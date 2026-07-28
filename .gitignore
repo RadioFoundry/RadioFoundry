@@ -1,0 +1,17 @@
+# Proprietary AMBE codec material and stock firmware: never commit
+codec/
+*.codec
+stock/
+# Build output and images (images can contain a merged codec)
+build/
+*.bin
+*.sgl
+*.elf
+*.map
+*.o
+*.d
+*.dSYM/
+tests/host/out/
+
+# Local provenance record (names the legacy sources); never committed
+PROVENANCE.md
