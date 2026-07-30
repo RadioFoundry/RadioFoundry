@@ -56,14 +56,14 @@ writes "no receive" for the other slot; locked to the wrong slot (noise, a pream
 390 ms timeout. Rule: anything that must hear both slots (repeater, scanner, DCDM) keeps the chip receiving every slot
 and derives slot parity itself from timeslot interrupt counts. Commit 814ba76.
 
-**1.7 The colour code probe busy-waits in the ISR.**
-Cause: the imported RX path writes reg 0x40 and spins 3 ms inside the Sys interrupt to probe the colour code. Rule: no
+**1.7 The color code probe busy-waits in the ISR.**
+Cause: the imported RX path writes reg 0x40 and spins 3 ms inside the Sys interrupt to probe the color code. Rule: no
 busy waits in modem interrupts; never probe while transmitting. Radios: HR_C6000; the HR_C7000 equivalent was removed
 too. Commits 38229da, c2fa743.
 
-**1.8 Access policy: polite to own colour code after the first TX.**
+**1.8 Access policy: polite to own color code after the first TX.**
 Symptom: a repeater (SFR) refused to send while the inbound slot was busy. Cause: after the driver has transmitted,
-reg 0x21 = 0xA2 makes the chip polite to our colour code, and it rejects the send ("send request rejected"
+reg 0x21 = 0xA2 makes the chip polite to our color code, and it rejects the send ("send request rejected"
 interrupt). Rule: decide politeness explicitly per transmission (regs 0x20 / 0x21); repeater transmissions and replies
 in a repeater's hang time must be impolite. Commit da845c3.
 
@@ -269,7 +269,7 @@ shot refused (0x0A). Commits 4967647, 31b52ef.
 
 **8.2 Type frames from the burst, not the control byte.** MMDVMHost writes control byte 0 on every frame; typing from
 it sent data as voice, ignored terminators, and NAKed the 6 idle frames before each call. Terminator / start detection
-by slot type only matched colour code 1. Rule: classify from the sync (BS, MS, TS1, TS2; voice or data) and the slot
+by slot type only matched color code 1. Rule: classify from the sync (BS, MS, TS1, TS2; voice or data) and the slot
 type's systematic bits; ACK and drop idle frames and PI headers. Commit cbc8478.
 
 **8.3 Back-to-back network calls.** A new call's header while the last call was still going out was merged into one
@@ -440,7 +440,7 @@ Commits f6e4b81, 31b52ef.
 
 ## 14. SFR (single frequency repeater)
 
-**14.1 The HR_C6000's RX status is unreliable while it transmits.** CRC flag, colour code (reg 0x52), sync type
+**14.1 The HR_C6000's RX status is unreliable while it transmits.** CRC flag, color code (reg 0x52), sync type
 (reg 0x5F), data type (a second Sys interrupt) and a header or terminator's info bytes 5-11 come out wrong while
 keyed; CSBK and data headers heard while keyed failed CRC by 11-23 bits. Rule: check bursts heard while keyed with
 their own checksum (RS(12,9), CRC-CCITT with masks CSBK 0xA5A5, data header 0xCCCC); rebuild headers and terminators
@@ -464,14 +464,13 @@ cleared). The raw 264-bit RX RAM areas (0x30 / 0x60) only held a fill pattern in
 **14.6 MD-9600 synthesizer per burst** is the open risk (about 1.25 ms guard time); the MD-380 and DM-32 aren't
 ported (HR_C5000 register page 0 and no CRC_MCU_Control; no C7000 layer 2 docs). Commits a6b31f5, bf08887.
 
-## 15. Testing practice**14.7 SFR channels never switch to repeater mode on BS sync.** RMO slot lock needs a CACH every slot and an SFR sends
+**14.7 SFR channels never switch to repeater mode on BS sync.** RMO slot lock needs a CACH every slot and an SFR sends
 none. On the GD-77 the repeater ends its own burst at the RF RX interrupt once the PA has been on 20 ms. Commits
 9369391, 10d57bd.
 
+## 15. Testing practice
 
-
-- Never transmit on 461.4625 MHz (channel 2); test with low power on a licensed test frequency.
-- An SDR with a burst analyzer (timing, sync, colour code, frequency offset) caught every timing bug above; host tests
+- An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests
   against independent decoders (RadioDesk) caught the protocol ones. Keep both.
 - On-air debug counters readable over the host protocol, plus runtime switches, let the SFR work go through 17 test
   rounds without reflashing for each experiment.
