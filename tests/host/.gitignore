@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+dmrDataTest
+dmrDataTest.out
+*.dSYM/
+ipGatewayTest
+ipGatewayTest.pcap
+ipGatewayTest.expert
+ipGatewayTest16
+ipGatewayTest16.pcap
+ipGatewayTestShared
+ipGatewayTestShared.pcap
+ipGatewayTest31
+ipGatewayTest31.pcap
+hotspotDataTest
+dmrPrivacyTest
+dmrDataServiceTest
+dmrDataServiceArsTest
+sfrTest
+hotspotUplinkTest
+dmrFecTest
