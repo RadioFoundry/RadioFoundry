@@ -27,6 +27,9 @@ enum {
 	KEY_COUNT
 };
 
+// SPI flash security registers (1..3, 256 bytes each): factory calibration in 1-2, panel type and model flags in 3
+bool dm1701_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len);
+
 // Factory calibration (calibration_dm1701.c, docs/spec/hardware-dm1701.md section 12)
 typedef struct {
 	bool valid;

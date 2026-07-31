@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The OpenDigitalRadio Authors
+// The codeplug as the core sees it: channels and zones, whatever format is stored underneath.
+// Today: read-only from a legacy-layout codeplug already in the radio's flash (docs/spec/legacy-cps-interop.md),
+// or a small built-in set when there is none. The native format comes later.
+#ifndef CODEPLUG_H
+#define CODEPLUG_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "hal_radio.h"
+
+#define CODEPLUG_NAME_LEN	16
+#define CODEPLUG_ZONE_MAX	80	// channels per zone
+
+typedef struct {
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint32_t rx_hz;
+	uint32_t tx_hz;
+	uint8_t mode;		// radio_mode_t
+	uint8_t bw;		// radio_bw_t
+	subtone_t rx_tone;
+	subtone_t tx_tone;
+	uint8_t power;		// board power level index, or CODEPLUG_POWER_DEFAULT
+	bool rx_only;
+	// DMR (unused by FM)
+	uint8_t color_code;
+	uint8_t timeslot;	// 1 or 2
+	uint16_t contact;	// talk target contact index, 0 = none
+	uint16_t listen_list;	// RX group list index, 0 = none
+} channel_t;
+
+#define CODEPLUG_POWER_DEFAULT	0xFF
+
+typedef struct {
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint16_t count;
+	uint16_t channels[CODEPLUG_ZONE_MAX];	// codeplug channel numbers, 1-based
+} zone_t;
+
+typedef enum { CODEPLUG_NONE, CODEPLUG_BUILTIN, CODEPLUG_LEGACY } codeplug_source_t;
+
+// Find and check the stored codeplug. Call once the board's flash works
+codeplug_source_t codeplug_init(void);
+codeplug_source_t codeplug_source(void);
+
+// Highest channel number that may be in use (channels are 1..count, some may be empty)
+uint16_t codeplug_channel_count(void);
+// false if the slot is empty or unreadable
+bool codeplug_channel(uint16_t number, channel_t *out);
+
+// Zones 0..count-1. With no zones stored there is one zone "All channels" holding every used channel
+uint16_t codeplug_zone_count(void);
+bool codeplug_zone(uint16_t index, zone_t *out);
+
+#endif

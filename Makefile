@@ -16,7 +16,7 @@ include platform/$(PLATFORM)/platform.mk
 BUILD := build/$(BOARD)
 TARGET := $(BUILD)/odr_$(BOARD)
 
-CORE_DIRS := core/app core/radio core/ui core/input
+CORE_DIRS := core/app core/radio core/ui core/input core/codeplug
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 

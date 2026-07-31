@@ -9,3 +9,5 @@ static bool wr(uint32_t a, const void *b, uint32_t n) { (void)a; (void)b; (void)
 static bool er(uint32_t a) { (void)a; return false; }
 
 hal_flash_t dm1701_flash = { .init = init, .size = 0, .erase_size = 4096, .read = rd, .write = wr, .erase = er };
+
+bool dm1701_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len) { (void)reg; (void)offset; (void)buf; (void)len; return false; }
