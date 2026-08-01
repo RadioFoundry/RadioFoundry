@@ -143,7 +143,7 @@ void st7735_init(const st7735_t *p)
 		cmd1(b, 0xFD, type == 2 ? 0x4F : 0x40);
 		run_table(b, init_unlock_b, sizeof(init_unlock_b));
 	}
-	cmd1(b, CMD_MADCTL, madctl_by_type[type]);
+	cmd1(b, CMD_MADCTL, madctl_by_type[type] ^ p->madctl_xor);
 	cmd1(b, CMD_COLMOD, 0x05);	// 16 bits per pixel
 	b->cmd(CMD_SLPOUT);
 	b->end();
