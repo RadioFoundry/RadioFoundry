@@ -282,8 +282,12 @@ static void apply_rx_tone(void)
 
 // --- hal_radio_t ---
 
-static void audio(bool on)
+static bool audio_wanted;	// the core wants the speaker on
+static bool volume_zero = false;	// knob at the bottom: silent (the lowest gain, -31 dB, is still audible)
+
+static void speaker_apply(void)
 {
+	bool on = audio_wanted && !volume_zero;
 	if (on) {
 		count(hrc6000_fm_audio(&r.modem, true));
 		PIN_WRITE(PIN_RX_AUDIO_MUX, true);	// HR_C6000 line out to the amp
@@ -294,6 +298,12 @@ static void audio(bool on)
 		PIN_WRITE(PIN_AMP_EN, false);
 		count(hrc6000_fm_audio(&r.modem, false));
 	}
+}
+
+static void audio(bool on)
+{
+	audio_wanted = on;
+	speaker_apply();
 }
 
 static void init(void)
@@ -458,6 +468,17 @@ static void status(radio_status_t *st)
 	st->tone_ok = at1846s_tone_match(flags, type);
 }
 
+// Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 dB of HR_C6000 RX gain
+static void volume(uint8_t percent)
+{
+	int db = (int)percent * 62 / 100 - 31;
+	count(hrc6000_set_rx_gain(&r.modem, (int8_t)db));
+	if ((percent == 0) != volume_zero) {
+		volume_zero = percent == 0;
+		speaker_apply();
+	}
+}
+
 const hal_radio_t dm1701_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -466,6 +487,7 @@ const hal_radio_t dm1701_radio = {
 	.tx_off = tx_off,
 	.status = status,
 	.audio = audio,
+	.volume = volume,
 };
 
 void dm1701_radio_diag(dm1701_radio_diag_t *d)

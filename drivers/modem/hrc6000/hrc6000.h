@@ -76,6 +76,8 @@ bool hrc6000_set_ref_offset(hrc6000_t *dev, int8_t offset, bool fm_tx);
 // Two-point modulation amplitudes from calibration (4:0x45 Mod2, 4:0x46 Mod1)
 bool hrc6000_set_mod_gain(hrc6000_t *dev, uint8_t mod2, uint8_t mod1);
 // Microphone gain 0..31 (4:0xE4)
+// RX audio gain, -31..+31 dB (4:0x37 = 0x80 + 0x40 if positive + the low 5 bits of the gain, modem-hrc6000.md 2)
+bool hrc6000_set_rx_gain(hrc6000_t *dev, int8_t db);
 bool hrc6000_set_mic_gain(hrc6000_t *dev, uint8_t gain);
 
 // Pure: the FM TX deviation coefficients for a band and bandwidth

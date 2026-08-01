@@ -291,6 +291,25 @@ static void quick_key(const input_event_t *ev)
 	dirty = true;
 }
 
+// Next / previous zone, wrapping; the new zone's name is shown as a toast
+static void zone_step(int dir)
+{
+	static zone_t z;	// large (80 channels): not on the UI task's stack
+	uint16_t n = codeplug_zone_count();
+	if (n < 2) {
+		toast("Only one zone");
+		return;
+	}
+	uint16_t next = (uint16_t)((view.zone_index + n + dir) % n);
+	radio_req_zone(next);
+	if (codeplug_zone(next, &z)) {
+		static char msg[CODEPLUG_NAME_LEN + 8];
+		strcpy(msg, "Zone: ");
+		strncat(msg, z.name, CODEPLUG_NAME_LEN);
+		toast(msg);
+	}
+}
+
 static void home_key(const input_event_t *ev)
 {
 	int8_t dir = nav_dir(ev);
@@ -364,8 +383,13 @@ static void home_key(const input_event_t *ev)
 		}
 		toast("Not assigned yet");
 		break;
+	case ACT_USER_1:
+	case ACT_USER_4:
+		if (ev->gesture == GESTURE_PRESS)
+			zone_step(ev->action == ACT_USER_4 ? 1 : -1);	// interim "Zone picker" until the Hub exists
+		break;
 	case ACT_TALK_TARGET:
-	case ACT_USER_1: case ACT_USER_2: case ACT_USER_4:
+	case ACT_USER_2:
 		toast("Not assigned yet");
 		break;
 	default:

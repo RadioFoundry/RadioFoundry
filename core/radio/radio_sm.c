@@ -331,6 +331,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->audio_out = -1;
 	sm->green_out = -1;
 	sm->red_out = -1;
+	sm->volume_sent = -1;
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
 	sm->view.squelch = RADIO_SQUELCH_DEFAULT;
 	sm->view.tot_s = RADIO_TOT_DEFAULT_S;
@@ -495,9 +496,27 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	}
 }
 
+// Follow a volume knob the MCU reads (soft volume): pass changes of 2 % or more, and the ends exactly
+static void follow_volume(radio_sm_t *sm)
+{
+	if (board.radio->volume == NULL || board.power == NULL || board.power->volume == NULL) {
+		return;
+	}
+	int v = board.power->volume();
+	if (v < 0) {
+		return;
+	}
+	int d = v - sm->volume_sent;
+	if (sm->volume_sent < 0 || d >= 2 || d <= -2 || ((v == 0 || v == 100) && v != sm->volume_sent)) {
+		sm->volume_sent = (int16_t)v;
+		board.radio->volume((uint8_t)v);
+	}
+}
+
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
+	follow_volume(sm);
 	board.radio->status(&st);
 	sm->view.rssi_dbm = st.rssi_dbm;
 	sm->view.noise = st.noise;

@@ -57,6 +57,7 @@ typedef struct {
 	uint8_t base_squelch;		// squelch without the temporary change
 	bool temp_power;
 	bool temp_squelch;
+	int16_t volume_sent;		// last level given to board.radio->volume, -1 = none yet
 
 	bool ptt;			// PTT held
 	uint32_t tx_start_ms;

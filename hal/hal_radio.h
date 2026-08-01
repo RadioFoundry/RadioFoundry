@@ -36,6 +36,8 @@ typedef struct {
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
+	// Optional: received audio level 0..100 % (radios whose volume knob is read by the MCU, not wired to the amp)
+	void (*volume)(uint8_t percent);
 } hal_radio_t;
 
 #endif

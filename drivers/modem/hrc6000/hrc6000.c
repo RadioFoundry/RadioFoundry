@@ -262,3 +262,10 @@ bool hrc6000_set_mode_fm_tx(hrc6000_t *dev, const hrc6000_fm_tx_t *cfg)
 	ok &= hrc6000_write(dev, 4, 0x60, 0x80);	// analog voice TX on
 	return ok;
 }
+
+bool hrc6000_set_rx_gain(hrc6000_t *dev, int8_t db)
+{
+	int g = db < -31 ? -31 : db > 31 ? 31 : db;
+	uint8_t v = (uint8_t)(0x80 | (g > 0 ? 0x40 : 0x00) | ((unsigned)g & 0x1Fu));
+	return hrc6000_write(dev, 4, 0x37, v);
+}
