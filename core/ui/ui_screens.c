@@ -257,15 +257,21 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 
-	// Channel number (medium, dim) and name (large), baselines aligned; the name shortened from the middle
+	// Channel number (medium, dim) and name, baselines aligned. The name uses the largest font it fits in; only a name
+	// too long even for the small font is shortened from the middle
 	sb_init(&b, buf, sizeof buf);
 	sb_u32(&b, v->channel_number, 1);
 	int x = gfx_text(L->medium, 0, base - L->medium->ascent, buf, col.dim) + L->medium->w / 2;
 	int avail = w - x;
 	if (v->temporary)
 		avail -= L->medium->w;
-	gfx_text_fit(L->large, v->ch.name, avail, fit, sizeof fit);
-	x = gfx_text(L->large, x, y, fit, col.fg);
+	const font_t *nf = L->large;
+	if (gfx_text_width(nf, v->ch.name) > avail)
+		nf = L->medium;
+	if (gfx_text_width(nf, v->ch.name) > avail)
+		nf = L->small;
+	gfx_text_fit(nf, v->ch.name, avail, fit, sizeof fit);
+	x = gfx_text(nf, x, nf == L->large ? y : base - nf->ascent, fit, col.fg);
 	if (v->temporary)
 		gfx_text(L->medium, x, base - L->medium->ascent, GLYPH_DOT, col.warn);
 }
