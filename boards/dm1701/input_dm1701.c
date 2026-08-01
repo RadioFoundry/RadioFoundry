@@ -109,7 +109,11 @@ static uint32_t scan_matrix(void)
 		set_mode(row_port[r], row_pin[r], MODER_OUTPUT, PUPDR_NONE);
 		hal_delay_us(5);
 		uint8_t cols = read_columns();
-		set_mode(row_port[r], row_pin[r], MODER_INPUT, PUPDR_NONE);
+		// Drive the row low before letting go: a row released while high stays charged, and through a pressed key
+		// the next row's scan saw it (every key also read as the one below it, seen on the bench 2026-10-09)
+		row_port[r]->BSRR = (uint32_t)row_pin[r] << 16;
+		hal_delay_us(2);
+		set_mode(row_port[r], row_pin[r], MODER_INPUT, PUPDR_DOWN);
 		for (int c = 0; c < 8; c++) {
 			if ((cols & (1u << c)) && matrix[r][c] != NO_KEY) {
 				keys |= 1u << matrix[r][c];
@@ -123,9 +127,10 @@ static uint32_t scan_matrix(void)
 
 static void init(void)
 {
-	// Rows float between scans (spec 2.1); one is driven high only while it is read
+	// Rows are inputs with a weak pull-down between scans (a definite low that can't load the LCD bus); one is driven
+	// high only while it is read
 	for (int r = 0; r < ROW_COUNT; r++) {
-		stm32_pin_in(row_port[r], row_pin[r], GPIO_NOPULL);
+		stm32_pin_in(row_port[r], row_pin[r], GPIO_PULLDOWN);
 	}
 	stm32_pin_in(PIN_PORT(PIN_PTT), PIN_MASK(PIN_PTT) | PIN_MASK(PIN_PTT_EXT), GPIO_PULLUP);
 	stm32_pin_in(PIN_PORT(PIN_ENC_A), PIN_MASK(PIN_ENC_A), GPIO_PULLUP);

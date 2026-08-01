@@ -77,7 +77,7 @@ static const uint8_t madctl_by_type[4] = { 0xA0, 0x60, 0xE0, 0xA0 };
 
 static bool is_bgr(const st7735_t *p)
 {
-	return (p->type & 3) == 3;
+	return (p->type & 3) == 3 && !p->force_rgb;
 }
 
 static void cmd1(const st7735_bus_t *b, uint8_t c, uint8_t v)

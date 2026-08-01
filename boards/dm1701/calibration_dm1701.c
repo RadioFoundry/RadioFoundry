@@ -53,6 +53,21 @@ typedef enum { CAL_NONE, CAL_WORKING, CAL_FACTORY } cal_source_t;
 static uint8_t table[CAL_SIZE];
 static bool band_ok[BAND_COUNT];
 static cal_source_t source;	// for the debugger
+// Why each copy was rejected, for the diagnostics page: "<copy>:<band><check><point>", e.g. "w:mark" or "f:UO3"
+static char why_working[12], why_factory[12];
+static char *why;	// the one being filled
+static uint8_t marker_seen[8];
+
+static void reject(int band, char check, uint8_t point)
+{
+	if (why == NULL || why[2] != '\0') {
+		return;		// keep the first reason
+	}
+	why[2] = band ? 'U' : 'V';
+	why[3] = check;
+	why[4] = (char)('0' + point % 10);
+	why[5] = '\0';
+}
 
 static const uint8_t *row(const row_t *r, int band)
 {
@@ -78,13 +93,16 @@ static bool band_sane(int band)
 	const uint8_t *vlow = row(&ROW_VLOW, band), *low = row(&ROW_LOW, band);
 	const uint8_t *mid = row(&ROW_MID, band), *high = row(&ROW_HIGH, band);
 	if (all_same(low, n, 0xFF) || all_same(mid, n, 0xFF) || all_same(vlow, n, 0xFF)) {
+		reject(band, 'E', 0);
 		return false;
 	}
 	for (uint8_t i = 0; i < n; i++) {
 		if (vlow[i] == 0 || low[i] == 0 || mid[i] == 0 || high[i] == 0) {
+			reject(band, 'Z', i);
 			return false;
 		}
 		if (vlow[i] > low[i] || low[i] >= high[i]) {
+			reject(band, 'O', i);
 			return false;
 		}
 	}
@@ -92,6 +110,7 @@ static bool band_sane(int band)
 	for (unsigned g = 0; g < sizeof(gains) / sizeof(gains[0]); g++) {
 		const uint8_t *p = row(gains[g], band);
 		if (all_same(p, n, 0xFF) || all_same(p, n, 0x00)) {
+			reject(band, 'G', (uint8_t)g);
 			return false;
 		}
 	}
@@ -130,19 +149,46 @@ static bool check_bands(void)
 	return any;
 }
 
+static void why_set(char *w, char copy, const char *s)
+{
+	w[0] = copy;
+	w[1] = ':';
+	strncpy(&w[2], s, 9);
+	w[11] = '\0';
+}
+
 static bool load_working(void)
 {
-	return dm1701_flash.read(CAL_WORKING_ADDR, table, CAL_SIZE) &&
-	       memcmp(&table[CAL_MARKER_OFFSET], MARKER, sizeof(MARKER)) == 0 && check_bands();
+	why = why_working;
+	why_set(why, 'w', "");
+	if (!dm1701_flash.read(CAL_WORKING_ADDR, table, CAL_SIZE)) {
+		why_set(why, 'w', "read");
+		return false;
+	}
+	memcpy(marker_seen, &table[CAL_MARKER_OFFSET], sizeof(marker_seen));
+	if (memcmp(&table[CAL_MARKER_OFFSET], MARKER, sizeof(MARKER)) != 0) {
+		why_set(why, 'w', "mark");
+		return false;
+	}
+	bool ok = check_bands();
+	if (ok)
+		why_set(why, 'w', "ok");
+	return ok;
 }
 
 static bool load_factory(void)
 {
+	why = why_factory;
+	why_set(why, 'f', "");
 	if (!dm1701_flash_read_security(1, 0, &table[0], 256) || !dm1701_flash_read_security(2, 0, &table[256], 256)) {
+		why_set(why, 'f', "read");
 		return false;
 	}
 	derive_working();
-	return check_bands();
+	bool ok = check_bands();
+	if (ok)
+		why_set(why, 'f', "ok");
+	return ok;
 }
 
 bool dm1701_cal_load(void)
@@ -220,4 +266,18 @@ bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out)
 const char *dm1701_cal_source(void)
 {
 	return source == CAL_WORKING ? "working" : source == CAL_FACTORY ? "factory" : "none";
+}
+
+// "w:mark f:UO3" plus the working copy's marker bytes, for the diagnostics page
+void dm1701_cal_why(char *out, uint8_t len, uint8_t marker[8])
+{
+	uint8_t n = 0;
+	for (const char *s = why_working; *s && n + 1 < len; s++)
+		out[n++] = *s;
+	if (n + 1 < len)
+		out[n++] = ' ';
+	for (const char *s = why_factory; *s && n + 1 < len; s++)
+		out[n++] = *s;
+	out[n] = '\0';
+	memcpy(marker, marker_seen, 8);
 }

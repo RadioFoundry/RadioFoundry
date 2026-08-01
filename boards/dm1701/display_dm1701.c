@@ -130,10 +130,7 @@ static st7735_t panel = {
 	.width = VISIBLE_W,
 	.height = VISIBLE_H,
 	.col_offset = 0,
-	// The MADCTL values in hardware-dm1701.md 9.2 come out mirrored top to bottom on the DM-1701 (seen on the bench,
-	// 2026-10-09), so the board flips the vertical axis (MX, landscape). The 8 hidden rows stay at panel rows 0-7
 	.row_offset = HIDDEN_ROWS,
-	.madctl_xor = 0x40,
 };
 
 static bool ready;
@@ -228,6 +225,12 @@ static void init(void)
 		type = 0;
 	}
 	panel.type = type & 3;
+	// hardware-dm1701.md 9.2, DM-1701 column: type 2 is "vertically flipped; treated as type 3 with RGB order" (the
+	// bench radio reports 2, and the type 2 MADCTL showed the picture mirrored top to bottom)
+	if (panel.type == 2) {
+		panel.type = 3;
+		panel.force_rgb = true;
+	}
 	st7735_init(&panel);
 	ready = true;
 }

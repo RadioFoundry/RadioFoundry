@@ -610,7 +610,7 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total)
 {
 	const ui_layout_t *L = &ui_layout;
-	const font_t *f = L->small;
+	const font_t *f = L->tiny != NULL ? L->tiny : L->small;	// small print: as many lines as fit
 	char buf[40];
 	sbuf_t b;
 	int y = 0;
@@ -652,5 +652,5 @@ void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total)
 		gfx_text(f, 0, y, buf, col.dim);
 		y += f->h;
 	}
-	gfx_text(f, 0, gfx_height() - f->h, "BACK to leave", col.idle);
+	gfx_text(f, 0, gfx_height() - f->h, "BACK Home, long BACK here", col.idle);
 }

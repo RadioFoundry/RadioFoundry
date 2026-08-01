@@ -43,7 +43,7 @@ typedef enum { SCR_HOME, SCR_QUICK, SCR_DIAG } screen_t;
 
 static ui_state_t st;
 static radio_view_t view;	// static: too large for a modest task stack
-static screen_t screen;
+static screen_t screen = SCR_DIAG;	// bring-up: diagnostics first; BACK goes Home, long BACK on Home returns
 static uint32_t toast_until, entry_last;
 static uint32_t radio_active_ms;
 static uint8_t backlight_now = 0xFF;
@@ -378,8 +378,12 @@ static void handle_key(const input_event_t *ev)
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
 	if (screen == SCR_DIAG) {
-		if (ev->action == ACT_BACK)
-			screen = SCR_HOME;	// every other key stays here so its bit can be read
+		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS)
+			screen = SCR_HOME;
+		else if (ev->action != ACT_BACK && ev->action != ACT_SELECT && ev->action != ACT_QUICK)
+			home_key(ev);	// channel, VFO and digits still work underneath
+	} else if (screen == SCR_HOME && ev->action == ACT_BACK && ev->gesture == GESTURE_LONG) {
+		screen = SCR_DIAG;
 	} else if (screen == SCR_QUICK) {
 		quick_key(ev);
 	} else {

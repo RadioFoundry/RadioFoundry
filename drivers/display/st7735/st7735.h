@@ -29,6 +29,7 @@ typedef struct {
 	uint16_t width, height;		// visible area
 	uint16_t col_offset, row_offset;	// panel address of visible pixel (0, 0)
 	uint8_t madctl_xor;			// board correction applied on top of the type's MADCTL (0x40: flip vertically in landscape, 0x80: horizontally)
+	bool force_rgb;				// RGB order even for type 3 (which is BGR by default)
 } st7735_t;
 
 // Reset the panel, run the init table for its type, clear the whole panel (hidden rows included) and turn it on

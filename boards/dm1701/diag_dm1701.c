@@ -99,6 +99,22 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " cal ");
 		put(&o, dm1701_cal_source());
 		break;
+	case 6: {
+		char w[28];
+		uint8_t m[8];
+		dm1701_cal_why(w, sizeof w, m);
+		put(&o, w);
+		break;
+	}
+	case 7: {
+		char w[28];
+		uint8_t m[8];
+		dm1701_cal_why(w, sizeof w, m);
+		put(&o, "mk ");
+		for (int k = 0; k < 8; k++)
+			put_x(&o, m[k], 2);
+		break;
+	}
 	default:
 		return false;
 	}

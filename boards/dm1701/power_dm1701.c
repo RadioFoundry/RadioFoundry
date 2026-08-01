@@ -17,9 +17,9 @@ enum { CH_VOLUME, CH_BATTERY, CH_MIC, CH_TEMP, CH_COUNT };
 #define FILTER_MS		10000		// time constant of the displayed battery voltage
 
 // Volume pot (spec 11.2, DM-1701): log taper, the breakpoint sits near the middle of the rotation
-#define VOL_MIN			29
+#define VOL_MIN			26	// measured on the bench: 26 at the bottom, 2063 at the top (spec 29..2075)
 #define VOL_BREAK		318
-#define VOL_MAX			2075
+#define VOL_MAX			2060
 #define VOL_MUTE_ZONE		5		// counts above the minimum that still read 0
 #define VOL_HYSTERESIS		5
 
