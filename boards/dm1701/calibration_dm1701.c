@@ -53,20 +53,21 @@ typedef enum { CAL_NONE, CAL_WORKING, CAL_FACTORY } cal_source_t;
 static uint8_t table[CAL_SIZE];
 static bool band_ok[BAND_COUNT];
 static cal_source_t source;	// for the debugger
-// Why each copy was rejected, for the diagnostics page: "<copy>:<band><check><point>", e.g. "w:mark" or "f:UO3"
+// Why each copy was rejected, for the diagnostics page: "<copy>:" then three characters per band (VHF, UHF):
+// check and point, or "ok" ("w:mark", "w:VG2UO3", "f:VG2ok ")
 static char why_working[12], why_factory[12];
 static char *why;	// the one being filled
 static uint8_t marker_seen[8];
 
 static void reject(int band, char check, uint8_t point)
 {
-	if (why == NULL || why[2] != '\0') {
-		return;		// keep the first reason
+	if (why == NULL) {
+		return;
 	}
-	why[2] = band ? 'U' : 'V';
-	why[3] = check;
-	why[4] = (char)('0' + point % 10);
-	why[5] = '\0';
+	char *w = &why[2 + band * 3];
+	w[0] = band ? 'U' : 'V';
+	w[1] = check;
+	w[2] = (char)('0' + point % 10);
 }
 
 static const uint8_t *row(const row_t *r, int band)
@@ -85,7 +86,7 @@ static bool all_same(const uint8_t *p, uint8_t n, uint8_t v)
 }
 
 // A band is usable when no power point is 0, very low <= low < high at every point, the very-low, low and mid rows
-// and the four gain rows are not erased (all 0xFF) and the gain rows are not all 0. The high row may legitimately be
+// and the four gain rows are not erased (all 0xFF); a gain row may be all 0. The high row may legitimately be
 // all 0xFF: the UHF conversion (x 1.7) saturates high factory values at 255
 static bool band_sane(int band)
 {
@@ -109,7 +110,8 @@ static bool band_sane(int band)
 	const row_t *gains[] = { &ROW_DMR_I, &ROW_DMR_Q, &ROW_FM_I, &ROW_FM_Q };
 	for (unsigned g = 0; g < sizeof(gains) / sizeof(gains[0]); g++) {
 		const uint8_t *p = row(gains[g], band);
-		if (all_same(p, n, 0xFF) || all_same(p, n, 0x00)) {
+		// All zero is real data: the bench DM-1701's factory table has FM I = 0 on both bands (2026-10-09)
+		if (all_same(p, n, 0xFF)) {
 			reject(band, 'G', (uint8_t)g);
 			return false;
 		}
@@ -144,6 +146,12 @@ static bool check_bands(void)
 	bool any = false;
 	for (int band = 0; band < BAND_COUNT; band++) {
 		band_ok[band] = band_sane(band);
+		if (band_ok[band] && why != NULL) {
+			char *w = &why[2 + band * 3];
+			w[0] = band ? 'U' : 'V';
+			w[1] = 'o';
+			w[2] = 'k';
+		}
 		any = any || band_ok[band];
 	}
 	return any;
@@ -160,7 +168,7 @@ static void why_set(char *w, char copy, const char *s)
 static bool load_working(void)
 {
 	why = why_working;
-	why_set(why, 'w', "");
+	why_set(why, 'w', "------");
 	if (!dm1701_flash.read(CAL_WORKING_ADDR, table, CAL_SIZE)) {
 		why_set(why, 'w', "read");
 		return false;
@@ -170,25 +178,19 @@ static bool load_working(void)
 		why_set(why, 'w', "mark");
 		return false;
 	}
-	bool ok = check_bands();
-	if (ok)
-		why_set(why, 'w', "ok");
-	return ok;
+	return check_bands();
 }
 
 static bool load_factory(void)
 {
 	why = why_factory;
-	why_set(why, 'f', "");
+	why_set(why, 'f', "------");
 	if (!dm1701_flash_read_security(1, 0, &table[0], 256) || !dm1701_flash_read_security(2, 0, &table[256], 256)) {
 		why_set(why, 'f', "read");
 		return false;
 	}
 	derive_working();
-	bool ok = check_bands();
-	if (ok)
-		why_set(why, 'f', "ok");
-	return ok;
+	return check_bands();
 }
 
 bool dm1701_cal_load(void)
@@ -280,4 +282,10 @@ void dm1701_cal_why(char *out, uint8_t len, uint8_t marker[8])
 		out[n++] = *s;
 	out[n] = '\0';
 	memcpy(marker, marker_seen, 8);
+}
+
+// Raw byte of the table in RAM (the last copy read), for the diagnostics page
+uint8_t dm1701_cal_byte(uint16_t offset)
+{
+	return offset < CAL_SIZE ? table[offset] : 0;
 }

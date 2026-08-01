@@ -49,6 +49,7 @@ uint8_t dm1701_display_panel_type(void);
 uint16_t dm1701_adc_raw(uint8_t ch);	// 0 volume, 1 battery, 2 mic, 3 temperature
 const char *dm1701_cal_source(void);	// "working", "factory" or "none"
 void dm1701_cal_why(char *out, uint8_t len, uint8_t marker[8]);
+uint8_t dm1701_cal_byte(uint16_t offset);
 bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len);
 
 // Factory calibration (calibration_dm1701.c, docs/spec/hardware-dm1701.md section 12)

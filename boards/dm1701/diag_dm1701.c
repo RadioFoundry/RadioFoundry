@@ -115,6 +115,19 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 			put_x(&o, m[k], 2);
 		break;
 	}
+	case 8:	// VHF DMR I / Q gain rows (5 points)
+	case 9:	// VHF FM I / Q
+	case 10: {	// UHF FM I / Q (first 5 of 9 points)
+		static const uint16_t rows[3][2] = { { 0x139, 0x149 }, { 0x179, 0x189 }, { 0x170, 0x180 } };
+		static const char *const names[3] = { "VdIQ ", "VfIQ ", "UfIQ " };
+		put(&o, names[i - 8]);
+		for (int k = 0; k < 2; k++) {
+			for (int n = 0; n < 5; n++)
+				put_x(&o, dm1701_cal_byte((uint16_t)(rows[i - 8][k] + n)), 2);
+			put(&o, " ");
+		}
+		break;
+	}
 	default:
 		return false;
 	}
