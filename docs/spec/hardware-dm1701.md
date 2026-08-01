@@ -1256,3 +1256,8 @@ Verified on one radio with the new firmware; they override the unverified notes 
 - **Soft volume**: HR_C6000 4:0x37 (RX gain) scales FM feed-through audio as well as DMR audio; -31 dB is still
   audible, so the bottom of the knob must also mute the speaker path.
 - **HR_C6000**: 4:0x10 reads back 0x80 after FM RX set-up (the config port works with the 4.2 timing).
+- **FM TX** (VFO 461.8625 MHz, 12.5 kHz, 1 W, measured with an RTL-SDR, 2026-10-09): with the TX sequence of
+  `radio_dm1701.c` (frequency written with the receiver off, straight to TX) the carrier is within about 50 Hz of the
+  channel, so no TX offset is added. Unmodulated carrier residual FM 41 Hz RMS, no hum or tone. Voice at normal level:
+  2.5 kHz peak deviation (99.5th percentile), 636 Hz RMS, about 7 kHz occupied at -26 dB. The FM I calibration row of 0
+  (Mod2 amplitude) does not stop voice modulation.
