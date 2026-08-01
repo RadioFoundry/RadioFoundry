@@ -98,3 +98,58 @@ clean:
 	rm -rf *.dSYM
 
 .PHONY: all run clean
+
+# The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
+CORE_HAL := -I$(ROOT)/hal -Wshadow
+TESTS   += radioCoreTest inputTest
+
+radioCoreTest: radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ radioCoreTest.c $(CORE)/radio/radio_sm.c
+
+inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
+
+run: run-core
+run-core: radioCoreTest inputTest
+	./radioCoreTest
+	./inputTest
+.PHONY: run-core
+
+# The read-only codeplug (legacy layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
+FLASH_HAL := -I$(ROOT)/hal -Wshadow
+TESTS   += codeplugTest calibrationTest
+
+codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h
+	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c
+
+calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h
+	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c
+
+run: run-flash
+run-flash: codeplugTest calibrationTest
+	./codeplugTest
+	./calibrationTest
+.PHONY: run-flash
+
+# The AT1846S driver: frequency word, DCS Golay word, register cache and write sequences, on a fake bus
+TESTS   += at1846sTest
+
+at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/rf/at1846s/at1846s.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c
+
+run: run-rf
+run-rf: at1846sTest
+	./at1846sTest
+.PHONY: run-rf
+
+# UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
+UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_screens.c
+TESTS   += gfxTest
+
+gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ gfxTest.c $(UI)
+
+run: run-ui
+run-ui: gfxTest
+	./gfxTest
+.PHONY: run-ui

@@ -18,3 +18,9 @@ dmrDataServiceArsTest
 sfrTest
 hotspotUplinkTest
 dmrFecTest
+radioCoreTest
+inputTest
+codeplugTest
+calibrationTest
+at1846sTest
+gfxTest

@@ -11,6 +11,12 @@
 // The LCD data bus doubles as the keypad columns: the display and the keypad scan take turns
 void dm1701_lcdbus_lock(void);
 void dm1701_lcdbus_unlock(void);
+// Reconnect LCD D0-D7 (the keypad columns) to the FSMC; the display calls it at the start of every burst, lock held
+void dm1701_lcd_pins_fsmc(void);
+
+// Extra analog readings (power_dm1701.c)
+uint16_t dm1701_mic_level_raw(void);
+int16_t dm1701_temperature_c10(void);
 
 // Ops each board file provides (display_dm1701.c, input_dm1701.c, radio_dm1701.c, power_dm1701.c, flash_dm1701.c)
 extern const hal_display_t dm1701_display;

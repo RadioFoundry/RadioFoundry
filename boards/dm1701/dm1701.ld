@@ -79,4 +79,8 @@ SECTIONS
 
 	/DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }
 	.ARM.attributes 0 : { *(.ARM.attributes) }
+
+	/* The .bin is one contiguous stream from 0x0800C000; data placed beyond the codec window needs the codec merged
+	 * (or padding) first, so keep it empty until that path exists */
+	ASSERT(SIZEOF(.rodata2) == 0, ".rodata2 is not packed into the image yet")
 }

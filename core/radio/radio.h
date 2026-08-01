@@ -16,7 +16,8 @@ typedef enum {
 	RS_TX_DENIED,	// PTT held but transmit refused (RX-only, out of band, timed out); shown until PTT release
 } radio_state_t;
 
-typedef enum { TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ } tx_deny_t;
+// TXDENY_MODE: the channel's mode can't transmit yet (a DMR channel while only FM exists)
+typedef enum { TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE } tx_deny_t;
 
 typedef struct {
 	radio_state_t state;
