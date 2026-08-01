@@ -12,6 +12,9 @@
 #include "hal_radio.h"
 #include "hal_power.h"
 #include "hal_flash.h"
+#include "hal_dmr_modem.h"
+#include "hal_audio.h"
+#include "hal_vocoder.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -42,6 +45,9 @@ typedef struct {
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;
+	const hal_dmr_modem_t *dmr;	// NULL on FM-only radios
+	const hal_audio_t *audio;
+	const hal_vocoder_t *vocoder;
 	// Optional: line i of a board diagnostics page (raw readings for bench checks); false past the last line
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
 } board_t;

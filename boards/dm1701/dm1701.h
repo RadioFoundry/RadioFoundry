@@ -24,6 +24,9 @@ extern const hal_input_t dm1701_input;
 extern const hal_radio_t dm1701_radio;
 extern const hal_power_t dm1701_power;
 extern hal_flash_t dm1701_flash;
+extern const hal_dmr_modem_t dm1701_dmr;
+extern const hal_audio_t dm1701_audio;
+extern const hal_vocoder_t dm1701_vocoder;
 
 // Physical key bits returned by dm1701_input.scan() (matrix positions in docs/spec/hardware-dm1701.md 10.1)
 enum {

@@ -56,6 +56,9 @@ const board_t board = {
 	.power = &dm1701_power,
 	.flash = &dm1701_flash,
 	.diag_line = dm1701_diag_line,
+	.dmr = &dm1701_dmr,
+	.audio = &dm1701_audio,
+	.vocoder = &dm1701_vocoder,
 };
 
 // docs/spec/hardware-dm1701.md 1.2
