@@ -181,7 +181,7 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | Channel knob | `CHANNEL_POS(1-16)` in the current zone |
-| SK1 (upper side) | `MONITOR` (while held) |
+| Upper side key (row 2 D5) and middle side key (row 2 D7): see hardware-dm1701.md 20 | `MONITOR` (while held) on the middle key |
 | SK2 (lower side) | `TALK_TARGET` / Scan on/off |
 | Top (orange) key | `EMERGENCY` if enabled, else Power cycle / Speak status |
 | PTT | `PTT` |

@@ -1236,3 +1236,23 @@ Missing for this radio: STM32F405 datasheet and RM0090 reference manual; the LCD
 HX8353-E, and the GalaxyCore-like controller used by panel types 2/3); W25Q128 datasheet (the W25Q80BV covers the
 command set); DM-1701 / MD-UV380 schematics or service manual; audio power amplifier, RF PA and TCXO part data; GPS
 module data.
+
+## 20. Bench findings (OpenDigitalRadio on a DM-1701, 2026-10-09)
+
+Verified on one radio with the new firmware; they override the unverified notes above where they differ.
+
+- **Keypad**: the 10.1 matrix is right. The two "function" keys are labeled P1 (row 0, D6) and P2 (row 0, D5). There is
+  no orange key: the three black side keys are, top to bottom, row 2 D5 (the "top key" position), row 2 D7, row 2 D6;
+  PTT is separate. A row released while still high stays charged and makes every key also read as the key below it:
+  drive the row low before releasing it and keep idle rows pulled down.
+- **Encoder**: clockwise counts up with the 10.3 rule, one count per detent.
+- **Panel**: this radio reports type 2 (security register 3, byte 0x1D). Driving it with the type 2 MADCTL (0xE0) shows the
+  picture mirrored top to bottom; treating it as type 3 with RGB order (as 9.2 says) is correct. The 8 hidden rows are
+  panel rows 0-7 either way.
+- **Volume pot**: raw 26 at the bottom, 2063 at the top.
+- **Battery**: raw / 37.5 gives a plausible 7.1 V (not yet checked against a meter).
+- **Calibration**: the working copy at 0x010000 carries the marker. The FM I gain rows (0x170 UHF, 0x179 VHF) are all
+  0x00 on both bands while the other gain rows hold values: an all-zero gain row is valid data.
+- **Soft volume**: HR_C6000 4:0x37 (RX gain) scales FM feed-through audio as well as DMR audio; -31 dB is still
+  audible, so the bottom of the knob must also mute the speaker path.
+- **HR_C6000**: 4:0x10 reads back 0x80 after FM RX set-up (the config port works with the 4.2 timing).
