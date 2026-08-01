@@ -48,6 +48,8 @@ void ui_layout_init(void);
 void ui_draw_splash(const char *product, const char *board_name, const char *git);
 void ui_draw_home(const radio_view_t *v, const ui_state_t *s);
 void ui_draw_quick(const radio_view_t *v, const ui_state_t *s);
+// Diagnostics: raw key bits, encoder total, radio readings and the board's own lines
+void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total);
 
 // Quick settings tile: false if it can't be used yet. label and value get short texts
 bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *label, size_t label_len,

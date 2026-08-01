@@ -18,6 +18,8 @@
 
 static input_engine_t engine;
 static QueueHandle_t events;
+static volatile uint32_t raw_keys;
+static volatile int32_t enc_total;
 
 static void emit(const input_event_t *ev, void *ctx)
 {
@@ -37,6 +39,8 @@ static void input_task(void *arg)
 	for (;;) {
 		uint32_t keys = board.input->scan();
 		int8_t enc = board.input->encoder();
+		raw_keys = keys;
+		enc_total += enc;
 		input_engine_step(&engine, keys, enc, hal_millis(), emit, NULL);
 		vTaskDelayUntil(&wake, pdMS_TO_TICKS(INPUT_SCAN_MS));
 	}
@@ -65,4 +69,14 @@ bool input_next(input_event_t *ev, uint32_t wait_ms)
 uint32_t input_idle_ms(void)
 {
 	return hal_millis() - engine.last_activity_ms;
+}
+
+uint32_t input_raw_keys(void)
+{
+	return raw_keys;
+}
+
+int32_t input_encoder_total(void)
+{
+	return enc_total;
 }

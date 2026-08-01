@@ -42,6 +42,8 @@ typedef struct {
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;
+	// Optional: line i of a board diagnostics page (raw readings for bench checks); false past the last line
+	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
 } board_t;
 
 extern const board_t board;

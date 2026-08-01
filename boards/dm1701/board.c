@@ -55,6 +55,7 @@ const board_t board = {
 	.radio = &dm1701_radio,
 	.power = &dm1701_power,
 	.flash = &dm1701_flash,
+	.diag_line = dm1701_diag_line,
 };
 
 // docs/spec/hardware-dm1701.md 1.2

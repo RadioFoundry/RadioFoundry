@@ -225,3 +225,8 @@ const hal_power_t dm1701_power = {
 	.switch_on = switch_on,
 	.led = led,
 };
+
+uint16_t dm1701_adc_raw(uint8_t ch)
+{
+	return ch < CH_COUNT ? adc_read(ch) : 0;
+}

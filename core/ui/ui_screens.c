@@ -606,3 +606,51 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 	if (s->toast != NULL)
 		draw_hint(s->toast, true);
 }
+
+void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
+	char buf[40];
+	sbuf_t b;
+	int y = 0;
+
+	gfx_clear(col.bg);
+	gfx_text(f, 0, y, "Diagnostics", col.warn);
+	y += f->h;
+
+	sb_init(&b, buf, sizeof buf);
+	sb_str(&b, "keys ");
+	for (int i = 5; i >= 0; i--)
+		sb_chr(&b, "0123456789ABCDEF"[(keys >> (4 * i)) & 0xF]);
+	sb_str(&b, " enc ");
+	if (enc_total < 0) {
+		sb_chr(&b, '-');
+		enc_total = -enc_total;
+	}
+	sb_u32(&b, (uint32_t)enc_total, 1);
+	gfx_text(f, 0, y, buf, col.fg);
+	y += f->h;
+
+	sb_init(&b, buf, sizeof buf);
+	sb_str(&b, "rx ");
+	if (v->rssi_dbm < 0) {
+		sb_chr(&b, '-');
+		sb_u32(&b, (uint32_t)-v->rssi_dbm, 1);
+	} else {
+		sb_u32(&b, (uint32_t)v->rssi_dbm, 1);
+	}
+	sb_str(&b, "dBm nz ");
+	sb_u32(&b, v->noise, 1);
+	sb_str(&b, v->state == RS_RX ? " open" : v->state == RS_TX ? " TX" : " closed");
+	gfx_text(f, 0, y, buf, col.fg);
+	y += f->h;
+
+	for (uint8_t i = 0; board.diag_line != NULL && y + f->h <= gfx_height() - f->h; i++) {
+		if (!board.diag_line(i, buf, sizeof buf))
+			break;
+		gfx_text(f, 0, y, buf, col.dim);
+		y += f->h;
+	}
+	gfx_text(f, 0, gfx_height() - f->h, "BACK to leave", col.idle);
+}

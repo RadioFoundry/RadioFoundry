@@ -248,3 +248,8 @@ const hal_display_t dm1701_display = {
 	.flush = flush,
 	.set_backlight = set_backlight,
 };
+
+uint8_t dm1701_display_panel_type(void)
+{
+	return panel.type;
+}

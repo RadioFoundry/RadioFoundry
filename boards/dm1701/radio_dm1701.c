@@ -46,6 +46,7 @@ static struct {
 	radio_bw_t rx_bw;
 	subtone_t rx_tone;
 	uint32_t bus_errors;	// I2C failures and failed chip operations since start (debug)
+	dm1701_radio_diag_t diag;
 } r;
 
 static I2C_HandleTypeDef i2c3;
@@ -323,6 +324,7 @@ static void init(void)
 	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	audio(false);
+	r.diag.c6000_ok = hrc6000_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
 }
 
 static void set_mode(radio_mode_t mode)
@@ -446,6 +448,9 @@ static void status(radio_status_t *st)
 		st->tone_ok = type == AT1846S_TONE_NONE;
 		return;
 	}
+	r.diag.rssi = rssi;
+	r.diag.noise = noise;
+	r.diag.flags = flags;
 	// Field calibration constants (hardware-dm1701.md 5.9)
 	st->rssi_dbm = r.rx_uhf ? (int16_t)(rssi - 151) : (int16_t)(-164 + rssi * 32 / 27);
 	st->noise = noise;
@@ -462,3 +467,9 @@ const hal_radio_t dm1701_radio = {
 	.status = status,
 	.audio = audio,
 };
+
+void dm1701_radio_diag(dm1701_radio_diag_t *d)
+{
+	*d = r.diag;
+	d->bus_errors = r.bus_errors;
+}

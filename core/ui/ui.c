@@ -39,7 +39,7 @@
 #define BACKLIGHT_DIM_MS	30000
 #define BACKLIGHT_OFF_MS	120000
 
-typedef enum { SCR_HOME, SCR_QUICK } screen_t;
+typedef enum { SCR_HOME, SCR_QUICK, SCR_DIAG } screen_t;
 
 static ui_state_t st;
 static radio_view_t view;	// static: too large for a modest task stack
@@ -357,8 +357,15 @@ static void home_key(const input_event_t *ev)
 	case ACT_CONTEXT:
 		toast("Caller actions: coming soon");
 		break;
+	case ACT_USER_3:
+		if (ev->gesture == GESTURE_LONG) {
+			screen = SCR_DIAG;	// long top key: diagnostics (bench checks), until the Hub has a place for it
+			break;
+		}
+		toast("Not assigned yet");
+		break;
 	case ACT_TALK_TARGET:
-	case ACT_USER_1: case ACT_USER_2: case ACT_USER_3: case ACT_USER_4:
+	case ACT_USER_1: case ACT_USER_2: case ACT_USER_4:
 		toast("Not assigned yet");
 		break;
 	default:
@@ -370,10 +377,14 @@ static void handle_key(const input_event_t *ev)
 {
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
-	if (screen == SCR_QUICK)
+	if (screen == SCR_DIAG) {
+		if (ev->action == ACT_BACK)
+			screen = SCR_HOME;	// every other key stays here so its bit can be read
+	} else if (screen == SCR_QUICK) {
 		quick_key(ev);
-	else
+	} else {
 		home_key(ev);
+	}
 	dirty = true;
 }
 
@@ -382,7 +393,9 @@ static void draw(void)
 	st.now_ms = hal_millis();
 	st.battery_pct = board.power->battery_pct();
 	radio_get_view(&view);
-	if (screen == SCR_QUICK)
+	if (screen == SCR_DIAG)
+		ui_draw_diag(&view, input_raw_keys(), input_encoder_total());
+	else if (screen == SCR_QUICK)
 		ui_draw_quick(&view, &st);
 	else
 		ui_draw_home(&view, &st);
@@ -442,7 +455,7 @@ static void ui_task(void *arg)
 			entry_cancel();
 		if (st.entry && !view.vfo)
 			entry_cancel();
-		uint32_t refresh = view.state == RS_TX ? REFRESH_TX_MS : REFRESH_MS;
+		uint32_t refresh = (view.state == RS_TX || screen == SCR_DIAG) ? REFRESH_TX_MS : REFRESH_MS;
 		if (now - last_refresh >= refresh) {
 			last_refresh = now;
 			dirty = true;

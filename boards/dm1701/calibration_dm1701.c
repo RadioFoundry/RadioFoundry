@@ -216,3 +216,8 @@ bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out)
 	out->ref_offset = (int8_t)((int)table[REF_TUNE[band]] - 128);
 	return true;
 }
+
+const char *dm1701_cal_source(void)
+{
+	return source == CAL_WORKING ? "working" : source == CAL_FACTORY ? "factory" : "none";
+}

@@ -36,6 +36,20 @@ enum {
 // SPI flash security registers (1..3, 256 bytes each): factory calibration in 1-2, panel type and model flags in 3
 bool dm1701_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len);
 
+// Diagnostics (diag_dm1701.c and the accessors it reads; all return cached values, no bus traffic)
+typedef struct {
+	uint8_t rssi, noise;	// AT1846S raw readings from the last status poll
+	uint16_t flags;		// AT1846S reg 0x1C from the last status poll
+	uint8_t c6000_r10;	// HR_C6000 4:0x10 read back after init (0x80 = FM)
+	bool c6000_ok;		// that read worked
+	uint32_t bus_errors;
+} dm1701_radio_diag_t;
+void dm1701_radio_diag(dm1701_radio_diag_t *d);
+uint8_t dm1701_display_panel_type(void);
+uint16_t dm1701_adc_raw(uint8_t ch);	// 0 volume, 1 battery, 2 mic, 3 temperature
+const char *dm1701_cal_source(void);	// "working", "factory" or "none"
+bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len);
+
 // Factory calibration (calibration_dm1701.c, docs/spec/hardware-dm1701.md section 12)
 typedef struct {
 	bool valid;
