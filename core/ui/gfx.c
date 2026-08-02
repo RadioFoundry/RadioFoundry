@@ -7,7 +7,9 @@
 static uint32_t fb_words[GFX_FB_BYTES / 4];
 static const hal_display_t *display;
 static int width, height, bpp, stride;	// stride in bytes
-static int clip_x0, clip_y0, clip_x1, clip_y1;	// x1, y1 exclusive
+static int clip_x0, clip_y0, clip_x1, clip_y1;	// panel coordinates, x1, y1 exclusive
+// The viewport (the board's safe area): every drawing call takes coordinates relative to it
+static int ox, oy, vw, vh;
 static uint32_t row_hash[GFX_MAX_ROWS];
 static bool all_dirty;
 
@@ -23,29 +25,39 @@ bool gfx_init(const hal_display_t *disp)
 		display = NULL;
 		return false;
 	}
+	ox = disp->inset_left;
+	oy = disp->inset_top;
+	vw = width - disp->inset_left - disp->inset_right;
+	vh = height - disp->inset_top - disp->inset_bottom;
+	if (vw < 32 || vh < 32) {	// insets that leave nothing usable: ignore them
+		ox = oy = 0;
+		vw = width;
+		vh = height;
+	}
 	gfx_clip_off();
 	all_dirty = true;
 	return true;
 }
 
-int gfx_width(void) { return width; }
-int gfx_height(void) { return height; }
+int gfx_width(void) { return vw; }
+int gfx_height(void) { return vh; }
 int gfx_bpp(void) { return bpp; }
 const void *gfx_framebuffer(void) { return fb_words; }
 
 void gfx_clip(int x, int y, int w, int h)
 {
-	clip_x0 = x < 0 ? 0 : x;
-	clip_y0 = y < 0 ? 0 : y;
-	clip_x1 = x + w > width ? width : x + w;
-	clip_y1 = y + h > height ? height : y + h;
+	clip_x0 = x < 0 ? ox : ox + x;
+	clip_y0 = y < 0 ? oy : oy + y;
+	clip_x1 = x + w > vw ? ox + vw : ox + x + w;
+	clip_y1 = y + h > vh ? oy + vh : oy + y + h;
 }
 
 void gfx_clip_off(void)
 {
-	clip_x0 = clip_y0 = 0;
-	clip_x1 = width;
-	clip_y1 = height;
+	clip_x0 = ox;
+	clip_y0 = oy;
+	clip_x1 = ox + vw;
+	clip_y1 = oy + vh;
 }
 
 // Fill a span of one row, already clipped
@@ -69,6 +81,8 @@ static void span(int x0, int x1, int y, color_t c)
 
 void gfx_fill(int x, int y, int w, int h, color_t c)
 {
+	x += ox;
+	y += oy;
 	int x0 = x < clip_x0 ? clip_x0 : x;
 	int y0 = y < clip_y0 ? clip_y0 : y;
 	int x1 = x + w > clip_x1 ? clip_x1 : x + w;
@@ -80,14 +94,18 @@ void gfx_fill(int x, int y, int w, int h, color_t c)
 
 void gfx_pixel(int x, int y, color_t c)
 {
+	x += ox;
+	y += oy;
 	if (x >= clip_x0 && x < clip_x1 && y >= clip_y0 && y < clip_y1)
 		span(x, x + 1, y, c);
 }
 
 color_t gfx_get_pixel(int x, int y)
 {
-	if (x < 0 || y < 0 || x >= width || y >= height)
+	if (x < 0 || y < 0 || x >= vw || y >= vh)
 		return 0;
+	x += ox;
+	y += oy;
 	const uint8_t *row = (const uint8_t *)fb_words + y * stride;
 	if (bpp == 16)
 		return ((const uint16_t *)row)[x];
@@ -96,10 +114,8 @@ color_t gfx_get_pixel(int x, int y)
 
 void gfx_clear(color_t c)
 {
-	int sx0 = clip_x0, sy0 = clip_y0, sx1 = clip_x1, sy1 = clip_y1;
-	gfx_clip_off();
-	gfx_fill(0, 0, width, height, c);
-	clip_x0 = sx0; clip_y0 = sy0; clip_x1 = sx1; clip_y1 = sy1;
+	for (int y = 0; y < height; y++)	// the whole panel, margins included
+		span(0, width, y, c);
 }
 
 void gfx_hline(int x, int y, int w, color_t c) { gfx_fill(x, y, w, 1, c); }
@@ -158,9 +174,10 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 {
 	int bytes = (f->w + 7) / 8;
 	for (; *s; s++, x += f->w) {
-		if (x >= clip_x1)
+		int px = x + ox, py = y + oy;	// panel coordinates for the clip tests and spans
+		if (px >= clip_x1)
 			break;
-		if (x + f->w <= clip_x0 || y >= clip_y1 || y + f->h <= clip_y0)
+		if (px + f->w <= clip_x0 || py >= clip_y1 || py + f->h <= clip_y0)
 			continue;
 		if (opaque)
 			gfx_fill(x, y, f->w, f->h, bg);
@@ -170,12 +187,12 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 			continue;
 		}
 		for (int r = 0; r < f->h; r++, g += bytes) {
-			int yy = y + r;
+			int yy = py + r;
 			if (yy < clip_y0 || yy >= clip_y1)
 				continue;
 			for (int col = 0; col < f->w; col++) {
 				if (g[col >> 3] & (0x80u >> (col & 7))) {
-					int xx = x + col;
+					int xx = px + col;
 					if (xx >= clip_x0 && xx < clip_x1)
 						span(xx, xx + 1, yy, fg);
 				}

@@ -3,6 +3,12 @@
 // DM-1701 diagnostics page lines: raw readings for bench checks (no bus traffic; everything is cached elsewhere)
 #include <stddef.h>
 #include "dm1701.h"
+#include "config.h"
+#if CONFIG_DMR
+#include "dmr_dm1701.h"
+#endif
+
+#if CONFIG_DIAG
 
 typedef struct {
 	char *p, *end;
@@ -49,6 +55,13 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 	if (len == 0) {
 		return false;
 	}
+#if CONFIG_DMR
+	// The DMR modem counters first (bring-up), then the board readings
+	if (i < DM1701_DMR_DIAG_LINES) {
+		return dm1701_dmr_stats_line(i, buf, len);
+	}
+	i -= DM1701_DMR_DIAG_LINES;
+#endif
 	out_t o = { buf, buf + len - 1 };
 	dm1701_radio_diag_t d;
 	switch (i) {
@@ -134,3 +147,5 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 	*o.p = '\0';
 	return true;
 }
+
+#endif

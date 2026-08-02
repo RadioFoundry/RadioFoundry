@@ -7,6 +7,7 @@
 // calling dm1701_lcd_pins_fsmc() itself, so the keypad scan may leave the lines in GPIO mode when it unlocks. Each
 // burst ends with CS high and a 0x00 write to the data address so the lines rest low for the next key scan.
 #include "dm1701.h"
+#include "config.h"
 #include "pins.h"
 #include "hal_time.h"
 #include "display/st7735/st7735.h"
@@ -244,6 +245,9 @@ static void flush(const void *fb, uint16_t y0, uint16_t y1)
 }
 
 const hal_display_t dm1701_display = {
+	// Safe area from the build (boards/dm1701/config.mk: the lens hides about 5 px at each edge)
+	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
+	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
 	.width = VISIBLE_W,
 	.height = VISIBLE_H,
 	.bpp = 16,

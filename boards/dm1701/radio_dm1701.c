@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-1701 radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI) + RF path GPIOs + APC DAC + calibration.
-// FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12; docs/spec/modem-hrc6000.md 3, 8).
+// DM-1701 radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI, voice SPI2) + RF path GPIOs + APC DAC +
+// calibration. FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12; docs/spec/modem-hrc6000.md 3, 8), and the
+// RF side of DMR (modem-hrc6000.md 3.1, 4.3; hardware-dm1701.md 5.3, 6): set_mode(DMR) puts both chips in DMR and starts
+// the slot engine (dmr_dm1701.c); tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA
+// then follows the bursts from the modem interrupts through dm1701_rf_dmr_switch(), which writes AT1846S reg 0x30
+// directly over I2C3 (never through the task-level driver and its cache, which is resynced when DMR TX ends).
+// tx_off() in DMR belongs after DMR_EV_TX_DONE; called while a transmission runs it drops it.
 //
 // TX switching sequence (gotchas 3.5): the TX frequency is written with the receiver off (reg 0x30 idle, then the
 // synthesizer words) and the chip goes straight from idle to FM TX, never through RX on. With this sequence the old
@@ -13,6 +18,8 @@
 #include "hal_time.h"
 #include "rf/at1846s/at1846s.h"
 #include "modem/hrc6000/hrc6000.h"
+#include "modem/hrc6000/hrc6000_dmr.h"
+#include "dmr_dm1701.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -30,6 +37,11 @@
 #define I2C_TRIES		3
 #define I2C_TIMEOUT_MS		5
 #define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first SPI access
+#define RF_ISR_I2C_TIMEOUT_MS	2	// one reg 0x30 write from a modem ISR takes about 0.1 ms at 400 kHz
+
+// Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
+#define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
+#define VOICE_SPI_TIMEOUT_MS	2
 
 // DM-1701 power interpolation fractions (hardware-dm1701.md 7), per mille: f0 f1 f2 f3
 static const uint16_t frac_vhf[4] = { 450, 750, 250, 530 };
@@ -47,10 +59,23 @@ static struct {
 	subtone_t rx_tone;
 	uint32_t bus_errors;	// I2C failures and failed chip operations since start (debug)
 	dm1701_radio_diag_t diag;
-} r;
+	radio_status_t last_status;	// returned without bus traffic while DMR transmits
+
+	// DMR per-burst keying (shared with the modem ISRs)
+	volatile bool dmr_armed;	// tx() in DMR mode: TX frequency and drive known
+	volatile uint32_t dmr_tx_hz;
+	volatile uint32_t dmr_drive;
+	volatile bool dmr_uhf;
+	volatile uint32_t rf_tuned_hz;	// what the AT1846S synthesizer holds, 0 unknown
+	volatile bool rf_isr_dirty;	// the ISR wrote the AT1846S behind the task-level driver
+	volatile bool rf_rx_pending;	// a back-to-RX write was skipped: retry at the next timeslot interrupt
+	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
+	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
+} r = { .rf_page = 0xFF };
 
 static I2C_HandleTypeDef i2c3;
 static DAC_HandleTypeDef dac;
+static SPI_HandleTypeDef spi2;
 
 static bool in_isr(void)
 {
@@ -114,7 +139,26 @@ static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
 static bool rf_write(void *ctx, uint8_t reg, uint16_t val)
 {
 	uint8_t buf[2] = { (uint8_t)(val >> 8), (uint8_t)val };
-	return i2c_xfer(reg, buf, true);
+	if (reg == 0x7F) {
+		r.rf_page = 0xFF;	// unknown until the write is through (the modem ISRs only write on page 0)
+	}
+	bool ok = i2c_xfer(reg, buf, true);
+	if (ok && reg == 0x7F) {
+		r.rf_page = (uint8_t)val;
+	}
+	return ok;
+}
+
+// One AT1846S page 0 register write from a modem ISR (or with them masked): a single try, skipped when a task-level
+// transfer owns I2C3 or the chip is on another page. Never touches the task-level driver's cache
+static bool rf_isr_write(uint8_t reg, uint16_t val)
+{
+	if (r.rf_page != 0 || HAL_I2C_GetState(&i2c3) != HAL_I2C_STATE_READY) {
+		return false;
+	}
+	uint8_t buf[2] = { (uint8_t)(val >> 8), (uint8_t)val };
+	return HAL_I2C_Mem_Write(&i2c3, AT1846S_I2C_ADDR << 1, reg, I2C_MEMADD_SIZE_8BIT, buf, 2, RF_ISR_I2C_TIMEOUT_MS)
+		== HAL_OK;
 }
 
 static bool rf_read(void *ctx, uint8_t reg, uint16_t *val)
@@ -176,8 +220,46 @@ static bool modem_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const
 	return true;
 }
 
+// Voice port: STM32 SPI2 master, mode 2, prescaler 8 (4.5 MHz)
+static void voice_spi_setup(void)
+{
+	__HAL_RCC_SPI2_CLK_ENABLE();
+	stm32_pin_af(GPIOB, VOICE_SPI_PINS, GPIO_AF5_SPI2, false, GPIO_NOPULL);
+	PIN_WRITE(PIN_C6000_VCS, true);
+	spi2.Instance = SPI2;
+	spi2.Init.Mode = SPI_MODE_MASTER;
+	spi2.Init.Direction = SPI_DIRECTION_2LINES;
+	spi2.Init.DataSize = SPI_DATASIZE_8BIT;
+	spi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
+	spi2.Init.CLKPhase = SPI_PHASE_1EDGE;
+	spi2.Init.NSS = SPI_NSS_SOFT;
+	spi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+	spi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
+	spi2.Init.TIMode = SPI_TIMODE_DISABLE;
+	spi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+	spi2.Init.CRCPolynomial = 7;
+	HAL_SPI_Init(&spi2);
+}
+
+// One page 3 frame on the voice port: 0x03 / 0x83, 0x00, then the data. Atomic with respect to the modem ISRs
+static bool voice_xfer(void *ctx, bool write, uint8_t *buf, uint8_t len)
+{
+	uint8_t hdr[2] = { write ? 0x03 : 0x83, 0x00 };
+	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
+	PIN_WRITE(PIN_C6000_VCS, false);
+	bool ok = HAL_SPI_Transmit(&spi2, hdr, 2, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
+	if (ok) {
+		ok = write ? HAL_SPI_Transmit(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK
+			   : HAL_SPI_Receive(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
+	}
+	PIN_WRITE(PIN_C6000_VCS, true);
+	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
+	return ok;
+}
+
 static const hrc6000_bus_t modem_bus = {
 	.transfer = modem_transfer, .delay_ms = hal_delay_ms, .delay_us = hal_delay_us, .ctx = NULL,
+	.voice = voice_xfer,
 };
 
 // --- APC DAC and RF path GPIOs (hardware-dm1701.md 6, 7) ---
@@ -280,6 +362,104 @@ static void apply_rx_tone(void)
 	count(at1846s_set_rx_tone(&r.rf, type, value));
 }
 
+// --- DMR per-burst RF switching (modem-hrc6000.md 4.3, hardware-dm1701.md 6): modem ISR context ---
+
+bool dm1701_rf_dmr_switch(bool tx)
+{
+	if (!tx) {
+		pa_off();
+		r.rf_isr_dirty = true;
+		if (rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
+			r.rf_rx_pending = false;
+			return true;
+		}
+		r.rf_rx_pending = true;
+		r.rf_skipped++;
+		return false;
+	}
+	if (!r.dmr_armed) {
+		r.rf_unarmed++;
+		return false;
+	}
+	uint32_t hz = r.dmr_tx_hz;
+	bool ok = true;
+	r.rf_isr_dirty = true;
+	if (r.rf_tuned_hz != hz) {	// repeater split: tune with the receiver off, then straight to TX (gotchas 3.5)
+		uint32_t word = at1846s_freq_word(hz);
+		r.rf_tuned_hz = 0;
+		ok = rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE))
+			&& rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu))
+			&& rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
+		if (ok) {
+			r.rf_tuned_hz = hz;
+		}
+	}
+	ok = ok && rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_DMR_TX));
+	if (!ok) {
+		r.rf_skipped++;
+		return false;	// no RF without the AT1846S in TX: leave the PA off
+	}
+	r.rf_rx_pending = false;
+	apc_set(r.dmr_drive);
+	PIN_WRITE(PIN_PA_EN1, true);
+	PIN_WRITE(PIN_PA_BAND, r.dmr_uhf);
+	PIN_WRITE(PIN_PA_EN2, true);
+	return true;
+}
+
+void dm1701_rf_dmr_service(void)
+{
+	if (r.rf_rx_pending) {
+		r.rf_rx_retries++;
+		if (rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
+			r.rf_rx_pending = false;
+		}
+	}
+}
+
+void dm1701_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_retries)
+{
+	*skipped = r.rf_skipped;
+	*unarmed = r.rf_unarmed;
+	*rx_retries = r.rf_rx_retries;
+}
+
+// Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
+static void dmr_disarm(void)
+{
+	r.dmr_armed = false;
+	if (dm1701_dmr_tx_active()) {
+		dm1701_dmr_tx_drop();
+	}
+	pa_off();
+}
+
+// The AT1846S again as the task-level driver believes it: the modem ISRs may have retuned it and switched reg 0x30
+static void rf_resync(void)
+{
+	if (!r.rf_isr_dirty) {
+		return;
+	}
+	r.rf_isr_dirty = false;
+	r.rf_rx_pending = false;
+	if (r.rx_valid) {
+		count(at1846s_set_freq(&r.rf, r.rx_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
+		r.rf_tuned_hz = r.rx_hz;
+	}
+	count(at1846s_set_state(&r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
+}
+
+// HR_C6000 into DMR (modem-hrc6000.md 3.1) with the DMR modulation pair for the frequency, then the slot engine
+static void dmr_enter(void)
+{
+	dm1701_cal_point_t cal;
+	dm1701_cal_at(r.rx_valid ? r.rx_hz : board.bands[0].lo_hz, &cal);	// on false it fills safe defaults
+#if CONFIG_DMR
+	count(hrc6000_dmr_enter(&r.modem, cal.dmr_i, cal.dmr_q, DMR_MIC_GAIN));
+#endif
+	dm1701_dmr_enter();
+}
+
 // --- hal_radio_t ---
 
 static bool audio_wanted;	// the core wants the speaker on
@@ -316,6 +496,7 @@ static void init(void)
 	dac_setup();
 	pa_off();
 	i2c_setup();
+	voice_spi_setup();
 
 	PIN_WRITE(PIN_C6000_PWD, false);	// the HR_C6000 wakes while the AT1846S initializes
 	uint32_t pwd_ms = hal_millis();
@@ -335,15 +516,25 @@ static void init(void)
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	audio(false);
 	r.diag.c6000_ok = hrc6000_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
+	dm1701_dmr_board_init(&r.modem);
 }
 
 static void set_mode(radio_mode_t mode)
 {
+	radio_mode_t prev = r.mode;
 	r.mode = mode;
 	if (mode == RADIO_MODE_DMR) {
-		// AT1846S baseband set-up only; the HR_C6000 DMR entry (modem-hrc6000.md 3.1) comes with the DMR stack
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_DMR));
+		if (prev != RADIO_MODE_DMR) {
+			dmr_enter();
+		}
 	} else {
+		if (prev == RADIO_MODE_DMR) {
+			dmr_disarm();
+			dm1701_dmr_leave();
+			rf_resync();
+			r.tx_on = false;
+		}
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 		if (!r.tx_on) {
 			count(hrc6000_set_mode_fm_rx(&r.modem));
@@ -359,6 +550,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 		return false;
 	}
 	bool uhf = hz >= UHF_MIN_HZ;
+	bool same = r.rx_valid && hz == r.rx_hz && bw == r.rx_bw;
+	if (r.mode == RADIO_MODE_DMR) {
+		dmr_disarm();
+	}
 	r.rx_hz = hz;
 	r.rx_bw = bw;
 	r.rx_tone = rx_tone != NULL ? *rx_tone : (subtone_t){ TONE_NONE, 0 };
@@ -372,12 +567,20 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	count(at1846s_set_freq(&r.rf, hz));
 	apply_rx_tone();
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
+	r.rf_tuned_hz = hz;
+	r.rf_isr_dirty = false;
+	r.rf_rx_pending = false;
 
 	dm1701_cal_point_t cal;
 	dm1701_cal_at(hz, &cal);	// on false it fills safe defaults
 	count(hrc6000_set_ref_offset(&r.modem, cal.ref_offset, false));
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc6000_set_mode_fm_rx(&r.modem));
+	} else if (!same) {
+		// New channel: the DMR modulation pair for it, and the receiver searches again (5.1). Back from our own
+		// transmission on the same channel the engine has already restarted it, or kept a repeater's timing
+		count(hrc6000_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
+		dm1701_dmr_rx_restart();
 	}
 	r.tx_on = false;
 	return true;
@@ -388,8 +591,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
 	const band_t *band = find_band(hz);
-	if (band == NULL || !band->tx || r.mode != RADIO_MODE_FM) {
-		return false;	// DMR transmit comes with the DMR stack
+	if (band == NULL || !band->tx) {
+		return false;
 	}
 	bool uhf = hz >= UHF_MIN_HZ;
 	if (board.power_count > 0 && power >= board.power_count) {
@@ -399,6 +602,20 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	dm1701_cal_point_t cal;
 	bool calibrated = dm1701_cal_at(hz, &cal) && cal.valid;
 	uint32_t drive = calibrated ? power_to_dac(&cal, power, uhf) : DM1701_DAC_UNCALIBRATED;
+
+	if (r.mode == RADIO_MODE_DMR) {
+		// Arm only: the receiver stays on the RX frequency (a repeater's slot timing is followed until our first
+		// burst); each burst is keyed from the modem's RF TX interrupt (dm1701_rf_dmr_switch)
+		int32_t dmr_offset = bw == RADIO_BW_25K ? DM1701_TX_OFFSET_HZ_25K : DM1701_TX_OFFSET_HZ_12K5;
+		count(hrc6000_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
+		r.dmr_tx_hz = (uint32_t)((int32_t)hz + dmr_offset);
+		r.dmr_drive = drive;
+		r.dmr_uhf = uhf;
+		__DMB();
+		r.dmr_armed = true;
+		r.tx_on = true;
+		return true;
+	}
 
 	uint16_t tone_value;
 	at1846s_tone_t tone = rf_tone(tx_tone, &tone_value);
@@ -434,6 +651,11 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 
 static void tx_off(void)
 {
+	if (r.mode == RADIO_MODE_DMR) {
+		dmr_disarm();	// after DMR_EV_TX_DONE this only disarms; before it, the transmission is cut
+		r.rf_isr_dirty = !r.rx_valid;	// rx() below retunes with forced writes; without it, resync here
+		rf_resync();
+	}
 	pa_off();
 	if (r.rx_valid) {
 		subtone_t tone = r.rx_tone;
@@ -448,6 +670,10 @@ static void tx_off(void)
 
 static void status(radio_status_t *st)
 {
+	if (dm1701_dmr_tx_active()) {
+		*st = r.last_status;	// keep I2C3 free for the per-burst switching
+		return;
+	}
 	uint8_t rssi, noise;
 	uint16_t flags, value;
 	at1846s_tone_t type = rf_tone(&r.rx_tone, &value);
@@ -466,6 +692,7 @@ static void status(radio_status_t *st)
 	st->noise = noise;
 	st->carrier = (flags & AT1846S_FLAG_SQ) != 0;
 	st->tone_ok = at1846s_tone_match(flags, type);
+	r.last_status = *st;
 }
 
 // Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 dB of HR_C6000 RX gain

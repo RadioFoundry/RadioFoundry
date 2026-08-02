@@ -25,6 +25,9 @@ typedef struct {
 	uint8_t quick_focus;		// 0..8 = tiles 1..9
 	bool quick_edit;		// the focused tile's value editor is open
 	uint8_t brightness;		// backlight percent chosen in quick settings
+	uint8_t tone_target;		// Tone editor: RADIO_TONE_BOTH, RADIO_TONE_TX or RADIO_TONE_RX
+	subtone_t tone_edit;		// Tone editor: the value picked (shown at once, before the radio's view catches up)
+	uint8_t diag_first;	// first board line on the diagnostics page
 } ui_state_t;
 
 enum { QT_POWER, QT_SQUELCH, QT_TONE, QT_MODE, QT_MONITOR, QT_VOX, QT_VFO, QT_BANDWIDTH, QT_BRIGHTNESS };
@@ -49,7 +52,9 @@ void ui_draw_splash(const char *product, const char *board_name, const char *git
 void ui_draw_home(const radio_view_t *v, const ui_state_t *s);
 void ui_draw_quick(const radio_view_t *v, const ui_state_t *s);
 // Diagnostics: raw key bits, encoder total, radio readings and the board's own lines
-void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total);
+void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8_t first_line);
+// The first board line of the page after the one starting at first_line (wraps to 0)
+uint8_t ui_diag_next_page(uint8_t first_line);
 
 // Quick settings tile: false if it can't be used yet. label and value get short texts
 bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *label, size_t label_len,

@@ -11,6 +11,11 @@
 //   encoder change the value, SELECT / QUICK / BACK close it). Power is an editor rather than the doc's cycle tile
 //   because radios have up to 9 levels. VFO on/off sits on tile 7 (Scan's place) until the Hub's Channels list,
 //   its real home, exists. Other tiles show their value grayed and say "not available yet".
+// - Tone (tile 3, FM): one editor for RX and TX. Up/Dn or the encoder step through none, the 50 standard CTCSS
+//   tones, then the 104 DCS codes normal (N) and inverted (I). It sets both directions ("Tone") when the channel's
+//   RX and TX tones are the same (including none), else only TX ("Tone TX", the usual repeater-access case);
+//   # cycles Tone -> Tone TX -> Tone RX. A temporary change on a channel, the VFO's own setting in the VFO.
+// - Bandwidth (tile 8, FM): a cycle tile, each press toggles 12.5 / 25 kHz. Both tiles are grayed on DMR channels.
 // - VFO entry: digits on Home in VFO type the frequency, decimal point implied after 3 MHz digits; digits that
 //   can't lead to a frequency in any band are refused with the bands in the hint. SELECT tunes, BACK deletes a
 //   digit (and leaves when empty), 10 s without a key cancels.
@@ -26,6 +31,8 @@
 #include "ui_screens.h"
 #include "input/input.h"
 #include "radio/radio.h"
+#include "radio/tones.h"
+#include "config.h"
 
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
 #define UI_TASK_STACK_WORDS	384	// measured worst path about 700 bytes plus the display driver
@@ -43,7 +50,7 @@ typedef enum { SCR_HOME, SCR_QUICK, SCR_DIAG } screen_t;
 
 static ui_state_t st;
 static radio_view_t view;	// static: too large for a modest task stack
-static screen_t screen = SCR_DIAG;	// bring-up: diagnostics first; BACK goes Home, long BACK on Home returns
+static screen_t screen = CONFIG_DIAG ? SCR_DIAG : SCR_HOME;	// bring-up: diagnostics first; BACK goes Home, long BACK on Home returns
 static uint32_t toast_until, entry_last;
 static uint32_t radio_active_ms;
 static uint8_t backlight_now = 0xFF;
@@ -167,6 +174,10 @@ static void quick_change(int tile, int8_t dir)
 		if ((dir > 0 && view.squelch < 9) || (dir < 0 && view.squelch > 0))
 			radio_req_squelch(dir);
 		break;
+	case QT_TONE:
+		st.tone_edit = tones_step(&st.tone_edit, dir);
+		radio_req_tone(st.tone_target, st.tone_edit);
+		break;
 	case QT_BRIGHTNESS: {
 		int b = st.brightness + dir * 10;
 		st.brightness = (uint8_t)(b < 10 ? 10 : b > 100 ? 100 : b);
@@ -189,6 +200,18 @@ static void quick_activate(int tile)
 	if (tile == QT_VFO) {
 		radio_req_vfo(!view.vfo);
 		toast(view.vfo ? "Back to channels" : "VFO on");
+	} else if (tile == QT_BANDWIDTH) {
+		bool wide = view.ch.bw != RADIO_BW_25K;
+		radio_req_bandwidth(wide ? RADIO_BW_25K : RADIO_BW_12K5);
+		view.ch.bw = wide ? RADIO_BW_25K : RADIO_BW_12K5;	// a second press before the radio answers toggles back
+		toast(wide ? "Bandwidth 25 kHz" : "Bandwidth 12.5 kHz");
+	} else if (tile == QT_TONE) {
+		bool same = view.ch.tx_tone.type == view.ch.rx_tone.type &&
+			(view.ch.tx_tone.type == TONE_NONE || view.ch.tx_tone.value == view.ch.rx_tone.value);
+		st.tone_target = same ? RADIO_TONE_BOTH : RADIO_TONE_TX;
+		st.tone_edit = view.ch.tx_tone;
+		st.quick_edit = true;
+		toast("Up/Dn tone  # TX/RX");
 	} else {
 		st.quick_edit = true;
 	}
@@ -261,6 +284,16 @@ static void quick_key(const input_event_t *ev)
 		return;
 	}
 	switch (ev->action) {
+	case ACT_CONTEXT:
+		if (press && st.quick_edit && st.quick_focus == QT_TONE) {
+			// Tone (both) -> TX -> RX -> both; the editor starts from that direction's tone
+			st.tone_target = st.tone_target == RADIO_TONE_BOTH ? RADIO_TONE_TX :
+				st.tone_target == RADIO_TONE_TX ? RADIO_TONE_RX : RADIO_TONE_BOTH;
+			st.tone_edit = st.tone_target == RADIO_TONE_RX ? view.ch.rx_tone : view.ch.tx_tone;
+			toast(st.tone_target == RADIO_TONE_BOTH ? "Tone for RX and TX" :
+				st.tone_target == RADIO_TONE_TX ? "Tone for TX only" : "Tone for RX only");
+		}
+		break;
 	case ACT_SELECT:
 		if (ev->gesture == GESTURE_LONG)
 			toast("Saving to the channel: coming soon");
@@ -404,9 +437,11 @@ static void handle_key(const input_event_t *ev)
 	if (screen == SCR_DIAG) {
 		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS)
 			screen = SCR_HOME;
+		else if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS)
+			st.diag_first = ui_diag_next_page(st.diag_first);	// * pages through the board's lines
 		else if (ev->action != ACT_BACK && ev->action != ACT_SELECT && ev->action != ACT_QUICK)
 			home_key(ev);	// channel, VFO and digits still work underneath
-	} else if (screen == SCR_HOME && ev->action == ACT_BACK && ev->gesture == GESTURE_LONG) {
+	} else if (CONFIG_DIAG && screen == SCR_HOME && ev->action == ACT_BACK && ev->gesture == GESTURE_LONG) {
 		screen = SCR_DIAG;
 	} else if (screen == SCR_QUICK) {
 		quick_key(ev);
@@ -421,9 +456,12 @@ static void draw(void)
 	st.now_ms = hal_millis();
 	st.battery_pct = board.power->battery_pct();
 	radio_get_view(&view);
+#if CONFIG_DIAG
 	if (screen == SCR_DIAG)
-		ui_draw_diag(&view, input_raw_keys(), input_encoder_total());
-	else if (screen == SCR_QUICK)
+		ui_draw_diag(&view, input_raw_keys(), input_encoder_total(), st.diag_first);
+	else
+#endif
+	if (screen == SCR_QUICK)
 		ui_draw_quick(&view, &st);
 	else
 		ui_draw_home(&view, &st);

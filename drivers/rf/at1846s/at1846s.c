@@ -117,7 +117,9 @@ static const uint16_t ctrl_values[][2] = {
 #define RX_DETECT_MASK	0x001Fu	// reg 0x3A bits 4:0
 #define RX_DETECT_BASE	0x0003u	// the mode tables' value for those bits
 #define TX_SEL_KEEP	0xF9FFu	// reg 0x4E: everything but bits 10:9
-#define TX_DCS_KEEP	0x38FFu	// reg 0x4E: keep bits 13:11 and the low byte
+#define TX_DCS_KEEP	0x383Fu	// reg 0x4E: keep bits 13:11 and 5:0
+#define TX_DCS_NORMAL	0x0480u	// reg 0x4E: bits 10:9 = 10 (DCS), cdcss_sel bits 8:6 = 010 (23-bit, normal)
+#define TX_DCS_INV	0x0580u	// cdcss_sel bits 8:6 = 110 (23-bit, inverted)
 
 // --- Pure helpers ---
 
@@ -373,7 +375,7 @@ bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)
 		ok = at1846s_write(dev, 0, 0x4A, AT1846S_DCS_TONE_REG);
 		ok &= at1846s_write(dev, 0, 0x4D, 0);
 		ok &= dcs_code_regs(dev, value);
-		ok &= at1846s_modify(dev, 0, 0x4E, TX_DCS_KEEP, type == AT1846S_TONE_DCS_INV ? 0x0500 : 0x0400);
+		ok &= at1846s_modify(dev, 0, 0x4E, TX_DCS_KEEP, type == AT1846S_TONE_DCS_INV ? TX_DCS_INV : TX_DCS_NORMAL);
 		return ok;
 	default:
 		ok = at1846s_write(dev, 0, 0x4A, 0);
@@ -404,7 +406,7 @@ bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)
 		ok = at1846s_write(dev, 0, 0x4A, AT1846S_DCS_TONE_REG);
 		ok &= at1846s_write(dev, 0, 0x4D, 0);
 		ok &= dcs_code_regs(dev, value);
-		ok &= at1846s_modify(dev, 0, 0x4E, TX_DCS_KEEP, type == AT1846S_TONE_DCS_INV ? 0x0500 : 0x0400);
+		ok &= at1846s_modify(dev, 0, 0x4E, TX_DCS_KEEP, type == AT1846S_TONE_DCS_INV ? TX_DCS_INV : TX_DCS_NORMAL);
 		ok &= at1846s_modify(dev, 0, 0x3A, (uint16_t)~RX_DETECT_MASK, type == AT1846S_TONE_DCS_INV ? 0x0004 : 0x0002);
 		return ok;
 	default:

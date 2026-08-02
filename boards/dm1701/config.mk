@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# DM-1701 feature defaults (config/features.mk lists them all). 418 KB of code space before the codec window.
+# 160x120 display
+CONFIG_FONT_XL ?= n
+# The lens over the panel hides about 5 px at each edge (bench, 2026-10-09)
+CONFIG_DISPLAY_INSET ?= 5

@@ -23,6 +23,12 @@
 #define RADIO_SQL_HYST_DB	3
 #define RADIO_SQL_CLOSE_POLLS	2
 
+// RX tone debounce: the AT1846S tone flag can drop out for a poll or two on a weak or fluttering signal. The tone
+// counts as heard after RADIO_TONE_ON_POLLS matching polls in a row and as gone after RADIO_TONE_OFF_POLLS missing
+// polls in a row (the chip's own detector already takes some 100-250 ms to report a match)
+#define RADIO_TONE_ON_POLLS	2
+#define RADIO_TONE_OFF_POLLS	8
+
 // RSSI moves smaller than this don't bump the view serial (the snapshot still carries the latest value)
 #define RADIO_RSSI_DEADBAND_DB	2
 
@@ -38,7 +44,15 @@ typedef enum {
 	RREQ_POWER,		// arg: direction
 	RREQ_SQUELCH,		// arg: direction
 	RREQ_CLEAR_TEMP,
+	RREQ_BANDWIDTH,		// arg: radio_bw_t
+	RREQ_TONE,		// arg: radio_tone_arg()
 } radio_req_type_t;
+
+// RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
+static inline int32_t radio_tone_arg(uint8_t which, subtone_t t)
+{
+	return (int32_t)(((uint32_t)(which & 3u) << 24) | ((uint32_t)t.type << 16) | t.value);
+}
 
 typedef struct {
 	uint8_t type;		// radio_req_type_t
@@ -57,11 +71,17 @@ typedef struct {
 	uint8_t base_squelch;		// squelch without the temporary change
 	bool temp_power;
 	bool temp_squelch;
+	uint8_t base_bw;		// the channel's own bandwidth and tones, for undoing temporary changes
+	subtone_t base_rx_tone;
+	subtone_t base_tx_tone;
+	uint8_t board_mode;		// radio_mode_t the board was last put in
 	int16_t volume_sent;		// last level given to board.radio->volume, -1 = none yet
 
 	bool ptt;			// PTT held
+	bool retune_pending;		// receive settings changed during TX: retune on PTT release
 	uint32_t tx_start_ms;
 	uint8_t close_count;		// polls in a row above the close threshold
+	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)
 	int16_t rssi_published;
 	int8_t audio_out;		// last speaker / LED settings sent to the board, -1 = not yet
 	int8_t green_out;

@@ -100,9 +100,9 @@ table literals (+0x40) and calls from stock wrapper code inside the window.
 None of the STM32 `codec.c` arrays (decode 0x7EC, encode 0x2000, ECC 0x100) occur in the decrypted stock image or
 in the MD-9600 carve: none of their non-zero 16-byte chunks match. They are run-time state snapshots, not stock
 data. The DM-32 stock firmware builds this state with the library's own init functions; on the DM-1701, the
-equivalent init functions are probably among the unreachable code in the code window. Finding them and their
-parameters is still open. Until then the DM-1701 still needs the `codec.c` tables, which come from our source, not
-the stock file.
+equivalent init functions are in the code window; stock V02.06 calls them from its wrapper at 0x08068D4C. The
+sequence, the state sizes and the call arguments are in "Codec state init and calls (stock V02.06)" below; the
+`codec.c` tables are no longer needed.
 
 ## Extraction recipe (V02.06 CSV)
 
@@ -128,5 +128,101 @@ no copy and no patching.
 
 * Exact end of the last table: the window end 0x080E4240 is a conservative estimate. Both windows also include
   some stock non-codec bytes, which are never executed.
-* Locating the stock codec init functions and their parameters, to drop the `codec.c` tables.
+* ~~Locating the stock codec init functions and their parameters~~: done, see below.
 * A hardware test: TX/RX audio with the stock V02.06 codec at its stock addresses.
+
+## Codec state init and calls (stock V02.06)
+
+Status: 2026-10-09. Static analysis of the stock V02.06 CSV image (decrypted app `app_0314efd4.bin`, listing
+`app0206.asm`), then **verified by execution**: the decrypted image was run on the host in an instruction set
+emulator (Unicorn, Thumb / M-profile) with only the two codec windows, the state blocks, the I/O buffers and a stack
+mapped, so any other access faults. Our own `boards/dm1701/vocoder_dm1701.c` and `platform/stm32f4/codec_call.c`,
+cross-compiled with the firmware flags, were run the same way against the stock windows and give bit-identical
+results to the reference run. Nothing here has run on a radio yet.
+
+### Stock call sites
+
+All 21 calls into the codec are in the stock voice module at 0x08068D4C..0x0806A160: decode 7 (one in init),
+encode 10, encode ECC 4. The stock wrapper keeps an encoder block E at RAM 0x2000A528 and a decoder block D at
+0x2000F794; both also hold stock fields after the codec state (PCM ring, bit buffers, privacy keystream, flags).
+
+### Init (stock function 0x08068D4C)
+
+1. Wrapper fields: E+0x1730 = 0x1840 (first encode flags), E+0x173E = 0x2000, E+0x1744.. = -22, 20, -10, -40, 0x4000,
+   3276, 3276, 1310, 10, 20, E+0x1740 = 128, E+0x1742 = -20, D+0x97A = 0, D+0x992 = 128, D+0x994 = -20.
+2. Calls (offsets from the codec start 0x08074714):
+
+   | call | stock call | arguments |
+   |---|---|---|
+   | encoder init | 0x08074998 (+0x284) | (E, 1, 1) |
+   | FEC init | 0x08074BE0 (+0x4CC) | (E+0x16E4, 1): the encoder side's FEC state, used by encode ECC |
+   | decoder init | 0x08074DE4 (+0x6D0) | (D, 1) |
+   | FEC init | 0x08074BE0 (+0x4CC) | (D+0x7F8, 1): the decoder side's FEC state, used by the FEC decode below |
+   | encoder parameters | 0x08074F5C (+0x848) | (E, -22, 20, -10, then on the stack -40, 0x4000, 3276, 3276, 1310, 10, 20) |
+   | encoder set | 0x080748D4 (+0x1C0) | (E, 128, -20) |
+   | decoder set | 0x08074D9C (+0x688) | (D, 128, -20) |
+   | decode | 0x08074CEC (+0x5D8) | (D+0xAD6, 80, D+0xB7C, 0, stack 8, 0, D): one decode of an all-zero frame, flags 8 |
+
+   This mirrors the DM-32 finding (codec-dm32.md section C) with the same parameter values; the DM-1701 build calls
+   the 10-parameter encoder function where the DM-32 wrapper stored the values in E.
+
+### State sizes (measured)
+
+Each block was placed so that it ends exactly at an unmapped page; the codec then faults on any access past the end.
+
+| block | size | notes |
+|---|---|---|
+| decoder state D | **0x7EC** (2028) bytes | decode, decoder init and set touch nothing past it (0x7E8 faults) |
+| encoder state E | **0x16E0** (5856) bytes | 0x16D0 faults |
+| FEC state | 0x44 bytes each | only for the codec's own FEC routines (encode ECC, FEC decode) |
+| stack | 3822 bytes peak | measured over init, encode and decode; allow 4 KB plus the caller |
+
+The blocks are passed by pointer and can live anywhere (we use CCM). No fixed RAM address is touched: with
+everything else unmapped, init, 30 frames of encode and decode and the ECC routine ran without a fault. The code uses
+no FPU instructions.
+
+### Per-frame calls (two per 20 ms frame, 80 samples each)
+
+| call | r0 | r1 | r2 | r3 | stack [0], [1], [2], [3] |
+|---|---|---|---|---|---|
+| encode | 49-bit out buffer (one bit per halfword) | 0 (stock: E+0x173A, zero) | PCM in, this half | 80 | flags, half (0 / 1), 0x2000, E |
+| decode | PCM out, this half | 80 | 49-bit in buffer (one bit per halfword) | 0 (stock: D+0x98E, zero) | flags, half (0 / 1), D |
+| encode ECC | bit buffer (49 in, 72 out) | same buffer | 0 (stock: E+0x173C, zero) | FEC state | |
+
+* Encode flags: 0x1840 on the first call of a transmission (stock copies E+0x1730), 0x800 on every later call. The
+  encoder reads the PCM and never writes it. Its output is the 49 parameter bits only; stock applies its privacy XOR to
+  them (E+0x189C ^= E+0x19BC, 49 halfwords) and then calls encode ECC, which turns them into the 72 air bits **in air
+  order** (one per halfword, the MSB of byte 0 first).
+* Decode flags: stock unpacks the 72 received bits, runs its own FEC decode (0x08075268, +0xB54: r0 = out, r1 = 0,
+  r2 = in, r3 = 1 (bits per symbol, it accepts soft bits), stack = flags, D+0x7F8), XORs the privacy keystream onto the
+  49 bits, and passes flags = D+0x97C (0) OR the FEC routine's result. That result is **0 for a good frame and 4 when
+  C0 is uncorrectable** (4 or more errors), measured over 300 frames with 0-4 injected errors per code word. With flags
+  4 (or 8) the decoder repeats the previous frame. The two decode calls of a frame use the same bit buffer, and the
+  first one rewrites it.
+* The codec's 49-bit order is the standard AMBE+2 order (C0 data, C1 data, C2, C3, MSB first) and its ECC output
+  matches `core/dmr/ambe/ambeFec.c` on 249 of 249 vectors (random, all zeros, all ones, each single bit); seven of
+  them are in `tests/host/ambeFecTest.c`. So the firmware runs encode / decode only and does the air frame FEC in
+  core/dmr/ambe.
+* The AMBE silence frame the call stack sends (B9 E8 81 52 61 73 00 2A 6B) is a valid frame (0 FEC errors) and decodes
+  to silence (peak |sample| 1 after 10 frames) with the stock decoder.
+* A 1 kHz tone at -12 dBFS through encode and decode comes back at about 945 zero crossings per second (the first
+  frames are the codec's delay), so the init sequence and arguments are right.
+
+### Hosting in OpenDigitalRadio
+
+* `boards/dm1701/vocoder_dm1701.c`: `present()` checks the first word 0x4FF0E92D and the CRC-32 of both windows
+  (code 0x42CF501D, tables 0x673D0006, computed once); `reset()` runs the init sequence above on zeroed CCM blocks;
+  `encode()` / `decode()` make the two calls per frame. Without the codec it reports not present (FM only).
+* `platform/stm32f4/codec_call.c`: a file-scope assembly veneer `stm32_codec_call(fn, args, n)` with its own frame
+  (r0-r3 from the array, the rest on an 8-byte aligned stack, SP restored from a saved frame register), so the call
+  doesn't depend on how the caller was compiled (gotcha 4.1); to the compiler it is an ordinary external call, which
+  orders memory around it (gotcha 4.4). Verified in the emulator with a deliberately misaligned caller stack.
+* `tools/codec_extract.py` builds the merged image (recipe above) on the user's machine; a run with the real stock
+  file and a key file matching hardware-dm1701.md 15.3 reproduces both window hashes and the CRCs above.
+
+### Still open
+
+* On the radio: audio quality, levels (decoded output is lower than the input; the encoder input level the codec
+  expects is unknown) and timing (encode + decode per 20 ms on the STM32 at 144 MHz).
+* The parameters the stock wrapper passes from its fields are all constants after init; whether any stock code path
+  changes them (E+0x173A, E+0x173C, D+0x98E, D+0x97A) during a call was not traced.

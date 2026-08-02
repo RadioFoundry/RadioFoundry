@@ -5,8 +5,13 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#include "radio/tones.h"
+#include "config.h"
 
 // Simplex frequencies tried, in order, for the VFO when there is nothing better to start from
+// The VFO is FM only for now; a DMR VFO (CONFIG_VFO_DMR) will join this when it exists
+#define VFO_AVAILABLE	CONFIG_VFO_FM
+
 static const uint32_t vfo_start_hz[] = { 146520000, 145500000, 446000000, 433500000 };
 
 static void changed(radio_sm_t *sm)
@@ -52,18 +57,84 @@ uint8_t radio_sm_squelch_open_below(uint8_t level)
 	return (uint8_t)(RADIO_SQL_OPEN_L1 - (level - 1) * RADIO_SQL_DB_PER_STEP);
 }
 
-static void set_temporary(radio_sm_t *sm)
+static bool same_tone(const subtone_t *a, const subtone_t *b)
 {
-	sm->view.temporary = sm->temp_power || sm->temp_squelch;
+	return a->type == b->type && (a->type == TONE_NONE || a->value == b->value);
 }
 
-static void clear_temporary(radio_sm_t *sm)
+// Recompute the temporary flags. Bandwidth and tones count against the channel's own values; in the VFO they are
+// the VFO's settings, never temporary
+static void set_temporary(radio_sm_t *sm)
 {
+	uint8_t t = 0;
+	if (sm->temp_power) {
+		t |= RADIO_TEMP_POWER;
+	}
+	if (sm->temp_squelch) {
+		t |= RADIO_TEMP_SQUELCH;
+	}
+	if (!sm->view.vfo) {
+		if (sm->view.ch.bw != sm->base_bw) {
+			t |= RADIO_TEMP_BW;
+		}
+		if (!same_tone(&sm->view.ch.tx_tone, &sm->base_tx_tone)) {
+			t |= RADIO_TEMP_TX_TONE;
+		}
+		if (!same_tone(&sm->view.ch.rx_tone, &sm->base_rx_tone)) {
+			t |= RADIO_TEMP_RX_TONE;
+		}
+	}
+	sm->view.temp = t;
+	sm->view.temporary = t != 0;
+}
+
+// Back to the channel's own settings. Returns whether the receiver needs retuning (bandwidth or RX tone changed)
+static bool clear_temporary(radio_sm_t *sm)
+{
+	bool retune = (sm->view.temp & (RADIO_TEMP_BW | RADIO_TEMP_RX_TONE)) != 0;
 	sm->temp_power = false;
 	sm->temp_squelch = false;
 	sm->view.power = channel_power(&sm->view.ch);
 	sm->view.squelch = sm->base_squelch;
+	if (!sm->view.vfo) {
+		sm->view.ch.bw = sm->base_bw;
+		sm->view.ch.rx_tone = sm->base_rx_tone;
+		sm->view.ch.tx_tone = sm->base_tx_tone;
+	}
 	set_temporary(sm);
+	return retune;
+}
+
+// RX tone squelch: whether the tone counts as heard, debounced. Always heard when the channel sets no RX tone
+// (DMR channels never use one)
+static bool tone_needed(const radio_sm_t *sm)
+{
+	return sm->view.ch.rx_tone.type != TONE_NONE && sm->view.ch.mode == RADIO_MODE_FM;
+}
+
+static void follow_tone(radio_sm_t *sm, bool raw)
+{
+	bool needed = tone_needed(sm);
+	if (!needed) {
+		raw = true;
+	}
+	if (raw == sm->view.tone_ok) {
+		sm->tone_count = 0;
+		return;
+	}
+	sm->tone_count++;
+	if (!needed || sm->tone_count >= (raw ? RADIO_TONE_ON_POLLS : RADIO_TONE_OFF_POLLS)) {
+		sm->view.tone_ok = raw;
+		sm->tone_count = 0;
+		changed(sm);
+	}
+}
+
+// After a retune, or with a new RX tone: nothing heard yet (or no tone needed)
+static void reset_tone(radio_sm_t *sm)
+{
+	sm->view.tone_ok = !tone_needed(sm);
+	sm->tone_count = 0;
 }
 
 // Speaker and LEDs follow the state; only changes go to the board
@@ -99,6 +170,12 @@ static void end_reception(radio_sm_t *sm, uint32_t now_ms)
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
 	end_reception(sm, now_ms);
+	reset_tone(sm);
+	radio_mode_t mode = (CONFIG_DMR && sm->view.ch.mode == RADIO_MODE_DMR) ? RADIO_MODE_DMR : RADIO_MODE_FM;
+	if (mode != sm->board_mode) {
+		sm->board_mode = mode;
+		board.radio->set_mode(mode);
+	}
 	board.radio->rx(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw, &sm->view.ch.rx_tone);
 	outputs(sm);
 	changed(sm);
@@ -134,9 +211,15 @@ static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 {
 	sm->view.ch = *ch;
 	sm->view.ch.name[CODEPLUG_NAME_LEN] = '\0';
+#if !CONFIG_SUBTONE
+	sm->view.ch.rx_tone = sm->view.ch.tx_tone = (subtone_t){ TONE_NONE, 0 };	// built without CTCSS / DCS
+#endif
 	sm->view.vfo = false;
 	sm->view.zone_pos = pos;
 	sm->view.channel_number = sm->zone.channels[pos];
+	sm->base_bw = sm->view.ch.bw;
+	sm->base_rx_tone = sm->view.ch.rx_tone;
+	sm->base_tx_tone = sm->view.ch.tx_tone;
 	clear_temporary(sm);
 }
 
@@ -264,7 +347,7 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (ch->rx_only) {
 		return TXDENY_RX_ONLY;
 	}
-	if (ch->mode != RADIO_MODE_FM) {
+	if (ch->mode != RADIO_MODE_FM || !CONFIG_FM) {
 		return TXDENY_MODE;
 	}
 	if (!in_band(ch->tx_hz, true)) {
@@ -307,7 +390,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	changed(sm);
 }
 
-static void ptt_up(radio_sm_t *sm)
+static void ptt_up(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (!sm->ptt) {
 		return;
@@ -320,8 +403,13 @@ static void ptt_up(radio_sm_t *sm)
 		sm->view.state = RS_IDLE;
 		sm->view.tx_deny = TXDENY_NONE;
 		sm->close_count = 0;
+		reset_tone(sm);
 		outputs(sm);
 		changed(sm);
+	}
+	if (sm->retune_pending) {
+		sm->retune_pending = false;
+		tune(sm, now_ms);	// a temporary bandwidth or RX tone was undone during TX
 	}
 }
 
@@ -345,6 +433,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->vfo_ch.power = CODEPLUG_POWER_DEFAULT;
 	sm->vfo_ch.timeslot = 1;
 
+	sm->board_mode = RADIO_MODE_FM;
 	board.radio->set_mode(RADIO_MODE_FM);
 
 	// Zone 0 and its first channel; if zone 0 has none, the first zone that has one
@@ -361,7 +450,11 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	}
 	if (!sm->have_channels) {
 		memset(&sm->zone, 0, sizeof(sm->zone));
-		enter_vfo(sm, now_ms);
+		if (VFO_AVAILABLE) {
+			enter_vfo(sm, now_ms);
+		} else {
+			strcpy(sm->view.ch.name, "No channels");	// built without a VFO and nothing programmed: nothing to tune
+		}
 	} else {
 		tune(sm, now_ms);
 	}
@@ -424,7 +517,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 	}
 	case RREQ_VFO:
-		if (busy || (req->arg != 0) == sm->view.vfo) {
+		if (busy || !VFO_AVAILABLE || (req->arg != 0) == sm->view.vfo) {
 			break;
 		}
 		if (req->arg != 0) {
@@ -434,7 +527,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		break;
 	case RREQ_VFO_SET:
-		if (busy || req->arg <= 0 || !in_band((uint32_t)req->arg, false)) {
+		if (busy || !VFO_AVAILABLE || req->arg <= 0 || !in_band((uint32_t)req->arg, false)) {
 			break;
 		}
 		vfo_set_hz(sm, (uint32_t)req->arg);
@@ -448,7 +541,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		if (req->arg != 0) {
 			ptt_down(sm, now_ms);
 		} else {
-			ptt_up(sm);
+			ptt_up(sm, now_ms);
 		}
 		break;
 	case RREQ_MONITOR:
@@ -487,10 +580,57 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	}
 	case RREQ_CLEAR_TEMP:
 		if (sm->view.temporary) {
-			clear_temporary(sm);
+			if (clear_temporary(sm)) {
+				if (busy) {
+					sm->retune_pending = true;
+				} else {
+					tune(sm, now_ms);
+				}
+			}
 			changed(sm);
 		}
 		break;
+	case RREQ_BANDWIDTH:
+		if (busy || sm->view.ch.mode != RADIO_MODE_FM || (req->arg != RADIO_BW_12K5 && req->arg != RADIO_BW_25K) ||
+				req->arg == sm->view.ch.bw) {
+			break;
+		}
+		sm->view.ch.bw = (uint8_t)req->arg;
+		if (sm->view.vfo) {
+			sm->vfo_ch.bw = sm->view.ch.bw;
+		}
+		set_temporary(sm);
+		tune(sm, now_ms);
+		break;
+	case RREQ_TONE: {
+		uint8_t which = (uint8_t)(((uint32_t)req->arg >> 24) & 3u);
+		subtone_t t = { (uint8_t)(((uint32_t)req->arg >> 16) & 0xFFu), (uint16_t)req->arg };
+		if (t.type == TONE_NONE) {
+			t.value = 0;
+		}
+		if (busy || sm->view.ch.mode != RADIO_MODE_FM || which == 0 || !tones_valid(&t)) {
+			break;
+		}
+		bool rx_changed = (which & RADIO_TONE_RX) && !same_tone(&t, &sm->view.ch.rx_tone);
+		bool tx_changed = (which & RADIO_TONE_TX) && !same_tone(&t, &sm->view.ch.tx_tone);
+		if (which & RADIO_TONE_TX) {
+			sm->view.ch.tx_tone = t;
+		}
+		if (which & RADIO_TONE_RX) {
+			sm->view.ch.rx_tone = t;
+		}
+		if (sm->view.vfo) {
+			sm->vfo_ch.tx_tone = sm->view.ch.tx_tone;
+			sm->vfo_ch.rx_tone = sm->view.ch.rx_tone;
+		}
+		set_temporary(sm);
+		if (rx_changed) {
+			tune(sm, now_ms);	// the receiver's tone detector
+		} else if (tx_changed) {
+			changed(sm);		// used on the next PTT
+		}
+		break;
+	}
 	default:
 		break;
 	}
@@ -542,10 +682,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 
+	// Open on carrier (noise below the level's threshold) and the RX tone, both; the monitor overrides (outputs())
+	follow_tone(sm, st.tone_ok);
 	uint8_t sq = sm->view.squelch;
 	uint8_t open_below = radio_sm_squelch_open_below(sq);
-	bool opens = st.tone_ok && (sq == 0 || st.noise < open_below);
-	bool holds = st.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB);
+	bool opens = sm->view.tone_ok && (sq == 0 || st.noise < open_below);
+	bool holds = sm->view.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB);
 
 	if (sm->view.state == RS_IDLE) {
 		if (opens) {

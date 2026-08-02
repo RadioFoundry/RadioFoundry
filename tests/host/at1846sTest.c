@@ -202,11 +202,135 @@ static void test_init(void)
 	CHECK((last_write(0x4E) & 0x0600) == 0 && last_write(0x4A) == 0);
 }
 
+static int popcount23(uint32_t x)
+{
+	int n = 0;
+	for (; x; x &= x - 1)
+		n++;
+	return n;
+}
+
+static uint32_t rot23(uint32_t x, int k)
+{
+	return ((x << k) | (x >> (23 - k))) & 0x7FFFFFu;
+}
+
+// DCS words: datasheet value, the Golay(23,12) distance, and the known normal / inverted equivalences
+static void test_dcs(void)
+{
+	// Each word is a Golay codeword: any two differ in at least 7 bits
+	int min_d = 23;
+	for (uint16_t a = 0; a < 0x200; a++) {
+		uint32_t wa = at1846s_dcs_word(a);
+		for (uint16_t b = a + 1; b < 0x200; b++) {
+			int d = popcount23(wa ^ at1846s_dcs_word(b));
+			if (d < min_d)
+				min_d = d;
+		}
+	}
+	CHECK(min_d >= 7);
+
+	// A receiver sees the inverted word as some rotation of another code's word: D023N = D047I and so on
+	static const uint16_t pairs[][2] = { { 023, 047 }, { 025, 0244 }, { 026, 0464 }, { 0114, 0712 } };
+	for (unsigned i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
+		uint32_t inv = at1846s_dcs_word(pairs[i][0]) ^ 0x7FFFFFu;
+		uint32_t other = at1846s_dcs_word(pairs[i][1]);
+		bool found = false;
+		for (int k = 0; k < 23; k++)
+			found |= rot23(inv, k) == other;
+		CHECK(found);
+	}
+
+	// Register split for a few codes (independently computed)
+	CHECK(at1846s_dcs_word(025) == 0x6B7815);
+	CHECK(at1846s_dcs_word(0754) == 0x20F9EC);
+
+	// TX DCS on the chip: words in 0x4B / 0x4C, DCS selected, cdcss_sel 23-bit with the polarity bit
+	at1846s_t dev;
+	at1846s_attach(&dev, &bus);
+	log_reset();
+	read_value = 0x00FF;		// whatever the chip holds in 0x4E's low bits
+	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_DCS, 0754));
+	CHECK(last_write(0x4A) == 13440 && last_write(0x4D) == 0);
+	CHECK(last_write(0x4B) == 0x0020 && last_write(0x4C) == 0xF9EC);
+	CHECK((last_write(0x4E) & 0x07C0) == 0x0480 && (last_write(0x4E) & 0x003F) == 0x003F);
+	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_DCS_INV, 0754));
+	CHECK((last_write(0x4E) & 0x07C0) == 0x0580);
+	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_CTCSS, 1000));
+	CHECK((last_write(0x4E) & 0x0600) == 0x0600 && last_write(0x4B) == 0 && last_write(0x4C) == 0);
+}
+
+// CTCSS register values and the match thresholds over the standard range
+static void test_ctcss(void)
+{
+	static const struct { uint16_t hz_x10, reg; uint8_t th; } t[] = {
+		{ 670, 6700, 18 }, { 885, 8850, 16 }, { 1000, 10000, 15 }, { 1318, 13180, 11 }, { 1622, 16220, 8 },
+		{ 2035, 20350, 4 }, { 2336, 23360, 1 }, { 2400, 24000, 1 }, { 2418, 24180, 1 }, { 2541, 25410, 1 },
+	};
+	for (unsigned i = 0; i < sizeof(t) / sizeof(t[0]); i++) {
+		CHECK(at1846s_ctcss_reg(t[i].hz_x10) == t[i].reg);
+		CHECK(at1846s_ctcss_threshold(t[i].reg) == t[i].th);
+	}
+	at1846s_t dev;
+	at1846s_attach(&dev, &bus);
+	read_value = 0x00C3;
+	log_reset();
+	CHECK(at1846s_set_rx_tone(&dev, AT1846S_TONE_CTCSS, 2541));
+	CHECK(last_write(0x4D) == 25410 && last_write(0x5B) == 0x0101 && last_write(0x4A) == 0);
+	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_CTCSS, 670));
+	CHECK(last_write(0x4A) == 6700 && last_write(0x4D) == 0);
+}
+
+// The whole 25 kHz table in order (5.4), page switches included, then idle at 25 kHz; and back to 12.5 kHz
+static void test_bw_sequence(void)
+{
+	static const wr_t want25[] = {
+		{ 0x7F, 0 }, { 0x3A, 0x40CB }, { 0x15, 0x1F00 }, { 0x32, 0x7564 }, { 0x3A, 0x00C3 }, { 0x59, 0x0BA0 },
+		{ 0x3F, 0x29D1 }, { 0x3C, 0x1B34 }, { 0x48, 0x1E38 }, { 0x60, 0x0F17 }, { 0x62, 0x3767 }, { 0x65, 0x248A },
+		{ 0x66, 0xFF2E }, { 0x7F, 1 }, { 0x06, 0x0024 }, { 0x07, 0x0214 }, { 0x08, 0x0224 }, { 0x09, 0x0314 },
+		{ 0x0A, 0x0324 }, { 0x0B, 0x0344 }, { 0x0C, 0x0384 }, { 0x0D, 0x1384 }, { 0x0E, 0x1B84 }, { 0x0F, 0x3F84 },
+		{ 0x12, 0xE0EB }, { 0x7F, 0 }, { 0x30, 0x7006 },
+	};
+	at1846s_t dev;
+	at1846s_attach(&dev, &bus);
+	log_reset();
+	CHECK(at1846s_set_bandwidth(&dev, AT1846S_BW_25K));
+	CHECK(n_wr == (int)(sizeof(want25) / sizeof(want25[0])));
+	for (int i = 0; i < n_wr && i < (int)(sizeof(want25) / sizeof(want25[0])); i++) {
+		if (log_wr[i].reg != want25[i].reg || log_wr[i].val != want25[i].val) {
+			printf("  25k write %d: %02X=%04X, want %02X=%04X\n", i, log_wr[i].reg, log_wr[i].val, want25[i].reg,
+				want25[i].val);
+			CHECK(0);
+		}
+	}
+	// 25 kHz RX and TX states
+	CHECK(at1846s_set_state(&dev, AT1846S_STATE_RX) && last_write(0x30) == 0x7026);
+	CHECK(at1846s_set_state(&dev, AT1846S_STATE_FM_TX) && last_write(0x30) == 0x7046);
+	log_reset();
+	CHECK(at1846s_set_freq(&dev, 461862500));
+	CHECK(log_wr[0].reg == 0x30 && log_wr[0].val == 0x7006);	// idle keeps the 25 kHz bits
+	CHECK(at1846s_freq_word(461862500) == 7389800);
+
+	// Back to 12.5 kHz: the rows that differ, idle at 12.5 kHz
+	log_reset();
+	CHECK(at1846s_set_bandwidth(&dev, AT1846S_BW_12K5));
+	CHECK(last_write(0x15) == 0x1100 && last_write(0x32) == 0x4495 && last_write(0x48) == 0x19B1);
+	CHECK(last_write(0x59) == 0x0B90 && last_write(0x30) == 0x6006);
+	CHECK(last_page() == 0);
+	// The mode table must be sent again after a bandwidth change (it shares registers)
+	log_reset();
+	CHECK(at1846s_set_mode(&dev, AT1846S_MODE_FM));
+	CHECK(n_wr > 0 && last_write(0x58) == 0xBC85);
+}
+
 int main(void)
 {
 	test_pure();
 	test_cache();
 	test_init();
+	test_dcs();
+	test_ctcss();
+	test_bw_sequence();
 	if (failures) {
 		printf("# FAILED %d\n", failures);
 		return 1;

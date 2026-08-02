@@ -3,8 +3,7 @@
 // HR_C6000 DMR / FM baseband chip: driver over its configuration port (U_SPI), independent of the board
 // (docs/spec/modem-hrc6000.md, docs/spec/hardware-dm1701.md 4 and 12).
 // The board supplies one function that runs a whole chip-select-framed transaction and makes it atomic with respect
-// to the chip's interrupt handlers. FM only for now; DMR entry (modem-hrc6000.md 3.1, 5, 6) is added next to the FM
-// mode functions as hrc6000_set_mode_dmr().
+// to the chip's interrupt handlers. FM modes here; DMR (modem-hrc6000.md 3.1, 4-6) is in hrc6000_dmr.h.
 #ifndef HRC6000_H
 #define HRC6000_H
 
@@ -17,6 +16,9 @@ typedef struct {
 	void (*delay_ms)(uint32_t ms);
 	void (*delay_us)(uint32_t us);	// busy wait
 	void *ctx;
+	// Voice port (V_SPI, modem-hrc6000.md 1 and 1.1): one page 3 frame, write (buf sent) or read (buf filled).
+	// Atomic like transfer, callable from the modem ISRs. NULL: page 3 over the config port (unverified on air)
+	bool (*voice)(void *ctx, bool write, uint8_t *buf, uint8_t len);
 } hrc6000_bus_t;
 
 typedef struct {

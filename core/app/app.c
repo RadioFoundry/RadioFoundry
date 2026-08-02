@@ -8,6 +8,8 @@
 //   start / house   5   512   this file: start-up, then a 100 ms power switch poll (sleeps nearly always)
 //   radio           4   512   core/radio: requests, 25 ms status poll, squelch, PTT, TX time-out
 //   input           3   256   core/input: 10 ms key scan, gestures, PTT / monitor straight to the radio core
+//   host            3   512   core/hostlink: the host port (USB CDC): MMDVM hotspot, CPS
+//   usb             3   256   drivers/usb: TinyUSB device stack (tud_task)
 //   ui              2   -     core/ui: chosen there (keep it at or below 2 and within about 1024 words)
 //   idle            0   128   FreeRTOS
 // The radio task is above input so a PTT edge is acted on as soon as it is queued; input is above the UI so a busy
@@ -18,6 +20,10 @@
 #include "radio/radio.h"
 #include "input/input.h"
 #include "ui/ui.h"
+#include "config.h"
+#if CONFIG_USB
+#include "hostlink/hostlink.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -49,6 +55,9 @@ static void startup_task(void *arg)
 	radio_core_start();
 	input_start();
 	ui_start();
+#if CONFIG_USB
+	hostlink_start();
+#endif	// after the settings: the USB personality depends on them
 
 	for (;;) {
 		hal_delay_ms(HOUSEKEEPING_MS);

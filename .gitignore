@@ -15,3 +15,7 @@ tests/host/out/
 
 # Local provenance record (names the legacy sources); never committed
 PROVENANCE.md
+
+# Bench tool output
+bench-results/
+__pycache__/

@@ -17,7 +17,7 @@ static int flushes, flushed_rows;
 static void d_init(void) {}
 static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; flushes++; flushed_rows += y1 - y0; }
 static void d_backlight(uint8_t p) { (void)p; }
-static hal_display_t disp = { 160, 120, 16, d_init, d_flush, d_backlight };
+static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush, .set_backlight = d_backlight };
 
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
 static const char *const power_names[] = { "50m", "250m", "500m", "750m", "1W", "2W", "3W", "4W", "5W" };
@@ -122,6 +122,34 @@ static void render_set(const char *cls)
 	ui_draw_quick(&v, &s);
 	snprintf(name, sizeof name, "%s_quick", cls); save(name);
 
+	// Temporary tone and bandwidth: dots on Home, the Tone editor (TX only) and the tiles
+	base_view(&v);
+	v.ch.bw = RADIO_BW_12K5;
+	v.ch.rx_tone = v.ch.tx_tone;
+	v.temp = RADIO_TEMP_BW | RADIO_TEMP_TX_TONE | RADIO_TEMP_RX_TONE;
+	v.temporary = true;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_home_temp", cls); save(name);
+	char label[12], value[12];
+	CHECK(ui_quick_tile(QT_BANDWIDTH, &v, &s, label, sizeof label, value, sizeof value));
+	CHECK(strcmp(label, "8Width") == 0 && strcmp(value, GLYPH_DOT "12.5k") == 0);
+	s.quick_edit = false;
+	CHECK(ui_quick_tile(QT_TONE, &v, &s, label, sizeof label, value, sizeof value));
+	CHECK(strcmp(label, "3Tone") == 0 && strcmp(value, GLYPH_DOT "100.0") == 0);
+	v.ch.rx_tone.type = TONE_NONE;
+	CHECK(ui_quick_tile(QT_TONE, &v, &s, label, sizeof label, value, sizeof value));
+	CHECK(strcmp(value, GLYPH_DOT "T100.0") == 0);
+	s.quick_focus = QT_TONE; s.quick_edit = true; s.tone_target = RADIO_TONE_TX;
+	s.tone_edit.type = TONE_DCS_INV; s.tone_edit.value = 0754;
+	CHECK(ui_quick_tile(QT_TONE, &v, &s, label, sizeof label, value, sizeof value));
+	CHECK(strcmp(label, "3Tone TX") == 0 && strcmp(value, "D754I") == 0);
+	ui_draw_quick(&v, &s);
+	snprintf(name, sizeof name, "%s_quick_tone", cls); save(name);
+	s.quick_edit = false;
+	v.ch.mode = RADIO_MODE_DMR;
+	CHECK(!ui_quick_tile(QT_TONE, &v, &s, label, sizeof label, value, sizeof value));
+	CHECK(!ui_quick_tile(QT_BANDWIDTH, &v, &s, label, sizeof label, value, sizeof value));
+
 	// Layout sanity: regions in order and inside the screen
 	const ui_layout_t *L = &ui_layout;
 	CHECK(L->channel_y >= L->strip_h);
@@ -190,6 +218,24 @@ int main(void)
 	CHECK(gfx_init(&disp));
 	ui_layout_init();
 	render_set("160x128");
+
+	// A board safe area (the DM-1701's lens): drawing moves inside it and the margins stay background
+	disp.height = 120;
+	disp.inset_top = disp.inset_bottom = disp.inset_left = disp.inset_right = 5;
+	CHECK(gfx_init(&disp));
+	CHECK(gfx_width() == 150 && gfx_height() == 110);
+	ui_layout_init();
+	render_set("160x120_inset");
+	{
+		const uint16_t *fb = gfx_framebuffer();
+		bool margins_clear = true;
+		for (int y = 0; y < 120; y++)
+			for (int x = 0; x < 160; x++)
+				if ((x < 5 || x >= 155 || y < 5 || y >= 115) && fb[y * 160 + x] != 0)
+					margins_clear = false;
+		CHECK(margins_clear);
+	}
+	disp.inset_top = disp.inset_bottom = disp.inset_left = disp.inset_right = 0;
 
 	disp.width = 128; disp.height = 64; disp.bpp = 1;
 	CHECK(gfx_init(&disp));

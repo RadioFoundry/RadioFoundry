@@ -31,8 +31,10 @@ typedef struct {
 	channel_t ch;		// what the radio is set to now (VFO: the VFO settings, with ch.name "VFO")
 	uint8_t power;		// effective board power level index
 	bool temporary;		// a temporary change (P7) is in effect on this channel
+	uint8_t temp;		// which settings are temporary changes: RADIO_TEMP_* bits (temporary == (temp != 0))
 	uint8_t squelch;	// 0 = open .. 9 = tight
 	bool monitor;		// squelch held open by the user
+	bool tone_ok;		// the RX tone or code is heard (debounced; true when the channel has no RX tone)
 	int16_t rssi_dbm;
 	uint8_t noise;
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
@@ -41,6 +43,18 @@ typedef struct {
 	uint32_t vfo_step_hz;
 	codeplug_source_t source;
 } radio_view_t;
+
+// view.temp bits
+#define RADIO_TEMP_POWER	0x01u
+#define RADIO_TEMP_SQUELCH	0x02u
+#define RADIO_TEMP_BW		0x04u
+#define RADIO_TEMP_TX_TONE	0x08u
+#define RADIO_TEMP_RX_TONE	0x10u
+
+// Which tone radio_req_tone sets
+#define RADIO_TONE_TX		0x01u
+#define RADIO_TONE_RX		0x02u
+#define RADIO_TONE_BOTH		(RADIO_TONE_TX | RADIO_TONE_RX)
 
 void radio_core_start(void);
 // A consistent copy of the current state
@@ -60,5 +74,9 @@ void radio_req_monitor(bool down);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps
 void radio_req_squelch(int8_t dir);
 void radio_req_clear_temporary(void);		// BACK on Home: revert temporary changes
+// FM bandwidth and sub-audio. On a channel these are temporary changes (P7); in the VFO they change the VFO itself.
+// Refused on DMR channels, while transmitting, and for tones tones_valid() rejects
+void radio_req_bandwidth(radio_bw_t bw);
+void radio_req_tone(uint8_t which, subtone_t tone);	// which: RADIO_TONE_TX, RADIO_TONE_RX or RADIO_TONE_BOTH
 
 #endif

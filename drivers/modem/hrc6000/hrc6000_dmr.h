@@ -1,0 +1,225 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The OpenDigitalRadio Authors
+// HR_C6000 in DMR: register sequences, burst status decode, and the slot engine behind hal_dmr_modem.h
+// (docs/spec/modem-hrc6000.md 3.1, 4-7; docs/spec/dmr-modem.md 6; docs/spec/gotchas.md 1, 3, 5).
+//
+// The engine is board independent. The board wires the chip's three interrupt lines to hrc6000_dmr_isr_*(), runs a
+// task that drains the engine's events (hrc6000_dmr_pop) and calls the DMR stack, and supplies the ops below: the
+// per-burst RF switch, a microsecond clock, a lock that keeps the modem ISRs out (task-level callers only) and a
+// "wake the task" call.
+//
+// Timing model (modem-hrc6000.md 4.1, 6): what the chip does in slot k+1 is written at the timeslot interrupt that
+// starts slot k (0x41 and, to send, the payload and 0x50). A burst reported by the system interrupt 1-12 ms after a
+// timeslot interrupt was heard in the slot that just ended, in step with the chip's timing. One of our bursts is on
+// air from its RF TX interrupt until the PA is dropped at the first timeslot interrupt more than 20 ms later
+// (no RF RX interrupt on the STM32 radios), and only after that is it finished (gotchas 3.2).
+//
+// Slot numbers: through a repeater from the CACH TC bit (5.3); in direct mode from the TS1 / TS2 sync family when
+// used, else a label: 1 is the phase of the first burst heard since the timing was (re)acquired, 2 the other. Labels
+// stay put while the timing holds, so the stack can lock to, reply on, or transmit opposite to (SFR) a slot heard.
+#ifndef HRC6000_DMR_H
+#define HRC6000_DMR_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "hrc6000.h"
+#include "hal_dmr_modem.h"
+
+// --- Chip-level helpers (any context that owns the bus; each register write is one atomic transaction) ---
+
+// Section 3.1: DMR modulation pair from calibration, 0x10 = 0x6E, codec, mic gain. Restart the receiver after
+bool hrc6000_dmr_enter(hrc6000_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain);
+// Section 5.1: 0x40 = 0xC3, 0x41 = 0x20, 0x00, 0x20, 0x50 (rx_ctl replaces the last 0x50 when non-zero)
+bool hrc6000_dmr_chip_rx_restart(hrc6000_t *dev, uint8_t rx_ctl);
+// 0x1F = CC << 4 (PI clear)
+bool hrc6000_dmr_set_cc(hrc6000_t *dev, uint8_t cc);
+// Page 1 0x04: the data sync pattern the chip transmits for a family (dmr_sync_family_t; NONE = MS)
+bool hrc6000_dmr_set_sync(hrc6000_t *dev, uint8_t family);
+// One 27-byte voice frame on page 3 (the bus's voice op, else the config port)
+bool hrc6000_dmr_voice(hrc6000_t *dev, bool write, uint8_t *buf);
+// Reg 0x21 value for an access policy (bit 1 also clears the vocoder encode buffer)
+uint8_t hrc6000_dmr_access_reg(dmr_access_t access);
+
+// --- Pure decode (modem-hrc6000.md 2 and 5.2) ---
+
+typedef struct {
+	uint8_t sync_class;	// 0x51 bits 1-0: 0 none / EMB only, 1 voice, 2 data, 3 RC
+	uint8_t kind;		// dmr_burst_kind_t, 0xFF = not a usable burst (RC, bad voice number)
+	uint8_t voice_index;	// 0..5 when kind is voice
+	bool crc_ok;
+	bool pi;
+	uint8_t cc;		// 0x52 bits 7-4
+	uint8_t tc;		// 0x52 bit 2 (CACH TC)
+	uint8_t sync;		// dmr_sync_family_t from 0x5F bits 1-0
+} hrc6000_rx_status_t;
+
+#define HRC6000_KIND_NONE	0xFFu
+
+void hrc6000_dmr_decode(uint8_t r51, uint8_t r52, uint8_t r5f, hrc6000_rx_status_t *st);
+// Payload bytes the chip holds in page 2 for a data / control burst kind (12, 18 for rate 3/4, 24 for rate 1)
+uint8_t hrc6000_dmr_payload_len(uint8_t kind);
+// Reg 0x50 value that frames a burst kind (voice: 0x08 | index << 4; data: DT << 4)
+uint8_t hrc6000_dmr_reg50(uint8_t kind, uint8_t voice_index);
+
+// --- Slot engine ---
+
+#define HRC6000_DMR_TXQ_DEPTH	12	// tx_queue holds this many bursts (the contract asks for at least 8)
+#define HRC6000_DMR_EVQ_DEPTH	24	// ISR -> task events (bursts and slot ticks)
+
+typedef struct {
+	// Per-burst RF switch (from the ISRs): tx = key the PA for our burst, else PA off and the RF chip back to receive.
+	// False when it could not be done now (the RF chip's bus busy); the engine counts it, the board retries RX
+	bool (*rf)(void *ctx, bool tx);
+	uint32_t (*now_us)(void *ctx);	// free-running microseconds (wraps), any context
+	void (*lock)(void *ctx);	// keep the modem ISRs out (task-level engine calls)
+	void (*unlock)(void *ctx);
+	void (*notify)(void *ctx);	// events queued: wake the board's task (from ISRs and from the lock)
+	bool (*sys_line_low)(void *ctx);	// optional: system interrupt line still asserted after its flags were cleared
+	void *ctx;
+} hrc6000_dmr_ops_t;
+
+// Counters for bench bring-up and the diagnostics page (wrap freely)
+typedef struct {
+	uint32_t ticks;		// timeslot interrupts
+	uint32_t sys_ints;	// system interrupts
+	uint32_t rftx_ints;	// RF TX interrupts
+	uint32_t rx_voice;	// voice bursts delivered
+	uint32_t rx_lc_header;	// voice LC headers
+	uint32_t rx_terminator;
+	uint32_t rx_csbk;	// CSBK, MBC
+	uint32_t rx_data;	// PI header, data headers and rate 1/2, 3/4, 1, USBD blocks
+	uint32_t rx_idle;
+	uint32_t rx_crc_err;	// delivered with a CRC error (data blocks and voice) or dropped for one (headers, CSBK)
+	uint32_t rx_dup;	// second report for one burst (the EMB report, extra reports), dropped
+	uint32_t rx_rc;		// reverse channel / unusable status, dropped
+	uint32_t rx_out_of_step;	// reports 22 ms or more after the timeslot interrupt
+	uint32_t rx_restarts;	// receiver restarts by the engine (silence, out of step, CC change, stall)
+	uint32_t late_entry;	// post-access interrupts
+	uint32_t voice_lost;	// voice-abnormal interrupts
+	uint32_t ev_overflow;	// events dropped, the task was behind
+	uint32_t tx_bursts;	// bursts set up
+	uint32_t tx_underrun;	// our slot came with an empty queue mid-transmission
+	uint32_t tx_rejected;	// send request rejected (polite access)
+	uint32_t tx_done;	// transmissions finished
+	uint32_t rf_fail;	// RF switches the board could not do
+	uint32_t stalls;	// timing stopped while busy (200 ms without a timeslot interrupt)
+	uint8_t last_cc;	// last burst heard
+	uint8_t last_sync;	// dmr_sync_family_t
+	uint8_t last_r51;	// raw 0x51 of the last report
+	uint8_t last_r42;	// raw 0x42 at the last timeslot interrupt
+	uint8_t last_report_ms;	// last report: ms after its timeslot interrupt
+	uint8_t last_pa_ms;	// last burst of ours: ms the PA was on
+	int8_t last_ts;		// slot number of the last burst heard (0 unknown)
+	uint8_t tx_state;	// engine TX state (0 idle)
+} hrc6000_dmr_stats_t;
+
+typedef struct {
+	dmr_event_t ev;
+	dmr_burst_t burst;
+} hrc6000_dmr_evslot_t;
+
+typedef struct {
+	hrc6000_t *dev;
+	const hrc6000_dmr_ops_t *ops;
+	bool running;		// chip in DMR and the engine in charge of it
+	dmr_config_t cfg;
+	int8_t cc_filter;	// -1 any
+	int8_t lock_ts;		// rx_lock_slot
+
+	// Slot clock
+	uint32_t tick;
+	uint32_t t_tick;	// now_us at the last timeslot interrupt
+	bool timing;		// timeslot interrupts are coming
+	int8_t phase_ts[2];	// slot number of each phase (tick & 1), 0 unknown
+	uint8_t ctl_next;	// 0x41 written for the slot after the current one
+	uint8_t ctl_now;	// ... and the one for the slot now starting
+	// CACH TC tracking (5.3)
+	int8_t own_ts;
+	uint8_t tc_agree, tc_disagree;
+	uint32_t bs_tick;	// tick of the last BS-sync burst heard
+	bool rmo_seen;
+
+	// Receive
+	uint32_t rx_tick;	// tick of the last burst taken
+	bool rx_any;		// a burst taken since the last restart
+	uint32_t t_voice;	// now_us of the last voice burst taken
+	bool voice_valid;
+	uint32_t report_tick;	// tick of the last report taken (one per slot)
+	bool report_valid;
+	uint8_t out_of_step_run;
+	uint32_t heard_tick;	// tick of the last burst taken, kept across receiver restarts (stale LC rule)
+	bool heard_any;
+	uint8_t stale_lc[9];
+	uint8_t voice_since_start;	// voice bursts since the reception started (stale LC rule)
+	// CC acquisition (5.4) when the filter is off
+	uint8_t cc_last, cc_matches, cc_cur;
+	uint32_t t_cc;
+	uint32_t cc_hold_tick;
+	bool cc_held;
+	bool restart_pending;
+
+	// Transmit
+	uint8_t tx_state;
+	uint8_t tx_timing;	// dmr_timing_t
+	int8_t tx_ts;
+	uint8_t tx_access;
+	uint8_t tx_phase;	// phase (tick & 1) of our slots
+	bool tx_end_req;
+	bool tx_abort_req;
+	uint32_t tx_wait;	// ticks waited for alignment
+	uint32_t tx_last_setup;	// tick of the last burst set up
+	bool tx_any_setup;
+	uint8_t reg40;		// shadow of 0x40 while transmitting
+	uint8_t sync_cur;	// sync family in page 1
+	dmr_tx_burst_t txq[HRC6000_DMR_TXQ_DEPTH];
+	volatile uint8_t txq_head, txq_tail;
+	dmr_tx_burst_t last_hdr;	// repeated when the queue runs dry in the header phase
+	uint8_t last_kind;
+	uint8_t last_voice;
+	uint8_t emb_lc[9];
+	bool emb_set, emb_pending;
+	// PA
+	bool pa_on;
+	uint32_t t_pa_on;
+	uint32_t pa_on_tick;
+
+	hrc6000_dmr_evslot_t evq[HRC6000_DMR_EVQ_DEPTH];
+	volatile uint8_t evq_head, evq_tail;
+	bool notify_req;	// events pushed since the task was last woken
+
+	hrc6000_dmr_stats_t st;
+} hrc6000_dmr_t;
+
+void hrc6000_dmr_init(hrc6000_dmr_t *e, hrc6000_t *dev, const hrc6000_dmr_ops_t *ops);
+
+// The chip has just been put in DMR (hrc6000_dmr_enter): engine on, receiver restarted. Task level
+void hrc6000_dmr_run(hrc6000_dmr_t *e);
+// Leaving DMR: any transmission dropped at once (PA off), engine off. Task level
+void hrc6000_dmr_halt(hrc6000_dmr_t *e);
+
+// ISR entry points (the three interrupt lines, one priority, never nested in each other)
+void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e);
+void hrc6000_dmr_isr_sys(hrc6000_dmr_t *e);
+void hrc6000_dmr_isr_rftx(hrc6000_dmr_t *e);
+
+// Task side. pop: the next event (ev->burst points at *burst for DMR_EV_BURST_RX); false when none
+bool hrc6000_dmr_pop(hrc6000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst);
+// Watchdog from the board's task, every few ms: timing stall (200 ms), PA left on (no timeslot interrupt)
+void hrc6000_dmr_poll(hrc6000_dmr_t *e);
+
+// The hal_dmr_modem.h commands (task level; each takes the lock)
+void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg);
+void hrc6000_dmr_rx_restart(hrc6000_dmr_t *e);
+void hrc6000_dmr_rx_lock_slot(hrc6000_dmr_t *e, int8_t ts);
+bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_access_t access);
+bool hrc6000_dmr_tx_queue(hrc6000_dmr_t *e, const dmr_tx_burst_t *b);
+uint8_t hrc6000_dmr_tx_queue_space(const hrc6000_dmr_t *e);
+void hrc6000_dmr_tx_end(hrc6000_dmr_t *e);
+void hrc6000_dmr_tx_abort(hrc6000_dmr_t *e);
+void hrc6000_dmr_set_embedded_lc(hrc6000_dmr_t *e, const uint8_t lc[9]);
+void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc);
+bool hrc6000_dmr_is_transmitting(const hrc6000_dmr_t *e);
+
+void hrc6000_dmr_stats(const hrc6000_dmr_t *e, hrc6000_dmr_stats_t *out);
+
+#endif

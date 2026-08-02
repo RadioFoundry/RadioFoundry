@@ -15,6 +15,7 @@
 #include "hal_dmr_modem.h"
 #include "hal_audio.h"
 #include "hal_vocoder.h"
+#include "hal_stream.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -48,6 +49,7 @@ typedef struct {
 	const hal_dmr_modem_t *dmr;	// NULL on FM-only radios
 	const hal_audio_t *audio;
 	const hal_vocoder_t *vocoder;
+	const hal_stream_t *host_port;	// the link to a host computer (MMDVM hotspot, CPS); NULL if none
 	// Optional: line i of a board diagnostics page (raw readings for bench checks); false past the last line
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
 } board_t;

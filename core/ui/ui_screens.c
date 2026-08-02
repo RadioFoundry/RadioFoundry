@@ -6,6 +6,7 @@
 #include "board.h"
 #include "ui_screens.h"
 #include "fmt.h"
+#include "config.h"
 
 ui_layout_t ui_layout;
 
@@ -41,7 +42,7 @@ void ui_layout_init(void)
 
 	// Display classes (P10): about 128 px wide, about 160 px wide, 240 px and wider
 	if (w >= 220) {
-		L->tiny = &font_6x12; L->small = &font_8x16; L->medium = &font_12x24; L->large = &font_16x32;
+		L->tiny = &font_6x12; L->small = &font_8x16; L->medium = &font_12x24; L->large = FONT_LARGEST;
 	} else if (w >= 150) {
 		L->tiny = &font_5x8; L->small = &font_6x12; L->medium = &font_8x16; L->large = &font_12x24;
 	} else {
@@ -316,6 +317,9 @@ static void draw_chips(const radio_view_t *v)
 	int x = 0, y = L->chips_y;
 
 	sb_init(&b, buf, sizeof buf);
+	bool tone_temp = (v->temp & (RADIO_TEMP_TX_TONE | RADIO_TEMP_RX_TONE)) != 0;
+	if (tone_temp)
+		x = gfx_text(f, x, y, GLYPH_DOT, col.warn);
 	if (v->ch.tx_tone.type == TONE_NONE && v->ch.rx_tone.type == TONE_NONE) {
 		sb_str(&b, "No tone");
 	} else {
@@ -332,8 +336,11 @@ static void draw_chips(const radio_view_t *v)
 			sb_tone(&b, &v->ch.rx_tone);
 		}
 	}
-	x = gfx_text(f, x, y, buf, col.fg) + f->w;
-	x = gfx_text(f, x, y, v->ch.bw == RADIO_BW_25K ? "25k" : "12.5k", col.fg) + f->w;
+	x = gfx_text(f, x, y, buf, tone_temp ? col.warn : col.fg) + f->w;
+	bool bw_temp = (v->temp & RADIO_TEMP_BW) != 0;
+	if (bw_temp)
+		x = gfx_text(f, x, y, GLYPH_DOT, col.warn);
+	x = gfx_text(f, x, y, v->ch.bw == RADIO_BW_25K ? "25k" : "12.5k", bw_temp ? col.warn : col.fg) + f->w;
 	bool pw_temp = v->power != channel_power(v);
 	if (pw_temp)
 		x = gfx_text(f, x, y, GLYPH_DOT, col.warn);
@@ -514,12 +521,35 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	case QT_SQUELCH:
 		sb_u32(&b, v->squelch, 1);
 		return true;
-	case QT_TONE:
-		if (v->ch.tx_tone.type == TONE_NONE)
+	case QT_TONE: {
+		if (!CONFIG_SUBTONE)
+			return false;
+		bool editing = s->quick_edit && s->quick_focus == QT_TONE;
+		if (editing && s->tone_target != RADIO_TONE_BOTH) {
+			sbuf_t lb;
+			sb_init(&lb, label, label_len);
+			sb_chr(&lb, '3');
+			sb_str(&lb, s->tone_target == RADIO_TONE_TX ? "Tone TX" : "Tone RX");
+		}
+		if (!editing && (v->temp & (RADIO_TEMP_TX_TONE | RADIO_TEMP_RX_TONE)))
+			sb_str(&b, GLYPH_DOT);
+		const subtone_t *t = &v->ch.tx_tone;
+		bool same = v->ch.tx_tone.type == v->ch.rx_tone.type &&
+			(v->ch.tx_tone.type == TONE_NONE || v->ch.tx_tone.value == v->ch.rx_tone.value);
+		if (editing) {
+			t = &s->tone_edit;
+		} else if (!same && v->ch.tx_tone.type != TONE_NONE) {
+			sb_chr(&b, 'T');	// TX only, or TX and RX differ: the TX tone, marked
+		} else if (!same) {
+			sb_chr(&b, 'R');
+			t = &v->ch.rx_tone;
+		}
+		if (t->type == TONE_NONE)
 			sb_str(&b, "None");
 		else
-			sb_tone(&b, &v->ch.tx_tone);
-		return false;
+			sb_tone(&b, t);
+		return v->ch.mode == RADIO_MODE_FM;
+	}
 	case QT_MODE:
 		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM");
 		return false;
@@ -530,11 +560,15 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		sb_str(&b, "Off");
 		return false;
 	case QT_VFO:
+		if (!CONFIG_VFO_FM)
+			return false;	// built without a VFO
 		sb_str(&b, v->vfo ? "On" : "Off");
 		return true;
 	case QT_BANDWIDTH:
+		if (v->temp & RADIO_TEMP_BW)
+			sb_str(&b, GLYPH_DOT);
 		sb_str(&b, v->ch.bw == RADIO_BW_25K ? "25k" : "12.5k");
-		return false;
+		return v->ch.mode == RADIO_MODE_FM;
 	case QT_BRIGHTNESS:
 		sb_u32(&b, s->brightness, 1);
 		sb_chr(&b, '%');
@@ -597,17 +631,32 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 			memcpy(value, tmp, sizeof value - 1);
 			value[sizeof value - 1] = 0;
 		}
-		gfx_text_fit(vf, value, x1 - x0 - 3, fit, sizeof fit);
-		int vx = x0 + (x1 - x0 + 1 - gfx_text_width(vf, fit)) / 2;
-		int vy = y0 + 1 + lf->h + (y1 - y0 - 1 - lf->h - vf->h) / 2;
-		gfx_text(vf, vx, vy, fit, fg);
+		const font_t *tf = vf;	// a value too wide for the tile ("<D023N>") drops to the label font
+		if (gfx_text_width(tf, value) > x1 - x0 - 3)
+			tf = lf;
+		gfx_text_fit(tf, value, x1 - x0 - 3, fit, sizeof fit);
+		int vx = x0 + (x1 - x0 + 1 - gfx_text_width(tf, fit)) / 2;
+		int vy = y0 + 1 + lf->h + (y1 - y0 - 1 - lf->h - tf->h) / 2;
+		gfx_text(tf, vx, vy, fit, fg);
 		gfx_clip_off();
 	}
 	if (s->toast != NULL)
 		draw_hint(s->toast, true);
 }
 
-void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total)
+#if CONFIG_DIAG
+static uint8_t diag_lines_per_page;
+
+uint8_t ui_diag_next_page(uint8_t first_line)
+{
+	char buf[40];
+	uint8_t next = (uint8_t)(first_line + (diag_lines_per_page ? diag_lines_per_page : 1));
+	if (board.diag_line == NULL || !board.diag_line(next, buf, sizeof buf))
+		return 0;
+	return next;
+}
+
+void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8_t first_line)
 {
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->tiny != NULL ? L->tiny : L->small;	// small print: as many lines as fit
@@ -643,14 +692,19 @@ void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total)
 	sb_str(&b, "dBm nz ");
 	sb_u32(&b, v->noise, 1);
 	sb_str(&b, v->state == RS_RX ? " open" : v->state == RS_TX ? " TX" : " closed");
+	if (v->ch.rx_tone.type != TONE_NONE)
+		sb_str(&b, v->tone_ok ? " tone" : " -tone");
 	gfx_text(f, 0, y, buf, col.fg);
 	y += f->h;
 
-	for (uint8_t i = 0; board.diag_line != NULL && y + f->h <= gfx_height() - f->h; i++) {
+	diag_lines_per_page = 0;
+	for (uint8_t i = first_line; board.diag_line != NULL && y + f->h <= gfx_height() - f->h; i++) {
+		diag_lines_per_page++;
 		if (!board.diag_line(i, buf, sizeof buf))
 			break;
 		gfx_text(f, 0, y, buf, col.dim);
 		y += f->h;
 	}
-	gfx_text(f, 0, gfx_height() - f->h, "BACK Home, long BACK here", col.idle);
+	gfx_text(f, 0, gfx_height() - f->h, "* more  BACK Home", col.idle);
 }
+#endif

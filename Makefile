@@ -11,19 +11,30 @@
 
 BOARD ?= dm1701
 include boards/$(BOARD)/board.mk
+-include boards/$(BOARD)/config.mk
+include config/features.mk
 include platform/$(PLATFORM)/platform.mk
 
 BUILD := build/$(BOARD)
 TARGET := $(BUILD)/odr_$(BOARD)
 
-CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/dmr/call core/dmr/ambe core/dmr/fec
+CORE_DIRS := core/app core/radio core/ui core/input core/codeplug
+ifeq ($(CONFIG_DMR),y)
+CORE_DIRS += core/dmr/call core/dmr/ambe core/dmr/fec
+endif
+ifeq ($(CONFIG_USB),y)
+CORE_DIRS += core/hostlink $(BOARD_USB_DIRS)
+endif
+ifeq ($(CONFIG_HOTSPOT),y)
+CORE_DIRS += core/hotspot
+endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)
 
 GITVERSION := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
-DEFS := $(MCU_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\" -DODR_GIT=\"$(GITVERSION)\"
+DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\" -DODR_GIT=\"$(GITVERSION)\"
 
 OPT ?= -Os
 COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP
@@ -36,8 +47,14 @@ APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
 OBJ := $(APP_OBJ) $(TP_OBJ)
 
-.PHONY: all clean size test
+.PHONY: all clean size test FORCE
 all: $(TARGET).bin
+
+# Rebuild everything when the compile flags change (feature switches and build values)
+$(BUILD)/flags: FORCE
+	@mkdir -p $(BUILD)
+	@echo '$(CFLAGS_APP)' | cmp -s - $@ || echo '$(CFLAGS_APP)' > $@
+$(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 
 $(TARGET).elf: $(OBJ) $(LDSCRIPT)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) -lm

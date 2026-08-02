@@ -5,6 +5,7 @@
 #define UI_FONT_H
 
 #include <stdint.h>
+#include "config.h"
 #include <stddef.h>
 
 // Extra glyphs, as bytes inside ordinary C strings ("PTT" GLYPH_ARROW "TG 91")
@@ -22,7 +23,13 @@ typedef struct {
 	const uint8_t *bits;	// glyph after glyph, h rows of (w + 7) / 8 bytes, MSB = left
 } font_t;
 
-extern const font_t font_5x8, font_6x12, font_8x16, font_12x24, font_16x32;
+extern const font_t font_5x8, font_6x12, font_8x16, font_12x24;
+#if CONFIG_FONT_XL
+extern const font_t font_16x32;
+#define FONT_LARGEST	(&font_16x32)
+#else
+#define FONT_LARGEST	(&font_12x24)	// built without the 16x32 font (CONFIG_FONT_XL)
+#endif
 
 // Bitmap of a glyph, or NULL for a byte the font can't draw (shown as a box) or a missing extra
 const uint8_t *font_glyph(const font_t *f, uint8_t c);

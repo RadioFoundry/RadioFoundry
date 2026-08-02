@@ -2,10 +2,14 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Baofeng DM-1701: board descriptor, clocks, reset-time pin levels, key map
 #include "board.h"
+#include "config.h"
 #include "dm1701.h"
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
+#if CONFIG_USB
+#include "usb/usb_device.h"
+#endif
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -42,7 +46,7 @@ static const keymap_entry_t keymap[] = {
 
 const board_t board = {
 	.name = "DM-1701",
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT,
+	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -55,10 +59,17 @@ const board_t board = {
 	.radio = &dm1701_radio,
 	.power = &dm1701_power,
 	.flash = &dm1701_flash,
+#if CONFIG_DIAG
 	.diag_line = dm1701_diag_line,
+#endif
+#if CONFIG_DMR
 	.dmr = &dm1701_dmr,
 	.audio = &dm1701_audio,
 	.vocoder = &dm1701_vocoder,
+#endif
+#if CONFIG_USB
+	.host_port = &usb_cdc_stream,
+#endif
 };
 
 // docs/spec/hardware-dm1701.md 1.2

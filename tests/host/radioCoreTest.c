@@ -5,6 +5,7 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#include "radio/tones.h"
 
 static int failures;
 static int checks;
@@ -14,7 +15,11 @@ static int checks;
 static struct {
 	int set_mode_calls;
 	uint32_t rx_hz;
+	radio_bw_t rx_bw;
+	subtone_t rx_tone;
 	int rx_calls;
+	radio_bw_t tx_bw;
+	subtone_t tx_tone;
 	int tx_calls;
 	uint32_t tx_hz;
 	uint8_t tx_power;
@@ -26,8 +31,23 @@ static struct {
 
 static void r_init(void) {}
 static void r_set_mode(radio_mode_t m) { (void)m; hw.set_mode_calls++; }
-static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t) { (void)bw; (void)t; hw.rx_hz = hz; hw.rx_calls++; return true; }
-static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t) { (void)bw; (void)t; hw.tx_calls++; hw.tx_hz = hz; hw.tx_power = p; return true; }
+static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
+{
+	hw.rx_hz = hz;
+	hw.rx_bw = bw;
+	hw.rx_tone = *t;
+	hw.rx_calls++;
+	return true;
+}
+static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
+{
+	hw.tx_calls++;
+	hw.tx_hz = hz;
+	hw.tx_bw = bw;
+	hw.tx_tone = *t;
+	hw.tx_power = p;
+	return true;
+}
 static void r_tx_off(void) { hw.tx_off_calls++; }
 static void r_status(radio_status_t *st) { *st = hw.st; }
 static void r_audio(bool on) { hw.audio = on; }
@@ -55,10 +75,10 @@ const board_t board = {
 };
 
 // ---- fake codeplug ----
-#define NCH 6
+#define NCH 8
 static channel_t chans[NCH + 1];
 static bool used[NCH + 1];
-static zone_t zones[2];
+static zone_t zones[3];
 static uint16_t nzones;
 static codeplug_source_t source = CODEPLUG_LEGACY;
 
@@ -103,6 +123,14 @@ static void setup_codeplug(void)
 	add(4, "DMR rptr", 438500000, RADIO_MODE_DMR, false, 2);
 	add(5, "Air", 121500000, RADIO_MODE_FM, false, 0);	// receive-only band
 	add(6, "Other", 145500000, RADIO_MODE_FM, false, CODEPLUG_POWER_DEFAULT);
+	// zone "Tones": a wide repeater with TX tone only, a narrow one with DCS 023 inverted both ways and different RX
+	add(7, "Rptr wide", 146940000, RADIO_MODE_FM, false, CODEPLUG_POWER_DEFAULT);
+	chans[7].tx_hz = 146340000;
+	chans[7].bw = RADIO_BW_25K;
+	chans[7].tx_tone = (subtone_t){ TONE_CTCSS, 1000 };
+	add(8, "Rptr DCS", 446100000, RADIO_MODE_FM, false, CODEPLUG_POWER_DEFAULT);
+	chans[8].tx_tone = (subtone_t){ TONE_DCS_INV, 023 };
+	chans[8].rx_tone = (subtone_t){ TONE_DCS, 0754 };
 	memset(zones, 0, sizeof(zones));
 	strcpy(zones[0].name, "Local");
 	zones[0].count = 5;
@@ -114,7 +142,11 @@ static void setup_codeplug(void)
 	strcpy(zones[1].name, "Two");
 	zones[1].count = 1;
 	zones[1].channels[0] = 6;
-	nzones = 2;
+	strcpy(zones[2].name, "Tones");
+	zones[2].count = 2;
+	zones[2].channels[0] = 7;
+	zones[2].channels[1] = 8;
+	nzones = 3;
 }
 
 static radio_sm_t sm;
@@ -229,7 +261,10 @@ static void test_squelch(void)
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms == now);
 
-	signal(10, false);			// strong carrier, wrong tone
+	signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	signal(120, true);
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE);
 
@@ -408,6 +443,222 @@ static void test_no_codeplug(void)
 	CHECK(sm.view.vfo);
 }
 
+static void test_codeplug_tones(void)
+{
+	setup_codeplug();
+	start();
+	CHECK(hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+	req(RREQ_ZONE, 2);
+	CHECK(sm.view.channel_number == 7 && hw.rx_hz == 146940000);
+	CHECK(hw.rx_bw == RADIO_BW_25K && hw.rx_tone.type == TONE_NONE);	// a TX-only tone: no tone squelch
+	CHECK(sm.view.tone_ok);
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_hz == 146340000 && hw.tx_bw == RADIO_BW_25K && hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 1000);
+	req(RREQ_PTT, 0);
+	req(RREQ_CH_STEP, 1);
+	CHECK(hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_DCS && hw.rx_tone.value == 0754);
+	CHECK(!sm.view.tone_ok);
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_tone.type == TONE_DCS_INV && hw.tx_tone.value == 023 && hw.tx_bw == RADIO_BW_12K5);
+	req(RREQ_PTT, 0);
+}
+
+static void test_tone_squelch(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_ZONE, 2);
+	req(RREQ_CH_STEP, 1);			// RX DCS 754
+	uint8_t thr = radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT);
+
+	signal(thr - 20, false);		// carrier, no code: closed
+	poll_for(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
+	signal(thr - 20, true);
+	poll_for(RADIO_POLL_MS);		// one poll of a match is not enough
+	CHECK(sm.view.state == RS_IDLE);
+	poll_for(RADIO_POLL_MS * (RADIO_TONE_ON_POLLS - 1));
+	CHECK(sm.view.state == RS_RX && hw.audio && sm.view.tone_ok);
+
+	// The flag chatters: short drop-outs keep the squelch open
+	for (int i = 0; i < 20; i++) {
+		signal(thr - 20, i % 3 != 0);
+		poll_for(RADIO_POLL_MS * (1 + i % 4 % 3));
+		CHECK(sm.view.state == RS_RX);
+	}
+	signal(thr - 20, true);
+	poll_for(RADIO_POLL_MS);
+	// The tone goes away for good, carrier stays: closes after the debounce and the close count
+	signal(thr - 20, false);
+	poll_for(RADIO_POLL_MS * (RADIO_TONE_OFF_POLLS - 1));
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS * (1 + RADIO_SQL_CLOSE_POLLS));
+	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
+
+	// Tone without a carrier (noise above the threshold): closed
+	signal(thr + 20, true);
+	poll_for(500);
+	CHECK(sm.view.state == RS_IDLE && sm.view.tone_ok);
+	// Carrier back with the tone: opens at once (the tone is already heard)
+	signal(thr - 20, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	// Carrier gone: closes on the noise alone
+	signal(thr + 20, true);
+	poll_for(RADIO_POLL_MS * RADIO_SQL_CLOSE_POLLS);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Monitor overrides tone squelch
+	signal(thr - 20, false);
+	poll_for(500);
+	req(RREQ_MONITOR, 1);
+	CHECK(hw.audio && sm.view.state == RS_IDLE);
+	req(RREQ_MONITOR, 0);
+	CHECK(!hw.audio);
+
+	// Squelch level 0 with an RX tone: the tone alone decides
+	req(RREQ_SQUELCH, -9);
+	signal(200, false);
+	poll_for(200);
+	CHECK(sm.view.state == RS_IDLE);
+	signal(200, true);
+	poll_for(RADIO_POLL_MS * RADIO_TONE_ON_POLLS);
+	CHECK(sm.view.state == RS_RX);
+	req(RREQ_CLEAR_TEMP, 0);
+
+	// A channel without an RX tone ignores the board's tone flag
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.channel_number == 7 && sm.view.tone_ok);
+	signal(thr - 20, false);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+}
+
+static void test_temp_bw_tone(void)
+{
+	setup_codeplug();
+	start();
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5 && sm.view.temp == 0);
+	int calls = hw.rx_calls;
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	CHECK(sm.view.ch.bw == RADIO_BW_25K && hw.rx_bw == RADIO_BW_25K && hw.rx_calls == calls + 1);
+	CHECK(sm.view.temporary && sm.view.temp == RADIO_TEMP_BW);
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);	// no change: no retune
+	CHECK(hw.rx_calls == calls + 1);
+	req(RREQ_BANDWIDTH, 7);			// not a bandwidth
+	CHECK(sm.view.ch.bw == RADIO_BW_25K);
+
+	// One tone for both directions
+	subtone_t t100 = { TONE_CTCSS, 1000 };
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, t100));
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.rx_tone.value == 1000);
+	CHECK(hw.rx_tone.type == TONE_CTCSS && hw.rx_tone.value == 1000);
+	CHECK(sm.view.temp == (RADIO_TEMP_BW | RADIO_TEMP_TX_TONE | RADIO_TEMP_RX_TONE));
+	CHECK(!sm.view.tone_ok);
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 1000 && hw.tx_bw == RADIO_BW_25K);
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, (subtone_t){ TONE_NONE, 0 }));	// not while transmitting
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS);
+	req(RREQ_BANDWIDTH, RADIO_BW_12K5);
+	CHECK(sm.view.ch.bw == RADIO_BW_25K);
+	req(RREQ_PTT, 0);
+
+	// TX only: no retune
+	calls = hw.rx_calls;
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_TX, (subtone_t){ TONE_DCS, 023 }));
+	CHECK(sm.view.ch.tx_tone.type == TONE_DCS && sm.view.ch.rx_tone.type == TONE_CTCSS && hw.rx_calls == calls);
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_RX, (subtone_t){ TONE_DCS_INV, 023 }));
+	CHECK(hw.rx_tone.type == TONE_DCS_INV && hw.rx_tone.value == 023 && hw.rx_calls == calls + 1);
+	// Invalid tones are refused
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, (subtone_t){ TONE_CTCSS, 50 }));
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, (subtone_t){ 9, 1000 }));
+	CHECK(sm.view.ch.tx_tone.type == TONE_DCS && sm.view.ch.rx_tone.type == TONE_DCS_INV);
+	// Setting the channel's own value again clears that flag
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, (subtone_t){ TONE_NONE, 0 }));
+	CHECK(sm.view.temp == RADIO_TEMP_BW);
+
+	// BACK on Home undoes everything and retunes
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, t100));
+	calls = hw.rx_calls;
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(!sm.view.temporary && sm.view.temp == 0 && sm.view.ch.bw == RADIO_BW_12K5 && sm.view.ch.rx_tone.type == TONE_NONE);
+	CHECK(hw.rx_calls == calls + 1 && hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+
+	// Undo during TX: the receiver is retuned when PTT is released
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	req(RREQ_PTT, 1);
+	calls = hw.rx_calls;
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(hw.rx_calls == calls && sm.view.ch.bw == RADIO_BW_12K5);
+	req(RREQ_PTT, 0);
+	CHECK(hw.rx_calls == calls + 1 && hw.rx_bw == RADIO_BW_12K5);
+
+	// A channel change drops them
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, t100));
+	req(RREQ_CH_STEP, 1);
+	req(RREQ_CH_STEP, -1);
+	CHECK(sm.view.temp == 0 && sm.view.ch.tx_tone.type == TONE_NONE && hw.rx_tone.type == TONE_NONE);
+
+	// DMR channel: refused
+	req(RREQ_ZONE_POS, 3);
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_BOTH, t100));
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5 && sm.view.ch.tx_tone.type == TONE_NONE && sm.view.temp == 0);
+
+	// VFO: its own settings, not temporary, remembered
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);	// temporary on the channel
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5 && sm.view.temp == 0);
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_TX, (subtone_t){ TONE_CTCSS, 885 }));
+	CHECK(sm.view.ch.bw == RADIO_BW_25K && sm.view.ch.tx_tone.value == 885 && !sm.view.temporary);
+	CHECK(hw.rx_bw == RADIO_BW_25K && hw.rx_tone.type == TONE_NONE);
+	req(RREQ_VFO, 0);
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5 && sm.view.ch.tx_tone.type == TONE_NONE && hw.rx_bw == RADIO_BW_12K5);
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.ch.bw == RADIO_BW_25K && sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 885);
+	CHECK(hw.rx_bw == RADIO_BW_25K);
+}
+
+static void test_tone_lists(void)
+{
+	// Spot checks and order
+	CHECK(tones_ctcss[0] == 670 && tones_ctcss[12] == 1000 && tones_ctcss[TONES_CTCSS_COUNT - 1] == 2541);
+	CHECK(tones_dcs[0] == 023 && tones_dcs[TONES_DCS_COUNT - 1] == 0754);
+	for (int i = 1; i < TONES_CTCSS_COUNT; i++)
+		CHECK(tones_ctcss[i] > tones_ctcss[i - 1]);
+	for (int i = 1; i < TONES_DCS_COUNT; i++)
+		CHECK(tones_dcs[i] > tones_dcs[i - 1]);
+
+	// Stepping visits every picker entry once and wraps
+	subtone_t t = { TONE_NONE, 0 };
+	for (int i = 1; i <= TONES_PICKER_COUNT; i++) {
+		t = tones_step(&t, 1);
+		subtone_t want = tones_picker((uint16_t)(i % TONES_PICKER_COUNT));
+		CHECK(t.type == want.type && t.value == want.value);
+		CHECK(tones_standard(&t));
+	}
+	t = tones_step(&t, -1);
+	CHECK(t.type == TONE_DCS_INV && t.value == 0754);
+	t = tones_step(&(subtone_t){ TONE_CTCSS, 670 }, -1);
+	CHECK(t.type == TONE_NONE);
+	t = tones_step(&(subtone_t){ TONE_CTCSS, 2541 }, 1);
+	CHECK(t.type == TONE_DCS && t.value == 023);
+	t = tones_step(&(subtone_t){ TONE_DCS, 0754 }, 1);
+	CHECK(t.type == TONE_DCS_INV && t.value == 023);
+
+	// A non-standard tone steps to its neighbors
+	subtone_t odd = { TONE_CTCSS, 1500 };
+	CHECK(!tones_standard(&odd) && tones_valid(&odd));
+	t = tones_step(&odd, 1);
+	CHECK(t.type == TONE_CTCSS && t.value == 1514);
+	t = tones_step(&odd, -1);
+	CHECK(t.type == TONE_CTCSS && t.value == 1462);
+	CHECK(!tones_valid(&(subtone_t){ TONE_CTCSS, 2700 }));
+	CHECK(!tones_valid(&(subtone_t){ TONE_DCS, 01000 }));
+}
+
 int main(void)
 {
 	test_startup();
@@ -418,6 +669,10 @@ int main(void)
 	test_power();
 	test_vfo();
 	test_no_codeplug();
+	test_codeplug_tones();
+	test_tone_squelch();
+	test_temp_bw_tone();
+	test_tone_lists();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

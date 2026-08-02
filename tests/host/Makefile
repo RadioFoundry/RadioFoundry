@@ -103,8 +103,8 @@ clean:
 CORE_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += radioCoreTest inputTest
 
-radioCoreTest: radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ radioCoreTest.c $(CORE)/radio/radio_sm.c
+radioCoreTest: radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h $(CORE)/radio/tones.c $(CORE)/radio/tones.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c
 
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
@@ -153,3 +153,56 @@ run: run-ui
 run-ui: gfxTest
 	./gfxTest
 .PHONY: run-ui
+
+# AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC
+# and the DMR voice glue between the call stack, the FEC, the vocoder and the audio driver (fakes)
+TESTS   += ambeFecTest ambeVoiceTest
+
+ambeFecTest: ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/dmr/ambe/ambeFec.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c
+
+ambeVoiceTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeVoice.h $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c
+
+run: run-ambe
+run-ambe: ambeFecTest ambeVoiceTest
+	./ambeFecTest
+	./ambeVoiceTest
+.PHONY: run-ambe
+
+# The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
+CALL    := dmrCallTest.c sim/dmr_sim_modem.c $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/sfr.c $(DATA) $(FRAME)
+TESTS   += dmrCallTest
+
+dmrCallTest: $(CALL) $(wildcard $(CORE)/dmr/call/*.h sim/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DHAS_SFR -o $@ $(CALL)
+
+run: run-call
+run-call: dmrCallTest
+	./dmrCallTest
+.PHONY: run-call
+
+# The HR_C6000 DMR modem: register sequences, burst status decode, RX de-duplication, TX queue and slot scheduling
+TESTS   += hrc6000DmrTest
+HRCDMR  := $(ROOT)/drivers/modem/hrc6000
+
+hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c
+
+run: run-hrcdmr
+run-hrcdmr: hrc6000DmrTest
+	./hrc6000DmrTest
+.PHONY: run-hrcdmr
+
+# The MMDVM protocol and the simplex hotspot engine (core/hotspot), against a fake DMR modem and radio core
+MMDVM   := mmdvmTest.c $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c $(CORE)/hotspot/hotspotUplink.c \
+           $(CORE)/hotspot/hotspotData.c $(FRAME)
+TESTS   += mmdvmTest
+
+mmdvmTest: $(MMDVM) $(wildcard $(CORE)/hotspot/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(MMDVM)
+
+run: run-mmdvm
+run-mmdvm: mmdvmTest
+	./mmdvmTest
+.PHONY: run-mmdvm
