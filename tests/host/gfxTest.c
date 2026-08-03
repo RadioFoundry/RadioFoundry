@@ -122,6 +122,68 @@ static void render_set(const char *cls)
 	ui_draw_quick(&v, &s);
 	snprintf(name, sizeof name, "%s_quick", cls); save(name);
 
+	// DMR: Home idle with the talk target and last heard, reply window, no codec, Receiving, Transmitting, refused
+	base_view(&v);
+	strcpy(v.zone_name, "Local repeaters");
+	strcpy(v.ch.name, "COUNTY DMR");
+	v.channel_number = 3;
+	v.ch.mode = RADIO_MODE_DMR;
+	v.ch.rx_hz = 467375000; v.ch.tx_hz = 467375000;
+	v.ch.color_code = 2; v.ch.timeslot = 1;
+	v.ch.tx_tone.type = TONE_NONE;
+	v.dmr.active = true; v.dmr.codec = true; v.dmr.cc = 2; v.dmr.ts = 1; v.dmr.own_id = 3101276;
+	v.dmr.target_id = 201; strcpy(v.dmr.target_name, "Main Ops");
+	v.dmr.last.src = 3101234; strcpy(v.dmr.last.src_name, "Joe"); v.dmr.last.dst = 91; v.dmr.last.group = true;
+	v.dmr.last_ms = s.now_ms - 120000;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_home", cls); save(name);
+	v.dmr.reply_active = true; v.dmr.reply_s = 8; v.dmr.target_id = 91; v.dmr.target_name[0] = 0;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_reply", cls); save(name);
+	v.dmr.reply_active = false; v.dmr.target_id = 201; strcpy(v.dmr.target_name, "Main Ops");
+	v.dmr.codec = false;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_nocodec", cls); save(name);
+	v.state = RS_RX; v.dmr.state = RDMR_RX; v.dmr.rssi_dbm = -71;
+	v.dmr.call.src = 3101234; strcpy(v.dmr.call.src_name, "JOE SMITH"); v.dmr.call.dst = 201; v.dmr.call.group = true;
+	strcpy(v.dmr.call.dst_name, "Main Ops");
+	strcpy(v.dmr.alias, "Joe - Boston, MA");
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_rx_nocodec", cls); save(name);
+	v.dmr.codec = true;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_rx", cls); save(name);
+	v.dmr.state = RDMR_RX_OTHER; v.dmr.call.dst = 3100; v.dmr.call.dst_name[0] = 0; v.dmr.call.src_name[0] = 0;
+	v.dmr.alias[0] = 0;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_rx_other", cls); save(name);
+	v.state = RS_TX; v.dmr.state = RDMR_TX; v.tx_elapsed_ms = 7400;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_tx", cls); save(name);
+	v.dmr.state = RDMR_TX_WAIT; v.dmr.rmo = true;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_tx_wake", cls); save(name);
+	v.dmr.rmo = false;
+	v.state = RS_TX_DENIED; v.tx_deny = TXDENY_NO_CODEC;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_denied", cls); save(name);
+	v.tx_deny = TXDENY_BUSY;
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_busy", cls); save(name);
+
+	// Hotspot screen
+	hotspot_view_t h;
+	memset(&h, 0, sizeof h);
+	h.running = true; h.rx_hz = h.tx_hz = 438800000; h.cc = 1; h.src = 3101276; h.dst = 91; h.group = true;
+	h.from_net = true; h.transmitting = true;
+	base_view(&v);
+	v.hotspot = true;
+	ui_draw_hotspot(&v, &h, &s);
+	snprintf(name, sizeof name, "%s_hotspot", cls); save(name);
+	h.transmitting = false; h.tx_hz = 433800000;
+	ui_draw_hotspot(&v, &h, &s);
+	snprintf(name, sizeof name, "%s_hotspot_split", cls); save(name);
+
 	// Temporary tone and bandwidth: dots on Home, the Tone editor (TX only) and the tiles
 	base_view(&v);
 	v.ch.bw = RADIO_BW_12K5;

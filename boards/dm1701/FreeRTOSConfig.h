@@ -13,7 +13,7 @@ extern uint32_t SystemCoreClock;
 #define configTICK_RATE_HZ			1000
 #define configMAX_PRIORITIES			7
 #define configMINIMAL_STACK_SIZE		128
-#define configTOTAL_HEAP_SIZE			(24 * 1024)
+#define configTOTAL_HEAP_SIZE			(28 * 1024)	// task stacks (about 20 KB with DMR: audio 5 KB, radio 3 KB), queues
 #define configMAX_TASK_NAME_LEN			12
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1

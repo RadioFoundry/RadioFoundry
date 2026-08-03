@@ -6,6 +6,10 @@
 #include "board.h"
 #include "radio/radio_sm.h"
 #include "radio/tones.h"
+#include "dmr/call/dmr_call.h"
+#include "dmr/call/dmr_lc.h"
+#include "dmr/ambe/ambeVoice.h"
+#include "sim/dmr_sim_modem.h"
 
 static int failures;
 static int checks;
@@ -54,6 +58,24 @@ static void r_audio(bool on) { hw.audio = on; }
 static const hal_radio_t fake_radio = { r_init, r_set_mode, r_rx, r_tx, r_tx_off, r_status, r_audio, NULL };
 
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
+
+// ---- fake PCM audio and vocoder (core/dmr/ambe runs on them) ----
+static struct {
+	bool started;
+	int starts, stops;
+	bool pcm;
+} aud;
+static bool a_start(audio_block_cb_t cb, void *ctx) { (void)cb; (void)ctx; aud.started = true; aud.starts++; return true; }
+static void a_stop(void) { aud.started = false; aud.stops++; }
+static void a_pcm(bool on) { aud.pcm = on; }
+static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+
+static bool codec_present;
+static bool v_present(void) { return codec_present; }
+static void v_reset(void) {}
+static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
+static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
+static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode };
 static const hal_power_t fake_power = { .led = p_led };
 
 static const band_t bands[] = {
@@ -72,6 +94,9 @@ const board_t board = {
 	.power_default = 1,
 	.radio = &fake_radio,
 	.power = &fake_power,
+	.dmr = &sim_modem,
+	.audio = &fake_audio,
+	.vocoder = &fake_vocoder,
 };
 
 // ---- fake codeplug ----
@@ -102,6 +127,36 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	return true;
 }
 
+// DMR records: the radio's ID, contacts, RX group lists
+static uint32_t own_dmr_id = 3101276;
+static const contact_t contacts[] = {
+	{ "Main Ops", 201, CONTACT_GROUP, 0 },
+	{ "Joe", 3101234, CONTACT_PRIVATE, 0 },
+	{ "Local", 9, CONTACT_GROUP, 0 },
+};
+uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
+bool codeplug_contact(uint16_t index, contact_t *out)
+{
+	if (index < 1 || index > sizeof(contacts) / sizeof(contacts[0])) {
+		return false;
+	}
+	*out = contacts[index - 1];
+	return true;
+}
+bool codeplug_listen_list(uint16_t index, listen_list_t *out)
+{
+	if (index != 1) {
+		return false;
+	}
+	memset(out, 0, sizeof(*out));
+	strcpy(out->name, "Local TGs");
+	out->count = 3;
+	out->contacts[0] = 1;
+	out->contacts[1] = 2;	// private: not a listen entry, but its name is known
+	out->contacts[2] = 3;
+	return true;
+}
+
 static void add(uint16_t n, const char *name, uint32_t hz, uint8_t mode, bool rx_only, uint8_t power)
 {
 	memset(&chans[n], 0, sizeof(chans[n]));
@@ -121,6 +176,10 @@ static void setup_codeplug(void)
 	add(2, "Weather", 162550000, RADIO_MODE_FM, true, CODEPLUG_POWER_DEFAULT);
 	// 3 is empty
 	add(4, "DMR rptr", 438500000, RADIO_MODE_DMR, false, 2);
+	chans[4].color_code = 2;
+	chans[4].timeslot = 1;
+	chans[4].contact = 1;
+	chans[4].listen_list = 1;
 	add(5, "Air", 121500000, RADIO_MODE_FM, false, 0);	// receive-only band
 	add(6, "Other", 145500000, RADIO_MODE_FM, false, CODEPLUG_POWER_DEFAULT);
 	// zone "Tones": a wide repeater with TX tone only, a narrow one with DCS 023 inverted both ways and different RX
@@ -154,7 +213,7 @@ static uint32_t now;
 
 static void req(uint8_t type, int32_t arg)
 {
-	radio_req_t r = { type, arg };
+	radio_req_t r = { type, arg, 0 };
 	radio_sm_request(&sm, &r, now);
 }
 
@@ -175,6 +234,9 @@ static void signal(uint8_t noise, bool tone_ok)
 
 static void start(void)
 {
+	ambeVoiceStop();	// a stream left from the last test
+	memset(&aud, 0, sizeof(aud));
+	sim_reset();
 	memset(&hw, 0, sizeof(hw));
 	signal(120, true);
 	now = 1000;
@@ -286,11 +348,11 @@ static void test_squelch(void)
 	req(RREQ_MONITOR, 0);
 	CHECK(!sm.view.monitor && !hw.audio);
 
-	// A DMR channel shows the carrier but keeps the FM speaker shut
+	// A DMR channel: the state follows the call stack, not the carrier, and the FM speaker stays shut
 	req(RREQ_ZONE_POS, 3);
 	signal(10, true);
 	poll_for(RADIO_POLL_MS);
-	CHECK(sm.view.state == RS_RX && !hw.audio);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 }
 
 static void test_tx(void)
@@ -325,10 +387,10 @@ static void test_tx(void)
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && sm.view.tx_deny == TXDENY_NONE && hw.tx_off_calls == 1);
 
-	// DMR channel: no FM transmit
+	// DMR channel without the codec: receive only
 	req(RREQ_CH_STEP, 1);
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_CODEC && hw.tx_calls == 1);
 	req(RREQ_PTT, 0);
 
 	// Receive-only band
@@ -659,6 +721,323 @@ static void test_tone_lists(void)
 	CHECK(!tones_valid(&(subtone_t){ TONE_DCS, 01000 }));
 }
 
+// ---- DMR: the call stack on a simulated modem, driven like the radio task drives it ----
+
+// Advance in 5 ms steps: a modem slot every 30 ms, the stack tick every RADIO_TICK_MS, the status poll every
+// RADIO_POLL_MS
+static void run(uint32_t ms)
+{
+	for (uint32_t t = 0; t < ms; t += 5) {
+		now += 5;
+		if (now % 30 == 0) {
+			sim_slot();
+		}
+		if (now % RADIO_TICK_MS == 0) {
+			radio_sm_tick(&sm, now);
+		}
+		if (now % RADIO_POLL_MS == 0) {
+			radio_sm_poll(&sm, now);
+		}
+	}
+}
+
+static void mk_lc(uint8_t lc[9], bool group, uint32_t dst, uint32_t src)
+{
+	dmr_lc_t l = { .flco = group ? DMR_FLCO_GROUP_VOICE : DMR_FLCO_UNIT_VOICE, .dst = dst, .src = src };
+	dmr_lc_pack(&l, lc);
+}
+
+static void burst_lc(const uint8_t lc[9], uint8_t cc, bool terminator)
+{
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = terminator ? DMR_BURST_TERMINATOR_LC : DMR_BURST_VOICE_LC_HEADER;
+	b.sync = DMR_SYNC_MS;
+	b.cc = cc;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = 12;
+	dmr_lc_encode_full(lc, terminator ? DMR_RS_MASK_TERMINATOR : DMR_RS_MASK_VOICE_HEADER, b.payload);
+	sim_rx(&b);
+}
+
+static void burst_voice(uint8_t index, uint8_t cc, const uint8_t *lc)
+{
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_VOICE;
+	b.voice_index = index;
+	b.sync = index == 0 ? DMR_SYNC_MS : DMR_SYNC_NONE;
+	b.cc = cc;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.rssi_dbm = -85;
+	b.len = 27;
+	for (int f = 0; f < 3; f++) {
+		memcpy(&b.payload[f * 9], dmr_ambe_silence, 9);
+	}
+	if (lc != NULL) {
+		b.lc_valid = true;
+		memcpy(b.lc, lc, 9);
+	}
+	sim_rx(&b);
+}
+
+// A call heard: three headers, superframes of voice, a terminator if end
+static void hear_call(bool group, uint32_t dst, uint32_t src, uint8_t cc, int superframes, bool end)
+{
+	uint8_t lc[9];
+	mk_lc(lc, group, dst, src);
+	for (int h = 0; h < 3; h++) {
+		burst_lc(lc, cc, false);
+		run(60);
+	}
+	for (int sf = 0; sf < superframes; sf++) {
+		for (int i = 0; i < 6; i++) {
+			burst_voice((uint8_t)i, cc, i == 5 ? lc : NULL);
+			run(60);
+		}
+	}
+	if (end) {
+		burst_lc(lc, cc, true);
+		run(100);
+	}
+}
+
+static void dmr_start(bool codec)
+{
+	setup_codeplug();
+	codec_present = codec;
+	start();
+	req(RREQ_ZONE_POS, 3);		// channel 4: DMR, CC 2, TS 1, talk target TG 201, listen list 1
+	run(50);
+}
+
+static void test_dmr_rx(void)
+{
+	dmr_start(false);
+	CHECK(sim.started && sim.cc_filter == 2 && sim.cfg.own_id == 3101276 && !sim.cfg.repeater);
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	CHECK(d->active && !d->codec && d->own_id == 3101276);
+	CHECK(d->target_id == 201 && !d->target_private && strcmp(d->target_name, "Main Ops") == 0);
+	CHECK(d->cc == 2 && d->ts == 1 && !d->rmo && d->state == RDMR_IDLE && d->last_ms == 0);
+
+	// A group call on the talk target: received, shown, played (silence without the codec)
+	hear_call(true, 201, 3101234, 2, 1, false);
+	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX);
+	CHECK(d->call.src == 3101234 && d->call.dst == 201 && d->call.group && strcmp(d->call.dst_name, "Main Ops") == 0);
+	CHECK(strcmp(d->call.src_name, "Joe") == 0);	// a private contact in the listen list
+	CHECK(d->rssi_dbm == -85);
+	CHECK(hw.led[LED_GREEN] && !hw.audio);		// FM speaker path stays off: DMR voice is PCM
+	CHECK(aud.started);
+	ambe_voice_stats_t vs;
+	ambeVoiceGetStats(&vs);
+	CHECK(vs.rx_frames == 0 && vs.rx_lost == 0);	// the fake audio callback never runs; frames were queued
+	burst_lc((uint8_t[9]){ 0 }, 2, true);
+	uint8_t lc[9];
+	mk_lc(lc, true, 201, 3101234);
+	burst_lc(lc, 2, true);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE && d->state == RDMR_IDLE && !hw.led[LED_GREEN]);
+	CHECK(d->last_ms != 0 && d->last.src == 3101234 && d->last.dst == 201 && sm.view.last_rx_ms != 0);
+	CHECK(!d->reply_active);	// the talk target's own talkgroup: no reply window
+
+	// TG 9 (in the listen list) opens the reply window to TG 9; BACK (RREQ_REPLY_CANCEL) ends it
+	hear_call(true, 9, 3105555, 2, 1, true);
+	CHECK(d->reply_active && d->target_id == 9 && d->reply_s == 10 && strcmp(d->target_name, "Local") == 0);
+	run(2000);
+	CHECK(d->reply_active && d->reply_s == 8);
+	req(RREQ_REPLY_CANCEL, 0);
+	run(20);
+	CHECK(!d->reply_active && d->target_id == 201);
+
+	// A talkgroup outside the list: shown as busy, not played
+	hear_call(true, 3100, 3107777, 2, 1, false);
+	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX_OTHER && d->call.dst == 3100 && !hw.led[LED_GREEN]);
+	run(500);			// fades out
+	CHECK(sm.view.state == RS_IDLE);
+	// MONITOR held: hear all
+	req(RREQ_MONITOR, 1);
+	CHECK(d->hear_all && !hw.audio);
+	hear_call(true, 3100, 3107777, 2, 1, true);
+	CHECK(d->last.dst == 3100);
+	req(RREQ_MONITOR, 0);
+	CHECK(!d->hear_all);
+	// Another color code: ignored
+	hear_call(true, 201, 3101234, 5, 1, false);
+	CHECK(sm.view.state == RS_IDLE);
+	run(500);
+
+	// Without the codec PTT is refused before anything is keyed
+	int tx = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_CODEC && hw.tx_calls == tx);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Leaving DMR stops the stack and the PCM stream
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !sim.started && !d->active && aud.stops > 0 && !aud.started);
+	req(RREQ_CH_STEP, -1);
+	CHECK(sim.started && d->active);
+}
+
+static void test_dmr_tx(void)
+{
+	dmr_start(true);
+	CHECK(sm.view.dmr.codec);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.tx_hz == 438500000 && hw.tx_power == 2);
+	CHECK(sim.tx_begins == 1 && sim.tx_active);
+	run(600);
+	CHECK(sm.view.dmr.state == RDMR_TX && hw.led[LED_RED] && sim.air_count >= 6);
+	CHECK(sim.air[0].kind == DMR_BURST_VOICE_LC_HEADER && sim.air[3].kind == DMR_BURST_VOICE);
+	CHECK(sm.view.dmr.call.dst == 201 && sm.view.dmr.call.src == 3101276);
+	req(RREQ_CH_STEP, 1);		// no retuning on air
+	CHECK(sm.view.channel_number == 4);
+
+	// Release: on air until the superframe ends and the modem reports TX done, then tx_off once
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && hw.tx_off_calls == 0);
+	bool early = false;
+	for (int i = 0; i < 100 && sm.view.state == RS_TX; i++) {
+		run(10);
+		if (hw.tx_off_calls != 0 && sim.tx_active) {
+			early = true;
+		}
+	}
+	CHECK(!early && sm.view.state == RS_IDLE && hw.tx_off_calls == 1 && !sim.tx_active && !hw.led[LED_RED]);
+	CHECK(sim.air[sim.air_count - 1].kind == DMR_BURST_TERMINATOR_LC);
+	run(100);
+	CHECK(hw.tx_off_calls == 1);
+
+	// Pressed again while the last one is ending: one arming, keeps going
+	req(RREQ_PTT, 1);
+	run(400);
+	req(RREQ_PTT, 0);
+	run(10);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 2);
+	run(600);
+	req(RREQ_PTT, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 2);
+}
+
+static void test_dmr_denied(void)
+{
+	// Polite access: a call on our slot and color code refuses PTT, and the arming is released
+	dmr_start(true);
+	hear_call(true, 3100, 3107777, 2, 1, false);
+	CHECK(sm.view.state == RS_RX);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY);
+	CHECK(hw.tx_calls == 1 && hw.tx_off_calls == 1 && sim.tx_begins == 0);
+	run(100);
+	CHECK(sm.view.state == RS_TX_DENIED);
+	req(RREQ_PTT, 0);
+	run(20);
+	CHECK(sm.view.state != RS_TX_DENIED);
+	run(600);
+
+	// Through a repeater that never answers: three wake-ups, then refused
+	chans[4].tx_hz = 433500000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(sm.view.dmr.rmo && sim.cfg.repeater && sim.locked_ts == 1);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 433500000);
+	run(500);
+	CHECK(sm.view.dmr.state == RDMR_TX_WAIT);
+	run(4000);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_REPEATER && hw.tx_off_calls == 2);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// No DMR ID anywhere
+	own_dmr_id = 0;
+	dmr_start(true);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_ID && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	own_dmr_id = 3101276;
+
+	// RX-only channel and out-of-band checks come first on DMR channels too
+	dmr_start(true);
+	chans[4].rx_only = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	chans[4].rx_only = false;
+}
+
+static void test_hotspot(void)
+{
+	CHECK(radio_sm_hotspot_freq_ok(438800000, 438800000));
+	CHECK(!radio_sm_hotspot_freq_ok(121500000, 121500000));	// TX not allowed there
+	CHECK(!radio_sm_hotspot_freq_ok(438800000, 0));
+	CHECK(radio_sm_hotspot_power(255) == 2 && radio_sm_hotspot_power(0) == 0 && radio_sm_hotspot_power(128) == 1);
+
+	dmr_start(true);
+	// Refused while PTT is held
+	req(RREQ_PTT, 1);
+	req(RREQ_HS_ENTER, 0);
+	CHECK(!sm.hotspot);
+	req(RREQ_PTT, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+
+	int modes = hw.set_mode_calls;
+	int tx0 = hw.tx_calls, off0 = hw.tx_off_calls;
+	req(RREQ_HS_ENTER, 0);
+	CHECK(sm.hotspot && sm.view.hotspot && !sim.started && sim.cb == NULL && !sm.view.dmr.active);
+	CHECK(hw.set_mode_calls == modes);	// already in DMR
+	radio_req_t r = { RREQ_HS_FREQ, 438800000, 438800000 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(hw.rx_hz == 438800000 && hw.tx_hz == 438800000 && hw.tx_calls == tx0 + 1 &&
+		hw.tx_power == 1);
+	req(RREQ_HS_POWER, 255);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2);
+	r.arg = 121500000;	// refused: the radio stays where it was
+	r.arg2 = 121500000;
+	radio_sm_request(&sm, &r, now);
+	CHECK(hw.rx_hz == 438800000);
+
+	// Channel keys, monitor and PTT do nothing; the carrier comes from the noise reading
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.channel_number == 4);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HOTSPOT);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off0);
+	signal(10, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.hs_carrier && sm.view.state == RS_IDLE);
+	signal(120, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(!sm.hs_carrier);
+
+	// Leave: disarmed, the channel back, the call stack has the modem again
+	req(RREQ_HS_LEAVE, 0);
+	CHECK(!sm.hotspot && !sm.view.hotspot && hw.tx_off_calls == off0 + 1);
+	CHECK(hw.rx_hz == 438500000 && sim.started && sim.cb != NULL && sm.view.dmr.active);
+	hear_call(true, 201, 3101234, 2, 1, false);
+	CHECK(sm.view.state == RS_RX);
+	run(500);
+
+	// From an FM channel: into DMR mode and back
+	req(RREQ_CH_STEP, 1);
+	modes = hw.set_mode_calls;
+	req(RREQ_HS_ENTER, 446000000);
+	CHECK(sm.hotspot && hw.set_mode_calls == modes + 1 && hw.rx_hz == 446000000);
+	req(RREQ_HS_LEAVE, 0);
+	CHECK(!sm.hotspot && hw.set_mode_calls == modes + 2 && hw.rx_hz == 121500000 && !sim.started);
+	CHECK(hw.tx_off_calls == off0 + 1);	// never armed: no TX frequency was set
+}
+
 int main(void)
 {
 	test_startup();
@@ -673,6 +1052,10 @@ int main(void)
 	test_tone_squelch();
 	test_temp_bw_tone();
 	test_tone_lists();
+	test_dmr_rx();
+	test_dmr_tx();
+	test_dmr_denied();
+	test_hotspot();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

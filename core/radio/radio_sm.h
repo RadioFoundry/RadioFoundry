@@ -10,6 +10,7 @@
 #include "radio/radio.h"
 
 #define RADIO_POLL_MS		25	// status poll and squelch period
+#define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5
 #define RADIO_SQUELCH_MAX	9
@@ -46,6 +47,11 @@ typedef enum {
 	RREQ_CLEAR_TEMP,
 	RREQ_BANDWIDTH,		// arg: radio_bw_t
 	RREQ_TONE,		// arg: radio_tone_arg()
+	RREQ_REPLY_CANCEL,	// DMR: end the reply window
+	RREQ_HS_ENTER,		// hotspot: arg = RX Hz (0 = stay)
+	RREQ_HS_FREQ,		// hotspot: arg = RX Hz, arg2 = TX Hz
+	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-255
+	RREQ_HS_LEAVE,		// hotspot: back to the channel
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -57,7 +63,19 @@ static inline int32_t radio_tone_arg(uint8_t which, subtone_t t)
 typedef struct {
 	uint8_t type;		// radio_req_type_t
 	int32_t arg;
+	uint32_t arg2;
 } radio_req_t;
+
+#if CONFIG_DMR
+#define RADIO_NAMES_MAX		(1 + CODEPLUG_LIST_LEN)	// talk target and the listen list's contacts
+
+// A contact name the screens show for a talkgroup or an ID
+typedef struct {
+	uint32_t id;
+	bool group;
+	char name[CODEPLUG_NAME_LEN + 1];
+} radio_name_t;
+#endif
 
 typedef struct {
 	radio_view_t view;
@@ -86,6 +104,24 @@ typedef struct {
 	int8_t audio_out;		// last speaker / LED settings sent to the board, -1 = not yet
 	int8_t green_out;
 	int8_t red_out;
+	bool hotspot;			// hotspot mode: the host link owns the modem
+#if CONFIG_DMR
+	bool codec;			// the vocoder is present
+	bool dmr_running;		// the call stack has the modem
+	bool dmr_keyed;			// board.radio->tx() armed the per-burst keying (until tx_off)
+	uint32_t own_id;		// the radio's DMR ID (codeplug, else RADIO_DMR_ID_DEFAULT)
+	uint32_t dmr_serial;		// call stack view serial last copied
+	uint32_t talk_id;		// the channel's talk target
+	bool talk_private;
+	uint8_t talk_ts;		// the contact's timeslot override, 0 = none
+	uint32_t listen[CODEPLUG_LIST_LEN];	// the channel's listen list (talkgroup IDs)
+	uint16_t listen_count;
+	radio_name_t names[RADIO_NAMES_MAX];
+	uint8_t name_count;
+	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
+	uint8_t hs_power;		// hotspot board power level
+	bool hs_carrier;		// hotspot: the receiver hears a carrier
+#endif
 } radio_sm_t;
 
 // Start-up: codeplug, zone 0, the first channel (or the VFO), FM receive
@@ -93,6 +129,15 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms);
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms);
 // Every RADIO_POLL_MS: status, squelch, audio, LEDs, TX time-out
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms);
+
+// Every RADIO_TICK_MS: the DMR call stack (poll, PTT keying, TX done, the DMR view). Nothing without CONFIG_DMR
+void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms);
+
+// Hotspot frequencies the board can use: RX in a band, TX in a band that allows transmit (the amateur band plan does
+// not apply, docs/spec/gotchas.md 8.7)
+bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz);
+// MMDVM RF level 0-255 -> board power level
+uint8_t radio_sm_hotspot_power(uint8_t rf_level);
 
 // Squelch thresholds for a level (exposed for the tests)
 uint8_t radio_sm_squelch_open_below(uint8_t level);

@@ -232,6 +232,76 @@ static void test_no_flash(void)
 	flash.size = IMAGE_SIZE;
 }
 
+// 8 BCD digits, bytes in reading order (DMR IDs and contact numbers)
+static void put_bcd_be(uint8_t *p, uint32_t v)
+{
+	for (int i = 3; i >= 0; i--) {
+		p[i] = (uint8_t)((v % 10) | ((v / 10 % 10) << 4));
+		v /= 100;
+	}
+}
+
+static void put_contact(uint16_t n, const char *name, uint32_t id, uint8_t type, uint8_t ts_byte)
+{
+	uint8_t *c = &image[FL + 0x87620 + 24u * (n - 1u)];
+	put_name(c, name);
+	put_bcd_be(c + 0x10, id);
+	c[0x14] = type;
+	c[0x15] = 0;
+	c[0x16] = 0;
+	c[0x17] = ts_byte;
+}
+
+static void test_dmr_records(void)
+{
+	build_legacy();
+	put_bcd_be(&image[EE + 0xE8], 3101276);
+	put_contact(1, "Main Ops", 201, 0, 0xFF);
+	put_contact(2, "Joe", 3101234, 1, 0x02);	// TS2 override
+	put_contact(3, "All", 16777215, 2, 0x01);	// all call, no override
+	put_contact(5, "Bad BCD", 0, 0, 0xFF);
+	image[FL + 0x87620 + 24u * 4u + 0x10] = 0xAB;
+	// List 2: TG 201 and contact 3; list 1 unused
+	image[FL + 0x8D620 + 0] = 0;
+	image[FL + 0x8D620 + 1] = 3;
+	uint8_t *l = &image[FL + 0x8D6A0 + 80u];
+	put_name(l, "Local TGs");
+	memset(l + 16, 0, 64);
+	put16(l + 16, 1);
+	put16(l + 18, 3);
+	// Channel 2 gets a DMR ID override and force DMO
+	uint8_t *c = channel(2);
+	c[0x26] = 0x84;
+	c[0x27] = 0x2F;
+	c[0x28] = 0x52;
+	c[0x29] = 0x5C;
+	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+
+	CHECK(codeplug_dmr_id() == 3101276);
+	contact_t ct;
+	CHECK(codeplug_contact(1, &ct) && ct.id == 201 && ct.type == CONTACT_GROUP && ct.timeslot == 0 &&
+		strcmp(ct.name, "Main Ops") == 0);
+	CHECK(codeplug_contact(2, &ct) && ct.id == 3101234 && ct.type == CONTACT_PRIVATE && ct.timeslot == 2);
+	CHECK(codeplug_contact(3, &ct) && ct.id == 0xFFFFFF && ct.type == CONTACT_ALL_CALL && ct.timeslot == 0);
+	CHECK(!codeplug_contact(4, &ct));	// erased
+	CHECK(!codeplug_contact(5, &ct));	// malformed number
+	CHECK(!codeplug_contact(0, &ct) && !codeplug_contact(1025, &ct));
+
+	listen_list_t ll;
+	CHECK(!codeplug_listen_list(1, &ll));
+	CHECK(codeplug_listen_list(2, &ll) && ll.count == 2 && ll.contacts[0] == 1 && ll.contacts[1] == 3 &&
+		strcmp(ll.name, "Local TGs") == 0);
+	CHECK(!codeplug_listen_list(77, &ll));
+
+	channel_t ch;
+	CHECK(codeplug_channel(2, &ch) && ch.dmr_id == 0x2F525C && ch.dmo);
+	CHECK(codeplug_channel(1, &ch) && ch.dmr_id == 0 && !ch.dmo);
+
+	// No ID stored
+	memset(&image[EE + 0xE8], 0xFF, 4);
+	CHECK(codeplug_dmr_id() == 0);
+}
+
 int main(void)
 {
 	image = malloc(IMAGE_SIZE);
@@ -239,6 +309,7 @@ int main(void)
 		return 1;
 	}
 	test_legacy();
+	test_dmr_records();
 	test_erased();
 	test_no_flash();
 	free(image);

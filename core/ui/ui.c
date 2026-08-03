@@ -22,6 +22,11 @@
 // - Backlight: full on any key and while receiving or transmitting; dims to a fifth after 30 s without either,
 //   off after 2 min. When it is off, the first key only wakes the screen (PTT and MONITOR still work: the input
 //   layer sends them to the radio directly).
+// - DMR: Home shows the talk target ("PTT-> TG 201 Main Ops", "Reply-> TG 9 (8s)" in the reply window) with TS / CC
+//   chips and the last call heard; a call heard or sent takes the screen below the status strip (Receiving,
+//   Transmitting). BACK on Home ends the reply window first, then undoes temporary changes.
+// - Hotspot: while the host link is in MMDVM mode a Hotspot screen replaces the others; SELECT or a long BACK leaves
+//   it (hostlink_hotspot_exit), * flips to the diagnostics page and back.
 #include <string.h>
 #include "board.h"
 #include "hal_time.h"
@@ -33,6 +38,10 @@
 #include "radio/radio.h"
 #include "radio/tones.h"
 #include "config.h"
+#if CONFIG_HOTSPOT
+#include "hostlink/hostlink.h"
+#include "hotspot/hotspot.h"
+#endif
 
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
 #define UI_TASK_STACK_WORDS	384	// measured worst path about 700 bytes plus the display driver
@@ -55,6 +64,30 @@ static uint32_t toast_until, entry_last;
 static uint32_t radio_active_ms;
 static uint8_t backlight_now = 0xFF;
 static bool dirty = true;
+static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
+#if CONFIG_HOTSPOT
+static void toast(const char *text);
+static hotspot_view_t hs_view;
+
+static bool in_hotspot(void)
+{
+	return hostlink_mode() == HOSTLINK_HOTSPOT || view.hotspot;
+}
+
+static void hotspot_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS;
+	if ((ev->action == ACT_SELECT && press) || (ev->action == ACT_BACK && ev->gesture == GESTURE_LONG)) {
+		hostlink_hotspot_exit();
+		hs_diag = false;
+		toast("Leaving hotspot mode");
+	} else if (ev->action == ACT_QUICK && press) {
+		hs_diag = !hs_diag;
+	} else if (press && !(hs_diag && ev->action == ACT_BACK)) {
+		toast("Hotspot: OK exits");
+	}
+}
+#endif
 
 static void toast(const char *text)
 {
@@ -398,6 +431,11 @@ static void home_key(const input_event_t *ev)
 		} else if (st.toast != NULL) {
 			st.toast = NULL;
 			dirty = true;
+#if CONFIG_DMR
+		} else if (view.ch.mode == RADIO_MODE_DMR && view.dmr.reply_active) {
+			radio_req_reply_cancel();
+			toast("Reply ended");
+#endif
 		} else if (view.temporary) {
 			radio_req_clear_temporary();
 			toast("Changes undone");
@@ -434,6 +472,13 @@ static void handle_key(const input_event_t *ev)
 {
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
+#if CONFIG_HOTSPOT
+	if (in_hotspot()) {
+		hotspot_key(ev);
+		dirty = true;
+		return;
+	}
+#endif
 	if (screen == SCR_DIAG) {
 		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS)
 			screen = SCR_HOME;
@@ -456,8 +501,16 @@ static void draw(void)
 	st.now_ms = hal_millis();
 	st.battery_pct = board.power->battery_pct();
 	radio_get_view(&view);
+#if CONFIG_HOTSPOT
+	if (in_hotspot() && !(CONFIG_DIAG && hs_diag)) {
+		hotspot_get_view(&hs_view);
+		ui_draw_hotspot(&view, &hs_view, &st);
+		gfx_flush();
+		return;
+	}
+#endif
 #if CONFIG_DIAG
-	if (screen == SCR_DIAG)
+	if (screen == SCR_DIAG || (CONFIG_HOTSPOT && hs_diag))
 		ui_draw_diag(&view, input_raw_keys(), input_encoder_total(), st.diag_first);
 	else
 #endif
@@ -487,6 +540,10 @@ static void ui_task(void *arg)
 	radio_get_view(&view);
 
 	uint32_t serial = radio_view_serial() - 1u;
+#if CONFIG_HOTSPOT
+	uint32_t hs_seen = radio_hotspot_serial();
+	bool hs_was = false;
+#endif
 	uint32_t last_draw = 0, last_refresh = 0;
 	radio_active_ms = hal_millis();
 	for (;;) {
@@ -522,6 +579,18 @@ static void ui_task(void *arg)
 		if (st.entry && !view.vfo)
 			entry_cancel();
 		uint32_t refresh = (view.state == RS_TX || screen == SCR_DIAG) ? REFRESH_TX_MS : REFRESH_MS;
+#if CONFIG_HOTSPOT
+		bool hs_now = in_hotspot();
+		if (hs_now != hs_was || radio_hotspot_serial() != hs_seen) {
+			hs_was = hs_now;
+			hs_seen = radio_hotspot_serial();
+			if (!hs_now)
+				hs_diag = false;
+			dirty = true;
+		}
+		if (hs_now)
+			refresh = REFRESH_TX_MS;
+#endif
 		if (now - last_refresh >= refresh) {
 			last_refresh = now;
 			dirty = true;

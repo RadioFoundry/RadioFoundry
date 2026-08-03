@@ -14,6 +14,10 @@ void dm1701_lcdbus_unlock(void);
 // Reconnect LCD D0-D7 (the keypad columns) to the FSMC; the display calls it at the start of every burst, lock held
 void dm1701_lcd_pins_fsmc(void);
 
+// DMR voice PCM to the speaker (radio_dm1701.c; audio_dm1701.c's hal_audio_t.speaker_pcm calls it): combined with the
+// FM squelch request, FM feed-through off while PCM plays. Callable from the audio and radio tasks
+void dm1701_speaker_pcm(bool on);
+
 // Extra analog readings (power_dm1701.c)
 uint16_t dm1701_mic_level_raw(void);
 int16_t dm1701_temperature_c10(void);

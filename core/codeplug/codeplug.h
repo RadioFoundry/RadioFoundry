@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "hal_radio.h"
+#include "config.h"
 
 #define CODEPLUG_NAME_LEN	16
 #define CODEPLUG_ZONE_MAX	80	// channels per zone
@@ -28,6 +29,8 @@ typedef struct {
 	uint8_t timeslot;	// 1 or 2
 	uint16_t contact;	// talk target contact index, 0 = none
 	uint16_t listen_list;	// RX group list index, 0 = none
+	uint32_t dmr_id;	// own DMR ID for this channel, 0 = the radio's
+	bool dmo;		// direct mode even when RX and TX differ (legacy "force DMO")
 } channel_t;
 
 #define CODEPLUG_POWER_DEFAULT	0xFF
@@ -52,5 +55,33 @@ bool codeplug_channel(uint16_t number, channel_t *out);
 // Zones 0..count-1. With no zones stored there is one zone "All channels" holding every used channel
 uint16_t codeplug_zone_count(void);
 bool codeplug_zone(uint16_t index, zone_t *out);
+
+#if CONFIG_DMR
+#define CODEPLUG_CONTACTS_MAX	1024
+#define CODEPLUG_LISTS_MAX	76	// RX group lists (listen lists)
+#define CODEPLUG_LIST_LEN	32	// contacts per list
+
+typedef enum { CONTACT_GROUP, CONTACT_PRIVATE, CONTACT_ALL_CALL } contact_type_t;
+
+typedef struct {
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint32_t id;		// talkgroup or DMR ID (24 bits)
+	uint8_t type;		// contact_type_t
+	uint8_t timeslot;	// 1 or 2 overrides the channel's, 0 = the channel's
+} contact_t;
+
+typedef struct {
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint8_t count;
+	uint16_t contacts[CODEPLUG_LIST_LEN];	// contact indices, 1-based
+} listen_list_t;
+
+// The radio's own DMR ID from the general settings, 0 if none is stored
+uint32_t codeplug_dmr_id(void);
+// Contacts 1..CODEPLUG_CONTACTS_MAX; false if empty or unreadable
+bool codeplug_contact(uint16_t index, contact_t *out);
+// RX group lists 1..CODEPLUG_LISTS_MAX; false if unused or unreadable
+bool codeplug_listen_list(uint16_t index, listen_list_t *out);
+#endif
 
 #endif

@@ -22,6 +22,7 @@
 #include "dmr_dm1701.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 
 // Measured TX carrier correction for the sequence above, per bandwidth (Hz, added to the TX frequency)
 #define DM1701_TX_OFFSET_HZ_12K5	0
@@ -462,14 +463,45 @@ static void dmr_enter(void)
 
 // --- hal_radio_t ---
 
-static bool audio_wanted;	// the core wants the speaker on
+// The speaker serves two requests: the core's FM squelch (audio(), radio task) and DMR voice PCM
+// (dm1701_speaker_pcm(), from the audio task's block callback or the radio task). The amp is on for either; while
+// PCM plays the FM feed-through (4:0x36) is off and the HR_C6000 codec DAC drives the line out. A mutex keeps the two
+// callers' register and pin writes from interleaving.
+static bool audio_wanted;	// the core wants the FM speaker on
+static bool pcm_wanted;		// DMR voice PCM is playing
 static bool volume_zero = false;	// knob at the bottom: silent (the lowest gain, -31 dB, is still audible)
+static SemaphoreHandle_t speaker_lock;
+
+// HR_C6000 codec set for PCM playback: DAC to the line out (4:0xE2 bit 1), and in DMR the codec under MCU control
+// (4:0xE0 = 0xC9) with the I2S mode bits of 4:0x22 (0x06, as at init and in the 0x86 TX start) kept set
+static void pcm_codec_on(void)
+{
+	uint8_t v;
+	if (hrc6000_read(&r.modem, 4, 0xE2, &v) && (v & 0x02u) == 0) {
+		count(hrc6000_write(&r.modem, 4, 0xE2, (uint8_t)(v | 0x02u)));
+	}
+	if (r.mode == RADIO_MODE_DMR) {
+		count(hrc6000_write(&r.modem, 4, 0xE0, 0xC9));
+		if (hrc6000_read(&r.modem, 4, 0x22, &v) && (v & 0x06u) != 0x06u) {
+			count(hrc6000_write(&r.modem, 4, 0x22, (uint8_t)(v | 0x06u)));
+		}
+	}
+}
 
 static void speaker_apply(void)
 {
-	bool on = audio_wanted && !volume_zero;
+	bool locked = speaker_lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+	if (locked) {
+		xSemaphoreTake(speaker_lock, portMAX_DELAY);
+	}
+	bool pcm = pcm_wanted;
+	bool fm = audio_wanted && !pcm;
+	bool on = (fm || pcm) && !volume_zero;
 	if (on) {
-		count(hrc6000_fm_audio(&r.modem, true));
+		count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
+		if (pcm) {
+			pcm_codec_on();
+		}
 		PIN_WRITE(PIN_RX_AUDIO_MUX, true);	// HR_C6000 line out to the amp
 		PIN_WRITE(PIN_AMP_EN, true);
 		PIN_WRITE(PIN_SPK_MUTE, false);
@@ -477,6 +509,9 @@ static void speaker_apply(void)
 		PIN_WRITE(PIN_SPK_MUTE, true);
 		PIN_WRITE(PIN_AMP_EN, false);
 		count(hrc6000_fm_audio(&r.modem, false));
+	}
+	if (locked) {
+		xSemaphoreGive(speaker_lock);
 	}
 }
 
@@ -486,8 +521,23 @@ static void audio(bool on)
 	speaker_apply();
 }
 
+#if CONFIG_DMR
+// Overrides the fallback in audio_dm1701.c (hal_audio_t.speaker_pcm)
+void dm1701_speaker_pcm(bool on)
+{
+	if (on == pcm_wanted) {
+		return;
+	}
+	pcm_wanted = on;
+	speaker_apply();
+}
+#endif
+
 static void init(void)
 {
+	if (speaker_lock == NULL) {
+		speaker_lock = xSemaphoreCreateMutex();
+	}
 	stm32_pin_in(PIN_PORT(PIN_C6000_MISO), PIN_MASK(PIN_C6000_MISO), GPIO_PULLUP);
 	PIN_WRITE(PIN_C6000_CS, true);
 	PIN_WRITE(PIN_C6000_CLK, true);		// clock idles high

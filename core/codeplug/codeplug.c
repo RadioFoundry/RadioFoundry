@@ -37,6 +37,8 @@
 #define CH_POWER	0x19u
 #define CH_RX_TONE	0x20u
 #define CH_TX_TONE	0x22u
+#define CH_LFLAG1	0x26u
+#define CH_DMR_ID	0x27u
 #define CH_RX_GROUP	0x2Bu
 #define CH_CC		0x2Cu
 #define CH_CONTACT	0x2Eu
@@ -45,6 +47,18 @@
 #define FLAG2_TS2	0x40u
 #define FLAG4_RX_ONLY	0x04u
 #define FLAG4_25K	0x02u
+#define LFLAG1_ID	0x80u	// per-channel DMR ID present
+#define LFLAG1_DMO	0x04u	// force direct mode
+
+// General settings (7.3.2): the radio's DMR ID, 8 BCD digits big endian
+#define GEN_DMR_ID	EE(0x00E8u)
+
+// Contacts (7.3.5) and RX group lists (7.3.6), flash image
+#define CONTACT_BASE	FL(0x87620u)
+#define CONTACT_SIZE	24u
+#define LIST_COUNTS	FL(0x8D620u)
+#define LIST_BASE	FL(0x8D6A0u)
+#define LIST_SIZE	80u
 
 // Zones (7.2, 7.3.4)
 #define ZONE_SLOTS	68u
@@ -332,6 +346,10 @@ static bool legacy_channel(uint16_t number, channel_t *out)
 	out->timeslot = (r[CH_FLAG2] & FLAG2_TS2) ? 2 : 1;
 	out->contact = le16(&r[CH_CONTACT]);
 	out->listen_list = r[CH_RX_GROUP];
+	if (r[CH_LFLAG1] & LFLAG1_ID) {
+		out->dmr_id = ((uint32_t)r[CH_DMR_ID] << 16) | ((uint32_t)r[CH_DMR_ID + 1] << 8) | r[CH_DMR_ID + 2];
+	}
+	out->dmo = (r[CH_LFLAG1] & LFLAG1_DMO) != 0;
 	return true;
 }
 
@@ -393,3 +411,73 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 	}
 	return true;
 }
+
+#if CONFIG_DMR
+// DMR ID or talkgroup: 8 BCD digits, bytes in reading order; 0 if malformed or out of the 24-bit range
+static uint32_t bcd_id(const uint8_t *p)
+{
+	uint32_t word = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+	uint32_t v;
+	if (!bcd(word, 8, &v) || v > 0xFFFFFFu) {
+		return 0;
+	}
+	return v;
+}
+
+uint32_t codeplug_dmr_id(void)
+{
+	uint8_t b[4];
+	if (source != CODEPLUG_LEGACY || !flash_read(GEN_DMR_ID, b, sizeof(b))) {
+		return 0;
+	}
+	return bcd_id(b);
+}
+
+bool codeplug_contact(uint16_t index, contact_t *out)
+{
+	uint8_t r[CONTACT_SIZE];
+	if (source != CODEPLUG_LEGACY || index < 1 || index > CODEPLUG_CONTACTS_MAX ||
+			!flash_read(CONTACT_BASE + (index - 1u) * CONTACT_SIZE, r, sizeof(r))) {
+		return false;
+	}
+	if (r[0] == 0xFF || r[0x14] > CONTACT_ALL_CALL) {
+		return false;
+	}
+	memset(out, 0, sizeof(*out));
+	copy_name(out->name, r);
+	out->type = r[0x14];
+	out->id = out->type == CONTACT_ALL_CALL ? 0xFFFFFFu : bcd_id(&r[0x10]);
+	if (out->id == 0) {
+		return false;
+	}
+	if (r[0x17] != 0xFF && (r[0x17] & 0x01u) == 0) {
+		out->timeslot = (r[0x17] & 0x02u) ? 2 : 1;
+	}
+	return true;
+}
+
+bool codeplug_listen_list(uint16_t index, listen_list_t *out)
+{
+	uint8_t n;
+	uint8_t r[LIST_SIZE];
+	if (source != CODEPLUG_LEGACY || index < 1 || index > CODEPLUG_LISTS_MAX ||
+			!flash_read(LIST_COUNTS + (index - 1u), &n, 1) || n == 0 || n == 0xFF ||
+			!flash_read(LIST_BASE + (index - 1u) * LIST_SIZE, r, sizeof(r))) {
+		return false;
+	}
+	memset(out, 0, sizeof(*out));
+	copy_name(out->name, r);
+	unsigned members = n - 1u;
+	if (members > CODEPLUG_LIST_LEN) {
+		members = CODEPLUG_LIST_LEN;
+	}
+	for (unsigned i = 0; i < members; i++) {
+		uint16_t c = le16(&r[ZONE_NAME_LEN + 2u * i]);
+		if (c == 0 || c > CODEPLUG_CONTACTS_MAX) {
+			break;
+		}
+		out->contacts[out->count++] = c;
+	}
+	return true;
+}
+#endif

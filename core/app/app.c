@@ -3,10 +3,14 @@
 // The application: the start-up task brings up the board and starts the core tasks, then stays on as housekeeping
 // (power switch watch).
 //
-// Tasks (FreeRTOS, configMAX_PRIORITIES 7, heap 24 KB shared by stacks and queues; stack sizes in words):
+// Tasks (FreeRTOS, configMAX_PRIORITIES 7, heap 28 KB on the DM-1701 shared by stacks and queues; stack sizes in
+// words):
 //   timer service   6   256   FreeRTOS
 //   start / house   5   512   this file: start-up, then a 100 ms power switch poll (sleeps nearly always)
-//   radio           4   512   core/radio: requests, 25 ms status poll, squelch, PTT, TX time-out
+//   audio           5   1280  board (DMR): PCM blocks, the vocoder runs here (created at the first DMR call)
+//   dmr             5   512   board (DMR): modem events to the DMR call stack's queue or the hotspot's
+//   radio           4   768   core/radio: requests, 25 ms status poll, squelch, PTT, TX time-out; 10 ms DMR call
+//                             stack poll (512 without DMR); the voice sink / source and the hotspot radio ops
 //   input           3   256   core/input: 10 ms key scan, gestures, PTT / monitor straight to the radio core
 //   host            3   512   core/hostlink: the host port (USB CDC): MMDVM hotspot, CPS
 //   usb             3   256   drivers/usb: TinyUSB device stack (tud_task)

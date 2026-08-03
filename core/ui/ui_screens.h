@@ -9,6 +9,10 @@
 #include "radio/radio.h"
 #include "font.h"
 #include "gfx.h"
+#include "config.h"
+#if CONFIG_HOTSPOT
+#include "hotspot/hotspot.h"
+#endif
 
 #define UI_ENTRY_MAX	8	// VFO entry digits: 3 MHz digits and 5 decimals (10 Hz)
 #define UI_ENTRY_MHZ	3
@@ -51,6 +55,10 @@ void ui_layout_init(void);
 void ui_draw_splash(const char *product, const char *board_name, const char *git);
 void ui_draw_home(const radio_view_t *v, const ui_state_t *s);
 void ui_draw_quick(const radio_view_t *v, const ui_state_t *s);
+#if CONFIG_HOTSPOT
+// Hotspot mode (hostlink in MMDVM mode): frequencies, color code, TX / RX, last call, how to leave
+void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_state_t *s);
+#endif
 // Diagnostics: raw key bits, encoder total, radio readings and the board's own lines
 void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8_t first_line);
 // The first board line of the page after the one starting at first_line (wraps to 0)

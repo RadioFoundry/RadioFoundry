@@ -7,6 +7,15 @@
 #include "radio/radio_sm.h"
 #include "radio/tones.h"
 #include "config.h"
+#if CONFIG_DMR
+#include "dmr/call/dmr_call.h"
+#include "dmr/ambe/ambeVoice.h"
+#endif
+
+// The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
+#ifndef RADIO_DMR_ID_DEFAULT
+#define RADIO_DMR_ID_DEFAULT	0
+#endif
 
 // Simplex frequencies tried, in order, for the VFO when there is nothing better to start from
 // The VFO is FM only for now; a DMR VFO (CONFIG_VFO_DMR) will join this when it exists
@@ -138,18 +147,30 @@ static void reset_tone(radio_sm_t *sm)
 }
 
 // Speaker and LEDs follow the state; only changes go to the board
+// FM: the board's speaker path follows the squelch (or the monitor). DMR voice goes out as PCM from the vocoder
+// (core/dmr/ambe routes the speaker itself); the green LED shows a call being played
 static void outputs(radio_sm_t *sm)
 {
 	bool tx = sm->view.state == RS_TX;
-	bool open = !tx && (sm->view.monitor || (sm->view.state == RS_RX && sm->view.ch.mode == RADIO_MODE_FM));
+	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot;
+	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX);
+	bool green = open;
+#if CONFIG_DMR
+	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
+		green = true;
+	}
+	if (sm->hotspot && board.dmr != NULL && board.dmr->is_transmitting()) {
+		tx = true;
+	}
+#endif
 
 	if (sm->audio_out != (int8_t)open) {
 		sm->audio_out = (int8_t)open;
 		board.radio->audio(open);
 	}
-	if (sm->green_out != (int8_t)open) {
-		sm->green_out = (int8_t)open;
-		board.power->led(LED_GREEN, open);
+	if (sm->green_out != (int8_t)green) {
+		sm->green_out = (int8_t)green;
+		board.power->led(LED_GREEN, green);
 	}
 	if (sm->red_out != (int8_t)tx) {
 		sm->red_out = (int8_t)tx;
@@ -167,16 +188,25 @@ static void end_reception(radio_sm_t *sm, uint32_t now_ms)
 }
 
 // Receive on what view.ch says now
+static void dmr_begin(radio_sm_t *sm);
+static void dmr_end(radio_sm_t *sm);
+
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
 	end_reception(sm, now_ms);
 	reset_tone(sm);
 	radio_mode_t mode = (CONFIG_DMR && sm->view.ch.mode == RADIO_MODE_DMR) ? RADIO_MODE_DMR : RADIO_MODE_FM;
+	if (sm->board_mode == RADIO_MODE_DMR && mode != RADIO_MODE_DMR) {
+		dmr_end(sm);		// the call stack lets go of the modem before the chip leaves DMR
+	}
 	if (mode != sm->board_mode) {
 		sm->board_mode = mode;
 		board.radio->set_mode(mode);
 	}
 	board.radio->rx(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw, &sm->view.ch.rx_tone);
+	if (mode == RADIO_MODE_DMR) {
+		dmr_begin(sm);		// after set_mode(DMR): the modem only starts in DMR mode
+	}
 	outputs(sm);
 	changed(sm);
 }
@@ -347,7 +377,7 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (ch->rx_only) {
 		return TXDENY_RX_ONLY;
 	}
-	if (ch->mode != RADIO_MODE_FM || !CONFIG_FM) {
+	if (ch->mode == RADIO_MODE_DMR ? !CONFIG_DMR : !CONFIG_FM) {
 		return TXDENY_MODE;
 	}
 	if (!in_band(ch->tx_hz, true)) {
@@ -364,12 +394,279 @@ static void deny(radio_sm_t *sm, uint8_t reason)
 	changed(sm);
 }
 
+// --- DMR: the call stack on DMR channels (core/dmr/call), voice through core/dmr/ambe ---
+#if CONFIG_DMR
+static void add_name(radio_sm_t *sm, const contact_t *c)
+{
+	if (sm->name_count >= RADIO_NAMES_MAX || c->name[0] == '\0') {
+		return;
+	}
+	radio_name_t *n = &sm->names[sm->name_count++];
+	n->id = c->id;
+	n->group = c->type != CONTACT_PRIVATE;
+	memcpy(n->name, c->name, sizeof(n->name));
+}
+
+static void find_name(const radio_sm_t *sm, uint32_t id, bool group, char *out)
+{
+	out[0] = '\0';
+	for (uint8_t i = 0; i < sm->name_count; i++) {
+		if (sm->names[i].id == id && sm->names[i].group == group) {
+			memcpy(out, sm->names[i].name, CODEPLUG_NAME_LEN + 1);
+			return;
+		}
+	}
+}
+
+// The channel's talk target and listen list from the codeplug contacts, with their names for the screens
+static void dmr_load_channel(radio_sm_t *sm)
+{
+	const channel_t *ch = &sm->view.ch;
+	contact_t c;
+	sm->name_count = 0;
+	sm->listen_count = 0;
+	sm->talk_id = 9;		// no contact: local talkgroup 9, the usual default
+	sm->talk_private = false;
+	sm->talk_ts = 0;
+	if (sm->view.vfo) {
+		return;
+	}
+	if (ch->contact != 0 && codeplug_contact(ch->contact, &c)) {
+		sm->talk_id = c.id;
+		sm->talk_private = c.type == CONTACT_PRIVATE;
+		sm->talk_ts = c.timeslot;
+		add_name(sm, &c);
+	}
+	static listen_list_t list;	// only the radio task uses it
+	if (ch->listen_list != 0 && codeplug_listen_list(ch->listen_list, &list)) {
+		for (uint8_t i = 0; i < list.count; i++) {
+			if (!codeplug_contact(list.contacts[i], &c)) {
+				continue;
+			}
+			if (c.type != CONTACT_PRIVATE && sm->listen_count < CODEPLUG_LIST_LEN) {
+				sm->listen[sm->listen_count++] = c.id;
+			}
+			add_name(sm, &c);
+		}
+	}
+}
+
+static void dmr_configure(radio_sm_t *sm)
+{
+	const channel_t *ch = &sm->view.ch;
+	dmr_call_config_t cfg;
+	dmr_call_config_default(&cfg);
+	cfg.own_id = ch->dmr_id != 0 ? ch->dmr_id : sm->own_id;
+	cfg.cc = ch->color_code & 0x0Fu;
+	cfg.ts = sm->talk_ts != 0 ? sm->talk_ts : (ch->timeslot == 2 ? 2 : 1);
+	cfg.rmo = ch->tx_hz != 0 && ch->rx_hz != ch->tx_hz && !ch->dmo;
+	cfg.talk_target.id = sm->talk_id;
+	cfg.talk_target.private_call = sm->talk_private;
+	cfg.listen.hear_all = sm->view.monitor;
+	cfg.listen.groups = sm->listen;
+	cfg.listen.group_count = sm->listen_count;
+	cfg.tot_s = sm->view.tot_s;
+	dmr_call_configure(&cfg);
+	sm->view.dmr.own_id = cfg.own_id;
+	sm->view.dmr.hear_all = cfg.listen.hear_all;
+}
+
+// On a DMR channel, after set_mode(DMR) and rx(): configure, and start the stack if it isn't running
+static void dmr_begin(radio_sm_t *sm)
+{
+	dmr_load_channel(sm);
+	dmr_configure(sm);
+	if (!sm->dmr_running && board.dmr != NULL) {
+		sm->dmr_running = dmr_call_start();
+	}
+	sm->view.dmr.active = sm->dmr_running;
+	sm->dmr_serial = dmr_call_view()->serial - 1u;	// copy the stack's view at the next tick
+}
+
+// Leaving DMR (or into hotspot mode): drop any transmission, stop the stack and the PCM stream
+static void dmr_end(radio_sm_t *sm)
+{
+	dmr_call_ptt(false);
+	dmr_call_stop();
+	ambeVoiceStop();
+	if (sm->dmr_keyed) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
+	sm->dmr_running = false;
+	memset(&sm->view.dmr.call, 0, sizeof(sm->view.dmr.call));
+	sm->view.dmr.active = false;
+	sm->view.dmr.state = RDMR_IDLE;
+	sm->view.dmr.reply_active = false;
+	sm->view.dmr.alias[0] = '\0';
+}
+
+static uint8_t dmr_deny_reason(uint8_t err)
+{
+	switch (err) {
+	case DMR_TX_ERR_BUSY: return TXDENY_BUSY;
+	case DMR_TX_ERR_NO_REPEATER: return TXDENY_NO_REPEATER;
+	case DMR_TX_ERR_REJECTED: return TXDENY_REJECTED;
+	case DMR_TX_ERR_TIMEOUT: return TXDENY_TIMEOUT;
+	default: return TXDENY_NO_DMR;
+	}
+}
+
+static bool dmr_tx_phase(uint8_t phase)
+{
+	return phase == DMR_CALL_PHASE_TX_ACCESS || phase == DMR_CALL_PHASE_TX_WAKEUP ||
+		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING;
+}
+
+static void copy_call(const radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *out)
+{
+	out->src = c->src;
+	out->dst = c->dst;
+	out->group = c->group;
+	out->to_us = c->to_us;
+	out->encrypted = c->encrypted;
+	find_name(sm, c->src, false, out->src_name);
+	find_name(sm, c->dst, c->group, out->dst_name);
+}
+
+// The stack's view into radio_view_t.dmr
+static void dmr_publish(radio_sm_t *sm)
+{
+	const dmr_call_view_t *cv = dmr_call_view();
+	radio_dmr_view_t *d = &sm->view.dmr;
+	if (cv->serial == sm->dmr_serial) {
+		return;
+	}
+	sm->dmr_serial = cv->serial;
+	switch (cv->phase) {
+	case DMR_CALL_PHASE_RX_VOICE: d->state = RDMR_RX; break;
+	case DMR_CALL_PHASE_RX_BUSY: d->state = RDMR_RX_OTHER; break;
+	case DMR_CALL_PHASE_TX_ACCESS:
+	case DMR_CALL_PHASE_TX_WAKEUP: d->state = RDMR_TX_WAIT; break;
+	case DMR_CALL_PHASE_TX_VOICE: d->state = RDMR_TX; break;
+	case DMR_CALL_PHASE_TX_ENDING: d->state = RDMR_TX_ENDING; break;
+	default: d->state = RDMR_IDLE; break;
+	}
+	d->codec = sm->codec;
+	d->cc = cv->cc;
+	d->ts = cv->ts;
+	d->rmo = cv->rmo;
+	d->repeater_up = cv->repeater_up;
+	d->target_id = cv->tx_target.id;
+	d->target_private = cv->tx_target.private_call;
+	find_name(sm, d->target_id, !d->target_private, d->target_name);
+	d->reply_active = cv->reply_active;
+	d->reply_s = cv->reply_s;
+	if (d->state != RDMR_IDLE) {
+		copy_call(sm, &cv->caller, &d->call);
+		d->late_entry = cv->caller.late_entry;
+#if CONFIG_DMR_TALKER_ALIAS
+		memcpy(d->alias, cv->caller.alias, sizeof(d->alias));
+		d->alias[RADIO_ALIAS_MAX] = '\0';
+#else
+		d->alias[0] = '\0';
+#endif
+	}
+	d->rssi_dbm = cv->rssi_dbm;
+	d->call_ms = cv->call_ms;
+	if (cv->last_heard_ms != 0) {
+		copy_call(sm, &cv->last_heard, &d->last);
+		d->last_ms = cv->last_heard_ms;
+	}
+	d->underruns = cv->tx_underruns;
+	changed(sm);
+}
+
+// Follow the stack: release the board's TX arming once the stack is off the air (after the modem's TX done), PTT
+// refusals, the RX state from the calls heard
+static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
+{
+	const dmr_call_view_t *cv = dmr_call_view();
+	bool tx = dmr_tx_phase(cv->phase);
+
+	if (sm->dmr_keyed && !tx) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
+	if (sm->ptt) {
+		if (cv->phase == DMR_CALL_PHASE_TX_DENIED && sm->view.state != RS_TX_DENIED) {
+			deny(sm, dmr_deny_reason(cv->tx_error));
+		}
+	} else if (sm->view.state == RS_TX && !tx) {
+		sm->view.state = RS_IDLE;
+		sm->view.tx_deny = TXDENY_NONE;
+		changed(sm);
+	}
+	dmr_publish(sm);
+	if (sm->view.state != RS_TX && sm->view.state != RS_TX_DENIED) {
+		bool rx = cv->state == DMR_CALL_STATE_RX;
+		if (rx && sm->view.state != RS_RX) {
+			sm->view.state = RS_RX;
+			changed(sm);
+		} else if (!rx && sm->view.state == RS_RX) {
+			end_reception(sm, now_ms);
+			changed(sm);
+		}
+	}
+	if (sm->view.state == RS_TX) {
+		uint32_t elapsed = now_ms - sm->tx_start_ms;
+		if (elapsed / 1000 != sm->view.tx_elapsed_ms / 1000) {
+			changed(sm);
+		}
+		sm->view.tx_elapsed_ms = elapsed;
+	}
+	outputs(sm);
+}
+
+// PTT on a DMR channel (band, RX-only and frequency checks passed): arm the board's per-burst keying, then the stack
+// decides when the bursts go out
+static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
+{
+	const channel_t *ch = &sm->view.ch;
+	if (!sm->codec) {
+		deny(sm, TXDENY_NO_CODEC);
+		return;
+	}
+	if (!sm->dmr_running) {
+		deny(sm, TXDENY_NO_DMR);
+		return;
+	}
+	if ((ch->dmr_id != 0 ? ch->dmr_id : sm->own_id) == 0) {
+		deny(sm, TXDENY_NO_ID);
+		return;
+	}
+	if (!sm->dmr_keyed) {
+		static const subtone_t none = { TONE_NONE, 0 };
+		if (!board.radio->tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+			deny(sm, TXDENY_BAND);
+			return;
+		}
+		sm->dmr_keyed = true;
+	}
+	sm->view.state = RS_TX;
+	sm->view.tx_deny = TXDENY_NONE;
+	sm->view.tx_elapsed_ms = 0;
+	sm->tx_start_ms = now_ms;
+	changed(sm);
+	dmr_call_ptt(true);
+	dmr_call_poll(now_ms);
+	dmr_follow(sm, now_ms);
+}
+#else
+static void dmr_begin(radio_sm_t *sm) { (void)sm; }
+static void dmr_end(radio_sm_t *sm) { (void)sm; }
+#endif
+
 static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->ptt) {
 		return;
 	}
 	sm->ptt = true;
+	if (sm->hotspot) {
+		deny(sm, TXDENY_HOTSPOT);	// the host link transmits for the hotspot; PTT does nothing until it ends
+		return;
+	}
 	end_reception(sm, now_ms);
 
 	uint8_t reason = tx_check(sm);
@@ -377,6 +674,12 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		deny(sm, reason);
 		return;
 	}
+#if CONFIG_DMR
+	if (sm->view.ch.mode == RADIO_MODE_DMR) {
+		dmr_ptt_down(sm, now_ms);
+		return;
+	}
+#endif
 	sm->view.state = RS_TX;		// speaker off, red LED on, before keying
 	sm->view.tx_deny = TXDENY_NONE;
 	sm->view.tx_elapsed_ms = 0;
@@ -396,9 +699,23 @@ static void ptt_up(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	sm->ptt = false;
+#if CONFIG_DMR
+	if (sm->dmr_running) {
+		dmr_call_ptt(false);
+		dmr_call_poll(now_ms);
+		if (sm->view.state == RS_TX) {
+			dmr_follow(sm, now_ms);	// on air until the superframe ends and the modem reports TX done
+			return;
+		}
+	}
+	if (sm->view.state == RS_TX && !sm->dmr_keyed) {
+		board.radio->tx_off();
+	}
+#else
 	if (sm->view.state == RS_TX) {
 		board.radio->tx_off();
 	}
+#endif
 	if (sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
 		sm->view.state = RS_IDLE;
 		sm->view.tx_deny = TXDENY_NONE;
@@ -412,6 +729,90 @@ static void ptt_up(radio_sm_t *sm, uint32_t now_ms)
 		tune(sm, now_ms);	// a temporary bandwidth or RX tone was undone during TX
 	}
 }
+
+// --- Hotspot mode (core/hotspot drives the modem; hotspot_radio_ops_t in radio_task.c posts these) ---
+
+bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz)
+{
+	return rx_hz != 0 && tx_hz != 0 && in_band(rx_hz, false) && in_band(tx_hz, true);
+}
+
+uint8_t radio_sm_hotspot_power(uint8_t rf_level)
+{
+	if (board.power_count == 0) {
+		return 0;
+	}
+	return (uint8_t)(((uint32_t)rf_level * (board.power_count - 1u) + 127u) / 255u);
+}
+
+#if CONFIG_DMR
+// Per-burst keying stays armed on the hotspot's TX frequency: the modem keys each burst the host sends
+static void hotspot_arm(radio_sm_t *sm)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	if (!sm->hotspot || sm->hs_tx_hz == 0) {
+		return;
+	}
+	sm->dmr_keyed = board.radio->tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
+}
+
+static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	if (sm->hotspot || board.dmr == NULL || sm->ptt || sm->view.state == RS_TX || sm->dmr_keyed) {
+		return;		// refused for now: the hotspot asks again
+	}
+	end_reception(sm, now_ms);
+	if (sm->board_mode == RADIO_MODE_DMR) {
+		dmr_end(sm);	// the modem is free for the hotspot
+	}
+	if (sm->board_mode != RADIO_MODE_DMR) {
+		sm->board_mode = RADIO_MODE_DMR;
+		board.radio->set_mode(RADIO_MODE_DMR);
+	}
+	uint32_t hz = (rx_hz != 0 && in_band(rx_hz, false)) ? rx_hz : sm->view.ch.rx_hz;
+	if (hz != 0 && in_band(hz, false)) {
+		board.radio->rx(hz, RADIO_BW_12K5, &none);
+	}
+	sm->hs_rx_hz = hz;
+	sm->hs_tx_hz = 0;
+	sm->hs_carrier = false;
+	sm->hotspot = true;
+	sm->view.hotspot = true;
+	sm->view.state = RS_IDLE;
+	outputs(sm);
+	changed(sm);
+}
+
+static void hotspot_freq(radio_sm_t *sm, uint32_t rx_hz, uint32_t tx_hz)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	if (!sm->hotspot || !radio_sm_hotspot_freq_ok(rx_hz, tx_hz)) {
+		return;
+	}
+	board.radio->rx(rx_hz, RADIO_BW_12K5, &none);	// disarms; armed again below
+	sm->dmr_keyed = false;
+	sm->hs_rx_hz = rx_hz;
+	sm->hs_tx_hz = tx_hz;
+	hotspot_arm(sm);
+	changed(sm);
+}
+
+static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->hotspot) {
+		return;
+	}
+	if (sm->dmr_keyed) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
+	sm->hotspot = false;
+	sm->view.hotspot = false;
+	sm->hs_carrier = false;
+	tune(sm, now_ms);	// the channel again; on a DMR channel the call stack takes the modem back
+}
+#endif
 
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -435,6 +836,20 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 	sm->board_mode = RADIO_MODE_FM;
 	board.radio->set_mode(RADIO_MODE_FM);
+
+#if CONFIG_DMR
+	sm->own_id = codeplug_dmr_id();
+	if (sm->own_id == 0) {
+		sm->own_id = RADIO_DMR_ID_DEFAULT;
+	}
+	sm->codec = board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
+	sm->view.dmr.codec = sm->codec;
+	sm->view.dmr.own_id = sm->own_id;
+	sm->hs_power = default_power();
+	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT
+	ambeVoiceInit(board.audio, board.vocoder);
+	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
+#endif
 
 	// Zone 0 and its first channel; if zone 0 has none, the first zone that has one
 	uint16_t zones = codeplug_zone_count();
@@ -463,7 +878,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
-	bool busy = sm->view.state == RS_TX;	// no retuning while transmitting
+	bool busy = sm->view.state == RS_TX || sm->hotspot;	// no retuning while transmitting or a hotspot
 	int dir = req->arg > 0 ? 1 : -1;
 	int steps = req->arg > 0 ? req->arg : -req->arg;
 
@@ -547,6 +962,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_MONITOR:
 		if (sm->view.monitor != (req->arg != 0)) {
 			sm->view.monitor = req->arg != 0;
+#if CONFIG_DMR
+			if (sm->dmr_running) {
+				dmr_configure(sm);	// DMR: hear all while held
+			}
+#endif
 			outputs(sm);
 			changed(sm);
 		}
@@ -631,6 +1051,24 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		break;
 	}
+#if CONFIG_DMR
+	case RREQ_REPLY_CANCEL:
+		dmr_call_reply_cancel();
+		break;
+	case RREQ_HS_ENTER:
+		hotspot_enter(sm, (uint32_t)req->arg, now_ms);
+		break;
+	case RREQ_HS_FREQ:
+		hotspot_freq(sm, (uint32_t)req->arg, req->arg2);
+		break;
+	case RREQ_HS_POWER:
+		sm->hs_power = radio_sm_hotspot_power((uint8_t)req->arg);
+		hotspot_arm(sm);
+		break;
+	case RREQ_HS_LEAVE:
+		hotspot_leave(sm, now_ms);
+		break;
+#endif
 	default:
 		break;
 	}
@@ -665,6 +1103,18 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->rssi_published = sm->view.rssi_dbm;
 		changed(sm);
 	}
+#if CONFIG_DMR
+	if (sm->hotspot) {
+		// Carrier for the host's listen before talk: the noise reading against the squelch level's threshold
+		uint8_t sq = sm->view.squelch != 0 ? sm->view.squelch : RADIO_SQUELCH_DEFAULT;
+		sm->hs_carrier = st.noise < radio_sm_squelch_open_below(sq);
+		outputs(sm);
+		return;
+	}
+	if (sm->dmr_running) {
+		return;		// the state follows the call stack (radio_sm_tick), and the stack keeps its own TX time-out
+	}
+#endif
 
 	if (sm->view.state == RS_TX) {
 		uint32_t elapsed = now_ms - sm->tx_start_ms;
@@ -702,4 +1152,18 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);
 	}
 	outputs(sm);
+}
+
+void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+#if CONFIG_DMR
+	if (!sm->dmr_running) {
+		return;
+	}
+	dmr_call_poll(now_ms);
+	dmr_follow(sm, now_ms);
+#else
+	(void)sm;
+	(void)now_ms;
+#endif
 }

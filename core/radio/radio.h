@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "codeplug/codeplug.h"
+#include "config.h"
 
 typedef enum {
 	RS_IDLE,	// receiving, squelch closed
@@ -16,8 +17,64 @@ typedef enum {
 	RS_TX_DENIED,	// PTT held but transmit refused (RX-only, out of band, timed out); shown until PTT release
 } radio_state_t;
 
-// TXDENY_MODE: the channel's mode can't transmit yet (a DMR channel while only FM exists)
-typedef enum { TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE } tx_deny_t;
+// TXDENY_MODE: the channel's mode is not built in (a DMR channel in an FM-only build, or the reverse).
+// DMR: NO_CODEC no vocoder merged (receive only), NO_DMR the modem didn't start, BUSY a call on our slot (polite
+// access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
+// NO_ID no DMR ID in the codeplug
+typedef enum {
+	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
+	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
+} tx_deny_t;
+
+#if CONFIG_DMR
+#define RADIO_ALIAS_MAX		31	// talker alias characters (DMR_TA_TEXT_MAX)
+
+// What the DMR side is doing, for the screens
+typedef enum {
+	RDMR_IDLE,		// listening
+	RDMR_RX,		// playing a call that passed the filters
+	RDMR_RX_OTHER,		// a call on our slot we don't play (other talkgroup, encrypted)
+	RDMR_TX_WAIT,		// PTT held: waiting for the channel or waking the repeater
+	RDMR_TX,		// on air
+	RDMR_TX_ENDING,		// PTT released: finishing the superframe
+} radio_dmr_state_t;
+
+typedef struct {
+	uint32_t src, dst;
+	bool group;		// group call, else private
+	bool to_us;		// private call to our ID
+	bool encrypted;
+	char src_name[CODEPLUG_NAME_LEN + 1];	// from the codeplug contacts, "" if unknown
+	char dst_name[CODEPLUG_NAME_LEN + 1];	// talkgroup name, "" if unknown
+} radio_dmr_call_t;
+
+typedef struct {
+	bool active;		// the call stack runs (a DMR channel, not hotspot mode)
+	bool codec;		// the vocoder is merged: voice plays and PTT works
+	uint8_t state;		// radio_dmr_state_t
+	uint32_t own_id;
+	uint8_t cc, ts;
+	bool rmo;		// through a repeater
+	bool repeater_up;
+	// Where PTT goes now (the reply target during the reply window)
+	uint32_t target_id;
+	bool target_private;
+	char target_name[CODEPLUG_NAME_LEN + 1];
+	bool reply_active;
+	uint8_t reply_s;	// reply window seconds left
+	bool hear_all;		// MONITOR held: every talkgroup on our slot
+	// The current call (RX or TX); valid while state != RDMR_IDLE
+	radio_dmr_call_t call;
+	bool late_entry;
+	char alias[RADIO_ALIAS_MAX + 1];	// talker alias so far (CONFIG_DMR_TALKER_ALIAS), "" if none
+	int16_t rssi_dbm;	// last burst of the call, 0 = unknown
+	uint32_t call_ms;	// duration of the current call
+	// The last call heard
+	radio_dmr_call_t last;
+	uint32_t last_ms;	// hal_millis() of its last burst, 0 = none yet
+	uint32_t underruns;	// TX voice frames sent as silence (diagnostics)
+} radio_dmr_view_t;
+#endif
 
 typedef struct {
 	radio_state_t state;
@@ -42,6 +99,10 @@ typedef struct {
 	uint32_t last_rx_ms;	// hal_millis() at the end of the last reception, 0 = none yet
 	uint32_t vfo_step_hz;
 	codeplug_source_t source;
+	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
+#if CONFIG_DMR
+	radio_dmr_view_t dmr;
+#endif
 } radio_view_t;
 
 // view.temp bits
@@ -78,5 +139,12 @@ void radio_req_clear_temporary(void);		// BACK on Home: revert temporary changes
 // Refused on DMR channels, while transmitting, and for tones tones_valid() rejects
 void radio_req_bandwidth(radio_bw_t bw);
 void radio_req_tone(uint8_t which, subtone_t tone);	// which: RADIO_TONE_TX, RADIO_TONE_RX or RADIO_TONE_BOTH
+#if CONFIG_DMR
+void radio_req_reply_cancel(void);		// BACK on Home: end the DMR reply window
+#endif
+#if CONFIG_HOTSPOT
+// Bumped when the hotspot engine reports a change (hotspot_radio_ops_t.changed), for the UI's hotspot screen
+uint32_t radio_hotspot_serial(void);
+#endif
 
 #endif
