@@ -3,13 +3,25 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """Quick check that a radio answers as an MMDVM modem on its USB serial port (core/hotspot/mmdvm.c).
 
-    mmdvm_probe.py [--port /dev/cu.usbmodemXXXX] [--config CC] [--freq MHZ] [--status N]
+    mmdvm_probe.py [--port /dev/cu.usbmodemXXXX] [--config CC] [--freq MHZ] [--status N] [--no-dtr]
+                   [--order mmdvmhost|rfgw] [--quiet-commands]
 
 Sends GET_VERSION and GET_STATUS and prints the answers. The first MMDVM frame puts the radio in hotspot mode (it
 takes the DMR modem from the call stack); it goes back to normal 20 s after the last frame. With --config it also
 sends SET_CONFIG (simplex, DMR, the color code), with --freq SET_FREQ (RX = TX), then SET_MODE DMR, and checks each
-is ACKed. --status N polls GET_STATUS N times, 250 ms apart, as MMDVMHost does. Exit status 0 when every request was
-answered as expected.
+is ACKed. --status N polls GET_STATUS N times, 250 ms apart, as MMDVMHost does; after a configuration every status
+must still show the DMR state (the configuration stuck). Exit status 0 when every request was answered as expected.
+
+--no-dtr opens the port with DTR cleared, as MMDVMHost on Windows does (docs/spec/mmdvm-protocol.md 5.1, test
+T-USB-2): the radio must answer and keep its configuration all the same.
+
+--order picks the start-up sequence (docs/spec/mmdvm-protocol.md 3.1, 3.2, tests T-1 and T-2):
+  mmdvmhost  (default) GET_VERSION, then SET_FREQ, SET_CONFIG (state 00), SET_MODE DMR, as given
+  rfgw       GET_VERSION, SET_MODE DMR at once (before any configuration), then the tune: SET_FREQ, SET_CONFIG with
+             state 02, SET_MODE DMR, each waited on for 1 s. Needs --freq; --config defaults to 1
+
+--quiet-commands sends what the radio must take without a NAK (docs/testing/mmdvm-audit.md A-5, A-13, I-2):
+DMR_SHORTLC, DMR_START, SERIAL and TRANSPARENT (no answer at all) and FM_PARAMS1 (ACK).
 
 Needs pyserial (pip install pyserial). Without --port it takes the only /dev/cu.usbmodem* (macOS) or
 /dev/ttyACM* (Linux) there is.
@@ -26,6 +38,7 @@ except ImportError:
 
 START = 0xE0
 GET_VERSION, GET_STATUS, SET_CONFIG, SET_MODE, SET_FREQ = 0x00, 0x01, 0x02, 0x03, 0x04
+DMR_SHORTLC, DMR_START, FM_PARAMS1, SERIAL, TRANSPARENT = 0x1C, 0x1D, 0x60, 0x80, 0x90
 ACK, NAK = 0x70, 0x7F
 MODE_DMR = 2
 MODES = {0: "idle", 1: "D-Star", 2: "DMR", 3: "YSF", 4: "P25", 5: "NXDN", 6: "POCSAG", 10: "FM", 99: "lockout"}
@@ -36,9 +49,13 @@ def frame(cmd, payload=b""):
 
 
 class Link:
-    def __init__(self, port):
-        self.s = serial.Serial(port, 115200, timeout=0.05)
-        self.s.dtr = True               # the radio treats the port as open only with DTR set
+    def __init__(self, port, dtr=True):
+        self.s = serial.Serial()
+        self.s.port = port
+        self.s.baudrate = 115200
+        self.s.timeout = 0.05
+        self.s.dtr = dtr                # applied at open: False opens with DTR cleared, as Windows MMDVMHost does
+        self.s.open()
         self.buf = bytearray()
 
     def read_frame(self, timeout):
@@ -80,6 +97,13 @@ def find_port():
     return ports[0]
 
 
+def quiet(link, cmd, payload, name):
+    """True if cmd got no answer within 200 ms (frames heard on air are skipped)."""
+    kind, f = link.request(cmd, payload, timeout=0.2)
+    print(f"{name}: {'no answer (ok)' if kind is None else kind + ' ' + f.hex()}")
+    return kind is None
+
+
 def show_status(f):
     flags = f[5]
     names = [n for bit, n in ((0x01, "TX"), (0x04, "RX overflow"), (0x08, "TX overflow"), (0x40, "carrier"),
@@ -95,9 +119,18 @@ def main():
     ap.add_argument("--config", type=int, metavar="CC", help="send SET_CONFIG with this color code, then SET_MODE")
     ap.add_argument("--freq", type=float, metavar="MHZ", help="send SET_FREQ (RX = TX)")
     ap.add_argument("--status", type=int, default=1, metavar="N")
+    ap.add_argument("--no-dtr", action="store_true", help="open the port with DTR cleared (Windows MMDVMHost)")
+    ap.add_argument("--order", choices=("mmdvmhost", "rfgw"), default="mmdvmhost")
+    ap.add_argument("--quiet-commands", action="store_true", help="check the commands that must not get a NAK")
     a = ap.parse_args()
+    if a.order == "rfgw":
+        if a.freq is None:
+            ap.error("--order rfgw needs --freq")
+        if a.config is None:
+            a.config = 1
 
-    link = Link(a.port or find_port())
+    link = Link(a.port or find_port(), dtr=not a.no_dtr)
+    print(f"port {link.s.port}, DTR {'cleared' if a.no_dtr else 'set'}, {a.order} order")
     ok = True
 
     kind, f = None, None
@@ -110,12 +143,25 @@ def main():
     text = f[4:].decode("ascii", "replace") if f[3] < 2 else f[23:].decode("ascii", "replace")
     print(f"GET_VERSION: protocol {f[3]}, \"{text}\"")
 
-    if a.freq is not None:
+    def check(kind, f, what):
+        print(f"{what}: {kind}" + (f" (reason {f[4]})" if kind == "nak" else ""))
+        return kind == "ack"
+
+    if a.order == "rfgw":
+        # rfgw: SET_MODE DMR right after the version, before any SET_FREQ / SET_CONFIG; then per tune
+        ok &= check(*link.request(SET_MODE, bytes([MODE_DMR])), "SET_MODE DMR (before configuration)")
+        hz = int(round(a.freq * 1e6)).to_bytes(4, "little")
+        ok &= check(*link.request(SET_FREQ, b"\x00" + hz + hz + b"\xff" + hz), f"SET_FREQ {a.freq} MHz")
+        p = bytearray(23)
+        p[0], p[1], p[2], p[3], p[6], p[8] = 0x80, 0x02, 10, MODE_DMR, a.config & 0x0F, 128
+        ok &= check(*link.request(SET_CONFIG, bytes(p)), f"SET_CONFIG CC {a.config} state DMR")
+        ok &= check(*link.request(SET_MODE, bytes([MODE_DMR])), "SET_MODE DMR")
+    elif a.freq is not None:
         hz = int(round(a.freq * 1e6)).to_bytes(4, "little")
         kind, f = link.request(SET_FREQ, b"\x00" + hz + hz + b"\xff" + hz)
         print(f"SET_FREQ {a.freq} MHz: {kind}" + (f" (reason {f[4]})" if kind == "nak" else ""))
         ok &= kind == "ack"
-    if a.config is not None:
+    if a.config is not None and a.order == "mmdvmhost":
         p = bytearray(23)
         p[0], p[1], p[2], p[3], p[6], p[8] = 0x80, 0x02, 10, 0, a.config & 0x0F, 128
         kind, f = link.request(SET_CONFIG, bytes(p))
@@ -125,6 +171,14 @@ def main():
         print(f"SET_MODE DMR: {kind}" + (f" (reason {f[4]})" if kind == "nak" else ""))
         ok &= kind == "ack"
 
+    if a.quiet_commands:
+        ok &= quiet(link, DMR_SHORTLC, bytes(9), "DMR_SHORTLC")
+        ok &= quiet(link, DMR_START, b"\x01", "DMR_START")
+        ok &= quiet(link, SERIAL, b"ABC", "SERIAL")
+        ok &= quiet(link, TRANSPARENT, b"\x00\x00", "TRANSPARENT")
+        ok &= check(*link.request(FM_PARAMS1, bytes(7)), "FM_PARAMS1")
+
+    configured = a.config is not None
     for i in range(a.status):
         kind, f = link.request(GET_STATUS)
         if kind != "reply" or len(f) < 13:
@@ -133,6 +187,9 @@ def main():
         else:
             print("GET_STATUS:")
             show_status(f)
+            if configured and f[4] != MODE_DMR:
+                print("  the configuration didn't stick (state not DMR): the radio left hotspot mode?")
+                ok = False
         if i + 1 < a.status:
             time.sleep(0.25)
     return 0 if ok else 1

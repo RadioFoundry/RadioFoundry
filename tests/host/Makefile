@@ -103,8 +103,13 @@ clean:
 CORE_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += radioCoreTest inputTest
 
-radioCoreTest: radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h $(CORE)/radio/tones.c $(CORE)/radio/tones.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c
+# With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
+RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/dmr/call/dmr_call.c \
+           $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
+           sim/dmr_sim_modem.c
+
+radioCoreTest: $(RCORE) $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h $(CORE)/radio/tones.h $(wildcard $(CORE)/dmr/call/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -o $@ $(RCORE)
 
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
@@ -194,12 +199,13 @@ run-hrcdmr: hrc6000DmrTest
 	./hrc6000DmrTest
 .PHONY: run-hrcdmr
 
-# The MMDVM protocol and the simplex hotspot engine (core/hotspot), against a fake DMR modem and radio core
+# The MMDVM protocol and the simplex hotspot engine (core/hotspot), against a fake DMR modem and radio core, and the
+# host link's rule for leaving hotspot mode (core/hostlink/hostlink_policy.c)
 MMDVM   := mmdvmTest.c $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c $(CORE)/hotspot/hotspotUplink.c \
-           $(CORE)/hotspot/hotspotData.c $(FRAME)
+           $(CORE)/hotspot/hotspotData.c $(FRAME) $(CORE)/dmr/call/dmr_lc.c $(CORE)/hostlink/hostlink_policy.c
 TESTS   += mmdvmTest
 
-mmdvmTest: $(MMDVM) $(wildcard $(CORE)/hotspot/*.h)
+mmdvmTest: $(MMDVM) $(wildcard $(CORE)/hotspot/*.h $(CORE)/hostlink/*.h $(CORE)/dmr/call/dmr_lc.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(MMDVM)
 
 run: run-mmdvm

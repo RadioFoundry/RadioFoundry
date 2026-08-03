@@ -334,6 +334,68 @@ int dmrFecGolay2087Decode(uint32_t codeword, uint8_t *data)
 	return (best <= 3) ? best : -1;
 }
 
+// --- QR(16,7,6) (B.3.2) ---
+//
+// The cyclic quadratic residue code QR(17,9,5) (generator x^8 + x^5 + x^4 + x^3 + 1) shortened to 7 data bits, plus an
+// overall even parity bit: data, 8 cyclic parity bits, the even parity bit. Minimum distance 6.
+
+#define QR17_GENERATOR		0x139u
+
+static uint16_t qr17Parity(uint16_t data)
+{
+	uint32_t r = (uint32_t)data << 8;
+
+	for (int b = 14; b >= 8; b--)
+	{
+		if (r & (1u << b))
+		{
+			r ^= QR17_GENERATOR << (b - 8);
+		}
+	}
+	return (uint16_t)(r & 0xFFu);
+}
+
+uint16_t dmrFecQr1676Encode(uint8_t data)
+{
+	uint32_t cw = ((uint32_t)(data & 0x7F) << 8) | qr17Parity(data & 0x7F);
+
+	return (uint16_t)((cw << 1) | (uint32_t)(popcount32(cw) & 1));
+}
+
+int dmrFecQr1676Decode(uint16_t codeword, uint8_t *data)
+{
+	int best = 17, bestData = 0;
+
+	for (int d = 0; d < 128; d++)
+	{
+		int dist = popcount32((uint32_t)(dmrFecQr1676Encode((uint8_t)d) ^ codeword));
+
+		if (dist < best)
+		{
+			best = dist;
+			bestData = d;
+		}
+	}
+	*data = (uint8_t)bestData;
+	return (best <= 2) ? best : -1;
+}
+
+uint16_t dmrFecEmbEncode(uint8_t colourCode, bool pi, uint8_t lcss)
+{
+	return dmrFecQr1676Encode((uint8_t)(((colourCode & 0x0F) << 3) | (pi ? 0x04 : 0) | (lcss & 0x03)));
+}
+
+int dmrFecEmbDecode(uint16_t emb, uint8_t *colourCode, bool *pi, uint8_t *lcss)
+{
+	uint8_t d;
+	int errors = dmrFecQr1676Decode(emb, &d);
+
+	*colourCode = d >> 3;
+	*pi = (d & 0x04) != 0;
+	*lcss = d & 0x03;
+	return errors;
+}
+
 // --- Slot type ---
 
 #define SLOT_TYPE_FIRST		98		// bits 98-107: codeword bits 19-10

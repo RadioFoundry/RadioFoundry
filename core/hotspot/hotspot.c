@@ -9,6 +9,7 @@
 #include "hotspot/dmrDataFrame.h"
 #include "dmr/dmrData.h"
 #include "dmr/fec/dmrFec.h"
+#include "dmr/call/dmr_lc.h"
 
 #define VOICE_RING		24	// host frames buffered for RF: 1.44 s of voice
 #define PREBUFFER_FRAMES	5	// a call keys up with more than 4 frames buffered, or on its terminator
@@ -16,10 +17,10 @@
 #define NET_LOST_MS		500	// no frame from the host for this long in a call: end it with our terminator
 #define EVENT_QUEUE		16	// modem events between the driver's task and ours (480 ms of bursts)
 #define CARRIER_HOLD_MS		200	// carrier detect stays on this long after the last burst heard
+#define SPACE_MARGIN		2	// frames the host may have written while our status was on its way (spec 2.4)
+#define RSSI_UHF_HZ		300000000u	// the AT1846S RSSI scale changes here (docs/spec/mmdvm-protocol.md 5.4)
 
 #define LC_LEN			9
-#define RS_MASK_HEADER		0x96	// ETSI TS 102 361-1 B.3.12: RS(12,9) parity masks
-#define RS_MASK_TERMINATOR	0x99
 #define FLCO_PRIVATE		0x03
 
 // ---- State ----
@@ -45,6 +46,8 @@ static const hal_dmr_modem_t *modem;
 static const hotspot_radio_ops_t *radio;
 static hotspot_send_fn send_up;
 static bool running;
+static bool enter_tried;		// enter() was refused at enter_ms: wait HOTSPOT_ENTER_RETRY_MS before the next try
+static uint32_t enter_ms;
 
 static uint8_t cc = 1;
 static bool simplex = true;
@@ -77,6 +80,10 @@ static hotspotUplink_t up;
 static uint32_t last_rx_ms;
 static uint32_t poll_ms;		// the time of the last hotspot_poll()
 static bool heard_any;
+static bool uplink_on = true;		// false in the POCSAG state: heard, not passed up
+static uint8_t sf_frag[4][4];		// the embedded signalling of B-E for the superframe going up
+static uint8_t alias_lc[LC_LEN];	// an embedded LC heard that isn't the call's (talker alias, GPS): sent next
+static bool alias_pending;
 
 static hotspot_view_t view;
 static hotspot_stats_t stats;
@@ -86,40 +93,6 @@ static void changed(void)
 	if ((radio != NULL) && (radio->changed != NULL)) {
 		radio->changed();
 	}
-}
-
-// ---- RS(12,9) for voice LC headers and terminators (ETSI TS 102 361-1 B.3.6): GF(256), polynomial 0x11D,
-// generator (x + a)(x + a^2)(x + a^3) = x^3 + 14x^2 + 56x + 64 ----
-
-static uint8_t gf_mul(uint8_t a, uint8_t b)
-{
-	uint8_t p = 0;
-
-	while (b != 0) {
-		if (b & 1) {
-			p ^= a;
-		}
-		a = (uint8_t)((a << 1) ^ ((a & 0x80) ? 0x1D : 0x00));
-		b >>= 1;
-	}
-	return p;
-}
-
-static void lc_with_parity(const uint8_t *lc, uint8_t mask, uint8_t *out12)
-{
-	uint8_t r2 = 0, r1 = 0, r0 = 0;	// remainder, highest degree first
-
-	for (int i = 0; i < LC_LEN; i++) {
-		uint8_t t = (uint8_t)(lc[i] ^ r2);
-
-		r2 = (uint8_t)(r1 ^ gf_mul(14, t));
-		r1 = (uint8_t)(r0 ^ gf_mul(56, t));
-		r0 = gf_mul(64, t);
-		out12[i] = lc[i];
-	}
-	out12[9] = (uint8_t)(r2 ^ mask);
-	out12[10] = (uint8_t)(r1 ^ mask);
-	out12[11] = (uint8_t)(r0 ^ mask);
 }
 
 static void note_call(const uint8_t *lc, bool from_net)
@@ -142,9 +115,10 @@ static void frame_to_voice(const uint8_t *frame, uint8_t *voice)
 
 static const uint8_t MS_VOICE_SYNC[6] = { 0x7F, 0x7D, 0x5D, 0xD5, 0x7D, 0xFD };
 
-// A voice burst for the host. A gets the MS voice sync; B-F an EMB with our color code and the LCSS of the burst's
-// position (B first, C-D continuation, E last, F none). The host regenerates the EMB parity and the embedded LC
-// fragments from the call's LC; the modem doesn't give us the raw embedded signalling, so those bits are zero.
+// A voice burst for the host, well formed as a transmitter makes it (docs/spec/mmdvm-protocol.md 2.8): A gets the MS
+// voice sync; B-F the EMB (our colour code, PI 0, the LCSS of the position: B first, C-D continuation, E last,
+// F single) with its QR(16,7,6) parity, B-E the four fragments of the superframe's embedded LC, F null embedded
+// signalling
 static void voice_to_frame(const uint8_t *voice, uint8_t index, uint8_t *frame)
 {
 	uint8_t middle[6] = { 0, 0, 0, 0, 0, 0 };
@@ -152,10 +126,13 @@ static void voice_to_frame(const uint8_t *voice, uint8_t index, uint8_t *frame)
 	if (index == 0) {
 		memcpy(middle, MS_VOICE_SYNC, 6);
 	} else {
-		static const uint8_t LCSS[6] = { 0, 1, 3, 3, 2, 0 };
-		uint8_t emb_hi = (uint8_t)((cc << 4) | (LCSS[index] << 1));	// CC, PI 0, LCSS, then parity
+		uint16_t emb = dmrFecEmbEncode(cc, false, dmr_emb_lcss(index));
 
-		middle[0] = emb_hi;
+		middle[0] = (uint8_t)(emb >> 8);
+		if (index <= 4) {
+			memcpy(middle + 1, sf_frag[index - 1], 4);
+		}
+		middle[5] = (uint8_t)emb;
 	}
 	memcpy(frame, voice, 13);
 	frame[13] = (uint8_t)((voice[13] & 0xF0) | (middle[0] >> 4));
@@ -168,13 +145,52 @@ static void voice_to_frame(const uint8_t *voice, uint8_t index, uint8_t *frame)
 	memcpy(frame + 20, voice + 14, 13);
 }
 
-static void send_frame(uint8_t control, const uint8_t *frame)
+// The superframe's embedded LC, chosen at its burst A: a talker alias or GPS block heard in the last superframe, else
+// the call's LC
+static void superframe_start(void)
 {
-	uint8_t payload[1 + MMDVM_DMR_FRAME_LEN];
+	const uint8_t *lc = alias_pending ? alias_lc : hotspotUplinkLc(&up);
+
+	dmr_emb_lc_encode(lc, sf_frag);
+	alias_pending = false;
+}
+
+// The RSSI bytes after an uplink burst: 00, then the AT1846S raw scale rfgw converts back to dBm (raw - 151 at
+// 300 MHz and up, -164 + raw x 32 / 27 below; docs/spec/mmdvm-protocol.md 5.4). False when the RSSI is unknown.
+// Radios with another RF chip use the same scale, so the host's conversion stays right for every radio.
+static bool rssi_raw(int16_t dbm, uint8_t *raw)
+{
+	int v;
+
+	if ((dbm == 0) && (radio != NULL) && (radio->rssi_dbm != NULL)) {
+		dbm = radio->rssi_dbm();
+	}
+	if ((dbm == 0) || (rx_hz == 0)) {
+		return false;
+	}
+	if (rx_hz >= RSSI_UHF_HZ) {
+		v = dbm + 151;
+	} else {
+		v = ((dbm + 164) * 27 + 16) / 32;
+	}
+	*raw = (uint8_t)((v < 0) ? 0 : ((v > 255) ? 255 : v));
+	return true;
+}
+
+// One burst up; rssi_dbm 0 for bursts we made (headers from the embedded LC, silence fill)
+static void send_frame(uint8_t control, const uint8_t *frame, int16_t rssi_dbm, bool heard)
+{
+	uint8_t payload[1 + MMDVM_DMR_FRAME_LEN + 2];
+	uint8_t len = 1 + MMDVM_DMR_FRAME_LEN;
+	uint8_t raw;
 
 	payload[0] = control;
 	memcpy(payload + 1, frame, MMDVM_DMR_FRAME_LEN);
-	send_up(MMDVM_DMR_DATA2, payload, sizeof(payload));
+	if (heard && rssi_raw(rssi_dbm, &raw)) {
+		payload[len++] = 0;
+		payload[len++] = raw;
+	}
+	send_up(MMDVM_DMR_DATA2, payload, len);
 	stats.rf_frames_up++;
 }
 
@@ -184,7 +200,7 @@ static void send_lost(void)
 	stats.rf_lost++;
 }
 
-static void send_lc_frame(uint8_t data_type, const uint8_t *lc)
+static void send_lc_frame(uint8_t data_type, const uint8_t *lc, int16_t rssi_dbm, bool heard)
 {
 	dmrBurst_t b;
 	uint8_t frame[MMDVM_DMR_FRAME_LEN];
@@ -193,17 +209,21 @@ static void send_lc_frame(uint8_t data_type, const uint8_t *lc)
 	b.dataType = data_type;
 	b.length = 12;
 	b.flags = 0;
-	lc_with_parity(lc, (data_type == DT_VOICE_LC_HEADER) ? RS_MASK_HEADER : RS_MASK_TERMINATOR, b.payload);
+	dmr_lc_encode_full(lc, (data_type == DT_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR,
+			   b.payload);
 	dmrDataBurstToFrame(&b, cc, frame);
-	send_frame((uint8_t)(MMDVM_DMR_SYNC_DATA | data_type), frame);
+	send_frame((uint8_t)(MMDVM_DMR_SYNC_DATA | data_type), frame, rssi_dbm, heard);
 }
 
-static void send_voice(const uint8_t *voice, uint8_t index)
+static void send_voice(const uint8_t *voice, uint8_t index, int16_t rssi_dbm, bool heard)
 {
 	uint8_t frame[MMDVM_DMR_FRAME_LEN];
 
+	if (index == 0) {
+		superframe_start();
+	}
 	voice_to_frame(voice, index, frame);
-	send_frame((index == 0) ? MMDVM_DMR_SYNC_AUDIO : index, frame);
+	send_frame((index == 0) ? MMDVM_DMR_SYNC_AUDIO : index, frame, rssi_dbm, heard);
 }
 
 // ---- Setup ----
@@ -227,12 +247,19 @@ static void reset_tx(void)
 	hotspotDataReset(data_store);
 }
 
-static void reset_all(void)
+static void reset_uplink(void)
 {
-	reset_tx();
 	ev_out = ev_in;
 	hotspotUplinkReset(&up);
 	heard_any = false;
+	alias_pending = false;
+	memset(sf_frag, 0, sizeof(sf_frag));
+}
+
+static void reset_all(void)
+{
+	reset_tx();
+	reset_uplink();
 }
 
 void hotspot_init(const hal_dmr_modem_t *m, hotspot_send_fn send)
@@ -245,6 +272,8 @@ void hotspot_init(const hal_dmr_modem_t *m, hotspot_send_fn send)
 	rx_hz = 0;
 	tx_hz = 0;
 	rf_level = 255;
+	enter_tried = false;
+	uplink_on = true;
 	memset(&stats, 0, sizeof(stats));
 	memset(&view, 0, sizeof(view));
 	reset_all();
@@ -263,13 +292,18 @@ static dmr_config_t modem_config(void)
 
 bool hotspot_start(uint32_t now_ms)
 {
-	(void)now_ms;
 	if (running) {
 		return true;
 	}
 	if ((modem == NULL) || (radio == NULL) || (radio->enter == NULL)) {
 		return false;
 	}
+	if (enter_tried && ((now_ms - enter_ms) < HOTSPOT_ENTER_RETRY_MS)) {
+		return false;	// the radio refused a moment ago: don't hammer it on every frame (enter must not block)
+	}
+	enter_tried = true;
+	enter_ms = now_ms;
+	stats.enter_attempts++;
 	if (!radio->enter(rx_hz)) {
 		return false;
 	}
@@ -279,7 +313,9 @@ bool hotspot_start(uint32_t now_ms)
 		radio->leave();
 		return false;
 	}
+	enter_tried = false;
 	modem->rx_lock_slot(0);
+	modem->set_cc_filter((int8_t)cc);
 	if (rx_hz != 0) {
 		radio->set_freq(rx_hz, tx_hz);
 	}
@@ -294,6 +330,8 @@ bool hotspot_start(uint32_t now_ms)
 
 void hotspot_stop(void)
 {
+	enter_tried = false;	// a new session tries at once
+	uplink_on = true;
 	if (!running) {
 		return;
 	}
@@ -336,7 +374,12 @@ bool hotspot_set_freq(uint32_t rx, uint32_t tx, uint8_t level)
 			modem->tx_abort();
 		}
 		reset_tx();
-		hotspotUplinkReset(&up);
+		// The call being heard ends here for the host (it has no RF watchdog), before the ACK; what was heard on
+		// the old frequency and is still queued never goes up after it (docs/spec/mmdvm-protocol.md 2.7)
+		if (hotspotUplinkCallOpen(&up)) {
+			send_lost();
+		}
+		reset_uplink();
 		if (!radio->set_freq(rx, tx)) {
 			return false;
 		}
@@ -483,6 +526,51 @@ void hotspot_net_abort(void)
 		modem->tx_abort();
 	}
 	reset_tx();
+}
+
+// SET_MODE idle (docs/spec/mmdvm-protocol.md 2.6): nothing new goes out; a call on air ends with its terminator after
+// what the modem already holds (under a superframe), a data transmission after the burst on air; the rest is dropped
+void hotspot_net_idle(void)
+{
+	tx_state_t st = tx_state;
+
+	if (!running || (st == TX_IDLE)) {
+		reset_tx();		// buffering only: nothing on air yet
+		return;
+	}
+	ring_head = 0;
+	ring_count = 0;
+	enq_open = false;
+	hotspotDataReset(data_store);
+	if (st == TX_VOICE) {
+		push_lc(DMR_BURST_TERMINATOR_LC, cur_lc);	// feed() queues it and ends the transmission
+	} else if (st == TX_DATA) {
+		data_count = data_next;				// feed() ends the transmission
+	}
+}
+
+void hotspot_set_uplink(bool on)
+{
+	if (on == uplink_on) {
+		return;
+	}
+	if (!on && running && hotspotUplinkCallOpen(&up)) {
+		send_lost();
+	}
+	uplink_on = on;
+	if (running) {
+		reset_uplink();
+	}
+}
+
+bool hotspot_cwid(const uint8_t *callsign, uint8_t len)
+{
+	stats.cwid_requests++;
+	if (running && (radio->cw_id != NULL) && radio->cw_id((const char *)callsign, len)) {
+		return true;
+	}
+	stats.cwid_unsent++;
+	return false;
 }
 
 static bool queue_item(const tx_item_t *it)
@@ -665,6 +753,9 @@ static void rf_burst(const dmr_burst_t *b, uint32_t now_ms)
 	stats.rf_bursts++;
 	last_rx_ms = now_ms;
 	heard_any = true;
+	if (!uplink_on) {
+		return;		// POCSAG state: carrier detect only
+	}
 
 	memset(&u, 0, sizeof(u));
 	u.ms = now_ms;
@@ -676,6 +767,16 @@ static void rf_burst(const dmr_burst_t *b, uint32_t now_ms)
 				    (((b->voice_index == 0) || b->crc_ok) ? HOTSPOT_UPLINK_FLAG_SYNC_OK : 0));
 		memcpy(u.lc, b->lc, LC_LEN);
 		memcpy(u.ambe, b->payload, HOTSPOT_UPLINK_AMBE_LENGTH);
+		// A talker alias or GPS block in this superframe's embedded LC (the modem gives it with F): the host gets
+		// it in the next superframe's B-E, so the alias reaches it (the modem doesn't give the raw fragments)
+		if (b->lc_valid) {
+			uint8_t flco = b->lc[0] & 0x3F;
+
+			if ((flco >= DMR_FLCO_TA_HEADER) && (flco <= DMR_FLCO_GPS)) {
+				memcpy(alias_lc, b->lc, LC_LEN);
+				alias_pending = true;
+			}
+		}
 		break;
 	case DMR_BURST_VOICE_LC_HEADER:
 	case DMR_BURST_TERMINATOR_LC:
@@ -703,7 +804,7 @@ static void rf_burst(const dmr_burst_t *b, uint32_t now_ms)
 			d.flags = 0;
 			memcpy(d.payload, b->payload, b->len);
 			if (dmrDataBurstToFrame(&d, cc, frame)) {
-				send_frame((uint8_t)(MMDVM_DMR_SYNC_DATA | b->kind), frame);
+				send_frame((uint8_t)(MMDVM_DMR_SYNC_DATA | b->kind), frame, b->rssi_dbm, true);
 			}
 		}
 		return;
@@ -714,21 +815,26 @@ static void rf_burst(const dmr_burst_t *b, uint32_t now_ms)
 
 	if (actions & HOTSPOT_UP_LOST) {
 		send_lost();
+		alias_pending = false;
 	}
 	if (actions & HOTSPOT_UP_HEADER) {
-		send_lc_frame(DT_VOICE_LC_HEADER, lc);
+		// A header heard is sent as heard (with its RSSI); one made from the embedded LC (late entry) is ours
+		send_lc_frame(DT_VOICE_LC_HEADER, lc, b->rssi_dbm, b->kind == DMR_BURST_VOICE_LC_HEADER);
 		note_call(lc, false);
+		dmr_emb_lc_encode(lc, sf_frag);
 	}
 	if (actions & HOTSPOT_UP_FILL) {
-		for (uint8_t i = fill; i < u.seq; i++) {
-			send_voice(HOTSPOT_UPLINK_SILENCE, i);
+		// The missed positions, stepping modulo 6 across a superframe boundary (E heard, F and A missed, then B)
+		for (uint8_t i = fill, n = 0; (i != u.seq) && (n < 6); i = (uint8_t)((i + 1) % 6), n++) {
+			send_voice(HOTSPOT_UPLINK_SILENCE, i, 0, false);
 		}
 	}
 	if (actions & HOTSPOT_UP_VOICE) {
-		send_voice(u.ambe, u.seq);
+		send_voice(u.ambe, u.seq, b->rssi_dbm, true);
 	}
 	if (actions & HOTSPOT_UP_TERMINATOR) {
-		send_lc_frame(DT_TERMINATOR_WITH_LC, lc);
+		send_lc_frame(DT_TERMINATOR_WITH_LC, lc, b->rssi_dbm, true);
+		alias_pending = false;
 	}
 }
 
@@ -800,6 +906,7 @@ uint8_t hotspot_space(void)
 	int data = hotspotDataSpace();
 	int s = (voice < data) ? voice : data;
 
+	s -= SPACE_MARGIN;
 	if (enq_open) {
 		s--;		// room for the terminator we may have to add (a new call's header)
 	}
@@ -808,7 +915,8 @@ uint8_t hotspot_space(void)
 
 bool hotspot_transmitting(void)
 {
-	return running && ((tx_state != TX_IDLE) || (ring_count > 0) || hotspotDataIsBusy() || modem->is_transmitting());
+	return running && ((tx_state != TX_IDLE) || (ring_count > 0) || hotspotDataIsBusy() || modem->is_transmitting() ||
+			   ((radio->cw_busy != NULL) && radio->cw_busy()));
 }
 
 bool hotspot_carrier(void)

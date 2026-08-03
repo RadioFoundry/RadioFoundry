@@ -2,7 +2,11 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The MMDVM modem protocol (public; written from its description): frames E0 <length> <command> <payload>, the
 // length counting the whole frame. The radio answers as a protocol 1 modem with DMR only, simplex on slot 2
-// (MMDVMHost Duplex=0, RadioDesk rfgw's roamer, our bench tools). Other modes' commands are refused (NAK).
+// (MMDVMHost Duplex=0, RadioDesk rfgw's roamer, our bench tools). Other modes' commands are refused (NAK), except
+// what docs/spec/mmdvm-protocol.md says to take quietly: DMR_SHORTLC and DMR_START (dropped), SERIAL, TRANSPARENT
+// and QSO_INFO (dropped), FM_PARAMS1-4 (ACKed, ignored), the POCSAG mode (ACKed, never transmits pages).
+// SEND_CWID is ACKed in idle; it keys only on radios whose radio core has the cw_id op (hotspot.h), elsewhere no ID
+// goes out (counted).
 //
 // The framer splits a byte stream (USB CDC, a UART, UDP datagrams) into frames by the length byte, resynchronizing
 // on 0xE0 (docs/spec/gotchas.md 8.10). The responder answers them and runs the DMR side through hotspot.c.
@@ -42,6 +46,9 @@
 #define MMDVM_NXDN_DATA		0x40
 #define MMDVM_POCSAG_DATA	0x50
 #define MMDVM_FM_PARAMS1	0x60
+#define MMDVM_FM_PARAMS2	0x61
+#define MMDVM_FM_PARAMS3	0x62
+#define MMDVM_FM_PARAMS4	0x63
 #define MMDVM_ACK		0x70
 #define MMDVM_NAK		0x7F
 #define MMDVM_SERIAL		0x80
@@ -77,6 +84,7 @@
 // [5] CW ID level, [6] DMR color code, [7] DMR delay, [8] oscillator offset, [10] DMR TX level, ...
 #define MMDVM_CONFIG_SIMPLEX	0x80	// flags: Duplex=0
 #define MMDVM_MODE_BIT_DMR	0x02	// modes enabled / GET_STATUS byte 3
+#define MMDVM_MODE_BIT_POCSAG	0x20
 
 // GET_STATUS (protocol 1) frame bytes: 3 modes enabled, 4 state, 5 flags, 6 D-Star space, 7 DMR slot 1 space,
 // 8 DMR slot 2 space, 9 YSF, 10 P25, 11 NXDN, 12 POCSAG space; 13 on: our extension's bytes (SFR debug counters)
@@ -118,14 +126,16 @@ typedef struct {
 } mmdvm_io_t;
 
 // Optional extension (the SFR, when ported): our vendor command, GET_STATUS bytes after byte 12, a GET_VERSION
-// suffix (" SFR TS1>TS2 TS", docs/spec/gotchas.md 8.11), and what SET_CONFIG / SET_FREQ said (SFR is chosen by
-// the simplex flag clear and RX = TX, evaluated after either, gotchas 8.12)
+// suffix (" SFR TS1>TS2 TS", docs/spec/gotchas.md 8.11), what SET_CONFIG / SET_FREQ said (SFR is chosen by
+// the simplex flag clear and RX = TX, evaluated after either, gotchas 8.12), and the space bytes (SFR reports the
+// outbound slot's space at both offsets 7 and 8, mmdvm-protocol.md 6.2)
 typedef struct {
 	uint8_t (*vendor)(uint8_t command, const uint8_t *payload, uint8_t len);	// 0 = ACK, else NAK reason
 	uint8_t (*status_extra)(uint8_t *buf, uint8_t max);				// bytes written
 	uint8_t (*version_suffix)(char *buf, uint8_t max);				// chars written
 	void (*config_changed)(bool simplex, uint32_t rx_hz, uint32_t tx_hz);
 	uint8_t (*status_flags)(void);							// ORed into byte 5
+	void (*space)(uint8_t *slot1, uint8_t *slot2);	// GET_STATUS bytes 7 and 8, given ours (0, the hotspot's): change them
 } mmdvm_ext_t;
 
 void mmdvm_init(const mmdvm_io_t *io);

@@ -8,6 +8,7 @@
 #define DESCRIPTION_MAX		96	// any build ID plus an extension suffix fits (docs/spec/gotchas.md 8.11)
 // MMDVM firmware doesn't acknowledge DMR data frames (it only NAKs a refused one); hosts don't wait for an answer
 #define ACK_DMR_DATA		0
+#define MODES_KNOWN		(MMDVM_MODE_BIT_DMR | MMDVM_MODE_BIT_POCSAG)	// enable bits we keep (and report)
 
 // ---- Framer ----
 
@@ -157,6 +158,7 @@ static void get_status(void)
 	uint8_t n = MMDVM_STATUS_BASE_LEN - 3;
 	uint8_t flags = 0;
 	bool dmr = hotspot_running() && (modes & MMDVM_MODE_BIT_DMR);
+	uint8_t slot1 = 0, slot2 = dmr ? hotspot_space() : 0;
 
 	memset(p, 0, sizeof(p));
 	if (hotspot_transmitting()) {
@@ -174,11 +176,15 @@ static void get_status(void)
 	if ((ext != NULL) && (ext->status_flags != NULL)) {
 		flags |= ext->status_flags();
 	}
-	p[0] = modes & MMDVM_MODE_BIT_DMR;
+	if ((ext != NULL) && (ext->space != NULL)) {
+		ext->space(&slot1, &slot2);	// SFR: both carry the outbound slot's space (spec 6.2)
+	}
+	p[0] = modes & MODES_KNOWN;
 	p[1] = state;
 	p[2] = flags;
-	p[4] = 0;				// DMR slot 1: not used in simplex
-	p[5] = dmr ? hotspot_space() : 0;	// DMR slot 2: frames the host may send
+	p[4] = slot1;		// DMR slot 1: 0 in simplex (the spec allows 0 or 10; the host then never writes DATA1)
+	p[5] = slot2;		// DMR slot 2: frames the host may send
+	p[9] = 0;		// POCSAG space: 0, the host never writes pages (spec 2.6)
 	if ((ext != NULL) && (ext->status_extra != NULL)) {
 		n = (uint8_t)(n + ext->status_extra(p + n, MMDVM_STATUS_EXTRA_MAX));
 	}
@@ -191,14 +197,19 @@ static void set_config(const uint8_t *p, uint8_t len)
 		nak(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID);
 		return;
 	}
-	if ((p[3] != MMDVM_MODE_IDLE) && (p[3] != MMDVM_MODE_DMR)) {
+	if ((p[3] != MMDVM_MODE_IDLE) && (p[3] != MMDVM_MODE_DMR) && (p[3] != MMDVM_MODE_POCSAG)) {
 		nak(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID);
 		return;
 	}
+	if (p[6] > 15) {
+		nak(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID);	// colour code
+		return;
+	}
 	simplex = (p[0] & MMDVM_CONFIG_SIMPLEX) != 0;
-	modes = p[1] & MMDVM_MODE_BIT_DMR;	// other modes asked for are simply not enabled
+	modes = p[1] & MODES_KNOWN;	// other modes asked for are simply not enabled
 	state = p[3];
-	hotspot_config(p[6] & 0x0F, simplex, (uint16_t)(p[2] * 10));
+	hotspot_set_uplink(state != MMDVM_MODE_POCSAG);
+	hotspot_config(p[6], simplex, (uint16_t)(p[2] * 10));
 	if ((ext != NULL) && (ext->config_changed != NULL)) {
 		ext->config_changed(simplex, rx_hz, tx_hz);
 	}
@@ -232,9 +243,11 @@ static void set_freq(const uint8_t *p, uint8_t len)
 	ack(MMDVM_SET_FREQ);
 }
 
+// POCSAG (06) is accepted so a Pi-Star style host with DAPNET on gets no NAK: DMR keeps being received but isn't passed
+// up while in it, and no page is ever sent (status POCSAG space 0, POCSAG_DATA NAK 2; spec 2.6)
 static void set_mode(const uint8_t *p, uint8_t len)
 {
-	if ((len < 1) || ((p[0] != MMDVM_MODE_IDLE) && (p[0] != MMDVM_MODE_DMR))) {
+	if ((len < 1) || ((p[0] != MMDVM_MODE_IDLE) && (p[0] != MMDVM_MODE_DMR) && (p[0] != MMDVM_MODE_POCSAG))) {
 		nak(MMDVM_SET_MODE, MMDVM_NAK_INVALID);
 		return;
 	}
@@ -242,18 +255,40 @@ static void set_mode(const uint8_t *p, uint8_t len)
 		nak(MMDVM_SET_MODE, MMDVM_NAK_WRONG_MODE);
 		return;
 	}
+	if ((p[0] == MMDVM_MODE_IDLE) && (state != MMDVM_MODE_IDLE)) {
+		hotspot_net_idle();	// a call on air ends with its terminator, the queue is dropped (spec 2.6)
+	}
 	state = p[0];
+	hotspot_set_uplink(state != MMDVM_MODE_POCSAG);
 	ack(MMDVM_SET_MODE);
+}
+
+// SEND_CWID (spec 2.11): only in idle with nothing on air, else NAK 5. Accepted requests are ACKed at once (rfgw
+// waits 1 s for it and treats a NAK as an error) and handed to the radio core's cw_id op. On a radio without CW keying
+// the ACK still goes out but no ID is sent; hotspot_stats_t counts it (cwid_unsent). An operator who relies on the
+// modem's CW ID for licensing must identify another way there (rfgw: leave cwid unset)
+static void send_cwid(const uint8_t *p, uint8_t len)
+{
+	if ((state != MMDVM_MODE_IDLE) || hotspot_transmitting()) {
+		nak(MMDVM_SEND_CWID, MMDVM_NAK_FULL);
+		return;
+	}
+	ack(MMDVM_SEND_CWID);
+	hotspot_cwid(p, len);
 }
 
 static void dmr_data(uint8_t command, const uint8_t *p, uint8_t len, uint32_t now_ms)
 {
-	if ((command == MMDVM_DMR_DATA1) || !hotspot_running() || !(modes & MMDVM_MODE_BIT_DMR)) {
+	if (command == MMDVM_DMR_DATA1) {
 		nak(command, MMDVM_NAK_WRONG_MODE);	// simplex: slot 2 only
 		return;
 	}
-	if (len < (1 + MMDVM_DMR_FRAME_LEN)) {
-		nak(command, MMDVM_NAK_INVALID);
+	if (len != (1 + MMDVM_DMR_FRAME_LEN)) {
+		nak(command, MMDVM_NAK_INVALID);	// exactly 37 bytes (spec 2.8)
+		return;
+	}
+	if (!hotspot_running() || !(modes & MMDVM_MODE_BIT_DMR) || (state == MMDVM_MODE_POCSAG)) {
+		nak(command, MMDVM_NAK_WRONG_MODE);
 		return;
 	}
 	if (state == MMDVM_MODE_IDLE) {
@@ -278,10 +313,8 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 	uint8_t plen = (uint8_t)(len - 3);
 
 	last_frame_ms = (now_ms != 0) ? now_ms : 1;
-	if (!hotspot_running()) {
-		hotspot_start(now_ms);	// the first frame takes the modem; retried while the radio refuses
-	}
 
+	// The command is answered first (GET_VERSION and GET_STATUS from what is known now); taking the modem comes after
 	switch (command) {
 	case MMDVM_GET_VERSION:
 		get_version();
@@ -307,15 +340,22 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 		break;
 	case MMDVM_DMR_START:
 	case MMDVM_DMR_SHORTLC:
-		nak(command, MMDVM_NAK_WRONG_MODE);	// duplex only
-		break;
+		break;		// taken silently: MMDVMHost sends the short LC on every call even in simplex (spec 2.10)
 	case MMDVM_SEND_CWID:
-		nak(command, MMDVM_NAK_WRONG_MODE);	// no CW keyer: the host must not count on it for its ID
+		send_cwid(p, plen);
 		break;
+	case MMDVM_FM_PARAMS1:
+	case MMDVM_FM_PARAMS2:
+	case MMDVM_FM_PARAMS3:
+	case MMDVM_FM_PARAMS4:
+		ack(command);	// ignored, so a host configured with FM still starts (spec 2.14)
+		break;
+	case MMDVM_SERIAL:
+	case MMDVM_TRANSPARENT:
 	case MMDVM_QSO_INFO:
 	case MMDVM_ACK:
 	case MMDVM_NAK:
-		break;					// informative; never answered
+		break;		// dropped silently, never answered (spec 2.12)
 	case MMDVM_ODR_SFR_DEBUG:
 		if ((ext != NULL) && (ext->vendor != NULL)) {
 			uint8_t r = ext->vendor(command, p, plen);
@@ -335,9 +375,16 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 										       : MMDVM_NAK_UNKNOWN);
 		break;
 	}
+
+	if (!hotspot_running()) {
+		hotspot_start(now_ms);	// the first frame takes the modem; retried at most every HOTSPOT_ENTER_RETRY_MS
+	}
 }
 
 void mmdvm_poll(uint32_t now_ms)
 {
+	if ((last_frame_ms != 0) && !hotspot_running()) {
+		hotspot_start(now_ms);	// still refused: try again while the host is there (rate limited)
+	}
 	hotspot_poll(now_ms);
 }

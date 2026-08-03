@@ -2,7 +2,9 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Host test of the MMDVM protocol (core/hotspot/mmdvm.c) and the simplex hotspot engine (core/hotspot/hotspot.c),
 // against a fake DMR modem (hal_dmr_modem_t) and a fake radio core. Frames are checked with independent decoding:
-// the RS(12,9) check evaluates the codeword at a, a^2, a^3 rather than dividing like the encoder.
+// the RS(12,9) check evaluates the codeword at a, a^2, a^3 rather than dividing like the encoder; the uplink EMB and
+// embedded LC are read back with the decoders (QR(16,7,6) in core/dmr/fec, the embedded LC reassembly of
+// core/dmr/call/dmr_lc.c). Also the host link's rule for leaving hotspot mode (DTR, idle, exit).
 #include <stdio.h>
 #include <string.h>
 #include "hotspot/mmdvm.h"
@@ -10,6 +12,9 @@
 #include "dmr/dmrData.h"
 #include "dmr/fec/dmrFec.h"
 #include "hotspot/dmrDataFrame.h"
+#include "hotspot/hotspotUplink.h"
+#include "dmr/call/dmr_lc.h"
+#include "hostlink/hostlink.h"
 
 static int failures;
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
@@ -111,20 +116,42 @@ static struct {
 	int enters, leaves, freqs;
 	uint32_t rx, tx;
 	uint8_t level;
+	int out_at_enter;	// frames written before the last enter (the reply goes first)
+	int16_t rssi;
+	int cw_calls;
+	char cw[64];
+	bool cw_ok, cw_keyed;
 } r;
 
-static bool r_enter(uint32_t rx) { r.enters++; return r.enter_ok; }
+static bool r_enter(uint32_t rx);
 static bool r_set_freq(uint32_t rx, uint32_t tx) { r.freqs++; r.rx = rx; r.tx = tx; return rx >= 100000000; }
 static void r_set_power(uint8_t level) { r.level = level; }
 static void r_leave(void) { r.leaves++; }
+static int16_t r_rssi(void) { return r.rssi; }
+static bool r_cw_id(const char *c, uint8_t len)
+{
+	r.cw_calls++;
+	memcpy(r.cw, c, len);
+	r.cw[len] = '\0';
+	r.cw_keyed = r.cw_ok;
+	return r.cw_ok;
+}
+static bool r_cw_busy(void) { return r.cw_keyed; }
 
 static const hotspot_radio_ops_t radio_ops = {
 	.enter = r_enter, .set_freq = r_set_freq, .set_power = r_set_power, .leave = r_leave,
+};
+// The same with the optional RSSI and CW ID ops
+static const hotspot_radio_ops_t radio_ops_full = {
+	.enter = r_enter, .set_freq = r_set_freq, .set_power = r_set_power, .leave = r_leave,
+	.rssi_dbm = r_rssi, .cw_id = r_cw_id, .cw_busy = r_cw_busy,
 };
 
 // ---- Helpers ----
 
 static uint32_t now = 1000;
+
+static bool r_enter(uint32_t rx) { r.enters++; r.out_at_enter = out_count; return r.enter_ok; }
 
 static void host(uint8_t cmd, const uint8_t *payload, uint8_t len)
 {
@@ -141,7 +168,7 @@ static void poll_for(uint32_t ms)
 {
 	for (uint32_t t = 0; t < ms; t += 5) {
 		now += 5;
-		hotspot_poll(now);
+		mmdvm_poll(now);
 	}
 }
 
@@ -421,13 +448,49 @@ static void test_version_status(void)
 		CHECK(s[8] == 0);	// no space: the hotspot isn't running
 	}
 	CHECK(!hotspot_running());
-	CHECK(r.enters == 2);	// tried at each frame
+	CHECK(r.enters == 1);		// tried once, after the version reply had gone out
+	CHECK(r.out_at_enter == 1);
 
-	// Now the radio lets go of the modem
+	// Now the radio lets go of the modem; the next try comes HOTSPOT_ENTER_RETRY_MS after the refused one
 	r.enter_ok = true;
+	now += 500;
+	status();
+	CHECK(!hotspot_running() && r.enters == 1);
+	now += HOTSPOT_ENTER_RETRY_MS - 500;
+	int before = out_count;
 	s = status();
-	CHECK(hotspot_running() && m.starts == 1);
-	CHECK(s != NULL && s[8] > 4 && s[7] == 0);
+	CHECK(hotspot_running() && m.starts == 1 && r.enters == 2);
+	CHECK(r.out_at_enter == before + 1);	// that status reply went out first (showing no space yet)
+	s = status();
+	CHECK(s != NULL && s[8] == 22 && s[7] == 0);	// 24 places less the margin of 2 (spec 2.4)
+	CHECK(s != NULL && s[12] == 0);			// POCSAG space
+}
+
+// A-15: a radio that keeps refusing (or posts the handover and returns): enter is tried at most once a second while
+// MMDVMHost polls every 250 ms, and every poll is answered
+static void test_slow_enter(void)
+{
+	reset_world();
+	r.enter_ok = false;
+	host(MMDVM_GET_VERSION, NULL, 0);
+	for (int i = 0; i < 20; i++) {	// 5 s
+		int before = out_count;
+
+		poll_for(250);
+		host(MMDVM_GET_STATUS, NULL, 0);
+		CHECK(out_count == before + 1 && out[before].b[2] == MMDVM_GET_STATUS);
+	}
+	CHECK(r.enters >= 5 && r.enters <= 6);
+	// The handover completes: running within a second, without another frame (mmdvm_poll retries)
+	r.enter_ok = true;
+	poll_for(1000);
+	CHECK(hotspot_running());
+	// After the host left, a new session tries at once
+	mmdvm_end();
+	r.enter_ok = false;
+	int e = r.enters;
+	host(MMDVM_GET_VERSION, NULL, 0);
+	CHECK(r.enters == e + 1);
 }
 
 static void test_config(void)
@@ -457,10 +520,33 @@ static void test_config(void)
 	CHECK(nak_for(MMDVM_YSF_DATA, MMDVM_NAK_WRONG_MODE));
 	host(MMDVM_DMR_DATA1, junk, 34);
 	CHECK(nak_for(MMDVM_DMR_DATA1, MMDVM_NAK_WRONG_MODE));
-	host(MMDVM_DMR_START, junk, 1);
-	CHECK(nak_for(MMDVM_DMR_START, MMDVM_NAK_WRONG_MODE));
 	host(MMDVM_DMR_DATA2, junk, 20);
 	CHECK(nak_for(MMDVM_DMR_DATA2, MMDVM_NAK_INVALID));
+	// D-6: exactly 37 bytes
+	out_count = 0;
+	host(MMDVM_DMR_DATA2, junk, 33);
+	host(MMDVM_DMR_DATA2, junk, 35);
+	CHECK(out_count == 2 && nak_for(MMDVM_DMR_DATA2, MMDVM_NAK_INVALID));
+	// D-8, D-13 (A-5, I-2, A-13): taken silently
+	out_count = 0;
+	host(MMDVM_DMR_START, junk, 1);
+	host(MMDVM_DMR_SHORTLC, junk, 9);
+	host(MMDVM_SERIAL, junk, 3);
+	host(MMDVM_TRANSPARENT, junk, 2);
+	CHECK(out_count == 0);
+	// C-15: FM parameters ACKed and ignored
+	host(MMDVM_FM_PARAMS1, junk, 7);
+	host(MMDVM_FM_PARAMS4, junk, 3);
+	CHECK(out_count == 2 && ack_for(MMDVM_FM_PARAMS1) && ack_for(MMDVM_FM_PARAMS4));
+	// C-4: colour code above 15
+	out_count = 0;
+	configure(16);
+	CHECK(nak_for(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID) && m.cc == 2);
+	// C-6: state 01
+	uint8_t c6[23] = { 0x80, 0x02, 10, MMDVM_MODE_DSTAR, 128, 128, 1 };
+	out_count = 0;
+	host(MMDVM_SET_CONFIG, c6, sizeof(c6));
+	CHECK(nak_for(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID));
 	host(0xC3, NULL, 0);
 	CHECK(nak_for(0xC3, MMDVM_NAK_UNKNOWN));
 	host(MMDVM_ODR_SFR_DEBUG, junk, 2);
@@ -853,6 +939,360 @@ static void test_data(void)
 	CHECK(!(status()[5] & MMDVM_STATUS_TX));
 }
 
+
+// ---- Audit fixes (docs/testing/mmdvm-audit.md) ----
+
+static uint8_t burst_bit(const uint8_t *f, int n)
+{
+	return (f[n / 8] >> (7 - (n % 8))) & 1;
+}
+
+// Voice B-F as sent up: the EMB (bits 108-115 and 148-155) decoded with QR(16,7,6), the 32 embedded bits between
+static void read_emb(const uint8_t *frame33, uint16_t *emb, uint8_t frag[4])
+{
+	uint16_t e = 0;
+
+	for (int i = 0; i < 8; i++) {
+		e = (uint16_t)((e << 1) | burst_bit(frame33, 108 + i));
+	}
+	for (int i = 0; i < 8; i++) {
+		e = (uint16_t)((e << 1) | burst_bit(frame33, 148 + i));
+	}
+	memset(frag, 0, 4);
+	for (int i = 0; i < 32; i++) {
+		frag[i / 8] |= (uint8_t)(burst_bit(frame33, 116 + i) << (7 - (i % 8)));
+	}
+	*emb = e;
+}
+
+// Checks every voice B-F frame up in out[from..]: the EMB decodes cleanly with our colour code, PI 0 and the LCSS of
+// its position, and B-E reassemble to embedded LCs. Returns the number of embedded LCs; the last ones in lcs[]
+static int check_uplink_emb(int from, uint8_t cc, uint8_t lcs[][9], int max)
+{
+	dmr_emb_rx_t rx;
+	int n = 0;
+
+	dmr_emb_rx_reset(&rx);
+	for (int i = from; i < out_count; i++) {
+		const uint8_t *f = out[i].b;
+		uint8_t ctl = f[3];
+
+		if ((f[2] != MMDVM_DMR_DATA2) || (ctl < 1) || (ctl > 5)) {
+			continue;
+		}
+		uint16_t emb;
+		uint8_t frag[4], fcc = 0xFF, lcss = 0xFF, lc[9];
+		bool pi = true;
+
+		read_emb(f + 4, &emb, frag);
+		CHECK(dmrFecEmbDecode(emb, &fcc, &pi, &lcss) == 0);
+		CHECK(fcc == cc && !pi && lcss == dmr_emb_lcss(ctl));
+		if (ctl == 5) {
+			CHECK(frag[0] == 0 && frag[1] == 0 && frag[2] == 0 && frag[3] == 0);	// F: null embedded signalling
+		}
+		if (dmr_emb_rx_push(&rx, frag, lcss, lc)) {
+			if (n < max) {
+				memcpy(lcs[n], lc, 9);
+			}
+			n++;
+		}
+	}
+	return n;
+}
+
+// A-3: B-F carry a correct EMB and the call's embedded LC; a talker alias block heard goes up in the next superframe
+static void test_uplink_emb(void)
+{
+	static const uint8_t TA[9] = { 0x04, 0x00, 0x51, 0x50, 0x55, 0x4C, 0x53, 0x45, 0x00 };	// FLCO 4, "PULSE"
+	uint8_t lcs[8][9];
+
+	reset_world();
+	configure(5);
+	out_count = 0;
+	rf_lc(DMR_BURST_VOICE_LC_HEADER, LC2);
+	for (int sf = 0; sf < 3; sf++) {
+		for (int i = 0; i < 6; i++) {
+			rf_voice((uint8_t)i, (uint8_t)(sf * 6 + i), ((sf == 0) && (i == 5)) ? TA : NULL);
+		}
+	}
+	rf_lc(DMR_BURST_TERMINATOR_LC, LC2);
+	CHECK(count_out(MMDVM_DMR_DATA2) == 20);
+	int n = check_uplink_emb(0, 5, lcs, 8);
+	CHECK(n == 3);
+	if (n == 3) {
+		CHECK(memcmp(lcs[0], LC2, 9) == 0);
+		CHECK(memcmp(lcs[1], TA, 9) == 0);	// the alias heard in superframe 1, passed on in superframe 2
+		CHECK(memcmp(lcs[2], LC2, 9) == 0);
+	}
+
+	// Late entry: the silence from A and the voice after it carry the same well-formed signalling
+	reset_world();
+	configure(5);
+	out_count = 0;
+	rf_voice(3, 1, LC1);
+	rf_voice(4, 2, NULL);
+	rf_voice(5, 3, NULL);
+	for (int i = 0; i < 6; i++) {
+		rf_voice((uint8_t)i, (uint8_t)(4 + i), NULL);
+	}
+	n = check_uplink_emb(0, 5, lcs, 8);
+	CHECK(n == 2 && memcmp(lcs[0], LC1, 9) == 0 && memcmp(lcs[1], LC1, 9) == 0);
+}
+
+// A-4: E heard, F and A missed, then B: silence F and A at their positions (a wrapped gap), then B
+static void test_uplink_wrapped_gap(void)
+{
+	uint8_t lcs[4][9];
+
+	reset_world();
+	configure(2);
+	out_count = 0;
+	rf_lc(DMR_BURST_VOICE_LC_HEADER, LC1);
+	for (int i = 0; i < 5; i++) {
+		rf_voice((uint8_t)i, (uint8_t)i, NULL);
+	}
+	int from = out_count;
+	now += 120;		// F and A not heard
+	rf_voice(1, 7, NULL);
+	CHECK(out_count - from == 3);
+	if (out_count - from == 3) {
+		CHECK(out[from].b[3] == 5 && out[from + 1].b[3] == 0x20 && out[from + 2].b[3] == 1);
+		CHECK(memcmp(out[from].b + 4, HOTSPOT_UPLINK_SILENCE, 13) == 0);
+		CHECK(memcmp(out[from + 1].b + 4, HOTSPOT_UPLINK_SILENCE, 13) == 0);
+		CHECK(out[from + 2].b[4] == (uint8_t)(7 * 3));
+	}
+	for (int i = 2; i < 6; i++) {
+		rf_voice((uint8_t)i, (uint8_t)(8 + i), NULL);
+	}
+	CHECK(check_uplink_emb(0, 2, lcs, 4) == 2);	// the sequence MMDVMHost checks carried on: both superframes' LCs
+	CHECK(count_out(MMDVM_DMR_LOST2) == 0);
+}
+
+// A-9: RSSI bytes 00, raw (AT1846S scale) after bursts heard, when known; none on bursts we made
+static void test_uplink_rssi(void)
+{
+	reset_world();
+	configure(2);
+	set_freq(438800000, 438800000, 255);
+	out_count = 0;
+	rf_lc(DMR_BURST_VOICE_LC_HEADER, LC1);	// rssi_dbm 0: unknown, no bytes
+	CHECK(out[out_count - 1].b[1] == 37);
+
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_VOICE;
+	b.voice_index = 2;
+	b.crc_ok = true;
+	b.len = 27;
+	b.rssi_dbm = -80;
+	b.lc_valid = true;
+	memcpy(b.lc, LC2, 9);
+	poll_for(1000);
+	out_count = 0;
+	rf(&b);			// late entry at C: a header, silence A and B (all ours, no RSSI), then C with its RSSI
+	CHECK(out_count == 4);
+	if (out_count == 4) {
+		CHECK(out[0].b[1] == 37 && out[1].b[1] == 37 && out[2].b[1] == 37);
+		CHECK(out[3].b[1] == 39 && out[3].b[37] == 0 && out[3].b[38] == 71);	// -80 + 151
+	}
+
+	// VHF: rfgw's -164 + raw x 32 / 27 gives the dBm back; the radio's own reading when the burst has none
+	reset_world();
+	hotspot_set_radio(&radio_ops_full);
+	configure(2);
+	set_freq(145500000, 145500000, 255);
+	r.rssi = -100;
+	out_count = 0;
+	rf_lc(DMR_BURST_VOICE_LC_HEADER, LC1);
+	const uint8_t *f = last_out(MMDVM_DMR_DATA2);
+	CHECK(f != NULL && f[1] == 39 && f[37] == 0);
+	if ((f != NULL) && (f[1] == 39)) {
+		int dbm = -164 + f[38] * 32 / 27;
+
+		CHECK(dbm >= -101 && dbm <= -99);
+	}
+}
+
+// A-10 / C-16: SET_FREQ during an uplink call: DMR_LOST2 before the ACK, nothing from the old frequency after it
+static void test_retune_lost(void)
+{
+	reset_world();
+	configure(2);
+	rf_lc(DMR_BURST_VOICE_LC_HEADER, LC1);
+	rf_voice(0, 1, NULL);
+	dmr_burst_t b;	// heard on the old frequency, still in the event queue
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_VOICE;
+	b.voice_index = 1;
+	b.crc_ok = true;
+	b.len = 27;
+	dmr_event_t ev = { .kind = DMR_EV_BURST_RX, .ts = 2, .burst = &b };
+	hotspot_modem_event(&ev, NULL);
+	out_count = 0;
+	set_freq(439000000, 439000000, 255);
+	CHECK(out_count == 2 && out[0].b[2] == MMDVM_DMR_LOST2 && out[1].b[2] == MMDVM_ACK);
+	poll_for(1000);
+	CHECK(count_out(MMDVM_DMR_DATA2) == 0 && count_out(MMDVM_DMR_LOST2) == 1);
+	// No call open: just the ACK
+	out_count = 0;
+	set_freq(439100000, 439100000, 255);
+	CHECK(out_count == 1 && out[0].b[2] == MMDVM_ACK);
+}
+
+// A-11 / D-12: SET_MODE idle mid-call ends the call with its terminator and drops the queue
+static void test_mode_idle(void)
+{
+	reset_world();
+	configure(1);		// state DMR
+	net_lc(DT_VOICE_LC_HEADER, LC1);
+	for (int i = 0; i < 18; i++) {
+		net_voice((uint8_t)(i % 6), (uint8_t)i);
+	}
+	poll_for(10);
+	CHECK(m.begins == 1 && m.log_count == 8);	// the modem's queue is full, the rest waits in ours
+	uint8_t mode = MMDVM_MODE_IDLE;
+	out_count = 0;
+	host(MMDVM_SET_MODE, &mode, 1);
+	CHECK(ack_for(MMDVM_SET_MODE));
+	air();
+	poll_for(10);
+	CHECK(m.log_count == 9 && m.ends == 1);
+	CHECK(m.log[8].kind == DMR_BURST_TERMINATOR_LC && memcmp(m.log[8].payload, LC1, 9) == 0);
+	tx_done();
+	poll_for(10);
+	const uint8_t *st = status();
+	CHECK(!(st[5] & MMDVM_STATUS_TX) && st[4] == MMDVM_MODE_IDLE && st[8] == 22);
+	// Buffering only (nothing keyed yet): dropped, no transmission
+	reset_world();
+	configure(1);
+	net_lc(DT_VOICE_LC_HEADER, LC1);
+	host(MMDVM_SET_MODE, &mode, 1);
+	poll_for(500);
+	CHECK(m.begins == 0 && !(status()[5] & MMDVM_STATUS_TX));
+}
+
+// A-12: POCSAG state accepted: no pages, DMR heard but not passed up, POCSAG space 0
+static void test_pocsag(void)
+{
+	reset_world();
+	configure(2);
+	uint8_t mode = MMDVM_MODE_POCSAG;
+	out_count = 0;
+	host(MMDVM_SET_MODE, &mode, 1);
+	CHECK(ack_for(MMDVM_SET_MODE));
+	const uint8_t *st = status();
+	CHECK(st[4] == MMDVM_MODE_POCSAG && st[12] == 0);
+	out_count = 0;
+	rf_lc(DMR_BURST_VOICE_LC_HEADER, LC1);
+	CHECK(count_out(MMDVM_DMR_DATA2) == 0);
+	CHECK(status()[5] & MMDVM_STATUS_CD);	// still heard
+	uint8_t junk[33] = { 0 };
+	host(MMDVM_POCSAG_DATA, junk, 20);
+	CHECK(nak_for(MMDVM_POCSAG_DATA, MMDVM_NAK_WRONG_MODE));
+	uint8_t f[33];
+	lc_frame(DT_VOICE_LC_HEADER, LC1, f);
+	CHECK(net(f) == MMDVM_NAK_WRONG_MODE);
+	// C-11: 06, 00, 02, 02
+	mode = MMDVM_MODE_IDLE;
+	host(MMDVM_SET_MODE, &mode, 1);
+	mode = MMDVM_MODE_DMR;
+	host(MMDVM_SET_MODE, &mode, 1);
+	host(MMDVM_SET_MODE, &mode, 1);
+	CHECK(count_out(MMDVM_ACK) == 3);
+	poll_for(1000);
+	out_count = 0;
+	rf_lc(DMR_BURST_VOICE_LC_HEADER, LC2);
+	CHECK(count_out(MMDVM_DMR_DATA2) == 1);	// passed up again
+	// SET_CONFIG with state 06 (and the POCSAG enable bit)
+	uint8_t c[23] = { 0x80, 0x22, 10, MMDVM_MODE_POCSAG, 128, 128, 1 };
+	out_count = 0;
+	host(MMDVM_SET_CONFIG, c, sizeof(c));
+	CHECK(ack_for(MMDVM_SET_CONFIG));
+	st = status();
+	CHECK(st[3] == 0x22 && st[4] == MMDVM_MODE_POCSAG);
+}
+
+// A-6 / C-13 / C-14: SEND_CWID ACKed in idle (keyed when the radio can), NAK 5 otherwise
+static void test_cwid(void)
+{
+	static const uint8_t CALL[5] = { 'T', 'E', 'S', 'T', '1' };
+	hotspot_stats_t st;
+
+	// No CW keying on this radio: ACK, counted, nothing keyed
+	reset_world();
+	configure(1);		// state DMR
+	out_count = 0;
+	host(MMDVM_SEND_CWID, CALL, 5);
+	CHECK(out_count == 1 && nak_for(MMDVM_SEND_CWID, MMDVM_NAK_FULL));
+	uint8_t mode = MMDVM_MODE_IDLE;
+	host(MMDVM_SET_MODE, &mode, 1);
+	out_count = 0;
+	host(MMDVM_SEND_CWID, CALL, 5);
+	CHECK(out_count == 1 && ack_for(MMDVM_SEND_CWID));
+	hotspot_get_stats(&st);
+	CHECK(st.cwid_requests == 1 && st.cwid_unsent == 1);
+	CHECK(!(status()[5] & MMDVM_STATUS_TX));
+
+	// With cw_id: keyed, the TX flag set while it runs
+	reset_world();
+	hotspot_set_radio(&radio_ops_full);
+	r.cw_ok = true;
+	configure(1);
+	host(MMDVM_SET_MODE, &mode, 1);
+	out_count = 0;
+	host(MMDVM_SEND_CWID, CALL, 5);
+	CHECK(ack_for(MMDVM_SEND_CWID) && r.cw_calls == 1 && strcmp(r.cw, "TEST1") == 0);
+	CHECK(status()[5] & MMDVM_STATUS_TX);
+	host(MMDVM_SEND_CWID, CALL, 5);		// still keying: not idle
+	CHECK(nak_for(MMDVM_SEND_CWID, MMDVM_NAK_FULL) && r.cw_calls == 1);
+	r.cw_keyed = false;
+	CHECK(!(status()[5] & MMDVM_STATUS_TX));
+	hotspot_get_stats(&st);
+	CHECK(st.cwid_requests == 1 && st.cwid_unsent == 0);
+}
+
+// A-8: the extension sets the space bytes (SFR: the outbound slot's space at offsets 7 and 8)
+static void ext_space(uint8_t *slot1, uint8_t *slot2) { *slot1 = *slot2; }
+
+static void test_ext_space(void)
+{
+	static const mmdvm_ext_t ext = { .space = ext_space };
+
+	reset_world();
+	configure(1);
+	CHECK(status()[7] == 0);
+	mmdvm_set_ext(&ext);
+	const uint8_t *st = status();
+	CHECK(st[7] == 22 && st[8] == 22);
+}
+
+// A-2 / T-USB-2: hotspot mode never depends on DTR being set, only on it dropping
+static void test_hostlink_dtr(void)
+{
+	hostlink_session_t hs;
+
+	// Windows MMDVMHost: DTR clear all along, polling: stays
+	hostlink_session_start(&hs, false);
+	for (int i = 0; i < 100; i++) {
+		CHECK(hostlink_session_check(&hs, false, true, false, 250) == HOSTLINK_STAY);
+	}
+	CHECK(hostlink_session_check(&hs, false, true, false, HOSTLINK_HOTSPOT_IDLE_MS + 1) == HOSTLINK_LEAVE_IDLE);
+	// DTR raised later (a host that sets it after opening): still stays; then dropped: the port was closed
+	hostlink_session_start(&hs, false);
+	CHECK(hostlink_session_check(&hs, true, true, false, 10) == HOSTLINK_STAY);
+	CHECK(hostlink_session_check(&hs, true, true, false, 10) == HOSTLINK_STAY);
+	CHECK(hostlink_session_check(&hs, false, true, false, 10) == HOSTLINK_LEAVE_CLOSED);
+	// Linux / macOS: DTR set on open, dropped on close
+	hostlink_session_start(&hs, true);
+	CHECK(hostlink_session_check(&hs, true, true, false, 10) == HOSTLINK_STAY);
+	CHECK(hostlink_session_check(&hs, false, true, false, 10) == HOSTLINK_LEAVE_CLOSED);
+	// The user's exit, and a port that went away
+	hostlink_session_start(&hs, false);
+	CHECK(hostlink_session_check(&hs, false, true, true, 10) == HOSTLINK_LEAVE_USER);
+	hostlink_session_start(&hs, false);
+	CHECK(hostlink_session_check(&hs, false, false, false, 10) == HOSTLINK_LEAVE_GONE);
+}
+
 static void test_end(void)
 {
 	reset_world();
@@ -871,6 +1311,7 @@ int main(void)
 {
 	test_framer();
 	test_version_status();
+	test_slow_enter();
 	test_config();
 	test_extension();
 	test_net_call();
@@ -881,6 +1322,15 @@ int main(void)
 	test_abort();
 	test_uplink();
 	test_data();
+	test_uplink_emb();
+	test_uplink_wrapped_gap();
+	test_uplink_rssi();
+	test_retune_lost();
+	test_mode_idle();
+	test_pocsag();
+	test_cwid();
+	test_ext_space();
+	test_hostlink_dtr();
 	test_end();
 	if (failures == 0) {
 		printf("mmdvmTest: all passed\n");

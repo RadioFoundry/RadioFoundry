@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 /*
- * Host test for core/dmr/fec: Hamming, BPTC(196,96), Golay(20,8) and the slot type
+ * Host test for core/dmr/fec: Hamming, BPTC(196,96), Golay(20,8), the slot type and the EMB's QR(16,7,6)
  *
  *   make -C tests/host
  */
@@ -192,12 +192,98 @@ static void testBptc(void)
 	CHECK(bad == 0, "BPTC: %d error patterns not corrected", bad);
 }
 
+// QR(16,7,6), ETSI TS 102 361-1 B.3.2. The code is checked against an independent construction: the 15 bit words
+// m(x) g(x) for all m of degree below 7 (non-systematic, by multiplication rather than division), each with an even
+// parity bit, must be exactly the encoder's codeword set
+static void testQr1676(void)
+{
+	static uint8_t isCodeword[65536 / 8];
+	int bad = 0;
+
+	// Known codewords: data 1, 2, 4 and 7 (the generator rows and a sum of them)
+	CHECK(dmrFecQr1676Encode(1) == 0x0273, "QR(16,7,6) 1 -> %04X", dmrFecQr1676Encode(1));
+	CHECK(dmrFecQr1676Encode(2) == 0x04E5, "QR(16,7,6) 2 -> %04X", dmrFecQr1676Encode(2));
+	CHECK(dmrFecQr1676Encode(4) == 0x09C9, "QR(16,7,6) 4 -> %04X", dmrFecQr1676Encode(4));
+	CHECK(dmrFecQr1676Encode(7) == 0x0F5F, "QR(16,7,6) 7 -> %04X", dmrFecQr1676Encode(7));
+	CHECK(dmrFecQr1676Encode(0) == 0x0000, "QR(16,7,6) 0");
+
+	memset(isCodeword, 0, sizeof(isCodeword));
+	for (uint32_t msg = 0; msg < 128; msg++)
+	{
+		uint32_t w = 0;
+
+		for (int i = 0; i < 7; i++)
+		{
+			if (msg & (1u << i))
+			{
+				w ^= 0x139u << i;	// g(x) = x^8 + x^5 + x^4 + x^3 + 1
+			}
+		}
+		w = (w << 1) | (uint32_t)(popcount(w) & 1);
+		isCodeword[w >> 3] |= (uint8_t)(1u << (w & 7));
+	}
+	for (uint16_t d = 0; d < 128; d++)
+	{
+		uint16_t cw = dmrFecQr1676Encode((uint8_t)d);
+		uint8_t out = 0xFF;
+
+		bad += !(isCodeword[cw >> 3] & (1u << (cw & 7))) || ((cw >> 9) != d);
+		bad += (dmrFecQr1676Decode(cw, &out) != 0) || (out != d);
+		for (uint16_t e = d + 1; e < 128; e++)
+		{
+			bad += popcount((uint32_t)(cw ^ dmrFecQr1676Encode((uint8_t)e))) < 6;
+		}
+	}
+	CHECK(bad == 0, "QR(16,7,6): %d codewords wrong or closer than 6", bad);
+
+	// Every 1 and 2 bit error corrected, every 3 bit error detected
+	bad = 0;
+	for (uint16_t d = 0; d < 128; d += 5)
+	{
+		uint16_t cw = dmrFecQr1676Encode((uint8_t)d);
+
+		for (int a = 0; a < 16; a++)
+		{
+			for (int b = a; b < 16; b++)
+			{
+				uint8_t out = 0xFF;
+				uint16_t e = (uint16_t)(cw ^ (1u << a) ^ ((a != b) ? (1u << b) : 0));
+
+				bad += (dmrFecQr1676Decode(e, &out) != ((a != b) ? 2 : 1)) || (out != d);
+				for (int c = b + 1; (a != b) && (c < 16); c++)
+				{
+					bad += dmrFecQr1676Decode((uint16_t)(e ^ (1u << c)), &out) != -1;
+				}
+			}
+		}
+	}
+	CHECK(bad == 0, "QR(16,7,6): %d error patterns mishandled", bad);
+
+	// EMB: colour code 1, PI 0, LCSS first (data 0001 0 01 = 9); round trip of every field combination
+	CHECK(dmrFecEmbEncode(1, false, 1) == (dmrFecQr1676Encode(8) ^ dmrFecQr1676Encode(1)), "EMB CC1 LCSS1");
+	bad = 0;
+	for (uint8_t cc = 0; cc < 16; cc++)
+	{
+		for (uint8_t lcss = 0; lcss < 4; lcss++)
+		{
+			uint8_t c2, l2;
+			bool pi;
+			uint16_t emb = dmrFecEmbEncode(cc, (lcss & 1) != 0, lcss);
+
+			bad += (dmrFecEmbDecode((uint16_t)(emb ^ 0x0101), &c2, &pi, &l2) != 2) || (c2 != cc) || (l2 != lcss) ||
+				   (pi != ((lcss & 1) != 0));
+		}
+	}
+	CHECK(bad == 0, "EMB: %d round trips wrong", bad);
+}
+
 int main(void)
 {
 	testHamming();
 	testGolay();
 	testSlotType();
 	testBptc();
+	testQr1676();
 
 	printf("# dmrFecTest %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

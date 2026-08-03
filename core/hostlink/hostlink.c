@@ -30,6 +30,8 @@ static uint32_t last_byte_ms;
 #if CONFIG_HOTSPOT
 static mmdvm_framer_t framer;
 static char description[64];
+static hostlink_session_t session;
+static uint32_t entered_ms;		// when hotspot mode began (idle time before the first whole frame)
 #endif
 
 hostlink_mode_t hostlink_mode(void)
@@ -116,6 +118,8 @@ static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
 	if ((mode != HOSTLINK_HOTSPOT) && new_request && (buf[0] == MMDVM_FRAME_START) && hotspot_allowed) {
 		mode = HOSTLINK_HOTSPOT;
 		mmdvm_framer_reset(&framer);
+		hostlink_session_start(&session, (board.host_port != NULL) && board.host_port->connected());
+		entered_ms = now;
 	}
 	if (mode == HOSTLINK_HOTSPOT) {
 		feed_mmdvm(buf, len, now);
@@ -169,8 +173,13 @@ static void hostlink_task(void *arg)
 		case HOSTLINK_HOTSPOT:
 #if CONFIG_HOTSPOT
 			mmdvm_poll(now);
-			if (exit_now || !port->connected() ||
-			    ((now - mmdvm_last_frame_ms()) > HOSTLINK_HOTSPOT_IDLE_MS)) {
+			// Never gated on DTR being set, only on it dropping (hostlink.h). The port can't report USB unmount or
+			// suspend apart from DTR yet (hal_stream_t has no such call), so with DTR never set an unplugged host
+			// is noticed by the idle timeout
+			uint32_t last = (mmdvm_last_frame_ms() != 0) ? mmdvm_last_frame_ms() : entered_ms;
+
+			if (hostlink_session_check(&session, port->connected(), true, exit_now, now - last) !=
+			    HOSTLINK_STAY) {
 				leave_hotspot();
 			}
 #else
