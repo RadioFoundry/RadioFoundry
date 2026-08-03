@@ -252,11 +252,25 @@ static void test_decode(void)
 	CHECK(s.kind == DMR_BURST_VOICE_LC_HEADER && s.pi && s.sync == DMR_SYNC_TS2);
 	hrc6000_dmr_decode(0x83, 0x00, 0x00, &s);	// reverse channel
 	CHECK(s.kind == HRC6000_KIND_NONE);
-	hrc6000_dmr_decode(0x81, 0x00, 0x00, &s);	// voice sync with burst number 0: unusable
+	hrc6000_dmr_decode(0x81, 0x00, 0x00, &s);	// type 0x8 has no voice number: rate 3/4 whatever the class
+	CHECK(s.kind == DMR_BURST_RATE_34_DATA);
+	hrc6000_dmr_decode(0xD2, 0x00, 0x00, &s);	// reserved data type 13 with data sync
 	CHECK(s.kind == HRC6000_KIND_NONE);
-	hrc6000_dmr_decode(0x30, 0x00, 0x00, &s);	// EMB-only report without a voice number
+	hrc6000_dmr_decode(0xF0, 0x00, 0x00, &s);
 	CHECK(s.kind == HRC6000_KIND_NONE);
-	hrc6000_dmr_decode(0xD2, 0x00, 0x00, &s);	// reserved data type 13
+	// Bench 2026-10-09 (MMDVM HAT, MS sync): voice F read 0xE8, class 0 with bit 3 set; it is not privacy
+	hrc6000_dmr_decode(0xE8, 0x20, 0x00, &s);
+	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == 5 && !s.pi && s.crc_ok);
+	// Headers and terminators are data types whatever the class reads
+	hrc6000_dmr_decode(0x10, 0x20, 0x00, &s);
+	CHECK(s.kind == DMR_BURST_VOICE_LC_HEADER);
+	hrc6000_dmr_decode(0x11, 0x20, 0x00, &s);
+	CHECK(s.kind == DMR_BURST_VOICE_LC_HEADER);
+	hrc6000_dmr_decode(0x20, 0x20, 0x00, &s);
+	CHECK(s.kind == DMR_BURST_TERMINATOR_LC);
+	hrc6000_dmr_decode(0x30, 0x00, 0x00, &s);
+	CHECK(s.kind == DMR_BURST_CSBK);
+	hrc6000_dmr_decode(0x13, 0x20, 0x00, &s);	// reverse channel class: dropped
 	CHECK(s.kind == HRC6000_KIND_NONE);
 }
 
@@ -701,6 +715,58 @@ static void test_cc_follow(void)
 	CHECK(last_write(4, 0x1F) == -1);
 }
 
+// Bench 2026-10-09: each voice burst was reported twice, in step, at two consecutive ticks (V twice the bursts sent)
+static void test_rx_repeat_report(void)
+{
+	fresh_engine();
+	uint32_t t = 9700000;
+	for (int i = 0; i < 27; i++) {
+		voice_rx[i] = (uint8_t)(0x30 + i);
+	}
+	for (int n = 0; n < 12; n++) {
+		uint8_t r51 = (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | 0x08);
+		ts_at(t);
+		report_at(t + 3000, r51, 0x20, 0x00);	// the burst
+		t += 30000;
+		ts_at(t);
+		report_at(t + 3000, r51, 0x20, 0x00);	// the same status again one slot later
+		t += 30000;
+	}
+	CHECK(eng.st.rx_voice == 12);
+	CHECK(eng.st.rx_dup_repeat == 12);
+	// Headers repeated the same way: 8 headers, each reported twice
+	uint32_t h = eng.st.rx_lc_header;
+	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
+	for (int n = 0; n < 8; n++) {
+		ts_at(t);
+		report_at(t + 3000, 0x12, 0x20, 0x00);
+		t += 30000;
+		ts_at(t);
+		report_at(t + 3000, 0x12, 0x20, 0x00);
+		t += 30000;
+	}
+	CHECK(eng.st.rx_lc_header == h + 8);
+	CHECK(eng.st.by_class[0] == 24 && eng.st.by_class[2] == 16);
+	CHECK(eng.st.by_type[0x9] == 4 && eng.st.by_type[0x1] == 16);
+	CHECK(eng.st.dt_hist[2] == 40);	// all 3 ms after the tick
+}
+
+// The quiet-period restart happens once, not every 20 ticks (each one drops the sync)
+static void test_idle_restart_once(void)
+{
+	fresh_engine();
+	uint32_t t = 9900000;
+	for (int k = 0; k < 100; k++) {
+		ts_at(t += 30000);
+	}
+	CHECK(eng.st.rs_why[HRC6000_RS_IDLE] == 1);
+	report_at(t + 3000, 0x12, 0x20, 0x00);	// something heard, then quiet again: one "lost" restart, no idle one
+	for (int k = 0; k < 100; k++) {
+		ts_at(t += 30000);
+	}
+	CHECK(eng.st.rs_why[HRC6000_RS_LOST] == 1 && eng.st.rs_why[HRC6000_RS_IDLE] == 1);
+}
+
 static void test_halt(void)
 {
 	fresh_engine();
@@ -726,6 +792,8 @@ int main(void)
 	test_tx_aligned_rmo();
 	test_tx_rejected_and_stall();
 	test_cc_follow();
+	test_rx_repeat_report();
+	test_idle_restart_once();
 	test_halt();
 	if (failures) {
 		printf("# hrc6000DmrTest: %d FAILED\n", failures);

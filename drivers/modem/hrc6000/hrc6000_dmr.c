@@ -64,8 +64,8 @@
 #define IN_STEP_MAX_US		12000u
 #define OUT_OF_STEP_US		22000u
 #define OUT_OF_STEP_RESYNC	2	// consecutive out-of-step reports before the receiver is restarted
-#define VOICE_DEDUP_US		45000u	// one slot locked
-#define VOICE_DEDUP_BOTH_US	28000u	// both slots received
+#define VOICE_DEDUP_US		45000u	// the same burst reported again
+#define VOICE_DEDUP_BOTH_US	28000u	// any two voice bursts
 #define PA_MIN_ON_US		20000u
 #define PA_FORCE_OFF_US		40000u	// poll fallback when no timeslot interrupt came to drop the PA
 #define STALL_US		200000u
@@ -183,22 +183,23 @@ void hrc6000_dmr_decode(uint8_t r51, uint8_t r52, uint8_t r5f, hrc6000_rx_status
 	st->sync = families[r5f & 3u];
 	st->kind = HRC6000_KIND_NONE;
 	st->voice_index = 0;
-	switch (st->sync_class) {
-	case 2:		// data sync: the ETSI data type (0x9 is idle here, not voice A)
-		if (nib <= 0x0Bu) {
-			st->kind = nib;
-		}
-		break;
-	case 0:		// no sync: voice B-F (and the EMB report)
-	case 1:		// voice sync: voice A
-		// Voice numbers come with bit 3 set (0x9-0xE): the burst is the low 3 bits, 1-6 = A-F (gotchas 1.3)
-		if ((nib & 0x08u) != 0 && (nib & 7u) >= 1u && (nib & 7u) <= 6u) {
-			st->kind = DMR_BURST_VOICE;
-			st->voice_index = (uint8_t)((nib & 7u) - 1u);
-		}
-		break;
-	default:	// reverse channel
-		break;
+	// Voice numbers come with bit 7 set (the field reads 0x9-0xE): the burst is the low 3 bits, 1-6 = A-F
+	// (gotchas 1.3). Bench 2026-10-09: voice F read 0xE8 (class 0, bit 3 set as well), and headers were never
+	// classified with the class 2 = data rule, so the class is only trusted where the type field is ambiguous:
+	//   type 0x0-0x8: a data type whatever the class (no voice number has bit 7 clear, and 0x8 has none)
+	//   type 0x9-0xB: idle / rate 1 / USBD with data sync (class 2), else voice A-C
+	//   type 0xC-0xE: voice D-F unless data sync (reserved data types);  0xF: nothing
+	// Class 3 (reverse channel) is dropped. For voice, bit 3 (PI) is unreliable (it is set on plain calls)
+	bool voice_nib = (nib & 0x08u) != 0 && (nib & 7u) >= 1u && (nib & 7u) <= 6u;
+	if (st->sync_class == 3) {
+		return;
+	}
+	if (nib <= 0x08u || (nib <= 0x0Bu && st->sync_class == 2)) {
+		st->kind = nib;
+	} else if (voice_nib && st->sync_class != 2) {
+		st->kind = DMR_BURST_VOICE;
+		st->voice_index = (uint8_t)((nib & 7u) - 1u);
+		st->pi = false;
 	}
 }
 
@@ -326,8 +327,11 @@ static void forget_slots(hrc6000_dmr_t *e)
 	e->tc_disagree = 0;
 }
 
-static void do_restart(hrc6000_dmr_t *e)
+static void do_restart(hrc6000_dmr_t *e, uint8_t why)
 {
+	if (why < HRC6000_RS_COUNT) {
+		e->st.rs_why[why]++;
+	}
 	hrc6000_dmr_chip_rx_restart(e->dev, rx_ctl(e));
 	e->ctl_next = rx_ctl(e);
 	forget_slots(e);
@@ -439,7 +443,7 @@ static void tx_finish(hrc6000_dmr_t *e)
 		set_ctl(e, rx_ctl(e));
 		e->rx_tick = e->tick;
 	} else {
-		do_restart(e);				// direct mode: follow whoever talks next
+		do_restart(e, HRC6000_RS_TX_END);	// direct mode: follow whoever talks next
 	}
 	txq_flush(e);
 	e->tx_state = TXS_IDLE;
@@ -605,11 +609,31 @@ static void cc_follow(hrc6000_dmr_t *e, uint8_t cc, uint32_t t)
 		e->cc_cur = cc;
 		hrc6000_dmr_set_cc(e->dev, cc);
 		e->restart_pending = true;	// at the next timeslot interrupt: no busy wait here (gotchas 1.7)
+		e->restart_why = HRC6000_RS_CC;
 	}
 	if (e->cc_matches >= CC_HOLD_MATCHES) {
 		e->cc_held = true;
 		e->cc_hold_tick = e->tick;
 	}
+}
+
+// Raw evidence for the bench, before anything is dropped: status class and type, sync type, report timing
+static void rx_evidence(hrc6000_dmr_t *e, uint8_t r51, uint8_t r5f, uint32_t dt)
+{
+	static const uint32_t edges_us[HRC6000_DT_BINS - 1] = { 1000u, 3000u, 6000u, 12000u, 22000u };
+	e->st.last_r51 = r51;
+	e->st.last_r5f = r5f;
+	e->st.by_class[r51 & 3u]++;
+	e->st.by_type[r51 >> 4]++;
+	e->st.by_r5f[r5f & 3u]++;
+	if (!e->timing) {
+		return;
+	}
+	uint8_t bin = 0;
+	while (bin < HRC6000_DT_BINS - 1 && dt >= edges_us[bin]) {
+		bin++;
+	}
+	e->st.dt_hist[bin]++;
 }
 
 static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
@@ -618,11 +642,11 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	uint8_t r5f = r(e->dev, R_SYNC_TYPE);
 	hrc6000_rx_status_t s;
 	hrc6000_dmr_decode(r51, r52, r5f, &s);
-	e->st.last_r51 = r51;
 
 	bool tx = e->tx_state != TXS_IDLE;
 	uint32_t dt = t - e->t_tick;
 	uint32_t dms = dt / 1000u;
+	rx_evidence(e, r51, r5f, dt);
 	e->st.last_report_ms = (uint8_t)(dms > 255u ? 255u : dms);
 	bool in_step = e->timing && dt >= IN_STEP_MIN_US && dt <= IN_STEP_MAX_US;
 
@@ -630,11 +654,15 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 		e->st.rx_rc++;
 		return;
 	}
+	if (s.kind != DMR_BURST_VOICE) {
+		e->st.last_data_r51 = r51;
+	}
 	if (e->timing && dt >= OUT_OF_STEP_US) {
 		e->st.rx_out_of_step++;
 		// The chip's timing is off the sender's (it locked to noise): resynchronize (gotchas 1.5)
 		if (!tx && ++e->out_of_step_run >= OUT_OF_STEP_RESYNC) {
 			e->restart_pending = true;
+			e->restart_why = HRC6000_RS_OOS;
 			e->out_of_step_run = 0;
 		}
 	} else if (in_step) {
@@ -644,17 +672,41 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	// One report per slot (gotchas 1.2)
 	if (e->timing && e->report_valid && e->report_tick == e->tick) {
 		e->st.rx_dup++;
+		e->st.rx_dup_slot++;
 		return;
 	}
 	// Following an in-step signal, a report off the slot timing is an extra one (the EMB report mid-slot)
 	if (!tx && !in_step && e->rx_any && (uint32_t)(e->tick - e->rx_tick) <= 2u && e->timing) {
 		e->st.rx_dup++;
+		e->st.rx_dup_extra++;
 		return;
 	}
+
+	// The payload now: the repeat check below compares it
+	dmr_burst_t nb;
+	memset(&nb, 0, sizeof(nb));
 	bool voice = s.kind == DMR_BURST_VOICE;
-	if (voice && e->voice_valid
-	    && (uint32_t)(t - e->t_voice) < (e->lock_ts > 0 ? VOICE_DEDUP_US : VOICE_DEDUP_BOTH_US)) {
+	nb.len = hrc6000_dmr_payload_len(s.kind);
+	if (voice) {
+		hrc6000_dmr_voice(e->dev, false, nb.payload);
+	} else {
+		hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, nb.payload, nb.len);
+	}
+
+	// The same burst reported again at the next timeslot interrupt (bench 2026-10-09: every voice burst came twice,
+	// both in step, 30 ms apart, so the 28 ms window let both through). A repeat: within 45 ms of the burst taken,
+	// same kind and voice number, and for data the same payload (two calls on two slots never share one). TS1 / TS2
+	// direct mode sync on different slots are two calls, not a repeat
+	if (e->report_valid && (uint32_t)(t - e->t_report) < VOICE_DEDUP_US && s.kind == e->last_rx_kind
+	    && !(s.sync != e->last_rx_sync && (s.sync == DMR_SYNC_TS1 || s.sync == DMR_SYNC_TS2))
+	    && (voice ? s.voice_index == e->last_rx_index : memcmp(nb.payload, e->last_rx_payload, nb.len) == 0)) {
 		e->st.rx_dup++;
+		e->st.rx_dup_repeat++;
+		return;
+	}
+	if (voice && e->voice_valid && (uint32_t)(t - e->t_voice) < VOICE_DEDUP_BOTH_US) {
+		e->st.rx_dup++;		// any voice within 28 ms of the last (gotchas 1.2)
+		e->st.rx_dup_repeat++;
 		return;
 	}
 
@@ -681,10 +733,16 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 
 	e->report_tick = e->tick;
 	e->report_valid = true;
+	e->t_report = t;
+	e->last_rx_kind = s.kind;
+	e->last_rx_index = s.voice_index;
+	e->last_rx_sync = s.sync;
+	memcpy(e->last_rx_payload, nb.payload, sizeof(e->last_rx_payload));
 	e->heard_tick = e->tick;
 	e->heard_any = true;
 	e->rx_tick = e->tick;
 	e->rx_any = true;
+	e->idle_restarted = false;
 	if (voice) {
 		e->t_voice = t;
 		e->voice_valid = true;
@@ -712,7 +770,7 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 		return;
 	}
 	dmr_burst_t *b = &slot->burst;
-	memset(b, 0, sizeof(*b));
+	*b = nb;
 	b->kind = s.kind;
 	b->voice_index = s.voice_index;
 	b->sync = s.sync;
@@ -721,23 +779,18 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	b->crc_ok = s.crc_ok;
 	b->pi = s.pi;
 	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)
-	b->len = hrc6000_dmr_payload_len(s.kind);
 	if (voice) {
-		hrc6000_dmr_voice(e->dev, false, b->payload);
 		if (s.voice_index == 5) {	// the embedded LC of B-E is assembled by F
 			hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, b->lc, sizeof(b->lc));
 			bool changed = memcmp(b->lc, e->stale_lc, sizeof(b->lc)) != 0;
 			b->lc_valid = s.crc_ok && (changed || e->voice_since_start > STALE_LC_VOICE);
 		}
-	} else {
-		hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, b->payload, b->len);
-		if (s.kind == DMR_BURST_VOICE_LC_HEADER || s.kind == DMR_BURST_TERMINATOR_LC) {
-			memcpy(b->lc, b->payload, sizeof(b->lc));
-			b->lc_valid = s.crc_ok;
-			if (s.crc_ok) {	// this call's LC from its own header: the embedded one may now equal it
-				memcpy(e->stale_lc, b->lc, sizeof(e->stale_lc));
-				e->voice_since_start = STALE_LC_VOICE + 1u;
-			}
+	} else if (s.kind == DMR_BURST_VOICE_LC_HEADER || s.kind == DMR_BURST_TERMINATOR_LC) {
+		memcpy(b->lc, b->payload, sizeof(b->lc));
+		b->lc_valid = s.crc_ok;
+		if (s.crc_ok) {	// this call's LC from its own header: the embedded one may now equal it
+			memcpy(e->stale_lc, b->lc, sizeof(e->stale_lc));
+			e->voice_since_start = STALE_LC_VOICE + 1u;
 		}
 	}
 	slot->ev.kind = DMR_EV_BURST_RX;
@@ -781,10 +834,17 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 			e->cc_matches = 0;
 		}
 		if (e->restart_pending) {
-			do_restart(e);
+			do_restart(e, e->restart_why);
 			push(e, DMR_EV_SYNC_LOST, 0, e->tick);
-		} else if ((e->rx_any && quiet > RX_LOST_TICKS) || (!e->rx_any && quiet > RX_IDLE_TICKS)) {
-			do_restart(e);
+		} else if (e->rx_any && quiet > RX_LOST_TICKS) {
+			do_restart(e, HRC6000_RS_LOST);		// a reception is over (5.5)
+			e->idle_restarted = true;
+		} else if (!e->rx_any && !e->idle_restarted && quiet > RX_IDLE_TICKS) {
+			// Once per quiet period, not every 600 ms: a restart drops the sync, and one landing in a call's
+			// header phase cost the headers (bench 2026-10-09: 43 restarts in 21 s, no header taken). A chip that
+			// locked to noise is caught by the out-of-step rule instead
+			do_restart(e, HRC6000_RS_IDLE);
+			e->idle_restarted = true;
 		} else {
 			uint8_t ctl = rx_ctl(e);
 			if (e->lock_ts > 0) {
@@ -902,12 +962,13 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	e->cc_held = false;
 	e->cc_matches = 0;
 	e->heard_any = false;
+	e->idle_restarted = false;
 	hrc6000_dmr_set_sync(e->dev, DMR_SYNC_MS);
 	if (e->cc_filter >= 0) {
 		e->cc_cur = (uint8_t)e->cc_filter;
 	}
 	hrc6000_dmr_set_cc(e->dev, e->cc_cur);
-	do_restart(e);
+	do_restart(e, HRC6000_RS_CMD);
 	e->running = true;
 	unlock(e);
 }
@@ -964,7 +1025,7 @@ void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 				e->tx_any_setup = false;	// nothing more will go out
 				tx_finish(e);
 			} else if (busy) {
-				do_restart(e);
+				do_restart(e, HRC6000_RS_STALL);
 			}
 			if (busy) {
 				e->st.stalls++;
@@ -987,7 +1048,7 @@ void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg)
 	}
 	e->cc_held = false;
 	if (e->running && e->tx_state == TXS_IDLE) {
-		do_restart(e);
+		do_restart(e, HRC6000_RS_CMD);
 	}
 	unlock(e);
 }
@@ -997,9 +1058,10 @@ void hrc6000_dmr_rx_restart(hrc6000_dmr_t *e)
 	lock(e);
 	if (e->running) {
 		if (e->tx_state == TXS_IDLE) {
-			do_restart(e);
+			do_restart(e, HRC6000_RS_CMD);
 		} else {
 			e->restart_pending = true;
+			e->restart_why = HRC6000_RS_CMD;
 		}
 	}
 	unlock(e);
@@ -1110,6 +1172,7 @@ void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc)
 	}
 	if (e->running) {
 		e->restart_pending = true;	// 5.1 after a color code change
+		e->restart_why = HRC6000_RS_CMD;
 	}
 	unlock(e);
 }

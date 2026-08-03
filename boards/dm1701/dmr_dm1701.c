@@ -359,9 +359,19 @@ static void put_kv(out_t *o, const char *k, uint32_t v)
 	put_u(o, v);
 }
 
+static void put_four(out_t *o, const char *label, const uint32_t *v)
+{
+	put(o, label);
+	for (int k = 0; k < 4; k++) {
+		put(o, " ");
+		put_u(o, v[k]);
+	}
+}
+
+// Lines of at most about 26 characters (the DM-1701 diagnostics page)
 bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 {
-	static const char *const sync_names[] = { "--", "MS", "BS", "T1", "T2" };
+	static const char *const sync_names[] = { "MS", "BS", "T1", "T2", "--" };
 	if (len == 0) {
 		return false;
 	}
@@ -376,7 +386,7 @@ bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " tk", m->ticks);
 		put_kv(&o, " si", m->sys_ints);
 		break;
-	case 1:
+	case 1:		// bursts delivered
 		put_kv(&o, "V", m->rx_voice);
 		put_kv(&o, " H", m->rx_lc_header);
 		put_kv(&o, " T", m->rx_terminator);
@@ -386,37 +396,73 @@ bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, "C", m->rx_csbk);
 		put_kv(&o, " D", m->rx_data);
 		put_kv(&o, " crc", m->rx_crc_err);
-		put_kv(&o, " dup", m->rx_dup);
+		put_kv(&o, " rc", m->rx_rc);
 		break;
-	case 3:
+	case 3:		// last burst: CC, sync family as decoded, slot, delay; raw 0x5F
 		put_kv(&o, "cc", m->last_cc);
 		put(&o, " ");
-		put(&o, sync_names[m->last_sync <= DMR_SYNC_TS2 ? m->last_sync : 0]);
+		put(&o, sync_names[m->last_sync >= DMR_SYNC_MS && m->last_sync <= DMR_SYNC_TS2 ? m->last_sync - 1 : 4]);
 		put_kv(&o, " ts", (uint32_t)(m->last_ts < 0 ? 0 : m->last_ts));
 		put_kv(&o, " @", m->last_report_ms);
-		put(&o, "ms");
+		put(&o, " 5F=");
+		put_x2(&o, m->last_r5f);
 		break;
-	case 4:
+	case 4:		// raw 0x51 of the last report and of the last non-voice one; 0x42 at the last tick
 		put(&o, "51=");
 		put_x2(&o, m->last_r51);
+		put(&o, " d51=");
+		put_x2(&o, m->last_data_r51);
 		put(&o, " 42=");
 		put_x2(&o, m->last_r42);
-		put_kv(&o, " oos", m->rx_out_of_step);
-		put_kv(&o, " rs", m->rx_restarts);
 		break;
-	case 5:
+	case 5:		// every report by 0x51 sync class (bits 1-0), before filtering
+		put_four(&o, "cls", m->by_class);
+		break;
+	case 6:		// ... by 0x51 type (bits 7-4): data types 0-8, voice 9-E
+	case 7:
+	case 8:
+	case 9: {
+		static const char *const labels[] = { "t0-3", "t4-7", "t8-B", "tC-F" };
+		put_four(&o, labels[i - 6], &m->by_type[(i - 6) * 4]);
+		break;
+	}
+	case 10:	// ... by 0x5F bits 1-0 (expected for the HAT's MS sync: all in column 0)
+		put_four(&o, "5F", m->by_r5f);
+		break;
+	case 11:	// ... by delay after the tick: <1 <3 <6 ms (then line 12: <12 <22 >=22); post-access interrupts
+		put_kv(&o, "ms ", m->dt_hist[0]);
+		put_kv(&o, " ", m->dt_hist[1]);
+		put_kv(&o, " ", m->dt_hist[2]);
+		put_kv(&o, " le", m->late_entry);
+		break;
+	case 12:
+		put_kv(&o, "ms12 ", m->dt_hist[3]);
+		put_kv(&o, " 22 ", m->dt_hist[4]);
+		put_kv(&o, " >", m->dt_hist[5]);
+		put_kv(&o, " oos", m->rx_out_of_step);
+		break;
+	case 13:	// dropped duplicates: same tick, off timing, repeat
+		put_kv(&o, "dup s", m->rx_dup_slot);
+		put_kv(&o, " x", m->rx_dup_extra);
+		put_kv(&o, " r", m->rx_dup_repeat);
+		put_kv(&o, " ov", m->ev_overflow);
+		put_kv(&o, " st", m->stalls);
+		break;
+	case 14:	// restarts by reason: idle, lost, out of step, cc, command, stall, tx end
+		put_kv(&o, "rs i", m->rs_why[HRC6000_RS_IDLE]);
+		put_kv(&o, " l", m->rs_why[HRC6000_RS_LOST]);
+		put_kv(&o, " o", m->rs_why[HRC6000_RS_OOS]);
+		put_kv(&o, " c", m->rs_why[HRC6000_RS_CC]);
+		put_kv(&o, " m", m->rs_why[HRC6000_RS_CMD]);
+		put_kv(&o, " s", m->rs_why[HRC6000_RS_STALL] + m->rs_why[HRC6000_RS_TX_END]);
+		break;
+	case 15:
 		put_kv(&o, "tx", m->tx_bursts);
 		put_kv(&o, " rf", m->rftx_ints);
 		put_kv(&o, " pa", m->last_pa_ms);
-		put_kv(&o, " rej", m->tx_rejected);
-		put_kv(&o, " ur", m->tx_underrun);
-		break;
-	case 6:
-		put_kv(&o, "skip", s.rf_skipped);
+		put_kv(&o, " rj", m->tx_rejected);
+		put_kv(&o, " sk", s.rf_skipped);
 		put_kv(&o, " na", s.rf_unarmed);
-		put_kv(&o, " ov", m->ev_overflow);
-		put_kv(&o, " st", m->stalls);
-		put_kv(&o, " le", m->late_entry);
 		break;
 	default:
 		return false;

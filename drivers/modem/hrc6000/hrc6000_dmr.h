@@ -78,6 +78,20 @@ typedef struct {
 	void *ctx;
 } hrc6000_dmr_ops_t;
 
+// Why the engine restarted the receiver (hrc6000_dmr_stats_t.rs_why)
+enum {
+	HRC6000_RS_IDLE,	// nothing heard for 20 ticks (once per quiet period)
+	HRC6000_RS_LOST,	// a reception ended: 13 ticks without a burst
+	HRC6000_RS_OOS,		// reports out of step with the chip's timing
+	HRC6000_RS_CC,		// color code followed to a new one
+	HRC6000_RS_CMD,		// asked for: run, configure, rx_restart, set_cc_filter
+	HRC6000_RS_STALL,	// timing stopped while busy
+	HRC6000_RS_TX_END,	// end of a direct mode transmission
+	HRC6000_RS_COUNT
+};
+
+#define HRC6000_DT_BINS	6	// report delay after the timeslot interrupt: <1, <3, <6, <12, <22, >=22 ms
+
 // Counters for bench bring-up and the diagnostics page (wrap freely)
 typedef struct {
 	uint32_t ticks;		// timeslot interrupts
@@ -91,6 +105,9 @@ typedef struct {
 	uint32_t rx_idle;
 	uint32_t rx_crc_err;	// delivered with a CRC error (data blocks and voice) or dropped for one (headers, CSBK)
 	uint32_t rx_dup;	// second report for one burst (the EMB report, extra reports), dropped
+	uint32_t rx_dup_slot;	// ... of those: a second report in the same tick
+	uint32_t rx_dup_extra;	// ... off the slot timing while following an in-step signal
+	uint32_t rx_dup_repeat;	// ... the same burst again (same kind and number / payload within 45 ms)
 	uint32_t rx_rc;		// reverse channel / unusable status, dropped
 	uint32_t rx_out_of_step;	// reports 22 ms or more after the timeslot interrupt
 	uint32_t rx_restarts;	// receiver restarts by the engine (silence, out of step, CC change, stall)
@@ -103,6 +120,13 @@ typedef struct {
 	uint32_t tx_done;	// transmissions finished
 	uint32_t rf_fail;	// RF switches the board could not do
 	uint32_t stalls;	// timing stopped while busy (200 ms without a timeslot interrupt)
+	uint32_t rs_why[HRC6000_RS_COUNT];	// receiver restarts by reason
+	uint32_t by_class[4];	// every received-data report by 0x51 bits 1-0, before any filtering
+	uint32_t by_type[16];	// ... by 0x51 bits 7-4
+	uint32_t by_r5f[4];	// ... by 0x5F bits 1-0
+	uint32_t dt_hist[HRC6000_DT_BINS];	// ... by delay after the timeslot interrupt
+	uint8_t last_r5f;	// raw 0x5F of the last report
+	uint8_t last_data_r51;	// raw 0x51 of the last report classified as non-voice
 	uint8_t last_cc;	// last burst heard
 	uint8_t last_sync;	// dmr_sync_family_t
 	uint8_t last_r51;	// raw 0x51 of the last report
@@ -157,6 +181,12 @@ typedef struct {
 	uint32_t cc_hold_tick;
 	bool cc_held;
 	bool restart_pending;
+	uint8_t restart_why;
+	bool idle_restarted;	// the quiet-period restart has been done
+	// The burst taken last (repeat check)
+	uint32_t t_report;
+	uint8_t last_rx_kind, last_rx_index, last_rx_sync;
+	uint8_t last_rx_payload[DMR_PAYLOAD_MAX];
 
 	// Transmit
 	uint8_t tx_state;

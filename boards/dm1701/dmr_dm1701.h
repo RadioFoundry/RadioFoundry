@@ -24,7 +24,7 @@ typedef struct {
 void dm1701_dmr_stats(dm1701_dmr_stats_t *out);
 // The counters as short text lines for the diagnostics page: line i (0..), false past the last
 bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len);
-#define DM1701_DMR_DIAG_LINES	7	// lines dm1701_dmr_stats_line formats
+#define DM1701_DMR_DIAG_LINES	16	// lines dm1701_dmr_stats_line formats
 
 // --- radio_dm1701.c -> dmr_dm1701.c ---
 
