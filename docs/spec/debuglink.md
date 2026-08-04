@@ -4,11 +4,14 @@
 
 A small framed protocol on the radio's host port (USB CDC-ACM on the STM32 radios) for bench automation: read the
 firmware version, the diagnostics counters and the radio's state, reset counters, take screenshots, press keys, key
-PTT with a firmware time-out, send radio requests and read a log ring. It lives beside the MMDVM hotspot and the
+PTT with a firmware time-out, send radio requests, read a log ring, read the chip's identity and option bytes, read
+internal flash and the other read-only memories, and reboot. It lives beside the MMDVM hotspot and the
 legacy CPS protocol on the same port (`core/hostlink`), and it never changes the host link's mode.
 
 - Firmware: `core/debuglink/` (switch `CONFIG_DEBUGLINK`, default on with `CONFIG_USB`), key injection in
   `core/input/input_task.c`, the hook in `core/hostlink/hostlink.c`.
+- Chip commands: the portable checks in `core/debuglink/dl_chip.c` (host tested), the platform side in `hal/hal_system.h`
+  (`board.system`) and `platform/stm32f4/sysboot.c`.
 - Host: `tools/odr_debug.py` (command line and Python module), `tests/hil/` (pytest hardware-in-the-loop tests).
 
 ## 1. Coexistence on the host port
@@ -68,6 +71,7 @@ Every reply payload starts with a status byte:
 | 4 | unavailable: not built in, or nothing to act on (no display, no key for that action) |
 | 5 | bad CRC (error frames only) |
 | 6 | request too long (error frames only) |
+| 7 | refused: a safety check said no (READ_MEM outside the readable ranges, the REBOOT gate; 3.11) |
 
 A request that can't be decoded gets an **error frame**: command `0xFF`, the request's sequence number as far as
 it was received, payload = status (5 or 6) and the command byte received. A request longer than 64 bytes is
@@ -90,6 +94,9 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x08` | GET_LOG | none | dropped u32, more u8, text lines (3.6) |
 | `0x09` | GET_VIEW | section u8 | ms u32, next section u8, key=value text (3.7) |
 | `0x0A` | RADIO | operation u8 + arguments (3.8) | none |
+| `0x0B` | INFO_CHIP | none | chip ID, flash size, UID, option bytes decoded (3.9) |
+| `0x0C` | READ_MEM | address u32 + length u16 | address u32, the bytes (3.10) |
+| `0x0D` | REBOOT | mode u8 + token u32 | reason u8 (3.11) |
 
 ### 3.1 VERSION
 
@@ -227,12 +234,90 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 13 | none | `radio_req_reply_cancel` (DMR builds) |
 | 14 | none | `hostlink_hotspot_exit`: leave hotspot mode |
 
+### 3.9 INFO_CHIP
+
+Read-only. Reply after the status (29 bytes in all):
+
+| Offset | Size | Field |
+|---|---|---|
+| 1 | 4 | DBGMCU IDCODE: device ID bits 11:0 (`0x413` = STM32F405/407), revision bits 31:16. May read 0 on some STM32F40x revisions when no debugger is attached |
+| 5 | 2 | flash size in KB (the flash size register at `0x1FFF7A22`) |
+| 7 | 12 | 96-bit unique ID (`0x1FFF7A10`), three u32, lowest word first. The lowest word is REBOOT's confirmation token |
+| 19 | 4 | `FLASH_OPTCR` as read |
+| 23 | 1 | RDP level: 0 (byte `0xAA`), 2 (byte `0xCC`), 1 (any other byte) |
+| 24 | 1 | the RDP byte (`FLASH_OPTCR` bits 15:8) |
+| 25 | 2 | write-protected sectors, bit n = sector n (from nWRP bits 27:16, where 0 means protected) |
+| 27 | 1 | BOR level field (bits 3:2): 0 = level 3 (2.7 V), 1 = level 2, 2 = level 1, 3 = off |
+| 28 | 1 | user bits: bit 0 WDG_SW, bit 1 nRST_STOP, bit 2 nRST_STDBY |
+
+`odr_debug.py chip` prints all of this, and prints a loud warning when RDP is not level 0 or when any application
+sector (3..11) is write protected.
+
+Example (the bench DM-1701, 2026-10-10): idcode `0x0009A413`, 1024 KB, `FLASH_OPTCR` `0x0FFF55ED`: **RDP level 1**
+(byte `0x55`), no write protection, BOR off, user bits all 1.
+
+### 3.10 READ_MEM
+
+Request: address u32, length u16 (1 to 1000). Reply after the status: the address u32, then the bytes. The whole range
+must lie inside one of these, otherwise the answer is refused (7):
+
+| Range | Contents |
+|---|---|
+| `0x08000000` up to the flash size (at most `0x080FFFFF`) | internal flash, the stock bootloader at `0x08000000-0x0800BFFF` included |
+| `0x1FFF0000-0x1FFF77FF` | system memory (ST's ROM bootloader) |
+| `0x1FFF7800-0x1FFF7A0F` | OTP and its lock bytes |
+| `0x1FFFC000-0x1FFFC00F` | option bytes |
+
+RAM, CCM and peripheral addresses are always refused: a read there can have side effects (clearing a status flag,
+popping a FIFO). The UID and the flash size register come through INFO_CHIP instead.
+
+RDP and reads: read protection level 1 does **not** stop the application from reading flash. Level 1 blocks flash
+access only from a debugger (SWD/JTAG), from code running in RAM and when the chip boots from system memory (the
+BOOT0 pin); code running from user flash, as this firmware does, reads every flash address. So READ_MEM works at
+RDP level 1, and that is how the stock bootloader was saved on the bench unit.
+
+`odr_debug.py dump --addr A --len N [-o FILE]` reads in 1000-byte pieces. It refuses to write inside any git work
+tree; the default file is `the external reference folder<addr>_<len>.bin`. The stock bootloader is proprietary:
+a dump of it is never committed or published.
+
+### 3.11 REBOOT
+
+Request: mode u8, token u32. Reply: the status and a reason byte.
+
+| Mode | Effect |
+|---|---|
+| 0 | normal reset (`NVIC_SystemReset`): the stock bootloader runs, then the application |
+| 1 | ROM DFU: reset, then straight into ST's system-memory bootloader (USB DfuSe, `0483:DF11`). Only at RDP level 0 |
+
+The token must be the low 32 bits of the chip UID (INFO_CHIP offset 7), so a stray frame can't reboot the radio.
+The checks, at the request and again just before the reset:
+
+| Reason | Refused when |
+|---|---|
+| 1 | the token is not the UID's low word (both modes) |
+| 2 | mode 1 and RDP is not level 0. At level 1 the ROM bootloader refuses flash access, and its read-unprotect command mass-erases all of flash, the stock bootloader included, which would leave the radio unable to load firmware without SWD. Level 2 disables the ROM bootloader |
+| 3 | transmitting: radio state TX, or the hotspot sending (both modes) |
+| 4 | the chip info could not be read |
+| 5 | (logged only) the ROM DFU flag could not be stored in the backup register |
+
+On OK the reply goes out first and the firmware resets 250 ms later. If a check fails at that point (a PTT came
+in), it logs `debuglink: reboot ... aborted` and stays up. How mode 1 enters the ROM:
+`docs/spec/hardware-dm1701.md` 15.4.
+
+`odr_debug.py reboot [--rom-dfu]` reads INFO_CHIP first, refuses `--rom-dfu` itself unless RDP is level 0, sends
+the token and prints the radio's reason when it refuses.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
   core's own TX time-out and transmit checks still apply.
 - Every injected key hold is capped at 10 s, one injected key at a time, 40 ms between them.
 - Radio requests are rate limited (20 ms).
+- INFO_CHIP and READ_MEM only read. READ_MEM reads flash, system memory, OTP and option bytes only, never RAM or
+  peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
+- REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
+  unless RDP is level 0. The host tool checks RDP too.
+- Memory dumps are never written inside a git tree (the stock bootloader is proprietary).
 - The debug link never enters hotspot or CPS mode, and never takes bytes that belong to an MMDVM frame or a CPS
   request (section 1).
 

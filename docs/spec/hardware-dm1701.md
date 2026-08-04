@@ -1141,6 +1141,67 @@ Other loader facts:
 Sources: loader tool (protocol, offsets, block numbering, keys by hash), codec extraction tool, on-hardware flashing
 of the DM-1701.
 
+### 15.4 Software entry to a bootloader
+
+Goal: re-flash over USB without someone holding PTT + side key 1 at power-on (15.1). There are two possible routes,
+both reached from the running firmware through the debug link (`docs/spec/debuglink.md` 3.9-3.11).
+
+**Read protection on the bench unit.** `odr_debug.py chip` on the bench DM-1701 (2026-10-10) reads idcode
+`0x0009A413` (STM32F405/407), 1024 KB flash, `FLASH_OPTCR` `0x0FFF55ED`: **RDP level 1** (byte `0x55`), no sector
+write protection, BOR off, user bits all 1. Assume every stock DM-1701 is at RDP level 1 until one reads otherwise.
+RDP level 1 does not stop the application from reading flash (only a debugger, RAM boot and system-memory boot are
+locked out), so the stock bootloader (sectors 0-2) can be read with `odr_debug.py dump`. It was saved outside the
+repository on 2026-10-10. It is proprietary and is never committed.
+
+**Route 1: ST's ROM bootloader (USB DfuSe in system memory). Refused on this radio.** The firmware has it:
+`REBOOT` mode 1 stores the flag `0xB007DF11` in `RTC_BKP19R` and resets. A backup register is used rather than RAM
+because the stock bootloader runs in RAM before the application. First thing in `main()`,
+`stm32_sysboot_check()` (`platform/stm32f4/sysboot.c`) finds the flag and then:
+
+1. clears the flag and checks that it is clear, so a failed entry boots normally next time (and boots normally
+   anyway if the flag won't clear);
+2. sets the power-up pin levels (`board_sysboot_prepare`: power latch high, transmitter off, HR_C6000 powered down);
+3. turns interrupts off, stops SysTick and clears every NVIC enable and pending bit;
+4. returns RCC to HSI with HSE and the PLLs off at their reset values, sets `FLASH_ACR` to 0 and resets every
+   peripheral except the GPIO ports;
+5. checks that `0x1FFF0000` holds a plausible vector table, maps system memory at 0 (`SYSCFG_MEMRMP`), sets
+   `VTOR` to 0, loads MSP from `0x1FFF0000` and jumps to the vector at `0x1FFF0004`.
+
+The firmware and `odr_debug.py` both refuse this mode unless RDP is level 0. At level 1 the ROM bootloader refuses
+every flash access, and its only way out, the read-unprotect command, sets RDP to 0 by **mass-erasing all of flash,
+the stock bootloader included**. After that the radio could be reloaded only over SWD. At level 2 the ROM
+bootloader is disabled. **On the bench unit (RDP 1) this route is closed.** The code stays in the firmware because it
+is gated and does nothing unless the flag is set. If a unit ever reads RDP 0, the procedure would be: `odr_debug.py
+chip` -> `odr_debug.py reboot --rom-dfu` -> a DfuSe host that erases and writes only sectors 3-11 (`0x0800C000` and
+up). No such host tool exists in `tools/`: `stm32_dfu.py` has no ROM mode.
+
+Untested risks of route 1, found while writing it (they matter only on an RDP 0 unit):
+
+- **Power latch.** The volume knob only breaks the battery-sense line (10.4); PA7 holds the supply. While the ROM
+  loader runs, PA7 stays high, so the knob cannot turn the radio off. Getting out of a stuck ROM loader takes a
+  DfuSe leave command or removing the battery. Because the flag is already cleared, the next start is normal.
+- **HSE clock.** The board feeds an external clock in bypass mode (1.2), not a crystal. ST's ROM needs HSE for USB
+  DFU on the F405 and may set it up in crystal mode. If that doesn't start, USB DFU never enumerates.
+- **Interface probing.** The ROM also listens on USART1 (PA9 / PA10, wired to GPS power and GPS RX on GPS-fitted
+  siblings) and on USART3 / CAN2. Activity on those pins can capture the loader before USB. The DM-1701 has no GPS
+  fitted, so PA10 is idle on it.
+- **Leaving.** Where the ROM's DfuSe leave command jumps, and with which memory mapping, is unverified. A battery
+  pull always returns to the normal start (stock bootloader, then the application).
+
+**Route 2: a software entry into the stock bootloader's own DFU mode.** This route would leave RDP alone and keep
+the XOR-keyed DfuSe path that `tools/stm32_dfu.py` already speaks (15.2, 15.3). It works only if the stock bootloader
+checks something besides the PTT + side key 1 combination that firmware can set before a reset: a RAM word it reads
+before clearing RAM, an RTC backup register, or a backup SRAM location. The dumped bootloader is being analyzed for
+such a check.
+
+> TODO (result of the stock bootloader analysis): whether an entry flag exists, its location and value, whether it
+> survives `NVIC_SystemReset`, and whether the bootloader clears it. If one exists, add `REBOOT` mode 2 with the same
+> gate (UID token, not transmitting; RDP doesn't matter for this route).
+
+Sources: `FLASH_OPTCR` and the flash size register read on the bench unit through the debug link (2026-10-10);
+STM32F405 reference manual (RDP levels, option bytes, `SYSCFG_MEMRMP`, backup domain); ST's application note on the
+system-memory bootloader (supported interfaces, read-unprotect behavior).
+
 ---
 
 ## 16. USB
