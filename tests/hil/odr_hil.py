@@ -281,7 +281,7 @@ class SdrBench:
         remote = f"{self.dir}/runs/{name}"
         self.ssh(f"mkdir -p ~/{self.dir}/runs")
         subprocess.run(["scp", "-q", local, f"{self.host}:{remote}"], check=True, timeout=120)
-        return f"~/{remote}"
+        return f"runs/{name}"     # relative: hat_tx.py runs in ~/<dir>, and a quoted "~" would not expand
 
     def transmit(self, args, freq, cc, timeout=300):
         """Run hat_tx.py with args (a string) on freq (MHz) / cc; returns the JSON lines it printed. Needs the lease

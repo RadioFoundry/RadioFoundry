@@ -276,8 +276,10 @@ class Bench:
                  f"while [ -e {hold} ] && [ $t -lt {self.a.lease_max} ]; do sleep 1; t=$((t+1)); done; "
                  f"rm -f {hold}; sudo systemctl start {SERVICE}; rc=$?; "
                  f"echo \"$(date -Is) restarted rc=$rc\" >> ~/{DIR}/lease.log")
+        # Only the guard goes to the background: "a && b && guard &" would background the whole list in a subshell
+        # that keeps ssh's stdout open, so ssh would wait the whole lease out
         self.ssh(f"mkdir -p ~/{DIR}/runs && touch {hold} && "
-                 f"setsid nohup bash -c {shlex.quote(guard)} > /dev/null 2>&1 < /dev/null &")
+                 f"{{ setsid nohup bash -c {shlex.quote(guard)} > /dev/null 2>&1 < /dev/null & }}")
         self.leased = True
         self.ssh(f"for i in $(seq 1 40); do systemctl is-active --quiet {SERVICE} || exit 0; sleep 0.25; done; "
                  f"echo 'service still active' >&2; exit 1")
