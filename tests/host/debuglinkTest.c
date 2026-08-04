@@ -7,6 +7,7 @@
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
 #include "debuglink/dlog.h"
+#include "debuglink/dl_chip.h"
 
 static int failures, checks;
 
@@ -259,12 +260,57 @@ static void test_dlog(void)
 	CHECK(n == 2 + DLOG_LINE_MAX + 1, "long line cut to DLOG_LINE_MAX: %zu", n);
 }
 
+static void test_chip(void)
+{
+	// Option bytes: RDP levels, write protection, BOR, user bits
+	CHECK(dl_rdp_level(0x0FFFAAEDu) == 0 && dl_rdp_byte(0x0FFFAAEDu) == 0xAA, "RDP 0");
+	CHECK(dl_rdp_level(0x0FFFCCEDu) == 2, "RDP 2");
+	CHECK(dl_rdp_level(0x0FFF55EDu) == 1 && dl_rdp_level(0x0FFF00EDu) == 1, "RDP 1: anything else");
+	CHECK(dl_wrp_mask(0x0FFFAAEDu) == 0, "no WRP");
+	CHECK(dl_wrp_mask(0x0FF8AAEDu) == 0x007, "WRP sectors 0-2: 0x%03X", dl_wrp_mask(0x0FF8AAEDu));
+	CHECK(dl_bor_level(0x0FFFAAEDu) == 3 && dl_user_bits(0x0FFFAAEDu) == 7, "BOR off, user bits");
+
+	// READ_MEM whitelist
+	CHECK(dl_mem_allowed(0x08000000u, 1000, 1024), "stock bootloader start");
+	CHECK(dl_mem_allowed(0x080FFC18u, 1000, 1024), "flash end exact");
+	CHECK(!dl_mem_allowed(0x080FFC19u, 1000, 1024), "past the flash end");
+	CHECK(!dl_mem_allowed(0x0807FFFFu, 2, 512), "a 512 KB part ends at 0x0807FFFF");
+	CHECK(dl_mem_allowed(0x080FFFFFu, 1, 0), "flash size unreadable: 1 MB");
+	CHECK(!dl_mem_allowed(0x08000000u, 0, 1024), "zero length");
+	CHECK(!dl_mem_allowed(0x07FFFFFFu, 2, 1024), "below flash");
+	CHECK(dl_mem_allowed(0x1FFF0000u, 1000, 1024) && dl_mem_allowed(0x1FFF7400u, 0x400, 1024), "system memory");
+	CHECK(!dl_mem_allowed(0x1FFF7700u, 0x200, 1024), "across system memory and OTP: refused");
+	CHECK(dl_mem_allowed(0x1FFF7800u, 0x210, 1024) && !dl_mem_allowed(0x1FFF7800u, 0x211, 1024), "OTP");
+	CHECK(!dl_mem_allowed(0x1FFF7A10u, 12, 1024), "UID is INFO_CHIP's, not READ_MEM's");
+	CHECK(dl_mem_allowed(0x1FFFC000u, 16, 1024) && !dl_mem_allowed(0x1FFFC000u, 17, 1024), "option bytes");
+	CHECK(!dl_mem_allowed(0x20000000u, 4, 1024) && !dl_mem_allowed(0x10000000u, 4, 1024), "RAM, CCM refused");
+	CHECK(!dl_mem_allowed(0x40023C00u, 4, 1024) && !dl_mem_allowed(0xE0042000u, 4, 1024), "peripherals refused");
+	CHECK(!dl_mem_allowed(0xFFFFFFF0u, 0x20, 1024) && !dl_mem_allowed(0x08000010u, 0xFFFFFFF8u, 1024),
+	      "wrap-around refused");
+
+	// REBOOT gate
+	hal_chip_t c = { .uid = { 0x12345678u, 1, 2 }, .optcr = 0x0FFFAAEDu, .flash_kb = 1024 };
+	CHECK(dl_reboot_check(HAL_REBOOT_ROM_DFU, 0x12345678u, &c, false) == DL_REBOOT_OK, "ROM DFU at RDP 0");
+	CHECK(dl_reboot_check(HAL_REBOOT_NORMAL, 0x12345678u, &c, false) == DL_REBOOT_OK, "normal");
+	CHECK(dl_reboot_check(HAL_REBOOT_ROM_DFU, 0x12345679u, &c, false) == DL_REBOOT_BAD_TOKEN, "bad token");
+	CHECK(dl_reboot_check(HAL_REBOOT_NORMAL, 0, &c, false) == DL_REBOOT_BAD_TOKEN, "normal needs the token too");
+	CHECK(dl_reboot_check(HAL_REBOOT_ROM_DFU, 0x12345678u, &c, true) == DL_REBOOT_TX, "TX");
+	CHECK(dl_reboot_check(HAL_REBOOT_NORMAL, 0x12345678u, &c, true) == DL_REBOOT_TX, "TX, normal");
+	CHECK(dl_reboot_check(HAL_REBOOT_ROM_DFU, 0x12345678u, NULL, false) == DL_REBOOT_NO_CHIP, "no chip");
+	c.optcr = 0x0FFF55EDu;
+	CHECK(dl_reboot_check(HAL_REBOOT_ROM_DFU, 0x12345678u, &c, false) == DL_REBOOT_RDP, "RDP 1 refused");
+	CHECK(dl_reboot_check(HAL_REBOOT_NORMAL, 0x12345678u, &c, false) == DL_REBOOT_OK, "RDP 1: normal reset fine");
+	c.optcr = 0x0FFFCCEDu;
+	CHECK(dl_reboot_check(HAL_REBOOT_ROM_DFU, 0x12345678u, &c, false) == DL_REBOOT_RDP, "RDP 2 refused");
+}
+
 int main(void)
 {
 	test_fmt();
 	test_crc();
 	test_parser();
 	test_dlog();
+	test_chip();
 	printf("# debuglinkTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

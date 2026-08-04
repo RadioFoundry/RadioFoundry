@@ -71,6 +71,7 @@ const board_t board = {
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
 #endif
+	.system = &stm32_system,
 };
 
 // docs/spec/hardware-dm1701.md 1.2
@@ -137,6 +138,12 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_RX_AUDIO_MUX), PIN_MASK(PIN_RX_AUDIO_MUX), true, false);
 	stm32_pin_out(PIN_PORT(PIN_FLASH_CS), PIN_MASK(PIN_FLASH_CS), true, false);
 	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), true, true);
+}
+
+// Before the ROM bootloader entry (stm32_sysboot_check): the same safe levels as at power-up; the power latch stays high
+void board_sysboot_prepare(void)
+{
+	reset_levels();
 }
 
 void board_early_init(void)

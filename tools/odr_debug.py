@@ -16,6 +16,10 @@
     odr_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
     odr_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq 162.550, power +1, ...
     odr_debug.py log [--follow]                 the firmware's dlog() ring
+    odr_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
+    odr_debug.py dump --addr A --len N [-o F]   read internal flash / system memory / OTP / option bytes to a file
+                                                outside the git tree (default the external reference folder)
+    odr_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
 
 Key names: up down left right select (ok) back (exit) quick (star) context (hash) 0-9 ptt monitor tt (talk target)
 emergency enc user1-user4.
@@ -44,10 +48,24 @@ HDR = 6
 REQ_MAX = 64
 INJECT_MAX_S = 10.0
 
-PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, KEY, PTT, GET_LOG, GET_VIEW, RADIO = range(1, 11)
+PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, KEY, PTT, GET_LOG, GET_VIEW, RADIO, INFO_CHIP, READ_MEM, \
+    REBOOT = range(1, 14)
 CMD_ERROR = 0xFF
 STATUS = {0: "ok", 1: "unknown command", 2: "bad argument", 3: "busy", 4: "unavailable", 5: "bad CRC",
-          6: "request too long"}
+          6: "request too long", 7: "refused"}
+ST_REFUSED = 7
+MEM_READ_MAX = 1000
+REBOOT_NORMAL, REBOOT_ROM_DFU = 0, 1
+REBOOT_REASONS = {1: "wrong confirmation token (not the chip UID's low word)",
+                  2: "RDP is not level 0: the ROM bootloader would refuse flash access and its unprotect mass-erases "
+                     "everything, the stock bootloader included",
+                  3: "transmitting", 4: "chip info unreadable", 5: "could not arm the ROM DFU flag"}
+# STM32F405 sectors: (start, size)
+F4_SECTORS = [(0x08000000 + i * 0x4000, 0x4000) for i in range(4)] + [(0x08010000, 0x10000)] + \
+    [(0x08020000 + i * 0x20000, 0x20000) for i in range(7)]
+MEM_WHITELIST = [(0x08000000, 0x08100000), (0x1FFF0000, 0x1FFF7800), (0x1FFF7800, 0x1FFF7A10),
+                 (0x1FFFC000, 0x1FFFC010)]
+DEFAULT_DUMP_DIR = os.path.expanduser("the external reference folder")
 ST_OK, ST_BUSY = 0, 3
 
 ACTIONS = {"up": 1, "down": 2, "left": 3, "right": 4, "select": 5, "ok": 5, "green": 5, "back": 6, "exit": 6,
@@ -66,9 +84,10 @@ TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
 class DebugLinkError(Exception):
     """The radio answered with an error status, or didn't answer."""
 
-    def __init__(self, msg, status=None):
+    def __init__(self, msg, status=None, data=b""):
         super().__init__(msg)
         self.status = status
+        self.data = data
 
 
 def crc16(data, crc=0xFFFF):
@@ -201,7 +220,7 @@ class DebugLink:
                 time.sleep(0.03)
                 continue
             if st != ST_OK:
-                raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}", st)
+                raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}", st, bytes(data[1:]))
             return st, data[1:]
 
     # ── commands ──
@@ -211,6 +230,30 @@ class DebugLink:
         if r != data:
             raise DebugLinkError(f"ping echo mismatch: {r!r}")
         return time.monotonic() - t
+
+    def chip(self):
+        """INFO_CHIP decoded (dict)."""
+        return decode_chip(self.request(INFO_CHIP)[1])
+
+    def read_mem(self, addr, n):
+        _, r = self.request(READ_MEM, struct.pack("<IH", addr, n))
+        (raddr,) = struct.unpack_from("<I", r)
+        if raddr != addr or len(r) - 4 != n:
+            raise DebugLinkError(f"READ_MEM answer for 0x{raddr:08X} with {len(r) - 4} bytes, asked 0x{addr:08X} {n}")
+        return bytes(r[4:])
+
+    def dump(self, addr, n, progress=None):
+        out = bytearray()
+        while len(out) < n:
+            k = min(MEM_READ_MAX, n - len(out))
+            out += self.read_mem(addr + len(out), k)
+            if progress:
+                progress(len(out), n)
+        return bytes(out)
+
+    def reboot(self, mode, token):
+        """Ask for a reboot; raises DebugLinkError (status 7, data = reason) when the firmware refuses."""
+        self.request(REBOOT, struct.pack("<BI", mode, token))
 
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
@@ -563,6 +606,109 @@ def cmd_radio(link, a):
     return 0
 
 
+def decode_chip(r):
+    idcode, flash_kb, u0, u1, u2, optcr, rdp, rdp_byte, wrp, bor, user = struct.unpack_from("<IH3IIBBHBB", r)
+    return {"idcode": idcode, "dev_id": idcode & 0xFFF, "rev_id": idcode >> 16, "flash_kb": flash_kb,
+            "uid": (u0, u1, u2), "token": u0, "optcr": optcr, "rdp": rdp, "rdp_byte": rdp_byte, "wrp": wrp,
+            "wrp_sectors": [i for i in range(12) if wrp & (1 << i)], "bor": bor, "user": user}
+
+
+def mem_allowed(addr, n):
+    return n > 0 and any(lo <= addr and addr + n <= hi for lo, hi in MEM_WHITELIST)
+
+
+def git_toplevel(path):
+    """The git work tree holding path (or its nearest existing parent), None if none."""
+    import subprocess
+    d = os.path.abspath(path)
+    while not os.path.isdir(d):
+        d = os.path.dirname(d)
+    try:
+        r = subprocess.run(["git", "-C", d, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    except OSError:
+        return None
+    return os.path.realpath(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else None
+
+
+def dump_path_ok(path):
+    """(ok, reason): refuse any path inside a git work tree (the vendor bootloader is proprietary: never commit)."""
+    top = git_toplevel(path)
+    if top is not None:
+        return False, f"{path} is inside the git work tree {top}; dumps must stay out of any repository"
+    return True, ""
+
+
+def print_chip(c):
+    rdp_names = {0: "level 0 (0xAA, no protection)", 1: f"LEVEL 1 (0x{c['rdp_byte']:02X}: read protection)",
+                 2: "LEVEL 2 (0xCC: permanent, ROM bootloader and debug disabled)"}
+    idc = f"0x{c['idcode']:08X}"
+    if c["idcode"] == 0:
+        idc += " (reads 0 without a debugger on some STM32F40x revisions)"
+    else:
+        idc += f" (dev 0x{c['dev_id']:03X}{' STM32F405/407' if c['dev_id'] == 0x413 else ''}, rev 0x{c['rev_id']:04X})"
+    print(f"idcode   {idc}")
+    print(f"flash    {c['flash_kb']} KB")
+    print(f"uid      {c['uid'][2]:08X}{c['uid'][1]:08X}{c['uid'][0]:08X} (token 0x{c['token']:08X})")
+    print(f"optcr    0x{c['optcr']:08X}")
+    print(f"rdp      {rdp_names[c['rdp']]}")
+    print(f"wrp      {'sectors ' + ','.join(map(str, c['wrp_sectors'])) if c['wrp_sectors'] else 'none'}")
+    print(f"bor      level {['3 (2.7 V)', '2 (2.4 V)', '1 (2.1 V)', 'off'][c['bor']]}")
+    u = c["user"]
+    print(f"user     WDG_SW={u & 1} nRST_STOP={(u >> 1) & 1} nRST_STDBY={(u >> 2) & 1}")
+    if c["rdp"] != 0:
+        print("\n*** WARNING: RDP is not level 0. Do NOT use the ROM bootloader (reboot --rom-dfu is refused): it would\n"
+              "*** refuse flash writes, and its read-unprotect command mass-erases ALL flash including the stock\n"
+              "*** bootloader. Report this to the owner before doing anything else. ***", file=sys.stderr)
+    app_wrp = [s for s in c["wrp_sectors"] if s >= 3]
+    if app_wrp:
+        print(f"\n*** WARNING: application sectors {app_wrp} are write protected: no loader can rewrite them ***",
+              file=sys.stderr)
+
+
+def cmd_dump(link, a):
+    addr, n = int(a.addr, 0), int(a.len, 0)
+    if not mem_allowed(addr, n):
+        print(f"odr_debug: 0x{addr:08X}+0x{n:X} is outside the readable ranges", file=sys.stderr)
+        return 2
+    out = a.output or os.path.join(DEFAULT_DUMP_DIR, f"dump_{addr:08X}_{n:X}.bin")
+    ok, why = dump_path_ok(out)
+    if not ok:
+        print(f"odr_debug: refusing: {why}", file=sys.stderr)
+        return 2
+    data = link.dump(addr, n, lambda d, t: print(f"\r{d}/{t} bytes", end="", file=sys.stderr))
+    print(file=sys.stderr)
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with open(out, "wb") as f:
+        f.write(data)
+    import hashlib
+    print(f"{out}: {len(data)} bytes from 0x{addr:08X}, sha256 {hashlib.sha256(data).hexdigest()}")
+    if addr < 0x0800C000 and addr >= 0x08000000:
+        print("note: this holds the proprietary stock bootloader: never commit or publish it")
+    return 0
+
+
+def cmd_reboot(link, a):
+    c = link.chip()
+    print_chip(c)
+    mode = REBOOT_ROM_DFU if a.rom_dfu else REBOOT_NORMAL
+    if mode == REBOOT_ROM_DFU and c["rdp"] != 0:
+        print("odr_debug: refusing ROM DFU: RDP is not level 0", file=sys.stderr)
+        return 1
+    try:
+        link.reboot(mode, c["token"])
+    except DebugLinkError as e:
+        if e.status == ST_REFUSED and e.data:
+            print(f"odr_debug: the radio refused: {REBOOT_REASONS.get(e.data[0], e.data[0])}", file=sys.stderr)
+            return 1
+        raise
+    if mode == REBOOT_ROM_DFU:
+        print("rebooting into the ROM bootloader: look for USB 0483:DF11 'STM32 BOOTLOADER' "
+              "(then tools/stm32_dfu.py --rom IMAGE.bin)")
+    else:
+        print("rebooting")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="serial port (default: the radio with USB ID 1FC9:0094, or $ODR_PORT)")
@@ -601,6 +747,13 @@ def main(argv=None):
     p.add_argument("args", nargs="*")
     p = sub.add_parser("log")
     p.add_argument("--follow", action="store_true")
+    sub.add_parser("chip")
+    p = sub.add_parser("dump")
+    p.add_argument("--addr", required=True)
+    p.add_argument("--len", required=True)
+    p.add_argument("-o", "--output", help=f"file outside any git tree (default {DEFAULT_DUMP_DIR}/dump_ADDR_LEN.bin)")
+    p = sub.add_parser("reboot")
+    p.add_argument("--rom-dfu", action="store_true", help="into ST's ROM USB DFU (refused unless RDP level 0)")
     a = ap.parse_args(argv)
 
     if a.cmd == "ptt" and not 0 < a.seconds <= INJECT_MAX_S:
@@ -630,6 +783,12 @@ def main(argv=None):
                 print(f"PTT held {a.seconds:g} s, released")
             elif a.cmd == "radio":
                 return cmd_radio(link, a)
+            elif a.cmd == "chip":
+                print_chip(link.chip())
+            elif a.cmd == "dump":
+                return cmd_dump(link, a)
+            elif a.cmd == "reboot":
+                return cmd_reboot(link, a)
             elif a.cmd == "log":
                 while True:
                     dropped, text = link.log()

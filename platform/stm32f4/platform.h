@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "stm32f4xx_hal.h"
+#include "hal_system.h"
 
 typedef struct {
 	uint32_t hse_hz;
@@ -21,6 +22,14 @@ typedef struct {
 // Switch to HSI first (the bootloader may leave HSE/PLL running, and HSE can't be changed while it is in use), then
 // bring up HSE and the PLL from the table. Returns false and stays on HSI if the HSE or PLL never locks
 bool stm32_clock_init(const stm32_clock_t *c);
+
+// System services for board.system (sysboot.c): chip info, memory reads, reboot incl. the ROM DFU entry
+extern const hal_system_t stm32_system;
+// First thing in main(): enters the ROM bootloader when a REBOOT ROM-DFU request armed it (does not return then)
+void stm32_sysboot_check(void);
+// Optional board hook, called before the ROM bootloader entry: the board's reset-time pin levels (power latch high,
+// transmitter off). Weak default does nothing
+void board_sysboot_prepare(void);
 
 // Enable the clock of a GPIO port by its base address
 void stm32_gpio_clock(GPIO_TypeDef *port);

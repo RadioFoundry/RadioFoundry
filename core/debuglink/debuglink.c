@@ -9,8 +9,12 @@
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
+#include "debuglink/dl_chip.h"
 #include "debuglink/dlog.h"
 #include "hostlink/hostlink.h"
+#if CONFIG_HOTSPOT
+#include "hotspot/hotspot.h"
+#endif
 #include "input/input.h"
 #include "radio/radio.h"
 #include "ui/gfx.h"
@@ -22,6 +26,7 @@
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_CHUNK_MAX		1000u	// screenshot bytes per reply
 #define RADIO_OP_GAP_MS		20u	// radio requests at most this often (the radio core's queue holds 16)
+#define REBOOT_DELAY_MS		250u	// the REBOOT reply goes out over USB before the reset
 
 // Radio operations (DL_CMD_RADIO, first payload byte)
 enum {
@@ -34,6 +39,9 @@ static uint8_t reply[DL_HDR + DL_REPLY_MAX + 2u];
 static radio_view_t view;	// static: too large for the host link task's stack
 static uint32_t last_radio_op_ms;
 static bool radio_op_done;
+static bool reboot_pending;
+static uint8_t reboot_mode;
+static uint32_t reboot_token;
 
 static const char features[] = "features="
 #if CONFIG_FM
@@ -463,6 +471,124 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	return status_only(out, DL_ST_OK);
 }
 
+// --- chip: identity and option bytes, memory reads, reboot ---
+
+static bool read_chip(hal_chip_t *c)
+{
+	return board.system != NULL && board.system->chip != NULL && board.system->chip(c);
+}
+
+static size_t cmd_info_chip(uint8_t *out)
+{
+	hal_chip_t c;
+
+	if (!read_chip(&c)) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	out[0] = DL_ST_OK;
+	put32(out + 1, c.idcode);
+	put16(out + 5, c.flash_kb);
+	put32(out + 7, c.uid[0]);
+	put32(out + 11, c.uid[1]);
+	put32(out + 15, c.uid[2]);
+	put32(out + 19, c.optcr);
+	out[23] = dl_rdp_level(c.optcr);
+	out[24] = dl_rdp_byte(c.optcr);
+	put16(out + 25, dl_wrp_mask(c.optcr));
+	out[27] = dl_bor_level(c.optcr);
+	out[28] = dl_user_bits(c.optcr);
+	return 29;
+}
+
+static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	hal_chip_t c;
+
+	if (len != 6) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	uint32_t addr = get32(req);
+	uint32_t n = get16(req + 4);
+	if (n == 0 || n > DL_MEM_READ_MAX || 5u + n > cap) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	if (board.system == NULL || board.system->read == NULL || !read_chip(&c)) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	if (!dl_mem_allowed(addr, n, c.flash_kb)) {
+		return status_only(out, DL_ST_REFUSED);
+	}
+	out[0] = DL_ST_OK;
+	put32(out + 1, addr);
+	board.system->read(addr, out + 5, n);
+	return 5u + n;
+}
+
+static bool transmitting(void)
+{
+	radio_get_view(&view);
+	if (view.state == RS_TX) {
+		return true;
+	}
+#if CONFIG_HOTSPOT
+	hotspot_view_t h;
+	hotspot_get_view(&h);
+	if (h.transmitting) {
+		return true;
+	}
+#endif
+	return false;
+}
+
+static uint8_t reboot_gate(uint8_t mode, uint32_t token)
+{
+	hal_chip_t c;
+	bool have = read_chip(&c);
+	return dl_reboot_check(mode, token, have ? &c : NULL, transmitting());
+}
+
+static size_t cmd_reboot(const uint8_t *req, uint16_t len, uint8_t *out)
+{
+	if (len != 5 || req[0] > HAL_REBOOT_ROM_DFU) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	if (board.system == NULL || board.system->reboot == NULL) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	uint8_t mode = req[0];
+	uint32_t token = get32(req + 1);
+	uint8_t why = reboot_gate(mode, token);
+	if (why != DL_REBOOT_OK) {
+		dlog("debuglink: reboot %u refused (%u)", mode, why);
+		out[0] = DL_ST_REFUSED;
+		out[1] = why;
+		return 2;
+	}
+	reboot_pending = true;
+	reboot_mode = mode;
+	reboot_token = token;
+	dlog("debuglink: reboot %s in %u ms", mode == HAL_REBOOT_ROM_DFU ? "ROM DFU" : "normal",
+	     (unsigned)REBOOT_DELAY_MS);
+	out[0] = DL_ST_OK;
+	out[1] = DL_REBOOT_OK;
+	return 2;
+}
+
+// After the reply went out: wait for USB to send it, check the gate again (a PTT may have come in), then reboot
+static void reboot_now(void)
+{
+	reboot_pending = false;
+	hal_delay_ms(REBOOT_DELAY_MS);
+	uint8_t why = reboot_gate(reboot_mode, reboot_token);
+	if (why != DL_REBOOT_OK) {
+		dlog("debuglink: reboot %u aborted (%u)", reboot_mode, why);
+		return;
+	}
+	if (!board.system->reboot(reboot_mode)) {
+		dlog("debuglink: reboot %u failed (%u)", reboot_mode, DL_REBOOT_ARM_FAILED);
+	}
+}
+
 // --- dispatch ---
 
 static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -490,6 +616,12 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return cmd_get_view(req, len, out, cap);
 	case DL_CMD_RADIO:
 		return cmd_radio(req, len, out);
+	case DL_CMD_INFO_CHIP:
+		return cmd_info_chip(out);
+	case DL_CMD_READ_MEM:
+		return cmd_read_mem(req, len, out, cap);
+	case DL_CMD_REBOOT:
+		return cmd_reboot(req, len, out);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}
@@ -502,7 +634,11 @@ static void write_out(const uint8_t *buf, size_t len)
 
 static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 {
-	return dl_parser_feed(&parser, buf, len, now_ms, handle, write_out, reply);
+	size_t took = dl_parser_feed(&parser, buf, len, now_ms, handle, write_out, reply);
+	if (reboot_pending) {
+		reboot_now();
+	}
+	return took;
 }
 
 static bool side_in_frame(uint32_t now_ms)

@@ -36,6 +36,9 @@ enum {
 	DL_CMD_GET_LOG		= 0x08,
 	DL_CMD_GET_VIEW		= 0x09,
 	DL_CMD_RADIO		= 0x0A,
+	DL_CMD_INFO_CHIP	= 0x0B,
+	DL_CMD_READ_MEM		= 0x0C,
+	DL_CMD_REBOOT		= 0x0D,
 };
 
 // Reply status (the first payload byte)
@@ -47,6 +50,7 @@ enum {
 	DL_ST_UNAVAILABLE	= 4,	// not built in, or nothing to act on (no display, no such key)
 	DL_ST_BAD_CRC		= 5,	// DL_CMD_ERROR only
 	DL_ST_TOO_LONG		= 6,	// DL_CMD_ERROR only: request payload over DL_REQ_MAX
+	DL_ST_REFUSED		= 7,	// a safety check said no (READ_MEM outside the whitelist, REBOOT gate)
 };
 
 uint16_t dl_crc16(uint16_t crc, const uint8_t *p, size_t n);

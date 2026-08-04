@@ -11,6 +11,7 @@ void app_start(void);	// core/app: creates the tasks
 
 int main(void)
 {
+	stm32_sysboot_check();	// REBOOT ROM-DFU: into the ROM bootloader before anything is set up
 	HAL_Init();
 	HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);	// all 4 bits preemption (FreeRTOS needs this)
 	stm32_time_init();

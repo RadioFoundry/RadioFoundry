@@ -16,6 +16,7 @@
 #include "hal_audio.h"
 #include "hal_vocoder.h"
 #include "hal_stream.h"
+#include "hal_system.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -54,6 +55,8 @@ typedef struct {
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
 	// Optional: zero the counters behind diag_line (the debug link's RESET_COUNTERS)
 	void (*diag_reset)(void);
+	// Optional: chip identity, raw memory reads, reboot modes (hal_system.h)
+	const hal_system_t *system;
 } board_t;
 
 extern const board_t board;
