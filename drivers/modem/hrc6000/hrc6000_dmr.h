@@ -45,7 +45,7 @@ uint8_t hrc6000_dmr_access_reg(dmr_access_t access);
 typedef struct {
 	uint8_t sync_class;	// 0x51 bits 1-0: 0 none / EMB only, 1 voice, 2 data, 3 RC
 	uint8_t kind;		// dmr_burst_kind_t, 0xFF = not a usable burst (RC, bad voice number)
-	uint8_t voice_index;	// 0..5 when kind is voice
+	uint8_t voice_index;	// 0..5 when kind is voice; HRC6000_INDEX_UNKNOWN: a class 0 report without a number
 	bool crc_ok;
 	bool pi;
 	uint8_t cc;		// 0x52 bits 7-4
@@ -54,6 +54,7 @@ typedef struct {
 } hrc6000_rx_status_t;
 
 #define HRC6000_KIND_NONE	0xFFu
+#define HRC6000_INDEX_UNKNOWN	0xFFu
 
 void hrc6000_dmr_decode(uint8_t r51, uint8_t r52, uint8_t r5f, hrc6000_rx_status_t *st);
 // Payload bytes the chip holds in page 2 for a data / control burst kind (12, 18 for rate 3/4, 24 for rate 1)
@@ -108,6 +109,10 @@ typedef struct {
 	uint32_t rx_dup_slot;	// ... of those: a second report in the same tick
 	uint32_t rx_dup_extra;	// ... off the slot timing while following an in-step signal
 	uint32_t rx_dup_repeat;	// ... the same burst again (same kind and number / payload within 45 ms)
+	uint32_t rx_no_call;	// class 0 reports with no superframe in progress on their slot (empty slot, after a call)
+	uint32_t rx_stale;	// class 0 reports repeating the number of the burst just taken on that slot
+	uint32_t rx_seq_fill;	// voice taken by sequence (the report had no usable number)
+	uint32_t rx_seq_jump;	// voice whose number skipped ahead of the sequence (a burst missed)
 	uint32_t rx_rc;		// reverse channel / unusable status, dropped
 	uint32_t rx_out_of_step;	// reports 22 ms or more after the timeslot interrupt
 	uint32_t rx_restarts;	// receiver restarts by the engine (silence, out of step, CC change, stall)
@@ -136,6 +141,13 @@ typedef struct {
 	int8_t last_ts;		// slot number of the last burst heard (0 unknown)
 	uint8_t tx_state;	// engine TX state (0 idle)
 } hrc6000_dmr_stats_t;
+
+typedef struct {
+	bool active;		// a superframe in progress on this slot phase
+	uint8_t last;		// voice number taken last (HRC6000_INDEX_UNKNOWN after a header)
+	uint8_t next;		// the one expected
+	uint32_t tick;		// when
+} hrc6000_dmr_vstate_t;
 
 typedef struct {
 	dmr_event_t ev;
@@ -187,6 +199,7 @@ typedef struct {
 	uint32_t t_report;
 	uint8_t last_rx_kind, last_rx_index, last_rx_sync;
 	uint8_t last_rx_payload[DMR_PAYLOAD_MAX];
+	hrc6000_dmr_vstate_t vs[2];	// per slot phase (tick & 1 of the slot)
 
 	// Transmit
 	uint8_t tx_state;

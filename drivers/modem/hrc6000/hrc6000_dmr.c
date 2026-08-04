@@ -183,23 +183,34 @@ void hrc6000_dmr_decode(uint8_t r51, uint8_t r52, uint8_t r5f, hrc6000_rx_status
 	st->sync = families[r5f & 3u];
 	st->kind = HRC6000_KIND_NONE;
 	st->voice_index = 0;
-	// Voice numbers come with bit 7 set (the field reads 0x9-0xE): the burst is the low 3 bits, 1-6 = A-F
-	// (gotchas 1.3). Bench 2026-10-09: voice F read 0xE8 (class 0, bit 3 set as well), and headers were never
-	// classified with the class 2 = data rule, so the class is only trusted where the type field is ambiguous:
-	//   type 0x0-0x8: a data type whatever the class (no voice number has bit 7 clear, and 0x8 has none)
-	//   type 0x9-0xB: idle / rate 1 / USBD with data sync (class 2), else voice A-C
-	//   type 0xC-0xE: voice D-F unless data sync (reserved data types);  0xF: nothing
-	// Class 3 (reverse channel) is dropped. For voice, bit 3 (PI) is unreliable (it is set on plain calls)
-	bool voice_nib = (nib & 0x08u) != 0 && (nib & 7u) >= 1u && (nib & 7u) <= 6u;
-	if (st->sync_class == 3) {
-		return;
-	}
-	if (nib <= 0x08u || (nib <= 0x0Bu && st->sync_class == 2)) {
-		st->kind = nib;
-	} else if (voice_nib && st->sync_class != 2) {
+	// Bench 2026-10-10 (one MS sync call: 8 headers, 96 voice, 3 terminators): the class was 2 for exactly the 11
+	// headers and terminators, 1 for the 16 voice A, 0 for everything else, and a report came at every tick (both
+	// slots). Class 0 reports carry a voice number in the low 3 bits of the type, with bit 7 set or clear (0x1-0x6
+	// as often as 0x9-0xE, gotchas 1.3), and stale ones keep repeating the last number. So:
+	//   class 2: the ETSI data type (the only class whose type is a data type)
+	//   class 1: voice A (voice sync)
+	//   class 0: a voice B-F candidate; its number from the low 3 bits when 1-6, else unknown. The engine takes it
+	//            only within a superframe in progress on that slot, by sequence
+	//   class 3: reverse channel, dropped
+	// For voice, bit 3 (PI) is unreliable (it is set on plain calls)
+	uint8_t low = nib & 7u;
+	switch (st->sync_class) {
+	case 2:
+		if (nib <= 0x0Bu) {
+			st->kind = nib;
+		}
+		break;
+	case 1:
 		st->kind = DMR_BURST_VOICE;
-		st->voice_index = (uint8_t)((nib & 7u) - 1u);
 		st->pi = false;
+		break;
+	case 0:
+		st->kind = DMR_BURST_VOICE;
+		st->voice_index = low >= 1u && low <= 6u ? (uint8_t)(low - 1u) : HRC6000_INDEX_UNKNOWN;
+		st->pi = false;
+		break;
+	default:
+		break;
 	}
 }
 
@@ -710,6 +721,41 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 		return;
 	}
 
+	// Voice by superframe, per slot phase (the report is for the slot that just ended): a class 1 report (voice
+	// sync) is burst A and starts or restarts the superframe; a class 0 report is taken only while a superframe is
+	// in progress on its slot, as the next burst. Its own number is used when it makes sense (a missed burst then
+	// doesn't shift the rest); the number of the burst just taken is a stale report (dropped)
+	uint8_t vph = (uint8_t)((e->tick - 1u) & 1u);
+	hrc6000_dmr_vstate_t *vs = &e->vs[vph];
+	if (voice) {
+		bool live = vs->active && (uint32_t)(e->tick - vs->tick) <= RX_LOST_TICKS;
+		if (s.sync_class == 1) {
+			s.voice_index = 0;
+		} else if (!live) {
+			e->st.rx_no_call++;	// stale status on the empty slot, or after the call: never voice, never data
+			return;
+		} else if (s.voice_index == HRC6000_INDEX_UNKNOWN) {
+			s.voice_index = vs->next;
+			e->st.rx_seq_fill++;
+		} else if (s.voice_index == vs->last) {
+			e->st.rx_stale++;
+			return;
+		} else if (s.voice_index != vs->next) {
+			e->st.rx_seq_jump++;	// a burst was missed: keep the chip's number
+		}
+		vs->active = true;
+		vs->last = s.voice_index;
+		vs->next = (uint8_t)((s.voice_index + 1u) % 6u);
+		vs->tick = e->tick;
+	} else if (s.kind == DMR_BURST_VOICE_LC_HEADER || s.kind == DMR_BURST_PI_HEADER) {
+		vs->active = true;	// voice A comes next (with its sync)
+		vs->last = HRC6000_INDEX_UNKNOWN;
+		vs->next = 0;
+		vs->tick = e->tick;
+	} else {
+		vs->active = false;	// terminator or data: no voice on this slot until the next A or header
+	}
+
 	// A new reception: capture the sticky LC so a stale one isn't taken for this call's (5.2)
 	bool fresh = !e->heard_any || (uint32_t)(e->tick - e->heard_tick) > RX_LOST_TICKS;	// not reset by restarts
 	if (fresh) {
@@ -963,6 +1009,7 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	e->cc_matches = 0;
 	e->heard_any = false;
 	e->idle_restarted = false;
+	memset(e->vs, 0, sizeof(e->vs));
 	hrc6000_dmr_set_sync(e->dev, DMR_SYNC_MS);
 	if (e->cc_filter >= 0) {
 		e->cc_cur = (uint8_t)e->cc_filter;

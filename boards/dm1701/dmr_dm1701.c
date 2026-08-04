@@ -472,6 +472,12 @@ bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " m", m->rs_why[HRC6000_RS_CMD]);
 		put_kv(&o, " s", m->rs_why[HRC6000_RS_STALL] + m->rs_why[HRC6000_RS_TX_END]);
 		break;
+	case 16:	// class 0 reports: no superframe on their slot, stale number, taken by sequence, number skipped
+		put_kv(&o, "v0 nc", m->rx_no_call);
+		put_kv(&o, " st", m->rx_stale);
+		put_kv(&o, " sf", m->rx_seq_fill);
+		put_kv(&o, " sj", m->rx_seq_jump);
+		break;
 	case 15:
 		put_kv(&o, "tx", m->tx_bursts);
 		put_kv(&o, " rf", m->rftx_ints);

@@ -130,8 +130,8 @@ static int first_write_at(uint8_t page, uint8_t reg)
 
 // --- Events ---
 
-static dmr_event_t evs[256];
-static dmr_burst_t bursts[256];
+static dmr_event_t evs[1024];
+static dmr_burst_t bursts[1024];
 static int nev;
 
 static void drain(void)
@@ -139,7 +139,7 @@ static void drain(void)
 	dmr_event_t ev;
 	dmr_burst_t b;
 	while (hrc6000_dmr_pop(&eng, &ev, &b)) {
-		if (nev < 256) {
+		if (nev < 1024) {
 			evs[nev] = ev;
 			if (ev.kind == DMR_EV_BURST_RX) {
 				bursts[nev] = b;
@@ -244,6 +244,10 @@ static void test_decode(void)
 	CHECK(s.sync == DMR_SYNC_MS && s.sync_class == 1);
 	hrc6000_dmr_decode(0xE0, 0x10, 0x01, &s);	// voice F, no sync (EMB), BS
 	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == 5 && s.sync == DMR_SYNC_BS);
+	hrc6000_dmr_decode(0x60, 0x20, 0xF0, &s);	// class 0, type 6 with bit 7 clear: voice F candidate, MS (bits 1-0 only)
+	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == 5 && s.sync == DMR_SYNC_MS);
+	hrc6000_dmr_decode(0x00, 0x20, 0x00, &s);	// class 0 without a number
+	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == HRC6000_INDEX_UNKNOWN);
 	hrc6000_dmr_decode(0x92, 0x00, 0x00, &s);	// 0x9 with data sync is idle, not voice A
 	CHECK(s.kind == DMR_BURST_IDLE);
 	hrc6000_dmr_decode(0x36, 0x00, 0x02, &s);	// CSBK, CRC error, TS1 direct
@@ -252,24 +256,24 @@ static void test_decode(void)
 	CHECK(s.kind == DMR_BURST_VOICE_LC_HEADER && s.pi && s.sync == DMR_SYNC_TS2);
 	hrc6000_dmr_decode(0x83, 0x00, 0x00, &s);	// reverse channel
 	CHECK(s.kind == HRC6000_KIND_NONE);
-	hrc6000_dmr_decode(0x81, 0x00, 0x00, &s);	// type 0x8 has no voice number: rate 3/4 whatever the class
+	hrc6000_dmr_decode(0x82, 0x00, 0x00, &s);	// rate 3/4 with data sync
 	CHECK(s.kind == DMR_BURST_RATE_34_DATA);
 	hrc6000_dmr_decode(0xD2, 0x00, 0x00, &s);	// reserved data type 13 with data sync
 	CHECK(s.kind == HRC6000_KIND_NONE);
-	hrc6000_dmr_decode(0xF0, 0x00, 0x00, &s);
-	CHECK(s.kind == HRC6000_KIND_NONE);
+	hrc6000_dmr_decode(0xF0, 0x00, 0x00, &s);	// class 0, low bits 7: a voice candidate without a number
+	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == HRC6000_INDEX_UNKNOWN);
 	// Bench 2026-10-09 (MMDVM HAT, MS sync): voice F read 0xE8, class 0 with bit 3 set; it is not privacy
 	hrc6000_dmr_decode(0xE8, 0x20, 0x00, &s);
 	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == 5 && !s.pi && s.crc_ok);
-	// Headers and terminators are data types whatever the class reads
-	hrc6000_dmr_decode(0x10, 0x20, 0x00, &s);
+	// Data types only with data sync (bench 2026-10-10): types 1-6 in class 0 are voice numbers, never data
+	hrc6000_dmr_decode(0x12, 0x20, 0x00, &s);
 	CHECK(s.kind == DMR_BURST_VOICE_LC_HEADER);
-	hrc6000_dmr_decode(0x11, 0x20, 0x00, &s);
-	CHECK(s.kind == DMR_BURST_VOICE_LC_HEADER);
-	hrc6000_dmr_decode(0x20, 0x20, 0x00, &s);
+	hrc6000_dmr_decode(0x22, 0x20, 0x00, &s);
 	CHECK(s.kind == DMR_BURST_TERMINATOR_LC);
 	hrc6000_dmr_decode(0x30, 0x00, 0x00, &s);
-	CHECK(s.kind == DMR_BURST_CSBK);
+	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == 2);
+	hrc6000_dmr_decode(0x11, 0x20, 0x00, &s);	// voice sync: A whatever the type says
+	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == 0);
 	hrc6000_dmr_decode(0x13, 0x20, 0x00, &s);	// reverse channel class: dropped
 	CHECK(s.kind == HRC6000_KIND_NONE);
 }
@@ -724,7 +728,7 @@ static void test_rx_repeat_report(void)
 		voice_rx[i] = (uint8_t)(0x30 + i);
 	}
 	for (int n = 0; n < 12; n++) {
-		uint8_t r51 = (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | 0x08);
+		uint8_t r51 = (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | 0x08 | (n % 6 == 0 ? 1 : 0));	// A with voice sync
 		ts_at(t);
 		report_at(t + 3000, r51, 0x20, 0x00);	// the burst
 		t += 30000;
@@ -746,7 +750,7 @@ static void test_rx_repeat_report(void)
 		t += 30000;
 	}
 	CHECK(eng.st.rx_lc_header == h + 8);
-	CHECK(eng.st.by_class[0] == 24 && eng.st.by_class[2] == 16);
+	CHECK(eng.st.by_class[0] == 20 && eng.st.by_class[1] == 4 && eng.st.by_class[2] == 16);
 	CHECK(eng.st.by_type[0x9] == 4 && eng.st.by_type[0x1] == 16);
 	CHECK(eng.st.dt_hist[2] == 40);	// all 3 ms after the tick
 }
@@ -765,6 +769,109 @@ static void test_idle_restart_once(void)
 		ts_at(t += 30000);
 	}
 	CHECK(eng.st.rs_why[HRC6000_RS_LOST] == 1 && eng.st.rs_why[HRC6000_RS_IDLE] == 1);
+}
+
+// Bench 2026-10-10, as the radio saw it: one MS sync call (8 headers, 16 superframes, 3 terminators), a report at
+// every tick, class 2 only for headers / terminators, class 1 for voice A, class 0 for B-F with the number's bit 7
+// set or clear, the empty slot repeating the last number (bit 7 clear), and the last status (0x60) repeated after the
+// call. Before the fix this gave C39 D59 and voice lost
+static void test_rx_bench_call(void)
+{
+	fresh_engine();
+	dmr_config_t cfg = { .own_id = 1, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	uint32_t t = 12000000;
+	uint8_t last51 = 0x00;
+	int burst_no = 0;
+	// the call's bursts, in order: r51 per burst
+	uint8_t seq[8 + 96 + 3];
+	int n = 0;
+	for (int i = 0; i < 8; i++) {
+		seq[n++] = 0x12;
+	}
+	for (int sf = 0; sf < 16; sf++) {
+		seq[n++] = 0x91;	// A: voice sync
+		for (int k = 1; k < 6; k++) {
+			bool bit7 = ((sf + k) & 1) != 0;
+			seq[n++] = (uint8_t)(((bit7 ? 0x8 : 0x0) | (k + 1)) << 4);
+		}
+	}
+	for (int i = 0; i < 3; i++) {
+		seq[n++] = 0x22;
+	}
+	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
+	for (int i = 0; i < n; i++) {
+		ts_at(t);	// the burst's slot ended: its report
+		report_at(t + 3500, seq[i], 0x20, 0xF0);
+		last51 = seq[i];
+		burst_no++;
+		t += 30000;
+		ts_at(t);	// the empty slot: the last number again, bit 7 clear, no sync
+		report_at(t + 3500, (uint8_t)(last51 & 0x70), 0x20, 0xF0);
+		t += 30000;
+		drain();	// the board's task keeps up
+	}
+	for (int i = 0; i < 20; i++) {	// after the call: the last status repeated
+		ts_at(t);
+		report_at(t + 3500, 0x60, 0x50, 0xF1);
+		t += 30000;
+		drain();
+	}
+	int voices = 0, expect = 0;
+	bool in_order = true;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+			if (bursts[i].voice_index != expect) {
+				in_order = false;
+			}
+			expect = (expect + 1) % 6;
+			voices++;
+		}
+	}
+	if (!(voices == 96 && in_order)) {
+		printf("voices %d in_order %d nc %u st %u dup %u sf %u sj %u\n", voices, in_order, eng.st.rx_no_call,
+		       eng.st.rx_stale, eng.st.rx_dup, eng.st.rx_seq_fill, eng.st.rx_seq_jump);
+	}
+	CHECK(voices == 96 && in_order);
+	CHECK(eng.st.rx_voice == 96);
+	CHECK(eng.st.rx_lc_header == 8 && eng.st.rx_terminator == 3);
+	CHECK(eng.st.rx_csbk == 0 && eng.st.rx_data == 0 && eng.st.rx_idle == 0);
+	CHECK(eng.st.last_cc == 2 && eng.st.last_sync == DMR_SYNC_MS);	// from the last burst taken, not the junk after
+	CHECK(eng.st.rx_no_call + eng.st.rx_stale + eng.st.rx_dup >= 107);
+	(void)burst_no;
+}
+
+// A burst whose report never came: the next one keeps its own number, no shift
+static void test_rx_missed_burst(void)
+{
+	fresh_engine();
+	uint32_t t = 14000000;
+	static const uint8_t r51s[] = { 0x91, 0xA0, 0xB0, /* D missed */ 0xD0, 0x60 };
+	static const uint8_t want[] = { 0, 1, 2, 4, 5 };
+	for (unsigned i = 0; i < sizeof(r51s); i++) {
+		ts_at(t);
+		report_at(t + 3500, r51s[i], 0x20, 0x00);
+		t += 60000;
+		ts_at(t - 30000);
+		if (i == 2) {	// D's slot: nothing reported at its tick
+			ts_at(t);
+			t += 60000;
+			ts_at(t - 30000);
+		}
+	}
+	drain();
+	int k = 0;
+	bool ok = true;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX) {
+			ok &= k < 5 && bursts[i].voice_index == want[k];
+			k++;
+		}
+	}
+	CHECK(k == 5 && ok);
+	CHECK(eng.st.rx_seq_jump == 1);
 }
 
 static void test_halt(void)
@@ -794,6 +901,8 @@ int main(void)
 	test_cc_follow();
 	test_rx_repeat_report();
 	test_idle_restart_once();
+	test_rx_bench_call();
+	test_rx_missed_burst();
 	test_halt();
 	if (failures) {
 		printf("# hrc6000DmrTest: %d FAILED\n", failures);
