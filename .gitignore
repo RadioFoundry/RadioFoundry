@@ -23,3 +23,6 @@ __pycache__/
 # Python caches (tools, tests/hil)
 __pycache__/
 .pytest_cache/
+
+# Personal README drafts; never committed
+personal_notes.md
