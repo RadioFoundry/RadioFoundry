@@ -163,16 +163,18 @@ void EXTI2_IRQHandler(void)
 // --- RX trace (debug link log) ---
 //
 // What the engine delivered, one entry per burst event, in the call stack's trace format (core/dmr/call/dmr_call.c)
-// so the two can be diffed:  drx @<slot> <burst><ts><cc>[/<slots since the previous entry>] ...
-// burst: A-F voice, H header, T terminator, I idle, D other data, L voice lost; cc: the burst's color code (hex)
+// so the two can be diffed:  drx @<slot> <burst><ts><cc>~<ms>[/<slots since the previous entry>] ...
+// burst: as the stack's (A-F voice, P H T K M N U R S W I X data by type, L voice lost), lower case when the report
+// was not in step (outside 1-12 ms after the timeslot interrupt); cc: the burst's color code (hex); ms: when the
+// report came after its timeslot interrupt (? = unknown: serviced at the next timeslot interrupt)
 
 #if CONFIG_DEBUGLINK
-#define TRACE_PER_LINE	10
+#define TRACE_PER_LINE	6
 #define TRACE_IDLE_TICKS	10	// flush a part line after this many slots without a burst
 
 static struct {
 	bool off;
-	char line[72];
+	char line[88];
 	uint8_t len, n;
 	uint32_t last_slot;
 } tr;
@@ -218,18 +220,22 @@ static void trace_event(const dmr_event_t *ev)
 		}
 		return;
 	}
+	static const char data[11] = { 'P', 'H', 'T', 'K', 'M', 'N', 'U', 'R', 'S', 'I', 'W' };
 	char burst;
 	uint8_t cc = 0;
+	uint8_t ms = 255;
 	if (ev->kind == DMR_EV_BURST_RX && ev->burst != NULL) {
 		const dmr_burst_t *b = ev->burst;
-		switch (b->kind) {
-		case DMR_BURST_VOICE: burst = (char)('A' + b->voice_index % 6u); break;
-		case DMR_BURST_VOICE_LC_HEADER: burst = 'H'; break;
-		case DMR_BURST_TERMINATOR_LC: burst = 'T'; break;
-		case DMR_BURST_IDLE: burst = 'I'; break;
-		default: burst = 'D'; break;
+		if (b->kind == DMR_BURST_VOICE) {
+			burst = (char)('A' + b->voice_index % 6u);
+		} else {
+			burst = b->kind < sizeof(data) ? data[b->kind] : 'X';
+		}
+		if (!b->in_step) {
+			burst = (char)(burst - 'A' + 'a');
 		}
 		cc = b->cc & 0x0Fu;
+		ms = hrc6000_dmr_pop_ms(&eng);
 	} else if (ev->kind == DMR_EV_VOICE_LOST) {
 		burst = 'L';
 	} else {
@@ -248,6 +254,14 @@ static void trace_event(const dmr_event_t *ev)
 	tr_put(burst);
 	tr_put((char)('0' + (ev->ts >= 0 && ev->ts <= 2 ? ev->ts : 9)));
 	tr_put("0123456789ABCDEF"[cc]);
+	if (burst != 'L') {
+		tr_put('~');
+		if (ms == 255) {
+			tr_put('?');
+		} else {
+			tr_put_u(ms);
+		}
+	}
 	if (tr.n) {
 		tr_put('/');
 		tr_put_u(ev->arg - tr.last_slot);
@@ -593,9 +607,11 @@ bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " sf", m->rx_seq_fill);
 		put_kv(&o, " sj", m->rx_seq_jump);
 		break;
-	case 17:	// class 1 (voice sync): lone ones dropped (no B after), A reports given the superframe's CC
+	case 17:	// lone voice syncs dropped (no B after); voice CCs replaced (filter / superframe); system interrupts
+			// serviced at the timeslot interrupt (line still low, no edge)
 		put_kv(&o, "v1 lone", m->rx_lone);
 		put_kv(&o, " acc", m->rx_a_cc);
+		put_kv(&o, " at", m->sys_at_tick);
 		break;
 	case 15:
 		put_kv(&o, "tx", m->tx_bursts);

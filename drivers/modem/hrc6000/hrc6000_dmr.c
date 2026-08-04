@@ -689,7 +689,7 @@ static void capture_if_fresh(hrc6000_dmr_t *e)
 // Deliver a burst taken: reception bookkeeping, slot number, counters, the event. tick: the tick of its report (the
 // slot that ended at tick - 1 ... the report is for the slot that just ended)
 static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst_t *nb, uint32_t tick, bool in_step,
-		 bool tx)
+		 bool on_time, uint8_t dms, bool tx)
 {
 	bool voice = s->kind == DMR_BURST_VOICE;
 
@@ -700,7 +700,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	if (s->sync == DMR_SYNC_BS) {
 		e->bs_tick = e->tick;
 		e->rmo_seen = true;
-	} else if (in_step && !tx && !e->cfg.repeater) {
+	} else if (on_time && !tx && !e->cfg.repeater) {
 		int8_t want = s->sync == DMR_SYNC_TS2 ? 2 : 1;
 		bool tdma = s->sync == DMR_SYNC_TS1 || s->sync == DMR_SYNC_TS2;
 		if (e->phase_ts[ph] == 0 || (tdma && e->phase_ts[ph] != want)) {
@@ -762,12 +762,15 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	slot->ev.ts = b->ts;
 	slot->ev.arg = tick;	// DMR_EV_BURST_RX: the slot counter of the report (never 0); the stack orders bursts by it
 	slot->ev.burst = NULL;
+	slot->dms = dms;
 	ev_commit(e);
 }
 
 // One received-data report. Returns whether the color code in 0x52 belongs to a burst (for the CC follower): not for
-// burst A (no CC on air) nor for unusable reports
-static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
+// voice (burst A has no CC on air; B-F under the CC filter get the filter's) nor for unusable reports.
+// at_tick: serviced from the timeslot interrupt, before the tick advanced: the report's interrupt was not taken in its
+// slot (no edge seen), so its delay is unknown; it still belongs to the slot that ended at e->tick
+static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 {
 	uint8_t r51 = r(e->dev, R_RX_TYPE);
 	uint8_t r5f = r(e->dev, R_SYNC_TYPE);
@@ -778,8 +781,12 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	uint32_t dt = t - e->t_tick;
 	uint32_t dms = dt / 1000u;
 	rx_evidence(e, r51, r5f, dt);
-	e->st.last_report_ms = (uint8_t)(dms > 255u ? 255u : dms);
-	bool in_step = e->timing && dt >= IN_STEP_MIN_US && dt <= IN_STEP_MAX_US;
+	e->st.last_report_ms = (uint8_t)(at_tick || dms > 255u ? 255u : dms);
+	bool in_step = !at_tick && e->timing && dt >= IN_STEP_MIN_US && dt <= IN_STEP_MAX_US;
+	// Within the slot it belongs to, early or late: good enough to name the slot (in_step is only the chip's normal
+	// 1-12 ms; bench 2026-10-10 on 90ce091: reports 12-22 ms after the tick)
+	bool on_time = !at_tick && e->timing && dt >= IN_STEP_MIN_US && dt < OUT_OF_STEP_US;
+	e->report_dms = (uint8_t)(at_tick || dms > 254u ? 255u : dms);
 
 	if (s.kind == HRC6000_KIND_NONE) {
 		e->st.rx_rc++;
@@ -789,7 +796,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	if (s.kind != DMR_BURST_VOICE) {
 		e->st.last_data_r51 = r51;
 	}
-	if (e->timing && dt >= OUT_OF_STEP_US) {
+	if (e->timing && !at_tick && dt >= OUT_OF_STEP_US) {
 		e->st.rx_out_of_step++;
 		// The chip's timing is off the sender's (it locked to noise): resynchronize (gotchas 1.5)
 		if (!tx && ++e->out_of_step_run >= OUT_OF_STEP_RESYNC) {
@@ -807,12 +814,10 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 		e->st.rx_dup_slot++;
 		return cc_real;
 	}
-	// Following an in-step signal, a report off the slot timing is an extra one (the EMB report mid-slot)
-	if (!tx && !in_step && e->rx_any && (uint32_t)(e->tick - e->rx_tick) <= 2u && e->timing) {
-		e->st.rx_dup++;
-		e->st.rx_dup_extra++;
-		return cc_real;
-	}
+	// No rule on the report's delay alone: a report off the 1-12 ms window used to be dropped as an extra one if a
+	// burst was taken in the last two slots, which on the bench (90ce091, reports 12-22 ms after the tick) dropped
+	// every other voice burst (A, C, E). A second report for one burst is caught by the one-per-slot rule (same
+	// tick), the repeat rules below (same number in the next slot) and the stale rule
 
 	// The payload now: the repeat check below compares it
 	dmr_burst_t nb;
@@ -829,11 +834,18 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	// both in step, 30 ms apart, so the 28 ms window let both through). A repeat: within 45 ms of the burst taken,
 	// same kind and voice number, and for data the same payload (two calls on two slots never share one). TS1 / TS2
 	// direct mode sync on different slots are two calls, not a repeat
-	if (e->report_valid && (uint32_t)(t - e->t_report) < VOICE_DEDUP_US && s.kind == e->last_rx_kind
-	    && !(s.sync != e->last_rx_sync && (s.sync == DMR_SYNC_TS1 || s.sync == DMR_SYNC_TS2))
-	    && (voice ? s.voice_index == e->last_rx_index : memcmp(nb.payload, e->last_rx_payload, nb.len) == 0)) {
+	bool same = e->report_valid && s.kind == e->last_rx_kind
+		    && !(s.sync != e->last_rx_sync && (s.sync == DMR_SYNC_TS1 || s.sync == DMR_SYNC_TS2))
+		    && (voice ? s.voice_index == e->last_rx_index : memcmp(nb.payload, e->last_rx_payload, nb.len) == 0);
+	if (same && (uint32_t)(t - e->t_report) < VOICE_DEDUP_US) {
 		e->st.rx_dup++;
 		e->st.rx_dup_repeat++;
+		return cc_real;
+	}
+	// The same voice number in the very next slot, whatever the delays (a late report and the empty slot's)
+	if (same && voice && s.voice_index != HRC6000_INDEX_UNKNOWN && (uint32_t)(e->tick - e->report_tick) <= 1u) {
+		e->st.rx_dup++;
+		e->st.rx_dup_extra++;
 		return cc_real;
 	}
 	if (voice && e->voice_valid && (uint32_t)(t - e->t_voice) < VOICE_DEDUP_BOTH_US) {
@@ -853,6 +865,10 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	uint8_t vph = (uint8_t)((e->tick - 1u) & 1u);
 	hrc6000_dmr_vstate_t *vs = &e->vs[vph];
 	hrc6000_dmr_held_t *hd = &e->held[vph];
+	// The chip deframes only bursts of the color code in 0x1F (modem-hrc6000.md 5.4): voice it reports under the CC
+	// filter is ours. 0x52 is not reliable for voice (A has no CC on air; bench 2026-10-10 on 90ce091: CC 5 in 0x52
+	// for every voice burst of a CC 2 call, reports late in the slot)
+	bool cc_fix = voice && e->cc_filter >= 0;
 	if (voice) {
 		bool live = vs->active && (uint32_t)(e->tick - vs->tick) <= RX_LOST_TICKS;
 		if (s.sync_class == 1) {
@@ -865,11 +881,13 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 				hd->t = t;
 				hd->tick = e->tick;
 				hd->in_step = in_step;
+				hd->on_time = on_time;
+				hd->dms = e->report_dms;
 				capture_if_fresh(e);
 				note_report(e, &s, &nb, t);
 				return false;
 			}
-			if (s.cc != vs->cc) {
+			if (!cc_fix && s.cc != vs->cc) {
 				e->st.rx_a_cc++;
 				s.cc = vs->cc;
 			}
@@ -880,8 +898,8 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 			}
 			// B after a lone A: the A was a call's (late entry). Deliver it first, with B's color code
 			hd->valid = false;
-			hd->s.cc = s.cc;
-			take(e, &hd->s, &hd->nb, hd->tick, hd->in_step, tx);
+			hd->s.cc = cc_fix ? (uint8_t)e->cc_filter : s.cc;
+			take(e, &hd->s, &hd->nb, hd->tick, hd->in_step, hd->on_time, hd->dms, tx);
 			vs->active = true;
 			vs->last = 0;
 			vs->next = 1;
@@ -905,7 +923,12 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 		vs->tick = e->tick;
 	} else {
 		held_drop(e, hd);	// a lone A followed by data on its slot: not a call
-		if (s.kind == DMR_BURST_VOICE_LC_HEADER || s.kind == DMR_BURST_PI_HEADER) {
+		// A PI header comes between the voice LC header and burst A: it keeps a superframe opened by a header, and
+		// anywhere else it opens nothing (bench 2026-10-10: terminators read late came as type 0, and the stale
+		// reports after the call were then taken as voice). A call joined at its PI header starts at A (held for B)
+		bool pi_in_header = s.kind == DMR_BURST_PI_HEADER && vs->active && vs->last == HRC6000_INDEX_UNKNOWN
+				    && (uint32_t)(e->tick - vs->tick) <= RX_LOST_TICKS;
+		if (s.kind == DMR_BURST_VOICE_LC_HEADER || pi_in_header) {
 			vs->active = true;	// voice A comes next (with its sync)
 			vs->last = HRC6000_INDEX_UNKNOWN;
 			vs->next = 0;
@@ -916,12 +939,18 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 		}
 	}
 
+	if (cc_fix && s.cc != (uint8_t)e->cc_filter) {
+		e->st.rx_a_cc++;
+		s.cc = (uint8_t)e->cc_filter;
+	}
 	note_report(e, &s, &nb, t);
-	take(e, &s, &nb, e->tick, in_step, tx);
+	take(e, &s, &nb, e->tick, in_step, on_time, e->report_dms, tx);
 	return cc_real;
 }
 
 // --- Engine: ISRs ---
+
+static void sys_service(hrc6000_dmr_t *e, uint32_t t, bool at_tick);
 
 void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 {
@@ -929,6 +958,13 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		return;
 	}
 	uint32_t t = now(e);
+	// A report whose system interrupt was not taken in its slot (the line held low, no edge): service it now, before
+	// the tick advances, so it is read before the chip moves on and is counted for the slot it belongs to (the
+	// board's task would otherwise pend it later, in the next slot)
+	if (e->ops->sys_line_low != NULL && e->ops->sys_line_low(e->ops->ctx)) {
+		e->st.sys_at_tick++;
+		sys_service(e, t, true);
+	}
 	// PA off first: our burst of the slot that just ended (hardware-dm1701.md 6, gotchas 3.4)
 	if (e->pa_on && (uint32_t)(t - e->t_pa_on) > PA_MIN_ON_US) {
 		pa_drop(e, t);
@@ -988,13 +1024,9 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	isr_done(e);
 }
 
-void hrc6000_dmr_isr_sys(hrc6000_dmr_t *e)
+// The system interrupt's work: from its own ISR, or from the timeslot ISR when the line is still low there (at_tick)
+static void sys_service(hrc6000_dmr_t *e, uint32_t t, bool at_tick)
 {
-	if (!e->running) {
-		return;
-	}
-	uint32_t t = now(e);
-	e->st.sys_ints++;
 	// The line stays low while any flag is set: clear what was read, and go again if it is still asserted
 	for (int pass = 0; pass < 3; pass++) {
 		uint8_t flags = r(e->dev, R_INT_FLAGS);
@@ -1014,7 +1046,7 @@ void hrc6000_dmr_isr_sys(hrc6000_dmr_t *e)
 		}
 		bool cc_real = true;
 		if ((flags & INT_RX_DATA) != 0) {
-			cc_real = rx_report(e, t, r52);
+			cc_real = rx_report(e, t, r52, at_tick);
 		}
 		if ((flags & INT_VOICE_ABN) != 0) {
 			uint8_t v = r(e->dev, R_VOICE_ABN);
@@ -1035,6 +1067,16 @@ void hrc6000_dmr_isr_sys(hrc6000_dmr_t *e)
 			break;
 		}
 	}
+}
+
+void hrc6000_dmr_isr_sys(hrc6000_dmr_t *e)
+{
+	if (!e->running) {
+		return;
+	}
+	uint32_t t = now(e);
+	e->st.sys_ints++;
+	sys_service(e, t, false);
 	isr_done(e);
 }
 
@@ -1132,9 +1174,11 @@ bool hrc6000_dmr_pop(hrc6000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
 	const hrc6000_dmr_evslot_t *s = &e->evq[e->evq_tail];
 	*ev = s->ev;
+	e->pop_dms = 255;
 	if (ev->kind == DMR_EV_BURST_RX) {
 		*burst = s->burst;
 		ev->burst = burst;
+		e->pop_dms = s->dms;
 	}
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 	e->evq_tail = (uint8_t)((e->evq_tail + 1u) % EV_N);

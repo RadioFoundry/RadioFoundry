@@ -107,7 +107,7 @@ typedef struct {
 	uint32_t rx_crc_err;	// delivered with a CRC error (data blocks and voice) or dropped for one (headers, CSBK)
 	uint32_t rx_dup;	// second report for one burst (the EMB report, extra reports), dropped
 	uint32_t rx_dup_slot;	// ... of those: a second report in the same tick
-	uint32_t rx_dup_extra;	// ... off the slot timing while following an in-step signal
+	uint32_t rx_dup_extra;	// ... the same voice number again in the next slot (beyond the 45 ms window)
 	uint32_t rx_dup_repeat;	// ... the same burst again (same kind and number / payload within 45 ms)
 	uint32_t rx_no_call;	// class 0 reports with no superframe in progress on their slot (empty slot, after a call)
 	uint32_t rx_stale;	// class 0 reports repeating the number of the burst just taken on that slot
@@ -115,8 +115,9 @@ typedef struct {
 	uint32_t rx_seq_jump;	// voice whose number skipped ahead of the sequence (a burst missed)
 	uint32_t rx_lone;	// voice sync reports (class 1) with no header or superframe on their slot and no burst B
 				// after them: noise, the other slot's echo of A. Dropped (never delivered)
-	uint32_t rx_a_cc;	// burst A reports whose 0x52 CC was not the superframe's (A has no CC on air): given the
-				// superframe's
+	uint32_t rx_a_cc;	// voice reports whose 0x52 CC was replaced: by the CC filter's (the chip deframes only that
+				// CC), or without a filter for burst A (no CC on air) by its superframe's
+	uint32_t sys_at_tick;	// system interrupts still pending at the timeslot interrupt, serviced there
 	uint32_t rx_rc;		// reverse channel / unusable status, dropped
 	uint32_t rx_out_of_step;	// reports 22 ms or more after the timeslot interrupt
 	uint32_t rx_restarts;	// receiver restarts by the engine (silence, out of step, CC change, stall)
@@ -157,6 +158,7 @@ typedef struct {
 typedef struct {
 	dmr_event_t ev;
 	dmr_burst_t burst;
+	uint8_t dms;		// DMR_EV_BURST_RX: ms after the timeslot interrupt the report came, 255 = unknown / at the tick
 } hrc6000_dmr_evslot_t;
 
 // A report taken but not yet delivered: a lone voice sync (burst A with nothing before it on its slot) waits for the
@@ -168,6 +170,8 @@ typedef struct {
 	uint32_t t;		// now_us of the report
 	uint32_t tick;		// tick of the report
 	bool in_step;
+	bool on_time;
+	uint8_t dms;
 } hrc6000_dmr_held_t;
 
 typedef struct {
@@ -213,6 +217,8 @@ typedef struct {
 	bool idle_restarted;	// the quiet-period restart has been done
 	// The burst taken last (repeat check)
 	uint32_t t_report;
+	uint8_t report_dms;	// ms after the tick of the report being handled (255 unknown)
+	uint8_t pop_dms;	// ... of the burst event last popped
 	uint8_t last_rx_kind, last_rx_index, last_rx_sync;
 	uint8_t last_rx_payload[DMR_PAYLOAD_MAX];
 	hrc6000_dmr_vstate_t vs[2];	// per slot phase (tick & 1 of the slot)
@@ -264,6 +270,8 @@ void hrc6000_dmr_isr_rftx(hrc6000_dmr_t *e);
 
 // Task side. pop: the next event (ev->burst points at *burst for DMR_EV_BURST_RX); false when none
 bool hrc6000_dmr_pop(hrc6000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst);
+// For the trace: ms after its timeslot interrupt the burst last popped was reported (255 unknown / serviced at a tick)
+static inline uint8_t hrc6000_dmr_pop_ms(const hrc6000_dmr_t *e) { return e->pop_dms; }
 // Watchdog from the board's task, every few ms: timing stall (200 ms), PA left on (no timeslot interrupt)
 void hrc6000_dmr_poll(hrc6000_dmr_t *e);
 

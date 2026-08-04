@@ -124,7 +124,8 @@ static struct {
 //
 //   crx @<slot> <entry> <entry> ...
 //   entry = <burst><ts><what>[<frames concealed before it>][/<slots since the previous entry>]
-//   burst: A-F voice, H voice LC header, T terminator, I idle, D other data, L voice lost (event)
+//   burst: A-F voice; data by type (never A-F): P PI header, H voice LC header, T terminator, K CSBK, M MBC header,
+//          N MBC continuation, U data header, R rate 1/2, S rate 3/4, W rate 1, I idle, X other; L voice lost (event)
 //   what:  p played, d repeat dropped, e not played (privacy, no key), x other CC, s other slot, o call not played
 //          (filters), n no call yet (late entry waiting), t ignored while transmitting, h call (re)started from it,
 //          k ended the call, - nothing to do
@@ -209,18 +210,11 @@ static void tr_add(char burst, int8_t ts, uint32_t slot, uint32_t now)
 
 static char tr_burst(const dmr_burst_t *b)
 {
-	switch (b->kind) {
-	case DMR_BURST_VOICE:
+	static const char data[11] = { 'P', 'H', 'T', 'K', 'M', 'N', 'U', 'R', 'S', 'I', 'W' };
+
+	if (b->kind == DMR_BURST_VOICE)
 		return (char)('A' + b->voice_index % 6);
-	case DMR_BURST_VOICE_LC_HEADER:
-		return 'H';
-	case DMR_BURST_TERMINATOR_LC:
-		return 'T';
-	case DMR_BURST_IDLE:
-		return 'I';
-	default:
-		return 'D';
-	}
+	return b->kind < sizeof(data) ? data[b->kind] : 'X';
 }
 
 #define TR_WHAT(c)	(tr.what = (c))
@@ -660,7 +654,9 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			rx_play(b, now, slot);
 		break;
 	default:
-		if (s.rx != RXC_NONE && b->kind != DMR_BURST_IDLE && b->kind != DMR_BURST_PI_HEADER)
+		// Any other burst on the call's slot keeps the call (a PI header precedes the voice of a call too; bench
+		// 2026-10-10: headers read late came as type 0, and eight of them outlast the fade time)
+		if (s.rx != RXC_NONE && b->kind != DMR_BURST_IDLE)
 			s.last_rx_ms = now;
 		break;
 	}

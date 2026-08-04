@@ -8,6 +8,7 @@
 // once, in order, with nothing concealed.
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "modem/hrc6000/hrc6000_dmr.h"
 #include "dmr/call/dmr_call.h"
@@ -66,6 +67,8 @@ static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const 
 		for (uint16_t i = 0; i < len; i++) {
 			rx[i] = rd[page][(uint8_t)(reg + i)];
 		}
+	} else if (page == 4 && reg == 0x83 && tx != NULL && len == 1) {
+		rd[4][0x82] &= (uint8_t)~tx[0];	// flags cleared: the system interrupt line goes high when none is left
 	}
 	return true;
 }
@@ -88,7 +91,9 @@ static uint32_t t_us;
 static bool fake_rf(void *ctx, bool tx) { return true; }
 static uint32_t fake_now(void *ctx) { return t_us; }
 
-static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, NULL, NULL };
+static bool fake_sys_line_low(void *ctx) { return rd[4][0x82] != 0; }
+
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, fake_sys_line_low, NULL };
 
 // --- The board glue (what boards/dm1701/dmr_dm1701.c does): hal_dmr_modem_t over the engine, a draining task ---
 
@@ -128,6 +133,9 @@ static void board_task(void)
 {
 	dmr_event_t ev;
 	dmr_burst_t b;
+	if (rd[4][0x82] != 0) {
+		hrc6000_dmr_isr_sys(&eng);	// a flag still holds the line low: no edge will come (the board pends it)
+	}
 	while (hrc6000_dmr_pop(&eng, &ev, &b)) {
 		if (ev.kind == DMR_EV_BURST_RX && b.kind == DMR_BURST_VOICE) {
 			task_voice_events++;
@@ -182,6 +190,9 @@ typedef struct {
 	uint32_t poll_ms;	// the stack's poll period
 	bool same_lc_before;	// the previous call heard had the same LC (late entry's stale LC)
 	unsigned voice_lost_at;	// voice burst number whose report also flags voice sync lost on its slot (0 = none)
+	uint32_t late_us;	// reports after the first serviced this long after their timeslot interrupt (0 = 3.5 ms)
+	bool late_junk;		// ... and read then: 0x52 holds CC 5 for voice, class 2 types read as 0 (the chip moved on)
+	bool sticky;		// no system interrupt edge: a report waits with the line low until someone looks
 } chip_t;
 
 typedef struct {
@@ -319,6 +330,7 @@ static void run_call(const chip_t *c, result_t *res)
 	uint32_t t_task = t_us, t_poll = t_us + 3000;
 	unsigned runs = 0;
 	uint32_t tick_t = t_us + 30000;
+	bool r_seen = false;
 	for (unsigned tick = 1; tick <= last_tick; tick++) {
 		// everything due before this tick's interrupt
 		while (t_task < tick_t || t_poll < tick_t) {
@@ -349,7 +361,10 @@ static void run_call(const chip_t *c, result_t *res)
 					voice_rx[f * 9 + 1] = (uint8_t)f;
 				}
 			}
-			t_us = tick_t + 3500;
+			bool first = !r_seen;
+			r_seen = true;
+			uint32_t delay = first || c->late_us == 0 ? 3500 : c->late_us;
+			t_us = tick_t + delay;
 			rd[4][0x82] = 0x08;
 			if (c->voice_lost_at != 0 && r->voice && r->burst_no == c->voice_lost_at) {
 				rd[4][0x82] = 0x08 | 0x02;	// received data, and voice abnormal: slot 0 voice sync lost
@@ -358,8 +373,17 @@ static void run_call(const chip_t *c, result_t *res)
 			rd[4][0x51] = r->r51;
 			rd[4][0x52] = r->r52;
 			rd[4][0x5F] = 0xF0;
-			hrc6000_dmr_isr_sys(&eng);
-			rd[4][0x82] = 0;
+			if (c->late_junk && !first && delay >= 12000) {
+				if ((r->r51 & 3u) == 2u) {
+					rd[4][0x51] = (uint8_t)(r->r51 & 0x0Fu);
+				} else {
+					rd[4][0x52] = 0x50;
+				}
+			}
+			if (!c->sticky || first) {
+				hrc6000_dmr_isr_sys(&eng);
+				rd[4][0x82] = 0;
+			}
 		}
 		tick_t += 30000;
 	}
@@ -385,6 +409,11 @@ static bool expect_clean(const char *name, const chip_t *c)
 		       r.voice_events, eng.st.rx_no_call, eng.st.rx_stale, eng.st.rx_seq_fill, eng.st.rx_seq_jump,
 		       eng.st.rx_dup, r.cs.rx_voice_bursts, r.cs.rx_lost_frames, r.cs.rx_dup_dropped,
 		       r.cs.rx_late_entries, r.cs.rx_calls, sk.frames, sk.losts, sk.begins, sk.in_order);
+		printf("    restarts:");
+		for (int k = 0; k < HRC6000_RS_COUNT; k++) {
+			printf(" %u", eng.st.rs_why[k]);
+		}
+		printf(" oos %u at %u\n", eng.st.rx_out_of_step, eng.st.sys_at_tick);
 	}
 	return ok;
 }
@@ -446,6 +475,30 @@ static void test_lone_voice_sync(void)
 // The chip flags voice sync lost after a burst: the next burst is concealed (three frames), and when it still comes
 // it is that burst again by its index and slot counter, so it is dropped, whatever its arrival time. Before, a burst
 // arriving 40 ms or more after the last one in arrival time (the task batching) cost five more bursts of concealment
+// Bench 2026-10-10 on 90ce091: reports 12-22 ms after the timeslot interrupt (outside the chip's normal 1-12 ms),
+// read when 0x52 held CC 5 and class 2 types had gone to 0. The driver took only every other voice burst (B, D, F:
+// the ones between were "extra reports" by delay alone) and gave them CC 5, which the stack dropped:
+//   drx @16995 F15 B15/4 D15/4 F15/4 ...      crx @16995 F1x B1x/4 D1x/4 ...
+// Every burst must still come through once, with the call's CC
+static void test_late_reports(void)
+{
+	chip_t c = base;
+	c.late_us = 15000;
+	c.late_junk = true;
+	CHECK(expect_clean("late reports", &c));
+	if (getenv("RXCHAIN_TRACE") != NULL) {
+		printf("%s", trace);
+	}
+	// No edge at all: each report waits with the line low; the timeslot interrupt services it for its own slot
+	c = base;
+	c.sticky = true;
+	c.task_ms = 40;
+	CHECK(expect_clean("sticky line", &c));
+	CHECK(eng.st.sys_at_tick >= 40);	// the rest were pended by the board's task before the next tick
+	c.task_ms = 95;
+	CHECK(expect_clean("sticky line, slow task", &c));
+}
+
 static void test_voice_lost(void)
 {
 	chip_t c = base;
@@ -476,6 +529,7 @@ int main(void)
 	test_lone_voice_sync();
 	test_same_call_again();
 	test_voice_lost();
+	test_late_reports();
 	if (failures) {
 		printf("# dmrRxChainTest: %d FAILED\n", failures);
 		return 1;

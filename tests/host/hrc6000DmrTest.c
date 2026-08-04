@@ -862,6 +862,7 @@ static void test_rx_bench_call(void)
 	CHECK(eng.st.rx_csbk == 0 && eng.st.rx_data == 0 && eng.st.rx_idle == 0);
 	CHECK(eng.st.last_cc == 2 && eng.st.last_sync == DMR_SYNC_MS);	// from the last burst taken, not the junk after
 	CHECK(eng.st.rx_no_call + eng.st.rx_stale + eng.st.rx_dup >= 107);
+	if (!(eng.st.rx_a_cc == 16 && eng.st.rx_lone == 5)) printf("acc %u lone %u\n", eng.st.rx_a_cc, eng.st.rx_lone);
 	CHECK(eng.st.rx_a_cc == 16 && eng.st.rx_lone == 5);
 	(void)burst_no;
 }
