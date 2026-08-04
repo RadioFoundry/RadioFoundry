@@ -113,6 +113,10 @@ typedef struct {
 	uint32_t rx_stale;	// class 0 reports repeating the number of the burst just taken on that slot
 	uint32_t rx_seq_fill;	// voice taken by sequence (the report had no usable number)
 	uint32_t rx_seq_jump;	// voice whose number skipped ahead of the sequence (a burst missed)
+	uint32_t rx_lone;	// voice sync reports (class 1) with no header or superframe on their slot and no burst B
+				// after them: noise, the other slot's echo of A. Dropped (never delivered)
+	uint32_t rx_a_cc;	// burst A reports whose 0x52 CC was not the superframe's (A has no CC on air): given the
+				// superframe's
 	uint32_t rx_rc;		// reverse channel / unusable status, dropped
 	uint32_t rx_out_of_step;	// reports 22 ms or more after the timeslot interrupt
 	uint32_t rx_restarts;	// receiver restarts by the engine (silence, out of step, CC change, stall)
@@ -146,6 +150,7 @@ typedef struct {
 	bool active;		// a superframe in progress on this slot phase
 	uint8_t last;		// voice number taken last (HRC6000_INDEX_UNKNOWN after a header)
 	uint8_t next;		// the one expected
+	uint8_t cc;		// color code of the superframe (from its header / bursts B-F): burst A has none on air
 	uint32_t tick;		// when
 } hrc6000_dmr_vstate_t;
 
@@ -153,6 +158,17 @@ typedef struct {
 	dmr_event_t ev;
 	dmr_burst_t burst;
 } hrc6000_dmr_evslot_t;
+
+// A report taken but not yet delivered: a lone voice sync (burst A with nothing before it on its slot) waits for the
+// burst B that proves it is a call (rx_report)
+typedef struct {
+	bool valid;
+	hrc6000_rx_status_t s;
+	dmr_burst_t nb;		// payload as read at the report
+	uint32_t t;		// now_us of the report
+	uint32_t tick;		// tick of the report
+	bool in_step;
+} hrc6000_dmr_held_t;
 
 typedef struct {
 	hrc6000_t *dev;
@@ -200,6 +216,7 @@ typedef struct {
 	uint8_t last_rx_kind, last_rx_index, last_rx_sync;
 	uint8_t last_rx_payload[DMR_PAYLOAD_MAX];
 	hrc6000_dmr_vstate_t vs[2];	// per slot phase (tick & 1 of the slot)
+	hrc6000_dmr_held_t held[2];	// per slot phase: a lone burst A waiting for its B
 
 	// Transmit
 	uint8_t tx_state;

@@ -346,6 +346,8 @@ static void do_restart(hrc6000_dmr_t *e, uint8_t why)
 	hrc6000_dmr_chip_rx_restart(e->dev, rx_ctl(e));
 	e->ctl_next = rx_ctl(e);
 	forget_slots(e);
+	e->held[0].valid = false;	// the timing they were heard in is gone
+	e->held[1].valid = false;
 	e->rx_any = false;
 	e->rx_tick = e->tick;
 	e->report_valid = false;
@@ -647,7 +649,125 @@ static void rx_evidence(hrc6000_dmr_t *e, uint8_t r51, uint8_t r5f, uint32_t dt)
 	e->st.dt_hist[bin]++;
 }
 
-static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
+// The dedup state of a report taken (one per slot, the repeat check), whether or not it is delivered now
+static void note_report(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst_t *nb, uint32_t t)
+{
+	e->report_tick = e->tick;
+	e->report_valid = true;
+	e->t_report = t;
+	e->last_rx_kind = s->kind;
+	e->last_rx_index = s->voice_index;
+	e->last_rx_sync = s->sync;
+	memcpy(e->last_rx_payload, nb->payload, sizeof(e->last_rx_payload));
+	if (s->kind == DMR_BURST_VOICE) {
+		e->t_voice = t;
+		e->voice_valid = true;
+	}
+}
+
+static void held_drop(hrc6000_dmr_t *e, hrc6000_dmr_held_t *hd)
+{
+	if (hd->valid) {
+		hd->valid = false;
+		e->st.rx_lone++;
+	}
+}
+
+// A new reception: capture the sticky LC so a stale one isn't taken for this call's (5.2). Also for a lone burst A
+// held back, so the capture is from the start of the reception and not from when its B confirmed it
+static void capture_if_fresh(hrc6000_dmr_t *e)
+{
+	bool fresh = !e->heard_any || (uint32_t)(e->tick - e->heard_tick) > RX_LOST_TICKS;	// not reset by restarts
+	if (fresh) {
+		hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, e->stale_lc, sizeof(e->stale_lc));
+		e->voice_since_start = 0;
+	}
+	e->heard_tick = e->tick;
+	e->heard_any = true;
+}
+
+// Deliver a burst taken: reception bookkeeping, slot number, counters, the event. tick: the tick of its report (the
+// slot that ended at tick - 1 ... the report is for the slot that just ended)
+static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst_t *nb, uint32_t tick, bool in_step,
+		 bool tx)
+{
+	bool voice = s->kind == DMR_BURST_VOICE;
+
+	capture_if_fresh(e);
+
+	// Slot numbers (see hrc6000_dmr.h): the report is for the slot that just ended
+	uint8_t ph = (uint8_t)((tick - 1u) & 1u);
+	if (s->sync == DMR_SYNC_BS) {
+		e->bs_tick = e->tick;
+		e->rmo_seen = true;
+	} else if (in_step && !tx && !e->cfg.repeater) {
+		int8_t want = s->sync == DMR_SYNC_TS2 ? 2 : 1;
+		bool tdma = s->sync == DMR_SYNC_TS1 || s->sync == DMR_SYNC_TS2;
+		if (e->phase_ts[ph] == 0 || (tdma && e->phase_ts[ph] != want)) {
+			e->phase_ts[ph] = want;
+			e->phase_ts[ph ^ 1u] = (int8_t)(3 - want);
+		}
+	}
+
+	e->rx_tick = e->tick;
+	e->rx_any = true;
+	e->idle_restarted = false;
+	if (voice && e->voice_since_start < 255u) {
+		e->voice_since_start++;
+	}
+	e->st.last_cc = s->cc;
+	e->st.last_sync = s->sync;
+	e->st.last_ts = e->phase_ts[ph];
+	if (!s->crc_ok) {
+		e->st.rx_crc_err++;
+	}
+	switch (s->kind) {
+	case DMR_BURST_VOICE: e->st.rx_voice++; break;
+	case DMR_BURST_VOICE_LC_HEADER: e->st.rx_lc_header++; break;
+	case DMR_BURST_TERMINATOR_LC: e->st.rx_terminator++; break;
+	case DMR_BURST_CSBK: case DMR_BURST_MBC_HEADER: case DMR_BURST_MBC_CONT: e->st.rx_csbk++; break;
+	case DMR_BURST_IDLE: e->st.rx_idle++; break;
+	default: e->st.rx_data++; break;
+	}
+
+	hrc6000_dmr_evslot_t *slot = ev_begin(e);
+	if (slot == NULL) {
+		return;
+	}
+	dmr_burst_t *b = &slot->burst;
+	*b = *nb;
+	b->kind = s->kind;
+	b->voice_index = s->voice_index;
+	b->sync = s->sync;
+	b->cc = s->cc;
+	b->ts = e->phase_ts[ph];
+	b->crc_ok = s->crc_ok;
+	b->pi = s->pi;
+	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)
+	if (voice) {
+		if (s->voice_index == 5) {	// the embedded LC of B-E is assembled by F
+			hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, b->lc, sizeof(b->lc));
+			bool changed = memcmp(b->lc, e->stale_lc, sizeof(b->lc)) != 0;
+			b->lc_valid = s->crc_ok && (changed || e->voice_since_start > STALE_LC_VOICE);
+		}
+	} else if (s->kind == DMR_BURST_VOICE_LC_HEADER || s->kind == DMR_BURST_TERMINATOR_LC) {
+		memcpy(b->lc, b->payload, sizeof(b->lc));
+		b->lc_valid = s->crc_ok;
+		if (s->crc_ok) {	// this call's LC from its own header: the embedded one may now equal it
+			memcpy(e->stale_lc, b->lc, sizeof(e->stale_lc));
+			e->voice_since_start = STALE_LC_VOICE + 1u;
+		}
+	}
+	slot->ev.kind = DMR_EV_BURST_RX;
+	slot->ev.ts = b->ts;
+	slot->ev.arg = tick;	// DMR_EV_BURST_RX: the slot counter of the report (never 0); the stack orders bursts by it
+	slot->ev.burst = NULL;
+	ev_commit(e);
+}
+
+// One received-data report. Returns whether the color code in 0x52 belongs to a burst (for the CC follower): not for
+// burst A (no CC on air) nor for unusable reports
+static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 {
 	uint8_t r51 = r(e->dev, R_RX_TYPE);
 	uint8_t r5f = r(e->dev, R_SYNC_TYPE);
@@ -663,8 +783,9 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 
 	if (s.kind == HRC6000_KIND_NONE) {
 		e->st.rx_rc++;
-		return;
+		return false;
 	}
+	bool cc_real = s.sync_class != 1;
 	if (s.kind != DMR_BURST_VOICE) {
 		e->st.last_data_r51 = r51;
 	}
@@ -684,13 +805,13 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	if (e->timing && e->report_valid && e->report_tick == e->tick) {
 		e->st.rx_dup++;
 		e->st.rx_dup_slot++;
-		return;
+		return cc_real;
 	}
 	// Following an in-step signal, a report off the slot timing is an extra one (the EMB report mid-slot)
 	if (!tx && !in_step && e->rx_any && (uint32_t)(e->tick - e->rx_tick) <= 2u && e->timing) {
 		e->st.rx_dup++;
 		e->st.rx_dup_extra++;
-		return;
+		return cc_real;
 	}
 
 	// The payload now: the repeat check below compares it
@@ -713,137 +834,91 @@ static void rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52)
 	    && (voice ? s.voice_index == e->last_rx_index : memcmp(nb.payload, e->last_rx_payload, nb.len) == 0)) {
 		e->st.rx_dup++;
 		e->st.rx_dup_repeat++;
-		return;
+		return cc_real;
 	}
 	if (voice && e->voice_valid && (uint32_t)(t - e->t_voice) < VOICE_DEDUP_BOTH_US) {
 		e->st.rx_dup++;		// any voice within 28 ms of the last (gotchas 1.2)
 		e->st.rx_dup_repeat++;
-		return;
+		return cc_real;
 	}
 
 	// Voice by superframe, per slot phase (the report is for the slot that just ended): a class 1 report (voice
 	// sync) is burst A and starts or restarts the superframe; a class 0 report is taken only while a superframe is
 	// in progress on its slot, as the next burst. Its own number is used when it makes sense (a missed burst then
-	// doesn't shift the rest); the number of the burst just taken is a stale report (dropped)
+	// doesn't shift the rest); the number of the burst just taken is a stale report (dropped).
+	// A voice sync with no header or superframe before it on its slot is held back, not delivered: only a burst B
+	// on the same slot one frame later (class 0, number 2) makes it the start of a call (late entry); anything else
+	// and it was noise or the other slot's echo of A (bench 2026-10-10: 6 such reports made 102 voice bursts of a
+	// 96-burst call). Burst A has no color code on air (voice sync instead of the EMB), so it gets the superframe's
 	uint8_t vph = (uint8_t)((e->tick - 1u) & 1u);
 	hrc6000_dmr_vstate_t *vs = &e->vs[vph];
+	hrc6000_dmr_held_t *hd = &e->held[vph];
 	if (voice) {
 		bool live = vs->active && (uint32_t)(e->tick - vs->tick) <= RX_LOST_TICKS;
 		if (s.sync_class == 1) {
 			s.voice_index = 0;
+			if (!live) {
+				held_drop(e, hd);	// an earlier lone A that nothing followed
+				hd->valid = true;
+				hd->s = s;
+				hd->nb = nb;
+				hd->t = t;
+				hd->tick = e->tick;
+				hd->in_step = in_step;
+				capture_if_fresh(e);
+				note_report(e, &s, &nb, t);
+				return false;
+			}
+			if (s.cc != vs->cc) {
+				e->st.rx_a_cc++;
+				s.cc = vs->cc;
+			}
 		} else if (!live) {
-			e->st.rx_no_call++;	// stale status on the empty slot, or after the call: never voice, never data
-			return;
+			if (!(hd->valid && (uint32_t)(e->tick - hd->tick) == 2u && s.voice_index == 1u)) {
+				e->st.rx_no_call++;	// stale status on the empty slot, or after the call: never voice
+				return cc_real;
+			}
+			// B after a lone A: the A was a call's (late entry). Deliver it first, with B's color code
+			hd->valid = false;
+			hd->s.cc = s.cc;
+			take(e, &hd->s, &hd->nb, hd->tick, hd->in_step, tx);
+			vs->active = true;
+			vs->last = 0;
+			vs->next = 1;
+			vs->cc = s.cc;
+			vs->tick = hd->tick;
 		} else if (s.voice_index == HRC6000_INDEX_UNKNOWN) {
 			s.voice_index = vs->next;
 			e->st.rx_seq_fill++;
 		} else if (s.voice_index == vs->last) {
 			e->st.rx_stale++;
-			return;
+			return cc_real;
 		} else if (s.voice_index != vs->next) {
 			e->st.rx_seq_jump++;	// a burst was missed: keep the chip's number
+		}
+		if (s.sync_class != 1) {
+			vs->cc = s.cc;
 		}
 		vs->active = true;
 		vs->last = s.voice_index;
 		vs->next = (uint8_t)((s.voice_index + 1u) % 6u);
 		vs->tick = e->tick;
-	} else if (s.kind == DMR_BURST_VOICE_LC_HEADER || s.kind == DMR_BURST_PI_HEADER) {
-		vs->active = true;	// voice A comes next (with its sync)
-		vs->last = HRC6000_INDEX_UNKNOWN;
-		vs->next = 0;
-		vs->tick = e->tick;
 	} else {
-		vs->active = false;	// terminator or data: no voice on this slot until the next A or header
-	}
-
-	// A new reception: capture the sticky LC so a stale one isn't taken for this call's (5.2)
-	bool fresh = !e->heard_any || (uint32_t)(e->tick - e->heard_tick) > RX_LOST_TICKS;	// not reset by restarts
-	if (fresh) {
-		hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, e->stale_lc, sizeof(e->stale_lc));
-		e->voice_since_start = 0;
-	}
-
-	// Slot numbers (see hrc6000_dmr.h): the report is for the slot that just ended
-	uint8_t ph = (uint8_t)((e->tick - 1u) & 1u);
-	if (s.sync == DMR_SYNC_BS) {
-		e->bs_tick = e->tick;
-		e->rmo_seen = true;
-	} else if (in_step && !tx && !e->cfg.repeater) {
-		int8_t want = s.sync == DMR_SYNC_TS2 ? 2 : 1;
-		bool tdma = s.sync == DMR_SYNC_TS1 || s.sync == DMR_SYNC_TS2;
-		if (e->phase_ts[ph] == 0 || (tdma && e->phase_ts[ph] != want)) {
-			e->phase_ts[ph] = want;
-			e->phase_ts[ph ^ 1u] = (int8_t)(3 - want);
+		held_drop(e, hd);	// a lone A followed by data on its slot: not a call
+		if (s.kind == DMR_BURST_VOICE_LC_HEADER || s.kind == DMR_BURST_PI_HEADER) {
+			vs->active = true;	// voice A comes next (with its sync)
+			vs->last = HRC6000_INDEX_UNKNOWN;
+			vs->next = 0;
+			vs->cc = s.cc;
+			vs->tick = e->tick;
+		} else {
+			vs->active = false;	// terminator or data: no voice on this slot until the next A or header
 		}
 	}
 
-	e->report_tick = e->tick;
-	e->report_valid = true;
-	e->t_report = t;
-	e->last_rx_kind = s.kind;
-	e->last_rx_index = s.voice_index;
-	e->last_rx_sync = s.sync;
-	memcpy(e->last_rx_payload, nb.payload, sizeof(e->last_rx_payload));
-	e->heard_tick = e->tick;
-	e->heard_any = true;
-	e->rx_tick = e->tick;
-	e->rx_any = true;
-	e->idle_restarted = false;
-	if (voice) {
-		e->t_voice = t;
-		e->voice_valid = true;
-		if (e->voice_since_start < 255u) {
-			e->voice_since_start++;
-		}
-	}
-	e->st.last_cc = s.cc;
-	e->st.last_sync = s.sync;
-	e->st.last_ts = e->phase_ts[ph];
-	if (!s.crc_ok) {
-		e->st.rx_crc_err++;
-	}
-	switch (s.kind) {
-	case DMR_BURST_VOICE: e->st.rx_voice++; break;
-	case DMR_BURST_VOICE_LC_HEADER: e->st.rx_lc_header++; break;
-	case DMR_BURST_TERMINATOR_LC: e->st.rx_terminator++; break;
-	case DMR_BURST_CSBK: case DMR_BURST_MBC_HEADER: case DMR_BURST_MBC_CONT: e->st.rx_csbk++; break;
-	case DMR_BURST_IDLE: e->st.rx_idle++; break;
-	default: e->st.rx_data++; break;
-	}
-
-	hrc6000_dmr_evslot_t *slot = ev_begin(e);
-	if (slot == NULL) {
-		return;
-	}
-	dmr_burst_t *b = &slot->burst;
-	*b = nb;
-	b->kind = s.kind;
-	b->voice_index = s.voice_index;
-	b->sync = s.sync;
-	b->cc = s.cc;
-	b->ts = e->phase_ts[ph];
-	b->crc_ok = s.crc_ok;
-	b->pi = s.pi;
-	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)
-	if (voice) {
-		if (s.voice_index == 5) {	// the embedded LC of B-E is assembled by F
-			hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, b->lc, sizeof(b->lc));
-			bool changed = memcmp(b->lc, e->stale_lc, sizeof(b->lc)) != 0;
-			b->lc_valid = s.crc_ok && (changed || e->voice_since_start > STALE_LC_VOICE);
-		}
-	} else if (s.kind == DMR_BURST_VOICE_LC_HEADER || s.kind == DMR_BURST_TERMINATOR_LC) {
-		memcpy(b->lc, b->payload, sizeof(b->lc));
-		b->lc_valid = s.crc_ok;
-		if (s.crc_ok) {	// this call's LC from its own header: the embedded one may now equal it
-			memcpy(e->stale_lc, b->lc, sizeof(e->stale_lc));
-			e->voice_since_start = STALE_LC_VOICE + 1u;
-		}
-	}
-	slot->ev.kind = DMR_EV_BURST_RX;
-	slot->ev.ts = b->ts;
-	slot->ev.arg = e->tick;
-	slot->ev.burst = NULL;
-	ev_commit(e);
+	note_report(e, &s, &nb, t);
+	take(e, &s, &nb, e->tick, in_step, tx);
+	return cc_real;
 }
 
 // --- Engine: ISRs ---
@@ -872,6 +947,11 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
 	push(e, DMR_EV_SLOT_TICK, e->phase_ts[ph], e->tick);
+	for (int k = 0; k < 2; k++) {	// a lone burst A whose B (one frame later) did not come
+		if (e->held[k].valid && (uint32_t)(e->tick - e->held[k].tick) > 2u) {
+			held_drop(e, &e->held[k]);
+		}
+	}
 
 	if (e->tx_state == TXS_IDLE) {
 		uint32_t quiet = e->tick - e->rx_tick;
@@ -932,8 +1012,9 @@ void hrc6000_dmr_isr_sys(hrc6000_dmr_t *e)
 		if ((flags & INT_LATE_ENTRY) != 0) {
 			e->st.late_entry++;
 		}
+		bool cc_real = true;
 		if ((flags & INT_RX_DATA) != 0) {
-			rx_report(e, t, r52);
+			cc_real = rx_report(e, t, r52);
 		}
 		if ((flags & INT_VOICE_ABN) != 0) {
 			uint8_t v = r(e->dev, R_VOICE_ABN);
@@ -946,7 +1027,9 @@ void hrc6000_dmr_isr_sys(hrc6000_dmr_t *e)
 				push(e, DMR_EV_VOICE_LOST, 2, e->tick);
 			}
 		}
-		cc_follow(e, (uint8_t)(r52 >> 4), t);
+		if (cc_real) {
+			cc_follow(e, (uint8_t)(r52 >> 4), t);
+		}
 		w(e->dev, R_INT_CLEAR, flags);
 		if (e->ops->sys_line_low == NULL || !e->ops->sys_line_low(e->ops->ctx)) {
 			break;
@@ -1010,6 +1093,7 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	e->heard_any = false;
 	e->idle_restarted = false;
 	memset(e->vs, 0, sizeof(e->vs));
+	memset(e->held, 0, sizeof(e->held));
 	hrc6000_dmr_set_sync(e->dev, DMR_SYNC_MS);
 	if (e->cc_filter >= 0) {
 		e->cc_cur = (uint8_t)e->cc_filter;

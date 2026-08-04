@@ -60,7 +60,10 @@ typedef struct {
 
 typedef enum {
 	DMR_EV_SLOT_TICK,	// arg = slot counter; ts = TS if known
-	DMR_EV_BURST_RX,	// burst = the burst heard
+	// burst = the burst heard; arg = the slot counter (as in DMR_EV_SLOT_TICK, never 0) when it was heard, 0 if the
+	// driver keeps none. One event per burst on air, in air order; events may reach the stack in batches, so the
+	// stack orders and de-duplicates by voice_index and arg, never by arrival time
+	DMR_EV_BURST_RX,
 	DMR_EV_VOICE_LOST,	// ts = the slot
 	DMR_EV_TX_SLOT_STARTED,
 	DMR_EV_TX_SLOT_ENDED,

@@ -197,11 +197,17 @@ typedef struct {
 	uint32_t tx_denied;		// PTT refused (any dmr_tx_error_t)
 	uint32_t tx_underruns;		// voice frames sent as silence
 	uint32_t evq_overflows;		// modem events dropped
+	uint32_t rx_cc_dropped;		// bursts dropped for another color code (never voice A: it has no CC on air)
+	uint32_t rx_ts_dropped;		// bursts of another slot than our call's / the channel's
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // Zero the counters only (the view's evq_overflows / tx_underruns keep counting). From any task; an increment racing
 // the reset may survive it
 void dmr_call_reset_stats(void);
+
+// RX trace (CONFIG_DEBUGLINK builds, DMR_RX_TRACE): every burst event as the stack saw it and what it did with it,
+// packed into dlog() lines "crx @<slot> <entries>" (docs: dmr_call.c, rx trace). On by default; off saves the lines
+void dmr_call_set_rx_trace(bool on);
 
 // Listen before talk for machine traffic (data, ACKs, CSBK answers; gotcha 3.6): DMO 120 ms without voice, data or
 // a call on our slot; RMO 180 ms without bursts on our slot, no call, and the last call over DMR_CALL_RMO_HANG_MS ago

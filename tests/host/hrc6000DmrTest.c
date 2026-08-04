@@ -296,12 +296,12 @@ static void test_rx(void)
 	static const uint8_t new_lc[9] = { 0, 0, 0, 0, 0, 91, 0x31, 0x00, 0x01 };
 	memcpy(&rd[2][0], old_lc, 9);
 
-	// Voice A reported 4 ms after the timeslot interrupt: in step
+	// Voice A reported 4 ms after the timeslot interrupt: in step. Nothing before it on its slot (a late entry):
+	// held back until its B proves it is a call
 	report_at(t + 4000, 0x91, 0x20, 0x00);
 	drain();
 	const dmr_burst_t *b = last_burst();
-	CHECK(b != NULL && b->kind == DMR_BURST_VOICE && b->voice_index == 0 && b->in_step && b->crc_ok);
-	CHECK(b != NULL && b->cc == 2 && b->len == 27 && b->payload[26] == 26 && b->ts == 1);
+	CHECK(b == NULL && eng.st.rx_voice == 0);
 	CHECK(last_write(4, 0x83) == 0x08);	// flags cleared with the value read
 	CHECK(eng.st.last_report_ms == 4);
 
@@ -338,6 +338,15 @@ static void test_rx(void)
 		}
 	}
 	CHECK(voices == 6 && in_order);
+	b = NULL;
+	for (int i = 0; i < nev && b == NULL; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX) {
+			b = &bursts[i];
+			CHECK(evs[i].arg == 1);	// A's own tick, delivered with B
+		}
+	}
+	CHECK(b != NULL && b->kind == DMR_BURST_VOICE && b->voice_index == 0 && b->in_step && b->crc_ok);
+	CHECK(b != NULL && b->cc == 2 && b->len == 27 && b->payload[26] == 26 && b->ts == 1);
 	CHECK(f_lc);	// the embedded LC differs from the stale one: valid at F
 	CHECK(eng.st.rx_voice == 6);
 
@@ -803,8 +812,8 @@ static void test_rx_bench_call(void)
 	}
 	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
 	for (int i = 0; i < n; i++) {
-		ts_at(t);	// the burst's slot ended: its report
-		report_at(t + 3500, seq[i], 0x20, 0xF0);
+		ts_at(t);	// the burst's slot ended: its report (burst A: no CC on air, 0x52 holds junk)
+		report_at(t + 3500, seq[i], (seq[i] & 3u) == 1u ? 0x50 : 0x20, 0xF0);
 		last51 = seq[i];
 		burst_no++;
 		t += 30000;
@@ -819,13 +828,26 @@ static void test_rx_bench_call(void)
 		t += 30000;
 		drain();
 	}
+	for (int i = 0; i < 40; i++) {	// then a few lone voice sync reports (noise), never delivered
+		ts_at(t);
+		if (i % 8 == 0) {
+			report_at(t + 3500, 0x91, 0x20, 0xF0);
+		}
+		t += 30000;
+		drain();
+	}
 	int voices = 0, expect = 0;
 	bool in_order = true;
+	uint32_t last_arg = 0;
 	for (int i = 0; i < nev; i++) {
 		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
-			if (bursts[i].voice_index != expect) {
+			if (bursts[i].voice_index != expect || bursts[i].cc != 2) {
 				in_order = false;
 			}
+			if (voices > 0 && evs[i].arg != last_arg + 2) {
+				in_order = false;	// one frame (two slots) apart by the engine's slot counter
+			}
+			last_arg = evs[i].arg;
 			expect = (expect + 1) % 6;
 			voices++;
 		}
@@ -840,6 +862,7 @@ static void test_rx_bench_call(void)
 	CHECK(eng.st.rx_csbk == 0 && eng.st.rx_data == 0 && eng.st.rx_idle == 0);
 	CHECK(eng.st.last_cc == 2 && eng.st.last_sync == DMR_SYNC_MS);	// from the last burst taken, not the junk after
 	CHECK(eng.st.rx_no_call + eng.st.rx_stale + eng.st.rx_dup >= 107);
+	CHECK(eng.st.rx_a_cc == 16 && eng.st.rx_lone == 5);
 	(void)burst_no;
 }
 

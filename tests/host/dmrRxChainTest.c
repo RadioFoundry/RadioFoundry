@@ -1,0 +1,485 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The OpenDigitalRadio Authors
+// The DMR receive chain end to end on the host: a model of the HR_C6000's receive reports (the bench call of
+// 2026-10-10: 8 voice LC headers, 16 superframes, 3 terminators, CC 2, MS sync, direct mode) drives the real slot engine
+// (drivers/modem/hrc6000/hrc6000_dmr.c) through its interrupt entry points; a board-like task drains the engine's
+// events into the real call stack (core/dmr/call/dmr_call.c) at its own pace (several bursts per batch when it runs
+// late), and the stack's poll runs on yet another cadence. The voice sink checks that every burst on air comes out
+// once, in order, with nothing concealed.
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+#include "modem/hrc6000/hrc6000_dmr.h"
+#include "dmr/call/dmr_call.h"
+#include "dmr/call/dmr_lc.h"
+
+static int failures;
+
+// The stack's RX trace lines (dlog, built with DMR_RX_TRACE=1)
+static char trace[16384];
+static size_t trace_len;
+
+void dlog(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	int n = vsnprintf(trace + trace_len, sizeof(trace) - trace_len, fmt, ap);
+	va_end(ap);
+	if (n > 0 && trace_len + (size_t)n + 1 < sizeof(trace)) {
+		trace_len += (size_t)n;
+		trace[trace_len++] = '\n';
+		trace[trace_len] = '\0';
+	}
+}
+
+// Trace entries (words after "crx @slot"), and how many have the given 'what' character (third character)
+static int trace_entries(char what)
+{
+	int n = 0;
+	const char *p = trace;
+	while ((p = strstr(p, "crx @")) != NULL) {
+		const char *eol = strchr(p, '\n');
+		const char *q = strchr(p + 5, ' ');
+		while (q != NULL && q < eol) {
+			q++;
+			if (what == 0 || q[2] == what) {
+				n++;
+			}
+			q = strchr(q, ' ');
+		}
+		p = eol;
+	}
+	return n;
+}
+
+#define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
+
+// --- Fake chip buses: reads come from rd[page][reg], voice reads from voice_rx ---
+
+static uint8_t rd[8][256];
+static uint8_t voice_rx[DMR_VOICE_BYTES];
+
+static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
+{
+	uint8_t page = hdr[0] & 7u, reg = hdr[1];
+	if ((hdr[0] & 0x80u) != 0 && rx != NULL) {
+		for (uint16_t i = 0; i < len; i++) {
+			rx[i] = rd[page][(uint8_t)(reg + i)];
+		}
+	}
+	return true;
+}
+
+static bool fake_voice(void *ctx, bool write, uint8_t *buf, uint8_t len)
+{
+	if (!write) {
+		memcpy(buf, voice_rx, len);
+	}
+	return true;
+}
+
+static void no_delay(uint32_t v) { (void)v; }
+
+static const hrc6000_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
+static hrc6000_t dev;
+static hrc6000_dmr_t eng;
+static uint32_t t_us;
+
+static bool fake_rf(void *ctx, bool tx) { return true; }
+static uint32_t fake_now(void *ctx) { return t_us; }
+
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, NULL, NULL };
+
+// --- The board glue (what boards/dm1701/dmr_dm1701.c does): hal_dmr_modem_t over the engine, a draining task ---
+
+static dmr_event_cb_t stack_cb;
+static void *stack_ctx;
+
+static bool m_start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
+{
+	hrc6000_dmr_configure(&eng, cfg);
+	stack_cb = cb;
+	stack_ctx = ctx;
+	return true;
+}
+static void m_stop(void) { stack_cb = NULL; }
+static void m_configure(const dmr_config_t *cfg) { hrc6000_dmr_configure(&eng, cfg); }
+static void m_rx_restart(void) { hrc6000_dmr_rx_restart(&eng); }
+static void m_rx_lock_slot(int8_t ts) { hrc6000_dmr_rx_lock_slot(&eng, ts); }
+static bool m_tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a) { return hrc6000_dmr_tx_begin(&eng, t, ts, a); }
+static bool m_tx_queue(const dmr_tx_burst_t *b) { return hrc6000_dmr_tx_queue(&eng, b); }
+static uint8_t m_tx_queue_space(void) { return hrc6000_dmr_tx_queue_space(&eng); }
+static void m_tx_end(void) { hrc6000_dmr_tx_end(&eng); }
+static void m_tx_abort(void) { hrc6000_dmr_tx_abort(&eng); }
+static void m_set_embedded_lc(const uint8_t lc[9]) { hrc6000_dmr_set_embedded_lc(&eng, lc); }
+static void m_set_cc_filter(int8_t cc) { hrc6000_dmr_set_cc_filter(&eng, cc); }
+static bool m_is_transmitting(void) { return hrc6000_dmr_is_transmitting(&eng); }
+
+static const hal_dmr_modem_t modem = {
+	.start = m_start, .stop = m_stop, .configure = m_configure, .rx_restart = m_rx_restart,
+	.rx_lock_slot = m_rx_lock_slot, .tx_begin = m_tx_begin, .tx_queue = m_tx_queue,
+	.tx_queue_space = m_tx_queue_space, .tx_end = m_tx_end, .tx_abort = m_tx_abort,
+	.set_embedded_lc = m_set_embedded_lc, .set_cc_filter = m_set_cc_filter, .is_transmitting = m_is_transmitting,
+};
+
+static unsigned task_voice_events;
+
+static void board_task(void)
+{
+	dmr_event_t ev;
+	dmr_burst_t b;
+	while (hrc6000_dmr_pop(&eng, &ev, &b)) {
+		if (ev.kind == DMR_EV_BURST_RX && b.kind == DMR_BURST_VOICE) {
+			task_voice_events++;
+		}
+		if (stack_cb != NULL) {
+			stack_cb(&ev, stack_ctx);
+		}
+	}
+}
+
+// --- Voice sink: frames carry (burst number, frame in burst) in their first two bytes ---
+
+static bool sink_verbose = true;	// print the first frame out of order
+
+static struct {
+	unsigned begins, ends, frames, losts;
+	unsigned next_burst;	// burst number expected next (1-based)
+	unsigned next_frame;
+	bool in_order;
+} sk;
+
+static void s_begin(const dmr_caller_t *c, void *ctx) { sk.begins++; }
+static void s_end(void *ctx) { sk.ends++; }
+static void s_lost(void *ctx) { sk.losts++; }
+static void s_frame(const uint8_t f[DMR_AMBE_FRAME_BYTES], void *ctx)
+{
+	if (f[0] != (uint8_t)sk.next_burst || f[1] != sk.next_frame) {
+		if (sk.in_order && sink_verbose) {
+			printf("  sink: frame %u.%u, expected %u.%u\n", f[0], f[1], sk.next_burst & 0xFFu, sk.next_frame);
+		}
+		sk.in_order = false;
+	}
+	sk.frames++;
+	if (++sk.next_frame == 3) {
+		sk.next_frame = 0;
+		sk.next_burst++;
+	}
+}
+
+static const dmr_voice_sink_t sink = { .begin = s_begin, .frame = s_frame, .lost = s_lost, .end = s_end };
+
+// --- The chip model ---
+
+typedef struct {
+	bool a_cc_junk;		// burst A (no EMB, no CC on air): 0x52 holds a junk color code at its report
+	uint8_t empty;		// the empty slot's report: 0 none, 1 class 0 without a number, 2 the last number again
+	bool echo_a;		// the empty slot after an A reports voice sync again (class 1)
+	uint8_t noise_a;	// lone voice-sync reports before and after the call
+	uint32_t task_ms;	// the board task's period (it drains everything each time)
+	uint32_t task_late_every;	// every n-th run is delayed by task_late_ms (0 = never)
+	uint32_t task_late_ms;
+	uint32_t poll_ms;	// the stack's poll period
+	bool same_lc_before;	// the previous call heard had the same LC (late entry's stale LC)
+	unsigned voice_lost_at;	// voice burst number whose report also flags voice sync lost on its slot (0 = none)
+} chip_t;
+
+typedef struct {
+	uint8_t r51, r52;
+	bool voice;
+	unsigned burst_no;	// voice: 1-based number of the burst on air
+	uint8_t page2[12];
+} report_t;
+
+static report_t sched[4096];	// per tick: the report at that tick (r51 0xFF = none)
+
+static const uint8_t call_lc[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x23, 0x45, 0x67 };	// TG 9 from 0x234567
+
+static unsigned build(const chip_t *c, unsigned start)
+{
+	for (unsigned i = 0; i < sizeof(sched) / sizeof(sched[0]); i++) {
+		sched[i].r51 = 0xFF;
+	}
+	unsigned k = start;
+	uint8_t hdr[12], term[12];
+	dmr_lc_encode_full(call_lc, DMR_RS_MASK_VOICE_HEADER, hdr);
+	dmr_lc_encode_full(call_lc, DMR_RS_MASK_TERMINATOR, term);
+	uint8_t last51 = 0;
+	unsigned burst_no = 0;
+	// noise before the call: lone voice sync reports, some ticks apart
+	for (unsigned i = 0; i < c->noise_a; i++) {
+		sched[start - 40 + i * 7].r51 = 0x91;
+		sched[start - 40 + i * 7].r52 = 0x20;
+		sched[start - 40 + i * 7].voice = true;
+	}
+	for (int i = 0; i < 8 + 96 + 3; i++) {
+		report_t *r = &sched[k];
+		r->r52 = 0x20;
+		if (i < 8) {
+			r->r51 = 0x12;
+			memcpy(r->page2, hdr, 12);
+		} else if (i < 8 + 96) {
+			int v = (i - 8) % 6, sf = (i - 8) / 6;
+			r->voice = true;
+			r->burst_no = ++burst_no;
+			if (v == 0) {
+				r->r51 = 0x91;
+				if (c->a_cc_junk) {
+					r->r52 = (uint8_t)((sf % 3) == 0 ? 0x00 : 0x50);
+				}
+			} else {
+				bool bit7 = ((sf + v) & 1) != 0;
+				r->r51 = (uint8_t)(((bit7 ? 0x8 : 0x0) | (v + 1)) << 4);
+			}
+			memcpy(r->page2, call_lc, 9);	// the embedded LC, complete at F (and sticky)
+		} else {
+			r->r51 = 0x22;
+			memcpy(r->page2, term, 12);
+		}
+		last51 = r->r51;
+		// the empty slot
+		report_t *e = &sched[k + 1];
+		if (c->echo_a && (last51 & 3u) == 1u) {
+			*e = *r;
+			e->voice = false;
+		} else if (c->empty == 1) {
+			e->r51 = 0x00;
+			e->r52 = 0x20;
+		} else if (c->empty == 2) {
+			e->r51 = (uint8_t)(last51 & 0x70);
+			e->r52 = 0x20;
+		}
+		memcpy(e->page2, r->page2, 12);
+		k += 2;
+	}
+	unsigned end = k;
+	for (int i = 0; i < 20; i++) {	// after the call: the last status repeated
+		sched[k].r51 = 0x60;
+		sched[k].r52 = 0x50;
+		k++;
+	}
+	for (unsigned i = 0; i < c->noise_a; i++) {
+		sched[k + 30 + i * 9].r51 = 0x91;
+		sched[k + 30 + i * 9].r52 = 0x20;
+	}
+	return end;
+}
+
+typedef struct {
+	unsigned voice_events;	// voice bursts the engine delivered
+	dmr_call_stats_t cs;
+} result_t;
+
+static void run_call(const chip_t *c, result_t *res)
+{
+	memset(rd, 0, sizeof(rd));
+	trace_len = 0;
+	trace[0] = '\0';
+	memset(&sk, 0, sizeof(sk));
+	sk.next_burst = 1;
+	sk.in_order = true;
+	task_voice_events = 0;
+	t_us = 1000000;
+	hrc6000_dmr_init(&eng, &dev, &ops);
+	hrc6000_dmr_run(&eng);
+
+	dmr_call_init(&modem);
+	dmr_call_set_voice(&sink, NULL);
+	dmr_call_config_t cfg;
+	dmr_call_config_default(&cfg);
+	cfg.own_id = 1234;
+	cfg.cc = 2;
+	cfg.ts = 1;
+	cfg.talk_target.id = 9;
+	dmr_call_configure(&cfg);
+	CHECK(dmr_call_start());
+
+	const unsigned start = 100;
+	unsigned end = build(c, start);
+	unsigned last_tick = end + 20 + 30 + c->noise_a * 9 + 40;
+
+	if (c->same_lc_before) {
+		// an earlier identical call that ended: the stack's stale LC is this call's
+		uint32_t t0 = 0;
+		dmr_burst_t h = { .kind = DMR_BURST_VOICE_LC_HEADER, .cc = 2, .sync = DMR_SYNC_MS, .crc_ok = true,
+			.len = 12 };
+		dmr_lc_encode_full(call_lc, DMR_RS_MASK_VOICE_HEADER, h.payload);
+		dmr_event_t ev = { .kind = DMR_EV_BURST_RX, .burst = &h };
+		stack_cb(&ev, stack_ctx);
+		dmr_call_poll(t0 + 1);
+		dmr_call_poll(t0 + 1000);	// faded out
+		memset(&sk, 0, sizeof(sk));
+		sk.next_burst = 1;
+		sk.in_order = true;
+	}
+	dmr_call_reset_stats();
+	trace_len = 0;
+	trace[0] = '\0';
+
+	uint32_t t_task = t_us, t_poll = t_us + 3000;
+	unsigned runs = 0;
+	uint32_t tick_t = t_us + 30000;
+	for (unsigned tick = 1; tick <= last_tick; tick++) {
+		// everything due before this tick's interrupt
+		while (t_task < tick_t || t_poll < tick_t) {
+			if (t_task <= t_poll) {
+				t_us = t_task;
+				board_task();
+				runs++;
+				uint32_t d = c->task_ms * 1000u;
+				if (c->task_late_every && runs % c->task_late_every == 0) {
+					d += c->task_late_ms * 1000u;
+				}
+				t_task += d;
+			} else {
+				t_us = t_poll;
+				dmr_call_poll(t_poll / 1000u);
+				t_poll += c->poll_ms * 1000u;
+			}
+		}
+		t_us = tick_t;
+		hrc6000_dmr_isr_timeslot(&eng);
+		const report_t *r = &sched[tick];
+		if (r->r51 != 0xFF) {
+			memcpy(&rd[2][0], r->page2, 12);
+			memset(voice_rx, 0, sizeof(voice_rx));
+			if (r->voice) {
+				for (int f = 0; f < 3; f++) {
+					voice_rx[f * 9] = (uint8_t)r->burst_no;
+					voice_rx[f * 9 + 1] = (uint8_t)f;
+				}
+			}
+			t_us = tick_t + 3500;
+			rd[4][0x82] = 0x08;
+			if (c->voice_lost_at != 0 && r->voice && r->burst_no == c->voice_lost_at) {
+				rd[4][0x82] = 0x08 | 0x02;	// received data, and voice abnormal: slot 0 voice sync lost
+				rd[4][0x98] = 0x02;
+			}
+			rd[4][0x51] = r->r51;
+			rd[4][0x52] = r->r52;
+			rd[4][0x5F] = 0xF0;
+			hrc6000_dmr_isr_sys(&eng);
+			rd[4][0x82] = 0;
+		}
+		tick_t += 30000;
+	}
+	for (int i = 0; i < 100; i++) {	// let the stack fade the call out
+		t_us += 10000;
+		board_task();
+		dmr_call_poll(t_us / 1000u);
+	}
+	res->voice_events = task_voice_events;
+	dmr_call_get_stats(&res->cs);
+}
+
+static bool expect_clean(const char *name, const chip_t *c)
+{
+	result_t r;
+	run_call(c, &r);
+	bool ok = r.voice_events == 96 && eng.st.rx_voice == 96 && r.cs.rx_voice_bursts == 96 &&
+		  r.cs.rx_lost_frames == 0 && sk.frames == 288 && sk.losts == 0 && sk.in_order && sk.begins == 1 &&
+		  r.cs.rx_late_entries == 0;
+	if (!ok) {
+		printf("  %s: driver V%u (events %u) nc %u st %u sf %u sj %u dup %u | call voice %u lost %u dup %u late %u"
+		       " calls %u | sink frames %u lost %u begins %u in_order %d\n", name, eng.st.rx_voice,
+		       r.voice_events, eng.st.rx_no_call, eng.st.rx_stale, eng.st.rx_seq_fill, eng.st.rx_seq_jump,
+		       eng.st.rx_dup, r.cs.rx_voice_bursts, r.cs.rx_lost_frames, r.cs.rx_dup_dropped,
+		       r.cs.rx_late_entries, r.cs.rx_calls, sk.frames, sk.losts, sk.begins, sk.in_order);
+	}
+	return ok;
+}
+
+static const chip_t base = { .empty = 1, .task_ms = 10, .poll_ms = 20 };
+
+static void test_clean_chain(void)
+{
+	chip_t c = base;
+	CHECK(expect_clean("clean", &c));
+	// The trace: every burst once (8 headers, 96 voice, 3 terminators), the first header starts the call, all voice
+	// played, the first terminator ends it
+	CHECK(trace_entries(0) == 107);
+	CHECK(trace_entries('p') == 96 && trace_entries('h') == 1 && trace_entries('k') == 1);
+	CHECK(strstr(trace, " H1h") != NULL && strstr(trace, " A1p/2 B1p/2") != NULL);
+	c.empty = 2;	// the empty slot repeats the last number
+	CHECK(expect_clean("empty repeats", &c));
+	c.empty = 0;
+	CHECK(expect_clean("no empty reports", &c));
+}
+
+// Burst A carries no color code on air (voice sync, no EMB): whatever 0x52 holds at its report must not drop it
+static void test_burst_a_cc(void)
+{
+	chip_t c = base;
+	c.a_cc_junk = true;
+	CHECK(expect_clean("A cc junk", &c));
+}
+
+// The board task runs late (higher priority work, flash writes): bursts reach the stack several at a time, with the
+// same arrival time; the stack's poll is slower still
+static void test_batched_delivery(void)
+{
+	chip_t c = base;
+	c.a_cc_junk = true;
+	c.task_ms = 10;
+	c.task_late_every = 5;
+	c.task_late_ms = 110;	// four bursts in one batch
+	c.poll_ms = 25;
+	CHECK(expect_clean("batched", &c));
+	c.task_ms = 45;
+	c.task_late_every = 0;
+	c.poll_ms = 50;
+	CHECK(expect_clean("slow task", &c));
+}
+
+// Lone voice sync reports (noise, the other slot's echo of A) are not bursts on air
+static void test_lone_voice_sync(void)
+{
+	chip_t c = base;
+	c.noise_a = 3;
+	CHECK(expect_clean("noise A", &c));
+	c.noise_a = 0;
+	c.echo_a = true;
+	CHECK(expect_clean("echo A", &c));
+}
+
+// The same call again (same LC as the last one heard): the header starts it, nothing lost to the stale LC rule
+// The chip flags voice sync lost after a burst: the next burst is concealed (three frames), and when it still comes
+// it is that burst again by its index and slot counter, so it is dropped, whatever its arrival time. Before, a burst
+// arriving 40 ms or more after the last one in arrival time (the task batching) cost five more bursts of concealment
+static void test_voice_lost(void)
+{
+	chip_t c = base;
+	c.voice_lost_at = 40;
+	sink_verbose = false;
+	c.task_late_every = 3;
+	c.task_late_ms = 50;
+	result_t r;
+	run_call(&c, &r);
+	CHECK(r.voice_events == 96 && r.cs.rx_voice_bursts == 95 && r.cs.rx_lost_frames == 3 && r.cs.rx_dup_dropped == 1);
+	CHECK(sk.frames == 285 && sk.losts == 3);
+	sink_verbose = true;
+}
+
+static void test_same_call_again(void)
+{
+	chip_t c = base;
+	c.same_lc_before = true;
+	CHECK(expect_clean("same LC again", &c));
+}
+
+int main(void)
+{
+	hrc6000_attach(&dev, &bus);
+	test_clean_chain();
+	test_burst_a_cc();
+	test_batched_delivery();
+	test_lone_voice_sync();
+	test_same_call_again();
+	test_voice_lost();
+	if (failures) {
+		printf("# dmrRxChainTest: %d FAILED\n", failures);
+		return 1;
+	}
+	printf("# dmrRxChainTest: PASSED\n");
+	return 0;
+}

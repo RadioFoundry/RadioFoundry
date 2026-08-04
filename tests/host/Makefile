@@ -109,7 +109,7 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE
            sim/dmr_sim_modem.c
 
 radioCoreTest: $(RCORE) $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h $(CORE)/radio/tones.h $(wildcard $(CORE)/dmr/call/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -o $@ $(RCORE)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RCORE)
 
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
@@ -180,7 +180,7 @@ CALL    := dmrCallTest.c sim/dmr_sim_modem.c $(CORE)/dmr/call/dmr_call.c $(CORE)
 TESTS   += dmrCallTest
 
 dmrCallTest: $(CALL) $(wildcard $(CORE)/dmr/call/*.h sim/*.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DHAS_SFR -o $@ $(CALL)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DHAS_SFR -DDMR_RX_TRACE=0 -o $@ $(CALL)
 
 run: run-call
 run-call: dmrCallTest
@@ -198,6 +198,20 @@ run: run-hrcdmr
 run-hrcdmr: hrc6000DmrTest
 	./hrc6000DmrTest
 .PHONY: run-hrcdmr
+
+# The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
+# stack to the voice sink (every burst on air out once, in order, nothing concealed)
+TESTS   += dmrRxChainTest
+RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(CORE)/dmr/call/dmr_call.c \
+           $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
+
+dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDMR_RX_TRACE=1 -o $@ $(RXCHAIN)
+
+run: run-rxchain
+run-rxchain: dmrRxChainTest
+	./dmrRxChainTest
+.PHONY: run-rxchain
 
 # The MMDVM protocol and the simplex hotspot engine (core/hotspot), against a fake DMR modem and radio core, and the
 # host link's rule for leaving hotspot mode (core/hostlink/hostlink_policy.c)

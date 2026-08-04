@@ -24,6 +24,7 @@
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "debuglink/dlog.h"
 
 #define DMR_TASK_PRIORITY	(configMAX_PRIORITIES - 2)
 #define DMR_TASK_STACK		512	// words: the stack's callback runs on it
@@ -159,6 +160,117 @@ void EXTI2_IRQHandler(void)
 	hrc6000_dmr_isr_rftx(&eng);
 }
 
+// --- RX trace (debug link log) ---
+//
+// What the engine delivered, one entry per burst event, in the call stack's trace format (core/dmr/call/dmr_call.c)
+// so the two can be diffed:  drx @<slot> <burst><ts><cc>[/<slots since the previous entry>] ...
+// burst: A-F voice, H header, T terminator, I idle, D other data, L voice lost; cc: the burst's color code (hex)
+
+#if CONFIG_DEBUGLINK
+#define TRACE_PER_LINE	10
+#define TRACE_IDLE_TICKS	10	// flush a part line after this many slots without a burst
+
+static struct {
+	bool off;
+	char line[72];
+	uint8_t len, n;
+	uint32_t last_slot;
+} tr;
+
+static void tr_put(char c)
+{
+	if (tr.len < sizeof(tr.line) - 1) {
+		tr.line[tr.len++] = c;
+	}
+}
+
+static void tr_put_u(uint32_t v)
+{
+	char t[10];
+	int n = 0;
+	do {
+		t[n++] = (char)('0' + v % 10u);
+		v /= 10u;
+	} while (v && n < 10);
+	while (n) {
+		tr_put(t[--n]);
+	}
+}
+
+static void tr_flush(void)
+{
+	if (tr.n) {
+		tr.line[tr.len] = '\0';
+		dlog("%s", tr.line);
+	}
+	tr.n = 0;
+	tr.len = 0;
+}
+
+static void trace_event(const dmr_event_t *ev)
+{
+	if (tr.off) {
+		return;
+	}
+	if (ev->kind == DMR_EV_SLOT_TICK) {
+		if (tr.n && (uint32_t)(ev->arg - tr.last_slot) > TRACE_IDLE_TICKS) {
+			tr_flush();
+		}
+		return;
+	}
+	char burst;
+	uint8_t cc = 0;
+	if (ev->kind == DMR_EV_BURST_RX && ev->burst != NULL) {
+		const dmr_burst_t *b = ev->burst;
+		switch (b->kind) {
+		case DMR_BURST_VOICE: burst = (char)('A' + b->voice_index % 6u); break;
+		case DMR_BURST_VOICE_LC_HEADER: burst = 'H'; break;
+		case DMR_BURST_TERMINATOR_LC: burst = 'T'; break;
+		case DMR_BURST_IDLE: burst = 'I'; break;
+		default: burst = 'D'; break;
+		}
+		cc = b->cc & 0x0Fu;
+	} else if (ev->kind == DMR_EV_VOICE_LOST) {
+		burst = 'L';
+	} else {
+		return;
+	}
+	if (tr.n == 0) {
+		tr.len = 0;
+		tr_put('d');
+		tr_put('r');
+		tr_put('x');
+		tr_put(' ');
+		tr_put('@');
+		tr_put_u(ev->arg);
+	}
+	tr_put(' ');
+	tr_put(burst);
+	tr_put((char)('0' + (ev->ts >= 0 && ev->ts <= 2 ? ev->ts : 9)));
+	tr_put("0123456789ABCDEF"[cc]);
+	if (tr.n) {
+		tr_put('/');
+		tr_put_u(ev->arg - tr.last_slot);
+	}
+	tr.last_slot = ev->arg;
+	if (++tr.n >= TRACE_PER_LINE) {
+		tr_flush();
+	}
+}
+#endif
+
+void dm1701_dmr_set_trace(bool on)
+{
+#if CONFIG_DEBUGLINK
+	tr.off = !on;
+	if (!on) {
+		tr.n = 0;
+	}
+#else
+	(void)on;
+#endif
+}
+
 // --- Deferred event task ---
 
 static void dmr_task(void *arg)
@@ -175,6 +287,9 @@ static void dmr_task(void *arg)
 			}
 		}
 		while (hrc6000_dmr_pop(&eng, &ev, &burst)) {
+#if CONFIG_DEBUGLINK
+			trace_event(&ev);
+#endif
 			dmr_event_cb_t cb = stack_cb;
 			if (cb != NULL) {
 				cb(&ev, stack_ctx);
@@ -477,6 +592,10 @@ bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " st", m->rx_stale);
 		put_kv(&o, " sf", m->rx_seq_fill);
 		put_kv(&o, " sj", m->rx_seq_jump);
+		break;
+	case 17:	// class 1 (voice sync): lone ones dropped (no B after), A reports given the superframe's CC
+		put_kv(&o, "v1 lone", m->rx_lone);
+		put_kv(&o, " acc", m->rx_a_cc);
 		break;
 	case 15:
 		put_kv(&o, "tx", m->tx_bursts);

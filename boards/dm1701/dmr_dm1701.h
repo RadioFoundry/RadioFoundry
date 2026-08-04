@@ -24,9 +24,12 @@ typedef struct {
 void dm1701_dmr_stats(dm1701_dmr_stats_t *out);
 // The counters as short text lines for the diagnostics page: line i (0..), false past the last
 bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len);
-#define DM1701_DMR_DIAG_LINES	17	// lines dm1701_dmr_stats_line formats
+#define DM1701_DMR_DIAG_LINES	18	// lines dm1701_dmr_stats_line formats
 // Zero the counters (slot engine and RF switch); the last_* values and the engine state are kept
 void dm1701_dmr_stats_reset(void);
+// RX trace into the debug link's log ("drx" lines: every burst event the engine delivered; CONFIG_DEBUGLINK builds).
+// On by default
+void dm1701_dmr_set_trace(bool on);
 
 // --- radio_dm1701.c -> dmr_dm1701.c ---
 

@@ -5,6 +5,15 @@
 // the modem transmits (their status can't be trusted then, docs/spec/dmr-modem.md 6.5).
 #include <string.h>
 #include "dmr/call/dmr_call.h"
+#include "config.h"
+
+// RX trace into the debug link's log (see dmr_call.h). Host tests that don't link dlog build with DMR_RX_TRACE=0
+#ifndef DMR_RX_TRACE
+#define DMR_RX_TRACE	CONFIG_DEBUGLINK
+#endif
+#if DMR_RX_TRACE
+#include "debuglink/dlog.h"
+#endif
 
 const uint8_t dmr_ambe_silence[DMR_AMBE_FRAME_BYTES] = { 0xB9, 0xE8, 0x81, 0x52, 0x61, 0x73, 0x00, 0x2A, 0x6B };
 
@@ -16,7 +25,8 @@ enum { RXC_NONE, RXC_PLAY, RXC_OTHER };
 enum { TX_NONE, TX_ACCESS, TX_WAKE, TX_WAKE_LISTEN, TX_ON, TX_END, TX_DENIED };
 
 #define VOICE_PERIOD_MS		60	// one burst per frame on our slot
-#define DUPLICATE_MS		40	// the same burst index again within this: a duplicate report
+#define DUPLICATE_MS		40	// no slot counter from the modem: the same burst index again within this is a repeat
+#define SUPERFRAME_SLOTS	12	// with the slot counter: the same index again sooner than this is a repeat
 
 // --- Event queue: the modem callback is the only producer, dmr_call_poll() the only consumer ---
 
@@ -60,7 +70,8 @@ static struct {
 	int8_t call_ts;
 	bool have_index;
 	uint8_t next_index;
-	uint32_t last_voice_ms;	// last voice burst of the call played
+	uint32_t last_voice_ms;	// last voice burst of the call played (arrival)
+	uint32_t last_voice_slot;	// ... its slot counter from the modem, 0 = none
 	uint32_t last_rx_ms;	// last burst of the call (played or not)
 	uint32_t last_activity_ms;	// last non-idle burst on our slot with our CC
 	bool activity_seen;
@@ -108,6 +119,127 @@ static struct {
 	uint32_t reply_until;
 	bool reply_set;
 } s;
+
+// --- RX trace: one entry per burst event, packed into lines for the debug link's log ---
+//
+//   crx @<slot> <entry> <entry> ...
+//   entry = <burst><ts><what>[<frames concealed before it>][/<slots since the previous entry>]
+//   burst: A-F voice, H voice LC header, T terminator, I idle, D other data, L voice lost (event)
+//   what:  p played, d repeat dropped, e not played (privacy, no key), x other CC, s other slot, o call not played
+//          (filters), n no call yet (late entry waiting), t ignored while transmitting, h call (re)started from it,
+//          k ended the call, - nothing to do
+// The driver side logs the same entries ("drx", boards/dm1701/dmr_dm1701.c), so the two can be diffed.
+
+#if DMR_RX_TRACE
+#define TRACE_PER_LINE	10
+#define TRACE_IDLE_MS	300	// flush a part line after this long without a burst
+
+static struct {
+	bool off;
+	char line[72];
+	uint8_t len, n;
+	uint32_t last_slot, last_ms;
+	char what;		// for the event being handled
+	uint16_t lost;
+} tr;
+
+static void tr_put(char c)
+{
+	if (tr.len < sizeof(tr.line) - 1)
+		tr.line[tr.len++] = c;
+}
+
+static void tr_put_u(uint32_t v)
+{
+	char t[10];
+	int n = 0;
+
+	do {
+		t[n++] = (char)('0' + v % 10);
+		v /= 10;
+	} while (v && n < 10);
+	while (n)
+		tr_put(t[--n]);
+}
+
+static void tr_flush(void)
+{
+	if (tr.n) {
+		tr.line[tr.len] = '\0';
+		dlog("%s", tr.line);
+	}
+	tr.n = 0;
+	tr.len = 0;
+}
+
+static void tr_begin(void)
+{
+	tr.what = '-';
+	tr.lost = 0;
+}
+
+static void tr_add(char burst, int8_t ts, uint32_t slot, uint32_t now)
+{
+	if (tr.off)
+		return;
+	if (tr.n == 0) {
+		tr.len = 0;
+		tr_put('c');
+		tr_put('r');
+		tr_put('x');
+		tr_put(' ');
+		tr_put('@');
+		tr_put_u(slot);
+	}
+	tr_put(' ');
+	tr_put(burst);
+	tr_put((char)('0' + (ts >= 0 && ts <= 2 ? ts : 9)));
+	tr_put(tr.what);
+	if (tr.lost)
+		tr_put_u(tr.lost);
+	if (tr.n) {
+		tr_put('/');
+		tr_put_u(slot - tr.last_slot);
+	}
+	tr.last_slot = slot;
+	tr.last_ms = now;
+	if (++tr.n >= TRACE_PER_LINE)
+		tr_flush();
+}
+
+static char tr_burst(const dmr_burst_t *b)
+{
+	switch (b->kind) {
+	case DMR_BURST_VOICE:
+		return (char)('A' + b->voice_index % 6);
+	case DMR_BURST_VOICE_LC_HEADER:
+		return 'H';
+	case DMR_BURST_TERMINATOR_LC:
+		return 'T';
+	case DMR_BURST_IDLE:
+		return 'I';
+	default:
+		return 'D';
+	}
+}
+
+#define TR_WHAT(c)	(tr.what = (c))
+#define TR_LOST(n)	(tr.lost = (uint16_t)(tr.lost + (n)))
+#else
+#define TR_WHAT(c)	((void)(c))
+#define TR_LOST(n)	((void)(n))
+#endif
+
+void dmr_call_set_rx_trace(bool on)
+{
+#if DMR_RX_TRACE
+	tr.off = !on;
+	if (!on)
+		tr.n = 0;
+#else
+	(void)on;
+#endif
+}
 
 static bool elapsed(uint32_t now, uint32_t since, bool valid, uint32_t ms)
 {
@@ -204,6 +336,7 @@ static void evq_reset(void)
 static void sink_lost(uint8_t frames)
 {
 	stats.rx_lost_frames += frames;
+	TR_LOST(frames);
 	if (s.sink && s.sink->lost)
 		while (frames--)
 			s.sink->lost(s.sink->ctx);
@@ -317,22 +450,34 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	s.dirty = true;
 }
 
-static void rx_play(const dmr_burst_t *b, uint32_t now)
+// slot: the modem's slot counter for the burst (0 = none). Bursts may arrive in batches, so a repeat is told by the
+// burst index and the slot counter, never by arrival time (that is only the fallback for a modem without a counter)
+static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 {
 	uint8_t i = b->voice_index % 6;
 
 	if (s.have_index) {
 		uint8_t missing = (uint8_t)((i + 6 - s.next_index) % 6);
 
-		if (missing == 5 && (uint32_t)(now - s.last_voice_ms) < DUPLICATE_MS) {
-			stats.rx_dup_dropped++;
-			return;	// the same burst reported twice
+		if (missing == 5) {
+			// The index of the burst just played (or just concealed for a voice-lost report): the same burst
+			// again unless a whole superframe went by
+			bool repeat = slot != 0 && s.last_voice_slot != 0
+				? (uint32_t)(slot - s.last_voice_slot) < SUPERFRAME_SLOTS
+				: (uint32_t)(now - s.last_voice_ms) < DUPLICATE_MS;
+
+			if (repeat) {
+				stats.rx_dup_dropped++;
+				TR_WHAT('d');
+				return;
+			}
 		}
 		sink_lost((uint8_t)(missing * DMR_AMBE_FRAMES_PER_BURST));
 	}
 	s.next_index = (uint8_t)((i + 1) % 6);
 	s.have_index = true;
 	s.last_voice_ms = now;
+	s.last_voice_slot = slot;
 
 	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY);
 
@@ -342,6 +487,7 @@ static void rx_play(const dmr_burst_t *b, uint32_t now)
 	}
 	if (enc && !s.cfg.privacy) {
 		stats.rx_enc_dropped++;
+		TR_WHAT('e');
 		sink_lost(DMR_AMBE_FRAMES_PER_BURST);	// no key: never play the scrambled voice
 		return;
 	}
@@ -352,6 +498,7 @@ static void rx_play(const dmr_burst_t *b, uint32_t now)
 	if (enc)
 		s.cfg.privacy(v, i, false, s.cfg.privacy_ctx);
 	stats.rx_voice_bursts++;
+	TR_WHAT('p');
 	if (s.sink && s.sink->frame)
 		for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++)
 			s.sink->frame(&v[f * DMR_AMBE_FRAME_BYTES], s.sink->ctx);
@@ -359,10 +506,11 @@ static void rx_play(const dmr_burst_t *b, uint32_t now)
 
 // Voice with no call: start one from the embedded LC once two consecutive bursts were seen (a lone burst is noise)
 // and the LC is not the previous call's, or is the same in two superframes (docs/spec/dmr-modem.md 2.4)
-static void rx_late_entry(const dmr_burst_t *b, uint32_t now)
+static void rx_late_entry(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 {
 	uint8_t i = b->voice_index % 6;
 
+	TR_WHAT('n');
 	if (!s.le_active || elapsed(now, s.le_last_ms, true, fade_ms())) {
 		le_reset();
 		s.le_active = true;
@@ -385,8 +533,13 @@ static void rx_late_entry(const dmr_burst_t *b, uint32_t now)
 		return;
 	rx_lc(b->lc, b, true, now);
 	s.have_index = false;
+	TR_WHAT('o');
 	if (s.rx == RXC_PLAY)
-		rx_play(b, now);
+		rx_play(b, now, slot);
+#if DMR_RX_TRACE
+	if (tr.what == 'p')
+		tr.what = 'h';
+#endif
 }
 
 static void rx_embedded(const dmr_burst_t *b, uint32_t now)
@@ -419,15 +572,25 @@ static bool rx_header_lc(const dmr_burst_t *b, uint8_t mask, uint8_t lc[DMR_LC_B
 	return false;
 }
 
-static void rx_burst(const dmr_burst_t *b, uint32_t now)
+static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 {
-	if (transmitting())
+	if (transmitting()) {
+		TR_WHAT('t');
 		return;
+	}
 	s.last_any_ms = now;
 	s.any_seen = true;
 
-	if (!s.cfg.listen.any_cc && b->cc != s.cfg.cc)
+	// Burst A has no color code on air (voice sync where B-F have the EMB): whatever CC the modem gives it is not
+	// the burst's, so it is never filtered on it (bench 2026-10-10: 0x52 at A's report held a junk CC, and every
+	// A was dropped here, three frames concealed per superframe)
+	bool cc_known = !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
+
+	if (!s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc) {
+		stats.rx_cc_dropped++;
+		TR_WHAT('x');
 		return;
+	}
 	if (b->sync == DMR_SYNC_BS) {
 		s.rpt_last_ms = now;
 		s.rpt_seen = true;
@@ -435,10 +598,11 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now)
 	// The slot number is only known through a repeater (CACH) or from the TDMA direct mode sync
 	bool ts_known = b->ts != 0 && (s.cfg.rmo || b->sync == DMR_SYNC_BS || b->sync == DMR_SYNC_TS1 ||
 				       b->sync == DMR_SYNC_TS2);
-	if (ts_known && b->ts != s.cfg.ts)
+	if ((ts_known && b->ts != s.cfg.ts) || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts)) {
+		stats.rx_ts_dropped++;
+		TR_WHAT('s');
 		return;
-	if (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts)
-		return;
+	}
 	if (b->kind != DMR_BURST_IDLE) {
 		s.last_activity_ms = now;
 		s.activity_seen = true;
@@ -456,12 +620,16 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now)
 	switch (b->kind) {
 	case DMR_BURST_VOICE_LC_HEADER:
 		if (rx_header_lc(b, DMR_RS_MASK_VOICE_HEADER, lc)) {
+			bool was = s.rx != RXC_NONE && memcmp(lc, s.call_lc, DMR_LC_BYTES) == 0;
+
 			rx_lc(lc, b, false, now);
 			if (s.rx != RXC_NONE) {
 				s.last_rx_ms = now;
 				s.have_index = true;
 				s.next_index = 0;
 				s.last_voice_ms = now;
+				s.last_voice_slot = slot;
+				TR_WHAT(was ? '-' : (s.rx == RXC_PLAY ? 'h' : 'o'));
 			}
 		}
 		break;
@@ -476,18 +644,20 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now)
 			if (s.cfg.rmo && memcmp(lc, s.call_lc, DMR_LC_BYTES) != 0)
 				break;
 			rx_end(now);
+			TR_WHAT('k');
 		}
 		break;
 	case DMR_BURST_VOICE:
 		if (s.rx == RXC_NONE) {
-			rx_late_entry(b, now);
+			rx_late_entry(b, now, slot);
 			break;
 		}
 		s.last_rx_ms = now;
 		if (b->lc_valid)
 			rx_embedded(b, now);
+		TR_WHAT('o');
 		if (s.rx == RXC_PLAY)
-			rx_play(b, now);
+			rx_play(b, now, slot);
 		break;
 	default:
 		if (s.rx != RXC_NONE && b->kind != DMR_BURST_IDLE && b->kind != DMR_BURST_PI_HEADER)
@@ -806,15 +976,29 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 {
 	switch (it->kind) {
 	case DMR_EV_BURST_RX:
-		if (it->has_burst)
-			rx_burst(&it->burst, now);
+		if (it->has_burst) {
+#if DMR_RX_TRACE
+			tr_begin();
+#endif
+			rx_burst(&it->burst, now, it->arg);
+#if DMR_RX_TRACE
+			tr_add(tr_burst(&it->burst), it->ts, it->arg, now);
+#endif
+		}
 		break;
 	case DMR_EV_VOICE_LOST:
+#if DMR_RX_TRACE
+		tr_begin();
+#endif
 		if (s.rx == RXC_PLAY && !transmitting() && (it->ts == 0 || s.call_ts == 0 || it->ts == s.call_ts)) {
+			// The next burst is concealed now; if it still comes, the repeat rule drops it (same index)
 			sink_lost(DMR_AMBE_FRAMES_PER_BURST);
 			if (s.have_index)
 				s.next_index = (uint8_t)((s.next_index + 1) % 6);
 		}
+#if DMR_RX_TRACE
+		tr_add('L', it->ts, it->arg, now);
+#endif
 		break;
 	case DMR_EV_TX_SLOT_STARTED:
 		if (transmitting())
@@ -1055,6 +1239,11 @@ void dmr_call_poll(uint32_t now_ms)
 			}
 		}
 	}
+
+#if DMR_RX_TRACE
+	if (tr.n && elapsed(now_ms, tr.last_ms, true, TRACE_IDLE_MS))
+		tr_flush();
+#endif
 
 	// Fade: no burst on the call for a while ends it
 	if (s.rx != RXC_NONE && elapsed(now_ms, s.last_rx_ms, true, fade_ms()))
