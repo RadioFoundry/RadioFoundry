@@ -508,6 +508,10 @@ static void handle_key(const input_event_t *ev)
 static void draw(void)
 {
 	st.now_ms = hal_millis();
+	if (gfx_held(st.now_ms)) {
+		dirty = true;	// a screen capture is reading the frame buffer: redraw once it is done
+		return;
+	}
 	st.battery_pct = board.power->battery_pct();
 	radio_get_view(&view);
 #if CONFIG_HOTSPOT

@@ -314,3 +314,15 @@ void gfx_invalidate(void)
 {
 	all_dirty = true;
 }
+
+static volatile uint32_t hold_until;
+
+void gfx_hold(uint32_t until_ms)
+{
+	hold_until = until_ms;
+}
+
+bool gfx_held(uint32_t now_ms)
+{
+	return hold_until != 0 && (int32_t)(hold_until - now_ms) > 0;
+}

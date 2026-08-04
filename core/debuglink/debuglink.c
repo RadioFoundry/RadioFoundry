@@ -19,6 +19,7 @@
 #define ODR_GIT "unknown"
 #endif
 
+#define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_CHUNK_MAX		1000u	// screenshot bytes per reply
 #define RADIO_OP_GAP_MS		20u	// radio requests at most this often (the radio core's queue holds 16)
 
@@ -275,6 +276,9 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	out[10] = d->inset_right;
 	put32(out + 11, total);
 	put32(out + 15, offset);
+	// Hold the UI's redraws while the host reads the chunks, so the capture is one frame. Every chunk extends the
+	// hold, so the host's check pass sees the same frame; redraws resume SHOT_HOLD_MS after the last chunk
+	gfx_hold(hal_millis() + SHOT_HOLD_MS);
 	memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
 	return 19u + n;
 }

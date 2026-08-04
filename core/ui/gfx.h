@@ -58,6 +58,9 @@ int gfx_pill(const font_t *f, int x, int y, int h, const char *s, color_t fg, co
 
 // Send the rows that changed since the last flush (compared by a hash per row) to the display
 void gfx_flush(void);
+// Freeze the frame buffer for a screen capture: the UI skips redraws until ms (hal_millis) or gfx_hold(0)
+void gfx_hold(uint32_t until_ms);
+bool gfx_held(uint32_t now_ms);
 // Make the next flush send every row
 void gfx_invalidate(void);
 

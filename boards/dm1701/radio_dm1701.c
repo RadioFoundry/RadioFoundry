@@ -385,7 +385,11 @@ bool dm1701_rf_dmr_switch(bool tx)
 	uint32_t hz = r.dmr_tx_hz;
 	bool ok = true;
 	r.rf_isr_dirty = true;
-	if (r.rf_tuned_hz != hz) {	// repeater split: tune with the receiver off, then straight to TX (gotchas 3.5)
+	// Always tune with the receiver off, then straight to TX (gotchas 3.5), simplex included: going from RX on
+	// straight to TX on the already-tuned frequency put the DMR carrier about 3.07 kHz low (SDR bench, 2026-10-10),
+	// too far for a 4FSK receiver to decode. The extra two writes cost about 0.25 ms per burst
+	r.rf_tuned_hz = 0;
+	if (r.rf_tuned_hz != hz) {
 		uint32_t word = at1846s_freq_word(hz);
 		r.rf_tuned_hz = 0;
 		ok = rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE))
