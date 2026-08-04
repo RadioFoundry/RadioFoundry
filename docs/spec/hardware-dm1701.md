@@ -1261,3 +1261,8 @@ Verified on one radio with the new firmware; they override the unverified notes 
   channel, so no TX offset is added. Unmodulated carrier residual FM 41 Hz RMS, no hum or tone. Voice at normal level:
   2.5 kHz peak deviation (99.5th percentile), 636 Hz RMS, about 7 kHz occupied at -26 dB. The FM I calibration row of 0
   (Mod2 amplitude) does not stop voice modulation.
+- **DMR TX** (Ch 1 467.375 MHz, cc 2, 1 W, SDR bench + an MMDVM_HS receiver, 2026-10-10): switching per burst from
+  RX on straight to TX on the already-tuned frequency put the carrier 3.07 kHz low (an ADF7021-based receiver
+  decoded nothing; a wide-AFC SDR decoder still did). Retuning with the receiver off before every burst (as FM TX
+  does) brings it to about +65 Hz, and the MMDVM_HS receiver decodes headers, all superframes with the embedded LC
+  and the terminator. Burst spacing 60.000 ms (sd 0.002 ms), 31 ms PA per burst.
