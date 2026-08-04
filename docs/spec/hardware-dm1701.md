@@ -1191,12 +1191,23 @@ Untested risks of route 1, found while writing it (they matter only on an RDP 0 
 **Route 2: a software entry into the stock bootloader's own DFU mode.** This route would leave RDP alone and keep
 the XOR-keyed DfuSe path that `tools/stm32_dfu.py` already speaks (15.2, 15.3). It works only if the stock bootloader
 checks something besides the PTT + side key 1 combination that firmware can set before a reset: a RAM word it reads
-before clearing RAM, an RTC backup register, or a backup SRAM location. The dumped bootloader is being analyzed for
-such a check.
+before clearing RAM, an RTC backup register, or a backup SRAM location.
 
-> TODO (result of the stock bootloader analysis): whether an entry flag exists, its location and value, whether it
-> survives `NVIC_SystemReset`, and whether the bootloader clears it. If one exists, add `REBOOT` mode 2 with the same
-> gate (UID token, not transmitting; RDP doesn't matter for this route).
+Result of the analysis of the dumped stock bootloader (2026-10-10): **there is no such flag.** The bootloader decides
+once, after its own startup has cleared and initialized main SRAM, and there is no timeout. It stays in DFU when either
+of these holds; otherwise it loads MSP from 0x0800C000 and jumps to the word at 0x0800C004:
+
+- GPIOE IDR bits 8 and 11 (PE8, keypad column 5 / side key 1; PE11, PTT) both read low, the power-on key combination.
+- The application's initial stack pointer at 0x0800C000 fails `(SP & 0x2FFE0000) == 0x20000000`, so an erased
+  sector 3 (0xFFFFFFFF) keeps it in DFU. The reset vector is not range checked.
+
+It reads no RAM word, no RTC backup register or backup SRAM, and no reset-cause flag (`RCC_CSR`), and it doesn't set
+`VTOR` (the application sets its own). So nothing firmware can set before a reset makes it stay in DFU, except making
+the application look invalid. The least damaging way is a single flash word program that clears bit 29 of the word at
+0x0800C000 (0x2001FFFC to 0x0001FFFC; programming can only clear bits, so no erase is needed). After that the radio
+boots into DFU every time until a full image is written again, which `tools/stm32_dfu.py` does. Sectors 0-2 are never
+touched, so the bootloader always stays reachable. This is not implemented; it is a candidate `REBOOT` mode 2 with the
+same gate plus an explicit confirmation in the tool.
 
 Sources: `FLASH_OPTCR` and the flash size register read on the bench unit through the debug link (2026-10-10);
 STM32F405 reference manual (RDP levels, option bytes, `SYSCFG_MEMRMP`, backup domain); ST's application note on the
