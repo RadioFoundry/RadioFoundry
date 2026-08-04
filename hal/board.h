@@ -52,6 +52,8 @@ typedef struct {
 	const hal_stream_t *host_port;	// the link to a host computer (MMDVM hotspot, CPS); NULL if none
 	// Optional: line i of a board diagnostics page (raw readings for bench checks); false past the last line
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
+	// Optional: zero the counters behind diag_line (the debug link's RESET_COUNTERS)
+	void (*diag_reset)(void);
 } board_t;
 
 extern const board_t board;

@@ -32,6 +32,15 @@ extern const hal_dmr_modem_t dm1701_dmr;
 extern const hal_audio_t dm1701_audio;
 extern const hal_vocoder_t dm1701_vocoder;
 
+// DMR PCM audio counters (audio_dm1701.c, CONFIG_DMR): the debug link's GET_DIAG / RESET_COUNTERS
+typedef struct {
+	uint32_t blocks;	// 20 ms blocks processed
+	uint32_t overruns;	// a DMA half completed before the task took the previous one
+	uint32_t dropped;	// blocks skipped because the task was a whole block late
+} dm1701_audio_stats_t;
+void dm1701_audio_stats(dm1701_audio_stats_t *out);
+void dm1701_audio_reset_stats(void);
+
 // Physical key bits returned by dm1701_input.scan() (matrix positions in docs/spec/hardware-dm1701.md 10.1)
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
@@ -58,6 +67,8 @@ const char *dm1701_cal_source(void);	// "working", "factory" or "none"
 void dm1701_cal_why(char *out, uint8_t len, uint8_t marker[8]);
 uint8_t dm1701_cal_byte(uint16_t offset);
 bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len);
+// Zero the counters behind the diagnostics lines (board.diag_reset)
+void dm1701_diag_reset(void);
 
 // Factory calibration (calibration_dm1701.c, docs/spec/hardware-dm1701.md section 12)
 typedef struct {

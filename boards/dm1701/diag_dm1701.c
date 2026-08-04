@@ -128,6 +128,19 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 			put_x(&o, m[k], 2);
 		break;
 	}
+#if CONFIG_DMR
+	case 11: {	// DMR PCM audio: blocks, overruns, blocks dropped
+		dm1701_audio_stats_t a;
+		dm1701_audio_stats(&a);
+		put(&o, "aud blk ");
+		put_u(&o, a.blocks);
+		put(&o, " ov ");
+		put_u(&o, a.overruns);
+		put(&o, " dr ");
+		put_u(&o, a.dropped);
+		break;
+	}
+#endif
 	case 8:	// VHF DMR I / Q gain rows (5 points)
 	case 9:	// VHF FM I / Q
 	case 10: {	// UHF FM I / Q (first 5 of 9 points)
@@ -146,6 +159,14 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 	*o.p = '\0';
 	return true;
+}
+
+void dm1701_diag_reset(void)
+{
+#if CONFIG_DMR
+	dm1701_dmr_stats_reset();
+	dm1701_audio_reset_stats();
+#endif
 }
 
 #endif

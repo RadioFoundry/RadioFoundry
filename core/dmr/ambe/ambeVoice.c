@@ -66,6 +66,9 @@ static void rx_push(const uint8_t bits[VOCODER_BITS], uint8_t bad)
 		stats.rx_overflows++;
 		return;
 	}
+	if ((uint8_t)(h + 1 - LOAD(rx_tail)) > stats.rx_queue_max) {
+		stats.rx_queue_max = (uint8_t)(h + 1 - LOAD(rx_tail));
+	}
 	rx_entry_t *e = &rxq[h & (AMBE_VOICE_QUEUE - 1)];
 	e->seq = rx_seq;
 	e->bad = bad;
@@ -91,6 +94,7 @@ static void sink_frame(const uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
 	if (rx_end_seq == rx_seq) {
 		sink_begin(NULL, NULL);	// frames with no call open: a new call
 	}
+	stats.rx_in++;
 	ambeFecDecode(ambe72, bits, &r);
 	if (r.c0_failed) {
 		stats.rx_bad++;
@@ -170,8 +174,10 @@ static bool voc_ok(void)
 static void conceal(int16_t *spk)
 {
 	if (have_last && cb_bad_run < AMBE_VOICE_REPEAT && voc_ok()) {
+		stats.rx_concealed++;
 		voc->decode(last_bits, spk);
 	} else {
+		stats.rx_silence++;
 		memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 	}
 	if (cb_bad_run < 255) {
@@ -212,6 +218,7 @@ static void rx_block(int16_t *spk)
 		if (queued >= AMBE_VOICE_PRIME || (ended && queued > 0)) {
 			cb_rx_primed = true;
 			cb_rx_playing = true;
+			stats.rx_calls++;
 			speaker(true);
 		} else {
 			if (ended) {
@@ -325,6 +332,11 @@ void ambeVoiceStop(void)
 		}
 	}
 	streaming = false;
+}
+
+void ambeVoiceResetStats(void)
+{
+	memset(&stats, 0, sizeof(stats));
 }
 
 void ambeVoiceGetStats(ambe_voice_stats_t *out)

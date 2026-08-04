@@ -19,3 +19,7 @@ PROVENANCE.md
 # Bench tool output
 bench-results/
 __pycache__/
+
+# Python caches (tools, tests/hil)
+__pycache__/
+.pytest_cache/

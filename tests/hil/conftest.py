@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+"""pytest set-up for the hardware-in-the-loop tests (README.md): finds the radio by its USB ID, skips cleanly when
+it isn't there, restores the radio's state after every test, and keeps transmitting and stopping the SDR bench's
+gateway service behind opt-in flags."""
+import os
+
+import pytest
+
+from odr_hil import DebugLinkError, Radio, SdrBench, find_ports
+
+
+def pytest_addoption(parser):
+    g = parser.getgroup("odr-hil", "OpenDigitalRadio hardware-in-the-loop")
+    g.addoption("--radio-port", default=os.environ.get("ODR_PORT"),
+                help="the radio's serial port (default: the only USB 1FC9:0094 device, or $ODR_PORT)")
+    g.addoption("--allow-rf", action="store_true",
+                help="tests may transmit (the SDR bench's transmitter; the radio only in tests marked radio_tx)")
+    g.addoption("--allow-service-stop", action="store_true",
+                help="tests may stop the SDR bench's gateway service (radiodesk-rfgw) to use its transmitter and "
+                     "receiver (dmr_bench.py's lease: always restarted)")
+    g.addoption("--tx-power", type=int, default=40, help="bench transmitter RF level 0-255 (bench: low)")
+    g.addoption("--dmr-freq", type=float, default=461.6875,
+                help="MHz: the DMR test channel (Ch 15 of the bench's gateway configuration)")
+    g.addoption("--dmr-cc", type=int, default=2)
+    g.addoption("--dmr-tg", type=int, default=9,
+                help="talkgroup the bench transmitter calls (in the radio channel's RX group list)")
+    g.addoption("--ambe", default=os.environ.get("ODR_HIL_AMBE"),
+                help="a 9-byte-frame .ambe speech recording on this Mac for test_dmr_voice ($ODR_HIL_AMBE); never "
+                     "commit recordings")
+    g.addoption("--noaa-mhz", type=float, default=162.550, help="NOAA weather radio frequency for test_fm")
+    g.addoption("--rssi-floor", type=int, default=-115, help="dBm: test_fm passes above this")
+    g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
+    config.addinivalue_line("markers", "bench_service: stops the SDR bench's gateway service (needs "
+                            "--allow-service-stop)")
+    config.addinivalue_line("markers", "radio_tx: the radio under test transmits (needs --allow-rf)")
+
+
+def pytest_collection_modifyitems(config, items):
+    for item in items:
+        if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
+            item.add_marker(pytest.mark.skip(reason="transmits: run with --allow-rf"))
+        elif "bench_service" in item.keywords and not config.getoption("--allow-service-stop"):
+            item.add_marker(pytest.mark.skip(reason="stops the SDR bench's gateway service: run with "
+                                                    "--allow-service-stop"))
+
+
+@pytest.fixture(scope="session")
+def radio(pytestconfig):
+    port = pytestconfig.getoption("--radio-port")
+    if not port and not find_ports():
+        pytest.skip("no radio on USB (1FC9:0094): plug it in or give --radio-port")
+    try:
+        r = Radio(port)
+    except DebugLinkError as e:
+        pytest.skip(f"radio not reachable: {e}")
+    try:
+        r.ping()
+    except DebugLinkError as e:
+        r.close()
+        pytest.skip(f"the radio doesn't answer the debug link (firmware without CONFIG_DEBUGLINK?): {e}")
+    yield r
+    r.close()
+
+
+@pytest.fixture(autouse=True)
+def restore_radio(request):
+    """Every test that uses the radio leaves it as it found it (channel / VFO, zone, power, squelch, monitor)."""
+    if "radio" not in request.fixturenames:
+        yield
+        return
+    r = request.getfixturevalue("radio")
+    snap = r.snapshot()
+    try:
+        yield
+    finally:
+        try:
+            r.link.ptt(False)       # whatever happened, no PTT held
+        except DebugLinkError:
+            pass
+        r.restore(snap)
+
+
+@pytest.fixture(scope="session")
+def sdr_bench(pytestconfig):
+    b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"),
+                 allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
+                 tx_power=pytestconfig.getoption("--tx-power"))
+    if not b.reachable():
+        pytest.skip(f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
+                    "sync)")
+    return b
+
+
+@pytest.fixture
+def shots(pytestconfig, tmp_path):
+    d = pytestconfig.getoption("--shots")
+    if d:
+        os.makedirs(d, exist_ok=True)
+        return d
+    return str(tmp_path)

@@ -212,3 +212,15 @@ run: run-mmdvm
 run-mmdvm: mmdvmTest
 	./mmdvmTest
 .PHONY: run-mmdvm
+
+# The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
+DLINK   := debuglinkTest.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c
+TESTS   += debuglinkTest
+
+debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -o $@ $(DLINK)
+
+run: run-debuglink
+run-debuglink: debuglinkTest
+	./debuglinkTest
+.PHONY: run-debuglink

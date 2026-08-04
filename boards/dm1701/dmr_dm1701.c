@@ -15,6 +15,7 @@
 // Priority 5 is configMAX_SYSCALL, so the ISRs may notify the task. Task-level calls into the engine raise BASEPRI to 5
 // for the duration of their register work, which keeps the three ISRs out (they share the bit-banged config port).
 #include <stddef.h>
+#include <string.h>
 #include "dm1701.h"
 #include "dmr_dm1701.h"
 #include "config.h"
@@ -313,12 +314,27 @@ const hal_dmr_modem_t dm1701_dmr = {
 
 // --- Bring-up counters ---
 
+// The RF switch counters live in radio_dm1701.c: a reset keeps their values here and reports the difference
+static uint32_t rf_base[3];
+
 void dm1701_dmr_stats(dm1701_dmr_stats_t *out)
 {
 	out->active = active;
 	out->stack_attached = stack_cb != NULL;
 	hrc6000_dmr_stats(&eng, &out->modem);
 	dm1701_rf_dmr_counters(&out->rf_skipped, &out->rf_unarmed, &out->rf_rx_retries);
+	out->rf_skipped -= rf_base[0];
+	out->rf_unarmed -= rf_base[1];
+	out->rf_rx_retries -= rf_base[2];
+}
+
+void dm1701_dmr_stats_reset(void)
+{
+	// Every field before last_r5f is a uint32_t counter (hrc6000_dmr.h); the ISRs update them, so under the lock
+	lock(NULL);
+	memset(&eng.st, 0, offsetof(hrc6000_dmr_stats_t, last_r5f));
+	unlock(NULL);
+	dm1701_rf_dmr_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
 }
 
 typedef struct {

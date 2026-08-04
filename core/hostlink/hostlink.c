@@ -9,11 +9,19 @@
 #include "hotspot/mmdvm.h"
 #include "hotspot/hotspot.h"
 #endif
+#if CONFIG_DEBUGLINK
+#include "debuglink/debuglink.h"
+#endif
+#include "debuglink/dlog.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
+#if CONFIG_DEBUGLINK
+#define HOSTLINK_TASK_STACK	640	// words: MMDVM frames on the stack; debug link replies format diagnostics lines
+#else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
+#endif
 #define POLL_MS			5	// hotspot housekeeping while nothing arrives
 #define READ_CHUNK		64
 #define CPS_GAP_MS		3	// a new CPS request starts after this much quiet (legacy-cps-interop.md 1.2)
@@ -26,6 +34,7 @@ static volatile hostlink_mode_t mode = HOSTLINK_IDLE;
 static volatile bool hotspot_allowed = true;
 static volatile bool exit_requested;
 static hostlink_cps_fn cps_handler;
+static const hostlink_side_t *side;
 static uint32_t last_byte_ms;
 #if CONFIG_HOTSPOT
 static mmdvm_framer_t framer;
@@ -55,6 +64,11 @@ void hostlink_hotspot_exit(void)
 void hostlink_set_cps_handler(hostlink_cps_fn fn)
 {
 	cps_handler = fn;
+}
+
+void hostlink_set_side_protocol(const hostlink_side_t *p)
+{
+	side = p;
 }
 
 size_t hostlink_write(const uint8_t *buf, size_t len)
@@ -92,38 +106,78 @@ static void make_description(void)
 
 static void leave_hotspot(void)
 {
+	dlog("hostlink: leaving hotspot mode");
 	mmdvm_end();
 	mmdvm_framer_reset(&framer);
 	mode = HOSTLINK_IDLE;
 }
 
-static void feed_mmdvm(const uint8_t *buf, size_t len, uint32_t now)
+static bool framer_idle(void)
+{
+	return (framer.len == 0) && (framer.skip == 0);
+}
+
+// MMDVM bytes up to the end of buf, or up to a side protocol frame starting between MMDVM frames. Returns the bytes
+// taken
+static size_t feed_mmdvm(const uint8_t *buf, size_t len, uint32_t now)
 {
 	for (size_t i = 0; i < len; i++) {
+		if ((i > 0) && (side != NULL) && (buf[i] == side->start) && framer_idle()) {
+			return i;
+		}
 		uint16_t n = mmdvm_framer_byte(&framer, buf[i]);
 
 		if (n > 0) {
 			mmdvm_frame(framer.buf, n, now);
 		}
 	}
+	return len;
 }
 #endif	// CONFIG_HOTSPOT
 
-static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
+// Bytes of the side protocol at the start of buf, if they are its own (see hostlink.h for where a frame may start)
+static size_t side_take(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
 {
-	bool new_request = (now - last_byte_ms) >= CPS_GAP_MS;
+	if (side == NULL) {
+		return 0;
+	}
+	if (!side->in_frame(now)) {
+		if (buf[0] != side->start) {
+			return 0;
+		}
+		switch (mode) {
+		case HOSTLINK_HOTSPOT:
+#if CONFIG_HOTSPOT
+			if (!framer_idle()) {
+				return 0;
+			}
+#endif
+			break;
+		case HOSTLINK_CPS:
+			if (!new_request) {
+				return 0;
+			}
+			break;
+		case HOSTLINK_IDLE:
+			break;
+		}
+	}
+	return side->feed(buf, len, now);
+}
 
-	last_byte_ms = now;
+// The other protocols: returns the bytes taken (all of them, except in hotspot mode before a side frame)
+static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
+{
 #if CONFIG_HOTSPOT
 	if ((mode != HOSTLINK_HOTSPOT) && new_request && (buf[0] == MMDVM_FRAME_START) && hotspot_allowed) {
 		mode = HOSTLINK_HOTSPOT;
 		mmdvm_framer_reset(&framer);
 		hostlink_session_start(&session, (board.host_port != NULL) && board.host_port->connected());
 		entered_ms = now;
+		dlog("hostlink: entering hotspot mode");
 	}
 	if (mode == HOSTLINK_HOTSPOT) {
-		feed_mmdvm(buf, len, now);
-		return;
+		return feed_mmdvm(buf, len, now);
 	}
 #else
 	(void)new_request;
@@ -131,6 +185,29 @@ static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
 	if (cps_handler != NULL) {
 		mode = HOSTLINK_CPS;
 		cps_handler(buf, len, now);
+	}
+	return len;
+}
+
+static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
+{
+	bool new_request = (now - last_byte_ms) >= CPS_GAP_MS;
+
+	last_byte_ms = now;
+	while (len > 0) {
+		size_t n = side_take(buf, len, now, new_request);
+
+		if (n > 0) {
+			new_request = true;	// what follows a side frame starts a new request
+		} else {
+			n = dispatch_main(buf, len, now, new_request);
+			new_request = false;
+			if (n == 0) {
+				break;
+			}
+		}
+		buf += n;
+		len -= n;
 	}
 }
 
@@ -199,5 +276,8 @@ static void hostlink_task(void *arg)
 
 void hostlink_start(void)
 {
+#if CONFIG_DEBUGLINK
+	debuglink_start();	// registers itself as the side protocol
+#endif
 	xTaskCreate(hostlink_task, "host", HOSTLINK_TASK_STACK, NULL, HOSTLINK_TASK_PRIORITY, NULL);
 }

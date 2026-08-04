@@ -33,7 +33,12 @@
 #define AMBE_VOICE_REPEAT	3	// bad / missing frames concealed by repeating the last good one, then silence
 
 typedef struct {
+	uint32_t rx_in;		// frames the call stack handed in (the sink's frame calls)
 	uint32_t rx_frames;	// frames decoded and played
+	uint32_t rx_concealed;	// blocks played as a repeat of the last good frame (bad, lost, underrun)
+	uint32_t rx_silence;	// blocks muted during a call (concealment exhausted, or no frame to repeat)
+	uint32_t rx_calls;	// calls that started playing
+	uint32_t rx_queue_max;	// most frames queued at once (of AMBE_VOICE_QUEUE)
 	uint32_t rx_bad;	// frames with an uncorrectable C0
 	uint32_t rx_lost;	// frames the call stack reported missing
 	uint32_t rx_underruns;	// blocks with nothing queued during a call
@@ -51,6 +56,9 @@ const dmr_voice_source_t *ambeVoiceSource(void);
 // Stop the audio stream (leaving DMR mode); the next begin restarts it
 void ambeVoiceStop(void);
 void ambeVoiceGetStats(ambe_voice_stats_t *out);
+// Zero the counters (the debug link's RESET_COUNTERS). Counters only: no state changes. From any task; an increment
+// racing the reset may survive it
+void ambeVoiceResetStats(void);
 
 // The audio block callback (exposed for tests): one 20 ms block in, one out
 void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx);

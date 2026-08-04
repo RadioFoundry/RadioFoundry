@@ -468,6 +468,15 @@ static void home_key(const input_event_t *ev)
 	}
 }
 
+const char *ui_screen_name(void)
+{
+#if CONFIG_HOTSPOT
+	if (in_hotspot())
+		return "hotspot";
+#endif
+	return screen == SCR_QUICK ? "quick" : screen == SCR_DIAG ? "diag" : "home";
+}
+
 static void handle_key(const input_event_t *ev)
 {
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)

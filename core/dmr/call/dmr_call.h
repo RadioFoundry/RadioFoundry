@@ -184,6 +184,25 @@ void dmr_call_poll(uint32_t now_ms);
 
 const dmr_call_view_t *dmr_call_view(void);
 
+// Diagnostics counters (the debug link's GET_DIAG / RESET_COUNTERS; wrap freely)
+typedef struct {
+	uint32_t rx_calls;		// calls heard on our slot (a new voice LC, header or late entry)
+	uint32_t rx_calls_played;	// ... of those, passed the filters and played
+	uint32_t rx_late_entries;	// ... of those, started from the embedded LC (no header seen)
+	uint32_t rx_voice_bursts;	// voice bursts handed to the sink (3 frames each)
+	uint32_t rx_lost_frames;	// frames reported lost to the sink (missing bursts, voice lost, no privacy key)
+	uint32_t rx_dup_dropped;	// voice bursts dropped as a repeated report of the previous one
+	uint32_t rx_enc_dropped;	// voice bursts not played: privacy without a key
+	uint32_t tx_calls;		// transmissions started
+	uint32_t tx_denied;		// PTT refused (any dmr_tx_error_t)
+	uint32_t tx_underruns;		// voice frames sent as silence
+	uint32_t evq_overflows;		// modem events dropped
+} dmr_call_stats_t;
+void dmr_call_get_stats(dmr_call_stats_t *out);
+// Zero the counters only (the view's evq_overflows / tx_underruns keep counting). From any task; an increment racing
+// the reset may survive it
+void dmr_call_reset_stats(void);
+
 // Listen before talk for machine traffic (data, ACKs, CSBK answers; gotcha 3.6): DMO 120 ms without voice, data or
 // a call on our slot; RMO 180 ms without bursts on our slot, no call, and the last call over DMR_CALL_RMO_HANG_MS ago
 bool dmr_call_channel_clear(uint32_t now_ms);

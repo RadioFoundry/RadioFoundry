@@ -32,6 +32,8 @@ static evq_item_t evq[DMR_CALL_EVQ_DEPTH];
 static uint8_t evq_head;	// written by the producer
 static uint8_t evq_tail;	// written by the consumer
 static uint32_t evq_drops;
+static dmr_call_stats_t stats;
+static uint32_t evq_drops_base, tx_underruns_base;	// at the last dmr_call_reset_stats
 static uint32_t tick_count;	// slot ticks, counted by the producer
 static uint8_t tick_alt;	// consecutive ticks with the slot number alternating 1 / 2
 static int8_t tick_ts;
@@ -201,6 +203,7 @@ static void evq_reset(void)
 
 static void sink_lost(uint8_t frames)
 {
+	stats.rx_lost_frames += frames;
 	if (s.sink && s.sink->lost)
 		while (frames--)
 			s.sink->lost(s.sink->ctx);
@@ -296,12 +299,18 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	c->late_entry = late;
 	memcpy(c->alias, s.ta.text, sizeof(c->alias));
 	c->alias_complete = s.ta.complete;
-	if (!continuing)
+	if (!continuing) {
 		s.view.call_start_ms = now;
+		stats.rx_calls++;
+		if (late)
+			stats.rx_late_entries++;
+	}
 	if (s.cfg.listen.any_cc)
 		s.view.cc = b->cc;
 
 	s.rx = rx_accept(&l, now) ? RXC_PLAY : RXC_OTHER;
+	if (s.rx == RXC_PLAY && !continuing)
+		stats.rx_calls_played++;
 	if (s.rx == RXC_PLAY && s.sink && s.sink->begin)
 		s.sink->begin(c, s.sink->ctx);
 	le_reset();
@@ -315,8 +324,10 @@ static void rx_play(const dmr_burst_t *b, uint32_t now)
 	if (s.have_index) {
 		uint8_t missing = (uint8_t)((i + 6 - s.next_index) % 6);
 
-		if (missing == 5 && (uint32_t)(now - s.last_voice_ms) < DUPLICATE_MS)
+		if (missing == 5 && (uint32_t)(now - s.last_voice_ms) < DUPLICATE_MS) {
+			stats.rx_dup_dropped++;
 			return;	// the same burst reported twice
+		}
 		sink_lost((uint8_t)(missing * DMR_AMBE_FRAMES_PER_BURST));
 	}
 	s.next_index = (uint8_t)((i + 1) % 6);
@@ -330,6 +341,7 @@ static void rx_play(const dmr_burst_t *b, uint32_t now)
 		s.dirty = true;
 	}
 	if (enc && !s.cfg.privacy) {
+		stats.rx_enc_dropped++;
 		sink_lost(DMR_AMBE_FRAMES_PER_BURST);	// no key: never play the scrambled voice
 		return;
 	}
@@ -339,6 +351,7 @@ static void rx_play(const dmr_burst_t *b, uint32_t now)
 	memcpy(v, b->payload, DMR_VOICE_BYTES);
 	if (enc)
 		s.cfg.privacy(v, i, false, s.cfg.privacy_ctx);
+	stats.rx_voice_bursts++;
 	if (s.sink && s.sink->frame)
 		for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++)
 			s.sink->frame(&v[f * DMR_AMBE_FRAME_BYTES], s.sink->ctx);
@@ -493,6 +506,7 @@ static void source_end(void)
 
 static void tx_deny(uint8_t err)
 {
+	stats.tx_denied++;
 	if (s.tx == TX_WAKE || s.tx == TX_ON || s.tx == TX_END)
 		s.modem->tx_abort();
 	if (s.tx == TX_ON)
@@ -634,6 +648,7 @@ static void tx_start_voice(uint32_t now)
 	s.tot_hit = false;
 	s.stage_n = 0;
 	s.tx = TX_ON;
+	stats.tx_calls++;
 	s.tx_start_ms = now;
 	s.tx_target_used = t;
 	s.view.tx_error = DMR_TX_OK;
@@ -845,6 +860,8 @@ void dmr_call_init(const hal_dmr_modem_t *modem)
 	memset(&s, 0, sizeof(s));
 	evq_reset();
 	evq_drops = 0;
+	memset(&stats, 0, sizeof(stats));
+	evq_drops_base = tx_underruns_base = 0;
 	tick_count = 0;
 	s.modem = modem;
 	dmr_call_config_default(&s.cfg);
@@ -1070,4 +1087,18 @@ bool dmr_call_channel_clear(uint32_t now_ms)
 		return elapsed(now_ms, s.last_activity_ms, s.activity_seen, DMR_CALL_LBT_DMO_MS);
 	return elapsed(now_ms, s.last_activity_ms, s.activity_seen, DMR_CALL_LBT_RMO_MS) &&
 	       elapsed(now_ms, s.last_call_end_ms, s.call_end_seen, DMR_CALL_RMO_HANG_MS);
+}
+
+void dmr_call_get_stats(dmr_call_stats_t *out)
+{
+	*out = stats;
+	out->tx_underruns = s.view.tx_underruns - tx_underruns_base;
+	out->evq_overflows = evq_drops - evq_drops_base;
+}
+
+void dmr_call_reset_stats(void)
+{
+	memset(&stats, 0, sizeof(stats));
+	tx_underruns_base = s.view.tx_underruns;
+	evq_drops_base = evq_drops;
 }

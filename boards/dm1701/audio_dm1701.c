@@ -46,6 +46,8 @@ static void *block_ctx;
 static volatile bool running;
 static volatile uint8_t pending;	// bit 0: half 0 received, bit 1: half 1
 static volatile uint32_t overruns;	// blocks the task did not get to in time
+static volatile uint32_t blocks;	// blocks processed (one per 20 ms while streaming)
+static volatile uint32_t dropped;	// blocks skipped: both halves pending, the older one overwritten
 
 // --- speaker routing ---
 
@@ -236,6 +238,7 @@ static void audio_task(void *arg)
 				// one it is not writing and drop the other
 				half = (DMA1_Stream0->NDTR > HALF_WORDS) ? 1 : 0;
 				pending = 0;
+				dropped++;
 			} else {
 				half = (p & 1) ? 0 : 1;
 				pending = 0;
@@ -245,6 +248,7 @@ static void audio_task(void *arg)
 				break;
 			}
 			process(half);
+			blocks++;
 		}
 	}
 }
@@ -285,6 +289,22 @@ static void stop(void)
 uint32_t dm1701_audio_overruns(void)
 {
 	return overruns;
+}
+
+void dm1701_audio_stats(dm1701_audio_stats_t *out)
+{
+	out->blocks = blocks;
+	out->overruns = overruns;
+	out->dropped = dropped;
+}
+
+void dm1701_audio_reset_stats(void)
+{
+	taskENTER_CRITICAL();
+	blocks = 0;
+	overruns = 0;
+	dropped = 0;
+	taskEXIT_CRITICAL();
 }
 
 const hal_audio_t dm1701_audio = { .start = start, .stop = stop, .speaker_pcm = speaker_pcm };

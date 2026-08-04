@@ -12,6 +12,13 @@
 //             Windows opens the port with DTR cleared (docs/spec/mmdvm-protocol.md 5.1)
 //   cps       anything else goes to the CPS handler, when one is registered (docs/spec/legacy-cps-interop.md); back
 //             to idle after HOSTLINK_CPS_IDLE_MS without a byte
+//
+// A side protocol (the debug link, docs/spec/debuglink.md) may be registered beside these: its frames start with a
+// byte no other protocol starts a request with (0xA5; MMDVM is 0xE0, CPS requests are ASCII letters). It never
+// changes the mode. Its first byte is recognized at a request boundary: in idle mode always, in a CPS session only
+// after the CPS_GAP_MS quiet that starts a new request, in hotspot mode only between MMDVM frames (where the MMDVM
+// framer would throw the byte away as junk). Once a side frame has started, its bytes go to it until it ends or
+// times out.
 #ifndef ODR_HOSTLINK_H
 #define ODR_HOSTLINK_H
 
@@ -38,7 +45,17 @@ void hostlink_hotspot_exit(void);
 // (requests are not framed here; the handler splits them, e.g. by the 3 ms gap). Replies go out with hostlink_write
 typedef void (*hostlink_cps_fn)(const uint8_t *buf, size_t len, uint32_t now_ms);
 void hostlink_set_cps_handler(hostlink_cps_fn fn);
-// Bytes to the host; only from the host link task (the CPS handler, the hotspot)
+// The side protocol: start is the first byte of its frames; feed takes bytes that start (buf[0] == start) or continue
+// a frame and returns how many it took (0: not its own after all, the bytes go to the other protocols); in_frame
+// says whether a frame is in progress (its next bytes belong to it). Called from the host link task; replies go out
+// with hostlink_write. Must not block for long: the hotspot's GET_STATUS answers wait meanwhile
+typedef struct {
+	uint8_t start;
+	size_t (*feed)(const uint8_t *buf, size_t len, uint32_t now_ms);
+	bool (*in_frame)(uint32_t now_ms);
+} hostlink_side_t;
+void hostlink_set_side_protocol(const hostlink_side_t *side);
+// Bytes to the host; only from the host link task (the CPS handler, the hotspot, the side protocol)
 size_t hostlink_write(const uint8_t *buf, size_t len);
 
 // When to leave hotspot mode (hostlink_policy.c, no RTOS: the host tests run it). Fed after every pass of the task

@@ -20,4 +20,45 @@ uint32_t input_idle_ms(void);
 uint32_t input_raw_keys(void);
 int32_t input_encoder_total(void);
 
+// --- Injection (the debug link, core/debuglink): host-driven keys processed by the input task exactly like real ones.
+// Injected physical key bits are ORed into the scan mask, so they go through the same debounce and gesture engine
+// (PTT and MONITOR edges reach the radio core as usual) and count as key activity for input_idle_ms(). Every hold is
+// capped at INPUT_INJECT_MAX_MS, so a host that goes away can't leave a key (PTT) held. Callable from any task.
+
+#define INPUT_INJECT_MAX_MS	10000u	// longest hold of any injected key, PTT included
+#define INPUT_INJECT_GAP_MS	40u	// after an injected key is released, the next one waits this long (debounce)
+#define INPUT_INJECT_PRESS_MS	80u	// how long a short PRESS is held
+#define INPUT_INJECT_LONG_MS	(INPUT_LONG_MS + 120u)	// how long a LONG is held (released after the LONG event)
+
+typedef enum {
+	INPUT_SRC_KEYS,		// the radio's own keys / encoder
+	INPUT_SRC_HOST,		// injected by the host (debug link)
+} input_source_t;
+
+typedef enum {
+	INPUT_INJ_OK,
+	INPUT_INJ_BUSY,		// an injected key is still held (or released less than INPUT_INJECT_GAP_MS ago)
+	INPUT_INJ_NO_KEY,	// no key in the board's key map gives that action / gesture
+	INPUT_INJ_BAD,		// bad argument
+} input_inject_t;
+
+// Hold physical key bits (the board's scan mask bits) for hold_ms (capped at INPUT_INJECT_MAX_MS), then release
+input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms);
+// A logical action with a gesture, through the key map: PRESS holds the key that gives it for INPUT_INJECT_PRESS_MS,
+// LONG for INPUT_INJECT_LONG_MS; DOWN / UP hold and release a raw-edge key (MONITOR; PTT goes to input_inject_ptt);
+// ACT_ENC_STEP with GESTURE_DOWN adds value detents to the encoder
+input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value);
+// Hold the key that gives action (as its short or its long action) for hold_ms, whatever the gesture that makes
+// (capped at INPUT_INJECT_MAX_MS; ACT_PTT goes through input_inject_ptt with hold_ms as its time-out)
+input_inject_t input_inject_action_hold(uint8_t action, uint32_t hold_ms);
+// The PTT key: down holds it for at most max_ms (0 or more than INPUT_INJECT_MAX_MS: INPUT_INJECT_MAX_MS), up
+// releases it. Independent of the other injected keys
+input_inject_t input_inject_ptt(bool down, uint32_t max_ms);
+// Injected keys held now (bits), PTT included
+uint32_t input_injected_keys(void);
+// Where the last key activity came from (the UI may treat host keys differently, e.g. not as a wake-up key)
+input_source_t input_last_source(void);
+// Count as key activity now without any key (wakes the backlight through input_idle_ms; no event)
+void input_inject_wake(void);
+
 #endif

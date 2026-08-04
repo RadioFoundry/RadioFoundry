@@ -36,6 +36,7 @@ error. Changing a switch rebuilds everything (the build keeps the flags in `buil
 | `CONFIG_USB` | y | USB device (CDC serial) |
 | `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter mode (not ported yet) |
 | `CONFIG_HOTSPOT` | = DMR and USB | MMDVM modem / hotspot over USB |
+| `CONFIG_DEBUGLINK` | = USB | USB debug link for bench automation: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
 | `CONFIG_VFO` | y | tuning a frequency by hand |
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO (not built yet) |

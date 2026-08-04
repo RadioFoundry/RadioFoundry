@@ -2,11 +2,13 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The input task: scans board.input every INPUT_SCAN_MS, runs the gesture engine, queues events for the UI.
 // PTT and MONITOR edges also go straight to the radio core so they work whatever the UI is doing.
+// Keys injected by the host (input_inject_*, for the debug link) are ORed into the scan here.
 #include "board.h"
 #include "hal_time.h"
 #include "input/input.h"
 #include "input/input_engine.h"
 #include "radio/radio.h"
+#include "debuglink/dlog.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -21,6 +23,16 @@ static QueueHandle_t events;
 static volatile uint32_t raw_keys;
 static volatile int32_t enc_total;
 
+// Injection state, shared with the callers of input_inject_* (any task): every access in a critical section
+static uint32_t inj_mask, inj_until, inj_released_ms;	// generic injected keys
+static bool inj_active;
+static uint32_t ptt_mask, ptt_until;			// the injected PTT key, on its own timer
+static bool ptt_held;
+static int8_t inj_enc;
+static uint32_t wake_ms;
+static bool wake_set;
+static volatile uint8_t last_source = INPUT_SRC_KEYS;
+
 static void emit(const input_event_t *ev, void *ctx)
 {
 	(void)ctx;
@@ -32,16 +44,54 @@ static void emit(const input_event_t *ev, void *ctx)
 	xQueueSend(events, ev, 0);	// a full queue drops the event (the UI is far behind anyway)
 }
 
+static bool due(uint32_t now, uint32_t t)
+{
+	return (int32_t)(now - t) >= 0;
+}
+
+// The injected keys for this scan (expired holds released) and the injected encoder detents
+static uint32_t take_injected(uint32_t now, int8_t *enc)
+{
+	bool ptt_expired = false;
+
+	taskENTER_CRITICAL();
+	if (inj_active && due(now, inj_until)) {
+		inj_active = false;
+		inj_mask = 0;
+		inj_released_ms = now;
+	}
+	if (ptt_held && due(now, ptt_until)) {
+		ptt_held = false;
+		ptt_expired = true;
+	}
+	uint32_t m = (inj_active ? inj_mask : 0) | (ptt_held ? ptt_mask : 0);
+	*enc = inj_enc;
+	inj_enc = 0;
+	taskEXIT_CRITICAL();
+	if (ptt_expired) {
+		dlog("input: injected PTT released by its time-out");
+	}
+	return m;
+}
+
 static void input_task(void *arg)
 {
 	(void)arg;
 	TickType_t wake = xTaskGetTickCount();
 	for (;;) {
+		uint32_t now = hal_millis();
+		int8_t ienc;
+		uint32_t inj = take_injected(now, &ienc);
 		uint32_t keys = board.input->scan();
 		int8_t enc = board.input->encoder();
 		raw_keys = keys;
 		enc_total += enc;
-		input_engine_step(&engine, keys, enc, hal_millis(), emit, NULL);
+		if ((keys != 0) || (enc != 0)) {
+			last_source = INPUT_SRC_KEYS;
+		} else if ((inj != 0) || (ienc != 0)) {
+			last_source = INPUT_SRC_HOST;
+		}
+		input_engine_step(&engine, keys | inj, (int8_t)(enc + ienc), now, emit, NULL);
 		vTaskDelayUntil(&wake, pdMS_TO_TICKS(INPUT_SCAN_MS));
 	}
 }
@@ -68,7 +118,15 @@ bool input_next(input_event_t *ev, uint32_t wait_ms)
 
 uint32_t input_idle_ms(void)
 {
-	return hal_millis() - engine.last_activity_ms;
+	uint32_t now = hal_millis();
+	uint32_t idle = now - engine.last_activity_ms;
+
+	taskENTER_CRITICAL();
+	if (wake_set && (now - wake_ms) < idle) {
+		idle = now - wake_ms;
+	}
+	taskEXIT_CRITICAL();
+	return idle;
 }
 
 uint32_t input_raw_keys(void)
@@ -79,4 +137,195 @@ uint32_t input_raw_keys(void)
 int32_t input_encoder_total(void)
 {
 	return enc_total;
+}
+
+// --- Injection ---
+
+static const keymap_entry_t *key_for(uint8_t action, bool long_action)
+{
+	for (uint8_t i = 0; i < board.keymap_len; i++) {
+		const keymap_entry_t *m = &board.keymap[i];
+		if ((long_action ? m->long_action : m->short_action) == action && m->bit < 32) {
+			return m;
+		}
+	}
+	return NULL;
+}
+
+input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms)
+{
+	uint32_t now = hal_millis();
+	input_inject_t r = INPUT_INJ_OK;
+
+	if (mask == 0) {
+		return INPUT_INJ_BAD;
+	}
+	if (hold_ms > INPUT_INJECT_MAX_MS) {
+		hold_ms = INPUT_INJECT_MAX_MS;
+	}
+	if (hold_ms < 3u * INPUT_SCAN_MS) {	// two agreeing scans to debounce, and one to spare
+		hold_ms = 3u * INPUT_SCAN_MS;
+	}
+	taskENTER_CRITICAL();
+	if (inj_active || (now - inj_released_ms) < INPUT_INJECT_GAP_MS) {
+		r = INPUT_INJ_BUSY;
+	} else {
+		inj_mask = mask;
+		inj_until = now + hold_ms;
+		inj_active = true;
+	}
+	taskEXIT_CRITICAL();
+	return r;
+}
+
+// Release injected keys in mask now (the task notices at its next scan)
+static void release_keys(uint32_t mask)
+{
+	taskENTER_CRITICAL();
+	if (inj_active && (inj_mask & mask) != 0) {
+		inj_until = hal_millis();
+	}
+	taskEXIT_CRITICAL();
+}
+
+// An action no key gives: the event goes to the UI directly (rate limited like a key)
+static input_inject_t post_direct(uint8_t action, uint8_t gesture, int8_t value)
+{
+	uint32_t now = hal_millis();
+	input_inject_t r = INPUT_INJ_OK;
+
+	if (events == NULL) {
+		return INPUT_INJ_NO_KEY;
+	}
+	taskENTER_CRITICAL();
+	if (inj_active || (now - inj_released_ms) < INPUT_INJECT_GAP_MS) {
+		r = INPUT_INJ_BUSY;
+	} else {
+		inj_released_ms = now;
+		wake_ms = now;
+		wake_set = true;
+	}
+	taskEXIT_CRITICAL();
+	if (r == INPUT_INJ_OK) {
+		input_event_t ev = { .action = action, .gesture = gesture, .value = value };
+		last_source = INPUT_SRC_HOST;
+		xQueueSend(events, &ev, 0);
+	}
+	return r;
+}
+
+input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value)
+{
+	const keymap_entry_t *m;
+
+	if (action == ACT_NONE || action >= ACT_COUNT) {
+		return INPUT_INJ_BAD;
+	}
+	if (action == ACT_PTT) {
+		if (gesture == GESTURE_DOWN || gesture == GESTURE_UP) {
+			return input_inject_ptt(gesture == GESTURE_DOWN, 0);
+		}
+		return INPUT_INJ_BAD;
+	}
+	if (action == ACT_ENC_STEP) {
+		if (gesture != GESTURE_DOWN || value == 0) {
+			return INPUT_INJ_BAD;
+		}
+		taskENTER_CRITICAL();
+		int v = inj_enc + value;
+		inj_enc = (int8_t)(v > 127 ? 127 : (v < -127 ? -127 : v));
+		taskEXIT_CRITICAL();
+		return INPUT_INJ_OK;
+	}
+	switch (gesture) {
+	case GESTURE_PRESS:
+		m = key_for(action, false);
+		if (m != NULL && !m->raw_edges) {
+			return input_inject_keys(1u << m->bit, INPUT_INJECT_PRESS_MS);
+		}
+		break;
+	case GESTURE_LONG:
+	case GESTURE_REPEAT:
+		m = key_for(action, true);
+		if (m != NULL && !m->raw_edges && (gesture == GESTURE_LONG || m->repeat)) {
+			uint32_t extra = gesture == GESTURE_REPEAT ? (uint32_t)(value > 0 ? value : 1) * INPUT_REPEAT_MS : 0;
+			return input_inject_keys(1u << m->bit, INPUT_INJECT_LONG_MS + extra);
+		}
+		break;
+	case GESTURE_DOWN:
+	case GESTURE_UP:
+		m = key_for(action, false);
+		if (m != NULL && m->raw_edges) {
+			if (gesture == GESTURE_DOWN) {
+				return input_inject_keys(1u << m->bit, INPUT_INJECT_MAX_MS);
+			}
+			release_keys(1u << m->bit);
+			return INPUT_INJ_OK;
+		}
+		break;
+	default:
+		return INPUT_INJ_BAD;
+	}
+	if (gesture == GESTURE_DOWN || gesture == GESTURE_UP) {
+		return INPUT_INJ_NO_KEY;	// raw edges need a real key (they act on the radio core)
+	}
+	return post_direct(action, gesture, value);
+}
+
+input_inject_t input_inject_action_hold(uint8_t action, uint32_t hold_ms)
+{
+	if (action == ACT_PTT) {
+		return input_inject_ptt(true, hold_ms);
+	}
+	const keymap_entry_t *m = key_for(action, false);
+	if (m == NULL) {
+		m = key_for(action, true);
+	}
+	if (m == NULL) {
+		return INPUT_INJ_NO_KEY;
+	}
+	return input_inject_keys(1u << m->bit, hold_ms);
+}
+
+input_inject_t input_inject_ptt(bool down, uint32_t max_ms)
+{
+	const keymap_entry_t *m = key_for(ACT_PTT, false);
+
+	if (m == NULL || !m->raw_edges) {
+		return INPUT_INJ_NO_KEY;
+	}
+	if (max_ms == 0 || max_ms > INPUT_INJECT_MAX_MS) {
+		max_ms = INPUT_INJECT_MAX_MS;
+	}
+	taskENTER_CRITICAL();
+	if (down) {
+		ptt_mask = 1u << m->bit;
+		ptt_until = hal_millis() + max_ms;	// a repeated DOWN re-arms the timer (the host is still there)
+		ptt_held = true;
+	} else {
+		ptt_held = false;
+	}
+	taskEXIT_CRITICAL();
+	return INPUT_INJ_OK;
+}
+
+uint32_t input_injected_keys(void)
+{
+	taskENTER_CRITICAL();
+	uint32_t m = (inj_active ? inj_mask : 0) | (ptt_held ? ptt_mask : 0);
+	taskEXIT_CRITICAL();
+	return m;
+}
+
+input_source_t input_last_source(void)
+{
+	return (input_source_t)last_source;
+}
+
+void input_inject_wake(void)
+{
+	taskENTER_CRITICAL();
+	wake_ms = hal_millis();
+	wake_set = true;
+	taskEXIT_CRITICAL();
 }

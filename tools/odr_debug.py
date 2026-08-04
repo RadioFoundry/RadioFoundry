@@ -1,0 +1,652 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+"""odr_debug: talk to a radio's USB debug link (docs/spec/debuglink.md). Command line tool and Python module
+(tests/hil uses the DebugLink class).
+
+    odr_debug.py [--port DEV] ping
+    odr_debug.py version
+    odr_debug.py diag [--watch N] [--raw]       radio summary + voice path + board diagnostics lines, with rates
+    odr_debug.py view [--section NAME] [--json] the radio state as key=value (all sections)
+    odr_debug.py reset                          zero the diagnostics counters
+    odr_debug.py screenshot -o FILE.png [--scale N] [--crop] [--tries N]
+    odr_debug.py key NAME [--long | --hold MS | --repeat N | --down | --up | --steps N]
+    odr_debug.py key --mask 0xBITS --hold MS    physical key bits
+    odr_debug.py wake                           backlight on without a key event
+    odr_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
+    odr_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq 162.550, power +1, ...
+    odr_debug.py log [--follow]                 the firmware's dlog() ring
+
+Key names: up down left right select (ok) back (exit) quick (star) context (hash) 0-9 ptt monitor tt (talk target)
+emergency enc user1-user4.
+
+The port is found by its USB ID 1FC9:0094 (the only one present); --port or $ODR_PORT picks one. Needs pyserial
+(pip install pyserial). Exit status 0 on success, 1 on a radio error, 2 on a usage or connection problem.
+"""
+import argparse
+import json
+import os
+import struct
+import sys
+import time
+import zlib
+
+try:
+    import serial
+    from serial.tools import list_ports
+except ImportError:          # the module is still importable for its pure helpers (PNG, parsing)
+    serial = None
+    list_ports = None
+
+VID, PID = 0x1FC9, 0x0094
+SOF1, SOF2 = 0xA5, 0x5A
+HDR = 6
+REQ_MAX = 64
+INJECT_MAX_S = 10.0
+
+PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, KEY, PTT, GET_LOG, GET_VIEW, RADIO = range(1, 11)
+CMD_ERROR = 0xFF
+STATUS = {0: "ok", 1: "unknown command", 2: "bad argument", 3: "busy", 4: "unavailable", 5: "bad CRC",
+          6: "request too long"}
+ST_OK, ST_BUSY = 0, 3
+
+ACTIONS = {"up": 1, "down": 2, "left": 3, "right": 4, "select": 5, "ok": 5, "green": 5, "back": 6, "exit": 6,
+           "red": 6, "quick": 7, "star": 7, "context": 8, "hash": 8, "ptt": 19, "monitor": 20, "tt": 21,
+           "talk_target": 21, "emergency": 22, "enc": 23, "user1": 24, "user2": 25, "user3": 26, "user4": 27}
+ACTIONS.update({str(d): 9 + d for d in range(10)})
+PRESS, LONG, REPEAT, DOWN, UP = range(5)
+
+VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link"]
+
+OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
+    OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT = range(1, 15)
+TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
+
+
+class DebugLinkError(Exception):
+    """The radio answered with an error status, or didn't answer."""
+
+    def __init__(self, msg, status=None):
+        super().__init__(msg)
+        self.status = status
+
+
+def crc16(data, crc=0xFFFF):
+    """CRC-16/CCITT-FALSE."""
+    for b in data:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
+
+def frame(cmd, seq, payload=b""):
+    body = bytes([cmd, seq]) + struct.pack("<H", len(payload)) + bytes(payload)
+    return bytes([SOF1, SOF2]) + body + struct.pack("<H", crc16(body))
+
+
+def parse_kv(text):
+    """key=value lines into a dict (values as strings; see as_int)."""
+    out = {}
+    for line in text.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k.strip()] = v
+    return out
+
+
+def as_int(v, default=None):
+    try:
+        return int(v, 0)
+    except (TypeError, ValueError):
+        return default
+
+
+def find_ports():
+    if list_ports is None:
+        return []
+    return sorted(p.device for p in list_ports.comports() if p.vid == VID and p.pid == PID)
+
+
+def pick_port(port=None):
+    port = port or os.environ.get("ODR_PORT")
+    if port:
+        return port
+    ports = find_ports()
+    if len(ports) == 1:
+        return ports[0]
+    if not ports:
+        raise DebugLinkError("no radio found (USB 1FC9:0094): is it plugged in and powered on? Or give --port")
+    raise DebugLinkError(f"several radios found {ports}: give --port")
+
+
+class DebugLink:
+    """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
+
+    def __init__(self, port=None, timeout=1.0):
+        if serial is None:
+            raise DebugLinkError("needs pyserial: pip install pyserial")
+        self.port = pick_port(port)
+        self.timeout = timeout
+        self.seq = 0
+        try:
+            self.s = serial.Serial(self.port, 115200, timeout=0.02)
+        except serial.SerialException as e:
+            raise DebugLinkError(f"can't open {self.port}: {e}")
+        self.buf = bytearray()
+
+    def close(self):
+        self.s.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    # ── transport ──
+    def _read_frame(self, deadline):
+        while time.monotonic() < deadline:
+            self.buf += self.s.read(max(1, self.s.in_waiting or 1))
+            while True:
+                i = self.buf.find(bytes([SOF1, SOF2]))
+                if i < 0:
+                    del self.buf[:-1]       # other protocols' bytes (MMDVM frames heard on air) are skipped
+                    break
+                del self.buf[:i]
+                if len(self.buf) < HDR:
+                    break
+                n = self.buf[4] | (self.buf[5] << 8)
+                if n > 1024:                # can't be ours: resync past this SOF
+                    del self.buf[:1]
+                    continue
+                if len(self.buf) < HDR + n + 2:
+                    break
+                f = bytes(self.buf[:HDR + n + 2])
+                body = f[2:HDR + n]
+                if crc16(body) != (f[HDR + n] | (f[HDR + n + 1] << 8)):
+                    del self.buf[:1]
+                    continue
+                del self.buf[:HDR + n + 2]
+                return f[2], f[3], f[HDR:HDR + n]
+        return None
+
+    def request(self, cmd, payload=b"", timeout=None, busy_wait=2.0):
+        """(status, data) of a command; retries a busy answer for up to busy_wait seconds. Raises on errors other
+        than busy after the wait."""
+        if len(payload) > REQ_MAX:
+            raise DebugLinkError(f"request payload {len(payload)} > {REQ_MAX}")
+        timeout = self.timeout if timeout is None else timeout
+        end_busy = time.monotonic() + busy_wait
+        while True:
+            self.seq = (self.seq + 1) & 0xFF
+            seq = self.seq
+            self.s.write(frame(cmd, seq, payload))
+            deadline = time.monotonic() + timeout
+            while True:
+                r = self._read_frame(deadline)
+                if r is None:
+                    raise DebugLinkError(f"no answer to command 0x{cmd:02X} within {timeout} s on {self.port} "
+                                         "(firmware without the debug link? another program has the port?)")
+                rcmd, rseq, data = r
+                if rseq != seq:
+                    continue                # a late answer to an earlier request
+                if rcmd == CMD_ERROR:
+                    st = data[0] if data else None
+                    raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}", st)
+                if rcmd == (cmd | 0x80):
+                    break
+            st = data[0] if data else None
+            if st == ST_BUSY and time.monotonic() < end_busy:
+                time.sleep(0.03)
+                continue
+            if st != ST_OK:
+                raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}", st)
+            return st, data[1:]
+
+    # ── commands ──
+    def ping(self, data=b"odr"):
+        t = time.monotonic()
+        _, r = self.request(PING, data)
+        if r != data:
+            raise DebugLinkError(f"ping echo mismatch: {r!r}")
+        return time.monotonic() - t
+
+    def version(self):
+        return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
+
+    def diag(self):
+        """(firmware ms, [lines])"""
+        lines, first, ms = [], 0, None
+        while True:
+            _, r = self.request(GET_DIAG, bytes([first]))
+            t, nxt = struct.unpack_from("<IB", r)
+            ms = t if ms is None else ms
+            text = r[5:].decode("ascii", "replace")
+            lines += text.split("\n")[:-1] if text else []
+            if nxt == 0xFF or nxt <= first:
+                return ms, lines
+            first = nxt
+
+    def reset(self):
+        """Zero the counters; returns the firmware ms at the reset."""
+        return struct.unpack_from("<I", self.request(RESET_COUNTERS)[1])[0]
+
+    def view_section(self, section):
+        """(firmware ms, next section, dict)"""
+        idx = VIEW_SECTIONS.index(section) if isinstance(section, str) else section
+        _, r = self.request(GET_VIEW, bytes([idx]))
+        ms, nxt = struct.unpack_from("<IB", r)
+        return ms, nxt, parse_kv(r[5:].decode("ascii", "replace"))
+
+    def view(self, sections=None):
+        """All sections (or the named ones) merged into one dict; 'section' keys dropped, 'ms' added."""
+        out = {}
+        idxs = range(len(VIEW_SECTIONS)) if sections is None else [VIEW_SECTIONS.index(s) for s in sections]
+        for i in idxs:
+            ms, _, kv = self.view_section(i)
+            kv.pop("section", None)
+            out.update(kv)
+            out.setdefault("ms", ms)
+        return out
+
+    def screenshot_raw(self):
+        """(info dict, bytes) of one pass over the frame buffer (may tear, see the spec)"""
+        _, r = self.request(SCREENSHOT)
+        w, h, bpp, fmt, it, ib, il, ir, total, _ = struct.unpack_from("<HHBBBBBBII", r)
+        info = {"width": w, "height": h, "bpp": bpp, "format": fmt, "insets": (it, ib, il, ir), "total": total}
+        data = bytearray()
+        while len(data) < total:
+            _, r = self.request(SCREENSHOT, struct.pack("<IH", len(data), 1000))
+            off = struct.unpack_from("<I", r, 14)[0]     # r: the payload after the status byte
+            if off != len(data):
+                raise DebugLinkError(f"screenshot chunk at {off}, expected {len(data)}")
+            chunk = r[18:]
+            if not chunk:
+                raise DebugLinkError("screenshot: empty chunk")
+            data += chunk
+        return info, bytes(data)
+
+    def screenshot(self, tries=4):
+        """(info, bytes, stable): reads until two passes agree (stable False if they never did)."""
+        info, prev = self.screenshot_raw()
+        for _ in range(max(1, tries) - 1):
+            info, cur = self.screenshot_raw()
+            if cur == prev:
+                return info, cur, True
+            prev = cur
+        return info, prev, tries <= 1
+
+    def key(self, name, gesture=PRESS, value=0):
+        a = ACTIONS[name] if isinstance(name, str) else name
+        self.request(KEY, struct.pack("<BBBb", 0, a, gesture, value))
+
+    def key_hold(self, name, ms):
+        a = ACTIONS[name] if isinstance(name, str) else name
+        self.request(KEY, struct.pack("<BBH", 3, a, int(ms)))
+
+    def keys_mask(self, mask, ms):
+        self.request(KEY, struct.pack("<BIH", 1, mask, int(ms)))
+
+    def wake(self):
+        self.request(KEY, bytes([2]))
+
+    def wait_keys_idle(self, timeout=12.0):
+        """Wait until no injected key is held (link section input.injected == 0)."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if as_int(self.view(["link"]).get("input.injected"), 0) == 0:
+                return
+            time.sleep(0.05)
+        raise DebugLinkError("injected keys still held")
+
+    def ptt(self, down, max_ms=10000):
+        _, r = self.request(PTT, struct.pack("<BH", 1 if down else 0, int(max_ms)))
+        return struct.unpack_from("<H", r)[0]
+
+    def ptt_for(self, seconds):
+        """Key PTT for seconds (<= 10), then release. The firmware's time-out is set just past the hold, so a lost
+        host can't leave it keyed; the release is sent in any case."""
+        if seconds <= 0 or seconds > INJECT_MAX_S:
+            raise DebugLinkError(f"PTT hold {seconds} s refused: 0 < S <= {INJECT_MAX_S:g}")
+        timeout_ms = min(int(seconds * 1000) + 300, 10000)
+        try:
+            self.ptt(True, timeout_ms)
+            time.sleep(seconds)
+        finally:
+            self.ptt(False)
+
+    def log(self):
+        """(dropped lines, text) of everything in the ring"""
+        text, dropped = "", 0
+        while True:
+            _, r = self.request(GET_LOG)
+            d, more = struct.unpack_from("<IB", r)
+            dropped += d
+            text += r[5:].decode("ascii", "replace")
+            if not more:
+                return dropped, text
+
+    def radio(self, op, args=b""):
+        self.request(RADIO, bytes([op]) + bytes(args))
+
+    # radio request helpers
+    def channel_step(self, d):
+        self.radio(OP_CHANNEL_STEP, struct.pack("<b", d))
+
+    def zone_pos(self, pos):
+        self.radio(OP_ZONE_POS, struct.pack("<H", pos))
+
+    def zone(self, index):
+        self.radio(OP_ZONE, struct.pack("<H", index))
+
+    def vfo(self, on):
+        self.radio(OP_VFO, bytes([1 if on else 0]))
+
+    def vfo_set(self, hz):
+        self.radio(OP_VFO_SET, struct.pack("<I", int(hz)))
+
+    def vfo_step(self, d):
+        self.radio(OP_VFO_STEP, struct.pack("<b", d))
+
+    def power_step(self, d):
+        self.radio(OP_POWER, struct.pack("<b", d))
+
+    def squelch_step(self, d):
+        self.radio(OP_SQUELCH, struct.pack("<b", d))
+
+    def bandwidth(self, wide):
+        self.radio(OP_BANDWIDTH, bytes([1 if wide else 0]))
+
+    def tone(self, which, kind, value):
+        self.radio(OP_TONE, struct.pack("<BBH", which, TONE_TYPES[kind] if isinstance(kind, str) else kind, value))
+
+    def monitor(self, on):
+        self.radio(OP_MONITOR, bytes([1 if on else 0]))
+
+    def clear_temporary(self):
+        self.radio(OP_CLEAR_TEMP)
+
+    def reply_cancel(self):
+        self.radio(OP_REPLY_CANCEL)
+
+    def hotspot_exit(self):
+        self.radio(OP_HOTSPOT_EXIT)
+
+
+# ── pictures ────────────────────────────────────────────────────────────────
+
+def to_rgb(info, data, crop=False):
+    """(width, height, RGB888 rows as bytes) from the frame buffer"""
+    w, h = info["width"], info["height"]
+    rows = []
+    if info["format"] == 1:
+        for y in range(h):
+            row = bytearray()
+            for x in range(w):
+                o = (y * w + x) * 2
+                if o + 1 >= len(data):
+                    row += b"\0\0\0"
+                    continue
+                v = data[o] | (data[o + 1] << 8)
+                r, g, b = (v >> 11) & 0x1F, (v >> 5) & 0x3F, v & 0x1F
+                row += bytes(((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2)))
+            rows.append(bytes(row))
+    else:
+        stride = (w + 7) // 8
+        for y in range(h):
+            row = bytearray()
+            for x in range(w):
+                o = y * stride + x // 8
+                on = o < len(data) and data[o] & (0x80 >> (x & 7))
+                row += b"\0\0\0" if on else b"\xff\xff\xff"
+            rows.append(bytes(row))
+    if crop:
+        t, b, lft, rgt = info["insets"]
+        rows = [r[lft * 3:(w - rgt) * 3] for r in rows[t:h - b]]
+        w, h = w - lft - rgt, h - t - b
+    return w, h, rows
+
+
+def write_png(path, w, h, rows, scale=1):
+    """RGB888 rows to a PNG with only the standard library"""
+    if scale > 1:
+        big = []
+        for r in rows:
+            px = b"".join(r[i:i + 3] * scale for i in range(0, len(r), 3))
+            big += [px] * scale
+        rows, w, h = big, w * scale, h * scale
+    raw = b"".join(b"\0" + r for r in rows)
+
+    def chunk(kind, payload):
+        c = kind + payload
+        return struct.pack(">I", len(payload)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + \
+        chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+    with open(path, "wb") as f:
+        f.write(png)
+
+
+def parse_counters(lines):
+    """Counters from the diagnostics lines as a flat dict: 'k=v' tokens (prefixed by the line's first word, e.g.
+    call.rx, voice.play), the DM-1701 board tokens (V H T I C D crc rc, as modem.voice etc.) and its audio line
+    (audio.blk, audio.ov, audio.dr)."""
+    import re
+    out = {}
+    board = {"V": "modem.voice", "H": "modem.headers", "T": "modem.terminators", "I": "modem.idle",
+             "C": "modem.csbk", "D": "modem.data", "crc": "modem.crc", "rc": "modem.rc", "tk": "modem.ticks",
+             "si": "modem.sys_ints"}
+    for line in lines:
+        words = line.split()
+        if not words:
+            continue
+        if words[0] == "aud":           # "aud blk N ov N dr N": the DM-1701 DMR audio counters
+            for k, v in zip(words[1::2], words[2::2]):
+                if as_int(v) is not None:
+                    out[f"audio.{k}"] = as_int(v)
+            continue
+        if any("=" in w for w in words[1:]):
+            for w in words[1:]:
+                if "=" in w:
+                    k, v = w.split("=", 1)
+                    if as_int(v) is not None:
+                        out[f"{words[0]}.{k}"] = as_int(v)
+            continue
+        for w in words:
+            m = re.fullmatch(r"([A-Za-z]+)(\d+)", w)
+            if m and m.group(1) in board:
+                out.setdefault(board[m.group(1)], int(m.group(2)))
+    return out
+
+
+# ── command line ────────────────────────────────────────────────────────────
+
+def cmd_diag(link, a):
+    prev = None
+    while True:
+        ms, lines = link.diag()
+        if a.raw:
+            print("\n".join(lines))
+        else:
+            print(f"--- {link.port}  t={ms / 1000:.3f} s")
+            for ln in lines:
+                print("  " + ln)
+            cur = parse_counters(lines)
+            if prev is not None:
+                dt = (ms - prev[0]) / 1000 or 1e-9
+                rates = [f"{k} +{cur[k] - prev[1][k]} ({(cur[k] - prev[1][k]) / dt:.1f}/s)"
+                         for k in sorted(cur) if k in prev[1] and cur[k] != prev[1][k]]
+                if rates:
+                    print("  changed: " + ", ".join(rates))
+            prev = (ms, cur)
+        if not a.watch:
+            return 0
+        time.sleep(a.watch)
+
+
+def cmd_screenshot(link, a):
+    info, data, stable = link.screenshot(a.tries)
+    w, h, rows = to_rgb(info, data, a.crop)
+    write_png(a.output, w, h, rows, a.scale)
+    note = "" if stable else f" (the screen kept changing over {a.tries} reads: may be torn)"
+    print(f"{a.output}: {w}x{h} from {info['width']}x{info['height']}x{info['bpp']}{note}")
+    return 0
+
+
+def cmd_key(link, a):
+    if a.mask is not None:
+        link.keys_mask(int(a.mask, 0), a.hold or 80)
+        return 0
+    if a.name is None:
+        raise DebugLinkError("give a key name or --mask")
+    name = a.name.lower()
+    if name not in ACTIONS:
+        raise DebugLinkError(f"unknown key {a.name!r}; one of: {' '.join(sorted(ACTIONS))}")
+    if name == "enc":
+        link.key(name, DOWN, a.steps or 1)
+    elif a.hold:
+        if a.hold > INJECT_MAX_S * 1000:
+            raise DebugLinkError("holds are limited to 10000 ms")
+        link.key_hold(name, a.hold)
+    elif a.down or a.up:
+        link.key(name, DOWN if a.down else UP)
+    elif a.long:
+        link.key(name, LONG)
+    elif a.repeat:
+        link.key(name, REPEAT, a.repeat)
+    elif name in ("ptt", "monitor"):
+        raise DebugLinkError(f"{name}: give --hold MS or --down / --up (or use the ptt command)")
+    else:
+        link.key(name, PRESS)
+    return 0
+
+
+def cmd_radio(link, a):
+    op, args = a.op, a.args
+
+    def num(i, f=int):
+        if len(args) <= i:
+            raise DebugLinkError(f"radio {op}: missing argument")
+        return f(args[i])
+    if op == "channel":
+        link.channel_step(num(0))
+    elif op == "pos":
+        link.zone_pos(num(0))
+    elif op == "zone":
+        link.zone(num(0))
+    elif op == "vfo":
+        link.vfo(args[:1] != ["off"])
+    elif op == "freq":
+        link.vfo_set(round(num(0, float) * 1e6))
+    elif op == "step":
+        link.vfo_step(num(0))
+    elif op == "power":
+        link.power_step(num(0))
+    elif op == "squelch":
+        link.squelch_step(num(0))
+    elif op == "bw":
+        link.bandwidth(args[:1] == ["25"])
+    elif op == "tone":                # tone tx|rx|both none|ctcss|dcs|dcs_inv VALUE
+        which = {"tx": 1, "rx": 2, "both": 3}[args[0]]
+        link.tone(which, args[1], int(args[2]) if len(args) > 2 else 0)
+    elif op == "monitor":
+        link.monitor(args[:1] != ["off"])
+    elif op == "clear":
+        link.clear_temporary()
+    elif op == "reply-cancel":
+        link.reply_cancel()
+    elif op == "hotspot-exit":
+        link.hotspot_exit()
+    else:
+        raise DebugLinkError(f"unknown radio op {op!r}")
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--port", help="serial port (default: the radio with USB ID 1FC9:0094, or $ODR_PORT)")
+    ap.add_argument("--timeout", type=float, default=1.0, help="seconds to wait for each answer")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("ping")
+    sub.add_parser("version")
+    p = sub.add_parser("diag")
+    p.add_argument("--watch", type=float, metavar="N", help="repeat every N seconds, with counter rates")
+    p.add_argument("--raw", action="store_true", help="the lines only")
+    p = sub.add_parser("view")
+    p.add_argument("--section", choices=VIEW_SECTIONS, action="append")
+    p.add_argument("--json", action="store_true")
+    sub.add_parser("reset")
+    p = sub.add_parser("screenshot")
+    p.add_argument("-o", "--output", required=True)
+    p.add_argument("--scale", type=int, default=1)
+    p.add_argument("--crop", action="store_true", help="leave out the insets hidden by the bezel")
+    p.add_argument("--tries", type=int, default=4, help="reads until two agree (1: one read, may tear)")
+    p = sub.add_parser("key")
+    p.add_argument("name", nargs="?")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--long", action="store_true")
+    g.add_argument("--hold", type=int, metavar="MS")
+    g.add_argument("--repeat", type=int, metavar="N", help="long press, then N repeats")
+    g.add_argument("--down", action="store_true", help="raw edge keys (monitor): press and keep (10 s at most)")
+    g.add_argument("--up", action="store_true")
+    g.add_argument("--steps", type=int, help="enc: detents (negative: the other way)")
+    p.add_argument("--mask", help="physical key bits (board specific), with --hold")
+    sub.add_parser("wake")
+    p = sub.add_parser("ptt")
+    p.add_argument("--seconds", type=float, required=True)
+    p = sub.add_parser("radio")
+    p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
+                                  "monitor", "clear", "reply-cancel", "hotspot-exit"])
+    p.add_argument("args", nargs="*")
+    p = sub.add_parser("log")
+    p.add_argument("--follow", action="store_true")
+    a = ap.parse_args(argv)
+
+    if a.cmd == "ptt" and not 0 < a.seconds <= INJECT_MAX_S:
+        ap.error(f"--seconds must be > 0 and <= {INJECT_MAX_S:g}")
+    try:
+        with DebugLink(a.port, a.timeout) as link:
+            if a.cmd == "ping":
+                print(f"{link.port}: pong in {link.ping() * 1000:.1f} ms")
+            elif a.cmd == "version":
+                for k, v in link.version().items():
+                    print(f"{k}={v}")
+            elif a.cmd == "diag":
+                return cmd_diag(link, a)
+            elif a.cmd == "view":
+                v = link.view(a.section)
+                print(json.dumps(v, indent=1) if a.json else "\n".join(f"{k}={x}" for k, x in v.items()))
+            elif a.cmd == "reset":
+                print(f"counters reset at t={link.reset() / 1000:.3f} s")
+            elif a.cmd == "screenshot":
+                return cmd_screenshot(link, a)
+            elif a.cmd == "key":
+                return cmd_key(link, a)
+            elif a.cmd == "wake":
+                link.wake()
+            elif a.cmd == "ptt":
+                link.ptt_for(a.seconds)
+                print(f"PTT held {a.seconds:g} s, released")
+            elif a.cmd == "radio":
+                return cmd_radio(link, a)
+            elif a.cmd == "log":
+                while True:
+                    dropped, text = link.log()
+                    if dropped:
+                        print(f"({dropped} lines dropped)")
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    if not a.follow:
+                        break
+                    time.sleep(0.5)
+    except DebugLinkError as e:
+        print(f"odr_debug: {e}", file=sys.stderr)
+        return 1 if e.status is not None else 2
+    except KeyboardInterrupt:
+        return 130
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

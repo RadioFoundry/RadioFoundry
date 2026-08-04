@@ -28,6 +28,9 @@ endif
 ifeq ($(CONFIG_HOTSPOT),y)
 CORE_DIRS += core/hotspot
 endif
+ifeq ($(CONFIG_DEBUGLINK),y)
+CORE_DIRS += core/debuglink
+endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 

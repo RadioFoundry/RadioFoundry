@@ -61,6 +61,7 @@ const board_t board = {
 	.flash = &dm1701_flash,
 #if CONFIG_DIAG
 	.diag_line = dm1701_diag_line,
+	.diag_reset = dm1701_diag_reset,
 #endif
 #if CONFIG_DMR
 	.dmr = &dm1701_dmr,
