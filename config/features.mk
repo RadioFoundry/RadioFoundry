@@ -33,25 +33,28 @@ CONFIG_DMR_IP_GATEWAY ?= n
 CONFIG_SFR ?= n
 # USB device (CDC serial)
 CONFIG_USB ?= y
+# the host link (core/hostlink): MMDVM hotspot, CPS and debug link over the board's host port (USB CDC, or the
+# programming cable's UART on radios without USB, e.g. the DM-32)
+CONFIG_HOSTLINK ?= $(CONFIG_USB)
 # USB network adapter mode (CDC-NCM, switches with serial mode; needs USB; not ported yet)
 CONFIG_USB_NETWORK ?= $(CONFIG_DMR_IP_GATEWAY)
-# MMDVM modem / hotspot mode over USB (needs DMR and USB)
-CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB))),y,n)
+# MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
+CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # VFO: tune a frequency by hand (off: programmed channels only)
 CONFIG_VFO ?= y
 # analog FM VFO (needs VFO and FM)
 CONFIG_VFO_FM ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_FM))),y,n)
 # digital DMR VFO: own ID, color code, timeslot, talk target typed in (needs VFO and DMR; not built yet)
 CONFIG_VFO_DMR ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_DMR))),y,n)
-# the USB debug link: framed commands on the host port for bench automation (docs/spec/debuglink.md; needs USB)
-CONFIG_DEBUGLINK ?= $(CONFIG_USB)
+# the debug link: framed commands on the host port for bench automation (docs/spec/debuglink.md; needs HOSTLINK)
+CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
 # the diagnostics page
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_IP_GATEWAY SFR \
-	USB USB_NETWORK HOTSPOT DEBUGLINK VFO VFO_FM VFO_DMR DIAG FONT_XL
+	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK VFO VFO_FM VFO_DMR DIAG FONT_XL
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -62,13 +65,13 @@ ifneq ($(call feature_on,SUBTONE),)
 endif
 $(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_IP_GATEWAY SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
 ifneq ($(call feature_on,HOTSPOT),)
-  ifeq ($(call feature_on,USB),)
-    $(error CONFIG_HOTSPOT=y needs CONFIG_USB=y)
+  ifeq ($(call feature_on,HOSTLINK),)
+    $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)
   endif
 endif
 ifneq ($(call feature_on,DEBUGLINK),)
-  ifeq ($(call feature_on,USB),)
-    $(error CONFIG_DEBUGLINK=y needs CONFIG_USB=y)
+  ifeq ($(call feature_on,HOSTLINK),)
+    $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)
   endif
 endif
 ifneq ($(call feature_on,USB_NETWORK),)

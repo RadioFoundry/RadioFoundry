@@ -12,7 +12,7 @@
 //   radio           4   768   core/radio: requests, 25 ms status poll, squelch, PTT, TX time-out; 10 ms DMR call
 //                             stack poll (512 without DMR); the voice sink / source and the hotspot radio ops
 //   input           3   256   core/input: 10 ms key scan, gestures, PTT / monitor straight to the radio core
-//   host            3   512   core/hostlink: the host port (USB CDC): MMDVM hotspot, CPS
+//   host            3   512   core/hostlink: the host port (USB CDC or a UART): MMDVM hotspot, CPS
 //   usb             3   256   drivers/usb: TinyUSB device stack (tud_task)
 //   ui              2   -     core/ui: chosen there (keep it at or below 2 and within about 1024 words)
 //   idle            0   128   FreeRTOS
@@ -25,7 +25,7 @@
 #include "input/input.h"
 #include "ui/ui.h"
 #include "config.h"
-#if CONFIG_USB
+#if CONFIG_HOSTLINK
 #include "hostlink/hostlink.h"
 #endif
 #include "FreeRTOS.h"
@@ -59,7 +59,7 @@ static void startup_task(void *arg)
 	radio_core_start();
 	input_start();
 	ui_start();
-#if CONFIG_USB
+#if CONFIG_HOSTLINK
 	hostlink_start();
 #endif	// after the settings: the USB personality depends on them
 

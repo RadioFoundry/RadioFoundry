@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The OpenDigitalRadio Authors
+// DM-32UV data flash: 16 MB SPI NOR (GD25Q128 or Puya PY25Q128HA) on the DesignWare SSI master SPI0, chip select on
+// GPIO 0x12 driven by hand (docs/spec/hardware-dm32.md 3.2, 10). One mutex serializes every transaction once the
+// scheduler runs. Everything below 0x700000 belongs to the stock firmware (10.1): reads only, writes and erases there
+// are refused here, whatever the caller asks.
+#include "dm32.h"
+#include "pins.h"
+#include "platform.h"
+#include "flash/spi_nor/spi_nor.h"
+#include "hal_time.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
+#include "task.h"
+
+#define SSI_CTRLR0		REG32(SPI0_BASE + 0x00)
+#define SSI_CTRLR1		REG32(SPI0_BASE + 0x04)
+#define SSI_SSIENR		REG32(SPI0_BASE + 0x08)
+#define SSI_SER			REG32(SPI0_BASE + 0x10)
+#define SSI_BAUDR		REG32(SPI0_BASE + 0x14)
+#define SSI_TXFTLR		REG32(SPI0_BASE + 0x18)
+#define SSI_RXFTLR		REG32(SPI0_BASE + 0x1C)
+#define SSI_SR			REG32(SPI0_BASE + 0x28)
+#define SSI_IMR			REG32(SPI0_BASE + 0x2C)
+#define SSI_DMACR		REG32(SPI0_BASE + 0x4C)
+#define SSI_DR			REG32(SPI0_BASE + 0x60)
+#define SSI_SR_BUSY		0x01u
+#define SSI_SR_TFNF		0x02u	// TX FIFO not full
+#define SSI_SR_TFE		0x04u	// TX FIFO empty
+
+#define WRITE_FLOOR		0x700000u	// first byte this firmware may write (hardware-dm32.md 10.1)
+#define SPINS			100000u
+#define SECURITY_REG_SIZE	256u
+
+static SemaphoreHandle_t lock;
+static bool ready;
+static uint32_t jedec;
+
+static void chip_select(bool active)
+{
+	SSI_SER = active ? 1u : 0u;
+	hrc_pin_write(PIN_FLASH_CS, !active);
+}
+
+static bool wait_sr(uint32_t mask, uint32_t want)
+{
+	for (uint32_t n = SPINS; n != 0; n--) {
+		if ((SSI_SR & mask) == want) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// One byte at a time, the way 3.2 describes: no FIFO depth assumed
+static bool xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
+{
+	for (uint32_t i = 0; i < len; i++) {
+		if (!wait_sr(SSI_SR_TFNF, SSI_SR_TFNF)) {
+			return false;
+		}
+		SSI_DR = tx != NULL ? tx[i] : 0xFFu;
+		if (!wait_sr(SSI_SR_TFE, SSI_SR_TFE) || !wait_sr(SSI_SR_BUSY, 0)) {
+			return false;
+		}
+		uint8_t b = (uint8_t)SSI_DR;
+		if (rx != NULL) {
+			rx[i] = b;
+		}
+	}
+	return true;
+}
+
+static const spi_nor_bus_t bus = { .select = chip_select, .xfer = xfer };
+static spi_nor_t nor = { .bus = &bus };
+
+static void take(void)
+{
+	if (lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+		xSemaphoreTake(lock, portMAX_DELAY);
+	}
+}
+
+static void give(void)
+{
+	if (lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+		xSemaphoreGive(lock);
+	}
+}
+
+static void spi_init(void)
+{
+	hrc_pin_out(PIN_FLASH_CS, true);
+	SSI_SSIENR = 0;
+	SSI_CTRLR0 = 0x07u;	// 8-bit frames, mode 0, transmit and receive
+	SSI_CTRLR1 = 0;
+	SSI_BAUDR = 4u;		// APB / 4 = 21 MHz (the stock-style 42 MHz is within the chip's rating; slower is safer)
+	SSI_TXFTLR = 0;
+	SSI_RXFTLR = 0;
+	SSI_IMR = 0;
+	SSI_DMACR = 0;
+	SSI_SER = 0;
+	SSI_SSIENR = 1;
+	hal_delay_us(200);	// 160 us from power-up to the first command (10)
+}
+
+static bool init(void)
+{
+	if (lock == NULL) {
+		lock = xSemaphoreCreateMutex();
+	}
+	spi_init();
+	take();
+	bool ok = spi_nor_probe(&nor) && nor.size != 0;
+	give();
+	jedec = (uint32_t)nor.manufacturer << 16 | nor.device;
+	// Any vendor whose capacity code the driver knows: GD25Q128 C8 40 18, Puya 85 20 18 (the old port took only 0x4018)
+	ready = ok;
+	dm32_flash.size = ok ? nor.size : 0;
+	return ok;
+}
+
+static bool in_range(uint32_t addr, uint32_t len)
+{
+	return ready && addr < nor.size && len <= nor.size - addr;
+}
+
+static bool rd(uint32_t addr, void *buf, uint32_t len)
+{
+	if (!in_range(addr, len)) {
+		return false;
+	}
+	take();
+	bool ok = spi_nor_read(&nor, addr, buf, len);
+	give();
+	return ok;
+}
+
+static bool wr(uint32_t addr, const void *buf, uint32_t len)
+{
+	if (!in_range(addr, len) || addr < WRITE_FLOOR) {
+		return false;
+	}
+	take();
+	bool ok = spi_nor_program(&nor, addr, buf, len);
+	give();
+	return ok;
+}
+
+static bool er(uint32_t addr)
+{
+	if (!in_range(addr, 1) || addr < WRITE_FLOOR) {
+		return false;
+	}
+	take();
+	bool ok = spi_nor_erase_sector(&nor, addr);
+	give();
+	return ok;
+}
+
+hal_flash_t dm32_flash = {
+	.init = init,
+	.size = 0,
+	.erase_size = SPI_NOR_SECTOR_SIZE,
+	.read = rd,
+	.write = wr,
+	.erase = er,
+};
+
+uint32_t dm32_flash_jedec(void)
+{
+	return jedec;
+}
