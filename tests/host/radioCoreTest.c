@@ -55,7 +55,7 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 static void r_tx_off(void) { hw.tx_off_calls++; }
 static void r_status(radio_status_t *st) { *st = hw.st; }
 static void r_audio(bool on) { hw.audio = on; }
-static const hal_radio_t fake_radio = { r_init, r_set_mode, r_rx, r_tx, r_tx_off, r_status, r_audio, NULL };
+static const hal_radio_t fake_radio = { r_init, r_set_mode, r_rx, r_tx, r_tx_off, r_status, r_audio, NULL, NULL, NULL };
 
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 
@@ -166,6 +166,7 @@ static void add(uint16_t n, const char *name, uint32_t hz, uint8_t mode, bool rx
 	chans[n].mode = mode;
 	chans[n].rx_only = rx_only;
 	chans[n].power = power;
+	chans[n].tot_s = CODEPLUG_TOT_DEFAULT;
 	used[n] = true;
 }
 

@@ -35,6 +35,7 @@
 #define CH_TX		0x14u
 #define CH_MODE		0x18u
 #define CH_POWER	0x19u
+#define CH_TOT		0x1Bu	// TX time-out in 15 s units, 0 = off
 #define CH_RX_TONE	0x20u
 #define CH_TX_TONE	0x22u
 #define CH_LFLAG1	0x26u
@@ -45,9 +46,13 @@
 #define CH_FLAG2	0x31u
 #define CH_FLAG4	0x33u
 #define FLAG2_TS2	0x40u
+#define FLAG4_VOX	0x40u
+#define FLAG4_ZONE_SKIP	0x20u	// zone scan skip
 #define FLAG4_RX_ONLY	0x04u
 #define FLAG4_25K	0x02u
 #define LFLAG1_ID	0x80u	// per-channel DMR ID present
+#define LFLAG1_NO_BEEP	0x40u
+#define LFLAG1_NO_ECO	0x20u	// no power saving on this channel
 #define LFLAG1_DMO	0x04u	// force direct mode
 
 // General settings (7.3.2): the radio's DMR ID, 8 BCD digits big endian
@@ -316,6 +321,7 @@ static bool builtin_channel(uint16_t number, channel_t *out)
 	out->rx_only = board.band_count != 0 && !in_bands(b->hz, true);
 	out->color_code = 1;
 	out->timeslot = 1;
+	out->tot_s = CODEPLUG_TOT_DEFAULT;
 	return true;
 }
 
@@ -350,6 +356,11 @@ static bool legacy_channel(uint16_t number, channel_t *out)
 		out->dmr_id = ((uint32_t)r[CH_DMR_ID] << 16) | ((uint32_t)r[CH_DMR_ID + 1] << 8) | r[CH_DMR_ID + 2];
 	}
 	out->dmo = (r[CH_LFLAG1] & LFLAG1_DMO) != 0;
+	out->tot_s = (uint16_t)(r[CH_TOT] * 15u);
+	out->scan_skip = (r[CH_FLAG4] & FLAG4_ZONE_SKIP) != 0;
+	out->vox = (r[CH_FLAG4] & FLAG4_VOX) != 0;
+	out->no_beep = (r[CH_LFLAG1] & LFLAG1_NO_BEEP) != 0;
+	out->no_eco = (r[CH_LFLAG1] & LFLAG1_NO_ECO) != 0;
 	return true;
 }
 

@@ -31,9 +31,15 @@ typedef struct {
 	uint16_t listen_list;	// RX group list index, 0 = none
 	uint32_t dmr_id;	// own DMR ID for this channel, 0 = the radio's
 	bool dmo;		// direct mode even when RX and TX differ (legacy "force DMO")
+	uint16_t tot_s;		// TX time-out in seconds, 0 = none, CODEPLUG_TOT_DEFAULT = the radio's setting
+	bool scan_skip;		// left out of zone scans
+	bool vox;		// VOX allowed on this channel (FM)
+	bool no_beep;		// no DMR talk permit / call end beeps on this channel
+	bool no_eco;		// no receiver battery saving on this channel
 } channel_t;
 
 #define CODEPLUG_POWER_DEFAULT	0xFF
+#define CODEPLUG_TOT_DEFAULT	0xFFFFu
 
 typedef struct {
 	char name[CODEPLUG_NAME_LEN + 1];

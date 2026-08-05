@@ -38,6 +38,12 @@ typedef struct {
 	void (*audio)(bool on);
 	// Optional: received audio level 0..100 % (radios whose volume knob is read by the MCU, not wired to the amp)
 	void (*volume)(uint8_t percent);
+	// Optional: during FM TX, send a single audio tone of hz instead of the microphone (1750 Hz burst, roger beep);
+	// 0 = the microphone again. False when the board can't (not in FM TX)
+	bool (*tx_tone)(uint16_t hz);
+	// Optional: receiver power saving. true = receiver off (no status until woken), false = receive again with the
+	// last rx() settings
+	void (*rx_sleep)(bool sleep);
 } hal_radio_t;
 
 #endif
