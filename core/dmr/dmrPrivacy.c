@@ -19,6 +19,7 @@
 
 #include <string.h>
 #include "dmr/dmrPrivacy.h"
+#include "dmr/ambe/ambeFec.h"
 
 #define FRAMES_PER_SUPERFRAME  18
 
@@ -285,14 +286,7 @@ void dmrPrivacyApplyBurst(dmrPrivacyType_t type, uint16_t key, uint8_t *ambe, ui
 
 		if (correctErrors)
 		{
-			uint16_t decoded[DMR_PRIVACY_AMBE_FRAME_BITS];
-
-			initFrame(frame, decoded);
-
-			for (int i = 0; i < DMR_PRIVACY_AMBE_FRAME_BITS; i++)
-			{
-				bits[i] = decoded[i] & 1;
-			}
+			ambeFecDecode(frame, bits, NULL);
 		}
 		else
 		{
@@ -301,5 +295,15 @@ void dmrPrivacyApplyBurst(dmrPrivacyType_t type, uint16_t key, uint8_t *ambe, ui
 
 		applyFrame(type, key, bits, (voiceSequence * DMR_PRIVACY_AMBE_BURST_FRAMES) + f);
 		dmrPrivacyAmbeEncode(bits, frame);
+	}
+}
+
+void dmrPrivacyCallHook(uint8_t *ambe27, uint8_t voiceIndex, bool tx, void *ctx)
+{
+	const dmrPrivacyKey_t *k = (const dmrPrivacyKey_t *)ctx;
+
+	if (k != NULL)
+	{
+		dmrPrivacyApplyBurst(k->type, k->key, ambe27, voiceIndex, !tx);
 	}
 }

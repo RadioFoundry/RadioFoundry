@@ -33,6 +33,10 @@ CORE_DIRS += core/debuglink
 endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
+# Single files of core/dmr (the directory also holds the data service, built by its own switches)
+ifeq ($(CONFIG_DMR_PRIVACY),y)
+APP_SRC += core/dmr/dmrPrivacy.c
+endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)
 

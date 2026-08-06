@@ -65,8 +65,8 @@ dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataServi
 dmrDataServiceArsTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(wildcard stubs/*.h stubs/*/*.h)
 	$(CC) $(CFLAGS) -Istubs -DHAS_DMR_ARS -DHAS_DMR_GPS_REPORTS -DHAS_DMR_LRRP -o $@ $(SVC) -lm
 
-dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h
-	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c
+dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
 
 # The single frequency repeater's generic logic (with BPTC for the idle message)
 SFRSRC  := sfrTest.c $(CORE)/dmr/sfr.c $(DATA) $(FRAME)

@@ -89,6 +89,10 @@ static struct {
 	uint32_t le_last_ms;
 	uint8_t le_cand[DMR_LC_BYTES];
 	bool le_cand_valid;
+	// PI header heard before the call was (late entry after a missed voice LC header)
+	bool pi_pending;
+	uint32_t pi_pending_ms;
+	uint8_t pi_pending_alg, pi_pending_key;
 
 	// repeater outbound
 	uint32_t rpt_last_ms;
@@ -113,6 +117,11 @@ static struct {
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
 	uint32_t tx_start_ms;
+	// talker alias in alternate superframes
+	uint8_t tx_ta[DMR_TA_LC_MAX][DMR_LC_BYTES];
+	uint8_t tx_ta_n;
+	uint8_t tx_sf;		// superframes started in this transmission
+	uint8_t tx_emb_cur;	// what the modem spreads now: 0 the voice LC, 1 + n talker alias LC n
 
 	// reply window
 	dmr_target_t reply;
@@ -255,9 +264,14 @@ static uint16_t fade_ms(void)
 	return s.cfg.fade_ms ? s.cfg.fade_ms : DMR_CALL_FADE_MS;
 }
 
+static uint8_t reply_window_s(bool private_call)
+{
+	return private_call && s.cfg.reply_window_private_s ? s.cfg.reply_window_private_s : s.cfg.reply_window_s;
+}
+
 static bool reply_running(uint32_t now)
 {
-	return s.reply_set && s.cfg.reply_window_s && before(now, s.reply_until) &&
+	return s.reply_set && reply_window_s(s.reply.private_call) && before(now, s.reply_until) &&
 		!same_target(s.reply, s.cfg.talk_target);
 }
 
@@ -268,10 +282,12 @@ static dmr_target_t effective_target(uint32_t now)
 
 static void set_reply(dmr_target_t t, uint32_t now)
 {
-	if (!s.cfg.reply_window_s)
+	uint8_t w = reply_window_s(t.private_call);
+
+	if (!w)
 		return;
 	s.reply = t;
-	s.reply_until = now + (uint32_t)s.cfg.reply_window_s * 1000u;
+	s.reply_until = now + (uint32_t)w * 1000u;
 	s.reply_set = true;
 	s.dirty = true;
 }
@@ -422,16 +438,36 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	c->to_us = !c->group && l.dst == s.cfg.own_id;
 	c->fid = l.fid;
 	c->svc = l.svc;
-	c->encrypted = (l.svc & DMR_SVC_PRIVACY) != 0;
+	bool was_encrypted = continuing && c->encrypted;
+
+	c->encrypted = (l.svc & DMR_SVC_PRIVACY) != 0 || was_encrypted;
+	c->emergency = (l.svc & DMR_SVC_EMERGENCY) != 0;
 	c->late_entry = late;
 	memcpy(c->alias, s.ta.text, sizeof(c->alias));
 	c->alias_complete = s.ta.complete;
 	if (!continuing) {
+		c->pi_header = false;
+		c->pi_alg = c->pi_key = 0;
+		if (s.pi_pending && !elapsed(now, s.pi_pending_ms, true, fade_ms())) {
+			c->pi_header = true;	// heard just before the call was acquired
+			c->pi_alg = s.pi_pending_alg;
+			c->pi_key = s.pi_pending_key;
+			c->encrypted = true;
+		}
 		s.view.call_start_ms = now;
 		stats.rx_calls++;
 		if (late)
 			stats.rx_late_entries++;
+		if (!c->group)
+			stats.rx_private_calls++;
+		if (c->emergency)
+			stats.rx_emergency_calls++;
+		if (c->encrypted)
+			stats.rx_encrypted_calls++;
+	} else if (c->encrypted && !was_encrypted) {
+		stats.rx_encrypted_calls++;
 	}
+	s.pi_pending = false;
 	if (s.cfg.listen.any_cc)
 		s.view.cc = b->cc;
 
@@ -477,6 +513,7 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 
 	if (enc && !s.view.caller.encrypted) {
 		s.view.caller.encrypted = true;
+		stats.rx_encrypted_calls++;
 		s.dirty = true;
 	}
 	if (enc && !s.cfg.privacy) {
@@ -546,12 +583,53 @@ static void rx_embedded(const dmr_burst_t *b, uint32_t now)
 			s.have_index = false;
 		}
 	} else if (flco >= DMR_FLCO_TA_HEADER && flco <= DMR_FLCO_TA_BLOCK3) {
+#if CONFIG_DMR_TALKER_ALIAS
+		bool was = s.ta.complete;
+
 		if (dmr_ta_push(&s.ta, b->lc)) {
 			memcpy(s.view.caller.alias, s.ta.text, sizeof(s.view.caller.alias));
 			s.view.caller.alias_complete = s.ta.complete;
+			if (s.ta.complete && !was)
+				stats.rx_alias_complete++;
 			s.dirty = true;
 		}
+#endif
 	}
+}
+
+// A PI header (data type 0, TS 102 361-1 7.1.2): 80 bits of privacy information and a CRC-CCITT masked 0x6969. It
+// marks the call as protected; the octets are kept for the screens and the debug link but not interpreted (the
+// static key schemes need none, MI-based ones would, docs/spec/gotchas.md 6.4). It comes between the voice LC header
+// and burst A, so the call it belongs to is usually running; if not (header missed), it is held for the late entry
+static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
+{
+	bool ok = b->crc_ok;
+
+	if (b->len >= 12) {
+		uint16_t crc = (uint16_t)(dmr_crc_ccitt(b->payload, 10) ^ DMR_CRC_MASK_PI);
+
+		ok = b->payload[10] == (uint8_t)(crc >> 8) && b->payload[11] == (uint8_t)crc;
+	}
+	if (!ok || b->len < 2)
+		return;
+	stats.rx_pi_headers++;
+	if (s.rx == RXC_NONE) {
+		s.pi_pending = true;
+		s.pi_pending_ms = now;
+		s.pi_pending_alg = b->payload[0];
+		s.pi_pending_key = b->payload[1];
+		return;
+	}
+
+	dmr_caller_t *c = &s.view.caller;
+
+	if (!c->encrypted)
+		stats.rx_encrypted_calls++;
+	c->pi_header = true;
+	c->pi_alg = b->payload[0];
+	c->pi_key = b->payload[1];
+	c->encrypted = true;
+	s.dirty = true;
 }
 
 static bool rx_header_lc(const dmr_burst_t *b, uint8_t mask, uint8_t lc[DMR_LC_BYTES])
@@ -658,6 +736,8 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		// 2026-10-10: headers read late came as type 0, and eight of them outlast the fade time)
 		if (s.rx != RXC_NONE && b->kind != DMR_BURST_IDLE)
 			s.last_rx_ms = now;
+		if (b->kind == DMR_BURST_PI_HEADER)
+			rx_pi_header(b, now);
 		break;
 	}
 }
@@ -726,6 +806,23 @@ static bool tx_put(uint8_t kind, uint8_t index, bool host_crc, const uint8_t *pa
 	return true;
 }
 
+// What bursts B-E of the superframe about to start carry: the voice LC, or with a talker alias set, one alias LC in
+// every other superframe (LC, header, LC, block 1, ... from the second superframe on, docs/spec/dmr-modem.md 4).
+// Given to the modem before burst A is queued: it takes a new embedded LC at the next burst A it sets up
+static void tx_superframe_lc(void)
+{
+	uint8_t want = 0;
+
+	if (s.tx_ta_n && (s.tx_sf & 1))
+		want = (uint8_t)(1 + (s.tx_sf / 2) % s.tx_ta_n);
+	if (want == s.tx_emb_cur)
+		return;
+	s.modem->set_embedded_lc(want ? s.tx_ta[want - 1] : s.tx_lc);
+	s.tx_emb_cur = want;
+	if (want)
+		stats.tx_alias_lcs++;
+}
+
 static void tx_fill(uint32_t now)
 {
 	while (s.tx == TX_ON) {
@@ -766,6 +863,9 @@ static void tx_fill(uint32_t now)
 			s.view.tx_underruns++;
 		}
 
+		if (s.voice_index == 0)
+			tx_superframe_lc();
+
 		uint8_t v[DMR_VOICE_BYTES];
 
 		memcpy(v, s.stage, DMR_VOICE_BYTES);
@@ -774,6 +874,8 @@ static void tx_fill(uint32_t now)
 		if (!tx_put(DMR_BURST_VOICE, s.voice_index, false, v, DMR_VOICE_BYTES))
 			return;	// keep the staged frames for the next try
 		s.stage_n = 0;
+		if (s.voice_index == 0 && s.tx_sf < 255)
+			s.tx_sf++;
 		s.voice_index = (uint8_t)((s.voice_index + 1) % 6);
 	}
 }
@@ -806,6 +908,12 @@ static void tx_start_voice(uint32_t now)
 	}
 	dmr_lc_pack(&l, s.tx_lc);
 	s.modem->set_embedded_lc(s.tx_lc);
+	s.tx_emb_cur = 0;
+	s.tx_sf = 0;
+	s.tx_ta_n = 0;
+#if CONFIG_DMR_TALKER_ALIAS
+	s.tx_ta_n = (uint8_t)dmr_ta_encode(s.cfg.tx_alias, s.cfg.tx_alias_format, s.tx_ta);
+#endif
 	s.queue_cap = s.modem->tx_queue_space();
 	s.headers_left = DMR_CALL_TX_HEADERS;
 	s.voice_index = 0;
@@ -827,6 +935,7 @@ static void tx_start_voice(uint32_t now)
 	c->fid = l.fid;
 	c->svc = l.svc;
 	c->encrypted = (l.svc & DMR_SVC_PRIVACY) != 0;
+	c->emergency = (l.svc & DMR_SVC_EMERGENCY) != 0;
 	s.view.call_start_ms = now;
 	s.dirty = true;
 
@@ -1097,6 +1206,9 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 	s.cfg.cc &= 0x0F;
 	if (s.cfg.reply_window_s > 30)
 		s.cfg.reply_window_s = 30;
+	if (s.cfg.reply_window_private_s > 30)
+		s.cfg.reply_window_private_s = 30;
+	s.cfg.tx_alias[DMR_TA_TEXT_MAX] = '\0';
 	if (rf_change || target_change)
 		s.reply_set = false;	// temporary state ends with the channel (docs/ux 1)
 	s.configured = true;

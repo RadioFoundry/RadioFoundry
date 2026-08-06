@@ -7,10 +7,11 @@
  *  RX: color code / timeslot / destination filters (talk target, listen list, private calls to us, all call,
  *      hear all), call start on a voice LC header or by late entry (consecutive voice bursts plus an embedded LC that
  *      is not the previous call's, or is confirmed by a second superframe), voice to a sink, end on a terminator or
- *      the fade timeout, caller info with talker alias.
+ *      the fade timeout, caller info with talker alias, emergency and privacy (service options, PI header).
  *  TX: listen before talk per the access policy, BS activation in repeater mode (BS_Dwn_Act CSBK, wait, retry),
  *      three voice LC headers, superframes A-F with the embedded LC, end at the superframe boundary with a terminator,
- *      TX time-out, reply window.
+ *      TX time-out, reply window (separate lengths for group and private calls), talker alias in alternate
+ *      superframes (CONFIG_DMR_TALKER_ALIAS), voice privacy through a hook (CONFIG_DMR_PRIVACY).
  *
  * Threading: the modem's event callback only copies events into a small single-producer / single-consumer queue
  * (slot ticks are counted, not queued). Everything else, including the voice sink and source calls, happens in
@@ -77,7 +78,8 @@ typedef struct {
 	dmr_listen_filter_t listen;
 	dmr_access_t access;		// voice PTT policy
 	uint16_t access_wait_ms;	// polite and busy: wait this long for the channel (0 = refuse at once)
-	uint8_t reply_window_s;		// 0 = off, up to 30
+	uint8_t reply_window_s;		// group calls: 0 = off, up to 30
+	uint8_t reply_window_private_s;	// private calls: 0 = reply_window_s, up to 30
 	uint16_t tot_s;			// TX time-out, 0 = none
 	uint8_t wakeup_attempts;	// BS_Dwn_Act tries, 0 = DMR_CALL_WAKEUP_ATTEMPTS
 	uint16_t fade_ms;		// 0 = DMR_CALL_FADE_MS
@@ -85,6 +87,8 @@ typedef struct {
 	uint8_t tx_svc;			// voice LC service options (privacy bit, emergency, priority)
 	dmr_privacy_fn privacy;		// NULL = none: bursts with PI set are not played
 	void *privacy_ctx;
+	char tx_alias[DMR_TA_TEXT_MAX + 1];	// our talker alias, "" = none (CONFIG_DMR_TALKER_ALIAS)
+	uint8_t tx_alias_format;	// DMR_TA_7BIT or DMR_TA_ISO8
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -97,6 +101,10 @@ typedef struct {
 	uint8_t svc;		// service options (emergency, privacy, priority)
 	bool encrypted;		// PI or the privacy service option
 	bool late_entry;	// acquired from the embedded LC, no header heard
+	bool emergency;		// the emergency service option
+	bool pi_header;		// a PI header (data type 0) was heard for this call
+	uint8_t pi_alg;		// its first two octets (algorithm and key ID in the DMRA layout; not interpreted)
+	uint8_t pi_key;
 	char alias[DMR_TA_TEXT_MAX + 1];	// talker alias so far, "" if none
 	bool alias_complete;
 } dmr_caller_t;
@@ -199,6 +207,12 @@ typedef struct {
 	uint32_t evq_overflows;		// modem events dropped
 	uint32_t rx_cc_dropped;		// bursts dropped for another color code (never voice A: it has no CC on air)
 	uint32_t rx_ts_dropped;		// bursts of another slot than our call's / the channel's
+	uint32_t rx_private_calls;	// rx_calls that were private (FLCO 3), to us or not
+	uint32_t rx_emergency_calls;	// rx_calls with the emergency service option
+	uint32_t rx_encrypted_calls;	// rx_calls marked private by the service options, PI or a PI header
+	uint32_t rx_pi_headers;		// PI headers with a good CRC on our call's slot
+	uint32_t rx_alias_complete;	// talker aliases completed
+	uint32_t tx_alias_lcs;		// superframes sent with a talker alias block instead of the voice LC
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // Zero the counters only (the view's evq_overflows / tx_underruns keep counting). From any task; an increment racing
