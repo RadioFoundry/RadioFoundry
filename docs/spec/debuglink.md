@@ -152,6 +152,12 @@ not fit in RAM). A redraw while the host reads the chunks can tear the image. `o
 whole buffer twice and repeats until two reads agree (`--tries`, default 4), which gives a consistent image unless
 the screen changes continuously (a running timer); it says so when it gives up.
 
+While a capture is read the UI does not redraw: every SCREENSHOT request holds redraws for 1 s, and the request that
+returns the last chunk for 250 ms, long enough for the host's check pass to start. A key or radio request in that
+time changes the UI's state (`ui.screen` in GET_VIEW) at once, but its screen is drawn only when the hold lapses, so
+a host that captures a new screen waits for the hold to end (`tests/hil/odr_hil.py`: `Radio.screenshot` and
+`shot_until`). Firmware before this rule held for 1 s after the last chunk too.
+
 ### 3.4 KEY
 
 Injected keys go through the same path as the radio's own keys: their physical key bits are ORed into the input

@@ -4,11 +4,11 @@
 """
 Adapted from our earlier bench tool sdrmon.py.
 
-sdrmon: on-air DMR burst monitor (one channel, offline analysis of a raw IQ capture from the bench-host's RTL-SDR).
-Runs on the bench-host with RadioDesk rfgw's venv (it uses rfgw's Channelizer / FmDemod / slicer and RadioDesk's FEC).
+sdrmon: on-air DMR burst monitor (one channel, offline analysis of a raw IQ capture from the SDR bench's RTL-SDR).
+Runs on the SDR bench with RadioDesk rfgw's venv (it uses rfgw's Channelizer / FmDemod / slicer and RadioDesk's FEC).
 
     sdrmon.py capture --seconds N --out FILE [--freq 461.6875] [--offset-khz -200] [--gain 15] [--ppm 0.7]
-                      [--service radiodesk-rfgw@bench-host | --service '']
+                      [--service radiodesk-rfgw@<bench host> | --service '']
         Stops the rfgw service (it holds the dongle) unless --service '', records raw IQ (cs8, 1.536 MS/s, bias tee
         on) tuned --offset-khz away from --freq (keeps the channel off the RTL DC spike at the tuner center), then
         restarts the service, always (finally + SIGTERM/SIGHUP/SIGINT handlers). Prints "READY <wall clock of sample
@@ -33,13 +33,14 @@ import argparse
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
 
 import numpy as np
 
-SERVICE = "radiodesk-rfgw@bench-host"
+SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE") or f"radiodesk-rfgw@{socket.gethostname()}"
 FS_CH = 48000.0
 SPS = 10
 BURST = 132 * SPS                  # 27.5 ms

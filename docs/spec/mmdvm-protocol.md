@@ -743,7 +743,7 @@ Example frames (typical MMDVMHost defaults: levels 50 %, CC 1, TX delay 100 ms, 
 
 | Id | Send | Expect |
 | --- | --- | --- |
-| D-1 | MMDVMHost-style call, control 00: 6 idle (BS data sync, DT 9), 8 headers (MS data sync), 3 superframes, 3 terminators, 2 idle, paced by space | no NAK; on air (SDR / HAT): one call, header LC as sent, ≥ 17 of 18 voice bursts, terminator, no voice after it |
+| D-1 | MMDVMHost-style call, control 00: 6 idle (BS data sync, DT 9), 8 headers (MS data sync), 3 superframes, 3 terminators, 2 idle, paced by space | no NAK; on air (SDR / bench modem): one call, header LC as sent, ≥ 17 of 18 voice bursts, terminator, no voice after it |
 | D-2 | the same with control bytes set (rfgw style) | same |
 | D-3 | 1 header, voice, 1 terminator (rfgw `opengd77` profile) | one complete call on air |
 | D-4 | call 2's idle + headers arriving while call 1 is still being sent | call 1 ends with its terminator, call 2 keys under its own LC; no NAK while the host respects space |
@@ -759,7 +759,7 @@ Example frames (typical MMDVMHost defaults: levels 50 %, CC 1, TX delay 100 ms, 
 
 ### 7.5 DMR uplink (air to host)
 
-Tests with the HAT (`hat_tx.py`) or the host-test model of MMDVMHost's RF handling (`tests/host/hotspotUplinkTest.c`).
+Tests with the bench modem (`bench_tx.py`) or the host-test model of MMDVMHost's RF handling (`tests/host/hotspotUplinkTest.c`).
 
 | Id | On air | Expect from the modem |
 | --- | --- | --- |
