@@ -1852,12 +1852,10 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		tx_timer(sm, now_ms);
 		if (sm->view.tot_s != 0 && sm->view.tx_elapsed_ms >= (uint32_t)sm->view.tot_s * 1000) {
 #if CONFIG_FM_TX_TONES
-			if (sm->roger_ms != 0) {
+			if (sm->roger_ms != 0 || sm->view.tone_burst) {
+				tx_tone(0);
 				sm->roger_ms = 0;
 				sm->view.roger = false;
-			}
-			if (sm->view.tone_burst) {
-				tx_tone(0);
 				sm->view.tone_burst = false;
 			}
 #endif

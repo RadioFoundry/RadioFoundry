@@ -213,6 +213,8 @@ void radio_req_tone_burst(bool on);
 void radio_settings_default(radio_settings_t *s);
 void radio_set_settings(const radio_settings_t *s);
 void radio_get_settings(radio_settings_t *s);
+// view.power_off without copying the view (the housekeeping task polls it)
+bool radio_power_off_wanted(void);
 // The backlight percent for the UI: batt_backlight_pct with the settings and the current battery level
 uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms);
 #if CONFIG_HOTSPOT

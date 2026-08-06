@@ -31,6 +31,7 @@ static radio_settings_t pending_settings;	// radio_set_settings -> the radio tas
 static radio_settings_t shared_settings;	// the published copy, under view_lock
 static radio_view_t shared_view;	// the published copy, under view_lock
 static volatile uint32_t shared_serial;
+static volatile bool power_off_wanted;	// published view.power_off
 static SemaphoreHandle_t view_lock;
 static QueueHandle_t requests;
 #if CONFIG_HOTSPOT
@@ -51,6 +52,7 @@ static void publish(void)
 	shared_serial = sm.serial;
 	shared_settings = sm.set;
 	xSemaphoreGive(view_lock);
+	power_off_wanted = sm.view.power_off;
 #if CONFIG_HOTSPOT
 	hs_active = sm.hotspot;
 	hs_carrier = sm.hs_carrier;
@@ -232,6 +234,11 @@ void radio_get_settings(radio_settings_t *s)
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	*s = shared_settings;
 	xSemaphoreGive(view_lock);
+}
+
+bool radio_power_off_wanted(void)
+{
+	return power_off_wanted;
 }
 
 uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms)
