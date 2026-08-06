@@ -36,8 +36,19 @@ APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)
 
+# Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
+# directories (both end up in the image). Only the files that use ODR_GIT get it, through their own stamp, so a new
+# commit or an edit rebuilds those few objects, not everything.
 GITVERSION := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
-DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\" -DODR_GIT=\"$(GITVERSION)\"
+ifneq ($(GITVERSION),unknown)
+GITDIRTY := $(shell git update-index -q --refresh >/dev/null 2>&1; git diff-index --quiet --ignore-submodules=all HEAD -- \
+	2>/dev/null || echo -dirty)
+ifeq ($(GITDIRTY),)
+GITDIRTY := $(if $(shell git ls-files --others --exclude-standard -- $(APP_DIRS) config Makefile 2>/dev/null),-dirty)
+endif
+endif
+ODR_VERSION := $(GITVERSION)$(GITDIRTY)
+DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\"
 
 OPT ?= -Os
 COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP
@@ -59,11 +70,18 @@ $(BUILD)/flags: FORCE
 	@echo '$(CFLAGS_APP)' | cmp -s - $@ || echo '$(CFLAGS_APP)' > $@
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 
+VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
+$(BUILD)/version: FORCE
+	@mkdir -p $(BUILD)
+	@echo '$(ODR_VERSION)' | cmp -s - $@ || echo '$(ODR_VERSION)' > $@
+$(VERSION_OBJ): $(BUILD)/version
+$(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\"
+
 $(TARGET).elf: $(OBJ) $(LDSCRIPT)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) -lm
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .isr_vector -j .text -j .rodata -j .ARM.extab -j .ARM -j .preinit_array -j .init_array -j .fini_array -j .data $< $@
-	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes"
+	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(ODR_VERSION)"
 
 $(APP_OBJ): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)

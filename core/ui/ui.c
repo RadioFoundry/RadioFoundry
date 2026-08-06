@@ -448,7 +448,7 @@ static void home_key(const input_event_t *ev)
 		toast("Caller actions: coming soon");
 		break;
 	case ACT_USER_3:
-		if (ev->gesture == GESTURE_LONG) {
+		if (CONFIG_DIAG && ev->gesture == GESTURE_LONG) {
 			screen = SCR_DIAG;	// long top key: diagnostics (bench checks), until the Hub has a place for it
 			break;
 		}
@@ -488,7 +488,7 @@ static void handle_key(const input_event_t *ev)
 		return;
 	}
 #endif
-	if (screen == SCR_DIAG) {
+	if (CONFIG_DIAG && screen == SCR_DIAG) {	// CONFIG_DIAG: the page and its paging aren't built without it
 		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS)
 			screen = SCR_HOME;
 		else if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS)
