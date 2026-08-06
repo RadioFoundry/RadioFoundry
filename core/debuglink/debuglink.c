@@ -24,6 +24,7 @@
 #endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
+#define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
 #define SHOT_CHUNK_MAX		1000u	// screenshot bytes per reply
 #define RADIO_OP_GAP_MS		20u	// radio requests at most this often (the radio core's queue holds 16)
 #define REBOOT_DELAY_MS		250u	// the REBOOT reply goes out over USB before the reset
@@ -285,8 +286,9 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	put32(out + 11, total);
 	put32(out + 15, offset);
 	// Hold the UI's redraws while the host reads the chunks, so the capture is one frame. Every chunk extends the
-	// hold, so the host's check pass sees the same frame; redraws resume SHOT_HOLD_MS after the last chunk
-	gfx_hold(hal_millis() + SHOT_HOLD_MS);
+	// hold, so the host's check pass sees the same frame; redraws resume SHOT_TAIL_MS after the last chunk (not the
+	// full hold: a key pressed right after a capture must show up in the next one)
+	gfx_hold(hal_millis() + (len == 6 && offset + n >= total ? SHOT_TAIL_MS : SHOT_HOLD_MS));
 	memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
 	return 19u + n;
 }

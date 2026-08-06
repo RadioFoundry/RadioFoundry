@@ -95,7 +95,7 @@ endif
 
 clean:
 	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTest.expert
-	rm -rf *.dSYM
+	rm -rf *.dSYM out
 
 .PHONY: all run clean
 
