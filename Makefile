@@ -61,19 +61,21 @@ APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
 OBJ := $(APP_OBJ) $(TP_OBJ)
 
-.PHONY: all clean size test FORCE
+.PHONY: all clean size test print-config print-cc
 all: $(TARGET).bin
 
-# Rebuild everything when the compile flags change (feature switches and build values)
-$(BUILD)/flags: FORCE
-	@mkdir -p $(BUILD)
-	@echo '$(CFLAGS_APP)' | cmp -s - $@ || echo '$(CFLAGS_APP)' > $@
-$(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
-
+# Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
+# the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
+# are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
+# (and a file removed by a recipe would still be in make's cache)
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
-$(BUILD)/version: FORCE
-	@mkdir -p $(BUILD)
-	@echo '$(ODR_VERSION)' | cmp -s - $@ || echo '$(ODR_VERSION)' > $@
+ifeq ($(filter clean test print-config print-cc,$(MAKECMDGOALS)),)
+$(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP)' | cmp -s - $(BUILD)/flags || { echo '$(CFLAGS_APP)' > $(BUILD)/flags; \
+	rm -f $(OBJ); })
+$(shell echo '$(ODR_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(ODR_VERSION)' > $(BUILD)/version; \
+	rm -f $(VERSION_OBJ); })
+endif
+$(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version
 $(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\"
 
@@ -98,6 +100,12 @@ size: $(TARGET).elf
 
 test:
 	$(MAKE) -C tests/host
+
+# For tools/ci.sh: the resolved feature switches (NAME=y|n, one per line) and the compiler this board uses
+print-config:
+	@$(foreach f,$(FEATURES),echo '$(f)=$(CONFIG_$(f))';)
+print-cc:
+	@echo '$(CC)'
 
 clean:
 	rm -rf $(BUILD)

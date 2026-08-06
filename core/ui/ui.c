@@ -59,13 +59,16 @@ typedef enum { SCR_HOME, SCR_QUICK, SCR_DIAG } screen_t;
 
 static ui_state_t st;
 static radio_view_t view;	// static: too large for a modest task stack
+#if !CONFIG_HOTSPOT
+#define hs_diag false	// no hotspot mode, so never its diagnostics page
+#endif
 static screen_t screen = CONFIG_DIAG ? SCR_DIAG : SCR_HOME;	// bring-up: diagnostics first; BACK goes Home, long BACK on Home returns
 static uint32_t toast_until, entry_last;
 static uint32_t radio_active_ms;
 static uint8_t backlight_now = 0xFF;
 static bool dirty = true;
-static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
 #if CONFIG_HOTSPOT
+static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
 static void toast(const char *text);
 static hotspot_view_t hs_view;
 
