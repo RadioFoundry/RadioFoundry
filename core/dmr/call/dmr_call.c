@@ -509,14 +509,15 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	s.last_voice_ms = now;
 	s.last_voice_slot = slot;
 
-	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY);
+	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
 
 	if (enc && !s.view.caller.encrypted) {
 		s.view.caller.encrypted = true;
 		stats.rx_encrypted_calls++;
 		s.dirty = true;
 	}
-	if (enc && !s.cfg.privacy) {
+	// No key, or a PI header: an MI-based scheme the static key hook can't undo (docs/spec/gotchas.md 6.4)
+	if (enc && (!s.cfg.privacy || s.view.caller.pi_header)) {
 		stats.rx_enc_dropped++;
 		TR_WHAT('e');
 		sink_lost(DMR_AMBE_FRAMES_PER_BURST);	// no key: never play the scrambled voice

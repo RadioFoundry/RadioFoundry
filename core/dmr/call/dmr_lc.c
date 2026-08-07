@@ -379,8 +379,8 @@ static char ta_char(uint32_t cp)
 
 // The alias text from the contiguous bits received so far. Formats (TS 102 361-2 7.2.18): 7-bit characters from the
 // header's first data bit; ISO 8-bit, UTF-8 and UTF-16 (big endian code units) from its second (the first is unused).
-// The length counts characters; for UTF-8 some senders count bytes instead, so a UTF-8 alias also counts as complete
-// once all four parts are in
+// The length counts characters; some senders count bytes (UTF-8) or overstate it, so the alias also counts as
+// complete at the first zero character (the padding) or once all four parts are in
 static void ta_render(dmr_ta_t *ta)
 {
 	int avail = 0;	// contiguous alias bits from the start
@@ -394,11 +394,16 @@ static void ta_render(dmr_ta_t *ta)
 	int at = ta->format == DMR_TA_7BIT ? 0 : 1;
 	int width = ta->format == DMR_TA_7BIT ? 7 : (ta->format == DMR_TA_UTF16 ? 16 : 8);
 	int n = 0, chars = 0;
+	bool ended = false;
 
 	while (chars < ta->length && n < DMR_TA_TEXT_MAX && at + width <= avail) {
 		uint32_t cp = stream_bits(ta->stream, at, width);
 		int units = 1;
 
+		if (cp == 0) {
+			ended = true;	// zero padding after the text: some senders count bytes, or overstate the length
+			break;
+		}
 		if (ta->format == DMR_TA_UTF8 && cp >= 0x80) {
 			// A multi-byte sequence is one character: the lead byte says how many continuation bytes follow
 			units = cp >= 0xF0 ? 4 : cp >= 0xE0 ? 3 : cp >= 0xC0 ? 2 : 1;
@@ -416,7 +421,7 @@ static void ta_render(dmr_ta_t *ta)
 	ta->text[n] = 0;
 
 	int need = ta->length < DMR_TA_TEXT_MAX ? ta->length : DMR_TA_TEXT_MAX;
-	ta->complete = (ta->have & 1) && (n >= need || (ta->format == DMR_TA_UTF8 && ta->have == 0x0F));
+	ta->complete = (ta->have & 1) && (n >= need || ended || ta->have == 0x0F);
 }
 
 bool dmr_ta_push(dmr_ta_t *ta, const uint8_t lc[DMR_LC_BYTES])
