@@ -1,0 +1,168 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+"""DMR voice call features: private calls, emergency, talker alias, late entry, privacy marking (opt-in RF:
+--allow-rf --allow-service-stop; the SDR bench's transmitter is the other station), and the talk target / privacy key
+requests over the debug link (radio only, nothing transmits).
+
+Each RF test sends one short call from the bench (hat_tx.py voice) on the DMR test channel and checks the call stack's
+counters (dmr_stats) and the call it shows (dmr_call). Pass criteria are in README.md."""
+import time
+
+import pytest
+
+from odr_hil import counter_deltas
+
+BENCH_SRC = 9990301
+STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.rx_voice_bursts",
+         "call.rx_enc_dropped", "call.rx_private_calls", "call.rx_emergency_calls", "call.rx_encrypted_calls",
+         "call.rx_alias_complete", "call.rx_pi_headers"]
+
+
+def _on_dmr_channel(radio, pytestconfig):
+    if "DMR" not in radio.features():
+        pytest.skip("built without DMR")
+    freq = pytestconfig.getoption("--dmr-freq")
+    radio.go_home()
+    radio.find_channel(round(freq * 1e6), "dmr")
+    time.sleep(1.0)
+
+
+def _bench_call(radio, sdr_bench, pytestconfig, **kw):
+    """One bench call with the given hat_tx.py voice options; returns (counter deltas, dmr + dmr_call view)."""
+    freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
+    kw.setdefault("dst", tg)
+    kw.setdefault("src", BENCH_SRC)
+    kw.setdefault("superframes", 4)
+    radio.reset_counters()
+    _, before = radio.counters()
+    with sdr_bench.lease():
+        sdr_bench.voice_call(freq, cc, **kw)
+    time.sleep(1.0)                      # the call ends (terminator or fade) and the view settles
+    _, after = radio.counters()
+    d = counter_deltas(before, after, STATS)
+    v = radio.view(["dmr", "dmr_call"])
+    print("radio deltas:", d)
+    print("view:", {k: v[k] for k in v if k.startswith(("call.", "last.", "dmr.target", "dmr.reply"))})
+    return d, v
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_private_call_to_us(radio, sdr_bench, pytestconfig):
+    """A private call to our ID: played, shown as to us, and the reply window points back at the caller."""
+    _on_dmr_channel(radio, pytestconfig)
+    own = int(radio.view(["dmr"])["dmr.own_id"])
+    if own == 0:
+        pytest.skip("no DMR ID in the codeplug")
+    d, v = _bench_call(radio, sdr_bench, pytestconfig, dst=own, private=True)
+    assert d["call.rx_calls"] == 1 and d["call.rx_private_calls"] == 1 and d["call.rx_calls_played"] == 1, d
+    assert v["last.src"] == str(BENCH_SRC) and v["last.to_us"] == "1" and v["last.group"] == "0", v
+    # The reply window (codeplug private hang, else 10 s) is likely still open one second later
+    if v.get("dmr.reply_active") == "1":
+        assert v["dmr.target_id"] == str(BENCH_SRC) and v["dmr.target_private"] == "1", v
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_private_call_to_other(radio, sdr_bench, pytestconfig):
+    """A private call between two other radios: counted (and shown while it lasts) but never played."""
+    _on_dmr_channel(radio, pytestconfig)
+    d, _ = _bench_call(radio, sdr_bench, pytestconfig, dst=1234567, private=True)
+    assert d["call.rx_calls"] == 1 and d["call.rx_private_calls"] == 1 and d["call.rx_calls_played"] == 0, d
+    assert d["call.rx_voice_bursts"] == 0, d
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_emergency_call(radio, sdr_bench, pytestconfig):
+    """The emergency service option is flagged on the call and counted."""
+    _on_dmr_channel(radio, pytestconfig)
+    d, v = _bench_call(radio, sdr_bench, pytestconfig, emergency=True)
+    assert d["call.rx_calls"] == 1 and d["call.rx_emergency_calls"] == 1, d
+    assert v["last.emergency"] == "1", v
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_talker_alias(radio, sdr_bench, pytestconfig):
+    """A talker alias in the odd superframes (ISO 8-bit) is assembled and shown."""
+    _on_dmr_channel(radio, pytestconfig)
+    if "DMR_TALKER_ALIAS" not in radio.features():
+        pytest.skip("built without CONFIG_DMR_TALKER_ALIAS")
+    alias = "ODR HIL N0CALL"
+    d, v = _bench_call(radio, sdr_bench, pytestconfig, talker_alias=alias, superframes=10)
+    assert d["call.rx_calls"] == 1 and d["call.rx_alias_complete"] == 1, d
+    assert v["call.alias"] == alias and v["call.alias_complete"] == "1", v
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_late_entry(radio, sdr_bench, pytestconfig):
+    """No header and the first 8 bursts left out: the call is taken from the embedded LC (one call, marked late),
+    voice played from the first burst after the LC is complete."""
+    _on_dmr_channel(radio, pytestconfig)
+    d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)
+    assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
+    # 36 bursts sent, 8 left out; the LC completes at the first F heard (burst 11), so about 25 play (18 allowed: the modem may need a second superframe)
+    assert 24 <= d["call.rx_voice_bursts"] <= 28, d
+    assert v["call.late_entry"] == "1" and v["last.src"] == str(BENCH_SRC), v
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_privacy_service_option(radio, sdr_bench, pytestconfig):
+    """A call with the privacy service option: without a key every burst is dropped (never played); with a basic
+    privacy key loaded the bursts go through the privacy hook to the vocoder. The bench doesn't scramble, so the
+    audio itself is noise either way: this checks the path, not the cipher (dmrCallTest does that)."""
+    _on_dmr_channel(radio, pytestconfig)
+    if "DMR_PRIVACY" not in radio.features():
+        pytest.skip("built without CONFIG_DMR_PRIVACY")
+    radio.link.dmr_privacy("off")
+    d, v = _bench_call(radio, sdr_bench, pytestconfig, service_options=0x40)
+    assert d["call.rx_calls"] == 1 and d["call.rx_encrypted_calls"] == 1, d
+    assert d["call.rx_voice_bursts"] == 0 and d["call.rx_enc_dropped"] >= 20, d
+    assert v["last.encrypted"] == "1", v
+    try:
+        radio.link.dmr_privacy("moto", 1)
+        radio.wait_for(lambda x: x.get("dmr.privacy") == "1", sections=("dmr",), what="privacy key loaded")
+        d, v = _bench_call(radio, sdr_bench, pytestconfig, service_options=0x40)
+        assert d["call.rx_calls"] == 1 and d["call.rx_enc_dropped"] == 0 and d["call.rx_voice_bursts"] >= 22, d
+    finally:
+        radio.link.dmr_privacy("off")
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_pi_bit(radio, sdr_bench, pytestconfig):
+    """The EMB PI bit on B-F. The HR_C6000 reports PI unreliably for voice, so its driver clears it (gotcha 6.4):
+    on the DM-1701 the call plays as clear. Recorded, not asserted beyond one call heard."""
+    _on_dmr_channel(radio, pytestconfig)
+    d, _ = _bench_call(radio, sdr_bench, pytestconfig, pi=True)
+    assert d["call.rx_calls"] == 1, d
+
+
+def test_talk_target_requests(radio, pytestconfig):
+    """Radio only (nothing transmits): a typed private ID, a contact and back to the channel's talk target; the
+    privacy key request. Every change shows in the dmr view."""
+    _on_dmr_channel(radio, pytestconfig)
+    L = radio.link
+    base = radio.view(["dmr"])
+    try:
+        L.dmr_target(3105555, private=True)
+        v = radio.wait_for(lambda x: x.get("dmr.target_manual") == "1", sections=("dmr",), what="manual target")
+        assert v["dmr.target_id"] == "3105555" and v["dmr.target_private"] == "1", v
+        L.dmr_target(91, private=False)
+        v = radio.wait_for(lambda x: x.get("dmr.target_id") == "91", sections=("dmr",), what="TG 91")
+        assert v["dmr.target_private"] == "0" and v["dmr.target_manual"] == "1", v
+        L.dmr_target_clear()
+        v = radio.wait_for(lambda x: x.get("dmr.target_manual") == "0", sections=("dmr",), what="target cleared")
+        assert v["dmr.target_id"] == base["dmr.target_id"], v
+        if "DMR_PRIVACY" in radio.features():
+            L.dmr_privacy("anytone", 0x1234)
+            radio.wait_for(lambda x: x.get("dmr.privacy") == "1", sections=("dmr",), what="privacy on")
+            L.dmr_privacy("off")
+            radio.wait_for(lambda x: x.get("dmr.privacy") == "0", sections=("dmr",), what="privacy off")
+    finally:
+        L.dmr_target_clear()
+        if "DMR_PRIVACY" in radio.features():
+            L.dmr_privacy("off")
