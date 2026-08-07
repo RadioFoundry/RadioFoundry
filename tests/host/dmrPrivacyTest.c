@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "dmr/dmrPrivacy.h"
+#include "dmr/ambe/ambeFec.h"
 
 static int failures = 0;
 
@@ -19,80 +20,6 @@ static int failures = 0;
 // The firmware's coded silence frame (HR-C6000.c SILENCE_AUDIO, MMDVM's AMBE silence) and its 49 bits (DSD-FME)
 static const uint8_t SILENCE_FRAME[9] = { 0xB9, 0xE8, 0x81, 0x52, 0x61, 0x73, 0x00, 0x2A, 0x6B };
 static const uint64_t SILENCE_BITS = 0xF801A99F8CE080ULL; // 56 bits, the first 49 used
-
-// --- A stand-in for the codec's de-interleave and FEC decode (initFrame(), TODO(hal): the AMBE codec interface) ---
-//
-// The 72 on-air bits of a frame fill a 4 x 18 matrix column by column; read row by row it is C0 (24 bits), C1 (23),
-// C2 (11) and C3 (14). C0 and C1 are corrected to the nearest Golay(23,12) codeword, C1 after its scrambling is removed.
-
-static uint32_t testGolay23(uint32_t d)
-{
-	uint32_t r = d << 11;
-	for (int i = 22; i >= 11; i--)
-	{
-		if (r & (1U << i))
-		{
-			r ^= 0xC75U << (i - 11);
-		}
-	}
-	return (d << 11) | r;
-}
-
-static uint32_t golayCorrect(uint32_t cw) // nearest Golay(23,12) codeword
-{
-	uint32_t best = 0;
-	int bestDist = 99;
-	for (uint32_t d = 0; d < 4096; d++)
-	{
-		int dist = __builtin_popcount(testGolay23(d) ^ cw);
-		if (dist < bestDist)
-		{
-			bestDist = dist;
-			best = testGolay23(d);
-		}
-	}
-	return best;
-}
-
-void initFrame(uint8_t *indata, uint16_t bitbufferDecode[49])
-{
-	uint8_t stream[72];
-
-	for (int n = 0; n < 72; n++)
-	{
-		int row = n % 4, col = n / 4;
-
-		stream[(row * 18) + col] = (indata[n / 8] >> (7 - (n % 8))) & 1;
-	}
-
-	uint32_t c0 = 0, c1 = 0;
-	for (int i = 0; i < 23; i++)
-	{
-		c0 = (c0 << 1) | stream[i];// stream bit 23 is C0's parity bit, not used
-		c1 = (c1 << 1) | stream[24 + i];
-	}
-	c0 = golayCorrect(c0);
-	uint32_t u0 = c0 >> 11;
-
-	uint32_t p = u0 << 4;
-	uint32_t mask = 0;
-	for (int i = 0; i < 23; i++)
-	{
-		p = (173 * p + 13849) & 0xFFFF;
-		mask = (mask << 1) | (p >> 15);
-	}
-	uint32_t u1 = golayCorrect(c1 ^ mask) >> 11;
-
-	for (int i = 0; i < 12; i++)
-	{
-		bitbufferDecode[i] = (u0 >> (11 - i)) & 1;
-		bitbufferDecode[12 + i] = (u1 >> (11 - i)) & 1;
-	}
-	for (int i = 0; i < 25; i++)
-	{
-		bitbufferDecode[24 + i] = stream[47 + i];// C2 and C3 as they are
-	}
-}
 
 // --- Reference keystreams, as DSD-FME applies them on receive (the behavior, written independently here) ---
 
@@ -159,14 +86,13 @@ static void testFec(void)
 
 	for (int n = 0; n < 500; n++)
 	{
-		uint16_t decoded[49];
 
 		randomBits(bits);
 		dmrPrivacyAmbeEncode(bits, frame);
 		dmrPrivacyAmbeExtract(frame, back);
 		CHECK(memcmp(back, bits, 49) == 0, "encode/extract round trip %d", n);
 
-		// One error in C0 and three in C1 are corrected by initFrame (on-air bit 4k+j is codeword bit 18j+k)
+		// One error in C0 and three in C1 are corrected by the FEC decode (ambeFec) (on-air bit 4k+j is codeword bit 18j+k)
 		uint8_t damaged[9];
 		memcpy(damaged, frame, 9);
 		int c0Bit = rand() % 23; // C0 stream bits 0..22 (bit 23 is the parity bit, not decoded)
@@ -178,12 +104,8 @@ static void testFec(void)
 			onAir = 4 * (c1Bit % 18) + (c1Bit / 18);
 			damaged[onAir >> 3] ^= 0x80 >> (onAir & 7);
 		}
-		initFrame(damaged, decoded);
-		for (int i = 0; i < 49; i++)
-		{
-			back[i] = decoded[i];
-		}
-		CHECK(memcmp(back, bits, 49) == 0, "initFrame corrects 1+3 errors %d", n);
+		ambeFecDecode(damaged, back, NULL);
+		CHECK(memcmp(back, bits, 49) == 0, "the FEC decode corrects 1+3 errors %d", n);
 	}
 }
 

@@ -29,8 +29,8 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_FM` | y | analog FM receive and transmit |
 | `CONFIG_SUBTONE` | = FM | CTCSS / DCS encode and decode |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
-| `CONFIG_DMR_PRIVACY` | = DMR | basic privacy / static-key scrambling hooks |
-| `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode |
+| `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
+| `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
 | `CONFIG_DMR_SMS` | = DMR | text messages (not ported yet) |
 | `CONFIG_DMR_ARS` | = DMR | ARS registration (not ported yet) |
 | `CONFIG_DMR_LRRP` | = DMR | LRRP location (not ported yet) |

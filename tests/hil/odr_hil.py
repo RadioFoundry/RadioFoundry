@@ -357,15 +357,30 @@ class SdrBench:
         return self.dmr_bench.jsonl(out)
 
     def voice_call(self, freq, cc, dst, superframes=3, calls=1, headers=8, terminators=3, gap_ms=500, ambe=None,
-                   private=False, src=None):
-        a = f"voice --dst {dst} --superframes {superframes} --calls {calls} --headers {headers} " \
-            f"--terminators {terminators} --gap-ms {gap_ms}"
+                   private=False, src=None, late=None, talker_alias=None, pi=False, emergency=False,
+                   service_options=None):
+        """One or more voice calls from the bench (hat_tx.py voice). late=K: no header, the first K bursts left out;
+        talker_alias: text in odd superframes; pi: the EMB PI bit on B-F; service_options: hex byte in the LC"""
+        a = f"voice --dst {dst} --superframes {superframes} --calls {calls} --gap-ms {gap_ms}"
+        if late is None:
+            a += f" --headers {headers}"
+        else:
+            a += f" --late {int(late)}"
+        a += f" --terminators {terminators}"
         if ambe:
             a += f" --ambe {shlex.quote(ambe)}"
         if private:
             a += " --private"
         if src:
             a += f" --src {src}"
+        if talker_alias:
+            a += f" --talker-alias {shlex.quote(talker_alias)}"
+        if pi:
+            a += " --pi"
+        if emergency:
+            a += " --emergency"
+        if service_options is not None:
+            a += f" --service-options {service_options:02x}"
         return self.transmit(a, freq, cc)
 
     def listen_start(self, freq, cc, seconds, ambe_out=None):

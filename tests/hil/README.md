@@ -81,6 +81,7 @@ put them in a file in the repository.
 | `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset | `--allow-rf --allow-service-stop` |
 | `test_fm_tx.py` | radio FM VFO keys 3 s with CTCSS 100.0, DCS D023N, and at 12.5 / 25 kHz; `tools/sdr_fm_check.py` on an SDR capture | `--allow-rf --allow-service-stop` |
 | `test_radiodesk_alert.py` | a RadioDesk sandbox alert (MQTT `ESS/RadioDesk/Alert/<id>/voice`) becomes a private call; the radio shows and plays it; `AlertStatus` reports | `--allow-rf --allow-radiodesk`, `$ODR_RADIODESK_MQTT_*` |
+| `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
 
 ### Pass criteria and tolerances
 
@@ -103,6 +104,13 @@ Screenshots: every SCREENSHOT request freezes the UI's redraws for a moment (`do
 capture taken right after a key can still show the old screen. `Radio.screenshot()` waits out the previous
 capture's hold, and `Radio.shot_until(pred)` repeats until the picture is what the test waits for (and not blank);
 UI tests use `shot_until`.
+
+`test_dmr_call_features`: one call heard per RF test (`call.rx_calls` delta 1). Private to us: played, `last.to_us=1`,
+the reply target is the bench ID. Private to another ID: counted, 0 bursts played. Emergency: `last.emergency=1`.
+Talker alias: `call.alias` equals the text sent, `call.rx_alias_complete` 1. Late entry: `call.rx_late_entries` 1,
+18 to 28 voice bursts played of the 28 sent after the gap. Privacy option without a key: 0 bursts played, 20 or more
+dropped as encrypted; with a key: none dropped, 22 or more played. PI bit: only that one call is heard (the
+DM-1701's modem driver clears PI on voice, so it plays as clear).
 
 Counter names: `Radio.counters()` merges the diagnostics lines (`modem.*` from the DM-1701's HR_C6000 lines, `call.*`
 and `voice.*` short names, `audio.*`) with the `dmr_stats` and `hotspot` view sections (full names such as
