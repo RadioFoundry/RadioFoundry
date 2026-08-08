@@ -44,7 +44,7 @@ void debuglink_dmr_reset(void);
 // The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
 // tone burst and one setting (DL_OP_*; returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
-enum { DL_OP_SCAN = 15, DL_OP_SCAN_VFO = 16, DL_OP_BEEP = 17, DL_OP_TONE_BURST = 18, DL_OP_SETTING = 19 };
+enum { DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
