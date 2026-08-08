@@ -2,17 +2,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """
-A local DMR repeater on the bench-host's MMDVM_HS dual HAT, with no network: the radio under test, on a repeater channel
+A local DMR repeater on the SDR bench's MMDVM_HS dual modem board, with no network: the radio under test, on a repeater channel
 (its TX = our --rx, its RX = our --tx), must wake it with the downlink activate CSBK (BS_Dwn_Act) and then talk
 through it. This is how we test the radio's repeater mode (RMO): BS activation, slot alignment to the outbound (CACH
 TC), BS sync reception, hang time, the radio hearing its own call repeated, and late entry on a BS outbound.
 
 New tool (no earlier bench tool did this). It wraps RadioDesk rfgw's Repeater (radiodesk_rfgw.mmdvm.repeater: the
 MMDVMHost DMRSlot behavior on a duplex modem: BS sync, CACH with short LC, 3 headers, terminators repeated for the
-call hang, AMBE FEC regenerated) without its HBlink4 link. Needs the dual HAT (two ADF7021s; a single one can't run
-duplex) and rfgw's venv (/opt/radiodesk-rfgw/.venv/bin/python). rfgw must not hold the HAT.
+call hang, AMBE FEC regenerated) without its HBlink4 link. Needs the dual modem (two ADF7021s; a single one can't run
+duplex) and rfgw's venv (/opt/radiodesk-rfgw/.venv/bin/python). rfgw must not hold the bench modem.
 
-    hat_repeater.py --rx 466.6875 --tx 461.6875 [--cc 2] [--seconds 60] [--hang 4] [--call-hang 3]
+    bench_repeater.py --rx 466.6875 --tx 461.6875 [--cc 2] [--seconds 60] [--hang 4] [--call-hang 3]
                     [--slots 1,2] [--power 255] [--json]
 
 Frequencies: a split pair you are licensed for; there is no default on purpose. Prints one JSON line per event

@@ -12,6 +12,10 @@
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
+#include "codeplug/dmr_iddb.h"
+#endif
+#if CONFIG_DMR_PRIVACY
+#include "dmr/dmrPrivacy.h"
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
 
@@ -73,11 +77,12 @@ static void beep(radio_sm_t *sm, uint8_t b)
 #endif
 }
 
-// The channel's TX time-out: its own, or the settings' for "default" (builtin channels and the VFO)
+// The TX time-out in effect (FM and DMR): the channel's own from the codeplug, or the radio's (settings, 180 s by
+// default) when the channel's is 0 (builtin channels and the VFO too)
 static void apply_tot(radio_sm_t *sm)
 {
 	uint16_t t = sm->view.ch.tot_s;
-	sm->view.tot_s = t == CODEPLUG_TOT_DEFAULT ? sm->set.tot_s : t;
+	sm->view.tot_s = t != 0 ? t : sm->set.tot_s;
 }
 
 static bool in_band(uint32_t hz, bool need_tx)
@@ -513,15 +518,42 @@ static void add_name(radio_sm_t *sm, const contact_t *c)
 	memcpy(n->name, c->name, sizeof(n->name));
 }
 
-static void find_name(const radio_sm_t *sm, uint32_t id, bool group, char *out)
+// A name for an ID: the channel's contacts (talk target, listen list), then the lookup cache, then every codeplug
+// contact and, for a private ID, the DMR ID database (both read from flash once per ID, the answer cached, "" too)
+static void find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
 {
 	out[0] = '\0';
+	if (id == 0) {
+		return;
+	}
 	for (uint8_t i = 0; i < sm->name_count; i++) {
 		if (sm->names[i].id == id && sm->names[i].group == group) {
 			memcpy(out, sm->names[i].name, CODEPLUG_NAME_LEN + 1);
 			return;
 		}
 	}
+	for (uint8_t i = 0; i < RADIO_LOOKUPS; i++) {
+		if (sm->lookups[i].id == id && sm->lookups[i].group == group) {
+			memcpy(out, sm->lookups[i].name, CODEPLUG_NAME_LEN + 1);
+			return;
+		}
+	}
+	radio_name_t *n = &sm->lookups[sm->lookup_next];
+	sm->lookup_next = (uint8_t)((sm->lookup_next + 1u) % RADIO_LOOKUPS);
+	n->id = id;
+	n->group = group;
+	n->name[0] = '\0';
+	contact_t c;
+	if (codeplug_contact_find(id, group, &c)) {
+		memcpy(n->name, c.name, sizeof(n->name));
+	} else if (!group) {
+		char text[DMR_IDDB_TEXT_MAX + 1];
+		if (dmr_iddb_lookup(id, text, sizeof(text))) {
+			memcpy(n->name, text, CODEPLUG_NAME_LEN);
+			n->name[CODEPLUG_NAME_LEN] = '\0';
+		}
+	}
+	memcpy(out, n->name, CODEPLUG_NAME_LEN + 1);
 }
 
 // The channel's talk target and listen list from the codeplug contacts, with their names for the screens
@@ -534,6 +566,9 @@ static void dmr_load_channel(radio_sm_t *sm)
 	sm->talk_id = 9;		// no contact: local talkgroup 9, the usual default
 	sm->talk_private = false;
 	sm->talk_ts = 0;
+	if (sm->manual && (sm->manual_vfo != sm->view.vfo || sm->manual_ch != sm->view.channel_number)) {
+		sm->manual = false;	// a chosen target lasts as long as its channel (temporary state, docs/ux)
+	}
 	if (sm->view.vfo) {
 		return;
 	}
@@ -557,6 +592,20 @@ static void dmr_load_channel(radio_sm_t *sm)
 	}
 }
 
+#if CONFIG_DMR_PRIVACY
+static dmrPrivacyKey_t privacy_key;	// the call stack's privacy hook context (radio task only)
+#endif
+
+// Hang time (ms) as the call stack's reply window (whole seconds, rounded up); 0 keeps the stack's default
+static uint8_t hang_s(uint16_t ms, uint8_t dflt)
+{
+	if (ms == 0) {
+		return dflt;
+	}
+	uint32_t s = (ms + 999u) / 1000u;
+	return (uint8_t)(s > 30u ? 30u : s);
+}
+
 static void dmr_configure(radio_sm_t *sm)
 {
 	const channel_t *ch = &sm->view.ch;
@@ -564,17 +613,64 @@ static void dmr_configure(radio_sm_t *sm)
 	dmr_call_config_default(&cfg);
 	cfg.own_id = ch->dmr_id != 0 ? ch->dmr_id : sm->own_id;
 	cfg.cc = ch->color_code & 0x0Fu;
-	cfg.ts = sm->talk_ts != 0 ? sm->talk_ts : (ch->timeslot == 2 ? 2 : 1);
+	uint8_t ts_override = sm->manual ? sm->manual_ts : sm->talk_ts;
+	cfg.ts = ts_override != 0 ? ts_override : (ch->timeslot == 2 ? 2 : 1);
 	cfg.rmo = ch->tx_hz != 0 && ch->rx_hz != ch->tx_hz && !ch->dmo;
-	cfg.talk_target.id = sm->talk_id;
-	cfg.talk_target.private_call = sm->talk_private;
+	cfg.talk_target.id = sm->manual ? sm->manual_id : sm->talk_id;
+	cfg.talk_target.private_call = sm->manual ? sm->manual_private : sm->talk_private;
 	cfg.listen.hear_all = sm->view.monitor;
 	cfg.listen.groups = sm->listen;
 	cfg.listen.group_count = sm->listen_count;
-	cfg.tot_s = sm->view.tot_s;
+	// The channel's TX time-out when it has one, else the radio's
+	cfg.tot_s = sm->view.tot_s;	// apply_tot: the channel's, else the radio's
+	cfg.reply_window_s = hang_s(sm->group_hang_ms, cfg.reply_window_s);
+	cfg.reply_window_private_s = hang_s(sm->private_hang_ms, cfg.reply_window_s);
+	bool alias = false;
+#if CONFIG_DMR_TALKER_ALIAS
+	alias = sm->radio_name[0] != '\0' && !sm->view.vfo &&
+		(ch->alias_tx & (cfg.ts == 2 ? CODEPLUG_ALIAS_TS2_TEXT : CODEPLUG_ALIAS_TS1_TEXT)) != 0;
+	if (alias) {
+		memcpy(cfg.tx_alias, sm->radio_name, sizeof(sm->radio_name));
+		cfg.tx_alias_format = DMR_TA_ISO8;
+	}
+#endif
+	bool privacy = false;
+#if CONFIG_DMR_PRIVACY
+	privacy = sm->privacy_type != DMR_PRIVACY_OFF;
+	if (privacy) {
+		privacy_key.type = (dmrPrivacyType_t)sm->privacy_type;
+		privacy_key.key = sm->privacy_key;
+		cfg.privacy = dmrPrivacyCallHook;
+		cfg.privacy_ctx = &privacy_key;
+		cfg.tx_fid = dmrPrivacyFID(privacy_key.type, cfg.tx_fid);
+		cfg.tx_svc = dmrPrivacyServiceOptions(privacy_key.type, cfg.tx_svc);
+	}
+#endif
 	dmr_call_configure(&cfg);
 	sm->view.dmr.own_id = cfg.own_id;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
+	sm->view.dmr.target_manual = sm->manual;
+	sm->view.dmr.alias_tx = alias;
+	sm->view.dmr.privacy = privacy;
+}
+
+// A talk target for now (typed, a contact, a call back): reconfigures the stack, which ends the reply window
+static void dmr_set_manual(radio_sm_t *sm, uint32_t id, bool private_call, uint8_t ts)
+{
+	if (id == 0 || id > DMR_ID_MAX || sm->view.ch.mode != RADIO_MODE_DMR) {
+		return;
+	}
+	sm->manual = true;
+	sm->manual_id = id;
+	sm->manual_private = private_call;
+	sm->manual_ts = ts;
+	sm->manual_ch = sm->view.channel_number;
+	sm->manual_vfo = sm->view.vfo;
+	if (sm->dmr_running) {
+		dmr_configure(sm);
+		sm->dmr_serial = dmr_call_view()->serial - 1u;	// publish the new target at the next tick
+	}
+	changed(sm);
 }
 
 // On a DMR channel, after set_mode(DMR) and rx(): configure, and start the stack if it isn't running
@@ -600,6 +696,8 @@ static void dmr_end(radio_sm_t *sm)
 		board.radio->tx_off();
 	}
 	sm->dmr_running = false;
+	sm->manual = false;		// a chosen talk target ends with the channel
+	sm->view.dmr.target_manual = false;
 	memset(&sm->view.dmr.call, 0, sizeof(sm->view.dmr.call));
 	sm->view.dmr.active = false;
 	sm->view.dmr.state = RDMR_IDLE;
@@ -624,13 +722,15 @@ static bool dmr_tx_phase(uint8_t phase)
 		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING;
 }
 
-static void copy_call(const radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *out)
+static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *out)
 {
 	out->src = c->src;
 	out->dst = c->dst;
 	out->group = c->group;
 	out->to_us = c->to_us;
 	out->encrypted = c->encrypted;
+	out->emergency = c->emergency;
+	out->pi_header = c->pi_header;
 	find_name(sm, c->src, false, out->src_name);
 	find_name(sm, c->dst, c->group, out->dst_name);
 }
@@ -1256,7 +1356,6 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->vfo_ch.bw = RADIO_BW_12K5;
 	sm->vfo_ch.power = CODEPLUG_POWER_DEFAULT;
 	sm->vfo_ch.timeslot = 1;
-	sm->vfo_ch.tot_s = CODEPLUG_TOT_DEFAULT;
 
 	sm->board_mode = RADIO_MODE_FM;
 	board.radio->set_mode(RADIO_MODE_FM);
@@ -1266,6 +1365,11 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->own_id == 0) {
 		sm->own_id = RADIO_DMR_ID_DEFAULT;
 	}
+	codeplug_dmr_settings_t gs;
+	codeplug_dmr_settings(&gs);
+	memcpy(sm->radio_name, gs.radio_name, sizeof(sm->radio_name));
+	sm->group_hang_ms = gs.group_hang_ms;
+	sm->private_hang_ms = gs.private_hang_ms;
 	sm->codec = board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
 	sm->view.dmr.codec = sm->codec;
 	sm->view.dmr.own_id = sm->own_id;
@@ -1575,6 +1679,50 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_REPLY_CANCEL:
 		dmr_call_reply_cancel();
 		break;
+	case RREQ_DMR_TARGET:
+		dmr_set_manual(sm, (uint32_t)req->arg & DMR_ID_MAX, ((uint32_t)req->arg >> 24) & 1u, 0);
+		break;
+	case RREQ_DMR_CONTACT: {
+		contact_t c;
+		if (req->arg > 0 && req->arg <= 0xFFFF && codeplug_contact((uint16_t)req->arg, &c)) {
+			dmr_set_manual(sm, c.id, c.type == CONTACT_PRIVATE, c.timeslot);
+		}
+		break;
+	}
+	case RREQ_DMR_CALL_BACK: {
+		const dmr_call_view_t *cv = dmr_call_view();
+		if (sm->dmr_running && cv->last_heard_ms != 0) {
+			const dmr_caller_t *l = &cv->last_heard;
+			dmr_set_manual(sm, l->group ? l->dst : l->src, !l->group, 0);
+		}
+		break;
+	}
+	case RREQ_DMR_TARGET_CLEAR:
+		if (sm->manual) {
+			sm->manual = false;
+			if (sm->dmr_running) {
+				dmr_configure(sm);
+				sm->dmr_serial = dmr_call_view()->serial - 1u;
+			}
+			changed(sm);
+		}
+		break;
+#if CONFIG_DMR_PRIVACY
+	case RREQ_DMR_PRIVACY: {
+		uint8_t type = (uint8_t)(((uint32_t)req->arg >> 16) & 0xFFu);
+		uint16_t key = (uint16_t)req->arg;
+		if (type >= DMR_PRIVACY_NUM_TYPES || (type != DMR_PRIVACY_OFF && !dmrPrivacyKeyIsValid(type, key))) {
+			break;
+		}
+		sm->privacy_type = type;
+		sm->privacy_key = type != DMR_PRIVACY_OFF ? key : 0;
+		if (sm->dmr_running) {
+			dmr_configure(sm);
+		}
+		changed(sm);
+		break;
+	}
+#endif
 	case RREQ_HS_ENTER:
 		hotspot_enter(sm, (uint32_t)req->arg, now_ms);
 		break;

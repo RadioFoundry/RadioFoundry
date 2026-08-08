@@ -31,15 +31,19 @@ typedef struct {
 	uint16_t listen_list;	// RX group list index, 0 = none
 	uint32_t dmr_id;	// own DMR ID for this channel, 0 = the radio's
 	bool dmo;		// direct mode even when RX and TX differ (legacy "force DMO")
-	uint16_t tot_s;		// TX time-out in seconds, 0 = none, CODEPLUG_TOT_DEFAULT = the radio's setting
+	uint16_t tot_s;		// TX time-out, 0 = the radio's
+	uint8_t alias_tx;	// talker alias TX: CODEPLUG_ALIAS_TS1_* / _TS2_* bits
 	bool scan_skip;		// left out of zone scans
 	bool vox;		// VOX allowed on this channel (FM)
 	bool no_beep;		// no DMR talk permit / call end beeps on this channel
 	bool no_eco;		// no receiver battery saving on this channel
 } channel_t;
 
+// channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
+#define CODEPLUG_ALIAS_TS1_TEXT	0x01u
+#define CODEPLUG_ALIAS_TS2_TEXT	0x02u
+
 #define CODEPLUG_POWER_DEFAULT	0xFF
-#define CODEPLUG_TOT_DEFAULT	0xFFFFu
 
 typedef struct {
 	char name[CODEPLUG_NAME_LEN + 1];
@@ -88,6 +92,21 @@ uint32_t codeplug_dmr_id(void);
 bool codeplug_contact(uint16_t index, contact_t *out);
 // RX group lists 1..CODEPLUG_LISTS_MAX; false if unused or unreadable
 bool codeplug_listen_list(uint16_t index, listen_list_t *out);
+// The first contact with this ID: group true finds a talkgroup (or all call for 0xFFFFFF), false a private contact.
+// Reads every contact record (24 KB of flash) in the worst case: cache the answer
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out);
+
+#define CODEPLUG_RADIO_NAME_LEN	8
+
+// General DMR settings (legacy general settings, docs/spec/legacy-cps-interop.md 7.3.2)
+typedef struct {
+	char radio_name[CODEPLUG_RADIO_NAME_LEN + 1];	// callsign / radio name, "" if none
+	uint16_t group_hang_ms;		// group call hang time, 0 = none stored
+	uint16_t private_hang_ms;	// private call hang time, 0 = none stored
+} codeplug_dmr_settings_t;
+
+// false (and out zeroed) without a legacy codeplug
+bool codeplug_dmr_settings(codeplug_dmr_settings_t *out);
 #endif
 
 #endif

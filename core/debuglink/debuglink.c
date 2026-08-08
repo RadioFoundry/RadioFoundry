@@ -25,6 +25,7 @@
 #endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
+#define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
 #define SHOT_CHUNK_MAX		1000u	// screenshot bytes per reply
 #define RADIO_OP_GAP_MS		20u	// radio requests at most this often (the radio core's queue holds 16)
 #define REBOOT_DELAY_MS		250u	// the REBOOT reply goes out over USB before the reset
@@ -33,6 +34,7 @@
 enum {
 	OP_CHANNEL_STEP = 1, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH,
 	OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT,
+	OP_DMR_TARGET, OP_DMR_CONTACT, OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY,
 };
 
 static dl_parser_t parser;
@@ -304,8 +306,9 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	put32(out + 11, total);
 	put32(out + 15, offset);
 	// Hold the UI's redraws while the host reads the chunks, so the capture is one frame. Every chunk extends the
-	// hold, so the host's check pass sees the same frame; redraws resume SHOT_HOLD_MS after the last chunk
-	gfx_hold(hal_millis() + SHOT_HOLD_MS);
+	// hold, so the host's check pass sees the same frame; redraws resume SHOT_TAIL_MS after the last chunk (not the
+	// full hold: a key pressed right after a capture must show up in the next one)
+	gfx_hold(hal_millis() + (len == 6 && offset + n >= total ? SHOT_TAIL_MS : SHOT_HOLD_MS));
 	memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
 	return 19u + n;
 }
@@ -417,6 +420,8 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		[OP_CHANNEL_STEP] = 1, [OP_ZONE_POS] = 2, [OP_ZONE] = 2, [OP_VFO] = 1, [OP_VFO_SET] = 4, [OP_VFO_STEP] = 1,
 		[OP_POWER] = 1, [OP_SQUELCH] = 1, [OP_BANDWIDTH] = 1, [OP_TONE] = 4, [OP_MONITOR] = 1, [OP_CLEAR_TEMP] = 0,
 		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0,
+		[OP_DMR_TARGET] = 4, [OP_DMR_CONTACT] = 2, [OP_DMR_CALL_BACK] = 0, [OP_DMR_TARGET_CLEAR] = 0,
+		[OP_DMR_PRIVACY] = 3,
 	};
 	uint32_t now = hal_millis();
 
@@ -494,6 +499,33 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	case OP_HOTSPOT_EXIT:
 		hostlink_hotspot_exit();
 		break;
+#if CONFIG_DMR
+	case OP_DMR_TARGET:	// u32 LE: ID in bits 23:0, bit 24 private
+		radio_req_dmr_target(get32(a) & 0xFFFFFFu, (get32(a) >> 24) & 1u);
+		break;
+	case OP_DMR_CONTACT:
+		radio_req_dmr_contact(get16(a));
+		break;
+	case OP_DMR_CALL_BACK:
+		radio_req_dmr_call_back();
+		break;
+	case OP_DMR_TARGET_CLEAR:
+		radio_req_dmr_target_clear();
+		break;
+#else
+	case OP_DMR_TARGET:
+	case OP_DMR_CONTACT:
+	case OP_DMR_CALL_BACK:
+	case OP_DMR_TARGET_CLEAR:
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
+	case OP_DMR_PRIVACY:	// type u8, key u16 LE (RAM only, never stored)
+#if CONFIG_DMR_PRIVACY
+		radio_req_dmr_privacy(a[0], get16(a + 1));
+		break;
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
 	default:
 		return status_only(out, DL_ST_BAD_ARG);
 	}

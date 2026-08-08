@@ -37,7 +37,7 @@ typedef enum { RADIO_VOX_OFF, RADIO_VOX_CHANNEL, RADIO_VOX_ALL } radio_vox_t;
 // The radio core's settings (docs/spec/radio-features.md). Nothing stores them yet: the owner of the settings screen
 // keeps them and hands them over at start-up and on every change (radio_set_settings)
 typedef struct {
-	uint16_t tot_s;		// TX time-out for channels whose codeplug entry says "default", 0 = none
+	uint16_t tot_s;		// the radio's TX time-out, for channels whose own is 0; 0 = none
 	uint8_t tot_warn_s;	// warning beep this long before the time-out, 0 = none
 	uint8_t bcl;		// radio_bcl_t
 	bool roger_beep;	// FM: a short tone pair at the end of each transmission (CONFIG_FM_TX_TONES)
@@ -83,8 +83,10 @@ typedef struct {
 	uint32_t src, dst;
 	bool group;		// group call, else private
 	bool to_us;		// private call to our ID
-	bool encrypted;
-	char src_name[CODEPLUG_NAME_LEN + 1];	// from the codeplug contacts, "" if unknown
+	bool encrypted;		// privacy service option, PI or a PI header
+	bool emergency;		// the emergency service option
+	bool pi_header;		// a PI header was heard (an MI-based scheme: we can't decrypt it)
+	char src_name[CODEPLUG_NAME_LEN + 1];	// codeplug contact, else the DMR ID database's text cut short, "" if unknown
 	char dst_name[CODEPLUG_NAME_LEN + 1];	// talkgroup name, "" if unknown
 } radio_dmr_call_t;
 
@@ -102,6 +104,9 @@ typedef struct {
 	char target_name[CODEPLUG_NAME_LEN + 1];
 	bool reply_active;
 	uint8_t reply_s;	// reply window seconds left
+	bool target_manual;	// a talk target chosen for now (contact, typed ID, call back), until the channel changes
+	bool privacy;		// a privacy key is loaded: encrypted calls play, our calls go out encrypted
+	bool alias_tx;		// our talker alias goes out on this channel
 	bool hear_all;		// MONITOR held: every talkgroup on our slot
 	// The current call (RX or TX); valid while state != RDMR_IDLE
 	radio_dmr_call_t call;
@@ -196,6 +201,16 @@ void radio_req_bandwidth(radio_bw_t bw);
 void radio_req_tone(uint8_t which, subtone_t tone);	// which: RADIO_TONE_TX, RADIO_TONE_RX or RADIO_TONE_BOTH
 #if CONFIG_DMR
 void radio_req_reply_cancel(void);		// BACK on Home: end the DMR reply window
+// Talk to someone else for now (until the channel changes or radio_req_dmr_target_clear): a typed ID or talkgroup,
+// a codeplug contact, or back to whoever was heard last (their ID for a private call, the talkgroup for a group call)
+void radio_req_dmr_target(uint32_t id, bool private_call);
+void radio_req_dmr_contact(uint16_t index);
+void radio_req_dmr_call_back(void);
+void radio_req_dmr_target_clear(void);
+#if CONFIG_DMR_PRIVACY
+// Load a basic privacy key (type dmrPrivacyType_t, 0 = off). Held in RAM until changed or the radio restarts
+void radio_req_dmr_privacy(uint8_t type, uint16_t key);
+#endif
 #endif
 // Scan (CONFIG_SCAN; no-ops otherwise). A zone scan starts from the current channel, a VFO scan steps the VFO by its
 // step between lo_hz and hi_hz (both 0: the band the VFO is in), dual watch alternates between the current channel

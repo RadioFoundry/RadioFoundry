@@ -1,37 +1,10 @@
 # SPDX-License-Identifier: MIT
-dmrDataTest
-dmrDataTest.out
-*.dSYM/
-ipGatewayTest
-ipGatewayTest.pcap
-ipGatewayTest.expert
-ipGatewayTest16
-ipGatewayTest16.pcap
-ipGatewayTestShared
-ipGatewayTestShared.pcap
-ipGatewayTest31
-ipGatewayTest31.pcap
-hotspotDataTest
-dmrPrivacyTest
-dmrDataServiceTest
-dmrDataServiceArsTest
-sfrTest
-hotspotUplinkTest
-dmrFecTest
-radioCoreTest
-radioFeaturesTest
-inputTest
-codeplugTest
-calibrationTest
-at1846sTest
-gfxTest
-ambeFecTest
-ambeVoiceTest
-mmdvmTest
-dmrCallTest
-hrc6000DmrTest
-mmdvmTest
-ambeFecTest
-ambeVoiceTest
-debuglinkTest
-dmrRxChainTest
+# Everything the host tests build or write (test binaries, their .dSYM bundles, .out / .pcap / .expert, out/*.ppm)
+# is ignored: only sources, the Makefile and the sim/ and stubs/ trees are tracked. A new test needs no entry here.
+/*
+!/.gitignore
+!/Makefile
+!/*.c
+!/*.h
+!/sim/
+!/stubs/

@@ -201,6 +201,20 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 	return true;
 }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out) { (void)index; (void)out; return false; }
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+{
+	if (group && id == 9) {
+		*out = contacts[0];
+		return true;
+	}
+	return false;
+}
+bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
+{
+	*out = (codeplug_dmr_settings_t){ "N0CALL", 0, 0 };
+	return true;
+}
+bool dmr_iddb_lookup(uint32_t id, char *out, size_t len) { (void)id; (void)out; (void)len; return false; }
 
 static void add(uint16_t n, const char *name, uint32_t hz, uint8_t mode)
 {
@@ -209,7 +223,6 @@ static void add(uint16_t n, const char *name, uint32_t hz, uint8_t mode)
 	chans[n].rx_hz = chans[n].tx_hz = hz;
 	chans[n].mode = mode;
 	chans[n].power = CODEPLUG_POWER_DEFAULT;
-	chans[n].tot_s = CODEPLUG_TOT_DEFAULT;
 	chans[n].color_code = 1;
 	chans[n].timeslot = 1;
 	used[n] = true;

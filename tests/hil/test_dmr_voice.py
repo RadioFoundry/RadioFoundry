@@ -30,7 +30,7 @@ def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
         pytest.skip("built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     frames = os.path.getsize(ambe) // 9
-    sent = 18 * -(-frames // 18)        # hat_tx.py pads to whole superframes
+    sent = 18 * -(-frames // 18)        # bench_tx.py pads to whole superframes
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     if radio.view(["dmr"]).get("dmr.codec") != "1":
