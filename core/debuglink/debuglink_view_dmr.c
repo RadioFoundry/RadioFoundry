@@ -37,6 +37,7 @@ static void call(dl_text_t *t, const char *p, const radio_dmr_call_t *c)
 
 	dl_text(t, "%s.src=%u\n%s.dst=%u\n", p, (unsigned)c->src, p, (unsigned)c->dst);
 	dl_text(t, "%s.group=%u\n%s.to_us=%u\n%s.encrypted=%u\n", p, c->group, p, c->to_us, p, c->encrypted);
+	dl_text(t, "%s.emergency=%u\n%s.pi_header=%u\n", p, c->emergency, p, c->pi_header);
 	dl_fmt(k, sizeof(k), "%s.src_name", p);
 	dl_text_kv_str(t, k, c->src_name);
 	dl_fmt(k, sizeof(k), "%s.dst_name", p);
@@ -61,11 +62,16 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text_kv_str(t, "dmr.target_name", d->target_name);
 		dl_text(t, "dmr.reply_active=%u\ndmr.reply_s=%u\n", d->reply_active, d->reply_s);
 		dl_text(t, "dmr.hear_all=%u\n", d->hear_all);
+		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\n", d->target_manual, d->privacy,
+			d->alias_tx);
 		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
 		break;
 	case 1:
 		call(t, "call", &d->call);
 		dl_text(t, "call.late_entry=%u\n", d->late_entry);
+		dl_text(t, "call.alias_complete=%u\n", cv->caller.alias_complete);
+		dl_text(t, "call.fid=%u\ncall.svc=%u\ncall.pi_alg=%u\ncall.pi_key=%u\n", cv->caller.fid, cv->caller.svc,
+			cv->caller.pi_alg, cv->caller.pi_key);
 		dl_text_kv_str(t, "call.alias", d->alias);
 		dl_text(t, "call.rssi_dbm=%d\ncall.ms=%u\n", d->rssi_dbm, (unsigned)d->call_ms);
 		call(t, "last", &d->last);
@@ -85,6 +91,10 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			(unsigned)c.rx_enc_dropped);
 		dl_text(t, "call.tx_calls=%u\ncall.tx_denied=%u\ncall.tx_underruns=%u\ncall.evq_overflows=%u\n",
 			(unsigned)c.tx_calls, (unsigned)c.tx_denied, (unsigned)c.tx_underruns, (unsigned)c.evq_overflows);
+		dl_text(t, "call.rx_private_calls=%u\ncall.rx_emergency_calls=%u\ncall.rx_encrypted_calls=%u\n",
+			(unsigned)c.rx_private_calls, (unsigned)c.rx_emergency_calls, (unsigned)c.rx_encrypted_calls);
+		dl_text(t, "call.rx_pi_headers=%u\ncall.rx_alias_complete=%u\ncall.tx_alias_lcs=%u\n",
+			(unsigned)c.rx_pi_headers, (unsigned)c.rx_alias_complete, (unsigned)c.tx_alias_lcs);
 		dl_text(t, "voice.rx_in=%u\nvoice.rx_frames=%u\nvoice.rx_concealed=%u\nvoice.rx_silence=%u\n",
 			(unsigned)a.rx_in, (unsigned)a.rx_frames, (unsigned)a.rx_concealed, (unsigned)a.rx_silence);
 		dl_text(t, "voice.rx_calls=%u\nvoice.rx_queue_max=%u\nvoice.rx_bad=%u\nvoice.rx_lost=%u\n",

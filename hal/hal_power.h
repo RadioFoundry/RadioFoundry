@@ -21,6 +21,8 @@ typedef struct {
 	// False once the user has switched the radio off (the core then saves and calls latch(false))
 	bool (*switch_on)(void);
 	void (*led)(uint8_t which, bool on);
+	// Optional: microphone level 0..100, logarithmic (about 0.7 dB per step, 0 = silence), for VOX
+	uint8_t (*mic_level)(void);
 } hal_power_t;
 
 #endif

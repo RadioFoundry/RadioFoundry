@@ -15,9 +15,9 @@ CONFIG_FM ?= y
 CONFIG_SUBTONE ?= $(CONFIG_FM)
 # DMR Tier II voice: modem driver, call stack, AMBE FEC, vocoder hosting
 CONFIG_DMR ?= y
-# basic privacy / static-key voice scrambling hooks (needs DMR)
+# basic privacy (Motorola / Anytone BP) on the voice path (needs DMR)
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
-# talker alias decode (needs DMR)
+# talker alias decode and TX of our radio name (needs DMR)
 CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 # DMR text messages (SMS; needs DMR; not ported yet)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
@@ -52,9 +52,19 @@ CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
+# channel / zone scan, VFO band scan, dual watch, nuisance delete (docs/spec/radio-features.md)
+CONFIG_SCAN ?= y
+# beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which the DM-1701 has with DMR)
+CONFIG_BEEP ?= y
+# FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
+CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
+# FM VOX: voice-operated transmit from the microphone level (needs FM; unverified on the bench)
+CONFIG_VOX ?= n
+# receiver battery saving: FM receiver duty cycling while idle (needs FM)
+CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_IP_GATEWAY SFR \
-	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK VFO VFO_FM VFO_DMR DIAG FONT_XL
+	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK VFO VFO_FM VFO_DMR DIAG FONT_XL SCAN BEEP FM_TX_TONES VOX BATTERY_SAVE
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -100,6 +110,7 @@ ifneq ($(call feature_on,VFO_DMR),)
     $(error CONFIG_VFO_DMR=y needs CONFIG_DMR=y)
   endif
 endif
+$(foreach f,FM_TX_TONES VOX BATTERY_SAVE,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
 ifeq ($(call feature_on,FM)$(call feature_on,DMR),)
   $(error at least one of CONFIG_FM and CONFIG_DMR must be y)
 endif

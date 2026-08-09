@@ -74,11 +74,22 @@ ACTIONS = {"up": 1, "down": 2, "left": 3, "right": 4, "select": 5, "ok": 5, "gre
 ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
-VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link"]
+VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
-    OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT = range(1, 15)
+    OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
+    OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY = range(1, 20)
+PRIVACY_TYPES = {"off": 0, "moto": 1, "anytone": 2}
 TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
+# The radio features (docs/spec/radio-features.md, debuglink.md 3.8)
+OP_SCAN, OP_SCAN_VFO, OP_BEEP, OP_TONE_BURST, OP_SETTING = range(20, 25)
+SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
+BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
+         "battery_crit": 8, "scan_hold": 9}
+SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit": 5, "scan_resume": 6,
+            "scan_hold_s": 7, "scan_delay_ms": 8, "scan_dwell_ms": 9, "scan_priority": 10, "beep_level": 11,
+            "key_beep": 12, "vox": 13, "vox_level": 14, "vox_tail_ms": 15, "rx_save": 16, "rx_save_idle_s": 17,
+            "battery_off_s": 18, "scan_beep": 19}
 
 
 class DebugLinkError(Exception):
@@ -416,6 +427,43 @@ class DebugLink:
     def hotspot_exit(self):
         self.radio(OP_HOTSPOT_EXIT)
 
+    def dmr_target(self, dmr_id, private=False):
+        """Talk to a typed ID / talkgroup until the channel changes."""
+        self.radio(OP_DMR_TARGET, struct.pack("<I", (int(dmr_id) & 0xFFFFFF) | (1 << 24 if private else 0)))
+
+    def dmr_contact(self, index):
+        self.radio(OP_DMR_CONTACT, struct.pack("<H", index))
+
+    def dmr_call_back(self):
+        self.radio(OP_DMR_CALL_BACK)
+
+    def dmr_target_clear(self):
+        self.radio(OP_DMR_TARGET_CLEAR)
+
+    def dmr_privacy(self, kind, key=0):
+        """Load a basic privacy key in RAM: kind off | moto (key 1-255) | anytone (key 0-65535)."""
+        self.radio(OP_DMR_PRIVACY, struct.pack("<BH", PRIVACY_TYPES[kind] if isinstance(kind, str) else kind, key))
+
+    def scan(self, cmd, pos=None):
+        """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle."""
+        c = SCAN_CMDS[cmd] if isinstance(cmd, str) else cmd
+        self.radio(OP_SCAN, bytes([c]) + (struct.pack("<H", pos) if c == SCAN_CMDS["dual"] else b""))
+
+    def scan_vfo(self, lo_hz, hi_hz):
+        """Band scan of the VFO from lo to hi in its step."""
+        self.radio(OP_SCAN_VFO, struct.pack("<II", int(lo_hz), int(hi_hz)))
+
+    def beep(self, which):
+        self.radio(OP_BEEP, bytes([BEEPS[which] if isinstance(which, str) else which]))
+
+    def tone_burst(self, on):
+        """The 1750 Hz burst (FM): keys up and sends the tone while on."""
+        self.radio(OP_TONE_BURST, bytes([1 if on else 0]))
+
+    def setting(self, name, value):
+        """One radio setting in RAM (not stored): a SETTINGS name or id, value u16."""
+        self.radio(OP_SETTING, struct.pack("<BH", SETTINGS[name] if isinstance(name, str) else name, int(value)))
+
 
 # ── pictures ────────────────────────────────────────────────────────────────
 
@@ -601,6 +649,26 @@ def cmd_radio(link, a):
         link.reply_cancel()
     elif op == "hotspot-exit":
         link.hotspot_exit()
+    elif op == "target":              # target ID [private]
+        link.dmr_target(num(0), args[1:2] == ["private"])
+    elif op == "contact":
+        link.dmr_contact(num(0))
+    elif op == "call-back":
+        link.dmr_call_back()
+    elif op == "target-clear":
+        link.dmr_target_clear()
+    elif op == "privacy":             # privacy off | moto KEY | anytone KEY
+        link.dmr_privacy(args[0], int(args[1], 0) if len(args) > 1 else 0)
+    elif op == "scan":                # scan stop|zone|vfo|dual POS|cancel|nuisance|toggle
+        link.scan(args[0] if args else "toggle", num(1) if args[:1] == ["dual"] else None)
+    elif op == "scan-vfo":            # scan-vfo LO_MHZ HI_MHZ
+        link.scan_vfo(round(num(0, float) * 1e6), round(num(1, float) * 1e6))
+    elif op == "beep":                # beep key|error|tx_permit|...
+        link.beep(args[0] if args else "key")
+    elif op == "burst":               # burst on|off
+        link.tone_burst(args[:1] != ["off"])
+    elif op == "set":                 # set NAME VALUE
+        link.setting(args[0], num(1))
     else:
         raise DebugLinkError(f"unknown radio op {op!r}")
     return 0
@@ -743,7 +811,8 @@ def main(argv=None):
     p.add_argument("--seconds", type=float, required=True)
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
-                                  "monitor", "clear", "reply-cancel", "hotspot-exit"])
+                                  "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
+                                  "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("log")
     p.add_argument("--follow", action="store_true")

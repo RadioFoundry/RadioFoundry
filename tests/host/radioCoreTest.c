@@ -55,7 +55,7 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 static void r_tx_off(void) { hw.tx_off_calls++; }
 static void r_status(radio_status_t *st) { *st = hw.st; }
 static void r_audio(bool on) { hw.audio = on; }
-static const hal_radio_t fake_radio = { r_init, r_set_mode, r_rx, r_tx, r_tx_off, r_status, r_audio, NULL };
+static const hal_radio_t fake_radio = { r_init, r_set_mode, r_rx, r_tx, r_tx_off, r_status, r_audio, NULL, NULL, NULL };
 
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 
@@ -141,6 +141,37 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 		return false;
 	}
 	*out = contacts[index - 1];
+	return true;
+}
+static uint32_t contact_finds, iddb_lookups;
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+{
+	contact_finds++;
+	for (unsigned i = 0; i < sizeof(contacts) / sizeof(contacts[0]); i++) {
+		if (contacts[i].id == id && (contacts[i].type != CONTACT_PRIVATE) == group) {
+			*out = contacts[i];
+			return true;
+		}
+	}
+	if (group && id == 3100) {
+		*out = (contact_t){ "TG USA", 3100, CONTACT_GROUP, 0 };
+		return true;
+	}
+	return false;
+}
+static codeplug_dmr_settings_t dmr_settings = { "N0CALL", 0, 0 };	// no hang times: the stack's 10 s
+bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
+{
+	*out = dmr_settings;
+	return true;
+}
+bool dmr_iddb_lookup(uint32_t id, char *out, size_t len)
+{
+	iddb_lookups++;
+	if (id != 3105555) {
+		return false;
+	}
+	snprintf(out, len, "KD9XYZ Robert Longname Springfield");
 	return true;
 }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out)
@@ -1038,6 +1069,158 @@ static void test_hotspot(void)
 	CHECK(hw.tx_off_calls == off0 + 1);	// never armed: no TX frequency was set
 }
 
+// The air header's LC of the last transmission that started at air[first]
+static void air_lc(unsigned first, dmr_lc_t *l)
+{
+	dmr_lc_unpack(sim.air[first].payload, l);
+}
+
+static void reload_channel(void)
+{
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+}
+
+static void tx_once(void)
+{
+	req(RREQ_PTT, 1);
+	run(600);
+	req(RREQ_PTT, 0);
+	run(1000);
+}
+
+static void test_dmr_voice_features(void)
+{
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	dmr_lc_t l;
+
+	// A typed private ID: PTT calls it, its name comes from the DMR ID database (cut to the name field)
+	dmr_start(true);
+	CHECK(!d->target_manual && !d->alias_tx && !d->privacy);
+	req(RREQ_DMR_TARGET, (int32_t)(3105555u | (1u << 24)));
+	run(20);
+	CHECK(d->target_manual && d->target_id == 3105555 && d->target_private);
+	CHECK(strcmp(d->target_name, "KD9XYZ Robert Lo") == 0);
+	unsigned first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(sim.air[first].kind == DMR_BURST_VOICE_LC_HEADER && l.flco == DMR_FLCO_UNIT_VOICE && l.dst == 3105555 &&
+	      l.src == 3101276);
+	// Looked up once, then from the cache
+	uint32_t finds = contact_finds, looks = iddb_lookups;
+	run(2000);
+	hear_call(true, 201, 3105555, 2, 1, true);
+	CHECK(contact_finds == finds && iddb_lookups == looks);
+	// Back to the channel's target
+	req(RREQ_DMR_TARGET_CLEAR, 0);
+	run(20);
+	CHECK(!d->target_manual && d->target_id == 201 && !d->target_private);
+
+	// A codeplug contact as the target; a channel change ends it
+	req(RREQ_DMR_CONTACT, 2);
+	run(20);
+	CHECK(d->target_manual && d->target_id == 3101234 && d->target_private && strcmp(d->target_name, "Joe") == 0);
+	req(RREQ_CH_STEP, 1);
+	req(RREQ_CH_STEP, -1);
+	run(50);
+	CHECK(!d->target_manual && d->target_id == 201);
+	req(RREQ_DMR_CONTACT, 99);	// no such contact: nothing changes
+	run(20);
+	CHECK(!d->target_manual);
+
+	// A private call to us: shown with its name, emergency flag passed on; then call back to the caller
+	uint8_t lc[9];
+	mk_lc(lc, false, 3101276, 3105555);
+	lc[2] = DMR_SVC_EMERGENCY;
+	for (int h = 0; h < 3; h++) {
+		burst_lc(lc, 2, false);
+		run(60);
+	}
+	for (int i = 0; i < 6; i++) {
+		burst_voice((uint8_t)i, 2, i == 5 ? lc : NULL);
+		run(60);
+	}
+	CHECK(d->state == RDMR_RX && d->call.to_us && !d->call.group && d->call.emergency);
+	CHECK(strcmp(d->call.src_name, "KD9XYZ Robert Lo") == 0);
+	burst_lc(lc, 2, true);
+	run(100);
+	CHECK(d->reply_active && d->target_private && d->target_id == 3105555);	// the reply window
+	req(RREQ_REPLY_CANCEL, 0);
+	run(20);
+	req(RREQ_DMR_CALL_BACK, 0);	// still possible after the window: from the last call heard
+	run(20);
+	CHECK(d->target_manual && d->target_private && d->target_id == 3105555);
+	// A group call heard last: call back goes to its talkgroup, named from all the contacts
+	hear_call(true, 3100, 3107777, 2, 1, true);
+	req(RREQ_DMR_TARGET_CLEAR, 0);
+	req(RREQ_MONITOR, 1);
+	hear_call(true, 3100, 3107777, 2, 1, true);
+	req(RREQ_MONITOR, 0);
+	req(RREQ_DMR_CALL_BACK, 0);
+	run(20);
+	CHECK(d->target_manual && !d->target_private && d->target_id == 3100 && strcmp(d->target_name, "TG USA") == 0);
+	req(RREQ_DMR_TARGET_CLEAR, 0);
+
+	// Codeplug hang times become the reply windows (group 3 s, private 6 s)
+	dmr_settings.group_hang_ms = 3000;
+	dmr_settings.private_hang_ms = 6000;
+	dmr_start(true);
+	hear_call(true, 9, 3105555, 2, 1, true);
+	CHECK(d->reply_active && d->reply_s == 3);
+	run(3100);
+	CHECK(!d->reply_active);
+	hear_call(false, 3101276, 3105555, 2, 1, true);
+	CHECK(d->reply_active && d->reply_s == 6);
+	dmr_settings.group_hang_ms = dmr_settings.private_hang_ms = 0;
+
+	// Talker alias TX when the channel asks for it on its timeslot: the radio name in alternate superframes
+	dmr_start(true);
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS2_TEXT;	// TS1 channel: not on this one
+	reload_channel();
+	CHECK(!d->alias_tx);
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS1_TEXT;
+	reload_channel();
+	CHECK(d->alias_tx);
+	dmr_call_stats_t cs0, cs1;
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_alias_lcs - cs0.tx_alias_lcs >= 1);	// "N0CALL" in every other superframe (details: dmrCallTest)
+	chans[4].alias_tx = 0;
+
+	// Channel TX time-out from the codeplug
+	dmr_start(true);
+	chans[4].tot_s = 2;
+	reload_channel();
+	req(RREQ_PTT, 1);
+	run(3000);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TIMEOUT);
+	req(RREQ_PTT, 0);
+	run(500);
+	chans[4].tot_s = 0;
+
+	// Basic privacy key: our calls go out with the privacy FID and service option; turned off again
+	dmr_start(true);
+	req(RREQ_DMR_PRIVACY, (int32_t)((1u << 16) | 0u));	// Motorola key 0 is not valid: ignored
+	CHECK(!d->privacy);
+	req(RREQ_DMR_PRIVACY, (int32_t)((1u << 16) | 7u));
+	CHECK(d->privacy);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.fid == 0x10 && l.svc == DMR_SVC_PRIVACY);
+	req(RREQ_DMR_PRIVACY, 0);
+	CHECK(!d->privacy);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.fid == 0 && l.svc == 0);
+}
+
 int main(void)
 {
 	test_startup();
@@ -1055,6 +1238,7 @@ int main(void)
 	test_dmr_rx();
 	test_dmr_tx();
 	test_dmr_denied();
+	test_dmr_voice_features();
 	test_hotspot();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;

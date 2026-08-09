@@ -65,8 +65,8 @@ static void startup_task(void *arg)
 
 	for (;;) {
 		hal_delay_ms(HOUSEKEEPING_MS);
-		if (!board.power->switch_on()) {
-			power_off();
+		if (!board.power->switch_on() || radio_power_off_wanted()) {
+			power_off();	// the knob, or the radio core after a long critical battery (battery_off_s)
 		}
 	}
 }

@@ -2,32 +2,36 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """
-dmr_bench: run a named DMR bench test case end to end from the Mac against the radio under test, with the bench-host's
-MMDVM_HS HAT and RTL-SDR as the other station and the instruments. New tool; the test cases and their pass criteria
-are described in docs/testing/dmr-bench.md.
+dmr_bench: run a named DMR bench test case end to end from the Mac against the radio under test, with the SDR
+bench's MMDVM_HS modem board and RTL-SDR as the other station and the instruments. New tool; the test cases and their
+pass criteria are described in docs/testing/dmr-bench.md.
 
     dmr_bench.py list                          the test cases, in bring-up order
     dmr_bench.py show CASE                     what CASE does, what the user does, the pass criteria
-    dmr_bench.py sync [--dry-run]              copy the bench-host-side tools to bench-host:~/odr-bench/
+    dmr_bench.py sync [--dry-run]              copy the bench-side tools to $ODR_SDR_BENCH_HOST:~/odr-bench/
     dmr_bench.py run CASE [--dry-run] [--yes] [--radio-id ID] [--tg TG] [--freq MHz] [--cc N] [--gain dB]
-                          [--hat-power N] [--rpt-rx MHz --rpt-tx MHz] [--ambe FILE] [--port DEV] [--out DIR]
-    dmr_bench.py check CASE SDRMON.json [--hat LISTEN.jsonl] [--radio-id ID] [--tg TG] [--cc N]
+                          [--modem-power N] [--rpt-rx MHz --rpt-tx MHz] [--ambe FILE] [--port DEV] [--out DIR]
+    dmr_bench.py check CASE SDRMON.json [--modem LISTEN.jsonl] [--radio-id ID] [--tg TG] [--cc N]
                                                re-run the automatic checks on saved results
 
 --dry-run prints every command, in order, exactly as it would run (local and over ssh), including the rfgw service
 stop and start, and runs nothing: give that to the owner for approval before the first real run of a case.
 
-Service handling. The HAT and the RTL-SDR are normally held by radiodesk-rfgw@bench-host. A case that needs either
-takes a *lease*: one detached process on the bench-host stops the service, waits while ~/odr-bench/hold exists (at most
+Configuration (environment): ODR_SDR_BENCH_HOST (ssh host or alias, default sdr-bench), ODR_SDR_BENCH_SERVICE
+(default radiodesk-rfgw@$(hostname), expanded on the bench), ODR_SDR_BENCH_DIR (default odr-bench, under the bench
+user's home), ODR_SDR_BENCH_PY (rfgw's venv python).
+
+Service handling. The bench modem and the RTL-SDR are normally held by the rfgw service. A case that needs either
+takes a *lease*: one detached process on the SDR bench stops the service, waits while ~/odr-bench/hold exists (at most
 --lease-max seconds, default 300), then starts the service again, whatever happens to this script or the ssh link
 (a signal to the lease process also ends the wait and restarts the service). This script removes the hold file in a
 finally block and then checks that the service is active again. Cases that only need rfgw's own decode (T0) don't
 stop anything.
 
-The script never deletes captures; they collect in ~/odr-bench/runs/ on the bench-host (about 50 MB per 16 s capture)
+The script never deletes captures; they collect in ~/odr-bench/runs/ on the SDR bench (about 50 MB per 16 s capture)
 and the analysis JSON comes back to --out (default ./bench-results/). Clean up by hand when asked to.
 
-Needs: ssh access to the bench-host (passwordless sudo for systemctl there); the bench-host-side tools from `sync`; python3
+Needs: ssh access to the SDR bench (passwordless sudo for systemctl there); the bench-side tools from `sync`; python3
 on the Mac (no third-party packages for this script). The radio is operated by the user from its keys; the script
 prompts for each action and for what the radio's diagnostics page shows.
 """
@@ -42,24 +46,25 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-bench-host = os.environ.get("bench-host", "bench-host")
-SERVICE = os.environ.get("RFGW_SERVICE", "radiodesk-rfgw@bench-host")
-DIR = os.environ.get("BENCH_DIR", "odr-bench")          # relative to the bench-host user's home
-PY = "/opt/radiodesk-rfgw/.venv/bin/python"
-BENCH_TOOLS = ["hat_tx.py", "hat_repeater.py", "sdrmon.py", "sdr_watch.py"]
+BENCH_HOST = os.environ.get("ODR_SDR_BENCH_HOST", "sdr-bench")    # an ssh host or alias for the SDR bench
+# The rfgw instance is named after the bench's host name: the default is expanded by the shell on the bench
+SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE", "radiodesk-rfgw@$(hostname)")
+DIR = os.environ.get("ODR_SDR_BENCH_DIR", "odr-bench")          # relative to the SDR bench user's home
+PY = os.environ.get("ODR_SDR_BENCH_PY", "/opt/radiodesk-rfgw/.venv/bin/python")
+BENCH_TOOLS = ["bench_tx.py", "bench_repeater.py", "sdrmon.py", "sdr_watch.py"]
 
 # ── test cases ───────────────────────────────────────────────────────────────
 # Step kinds: ("capture", seconds[, freq_key]) raw SDR capture in the background (READY + 2 s waited);
-# ("listen", seconds) hat_tx listen in the background; ("hat", args) hat_tx in the foreground; ("repeater", seconds)
-# hat_repeater in the background; ("prompt", text) the user acts on the radio, Enter when done; ("ask", [questions])
+# ("listen", seconds) bench_tx listen in the background; ("modem", args) bench_tx in the foreground; ("repeater", seconds)
+# bench_repeater in the background; ("prompt", text) the user acts on the radio, Enter when done; ("ask", [questions])
 # what the radio shows; ("wait", s); ("watch", seconds) sdr_watch (no lease); ("local", argv) a Mac command;
 # ("gains", [dB...], seconds) captures at several gains.
-# Placeholders: {tg} {radio_id} {cc} {cc_wrong} {freq} {ambe} {port} {rpt_rx} {rpt_tx} {hat_power}
+# Placeholders: {tg} {radio_id} {cc} {cc_wrong} {freq} {ambe} {port} {rpt_rx} {rpt_tx} {modem_power}
 
 R_ASK_VOICE = ["Diagnostics: slot ticks still counting? (y/n)", "Voice bursts counted (number, or ?)",
                "CRC errors (number)", "Last CC shown", "Last sync family shown (MS/BS/TS1/TS2)",
                "Call shown on the main screen with the right caller and TG? (y/n)",
-               "Call ended within about 0.5 s of the HAT's end? (y/n)"]
+               "Call ended within about 0.5 s of the bench modem's end? (y/n)"]
 
 CASES = [
     {"id": "C0", "phase": "setup", "title": "SDR level check: ADC clipping at several gains",
@@ -76,82 +81,82 @@ CASES = [
      "steps": [("watch", 15), ("prompt", "Within 10 s: press PTT for ~3 s on the DMR test channel, release.")],
      "pass": "sdr_watch shows ms-data headers, voice, a terminator, cc {cc}, src = the radio's ID, dst = the TG."},
     # (a) the radio receives
-    {"id": "R1", "phase": "radio receives", "title": "Group voice from the HAT (3 superframes, 8 headers)",
+    {"id": "R1", "phase": "radio receives", "title": "Group voice from the bench modem (3 superframes, 8 headers)",
      "why": "First DMR RX: headers, voice A-F, embedded LC, terminator, all MS sync, our cc.",
      "user": "Radio on the DMR test channel, TG {tg} in its RX group list, diagnostics page open.",
      "steps": [("prompt", "Diagnostics page open on the radio, counters noted. Enter to send."),
-               ("hat", "voice --dst {tg} --superframes 3"), ("ask", R_ASK_VOICE)],
+               ("modem", "voice --dst {tg} --superframes 3"), ("ask", R_ASK_VOICE)],
      "pass": "Voice bursts 18 (+-1) more than before, CRC errors unchanged, cc {cc}, sync MS, call shown "
              "(9990301 -> TG {tg}) and ended by the terminator; speaker: AMBE silence (quiet)."},
     {"id": "R2", "phase": "radio receives", "title": "Private call to the radio's ID",
-     "steps": [("hat", "voice --private --dst {radio_id} --superframes 3"), ("ask", R_ASK_VOICE)],
+     "steps": [("modem", "voice --private --dst {radio_id} --superframes 3"), ("ask", R_ASK_VOICE)],
      "user": "Radio on the test channel.", "why": "FLCO 3, destination filter = own ID.",
      "pass": "Shown as a private call from 9990301; a private call to another ID (rerun with --radio-id 1) is not."},
     {"id": "R3", "phase": "radio receives", "title": "Late entry (no header, first 8 bursts left out)",
-     "steps": [("hat", "voice --dst {tg} --late 8 --superframes 5"), ("ask", R_ASK_VOICE)],
+     "steps": [("modem", "voice --dst {tg} --late 8 --superframes 5"), ("ask", R_ASK_VOICE)],
      "user": "Radio on the test channel.", "why": "Call acquired from the embedded LC (dmr-modem.md 2.4).",
      "pass": "Call shown with 9990301 -> TG {tg} (not a stale LC) within ~1 s of the first burst; ended by the "
              "terminator; no voice burst counted as a call before a complete embedded LC."},
     {"id": "R4", "phase": "radio receives", "title": "Three calls back to back, 60 ms apart, sources alternating",
-     "steps": [("hat", "voice --dst {tg} --superframes 2 --calls 3 --gap-ms 60"), ("ask", R_ASK_VOICE + [
+     "steps": [("modem", "voice --dst {tg} --superframes 2 --calls 3 --gap-ms 60"), ("ask", R_ASK_VOICE + [
          "Three separate calls seen, callers 9990301, 9990302, 9990301? (y/n)"])],
      "user": "Radio on the test channel.", "why": "Call end / start state machine, new LC per call.",
      "pass": "Three calls with the right callers, none merged or lost."},
     {"id": "R5", "phase": "radio receives", "title": "Call with no terminator (receiver time-out)",
-     "steps": [("hat", "voice --dst {tg} --superframes 2 --terminators 0"), ("ask", R_ASK_VOICE)],
+     "steps": [("modem", "voice --dst {tg} --superframes 2 --terminators 0"), ("ask", R_ASK_VOICE)],
      "user": "Radio on the test channel.", "why": "End of call by ~390 ms of no burst (13 slot ticks).",
      "pass": "Call ends 0.3-0.8 s after the last burst; slot ticks keep counting; radio back to idle."},
     {"id": "R6", "phase": "radio receives", "title": "Wrong color code (bursts with cc+1)",
-     "steps": [("hat", "voice --dst {tg} --superframes 2 --burst-cc {cc_wrong}"),
+     "steps": [("modem", "voice --dst {tg} --superframes 2 --burst-cc {cc_wrong}"),
                ("ask", ["Call shown or audio heard? (y/n)", "Last CC shown", "Bursts / CRC errors counters"])],
      "user": "Radio on the test channel (cc {cc}).", "why": "CC filter.",
      "pass": "No call, no audio. Counters may show the bursts as other-CC (last CC {cc_wrong}) but never as voice."},
     {"id": "R7", "phase": "radio receives", "title": "CSBKs: 4 preambles then a call alert (CSBKO 0x1F) to the radio",
-     "steps": [("hat", "--listen-after 3 csbk --dst {radio_id} --count 4 --opcode 1F"),
+     "steps": [("modem", "--listen-after 3 csbk --dst {radio_id} --count 4 --opcode 1F"),
                ("ask", ["CSBK counter increased by 5? (number)", "Call alert shown? (y/n, later firmware)"])],
      "user": "Radio on the test channel.", "why": "Data-sync burst path, CSBK CRC, data service hook.",
      "pass": "5 CSBKs counted, CRC errors unchanged. With the data service: alert shown and the radio's ack CSBK "
-             "in the HAT's listen output (CSBKO 0x20)."},
+             "in the bench modem's listen output (CSBKO 0x20)."},
     {"id": "R8", "phase": "radio receives", "title": "Unconfirmed data to the radio (2 preambles, header, 4 blocks)",
-     "steps": [("hat", "data --dst {radio_id} --octets 40 --preambles 2"),
+     "steps": [("modem", "data --dst {radio_id} --octets 40 --preambles 2"),
                ("ask", ["Data header counted (number)", "Rate 1/2 blocks counted (number)", "CRC errors"])],
      "user": "Radio on the test channel.", "why": "Data header + rate 1/2 blocks.",
      "pass": "2 CSBK + 1 header + 4 blocks counted, CRC errors unchanged."},
     {"id": "R9", "phase": "radio receives", "title": "Confirmed data to the radio, listen for its response",
-     "steps": [("hat", "--listen-after 4 data --dst {radio_id} --octets 40 --confirmed"),
+     "steps": [("modem", "--listen-after 4 data --dst {radio_id} --octets 40 --confirmed"),
                ("ask", ["Data received (counters / message)? (y/n)"])],
      "user": "Radio on the test channel (needs the data service in the firmware).",
      "why": "Confirmed data and the radio's response packet (ACK) on air.",
-     "pass": "The HAT hears a response data header (DPF response) from {radio_id} within 1 s of the last block."},
+     "pass": "The bench modem hears a response data header (DPF response) from {radio_id} within 1 s of the last block."},
     {"id": "R10", "phase": "radio receives", "title": "BS-synced voice in DMO timing (no CACH)",
-     "steps": [("hat", "voice --dst {tg} --superframes 2 --family bs"),
+     "steps": [("modem", "voice --dst {tg} --superframes 2 --family bs"),
                ("ask", ["Last sync family shown", "Voice bursts counted", "Call shown? (y/n)"])],
      "user": "Radio on a channel in repeater mode or 'any' framing, test frequency.",
      "why": "The receiver must detect all four sync families and say which (dmr-modem.md 1.3). Not a repeater "
             "outbound (no CACH, not continuous): see P1 for that.",
      "pass": "Sync family BS reported for the headers / voice A."},
     {"id": "R11", "phase": "radio receives", "title": "TDMA direct mode sync (TS1, then TS2)",
-     "steps": [("hat", "voice --dst {tg} --superframes 2 --family ts1"), ("ask", ["Last sync family shown"]),
-               ("hat", "voice --dst {tg} --superframes 2 --family ts2"), ("ask", ["Last sync family shown"])],
+     "steps": [("modem", "voice --dst {tg} --superframes 2 --family ts1"), ("ask", ["Last sync family shown"]),
+               ("modem", "voice --dst {tg} --superframes 2 --family ts2"), ("ask", ["Last sync family shown"])],
      "user": "Radio on the test channel.", "why": "DCDM / SFR framings.",
      "pass": "TS1 then TS2 reported."},
     {"id": "R12", "phase": "radio receives", "title": "Long call (50 superframes, 18 s)",
-     "steps": [("hat", "voice --dst {tg} --superframes 50"), ("ask", R_ASK_VOICE + ["Any drop / restart? (y/n)"])],
+     "steps": [("modem", "voice --dst {tg} --superframes 50"), ("ask", R_ASK_VOICE + ["Any drop / restart? (y/n)"])],
      "user": "Radio on the test channel.", "why": "Slot clock stability, no SYNC_LOST over a long call.",
      "pass": "300 (+-3) voice bursts, one call, no restart, CRC errors unchanged."},
     {"id": "R13", "phase": "radio receives", "title": "Emergency, privacy flag, PI bit",
-     "steps": [("hat", "voice --dst {tg} --superframes 2 --emergency"), ("ask", ["Emergency shown? (y/n)"]),
-               ("hat", "voice --dst {tg} --superframes 2 --service-options 40 --pi"),
+     "steps": [("modem", "voice --dst {tg} --superframes 2 --emergency"), ("ask", ["Emergency shown? (y/n)"]),
+               ("modem", "voice --dst {tg} --superframes 2 --service-options 40 --pi"),
                ("ask", ["Privacy call muted / marked (no key configured)? (y/n)"])],
      "user": "Radio on the test channel, no privacy key.", "why": "Service options and EMB PI (dmr-modem.md 3).",
      "pass": "Emergency indicated; the PI call is not played (or played as configured)."},
     {"id": "R14", "phase": "radio receives", "title": "Talker alias in the embedded LC",
-     "steps": [("hat", "voice --dst {tg} --superframes 8 --talker-alias 'ODR bench HAT'"),
-               ("ask", ["Alias shown ('ODR bench HAT')? (y/n)"])],
+     "steps": [("modem", "voice --dst {tg} --superframes 8 --talker-alias 'ODR bench modem'"),
+               ("ask", ["Alias shown ('ODR bench modem')? (y/n)"])],
      "user": "Radio on the test channel.", "why": "FLCO 4-7 assembly (dmr-modem.md 4).",
      "pass": "Alias shown within ~2 s; the call's LC stays right between alias superframes."},
     # (b) the radio transmits
-    {"id": "T1", "phase": "radio transmits", "title": "Radio group call: SDR capture + HAT listen",
+    {"id": "T1", "phase": "radio transmits", "title": "Radio group call: SDR capture + bench modem listen",
      "why": "The full TX timing check: sync family, cc, headers, superframes, embedded LC, terminator, slot spacing, "
             "frequency offset, ramps, burst length.",
      "user": "Radio on the DMR test channel, TG {tg}, low power.",
@@ -163,7 +168,7 @@ CASES = [
              "voice A-F in order; embedded LC = the header's; >= 1 terminator after the last voice; same-slot "
              "spacing 60.00 +- 0.05 ms (sd < 0.1); |frequency offset| < 500 Hz; burst on-time 27-31.5 ms; key-up "
              "/ key-down ramps < 1.5 ms; no power steps, no overlaps, no unexplained carrier; capture clip < 1 %. "
-             "HAT: one call, terminator, AMBE FEC corrections 0 on the bench."},
+             "bench modem: one call, terminator, AMBE FEC corrections 0 on the bench."},
     {"id": "T2", "phase": "radio transmits", "title": "Radio PTT tap (< 0.3 s)",
      "steps": [("capture", 10), ("listen", 8), ("prompt", "Tap PTT as briefly as you can. Enter."), ("wait", 2)],
      "checks": "tx", "expect": {"flco": 0, "dst": "{tg}"}, "user": "As T1.",
@@ -180,29 +185,29 @@ CASES = [
                ("prompt", "Make a private call to 9990301 (~3 s). Enter."), ("wait", 2)],
      "checks": "tx", "expect": {"flco": 3, "dst": 9990301}, "user": "A private contact 9990301 on the radio.",
      "why": "FLCO 3 in the header, terminator and embedded LC.", "pass": "As T1 with FLCO 3, dst 9990301."},
-    {"id": "T5", "phase": "radio transmits", "title": "Reply in the HAT's call hang",
+    {"id": "T5", "phase": "radio transmits", "title": "Reply in the bench modem's call hang",
      "steps": [("capture", 16),
-               ("prompt", "After Enter the HAT sends a 1.5 s call to TG {tg}: as soon as it ends on the radio, press "
+               ("prompt", "After Enter the bench modem sends a 1.5 s call to TG {tg}: as soon as it ends on the radio, press "
                           "PTT ~2 s (a reply). Press Enter now."),
-               ("hat", "--listen-after 8 voice --dst {tg} --superframes 2"), ("wait", 2)],
+               ("modem", "--listen-after 8 voice --dst {tg} --superframes 2"), ("wait", 2)],
      "checks": "tx", "expect": {"flco": 0}, "user": "Radio on the test channel with TG {tg}.",
      "why": "Reply timing in DMO (aligned to the call heard), capture timeout / hang.",
-     "pass": "As T1 for the reply; the reply's dst is TG {tg} (talkback) and starts in step with the HAT's slot "
+     "pass": "As T1 for the reply; the reply's dst is TG {tg} (talkback) and starts in step with the bench modem's slot "
              "(phase within +-1 ms)."},
     # (c) voice quality
-    {"id": "Q1", "phase": "voice quality", "title": "Radio speech to AMBE files (off air, HAT)",
+    {"id": "Q1", "phase": "voice quality", "title": "Radio speech to AMBE files (off air, bench modem)",
      "steps": [("listen", 14), ("prompt", "Press PTT and read a sentence for ~8 s, release. Enter."), ("wait", 2)],
      "checks": "voice", "user": "Radio on the test channel.",
      "why": "Encoder + I2S + AMBE FEC on the TX side, judged off air without any vocoder in this project.",
      "pass": "One call; AMBE FEC corrections 0; non-silence frames during speech; decode the .amb with your own "
              "decoder (see docs/testing/dmr-bench.md) and listen: intelligible, no clicks or dropouts."},
-    {"id": "Q2", "phase": "voice quality", "title": "Recorded speech from the HAT to the radio's speaker",
-     "steps": [("hat", "voice --dst {tg} --ambe {ambe}"),
+    {"id": "Q2", "phase": "voice quality", "title": "Recorded speech from the bench modem to the radio's speaker",
+     "steps": [("modem", "voice --dst {tg} --ambe {ambe}"),
                ("ask", ["Speech intelligible, level OK, no clicks? (y/n)", "CRC errors counter"])],
      "user": "Radio on the test channel, volume mid. Needs --ambe FILE (a 9-byte-frame .ambe recording).",
      "why": "Decoder + I2S + speaker path with real speech.", "pass": "Clean, intelligible speech."},
     # (d) repeater mode
-    {"id": "P1", "phase": "repeater", "title": "Repeater: BS activation and a call through the HAT repeater",
+    {"id": "P1", "phase": "repeater", "title": "Repeater: BS activation and a call through the bench modem repeater",
      "steps": [("capture", 40, "rpt"), ("repeater", 38),
                ("prompt", "Radio on its repeater channel (TX {rpt_rx}, RX {rpt_tx}). Press PTT ~3 s, release. "
                           "Then again within 3 s (hang). Enter."), ("wait", 4)],
@@ -219,11 +224,11 @@ CASES = [
      "user": "Radio connected to the Mac over USB, hotspot mode. RadioDesk server venv python (RADIODESK).",
      "why": "Automated coverage of the modem driver and call stack: every burst heard / sent is visible.",
      "pass": "All cases PASS (see hotspot_cases.py --list)."},
-    {"id": "S1", "phase": "SFR (planned)", "title": "SFR repeat of one HAT call (raw SDR capture)",
+    {"id": "S1", "phase": "SFR (planned)", "title": "SFR repeat of one bench modem call (raw SDR capture)",
      "steps": [("capture", 14), ("local", ["python3", "-I", os.path.join(HERE, "mmdvm_hotspot.py"), "--port",
                                            "{port}", "--sfr", "--seconds", "11", "--freq", "{freq}", "--cc", "{cc}"],
                                  "bg"),
-               ("wait", 2), ("hat", "voice --superframes 1"), ("wait", 10)],
+               ("wait", 2), ("modem", "voice --superframes 1"), ("wait", 10)],
      "checks": "sfr", "user": "Radio over USB with SFR in the firmware.",
      "why": "The single frequency repeater: inbound MS on one slot, repeat on the other.",
      "pass": "inbound(MS) -> repeat gap 60 ms (+-1), repeat family as configured, no overlaps."},
@@ -247,7 +252,7 @@ class Bench:
         cc = a.cc
         return str(s).format(tg=a.tg, radio_id=a.radio_id, cc=cc, cc_wrong=(cc % 15) + 1, freq=a.freq,
                              ambe=f"~/{DIR}/runs/speech.ambe", port=a.port, rpt_rx=a.rpt_rx, rpt_tx=a.rpt_tx,
-                             hat_power=a.hat_power)
+                             modem_power=a.modem_power)
 
     def note(self, line):
         self.log.append(line)
@@ -267,9 +272,9 @@ class Bench:
         return r.stdout if capture else r.returncode == 0
 
     def ssh(self, cmd, bg=False, capture=False, timeout=600):
-        return self.local(["ssh", bench-host, cmd], bg=bg, capture=capture, timeout=timeout)
+        return self.local(["ssh", BENCH_HOST, cmd], bg=bg, capture=capture, timeout=timeout)
 
-    # The lease: a detached process on the bench-host owns the service stop and its restart
+    # The lease: a detached process on the SDR bench owns the service stop and its restart
     def lease(self):
         hold = f"~/{DIR}/hold"
         guard = (f"trap 'rm -f {hold}' TERM HUP INT; sudo systemctl stop {SERVICE}; t=0; "
@@ -289,7 +294,7 @@ class Bench:
             return
         self.ssh(f"rm -f ~/{DIR}/hold; for i in $(seq 1 80); do systemctl is-active --quiet {SERVICE} && "
                  f"{{ echo {SERVICE} active; exit 0; }}; sleep 0.25; done; "
-                 f"echo '{SERVICE} NOT active: run sudo systemctl start {SERVICE}' >&2; exit 1")
+                 f"echo \"{SERVICE} NOT active: run sudo systemctl start {SERVICE}\" >&2; exit 1")
         self.leased = False
 
     def user(self, text):
@@ -303,7 +308,7 @@ class Bench:
 
 
 def needs_lease(case):
-    return any(s[0] in ("capture", "listen", "hat", "repeater", "gains") for s in case["steps"]) \
+    return any(s[0] in ("capture", "listen", "modem", "repeater", "gains") for s in case["steps"]) \
         or case["id"].startswith("H")
 
 
@@ -332,7 +337,7 @@ def check_tx(sdr, expect, radio_id, cc, c):
     b = sdr.get("bursts", [])
     edges_all = sdr.get("edges", [])
     # Only the radio's transmission: from its first voice LC header (by source ID) on, on that header's slot. Without
-    # --radio-id everything in the capture counts (keep the HAT off the air then).
+    # --radio-id everything in the capture counts (keep the bench modem off the air then).
     mine = [x for x in b if x["kind"] == "VLC_HDR" and x.get("lc") and radio_id and x["lc"].get("src") == radio_id]
     if mine:
         t0, slot = mine[0]["t_ms"], mine[0]["slot"]
@@ -395,19 +400,19 @@ def check_tx(sdr, expect, radio_id, cc, c):
     c.add("no unexplained carrier", not s["unexplained_carrier"], f"{s['unexplained_carrier'][:3]}")
 
 
-def check_hat_calls(recs, radio_id, c, voice_quality=False):
+def check_modem_calls(recs, radio_id, c, voice_quality=False):
     calls = [r for r in recs if "call" in r]
-    c.add("HAT heard one call", len(calls) == 1, f"{len(calls)}")
+    c.add("bench modem heard one call", len(calls) == 1, f"{len(calls)}")
     for k in calls[:1]:
-        c.add("HAT: ended by terminator", k.get("ended") == "terminator", f"{k.get('ended')}")
-        c.add("HAT: started by header (not late entry)", k.get("start") == "header", k.get("start"))
+        c.add("bench modem: ended by terminator", k.get("ended") == "terminator", f"{k.get('ended')}")
+        c.add("bench modem: started by header (not late entry)", k.get("start") == "header", k.get("start"))
         if radio_id:
-            c.add("HAT: source = radio ID", k.get("src") == radio_id, f"{k.get('src')}")
-        c.add("HAT: AMBE FEC corrections 0 (bench)", k.get("ambe_fec_bits_corrected", 1) == 0,
+            c.add("bench modem: source = radio ID", k.get("src") == radio_id, f"{k.get('src')}")
+        c.add("bench modem: AMBE FEC corrections 0 (bench)", k.get("ambe_fec_bits_corrected", 1) == 0,
               f"{k.get('ambe_fec_bits_corrected')}")
-        c.add("HAT: voice bursts in whole superframes", k.get("voice", 0) % 6 == 0, f"{k.get('voice')}")
+        c.add("bench modem: voice bursts in whole superframes", k.get("voice", 0) % 6 == 0, f"{k.get('voice')}")
         if voice_quality:
-            c.add("HAT: speech present (non-silence frames)",
+            c.add("bench modem: speech present (non-silence frames)",
                   k.get("ambe_frames", 0) - k.get("ambe_silence_frames", 0) > 50,
                   f"{k.get('ambe_frames')} frames, {k.get('ambe_silence_frames')} silence")
             c.add("listen to the .amb with an AMBE+2 decoder", None, f"{k.get('files')}")
@@ -436,7 +441,7 @@ def check_sfr(sdr, c):
     c.add("no overlapping bursts", sdr["summary"]["overlaps"] == 0, "")
 
 
-def run_checks(case, a, sdr=None, hat=None, rpt=None):
+def run_checks(case, a, sdr=None, modem=None, rpt=None):
     c = Checks()
     kind = case.get("checks")
     exp = {k: (BENCH_FMT(a, v) if isinstance(v, str) else v) for k, v in case.get("expect", {}).items()}
@@ -444,10 +449,10 @@ def run_checks(case, a, sdr=None, hat=None, rpt=None):
         c.add("SDR analysis available", False)
     if kind == "tx" and sdr is not None:
         check_tx(sdr, exp, a.radio_id, a.cc, c)
-    if kind == "tx" and hat is not None and case["id"] != "T5":
-        check_hat_calls(hat, a.radio_id, c)
-    if kind == "voice" and hat is not None:
-        check_hat_calls(hat, a.radio_id, c, voice_quality=True)
+    if kind == "tx" and modem is not None and case["id"] != "T5":
+        check_modem_calls(modem, a.radio_id, c)
+    if kind == "voice" and modem is not None:
+        check_modem_calls(modem, a.radio_id, c, voice_quality=True)
     if kind == "repeater" and rpt is not None:
         check_repeater(rpt, a.radio_id, c)
     if kind == "sfr" and sdr is not None:
@@ -491,7 +496,7 @@ def cmd_show(a):
 def cmd_sync(a):
     b = Bench(a)
     b.ssh(f"mkdir -p ~/{DIR}/runs")
-    b.local(["scp"] + [os.path.join(HERE, t) for t in BENCH_TOOLS] + [f"{bench-host}:{DIR}/"])
+    b.local(["scp"] + [os.path.join(HERE, t) for t in BENCH_TOOLS] + [f"{BENCH_HOST}:{DIR}/"])
 
 
 def cmd_run(a):
@@ -503,9 +508,9 @@ def cmd_run(a):
     out = os.path.join(a.out, run)
     if not b.dry:
         os.makedirs(out, exist_ok=True)
-    hat = f"cd ~/{DIR} && {PY} hat_tx.py --freq {a.freq} --cc {a.cc} --power {a.hat_power}"
+    modem = f"cd ~/{DIR} && {PY} bench_tx.py --freq {a.freq} --cc {a.cc} --power {a.modem_power}"
     results = {"case": case["id"], "title": case["title"], "run": run, "args": vars(a), "radio": [], "steps": []}
-    captures, listen_p, rpt_p, sdr, hat_recs, rpt_recs = [], None, None, None, [], []
+    captures, listen_p, rpt_p, sdr, modem_recs, rpt_recs = [], None, None, None, [], []
 
     def interrupted(signum, frame):
         raise KeyboardInterrupt
@@ -515,7 +520,7 @@ def cmd_run(a):
     try:
         if a.ambe:
             b.ssh(f"mkdir -p ~/{DIR}/runs")
-            b.local(["scp", a.ambe, f"{bench-host}:{DIR}/runs/speech.ambe"])
+            b.local(["scp", a.ambe, f"{BENCH_HOST}:{DIR}/runs/speech.ambe"])
         if needs_lease(case):
             b.lease()
         b.ssh(f"mkdir -p {rdir}")
@@ -545,18 +550,18 @@ def cmd_run(a):
                         results["steps"].append({"gain": g, "clip_pct": meta.get("clip_pct")})
                         b.note(f"    gain {g}: ADC clipping {meta.get('clip_pct')} %")
             elif kind == "listen":
-                listen_p = b.ssh(f"{hat} --ambe-out {rdir}/heard listen --json --seconds {step[1]}", bg=True)
+                listen_p = b.ssh(f"{modem} --ambe-out {rdir}/heard listen --json --seconds {step[1]}", bg=True)
                 if not b.dry:
                     time.sleep(3)       # port open + tune + 1 s settle
             elif kind == "repeater":
-                rpt_p = b.ssh(f"cd ~/{DIR} && {PY} hat_repeater.py --rx {a.rpt_rx} --tx {a.rpt_tx} --cc {a.cc} "
-                              f"--power {a.hat_power} --seconds {step[1]} --json", bg=True)
+                rpt_p = b.ssh(f"cd ~/{DIR} && {PY} bench_repeater.py --rx {a.rpt_rx} --tx {a.rpt_tx} --cc {a.cc} "
+                              f"--power {a.modem_power} --seconds {step[1]} --json", bg=True)
                 if not b.dry:
                     time.sleep(3)
-            elif kind == "hat":
-                text = b.ssh(f"{hat} {b.fmt(step[1])}", capture=True, timeout=300)
-                hat_recs += jsonl(text)
-                results["steps"].append({"hat": b.fmt(step[1]), "ok": text is not None})
+            elif kind == "modem":
+                text = b.ssh(f"{modem} {b.fmt(step[1])}", capture=True, timeout=300)
+                modem_recs += jsonl(text)
+                results["steps"].append({"modem": b.fmt(step[1]), "ok": text is not None})
             elif kind == "watch":
                 listen_p = b.ssh(f"cd ~/{DIR} && export $(sudo cat /etc/radiodesk-rfgw/env | xargs) && "
                                  f"{PY} -W ignore sdr_watch.py --receiver {a.receiver} --seconds {step[1]} --json",
@@ -586,7 +591,7 @@ def cmd_run(a):
                 p.kill()
                 txt = ""
             if p is listen_p:
-                hat_recs += jsonl(txt)
+                modem_recs += jsonl(txt)
                 with open(os.path.join(out, "listen.jsonl"), "w") as f:
                     f.write(txt)
             elif p is rpt_p:
@@ -602,7 +607,7 @@ def cmd_run(a):
             if p.poll() is None:
                 p.terminate()
         b.release()
-    # analysis runs with rfgw back up (about 150 MB for a 15 s capture on the 824 MB bench-host)
+    # analysis runs with rfgw back up (about 150 MB for a 15 s capture on the 824 MB SDR bench)
     for i, (name, freq, off, secs) in enumerate(captures):
         freqs = [freq] + ([a.rpt_tx] if case.get("checks") == "repeater" else [])
         for f_ in freqs:
@@ -612,20 +617,20 @@ def cmd_run(a):
             if not b.dry and txt:
                 with open(os.path.join(out, tag + ".json"), "w") as fh:
                     fh.write(txt)
-                b.local(["scp", f"{bench-host}:{name[2:]}.{f_}.txt", os.path.join(out, tag + ".txt")])
+                b.local(["scp", f"{BENCH_HOST}:{name[2:]}.{f_}.txt", os.path.join(out, tag + ".txt")])
                 if sdr is None:
                     sdr = json.loads(txt)
     if b.dry:
         b.note("# dry run: nothing was executed")
         return 0
-    if hat_recs and case["id"] == "T0":
+    if modem_recs and case["id"] == "T0":
         fams = {}
-        for r in hat_recs:
+        for r in modem_recs:
             fams[(r.get("family"), r.get("type"), r.get("cc"), r.get("src"), r.get("dst"))] = \
                 fams.get((r.get("family"), r.get("type"), r.get("cc"), r.get("src"), r.get("dst")), 0) + 1
         for k, v in sorted(fams.items(), key=str):
             b.note(f"    {v:4d}  family {k[0]} type {k[1]} cc {k[2]} src {k[3]} dst {k[4]}")
-    checks = run_checks(case, a, sdr=sdr, hat=hat_recs or None, rpt=rpt_recs or None)
+    checks = run_checks(case, a, sdr=sdr, modem=modem_recs or None, rpt=rpt_recs or None)
     results["checks"] = checks.items
     results["verdict"] = checks.verdict if case.get("checks") else "MANUAL"
     results["commands"] = b.log
@@ -654,8 +659,8 @@ def report_md(case, r, b):
 def cmd_check(a):
     case = BY_ID[a.case]
     sdr = json.load(open(a.sdr)) if a.sdr else None
-    hat = jsonl(open(a.hat).read()) if a.hat else None
-    c = run_checks(case, a, sdr=sdr, hat=hat, rpt=hat if case.get("checks") == "repeater" else None)
+    modem = jsonl(open(a.modem).read()) if a.modem else None
+    c = run_checks(case, a, sdr=sdr, modem=modem, rpt=modem if case.get("checks") == "repeater" else None)
     for i in c.items:
         print(f"{ {True: 'ok  ', False: 'FAIL', None: 'man '}[i['ok']]} {i['check']}  {i['detail']}")
     print(c.verdict)
@@ -674,7 +679,7 @@ def main():
         p.add_argument("--cc", type=int, default=2)
         p.add_argument("--gain", type=float, default=5.0, help="RTL-SDR gain for captures (C0 picks it)")
         p.add_argument("--offset-khz", type=float, default=-200.0, help="channel minus SDR center (DC spike)")
-        p.add_argument("--hat-power", type=int, default=40, help="HAT RF level 0-255 (bench: low)")
+        p.add_argument("--modem-power", type=int, default=40, help="bench modem RF level 0-255 (bench: low)")
         p.add_argument("--rpt-rx", type=float, default=None, help="repeater input MHz (P cases)")
         p.add_argument("--rpt-tx", type=float, default=None, help="repeater output MHz (P cases)")
         p.add_argument("--ambe", default=None, help="Q2: a 9-byte-frame .ambe speech recording on the Mac")
@@ -696,7 +701,7 @@ def main():
     s = sub.add_parser("check")
     s.add_argument("case", choices=list(BY_ID))
     s.add_argument("sdr", nargs="?", default=None)
-    s.add_argument("--hat", default=None)
+    s.add_argument("--modem", default=None)
     common(s)
     a = ap.parse_args()
     if a.cmd == "run" and BY_ID[a.case].get("checks") == "repeater" and not (a.rpt_rx and a.rpt_tx):

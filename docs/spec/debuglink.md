@@ -152,6 +152,12 @@ not fit in RAM). A redraw while the host reads the chunks can tear the image. `o
 whole buffer twice and repeats until two reads agree (`--tries`, default 4), which gives a consistent image unless
 the screen changes continuously (a running timer); it says so when it gives up.
 
+While a capture is read the UI does not redraw: every SCREENSHOT request holds redraws for 1 s, and the request that
+returns the last chunk for 250 ms, long enough for the host's check pass to start. A key or radio request in that
+time changes the UI's state (`ui.screen` in GET_VIEW) at once, but its screen is drawn only when the hold lapses, so
+a host that captures a new screen waits for the hold to end (`tests/hil/odr_hil.py`: `Radio.screenshot` and
+`shot_until`). Firmware before this rule held for 1 s after the last chunk too.
+
 ### 3.4 KEY
 
 Injected keys go through the same path as the radio's own keys: their physical key bits are ORed into the input
@@ -200,11 +206,12 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 |---|---|---|
 | 0 | `core` | `view state tx_deny mode vfo zone_index zone_pos zone_size zone_name channel_number channel_name rx_hz tx_hz power power_name power_count temporary temp squelch monitor tone_ok rssi_dbm noise tx_elapsed_ms tot_s last_rx_ms vfo_step_hz codeplug hotspot serial` |
 | 1 | `channel` | `ch.name ch.rx_hz ch.tx_hz ch.mode ch.bw ch.rx_tone ch.tx_tone ch.power ch.rx_only ch.color_code ch.timeslot ch.contact ch.listen_list ch.dmr_id ch.dmo` |
-| 2 | `dmr` | `dmr.built dmr.active dmr.codec dmr.state dmr.phase dmr.tx_error dmr.own_id dmr.cc dmr.ts dmr.rmo dmr.repeater_up dmr.target_id dmr.target_private dmr.target_name dmr.reply_active dmr.reply_s dmr.hear_all dmr.underruns` |
-| 3 | `dmr_call` | `call.src call.dst call.group call.to_us call.encrypted call.src_name call.dst_name call.late_entry call.alias call.rssi_dbm call.ms`, the same with `last.` and `last.ms` |
-| 4 | `dmr_stats` | call stack (`call.rx_calls rx_calls_played rx_late_entries rx_voice_bursts rx_lost_frames rx_dup_dropped rx_enc_dropped tx_calls tx_denied tx_underruns evq_overflows`), AMBE voice (`voice.rx_in rx_frames rx_concealed rx_silence rx_calls rx_queue_max rx_bad rx_lost rx_underruns rx_overflows rx_bit_errors tx_frames tx_overflows`) |
+| 2 | `dmr` | `dmr.built dmr.active dmr.codec dmr.state dmr.phase dmr.tx_error dmr.own_id dmr.cc dmr.ts dmr.rmo dmr.repeater_up dmr.target_id dmr.target_private dmr.target_name dmr.reply_active dmr.reply_s dmr.hear_all dmr.underruns dmr.target_manual dmr.privacy dmr.alias_tx` |
+| 3 | `dmr_call` | `call.src call.dst call.group call.to_us call.encrypted call.emergency call.pi_header call.src_name call.dst_name call.late_entry call.alias_complete call.fid call.svc call.pi_alg call.pi_key call.alias call.rssi_dbm call.ms`, the same with `last.` (`src` to `dst_name`) and `last.ms` |
+| 4 | `dmr_stats` | call stack (`call.rx_calls rx_calls_played rx_late_entries rx_voice_bursts rx_lost_frames rx_dup_dropped rx_enc_dropped tx_calls tx_denied tx_underruns evq_overflows rx_private_calls rx_emergency_calls rx_encrypted_calls rx_pi_headers rx_alias_complete tx_alias_lcs`), AMBE voice (`voice.rx_in rx_frames rx_concealed rx_silence rx_calls rx_queue_max rx_bad rx_lost rx_underruns rx_overflows rx_bit_errors tx_frames tx_overflows`) |
 | 5 | `hotspot` | `hostlink` (idle / hotspot / cps), `hs.running hs.transmitting hs.receiving hs.rx_hz hs.tx_hz hs.cc hs.src hs.dst hs.group hs.from_net` and the engine counters `hs.net_frames ... hs.enter_attempts` |
 | 6 | `link` | `uptime_ms ui.screen` (home, quick, diag, hotspot) `input.idle_ms input.source input.raw_keys input.injected input.encoder_total dl.frames dl.bad_crc dl.too_long dl.timeouts` |
+| 7 | `features` | `scan.built scan` (off, zone, vfo, dual) `scan_phase` (listen, probe, hold, resume, paused) `scan_skipped tot_warning tone_burst roger vox_keyed rx_sleeping battery` (ok, low, critical) `battery_pct battery_mv power_off`, `beep.built beep.played beep.no_stream beep.blocks beep.busy`, and the radio settings `set.tot_s set.tot_warn_s set.bcl set.roger_beep set.tx_inhibit set.scan_resume set.scan_hold_s set.scan_delay_ms set.scan_dwell_ms set.scan_priority set.beep_level set.key_beep set.vox set.vox_level set.vox_tail_ms set.rx_save set.rx_save_idle_s set.battery_off_s` (`docs/spec/radio-features.md`) |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -233,6 +240,18 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 12 | none | `radio_req_clear_temporary` |
 | 13 | none | `radio_req_reply_cancel` (DMR builds) |
 | 14 | none | `hostlink_hotspot_exit`: leave hotspot mode |
+| 15 | target u32 | `radio_req_dmr_target`: ID or talkgroup in bits 23:0, bit 24 = private call (DMR builds) |
+| 16 | index u16 | `radio_req_dmr_contact`: a codeplug contact as the talk target |
+| 17 | none | `radio_req_dmr_call_back`: talk to the last call heard (its ID if private, its talkgroup if group) |
+| 18 | none | `radio_req_dmr_target_clear`: back to the channel's talk target |
+| 19 | type u8, key u16 | `radio_req_dmr_privacy`: basic privacy key in RAM, type 0 off, 1 Motorola BP (key 1-255), 2 Anytone BP (CONFIG_DMR_PRIVACY builds; never stored) |
+| 20 | cmd u8 [, pos u16] | `radio_req_scan`: 0 stop (stay where it is), 1 zone, 2 VFO (the band of the VFO frequency), 3 dual watch (pos = the second channel, required), 4 cancel (back to where it started), 5 nuisance delete (skip the current channel until the scan ends), 6 toggle (CONFIG_SCAN builds) |
+| 21 | lo u32, hi u32 | `radio_req_scan_vfo`: VFO scan from lo to hi Hz in the VFO step |
+| 22 | beep u8 | `radio_req_beep`: 1 key (only with `set.key_beep`), 2 error, 3 TX permit, 4 TX deny, 5 call end, 6 time-out warning, 7 battery low, 8 battery critical, 9 scan hold (CONFIG_BEEP builds) |
+| 23 | on u8 | `radio_req_tone_burst`: the 1750 Hz burst, keys up while on (FM channels, CONFIG_FM_TX_TONES builds) |
+| 24 | id u8, value u16 | one radio setting in RAM (`radio_set_settings`; not stored): 1 tot_s, 2 tot_warn_s, 3 bcl (0 off, 1 carrier, 2 wrong tone), 4 roger_beep, 5 tx_inhibit, 6 scan_resume (0 time, 1 carrier, 2 stop), 7 scan_hold_s, 8 scan_delay_ms, 9 scan_dwell_ms, 10 scan_priority, 11 beep_level (0-100), 12 key_beep, 13 vox (0 off, 1 channel, 2 all), 14 vox_level (0-10), 15 vox_tail_ms, 16 rx_save (0-3), 17 rx_save_idle_s, 18 battery_off_s, 19 scan_beep. Out of range: bad argument |
+
+Ops 15-18 last until the channel changes (`dmr.target_manual`). Unavailable ops answer UNAVAILABLE.
 
 ### 3.9 INFO_CHIP
 
@@ -324,9 +343,9 @@ the token and prints the radio's reason when it refuses.
 ## 5. Counters and resets
 
 RESET_COUNTERS zeroes: the board's diagnostics counters (`board.diag_reset`: on the DM-1701 the HR_C6000 slot engine
-counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`)
-and the AMBE voice counters (`ambeVoiceResetStats`). States and "last" values (last CC, last sync, engine TX state)
-are kept. The resets are not atomic with respect to the tasks and interrupts that count: an increment racing the
+counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`),
+the AMBE voice counters (`ambeVoiceResetStats`) and the beep counters (`beep_reset_stats`). States and "last"
+values (last CC, last sync, engine TX state) are kept. The resets are not atomic with respect to the tasks and interrupts that count: an increment racing the
 reset may survive it; a test that resets, waits a moment and then starts its traffic is not affected.
 
 ## 6. Adding a command

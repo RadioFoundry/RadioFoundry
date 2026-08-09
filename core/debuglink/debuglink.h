@@ -24,6 +24,7 @@ enum {
 	DL_VIEW_DMR_STATS,	// the DMR voice path counters: call stack, AMBE voice (debuglink_view_dmr.c)
 	DL_VIEW_HOTSPOT,	// the host link mode and the hotspot engine
 	DL_VIEW_LINK,		// input and debug link state
+	DL_VIEW_FEATURES,	// scan, FM extras, battery, beeps, the radio settings (debuglink_view_radio.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		1	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -39,6 +40,12 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t);
 bool debuglink_dmr_diag_line(uint8_t i, char *buf, uint8_t len);
 // Zero the call stack's and the AMBE voice counters
 void debuglink_dmr_reset(void);
+
+// The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
+// tone burst and one setting (DL_OP_*; returns a DL_ST_* status)
+void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
+enum { DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24 };
+uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
 #define DL_LINK_COUNTERS	4

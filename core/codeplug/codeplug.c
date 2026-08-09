@@ -35,6 +35,7 @@
 #define CH_TX		0x14u
 #define CH_MODE		0x18u
 #define CH_POWER	0x19u
+#define CH_TOT		0x1Bu	// 15 s units, 0 = off
 #define CH_RX_TONE	0x20u
 #define CH_TX_TONE	0x22u
 #define CH_LFLAG1	0x26u
@@ -42,16 +43,25 @@
 #define CH_RX_GROUP	0x2Bu
 #define CH_CC		0x2Cu
 #define CH_CONTACT	0x2Eu
+#define CH_FLAG1	0x30u	// bits 0-1 talker alias on TS1, 2-3 on TS2: 0 off, 1 APRS, 2 text, 3 both
 #define CH_FLAG2	0x31u
 #define CH_FLAG4	0x33u
 #define FLAG2_TS2	0x40u
+#define FLAG4_VOX	0x40u
+#define FLAG4_ZONE_SKIP	0x20u	// zone scan skip
 #define FLAG4_RX_ONLY	0x04u
 #define FLAG4_25K	0x02u
 #define LFLAG1_ID	0x80u	// per-channel DMR ID present
+#define LFLAG1_NO_BEEP	0x40u
+#define LFLAG1_NO_ECO	0x20u	// no power saving on this channel
 #define LFLAG1_DMO	0x04u	// force direct mode
 
 // General settings (7.3.2): the radio's DMR ID, 8 BCD digits big endian
+#define GEN_BASE	EE(0x00E0u)
 #define GEN_DMR_ID	EE(0x00E8u)
+#define GEN_GROUP_HANG	0x18u	// offsets in the block
+#define GEN_PRIV_HANG	0x19u
+#define GEN_HANG_UNIT_MS 500u	// TODO: the unit is not in the interop spec; 500 ms steps as in the vendor CPS range
 
 // Contacts (7.3.5) and RX group lists (7.3.6), flash image
 #define CONTACT_BASE	FL(0x87620u)
@@ -350,6 +360,13 @@ static bool legacy_channel(uint16_t number, channel_t *out)
 		out->dmr_id = ((uint32_t)r[CH_DMR_ID] << 16) | ((uint32_t)r[CH_DMR_ID + 1] << 8) | r[CH_DMR_ID + 2];
 	}
 	out->dmo = (r[CH_LFLAG1] & LFLAG1_DMO) != 0;
+	out->tot_s = (uint16_t)(r[CH_TOT] * 15u);
+	out->scan_skip = (r[CH_FLAG4] & FLAG4_ZONE_SKIP) != 0;
+	out->vox = (r[CH_FLAG4] & FLAG4_VOX) != 0;
+	out->no_beep = (r[CH_LFLAG1] & LFLAG1_NO_BEEP) != 0;
+	out->no_eco = (r[CH_LFLAG1] & LFLAG1_NO_ECO) != 0;
+	out->alias_tx = (uint8_t)(((r[CH_FLAG1] & 0x02u) ? CODEPLUG_ALIAS_TS1_TEXT : 0u) |
+				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u));
 	return true;
 }
 
@@ -477,6 +494,58 @@ bool codeplug_listen_list(uint16_t index, listen_list_t *out)
 			break;
 		}
 		out->contacts[out->count++] = c;
+	}
+	return true;
+}
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+{
+	enum { PER_READ = 32 };	// records per flash read (768 bytes on the stack)
+	uint8_t r[PER_READ * CONTACT_SIZE];
+
+	if (source != CODEPLUG_LEGACY || id == 0 || id > 0xFFFFFFu) {
+		return false;
+	}
+	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX; first += PER_READ) {
+		if (!flash_read(CONTACT_BASE + first * CONTACT_SIZE, r, sizeof(r))) {
+			return false;
+		}
+		for (unsigned i = 0; i < PER_READ; i++) {
+			const uint8_t *c = &r[i * CONTACT_SIZE];
+			uint8_t type = c[0x14];
+			if (c[0] == 0xFF || type > CONTACT_ALL_CALL || (type == CONTACT_PRIVATE) == group) {
+				continue;
+			}
+			uint32_t cid = type == CONTACT_ALL_CALL ? 0xFFFFFFu : bcd_id(&c[0x10]);
+			if (cid == id) {
+				return codeplug_contact((uint16_t)(first + i + 1u), out);
+			}
+		}
+	}
+	return false;
+}
+
+bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
+{
+	uint8_t g[0x1A];
+
+	memset(out, 0, sizeof(*out));
+	if (source != CODEPLUG_LEGACY || !flash_read(GEN_BASE, g, sizeof(g))) {
+		return false;
+	}
+	unsigned n = 0;
+	while (n < CODEPLUG_RADIO_NAME_LEN && g[n] >= 0x20 && g[n] < 0x7F) {
+		out->radio_name[n] = (char)g[n];
+		n++;
+	}
+	while (n > 0 && out->radio_name[n - 1] == ' ') {
+		n--;
+	}
+	out->radio_name[n] = '\0';
+	if (g[GEN_GROUP_HANG] != 0xFF) {
+		out->group_hang_ms = (uint16_t)(g[GEN_GROUP_HANG] * GEN_HANG_UNIT_MS);
+	}
+	if (g[GEN_PRIV_HANG] != 0xFF) {
+		out->private_hang_ms = (uint16_t)(g[GEN_PRIV_HANG] * GEN_HANG_UNIT_MS);
 	}
 	return true;
 }
