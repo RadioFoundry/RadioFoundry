@@ -73,8 +73,9 @@ bool fd6818_band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 
 uint16_t fd6818_ctcss_word(uint16_t hz_x10)
 {
-	// Hz x 20.64888 = (Hz x 10) x 2.064888
-	return (uint16_t)(((uint32_t)hz_x10 * 2064888u + 500000u) / 1000000u);
+	// Hz x 20.64888 = (Hz x 10) x 2.064888 = (Hz x 10) x 258111 / 125000 (exact; fits 32 bits up to 1664 Hz x 10,
+	// so the product is done in 64 bits for any input)
+	return (uint16_t)(((uint64_t)hz_x10 * 258111u + 62500u) / 125000u);
 }
 
 void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus)

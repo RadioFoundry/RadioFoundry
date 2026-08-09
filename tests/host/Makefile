@@ -251,3 +251,34 @@ run: run-debuglink
 run-debuglink: debuglinkTest
 	./debuglinkTest
 .PHONY: run-debuglink
+
+# DM-32UV drivers and board logic: FD6818 frames on a fake three-wire chip, ST7789 init stream and 2x scaling, key
+# matrix decode with the column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the factory
+# calibration decoder (docs/spec/hardware-dm32.md, modem-hrc7000.md)
+DM32    := $(ROOT)/boards/dm32
+HRC7    := $(ROOT)/drivers/modem/hrc7000
+TESTS   += fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
+
+fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c
+
+st7789Test: st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c $(ROOT)/drivers/display/st7789/st7789.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c
+
+keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
+
+hrc7000DmrTest: hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
+
+dm32CalTest: dm32CalTest.c $(DM32)/calibration_dm32.c $(DM32)/dm32.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DM32) -Wshadow -o $@ dm32CalTest.c $(DM32)/calibration_dm32.c
+
+run: run-dm32
+run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
+	./fd6818Test
+	./st7789Test
+	./keymatrixTest
+	./hrc7000DmrTest
+	./dm32CalTest
+.PHONY: run-dm32
