@@ -239,3 +239,15 @@ run: run-debuglink
 run-debuglink: debuglinkTest
 	./debuglinkTest
 .PHONY: run-debuglink
+
+# The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
+STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
+TESTS   += settingsTest
+
+settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
+
+run: run-settings
+run-settings: settingsTest
+	./settingsTest
+.PHONY: run-settings

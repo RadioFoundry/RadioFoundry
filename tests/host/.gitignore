@@ -34,3 +34,8 @@ ambeFecTest
 ambeVoiceTest
 debuglinkTest
 dmrRxChainTest
+settingsTest
+codeplugEditTest
+cpsTest
+cpsSim
+cps_sim_*.bin

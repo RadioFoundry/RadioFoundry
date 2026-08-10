@@ -17,6 +17,7 @@
 #include "hal_vocoder.h"
 #include "hal_stream.h"
 #include "hal_system.h"
+#include "hal_cps.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -57,6 +58,8 @@ typedef struct {
 	void (*diag_reset)(void);
 	// Optional: chip identity, raw memory reads, reboot modes (hal_system.h)
 	const hal_system_t *system;
+	// Optional: the legacy CPS shim's view of the radio (hal_cps.h)
+	const hal_cps_t *cps;
 } board_t;
 
 extern const board_t board;

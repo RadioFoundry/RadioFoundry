@@ -45,13 +45,16 @@ CONFIG_VFO_FM ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_FM))),
 CONFIG_VFO_DMR ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_DMR))),y,n)
 # the USB debug link: framed commands on the host port for bench automation (docs/spec/debuglink.md; needs USB)
 CONFIG_DEBUGLINK ?= $(CONFIG_USB)
+# the legacy CPS protocol shim on the host port, so qdmr and the legacy CPS can read and write the codeplug
+# (docs/spec/legacy-cps-interop.md; needs USB)
+CONFIG_CPS_LEGACY ?= $(CONFIG_USB)
 # the diagnostics page
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_IP_GATEWAY SFR \
-	USB USB_NETWORK HOTSPOT DEBUGLINK VFO VFO_FM VFO_DMR DIAG FONT_XL
+	USB USB_NETWORK HOTSPOT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -69,6 +72,11 @@ endif
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,USB),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_USB=y)
+  endif
+endif
+ifneq ($(call feature_on,CPS_LEGACY),)
+  ifeq ($(call feature_on,USB),)
+    $(error CONFIG_CPS_LEGACY=y needs CONFIG_USB=y)
   endif
 endif
 ifneq ($(call feature_on,USB_NETWORK),)
