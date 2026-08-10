@@ -9,6 +9,9 @@
 
 static int failures;
 
+void storage_lock(void) {}
+void storage_unlock(void) {}
+
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
 #define IMAGE_SIZE	0x0B0000u

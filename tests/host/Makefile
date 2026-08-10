@@ -124,8 +124,8 @@ run-core: radioCoreTest inputTest
 FLASH_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += codeplugTest calibrationTest
 
-codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h
-	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c
+codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/storage/storage.c
 
 calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h
 	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c
@@ -251,3 +251,16 @@ run: run-settings
 run-settings: settingsTest
 	./settingsTest
 .PHONY: run-settings
+
+# Codeplug editing: the legacy record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
+# the round trip read -> write -> read, power cuts during an edit
+CPEDIT  := $(CORE)/codeplug/codeplug.c $(CORE)/storage/storage.c sim/sim_flash.c
+TESTS   += codeplugEditTest
+
+codeplugEditTest: codeplugEditTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugEditTest.c $(CPEDIT)
+
+run: run-cpedit
+run-cpedit: codeplugEditTest
+	./codeplugEditTest
+.PHONY: run-cpedit
