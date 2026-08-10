@@ -281,4 +281,5 @@ run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
 	./keymatrixTest
 	./hrc7000DmrTest
 	./dm32CalTest
+	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
 .PHONY: run-dm32

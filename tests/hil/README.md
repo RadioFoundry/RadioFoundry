@@ -72,6 +72,7 @@ put them in a file in the repository.
 
 | Module | What | Needs |
 |---|---|---|
+| `test_dm32.py` | DM-32UV bring-up: display geometry and features, data flash JEDEC ID and factory calibration, battery reading, FD6818 reads alive, DMR timeslot interrupts, stock codec merged (docs/testing/dm32-bringup.md); skipped on other boards | DM-32 on its programming cable: `--radio-port /dev/cu.usbserial-...` |
 | `test_boot.py` | version / features, ping latency, screenshot geometry, firmware clock vs wall clock (no stalls), view sections, diagnostics clock, error replies (unknown command, bad CRC, oversized request), log ring | radio |
 | `test_ui.py` | UP / DOWN change the channel on Home, Quick settings open and close (screenshots differ, then match), diagnostics page, injected keys count as activity | radio |
 | `test_fm.py` | VFO on NOAA weather: squelch opens or RSSI above the floor within 10 s (receive only) | radio with the FM VFO |

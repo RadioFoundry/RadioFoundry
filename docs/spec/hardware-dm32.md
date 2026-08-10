@@ -834,3 +834,27 @@ These are traps in the old port, listed so a fresh implementation does not copy 
 | 13 | SYS_SOFT_RSTN values 0x180 / 0x190 hold most modem blocks in reset if the manual's "low active" is right, yet FM worked | Bit meanings need checking on hardware |
 | 14 | LED color of GPIO 0x20 / 0x21 disagrees between the port and the community map | Check on hardware |
 | 15 | PWM backlight duty only spans half the range (FP 0..100 with PER 200) | Check on hardware |
+
+---
+
+## 17. How OpenDigitalRadio uses it (`make BOARD=dm32`)
+
+Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checklist.
+
+| Area | Choice | Where |
+|---|---|---|
+| Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; packed with `tools/dm32_pack.py` for the Baofeng updater | `boards/dm32/dm32.ld`, `platform/hrc7000/crt0.S` |
+| Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/dm32_codec.py` | `dm32.ld` |
+| SRAM | 0x10000..0x16CDC: vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows). 0x2F914..0x58000: data, bss (RTOS heap inside), start-up stack | `dm32.ld` |
+| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E20 the codec's tables (copied at first use) | `audio_dm32.c`, `vocoder_dm32.c` |
+| Clocks | PLL sequence of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
+| Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
+| Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock) | `platform/hrc7000/time.c`, `boards/dm32/dmr_dm32.c` |
+| RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
+| Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot; no USB on this radio (`CONFIG_USB=n`, `CONFIG_HOSTLINK=y`) | `platform/hrc7000/uart.c` |
+| Display | 240x320 at 2x: the core draws 120x160 (its frame buffer is 40 KB); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
+| Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
+| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused | `flash_dm32.c` |
+| Calibration | 11, read only; OpenDM32's copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `calibration_dm32.c` |
+| Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM with its own sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
+| DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `dmr_dm32.c` |

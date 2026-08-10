@@ -15,7 +15,7 @@ def test_version_and_features(radio):
     assert v.get("board"), "board name"
     assert v.get("git") and v["git"] != "unknown", "firmware built from a git tree"
     feats = radio.features()
-    assert {"USB", "DEBUGLINK"} <= feats, feats
+    assert {"HOSTLINK", "DEBUGLINK"} <= feats, feats    # USB too on radios that have it (not the DM-32)
     assert "FM" in feats or "DMR" in feats
 
 
