@@ -264,3 +264,16 @@ run: run-cpedit
 run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
+
+# The legacy CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
+CPS     := $(CORE)/cps/cps_legacy.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
+           sim/sim_flash.c
+TESTS   += cpsTest
+
+cpsTest: cpsTest.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsTest.c $(CPS)
+
+run: run-cps
+run-cps: cpsTest
+	./cpsTest
+.PHONY: run-cps
