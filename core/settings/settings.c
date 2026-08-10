@@ -29,6 +29,7 @@ static bool have_flash;
 static bool dirty;
 static uint32_t changed_ms;
 static settings_stats_t stats;
+static bool inited;			// live holds the defaults or a loaded record
 static uint16_t sectors;		// ring length
 
 void settings_defaults(settings_t *s)
@@ -87,15 +88,19 @@ static slot_state_t read_slot(uint16_t sector, uint16_t slot, uint8_t *r)
 }
 
 static bool have_newest;		// stats.sector / stats.slot point at the newest valid record
+// Slot buffers, used only under the storage lock (kept off the small housekeeping and start-up task stacks)
+static uint8_t slot_buf[SLOT_SIZE];
+static uint8_t slot_buf2[SLOT_SIZE];
 
 settings_load_t settings_init(void)
 {
 	const hal_flash_map_t *m = storage_map();
-	uint8_t r[SLOT_SIZE];
-	uint8_t best[SLOT_SIZE];
+	uint8_t *r = slot_buf;
+	uint8_t *best = slot_buf2;
 
 	memset(&stats, 0, sizeof(stats));
 	settings_defaults(&live);
+	inited = true;
 	have_newest = false;
 	have_flash = storage_ready() && m != NULL && m->settings_size >= 2u * STORAGE_SECTOR;
 	if (!have_flash) {
@@ -131,9 +136,20 @@ settings_load_t settings_init(void)
 	return (settings_load_t)stats.load;
 }
 
+// Before settings_init: the defaults
+static void ensure(void)
+{
+	if (!inited) {
+		settings_defaults(&live);
+		saved = live;
+		inited = true;
+	}
+}
+
 void settings_read(settings_t *out)
 {
 	storage_quick_lock();
+	ensure();
 	*out = live;
 	storage_quick_unlock();
 }
@@ -141,6 +157,7 @@ void settings_read(settings_t *out)
 settings_t *settings_begin(void)
 {
 	storage_quick_lock();
+	ensure();
 	before = live;
 	return &live;
 }
@@ -158,7 +175,7 @@ void settings_end(uint32_t now_ms)
 // sector (erased first). Returns false if the flash fails
 static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 {
-	uint8_t r[SLOT_SIZE];
+	uint8_t *r = slot_buf2;
 	uint16_t sec = have_newest ? stats.sector : 0;
 	uint16_t sl = have_newest ? (uint16_t)(stats.slot + 1u) : 0;
 
@@ -178,10 +195,11 @@ static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 
 static bool save(const settings_t *s)
 {
-	uint8_t r[SLOT_SIZE];
+	static uint8_t r[SLOT_SIZE];
 	uint16_t n = sizeof(*s);
 	uint32_t seq = stats.seq + 1u;
 
+	storage_lock();
 	memset(r, 0xFF, sizeof(r));
 	put32(&r[0], MAGIC);
 	put32(&r[4], seq);
@@ -192,7 +210,6 @@ static bool save(const settings_t *s)
 	memcpy(&r[HDR], s, n);
 	put32(&r[HDR + n], storage_crc32(0, r, HDR + n));
 
-	storage_lock();
 	bool ok = false;
 	for (int attempt = 0; attempt < RETRIES && !ok; attempt++) {
 		uint16_t sec, sl;
@@ -209,7 +226,7 @@ static bool save(const settings_t *s)
 		}
 		// The record, then the commit word: a cut in between leaves an unfinished slot, which load skips
 		static const uint8_t commit[4] = { 0, 0, 0, 0 };
-		uint8_t back[SLOT_SIZE];
+		uint8_t *back = slot_buf;
 		bool written = board.flash->write(a, r, HDR + n + 4u) && board.flash->write(a + COMMIT, commit, 4) &&
 			       read_slot(sec, sl, back) == SLOT_VALID && get32(&back[4]) == seq;
 		// Whatever happened, this slot is used now: the next attempt (or save) goes past it

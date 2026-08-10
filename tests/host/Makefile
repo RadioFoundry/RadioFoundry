@@ -106,7 +106,7 @@ TESTS   += radioCoreTest inputTest
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
-           sim/dmr_sim_modem.c
+           sim/dmr_sim_modem.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c
 
 radioCoreTest: $(RCORE) $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h $(CORE)/radio/tones.h $(wildcard $(CORE)/dmr/call/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RCORE)

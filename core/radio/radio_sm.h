@@ -52,6 +52,7 @@ typedef enum {
 	RREQ_HS_FREQ,		// hotspot: arg = RX Hz, arg2 = TX Hz
 	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-255
 	RREQ_HS_LEAVE,		// hotspot: back to the channel
+	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -105,6 +106,8 @@ typedef struct {
 	int8_t green_out;
 	int8_t red_out;
 	bool hotspot;			// hotspot mode: the host link owns the modem
+	uint32_t codeplug_serial;	// codeplug_serial() when the zone and channel were last read
+	bool reload_pending;		// RREQ_RELOAD came while busy
 #if CONFIG_DMR
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem
@@ -124,7 +127,9 @@ typedef struct {
 #endif
 } radio_sm_t;
 
-// Start-up: codeplug, zone 0, the first channel (or the VFO), FM receive
+// Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its
+// first channel (or the VFO); FM receive. Every request notes the position and the VFO in the settings, and
+// radio_sm_poll re-reads the codeplug when codeplug_serial() moves
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms);
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms);
 // Every RADIO_POLL_MS: status, squelch, audio, LEDs, TX time-out
