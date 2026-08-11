@@ -24,6 +24,7 @@ enum {
 	DL_VIEW_DMR_STATS,	// the DMR voice path counters: call stack, AMBE voice (debuglink_view_dmr.c)
 	DL_VIEW_HOTSPOT,	// the host link mode and the hotspot engine
 	DL_VIEW_LINK,		// input and debug link state
+	DL_VIEW_STORAGE,	// settings store, flash journal, codeplug and CPS session counters
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		1	// bumped when a key changes meaning or goes away (new keys don't bump it)

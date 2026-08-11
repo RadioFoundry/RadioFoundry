@@ -19,6 +19,7 @@ python3 -m pytest tests/hil -v -rs --allow-rf --allow-service-stop --ambe ~/reco
 python3 -m pytest tests/hil -k ui --shots /tmp/odr-shots                    # keep the screenshots
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"   # radio TX off air
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk         # RadioDesk alert call
+python3 -m pytest tests/hil -v -rs -s -k cps --allow-codeplug-write --allow-reboot      # CPS write + restart
 ```
 
 Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094;
@@ -31,6 +32,8 @@ Without a radio every test is skipped with the reason (no failure). The radio is
 | (none) | radio-only tests: version, screenshots, keys, FM receive, MMDVM requests that don't transmit |
 | `--allow-rf` | tests that transmit (marker `rf`: the SDR bench's transmitter; marker `radio_tx`: the radio itself) |
 | `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver |
+| `--allow-codeplug-write` | tests that write the codeplug over CPS (marker `codeplug_write`): the qdmr regions are read and saved to the test's tmp directory first, one channel name is changed, and the backup is written back and verified in a `finally` block |
+| `--allow-reboot` | tests that restart the radio (marker `reboot`) through the debug link's REBOOT (mode 0) |
 | `--allow-radiodesk` | tests that publish to the RadioDesk sandbox broker (marker `radiodesk`), whose gateway then calls the radio; also needs `--allow-rf` and `$ODR_RADIODESK_MQTT_*` |
 
 The RF tests need both flags. The gateway service is stopped through `tools/bench/dmr_bench.py`'s lease: a detached
@@ -81,6 +84,7 @@ put them in a file in the repository.
 | `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset | `--allow-rf --allow-service-stop` |
 | `test_fm_tx.py` | radio FM VFO keys 3 s with CTCSS 100.0, DCS D023N, and at 12.5 / 25 kHz; `tools/sdr_fm_check.py` on an SDR capture | `--allow-rf --allow-service-stop` |
 | `test_radiodesk_alert.py` | a RadioDesk sandbox alert (MQTT `ESS/RadioDesk/Alert/<id>/voice`) becomes a private call; the radio shows and plays it; `AlertStatus` reports | `--allow-rf --allow-radiodesk`, `$ODR_RADIODESK_MQTT_*` |
+| `test_cps.py` | legacy CPS over USB with `tools/cps_client.py`: radio info (type 8 / 10, struct 3), two reads of the qdmr regions identical, the current channel's record matches the view, a channel change saved by the settings store within 2 s (the `storage` view section); opt-in: one channel renamed, read back and the backup restored and verified; the channel position survives a restart | radio; `--allow-codeplug-write`, `--allow-reboot` |
 | `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
 
 ### Pass criteria and tolerances

@@ -33,6 +33,21 @@ def main():
         name = bytes(img[0x3790:0x37A0]).rstrip(b"\xff")
         check(name == b"Sim 1", f"channel 1 name {name!r}")
         check(bytes(img[0xE0:0xE5]) == b"N0SIM", "radio name")
+        ch = cps_client.decode_channel(img, 2)
+        check(ch == {"name": "Sim 2", "rx_hz": 446025000, "tx_hz": 446025000}, f"decode_channel {ch}")
+        check(cps_client.decode_channel(img, 41) is None, "channel 41 unused")
+
+        # Only the sectors that differ from what the radio holds (the HIL write test's way)
+        before = bytes(img)
+        edit = bytearray(img)
+        cps_client.set_channel_name(edit, 2, "Two")
+        commits = []
+        cps.write_image(edit, regions, reboot=False, base=before, progress=lambda i, n: commits.append(n))
+        check(commits and commits[-1] == 1, f"one sector written ({commits[-1:]})")
+        check(cps_client.decode_channel(cps.read_image(regions), 2)["name"] == "Two", "base write landed")
+        cps.write_image(before, regions, reboot=False, base=edit)
+        img = cps.read_image(regions)
+        check(not cps_client.compare(before, img, regions), "base write undone")
 
         # Edit: rename channel 1, try to clobber the quick keys; write with save-and-reboot; read back
         img[0x3790:0x37A0] = b"Edited".ljust(16, b"\xff")

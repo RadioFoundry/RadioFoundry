@@ -197,12 +197,15 @@ class Cps:
         self.t.write(bytes([0x58, 3]))
         self._ack(f"commit sector {sector:#x}", 3)
 
-    def write_image(self, img, regions, reboot=True, block=BLOCK, progress=None):
+    def write_image(self, img, regions, reboot=True, block=BLOCK, progress=None, base=None):
+        """Write the regions of img; with base (what the radio holds now) only the sectors that differ"""
         self.opening(True)
         jobs = []
         for start, end in regions:
             for sector in range(start // SECTOR, (end + SECTOR - 1) // SECTOR):
-                jobs.append((sector, start, end))
+                lo, hi = max(start, sector * SECTOR), min(end, (sector + 1) * SECTOR)
+                if base is None or bytes(img[lo:hi]) != bytes(base[lo:hi]):
+                    jobs.append((sector, start, end))
         for i, (sector, start, end) in enumerate(jobs):
             self.write_sector(img, sector, start, end, block)
             if progress:
@@ -210,6 +213,47 @@ class Cps:
         self.control(5)
         if reboot:
             self.control(6, bytes([0]))
+
+
+# ── the legacy channel records (docs/spec/legacy-cps-interop.md), enough for tests to find and edit a channel ──
+CHANNEL_SIZE = 56
+CHANNELS_PER_BANK = 128
+
+
+def channel_addr(number):
+    """Flash address of channel number (1-1024): bank 0 in the EEPROM image, banks 1-7 in the flash image"""
+    i = number - 1
+    bank = i // CHANNELS_PER_BANK
+    bitmap = 0x3780 if bank == 0 else 0x9B1B0 + (bank - 1) * (16 + CHANNELS_PER_BANK * CHANNEL_SIZE)
+    return bitmap, bitmap + 16 + (i % CHANNELS_PER_BANK) * CHANNEL_SIZE
+
+
+def _bcd(b):
+    v = 0
+    for byte in reversed(b):
+        hi, lo = byte >> 4, byte & 15
+        if hi > 9 or lo > 9:
+            return None
+        v = v * 100 + hi * 10 + lo
+    return v
+
+
+def decode_channel(img, number):
+    """{name, rx_hz, tx_hz} of a channel in an image, None when its bit in the bank bitmap is clear"""
+    bitmap, a = channel_addr(number)
+    i = (number - 1) % CHANNELS_PER_BANK
+    if not img[bitmap + i // 8] & (1 << (i % 8)):
+        return None
+    rec = bytes(img[a:a + CHANNEL_SIZE])
+    rx, tx = _bcd(rec[0x10:0x14]), _bcd(rec[0x14:0x18])
+    return {"name": rec[0:16].split(b"\xff")[0].split(b"\0")[0].decode("ascii", "replace"),
+            "rx_hz": rx * 10 if rx is not None else None, "tx_hz": tx * 10 if tx is not None else None}
+
+
+def set_channel_name(img, number, name):
+    _, a = channel_addr(number)
+    raw = name.encode("ascii")[:16]
+    img[a:a + 16] = raw + b"\xff" * (16 - len(raw))
 
 
 def open_cps(port=None, exec_cmd=None, timeout=2.0):
