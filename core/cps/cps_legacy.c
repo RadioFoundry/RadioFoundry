@@ -37,6 +37,7 @@ static uint8_t *sector;			// the shared storage buffer while a sector is pending
 static uint32_t sector_addr;
 static bool sector_cal;			// the calibration sector: only the window may change
 static bool image_written;		// a commit since the session began: re-read the codeplug at its end
+static int8_t reboot_req = -1;		// C 6 0 / 1 seen: reboot (1 = save first) once the bytes are handled
 
 static uint32_t be32(const uint8_t *p)
 {
@@ -470,9 +471,7 @@ static void cmd_control(void)
 			if (req[2] == 0) {
 				settings_flush();
 			}
-			if (io != NULL && io->reboot != NULL) {
-				io->reboot(req[2] == 0);
-			}
+			reboot_req = req[2] == 0 ? 1 : 0;	// after this feed: the engine may be re-initialized
 			return;
 		case 2:		// save the settings and the VFOs (the image shows the live VFO anyway)
 			settings_flush();
@@ -601,8 +600,22 @@ void cps_init(const cps_io_t *p)
 	overflow = false;
 	drop_sector();
 	image_written = false;
+	reboot_req = -1;
 	memset(&stats, 0, sizeof(stats));
 	memset(req, 0, sizeof(req));
+}
+
+// A reboot asked for by C 6 0 / 1, once the bytes at hand are handled (the reboot may re-initialize the engine)
+static void reboot_now(void)
+{
+	if (reboot_req >= 0) {
+		bool save = reboot_req == 1;
+		reboot_req = -1;
+		req_len = 0;
+		if (io != NULL && io->reboot != NULL) {
+			io->reboot(save);
+		}
+	}
 }
 
 void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
@@ -624,6 +637,7 @@ void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 		if (stats.session && (now_ms - last_rx_ms) > CPS_SESSION_MS) {
 			end_session();
 		}
+		reboot_now();
 		return;
 	}
 	last_rx_ms = now_ms;
@@ -637,6 +651,7 @@ void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 	memcpy(req + req_len, buf, len);
 	req_len += len;
 	process(false);
+	reboot_now();
 }
 
 void cps_get_stats(cps_stats_t *s)

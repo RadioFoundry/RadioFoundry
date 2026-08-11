@@ -277,3 +277,19 @@ run: run-cps
 run-cps: cpsTest
 	./cpsTest
 .PHONY: run-cps
+
+# tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there
+PYTHON  ?= $(shell command -v python3)
+TESTS   += cpsSim
+
+cpsSim: cpsSim.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsSim.c $(CPS)
+
+run: run-cpsclient
+run-cpsclient: cpsSim
+ifneq ($(PYTHON),)
+	$(PYTHON) -B cpsClientTest.py
+else
+	@echo "# cpsClientTest skipped (no python3)"
+endif
+.PHONY: run-cpsclient
