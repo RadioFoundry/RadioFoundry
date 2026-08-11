@@ -11,6 +11,8 @@
 #include "dmr/sfr.h"
 #include "dmr/dmrData.h"
 #include "sim/dmr_sim_modem.h"
+#include "dmr/dmrPrivacy.h"
+#include "dmr/ambe/ambeFec.h"
 
 static int failures;
 static int checks;
@@ -1061,6 +1063,376 @@ static void test_reconfigure(void)
 	run_ms(20);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Voice call features: talker alias TX, PI headers, emergency, private calls and their reply window, basic privacy
+
+// The embedded LC of every whole superframe on air, in order (reassembled from the B-E fragments)
+static int air_superframe_lcs(uint8_t out[][9], int max)
+{
+	dmr_emb_rx_t rx;
+	int n = 0;
+
+	dmr_emb_rx_reset(&rx);
+	for (unsigned i = 0; i < sim.air_count && n < max; i++) {
+		sim_air_t *a = &sim.air[i];
+
+		if (a->kind == DMR_BURST_VOICE && a->voice_index >= 1 && a->voice_index <= 4 &&
+		    dmr_emb_rx_push(&rx, a->emb, a->lcss, out[n]))
+			n++;
+	}
+	return n;
+}
+
+static void test_tx_alias(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9], ta[4][9], got[16][9];
+	dmr_call_stats_t st;
+
+	strcpy(c.tx_alias, "N0CALL Spencer");	// ISO 8-bit: header and two blocks
+	c.tx_alias_format = DMR_TA_ISO8;
+	setup(&c);
+	int n = dmr_ta_encode(c.tx_alias, DMR_TA_ISO8, ta);
+	CHECK(n == 3);
+	dmr_call_ptt(true);
+	run_ms(360 * 9);
+	dmr_call_ptt(false);
+	run_ms(1200);
+	mk_lc(lc, 0, TG_TALK, OWN_ID);
+	int sfs = air_superframe_lcs(got, 16);
+	CHECK(sfs >= 9);
+	// LC, header, LC, block 1, LC, block 2, LC, header, LC ...
+	for (int k = 0; k < sfs; k++) {
+		const uint8_t *want = (k & 1) ? ta[(k / 2) % n] : lc;
+
+		CHECK(memcmp(got[k], want, 9) == 0);
+	}
+	// An independent receiver (the stack's own decoder) gets the text back
+	dmr_ta_t rx;
+	dmr_ta_reset(&rx);
+	for (int k = 1; k < sfs; k += 2)
+		dmr_ta_push(&rx, got[k]);
+	CHECK(rx.complete && strcmp(rx.text, "N0CALL Spencer") == 0);
+	dmr_call_get_stats(&st);
+	CHECK(st.tx_alias_lcs == (uint32_t)(sfs / 2));
+
+	// 7-bit, the longest alias: header and three blocks
+	n = dmr_ta_encode("ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567", DMR_TA_7BIT, ta);
+	dmr_ta_reset(&rx);
+	for (int k = 0; k < n; k++)
+		dmr_ta_push(&rx, ta[k]);
+	CHECK(n == 4 && rx.complete && strcmp(rx.text, "ABCDEFGHIJKLMNOPQRSTUVWXYZ01234") == 0);
+	CHECK(dmr_ta_encode("", DMR_TA_ISO8, ta) == 0);
+
+	// No alias: the voice LC in every superframe
+	c = base_cfg();
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(360 * 4);
+	dmr_call_ptt(false);
+	run_ms(1200);
+	sfs = air_superframe_lcs(got, 16);
+	CHECK(sfs >= 4);
+	for (int k = 0; k < sfs; k++)
+		CHECK(memcmp(got[k], lc, 9) == 0);
+}
+
+// Talker alias formats a receiver must take (TS 102 361-2 7.2.18)
+static void ta_build(uint8_t format, uint8_t length, const uint8_t *data, int bits, uint8_t lcs[4][9])
+{
+	uint8_t stream[28] = { 0 };
+
+	for (int i = 0; i < bits; i++)
+		if (data[i / 8] & (0x80 >> (i % 8)))
+			stream[(i + (format ? 1 : 0)) / 8] |= (uint8_t)(0x80 >> ((i + (format ? 1 : 0)) % 8));
+	memset(lcs, 0, 4 * 9);
+	lcs[0][0] = DMR_FLCO_TA_HEADER;
+	lcs[0][2] = (uint8_t)((format << 6) | (length << 1) | (stream[0] >> 7));
+	for (int i = 0; i < 48; i++)
+		if (stream[(1 + i) / 8] & (0x80 >> ((1 + i) % 8)))
+			lcs[0][3 + i / 8] |= (uint8_t)(0x80 >> (i % 8));
+	for (int b = 1; b <= 3; b++) {
+		lcs[b][0] = (uint8_t)(DMR_FLCO_TA_BLOCK1 + b - 1);
+		for (int i = 0; i < 56; i++) {
+			int at = 49 + (b - 1) * 56 + i;
+			if (stream[at / 8] & (0x80 >> (at % 8)))
+				lcs[b][2 + i / 8] |= (uint8_t)(0x80 >> (i % 8));
+		}
+	}
+}
+
+static void test_alias_formats(void)
+{
+	uint8_t lcs[4][9];
+	dmr_ta_t ta;
+
+	// UTF-8 "Zoë K1" (length 6 characters, 7 bytes): the two-byte sequence shows as one '?'
+	static const uint8_t utf8[] = { 'Z', 'o', 0xC3, 0xAB, ' ', 'K', '1' };
+	ta_build(DMR_TA_UTF8, 6, utf8, 8 * sizeof(utf8), lcs);
+	dmr_ta_reset(&ta);
+	dmr_ta_push(&ta, lcs[0]);
+	CHECK(strcmp(ta.text, "Zo? K") == 0 && !ta.complete);	// header: 6 bytes, the "1" still missing
+	dmr_ta_push(&ta, lcs[1]);
+	CHECK(strcmp(ta.text, "Zo? K1") == 0 && ta.complete);
+	// ... and a sender counting bytes (length 7): the zero padding after the text ends it
+	ta_build(DMR_TA_UTF8, 7, utf8, 8 * sizeof(utf8), lcs);
+	dmr_ta_reset(&ta);
+	dmr_ta_push(&ta, lcs[0]);
+	CHECK(!ta.complete);
+	dmr_ta_push(&ta, lcs[1]);
+	CHECK(strcmp(ta.text, "Zo? K1") == 0 && ta.complete);
+	// ... or, with no padding to see (a 27-byte alias announced as 31), once all four parts are in
+	static const uint8_t full[27] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	uint8_t f27[27];
+	memcpy(f27, full, 26);
+	f27[26] = 'z';
+	ta_build(DMR_TA_UTF8, 31, f27, 8 * 27, lcs);
+	dmr_ta_reset(&ta);
+	for (int k = 0; k < 3; k++)
+		dmr_ta_push(&ta, lcs[k]);
+	CHECK(!ta.complete);
+	dmr_ta_push(&ta, lcs[3]);
+	CHECK(ta.complete && strcmp(ta.text, "ABCDEFGHIJKLMNOPQRSTUVWXYZz") == 0);
+
+	// UTF-16 BE "AB" + a surrogate pair + "C": 4 characters
+	static const uint8_t utf16[] = { 0, 'A', 0, 'B', 0xD8, 0x3D, 0xDE, 0x00, 0, 'C' };
+	ta_build(DMR_TA_UTF16, 4, utf16, 8 * sizeof(utf16), lcs);
+	dmr_ta_reset(&ta);
+	dmr_ta_push(&ta, lcs[0]);
+	CHECK(strcmp(ta.text, "AB") == 0 && !ta.complete);
+	dmr_ta_push(&ta, lcs[1]);
+	CHECK(strcmp(ta.text, "AB?C") == 0 && ta.complete);
+
+	// ISO 8-bit with a Latin-1 letter
+	static const uint8_t iso[] = { 'J', 0xE9, 'r', 0xF4, 'm', 'e' };
+	ta_build(DMR_TA_ISO8, 6, iso, 8 * sizeof(iso), lcs);
+	dmr_ta_reset(&ta);
+	dmr_ta_push(&ta, lcs[0]);
+	CHECK(strcmp(ta.text, "J?r?me") == 0 && ta.complete);
+}
+
+static void rx_pi_header_burst(const uint8_t info[10], uint8_t cc, bool good_crc)
+{
+	dmr_burst_t b;
+
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_PI_HEADER;
+	b.sync = DMR_SYNC_MS;
+	b.cc = cc;
+	b.crc_ok = good_crc;
+	b.in_step = true;
+	b.len = 12;
+	memcpy(b.payload, info, 10);
+	uint16_t crc = (uint16_t)(dmr_crc_ccitt(info, 10) ^ DMR_CRC_MASK_PI);
+	b.payload[10] = (uint8_t)(crc >> 8);
+	b.payload[11] = (uint8_t)(good_crc ? crc : ~crc);
+	sim_rx(&b);
+}
+
+static void test_pi_header_and_emergency(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9];
+	static const uint8_t info[10] = { 0x21, 0x05, 0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x5B, 0x00 };
+	unsigned frame = 1;
+	dmr_call_stats_t st;
+
+	// Header, PI header, voice: the call is marked protected with the PI octets; no key, so nothing plays
+	setup(&c);
+	mk_lc(lc, 0, TG_TALK, 2345678);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
+	run_ms(60);
+	CHECK(!V()->caller.encrypted && !V()->caller.pi_header);
+	rx_pi_header_burst(info, 1, false);	// a bad CRC is ignored
+	run_ms(60);
+	CHECK(!V()->caller.pi_header);
+	rx_pi_header_burst(info, 1, true);
+	run_ms(60);
+	CHECK(V()->caller.pi_header && V()->caller.encrypted && V()->caller.pi_alg == 0x21 && V()->caller.pi_key == 0x05);
+	rx_call(lc, 1, false, 0, 1, true, &frame);
+	CHECK(sink_log.frames == 0 && V()->last_heard.pi_header);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_pi_headers == 1 && st.rx_encrypted_calls == 1 && st.rx_calls == 1);
+
+	// PI header heard, voice LC header missed: the late entry takes it
+	run_ms(1000);
+	mk_lc(lc, 0, TG_TALK, 3456789);
+	rx_pi_header_burst(info, 1, true);
+	run_ms(60);
+	rx_call(lc, 1, false, 0, 1, false, &frame);
+	CHECK(V()->caller.late_entry && V()->caller.pi_header && V()->caller.encrypted);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
+	run_ms(500);
+
+	// Emergency service option: flagged for the screens and counted
+	setup(&c);
+	mk_lc(lc, 0, TG_TALK, 2345678);
+	lc[2] = DMR_SVC_EMERGENCY;
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	CHECK(V()->caller.emergency && !V()->caller.encrypted && sink_log.frames == 18);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
+	run_ms(60);
+	CHECK(V()->last_heard.emergency);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_emergency_calls == 1);
+	// ... and an emergency call to a talkgroup we don't listen to is still shown (busy), with the flag
+	mk_lc(lc, 0, 5555, 2345678);
+	lc[2] = DMR_SVC_EMERGENCY;
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && V()->caller.emergency);
+}
+
+static void test_private_calls(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9];
+	unsigned frame = 1;
+	dmr_call_stats_t st;
+
+	c.reply_window_s = 4;
+	c.reply_window_private_s = 12;
+	setup(&c);
+	// To us: played, reply target is the caller (private) for the private window
+	mk_lc(lc, DMR_FLCO_UNIT_VOICE, OWN_ID, 2345678);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(sink_log.begins == 1 && sink_log.caller.to_us && !sink_log.caller.group && sink_log.frames == 18);
+	CHECK(V()->reply_active && V()->tx_target.id == 2345678 && V()->tx_target.private_call && V()->reply_s == 12);
+	// PTT in the window: a private call back
+	dmr_call_ptt(true);
+	run_ms(400);
+	dmr_call_ptt(false);
+	run_ms(800);
+	CHECK(sim.air[0].payload[0] == DMR_FLCO_UNIT_VOICE);
+	dmr_lc_t l;
+	dmr_lc_unpack(sim.air[0].payload, &l);
+	CHECK(l.dst == 2345678 && l.src == OWN_ID);
+	CHECK(V()->reply_active && V()->reply_s == 12);	// our call restarted the private window
+	run_ms(13000);
+	CHECK(!V()->reply_active);
+
+	// To someone else: shown (busy) while it lasts, not played, no reply window
+	mk_lc(lc, DMR_FLCO_UNIT_VOICE, 3999999, 2345678);
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && V()->caller.dst == 3999999 && !V()->caller.to_us &&
+	      !V()->caller.group);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
+	run_ms(60);
+	CHECK(sink_log.begins == 1 && !V()->reply_active);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_private_calls == 2 && st.rx_calls_played == 1);
+
+	// A group call uses the group window
+	mk_lc(lc, 0, TG_LIST, 2345678);
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	CHECK(V()->reply_active && !V()->tx_target.private_call && V()->reply_s == 4);
+
+	// Private talk target (a contact or a typed ID): the header and terminator are unit to unit
+	c = base_cfg();
+	c.talk_target.id = 2345678;
+	c.talk_target.private_call = true;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(400);
+	dmr_call_ptt(false);
+	run_ms(800);
+	unsigned v;
+	mk_lc(lc, DMR_FLCO_UNIT_VOICE, 2345678, OWN_ID);
+	check_tx_burst_sequence(0, lc, &v);
+}
+
+// Basic privacy end to end through the real hook: TX scrambles the voice parameter bits, a receiver with the key gets
+// the encoder's frames back, one without it never plays them
+static void test_basic_privacy(void)
+{
+	static dmrPrivacyKey_t key = { DMR_PRIVACY_MOTOROLA_BP, 7 };
+	dmr_call_config_t c = base_cfg();
+
+	c.privacy = dmrPrivacyCallHook;
+	c.privacy_ctx = &key;
+	c.tx_fid = dmrPrivacyFID(key.type, 0);
+	c.tx_svc = dmrPrivacyServiceOptions(key.type, 0);
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(800);
+	dmr_call_ptt(false);
+	run_ms(800);
+	CHECK(sim.air[0].payload[1] == 0x10 && sim.air[0].payload[2] == DMR_SVC_PRIVACY);
+
+	// The source's frames are not valid AMBE FEC words, so compare the 49 parameter bits after the FEC decode
+	unsigned voice = 0, same = 0;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		sim_air_t *a = &sim.air[i];
+		if (a->kind != DMR_BURST_VOICE)
+			continue;
+		uint8_t clear[27], bits_air[49], bits_clear[49];
+		for (int f = 0; f < 3; f++) {
+			unsigned n = voice * 3 + (unsigned)f;
+			uint8_t src_frame[9], p[49];
+			src_frame[0] = (uint8_t)(n + 1);
+			for (int k = 1; k < 9; k++)
+				src_frame[k] = (uint8_t)(0xA0 + k);
+			// the hook takes the encoder's 49 bits as they are (no correction on TX) and re-encodes them
+			dmrPrivacyAmbeExtract(src_frame, p);
+			ambeFecEncode(p, &clear[f * 9]);
+		}
+		// Descramble what went on air with the key (as a receiver would) and compare with the clear frames
+		uint8_t back[27];
+		memcpy(back, a->payload, 27);
+		dmrPrivacyCallHook(back, a->voice_index, false, &key);
+		for (int f = 0; f < 3; f++) {
+			ambeFecDecode(&back[f * 9], bits_air, NULL);
+			ambeFecDecode(&clear[f * 9], bits_clear, NULL);
+			if (memcmp(bits_air, bits_clear, 49) == 0)
+				same++;
+		}
+		CHECK(memcmp(a->payload, clear, 27) != 0);	// scrambled on air
+		voice++;
+	}
+	CHECK(voice >= 12 && same == voice * 3);
+
+	// RX: a call scrambled with key 7; played (descrambled) with the key, dropped without
+	uint8_t lc[9], plain[27], scr[27], p49[49];
+	for (int f = 0; f < 3; f++) {
+		for (int k = 0; k < 49; k++)
+			p49[k] = (uint8_t)((k * 7 + f) & 1);
+		ambeFecEncode(p49, &plain[f * 9]);
+	}
+	mk_lc(lc, 0, TG_TALK, 2345678);
+	lc[1] = 0x10;
+	lc[2] = DMR_SVC_PRIVACY;
+	for (int pass = 0; pass < 2; pass++) {
+		c = base_cfg();
+		if (pass == 0) {
+			c.privacy = dmrPrivacyCallHook;
+			c.privacy_ctx = &key;
+		}
+		setup(&c);
+		rx_header(lc, 1, 0, DMR_SYNC_MS, false);
+		run_ms(60);
+		for (int i = 0; i < 6; i++) {
+			dmr_burst_t b;
+			memset(&b, 0, sizeof(b));
+			b.kind = DMR_BURST_VOICE;
+			b.voice_index = (uint8_t)i;
+			b.sync = i == 0 ? DMR_SYNC_MS : DMR_SYNC_NONE;
+			b.cc = 1;
+			b.crc_ok = true;
+			b.in_step = true;
+			b.len = 27;
+			memcpy(scr, plain, 27);
+			dmrPrivacyCallHook(scr, (uint8_t)i, true, &key);
+			memcpy(b.payload, scr, 27);
+			sim_rx(&b);
+			run_ms(60);
+		}
+		CHECK(V()->caller.encrypted);
+		if (pass == 0)
+			CHECK(sink_log.frames == 18 && sink_log.losts == 0 && memcmp(sink_log.first, plain, 9) == 0);
+		else
+			CHECK(sink_log.frames == 0 && sink_log.losts == 18);
+	}
+}
+
 int main(void)
 {
 	test_lc_pack();
@@ -1080,6 +1452,11 @@ int main(void)
 	test_privacy_hook();
 	test_impolite_over_call();
 	test_reconfigure();
+	test_tx_alias();
+	test_alias_formats();
+	test_pi_header_and_emergency();
+	test_private_calls();
+	test_basic_privacy();
 	printf("# dmrCallTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

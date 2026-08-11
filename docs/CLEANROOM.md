@@ -33,5 +33,5 @@ The author's own work moves over; the legacy firmware's doesn't.
 
 - Every source file has an SPDX header. `reuse lint` passes.
 - `PROVENANCE.md` lists every file: `ours` (old commit), `clean` (spec section), or `third-party` (license, upstream, version).
-- Before each release, a similarity scan of this tree against the legacy-derived trees has no unreviewed hits (`tools/similarity_scan.sh`).
+- Before each release, a similarity scan of this tree against the legacy-derived trees has no unreviewed hits (`tools/similarity_scan.py REF...`, or `ODR_SIMILARITY_REFS="REF..." tools/ci.sh`; docs/testing/README.md).
 - `tools/license_grep.sh` finds no `commercial`, `Micrium`, `GPL`, `G4KLX`, `Roger Clark`, `Kai Ludwig` or similar markers outside `docs/` and `LICENSES/`.

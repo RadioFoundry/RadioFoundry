@@ -18,6 +18,7 @@
 #define SETTINGS_LAYOUT		1	// bumped only when a field changes meaning or moves (old records then reset)
 #define SETTINGS_SAVE_DELAY_MS	2000
 #define SETTINGS_NAME_LEN	16
+#define SETTINGS_PRIVACY_KEYS	4
 #define SETTINGS_UNSET8		0xFFu	// "not set: the radio's default" in an 8-bit field
 
 // Fields are only ever appended (docs/spec/settings-store.md 3); a record written by an older firmware fills the
@@ -53,6 +54,12 @@ typedef struct {
 	uint16_t reserved1;
 	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's
 	char radio_name[SETTINGS_NAME_LEN];	// NUL padded, "" = the codeplug's callsign
+	// DMR basic privacy keys (the key store dmr-voice's privacy uses; docs/spec/settings-store.md 3). A channel's
+	// choice of key will be a slot number in the native codeplug
+	uint32_t privacy_key[SETTINGS_PRIVACY_KEYS];	// key value per slot (0 = empty)
+	uint8_t privacy_type[SETTINGS_PRIVACY_KEYS];	// dmrPrivacyType_t per slot
+	uint8_t privacy_active;		// slot in use radio-wide, 1..SETTINGS_PRIVACY_KEYS, 0 = privacy off
+	uint8_t reserved2[3];
 } settings_t;
 
 typedef enum {

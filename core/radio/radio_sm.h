@@ -48,6 +48,11 @@ typedef enum {
 	RREQ_BANDWIDTH,		// arg: radio_bw_t
 	RREQ_TONE,		// arg: radio_tone_arg()
 	RREQ_REPLY_CANCEL,	// DMR: end the reply window
+	RREQ_DMR_TARGET,	// DMR: arg = ID (bits 23:0) | private (bit 24)
+	RREQ_DMR_CONTACT,	// DMR: arg = contact index
+	RREQ_DMR_CALL_BACK,	// DMR: talk to the last call heard
+	RREQ_DMR_TARGET_CLEAR,	// DMR: back to the channel's talk target
+	RREQ_DMR_PRIVACY,	// DMR: arg = type << 16 | key
 	RREQ_HS_ENTER,		// hotspot: arg = RX Hz (0 = stay)
 	RREQ_HS_FREQ,		// hotspot: arg = RX Hz, arg2 = TX Hz
 	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-255
@@ -69,6 +74,7 @@ typedef struct {
 
 #if CONFIG_DMR
 #define RADIO_NAMES_MAX		(1 + CODEPLUG_LIST_LEN)	// talk target and the listen list's contacts
+#define RADIO_LOOKUPS		4	// IDs looked up in all contacts / the DMR ID database, most recent kept
 
 // A contact name the screens show for a talkgroup or an ID
 typedef struct {
@@ -121,6 +127,19 @@ typedef struct {
 	uint16_t listen_count;
 	radio_name_t names[RADIO_NAMES_MAX];
 	uint8_t name_count;
+	radio_name_t lookups[RADIO_LOOKUPS];	// cache of codeplug_contact_find / dmr_iddb_lookup answers ("" = none)
+	uint8_t lookup_next;
+	// A talk target chosen for now (RREQ_DMR_TARGET / _CONTACT / _CALL_BACK), on channel manual_ch
+	bool manual;
+	uint32_t manual_id;
+	bool manual_private;
+	uint8_t manual_ts;
+	uint16_t manual_ch;
+	bool manual_vfo;
+	uint8_t privacy_type;		// dmrPrivacyType_t, 0 = off
+	uint16_t privacy_key;
+	char radio_name[CODEPLUG_RADIO_NAME_LEN + 1];	// our talker alias text
+	uint16_t group_hang_ms, private_hang_ms;	// codeplug hang times, 0 = the stack's default reply window
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
 	bool hs_carrier;		// hotspot: the receiver hears a carrier

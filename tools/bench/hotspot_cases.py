@@ -10,22 +10,22 @@ stack far better than key presses can: every burst the radio hears comes back ov
 is under our control.
 
 The radio under test is driven as MMDVMHost drives a simplex modem (mmdvm_hotspot.MmdvmLink, over USB serial or the
-optional UDP transport); the bench-host's MMDVM_HS HAT (hat_tx.py, over ssh) is the other radio:
+optional UDP transport); the SDR bench's MMDVM_HS modem board (bench_tx.py, over ssh) is the other radio:
 
-  rf_*   the HAT transmits, the script checks what the radio sends up, through a model of MMDVMHost's
+  rf_*   the bench modem transmits, the script checks what the radio sends up, through a model of MMDVMHost's
          DMRSlot::writeModem() (a header starts a call, voice A resets the sequence, B-F must follow in order, a
          terminator ends the call, DMR_LOST ends it as lost)
   net_*  the script sends a call as MMDVMHost would (6 idle frames, 8 headers, voice, 3 terminators, 2 idle frames,
-         control byte 0, written only while GET_STATUS shows space), the HAT listens (hat_tx.py listen --json) and
+         control byte 0, written only while GET_STATUS shows space), the bench modem listens (bench_tx.py listen --json) and
          the script checks what came over the air
 
     hotspot_cases.py (--port /dev/tty.usbmodemXXXX | --udp host:3334) [--cases rf_voice8,net_voice,...|all]
                      [--freq 461.6875] [--cc 2] [--power 12] [--sync-tools] [--json results.json] [--list]
 
 Needs RadioDesk (RADIODESK env, default ~/RadioDesk; run with its server venv's python) for
-burst building and decoding. rfgw must not hold the HAT: run it through `dmr_bench.py run H1` (which stops and
-restores radiodesk-rfgw@bench-host around it) or stop the service yourself. --sync-tools copies hat_tx.py to the
-bench-host (~/odr-bench/) first.
+burst building and decoding. rfgw must not hold the bench modem: run it through `dmr_bench.py run H1` (which stops and
+restores radiodesk-rfgw@<bench host> around it) or stop the service yourself. --sync-tools copies bench_tx.py to the
+SDR bench (~/odr-bench/) first.
 """
 import argparse
 import json
@@ -43,15 +43,15 @@ M.radiodesk_path()
 from radiodesk.dmr import packet, pdu          # noqa: E402
 from radiodesk_rfgw import layer2 as L2, sim   # noqa: E402
 
-bench-host = os.environ.get("bench-host", "bench-host")
-BENCH_DIR = os.environ.get("BENCH_DIR", "~/odr-bench")
-HAT = f"cd {BENCH_DIR} && /opt/radiodesk-rfgw/.venv/bin/python hat_tx.py"
+BENCH_HOST = os.environ.get("ODR_SDR_BENCH_HOST", "sdr-bench")
+BENCH_DIR = os.environ.get("ODR_SDR_BENCH_DIR", "~/odr-bench")
+MODEM_CMD = f"cd {BENCH_DIR} && /opt/radiodesk-rfgw/.venv/bin/python bench_tx.py"
 
 DMR_DATA2, DMR_LOST2 = M.DMR_DATA2, M.DMR_LOST2
 SYNC_DATA, SYNC_AUDIO = M.SYNC_DATA, M.SYNC_AUDIO
 DT_HEADER, DT_TERM, DT_CSBK, DT_DHDR, DT_IDLE = 1, 2, 3, 6, 9
 
-HAT_SRC, HAT_SRC2, HAT_DST = 9990301, 9990302, 215
+MODEM_SRC, MODEM_SRC2, MODEM_DST = 9990301, 9990302, 215
 NET_SRC, NET_SRC2, NET_DST = 3101999, 3101998, 9
 frame = M.frame
 
@@ -159,26 +159,26 @@ def send_paced(hs, frames, upfront):
         hs.send(frame(DMR_DATA2, bytes([control]) + burst))
 
 
-# ── the HAT over ssh ─────────────────────────────────────────────────────────
+# ── the bench modem over ssh ────────────────────────────────────────
 
-def hat(args_line, freq, cc, timeout=120):
-    cmd = f"{HAT} --freq {freq} --cc {cc} {args_line}"
-    r = subprocess.run(["ssh", bench-host, cmd], capture_output=True, text=True, timeout=timeout)
+def modem(args_line, freq, cc, timeout=120):
+    cmd = f"{MODEM_CMD} --freq {freq} --cc {cc} {args_line}"
+    r = subprocess.run(["ssh", BENCH_HOST, cmd], capture_output=True, text=True, timeout=timeout)
     if r.returncode != 0:
         print(r.stderr[-2000:])
     return r.returncode == 0
 
 
-class HatListener:
+class ModemListener:
     def __init__(self, freq, cc, seconds):
-        cmd = f"{HAT} --freq {freq} --cc {cc} listen --json --seconds {seconds}"
-        self.p = subprocess.Popen(["ssh", bench-host, cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        cmd = f"{MODEM_CMD} --freq {freq} --cc {cc} listen --json --seconds {seconds}"
+        self.p = subprocess.Popen(["ssh", BENCH_HOST, cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.lines = queue.Queue()
         self.ready = threading.Event()
         threading.Thread(target=self._out, daemon=True).start()
         threading.Thread(target=self._err, daemon=True).start()
         if not self.ready.wait(20):
-            raise RuntimeError("the HAT listener didn't start")
+            raise RuntimeError("the bench modem listener didn't start")
 
     def _out(self):
         for line in self.p.stdout:
@@ -201,7 +201,7 @@ class HatListener:
 
 
 def air_calls(recs):
-    """What the HAT heard, as calls: header LCs, voice bursts, terminators, and voice after the call's terminator."""
+    """What the bench modem heard, as calls: header LCs, voice bursts, terminators, and voice after the call's terminator."""
     calls, cur = [], None
     for r in recs:
         if r.get("dt") == DT_HEADER:
@@ -235,9 +235,9 @@ class Result:
         return all(ok for _, ok in self.checks) and bool(self.checks)
 
 
-def rf_case(hs, args, hat_line, settle=1.5, timeout=120):
+def rf_case(hs, args, modem_line, settle=1.5, timeout=120):
     mark = hs.mark()
-    ok = hat(hat_line, args.freq, args.cc, timeout)
+    ok = modem(modem_line, args.freq, args.cc, timeout)
     time.sleep(settle)
     frames, naks = hs.since(mark)
     m = HostModel()
@@ -247,13 +247,13 @@ def rf_case(hs, args, hat_line, settle=1.5, timeout=120):
 
 
 def case_rf_voice8(hs, args, r):
-    ok, m, _ = rf_case(hs, args, f"voice --src {HAT_SRC} --dst {HAT_DST} --headers 8 --superframes 3 --terminators 3")
+    ok, m, _ = rf_case(hs, args, f"voice --src {MODEM_SRC} --dst {MODEM_DST} --headers 8 --superframes 3 --terminators 3")
     r.info["calls"] = m.calls
-    r.check("HAT sent", ok)
+    r.check("bench modem sent", ok)
     r.check("one call", len(m.calls) == 1)
     if m.calls:
         c = m.calls[0]
-        r.check("header LC is the HAT's", (c["src"], c["dst"]) == (HAT_SRC, HAT_DST))
+        r.check("header LC is the bench modem's", (c["src"], c["dst"]) == (MODEM_SRC, MODEM_DST))
         r.check("no DMR_LOST during the 8 headers", c["end"] != "lost")
         r.check("17-18 of 18 voice bursts in sequence", c["voice"] >= 17)
         r.check("ended by the terminator", c["end"] == "terminator")
@@ -262,25 +262,25 @@ def case_rf_voice8(hs, args, r):
 def case_rf_late(hs, args, r):
     # No header, the first 8 voice bursts left out: the hotspot makes a header from the embedded LC (from the
     # superframe after the one it joined in), then that superframe from A as silence and the voice from there
-    ok, m, _ = rf_case(hs, args, f"voice --src {HAT_SRC} --dst {HAT_DST} --late 8 --superframes 5")
+    ok, m, _ = rf_case(hs, args, f"voice --src {MODEM_SRC} --dst {MODEM_DST} --late 8 --superframes 5")
     r.info["calls"] = m.calls
     # What came up and when (ms from the first frame), to tell a late LC from missed bursts when it fails
     t0 = m.events[0][0] if m.events else 0
     r.info["events"] = [f"{(t - t0) * 1000:.0f} {e}" for t, e in m.events]
-    r.check("HAT sent", ok)
+    r.check("bench modem sent", ok)
     r.check("one call", len(m.calls) == 1)
     if m.calls:
         c = m.calls[0]
-        r.check("made header has the HAT's LC (not the last call's)", (c["src"], c["dst"]) == (HAT_SRC, HAT_DST))
+        r.check("made header has the bench modem's LC (not the last call's)", (c["src"], c["dst"]) == (MODEM_SRC, MODEM_DST))
         r.check("voice from at most a superframe after the LC is known (>= 10 of 22)", c["voice"] >= 10)
         r.check("no voice dropped by the host's sequence check", c["dropped"] == 0)
         r.check("ended by the terminator", c["end"] == "terminator")
 
 
 def case_rf_long(hs, args, r):
-    ok, m, _ = rf_case(hs, args, f"voice --src {HAT_SRC} --dst {HAT_DST} --superframes 50", settle=2, timeout=180)
+    ok, m, _ = rf_case(hs, args, f"voice --src {MODEM_SRC} --dst {MODEM_DST} --superframes 50", settle=2, timeout=180)
     r.info["calls"] = [dict(c) for c in m.calls]
-    r.check("HAT sent", ok)
+    r.check("bench modem sent", ok)
     r.check("one call (no LOST and restart)", len(m.calls) == 1)
     if m.calls:
         c = m.calls[0]
@@ -289,9 +289,9 @@ def case_rf_long(hs, args, r):
 
 
 def case_rf_lost(hs, args, r):
-    ok, m, _ = rf_case(hs, args, f"voice --src {HAT_SRC} --dst {HAT_DST} --superframes 2 --terminators 0", settle=2)
+    ok, m, _ = rf_case(hs, args, f"voice --src {MODEM_SRC} --dst {MODEM_DST} --superframes 2 --terminators 0", settle=2)
     r.info["calls"] = m.calls
-    r.check("HAT sent", ok)
+    r.check("bench modem sent", ok)
     r.check("one call", len(m.calls) == 1)
     voice_t = [t for t, e in m.events if e.startswith("voice")]
     r.check("voice went up", bool(voice_t))
@@ -304,33 +304,33 @@ def case_rf_lost(hs, args, r):
 
 
 def case_rf_b2b(hs, args, r):
-    ok, m, _ = rf_case(hs, args, f"voice --src {HAT_SRC} --src2 {HAT_SRC2} --dst {HAT_DST} --superframes 2 --calls 3 "
+    ok, m, _ = rf_case(hs, args, f"voice --src {MODEM_SRC} --src2 {MODEM_SRC2} --dst {MODEM_DST} --superframes 2 --calls 3 "
                        f"--gap-ms 60", timeout=150)
     r.info["calls"] = m.calls
-    r.check("HAT sent", ok)
+    r.check("bench modem sent", ok)
     r.check("three calls", len(m.calls) == 3)
-    r.check("sources alternate", [c["src"] for c in m.calls] == [HAT_SRC, HAT_SRC2, HAT_SRC])
+    r.check("sources alternate", [c["src"] for c in m.calls] == [MODEM_SRC, MODEM_SRC2, MODEM_SRC])
     r.check("each ended by its terminator", all(c["end"] == "terminator" for c in m.calls))
     r.check("each >= 11 of 12 voice bursts", all(c["voice"] >= 11 for c in m.calls))
 
 
 def case_rf_csbk(hs, args, r):
-    ok, m, _ = rf_case(hs, args, f"csbk --src {HAT_SRC} --dst 3101276 --count 4")
+    ok, m, _ = rf_case(hs, args, f"csbk --src {MODEM_SRC} --dst 3101276 --count 4")
     csbks = [x for x in m.data if x[1] == DT_CSBK]
     r.info["csbk"] = len(csbks)
-    r.check("HAT sent", ok)
+    r.check("bench modem sent", ok)
     r.check(">= 3 of 4 CSBKs up", len(csbks) >= 3)
     r.check("no voice call", not m.calls)
 
 
 def data_case(hs, args, r, confirmed):
     octets = 40
-    ok, m, _ = rf_case(hs, args, f"data --src {HAT_SRC} --dst 3101276 --octets {octets} --preambles 2"
+    ok, m, _ = rf_case(hs, args, f"data --src {MODEM_SRC} --dst 3101276 --octets {octets} --preambles 2"
                        + (" --confirmed" if confirmed else ""))
     types = [dt for _, dt, _ in m.data]
     blocks = (octets + 4 + 9) // 10 if confirmed else (octets + 4 + 11) // 12
     r.info["types"] = types
-    r.check("HAT sent", ok)
+    r.check("bench modem sent", ok)
     r.check("data header up", types.count(DT_DHDR) == 1)
     r.check(f"{blocks} rate 1/2 blocks up", types.count(7) == blocks)
     if DT_DHDR in types:
@@ -350,7 +350,7 @@ def case_rf_data_conf(hs, args, r):
 
 
 def net_case(hs, args, frames, upfront, listen_s):
-    lis = HatListener(args.freq, args.cc, listen_s)
+    lis = ModemListener(args.freq, args.cc, listen_s)
     mark = hs.mark()
     send_paced(hs, frames, upfront)
     recs = lis.records()
@@ -446,9 +446,9 @@ def main():
     hz = int(round(args.freq * 1e6))
     names = list(CASES) if args.cases == "all" else args.cases.split(",")
     if args.sync_tools:
-        subprocess.run(["ssh", bench-host, f"mkdir -p {BENCH_DIR}"], check=True)
-        subprocess.run(["scp", os.path.join(os.path.dirname(os.path.abspath(__file__)), "hat_tx.py"),
-                        f"{bench-host}:{BENCH_DIR}/hat_tx.py"], check=True)
+        subprocess.run(["ssh", BENCH_HOST, f"mkdir -p {BENCH_DIR}"], check=True)
+        subprocess.run(["scp", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bench_tx.py"),
+                        f"{BENCH_HOST}:{BENCH_DIR}/bench_tx.py"], check=True)
 
     hs = M.MmdvmLink(M.Transport(args.port, args.udp, args.local), hz, args.cc, args.power, simplex=True)
     results = []

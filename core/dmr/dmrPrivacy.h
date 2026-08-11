@@ -51,8 +51,15 @@ void dmrPrivacyApplyBurst(dmrPrivacyType_t type, uint16_t key, uint8_t *ambe, ui
 void dmrPrivacyAmbeEncode(const uint8_t *bits, uint8_t *frame);
 void dmrPrivacyAmbeExtract(const uint8_t *frame, uint8_t *bits); // no error correction
 
-// Provided by the codec (dmr_codec/codec.c): de-interleave and FEC decode with error correction
-// TODO(hal): initFrame() is the legacy codec glue's name; it becomes a call through the AMBE codec hal
-void initFrame(uint8_t *indata, uint16_t bitbufferDecode[49]);
+// A key as the call stack's privacy hook takes it (dmr_call_config_t.privacy_ctx)
+typedef struct
+{
+	dmrPrivacyType_t type;
+	uint16_t key;
+} dmrPrivacyKey_t;
+
+// The call stack's voice privacy hook (dmr_privacy_fn, core/dmr/call/dmr_call.h): ctx is a dmrPrivacyKey_t. RX bursts
+// are FEC corrected (core/dmr/ambe/ambeFec) before the keystream is removed, TX bursts are taken as encoded
+void dmrPrivacyCallHook(uint8_t *ambe27, uint8_t voiceIndex, bool tx, void *ctx);
 
 #endif

@@ -34,7 +34,13 @@ typedef struct {
 	uint16_t listen_list;	// RX group list index, 0 = none
 	uint32_t dmr_id;	// own DMR ID for this channel, 0 = the radio's
 	bool dmo;		// direct mode even when RX and TX differ (legacy "force DMO")
+	uint16_t tot_s;		// TX time-out, 0 = the radio's
+	uint8_t alias_tx;	// talker alias TX: CODEPLUG_ALIAS_TS1_* / _TS2_* bits
 } channel_t;
+
+// channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
+#define CODEPLUG_ALIAS_TS1_TEXT	0x01u
+#define CODEPLUG_ALIAS_TS2_TEXT	0x02u
 
 #define CODEPLUG_POWER_DEFAULT	0xFF
 
@@ -122,6 +128,21 @@ bool codeplug_set_contact(uint16_t index, const contact_t *c);
 bool codeplug_delete_contact(uint16_t index);
 bool codeplug_set_listen_list(uint16_t index, const listen_list_t *l);
 bool codeplug_delete_listen_list(uint16_t index);
+// The first contact with this ID: group true finds a talkgroup (or all call for 0xFFFFFF), false a private contact.
+// Reads every contact record (24 KB of flash) in the worst case: cache the answer
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out);
+
+#define CODEPLUG_RADIO_NAME_LEN	8
+
+// General DMR settings (legacy general settings, docs/spec/legacy-cps-interop.md 7.3.2)
+typedef struct {
+	char radio_name[CODEPLUG_RADIO_NAME_LEN + 1];	// callsign / radio name, "" if none
+	uint16_t group_hang_ms;		// group call hang time, 0 = none stored
+	uint16_t private_hang_ms;	// private call hang time, 0 = none stored
+} codeplug_dmr_settings_t;
+
+// false (and out zeroed) without a legacy codeplug
+bool codeplug_dmr_settings(codeplug_dmr_settings_t *out);
 #endif
 
 #endif

@@ -2,23 +2,23 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """
-Adapted from our earlier bench tool hat_tx.py.
+Adapted from an earlier bench tool of ours.
 
-Drive the bench-host's MMDVM_HS HAT by hand as a plain DMR subscriber (simplex) to send known traffic to the radio under
-test, or to listen to what the radio sends. Runs on the bench-host with the RadioDesk rfgw venv
+Drive the SDR bench's MMDVM_HS modem board by hand as a plain DMR subscriber (simplex) to send known traffic to the radio under
+test, or to listen to what the radio sends. Runs on the SDR bench with the RadioDesk rfgw venv
 (/opt/radiodesk-rfgw/.venv/bin/python): it uses rfgw's MMDVM modem driver and RadioDesk's burst / FEC code, so bursts
-are framed exactly as rfgw's roamer frames them. rfgw must not hold the HAT while this runs (stop
-radiodesk-rfgw@bench-host, or take ROAM1 out of its config); tools/bench/dmr_bench.py does that for you.
+are framed exactly as rfgw's roamer frames them. rfgw must not hold the bench modem while this runs (stop
+radiodesk-rfgw@<bench host>, or take ROAM1 out of its config); tools/bench/dmr_bench.py does that for you.
 
-    hat_tx.py [--freq 461.6875] [--cc 2] [--power 255] voice [--src ID] [--dst ID] [--private] [--superframes N]
+    bench_tx.py [--freq 461.6875] [--cc 2] [--power 255] voice [--src ID] [--dst ID] [--private] [--superframes N]
               [--headers N] [--terminators N] [--late K] [--calls N] [--gap-ms MS] [--src2 ID]
               [--family ms|bs|ts1|ts2] [--ambe FILE] [--talker-alias TEXT] [--pi] [--service-options HEX]
               [--emergency] [--burst-cc CC]
-    hat_tx.py ... csbk  [--src ID] [--dst ID] [--count N] [--opcode HEX [--fid HEX]] [--family ...]
+    bench_tx.py ... csbk  [--src ID] [--dst ID] [--count N] [--opcode HEX [--fid HEX]] [--family ...]
                                             (preamble CSBK train, then optionally one CSBK, e.g. 1F call alert)
-    hat_tx.py ... data  [--src ID] [--dst ID] [--confirmed] [--octets N] [--preambles N] [--family ...]
-    hat_tx.py [--ambe-out PREFIX] ... listen [--seconds N] [--json]
-    hat_tx.py --listen-after S [--ambe-out PREFIX] voice|data|csbk ...  (send, then listen S seconds, JSON lines)
+    bench_tx.py ... data  [--src ID] [--dst ID] [--confirmed] [--octets N] [--preambles N] [--family ...]
+    bench_tx.py [--ambe-out PREFIX] ... listen [--seconds N] [--json]
+    bench_tx.py --listen-after S [--ambe-out PREFIX] voice|data|csbk ...  (send, then listen S seconds, JSON lines)
 
 voice:
   --late K           no header and the first K voice bursts left out (late entry: the receiver joins at burst K)
@@ -27,15 +27,15 @@ voice:
   --terminators 0    the call just stops (the receiver must time out)
   --family           sync family of every burst (default ms). bs gives BS-synced bursts in DMO timing (one burst per
                      60 ms, no CACH): enough to see that the radio recognizes BS sync, not a real repeater outbound
-                     (use hat_repeater.py for that)
+                     (use bench_repeater.py for that)
   --ambe FILE        voice content: a file of 9-byte AMBE+2 channel frames (FEC applied, as RadioDesk's recorder
                      writes them, *.ambe), or a DSD .amb file is NOT accepted (it has no FEC). Default: AMBE silence
   --talker-alias T   send talker alias (ISO-8, up to 27 characters) in the embedded LC of odd superframes
   --pi               set the EMB PI bit on voice bursts B-F (a privacy-protected call to a radio without the key)
   --service-options  LC service options byte (hex): 0x80 emergency, 0x40 privacy, 0x08 broadcast, 0x04 OVCM
-  --burst-cc CC      color code written into the bursts (default --cc): a wrong-CC test with the HAT on --cc
+  --burst-cc CC      color code written into the bursts (default --cc): a wrong-CC test with the bench modem on --cc
 
-listen: logs what the HAT hears (MS-synced DMO bursts only: the MMDVM_HS simplex receiver does not search for BS or
+listen: logs what the bench modem hears (MS-synced DMO bursts only: the MMDVM_HS simplex receiver does not search for BS or
 TDMA direct-mode sync). --json prints one line per burst with data type / voice index, header and terminator LC,
 EMB color code and PI, the embedded LC assembled per superframe (call LC or talker alias) and, at the end, a
 summary per call. --ambe-out PREFIX writes each call's AMBE frames to PREFIX_<n>.ambe (9-byte FEC frames) and
@@ -162,7 +162,7 @@ def send(modem: Modem, items, headers: int, terminators: int) -> int:
     out = []
     for control, burst in items:
         out += [(control, b) for b in B.expand(control, burst, headers, terminators)]
-    # Flow control as MMDVMHost does it: only write while the HAT reports free DMR space, then wait until it has
+    # Flow control as MMDVMHost does it: only write while the bench modem reports free DMR space, then wait until it has
     # sent everything (space back to where it started, not transmitting) before closing the port
     space0 = modem.status()["space"]
     i, deadline = 0, time.monotonic() + len(out) * SLOT_S + 10
@@ -173,7 +173,7 @@ def send(modem: Modem, items, headers: int, terminators: int) -> int:
         if st != last:
             logging.debug("status %s, written %d/%d", st, i, len(out))
             last = st
-        # Done only by a status read after the last write (else a HAT that was idle with an empty buffer looks
+        # Done only by a status read after the last write (else a bench modem that was idle with an empty buffer looks
         # finished right after we fill it, and closing the port leaves the call queued for the next run)
         if i == len(out) and not st["transmitting"] and st["space"] >= space0:
             break
@@ -189,7 +189,7 @@ def send(modem: Modem, items, headers: int, terminators: int) -> int:
 # ── listening ────────────────────────────────────────────────────────────────
 
 class Listener:
-    """Decodes what the HAT hears; JSON lines out, per-call summary and AMBE files at the end."""
+    """Decodes what the bench modem hears; JSON lines out, per-call summary and AMBE files at the end."""
 
     def __init__(self, as_json: bool, ambe_out: str = None):
         self.as_json, self.ambe_out = as_json, ambe_out
@@ -321,9 +321,9 @@ def main() -> None:
     ap.add_argument("--freq", type=float, default=461.6875)
     ap.add_argument("--cc", type=int, default=2)
     ap.add_argument("--power", type=int, default=255, help="MMDVM_HS RF level 0-255")
-    ap.add_argument("--rx-offset", type=int, default=-150, help="Hz, the HAT's calibration (rfgw rx_offset_hz)")
-    ap.add_argument("--tx-offset", type=int, default=-175, help="Hz, the HAT's calibration (rfgw tx_offset_hz)")
-    ap.add_argument("-v", "--verbose", action="store_true", help="log every HAT status change")
+    ap.add_argument("--rx-offset", type=int, default=-150, help="Hz, the bench modem's calibration (rfgw rx_offset_hz)")
+    ap.add_argument("--tx-offset", type=int, default=-175, help="Hz, the bench modem's calibration (rfgw tx_offset_hz)")
+    ap.add_argument("-v", "--verbose", action="store_true", help="log every bench modem status change")
     ap.add_argument("--listen-after", type=float, default=0,
                     help="voice / data / csbk: then listen this many seconds (JSON lines), for the radio's answer "
                          "(confirmed data response, call alert ack, a reply call)")
