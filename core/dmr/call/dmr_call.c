@@ -934,9 +934,11 @@ static void tx_start_data(uint32_t now)
 
 	if (s.cfg.rmo)
 		timing = DMR_TIMING_ALIGNED;
-	else	// DMO: in step with a station just heard (an ACK to its data), else on our own timing
-		timing = elapsed(now, s.last_activity_ms, s.activity_seen, DMR_CALL_ALIGN_MS) ? DMR_TIMING_OWN
-											    : DMR_TIMING_ALIGNED;
+	else	// DMO: in step with a station just heard (an ACK to its data), else on our own timing. The modem keeps the
+		// slot timing of a reception only briefly (the HR_C6000 engine: 390 ms), so not DMR_CALL_ALIGN_MS here: an
+		// aligned start after that waits for a slot that never comes and is refused (found by dmrDataChainTest)
+		timing = elapsed(now, s.last_activity_ms, s.activity_seen, DMR_CALL_DATA_ALIGN_MS) ? DMR_TIMING_OWN
+												 : DMR_TIMING_ALIGNED;
 	if (!s.modem->tx_begin(timing, (int8_t)s.cfg.ts, DMR_ACCESS_IMPOLITE)) {
 		tx_deny(DMR_TX_ERR_REJECTED);
 		return;

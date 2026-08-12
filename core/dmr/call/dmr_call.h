@@ -42,6 +42,7 @@
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
 #define DMR_CALL_REPLY_WINDOW_S		10
 #define DMR_CALL_DATA_TIMEOUT_MS	10000	// a burst list on air takes at most this plus 60 ms per burst (gotcha 3.9)
+#define DMR_CALL_DATA_ALIGN_MS		300	// DMO data: aligned to a station heard this recently (the modem's slot memory)
 #ifndef DMR_CALL_EVQ_DEPTH
 #define DMR_CALL_EVQ_DEPTH		8	// power of two
 #endif
