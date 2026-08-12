@@ -56,7 +56,7 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 static void r_tx_off(void) { hw.tx_off_calls++; }
 static void r_status(radio_status_t *st) { *st = hw.st; }
 static void r_audio(bool on) { hw.audio = on; }
-static const hal_radio_t fake_radio = { r_init, r_set_mode, r_rx, r_tx, r_tx_off, r_status, r_audio, NULL };
+static const hal_radio_t fake_radio = { r_init, r_set_mode, r_rx, r_tx, r_tx_off, r_status, r_audio, NULL, NULL, NULL };
 
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 
@@ -1159,6 +1159,25 @@ static void test_persist(void)
 	nzones = 2;
 	boot();
 	CHECK(sm.view.zone_index == 0);
+
+	// The radio core's settings (radio_set_settings) are saved and in effect after a reboot
+	radio_settings_t rs;
+	radio_settings_default(&rs);
+	CHECK(sm.set.tot_s == rs.tot_s && sm.set.key_beep);
+	rs.tot_s = 45;
+	rs.key_beep = false;
+	rs.roger_beep = true;
+	rs.vox_level = 99;			// clamped to 10
+	radio_sm_set_settings(&sm, &rs, now);
+	settings_t cur;
+	settings_read(&cur);
+	CHECK(cur.rs_stored == 1 && cur.rs_tot_s == 45 && cur.rs_vox_level == 10);
+	boot();
+	CHECK(sm.set.tot_s == 45 && !sm.set.key_beep && sm.set.roger_beep && sm.set.vox_level == 10);
+	settings_begin()->rs_stored = 0;	// never set: the defaults
+	settings_end(now);
+	boot();
+	CHECK(sm.set.tot_s == RADIO_TOT_DEFAULT_S && sm.set.key_beep && !sm.set.roger_beep);
 	setup_codeplug();
 	start();
 }

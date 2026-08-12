@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "radio/radio.h"
+#include "radio/scan.h"
+#include "radio/battery.h"
 
 #define RADIO_POLL_MS		25	// status poll and squelch period
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
@@ -33,6 +35,34 @@
 // RSSI moves smaller than this don't bump the view serial (the snapshot still carries the latest value)
 #define RADIO_RSSI_DEADBAND_DB	2
 
+// Scan defaults and per-stop timing (docs/spec/radio-features.md 2)
+#define RADIO_SCAN_DWELL_MS	150	// listen per channel (from the retune) with nothing heard
+#define RADIO_SCAN_FM_PROBE_MS	350	// FM: a carrier without the RX tone yet (CTCSS detection takes 100-250 ms)
+#define RADIO_SCAN_DMR_PROBE_MS	700	// DMR: a carrier, waiting for a call to play (late entry needs a superframe)
+#define RADIO_SCAN_HOLD_S	5
+#define RADIO_SCAN_DELAY_MS	2000
+
+// Battery monitor: one reading a second, none while transmitting and for a while after (the load sags the voltage)
+#define RADIO_BATT_PERIOD_MS	1000
+#define RADIO_BATT_TX_QUIET_MS	3000
+
+// FM transmit tones
+#define RADIO_BURST_HZ		1750
+#define RADIO_ROGER_HZ1		1200
+#define RADIO_ROGER_HZ2		900
+#define RADIO_ROGER_STEP_MS	100	// each of the two roger tones
+
+// VOX: the mic level counts as voice at or above 100 - 8 x sensitivity; keyed after RADIO_VOX_ATTACK_POLLS polls of
+// voice, never while received audio plays or for RADIO_VOX_RX_GUARD_MS after (the speaker would key it)
+#define RADIO_VOX_ATTACK_POLLS	2
+#define RADIO_VOX_RX_GUARD_MS	500
+
+// Receiver battery saving: awake RADIO_SAVE_WAKE_MS (the first RADIO_SAVE_SETTLE_MS of it ignored), asleep
+// RADIO_SAVE_SLEEP_MS x 1, 2 or 4
+#define RADIO_SAVE_WAKE_MS	100
+#define RADIO_SAVE_SETTLE_MS	50
+#define RADIO_SAVE_SLEEP_MS	200
+
 typedef enum {
 	RREQ_CH_STEP,		// arg: direction
 	RREQ_ZONE_POS,		// arg: position in the zone
@@ -57,6 +87,11 @@ typedef enum {
 	RREQ_HS_FREQ,		// hotspot: arg = RX Hz, arg2 = TX Hz
 	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-255
 	RREQ_HS_LEAVE,		// hotspot: back to the channel
+	RREQ_SCAN,		// arg: radio_scan_cmd_t, arg2: dual watch position
+	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)
+	RREQ_BEEP,		// arg: beep_t
+	RREQ_TONE_BURST,	// arg: 1 on, 0 off
+	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
 	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
 } radio_req_type_t;
 
@@ -112,9 +147,34 @@ typedef struct {
 	int8_t green_out;
 	int8_t red_out;
 	bool hotspot;			// hotspot mode: the host link owns the modem
+
+	radio_settings_t set;		// the settings in effect
+	uint32_t activity_ms;		// last request, reception or transmission (battery save)
+	bool tot_warned;		// the time-out warning sounded for this transmission
+#if CONFIG_SCAN
+	scan_t scan;
+#endif
+	batt_t batt;
+	uint32_t batt_ms;		// last battery reading
+	uint32_t tx_end_ms;		// end of the last transmission (battery readings wait)
+#if CONFIG_FM_TX_TONES
+	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
+	uint32_t roger_ms;		// roger beep start, 0 = none
+#endif
+#if CONFIG_VOX
+	bool vox_keyed;
+	uint8_t vox_count;		// polls in a row above (or below, while keyed) the threshold
+	uint32_t vox_quiet_ms;		// keyed: when the voice stopped, 0 = still talking
+#endif
+#if CONFIG_BATTERY_SAVE
+	bool save_on;			// duty cycling now
+	bool save_asleep;
+	uint32_t save_ms;		// start of the current sleep / wake
+#endif
 	uint32_t codeplug_serial;	// codeplug_serial() when the zone and channel were last read
 	bool reload_pending;		// RREQ_RELOAD came while busy
 #if CONFIG_DMR
+	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem
 	bool dmr_keyed;			// board.radio->tx() armed the per-burst keying (until tx_off)
@@ -162,6 +222,9 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms);
 bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz);
 // MMDVM RF level 0-255 -> board power level
 uint8_t radio_sm_hotspot_power(uint8_t rf_level);
+
+// Settings in effect from now on (radio_task.c calls it for RREQ_SETTINGS; the tests call it directly)
+void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms);
 
 // Squelch thresholds for a level (exposed for the tests)
 uint8_t radio_sm_squelch_open_below(uint8_t level);

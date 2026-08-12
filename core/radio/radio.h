@@ -20,11 +20,51 @@ typedef enum {
 // TXDENY_MODE: the channel's mode is not built in (a DMR channel in an FM-only build, or the reverse).
 // DMR: NO_CODEC no vocoder merged (receive only), NO_DMR the modem didn't start, BUSY a call on our slot (polite
 // access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
-// NO_ID no DMR ID in the codeplug
+// NO_ID no DMR ID in the codeplug. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
+// settings. BATTERY: the battery is critical
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
+	TXDENY_INHIBIT, TXDENY_BATTERY,
 } tx_deny_t;
+
+// Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
+// carrier without our RX tone is heard (the channel is used by another group)
+typedef enum { RADIO_BCL_OFF, RADIO_BCL_CARRIER, RADIO_BCL_WRONG_TONE } radio_bcl_t;
+// VOX: off, on channels whose codeplug entry allows it, on every FM channel
+typedef enum { RADIO_VOX_OFF, RADIO_VOX_CHANNEL, RADIO_VOX_ALL } radio_vox_t;
+
+// The radio core's settings (docs/spec/radio-features.md). The radio core loads them from the settings store at
+// start-up (docs/spec/settings-store.md 3) and saves every change made with radio_set_settings
+typedef struct {
+	uint16_t tot_s;		// the radio's TX time-out, for channels whose own is 0; 0 = none
+	uint8_t tot_warn_s;	// warning beep this long before the time-out, 0 = none
+	uint8_t bcl;		// radio_bcl_t
+	bool roger_beep;	// FM: a short tone pair at the end of each transmission (CONFIG_FM_TX_TONES)
+	bool tx_inhibit;	// refuse every transmission
+	// Scan (CONFIG_SCAN)
+	uint8_t scan_resume;	// scan_resume_t (radio/scan.h): 0 time, 1 carrier, 2 stop
+	uint8_t scan_hold_s;	// time mode: move on after this long on a signal
+	uint16_t scan_delay_ms;	// after the signal ends, move on after this long
+	uint16_t scan_dwell_ms;	// listen time per channel with nothing heard
+	bool scan_priority;	// zone scan: revisit the start channel between the others
+	bool scan_beep;		// a short beep when the scan stops on a signal
+	// Beeps (CONFIG_BEEP)
+	uint8_t beep_level;	// 0 = silent .. 100, relative to the volume knob
+	bool key_beep;		// radio_req_beep(BEEP_KEY) sounds
+	// VOX (CONFIG_VOX)
+	uint8_t vox;		// radio_vox_t
+	uint8_t vox_level;	// sensitivity 1 (needs a loud voice) .. 10
+	uint16_t vox_tail_ms;	// stays keyed this long after the voice stops
+	// Power
+	uint8_t rx_save;	// receiver battery saving (CONFIG_BATTERY_SAVE): 0 off, 1..3 = sleep 1, 2, 4 x the listen time
+	uint16_t rx_save_idle_s;	// starts after this long without activity
+	uint16_t battery_off_s;	// switch off after this long with the battery critical, 0 = never
+	uint16_t backlight_dim_s;	// for batt_backlight_pct (radio/battery.h): dim after, 0 = never
+	uint16_t backlight_off_s;	// off after, 0 = never
+} radio_settings_t;
+
+typedef enum { RADIO_BATT_OK, RADIO_BATT_LOW, RADIO_BATT_CRITICAL } radio_batt_t;	// = batt_level_t
 
 #if CONFIG_DMR
 #define RADIO_ALIAS_MAX		31	// talker alias characters (DMR_TA_TEXT_MAX)
@@ -105,6 +145,21 @@ typedef struct {
 	uint32_t vfo_step_hz;
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
+	// Scan (CONFIG_SCAN; all 0 otherwise)
+	uint8_t scan;		// scan_kind_t: 0 off, 1 zone, 2 VFO, 3 dual watch
+	uint8_t scan_phase;	// scan_phase_t: listen, probe, hold, resume, paused
+	uint8_t scan_skipped;	// nuisance-deleted stops
+	// FM extras
+	bool tot_warning;	// TX: the time-out is near (tot_warn_s)
+	bool tone_burst;	// TX: the 1750 Hz burst is on
+	bool roger;		// TX: the roger beep is being sent after the PTT release
+	bool vox_keyed;		// TX keyed by VOX
+	bool rx_sleeping;	// battery save: the receiver is off for now
+	// Battery
+	uint8_t battery;	// radio_batt_t
+	uint8_t battery_pct;	// board.power->battery_pct(), 0 if unknown
+	uint16_t battery_mv;
+	bool power_off;		// the radio core asks to be switched off (critical battery, battery_off_s)
 #if CONFIG_DMR
 	radio_dmr_view_t dmr;
 #endif
@@ -158,6 +213,26 @@ void radio_req_dmr_target_clear(void);
 void radio_req_dmr_privacy(uint8_t type, uint16_t key);
 #endif
 #endif
+// Scan (CONFIG_SCAN; no-ops otherwise). A zone scan starts from the current channel, a VFO scan steps the VFO by its
+// step between lo_hz and hi_hz (both 0: the band the VFO is in), dual watch alternates between the current channel
+// and zone position pos. Stop stays where the scan is, cancel goes back to where it started. Nuisance leaves the
+// current stop out until the scan ends and moves on. Any channel, zone or VFO change, PTT, or hotspot mode stops it
+typedef enum { RSCAN_STOP, RSCAN_ZONE, RSCAN_VFO, RSCAN_DUAL, RSCAN_CANCEL, RSCAN_NUISANCE, RSCAN_TOGGLE } radio_scan_cmd_t;
+void radio_req_scan(uint8_t cmd);		// radio_scan_cmd_t; TOGGLE: stop if scanning, else zone (or VFO in the VFO)
+void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz);
+void radio_req_scan_dual(uint16_t pos);
+// A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
+void radio_req_beep(uint8_t beep);
+// FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off
+void radio_req_tone_burst(bool on);
+// Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them
+void radio_settings_default(radio_settings_t *s);
+void radio_set_settings(const radio_settings_t *s);
+void radio_get_settings(radio_settings_t *s);
+// view.power_off without copying the view (the housekeeping task polls it)
+bool radio_power_off_wanted(void);
+// The backlight percent for the UI: batt_backlight_pct with the settings and the current battery level
+uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms);
 #if CONFIG_HOTSPOT
 // Bumped when the hotspot engine reports a change (hotspot_radio_ops_t.changed), for the UI's hotspot screen
 uint32_t radio_hotspot_serial(void);

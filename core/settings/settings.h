@@ -60,7 +60,35 @@ typedef struct {
 	uint8_t privacy_type[SETTINGS_PRIVACY_KEYS];	// dmrPrivacyType_t per slot
 	uint8_t privacy_active;		// slot in use radio-wide, 1..SETTINGS_PRIVACY_KEYS, 0 = privacy off
 	uint8_t reserved2[3];
+	// The radio core's settings (radio_settings_t, docs/spec/radio-features.md), field by field so the layout stays
+	// fixed; rs_stored 0 = never set (the radio core's defaults apply)
+	uint16_t rs_tot_s;
+	uint8_t rs_tot_warn_s;
+	uint8_t rs_bcl;
+	uint8_t rs_flags;		// SETTINGS_RS_* bits
+	uint8_t rs_scan_resume;
+	uint8_t rs_scan_hold_s;
+	uint8_t rs_beep_level;
+	uint16_t rs_scan_delay_ms;
+	uint16_t rs_scan_dwell_ms;
+	uint8_t rs_vox;
+	uint8_t rs_vox_level;
+	uint16_t rs_vox_tail_ms;
+	uint8_t rs_rx_save;
+	uint8_t rs_stored;		// 1 = the rs_ fields hold the radio core's settings
+	uint16_t rs_rx_save_idle_s;
+	uint16_t rs_battery_off_s;
+	uint16_t rs_backlight_dim_s;
+	uint16_t rs_backlight_off_s;
+	uint16_t reserved3;
 } settings_t;
+
+// settings_t.rs_flags
+#define SETTINGS_RS_ROGER_BEEP		0x01u
+#define SETTINGS_RS_TX_INHIBIT		0x02u
+#define SETTINGS_RS_SCAN_PRIORITY	0x04u
+#define SETTINGS_RS_SCAN_BEEP		0x08u
+#define SETTINGS_RS_KEY_BEEP		0x10u
 
 typedef enum {
 	SETTINGS_RAM,		// no flash: defaults, nothing saved

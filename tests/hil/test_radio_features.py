@@ -1,0 +1,361 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+"""The everyday radio features (docs/spec/radio-features.md): scan, beeps, battery, settings, and the FM transmit
+extras. Radio-only tests never transmit; the radio_tx ones key the radio on its FM VFO at its lowest power (opt-in
+--allow-rf); the rf one uses the SDR bench's transmitter (--allow-rf --allow-service-stop).
+
+Everything is read from the view's `features` section (debuglink.md 3.7) and driven by the radio feature operations
+(RADIO ops 20-24, debuglink.md 3.8). Settings changed through the SETTING op live in RAM only; each test puts back
+the values it changed.
+
+Pass criteria:
+- test_features_section: every key present; battery one of ok / low / critical, battery_pct 0-100, battery_mv 5000
+  to 9000 (a 2S Li-ion pack; 0 only when the board has no ADC), power_off 0.
+- test_settings_round_trip: SETTING scan_hold_s 7 (8 if it was 7) shows in set.scan_hold_s within 1 s, and the old
+  value again within 1 s after it is put back.
+- test_beep_counts: a BEEP error request counts in beep.played or beep.no_stream (one of them, by 1); when played,
+  beep.blocks grows within 1 s (the audio stream ran: on FM this shows whether the I2S clock runs) and beep.busy
+  falls back to 0 within 2 s.
+- test_zone_scan_cancel: (zone of 2+ channels) scan=zone within 1 s; at least 2 different zone positions within 4 s
+  unless the scan stopped on a busy channel (scan_phase probe / hold / resume); CANCEL: scan=off and back on the
+  starting position within 1 s.
+- test_zone_scan_nuisance: (zone of 3+ channels) NUISANCE while scanning: scan_skipped=1 within 1 s; STOP: scan=off,
+  scan_skipped=0.
+- test_vfo_scan: (FM VFO) SCAN_VFO over the VFO frequency + 0..10 steps: rx_hz takes 3+ values, all inside the range,
+  within 4 s; CANCEL: the starting frequency again.
+- test_dual_watch: (zone of 2+ channels) dual watch with the next position: zone_pos alternates between exactly the
+  two positions; CANCEL: back to the start.
+- test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx.
+- test_tot_warning (radio_tx): tot_s 6, tot_warn_s 3: tot_warning=1 between 2.5 and 4.5 s after key-up, then
+  tx_deny=timeout and the state leaves tx between 5.5 and 7.5 s.
+- test_roger_beep (radio_tx): roger_beep 1, 1.5 s over: roger=1 is seen after PTT release while still transmitting,
+  then the state returns to rx within 1 s.
+- test_tone_burst (radio_tx): TONE_BURST 1: state tx and tone_burst=1 within 1 s; TONE_BURST 0: rx within 1 s.
+- test_scan_stops_on_dmr_call (rf): the zone holding the DMR test channel scans while the bench sends a 20 superframe
+  group call there: the scan holds on that channel (scan_phase hold, rx_hz the test frequency) while the call runs.
+"""
+import contextlib
+import threading
+import time
+
+import pytest
+
+from odr_debug import as_int
+
+FEATURE_KEYS = ("scan.built", "scan", "scan_phase", "scan_skipped", "tot_warning", "tone_burst", "roger", "vox_keyed",
+                "rx_sleeping", "battery", "battery_pct", "battery_mv", "power_off", "beep.built", "set.tot_s",
+                "set.tot_warn_s", "set.bcl", "set.roger_beep", "set.tx_inhibit", "set.scan_resume", "set.scan_hold_s",
+                "set.scan_delay_ms", "set.scan_dwell_ms", "set.scan_priority", "set.beep_level", "set.key_beep",
+                "set.vox", "set.vox_level", "set.vox_tail_ms", "set.rx_save", "set.rx_save_idle_s",
+                "set.battery_off_s")
+# view value -> SETTING value, for putting settings back
+WORDS = {"set.bcl": {"off": 0, "carrier": 1, "wrong_tone": 2}, "set.scan_resume": {"time": 0, "carrier": 1, "stop": 2},
+         "set.vox": {"off": 0, "channel": 1, "all": 2}}
+
+
+def features(radio):
+    return radio.link.view(["features"])
+
+
+def wait_features(radio, pred, timeout=3.0, what="features"):
+    return radio.wait_for(pred, timeout, sections=("features",), what=what)
+
+
+@contextlib.contextmanager
+def settings(radio, **values):
+    """Set radio settings (RAM) for the block, then put the old values back."""
+    before = features(radio)
+    old = {}
+    for name, value in values.items():
+        v = before[f"set.{name}"]
+        old[name] = WORDS.get(f"set.{name}", {}).get(v, None)
+        if old[name] is None:
+            old[name] = int(v)
+        radio.link.setting(name, value)
+        time.sleep(0.06)        # the radio request rate limit
+    try:
+        yield
+    finally:
+        for name, value in old.items():
+            radio.link.setting(name, value)
+            time.sleep(0.06)
+
+
+def need_scan(radio):
+    if as_int(features(radio).get("scan.built"), 0) != 1:
+        pytest.skip("built without CONFIG_SCAN")
+
+
+def on_channel(radio, minimum):
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        pytest.skip("the radio is in hotspot mode")
+    if radio.core().get("vfo") == "1":
+        radio.link.vfo(False)
+        radio.wait_for(lambda v: v.get("vfo") == "0", what="VFO off")
+    size = as_int(radio.core().get("zone_size"), 0)
+    if size < minimum:
+        pytest.skip(f"the current zone has {size} channels, the test needs {minimum}")
+    return size
+
+
+def scan_off(radio):
+    radio.link.scan("cancel")
+    wait_features(radio, lambda v: v.get("scan") == "off", what="scan off")
+
+
+def collect(radio, key, seconds, sections=("core",)):
+    """Values of a view key seen in `seconds`, and the last view of the features section."""
+    seen, end = [], time.monotonic() + seconds
+    while time.monotonic() < end:
+        v = radio.link.view(list(sections))
+        if not seen or seen[-1] != v.get(key):
+            seen.append(v.get(key))
+        time.sleep(0.03)
+    return seen, features(radio)
+
+
+# ── radio only ────────────────────────────────────────────────────────────
+
+def test_features_section(radio):
+    f = features(radio)
+    missing = [k for k in FEATURE_KEYS if k not in f]
+    assert not missing, f"missing keys in the features section: {missing}"
+    assert f["battery"] in ("ok", "low", "critical"), f
+    assert 0 <= as_int(f["battery_pct"], -1) <= 100, f
+    mv = as_int(f["battery_mv"], -1)
+    assert mv == 0 or 5000 <= mv <= 9000, f"battery_mv {mv}"
+    assert f["power_off"] == "0", f
+    print({k: f[k] for k in ("battery", "battery_pct", "battery_mv", "beep.built", "scan.built")})
+
+
+def test_settings_round_trip(radio):
+    old = features(radio)["set.scan_hold_s"]
+    new = 7 if old != "7" else 8
+    with settings(radio, scan_hold_s=new):
+        wait_features(radio, lambda v: v.get("set.scan_hold_s") == str(new), 1.0, f"set.scan_hold_s={new}")
+    wait_features(radio, lambda v: v.get("set.scan_hold_s") == old, 1.0, "set.scan_hold_s put back")
+
+
+def test_beep_counts(radio):
+    f0 = features(radio)
+    if f0.get("beep.built") != "1":
+        pytest.skip("built without CONFIG_BEEP")
+    if as_int(f0.get("set.beep_level"), 0) == 0:
+        pytest.skip("beep level 0")
+    played0, none0, blocks0 = (as_int(f0.get(k), 0) for k in ("beep.played", "beep.no_stream", "beep.blocks"))
+    radio.link.beep("error")
+    f = wait_features(radio, lambda v: as_int(v.get("beep.played"), 0) + as_int(v.get("beep.no_stream"), 0)
+                      > played0 + none0, 1.0, "the beep counted")
+    played = as_int(f["beep.played"], 0) - played0
+    no_stream = as_int(f["beep.no_stream"], 0) - none0
+    print(f"mode {radio.core().get('mode')}: played +{played}, no_stream +{no_stream}")
+    assert played + no_stream == 1, f
+    if played:
+        f = wait_features(radio, lambda v: as_int(v.get("beep.blocks"), 0) > blocks0, 1.0,
+                          "audio blocks (the stream runs)")
+        wait_features(radio, lambda v: v.get("beep.busy") == "0", 2.0, "the beep finished")
+        print(f"blocks +{as_int(f['beep.blocks'], 0) - blocks0}")
+
+
+def test_zone_scan_cancel(radio):
+    need_scan(radio)
+    on_channel(radio, 2)
+    start = radio.core()["zone_pos"]
+    with settings(radio, scan_resume=1):
+        radio.link.scan("zone")
+        try:
+            wait_features(radio, lambda v: v.get("scan") == "zone", 1.0, "scan=zone")
+            seen, f = collect(radio, "zone_pos", 4.0)
+            print("positions:", seen, "phase:", f.get("scan_phase"))
+            assert len(set(seen)) >= 2 or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
+        finally:
+            scan_off(radio)
+    radio.wait_for(lambda v: v.get("zone_pos") == start, 1.0, what="back on the starting channel")
+
+
+def test_zone_scan_nuisance(radio):
+    need_scan(radio)
+    on_channel(radio, 3)
+    radio.link.scan("zone")
+    try:
+        wait_features(radio, lambda v: v.get("scan") == "zone", 1.0, "scan=zone")
+        time.sleep(0.5)
+        radio.link.scan("nuisance")
+        wait_features(radio, lambda v: v.get("scan_skipped") == "1", 1.0, "scan_skipped=1")
+        time.sleep(0.06)
+        radio.link.scan("stop")
+        f = wait_features(radio, lambda v: v.get("scan") == "off", 1.0, "scan off")
+        assert f["scan_skipped"] == "0", f
+    finally:
+        scan_off(radio)
+
+
+def test_vfo_scan(radio):
+    need_scan(radio)
+    if "VFO_FM" not in radio.features():
+        pytest.skip("built without the FM VFO")
+    radio.go_home()
+    with radio.vfo_session() as hz:
+        step = as_int(radio.core().get("vfo_step_hz"), 12500) or 12500
+        lo, hi = hz, hz + 10 * step
+        radio.link.scan_vfo(lo, hi)
+        try:
+            wait_features(radio, lambda v: v.get("scan") == "vfo", 1.0, "scan=vfo")
+            seen, f = collect(radio, "rx_hz", 4.0)
+            vals = {int(x) for x in seen}
+            print(f"{len(vals)} frequencies, phase {f.get('scan_phase')}")
+            assert all(lo <= x <= hi for x in vals), (sorted(vals), lo, hi)
+            assert len(vals) >= 3 or f.get("scan_phase") in ("probe", "hold", "resume"), (sorted(vals), f)
+        finally:
+            scan_off(radio)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(hz), 1.0, what="back on the starting frequency")
+
+
+def test_dual_watch(radio):
+    need_scan(radio)
+    size = on_channel(radio, 2)
+    a = as_int(radio.core()["zone_pos"], 0)
+    b = (a + 1) % size
+    radio.link.scan("dual", b)
+    try:
+        wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        seen, f = collect(radio, "zone_pos", 3.0)
+        print("positions:", seen, "phase:", f.get("scan_phase"))
+        assert set(seen) <= {str(a), str(b)}, seen
+        assert len(set(seen)) == 2 or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
+    finally:
+        scan_off(radio)
+    radio.wait_for(lambda v: v.get("zone_pos") == str(a), 1.0, what="back on the first channel")
+
+
+# ── the radio transmits (FM VFO, lowest power) ─────────────────────────────
+
+@pytest.fixture
+def fm_tx(radio, pytestconfig):
+    if "VFO_FM" not in radio.features():
+        pytest.skip("built without the FM VFO")
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        pytest.skip("the radio is in hotspot mode")
+    with radio.vfo_session():
+        radio.link.vfo_set(round(pytestconfig.getoption("--fm-mhz") * 1e6))
+        radio.wait_for(lambda v: v.get("mode") == "fm", what="FM VFO")
+        radio.lowest_power()
+        try:
+            yield radio
+        finally:
+            radio.link.ptt(False)
+            radio.link.tone_burst(False)
+            radio.wait_for(lambda v: v.get("state") != "tx", 3.0, what="TX ended")
+
+
+@pytest.mark.radio_tx
+def test_tx_inhibit(fm_tx):
+    with settings(fm_tx, tx_inhibit=1):
+        fm_tx.link.ptt(True)
+        try:
+            seen, _ = collect(fm_tx, "state", 1.0)
+            v = fm_tx.core()
+        finally:
+            fm_tx.link.ptt(False)
+    assert "tx" not in seen, seen
+    assert v.get("tx_deny") == "inhibit", v
+
+
+@pytest.mark.radio_tx
+def test_tot_warning(fm_tx):
+    with settings(fm_tx, tot_s=6, tot_warn_s=3):
+        t0 = time.monotonic()
+        fm_tx.link.ptt(True)
+        try:
+            fm_tx.wait_for(lambda v: v.get("state") == "tx", 1.0, what="TX")
+            wait_features(fm_tx, lambda v: v.get("tot_warning") == "1", 6.0, "tot_warning")
+            t_warn = time.monotonic() - t0
+            fm_tx.wait_for(lambda v: v.get("state") != "tx", 6.0, what="the time-out")
+            t_end = time.monotonic() - t0
+            deny = fm_tx.core().get("tx_deny")
+        finally:
+            fm_tx.link.ptt(False)
+    print(f"warning at {t_warn:.1f} s, time-out at {t_end:.1f} s, tx_deny {deny}")
+    assert 2.5 <= t_warn <= 4.5, t_warn
+    assert 5.5 <= t_end <= 7.5, t_end
+    assert deny == "timeout", deny
+
+
+@pytest.mark.radio_tx
+def test_roger_beep(fm_tx):
+    if "FM_TX_TONES" not in fm_tx.features():
+        pytest.skip("built without CONFIG_FM_TX_TONES")
+    with settings(fm_tx, roger_beep=1):
+        fm_tx.link.ptt(True)
+        fm_tx.wait_for(lambda v: v.get("state") == "tx", 1.0, what="TX")
+        time.sleep(1.5)
+        fm_tx.link.ptt(False)
+        rogers = []
+        end = time.monotonic() + 1.0
+        while time.monotonic() < end:
+            v = fm_tx.link.view(["core", "features"])
+            rogers.append((v.get("state"), v.get("roger")))
+            if v.get("state") != "tx":
+                break
+            time.sleep(0.01)
+    print(rogers)
+    assert ("tx", "1") in rogers, rogers
+    assert rogers[-1][0] != "tx", f"still transmitting 1 s after release: {rogers[-3:]}"
+
+
+@pytest.mark.radio_tx
+def test_tone_burst(fm_tx):
+    if "FM_TX_TONES" not in fm_tx.features():
+        pytest.skip("built without CONFIG_FM_TX_TONES")
+    fm_tx.link.tone_burst(True)
+    try:
+        fm_tx.wait_for(lambda v: v.get("state") == "tx" and v.get("tone_burst") == "1", 1.0,
+                       sections=("core", "features"), what="burst keyed")
+        time.sleep(1.0)
+    finally:
+        fm_tx.link.tone_burst(False)
+    fm_tx.wait_for(lambda v: v.get("state") != "tx", 1.0, what="burst over")
+
+
+# ── the SDR bench transmits ───────────────────────────────────────────────
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
+    need_scan(radio)
+    if "DMR" not in radio.features():
+        pytest.skip("built without DMR")
+    freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
+    hz = round(freq * 1e6)
+    radio.go_home()
+    pos = radio.find_channel(hz, "dmr")
+    if as_int(radio.core().get("zone_size"), 0) < 2:
+        pytest.skip("the DMR test channel's zone has one channel")
+    # start somewhere else so the scan has to find it
+    radio.link.zone_pos((pos + 1) % as_int(radio.core()["zone_size"], 1))
+    time.sleep(0.2)
+    held, done = [], threading.Event()
+
+    def watch():
+        while not done.is_set():
+            v = radio.link.view(["core", "features"])
+            if v.get("scan_phase") == "hold":
+                held.append(v.get("rx_hz"))
+            time.sleep(0.1)
+
+    with settings(radio, scan_resume=1):
+        radio.link.scan("zone")
+        t = threading.Thread(target=watch, daemon=True)
+        try:
+            wait_features(radio, lambda v: v.get("scan") == "zone", 1.0, "scan=zone")
+            t.start()
+            with sdr_bench.lease():
+                sdr_bench.voice_call(freq, cc, tg, superframes=20, calls=1)
+        finally:
+            done.set()
+            t.join(2)
+            scan_off(radio)
+    print(f"held on {sorted(set(held))} ({len(held)} views)")
+    assert str(hz) in held, f"the scan never held on {freq} MHz: {sorted(set(held))}"
