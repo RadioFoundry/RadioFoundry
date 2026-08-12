@@ -297,8 +297,8 @@ static bool smsTransmit(void)
 
 bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested)
 {
-	if ((sms.state == DMR_REQ_QUEUED) || (sms.state == DMR_REQ_SENDING) || (text == NULL) || (text[0] == '\0') ||
-			(dst == 0))
+	if (!CONFIG_DMR_SMS || (sms.state == DMR_REQ_QUEUED) || (sms.state == DMR_REQ_SENDING) || (text == NULL) ||
+			(text[0] == '\0') || (dst == 0))
 	{
 		return false;
 	}
@@ -407,7 +407,7 @@ static void signalFinish(bool ok)
 
 static bool signalStart(uint8_t kind, uint32_t dst)
 {
-	if ((sig.state == DMR_REQ_QUEUED) || (sig.state == DMR_REQ_SENDING) || (dst == 0))
+	if (!CONFIG_DMR_SIGNALING || (sig.state == DMR_REQ_QUEUED) || (sig.state == DMR_REQ_SENDING) || (dst == 0))
 	{
 		return false;
 	}
@@ -504,7 +504,7 @@ static bool arsSend(uint32_t server, bool registration)
 
 static void arsTick(void)
 {
-	if (ars.powerOff != ARS_POWER_OFF_NONE)
+	if (!CONFIG_DMR_ARS || (ars.powerOff != ARS_POWER_OFF_NONE))
 	{
 		return;
 	}
@@ -612,7 +612,7 @@ static void arsTick(void)
 
 dmrArsState_t dmrDataServiceArsState(void)
 {
-	if (settings.arsServer == 0)
+	if (!CONFIG_DMR_ARS || (settings.arsServer == 0))
 	{
 		return DMR_ARS_STATE_OFF;
 	}
@@ -682,7 +682,7 @@ static void lrrpReceived(uint32_t src, const uint8_t *payload, int length)
 	uint8_t next = (lrrpWriteIdx + 1) % LRRP_QUEUE_SIZE;
 	lrrpPendingRequest_t *pending = &lrrpQueue[lrrpWriteIdx];
 
-	if (!settings.lrrpReply || (next == lrrpReadIdx) || !lrrpDecodeRequest(payload, length, &pending->request))
+	if (!CONFIG_DMR_LRRP || !settings.lrrpReply || (next == lrrpReadIdx) || !lrrpDecodeRequest(payload, length, &pending->request))
 	{
 		return;// off, full (the server asks again), or not a request
 	}
@@ -837,6 +837,10 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 
 static void lrrpTick(void)
 {
+	if (!CONFIG_DMR_LRRP)
+	{
+		return;
+	}
 	if (lrrpReadIdx != lrrpWriteIdx)
 	{
 		if (lrrpHandleRequest(&lrrpQueue[lrrpReadIdx]))
@@ -930,6 +934,10 @@ uint32_t dmrDataServiceLocationNeededInMs(void)
 // deregistration still has to go out; the caller gives up on it after a while (3 s, gotcha 7.4)
 bool dmrDataServicePowerOff(void)
 {
+	if (!CONFIG_DMR_ARS)
+	{
+		return false;
+	}
 	if (ars.powerOff == ARS_POWER_OFF_NONE)
 	{
 		if (!(ars.deregister || ((ars.context != 0) && (ars.registered || (ars.attempts > 0)))) || !canTransmit())
@@ -1186,7 +1194,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	}
 
 	// The presence server's answer to our registration, or its request for one
-	if (isUDP && (udp.appPort == DMR_UDP_PORT_ARS) && !packet->group && (packet->src == ars.server) && (ars.server != 0))
+	if (CONFIG_DMR_ARS && isUDP && (udp.appPort == DMR_UDP_PORT_ARS) && !packet->group && (packet->src == ars.server) && (ars.server != 0))
 	{
 		switch (dmrDataDecodeARS(udp.payload, udp.length))
 		{
@@ -1218,12 +1226,12 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		}
 	}
 
-	if (isUDP && (udp.appPort == DMR_UDP_PORT_LRRP) && !packet->group)
+	if (CONFIG_DMR_LRRP && isUDP && (udp.appPort == DMR_UDP_PORT_LRRP) && !packet->group)
 	{
 		lrrpReceived(packet->src, udp.payload, udp.length);
 	}
 
-	bool isTMS = isUDP && (udp.appPort == DMR_UDP_PORT_TMS) && dmrDataDecodeTMS(udp.payload, udp.length, &tms);
+	bool isTMS = CONFIG_DMR_SMS && isUDP && (udp.appPort == DMR_UDP_PORT_TMS) && dmrDataDecodeTMS(udp.payload, udp.length, &tms);
 
 	// The ACK of our own message
 	if (isTMS && tms.isAck && !packet->group && (sms.state == DMR_REQ_SENDING) && sms.ack &&
@@ -1297,6 +1305,10 @@ static uint32_t getId(const uint8_t *p)
 // Call alert and radio check: answers to ours, and requests to us (answered, a call alert rings)
 static void handleCSBK(const uint8_t *csbk)
 {
+	if (!CONFIG_DMR_SIGNALING)
+	{
+		return;
+	}
 	uint8_t opcode = csbk[0] & 0x3F;
 	uint32_t target = getId(&csbk[4]);
 	uint32_t source = getId(&csbk[7]);
@@ -1529,7 +1541,7 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 {
 	bool ok = false;
 
-	if ((text == NULL) || (text[0] == '\0') || (dst == 0) || (format != DMR_SMS_FORMAT_TMS))
+	if (!CONFIG_DMR_SMS || (text == NULL) || (text[0] == '\0') || (dst == 0) || (format != DMR_SMS_FORMAT_TMS))
 	{
 		return false;
 	}
@@ -1556,7 +1568,7 @@ static bool signalRequest(uint8_t kind, uint32_t dst)
 {
 	bool ok = false;
 
-	if (dst == 0)
+	if (!CONFIG_DMR_SIGNALING || (dst == 0))
 	{
 		return false;
 	}

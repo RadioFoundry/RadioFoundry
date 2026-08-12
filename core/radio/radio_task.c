@@ -12,6 +12,9 @@
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
+#if CONFIG_DMR_DATA_CORE
+#include "dmr/dmrDataService.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -116,8 +119,18 @@ static void radio_task(void *arg)
 static const hotspot_radio_ops_t hotspot_ops;
 #endif
 
+#if CONFIG_DMR_DATA_CORE
+// The data service's API (dmr_data_api.h) is called from the UI and debug link tasks: its copies are short (an inbox
+// message), so the scheduler is held rather than a mutex taken (no priority games with the radio task)
+static void data_lock(void) { vTaskSuspendAll(); }
+static void data_unlock(void) { (void)xTaskResumeAll(); }
+#endif
+
 void radio_core_start(void)
 {
+#if CONFIG_DMR_DATA_CORE
+	dmrDataServiceSetLock(data_lock, data_unlock);
+#endif
 	view_lock = xSemaphoreCreateMutex();
 	requests = xQueueCreate(RADIO_QUEUE_LEN, sizeof(radio_req_t));
 	configASSERT(view_lock != NULL && requests != NULL);
