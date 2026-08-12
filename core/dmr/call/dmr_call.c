@@ -22,7 +22,7 @@ const uint8_t dmr_ambe_silence[DMR_AMBE_FRAME_BYTES] = { 0xB9, 0xE8, 0x81, 0x52,
 #endif
 
 enum { RXC_NONE, RXC_PLAY, RXC_OTHER };
-enum { TX_NONE, TX_ACCESS, TX_WAKE, TX_WAKE_LISTEN, TX_ON, TX_END, TX_DENIED };
+enum { TX_NONE, TX_ACCESS, TX_WAKE, TX_WAKE_LISTEN, TX_ON, TX_END, TX_DENIED, TX_DATA, TX_DATA_END };
 
 #define VOICE_PERIOD_MS		60	// one burst per frame on our slot
 #define DUPLICATE_MS		40	// no slot counter from the modem: the same burst index again within this is a repeat
@@ -118,6 +118,14 @@ static struct {
 	dmr_target_t reply;
 	uint32_t reply_until;
 	bool reply_set;
+
+	// data (dmr_call_data_tx): the list being sent, and where received data bursts go
+	dmr_data_source_t data;
+	bool data_active;	// a list is being sent or its repeater woken (TX_WAKE / TX_WAKE_LISTEN / TX_DATA*)
+	bool data_staged;	// data_stage taken from the list but not queued yet
+	dmr_tx_burst_t data_stage;
+	dmr_data_rx_fn data_rx;
+	void *data_rx_ctx;
 } s;
 
 // --- RX trace: one entry per burst event, packed into lines for the debug link's log ---
@@ -278,7 +286,7 @@ static void set_reply(dmr_target_t t, uint32_t now)
 
 static bool transmitting(void)
 {
-	return s.tx == TX_WAKE || s.tx == TX_ON || s.tx == TX_END;
+	return s.tx == TX_WAKE || s.tx == TX_ON || s.tx == TX_END || s.tx == TX_DATA || s.tx == TX_DATA_END;
 }
 
 // --- Modem event callback (producer) ---
@@ -658,6 +666,8 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		// 2026-10-10: headers read late came as type 0, and eight of them outlast the fade time)
 		if (s.rx != RXC_NONE && b->kind != DMR_BURST_IDLE)
 			s.last_rx_ms = now;
+		if (s.data_rx && b->kind >= DMR_BURST_CSBK && b->kind <= DMR_BURST_USBD && b->kind != DMR_BURST_IDLE)
+			s.data_rx(b, now, s.data_rx_ctx);
 		break;
 	}
 }
@@ -670,8 +680,14 @@ static void source_end(void)
 		s.source->end(s.source->ctx);
 }
 
+static void data_end(uint8_t err);
+
 static void tx_deny(uint8_t err)
 {
+	if (s.data_active) {	// a burst list, not PTT: its owner hears about it, nothing is shown
+		data_end(err);
+		return;
+	}
 	stats.tx_denied++;
 	if (s.tx == TX_WAKE || s.tx == TX_ON || s.tx == TX_END)
 		s.modem->tx_abort();
@@ -855,8 +871,14 @@ static void tx_wakeup(uint32_t now)
 	s.dirty = true;
 }
 
+static void tx_start_data(uint32_t now);
+
 static void tx_access(uint32_t now)
 {
+	if (s.data_active) {	// the repeater is up now (the list's owner did the listen before talk)
+		tx_start_data(now);
+		return;
+	}
 	if (voice_channel_busy(now)) {
 		if (elapsed(now, s.tx_since, true, s.cfg.access_wait_ms))
 			tx_deny(DMR_TX_ERR_BUSY);
@@ -866,6 +888,65 @@ static void tx_access(uint32_t now)
 		tx_wakeup(now);
 	else
 		tx_start_voice(now);
+}
+
+// --- Data TX: a burst list from the data service, one burst per frame on our slot (dmr-modem.md 2.6) ---
+
+static void data_end(uint8_t err)
+{
+	if (transmitting())
+		s.modem->tx_abort();
+	dmr_data_source_t d = s.data;
+
+	s.data_active = false;
+	s.data_staged = false;
+	s.tx = TX_NONE;
+	s.dirty = true;
+	if (d.done)
+		d.done(err, d.ctx);
+	if (s.ptt)
+		s.ptt_seen = false;	// PTT pressed during the list: handled at this poll's PTT check
+}
+
+static void tx_data_fill(uint32_t now)
+{
+	while (s.tx == TX_DATA && s.modem->tx_queue_space() > 0) {
+		if (!s.data_staged) {
+			if (!s.data.next || !s.data.next(&s.data_stage, s.data.ctx)) {
+				s.modem->tx_end();
+				s.tx = TX_DATA_END;
+				s.deadline = now + (tx_inflight() + 1u) * VOICE_PERIOD_MS + DMR_CALL_TX_DONE_GUARD_MS;
+				s.dirty = true;
+				return;
+			}
+			s.data_staged = true;
+		}
+		if (!s.modem->tx_queue(&s.data_stage))
+			return;	// kept staged for the next poll
+		s.data_staged = false;
+		s.queued++;
+	}
+}
+
+static void tx_start_data(uint32_t now)
+{
+	dmr_timing_t timing;
+
+	if (s.cfg.rmo)
+		timing = DMR_TIMING_ALIGNED;
+	else	// DMO: in step with a station just heard (an ACK to its data), else on our own timing
+		timing = elapsed(now, s.last_activity_ms, s.activity_seen, DMR_CALL_ALIGN_MS) ? DMR_TIMING_OWN
+											    : DMR_TIMING_ALIGNED;
+	if (!s.modem->tx_begin(timing, (int8_t)s.cfg.ts, DMR_ACCESS_IMPOLITE)) {
+		tx_deny(DMR_TX_ERR_REJECTED);
+		return;
+	}
+	s.queue_cap = s.modem->tx_queue_space();
+	s.queued = s.started = 0;
+	s.tx = TX_DATA;
+	s.deadline = now + DMR_CALL_DATA_TIMEOUT_MS + (uint32_t)s.data.count * VOICE_PERIOD_MS;
+	s.dirty = true;
+	tx_data_fill(now);
 }
 
 static void tx_ptt_pressed(uint32_t now)
@@ -961,6 +1042,16 @@ static void tx_poll(uint32_t now)
 			tx_finished(now);
 		}
 		break;
+	case TX_DATA:
+		if (!before(now, s.deadline))
+			tx_deny(DMR_TX_ERR_TIMEOUT);
+		else
+			tx_data_fill(now);
+		break;
+	case TX_DATA_END:
+		if (!before(now, s.deadline))
+			data_end(DMR_TX_OK);	// tx_done overdue: the bursts went (data_end aborts the modem)
+		break;
 	default:
 		break;
 	}
@@ -1007,6 +1098,8 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 	case DMR_EV_TX_DONE:
 		if (s.tx == TX_END) {
 			tx_finished(now);
+		} else if (s.tx == TX_DATA_END) {
+			data_end(DMR_TX_OK);
 		} else if (s.tx == TX_WAKE) {
 			s.tx = TX_WAKE_LISTEN;
 			s.deadline = now + DMR_CALL_WAKEUP_LISTEN_MS;
@@ -1081,6 +1174,8 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 	bool target_change = !same_target(cfg->talk_target, s.cfg.talk_target);
 
 	if (rf_change && s.configured) {
+		if (s.data_active && s.modem)
+			data_end(DMR_TX_ERR_REJECTED);
 		if (transmitting() && s.modem)
 			s.modem->tx_abort();
 		if (s.tx == TX_ON)
@@ -1131,6 +1226,8 @@ void dmr_call_stop(void)
 {
 	if (!s.running)
 		return;
+	if (s.data_active)
+		data_end(DMR_TX_ERR_REJECTED);
 	if (transmitting())
 		s.modem->tx_abort();
 	if (s.tx == TX_ON)
@@ -1170,7 +1267,7 @@ static void view_update(uint32_t now)
 		break;
 	case TX_WAKE:
 	case TX_WAKE_LISTEN:
-		phase = DMR_CALL_PHASE_TX_WAKEUP;
+		phase = s.data_active ? DMR_CALL_PHASE_TX_DATA : DMR_CALL_PHASE_TX_WAKEUP;
 		break;
 	case TX_ON:
 		phase = DMR_CALL_PHASE_TX_VOICE;
@@ -1180,6 +1277,10 @@ static void view_update(uint32_t now)
 		break;
 	case TX_DENIED:
 		phase = DMR_CALL_PHASE_TX_DENIED;
+		break;
+	case TX_DATA:
+	case TX_DATA_END:
+		phase = DMR_CALL_PHASE_TX_DATA;
 		break;
 	default:
 		phase = s.rx == RXC_PLAY ? DMR_CALL_PHASE_RX_VOICE
@@ -1286,4 +1387,33 @@ void dmr_call_reset_stats(void)
 	memset(&stats, 0, sizeof(stats));
 	tx_underruns_base = s.view.tx_underruns;
 	evq_drops_base = evq_drops;
+}
+
+void dmr_call_set_data_rx(dmr_data_rx_fn fn, void *ctx)
+{
+	s.data_rx = fn;
+	s.data_rx_ctx = ctx;
+}
+
+bool dmr_call_data_tx(const dmr_data_source_t *src)
+{
+	if (!s.modem || !s.running || !s.configured || s.tx != TX_NONE || s.ptt || s.data_active || src == NULL ||
+	    src->next == NULL)
+		return false;
+	s.data = *src;
+	s.data_active = true;
+	s.data_staged = false;
+	s.tx_since = s.now;
+	s.wake_tries = 0;
+	s.dirty = true;
+	if (s.cfg.rmo && !repeater_up(s.now))
+		tx_wakeup(s.now);
+	else
+		tx_start_data(s.now);
+	return true;
+}
+
+bool dmr_call_data_busy(void)
+{
+	return s.data_active;
 }

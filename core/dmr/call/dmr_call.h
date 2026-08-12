@@ -41,6 +41,7 @@
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
 #define DMR_CALL_REPLY_WINDOW_S		10
+#define DMR_CALL_DATA_TIMEOUT_MS	10000	// a burst list on air takes at most this plus 60 ms per burst (gotcha 3.9)
 #ifndef DMR_CALL_EVQ_DEPTH
 #define DMR_CALL_EVQ_DEPTH		8	// power of two
 #endif
@@ -130,6 +131,7 @@ typedef enum {
 	DMR_CALL_PHASE_TX_VOICE,
 	DMR_CALL_PHASE_TX_ENDING,	// terminator queued, waiting for the modem's tx_done
 	DMR_CALL_PHASE_TX_DENIED,	// PTT still held after a refusal: release to clear
+	DMR_CALL_PHASE_TX_DATA,		// sending a data / CSBK burst list (dmr_call_data_tx), its repeater wake-up included
 } dmr_call_phase_t;
 
 typedef enum {
@@ -212,5 +214,32 @@ void dmr_call_set_rx_trace(bool on);
 // Listen before talk for machine traffic (data, ACKs, CSBK answers; gotcha 3.6): DMO 120 ms without voice, data or
 // a call on our slot; RMO 180 ms without bursts on our slot, no call, and the last call over DMR_CALL_RMO_HANG_MS ago
 bool dmr_call_channel_clear(uint32_t now_ms);
+
+// --- Data and CSBK (core/dmr/dmrDataService.c sits on these) ---
+
+// Every data / control burst heard on our slot with our color code: CSBK, MBC header / continuation, data header,
+// rate 1/2, 3/4 and 1 blocks, unified single block data. After the color code and slot filters, never while we
+// transmit (the HR_C6000's reports are unreliable then, gotcha 14.1), from dmr_call_poll(). CRC checks are the
+// receiver's: headers and CSBKs come with crc_ok as the modem said, blocks have no CRC of their own (gotcha 5.4)
+typedef void (*dmr_data_rx_fn)(const dmr_burst_t *b, uint32_t now_ms, void *ctx);
+void dmr_call_set_data_rx(dmr_data_rx_fn fn, void *ctx);
+
+// A burst list to send (dmr_call_data_tx): next() gives the bursts in order (false: the list is over), done() is
+// called once from dmr_call_poll() with a dmr_tx_error_t when the last burst has left the antenna (DMR_TX_OK) or the
+// list was dropped (the repeater didn't wake, the modem refused, the time-out, a channel change)
+typedef struct {
+	bool (*next)(dmr_tx_burst_t *out, void *ctx);
+	void (*done)(uint8_t err, void *ctx);
+	void *ctx;
+	uint8_t count;		// bursts in the list, for the time-out
+} dmr_data_source_t;
+
+// Send a burst list now: on our slot, one burst per frame, the repeater woken first through a repeater that isn't
+// up (as for voice). The caller has done its listen before talk (dmr_call_channel_clear); the modem is asked for
+// impolite access. False (nothing started) while the stack is busy: a voice call being sent, PTT held, another
+// list, or the modem not running. A PTT press during a list waits for it to end. *src is copied
+bool dmr_call_data_tx(const dmr_data_source_t *src);
+// A list is being sent (or its repeater woken)
+bool dmr_call_data_busy(void);
 
 #endif

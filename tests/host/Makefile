@@ -14,7 +14,7 @@ FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c
 
 TSHARK  ?= $(firstword $(wildcard /Applications/Wireshark*.app/Contents/MacOS/tshark) $(shell command -v tshark))
 
-TESTS   := dmrFecTest sfrTest dmrDataTest dmrDataServiceTest dmrDataServiceArsTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
+TESTS   := dmrFecTest sfrTest dmrDataTest dmrDataServiceTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
            ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared
 
 all: run
@@ -55,15 +55,11 @@ ipGatewayTest31: $(IPGW) $(CORE)/dmr/ipGateway.h
 ipGatewayTestShared: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=8 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
 
-# The service's reply queue and retried message handling, with the firmware it uses stubbed (stubs/)
+# The data service (replies, signaling, our SMS, ARS, LRRP, the API mailbox) on a fake host
 SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c
 
-dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(wildcard stubs/*.h stubs/*/*.h)
-	$(CC) $(CFLAGS) -Istubs -o $@ $(SVC) -lm
-
-# The same with Motorola ARS registration built in
-dmrDataServiceArsTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(wildcard stubs/*.h stubs/*/*.h)
-	$(CC) $(CFLAGS) -Istubs -DHAS_DMR_ARS -DHAS_DMR_GPS_REPORTS -DHAS_DMR_LRRP -o $@ $(SVC) -lm
+dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
+	$(CC) $(CFLAGS) -o $@ $(SVC) -lm
 
 dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h
 	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c
@@ -78,7 +74,6 @@ run: $(TESTS)
 	./dmrFecTest
 	./dmrDataTest > dmrDataTest.out; status=$$?; grep -E "^(FAIL|# (PASSED|FAILED))" dmrDataTest.out; exit $$status
 	./dmrDataServiceTest
-	./dmrDataServiceArsTest
 	./hotspotDataTest
 	./hotspotUplinkTest
 	./dmrPrivacyTest
@@ -106,10 +101,11 @@ TESTS   += radioCoreTest inputTest
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
-           sim/dmr_sim_modem.c
+           sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrLrrp.c
 
-radioCoreTest: $(RCORE) $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h $(CORE)/radio/tones.h $(wildcard $(CORE)/dmr/call/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RCORE)
+radioCoreTest: $(RCORE) $(CORE)/radio/radio_sm.h $(CORE)/radio/radio.h $(CORE)/radio/tones.h $(wildcard $(CORE)/dmr/call/*.h) \
+               $(CORE)/dmr/dmrDataService.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RCORE) -lm
 
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c

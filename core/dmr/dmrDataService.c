@@ -1,64 +1,34 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 /*
- * DMR data service: SMS (Motorola TMS) inbox, ACKs and the host interface
+ * DMR data service, see dmrDataService.h. Single task (the host's, the radio task in the firmware), except the
+ * dmr_data_api.h calls at the end, which only touch the mailbox and copies under the lock.
  */
 
 #include <stdio.h>
 #include <string.h>
+#include "config.h"
 #include "dmr/dmrDataService.h"
-// TODO(hal): the legacy firmware headers below go when this moves onto hal/. Used from them: trxGetMode,
-// trxCheckFrequencyInAmateurBand, trxCarrierDetected, trxGetDMRTimeSlot, trxGetDMRColourCode, trxDMRID,
-// trxTalkGroupOrPcId, trxDMRModeRx; HRC6000DataTxStart, HRC6000DataTxGetStatus, HRC6000GetReceivedSrcId,
-// HRC6000SetDmrRxGain; settingsIsOptionBitSet(FromSettings), settingsSetOptionBit, settingsSetDirty, settingsUsbMode,
-// nonVolatileSettings, originalNonVolatileSettings; codeplugChannelGetFlag / codeplugChannelIsFlagSet,
-// currentChannelData, currentRxGroupData; contactIDLookup, dmrIDLookup; soundSetMelody, soundMelodyIsPlaying;
-// uiNotificationShow, displayLightTrigger, uiDataGlobal; rxPowerSavingSetState; ticksGetMillis; the USB CDC buffers.
-#include "hardware/HR-C6000.h"
-#include "functions/trx.h"
-#include "functions/settings.h"
-#include "functions/sound.h"
-#include "functions/ticks.h"
-#include "functions/rxPowerSaving.h"
-#include "user_interface/uiGlobals.h"
-#include "usb/usb_com.h"
-#include "usb/usb_ncm.h"
-#include "dmr/ipGateway.h"
-#include "dmr/dmrLrrp.h"
-#include "functions/codeplug.h"
-#include "user_interface/menuSystem.h"
-#include "user_interface/uiUtilities.h"
+#include "dmr/dmr_data_api.h"
 
-#define MILLIS()				ticksGetMillis()
-#if defined(PLATFORM_MD380)// the 2023 MD-380 tree: its own channel flag and melody API, no radio device abstraction
-#define CHANNEL_IS_RX_ONLY()	codeplugChannelIsFlagSet(currentChannelData, CHANNEL_FLAG_RX_ONLY)
-typedef int melodyNote_t;
-#else
-#define CHANNEL_IS_RX_ONLY()	(codeplugChannelGetFlag(currentChannelData, CHANNEL_FLAG_RX_ONLY) != 0)
-typedef int16_t melodyNote_t;
-#define HAS_RADIO_DEVICES		// currentRadioDevice, trxCarrierDetected(device)
-#endif
-#if !defined(STM32F405xx) && !defined(PLATFORM_DM32)
-#undef HAS_RADIO_DEVICES
-#endif
-#if !defined(NOTIFICATION_MESSAGE_LEN_MAX)// TODO(hal): the notification text limit comes from the UI layer
-#define NOTIFICATION_MESSAGE_LEN_MAX	MESSAGEBOX_MESSAGE_LEN_MAX
-#endif
+#if CONFIG_DMR_DATA_CORE
 
-#define RX_BURST_QUEUE_SIZE		8
-#define USB_BUFFER_SIZE			300
 #define START_TIMEOUT_MS		10000	// a transmission still waiting for a clear channel after this is dropped
 #define REPLY_TIMEOUT_MS		3000	// the same for an ACK or CSBK answer: later than this the sender has given up
-#define REPLY_HOLDOFF_MS		180		// through a repeater: our slot quiet this long means the sender has finished
-#define LBT_CLEAR_MS			120		// direct mode: nothing heard for this long before transmitting (listen before talk). A
-												// radio sends a burst every 60 ms, so this is at least one frame with none
+#define BLOCK_WINDOW_MS			400		// data blocks count only this soon after a header / CSBK / block (gotcha 5.4)
 #define CALL_ALERT_REPEAT_MS	10000	// the caller retries until it hears the ack: ring once
-#define CALL_ALERT_SHOW_MS		10000
-// Motorola ARS: registration with the presence server (the "ARS radio ID"), as MOTOTRBO radios do it: 5-15 s after power
-// on (spread by radio ID, so that radios switched on together don't collide), and again once the channel, our ID or the
-// server has been unchanged for ARS_SETTLE_MS. A registration the server doesn't acknowledge is retried ARS_RETRIES times,
-// ARS_RETRY_FIRST_MS apart and doubling (30 s to 8 min), then left until something changes: with no server on the
-// channel, MOTOTRBO radios retry for ever
+#define DUPLICATE_MESSAGE_MS	60000	// the same message again from the same radio this soon is a retry: ACKed, not kept
+// Our own call alert / radio check: the answer is a CSBK in the next frames; tried this many times (docs/ux task flow 8)
+#define SIGNAL_TRIES			3
+#define SIGNAL_ANSWER_MS		1500	// after our CSBK has gone
+// Our SMS with an ACK requested: the TMS ACK comes as a data call of its own after the ETSI part
+#define SMS_TRIES				2
+#define SMS_ACK_MS				8000
+#define SMS_BLOCK_TYPE			DT_RATE_12_DATA	// rate 1/2 by default: rate 1 fails on one bit error (gotcha 5.3)
+// Motorola ARS (gotchas 7.1-7.4): registration 5-15 s after power on (spread by radio ID, so that radios switched on
+// together don't collide), and again once the channel, our ID or the server has been unchanged for ARS_SETTLE_MS. A
+// registration the server doesn't acknowledge is retried ARS_RETRIES times, ARS_RETRY_FIRST_MS apart and doubling
+// (30 s to 8 min), then left until something changes: with no server on the channel, MOTOTRBO radios retry for ever
 #define ARS_POWER_ON_MIN_MS		5000
 #define ARS_POWER_ON_SPREAD_MS	10000
 #define ARS_SETTLE_MS			5000
@@ -67,39 +37,49 @@ typedef int16_t melodyNote_t;
 // Registered: again after the refresh time the server's answer gives (never when it gives 0, refresh not expected), or
 // this when its answer has no refresh time, so that a server that was restarted, or ages radios out, learns we're still here
 #define ARS_REFRESH_DEFAULT_MS	(30U * 60U * 1000U)
-#if defined(HAS_SOFT_VOLUME)
-#define CALL_ALERT_LOUD_GAIN	16		// HR-C6000 line out gain while the alert rings with BIT_CALL_ALERT_LOUD (knob: -31..31)
-#endif
 
-// USB 'D' sub commands
-enum
+static dmrDataEnv_t env;
+static dmrDataSettings_t settings = { .callAlertAck = true, .lrrpReply = true };
+static dmrDataChannel_t channel;
+static uint32_t now;
+static dmrDataStats_t stats;
+static void (*lockFn)(void);
+static void (*unlockFn)(void);
+
+static void lock(void)
 {
-	USB_DATA_CLEAR = 1,				// clear the byte buffer and the burst list
-	USB_DATA_APPEND_BYTES,			// [len][bytes]
-	USB_DATA_APPEND_BURST,			// [dataType][flags][len][payload]
-	USB_DATA_SEND,					// [kind][flags][dst 3][port or dpf/sap 2]
-	USB_DATA_STATUS,				// -> [tx status][rx bursts][inbox count]
-	USB_DATA_POP_BURST,				// -> [1][dataType][flags][len][payload] or [0]
-	USB_DATA_POP_MESSAGE,			// -> [1][src 3][dst 3][group][len][text] or [0]
-	USB_DATA_NETWORK_MODE			// [0 off / 1 on / 0xFF query] -> [result][mode saved for the next boot][network link up]
-};
+	if (lockFn)
+	{
+		lockFn();
+	}
+}
 
-enum { USB_SEND_BURSTS = 0, USB_SEND_TMS, USB_SEND_UDP, USB_SEND_PACKET };
+static void unlock(void)
+{
+	if (unlockFn)
+	{
+		unlockFn();
+	}
+}
 
-#define USB_SEND_FLAG_GROUP		0x01
-#define USB_SEND_FLAG_ACK		0x02
-#define USB_SEND_RATE_SHIFT		2		// flag bits 2-3: the block rate of kinds 1-3, 0 Rate 1/2, 1 Rate 3/4, 2 Rate 1
+// --- The burst list being sent ---
+
+// What the list on air is for, so that its end reaches the right owner
+enum { TXK_OTHER, TXK_SMS, TXK_SIGNAL, TXK_ARS, TXK_REPLY };
 
 DMR_DATA_BUFFER static dmrBurst_t txBursts[DMR_DATA_MAX_BURSTS];
 static int txBurstCount = 0;
-static volatile bool txPending = false;
+static bool txPending = false;			// waiting for a clear channel
+static bool txRunning = false;			// given to the host, waiting for dmrDataServiceTxDone
 static uint32_t txPendingSince;
 static bool txIsReply;
+static uint8_t txKind;
 
 static uint8_t smsSeq = 0;
+
 // Replies to a received message: the ETSI response for confirmed data, then the TMS ACK in a transmission of its own,
-// as MOTOTRBO radios send it (a repeater or hotspot takes one transmission for one data call). Queued by the HR-C6000
-// task (single producer) and sent by the main task (single consumer), so messages arriving back to back each get theirs
+// as MOTOTRBO radios send it (a repeater or hotspot takes one transmission for one data call). A queue, so messages
+// arriving back to back each get theirs (gotcha 5.7)
 #define REPLY_QUEUE_SIZE		5		// one slot is kept free: 4 replies
 #define REPLY_QUEUE_MAX_AGE_MS	5000	// a reply still queued after this is dropped: the sender has given up
 typedef struct
@@ -113,34 +93,64 @@ typedef struct
 	uint8_t tmsSeq;
 } pendingReply_t;
 static pendingReply_t replyQueue[REPLY_QUEUE_SIZE];
-static volatile uint8_t replyWriteIdx = 0;
-static volatile uint8_t replyReadIdx = 0;
+static uint8_t replyWriteIdx = 0;
+static uint8_t replyReadIdx = 0;
 static bool tmsAckPending = false;
 static uint32_t tmsAckDst;
 static uint8_t tmsAckSeq;
-static volatile bool newMessage = false;
-#define DUPLICATE_MESSAGE_MS	60000	// the same message again from the same radio this soon is a retry: ACKed, not kept
 
 // Call alert ack or radio check answer, sent on its own
-static volatile bool csbkAnswerPending = false;
+static bool csbkAnswerPending = false;
 static dmrBurst_t csbkAnswer;
-static volatile uint32_t lastRxBurstTime;
-static uint32_t channelBusyTime;
-static volatile bool callAlertPending = false;
-static uint32_t callAlertSrc;
 static uint32_t lastCallAlertSrc = 0;
 static uint32_t lastCallAlertTime;
-#if defined(HAS_SOFT_VOLUME)
-static bool callAlertGainRaised = false;
-#endif
+static uint32_t lastBlockWindow;		// last header / CSBK / block (gotcha 5.4)
+static bool blockWindowValid;
 
-// Ring twice, like a phone
-static const melodyNote_t MELODY_CALL_ALERT[] = {
-		1000, 50, 1300, 50, 1000, 50, 1300, 50, 1000, 50, 1300, 50, 1000, 50, 1300, 50, 1000, 50, 1300, 50, 0, 400,
-		1000, 50, 1300, 50, 1000, 50, 1300, 50, 1000, 50, 1300, 50, 1000, 50, 1300, 50, 1000, 50, 1300, 50,
-		-1, -1 };
+// Our own call alert / radio check
+static struct
+{
+	uint8_t kind;						// 0 none, DMR_DATA_EV_CALL_ALERT_ACKED (alert), DMR_DATA_EV_RADIO_CHECK_OK (check)
+	uint32_t dst;
+	uint8_t state;						// dmr_req_state_t
+	uint8_t tries;
+	bool waiting;						// sent, waiting for the answer until due
+	uint32_t due;
+	uint32_t startedAt;
+} sig;
 
-#if defined(HAS_DMR_ARS)
+// Our own SMS
+static struct
+{
+	uint32_t dst;
+	bool group;
+	bool ack;
+	uint8_t state;						// dmr_req_state_t
+	uint8_t tries;
+	uint8_t seq;
+	bool waiting;
+	uint32_t due;
+	char text[sizeof(((dmrDataTMS_t *)0)->text)];
+} sms;
+
+// Requests from other tasks (dmr_data_api.h), taken at the next tick
+static struct
+{
+	bool smsPending;
+	uint32_t smsDst;
+	bool smsGroup;
+	bool smsAck;
+	char smsText[sizeof(((dmrDataTMS_t *)0)->text)];
+	bool sigPending;
+	uint8_t sigKind;
+	uint32_t sigDst;
+	bool settingsPending;
+	dmrDataSettings_t settings;
+} mailbox;
+
+static dmrDataEvent_t lastEvent;
+static uint32_t dataSerial;
+
 static struct
 {
 	uint32_t seen;							// what to register (arsContext()) as last seen, and since when
@@ -156,69 +166,45 @@ static struct
 	uint32_t refreshMs;						// re-register after this, 0: never
 	bool deregister;						// a deregistration to the old server is waiting to go
 	uint8_t powerOff;						// ARS_POWER_OFF_xxx: deregistering because the radio is being switched off
+	uint8_t shownState;						// the dmrArsState_t last posted as an event
 } ars;
 enum { ARS_POWER_OFF_NONE = 0, ARS_POWER_OFF_SENDING, ARS_POWER_OFF_DONE };
-static volatile bool arsAckReceived = false;
-static volatile bool arsNakReceived = false;
-static volatile uint16_t arsAckRefreshMinutes = DMR_ARS_REFRESH_NOT_GIVEN;
-static volatile bool arsQueryReceived = false;
-#endif
+static bool arsAckReceived = false;
+static bool arsNakReceived = false;
+static uint16_t arsAckRefreshMinutes = DMR_ARS_REFRESH_NOT_GIVEN;
+static bool arsQueryReceived = false;
 
 DMR_DATA_BUFFER static dmrDataMessage_t inbox[DMR_DATA_INBOX_SIZE];
-static volatile uint8_t inboxNewest = 0;
-static volatile uint8_t inboxUsed = 0;
+static uint8_t inboxNewest = 0;
+static uint8_t inboxUsed = 0;
 
-static dmrBurst_t rxBursts[RX_BURST_QUEUE_SIZE];
-static volatile uint8_t rxBurstWriteIdx = 0;
-static volatile uint8_t rxBurstReadIdx = 0;
-
-// An IP packet received over the air (ICMP, UDP or SCTP, from layer 4 on), waiting for the main task to give it to the
-// USB network gateway
-static volatile bool airToHostPending = false;
-DMR_DATA_BUFFER static struct
+static void post(uint8_t kind, uint32_t id)
 {
-	bool group;
-	uint32_t dst;
-	uint32_t src;
-	uint8_t protocol;
-	int length;
-	uint8_t l4[DMR_DATA_MAX_PACKET];
-} airToHost;
-
-// Every data burst received, for the USB network host (see IPGW_MONITOR_PORT)
-#define MONITOR_RECORD_HEADER	6
-static uint8_t monitorRecords[RX_BURST_QUEUE_SIZE][MONITOR_RECORD_HEADER + DMR_BURST_PAYLOAD_MAX];
-static volatile uint8_t monitorWriteIdx = 0;
-static volatile uint8_t monitorReadIdx = 0;
-
-DMR_DATA_BUFFER static uint8_t usbBuffer[USB_BUFFER_SIZE];
-static int usbBufferLength = 0;
-
-// TODO(hal): the radio layer should answer "may we transmit on this channel now" (band limits, RX only)
-static bool txFrequencyAllowed(void)
-{
-	if (nonVolatileSettings.txFreqLimited != BAND_LIMITS_NONE)
+	lock();
+	lastEvent.serial++;
+	lastEvent.kind = kind;
+	lastEvent.id = id;
+	lastEvent.atMs = now;
+	dataSerial++;
+	dmrDataEvent_t copy = lastEvent;
+	unlock();
+	if (env.notify)
 	{
-		return trxCheckFrequencyInAmateurBand(currentChannelData->txFreq);
+		env.notify(&copy, env.ctx);
 	}
-	return true;
 }
 
 static bool canTransmit(void)
 {
-	if ((settingsUsbMode == USB_MODE_HOTSPOT) || (trxGetMode() != RADIO_MODE_DIGITAL) || CHANNEL_IS_RX_ONLY())
-	{
-		return false;
-	}
-	return txFrequencyAllowed();
+	return channel.canTransmit && (channel.ownId != 0);
 }
 
 bool dmrDataServiceIsBusy(void)
 {
-	return txPending || (HRC6000DataTxGetStatus() == DMR_DATA_TX_RUNNING);
+	return txPending || txRunning;
 }
 
-static bool queueTx(int count)
+static bool queueTx(int count, uint8_t kind)
 {
 	if (count <= 0)
 	{
@@ -226,31 +212,20 @@ static bool queueTx(int count)
 	}
 
 	txBurstCount = count;
-	txPendingSince = MILLIS();
-	channelBusyTime = txPendingSince;// listen for LBT_CLEAR_MS at least
+	txPendingSince = now;
 	txIsReply = false;
+	txKind = kind;
 	txPending = true;
 	return true;
 }
 
-// ACKs and CSBK answers: sent in the repeater's hang time, and only worth sending for REPLY_TIMEOUT_MS
+// ACKs and CSBK answers: only worth sending for REPLY_TIMEOUT_MS
 static void queueReply(int count)
 {
-	if (queueTx(count))
+	if (queueTx(count, TXK_REPLY))
 	{
 		txIsReply = true;
 	}
-}
-
-static bool sendSMS(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t blockType)
-{
-	if (dmrDataServiceIsBusy() || !canTransmit())
-	{
-		return false;
-	}
-
-	smsSeq = (smsSeq + 1) & 0x1F;
-	return queueTx(dmrDataBuildTMS(group, dst, trxDMRID, text, smsSeq, ackRequested, blockType, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
 }
 
 static bool sendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length, uint8_t blockType)
@@ -260,12 +235,8 @@ static bool sendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort
 		return false;
 	}
 
-	return queueTx(dmrDataBuildUDP(group, dst, trxDMRID, srcPort, dstPort, payload, length, blockType, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
-}
-
-bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested)
-{
-	return sendSMS(group, dst, text, ackRequested, DT_RATE_12_DATA);
+	return queueTx(dmrDataBuildUDP(group, dst, channel.ownId, srcPort, dstPort, payload, length, blockType, DMR_DATA_SMS_PREAMBLES,
+									txBursts, DMR_DATA_MAX_BURSTS), TXK_OTHER);
 }
 
 bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
@@ -281,92 +252,224 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 	}
 
 	memmove(txBursts, bursts, count * sizeof(dmrBurst_t));
-	return queueTx(count);
+	return queueTx(count, TXK_OTHER);
 }
 
-// TODO(hal): name lookup (contacts, then the DMR ID database, else "ID:n") belongs to the codeplug / UI layer
-static void callerName(uint32_t id, char *name, size_t size)
-{
-	dmrIdDataStruct_t record;
+// --- Our SMS ---
 
-	if (contactIDLookup(id, CONTACT_CALLTYPE_PC, name))
+static void smsFinish(uint8_t state)
+{
+	sms.state = state;
+	sms.waiting = false;
+	if (state == DMR_REQ_OK)
 	{
-		return;
+		post(DMR_DATA_EV_SMS_SENT, sms.dst);
 	}
-	dmrIDLookup(id, &record);
-	snprintf(name, size, "%s", record.text);
+	else
+	{
+		stats.smsFailed++;
+		post(DMR_DATA_EV_SMS_FAILED, sms.dst);
+	}
 }
 
-static void showCallAlert(uint32_t src)
+static bool smsTransmit(void)
 {
-	char name[MAX_DMR_ID_CONTACT_TEXT_LENGTH];
-	char message[NOTIFICATION_MESSAGE_LEN_MAX];
-
-	callerName(src, name, sizeof(name));
-	snprintf(message, sizeof(message), "Call alert\n%s", name);
-
-	displayLightTrigger(true);
-	uiNotificationShow(NOTIFICATION_TYPE_MESSAGE, NOTIFICATION_ID_MESSAGE, CALL_ALERT_SHOW_MS, message, true);
-
-#if defined(HAS_SOFT_VOLUME)
-	// The volume knob only sets the HR-C6000 line out gain, which the beeps go through as well
-	if (settingsIsOptionBitSet(BIT_CALL_ALERT_LOUD) && (lastVolume < CALL_ALERT_LOUD_GAIN))
+	if (dmrDataServiceIsBusy() || !canTransmit())
 	{
-		HRC6000SetDmrRxGain(CALL_ALERT_LOUD_GAIN);
-		callAlertGainRaised = true;
-	}
-#endif
-	soundSetMelody(MELODY_CALL_ALERT);
-}
-
-// Listen before talk, for everything the service transmits. Direct mode: no voice call (its terminator clears the ID),
-// and for LBT_CLEAR_MS no data burst and no carrier, decodable or not. The HR-C6000 slot state isn't used: without a
-// terminator (data, CSBKs) it only goes idle on the voice fade timeout, 200-400 ms after the last burst. A repeater's
-// outbound carrier stays up through its hang time, so there: our slot has had no data bursts for REPLY_HOLDOFF_MS, and
-// unless this is a reply (expected in the hang time), no call is going on on our slot. The caller's ID is only cleared
-// when the repeater stops, so new traffic waits for the hang time to end
-static bool channelIsClear(bool isReply)
-{
-#if defined(HAS_RADIO_DEVICES)
-	if (currentRadioDevice->trxDMRModeRx == DMR_MODE_RMO)
-#else
-	if (trxDMRModeRx == DMR_MODE_RMO)
-#endif
-	{
-		return ((MILLIS() - lastRxBurstTime) > REPLY_HOLDOFF_MS) && (isReply || (HRC6000GetReceivedSrcId() == 0));
-	}
-
-	if ((HRC6000GetReceivedSrcId() != 0) || ((MILLIS() - lastRxBurstTime) < LBT_CLEAR_MS) ||
-#if defined(HAS_RADIO_DEVICES)
-			trxCarrierDetected(RADIO_DEVICE_PRIMARY))
-#else
-			trxCarrierDetected())
-#endif
-	{
-		channelBusyTime = MILLIS();
 		return false;
 	}
 
-	return ((MILLIS() - channelBusyTime) > LBT_CLEAR_MS);
+	if (sms.tries == 0)
+	{
+		smsSeq = (smsSeq + 1) & 0x1F;
+		sms.seq = smsSeq;
+	}
+	if (!queueTx(dmrDataBuildTMS(sms.group, sms.dst, channel.ownId, sms.text, sms.seq, sms.ack, SMS_BLOCK_TYPE,
+								 DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS), TXK_SMS))
+	{
+		return false;
+	}
+	sms.tries++;
+	sms.state = DMR_REQ_SENDING;
+	stats.smsSent++;
+	return true;
 }
 
-#if defined(HAS_DMR_ARS)
-// The ARS radio ID, 0 when ARS is off. Saved settings only: while an options menu is open its changes aren't, and
-// leaving it with Red puts the saved ones back (originalNonVolatileSettings holds them until then)
-static uint32_t arsServer(void)
+bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested)
 {
-	settingsStruct_t *saved = ((uint32_t)originalNonVolatileSettings.magicNumber != 0xDEADBEEF) ? &originalNonVolatileSettings : &nonVolatileSettings;
-
-	if (!settingsIsOptionBitSetFromSettings(saved, BIT_DMR_ARS))
+	if ((sms.state == DMR_REQ_QUEUED) || (sms.state == DMR_REQ_SENDING) || (text == NULL) || (text[0] == '\0') ||
+			(dst == 0))
 	{
-		return 0;
+		return false;
 	}
 
-	return (saved->dmrArsId[0] << 16) | (saved->dmrArsId[1] << 8) | saved->dmrArsId[2];
+	sms.dst = dst;
+	sms.group = group;
+	sms.ack = ackRequested && !group;
+	sms.tries = 0;
+	sms.waiting = false;
+	snprintf(sms.text, sizeof(sms.text), "%s", text);
+	sms.state = DMR_REQ_QUEUED;
+	if (!canTransmit())
+	{
+		smsFinish(DMR_REQ_FAILED);
+		return false;
+	}
+	return true;
 }
 
-// What a registration is for: the server, our ID and the channel (frequency, timeslot, colour code). 0 when there is
-// nothing to register (ARS off, or a channel we can't send data on)
+static void smsTick(void)
+{
+	if (sms.state == DMR_REQ_QUEUED)
+	{
+		smsTransmit();// sent when the service is free
+	}
+	else if ((sms.state == DMR_REQ_SENDING) && sms.waiting && ((int32_t)(now - sms.due) >= 0))
+	{
+		sms.waiting = false;
+		if (sms.tries < SMS_TRIES)
+		{
+			sms.state = DMR_REQ_QUEUED;
+			smsTransmit();
+		}
+		else
+		{
+			smsFinish(DMR_REQ_FAILED);
+		}
+	}
+}
+
+static void smsTxDone(bool ok)
+{
+	if (sms.state != DMR_REQ_SENDING)
+	{
+		return;
+	}
+	if (!sms.ack)
+	{
+		smsFinish(ok ? DMR_REQ_OK : DMR_REQ_FAILED);
+		return;
+	}
+	sms.waiting = true;// a list that didn't go out counts as a try: waited out like one without an ACK
+	sms.due = now + (ok ? SMS_ACK_MS : 1000);
+}
+
+// --- Our call alert / radio check ---
+
+static bool signalTransmit(void)
+{
+	uint8_t buf[10];
+
+	if (dmrDataServiceIsBusy() || !canTransmit())
+	{
+		return false;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	if (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED)
+	{
+		buf[0] = 0x80 | DMR_CSBKO_CALL_ALERT;// last block; ETSI call alert (TS 102 361-2), FID 0
+		buf[1] = DMR_FID_ETSI;
+		stats.callAlertsSent++;
+	}
+	else
+	{
+		buf[0] = 0x80 | DMR_CSBKO_RADIO_CHECK;// Motorola radio check request: octet 3 0x80
+		buf[1] = DMR_FID_MOTOROLA;
+		buf[3] = 0x80;
+		stats.radioChecksSent++;
+	}
+	buf[4] = (sig.dst >> 16) & 0xFF;
+	buf[5] = (sig.dst >> 8) & 0xFF;
+	buf[6] = sig.dst & 0xFF;
+	buf[7] = (channel.ownId >> 16) & 0xFF;
+	buf[8] = (channel.ownId >> 8) & 0xFF;
+	buf[9] = channel.ownId & 0xFF;
+	queueTx(dmrDataBuildCSBK(buf, txBursts), TXK_SIGNAL);
+	sig.tries++;
+	sig.state = DMR_REQ_SENDING;
+	return true;
+}
+
+static void signalFinish(bool ok)
+{
+	sig.state = ok ? DMR_REQ_OK : DMR_REQ_FAILED;
+	sig.waiting = false;
+	if (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED)
+	{
+		post(ok ? DMR_DATA_EV_CALL_ALERT_ACKED : DMR_DATA_EV_CALL_ALERT_FAILED, sig.dst);
+	}
+	else
+	{
+		post(ok ? DMR_DATA_EV_RADIO_CHECK_OK : DMR_DATA_EV_RADIO_CHECK_FAILED, sig.dst);
+	}
+}
+
+static bool signalStart(uint8_t kind, uint32_t dst)
+{
+	if ((sig.state == DMR_REQ_QUEUED) || (sig.state == DMR_REQ_SENDING) || (dst == 0))
+	{
+		return false;
+	}
+
+	sig.kind = kind;
+	sig.dst = dst;
+	sig.tries = 0;
+	sig.waiting = false;
+	sig.startedAt = now;
+	sig.state = DMR_REQ_QUEUED;
+	if (!canTransmit())
+	{
+		signalFinish(false);
+		return false;
+	}
+	return true;
+}
+
+bool dmrDataServiceCallAlert(uint32_t dst)
+{
+	return signalStart(DMR_DATA_EV_CALL_ALERT_ACKED, dst);
+}
+
+bool dmrDataServiceRadioCheck(uint32_t dst)
+{
+	return signalStart(DMR_DATA_EV_RADIO_CHECK_OK, dst);
+}
+
+static void signalTick(void)
+{
+	if (sig.state == DMR_REQ_QUEUED)
+	{
+		signalTransmit();
+	}
+	else if ((sig.state == DMR_REQ_SENDING) && sig.waiting && ((int32_t)(now - sig.due) >= 0))
+	{
+		sig.waiting = false;
+		if (sig.tries < SIGNAL_TRIES)
+		{
+			sig.state = DMR_REQ_QUEUED;
+			signalTransmit();
+		}
+		else
+		{
+			signalFinish(false);
+		}
+	}
+}
+
+static void signalTxDone(bool ok)
+{
+	if (sig.state == DMR_REQ_SENDING)
+	{
+		sig.waiting = true;
+		sig.due = now + (ok ? SIGNAL_ANSWER_MS : 500);
+	}
+}
+
+// --- ARS ---
+
+// What a registration is for: the server, our ID and the channel. 0 when there is nothing to register (ARS off, or
+// a channel we can't send data on)
 static uint32_t arsContext(uint32_t server)
 {
 	if ((server == 0) || !canTransmit())
@@ -375,7 +478,7 @@ static uint32_t arsContext(uint32_t server)
 	}
 
 	uint32_t h = 2166136261u;// FNV-1a
-	uint32_t values[] = { server, trxDMRID, currentChannelData->txFreq, trxGetDMRTimeSlot(), trxGetDMRColourCode() };
+	uint32_t values[] = { server, channel.ownId, channel.channelKey };
 
 	for (unsigned int i = 0; i < (sizeof(values) / sizeof(values[0])); i++)
 	{
@@ -388,10 +491,15 @@ static uint32_t arsContext(uint32_t server)
 static bool arsSend(uint32_t server, bool registration)
 {
 	uint8_t pdu[DMR_ARS_MAX_PDU];
-	int length = registration ? dmrDataBuildARSRegistration(trxDMRID, pdu) : dmrDataBuildARSDeregistration(pdu);
+	int length = registration ? dmrDataBuildARSRegistration(channel.ownId, pdu) : dmrDataBuildARSDeregistration(pdu);
 
-	return queueTx(dmrDataBuildUDP(false, server, trxDMRID, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, pdu, length,
-									DT_RATE_12_DATA, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
+	if (!queueTx(dmrDataBuildUDP(false, server, channel.ownId, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, pdu, length,
+								 DT_RATE_12_DATA, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS), TXK_ARS))
+	{
+		return false;
+	}
+	stats.arsSent++;
+	return true;
 }
 
 static void arsTick(void)
@@ -401,13 +509,12 @@ static void arsTick(void)
 		return;
 	}
 
-	uint32_t now = MILLIS();
-	uint32_t server = arsServer();
+	uint32_t server = settings.arsServer;
 	uint32_t context = arsContext(server);
 
 	if (ars.settleMs == 0)
 	{
-		ars.settleMs = ARS_POWER_ON_MIN_MS + (((trxDMRID * 2654435761u) ^ now) % ARS_POWER_ON_SPREAD_MS);
+		ars.settleMs = ARS_POWER_ON_MIN_MS + (((channel.ownId * 2654435761u) ^ now) % ARS_POWER_ON_SPREAD_MS);
 		ars.seen = context;
 		ars.seenSince = now;
 	}
@@ -474,6 +581,14 @@ static void arsTick(void)
 		}
 	}
 
+	uint8_t state = dmrDataServiceArsState();
+
+	if (state != ars.shownState)
+	{
+		ars.shownState = state;
+		post(DMR_DATA_EV_ARS_CHANGED, state);
+	}
+
 	if (dmrDataServiceIsBusy() || !canTransmit())
 	{
 		return;
@@ -494,12 +609,10 @@ static void arsTick(void)
 		ars.attempts++;
 	}
 }
-#endif
 
-#if defined(HAS_DMR_ARS)
 dmrArsState_t dmrDataServiceArsState(void)
 {
-	if (arsServer() == 0)
+	if (settings.arsServer == 0)
 	{
 		return DMR_ARS_STATE_OFF;
 	}
@@ -513,97 +626,12 @@ dmrArsState_t dmrDataServiceArsState(void)
 	}
 	return (ars.attempts > ARS_RETRIES) ? DMR_ARS_STATE_NO_ANSWER : DMR_ARS_STATE_REGISTERING;
 }
-#endif
 
-#if defined(HAS_DMR_GPS_REPORTS)
-// Location reports (ETSI UDT NMEA) to GPS_REPORT_ID_GET(): every gpsReportInterval seconds, with preambles and listen
-// before talk like the other data, and with GPS_REPORT_FLAG_AFTER_CALL straight after each voice call of ours, without
-// preambles (the receivers are in sync) and in the repeater's hang time. Only when the platform has a position
-static volatile bool voiceTxEnded = false;
-static bool gpsReportScheduled = false;
-static uint32_t gpsReportDue;
+// --- LRRP ---
 
-// The platform's position (main task), false when it has none. Weak: no GPS (the host test, which includes this file,
-// brings its own)
-#if !defined(DMR_DATA_SERVICE_TEST)
-__attribute__((weak)) bool dmrDataServiceGetLocation(dmrDataLocation_t *location)
-{
-	(void)location;
-	return false;
-}
-#endif
-
-// HR-C6000 / HR-C5000 driver (ISR): a voice transmission of ours has just ended (its terminator went)
-void dmrDataServiceVoiceTxEnded(void)
-{
-	voiceTxEnded = true;
-}
-
-static bool gpsReportQueue(int preambles, bool isReply)
-{
-	dmrDataLocation_t location;
-	uint32_t dst = GPS_REPORT_ID_GET();
-
-	if ((dst == 0) || dmrDataServiceIsBusy() || !canTransmit() || !dmrDataServiceGetLocation(&location))
-	{
-		return false;
-	}
-
-	int count = dmrDataBuildUDTLocation(((nonVolatileSettings.gpsReportFlags & GPS_REPORT_FLAG_GROUP) != 0), dst, trxDMRID, &location,
-										preambles, txBursts, DMR_DATA_MAX_BURSTS);
-
-	if (isReply)
-	{
-		queueReply(count);
-		return (count > 0);
-	}
-
-	return queueTx(count);
-}
-
-static void gpsReportTick(void)
-{
-	uint32_t now = MILLIS();
-
-	if (voiceTxEnded)
-	{
-		voiceTxEnded = false;
-
-		if (nonVolatileSettings.gpsReportFlags & GPS_REPORT_FLAG_AFTER_CALL)
-		{
-			gpsReportQueue(0, true);
-		}
-	}
-
-	if ((nonVolatileSettings.gpsReportInterval == 0) || (GPS_REPORT_ID_GET() == 0))
-	{
-		gpsReportScheduled = false;
-		return;
-	}
-
-	if (!gpsReportScheduled)
-	{
-		gpsReportScheduled = true;
-		gpsReportDue = now + (nonVolatileSettings.gpsReportInterval * 1000U);
-	}
-
-	if ((int32_t)(now - gpsReportDue) >= 0)
-	{
-		if (dmrDataServiceIsBusy() || !canTransmit())
-		{
-			return;// when the channel is free again
-		}
-
-		gpsReportQueue(DMR_DATA_SMS_PREAMBLES, false);
-		gpsReportDue = now + (nonVolatileSettings.gpsReportInterval * 1000U);
-	}
-}
-#endif
-
-#if defined(HAS_DMR_LRRP)
 // Motorola LRRP (UDP 4001): a location server (RadioDesk, TRBOnet, ...) asks for a position now, or starts reports
-// every n seconds or every n meters (checked every interval, 30 s when it gives none), and stops them. Requests come
-// in from the HR-C6000 task (single producer), are answered from the main task; up to LRRP_TRIGGERS_MAX triggers run
+// every n seconds or every n meters (checked every interval, 30 s when it gives none), and stops them. Without a
+// position source (settings.hasGps false: the DM-1701) every answer says "no fix" and no trigger is started
 #define LRRP_QUEUE_SIZE				3		// one slot kept free
 #define LRRP_TRIGGERS_MAX			2
 #define LRRP_MIN_INTERVAL_S			5
@@ -616,8 +644,8 @@ typedef struct
 	lrrpRequest_t request;
 } lrrpPendingRequest_t;
 static lrrpPendingRequest_t lrrpQueue[LRRP_QUEUE_SIZE];
-static volatile uint8_t lrrpWriteIdx = 0;
-static volatile uint8_t lrrpReadIdx = 0;
+static uint8_t lrrpWriteIdx = 0;
+static uint8_t lrrpReadIdx = 0;
 
 typedef struct
 {
@@ -635,40 +663,50 @@ typedef struct
 } lrrpTrigger_t;
 static lrrpTrigger_t lrrpTriggers[LRRP_TRIGGERS_MAX];
 
-// The platform's position with the date and course for LRRP (main task). Weak: from dmrDataServiceGetLocation()
+// The platform's position for LRRP. Weak: none (the host test brings its own)
 #if !defined(DMR_DATA_SERVICE_TEST)
 __attribute__((weak)) bool dmrDataServiceGetPosition(lrrpPosition_t *position)
 {
 	memset(position, 0, sizeof(*position));
-	return dmrDataServiceGetLocation(&position->location);
+	return false;
 }
 #endif
 
-// HR-C6000 task: an LRRP document to us
+static bool havePosition(lrrpPosition_t *position)
+{
+	return settings.hasGps && dmrDataServiceGetPosition(position);
+}
+
 static void lrrpReceived(uint32_t src, const uint8_t *payload, int length)
 {
 	uint8_t next = (lrrpWriteIdx + 1) % LRRP_QUEUE_SIZE;
 	lrrpPendingRequest_t *pending = &lrrpQueue[lrrpWriteIdx];
 
-	if ((next == lrrpReadIdx) || !lrrpDecodeRequest(payload, length, &pending->request))
+	if (!settings.lrrpReply || (next == lrrpReadIdx) || !lrrpDecodeRequest(payload, length, &pending->request))
 	{
-		return;// full (the server asks again), or not a request
+		return;// off, full (the server asks again), or not a request
 	}
 
+	stats.lrrpRequests++;
 	pending->src = src;
-	__asm__ volatile ("" ::: "memory");
 	lrrpWriteIdx = next;
 }
 
-static bool lrrpSend(uint32_t dst, const uint8_t *doc, int length, int preambles)
+static bool lrrpSend(uint32_t dst, const uint8_t *doc, int length, int preambles, bool noFix)
 {
 	if (length <= 0)
 	{
 		return false;
 	}
 
-	return queueTx(dmrDataBuildUDP(false, dst, trxDMRID, DMR_UDP_PORT_LRRP, DMR_UDP_PORT_LRRP, doc, length,
-									DT_RATE_12_DATA, preambles, txBursts, DMR_DATA_MAX_BURSTS));
+	if (!queueTx(dmrDataBuildUDP(false, dst, channel.ownId, DMR_UDP_PORT_LRRP, DMR_UDP_PORT_LRRP, doc, length,
+								 DT_RATE_12_DATA, preambles, txBursts, DMR_DATA_MAX_BURSTS), TXK_OTHER))
+	{
+		return false;
+	}
+	stats.lrrpAnswers++;
+	stats.lrrpNoFix += noFix ? 1 : 0;
+	return true;
 }
 
 static lrrpTrigger_t *lrrpFindTrigger(uint32_t requester, const uint8_t *requestId, uint8_t requestIdLength)
@@ -693,7 +731,6 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 	const lrrpRequest_t *request = &pending->request;
 	uint8_t doc[LRRP_MAX_DOCUMENT];
 	lrrpPosition_t position;
-	uint32_t now = MILLIS();
 
 	if (dmrDataServiceIsBusy() || !canTransmit())
 	{
@@ -703,8 +740,13 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 	switch (request->type)
 	{
 		case LRRP_REQUEST_IMMEDIATE:
-			lrrpSend(pending->src, doc, lrrpBuildImmediateResponse(request, (dmrDataServiceGetPosition(&position) ? &position : NULL), doc),
-						DMR_DATA_SMS_PREAMBLES);
+			{
+				bool have = havePosition(&position);
+				bool fix = have && position.location.fixValid;
+
+				lrrpSend(pending->src, doc, lrrpBuildImmediateResponse(request, (have ? &position : NULL), doc),
+						 DMR_DATA_SMS_PREAMBLES, !fix);
+			}
 			break;
 
 		case LRRP_REQUEST_TRIGGERED_START:
@@ -712,11 +754,18 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 				bool usable = (request->triggers & (LRRP_TRIGGER_PERIODIC | LRRP_TRIGGER_DISTANCE)) &&
 						((request->intervalSeconds != 0) || (request->distanceMeters != 0));
 
+				if (!settings.hasGps)
+				{
+					// No position source at all: reports would never come
+					lrrpSend(pending->src, doc, lrrpBuildTriggeredStartResponse(request->requestId, request->requestIdLength,
+								LRRP_RESULT_NO_FIX, doc), DMR_DATA_SMS_PREAMBLES, true);
+					break;
+				}
 				if (!usable)
 				{
 					// Emergency or one shot triggers: this radio has no emergency, so they'd never fire
 					lrrpSend(pending->src, doc, lrrpBuildTriggeredStartResponse(request->requestId, request->requestIdLength,
-								LRRP_RESULT_NOT_UNDERSTOOD, doc), DMR_DATA_SMS_PREAMBLES);
+								LRRP_RESULT_NOT_UNDERSTOOD, doc), DMR_DATA_SMS_PREAMBLES, false);
 					break;
 				}
 
@@ -762,7 +811,7 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 				t->due = now + LRRP_FIRST_REPORT_MS;
 
 				lrrpSend(pending->src, doc, lrrpBuildTriggeredStartResponse(request->requestId, request->requestIdLength, LRRP_RESULT_SUCCESS, doc),
-							DMR_DATA_SMS_PREAMBLES);
+						 DMR_DATA_SMS_PREAMBLES, false);
 			}
 			break;
 
@@ -774,7 +823,8 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 				{
 					t->active = false;
 				}
-				lrrpSend(pending->src, doc, lrrpBuildTriggeredStopResponse(request->requestId, request->requestIdLength, doc), DMR_DATA_SMS_PREAMBLES);
+				lrrpSend(pending->src, doc, lrrpBuildTriggeredStopResponse(request->requestId, request->requestIdLength, doc),
+						 DMR_DATA_SMS_PREAMBLES, false);
 			}
 			break;
 
@@ -787,13 +837,10 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 
 static void lrrpTick(void)
 {
-	uint32_t now = MILLIS();
-
 	if (lrrpReadIdx != lrrpWriteIdx)
 	{
 		if (lrrpHandleRequest(&lrrpQueue[lrrpReadIdx]))
 		{
-			__asm__ volatile ("" ::: "memory");
 			lrrpReadIdx = (lrrpReadIdx + 1) % LRRP_QUEUE_SIZE;
 		}
 		return;// one transmission at a time
@@ -816,7 +863,7 @@ static void lrrpTick(void)
 
 		t->due = now + t->intervalMs;
 
-		if (!dmrDataServiceGetPosition(&position))
+		if (!havePosition(&position))
 		{
 			continue;// no position at all: nothing to report
 		}
@@ -830,7 +877,7 @@ static void lrrpTick(void)
 		uint8_t doc[LRRP_MAX_DOCUMENT];
 
 		if (lrrpSend(t->requester, doc, lrrpBuildTriggeredReport(t->requestId, t->requestIdLength, t->wanted, &position, doc),
-						DMR_DATA_SMS_PREAMBLES))
+					 DMR_DATA_SMS_PREAMBLES, !position.location.fixValid))
 		{
 			if (position.location.fixValid)
 			{
@@ -852,31 +899,11 @@ int dmrDataServiceLrrpTriggerCount(void)
 	}
 	return n;
 }
-#endif
 
-// Milliseconds until the service next needs a position (0: now or all the time, UINT32_MAX: not at all), for the
-// platform's GPS power management
 uint32_t dmrDataServiceLocationNeededInMs(void)
 {
-	uint32_t now = MILLIS();
 	uint32_t soonest = UINT32_MAX;
 
-#if defined(HAS_DMR_GPS_REPORTS)
-	if (GPS_REPORT_ID_GET() != 0)
-	{
-		if (nonVolatileSettings.gpsReportFlags & GPS_REPORT_FLAG_AFTER_CALL)
-		{
-			return 0;// a call can end any time
-		}
-		if ((nonVolatileSettings.gpsReportInterval != 0) && gpsReportScheduled)
-		{
-			int32_t in = (int32_t)(gpsReportDue - now);
-
-			soonest = (in <= 0) ? 0 : (uint32_t)in;
-		}
-	}
-#endif
-#if defined(HAS_DMR_LRRP)
 	if (lrrpReadIdx != lrrpWriteIdx)
 	{
 		return 0;
@@ -894,16 +921,15 @@ uint32_t dmrDataServiceLocationNeededInMs(void)
 			}
 		}
 	}
-#endif
-	(void)now;
 	return soonest;
 }
 
-// The radio is being switched off (the power off screen, main task): deregister from the ARS server if registered, or
-// tried to. True while the deregistration still has to go out; the caller gives up on it after a while
+// --- Power off ---
+
+// The radio is being switched off: deregister from the ARS server if registered, or tried to. True while the
+// deregistration still has to go out; the caller gives up on it after a while (3 s, gotcha 7.4)
 bool dmrDataServicePowerOff(void)
 {
-#if defined(HAS_DMR_ARS)
 	if (ars.powerOff == ARS_POWER_OFF_NONE)
 	{
 		if (!(ars.deregister || ((ars.context != 0) && (ars.registered || (ars.attempts > 0)))) || !canTransmit())
@@ -922,60 +948,110 @@ bool dmrDataServicePowerOff(void)
 	}
 
 	return (ars.powerOff == ARS_POWER_OFF_SENDING) && dmrDataServiceIsBusy();
-#else
-	return false;
-#endif
 }
 
 // Switched back on before the power off finished: register again if we deregistered
 void dmrDataServicePowerOffCancelled(void)
 {
-#if defined(HAS_DMR_ARS)
 	if (ars.powerOff == ARS_POWER_OFF_SENDING)
 	{
 		ars.context = 0;
 	}
 	ars.powerOff = ARS_POWER_OFF_NONE;
-#endif
 }
 
-void dmrDataServiceTick(void)
+// --- Tick ---
+
+static void takeMailbox(void)
 {
+	bool smsReq = false, sigReq = false, setReq = false;
+	uint32_t smsDst = 0, sigDst = 0;
+	bool smsGroup = false, smsAck = false;
+	uint8_t sigKind = 0;
+	static char text[sizeof(mailbox.smsText)];
+	dmrDataSettings_t newSettings;
+
+	lock();
+	if (mailbox.smsPending)
+	{
+		smsReq = true;
+		smsDst = mailbox.smsDst;
+		smsGroup = mailbox.smsGroup;
+		smsAck = mailbox.smsAck;
+		memcpy(text, mailbox.smsText, sizeof(text));
+		mailbox.smsPending = false;
+	}
+	if (mailbox.sigPending)
+	{
+		sigReq = true;
+		sigKind = mailbox.sigKind;
+		sigDst = mailbox.sigDst;
+		mailbox.sigPending = false;
+	}
+	if (mailbox.settingsPending)
+	{
+		setReq = true;
+		newSettings = mailbox.settings;
+		mailbox.settingsPending = false;
+	}
+	unlock();
+
+	if (setReq)
+	{
+		settings = newSettings;
+	}
+	if (smsReq && !dmrDataServiceSendSMS(smsGroup, smsDst, text, smsAck) && (sms.state != DMR_REQ_FAILED))
+	{
+		post(DMR_DATA_EV_SMS_FAILED, smsDst);// another one still running
+	}
+	if (sigReq && !signalStart(sigKind, sigDst) && (sig.state != DMR_REQ_FAILED))
+	{
+		post((sigKind == DMR_DATA_EV_CALL_ALERT_ACKED) ? DMR_DATA_EV_CALL_ALERT_FAILED : DMR_DATA_EV_RADIO_CHECK_FAILED, sigDst);
+	}
+}
+
+static void txGiveUp(void)
+{
+	stats.txGaveUp++;
+	switch (txKind)
+	{
+		case TXK_SMS:
+			smsTxDone(false);
+			break;
+		case TXK_SIGNAL:
+			signalTxDone(false);
+			break;
+		default:
+			break;
+	}
+}
+
+void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
+{
+	now = nowMs;
+	if (ch != NULL)
+	{
+		channel = *ch;
+	}
+
+	takeMailbox();
+
 	if (csbkAnswerPending && !dmrDataServiceIsBusy() && canTransmit())
 	{
 		txBursts[0] = csbkAnswer;
 		csbkAnswerPending = false;
 		queueReply(1);
+		stats.csbkAnswersSent++;
 	}
-
-	if (callAlertPending)
-	{
-		callAlertPending = false;
-		if ((callAlertSrc != lastCallAlertSrc) || ((MILLIS() - lastCallAlertTime) > CALL_ALERT_REPEAT_MS))
-		{
-			showCallAlert(callAlertSrc);
-		}
-		lastCallAlertSrc = callAlertSrc;
-		lastCallAlertTime = MILLIS();
-	}
-
-#if defined(HAS_SOFT_VOLUME)
-	if (callAlertGainRaised && !soundMelodyIsPlaying())
-	{
-		callAlertGainRaised = false;
-		HRC6000SetDmrRxGain(lastVolume);
-	}
-#endif
 
 	// The next queued reply, once the last one's TMS ACK has gone
 	while (!tmsAckPending && (replyReadIdx != replyWriteIdx) && !dmrDataServiceIsBusy() && canTransmit())
 	{
 		pendingReply_t reply = replyQueue[replyReadIdx];
 
-		__asm__ volatile ("" ::: "memory");// copied before the producer may reuse the slot
 		replyReadIdx = (replyReadIdx + 1) % REPLY_QUEUE_SIZE;
 
-		if ((MILLIS() - reply.queuedAt) > REPLY_QUEUE_MAX_AGE_MS)
+		if ((now - reply.queuedAt) > REPLY_QUEUE_MAX_AGE_MS)
 		{
 			continue;
 		}
@@ -988,7 +1064,8 @@ void dmrDataServiceTick(void)
 		}
 		if (reply.response)
 		{
-			queueReply(dmrDataBuildResponseAck(reply.sap, reply.dst, trxDMRID, reply.sendSeq, txBursts));
+			queueReply(dmrDataBuildResponseAck(reply.sap, reply.dst, channel.ownId, reply.sendSeq, txBursts));
+			stats.responsesSent++;
 		}
 		break;
 	}
@@ -997,127 +1074,82 @@ void dmrDataServiceTick(void)
 	if (tmsAckPending && !dmrDataServiceIsBusy() && canTransmit())
 	{
 		tmsAckPending = false;
-		queueReply(dmrDataBuildTMSAck(tmsAckDst, trxDMRID, tmsAckSeq, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
+		queueReply(dmrDataBuildTMSAck(tmsAckDst, channel.ownId, tmsAckSeq, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
+		stats.tmsAcksSent++;
 	}
 
-#if defined(HAS_DMR_ARS)
+	signalTick();
+	smsTick();
 	arsTick();
-#endif
-#if defined(HAS_DMR_GPS_REPORTS)
-	gpsReportTick();
-#endif
-#if defined(HAS_DMR_LRRP)
 	lrrpTick();
-#endif
 
-	if (txPending)
+	if (txPending && !txRunning)
 	{
-		rxPowerSavingSetState(ECOPHASE_POWERSAVE_INACTIVE);
+		bool clear = canTransmit() && (env.channelClear == NULL || env.channelClear(now, env.ctx));
 
-		if (channelIsClear(txIsReply) && HRC6000DataTxStart(txBursts, txBurstCount))
+		if (clear && (env.txStart != NULL) && env.txStart(txBursts, txBurstCount, env.ctx))
 		{
 			txPending = false;
+			txRunning = true;
+			stats.txLists++;
 		}
-		else if ((MILLIS() - txPendingSince) > (txIsReply ? REPLY_TIMEOUT_MS : START_TIMEOUT_MS))
+		else if ((now - txPendingSince) > (txIsReply ? REPLY_TIMEOUT_MS : START_TIMEOUT_MS))
 		{
 			txPending = false;
-		}
-	}
-
-	if (newMessage)
-	{
-		newMessage = false;
-		soundSetMelody(MELODY_PRIVATE_CALL);
-		dmrDataServiceMessageReceived(dmrDataServiceMessage(0));
-	}
-
-	while (monitorReadIdx != monitorWriteIdx)
-	{
-		uint8_t *record = monitorRecords[monitorReadIdx];
-
-		if (usbNcmIsUp() && !ipGatewayDeliverMonitor(record, MONITOR_RECORD_HEADER + record[5]))
-		{
-			break;// USB IN busy, next tick
-		}
-		monitorReadIdx = (monitorReadIdx + 1) % RX_BURST_QUEUE_SIZE;
-	}
-
-	if (airToHostPending)
-	{
-		// Retried on the next tick if the USB IN endpoint is still busy, dropped if the link went down
-		if (!usbNcmIsUp() || ipGatewayDeliverIP(airToHost.group, airToHost.dst, airToHost.src, airToHost.protocol,
-													airToHost.l4, airToHost.length))
-		{
-			airToHostPending = false;
+			txGiveUp();
 		}
 	}
 }
 
-// The radio's own DMR ID from the codeplug, not trxDMRID: per channel IDs, manual overrides and the hotspot (which uses
-// the caller's ID) change that, and the host's address must stay put
-uint32_t ipGatewayRadioId(void)
+void dmrDataServiceTxDone(uint8_t err)
 {
-	return (uiDataGlobal.userDMRId != 0) ? uiDataGlobal.userDMRId : trxDMRID;
-}
-
-// USB network gateway: ICMP, UDP or SCTP from the host to a radio ID or talkgroup
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
-{
-	if (dmrDataServiceIsBusy() || !canTransmit())
+	if (!txRunning)
 	{
-		return false;
+		return;
 	}
-
-	return queueTx(dmrDataBuildIP(group, dst, trxDMRID, protocol, l4, length, DT_RATE_12_DATA, DMR_DATA_SMS_PREAMBLES,
-									txBursts, DMR_DATA_MAX_BURSTS));
-}
-
-// USB network gateway: the payload of a datagram to IPGW_RAW_PORT, as the user data of a short data packet
-bool ipGatewayRawToAir(bool group, uint32_t dst, const uint8_t *data, int length)
-{
-	if (dmrDataServiceIsBusy() || !canTransmit())
+	txRunning = false;
+	stats.txLastError = err;
+	if (err == 0)
 	{
-		return false;
+		stats.txOk++;
 	}
-
-	return queueTx(dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, trxDMRID, data, length,
-										DT_RATE_12_DATA, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
-}
-
-// TODO(hal): RX group membership from the codeplug layer
-static bool inRxGroupList(uint32_t talkGroup)
-{
-	int remaining = currentRxGroupData.NOT_IN_CODEPLUG_numTGsInGroup;
-	const uint32_t *tg = currentRxGroupData.NOT_IN_CODEPLUG_contactsTG;
-
-	while (remaining-- > 0)
+	else
 	{
-		if (*tg++ == talkGroup)
-		{
-			return true;
-		}
+		stats.txFailed++;
 	}
-	return false;
+	switch (txKind)
+	{
+		case TXK_SMS:
+			smsTxDone(err == 0);
+			break;
+		case TXK_SIGNAL:
+			signalTxDone(err == 0);
+			break;
+		default:
+			break;
+	}
 }
+
+// --- RX ---
 
 static bool isForUs(const dmrDataPacket_t *packet)
 {
-	if (packet->src == trxDMRID)
+	if (packet->src == channel.ownId)
 	{
 		return false;// our own transmission, repeated back
 	}
 
 	if (!packet->group)
 	{
-		return (packet->dst == trxDMRID);
+		return (packet->dst == channel.ownId);
 	}
 
-	if (packet->dst == (trxTalkGroupOrPcId & 0x00FFFFFF))
+	if ((channel.talkGroup != 0) && (packet->dst == channel.talkGroup))
 	{
 		return true;
 	}
 
-	return inRxGroupList(packet->dst);
+	return (env.inRxGroup != NULL) && env.inRxGroup(packet->dst, env.ctx);
 }
 
 static void handlePacket(const dmrDataPacket_t *packet)
@@ -1126,64 +1158,21 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	dmrDataTMS_t tms;
 	bool isUDP = dmrDataGetUDP(packet, &udp);
 
-	// ICMP, UDP and SCTP go to the USB network host, also between other radios so that a capture shows them. UDP is
-	// rebuilt from its ports and payload (it may have come with a compressed header, SAP 3). Data that isn't IP based
-	// goes as the payload of a datagram to IPGW_RAW_PORT
-	if ((packet->src != trxDMRID) && usbNcmIsUp() && !airToHostPending)
+	stats.rxPackets++;
+	if (env.packet)
 	{
-		dmrDataIP_t ip;
-
-		if (isUDP && ((8 + udp.length) <= (int)sizeof(airToHost.l4)))
-		{
-			airToHost.protocol = DMR_IP_PROTO_UDP;
-			airToHost.l4[0] = udp.srcPort >> 8;
-			airToHost.l4[1] = udp.srcPort & 0xFF;
-			airToHost.l4[2] = udp.dstPort >> 8;
-			airToHost.l4[3] = udp.dstPort & 0xFF;
-			memset(&airToHost.l4[4], 0, 4);// length and checksum, worked out by the gateway
-			memcpy(&airToHost.l4[8], udp.payload, udp.length);
-			airToHost.length = 8 + udp.length;
-			airToHostPending = true;
-		}
-		else if (!isUDP && dmrDataGetIP(packet, &ip) && ((ip.protocol == DMR_IP_PROTO_ICMP) || (ip.protocol == DMR_IP_PROTO_SCTP)) &&
-					(ip.length > 0) && (ip.length <= (int)sizeof(airToHost.l4)))
-		{
-			airToHost.protocol = ip.protocol;
-			memcpy(airToHost.l4, ip.payload, ip.length);
-			airToHost.length = ip.length;
-			airToHostPending = true;
-		}
-		else if (((packet->dpf == DMR_DPF_UNCONFIRMED) || (packet->dpf == DMR_DPF_CONFIRMED)) &&
-					(packet->sap != DMR_SAP_IP) && (packet->sap != DMR_SAP_UDPIP_COMPRESSION) &&
-					(packet->length > 0) && ((8 + packet->length) <= (int)sizeof(airToHost.l4)))
-		{
-			airToHost.protocol = DMR_IP_PROTO_UDP;
-			airToHost.l4[0] = IPGW_RAW_PORT >> 8;
-			airToHost.l4[1] = IPGW_RAW_PORT & 0xFF;
-			airToHost.l4[2] = IPGW_RAW_PORT >> 8;
-			airToHost.l4[3] = IPGW_RAW_PORT & 0xFF;
-			memset(&airToHost.l4[4], 0, 4);
-			memcpy(&airToHost.l4[8], packet->data, packet->length);
-			airToHost.length = 8 + packet->length;
-			airToHostPending = true;
-		}
-
-		if (airToHostPending)
-		{
-			airToHost.group = packet->group;
-			airToHost.dst = packet->dst;
-			airToHost.src = packet->src;
-		}
+		env.packet(packet, env.ctx);
 	}
 
 	if (!isForUs(packet))
 	{
 		return;
 	}
+	stats.rxForUs++;
 
 	// Confirmed data to us must be acknowledged, whatever it carries, or the sender keeps retrying
 	pendingReply_t reply = {
-			.queuedAt = MILLIS(),
+			.queuedAt = now,
 			.dst = packet->src,
 			.response = (packet->dpf == DMR_DPF_CONFIRMED) && packet->responseRequested && !packet->group,
 			.sap = packet->sap,
@@ -1191,9 +1180,13 @@ static void handlePacket(const dmrDataPacket_t *packet)
 			.tms = false,
 			.tmsSeq = 0 };
 
-#if defined(HAS_DMR_ARS)
+	if (packet->dpf == DMR_DPF_CONFIRMED)
+	{
+		stats.rxConfirmed++;
+	}
+
 	// The presence server's answer to our registration, or its request for one
-	if (isUDP && (udp.appPort == DMR_UDP_PORT_ARS) && !packet->group && (packet->src == ars.server))
+	if (isUDP && (udp.appPort == DMR_UDP_PORT_ARS) && !packet->group && (packet->src == ars.server) && (ars.server != 0))
 	{
 		switch (dmrDataDecodeARS(udp.payload, udp.length))
 		{
@@ -1204,6 +1197,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 
 					if (dmrDataDecodeARSResponse(udp.payload, udp.length, &accepted, &refreshMinutes))
 					{
+						stats.arsAcks++;
 						if (accepted)
 						{
 							arsAckRefreshMinutes = refreshMinutes;
@@ -1223,16 +1217,22 @@ static void handlePacket(const dmrDataPacket_t *packet)
 				break;
 		}
 	}
-#endif
 
-#if defined(HAS_DMR_LRRP)
 	if (isUDP && (udp.appPort == DMR_UDP_PORT_LRRP) && !packet->group)
 	{
 		lrrpReceived(packet->src, udp.payload, udp.length);
 	}
-#endif
 
-	bool isTMS = isUDP && (udp.appPort == DMR_UDP_PORT_TMS) && dmrDataDecodeTMS(udp.payload, udp.length, &tms) && !tms.isAck;
+	bool isTMS = isUDP && (udp.appPort == DMR_UDP_PORT_TMS) && dmrDataDecodeTMS(udp.payload, udp.length, &tms);
+
+	// The ACK of our own message
+	if (isTMS && tms.isAck && !packet->group && (sms.state == DMR_REQ_SENDING) && sms.ack &&
+			(packet->src == sms.dst) && ((tms.seq & 0x1F) == sms.seq))
+	{
+		stats.smsAcked++;
+		smsFinish(DMR_REQ_OK);
+	}
+	isTMS = isTMS && !tms.isAck;
 
 	if (isTMS && tms.ackRequested && !packet->group)
 	{
@@ -1247,7 +1247,6 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		if (next != replyReadIdx)// full: the sender will retry
 		{
 			replyQueue[replyWriteIdx] = reply;
-			__asm__ volatile ("" ::: "memory");// the entry is complete before the consumer can see it
 			replyWriteIdx = next;
 		}
 	}
@@ -1257,26 +1256,27 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		return;
 	}
 
-	// A sender that missed our ACK sends the message again: ACKed again above, but kept (and rung) once
+	// A sender that missed our ACK sends the message again: ACKed again above, but kept (and announced) once
 	for (int i = 0; i < inboxUsed; i++)
 	{
 		const dmrDataMessage_t *m = dmrDataServiceMessage(i);
 
 		if ((m->src == packet->src) && (m->dst == packet->dst) && (m->group == packet->group) && (m->seq == tms.seq) &&
-				((MILLIS() - m->receivedAt) < DUPLICATE_MESSAGE_MS) && (strcmp(m->text, tms.text) == 0))
+				((now - m->receivedAt) < DUPLICATE_MESSAGE_MS) && (strcmp(m->text, tms.text) == 0))
 		{
+			stats.smsDuplicates++;
 			return;
 		}
 	}
 
+	lock();
 	uint8_t next = (inboxUsed == 0) ? 0 : ((inboxNewest + 1) % DMR_DATA_INBOX_SIZE);// replaces the oldest when full
 	dmrDataMessage_t *message = &inbox[next];
 	message->src = packet->src;
 	message->dst = packet->dst;
 	message->group = packet->group;
 	message->seq = tms.seq;
-	message->receivedAt = MILLIS();
-	message->hostPending = true;
+	message->receivedAt = now;
 	message->unread = true;
 	memcpy(message->text, tms.text, sizeof(message->text));
 	inboxNewest = next;
@@ -1284,76 +1284,174 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	{
 		inboxUsed++;
 	}
-	newMessage = true;
+	unlock();
+	stats.smsReceived++;
+	post(DMR_DATA_EV_SMS_RECEIVED, packet->src);
 }
 
-// Main task context: a text message to us has arrived. The platform's UI shows it (see uiMessages.c)
-__attribute__((weak)) void dmrDataServiceMessageReceived(const dmrDataMessage_t *message)
+static uint32_t getId(const uint8_t *p)
 {
-	(void)message;
+	return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
 }
 
-// Call alert and radio check to us: answered, and a call alert rings
+// Call alert and radio check: answers to ours, and requests to us (answered, a call alert rings)
 static void handleCSBK(const uint8_t *csbk)
 {
-	if (csbkAnswerPending || (dmrDataBuildCSBKAnswer(csbk, trxDMRID, &csbkAnswer) == 0))
+	uint8_t opcode = csbk[0] & 0x3F;
+	uint32_t target = getId(&csbk[4]);
+	uint32_t source = getId(&csbk[7]);
+
+	if ((sig.state == DMR_REQ_SENDING) && (source == channel.ownId) && (target == sig.dst))
+	{
+		if (((sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK)) ||
+				((sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (opcode == DMR_CSBKO_RADIO_CHECK) && (csbk[3] != 0x80)))
+		{
+			if (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED)
+			{
+				stats.callAlertsAcked++;
+			}
+			else
+			{
+				stats.radioChecksAnswered++;
+			}
+			signalFinish(true);
+			return;
+		}
+	}
+	// The ack's IDs are the other way round: to the caller (us) from the alerted radio
+	if ((sig.state == DMR_REQ_SENDING) && (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK) &&
+			(target == channel.ownId) && (source == sig.dst))
+	{
+		stats.callAlertsAcked++;
+		signalFinish(true);
+		return;
+	}
+
+	dmrBurst_t answer;
+
+	if ((channel.ownId == 0) || (dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
 	{
 		return;
 	}
 
-	csbkAnswerPending = true;
-
-	if (((csbk[0] & 0x3F) == DMR_CSBKO_CALL_ALERT) && !callAlertPending)
+	if (opcode == DMR_CSBKO_CALL_ALERT)
 	{
-		callAlertSrc = (csbk[7] << 16) | (csbk[8] << 8) | csbk[9];
-		callAlertPending = true;
+		stats.callAlertsReceived++;
+		if ((source != lastCallAlertSrc) || ((now - lastCallAlertTime) > CALL_ALERT_REPEAT_MS))
+		{
+			post(DMR_DATA_EV_CALL_ALERT, source);
+		}
+		lastCallAlertSrc = source;
+		lastCallAlertTime = now;
+		if (!settings.callAlertAck)
+		{
+			return;
+		}
+	}
+	else
+	{
+		stats.radioChecksReceived++;
+		if (!settings.radioCheckReply)
+		{
+			return;
+		}
+		post(DMR_DATA_EV_RADIO_CHECK_ANSWERED, source);
+	}
+
+	if (!csbkAnswerPending)
+	{
+		csbkAnswer = answer;
+		csbkAnswerPending = true;
 	}
 }
 
-// HR-C6000 task context
-void dmrDataServiceRxBurst(const dmrBurst_t *burst)
+void dmrDataServiceRxBurst(const dmrBurst_t *burst, uint32_t nowMs)
 {
-	lastRxBurstTime = MILLIS();// through a repeater, holds our transmissions back until the sender has finished
+	now = nowMs;
+	stats.rxBursts++;
 
-	uint8_t next = (rxBurstWriteIdx + 1) % RX_BURST_QUEUE_SIZE;
+	bool block = (burst->dataType == DT_RATE_12_DATA) || (burst->dataType == DT_RATE_34_DATA) || (burst->dataType == DT_RATE_1_DATA);
 
-	if (next == rxBurstReadIdx)
+	if (block)
 	{
-		rxBurstReadIdx = (rxBurstReadIdx + 1) % RX_BURST_QUEUE_SIZE;// drop the oldest
-	}
-	rxBursts[rxBurstWriteIdx] = *burst;
-	rxBurstWriteIdx = next;
-
-	next = (monitorWriteIdx + 1) % RX_BURST_QUEUE_SIZE;
-	if (usbNcmIsUp() && (next != monitorReadIdx))
-	{
-		uint8_t *record = monitorRecords[monitorWriteIdx];
-
-		record[0] = 1;// version
-		record[1] = trxGetDMRTimeSlot() + 1;
-		record[2] = trxGetDMRColourCode();
-		record[3] = burst->dataType;
-		record[4] = burst->flags;
-		record[5] = burst->length;
-		memcpy(&record[MONITOR_RECORD_HEADER], burst->payload, burst->length);
-		monitorWriteIdx = next;
-	}
-
-	// In hotspot mode MMDVMHost gets the bursts (see hotspotDataTick), the radio itself is not the recipient
-	if (settingsUsbMode != USB_MODE_HOTSPOT)
-	{
-		switch (dmrDataRxBurst(burst))
+		stats.rxBlocks++;
+		if (!blockWindowValid || ((now - lastBlockWindow) > BLOCK_WINDOW_MS))
 		{
-			case DMR_DATA_RX_PACKET:
-				handlePacket(&dmrDataRxPacket);
-				break;
-			case DMR_DATA_RX_CSBK:
-				handleCSBK(burst->payload);
-				break;
-			default:
-				break;
+			stats.rxBlocksStale++;
+			dmrDataRxReset();
+			return;// noise decodes as data blocks
 		}
 	}
+	else if ((burst->dataType == DT_CSBK) || (burst->dataType == DT_DATA_HEADER))
+	{
+		// The receiver checks the CRC itself (dmr-modem.md 2.2: headers and CSBKs with a bad one are dropped); the
+		// modem's flag is only compared with it, for the bench
+		bool ok = dmrDataCheckCRC16(burst->payload, (burst->dataType == DT_CSBK) ? 0xA5 : 0xCC);
+		bool flagOk = (burst->flags & DMR_BURST_FLAG_RX_CRC_ERROR) == 0;
+
+		stats.rxCrcFlagMismatch += (ok != flagOk) ? 1 : 0;
+		if (!ok)
+		{
+			stats.rxCrcErrors++;
+			return;
+		}
+		if (burst->dataType == DT_CSBK)
+		{
+			stats.rxCsbk++;
+		}
+		else
+		{
+			stats.rxHeaders++;
+		}
+	}
+	lastBlockWindow = now;
+	blockWindowValid = true;
+
+	switch (dmrDataRxBurst(burst))
+	{
+		case DMR_DATA_RX_PACKET:
+			handlePacket(&dmrDataRxPacket);
+			break;
+		case DMR_DATA_RX_CSBK:
+			handleCSBK(burst->payload);
+			break;
+		case DMR_DATA_RX_ERROR:
+			if (block)
+			{
+				stats.rxCrcErrors++;// the packet's CRC-32 (headers were counted above)
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+// --- The rest of the host's API ---
+
+void dmrDataServiceInit(const dmrDataEnv_t *e)
+{
+	memset(&env, 0, sizeof(env));
+	if (e != NULL)
+	{
+		env = *e;
+	}
+	dmrDataRxReset();
+}
+
+void dmrDataServiceSetSettings(const dmrDataSettings_t *s)
+{
+	settings = *s;
+}
+
+void dmrDataServiceGetSettings(dmrDataSettings_t *s)
+{
+	*s = settings;
+}
+
+void dmrDataServiceSetLock(void (*l)(void), void (*u)(void))
+{
+	lockFn = l;
+	unlockFn = u;
 }
 
 int dmrDataServiceMessageCount(void)
@@ -1361,7 +1459,7 @@ int dmrDataServiceMessageCount(void)
 	return inboxUsed;
 }
 
-dmrDataMessage_t *dmrDataServiceMessage(int index)
+const dmrDataMessage_t *dmrDataServiceMessage(int index)
 {
 	if ((index < 0) || (index >= inboxUsed))
 	{
@@ -1371,198 +1469,183 @@ dmrDataMessage_t *dmrDataServiceMessage(int index)
 	return &inbox[(inboxNewest + DMR_DATA_INBOX_SIZE - index) % DMR_DATA_INBOX_SIZE];
 }
 
-int dmrDataServiceInboxCount(void)
+void dmrDataServiceGetStats(dmrDataStats_t *out)
 {
-	int count = 0;
+	*out = stats;
+}
 
+void dmrDataServiceResetStats(void)
+{
+	memset(&stats, 0, sizeof(stats));
+}
+
+// --- dmr_data_api.h: any task ---
+
+int sms_inbox_count(void)
+{
+	return inboxUsed;
+}
+
+int sms_inbox_unread(void)
+{
+	int n = 0;
+
+	lock();
 	for (int i = 0; i < inboxUsed; i++)
 	{
-		if (dmrDataServiceMessage(i)->hostPending)
-		{
-			count++;
-		}
+		n += dmrDataServiceMessage(i)->unread ? 1 : 0;
 	}
-
-	return count;
+	unlock();
+	return n;
 }
 
-// The oldest message the host hasn't had
-bool dmrDataServiceInboxPop(dmrDataMessage_t *message)
+bool sms_inbox_get(int i, dmrDataMessage_t *out)
 {
-	for (int i = inboxUsed - 1; i >= 0; i--)
+	lock();
+	const dmrDataMessage_t *m = dmrDataServiceMessage(i);
+
+	if (m != NULL)
 	{
-		dmrDataMessage_t *m = dmrDataServiceMessage(i);
-
-		if (m->hostPending)
-		{
-			m->hostPending = false;
-			*message = *m;
-			return true;
-		}
+		*out = *m;
 	}
-
-	return false;
+	unlock();
+	return m != NULL;
 }
 
-dmrBurst_t *dmrDataServiceTxBursts(void)
+void sms_inbox_mark_read(int i)
 {
-	return txBursts;
+	lock();
+	dmrDataMessage_t *m = (dmrDataMessage_t *)dmrDataServiceMessage(i);
+
+	if ((m != NULL) && m->unread)
+	{
+		m->unread = false;
+		dataSerial++;
+	}
+	unlock();
 }
 
-int dmrDataServiceRxBurstCount(void)
+bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dmr_sms_format_t format)
 {
-	return (rxBurstWriteIdx + RX_BURST_QUEUE_SIZE - rxBurstReadIdx) % RX_BURST_QUEUE_SIZE;
-}
+	bool ok = false;
 
-bool dmrDataServiceRxBurstPop(dmrBurst_t *burst)
-{
-	if (rxBurstReadIdx == rxBurstWriteIdx)
+	if ((text == NULL) || (text[0] == '\0') || (dst == 0) || (format != DMR_SMS_FORMAT_TMS))
 	{
 		return false;
 	}
-
-	*burst = rxBursts[rxBurstReadIdx];
-	rxBurstReadIdx = (rxBurstReadIdx + 1) % RX_BURST_QUEUE_SIZE;
-	return true;
+	lock();
+	if (!mailbox.smsPending && (sms.state != DMR_REQ_QUEUED) && (sms.state != DMR_REQ_SENDING))
+	{
+		mailbox.smsDst = dst;
+		mailbox.smsGroup = group;
+		mailbox.smsAck = ack_requested;
+		snprintf(mailbox.smsText, sizeof(mailbox.smsText), "%s", text);
+		mailbox.smsPending = true;
+		ok = true;
+	}
+	unlock();
+	return ok;
 }
 
-static bool usbSend(const uint8_t *r)
+dmr_req_state_t sms_send_state(void)
 {
-	bool group = (r[1] & USB_SEND_FLAG_GROUP) != 0;
-	uint32_t dst = (r[2] << 16) | (r[3] << 8) | r[4];
-	uint16_t port = (r[5] << 8) | r[6];
-	static const uint8_t RATES[4] = { DT_RATE_12_DATA, DT_RATE_34_DATA, DT_RATE_1_DATA, 0 };
-	uint8_t blockType = RATES[(r[1] >> USB_SEND_RATE_SHIFT) & 0x03];
+	return mailbox.smsPending ? DMR_REQ_QUEUED : (dmr_req_state_t)sms.state;
+}
 
-	if ((r[0] != USB_SEND_BURSTS) && (blockType == 0))
+static bool signalRequest(uint8_t kind, uint32_t dst)
+{
+	bool ok = false;
+
+	if (dst == 0)
 	{
 		return false;
 	}
-
-	switch (r[0])
+	lock();
+	if (!mailbox.sigPending && (sig.state != DMR_REQ_QUEUED) && (sig.state != DMR_REQ_SENDING))
 	{
-		case USB_SEND_BURSTS:
-			return dmrDataServiceSendBursts(txBursts, txBurstCount);
-		case USB_SEND_TMS:
-			usbBuffer[(usbBufferLength < USB_BUFFER_SIZE) ? usbBufferLength : (USB_BUFFER_SIZE - 1)] = 0;
-			return sendSMS(group, dst, (const char *)usbBuffer, (r[1] & USB_SEND_FLAG_ACK) != 0, blockType);
-		case USB_SEND_UDP:
-			return sendUDP(group, dst, port, port, usbBuffer, usbBufferLength, blockType);
-		case USB_SEND_PACKET:
-			if (dmrDataServiceIsBusy() || !canTransmit())
-			{
-				return false;
-			}
-			return queueTx(dmrDataBuildPacket(port >> 8, port & 0x0F, group, dst, trxDMRID, usbBuffer, usbBufferLength,
-									blockType, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
-		default:
-			return false;
+		mailbox.sigKind = kind;
+		mailbox.sigDst = dst;
+		mailbox.sigPending = true;
+		ok = true;
 	}
+	unlock();
+	return ok;
 }
 
-// request: 'D', sub command, arguments. Returns the reply length
-int dmrDataServiceHandleUSB(const uint8_t *request, uint8_t *reply)
+bool dmr_signal_call_alert(uint32_t dst)
 {
-	const uint8_t *args = &request[2];
-	int len = 3;
-
-	reply[0] = 'D';
-	reply[1] = request[1];
-	reply[2] = 1;// result, 1 = OK
-
-	switch (request[1])
-	{
-		case USB_DATA_CLEAR:
-			if (dmrDataServiceIsBusy())
-			{
-				reply[2] = 0;
-				break;
-			}
-			usbBufferLength = 0;
-			txBurstCount = 0;
-			break;
-
-		case USB_DATA_APPEND_BYTES:
-			if ((args[0] > (COM_REQUESTBUFFER_SIZE - 3)) || ((usbBufferLength + args[0]) > USB_BUFFER_SIZE))
-			{
-				reply[2] = 0;
-				break;
-			}
-			memcpy(&usbBuffer[usbBufferLength], &args[1], args[0]);
-			usbBufferLength += args[0];
-			break;
-
-		case USB_DATA_APPEND_BURST:
-			if (dmrDataServiceIsBusy() || (txBurstCount >= DMR_DATA_MAX_BURSTS) || (args[2] > DMR_BURST_PAYLOAD_MAX))
-			{
-				reply[2] = 0;
-				break;
-			}
-			txBursts[txBurstCount].dataType = args[0];
-			txBursts[txBurstCount].flags = args[1];
-			txBursts[txBurstCount].length = args[2];
-			memcpy(txBursts[txBurstCount].payload, &args[3], args[2]);
-			txBurstCount++;
-			break;
-
-		case USB_DATA_SEND:
-			reply[2] = usbSend(args) ? 1 : 0;
-			break;
-
-		case USB_DATA_STATUS:
-			reply[2] = txPending ? DMR_DATA_TX_RUNNING : HRC6000DataTxGetStatus();
-			reply[3] = dmrDataServiceRxBurstCount();
-			reply[4] = dmrDataServiceInboxCount();
-			len = 5;
-			break;
-
-		case USB_DATA_POP_BURST:
-			{
-				dmrBurst_t burst;
-				reply[2] = dmrDataServiceRxBurstPop(&burst) ? 1 : 0;
-				if (reply[2])
-				{
-					reply[3] = burst.dataType;
-					reply[4] = burst.flags;
-					reply[5] = burst.length;
-					memcpy(&reply[6], burst.payload, burst.length);
-					len = 6 + burst.length;
-				}
-			}
-			break;
-
-		case USB_DATA_POP_MESSAGE:
-			{
-				dmrDataMessage_t message;
-				reply[2] = dmrDataServiceInboxPop(&message) ? 1 : 0;
-				if (reply[2])
-				{
-					int textLen = strlen(message.text);
-					reply[3] = message.src >> 16; reply[4] = message.src >> 8; reply[5] = message.src;
-					reply[6] = message.dst >> 16; reply[7] = message.dst >> 8; reply[8] = message.dst;
-					reply[9] = message.group;
-					reply[10] = textLen;
-					memcpy(&reply[11], message.text, textLen);
-					len = 11 + textLen;
-				}
-			}
-			break;
-
-		case USB_DATA_NETWORK_MODE:
-			if (args[0] != 0xFF)
-			{
-				settingsSetOptionBit(BIT_USB_NETWORK, (args[0] != 0));
-				settingsSetDirty();// saved with the other settings, e.g. by the CPS save and reboot command
-			}
-			reply[3] = settingsIsOptionBitSet(BIT_USB_NETWORK) ? 1 : 0;
-			reply[4] = usbNcmIsUp() ? 1 : 0;
-			len = 5;
-			break;
-
-		default:
-			reply[2] = 0;
-			break;
-	}
-
-	return len;
+	return signalRequest(DMR_DATA_EV_CALL_ALERT_ACKED, dst);
 }
+
+bool dmr_signal_radio_check(uint32_t dst)
+{
+	return signalRequest(DMR_DATA_EV_RADIO_CHECK_OK, dst);
+}
+
+dmr_req_state_t dmr_signal_state(uint8_t *kind, uint32_t *dst)
+{
+	dmr_req_state_t st;
+
+	lock();
+	if (mailbox.sigPending)
+	{
+		st = DMR_REQ_QUEUED;
+		if (kind)
+		{
+			*kind = mailbox.sigKind;
+		}
+		if (dst)
+		{
+			*dst = mailbox.sigDst;
+		}
+	}
+	else
+	{
+		st = (dmr_req_state_t)sig.state;
+		if (kind)
+		{
+			*kind = sig.kind;
+		}
+		if (dst)
+		{
+			*dst = sig.dst;
+		}
+	}
+	unlock();
+	return st;
+}
+
+uint32_t dmr_data_serial(void)
+{
+	return dataSerial;
+}
+
+dmrDataEvent_t dmr_data_last_event(void)
+{
+	lock();
+	dmrDataEvent_t e = lastEvent;
+	unlock();
+	return e;
+}
+
+dmrArsState_t dmr_data_ars_state(void)
+{
+	return dmrDataServiceArsState();
+}
+
+void dmr_data_get_settings(dmrDataSettings_t *out)
+{
+	lock();
+	*out = mailbox.settingsPending ? mailbox.settings : settings;
+	unlock();
+}
+
+void dmr_data_set_settings(const dmrDataSettings_t *in)
+{
+	lock();
+	mailbox.settings = *in;
+	mailbox.settingsPending = true;
+	unlock();
+}
+
+#endif

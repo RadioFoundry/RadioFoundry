@@ -37,6 +37,7 @@ typedef enum {
 	RDMR_TX_WAIT,		// PTT held: waiting for the channel or waking the repeater
 	RDMR_TX,		// on air
 	RDMR_TX_ENDING,		// PTT released: finishing the superframe
+	RDMR_TX_DATA,		// sending data / a CSBK for the data service (SMS, ACK, call alert, ...)
 } radio_dmr_state_t;
 
 typedef struct {
