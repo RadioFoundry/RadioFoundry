@@ -14,9 +14,12 @@ radiodesk-rfgw@<bench host>, or take ROAM1 out of its config); tools/bench/dmr_b
               [--headers N] [--terminators N] [--late K] [--calls N] [--gap-ms MS] [--src2 ID]
               [--family ms|bs|ts1|ts2] [--ambe FILE] [--talker-alias TEXT] [--pi] [--service-options HEX]
               [--emergency] [--burst-cc CC]
-    bench_tx.py ... csbk  [--src ID] [--dst ID] [--count N] [--opcode HEX [--fid HEX]] [--family ...]
-                                            (preamble CSBK train, then optionally one CSBK, e.g. 1F call alert)
-    bench_tx.py ... data  [--src ID] [--dst ID] [--confirmed] [--octets N] [--preambles N] [--family ...]
+    bench_tx.py ... csbk  [--src ID] [--dst ID] [--count N] [--opcode HEX [--fid HEX] [--octet3 HEX]] [--family ...]
+                                            (preamble CSBK train, then optionally one CSBK, e.g. 1F call alert, or
+                                            24 --fid 10 --octet3 80 radio check request)
+    bench_tx.py ... data  [--src ID] [--dst ID] [--confirmed] [--octets N | --tms TEXT [--tms-seq N] [--tms-no-ack]]
+                          [--preambles N] [--family ...]
+                                            (--tms: a Motorola TMS text message in IPv4 / UDP 4007 user data)
     bench_tx.py [--ambe-out PREFIX] ... listen [--seconds N] [--json]
     bench_tx.py --listen-after S [--ambe-out PREFIX] voice|data|csbk ...  (send, then listen S seconds, JSON lines)
 
@@ -36,7 +39,8 @@ voice:
   --burst-cc CC      color code written into the bursts (default --cc): a wrong-CC test with the bench modem on --cc
 
 listen: logs what the bench modem hears (MS-synced DMO bursts only: the MMDVM_HS simplex receiver does not search for BS or
-TDMA direct-mode sync). --json prints one line per burst with data type / voice index, header and terminator LC,
+TDMA direct-mode sync). --json prints one line per burst with data type / voice index, the 12 info octets of CSBKs,
+data headers and rate 1/2 blocks ("info", hex), header and terminator LC,
 EMB color code and PI, the embedded LC assembled per superframe (call LC or talker alias) and, at the end, a
 summary per call. --ambe-out PREFIX writes each call's AMBE frames to PREFIX_<n>.ambe (9-byte FEC frames) and
 PREFIX_<n>.amb (DSD .amb: 49 parameter bits per frame, for any AMBE+2 decoder you have; none is in this project).
@@ -131,9 +135,48 @@ def voice_call(args, src: int):
     return items
 
 
+def ip_checksum(data: bytes) -> int:
+    if len(data) % 2:
+        data += b"\0"
+    s = sum(int.from_bytes(data[i:i + 2], "big") for i in range(0, len(data), 2))
+    while s >> 16:
+        s = (s & 0xFFFF) + (s >> 16)
+    return ~s & 0xFFFF
+
+
+def tms_user_data(src: int, dst: int, text: str, seq: int, ack: bool) -> bytes:
+    """IPv4 / UDP 4007 -> 4007 carrying a TMS simple text message (header 0xE0 with an ACK requested, else 0xA0;
+    sequence number with bit 7; encoding 4; UTF-16LE text). Radio IDs map to 12.x.x.x (the CAI network)."""
+    body = bytes([0xE0 if ack else 0xA0, 0x00, 0x80 | (seq & 0x1F), 0x04]) + text.encode("utf-16-le")
+    tms = len(body).to_bytes(2, "big") + body
+    sip, dip = bytes([12]) + src.to_bytes(3, "big"), bytes([12]) + dst.to_bytes(3, "big")
+    udp_len = 8 + len(tms)
+    udp = (4007).to_bytes(2, "big") * 2 + udp_len.to_bytes(2, "big") + b"\0\0" + tms
+    csum = ip_checksum(sip + dip + bytes([0, 17]) + udp_len.to_bytes(2, "big") + udp) or 0xFFFF
+    udp = udp[:6] + csum.to_bytes(2, "big") + udp[8:]
+    total = 20 + udp_len
+    ip = bytes([0x45, 0]) + total.to_bytes(2, "big") + b"\0\x01\0\0" + bytes([64, 17]) + b"\0\0" + sip + dip
+    ip = ip[:10] + ip_checksum(ip).to_bytes(2, "big") + ip[12:]
+    return ip + udp
+
+
+def bptc_info(burst: bytes) -> bytes:
+    """The 12 info octets of a BPTC(196,96) burst (CSBK, data header, rate 1/2 block; ETSI TS 102 361-1 B.1.1):
+    the 196 bits around the sync, de-interleaved (index * 181 mod 196), data bits taken without correction."""
+    bits = [(burst[i // 8] >> (7 - i % 8)) & 1 for i in range(264)]
+    raw = bits[0:98] + bits[166:264]
+    de = [raw[(i * 181) % 196] for i in range(196)]
+    idx = list(range(4, 12)) + [a for r in range(1, 9) for a in range(1 + 15 * r, 12 + 15 * r)]
+    data = [de[i] for i in idx]
+    return bytes(int("".join(map(str, data[k:k + 8])), 2) for k in range(0, 96, 8))
+
+
 def data_items(args):
     from radiodesk.dmr import packet
-    user = bytes((i * 7 + 1) & 0xFF for i in range(args.octets))
+    if args.tms is not None:
+        user = tms_user_data(args.src, args.dst, args.tms, args.tms_seq, not args.tms_no_ack)
+    else:
+        user = bytes((i * 7 + 1) & 0xFF for i in range(args.octets))
     if args.confirmed:
         infos = packet.confirmed_packet(args.src, args.dst, 4, user, ns=1).bursts(preambles=args.preambles)
     else:
@@ -142,9 +185,10 @@ def data_items(args):
     return [(SYNC_DATA | dt, L2.data_burst(info, dt, args.burst_cc, sync)) for dt, info in infos]
 
 
-def one_csbk(opcode: int, fid: int, src: int, dst: int, cc: int) -> bytes:
-    """A single CSBK (last block): opcode, FID, octets 2-3 zero, target (4-6), source (7-9), CRC with the CSBK mask."""
-    head = bytes([0x80 | (opcode & 0x3F), fid, 0, 0]) + dst.to_bytes(3, "big") + src.to_bytes(3, "big")
+def one_csbk(opcode: int, fid: int, src: int, dst: int, cc: int, octet3: int = 0) -> bytes:
+    """A single CSBK (last block): opcode, FID, octet 2 zero, octet 3, target (4-6), source (7-9), CRC with the CSBK
+    mask."""
+    head = bytes([0x80 | (opcode & 0x3F), fid, 0, octet3 & 0xFF]) + dst.to_bytes(3, "big") + src.to_bytes(3, "big")
     info = head + (fec.crc16_ccitt(head) ^ fec.MASK_CSBK).to_bytes(2, "big")
     return L2.data_burst(info, pdu.DT_CSBK, cc, L2.data_sync(L2.MS_VOICE))
 
@@ -152,7 +196,7 @@ def one_csbk(opcode: int, fid: int, src: int, dst: int, cc: int) -> bytes:
 def csbk_items(args):
     bursts = B.csbk_preambles(args.src, args.dst, False, args.count, args.burst_cc)
     if args.opcode is not None:
-        bursts.append(one_csbk(args.opcode, args.fid, args.src, args.dst, args.burst_cc))
+        bursts.append(one_csbk(args.opcode, args.fid, args.src, args.dst, args.burst_cc, args.octet3))
     if args.family != "ms":
         bursts = [tb.burst for tb in sim.resync(bursts, args.family, args.burst_cc)]
     return [(B.CSBK, b) for b in bursts]
@@ -219,6 +263,8 @@ class Listener:
             rec["dt"] = dt
             cc, _dt, _ = L2.decode_slot_type(burst)
             rec["cc"] = cc
+            if dt in (pdu.DT_CSBK, 6, 7):     # CSBK, data header, rate 1/2 block: the raw info octets for tests
+                rec["info"] = bptc_info(burst).hex()
             if dt in (pdu.DT_VOICE_LC_HEADER, pdu.DT_TERMINATOR_WITH_LC):
                 lc = pdu.decode_voice_lc(burst, dt)
                 if lc is not None:
@@ -356,12 +402,16 @@ def main() -> None:
     d.add_argument("--confirmed", action="store_true")
     d.add_argument("--octets", type=int, default=40)
     d.add_argument("--preambles", type=int, default=2)
+    d.add_argument("--tms", default=None, help="user data: a TMS text message with this text (else --octets bytes)")
+    d.add_argument("--tms-seq", type=int, default=1, help="TMS sequence number (5 bits)")
+    d.add_argument("--tms-no-ack", action="store_true", help="TMS without an ACK requested")
     c = sub.add_parser("csbk")
     common(c, 3101276)
     c.add_argument("--count", type=int, default=4, help="preamble CSBKs (opcode 0x3D)")
     c.add_argument("--opcode", type=lambda x: int(x, 16), default=None,
                    help="then one CSBK with this opcode (hex), e.g. 1F call alert (FID 0)")
     c.add_argument("--fid", type=lambda x: int(x, 16), default=0)
+    c.add_argument("--octet3", type=lambda x: int(x, 16), default=0, help="CSBK octet 3 (hex): 80 radio check request")
     li = sub.add_parser("listen")
     li.add_argument("--seconds", type=float, default=20)
     li.add_argument("--json", action="store_true")
