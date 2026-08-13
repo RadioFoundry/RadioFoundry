@@ -97,6 +97,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x0B` | INFO_CHIP | none | chip ID, flash size, UID, option bytes decoded (3.9) |
 | `0x0C` | READ_MEM | address u32 + length u16 | address u32, the bytes (3.10) |
 | `0x0D` | REBOOT | mode u8 + token u32 | reason u8 (3.11) |
+| `0x0E` | DMR_DATA | operation u8 + arguments (3.12) | none, or an inbox message (3.12) |
 
 ### 3.1 VERSION
 
@@ -211,10 +212,12 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 4 | `dmr_stats` | call stack (`call.rx_calls rx_calls_played rx_late_entries rx_voice_bursts rx_lost_frames rx_dup_dropped rx_enc_dropped tx_calls tx_denied tx_underruns evq_overflows rx_private_calls rx_emergency_calls rx_encrypted_calls rx_pi_headers rx_alias_complete tx_alias_lcs`), AMBE voice (`voice.rx_in rx_frames rx_concealed rx_silence rx_calls rx_queue_max rx_bad rx_lost rx_underruns rx_overflows rx_bit_errors tx_frames tx_overflows`) |
 | 5 | `hotspot` | `hostlink` (idle / hotspot / cps), `hs.running hs.transmitting hs.receiving hs.rx_hz hs.tx_hz hs.cc hs.src hs.dst hs.group hs.from_net` and the engine counters `hs.net_frames ... hs.enter_attempts` |
 | 6 | `link` | `uptime_ms ui.screen` (home, quick, diag, hotspot) `input.idle_ms input.source input.raw_keys input.injected input.encoder_total dl.frames dl.bad_crc dl.too_long dl.timeouts` |
+| 7 | `dmr_data` | `data.built data.busy data.sms_state data.signal_state data.signal_kind data.signal_dst data.ars_state data.inbox_count data.inbox_unread data.serial data.event data.event_serial data.event_id data.ars_server data.radio_check_reply data.call_alert_ack data.lrrp_reply data.has_gps data.lrrp_triggers`, counters `data.rx_bursts rx_csbk rx_headers rx_blocks rx_blocks_stale rx_crc_errors rx_crc_flag_mismatch rx_packets rx_for_us rx_confirmed sms_received sms_duplicates sms_sent sms_acked sms_failed tms_acks_sent responses_sent csbk_answers_sent call_alerts_received radio_checks_received call_alerts_sent call_alerts_acked radio_checks_sent radio_checks_answered ars_sent ars_acks lrrp_requests lrrp_answers lrrp_no_fix tx_lists tx_ok tx_failed tx_gave_up tx_last_error` (meanings: `core/dmr/dmrDataService.h` dmrDataStats_t). States: `idle queued sending ok failed`; ARS `off registering registered refused no_answer`; `data.event` the last event's name (`sms_received`, `call_alert`, `radio_check_answered`, ...), `data.event_id` its radio ID |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
-`?`. Built without DMR the DMR sections hold `dmr.built=0`. The DMR sections are rendered in
+`?`. Built without DMR the DMR sections hold `dmr.built=0`; built without the DMR data features `dmr_data` holds
+`data.built=0`. The DMR sections are rendered in
 `core/debuglink/debuglink_view_dmr.c`, apart from the rest, so DMR work can extend them.
 
 ### 3.8 RADIO
@@ -320,6 +323,24 @@ in), it logs `debuglink: reboot ... aborted` and stays up. How mode 1 enters the
 `odr_debug.py reboot [--rom-dfu]` reads INFO_CHIP first, refuses `--rom-dfu` itself unless RDP is level 0, sends
 the token and prints the radio's reason when it refuses.
 
+### 3.12 DMR_DATA
+
+Requests to the DMR data service (`docs/spec/dmr-data.md`), through the same mailbox as the UI's
+(`core/dmr/dmr_data_api.h`): the radio task takes them at its next tick, so OK means queued, not sent. Follow the
+result in the `dmr_data` view section (`data.sms_state`, `data.signal_state`, the counters). IDs are u32 little
+endian (24 bits used). BUSY: one of the kind is still queued; UNAVAILABLE: built without the data features.
+
+| Op | Name | Arguments | Effect |
+|---|---|---|---|
+| 1 | SMS | destination u32, flags u8 (bit 0 group, bit 1 ACK requested), text (Latin-1, the rest of the payload, up to 58) | send a TMS text message |
+| 2 | CALL_ALERT | target u32 | send a call alert (3 tries) |
+| 3 | RADIO_CHECK | target u32 | send a radio check (3 tries) |
+| 4 | SETTINGS | ARS server u32 (0 off), flags u8 (bit 0 answer radio checks, bit 1 acknowledge call alerts, bit 2 answer LRRP) | the service's settings, in RAM only (until the codeplug holds them) |
+| 5 | INBOX | index u8 (0 newest) | reply: source u32, destination u32, group u8, unread u8, the text; UNAVAILABLE when there is no such message |
+| 6 | MARK_READ | index u8 | mark an inbox message read |
+
+RESET_COUNTERS also zeroes the data service's counters. `odr_debug.py data sms|alert|check|settings|inbox|read`.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -337,8 +358,8 @@ the token and prints the radio's reason when it refuses.
 ## 5. Counters and resets
 
 RESET_COUNTERS zeroes: the board's diagnostics counters (`board.diag_reset`: on the DM-1701 the HR_C6000 slot engine
-counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`)
-and the AMBE voice counters (`ambeVoiceResetStats`). States and "last" values (last CC, last sync, engine TX state)
+counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`),
+the AMBE voice counters (`ambeVoiceResetStats`) and the DMR data service counters (`dmrDataServiceResetStats`). States and "last" values (last CC, last sync, engine TX state)
 are kept. The resets are not atomic with respect to the tasks and interrupts that count: an increment racing the
 reset may survive it; a test that resets, waits a moment and then starts its traffic is not affected.
 
