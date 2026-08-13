@@ -9,7 +9,7 @@
  *    rows, column parity, B.2.1), interleaved and spread over voice bursts B-E as 4 x 32 bits with LCSS
  *    first / continuation / continuation / last
  *  - CRC-CCITT (B.3.7) for the BS activation CSBK
- *  - talker alias (FLCO 4 header, FLCO 5-7 blocks) decoding
+ *  - talker alias (FLCO 4 header, FLCO 5-7 blocks) decoding (all four formats) and encoding (7-bit, ISO 8-bit)
  *
  * No board or modem knowledge: modems that build the embedded signalling themselves only need the 9 LC octets;
  * a software modem or a host test uses the fragment functions.
@@ -82,6 +82,7 @@ uint16_t dmr_crc_ccitt(const uint8_t *buf, uint8_t len);
 // buf[0..9] -> buf[10..11] = CRC ^ mask, MSB first
 void dmr_crc16_append(uint8_t buf[12], uint16_t mask);
 #define DMR_CRC_MASK_CSBK		0xA5A5
+#define DMR_CRC_MASK_PI			0x6969	// PI header (data type 0)
 
 // BS_Dwn_Act CSBK (CSBKO 0x38, LB = 1, FID 0, any BS) from own_id, with its masked CRC: 12 octets
 void dmr_csbk_bs_activation(uint32_t own_id, uint8_t out[12]);
@@ -110,9 +111,11 @@ void dmr_emb_rx_reset(dmr_emb_rx_t *rx);
 // One burst's 32 embedded bits with its EMB LCSS. True when an LC was completed and checked (written to lc)
 bool dmr_emb_rx_push(dmr_emb_rx_t *rx, const uint8_t frag[4], uint8_t lcss, uint8_t lc[DMR_LC_BYTES]);
 
-// --- Talker alias (TS 102 361-2 7.1.1.3, 7.1.1.4): decode only ---
+// --- Talker alias (TS 102 361-2 7.1.1.3, 7.1.1.4, 7.2.18) ---
 
 #define DMR_TA_TEXT_MAX			31	// 7-bit format: 7 + 3 x 8 characters
+#define DMR_TA_ISO8_MAX			27	// 8-bit format: 6 + 3 x 7 characters
+#define DMR_TA_LC_MAX			4	// header and three blocks
 
 typedef enum { DMR_TA_7BIT = 0, DMR_TA_ISO8 = 1, DMR_TA_UTF8 = 2, DMR_TA_UTF16 = 3 } dmr_ta_format_t;
 
@@ -126,7 +129,11 @@ typedef struct {
 } dmr_ta_t;
 
 void dmr_ta_reset(dmr_ta_t *ta);
-// One embedded LC with FLCO 4-7. True when text or completeness changed
+// One embedded LC with FLCO 4-7. True when text or completeness changed. Characters outside printable ASCII (ISO 8-bit
+// above 0x7E, UTF-8 multi-byte sequences, UTF-16 above 0x7E and surrogate pairs) show as one '?' each
 bool dmr_ta_push(dmr_ta_t *ta, const uint8_t lc[DMR_LC_BYTES]);
+// The talker alias LCs for text: header (FLCO 4) and as many blocks (FLCO 5-7) as the text needs, FID 0.
+// format DMR_TA_7BIT (up to 31 characters) or DMR_TA_ISO8 (anything else; up to 27). Returns the LC count, 0 for ""
+int dmr_ta_encode(const char *text, uint8_t format, uint8_t lcs[DMR_TA_LC_MAX][DMR_LC_BYTES]);
 
 #endif

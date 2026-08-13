@@ -371,6 +371,16 @@ static uint32_t stream_bits(const uint8_t *s, int at, int n)
 	return v;
 }
 
+// One character for the screens: printable ASCII as it is, anything else '?'
+static char ta_char(uint32_t cp)
+{
+	return (cp >= 0x20 && cp < 0x7F) ? (char)cp : '?';
+}
+
+// The alias text from the contiguous bits received so far. Formats (TS 102 361-2 7.2.18): 7-bit characters from the
+// header's first data bit; ISO 8-bit, UTF-8 and UTF-16 (big endian code units) from its second (the first is unused).
+// The length counts characters; some senders count bytes (UTF-8) or overstate it, so the alias also counts as
+// complete at the first zero character (the padding) or once all four parts are in
 static void ta_render(dmr_ta_t *ta)
 {
 	int avail = 0;	// contiguous alias bits from the start
@@ -381,22 +391,37 @@ static void ta_render(dmr_ta_t *ta)
 			avail += TA_BLOCK_BITS;
 	}
 
-	int start = ta->format == DMR_TA_7BIT ? 0 : 1;	// 8 and 16-bit formats skip the header's first data bit
+	int at = ta->format == DMR_TA_7BIT ? 0 : 1;
 	int width = ta->format == DMR_TA_7BIT ? 7 : (ta->format == DMR_TA_UTF16 ? 16 : 8);
-	int n = 0;
+	int n = 0, chars = 0;
+	bool ended = false;
 
-	for (int i = 0; i < ta->length && n < DMR_TA_TEXT_MAX; i++) {
-		int at = start + i * width;
+	while (chars < ta->length && n < DMR_TA_TEXT_MAX && at + width <= avail) {
+		uint32_t cp = stream_bits(ta->stream, at, width);
+		int units = 1;
 
-		if (at + width > avail)
+		if (cp == 0) {
+			ended = true;	// zero padding after the text: some senders count bytes, or overstate the length
 			break;
-		uint32_t ch = stream_bits(ta->stream, at, width);
-		ta->text[n++] = (ch >= 0x20 && ch < 0x7F) ? (char)ch : '?';
+		}
+		if (ta->format == DMR_TA_UTF8 && cp >= 0x80) {
+			// A multi-byte sequence is one character: the lead byte says how many continuation bytes follow
+			units = cp >= 0xF0 ? 4 : cp >= 0xE0 ? 3 : cp >= 0xC0 ? 2 : 1;
+			cp = '?';
+		} else if (ta->format == DMR_TA_UTF16 && cp >= 0xD800 && cp < 0xDC00) {
+			units = 2;	// surrogate pair
+			cp = '?';
+		}
+		if (at + units * width > avail)
+			break;	// the rest of the character is in a part not received yet
+		at += units * width;
+		ta->text[n++] = ta_char(cp);
+		chars++;
 	}
 	ta->text[n] = 0;
 
 	int need = ta->length < DMR_TA_TEXT_MAX ? ta->length : DMR_TA_TEXT_MAX;
-	ta->complete = (ta->have & 1) && n >= need;
+	ta->complete = (ta->have & 1) && (n >= need || ended || ta->have == 0x0F);
 }
 
 bool dmr_ta_push(dmr_ta_t *ta, const uint8_t lc[DMR_LC_BYTES])
@@ -429,4 +454,42 @@ bool dmr_ta_push(dmr_ta_t *ta, const uint8_t lc[DMR_LC_BYTES])
 	}
 	ta_render(ta);
 	return was_complete != ta->complete || memcmp(before, ta->text, sizeof(before)) != 0;
+}
+
+int dmr_ta_encode(const char *text, uint8_t format, uint8_t lcs[DMR_TA_LC_MAX][DMR_LC_BYTES])
+{
+	uint8_t stream[28];
+	int width = format == DMR_TA_7BIT ? 7 : 8;
+	int at = format == DMR_TA_7BIT ? 0 : 1;
+	int max = format == DMR_TA_7BIT ? DMR_TA_TEXT_MAX : DMR_TA_ISO8_MAX;
+	int len = 0;
+
+	if (format != DMR_TA_7BIT)
+		format = DMR_TA_ISO8;
+	memset(stream, 0, sizeof(stream));
+	while (text[len] && len < max) {
+		uint8_t c = (uint8_t)text[len];
+
+		if (format == DMR_TA_7BIT && c >= 0x80)
+			c = '?';
+		for (int i = 0; i < width; i++)
+			bit_put(stream, at++, (c >> (width - 1 - i)) & 1);
+		len++;
+	}
+	if (len == 0)
+		return 0;
+
+	int blocks = at > TA_HEADER_BITS ? (at - TA_HEADER_BITS + TA_BLOCK_BITS - 1) / TA_BLOCK_BITS : 0;
+
+	memset(lcs, 0, (size_t)(blocks + 1) * DMR_LC_BYTES);
+	lcs[0][0] = DMR_FLCO_TA_HEADER;
+	lcs[0][2] = (uint8_t)((format << 6) | ((len & 0x1F) << 1) | bit_get(stream, 0));
+	for (int i = 0; i < 48; i++)
+		bit_put(&lcs[0][3], i, bit_get(stream, 1 + i));
+	for (int b = 1; b <= blocks; b++) {
+		lcs[b][0] = (uint8_t)(DMR_FLCO_TA_BLOCK1 + b - 1);
+		for (int i = 0; i < TA_BLOCK_BITS; i++)
+			bit_put(&lcs[b][2], i, bit_get(stream, TA_HEADER_BITS + (b - 1) * TA_BLOCK_BITS + i));
+	}
+	return blocks + 1;
 }

@@ -195,6 +195,16 @@ void radio_req_bandwidth(radio_bw_t bw) { post(RREQ_BANDWIDTH, bw, 0); }
 void radio_req_tone(uint8_t which, subtone_t tone) { post(RREQ_TONE, radio_tone_arg(which, tone), 0); }
 #if CONFIG_DMR
 void radio_req_reply_cancel(void) { post(RREQ_REPLY_CANCEL, 0, 0); }
+void radio_req_dmr_target(uint32_t id, bool private_call)
+{
+	post(RREQ_DMR_TARGET, (int32_t)((id & 0xFFFFFFu) | (private_call ? 1u << 24 : 0u)), 0);
+}
+void radio_req_dmr_contact(uint16_t index) { post(RREQ_DMR_CONTACT, index, 0); }
+void radio_req_dmr_call_back(void) { post(RREQ_DMR_CALL_BACK, 0, 0); }
+void radio_req_dmr_target_clear(void) { post(RREQ_DMR_TARGET_CLEAR, 0, 0); }
+#if CONFIG_DMR_PRIVACY
+void radio_req_dmr_privacy(uint8_t type, uint16_t key) { post(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key), 0); }
+#endif
 #endif
 
 #if CONFIG_HOTSPOT

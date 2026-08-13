@@ -37,17 +37,18 @@ def test_keys_move_the_channel(home):
 
 
 def test_quick_settings_open_and_close(home, shots):
+    """Screenshots go through Radio.shot_until: a capture freezes the UI's redraws for a moment, so one taken right
+    after a key can still show the old screen (or a redraw half done); shot_until waits the hold out and retries
+    until the picture is what the test waits for."""
     r = home
-    _, before, _ = r.screenshot()
+    _, before = r.shot_until(lambda d: True, what="Home")
     r.press("quick")
     r.wait_for(lambda v: v.get("ui.screen") == "quick", sections=("link",), what="Quick settings open")
-    _, opened, _ = r.screenshot()
-    r.save_screenshot(f"{shots}/quick.png")
-    assert diff_fraction(before, opened) > 0.10, "the screen hardly changed"
+    info, opened = r.shot_until(lambda d: diff_fraction(before, d) > 0.10, what="Quick settings drawn")
+    r.save_screenshot(f"{shots}/quick.png", data=opened, info=info)
     r.press("back")
     r.wait_for(lambda v: v.get("ui.screen") == "home", sections=("link",), what="back to Home")
-    _, after, _ = r.screenshot()
-    assert diff_fraction(before, after) < 0.05, "Home looks different after closing Quick settings"
+    r.shot_until(lambda d: diff_fraction(before, d) < 0.05, what="Home as before Quick settings")
 
 
 def test_diagnostics_page(home):
@@ -59,7 +60,7 @@ def test_diagnostics_page(home):
 
 
 def test_screenshot_sanity(home):
-    info, data, _ = home.screenshot()
+    info, data = home.shot_until(lambda d: True, what="a picture")
     px = {data[i:i + 2] for i in range(0, len(data), 2)} if info["bpp"] == 16 else set(data)
     assert len(px) > 2, "the screen is blank"
 

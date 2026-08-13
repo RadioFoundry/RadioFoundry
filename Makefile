@@ -33,15 +33,30 @@ CORE_DIRS += core/debuglink
 endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
-# DMR data (SMS, ARS, LRRP, CSBK signaling): single files of core/dmr, whose other files belong to other features
+# Single files of core/dmr, whose other files belong to other features
+ifeq ($(CONFIG_DMR_PRIVACY),y)
+APP_SRC += core/dmr/dmrPrivacy.c
+endif
+# DMR data (SMS, ARS, LRRP, CSBK signaling)
 ifeq ($(CONFIG_DMR_DATA_CORE),y)
 APP_SRC += core/dmr/dmrData.c core/dmr/dmrDataService.c core/dmr/dmrLrrp.c
 endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)
 
+# Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
+# directories (both end up in the image). Only the files that use ODR_GIT get it, through their own stamp, so a new
+# commit or an edit rebuilds those few objects, not everything.
 GITVERSION := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
-DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\" -DODR_GIT=\"$(GITVERSION)\"
+ifneq ($(GITVERSION),unknown)
+GITDIRTY := $(shell git update-index -q --refresh >/dev/null 2>&1; git diff-index --quiet --ignore-submodules=all HEAD -- \
+	2>/dev/null || echo -dirty)
+ifeq ($(GITDIRTY),)
+GITDIRTY := $(if $(shell git ls-files --others --exclude-standard -- $(APP_DIRS) config Makefile 2>/dev/null),-dirty)
+endif
+endif
+ODR_VERSION := $(GITVERSION)$(GITDIRTY)
+DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\"
 
 OPT ?= -Os
 COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP
@@ -54,20 +69,29 @@ APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
 OBJ := $(APP_OBJ) $(TP_OBJ)
 
-.PHONY: all clean size test FORCE
+.PHONY: all clean size test print-config print-cc
 all: $(TARGET).bin
 
-# Rebuild everything when the compile flags change (feature switches and build values)
-$(BUILD)/flags: FORCE
-	@mkdir -p $(BUILD)
-	@echo '$(CFLAGS_APP)' | cmp -s - $@ || echo '$(CFLAGS_APP)' > $@
+# Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
+# the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
+# are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
+# (and a file removed by a recipe would still be in make's cache)
+VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
+ifeq ($(filter clean test print-config print-cc,$(MAKECMDGOALS)),)
+$(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP)' | cmp -s - $(BUILD)/flags || { echo '$(CFLAGS_APP)' > $(BUILD)/flags; \
+	rm -f $(OBJ); })
+$(shell echo '$(ODR_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(ODR_VERSION)' > $(BUILD)/version; \
+	rm -f $(VERSION_OBJ); })
+endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
+$(VERSION_OBJ): $(BUILD)/version
+$(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\"
 
 $(TARGET).elf: $(OBJ) $(LDSCRIPT)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) -lm
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .isr_vector -j .text -j .rodata -j .ARM.extab -j .ARM -j .preinit_array -j .init_array -j .fini_array -j .data $< $@
-	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes"
+	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(ODR_VERSION)"
 
 $(APP_OBJ): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -84,6 +108,12 @@ size: $(TARGET).elf
 
 test:
 	$(MAKE) -C tests/host
+
+# For tools/ci.sh: the resolved feature switches (NAME=y|n, one per line) and the compiler this board uses
+print-config:
+	@$(foreach f,$(FEATURES),echo '$(f)=$(CONFIG_$(f))';)
+print-cc:
+	@echo '$(CC)'
 
 clean:
 	rm -rf $(BUILD)
