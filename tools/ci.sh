@@ -171,6 +171,10 @@ echo
 # ── 4. license checks ────────────────────────────────────────────────────────
 echo "== licenses"
 if tools/license_grep.sh; then ok "license_grep"; else bad "license_grep: markers of foreign code found"; fi
+# third_party must stay submodule links (mode 160000) in HEAD: a worktree that symlinks them must never commit the
+# symlinks (a merge would then replace the submodules in every checkout)
+if git ls-tree HEAD third_party/ | awk '$1 != "160000" {bad=1} END {exit bad}'; then ok "third_party: submodule links"
+else bad "third_party: entries in HEAD are not submodule links (git ls-tree HEAD third_party/)"; fi
 if command -v reuse > /dev/null; then
 	if reuse lint > "$OUT/reuse.log" 2>&1; then ok "reuse lint"; else tail -30 "$OUT/reuse.log"; bad "reuse lint (see $OUT/reuse.log)"; fi
 else
