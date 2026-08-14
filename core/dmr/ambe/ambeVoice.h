@@ -55,6 +55,12 @@ const dmr_voice_sink_t *ambeVoiceSink(void);
 const dmr_voice_source_t *ambeVoiceSource(void);
 // Stop the audio stream (leaving DMR mode); the next begin restarts it
 void ambeVoiceStop(void);
+// Whether the voice stream runs (its callback owns hal_audio_t). Call task only
+bool ambeVoiceStreaming(void);
+// Something else to hear while the voice stream runs (beeps): called at the end of each audio block with the speaker
+// block, adds into it and returns true while it sounds (the speaker route is kept on for it). NULL = none
+typedef bool (*ambe_voice_mixer_t)(int16_t *spk);
+void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
 void ambeVoiceGetStats(ambe_voice_stats_t *out);
 // Zero the counters (the debug link's RESET_COUNTERS). Counters only: no state changes. From any task; an increment
 // racing the reset may survive it
