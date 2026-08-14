@@ -28,6 +28,9 @@ untracked sources in the built directories); only the few files that use it are 
 |---|---|---|
 | `CONFIG_FM` | y | analog FM receive and transmit |
 | `CONFIG_SUBTONE` | = FM | CTCSS / DCS encode and decode |
+| `CONFIG_FM_TX_TONES` | = FM | roger beep and 1750 Hz burst sent over the air (`docs/spec/radio-features.md` 3) |
+| `CONFIG_VOX` | n | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
+| `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
 | `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
@@ -45,6 +48,8 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO (not built yet) |
 | `CONFIG_DIAG` | y | the diagnostics page |
+| `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
+| `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
 | `CONFIG_FONT_XL` | n | 16x32 font, for 240 px and wider displays |
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is.

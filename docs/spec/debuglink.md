@@ -212,7 +212,8 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 4 | `dmr_stats` | call stack (`call.rx_calls rx_calls_played rx_late_entries rx_voice_bursts rx_lost_frames rx_dup_dropped rx_enc_dropped tx_calls tx_denied tx_underruns evq_overflows rx_private_calls rx_emergency_calls rx_encrypted_calls rx_pi_headers rx_alias_complete tx_alias_lcs`), AMBE voice (`voice.rx_in rx_frames rx_concealed rx_silence rx_calls rx_queue_max rx_bad rx_lost rx_underruns rx_overflows rx_bit_errors tx_frames tx_overflows`) |
 | 5 | `hotspot` | `hostlink` (idle / hotspot / cps), `hs.running hs.transmitting hs.receiving hs.rx_hz hs.tx_hz hs.cc hs.src hs.dst hs.group hs.from_net` and the engine counters `hs.net_frames ... hs.enter_attempts` |
 | 6 | `link` | `uptime_ms ui.screen` (home, quick, diag, hotspot) `input.idle_ms input.source input.raw_keys input.injected input.encoder_total dl.frames dl.bad_crc dl.too_long dl.timeouts` |
-| 7 | `dmr_data` | `data.built data.busy data.sms_state data.signal_state data.signal_kind data.signal_dst data.ars_state data.inbox_count data.inbox_unread data.serial data.event data.event_serial data.event_id data.ars_server data.radio_check_reply data.call_alert_ack data.lrrp_reply data.has_gps data.lrrp_triggers`, counters `data.rx_bursts rx_csbk rx_headers rx_blocks rx_blocks_stale rx_crc_errors rx_crc_flag_mismatch rx_packets rx_for_us rx_confirmed sms_received sms_duplicates sms_sent sms_acked sms_failed tms_acks_sent responses_sent csbk_answers_sent call_alerts_received radio_checks_received call_alerts_sent call_alerts_acked radio_checks_sent radio_checks_answered ars_sent ars_acks lrrp_requests lrrp_answers lrrp_no_fix tx_lists tx_ok tx_failed tx_gave_up tx_last_error` (meanings: `core/dmr/dmrDataService.h` dmrDataStats_t). States: `idle queued sending ok failed`; ARS `off registering registered refused no_answer`; `data.event` the last event's name (`sms_received`, `call_alert`, `radio_check_answered`, ...), `data.event_id` its radio ID |
+| 7 | `features` | `scan.built scan` (off, zone, vfo, dual) `scan_phase` (listen, probe, hold, resume, paused) `scan_skipped tot_warning tone_burst roger vox_keyed rx_sleeping battery` (ok, low, critical) `battery_pct battery_mv power_off`, `beep.built beep.played beep.no_stream beep.blocks beep.busy`, and the radio settings `set.tot_s set.tot_warn_s set.bcl set.roger_beep set.tx_inhibit set.scan_resume set.scan_hold_s set.scan_delay_ms set.scan_dwell_ms set.scan_priority set.beep_level set.key_beep set.vox set.vox_level set.vox_tail_ms set.rx_save set.rx_save_idle_s set.battery_off_s` (`docs/spec/radio-features.md`) |
+| 8 | `dmr_data` | `data.built data.busy data.sms_state data.signal_state data.signal_kind data.signal_dst data.ars_state data.inbox_count data.inbox_unread data.serial data.event data.event_serial data.event_id data.ars_server data.radio_check_reply data.call_alert_ack data.lrrp_reply data.has_gps data.lrrp_triggers`, counters `data.rx_bursts rx_csbk rx_headers rx_blocks rx_blocks_stale rx_crc_errors rx_crc_flag_mismatch rx_packets rx_for_us rx_confirmed sms_received sms_duplicates sms_sent sms_acked sms_failed tms_acks_sent responses_sent csbk_answers_sent call_alerts_received radio_checks_received call_alerts_sent call_alerts_acked radio_checks_sent radio_checks_answered ars_sent ars_acks lrrp_requests lrrp_answers lrrp_no_fix tx_lists tx_ok tx_failed tx_gave_up tx_last_error` (meanings: `core/dmr/dmrDataService.h` dmrDataStats_t). States: `idle queued sending ok failed`; ARS `off registering registered refused no_answer`; `data.event` the last event's name (`sms_received`, `call_alert`, `radio_check_answered`, ...), `data.event_id` its radio ID |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -247,6 +248,11 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 17 | none | `radio_req_dmr_call_back`: talk to the last call heard (its ID if private, its talkgroup if group) |
 | 18 | none | `radio_req_dmr_target_clear`: back to the channel's talk target |
 | 19 | type u8, key u16 | `radio_req_dmr_privacy`: basic privacy key in RAM, type 0 off, 1 Motorola BP (key 1-255), 2 Anytone BP (CONFIG_DMR_PRIVACY builds; never stored) |
+| 20 | cmd u8 [, pos u16] | `radio_req_scan`: 0 stop (stay where it is), 1 zone, 2 VFO (the band of the VFO frequency), 3 dual watch (pos = the second channel, required), 4 cancel (back to where it started), 5 nuisance delete (skip the current channel until the scan ends), 6 toggle (CONFIG_SCAN builds) |
+| 21 | lo u32, hi u32 | `radio_req_scan_vfo`: VFO scan from lo to hi Hz in the VFO step |
+| 22 | beep u8 | `radio_req_beep`: 1 key (only with `set.key_beep`), 2 error, 3 TX permit, 4 TX deny, 5 call end, 6 time-out warning, 7 battery low, 8 battery critical, 9 scan hold (CONFIG_BEEP builds) |
+| 23 | on u8 | `radio_req_tone_burst`: the 1750 Hz burst, keys up while on (FM channels, CONFIG_FM_TX_TONES builds) |
+| 24 | id u8, value u16 | one radio setting in RAM (`radio_set_settings`; not stored): 1 tot_s, 2 tot_warn_s, 3 bcl (0 off, 1 carrier, 2 wrong tone), 4 roger_beep, 5 tx_inhibit, 6 scan_resume (0 time, 1 carrier, 2 stop), 7 scan_hold_s, 8 scan_delay_ms, 9 scan_dwell_ms, 10 scan_priority, 11 beep_level (0-100), 12 key_beep, 13 vox (0 off, 1 channel, 2 all), 14 vox_level (0-10), 15 vox_tail_ms, 16 rx_save (0-3), 17 rx_save_idle_s, 18 battery_off_s, 19 scan_beep. Out of range: bad argument |
 
 Ops 15-18 last until the channel changes (`dmr.target_manual`). Unavailable ops answer UNAVAILABLE.
 
@@ -359,9 +365,10 @@ RESET_COUNTERS also zeroes the data service's counters. `odr_debug.py data sms|a
 
 RESET_COUNTERS zeroes: the board's diagnostics counters (`board.diag_reset`: on the DM-1701 the HR_C6000 slot engine
 counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`),
-the AMBE voice counters (`ambeVoiceResetStats`) and the DMR data service counters (`dmrDataServiceResetStats`). States and "last" values (last CC, last sync, engine TX state)
-are kept. The resets are not atomic with respect to the tasks and interrupts that count: an increment racing the
-reset may survive it; a test that resets, waits a moment and then starts its traffic is not affected.
+the AMBE voice counters (`ambeVoiceResetStats`), the beep counters (`beep_reset_stats`) and the DMR data service
+counters (`dmrDataServiceResetStats`). States and "last" values (last CC, last sync, engine TX state) are kept. The
+resets are not atomic with respect to the tasks and interrupts that count: an increment racing the reset may survive
+it; a test that resets, waits a moment and then starts its traffic is not affected.
 
 ## 6. Adding a command
 

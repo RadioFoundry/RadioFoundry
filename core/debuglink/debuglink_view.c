@@ -22,7 +22,8 @@ static const char *state_key(uint8_t s)
 static const char *deny_key(uint8_t d)
 {
 	static const char *const names[] = { "none", "rx_only", "band", "timeout", "no_freq", "mode", "no_codec",
-					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id" };
+					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
+					     "battery" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
@@ -129,7 +130,7 @@ static void link_section(dl_text_t *t)
 void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t)
 {
 	static const char *const names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
-							  "link", "dmr_data" };
+							  "link", "features", "dmr_data" };
 
 	if (section >= DL_VIEW_COUNT) {
 		return;
@@ -156,6 +157,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_LINK:
 		link_section(t);
+		break;
+	case DL_VIEW_FEATURES:
+		debuglink_view_radio(v, t);
 		break;
 	case DL_VIEW_DMR_DATA:
 		debuglink_view_dmr_data(t);

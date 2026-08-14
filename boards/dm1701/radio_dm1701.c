@@ -61,6 +61,9 @@ static struct {
 	uint32_t bus_errors;	// I2C failures and failed chip operations since start (debug)
 	dm1701_radio_diag_t diag;
 	radio_status_t last_status;	// returned without bus traffic while DMR transmits
+	uint16_t tone_hz;		// FM TX tone in place of the microphone (tx_tone), 0 = none
+	uint16_t saved_59, saved_79;	// AT1846S tone deviation and tone select before the tone
+	bool asleep;			// rx_sleep(true): receiver off
 
 	// DMR per-burst keying (shared with the modem ISRs)
 	volatile bool dmr_armed;	// tx() in DMR mode: TX frequency and drive known
@@ -597,6 +600,22 @@ static void set_mode(radio_mode_t mode)
 	apply_rx_tone();	// the mode table rewrote reg 0x3A
 }
 
+// Back from an FM TX tone (tx_tone): the microphone as the voice source again, the tone registers as they were
+static void tone_restore(void)
+{
+	if (r.tone_hz == 0) {
+		return;
+	}
+	uint8_t e0;
+	count(at1846s_modify(&r.rf, 0, 0x3A, 0xFF8F, 0x40));	// voice source: microphone
+	count(at1846s_write(&r.rf, 0, 0x59, r.saved_59));
+	count(at1846s_write(&r.rf, 0, 0x79, r.saved_79));
+	if (hrc6000_read(&r.modem, 4, 0xE0, &e0)) {
+		count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)(e0 | 0x40u)));
+	}
+	r.tone_hz = 0;
+}
+
 // Enter RX (hardware-dm1701.md 6): PA off first, RX supply for the band, AT1846S to RX, then the HR_C6000
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 {
@@ -608,6 +627,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
+	r.asleep = false;
+	tone_restore();
 	r.rx_hz = hz;
 	r.rx_bw = bw;
 	r.rx_tone = rx_tone != NULL ? *rx_tone : (subtone_t){ TONE_NONE, 0 };
@@ -760,6 +781,52 @@ static void volume(uint8_t percent)
 	}
 }
 
+// FM TX tone (hardware-dm1701.md 5.8): the AT1846S tone generator as the voice source with the HR_C6000 microphone
+// input muted (4:0xE0 bit 6 cleared). Unverified on the bench: how the AT1846S tone reaches the modulator while the
+// HR_C6000 does the two-point modulation. Only during FM TX; the next tx() / rx() reapplies the mode tables
+static bool tx_tone(uint16_t hz)
+{
+	if (!r.tx_on || r.mode != RADIO_MODE_FM) {
+		return false;
+	}
+	if (hz != 0) {
+		uint8_t e0;
+		bool ok = hrc6000_read(&r.modem, 4, 0xE0, &e0);
+		if (r.tone_hz == 0) {
+			uint16_t v;
+			r.saved_59 = at1846s_read(&r.rf, 0, 0x59, &v) ? v : 0;
+			r.saved_79 = at1846s_read(&r.rf, 0, 0x79, &v) ? v : 0;
+		}
+		if (ok) {
+			count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)(e0 & ~0x40u)));	// microphone muted
+		}
+		count(at1846s_write(&r.rf, 0, 0x35, (uint16_t)(hz * 10u)));		// tone1 = Hz x 10
+		count(at1846s_write(&r.rf, 0, 0x79, 0xC000));				// single tone
+		count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((0x40u << 6) | (r.saved_59 & 0x3Fu))));	// tone deviation
+		count(at1846s_modify(&r.rf, 0, 0x3A, 0xFF8F, 0x10));			// voice source: tone1
+		r.tone_hz = hz;
+	} else {
+		tone_restore();
+	}
+	return true;
+}
+
+// Receiver battery saving (FM receive only): the AT1846S idle and the RX supply off; waking retunes with rx()
+static void rx_sleep(bool sleep)
+{
+	if (r.mode != RADIO_MODE_FM || r.tx_on || !r.rx_valid || sleep == r.asleep) {
+		return;
+	}
+	if (sleep) {
+		count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
+		rx_supply(false, false);
+		r.asleep = true;
+	} else {
+		subtone_t tone = r.rx_tone;
+		rx(r.rx_hz, r.rx_bw, &tone);
+	}
+}
+
 const hal_radio_t dm1701_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -769,6 +836,8 @@ const hal_radio_t dm1701_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = volume,
+	.tx_tone = tx_tone,
+	.rx_sleep = rx_sleep,
 };
 
 void dm1701_radio_diag(dm1701_radio_diag_t *d)
