@@ -39,6 +39,17 @@ enum {
 	DL_CMD_INFO_CHIP	= 0x0B,
 	DL_CMD_READ_MEM		= 0x0C,
 	DL_CMD_REBOOT		= 0x0D,
+	DL_CMD_DMR_DATA		= 0x0E,	// DMR data service requests (debuglink_dmr_data.c)
+};
+
+// DL_CMD_DMR_DATA operations (first payload byte; docs/spec/debuglink.md 3.12). IDs are u32 little endian
+enum {
+	DL_DATA_OP_SMS = 1,		// dst u32, flags u8 (bit 0 group, bit 1 ACK requested), text (the rest, Latin-1)
+	DL_DATA_OP_CALL_ALERT,		// dst u32
+	DL_DATA_OP_RADIO_CHECK,		// dst u32
+	DL_DATA_OP_SETTINGS,		// ARS server u32 (0 off), flags u8 (bit 0 radio check reply, 1 call alert ack, 2 LRRP)
+	DL_DATA_OP_INBOX,		// index u8 (0 newest) -> src u32, dst u32, group u8, unread u8, text
+	DL_DATA_OP_MARK_READ,		// index u8
 };
 
 // Reply status (the first payload byte)
