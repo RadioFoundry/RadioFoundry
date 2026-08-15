@@ -38,7 +38,7 @@
 #define DMR_CALL_LBT_DMO_MS		120	// machine traffic: quiet needed before sending (gotcha 3.6)
 #define DMR_CALL_LBT_RMO_MS		180
 #define DMR_CALL_RMO_HANG_MS		3000	// machine traffic waits this long after a call through a repeater
-#define DMR_CALL_ALIGN_MS		1000	// DMO: reply aligned to a station heard this recently
+#define DMR_CALL_ALIGN_MS		300	// DMO: reply aligned to a station heard this recently (within the modem's slot memory, 390 ms on the HR_C6000)
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
 #define DMR_CALL_REPLY_WINDOW_S		10
