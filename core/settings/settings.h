@@ -81,6 +81,11 @@ typedef struct {
 	uint16_t rs_backlight_dim_s;
 	uint16_t rs_backlight_off_s;
 	uint16_t reserved3;
+	// The DMR data service's settings (dmrDataSettings_t, docs/spec/dmr-data.md); ds_stored 0 = never set
+	uint32_t ds_ars_server;		// ARS server ID, 0 = ARS off
+	uint8_t ds_flags;		// SETTINGS_DS_* bits
+	uint8_t ds_stored;		// 1 = the ds_ fields hold the data service's settings
+	uint16_t reserved4;
 } settings_t;
 
 // settings_t.rs_flags
@@ -89,6 +94,11 @@ typedef struct {
 #define SETTINGS_RS_SCAN_PRIORITY	0x04u
 #define SETTINGS_RS_SCAN_BEEP		0x08u
 #define SETTINGS_RS_KEY_BEEP		0x10u
+
+// settings_t.ds_flags
+#define SETTINGS_DS_RADIO_CHECK_REPLY	0x01u
+#define SETTINGS_DS_CALL_ALERT_ACK	0x02u
+#define SETTINGS_DS_LRRP_REPLY		0x04u
 
 typedef enum {
 	SETTINGS_RAM,		// no flash: defaults, nothing saved

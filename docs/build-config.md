@@ -34,10 +34,10 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
 | `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
-| `CONFIG_DMR_SMS` | = DMR | text messages (not ported yet) |
-| `CONFIG_DMR_ARS` | = DMR | ARS registration (not ported yet) |
-| `CONFIG_DMR_LRRP` | = DMR | LRRP location (not ported yet) |
-| `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert, radio check (not ported yet) |
+| `CONFIG_DMR_SMS` | = DMR | text messages: Motorola TMS receive (inbox, ACK) and send, with retries (docs/spec/dmr-data.md) |
+| `CONFIG_DMR_ARS` | = DMR | ARS registration with a presence server, at power-up and channel change, refreshed (off until a server ID is set) |
+| `CONFIG_DMR_LRRP` | = DMR | LRRP location answers (a radio without GPS answers "no fix"); builds core/dmr/dmrLrrp.c into the image |
+| `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert and radio check, answered and sent |
 | `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR to a USB network adapter (not ported yet) |
 | `CONFIG_SFR` | n | single frequency repeater (not ported yet) |
 | `CONFIG_USB` | y | USB device (CDC serial) |

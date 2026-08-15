@@ -66,6 +66,10 @@ changes have rested `SETTINGS_SAVE_DELAY_MS` (2 s), so turning the knob through 
 
 - The radio core (`radio_sm.c` `persist()`): VFO or channel mode, the zone, the channel number and its position,
   the VFO's frequency and settings, and the privacy key in use.
+- The radio core, for `radio_set_settings()`: the `rs_*` fields (TOT, busy channel lockout, scan, beeps, VOX,
+  battery saving, backlight times; `radio-features.md` 1). `rs_stored` 0 means the radio core's defaults.
+- The radio core's data tick, for the DMR data service (`dmr-data.md`): the `ds_*` fields (ARS server, radio
+  check reply, call alert ACK, LRRP reply). `ds_stored` 0 means the service's defaults.
 - The UI: brightness.
 - The CPS shim: the VFO when a CPS writes a changed VFO A record (`cps-protocol.md` 2.3).
 
@@ -93,7 +97,12 @@ codeplug's callsign.
 | VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz`, `vfo_mode`, `vfo_bw`, `vfo_power`, `vfo_cc`, `vfo_ts`, tone types and values |
 | preferences | `brightness`, `backlight_s`, `beeps`, `hotspot_allowed`, `master_power`, `usb_mode` |
 | identity | `dmr_id` (0 = the codeplug's), `radio_name[16]` ("" = the codeplug's callsign) |
-| privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (layout 1, appended by the merge with dmr-voice) |
+| privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (appended for dmr-voice) |
+| radio core settings | `rs_tot_s rs_tot_warn_s rs_bcl rs_flags` (roger beep, TX inhibit, scan priority, scan beep, key beep) `rs_scan_resume rs_scan_hold_s rs_beep_level rs_scan_delay_ms rs_scan_dwell_ms rs_vox rs_vox_level rs_vox_tail_ms rs_rx_save rs_stored rs_rx_save_idle_s rs_battery_off_s rs_backlight_dim_s rs_backlight_off_s` (appended for radio-features) |
+| DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply) `ds_stored` (appended for dmr-data) |
+
+All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
+payload is 120 bytes now (at most 236).
 
 ### 3.1 Privacy key slots (the hook for DMR basic privacy)
 

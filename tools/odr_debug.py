@@ -50,6 +50,9 @@ INJECT_MAX_S = 10.0
 
 PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, KEY, PTT, GET_LOG, GET_VIEW, RADIO, INFO_CHIP, READ_MEM, \
     REBOOT = range(1, 14)
+DMR_DATA = 0x0E
+DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
+SMS_TEXT_MAX = REQ_MAX - 6          # op, u32 destination, flags
 CMD_ERROR = 0xFF
 STATUS = {0: "ok", 1: "unknown command", 2: "bad argument", 3: "busy", 4: "unavailable", 5: "bad CRC",
           6: "request too long", 7: "refused"}
@@ -74,7 +77,7 @@ ACTIONS = {"up": 1, "down": 2, "left": 3, "right": 4, "select": 5, "ok": 5, "gre
 ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
-VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features",
+VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
@@ -465,6 +468,43 @@ class DebugLink:
         """One radio setting in RAM (not stored): a SETTINGS name or id, value u16."""
         self.radio(OP_SETTING, struct.pack("<BH", SETTINGS[name] if isinstance(name, str) else name, int(value)))
 
+    # DMR data service (docs/spec/debuglink.md 3.12): requests go through the service's mailbox, so a busy answer
+    # means one of the kind is still queued (request() retries it for 2 s). Results: the dmr_data view section
+    def data_request(self, op, args=b""):
+        return self.request(DMR_DATA, bytes([op]) + bytes(args))[1]
+
+    def sms(self, dst, text, group=False, ack=True):
+        """Send a text message (Motorola TMS); text is Latin-1, at most SMS_TEXT_MAX characters here."""
+        t = text.encode("latin-1", "replace")[:SMS_TEXT_MAX]
+        self.data_request(DATA_OP_SMS, struct.pack("<IB", int(dst) & 0xFFFFFF, (1 if group else 0) |
+                                                   (2 if ack else 0)) + t)
+
+    def call_alert(self, dst):
+        self.data_request(DATA_OP_CALL_ALERT, struct.pack("<I", int(dst) & 0xFFFFFF))
+
+    def radio_check(self, dst):
+        self.data_request(DATA_OP_RADIO_CHECK, struct.pack("<I", int(dst) & 0xFFFFFF))
+
+    def data_settings(self, ars_server=0, radio_check_reply=False, call_alert_ack=True, lrrp_reply=True):
+        """The data service settings in RAM (not saved): ARS server ID (0 off) and the answer switches."""
+        flags = (1 if radio_check_reply else 0) | (2 if call_alert_ack else 0) | (4 if lrrp_reply else 0)
+        self.data_request(DATA_OP_SETTINGS, struct.pack("<IB", int(ars_server) & 0xFFFFFF, flags))
+
+    def inbox(self, index=0):
+        """Inbox message index (0 newest) as a dict, None when there is none."""
+        try:
+            r = self.data_request(DATA_OP_INBOX, bytes([index]))
+        except DebugLinkError as e:
+            if e.status == 4:
+                return None
+            raise
+        src, dst, group, unread = struct.unpack_from("<IIBB", r)
+        return {"src": src, "dst": dst, "group": bool(group), "unread": bool(unread),
+                "text": r[10:].decode("latin-1")}
+
+    def mark_read(self, index=0):
+        self.data_request(DATA_OP_MARK_READ, bytes([index]))
+
 
 # ── pictures ────────────────────────────────────────────────────────────────
 
@@ -675,6 +715,32 @@ def cmd_radio(link, a):
     return 0
 
 
+def cmd_data(link, a):
+    args = a.args
+    if a.op == "sms":
+        if len(args) < 2:
+            print("data sms: ID TEXT", file=sys.stderr)
+            return 2
+        link.sms(int(args[0], 0), " ".join(args[1:]), group=a.group, ack=not a.no_ack)
+    elif a.op in ("alert", "check"):
+        if len(args) != 1:
+            print(f"data {a.op}: ID", file=sys.stderr)
+            return 2
+        (link.call_alert if a.op == "alert" else link.radio_check)(int(args[0], 0))
+    elif a.op == "settings":
+        if not args:
+            print("data settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp]", file=sys.stderr)
+            return 2
+        link.data_settings(int(args[0], 0), "check-reply" in args, "no-alert-ack" not in args, "no-lrrp" not in args)
+    elif a.op == "inbox":
+        m = link.inbox(int(args[0]) if args else 0)
+        print("empty" if m is None else f"from {m['src']} to {m['dst']}{' (group)' if m['group'] else ''}"
+              f"{' unread' if m['unread'] else ''}: {m['text']}")
+    elif a.op == "read":
+        link.mark_read(int(args[0]) if args else 0)
+    return 0
+
+
 def decode_chip(r):
     idcode, flash_kb, u0, u1, u2, optcr, rdp, rdp_byte, wrp, bor, user = struct.unpack_from("<IH3IIBBHBB", r)
     return {"idcode": idcode, "dev_id": idcode & 0xFFF, "rev_id": idcode >> 16, "flash_kb": flash_kb,
@@ -815,6 +881,12 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set"])
     p.add_argument("args", nargs="*")
+    p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
+    p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read"])
+    p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack]; alert / check: ID; settings: "
+                   "ARS_ID [check-reply] [no-alert-ack] [no-lrrp]; inbox / read: [INDEX]")
+    p.add_argument("--group", action="store_true")
+    p.add_argument("--no-ack", action="store_true")
     p = sub.add_parser("log")
     p.add_argument("--follow", action="store_true")
     sub.add_parser("chip")
@@ -853,6 +925,8 @@ def main(argv=None):
                 print(f"PTT held {a.seconds:g} s, released")
             elif a.cmd == "radio":
                 return cmd_radio(link, a)
+            elif a.cmd == "data":
+                return cmd_data(link, a)
             elif a.cmd == "chip":
                 print_chip(link.chip())
             elif a.cmd == "dump":

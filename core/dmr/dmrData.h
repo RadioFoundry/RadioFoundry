@@ -113,6 +113,9 @@ typedef enum
 extern dmrDataPacket_t dmrDataRxPacket;
 
 uint32_t dmrDataCRC32(const uint8_t *data, int length);
+// The CRC-CCITT of a 12-octet CSBK / header / MBC info field (octets 10-11) with its mask (CSBK 0xA5, data header
+// 0xCC, MBC 0xAA, as one octet repeated)
+bool dmrDataCheckCRC16(const uint8_t *burst12, uint8_t mask);
 
 // TX builders. Each returns the number of bursts written to out, or 0 if the data does not fit
 int dmrDataBuildCSBK(const uint8_t csbk[10], dmrBurst_t *out);

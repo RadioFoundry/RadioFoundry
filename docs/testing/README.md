@@ -99,6 +99,7 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 ```
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx" --sdr-ppm 0.7
+python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk         # needs $ODR_RADIODESK_MQTT_*
 ```
 
@@ -107,6 +108,7 @@ python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk 
 | `test_dmr_rx`, `test_dmr_voice` | the bench modem sends calls; the radio's counters show every burst, every voice frame reaches the speaker path |
 | `test_dmr_tx` | the radio keys 3 s; an SDR capture (`sdrmon.py`) and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
 | `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz; `tools/sdr_fm_check.py` decodes the tones and compares the deviations |
+| `test_dmr_data` | the bench sends data, a text message, a call alert and radio checks to the radio, which answers (its `dmr_data` counters, the answers heard by the bench modem); the radio sends a call alert, a radio check and a text message the bench modem hears (`docs/spec/dmr-data.md`) |
 | `test_radiodesk_alert` | a sandbox alert (MQTT `ESS/RadioDesk/Alert/<radio id>/voice`) becomes a private call; the radio shows and plays it; RadioDesk's `AlertStatus` reports |
 
 The SDR bench's names come from the environment: `ODR_SDR_BENCH_HOST` (ssh host or alias, default `sdr-bench`),

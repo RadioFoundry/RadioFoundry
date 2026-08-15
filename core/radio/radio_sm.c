@@ -19,6 +19,9 @@
 #include "dmr/dmrPrivacy.h"
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
+#if CONFIG_DMR_DATA_CORE
+#include "dmr/dmrDataService.h"
+#endif
 
 // The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
 #ifndef RADIO_DMR_ID_DEFAULT
@@ -725,7 +728,7 @@ static uint8_t dmr_deny_reason(uint8_t err)
 static bool dmr_tx_phase(uint8_t phase)
 {
 	return phase == DMR_CALL_PHASE_TX_ACCESS || phase == DMR_CALL_PHASE_TX_WAKEUP ||
-		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING;
+		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING || phase == DMR_CALL_PHASE_TX_DATA;
 }
 
 static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *out)
@@ -757,6 +760,7 @@ static void dmr_publish(radio_sm_t *sm)
 	case DMR_CALL_PHASE_TX_WAKEUP: d->state = RDMR_TX_WAIT; break;
 	case DMR_CALL_PHASE_TX_VOICE: d->state = RDMR_TX; break;
 	case DMR_CALL_PHASE_TX_ENDING: d->state = RDMR_TX_ENDING; break;
+	case DMR_CALL_PHASE_TX_DATA: d->state = RDMR_TX_DATA; break;
 	default: d->state = RDMR_IDLE; break;
 	}
 	d->codec = sm->codec;
@@ -873,6 +877,170 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	dmr_call_poll(now_ms);
 	dmr_follow(sm, now_ms);
 }
+
+#if CONFIG_DMR_DATA_CORE
+// --- DMR data: the data service (core/dmr/dmrDataService.c) on the call stack. The service decides what to send and
+// when (listen before talk, retries); this side checks the channel allows it, arms the board's per-burst keying as
+// PTT does, and lends the list to the stack. dmr_follow releases the keying once the stack is off the air ---
+
+static struct {
+	const dmrBurst_t *list;		// the service's buffer, valid until dmrDataServiceTxDone
+	int count, next;
+} data_tx;
+
+static bool data_next(dmr_tx_burst_t *out, void *ctx)
+{
+	(void)ctx;
+	if (data_tx.list == NULL || data_tx.next >= data_tx.count) {
+		return false;
+	}
+	const dmrBurst_t *d = &data_tx.list[data_tx.next++];
+	memset(out, 0, sizeof(*out));
+	out->kind = d->dataType;
+	out->host_crc = (d->flags & DMR_BURST_FLAG_MCU_CRC) != 0;	// CRC_MCU_Control (gotcha 5.1)
+	out->sync_override = DMR_SYNC_NONE;
+	out->len = d->length <= DMR_PAYLOAD_MAX ? d->length : DMR_PAYLOAD_MAX;
+	memcpy(out->payload, d->payload, out->len);
+	return true;
+}
+
+static void data_done(uint8_t err, void *ctx)
+{
+	(void)ctx;
+	data_tx.list = NULL;
+	dmrDataServiceTxDone(err);
+}
+
+// Every data / control burst the stack heard on our slot
+static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
+{
+	(void)ctx;
+	dmrBurst_t d;
+	d.dataType = b->kind;
+	d.length = b->len <= DMR_BURST_PAYLOAD_MAX ? b->len : DMR_BURST_PAYLOAD_MAX;
+	d.flags = b->crc_ok ? 0 : DMR_BURST_FLAG_RX_CRC_ERROR;
+	memcpy(d.payload, b->payload, d.length);
+	dmrDataServiceRxBurst(&d, now_ms);
+}
+
+static bool data_can_send(const radio_sm_t *sm)
+{
+	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.vfo &&
+		tx_check(sm) == TXDENY_NONE && sm->view.dmr.own_id != 0;
+}
+
+static bool data_tx_start(const dmrBurst_t *bursts, int count, void *ctx)
+{
+	radio_sm_t *sm = ctx;
+	if (!data_can_send(sm) || sm->ptt || count <= 0) {
+		return false;
+	}
+	if (!sm->dmr_keyed) {
+		static const subtone_t none = { TONE_NONE, 0 };
+		const channel_t *ch = &sm->view.ch;
+		if (!board.radio->tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+			return false;
+		}
+		sm->dmr_keyed = true;
+	}
+	data_tx.list = bursts;
+	data_tx.count = count;
+	data_tx.next = 0;
+	dmr_data_source_t src = { .next = data_next, .done = data_done, .ctx = NULL,
+				  .count = (uint8_t)(count > 255 ? 255 : count) };
+	if (!dmr_call_data_tx(&src)) {
+		data_tx.list = NULL;
+		return false;	// the keying is released by dmr_follow (the stack isn't transmitting)
+	}
+	return true;
+}
+
+static bool data_channel_clear(uint32_t now_ms, void *ctx)
+{
+	(void)ctx;
+	return dmr_call_channel_clear(now_ms);
+}
+
+static bool data_in_rx_group(uint32_t tg, void *ctx)
+{
+	const radio_sm_t *sm = ctx;
+	for (uint16_t i = 0; i < sm->listen_count; i++) {
+		if (sm->listen[i] == tg) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The data service's settings as last saved: a change (dmr_data_set_settings, applied by the service's tick) is
+// noted in the settings store from data_tick
+static dmrDataSettings_t data_saved;
+
+static void data_save_settings(uint32_t now_ms)
+{
+	dmrDataSettings_t cur;
+	dmrDataServiceGetSettings(&cur);
+	if (cur.arsServer == data_saved.arsServer && cur.radioCheckReply == data_saved.radioCheckReply &&
+	    cur.callAlertAck == data_saved.callAlertAck && cur.lrrpReply == data_saved.lrrpReply) {
+		return;
+	}
+	data_saved = cur;
+	settings_t *st = settings_begin();
+	st->ds_ars_server = cur.arsServer;
+	st->ds_flags = (uint8_t)((cur.radioCheckReply ? SETTINGS_DS_RADIO_CHECK_REPLY : 0) |
+				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
+				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0));
+	st->ds_stored = 1;
+	settings_end(now_ms);
+}
+
+static void data_init(radio_sm_t *sm)
+{
+	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
+			     .inRxGroup = data_in_rx_group, .ctx = sm };
+	// No auto-transmit features until the user turns them on (docs/ux/principles.md): no ARS server, no radio
+	// check auto-reply. Call alerts are acknowledged (that is what makes them work); LRRP answers "no fix" without
+	// a position source
+	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
+				  .hasGps = false };
+	settings_t st;
+	settings_read(&st);
+	if (st.ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
+		set.arsServer = st.ds_ars_server <= 0xFFFFFFu ? st.ds_ars_server : 0;
+		set.radioCheckReply = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
+		set.callAlertAck = (st.ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
+		set.lrrpReply = (st.ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
+	}
+	data_saved = set;
+	data_tx.list = NULL;
+	dmrDataServiceInit(&env);
+	dmrDataServiceSetSettings(&set);
+	dmr_call_set_data_rx(data_rx, NULL);
+}
+
+static void data_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	const channel_t *ch = &sm->view.ch;
+	dmrDataChannel_t c = {
+		.ownId = sm->view.dmr.own_id,
+		.talkGroup = sm->talk_private ? 0 : sm->talk_id,
+		.rmo = sm->view.dmr.rmo,
+		.canTransmit = data_can_send(sm),
+	};
+	uint32_t h = 2166136261u;	// FNV-1a of what a registration is for
+	uint32_t vals[] = { ch->rx_hz, ch->tx_hz, sm->view.dmr.ts, sm->view.dmr.cc };
+	for (unsigned i = 0; i < sizeof(vals) / sizeof(vals[0]); i++) {
+		h = (h ^ vals[i]) * 16777619u;
+	}
+	c.channelKey = h;
+	dmrDataServiceTick(now_ms, &c);
+	data_save_settings(now_ms);
+	if (sm->power_off_req && sm->power_off_busy) {
+		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
+	}
+}
+#endif
+
 #else
 static void dmr_begin(radio_sm_t *sm) { (void)sm; }
 static void dmr_end(radio_sm_t *sm) { (void)sm; }
@@ -1659,6 +1827,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_BEEP
 	ambeVoiceSetMixer(beep_mix);	// beeps while the voice stream owns the PCM audio
 #endif
+#if CONFIG_DMR_DATA_CORE
+	data_init(sm);
+#endif
 #endif
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
@@ -1986,6 +2157,10 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		hotspot_leave(sm, now_ms);
 		break;
 #endif
+	case RREQ_POWER_OFF:
+		sm->power_off_req = true;
+		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
+		break;
 	case RREQ_RELOAD:
 		if (busy || sm->ptt) {
 			sm->reload_pending = true;	// after the transmission or the hotspot (radio_sm_poll)
@@ -2307,11 +2482,14 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 #if CONFIG_DMR
-	if (!sm->dmr_running) {
-		return;
+	if (sm->dmr_running) {
+		dmr_call_poll(now_ms);
+		dmr_follow(sm, now_ms);
 	}
-	dmr_call_poll(now_ms);
-	dmr_follow(sm, now_ms);
+#if CONFIG_DMR_DATA_CORE
+	data_tick(sm, now_ms);	// also off DMR: requests fail at once, ARS keeps its state. A list it starts is queued
+				// to the modem at once (dmr_call_data_tx)
+#endif
 #else
 	(void)sm;
 	(void)now_ms;

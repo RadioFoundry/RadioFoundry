@@ -92,6 +92,7 @@ typedef enum {
 	RREQ_BEEP,		// arg: beep_t
 	RREQ_TONE_BURST,	// arg: 1 on, 0 off
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
+	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done)
 	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
 } radio_req_type_t;
 
@@ -173,6 +174,8 @@ typedef struct {
 #endif
 	uint32_t codeplug_serial;	// codeplug_serial() when the zone and channel were last read
 	bool reload_pending;		// RREQ_RELOAD came while busy
+	bool power_off_req;		// RREQ_POWER_OFF seen
+	bool power_off_busy;		// still sending what has to go out before the supply drops
 #if CONFIG_DMR
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
 	bool codec;			// the vocoder is present

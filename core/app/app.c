@@ -41,11 +41,16 @@
 #define START_TASK_STACK	512	// words
 #define HOUSEKEEPING_MS		100
 #define POWER_OFF_TX_MS		200	// after the PTT release, before the latch drops
+#define POWER_OFF_DEREG_MS	3000	// at most this long for the ARS deregistration (gotcha 7.4)
 
 static void power_off(void)
 {
 	radio_req_ptt(false);		// stop any transmission first
+	radio_req_power_off();		// then what has to go out before the supply drops (ARS deregistration)
 	hal_delay_ms(POWER_OFF_TX_MS);
+	for (unsigned t = 0; t < POWER_OFF_DEREG_MS && radio_power_off_busy(); t += 50) {
+		hal_delay_ms(50);
+	}
 	settings_flush();		// unsaved changes (the debounce hadn't run out yet)
 	board.display->set_backlight(0);
 	board.power->latch(false);

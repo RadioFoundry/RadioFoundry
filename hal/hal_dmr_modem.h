@@ -37,6 +37,7 @@ typedef enum {
 	DMR_BURST_RATE_34_DATA = 0x8,
 	DMR_BURST_IDLE = 0x9,
 	DMR_BURST_RATE_1_DATA = 0xA,
+	DMR_BURST_USBD = 0xB,		// unified single block data
 } dmr_burst_kind_t;
 
 #define DMR_VOICE_BYTES		27	// three 72-bit AMBE+2 frames

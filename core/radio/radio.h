@@ -77,6 +77,7 @@ typedef enum {
 	RDMR_TX_WAIT,		// PTT held: waiting for the channel or waking the repeater
 	RDMR_TX,		// on air
 	RDMR_TX_ENDING,		// PTT released: finishing the superframe
+	RDMR_TX_DATA,		// sending data / a CSBK for the data service (SMS, ACK, call alert, ...)
 } radio_dmr_state_t;
 
 typedef struct {
@@ -231,6 +232,10 @@ void radio_set_settings(const radio_settings_t *s);
 void radio_get_settings(radio_settings_t *s);
 // view.power_off without copying the view (the housekeeping task polls it)
 bool radio_power_off_wanted(void);
+// Switching off: the radio core sends what has to go out first (the ARS deregistration). radio_power_off_busy() is
+// true until that is done; the caller gives up after a few seconds (gotcha 7.4)
+void radio_req_power_off(void);
+bool radio_power_off_busy(void);
 // The backlight percent for the UI: batt_backlight_pct with the settings and the current battery level
 uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms);
 #if CONFIG_HOTSPOT

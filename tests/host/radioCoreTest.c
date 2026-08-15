@@ -11,6 +11,7 @@
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
+#include "dmr/dmr_data_api.h"
 
 static int failures;
 static int checks;
@@ -1178,6 +1179,32 @@ static void test_persist(void)
 	settings_end(now);
 	boot();
 	CHECK(sm.set.tot_s == RADIO_TOT_DEFAULT_S && sm.set.key_beep && !sm.set.roger_beep);
+
+	// The DMR data service's settings: saved when they change, back after a reboot
+	dmrDataSettings_t ds;
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck);
+	ds.arsServer = 3100999;
+	ds.radioCheckReply = true;
+	ds.callAlertAck = false;
+	dmr_data_set_settings(&ds);
+	run(50);
+	settings_read(&cur);
+	CHECK(cur.ds_stored == 1 && cur.ds_ars_server == 3100999 && cur.ds_flags == (SETTINGS_DS_RADIO_CHECK_REPLY |
+											SETTINGS_DS_LRRP_REPLY));
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100999 && ds.radioCheckReply && !ds.callAlertAck && ds.lrrpReply);
+	settings_begin()->ds_stored = 0;
+	settings_end(now);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck);
+
+	// Power off: nothing to deregister, so the radio core is done at once
+	req(RREQ_POWER_OFF, 0);
+	run(50);
+	CHECK(sm.power_off_req && !sm.power_off_busy);
 	setup_codeplug();
 	start();
 }
