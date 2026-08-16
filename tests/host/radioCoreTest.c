@@ -10,6 +10,8 @@
 #include "dmr/call/dmr_lc.h"
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
+#include "settings/settings.h"
+#include "dmr/dmr_data_api.h"
 
 static int failures;
 static int checks;
@@ -107,7 +109,9 @@ static zone_t zones[3];
 static uint16_t nzones;
 static codeplug_source_t source = CODEPLUG_LEGACY;
 
+static uint32_t cp_serial;
 codeplug_source_t codeplug_source(void) { return source; }
+uint32_t codeplug_serial(void) { return cp_serial; }
 uint16_t codeplug_channel_count(void) { return NCH; }
 bool codeplug_channel(uint16_t n, channel_t *out)
 {
@@ -263,8 +267,25 @@ static void signal(uint8_t noise, bool tone_ok)
 	hw.st.rssi_dbm = noise < 50 ? -80 : -125;
 }
 
+void storage_lock(void) {}
+void storage_unlock(void) {}
+void storage_quick_lock(void) {}
+void storage_quick_unlock(void) {}
+
+// A boot with the settings as they are (RAM only here: the fake board has no flash)
+static void boot(void)
+{
+	ambeVoiceStop();
+	memset(&aud, 0, sizeof(aud));
+	sim_reset();
+	memset(&hw, 0, sizeof(hw));
+	signal(120, true);
+	radio_sm_init(&sm, now);
+}
+
 static void start(void)
 {
+	settings_init();	// nothing saved: the defaults
 	ambeVoiceStop();	// a stream left from the last test
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
@@ -1069,6 +1090,125 @@ static void test_hotspot(void)
 	CHECK(hw.tx_off_calls == off0 + 1);	// never armed: no TX frequency was set
 }
 
+// The position, the VFO and the preferences come back after a reboot (core/settings), temporary changes don't, and
+// a codeplug change underneath moves the radio to a channel that still exists
+static void test_persist(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_ZONE, 1);
+	CHECK(sm.view.zone_index == 1 && sm.view.channel_number == 6);
+	boot();
+	CHECK(!sm.view.vfo && sm.view.zone_index == 1 && sm.view.channel_number == 6);
+	req(RREQ_ZONE, 0);
+	req(RREQ_ZONE_POS, 3);
+	CHECK(sm.view.channel_number == 4);
+	boot();
+	CHECK(sm.view.zone_index == 0 && sm.view.zone_pos == 3 && sm.view.channel_number == 4);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.board_mode == RADIO_MODE_DMR);
+
+	// The VFO and its settings
+	req(RREQ_VFO_SET, 145600000);
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_TX, (subtone_t){ TONE_CTCSS, 1000 }));
+	CHECK(sm.view.vfo);
+	boot();
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 145600000 && sm.view.ch.bw == RADIO_BW_25K);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 1000 && hw.rx_hz == 145600000);
+	req(RREQ_VFO, 0);
+	boot();
+	CHECK(!sm.view.vfo && sm.view.channel_number == 4);
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.ch.rx_hz == 145600000);	// the VFO kept its frequency while on the channel
+	req(RREQ_VFO, 0);
+
+	// Temporary changes are not saved; the base squelch, master power and DMR ID override are preferences
+	req(RREQ_SQUELCH, 2);
+	CHECK(sm.view.temporary);
+	boot();
+	CHECK(!sm.view.temporary && sm.view.squelch == RADIO_SQUELCH_DEFAULT);
+	settings_t *st = settings_begin();
+	st->squelch = 2;
+	st->master_power = 0;
+	st->dmr_id = 1234567;
+	settings_end(now);
+	req(RREQ_RELOAD, 0);
+	CHECK(sm.view.squelch == 2 && !sm.view.temporary);
+	CHECK(sm.view.dmr.own_id == 1234567);
+	req(RREQ_ZONE_POS, 0);			// "Simplex": default power = the master power now
+	CHECK(sm.view.power == 0);
+	boot();
+	CHECK(sm.view.squelch == 2 && sm.view.power == 0 && sm.view.dmr.own_id == 1234567);
+
+	// The codeplug changes underneath: the channel is deleted, the radio moves on to the next one in the zone
+	req(RREQ_ZONE_POS, 3);
+	CHECK(sm.view.channel_number == 4);
+	used[4] = false;
+	cp_serial++;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.channel_number == 5 && sm.view.zone_pos == 4);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.board_mode == RADIO_MODE_FM);
+	boot();
+	CHECK(sm.view.channel_number == 5);
+	// Renamed in place: the new name shows
+	strcpy(chans[5].name, "Air 2");
+	cp_serial++;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.channel_number == 5 && strcmp(sm.view.ch.name, "Air 2") == 0);
+	// A saved zone that no longer exists: the first zone
+	req(RREQ_ZONE, 2);
+	nzones = 2;
+	boot();
+	CHECK(sm.view.zone_index == 0);
+
+	// The radio core's settings (radio_set_settings) are saved and in effect after a reboot
+	radio_settings_t rs;
+	radio_settings_default(&rs);
+	CHECK(sm.set.tot_s == rs.tot_s && sm.set.key_beep);
+	rs.tot_s = 45;
+	rs.key_beep = false;
+	rs.roger_beep = true;
+	rs.vox_level = 99;			// clamped to 10
+	radio_sm_set_settings(&sm, &rs, now);
+	settings_t cur;
+	settings_read(&cur);
+	CHECK(cur.rs_stored == 1 && cur.rs_tot_s == 45 && cur.rs_vox_level == 10);
+	boot();
+	CHECK(sm.set.tot_s == 45 && !sm.set.key_beep && sm.set.roger_beep && sm.set.vox_level == 10);
+	settings_begin()->rs_stored = 0;	// never set: the defaults
+	settings_end(now);
+	boot();
+	CHECK(sm.set.tot_s == RADIO_TOT_DEFAULT_S && sm.set.key_beep && !sm.set.roger_beep);
+
+	// The DMR data service's settings: saved when they change, back after a reboot
+	dmrDataSettings_t ds;
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck);
+	ds.arsServer = 3100999;
+	ds.radioCheckReply = true;
+	ds.callAlertAck = false;
+	dmr_data_set_settings(&ds);
+	run(50);
+	settings_read(&cur);
+	CHECK(cur.ds_stored == 1 && cur.ds_ars_server == 3100999 && cur.ds_flags == (SETTINGS_DS_RADIO_CHECK_REPLY |
+											SETTINGS_DS_LRRP_REPLY));
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100999 && ds.radioCheckReply && !ds.callAlertAck && ds.lrrpReply);
+	settings_begin()->ds_stored = 0;
+	settings_end(now);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck);
+
+	// Power off: nothing to deregister, so the radio core is done at once
+	req(RREQ_POWER_OFF, 0);
+	run(50);
+	CHECK(sm.power_off_req && !sm.power_off_busy);
+	setup_codeplug();
+	start();
+}
+
 // The air header's LC of the last transmission that started at air[first]
 static void air_lc(unsigned first, dmr_lc_t *l)
 {
@@ -1224,6 +1364,7 @@ static void test_dmr_voice_features(void)
 int main(void)
 {
 	test_startup();
+	test_persist();
 	test_channel_step();
 	test_squelch();
 	test_tx();

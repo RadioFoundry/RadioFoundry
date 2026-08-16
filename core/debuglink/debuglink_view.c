@@ -9,6 +9,12 @@
 #include "hostlink/hostlink.h"
 #include "input/input.h"
 #include "ui/ui.h"
+#include "codeplug/codeplug.h"
+#include "settings/settings.h"
+#include "storage/storage.h"
+#if CONFIG_CPS_LEGACY
+#include "cps/cps_legacy.h"
+#endif
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
@@ -127,10 +133,44 @@ static void link_section(dl_text_t *t)
 		(unsigned)c[2], (unsigned)c[3]);
 }
 
+static void storage_section(dl_text_t *t)
+{
+	static const char *const loads[] = { "ram", "defaults", "loaded", "upgraded" };
+	static const char *const sources[] = { "none", "builtin", "legacy" };
+	settings_stats_t ss;
+	storage_stats_t st;
+	codeplug_source_t src = codeplug_source();
+
+	settings_get_stats(&ss);
+	storage_get_stats(&st);
+	dl_text(t, "settings.load=%s\nsettings.dirty=%u\nsettings.seq=%u\n", ss.load < 4 ? loads[ss.load] : "?", ss.dirty,
+		(unsigned)ss.seq);
+	dl_text(t, "settings.saves=%u\nsettings.erases=%u\nsettings.failures=%u\n", (unsigned)ss.saves,
+		(unsigned)ss.erases, (unsigned)ss.failures);
+	dl_text(t, "settings.sector=%u\nsettings.slot=%u\nsettings.skipped=%u\n", ss.sector, ss.slot, ss.skipped);
+	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
+		(unsigned)st.sector_skips);
+	dl_text(t, "storage.replays=%u\nstorage.errors=%u\n", (unsigned)st.replays, (unsigned)st.errors);
+	dl_text(t, "codeplug.source=%s\ncodeplug.serial=%u\n", (unsigned)src < 3 ? sources[src] : "?",
+		(unsigned)codeplug_serial());
+#if CONFIG_CPS_LEGACY
+	cps_stats_t c;
+
+	cps_get_stats(&c);
+	dl_text(t, "cps.built=1\ncps.requests=%u\ncps.reads=%u\ncps.commits=%u\n", (unsigned)c.requests,
+		(unsigned)c.reads, (unsigned)c.commits);
+	dl_text(t, "cps.refused=%u\ncps.overflows=%u\ncps.last=0x%02x\n", (unsigned)c.refused, (unsigned)c.overflows,
+		c.last);
+	dl_text(t, "cps.session=%u\ncps.pending=%u\n", c.session, c.pending);
+#else
+	dl_text(t, "cps.built=0\n");
+#endif
+}
+
 void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t)
 {
 	static const char *const names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
-							  "link", "features", "dmr_data" };
+							  "link", "features", "dmr_data", "storage" };
 
 	if (section >= DL_VIEW_COUNT) {
 		return;
@@ -163,6 +203,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_DMR_DATA:
 		debuglink_view_dmr_data(t);
+		break;
+	case DL_VIEW_STORAGE:
+		storage_section(t);
 		break;
 	default:
 		break;

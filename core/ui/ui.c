@@ -37,6 +37,7 @@
 #include "input/input.h"
 #include "radio/radio.h"
 #include "radio/tones.h"
+#include "settings/settings.h"
 #include "config.h"
 #if CONFIG_HOTSPOT
 #include "hostlink/hostlink.h"
@@ -221,6 +222,8 @@ static void quick_change(int tile, int8_t dir)
 	case QT_BRIGHTNESS: {
 		int b = st.brightness + dir * 10;
 		st.brightness = (uint8_t)(b < 10 ? 10 : b > 100 ? 100 : b);
+		settings_begin()->brightness = st.brightness;	// kept across power cycles
+		settings_end(hal_millis());
 		break;
 	}
 	default:
@@ -580,7 +583,9 @@ static void ui_task(void *arg)
 {
 	(void)arg;
 	bool have_fb = gfx_init(board.display);
-	st.brightness = 100;
+	settings_t saved;
+	settings_read(&saved);
+	st.brightness = saved.brightness >= 10 && saved.brightness <= 100 ? saved.brightness : 100;
 	input_event_t ev;
 
 	if (have_fb) {
