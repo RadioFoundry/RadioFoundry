@@ -48,6 +48,9 @@ CONFIG_VFO_FM ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_FM))),
 CONFIG_VFO_DMR ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_DMR))),y,n)
 # the debug link: framed commands on the host port for bench automation (docs/spec/debuglink.md; needs HOSTLINK)
 CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
+# the legacy CPS protocol shim on the host port, so qdmr and the legacy CPS can read and write the codeplug
+# (docs/spec/legacy-cps-interop.md; needs HOSTLINK)
+CONFIG_CPS_LEGACY ?= $(CONFIG_HOSTLINK)
 # the diagnostics page
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
@@ -64,7 +67,8 @@ CONFIG_VOX ?= n
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_IP_GATEWAY SFR \
-	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK VFO VFO_FM VFO_DMR DIAG FONT_XL SCAN BEEP FM_TX_TONES VOX BATTERY_SAVE
+	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL SCAN BEEP FM_TX_TONES VOX \
+	BATTERY_SAVE
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -82,6 +86,11 @@ endif
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)
+  endif
+endif
+ifneq ($(call feature_on,CPS_LEGACY),)
+  ifeq ($(call feature_on,HOSTLINK),)
+    $(error CONFIG_CPS_LEGACY=y needs CONFIG_HOSTLINK=y)
   endif
 endif
 ifneq ($(call feature_on,USB_NETWORK),)

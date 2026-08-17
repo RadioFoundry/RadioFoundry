@@ -14,7 +14,7 @@ FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c
 
 TSHARK  ?= $(firstword $(wildcard /Applications/Wireshark*.app/Contents/MacOS/tshark) $(shell command -v tshark))
 
-TESTS   := dmrFecTest sfrTest dmrDataTest dmrDataServiceTest dmrDataServiceArsTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
+TESTS   := dmrFecTest sfrTest dmrDataTest dmrDataServiceTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
            ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared
 
 all: run
@@ -55,15 +55,11 @@ ipGatewayTest31: $(IPGW) $(CORE)/dmr/ipGateway.h
 ipGatewayTestShared: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=8 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
 
-# The service's reply queue and retried message handling, with the firmware it uses stubbed (stubs/)
+# The data service (replies, signaling, our SMS, ARS, LRRP, the API mailbox) on a fake host
 SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c
 
-dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(wildcard stubs/*.h stubs/*/*.h)
-	$(CC) $(CFLAGS) -Istubs -o $@ $(SVC) -lm
-
-# The same with Motorola ARS registration built in
-dmrDataServiceArsTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(wildcard stubs/*.h stubs/*/*.h)
-	$(CC) $(CFLAGS) -Istubs -DHAS_DMR_ARS -DHAS_DMR_GPS_REPORTS -DHAS_DMR_LRRP -o $@ $(SVC) -lm
+dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
+	$(CC) $(CFLAGS) -o $@ $(SVC) -lm
 
 dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
@@ -78,7 +74,6 @@ run: $(TESTS)
 	./dmrFecTest
 	./dmrDataTest > dmrDataTest.out; status=$$?; grep -E "^(FAIL|# (PASSED|FAILED))" dmrDataTest.out; exit $$status
 	./dmrDataServiceTest
-	./dmrDataServiceArsTest
 	./hotspotDataTest
 	./hotspotUplinkTest
 	./dmrPrivacyTest
@@ -107,19 +102,23 @@ TESTS   += radioCoreTest inputTest
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
-           $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c
+           $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
+           $(CORE)/dmr/dmrLrrp.c \
+           $(CORE)/settings/settings.c $(CORE)/storage/storage.c
 
-radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RCORE)
+radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RCORE) -lm
 
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
 RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
-           $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c
+           $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
+           $(CORE)/dmr/dmrLrrp.c \
+           $(CORE)/settings/settings.c $(CORE)/storage/storage.c
 
 radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RFTEST)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RFTEST) -lm
 
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
@@ -135,8 +134,8 @@ run-core: radioCoreTest radioFeaturesTest inputTest
 FLASH_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += codeplugTest calibrationTest
 
-codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h
-	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c
+codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
 
 calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h
 	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c
@@ -220,6 +219,15 @@ RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(CORE)/
 dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDMR_RX_TRACE=1 -o $@ $(RXCHAIN)
 
+# DMR data end to end: chip model -> slot engine -> call stack -> data service, and its answers back out the engine
+TESTS   += dmrDataChainTest
+DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(CORE)/dmr/call/dmr_call.c \
+           $(CORE)/dmr/call/dmr_lc.c $(DATA) $(FRAME) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrLrrp.c
+
+dmrDataChainTest: $(DCHAIN) $(HRCDMR)/hrc6000_dmr.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h) \
+                  $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDMR_RX_TRACE=0 -o $@ $(DCHAIN) -lm
+
 run: run-rxchain
 run-rxchain: dmrRxChainTest
 	./dmrRxChainTest
@@ -283,3 +291,57 @@ run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
 	./dm32CalTest
 	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
 .PHONY: run-dm32
+
+# The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
+STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
+TESTS   += settingsTest
+
+settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
+
+run: run-settings
+run-settings: settingsTest
+	./settingsTest
+.PHONY: run-settings
+
+# Codeplug editing: the legacy record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
+# the round trip read -> write -> read, power cuts during an edit
+CPEDIT  := $(CORE)/codeplug/codeplug.c $(CORE)/storage/storage.c sim/sim_flash.c
+TESTS   += codeplugEditTest
+
+codeplugEditTest: codeplugEditTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugEditTest.c $(CPEDIT)
+
+run: run-cpedit
+run-cpedit: codeplugEditTest
+	./codeplugEditTest
+.PHONY: run-cpedit
+
+# The legacy CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
+CPS     := $(CORE)/cps/cps_legacy.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
+           sim/sim_flash.c
+TESTS   += cpsTest
+
+cpsTest: cpsTest.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsTest.c $(CPS)
+
+run: run-cps
+run-cps: cpsTest
+	./cpsTest
+.PHONY: run-cps
+
+# tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there
+PYTHON  ?= $(shell command -v python3)
+TESTS   += cpsSim
+
+cpsSim: cpsSim.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsSim.c $(CPS)
+
+run: run-cpsclient
+run-cpsclient: cpsSim
+ifneq ($(PYTHON),)
+	$(PYTHON) -B cpsClientTest.py
+else
+	@echo "# cpsClientTest skipped (no python3)"
+endif
+.PHONY: run-cpsclient

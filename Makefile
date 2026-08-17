@@ -18,7 +18,7 @@ include platform/$(PLATFORM)/platform.mk
 BUILD := build/$(BOARD)
 TARGET := $(BUILD)/odr_$(BOARD)
 
-CORE_DIRS := core/app core/radio core/ui core/input core/codeplug
+CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/settings core/storage
 ifeq ($(CONFIG_DMR),y)
 CORE_DIRS += core/dmr/call core/dmr/ambe core/dmr/fec
 endif
@@ -31,15 +31,22 @@ endif
 ifeq ($(CONFIG_HOTSPOT),y)
 CORE_DIRS += core/hotspot
 endif
+ifeq ($(CONFIG_CPS_LEGACY),y)
+CORE_DIRS += core/cps
+endif
 ifeq ($(CONFIG_DEBUGLINK),y)
 CORE_DIRS += core/debuglink
 endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
-# Single files of core/dmr (the directory also holds the data service, built by its own switches)
+# Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
+endif
+# DMR data (SMS, ARS, LRRP, CSBK signaling)
+ifeq ($(CONFIG_DMR_DATA_CORE),y)
+APP_SRC += core/dmr/dmrData.c core/dmr/dmrDataService.c core/dmr/dmrLrrp.c
 endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)

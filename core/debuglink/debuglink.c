@@ -65,6 +65,18 @@ static const char features[] = "features="
 #if CONFIG_DMR_DATA_CORE
 	"DMR_DATA_CORE,"
 #endif
+#if CONFIG_DMR_SMS
+	"DMR_SMS,"
+#endif
+#if CONFIG_DMR_ARS
+	"DMR_ARS,"
+#endif
+#if CONFIG_DMR_LRRP
+	"DMR_LRRP,"
+#endif
+#if CONFIG_DMR_SIGNALING
+	"DMR_SIGNALING,"
+#endif
 #if CONFIG_SFR
 	"SFR,"
 #endif
@@ -237,6 +249,7 @@ static size_t cmd_reset(uint8_t *out)
 #if CONFIG_BEEP
 	beep_reset_stats();
 #endif
+	debuglink_dmr_data_reset();
 	uint32_t now = hal_millis();
 	dlog("debuglink: counters reset");
 	out[0] = DL_ST_OK;
@@ -688,6 +701,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return cmd_read_mem(req, len, out, cap);
 	case DL_CMD_REBOOT:
 		return cmd_reboot(req, len, out);
+	case DL_CMD_DMR_DATA:
+		return debuglink_cmd_dmr_data(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}
