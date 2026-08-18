@@ -597,7 +597,7 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	x = gfx_text(f, x, L->chips_y, ui_power_name(v->power), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
 	if ((v->dmr.hear_all || s->hear_all) && x + 3 * f->w <= gfx_width())
 		x = gfx_text(f, x, L->chips_y, "All", ui_col.warn) + f->w;
-	if (s->privacy && x + 4 * f->w <= gfx_width())
+	if ((s->privacy || v->dmr.privacy) && x + 4 * f->w <= gfx_width())
 		gfx_text(f, x, L->chips_y, "Priv", ui_col.priv);
 }
 
@@ -679,6 +679,8 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		sb_str(&b, d->target_private ? " Private" : " Group");
 		if (d->rmo)
 			sb_str(&b, " RPT");
+		if (d->privacy)
+			sb_str(&b, " ENC");
 		y = call_line(L->small, y, buf, ui_col.dim);
 		sb_init(&b, buf, sizeof buf);
 		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
@@ -697,7 +699,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	const font_t *big = gfx_text_width(L->large, buf) <= w ? L->large : L->medium;
 	char fit[40];
 	gfx_text_fit(big, buf, w, fit, sizeof fit);
-	gfx_text(big, 0, y, fit, d->state == RDMR_RX ? ui_col.fg : ui_col.dim);
+	gfx_text(big, 0, y, fit, d->call.emergency ? ui_col.warn : (d->state == RDMR_RX ? ui_col.fg : ui_col.dim));
 	y += big->h;
 	sb_init(&b, buf, sizeof buf);
 	if (d->call.src_name[0] != '\0') {
@@ -708,7 +710,11 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	sb_u32(&b, d->ts, 1);
 	if (d->late_entry)
 		sb_str(&b, " late");
-	y = call_line(L->small, y, buf, ui_col.dim);
+	if (d->call.encrypted)
+		sb_str(&b, " ENC");	// privacy marker (played only with the key, never after a PI header)
+	if (d->call.emergency)
+		sb_str(&b, " EMERGENCY");
+	y = call_line(L->small, y, buf, d->call.emergency ? ui_col.warn : ui_col.dim);
 	if (d->alias[0] != '\0') {
 		sb_init(&b, buf, sizeof buf);
 		sb_chr(&b, '"');
@@ -836,6 +842,10 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 #endif
 	if (v->temporary)
 		return "Back undo  Hold OK save";
+#if CONFIG_DMR
+	if (v->ch.mode == RADIO_MODE_DMR && v->dmr.target_manual)
+		return "Back: channel's talkgroup";
+#endif
 	if (v->vfo)
 		return "0-9 freq  * Quick  Up/Dn";
 	return s->home_hint != NULL ? s->home_hint : "OK Menu  * Quick";

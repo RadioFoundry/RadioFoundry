@@ -11,9 +11,9 @@ its normal job. It sees what rfgw decodes (no idle bursts, no timing, no power):
 
     sdr_watch.py [--receiver SDR15] [--seconds 60] [--json] [--host 192.0.2.10]
 
-Runs on the bench-host in rfgw's venv (radiodesk_rfgw.layer2, paho-mqtt). MQTT_PASSWORD comes from the environment
+Runs on the SDR bench in rfgw's venv (radiodesk_rfgw.layer2, paho-mqtt). MQTT_PASSWORD comes from the environment
 (it is in /etc/radiodesk-rfgw/env, root only: `export $(sudo cat /etc/radiodesk-rfgw/env | xargs)`).
-SDR15 is the 461.6875 MHz receiver on the bench-host (2026-10).
+SDR15 is the 461.6875 MHz receiver on the SDR bench (2026-10).
 """
 import argparse
 import base64

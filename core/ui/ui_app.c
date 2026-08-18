@@ -337,7 +337,17 @@ void ui_talk(const ui_target_t *t, bool permanent)
 	static char msg[48];
 	char name[32];
 	ui_sb_target(name, sizeof name, t);
-	if (!ui_svc_talk_to(t->id, !t->group, permanent ? UI_TALK_PERMANENT : UI_TALK_TEMPORARY)) {
+	if (permanent && !ui_svc_talk_to(t->id, !t->group, UI_TALK_PERMANENT)) {
+		// No codeplug writer yet: use it for now and say so
+		if (ui_svc_talk_to(t->id, !t->group, UI_TALK_TEMPORARY)) {
+			ui_go_home();
+			ui_toast("For now only: saving needs qdmr");
+		} else {
+			ui_toast("Can't change the talk target in this build");
+		}
+		return;
+	}
+	if (!permanent && !ui_svc_talk_to(t->id, !t->group, UI_TALK_TEMPORARY)) {
 		ui_toast("Can't change the talk target in this build");
 		return;
 	}
@@ -626,6 +636,15 @@ static void save_channel(void)
 
 // --- Home (information-architecture.md 3) ---
 
+static bool target_manual(void)
+{
+#if CONFIG_DMR
+	return view->dmr.target_manual;
+#else
+	return false;
+#endif
+}
+
 static void zone_step(int dir)
 {
 	static zone_t z;	// large (80 channels): not on the task's stack
@@ -720,8 +739,6 @@ bool ui_home_key(const input_event_t *ev)
 				ui_st.entry_digits[ui_st.entry_len] = 0;
 		} else if (ui_st.banner.kind != UI_BANNER_NONE) {
 			ui_st.banner.kind = UI_BANNER_NONE;
-		} else if (ui_st.toast != NULL) {
-			ui_st.toast = NULL;
 		} else if (ui_st.scanning) {
 			ui_svc_scan(false);
 			ui_st.scanning = false;
@@ -735,7 +752,7 @@ bool ui_home_key(const input_event_t *ev)
 			ui_st.hear_all = false;
 			ui_toast("Hear all off");
 #endif
-		} else if (view->temporary || ui_st.privacy) {
+		} else if (view->temporary || ui_st.privacy || (CONFIG_DMR && target_manual())) {
 			radio_req_clear_temporary();
 			ui_svc_talk_to(0, false, UI_TALK_DEFAULT);
 			if (ui_st.privacy && ui_svc_privacy(false))
@@ -1033,7 +1050,9 @@ bool ui_diag_key(const input_event_t *ev)
 	}
 	if (ev->action == ACT_BACK || ev->action == ACT_SELECT)
 		return false;
-	return ui_home_key(ev);	// channel, VFO and digits still work underneath (bench checks)
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && !view->vfo)
+		return false;	// no Find from here
+	return ui_home_key(ev);	// channel, VFO digits and side keys still work underneath (bench checks)
 #else
 	(void)ev;
 	return false;

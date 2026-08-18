@@ -7,7 +7,15 @@
 
 #define WEAK __attribute__((weak))
 
-WEAK uint32_t ui_svc_features(void) { return 0; }
+// What each package provides, ORed; a package defines its own ui_svc_feat_* when it connects its calls
+WEAK uint32_t ui_svc_feat_voice(void) { return 0; }
+WEAK uint32_t ui_svc_feat_data(void) { return 0; }
+WEAK uint32_t ui_svc_feat_storage(void) { return 0; }
+WEAK uint32_t ui_svc_feat_radio(void) { return 0; }
+WEAK uint32_t ui_svc_features(void)
+{
+	return ui_svc_feat_voice() | ui_svc_feat_data() | ui_svc_feat_storage() | ui_svc_feat_radio();
+}
 
 WEAK bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life) { (void)id; (void)private_call; (void)life; return false; }
 WEAK void ui_svc_focus_target(uint32_t id, bool private_call) { (void)id; (void)private_call; }

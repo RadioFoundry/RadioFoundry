@@ -308,6 +308,7 @@ static void changed(void) { serial++; }
 static void default_target(void)
 {
 	contact_t c;
+	view.dmr.target_manual = temp_target != 0;
 	if (temp_target) {
 		view.dmr.target_id = temp_target;
 		view.dmr.target_private = temp_private;

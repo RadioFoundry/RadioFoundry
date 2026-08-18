@@ -262,7 +262,7 @@ static void test_decode(void)
 	CHECK(s.kind == HRC6000_KIND_NONE);
 	hrc6000_dmr_decode(0xF0, 0x00, 0x00, &s);	// class 0, low bits 7: a voice candidate without a number
 	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == HRC6000_INDEX_UNKNOWN);
-	// Bench 2026-10-09 (MMDVM HAT, MS sync): voice F read 0xE8, class 0 with bit 3 set; it is not privacy
+	// Bench 2026-10-09 (MMDVM modem board, MS sync): voice F read 0xE8, class 0 with bit 3 set; it is not privacy
 	hrc6000_dmr_decode(0xE8, 0x20, 0x00, &s);
 	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == 5 && !s.pi && s.crc_ok);
 	// Data types only with data sync (bench 2026-10-10): types 1-6 in class 0 are voice numbers, never data

@@ -29,6 +29,12 @@
 #define UI_FEAT_MONITOR_LATCH	(1u << 13)	// ui_svc_monitor latch (FM)
 #define UI_FEAT_FACTORY_RESET	(1u << 14)	// ui_svc_factory_reset (storage-cps)
 uint32_t ui_svc_features(void);
+// The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
+// radio-features
+uint32_t ui_svc_feat_voice(void);
+uint32_t ui_svc_feat_data(void);
+uint32_t ui_svc_feat_storage(void);
+uint32_t ui_svc_feat_radio(void);
 
 // --- Talk target (dmr-voice; information-architecture.md 1, three lifetimes) ---
 typedef enum {

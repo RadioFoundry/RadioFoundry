@@ -31,6 +31,20 @@ def pytest_addoption(parser):
     g.addoption("--noaa-mhz", type=float, default=162.550, help="NOAA weather radio frequency for test_fm")
     g.addoption("--rssi-floor", type=int, default=-115, help="dBm: test_fm passes above this")
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
+    g.addoption("--sdr-gain", type=float, default=5.0, help="RTL-SDR gain for raw captures (dmr_bench.py C0 picks it)")
+    g.addoption("--sdr-ppm", type=float, default=None,
+                help="the SDR's own frequency error in ppm: carrier offsets are corrected by it when given")
+    g.addoption("--max-foff", type=float, default=500.0, help="Hz: largest carrier offset the TX tests accept")
+    g.addoption("--fm-mhz", type=float, default=461.6875,
+                help="MHz: the FM TX test frequency (the radio's VFO; a channel you may transmit on)")
+    g.addoption("--allow-radiodesk", action="store_true",
+                help="tests may publish to the RadioDesk sandbox broker (marker radiodesk; credentials from "
+                     "$ODR_RADIODESK_MQTT_*)")
+    g.addoption("--radiodesk-freq", type=float, default=None,
+                help="MHz: the channel the RadioDesk gateway calls the radio on (default --dmr-freq)")
+    g.addoption("--radiodesk-src", type=int, default=None, help="RadioDesk's own DMR ID, checked as the caller")
+    g.addoption("--radiodesk-text", default="OpenDigitalRadio HIL test call",
+                help="the alert text RadioDesk speaks in the private call")
 
 
 def pytest_configure(config):
@@ -38,6 +52,8 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "bench_service: stops the SDR bench's gateway service (needs "
                             "--allow-service-stop)")
     config.addinivalue_line("markers", "radio_tx: the radio under test transmits (needs --allow-rf)")
+    config.addinivalue_line("markers", "radiodesk: publishes to the RadioDesk sandbox broker, which makes its "
+                            "gateway transmit (needs --allow-radiodesk and --allow-rf)")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -47,6 +63,9 @@ def pytest_collection_modifyitems(config, items):
         elif "bench_service" in item.keywords and not config.getoption("--allow-service-stop"):
             item.add_marker(pytest.mark.skip(reason="stops the SDR bench's gateway service: run with "
                                                     "--allow-service-stop"))
+        elif "radiodesk" in item.keywords and not config.getoption("--allow-radiodesk"):
+            item.add_marker(pytest.mark.skip(reason="publishes to the RadioDesk sandbox: run with --allow-radiodesk "
+                                                    "(and $ODR_RADIODESK_MQTT_* set)"))
 
 
 @pytest.fixture(scope="session")
@@ -89,7 +108,7 @@ def restore_radio(request):
 def sdr_bench(pytestconfig):
     b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"),
                  allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
-                 tx_power=pytestconfig.getoption("--tx-power"))
+                 tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"))
     if not b.reachable():
         pytest.skip(f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
                     "sync)")
