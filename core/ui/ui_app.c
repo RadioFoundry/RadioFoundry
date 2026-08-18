@@ -51,7 +51,9 @@ static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
 static char home_hint[32];
+#if CONFIG_HOTSPOT
 static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
+#endif
 static uint32_t emerg_id;
 static char emerg_name[CODEPLUG_NAME_LEN + 1];
 
@@ -213,6 +215,7 @@ static bool recent_tx;
 uint8_t ui_recent_count(void) { return recent_n; }
 const ui_recent_t *ui_recent_get(uint8_t i) { return i < recent_n ? &recent[i] : NULL; }
 
+#if CONFIG_DMR
 static void recent_add(const ui_recent_t *r)
 {
 	// The same station and destination again: move it to the top instead of repeating it
@@ -228,6 +231,7 @@ static void recent_add(const ui_recent_t *r)
 	recent[0] = *r;
 	dirty = true;
 }
+#endif
 
 void ui_recent_target(const ui_recent_t *r, ui_target_t *t)
 {

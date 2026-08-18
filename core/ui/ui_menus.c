@@ -657,12 +657,13 @@ static const ui_scr_def_t recent_screen = {
 
 #define CH_VFO	(CONFIG_VFO_FM ? 1u : 0u)	// raw row 0 is the VFO when it is built
 
+static bool chans_is_vfo(uint16_t raw) { return CONFIG_VFO_FM && raw == 0; }
 static uint16_t chans_raw_count(void) { return (uint16_t)(CH_VFO + codeplug_zone_count()); }
 
 static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	static zone_t z;
-	if (raw < CH_VFO) {
+	if (chans_is_vfo(raw)) {
 		strncpy(buf, "VFO", len);
 		return true;
 	}
@@ -690,7 +691,7 @@ static void chans_item(uint16_t i, ui_item_t *it)
 	uint16_t raw = ui_filter_raw(i);
 	sbuf_t vb;
 	sb_init(&vb, it->value, sizeof it->value);
-	if (raw < CH_VFO) {
+	if (chans_is_vfo(raw)) {
 		strcpy(it->label, "VFO");
 		if (v->vfo)
 			sb_str(&vb, "on");
@@ -713,7 +714,7 @@ static void chans_select(uint16_t i, bool hold)
 	(void)hold;
 	const radio_view_t *v = ui_view();
 	uint16_t raw = ui_filter_raw(i);
-	if (raw < CH_VFO) {
+	if (chans_is_vfo(raw)) {
 		radio_req_vfo(!v->vfo);
 		ui_go_home();
 		ui_toast(v->vfo ? "Back to channels" : "VFO: type a frequency");
@@ -734,7 +735,7 @@ static void chans_select(uint16_t i, bool hold)
 static void chans_context(uint16_t i)
 {
 	uint16_t raw = ui_filter_raw(i);
-	if (raw < CH_VFO) {
+	if (chans_is_vfo(raw)) {
 		ui_toast("The VFO has no channel list");
 		return;
 	}
@@ -1406,6 +1407,7 @@ typedef struct {
 static pick_t picks[PICK_MAX];
 static uint8_t n_picks;
 
+#if CONFIG_DMR
 static void pick_add(const ui_target_t *t, const char *tag)
 {
 	if (n_picks >= PICK_MAX - 1 || t->id == 0)
@@ -1417,6 +1419,7 @@ static void pick_add(const ui_target_t *t, const char *tag)
 	picks[n_picks].tag = tag;
 	n_picks++;
 }
+#endif
 
 static void picker_enter(void)
 {

@@ -99,6 +99,7 @@ static uint32_t query_number(void)
 	return n;
 }
 
+#if CONFIG_DMR
 static bool id_prefix(uint32_t id, const char *keys)
 {
 	char buf[12];
@@ -107,6 +108,7 @@ static bool id_prefix(uint32_t id, const char *keys)
 	sb_u32(&b, id, 1);
 	return strncmp(buf, keys, strlen(keys)) == 0;
 }
+#endif
 
 void ui_find_run(void)
 {
