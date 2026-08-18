@@ -841,6 +841,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "privacy") == 0) snprintf(got, sizeof got, "%u", privacy);
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", hear_all);
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
+	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
 	else {

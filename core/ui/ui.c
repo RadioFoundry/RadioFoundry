@@ -65,6 +65,15 @@ const char *ui_screen_name(void)
 void ui_get_status(ui_app_status_t *st)
 {
 	*st = status;
+	// Before the first frame nothing is filled in
+	if (st->screen == NULL)
+		st->screen = "home";
+	if (st->banner == NULL)
+		st->banner = "";
+	if (st->toast == NULL)
+		st->toast = "";
+	if (st->query == NULL)
+		st->query = "";
 }
 
 static void ui_task(void *arg)
