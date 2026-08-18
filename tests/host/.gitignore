@@ -34,3 +34,5 @@ ambeFecTest
 ambeVoiceTest
 debuglinkTest
 dmrRxChainTest
+uiFlowTest
+uiSim
