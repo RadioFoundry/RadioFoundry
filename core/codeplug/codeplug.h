@@ -33,6 +33,10 @@ typedef struct {
 	bool dmo;		// direct mode even when RX and TX differ (legacy "force DMO")
 	uint16_t tot_s;		// TX time-out, 0 = the radio's
 	uint8_t alias_tx;	// talker alias TX: CODEPLUG_ALIAS_TS1_* / _TS2_* bits
+	bool scan_skip;		// left out of zone scans
+	bool vox;		// VOX allowed on this channel (FM)
+	bool no_beep;		// no DMR talk permit / call end beeps on this channel
+	bool no_eco;		// no receiver battery saving on this channel
 } channel_t;
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)

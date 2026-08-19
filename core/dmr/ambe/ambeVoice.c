@@ -49,6 +49,8 @@ static uint8_t last_bits[VOCODER_BITS];
 static bool have_last;
 
 static ambe_voice_stats_t stats;
+static ambe_voice_mixer_t mixer;
+static bool cb_mixing;
 
 static void ensure_streaming(void)
 {
@@ -294,6 +296,16 @@ void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 	// DMR is simplex: TX first (a fresh transmission resets the vocoder), then RX playback
 	tx_block(mic);
 	rx_block(spk);
+	ambe_voice_mixer_t mix = LOAD(mixer);
+	if (mix != NULL && mix(spk)) {
+		cb_mixing = true;
+		speaker(true);
+	} else if (cb_mixing) {
+		cb_mixing = false;
+		if (!cb_rx_playing) {
+			speaker(false);
+		}
+	}
 }
 
 // --- set-up ---
@@ -332,6 +344,16 @@ void ambeVoiceStop(void)
 		}
 	}
 	streaming = false;
+}
+
+bool ambeVoiceStreaming(void)
+{
+	return streaming;
+}
+
+void ambeVoiceSetMixer(ambe_voice_mixer_t m)
+{
+	STORE(mixer, m);
 }
 
 void ambeVoiceResetStats(void)

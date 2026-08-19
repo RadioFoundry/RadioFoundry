@@ -47,9 +47,13 @@
 #define CH_FLAG2	0x31u
 #define CH_FLAG4	0x33u
 #define FLAG2_TS2	0x40u
+#define FLAG4_VOX	0x40u
+#define FLAG4_ZONE_SKIP	0x20u	// zone scan skip
 #define FLAG4_RX_ONLY	0x04u
 #define FLAG4_25K	0x02u
 #define LFLAG1_ID	0x80u	// per-channel DMR ID present
+#define LFLAG1_NO_BEEP	0x40u
+#define LFLAG1_NO_ECO	0x20u	// no power saving on this channel
 #define LFLAG1_DMO	0x04u	// force direct mode
 
 // General settings (7.3.2): the radio's DMR ID, 8 BCD digits big endian
@@ -357,6 +361,10 @@ static bool legacy_channel(uint16_t number, channel_t *out)
 	}
 	out->dmo = (r[CH_LFLAG1] & LFLAG1_DMO) != 0;
 	out->tot_s = (uint16_t)(r[CH_TOT] * 15u);
+	out->scan_skip = (r[CH_FLAG4] & FLAG4_ZONE_SKIP) != 0;
+	out->vox = (r[CH_FLAG4] & FLAG4_VOX) != 0;
+	out->no_beep = (r[CH_LFLAG1] & LFLAG1_NO_BEEP) != 0;
+	out->no_eco = (r[CH_LFLAG1] & LFLAG1_NO_ECO) != 0;
 	out->alias_tx = (uint8_t)(((r[CH_FLAG1] & 0x02u) ? CODEPLUG_ALIAS_TS1_TEXT : 0u) |
 				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u));
 	return true;
