@@ -44,6 +44,8 @@ typedef struct {
 	uint32_t codeplug_writes;	// save to channel, make default
 	uint32_t radio_checks, call_alerts, messages_sent;
 	char last_text[48];
+	uint32_t beeps;			// key beeps asked of the radio
+	uint32_t tot_s, backlight_s;	// settings handed to the radio core (ui_svc_apply)
 } sim_record_t;
 extern sim_record_t sim_rec;
 const radio_view_t *sim_view(void);

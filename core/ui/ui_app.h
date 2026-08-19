@@ -19,9 +19,9 @@ void ui_app_key(const input_event_t *ev);
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms);
 // Draw the current screen into the frame buffer (no flush)
 void ui_app_draw(void);
-// Backlight percent the user chose (Quick settings / Settings > Display) and the time-out in seconds (0 = never)
+// Backlight percent the user chose (Quick settings / Settings > Display); the dim and off times are the radio's
+// settings (ui_svc_apply)
 uint8_t ui_app_brightness(void);
-uint16_t ui_app_backlight_s(void);
 
 // For the debug link and the simulator: what is on screen
 typedef struct {

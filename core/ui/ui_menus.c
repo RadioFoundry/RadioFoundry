@@ -1267,10 +1267,12 @@ static void apply_setting(uint8_t id, int32_t v)
 
 static void set_store(const set_item_t *s, int32_t v)
 {
-	if (ui_svc_setting_set(s->id, v))
+	if (ui_svc_setting_set(s->id, v)) {
 		apply_setting(s->id, v);
-	else
+		ui_svc_apply(s->id, v);
+	} else {
 		ui_toast("Couldn't save the setting: try again");
+	}
 }
 
 static void group_select(uint16_t i, bool hold)

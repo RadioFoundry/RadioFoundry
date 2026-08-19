@@ -675,7 +675,7 @@ static void scan_toggle(void)
 		return;
 	}
 	ui_st.scanning = on;
-	ui_toast(on ? "Scanning this zone" : "Scan stopped");
+	ui_toast(!on ? "Scan stopped" : view->vfo ? "Scanning the band" : "Scanning this zone");
 }
 
 bool ui_home_key(const input_event_t *ev)
@@ -1262,6 +1262,8 @@ void ui_app_init(void)
 	ev_head = ev_tail = 0;
 	sp = 0;
 	stack[0].scr = SCR_HOME;
+	for (uint8_t id = 0; id < UI_SET_COUNT; id++)
+		ui_svc_apply(id, ui_svc_setting_get(id));
 	ui_st.hints = ui_svc_setting_get(UI_SET_HINTS) != 0;
 	ui_st.large_text = ui_svc_setting_get(UI_SET_LARGE_TEXT) != 0;
 	int32_t br = ui_svc_setting_get(UI_SET_BRIGHTNESS);
@@ -1274,12 +1276,6 @@ void ui_app_init(void)
 }
 
 uint8_t ui_app_brightness(void) { return ui_st.brightness; }
-
-uint16_t ui_app_backlight_s(void)
-{
-	int32_t s = ui_svc_setting_get(UI_SET_BACKLIGHT_S);
-	return (uint16_t)(s < 0 ? 0 : s);
-}
 
 static bool emergency_key(const input_event_t *ev)
 {
@@ -1300,6 +1296,8 @@ void ui_app_key(const input_event_t *ev)
 	dirty = true;
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
+	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)
+		ui_svc_beep(UI_BEEP_KEY);
 	if (emergency_key(ev))
 		return;
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
@@ -1413,7 +1411,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.unread = unread;
 		dirty = true;
 	}
-	bool scanning = ui_svc_scan_active();
+	bool scanning = v->scan != 0;
 	if (scanning != ui_st.scanning && (ui_svc_features() & UI_FEAT_SCAN)) {
 		ui_st.scanning = scanning;
 		dirty = true;

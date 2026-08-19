@@ -44,17 +44,10 @@ static uint8_t backlight_target(uint32_t now)
 {
 	uint32_t idle = input_idle_ms();
 	uint32_t since_radio = now - radio_active_ms;
-	uint8_t full = ui_app_brightness();
-	uint32_t dim_ms = ui_app_backlight_s() * 1000u;
 	if (since_radio < idle)
 		idle = since_radio;
-	if (dim_ms == 0 || idle < dim_ms)
-		return full;
-	if (idle < dim_ms * 4u) {
-		uint8_t dim = full / 5;
-		return dim < 5 ? 5 : dim;
-	}
-	return 0;
+	// Dim and off times from the radio's settings (Display > Backlight time), dimmer on a low battery
+	return radio_backlight_pct(ui_app_brightness(), idle);
 }
 
 const char *ui_screen_name(void)

@@ -58,10 +58,13 @@ bool ui_svc_vox(bool on);
 // Make the temporary changes permanent (storage-cps): false if the codeplug can't be written
 bool ui_svc_save_channel(void);
 
-// --- Scan (radio-features) ---
-bool ui_svc_scan(bool on);
-bool ui_svc_scan_active(void);
+// --- Scan (radio-features). Whether a scan runs is radio_view_t.scan ---
+bool ui_svc_scan(bool on);			// on: the zone (in the VFO: the band); off: stop where it is
 bool ui_svc_scan_skip(void);			// nuisance delete of the channel that stopped the scan
+
+// --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
+typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR } ui_beep_t;
+void ui_svc_beep(uint8_t beep);
 
 // --- Messages and signaling (dmr-data) ---
 #define UI_MSG_TEXT_MAX	143
@@ -111,6 +114,9 @@ typedef enum {
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);
 bool ui_svc_setting_set(uint8_t id, int32_t value);
+// A setting has its value (at start-up for every one, then on each change): hand it to the package that acts on it
+// (the radio core's radio_settings_t for time-out, key beeps, backlight, battery saver)
+void ui_svc_apply(uint8_t id, int32_t value);
 
 // --- Inbound: events other packages hand to the UI (any task; the UI picks them up on its next pass) ---
 typedef enum {

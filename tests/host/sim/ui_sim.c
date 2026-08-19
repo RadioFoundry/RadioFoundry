@@ -297,7 +297,6 @@ static bool focus_private;
 static uint32_t reply_until;
 static uint32_t ptt_up_at;
 static bool rx_on;
-static bool scanning;
 static uint32_t check_due, check_id;
 
 const radio_view_t *sim_view(void) { return &view; }
@@ -562,8 +561,20 @@ bool ui_svc_save_channel(void)
 	changed();
 	return true;
 }
-bool ui_svc_scan(bool on) { scanning = on; return true; }
-bool ui_svc_scan_active(void) { return scanning; }
+bool ui_svc_scan(bool on)
+{
+	view.scan = on ? (view.vfo ? 2 : 1) : 0;	// scan_kind_t: zone, VFO
+	changed();
+	return true;
+}
+void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; }
+void ui_svc_apply(uint8_t id, int32_t value)
+{
+	if (id == UI_SET_TOT_S)
+		sim_rec.tot_s = (uint32_t)value;
+	else if (id == UI_SET_BACKLIGHT_S)
+		sim_rec.backlight_s = (uint32_t)value;
+}
 bool ui_svc_scan_skip(void) { radio_req_channel_step(1); return true; }
 uint16_t ui_svc_msg_count(void) { return n_inbox; }
 uint16_t ui_svc_msg_unread(void)
@@ -713,7 +724,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.zone_index = 0;
 	view.zone_pos = 2;	// 3 COUNTY DMR
 	n_inbox = 0;
-	hear_all = privacy = scanning = hotspot_on = rx_on = false;
+	hear_all = privacy = hotspot_on = rx_on = false;
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
@@ -723,6 +734,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
 	ui_svc_setting_set(UI_SET_BRIGHTNESS, 100);
+	ui_svc_setting_set(UI_SET_TOT_S, 180);
+	ui_svc_setting_set(UI_SET_BACKLIGHT_S, 30);
 	ui_app_init();
 	presses = 0;
 	advance(200);
@@ -837,10 +850,13 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
-	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", scanning);
+	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0);
 	else if (strcmp(key, "privacy") == 0) snprintf(got, sizeof got, "%u", privacy);
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", hear_all);
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
+	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
+	else if (strcmp(key, "radio_tot") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tot_s);
+	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.backlight_s);
 	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);

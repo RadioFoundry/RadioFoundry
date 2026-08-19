@@ -63,6 +63,10 @@ static const flow_t flows[] = {
 	{ "20 timeslot", "", "quick 2 back", "ts=2 screen=home", 3, false },
 	{ "20 color code 7", "", "quick 3 7 ok", "cc=7", 4, false },
 	{ "20 save to channel", "quick 2", "long:ok", "writes=1", 1, true },
+	// Settings the radio core acts on reach it (ui_svc_apply), key presses ask for a key beep
+	{ "S TX timeout to the radio", "", "ok 6 3 down ok", "radio_tot=300", 5, false },
+	{ "S backlight time to the radio", "", "ok 6 2 down ok", "radio_backlight=60", 5, false },
+	{ "S key beep", "", "up", "beeps=1", 1, false },
 	{ "T22 Home and undo", "quick 2 back ok 6", "long:back back", "screen=home temporary=0", 2, false },
 };
 
