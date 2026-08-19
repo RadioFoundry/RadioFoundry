@@ -506,6 +506,17 @@ static void handle_event(const ui_event_t *ev)
 	case UI_EV_HOTSPOT_STARTED:
 		banner(UI_BANNER_INFO, false, 0, "Hotspot started by host", "Back to stop");
 		break;
+	case UI_EV_CALL_ALERT_RESULT:
+		if (ev->ok) {
+			station(&b, ev);
+			sb_str(&b, " answered the alert");
+			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
+		} else {
+			sb_str(&b, "No answer from ");
+			station(&b, ev);
+			banner(UI_BANNER_RESULT, true, ev->id, title, "Off, out of range or elsewhere");
+		}
+		break;
 	case UI_EV_SCAN_STOPPED:
 		break;
 	default:
@@ -1387,6 +1398,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	view = v;
 	now = now_ms;
 	ui_st.now_ms = now_ms;
+	ui_svc_poll();
 
 	while (ev_tail != ev_head) {
 		ui_event_t ev = events[ev_tail];

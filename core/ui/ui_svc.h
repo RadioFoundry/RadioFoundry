@@ -128,6 +128,7 @@ typedef enum {
 	UI_EV_EMERGENCY,	// emergency received from id
 	UI_EV_HOTSPOT_STARTED,	// the host started hotspot mode
 	UI_EV_SCAN_STOPPED,	// the scan stopped on a channel
+	UI_EV_CALL_ALERT_RESULT,	// our call alert: ok = the radio answered, else no answer after the retries
 } ui_event_kind_t;
 
 typedef struct {
@@ -141,5 +142,7 @@ typedef struct {
 } ui_event_t;
 // Queue an event for the UI (copies it). False when the queue is full (the event is dropped)
 bool ui_notify(const ui_event_t *ev);
+// Every UI pass: a package whose state the UI polls (rather than one that calls ui_notify) turns changes into events
+void ui_svc_poll(void);
 
 #endif

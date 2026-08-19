@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 /*
- * Host unit test for the DMR data service's replies (functions/dmrDataService.c): the reply queue filled by the
- * HR-C6000 task and emptied by the main task, and a TMS message retried by its sender kept once but ACKed again
+ * Host unit test for the DMR data service (core/dmr/dmrDataService.c): the reply queue and retried message handling,
+ * CSBK signaling both ways, our SMS with its ACK, ARS registration, LRRP answers with and without a position, the
+ * 400 ms block window, and the dmr_data_api.h mailbox.
  *
  *   make -C tests/host
  *
- * The service is included as source, with the firmware it uses stubbed (stubs/), so that its static state can be
- * looked at. Transmissions are decoded again with functions/dmrData.c
+ * The service is included as source, so that its static state can be looked at, on a fake host (dmrDataEnv_t).
+ * Transmissions are decoded again with core/dmr/dmrData.c
  */
 
 #include <stdio.h>
@@ -23,68 +24,27 @@ static int failures = 0;
 #define RADIO_A		2001
 #define RADIO_B		2002
 
-// Stubbed firmware
 static uint32_t millis = 100000;
-uint32_t trxDMRID = OUR_ID;
-uint32_t trxTalkGroupOrPcId = 9;
-int trxDMRModeRx = 0;// direct mode
-int settingsUsbMode = 0;
-settingsStruct_t nonVolatileSettings = { BAND_LIMITS_NONE };
-settingsStruct_t originalNonVolatileSettings = { .magicNumber = (int32_t)0xDEADBEEF };// no options menu open
-static struct_codeplugChannel_t channel = { 446000000 };
-struct_codeplugChannel_t *currentChannelData = &channel;
-struct_codeplugRxGroup_t currentRxGroupData;
-uiDataGlobal_t uiDataGlobal = { OUR_ID };
-const int16_t MELODY_PRIVATE_CALL[] = { -1, -1 };
-static int melodies = 0;
-
-uint32_t ticksGetMillis(void) { return millis; }
-int trxGetMode(void) { return RADIO_MODE_DIGITAL; }
-bool trxCheckFrequencyInAmateurBand(uint32_t freq) { return true; }
-bool trxCarrierDetected(void) { return false; }
-int trxGetDMRTimeSlot(void) { return 0; }
-int trxGetDMRColourCode(void) { return 1; }
-int HRC6000DataTxGetStatus(void) { return 0; }
-uint32_t HRC6000GetReceivedSrcId(void) { return 0; }
-int codeplugChannelGetFlag(struct_codeplugChannel_t *c, int flag) { return 0; }
-bool settingsIsOptionBitSet(int bit) { return false; }
-void settingsSetOptionBit(int bit, bool set) { }
-void settingsSetDirty(void) { }
-bool settingsIsOptionBitSetFromSettings(settingsStruct_t *sets, int bit) { return (sets->bitfieldOptions & bit) == (uint32_t)bit; }
-void soundSetMelody(const int16_t *melody) { if (melody == MELODY_PRIVATE_CALL) melodies++; }
-bool contactIDLookup(uint32_t id, int callType, char *name) { return false; }
-bool dmrIDLookup(uint32_t id, dmrIdDataStruct_t *record) { snprintf(record->text, sizeof(record->text), "ID:%u", (unsigned)id); return true; }
-void displayLightTrigger(bool on) { }
-void uiNotificationShow(int type, int id, uint32_t ms, const char *message, bool immediate) { }
-void rxPowerSavingSetState(int state) { }
-bool usbNcmIsUp(void) { return false; }
-bool ipGatewayDeliverMonitor(const uint8_t *record, int length) { return true; }
-bool ipGatewayDeliverIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, const uint8_t *l4, int length) { return true; }
+static dmrDataChannel_t ch = { .ownId = OUR_ID, .talkGroup = 9, .rmo = false, .canTransmit = true, .channelKey = 1 };
+static bool channelClear = true;
+static bool txAccept = true;
+static bool txAutoDone = true;		// the fake stack finishes each list at once
+static int events[16];
 
 static bool haveLocation = false;
-bool dmrDataServiceGetLocation(dmrDataLocation_t *location)
-{
-	if (!haveLocation)
-	{
-		return false;
-	}
-	memset(location, 0, sizeof(*location));
-	location->fixValid = true;
-	location->north = true;
-	location->latDegrees = 33;
-	location->lonDegrees = 84;
-	location->speedKnots = DMR_LOCATION_SPEED_UNKNOWN;
-	return true;
-}
-
 static int positionLatMinutes = 0;// the test moves the radio north by this many 1/10000 minutes
 bool dmrDataServiceGetPosition(lrrpPosition_t *position)
 {
 	memset(position, 0, sizeof(*position));
-	if (!dmrDataServiceGetLocation(&position->location))
+	if (!haveLocation)
 	{
 		return false;
 	}
+	position->location.fixValid = true;
+	position->location.north = true;
+	position->location.latDegrees = 33;
+	position->location.lonDegrees = 84;
+	position->location.speedKnots = DMR_LOCATION_SPEED_UNKNOWN;
 	position->location.latMinutes10000 = positionLatMinutes;
 	position->utcYear = 2026;
 	position->utcMonth = 10;
@@ -92,36 +52,33 @@ bool dmrDataServiceGetPosition(lrrpPosition_t *position)
 	return true;
 }
 
-// What went on air, decoded: 'R' ETSI response, 'T' TMS ACK, '?' anything else
+// What went on air, decoded: 'R' ETSI response, 'T' TMS ACK, 'S' TMS message, 'L' LRRP, 'A' ARS, 'C' CSBK (seq: the
+// opcode), '?' anything else
 #define MAX_SENT	16
-static struct { char kind; uint32_t dst; uint8_t seq; } sent[MAX_SENT];
+static struct { char kind; uint32_t dst; uint8_t seq; uint8_t extra; } sent[MAX_SENT];
 static int sentCount = 0;
+static bool txOpen = false;
 
-bool HRC6000DataTxStart(const dmrBurst_t *bursts, int count)
+static bool fakeTxStart(const dmrBurst_t *bursts, int count, void *ctx)
 {
 	char kind = '?';
 	uint32_t dst = 0;
-	uint8_t seq = 0;
+	uint8_t seq = 0, extra = 0;
 
-	int preambles = 0;
-
-	for (int i = 0; i < count; i++)
+	if (!txAccept)
 	{
-		if ((bursts[i].dataType == DT_CSBK) && ((bursts[i].payload[0] & 0x3F) == DMR_CSBKO_PREAMBLE))
-		{
-			preambles++;
-		}
-		else if ((bursts[i].dataType == DT_DATA_HEADER) && ((bursts[i].payload[0] & 0x0F) == DMR_DPF_UDT) &&
-					((bursts[i].payload[1] & 0x0F) == DMR_UDT_FORMAT_NMEA))
-		{
-			kind = 'G';// seq: the preambles before it
-			dst = (bursts[i].payload[2] << 16) | (bursts[i].payload[3] << 8) | bursts[i].payload[4];
-			seq = preambles;
-		}
+		return false;
+	}
+	if ((count == 1) && (bursts[0].dataType == DT_CSBK))
+	{
+		kind = 'C';
+		seq = bursts[0].payload[0] & 0x3F;
+		extra = bursts[0].payload[3];
+		dst = (bursts[0].payload[4] << 16) | (bursts[0].payload[5] << 8) | bursts[0].payload[6];
 	}
 
 	dmrDataRxReset();
-	for (int i = 0; (i < count) && (kind != 'G'); i++)
+	for (int i = 0; (i < count) && (kind == '?'); i++)
 	{
 		if (dmrDataRxBurst(&bursts[i]) == DMR_DATA_RX_PACKET)
 		{
@@ -134,15 +91,22 @@ bool HRC6000DataTxStart(const dmrBurst_t *bursts, int count)
 				kind = 'R';
 			}
 			else if (dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.appPort == DMR_UDP_PORT_TMS) &&
-						dmrDataDecodeTMS(udp.payload, udp.length, &tms) && tms.isAck)
+						dmrDataDecodeTMS(udp.payload, udp.length, &tms))
 			{
-				kind = 'T';
+				kind = tms.isAck ? 'T' : 'S';
 				seq = tms.seq;
 			}
 			else if (dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.appPort == DMR_UDP_PORT_LRRP))
 			{
-				kind = 'L';// seq: the LRRP document ID
+				kind = 'L';// seq: the LRRP document ID, extra: the result token when there is one
 				seq = udp.payload[0];
+				for (int k = 2; k + 1 < udp.length; k++)
+				{
+					if (udp.payload[k] == 0x37)
+					{
+						extra = udp.payload[k + 1];
+					}
+				}
 			}
 			else if (dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.appPort == DMR_UDP_PORT_ARS))
 			{
@@ -151,40 +115,59 @@ bool HRC6000DataTxStart(const dmrBurst_t *bursts, int count)
 			}
 		}
 	}
+	dmrDataRxReset();
 
 	if (sentCount < MAX_SENT)
 	{
 		sent[sentCount].kind = kind;
 		sent[sentCount].dst = dst;
 		sent[sentCount].seq = seq;
+		sent[sentCount].extra = extra;
 		sentCount++;
 	}
+	txOpen = true;
 	return true;
 }
 
-// The main task: ticks every 10 ms for a while, everything queued goes out
+static bool fakeClear(uint32_t nowMs, void *ctx) { return channelClear; }
+static bool fakeInRxGroup(uint32_t tg, void *ctx) { return tg == 91; }
+static void fakeNotify(const dmrDataEvent_t *e, void *ctx) { if (e->kind < 16) events[e->kind]++; }
+
+static const dmrDataEnv_t fakeEnv = { .txStart = fakeTxStart, .channelClear = fakeClear, .inRxGroup = fakeInRxGroup,
+									  .notify = fakeNotify };
+
+// The radio task: ticks every 10 ms for a while, everything queued goes out
 static void runMainTask(int ms)
 {
 	for (int t = 0; t < ms; t += 10)
 	{
 		millis += 10;
-		dmrDataServiceTick();
+		dmrDataServiceTick(millis, &ch);
+		if (txOpen && txAutoDone)
+		{
+			txOpen = false;
+			dmrDataServiceTxDone(0);
+		}
 	}
 }
 
-// HR-C6000 task: a TMS message from src to us, burst by burst (seq: dmrDataBuildTMS sends 5 bits)
+static void rxBursts(const dmrBurst_t *bursts, int count)
+{
+	for (int i = 0; i < count; i++)
+	{
+		millis += 60;
+		dmrDataServiceRxBurst(&bursts[i], millis);
+	}
+}
+
+// A TMS message from src to us, burst by burst (seq: dmrDataBuildTMS sends 5 bits)
 static void receiveTMS(uint32_t src, const char *text, uint8_t seq)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	int count = dmrDataBuildTMS(false, OUR_ID, src, text, seq, true, DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
 
 	CHECK(count > 0);
-	dmrDataRxReset();
-	for (int i = 0; i < count; i++)
-	{
-		millis += 60;
-		dmrDataServiceRxBurst(&bursts[i]);
-	}
+	rxBursts(bursts, count);
 }
 
 // The same, as confirmed data with a response requested: an ETSI response, then the TMS ACK
@@ -206,17 +189,30 @@ static void receiveConfirmedTMS(uint32_t src, const char *text, uint8_t seq, uin
 	packet.responseRequested = true;
 	packet.sendSeq = sendSeq;
 	millis += 60;
+	now = millis;
 	handlePacket(&packet);
+	dmrDataRxReset();
+}
+
+static void receiveCSBK(uint8_t opcode, uint8_t fid, uint8_t octet3, uint32_t target, uint32_t source)
+{
+	uint8_t c[10] = { (uint8_t)(0x80 | opcode), fid, 0, octet3, (uint8_t)(target >> 16), (uint8_t)(target >> 8),
+					  (uint8_t)target, (uint8_t)(source >> 16), (uint8_t)(source >> 8), (uint8_t)source };
+	dmrBurst_t b;
+
+	dmrDataBuildCSBK(c, &b);
+	b.flags = 0;
+	millis += 60;
+	dmrDataServiceRxBurst(&b, millis);
 }
 
 static void reset(void)
 {
 	runMainTask(6000);// anything left over goes, or ages out
 	sentCount = 0;
-	melodies = 0;
+	memset(events, 0, sizeof(events));
 }
 
-#if defined(HAS_DMR_ARS)
 #define ARS_SERVER	9990100
 
 // The server's ARS PDU to us, over the air
@@ -227,12 +223,7 @@ static void receiveARS(const uint8_t *pdu, int length)
 								bursts, DMR_DATA_MAX_BURSTS);
 
 	CHECK(count > 0);
-	dmrDataRxReset();
-	for (int i = 0; i < count; i++)
-	{
-		millis += 60;
-		dmrDataServiceRxBurst(&bursts[i]);
-	}
+	rxBursts(bursts, count);
 }
 
 static int countSent(char kind, uint8_t seq)
@@ -268,10 +259,7 @@ static void testARS(void)
 	CHECK(dmrDataServiceArsState() == DMR_ARS_STATE_OFF);
 
 	// Switched on: registers 5-15 s later
-	nonVolatileSettings.bitfieldOptions |= BIT_DMR_ARS;
-	nonVolatileSettings.dmrArsId[0] = (ARS_SERVER >> 16) & 0xFF;
-	nonVolatileSettings.dmrArsId[1] = (ARS_SERVER >> 8) & 0xFF;
-	nonVolatileSettings.dmrArsId[2] = ARS_SERVER & 0xFF;
+	settings.arsServer = ARS_SERVER;
 	runMainTask(4000);
 	CHECK(countSent('A', DMR_ARS_DEVICE_REGISTRATION) == 0);
 	runMainTask(20000);
@@ -325,69 +313,13 @@ static void testARS(void)
 	receiveARS(ACK_PLAIN, sizeof(ACK_PLAIN));
 	runMainTask(1000);
 	sentCount = 0;
-	nonVolatileSettings.bitfieldOptions &= ~BIT_DMR_ARS;
+	settings.arsServer = 0;
 	runMainTask(8000);
 	CHECK(countSent('A', DMR_ARS_DEVICE_DEREGISTRATION) == 1);
 	CHECK(dmrDataServiceArsState() == DMR_ARS_STATE_OFF);
 }
-#endif
 
-#if defined(HAS_DMR_GPS_REPORTS)
-#define GPS_SERVER	9990200
 
-static int countGps(uint8_t preambles)
-{
-	int n = 0;
-
-	for (int i = 0; i < sentCount; i++)
-	{
-		n += ((sent[i].kind == 'G') && (sent[i].seq == preambles) && (sent[i].dst == GPS_SERVER));
-	}
-	return n;
-}
-
-static void testGpsReports(void)
-{
-	reset();
-	nonVolatileSettings.gpsReportDest[0] = (GPS_SERVER >> 16) & 0xFF;
-	nonVolatileSettings.gpsReportDest[1] = (GPS_SERVER >> 8) & 0xFF;
-	nonVolatileSettings.gpsReportDest[2] = GPS_SERVER & 0xFF;
-
-	// Periodic, every 60 s, with preambles; nothing without a position
-	nonVolatileSettings.gpsReportInterval = 60;
-	runMainTask(61000);
-	CHECK(countGps(DMR_DATA_SMS_PREAMBLES) == 0);
-	haveLocation = true;
-	runMainTask(60000);
-	CHECK(countGps(DMR_DATA_SMS_PREAMBLES) == 1);
-	runMainTask(60000);
-	CHECK(countGps(DMR_DATA_SMS_PREAMBLES) == 2);
-
-	// After a call of ours, straight away and without preambles; only with the flag
-	sentCount = 0;
-	nonVolatileSettings.gpsReportInterval = 0;
-	dmrDataServiceVoiceTxEnded();
-	runMainTask(2000);
-	CHECK(sentCount == 0);
-	nonVolatileSettings.gpsReportFlags = GPS_REPORT_FLAG_AFTER_CALL;
-	dmrDataServiceVoiceTxEnded();
-	runMainTask(2000);
-	CHECK(countGps(0) == 1);
-
-	// No destination: nothing
-	sentCount = 0;
-	memset(nonVolatileSettings.gpsReportDest, 0, 3);
-	nonVolatileSettings.gpsReportInterval = 60;
-	dmrDataServiceVoiceTxEnded();
-	runMainTask(130000);
-	CHECK(sentCount == 0);
-	nonVolatileSettings.gpsReportInterval = 0;
-	nonVolatileSettings.gpsReportFlags = 0;
-	haveLocation = false;
-}
-#endif
-
-#if defined(HAS_DMR_LRRP)
 #define LRRP_SERVER	9990300
 
 static void receiveLrrp(const char *hex)
@@ -403,12 +335,7 @@ static void receiveLrrp(const char *hex)
 
 	int count = dmrDataBuildUDP(false, OUR_ID, LRRP_SERVER, DMR_UDP_PORT_LRRP, DMR_UDP_PORT_LRRP, doc, n, DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
 
-	dmrDataRxReset();
-	for (int i = 0; i < count; i++)
-	{
-		millis += 60;
-		dmrDataServiceRxBurst(&bursts[i]);
-	}
+	rxBursts(bursts, count);
 }
 
 static int countLrrp(uint8_t docId)
@@ -426,6 +353,7 @@ static int countLrrp(uint8_t docId)
 static void testLrrp(void)
 {
 	reset();
+	settings.hasGps = true;
 	haveLocation = true;
 	positionLatMinutes = 0;
 
@@ -479,11 +407,259 @@ static void testLrrp(void)
 	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
 	CHECK(dmrDataServiceLocationNeededInMs() == UINT32_MAX);
 	haveLocation = false;
+
+	// No position source (the DM-1701): an immediate request says "no fix", a triggered start is refused with it
+	settings.hasGps = false;
+	sentCount = 0;
+	receiveLrrp("050922040a0b0c0d516257");
+	runMainTask(3000);
+	CHECK(countLrrp(0x07) == 1);
+	CHECK(sent[0].extra == LRRP_RESULT_NO_FIX);
+	receiveLrrp("090922041122334434313c");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(sent[1].extra == LRRP_RESULT_NO_FIX);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+	CHECK(stats.lrrpNoFix == 2);
+
+	// LRRP answers switched off: nothing
+	settings.lrrpReply = false;
+	sentCount = 0;
+	receiveLrrp("050922040a0b0c0d516257");
+	runMainTask(3000);
+	CHECK(sentCount == 0);
+	settings.lrrpReply = true;
 }
-#endif
+
+
+static int countCsbk(uint8_t opcode, uint32_t dst)
+{
+	int n = 0;
+
+	for (int i = 0; i < sentCount; i++)
+	{
+		n += ((sent[i].kind == 'C') && (sent[i].seq == opcode) && (sent[i].dst == dst));
+	}
+	return n;
+}
+
+// Call alert and radio check, received and sent
+static void testSignaling(void)
+{
+	reset();
+	settings.callAlertAck = true;
+	settings.radioCheckReply = false;
+
+	// A call alert to us: rings (event) and is acked to the caller; the caller's retry rings no more
+	receiveCSBK(DMR_CSBKO_CALL_ALERT, DMR_FID_ETSI, 0, OUR_ID, RADIO_A);
+	runMainTask(500);
+	CHECK(events[DMR_DATA_EV_CALL_ALERT] == 1);
+	CHECK(sentCount == 1);
+	CHECK((sent[0].kind == 'C') && (sent[0].seq == DMR_CSBKO_CALL_ALERT_ACK) && (sent[0].dst == RADIO_A));
+	receiveCSBK(DMR_CSBKO_CALL_ALERT, DMR_FID_ETSI, 0, OUR_ID, RADIO_A);
+	runMainTask(500);
+	CHECK(events[DMR_DATA_EV_CALL_ALERT] == 1);
+	CHECK(sentCount == 2);
+	CHECK(stats.callAlertsReceived == 2);
+
+	// To someone else: nothing
+	receiveCSBK(DMR_CSBKO_CALL_ALERT, DMR_FID_ETSI, 0, RADIO_B, RADIO_A);
+	runMainTask(500);
+	CHECK(sentCount == 2);
+
+	// A radio check with the reply off: counted, not answered; on: answered (the request echoed, octet 3 cleared)
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, RADIO_B);
+	runMainTask(500);
+	CHECK(sentCount == 2);
+	CHECK(stats.radioChecksReceived == 1);
+	settings.radioCheckReply = true;
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, RADIO_B);
+	runMainTask(500);
+	CHECK(sentCount == 3);
+	CHECK((sent[2].kind == 'C') && (sent[2].seq == DMR_CSBKO_RADIO_CHECK) && (sent[2].extra == 0x00) &&
+		  (sent[2].dst == OUR_ID));
+	CHECK(events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 1);
+	// A bad CRC: dropped
+	{
+		uint8_t c[10] = { 0x80 | DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0, 0x80, 0, 0x03, 0xE8, 0, 0x07, 0xD2 };
+		dmrBurst_t b;
+		uint32_t errors = stats.rxCrcErrors;
+
+		dmrDataBuildCSBK(c, &b);
+		b.payload[11] ^= 1;
+		dmrDataServiceRxBurst(&b, millis);
+		runMainTask(500);
+		CHECK(sentCount == 3);
+		CHECK(stats.rxCrcErrors == errors + 1);
+		CHECK(stats.rxCrcFlagMismatch >= 1);// the modem said it was fine
+	}
+
+	// Our radio check: one CSBK, answered by the radio checked
+	reset();
+	CHECK(dmr_signal_radio_check(RADIO_A));
+	CHECK(!dmr_signal_call_alert(RADIO_B));// one at a time
+	runMainTask(100);
+	CHECK(countCsbk(DMR_CSBKO_RADIO_CHECK, RADIO_A) == 1);
+	CHECK(sent[0].extra == 0x80);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_SENDING);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x00, RADIO_A, OUR_ID);
+	runMainTask(100);
+	uint8_t kind;
+	uint32_t dst;
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK);
+	CHECK((kind == DMR_DATA_EV_RADIO_CHECK_OK) && (dst == RADIO_A));
+	CHECK(events[DMR_DATA_EV_RADIO_CHECK_OK] == 1);
+	CHECK(dmr_data_last_event().kind == DMR_DATA_EV_RADIO_CHECK_OK);
+
+	// Our call alert with no answer: three tries, then failed
+	reset();
+	CHECK(dmr_signal_call_alert(RADIO_B));
+	runMainTask(10000);
+	CHECK(countCsbk(DMR_CSBKO_CALL_ALERT, RADIO_B) == SIGNAL_TRIES);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_FAILED);
+	CHECK(events[DMR_DATA_EV_CALL_ALERT_FAILED] == 1);
+
+	// ... and acked on the second try (the ack: to us from the radio alerted)
+	reset();
+	CHECK(dmr_signal_call_alert(RADIO_B));
+	runMainTask(SIGNAL_ANSWER_MS + 200);
+	CHECK(countCsbk(DMR_CSBKO_CALL_ALERT, RADIO_B) == 2);
+	receiveCSBK(DMR_CSBKO_CALL_ALERT_ACK, DMR_FID_ETSI, 0, OUR_ID, RADIO_B);
+	runMainTask(5000);
+	CHECK(countCsbk(DMR_CSBKO_CALL_ALERT, RADIO_B) == 2);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK);
+	CHECK(events[DMR_DATA_EV_CALL_ALERT_ACKED] == 1);
+}
+
+// Our text messages: to a radio with an ACK, to a group, and unanswered
+static void testOurSms(void)
+{
+	reset();
+	CHECK(sms_send(RADIO_A, false, "hello A", true, DMR_SMS_FORMAT_TMS));
+	CHECK(!sms_send(RADIO_B, false, "busy", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(200);
+	CHECK((sentCount == 1) && (sent[0].kind == 'S') && (sent[0].dst == RADIO_A));
+	CHECK(sms_send_state() == DMR_REQ_SENDING);
+	uint8_t seq = sent[0].seq;
+	// The ACK from A, as A's radio sends it
+	{
+		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+		int count = dmrDataBuildTMSAck(OUR_ID, RADIO_A, seq, 1, bursts, DMR_DATA_MAX_BURSTS);
+
+		rxBursts(bursts, count);
+	}
+	runMainTask(200);
+	CHECK(sms_send_state() == DMR_REQ_OK);
+	CHECK(events[DMR_DATA_EV_SMS_SENT] == 1);
+	CHECK(stats.smsAcked == 1);
+
+	// To a group: sent, no ACK expected
+	reset();
+	CHECK(sms_send(91, true, "to the group", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(200);
+	CHECK((sentCount == 1) && (sent[0].kind == 'S') && (sent[0].dst == 91));
+	CHECK(sms_send_state() == DMR_REQ_OK);
+
+	// No ACK: sent SMS_TRIES times with the same sequence number, then failed
+	reset();
+	CHECK(sms_send(RADIO_B, false, "anyone?", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(SMS_TRIES * SMS_ACK_MS + 1000);
+	CHECK(sentCount == SMS_TRIES);
+	CHECK((sent[0].seq == sent[1].seq) && (sent[1].kind == 'S'));
+	CHECK(sms_send_state() == DMR_REQ_FAILED);
+	CHECK(events[DMR_DATA_EV_SMS_FAILED] == 1);
+
+	// The channel never clears: given up after START_TIMEOUT_MS each try, then failed
+	reset();
+	channelClear = false;
+	CHECK(sms_send(RADIO_B, false, "busy channel", false, DMR_SMS_FORMAT_TMS));
+	runMainTask(START_TIMEOUT_MS + 2000);
+	CHECK(sentCount == 0);
+	CHECK(sms_send_state() == DMR_REQ_FAILED);
+	CHECK(stats.txGaveUp == 1);
+	channelClear = true;
+
+	// The stack drops the list (no repeater): an unacknowledged message fails
+	reset();
+	txAutoDone = false;
+	CHECK(sms_send(RADIO_B, false, "dropped", false, DMR_SMS_FORMAT_TMS));
+	runMainTask(100);
+	CHECK(dmrDataServiceIsBusy());
+	dmrDataServiceTxDone(2);
+	txOpen = false;
+	runMainTask(100);
+	CHECK(!dmrDataServiceIsBusy());
+	CHECK(sms_send_state() == DMR_REQ_FAILED);
+	CHECK(stats.txFailed == 1);
+	txAutoDone = true;
+
+	// The inbox through the API
+	reset();
+	receiveTMS(RADIO_A, "inbox one", 30);
+	runMainTask(500);
+	dmrDataMessage_t m;
+	CHECK(sms_inbox_get(0, &m) && (strcmp(m.text, "inbox one") == 0) && m.unread && (m.src == RADIO_A));
+	int unread = sms_inbox_unread();
+	uint32_t serial = dmr_data_serial();
+	sms_inbox_mark_read(0);
+	CHECK(sms_inbox_unread() == unread - 1);
+	CHECK(dmr_data_serial() != serial);
+	CHECK(!sms_inbox_get(DMR_DATA_INBOX_SIZE, &m));
+}
+
+// Data blocks long after their header are noise (gotcha 5.4); group data to the listen list is ours
+static void testBlockWindow(void)
+{
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	int count = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "late blocks", 31, true, DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	int before = dmrDataServiceMessageCount() < DMR_DATA_INBOX_SIZE ? dmrDataServiceMessageCount() : 0;
+	uint32_t received = stats.smsReceived;
+
+	reset();
+	millis += 60;
+	dmrDataServiceRxBurst(&bursts[0], millis);
+	millis += 500;
+	for (int i = 1; i < count; i++)
+	{
+		dmrDataServiceRxBurst(&bursts[i], millis);
+		millis += 60;
+	}
+	runMainTask(500);
+	CHECK(stats.smsReceived == received);
+	CHECK(stats.rxBlocksStale >= 1);
+	(void)before;
+
+	// Group 91 is in the listen list: kept, not ACKed (group)
+	count = dmrDataBuildTMS(true, 91, RADIO_A, "to 91", 32, false, DT_RATE_34_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+	rxBursts(bursts, count);
+	runMainTask(500);
+	CHECK(stats.smsReceived == received + 1);
+	CHECK(sentCount == 0);
+	// Group 92 isn't
+	count = dmrDataBuildTMS(true, 92, RADIO_A, "to 92", 33, false, DT_RATE_1_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+	rxBursts(bursts, count);
+	runMainTask(500);
+	CHECK(stats.smsReceived == received + 1);
+}
+
+// Not a channel we may send on (FM, RX only, hotspot): requests fail at once, replies aren't sent
+static void testNotOnChannel(void)
+{
+	reset();
+	ch.canTransmit = false;
+	CHECK(dmr_signal_radio_check(RADIO_A));// queued in the mailbox ...
+	runMainTask(100);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_FAILED);// ... and failed at the next tick
+	receiveTMS(RADIO_B, "no reply here", 3);
+	runMainTask(6000);
+	CHECK(sentCount == 0);
+	ch.canTransmit = true;
+}
 
 int main(void)
 {
+	dmrDataServiceInit(&fakeEnv);
+
 	// Two messages from different radios before the main task runs: each gets its ACK, in order
 	reset();
 	receiveTMS(RADIO_A, "hello from A", 3);
@@ -493,7 +669,7 @@ int main(void)
 	CHECK(sentCount == 2);
 	CHECK((sent[0].kind == 'T') && (sent[0].dst == RADIO_A) && (sent[0].seq == 3));
 	CHECK((sent[1].kind == 'T') && (sent[1].dst == RADIO_B) && (sent[1].seq == 7));
-	CHECK(melodies == 1);// one newMessage flag: rung once for both (dmrDataServiceMessageReceived gets the newest)
+	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 2);
 	CHECK(replyReadIdx == replyWriteIdx);
 
 	// The same message again (the sender missed our ACK): ACKed again, kept once, rung once
@@ -508,7 +684,7 @@ int main(void)
 	CHECK(sentCount == 2);
 	CHECK((sent[0].kind == 'T') && (sent[0].dst == RADIO_A) && (sent[0].seq == 9));
 	CHECK((sent[1].kind == 'T') && (sent[1].dst == RADIO_A) && (sent[1].seq == 9));
-	CHECK(melodies == 1);
+	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 1);
 
 	// The retry arriving before the first ACK has even gone: two ACKs, one message
 	before = dmrDataServiceMessageCount();
@@ -533,7 +709,7 @@ int main(void)
 	CHECK(dmrDataServiceMessageCount() == DMR_DATA_INBOX_SIZE);
 	CHECK(before + 4 >= DMR_DATA_INBOX_SIZE);
 	CHECK(sentCount == 4);
-	CHECK(melodies == 2);// once for the three before the main task ran, once for the last
+	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 4);
 
 	// Confirmed data from two radios: response then TMS ACK for the first, then the same for the second
 	reset();
@@ -580,17 +756,14 @@ int main(void)
 	runMainTask(2000);
 	CHECK(millis < 0x10000000u);
 	CHECK(sentCount == 2);
-	CHECK(melodies == 1);
+	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 1);
 
-#if defined(HAS_DMR_ARS)
 	testARS();
-#endif
-#if defined(HAS_DMR_GPS_REPORTS)
-	testGpsReports();
-#endif
-#if defined(HAS_DMR_LRRP)
 	testLrrp();
-#endif
+	testSignaling();
+	testOurSms();
+	testBlockWindow();
+	testNotOnChannel();
 
 	printf(failures ? "# FAILED (%d failures)\n" : "# PASSED (%d failures)\n", failures);
 	return failures ? 1 : 0;

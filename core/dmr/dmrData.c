@@ -98,6 +98,11 @@ static bool checkCRC16(const uint8_t *in, uint8_t mask)
 	return (in[10] == (crc >> 8)) && (in[11] == (crc & 0xFF));
 }
 
+bool dmrDataCheckCRC16(const uint8_t *burst12, uint8_t mask)
+{
+	return checkCRC16(burst12, mask);
+}
+
 static void setBurst(dmrBurst_t *burst, uint8_t dataType, const uint8_t *payload, uint8_t length)
 {
 	burst->dataType = dataType;

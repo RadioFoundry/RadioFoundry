@@ -32,6 +32,7 @@ WEAK bool ui_svc_save_channel(void) { return false; }
 WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
 WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
+WEAK void ui_svc_poll(void) { }
 WEAK void ui_svc_apply(uint8_t id, int32_t value) { (void)id; (void)value; }
 
 WEAK uint16_t ui_svc_msg_count(void) { return 0; }
