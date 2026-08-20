@@ -49,6 +49,8 @@ CONFIG_DEBUGLINK ?= $(CONFIG_USB)
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
+# the Settings menu on the radio (off: settings keep their stored values and are set with qdmr; docs/spec/ui.md)
+CONFIG_UI_SETTINGS ?= y
 # channel / zone scan, VFO band scan, dual watch, nuisance delete (docs/spec/radio-features.md)
 CONFIG_SCAN ?= y
 # beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which the DM-1701 has with DMR)
@@ -61,7 +63,7 @@ CONFIG_VOX ?= n
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_IP_GATEWAY SFR \
-	USB USB_NETWORK HOTSPOT DEBUGLINK VFO VFO_FM VFO_DMR DIAG FONT_XL SCAN BEEP FM_TX_TONES VOX BATTERY_SAVE
+	USB USB_NETWORK HOTSPOT DEBUGLINK VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES VOX BATTERY_SAVE
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))

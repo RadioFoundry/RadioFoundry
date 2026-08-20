@@ -1051,6 +1051,8 @@ static const ui_scr_def_t tools_screen = {
 };
 
 // ======================= Settings by intent (information-architecture.md 6) =======================
+// CONFIG_UI_SETTINGS=n leaves the whole menu out (the settings keep their stored values; qdmr sets them)
+#if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
 enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_KEYS };
@@ -1398,6 +1400,28 @@ static const ui_scr_def_t confirm_screen = {
 	.name = "confirm", .flags = SF_LIST, .prefix = "Factory reset", .hint = "OK choose  Back keeps",
 	.count = confirm_count, .item = confirm_item, .select = confirm_select, .body = confirm_body,
 };
+#else
+uint8_t ui_set_group_count(void) { return 0; }
+const char *ui_set_group_name(uint8_t g) { (void)g; return ""; }
+uint8_t ui_set_item_count(uint8_t g) { (void)g; return 0; }
+const char *ui_set_item_name(uint8_t g, uint8_t i, const char **synonyms) { (void)g; (void)i; *synonyms = NULL; return ""; }
+void ui_open_setting(uint8_t g, uint8_t i) { (void)g; (void)i; }
+
+static uint16_t settings_count(void) { return 1; }
+static void settings_item(uint16_t i, ui_item_t *it)
+{
+	(void)i;
+	strcpy(it->label, "Set them with qdmr");
+	it->flags |= UI_ITEM_INFO;
+}
+
+static const ui_scr_def_t settings_screen = {
+	.name = "settings", .flags = SF_LIST, .prefix = "Settings", .hint = "Back",
+	.count = settings_count, .item = settings_item,
+};
+#define group_screen	settings_screen
+#define confirm_screen	settings_screen
+#endif
 
 // ======================= Talk target picker (SK2, quick 8) =======================
 
