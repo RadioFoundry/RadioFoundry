@@ -16,7 +16,7 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 | `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Channels, Zone, Tools, Settings, Picker, Info, Confirm, Scan |
 | `ui_find.c` | type-to-find (T9 word starts, numbers, channel positions) |
 | `ui_svc.h`, `ui_svc_stub.c` | the thin interface to data other packages own, with weak "not in this build" stubs (section 4) |
-| `ui_svc_radio.c`, `ui_svc_data.c` | the strong implementations on the radio core and the DMR data service |
+| `ui_svc_radio.c`, `ui_svc_data.c`, `ui_svc_storage.c` | the strong implementations on the radio core, the DMR data service and the settings store / codeplug editing |
 | `ui.c` | the UI task: splash, 50 ms frame pacing, backlight, status copy for the debug link |
 
 `ui_app.c` and `ui_menus.c` never call the RTOS. The firmware drives them from `ui.c`; the host simulator
@@ -76,7 +76,8 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | Calls | Owner | State in this branch |
 |---|---|---|
 | `ui_svc_talk_to` temporary / default | dmr-voice (radio core) | `ui_svc_radio.c`: `radio_req_dmr_target`, `radio_req_dmr_target_clear` |
-| `ui_svc_talk_to` permanent, `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_factory_reset`, `ui_svc_feat_storage` | storage-cps | stubs (settings kept in RAM with defaults; permanent falls back to temporary with "For now only: saving needs qdmr") |
+| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the rest stay in RAM until a store field exists |
+| `ui_svc_factory_reset` | storage-cps | stub: no reset call yet |
 | `ui_svc_focus_target` (one-shot PTT to the focused row), `ui_svc_dmr_timeslot`, `ui_svc_dmr_color_code`, `ui_svc_mode`, `ui_svc_hear_all`, `ui_svc_privacy`, `ui_svc_monitor`, `ui_svc_vox`, `ui_svc_emergency` | dmr-voice / radio core | stubs: the radio core has no request for these yet |
 | `ui_svc_scan`, `ui_svc_scan_skip`, `ui_svc_feat_radio`; scanning state from `radio_view_t.scan` | radio-features | `ui_svc_radio.c`: `radio_req_scan` (toggle, stop, nuisance) |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
@@ -154,3 +155,6 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
 - The long-press time setting (`UI_SET_LONG_PRESS_MS`) is stored but not yet handed to the input layer.
 - Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"); free text is dimmed.
 - Deleting a message has no undo (and the data service has no delete yet).
+- Save to channel and the permanent talk target write the codeplug from the UI task (`codeplug_set_channel`), so the
+  UI stalls for the flash write; a permanent target must be a stored contact (a typed ID stays temporary, with
+  "For now only").

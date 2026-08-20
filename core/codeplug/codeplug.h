@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The codeplug as the core sees it: channels and zones, whatever format is stored underneath.
-// Today: read-only from a legacy-layout codeplug already in the radio's flash (docs/spec/legacy-cps-interop.md),
-// or a small built-in set when there is none. The native format comes later.
+// The codeplug as the core sees it: channels, zones, contacts and RX group lists, whatever format is stored
+// underneath. This is the editing model the UI and the CPS share (docs/spec/codeplug-native.md 2).
+// Today it is stored in the legacy layout (docs/spec/legacy-cps-interop.md 7), read on demand and written through
+// the sector journal (core/storage); with nothing stored, a small built-in set of channels, which the first edit
+// turns into a stored codeplug. The native format comes later behind the same calls.
+// All calls may come from any task (they take the storage lock); writes can take some 100 ms (sector rewrites).
 #ifndef CODEPLUG_H
 #define CODEPLUG_H
 
@@ -65,6 +68,37 @@ bool codeplug_channel(uint16_t number, channel_t *out);
 // Zones 0..count-1. With no zones stored there is one zone "All channels" holding every used channel
 uint16_t codeplug_zone_count(void);
 bool codeplug_zone(uint16_t index, zone_t *out);
+// true when the zones are stored ones (false: the virtual "All channels" zone)
+bool codeplug_zones_stored(void);
+
+// --- Editing. Each returns false if nothing is stored and can't be (no flash), the argument is invalid, or the
+// flash failed. A change bumps codeplug_serial(), so the radio core knows to re-read its channel ---
+#define CODEPLUG_CHANNELS_MAX	1024
+#define CODEPLUG_ZONES_MAX	68
+
+// Bumped on every change (edits, and codeplug_reload after the CPS wrote the image)
+uint32_t codeplug_serial(void);
+// Store a channel at number 1..CODEPLUG_CHANNELS_MAX (new or replaced; fields the model doesn't know are kept)
+bool codeplug_set_channel(uint16_t number, const channel_t *ch);
+bool codeplug_delete_channel(uint16_t number);
+// The lowest unused channel number, 0 if all are used
+uint16_t codeplug_free_channel(void);
+// Replace zone index (0..count-1), or add one with index == codeplug_zone_count() (when only the virtual zone
+// exists, index 0 replaces it with a stored zone). Channels that aren't stored are refused
+bool codeplug_set_zone(uint16_t index, const zone_t *z);
+bool codeplug_delete_zone(uint16_t index);
+// The radio name (the legacy callsign field, 8 characters), "" if none
+void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]);
+bool codeplug_set_radio_name(const char *name);
+
+// Re-read everything after the image was written underneath (the CPS); bumps the serial
+codeplug_source_t codeplug_reload(void);
+
+// The legacy 56-byte channel record (legacy-cps-interop.md 7.3.3), for the CPS shim's VFO handling. decode: false
+// if the frequencies are malformed. encode: updates rec in place, keeping the bytes the model doesn't own
+#define CODEPLUG_LEGACY_CHANNEL_SIZE	56
+bool codeplug_legacy_decode(const uint8_t *rec, channel_t *out);
+void codeplug_legacy_encode(const channel_t *ch, uint8_t *rec);
 
 #if CONFIG_DMR
 #define CODEPLUG_CONTACTS_MAX	1024
@@ -92,6 +126,12 @@ uint32_t codeplug_dmr_id(void);
 bool codeplug_contact(uint16_t index, contact_t *out);
 // RX group lists 1..CODEPLUG_LISTS_MAX; false if unused or unreadable
 bool codeplug_listen_list(uint16_t index, listen_list_t *out);
+
+bool codeplug_set_dmr_id(uint32_t id);		// 1..16776415, 0 = none
+bool codeplug_set_contact(uint16_t index, const contact_t *c);
+bool codeplug_delete_contact(uint16_t index);
+bool codeplug_set_listen_list(uint16_t index, const listen_list_t *l);
+bool codeplug_delete_listen_list(uint16_t index);
 // The first contact with this ID: group true finds a talkgroup (or all call for 0xFFFFFF), false a private contact.
 // Reads every contact record (24 KB of flash) in the worst case: cache the answer
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out);

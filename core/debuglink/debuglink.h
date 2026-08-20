@@ -26,6 +26,7 @@ enum {
 	DL_VIEW_LINK,		// input and debug link state
 	DL_VIEW_FEATURES,	// scan, FM extras, battery, beeps, the radio settings (debuglink_view_radio.c)
 	DL_VIEW_DMR_DATA,	// the DMR data service: state, settings, counters (debuglink_dmr_data.c)
+	DL_VIEW_STORAGE,	// settings store, flash journal, codeplug and CPS session counters
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		1	// bumped when a key changes meaning or goes away (new keys don't bump it)

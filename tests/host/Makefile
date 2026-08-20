@@ -103,7 +103,8 @@ RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
-           $(CORE)/dmr/dmrLrrp.c
+           $(CORE)/dmr/dmrLrrp.c \
+           $(CORE)/settings/settings.c $(CORE)/storage/storage.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RCORE) -lm
@@ -113,7 +114,8 @@ TESTS   += radioFeaturesTest
 RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
-           $(CORE)/dmr/dmrLrrp.c
+           $(CORE)/dmr/dmrLrrp.c \
+           $(CORE)/settings/settings.c $(CORE)/storage/storage.c
 
 radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RFTEST) -lm
@@ -132,8 +134,8 @@ run-core: radioCoreTest radioFeaturesTest inputTest
 FLASH_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += codeplugTest calibrationTest
 
-codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h
-	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c
+codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
 
 calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h
 	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c
@@ -280,3 +282,57 @@ run: run-debuglink
 run-debuglink: debuglinkTest
 	./debuglinkTest
 .PHONY: run-debuglink
+
+# The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
+STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
+TESTS   += settingsTest
+
+settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
+
+run: run-settings
+run-settings: settingsTest
+	./settingsTest
+.PHONY: run-settings
+
+# Codeplug editing: the legacy record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
+# the round trip read -> write -> read, power cuts during an edit
+CPEDIT  := $(CORE)/codeplug/codeplug.c $(CORE)/storage/storage.c sim/sim_flash.c
+TESTS   += codeplugEditTest
+
+codeplugEditTest: codeplugEditTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugEditTest.c $(CPEDIT)
+
+run: run-cpedit
+run-cpedit: codeplugEditTest
+	./codeplugEditTest
+.PHONY: run-cpedit
+
+# The legacy CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
+CPS     := $(CORE)/cps/cps_legacy.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
+           sim/sim_flash.c
+TESTS   += cpsTest
+
+cpsTest: cpsTest.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsTest.c $(CPS)
+
+run: run-cps
+run-cps: cpsTest
+	./cpsTest
+.PHONY: run-cps
+
+# tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there
+PYTHON  ?= $(shell command -v python3)
+TESTS   += cpsSim
+
+cpsSim: cpsSim.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsSim.c $(CPS)
+
+run: run-cpsclient
+run-cpsclient: cpsSim
+ifneq ($(PYTHON),)
+	$(PYTHON) -B cpsClientTest.py
+else
+	@echo "# cpsClientTest skipped (no python3)"
+endif
+.PHONY: run-cpsclient

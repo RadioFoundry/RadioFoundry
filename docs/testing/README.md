@@ -83,6 +83,17 @@ The radio on USB with firmware built with `CONFIG_DEBUGLINK` (the default). Noth
 screenshots, injected keys, FM receive on NOAA weather, MMDVM requests. Without a radio every test is skipped with
 the reason. Details, rig assumptions and pass criteria: `tests/hil/README.md`.
 
+CPS and settings (`test_cps.py`): the radio-only tests read the codeplug twice over the legacy CPS protocol and
+compare, and check a channel change is saved. Two opt-in flags change the radio but don't transmit:
+
+```
+python3 -m pytest tests/hil -v -rs -s -k cps --allow-codeplug-write   # backs up, renames a channel, restores
+python3 -m pytest tests/hil -v -rs -s -k cps --allow-reboot           # channel position survives a restart
+```
+
+The write test saves the backup in its tmp directory and prints the path. If the restore fails, the path and the
+`tools/cps_client.py write` command are in the failure message.
+
 ## 3. Hardware in the loop, on air (opt-in)
 
 Each flag allows one more kind of action, and a test runs only when all it needs is allowed:

@@ -114,7 +114,8 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
   meanwhile and after the last try, until something changes.
 - Registered: again after the refresh time the server's answer gives (never when it says 0), else every 30 min.
 - Power-off deregistration: `dmrDataServicePowerOff()` sends it and returns true until it has gone (gotcha 7.4).
-  Not yet called by the firmware's power-off path.
+  The power-off path calls it through the radio core: `radio_req_power_off()` (`RREQ_POWER_OFF`), then
+  `core/app/app.c` waits while `radio_power_off_busy()`, at most 3 s, before the settings flush and the latch.
 
 ## 7. LRRP
 
@@ -138,8 +139,9 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 | `lrrpReply` | on | answers only a dispatcher's request; without GPS it says "no fix" |
 | `hasGps` | false | the DM-1701 has none |
 
-The settings live in RAM (set by the radio core at start, changed by `dmr_data_set_settings` or the debug link's
-DMR_DATA SETTINGS); the codeplug does not hold them yet. Only committed settings are applied, never an edit in
+The settings are kept in the settings store (the `ds_*` fields, `settings-store.md` 3): the radio core loads them
+at start and, from its data tick, saves any change made by `dmr_data_set_settings` or the debug link's DMR_DATA
+SETTINGS. `hasGps` is the board's, not saved. The codeplug does not hold them. Only committed settings are applied, never an edit in
 progress (gotcha 3.7).
 
 Transmission rules: nothing is sent unless the channel is a DMR channel we may transmit on (not RX only, in band,

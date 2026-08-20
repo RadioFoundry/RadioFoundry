@@ -57,6 +57,8 @@ bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
 // Make the temporary changes permanent (storage-cps): false if the codeplug can't be written
 bool ui_svc_save_channel(void);
+// Write the talk target into the channel (UI_TALK_PERMANENT): false if it isn't a stored contact or can't be written
+bool ui_svc_save_talk_target(uint32_t id, bool private_call);
 
 // --- Scan (radio-features). Whether a scan runs is radio_view_t.scan ---
 bool ui_svc_scan(bool on);			// on: the zone (in the VFO: the band); off: stop where it is
@@ -114,6 +116,9 @@ typedef enum {
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);
 bool ui_svc_setting_set(uint8_t id, int32_t value);
+// The RAM table behind the stub (defaults until set): for the settings no package stores
+int32_t ui_svc_ram_get(uint8_t id);
+bool ui_svc_ram_set(uint8_t id, int32_t value);
 // A setting has its value (at start-up for every one, then on each change): hand it to the package that acts on it
 // (the radio core's radio_settings_t for time-out, key beeps, backlight, battery saver)
 void ui_svc_apply(uint8_t id, int32_t value);

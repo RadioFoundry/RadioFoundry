@@ -264,6 +264,9 @@ static void hostlink_task(void *arg)
 #endif
 			break;
 		case HOSTLINK_CPS:
+			if (cps_handler != NULL) {
+				cps_handler(NULL, 0, now);	// tick: gap-terminated requests, the session time-out
+			}
 			if ((now - last_byte_ms) > HOSTLINK_CPS_IDLE_MS) {
 				mode = HOSTLINK_IDLE;
 			}

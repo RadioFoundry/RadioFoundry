@@ -28,6 +28,7 @@ WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }
 WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
+WEAK bool ui_svc_save_talk_target(uint32_t id, bool private_call) { (void)id; (void)private_call; return false; }
 
 WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
 WEAK bool ui_svc_scan_skip(void) { return false; }
@@ -56,12 +57,15 @@ static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_PTT_LOCKED] = 1, [UI_SET_LOW_BATTERY] = 15, [UI_SET_LONG_PRESS_MS] = 600, [UI_SET_REPEAT_MS] = 120,
 };
 
-WEAK int32_t ui_svc_setting_get(uint8_t id) { return id < UI_SET_COUNT ? settings[id] : 0; }
+int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_COUNT ? settings[id] : 0; }
 
-WEAK bool ui_svc_setting_set(uint8_t id, int32_t value)
+bool ui_svc_ram_set(uint8_t id, int32_t value)
 {
 	if (id >= UI_SET_COUNT)
 		return false;
 	settings[id] = value;
 	return true;
 }
+
+WEAK int32_t ui_svc_setting_get(uint8_t id) { return ui_svc_ram_get(id); }
+WEAK bool ui_svc_setting_set(uint8_t id, int32_t value) { return ui_svc_ram_set(id, value); }

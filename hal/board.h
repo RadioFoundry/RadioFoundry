@@ -17,6 +17,7 @@
 #include "hal_vocoder.h"
 #include "hal_stream.h"
 #include "hal_system.h"
+#include "hal_cps.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -61,6 +62,8 @@ typedef struct {
 	// battery_critical_mv it refuses to transmit (and may switch off). 0 = no warning of that kind
 	uint16_t battery_low_mv;
 	uint16_t battery_critical_mv;
+	// Optional: the legacy CPS shim's view of the radio (hal_cps.h)
+	const hal_cps_t *cps;
 } board_t;
 
 extern const board_t board;

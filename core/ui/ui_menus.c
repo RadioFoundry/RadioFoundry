@@ -1131,7 +1131,7 @@ static const set_item_t s_location[] = {
 	TOGGLE("Answer position requests", "LRRP", UI_SET_POS_REPLY),
 };
 static const set_item_t s_connections[] = {
-	TOGGLE("Auto hotspot", "MMDVM", UI_SET_HOTSPOT_AUTO),
+	TOGGLE("Hotspot allowed", "MMDVM", UI_SET_HOTSPOT_AUTO),
 	TOGGLE("Answer radio checks", NULL, UI_SET_CHECK_REPLY),
 	TOGGLE("Answer call alerts", NULL, UI_SET_ALERT_ANSWER),
 };

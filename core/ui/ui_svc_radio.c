@@ -6,6 +6,7 @@
 #include "ui_svc.h"
 #include "radio/radio.h"
 #include "radio/beep.h"
+#include <string.h>
 #include "config.h"
 
 uint32_t ui_svc_feat_voice(void)
@@ -28,8 +29,13 @@ bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 	case UI_TALK_DEFAULT:
 		radio_req_dmr_target_clear();
 		return true;
+	case UI_TALK_PERMANENT:
+		if (!ui_svc_save_talk_target(id, private_call))
+			return false;
+		radio_req_dmr_target_clear();	// the channel's own target is the new one once the radio re-reads it
+		return true;
 	default:
-		return false;	// permanent: writing the channel's contact needs the codeplug writer (storage-cps)
+		return false;
 	}
 }
 #endif
@@ -57,8 +63,9 @@ void ui_svc_beep(uint8_t beep)
 }
 #endif
 
-// The UI's settings that live in radio_settings_t. A local copy, so a run of changes at start-up doesn't read back a
-// copy the radio task hasn't taken in yet
+// The UI's settings that live in radio_settings_t. The radio core saves them (settings store) and restores them at
+// start-up, so ui_svc_setting_get reads them back from it (ui_svc_storage.c) and a value it already has is not sent
+// again. A local copy, so a run of changes doesn't read back one the radio task hasn't taken in yet
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	static radio_settings_t rs;
@@ -67,6 +74,7 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		radio_get_settings(&rs);
 		have = true;
 	}
+	radio_settings_t was = rs;
 	uint16_t v16 = (uint16_t)(value < 0 ? 0 : value > 0xFFFF ? 0xFFFF : value);
 	switch (id) {
 	case UI_SET_KEY_TONES:
@@ -83,10 +91,11 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		rs.backlight_off_s = (uint16_t)(v16 > 0x3FFF ? 0xFFFF : v16 * 4u);
 		break;
 	case UI_SET_BATTERY_SAVER:
-		rs.rx_save = value != 0 ? 1 : 0;
+		rs.rx_save = value != 0 ? (rs.rx_save != 0 ? rs.rx_save : 1) : 0;
 		break;
 	default:
 		return;
 	}
-	radio_set_settings(&rs);
+	if (memcmp(&was, &rs, sizeof rs) != 0)
+		radio_set_settings(&rs);
 }
