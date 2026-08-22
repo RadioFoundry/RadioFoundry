@@ -66,6 +66,14 @@ and in the MMDVM GET_VERSION description) with `-dirty` appended when tracked fi
 sources sit in the built directories. The build prints it on the image line (`image ...: N bytes, version
 c1544f29-dirty`). An image for anyone else is built from a clean, committed tree.
 
+### The UI without a radio
+
+The UI's host tests (`make -C tests/host run-ui`, part of the host tests above) replay every task flow of
+`docs/ux/task-flows.md` against the press budgets of `docs/ux/usability-tests.md` on four display and key map pairs,
+and crawl every screen for the rules that hold everywhere (`docs/spec/ui.md` 7). `make -C tests/host ui-gallery`
+renders every screen at every display class into `docs/ux/screens/`; run it after a UI change and commit the PNGs
+with it, so the review shows what changed. `tests/host/uiSim` renders one screen after a key script, to PNG.
+
 ## 2. Hardware in the loop, radio only
 
 ```

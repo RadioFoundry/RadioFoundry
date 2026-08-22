@@ -13,8 +13,13 @@
 
 // Frame buffer size, static in main SRAM (DMA capable). 160 x 128 x 16 bpp = 40 KB. A 240 x 320 color panel
 // (150 KB) does not fit the STM32F405's 128 KB SRAM and will need band rendering instead of a whole frame.
+// The host simulator sets larger values to render 240 x 320.
+#ifndef GFX_FB_BYTES
 #define GFX_FB_BYTES	(160u * 128u * 2u)
+#endif
+#ifndef GFX_MAX_ROWS
 #define GFX_MAX_ROWS	160u
+#endif
 
 // RGB565. On a 1 bpp panel any nonzero color is ink (pixel set), zero is paper
 typedef uint16_t color_t;

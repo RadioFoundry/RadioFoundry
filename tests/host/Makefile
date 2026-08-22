@@ -158,16 +158,39 @@ run-rf: at1846sTest
 .PHONY: run-rf
 
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
-UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_screens.c
+UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ gfxTest.c $(UI)
 
+# The UI host simulator (tests/host/sim/ui_sim.c): the whole of core/ui against a simulated radio, codeplug and
+# board at any display geometry and key map. uiFlowTest runs the task flows of docs/ux/task-flows.md against their
+# press budgets, crawls every screen (BACK leaves it, long BACK reaches Home, the status strip is drawn) and checks
+# the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/). Built without the
+# __attribute__ override above so the weak service stubs (ui_svc_stub.c) give way to the simulator's.
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/radio/tones.c \
+           sim/ui_sim.c sim/ui_png.c
+UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g -I$(CORE) -I$(ROOT)/hal -I. \
+           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1
+UIDEPS  := $(UIAPP) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
+TESTS   += uiFlowTest uiSim
+
+uiFlowTest: uiFlowTest.c $(UIDEPS)
+	$(CC) $(UIFLAGS) -o $@ uiFlowTest.c $(UIAPP) -lz
+
+uiSim: uiSim.c $(UIDEPS)
+	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
+
+ui-gallery: uiSim
+	rm -rf $(ROOT)/docs/ux/screens/*/
+	./uiSim --gallery $(ROOT)/docs/ux/screens
+
 run: run-ui
-run-ui: gfxTest
+run-ui: gfxTest uiFlowTest uiSim
 	./gfxTest
-.PHONY: run-ui
+	./uiFlowTest
+.PHONY: run-ui ui-gallery
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC
 # and the DMR voice glue between the call stack, the FEC, the vocoder and the audio driver (fakes)

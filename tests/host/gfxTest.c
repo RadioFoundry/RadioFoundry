@@ -210,7 +210,9 @@ static void render_set(const char *cls)
 	s.quick_edit = false;
 	v.ch.mode = RADIO_MODE_DMR;
 	CHECK(!ui_quick_tile(QT_TONE, &v, &s, label, sizeof label, value, sizeof value));
-	CHECK(!ui_quick_tile(QT_BANDWIDTH, &v, &s, label, sizeof label, value, sizeof value));
+	// On DMR the same positions hold the DMR tiles (information-architecture.md 5): 3 color code, 8 talk target
+	CHECK(ui_quick_kind(2, &v) == QT_CC && ui_quick_kind(7, &v) == QT_TALK_TO);
+	CHECK(ui_quick_tile(7, &v, &s, label, sizeof label, value, sizeof value) && strcmp(label, "8Talk to") == 0);
 
 	// Layout sanity: regions in order and inside the screen
 	const ui_layout_t *L = &ui_layout;
