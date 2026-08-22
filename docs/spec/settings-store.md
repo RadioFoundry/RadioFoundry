@@ -158,7 +158,52 @@ calls, a settings save, a CPS commit. `storage_quick_lock()` guards only RAM: th
 takes only the quick lock on its own, so it never waits for an erase. A codeplug read from the radio task (a channel
 change) does take `storage_lock` and may wait out a sector rewrite (about 100 ms) during a CPS write.
 
-## 5. Testing
+## 5. Foreign region guard
+
+The flash of a radio that ran other firmware may hold that firmware's data where our settings ring and journal go
+(on the DM-1701, 0x011000-0x01AFFF has never been checked on a used radio). Before anything is erased or programmed
+there, `storage_init()` classifies the region:
+
+| Part | Ours | Anything else |
+|---|---|---|
+| settings slot | all 0xFF; a valid record; our magic with a torn rest; a save cut inside the magic (the bytes so far on their way to "OSET", the rest 0xFF) | other bytes |
+| J0 | all 0xFF; our header (magic "OJNL"), nothing after the done byte | other bytes |
+| J1 | all 0xFF, or anything once J0 holds our header | non-blank while J0 is blank |
+
+**Foreign** = some part holds other bytes **and** no valid record of ours (a settings record or a J0 header with
+a good CRC) exists anywhere in the region. Then:
+
+- `storage_init()` returns false, `storage_ready()` is false, nothing is replayed.
+- Every erase and program in the region is refused. `storage_sector_write` and `storage_write` fail
+  (`storage.foreign_refusals`), so codeplug edits and CPS commits fail too (the journal is the region). The CPS
+  shim refuses `X 1` (`cps-protocol.md` 2.3).
+- `settings_init()` returns `SETTINGS_FOREIGN` and the radio runs on the defaults in RAM; changes are kept in RAM
+  and not saved.
+- The debug link's view shows `settings.load=foreign`, `storage.region=foreign`, `storage.journal=foreign` and
+  `storage.foreign_slots` (slots and journal sectors with other bytes).
+
+Junk beside a valid record of ours (a torn erase of our own ring) is not foreign: the slots are skipped and
+reused once their sector comes round.
+
+**Ownership mark.** When the region is ours but holds no valid record (a blank flash), `storage_init()` programs
+one valid settings slot of layout 0 and sequence 0 (no payload) in the first free slot. The settings load their
+defaults past it (no settings layout is 0) and the first real save gets sequence 1. From then on a valid record
+always exists, because saves never erase the sector with the newest record, so a power cut inside a journal
+rewrite (J0 erased, J1 full) can't make the region look foreign at the next boot.
+
+**Claim.** Only through the debug link, behind the chip UID token like REBOOT (`debuglink.md` 3.13):
+
+1. `odr_debug.py storage claim` reads the settings ring, the journal and the calibration copy through the debug
+   link's read-only SPI flash window (twice, compared) into `the external reference folder` (refused inside any git
+   work tree), then sends the claim with the token.
+2. The firmware notes the request (`storage.claim_pending`). The housekeeping task (`settings_poll`) erases every
+   settings sector and both journal sectors, checks they read blank, marks the region ours and writes the
+   ownership mark, then saves the settings the radio is running with.
+3. The tool polls until `storage.region=ours`.
+
+`odr_debug.py storage dump` saves the same files without claiming; `storage info` shows the state and addresses.
+
+## 6. Testing
 
 | Test | What |
 |---|---|
@@ -167,4 +212,7 @@ change) does take `storage_lock` and may wait out a sector rewrite (about 100 ms
 | `tests/host/sim/sim_flash.c` | the simulated NOR: program only clears bits (violations counted), erase per 4 KB, a power cut after N operations (a torn program or erase leaves random bits) |
 | `tests/host/radioCoreTest.c` `test_persist` | the radio core saves the zone, the channel and the VFO and comes back to them after a reboot |
 | `tests/hil/test_cps.py` `test_settings_saved` | on the radio: a channel change is saved within 2 s (the debug link's `storage` view section, `debuglink.md` 3.7) |
+| `settingsTest.c` `test_foreign` | another firmware's bytes in the ring / J0 / J1: foreign, no flash operation at all, writes refused, RAM defaults, the read window's limits; claim erases and saves; junk beside our record, our J0 header beside junk, a cut inside a journal rewrite after the mark, a cut inside the first mark: ours |
+| `cpsTest.c` `test_foreign` | a foreign region: reads answered, `X 1` and codeplug edits refused, flash unchanged; after a claim, CPS writes work |
+| `tests/hil/test_cps.py` `test_storage_region` | on the radio: the region state matches the view, reads inside the window work and outside it are refused (skips with instructions when foreign) |
 | `tests/hil/test_cps.py` `test_settings_survive_restart` | opt-in `--allow-reboot`: the channel position survives a restart |

@@ -98,6 +98,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x0C` | READ_MEM | address u32 + length u16 | address u32, the bytes (3.10) |
 | `0x0D` | REBOOT | mode u8 + token u32 | reason u8 (3.11) |
 | `0x0E` | DMR_DATA | operation u8 + arguments (3.12) | none, or an inbox message (3.12) |
+| `0x0F` | STORAGE | operation u8 + arguments (3.13) | region info, SPI flash bytes, or a reason (3.13) |
 
 ### 3.1 VERSION
 
@@ -214,7 +215,7 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 6 | `link` | `uptime_ms ui.screen` (the screen's name, `docs/spec/ui.md` 2) `ui.depth ui.focus ui.count ui.locked ui.banner ui.toast ui.query ui.draws input.idle_ms input.source input.raw_keys input.injected input.encoder_total dl.frames dl.bad_crc dl.too_long dl.timeouts` |
 | 7 | `features` | `scan.built scan` (off, zone, vfo, dual) `scan_phase` (listen, probe, hold, resume, paused) `scan_skipped tot_warning tone_burst roger vox_keyed rx_sleeping battery` (ok, low, critical) `battery_pct battery_mv power_off`, `beep.built beep.played beep.no_stream beep.blocks beep.busy`, and the radio settings `set.tot_s set.tot_warn_s set.bcl set.roger_beep set.tx_inhibit set.scan_resume set.scan_hold_s set.scan_delay_ms set.scan_dwell_ms set.scan_priority set.beep_level set.key_beep set.vox set.vox_level set.vox_tail_ms set.rx_save set.rx_save_idle_s set.battery_off_s` (`docs/spec/radio-features.md`) |
 | 8 | `dmr_data` | `data.built data.busy data.sms_state data.signal_state data.signal_kind data.signal_dst data.ars_state data.inbox_count data.inbox_unread data.serial data.event data.event_serial data.event_id data.ars_server data.radio_check_reply data.call_alert_ack data.lrrp_reply data.has_gps data.lrrp_triggers`, counters `data.rx_bursts rx_csbk rx_headers rx_blocks rx_blocks_stale rx_crc_errors rx_crc_flag_mismatch rx_packets rx_for_us rx_confirmed sms_received sms_duplicates sms_sent sms_acked sms_failed tms_acks_sent responses_sent csbk_answers_sent call_alerts_received radio_checks_received call_alerts_sent call_alerts_acked radio_checks_sent radio_checks_answered ars_sent ars_acks lrrp_requests lrrp_answers lrrp_no_fix tx_lists tx_ok tx_failed tx_gave_up tx_last_error` (meanings: `core/dmr/dmrDataService.h` dmrDataStats_t). States: `idle queued sending ok failed`; ARS `off registering registered refused no_answer`; `data.event` the last event's name (`sms_received`, `call_alert`, `radio_check_answered`, ...), `data.event_id` its radio ID |
-| 9 | `storage` | settings store (`settings.load` ram / defaults / loaded / upgraded, `settings.dirty seq saves erases failures sector slot skipped`), flash journal (`storage.sector_writes sector_skips replays errors`), `codeplug.source codeplug.serial`, legacy CPS (`cps.built requests reads commits refused overflows last session pending`; [settings-store.md](settings-store.md), [cps-protocol.md](cps-protocol.md)) |
+| 9 | `storage` | settings store (`settings.load` ram / defaults / loaded / upgraded, `settings.dirty seq saves erases failures sector slot skipped`), flash journal (`storage.sector_writes sector_skips replays errors`), `codeplug.source codeplug.serial`, foreign region guard (`storage.region` none / ours / foreign, `storage.journal` none / ok / foreign, `storage.foreign_slots foreign_refusals claim_pending`; `settings.load` also `foreign`), legacy CPS (`cps.built requests reads commits refused overflows last session pending`; [settings-store.md](settings-store.md), [cps-protocol.md](cps-protocol.md)) |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -347,6 +348,19 @@ endian (24 bits used). BUSY: one of the kind is still queued; UNAVAILABLE: built
 | 6 | MARK_READ | index u8 | mark an inbox message read |
 
 RESET_COUNTERS also zeroes the data service's counters. `odr_debug.py data sms|alert|check|settings|inbox|read`.
+
+### 3.13 STORAGE
+
+The settings ring / journal region (`settings-store.md` 5): its state, a read-only SPI flash window for dumping it,
+and the claim of a foreign region.
+
+| Op | Request | Reply after the status |
+|---|---|---|
+| 0 INFO | none | region u8 (0 none, 1 ours, 2 foreign), claim pending u8, then address u32 + size u32 for the settings ring, the journal, the calibration copy |
+| 1 READ | address u32, length u16 (1-1000) | address u32, the bytes. Only inside the three ranges of INFO, else `DL_ST_REFUSED`. Taken under the storage lock |
+| 2 CLAIM | token u32: the chip UID's low word (INFO_CHIP offset 7) | reason u8. `DL_ST_REFUSED` with reason 1 (bad token) or 4 (no chip info); `DL_ST_UNAVAILABLE` when the region isn't foreign. On OK the housekeeping task erases the region (10 sector erases, up to about 4 s, during which it does not watch the power knob); poll `storage.region` |
+
+`odr_debug.py storage info | dump | claim` drives it; `claim` always dumps first, outside any git tree.
 
 ## 4. Safety
 
