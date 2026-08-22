@@ -22,10 +22,47 @@ void storage_unlock(void);
 void storage_quick_lock(void);
 void storage_quick_unlock(void);
 
-// After the board's flash works, before the settings and the codeplug are read: finish a journaled rewrite that a
-// power cut interrupted. False if there is no usable flash (then every write is refused)
+// After the board's flash works, before the settings and the codeplug are read: check that the settings ring and the
+// journal are ours (else the region is foreign, below), then finish a journaled rewrite that a power cut
+// interrupted. False if there is no usable flash or the region is foreign (then every write is refused)
 bool storage_init(void);
+// Flash usable and the region ours: writes allowed
 bool storage_ready(void);
+
+// --- Foreign region guard (docs/spec/settings-store.md 5) ---
+// A flash that held another firmware may have its own data where our settings ring and journal go. When the region
+// holds bytes that are neither erased nor ours, and not one valid record of ours (a settings record, a journal
+// header) is anywhere in it, it is foreign: nothing is erased or programmed there (and so no codeplug or CPS write
+// goes through the journal) until the debug link claims it (after the host dumped it)
+typedef enum {
+	STORAGE_REGION_NONE,		// no flash map / unusable flash
+	STORAGE_REGION_OURS,		// blank, or holding our records
+	STORAGE_REGION_FOREIGN,		// someone else's data: hands off
+} storage_region_t;
+storage_region_t storage_region(void);
+// Ask for a claim (the debug link, behind the UID token): the housekeeping task erases the settings ring and the
+// journal (settings_poll -> storage_claim) and the region becomes ours. False if the region isn't foreign
+bool storage_claim_request(void);
+bool storage_claim_pending(void);
+// Erase the region and take it (false if not foreign or the flash failed). Slow: some 10 sector erases
+bool storage_claim(void);
+// The flash ranges the debug link may read (the settings ring, the journal, the calibration copy): true when the
+// whole of [addr, addr + len) is inside one of them
+bool storage_debug_read_allowed(uint32_t addr, uint32_t len);
+
+// --- Settings slots (the record format, shared with core/settings so the guard knows our records) ---
+#define STORAGE_SLOT_SIZE	256u
+#define STORAGE_SLOT_MAGIC	0x5445534Fu	// "OSET"
+#define STORAGE_SLOT_HDR	12u		// magic, sequence, layout, payload length
+#define STORAGE_SLOT_COMMIT	(STORAGE_SLOT_SIZE - 4u)
+#define STORAGE_SLOT_PAYLOAD_MAX (STORAGE_SLOT_COMMIT - STORAGE_SLOT_HDR - 4u)
+typedef enum {
+	STORAGE_SLOT_FREE,		// all 0xFF
+	STORAGE_SLOT_VALID,		// a complete record (magic, length, CRC, commit word)
+	STORAGE_SLOT_TORN,		// our magic but not complete (a cut during a save)
+	STORAGE_SLOT_OTHER,		// anything else (a torn erase, or someone else's data)
+} storage_slot_t;
+storage_slot_t storage_slot_check(const uint8_t slot[STORAGE_SLOT_SIZE]);
 
 // Rewrite the erase unit at addr (aligned) with data (STORAGE_SECTOR bytes), through the journal. Skipped when the
 // flash already holds exactly that
@@ -47,6 +84,9 @@ typedef struct {
 	uint32_t sector_skips;		// rewrites skipped (same content)
 	uint32_t replays;		// interrupted rewrites finished at boot
 	uint32_t errors;		// flash operations that failed
+	uint32_t foreign_refusals;	// writes refused because the region is foreign
+	uint16_t foreign_slots;		// settings slots (and journal sectors) that were neither erased nor ours at boot
+	bool claim_pending;
 } storage_stats_t;
 
 void storage_get_stats(storage_stats_t *s);

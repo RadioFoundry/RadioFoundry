@@ -20,6 +20,9 @@
     odr_debug.py dump --addr A --len N [-o F]   read internal flash / system memory / OTP / option bytes to a file
                                                 outside the git tree (default the external reference folder)
     odr_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
+    odr_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
+    odr_debug.py storage dump [--out DIR]       the region and the calibration copy (SPI flash) to files outside git
+    odr_debug.py storage claim [--out DIR]      dump first, then let the firmware erase a foreign region and use it
 
 Key names: up down left right select (ok) back (exit) quick (star) context (hash) 0-9 ptt monitor tt (talk target)
 emergency enc user1-user4.
@@ -51,6 +54,9 @@ INJECT_MAX_S = 10.0
 PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, KEY, PTT, GET_LOG, GET_VIEW, RADIO, INFO_CHIP, READ_MEM, \
     REBOOT = range(1, 14)
 DMR_DATA = 0x0E
+STORAGE = 0x0F
+STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
+REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
 SMS_TEXT_MAX = REQ_MAX - 6          # op, u32 destination, flags
 CMD_ERROR = 0xFF
@@ -256,6 +262,29 @@ class DebugLink:
         if raddr != addr or len(r) - 4 != n:
             raise DebugLinkError(f"READ_MEM answer for 0x{raddr:08X} with {len(r) - 4} bytes, asked 0x{addr:08X} {n}")
         return bytes(r[4:])
+
+    def storage_info(self):
+        """STORAGE INFO: region state and the (address, size) of the settings ring, journal, calibration copy"""
+        _, r = self.request(STORAGE, bytes([STORAGE_OP_INFO]))
+        region, pending = r[0], r[1]
+        sa, ss, ja, js, ca, cs = struct.unpack_from("<6I", r, 2)
+        return {"region": REGIONS.get(region, str(region)), "claim_pending": bool(pending),
+                "ranges": {"settings": (sa, ss), "journal": (ja, js), "calibration": (ca, cs)}}
+
+    def storage_read(self, addr, n):
+        out = bytearray()
+        while len(out) < n:
+            k = min(MEM_READ_MAX, n - len(out))
+            _, r = self.request(STORAGE, struct.pack("<BIH", STORAGE_OP_READ, addr + len(out), k))
+            (raddr,) = struct.unpack_from("<I", r)
+            if raddr != addr + len(out) or len(r) - 4 != k:
+                raise DebugLinkError(f"STORAGE READ answer for 0x{raddr:08X} with {len(r) - 4} bytes")
+            out += r[4:]
+        return bytes(out)
+
+    def storage_claim(self, token):
+        """Raises DebugLinkError (status 7 with the reason, or 4: not foreign) when refused"""
+        self.request(STORAGE, struct.pack("<BI", STORAGE_OP_CLAIM, token))
 
     def dump(self, addr, n, progress=None):
         out = bytearray()
@@ -822,6 +851,65 @@ def cmd_dump(link, a):
     return 0
 
 
+def storage_dump(link, out_dir, info=None):
+    """Read the settings ring, the journal and the calibration copy into out_dir (never inside a git tree), each
+    read twice and compared. Returns the file paths"""
+    import hashlib
+    info = info or link.storage_info()
+    c = link.chip()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    paths = []
+    for name, (addr, size) in info["ranges"].items():
+        if size == 0:
+            continue
+        path = os.path.join(out_dir, f"storage_{c['uid'][0]:08X}_{stamp}_{name}_{addr:06X}.bin")
+        ok, why = dump_path_ok(path)
+        if not ok:
+            raise DebugLinkError(f"refusing: {why}")
+        data = link.storage_read(addr, size)
+        if link.storage_read(addr, size) != data:
+            raise DebugLinkError(f"{name}: two reads differ; not saved")
+        os.makedirs(out_dir, exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+        print(f"{path}: {size} bytes from SPI flash 0x{addr:06X}, sha256 {hashlib.sha256(data).hexdigest()}")
+        paths.append(path)
+    return paths
+
+
+def cmd_storage(link, a):
+    info = link.storage_info()
+    if a.op == "info":
+        print(f"region   {info['region']}{' (claim pending)' if info['claim_pending'] else ''}")
+        for name, (addr, size) in info["ranges"].items():
+            print(f"{name:<11}0x{addr:06X} + 0x{size:X}")
+        return 0
+    if a.op == "dump":
+        storage_dump(link, a.out, info)
+        return 0
+    # claim
+    if info["region"] != "foreign":
+        print(f"odr_debug: the region is {info['region']}: nothing to claim", file=sys.stderr)
+        return 1
+    storage_dump(link, a.out, info)
+    try:
+        link.storage_claim(link.chip()["token"])
+    except DebugLinkError as e:
+        if e.status == ST_REFUSED and e.data:
+            print(f"odr_debug: the radio refused: {REBOOT_REASONS.get(e.data[0], e.data[0])}", file=sys.stderr)
+            return 1
+        raise
+    print("claimed: the radio erases the settings ring and the journal", file=sys.stderr)
+    end = time.monotonic() + 20
+    while time.monotonic() < end:
+        time.sleep(0.5)
+        if link.storage_info()["region"] == "ours":
+            print("region   ours")
+            return 0
+    print("odr_debug: the region is not ours after 20 s (see `log`)", file=sys.stderr)
+    return 1
+
+
 def cmd_reboot(link, a):
     c = link.chip()
     print_chip(c)
@@ -896,6 +984,9 @@ def main(argv=None):
     p.add_argument("-o", "--output", help=f"file outside any git tree (default {DEFAULT_DUMP_DIR}/dump_ADDR_LEN.bin)")
     p = sub.add_parser("reboot")
     p.add_argument("--rom-dfu", action="store_true", help="into ST's ROM USB DFU (refused unless RDP level 0)")
+    p = sub.add_parser("storage", help="the settings / journal region: info, dump, claim (docs/spec/settings-store.md 5)")
+    p.add_argument("op", choices=["info", "dump", "claim"])
+    p.add_argument("--out", default=DEFAULT_DUMP_DIR, help=f"dump directory outside any git tree (default {DEFAULT_DUMP_DIR})")
     a = ap.parse_args(argv)
 
     if a.cmd == "ptt" and not 0 < a.seconds <= INJECT_MAX_S:
@@ -933,6 +1024,8 @@ def main(argv=None):
                 return cmd_dump(link, a)
             elif a.cmd == "reboot":
                 return cmd_reboot(link, a)
+            elif a.cmd == "storage":
+                return cmd_storage(link, a)
             elif a.cmd == "log":
                 while True:
                     dropped, text = link.log()

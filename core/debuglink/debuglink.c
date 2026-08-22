@@ -18,6 +18,7 @@
 #endif
 #include "input/input.h"
 #include "radio/radio.h"
+#include "storage/storage.h"
 #include "ui/gfx.h"
 
 #ifndef ODR_GIT
@@ -665,6 +666,78 @@ static void reboot_now(void)
 	}
 }
 
+// --- the settings / journal region (docs/spec/debuglink.md 3.13) ---
+
+static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	const hal_flash_map_t *m = storage_map();
+
+	if (len < 1) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	if (m == NULL || board.flash == NULL) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	switch (req[0]) {
+	case DL_STORAGE_OP_INFO: {
+		out[0] = DL_ST_OK;
+		out[1] = (uint8_t)storage_region();
+		out[2] = storage_claim_pending();
+		put32(out + 3, m->settings_addr);
+		put32(out + 7, m->settings_size);
+		put32(out + 11, m->journal_addr);
+		put32(out + 15, 2u * STORAGE_SECTOR);
+		put32(out + 19, m->calibration_addr);
+		put32(out + 23, m->calibration_size);
+		return 27;
+	}
+	case DL_STORAGE_OP_READ: {
+		if (len != 7) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		uint32_t addr = get32(req + 1);
+		uint32_t n = get16(req + 5);
+		if (n == 0 || n > DL_MEM_READ_MAX || 5u + n > cap) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		if (!storage_debug_read_allowed(addr, n)) {
+			return status_only(out, DL_ST_REFUSED);
+		}
+		storage_lock();
+		bool ok = board.flash->read(addr, out + 5, n);
+		storage_unlock();
+		if (!ok) {
+			return status_only(out, DL_ST_UNAVAILABLE);
+		}
+		out[0] = DL_ST_OK;
+		put32(out + 1, addr);
+		return 5u + n;
+	}
+	case DL_STORAGE_OP_CLAIM: {
+		hal_chip_t c;
+		if (len != 5) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		bool have = read_chip(&c);
+		uint8_t why = dl_reboot_check(HAL_REBOOT_NORMAL, get32(req + 1), have ? &c : NULL, false);
+		if (why != DL_REBOOT_OK) {
+			out[0] = DL_ST_REFUSED;
+			out[1] = why;
+			return 2;
+		}
+		if (!storage_claim_request()) {
+			return status_only(out, DL_ST_UNAVAILABLE);	// not foreign: nothing to claim
+		}
+		dlog("debuglink: storage region claimed, erasing");
+		out[0] = DL_ST_OK;
+		out[1] = DL_REBOOT_OK;
+		return 2;
+	}
+	default:
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+}
+
 // --- dispatch ---
 
 static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -700,6 +773,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return cmd_reboot(req, len, out);
 	case DL_CMD_DMR_DATA:
 		return debuglink_cmd_dmr_data(req, len, out, cap);
+	case DL_CMD_STORAGE:
+		return cmd_storage(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

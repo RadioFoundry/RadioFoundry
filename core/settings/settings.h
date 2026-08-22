@@ -105,6 +105,7 @@ typedef enum {
 	SETTINGS_DEFAULTS,	// flash usable but no valid record (new radio, or an incompatible layout)
 	SETTINGS_LOADED,	// the newest record, same size
 	SETTINGS_UPGRADED,	// the newest record, written by a firmware with fewer or more fields
+	SETTINGS_FOREIGN,	// the settings area holds another firmware's data: defaults, nothing saved until claimed
 } settings_load_t;
 
 typedef struct {

@@ -135,7 +135,8 @@ static void link_section(dl_text_t *t)
 
 static void storage_section(dl_text_t *t)
 {
-	static const char *const loads[] = { "ram", "defaults", "loaded", "upgraded" };
+	static const char *const loads[] = { "ram", "defaults", "loaded", "upgraded", "foreign" };
+	static const char *const regions[] = { "none", "ours", "foreign" };
 	static const char *const sources[] = { "none", "builtin", "legacy" };
 	settings_stats_t ss;
 	storage_stats_t st;
@@ -143,7 +144,7 @@ static void storage_section(dl_text_t *t)
 
 	settings_get_stats(&ss);
 	storage_get_stats(&st);
-	dl_text(t, "settings.load=%s\nsettings.dirty=%u\nsettings.seq=%u\n", ss.load < 4 ? loads[ss.load] : "?", ss.dirty,
+	dl_text(t, "settings.load=%s\nsettings.dirty=%u\nsettings.seq=%u\n", ss.load < 5 ? loads[ss.load] : "?", ss.dirty,
 		(unsigned)ss.seq);
 	dl_text(t, "settings.saves=%u\nsettings.erases=%u\nsettings.failures=%u\n", (unsigned)ss.saves,
 		(unsigned)ss.erases, (unsigned)ss.failures);
@@ -151,6 +152,11 @@ static void storage_section(dl_text_t *t)
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);
 	dl_text(t, "storage.replays=%u\nstorage.errors=%u\n", (unsigned)st.replays, (unsigned)st.errors);
+	storage_region_t rg = storage_region();
+	dl_text(t, "storage.region=%s\nstorage.journal=%s\n", (unsigned)rg < 3 ? regions[rg] : "?",
+		rg == STORAGE_REGION_FOREIGN ? "foreign" : (rg == STORAGE_REGION_OURS ? "ok" : "none"));
+	dl_text(t, "storage.foreign_slots=%u\nstorage.foreign_refusals=%u\nstorage.claim_pending=%u\n",
+		st.foreign_slots, (unsigned)st.foreign_refusals, st.claim_pending);
 	dl_text(t, "codeplug.source=%s\ncodeplug.serial=%u\n", (unsigned)src < 3 ? sources[src] : "?",
 		(unsigned)codeplug_serial());
 #if CONFIG_CPS_LEGACY

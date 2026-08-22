@@ -70,6 +70,9 @@ written and verified (about 100 ms). Rules:
 
 - **Writable**: the EEPROM image (0 to 64 KB) and the legacy flash image (`legacy_flash` to `legacy_end`). Anything
   else is refused at `X 1`. That includes the settings ring, the journal and the native area.
+- **Foreign journal**: while the settings / journal region holds another firmware's data (`settings-store.md` 5),
+  every `X 1` is refused, because a commit would erase the journal. Reads still work, so a backup can be taken
+  first.
 - **Quick keys** (EEPROM 0x7524-0x7537) belong to the radio. `X 2` bytes there are ignored, so a CPS that writes
   its stale copy doesn't undo what the user set on the radio.
 - **Calibration** (`calibration_addr`, 512 bytes, inside the protected sector 0x010000): only the window's bytes
