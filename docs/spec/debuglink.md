@@ -233,6 +233,7 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 12 | none | `radio_req_clear_temporary` |
 | 13 | none | `radio_req_reply_cancel` (DMR builds) |
 | 14 | none | `hostlink_hotspot_exit`: leave hotspot mode |
+| 15 | on u8: 1 network, 0 serial | switch the USB personality once the reply has gone out (`CONFIG_USB_NETWORK`; status 4 without it). The radio re-enumerates; in network mode this link answers over UDP to the radio's address, port 3334 (`docs/spec/usb-network.md`) |
 
 ### 3.9 INFO_CHIP
 

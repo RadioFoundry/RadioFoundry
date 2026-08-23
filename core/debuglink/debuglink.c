@@ -31,7 +31,7 @@
 // Radio operations (DL_CMD_RADIO, first payload byte)
 enum {
 	OP_CHANNEL_STEP = 1, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH,
-	OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT,
+	OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_USB_NETWORK,
 };
 
 static dl_parser_t parser;
@@ -67,6 +67,12 @@ static const char features[] = "features="
 #endif
 #if CONFIG_HOTSPOT
 	"HOTSPOT,"
+#endif
+#if CONFIG_USB_NETWORK
+	"USB_NETWORK,"
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+	"DMR_IP_GATEWAY,"
 #endif
 #if CONFIG_VFO
 	"VFO,"
@@ -397,7 +403,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	static const uint8_t arg_len[] = {
 		[OP_CHANNEL_STEP] = 1, [OP_ZONE_POS] = 2, [OP_ZONE] = 2, [OP_VFO] = 1, [OP_VFO_SET] = 4, [OP_VFO_STEP] = 1,
 		[OP_POWER] = 1, [OP_SQUELCH] = 1, [OP_BANDWIDTH] = 1, [OP_TONE] = 4, [OP_MONITOR] = 1, [OP_CLEAR_TEMP] = 0,
-		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0,
+		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0, [OP_USB_NETWORK] = 1,
 	};
 	uint32_t now = hal_millis();
 
@@ -462,6 +468,11 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 #endif
 	case OP_HOTSPOT_EXIT:
 		hostlink_hotspot_exit();
+		break;
+	case OP_USB_NETWORK:
+		if (!hostlink_request_usb_network(a[0] != 0)) {
+			return status_only(out, DL_ST_UNAVAILABLE);
+		}
 		break;
 	default:
 		return status_only(out, DL_ST_BAD_ARG);

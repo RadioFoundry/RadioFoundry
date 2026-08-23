@@ -31,10 +31,10 @@ error. Changing a switch rebuilds everything (the build keeps the flags in `buil
 | `CONFIG_DMR_ARS` | = DMR | ARS registration (not ported yet) |
 | `CONFIG_DMR_LRRP` | = DMR | LRRP location (not ported yet) |
 | `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert, radio check (not ported yet) |
-| `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR to a USB network adapter (not ported yet) |
+| `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter (`docs/spec/usb-network.md`) |
 | `CONFIG_SFR` | n | single frequency repeater (not ported yet) |
 | `CONFIG_USB` | y | USB device (CDC serial) |
-| `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter mode (not ported yet) |
+| `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 15) |
 | `CONFIG_HOTSPOT` | = DMR and USB | MMDVM modem / hotspot over USB |
 | `CONFIG_DEBUGLINK` | = USB | USB debug link for bench automation: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
 | `CONFIG_VFO` | y | tuning a frequency by hand |

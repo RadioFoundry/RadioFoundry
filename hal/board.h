@@ -17,6 +17,7 @@
 #include "hal_vocoder.h"
 #include "hal_stream.h"
 #include "hal_system.h"
+#include "hal_netif.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -57,6 +58,8 @@ typedef struct {
 	void (*diag_reset)(void);
 	// Optional: chip identity, raw memory reads, reboot modes (hal_system.h)
 	const hal_system_t *system;
+	// Optional: the USB network personality (hal_netif.h); NULL when not built
+	const hal_netif_t *netif;
 } board_t;
 
 extern const board_t board;

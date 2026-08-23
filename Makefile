@@ -33,6 +33,10 @@ CORE_DIRS += core/debuglink
 endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
+# The IP gateway and the packet data codec it needs (sorted: another feature may list the codec too)
+ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
+APP_SRC := $(sort $(APP_SRC) core/dmr/ipGateway.c core/dmr/dmrData.c)
+endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)
 

@@ -240,3 +240,15 @@ run: run-debuglink
 run-debuglink: debuglinkTest
 	./debuglinkTest
 .PHONY: run-debuglink
+
+# The host link's network personality: the IP gateway between a fake USB network interface and fake air ops
+HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/dmr/ipGateway.c $(DATA) $(FRAME)
+TESTS   += hostlinkNetTest
+
+hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HLNET)
+
+run: run-hlnet
+run-hlnet: hostlinkNetTest
+	./hostlinkNetTest
+.PHONY: run-hlnet

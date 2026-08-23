@@ -9,6 +9,7 @@
 #include "semphr.h"
 #if CONFIG_USB
 #include "usb/usb_device.h"
+#include "usb/usb_ncm.h"
 #endif
 
 static const band_t bands[] = {
@@ -70,6 +71,9 @@ const board_t board = {
 #endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
+#if CONFIG_USB_NETWORK
+	.netif = &usb_ncm_netif,
+#endif
 #endif
 	.system = &stm32_system,
 };

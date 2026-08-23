@@ -12,6 +12,10 @@
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
+#if CONFIG_DMR_IP_GATEWAY
+#include "hostlink/hostlink_net.h"
+#include "dmr/ipGateway.h"
+#endif
 
 static const char *state_key(uint8_t s)
 {
@@ -92,6 +96,18 @@ static void hotspot_section(dl_text_t *t)
 
 	dl_text(t, "hostlink=%s\n", (unsigned)m < 3 ? modes[m] : "?");
 	dl_text(t, "hostlink.left=%s\n", (unsigned)l < 5 ? leaves[l] : "?");
+	dl_text(t, "usb.network=%u\nusb.net_up=%u\n", hostlink_network_mode(),
+		(board.netif != NULL) && board.netif->up());
+#if CONFIG_DMR_IP_GATEWAY
+	hostlink_net_stats_t ns;
+
+	hostlink_net_stats(&ns);
+	dl_text(t, "net.host_ip=%08x\nnet.radio_ip=%08x\n", (unsigned)ipGatewayHostIP(), (unsigned)ipGatewayRadioIP());
+	dl_text(t, "net.frames_in=%u\nnet.to_air=%u\nnet.to_air_refused=%u\n", (unsigned)ns.frames_in,
+		(unsigned)ns.to_air, (unsigned)ns.to_air_refused);
+	dl_text(t, "net.packets_air=%u\nnet.packets_up=%u\nnet.packets_dropped=%u\n", (unsigned)ns.packets_air,
+		(unsigned)ns.packets_up, (unsigned)ns.packets_dropped);
+#endif
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;
 	hotspot_stats_t s;

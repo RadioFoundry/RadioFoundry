@@ -77,7 +77,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
-    OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT = range(1, 15)
+    OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_USB_NETWORK = range(1, 16)
 TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
 
 
@@ -139,19 +139,57 @@ def pick_port(port=None):
     raise DebugLinkError(f"several radios found {ports}: give --port")
 
 
+class UdpPort:
+    """The debug link over UDP, for a radio in USB network mode (docs/spec/usb-network.md): the radio's serial
+    protocols on UDP port 3334 of its own address. Looks enough like a pyserial port for DebugLink."""
+
+    def __init__(self, host, port=3334, timeout=0.02):
+        import socket
+        self.addr = (host, port)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(timeout)
+        self.pending = bytearray()
+
+    @property
+    def in_waiting(self):
+        return len(self.pending)
+
+    def read(self, n=1):
+        if not self.pending:
+            try:
+                data, _ = self.sock.recvfrom(2048)
+                self.pending += data
+            except OSError:
+                return b""
+        out = bytes(self.pending[:n])
+        del self.pending[:n]
+        return out
+
+    def write(self, data):
+        self.sock.sendto(bytes(data), self.addr)
+        return len(data)
+
+    def close(self):
+        self.sock.close()
+
+
 class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
     def __init__(self, port=None, timeout=1.0):
-        if serial is None:
+        if serial is None and not str(port or "").startswith("udp:"):
             raise DebugLinkError("needs pyserial: pip install pyserial")
         self.port = pick_port(port)
         self.timeout = timeout
         self.seq = 0
-        try:
-            self.s = serial.Serial(self.port, 115200, timeout=0.02)
-        except serial.SerialException as e:
-            raise DebugLinkError(f"can't open {self.port}: {e}")
+        if self.port.startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
+            host, _, udp_port = self.port[4:].partition(":")
+            self.s = UdpPort(host, int(udp_port or 3334))
+        else:
+            try:
+                self.s = serial.Serial(self.port, 115200, timeout=0.02)
+            except serial.SerialException as e:
+                raise DebugLinkError(f"can't open {self.port}: {e}")
         self.buf = bytearray()
 
     def close(self):
@@ -416,6 +454,11 @@ class DebugLink:
     def hotspot_exit(self):
         self.radio(OP_HOTSPOT_EXIT)
 
+    def usb_network(self, on):
+        """Switch the USB personality after the reply: network adapter (CDC-NCM) or serial port. The radio
+        re-enumerates; in network mode the debug link answers over UDP (--port udp:<radio IP>)."""
+        self.radio(OP_USB_NETWORK, bytes([1 if on else 0]))
+
 
 # ── pictures ────────────────────────────────────────────────────────────────
 
@@ -601,6 +644,8 @@ def cmd_radio(link, a):
         link.reply_cancel()
     elif op == "hotspot-exit":
         link.hotspot_exit()
+    elif op == "usb":                 # usb network|serial
+        link.usb_network(args[:1] == ["network"])
     else:
         raise DebugLinkError(f"unknown radio op {op!r}")
     return 0
@@ -743,7 +788,7 @@ def main(argv=None):
     p.add_argument("--seconds", type=float, required=True)
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
-                                  "monitor", "clear", "reply-cancel", "hotspot-exit"])
+                                  "monitor", "clear", "reply-cancel", "hotspot-exit", "usb"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("log")
     p.add_argument("--follow", action="store_true")

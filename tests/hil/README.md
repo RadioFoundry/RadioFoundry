@@ -28,6 +28,7 @@ Without a radio every test is skipped with the reason (no failure). The radio is
 |---|---|
 | (none) | radio-only tests: version, screenshots, keys, FM receive, MMDVM requests that don't transmit |
 | `--allow-rf` | tests that transmit (marker `rf`: the SDR bench's transmitter; marker `radio_tx`: the radio itself) |
+| `--allow-usb-switch` | tests that switch the radio's USB personality to the network adapter and back (marker `usb_switch`) |
 | `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver |
 
 The RF tests need both flags. The gateway service is stopped through `tools/bench/dmr_bench.py`'s lease: a detached
@@ -58,7 +59,8 @@ Other options: `--tx-power` (bench transmitter level 0-255, default 40), `--dmr-
 | `test_boot.py` | version / features, ping latency, screenshot geometry, firmware clock vs wall clock (no stalls), view sections, diagnostics clock, error replies (unknown command, bad CRC, oversized request), log ring | radio |
 | `test_ui.py` | UP / DOWN change the channel on Home, Quick settings open and close (screenshots differ, then match), diagnostics page, injected keys count as activity | radio |
 | `test_fm.py` | VFO on NOAA weather: squelch opens or RSSI above the floor within 10 s (receive only) | radio with the FM VFO |
-| `test_hotspot.py` | MMDVM GET_VERSION / GET_STATUS answered, the debug link answers in hotspot mode, hotspot left through the debug link (no transmission) | radio with the hotspot |
+| `test_hotspot.py` | MMDVM GET_VERSION / GET_STATUS answered (client with DTR clear, so its close doesn't end the session), the hotspot takes the modem (slot 2 space, `hs.running`, `hs.starts`), the debug link answers in hotspot mode, hotspot left through the debug link (no transmission) | radio with the hotspot |
+| `test_usb_network.py` | USB network personality: re-enumerates as CDC-NCM, DHCP gives the host 12.<ID>, ping and the debug link over UDP 3334 at the radio's address, back to serial | `--allow-usb-switch`, firmware with `CONFIG_DMR_IP_GATEWAY` |
 | `test_dmr_rx.py` | bench sends 2 group calls (10 superframes, 8 headers, 3 terminators each); counter deltas | `--allow-rf --allow-service-stop` |
 | `test_dmr_voice.py` | bench sends a speech recording; every frame reaches the speaker path | the same, and `--ambe` |
 | `test_placeholders.py` | planned: radio DMR TX checked by the SDR bench's receiver; incoming private voice call through the RadioDesk sandbox alert API | skipped |

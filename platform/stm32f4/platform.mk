@@ -18,7 +18,8 @@ TUSB := third_party/tinyusb/src
 # TinyUSB (MIT), device stack on the OTG_FS core (Synopsys DWC2); configured by drivers/usb/tusb_config.h
 MCU_DEFS += -DCFG_TUSB_MCU=OPT_MCU_STM32F4
 TUSB_SRC := $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
-	$(TUSB)/class/cdc/cdc_device.c $(TUSB)/portable/synopsys/dwc2/dcd_dwc2.c $(TUSB)/portable/synopsys/dwc2/dwc2_common.c
+	$(TUSB)/class/cdc/cdc_device.c $(TUSB)/portable/synopsys/dwc2/dcd_dwc2.c $(TUSB)/portable/synopsys/dwc2/dwc2_common.c \
+	$(if $(filter y,$(CONFIG_USB_NETWORK)),$(TUSB)/class/net/ncm_device.c)
 
 PLATFORM_DIRS := platform/stm32f4
 PLATFORM_INC := -I$(HALDIR)/Inc -I$(CMSIS_DEV)/Include -I$(CMSIS_CORE)/Include -I$(RTOS)/include -I$(RTOS)/portable/GCC/ARM_CM4F \
