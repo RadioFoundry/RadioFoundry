@@ -17,6 +17,8 @@ static void emit(uint8_t kind, int8_t ts, uint32_t arg, const dmr_burst_t *b)
 
 static bool start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 {
+	if (sim.refuse_start)
+		return false;
 	sim.started = true;
 	sim.cfg = *cfg;
 	sim.cb = cb;

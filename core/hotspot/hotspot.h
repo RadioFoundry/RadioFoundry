@@ -125,7 +125,8 @@ typedef struct {
 	uint32_t net_frames, net_dropped, net_calls, rf_bursts, rf_frames_up, rf_lost, events_dropped;
 	uint32_t tx_rejected;
 	uint32_t cwid_requests, cwid_unsent;	// SEND_CWID accepted; of those, not keyed (no cw_id op, or it refused)
-	uint32_t enter_attempts;
+	uint32_t enter_attempts;		// hotspot_start() calls that asked the radio (all sessions since boot)
+	uint32_t starts, stops;			// the modem taken / given back (sessions since boot)
 } hotspot_stats_t;
 void hotspot_get_stats(hotspot_stats_t *s);
 

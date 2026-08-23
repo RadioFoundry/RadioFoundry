@@ -31,6 +31,7 @@
 #endif
 
 static volatile hostlink_mode_t mode = HOSTLINK_IDLE;
+static volatile hostlink_leave_t last_leave = HOSTLINK_STAY;
 static volatile bool hotspot_allowed = true;
 static volatile bool exit_requested;
 static hostlink_cps_fn cps_handler;
@@ -46,6 +47,11 @@ static uint32_t entered_ms;		// when hotspot mode began (idle time before the fi
 hostlink_mode_t hostlink_mode(void)
 {
 	return mode;
+}
+
+hostlink_leave_t hostlink_last_leave(void)
+{
+	return last_leave;
 }
 
 void hostlink_set_hotspot_allowed(bool allowed)
@@ -104,9 +110,13 @@ static void make_description(void)
 	description[n] = '\0';
 }
 
-static void leave_hotspot(void)
+static void leave_hotspot(hostlink_leave_t why)
 {
-	dlog("hostlink: leaving hotspot mode");
+	static const char *const names[] = { "", "user", "port closed (DTR dropped)", "port gone", "idle" };
+
+	last_leave = why;
+	dlog("hostlink: leaving hotspot mode: %s", ((unsigned)why < 5) ? names[why] : "?");
+	(void)names;	// dlog() may be compiled out
 	mmdvm_end();
 	mmdvm_framer_reset(&framer);
 	mode = HOSTLINK_IDLE;
@@ -255,9 +265,11 @@ static void hostlink_task(void *arg)
 			// is noticed by the idle timeout
 			uint32_t last = (mmdvm_last_frame_ms() != 0) ? mmdvm_last_frame_ms() : entered_ms;
 
-			if (hostlink_session_check(&session, port->connected(), true, exit_now, now - last) !=
-			    HOSTLINK_STAY) {
-				leave_hotspot();
+			hostlink_leave_t why = hostlink_session_check(&session, port->connected(), true, exit_now,
+								      now - last);
+
+			if (why != HOSTLINK_STAY) {
+				leave_hotspot(why);
 			}
 #else
 			mode = HOSTLINK_IDLE;

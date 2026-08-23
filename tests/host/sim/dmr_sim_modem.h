@@ -40,6 +40,7 @@ typedef struct {
 
 	// Behavior knobs
 	bool refuse_tx;		// tx_begin returns false
+	bool refuse_start;	// start returns false (a board whose modem is not in DMR mode)
 	bool reject_next;	// send DMR_EV_TX_REJECTED at the next slot
 	bool repeater;		// emit slot ticks with the slot number alternating (a repeater's CACH)
 	bool wake_repeater_on_csbk;	// a BS_Dwn_Act on air starts the repeater (repeater = true)

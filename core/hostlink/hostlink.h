@@ -71,6 +71,9 @@ typedef struct {
 	bool was_connected;
 } hostlink_session_t;
 
+// Why hotspot mode was last left (HOSTLINK_STAY = not left yet since boot), for the debug link
+hostlink_leave_t hostlink_last_leave(void);
+
 // On entering hotspot mode, with the port's connected() at that moment
 void hostlink_session_start(hostlink_session_t *s, bool connected);
 // connected: the port's connected() now (DTR); present: the port exists (USB configured and not suspended; true when

@@ -87,7 +87,11 @@ static void hotspot_section(dl_text_t *t)
 	static const char *const modes[] = { "idle", "hotspot", "cps" };
 	hostlink_mode_t m = hostlink_mode();
 
+	static const char *const leaves[] = { "none", "user", "closed", "gone", "idle" };
+	hostlink_leave_t l = hostlink_last_leave();
+
 	dl_text(t, "hostlink=%s\n", (unsigned)m < 3 ? modes[m] : "?");
+	dl_text(t, "hostlink.left=%s\n", (unsigned)l < 5 ? leaves[l] : "?");
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;
 	hotspot_stats_t s;
@@ -105,6 +109,7 @@ static void hotspot_section(dl_text_t *t)
 	dl_text(t, "hs.events_dropped=%u\nhs.tx_rejected=%u\n", (unsigned)s.events_dropped, (unsigned)s.tx_rejected);
 	dl_text(t, "hs.cwid_requests=%u\nhs.cwid_unsent=%u\nhs.enter_attempts=%u\n", (unsigned)s.cwid_requests,
 		(unsigned)s.cwid_unsent, (unsigned)s.enter_attempts);
+	dl_text(t, "hs.starts=%u\nhs.stops=%u\n", (unsigned)s.starts, (unsigned)s.stops);
 #else
 	dl_text(t, "hs.built=0\n");
 #endif

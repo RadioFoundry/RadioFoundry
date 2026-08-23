@@ -324,6 +324,7 @@ bool hotspot_start(uint32_t now_ms)
 	}
 	running = true;
 	view.running = true;
+	stats.starts++;
 	changed();
 	return true;
 }
@@ -340,6 +341,7 @@ void hotspot_stop(void)
 	}
 	modem->stop();
 	running = false;
+	stats.stops++;
 	reset_all();
 	view.running = false;
 	view.transmitting = false;

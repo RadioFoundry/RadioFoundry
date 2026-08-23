@@ -11,6 +11,7 @@
 #include "config.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
+#include "radio/radio_hotspot.h"
 #endif
 #include "FreeRTOS.h"
 #include "task.h"
@@ -31,15 +32,16 @@ static radio_view_t shared_view;	// the published copy, under view_lock
 static volatile uint32_t shared_serial;
 static SemaphoreHandle_t view_lock;
 static QueueHandle_t requests;
-#if CONFIG_HOTSPOT
-static volatile bool hs_active;		// published: the radio is in hotspot mode
-static volatile bool hs_carrier;	// published: hotspot carrier
-static volatile int16_t hs_rssi;	// published: the last status poll's RSSI (dBm)
-static volatile uint32_t hs_serial;
-static uint32_t hs_orphan_ms;		// hotspot mode without a running hotspot since, 0 = not
 
-// The hotspot engine gave up before it took the modem (or its leave was lost): back to the channel after this long
-#define HOTSPOT_ORPHAN_MS	3000
+#if CONFIG_HOTSPOT
+// radio_hotspot.c's way into the queue: from the host link task, never waiting except for a request that must not be
+// lost (the leave: the channel comes back with it)
+static void hs_post(const radio_req_t *req, bool must)
+{
+	if (requests != NULL) {
+		xQueueSend(requests, req, must ? pdMS_TO_TICKS(50) : 0);
+	}
+}
 #endif
 
 static void publish(void)
@@ -49,29 +51,10 @@ static void publish(void)
 	shared_serial = sm.serial;
 	xSemaphoreGive(view_lock);
 #if CONFIG_HOTSPOT
-	hs_active = sm.hotspot;
-	hs_carrier = sm.hs_carrier;
-	hs_rssi = sm.view.rssi_dbm;
+	radio_hs_publish(&sm);
 #endif
 }
 
-#if CONFIG_HOTSPOT
-// In hotspot mode with no hotspot running for a while: the enter was answered too late, or the host went away
-static void hotspot_watch(uint32_t now)
-{
-	if (!sm.hotspot || hotspot_running()) {
-		hs_orphan_ms = 0;
-		return;
-	}
-	if (hs_orphan_ms == 0) {
-		hs_orphan_ms = now != 0 ? now : 1;
-	} else if (now - hs_orphan_ms >= HOTSPOT_ORPHAN_MS) {
-		radio_req_t req = { .type = RREQ_HS_LEAVE };
-		radio_sm_request(&sm, &req, now);
-		hs_orphan_ms = 0;
-	}
-}
-#endif
 
 static void radio_task(void *arg)
 {
@@ -101,7 +84,7 @@ static void radio_task(void *arg)
 		if ((int32_t)(now - next_poll) >= 0) {
 			radio_sm_poll(&sm, hal_millis());
 #if CONFIG_HOTSPOT
-			hotspot_watch(hal_millis());
+			radio_hs_watch(&sm, hal_millis());
 #endif
 			next_poll += period;
 			if ((int32_t)(now - next_poll) >= 0) {	// fell behind: don't try to catch up
@@ -112,10 +95,6 @@ static void radio_task(void *arg)
 	}
 }
 
-#if CONFIG_HOTSPOT
-static const hotspot_radio_ops_t hotspot_ops;
-#endif
-
 void radio_core_start(void)
 {
 	view_lock = xSemaphoreCreateMutex();
@@ -124,9 +103,12 @@ void radio_core_start(void)
 	radio_sm_init(&sm, hal_millis());
 	shared_view = sm.view;
 	shared_serial = sm.serial;
+#if CONFIG_HOTSPOT
+	radio_hs_init(hs_post);
+#endif
 	xTaskCreate(radio_task, "radio", RADIO_TASK_STACK, NULL, RADIO_TASK_PRIORITY, NULL);
 #if CONFIG_HOTSPOT
-	hotspot_set_radio(&hotspot_ops);
+	hotspot_set_radio(&radio_hs_ops);
 #endif
 }
 
@@ -155,16 +137,6 @@ static void post(uint8_t type, int32_t arg, TickType_t wait)
 	xQueueSend(requests, &req, wait);
 }
 
-#if CONFIG_HOTSPOT
-static void post2(uint8_t type, int32_t arg, uint32_t arg2)
-{
-	if (requests == NULL) {
-		return;
-	}
-	radio_req_t req = { .type = type, .arg = arg, .arg2 = arg2 };
-	xQueueSend(requests, &req, 0);
-}
-#endif
 
 void radio_req_channel_step(int8_t dir) { post(RREQ_CH_STEP, dir, 0); }
 void radio_req_zone_pos(uint16_t pos) { post(RREQ_ZONE_POS, pos, 0); }
@@ -185,61 +157,8 @@ void radio_req_reply_cancel(void) { post(RREQ_REPLY_CANCEL, 0, 0); }
 #endif
 
 #if CONFIG_HOTSPOT
-// --- hotspot_radio_ops_t, called from the host link task. None of them waits ---
-
-// The request runs in the radio task, which is above the host link task: it has normally been handled by the time
-// the send returns. If not, false now and the hotspot asks again later (a repeat while in hotspot mode is a no-op)
-static bool hs_enter(uint32_t rx_hz)
-{
-	if (hs_active) {
-		return true;
-	}
-	post(RREQ_HS_ENTER, (int32_t)rx_hz, 0);
-	return hs_active;
-}
-
-static bool hs_set_freq(uint32_t rx_hz, uint32_t tx_hz)
-{
-	if (!radio_sm_hotspot_freq_ok(rx_hz, tx_hz)) {
-		return false;
-	}
-	post2(RREQ_HS_FREQ, (int32_t)rx_hz, tx_hz);
-	return true;
-}
-
-static void hs_set_power(uint8_t rf_level)
-{
-	post(RREQ_HS_POWER, rf_level, 0);
-}
-
-static void hs_leave(void)
-{
-	post(RREQ_HS_LEAVE, 0, pdMS_TO_TICKS(50));	// must not be lost: the channel comes back with it
-}
-
-static bool hs_carrier_fn(void)
-{
-	return hs_carrier;
-}
-
-static int16_t hs_rssi_fn(void)
-{
-	return hs_active ? hs_rssi : 0;
-}
-
-static void hs_changed(void)
-{
-	hs_serial++;
-}
-
-static const hotspot_radio_ops_t hotspot_ops = {
-	.enter = hs_enter, .set_freq = hs_set_freq, .set_power = hs_set_power, .leave = hs_leave,
-	.carrier = hs_carrier_fn, .changed = hs_changed, .rssi_dbm = hs_rssi_fn,
-	.cw_id = NULL, .cw_busy = NULL,	// no FM Morse keyer yet: the hotspot ACKs SEND_CWID and counts it unsent
-};
-
 uint32_t radio_hotspot_serial(void)
 {
-	return hs_serial;
+	return radio_hs_serial();
 }
 #endif
