@@ -625,6 +625,8 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		sb_str(&b, d->target_private ? " Private" : " Group");
 		if (d->rmo)
 			sb_str(&b, " RPT");
+		if (d->privacy)
+			sb_str(&b, " ENC");
 		y = call_line(L->small, y, buf, col.dim);
 		sb_init(&b, buf, sizeof buf);
 		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
@@ -643,7 +645,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	const font_t *big = gfx_text_width(L->large, buf) <= w ? L->large : L->medium;
 	char fit[40];
 	gfx_text_fit(big, buf, w, fit, sizeof fit);
-	gfx_text(big, 0, y, fit, d->state == RDMR_RX ? col.fg : col.dim);
+	gfx_text(big, 0, y, fit, d->call.emergency ? col.warn : (d->state == RDMR_RX ? col.fg : col.dim));
 	y += big->h;
 	sb_init(&b, buf, sizeof buf);
 	if (d->call.src_name[0] != '\0') {
@@ -654,7 +656,11 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	sb_u32(&b, d->ts, 1);
 	if (d->late_entry)
 		sb_str(&b, " late");
-	y = call_line(L->small, y, buf, col.dim);
+	if (d->call.encrypted)
+		sb_str(&b, " ENC");	// privacy marker (played only with the key, never after a PI header)
+	if (d->call.emergency)
+		sb_str(&b, " EMERGENCY");
+	y = call_line(L->small, y, buf, d->call.emergency ? col.warn : col.dim);
 	if (d->alias[0] != '\0') {
 		sb_init(&b, buf, sizeof buf);
 		sb_chr(&b, '"');

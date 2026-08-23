@@ -17,6 +17,8 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbmodem2101
 python3 -m pytest tests/hil -v -rs --allow-rf --allow-service-stop          # adds the RF tests
 python3 -m pytest tests/hil -v -rs --allow-rf --allow-service-stop --ambe ~/recordings/speech.ambe
 python3 -m pytest tests/hil -k ui --shots /tmp/odr-shots                    # keep the screenshots
+python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"   # radio TX off air
+python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk         # RadioDesk alert call
 ```
 
 Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094;
@@ -30,6 +32,7 @@ Without a radio every test is skipped with the reason (no failure). The radio is
 | `--allow-rf` | tests that transmit (marker `rf`: the SDR bench's transmitter; marker `radio_tx`: the radio itself) |
 | `--allow-usb-switch` | tests that switch the radio's USB personality to the network adapter and back (marker `usb_switch`) |
 | `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver |
+| `--allow-radiodesk` | tests that publish to the RadioDesk sandbox broker (marker `radiodesk`), whose gateway then calls the radio; also needs `--allow-rf` and `$ODR_RADIODESK_MQTT_*` |
 
 The RF tests need both flags. The gateway service is stopped through `tools/bench/dmr_bench.py`'s lease: a detached
 process on the SDR bench stops it, waits while a hold file exists (at most 300 s) and starts it again whatever
@@ -38,15 +41,29 @@ is back.
 
 Other options: `--tx-power` (bench transmitter level 0-255, default 40), `--dmr-freq` / `--dmr-cc` / `--dmr-tg`
 (DMR test channel, default 461.6875 MHz, color code 2, talkgroup 9), `--noaa-mhz` / `--rssi-floor` (FM test),
-`--ambe` / `$ODR_HIL_AMBE` (speech recording for the voice test), `--shots DIR`.
+`--ambe` / `$ODR_HIL_AMBE` (speech recording for the voice test), `--shots DIR`, `--sdr-gain` (RTL-SDR gain for
+raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (the SDR's own frequency error: carrier
+offsets are corrected by it), `--max-foff` (largest carrier offset the TX tests accept, default 500 Hz), `--fm-mhz`
+(FM TX test frequency, default 461.6875), `--radiodesk-freq` / `--radiodesk-src` / `--radiodesk-text` (the alert
+test's channel, RadioDesk's caller ID to check, the text it speaks).
+
+SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$ODR_SDR_BENCH_HOST` (ssh host or
+alias, default `sdr-bench`), `$ODR_SDR_BENCH_SERVICE`, `$ODR_SDR_BENCH_DIR`, `$ODR_SDR_BENCH_PY`. The RadioDesk
+sandbox credentials only ever come from `$ODR_RADIODESK_MQTT_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_TLS`; never
+put them in a file in the repository.
 
 ## Rig assumptions
 
 - The radio on USB, with a codeplug whose current zone holds a DMR channel on the DMR test frequency (the tests
   look for it by frequency and mode, and put the radio back on its channel afterwards).
 - The SDR bench reachable by SSH without a password (passwordless sudo for `systemctl` there), with the bench tools
-  installed (`tools/bench/dmr_bench.py sync`). Its gateway configuration has Ch 1 at 467.375 MHz and Ch 15 at
-  461.6875 MHz, color code 2; the tests use Ch 15. `$ODR_SDR_BENCH_HOST` overrides the SSH host.
+  installed (`tools/bench/dmr_bench.py sync`; the FM tests copy `tools/sdr_fm_check.py` there themselves). Its
+  gateway configuration has Ch 1 at 467.375 MHz and Ch 15 at 461.6875 MHz, color code 2; the tests use Ch 15.
+- For the TX tests: the radio has a DMR ID, a DMR channel on the test frequency with a talk target, and may
+  transmit on `--fm-mhz` in its FM VFO; it runs on its lowest power, into an antenna or a dummy load at bench
+  distance.
+- For the RadioDesk test: a RadioDesk sandbox whose gateway (on the SDR bench) calls on `--radiodesk-freq`, and
+  `pip install paho-mqtt`.
 - An antenna or attenuator so the bench transmitter at power 40 doesn't overload the radio.
 - For `test_fm`: NOAA weather radio audible at the bench (162.550 MHz by default; change it with `--noaa-mhz`).
 - Speech recordings for `test_dmr_voice` stay outside the repository; give the path with `--ambe` or
@@ -63,7 +80,10 @@ Other options: `--tx-power` (bench transmitter level 0-255, default 40), `--dmr-
 | `test_usb_network.py` | USB network personality: re-enumerates as CDC-NCM, DHCP gives the host 12.<ID>, ping and the debug link over UDP 3334 at the radio's address, back to serial | `--allow-usb-switch`, firmware with `CONFIG_DMR_IP_GATEWAY` |
 | `test_dmr_rx.py` | bench sends 2 group calls (10 superframes, 8 headers, 3 terminators each); counter deltas | `--allow-rf --allow-service-stop` |
 | `test_dmr_voice.py` | bench sends a speech recording; every frame reaches the speaker path | the same, and `--ambe` |
-| `test_placeholders.py` | planned: radio DMR TX checked by the SDR bench's receiver; incoming private voice call through the RadioDesk sandbox alert API | skipped |
+| `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset | `--allow-rf --allow-service-stop` |
+| `test_fm_tx.py` | radio FM VFO keys 3 s with CTCSS 100.0, DCS D023N, and at 12.5 / 25 kHz; `tools/sdr_fm_check.py` on an SDR capture | `--allow-rf --allow-service-stop` |
+| `test_radiodesk_alert.py` | a RadioDesk sandbox alert (MQTT `ESS/RadioDesk/Alert/<id>/voice`) becomes a private call; the radio shows and plays it; `AlertStatus` reports | `--allow-rf --allow-radiodesk`, `$ODR_RADIODESK_MQTT_*` |
+| `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
 
 ### Pass criteria and tolerances
 
@@ -76,6 +96,23 @@ muted, lost or overflowed frames in the voice layer, zero lost frames in the cal
 dropped blocks. When it fails, the printed deltas show which layer lost frames: modem (`modem.voice`, `modem.crc`),
 call stack (`call.rx_voice_bursts`, `call.rx_lost_frames`), voice layer (`voice.rx_in`, `voice.rx_frames`,
 `voice.rx_concealed`, `voice.rx_underruns`, `voice.rx_overflows`) or audio (`audio.ov`, `audio.dr`).
+
+`test_dmr_tx`, `test_fm_tx`, `test_radiodesk_alert`: the criteria are in each module's docstring (dmr_bench.py
+case T1's checks for DMR TX; CTCSS within 0.5 Hz and 200-900 Hz deviation at 12.5 kHz, DCS with the right polarity,
+the 25 / 12.5 kHz deviation ratio 1.5-2.6 for FM; a private call to us on Home, played with at most 5 % concealed
+frames, for the alert).
+
+Screenshots: every SCREENSHOT request freezes the UI's redraws for a moment (`docs/spec/debuglink.md` 3.3), so a
+capture taken right after a key can still show the old screen. `Radio.screenshot()` waits out the previous
+capture's hold, and `Radio.shot_until(pred)` repeats until the picture is what the test waits for (and not blank);
+UI tests use `shot_until`.
+
+`test_dmr_call_features`: one call heard per RF test (`call.rx_calls` delta 1). Private to us: played, `last.to_us=1`,
+the reply target is the bench ID. Private to another ID: counted, 0 bursts played. Emergency: `last.emergency=1`.
+Talker alias: `call.alias` equals the text sent, `call.rx_alias_complete` 1. Late entry: `call.rx_late_entries` 1,
+18 to 28 voice bursts played of the 28 sent after the gap. Privacy option without a key: 0 bursts played, 20 or more
+dropped as encrypted; with a key: none dropped, 22 or more played. PI bit: only that one call is heard (the
+DM-1701's modem driver clears PI on voice, so it plays as clear).
 
 Counter names: `Radio.counters()` merges the diagnostics lines (`modem.*` from the DM-1701's HR_C6000 lines, `call.*`
 and `voice.*` short names, `audio.*`) with the `dmr_stats` and `hotspot` view sections (full names such as
@@ -93,5 +130,8 @@ and `voice.*` short names, `audio.*`) with the `dmr_stats` and `hotspot` view se
 - Check state with `radio.wait_for(lambda v: ..., timeout)` on the view (key=value strings, `docs/spec/debuglink.md`
   3.7), never with fixed sleeps alone; counters with `radio.reset_counters()` then `radio.counters()` deltas.
 - Anything that transmits gets `@pytest.mark.rf` (the radio: `radio_tx`); anything that uses the SDR bench's
-  transmitter or receiver also gets `@pytest.mark.bench_service` and runs inside `with sdr_bench.lease():`.
+  transmitter or receiver also gets `@pytest.mark.bench_service` and runs inside `with sdr_bench.lease():`
+  (`transmit` / `voice_call`, `listen_start` / `listen_result`, `capture_start` / `capture_wait`, then
+  `analyze_dmr` / `analyze_fm` after the lease, with the gateway back up).
+- Never sleep and capture: use `radio.shot_until(...)` for screenshots that should show a new screen.
 - Document the pass criteria and tolerances in the module docstring and in the table above.

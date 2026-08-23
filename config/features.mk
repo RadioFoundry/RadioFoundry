@@ -15,9 +15,9 @@ CONFIG_FM ?= y
 CONFIG_SUBTONE ?= $(CONFIG_FM)
 # DMR Tier II voice: modem driver, call stack, AMBE FEC, vocoder hosting
 CONFIG_DMR ?= y
-# basic privacy / static-key voice scrambling hooks (needs DMR)
+# basic privacy (Motorola / Anytone BP) on the voice path (needs DMR)
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
-# talker alias decode (needs DMR)
+# talker alias decode and TX of our radio name (needs DMR)
 CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 # DMR text messages (SMS; needs DMR; not ported yet)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)

@@ -5,13 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "codeplug/codeplug.h"
+#include "codeplug/dmr_iddb.h"
 #include "board.h"
 
 static int failures;
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
-#define IMAGE_SIZE	0x0B0000u
+#define IMAGE_SIZE	0x100000u	// to the DMR ID database's area 2
 #define EE		0x000000u
 #define FL		0x020000u
 
@@ -297,9 +298,130 @@ static void test_dmr_records(void)
 	CHECK(codeplug_channel(2, &ch) && ch.dmr_id == 0x2F525C && ch.dmo);
 	CHECK(codeplug_channel(1, &ch) && ch.dmr_id == 0 && !ch.dmo);
 
+	// Lookup by ID: group and private are separate name spaces
+	CHECK(codeplug_contact_find(201, true, &ct) && strcmp(ct.name, "Main Ops") == 0);
+	CHECK(!codeplug_contact_find(201, false, &ct));
+	CHECK(codeplug_contact_find(3101234, false, &ct) && strcmp(ct.name, "Joe") == 0);
+	CHECK(!codeplug_contact_find(3101234, true, &ct));
+	CHECK(codeplug_contact_find(0xFFFFFF, true, &ct) && ct.type == CONTACT_ALL_CALL);
+	put_contact(1024, "Last", 777, 1, 0xFF);	// the last record
+	CHECK(codeplug_contact_find(777, false, &ct) && strcmp(ct.name, "Last") == 0);
+	CHECK(!codeplug_contact_find(778, false, &ct) && !codeplug_contact_find(0, true, &ct));
+
+	// Channel TOT and talker alias TX flags
+	c = channel(2);
+	c[0x1B] = 4;		// 60 s
+	c[0x30] = 0x0E;		// TS1 text (2), TS2 both (3)
+	CHECK(codeplug_channel(2, &ch) && ch.tot_s == 60 &&
+		ch.alias_tx == (CODEPLUG_ALIAS_TS1_TEXT | CODEPLUG_ALIAS_TS2_TEXT));
+	c[0x30] = 0x01;		// TS1 APRS only: no text
+	CHECK(codeplug_channel(2, &ch) && ch.alias_tx == 0);
+
+	// General settings: radio name (0xFF padded) and hang times
+	codeplug_dmr_settings_t g;
+	memcpy(&image[EE + 0xE0], "N0CALL\xFF\xFF", 8);
+	image[EE + 0xF8] = 6;
+	image[EE + 0xF9] = 0xFF;
+	CHECK(codeplug_dmr_settings(&g) && strcmp(g.radio_name, "N0CALL") == 0 && g.group_hang_ms == 3000 &&
+		g.private_hang_ms == 0);
+
 	// No ID stored
 	memset(&image[EE + 0xE8], 0xFF, 4);
 	CHECK(codeplug_dmr_id() == 0);
+}
+
+// DMR ID database records (legacy-cps-interop.md 7.5)
+static int pack6(char c)
+{
+	if (c == ' ') return 0;
+	if (c >= '0' && c <= '9') return 1 + c - '0';
+	if (c >= 'A' && c <= 'Z') return 11 + c - 'A';
+	if (c >= 'a' && c <= 'z') return 37 + c - 'a';
+	return 63;
+}
+
+static void put_iddb_header(char format, uint8_t rec, uint32_t count)
+{
+	uint8_t *h = &image[FL + 0x30000];
+	h[0] = 'I';
+	h[1] = 'd';
+	h[2] = (uint8_t)format;
+	h[3] = (uint8_t)(rec + 0x4A);
+	memcpy(h + 4, "001", 4);
+	h[8] = (uint8_t)count;
+	h[9] = (uint8_t)(count >> 8);
+	h[10] = (uint8_t)(count >> 16);
+	h[11] = (uint8_t)(count >> 24);
+}
+
+static uint8_t *iddb_rec(uint32_t i, uint8_t rec, uint32_t area2)
+{
+	uint32_t per1 = (0x40000u - 12u) / rec;
+	return i < per1 ? &image[FL + 0x30000 + 12 + i * rec] : &image[area2 + (i - per1) * rec];
+}
+
+// Format N: 3-byte LE ID, 16 characters packed in 12 bytes
+static void put_iddb_n(uint32_t i, uint32_t id, const char *text, uint32_t area2)
+{
+	uint8_t *r = iddb_rec(i, 15, area2);
+	char t[16];
+	memset(t, ' ', sizeof(t));
+	memcpy(t, text, strlen(text) < 16 ? strlen(text) : 16);
+	r[0] = (uint8_t)id;
+	r[1] = (uint8_t)(id >> 8);
+	r[2] = (uint8_t)(id >> 16);
+	for (int k = 0; k < 4; k++) {
+		uint32_t w = 0;
+		for (int j = 0; j < 4; j++) {
+			w = (w << 6) | (uint32_t)pack6(t[4 * k + j]);
+		}
+		r[3 + 3 * k] = (uint8_t)(w >> 16);
+		r[4 + 3 * k] = (uint8_t)(w >> 8);
+		r[5 + 3 * k] = (uint8_t)w;
+	}
+}
+
+static void test_iddb(void)
+{
+	char text[DMR_IDDB_TEXT_MAX + 1];
+	uint32_t area2 = FL + 0xB8000;
+
+	build_legacy();
+	CHECK(!dmr_iddb_init() && dmr_iddb_count() == 0 && !dmr_iddb_lookup(3101234, text, sizeof(text)));
+
+	// 17500 records with IDs 1000000 + 7 i: 17475 fit in area 1, the rest are in area 2
+	uint32_t n = 17500;
+	put_iddb_header('N', 15, n);
+	for (uint32_t i = 0; i < n; i++) {
+		char t[17];
+		snprintf(t, sizeof(t), "K%05u Op%u", (unsigned)i, (unsigned)(i % 10));
+		put_iddb_n(i, 1000000u + 7u * i, t, area2);
+	}
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == n);
+	CHECK(dmr_iddb_lookup(1000000, text, sizeof(text)) && strcmp(text, "K00000 Op0") == 0);
+	CHECK(dmr_iddb_lookup(1000000 + 7 * 1234, text, sizeof(text)) && strcmp(text, "K01234 Op4") == 0);
+	CHECK(dmr_iddb_lookup(1000000 + 7 * 17475, text, sizeof(text)) && strcmp(text, "K17475 Op5") == 0);
+	CHECK(dmr_iddb_lookup(1000000 + 7 * 17476, text, sizeof(text)) && strcmp(text, "K17476 Op6") == 0);
+	CHECK(dmr_iddb_lookup(1000000 + 7 * 17499, text, sizeof(text)) && strcmp(text, "K17499 Op9") == 0);
+	CHECK(!dmr_iddb_lookup(1000001, text, sizeof(text)) && !dmr_iddb_lookup(999999, text, sizeof(text)));
+	char small[7];
+	CHECK(dmr_iddb_lookup(1000000 + 7 * 42, small, sizeof(small)) && strcmp(small, "K00042") == 0);
+
+	// Plain format: 4-byte BCD IDs (LE word) and ASCII text
+	put_iddb_header('-', 4 + 20, 2);
+	uint8_t *r = &image[FL + 0x30000 + 12];
+	memset(r, 0, 48);
+	r[0] = 0x34; r[1] = 0x12; r[2] = 0x10; r[3] = 0x03;	// 03101234
+	memcpy(r + 4, "N0CALL Spencer", 14);
+	r[24] = 0x00; r[25] = 0x00; r[26] = 0x20; r[27] = 0x03;	// 03200000
+	memcpy(r + 28, "W1AW", 4);
+	CHECK(dmr_iddb_init() && dmr_iddb_count() == 2);
+	CHECK(dmr_iddb_lookup(3101234, text, sizeof(text)) && strcmp(text, "N0CALL Spencer") == 0);
+	CHECK(dmr_iddb_lookup(3200000, text, sizeof(text)) && strcmp(text, "W1AW") == 0);
+
+	// The old "ID" tag is rejected
+	image[FL + 0x30001] = 'D';
+	CHECK(!dmr_iddb_init());
 }
 
 int main(void)
@@ -310,6 +432,7 @@ int main(void)
 	}
 	test_legacy();
 	test_dmr_records();
+	test_iddb();
 	test_erased();
 	test_no_flash();
 	free(image);

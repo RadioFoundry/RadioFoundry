@@ -77,7 +77,9 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
-    OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_USB_NETWORK = range(1, 16)
+    OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
+    OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY, OP_USB_NETWORK = range(1, 21)
+PRIVACY_TYPES = {"off": 0, "moto": 1, "anytone": 2}
 TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
 
 
@@ -454,6 +456,23 @@ class DebugLink:
     def hotspot_exit(self):
         self.radio(OP_HOTSPOT_EXIT)
 
+    def dmr_target(self, dmr_id, private=False):
+        """Talk to a typed ID / talkgroup until the channel changes."""
+        self.radio(OP_DMR_TARGET, struct.pack("<I", (int(dmr_id) & 0xFFFFFF) | (1 << 24 if private else 0)))
+
+    def dmr_contact(self, index):
+        self.radio(OP_DMR_CONTACT, struct.pack("<H", index))
+
+    def dmr_call_back(self):
+        self.radio(OP_DMR_CALL_BACK)
+
+    def dmr_target_clear(self):
+        self.radio(OP_DMR_TARGET_CLEAR)
+
+    def dmr_privacy(self, kind, key=0):
+        """Load a basic privacy key in RAM: kind off | moto (key 1-255) | anytone (key 0-65535)."""
+        self.radio(OP_DMR_PRIVACY, struct.pack("<BH", PRIVACY_TYPES[kind] if isinstance(kind, str) else kind, key))
+
     def usb_network(self, on):
         """Switch the USB personality after the reply: network adapter (CDC-NCM) or serial port. The radio
         re-enumerates; in network mode the debug link answers over UDP (--port udp:<radio IP>)."""
@@ -644,6 +663,16 @@ def cmd_radio(link, a):
         link.reply_cancel()
     elif op == "hotspot-exit":
         link.hotspot_exit()
+    elif op == "target":              # target ID [private]
+        link.dmr_target(num(0), args[1:2] == ["private"])
+    elif op == "contact":
+        link.dmr_contact(num(0))
+    elif op == "call-back":
+        link.dmr_call_back()
+    elif op == "target-clear":
+        link.dmr_target_clear()
+    elif op == "privacy":             # privacy off | moto KEY | anytone KEY
+        link.dmr_privacy(args[0], int(args[1], 0) if len(args) > 1 else 0)
     elif op == "usb":                 # usb network|serial
         link.usb_network(args[:1] == ["network"])
     else:
@@ -788,7 +817,8 @@ def main(argv=None):
     p.add_argument("--seconds", type=float, required=True)
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
-                                  "monitor", "clear", "reply-cancel", "hotspot-exit", "usb"])
+                                  "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
+                                  "target-clear", "privacy", "usb"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("log")
     p.add_argument("--follow", action="store_true")
