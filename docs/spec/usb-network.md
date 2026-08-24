@@ -13,7 +13,7 @@ needs two, so a composite ACM + NCM device does not fit; the radio is either a s
 adapter (PID 0x0096), with the descriptors of `docs/spec/hardware-dm1701.md` 16. Switching drops the D+ pull-up for
 100 ms, so the host sees an unplug and enumerates the other personality.
 
-- Boot is always serial. The switch is a run-time request: debug link radio op 15 (`odr_debug.py radio usb network`),
+- Boot is always serial. The switch is a run-time request: debug link radio op 25 (`odr_debug.py radio usb network`),
   carried out after its reply has gone out. A stored setting (and a menu item) to boot as an adapter is not built yet.
 - In network mode the serial protocols stay reachable over UDP: datagrams to the radio's own address, port 3334,
   carry the same byte stream as the serial port (debug link, MMDVM, CPS), and the replies go back to the address and

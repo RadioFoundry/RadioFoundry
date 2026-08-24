@@ -5,6 +5,7 @@
 // requests are queued, injected keys are timed by the input task).
 #include <string.h>
 #include "config.h"
+#include "radio/beep.h"
 #include "board.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
@@ -33,7 +34,9 @@
 enum {
 	OP_CHANNEL_STEP = 1, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH,
 	OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT,
-	OP_DMR_TARGET, OP_DMR_CONTACT, OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY, OP_USB_NETWORK,
+	OP_DMR_TARGET, OP_DMR_CONTACT, OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY,
+	// 20-24: the radio features' (DL_OP_SCAN .. DL_OP_SETTING, debuglink_view_radio.c)
+	OP_USB_NETWORK = 25,
 };
 
 static dl_parser_t parser;
@@ -64,6 +67,18 @@ static const char features[] = "features="
 #if CONFIG_DMR_DATA_CORE
 	"DMR_DATA_CORE,"
 #endif
+#if CONFIG_DMR_SMS
+	"DMR_SMS,"
+#endif
+#if CONFIG_DMR_ARS
+	"DMR_ARS,"
+#endif
+#if CONFIG_DMR_LRRP
+	"DMR_LRRP,"
+#endif
+#if CONFIG_DMR_SIGNALING
+	"DMR_SIGNALING,"
+#endif
 #if CONFIG_SFR
 	"SFR,"
 #endif
@@ -87,6 +102,21 @@ static const char features[] = "features="
 #endif
 #if CONFIG_DIAG
 	"DIAG,"
+#endif
+#if CONFIG_SCAN
+	"SCAN,"
+#endif
+#if CONFIG_BEEP
+	"BEEP,"
+#endif
+#if CONFIG_FM_TX_TONES
+	"FM_TX_TONES,"
+#endif
+#if CONFIG_VOX
+	"VOX,"
+#endif
+#if CONFIG_BATTERY_SAVE
+	"BATTERY_SAVE,"
 #endif
 	"USB,DEBUGLINK\n";
 
@@ -221,6 +251,10 @@ static size_t cmd_reset(uint8_t *out)
 #if CONFIG_DMR
 	debuglink_dmr_reset();
 #endif
+#if CONFIG_BEEP
+	beep_reset_stats();
+#endif
+	debuglink_dmr_data_reset();
 	uint32_t now = hal_millis();
 	dlog("debuglink: counters reset");
 	out[0] = DL_ST_OK;
@@ -412,6 +446,18 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	};
 	uint32_t now = hal_millis();
 
+	if (len >= 1 && req[0] >= DL_OP_SCAN && req[0] <= DL_OP_SETTING) {
+		// The radio features' operations (debuglink_view_radio.c), under the same rate limit
+		if (radio_op_done && (now - last_radio_op_ms) < RADIO_OP_GAP_MS) {
+			return status_only(out, DL_ST_BUSY);
+		}
+		uint8_t st = debuglink_radio_feature_op(req[0], req + 1, (uint16_t)(len - 1u));
+		if (st == DL_ST_OK) {
+			last_radio_op_ms = now;
+			radio_op_done = true;
+		}
+		return status_only(out, st);
+	}
 	if (len < 1 || req[0] == 0 || req[0] >= sizeof(arg_len) || len < 1u + arg_len[req[0]]) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
@@ -665,6 +711,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return cmd_read_mem(req, len, out, cap);
 	case DL_CMD_REBOOT:
 		return cmd_reboot(req, len, out);
+	case DL_CMD_DMR_DATA:
+		return debuglink_cmd_dmr_data(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

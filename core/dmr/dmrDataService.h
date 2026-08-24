@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 /*
- * DMR data service: SMS (Motorola TMS) inbox, ACKs and the host interface
+ * DMR data service: text messages (Motorola TMS) with their ACKs, ETSI responses to confirmed data, CSBK signaling
+ * (call alert, radio check: answered and sent), Motorola ARS registration and LRRP location answers.
+ *
+ * It sits on the DMR call stack (core/dmr/call/dmr_call.h): the host (core/radio/radio_sm.c in the firmware, a fake in
+ * the host tests) hands it every data burst heard on our slot, ticks it, tells it about the channel, and sends the
+ * burst lists it asks for (dmrDataEnv_t.txStart, then dmrDataServiceTxDone). Everything here runs in that one task
+ * (the radio task); the user-facing calls in dmr/dmr_data_api.h may come from any task and only touch a mailbox and
+ * copies under the lock given to dmrDataServiceSetLock(). Specs: docs/spec/dmr-data.md, gotchas 3.6-3.9, 5, 7.
  */
 
 #ifndef ODR_DMRDATASERVICE_H
@@ -12,59 +19,159 @@
 
 #define DMR_DATA_INBOX_SIZE			4
 #define DMR_DATA_SMS_PREAMBLES		2		// preamble CSBKs before an SMS, gives receivers time to sync
+#define DMR_DATA_TEXT_MAX			(sizeof(((dmrDataTMS_t *)0)->text) - 1)
 
 typedef struct
 {
 	uint32_t src;
 	uint32_t dst;
-	uint32_t receivedAt;					// ticksGetMillis()
+	uint32_t receivedAt;					// the service's clock (ms)
 	bool     group;
 	uint8_t  seq;							// TMS sequence number, to spot a sender's retries
-	bool     hostPending;					// not popped by the USB host yet
 	bool     unread;						// not shown on the radio yet
 	char     text[sizeof(((dmrDataTMS_t *)0)->text)];
 } dmrDataMessage_t;
 
-// Requests are queued and started from the main task by dmrDataServiceTick()
+// What the service needs to know about the channel, from its host at every tick
+typedef struct
+{
+	uint32_t ownId;							// our DMR ID on this channel; 0: nothing is sent
+	uint32_t talkGroup;						// the channel's talkgroup (group data to it is ours); 0: none
+	bool     rmo;							// through a repeater
+	bool     canTransmit;					// a DMR channel we may send on now: not RX only, in band, no hotspot
+	uint32_t channelKey;					// changes with the frequency, slot or color code (ARS registers again)
+} dmrDataChannel_t;
+
+// The service's user settings. Only committed settings, never an edit in progress (gotcha 3.7)
+typedef struct
+{
+	uint32_t arsServer;						// the ARS radio ID to register with; 0: ARS off
+	bool     radioCheckReply;				// answer radio checks
+	bool     callAlertAck;					// acknowledge call alerts (they ring either way)
+	bool     lrrpReply;						// answer LRRP location requests
+	bool     hasGps;						// the radio has a position source (else LRRP says "no fix")
+} dmrDataSettings_t;
+
+// Events for the UI (dmr_data_api.h: dmr_data_last_event)
+typedef enum
+{
+	DMR_DATA_EV_NONE = 0,
+	DMR_DATA_EV_SMS_RECEIVED,				// id: the sender
+	DMR_DATA_EV_SMS_SENT,					// id: the destination; acknowledged (or sent, to a group / unacknowledged)
+	DMR_DATA_EV_SMS_FAILED,					// id: the destination; no ACK after the retries, or couldn't be sent
+	DMR_DATA_EV_CALL_ALERT,					// id: the caller
+	DMR_DATA_EV_CALL_ALERT_ACKED,			// id: the radio we alerted answered
+	DMR_DATA_EV_CALL_ALERT_FAILED,			// id: no answer after the retries
+	DMR_DATA_EV_RADIO_CHECK_OK,				// id: the radio we checked answered
+	DMR_DATA_EV_RADIO_CHECK_FAILED,			// id: no answer after the retries
+	DMR_DATA_EV_RADIO_CHECK_ANSWERED,		// id: a radio checked us and was answered
+	DMR_DATA_EV_ARS_CHANGED,				// id: the ARS state (dmrArsState_t)
+} dmrDataEventKind_t;
+
+typedef struct
+{
+	uint32_t serial;						// bumped with every event
+	uint8_t  kind;							// dmrDataEventKind_t
+	uint32_t id;
+	uint32_t atMs;
+} dmrDataEvent_t;
+
+typedef enum { DMR_ARS_STATE_OFF, DMR_ARS_STATE_REGISTERING, DMR_ARS_STATE_REGISTERED, DMR_ARS_STATE_REFUSED, DMR_ARS_STATE_NO_ANSWER } dmrArsState_t;
+
+// The host's side
+typedef struct
+{
+	// Send a burst list (the service's buffer, valid until dmrDataServiceTxDone): true when started. The service has
+	// done its listen before talk
+	bool (*txStart)(const dmrBurst_t *bursts, int count, void *ctx);
+	// Listen before talk for machine traffic (gotcha 3.6; dmr_call_channel_clear in the firmware)
+	bool (*channelClear)(uint32_t nowMs, void *ctx);
+	// Group calls of the channel's listen list count as ours (may be NULL)
+	bool (*inRxGroup)(uint32_t talkGroup, void *ctx);
+	// An event for the UI was posted (may be NULL; any task may poll dmr_data_last_event instead)
+	void (*notify)(const dmrDataEvent_t *event, void *ctx);
+	// Every packet received (to us or not), for the IP gateway when it is ported (may be NULL)
+	void (*packet)(const dmrDataPacket_t *packet, void *ctx);
+	void *ctx;
+} dmrDataEnv_t;
+
+// Counters for the debug link and the HIL tests (wrap freely)
+typedef struct
+{
+	uint32_t rxBursts;						// data / control bursts handed to the service
+	uint32_t rxCsbk;						// CSBKs with a good CRC (preambles included)
+	uint32_t rxHeaders;						// data headers with a good CRC
+	uint32_t rxBlocks;						// rate 1/2, 3/4, 1 blocks
+	uint32_t rxBlocksStale;					// blocks dropped: no header in the last 400 ms (gotcha 5.4)
+	uint32_t rxCrcErrors;					// headers / CSBKs failing their CRC, packets failing the CRC-32
+	uint32_t rxCrcFlagMismatch;				// headers / CSBKs whose CRC checks but the modem flagged (or the reverse)
+	uint32_t rxPackets;						// complete packets
+	uint32_t rxForUs;						// ... addressed to us (or a group we listen to)
+	uint32_t rxConfirmed;					// ... confirmed data to us
+	uint32_t smsReceived;					// text messages kept
+	uint32_t smsDuplicates;					// a sender's retry: ACKed, not kept
+	uint32_t smsSent;						// SMS lists sent
+	uint32_t smsAcked;						// TMS ACKs received for ours
+	uint32_t smsFailed;
+	uint32_t tmsAcksSent;
+	uint32_t responsesSent;					// ETSI responses to confirmed data
+	uint32_t csbkAnswersSent;				// call alert acks and radio check answers
+	uint32_t callAlertsReceived;
+	uint32_t radioChecksReceived;			// radio checks to us (answered when the setting allows)
+	uint32_t callAlertsSent;				// CSBKs sent, retries included
+	uint32_t callAlertsAcked;
+	uint32_t radioChecksSent;
+	uint32_t radioChecksAnswered;
+	uint32_t arsSent;						// registrations and deregistrations sent
+	uint32_t arsAcks;
+	uint32_t lrrpRequests;
+	uint32_t lrrpAnswers;					// answers and reports sent
+	uint32_t lrrpNoFix;						// ... of those, saying "no fix"
+	uint32_t txLists;						// burst lists started
+	uint32_t txOk;							// ... that went out whole
+	uint32_t txFailed;						// ... dropped by the stack (no repeater, refused, time-out)
+	uint32_t txGaveUp;						// lists never started: no clear channel in time
+	uint8_t  txLastError;					// dmr_tx_error_t of the last list
+} dmrDataStats_t;
+
+// --- The host's calls (the radio task) ---
+
+void dmrDataServiceInit(const dmrDataEnv_t *env);
+void dmrDataServiceSetSettings(const dmrDataSettings_t *settings);
+void dmrDataServiceGetSettings(dmrDataSettings_t *settings);
+// The lock that keeps the API callers' copies consistent (the firmware: scheduler suspend); NULL: none
+void dmrDataServiceSetLock(void (*lock)(void), void (*unlock)(void));
+// Every 10-25 ms with the time and the channel
+void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *channel);
+// A data / control burst heard on our slot (dmr_call_set_data_rx)
+void dmrDataServiceRxBurst(const dmrBurst_t *burst, uint32_t nowMs);
+// The list given to txStart is over: err 0 = sent whole, else the dmr_tx_error_t
+void dmrDataServiceTxDone(uint8_t err);
+bool dmrDataServiceIsBusy(void);
+// Power off: true while the ARS deregistration is still going out, call again until it's false (gotcha 7.4)
+bool dmrDataServicePowerOff(void);
+void dmrDataServicePowerOffCancelled(void);
+
+// Requests (the radio task, or through the dmr_data_api.h mailbox). False when one of the kind is still running or
+// it can't be sent now
 bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested);
 bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
-bool dmrDataServiceIsBusy(void);
-void dmrDataServiceTick(void);
-// Power off (main task): true while the ARS deregistration is still going out, call again until it's false
-bool dmrDataServicePowerOff(void);
-// Motorola ARS registration, for the UI
-typedef enum { DMR_ARS_STATE_OFF, DMR_ARS_STATE_REGISTERING, DMR_ARS_STATE_REGISTERED, DMR_ARS_STATE_REFUSED, DMR_ARS_STATE_NO_ANSWER } dmrArsState_t;
+bool dmrDataServiceCallAlert(uint32_t dst);
+bool dmrDataServiceRadioCheck(uint32_t dst);
+
 dmrArsState_t dmrDataServiceArsState(void);
-// Location reports (HAS_DMR_GPS_REPORTS): the platform gives its position, the driver says when our voice call ended
-bool dmrDataServiceGetLocation(dmrDataLocation_t *location);
-void dmrDataServiceVoiceTxEnded(void);
-// LRRP (HAS_DMR_LRRP): the platform's position with date and course (weak: from dmrDataServiceGetLocation), and the
-// triggered reports running
-bool dmrDataServiceGetPosition(lrrpPosition_t *position);
 int dmrDataServiceLrrpTriggerCount(void);
 // When the service next needs a position, in ms (0: now or any time, UINT32_MAX: never): GPS power management
 uint32_t dmrDataServiceLocationNeededInMs(void);
-void dmrDataServicePowerOffCancelled(void);
+// The platform's position for LRRP (weak: none). Only asked when the settings say hasGps
+bool dmrDataServiceGetPosition(lrrpPosition_t *position);
 
-// Main task context, for each text message received (a weak no-op unless the platform's UI has one)
-void dmrDataServiceMessageReceived(const dmrDataMessage_t *message);
-
-// The inbox: the last DMR_DATA_INBOX_SIZE messages, shared by the USB host (which pops the oldest it hasn't had yet)
-// and the radio's UI (which reads them all, newest first, and marks them read). A new message replaces the oldest
-int dmrDataServiceInboxCount(void);// messages the USB host hasn't popped
-bool dmrDataServiceInboxPop(dmrDataMessage_t *message);
+// The inbox: the last DMR_DATA_INBOX_SIZE messages, newest first; a new message replaces the oldest
 int dmrDataServiceMessageCount(void);
-dmrDataMessage_t *dmrDataServiceMessage(int index);// 0: the newest
+const dmrDataMessage_t *dmrDataServiceMessage(int index);	// 0: the newest
 
-// Raw received bursts kept for the host (USB 'D' commands)
-// The TX burst list (DMR_DATA_MAX_BURSTS), lent to the hotspot: the service never transmits in hotspot mode
-dmrBurst_t *dmrDataServiceTxBursts(void);
-
-int dmrDataServiceRxBurstCount(void);
-bool dmrDataServiceRxBurstPop(dmrBurst_t *burst);
-
-// USB 'D' command handler, see usb_com.c
-int dmrDataServiceHandleUSB(const uint8_t *request, uint8_t *reply);
+void dmrDataServiceGetStats(dmrDataStats_t *stats);
+void dmrDataServiceResetStats(void);
 
 #endif

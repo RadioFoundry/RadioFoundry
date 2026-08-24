@@ -28,13 +28,16 @@ untracked sources in the built directories); only the few files that use it are 
 |---|---|---|
 | `CONFIG_FM` | y | analog FM receive and transmit |
 | `CONFIG_SUBTONE` | = FM | CTCSS / DCS encode and decode |
+| `CONFIG_FM_TX_TONES` | = FM | roger beep and 1750 Hz burst sent over the air (`docs/spec/radio-features.md` 3) |
+| `CONFIG_VOX` | n | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
+| `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
 | `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
-| `CONFIG_DMR_SMS` | = DMR | text messages (not ported yet) |
-| `CONFIG_DMR_ARS` | = DMR | ARS registration (not ported yet) |
-| `CONFIG_DMR_LRRP` | = DMR | LRRP location (not ported yet) |
-| `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert, radio check (not ported yet) |
+| `CONFIG_DMR_SMS` | = DMR | text messages: Motorola TMS receive (inbox, ACK) and send, with retries (docs/spec/dmr-data.md) |
+| `CONFIG_DMR_ARS` | = DMR | ARS registration with a presence server, at power-up and channel change, refreshed (off until a server ID is set) |
+| `CONFIG_DMR_LRRP` | = DMR | LRRP location answers (a radio without GPS answers "no fix"); builds core/dmr/dmrLrrp.c into the image |
+| `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert and radio check, answered and sent |
 | `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter (`docs/spec/usb-network.md`) |
 | `CONFIG_SFR` | n | single frequency repeater (not ported yet) |
 | `CONFIG_USB` | y | USB device (CDC serial) |
@@ -45,6 +48,8 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO (not built yet) |
 | `CONFIG_DIAG` | y | the diagnostics page |
+| `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
+| `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
 | `CONFIG_FONT_XL` | n | 16x32 font, for 240 px and wider displays |
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is.

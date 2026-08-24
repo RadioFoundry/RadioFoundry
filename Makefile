@@ -33,18 +33,22 @@ CORE_DIRS += core/debuglink
 endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
-# Single files of core/dmr (the directory also holds the data service, built by its own switches)
+# Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
+endif
+# DMR data (SMS, ARS, LRRP, CSBK signaling)
+ifeq ($(CONFIG_DMR_DATA_CORE),y)
+APP_SRC += core/dmr/dmrData.c core/dmr/dmrDataService.c core/dmr/dmrLrrp.c
 endif
 # The single frequency repeater: the generic logic and its runner on the DMR modem (the hotspot's SFR mode is in
 # core/hotspot/hotspotSfr.c)
 ifeq ($(CONFIG_SFR),y)
 APP_SRC += core/dmr/sfr.c core/dmr/sfrRunner.c
 endif
-# The IP gateway and the packet data codec it needs (sorted: another feature may list the codec too)
+# The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
-APP_SRC := $(sort $(APP_SRC) core/dmr/ipGateway.c core/dmr/dmrData.c)
+APP_SRC += core/dmr/ipGateway.c
 endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)

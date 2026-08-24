@@ -42,6 +42,10 @@
 #include "hostlink/hostlink.h"
 #include "hotspot/hotspot.h"
 #endif
+#if CONFIG_DMR_DATA_CORE
+#include "dmr/dmr_data_api.h"
+#include "fmt.h"
+#endif
 
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
 #define UI_TASK_STACK_WORDS	384	// measured worst path about 700 bytes plus the display driver
@@ -537,6 +541,41 @@ static void draw(void)
 	gfx_flush();
 }
 
+#if CONFIG_DMR_DATA_CORE
+// DMR data events as a toast (the minimal hook until the Hub has an inbox): "Message from 3101234", "Call alert from
+// 3101234", "3101234 answered", "No answer from 3101234". The text stays in a static buffer while it is shown
+static void data_poll(void)
+{
+	static uint32_t seen;
+	static char text[32];
+	uint32_t serial = dmr_data_serial();
+	if (serial == seen)
+		return;
+	seen = serial;
+	dmrDataEvent_t ev = dmr_data_last_event();
+	const char *pre = NULL, *post = NULL;
+	switch (ev.kind) {
+	case DMR_DATA_EV_SMS_RECEIVED: pre = "Message from "; break;
+	case DMR_DATA_EV_SMS_SENT: pre = "Message sent to "; break;
+	case DMR_DATA_EV_SMS_FAILED: pre = "Not delivered: "; break;
+	case DMR_DATA_EV_CALL_ALERT: pre = "Call alert from "; break;
+	case DMR_DATA_EV_CALL_ALERT_ACKED:
+	case DMR_DATA_EV_RADIO_CHECK_OK: post = " answered"; break;
+	case DMR_DATA_EV_CALL_ALERT_FAILED:
+	case DMR_DATA_EV_RADIO_CHECK_FAILED: pre = "No answer from "; break;
+	default: return;	// ARS changes and checks of us stay off the screen
+	}
+	sbuf_t b;
+	sb_init(&b, text, sizeof(text));
+	if (pre)
+		sb_str(&b, pre);
+	sb_u32(&b, ev.id, 1);
+	if (post)
+		sb_str(&b, post);
+	toast(text);
+}
+#endif
+
 static void ui_task(void *arg)
 {
 	(void)arg;
@@ -586,6 +625,9 @@ static void ui_task(void *arg)
 		}
 		if (view.state != RS_IDLE)
 			radio_active_ms = now;
+#if CONFIG_DMR_DATA_CORE
+		data_poll();
+#endif
 		if (st.toast != NULL && (int32_t)(now - toast_until) >= 0) {
 			st.toast = NULL;
 			dirty = true;

@@ -76,6 +76,10 @@ const board_t board = {
 #endif
 #endif
 	.system = &stm32_system,
+	// hardware-dm1701.md 11.1: low battery 6.2 V (back above 6.4 V); critical 6.0 V (3.0 V a cell) is our choice, the
+	// spec gives none (below 5.5 V the board reads as switched off)
+	.battery_low_mv = 6200,
+	.battery_critical_mv = 6000,
 };
 
 // docs/spec/hardware-dm1701.md 1.2

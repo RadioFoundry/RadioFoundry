@@ -14,14 +14,15 @@
 
 static const char *dmr_state_key(uint8_t s)
 {
-	static const char *const names[] = { "idle", "rx", "rx_other", "tx_wait", "tx", "tx_ending" };
+	static const char *const names[] = { "idle", "rx", "rx_other", "tx_wait", "tx", "tx_ending",
+					     "tx_data" };
 	return s < sizeof(names) / sizeof(names[0]) ? names[s] : "?";
 }
 
 static const char *phase_key(uint8_t p)
 {
 	static const char *const names[] = { "idle", "rx_voice", "rx_busy", "tx_access", "tx_wakeup", "tx_voice",
-					     "tx_ending", "tx_denied" };
+					     "tx_ending", "tx_denied", "tx_data" };
 	return p < sizeof(names) / sizeof(names[0]) ? names[p] : "?";
 }
 

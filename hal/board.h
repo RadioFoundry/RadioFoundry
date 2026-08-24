@@ -58,6 +58,10 @@ typedef struct {
 	void (*diag_reset)(void);
 	// Optional: chip identity, raw memory reads, reboot modes (hal_system.h)
 	const hal_system_t *system;
+	// Battery warnings (the radio core's battery monitor): below battery_low_mv the radio warns, below
+	// battery_critical_mv it refuses to transmit (and may switch off). 0 = no warning of that kind
+	uint16_t battery_low_mv;
+	uint16_t battery_critical_mv;
 	// Optional: the USB network personality (hal_netif.h); NULL when not built
 	const hal_netif_t *netif;
 } board_t;

@@ -84,6 +84,8 @@ put them in a file in the repository.
 | `test_fm_tx.py` | radio FM VFO keys 3 s with CTCSS 100.0, DCS D023N, and at 12.5 / 25 kHz; `tools/sdr_fm_check.py` on an SDR capture | `--allow-rf --allow-service-stop` |
 | `test_radiodesk_alert.py` | a RadioDesk sandbox alert (MQTT `ESS/RadioDesk/Alert/<id>/voice`) becomes a private call; the radio shows and plays it; `AlertStatus` reports | `--allow-rf --allow-radiodesk`, `$ODR_RADIODESK_MQTT_*` |
 | `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
+| `test_radio_features.py` | the `features` view section, settings round trip, beep counters (does PCM play in this mode), zone scan + cancel, nuisance delete, VFO band scan, dual watch (radio only); TX inhibit, TOT warning and time-out, roger beep, 1750 Hz burst on the FM VFO at lowest power (`radio_tx`); the scan holds on a bench DMR call (`rf`) | radio; `--allow-rf` (radio_tx); `--allow-rf --allow-service-stop` (the last) |
+| `test_dmr_data.py` | DMR data: bench sends unconfirmed and confirmed data, a TMS text message, a call alert and radio checks to us (the radio's answers listened for); the radio sends a call alert, a radio check and a text message to the bench (the bench modem listens); the data settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio) |
 
 ### Pass criteria and tolerances
 
@@ -97,10 +99,11 @@ dropped blocks. When it fails, the printed deltas show which layer lost frames: 
 call stack (`call.rx_voice_bursts`, `call.rx_lost_frames`), voice layer (`voice.rx_in`, `voice.rx_frames`,
 `voice.rx_concealed`, `voice.rx_underruns`, `voice.rx_overflows`) or audio (`audio.ov`, `audio.dr`).
 
-`test_dmr_tx`, `test_fm_tx`, `test_radiodesk_alert`: the criteria are in each module's docstring (dmr_bench.py
-case T1's checks for DMR TX; CTCSS within 0.5 Hz and 200-900 Hz deviation at 12.5 kHz, DCS with the right polarity,
-the 25 / 12.5 kHz deviation ratio 1.5-2.6 for FM; a private call to us on Home, played with at most 5 % concealed
-frames, for the alert).
+`test_dmr_tx`, `test_fm_tx`, `test_radiodesk_alert`, `test_radio_features`: the criteria are in each module's
+docstring (dmr_bench.py case T1's checks for DMR TX; CTCSS within 0.5 Hz and 200-900 Hz deviation at 12.5 kHz, DCS
+with the right polarity, the 25 / 12.5 kHz deviation ratio 1.5-2.6 for FM; a private call to us on Home, played with
+at most 5 % concealed frames, for the alert; for the radio features: warning 2.5-4.5 s and time-out 5.5-7.5 s with
+tot_s 6 / tot_warn_s 3, roger=1 seen after release while still on air, beep.blocks grows when beep.played does).
 
 Screenshots: every SCREENSHOT request freezes the UI's redraws for a moment (`docs/spec/debuglink.md` 3.3), so a
 capture taken right after a key can still show the old screen. `Radio.screenshot()` waits out the previous
@@ -113,6 +116,17 @@ Talker alias: `call.alias` equals the text sent, `call.rx_alias_complete` 1. Lat
 18 to 28 voice bursts played of the 28 sent after the gap. Privacy option without a key: 0 bursts played, 20 or more
 dropped as encrypted; with a key: none dropped, 22 or more played. PI bit: only that one call is heard (the
 DM-1701's modem driver clears PI on voice, so it plays as clear).
+
+`test_dmr_data` (counters from the `dmr_data` section, `docs/spec/debuglink.md` 3.7): unconfirmed data:
+`data.rx_headers` 1, `data.rx_packets` 1, `data.rx_for_us` 1, `data.rx_blocks` 4 or more, CRC errors and stale
+blocks 0. Confirmed: `data.rx_confirmed` 1, `data.responses_sent` 1, `data.tx_failed` 0. Text message:
+`data.sms_received` 1, `data.tms_acks_sent` 1, inbox entry 0 is the text from the bench ID, unread until
+MARK_READ. Call alert: `data.call_alerts_received` 1, `data.csbk_answers_sent` 1, `data.event=call_alert` from the
+bench ID. Radio check: with `radio_check_reply` off (the default) counted and not answered; on, answered
+(`data.event=radio_check_answered`). Radio TX: call alert and radio check end `failed` after exactly 3 tries heard
+by the bench modem (the bench doesn't answer); the text message (no ACK asked) ends `ok` and its data header (to
+the bench, from us) is heard. An answer to the bench that the bench modem misses only warns: the radio sends it
+within a few frames of the bench's last burst, inside the bench modem's TX to RX turnaround.
 
 Counter names: `Radio.counters()` merges the diagnostics lines (`modem.*` from the DM-1701's HR_C6000 lines, `call.*`
 and `voice.*` short names, `audio.*`) with the `dmr_stats` and `hotspot` view sections (full names such as

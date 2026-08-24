@@ -13,6 +13,9 @@
 #include "hotspot/hotspot.h"
 #include "radio/radio_hotspot.h"
 #endif
+#if CONFIG_DMR_DATA_CORE
+#include "dmr/dmrDataService.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -28,8 +31,11 @@
 #define RADIO_QUEUE_LEN		16
 
 static radio_sm_t sm;			// owned by the radio task
+static radio_settings_t pending_settings;	// radio_set_settings -> the radio task, under view_lock
+static radio_settings_t shared_settings;	// the published copy, under view_lock
 static radio_view_t shared_view;	// the published copy, under view_lock
 static volatile uint32_t shared_serial;
+static volatile bool power_off_wanted;	// published view.power_off
 static SemaphoreHandle_t view_lock;
 static QueueHandle_t requests;
 
@@ -49,7 +55,9 @@ static void publish(void)
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	shared_view = sm.view;
 	shared_serial = sm.serial;
+	shared_settings = sm.set;
 	xSemaphoreGive(view_lock);
+	power_off_wanted = sm.view.power_off;
 #if CONFIG_HOTSPOT
 	radio_hs_publish(&sm);
 #endif
@@ -70,7 +78,15 @@ static void radio_task(void *arg)
 		radio_req_t req;
 		if (xQueueReceive(requests, &req, left > 0 ? (TickType_t)left : 0) == pdTRUE) {
 			do {
-				radio_sm_request(&sm, &req, hal_millis());
+				if (req.type == RREQ_SETTINGS) {
+					radio_settings_t set;
+					xSemaphoreTake(view_lock, portMAX_DELAY);
+					set = pending_settings;
+					xSemaphoreGive(view_lock);
+					radio_sm_set_settings(&sm, &set, hal_millis());
+				} else {
+					radio_sm_request(&sm, &req, hal_millis());
+				}
 			} while (xQueueReceive(requests, &req, 0) == pdTRUE);
 		}
 		TickType_t now = xTaskGetTickCount();
@@ -95,14 +111,25 @@ static void radio_task(void *arg)
 	}
 }
 
+#if CONFIG_DMR_DATA_CORE
+// The data service's API (dmr_data_api.h) is called from the UI and debug link tasks: its copies are short (an inbox
+// message), so the scheduler is held rather than a mutex taken (no priority games with the radio task)
+static void data_lock(void) { vTaskSuspendAll(); }
+static void data_unlock(void) { (void)xTaskResumeAll(); }
+#endif
+
 void radio_core_start(void)
 {
+#if CONFIG_DMR_DATA_CORE
+	dmrDataServiceSetLock(data_lock, data_unlock);
+#endif
 	view_lock = xSemaphoreCreateMutex();
 	requests = xQueueCreate(RADIO_QUEUE_LEN, sizeof(radio_req_t));
 	configASSERT(view_lock != NULL && requests != NULL);
 	radio_sm_init(&sm, hal_millis());
 	shared_view = sm.view;
 	shared_serial = sm.serial;
+	shared_settings = sm.set;
 #if CONFIG_HOTSPOT
 	radio_hs_init(hs_post);
 #endif
@@ -165,6 +192,61 @@ void radio_req_dmr_target_clear(void) { post(RREQ_DMR_TARGET_CLEAR, 0, 0); }
 void radio_req_dmr_privacy(uint8_t type, uint16_t key) { post(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key), 0); }
 #endif
 #endif
+
+static void post_pair(uint8_t type, int32_t arg, uint32_t arg2)
+{
+	if (requests == NULL) {
+		return;
+	}
+	radio_req_t req = { .type = type, .arg = arg, .arg2 = arg2 };
+	xQueueSend(requests, &req, 0);
+}
+
+void radio_req_scan(uint8_t cmd) { post(RREQ_SCAN, cmd, 0); }
+void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz) { post_pair(RREQ_SCAN_VFO, (int32_t)lo_hz, hi_hz); }
+void radio_req_scan_dual(uint16_t pos) { post_pair(RREQ_SCAN, RSCAN_DUAL, pos); }
+void radio_req_beep(uint8_t b) { post(RREQ_BEEP, b, 0); }
+// A lost release would leave the burst keyed until the time-out
+void radio_req_tone_burst(bool on) { post(RREQ_TONE_BURST, on, pdMS_TO_TICKS(50)); }
+
+void radio_set_settings(const radio_settings_t *s)
+{
+	if (view_lock == NULL) {
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	pending_settings = *s;
+	xSemaphoreGive(view_lock);
+	post(RREQ_SETTINGS, 0, pdMS_TO_TICKS(50));
+}
+
+void radio_get_settings(radio_settings_t *s)
+{
+	if (view_lock == NULL) {
+		radio_settings_default(s);
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	*s = shared_settings;
+	xSemaphoreGive(view_lock);
+}
+
+bool radio_power_off_wanted(void)
+{
+	return power_off_wanted;
+}
+
+uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms)
+{
+	if (view_lock == NULL) {
+		return brightness;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	uint16_t dim_s = shared_settings.backlight_dim_s, off_s = shared_settings.backlight_off_s;
+	uint8_t level = shared_view.battery;
+	xSemaphoreGive(view_lock);
+	return batt_backlight_pct(brightness, dim_s, off_s, idle_ms, level);
+}
 
 #if CONFIG_HOTSPOT
 uint32_t radio_hotspot_serial(void)
