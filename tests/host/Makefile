@@ -228,6 +228,20 @@ mmdvmTest: $(MMDVM) $(wildcard $(CORE)/hotspot/*.h $(CORE)/hostlink/*.h $(CORE)/
 run: run-mmdvm
 run-mmdvm: mmdvmTest
 	./mmdvmTest
+
+# The hotspot's SFR mode (core/hotspot/hotspotSfr.c on core/dmr/sfrRunner.c and sfr.c) through mmdvm.c and hotspot.c,
+# against the simulated modem
+HSFR    := hotspotSfrTest.c $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
+           $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c \
+           $(FRAME) $(CORE)/dmr/call/dmr_lc.c sim/dmr_sim_modem.c
+TESTS   += hotspotSfrTest
+
+hotspotSfrTest: $(HSFR) $(wildcard $(CORE)/hotspot/*.h $(CORE)/dmr/sfr*.h sim/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SFR=1 -o $@ $(HSFR)
+
+run: run-hsfr
+run-hsfr: hotspotSfrTest
+	./hotspotSfrTest
 .PHONY: run-mmdvm
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)

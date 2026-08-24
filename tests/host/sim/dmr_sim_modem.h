@@ -17,6 +17,7 @@ typedef struct {
 	uint8_t kind;		// dmr_burst_kind_t
 	uint8_t voice_index;
 	bool host_crc;
+	uint8_t sync;		// dmr_tx_burst_t.sync_override
 	uint8_t len;
 	uint8_t payload[DMR_PAYLOAD_MAX];
 	uint8_t lcss;		// voice: the EMB LCSS sent
@@ -31,6 +32,8 @@ typedef struct {
 	int8_t cc_filter;
 	int8_t locked_ts;
 	unsigned tx_begins;
+	dmr_timing_t first_timing;	// of the first tx_begin since sim_reset
+	int8_t first_ts;
 	dmr_timing_t last_timing;
 	int8_t last_ts;
 	dmr_access_t last_access;

@@ -37,6 +37,11 @@ APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
 endif
+# The single frequency repeater: the generic logic and its runner on the DMR modem (the hotspot's SFR mode is in
+# core/hotspot/hotspotSfr.c)
+ifeq ($(CONFIG_SFR),y)
+APP_SRC += core/dmr/sfr.c core/dmr/sfrRunner.c
+endif
 # The IP gateway and the packet data codec it needs (sorted: another feature may list the codec too)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC := $(sort $(APP_SRC) core/dmr/ipGateway.c core/dmr/dmrData.c)

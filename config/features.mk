@@ -29,7 +29,8 @@ CONFIG_DMR_LRRP ?= $(CONFIG_DMR)
 CONFIG_DMR_SIGNALING ?= $(CONFIG_DMR)
 # IP over DMR packet data through the USB network adapter (needs DMR and USB_NETWORK; core/hostlink/hostlink_net.c)
 CONFIG_DMR_IP_GATEWAY ?= n
-# single frequency repeater (needs DMR; not ported yet)
+# single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
+# the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
 CONFIG_SFR ?= n
 # USB device (CDC serial)
 CONFIG_USB ?= y

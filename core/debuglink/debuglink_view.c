@@ -11,6 +11,9 @@
 #include "ui/ui.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
+#if CONFIG_SFR
+#include "hotspot/hotspotSfr.h"
+#endif
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net.h"
@@ -126,6 +129,19 @@ static void hotspot_section(dl_text_t *t)
 	dl_text(t, "hs.cwid_requests=%u\nhs.cwid_unsent=%u\nhs.enter_attempts=%u\n", (unsigned)s.cwid_requests,
 		(unsigned)s.cwid_unsent, (unsigned)s.enter_attempts);
 	dl_text(t, "hs.starts=%u\nhs.stops=%u\n", (unsigned)s.starts, (unsigned)s.stops);
+#if CONFIG_SFR
+	hotspot_sfr_view_t f;
+
+	hotspot_sfr_get_view(&f);
+	dl_text(t, "sfr.on=%u\nsfr.keyed=%u\nsfr.busy=%u\nsfr.slots=%u>%u\n", f.on, f.keyed, f.inbound_busy,
+		f.inbound_slot + 1u, 2u - f.inbound_slot);
+	dl_text(t, "sfr.rx=%u\nsfr.repeated=%u\nsfr.ignored=%u\nsfr.echo=%u\nsfr.bad_crc=%u\n",
+		(unsigned)f.stats.rx_bursts, (unsigned)f.stats.rx_repeated, (unsigned)f.stats.rx_ignored,
+		(unsigned)f.stats.rx_echo, (unsigned)f.stats.rx_bad_crc);
+	dl_text(t, "sfr.tx_bursts=%u\nsfr.tx_idle=%u\nsfr.tx_starts=%u\nsfr.up=%u\nsfr.up_lost=%u\n",
+		(unsigned)f.stats.tx_bursts, (unsigned)f.stats.tx_idle, (unsigned)f.stats.tx_starts,
+		(unsigned)f.stats.up_bursts, (unsigned)f.stats.up_lost);
+#endif
 #else
 	dl_text(t, "hs.built=0\n");
 #endif

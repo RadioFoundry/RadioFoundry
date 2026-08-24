@@ -8,6 +8,9 @@
 #if CONFIG_HOTSPOT
 #include "hotspot/mmdvm.h"
 #include "hotspot/hotspot.h"
+#if CONFIG_SFR
+#include "hotspot/hotspotSfr.h"
+#endif
 #endif
 #if CONFIG_DEBUGLINK
 #include "debuglink/debuglink.h"
@@ -282,6 +285,9 @@ static void hostlink_task(void *arg)
 	make_description();
 	hotspot_init(board.dmr, mmdvm_send);
 	mmdvm_init(&mmdvm_io);
+#if CONFIG_SFR
+	hotspot_sfr_init();
+#endif
 	mmdvm_framer_reset(&framer);
 #endif
 #if CONFIG_DMR_IP_GATEWAY
