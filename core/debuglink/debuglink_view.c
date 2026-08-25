@@ -17,6 +17,7 @@
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net.h"
+#include "hostlink/hostlink_net_air.h"
 #include "dmr/ipGateway.h"
 #endif
 
@@ -111,6 +112,11 @@ static void hotspot_section(dl_text_t *t)
 		(unsigned)ns.to_air, (unsigned)ns.to_air_refused);
 	dl_text(t, "net.packets_air=%u\nnet.packets_up=%u\nnet.packets_dropped=%u\n", (unsigned)ns.packets_air,
 		(unsigned)ns.packets_up, (unsigned)ns.packets_dropped);
+	hostlink_net_air_stats_t as;
+
+	hostlink_net_air_stats(&as);
+	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\n", (unsigned)as.sent,
+		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long));
 #endif
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;

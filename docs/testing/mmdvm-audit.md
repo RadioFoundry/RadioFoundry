@@ -18,6 +18,50 @@ Severity:
 - **Low**: differs from the spec with little effect.
 - **Info**: confirmed correct, or the spec should change.
 
+## Status (2026-10-10, branch agent/hotspot-net)
+
+The findings below are as written at 2d45a21. Where they stand now, checked against the code and the host tests
+(nothing below has been run on a radio since):
+
+| Finding | Status | Where |
+|---|---|---|
+| A-1 no board wires the hotspot | fixed: the radio core registers `radio_hs_ops` (`core/radio/radio_hotspot.c`) | `radioCoreTest` test_hotspot_session |
+| A-2 hotspot left while DTR is clear | fixed: only a DTR drop (an edge) ends hotspot mode (`hostlink_policy.c`) | `mmdvmTest` test_hostlink_dtr |
+| A-3 uplink EMB / embedded signalling | fixed | `mmdvmTest` test_uplink_emb |
+| A-4 silence fill across a superframe | fixed (modulo 6) | test_uplink_wrapped_gap |
+| A-5 DMR_SHORTLC NAK, I-2 DMR_START NAK | fixed: taken silently (ACKed in SFR mode) | test_config, `hotspotSfrTest` |
+| A-6 SEND_CWID NAK | fixed: ACKed in idle; the ID itself is not keyed on the DM-1701 (no `cw_id` op, counted in `hs.cwid_unsent`) | test_cwid |
+| A-7 rfgw doesn't know the description | open, on rfgw's side | |
+| A-8 slot 1 space / SFR hook | the hook exists (`mmdvm_ext_t.space`); simplex keeps 0, which the spec allows | test_ext_space, `hotspotSfrTest` |
+| A-9 no RSSI after uplink bursts | fixed (AT1846S raw scale) | test_uplink_rssi |
+| A-10 no DMR_LOST on SET_FREQ mid-call | fixed | test_retune_lost |
+| A-11 SET_MODE idle doesn't stop TX | fixed | test_mode_idle |
+| A-12 POCSAG refused | fixed: accepted, never transmits | test_pocsag |
+| A-13 NAK / accept mismatches | fixed | test_config |
+| A-14 no space margin | fixed: `hotspot_space()` keeps 2 frames back (`SPACE_MARGIN`) | code |
+| A-15 `enter` inside every frame | fixed: rate limited (1 s) and posted to the radio task | test_slow_enter, test_hotspot_session |
+| T-1 coverage gaps | covered by the tests named above | |
+
+Found since:
+
+- **H-1 (HIL test, fixed): "hotspot entered through the debug link" failed with `hs.enter_attempts=2`,
+  `hs.running=0`.** The test's MMDVM client opened the port with pyserial's default DTR set; closing it dropped DTR,
+  and the host link leaves hotspot mode on that edge (spec 5.1). By the time the debug link looked, the session was
+  over. `hs.enter_attempts` counts every session since boot, so 2 meant two sessions that had each taken the modem,
+  not two refused attempts. The radio core path was reproduced on the host (DMR channel at 467.375 MHz, the radio
+  task above and below the host link task in priority): the modem is taken on the first frame or on the retry 1 s
+  later. Fix: `tests/hil/test_hotspot.py` opens with DTR clear (as MMDVMHost on Windows does) and checks the slot 2
+  space, `hs.running` and `hs.starts`; new view keys `hostlink.left` (why the last session ended), `hs.starts`,
+  `hs.stops`.
+- **SFR mode**: built behind `CONFIG_SFR` (`docs/spec/sfr.md`): spec 6.1-6.4 answered by `core/hotspot/hotspotSfr.c`,
+  host-tested by `hotspotSfrTest`. The on-air repeat needs per-burst RF switching in the driver (sfr.md 3).
+- **Network transport**: MMDVM over UDP 3334 in the USB network personality (`docs/spec/usb-network.md`); the DTR
+  rule does not apply there, the 20 s idle timeout does.
+
+Updated per-client view: MMDVMHost on Linux and Windows and the rfgw roamer should work for voice and data in
+simplex (rfgw still needs `radio.type: opengd77` until A-7); no CW ID on the DM-1701; rfgw SFR answers correctly
+but repeats only what it heard before keying until the driver work lands.
+
 ## Summary
 
 The protocol responder is sound:

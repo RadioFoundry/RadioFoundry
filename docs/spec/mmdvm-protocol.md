@@ -669,6 +669,13 @@ not disturbed: MMDVMHost (protocol 1) reads at most offset 12; rfgw reads offset
 Keep the length and member order stable; add new members only at the end, and never change a member's meaning, so
 old bench tool versions stay correct.
 
+The generic SFR layer (`core/hotspot/hotspotSfr.c` on `core/dmr/sfrRunner.c`, any modem behind `hal_dmr_modem_t`)
+fills the members it knows: 14 bursts written, 15 bursts heard, 16 repeated, 17 send rejected, 24 state (01 keyed,
+02 own timing, 10 RF call, 20 busy), 25 flags, 28 echo, 29 ignored, 30 duplicate, 31 last burst, 32 its colour code,
+35 reg10, 36 reg12, 38 ignored on the outbound slot, 39 bad checksum, 55 rssiMin, 60 raw area (FF: not used), 99 LC
+rebuilt, 106 reg11, 107 flags2, 117 late entry held. The rest (register reads, RF switch timing, raw bursts) belong
+to an HR_C6000 driver level SFR and stay 0 until one fills them.
+
 ### 6.4 Command 0xD5 (SFR debug)
 
 `E0 <len> D5 <flags> <framing> [<reg10> [<reg12> [<rssiMin> [<reg11> [<flags2>]]]]]`, payload 2 to 7 bytes. ACK
@@ -676,7 +683,8 @@ old bench tool versions stay correct.
 optional bytes take their defaults: reg10 00 (the driver's), reg12 FF (the driver's), rssiMin 00 (default threshold),
 reg11 00, flags2 00. Meanings of each bit: the `HRC_SFR_DEBUG_*` and `HRC_SFR_DEBUG2_*` definitions in
 `drivers/modem/hrc6000/sfr_glue/hrcSfr.h`; framing 0 = the channel setting, 1 MS, 2 TS, 3 BS (GET_VERSION shows the
-result). In a firmware without SFR, 0xD5 is an unknown command (NAK 1).
+result). In a firmware without SFR, 0xD5 is an unknown command (NAK 1). The generic SFR layer acts on the framing and on flags2 0x40
+(data calls repeated as heard, no hold); it keeps and reports the other switches for a driver that uses them.
 
 ## 7. Conformance checklist and test list
 

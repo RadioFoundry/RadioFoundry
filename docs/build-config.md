@@ -38,10 +38,10 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_DMR_ARS` | = DMR | ARS registration with a presence server, at power-up and channel change, refreshed (off until a server ID is set) |
 | `CONFIG_DMR_LRRP` | = DMR | LRRP location answers (a radio without GPS answers "no fix"); builds core/dmr/dmrLrrp.c into the image |
 | `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert and radio check, answered and sent |
-| `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter (`docs/spec/usb-network.md`) |
-| `CONFIG_SFR` | n | single frequency repeater (not ported yet) |
+| `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter, carried by the data service (`docs/spec/usb-network.md`) |
+| `CONFIG_SFR` | n | single frequency repeater: the MMDVM hotspot's SFR mode (duplex with RX = TX); the stand-alone repeater and user roles on a channel are not wired yet (`docs/spec/sfr.md`) |
 | `CONFIG_USB` | y | USB device (CDC serial) |
-| `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 15) |
+| `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
 | `CONFIG_HOTSPOT` | = DMR and USB | MMDVM modem / hotspot over USB |
 | `CONFIG_DEBUGLINK` | = USB | USB debug link for bench automation: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
 | `CONFIG_VFO` | y | tuning a frequency by hand |

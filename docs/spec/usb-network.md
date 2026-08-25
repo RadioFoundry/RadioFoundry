@@ -42,21 +42,27 @@ iMACAddress) ends in an even byte, the radio's side of the link is the same addr
 Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGateway.h` describes: the host gets
 12.<DMR ID>/32 by DHCP, the radio is that address xor 1, radios are 12.x.y.z and talkgroups 225.x.y.z.
 
-- Host to air: IP for a radio ID or talkgroup, and datagrams to the raw port, go to the air ops the DMR data
-  integration registers with `hostlink_net_set_air()` (radio ID, IP to air as SAP 4, raw data as SAP 10). They are
-  called from the host link task and must not block: they queue the packet for the radio task and return false when
-  it can't go now (busy, not a DMR channel, receive only). Refusals are counted (`net.to_air_refused`); nothing is
-  retried, as with any lost IP packet.
+- Host to air: IP for a radio ID or talkgroup, and datagrams to the raw port, go to the air ops registered with
+  `hostlink_net_set_air()` (radio ID, IP to air as SAP 4, raw data as SAP 10). They are called from the host link task
+  and must not block. The default ones (`core/hostlink/hostlink_net_air.c`, registered by the radio core's data
+  service glue in `radio_sm.c`) copy the packet into a one-packet mailbox and return false while it is full; at the
+  radio task's data tick the packet is built (`dmrDataBuildIP`, or an unconfirmed SAP 10 packet for raw data; rate 1/2,
+  2 preamble CSBKs) and handed to `dmrDataServiceSendBursts`, which does the listen before talk and the TX. A busy
+  service (another list going out, not a DMR channel, receive only) is tried again on every tick for up to 2 s, then
+  the packet is dropped. The host's address follows the radio's DMR ID. Refusals are counted (`net.to_air_refused`,
+  `net.air_busy`, `net.air_dropped`); nothing else is retried, as with any lost IP packet.
 - Air to host: the data service hands every packet it receives to `hostlink_net_packet()` (its `dmrDataEnv_t.packet`
   hook). Two packets wait for the host link task, which delivers SAP 4 as IP (ICMP, UDP, SCTP), SAP 3 as UDP, and
   anything else as raw data on port 40078; a packet that finds the IN endpoint busy goes on the next pass, and packets
   are dropped while the link is down.
 - Debug link view, section `hotspot`: `usb.network usb.net_up net.host_ip net.radio_ip net.frames_in net.to_air
-  net.to_air_refused net.packets_air net.packets_up net.packets_dropped`.
+  net.to_air_refused net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped`.
 
 ## 4. Tests
 
 - Host: `tests/host/hostlinkNetTest.c` (the gateway with a fake interface and fake air ops: unicast, multicast and raw
-  to air, refusals, UDP serial both ways with chunking and a busy endpoint, IP and short data from the air, link down),
+  to air, refusals, UDP serial both ways with chunking and a busy endpoint, IP and short data from the air, link down;
+  then the default air side against a fake data service: the mailbox, the bursts decoded back by the codec's receiver
+  into the IP / SAP 10 packet, a busy service retried, the 2 s give-up, the packet hook),
   and the gateway's own `ipGatewayTest*` with pcaps checked by tshark.
 - HIL: `tests/hil/test_usb_network.py` (`--allow-usb-switch`).
