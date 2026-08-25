@@ -11,9 +11,10 @@ and RADIO ops 20-24 (`docs/spec/debuglink.md` 3.7, 3.8). Host tests: `tests/host
 
 ## 1. Settings
 
-The radio core keeps one `radio_settings_t` (`core/radio/radio.h`). Nothing stores it yet: whoever owns the settings
-screen and storage hands the whole struct over at start-up and on every change with `radio_set_settings()`, and
-reads it back with `radio_get_settings()`. The debug link's SETTING op changes one field in RAM.
+The radio core keeps one `radio_settings_t` (`core/radio/radio.h`). It loads it from the settings store at
+start-up (the `rs_*` fields, `settings-store.md` 3) and saves every change made with `radio_set_settings()`, so the
+settings screen hands the whole struct over on a change and reads it back with `radio_get_settings()`. The debug
+link's SETTING op goes through `radio_set_settings()` too, so its changes are saved.
 
 | Setting | Default | Meaning |
 |---|---|---|

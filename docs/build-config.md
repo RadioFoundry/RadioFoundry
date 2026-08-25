@@ -44,6 +44,7 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
 | `CONFIG_HOTSPOT` | = DMR and USB | MMDVM modem / hotspot over USB |
 | `CONFIG_DEBUGLINK` | = USB | USB debug link for bench automation: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
+| `CONFIG_CPS_LEGACY` | = USB | legacy CPS protocol on the USB serial port (qdmr, the legacy CPS, `tools/cps_client.py`): codeplug read / write, radio info (`docs/spec/cps-protocol.md` 2). The settings store and the sector journal (`docs/spec/settings-store.md`) are always built |
 | `CONFIG_VFO` | y | tuning a frequency by hand |
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO (not built yet) |

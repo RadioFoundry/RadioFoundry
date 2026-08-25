@@ -46,6 +46,11 @@ def pytest_addoption(parser):
     g.addoption("--radiodesk-freq", type=float, default=None,
                 help="MHz: the channel the RadioDesk gateway calls the radio on (default --dmr-freq)")
     g.addoption("--radiodesk-src", type=int, default=None, help="RadioDesk's own DMR ID, checked as the caller")
+    g.addoption("--allow-codeplug-write", action="store_true",
+                help="tests may write the radio's codeplug over CPS (marker codeplug_write: backed up first, "
+                     "restored and verified afterwards)")
+    g.addoption("--allow-reboot", action="store_true",
+                help="tests may restart the radio (marker reboot: the settings persistence check)")
     g.addoption("--radiodesk-text", default="OpenDigitalRadio HIL test call",
                 help="the alert text RadioDesk speaks in the private call")
 
@@ -57,6 +62,9 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "radio_tx: the radio under test transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "radiodesk: publishes to the RadioDesk sandbox broker, which makes its "
                             "gateway transmit (needs --allow-radiodesk and --allow-rf)")
+    config.addinivalue_line("markers", "codeplug_write: writes the radio's codeplug over CPS, backed up and restored "
+                            "(needs --allow-codeplug-write)")
+    config.addinivalue_line("markers", "reboot: restarts the radio (needs --allow-reboot)")
     config.addinivalue_line("markers", "usb_switch: switches the USB personality (needs --allow-usb-switch)")
 
 
@@ -73,6 +81,10 @@ def pytest_collection_modifyitems(config, items):
         elif "radiodesk" in item.keywords and not config.getoption("--allow-radiodesk"):
             item.add_marker(pytest.mark.skip(reason="publishes to the RadioDesk sandbox: run with --allow-radiodesk "
                                                     "(and $ODR_RADIODESK_MQTT_* set)"))
+        elif "codeplug_write" in item.keywords and not config.getoption("--allow-codeplug-write"):
+            item.add_marker(pytest.mark.skip(reason="writes the codeplug: run with --allow-codeplug-write"))
+        elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):
+            item.add_marker(pytest.mark.skip(reason="restarts the radio: run with --allow-reboot"))
 
 
 @pytest.fixture(scope="session")

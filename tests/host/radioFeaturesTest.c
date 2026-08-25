@@ -14,6 +14,7 @@
 #include "dmr/call/dmr_lc.h"
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
+#include "settings/settings.h"
 
 static int failures;
 static int checks;
@@ -172,6 +173,12 @@ static bool used[NCH + 1];
 static zone_t zone;
 
 codeplug_source_t codeplug_source(void) { return CODEPLUG_LEGACY; }
+uint32_t codeplug_serial(void) { return 1; }
+// The settings store runs from RAM here (no flash map); its locks are no-ops
+void storage_lock(void) {}
+void storage_unlock(void) {}
+void storage_quick_lock(void) {}
+void storage_quick_unlock(void) {}
 uint16_t codeplug_channel_count(void) { return NCH; }
 bool codeplug_channel(uint16_t n, channel_t *out)
 {
@@ -304,6 +311,7 @@ static void start(void)
 	beep_reset_stats();
 	setup_codeplug();
 	now = 1000;
+	settings_init();	// no flash: the defaults again (the last test's settings were "saved" in RAM)
 	radio_sm_init(&sm, now);
 	run(100);
 }

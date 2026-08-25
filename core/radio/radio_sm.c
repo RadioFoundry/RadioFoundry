@@ -8,6 +8,7 @@
 #include "board.h"
 #include "radio/radio_sm.h"
 #include "radio/tones.h"
+#include "settings/settings.h"
 #include "config.h"
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
@@ -102,10 +103,15 @@ static bool in_band(uint32_t hz, bool need_tx)
 	return false;
 }
 
+static uint8_t master_power = SETTINGS_UNSET8;	// the settings' power for "default" channels
+
 static uint8_t default_power(void)
 {
 	if (board.power_count == 0) {
 		return 0;
+	}
+	if (master_power < board.power_count) {
+		return master_power;
 	}
 	return board.power_default < board.power_count ? board.power_default : board.power_count - 1;
 }
@@ -969,6 +975,28 @@ static bool data_in_rx_group(uint32_t tg, void *ctx)
 	return false;
 }
 
+// The data service's settings as last saved: a change (dmr_data_set_settings, applied by the service's tick) is
+// noted in the settings store from data_tick
+static dmrDataSettings_t data_saved;
+
+static void data_save_settings(uint32_t now_ms)
+{
+	dmrDataSettings_t cur;
+	dmrDataServiceGetSettings(&cur);
+	if (cur.arsServer == data_saved.arsServer && cur.radioCheckReply == data_saved.radioCheckReply &&
+	    cur.callAlertAck == data_saved.callAlertAck && cur.lrrpReply == data_saved.lrrpReply) {
+		return;
+	}
+	data_saved = cur;
+	settings_t *st = settings_begin();
+	st->ds_ars_server = cur.arsServer;
+	st->ds_flags = (uint8_t)((cur.radioCheckReply ? SETTINGS_DS_RADIO_CHECK_REPLY : 0) |
+				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
+				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0));
+	st->ds_stored = 1;
+	settings_end(now_ms);
+}
+
 static void data_init(radio_sm_t *sm)
 {
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
@@ -982,6 +1010,15 @@ static void data_init(radio_sm_t *sm)
 	// a position source
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false };
+	settings_t st;
+	settings_read(&st);
+	if (st.ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
+		set.arsServer = st.ds_ars_server <= 0xFFFFFFu ? st.ds_ars_server : 0;
+		set.radioCheckReply = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
+		set.callAlertAck = (st.ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
+		set.lrrpReply = (st.ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
+	}
+	data_saved = set;
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
@@ -1004,6 +1041,10 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 	c.channelKey = h;
 	dmrDataServiceTick(now_ms, &c);
+	data_save_settings(now_ms);
+	if (sm->power_off_req && sm->power_off_busy) {
+		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
+	}
 #if CONFIG_DMR_IP_GATEWAY
 	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
 #endif
@@ -1474,8 +1515,289 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+// --- Settings: what the radio was set to, back at power-on (core/settings), and saved when it changes ---
+
+// The preferences the radio core uses: base squelch, master power, VFO step, the own DMR ID override
+static void apply_prefs(radio_sm_t *sm, const settings_t *st)
+{
+	master_power = st->master_power;
+	if (st->squelch <= RADIO_SQUELCH_MAX && sm->base_squelch != st->squelch) {
+		sm->base_squelch = st->squelch;
+		if (!sm->temp_squelch) {
+			sm->view.squelch = st->squelch;
+		}
+	}
+	if (!sm->temp_power) {
+		sm->view.power = channel_power(&sm->view.ch);
+	}
+	if (st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u) {
+		sm->view.vfo_step_hz = st->vfo_step_hz;
+	}
+#if CONFIG_DMR
+	sm->own_id = st->dmr_id != 0 && st->dmr_id <= 0xFFFFFFu ? st->dmr_id : codeplug_dmr_id();
+	if (sm->own_id == 0) {
+		sm->own_id = RADIO_DMR_ID_DEFAULT;
+	}
+	sm->view.dmr.own_id = sm->own_id;
+	// The radio name (talker alias text): the settings' override, else the codeplug's; hang times from the codeplug
+	codeplug_dmr_settings_t gs;
+	codeplug_dmr_settings(&gs);
+	if (st->radio_name[0] != '\0') {
+		memset(gs.radio_name, 0, sizeof(gs.radio_name));
+		memcpy(gs.radio_name, st->radio_name, CODEPLUG_RADIO_NAME_LEN);
+	}
+	memcpy(sm->radio_name, gs.radio_name, sizeof(sm->radio_name));
+	sm->group_hang_ms = gs.group_hang_ms;
+	sm->private_hang_ms = gs.private_hang_ms;
+#if CONFIG_DMR_PRIVACY
+	// The privacy key in use, kept in the settings (slot 1 for now; per-channel choice: codeplug-native.md)
+	uint8_t slot = st->privacy_active;
+	if (slot >= 1 && slot <= SETTINGS_PRIVACY_KEYS && st->privacy_type[slot - 1] < DMR_PRIVACY_NUM_TYPES &&
+	    st->privacy_type[slot - 1] != DMR_PRIVACY_OFF &&
+	    dmrPrivacyKeyIsValid(st->privacy_type[slot - 1], (uint16_t)st->privacy_key[slot - 1])) {
+		sm->privacy_type = st->privacy_type[slot - 1];
+		sm->privacy_key = (uint16_t)st->privacy_key[slot - 1];
+	} else {
+		sm->privacy_type = DMR_PRIVACY_OFF;
+		sm->privacy_key = 0;
+	}
+#endif
+#endif
+	set_temporary(sm);
+}
+
+// The VFO as saved, if its frequency still fits the board
+static void restore_vfo(radio_sm_t *sm, const settings_t *st)
+{
+	if (st->vfo_rx_hz == 0 || !in_band(st->vfo_rx_hz, false)) {
+		return;
+	}
+	sm->vfo_ch.rx_hz = st->vfo_rx_hz;
+	sm->vfo_ch.tx_hz = st->vfo_tx_hz != 0 ? st->vfo_tx_hz : st->vfo_rx_hz;
+	sm->vfo_ch.mode = RADIO_MODE_FM;	// the VFO is FM only for now
+	sm->vfo_ch.bw = st->vfo_bw == RADIO_BW_25K ? RADIO_BW_25K : RADIO_BW_12K5;
+	sm->vfo_ch.power = st->vfo_power < board.power_count ? st->vfo_power : CODEPLUG_POWER_DEFAULT;
+	sm->vfo_ch.color_code = st->vfo_cc & 0x0Fu;
+	sm->vfo_ch.timeslot = st->vfo_ts == 2 ? 2 : 1;
+	subtone_t rx = { st->vfo_rx_tone_type, st->vfo_rx_tone }, tx = { st->vfo_tx_tone_type, st->vfo_tx_tone };
+	sm->vfo_ch.rx_tone = tones_valid(&rx) ? rx : (subtone_t){ TONE_NONE, 0 };
+	sm->vfo_ch.tx_tone = tones_valid(&tx) ? tx : (subtone_t){ TONE_NONE, 0 };
+	sm->vfo_seeded = true;
+}
+
+// The position of channel number in z, or -1
+static int zone_find(const zone_t *z, uint16_t number)
+{
+	for (uint16_t i = 0; number != 0 && i < z->count; i++) {
+		if (z->channels[i] == number) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+// Zone zi, on channel number (or else near pos); false if the zone has no readable channel
+static bool select_in_zone(radio_sm_t *sm, uint16_t zi, uint16_t number, uint16_t pos)
+{
+	zone_t z;
+	uint16_t p;
+	channel_t ch;
+	if (!read_zone(zi, &z)) {
+		return false;
+	}
+	int at = zone_find(&z, number);
+	if (at >= 0 && codeplug_channel(number, &ch)) {
+		p = (uint16_t)at;
+	} else if (!find_channel(&z, pos < z.count ? pos : 0, 1, &p, &ch)) {
+		return false;
+	}
+	set_zone(sm, zi, &z);
+	set_channel(sm, p, &ch);
+	sm->have_channels = true;
+	return true;
+}
+
+// Zone and channel: the saved ones, else zone 0's first channel, else the first zone that has one
+static void select_position(radio_sm_t *sm, uint16_t zi, uint16_t number, uint16_t pos)
+{
+	uint16_t zones = codeplug_zone_count();
+	sm->have_channels = false;
+	if (zi < zones && select_in_zone(sm, zi, number, pos)) {
+		return;
+	}
+	for (uint16_t i = 0; i < zones; i++) {
+		if (select_in_zone(sm, i, 0, 0)) {
+			return;
+		}
+	}
+	memset(&sm->zone, 0, sizeof(sm->zone));
+}
+
+// Note the position and the VFO in the settings (saved later, when they rest; settings_end only marks changes)
+static void persist(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->hotspot) {
+		return;		// the hotspot's frequencies are the host's, not the radio's
+	}
+	settings_t *st = settings_begin();
+	st->vfo = sm->view.vfo;
+	if (sm->have_channels) {
+		st->zone_index = sm->view.zone_index;
+		st->zone_pos = sm->view.zone_pos;
+		st->channel = sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
+	}
+	if (sm->vfo_seeded) {
+		const channel_t *v = &sm->vfo_ch;
+		st->vfo_rx_hz = v->rx_hz;
+		st->vfo_tx_hz = v->tx_hz;
+		st->vfo_mode = v->mode;
+		st->vfo_bw = v->bw;
+		st->vfo_power = v->power == CODEPLUG_POWER_DEFAULT ? SETTINGS_UNSET8 : v->power;
+		st->vfo_cc = v->color_code;
+		st->vfo_ts = v->timeslot;
+		st->vfo_rx_tone_type = v->rx_tone.type;
+		st->vfo_rx_tone = v->rx_tone.value;
+		st->vfo_tx_tone_type = v->tx_tone.type;
+		st->vfo_tx_tone = v->tx_tone.value;
+	}
+#if CONFIG_DMR_PRIVACY
+	if (sm->privacy_type != DMR_PRIVACY_OFF) {
+		st->privacy_active = 1;
+		st->privacy_type[0] = sm->privacy_type;
+		st->privacy_key[0] = sm->privacy_key;
+	} else {
+		st->privacy_active = 0;		// the key stays in its slot
+	}
+#endif
+	settings_end(now_ms);
+}
+
+static void clamp_settings(radio_settings_t *s)
+{
+	if (s->beep_level > 100) {
+		s->beep_level = 100;
+	}
+	if (s->vox_level > 10) {
+		s->vox_level = 10;
+	}
+	if (s->rx_save > 3) {
+		s->rx_save = 3;
+	}
+}
+
+// The radio core's settings as kept in the settings store (docs/spec/settings-store.md 3); the defaults if never set
+static void settings_to_radio(const settings_t *st, radio_settings_t *s)
+{
+	radio_settings_default(s);
+	if (st->rs_stored != 1) {
+		return;
+	}
+	s->tot_s = st->rs_tot_s;
+	s->tot_warn_s = st->rs_tot_warn_s;
+	s->bcl = st->rs_bcl;
+	s->roger_beep = (st->rs_flags & SETTINGS_RS_ROGER_BEEP) != 0;
+	s->tx_inhibit = (st->rs_flags & SETTINGS_RS_TX_INHIBIT) != 0;
+	s->scan_priority = (st->rs_flags & SETTINGS_RS_SCAN_PRIORITY) != 0;
+	s->scan_beep = (st->rs_flags & SETTINGS_RS_SCAN_BEEP) != 0;
+	s->key_beep = (st->rs_flags & SETTINGS_RS_KEY_BEEP) != 0;
+	s->scan_resume = st->rs_scan_resume;
+	s->scan_hold_s = st->rs_scan_hold_s;
+	s->scan_delay_ms = st->rs_scan_delay_ms;
+	s->scan_dwell_ms = st->rs_scan_dwell_ms;
+	s->beep_level = st->rs_beep_level;
+	s->vox = st->rs_vox;
+	s->vox_level = st->rs_vox_level;
+	s->vox_tail_ms = st->rs_vox_tail_ms;
+	s->rx_save = st->rs_rx_save;
+	s->rx_save_idle_s = st->rs_rx_save_idle_s;
+	s->battery_off_s = st->rs_battery_off_s;
+	s->backlight_dim_s = st->rs_backlight_dim_s;
+	s->backlight_off_s = st->rs_backlight_off_s;
+	clamp_settings(s);
+}
+
+static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
+{
+	settings_t *st = settings_begin();
+	st->rs_tot_s = s->tot_s;
+	st->rs_tot_warn_s = s->tot_warn_s;
+	st->rs_bcl = s->bcl;
+	st->rs_flags = (uint8_t)((s->roger_beep ? SETTINGS_RS_ROGER_BEEP : 0) | (s->tx_inhibit ? SETTINGS_RS_TX_INHIBIT : 0) |
+				 (s->scan_priority ? SETTINGS_RS_SCAN_PRIORITY : 0) |
+				 (s->scan_beep ? SETTINGS_RS_SCAN_BEEP : 0) | (s->key_beep ? SETTINGS_RS_KEY_BEEP : 0));
+	st->rs_scan_resume = s->scan_resume;
+	st->rs_scan_hold_s = s->scan_hold_s;
+	st->rs_scan_delay_ms = s->scan_delay_ms;
+	st->rs_scan_dwell_ms = s->scan_dwell_ms;
+	st->rs_beep_level = s->beep_level;
+	st->rs_vox = s->vox;
+	st->rs_vox_level = s->vox_level;
+	st->rs_vox_tail_ms = s->vox_tail_ms;
+	st->rs_rx_save = s->rx_save;
+	st->rs_rx_save_idle_s = s->rx_save_idle_s;
+	st->rs_battery_off_s = s->battery_off_s;
+	st->rs_backlight_dim_s = s->backlight_dim_s;
+	st->rs_backlight_off_s = s->backlight_off_s;
+	st->rs_stored = 1;
+	settings_end(now_ms);
+}
+
+static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
+{
+	sm->set = *s;
+	clamp_settings(&sm->set);
+	apply_tot(sm);
+	activity(sm, now_ms);
+#if CONFIG_VOX
+	if (sm->vox_keyed && sm->set.vox == RADIO_VOX_OFF) {
+		sm->vox_keyed = false;
+		sm->view.vox_keyed = false;
+		ptt_release(sm, false, now_ms);
+	}
+#endif
+	changed(sm);
+}
+
+// From radio_set_settings (the settings screen, the debug link): in effect at once, saved by the settings store
+void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
+{
+	use_settings(sm, s, now_ms);
+	radio_to_settings(&sm->set, now_ms);
+}
+
+// The codeplug changed underneath (an edit, a CPS write) or the preferences did: read them again, keep the zone and
+// the channel if they still exist
+static void reload(radio_sm_t *sm, uint32_t now_ms)
+{
+	settings_t st;
+	settings_read(&st);
+	sm->reload_pending = false;
+	sm->codeplug_serial = codeplug_serial();
+	sm->view.source = codeplug_source();
+	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
+	bool vfo = sm->view.vfo;
+	select_position(sm, sm->view.zone_index, number, sm->view.zone_pos);
+	apply_prefs(sm, &st);
+	radio_settings_t rs;
+	settings_to_radio(&st, &rs);
+	use_settings(sm, &rs, now_ms);
+	if (vfo || !sm->have_channels) {
+		if (VFO_AVAILABLE) {
+			enter_vfo(sm, now_ms);
+		} else {
+			strcpy(sm->view.ch.name, "No channels");
+			changed(sm);
+		}
+	} else {
+		tune(sm, now_ms);
+	}
+}
+
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
+	settings_t st;
+	settings_read(&st);
+
 	memset(sm, 0, sizeof(*sm));
 	sm->audio_out = -1;
 	sm->green_out = -1;
@@ -1483,7 +1805,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->volume_sent = -1;
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
 	sm->view.squelch = RADIO_SQUELCH_DEFAULT;
-	radio_settings_default(&sm->set);
+	settings_to_radio(&st, &sm->set);	// as saved (docs/spec/settings-store.md 3)
 	sm->view.tot_s = sm->set.tot_s;
 	sm->activity_ms = now_ms;
 	batt_init(&sm->batt);
@@ -1492,6 +1814,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	sm->view.vfo_step_hz = RADIO_VFO_STEP_HZ;
 	sm->view.source = codeplug_source();
+	sm->codeplug_serial = codeplug_serial();
 
 	memset(&sm->vfo_ch, 0, sizeof(sm->vfo_ch));
 	strcpy(sm->vfo_ch.name, "VFO");
@@ -1499,23 +1822,14 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->vfo_ch.bw = RADIO_BW_12K5;
 	sm->vfo_ch.power = CODEPLUG_POWER_DEFAULT;
 	sm->vfo_ch.timeslot = 1;
+	restore_vfo(sm, &st);
 
 	sm->board_mode = RADIO_MODE_FM;
 	board.radio->set_mode(RADIO_MODE_FM);
 
 #if CONFIG_DMR
-	sm->own_id = codeplug_dmr_id();
-	if (sm->own_id == 0) {
-		sm->own_id = RADIO_DMR_ID_DEFAULT;
-	}
-	codeplug_dmr_settings_t gs;
-	codeplug_dmr_settings(&gs);
-	memcpy(sm->radio_name, gs.radio_name, sizeof(sm->radio_name));
-	sm->group_hang_ms = gs.group_hang_ms;
-	sm->private_hang_ms = gs.private_hang_ms;
 	sm->codec = board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
 	sm->view.dmr.codec = sm->codec;
-	sm->view.dmr.own_id = sm->own_id;
 	sm->hs_power = default_power();
 	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT
 	ambeVoiceInit(board.audio, board.vocoder);
@@ -1528,20 +1842,13 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #endif
 #endif
 
-	// Zone 0 and its first channel; if zone 0 has none, the first zone that has one
-	uint16_t zones = codeplug_zone_count();
-	for (uint16_t zi = 0; zi < zones; zi++) {
-		uint16_t pos;
-		channel_t ch;
-		if (read_zone(zi, &sm->zone) && find_channel(&sm->zone, 0, 1, &pos, &ch)) {
-			set_zone(sm, zi, &sm->zone);
-			set_channel(sm, pos, &ch);
-			sm->have_channels = true;
-			break;
-		}
-	}
-	if (!sm->have_channels) {
-		memset(&sm->zone, 0, sizeof(sm->zone));
+	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
+	select_position(sm, st.zone_index, st.channel, st.zone_pos);
+	apply_prefs(sm, &st);
+#if CONFIG_DMR
+	sm->hs_power = default_power();
+#endif
+	if (!sm->have_channels || (st.vfo && VFO_AVAILABLE)) {
 		if (VFO_AVAILABLE) {
 			enter_vfo(sm, now_ms);
 		} else {
@@ -1553,29 +1860,6 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->rssi_published = sm->view.rssi_dbm;
 }
 
-void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
-{
-	sm->set = *s;
-	if (sm->set.beep_level > 100) {
-		sm->set.beep_level = 100;
-	}
-	if (sm->set.vox_level > 10) {
-		sm->set.vox_level = 10;
-	}
-	if (sm->set.rx_save > 3) {
-		sm->set.rx_save = 3;
-	}
-	apply_tot(sm);
-	activity(sm, now_ms);
-#if CONFIG_VOX
-	if (sm->vox_keyed && sm->set.vox == RADIO_VOX_OFF) {
-		sm->vox_keyed = false;
-		sm->view.vox_keyed = false;
-		ptt_release(sm, false, now_ms);
-	}
-#endif
-	changed(sm);
-}
 
 #if CONFIG_FM_TX_TONES
 // The 1750 Hz burst: on keys up (FM channel, the usual TX checks) if not transmitting yet
@@ -1883,6 +2167,17 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		hotspot_leave(sm, now_ms);
 		break;
 #endif
+	case RREQ_POWER_OFF:
+		sm->power_off_req = true;
+		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
+		break;
+	case RREQ_RELOAD:
+		if (busy || sm->ptt) {
+			sm->reload_pending = true;	// after the transmission or the hotspot (radio_sm_poll)
+		} else {
+			reload(sm, now_ms);
+		}
+		break;
 #if CONFIG_SCAN
 	case RREQ_SCAN:
 		scan_request(sm, req, now_ms);
@@ -1906,6 +2201,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	default:
 		break;
 	}
+	persist(sm, now_ms);
 }
 
 // Follow a volume knob the MCU reads (soft volume): pass changes of 2 % or more, and the ends exactly
@@ -2085,6 +2381,11 @@ static void vox_poll(radio_sm_t *sm, uint32_t now_ms)
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
+	if ((sm->reload_pending || codeplug_serial() != sm->codeplug_serial) && !sm->hotspot && !sm->ptt &&
+	    sm->view.state != RS_TX) {
+		reload(sm, now_ms);
+		persist(sm, now_ms);
+	}
 	follow_volume(sm);
 	battery_poll(sm, now_ms);
 #if CONFIG_BEEP

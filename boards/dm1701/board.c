@@ -45,6 +45,27 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
 };
 
+#if CONFIG_CPS_LEGACY
+// legacy-cps-interop.md 4: type 8 is the DM-1701 with a BGR panel, 10 with an RGB one (the factory panel type 2 is
+// driven in RGB order, hardware-dm1701.md 9.2)
+static uint32_t cps_radio_type(void)
+{
+	uint8_t type = 0;
+
+	if (dm1701_flash_read_security(3, 0x1D, &type, 1) && (type & 3u) == 2u) {
+		return 10;
+	}
+	return 8;
+}
+
+static const hal_cps_t cps = {
+	.radio_type = cps_radio_type,
+	.rom_base = 0x08000000u,
+	.rom_size = 1024u * 1024u,
+	.security_read = dm1701_cps_security_read,
+};
+#endif
+
 const board_t board = {
 	.name = "DM-1701",
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_DMR ? CAP_DMR : 0),
@@ -80,6 +101,9 @@ const board_t board = {
 	// spec gives none (below 5.5 V the board reads as switched off)
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
+#if CONFIG_CPS_LEGACY
+	.cps = &cps,
+#endif
 };
 
 // docs/spec/hardware-dm1701.md 1.2

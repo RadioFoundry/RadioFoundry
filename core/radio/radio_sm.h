@@ -92,6 +92,8 @@ typedef enum {
 	RREQ_BEEP,		// arg: beep_t
 	RREQ_TONE_BURST,	// arg: 1 on, 0 off
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
+	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done)
+	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -170,6 +172,10 @@ typedef struct {
 	bool save_asleep;
 	uint32_t save_ms;		// start of the current sleep / wake
 #endif
+	uint32_t codeplug_serial;	// codeplug_serial() when the zone and channel were last read
+	bool reload_pending;		// RREQ_RELOAD came while busy
+	bool power_off_req;		// RREQ_POWER_OFF seen
+	bool power_off_busy;		// still sending what has to go out before the supply drops
 #if CONFIG_DMR
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
 	bool codec;			// the vocoder is present
@@ -203,7 +209,9 @@ typedef struct {
 #endif
 } radio_sm_t;
 
-// Start-up: codeplug, zone 0, the first channel (or the VFO), FM receive
+// Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its
+// first channel (or the VFO); FM receive. Every request notes the position and the VFO in the settings, and
+// radio_sm_poll re-reads the codeplug when codeplug_serial() moves
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms);
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms);
 // Every RADIO_POLL_MS: status, squelch, audio, LEDs, TX time-out

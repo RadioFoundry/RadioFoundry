@@ -47,7 +47,8 @@ bool hostlink_request_usb_network(bool network);
 bool hostlink_network_mode(void);
 
 // The CPS protocol, when it exists: called from the host link task with each chunk of bytes in a CPS session
-// (requests are not framed here; the handler splits them, e.g. by the 3 ms gap). Replies go out with hostlink_write
+// (requests are not framed here; the handler splits them, e.g. by the 3 ms gap), and with len 0 (buf NULL) as a tick
+// on every pass of the task while the session lasts. Replies go out with hostlink_write
 typedef void (*hostlink_cps_fn)(const uint8_t *buf, size_t len, uint32_t now_ms);
 void hostlink_set_cps_handler(hostlink_cps_fn fn);
 // The side protocol: start is the first byte of its frames; feed takes bytes that start (buf[0] == start) or continue

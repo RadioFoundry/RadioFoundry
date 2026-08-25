@@ -35,6 +35,7 @@ static radio_settings_t pending_settings;	// radio_set_settings -> the radio tas
 static radio_settings_t shared_settings;	// the published copy, under view_lock
 static radio_view_t shared_view;	// the published copy, under view_lock
 static volatile uint32_t shared_serial;
+static volatile bool power_off_busy;	// radio_req_power_off until the radio core is done
 static volatile bool power_off_wanted;	// published view.power_off
 static SemaphoreHandle_t view_lock;
 static QueueHandle_t requests;
@@ -58,6 +59,9 @@ static void publish(void)
 	shared_settings = sm.set;
 	xSemaphoreGive(view_lock);
 	power_off_wanted = sm.view.power_off;
+	if (sm.power_off_req) {
+		power_off_busy = sm.power_off_busy;
+	}
 #if CONFIG_HOTSPOT
 	radio_hs_publish(&sm);
 #endif
@@ -177,6 +181,7 @@ void radio_req_monitor(bool down) { post(RREQ_MONITOR, down, pdMS_TO_TICKS(50));
 void radio_req_power(int8_t dir) { post(RREQ_POWER, dir, 0); }
 void radio_req_squelch(int8_t dir) { post(RREQ_SQUELCH, dir, 0); }
 void radio_req_clear_temporary(void) { post(RREQ_CLEAR_TEMP, 0, 0); }
+void radio_req_reload(void) { post(RREQ_RELOAD, 0, pdMS_TO_TICKS(50)); }
 void radio_req_bandwidth(radio_bw_t bw) { post(RREQ_BANDWIDTH, bw, 0); }
 void radio_req_tone(uint8_t which, subtone_t tone) { post(RREQ_TONE, radio_tone_arg(which, tone), 0); }
 #if CONFIG_DMR
@@ -229,6 +234,17 @@ void radio_get_settings(radio_settings_t *s)
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	*s = shared_settings;
 	xSemaphoreGive(view_lock);
+}
+
+void radio_req_power_off(void)
+{
+	power_off_busy = true;
+	post(RREQ_POWER_OFF, 0, pdMS_TO_TICKS(50));
+}
+
+bool radio_power_off_busy(void)
+{
+	return power_off_busy;
 }
 
 bool radio_power_off_wanted(void)

@@ -18,7 +18,7 @@ include platform/$(PLATFORM)/platform.mk
 BUILD := build/$(BOARD)
 TARGET := $(BUILD)/odr_$(BOARD)
 
-CORE_DIRS := core/app core/radio core/ui core/input core/codeplug
+CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/settings core/storage
 ifeq ($(CONFIG_DMR),y)
 CORE_DIRS += core/dmr/call core/dmr/ambe core/dmr/fec
 endif
@@ -27,6 +27,9 @@ CORE_DIRS += core/hostlink $(BOARD_USB_DIRS)
 endif
 ifeq ($(CONFIG_HOTSPOT),y)
 CORE_DIRS += core/hotspot
+endif
+ifeq ($(CONFIG_CPS_LEGACY),y)
+CORE_DIRS += core/cps
 endif
 ifeq ($(CONFIG_DEBUGLINK),y)
 CORE_DIRS += core/debuglink

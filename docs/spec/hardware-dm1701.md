@@ -1056,6 +1056,8 @@ records are in `legacy-cps-interop.md`.
 |---|---|---|---|
 | 0x000000 | EEPROM 0x0000 | 64 KB | emulated EEPROM: general settings at 0x00E0 (callsign 0x00E0, DMR ID 0x00E8), DTMF contacts 0x2F88, signalling/DTMF 0x1400, APRS configs 0x1588, first 128 channels (header 0x3780, data 0x3790), last used channel per zone 0x6000, radio settings block at 0x604B, boot screen/password at 0x7518-0x755F, quick keys 0x7524, VFO A/B at 0x7590, zones 0x8000+ |
 | 0x010000 | (local) | 512 B | calibration working copy (12.1). CPS reads/writes it through a 0x10000 window |
+| 0x011000 | (ours) | 32 KB | OpenDigitalRadio settings ring (`settings-store.md` 2); no legacy tool uses it, the CPS shim refuses writes |
+| 0x019000 | (ours) | 8 KB | OpenDigitalRadio sector journal (`settings-store.md` 4) |
 | 0x020000 | flash 0x00000 | 4 KB | custom data: boot image and boot melody, themes (one 4 KB sector; erased when the user clears custom data) |
 | 0x050000 | flash 0x30000 | 256 KB | DMR ID database part 1 (header "Id" + type byte + record length + entry count; see the CPS spec) |
 | 0x09B1B0 | flash 0x7B1B0 | | channels 129-1024 (bank headers 16 B before each bank, data from 0x9B1C0) |
@@ -1064,7 +1066,9 @@ records are in `legacy-cps-interop.md`.
 | 0x0AF400 | flash 0x8F400 | | voice prompts (header magic 'VP' = 0x5056); with the long ID-database format the ID database may overwrite this area |
 | 0x0D8000 | flash 0xB8000 | to 0x120000 | DMR ID database part 2 |
 | 0x100000 | flash 0xE0000 | | old voice prompt location (read for compatibility) |
-| 0x120000 - 0xFFFFFF | | about 14.9 MB | unused by the codeplug layout; GPS logs use the ID database areas when enabled |
+| 0x120000 - 0xDFFFFF | | about 12.9 MB | unused by the codeplug layout; GPS logs use the ID database areas when enabled |
+| 0xE00000 - 0xEFFFFF | (ours) | 1 MB | reserved for the native codeplug (`codeplug-native.md` 4); the CPS shim refuses writes from here up |
+| 0xF00000 - 0xFFFFFF | | 1 MB | unused |
 | security register 1-2 | | 512 B | factory calibration (read only) |
 | security register 3 | | 256 B | factory flags: 0x1C (0xF4 = MD-UV390 Plus 10 W), 0x1D (LCD type) |
 

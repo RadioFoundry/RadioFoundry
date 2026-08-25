@@ -34,8 +34,8 @@ typedef enum { RADIO_BCL_OFF, RADIO_BCL_CARRIER, RADIO_BCL_WRONG_TONE } radio_bc
 // VOX: off, on channels whose codeplug entry allows it, on every FM channel
 typedef enum { RADIO_VOX_OFF, RADIO_VOX_CHANNEL, RADIO_VOX_ALL } radio_vox_t;
 
-// The radio core's settings (docs/spec/radio-features.md). Nothing stores them yet: the owner of the settings screen
-// keeps them and hands them over at start-up and on every change (radio_set_settings)
+// The radio core's settings (docs/spec/radio-features.md). The radio core loads them from the settings store at
+// start-up (docs/spec/settings-store.md 3) and saves every change made with radio_set_settings
 typedef struct {
 	uint16_t tot_s;		// the radio's TX time-out, for channels whose own is 0; 0 = none
 	uint8_t tot_warn_s;	// warning beep this long before the time-out, 0 = none
@@ -196,6 +196,7 @@ void radio_req_monitor(bool down);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps
 void radio_req_squelch(int8_t dir);
 void radio_req_clear_temporary(void);		// BACK on Home: revert temporary changes
+void radio_req_reload(void);			// the settings' preferences changed (squelch, master power, DMR ID)
 // FM bandwidth and sub-audio. On a channel these are temporary changes (P7); in the VFO they change the VFO itself.
 // Refused on DMR channels, while transmitting, and for tones tones_valid() rejects
 void radio_req_bandwidth(radio_bw_t bw);
@@ -231,6 +232,10 @@ void radio_set_settings(const radio_settings_t *s);
 void radio_get_settings(radio_settings_t *s);
 // view.power_off without copying the view (the housekeeping task polls it)
 bool radio_power_off_wanted(void);
+// Switching off: the radio core sends what has to go out first (the ARS deregistration). radio_power_off_busy() is
+// true until that is done; the caller gives up after a few seconds (gotcha 7.4)
+void radio_req_power_off(void);
+bool radio_power_off_busy(void);
 // The backlight percent for the UI: batt_backlight_pct with the settings and the current battery level
 uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms);
 #if CONFIG_HOTSPOT
