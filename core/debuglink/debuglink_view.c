@@ -17,6 +17,14 @@
 #endif
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
+#if CONFIG_SFR
+#include "hotspot/hotspotSfr.h"
+#endif
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+#include "hostlink/hostlink_net.h"
+#include "hostlink/hostlink_net_air.h"
+#include "dmr/ipGateway.h"
 #endif
 
 static const char *state_key(uint8_t s)
@@ -94,7 +102,28 @@ static void hotspot_section(dl_text_t *t)
 	static const char *const modes[] = { "idle", "hotspot", "cps" };
 	hostlink_mode_t m = hostlink_mode();
 
+	static const char *const leaves[] = { "none", "user", "closed", "gone", "idle" };
+	hostlink_leave_t l = hostlink_last_leave();
+
 	dl_text(t, "hostlink=%s\n", (unsigned)m < 3 ? modes[m] : "?");
+	dl_text(t, "hostlink.left=%s\n", (unsigned)l < 5 ? leaves[l] : "?");
+	dl_text(t, "usb.network=%u\nusb.net_up=%u\n", hostlink_network_mode(),
+		(board.netif != NULL) && board.netif->up());
+#if CONFIG_DMR_IP_GATEWAY
+	hostlink_net_stats_t ns;
+
+	hostlink_net_stats(&ns);
+	dl_text(t, "net.host_ip=%08x\nnet.radio_ip=%08x\n", (unsigned)ipGatewayHostIP(), (unsigned)ipGatewayRadioIP());
+	dl_text(t, "net.frames_in=%u\nnet.to_air=%u\nnet.to_air_refused=%u\n", (unsigned)ns.frames_in,
+		(unsigned)ns.to_air, (unsigned)ns.to_air_refused);
+	dl_text(t, "net.packets_air=%u\nnet.packets_up=%u\nnet.packets_dropped=%u\n", (unsigned)ns.packets_air,
+		(unsigned)ns.packets_up, (unsigned)ns.packets_dropped);
+	hostlink_net_air_stats_t as;
+
+	hostlink_net_air_stats(&as);
+	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\n", (unsigned)as.sent,
+		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long));
+#endif
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;
 	hotspot_stats_t s;
@@ -112,6 +141,20 @@ static void hotspot_section(dl_text_t *t)
 	dl_text(t, "hs.events_dropped=%u\nhs.tx_rejected=%u\n", (unsigned)s.events_dropped, (unsigned)s.tx_rejected);
 	dl_text(t, "hs.cwid_requests=%u\nhs.cwid_unsent=%u\nhs.enter_attempts=%u\n", (unsigned)s.cwid_requests,
 		(unsigned)s.cwid_unsent, (unsigned)s.enter_attempts);
+	dl_text(t, "hs.starts=%u\nhs.stops=%u\n", (unsigned)s.starts, (unsigned)s.stops);
+#if CONFIG_SFR
+	hotspot_sfr_view_t f;
+
+	hotspot_sfr_get_view(&f);
+	dl_text(t, "sfr.on=%u\nsfr.keyed=%u\nsfr.busy=%u\nsfr.slots=%u>%u\n", f.on, f.keyed, f.inbound_busy,
+		f.inbound_slot + 1u, 2u - f.inbound_slot);
+	dl_text(t, "sfr.rx=%u\nsfr.repeated=%u\nsfr.ignored=%u\nsfr.echo=%u\nsfr.bad_crc=%u\n",
+		(unsigned)f.stats.rx_bursts, (unsigned)f.stats.rx_repeated, (unsigned)f.stats.rx_ignored,
+		(unsigned)f.stats.rx_echo, (unsigned)f.stats.rx_bad_crc);
+	dl_text(t, "sfr.tx_bursts=%u\nsfr.tx_idle=%u\nsfr.tx_starts=%u\nsfr.up=%u\nsfr.up_lost=%u\n",
+		(unsigned)f.stats.tx_bursts, (unsigned)f.stats.tx_idle, (unsigned)f.stats.tx_starts,
+		(unsigned)f.stats.up_bursts, (unsigned)f.stats.up_lost);
+#endif
 #else
 	dl_text(t, "hs.built=0\n");
 #endif

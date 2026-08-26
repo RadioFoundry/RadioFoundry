@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // TinyUSB configuration for every radio that uses it (CFG_TUSB_MCU comes from the platform's make file).
-// Serial mode only for now: one CDC-ACM function. Network mode (CDC-NCM) will be a second configuration chosen at
-// USB start; ACM and NCM can't both fit the STM32F405's three IN endpoints (docs/spec/hardware-dm1701.md 16).
+// Serial mode: one CDC-ACM function. Network mode (CONFIG_USB_NETWORK): one CDC-NCM function, the other configuration
+// (usb_device.c picks the descriptors); ACM and NCM can't both fit the STM32F405's three IN endpoints
+// (docs/spec/hardware-dm1701.md 16).
 #ifndef ODR_TUSB_CONFIG_H
 #define ODR_TUSB_CONFIG_H
 
@@ -27,7 +28,18 @@
 #define CFG_TUD_HID			0
 #define CFG_TUD_MIDI			0
 #define CFG_TUD_VENDOR			0
+#if defined(CONFIG_USB_NETWORK) && CONFIG_USB_NETWORK
+#define CFG_TUD_NCM			1
+// NTB16 only. OUT NTBs up to 2048 bytes (Linux needs a full Ethernet frame plus headers), IN NTBs one datagram each
+// (the gateway's frames are at most 600 bytes); one buffer each way (spec 16)
+#define CFG_TUD_NCM_OUT_NTB_MAX_SIZE	2048
+#define CFG_TUD_NCM_IN_NTB_MAX_SIZE	1024
+#define CFG_TUD_NCM_OUT_NTB_N		1
+#define CFG_TUD_NCM_IN_NTB_N		1
+#define CFG_TUD_NCM_IN_MAX_DATAGRAMS_PER_NTB	1
+#else
 #define CFG_TUD_NCM			0
+#endif
 
 // An MMDVM DMR frame is 37 bytes and the host can send several back to back; a CPS block read reply is up to about
 // 1 KB. 64-byte endpoints (full speed bulk maximum)

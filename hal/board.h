@@ -18,6 +18,7 @@
 #include "hal_stream.h"
 #include "hal_system.h"
 #include "hal_cps.h"
+#include "hal_netif.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -64,6 +65,8 @@ typedef struct {
 	uint16_t battery_critical_mv;
 	// Optional: the legacy CPS shim's view of the radio (hal_cps.h)
 	const hal_cps_t *cps;
+	// Optional: the USB network personality (hal_netif.h); NULL when not built
+	const hal_netif_t *netif;
 } board_t;
 
 extern const board_t board;

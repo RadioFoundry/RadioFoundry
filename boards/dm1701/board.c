@@ -9,6 +9,7 @@
 #include "semphr.h"
 #if CONFIG_USB
 #include "usb/usb_device.h"
+#include "usb/usb_ncm.h"
 #endif
 
 static const band_t bands[] = {
@@ -91,6 +92,9 @@ const board_t board = {
 #endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
+#if CONFIG_USB_NETWORK
+	.netif = &usb_ncm_netif,
+#endif
 #endif
 	.system = &stm32_system,
 	// hardware-dm1701.md 11.1: low battery 6.2 V (back above 6.4 V); critical 6.0 V (3.0 V a cell) is our choice, the

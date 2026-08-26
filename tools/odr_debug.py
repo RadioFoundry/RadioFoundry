@@ -93,6 +93,7 @@ PRIVACY_TYPES = {"off": 0, "moto": 1, "anytone": 2}
 TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
 # The radio features (docs/spec/radio-features.md, debuglink.md 3.8)
 OP_SCAN, OP_SCAN_VFO, OP_BEEP, OP_TONE_BURST, OP_SETTING = range(20, 25)
+OP_USB_NETWORK = 25
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
@@ -160,19 +161,57 @@ def pick_port(port=None):
     raise DebugLinkError(f"several radios found {ports}: give --port")
 
 
+class UdpPort:
+    """The debug link over UDP, for a radio in USB network mode (docs/spec/usb-network.md): the radio's serial
+    protocols on UDP port 3334 of its own address. Looks enough like a pyserial port for DebugLink."""
+
+    def __init__(self, host, port=3334, timeout=0.02):
+        import socket
+        self.addr = (host, port)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(timeout)
+        self.pending = bytearray()
+
+    @property
+    def in_waiting(self):
+        return len(self.pending)
+
+    def read(self, n=1):
+        if not self.pending:
+            try:
+                data, _ = self.sock.recvfrom(2048)
+                self.pending += data
+            except OSError:
+                return b""
+        out = bytes(self.pending[:n])
+        del self.pending[:n]
+        return out
+
+    def write(self, data):
+        self.sock.sendto(bytes(data), self.addr)
+        return len(data)
+
+    def close(self):
+        self.sock.close()
+
+
 class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
     def __init__(self, port=None, timeout=1.0):
-        if serial is None:
+        if serial is None and not str(port or "").startswith("udp:"):
             raise DebugLinkError("needs pyserial: pip install pyserial")
         self.port = pick_port(port)
         self.timeout = timeout
         self.seq = 0
-        try:
-            self.s = serial.Serial(self.port, 115200, timeout=0.02)
-        except serial.SerialException as e:
-            raise DebugLinkError(f"can't open {self.port}: {e}")
+        if self.port.startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
+            host, _, udp_port = self.port[4:].partition(":")
+            self.s = UdpPort(host, int(udp_port or 3334))
+        else:
+            try:
+                self.s = serial.Serial(self.port, 115200, timeout=0.02)
+            except serial.SerialException as e:
+                raise DebugLinkError(f"can't open {self.port}: {e}")
         self.buf = bytearray()
 
     def close(self):
@@ -477,6 +516,11 @@ class DebugLink:
         """Load a basic privacy key in RAM: kind off | moto (key 1-255) | anytone (key 0-65535)."""
         self.radio(OP_DMR_PRIVACY, struct.pack("<BH", PRIVACY_TYPES[kind] if isinstance(kind, str) else kind, key))
 
+    def usb_network(self, on):
+        """Switch the USB personality after the reply: network adapter (CDC-NCM) or serial port. The radio
+        re-enumerates; in network mode the debug link answers over UDP (--port udp:<radio IP>)."""
+        self.radio(OP_USB_NETWORK, bytes([1 if on else 0]))
+
     def scan(self, cmd, pos=None):
         """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle."""
         c = SCAN_CMDS[cmd] if isinstance(cmd, str) else cmd
@@ -739,6 +783,8 @@ def cmd_radio(link, a):
         link.tone_burst(args[:1] != ["off"])
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
+    elif op == "usb":                 # usb network|serial
+        link.usb_network(args[:1] == ["network"])
     else:
         raise DebugLinkError(f"unknown radio op {op!r}")
     return 0
@@ -967,7 +1013,7 @@ def main(argv=None):
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
-                                  "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set"])
+                                  "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read"])

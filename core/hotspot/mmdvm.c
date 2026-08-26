@@ -123,6 +123,9 @@ void mmdvm_end(void)
 	simplex = true;
 	rx_hz = 0;
 	tx_hz = 0;
+	if ((ext != NULL) && (ext->config_changed != NULL)) {
+		ext->config_changed(simplex, rx_hz, tx_hz);	// a new session starts without the extension's mode
+	}
 }
 
 uint32_t mmdvm_last_frame_ms(void)
@@ -279,6 +282,21 @@ static void send_cwid(const uint8_t *p, uint8_t len)
 
 static void dmr_data(uint8_t command, const uint8_t *p, uint8_t len, uint32_t now_ms)
 {
+	if (hotspot_alt_active() && (len == (1 + MMDVM_DMR_FRAME_LEN)) && (modes & MMDVM_MODE_BIT_DMR) &&
+	    (state != MMDVM_MODE_POCSAG)) {
+		// SFR (spec 6.2): either slot's command carries the outbound slot's stream
+		if (state == MMDVM_MODE_IDLE) {
+			state = MMDVM_MODE_DMR;
+		}
+		uint8_t r = hotspot_alt_net_frame(command, p[0], p + 1, now_ms);
+
+		if (r != 0) {
+			nak(command, r);
+		} else {
+			ack(command);	// each frame ACKed or NAKed in SFR mode (spec 6.2)
+		}
+		return;
+	}
 	if (command == MMDVM_DMR_DATA1) {
 		nak(command, MMDVM_NAK_WRONG_MODE);	// simplex: slot 2 only
 		return;
@@ -337,10 +355,18 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 		break;
 	case MMDVM_DMR_ABORT:
 		hotspot_net_abort();
+		if (hotspot_alt_active()) {
+			ack(command);	// SFR: rfgw waits for it (spec 6.2)
+		}
 		break;
 	case MMDVM_DMR_START:
 	case MMDVM_DMR_SHORTLC:
-		break;		// taken silently: MMDVMHost sends the short LC on every call even in simplex (spec 2.10)
+		// Taken silently: MMDVMHost sends the short LC on every call even in simplex (spec 2.10). SFR: ACKed and
+		// ignored, the radio owns its keying and sends no CACH (spec 6.2)
+		if (hotspot_alt_active()) {
+			ack(command);
+		}
+		break;
 	case MMDVM_SEND_CWID:
 		send_cwid(p, plen);
 		break;

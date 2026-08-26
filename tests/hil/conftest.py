@@ -19,6 +19,9 @@ def pytest_addoption(parser):
     g.addoption("--allow-service-stop", action="store_true",
                 help="tests may stop the SDR bench's gateway service (radiodesk-rfgw) to use its transmitter and "
                      "receiver (dmr_bench.py's lease: always restarted)")
+    g.addoption("--allow-usb-switch", action="store_true",
+                help="tests may switch the radio's USB personality to the network adapter (it re-enumerates; the "
+                     "test switches it back over UDP)")
     g.addoption("--tx-power", type=int, default=40, help="bench transmitter RF level 0-255 (bench: low)")
     g.addoption("--dmr-freq", type=float, default=461.6875,
                 help="MHz: the DMR test channel (Ch 15 of the bench's gateway configuration)")
@@ -62,12 +65,16 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "codeplug_write: writes the radio's codeplug over CPS, backed up and restored "
                             "(needs --allow-codeplug-write)")
     config.addinivalue_line("markers", "reboot: restarts the radio (needs --allow-reboot)")
+    config.addinivalue_line("markers", "usb_switch: switches the USB personality (needs --allow-usb-switch)")
 
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
         if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
             item.add_marker(pytest.mark.skip(reason="transmits: run with --allow-rf"))
+        elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
+            item.add_marker(pytest.mark.skip(reason="re-enumerates the radio as a network adapter: run with "
+                                                    "--allow-usb-switch"))
         elif "bench_service" in item.keywords and not config.getoption("--allow-service-stop"):
             item.add_marker(pytest.mark.skip(reason="stops the SDR bench's gateway service: run with "
                                                     "--allow-service-stop"))

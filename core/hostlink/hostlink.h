@@ -40,6 +40,11 @@ hostlink_mode_t hostlink_mode(void);
 void hostlink_set_hotspot_allowed(bool allowed);
 // Leave hotspot mode now (the UI's exit); the host must send a request again to come back
 void hostlink_hotspot_exit(void);
+// Switch the USB personality to the network adapter (true) or the serial port, after the current request's reply has
+// gone out (the host link task does it between passes). False if the board has no network personality
+bool hostlink_request_usb_network(bool network);
+// The network personality is the one in use (UDP serial, the IP gateway)
+bool hostlink_network_mode(void);
 
 // The CPS protocol, when it exists: called from the host link task with each chunk of bytes in a CPS session
 // (requests are not framed here; the handler splits them, e.g. by the 3 ms gap), and with len 0 (buf NULL) as a tick
@@ -71,6 +76,9 @@ typedef enum {
 typedef struct {
 	bool was_connected;
 } hostlink_session_t;
+
+// Why hotspot mode was last left (HOSTLINK_STAY = not left yet since boot), for the debug link
+hostlink_leave_t hostlink_last_leave(void);
 
 // On entering hotspot mode, with the port's connected() at that moment
 void hostlink_session_start(hostlink_session_t *s, bool connected);

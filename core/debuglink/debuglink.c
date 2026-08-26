@@ -36,6 +36,8 @@ enum {
 	OP_CHANNEL_STEP = 1, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH,
 	OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT,
 	OP_DMR_TARGET, OP_DMR_CONTACT, OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY,
+	// 20-24: the radio features' (DL_OP_SCAN .. DL_OP_SETTING, debuglink_view_radio.c)
+	OP_USB_NETWORK = 25,
 };
 
 static dl_parser_t parser;
@@ -83,6 +85,12 @@ static const char features[] = "features="
 #endif
 #if CONFIG_HOTSPOT
 	"HOTSPOT,"
+#endif
+#if CONFIG_USB_NETWORK
+	"USB_NETWORK,"
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+	"DMR_IP_GATEWAY,"
 #endif
 #if CONFIG_VFO
 	"VFO,"
@@ -435,7 +443,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		[OP_POWER] = 1, [OP_SQUELCH] = 1, [OP_BANDWIDTH] = 1, [OP_TONE] = 4, [OP_MONITOR] = 1, [OP_CLEAR_TEMP] = 0,
 		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0,
 		[OP_DMR_TARGET] = 4, [OP_DMR_CONTACT] = 2, [OP_DMR_CALL_BACK] = 0, [OP_DMR_TARGET_CLEAR] = 0,
-		[OP_DMR_PRIVACY] = 3,
+		[OP_DMR_PRIVACY] = 3, [OP_USB_NETWORK] = 1,
 	};
 	uint32_t now = hal_millis();
 
@@ -540,6 +548,11 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 #else
 		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
+	case OP_USB_NETWORK:
+		if (!hostlink_request_usb_network(a[0] != 0)) {
+			return status_only(out, DL_ST_UNAVAILABLE);
+		}
+		break;
 	default:
 		return status_only(out, DL_ST_BAD_ARG);
 	}

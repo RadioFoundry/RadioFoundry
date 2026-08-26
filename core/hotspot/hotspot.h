@@ -99,6 +99,37 @@ void hotspot_modem_event(const dmr_event_t *ev, void *ctx);
 // Run often (every few ms) from the host link task: modem events, the TX feed, data lists, uplink timers
 void hotspot_poll(uint32_t now_ms);
 
+// ---- Another mode on the same modem (the SFR, core/hotspot/hotspotSfr.c) ----
+// While active() it gets the modem's events, the host's DMR frames for either slot and DMR_ABORT, and the simplex
+// engine above stays idle. poll() runs on every hotspot_poll(), active or not (it decides when to become active)
+typedef struct {
+	bool (*active)(void);
+	void (*poll)(uint32_t now_ms);
+	void (*event)(uint8_t kind, const dmr_burst_t *burst, uint32_t now_ms);
+	uint8_t (*net_frame)(uint8_t command, uint8_t control, const uint8_t *frame, uint32_t now_ms);	// 0 or NAK
+	void (*net_abort)(void);
+	bool (*transmitting)(void);
+	void (*stopped)(void);		// the modem is being given back, or retuned: drop everything, inactive
+} hotspot_alt_t;
+void hotspot_set_alt(const hotspot_alt_t *alt);
+bool hotspot_alt_active(void);
+// A DMR_DATA1 / DMR_DATA2 frame while the other mode is active: 0 if taken, else the MMDVM NAK reason
+uint8_t hotspot_alt_net_frame(uint8_t command, uint8_t control, const uint8_t *frame, uint32_t now_ms);
+// The simplex engine drops what it has (a call going up gets its DMR_LOST2), before the other mode takes over
+void hotspot_alt_takeover(void);
+const hal_dmr_modem_t *hotspot_modem(void);
+uint8_t hotspot_color_code(void);
+// A host frame for the other mode: the control byte it should have had (hotspotNetFrameControl) and the voice bits
+uint8_t hotspot_frame_control(uint8_t control, const uint8_t *frame);
+void hotspot_frame_voice(const uint8_t *frame, uint8_t *voice);	// 27 bytes of AMBE from a 33-byte frame
+// Bursts up to the host with the given command (DMR_DATA1 / DMR_DATA2), as the simplex uplink frames them: voice
+// with the EMB of its position and the embedded LC of call_lc in B-E, headers and terminators from their LC, data
+// from its info bits (checksum included). rssi_dbm 0: unknown / made by us (no RSSI bytes)
+void hotspot_up_voice(uint8_t command, const uint8_t *ambe, uint8_t index, const uint8_t *call_lc, int16_t rssi_dbm);
+void hotspot_up_lc(uint8_t command, uint8_t data_type, const uint8_t *lc, int16_t rssi_dbm);
+void hotspot_up_data(uint8_t command, uint8_t data_type, const uint8_t *info, uint8_t len, int16_t rssi_dbm);
+void hotspot_up_lost(uint8_t command);	// DMR_LOST1 / DMR_LOST2
+
 // ---- Status for GET_STATUS ----
 uint8_t hotspot_space(void);		// DMR frames the host may still send (the smaller of voice buffer and data list,
 					// less a margin for frames already on their way, docs/spec/mmdvm-protocol.md 2.4)
@@ -125,7 +156,8 @@ typedef struct {
 	uint32_t net_frames, net_dropped, net_calls, rf_bursts, rf_frames_up, rf_lost, events_dropped;
 	uint32_t tx_rejected;
 	uint32_t cwid_requests, cwid_unsent;	// SEND_CWID accepted; of those, not keyed (no cw_id op, or it refused)
-	uint32_t enter_attempts;
+	uint32_t enter_attempts;		// hotspot_start() calls that asked the radio (all sessions since boot)
+	uint32_t starts, stops;			// the modem taken / given back (sessions since boot)
 } hotspot_stats_t;
 void hotspot_get_stats(hotspot_stats_t *s);
 
