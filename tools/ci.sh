@@ -95,6 +95,7 @@ build() {
 	b=$1; name=$2; shift 2
 	dir="$OUT/$b-$name"
 	log="$dir.log"
+	rm -f "$dir/odr_$b.elf"		# always relink: the size report reads the linker's memory-usage lines
 	if ! make BOARD="$b" BUILD="$dir" -j"$JOBS" "$@" > "$log" 2>&1; then
 		grep -E 'error|undefined' "$log" | head -10
 		bad "$b $name: build failed ($*; see $log)"
@@ -109,7 +110,7 @@ build() {
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  427796 B  28.76%" (the app region, codec windows excluded)
 	set -- $(grep -E '^ *FLASH:' "$log" | head -1)
-	used=$2; size=$4
+	used=${2:-}; size=${4:-}
 	if [ -n "$size" ] && [ "$used" -le "$size" ] 2>/dev/null; then
 		free=$((size - used))
 		pct=$(awk "BEGIN { printf \"%.1f\", 100 * $used / $size }")

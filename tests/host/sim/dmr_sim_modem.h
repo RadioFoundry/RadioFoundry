@@ -17,6 +17,7 @@ typedef struct {
 	uint8_t kind;		// dmr_burst_kind_t
 	uint8_t voice_index;
 	bool host_crc;
+	uint8_t sync;		// dmr_tx_burst_t.sync_override
 	uint8_t len;
 	uint8_t payload[DMR_PAYLOAD_MAX];
 	uint8_t lcss;		// voice: the EMB LCSS sent
@@ -31,6 +32,8 @@ typedef struct {
 	int8_t cc_filter;
 	int8_t locked_ts;
 	unsigned tx_begins;
+	dmr_timing_t first_timing;	// of the first tx_begin since sim_reset
+	int8_t first_ts;
 	dmr_timing_t last_timing;
 	int8_t last_ts;
 	dmr_access_t last_access;
@@ -40,6 +43,7 @@ typedef struct {
 
 	// Behavior knobs
 	bool refuse_tx;		// tx_begin returns false
+	bool refuse_start;	// start returns false (a board whose modem is not in DMR mode)
 	bool reject_next;	// send DMR_EV_TX_REJECTED at the next slot
 	bool repeater;		// emit slot ticks with the slot number alternating (a repeater's CACH)
 	bool wake_repeater_on_csbk;	// a BS_Dwn_Act on air starts the repeater (repeater = true)

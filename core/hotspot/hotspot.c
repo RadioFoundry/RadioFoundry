@@ -88,6 +88,13 @@ static bool alias_pending;
 static hotspot_view_t view;
 static hotspot_stats_t stats;
 
+static const hotspot_alt_t *alt;	// another mode on the modem (the SFR), when built in
+
+static bool alt_on(void)
+{
+	return (alt != NULL) && running && alt->active();
+}
+
 static void changed(void)
 {
 	if ((radio != NULL) && (radio->changed != NULL)) {
@@ -147,9 +154,9 @@ static void voice_to_frame(const uint8_t *voice, uint8_t index, uint8_t *frame)
 
 // The superframe's embedded LC, chosen at its burst A: a talker alias or GPS block heard in the last superframe, else
 // the call's LC
-static void superframe_start(void)
+static void superframe_start(const uint8_t *call_lc)
 {
-	const uint8_t *lc = alias_pending ? alias_lc : hotspotUplinkLc(&up);
+	const uint8_t *lc = alias_pending ? alias_lc : call_lc;
 
 	dmr_emb_lc_encode(lc, sf_frag);
 	alias_pending = false;
@@ -178,7 +185,7 @@ static bool rssi_raw(int16_t dbm, uint8_t *raw)
 }
 
 // One burst up; rssi_dbm 0 for bursts we made (headers from the embedded LC, silence fill)
-static void send_frame(uint8_t control, const uint8_t *frame, int16_t rssi_dbm, bool heard)
+static void send_frame_cmd(uint8_t command, uint8_t control, const uint8_t *frame, int16_t rssi_dbm, bool heard)
 {
 	uint8_t payload[1 + MMDVM_DMR_FRAME_LEN + 2];
 	uint8_t len = 1 + MMDVM_DMR_FRAME_LEN;
@@ -190,8 +197,13 @@ static void send_frame(uint8_t control, const uint8_t *frame, int16_t rssi_dbm, 
 		payload[len++] = 0;
 		payload[len++] = raw;
 	}
-	send_up(MMDVM_DMR_DATA2, payload, len);
+	send_up(command, payload, len);
 	stats.rf_frames_up++;
+}
+
+static void send_frame(uint8_t control, const uint8_t *frame, int16_t rssi_dbm, bool heard)
+{
+	send_frame_cmd(MMDVM_DMR_DATA2, control, frame, rssi_dbm, heard);
 }
 
 static void send_lost(void)
@@ -200,7 +212,7 @@ static void send_lost(void)
 	stats.rf_lost++;
 }
 
-static void send_lc_frame(uint8_t data_type, const uint8_t *lc, int16_t rssi_dbm, bool heard)
+static void send_lc_frame_cmd(uint8_t command, uint8_t data_type, const uint8_t *lc, int16_t rssi_dbm, bool heard)
 {
 	dmrBurst_t b;
 	uint8_t frame[MMDVM_DMR_FRAME_LEN];
@@ -212,18 +224,109 @@ static void send_lc_frame(uint8_t data_type, const uint8_t *lc, int16_t rssi_dbm
 	dmr_lc_encode_full(lc, (data_type == DT_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR,
 			   b.payload);
 	dmrDataBurstToFrame(&b, cc, frame);
-	send_frame((uint8_t)(MMDVM_DMR_SYNC_DATA | data_type), frame, rssi_dbm, heard);
+	send_frame_cmd(command, (uint8_t)(MMDVM_DMR_SYNC_DATA | data_type), frame, rssi_dbm, heard);
 }
 
-static void send_voice(const uint8_t *voice, uint8_t index, int16_t rssi_dbm, bool heard)
+static void send_lc_frame(uint8_t data_type, const uint8_t *lc, int16_t rssi_dbm, bool heard)
+{
+	send_lc_frame_cmd(MMDVM_DMR_DATA2, data_type, lc, rssi_dbm, heard);
+}
+
+static void send_voice_cmd(uint8_t command, const uint8_t *voice, uint8_t index, const uint8_t *call_lc,
+			   int16_t rssi_dbm, bool heard)
 {
 	uint8_t frame[MMDVM_DMR_FRAME_LEN];
 
 	if (index == 0) {
-		superframe_start();
+		superframe_start(call_lc);
 	}
 	voice_to_frame(voice, index, frame);
-	send_frame((index == 0) ? MMDVM_DMR_SYNC_AUDIO : index, frame, rssi_dbm, heard);
+	send_frame_cmd(command, (index == 0) ? MMDVM_DMR_SYNC_AUDIO : index, frame, rssi_dbm, heard);
+}
+
+static void send_voice(const uint8_t *voice, uint8_t index, int16_t rssi_dbm, bool heard)
+{
+	send_voice_cmd(MMDVM_DMR_DATA2, voice, index, hotspotUplinkLc(&up), rssi_dbm, heard);
+}
+
+// ---- For another mode on the modem (hotspot_alt_t) ----
+
+void hotspot_set_alt(const hotspot_alt_t *a)
+{
+	alt = a;
+}
+
+bool hotspot_alt_active(void)
+{
+	return alt_on();
+}
+
+uint8_t hotspot_alt_net_frame(uint8_t command, uint8_t control, const uint8_t *frame, uint32_t now_ms)
+{
+	if (!alt_on()) {
+		return MMDVM_NAK_WRONG_MODE;
+	}
+	stats.net_frames++;
+	return alt->net_frame(command, control, frame, now_ms);
+}
+
+const hal_dmr_modem_t *hotspot_modem(void)
+{
+	return modem;
+}
+
+uint8_t hotspot_color_code(void)
+{
+	return cc;
+}
+
+uint8_t hotspot_frame_control(uint8_t control, const uint8_t *frame)
+{
+	return hotspotNetFrameControl(control, frame);
+}
+
+void hotspot_frame_voice(const uint8_t *frame, uint8_t *voice)
+{
+	frame_to_voice(frame, voice);
+}
+
+void hotspot_up_voice(uint8_t command, const uint8_t *ambe, uint8_t index, const uint8_t *call_lc, int16_t rssi_dbm)
+{
+	last_rx_ms = poll_ms;
+	send_voice_cmd(command, ambe, index, call_lc, rssi_dbm, rssi_dbm != 0);
+}
+
+void hotspot_up_lc(uint8_t command, uint8_t data_type, const uint8_t *lc, int16_t rssi_dbm)
+{
+	if (data_type == DT_VOICE_LC_HEADER) {
+		note_call(lc, false);
+		changed();
+	}
+	send_lc_frame_cmd(command, data_type, lc, rssi_dbm, rssi_dbm != 0);
+}
+
+void hotspot_up_data(uint8_t command, uint8_t data_type, const uint8_t *info, uint8_t len, int16_t rssi_dbm)
+{
+	dmrBurst_t d;
+	uint8_t frame[MMDVM_DMR_FRAME_LEN];
+
+	if (len > DMR_BURST_PAYLOAD_MAX) {
+		return;
+	}
+	memset(frame, 0, sizeof(frame));
+	d.dataType = data_type;
+	d.length = len;
+	d.flags = 0;
+	memcpy(d.payload, info, len);
+	if (dmrDataBurstToFrame(&d, cc, frame)) {
+		send_frame_cmd(command, (uint8_t)(MMDVM_DMR_SYNC_DATA | data_type), frame, rssi_dbm, rssi_dbm != 0);
+	}
+}
+
+void hotspot_up_lost(uint8_t command)
+{
+	send_up(command, NULL, 0);
+	stats.rf_lost++;
 }
 
 // ---- Setup ----
@@ -260,6 +363,20 @@ static void reset_all(void)
 {
 	reset_tx();
 	reset_uplink();
+}
+
+void hotspot_alt_takeover(void)
+{
+	if (!running) {
+		return;
+	}
+	if (tx_state != TX_IDLE) {
+		modem->tx_abort();
+	}
+	if (hotspotUplinkCallOpen(&up)) {
+		send_lost();
+	}
+	reset_all();
 }
 
 void hotspot_init(const hal_dmr_modem_t *m, hotspot_send_fn send)
@@ -324,6 +441,7 @@ bool hotspot_start(uint32_t now_ms)
 	}
 	running = true;
 	view.running = true;
+	stats.starts++;
 	changed();
 	return true;
 }
@@ -335,11 +453,15 @@ void hotspot_stop(void)
 	if (!running) {
 		return;
 	}
+	if (alt != NULL) {
+		alt->stopped();
+	}
 	if (tx_state != TX_IDLE) {
 		modem->tx_abort();
 	}
 	modem->stop();
 	running = false;
+	stats.stops++;
 	reset_all();
 	view.running = false;
 	view.transmitting = false;
@@ -357,7 +479,7 @@ void hotspot_config(uint8_t color_code, bool is_simplex, uint16_t tx_delay_ms)
 {
 	(void)tx_delay_ms;	// the modem keys from its own slot timing
 	cc = color_code & 0x0F;
-	simplex = is_simplex;	// duplex + RX = TX will select SFR once it is ported (mmdvm_ext_t.config_changed)
+	simplex = is_simplex;	// duplex + RX = TX selects the SFR where it is built (hotspotSfr.c, through mmdvm_ext_t)
 	view.cc = cc;
 	if (running) {
 		dmr_config_t c = modem_config();
@@ -370,6 +492,9 @@ bool hotspot_set_freq(uint32_t rx, uint32_t tx, uint8_t level)
 {
 	if (running) {
 		// A retune drops what is in flight (docs/spec/gotchas.md 8.6: the host waits for idle first)
+		if (alt != NULL) {
+			alt->stopped();		// the other mode is chosen again after the ACK (config_changed)
+		}
 		if (tx_state != TX_IDLE) {
 			modem->tx_abort();
 		}
@@ -522,6 +647,10 @@ uint8_t hotspot_net_frame(uint8_t control, const uint8_t *frame, uint32_t now_ms
 
 void hotspot_net_abort(void)
 {
+	if (alt_on()) {
+		alt->net_abort();
+		return;
+	}
 	if (running && (tx_state != TX_IDLE)) {
 		modem->tx_abort();
 	}
@@ -534,6 +663,10 @@ void hotspot_net_idle(void)
 {
 	tx_state_t st = tx_state;
 
+	if (alt_on()) {
+		alt->net_abort();
+		return;
+	}
 	if (!running || (st == TX_IDLE)) {
 		reset_tx();		// buffering only: nothing on air yet
 		return;
@@ -840,6 +973,10 @@ static void rf_burst(const dmr_burst_t *b, uint32_t now_ms)
 
 static void handle_event(const queued_event_t *e, uint32_t now_ms)
 {
+	if (alt_on()) {
+		alt->event(e->kind, e->has_burst ? &e->burst : NULL, now_ms);
+		return;
+	}
 	switch (e->kind) {
 	case DMR_EV_BURST_RX:
 		if (e->has_burst) {
@@ -885,6 +1022,14 @@ void hotspot_poll(uint32_t now_ms)
 		handle_event(&events[ev_out], now_ms);
 		ev_out = (uint8_t)((ev_out + 1) % EVENT_QUEUE);
 	}
+	if (alt != NULL) {
+		alt->poll(now_ms);
+		if (alt_on()) {
+			view.transmitting = hotspot_transmitting();
+			view.receiving = hotspot_carrier();
+			return;
+		}
+	}
 
 	feed(now_ms);
 	hotspotDataTick(now_ms, (tx_state == TX_IDLE) && (ring_count == 0) && !hotspotUplinkCallOpen(&up));
@@ -915,6 +1060,9 @@ uint8_t hotspot_space(void)
 
 bool hotspot_transmitting(void)
 {
+	if (alt_on()) {
+		return alt->transmitting() || ((radio->cw_busy != NULL) && radio->cw_busy());
+	}
 	return running && ((tx_state != TX_IDLE) || (ring_count > 0) || hotspotDataIsBusy() || modem->is_transmitting() ||
 			   ((radio->cw_busy != NULL) && radio->cw_busy()));
 }

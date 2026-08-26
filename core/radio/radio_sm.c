@@ -22,6 +22,9 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #endif
+#if CONFIG_DMR_IP_GATEWAY
+#include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
+#endif
 
 // The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
 #ifndef RADIO_DMR_ID_DEFAULT
@@ -998,6 +1001,10 @@ static void data_init(radio_sm_t *sm)
 {
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
 			     .inRxGroup = data_in_rx_group, .ctx = sm };
+#if CONFIG_DMR_IP_GATEWAY
+	env.packet = hostlink_net_air_packet;
+	hostlink_net_air_start();
+#endif
 	// No auto-transmit features until the user turns them on (docs/ux/principles.md): no ARS server, no radio
 	// check auto-reply. Call alerts are acknowledged (that is what makes them work); LRRP answers "no fix" without
 	// a position source
@@ -1038,6 +1045,9 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
 	}
+#if CONFIG_DMR_IP_GATEWAY
+	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
+#endif
 }
 #endif
 

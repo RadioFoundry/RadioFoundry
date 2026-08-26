@@ -104,10 +104,12 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEA
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c \
-           $(CORE)/settings/settings.c $(CORE)/storage/storage.c
+           $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
+           $(CORE)/radio/radio_hotspot.c $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c \
+           $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c $(CORE)/hotspot/dmrDataFrame.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RCORE) -lm
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -o $@ $(RCORE) -lm
 
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
@@ -118,7 +120,7 @@ RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(
            $(CORE)/settings/settings.c $(CORE)/storage/storage.c
 
 radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -o $@ $(RFTEST) -lm
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -o $@ $(RFTEST) -lm
 
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
@@ -268,6 +270,20 @@ mmdvmTest: $(MMDVM) $(wildcard $(CORE)/hotspot/*.h $(CORE)/hostlink/*.h $(CORE)/
 run: run-mmdvm
 run-mmdvm: mmdvmTest
 	./mmdvmTest
+
+# The hotspot's SFR mode (core/hotspot/hotspotSfr.c on core/dmr/sfrRunner.c and sfr.c) through mmdvm.c and hotspot.c,
+# against the simulated modem
+HSFR    := hotspotSfrTest.c $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
+           $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c \
+           $(FRAME) $(CORE)/dmr/call/dmr_lc.c sim/dmr_sim_modem.c
+TESTS   += hotspotSfrTest
+
+hotspotSfrTest: $(HSFR) $(wildcard $(CORE)/hotspot/*.h $(CORE)/dmr/sfr*.h sim/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SFR=1 -o $@ $(HSFR)
+
+run: run-hsfr
+run-hsfr: hotspotSfrTest
+	./hotspotSfrTest
 .PHONY: run-mmdvm
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
@@ -314,6 +330,19 @@ run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
 	./dm32CalTest
 	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
 .PHONY: run-dm32
+
+# The host link's network personality: the IP gateway between a fake USB network interface and fake air ops
+HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
+           $(DATA) $(FRAME)
+TESTS   += hostlinkNetTest
+
+hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HLNET)
+
+run: run-hlnet
+run-hlnet: hostlinkNetTest
+	./hostlinkNetTest
+.PHONY: run-hlnet
 
 # The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
 STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c

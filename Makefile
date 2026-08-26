@@ -48,6 +48,15 @@ endif
 ifeq ($(CONFIG_DMR_DATA_CORE),y)
 APP_SRC += core/dmr/dmrData.c core/dmr/dmrDataService.c core/dmr/dmrLrrp.c
 endif
+# The single frequency repeater: the generic logic and its runner on the DMR modem (the hotspot's SFR mode is in
+# core/hotspot/hotspotSfr.c)
+ifeq ($(CONFIG_SFR),y)
+APP_SRC += core/dmr/sfr.c core/dmr/sfrRunner.c
+endif
+# The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)
+ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
+APP_SRC += core/dmr/ipGateway.c
+endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)
 

@@ -158,6 +158,25 @@ static bool er(uint32_t addr)
 	return ok;
 }
 
+// Everything the core stores lives above the write floor (hardware-dm32.md 10.1): the legacy-layout codeplug's 64 KB
+// "EEPROM" image at 0x700000 (CODEPLUG_LEGACY_EEPROM_BASE in board.mk), OpenDM32's calibration copy left alone at
+// 0x710000, the settings ring and the sector journal after it, the 1 MB legacy "flash" image at 0x720000
+// (CODEPLUG_LEGACY_FLASH_BASE) with room above it for the DMR ID database, the native codeplug in the last 1 MB. The
+// factory calibration is read only, so the legacy CPS gets no calibration window
+static const hal_flash_map_t map = {
+	.settings_addr = 0x711000u,
+	.settings_size = 0x008000u,	// 8 sectors
+	.journal_addr = 0x719000u,	// 2 sectors
+	.legacy_eeprom = 0x700000u,
+	.legacy_flash = 0x720000u,
+	.legacy_end = 0xF00000u,
+	.calibration_addr = 0,
+	.calibration_size = 0,
+	.native_addr = 0xF00000u,
+	.native_size = 0x100000u,
+};
+_Static_assert(0x700000u >= WRITE_FLOOR, "the core's areas start at the write floor");
+
 hal_flash_t dm32_flash = {
 	.init = init,
 	.size = 0,
@@ -165,6 +184,7 @@ hal_flash_t dm32_flash = {
 	.read = rd,
 	.write = wr,
 	.erase = er,
+	.map = &map,
 };
 
 uint32_t dm32_flash_jedec(void)

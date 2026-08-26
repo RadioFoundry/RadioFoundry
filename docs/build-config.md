@@ -39,11 +39,11 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_DMR_ARS` | = DMR | ARS registration with a presence server, at power-up and channel change, refreshed (off until a server ID is set) |
 | `CONFIG_DMR_LRRP` | = DMR | LRRP location answers (a radio without GPS answers "no fix"); builds core/dmr/dmrLrrp.c into the image |
 | `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert and radio check, answered and sent |
-| `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR to a USB network adapter (not ported yet) |
-| `CONFIG_SFR` | n | single frequency repeater (not ported yet) |
+| `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter, carried by the data service (`docs/spec/usb-network.md`) |
+| `CONFIG_SFR` | n | single frequency repeater: the MMDVM hotspot's SFR mode (duplex with RX = TX); the stand-alone repeater and user roles on a channel are not wired yet (`docs/spec/sfr.md`) |
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
-| `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter mode (not ported yet) |
+| `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
 | `CONFIG_HOTSPOT` | = DMR and HOSTLINK | MMDVM modem / hotspot over the host port |
 | `CONFIG_DEBUGLINK` | = HOSTLINK | debug link for bench automation on the host port: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
 | `CONFIG_CPS_LEGACY` | = HOSTLINK | legacy CPS protocol on the host port (USB serial, or the DM-32 programming cable UART; qdmr, the legacy CPS, `tools/cps_client.py`): codeplug read / write, radio info (`docs/spec/cps-protocol.md` 2). The settings store and the sector journal (`docs/spec/settings-store.md`) are always built |

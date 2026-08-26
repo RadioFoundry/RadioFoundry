@@ -17,6 +17,8 @@ static void emit(uint8_t kind, int8_t ts, uint32_t arg, const dmr_burst_t *b)
 
 static bool start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 {
+	if (sim.refuse_start)
+		return false;
 	sim.started = true;
 	sim.cfg = *cfg;
 	sim.cb = cb;
@@ -31,7 +33,10 @@ static void rx_lock_slot(int8_t ts) { sim.locked_ts = ts; }
 
 static bool tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a)
 {
-	sim.tx_begins++;
+	if (sim.tx_begins++ == 0) {
+		sim.first_timing = t;
+		sim.first_ts = ts;
+	}
 	sim.last_timing = t;
 	sim.last_ts = ts;
 	sim.last_access = a;
@@ -113,6 +118,7 @@ static void send_one(void)
 		a->kind = b.kind;
 		a->voice_index = b.voice_index;
 		a->host_crc = b.host_crc;
+		a->sync = b.sync_override;
 		a->len = b.len;
 		memcpy(a->payload, b.payload, b.len);
 		a->slot = sim.slot;

@@ -446,6 +446,42 @@ static void test_session_timeout(void)
 	CHECK(!x_commit());
 }
 
+// The settings / journal region holds another firmware's data: reads work, every write is refused until a claim
+static void test_foreign(void)
+{
+	uint8_t d[32], img[32];
+	populate();
+	for (uint32_t i = 0; i < 0xA000u; i++) {
+		sim_flash_data[0x11000u + i] = (uint8_t)(0x30 + i * 11u);	// ring and journal: no record of ours
+	}
+	sim_flash_power_on();
+	CHECK(!storage_init());
+	settings_init();
+	codeplug_init();
+	cps_init(&io);
+	CHECK(storage_region() == STORAGE_REGION_FOREIGN);
+	uint8_t *snap = malloc(FLASH_SIZE);
+	memcpy(snap, sim_flash_data, FLASH_SIZE);
+	CHECK(read_block(1, 0x3790, 32, img));		// reads still answered
+	memset(d, 0x11, sizeof(d));
+	CHECK(!x_prepare(0x3));				// no CPS write through a foreign journal
+	CHECK(!x_commit() && !x_data(0x3000, d, 32, 0));
+	channel_t c;
+	memset(&c, 0, sizeof(c));
+	strcpy(c.name, "X");
+	c.rx_hz = c.tx_hz = 145500000u;
+	CHECK(!codeplug_set_channel(2, &c));		// nor a radio-side edit
+	CHECK(control(6, 2));				// "save the settings": answered, nothing written
+	CHECK(memcmp(snap, sim_flash_data, FLASH_SIZE) == 0);
+	// Claimed (the debug link), erased by the housekeeping: writes work again
+	CHECK(storage_claim_request());
+	settings_poll(now);
+	CHECK(storage_ready());
+	CHECK(x_prepare(0x3) && x_data(0x3000, d, 32, 0) && x_commit() && control(5, 0));
+	CHECK(sim_flash_data[0x3000] == 0x11);
+	free(snap);
+}
+
 int main(void)
 {
 	populate();
@@ -456,6 +492,7 @@ int main(void)
 	test_assembly();
 	test_vfo();
 	test_session_timeout();
+	test_foreign();
 	sim_flash_free();
 	printf("# cpsTest %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

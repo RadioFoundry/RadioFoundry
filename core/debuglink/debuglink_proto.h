@@ -40,6 +40,7 @@ enum {
 	DL_CMD_READ_MEM		= 0x0C,
 	DL_CMD_REBOOT		= 0x0D,
 	DL_CMD_DMR_DATA		= 0x0E,	// DMR data service requests (debuglink_dmr_data.c)
+	DL_CMD_STORAGE		= 0x0F,	// the settings / journal region: info, SPI flash read, claim (docs/spec/debuglink.md 3.13)
 };
 
 // DL_CMD_DMR_DATA operations (first payload byte; docs/spec/debuglink.md 3.12). IDs are u32 little endian
@@ -50,6 +51,16 @@ enum {
 	DL_DATA_OP_SETTINGS,		// ARS server u32 (0 off), flags u8 (bit 0 radio check reply, 1 call alert ack, 2 LRRP)
 	DL_DATA_OP_INBOX,		// index u8 (0 newest) -> src u32, dst u32, group u8, unread u8, text
 	DL_DATA_OP_MARK_READ,		// index u8
+};
+
+// DL_CMD_STORAGE operations (first payload byte; docs/spec/debuglink.md 3.13)
+enum {
+	DL_STORAGE_OP_INFO = 0,		// -> region u8 (0 none, 1 ours, 2 foreign), claim pending u8, then u32 pairs (address,
+					// size): settings ring, journal, calibration copy
+	DL_STORAGE_OP_READ,		// address u32, length u16 (<= DL_MEM_READ_MAX) -> address u32, the bytes. SPI flash, only
+					// inside the three ranges
+	DL_STORAGE_OP_CLAIM,		// token u32 (the chip UID's low word) -> reason u8 (as REBOOT's); the erase follows in
+					// the housekeeping task: poll the view's storage.region
 };
 
 // Reply status (the first payload byte)

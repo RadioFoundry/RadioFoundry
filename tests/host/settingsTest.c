@@ -264,9 +264,10 @@ static void cut_run(unsigned saves_before)
 
 static void test_settings_cuts(void)
 {
+	// (slot 0 of the ring holds the ownership mark, so save n goes to slot n)
 	cut_run(1);		// inside a sector
-	cut_run(16);		// the save that erases the next sector
-	cut_run(8 * 16);	// round the ring: the erase of the first sector again
+	cut_run(15);		// the save that erases the next sector
+	cut_run(8 * 16 - 1);	// round the ring: the erase of the first sector again
 }
 
 // Records from an older firmware (fewer fields) and a newer one (more), and an incompatible layout
@@ -316,15 +317,16 @@ static void test_settings_versions(void)
 	settings_begin()->squelch = 1;
 	settings_end(1);
 	settings_flush();
-	sim_flash_data[map.settings_addr + 256 + 7] = 0x12;	// junk in slot 1
+	// (slot 0: the ownership mark storage_init wrote on the blank ring, slot 1: the record)
+	sim_flash_data[map.settings_addr + 2 * 256 + 7] = 0x12;	// junk in slot 2
 	boot();
 	settings_get_stats(&st);
-	CHECK(st.load == SETTINGS_LOADED && st.skipped == 1);
+	CHECK(st.load == SETTINGS_LOADED && st.skipped == 1 && st.slot == 1);
 	settings_begin()->squelch = 2;
 	settings_end(2);
 	CHECK(settings_flush());
 	settings_get_stats(&st);
-	CHECK(st.slot == 2);
+	CHECK(st.slot == 3);
 	// No flash map: RAM only
 	sim_flash.map = NULL;
 	CHECK(!storage_init());
@@ -336,6 +338,132 @@ static void test_settings_versions(void)
 	CHECK(s.squelch == 3);
 }
 
+// --- the foreign region guard ---
+
+static void junk(uint32_t addr, uint32_t len, uint8_t seed)
+{
+	for (uint32_t i = 0; i < len; i++) {
+		sim_flash_data[addr + i] = (uint8_t)(seed + i * 13u + (i >> 7));
+	}
+}
+
+// A boot that may find the region foreign (boot() checks it isn't)
+static bool boot_any(void)
+{
+	sim_flash_power_on();
+	bool ok = storage_init();
+	settings_init();
+	return ok;
+}
+
+static void test_foreign(void)
+{
+	uint8_t a[STORAGE_SECTOR];
+	settings_stats_t st;
+	storage_stats_t ss;
+	settings_t s;
+	const uint32_t ring = map.settings_addr, jr = map.journal_addr;
+
+	// Another firmware's data in the ring and in J0: foreign, nothing erased or programmed there, defaults in RAM
+	sim_flash_create(FLASH_SIZE, &map);
+	junk(ring + 2 * STORAGE_SECTOR, 3000, 7);
+	junk(jr, 100, 9);
+	uint8_t *snap = malloc(FLASH_SIZE);
+	memcpy(snap, sim_flash_data, FLASH_SIZE);
+	uint32_t u0 = sim_flash_units();
+	CHECK(!boot_any());
+	CHECK(storage_region() == STORAGE_REGION_FOREIGN && !storage_ready());
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_FOREIGN);
+	settings_begin()->squelch = 5;
+	settings_end(100);
+	settings_poll(5000);
+	CHECK(!settings_flush());
+	settings_read(&s);
+	CHECK(s.squelch == 5);			// the radio runs on, from RAM
+	fill(a, 5);
+	CHECK(!storage_sector_write(0x3000u, a));	// no journal use: codeplug edits and CPS commits fail
+	CHECK(!storage_write(0x3000u, a, 16));
+	storage_get_stats(&ss);
+	CHECK(ss.foreign_refusals == 2 && ss.foreign_slots > 0 && !ss.claim_pending);
+	CHECK(sim_flash_units() == u0 && memcmp(snap, sim_flash_data, FLASH_SIZE) == 0);
+	// The same at the next boot (nothing was "repaired")
+	CHECK(!boot_any() && storage_region() == STORAGE_REGION_FOREIGN);
+	CHECK(memcmp(snap, sim_flash_data, FLASH_SIZE) == 0);
+	settings_begin()->squelch = 5;		// (the boot started from the defaults again)
+	settings_end(200);
+
+	// The debug link's read window: the ring, the journal, the calibration copy; nothing else
+	CHECK(storage_debug_read_allowed(ring, map.settings_size));
+	CHECK(storage_debug_read_allowed(jr, 2 * STORAGE_SECTOR));
+	CHECK(storage_debug_read_allowed(map.calibration_addr, map.calibration_size));
+	CHECK(!storage_debug_read_allowed(ring - 1, 2));
+	CHECK(!storage_debug_read_allowed(jr + 2 * STORAGE_SECTOR - 1, 2));
+	CHECK(!storage_debug_read_allowed(map.calibration_addr + 0x1F0, 0x20));
+	CHECK(!storage_debug_read_allowed(0x3000u, 16) && !storage_debug_read_allowed(ring, 0));
+	CHECK(!storage_debug_read_allowed(0xFFFFFFF0u, 0x20));
+
+	// Claim: the housekeeping erases the ring and the journal, then saves what the radio runs with
+	CHECK(storage_claim_request() && storage_claim_pending());
+	settings_poll(6000);
+	CHECK(storage_region() == STORAGE_REGION_OURS && storage_ready() && !storage_claim_pending());
+	settings_get_stats(&st);
+	CHECK(!st.dirty && st.saves == 1);
+	CHECK(sim_flash_data[jr] == 0xFF && sim_flash_data[jr + STORAGE_SECTOR + 5] == 0xFF);
+	CHECK(sim_flash_data[ring + 2 * STORAGE_SECTOR + 5] == 0xFF);
+	CHECK(memcmp(snap + 0x20000, sim_flash_data + 0x20000, FLASH_SIZE - 0x20000) == 0);	// nothing else touched
+	CHECK(storage_sector_write(0x3000u, a));
+	CHECK(boot_any());
+	settings_get_stats(&st);
+	settings_read(&s);
+	CHECK(st.load == SETTINGS_LOADED && s.squelch == 5);
+	CHECK(!storage_claim_request());	// ours: nothing to claim
+	CHECK(sim_flash_violations() == 0);
+
+	// Junk beside a valid record of ours (a torn erase in our own ring): ours, the junk is skipped
+	sim_flash_create(FLASH_SIZE, &map);
+	boot();
+	settings_begin()->squelch = 6;
+	settings_end(1);
+	CHECK(settings_flush());
+	junk(ring + 3 * STORAGE_SECTOR, 2000, 3);
+	CHECK(boot_any() && storage_region() == STORAGE_REGION_OURS);
+	settings_read(&s);
+	CHECK(s.squelch == 6);
+
+	// A sector copy in J1 with J0 never written, nothing else: foreign
+	sim_flash_create(FLASH_SIZE, &map);
+	junk(jr + STORAGE_SECTOR, STORAGE_SECTOR, 1);
+	CHECK(!boot_any() && storage_region() == STORAGE_REGION_FOREIGN);
+	// Our J0 header (any J1) beside junk in the ring: ours
+	sim_flash_create(FLASH_SIZE, &map);
+	boot();
+	CHECK(storage_sector_write(0x3000u, a));
+	memset(sim_flash_data + ring, 0xFF, map.settings_size);	// no settings record (no mark either)
+	junk(ring + 5 * STORAGE_SECTOR, 500, 2);
+	CHECK(boot_any() && storage_region() == STORAGE_REGION_OURS);
+
+	// A blank region gets the ownership mark; a cut in the middle of a later journal rewrite (J0 erased, J1 full)
+	// then never looks foreign
+	sim_flash_create(FLASH_SIZE, &map);
+	boot();
+	CHECK(storage_sector_write(0x3000u, a));
+	fill(a, 77);
+	u0 = sim_flash_units();
+	sim_flash_cut_after(STORAGE_SECTOR + 2u);	// J1 erased and programmed, J0 erased, header not yet
+	CHECK(!storage_sector_write(0x3000u, a));
+	CHECK(sim_flash_data[jr] == 0xFF && sim_flash_data[jr + STORAGE_SECTOR] != 0xFF);
+	CHECK(boot_any() && storage_region() == STORAGE_REGION_OURS);
+	// A cut inside the very first mark (a torn magic): still ours
+	for (uint32_t cut = 1; cut <= 6; cut++) {
+		sim_flash_create(FLASH_SIZE, &map);
+		sim_flash_cut_after(cut);
+		storage_init();
+		CHECK(boot_any() && storage_region() == STORAGE_REGION_OURS);
+	}
+	free(snap);
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -344,6 +472,7 @@ int main(void)
 	test_settings_wear();
 	test_settings_cuts();
 	test_settings_versions();
+	test_foreign();
 	sim_flash_free();
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

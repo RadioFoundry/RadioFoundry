@@ -27,16 +27,17 @@ CONFIG_DMR_ARS ?= $(CONFIG_DMR)
 CONFIG_DMR_LRRP ?= $(CONFIG_DMR)
 # CSBK signaling: call alert, radio check (needs DMR; not ported yet)
 CONFIG_DMR_SIGNALING ?= $(CONFIG_DMR)
-# IP over DMR packet data to a USB network adapter (needs DMR and USB_NETWORK; not ported yet)
+# IP over DMR packet data through the USB network adapter (needs DMR and USB_NETWORK; core/hostlink/hostlink_net.c)
 CONFIG_DMR_IP_GATEWAY ?= n
-# single frequency repeater (needs DMR; not ported yet)
+# single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
+# the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
 CONFIG_SFR ?= n
 # USB device (CDC serial)
 CONFIG_USB ?= y
 # the host link (core/hostlink): MMDVM hotspot, CPS and debug link over the board's host port (USB CDC, or the
 # programming cable's UART on radios without USB, e.g. the DM-32)
 CONFIG_HOSTLINK ?= $(CONFIG_USB)
-# USB network adapter mode (CDC-NCM, switches with serial mode; needs USB; not ported yet)
+# USB network adapter personality (CDC-NCM, switched with the serial one at run time; needs USB)
 CONFIG_USB_NETWORK ?= $(CONFIG_DMR_IP_GATEWAY)
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)

@@ -10,6 +10,9 @@
 #include "dmr/call/dmr_lc.h"
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
+#include "radio/radio_hotspot.h"
+#include "hotspot/hotspot.h"
+#include "hotspot/mmdvm.h"
 #include "settings/settings.h"
 #include "dmr/dmr_data_api.h"
 
@@ -36,7 +39,9 @@ static struct {
 } hw;
 
 static void r_init(void) {}
-static void r_set_mode(radio_mode_t m) { (void)m; hw.set_mode_calls++; }
+static radio_mode_t hw_mode;
+// As on the DM-1701: the modem starts only with the board in DMR mode (dm1701_dmr_enter)
+static void r_set_mode(radio_mode_t m) { hw_mode = m; hw.set_mode_calls++; sim.refuse_start = m != RADIO_MODE_DMR; }
 static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 {
 	hw.rx_hz = hz;
@@ -1090,6 +1095,175 @@ static void test_hotspot(void)
 	CHECK(hw.tx_off_calls == off0 + 1);	// never armed: no TX frequency was set
 }
 
+// ---- The hotspot session end to end: host link frames -> mmdvm.c -> hotspot.c -> radio_hotspot.c ops -> the radio
+// state machine -> the modem, with the radio task modeled: requests are queued and handled either at once (the
+// radio task is above the host link task and waiting on its queue) or later (it was busy elsewhere) ----
+
+#define HS_Q	16
+static radio_req_t hs_q[HS_Q];
+static int hs_qn;
+static bool radio_preempts = true;	// a post runs the radio task at once
+static int mm_replies, mm_acks, mm_naks;
+static uint8_t mm_last[64];
+
+static void radio_pass(void)
+{
+	for (int i = 0; i < hs_qn; i++) {
+		radio_sm_request(&sm, &hs_q[i], now);
+	}
+	hs_qn = 0;
+	radio_hs_watch(&sm, now);
+	radio_hs_publish(&sm);
+}
+
+static void hs_post(const radio_req_t *r, bool must)
+{
+	(void)must;
+	if (hs_qn < HS_Q) {
+		hs_q[hs_qn++] = *r;
+	}
+	if (radio_preempts) {
+		radio_pass();
+	}
+}
+
+static void mm_write(const uint8_t *buf, size_t len)
+{
+	mm_replies++;
+	if (len >= 3 && buf[2] == MMDVM_ACK) {
+		mm_acks++;
+	}
+	if (len >= 3 && buf[2] == MMDVM_NAK) {
+		mm_naks++;
+	}
+	memcpy(mm_last, buf, len < sizeof(mm_last) ? len : sizeof(mm_last));
+}
+
+static const mmdvm_io_t mm_io = { .write = mm_write, .description = "OpenDigitalRadio fake" };
+
+static void mm_cmd(uint8_t cmd, const uint8_t *p, uint8_t n)
+{
+	uint8_t f[64];
+	f[0] = MMDVM_FRAME_START;
+	f[1] = (uint8_t)(n + 3);
+	f[2] = cmd;
+	memcpy(f + 3, p, n);
+	mmdvm_frame(f, (uint16_t)(n + 3), now);
+}
+
+// The host link task's loop for ms: mmdvm_poll every 5 ms; the radio task's tick and poll on their periods
+static void hs_run(uint32_t ms)
+{
+	for (uint32_t t = 0; t < ms; t += 5) {
+		now += 5;
+		if (now % 30 == 0) {
+			sim_slot();
+		}
+		if (now % RADIO_TICK_MS == 0) {
+			radio_sm_tick(&sm, now);
+		}
+		if (now % RADIO_POLL_MS == 0) {
+			radio_sm_poll(&sm, now);
+			radio_pass();
+		}
+		mmdvm_poll(now);
+	}
+}
+
+static void hs_session_start(void)
+{
+	setup_codeplug();
+	codec_present = true;
+	start();
+	chans[4].rx_hz = chans[4].tx_hz = 467375000;	// the bench's DMR channel
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	hs_qn = 0;
+	radio_hs_init(hs_post);
+	radio_hs_publish(&sm);
+	hotspot_set_radio(&radio_hs_ops);
+	hotspot_init(&sim_modem, mmdvm_send);
+	mmdvm_init(&mm_io);
+	mm_replies = mm_acks = mm_naks = 0;
+}
+
+static void test_hotspot_session(void)
+{
+	hotspot_stats_t st;
+	hotspot_view_t v;
+
+	// The radio task answers the enter at once: the first frame takes the modem
+	hs_session_start();
+	CHECK(sim.started && sim.cb != NULL && sm.view.dmr.active);
+	radio_preempts = true;
+	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
+	CHECK(mm_replies == 1 && mm_last[2] == MMDVM_GET_VERSION);
+	hotspot_get_stats(&st);
+	hotspot_get_view(&v);
+	CHECK(sm.hotspot && v.running && st.enter_attempts == 1 && hotspot_running());
+	CHECK(sim.started && sim.cb == hotspot_modem_event);
+	mm_cmd(MMDVM_GET_STATUS, NULL, 0);
+	CHECK(mm_last[2] == MMDVM_GET_STATUS && mm_last[8] > 0);	// DMR slot 2 space: the hotspot runs
+	hs_run(4000);
+	hotspot_get_view(&v);
+	CHECK(v.running && sm.hotspot);	// the orphan watch leaves it alone
+	mmdvm_end();
+	radio_pass();
+	CHECK(!sm.hotspot && sim.cb != NULL && sim.cb != hotspot_modem_event && sm.view.dmr.active);
+
+	// The radio task busy when the first frame comes (the enter is handled after the post returned): taken on the
+	// next attempt, HOTSPOT_ENTER_RETRY_MS later
+	hs_session_start();
+	radio_preempts = false;
+	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
+	hotspot_get_stats(&st);
+	CHECK(st.enter_attempts == 1 && !hotspot_running());
+	mm_cmd(MMDVM_GET_STATUS, NULL, 0);
+	CHECK(mm_last[2] == MMDVM_GET_STATUS && mm_last[8] == 0);	// no space until the hotspot runs
+	hs_run(HOTSPOT_ENTER_RETRY_MS + 50);
+	hotspot_get_stats(&st);
+	hotspot_get_view(&v);
+	CHECK(st.enter_attempts == 2 && v.running && sm.hotspot && sim.cb == hotspot_modem_event);
+	radio_preempts = true;
+	mmdvm_end();
+	radio_pass();
+	CHECK(!sm.hotspot && sm.view.dmr.active);
+	// A second session on the same boot (the first ended with the port closed, after a full configuration): the
+	// next host frame takes the modem again
+	hs_session_start();
+	radio_preempts = true;
+	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
+	{
+		uint8_t fr[13] = { 0 };
+		uint32_t hz = 467375000;
+		for (int i = 0; i < 4; i++) {
+			fr[1 + i] = (uint8_t)(hz >> (8 * i));
+			fr[5 + i] = (uint8_t)(hz >> (8 * i));
+		}
+		fr[9] = 255;
+		mm_cmd(MMDVM_SET_FREQ, fr, 10);
+		uint8_t cfg[21] = { MMDVM_CONFIG_SIMPLEX, MMDVM_MODE_BIT_DMR, 10, 0, 128, 128, 1 };
+		mm_cmd(MMDVM_SET_CONFIG, cfg, sizeof(cfg));
+		uint8_t m = MMDVM_MODE_DMR;
+		mm_cmd(MMDVM_SET_MODE, &m, 1);
+	}
+	CHECK(mm_naks == 0 && hotspot_running() && sm.hs_tx_hz == 467375000 && sm.dmr_keyed);
+	hs_run(500);
+	mmdvm_end();
+	hs_run(100);
+	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active);
+	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
+	hs_run(100);
+	hotspot_get_stats(&st);
+	hotspot_get_view(&v);
+	CHECK(st.enter_attempts == 2 && v.running && sm.hotspot && sim.cb == hotspot_modem_event);
+	CHECK(st.starts == 2 && st.stops == 1);	// counted across sessions: enter_attempts 2 is two sessions here
+	mmdvm_end();
+	radio_pass();
+	hotspot_get_stats(&st);
+	CHECK(st.stops == 2 && !hotspot_running());
+}
+
 // The position, the VFO and the preferences come back after a reboot (core/settings), temporary changes don't, and
 // a codeplug change underneath moves the radio to a channel that still exists
 static void test_persist(void)
@@ -1381,6 +1555,7 @@ int main(void)
 	test_dmr_denied();
 	test_dmr_voice_features();
 	test_hotspot();
+	test_hotspot_session();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

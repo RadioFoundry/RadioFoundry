@@ -149,3 +149,21 @@ def test_cps_write_restore(radio, tmp_path):
         assert not d, f"RESTORE FAILED at {len(d)} bytes: write {path} back with tools/cps_client.py"
     s = storage(radio)
     assert as_int(s["cps.commits"]) >= 2 and as_int(s["storage.errors"]) == 0, s
+
+
+def test_storage_region(radio):
+    """The settings / journal region: its state is reported, the read window holds, a read outside it is refused.
+    A foreign region (another firmware's data) is reported, not claimed: `odr_debug.py storage claim` does that"""
+    info = radio.link.storage_info()
+    s = storage(radio)
+    assert s.get("storage.region") == info["region"], (s, info)
+    if info["region"] == "foreign":
+        assert s.get("settings.load") == "foreign" and s.get("storage.journal") == "foreign", s
+        pytest.skip("the settings / journal region holds another firmware's data: dump and claim it with "
+                    "tools/odr_debug.py storage claim (writes are refused until then)")
+    assert info["region"] == "ours" and s.get("storage.journal") == "ok", (s, info)
+    addr, _ = info["ranges"]["settings"]
+    assert len(radio.link.storage_read(addr, 64)) == 64
+    with pytest.raises(DebugLinkError) as e:
+        radio.link.storage_read(addr - 16, 16)        # just before the ring: outside the window
+    assert e.value.status == 7

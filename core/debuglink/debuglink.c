@@ -18,6 +18,7 @@
 #endif
 #include "input/input.h"
 #include "radio/radio.h"
+#include "storage/storage.h"
 #include "ui/gfx.h"
 
 #ifndef ODR_GIT
@@ -35,6 +36,8 @@ enum {
 	OP_CHANNEL_STEP = 1, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH,
 	OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT,
 	OP_DMR_TARGET, OP_DMR_CONTACT, OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY,
+	// 20-24: the radio features' (DL_OP_SCAN .. DL_OP_SETTING, debuglink_view_radio.c)
+	OP_USB_NETWORK = 25,
 };
 
 static dl_parser_t parser;
@@ -82,6 +85,12 @@ static const char features[] = "features="
 #endif
 #if CONFIG_HOTSPOT
 	"HOTSPOT,"
+#endif
+#if CONFIG_USB_NETWORK
+	"USB_NETWORK,"
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+	"DMR_IP_GATEWAY,"
 #endif
 #if CONFIG_VFO
 	"VFO,"
@@ -437,7 +446,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		[OP_POWER] = 1, [OP_SQUELCH] = 1, [OP_BANDWIDTH] = 1, [OP_TONE] = 4, [OP_MONITOR] = 1, [OP_CLEAR_TEMP] = 0,
 		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0,
 		[OP_DMR_TARGET] = 4, [OP_DMR_CONTACT] = 2, [OP_DMR_CALL_BACK] = 0, [OP_DMR_TARGET_CLEAR] = 0,
-		[OP_DMR_PRIVACY] = 3,
+		[OP_DMR_PRIVACY] = 3, [OP_USB_NETWORK] = 1,
 	};
 	uint32_t now = hal_millis();
 
@@ -542,6 +551,11 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 #else
 		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
+	case OP_USB_NETWORK:
+		if (!hostlink_request_usb_network(a[0] != 0)) {
+			return status_only(out, DL_ST_UNAVAILABLE);
+		}
+		break;
 	default:
 		return status_only(out, DL_ST_BAD_ARG);
 	}
@@ -668,6 +682,78 @@ static void reboot_now(void)
 	}
 }
 
+// --- the settings / journal region (docs/spec/debuglink.md 3.13) ---
+
+static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	const hal_flash_map_t *m = storage_map();
+
+	if (len < 1) {
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	if (m == NULL || board.flash == NULL) {
+		return status_only(out, DL_ST_UNAVAILABLE);
+	}
+	switch (req[0]) {
+	case DL_STORAGE_OP_INFO: {
+		out[0] = DL_ST_OK;
+		out[1] = (uint8_t)storage_region();
+		out[2] = storage_claim_pending();
+		put32(out + 3, m->settings_addr);
+		put32(out + 7, m->settings_size);
+		put32(out + 11, m->journal_addr);
+		put32(out + 15, 2u * STORAGE_SECTOR);
+		put32(out + 19, m->calibration_addr);
+		put32(out + 23, m->calibration_size);
+		return 27;
+	}
+	case DL_STORAGE_OP_READ: {
+		if (len != 7) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		uint32_t addr = get32(req + 1);
+		uint32_t n = get16(req + 5);
+		if (n == 0 || n > DL_MEM_READ_MAX || 5u + n > cap) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		if (!storage_debug_read_allowed(addr, n)) {
+			return status_only(out, DL_ST_REFUSED);
+		}
+		storage_lock();
+		bool ok = board.flash->read(addr, out + 5, n);
+		storage_unlock();
+		if (!ok) {
+			return status_only(out, DL_ST_UNAVAILABLE);
+		}
+		out[0] = DL_ST_OK;
+		put32(out + 1, addr);
+		return 5u + n;
+	}
+	case DL_STORAGE_OP_CLAIM: {
+		hal_chip_t c;
+		if (len != 5) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		bool have = read_chip(&c);
+		uint8_t why = dl_reboot_check(HAL_REBOOT_NORMAL, get32(req + 1), have ? &c : NULL, false);
+		if (why != DL_REBOOT_OK) {
+			out[0] = DL_ST_REFUSED;
+			out[1] = why;
+			return 2;
+		}
+		if (!storage_claim_request()) {
+			return status_only(out, DL_ST_UNAVAILABLE);	// not foreign: nothing to claim
+		}
+		dlog("debuglink: storage region claimed, erasing");
+		out[0] = DL_ST_OK;
+		out[1] = DL_REBOOT_OK;
+		return 2;
+	}
+	default:
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+}
+
 // --- dispatch ---
 
 static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -703,6 +789,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return cmd_reboot(req, len, out);
 	case DL_CMD_DMR_DATA:
 		return debuglink_cmd_dmr_data(req, len, out, cap);
+	case DL_CMD_STORAGE:
+		return cmd_storage(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

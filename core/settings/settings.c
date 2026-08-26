@@ -11,12 +11,12 @@
 #include "settings/settings.h"
 #include "storage/storage.h"
 
-#define SLOT_SIZE	256u
+#define SLOT_SIZE	STORAGE_SLOT_SIZE	// the record format is storage.h's (the foreign region guard knows it)
 #define SLOTS		(STORAGE_SECTOR / SLOT_SIZE)
-#define HDR		12u
-#define COMMIT		(SLOT_SIZE - 4u)
-#define PAYLOAD_MAX	(COMMIT - HDR - 4u)
-#define MAGIC		0x5445534Fu	// "OSET"
+#define HDR		STORAGE_SLOT_HDR
+#define COMMIT		STORAGE_SLOT_COMMIT
+#define PAYLOAD_MAX	STORAGE_SLOT_PAYLOAD_MAX
+#define MAGIC		STORAGE_SLOT_MAGIC
 #define RETRIES		4		// slots tried when a write doesn't read back
 
 _Static_assert(sizeof(settings_t) <= PAYLOAD_MAX, "settings_t outgrew a slot");
@@ -72,19 +72,14 @@ static slot_state_t read_slot(uint16_t sector, uint16_t slot, uint8_t *r)
 	if (!board.flash->read(slot_addr(sector, slot), r, SLOT_SIZE)) {
 		return SLOT_BAD;
 	}
-	bool erased = true;
-	for (unsigned i = 0; i < SLOT_SIZE && erased; i++) {
-		erased = r[i] == 0xFF;
-	}
-	if (erased) {
+	switch (storage_slot_check(r)) {
+	case STORAGE_SLOT_FREE:
 		return SLOT_FREE;
-	}
-	uint16_t n = (uint16_t)(r[10] | (r[11] << 8));
-	if (get32(&r[0]) != MAGIC || get32(&r[COMMIT]) != 0 || n > PAYLOAD_MAX ||
-	    get32(&r[HDR + n]) != storage_crc32(0, r, HDR + n)) {
+	case STORAGE_SLOT_VALID:
+		return SLOT_VALID;
+	default:
 		return SLOT_BAD;
 	}
-	return SLOT_VALID;
 }
 
 static bool have_newest;		// stats.sector / stats.slot point at the newest valid record
@@ -105,8 +100,8 @@ settings_load_t settings_init(void)
 	have_flash = storage_ready() && m != NULL && m->settings_size >= 2u * STORAGE_SECTOR;
 	if (!have_flash) {
 		saved = live;
-		stats.load = SETTINGS_RAM;
-		return SETTINGS_RAM;
+		stats.load = storage_region() == STORAGE_REGION_FOREIGN ? SETTINGS_FOREIGN : SETTINGS_RAM;
+		return (settings_load_t)stats.load;
 	}
 	sectors = (uint16_t)(m->settings_size / STORAGE_SECTOR);
 	storage_lock();
@@ -276,8 +271,34 @@ static bool save_now(void)
 	return true;
 }
 
+// After a claim (storage.h): the settings area is ours and blank now; what the radio runs with is saved there
+static void attach(uint32_t now_ms)
+{
+	const hal_flash_map_t *m = storage_map();
+	if (!storage_ready() || m == NULL || m->settings_size < 2u * STORAGE_SECTOR) {
+		return;
+	}
+	storage_quick_lock();
+	ensure();
+	sectors = (uint16_t)(m->settings_size / STORAGE_SECTOR);
+	have_newest = false;
+	stats.seq = 0;
+	stats.sector = 0;
+	stats.slot = 0;
+	stats.skipped = 0;
+	stats.load = SETTINGS_DEFAULTS;
+	memset(&saved, 0xFF, sizeof(saved));	// nothing stored: unlike anything live holds, so the first poll saves
+	dirty = true;
+	changed_ms = now_ms - SETTINGS_SAVE_DELAY_MS;
+	have_flash = true;
+	storage_quick_unlock();
+}
+
 void settings_poll(uint32_t now_ms)
 {
+	if (storage_claim_pending() && storage_claim()) {
+		attach(now_ms);
+	}
 	if (dirty && have_flash && (now_ms - changed_ms) >= SETTINGS_SAVE_DELAY_MS) {
 		save_now();
 	}

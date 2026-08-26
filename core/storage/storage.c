@@ -14,7 +14,9 @@
 #define J_DONE		J_HDR_LEN	// the done byte's offset
 #define CHUNK		256u
 
-static bool ready;
+static bool ready;			// usable flash (the region may still be foreign)
+static storage_region_t region;
+static bool claim_pending;
 static uint8_t buffer[STORAGE_SECTOR];
 static bool buffer_taken;
 static storage_stats_t stats;
@@ -152,25 +154,217 @@ static void replay(void)
 	wr(m->journal_addr + J_DONE, &done, 1);
 }
 
+storage_slot_t storage_slot_check(const uint8_t r[STORAGE_SLOT_SIZE])
+{
+	bool erased = true;
+	for (unsigned i = 0; i < STORAGE_SLOT_SIZE && erased; i++) {
+		erased = r[i] == 0xFF;
+	}
+	if (erased) {
+		return STORAGE_SLOT_FREE;
+	}
+	if (get32(&r[0]) != STORAGE_SLOT_MAGIC) {
+		// A save cut inside the magic: the bytes programmed so far are on their way to it (programming only
+		// clears bits) and everything after them is still erased
+		static const uint8_t magic[4] = { 'O', 'S', 'E', 'T' };
+		unsigned i = 0;
+		while (i < 4 && r[i] == magic[i]) {
+			i++;
+		}
+		if ((r[i] & magic[i]) != magic[i]) {
+			return STORAGE_SLOT_OTHER;
+		}
+		for (unsigned k = i + 1; k < STORAGE_SLOT_SIZE; k++) {
+			if (r[k] != 0xFF) {
+				return STORAGE_SLOT_OTHER;
+			}
+		}
+		return STORAGE_SLOT_TORN;
+	}
+	uint16_t n = (uint16_t)(r[10] | (r[11] << 8));
+	if (get32(&r[STORAGE_SLOT_COMMIT]) != 0 || n > STORAGE_SLOT_PAYLOAD_MAX ||
+	    get32(&r[STORAGE_SLOT_HDR + n]) != storage_crc32(0, r, STORAGE_SLOT_HDR + n)) {
+		return STORAGE_SLOT_TORN;
+	}
+	return STORAGE_SLOT_VALID;
+}
+
+// Whether len bytes at addr are all erased; false also when unreadable
+static bool blank(uint32_t addr, uint32_t len)
+{
+	uint8_t c[CHUNK];
+	for (uint32_t off = 0; off < len; off += CHUNK) {
+		uint32_t n = len - off < CHUNK ? len - off : CHUNK;
+		if (!rd(addr + off, c, n)) {
+			return false;
+		}
+		for (uint32_t i = 0; i < n; i++) {
+			if (c[i] != 0xFF) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// An ownership mark: a valid settings slot of layout 0 (which no settings layout uses, so the settings load their
+// defaults past it) in the first free slot of the ring. Written while the region holds no valid record of ours, so
+// from then on one always exists (saves never erase the sector holding the newest record) and a cut in the middle
+// of a journal rewrite (J0 erased, J1 full) can't make the region look foreign at the next boot
+static void mark(const hal_flash_map_t *m)
+{
+	static uint8_t r[STORAGE_SLOT_SIZE];
+	for (uint32_t a = m->settings_addr; a + STORAGE_SLOT_SIZE <= m->settings_addr + m->settings_size;
+	     a += STORAGE_SLOT_SIZE) {
+		if (!rd(a, r, sizeof(r)) || storage_slot_check(r) != STORAGE_SLOT_FREE) {
+			continue;
+		}
+		memset(r, 0xFF, sizeof(r));
+		put32(&r[0], STORAGE_SLOT_MAGIC);
+		put32(&r[4], 0);		// sequence 0: any real record is newer
+		r[8] = r[9] = 0;		// layout 0
+		r[10] = r[11] = 0;		// no payload
+		put32(&r[STORAGE_SLOT_HDR], storage_crc32(0, r, STORAGE_SLOT_HDR));
+		static const uint8_t commit[4] = { 0, 0, 0, 0 };
+		if (wr(a, r, STORAGE_SLOT_HDR + 4u)) {
+			wr(a + STORAGE_SLOT_COMMIT, commit, sizeof(commit));
+		}
+		return;
+	}
+}
+
+// Classify the settings ring and the journal (storage.h "Foreign region guard")
+static storage_region_t scan_region(const hal_flash_map_t *m)
+{
+	static uint8_t r[STORAGE_SLOT_SIZE];	// under the storage lock (off the start-up task's stack)
+	bool ours = false;			// one valid record of ours somewhere
+	uint16_t other = 0;
+
+	for (uint32_t a = m->settings_addr; a + STORAGE_SLOT_SIZE <= m->settings_addr + m->settings_size;
+	     a += STORAGE_SLOT_SIZE) {
+		storage_slot_t s = rd(a, r, sizeof(r)) ? storage_slot_check(r) : STORAGE_SLOT_OTHER;
+		ours = ours || s == STORAGE_SLOT_VALID;
+		other = (uint16_t)(other + (s == STORAGE_SLOT_OTHER));
+	}
+	// J0: erased, or our header (a torn one counts as ours-looking), and nothing after the done byte
+	uint8_t h[J_HDR_LEN + 1];
+	bool j0_blank = blank(m->journal_addr, STORAGE_SECTOR);
+	if (!j0_blank) {
+		bool hdr = rd(m->journal_addr, h, sizeof(h)) && get32(&h[0]) == J_MAGIC;
+		bool valid = hdr && get32(&h[12]) == storage_crc32(0, h, 12);
+		ours = ours || valid;
+		if (!hdr || !blank(m->journal_addr + J_HDR_LEN + 1u, STORAGE_SECTOR - J_HDR_LEN - 1u)) {
+			other++;
+		}
+	}
+	// J1: a sector copy, any content, but only after our J0 header has been written at least once
+	if (j0_blank && !blank(m->journal_addr + STORAGE_SECTOR, STORAGE_SECTOR)) {
+		other++;
+	}
+	stats.foreign_slots = other;
+	if (other != 0 && !ours) {
+		return STORAGE_REGION_FOREIGN;
+	}
+	if (!ours) {
+		mark(m);
+	}
+	return STORAGE_REGION_OURS;
+}
+
 bool storage_init(void)
 {
 	const hal_flash_map_t *m = storage_map();
 
 	ready = false;
+	region = STORAGE_REGION_NONE;
+	claim_pending = false;
 	if (m == NULL || board.flash->size == 0 || board.flash->erase_size != STORAGE_SECTOR ||
 	    board.flash->write == NULL || board.flash->erase == NULL) {
 		return false;
 	}
 	ready = true;
 	storage_lock();
-	replay();
+	region = scan_region(m);
+	if (region == STORAGE_REGION_OURS) {
+		replay();
+	}
 	storage_unlock();
-	return true;
+	return region == STORAGE_REGION_OURS;
 }
 
 bool storage_ready(void)
 {
-	return ready;
+	return ready && region == STORAGE_REGION_OURS;
+}
+
+storage_region_t storage_region(void)
+{
+	return region;
+}
+
+bool storage_claim_request(void)
+{
+	if (region != STORAGE_REGION_FOREIGN) {
+		return false;
+	}
+	claim_pending = true;
+	return true;
+}
+
+bool storage_claim_pending(void)
+{
+	return claim_pending;
+}
+
+bool storage_claim(void)
+{
+	const hal_flash_map_t *m = storage_map();
+	bool ok = true;
+
+	storage_lock();
+	claim_pending = false;
+	if (region != STORAGE_REGION_FOREIGN) {
+		storage_unlock();
+		return false;
+	}
+	for (uint32_t a = m->settings_addr; ok && a < m->settings_addr + m->settings_size; a += STORAGE_SECTOR) {
+		ok = er(a) && blank(a, STORAGE_SECTOR);
+	}
+	for (uint32_t a = m->journal_addr; ok && a < m->journal_addr + 2u * STORAGE_SECTOR; a += STORAGE_SECTOR) {
+		ok = er(a) && blank(a, STORAGE_SECTOR);
+	}
+	if (ok) {
+		region = STORAGE_REGION_OURS;
+		stats.foreign_slots = 0;
+		mark(m);
+	}
+	storage_unlock();
+	return ok;
+}
+
+static bool inside(uint32_t addr, uint32_t len, uint32_t base, uint32_t size)
+{
+	return size != 0 && addr >= base && len <= size && addr - base <= size - len;
+}
+
+bool storage_debug_read_allowed(uint32_t addr, uint32_t len)
+{
+	const hal_flash_map_t *m = storage_map();
+	if (m == NULL || len == 0 || addr + len < addr) {
+		return false;
+	}
+	return inside(addr, len, m->settings_addr, m->settings_size) ||
+	       inside(addr, len, m->journal_addr, 2u * STORAGE_SECTOR) ||
+	       inside(addr, len, m->calibration_addr, m->calibration_size);
+}
+
+// A write refused because the region is foreign (counted), or because there is no flash
+static bool refused(void)
+{
+	if (ready && region == STORAGE_REGION_FOREIGN) {
+		stats.foreign_refusals++;
+	}
+	return false;
 }
 
 bool storage_sector_write(uint32_t addr, const uint8_t *data)
@@ -178,8 +372,8 @@ bool storage_sector_write(uint32_t addr, const uint8_t *data)
 	const hal_flash_map_t *m = storage_map();
 	bool ok = false;
 
-	if (!ready || !target_ok(m, addr)) {
-		return false;
+	if (!storage_ready() || !target_ok(m, addr)) {
+		return refused();
 	}
 	storage_lock();
 	if (same(addr, data, STORAGE_SECTOR)) {
@@ -231,8 +425,11 @@ bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 {
 	const uint8_t *p = buf;
 
-	if (!ready || len == 0 || addr + len < addr || addr + len > board.flash->size) {
-		return ready && len == 0;
+	if (!storage_ready()) {
+		return refused();
+	}
+	if (len == 0 || addr + len < addr || addr + len > board.flash->size) {
+		return len == 0;
 	}
 	storage_lock();
 	uint8_t *b = storage_buffer_acquire();
@@ -260,4 +457,5 @@ bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 void storage_get_stats(storage_stats_t *s)
 {
 	*s = stats;
+	s->claim_pending = claim_pending;
 }

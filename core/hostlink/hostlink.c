@@ -8,9 +8,15 @@
 #if CONFIG_HOTSPOT
 #include "hotspot/mmdvm.h"
 #include "hotspot/hotspot.h"
+#if CONFIG_SFR
+#include "hotspot/hotspotSfr.h"
+#endif
 #endif
 #if CONFIG_DEBUGLINK
 #include "debuglink/debuglink.h"
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+#include "hostlink/hostlink_net.h"
 #endif
 #include "debuglink/dlog.h"
 #include "FreeRTOS.h"
@@ -31,8 +37,10 @@
 #endif
 
 static volatile hostlink_mode_t mode = HOSTLINK_IDLE;
+static volatile hostlink_leave_t last_leave = HOSTLINK_STAY;
 static volatile bool hotspot_allowed = true;
 static volatile bool exit_requested;
+static volatile int8_t usb_switch = -1;		// a personality switch asked for: 1 network, 0 serial, -1 none
 static hostlink_cps_fn cps_handler;
 static const hostlink_side_t *side;
 static uint32_t last_byte_ms;
@@ -48,6 +56,11 @@ hostlink_mode_t hostlink_mode(void)
 	return mode;
 }
 
+hostlink_leave_t hostlink_last_leave(void)
+{
+	return last_leave;
+}
+
 void hostlink_set_hotspot_allowed(bool allowed)
 {
 	hotspot_allowed = allowed;
@@ -59,6 +72,20 @@ void hostlink_set_hotspot_allowed(bool allowed)
 void hostlink_hotspot_exit(void)
 {
 	exit_requested = true;
+}
+
+bool hostlink_request_usb_network(bool network)
+{
+	if ((board.netif == NULL) || (board.netif->select == NULL)) {
+		return false;
+	}
+	usb_switch = network ? 1 : 0;
+	return true;
+}
+
+bool hostlink_network_mode(void)
+{
+	return (board.netif != NULL) && board.netif->selected();
 }
 
 void hostlink_set_cps_handler(hostlink_cps_fn fn)
@@ -73,6 +100,11 @@ void hostlink_set_side_protocol(const hostlink_side_t *p)
 
 size_t hostlink_write(const uint8_t *buf, size_t len)
 {
+#if CONFIG_DMR_IP_GATEWAY
+	if (hostlink_network_mode()) {
+		return hostlink_net_write(buf, len);	// UDP serial: to whoever last sent to the radio's serial port
+	}
+#endif
 	if (board.host_port == NULL) {
 		return 0;
 	}
@@ -104,9 +136,13 @@ static void make_description(void)
 	description[n] = '\0';
 }
 
-static void leave_hotspot(void)
+static void leave_hotspot(hostlink_leave_t why)
 {
-	dlog("hostlink: leaving hotspot mode");
+	static const char *const names[] = { "", "user", "port closed (DTR dropped)", "port gone", "idle" };
+
+	last_leave = why;
+	dlog("hostlink: leaving hotspot mode: %s", ((unsigned)why < 5) ? names[why] : "?");
+	(void)names;	// dlog() may be compiled out
 	mmdvm_end();
 	mmdvm_framer_reset(&framer);
 	mode = HOSTLINK_IDLE;
@@ -211,6 +247,34 @@ static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
 	}
 }
 
+#if CONFIG_DMR_IP_GATEWAY
+// UDP serial bytes from the IP gateway (network mode): the same protocols as on the serial port
+static void net_serial_in(const uint8_t *buf, size_t len)
+{
+	dispatch(buf, len, hal_millis());
+}
+#endif
+
+// A personality switch asked for (the debug link's reply is out by now): hotspot mode ends first
+static void usb_switch_now(void)
+{
+	int8_t s = usb_switch;
+
+	if (s < 0) {
+		return;
+	}
+	usb_switch = -1;
+#if CONFIG_HOTSPOT
+	if (mode == HOSTLINK_HOTSPOT) {
+		leave_hotspot(HOSTLINK_LEAVE_USER);
+	}
+#endif
+	mode = HOSTLINK_IDLE;
+	dlog("hostlink: USB %s", s ? "network" : "serial");
+	hal_delay_ms(20);	// the reply's last USB packet
+	board.netif->select(s != 0);
+}
+
 static void hostlink_task(void *arg)
 {
 	(void)arg;
@@ -221,7 +285,13 @@ static void hostlink_task(void *arg)
 	make_description();
 	hotspot_init(board.dmr, mmdvm_send);
 	mmdvm_init(&mmdvm_io);
+#if CONFIG_SFR
+	hotspot_sfr_init();
+#endif
 	mmdvm_framer_reset(&framer);
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+	hostlink_net_init(net_serial_in);
 #endif
 	if ((port == NULL) || !port->start()) {
 		vTaskDelete(NULL);
@@ -245,6 +315,13 @@ static void hostlink_task(void *arg)
 			dispatch(buf, n, now);
 			now = hal_millis();
 		}
+#if CONFIG_DMR_IP_GATEWAY
+		if (hostlink_network_mode()) {
+			hostlink_net_poll(now);		// frames from the host (UDP serial among them), packets from the air
+			now = hal_millis();
+		}
+#endif
+		usb_switch_now();
 
 		switch (mode) {
 		case HOSTLINK_HOTSPOT:
@@ -255,9 +332,11 @@ static void hostlink_task(void *arg)
 			// is noticed by the idle timeout
 			uint32_t last = (mmdvm_last_frame_ms() != 0) ? mmdvm_last_frame_ms() : entered_ms;
 
-			if (hostlink_session_check(&session, port->connected(), true, exit_now, now - last) !=
-			    HOSTLINK_STAY) {
-				leave_hotspot();
+			hostlink_leave_t why = hostlink_session_check(&session, port->connected(), true, exit_now,
+								      now - last);
+
+			if (why != HOSTLINK_STAY) {
+				leave_hotspot(why);
 			}
 #else
 			mode = HOSTLINK_IDLE;

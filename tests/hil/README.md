@@ -31,6 +31,7 @@ Without a radio every test is skipped with the reason (no failure). The radio is
 |---|---|
 | (none) | radio-only tests: version, screenshots, keys, FM receive, MMDVM requests that don't transmit |
 | `--allow-rf` | tests that transmit (marker `rf`: the SDR bench's transmitter; marker `radio_tx`: the radio itself) |
+| `--allow-usb-switch` | tests that switch the radio's USB personality to the network adapter and back (marker `usb_switch`) |
 | `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver |
 | `--allow-codeplug-write` | tests that write the codeplug over CPS (marker `codeplug_write`): the qdmr regions are read and saved to the test's tmp directory first, one channel name is changed, and the backup is written back and verified in a `finally` block |
 | `--allow-reboot` | tests that restart the radio (marker `reboot`) through the debug link's REBOOT (mode 0) |
@@ -79,7 +80,9 @@ put them in a file in the repository.
 | `test_boot.py` | version / features, ping latency, screenshot geometry, firmware clock vs wall clock (no stalls), view sections, diagnostics clock, error replies (unknown command, bad CRC, oversized request), log ring | radio |
 | `test_ui.py` | UP / DOWN change the channel on Home; OK opens the Hub (6 rows), digits open its destinations, BACK goes up, long BACK goes Home from depth 3; Quick settings open and close (BACK and QUICK); digits on Home start Find (`ui.query`); long QUICK locks and unlocks; long # opens Recent; diagnostics through Tools (Hub 5, 7); screenshots `ui_quick.png` and `ui_find.png`; injected keys count as activity. State is read from the link section (`ui.screen`, `ui.depth`, `ui.count`, `ui.locked`, `ui.query`, `ui.toast`) | radio |
 | `test_fm.py` | VFO on NOAA weather: squelch opens or RSSI above the floor within 10 s (receive only) | radio with the FM VFO |
-| `test_hotspot.py` | MMDVM GET_VERSION / GET_STATUS answered, the debug link answers in hotspot mode, hotspot left through the debug link (no transmission) | radio with the hotspot |
+| `test_hotspot.py` | MMDVM GET_VERSION / GET_STATUS answered (client with DTR clear, so its close doesn't end the session), the hotspot takes the modem (slot 2 space, `hs.running`, `hs.starts`), the debug link answers in hotspot mode, hotspot left through the debug link (no transmission) | radio with the hotspot |
+| `test_hotspot_sfr.py` | MMDVM SFR mode on the radio's channel: the version suffix, duplex with RX = TX turns it on (121-byte status, both space bytes 16, `sfr.on`), command 0xD5 ACK / NAK 4, simplex turns it off; sends nothing and expects a quiet channel (`sfr.tx_starts` unchanged) | `--allow-rf` (a call heard would be repeated), firmware with `CONFIG_SFR` |
+| `test_usb_network.py` | USB network personality: re-enumerates as CDC-NCM, DHCP gives the host 12.<ID>, ping and the debug link over UDP 3334 at the radio's address, back to serial | `--allow-usb-switch`, firmware with `CONFIG_DMR_IP_GATEWAY` |
 | `test_dmr_rx.py` | bench sends 2 group calls (10 superframes, 8 headers, 3 terminators each); counter deltas | `--allow-rf --allow-service-stop` |
 | `test_dmr_voice.py` | bench sends a speech recording; every frame reaches the speaker path | the same, and `--ambe` |
 | `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset | `--allow-rf --allow-service-stop` |
