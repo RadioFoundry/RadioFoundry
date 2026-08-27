@@ -995,6 +995,33 @@ static void test_privacy_hook(void)
 	CHECK(privacy_calls > 0);
 }
 
+// An emergency call (docs/spec/dmr-emergency.md 3): the emergency service option in the voice LC headers, the embedded
+// LC and the terminator, sent with impolite access as the radio core sets it in emergency
+static void test_emergency_tx(void)
+{
+	dmr_call_config_t c = base_cfg();
+	c.tx_svc = DMR_SVC_EMERGENCY;
+	c.access = DMR_ACCESS_IMPOLITE;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(500);
+	dmr_call_ptt(false);
+	run_ms(600);
+	int headers = 0, terminators = 0;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_VOICE_LC_HEADER) {
+			headers++;
+			CHECK(sim.air[i].payload[0] == DMR_FLCO_GROUP_VOICE && sim.air[i].payload[2] == DMR_SVC_EMERGENCY);
+		} else if (sim.air[i].kind == DMR_BURST_TERMINATOR_LC) {
+			terminators++;
+			CHECK(sim.air[i].payload[2] == DMR_SVC_EMERGENCY);
+		}
+	}
+	CHECK(headers == DMR_CALL_TX_HEADERS && terminators == 1);
+	CHECK(sim.emb_lc_set && sim.emb_lc[2] == DMR_SVC_EMERGENCY);
+	CHECK(sim.last_access == DMR_ACCESS_IMPOLITE);
+}
+
 static void test_impolite_over_call(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -1450,6 +1477,7 @@ int main(void)
 	test_late_entry();
 	test_alias_and_privacy();
 	test_privacy_hook();
+	test_emergency_tx();
 	test_impolite_over_call();
 	test_reconfigure();
 	test_tx_alias();

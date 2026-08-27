@@ -14,6 +14,7 @@
 #include "dmr/call/dmr_call.h"
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"
+#include "dmr/dmr_emergency.h"
 
 static int failures;
 
@@ -21,6 +22,7 @@ static int failures;
 
 #define OUR_ID		1234
 #define OTHER_ID	0x234567
+#define TG		9
 #define CC		2
 
 // --- Fake chip: reads from rd[page][reg]; writes to page 2, 0x40 and 0x50 captured as transmitted bursts ---
@@ -194,8 +196,9 @@ static bool env_clear(uint32_t now_ms, void *ctx) { return dmr_call_channel_clea
 static void env_notify(const dmrDataEvent_t *e, void *ctx) { if (e->kind < 16) events[e->kind]++; }
 
 static const dmrDataEnv_t env = { .txStart = env_tx_start, .channelClear = env_clear, .notify = env_notify };
-static const dmrDataChannel_t channel = { .ownId = OUR_ID, .talkGroup = 9, .rmo = false, .canTransmit = true,
+static const dmrDataChannel_t channel = { .ownId = OUR_ID, .talkGroup = TG, .rmo = false, .canTransmit = true,
 					  .channelKey = 1 };
+static const dmr_emergency_channel_t em_channel = { .can_transmit = true, .talk_id = TG, .talk_private = false };
 
 // --- The clock: timeslot interrupts every 30 ms (the RF TX interrupt 1.5 ms before one that follows a set-up),
 // receive reports 4 ms after a tick, the board task every 10 ms, the radio task (stack poll and service tick) every
@@ -250,6 +253,7 @@ static void run(uint32_t ms)
 		} else {
 			dmr_call_poll(t / 1000u);
 			dmrDataServiceTick(t / 1000u, &channel);
+			dmr_emergency_tick(t / 1000u, &em_channel);
 			next_radio_us += 10000;
 		}
 	}
@@ -295,6 +299,8 @@ static void setup(void)
 	dmrDataServiceSetSettings(&st);
 	dmrDataServiceResetStats();
 	dmr_call_set_data_rx(data_rx, NULL);
+	dmr_emergency_init(NULL);
+	dmr_emergency_reset_stats();
 	run(300);	// the receiver settles
 }
 
@@ -463,6 +469,258 @@ static void test_send_after_recent_activity(void)
 	CHECK(ntx >= 1);
 }
 
+
+// --- Emergency (docs/spec/dmr-emergency.md) ---
+
+// An emergency alarm to our talkgroup: the event, the alert (once for the repeats), no answer on air. One to a group
+// we don't listen to, and our own alarm repeated back, are only counted
+static void test_emergency_alarm_in(void)
+{
+	setup();
+	uint8_t c[10];
+	dmrBurst_t b[4];
+	dmrDataBuildEmergencyAlarm(TG, OTHER_ID, true, DMR_FID_MOTOROLA, c);
+	CHECK(c[0] == (0x80 | DMR_CSBKO_EMERGENCY_ALARM) && c[1] == DMR_FID_MOTOROLA && id24(&c[4]) == TG &&
+	      id24(&c[7]) == OTHER_ID);
+	dmrDataBuildCSBK(c, &b[0]);
+	b[1] = b[0];		// the sender repeats it
+	dmrDataBuildEmergencyAlarm(4242, OTHER_ID + 1, true, DMR_FID_MOTOROLA, c);
+	dmrDataBuildCSBK(c, &b[2]);
+	dmrDataBuildEmergencyAlarm(TG, OUR_ID, true, DMR_FID_ETSI, c);
+	dmrDataBuildCSBK(c, &b[3]);
+	queue_rx(b, 4);
+	run(1500);
+	dmrDataStats_t st;
+	dmrDataServiceGetStats(&st);
+	CHECK(st.emergencyAlarmsHeard == 3 && st.emergencyAlarmsReceived == 2);
+	CHECK(events[DMR_DATA_EV_EMERGENCY_ALARM] == 2);
+	dmr_emergency_alert_t a;
+	CHECK(dmr_emergency_alert(&a) && a.kind == DMR_EMERGENCY_ALERT_ALARM && a.src == OTHER_ID && a.dst == TG && a.group);
+	CHECK(a.pending == 1);
+	CHECK(dmr_emergency_take_tone() && !dmr_emergency_take_tone());
+	dmr_emergency_stats_t es;
+	dmr_emergency_get_stats(&es);
+	CHECK(es.alerts == 1 && es.alerts_alarm == 1);
+	CHECK(ntx == 0);	// nothing answers an alarm
+	dmr_emergency_dismiss();
+	run(50);
+	CHECK(!dmr_emergency_alert(&a) && a.src == OTHER_ID);
+}
+
+// The emergency key in "alarm only" mode: three alarm CSBKs about a second apart to the channel's talkgroup, then the
+// radio stays in emergency until cancelled
+static void test_emergency_alarm_out(void)
+{
+	setup();
+	dmr_emergency_settings_t es;
+	dmr_emergency_settings_default(&es);
+	es.mode = DMR_EMERGENCY_MODE_ALARM;
+	es.alarm_tries = 3;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	CHECK(dmr_emergency_start());
+	run(200);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ALARM && dmr_emergency_in_progress());
+	run(4000);
+	int alarms = 0;
+	uint32_t slots[3] = { 0 };
+	for (int i = 0; i < ntx; i++) {
+		if (txl[i].kind == DMR_BURST_CSBK && (txl[i].payload[0] & 0x3F) == DMR_CSBKO_EMERGENCY_ALARM) {
+			CHECK(txl[i].mcu_crc && dmrDataCheckCRC16(txl[i].payload, 0xA5));
+			CHECK(txl[i].payload[1] == DMR_FID_MOTOROLA && (txl[i].payload[2] & 0x80) == 0);
+			CHECK(id24(&txl[i].payload[4]) == TG && id24(&txl[i].payload[7]) == OUR_ID);
+			if (alarms < 3) {
+				slots[alarms] = txl[i].tick;
+			}
+			alarms++;
+		}
+	}
+	CHECK(alarms == 3);
+	CHECK((slots[1] - slots[0]) * 30u >= DMR_DATA_EMERGENCY_GAP_MS && (slots[2] - slots[1]) * 30u >= DMR_DATA_EMERGENCY_GAP_MS);
+	CHECK(events[DMR_DATA_EV_EMERGENCY_SENT] == 1);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && !dmr_emergency_hot_mic());
+	uint32_t id;
+	bool priv;
+	dmr_emergency_target(&id, &priv);
+	CHECK(id == TG && !priv);
+	dmr_emergency_cancel();
+	run(50);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !dmr_emergency_in_progress());
+	dmrDataStats_t st;
+	dmrDataServiceGetStats(&st);
+	CHECK(st.emergencyAlarmsSent == 3);
+}
+
+// --- ETSI short data (docs/spec/dmr-data.md 5.2) ---
+
+// A defined short data packet with any DD format and payload (the bit padding below an octet given)
+static int build_dd(uint8_t dd, const uint8_t *data, int len, uint8_t extra_pad_bits, bool response, dmrBurst_t *out)
+{
+	uint8_t pkt[96];
+	int blocks = (len + 4 + 11) / 12;
+	int pad = blocks * 12 - 4 - len;
+	uint8_t h[12] = { 0 };
+	h[0] = (uint8_t)((response ? 0x40 : 0) | (((blocks >> 4) & 3) << 4) | DMR_DPF_DEFINED_SHORT);
+	h[1] = (uint8_t)((DMR_SAP_SHORT_DATA << 4) | (blocks & 0x0F));
+	h[2] = (uint8_t)(OUR_ID >> 16); h[3] = (uint8_t)(OUR_ID >> 8); h[4] = (uint8_t)OUR_ID;
+	h[5] = (uint8_t)(OTHER_ID >> 16); h[6] = (uint8_t)(OTHER_ID >> 8); h[7] = (uint8_t)OTHER_ID;
+	h[8] = (uint8_t)((dd << 2) | 1);
+	h[9] = (uint8_t)(pad * 8 + extra_pad_bits);
+	uint16_t crc = 0;	// CRC-CCITT of the header, masked 0xCCCC
+	for (int i = 0; i < 10; i++) {
+		crc ^= (uint16_t)(h[i] << 8);
+		for (int k = 0; k < 8; k++)
+			crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+	}
+	crc = (uint16_t)(~crc ^ 0xCCCC);
+	h[10] = (uint8_t)(crc >> 8);
+	h[11] = (uint8_t)crc;
+	out[0].dataType = DT_DATA_HEADER;
+	out[0].length = 12;
+	out[0].flags = 0;
+	memcpy(out[0].payload, h, 12);
+	memset(pkt, 0, sizeof(pkt));
+	memcpy(pkt, data, len);
+	uint32_t c32 = dmrDataCRC32(pkt, len + pad);
+	pkt[len + pad] = (uint8_t)c32;
+	pkt[len + pad + 1] = (uint8_t)(c32 >> 8);
+	pkt[len + pad + 2] = (uint8_t)(c32 >> 16);
+	pkt[len + pad + 3] = (uint8_t)(c32 >> 24);
+	for (int i = 0; i < blocks; i++) {
+		out[1 + i].dataType = DT_RATE_12_DATA;
+		out[1 + i].length = 12;
+		out[1 + i].flags = 0;
+		memcpy(out[1 + i].payload, &pkt[i * 12], 12);
+	}
+	return 1 + blocks;
+}
+
+static bool decode_bursts(const dmrBurst_t *b, int n, char *text, int size)
+{
+	dmrDataRxReset();
+	for (int i = 0; i < n; i++) {
+		if (dmrDataRxBurst(&b[i]) == DMR_DATA_RX_PACKET) {
+			return dmrDataDecodeEtsiText(&dmrDataRxPacket, text, size);
+		}
+	}
+	return false;
+}
+
+// The text formats a receiver may meet: ISO 8859-1, 7-bit packed, UTF-16 BE / LE / with a BOM, UTF-8, UDT text
+static void test_etsi_text_formats(void)
+{
+	char text[64];
+	dmrBurst_t b[8];
+	static const uint8_t latin[] = { 'C', 'a', 'f', 0xE9 };
+	CHECK(decode_bursts(b, build_dd(DMR_DD_ISO8859_1, latin, 4, 0, false, b), text, sizeof(text)) &&
+	      strcmp(text, "Caf\xE9") == 0);
+	// "Hi!" in 7 bits: 1001000 1101001 0100001 = 21 bits in 3 octets, 3 bits of padding
+	static const uint8_t seven[] = { 0x91, 0xA5, 0x08 };
+	CHECK(decode_bursts(b, build_dd(DMR_DD_7BIT, seven, 3, 3, false, b), text, sizeof(text)) && strcmp(text, "Hi!") == 0);
+	static const uint8_t be[] = { 0x00, 'O', 0x00, 'K', 0x20, 0xAC };
+	CHECK(decode_bursts(b, build_dd(DMR_DD_UTF16BE, be, 6, 0, false, b), text, sizeof(text)) && strcmp(text, "OK?") == 0);
+	static const uint8_t le[] = { 'O', 0x00, 'K', 0x00 };
+	CHECK(decode_bursts(b, build_dd(DMR_DD_UTF16LE, le, 4, 0, false, b), text, sizeof(text)) && strcmp(text, "OK") == 0);
+	static const uint8_t bom[] = { 0xFF, 0xFE, 'b', 0x00, 'o', 0x00, 'm', 0x00 };
+	CHECK(decode_bursts(b, build_dd(DMR_DD_UTF16, bom, 8, 0, false, b), text, sizeof(text)) && strcmp(text, "bom") == 0);
+	static const uint8_t u8[] = { 'n', 0xC3, 0xA9, 0xE2, 0x82, 0xAC };
+	CHECK(decode_bursts(b, build_dd(DMR_DD_UTF8, u8, 6, 0, false, b), text, sizeof(text)) && strcmp(text, "n\xE9?") == 0);
+	CHECK(!decode_bursts(b, build_dd(DMR_DD_BINARY, latin, 4, 0, false, b), text, sizeof(text)));
+	// Our own builder, read back
+	int n = dmrDataBuildEtsiText(false, OUR_ID, OTHER_ID, "Round trip \xC4", true, 0, b, 8);
+	CHECK(n == 3 && decode_bursts(b, n, text, sizeof(text)) && strcmp(text, "Round trip \xC4") == 0);
+	CHECK(dmrDataRxPacket.dpf == DMR_DPF_DEFINED_SHORT && dmrDataRxPacket.sap == DMR_SAP_SHORT_DATA &&
+	      dmrDataRxPacket.responseRequested && dmrDataRxPacket.ddFormat == DMR_DD_ISO8859_1);
+	dmrDataRxReset();
+}
+
+// An ETSI text message to us with a response requested: kept in the inbox as ETSI, the ETSI response (ACK) goes out
+static void test_etsi_sms_in(void)
+{
+	setup();
+	dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+	int n = dmrDataBuildEtsiText(false, OUR_ID, OTHER_ID, "ETSI short data in", true, 1, b, DMR_DATA_MAX_BURSTS);
+	CHECK(n >= 3);
+	queue_rx(b, n);
+	run((uint32_t)n * 60u + 1500u);
+	dmrDataStats_t st;
+	dmrDataServiceGetStats(&st);
+	CHECK(st.smsReceived == 1 && st.etsiSmsReceived == 1 && events[DMR_DATA_EV_SMS_RECEIVED] == 1);
+	dmrDataMessage_t m;
+	CHECK(sms_inbox_get(0, &m) && strcmp(m.text, "ETSI short data in") == 0 && m.format == DMR_SMS_FORMAT_ETSI &&
+	      m.src == OTHER_ID);
+	CHECK(st.responsesSent == 1 && st.tmsAcksSent == 0 && ntx == 1);
+	if (ntx >= 1) {
+		CHECK(txl[0].kind == DMR_BURST_DATA_HEADER && dmrDataCheckCRC16(txl[0].payload, 0xCC));
+		CHECK((txl[0].payload[0] & 0x0F) == DMR_DPF_RESPONSE && (txl[0].payload[1] >> 4) == DMR_SAP_SHORT_DATA);
+		CHECK(DMR_RESPONSE_IS_ACK(txl[0].payload[9]) && id24(&txl[0].payload[2]) == OTHER_ID &&
+		      id24(&txl[0].payload[5]) == OUR_ID);
+	}
+}
+
+// Our ETSI message (the setting's default format): defined short data on air, OK once the ETSI response is heard
+static void test_etsi_sms_out(void)
+{
+	setup();
+	dmrDataSettings_t set;
+	dmrDataServiceGetSettings(&set);
+	set.smsFormat = DMR_SMS_FORMAT_ETSI;
+	dmrDataServiceSetSettings(&set);
+	CHECK(sms_send(OTHER_ID, false, "Out in ETSI form", true, DMR_SMS_FORMAT_DEFAULT));
+	run(1500);
+	CHECK(sms_send_state() == DMR_REQ_SENDING);
+	char text[64];
+	dmrBurst_t b[16];
+	int n = captured(0, b, 16);
+	CHECK(n >= 3 && decode_bursts(b, n, text, sizeof(text)) && strcmp(text, "Out in ETSI form") == 0);
+	CHECK(dmrDataRxPacket.dst == OTHER_ID && dmrDataRxPacket.src == OUR_ID && dmrDataRxPacket.responseRequested);
+	dmrDataRxReset();
+	dmrBurst_t r;
+	dmrDataBuildResponseAck(DMR_SAP_SHORT_DATA, OUR_ID, OTHER_ID, 0, &r);
+	queue_rx(&r, 1);
+	run(500);
+	CHECK(sms_send_state() == DMR_REQ_OK && events[DMR_DATA_EV_SMS_SENT] == 1);
+	dmrDataStats_t st;
+	dmrDataServiceGetStats(&st);
+	CHECK(st.etsiSmsSent == 1 && st.etsiResponsesReceived == 1 && st.smsAcked == 1);
+	set.smsFormat = DMR_SMS_FORMAT_TMS;
+	dmrDataServiceSetSettings(&set);
+}
+
+// Our radio check in the ETSI form (FID 0x00), answered in the ETSI order (to us from the checked radio)
+static void test_radio_check_etsi(void)
+{
+	setup();
+	dmrDataSettings_t set;
+	dmrDataServiceGetSettings(&set);
+	set.radioCheckEtsi = true;
+	dmrDataServiceSetSettings(&set);
+	CHECK(dmr_signal_radio_check(OTHER_ID));
+	run(400);
+	CHECK(ntx >= 1);
+	if (ntx >= 1) {
+		CHECK((txl[0].payload[0] & 0x3F) == DMR_CSBKO_RADIO_CHECK && txl[0].payload[1] == DMR_FID_ETSI &&
+		      txl[0].payload[3] == 0x80 && id24(&txl[0].payload[4]) == OTHER_ID && id24(&txl[0].payload[7]) == OUR_ID);
+	}
+	dmrBurst_t b;
+	csbk_burst(DMR_CSBKO_RADIO_CHECK, DMR_FID_ETSI, 0, OUR_ID, OTHER_ID, &b);
+	queue_rx(&b, 1);
+	run(600);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK && events[DMR_DATA_EV_RADIO_CHECK_OK] == 1);
+	// An ETSI-form check to us is answered too (the request echoed with octet 3 cleared, FID kept)
+	int sent = ntx;
+	csbk_burst(DMR_CSBKO_RADIO_CHECK, DMR_FID_ETSI, 0x80, OUR_ID, OTHER_ID, &b);
+	queue_rx(&b, 1);
+	run(800);
+	CHECK(ntx == sent + 1);
+	if (ntx == sent + 1) {
+		CHECK((txl[sent].payload[0] & 0x3F) == DMR_CSBKO_RADIO_CHECK && txl[sent].payload[1] == DMR_FID_ETSI &&
+		      txl[sent].payload[3] == 0x00 && id24(&txl[sent].payload[4]) == OUR_ID);
+	}
+	set.radioCheckEtsi = false;
+	dmrDataServiceSetSettings(&set);
+}
+
 int main(void)
 {
 	hrc6000_attach(&dev, &bus);
@@ -471,8 +729,14 @@ int main(void)
 	test_sms_in(DT_RATE_34_DATA, "Rate three quarters, a little longer text");
 	test_sms_in(DT_RATE_1_DATA, "Rate one");
 	test_radio_check_out();
+	test_radio_check_etsi();	// before a check is left unanswered (the state carries over)
 	test_call_alert_out_no_answer();
 	test_send_after_recent_activity();
+	test_emergency_alarm_in();
+	test_emergency_alarm_out();
+	test_etsi_text_formats();
+	test_etsi_sms_in();
+	test_etsi_sms_out();
 	if (failures) {
 		printf("# dmrDataChainTest: %d FAILED\n", failures);
 		return 1;

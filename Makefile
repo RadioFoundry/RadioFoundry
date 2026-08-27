@@ -48,6 +48,10 @@ endif
 ifeq ($(CONFIG_DMR_DATA_CORE),y)
 APP_SRC += core/dmr/dmrData.c core/dmr/dmrDataService.c core/dmr/dmrLrrp.c
 endif
+# DMR emergency (the alarm goes through the data service above)
+ifeq ($(CONFIG_DMR_EMERGENCY),y)
+APP_SRC += core/dmr/dmr_emergency.c
+endif
 # The single frequency repeater: the generic logic and its runner on the DMR modem (the hotspot's SFR mode is in
 # core/hotspot/hotspotSfr.c)
 ifeq ($(CONFIG_SFR),y)
