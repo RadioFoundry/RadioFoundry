@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Baofeng DM-32UV: HR_C7000 SoC (C-SKY CK803S + DMR modem) + FD6818 + ST7789 240x320 on i8080
+PLATFORM   := hrc7000
+# The CPS-compatible codeplug image sits at +0x700000 in the 16 MB data flash, below it is all stock data
+# (docs/spec/legacy-cps-interop.md 7.4, hardware-dm32.md 10.1)
+MCU_DEFS   := -DCODEPLUG_LEGACY_EEPROM_BASE=0x700000u -DCODEPLUG_LEGACY_FLASH_BASE=0x720000u
+LDSCRIPT   := boards/dm32/dm32.ld
+BOARD_DIRS := boards/dm32 drivers/rf/fd6818 drivers/modem/hrc7000 drivers/display/st7789 drivers/flash/spi_nor \
+	drivers/input/keymatrix

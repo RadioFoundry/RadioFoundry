@@ -15,7 +15,7 @@
 #include "codeplug/codeplug.h"
 #include "hal_time.h"
 #include "config.h"
-#if CONFIG_USB
+#if CONFIG_HOSTLINK
 #include "hostlink/hostlink.h"
 #endif
 #if CONFIG_DMR_DATA_CORE
@@ -96,7 +96,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		st = settings_begin();
 		st->hotspot_allowed = value != 0;
 		settings_end(hal_millis());
-#if CONFIG_USB
+#if CONFIG_HOSTLINK
 		hostlink_set_hotspot_allowed(value != 0);
 #endif
 		return true;

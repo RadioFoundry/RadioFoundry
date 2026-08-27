@@ -119,7 +119,10 @@ static const char features[] = "features="
 #if CONFIG_BATTERY_SAVE
 	"BATTERY_SAVE,"
 #endif
-	"USB,DEBUGLINK\n";
+#if CONFIG_USB
+	"USB,"
+#endif
+	"HOSTLINK,DEBUGLINK\n";	// the debug link always runs on the host link (USB CDC or a UART)
 
 // --- little endian helpers ---
 

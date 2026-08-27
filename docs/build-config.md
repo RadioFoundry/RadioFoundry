@@ -10,6 +10,7 @@ make BOARD=dm1701                        # the board's defaults
 make BOARD=dm1701 CONFIG_DMR=n           # FM only
 make BOARD=dm1701 CONFIG_VFO=n           # programmed channels only
 make BOARD=dm1701 CONFIG_DISPLAY_INSET=3 # smaller screen margins
+make BOARD=dm32                          # DM-32UV (csky-elf toolchain: tools/build-csky-toolchain.sh)
 ```
 
 Each switch reaches C as `CONFIG_<NAME>` = 0 or 1, always defined: test it with `#if CONFIG_X`, never `#ifdef`.
@@ -40,18 +41,19 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert and radio check, answered and sent |
 | `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter, carried by the data service (`docs/spec/usb-network.md`) |
 | `CONFIG_SFR` | n | single frequency repeater: the MMDVM hotspot's SFR mode (duplex with RX = TX); the stand-alone repeater and user roles on a channel are not wired yet (`docs/spec/sfr.md`) |
-| `CONFIG_USB` | y | USB device (CDC serial) |
+| `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
+| `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
 | `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
-| `CONFIG_HOTSPOT` | = DMR and USB | MMDVM modem / hotspot over USB |
-| `CONFIG_DEBUGLINK` | = USB | USB debug link for bench automation: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
-| `CONFIG_CPS_LEGACY` | = USB | legacy CPS protocol on the USB serial port (qdmr, the legacy CPS, `tools/cps_client.py`): codeplug read / write, radio info (`docs/spec/cps-protocol.md` 2). The settings store and the sector journal (`docs/spec/settings-store.md`) are always built |
+| `CONFIG_HOTSPOT` | = DMR and HOSTLINK | MMDVM modem / hotspot over the host port |
+| `CONFIG_DEBUGLINK` | = HOSTLINK | debug link for bench automation on the host port: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
+| `CONFIG_CPS_LEGACY` | = HOSTLINK | legacy CPS protocol on the host port (USB serial, or the DM-32 programming cable UART; qdmr, the legacy CPS, `tools/cps_client.py`): codeplug read / write, radio info (`docs/spec/cps-protocol.md` 2). The settings store and the sector journal (`docs/spec/settings-store.md`) are always built |
 | `CONFIG_VFO` | y | tuning a frequency by hand |
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO (not built yet) |
 | `CONFIG_DIAG` | y | the diagnostics page |
 | `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
-| `CONFIG_FONT_XL` | n | 16x32 font, for 240 px and wider displays |
+| `CONFIG_FONT_XL` | n | 16x32 font, for 240 px and wider displays (the DM-32 draws at 120x160, so it stays off there) |
 | `CONFIG_UI_SETTINGS` | y | the Settings menu on the radio; off: settings keep their stored values and are set with qdmr (`docs/spec/ui.md` 5) |
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is.

@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The OpenDigitalRadio Authors
+// HR_C7000 baseband (the modem inside the DM-32's SoC): register map, power-on set-up, FM modes, sub-audio, audio
+// paths and the internal audio codec (docs/spec/modem-hrc7000.md 2, 4, 5.1, 8; hardware-dm32.md 9).
+//
+// The modem is memory mapped: 32-bit registers at 0x11000000, byte buffers at 0x16000000. The driver reaches both
+// through the base pointers given to hrc7000_attach, so host tests can run it on plain arrays. Peripherals outside
+// the modem (the DAC for the PA drive, the ADC, the IO mux) belong to the board.
+#ifndef HRC7000_H
+#define HRC7000_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#define HRC7000_REG_BASE	0x11000000u
+#define HRC7000_BUF_BASE	0x16000000u
+
+// --- Registers (byte offsets from HRC7000_REG_BASE) ---
+#define C7_SYS_SOFT_RSTN	0x000u
+#define C7_DAC_CONTROL		0x070u
+#define C7_ADC_CONTROL		0x074u
+#define C7_AUDIO_CONTROL	0x080u
+#define C7_AUDIO_BUFFER_CLR	0x084u
+#define C7_LINEOUT_CTRL		0x088u
+#define C7_WORK_MODE		0x100u
+#define C7_RF_MODE		0x104u
+#define C7_SIG_CENTER		0x108u
+#define C7_TX_IF_FREQ		0x10Cu
+#define C7_RF_CONTROL		0x110u
+#define C7_RF_MOD_BIAS		0x114u
+#define C7_DEV_LIMITER		0x118u
+#define C7_THRESHOLD		0x120u
+#define C7_SEND_DATA_SYNC_H	0x12Cu
+#define C7_SEND_DATA_SYNC_L	0x130u
+#define C7_SEND_RC_SYNC_H	0x134u
+#define C7_SEND_RC_SYNC_L	0x138u
+#define C7_RECV_MS_SYNC_H	0x13Cu
+#define C7_RECV_MS_SYNC_L	0x140u
+#define C7_RECV_BS_SYNC_H	0x144u
+#define C7_RECV_BS_SYNC_L	0x148u
+#define C7_RECV_TDMA1_SYNC_H	0x14Cu
+#define C7_RECV_TDMA1_SYNC_L	0x150u
+#define C7_RECV_TDMA2_SYNC_H	0x154u
+#define C7_RECV_TDMA2_SYNC_L	0x158u
+#define C7_RECV_RC_SYNC_H	0x15Cu
+#define C7_RECV_RC_SYNC_L	0x160u
+#define C7_RECV_INFO_COUNT	0x164u
+#define C7_REG_X06		0x168u
+#define C7_RX_IF_FREQ		0x1B0u
+#define C7_RF_RECV_DELAY	0x1B4u
+#define C7_PI_CRC_MASK		0x350u
+#define C7_RS_H_MASK		0x354u
+#define C7_RS_H_INIT		0x358u
+#define C7_RS_T_MASK		0x35Cu
+#define C7_RS_T_INIT		0x360u
+#define C7_CSBK_CRC_MASK	0x364u
+#define C7_MBCH_CRC_MASK	0x368u
+#define C7_DATAH_CRC_MASK	0x36Cu
+#define C7_CRC8_INIT		0x380u
+#define C7_LOCAL_CC		0x384u
+#define C7_VOICE_EMB_CTRL	0x388u
+#define C7_SCRAMBLE_REG		0x38Cu
+#define C7_RX_TYPE_INFO		0x390u
+#define C7_RX_INFO		0x394u
+#define C7_SYS_INTERP_LIST	0x398u
+#define C7_SYS_INTERP_MASK	0x39Cu	// 1 = enabled
+#define C7_SYS_INTERP_CLEAR	0x3A0u
+#define C7_INTERP_CLEAR		0x3B0u
+#define C7_LAYER2_CONTROL	0x400u
+#define C7_LAYER2_SLOTON	0x404u
+#define C7_LAYER2_TXRX_CTRL	0x408u
+#define C7_LAYER2_SEND_TYPE	0x418u
+#define C7_LAYER2_STATUS	0x41Cu
+#define C7_LAYER2_SLOT_PRE	0x424u
+#define C7_FM_BANDWIDTH		0x500u
+#define C7_FM_DEV_COEF		0x504u
+#define C7_FM_SQL		0x508u
+#define C7_SUBVOICE_COEF	0x50Cu
+#define C7_FM_MOD		0x510u
+#define C7_CTCSS_ADDR		0x518u
+#define C7_USER_DEFINE_CTC	0x51Cu
+#define C7_CDCSS_ADDR		0x520u
+#define C7_FM_TONE1		0x550u
+#define C7_FM_TONE2		0x554u
+#define C7_FM_TONE3		0x558u
+#define C7_FM_TONE4		0x55Cu
+#define C7_FM_PTT		0x560u
+#define C7_FM_DECODE_FLAG2	0x568u
+
+// --- Buffers (byte offsets from HRC7000_BUF_BASE) ---
+#define C7_TX_RAM		0x000u
+#define C7_RX_RAM		0x4B0u
+#define C7_VOICE_RAM		0x960u	// 27 bytes, TX and RX
+#define C7_PROMPT_FIFO		0x980u
+#define C7_CODEC		0x9C0u	// internal audio codec, byte registers
+
+// Codec registers (offsets from C7_CODEC)
+#define C7_CODEC_AICR_DAC	0x08u
+#define C7_CODEC_AICR_ADC	0x09u
+#define C7_CODEC_CR_MIC1	0x0Bu
+#define C7_CODEC_CR_MIC2	0x0Cu
+#define C7_CODEC_CR_DAC		0x0Du	// b7 = mute line out
+#define C7_CODEC_CR_ADC		0x0Fu	// b7 = mute the mic
+#define C7_CODEC_CR_VIC		0x12u
+#define C7_CODEC_CR_CK		0x13u
+#define C7_CODEC_GCR_DACL	0x1Fu
+#define C7_CODEC_GCR_MIC1	0x23u
+#define C7_CODEC_GCR_ADCL	0x25u
+#define C7_CODEC_CR_DAC_AGC	0x2Bu
+#define C7_CODEC_CR_ADC_AGC	0x2Fu
+#define C7_CODEC_DR_ADC_AGC	0x30u
+
+// WORK_MODE values: the only two the working firmware writes (2.1)
+#define C7_WORK_MODE_FM		0x80u
+#define C7_WORK_MODE_DMR	0x6Eu
+
+// AUDIO_CONTROL bits (8.1)
+#define C7_AUDIO_RING_FULL	(1u << 31)
+#define C7_AUDIO_RING_PLAY	(1u << 7)
+#define C7_AUDIO_FM_PLAY	(1u << 6)
+#define C7_AUDIO_PCM_SPK	(1u << 5)	// CPU-fed speaker PCM
+#define C7_AUDIO_PCM_MIC	(1u << 4)	// mic PCM to the CPU
+#define C7_AUDIO_I2S_SLAVE	(1u << 1)
+
+// INTERP_CLEAR bits (2.4)
+#define C7_INT_TS_TX		(1u << 0)
+#define C7_INT_TS_RX		(1u << 1)
+#define C7_INT_RF_TX		(1u << 2)
+#define C7_INT_RF_RX		(1u << 3)
+#define C7_INT_PCM_WR		(1u << 4)
+#define C7_INT_PCM_RD		(1u << 5)
+
+// PCM buffers in the system SRAM shared with the modem (160 bytes = 80 samples each, 10 ms)
+#define C7_PCM_MIC_ADDR		0x18000000u
+#define C7_PCM_SPK_ADDR		0x180000A0u
+#define C7_PCM_SAMPLES		80u
+
+typedef struct {
+	volatile uint32_t *regs;	// HRC7000_REG_BASE
+	volatile uint8_t *buf;		// HRC7000_BUF_BASE
+	uint32_t audio_ctl;		// shadow of AUDIO_CONTROL (the CPU's bits)
+} hrc7000_t;
+
+static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
+static inline uint32_t hrc7000_rd(hrc7000_t *d, uint32_t off) { return d->regs[off / 4u]; }
+static inline void hrc7000_codec_wr(hrc7000_t *d, uint8_t reg, uint8_t v) { d->buf[C7_CODEC + reg] = v; }
+static inline uint8_t hrc7000_codec_rd(hrc7000_t *d, uint8_t reg) { return d->buf[C7_CODEC + reg]; }
+
+void hrc7000_attach(hrc7000_t *d, volatile uint32_t *regs, volatile uint8_t *buf);
+
+// --- Calibration values (hardware-dm32.md 11.3) ---
+// SIG_CENTER: TX I and Q center = the factory TX center byte (128 without calibration)
+static inline uint32_t hrc7000_sig_center(uint8_t tx_center) { return ((uint32_t)tx_center << 24) | ((uint32_t)tx_center << 16); }
+// RF_MOD_BIAS_CTRL: two-point bias from the TX center, modulation balance (b x 0x0101) from the frequency
+static inline uint32_t hrc7000_mod_bias(uint8_t tx_center, uint16_t modcal) { return (((uint32_t)tx_center + 384u) << 16) | modcal; }
+#define HRC7000_MODCAL_DEFAULT	0x4D4Du	// before a TX frequency is known
+
+// --- Sequences ---
+
+// Power-on set-up (modem-hrc7000.md 4 steps 4-32; the board does steps 1-3: ADC, IO mux and DAC). Leaves the modem in
+// FM (WORK_MODE 0x80) with every DMR register written once, the modem system interrupts enabled at the chip and
+// mic_gain (0..42 dB) in GCR_ADCL
+void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db);
+void hrc7000_set_mic_gain(hrc7000_t *d, uint8_t db);
+// Speaker line out gain: 0 = -31 dB .. 31 = 0 dB .. 63 = +32 dB (GCR_DACL bits 5:0)
+void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);
+
+// FM receive / transmit (8.2). wide = 25 kHz. FM receive turns the FM audio path to the speaker on
+void hrc7000_fm_rx(hrc7000_t *d, bool wide);
+void hrc7000_fm_tx(hrc7000_t *d, bool wide);
+// Back to the FM idle state: FM_PTT off, FM audio off
+void hrc7000_fm_idle(hrc7000_t *d);
+
+// Enter DMR (5.1): modulation balance for the TX frequency, mic gain, WORK_MODE 0x80 then 0x6E. The board turns the
+// PA drive DAC back on first (FM receive powers it down)
+void hrc7000_dmr_enter(hrc7000_t *d, uint32_t mod_bias, uint8_t mic_gain_db);
+
+// Audio paths (AUDIO_CONTROL bits, the shadow keeps the CPU's view)
+void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear);
+void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted);
+
+// --- Sub-audio by the modem's own engine (8.1, 8.2) ---
+
+// CTCSS tone address for Hz x 10 (table 59), 0 if the tone isn't a standard one
+uint8_t hrc7000_ctcss_addr(uint16_t hz_x10);
+// USER_DEFINE_CTC step for a non-standard tone: round(f x 65.536), with the enable bit
+uint32_t hrc7000_user_ctcss(uint16_t hz_x10);
+
+typedef enum { HRC7000_TONE_NONE, HRC7000_TONE_CTCSS, HRC7000_TONE_DCS, HRC7000_TONE_DCS_INV } hrc7000_tone_t;
+// TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19)
+void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t value);
+// The received tone or code matches (FM_DECODE_FLAG2 b0 CTCSS / b1 CDCSS); true when no RX tone is set
+bool hrc7000_subtone_ok(hrc7000_t *d);
+// FM noise measure (FM_SQL bits 15:0, higher = less signal)
+static inline uint16_t hrc7000_fm_noise(hrc7000_t *d) { return (uint16_t)hrc7000_rd(d, C7_FM_SQL); }
+
+#endif

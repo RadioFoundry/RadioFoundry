@@ -11,6 +11,7 @@ repeatable and each skipping cleanly what it can't reach:
 | Hardware in the loop, radio only | the radio on USB | `python3 -m pytest tests/hil -v -rs` | `tests/hil/README.md` |
 | Hardware in the loop, on air | the radio and the SDR bench (and the RadioDesk sandbox for one test) | the same with opt-in flags | `tests/hil/README.md`, section 3 here |
 | Manual bench cases | the SDR bench, a person at the radio | `tools/bench/dmr_bench.py run CASE` | `docs/testing/dmr-bench.md` |
+| DM-32UV first hardware test | a DM-32UV on its programming cable, a dummy load | step by step | `docs/testing/dm32-bringup.md` |
 
 ## 1. The release gate: `tools/ci.sh`
 
@@ -128,4 +129,5 @@ they are never written into the repository.
 
 `docs/testing/dmr-bench.md`: the DMR test cases that need a person at the radio (talking, reading the display), run
 end to end by `tools/bench/dmr_bench.py` with automatic checks where possible; `--dry-run` prints every command
-first. `docs/testing/mmdvm-audit.md`: the MMDVM protocol audit of the hotspot.
+first. `docs/testing/mmdvm-audit.md`: the MMDVM protocol audit of the hotspot. `docs/testing/dm32-bringup.md`: the
+DM-32UV port's first test on a radio, in order, with what to change when a step fails.
