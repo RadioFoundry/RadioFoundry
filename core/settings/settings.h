@@ -86,6 +86,16 @@ typedef struct {
 	uint8_t ds_flags;		// SETTINGS_DS_* bits
 	uint8_t ds_stored;		// 1 = the ds_ fields hold the data service's settings
 	uint16_t reserved4;
+	// DMR emergency (dmr_emergency_settings_t, docs/spec/dmr-emergency.md); em_stored 0 = never set (the defaults)
+	uint32_t em_dst;		// emergency target, 0 = the channel's talk target
+	uint8_t em_mode;		// dmr_emergency_mode_t
+	uint8_t em_flags;		// SETTINGS_EM_* bits
+	uint8_t em_alarm_tries;
+	uint8_t em_hot_mic_s;
+	uint8_t em_stored;		// 1 = the em_ fields hold the emergency settings
+	// The hotspot's CW ID (docs/spec/mmdvm-protocol.md 2.11): 0 = the default
+	uint8_t cw_wpm;			// Morse speed, words per minute (PARIS)
+	uint16_t cw_tone_hz;		// keyer tone
 } settings_t;
 
 // settings_t.rs_flags
@@ -99,6 +109,13 @@ typedef struct {
 #define SETTINGS_DS_RADIO_CHECK_REPLY	0x01u
 #define SETTINGS_DS_CALL_ALERT_ACK	0x02u
 #define SETTINGS_DS_LRRP_REPLY		0x04u
+#define SETTINGS_DS_SMS_ETSI		0x08u	// sms_send's default format is ETSI, else TMS
+#define SETTINGS_DS_RADIO_CHECK_ETSI	0x10u	// our radio checks in the ETSI form (FID 0x00)
+
+// settings_t.em_flags
+#define SETTINGS_EM_DST_PRIVATE		0x01u
+#define SETTINGS_EM_ETSI_FID		0x02u
+#define SETTINGS_EM_NO_TONE		0x04u
 
 typedef enum {
 	SETTINGS_RAM,		// no flash: defaults, nothing saved

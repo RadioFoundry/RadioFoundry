@@ -16,6 +16,9 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #endif
+#if CONFIG_DMR_EMERGENCY
+#include "dmr/dmr_emergency.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -126,6 +129,9 @@ void radio_core_start(void)
 {
 #if CONFIG_DMR_DATA_CORE
 	dmrDataServiceSetLock(data_lock, data_unlock);
+#endif
+#if CONFIG_DMR_EMERGENCY
+	dmr_emergency_set_lock(data_lock, data_unlock);	// the same short copies
 #endif
 	view_lock = xSemaphoreCreateMutex();
 	requests = xQueueCreate(RADIO_QUEUE_LEN, sizeof(radio_req_t));

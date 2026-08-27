@@ -811,6 +811,19 @@ static bool tx_tone(uint16_t hz)
 	return true;
 }
 
+// Morse keying of the FM TX tone (hardware-dm1701.md 5.8): the tone deviation (reg 0x59 bits 15:6) to 0 for key up,
+// back to the tone value for key down. The tone generator stays the voice source and the HR_C6000 microphone input
+// stays muted, so the gaps are silent. Unverified on the bench, like tx_tone
+static bool tx_tone_key(bool down)
+{
+	if (!r.tx_on || r.mode != RADIO_MODE_FM || r.tone_hz == 0) {
+		return false;
+	}
+	uint16_t dev = down ? 0x40u : 0x00u;
+	count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));
+	return true;
+}
+
 // Receiver battery saving (FM receive only): the AT1846S idle and the RX supply off; waking retunes with rx()
 static void rx_sleep(bool sleep)
 {
@@ -837,6 +850,7 @@ const hal_radio_t dm1701_radio = {
 	.audio = audio,
 	.volume = volume,
 	.tx_tone = tx_tone,
+	.tx_tone_key = tx_tone_key,
 	.rx_sleep = rx_sleep,
 };
 

@@ -10,6 +10,7 @@
 #include "radio/radio.h"
 #include "radio/scan.h"
 #include "radio/battery.h"
+#include "radio/morse.h"
 
 #define RADIO_POLL_MS		25	// status poll and squelch period
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
@@ -94,6 +95,7 @@ typedef enum {
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
 	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done)
 	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
+	RREQ_HS_CWID,		// hotspot: key the CW ID left by radio_hs_ops.cw_id (radio_hotspot.h)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -206,6 +208,18 @@ typedef struct {
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
+#if CONFIG_HOTSPOT
+	uint8_t cw_phase;		// hotspot CW ID: CW_* in radio_sm.c, 0 = not keying
+	morse_t cw;
+	uint32_t cw_ms;			// start of the current phase
+	uint32_t cw_start_ms;		// carrier up
+	uint16_t cw_tone_hz;
+	bool cw_key;			// the tone keyed now
+#endif
+#endif
+#if CONFIG_DMR_EMERGENCY
+	bool em_keyed;			// the emergency hot mic keyed the transmitter (not PTT)
+	uint32_t em_cfg_serial;		// dmr_emergency_config_serial() the call stack was configured with
 #endif
 } radio_sm_t;
 

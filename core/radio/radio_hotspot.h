@@ -30,4 +30,21 @@ void radio_hs_watch(radio_sm_t *sm, uint32_t now_ms);
 // Bumped when the hotspot engine reports a change
 uint32_t radio_hs_serial(void);
 
+// --- CW ID (SEND_CWID): the cw_id op copies the callsign here and posts RREQ_HS_CWID; the radio task keys it in Morse
+// on FM (radio_sm.c, core/radio/morse.c) and reports back. cw_busy is true from the op until the radio task is done ---
+typedef struct {
+	uint32_t requests;	// cw_id ops taken
+	uint32_t sent;		// IDs keyed to the end
+	uint32_t refused;	// the radio task couldn't key (not in hotspot mode, no TX frequency, no FM tone, busy)
+	uint32_t last_ms;	// the last ID's time on air (carrier up to down)
+	uint8_t wpm;		// the speed of the last ID
+	bool active;		// keying now (or about to)
+} radio_hs_cw_stats_t;
+// Radio task: the callsign the last cw_id op left (len bytes, not NUL terminated); 0 when none is waiting
+uint8_t radio_hs_cw_take(char *out, uint8_t cap);
+// Radio task: keying started (wpm), ended (sent: to the end; ms on air), or refused
+void radio_hs_cw_started(uint8_t wpm);
+void radio_hs_cw_ended(bool sent, uint32_t ms);
+void radio_hs_cw_get_stats(radio_hs_cw_stats_t *out);
+
 #endif

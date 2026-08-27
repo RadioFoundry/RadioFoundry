@@ -120,6 +120,7 @@ early on CTCSS loss conflicts with the tone debounce (8 polls) that keeps fades 
 | battery low | 800 Hz, 600 Hz | entering low, then every 2 min |
 | battery critical | 600 Hz three times | entering critical, then every 30 s |
 | scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` |
+| emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (`dmr-emergency.md`) |
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
 scale so a beep mixed over voice doesn't clip. Volume is relative to the knob: the beep goes through the same

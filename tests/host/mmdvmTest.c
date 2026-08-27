@@ -15,6 +15,7 @@
 #include "hotspot/hotspotUplink.h"
 #include "dmr/call/dmr_lc.h"
 #include "hostlink/hostlink.h"
+#include "radio/morse.h"
 
 static int failures;
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
@@ -1307,6 +1308,48 @@ static void test_end(void)
 	CHECK(!hotspot_running() && r.enters == 1 && r.leaves == 1);
 }
 
+// The Morse timing behind the CW ID (core/radio/morse.c): PARIS at 20 wpm, the code table, the keying over time
+static void test_morse(void)
+{
+	CHECK(morse_dot_ms(20) == 60 && morse_dot_ms(12) == 100 && morse_dot_ms(1) == 1200 / MORSE_WPM_MIN &&
+	      morse_dot_ms(99) == 1200 / MORSE_WPM_MAX);
+	CHECK(morse_code('A') == 0x05 && morse_code('a') == 0x05 && morse_code('E') == 0x02 && morse_code('T') == 0x03);
+	CHECK(morse_code('Q') == 0x1D && morse_code('0') == 0x3F && morse_code('5') == 0x20 && morse_code('/') == 0x32);
+	CHECK(morse_code('#') == 0);
+	// PARIS is 50 units with the word gap after it: 43 keyed, PARIS PARIS 43 + 7 + 43
+	CHECK(morse_units("PARIS", 5) == 43);
+	CHECK(morse_units("PARIS PARIS", 11) == 93);
+	CHECK(morse_units("E", 1) == 1 && morse_units("T", 1) == 3 && morse_units("EE", 2) == 5);
+	CHECK(morse_units("  E # E ", 8) == 9);	// leading spaces and unknown characters skipped, the space a word gap
+	CHECK(morse_units("", 0) == 0 && morse_units("###", 3) == 0);
+	// Keying "AT" at 20 wpm from t = 1000: A .- (dot 0-60, gap, dash 120-300), character gap, T - (480-660)
+	morse_t mo;
+	morse_start(&mo, "AT", 2, 20, 1000);
+	uint32_t edges[8];
+	int n = 0;
+	bool key = false;
+	for (uint32_t t = 1000; t < 2000 && n < 8; t += 5) {
+		bool k = morse_poll(&mo, t);
+		if (k != key) {
+			edges[n++] = t - 1000;
+			key = k;
+		}
+	}
+	CHECK(n == 6);
+	if (n == 6) {
+		CHECK(edges[0] == 0 && edges[1] == 60 && edges[2] == 120 && edges[3] == 300 && edges[4] == 480 &&
+		      edges[5] == 660);
+	}
+	CHECK(mo.done && !mo.key && mo.units == 11);
+	// A slow poll keeps the timing (segments end on the schedule, not on the poll)
+	morse_start(&mo, "EEE", 3, 20, 0);
+	morse_poll(&mo, 0);
+	CHECK(mo.key);
+	CHECK(!morse_poll(&mo, 70) && mo.until == 240);
+	CHECK(morse_poll(&mo, 240) && mo.until == 300);
+	CHECK(!morse_poll(&mo, 1000) && mo.done);
+}
+
 int main(void)
 {
 	test_framer();
@@ -1329,6 +1372,7 @@ int main(void)
 	test_mode_idle();
 	test_pocsag();
 	test_cwid();
+	test_morse();
 	test_ext_space();
 	test_hostlink_dtr();
 	test_end();
