@@ -91,6 +91,16 @@ fi
 
 # ── 3. firmware: every board, the feature matrix, sizes ──────────────────────
 # build BOARD NAME [make variables...]: one configuration; appends a row to the size report
+# "205744" "B" / "880" "KB" / "1" "MB" (the linker's --print-memory-usage units) to bytes; empty when unknown
+tobytes() {
+	case "$2" in
+	B) echo "$1" ;;
+	KB) echo $(($1 * 1024)) ;;
+	MB) echo $(($1 * 1048576)) ;;
+	*) echo "" ;;
+	esac
+}
+
 build() {
 	b=$1; name=$2; shift 2
 	dir="$OUT/$b-$name"
@@ -110,7 +120,7 @@ build() {
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  427796 B  28.76%" (the app region, codec windows excluded)
 	set -- $(grep -E '^ *FLASH:' "$log" | head -1)
-	used=${2:-}; size=${4:-}
+	used=$(tobytes "${2:-}" "${3:-}"); size=$(tobytes "${4:-}" "${5:-}")
 	if [ -n "$size" ] && [ "$used" -le "$size" ] 2>/dev/null; then
 		free=$((size - used))
 		pct=$(awk "BEGIN { printf \"%.1f\", 100 * $used / $size }")

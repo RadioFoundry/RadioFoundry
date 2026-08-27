@@ -191,7 +191,7 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 	// Field-use screens: the shortest way there is at most 3 levels (P4; quick settings and actions also open on
 	// top of deeper screens, which is fine)
 	for (int i = 0; i < n_nodes; i++) {
-		char name[24];
+		char name[sizeof nodes[i].sig];
 		snprintf(name, sizeof name, "%s", nodes[i].sig);
 		char *slash = strchr(name, '/');
 		if (slash != NULL)
