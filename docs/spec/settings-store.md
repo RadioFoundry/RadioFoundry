@@ -100,9 +100,25 @@ codeplug's callsign.
 | privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (appended for dmr-voice) |
 | radio core settings | `rs_tot_s rs_tot_warn_s rs_bcl rs_flags` (roger beep, TX inhibit, scan priority, scan beep, key beep) `rs_scan_resume rs_scan_hold_s rs_beep_level rs_scan_delay_ms rs_scan_dwell_ms rs_vox rs_vox_level rs_vox_tail_ms rs_rx_save rs_stored rs_rx_save_idle_s rs_battery_off_s rs_backlight_dim_s rs_backlight_off_s` (appended for radio-features) |
 | DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply) `ds_stored` (appended for dmr-data) |
+| UI settings | `rs_reply_s` (the reply window in s, 0..30; `SETTINGS_UNSET8` = the codeplug's hang times; a radio core setting), `mic_gain` (0..9, default 5, not applied yet), `auto_lock_s` (0 = off), `long_press_ms`, `repeat_ms` (0 = the input layer's defaults), `gps`, `pos_format`, `pos_send_s` (stored for a GPS owner, act on nothing yet) (appended for glue) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
-payload is 120 bytes now (at most 236).
+payload is 132 bytes now (at most 236).
+
+### 3.0 Who writes, and storage jobs
+
+The settings are written through `settings_save` (debounced, written by `settings_poll` on the housekeeping task in
+`app.c`). Other flash writes that a screen asks for (save to channel, the permanent talk target, factory reset) are
+storage jobs: `storage_job_post(fn, ctx)` hands a function to the housekeeping task, which runs it from
+`storage_job_poll` right after `settings_poll`. There is one slot: a second post while a job is pending is refused
+(the UI says so), and `storage.job_busy` on the debug link shows a pending job. A job runs with no UI lock held, so
+the UI keeps drawing during the flash write; the job reports back through `ui_notify`.
+
+Factory reset (a job): `settings_defaults` into the live copy and save it at once, then `storage_native_erase`.
+That erases the native area only when its first word is the native magic `STORAGE_NATIVE_MAGIC` (0x4E52444F, "ODRN")
+or when it is blank already; anything else is reported as foreign and left alone. The legacy codeplug, the
+calibration and the foreign-guarded regions (section 5) are never touched; a reset of those would need its own
+second confirmation and is not offered.
 
 ### 3.1 Privacy key slots (the hook for DMR basic privacy)
 

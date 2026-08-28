@@ -14,7 +14,7 @@ when it passes the filters, and shown either way:
 
 | Call | Played when |
 |---|---|
-| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or MONITOR is held (hear all) |
+| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all (MONITOR held, or the hear-all latch: Quick 5 on a DMR channel, `radio_req_dmr_hear_all`, until the call or the channel ends, a mode change, or BACK on Home) |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | never (our call echoed by a repeater) |
 | Encrypted | only with a privacy key, and never after a PI header (section 5) |
@@ -33,15 +33,26 @@ is no alarm tone or acknowledgement yet.
 
 PTT sends to, in order:
 
+0. a one-shot target: the row with the focus in the talk target picker or a list (`radio_req_dmr_focus`, handed over
+   by the UI as the focus moves). PTT talks to it once; after the call the radio follows it (plays its calls and
+   sends to it on PTT) for the reply window, then goes back to the channel's target. A channel change, Reply cancel,
+   a new manual target, or the focus moving to the talk target itself end it (`dmr.one_shot`, `dmr.focus_id`).
 1. the reply target while the reply window runs: after a call we played, its talkgroup (group call) or its caller
    (private call to us); after our own call, its target again. The window is the codeplug's group or private call
-   hang time (rounded up to whole seconds, at most 30 s), or 10 s when the codeplug has none. BACK on Home ends it.
+   hang time (rounded up to whole seconds, at most 30 s), or 10 s when the codeplug has none; the reply time setting
+   (`reply_s`, 0 to 30 s, Settings > Talk & listen) replaces the codeplug's for both. BACK on Home ends it.
 2. a talk target chosen for now: a typed ID or talkgroup, a codeplug contact (with its timeslot override), or "call
    back", which takes the last call heard (its caller for a private call, its talkgroup for a group call). It lasts
    until the channel changes or it is cleared.
 3. the channel's TX contact; with none, talkgroup 9.
 
 The call is unit to unit (FLCO 3) for a private target, else group (FLCO 0).
+
+For now changes (Quick settings, P7): `radio_req_dmr_timeslot` and `radio_req_dmr_color_code` set the timeslot
+(temp bit 0x20; it overrides a contact's timeslot) and the color code (0x40) without touching the channel;
+`radio_req_mode` listens in FM or DMR on the same frequencies (0x80). They are refused while transmitting or busy and
+in the VFO (the VFO's own fields are the place for those), and BACK on Home (`radio_req_clear_temporary`) or a
+channel change undoes them. Save to channel writes them into the channel.
 
 TX time-out: the channel's codeplug TOT (15 s units) when it has one, else the radio's (180 s by default). The
 transmission ends at the next superframe boundary with its terminator, and PTT shows "timed out" until released.

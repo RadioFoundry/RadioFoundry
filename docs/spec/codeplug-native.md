@@ -78,6 +78,12 @@ until the native format exists every channel uses the radio-wide slot.
   tool writes (`legacy_end`). The CPS shim refuses writes there.
 - **Layout.** A header sector (magic, format version, table offsets, CRC) then fixed-size tables (channels, zones,
   contacts, lists) with a used bitmap each, sector-aligned so an edit rewrites one sector through the journal.
+  The magic is the header's first word, `STORAGE_NATIVE_MAGIC` 0x4E52444F ("ODRN" in memory order), already fixed
+  because factory reset keys on it.
+- **Factory reset (built).** `storage_native_erase()` erases the native area only when it starts with the magic
+  (non-blank sectors from the end, the header sector last, so a power cut leaves the magic in place and the next
+  reset finishes the job), reports it blank when it is all 0xFF, and otherwise leaves it alone as
+  foreign (another firmware's data). It never touches the legacy image, the calibration or a foreign-guarded region.
 - **Switching.** `codeplug_init()` prefers a valid native header and otherwise uses the legacy image. A one-way
   "convert" (UI or CPS) writes the native area from the legacy image. The legacy image is left as it was, so a
   firmware downgrade still finds it.
