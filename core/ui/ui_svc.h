@@ -106,6 +106,8 @@ bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off
 // Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until
 // then the weak stub says "not set up"
 bool ui_svc_emergency(bool on);
+// dmr-ext: a new emergency alert heard becomes UI_EV_EMERGENCY (ok: an alarm, else a call); run from ui_svc_poll
+void ui_svc_emergency_poll(void);
 // The settings back to their defaults and the native codeplug area emptied (never the legacy codeplug or the
 // calibration: those would need a second, explicit confirmation), then the radio restarts. Done by the housekeeping
 // task, not the UI's; false if it can't be started (no flash, or a save still going on)
