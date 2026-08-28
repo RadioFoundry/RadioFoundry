@@ -1265,6 +1265,8 @@ static void apply_setting(uint8_t id, int32_t v)
 		ui_st.hints = v != 0;
 	else if (id == UI_SET_LARGE_TEXT)
 		ui_st.large_text = v != 0;
+	else if (id == UI_SET_AUTO_LOCK_S)
+		ui_st.auto_lock_s = (uint16_t)(v < 0 ? 0 : v > 0xFFFF ? 0xFFFF : v);
 }
 
 static void set_store(const set_item_t *s, int32_t v)

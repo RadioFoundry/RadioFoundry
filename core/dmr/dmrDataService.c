@@ -1537,6 +1537,28 @@ void sms_inbox_mark_read(int i)
 	unlock();
 }
 
+bool sms_inbox_delete(int i)
+{
+	bool ok = false;
+
+	lock();
+	if ((i >= 0) && (i < inboxUsed))
+	{
+		// Logical index k is inbox[(newest - k) mod N]: each older message moves one place towards the newest, the
+		// oldest slot becomes free (the next message goes to newest + 1, which is that slot once one is free)
+		for (int k = i; k < inboxUsed - 1; k++)
+		{
+			inbox[(inboxNewest + DMR_DATA_INBOX_SIZE - k) % DMR_DATA_INBOX_SIZE] =
+				inbox[(inboxNewest + DMR_DATA_INBOX_SIZE - (k + 1)) % DMR_DATA_INBOX_SIZE];
+		}
+		inboxUsed--;
+		dataSerial++;
+		ok = true;
+	}
+	unlock();
+	return ok;
+}
+
 bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dmr_sms_format_t format)
 {
 	bool ok = false;

@@ -79,6 +79,30 @@ void storage_buffer_release(void);
 // The flash map, NULL without one
 const hal_flash_map_t *storage_map(void);
 
+// --- The native codeplug area (docs/spec/codeplug-native.md 4) ---
+// Its header sector starts with this magic ("ODRN", little endian). Nothing writes the area yet; the magic is what
+// tells our data from another firmware's there
+#define STORAGE_NATIVE_MAGIC	0x4E52444Fu
+typedef enum {
+	STORAGE_NATIVE_BLANK,		// nothing there: nothing to do
+	STORAGE_NATIVE_ERASED,		// our native data was there and is erased now
+	STORAGE_NATIVE_FOREIGN,		// something that isn't ours (no magic in the header sector): left alone
+	STORAGE_NATIVE_FAILED,		// no flash, no area, the region isn't ours, or an erase failed
+} storage_native_t;
+// Empty the native area (factory reset): only when it holds our data (the magic) or nothing. The data sectors go
+// first and the header sector last, so a cut in between leaves the magic and the reset can run again. Slow: one
+// erase per sector that isn't blank (the DM-1701's 1 MB area: up to 256)
+storage_native_t storage_native_erase(void);
+
+// --- Deferred flash work: a task that must not wait for the flash (the UI) hands a job to the housekeeping task,
+// which runs it from its loop (storage_job_poll, every 100 ms). One job at a time, posted from one task ---
+typedef void (*storage_job_fn)(void *ctx);
+// False while the last job is still pending or running
+bool storage_job_post(storage_job_fn fn, void *ctx);
+bool storage_job_busy(void);
+// The housekeeping task: run the pending job, if any
+void storage_job_poll(void);
+
 typedef struct {
 	uint32_t sector_writes;		// journaled rewrites done
 	uint32_t sector_skips;		// rewrites skipped (same content)

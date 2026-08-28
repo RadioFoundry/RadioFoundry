@@ -62,7 +62,11 @@ typedef struct {
 	uint16_t battery_off_s;	// switch off after this long with the battery critical, 0 = never
 	uint16_t backlight_dim_s;	// for batt_backlight_pct (radio/battery.h): dim after, 0 = never
 	uint16_t backlight_off_s;	// off after, 0 = never
+	// DMR (CONFIG_DMR)
+	uint8_t reply_s;	// reply window after a call, 0 = off .. 30 s, RADIO_REPLY_CODEPLUG = the codeplug's hang times
 } radio_settings_t;
+
+#define RADIO_REPLY_CODEPLUG	0xFFu	// radio_settings_t.reply_s: the codeplug's hang times (else the stack's 10 s)
 
 typedef enum { RADIO_BATT_OK, RADIO_BATT_LOW, RADIO_BATT_CRITICAL } radio_batt_t;	// = batt_level_t
 
@@ -108,7 +112,11 @@ typedef struct {
 	bool target_manual;	// a talk target chosen for now (contact, typed ID, call back), until the channel changes
 	bool privacy;		// a privacy key is loaded: encrypted calls play, our calls go out encrypted
 	bool alias_tx;		// our talker alias goes out on this channel
-	bool hear_all;		// MONITOR held: every talkgroup on our slot
+	bool hear_all;		// every talkgroup on our slot: MONITOR held, or the hear all latch
+	bool hear_all_latch;	// hear all latched (radio_req_dmr_hear_all), until the channel changes
+	uint32_t focus_id;	// the focused row's target (radio_req_dmr_focus), 0 = none: PTT talks to it once
+	bool focus_private;
+	bool one_shot;		// PTT went to the focused target: it stays the talk target for the reply window
 	// The current call (RX or TX); valid while state != RDMR_IDLE
 	radio_dmr_call_t call;
 	bool late_entry;
@@ -155,6 +163,7 @@ typedef struct {
 	bool tone_burst;	// TX: the 1750 Hz burst is on
 	bool roger;		// TX: the roger beep is being sent after the PTT release
 	bool vox_keyed;		// TX keyed by VOX
+	bool vox_on;		// VOX listens on this channel (the settings' vox, the channel, an FM channel)
 	bool rx_sleeping;	// battery save: the receiver is off for now
 	// Battery
 	uint8_t battery;	// radio_batt_t
@@ -172,6 +181,9 @@ typedef struct {
 #define RADIO_TEMP_BW		0x04u
 #define RADIO_TEMP_TX_TONE	0x08u
 #define RADIO_TEMP_RX_TONE	0x10u
+#define RADIO_TEMP_TS		0x20u	// DMR timeslot (radio_req_dmr_timeslot)
+#define RADIO_TEMP_CC		0x40u	// DMR color code (radio_req_dmr_color_code)
+#define RADIO_TEMP_MODE		0x80u	// FM <-> DMR (radio_req_mode)
 
 // Which tone radio_req_tone sets
 #define RADIO_TONE_TX		0x01u
@@ -209,6 +221,18 @@ void radio_req_dmr_target(uint32_t id, bool private_call);
 void radio_req_dmr_contact(uint16_t index);
 void radio_req_dmr_call_back(void);
 void radio_req_dmr_target_clear(void);
+// On-the-fly channel changes (temporary, P7; undone by radio_req_clear_temporary, kept by a save to the channel).
+// Refused while transmitting, in the VFO and in hotspot mode. Timeslot and color code only on a DMR channel; the
+// timeslot beats a contact's timeslot override. The mode change retunes (the call stack starts or stops)
+void radio_req_dmr_timeslot(uint8_t ts);	// 1 or 2
+void radio_req_dmr_color_code(uint8_t cc);	// 0..15
+void radio_req_mode(uint8_t mode);		// radio_mode_t: FM or DMR on the current channel
+// Hear all latched on (every talkgroup on our slot, as while MONITOR is held) until off or the channel changes
+void radio_req_dmr_hear_all(bool on);
+// The talk target focused in a list (the UI calls it on every focus change; id 0 = none). A PTT press while one is
+// focused transmits to it once (one-shot) and keeps it as the talk target for the reply window, then the channel's
+// (or the chosen) target is back. BACK on Home (radio_req_reply_cancel) ends it at once
+void radio_req_dmr_focus(uint32_t id, bool private_call);
 #if CONFIG_DMR_PRIVACY
 // Load a basic privacy key (type dmrPrivacyType_t, 0 = off). Held in RAM until changed or the radio restarts
 void radio_req_dmr_privacy(uint8_t type, uint16_t key);

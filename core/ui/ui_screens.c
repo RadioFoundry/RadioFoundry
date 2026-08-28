@@ -1292,8 +1292,8 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		sb_str(&b, v->monitor ? "On" : "Off");
 		return feat(UI_FEAT_MONITOR_LATCH);
 	case QT_VOX:
-		sb_str(&b, "Off");
-		return feat(UI_FEAT_VOX);
+		sb_str(&b, v->vox_on ? "On" : "Off");
+		return feat(UI_FEAT_VOX) && v->ch.mode == RADIO_MODE_FM;
 	case QT_SCAN:
 		sb_str(&b, s->scanning ? "On" : "Off");
 		return feat(UI_FEAT_SCAN);

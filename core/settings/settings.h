@@ -86,6 +86,16 @@ typedef struct {
 	uint8_t ds_flags;		// SETTINGS_DS_* bits
 	uint8_t ds_stored;		// 1 = the ds_ fields hold the data service's settings
 	uint16_t reserved4;
+	// Appended for the UI's settings (docs/spec/ui.md 4). The radio core's DMR reply window belongs with the rs_
+	// fields (taken only when rs_stored is 1); the others are the UI's
+	uint8_t rs_reply_s;		// radio_settings_t.reply_s: 0-30 s, SETTINGS_UNSET8 = the codeplug's hang times
+	uint8_t mic_gain;		// 0-10 (5 = as the board sets it); kept only: no board takes it yet
+	uint16_t auto_lock_s;		// lock the keys after this long without a key press, 0 = never
+	uint16_t long_press_ms;		// long press threshold for core/input, 0 = INPUT_LONG_MS
+	uint16_t repeat_ms;		// key repeat period, 0 = INPUT_REPEAT_MS
+	uint8_t gps;			// GPS on (kept only: no GPS driver yet)
+	uint8_t pos_format;		// position format shown (UI list index)
+	uint16_t pos_send_s;		// send our position every so many seconds, 0 = never (kept only)
 } settings_t;
 
 // settings_t.rs_flags

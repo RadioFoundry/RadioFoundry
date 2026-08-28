@@ -27,6 +27,7 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		v->scan_skipped);
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
+	dl_text(t, "vox_on=%u\n", v->vox_on);
 	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", word(v->battery, batt, 3),
 		v->battery_pct, v->battery_mv, v->power_off);
 #if CONFIG_BEEP
@@ -48,6 +49,11 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		s.vox_tail_ms);
 	dl_text(t, "set.rx_save=%u\nset.rx_save_idle_s=%u\nset.battery_off_s=%u\n", s.rx_save, s.rx_save_idle_s,
 		s.battery_off_s);
+	if (s.reply_s <= 30) {
+		dl_text(t, "set.reply_s=%u\n", s.reply_s);
+	} else {
+		dl_text(t, "set.reply_s=codeplug\n");
+	}
 }
 
 // One setting by id (DL radio op SETTING; docs/spec/debuglink.md 3.8)
@@ -73,6 +79,7 @@ static bool set_one(radio_settings_t *s, uint8_t id, uint16_t v)
 	case 17: s->rx_save_idle_s = v; break;
 	case 18: s->battery_off_s = v; break;
 	case 19: s->scan_beep = v != 0; break;
+	case 20: if (v > 30 && v != RADIO_REPLY_CODEPLUG) return false; s->reply_s = (uint8_t)v; break;
 	default: return false;
 	}
 	return true;

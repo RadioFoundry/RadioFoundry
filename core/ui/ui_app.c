@@ -55,6 +55,8 @@ static char home_hint[32];
 static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
 #endif
 static uint32_t emerg_id;
+static uint32_t last_key_ms;		// the last key press (auto lock)
+static bool lock_armed;			// last_key_ms holds a time (from the first tick)
 static char emerg_name[CODEPLUG_NAME_LEN + 1];
 
 // --- small helpers ---
@@ -506,6 +508,13 @@ static void handle_event(const ui_event_t *ev)
 	case UI_EV_HOTSPOT_STARTED:
 		banner(UI_BANNER_INFO, false, 0, "Hotspot started by host", "Back to stop");
 		break;
+	case UI_EV_SAVE_FAILED: {
+		static char msg[sizeof ev->text];
+		memcpy(msg, ev->text, sizeof msg);
+		msg[sizeof msg - 1] = 0;
+		ui_toast(msg[0] ? msg : "Couldn't save: try again");
+		break;
+	}
 	case UI_EV_CALL_ALERT_RESULT:
 		if (ev->ok) {
 			station(&b, ev);
@@ -902,7 +911,9 @@ static void quick_activate(int tile)
 			quick_unavailable(kind);
 		break;
 	case QT_VOX:
-		if (!ui_svc_vox(true))
+		if (ui_svc_vox(!view->vox_on))
+			ui_toast(view->vox_on ? "VOX off" : "VOX on: speak to transmit");
+		else
 			quick_unavailable(kind);
 		break;
 	case QT_SCAN:
@@ -1277,6 +1288,9 @@ void ui_app_init(void)
 		ui_svc_apply(id, ui_svc_setting_get(id));
 	ui_st.hints = ui_svc_setting_get(UI_SET_HINTS) != 0;
 	ui_st.large_text = ui_svc_setting_get(UI_SET_LARGE_TEXT) != 0;
+	int32_t al = ui_svc_setting_get(UI_SET_AUTO_LOCK_S);
+	ui_st.auto_lock_s = (uint16_t)(al < 0 ? 0 : al > 0xFFFF ? 0xFFFF : al);
+	lock_armed = false;
 	int32_t br = ui_svc_setting_get(UI_SET_BRIGHTNESS);
 	ui_st.brightness = (uint8_t)(br >= 10 && br <= 100 ? br : 100);
 	has_quick_key = ui_has_action(ACT_QUICK);
@@ -1305,6 +1319,7 @@ static bool emergency_key(const input_event_t *ev)
 void ui_app_key(const input_event_t *ev)
 {
 	dirty = true;
+	last_key_ms = now;
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
 	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)
@@ -1426,6 +1441,29 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	bool scanning = v->scan != 0;
 	if (scanning != ui_st.scanning && (ui_svc_features() & UI_FEAT_SCAN)) {
 		ui_st.scanning = scanning;
+		dirty = true;
+	}
+#if CONFIG_DMR
+	// The latches the radio keeps (it may drop them itself: hear all ends with the channel)
+	if ((ui_svc_features() & UI_FEAT_HEAR_ALL) && v->dmr.hear_all_latch != ui_st.hear_all) {
+		ui_st.hear_all = v->dmr.hear_all_latch;
+		dirty = true;
+	}
+	if ((ui_svc_features() & UI_FEAT_PRIVACY) && v->dmr.privacy != ui_st.privacy) {
+		ui_st.privacy = v->dmr.privacy;
+		dirty = true;
+	}
+#endif
+	// Auto lock (Settings > Keys): after so long without a key press, not while transmitting
+	if (!lock_armed) {
+		lock_armed = true;
+		last_key_ms = now;
+	}
+	if (ui_st.auto_lock_s != 0 && !ui_st.locked && v->state != RS_TX &&
+			now - last_key_ms >= (uint32_t)ui_st.auto_lock_s * 1000u) {
+		ui_st.locked = true;
+		ui_st.quick_edit = false;
+		entry_cancel();
 		dirty = true;
 	}
 	// The hint names the last caller: "OK Menu  * Quick  # Joe"
