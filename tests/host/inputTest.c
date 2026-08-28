@@ -122,6 +122,28 @@ static void test_repeat(void)
 	CHECK(count(ACT_NAV_UP, GESTURE_PRESS) == 0);
 }
 
+// Settings > Keys: a longer long press and a slower repeat (input_engine_set_timing); 0 is the defaults again
+static void test_timing(void)
+{
+	reset(0);
+	input_engine_set_timing(&e, 900, 200);
+	keys = 1u << K_UP;
+	run(INPUT_LONG_MS + 100, 0);
+	CHECK(count(ACT_NAV_UP, GESTURE_LONG) == 0);
+	run(900 - INPUT_LONG_MS, 0);
+	CHECK(count(ACT_NAV_UP, GESTURE_LONG) == 1);
+	run(200 * 5, 0);
+	int r = count(ACT_NAV_UP, GESTURE_REPEAT);
+	CHECK(r >= 4 && r <= 5);
+	keys = 0;
+	run(30, 0);
+	reset(0);
+	input_engine_set_timing(&e, 0, 0);
+	keys = 1u << K_OK;
+	run(INPUT_LONG_MS + 20, 0);
+	CHECK(nev == 1 && evs[0].gesture == GESTURE_LONG);
+}
+
 static void test_raw_edges(void)
 {
 	reset(0);
@@ -185,6 +207,7 @@ int main(void)
 	test_bounce();
 	test_long();
 	test_repeat();
+	test_timing();
 	test_raw_edges();
 	test_chord();
 	test_held_at_start();

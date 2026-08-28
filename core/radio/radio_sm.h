@@ -95,6 +95,11 @@ typedef enum {
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
 	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done)
 	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
+	RREQ_DMR_TS,		// DMR: arg = timeslot 1 / 2 (temporary)
+	RREQ_DMR_CC,		// DMR: arg = color code 0..15 (temporary)
+	RREQ_MODE,		// arg = radio_mode_t (temporary FM <-> DMR on a channel)
+	RREQ_DMR_HEAR_ALL,	// DMR: arg = 1 latch hear all, 0 off
+	RREQ_DMR_FOCUS,		// DMR: arg = ID (bits 23:0) | private (bit 24) of the focused row, 0 = none
 	RREQ_HS_CWID,		// hotspot: key the CW ID left by radio_hs_ops.cw_id (radio_hotspot.h)
 } radio_req_type_t;
 
@@ -137,6 +142,10 @@ typedef struct {
 	uint8_t base_bw;		// the channel's own bandwidth and tones, for undoing temporary changes
 	subtone_t base_rx_tone;
 	subtone_t base_tx_tone;
+	uint8_t base_cc;		// the channel's own color code, timeslot and mode (temporary changes)
+	uint8_t base_ts;
+	uint8_t base_mode;
+	uint8_t temp_ts;		// a timeslot chosen for now (RREQ_DMR_TS), 0 = none
 	uint8_t board_mode;		// radio_mode_t the board was last put in
 	int16_t volume_sent;		// last level given to board.radio->volume, -1 = none yet
 
@@ -201,6 +210,20 @@ typedef struct {
 	uint8_t manual_ts;
 	uint16_t manual_ch;
 	bool manual_vfo;
+	// Hear all latched (RREQ_DMR_HEAR_ALL) on channel latch_ch
+	bool hear_all_latch;
+	uint16_t latch_ch;
+	bool latch_vfo;
+	// The focused row's target (RREQ_DMR_FOCUS) and the one-shot target PTT took from it: the talk target until
+	// one_shot_until (0 = while the call goes on), on channel one_shot_ch
+	uint32_t focus_id;
+	bool focus_private;
+	bool one_shot;
+	uint32_t one_shot_id;
+	bool one_shot_private;
+	uint16_t one_shot_ch;
+	uint32_t one_shot_until;
+	uint8_t win_group_s, win_private_s;	// reply windows in effect (dmr_configure)
 	uint8_t privacy_type;		// dmrPrivacyType_t, 0 = off
 	uint16_t privacy_key;
 	char radio_name[CODEPLUG_RADIO_NAME_LEN + 1];	// our talker alias text

@@ -29,11 +29,15 @@ typedef struct {
 	uint32_t held;		// debounced mask
 	uint32_t ignore;	// keys held at start-up, ignored until released (no TX from a PTT held at power-on)
 	uint32_t last_activity_ms;
+	uint16_t long_ms;	// long press threshold, 0 = INPUT_LONG_MS
+	uint16_t repeat_ms;	// repeat period, 0 = INPUT_REPEAT_MS
 	input_key_t keys[INPUT_KEYS_MAX];
 } input_engine_t;
 
 void input_engine_init(input_engine_t *e, const keymap_entry_t *keymap, uint8_t keymap_len, uint32_t now_ms);
 // One scan: raw key mask and encoder detents since the last call
+// Gesture timing in ms (0 = the defaults); keys held now keep their LONG / REPEAT state
+void input_engine_set_timing(input_engine_t *e, uint16_t long_ms, uint16_t repeat_ms);
 void input_engine_step(input_engine_t *e, uint32_t raw, int8_t enc, uint32_t now_ms, input_emit_t emit, void *ctx);
 
 #endif

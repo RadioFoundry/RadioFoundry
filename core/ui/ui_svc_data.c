@@ -60,7 +60,10 @@ void ui_svc_msg_read(uint16_t i)
 	sms_inbox_mark_read(i);
 }
 
-// ui_svc_msg_delete stays the weak "can't": the inbox has no delete yet (a ring of DMR_DATA_INBOX_SIZE)
+bool ui_svc_msg_delete(uint16_t i)
+{
+	return sms_inbox_delete(i);
+}
 
 bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 {

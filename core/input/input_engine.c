@@ -14,6 +14,12 @@ void input_engine_init(input_engine_t *e, const keymap_entry_t *keymap, uint8_t 
 	e->last_activity_ms = now_ms;
 }
 
+void input_engine_set_timing(input_engine_t *e, uint16_t long_ms, uint16_t repeat_ms)
+{
+	e->long_ms = long_ms;
+	e->repeat_ms = repeat_ms;
+}
+
 static void send(input_emit_t emit, void *ctx, uint8_t action, uint8_t gesture, int8_t value)
 {
 	if (action == ACT_NONE) {
@@ -40,6 +46,8 @@ void input_engine_step(input_engine_t *e, uint32_t raw, int8_t enc, uint32_t now
 	}
 	e->held = held;
 	held &= ~e->ignore;
+	uint32_t long_ms = e->long_ms != 0 ? e->long_ms : INPUT_LONG_MS;
+	uint32_t repeat_ms = e->repeat_ms != 0 ? e->repeat_ms : INPUT_REPEAT_MS;
 
 	for (uint8_t i = 0; i < e->keymap_len; i++) {
 		const keymap_entry_t *m = &e->keymap[i];
@@ -62,15 +70,15 @@ void input_engine_step(input_engine_t *e, uint32_t raw, int8_t enc, uint32_t now
 			}
 		} else if (down && !m->raw_edges) {
 			if (!k->long_done) {
-				if (now_ms - k->t_down >= INPUT_LONG_MS) {
+				if (now_ms - k->t_down >= long_ms) {
 					k->long_done = true;
-					k->t_next = now_ms + INPUT_REPEAT_MS;
+					k->t_next = now_ms + repeat_ms;
 					send(emit, ctx, m->long_action, GESTURE_LONG, 0);
 				}
 			} else if (m->repeat && (int32_t)(now_ms - k->t_next) >= 0) {
-				k->t_next += INPUT_REPEAT_MS;
+				k->t_next += repeat_ms;
 				if ((int32_t)(now_ms - k->t_next) >= 0) {	// fell behind: no burst of repeats
-					k->t_next = now_ms + INPUT_REPEAT_MS;
+					k->t_next = now_ms + repeat_ms;
 				}
 				send(emit, ctx, m->long_action, GESTURE_REPEAT, 0);
 			}

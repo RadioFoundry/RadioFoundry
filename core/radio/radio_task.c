@@ -199,6 +199,15 @@ void radio_req_dmr_target(uint32_t id, bool private_call)
 void radio_req_dmr_contact(uint16_t index) { post(RREQ_DMR_CONTACT, index, 0); }
 void radio_req_dmr_call_back(void) { post(RREQ_DMR_CALL_BACK, 0, 0); }
 void radio_req_dmr_target_clear(void) { post(RREQ_DMR_TARGET_CLEAR, 0, 0); }
+void radio_req_dmr_timeslot(uint8_t ts) { post(RREQ_DMR_TS, ts, 0); }
+void radio_req_dmr_color_code(uint8_t cc) { post(RREQ_DMR_CC, cc, 0); }
+void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }
+void radio_req_dmr_hear_all(bool on) { post(RREQ_DMR_HEAR_ALL, on, 0); }
+// A lost focus change would send the next PTT to the wrong target: wait a little for room in the queue
+void radio_req_dmr_focus(uint32_t id, bool private_call)
+{
+	post(RREQ_DMR_FOCUS, (int32_t)((id & 0xFFFFFFu) | (private_call ? 1u << 24 : 0u)), pdMS_TO_TICKS(20));
+}
 #if CONFIG_DMR_PRIVACY
 void radio_req_dmr_privacy(uint8_t type, uint16_t key) { post(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key), 0); }
 #endif

@@ -6,8 +6,8 @@
 // Tasks (FreeRTOS, configMAX_PRIORITIES 7, heap 28 KB on the DM-1701 shared by stacks and queues; stack sizes in
 // words):
 //   timer service   6   256   FreeRTOS
-//   start / house   5   512   this file: start-up, then a 100 ms power switch poll and the settings saves
-//                             (sleeps nearly always)
+//   start / house   5   512   this file: start-up, then a 100 ms power switch poll, the settings saves and the
+//                             UI's codeplug writes (storage_job_poll; sleeps nearly always)
 //   audio           5   1280  board (DMR): PCM blocks, the vocoder runs here (created at the first DMR call)
 //   dmr             5   512   board (DMR): modem events to the DMR call stack's queue or the hotspot's
 //   radio           4   768   core/radio: requests, 25 ms status poll, squelch, PTT, TX time-out; 10 ms DMR call
@@ -86,6 +86,7 @@ static void startup_task(void *arg)
 	for (;;) {
 		hal_delay_ms(HOUSEKEEPING_MS);
 		settings_poll(hal_millis());	// saves here, so no other task waits for the flash
+		storage_job_poll();		// and the codeplug writes the UI asks for (save to channel, factory reset)
 		if (!board.power->switch_on() || radio_power_off_wanted()) {
 			power_off();	// the knob, or the radio core after a long critical battery (battery_off_s)
 		}

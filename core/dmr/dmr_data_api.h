@@ -8,7 +8,8 @@
 // Typical UI use:
 //   - redraw when dmr_data_serial() changes; dmr_data_last_event() says what happened (a banner / toast:
 //     "Message from 3101234", "Call alert from 3101234", "K1ABC answered", "No answer from 3101234")
-//   - inbox list: sms_inbox_count(), sms_inbox_get(i) (0 = newest), sms_inbox_mark_read(i), sms_inbox_unread()
+//   - inbox list: sms_inbox_count(), sms_inbox_get(i) (0 = newest), sms_inbox_mark_read(i), sms_inbox_unread(),
+//     sms_inbox_delete(i)
 //   - send: sms_send() then watch sms_send_state() (or the SMS_SENT / SMS_FAILED events)
 //   - dmr_signal_call_alert() / dmr_signal_radio_check() then dmr_signal_state() (or the events)
 #ifndef ODR_DMR_DATA_API_H
@@ -42,6 +43,8 @@ int sms_inbox_unread(void);
 // Copy message i (0 = newest); false when there is none
 bool sms_inbox_get(int i, dmrDataMessage_t *out);
 void sms_inbox_mark_read(int i);
+// Delete message i (0 = newest): the older ones move up. False when there is none
+bool sms_inbox_delete(int i);
 // Queue a message (group: to a talkgroup, no ACK). False when the mailbox is full (one SMS at a time) or the text is
 // empty. The text is cut at DMR_DATA_TEXT_MAX characters (Latin-1; ETSI: DMR_ETSI_TEXT_MAX). format: TMS, ETSI, or
 // DEFAULT for the radio's setting; a reply uses the message's own dmrDataMessage_t.format
@@ -68,6 +71,7 @@ static inline int sms_inbox_count(void) { return 0; }
 static inline int sms_inbox_unread(void) { return 0; }
 static inline bool sms_inbox_get(int i, dmrDataMessage_t *out) { (void)i; (void)out; return false; }
 static inline void sms_inbox_mark_read(int i) { (void)i; }
+static inline bool sms_inbox_delete(int i) { (void)i; return false; }
 static inline bool sms_send(uint32_t dst, bool group, const char *text, bool ack, dmr_sms_format_t f)
 { (void)dst; (void)group; (void)text; (void)ack; (void)f; return false; }
 static inline dmr_req_state_t sms_send_state(void) { return DMR_REQ_IDLE; }

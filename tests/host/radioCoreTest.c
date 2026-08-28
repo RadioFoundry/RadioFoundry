@@ -16,6 +16,8 @@
 #include "settings/settings.h"
 #include "dmr/dmr_data_api.h"
 #include "dmr/dmr_emergency.h"
+#include "ui/ui_svc.h"
+#include "storage/storage.h"
 
 static int failures;
 static int checks;
@@ -1586,6 +1588,9 @@ static void hear_emergency_call(uint32_t dst, uint32_t src)
 	run(100);
 }
 
+static ui_event_t last_ev;	// the UI glue fakes below (ui_notify)
+static int n_ev;
+
 static void test_dmr_emergency(void)
 {
 	dmr_lc_t l;
@@ -1660,9 +1665,26 @@ static void test_dmr_emergency(void)
 	hear_emergency_call(201, 3101234);	// the next over: the same alert
 	dmr_emergency_get_stats(&s1);
 	CHECK(s1.alerts == s0.alerts + 1 && s1.alerts_call == s0.alerts_call + 1 && s1.tones == s0.tones + 1);
+	n_ev = 0;
+	ui_svc_poll();		// the UI's pass: the alert as UI_EV_EMERGENCY, once
+	ui_svc_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_EMERGENCY && last_ev.id == 3101234 && !last_ev.ok &&
+	      strcmp(last_ev.name, "Joe") == 0);
 	dmr_emergency_dismiss();
 	run(20);
 	CHECK(!dmr_emergency_alert(&a));
+
+	// The UI's emergency key (ui_svc_emergency, core/ui/ui_svc_emergency.c)
+	CHECK(ui_svc_feat_ext() & UI_FEAT_EMERGENCY);
+	CHECK(ui_svc_emergency(true));
+	run(50);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_HOT_MIC && sm.view.state == RS_TX);
+	CHECK(ui_svc_emergency(true));		// already on
+	CHECK(ui_svc_emergency(false));
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !sm.em_keyed);
+	run(1500);
+	CHECK(sm.view.state == RS_IDLE);
 }
 
 // ---- The hotspot's CW ID (SEND_CWID) on a board with tx_tone_key: FM carrier on the hotspot TX frequency, the tone
@@ -1729,6 +1751,310 @@ static void test_hotspot_cwid(void)
 	CHECK(hw_mode == RADIO_MODE_DMR && sm.view.dmr.active);
 }
 
+// The UI's on-the-fly DMR changes (temporary timeslot, color code and mode), hear all latched, the one-shot talk
+// target of a focused row and the reply window setting (docs/spec/ui.md 4)
+static void test_ui_requests(void)
+{
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	dmr_lc_t l;
+
+	// Timeslot 2 for now; asking for the channel's slot again clears it
+	dmr_start(true);
+	req(RREQ_DMR_TS, 2);
+	run(20);
+	CHECK((sm.view.temp & RADIO_TEMP_TS) && sm.view.ch.timeslot == 2 && d->ts == 2);
+	req(RREQ_DMR_TS, 1);
+	run(20);
+	CHECK(!sm.view.temporary && sm.view.ch.timeslot == 1 && d->ts == 1);
+	req(RREQ_DMR_TS, 3);
+	CHECK(!sm.view.temporary);
+	// Color code 7 for now: the old color code isn't heard any more, the new one is
+	req(RREQ_DMR_CC, 7);
+	run(20);
+	CHECK((sm.view.temp & RADIO_TEMP_CC) && d->cc == 7 && sm.view.ch.color_code == 7);
+	hear_call(true, 201, 3101234, 2, 1, false);
+	CHECK(sm.view.state == RS_IDLE);
+	run(500);
+	hear_call(true, 201, 3101234, 7, 1, true);
+	CHECK(d->last_ms != 0 && d->last.src == 3101234);
+	// Undo (BACK on Home): the channel's color code and timeslot again
+	req(RREQ_DMR_TS, 2);
+	req(RREQ_CLEAR_TEMP, 0);
+	run(20);
+	CHECK(!sm.view.temporary && d->cc == 2 && d->ts == 1 && sm.view.ch.color_code == 2 && sm.view.ch.timeslot == 1);
+	// FM for now stops the call stack (color code refused on FM); undo starts it again
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(20);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && (sm.view.temp & RADIO_TEMP_MODE) && !d->active && !sim.started);
+	req(RREQ_DMR_CC, 3);
+	CHECK(sm.view.ch.color_code == 2 && !(sm.view.temp & RADIO_TEMP_CC));
+	req(RREQ_CLEAR_TEMP, 0);
+	run(50);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && d->active && sim.started && !sm.view.temporary);
+	// An FM channel as DMR for now; a channel change drops it
+	req(RREQ_ZONE_POS, 0);
+	run(20);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && d->active && (sm.view.temp & RADIO_TEMP_MODE) && d->ts == 1);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(!sm.view.temporary && d->active && d->cc == 2);
+	// Nothing changes while transmitting
+	req(RREQ_PTT, 1);
+	run(100);
+	req(RREQ_DMR_CC, 5);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.color_code == 2 && sm.view.ch.mode == RADIO_MODE_DMR);
+	req(RREQ_PTT, 0);
+	run(1000);
+
+	// Hear all latched: other talkgroups play until it is turned off, or the channel changes
+	req(RREQ_DMR_HEAR_ALL, 1);
+	CHECK(d->hear_all && d->hear_all_latch);
+	hear_call(true, 3100, 3107777, 2, 1, false);
+	CHECK(d->state == RDMR_RX);
+	run(500);
+	req(RREQ_DMR_HEAR_ALL, 0);
+	CHECK(!d->hear_all && !d->hear_all_latch);
+	req(RREQ_REPLY_CANCEL, 0);		// TG 3100's reply window would let it through
+	hear_call(true, 3100, 3107777, 2, 1, false);
+	CHECK(d->state == RDMR_RX_OTHER);
+	run(500);
+	req(RREQ_DMR_HEAR_ALL, 1);
+	req(RREQ_MONITOR, 1);
+	req(RREQ_MONITOR, 0);
+	CHECK(d->hear_all);			// MONITOR released: the latch still holds
+	req(RREQ_CH_STEP, 1);
+	req(RREQ_CH_STEP, -1);
+	run(50);
+	CHECK(!d->hear_all_latch && !d->hear_all);
+
+	// One-shot: PTT with Joe focused calls Joe once and keeps him for the reply window, then TG 201 again
+	req(RREQ_DMR_FOCUS, (int32_t)(3101234u | (1u << 24)));
+	CHECK(d->focus_id == 3101234 && d->focus_private);
+	unsigned first = sim.air_count;
+	req(RREQ_PTT, 1);
+	run(600);
+	CHECK(d->one_shot && d->target_id == 3101234 && d->target_private);
+	req(RREQ_PTT, 0);
+	run(1000);
+	air_lc(first, &l);
+	CHECK(l.flco == DMR_FLCO_UNIT_VOICE && l.dst == 3101234);
+	CHECK(d->one_shot && d->reply_active && d->reply_s >= 8 && d->target_id == 3101234);
+	req(RREQ_DMR_FOCUS, 0);		// back on Home: PTT inside the window still answers Joe
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.flco == DMR_FLCO_UNIT_VOICE && l.dst == 3101234 && d->one_shot);
+	run(8000);
+	CHECK(d->one_shot && d->reply_active && d->reply_s <= 2);
+	run(1500);
+	CHECK(!d->one_shot && !d->reply_active && d->target_id == 201 && !d->target_private);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.flco == DMR_FLCO_GROUP_VOICE && l.dst == 201);
+	// BACK on Home (reply cancel) ends it at once
+	req(RREQ_DMR_FOCUS, 9);
+	tx_once();
+	CHECK(d->one_shot && d->target_id == 9 && !d->target_private);
+	req(RREQ_REPLY_CANCEL, 0);
+	run(20);
+	CHECK(!d->one_shot && d->target_id == 201);
+	// The talk target itself focused: an ordinary transmission
+	req(RREQ_DMR_FOCUS, 201);
+	tx_once();
+	CHECK(!d->one_shot);
+	req(RREQ_DMR_FOCUS, 0);
+	CHECK(d->focus_id == 0);
+
+	// The reply window setting replaces the codeplug's hang time (and the stack's 10 s)
+	radio_settings_t rs = sm.set;
+	rs.reply_s = 3;
+	radio_sm_set_settings(&sm, &rs, now);
+	hear_call(true, 9, 3105555, 2, 1, true);
+	CHECK(d->reply_active && d->reply_s == 3);
+	run(3100);
+	CHECK(!d->reply_active);
+	rs.reply_s = 0;			// off
+	radio_sm_set_settings(&sm, &rs, now);
+	hear_call(true, 9, 3105555, 2, 1, true);
+	CHECK(!d->reply_active);
+	settings_t st;
+	settings_read(&st);
+	CHECK(st.rs_reply_s == 0 && st.rs_stored == 1);
+	rs.reply_s = RADIO_REPLY_CODEPLUG;
+	radio_sm_set_settings(&sm, &rs, now);
+	hear_call(true, 9, 3105555, 2, 1, true);
+	CHECK(d->reply_active && d->reply_s == 10);
+	run(11000);
+}
+
+// ---- The UI's service glue (core/ui/ui_svc_radio.c, ui_svc_storage.c, ui_svc_data.c) on the radio core: the
+// requests go straight into the state machine here instead of through radio_task.c's queue ----
+
+uint32_t hal_millis(void) { return now; }
+void radio_get_view(radio_view_t *v) { *v = sm.view; }
+uint32_t radio_view_serial(void) { return sm.serial; }
+void radio_get_settings(radio_settings_t *s) { *s = sm.set; }
+void radio_set_settings(const radio_settings_t *s) { radio_sm_set_settings(&sm, s, now); }
+void radio_req_monitor(bool down) { req(RREQ_MONITOR, down); }
+void radio_req_reload(void) { req(RREQ_RELOAD, 0); }
+void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
+void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }
+void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
+void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0))); }
+void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }
+void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
+void radio_req_dmr_color_code(uint8_t cc) { req(RREQ_DMR_CC, cc); }
+void radio_req_mode(uint8_t mode) { req(RREQ_MODE, mode); }
+void radio_req_dmr_hear_all(bool on) { req(RREQ_DMR_HEAR_ALL, on); }
+static int focus_posts;
+void radio_req_dmr_focus(uint32_t id, bool p)
+{
+	focus_posts++;
+	req(RREQ_DMR_FOCUS, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0)));
+}
+void radio_req_dmr_privacy(uint8_t type, uint16_t key) { req(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key)); }
+static uint16_t input_long, input_repeat;
+void input_set_timing(uint16_t l, uint16_t r) { input_long = l; input_repeat = r; }
+void hostlink_set_hotspot_allowed(bool on) { (void)on; }
+static int32_t ram[UI_SET_COUNT];
+int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_COUNT ? ram[id] : 0; }
+bool ui_svc_ram_set(uint8_t id, int32_t v) { if (id >= UI_SET_COUNT) return false; ram[id] = v; return true; }
+static ui_event_t last_ev;
+static int n_ev;
+bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
+static int cp_writes;
+static bool cp_write_fails;
+bool codeplug_set_channel(uint16_t n, const channel_t *ch)
+{
+	if (cp_write_fails || n < 1 || n > NCH) {
+		return false;
+	}
+	chans[n] = *ch;
+	used[n] = true;
+	cp_writes++;
+	cp_serial++;
+	return true;
+}
+
+static void test_ui_glue(void)
+{
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	settings_t *st;
+
+	dmr_start(true);
+	uint32_t f = ui_svc_feat_voice();
+	CHECK((f & UI_FEAT_TIMESLOT) && (f & UI_FEAT_COLOR_CODE) && (f & UI_FEAT_HEAR_ALL) && (f & UI_FEAT_MODE) &&
+	      (f & UI_FEAT_PRIVACY) && (f & UI_FEAT_MONITOR_LATCH) && (f & UI_FEAT_TALK_TARGET));
+	CHECK(ui_svc_feat_storage() & UI_FEAT_FACTORY_RESET);
+	// The focus goes to the radio only when it changes
+	int posts = focus_posts;
+	ui_svc_focus_target(3101234, true);
+	ui_svc_focus_target(3101234, true);
+	CHECK(focus_posts == posts + 1 && d->focus_id == 3101234 && d->focus_private);
+	ui_svc_focus_target(0, false);
+	CHECK(d->focus_id == 0);
+	// Temporary channel changes and latches
+	CHECK(ui_svc_dmr_timeslot(2) && !ui_svc_dmr_timeslot(3));
+	CHECK(ui_svc_dmr_color_code(9) && !ui_svc_dmr_color_code(16));
+	run(20);
+	CHECK(d->ts == 2 && d->cc == 9);
+	CHECK(ui_svc_hear_all(true) && d->hear_all_latch);
+	CHECK(ui_svc_hear_all(false) && !d->hear_all_latch);
+	CHECK(ui_svc_monitor(true) && sm.view.monitor);
+	CHECK(ui_svc_monitor(false) && !sm.view.monitor);
+	// Save to channel: nothing written by the call itself, the housekeeping job writes timeslot and color code
+	int w = cp_writes;
+	CHECK(ui_svc_save_channel());
+	CHECK(cp_writes == w && storage_job_busy() && !ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(cp_writes == w + 1 && chans[4].timeslot == 2 && chans[4].color_code == 9 && !storage_job_busy());
+	run(100);			// the radio core re-reads the channel (codeplug serial)
+	CHECK(!sm.view.temporary && d->ts == 2 && d->cc == 9);
+	chans[4].timeslot = 1;
+	chans[4].color_code = 2;
+	reload_channel();
+	// A failed write comes back as an event
+	CHECK(ui_svc_dmr_color_code(4));
+	cp_write_fails = true;
+	n_ev = 0;
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "not saved") != NULL);
+	CHECK(sm.view.temporary);
+	cp_write_fails = false;
+	req(RREQ_CLEAR_TEMP, 0);
+	// The permanent talk target: at once for now, then the channel's contact once the job ran
+	CHECK(ui_svc_talk_to(9, false, UI_TALK_PERMANENT));
+	run(20);
+	CHECK(d->target_id == 9);
+	storage_job_poll();
+	CHECK(chans[4].contact == 3);
+	run(100);
+	CHECK(d->target_id == 9 && !d->target_manual);
+	n_ev = 0;
+	CHECK(ui_svc_talk_to(3109999, true, UI_TALK_PERMANENT));	// not a stored contact: stays for now
+	storage_job_poll();
+	run(20);
+	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL && d->target_manual && d->target_id == 3109999);
+	chans[4].contact = 1;
+	reload_channel();
+	// Mode
+	CHECK(ui_svc_mode(RADIO_MODE_FM) && sm.view.ch.mode == RADIO_MODE_FM && !ui_svc_mode(7));
+	req(RREQ_CLEAR_TEMP, 0);
+	run(50);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR);
+
+	// Privacy: no key stored, nothing to turn on; then the first valid slot is used
+	CHECK(!ui_svc_privacy(true) && !d->privacy);
+	st = settings_begin();
+	st->privacy_type[1] = 1;	// Motorola basic privacy, key 7, slot 2 (none active)
+	st->privacy_key[1] = 7;
+	settings_end(now);
+	CHECK(ui_svc_privacy(true) && d->privacy);
+	CHECK(ui_svc_privacy(false) && !d->privacy);
+
+	// Settings with a store field now: kept across "power cycles" (settings_t), the reply window in the radio core
+	CHECK(ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 60) && ui_svc_setting_get(UI_SET_AUTO_LOCK_S) == 60);
+	CHECK(ui_svc_setting_set(UI_SET_MIC_GAIN, 8) && ui_svc_setting_get(UI_SET_MIC_GAIN) == 8);
+	CHECK(ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 900) && ui_svc_setting_get(UI_SET_LONG_PRESS_MS) == 900);
+	CHECK(ui_svc_setting_set(UI_SET_GPS, 1) && ui_svc_setting_get(UI_SET_GPS) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_POS_SEND_S, 300) && ui_svc_setting_get(UI_SET_POS_SEND_S) == 300);
+	settings_t sv;
+	settings_read(&sv);
+	CHECK(sv.auto_lock_s == 60 && sv.mic_gain == 8 && sv.long_press_ms == 900 && sv.gps == 1 && sv.pos_send_s == 300);
+	ui_svc_apply(UI_SET_LONG_PRESS_MS, 900);
+	ui_svc_apply(UI_SET_REPEAT_MS, 200);
+	CHECK(input_long == 900 && input_repeat == 200);
+	// Reply window: the value shown at start-up for "the codeplug's" keeps it; another value is the radio's own
+	CHECK(ui_svc_setting_get(UI_SET_REPLY_S) == 10);
+	ui_svc_apply(UI_SET_REPLY_S, 10);
+	CHECK(sm.set.reply_s == RADIO_REPLY_CODEPLUG);
+	ui_svc_apply(UI_SET_REPLY_S, 4);
+	CHECK(sm.set.reply_s == 4 && ui_svc_setting_get(UI_SET_REPLY_S) == 4);
+	ui_svc_apply(UI_SET_REPLY_S, 10);
+	CHECK(sm.set.reply_s == 10);
+	// VOX: on every FM channel, off again (the radio's settings)
+	ui_svc_vox(true);
+	CHECK(sm.set.vox == RADIO_VOX_ALL);
+	ui_svc_vox(false);
+	CHECK(sm.set.vox == RADIO_VOX_OFF);
+
+	// Messages: delete through the data service
+	CHECK(!ui_svc_msg_delete(0));
+
+	// Factory reset: a job; the settings are the defaults afterwards (no flash here: RAM only, no restart)
+	CHECK(ui_svc_factory_reset() && !ui_svc_factory_reset());
+	storage_job_poll();
+	settings_read(&sv);
+	CHECK(sv.auto_lock_s == 0 && sv.mic_gain == 5 && sv.privacy_type[1] == 0 && sv.rs_stored == 0);
+	run(100);
+	CHECK(sm.set.reply_s == RADIO_REPLY_CODEPLUG && sm.set.vox == RADIO_VOX_OFF);
+}
+
 int main(void)
 {
 	test_startup();
@@ -1748,6 +2074,8 @@ int main(void)
 	test_dmr_tx();
 	test_dmr_denied();
 	test_dmr_voice_features();
+	test_ui_requests();
+	test_ui_glue();
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();

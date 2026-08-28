@@ -335,6 +335,8 @@ static void load_channel(void)
 	view.temporary = false;
 	view.squelch = 5;
 	temp_target = 0;
+	view.dmr.hear_all_latch = false;	// the latch ends with the channel, as in the radio core
+	view.dmr.hear_all = view.monitor;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
 	view.dmr.codec = true;
 	view.dmr.cc = view.ch.color_code;
@@ -511,7 +513,6 @@ static void rx_end(void)
 typedef struct { ui_msg_t m; uint32_t at; } sim_msg_t;
 static sim_msg_t inbox[8];
 static uint16_t n_inbox;
-static bool hear_all, privacy;
 
 uint32_t ui_svc_features(void) { return 0xFFFFFFFFu; }
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
@@ -538,7 +539,13 @@ bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 	changed();
 	return true;
 }
-void ui_svc_focus_target(uint32_t id, bool private_call) { focus_id = id; focus_private = private_call; }
+void ui_svc_focus_target(uint32_t id, bool private_call)
+{
+	focus_id = id;
+	focus_private = private_call;
+	view.dmr.focus_id = id;
+	view.dmr.focus_private = id != 0 && private_call;
+}
 bool ui_svc_dmr_timeslot(uint8_t ts) { view.dmr.ts = view.ch.timeslot = ts; set_temp(0x20); return true; }
 bool ui_svc_dmr_color_code(uint8_t cc) { view.dmr.cc = view.ch.color_code = cc; set_temp(0x40); return true; }
 bool ui_svc_mode(uint8_t mode)
@@ -548,10 +555,26 @@ bool ui_svc_mode(uint8_t mode)
 	set_temp(0x80);
 	return true;
 }
-bool ui_svc_hear_all(bool on) { hear_all = on; return true; }
-bool ui_svc_privacy(bool on) { privacy = on && view.dmr.active; return privacy == on; }
+bool ui_svc_hear_all(bool on)
+{
+	view.dmr.hear_all_latch = on;
+	view.dmr.hear_all = on || view.monitor;
+	changed();
+	return true;
+}
+bool ui_svc_privacy(bool on)
+{
+	view.dmr.privacy = on && view.dmr.active;
+	changed();
+	return view.dmr.privacy == on;
+}
 bool ui_svc_monitor(bool on) { view.monitor = on; changed(); return true; }
-bool ui_svc_vox(bool on) { (void)on; return true; }
+bool ui_svc_vox(bool on)
+{
+	view.vox_on = on && view.ch.mode == RADIO_MODE_FM;
+	changed();
+	return true;
+}
 bool ui_svc_save_channel(void)
 {
 	sim_rec.codeplug_writes++;
@@ -570,7 +593,9 @@ bool ui_svc_scan(bool on)
 void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; }
 void ui_svc_apply(uint8_t id, int32_t value)
 {
-	if (id == UI_SET_TOT_S)
+	if (id == UI_SET_LONG_PRESS_MS)
+		sim_rec.long_press_ms = (uint32_t)value;
+	else if (id == UI_SET_TOT_S)
 		sim_rec.tot_s = (uint32_t)value;
 	else if (id == UI_SET_BACKLIGHT_S)
 		sim_rec.backlight_s = (uint32_t)value;
@@ -724,7 +749,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.zone_index = 0;
 	view.zone_pos = 2;	// 3 COUNTY DMR
 	n_inbox = 0;
-	hear_all = privacy = hotspot_on = rx_on = false;
+	hotspot_on = rx_on = false;
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
@@ -736,6 +761,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_BRIGHTNESS, 100);
 	ui_svc_setting_set(UI_SET_TOT_S, 180);
 	ui_svc_setting_set(UI_SET_BACKLIGHT_S, 30);
+	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
+	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
 	ui_app_init();
 	presses = 0;
 	advance(200);
@@ -851,8 +878,11 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
 	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0);
-	else if (strcmp(key, "privacy") == 0) snprintf(got, sizeof got, "%u", privacy);
-	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", hear_all);
+	else if (strcmp(key, "privacy") == 0) snprintf(got, sizeof got, "%u", view.dmr.privacy);
+	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", view.dmr.hear_all_latch);
+	else if (strcmp(key, "vox") == 0) snprintf(got, sizeof got, "%u", view.vox_on);
+	else if (strcmp(key, "focusid") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.focus_id);
+	else if (strcmp(key, "longpress") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.long_press_ms);
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
 	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
 	else if (strcmp(key, "radio_tot") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tot_s);

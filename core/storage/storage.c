@@ -454,6 +454,62 @@ bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 	return ok;
 }
 
+storage_native_t storage_native_erase(void)
+{
+	const hal_flash_map_t *m = storage_map();
+	if (!storage_ready() || m == NULL || m->native_size == 0 || (m->native_addr % STORAGE_SECTOR) != 0 ||
+	    (m->native_size % STORAGE_SECTOR) != 0 || m->native_addr + m->native_size > board.flash->size) {
+		return STORAGE_NATIVE_FAILED;
+	}
+	storage_native_t r = STORAGE_NATIVE_FAILED;
+	uint8_t h[4];
+	storage_lock();
+	if (!rd(m->native_addr, h, sizeof(h))) {
+		goto out;
+	}
+	if (get32(h) != STORAGE_NATIVE_MAGIC) {
+		r = blank(m->native_addr, m->native_size) ? STORAGE_NATIVE_BLANK : STORAGE_NATIVE_FOREIGN;
+		goto out;
+	}
+	for (uint32_t a = m->native_addr + m->native_size; a > m->native_addr; ) {
+		a -= STORAGE_SECTOR;		// from the end: the header sector last
+		if (!blank(a, STORAGE_SECTOR) && !er(a)) {
+			goto out;
+		}
+	}
+	r = blank(m->native_addr, STORAGE_SECTOR) ? STORAGE_NATIVE_ERASED : STORAGE_NATIVE_FAILED;
+out:
+	storage_unlock();
+	return r;
+}
+
+static storage_job_fn volatile job_fn;	// set last by the poster, cleared by the housekeeping task when done
+static void *volatile job_ctx;
+
+bool storage_job_post(storage_job_fn fn, void *ctx)
+{
+	if (fn == NULL || job_fn != NULL) {
+		return false;
+	}
+	job_ctx = ctx;
+	job_fn = fn;
+	return true;
+}
+
+bool storage_job_busy(void)
+{
+	return job_fn != NULL;
+}
+
+void storage_job_poll(void)
+{
+	storage_job_fn fn = job_fn;
+	if (fn != NULL) {
+		fn(job_ctx);
+		job_fn = NULL;
+	}
+}
+
 void storage_get_stats(storage_stats_t *s)
 {
 	*s = stats;

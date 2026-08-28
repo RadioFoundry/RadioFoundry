@@ -95,6 +95,20 @@ python3 -m pytest tests/hil -v -rs -s -k cps --allow-reboot           # channel 
 The write test saves the backup in its tmp directory and prints the path. If the restore fails, the path and the
 `tools/cps_client.py write` command are in the failure message.
 
+The UI controls (`test_ui.py`): the Quick tiles drive the radio core with injected keys and read it back (timeslot,
+color code and mode for now, hear all, monitor latch, VOX), the picker hands its focus row to the radio core, Settings
+reach the input layer (long press time) and the UI (auto lock, about 35 s). The DMR tests need a DMR channel, the
+monitor and VOX tests an FM channel; the others skip. Three change the radio and are opt-in:
+
+```
+python3 -m pytest tests/hil/test_ui.py -v -rs -k save --allow-codeplug-write          # timeslot saved to the channel and back
+ODR_HIL_DELETE_MESSAGE=1 python3 -m pytest tests/hil/test_ui.py -v -rs -k delete      # deletes the newest inbox message
+ODR_HIL_FACTORY_RESET=1 python3 -m pytest tests/hil/test_ui.py -v -rs -k factory --allow-reboot   # erases all settings
+```
+
+Factory reset puts every setting back to its default (brightness, privacy keys, radio settings, the channel position)
+and erases the native area; the codeplug and calibration stay. Note the settings before running it.
+
 ## 3. Hardware in the loop, on air (opt-in)
 
 Each flag allows one more kind of action, and a test runs only when all it needs is allowed:

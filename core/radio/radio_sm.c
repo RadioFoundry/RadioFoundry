@@ -69,6 +69,7 @@ void radio_settings_default(radio_settings_t *s)
 	s->battery_off_s = 0;
 	s->backlight_dim_s = 30;
 	s->backlight_off_s = 120;
+	s->reply_s = RADIO_REPLY_CODEPLUG;
 }
 
 static void activity(radio_sm_t *sm, uint32_t now_ms)
@@ -168,23 +169,40 @@ static void set_temporary(radio_sm_t *sm)
 		if (!same_tone(&sm->view.ch.rx_tone, &sm->base_rx_tone)) {
 			t |= RADIO_TEMP_RX_TONE;
 		}
+		if (sm->view.ch.mode != sm->base_mode) {
+			t |= RADIO_TEMP_MODE;
+		}
+		if (sm->view.ch.mode == RADIO_MODE_DMR) {
+			if (sm->view.ch.color_code != sm->base_cc) {
+				t |= RADIO_TEMP_CC;
+			}
+			if (sm->temp_ts != 0) {
+				t |= RADIO_TEMP_TS;
+			}
+		}
 	}
 	sm->view.temp = t;
 	sm->view.temporary = t != 0;
 }
 
-// Back to the channel's own settings. Returns whether the receiver needs retuning (bandwidth or RX tone changed)
+// Back to the channel's own settings. Returns whether the receiver needs retuning (bandwidth, RX tone, mode, color
+// code or timeslot changed: tune() also reconfigures the DMR call stack)
 static bool clear_temporary(radio_sm_t *sm)
 {
-	bool retune = (sm->view.temp & (RADIO_TEMP_BW | RADIO_TEMP_RX_TONE)) != 0;
+	bool retune = (sm->view.temp & (RADIO_TEMP_BW | RADIO_TEMP_RX_TONE | RADIO_TEMP_MODE | RADIO_TEMP_CC |
+					RADIO_TEMP_TS)) != 0;
 	sm->temp_power = false;
 	sm->temp_squelch = false;
+	sm->temp_ts = 0;
 	sm->view.power = channel_power(&sm->view.ch);
 	sm->view.squelch = sm->base_squelch;
 	if (!sm->view.vfo) {
 		sm->view.ch.bw = sm->base_bw;
 		sm->view.ch.rx_tone = sm->base_rx_tone;
 		sm->view.ch.tx_tone = sm->base_tx_tone;
+		sm->view.ch.mode = sm->base_mode;
+		sm->view.ch.color_code = sm->base_cc;
+		sm->view.ch.timeslot = sm->base_ts;
 	}
 	set_temporary(sm);
 	return retune;
@@ -335,6 +353,9 @@ static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 	sm->base_bw = sm->view.ch.bw;
 	sm->base_rx_tone = sm->view.ch.rx_tone;
 	sm->base_tx_tone = sm->view.ch.tx_tone;
+	sm->base_mode = sm->view.ch.mode;
+	sm->base_cc = sm->view.ch.color_code;
+	sm->base_ts = sm->view.ch.timeslot;
 	clear_temporary(sm);
 	apply_tot(sm);
 }
@@ -593,6 +614,12 @@ static void dmr_load_channel(radio_sm_t *sm)
 	if (sm->manual && (sm->manual_vfo != sm->view.vfo || sm->manual_ch != sm->view.channel_number)) {
 		sm->manual = false;	// a chosen target lasts as long as its channel (temporary state, docs/ux)
 	}
+	if (sm->hear_all_latch && (sm->latch_vfo != sm->view.vfo || sm->latch_ch != sm->view.channel_number)) {
+		sm->hear_all_latch = false;	// so does the hear all latch
+	}
+	if (sm->one_shot && (sm->view.vfo || sm->one_shot_ch != sm->view.channel_number)) {
+		sm->one_shot = false;		// and a one-shot target
+	}
 	if (sm->view.vfo) {
 		return;
 	}
@@ -637,18 +664,30 @@ static void dmr_configure(radio_sm_t *sm)
 	dmr_call_config_default(&cfg);
 	cfg.own_id = ch->dmr_id != 0 ? ch->dmr_id : sm->own_id;
 	cfg.cc = ch->color_code & 0x0Fu;
-	uint8_t ts_override = sm->manual ? sm->manual_ts : sm->talk_ts;
+	// The talk target: a one-shot target (the focused row PTT went to), else one chosen for now, else the channel's.
+	// A timeslot chosen for now beats a contact's timeslot override
+	uint8_t ts_override = sm->one_shot ? 0 : sm->manual ? sm->manual_ts : sm->talk_ts;
+	if (sm->temp_ts != 0) {
+		ts_override = sm->temp_ts;
+	}
 	cfg.ts = ts_override != 0 ? ts_override : (ch->timeslot == 2 ? 2 : 1);
 	cfg.rmo = ch->tx_hz != 0 && ch->rx_hz != ch->tx_hz && !ch->dmo;
-	cfg.talk_target.id = sm->manual ? sm->manual_id : sm->talk_id;
-	cfg.talk_target.private_call = sm->manual ? sm->manual_private : sm->talk_private;
-	cfg.listen.hear_all = sm->view.monitor;
+	cfg.talk_target.id = sm->one_shot ? sm->one_shot_id : sm->manual ? sm->manual_id : sm->talk_id;
+	cfg.talk_target.private_call = sm->one_shot ? sm->one_shot_private : sm->manual ? sm->manual_private :
+		sm->talk_private;
+	cfg.listen.hear_all = sm->view.monitor || sm->hear_all_latch;
 	cfg.listen.groups = sm->listen;
 	cfg.listen.group_count = sm->listen_count;
 	// The channel's TX time-out when it has one, else the radio's
 	cfg.tot_s = sm->view.tot_s;	// apply_tot: the channel's, else the radio's
-	cfg.reply_window_s = hang_s(sm->group_hang_ms, cfg.reply_window_s);
-	cfg.reply_window_private_s = hang_s(sm->private_hang_ms, cfg.reply_window_s);
+	if (sm->set.reply_s <= 30u) {
+		cfg.reply_window_s = cfg.reply_window_private_s = sm->set.reply_s;	// the radio's setting
+	} else {
+		cfg.reply_window_s = hang_s(sm->group_hang_ms, cfg.reply_window_s);
+		cfg.reply_window_private_s = hang_s(sm->private_hang_ms, cfg.reply_window_s);
+	}
+	sm->win_group_s = cfg.reply_window_s;
+	sm->win_private_s = cfg.reply_window_private_s != 0 ? cfg.reply_window_private_s : cfg.reply_window_s;
 	bool alias = false;
 #if CONFIG_DMR_TALKER_ALIAS
 	alias = sm->radio_name[0] != '\0' && !sm->view.vfo &&
@@ -689,6 +728,8 @@ static void dmr_configure(radio_sm_t *sm)
 	dmr_call_configure(&cfg);
 	sm->view.dmr.own_id = cfg.own_id;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
+	sm->view.dmr.hear_all_latch = sm->hear_all_latch;
+	sm->view.dmr.one_shot = sm->one_shot;
 	sm->view.dmr.target_manual = sm->manual;
 	sm->view.dmr.alias_tx = alias;
 	sm->view.dmr.privacy = privacy;
@@ -700,6 +741,7 @@ static void dmr_set_manual(radio_sm_t *sm, uint32_t id, bool private_call, uint8
 	if (id == 0 || id > DMR_ID_MAX || sm->view.ch.mode != RADIO_MODE_DMR) {
 		return;
 	}
+	sm->one_shot = false;		// an explicit choice replaces a one-shot target
 	sm->manual = true;
 	sm->manual_id = id;
 	sm->manual_private = private_call;
@@ -711,6 +753,35 @@ static void dmr_set_manual(radio_sm_t *sm, uint32_t id, bool private_call, uint8
 		sm->dmr_serial = dmr_call_view()->serial - 1u;	// publish the new target at the next tick
 	}
 	changed(sm);
+}
+
+// The stack follows a change of the channel's DMR settings (temporary color code, timeslot, hear all)
+static void dmr_reconfigure(radio_sm_t *sm)
+{
+	if (sm->dmr_running) {
+		dmr_configure(sm);
+		sm->dmr_serial = dmr_call_view()->serial - 1u;	// publish at the next tick
+	}
+	changed(sm);
+}
+
+// A timeslot for now (RREQ_DMR_TS). The slot the radio would use without it (a contact's override, else the
+// channel's) clears it again
+static void dmr_set_timeslot(radio_sm_t *sm, int32_t ts, bool busy)
+{
+	if (busy || sm->view.vfo || sm->view.ch.mode != RADIO_MODE_DMR || (ts != 1 && ts != 2)) {
+		return;
+	}
+	uint8_t over = sm->one_shot ? 0 : sm->manual ? sm->manual_ts : sm->talk_ts;
+	uint8_t natural = over != 0 ? over : (sm->base_ts == 2 ? 2 : 1);
+	uint8_t want = ts == natural ? 0 : (uint8_t)ts;
+	if (want == sm->temp_ts) {
+		return;
+	}
+	sm->temp_ts = want;
+	sm->view.ch.timeslot = want != 0 ? want : sm->base_ts;
+	set_temporary(sm);
+	dmr_reconfigure(sm);
 }
 
 // On a DMR channel, after set_mode(DMR) and rx(): configure, and start the stack if it isn't running
@@ -738,6 +809,11 @@ static void dmr_end(radio_sm_t *sm)
 	sm->dmr_running = false;
 	sm->manual = false;		// a chosen talk target ends with the channel
 	sm->view.dmr.target_manual = false;
+	sm->one_shot = false;
+	sm->view.dmr.one_shot = false;
+	sm->hear_all_latch = false;	// and so does the hear all latch
+	sm->view.dmr.hear_all_latch = false;
+	sm->view.dmr.hear_all = sm->view.monitor;
 	memset(&sm->view.dmr.call, 0, sizeof(sm->view.dmr.call));
 	sm->view.dmr.active = false;
 	sm->view.dmr.state = RDMR_IDLE;
@@ -804,6 +880,7 @@ static void dmr_publish(radio_sm_t *sm)
 	find_name(sm, d->target_id, !d->target_private, d->target_name);
 	d->reply_active = cv->reply_active;
 	d->reply_s = cv->reply_s;
+	d->one_shot = sm->one_shot;
 #if CONFIG_DMR_EMERGENCY
 	if (d->state == RDMR_RX && cv->caller.emergency) {
 		dmr_emergency_heard(DMR_EMERGENCY_ALERT_CALL, cv->caller.src, cv->caller.dst, cv->caller.group, cv->call_start_ms);
@@ -879,6 +956,93 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	}
 }
 
+// --- One-shot talk target: PTT while a list row is focused talks to that row's target once, and keeps it as the
+// talk target for the reply window after the call (information-architecture.md 1). The stack sees it as the talk
+// target, so replies on that talkgroup are heard; radio_sm_tick ends it ---
+
+static bool same_dmr_target(uint32_t id_a, bool priv_a, uint32_t id_b, bool priv_b)
+{
+	return id_a == id_b && priv_a == priv_b;
+}
+
+// At PTT down: the focused target, if it isn't where PTT goes already
+static void one_shot_start(radio_sm_t *sm)
+{
+	if (sm->focus_id == 0 || !sm->dmr_running) {
+		if (sm->one_shot) {
+			sm->one_shot_until = 0;	// PTT again inside the window: it runs again after this call
+		}
+		return;
+	}
+	const dmr_call_view_t *cv = dmr_call_view();
+	if (same_dmr_target(cv->tx_target.id, cv->tx_target.private_call, sm->focus_id, sm->focus_private)) {
+		if (sm->one_shot) {
+			sm->one_shot_until = 0;
+		}
+		return;
+	}
+	sm->one_shot = true;
+	sm->one_shot_id = sm->focus_id;
+	sm->one_shot_private = sm->focus_private;
+	sm->one_shot_ch = sm->view.channel_number;
+	sm->one_shot_until = 0;
+	dmr_configure(sm);
+	sm->dmr_serial = cv->serial - 1u;	// publish the new target at the next tick
+}
+
+static void one_shot_end(radio_sm_t *sm)
+{
+	if (!sm->one_shot) {
+		return;
+	}
+	sm->one_shot = false;
+	sm->view.dmr.one_shot = false;
+	if (sm->dmr_running) {
+		dmr_configure(sm);
+		sm->dmr_serial = dmr_call_view()->serial - 1u;
+	}
+	changed(sm);
+}
+
+// Every tick: the window runs from the end of our call (or of the target's answer), then the target goes back
+static void one_shot_follow(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->one_shot) {
+		return;
+	}
+	radio_dmr_view_t *d = &sm->view.dmr;
+	const radio_dmr_call_t *c = &d->call;
+	bool theirs = sm->view.state == RS_RX && d->state == RDMR_RX &&
+		(sm->one_shot_private ? c->src == sm->one_shot_id : (c->group && c->dst == sm->one_shot_id));
+	if (sm->ptt || sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED || theirs) {
+		sm->one_shot_until = 0;
+		return;
+	}
+	const dmr_call_view_t *cv = dmr_call_view();
+	if (sm->one_shot_until == 0) {
+		uint8_t w = sm->one_shot_private ? sm->win_private_s : sm->win_group_s;
+		sm->one_shot_until = now_ms + (uint32_t)w * 1000u;
+		if (sm->one_shot_until == 0) {
+			sm->one_shot_until = 1;
+		}
+	}
+	int32_t left = (int32_t)(sm->one_shot_until - now_ms);
+	if (left <= 0) {
+		if (!cv->reply_active) {	// someone else's reply window runs: the target comes back after it
+			one_shot_end(sm);
+		}
+		return;
+	}
+	if (!cv->reply_active) {
+		uint8_t s = (uint8_t)((left + 999) / 1000);
+		if (!d->reply_active || d->reply_s != s) {
+			d->reply_active = true;
+			d->reply_s = s;
+			changed(sm);
+		}
+	}
+}
+
 // PTT on a DMR channel (band, RX-only and frequency checks passed): arm the board's per-burst keying, then the stack
 // decides when the bursts go out
 static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
@@ -904,6 +1068,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		}
 		sm->dmr_keyed = true;
 	}
+	one_shot_start(sm);
 	sm->view.state = RS_TX;
 	sm->view.tx_deny = TXDENY_NONE;
 	sm->view.tx_elapsed_ms = 0;
@@ -1916,6 +2081,9 @@ static void clamp_settings(radio_settings_t *s)
 	if (s->rx_save > 3) {
 		s->rx_save = 3;
 	}
+	if (s->reply_s > 30 && s->reply_s != RADIO_REPLY_CODEPLUG) {
+		s->reply_s = 30;
+	}
 }
 
 // The radio core's settings as kept in the settings store (docs/spec/settings-store.md 3); the defaults if never set
@@ -1946,6 +2114,7 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 	s->battery_off_s = st->rs_battery_off_s;
 	s->backlight_dim_s = st->rs_backlight_dim_s;
 	s->backlight_off_s = st->rs_backlight_off_s;
+	s->reply_s = st->rs_reply_s;
 	clamp_settings(s);
 }
 
@@ -1971,16 +2140,25 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_battery_off_s = s->battery_off_s;
 	st->rs_backlight_dim_s = s->backlight_dim_s;
 	st->rs_backlight_off_s = s->backlight_off_s;
+	st->rs_reply_s = s->reply_s;
 	st->rs_stored = 1;
 	settings_end(now_ms);
 }
 
 static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
 {
+#if CONFIG_DMR
+	bool reply_changed = s->reply_s != sm->set.reply_s;
+#endif
 	sm->set = *s;
 	clamp_settings(&sm->set);
 	apply_tot(sm);
 	activity(sm, now_ms);
+#if CONFIG_DMR
+	if (reply_changed && sm->dmr_running) {
+		dmr_configure(sm);	// the reply window
+	}
+#endif
 #if CONFIG_VOX
 	if (sm->vox_keyed && sm->set.vox == RADIO_VOX_OFF) {
 		sm->vox_keyed = false;
@@ -2134,7 +2312,7 @@ static bool retunes(uint8_t type)
 {
 	switch (type) {
 	case RREQ_CH_STEP: case RREQ_ZONE_POS: case RREQ_ZONE: case RREQ_VFO: case RREQ_VFO_STEP: case RREQ_VFO_SET:
-	case RREQ_BANDWIDTH: case RREQ_TONE:
+	case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC:
 		return true;
 	default:
 		return false;
@@ -2347,6 +2525,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #if CONFIG_DMR
 	case RREQ_REPLY_CANCEL:
 		dmr_call_reply_cancel();
+		one_shot_end(sm);
 		break;
 	case RREQ_DMR_TARGET:
 		dmr_set_manual(sm, (uint32_t)req->arg & DMR_ID_MAX, ((uint32_t)req->arg >> 24) & 1u, 0);
@@ -2367,8 +2546,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 	}
 	case RREQ_DMR_TARGET_CLEAR:
-		if (sm->manual) {
+		if (sm->manual || sm->one_shot) {
 			sm->manual = false;
+			sm->one_shot = false;
 			if (sm->dmr_running) {
 				dmr_configure(sm);
 				sm->dmr_serial = dmr_call_view()->serial - 1u;
@@ -2376,6 +2556,52 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			changed(sm);
 		}
 		break;
+	case RREQ_DMR_TS:
+		dmr_set_timeslot(sm, req->arg, busy);
+		break;
+	case RREQ_DMR_CC:
+		if (busy || sm->view.vfo || sm->view.ch.mode != RADIO_MODE_DMR || req->arg < 0 || req->arg > 15 ||
+				req->arg == sm->view.ch.color_code) {
+			break;
+		}
+		sm->view.ch.color_code = (uint8_t)req->arg;
+		set_temporary(sm);
+		dmr_reconfigure(sm);
+		break;
+	case RREQ_MODE:
+		if (busy || sm->view.vfo || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR) ||
+				req->arg == sm->view.ch.mode || (req->arg == RADIO_MODE_FM && !CONFIG_FM)) {
+			break;
+		}
+		sm->view.ch.mode = (uint8_t)req->arg;
+		if (sm->view.ch.mode == RADIO_MODE_DMR && sm->view.ch.timeslot != 2) {
+			sm->view.ch.timeslot = 1;
+		}
+		set_temporary(sm);
+		tune(sm, now_ms);	// the call stack starts or stops with the mode
+		break;
+	case RREQ_DMR_HEAR_ALL:
+		if ((req->arg != 0) == sm->hear_all_latch) {
+			break;
+		}
+		sm->hear_all_latch = req->arg != 0;
+		sm->latch_ch = sm->view.channel_number;
+		sm->latch_vfo = sm->view.vfo;
+		sm->view.dmr.hear_all_latch = sm->hear_all_latch;
+		dmr_reconfigure(sm);
+		break;
+	case RREQ_DMR_FOCUS: {
+		uint32_t id = (uint32_t)req->arg & DMR_ID_MAX;
+		bool priv = (((uint32_t)req->arg >> 24) & 1u) != 0;
+		if (id != sm->focus_id || priv != sm->focus_private) {
+			sm->focus_id = id;
+			sm->focus_private = id != 0 && priv;
+			sm->view.dmr.focus_id = id;
+			sm->view.dmr.focus_private = sm->focus_private;
+			changed(sm);
+		}
+		break;
+	}
 #if CONFIG_DMR_PRIVACY
 	case RREQ_DMR_PRIVACY: {
 		uint8_t type = (uint8_t)(((uint32_t)req->arg >> 16) & 0xFFu);
@@ -2665,6 +2891,10 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 #if CONFIG_VOX
 	vox_poll(sm, now_ms);
+	if (vox_enabled(sm) != sm->view.vox_on) {
+		sm->view.vox_on = !sm->view.vox_on;
+		changed(sm);
+	}
 #endif
 #if CONFIG_DMR
 	if (sm->hotspot) {
@@ -2742,6 +2972,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->dmr_running) {
 		dmr_call_poll(now_ms);
 		dmr_follow(sm, now_ms);
+		one_shot_follow(sm, now_ms);
 	}
 #if CONFIG_DMR_DATA_CORE
 	data_tick(sm, now_ms);	// also off DMR: requests fail at once, ARS keeps its state. A list it starts is queued

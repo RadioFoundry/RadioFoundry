@@ -101,6 +101,8 @@ On FM channels (all, or those with the codeplug VOX flag) the microphone level (
 or above `100 - 8 x vox_level` for 2 polls (50 ms) keys up; below it for `vox_tail_ms` unkeys (with the roger beep
 if on). Received audio, MONITOR, and 500 ms after a reception never key VOX (the speaker into the microphone). PTT
 works as usual and wins. DM-1701: `mic_level` from the microphone ADC (PA3); not verified on the bench.
+The Quick VOX tile (FM) turns the `vox` setting to all or off; `vox_on` in the view says whether VOX is armed on
+the current channel.
 
 ### 3.5 Squelch tail elimination
 

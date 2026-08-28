@@ -178,6 +178,7 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "input.raw_keys=0x%08x\ninput.injected=0x%08x\n", (unsigned)input_raw_keys(),
 		(unsigned)input_injected_keys());
 	dl_text(t, "input.encoder_total=%d\n", (int)input_encoder_total());
+	dl_text(t, "input.long_ms=%u\n", (unsigned)input_long_ms());
 	dl_text(t, "dl.frames=%u\ndl.bad_crc=%u\ndl.too_long=%u\ndl.timeouts=%u\n", (unsigned)c[0], (unsigned)c[1],
 		(unsigned)c[2], (unsigned)c[3]);
 }
@@ -198,6 +199,11 @@ static void storage_section(dl_text_t *t)
 	dl_text(t, "settings.saves=%u\nsettings.erases=%u\nsettings.failures=%u\n", (unsigned)ss.saves,
 		(unsigned)ss.erases, (unsigned)ss.failures);
 	dl_text(t, "settings.sector=%u\nsettings.slot=%u\nsettings.skipped=%u\n", ss.sector, ss.slot, ss.skipped);
+	settings_t sv;
+	settings_read(&sv);
+	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
+		sv.auto_lock_s, sv.long_press_ms, sv.repeat_ms, sv.mic_gain);
+	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);
 	dl_text(t, "storage.replays=%u\nstorage.errors=%u\n", (unsigned)st.replays, (unsigned)st.errors);
