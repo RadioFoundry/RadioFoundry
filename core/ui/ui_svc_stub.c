@@ -12,9 +12,11 @@ WEAK uint32_t ui_svc_feat_voice(void) { return 0; }
 WEAK uint32_t ui_svc_feat_data(void) { return 0; }
 WEAK uint32_t ui_svc_feat_storage(void) { return 0; }
 WEAK uint32_t ui_svc_feat_radio(void) { return 0; }
+WEAK uint32_t ui_svc_feat_ext(void) { return 0; }
 WEAK uint32_t ui_svc_features(void)
 {
-	return ui_svc_feat_voice() | ui_svc_feat_data() | ui_svc_feat_storage() | ui_svc_feat_radio();
+	return ui_svc_feat_voice() | ui_svc_feat_data() | ui_svc_feat_storage() | ui_svc_feat_radio() |
+		ui_svc_feat_ext();
 }
 
 WEAK bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life) { (void)id; (void)private_call; (void)life; return false; }
@@ -56,6 +58,8 @@ static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_REPLY_S] = 10, [UI_SET_TOT_S] = 180, [UI_SET_SQUELCH] = 5, [UI_SET_MIC_GAIN] = 5, [UI_SET_ALIAS_SHOW] = 1,
 	[UI_SET_PTT_LOCKED] = 1, [UI_SET_LOW_BATTERY] = 15, [UI_SET_LONG_PRESS_MS] = 600, [UI_SET_REPEAT_MS] = 120,
 };
+// (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
+// stand-ins in a build without the store)
 
 int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_COUNT ? settings[id] : 0; }
 

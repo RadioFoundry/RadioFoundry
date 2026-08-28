@@ -61,7 +61,8 @@ typedef struct {
 	bool hints;		// the hint row is shown (Settings > Display)
 	bool large_text;	// Home shows only the channel and the talk target (Settings > Display)
 	bool privacy;		// the next DMR transmission is encrypted
-	bool hear_all;		// hear all latched (quick tile 5 on DMR)
+	bool hear_all;		// hear all latched (quick tile 5 on DMR); follows the radio view where the radio has it
+	uint16_t auto_lock_s;	// lock the keys after this long without a key press, 0 = never (Settings > Keys)
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
 	ui_banner_t banner;

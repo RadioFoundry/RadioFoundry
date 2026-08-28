@@ -464,6 +464,71 @@ static void test_foreign(void)
 	free(snap);
 }
 
+// The native area on factory reset (storage_native_erase): blank stays blank, our data (the magic) is erased with
+// the header sector last, anything else is left alone; a cut in the middle can be finished by running it again.
+// And the deferred job the UI hands to the housekeeping task
+static const hal_flash_map_t map_native = {
+	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = 0x30000u,
+	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+	.native_addr = 0x30000u, .native_size = 0x8000u,
+};
+
+static int job_runs;
+static void job(void *ctx) { job_runs += *(int *)ctx; }
+
+static void test_native_and_jobs(void)
+{
+	const uint32_t na = map_native.native_addr, ns = map_native.native_size;
+	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
+	uint8_t junk[16];
+	memset(junk, 0x5A, sizeof(junk));
+
+	sim_flash_create(FLASH_SIZE, &map_native);
+	boot();
+	CHECK(storage_native_erase() == STORAGE_NATIVE_BLANK);
+	// Another firmware's bytes, no magic: untouched
+	sim_flash.write(na + 0x5000u, junk, sizeof(junk));
+	uint32_t e0 = sim_flash_units();
+	CHECK(storage_native_erase() == STORAGE_NATIVE_FOREIGN);
+	CHECK(sim_flash_units() == e0 && sim_flash_data[na + 0x5000u] == 0x5A);
+	// Ours: everything erased, the header sector last
+	sim_flash.write(na, magic, sizeof(magic));
+	sim_flash.write(na + 0x2000u, junk, sizeof(junk));
+	CHECK(storage_native_erase() == STORAGE_NATIVE_ERASED);
+	for (uint32_t a = na; a < na + ns; a++) {
+		if (sim_flash_data[a] != 0xFF) {
+			CHECK(!"native area not blank");
+			break;
+		}
+	}
+	CHECK(sim_flash_erases(na + 0x7000u) == 0 && sim_flash_erases(na + 0x5000u) == 1 && sim_flash_erases(na) == 1);
+	// A cut after the first erase: the magic is still there, a second run finishes
+	sim_flash.write(na, magic, sizeof(magic));
+	sim_flash.write(na + 0x6000u, junk, sizeof(junk));
+	sim_flash.write(na + 0x1000u, junk, sizeof(junk));
+	sim_flash_cut_after(1);
+	CHECK(storage_native_erase() == STORAGE_NATIVE_FAILED);
+	sim_flash_power_on();
+	CHECK(memcmp(&sim_flash_data[na], magic, 4) == 0 && sim_flash_data[na + 0x6000u] == 0xFF);
+	CHECK(storage_native_erase() == STORAGE_NATIVE_ERASED && sim_flash_data[na + 0x1000u] == 0xFF);
+	// No native area in the map: refused
+	sim_flash_create(FLASH_SIZE, &map);
+	boot();
+	CHECK(storage_native_erase() == STORAGE_NATIVE_FAILED);
+
+	// Jobs: one at a time, run by the poll, then the next may come
+	int one = 1;
+	CHECK(!storage_job_busy() && storage_job_post(job, &one));
+	CHECK(storage_job_busy() && !storage_job_post(job, &one));
+	storage_job_poll();
+	CHECK(job_runs == 1 && !storage_job_busy());
+	storage_job_poll();
+	CHECK(job_runs == 1);
+	CHECK(!storage_job_post(NULL, NULL));
+	CHECK(sim_flash_violations() == 0);
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -473,6 +538,7 @@ int main(void)
 	test_settings_cuts();
 	test_settings_versions();
 	test_foreign();
+	test_native_and_jobs();
 	sim_flash_free();
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

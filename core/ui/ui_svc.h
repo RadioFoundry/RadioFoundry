@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "config.h"
+#include "radio/radio.h"
 
 // --- What is available (screens gray out what isn't, and say why on SELECT) ---
 #define UI_FEAT_TALK_TARGET	(1u << 0)	// ui_svc_talk_to / ui_svc_focus_target (dmr-voice)
@@ -35,6 +36,9 @@ uint32_t ui_svc_feat_voice(void);
 uint32_t ui_svc_feat_data(void);
 uint32_t ui_svc_feat_storage(void);
 uint32_t ui_svc_feat_radio(void);
+// A package outside the four above that connects calls of its own (dmr-ext: UI_FEAT_EMERGENCY with its
+// ui_svc_emergency); weak 0 until one does
+uint32_t ui_svc_feat_ext(void);
 
 // --- Talk target (dmr-voice; information-architecture.md 1, three lifetimes) ---
 typedef enum {
@@ -99,7 +103,12 @@ typedef struct {
 bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off)
 
 // --- Emergency, reset ---
+// Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until
+// then the weak stub says "not set up"
 bool ui_svc_emergency(bool on);
+// The settings back to their defaults and the native codeplug area emptied (never the legacy codeplug or the
+// calibration: those would need a second, explicit confirmation), then the radio restarts. Done by the housekeeping
+// task, not the UI's; false if it can't be started (no flash, or a save still going on)
 bool ui_svc_factory_reset(void);
 
 // --- Settings persistence (storage-cps). The stub keeps them in RAM (lost at power off) ---
@@ -122,6 +131,8 @@ bool ui_svc_ram_set(uint8_t id, int32_t value);
 // A setting has its value (at start-up for every one, then on each change): hand it to the package that acts on it
 // (the radio core's radio_settings_t for time-out, key beeps, backlight, battery saver)
 void ui_svc_apply(uint8_t id, int32_t value);
+// The reply window value shown for the radio core's settings (ui_svc_radio.c; the codeplug's hang time when unset)
+int32_t ui_svc_reply_shown(const radio_settings_t *s);
 
 // --- Inbound: events other packages hand to the UI (any task; the UI picks them up on its next pass) ---
 typedef enum {
@@ -134,6 +145,7 @@ typedef enum {
 	UI_EV_HOTSPOT_STARTED,	// the host started hotspot mode
 	UI_EV_SCAN_STOPPED,	// the scan stopped on a channel
 	UI_EV_CALL_ALERT_RESULT,	// our call alert: ok = the radio answered, else no answer after the retries
+	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (text: what failed)
 } ui_event_kind_t;
 
 typedef struct {

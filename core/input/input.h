@@ -19,6 +19,10 @@ uint32_t input_idle_ms(void);
 // Raw state for the diagnostics page: physical key bits held now, encoder detents since start
 uint32_t input_raw_keys(void);
 int32_t input_encoder_total(void);
+// Gesture timing (Settings > Keys): the long press threshold and the repeat period in ms, 0 = the defaults above.
+// Clamped to 200..3000 and 40..1000; in effect from the next scan
+void input_set_timing(uint16_t long_ms, uint16_t repeat_ms);
+uint16_t input_long_ms(void);		// in effect now
 
 // --- Injection (the debug link, core/debuglink): host-driven keys processed by the input task exactly like real ones.
 // Injected physical key bits are ORed into the scan mask, so they go through the same debounce and gesture engine
@@ -28,7 +32,7 @@ int32_t input_encoder_total(void);
 #define INPUT_INJECT_MAX_MS	10000u	// longest hold of any injected key, PTT included
 #define INPUT_INJECT_GAP_MS	40u	// after an injected key is released, the next one waits this long (debounce)
 #define INPUT_INJECT_PRESS_MS	80u	// how long a short PRESS is held
-#define INPUT_INJECT_LONG_MS	(INPUT_LONG_MS + 120u)	// how long a LONG is held (released after the LONG event)
+#define INPUT_INJECT_LONG_EXTRA_MS	120u	// a LONG is held the long press time plus this (released after the LONG)
 
 typedef enum {
 	INPUT_SRC_KEYS,		// the radio's own keys / encoder
@@ -45,7 +49,7 @@ typedef enum {
 // Hold physical key bits (the board's scan mask bits) for hold_ms (capped at INPUT_INJECT_MAX_MS), then release
 input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms);
 // A logical action with a gesture, through the key map: PRESS holds the key that gives it for INPUT_INJECT_PRESS_MS,
-// LONG for INPUT_INJECT_LONG_MS; DOWN / UP hold and release a raw-edge key (MONITOR; PTT goes to input_inject_ptt);
+// LONG for input_long_ms() + INPUT_INJECT_LONG_EXTRA_MS; DOWN / UP hold and release a raw-edge key (MONITOR; PTT goes to input_inject_ptt);
 // ACT_ENC_STEP with GESTURE_DOWN adds value detents to the encoder
 input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value);
 // Hold the key that gives action (as its short or its long action) for hold_ms, whatever the gesture that makes

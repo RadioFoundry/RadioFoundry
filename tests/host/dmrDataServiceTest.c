@@ -605,6 +605,44 @@ static void testOurSms(void)
 	CHECK(sms_inbox_unread() == unread - 1);
 	CHECK(dmr_data_serial() != serial);
 	CHECK(!sms_inbox_get(DMR_DATA_INBOX_SIZE, &m));
+
+	// Delete (the UI's message actions): from the middle of a full, wrapped ring, then the newest; a new message
+	// goes in front of the rest
+	reset();
+	static const char *const texts[] = { "m0", "m1", "m2", "m3", "m4" };
+	for (int i = 0; i < 5; i++)
+	{
+		receiveTMS(RADIO_A, texts[i], (uint8_t)(40 + i));
+		runMainTask(500);
+	}
+	CHECK(sms_inbox_count() == DMR_DATA_INBOX_SIZE);	// m4 m3 m2 m1 (m0 dropped)
+	serial = dmr_data_serial();
+	CHECK(sms_inbox_delete(1));				// m3
+	CHECK(dmr_data_serial() != serial);
+	CHECK(sms_inbox_count() == 3);
+	const char *const after[] = { "m4", "m2", "m1" };
+	for (int i = 0; i < 3; i++)
+	{
+		CHECK(sms_inbox_get(i, &m) && (strcmp(m.text, after[i]) == 0));
+	}
+	CHECK(sms_inbox_delete(0));				// m4
+	CHECK(!sms_inbox_delete(2) && !sms_inbox_delete(-1));
+	receiveTMS(RADIO_A, "m5", 50);
+	runMainTask(500);
+	const char *const now3[] = { "m5", "m2", "m1" };
+	CHECK(sms_inbox_count() == 3);
+	for (int i = 0; i < 3; i++)
+	{
+		CHECK(sms_inbox_get(i, &m) && (strcmp(m.text, now3[i]) == 0));
+	}
+	while (sms_inbox_count() > 0)
+	{
+		CHECK(sms_inbox_delete(0));
+	}
+	CHECK(!sms_inbox_get(0, &m) && sms_inbox_unread() == 0);
+	receiveTMS(RADIO_A, "m6", 51);
+	runMainTask(500);
+	CHECK(sms_inbox_count() == 1 && sms_inbox_get(0, &m) && (strcmp(m.text, "m6") == 0));
 }
 
 // Data blocks long after their header are noise (gotcha 5.4); group data to the listen list is ours

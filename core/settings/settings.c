@@ -44,6 +44,8 @@ void settings_defaults(settings_t *s)
 	s->beeps = 1;
 	s->hotspot_allowed = 1;
 	s->master_power = SETTINGS_UNSET8;
+	s->rs_reply_s = SETTINGS_UNSET8;
+	s->mic_gain = 5;
 }
 
 static void put32(uint8_t *p, uint32_t v)

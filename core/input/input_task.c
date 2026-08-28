@@ -32,6 +32,8 @@ static int8_t inj_enc;
 static uint32_t wake_ms;
 static bool wake_set;
 static volatile uint8_t last_source = INPUT_SRC_KEYS;
+static volatile uint32_t timing;	// input_set_timing: long ms << 16 | repeat ms (one word: no lock needed)
+static volatile uint16_t long_now = INPUT_LONG_MS;
 
 static void emit(const input_event_t *ev, void *ctx)
 {
@@ -91,6 +93,8 @@ static void input_task(void *arg)
 		} else if ((inj != 0) || (ienc != 0)) {
 			last_source = INPUT_SRC_HOST;
 		}
+		uint32_t tm = timing;
+		input_engine_set_timing(&engine, (uint16_t)(tm >> 16), (uint16_t)tm);
 		input_engine_step(&engine, keys | inj, (int8_t)(enc + ienc), now, emit, NULL);
 		vTaskDelayUntil(&wake, pdMS_TO_TICKS(INPUT_SCAN_MS));
 	}
@@ -127,6 +131,23 @@ uint32_t input_idle_ms(void)
 	}
 	taskEXIT_CRITICAL();
 	return idle;
+}
+
+void input_set_timing(uint16_t long_ms, uint16_t repeat_ms)
+{
+	if (long_ms != 0) {
+		long_ms = long_ms < 200 ? 200 : long_ms > 3000 ? 3000 : long_ms;
+	}
+	if (repeat_ms != 0) {
+		repeat_ms = repeat_ms < 40 ? 40 : repeat_ms > 1000 ? 1000 : repeat_ms;
+	}
+	timing = ((uint32_t)long_ms << 16) | repeat_ms;
+	long_now = long_ms != 0 ? long_ms : INPUT_LONG_MS;
+}
+
+uint16_t input_long_ms(void)
+{
+	return long_now;
 }
 
 uint32_t input_raw_keys(void)
@@ -248,8 +269,9 @@ input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value
 	case GESTURE_REPEAT:
 		m = key_for(action, true);
 		if (m != NULL && !m->raw_edges && (gesture == GESTURE_LONG || m->repeat)) {
-			uint32_t extra = gesture == GESTURE_REPEAT ? (uint32_t)(value > 0 ? value : 1) * INPUT_REPEAT_MS : 0;
-			return input_inject_keys(1u << m->bit, INPUT_INJECT_LONG_MS + extra);
+			uint32_t rep = (uint16_t)timing != 0 ? (uint16_t)timing : INPUT_REPEAT_MS;
+			uint32_t extra = gesture == GESTURE_REPEAT ? (uint32_t)(value > 0 ? value : 1) * rep : 0;
+			return input_inject_keys(1u << m->bit, long_now + INPUT_INJECT_LONG_EXTRA_MS + extra);
 		}
 		break;
 	case GESTURE_DOWN:

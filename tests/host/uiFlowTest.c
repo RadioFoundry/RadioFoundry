@@ -60,6 +60,13 @@ static const flow_t flows[] = {
 	{ "15 stop hotspot", "hotspot:on", "ok", "hotspot=0", 2, false },
 	{ "18 FM / DMR", "", "quick 4", "mode=fm", 2, false },
 	{ "19 hear all latched", "", "quick 5", "hearall=1", 2, false },
+	{ "19 hear all off on BACK", "quick 5 back", "back", "hearall=0", 1, false },
+	{ "19 hear all ends with the channel", "quick 5 back", "up", "hearall=0", 1, false },
+	{ "21 VOX on (FM)", "down", "quick 6", "vox=1", 2, false },
+	{ "21 VOX off again", "down quick 6", "6", "vox=0", 1, false },
+	{ "21 monitor latch (FM)", "down", "quick 5", "monitor=1", 2, false },
+	{ "3 focus follows the row", "", "tt down", "focusid=91", 2, false },
+	{ "3 focus cleared on Home", "tt down", "long:back", "focusid=0", 1, false },
 	{ "20 timeslot", "", "quick 2 back", "ts=2 screen=home", 3, false },
 	{ "20 color code 7", "", "quick 3 7 ok", "cc=7", 4, false },
 	{ "20 save to channel", "quick 2", "long:ok", "writes=1", 1, true },
@@ -67,6 +74,9 @@ static const flow_t flows[] = {
 	{ "S TX timeout to the radio", "", "ok 6 3 down ok", "radio_tot=300", 5, false },
 	{ "S backlight time to the radio", "", "ok 6 2 down ok", "radio_backlight=60", 5, false },
 	{ "S key beep", "", "up", "beeps=1", 1, false },
+	{ "S long press time to input", "", "ok 6 8 ok up ok", "longpress=700", 6, false },
+	{ "S auto lock after 30 s", "ok 6 4 down ok long:back", "wait:31000", "locked=1", 0, false },
+	{ "S auto lock waits for keys", "ok 6 4 down ok long:back", "wait:20000 up wait:20000", "locked=0", 1, false },
 	{ "T22 Home and undo", "quick 2 back ok 6", "long:back back", "screen=home temporary=0", 2, false },
 };
 

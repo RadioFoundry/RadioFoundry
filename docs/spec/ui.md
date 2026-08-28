@@ -76,14 +76,16 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | Calls | Owner | State in this branch |
 |---|---|---|
 | `ui_svc_talk_to` temporary / default | dmr-voice (radio core) | `ui_svc_radio.c`: `radio_req_dmr_target`, `radio_req_dmr_target_clear` |
-| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the rest stay in RAM until a store field exists |
-| `ui_svc_factory_reset` | storage-cps | stub: no reset call yet |
-| `ui_svc_focus_target` (one-shot PTT to the focused row), `ui_svc_dmr_timeslot`, `ui_svc_dmr_color_code`, `ui_svc_mode`, `ui_svc_hear_all`, `ui_svc_privacy`, `ui_svc_monitor`, `ui_svc_vox`, `ui_svc_emergency` | dmr-voice / radio core | stubs: the radio core has no request for these yet |
+| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, auto lock, long press and repeat times and the GPS options have `settings_t` fields (appended, settings-store.md); only the ones without a field stay in RAM. Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
+| `ui_svc_factory_reset` | storage-cps | `ui_svc_storage.c`, as a storage job: `settings_t` back to its defaults and saved, then `storage_native_erase` (the native area, only when it carries the `ODRN` magic or is already blank; never the legacy codeplug, calibration or a foreign region), then a restart (`board.system->reboot`), or a radio core reload where the board can't restart |
+| `ui_svc_focus_target` (one-shot PTT to the focused row), `ui_svc_dmr_timeslot`, `ui_svc_dmr_color_code`, `ui_svc_mode`, `ui_svc_hear_all` | dmr-voice / radio core | `ui_svc_radio.c` on the new requests `radio_req_dmr_focus`, `radio_req_dmr_timeslot`, `radio_req_dmr_color_code`, `radio_req_mode`, `radio_req_dmr_hear_all` (radio-features.md, dmr-voice.md). Timeslot, color code and mode are temporary changes (temp bits 0x20, 0x40, 0x80) that BACK on Home undoes and Save to channel keeps; the hear-all latch ends with the call, the channel or a mode change |
+| `ui_svc_privacy`, `ui_svc_monitor`, `ui_svc_vox` | radio core | `ui_svc_radio.c`: `radio_req_dmr_privacy` on the active privacy slot (else the first set one), `radio_req_monitor` as a latch, the `vox` setting (all / off) with `radio_view_t.vox_on` for the tile |
+| `ui_svc_emergency`, `ui_svc_feat_ext` | dmr-ext | weak seams: the Emergency screen calls `ui_svc_emergency`, and dmr-ext reports `UI_FEAT_EMERGENCY` through its own strong `ui_svc_feat_ext`; until then the screen says "not in this build" |
 | `ui_svc_scan`, `ui_svc_scan_skip`, `ui_svc_feat_radio`; scanning state from `radio_view_t.scan` | radio-features | `ui_svc_radio.c`: `radio_req_scan` (toggle, stop, nuisance) |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
 | `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change |
 | backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too) |
-| `ui_svc_msg_*`, `ui_svc_radio_check`, `ui_svc_call_alert`, `ui_svc_poll`, `ui_svc_feat_data` | dmr-data | `ui_svc_data.c` on `dmr_data_api.h`; `ui_svc_msg_delete` stays a stub (the inbox has no delete) |
+| `ui_svc_msg_*`, `ui_svc_radio_check`, `ui_svc_call_alert`, `ui_svc_poll`, `ui_svc_feat_data` | dmr-data | `ui_svc_data.c` on `dmr_data_api.h`; `ui_svc_msg_delete` is `sms_inbox_delete` |
 | `ui_svc_position` | GPS (no owner yet) | stub: "No GPS on this radio" |
 | talker alias, private call start | dmr-voice | read from `radio_view_t.dmr`; `UI_EV_PRIVATE_CALL` is not raised by anyone yet |
 
@@ -152,9 +154,16 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   list is in Settings.
 - Long BACK on Home no longer opens diagnostics (P3: one meaning per key); they are in Tools 7. The firmware boots
   into Home.
-- The long-press time setting (`UI_SET_LONG_PRESS_MS`) is stored but not yet handed to the input layer.
+- The long-press and key-repeat times are stored in `settings_t` and handed to the input layer (`input_set_timing`,
+  clamped to 200..3000 ms and 40..1000 ms); auto lock locks the keys after its time without a key press (counted on
+  Home and in menus alike; injected keys count).
+- Mic gain and the GPS options are stored but act on nothing yet (no HAL hook for mic gain, no GPS owner).
 - Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"); free text is dimmed.
-- Deleting a message has no undo (and the data service has no delete yet).
-- Save to channel and the permanent talk target write the codeplug from the UI task (`codeplug_set_channel`), so the
-  UI stalls for the flash write; a permanent target must be a stored contact (a typed ID stays temporary, with
-  "For now only").
+- Deleting a message has no undo (`sms_inbox_delete` removes it from the RAM inbox).
+- Save to channel and the permanent talk target write the codeplug as a storage job on the housekeeping task, so the
+  UI no longer stalls for the flash write. A permanent target must be a stored contact: a typed ID is set for now at
+  once and the job then says "Not a stored contact: for now only".
+- One-shot PTT: the row with the focus in the picker or a list is handed to the radio core (`radio_req_dmr_focus`);
+  PTT then talks to it once, and the radio follows it for a reply window (the reply time setting, else the
+  codeplug's hang time) before going back to the channel's talk target. A channel change, the call ending outside
+  the window, Reply cancel or a new manual target end it.
