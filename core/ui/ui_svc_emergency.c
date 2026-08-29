@@ -31,6 +31,11 @@ bool ui_svc_emergency(bool on)
 	return st == DMR_EMERGENCY_ALARM || st == DMR_EMERGENCY_HOT_MIC || st == DMR_EMERGENCY_ACTIVE;
 }
 
+void ui_svc_emergency_dismiss(void)
+{
+	dmr_emergency_dismiss();
+}
+
 void ui_svc_emergency_poll(void)
 {
 	static uint32_t seen;

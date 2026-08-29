@@ -82,9 +82,9 @@ class Radio:
         return self.link.reset()
 
     def data_view(self):
-        """The dmr_data view section, numbers as ints (state names stay strings)."""
+        """The dmr_data and dmr_data_stats view sections, numbers as ints (state names stay strings)."""
         out = {}
-        for k, v in self.link.view(["dmr_data"]).items():
+        for k, v in self.link.view(["dmr_data", "dmr_data_stats"]).items():
             n = as_int(v)
             out[k] = n if n is not None else v
         return out

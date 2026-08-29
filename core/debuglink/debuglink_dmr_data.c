@@ -35,7 +35,7 @@ static const char *event_key(uint8_t e)
 	return e < sizeof(names) / sizeof(names[0]) ? names[e] : "?";
 }
 
-void debuglink_view_dmr_data(dl_text_t *t)
+void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 {
 	dmrDataStats_t s;
 	dmrDataSettings_t set;
@@ -46,6 +46,9 @@ void debuglink_view_dmr_data(dl_text_t *t)
 
 	dmrDataServiceGetStats(&s);
 	dmr_data_get_settings(&set);
+	if (part == 1) {	// the counters: their own section (dmr_data_stats), the whole set doesn't fit one reply
+		goto counters;
+	}
 	dl_text(t, "data.built=1\n");
 	dl_text(t, "data.busy=%u\n", dmrDataServiceIsBusy());
 	dl_text(t, "data.sms_state=%s\n", req_key(sms_send_state()));
@@ -61,6 +64,8 @@ void debuglink_view_dmr_data(dl_text_t *t)
 	dl_text(t, "data.ars_server=%u\ndata.radio_check_reply=%u\ndata.call_alert_ack=%u\ndata.lrrp_reply=%u\n",
 		(unsigned)set.arsServer, set.radioCheckReply, set.callAlertAck, set.lrrpReply);
 	dl_text(t, "data.has_gps=%u\ndata.lrrp_triggers=%u\n", set.hasGps, (unsigned)dmrDataServiceLrrpTriggerCount());
+	return;
+counters:
 	dl_text(t, "data.rx_bursts=%u\ndata.rx_csbk=%u\ndata.rx_headers=%u\ndata.rx_blocks=%u\n", (unsigned)s.rxBursts,
 		(unsigned)s.rxCsbk, (unsigned)s.rxHeaders, (unsigned)s.rxBlocks);
 	dl_text(t, "data.rx_blocks_stale=%u\ndata.rx_crc_errors=%u\ndata.rx_crc_flag_mismatch=%u\n",
@@ -234,8 +239,9 @@ void debuglink_dmr_data_reset(void)
 
 #else	// built without the data features
 
-void debuglink_view_dmr_data(dl_text_t *t)
+void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 {
+	(void)part;
 	dl_text(t, "data.built=0\n");
 }
 

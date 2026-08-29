@@ -1095,6 +1095,7 @@ bool ui_emergency_key(const input_event_t *ev)
 	if (ev->gesture != GESTURE_PRESS)
 		return false;
 	if (ev->action == ACT_SELECT) {
+		ui_svc_emergency_dismiss();
 		ui_pop();
 		ui_toast("Emergency acknowledged");
 		return true;
@@ -1104,6 +1105,7 @@ bool ui_emergency_key(const input_event_t *ev)
 		memset(&t, 0, sizeof t);
 		t.id = emerg_id;
 		strcpy(t.name, emerg_name);
+		ui_svc_emergency_dismiss();
 		ui_pop();
 		ui_open_actions(&t);
 		return true;
