@@ -731,6 +731,11 @@ static void dmr_configure(radio_sm_t *sm)
 	sm->view.dmr.hear_all_latch = sm->hear_all_latch;
 	sm->view.dmr.one_shot = sm->one_shot;
 	sm->view.dmr.target_manual = sm->manual;
+	// The target with its flags in one update (dmr_publish copies the stack's own at the next tick): a reader never
+	// sees the new manual / one-shot flag beside the old target
+	sm->view.dmr.target_id = cfg.talk_target.id;
+	sm->view.dmr.target_private = cfg.talk_target.private_call;
+	find_name(sm, cfg.talk_target.id, !cfg.talk_target.private_call, sm->view.dmr.target_name);
 	sm->view.dmr.alias_tx = alias;
 	sm->view.dmr.privacy = privacy;
 }

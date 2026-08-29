@@ -298,10 +298,15 @@ def test_picker_focus_target(home):
     s = wait_screen(r, "picker", "the talk target picker")
     if as_int(s.get("ui.count"), 0) < 2:
         r.press("back", LONG)
-        pytest.skip("the picker has fewer than two rows")
-    r.press("down")
+        pytest.skip("the picker has no talk target rows")
+    # The focus starts on the first target; the last row ("Type a number...") has none
     v = r.wait_for(lambda x: as_int(x.get("dmr.focus_id"), 0) != 0, sections=("dmr",), what="a focus id")
     assert v["dmr.one_shot"] == "0", v
+    if as_int(s.get("ui.count"), 0) >= 3:
+        first = v["dmr.focus_id"]
+        r.press("down")
+        v = r.wait_for(lambda x: x.get("dmr.focus_id") not in (first, "0"), sections=("dmr",),
+                       what="the next row's focus id")
     r.press("back", LONG)
     wait_screen(r, "home")
     r.wait_for(lambda x: as_int(x.get("dmr.focus_id"), 0) == 0, sections=("dmr",), what="the focus cleared")
