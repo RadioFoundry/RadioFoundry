@@ -17,7 +17,8 @@ radiodesk-rfgw@<bench host>, or take ROAM1 out of its config); tools/bench/dmr_b
     bench_tx.py ... csbk  [--src ID] [--dst ID] [--count N] [--opcode HEX [--fid HEX] [--octet3 HEX]] [--family ...]
                                             (preamble CSBK train, then optionally one CSBK, e.g. 1F call alert, or
                                             24 --fid 10 --octet3 80 radio check request)
-    bench_tx.py ... data  [--src ID] [--dst ID] [--confirmed] [--octets N | --tms TEXT [--tms-seq N] [--tms-no-ack]]
+    bench_tx.py ... data  [--src ID] [--dst ID] [--confirmed] [--octets N | --tms TEXT [--tms-seq N] [--tms-no-ack]
+                           | --etsi TEXT [--etsi-no-response] [--group]]
                           [--preambles N] [--family ...]
                                             (--tms: a Motorola TMS text message in IPv4 / UDP 4007 user data)
     bench_tx.py [--ambe-out PREFIX] ... listen [--seconds N] [--json]
@@ -171,8 +172,48 @@ def bptc_info(burst: bytes) -> bytes:
     return bytes(int("".join(map(str, data[k:k + 8])), 2) for k in range(0, 96, 8))
 
 
+def etsi_crc32(data: bytes) -> int:
+    """The data block CRC-32 (ETSI TS 102 361-1 B.3.9): polynomial 0x04C11DB7, initial 0, over the octets taken in
+    swapped pairs (1, 0, 3, 2, ...), the last odd octet paired with a zero; sent least significant octet first."""
+    crc = 0
+    n = len(data) + (len(data) & 1)
+    for i in range(n):
+        j = i ^ 1
+        crc ^= (data[j] if j < len(data) else 0) << 24
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x04C11DB7) if crc & 0x80000000 else (crc << 1)
+            crc &= 0xFFFFFFFF
+    return crc
+
+
+def etsi_text_infos(src: int, dst: int, text: str, group: bool, response: bool, preambles: int):
+    """An ETSI text message (TS 102 361-3 defined short data: DPF 13, SAP 10, DD format ISO 8859-1) as (data type,
+    12 info octets): preamble CSBKs, the header, rate 1/2 blocks with the CRC-32 in the last block."""
+    user = text.encode("latin-1", "replace")
+    blocks = (len(user) + 4 + 11) // 12
+    pad = blocks * 12 - 4 - len(user)
+    h = bytes([(0x80 if group else 0) | (0x40 if response and not group else 0) | (((blocks >> 4) & 3) << 4) | 13,
+               (10 << 4) | (blocks & 0x0F)]) + dst.to_bytes(3, "big") + src.to_bytes(3, "big") + \
+        bytes([(0x02 << 2) | 1, pad * 8])
+    h += (fec.crc16_ccitt(h) ^ 0xCCCC).to_bytes(2, "big")
+    body = user + bytes(pad)
+    body += etsi_crc32(body).to_bytes(4, "little")
+    infos = []
+    for k in range(preambles):
+        head = bytes([0x80 | 0x3D, 0, 0x80 | (0x40 if group else 0), blocks + 1 + preambles - 1 - k]) + \
+            dst.to_bytes(3, "big") + src.to_bytes(3, "big")
+        infos.append((pdu.DT_CSBK, head + (fec.crc16_ccitt(head) ^ fec.MASK_CSBK).to_bytes(2, "big")))
+    infos.append((6, h))
+    infos += [(7, body[i * 12:(i + 1) * 12]) for i in range(blocks)]
+    return infos
+
+
 def data_items(args):
     from radiodesk.dmr import packet
+    if args.etsi is not None:
+        infos = etsi_text_infos(args.src, args.dst, args.etsi, args.group, not args.etsi_no_response, args.preambles)
+        sync = L2.data_sync(family_sync(args.family))
+        return [(SYNC_DATA | dt, L2.data_burst(info, dt, args.burst_cc, sync)) for dt, info in infos]
     if args.tms is not None:
         user = tms_user_data(args.src, args.dst, args.tms, args.tms_seq, not args.tms_no_ack)
     else:
@@ -405,6 +446,9 @@ def main() -> None:
     d.add_argument("--tms", default=None, help="user data: a TMS text message with this text (else --octets bytes)")
     d.add_argument("--tms-seq", type=int, default=1, help="TMS sequence number (5 bits)")
     d.add_argument("--tms-no-ack", action="store_true", help="TMS without an ACK requested")
+    d.add_argument("--etsi", default=None, help="an ETSI text message (defined short data, ISO 8859-1) with this text")
+    d.add_argument("--etsi-no-response", action="store_true", help="ETSI text without a response requested")
+    d.add_argument("--group", action="store_true", help="--etsi to a talkgroup (--dst)")
     c = sub.add_parser("csbk")
     common(c, 3101276)
     c.add_argument("--count", type=int, default=4, help="preamble CSBKs (opcode 0x3D)")

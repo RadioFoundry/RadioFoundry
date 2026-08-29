@@ -231,7 +231,7 @@ static void storage_section(dl_text_t *t)
 void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t)
 {
 	static const char *const names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
-							  "link", "features", "dmr_data", "storage" };
+							  "link", "features", "dmr_data", "storage", "dmr_ext" };
 
 	if (section >= DL_VIEW_COUNT) {
 		return;
@@ -267,6 +267,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_STORAGE:
 		storage_section(t);
+		break;
+	case DL_VIEW_DMR_EXT:
+		debuglink_view_dmr_ext(t);
 		break;
 	default:
 		break;

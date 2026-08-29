@@ -27,6 +27,7 @@ enum {
 	DL_VIEW_FEATURES,	// scan, FM extras, battery, beeps, the radio settings (debuglink_view_radio.c)
 	DL_VIEW_DMR_DATA,	// the DMR data service: state, settings, counters (debuglink_dmr_data.c)
 	DL_VIEW_STORAGE,	// settings store, flash journal, codeplug and CPS session counters
+	DL_VIEW_DMR_EXT,	// DMR emergency, ETSI short data, the hotspot CW ID (debuglink_view_ext.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		1	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -53,6 +54,8 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len
 void debuglink_view_dmr_data(dl_text_t *t);
 size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_dmr_data_reset(void);
+// The dmr_ext section (debuglink_view_ext.c): emergency state, alert and settings, the ETSI data counters, CW ID
+void debuglink_view_dmr_ext(dl_text_t *t);
 
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
 #define DL_LINK_COUNTERS	4

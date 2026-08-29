@@ -403,11 +403,14 @@ class SdrBench:
         return self.transmit(a, freq, cc)
 
     def data(self, freq, cc, dst, tms=None, tms_seq=1, tms_ack=True, confirmed=False, octets=40, preambles=2,
-             src=None, listen_after=0):
-        """One data packet (bench_tx.py data): tms text in IPv4 / UDP 4007 user data, else octets of filler."""
+             src=None, listen_after=0, etsi=None, etsi_response=True):
+        """One data packet (bench_tx.py data): tms text in IPv4 / UDP 4007 user data, etsi text as ETSI defined short
+        data (ISO 8859-1), else octets of filler."""
         a = f"--listen-after {listen_after} " if listen_after else ""
         a += f"data --dst {dst} --preambles {preambles}"
-        if tms is not None:
+        if etsi is not None:
+            a += f" --etsi {shlex.quote(etsi)}" + ("" if etsi_response else " --etsi-no-response")
+        elif tms is not None:
             a += f" --tms {shlex.quote(tms)} --tms-seq {tms_seq}" + ("" if tms_ack else " --tms-no-ack")
         else:
             a += f" --octets {octets}"

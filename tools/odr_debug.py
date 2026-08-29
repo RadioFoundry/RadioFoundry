@@ -58,6 +58,8 @@ STORAGE = 0x0F
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
+DATA_OP_EMERGENCY, DATA_OP_EMERGENCY_SETTINGS = 7, 8
+EMERGENCY_MODES = {"alarm": 0, "alarm_call": 1, "call": 2}
 SMS_TEXT_MAX = REQ_MAX - 6          # op, u32 destination, flags
 CMD_ERROR = 0xFF
 STATUS = {0: "ok", 1: "unknown command", 2: "bad argument", 3: "busy", 4: "unavailable", 5: "bad CRC",
@@ -84,7 +86,7 @@ ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
-                 "storage"]
+                 "storage", "dmr_ext"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -546,11 +548,13 @@ class DebugLink:
     def data_request(self, op, args=b""):
         return self.request(DMR_DATA, bytes([op]) + bytes(args))[1]
 
-    def sms(self, dst, text, group=False, ack=True):
-        """Send a text message (Motorola TMS); text is Latin-1, at most SMS_TEXT_MAX characters here."""
+    def sms(self, dst, text, group=False, ack=True, fmt="tms"):
+        """Send a text message; fmt "tms" (Motorola TMS), "etsi" (ETSI defined short data) or "default" (the radio's
+        setting); text is Latin-1, at most SMS_TEXT_MAX characters here."""
         t = text.encode("latin-1", "replace")[:SMS_TEXT_MAX]
+        f = {"tms": 0, "etsi": 4, "default": 8}[fmt]
         self.data_request(DATA_OP_SMS, struct.pack("<IB", int(dst) & 0xFFFFFF, (1 if group else 0) |
-                                                   (2 if ack else 0)) + t)
+                                                   (2 if ack else 0) | f) + t)
 
     def call_alert(self, dst):
         self.data_request(DATA_OP_CALL_ALERT, struct.pack("<I", int(dst) & 0xFFFFFF))
@@ -558,9 +562,11 @@ class DebugLink:
     def radio_check(self, dst):
         self.data_request(DATA_OP_RADIO_CHECK, struct.pack("<I", int(dst) & 0xFFFFFF))
 
-    def data_settings(self, ars_server=0, radio_check_reply=False, call_alert_ack=True, lrrp_reply=True):
-        """The data service settings in RAM (not saved): ARS server ID (0 off) and the answer switches."""
-        flags = (1 if radio_check_reply else 0) | (2 if call_alert_ack else 0) | (4 if lrrp_reply else 0)
+    def data_settings(self, ars_server=0, radio_check_reply=False, call_alert_ack=True, lrrp_reply=True,
+                      sms_etsi=False, radio_check_etsi=False):
+        """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms."""
+        flags = (1 if radio_check_reply else 0) | (2 if call_alert_ack else 0) | (4 if lrrp_reply else 0) | \
+            (8 if sms_etsi else 0) | (16 if radio_check_etsi else 0)
         self.data_request(DATA_OP_SETTINGS, struct.pack("<IB", int(ars_server) & 0xFFFFFF, flags))
 
     def inbox(self, index=0):
@@ -571,12 +577,23 @@ class DebugLink:
             if e.status == 4:
                 return None
             raise
-        src, dst, group, unread = struct.unpack_from("<IIBB", r)
-        return {"src": src, "dst": dst, "group": bool(group), "unread": bool(unread),
-                "text": r[10:].decode("latin-1")}
+        src, dst, group, flags = struct.unpack_from("<IIBB", r)
+        return {"src": src, "dst": dst, "group": bool(group), "unread": bool(flags & 1),
+                "format": "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
 
     def mark_read(self, index=0):
         self.data_request(DATA_OP_MARK_READ, bytes([index]))
+
+    def emergency(self, what="start"):
+        """The emergency key: "start", "cancel", or "dismiss" the alert heard (docs/spec/dmr-emergency.md)."""
+        self.data_request(DATA_OP_EMERGENCY, bytes([{"cancel": 0, "start": 1, "dismiss": 2}[what]]))
+
+    def emergency_settings(self, mode="alarm_call", dst=0, dst_private=False, etsi_fid=False, tone=True, tries=3,
+                           hot_mic_s=10):
+        """The emergency settings (saved by the radio): dst 0 = the channel's talk target."""
+        flags = (1 if dst_private else 0) | (2 if etsi_fid else 0) | (0 if tone else 4)
+        self.data_request(DATA_OP_EMERGENCY_SETTINGS, struct.pack("<BIBBB", EMERGENCY_MODES[mode],
+                                                                  int(dst) & 0xFFFFFF, flags, tries, hot_mic_s))
 
 
 # ── pictures ────────────────────────────────────────────────────────────────
@@ -796,7 +813,7 @@ def cmd_data(link, a):
         if len(args) < 2:
             print("data sms: ID TEXT", file=sys.stderr)
             return 2
-        link.sms(int(args[0], 0), " ".join(args[1:]), group=a.group, ack=not a.no_ack)
+        link.sms(int(args[0], 0), " ".join(args[1:]), group=a.group, ack=not a.no_ack, fmt=a.format)
     elif a.op in ("alert", "check"):
         if len(args) != 1:
             print(f"data {a.op}: ID", file=sys.stderr)
@@ -806,13 +823,29 @@ def cmd_data(link, a):
         if not args:
             print("data settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp]", file=sys.stderr)
             return 2
-        link.data_settings(int(args[0], 0), "check-reply" in args, "no-alert-ack" not in args, "no-lrrp" not in args)
+        link.data_settings(int(args[0], 0), "check-reply" in args, "no-alert-ack" not in args, "no-lrrp" not in args,
+                           "sms-etsi" in args, "check-etsi" in args)
     elif a.op == "inbox":
         m = link.inbox(int(args[0]) if args else 0)
         print("empty" if m is None else f"from {m['src']} to {m['dst']}{' (group)' if m['group'] else ''}"
-              f"{' unread' if m['unread'] else ''}: {m['text']}")
+              f"{' unread' if m['unread'] else ''} [{m['format']}]: {m['text']}")
     elif a.op == "read":
         link.mark_read(int(args[0]) if args else 0)
+    elif a.op == "emergency":
+        what = args[0] if args else "start"
+        if what not in ("start", "cancel", "dismiss"):
+            print("data emergency: start|cancel|dismiss", file=sys.stderr)
+            return 2
+        link.emergency(what)
+    elif a.op == "em-settings":
+        if not args or args[0] not in EMERGENCY_MODES:
+            print("data em-settings: alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]",
+                  file=sys.stderr)
+            return 2
+        kv = dict(x.split("=", 1) for x in args[1:] if "=" in x)
+        dst = next((int(x, 0) for x in args[1:] if x[:1].isdigit()), 0)
+        link.emergency_settings(args[0], dst, "private" in args, "etsi" in args, "no-tone" not in args,
+                                int(kv.get("tries", 3)), int(kv.get("hot", 10)))
     return 0
 
 
@@ -1016,9 +1049,12 @@ def main(argv=None):
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
-    p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read"])
-    p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack]; alert / check: ID; settings: "
-                   "ARS_ID [check-reply] [no-alert-ack] [no-lrrp]; inbox / read: [INDEX]")
+    p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings"])
+    p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack] [--format tms|etsi|default]; alert / "
+                   "check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi] [check-etsi]; "
+                   "inbox / read: [INDEX]; emergency: start|cancel|dismiss; em-settings: alarm|alarm_call|call [DST] "
+                   "[private] [etsi] [no-tone] [tries=N] [hot=S]")
+    p.add_argument("--format", choices=["tms", "etsi", "default"], default="tms")
     p.add_argument("--group", action="store_true")
     p.add_argument("--no-ack", action="store_true")
     p = sub.add_parser("log")
