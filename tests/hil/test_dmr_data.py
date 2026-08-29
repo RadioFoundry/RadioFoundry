@@ -87,8 +87,10 @@ def data_settings(radio):
     v = radio.data_view()
     yield
     if v.get("data.built") == 1:
+        x = radio.view(["dmr_ext"])
         radio.link.data_settings(v["data.ars_server"], v["data.radio_check_reply"] == 1, v["data.call_alert_ack"] == 1,
-                                 v["data.lrrp_reply"] == 1)
+                                 v["data.lrrp_reply"] == 1, x.get("data.sms_format") == "etsi",
+                                 x.get("data.radio_check_etsi") == "1")
 
 
 def test_data_view_and_settings(radio, pytestconfig, data_settings):
@@ -275,3 +277,72 @@ def test_sms_tx(radio, sdr_bench, pytestconfig):
     print("radio deltas:", d)
     assert after["data.sms_state"] == "ok" and d["data.sms_sent"] == 1 and d["data.tx_ok"] == 1, (after, d)
     assert (BENCH_SRC, own) in _heard_headers(heard), heard
+
+
+# --- ETSI short data and the ETSI radio check form (docs/spec/dmr-data.md 5.2, 6) ---
+
+def _ext(radio):
+    out = {}
+    for k, v in radio.view(["dmr_ext"]).items():
+        try:
+            out[k] = int(v)
+        except ValueError:
+            out[k] = v
+    return out
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
+    """An ETSI text message (defined short data, ISO 8859-1) to our ID with a response requested: kept in the inbox
+    as ETSI, the ETSI response (ACK, SAP 10) goes back."""
+    freq, cc, own, feats = _setup(radio, pytestconfig)
+    _need(feats, "DMR_SMS")
+    text = f"ODR ETSI {int(time.time()) % 10000}"
+    before, xb = radio.data_view(), _ext(radio)
+    with sdr_bench.lease():
+        heard = sdr_bench.data(freq, cc, own, etsi=text, src=BENCH_SRC, listen_after=3)
+    time.sleep(0.5)
+    after, xa = radio.data_view(), _ext(radio)
+    d = _deltas(before, after, ["data.sms_received", "data.responses_sent", "data.tms_acks_sent", "data.tx_failed"])
+    e = _deltas(xb, xa, ["data.etsi_sms_received"])
+    print("radio deltas:", d, e)
+    assert d["data.sms_received"] == 1 and e["data.etsi_sms_received"] == 1, (d, e)
+    assert d["data.responses_sent"] == 1 and d["data.tms_acks_sent"] == 0 and d["data.tx_failed"] == 0, d
+    m = radio.link.inbox(0)
+    assert m is not None and m["text"] == text and m["src"] == BENCH_SRC and m["format"] == "etsi", m
+    radio.link.mark_read(0)
+    _soft((BENCH_SRC, own) in _heard_headers(heard), "the ETSI response header to the bench")
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_etsi_sms_tx(radio, sdr_bench, pytestconfig):
+    """Our ETSI text message to the bench, no response asked: a defined short data header (DPF 13, SAP 10) to the
+    bench from us, then sent."""
+    freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
+    _need(feats, "DMR_SMS")
+    xb = _ext(radio)
+    heard, _ = _radio_sends(radio, sdr_bench, freq, cc,
+                            lambda: radio.link.sms(BENCH_SRC, "ODR HIL ETSI", ack=False, fmt="etsi"), 10,
+                            lambda v: v.get("data.sms_state") in ("ok", "failed"))
+    after, xa = radio.data_view(), _ext(radio)
+    assert after["data.sms_state"] == "ok" and xa["data.etsi_sms_sent"] - xb["data.etsi_sms_sent"] == 1, (after, xa)
+    hdrs = [bytes.fromhex(r["info"]) for r in heard if r.get("dt") == DT_DATA_HEADER and r.get("info")]
+    assert any((b[0] & 0x0F) == 13 and (b[1] >> 4) == 10 and int.from_bytes(b[2:5], "big") == BENCH_SRC and
+               int.from_bytes(b[5:8], "big") == own for b in hdrs), heard
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_radio_check_tx_etsi(radio, sdr_bench, pytestconfig, data_settings):
+    """Our radio check in the ETSI form: opcode 0x24 with FID 0x00 on air, three tries, then failed."""
+    freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
+    _need(feats, "DMR_SIGNALING")
+    radio.link.data_settings(0, radio_check_etsi=True)
+    radio.wait_for(lambda v: v.get("data.radio_check_etsi") == "1", sections=("dmr_ext",), what="ETSI form on")
+    heard, _ = _radio_sends(radio, sdr_bench, freq, cc, lambda: radio.link.radio_check(BENCH_SRC), 14,
+                            lambda v: v.get("data.signal_state") in ("ok", "failed"))
+    fids = [_ids(r["info"])[1] for r in heard if r.get("dt") == DT_CSBK and r.get("info") and
+            _ids(r["info"])[0] == CSBK_RADIO_CHECK and _ids(r["info"])[3] == BENCH_SRC]
+    assert len(fids) == 3 and all(f == 0 for f in fids), heard

@@ -15,6 +15,7 @@
 #include "hotspot/mmdvm.h"
 #include "settings/settings.h"
 #include "dmr/dmr_data_api.h"
+#include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
 
@@ -64,7 +65,38 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 static void r_tx_off(void) { hw.tx_off_calls++; }
 static void r_status(radio_status_t *st) { *st = hw.st; }
 static void r_audio(bool on) { hw.audio = on; }
-static const hal_radio_t fake_radio = { r_init, r_set_mode, r_rx, r_tx, r_tx_off, r_status, r_audio, NULL, NULL, NULL };
+// FM TX tone and its Morse keying (the hotspot's CW ID): every change logged with the time
+static struct {
+	uint16_t hz;		// tx_tone now, 0 = the microphone
+	bool down;		// tx_tone_key
+	int changes;		// key edges
+	uint32_t first_down_ms, last_up_ms;
+	uint32_t down_ms;	// total key-down time
+	uint32_t edge_ms;
+} tone;
+static uint32_t now;
+static bool r_tx_tone(uint16_t hz) { tone.hz = hz; if (hz == 0) tone.down = false; return true; }
+static bool r_tx_tone_key(bool down)
+{
+	if (tone.hz == 0 || down == tone.down) {
+		return tone.hz != 0;
+	}
+	if (down) {
+		if (tone.first_down_ms == 0) {
+			tone.first_down_ms = now;
+		}
+	} else {
+		tone.down_ms += now - tone.edge_ms;
+		tone.last_up_ms = now;
+	}
+	tone.edge_ms = now;
+	tone.down = down;
+	tone.changes++;
+	return true;
+}
+static const hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
+					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
+					.tx_tone_key = r_tx_tone_key };
 
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 
@@ -251,7 +283,6 @@ static void setup_codeplug(void)
 }
 
 static radio_sm_t sm;
-static uint32_t now;
 
 static void req(uint8_t type, int32_t arg)
 {
@@ -1537,6 +1568,189 @@ static void test_dmr_voice_features(void)
 	CHECK(l.fid == 0 && l.svc == 0);
 }
 
+// ---- DMR emergency in the radio core (docs/spec/dmr-emergency.md): the hot mic keys a call with the emergency service
+// option to the target, PTT takes it over, cancel ends the option; a heard emergency call raises one alert ----
+
+static void hear_emergency_call(uint32_t dst, uint32_t src)
+{
+	uint8_t lc[9];
+	dmr_lc_t l = { .flco = DMR_FLCO_GROUP_VOICE, .svc = DMR_SVC_EMERGENCY, .dst = dst, .src = src };
+	dmr_lc_pack(&l, lc);
+	for (int h = 0; h < 3; h++) {
+		burst_lc(lc, 2, false);
+		run(60);
+	}
+	for (int i = 0; i < 6; i++) {
+		burst_voice((uint8_t)i, 2, i == 5 ? lc : NULL);
+		run(60);
+	}
+	burst_lc(lc, 2, true);
+	run(100);
+}
+
+static ui_event_t last_ev;	// the UI glue fakes below (ui_notify)
+static int n_ev;
+
+static void test_dmr_emergency(void)
+{
+	dmr_lc_t l;
+	dmr_start(true);
+	dmr_emergency_settings_t es;
+	dmr_emergency_settings_default(&es);
+	es.mode = DMR_EMERGENCY_MODE_CALL;	// the alarm CSBKs: dmrDataChainTest
+	es.hot_mic_s = 2;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	settings_t st;
+	settings_read(&st);
+	CHECK(st.em_stored == 1 && st.em_mode == DMR_EMERGENCY_MODE_CALL && st.em_hot_mic_s == 2);
+
+	// The key: the hot mic keys the channel's talk target (TG 201) with the emergency option, impolite
+	unsigned first = sim.air_count;
+	int tx = hw.tx_calls;
+	CHECK(dmr_emergency_start());
+	run(50);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_HOT_MIC && sm.em_keyed && sm.view.state == RS_TX && hw.tx_calls == tx + 1);
+	run(600);
+	air_lc(first, &l);
+	CHECK(sim.air[first].kind == DMR_BURST_VOICE_LC_HEADER && (l.svc & DMR_SVC_EMERGENCY) && l.dst == 201 &&
+	      l.flco == DMR_FLCO_GROUP_VOICE);
+	run(1600);	// the 2 s run out: released
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && !sm.em_keyed);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE && sim.air[sim.air_count - 1].kind == DMR_BURST_TERMINATOR_LC);
+
+	// Still in emergency: the user's own call carries the option
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK((l.svc & DMR_SVC_EMERGENCY) && l.dst == 201);
+	// Cancelled: the next call doesn't
+	dmr_emergency_cancel();
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(!(l.svc & DMR_SVC_EMERGENCY) && l.dst == 201);
+
+	// PTT pressed during the hot mic takes the call over: it stays keyed past the hot mic, ends on release
+	es.hot_mic_s = 1;
+	es.dst = 9;		// a set emergency target
+	dmr_emergency_set_settings(&es);
+	run(20);
+	first = sim.air_count;
+	CHECK(dmr_emergency_start());
+	run(300);
+	CHECK(sm.view.state == RS_TX && sm.em_keyed);
+	req(RREQ_PTT, 1);
+	CHECK(!sm.em_keyed);
+	run(1500);
+	CHECK(sm.view.state == RS_TX && dmr_emergency_state() == DMR_EMERGENCY_ACTIVE);
+	air_lc(first, &l);
+	CHECK((l.svc & DMR_SVC_EMERGENCY) && l.dst == 9);
+	req(RREQ_PTT, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+	dmr_emergency_cancel();
+	run(20);
+
+	// Heard: an emergency call on a group we listen to raises the alert and its tone once
+	dmr_emergency_stats_t s0, s1;
+	dmr_emergency_get_stats(&s0);
+	hear_emergency_call(201, 3101234);
+	dmr_emergency_alert_t a;
+	CHECK(dmr_emergency_alert(&a) && a.kind == DMR_EMERGENCY_ALERT_CALL && a.src == 3101234 && a.dst == 201 && a.group);
+	run(500);
+	hear_emergency_call(201, 3101234);	// the next over: the same alert
+	dmr_emergency_get_stats(&s1);
+	CHECK(s1.alerts == s0.alerts + 1 && s1.alerts_call == s0.alerts_call + 1 && s1.tones == s0.tones + 1);
+	n_ev = 0;
+	ui_svc_poll();		// the UI's pass: the alert as UI_EV_EMERGENCY, once
+	ui_svc_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_EMERGENCY && last_ev.id == 3101234 && !last_ev.ok &&
+	      strcmp(last_ev.name, "Joe") == 0);
+	dmr_emergency_dismiss();
+	run(20);
+	CHECK(!dmr_emergency_alert(&a));
+
+	// The UI's emergency key (ui_svc_emergency, core/ui/ui_svc_emergency.c)
+	CHECK(ui_svc_feat_ext() & UI_FEAT_EMERGENCY);
+	CHECK(ui_svc_emergency(true));
+	run(50);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_HOT_MIC && sm.view.state == RS_TX);
+	CHECK(ui_svc_emergency(true));		// already on
+	CHECK(ui_svc_emergency(false));
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !sm.em_keyed);
+	run(1500);
+	CHECK(sm.view.state == RS_IDLE);
+}
+
+// ---- The hotspot's CW ID (SEND_CWID) on a board with tx_tone_key: FM carrier on the hotspot TX frequency, the tone
+// keyed in Morse at 20 wpm after a 150 ms lead, then back to DMR on the RX frequency with the keying armed ----
+
+static void hs_configure(void)
+{
+	uint8_t fr[13] = { 0 };
+	uint32_t hz = 467375000;
+	for (int i = 0; i < 4; i++) {
+		fr[1 + i] = (uint8_t)(hz >> (8 * i));
+		fr[5 + i] = (uint8_t)(hz >> (8 * i));
+	}
+	fr[9] = 255;
+	mm_cmd(MMDVM_SET_FREQ, fr, 10);
+	uint8_t cfg[21] = { MMDVM_CONFIG_SIMPLEX, MMDVM_MODE_BIT_DMR, 10, 0, 128, 128, 1 };
+	mm_cmd(MMDVM_SET_CONFIG, cfg, sizeof(cfg));
+	uint8_t m = MMDVM_MODE_IDLE;
+	mm_cmd(MMDVM_SET_MODE, &m, 1);
+}
+
+static void test_hotspot_cwid(void)
+{
+	hs_session_start();
+	radio_preempts = true;
+	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
+	hs_configure();
+	CHECK(mm_naks == 0 && hotspot_running() && sm.dmr_keyed && hw_mode == RADIO_MODE_DMR);
+	memset(&tone, 0, sizeof(tone));
+	radio_hs_cw_stats_t cs0, cs;
+	radio_hs_cw_get_stats(&cs0);
+	int modes = hw.set_mode_calls;
+	uint32_t t0 = now;
+	// "AB": A .- (5 units), the character gap (3), B -... (9): 17 units, 1020 ms; key down 10 units, 600 ms
+	mm_cmd(MMDVM_SEND_CWID, (const uint8_t *)"AB", 2);
+	CHECK(mm_last[2] == MMDVM_ACK && mm_naks == 0);
+	CHECK(hw_mode == RADIO_MODE_FM && hw.set_mode_calls == modes + 1 && hw.tx_hz == 467375000 && tone.hz == 800);
+	CHECK(!sm.dmr_keyed && sm.cw_phase != 0 && hw.led[LED_RED]);
+	mm_cmd(MMDVM_GET_STATUS, NULL, 0);
+	CHECK(mm_last[2] == MMDVM_GET_STATUS && (mm_last[5] & MMDVM_STATUS_TX));	// the TX flag while it keys
+	mm_cmd(MMDVM_SEND_CWID, (const uint8_t *)"AB", 2);
+	CHECK(mm_last[2] == MMDVM_NAK);		// not idle meanwhile
+	hs_run(1500);
+	CHECK(tone.changes == 12);		// six elements
+	CHECK(tone.first_down_ms >= t0 + 150 && tone.first_down_ms <= t0 + 160);
+	CHECK(tone.last_up_ms - tone.first_down_ms >= 1010 && tone.last_up_ms - tone.first_down_ms <= 1030);
+	CHECK(tone.down_ms >= 590 && tone.down_ms <= 610);
+	radio_hs_cw_get_stats(&cs);
+	CHECK(cs.sent == cs0.sent + 1 && cs.wpm == 20 && !cs.active && cs.last_ms >= 1300 && cs.last_ms <= 1340);
+	// Back: DMR mode (the modem set up again), the RX frequency, the keying armed, the TX flag clear
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.set_mode_calls == modes + 2 && hw.rx_hz == 467375000 && sm.dmr_keyed);
+	CHECK(sm.cw_phase == 0 && tone.hz == 0 && !hw.led[LED_RED]);
+	mm_cmd(MMDVM_GET_STATUS, NULL, 0);
+	CHECK(!(mm_last[5] & MMDVM_STATUS_TX));
+
+	// Hotspot mode left in the middle of an ID: cut, counted as not sent
+	mm_cmd(MMDVM_SEND_CWID, (const uint8_t *)"TEST", 4);
+	hs_run(300);
+	CHECK(sm.cw_phase != 0 && tone.hz == 800);
+	mmdvm_end();
+	hs_run(100);
+	radio_hs_cw_get_stats(&cs);
+	CHECK(cs.refused == cs0.refused + 1 && !cs.active && sm.cw_phase == 0 && tone.hz == 0 && !sm.hotspot);
+	CHECK(hw_mode == RADIO_MODE_DMR && sm.view.dmr.active);
+}
+
 // The UI's on-the-fly DMR changes (temporary timeslot, color code and mode), hear all latched, the one-shot talk
 // target of a focused row and the reply window setting (docs/spec/ui.md 4)
 static void test_ui_requests(void)
@@ -1864,6 +2078,8 @@ int main(void)
 	test_ui_glue();
 	test_hotspot();
 	test_hotspot_session();
+	test_hotspot_cwid();
+	test_dmr_emergency();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

@@ -29,7 +29,11 @@ typedef enum {
 	DMR_REQ_FAILED,		// no answer after the retries, or it couldn't be sent (not a DMR channel, RX only, ...)
 } dmr_req_state_t;
 
-typedef enum { DMR_SMS_FORMAT_TMS = 0 } dmr_sms_format_t;	// Motorola TMS (the only one so far)
+typedef enum {
+	DMR_SMS_FORMAT_TMS = 0,		// Motorola TMS (IP / UDP 4007)
+	DMR_SMS_FORMAT_ETSI = 1,	// ETSI defined short data, ISO 8859-1 text (docs/spec/dmr-data.md 5.2)
+	DMR_SMS_FORMAT_DEFAULT = 0xFF,	// sms_send only: the radio's setting (dmrDataSettings_t.smsFormat)
+} dmr_sms_format_t;
 
 #if CONFIG_DMR_DATA_CORE
 
@@ -42,7 +46,8 @@ void sms_inbox_mark_read(int i);
 // Delete message i (0 = newest): the older ones move up. False when there is none
 bool sms_inbox_delete(int i);
 // Queue a message (group: to a talkgroup, no ACK). False when the mailbox is full (one SMS at a time) or the text is
-// empty. The text is cut at DMR_DATA_TEXT_MAX characters (Latin-1)
+// empty. The text is cut at DMR_DATA_TEXT_MAX characters (Latin-1; ETSI: DMR_ETSI_TEXT_MAX). format: TMS, ETSI, or
+// DEFAULT for the radio's setting; a reply uses the message's own dmrDataMessage_t.format
 bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dmr_sms_format_t format);
 dmr_req_state_t sms_send_state(void);
 
@@ -76,6 +81,8 @@ static inline dmr_req_state_t dmr_signal_state(uint8_t *kind, uint32_t *dst)
 { if (kind) *kind = 0; if (dst) *dst = 0; return DMR_REQ_IDLE; }
 static inline uint32_t dmr_data_serial(void) { return 0; }
 static inline dmrDataEvent_t dmr_data_last_event(void) { dmrDataEvent_t e = { 0, 0, 0, 0 }; return e; }
+static inline void dmr_data_get_settings(dmrDataSettings_t *out) { (void)out; }
+static inline void dmr_data_set_settings(const dmrDataSettings_t *in) { (void)in; }
 static inline dmrArsState_t dmr_data_ars_state(void) { return DMR_ARS_STATE_OFF; }
 
 #endif

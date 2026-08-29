@@ -9,6 +9,7 @@
 #include "debuglink/debuglink_proto.h"
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmr_data_api.h"
+#include "dmr/dmr_emergency.h"
 #endif
 
 #if CONFIG_DMR_DATA_CORE
@@ -29,7 +30,8 @@ static const char *event_key(uint8_t e)
 {
 	static const char *const names[] = { "none", "sms_received", "sms_sent", "sms_failed", "call_alert",
 					     "call_alert_acked", "call_alert_failed", "radio_check_ok",
-					     "radio_check_failed", "radio_check_answered", "ars_changed" };
+					     "radio_check_failed", "radio_check_answered", "ars_changed",
+					     "emergency_alarm", "emergency_sent", "emergency_failed" };
 	return e < sizeof(names) / sizeof(names[0]) ? names[e] : "?";
 }
 
@@ -118,8 +120,9 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		}
 		memcpy(text, a + 5, tl);
 		text[tl] = '\0';
-		st = sms_send(get32(a), (a[4] & 1u) != 0, text, (a[4] & 2u) != 0, DMR_SMS_FORMAT_TMS) ? DL_ST_OK
-													 : DL_ST_BUSY;
+		uint8_t format = (a[4] & 8u) ? DMR_SMS_FORMAT_DEFAULT : (a[4] & 4u) ? DMR_SMS_FORMAT_ETSI
+											: DMR_SMS_FORMAT_TMS;
+		st = sms_send(get32(a), (a[4] & 1u) != 0, text, (a[4] & 2u) != 0, format) ? DL_ST_OK : DL_ST_BUSY;
 		break;
 	}
 	case DL_DATA_OP_CALL_ALERT:
@@ -143,6 +146,8 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		set.radioCheckReply = (a[4] & 1u) != 0;
 		set.callAlertAck = (a[4] & 2u) != 0;
 		set.lrrpReply = (a[4] & 4u) != 0;
+		set.smsFormat = (a[4] & 8u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		set.radioCheckEtsi = (a[4] & 16u) != 0;
 		dmr_data_set_settings(&set);
 		break;
 	}
@@ -165,7 +170,7 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		put32(out + 1, m.src);
 		put32(out + 5, m.dst);
 		out[9] = m.group;
-		out[10] = m.unread;
+		out[10] = (uint8_t)((m.unread ? 1u : 0u) | (m.format == DMR_SMS_FORMAT_ETSI ? 2u : 0u));
 		memcpy(out + 11, m.text, tl);
 		return 11u + tl;
 	}
@@ -176,6 +181,41 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		}
 		sms_inbox_mark_read(a[0]);
 		break;
+	case DL_DATA_OP_EMERGENCY:
+		if (!CONFIG_DMR_EMERGENCY) {
+			st = DL_ST_UNAVAILABLE;
+		} else if (n < 1 || a[0] > 2) {
+			st = DL_ST_BAD_ARG;
+		} else if (a[0] == 1) {
+			st = dmr_emergency_start() ? DL_ST_OK : DL_ST_BUSY;
+		} else if (a[0] == 0) {
+			dmr_emergency_cancel();
+		} else {
+			dmr_emergency_dismiss();
+		}
+		break;
+	case DL_DATA_OP_EMERGENCY_SETTINGS: {
+		dmr_emergency_settings_t es;
+
+		if (!CONFIG_DMR_EMERGENCY) {
+			st = DL_ST_UNAVAILABLE;
+			break;
+		}
+		if (n < 8) {
+			st = DL_ST_BAD_ARG;
+			break;
+		}
+		dmr_emergency_get_settings(&es);
+		es.mode = a[0];
+		es.dst = get32(a + 1) & 0xFFFFFFu;
+		es.dst_private = (a[5] & 1u) != 0;
+		es.etsi_fid = (a[5] & 2u) != 0;
+		es.rx_tone = (a[5] & 4u) == 0;
+		es.alarm_tries = a[6];
+		es.hot_mic_s = a[7];
+		dmr_emergency_set_settings(&es);	// clamped by the module
+		break;
+	}
 	default:
 		st = DL_ST_BAD_ARG;
 		break;
@@ -187,6 +227,9 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 void debuglink_dmr_data_reset(void)
 {
 	dmrDataServiceResetStats();
+#if CONFIG_DMR_EMERGENCY
+	dmr_emergency_reset_stats();
+#endif
 }
 
 #else	// built without the data features

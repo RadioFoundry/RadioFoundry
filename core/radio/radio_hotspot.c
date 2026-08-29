@@ -4,7 +4,9 @@
 #include "config.h"
 #if CONFIG_HOTSPOT	// the whole file
 #include <stddef.h>
+#include <string.h>
 #include "radio/radio_hotspot.h"
+#include "radio/morse.h"
 
 static radio_hs_post_fn post_fn;
 static volatile bool hs_active;		// published: the radio is in hotspot mode
@@ -12,6 +14,11 @@ static volatile bool hs_carrier;	// published: hotspot carrier
 static volatile int16_t hs_rssi;	// published: the last status poll's RSSI (dBm)
 static volatile uint32_t hs_serial;
 static uint32_t orphan_ms;		// hotspot mode without a running hotspot since, 0 = not
+// CW ID handover: written by the cw_id op (host link task) only while cw_busy is false, read by the radio task
+static char cw_text[MORSE_TEXT_MAX];
+static volatile uint8_t cw_len;
+static volatile bool cw_pending;	// from the op until the radio task has ended (or refused) the ID
+static radio_hs_cw_stats_t cw_stats;
 
 void radio_hs_init(radio_hs_post_fn post)
 {
@@ -20,6 +27,8 @@ void radio_hs_init(radio_hs_post_fn post)
 	hs_carrier = false;
 	hs_rssi = 0;
 	orphan_ms = 0;
+	cw_len = 0;
+	cw_pending = false;
 }
 
 static void post(uint8_t type, int32_t arg, uint32_t arg2, bool must)
@@ -108,10 +117,71 @@ static void hs_changed(void)
 	hs_serial++;
 }
 
+// SEND_CWID: the radio task keys it (FM, the board's TX tone); refused at once without hotspot mode
+static bool hs_cw_id(const char *callsign, uint8_t len)
+{
+	if (!hs_active || cw_pending || len == 0) {
+		return false;
+	}
+	if (len > MORSE_TEXT_MAX) {
+		len = MORSE_TEXT_MAX;
+	}
+	memcpy(cw_text, callsign, len);
+	cw_len = len;
+	cw_pending = true;
+	cw_stats.requests++;
+	post(RREQ_HS_CWID, 0, 0, true);
+	return true;
+}
+
+static bool hs_cw_busy(void)
+{
+	return cw_pending;
+}
+
+uint8_t radio_hs_cw_take(char *out, uint8_t cap)
+{
+	uint8_t n = cw_len;
+	if (!cw_pending || n == 0) {
+		return 0;
+	}
+	if (n > cap) {
+		n = cap;
+	}
+	memcpy(out, cw_text, n);
+	cw_len = 0;
+	return n;
+}
+
+void radio_hs_cw_started(uint8_t wpm)
+{
+	cw_stats.wpm = wpm;
+	cw_stats.active = true;
+}
+
+void radio_hs_cw_ended(bool sent, uint32_t ms)
+{
+	if (sent) {
+		cw_stats.sent++;
+		cw_stats.last_ms = ms;
+	} else {
+		cw_stats.refused++;
+	}
+	cw_stats.active = false;
+	cw_len = 0;
+	cw_pending = false;
+}
+
+void radio_hs_cw_get_stats(radio_hs_cw_stats_t *out)
+{
+	*out = cw_stats;
+	out->active = cw_pending;
+}
+
 const hotspot_radio_ops_t radio_hs_ops = {
 	.enter = hs_enter, .set_freq = hs_set_freq, .set_power = hs_set_power, .leave = hs_leave,
 	.carrier = hs_carrier_fn, .changed = hs_changed, .rssi_dbm = hs_rssi_fn,
-	.cw_id = NULL, .cw_busy = NULL,	// no FM Morse keyer yet: the hotspot ACKs SEND_CWID and counts it unsent
+	.cw_id = hs_cw_id, .cw_busy = hs_cw_busy,	// keyed by the radio task (radio_sm.c cw_*), on boards with tx_tone
 };
 
 #endif	// CONFIG_HOTSPOT

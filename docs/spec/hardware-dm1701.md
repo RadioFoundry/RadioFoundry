@@ -570,6 +570,11 @@ On these radios FM microphone audio is processed and modulated by the HR_C6000 (
 AT1846S. The AT1846S tone generator is still used for the 1750 Hz burst and for AFSK (with the HR_C6000 microphone input
 muted, HR_C6000 0xE0 bit 6 cleared). How the AT1846S tone reaches the modulator in this configuration is unverified.
 
+Morse keying for the hotspot's CW ID (`tx_tone_key`, `boards/dm1701/radio_dm1701.c`): with the tone set up by
+`tx_tone`, key up writes the 0x59 tone deviation bits 15:6 to 0 and key down back to 0x40 (bits 5:0 kept from the
+saved value), so the carrier stays up and the tone switches without a retune. Unverified on the bench, like the tone
+path itself.
+
 ### 5.9 RSSI, noise, squelch
 
 | Register | Field |

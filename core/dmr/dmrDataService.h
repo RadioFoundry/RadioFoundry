@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 /*
- * DMR data service: text messages (Motorola TMS) with their ACKs, ETSI responses to confirmed data, CSBK signaling
- * (call alert, radio check: answered and sent), Motorola ARS registration and LRRP location answers.
+ * DMR data service: text messages (Motorola TMS and ETSI defined short data) with their ACKs, ETSI responses to
+ * confirmed data, CSBK signaling (call alert, radio check in the Motorola and the ETSI form: answered and sent), the
+ * emergency alarm (sent, heard: core/dmr/dmr_emergency.c), Motorola ARS registration and LRRP location answers.
  *
  * It sits on the DMR call stack (core/dmr/call/dmr_call.h): the host (core/radio/radio_sm.c in the firmware, a fake in
  * the host tests) hands it every data burst heard on our slot, ticks it, tells it about the channel, and sends the
@@ -29,6 +30,7 @@ typedef struct
 	bool     group;
 	uint8_t  seq;							// TMS sequence number, to spot a sender's retries
 	bool     unread;						// not shown on the radio yet
+	uint8_t  format;						// dmr_sms_format_t it came in (a reply goes the same way)
 	char     text[sizeof(((dmrDataTMS_t *)0)->text)];
 } dmrDataMessage_t;
 
@@ -50,6 +52,8 @@ typedef struct
 	bool     callAlertAck;					// acknowledge call alerts (they ring either way)
 	bool     lrrpReply;						// answer LRRP location requests
 	bool     hasGps;						// the radio has a position source (else LRRP says "no fix")
+	uint8_t  smsFormat;						// dmr_sms_format_t of sms_send(..., DMR_SMS_FORMAT_DEFAULT): TMS or ETSI
+	bool     radioCheckEtsi;				// our radio checks in the ETSI form (FID 0x00), else Motorola's (FID 0x10)
 } dmrDataSettings_t;
 
 // Events for the UI (dmr_data_api.h: dmr_data_last_event)
@@ -66,6 +70,9 @@ typedef enum
 	DMR_DATA_EV_RADIO_CHECK_FAILED,			// id: no answer after the retries
 	DMR_DATA_EV_RADIO_CHECK_ANSWERED,		// id: a radio checked us and was answered
 	DMR_DATA_EV_ARS_CHANGED,				// id: the ARS state (dmrArsState_t)
+	DMR_DATA_EV_EMERGENCY_ALARM,			// id: the radio in emergency (an alarm to us or a group we listen to)
+	DMR_DATA_EV_EMERGENCY_SENT,				// id: the alarm's destination; all tries have gone out
+	DMR_DATA_EV_EMERGENCY_FAILED,			// id: the alarm's destination; it couldn't be sent
 } dmrDataEventKind_t;
 
 typedef struct
@@ -127,6 +134,12 @@ typedef struct
 	uint32_t lrrpRequests;
 	uint32_t lrrpAnswers;					// answers and reports sent
 	uint32_t lrrpNoFix;						// ... of those, saying "no fix"
+	uint32_t etsiSmsReceived;				// ... of smsReceived, ETSI short data (defined short data, UDT text)
+	uint32_t etsiSmsSent;					// ... of smsSent, ETSI
+	uint32_t etsiResponsesReceived;			// ETSI response ACKs for ours
+	uint32_t emergencyAlarmsHeard;			// emergency alarm CSBKs with a good CRC, to anyone
+	uint32_t emergencyAlarmsReceived;		// ... to us or a group we listen to (the alert)
+	uint32_t emergencyAlarmsSent;			// alarm CSBKs sent, repeats included
 	uint32_t txLists;						// burst lists started
 	uint32_t txOk;							// ... that went out whole
 	uint32_t txFailed;						// ... dropped by the stack (no repeater, refused, time-out)
@@ -159,6 +172,17 @@ bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t 
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
 bool dmrDataServiceCallAlert(uint32_t dst);
 bool dmrDataServiceRadioCheck(uint32_t dst);
+// format: dmr_sms_format_t (TMS or ETSI; not DEFAULT)
+bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t format);
+// The emergency alarm (CONFIG_DMR_EMERGENCY): the CSBK to dst (group or individual) with the feature set ID fid,
+// tries times, DMR_DATA_EMERGENCY_GAP_MS apart. Ahead of everything but a reply already queued. Ends with the event
+// EMERGENCY_SENT or EMERGENCY_FAILED. False when one is running already or it can't be sent now
+#define DMR_DATA_EMERGENCY_GAP_MS	1000
+bool dmrDataServiceEmergencyAlarm(uint32_t dst, bool group, uint8_t fid, uint8_t tries);
+void dmrDataServiceEmergencyAlarmCancel(void);
+bool dmrDataServiceEmergencyAlarmBusy(void);
+// The 10 octets of an emergency alarm CSBK (docs/spec/dmr-emergency.md 2)
+void dmrDataBuildEmergencyAlarm(uint32_t dst, uint32_t src, bool group, uint8_t fid, uint8_t out[10]);
 
 dmrArsState_t dmrDataServiceArsState(void);
 int dmrDataServiceLrrpTriggerCount(void);

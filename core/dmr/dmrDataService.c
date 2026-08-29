@@ -10,6 +10,9 @@
 #include "config.h"
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"
+#if CONFIG_DMR_EMERGENCY
+#include "dmr/dmr_emergency.h"
+#endif
 
 #if CONFIG_DMR_DATA_CORE
 
@@ -24,6 +27,7 @@
 // Our SMS with an ACK requested: the TMS ACK comes as a data call of its own after the ETSI part
 #define SMS_TRIES				2
 #define SMS_ACK_MS				8000
+#define SMS_ETSI_ACK_MS			4000	// the ETSI response comes straight after the message
 #define SMS_BLOCK_TYPE			DT_RATE_12_DATA	// rate 1/2 by default: rate 1 fails on one bit error (gotcha 5.3)
 // Motorola ARS (gotchas 7.1-7.4): registration 5-15 s after power on (spread by radio ID, so that radios switched on
 // together don't collide), and again once the channel, our ID or the server has been unchanged for ARS_SETTLE_MS. A
@@ -65,7 +69,7 @@ static void unlock(void)
 // --- The burst list being sent ---
 
 // What the list on air is for, so that its end reaches the right owner
-enum { TXK_OTHER, TXK_SMS, TXK_SIGNAL, TXK_ARS, TXK_REPLY };
+enum { TXK_OTHER, TXK_SMS, TXK_SIGNAL, TXK_ARS, TXK_REPLY, TXK_EMERGENCY };
 
 DMR_DATA_BUFFER static dmrBurst_t txBursts[DMR_DATA_MAX_BURSTS];
 static int txBurstCount = 0;
@@ -125,6 +129,7 @@ static struct
 	uint32_t dst;
 	bool group;
 	bool ack;
+	uint8_t format;						// dmr_sms_format_t
 	uint8_t state;						// dmr_req_state_t
 	uint8_t tries;
 	uint8_t seq;
@@ -133,6 +138,18 @@ static struct
 	char text[sizeof(((dmrDataTMS_t *)0)->text)];
 } sms;
 
+// Our emergency alarm (CONFIG_DMR_EMERGENCY)
+static struct
+{
+	bool active;
+	uint32_t dst;
+	bool group;
+	uint8_t fid;
+	uint8_t tries;						// still to send
+	bool waiting;						// one has gone: the next after the gap
+	uint32_t due;
+} emg;
+
 // Requests from other tasks (dmr_data_api.h), taken at the next tick
 static struct
 {
@@ -140,6 +157,7 @@ static struct
 	uint32_t smsDst;
 	bool smsGroup;
 	bool smsAck;
+	uint8_t smsFormat;
 	char smsText[sizeof(((dmrDataTMS_t *)0)->text)];
 	bool sigPending;
 	uint8_t sigKind;
@@ -284,19 +302,37 @@ static bool smsTransmit(void)
 		smsSeq = (smsSeq + 1) & 0x1F;
 		sms.seq = smsSeq;
 	}
-	if (!queueTx(dmrDataBuildTMS(sms.group, sms.dst, channel.ownId, sms.text, sms.seq, sms.ack, SMS_BLOCK_TYPE,
-								 DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS), TXK_SMS))
+	int count = (sms.format == DMR_SMS_FORMAT_ETSI)
+			? dmrDataBuildEtsiText(sms.group, sms.dst, channel.ownId, sms.text, sms.ack, DMR_DATA_SMS_PREAMBLES, txBursts,
+								   DMR_DATA_MAX_BURSTS)
+			: dmrDataBuildTMS(sms.group, sms.dst, channel.ownId, sms.text, sms.seq, sms.ack, SMS_BLOCK_TYPE,
+							  DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS);
+	if (!queueTx(count, TXK_SMS))
 	{
 		return false;
 	}
 	sms.tries++;
 	sms.state = DMR_REQ_SENDING;
 	stats.smsSent++;
+	stats.etsiSmsSent += (sms.format == DMR_SMS_FORMAT_ETSI) ? 1 : 0;
 	return true;
 }
 
 bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested)
 {
+	return dmrDataServiceSendSMSFormat(group, dst, text, ackRequested, DMR_SMS_FORMAT_TMS);
+}
+
+bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t format)
+{
+	if (format == DMR_SMS_FORMAT_DEFAULT)
+	{
+		format = settings.smsFormat;
+	}
+	if ((format != DMR_SMS_FORMAT_TMS) && (format != DMR_SMS_FORMAT_ETSI))
+	{
+		return false;
+	}
 	if (!CONFIG_DMR_SMS || (sms.state == DMR_REQ_QUEUED) || (sms.state == DMR_REQ_SENDING) || (text == NULL) ||
 			(text[0] == '\0') || (dst == 0))
 	{
@@ -306,6 +342,7 @@ bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackR
 	sms.dst = dst;
 	sms.group = group;
 	sms.ack = ackRequested && !group;
+	sms.format = format;
 	sms.tries = 0;
 	sms.waiting = false;
 	snprintf(sms.text, sizeof(sms.text), "%s", text);
@@ -351,7 +388,7 @@ static void smsTxDone(bool ok)
 		return;
 	}
 	sms.waiting = true;// a list that didn't go out counts as a try: waited out like one without an ACK
-	sms.due = now + (ok ? SMS_ACK_MS : 1000);
+	sms.due = now + (ok ? ((sms.format == DMR_SMS_FORMAT_ETSI) ? SMS_ETSI_ACK_MS : SMS_ACK_MS) : 1000);
 }
 
 // --- Our call alert / radio check ---
@@ -374,8 +411,8 @@ static bool signalTransmit(void)
 	}
 	else
 	{
-		buf[0] = 0x80 | DMR_CSBKO_RADIO_CHECK;// Motorola radio check request: octet 3 0x80
-		buf[1] = DMR_FID_MOTOROLA;
+		buf[0] = 0x80 | DMR_CSBKO_RADIO_CHECK;// radio check request: octet 3 0x80; FID per the setting (Motorola / ETSI)
+		buf[1] = settings.radioCheckEtsi ? DMR_FID_ETSI : DMR_FID_MOTOROLA;
 		buf[3] = 0x80;
 		stats.radioChecksSent++;
 	}
@@ -464,6 +501,105 @@ static void signalTxDone(bool ok)
 		sig.waiting = true;
 		sig.due = now + (ok ? SIGNAL_ANSWER_MS : 500);
 	}
+}
+
+// --- Our emergency alarm (docs/spec/dmr-emergency.md 2) ---
+
+void dmrDataBuildEmergencyAlarm(uint32_t dst, uint32_t src, bool group, uint8_t fid, uint8_t out[10])
+{
+	memset(out, 0, 10);
+	out[0] = 0x80 | DMR_CSBKO_EMERGENCY_ALARM;// last block
+	out[1] = fid;
+	out[2] = group ? 0x00 : 0x80;// individual: bit 7 of octet 2 (ours; group is the usual case)
+	out[4] = (dst >> 16) & 0xFF;
+	out[5] = (dst >> 8) & 0xFF;
+	out[6] = dst & 0xFF;
+	out[7] = (src >> 16) & 0xFF;
+	out[8] = (src >> 8) & 0xFF;
+	out[9] = src & 0xFF;
+}
+
+static void emergencyFinish(bool ok)
+{
+	if (!emg.active)
+	{
+		return;
+	}
+	emg.active = false;
+	emg.waiting = false;
+	post(ok ? DMR_DATA_EV_EMERGENCY_SENT : DMR_DATA_EV_EMERGENCY_FAILED, emg.dst);
+}
+
+bool dmrDataServiceEmergencyAlarm(uint32_t dst, bool group, uint8_t fid, uint8_t tries)
+{
+	if (!CONFIG_DMR_EMERGENCY || emg.active || (dst == 0) || (dst > 0xFFFFFFu) || (tries == 0))
+	{
+		return false;
+	}
+	emg.dst = dst;
+	emg.group = group;
+	emg.fid = fid;
+	emg.tries = tries;
+	emg.waiting = false;
+	emg.due = now;
+	emg.active = true;
+	if (!canTransmit())
+	{
+		emergencyFinish(false);
+		return false;
+	}
+	return true;
+}
+
+void dmrDataServiceEmergencyAlarmCancel(void)
+{
+	emg.active = false;// a CSBK already on its way still goes
+	emg.waiting = false;
+}
+
+bool dmrDataServiceEmergencyAlarmBusy(void)
+{
+	return emg.active;
+}
+
+static void emergencyTick(void)
+{
+	if (!CONFIG_DMR_EMERGENCY || !emg.active || emg.waiting || dmrDataServiceIsBusy() || ((int32_t)(now - emg.due) < 0))
+	{
+		return;
+	}
+	if (!canTransmit())
+	{
+		emergencyFinish(false);
+		return;
+	}
+	uint8_t buf[10];
+
+	dmrDataBuildEmergencyAlarm(emg.dst, channel.ownId, emg.group, emg.fid, buf);
+	if (queueTx(dmrDataBuildCSBK(buf, txBursts), TXK_EMERGENCY))
+	{
+		emg.waiting = true;
+		stats.emergencyAlarmsSent++;
+	}
+}
+
+static void emergencyTxDone(bool ok)
+{
+	if (!emg.active || !emg.waiting)
+	{
+		return;
+	}
+	emg.waiting = false;
+	if (emg.tries > 0)
+	{
+		emg.tries--;
+	}
+	if (emg.tries == 0)
+	{
+		emergencyFinish(ok);
+		return;
+	}
+	emg.due = now + DMR_DATA_EMERGENCY_GAP_MS;
 }
 
 // --- ARS ---
@@ -975,6 +1111,7 @@ static void takeMailbox(void)
 	bool smsReq = false, sigReq = false, setReq = false;
 	uint32_t smsDst = 0, sigDst = 0;
 	bool smsGroup = false, smsAck = false;
+	uint8_t smsFormat = DMR_SMS_FORMAT_TMS;
 	uint8_t sigKind = 0;
 	static char text[sizeof(mailbox.smsText)];
 	dmrDataSettings_t newSettings;
@@ -986,6 +1123,7 @@ static void takeMailbox(void)
 		smsDst = mailbox.smsDst;
 		smsGroup = mailbox.smsGroup;
 		smsAck = mailbox.smsAck;
+		smsFormat = mailbox.smsFormat;
 		memcpy(text, mailbox.smsText, sizeof(text));
 		mailbox.smsPending = false;
 	}
@@ -1008,7 +1146,7 @@ static void takeMailbox(void)
 	{
 		settings = newSettings;
 	}
-	if (smsReq && !dmrDataServiceSendSMS(smsGroup, smsDst, text, smsAck) && (sms.state != DMR_REQ_FAILED))
+	if (smsReq && !dmrDataServiceSendSMSFormat(smsGroup, smsDst, text, smsAck, smsFormat) && (sms.state != DMR_REQ_FAILED))
 	{
 		post(DMR_DATA_EV_SMS_FAILED, smsDst);// another one still running
 	}
@@ -1028,6 +1166,9 @@ static void txGiveUp(void)
 			break;
 		case TXK_SIGNAL:
 			signalTxDone(false);
+			break;
+		case TXK_EMERGENCY:
+			emergencyTxDone(false);
 			break;
 		default:
 			break;
@@ -1086,6 +1227,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 		stats.tmsAcksSent++;
 	}
 
+	emergencyTick();// ahead of the user's other requests and the automatic traffic
 	signalTick();
 	smsTick();
 	arsTick();
@@ -1132,6 +1274,9 @@ void dmrDataServiceTxDone(uint8_t err)
 			break;
 		case TXK_SIGNAL:
 			signalTxDone(err == 0);
+			break;
+		case TXK_EMERGENCY:
+			emergencyTxDone(err == 0);
 			break;
 		default:
 			break;
@@ -1232,6 +1377,32 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	}
 
 	bool isTMS = CONFIG_DMR_SMS && isUDP && (udp.appPort == DMR_UDP_PORT_TMS) && dmrDataDecodeTMS(udp.payload, udp.length, &tms);
+	uint8_t format = DMR_SMS_FORMAT_TMS;
+
+	// The ETSI response to our ETSI message
+	if (CONFIG_DMR_SMS && (packet->dpf == DMR_DPF_RESPONSE) && !packet->group && (sms.state == DMR_REQ_SENDING) && sms.ack &&
+			(sms.format == DMR_SMS_FORMAT_ETSI) && (packet->src == sms.dst) && DMR_RESPONSE_IS_ACK(packet->response))
+	{
+		stats.etsiResponsesReceived++;
+		stats.smsAcked++;
+		smsFinish(DMR_REQ_OK);
+		return;
+	}
+
+	// ETSI short data text (defined short data, UDT text): into the same inbox; the sender's response request (A) is
+	// answered with an ETSI ACK
+	if (CONFIG_DMR_SMS && !isTMS && ((packet->dpf == DMR_DPF_DEFINED_SHORT) || (packet->dpf == DMR_DPF_UDT)) &&
+			dmrDataDecodeEtsiText(packet, tms.text, sizeof(tms.text)))
+	{
+		isTMS = true;
+		format = DMR_SMS_FORMAT_ETSI;
+		tms.isAck = false;
+		tms.ackRequested = false;
+		tms.seq = 0;
+		reply.response = packet->responseRequested && !packet->group;
+		reply.sap = packet->sap;
+		reply.sendSeq = 0;
+	}
 
 	// The ACK of our own message
 	if (isTMS && tms.isAck && !packet->group && (sms.state == DMR_REQ_SENDING) && sms.ack &&
@@ -1270,6 +1441,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		const dmrDataMessage_t *m = dmrDataServiceMessage(i);
 
 		if ((m->src == packet->src) && (m->dst == packet->dst) && (m->group == packet->group) && (m->seq == tms.seq) &&
+				(m->format == format) &&
 				((now - m->receivedAt) < DUPLICATE_MESSAGE_MS) && (strcmp(m->text, tms.text) == 0))
 		{
 			stats.smsDuplicates++;
@@ -1286,6 +1458,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	message->seq = tms.seq;
 	message->receivedAt = now;
 	message->unread = true;
+	message->format = format;
 	memcpy(message->text, tms.text, sizeof(message->text));
 	inboxNewest = next;
 	if (inboxUsed < DMR_DATA_INBOX_SIZE)
@@ -1294,6 +1467,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	}
 	unlock();
 	stats.smsReceived++;
+	stats.etsiSmsReceived += (format == DMR_SMS_FORMAT_ETSI) ? 1 : 0;
 	post(DMR_DATA_EV_SMS_RECEIVED, packet->src);
 }
 
@@ -1302,16 +1476,52 @@ static uint32_t getId(const uint8_t *p)
 	return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
 }
 
-// Call alert and radio check: answers to ours, and requests to us (answered, a call alert rings)
+static bool groupIsOurs(uint32_t tg)
+{
+	return (tg == 0xFFFFFFu) || // all call
+			((channel.talkGroup != 0) && (tg == channel.talkGroup)) ||
+			((env.inRxGroup != NULL) && env.inRxGroup(tg, env.ctx));
+}
+
+// An emergency alarm heard (docs/spec/dmr-emergency.md 2): to us, or to a group we listen to, it alerts the user
+static void handleEmergencyAlarm(const uint8_t *csbk)
+{
+	uint32_t target = getId(&csbk[4]);
+	uint32_t source = getId(&csbk[7]);
+	bool group = (csbk[2] & 0x80) == 0;
+
+	if (((csbk[1] != DMR_FID_ETSI) && (csbk[1] != DMR_FID_MOTOROLA)) || (source == channel.ownId) || (source == 0))
+	{
+		return;// another manufacturer's opcode 0x27, or our own alarm repeated back
+	}
+	stats.emergencyAlarmsHeard++;
+	if (group ? !groupIsOurs(target) : (target != channel.ownId))
+	{
+		return;
+	}
+	stats.emergencyAlarmsReceived++;
+	post(DMR_DATA_EV_EMERGENCY_ALARM, source);
+#if CONFIG_DMR_EMERGENCY
+	dmr_emergency_heard(DMR_EMERGENCY_ALERT_ALARM, source, target, group, now);
+#endif
+}
+
+// Call alert and radio check: answers to ours, and requests to us (answered, a call alert rings); emergency alarms
 static void handleCSBK(const uint8_t *csbk)
 {
+	uint8_t opcode = csbk[0] & 0x3F;
+	uint32_t target = getId(&csbk[4]);
+	uint32_t source = getId(&csbk[7]);
+
+	if (CONFIG_DMR_EMERGENCY && (opcode == DMR_CSBKO_EMERGENCY_ALARM))
+	{
+		handleEmergencyAlarm(csbk);
+		return;
+	}
 	if (!CONFIG_DMR_SIGNALING)
 	{
 		return;
 	}
-	uint8_t opcode = csbk[0] & 0x3F;
-	uint32_t target = getId(&csbk[4]);
-	uint32_t source = getId(&csbk[7]);
 
 	if ((sig.state == DMR_REQ_SENDING) && (source == channel.ownId) && (target == sig.dst))
 	{
@@ -1330,13 +1540,22 @@ static void handleCSBK(const uint8_t *csbk)
 			return;
 		}
 	}
-	// The ack's IDs are the other way round: to the caller (us) from the alerted radio
-	if ((sig.state == DMR_REQ_SENDING) && (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK) &&
-			(target == channel.ownId) && (source == sig.dst))
+	// The ack's IDs are the other way round: to the caller (us) from the alerted radio. A radio check answered in
+	// that order (the ETSI acknowledgment convention) counts too
+	if ((sig.state == DMR_REQ_SENDING) && (target == channel.ownId) && (source == sig.dst))
 	{
-		stats.callAlertsAcked++;
-		signalFinish(true);
-		return;
+		if ((sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK))
+		{
+			stats.callAlertsAcked++;
+			signalFinish(true);
+			return;
+		}
+		if ((sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (opcode == DMR_CSBKO_RADIO_CHECK) && (csbk[3] != 0x80))
+		{
+			stats.radioChecksAnswered++;
+			signalFinish(true);
+			return;
+		}
 	}
 
 	dmrBurst_t answer;
@@ -1563,7 +1782,8 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 {
 	bool ok = false;
 
-	if (!CONFIG_DMR_SMS || (text == NULL) || (text[0] == '\0') || (dst == 0) || (format != DMR_SMS_FORMAT_TMS))
+	if (!CONFIG_DMR_SMS || (text == NULL) || (text[0] == '\0') || (dst == 0) ||
+			((format != DMR_SMS_FORMAT_TMS) && (format != DMR_SMS_FORMAT_ETSI) && (format != DMR_SMS_FORMAT_DEFAULT)))
 	{
 		return false;
 	}
@@ -1573,6 +1793,7 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 		mailbox.smsDst = dst;
 		mailbox.smsGroup = group;
 		mailbox.smsAck = ack_requested;
+		mailbox.smsFormat = format;
 		snprintf(mailbox.smsText, sizeof(mailbox.smsText), "%s", text);
 		mailbox.smsPending = true;
 		ok = true;

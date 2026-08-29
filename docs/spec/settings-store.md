@@ -99,11 +99,13 @@ codeplug's callsign.
 | identity | `dmr_id` (0 = the codeplug's), `radio_name[16]` ("" = the codeplug's callsign) |
 | privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (appended for dmr-voice) |
 | radio core settings | `rs_tot_s rs_tot_warn_s rs_bcl rs_flags` (roger beep, TX inhibit, scan priority, scan beep, key beep) `rs_scan_resume rs_scan_hold_s rs_beep_level rs_scan_delay_ms rs_scan_dwell_ms rs_vox rs_vox_level rs_vox_tail_ms rs_rx_save rs_stored rs_rx_save_idle_s rs_battery_off_s rs_backlight_dim_s rs_backlight_off_s` (appended for radio-features) |
-| DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply) `ds_stored` (appended for dmr-data) |
+| DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply, SMS format ETSI, radio check ETSI form) `ds_stored` (appended for dmr-data; the two ETSI bits for dmr-ext, 0 = as before) |
 | UI settings | `rs_reply_s` (the reply window in s, 0..30; `SETTINGS_UNSET8` = the codeplug's hang times; a radio core setting), `mic_gain` (0..9, default 5, not applied yet), `auto_lock_s` (0 = off), `long_press_ms`, `repeat_ms` (0 = the input layer's defaults), `gps`, `pos_format`, `pos_send_s` (stored for a GPS owner, act on nothing yet) (appended for glue) |
+| DMR emergency | `em_dst em_mode em_flags` (target is a radio, ETSI alarm FID, no alert tone) `em_alarm_tries em_hot_mic_s em_stored` (appended for dmr-ext, `dmr-emergency.md` 5) |
+| hotspot CW ID | `cw_wpm cw_tone_hz` (0 = 20 wpm / 800 Hz; appended for dmr-ext) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
-payload is 132 bytes now (at most 236).
+payload is 144 bytes now (at most 236).
 
 ### 3.0 Who writes, and storage jobs
 

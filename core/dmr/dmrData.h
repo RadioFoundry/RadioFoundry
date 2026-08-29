@@ -71,6 +71,7 @@ typedef struct
 #define DMR_CSBKO_CALL_ALERT		0x1F
 #define DMR_CSBKO_CALL_ALERT_ACK	0x20
 #define DMR_CSBKO_RADIO_CHECK		0x24		// byte 3 0x80: request, else the answer
+#define DMR_CSBKO_EMERGENCY_ALARM	0x27		// emergency alarm (docs/spec/dmr-emergency.md 2)
 #define DMR_CSBKO_PREAMBLE			0x3D
 
 // Feature set IDs whose call alert and radio check CSBKs are answered
@@ -97,6 +98,9 @@ typedef struct
 	uint8_t  blocksToFollow;
 	uint8_t  padOctets;
 	uint8_t  sendSeq;						// N(S), confirmed only
+	uint8_t  ddFormat;						// defined short data: the DD format (6 bits); UDT: the UDT format
+	uint8_t  padBits;						// defined short data: the bit padding; UDT: the pad nibbles x 4
+	uint8_t  response;						// response packets: class (7-6), type (5-3), status (2-0)
 	uint8_t  dataType;						// DT of the blocks
 	uint16_t length;						// user data length
 	uint8_t  data[DMR_DATA_MAX_PACKET];
@@ -134,6 +138,8 @@ int dmrDataBuildIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, con
 int dmrDataBuildTMS(bool group, uint32_t dst, uint32_t src, const char *text, uint8_t seq, bool ackRequested,
 						uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
 int dmrDataBuildResponseAck(uint8_t sap, uint32_t dst, uint32_t src, uint8_t sendSeq, dmrBurst_t *out);
+// The ACK class / type of a response packet (dmrDataPacket_t.response): class 0, type 1
+#define DMR_RESPONSE_IS_ACK(r)		(((r) & 0xF8) == 0x08)
 // seq: the 7 bit sequence number of the message being acknowledged
 int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, dmrBurst_t *out, int maxBursts);
 
@@ -161,6 +167,30 @@ typedef struct
 #define DMR_UDT_OPCODE					0x1A	// as RadioDesk's builder (C_UDTHU)
 int dmrDataBuildUDTLocation(bool group, uint32_t dst, uint32_t src, const dmrDataLocation_t *location, int preambles,
 							dmrBurst_t *out, int maxBursts);
+
+// ETSI short data text (TS 102 361-3 defined short data, DPF 13, SAP 10): the header carries the defined data format,
+// rate 1/2 blocks with the CRC-32 follow. The DD formats used here (docs/spec/dmr-data.md 5.2)
+#define DMR_DD_BINARY					0x00
+#define DMR_DD_BCD						0x01
+#define DMR_DD_7BIT						0x02	// ISO/IEC 646, packed 7 bits per character
+#define DMR_DD_ISO8859_1				0x03	// 0x03-0x11: ISO/IEC 8859-1 ... -16 (no -12)
+#define DMR_DD_ISO8859_LAST				0x11
+#define DMR_DD_UTF8						0x12
+#define DMR_DD_UTF16					0x13	// with a byte order mark, big endian without one
+#define DMR_DD_UTF16BE					0x14
+#define DMR_DD_UTF16LE					0x15
+// UDT formats that carry text (TS 102 361-4 UDT header), for reception
+#define DMR_UDT_FORMAT_ISO7				0x03
+#define DMR_UDT_FORMAT_ISO8				0x04
+#define DMR_UDT_FORMAT_UTF16BE			0x07
+#define DMR_ETSI_TEXT_MAX				140		// characters we send
+// Text (Latin-1, NUL terminated) as defined short data in ISO 8859-1, with an ETSI response requested when
+// responseRequested (individual only). 0 if it doesn't fit
+int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *text, bool responseRequested,
+						int preambles, dmrBurst_t *out, int maxBursts);
+// The text of a received defined short data (any of the text DD formats above) or UDT text packet, as Latin-1 ('?'
+// for characters outside it). False when the packet isn't one, or its format isn't text
+bool dmrDataDecodeEtsiText(const dmrDataPacket_t *packet, char *text, int textSize);
 
 // RX
 void dmrDataRxReset(void);

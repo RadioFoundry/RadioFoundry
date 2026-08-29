@@ -91,7 +91,9 @@ put them in a file in the repository.
 | `test_cps.py` | legacy CPS over USB with `tools/cps_client.py`: radio info (type 8 / 10, struct 3), two reads of the qdmr regions identical, the current channel's record matches the view, a channel change saved by the settings store within 2 s (the `storage` view section); opt-in: one channel renamed, read back and the backup restored and verified; the channel position survives a restart | radio; `--allow-codeplug-write`, `--allow-reboot` |
 | `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
 | `test_radio_features.py` | the `features` view section, settings round trip, beep counters (does PCM play in this mode), zone scan + cancel, nuisance delete, VFO band scan, dual watch (radio only); TX inhibit, TOT warning and time-out, roger beep, 1750 Hz burst on the FM VFO at lowest power (`radio_tx`); the scan holds on a bench DMR call (`rf`) | radio; `--allow-rf` (radio_tx); `--allow-rf --allow-service-stop` (the last) |
-| `test_dmr_data.py` | DMR data: bench sends unconfirmed and confirmed data, a TMS text message, a call alert and radio checks to us (the radio's answers listened for); the radio sends a call alert, a radio check and a text message to the bench (the bench modem listens); the data settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio) |
+| `test_dmr_emergency.py` | DMR emergency: the bench sends an emergency alarm CSBK and an emergency voice call to the channel's talkgroup (alerts raised); the radio sends its alarm (3 CSBKs) and an emergency call with the hot mic (the bench listens); the emergency settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio), firmware with `CONFIG_DMR_EMERGENCY` |
+| `test_hotspot_cwid.py` | MMDVM SEND_CWID in hotspot mode: the radio keys the callsign in Morse on FM on the hotspot TX frequency (the SDR bench records), then the hotspot's DMR set-up is back | `--allow-rf --allow-service-stop` |
+| `test_dmr_data.py` | DMR data: bench sends unconfirmed and confirmed data, a TMS and an ETSI text message, a call alert and radio checks to us (the radio's answers listened for); the radio sends a call alert, a radio check (Motorola and ETSI forms) and a text message (TMS and ETSI) to the bench (the bench modem listens); the data settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio) |
 
 ### Pass criteria and tolerances
 
@@ -133,6 +135,22 @@ bench ID. Radio check: with `radio_check_reply` off (the default) counted and no
 by the bench modem (the bench doesn't answer); the text message (no ACK asked) ends `ok` and its data header (to
 the bench, from us) is heard. An answer to the bench that the bench modem misses only warns: the radio sends it
 within a few frames of the bench's last burst, inside the bench modem's TX to RX turnaround.
+ETSI forms (`dmr_ext` section): an ETSI text message in: `data.sms_received` 1, `data.etsi_sms_received` 1,
+`data.responses_sent` 1, no TMS ACK, inbox entry 0 with format `etsi`. ETSI text out (no response asked): `ok`,
+`data.etsi_sms_sent` 1, a data header with DPF 13 and SAP 10 to the bench heard. Radio check in the ETSI form: 3
+tries heard, each with FID 0x00.
+
+`test_dmr_emergency` (`dmr_ext` section): an alarm in (opcode 0x27, FID 0x10, to the channel's talkgroup):
+`data.emergency_alarms_received` 1 or more, `em.alert=1`, `em.alert_kind=alarm` from the bench ID, `data.event=
+emergency_alarm`, nothing transmitted (`data.tx_lists` unchanged). An emergency voice call in (another source):
+`em.alerts_call` +1, `em.alert_kind=call`, `last.emergency=1`. Alarm out (alarm mode, 3 tries):
+`data.emergency_alarms_sent` +3, `em.state=active`, 3 CSBKs heard with FID 0x10, the talkgroup in octets 4-6 and us
+in 7-9, at least 0.9 s apart. Emergency call out (call mode, 3 s hot mic, needs the codec): the radio keys by itself
+and unkeys, the LCs heard to the talkgroup from us all carry service options bit 0x80, `em.hot_mic_keyed` 1 or more.
+
+`test_hotspot_cwid` (DM-1701 or another board with `tx_tone_key`): SEND_CWID "N0CALL" (73 units) ACKed, the
+GET_STATUS TX flag set while keying and clear after, `hs.cw_sent` +1, `hs.cw_wpm=20`, `hs.cw_last_ms` within 10 %
+of 150 + 73 x 60 + 150 = 4680 ms, one keyed segment off air.
 
 Counter names: `Radio.counters()` merges the diagnostics lines (`modem.*` from the DM-1701's HR_C6000 lines, `call.*`
 and `voice.*` short names, `audio.*`) with the `dmr_stats` and `hotspot` view sections (full names such as

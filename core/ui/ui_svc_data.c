@@ -67,8 +67,9 @@ bool ui_svc_msg_delete(uint16_t i)
 
 bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 {
-	// A message to a person asks for the acknowledgment ("Delivered"); a group message can't have one
-	return sms_send(dst, group, text, !group, DMR_SMS_FORMAT_TMS);
+	// A message to a person asks for the acknowledgment ("Delivered"); a group message can't have one. The format
+	// (TMS or ETSI) is the radio's setting (dmrDataSettings_t smsFormat)
+	return sms_send(dst, group, text, !group, DMR_SMS_FORMAT_DEFAULT);
 }
 
 static uint32_t check_sent_ms;
@@ -86,6 +87,9 @@ bool ui_svc_call_alert(uint32_t id)
 
 void ui_svc_poll(void)
 {
+#if CONFIG_DMR_EMERGENCY
+	ui_svc_emergency_poll();
+#endif
 	static uint32_t seen;
 	uint32_t serial = dmr_data_serial();
 	if (serial == seen)

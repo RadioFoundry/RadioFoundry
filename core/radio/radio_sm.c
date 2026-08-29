@@ -21,6 +21,13 @@
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
+#include "dmr/dmr_data_api.h"	// dmr_sms_format_t
+#endif
+#if CONFIG_DMR_EMERGENCY
+#include "dmr/dmr_emergency.h"
+#endif
+#if CONFIG_HOTSPOT
+#include "radio/radio_hotspot.h"	// the CW ID handover
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
@@ -248,6 +255,11 @@ static void outputs(radio_sm_t *sm)
 	}
 	if (sm->hotspot && board.dmr != NULL && board.dmr->is_transmitting()) {
 		tx = true;
+	}
+#endif
+#if CONFIG_HOTSPOT
+	if (sm->cw_phase != 0) {
+		tx = true;	// the hotspot's CW ID
 	}
 #endif
 
@@ -697,6 +709,22 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.tx_svc = dmrPrivacyServiceOptions(privacy_key.type, cfg.tx_svc);
 	}
 #endif
+#if CONFIG_DMR_EMERGENCY
+	// In emergency: every call carries the emergency service option, goes to the emergency target, and doesn't wait
+	// for a busy channel (docs/spec/dmr-emergency.md 3)
+	if (dmr_emergency_in_progress()) {
+		uint32_t id;
+		bool priv;
+		dmr_emergency_target(&id, &priv);
+		if (id != 0) {
+			cfg.talk_target.id = id;
+			cfg.talk_target.private_call = priv;
+		}
+		cfg.tx_svc |= DMR_SVC_EMERGENCY;
+		cfg.access = DMR_ACCESS_IMPOLITE;
+	}
+	sm->em_cfg_serial = dmr_emergency_config_serial();
+#endif
 	dmr_call_configure(&cfg);
 	sm->view.dmr.own_id = cfg.own_id;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
@@ -853,6 +881,11 @@ static void dmr_publish(radio_sm_t *sm)
 	d->reply_active = cv->reply_active;
 	d->reply_s = cv->reply_s;
 	d->one_shot = sm->one_shot;
+#if CONFIG_DMR_EMERGENCY
+	if (d->state == RDMR_RX && cv->caller.emergency) {
+		dmr_emergency_heard(DMR_EMERGENCY_ALERT_CALL, cv->caller.src, cv->caller.dst, cv->caller.group, cv->call_start_ms);
+	}
+#endif
 	if (d->state != RDMR_IDLE) {
 		copy_call(sm, &cv->caller, &d->call);
 		d->late_entry = cv->caller.late_entry;
@@ -1149,7 +1182,8 @@ static void data_save_settings(uint32_t now_ms)
 	dmrDataSettings_t cur;
 	dmrDataServiceGetSettings(&cur);
 	if (cur.arsServer == data_saved.arsServer && cur.radioCheckReply == data_saved.radioCheckReply &&
-	    cur.callAlertAck == data_saved.callAlertAck && cur.lrrpReply == data_saved.lrrpReply) {
+	    cur.callAlertAck == data_saved.callAlertAck && cur.lrrpReply == data_saved.lrrpReply &&
+	    cur.smsFormat == data_saved.smsFormat && cur.radioCheckEtsi == data_saved.radioCheckEtsi) {
 		return;
 	}
 	data_saved = cur;
@@ -1157,10 +1191,83 @@ static void data_save_settings(uint32_t now_ms)
 	st->ds_ars_server = cur.arsServer;
 	st->ds_flags = (uint8_t)((cur.radioCheckReply ? SETTINGS_DS_RADIO_CHECK_REPLY : 0) |
 				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
-				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0));
+				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI ? SETTINGS_DS_SMS_ETSI : 0) |
+				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0));
 	st->ds_stored = 1;
 	settings_end(now_ms);
 }
+
+#if CONFIG_DMR_EMERGENCY
+// --- DMR emergency (core/dmr/dmr_emergency.c): the module decides; this keys the hot mic as the 1750 Hz burst keys
+// the transmitter (PTT taken over by a real press), reconfigures the stack when the emergency starts or ends, sounds
+// the alert tone and keeps the settings in the store (settings_t em_*) ---
+
+static uint32_t em_saved_serial;
+static void ptt_down(radio_sm_t *sm, uint32_t now_ms);
+static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
+
+static void emergency_init(const settings_t *st)
+{
+	dmr_emergency_settings_t es;
+	dmr_emergency_settings_default(&es);
+	if (st->em_stored == 1) {
+		es.mode = st->em_mode;
+		es.dst = st->em_dst;
+		es.dst_private = (st->em_flags & SETTINGS_EM_DST_PRIVATE) != 0;
+		es.etsi_fid = (st->em_flags & SETTINGS_EM_ETSI_FID) != 0;
+		es.rx_tone = (st->em_flags & SETTINGS_EM_NO_TONE) == 0;
+		es.alarm_tries = st->em_alarm_tries;
+		es.hot_mic_s = st->em_hot_mic_s;
+	}
+	dmr_emergency_init(&es);
+	em_saved_serial = dmr_emergency_settings_serial();
+}
+
+static void emergency_save(uint32_t now_ms)
+{
+	if (dmr_emergency_settings_serial() == em_saved_serial) {
+		return;
+	}
+	em_saved_serial = dmr_emergency_settings_serial();
+	dmr_emergency_settings_t es;
+	dmr_emergency_get_settings_now(&es);
+	settings_t *st = settings_begin();
+	st->em_mode = es.mode;
+	st->em_dst = es.dst;
+	st->em_flags = (uint8_t)((es.dst_private ? SETTINGS_EM_DST_PRIVATE : 0) | (es.etsi_fid ? SETTINGS_EM_ETSI_FID : 0) |
+				 (es.rx_tone ? 0 : SETTINGS_EM_NO_TONE));
+	st->em_alarm_tries = es.alarm_tries;
+	st->em_hot_mic_s = es.hot_mic_s;
+	st->em_stored = 1;
+	settings_end(now_ms);
+}
+
+static void emergency_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	dmr_emergency_channel_t c = {
+		.can_transmit = data_can_send(sm),
+		.talk_id = sm->manual ? sm->manual_id : sm->talk_id,
+		.talk_private = sm->manual ? sm->manual_private : sm->talk_private,
+	};
+	dmr_emergency_tick(now_ms, &c);
+	if (sm->dmr_running && dmr_emergency_config_serial() != sm->em_cfg_serial) {
+		dmr_configure(sm);	// the emergency option and target on or off; takes effect at the next call
+	}
+	bool want = dmr_emergency_hot_mic();
+	if (want && !sm->em_keyed && !sm->ptt) {
+		ptt_down(sm, now_ms);
+		sm->em_keyed = sm->ptt;		// held by the hot mic, even when refused (the deny shows until it ends)
+	} else if (!want && sm->em_keyed) {
+		sm->em_keyed = false;
+		ptt_release(sm, false, now_ms);
+	}
+	if (dmr_emergency_take_tone()) {
+		beep(sm, BEEP_EMERGENCY);
+	}
+	emergency_save(now_ms);
+}
+#endif
 
 static void data_init(radio_sm_t *sm)
 {
@@ -1182,12 +1289,17 @@ static void data_init(radio_sm_t *sm)
 		set.radioCheckReply = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st.ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st.ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
+		set.smsFormat = (st.ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		set.radioCheckEtsi = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
 	}
 	data_saved = set;
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
 	dmr_call_set_data_rx(data_rx, NULL);
+#if CONFIG_DMR_EMERGENCY
+	emergency_init(&st);
+#endif
 }
 
 static void data_tick(radio_sm_t *sm, uint32_t now_ms)
@@ -1618,8 +1730,123 @@ static void hotspot_arm(radio_sm_t *sm)
 	if (!sm->hotspot || sm->hs_tx_hz == 0) {
 		return;
 	}
+#if CONFIG_HOTSPOT
+	if (sm->cw_phase != 0) {
+		return;		// armed again when the CW ID ends
+	}
+#endif
 	sm->dmr_keyed = board.radio->tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 }
+
+#if CONFIG_HOTSPOT
+// --- The hotspot's CW ID (SEND_CWID, docs/spec/mmdvm-protocol.md 2.11): the hotspot is idle (mmdvm.c accepts it only
+// then); the DMR keying is released, the board goes to FM and keys a carrier on the hotspot's TX frequency, the
+// board's TX tone is keyed in Morse (core/radio/morse.c) at the settings' speed, then FM is left: set_mode(DMR) sets up
+// the modem again (gotcha 8.13), the receiver goes back to the hotspot's RX frequency and the keying is armed again ---
+
+#define CW_LEAD_MS		150	// carrier up before the first element
+#define CW_TAIL_MS		150	// and after the last
+#define CW_TONE_MIN_HZ		300
+#define CW_TONE_MAX_HZ		3000
+enum { CW_OFF = 0, CW_KEYING, CW_TAIL };
+
+static void cw_key(radio_sm_t *sm, bool down)
+{
+	sm->cw_key = down;
+	if (board.radio->tx_tone_key != NULL && board.radio->tx_tone_key(down)) {
+		return;
+	}
+	board.radio->tx_tone(down ? sm->cw_tone_hz : 0);
+}
+
+// FM off again, the hotspot's DMR set-up back
+static void cw_restore(radio_sm_t *sm)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	board.radio->tx_tone(0);
+	board.radio->tx_off();
+	sm->cw_phase = CW_OFF;
+	sm->cw_key = false;
+	sm->board_mode = RADIO_MODE_DMR;
+	board.radio->set_mode(RADIO_MODE_DMR);
+	if (sm->hs_rx_hz != 0) {
+		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);
+	}
+	hotspot_arm(sm);
+	outputs(sm);
+}
+
+// Leaving hotspot mode or retuning in the middle: the ID is cut
+static void cw_abort(radio_sm_t *sm)
+{
+	if (sm->cw_phase != CW_OFF) {
+		cw_restore(sm);
+		radio_hs_cw_ended(false, 0);
+	}
+}
+
+static void cw_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	char text[MORSE_TEXT_MAX];
+	uint8_t n = radio_hs_cw_take(text, sizeof(text));
+	if (n == 0) {
+		return;
+	}
+	if (sm->cw_phase != CW_OFF || !sm->hotspot || sm->hs_tx_hz == 0 || board.radio->tx_tone == NULL ||
+	    (board.dmr != NULL && board.dmr->is_transmitting())) {
+		radio_hs_cw_ended(false, 0);
+		return;
+	}
+	settings_t st;
+	settings_read(&st);
+	uint8_t wpm = st.cw_wpm != 0 ? st.cw_wpm : MORSE_WPM_DEFAULT;
+	if (wpm < MORSE_WPM_MIN || wpm > MORSE_WPM_MAX) {
+		wpm = MORSE_WPM_DEFAULT;
+	}
+	uint16_t hz = st.cw_tone_hz;
+	sm->cw_tone_hz = (hz >= CW_TONE_MIN_HZ && hz <= CW_TONE_MAX_HZ) ? hz : MORSE_TONE_HZ_DEFAULT;
+
+	if (sm->dmr_keyed) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
+	sm->board_mode = RADIO_MODE_FM;
+	board.radio->set_mode(RADIO_MODE_FM);
+	sm->cw_phase = CW_KEYING;	// before tx(): cw_restore and outputs see it
+	if (!board.radio->tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none) || !board.radio->tx_tone(sm->cw_tone_hz)) {
+		cw_restore(sm);
+		radio_hs_cw_ended(false, 0);
+		return;
+	}
+	cw_key(sm, false);		// a silent carrier for the lead-in
+	morse_start(&sm->cw, text, n, wpm, now_ms + CW_LEAD_MS);
+	sm->cw_start_ms = now_ms;
+	radio_hs_cw_started(wpm);
+	outputs(sm);
+	changed(sm);
+}
+
+// Every RADIO_TICK_MS
+static void cw_service(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->cw_phase == CW_KEYING) {
+		bool key = morse_poll(&sm->cw, now_ms);
+		if (key != sm->cw_key) {
+			cw_key(sm, key);
+		}
+		if (sm->cw.done) {
+			sm->cw_phase = CW_TAIL;
+			sm->cw_ms = now_ms;
+		}
+	} else if (sm->cw_phase == CW_TAIL && (now_ms - sm->cw_ms) >= CW_TAIL_MS) {
+		uint32_t ms = now_ms - sm->cw_start_ms;
+		cw_restore(sm);
+		radio_hs_cw_ended(true, ms);
+		changed(sm);
+	}
+}
+#endif
 
 static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 {
@@ -1656,6 +1883,9 @@ static void hotspot_freq(radio_sm_t *sm, uint32_t rx_hz, uint32_t tx_hz)
 	if (!sm->hotspot || !radio_sm_hotspot_freq_ok(rx_hz, tx_hz)) {
 		return;
 	}
+#if CONFIG_HOTSPOT
+	cw_abort(sm);
+#endif
 	board.radio->rx(rx_hz, RADIO_BW_12K5, &none);	// disarms; armed again below
 	sm->dmr_keyed = false;
 	sm->hs_rx_hz = rx_hz;
@@ -1669,6 +1899,9 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->hotspot) {
 		return;
 	}
+#if CONFIG_HOTSPOT
+	cw_abort(sm);
+#endif
 	if (sm->dmr_keyed) {
 		sm->dmr_keyed = false;
 		board.radio->tx_off();
@@ -2175,6 +2408,12 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			break;
 		}
 #endif
+#if CONFIG_DMR_EMERGENCY
+		if (sm->em_keyed) {
+			sm->em_keyed = req->arg == 0;	// PTT pressed during the hot mic takes the transmission over
+			break;
+		}
+#endif
 #if CONFIG_VOX
 		if (sm->vox_keyed) {
 			if (req->arg != 0) {
@@ -2392,6 +2631,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_HS_LEAVE:
 		hotspot_leave(sm, now_ms);
 		break;
+#if CONFIG_HOTSPOT
+	case RREQ_HS_CWID:
+		cw_start(sm, now_ms);
+		break;
+#endif
 #endif
 	case RREQ_POWER_OFF:
 		sm->power_off_req = true;
@@ -2721,6 +2965,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
+#if CONFIG_HOTSPOT
+	cw_service(sm, now_ms);
+#endif
 #if CONFIG_DMR
 	if (sm->dmr_running) {
 		dmr_call_poll(now_ms);
@@ -2730,6 +2977,9 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_DATA_CORE
 	data_tick(sm, now_ms);	// also off DMR: requests fail at once, ARS keeps its state. A list it starts is queued
 				// to the modem at once (dmr_call_data_tx)
+#endif
+#if CONFIG_DMR_EMERGENCY
+	emergency_tick(sm, now_ms);
 #endif
 #else
 	(void)sm;

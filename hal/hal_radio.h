@@ -41,6 +41,10 @@ typedef struct {
 	// Optional: during FM TX, send a single audio tone of hz instead of the microphone (1750 Hz burst, roger beep);
 	// 0 = the microphone again. False when the board can't (not in FM TX)
 	bool (*tx_tone)(uint16_t hz);
+	// Optional, with tx_tone: key the tone on and off without giving the microphone back (Morse keying, the hotspot's
+	// CW ID): false = a silent carrier, true = the tone again. Only while a tone set with tx_tone runs. Without it the
+	// core keys with tx_tone(hz) / tx_tone(0), which lets the microphone through in the gaps
+	bool (*tx_tone_key)(bool down);
 	// Optional: receiver power saving. true = receiver off (no status until woken), false = receive again with the
 	// last rx() settings
 	void (*rx_sleep)(bool sleep);

@@ -45,12 +45,16 @@ enum {
 
 // DL_CMD_DMR_DATA operations (first payload byte; docs/spec/debuglink.md 3.12). IDs are u32 little endian
 enum {
-	DL_DATA_OP_SMS = 1,		// dst u32, flags u8 (bit 0 group, bit 1 ACK requested), text (the rest, Latin-1)
+	DL_DATA_OP_SMS = 1,		// dst u32, flags u8 (bit 0 group, 1 ACK requested, 2 ETSI, 3 the radio's format), text
 	DL_DATA_OP_CALL_ALERT,		// dst u32
 	DL_DATA_OP_RADIO_CHECK,		// dst u32
-	DL_DATA_OP_SETTINGS,		// ARS server u32 (0 off), flags u8 (bit 0 radio check reply, 1 call alert ack, 2 LRRP)
-	DL_DATA_OP_INBOX,		// index u8 (0 newest) -> src u32, dst u32, group u8, unread u8, text
+	DL_DATA_OP_SETTINGS,		// ARS server u32 (0 off), flags u8 (bit 0 radio check reply, 1 call alert ack, 2 LRRP,
+					// 3 SMS in ETSI form, 4 radio check in ETSI form)
+	DL_DATA_OP_INBOX,		// index u8 (0 newest) -> src u32, dst u32, group u8, flags u8 (bit 0 unread, 1 ETSI), text
 	DL_DATA_OP_MARK_READ,		// index u8
+	DL_DATA_OP_EMERGENCY,		// u8: 0 cancel, 1 start (the emergency key), 2 dismiss the alert
+	DL_DATA_OP_EMERGENCY_SETTINGS,	// mode u8, dst u32 (0 the channel's), flags u8 (bit 0 dst is a radio, 1 ETSI FID,
+					// 2 no alert tone), alarm tries u8, hot mic s u8
 };
 
 // DL_CMD_STORAGE operations (first payload byte; docs/spec/debuglink.md 3.13)

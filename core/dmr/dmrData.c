@@ -443,6 +443,260 @@ int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, d
 	return dmrDataBuildUDP(false, dst, src, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, ack, length, DT_RATE_12_DATA, preambles, out, maxBursts);
 }
 
+// TS 102 361-3 defined short data header (DPF 13): G/I, A (response requested), the appended blocks' high bits and
+// the DPF; SAP 10 (short data) and their low bits; the addresses; the DD format, S (selective ACK, 0) and F (full
+// message, 1); the bit padding of the last block. Then rate 1/2 blocks: the text, zero padding, the CRC-32 as in an
+// unconfirmed packet
+int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *text, bool responseRequested,
+						int preambles, dmrBurst_t *out, int maxBursts)
+{
+	const int blockLen = 12;
+	int length = (int)strlen(text);
+
+	if (length > DMR_ETSI_TEXT_MAX)
+	{
+		length = DMR_ETSI_TEXT_MAX;
+	}
+
+	int blocks = (length + 4 + blockLen - 1) / blockLen;
+	int padOctets = (blocks * blockLen) - 4 - length;
+	int bursts = preambles + 1 + blocks;
+	uint8_t buf[12];
+
+	if ((length <= 0) || (blocks > 63) || (bursts > maxBursts) || ((blocks * blockLen) > DMR_DATA_MAX_PACKET))
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < preambles; i++)
+	{
+		buf[0] = 0x80 | DMR_CSBKO_PREAMBLE;// Last Block
+		buf[1] = 0x00;// FID
+		buf[2] = 0x80 | (group ? 0x40 : 0x00);// Data follows, G/I
+		buf[3] = bursts - 1 - i;// CSBK blocks to follow
+		putId(&buf[4], dst);
+		putId(&buf[7], src);
+		dmrDataBuildCSBK(buf, out++);
+	}
+
+	buf[0] = (group ? 0x80 : 0x00) | ((responseRequested && !group) ? 0x40 : 0x00) | (((blocks >> 4) & 0x03) << 4) |
+			 DMR_DPF_DEFINED_SHORT;
+	buf[1] = (DMR_SAP_SHORT_DATA << 4) | (blocks & 0x0F);
+	putId(&buf[2], dst);
+	putId(&buf[5], src);
+	buf[8] = (DMR_DD_ISO8859_1 << 2) | 0x01;// S 0, F 1
+	buf[9] = padOctets * 8;
+	addCRC16(buf, 0xCC);
+	setBurst(out++, DT_DATA_HEADER, buf, 12);
+
+	memcpy(txPacket, text, length);
+	memset(&txPacket[length], 0, padOctets);
+	uint32_t crc = dmrDataCRC32(txPacket, length + padOctets);
+	uint8_t *crcPos = &txPacket[length + padOctets];
+	crcPos[0] = crc & 0xFF;
+	crcPos[1] = (crc >> 8) & 0xFF;
+	crcPos[2] = (crc >> 16) & 0xFF;
+	crcPos[3] = (crc >> 24) & 0xFF;
+
+	for (int i = 0; i < blocks; i++)
+	{
+		setBurst(out++, DT_RATE_12_DATA, &txPacket[i * blockLen], blockLen);
+	}
+
+	return bursts;
+}
+
+// A Unicode code point as Latin-1, '?' outside it; control characters are dropped (0)
+static char latin1(uint32_t cp)
+{
+	if (cp < 0x20)
+	{
+		return 0;
+	}
+	return (cp <= 0xFF) ? (char)cp : '?';
+}
+
+static void textPut(char *text, int textSize, int *n, char c)
+{
+	if ((c != 0) && (*n < (textSize - 1)))
+	{
+		text[(*n)++] = c;
+	}
+}
+
+// UTF-16 code units from big or little endian octet pairs; a surrogate pair is one character
+static void decodeUTF16(const uint8_t *d, int length, bool bigEndian, char *text, int textSize, int *n)
+{
+	for (int i = 0; (i + 1) < length; i += 2)
+	{
+		uint16_t u = bigEndian ? ((d[i] << 8) | d[i + 1]) : ((d[i + 1] << 8) | d[i]);
+
+		if (u == 0)
+		{
+			break;// padding
+		}
+		if ((u >= 0xD800) && (u <= 0xDBFF))
+		{
+			i += 2;// the low surrogate follows
+			textPut(text, textSize, n, '?');
+			continue;
+		}
+		textPut(text, textSize, n, latin1(u));
+	}
+}
+
+static void decodeUTF8(const uint8_t *d, int length, char *text, int textSize, int *n)
+{
+	for (int i = 0; i < length; i++)
+	{
+		uint8_t c = d[i];
+
+		if (c == 0)
+		{
+			break;
+		}
+		if (c < 0x80)
+		{
+			textPut(text, textSize, n, latin1(c));
+		}
+		else if (((c & 0xE0) == 0xC0) && ((i + 1) < length))
+		{
+			textPut(text, textSize, n, latin1(((uint32_t)(c & 0x1F) << 6) | (d[i + 1] & 0x3F)));
+			i++;
+		}
+		else if ((c & 0xC0) != 0x80)
+		{
+			textPut(text, textSize, n, '?');// three or four octets: outside Latin-1
+			i += ((c & 0xF0) == 0xE0) ? 2 : 3;
+		}
+	}
+}
+
+// Characters of 7 bits packed MSB first, bits bits in all
+static void decode7bit(const uint8_t *d, int bits, char *text, int textSize, int *n)
+{
+	for (int pos = 0; (pos + 7) <= bits; pos += 7)
+	{
+		uint8_t c = 0;
+
+		for (int b = 0; b < 7; b++)
+		{
+			int bit = pos + b;
+
+			c = (c << 1) | ((d[bit >> 3] >> (7 - (bit & 7))) & 1);
+		}
+		if (c == 0)
+		{
+			break;
+		}
+		textPut(text, textSize, n, latin1(c));
+	}
+}
+
+// CRC-CCITT over any length (B.3.7), unmasked: the UDT appended blocks' check
+static uint16_t crcCCITT(const uint8_t *buf, int length)
+{
+	uint16_t crc = 0;
+
+	for (int i = 0; i < length; i++)
+	{
+		crc ^= buf[i] << 8;
+		for (int bit = 0; bit < 8; bit++)
+		{
+			crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+		}
+	}
+
+	return ~crc;
+}
+
+bool dmrDataDecodeEtsiText(const dmrDataPacket_t *packet, char *text, int textSize)
+{
+	const uint8_t *d = packet->data;
+	int length;
+	int n = 0;
+	uint8_t format = packet->ddFormat;
+
+	if (textSize <= 0)
+	{
+		return false;
+	}
+
+	if (packet->dpf == DMR_DPF_DEFINED_SHORT)
+	{
+		length = packet->length;// the padding octets are gone already; bit padding below an octet only for 7-bit
+		if (format == DMR_DD_7BIT)
+		{
+			decode7bit(d, (length * 8) - (packet->padBits & 7), text, textSize, &n);
+		}
+		else if ((format >= DMR_DD_ISO8859_1) && (format <= DMR_DD_ISO8859_LAST))
+		{
+			for (int i = 0; (i < length) && (d[i] != 0); i++)
+			{
+				// ISO 8859-1 is Latin-1 itself; the other parts share only ASCII with it
+				textPut(text, textSize, &n, ((d[i] < 0x80) || (format == DMR_DD_ISO8859_1)) ? latin1(d[i]) : '?');
+			}
+		}
+		else if (format == DMR_DD_UTF8)
+		{
+			decodeUTF8(d, length, text, textSize, &n);
+		}
+		else if ((format == DMR_DD_UTF16) || (format == DMR_DD_UTF16BE) || (format == DMR_DD_UTF16LE))
+		{
+			bool bigEndian = (format != DMR_DD_UTF16LE);
+
+			if ((format == DMR_DD_UTF16) && (length >= 2) && (((d[0] == 0xFF) && (d[1] == 0xFE)) || ((d[0] == 0xFE) && (d[1] == 0xFF))))
+			{
+				bigEndian = (d[0] == 0xFE);
+				d += 2;
+				length -= 2;
+			}
+			decodeUTF16(d, length, bigEndian, text, textSize, &n);
+		}
+		else
+		{
+			return false;
+		}
+	}
+	else if (packet->dpf == DMR_DPF_UDT)
+	{
+		// The appended blocks end with their CRC-CCITT; the pad nibbles come before it
+		length = packet->length - 2;
+		if ((length <= 0) || (crcCCITT(d, length) != (uint16_t)((d[length] << 8) | d[length + 1])))
+		{
+			return false;
+		}
+		int bits = (length * 8) - packet->padBits;
+
+		if (format == DMR_UDT_FORMAT_ISO7)
+		{
+			decode7bit(d, bits, text, textSize, &n);
+		}
+		else if (format == DMR_UDT_FORMAT_ISO8)
+		{
+			for (int i = 0; (i < (bits / 8)) && (d[i] != 0); i++)
+			{
+				textPut(text, textSize, &n, latin1(d[i]));
+			}
+		}
+		else if (format == DMR_UDT_FORMAT_UTF16BE)
+		{
+			decodeUTF16(d, bits / 8, true, text, textSize, &n);
+		}
+		else
+		{
+			return false;
+		}
+	}
+	else
+	{
+		return false;
+	}
+
+	text[n] = '\0';
+	return true;
+}
+
 void dmrDataRxReset(void)
 {
 	rxCollecting = false;
@@ -458,6 +712,9 @@ static bool parseHeader(const uint8_t *h, dmrDataPacket_t *p)
 	p->src = getId(&h[5]);
 	p->length = 0;
 	p->sendSeq = 0;
+	p->ddFormat = 0;
+	p->padBits = 0;
+	p->response = 0;
 
 	switch (p->dpf)
 	{
@@ -472,14 +729,19 @@ static bool parseHeader(const uint8_t *h, dmrDataPacket_t *p)
 			// Appended blocks are split over octets 0 and 1, octet 9 holds the bit padding
 			p->blocksToFollow = (((h[0] >> 4) & 0x03) << 4) | (h[1] & 0x0F);
 			p->padOctets = h[9] / 8;
+			p->padBits = h[9];
+			p->ddFormat = (p->dpf == DMR_DPF_DEFINED_SHORT) ? (h[8] >> 2) : 0;
 			break;
 		case DMR_DPF_RESPONSE:
 			p->blocksToFollow = h[8] & 0x7F;
 			p->padOctets = 0;
+			p->response = h[9];
 			break;
 		case DMR_DPF_UDT:
 			p->blocksToFollow = (h[8] & 0x03) + 1;// appended blocks are stored minus one
 			p->padOctets = 0;
+			p->ddFormat = h[1] & 0x0F;// the UDT format
+			p->padBits = (h[8] >> 3) * 4;// pad nibbles
 			break;
 		default:
 			return false;
