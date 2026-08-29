@@ -11,12 +11,12 @@
 //             while open), or when the UI asks (hostlink_hotspot_exit). Never because DTR is clear: MMDVMHost on
 //             Windows opens the port with DTR cleared (docs/spec/mmdvm-protocol.md 5.1)
 //   cps       anything else goes to the CPS handler, when one is registered (docs/spec/legacy-cps-interop.md); back
-//             to idle after HOSTLINK_CPS_IDLE_MS without a byte
+//             to idle after HOSTLINK_CPS_IDLE_MS without a CPS byte (side protocol frames don't count)
 //
 // A side protocol (the debug link, docs/spec/debuglink.md) may be registered beside these: its frames start with a
 // byte no other protocol starts a request with (0xA5; MMDVM is 0xE0, CPS requests are ASCII letters). It never
 // changes the mode. Its first byte is recognized at a request boundary: in idle mode always, in a CPS session only
-// after the CPS_GAP_MS quiet that starts a new request, in hotspot mode only between MMDVM frames (where the MMDVM
+// after the CPS_GAP_MS quiet that starts a new request or right after another side frame, in hotspot mode only between MMDVM frames (where the MMDVM
 // framer would throw the byte away as junk). Once a side frame has started, its bytes go to it until it ends or
 // times out.
 #ifndef ODR_HOSTLINK_H

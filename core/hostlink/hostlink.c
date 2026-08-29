@@ -44,6 +44,8 @@ static volatile int8_t usb_switch = -1;		// a personality switch asked for: 1 ne
 static hostlink_cps_fn cps_handler;
 static const hostlink_side_t *side;
 static uint32_t last_byte_ms;
+static uint32_t last_main_ms;		// the last byte for the mode's own protocol (side frames don't count)
+static bool side_ended;			// a side frame just ended: the next byte is at a request boundary
 #if CONFIG_HOTSPOT
 static mmdvm_framer_t framer;
 static char description[64];
@@ -227,15 +229,20 @@ static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool n
 
 static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
 {
-	bool new_request = (now - last_byte_ms) >= CPS_GAP_MS;
+	// A side frame's end is a request boundary too, also when the next request comes in a later chunk without the
+	// gap (a debug link client sends its next request as soon as the reply is in)
+	bool new_request = side_ended || ((now - last_byte_ms) >= CPS_GAP_MS);
 
 	last_byte_ms = now;
 	while (len > 0) {
 		size_t n = side_take(buf, len, now, new_request);
 
 		if (n > 0) {
-			new_request = true;	// what follows a side frame starts a new request
+			side_ended = !side->in_frame(now);
+			new_request = side_ended;	// what follows a side frame starts a new request
 		} else {
+			side_ended = false;
+			last_main_ms = now;
 			n = dispatch_main(buf, len, now, new_request);
 			new_request = false;
 			if (n == 0) {
@@ -346,7 +353,7 @@ static void hostlink_task(void *arg)
 			if (cps_handler != NULL) {
 				cps_handler(NULL, 0, now);	// tick: gap-terminated requests, the session time-out
 			}
-			if ((now - last_byte_ms) > HOSTLINK_CPS_IDLE_MS) {
+			if ((now - last_main_ms) > HOSTLINK_CPS_IDLE_MS) {	// debug link traffic doesn't hold it
 				mode = HOSTLINK_IDLE;
 			}
 			break;
