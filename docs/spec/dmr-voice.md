@@ -26,8 +26,9 @@ codeplug contact with that ID (group and private IDs are separate name spaces), 
 database text (callsign and name, cut to the 16-character name field). The radio core keeps the last four answers
 (including "no name"), so flash is read once per new ID.
 
-The emergency service option (bit 7) marks the call (`emergency` in the view, the call screen's warning color). There
-is no alarm tone or acknowledgement yet.
+The emergency service option (bit 7) marks the call (`emergency` in the view, the call screen's warning color). With
+`CONFIG_DMR_EMERGENCY` a played emergency call also raises the emergency alert and tone, and the radio's own
+emergency calls carry the option (`dmr-emergency.md`).
 
 ## 2. Who we talk to
 
@@ -108,7 +109,12 @@ Debug link (`debuglink.md`): the `dmr` view's `target_manual`, `privacy`, `alias
 
 ## 7. Open points
 
-- The codeplug's hang time unit is not in the interop spec; 500 ms steps are assumed (`codeplug.c`, `GEN_HANG_UNIT_MS`).
+- The codeplug's hang time unit is not confirmed. Checked: the interop spec lists the group and private hang bytes
+  (general settings 0x18, 0x19) only as vendor layout the legacy firmware ignores ("only the callsign and the DMR ID
+  matter", `legacy-cps-interop.md` 7.3.2), and neither the reference notes nor the DM-1701 vendor guide give a unit.
+  Assumed: 500 ms steps (`codeplug.c`, `GEN_HANG_UNIT_MS`), so a stored 6 is 3 s. Confirm with the vendor CPS
+  (set a known hang time, read the byte) on the bench; the reply time setting (`rs_reply_s`) overrides it meanwhile.
 - DMR ID database plain format: the 4-byte BCD ID is read as a little-endian word (the spec doesn't say).
 - A codeplug TOT of 0 means "off" to the legacy firmware; here it falls back to the radio's TOT.
-- No emergency alarm, no emergency call TX, no enhanced privacy, no APRS / GPS talker alias TX.
+- Emergency alarm and emergency call TX are in `dmr-emergency.md` (host-tested, not on air yet). No enhanced
+  privacy, no APRS / GPS talker alias TX.

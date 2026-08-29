@@ -30,7 +30,7 @@ The findings below are as written at 2d45a21. Where they stand now, checked agai
 | A-3 uplink EMB / embedded signalling | fixed | `mmdvmTest` test_uplink_emb |
 | A-4 silence fill across a superframe | fixed (modulo 6) | test_uplink_wrapped_gap |
 | A-5 DMR_SHORTLC NAK, I-2 DMR_START NAK | fixed: taken silently (ACKed in SFR mode) | test_config, `hotspotSfrTest` |
-| A-6 SEND_CWID NAK | fixed: ACKed in idle; the ID itself is not keyed on the DM-1701 (no `cw_id` op, counted in `hs.cwid_unsent`) | test_cwid |
+| A-6 SEND_CWID NAK | fixed: ACKed in idle; keyed in Morse on FM on the DM-1701 (radio core CW keyer, `tx_tone_key`; host-tested, not yet on air) | test_cwid, radioCoreTest test_hotspot_cwid, tests/hil/test_hotspot_cwid.py |
 | A-7 rfgw doesn't know the description | open, on rfgw's side | |
 | A-8 slot 1 space / SFR hook | the hook exists (`mmdvm_ext_t.space`); simplex keeps 0, which the spec allows | test_ext_space, `hotspotSfrTest` |
 | A-9 no RSSI after uplink bursts | fixed (AT1846S raw scale) | test_uplink_rssi |
@@ -59,7 +59,7 @@ Found since:
   rule does not apply there, the 20 s idle timeout does.
 
 Updated per-client view: MMDVMHost on Linux and Windows and the rfgw roamer should work for voice and data in
-simplex (rfgw still needs `radio.type: opengd77` until A-7); no CW ID on the DM-1701; rfgw SFR answers correctly
+simplex (rfgw still needs `radio.type: opengd77` until A-7); CW ID keyed on the DM-1701 (host-tested only); rfgw SFR answers correctly
 but repeats only what it heard before keying until the driver work lands.
 
 ## Summary

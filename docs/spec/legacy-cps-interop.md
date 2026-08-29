@@ -369,6 +369,8 @@ them unchanged.
 | 0x20 | 8 | Programming password |
 
 Only the callsign and the DMR ID matter to the firmware. The rest is vendor layout and should be kept.
+The group and private hang bytes (0x18, 0x19) have no unit here. Our firmware reads them as the reply window,
+assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that unit is not confirmed.
 
 #### 7.3.3 Channel (56 bytes; EEPROM 0x3790 + 56 x (n-1) for n = 1..128, flash banks for 129..1024; VFOs too)
 

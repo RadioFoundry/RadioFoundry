@@ -425,6 +425,15 @@ Morse; TX flag set until done. In any other state NAK 5. rfgw waits for the ACK 
 success, our old firmware did. After CW, restore the DMR setup fully (gotchas 8.13: on the MD-9600 the HR_C6000 tone
 configuration must be restored or DMR fails until a power cycle). The old firmware sent 60 ms dots (about 20 wpm).
 
+Ours: the hotspot's `cw_id` op (`core/radio/radio_hotspot.c`) hands the callsign (up to 40 characters) to the radio
+task, which keys it on boards with an FM TX tone (`hal_radio_t` `tx_tone`, the DM-1701; `tx_tone_key` switches the
+tone without retuning): the DMR keying released, `set_mode(FM)`, a carrier on the hotspot's TX frequency, 150 ms
+lead, the Morse (`core/radio/morse.c`: PARIS timing, dot = 1200 / wpm ms, `settings_t` `cw_wpm`, default 20 wpm,
+tone `cw_tone_hz`, default 800 Hz), 150 ms tail, then `set_mode(DMR)` (the modem set up again, 8.13), the receiver
+back on the hotspot's RX frequency and the DMR keying armed. The TX flag stays set meanwhile (`cw_busy`). Leaving
+hotspot mode or SET_FREQ cuts the ID. Boards without `tx_tone` ACK and count it (`hs.cwid_unsent`, nothing keyed).
+Debug link: `hs.cw_*` in the `dmr_ext` view section.
+
 ### 2.12 SERIAL (80), TRANSPARENT (90), QSO_INFO (91)
 
 - SERIAL: MMDVMHost uses it to drive a Nextion display attached to the modem (`[Nextion] Port=modem`); it may arrive

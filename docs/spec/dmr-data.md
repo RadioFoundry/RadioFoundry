@@ -12,14 +12,15 @@ already decoded), `docs/spec/gotchas.md` 3.6-3.9, 5, 7, 14.1.
 
 | Switch | What it adds |
 |---|---|
-| `CONFIG_DMR_SMS` | TMS text messages: receive (inbox, TMS ACK, duplicate suppression), send with ACK and retries |
+| `CONFIG_DMR_SMS` | text messages, Motorola TMS and ETSI defined short data: receive (inbox, TMS ACK or ETSI response, duplicate suppression), send with ACK and retries |
 | `CONFIG_DMR_ARS` | ARS registration with a presence server |
 | `CONFIG_DMR_LRRP` | LRRP answers (immediate and triggered location requests) |
 | `CONFIG_DMR_SIGNALING` | call alert and radio check CSBKs: answered, and sent by the user |
+| `CONFIG_DMR_EMERGENCY` | the emergency alarm CSBK, sent and heard (`dmr-emergency.md`; the rest of the emergency is in the radio core) |
 | `CONFIG_DMR_DATA_CORE` | derived, on when any of the above is: the packet data core (`core/dmr/dmrData.c`), the service, the ETSI responses to confirmed data |
 
-All four default to on with DMR. A feature switched off is compiled out of the service (`if (!CONFIG_...)` guards,
-the linker drops what is unused); its API calls return false. With all four off nothing of the data path is built,
+All five default to on with DMR. A feature switched off is compiled out of the service (`if (!CONFIG_...)` guards,
+the linker drops what is unused); its API calls return false. With all five off nothing of the data path is built,
 and `core/dmr/dmr_data_api.h` turns into inline no-ops so UI code needs no `#if`.
 
 ## 2. Architecture
@@ -85,16 +86,23 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 | call alert ack | 0x80 \| 0x20 | 0x00 | 0 | the caller | the alerted radio |
 | radio check request | 0x80 \| 0x24 | 0x10 (Motorola) | 0x80 | the checked radio | the checker |
 | radio check answer | 0x80 \| 0x24 | 0x10 | 0x00 | the checked radio | the checker |
+| radio check, ETSI form | 0x80 \| 0x24 | 0x00 | 0x80 request, 0x00 answer | as above | as above |
+| emergency alarm | 0x80 \| 0x27 | 0x10 or 0x00 | 0 | the group or radio | the radio in emergency (`dmr-emergency.md` 2) |
 
 - Received call alert to us: event `CALL_ALERT` (the UI shows "Call alert from N"), acknowledged when the setting
   allows. A caller repeats until it hears the ack, so the same caller within 10 s rings once.
 - Received radio check to us: counted; answered (event `RADIO_CHECK_ANSWERED`) only when the setting allows.
-- Both are answered for FID 0x00 and 0x10.
+- Both are answered for FID 0x00 and 0x10, with the request's FID.
+- Our radio check goes with FID 0x10 (Motorola), or 0x00 with the setting `radioCheckEtsi` (the "ETSI form": the
+  same opcode and octets with the ETSI FID; an assumption, no ETSI text we have names it). An answer is taken with
+  the IDs in either order (octets 4-6 the checked radio as the Motorola answer has it, or swapped).
 - Ours (`dmr_signal_call_alert`, `dmr_signal_radio_check`): up to 3 tries, each waiting 1.5 s after the CSBK has
   gone for the answer; events `CALL_ALERT_ACKED` / `RADIO_CHECK_OK` or `..._FAILED`. One call alert or radio check
   at a time.
 
-## 5. Text messages (TMS)
+## 5. Text messages
+
+### 5.1 Motorola TMS
 
 - Format: IPv4 / UDP port 4007 to 4007, user data SAP 4, unconfirmed data. TMS header 0xE0 (ACK requested) or 0xA0,
   sequence number in 5 bits (with bit 7 set), encoding 4, the text as UTF-16LE (Latin-1 characters only on the
@@ -102,8 +110,30 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 - Ours (`sms_send`): rate 1/2 blocks (gotcha 5.3), 2 preamble CSBKs. With an ACK requested: waits 8 s for the TMS
   ACK with our sequence number, 2 tries, then `SMS_FAILED`. To a group or without an ACK: `SMS_SENT` once on air.
   One message at a time, at most 140 characters.
-- Only Motorola TMS. The ETSI short data formats (defined short data, raw short data, the ETSI TS 102 361-4 text
-  message) are not sent; a received one is counted as a packet but not shown.
+
+### 5.2 ETSI short data text
+
+- Format (TS 102 361-3 defined short data): data header with DPF 13 (octet 0 bits 3:0), SAP 10 (octet 1 bits 7:4),
+  the blocks to follow in octet 0 bits 5:4 and octet 1 bits 3:0, octet 0 bit 7 group, bit 6 response requested;
+  octet 8 the defined data format in bits 7:2 (bit 1 S, bit 0 F: one complete message), octet 9 the bit padding;
+  CRC-CCITT masked 0xCCCC. Rate 1/2 blocks follow, the last ending with the CRC-32 (B.3.9, least significant octet
+  first).
+- DD formats read (`dmrData.h`): 0x02 7-bit (ISO/IEC 646, packed, the bit padding gives the length), 0x03-0x11 ISO
+  8859-x (all read as 8859-1), 0x12 UTF-8, 0x13 UTF-16 (with a byte order mark; big endian without one), 0x14
+  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?'. Binary and BCD are not text: counted, not shown.
+  The table is from the public format list as we read it; to be checked against a commercial radio (open point).
+- Also read: UDT text (TS 102 361-4, UDT header formats 3 ISO 7-bit, 4 ISO 8-bit, 7 UTF-16BE; CRC-CCITT
+  unmasked, the pad nibbles in octet 8).
+- Received to us: into the inbox with format ETSI (`dmrDataMessage_t.format`); with the response bit set the ETSI
+  response (ACK: class 0, type 1, SAP 10) goes back. Duplicates: the same source, format and text within the TMS
+  window.
+- Ours: ISO 8859-1, response requested when individual (`ack`), 2 preamble CSBKs. Done (`SMS_SENT`) when the
+  response ACK from the destination arrives, waiting 4 s per try, 2 tries, then `SMS_FAILED` (a NACK response is not acted on: the message
+  fails when the tries run out).
+  To a group: `SMS_SENT` once on air.
+- Which format a message goes in: per message (`sms_send(..., DMR_SMS_FORMAT_TMS / _ETSI)`,
+  `dmrDataServiceSendSMSFormat`) or the radio's default (`DMR_SMS_FORMAT_DEFAULT`: the setting `smsFormat`, used
+  by the UI). A per-contact format is not stored yet (the codeplug's contact has no field for it).
 
 ## 6. ARS
 
@@ -138,6 +168,8 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 | `callAlertAck` | on | the ack is what makes a call alert work for the caller |
 | `lrrpReply` | on | answers only a dispatcher's request; without GPS it says "no fix" |
 | `hasGps` | false | the DM-1701 has none |
+| `smsFormat` | TMS | the format most radios in the field read; ETSI for radios that only speak the standard |
+| `radioCheckEtsi` | off | the Motorola form is what most radios answer |
 
 The settings are kept in the settings store (the `ds_*` fields, `settings-store.md` 3): the radio core loads them
 at start and, from its data tick, saves any change made by `dmr_data_set_settings` or the debug link's DMR_DATA
@@ -155,7 +187,7 @@ waiting after 10 s (3 s for replies) is given up (`data.tx_gave_up`).
 |---|---|
 | `sms_inbox_count()`, `sms_inbox_unread()` | inbox size and unread count |
 | `sms_inbox_get(i, &msg)`, `sms_inbox_mark_read(i)` | message i, 0 = newest: source, destination, group, time, unread, text |
-| `sms_send(dst, group, text, ack, DMR_SMS_FORMAT_TMS)`, `sms_send_state()` | queue a message; state idle / queued / sending / ok / failed |
+| `sms_send(dst, group, text, ack, format)`, `sms_send_state()` | queue a message (format TMS, ETSI or DEFAULT = the setting); state idle / queued / sending / ok / failed |
 | `dmr_signal_call_alert(dst)`, `dmr_signal_radio_check(dst)`, `dmr_signal_state(&kind, &dst)` | start one; the last one's state |
 | `dmr_data_serial()`, `dmr_data_last_event()` | bumped on every event and inbox change; the last event (kind, ID, time) |
 | `dmr_data_ars_state()` | off / registering / registered / refused / no_answer |
@@ -165,7 +197,7 @@ The UI's minimal hook (`core/ui/ui.c`): a toast on each event ("Message from N",
 "N answered", "No answer from N", "Message sent to N", "Not delivered: N"). The inbox screen and the send
 screens belong to the Hub.
 
-Debug link: the `dmr_data` view section and the DMR_DATA command (`docs/spec/debuglink.md` 3.7, 3.12).
+Debug link: the `dmr_data` and `dmr_ext` view sections and the DMR_DATA command (`docs/spec/debuglink.md` 3.7, 3.12).
 
 ## 10. Tests
 
@@ -175,5 +207,8 @@ Debug link: the `dmr_data` view section and the DMR_DATA command (`docs/spec/deb
 - `tests/host/dmrDataChainTest.c`: end to end through the real slot engine (a model of the chip's receive reports
   and its page 2 / 0x40 / 0x50 writes), the real call stack and the service: call alert in and its ack out (CRC
   with CRC_MCU_Control), TMS in at rate 1/2, 3/4 and 1 and its ACK packet out, our radio check out and its answer
-  in, an unanswered call alert (3 tries), a request sent 600 ms after a reception.
+  in, an unanswered call alert (3 tries), a request sent 600 ms after a reception; the emergency alarm in and out;
+  the ETSI text formats (ISO 8859-1, 7-bit, UTF-16 BE / LE / BOM, UTF-8, binary refused, our builder read back),
+  an ETSI message in and its response out, ours out and done on the response; the radio check in the ETSI form
+  both ways. Run by `make -C tests/host` (`run-rxchain`).
 - `tests/hil/test_dmr_data.py`: the same on air against the SDR bench (opt-in RF).
