@@ -49,6 +49,34 @@ There are no release binaries. You build it yourself and supply the codec (see b
 
 Each feature that costs flash has a build switch. See [docs/build-config.md](docs/build-config.md).
 
+## Interoperability
+
+Interoperability is a priority, in two directions.
+
+**Across hardware.** One core runs on every radio. A radio is a board file that picks its chips (DMR modem, RF
+chip, display, keypad or encoder, flash) and describes its bands, power levels and screen. The core never checks
+which radio it's on. The same UI lays itself out on a 128x64 monochrome LCD or a 240x320 color panel, and works
+with a full keypad or just a knob and a couple of buttons. Today that's two different MCUs (STM32F405 and C-SKY
+CK803S), two DMR modems (HR_C6000 and HR_C7000) and two RF chips (AT1846S and FD6818) sharing all the code above
+them.
+
+**With everything else on the air and on your desk.** A radio is only useful if it talks to the radios and software
+people already have. We support the formats other radios use, not just our favorite:
+
+| Area | Supported now | Planned |
+|---|---|---|
+| Air interface | ETSI DMR Tier II: simplex, repeater, SFR (single frequency repeater) | repeater roaming, ETSI Tier III trunking |
+| Text messages | Motorola TMS; ETSI short data in 7-bit, ISO 8859, UTF-8 and UTF-16; ETSI UDT text | Hytera text format |
+| Location | Motorola LRRP location answers and ARS registration | NMEA from the radio's GPS receiver, ETSI UDT location, APRS on FM |
+| Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
+| Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
+| Programming | qdmr, over the GD-77-style CPS protocol | an open, published native codeplug format with its own qdmr driver; qdmr YAML and CSV import/export; RadioID user database |
+| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter | |
+
+"Supported now" means built and passing its tests; see [Radios and status](#radios-and-status) for what has been
+checked on the air. Specs for every format are in [docs/spec](docs/spec), written so other projects can implement
+the same thing.
+
 ## The AMBE codec
 
 DMR voice needs DVSI's proprietary AMBE+2 vocoder. ODR never ships it, not in this repo and not in any binary.
