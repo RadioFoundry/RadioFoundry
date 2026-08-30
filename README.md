@@ -84,12 +84,32 @@ wrapped with `tools/dm32_pack.py` for Baofeng's updater.
 More: [build-config](docs/build-config.md), [testing](docs/testing/README.md),
 [DM-1701 hardware and bootloader](docs/spec/hardware-dm1701.md).
 
-## Debug link and hardware tests
+## How it's tested
 
-Default builds answer a debug protocol on USB for diagnostics, screenshots and key/PTT injection
-([debuglink](docs/spec/debuglink.md), `tools/odr_debug.py`). The pytest suite in `tests/hil` drives a real radio
-with it, and with opt-in flags uses the SDR bench as the other station. Without a radio, every test just skips. See
-[tests/hil/README.md](tests/hil/README.md).
+Radio firmware is usually tested by hand: flash it, push buttons, key up, listen. That's slow, and it means nobody
+wants to touch old code. We test at four levels instead, and most of it runs on any laptop with no radio at all.
+
+- **Unit tests.** Small pieces checked on their own: the error-correction math, a message encoder, the settings
+  format. Feed in known inputs, compare against known answers (worked out from the standards, or recorded from
+  real radios).
+- **Software-in-the-loop (SIL).** The real firmware code for whole features, compiled for your computer and run
+  against simulated chips. A fake DMR modem plays recorded or generated bursts into the real call handling, a fake
+  flash chip takes the codeplug writes, a fake CPS talks to the real CPS code. If a call, a text message or a
+  codeplug write breaks, this catches it without a radio.
+- **UI simulator.** Part of SIL: the real screen and menu code drawn into an image instead of an LCD, at every
+  display size we support. Scripted key presses walk through the menus and check where they end up, and the same
+  tool renders every screenshot in these docs.
+- **Hardware-in-the-loop (HIL).** The same kind of scripted tests, run against a real radio over USB. A debug
+  protocol lets the tests press keys, read what the radio thinks is going on and take screenshots
+  ([debuglink](docs/spec/debuglink.md), `tools/odr_debug.py`), and an SDR bench plays the other radio: it sends
+  calls and texts to the radio and checks what the radio transmits. See [tests/hil/README.md](tests/hil/README.md).
+
+On top of that, every change builds every radio with each feature switched on and off, checks the image still fits,
+and runs the license and clean-room checks (`tools/ci.sh`).
+
+What that buys: you can change the DMR stack, the UI or the storage code and know within a couple of minutes, on
+your own machine, whether you broke something. You don't need our exact radio or our bench to contribute, and a bug
+found on the bench usually turns into a SIL test so it stays fixed.
 
 ## FAQ
 
