@@ -79,16 +79,12 @@ static struct {
 	bool any_seen;
 	uint32_t last_call_end_ms;
 	bool call_end_seen;
-	uint8_t stale_lc[DMR_LC_BYTES];	// the previous call's LC (late entry must not take it for the new call)
-	bool stale_valid;
 	dmr_ta_t ta;
 	// late entry
 	bool le_active;
 	bool le_pair;		// two consecutive voice bursts seen
 	uint8_t le_last_index;
 	uint32_t le_last_ms;
-	uint8_t le_cand[DMR_LC_BYTES];
-	bool le_cand_valid;
 	// PI header heard before the call was (late entry after a missed voice LC header)
 	bool pi_pending;
 	uint32_t pi_pending_ms;
@@ -364,7 +360,6 @@ static void le_reset(void)
 {
 	s.le_active = false;
 	s.le_pair = false;
-	s.le_cand_valid = false;
 }
 
 static bool group_listened(uint32_t tg, uint32_t now)
@@ -406,8 +401,6 @@ static void rx_end(uint32_t now)
 		if (s.view.caller.group || s.view.caller.to_us)
 			set_reply(t, now);
 	}
-	memcpy(s.stale_lc, s.call_lc, DMR_LC_BYTES);
-	s.stale_valid = true;
 	s.last_call_end_ms = now;
 	s.call_end_seen = true;
 	s.rx = RXC_NONE;
@@ -544,8 +537,11 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			s.sink->frame(&v[f * DMR_AMBE_FRAME_BYTES], s.sink->ctx);
 }
 
-// Voice with no call: start one from the embedded LC once two consecutive bursts were seen (a lone burst is noise)
-// and the LC is not the previous call's, or is the same in two superframes (docs/spec/dmr-modem.md 2.4)
+// Voice with no call: start one from the embedded LC once two consecutive bursts were seen (a lone burst is noise).
+// The stale LC (a modem's sticky LC buffer still holding the previous call's) is the driver's to filter: lc_valid on
+// a voice burst is an LC of this reception (docs/spec/dmr-modem.md 2.4, 6.1). Checking again here against the
+// previous call's LC cost a whole superframe more whenever the same talker called again (HIL 2026-10-10: a late entry
+// played from the fourth superframe heard instead of the third)
 static void rx_late_entry(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 {
 	uint8_t i = b->voice_index % 6;
@@ -563,13 +559,7 @@ static void rx_late_entry(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	if (!b->lc_valid || !dmr_lc_is_voice(b->lc))
 		return;
 
-	bool fresh = !s.stale_valid || memcmp(b->lc, s.stale_lc, DMR_LC_BYTES) != 0;
-	bool confirmed = s.le_cand_valid && memcmp(b->lc, s.le_cand, DMR_LC_BYTES) == 0;
-	bool pair = s.le_pair;
-
-	memcpy(s.le_cand, b->lc, DMR_LC_BYTES);
-	s.le_cand_valid = true;
-	if (!pair || !(fresh || confirmed))
+	if (!s.le_pair)
 		return;
 	rx_lc(b->lc, b, true, now);
 	s.have_index = false;
@@ -1296,7 +1286,6 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 			s.tx = s.ptt ? TX_DENIED : TX_NONE;
 		rx_end(s.now);
 		s.rpt_seen = false;
-		s.stale_valid = false;
 	}
 	s.cfg = *cfg;
 	if (s.cfg.ts != 2)

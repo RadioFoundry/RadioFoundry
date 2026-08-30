@@ -634,6 +634,40 @@ static void test_etsi_text_formats(void)
 	dmrDataRxReset();
 }
 
+// "ODR ETSI 541" from 9990301 to 3101276, response requested, as ETSI TS 102 361-1 V2.7.1 lays it out, computed apart
+// from this code (a short script from the clauses): DD_HEAD (Figure 8.9, 9.2.12) with the DD format 0x03 for ISO/IEC
+// 8859-1 (Table 9.50; 0x02 is the 7-bit format), S 0, F 1, 64 bits of padding (9.3.44), CRC-CCITT (B.3.8) masked
+// 0xCCCC; then the text, 8 pad octets and the CRC-32 (B.3.9) in two rate 1/2 blocks. HIL 2026-10-10: the bench sent
+// this text with DD format 0x02, and the radio rightly read it as 7-bit characters ('Q"(S$HS!)
+static const uint8_t etsi_vec[3][12] = {
+	{ 0x4D, 0xA2, 0x2F, 0x52, 0x5C, 0x98, 0x70, 0x9D, 0x0D, 0x40, 0x26, 0xB0 },
+	{ 0x4F, 0x44, 0x52, 0x20, 0x45, 0x54, 0x53, 0x49, 0x20, 0x35, 0x34, 0x31 },
+	{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9B, 0xB8, 0xBA, 0x23 },
+};
+
+static void test_etsi_text_vector(void)
+{
+	char text[64];
+	dmrBurst_t b[8];
+	for (int i = 0; i < 3; i++) {
+		b[i].dataType = i == 0 ? DT_DATA_HEADER : DT_RATE_12_DATA;
+		b[i].length = 12;
+		b[i].flags = 0;
+		memcpy(b[i].payload, etsi_vec[i], 12);
+	}
+	CHECK(decode_bursts(b, 3, text, sizeof(text)) && strcmp(text, "ODR ETSI 541") == 0);
+	CHECK(dmrDataRxPacket.ddFormat == DMR_DD_ISO8859_1 && dmrDataRxPacket.src == 9990301 &&
+	      dmrDataRxPacket.dst == 3101276 && dmrDataRxPacket.responseRequested);
+	dmrDataRxReset();
+	// Our own ETSI text goes out the same, octet for octet
+	int n = dmrDataBuildEtsiText(false, 3101276, 9990301, "ODR ETSI 541", true, 0, b, 8);
+	CHECK(n == 3);
+	for (int i = 0; i < n && i < 3; i++) {
+		CHECK(b[i].length == 12 && memcmp(b[i].payload, etsi_vec[i], 12) == 0);
+	}
+	CHECK(b[0].dataType == DT_DATA_HEADER && b[1].dataType == DT_RATE_12_DATA && b[2].dataType == DT_RATE_12_DATA);
+}
+
 // An ETSI text message to us with a response requested: kept in the inbox as ETSI, the ETSI response (ACK) goes out
 static void test_etsi_sms_in(void)
 {
@@ -735,6 +769,7 @@ int main(void)
 	test_emergency_alarm_in();
 	test_emergency_alarm_out();
 	test_etsi_text_formats();
+	test_etsi_text_vector();
 	test_etsi_sms_in();
 	test_etsi_sms_out();
 	if (failures) {

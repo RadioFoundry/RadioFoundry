@@ -155,6 +155,8 @@ static struct {
 	unsigned next_burst;	// burst number expected next (1-based)
 	unsigned next_frame;
 	bool in_order;
+	bool from_any;		// a late entry: the first frame played sets the burst expected (later ones in order)
+	unsigned first_burst;	// the burst number of the first frame played
 } sk;
 
 static void s_begin(const dmr_caller_t *c, void *ctx) { sk.begins++; }
@@ -162,6 +164,12 @@ static void s_end(void *ctx) { sk.ends++; }
 static void s_lost(void *ctx) { sk.losts++; }
 static void s_frame(const uint8_t f[DMR_AMBE_FRAME_BYTES], void *ctx)
 {
+	if (sk.frames == 0) {
+		sk.first_burst = f[0];
+		if (sk.from_any) {
+			sk.next_burst = f[0];
+		}
+	}
 	if (f[0] != (uint8_t)sk.next_burst || f[1] != sk.next_frame) {
 		if (sk.in_order && sink_verbose) {
 			printf("  sink: frame %u.%u, expected %u.%u\n", f[0], f[1], sk.next_burst & 0xFFu, sk.next_frame);
@@ -193,6 +201,8 @@ typedef struct {
 	uint32_t late_us;	// reports after the first serviced this long after their timeslot interrupt (0 = 3.5 ms)
 	bool late_junk;		// ... and read then: 0x52 holds CC 5 for voice, class 2 types read as 0 (the chip moved on)
 	bool sticky;		// no system interrupt edge: a report waits with the line low until someone looks
+	unsigned late;		// late entry: no headers, the first n voice bursts not sent (the receiver joins at n + 1)
+	const uint8_t *page2_before;	// late: page 2 until this call's embedded LC is first complete (the sticky LC)
 } chip_t;
 
 typedef struct {
@@ -223,7 +233,14 @@ static unsigned build(const chip_t *c, unsigned start)
 		sched[start - 40 + i * 7].r52 = 0x20;
 		sched[start - 40 + i * 7].voice = true;
 	}
+	unsigned on_air_from = c->late;	// the first voice burst on air (0-based)
 	for (int i = 0; i < 8 + 96 + 3; i++) {
+		if (c->late != 0 && (i < 8 || (i < 8 + 96 && (unsigned)(i - 8) < c->late))) {
+			if (i >= 8) {
+				++burst_no;	// left out on air, numbered all the same
+			}
+			continue;
+		}
 		report_t *r = &sched[k];
 		r->r52 = 0x20;
 		if (i < 8) {
@@ -243,6 +260,13 @@ static unsigned build(const chip_t *c, unsigned start)
 				r->r51 = (uint8_t)(((bit7 ? 0x8 : 0x0) | (v + 1)) << 4);
 			}
 			memcpy(r->page2, call_lc, 9);	// the embedded LC, complete at F (and sticky)
+			if (c->page2_before != NULL) {
+				// Complete at the first F whose B-E were all on air: until then the chip holds the old LC
+				unsigned first_full_f = (on_air_from / 6u + (on_air_from % 6u <= 1u ? 0u : 1u)) * 6u + 5u;
+				if ((unsigned)(i - 8) < first_full_f) {
+					memcpy(r->page2, c->page2_before, 9);
+				}
+			}
 		} else {
 			r->r51 = 0x22;
 			memcpy(r->page2, term, 12);
@@ -289,6 +313,7 @@ static void run_call(const chip_t *c, result_t *res)
 	memset(&sk, 0, sizeof(sk));
 	sk.next_burst = 1;
 	sk.in_order = true;
+	sk.from_any = c->late != 0;
 	task_voice_events = 0;
 	t_us = 1000000;
 	hrc6000_dmr_init(&eng, &dev, &ops);
@@ -322,6 +347,7 @@ static void run_call(const chip_t *c, result_t *res)
 		memset(&sk, 0, sizeof(sk));
 		sk.next_burst = 1;
 		sk.in_order = true;
+		sk.from_any = c->late != 0;
 	}
 	dmr_call_reset_stats();
 	trace_len = 0;
@@ -520,6 +546,36 @@ static void test_same_call_again(void)
 	CHECK(expect_clean("same LC again", &c));
 }
 
+// Late entry (HIL test_late_entry, 2026-10-10 on aa79493: 7 voice bursts played of a 36-burst call joined at burst 9).
+// No header; the first 8 bursts are not sent, so the receiver hears from burst C of the second superframe. The engine
+// takes voice only from a burst A on (C-F before it are status the chip reports with no superframe open), so the
+// first embedded LC it can give is at the F of the third superframe (burst 18), assembled from that superframe's B-E.
+//   - The previous call had another LC: the LC differs from the chip's sticky one, valid at once: play from 18.
+//   - The previous call had the same LC (the HIL tests all call from the same ID to the same TG): the engine trusts an
+//     unchanged LC only after more than one superframe of voice (the next F, burst 24), and the stack must take it
+//     then; it used to ask for one more superframe on top (its own stale LC rule), playing only from burst 30
+static void test_late_entry(void)
+{
+	static const uint8_t other_lc[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x11, 0x11, 0x11 };
+	chip_t c = base;
+	c.late = 8;
+	c.page2_before = other_lc;
+	result_t r;
+	run_call(&c, &r);
+	printf("  late entry, new LC: played %u from burst %u (late %u, calls %u, in order %d)\n", r.cs.rx_voice_bursts,
+	       sk.first_burst, r.cs.rx_late_entries, r.cs.rx_calls, sk.in_order);
+	CHECK(r.cs.rx_calls == 1 && r.cs.rx_late_entries == 1 && sk.begins == 1 && sk.in_order);
+	CHECK(sk.first_burst == 18 && r.cs.rx_voice_bursts == 96 - 17 && sk.losts == 0);
+
+	c.page2_before = call_lc;
+	c.same_lc_before = true;
+	run_call(&c, &r);
+	printf("  late entry, same LC: played %u from burst %u (late %u, calls %u, in order %d)\n", r.cs.rx_voice_bursts,
+	       sk.first_burst, r.cs.rx_late_entries, r.cs.rx_calls, sk.in_order);
+	CHECK(r.cs.rx_calls == 1 && r.cs.rx_late_entries == 1 && sk.begins == 1 && sk.in_order);
+	CHECK(sk.first_burst == 24 && r.cs.rx_voice_bursts == 96 - 23 && sk.losts == 0);
+}
+
 int main(void)
 {
 	hrc6000_attach(&dev, &bus);
@@ -530,6 +586,7 @@ int main(void)
 	test_same_call_again();
 	test_voice_lost();
 	test_late_reports();
+	test_late_entry();
 	if (failures) {
 		printf("# dmrRxChainTest: %d FAILED\n", failures);
 		return 1;

@@ -443,10 +443,10 @@ int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, d
 	return dmrDataBuildUDP(false, dst, src, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, ack, length, DT_RATE_12_DATA, preambles, out, maxBursts);
 }
 
-// TS 102 361-3 defined short data header (DPF 13): G/I, A (response requested), the appended blocks' high bits and
-// the DPF; SAP 10 (short data) and their low bits; the addresses; the DD format, S (selective ACK, 0) and F (full
-// message, 1); the bit padding of the last block. Then rate 1/2 blocks: the text, zero padding, the CRC-32 as in an
-// unconfirmed packet
+// Defined short data header (DD_HEAD, TS 102 361-1 9.2.12, DPF 13): G/I, A (response requested), the appended
+// blocks' high bits and the DPF; SAP 10 (short data) and their low bits; the addresses; the DD format (0x03, ISO
+// 8859-1), S (selective ACK, 0) and F (full message, 1); the bit padding of the last block. Then rate 1/2 blocks:
+// the text, zero padding, the CRC-32 as in an unconfirmed packet
 int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *text, bool responseRequested,
 						int preambles, dmrBurst_t *out, int maxBursts)
 {

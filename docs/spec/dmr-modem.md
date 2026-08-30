@@ -177,7 +177,12 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 - **Stale LC**: the HR_C6000 (and likely the C7000) keeps the previous call's LC in its RX LC buffer until a new one is
   decoded. The stack must not attribute the new call to that LC: either wait two superframes (two bursts A) after the
   slot lock, or compare with the LC that was present when the reception began and only accept a different one, or
-  accept after more than one superframe.
+  accept after more than one superframe. This is the driver's job, done once: it knows its chip's buffer, and a
+  voice burst's embedded LC marked valid is this reception's (6.1 rule 4). The HR_C6000 driver captures the buffer when
+  a reception starts and accepts an unchanged LC after more than one superframe of voice; the HR_C7000 hands over
+  only LCs its late-LC interrupt reports with a good checksum. The stack must not add its own stale check on top
+  (for example against the previous call's LC): the same talker calling again then costs a superframe more for
+  each layer (HIL 2026-10-10: a late entry joined at burst 9 of 36 played 7 bursts instead of 13).
 - Skip the first two bursts A of a late entry before playing audio, unless the source is already known and isn't us.
 - A lone voice burst (noise, a stray) must not start a call: require a B 60 ms after an A (SFR practice).
 - A PI header missed => privacy parameters come from the embedded / F-burst privacy info (risk for privacy schemes).

@@ -168,8 +168,8 @@ typedef struct
 int dmrDataBuildUDTLocation(bool group, uint32_t dst, uint32_t src, const dmrDataLocation_t *location, int preambles,
 							dmrBurst_t *out, int maxBursts);
 
-// ETSI short data text (TS 102 361-3 defined short data, DPF 13, SAP 10): the header carries the defined data format,
-// rate 1/2 blocks with the CRC-32 follow. The DD formats used here (docs/spec/dmr-data.md 5.2)
+// ETSI short data text (defined short data, TS 102 361-1 9.2.12, DPF 13, SAP 10): the header carries the defined
+// data format, rate 1/2 blocks with the CRC-32 follow. The DD formats used here (Table 9.50, docs/spec/dmr-data.md 5.2)
 #define DMR_DD_BINARY					0x00
 #define DMR_DD_BCD						0x01
 #define DMR_DD_7BIT						0x02	// ISO/IEC 646, packed 7 bits per character
