@@ -120,8 +120,10 @@ UI tests use `shot_until`.
 
 `test_dmr_call_features`: one call heard per RF test (`call.rx_calls` delta 1). Private to us: played, `last.to_us=1`,
 the reply target is the bench ID. Private to another ID: counted, 0 bursts played. Emergency: `last.emergency=1`.
-Talker alias: `call.alias` equals the text sent, `call.rx_alias_complete` 1. Late entry: `call.rx_late_entries` 1,
-18 to 28 voice bursts played of the 28 sent after the gap. Privacy option without a key: 0 bursts played, 20 or more
+Talker alias: `call.alias` equals the text sent, `call.rx_alias_complete` 1. Late entry (after a call from
+another ID): `call.rx_late_entries` 1, 18 to 20 voice bursts played of the 28 sent after the gap (voice is taken from
+the first burst A, the embedded LC is complete at the next F, burst 18 of 36); the same late call again (same LC as the
+last one, so the modem's sticky LC rule waits one superframe more): 12 to 14. Privacy option without a key: 0 bursts played, 20 or more
 dropped as encrypted; with a key: none dropped, 22 or more played. PI bit: only that one call is heard (the
 DM-1701's modem driver clears PI on voice, so it plays as clear).
 

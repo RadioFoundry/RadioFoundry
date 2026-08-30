@@ -98,14 +98,22 @@ def test_talker_alias(radio, sdr_bench, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_late_entry(radio, sdr_bench, pytestconfig):
-    """No header and the first 8 bursts left out: the call is taken from the embedded LC (one call, marked late),
-    voice played from the first burst after the LC is complete."""
+    """No header and the first 8 of 36 bursts left out: the call is taken from the embedded LC (one call, marked late).
+    The radio hears from burst C of the second superframe, but takes voice only from a burst A on, so the first
+    embedded LC it can assemble is at burst 18 (the third superframe's F): played from there, 19 bursts. A call with
+    the same LC as the one before (the same talker again) can't be told from the modem's sticky LC buffer at first:
+    taken one superframe later (burst 24), 13 bursts. HIL 2026-10-10 on aa79493: 7 (the stack waited a superframe more
+    on top of the driver's rule)."""
     _on_dmr_channel(radio, pytestconfig)
+    _bench_call(radio, sdr_bench, pytestconfig, src=BENCH_SRC + 1)    # another LC first: the next one is new
     d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)
     assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
-    # 36 bursts sent, 8 left out; the LC completes at the first F heard (burst 11), so about 25 play (18 allowed: the modem may need a second superframe)
-    assert 24 <= d["call.rx_voice_bursts"] <= 28, d
+    assert 18 <= d["call.rx_voice_bursts"] <= 20, d
     assert v["call.late_entry"] == "1" and v["last.src"] == str(BENCH_SRC), v
+    d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)    # the same LC again
+    assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
+    assert 12 <= d["call.rx_voice_bursts"] <= 14, d
+    assert v["last.src"] == str(BENCH_SRC), v
 
 
 @pytest.mark.rf

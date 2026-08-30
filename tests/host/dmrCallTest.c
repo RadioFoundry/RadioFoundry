@@ -895,16 +895,17 @@ static void test_late_entry(void)
 	CHECK(sink_log.begins == 0 && V()->state == DMR_CALL_STATE_IDLE);
 	run_ms(500);
 
-	// The next call without a header and with the same LC as the last one (the modem's stale LC): only after a
-	// second superframe confirms it
+	// The next call without a header and with the same LC as the last one (the same talker again): taken at its first
+	// complete embedded LC. A sticky LC buffer is the driver's to filter (lc_valid is this reception's LC); the stack
+	// used to wait for a second superframe on top (HIL 2026-10-10: a late entry lost a superframe more)
 	setup(&c);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 1);
 	run_ms(1000);
 	rx_call(lc, 1, false, 0, 1, false, &frame);
-	CHECK(sink_log.begins == 1 && V()->state == DMR_CALL_STATE_IDLE);
+	CHECK(sink_log.begins == 2 && V()->caller.late_entry && V()->state != DMR_CALL_STATE_IDLE);
 	rx_call(lc, 1, false, 0, 1, false, &frame);
-	CHECK(sink_log.begins == 2 && V()->caller.late_entry);
+	CHECK(sink_log.begins == 2);
 	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
 	run_ms(500);
 
