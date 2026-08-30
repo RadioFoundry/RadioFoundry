@@ -63,6 +63,7 @@ from radiodesk_rfgw.mmdvm.radio import Radio, ModemTuner
 SLOT_S = 0.060          # one DMO burst every 60 ms
 FLCO_GROUP, FLCO_PRIVATE, FLCO_TA_HEADER = 0, 3, 4
 TA_ISO8 = 1
+DD_ISO8859_1 = 0x03     # defined data format (TS 102 361-1 Table 9.50); 0x02 is 7-bit characters
 
 
 def family_sync(family: str) -> int:
@@ -187,14 +188,15 @@ def etsi_crc32(data: bytes) -> int:
 
 
 def etsi_text_infos(src: int, dst: int, text: str, group: bool, response: bool, preambles: int):
-    """An ETSI text message (TS 102 361-3 defined short data: DPF 13, SAP 10, DD format ISO 8859-1) as (data type,
-    12 info octets): preamble CSBKs, the header, rate 1/2 blocks with the CRC-32 in the last block."""
+    """An ETSI text message (defined short data: DPF 13, SAP 10, DD format 0x03 ISO 8859-1; TS 102 361-1 V2.7.1
+    Figure 8.9, 9.2.12, Table 9.50, where 0x02 is the 7-bit format) as (data type, 12 info octets): preamble CSBKs,
+    the header, rate 1/2 blocks with the CRC-32 in the last block."""
     user = text.encode("latin-1", "replace")
     blocks = (len(user) + 4 + 11) // 12
     pad = blocks * 12 - 4 - len(user)
     h = bytes([(0x80 if group else 0) | (0x40 if response and not group else 0) | (((blocks >> 4) & 3) << 4) | 13,
                (10 << 4) | (blocks & 0x0F)]) + dst.to_bytes(3, "big") + src.to_bytes(3, "big") + \
-        bytes([(0x02 << 2) | 1, pad * 8])
+        bytes([(DD_ISO8859_1 << 2) | 1, pad * 8])
     h += (fec.crc16_ccitt(h) ^ 0xCCCC).to_bytes(2, "big")
     body = user + bytes(pad)
     body += etsi_crc32(body).to_bytes(4, "little")
