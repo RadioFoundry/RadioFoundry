@@ -334,3 +334,8 @@ bool ui_svc_factory_reset(void)
 {
 	return storage_job_post(factory_reset_job, NULL);
 }
+
+void ui_svc_boot_text(char line1[17], char line2[17])
+{
+	codeplug_boot_text(line1, line2);
+}

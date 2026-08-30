@@ -161,6 +161,9 @@ typedef struct {
 	char name[17];
 	char text[40];
 } ui_event_t;
+// The owner's two boot screen lines from the codeplug (storage-cps); empty strings when there are none
+void ui_svc_boot_text(char line1[17], char line2[17]);
+
 // Queue an event for the UI (copies it). False when the queue is full (the event is dropped)
 bool ui_notify(const ui_event_t *ev);
 // Every UI pass: a package whose state the UI polls (rather than one that calls ui_notify) turns changes into events

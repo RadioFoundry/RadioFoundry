@@ -14,6 +14,7 @@
 #include "ui.h"
 #include "ui_app.h"
 #include "ui_screens.h"
+#include "ui_svc.h"
 #include "input/input.h"
 #include "radio/radio.h"
 #include "config.h"
@@ -77,7 +78,9 @@ static void ui_task(void *arg)
 
 	if (have_fb) {
 		ui_layout_init();
-		ui_draw_splash("OpenDigitalRadio", board.name, ODR_GIT);
+		char line1[17], line2[17];
+		ui_svc_boot_text(line1, line2);
+		ui_draw_splash(board.name, ODR_GIT, line1, line2);
 		gfx_flush();
 	}
 	ui_app_init();

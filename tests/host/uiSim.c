@@ -16,6 +16,7 @@
 
 // Screens for the gallery: a name and the script that reaches it from Home (zone 0, channel 3, a DMR channel)
 static const struct { const char *name, *script; } gallery[] = {
+	{ "boot", "splash" },
 	{ "home_dmr", "" },
 	{ "home_dmr_lastheard", "call:3101234,91,g wait:11000" },
 	{ "home_reply", "call:3101234,91,g" },

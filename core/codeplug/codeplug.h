@@ -90,6 +90,8 @@ bool codeplug_delete_zone(uint16_t index);
 // The radio name (the legacy callsign field, 8 characters), "" if none
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]);
 bool codeplug_set_radio_name(const char *name);
+// The two boot screen text lines the CPS writes (empty when unset or not in this codeplug)
+void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]);
 
 // Re-read everything after the image was written underneath (the CPS); bumps the serial
 codeplug_source_t codeplug_reload(void);

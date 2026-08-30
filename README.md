@@ -8,9 +8,10 @@ anything, commercial products included.
 It's early. Read the status section before you flash anything.
 
 <p>
-<img src="docs/ux/screens/160x120i5/home_dmr.png" width="200" alt="Home screen on a DMR channel">
-<img src="docs/ux/screens/160x120i5/hub.png" width="200" alt="The hub">
-<img src="docs/ux/screens/160x120i5/rx_group.png" width="200" alt="Receiving a group call">
+<img src="docs/ux/screens/160x120i5/boot.png" width="180" alt="Boot screen">
+<img src="docs/ux/screens/160x120i5/home_dmr.png" width="180" alt="Home screen on a DMR channel">
+<img src="docs/ux/screens/160x120i5/hub.png" width="180" alt="The hub">
+<img src="docs/ux/screens/160x120i5/rx_group.png" width="180" alt="Receiving a group call">
 </p>
 
 <sub>DM-1701 screens, rendered by the UI simulator (`make -C tests/host ui-gallery`).</sub>

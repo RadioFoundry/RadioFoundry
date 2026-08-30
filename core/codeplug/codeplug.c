@@ -60,6 +60,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 // General settings (7.3.2): the callsign (radio name) and the radio's DMR ID, 8 BCD digits big endian
 #define GEN_CALLSIGN	EE(0x00E0u)
 #define GEN_NAME_LEN	8u
+#define BOOT_TEXT	EE(0x7540u)	// two 16 byte lines (legacy-cps-interop.md 7, CPS section 2)
 #define GEN_BASE	GEN_CALLSIGN	// the general settings block
 #define GEN_DMR_ID	EE(0x00E8u)
 #define GEN_GROUP_HANG	0x18u	// offsets in the block
@@ -796,6 +797,18 @@ void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1])
 	storage_lock();
 	if (source == CODEPLUG_LEGACY && flash_read(GEN_CALLSIGN, b, sizeof(b))) {
 		copy_name(out, b, GEN_NAME_LEN);
+	}
+	storage_unlock();
+}
+
+void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1])
+{
+	uint8_t b[2u * CODEPLUG_NAME_LEN];
+	line1[0] = line2[0] = '\0';
+	storage_lock();
+	if (source == CODEPLUG_LEGACY && flash_read(BOOT_TEXT, b, sizeof(b))) {
+		copy_name(line1, b, CODEPLUG_NAME_LEN);
+		copy_name(line2, b + CODEPLUG_NAME_LEN, CODEPLUG_NAME_LEN);
 	}
 	storage_unlock();
 }

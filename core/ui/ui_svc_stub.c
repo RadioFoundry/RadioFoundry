@@ -9,6 +9,7 @@
 
 // What each package provides, ORed; a package defines its own ui_svc_feat_* when it connects its calls
 WEAK uint32_t ui_svc_feat_voice(void) { return 0; }
+WEAK void ui_svc_boot_text(char line1[17], char line2[17]) { line1[0] = line2[0] = '\0'; }
 WEAK uint32_t ui_svc_feat_data(void) { return 0; }
 WEAK uint32_t ui_svc_feat_storage(void) { return 0; }
 WEAK uint32_t ui_svc_feat_radio(void) { return 0; }

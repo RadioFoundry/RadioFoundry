@@ -230,26 +230,107 @@ void ui_draw_hint(const char *text, bool toast)
 
 // --- boot splash ---
 
-void ui_draw_splash(const char *product, const char *board_name, const char *git)
+// The mark: a mast with a station dot on top and three arcs of signal either side, drawn to the size asked for (r =
+// outer arc radius; the mark is 2r wide and about 1.4r tall, the dot at cx, cy). Plain pixels, so it scales to every
+// display class and stays crisp on a 1 bpp panel
+static void draw_mark(int cx, int cy, int r)
+{
+	static const color_t arc_rgb[3] = { RGB565(110, 170, 255), RGB565(64, 140, 255), RGB565(32, 96, 200) };
+	int t = r >= 28 ? 3 : r >= 14 ? 2 : 1;		// arc thickness
+	int dot = r / 7 > 1 ? r / 7 : 1;
+	for (int i = 0; i < 3; i++) {
+		int ro = r * (i + 2) / 4, ri = ro - t;	// radii r/2, 3r/4, r
+		color_t c = gfx_bpp() == 1 ? ui_col.fg : arc_rgb[i];
+		for (int dy = -ro; dy <= ro; dy++) {
+			for (int dx = -ro; dx <= ro; dx++) {
+				int d2 = dx * dx + dy * dy, ady = dy < 0 ? -dy : dy, adx = dx < 0 ? -dx : dx;
+				// in the ring, within 40 degrees of horizontal (tan 40 = 0.84)
+				if (d2 <= ro * ro && d2 > ri * ri && ady * 100 <= adx * 84)
+					gfx_pixel(cx + dx, cy + dy, c);
+			}
+		}
+	}
+	// The mast: a narrow triangle from under the dot to the base, then the dot
+	int top = cy + dot + 1, base = cy + r * 3 / 4, half = r / 5 > 1 ? r / 5 : 1;
+	for (int y = top; y <= base; y++) {
+		int hw = half * (y - top) / (base - top > 0 ? base - top : 1);
+		gfx_hline(cx - hw, y, 2 * hw + 1, gfx_bpp() == 1 ? ui_col.fg : ui_col.dim);
+	}
+	for (int dy = -dot; dy <= dot; dy++)
+		for (int dx = -dot; dx <= dot; dx++)
+			if (dx * dx + dy * dy <= dot * dot + dot / 2)
+				gfx_pixel(cx + dx, cy + dy, ui_col.fg);
+}
+
+// The wordmark: "Open" in the accent color, "DigitalRadio" in the text color, centered; returns its height
+static int draw_wordmark(const font_t *f, int y)
+{
+	int w1 = gfx_text_width(f, "Open"), w = w1 + gfx_text_width(f, "DigitalRadio");
+	int x = (gfx_width() - w) / 2;
+	gfx_text(f, x, y, "Open", gfx_bpp() == 1 ? ui_col.fg : ui_col.priv);
+	gfx_text(f, x + w1, y, "DigitalRadio", ui_col.fg);
+	return f->h;
+}
+
+void ui_draw_splash(const char *board_name, const char *git, const char *line1, const char *line2)
 {
 	int w = gfx_width(), h = gfx_height();
 	const ui_layout_t *L = &ui_layout;
 	gfx_clear(ui_col.bg);
-	const font_t *big = gfx_text_width(L->large, product) <= w ? L->large :
-		gfx_text_width(L->medium, product) <= w ? L->medium : L->small;
-	int total = big->h + 4 + L->small->h * 2;
-	int y = (h - total) / 2;
-	gfx_text(big, (w - gfx_text_width(big, product)) / 2, y, product, ui_col.fg);
-	y += big->h + 4;
-	gfx_hline(w / 4, y - 3, w / 2, ui_col.focus);
-	gfx_text(L->small, (w - gfx_text_width(L->small, board_name)) / 2, y, board_name, ui_col.dim);
-	y += L->small->h;
-	char line[24];
+
+	const char *word = "OpenDigitalRadio";
+	const font_t *wf = gfx_text_width(L->large, word) <= w - 4 ? L->large :
+		gfx_text_width(L->medium, word) <= w - 4 ? L->medium : L->small;
+	// The owner's lines (the CPS boot text): as large as fits, never dropped
+	const char *lines[2] = { line1 != NULL ? line1 : "", line2 != NULL ? line2 : "" };
+	int n_lines = (lines[0][0] != '\0') + (lines[1][0] != '\0');
+	const font_t *lf = L->medium;
+	for (int i = 0; i < 2; i++)
+		if (gfx_text_width(lf, lines[i]) > w - 2)
+			lf = L->small;
+
+	// Footer: board and version, small and dim along the bottom
+	char foot[48];
 	sbuf_t b;
-	sb_init(&b, line, sizeof line);
-	sb_str(&b, "git ");
+	sb_init(&b, foot, sizeof foot);
+	sb_str(&b, board_name);
+	sb_str(&b, "  ");
 	sb_str(&b, git);
-	gfx_text(L->small, (w - gfx_text_width(L->small, line)) / 2, y, line, ui_col.dim);
+	const font_t *ff = L->tiny;
+	int foot_y = h - ff->h;
+
+	// Stack: mark, wordmark, rule, lines; centered in the space above the footer. The mark takes what is left
+	int gap = h >= 200 ? 8 : h >= 100 ? 4 : 2;
+	int text_h = wf->h + gap + (n_lines > 0 ? gap + n_lines * lf->h : 0);
+	int avail = foot_y - gap - text_h - gap;
+	int r = avail * 10 / 14;			// the mark is about 1.4 r tall
+	if (r > w / 4)
+		r = w / 4;
+	if (r > h / 4)
+		r = h / 4;
+	bool mark = r >= 12;		// smaller than this the arcs merge into noise
+	int mark_h = mark ? r * 14 / 10 : 0;
+	int total = mark_h + (mark ? gap : 0) + text_h;
+	int y = (foot_y - total) / 2;
+	if (y < 0)
+		y = 0;
+	if (mark) {
+		draw_mark(w / 2, y + r * 64 / 100 + 1, r);	// the arcs reach 0.64 r above the dot
+		y += mark_h + gap;
+	}
+	y += draw_wordmark(wf, y);
+	gfx_hline(w / 2 - w / 6, y + gap / 2, w / 3, gfx_bpp() == 1 ? ui_col.fg : ui_col.focus);
+	y += gap;
+	if (n_lines > 0) {
+		y += gap;
+		for (int i = 0; i < 2; i++) {
+			if (lines[i][0] == '\0')
+				continue;
+			gfx_text(lf, (w - gfx_text_width(lf, lines[i])) / 2, y, lines[i], ui_col.fg);
+			y += lf->h;
+		}
+	}
+	gfx_text(ff, (w - gfx_text_width(ff, foot)) / 2, foot_y, foot, ui_col.dim);
 }
 
 // --- Home ---

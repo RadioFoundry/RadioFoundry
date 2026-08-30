@@ -143,7 +143,8 @@ void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l
 // Rows that fit below the title (and header) on this display, for paging
 int ui_list_rows(const ui_list_t *l);
 
-void ui_draw_splash(const char *product, const char *board_name, const char *git);
+// The boot screen: the mark, the name, the owner's two boot text lines (empty: left out), board and version
+void ui_draw_splash(const char *board_name, const char *git, const char *line1, const char *line2);
 void ui_draw_home(const radio_view_t *v, const ui_state_t *s);
 void ui_draw_quick(const radio_view_t *v, const ui_state_t *s);
 #if CONFIG_HOTSPOT

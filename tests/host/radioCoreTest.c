@@ -178,6 +178,7 @@ static const contact_t contacts[] = {
 	{ "Local", 9, CONTACT_GROUP, 0 },
 };
 uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
+void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index < 1 || index > sizeof(contacts) / sizeof(contacts[0])) {

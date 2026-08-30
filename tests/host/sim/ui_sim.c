@@ -13,6 +13,7 @@
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //   hotspot:on|off      the host link enters / leaves hotspot mode
+//   splash              draw the boot screen (put it last: nothing redraws over it)
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything
 #include <stdio.h>
@@ -515,6 +516,11 @@ static sim_msg_t inbox[8];
 static uint16_t n_inbox;
 
 uint32_t ui_svc_features(void) { return 0xFFFFFFFFu; }
+void ui_svc_boot_text(char line1[17], char line2[17])
+{
+	strcpy(line1, "N0CALL");
+	strcpy(line2, "Search & Rescue");
+}
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 {
 	if (life == UI_TALK_DEFAULT) {
@@ -992,6 +998,12 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "hotspot") == 0 && arg != NULL) {
 		hotspot_on = strcmp(arg, "on") == 0;
 		advance(300);
+		return true;
+	}
+	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)
+		char l1[17], l2[17];
+		ui_svc_boot_text(l1, l2);
+		ui_draw_splash(board.name, "a1b2c3d4", l1, l2);
 		return true;
 	}
 	if (strcmp(t, "battery") == 0 && arg != NULL) {
