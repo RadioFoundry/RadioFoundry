@@ -403,3 +403,14 @@ else
 	@echo "# cpsClientTest skipped (no python3)"
 endif
 .PHONY: run-cpsclient
+
+# DMR Tier III prototype: the PDU layouts, tables and authentication vectors behind docs/spec/dmr-tier3-plan.md
+TESTS   += tier3ProtoTest
+
+tier3ProtoTest: tier3ProtoTest.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/call/dmr_lc.h $(CORE)/dmr/fec/dmrFec.c
+	$(CC) $(CFLAGS) -o $@ tier3ProtoTest.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
+
+run: run-tier3
+run-tier3: tier3ProtoTest
+	./tier3ProtoTest
+.PHONY: run-tier3
