@@ -28,6 +28,7 @@ The radio keeps its own screen during the transfer.
 | RX group lists | The talkgroups each channel listens to |
 | DMR ID database | Names for DMR IDs that aren't contacts, shown on the receive screen |
 | VFO A | Frequency and settings of the VFO, read after the next restart |
+| Boot text | The two lines on the boot screen |
 
 The radio keeps every other part of the codeplug unchanged (boot image, APRS settings, DTMF contacts and so on), so
 qdmr reads back what it wrote, but ODR doesn't act on those parts.

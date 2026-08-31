@@ -4,8 +4,11 @@
 
 ## Turning the radio on
 
-Turn the volume knob clockwise past its click. The boot screen shows for about a second with the radio model and the
-firmware version, then the radio opens the Home screen. Keys pressed during the boot screen are ignored.
+Turn the volume knob clockwise past its click. The boot screen shows for about a second, then the radio opens the
+Home screen. Keys pressed during the boot screen are ignored.
+
+The boot screen shows the ODR logo, the two boot text lines from the codeplug (16 characters each, set with qdmr; for
+example your callsign and name), and along the bottom the radio model and the firmware version.
 
 <img src="../ux/screens/160x120i5/boot.png" width="200" alt="Boot screen">
 
