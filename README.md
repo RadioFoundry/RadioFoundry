@@ -18,20 +18,25 @@ It's early. Read the status section before you flash anything.
 
 ## Radios and status
 
-| Radio | Status |
-|---|---|
-| Baofeng DM-1701 | First target, on the bench now |
-| Baofeng DM-32UV | Builds and passes its host tests; hasn't run on a radio yet |
-| TYT MD-UV380, MD-9600, MD-380, Radioddity GD-77, GD-88 | Planned |
+| Radio | Builds | Host tests | On the radio | Support |
+|---|:---:|:---:|:---:|---|
+| Baofeng DM-1701 | ● | ● | ◐ | First target. FM and DMR voice work on the radio; the other features wait on hardware tests (below) |
+| Baofeng DM-32UV | ● | ● | ○ | Builds and passes its host tests; hasn't run on a radio yet ([bring-up checklist](docs/testing/dm32-bringup.md)) |
+| TYT MD-UV380 | ○ | ○ | ○ | Planned. Close to the DM-1701 (STM32F405, HR_C6000), so it should be the next port |
+| TYT MD-9600 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair |
+| TYT MD-380 | ○ | ○ | ○ | Planned. Single band, older HR_C5000 modem |
+| Radioddity GD-77 | ○ | ○ | ○ | Planned. Different MCU (NXP), same HR_C6000 modem |
+| Radioddity GD-88 | ○ | ○ | ○ | Planned. Two HR_C7000 transceivers; reuses most of the DM-32UV port |
+
+● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet
 
 On the DM-1701, these are verified on the radio: boot, display, keys, calibration, FM receive and transmit, DMR voice
 receive, and DMR transmit (decoded by an MMDVM receiver on the SDR bench). Most everything else (data, emergency,
 privacy, hotspot, USB network, SFR, CPS) is built and passes the host tests, but is still waiting on hardware tests.
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
-The DM-32UV port has a [bring-up checklist](docs/testing/dm32-bringup.md) for the first time it meets a radio.
-
-There are no release binaries. You build it yourself and supply the codec (see below).
+Releases carry the user manual as a PDF but no firmware. You build the firmware yourself and supply the codec (see
+below).
 
 ## What it does
 
@@ -112,6 +117,14 @@ wrapped with `tools/dm32_pack.py` for Baofeng's updater.
 More: [build-config](docs/build-config.md), [testing](docs/testing/README.md),
 [DM-1701 hardware and bootloader](docs/spec/hardware-dm1701.md).
 
+## Documentation
+
+- [User manual](docs/user/README.md): installing, the keys and screens, FM, DMR, messages, hotspot, settings,
+  troubleshooting. Each release also carries it as a PDF.
+- [Developer documentation](docs/dev/README.md): architecture, building, adding a radio, testing, the debug link,
+  CPS, the codec, contributing, releases.
+- Specs and design: [docs/spec](docs/spec/), [docs/ux](docs/ux/), [docs/testing](docs/testing/README.md).
+
 ## How it's tested
 
 Radio firmware is usually tested by hand: flash it, push buttons, key up, listen. That's slow, and it means nobody
@@ -133,7 +146,8 @@ wants to touch old code. We test at four levels instead, and most of it runs on 
   calls and texts to the radio and checks what the radio transmits. See [tests/hil/README.md](tests/hil/README.md).
 
 On top of that, every change builds every radio with each feature switched on and off, checks the image still fits,
-and runs the license and clean-room checks (`tools/ci.sh`).
+and runs the license and clean-room checks (`tools/ci.sh`). How to run each level and where a new test goes:
+[developer docs, testing](docs/dev/testing.md) and [docs/testing](docs/testing/README.md).
 
 What that buys: you can change the DMR stack, the UI or the storage code and know within a couple of minutes, on
 your own machine, whether you broke something. You don't need our exact radio or our bench to contribute, and a bug
@@ -176,7 +190,7 @@ Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's HAL and CMSIS) keeps
 ## Contributing
 
 Issues and pull requests are welcome. Read [docs/CLEANROOM.md](docs/CLEANROOM.md) first, keep radio-specific code out
-of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make sure `tools/ci.sh` passes.
+of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make sure `tools/ci.sh` passes. Details: [contributing](docs/dev/contributing.md).
 
 ## Layout
 
@@ -191,4 +205,5 @@ of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make su
 | `third_party/` | Permissively licensed upstream code, as submodules |
 | `tools/` | Flashing, codec merge, CPS client, debug link, CI, SDR bench tools |
 | `tests/host/`, `tests/hil/` | Host tests and hardware-in-the-loop tests |
+| `docs/user/`, `docs/dev/` | User manual, developer documentation |
 | `docs/spec/`, `docs/ux/`, `docs/testing/` | Specs, UI design, test procedures |

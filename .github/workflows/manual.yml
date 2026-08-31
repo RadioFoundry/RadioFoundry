@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# The user manual (docs/dev/release.md): check the doc links, build the PDF from docs/user with pandoc and typst,
+# and on a v* tag attach it to the GitHub release (created when missing). Independent of the firmware build.
+name: User manual
+
+on:
+  push:
+    tags: ["v*"]
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "tools/build_manual.sh"
+      - "tools/manual/**"
+      - "tools/check_doc_links.py"
+      - ".github/workflows/manual.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "tools/build_manual.sh"
+      - "tools/manual/**"
+      - "tools/check_doc_links.py"
+      - ".github/workflows/manual.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PANDOC_VERSION: "3.6.4"
+  TYPST_VERSION: "0.13.1"
+
+jobs:
+  manual:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # gh release create / upload on tags
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false   # the manual needs none of third_party
+
+      - name: Check doc links
+        run: python3 tools/check_doc_links.py
+
+      - name: Install pandoc and typst
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          curl -fsSL -o pandoc.tar.gz \
+            "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz"
+          tar -xzf pandoc.tar.gz
+          curl -fsSL -o typst.tar.xz \
+            "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz"
+          tar -xJf typst.tar.xz
+          echo "PANDOC=$RUNNER_TEMP/tools/pandoc-${PANDOC_VERSION}/bin/pandoc" >> "$GITHUB_ENV"
+          echo "TYPST=$RUNNER_TEMP/tools/typst-x86_64-unknown-linux-musl/typst" >> "$GITHUB_ENV"
+
+      - name: Build the PDF
+        run: |
+          set -eu
+          "$PANDOC" --version | head -1
+          "$TYPST" --version
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            VERSION="${GITHUB_REF_NAME}"
+            REF="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(git rev-parse --short=8 HEAD)"
+            REF="${GITHUB_SHA}"
+          fi
+          OUT="build/manual/OpenDigitalRadio-manual-${VERSION}.pdf"
+          ODR_REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${REF}" \
+            tools/build_manual.sh --version "$VERSION" --out "$OUT"
+          echo "MANUAL_PDF=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: user-manual
+          path: ${{ env.MANUAL_PDF }}
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="${GITHUB_REF_NAME}"
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "OpenDigitalRadio $TAG" \
+              --notes "User manual attached. There are no firmware binaries: build the image and merge your radio's codec (docs/user/02-installing.md)."
+          fi
+          gh release upload "$TAG" "$MANUAL_PDF" --clobber
