@@ -28,7 +28,8 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    C compiler. Their binaries, `.dSYM` bundles and outputs stay in `tests/host/` and are ignored by git
    (`tests/host/.gitignore` tracks only sources); `make -C tests/host clean` removes them.
 2. **Python**: every tool and HIL test parses, and pytest collects `tests/hil` (skipped without pytest:
-   `pip install pytest pyserial`).
+   `pip install pytest pyserial`). `tools/check_doc_links.py` checks that every relative link, image and anchor in
+   the Markdown resolves.
 3. **Firmware, every board with the feature matrix**. For each `boards/<b>/board.mk` whose compiler is installed:
    - `default`: the board's defaults;
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
