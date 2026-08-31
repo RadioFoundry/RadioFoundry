@@ -25,4 +25,5 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [docs/ux](../ux/) | The UI design: principles, information architecture, task flows, usability tests, wireframes, screens |
 | [docs/testing](../testing/README.md) | How to run every test tier; bench procedures; the MMDVM audit; DM-32 bring-up |
 | [docs/build-config.md](../build-config.md) | Every build switch and value |
+| [Tier III plan](../spec/dmr-tier3-plan.md) | ETSI DMR Tier III trunking: scope, architecture, risks, work packages (planning only) |
 | [docs/CLEANROOM.md](../CLEANROOM.md) | The clean-room rules |
