@@ -14,7 +14,7 @@ when it passes the filters, and shown either way:
 
 | Call | Played when |
 |---|---|
-| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all (MONITOR held, or the hear-all latch: Quick 5 on a DMR channel, `radio_req_dmr_hear_all`, until the call or the channel ends, a mode change, or BACK on Home) |
+| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all (MONITOR held, or the hear-all latch: Quick 5 on a DMR channel, `radio_req_dmr_hear_all`, until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it) |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | never (our call echoed by a repeater) |
 | Encrypted | only with a privacy key, and never after a PI header (section 5) |
@@ -89,8 +89,9 @@ encoder's bits as they are), on RX before the voice sink (after the FEC decode, 
 loaded our calls carry FID 0x10 and the privacy service option (0x40), and received calls with the privacy service
 option (or PI) are descrambled. Without a key such bursts are never played; they count as `rx_enc_dropped`.
 
-The key is a RAM setting for now (debug link RADIO op 19, `radio_req_dmr_privacy`), lost at restart: the legacy
-codeplug has no key storage, and settings storage belongs to the settings work.
+The key is set over the debug link (RADIO op 19, `radio_req_dmr_privacy`). The radio core saves it in settings slot 1
+and loads the active slot at boot (`settings-store.md` 3.1); the legacy codeplug has no key storage, so qdmr can't
+set it.
 
 PI header (data type 0, CRC-CCITT masked 0x6969): heard between the voice LC header and burst A, it marks the call
 encrypted and its first two octets are kept for display (algorithm and key ID in the common layout; not interpreted).
