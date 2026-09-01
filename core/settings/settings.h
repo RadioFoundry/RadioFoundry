@@ -20,6 +20,7 @@
 #define SETTINGS_NAME_LEN	16
 #define SETTINGS_PRIVACY_KEYS	4
 #define SETTINGS_UNSET8		0xFFu	// "not set: the radio's default" in an 8-bit field
+#define SETTINGS_ROAM_ZONE_BYTES	10	// roaming zone bits for zones 0..79
 
 // Fields are only ever appended (docs/spec/settings-store.md 3); a record written by an older firmware fills the
 // fields it knows, the rest keep their defaults. Fixed-width members, ordered so there is no padding
@@ -106,6 +107,14 @@ typedef struct {
 	// The hotspot's CW ID (docs/spec/mmdvm-protocol.md 2.11): 0 = the default
 	uint8_t cw_wpm;			// Morse speed, words per minute (PARIS)
 	uint16_t cw_tone_hz;		// keyer tone
+	// DMR repeater roaming (docs/spec/dmr-roaming.md 5.1): the radio core's roam_* settings, taken only when
+	// roam_stored is 1, and the roaming zones (written by the radio core when the user turns roaming on for a zone)
+	int8_t roam_rssi_dbm;		// threshold
+	uint8_t roam_hyst_db;		// hysteresis
+	uint8_t roam_probe;		// 0 passive, 1 wake probe
+	uint8_t roam_stored;		// 1 = the roam_ values are set
+	uint16_t roam_check_s;		// beacon check interval, 0 = off
+	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// bit z % 8 of byte z / 8: zone z is a roaming zone
 } settings_t;
 
 // settings_t.rs_flags

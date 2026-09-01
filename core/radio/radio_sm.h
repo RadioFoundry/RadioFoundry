@@ -11,6 +11,10 @@
 #include "radio/scan.h"
 #include "radio/battery.h"
 #include "radio/morse.h"
+#if CONFIG_DMR_ROAMING
+#include "radio/roam.h"
+#include "settings/settings.h"	// SETTINGS_ROAM_ZONE_BYTES
+#endif
 
 #define RADIO_POLL_MS		25	// status poll and squelch period
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
@@ -101,6 +105,7 @@ typedef enum {
 	RREQ_DMR_HEAR_ALL,	// DMR: arg = 1 latch hear all, 0 off
 	RREQ_DMR_FOCUS,		// DMR: arg = ID (bits 23:0) | private (bit 24) of the focused row, 0 = none
 	RREQ_HS_CWID,		// hotspot: key the CW ID left by radio_hs_ops.cw_id (radio_hotspot.h)
+	RREQ_ROAM,		// DMR roaming: arg = radio_roam_cmd_t
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -239,6 +244,17 @@ typedef struct {
 	uint16_t cw_tone_hz;
 	bool cw_key;			// the tone keyed now
 #endif
+#endif
+#if CONFIG_DMR_ROAMING
+	roam_t roam;
+	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// the roaming zones (settings_t.roam_zones)
+	bool roam_dirty;		// the site list needs building again
+	uint16_t roam_zone;		// zone and channel the site list was built for
+	uint16_t roam_channel;
+	bool roam_probing;		// our wake probe is on the air (dmr_call_data_tx)
+	uint8_t roam_probe_err;		// its result, 0xFF = still running
+	uint32_t roam_quiet_ms;		// last reception or transmission seen (ROAM_QUIET_MS)
+	uint8_t roam_prev_why;		// to notice a finished search (beep, toast)
 #endif
 #if CONFIG_DMR_EMERGENCY
 	bool em_keyed;			// the emergency hot mic keyed the transmitter (not PTT)

@@ -64,6 +64,11 @@ typedef struct {
 	uint16_t backlight_off_s;	// off after, 0 = never
 	// DMR (CONFIG_DMR)
 	uint8_t reply_s;	// reply window after a call, 0 = off .. 30 s, RADIO_REPLY_CODEPLUG = the codeplug's hang times
+	// DMR repeater roaming (CONFIG_DMR_ROAMING; docs/spec/dmr-roaming.md). Which zones roam is kept apart (RREQ_ROAM)
+	int8_t roam_rssi_dbm;	// threshold: the site counts as weak below it, a candidate must reach it (-125 .. -60)
+	uint8_t roam_hyst_db;	// a candidate must beat the current site by this much (1 .. 30)
+	uint8_t roam_probe;	// 0 passive, 1 wake probe (a BS_Dwn_Act on each silent site visited: transmits)
+	uint16_t roam_check_s;	// beacon check: look at the other sites this often, 0 = off (30 .. 3600)
 } radio_settings_t;
 
 #define RADIO_REPLY_CODEPLUG	0xFFu	// radio_settings_t.reply_s: the codeplug's hang times (else the stack's 10 s)
@@ -130,6 +135,33 @@ typedef struct {
 } radio_dmr_view_t;
 #endif
 
+#if CONFIG_DMR_ROAMING
+#define RADIO_ROAM_SITES	16	// = ROAM_SITES_MAX (radio/roam.h)
+
+// Why roaming can't start a search now (docs/spec/dmr-roaming.md 4.3)
+typedef enum {
+	RROAM_BLOCK_NONE, RROAM_BLOCK_MODE, RROAM_BLOCK_HOTSPOT, RROAM_BLOCK_SCAN, RROAM_BLOCK_TX, RROAM_BLOCK_CALL,
+	RROAM_BLOCK_REPLY, RROAM_BLOCK_QUIET, RROAM_BLOCK_OVERRIDE, RROAM_BLOCK_EMERGENCY,
+} radio_roam_block_t;
+
+// Roaming for the screens and the debug link
+typedef struct {
+	bool zone_on;		// the current zone is a roaming zone
+	uint8_t state;		// roam_state_t: 0 off (not active here), 1 watch, 2 search, 3 locked
+	uint8_t why;		// roam_why_t of the running or last search (0 none, 1 weak, 2 tx_fail, 3 manual, 4 check, 5 stale)
+	uint8_t pending;	// a latched trigger waiting (roam_why_t)
+	uint8_t blocked;	// radio_roam_block_t now
+	uint8_t sites;		// sites in the zone (0 when roaming is off here)
+	uint8_t site;		// the site the radio is on (index)
+	uint8_t home;		// the site the user picked
+	int16_t rssi_dbm;	// the current site's average, 0 = unknown
+	bool weak;		// that average is below the threshold
+	uint32_t searches, roams, stays, aborts, probes, triggers;
+	uint16_t site_number[RADIO_ROAM_SITES];	// codeplug channel numbers
+	int16_t site_rssi[RADIO_ROAM_SITES];	// last measurement (the current site: its average), 0 = none
+} radio_roam_view_t;
+#endif
+
 typedef struct {
 	radio_state_t state;
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
@@ -172,6 +204,9 @@ typedef struct {
 	bool power_off;		// the radio core asks to be switched off (critical battery, battery_off_s)
 #if CONFIG_DMR
 	radio_dmr_view_t dmr;
+#endif
+#if CONFIG_DMR_ROAMING
+	radio_roam_view_t roam;
 #endif
 } radio_view_t;
 
@@ -246,6 +281,12 @@ typedef enum { RSCAN_STOP, RSCAN_ZONE, RSCAN_VFO, RSCAN_DUAL, RSCAN_CANCEL, RSCA
 void radio_req_scan(uint8_t cmd);		// radio_scan_cmd_t; TOGGLE: stop if scanning, else zone (or VFO in the VFO)
 void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz);
 void radio_req_scan_dual(uint16_t pos);
+// DMR repeater roaming (CONFIG_DMR_ROAMING; no-op otherwise; docs/spec/dmr-roaming.md 6.1): the current zone's
+// roaming flag (stored), roam now (a search at once, clears a lock), lock to the current site (RAM only)
+typedef enum {
+	RROAM_ZONE_OFF, RROAM_ZONE_ON, RROAM_ZONE_TOGGLE, RROAM_NOW, RROAM_LOCK, RROAM_UNLOCK, RROAM_LOCK_TOGGLE,
+} radio_roam_cmd_t;
+void radio_req_roam(uint8_t cmd);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
 // FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off

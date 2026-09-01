@@ -38,6 +38,7 @@ enum {
 	OP_DMR_TARGET, OP_DMR_CONTACT, OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY,
 	// 20-24: the radio features' (DL_OP_SCAN .. DL_OP_SETTING, debuglink_view_radio.c)
 	OP_USB_NETWORK = 25,
+	// 26: DMR roaming (DL_OP_ROAM, debuglink_view_radio.c)
 };
 
 static dl_parser_t parser;
@@ -450,7 +451,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	};
 	uint32_t now = hal_millis();
 
-	if (len >= 1 && req[0] >= DL_OP_SCAN && req[0] <= DL_OP_SETTING) {
+	if (len >= 1 && ((req[0] >= DL_OP_SCAN && req[0] <= DL_OP_SETTING) || req[0] == DL_OP_ROAM)) {
 		// The radio features' operations (debuglink_view_radio.c), under the same rate limit
 		if (radio_op_done && (now - last_radio_op_ms) < RADIO_OP_GAP_MS) {
 			return status_only(out, DL_ST_BUSY);

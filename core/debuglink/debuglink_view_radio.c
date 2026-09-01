@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The radio features for the debug link (docs/spec/debuglink.md 3.7, 3.8): the "features" view section (scan, FM
-// extras, battery, beeps, settings) and the RADIO operations that drive them (scan, beep, tone burst, one setting)
+// extras, battery, beeps, settings) and the RADIO operations that drive them (scan, beep, tone burst, one setting,
+// roaming)
 #include "config.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -80,6 +81,10 @@ static bool set_one(radio_settings_t *s, uint8_t id, uint16_t v)
 	case 18: s->battery_off_s = v; break;
 	case 19: s->scan_beep = v != 0; break;
 	case 20: if (v > 30 && v != RADIO_REPLY_CODEPLUG) return false; s->reply_s = (uint8_t)v; break;
+	case 21: if ((int16_t)v < -125 || (int16_t)v > -60) return false; s->roam_rssi_dbm = (int8_t)(int16_t)v; break;
+	case 22: if (v < 1 || v > 30) return false; s->roam_hyst_db = (uint8_t)v; break;
+	case 23: if (v > 1) return false; s->roam_probe = (uint8_t)v; break;
+	case 24: if (v != 0 && (v < 30 || v > 3600)) return false; s->roam_check_s = v; break;
 	default: return false;
 	}
 	return true;
@@ -131,6 +136,15 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return DL_ST_UNAVAILABLE;
 		}
 		radio_req_tone_burst(a[0] != 0);
+		return DL_ST_OK;
+	case DL_OP_ROAM:
+		if (len < 1 || a[0] > RROAM_LOCK_TOGGLE) {
+			return DL_ST_BAD_ARG;
+		}
+		if (!CONFIG_DMR_ROAMING) {
+			return DL_ST_UNAVAILABLE;
+		}
+		radio_req_roam(a[0]);
 		return DL_ST_OK;
 	case DL_OP_SETTING: {
 		if (len < 3) {
