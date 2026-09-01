@@ -419,7 +419,7 @@ LibreDMR flag 1 (offset 0x26):
 | 3 | Use the fixed location |
 | 2 | Force DMO (direct mode on a duplex channel; qdmr calls it "simplex") |
 | 1 | SFR enabled for this channel (ours) |
-| 0 | Roaming |
+| 0 | Roaming (ours reads it: in a roaming zone, flagged channels narrow the sites to themselves; `dmr-roaming.md` 5.2) |
 
 SFR bytes (ours; the CPS doesn't know them and leaves them as read; they are only read when flag 1 bit 1 is set):
 

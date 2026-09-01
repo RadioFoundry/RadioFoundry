@@ -202,7 +202,8 @@ Capabilities users of these radios generally expect that no current build has:
   MD-UV380.
 - Bluetooth audio and programming (on hardware that has it), Wi-Fi none.
 - Over-the-air programming and remote monitor.
-- IP site connect style roaming by signal strength (RSSI-based repeater roaming rather than GPS distance).
+- IP site connect style roaming by signal strength (RSSI-based repeater roaming rather than GPS distance). Ours now:
+  `CONFIG_DMR_ROAMING`, `docs/spec/dmr-roaming.md` (standard DMR only, no vendor site signaling).
 - A native qdmr driver (beyond the legacy protocol shim) with every setting the radio has, including SFR and data
   options.
 - Persistent ARS state and LRRP triggers across power cycles; LRRP altitude and accuracy.

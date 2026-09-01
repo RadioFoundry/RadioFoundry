@@ -86,7 +86,7 @@ ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
-                 "storage", "dmr_ext", "dmr_data_stats"]
+                 "storage", "dmr_ext", "dmr_data_stats", "roam"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -96,13 +96,16 @@ TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
 # The radio features (docs/spec/radio-features.md, debuglink.md 3.8)
 OP_SCAN, OP_SCAN_VFO, OP_BEEP, OP_TONE_BURST, OP_SETTING = range(20, 25)
 OP_USB_NETWORK = 25
+OP_ROAM = 26
+ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
 SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit": 5, "scan_resume": 6,
             "scan_hold_s": 7, "scan_delay_ms": 8, "scan_dwell_ms": 9, "scan_priority": 10, "beep_level": 11,
             "key_beep": 12, "vox": 13, "vox_level": 14, "vox_tail_ms": 15, "rx_save": 16, "rx_save_idle_s": 17,
-            "battery_off_s": 18, "scan_beep": 19}
+            "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
+            "roam_probe": 23, "roam_check_s": 24}
 
 
 class DebugLinkError(Exception):
@@ -370,8 +373,16 @@ class DebugLink:
     def view(self, sections=None):
         """All sections (or the named ones) merged into one dict; 'section' keys dropped, 'ms' added."""
         out = {}
-        idxs = range(len(VIEW_SECTIONS)) if sections is None else [VIEW_SECTIONS.index(s) for s in sections]
-        for i in idxs:
+        if sections is None:
+            # Every section the firmware has, by its next links (an older firmware has fewer than VIEW_SECTIONS)
+            i = 0
+            while i != 0xFF and i < 64:
+                ms, i, kv = self.view_section(i)
+                kv.pop("section", None)
+                out.update(kv)
+                out.setdefault("ms", ms)
+            return out
+        for i in [VIEW_SECTIONS.index(s) for s in sections]:
             ms, _, kv = self.view_section(i)
             kv.pop("section", None)
             out.update(kv)
@@ -540,8 +551,14 @@ class DebugLink:
         self.radio(OP_TONE_BURST, bytes([1 if on else 0]))
 
     def setting(self, name, value):
-        """One radio setting in RAM (not stored): a SETTINGS name or id, value u16."""
-        self.radio(OP_SETTING, struct.pack("<BH", SETTINGS[name] if isinstance(name, str) else name, int(value)))
+        """One radio setting in RAM (not stored): a SETTINGS name or id, value u16 (negative: two's complement)."""
+        self.radio(OP_SETTING, struct.pack("<BH", SETTINGS[name] if isinstance(name, str) else name,
+                                           int(value) & 0xFFFF))
+
+    def roam(self, cmd):
+        """DMR roaming (docs/spec/dmr-roaming.md 6.1): zone_off | zone_on | zone_toggle | now | lock | unlock |
+        lock_toggle. The state is in the roam view section."""
+        self.radio(OP_ROAM, bytes([ROAM_CMDS[cmd] if isinstance(cmd, str) else cmd]))
 
     # DMR data service (docs/spec/debuglink.md 3.12): requests go through the service's mailbox, so a busy answer
     # means one of the kind is still queued (request() retries it for 2 s). Results: the dmr_data view section
@@ -802,6 +819,8 @@ def cmd_radio(link, a):
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
         link.usb_network(args[:1] == ["network"])
+    elif op == "roam":                # roam zone_on|zone_off|zone_toggle|now|lock|unlock|lock_toggle
+        link.roam(args[0] if args else "now")
     else:
         raise DebugLinkError(f"unknown radio op {op!r}")
     return 0

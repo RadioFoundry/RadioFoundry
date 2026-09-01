@@ -596,6 +596,40 @@ bool ui_svc_scan(bool on)
 	changed();
 	return true;
 }
+// Roaming as the radio core does it, without sites to search: roam now "moves" at once
+bool ui_svc_roam(uint8_t cmd)
+{
+#if CONFIG_DMR_ROAMING
+	radio_roam_view_t *r = &view.roam;
+	switch (cmd) {
+	case RROAM_ZONE_OFF: r->zone_on = false; break;
+	case RROAM_ZONE_ON: r->zone_on = true; break;
+	case RROAM_ZONE_TOGGLE: r->zone_on = !r->zone_on; break;
+	case RROAM_NOW:
+		if (r->state != RROAM_STATE_OFF) {
+			r->searches++;
+			r->roams++;
+			r->state = RROAM_STATE_WATCH;
+		}
+		break;
+	case RROAM_LOCK: if (r->state != RROAM_STATE_OFF) r->state = RROAM_STATE_LOCKED; break;
+	case RROAM_UNLOCK: if (r->state == RROAM_STATE_LOCKED) r->state = RROAM_STATE_WATCH; break;
+	default: break;
+	}
+	if (!r->zone_on || view.vfo) {
+		r->state = RROAM_STATE_OFF;
+		r->sites = 0;
+	} else if (r->state == RROAM_STATE_OFF) {
+		r->state = RROAM_STATE_WATCH;
+		r->sites = 3;
+		r->rssi_dbm = -92;
+	}
+	changed();
+	return true;
+#else
+	return false;
+#endif
+}
 void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; }
 void ui_svc_apply(uint8_t id, int32_t value)
 {
@@ -896,6 +930,11 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
+#if CONFIG_DMR_ROAMING
+	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*
+	else if (strcmp(key, "roamzone") == 0) snprintf(got, sizeof got, "%u", view.roam.zone_on);
+	else if (strcmp(key, "roams") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.roam.roams);
+#endif
 	else {
 		snprintf(err, len, "unknown expect key %s", key);
 		return false;

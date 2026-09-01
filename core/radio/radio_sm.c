@@ -70,6 +70,10 @@ void radio_settings_default(radio_settings_t *s)
 	s->backlight_dim_s = 30;
 	s->backlight_off_s = 120;
 	s->reply_s = RADIO_REPLY_CODEPLUG;
+	s->roam_rssi_dbm = -105;	// ROAM_RSSI_DEFAULT
+	s->roam_hyst_db = 6;		// ROAM_HYST_DEFAULT
+	s->roam_probe = 0;		// passive: no automatic transmission (P7)
+	s->roam_check_s = 0;
 }
 
 static void activity(radio_sm_t *sm, uint32_t now_ms)
@@ -925,6 +929,11 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->ptt) {
 		if (cv->phase == DMR_CALL_PHASE_TX_DENIED && sm->view.state != RS_TX_DENIED) {
 			deny(sm, dmr_deny_reason(cv->tx_error));
+#if CONFIG_DMR_ROAMING
+			if (cv->tx_error == DMR_TX_ERR_NO_REPEATER) {
+				roam_trigger(&sm->roam, ROAM_WHY_TX_FAIL);	// the site didn't wake: look for another
+			}
+#endif
 		}
 	} else if (sm->view.state == RS_TX && !tx) {
 		sm->view.state = RS_IDLE;
@@ -1112,7 +1121,14 @@ static bool data_next(dmr_tx_burst_t *out, void *ctx)
 
 static void data_done(uint8_t err, void *ctx)
 {
+#if CONFIG_DMR_ROAMING
+	radio_sm_t *sm = ctx;
+	if (err == DMR_TX_ERR_NO_REPEATER && sm != NULL) {
+		roam_trigger(&sm->roam, ROAM_WHY_TX_FAIL);	// the site didn't wake for our data either
+	}
+#else
 	(void)ctx;
+#endif
 	data_tx.list = NULL;
 	dmrDataServiceTxDone(err);
 }
@@ -1131,8 +1147,12 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 
 static bool data_can_send(const radio_sm_t *sm)
 {
+	bool roaming = false;
+#if CONFIG_DMR_ROAMING
+	roaming = roam_searching(&sm->roam);	// never on a site being looked at
+#endif
 	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.vfo &&
-		tx_check(sm) == TXDENY_NONE && sm->view.dmr.own_id != 0;
+		tx_check(sm) == TXDENY_NONE && sm->view.dmr.own_id != 0 && !roaming;
 }
 
 static bool data_tx_start(const dmrBurst_t *bursts, int count, void *ctx)
@@ -1152,7 +1172,7 @@ static bool data_tx_start(const dmrBurst_t *bursts, int count, void *ctx)
 	data_tx.list = bursts;
 	data_tx.count = count;
 	data_tx.next = 0;
-	dmr_data_source_t src = { .next = data_next, .done = data_done, .ctx = NULL,
+	dmr_data_source_t src = { .next = data_next, .done = data_done, .ctx = sm,
 				  .count = (uint8_t)(count > 255 ? 255 : count) };
 	if (!dmr_call_data_tx(&src)) {
 		data_tx.list = NULL;
@@ -1557,6 +1577,368 @@ static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms
 static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms) { (void)sm; (void)cancel; (void)now_ms; }
 #endif
 
+static void persist(radio_sm_t *sm, uint32_t now_ms);
+
+// --- DMR repeater roaming (radio/roam.c decides; this builds the site list, measures, tunes and keeps the block
+// list; docs/spec/dmr-roaming.md) ---
+#if CONFIG_DMR_ROAMING
+static bool roam_zone_flag(const radio_sm_t *sm, uint16_t zi)
+{
+	return zi < SETTINGS_ROAM_ZONE_BYTES * 8u && (sm->roam_zones[zi / 8u] & (1u << (zi % 8u))) != 0;
+}
+
+static void roam_cfg_of(const radio_settings_t *s, roam_cfg_t *c)
+{
+	c->rssi_dbm = s->roam_rssi_dbm;
+	c->hyst_db = s->roam_hyst_db;
+	c->probe = s->roam_probe;
+	c->check_s = s->roam_check_s;
+}
+
+// Where a channel talks: its contact's ID and call type, else the default talkgroup 9 (as dmr_load_channel)
+static void roam_talk_of(const channel_t *ch, uint32_t *id, bool *priv)
+{
+	contact_t c;
+	*id = 9;
+	*priv = false;
+	if (ch->contact != 0 && codeplug_contact(ch->contact, &c)) {
+		*id = c.id;
+		*priv = c.type == CONTACT_PRIVATE;
+	}
+}
+
+// A DMR repeater channel the radio could roam to (docs/spec/dmr-roaming.md 2)
+static bool roam_repeater(const channel_t *ch)
+{
+	return ch->mode == RADIO_MODE_DMR && !ch->rx_only && ch->tx_hz != 0 && ch->tx_hz != ch->rx_hz && !ch->dmo &&
+		in_band(ch->rx_hz, false);
+}
+
+static void roam_publish(radio_sm_t *sm, uint32_t now_ms)
+{
+	const roam_t *r = &sm->roam;
+	radio_roam_view_t *v = &sm->view.roam;
+	bool on = r->state != ROAM_OFF;
+	int16_t avg = on ? roam_signal(r, now_ms) : 0;
+	bool zone_on = !sm->view.vfo && sm->have_channels && roam_zone_flag(sm, sm->view.zone_index);
+	bool weak = avg != 0 && avg < sm->set.roam_rssi_dbm;
+	uint8_t sites = on ? r->count : 0;
+	if (v->zone_on != zone_on || v->state != r->state || v->why != r->why || v->pending != r->pending ||
+	    v->sites != sites || v->site != r->cur || v->home != r->home || v->weak != weak ||
+	    v->searches != r->searches || v->roams != r->roams || v->aborts != r->aborts) {
+		changed(sm);
+	}
+	v->zone_on = zone_on;
+	v->state = r->state;
+	v->why = r->why;
+	v->pending = r->pending;
+	v->sites = sites;
+	v->site = r->cur;
+	v->home = r->home;
+	v->rssi_dbm = avg;
+	v->weak = weak;
+	v->searches = r->searches;
+	v->roams = r->roams;
+	v->stays = r->stays;
+	v->aborts = r->aborts;
+	v->probes = r->probes;
+	v->triggers = r->triggers;
+	for (uint8_t i = 0; i < RADIO_ROAM_SITES; i++) {
+		v->site_number[i] = i < sites ? r->site[i].number : 0;
+		v->site_rssi[i] = i < sites ? r->site[i].rssi_dbm : 0;
+	}
+}
+
+// The site list from the current zone (docs/spec/dmr-roaming.md 2). user: the user picked this channel (it is home)
+static void roam_rebuild(radio_sm_t *sm, uint32_t now_ms, bool user)
+{
+	roam_site_t sites[ROAM_SITES_MAX];
+	bool flagged[ROAM_SITES_MAX];
+	uint8_t n = 0;
+	int cur = -1;
+	channel_t here, ch;
+	sm->roam_dirty = false;
+	sm->roam_zone = sm->view.zone_index;
+	sm->roam_channel = sm->view.vfo ? 0 : sm->view.channel_number;
+	if (sm->view.vfo || !sm->have_channels || !roam_zone_flag(sm, sm->view.zone_index) ||
+	    !codeplug_channel(sm->view.channel_number, &here) || !roam_repeater(&here)) {
+		roam_set_sites(&sm->roam, sites, 0, -1, -1, now_ms);
+		roam_publish(sm, now_ms);
+		return;
+	}
+	uint32_t talk_id;
+	bool talk_priv, any_flag = false;
+	roam_talk_of(&here, &talk_id, &talk_priv);
+	for (uint16_t p = 0; p < sm->zone.count; p++) {
+		uint32_t id;
+		bool priv;
+		if (!codeplug_channel(sm->zone.channels[p], &ch)) {
+			continue;
+		}
+		any_flag |= ch.roam;
+		if (n >= ROAM_SITES_MAX || !roam_repeater(&ch)) {
+			continue;
+		}
+		roam_talk_of(&ch, &id, &priv);
+		if (id != talk_id || priv != talk_priv) {
+			continue;
+		}
+		memset(&sites[n], 0, sizeof(sites[n]));
+		sites[n].pos = p;
+		sites[n].number = sm->zone.channels[p];
+		flagged[n] = ch.roam;
+		n++;
+	}
+	if (any_flag) {
+		// The legacy Roaming flag narrows the zone to the flagged channels
+		uint8_t k = 0;
+		for (uint8_t i = 0; i < n; i++) {
+			if (flagged[i]) {
+				sites[k++] = sites[i];
+			}
+		}
+		n = k;
+	}
+	for (uint8_t i = 0; i < n; i++) {
+		if (sites[i].pos == sm->view.zone_pos) {
+			cur = i;
+		}
+	}
+	roam_set_sites(&sm->roam, sites, n, cur, user ? cur : -1, now_ms);
+	roam_publish(sm, now_ms);
+}
+
+// Why a search can't start now (docs/spec/dmr-roaming.md 4.3)
+static uint8_t roam_blocked(const radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->hotspot) {
+		return RROAM_BLOCK_HOTSPOT;
+	}
+	if (sm->view.vfo || sm->view.ch.mode != RADIO_MODE_DMR || !sm->dmr_running) {
+		return RROAM_BLOCK_MODE;
+	}
+#if CONFIG_SCAN
+	if (scan_on(&sm->scan)) {
+		return RROAM_BLOCK_SCAN;
+	}
+#endif
+	if (sm->ptt || sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED || sm->dmr_keyed || dmr_call_data_busy()) {
+		return RROAM_BLOCK_TX;
+	}
+	if (sm->view.state == RS_RX || sm->view.dmr.state != RDMR_IDLE) {
+		return RROAM_BLOCK_CALL;
+	}
+	if (sm->view.dmr.reply_active || sm->one_shot) {
+		return RROAM_BLOCK_REPLY;
+	}
+	if (now_ms - sm->roam_quiet_ms < ROAM_QUIET_MS) {
+		return RROAM_BLOCK_QUIET;
+	}
+	if (sm->view.temporary || sm->manual || sm->hear_all_latch || sm->view.monitor) {
+		return RROAM_BLOCK_OVERRIDE;
+	}
+#if CONFIG_DMR_EMERGENCY
+	if (dmr_emergency_in_progress()) {
+		return RROAM_BLOCK_EMERGENCY;
+	}
+#endif
+	return RROAM_BLOCK_NONE;
+}
+
+// Tune site idx (a roaming move, not the user's: the site list stays). force: retune even when already there
+static bool roam_tune(radio_sm_t *sm, uint8_t idx, bool force, uint32_t now_ms)
+{
+	const roam_site_t *s = &sm->roam.site[idx];
+	channel_t ch;
+	if (idx >= sm->roam.count || s->pos >= sm->zone.count || sm->zone.channels[s->pos] != s->number ||
+	    !codeplug_channel(s->number, &ch)) {
+		return false;
+	}
+	sm->roam_channel = s->number;
+	if (!force && !sm->view.vfo && sm->view.zone_pos == s->pos) {
+		return true;
+	}
+	set_channel(sm, s->pos, &ch);
+	tune(sm, now_ms);
+	return true;
+}
+
+// The wake probe: one BS_Dwn_Act CSBK through the stack's data path, which wakes the repeater first (its own
+// activation bursts and retries) when it isn't up (docs/spec/dmr-roaming.md 4.5)
+static uint8_t roam_probe_left;
+
+static bool roam_probe_next(dmr_tx_burst_t *out, void *ctx)
+{
+	const radio_sm_t *sm = ctx;
+	if (roam_probe_left == 0) {
+		return false;
+	}
+	roam_probe_left--;
+	memset(out, 0, sizeof(*out));
+	out->kind = DMR_BURST_CSBK;
+	out->host_crc = true;
+	out->sync_override = DMR_SYNC_NONE;
+	out->len = 12;
+	dmr_csbk_bs_activation(sm->view.dmr.own_id, out->payload);
+	return true;
+}
+
+static void roam_probe_done(uint8_t err, void *ctx)
+{
+	radio_sm_t *sm = ctx;
+	sm->roam_probing = false;
+	sm->roam_probe_err = err;
+}
+
+static bool roam_probe(radio_sm_t *sm)
+{
+	const channel_t *ch = &sm->view.ch;
+	if (!sm->dmr_running || sm->ptt || sm->view.dmr.own_id == 0 || tx_check(sm) != TXDENY_NONE ||
+	    dmr_call_data_busy()) {
+		return false;
+	}
+	if (!sm->dmr_keyed) {
+		static const subtone_t none = { TONE_NONE, 0 };
+		if (!board.radio->tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+			return false;
+		}
+		sm->dmr_keyed = true;
+	}
+	roam_probe_left = 1;
+	dmr_data_source_t src = { .next = roam_probe_next, .done = roam_probe_done, .ctx = sm, .count = 1 };
+	if (!dmr_call_data_tx(&src)) {
+		return false;	// dmr_follow releases the keying
+	}
+	sm->roam_probing = true;
+	sm->roam_probe_err = 0xFF;
+	return true;
+}
+
+// End a search now and go back to where it started (the user did something)
+static void roam_cancel(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!roam_searching(&sm->roam)) {
+		return;
+	}
+	roam_abort(&sm->roam, now_ms);
+	bool restart = sm->roam_probing || dmr_call_data_busy() || sm->dmr_keyed;
+	if (restart) {
+		dmr_end(sm);		// our probe is on the air: stop it with the stack (tune() starts it again)
+		sm->roam_probing = false;
+	}
+	if (!roam_tune(sm, sm->roam.cur, restart, now_ms)) {
+		sm->roam_dirty = true;
+	}
+	roam_publish(sm, now_ms);
+}
+
+// Every poll (DMR builds, not in hotspot mode): the site list, the measurement, the search
+static void roam_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
+{
+	roam_t *r = &sm->roam;
+	if (sm->view.state != RS_IDLE || sm->view.dmr.state != RDMR_IDLE) {
+		sm->roam_quiet_ms = now_ms;
+	}
+	if (!roam_searching(r)) {
+		bool moved = sm->view.zone_index != sm->roam_zone ||
+			     sm->view.channel_number != sm->roam_channel || (sm->view.vfo && sm->roam_channel != 0);
+		bool scanning = false;
+#if CONFIG_SCAN
+		scanning = scan_on(&sm->scan);
+#endif
+		if ((moved || sm->roam_dirty) && !scanning) {
+			if (moved) {
+				roam_lock(r, false, now_ms);	// a lock ends with the user's channel change
+			}
+			roam_rebuild(sm, now_ms, moved);
+		}
+	}
+	if (r->state == ROAM_OFF) {
+		roam_publish(sm, now_ms);
+		return;
+	}
+	bool heard = sm->dmr_running && dmr_call_view()->repeater_up;
+	roam_sample(r, now_ms, heard, st->rssi_dbm);
+	uint8_t blocked = roam_blocked(sm, now_ms);
+	sm->view.roam.blocked = blocked;
+	if (roam_searching(r) && (sm->roam_probing || sm->dmr_keyed)) {
+		roam_publish(sm, now_ms);	// the probe is on the air: no retune until it is done
+		return;
+	}
+	uint32_t roams = r->roams;
+	switch (roam_poll(r, now_ms, blocked, sm->view.dmr.state == RDMR_RX)) {
+	case ROAM_ACT_TUNE:
+		if (roam_tune(sm, r->visit, false, now_ms)) {
+			roam_tuned(r, now_ms);
+		} else {
+			roam_cancel(sm, now_ms);
+			sm->roam_dirty = true;
+		}
+		break;
+	case ROAM_ACT_PROBE:
+		roam_probe_sent(r, roam_probe(sm));
+		break;
+	case ROAM_ACT_DONE:
+		if (!roam_tune(sm, r->cur, false, now_ms)) {
+			sm->roam_dirty = true;
+		}
+		if (r->roams != roams) {
+			persist(sm, now_ms);	// powers up on this site
+			if (sm->set.key_beep && !sm->view.ch.no_beep) {
+				beep(sm, BEEP_SCAN_HOLD);
+			}
+		}
+		break;
+	default:
+		break;
+	}
+	roam_publish(sm, now_ms);
+}
+
+static void roam_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
+{
+	roam_t *r = &sm->roam;
+	switch (cmd) {
+	case RROAM_ZONE_OFF:
+	case RROAM_ZONE_ON:
+	case RROAM_ZONE_TOGGLE: {
+		uint16_t zi = sm->view.zone_index;
+		if (sm->view.vfo || !sm->have_channels || zi >= SETTINGS_ROAM_ZONE_BYTES * 8u) {
+			break;
+		}
+		bool on = cmd == RROAM_ZONE_ON || (cmd == RROAM_ZONE_TOGGLE && !roam_zone_flag(sm, zi));
+		if (!on) {
+			roam_cancel(sm, now_ms);
+		}
+		uint8_t bit = (uint8_t)(1u << (zi % 8u));
+		sm->roam_zones[zi / 8u] = (uint8_t)(on ? sm->roam_zones[zi / 8u] | bit : sm->roam_zones[zi / 8u] & ~bit);
+		settings_t *s = settings_begin();
+		memcpy(s->roam_zones, sm->roam_zones, sizeof(s->roam_zones));
+		settings_end(now_ms);
+		roam_rebuild(sm, now_ms, true);
+		break;
+	}
+	case RROAM_NOW:
+		if (sm->roam_dirty) {
+			roam_rebuild(sm, now_ms, false);
+		}
+		roam_trigger(r, ROAM_WHY_MANUAL);
+		break;
+	case RROAM_LOCK:
+	case RROAM_UNLOCK:
+	case RROAM_LOCK_TOGGLE:
+		roam_cancel(sm, now_ms);
+		roam_lock(r, cmd == RROAM_LOCK || (cmd == RROAM_LOCK_TOGGLE && r->state != ROAM_LOCKED), now_ms);
+		break;
+	default:
+		break;
+	}
+	roam_publish(sm, now_ms);
+}
+#else
+static inline void roam_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
+#endif
+
 // --- FM transmit tones and the end of an FM transmission ---
 
 // Back to receive after an FM transmission (PTT released, roger beep done, burst released)
@@ -1620,6 +2002,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	activity(sm, now_ms);
+	roam_cancel(sm, now_ms);	// PTT transmits on the site the user saw before a roaming search
 #if CONFIG_FM_TX_TONES
 	if (sm->roger_ms != 0 && sm->view.state == RS_TX) {
 		roger_cancel(sm);	// pressed again during the roger beep: the transmission goes on
@@ -2089,12 +2472,37 @@ static void clamp_settings(radio_settings_t *s)
 	if (s->reply_s > 30 && s->reply_s != RADIO_REPLY_CODEPLUG) {
 		s->reply_s = 30;
 	}
+	if (s->roam_rssi_dbm < -125) {
+		s->roam_rssi_dbm = -125;
+	} else if (s->roam_rssi_dbm > -60) {
+		s->roam_rssi_dbm = -60;
+	}
+	if (s->roam_hyst_db < 1) {
+		s->roam_hyst_db = 1;
+	} else if (s->roam_hyst_db > 30) {
+		s->roam_hyst_db = 30;
+	}
+	if (s->roam_probe > 1) {
+		s->roam_probe = 1;
+	}
+	if (s->roam_check_s != 0 && s->roam_check_s < 30) {
+		s->roam_check_s = 30;
+	} else if (s->roam_check_s > 3600) {
+		s->roam_check_s = 3600;
+	}
 }
 
 // The radio core's settings as kept in the settings store (docs/spec/settings-store.md 3); the defaults if never set
 static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 {
 	radio_settings_default(s);
+	if (st->roam_stored == 1) {
+		s->roam_rssi_dbm = st->roam_rssi_dbm;
+		s->roam_hyst_db = st->roam_hyst_db;
+		s->roam_probe = st->roam_probe;
+		s->roam_check_s = st->roam_check_s;
+		clamp_settings(s);
+	}
 	if (st->rs_stored != 1) {
 		return;
 	}
@@ -2147,6 +2555,11 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_backlight_off_s = s->backlight_off_s;
 	st->rs_reply_s = s->reply_s;
 	st->rs_stored = 1;
+	st->roam_rssi_dbm = s->roam_rssi_dbm;
+	st->roam_hyst_db = s->roam_hyst_db;
+	st->roam_probe = s->roam_probe;
+	st->roam_check_s = s->roam_check_s;
+	st->roam_stored = 1;
 	settings_end(now_ms);
 }
 
@@ -2158,6 +2571,11 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 	sm->set = *s;
 	clamp_settings(&sm->set);
 	apply_tot(sm);
+#if CONFIG_DMR_ROAMING
+	roam_cfg_t rc;
+	roam_cfg_of(&sm->set, &rc);
+	roam_set_cfg(&sm->roam, &rc);
+#endif
 	activity(sm, now_ms);
 #if CONFIG_DMR
 	if (reply_changed && sm->dmr_running) {
@@ -2186,7 +2604,12 @@ void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t n
 static void reload(radio_sm_t *sm, uint32_t now_ms)
 {
 	settings_t st;
+	roam_cancel(sm, now_ms);	// back to the site the search started from first
 	settings_read(&st);
+#if CONFIG_DMR_ROAMING
+	memcpy(sm->roam_zones, st.roam_zones, sizeof(sm->roam_zones));
+	sm->roam_dirty = true;
+#endif
 	sm->reload_pending = false;
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
@@ -2222,6 +2645,13 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
 	sm->view.squelch = RADIO_SQUELCH_DEFAULT;
 	settings_to_radio(&st, &sm->set);	// as saved (docs/spec/settings-store.md 3)
+#if CONFIG_DMR_ROAMING
+	roam_cfg_t rc;
+	roam_cfg_of(&sm->set, &rc);
+	roam_init(&sm->roam, &rc);
+	memcpy(sm->roam_zones, st.roam_zones, sizeof(sm->roam_zones));
+	sm->roam_dirty = true;
+#endif
 	sm->view.tot_s = sm->set.tot_s;
 	sm->activity_ms = now_ms;
 	batt_init(&sm->batt);
@@ -2332,6 +2762,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 
 	if (req->type != RREQ_BEEP) {
 		activity(sm, now_ms);
+	}
+	if (req->type != RREQ_BEEP && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS && req->type != RREQ_ROAM) {
+		roam_cancel(sm, now_ms);	// the user does something: back to the site a roaming search started from
 	}
 	if (retunes(req->type)) {
 		scan_stop(sm, false, now_ms);
@@ -2642,6 +3075,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 #endif
+#if CONFIG_DMR_ROAMING
+	case RREQ_ROAM:
+		roam_request(sm, (uint8_t)req->arg, now_ms);
+		break;
+#endif
 	case RREQ_POWER_OFF:
 		sm->power_off_req = true;
 		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
@@ -2909,6 +3347,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		outputs(sm);
 		return;
 	}
+#if CONFIG_DMR_ROAMING
+	roam_service(sm, &st, now_ms);
+#endif
 	if (sm->dmr_running) {
 		return;		// the state follows the call stack (radio_sm_tick), and the stack keeps its own TX time-out
 	}
