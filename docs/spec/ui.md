@@ -13,7 +13,7 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 | `gfx.c`, `fonts.c`, `fmt.c` | drawing in a viewport inside the display's safe-area insets, fonts, number / text formatting |
 | `ui_screens.c` | drawing only: status strip, title, hint row, lists, Home, call screens, Quick tiles, banners, emergency |
 | `ui_app.c` | behavior without the RTOS: the navigation stack, global keys, Home and Quick keys, filters, Recent, events, banners |
-| `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Channels, Zone, Tools, Settings, Picker, Info, Confirm, Scan |
+| `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Channels, Zone, Tools, Settings, Picker, Info, Confirm, Scan, Roaming |
 | `ui_find.c` | type-to-find (T9 word starts, numbers, channel positions) |
 | `ui_svc.h`, `ui_svc_stub.c` | the thin interface to data other packages own, with weak "not in this build" stubs (section 4) |
 | `ui_svc_radio.c`, `ui_svc_data.c`, `ui_svc_storage.c` | the strong implementations on the radio core, the DMR data service and the settings store / codeplug editing |
@@ -43,6 +43,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Recent | `recent` | long CONTEXT, Hub 3 |
 | Talk target picker | `picker` | TALK_TARGET (SK2), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
+| Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
 
 The gallery (section 7) shows every screen at every display class.
 
@@ -82,6 +83,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_privacy`, `ui_svc_monitor`, `ui_svc_vox` | radio core | `ui_svc_radio.c`: `radio_req_dmr_privacy` on the active privacy slot (else the first set one), `radio_req_monitor` as a latch, the `vox` setting (all / off) with `radio_view_t.vox_on` for the tile |
 | `ui_svc_emergency`, `ui_svc_feat_ext` | dmr-ext | weak seams: the Emergency screen calls `ui_svc_emergency`, and dmr-ext reports `UI_FEAT_EMERGENCY` through its own strong `ui_svc_feat_ext`; until then the screen says "not in this build" |
 | `ui_svc_scan`, `ui_svc_scan_skip`, `ui_svc_feat_radio`; scanning state from `radio_view_t.scan` | radio-features | `ui_svc_radio.c`: `radio_req_scan` (toggle, stop, nuisance) |
+| `ui_svc_roam` (`UI_FEAT_ROAMING`); roaming state from `radio_view_t.roam` (the Home chip, `ROAM` in the strip, Tools > Roaming, the "Moved to" toast) | radio core (CONFIG_DMR_ROAMING) | `ui_svc_radio.c`: `radio_req_roam` |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
 | `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change |
 | backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too) |
@@ -98,7 +100,7 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | Switch | Default | Off |
 |---|---|---|
 | `CONFIG_UI_SETTINGS` | y | the Settings menu is left out (about 3.7 KB); settings keep their stored values and are set with qdmr; Settings shows one row saying so, Find finds no settings |
-| `CONFIG_DIAG` | y | no diagnostics page (Tools has no row 7) |
+| `CONFIG_DIAG` | y | no diagnostics page (Tools has no Diagnostics row; Roaming moves up to 7) |
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_SCAN`, data features) are

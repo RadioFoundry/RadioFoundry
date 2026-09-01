@@ -215,18 +215,21 @@ zone has it, only those channels are sites. Whether qdmr exposes this bit for th
 - **Home**: in DMR chips, `Roam` after the repeater chip when roaming is active (`Lock` when locked, amber `Roam?`
   when the current site is below the threshold). The status strip shows `ROAM` (amber) during a search, as it shows
   `SCAN`.
-- **Tools > Roaming** (Hub 5, last row): "Roam in this zone" On/Off (the zone flag), "Roam now", "Lock to this site"
-  On/Off, and a body line with the state: the site (its position in the list and the channel name), its signal, or
-  why roaming is not available here ("Turn it on for this zone", "This channel is not a repeater site", "Needs two
-  sites in the zone with the same talkgroup"). Roaming is not in Quick settings: the nine tiles are taken
-  (`information-architecture.md` 5) and roaming is set per zone, not changed per call.
-- Toasts: "Roaming on for <zone>", "Roaming off", "Moved to <channel>" (after an automatic move, with a short beep
-  when beeps are on), "Searching sites", "Locked to <channel>", "Can't roam now: <reason>".
+- **Tools > Roaming** (Hub 5, last row: 8, or 7 in a build without diagnostics, which keeps 7): 1 "Roam in this
+  zone" On/Off (the zone flag), 2 "Roam now" (goes Home, where `ROAM` shows the search), 3 "Lock to this site"
+  On/Off, and a body with the state: the site (its position in the list and the channel name), its signal, or why
+  roaming is not available here ("Turn it on for this zone", "This channel is not a repeater site", "Needs two sites
+  in the zone with the same talkgroup", not in the VFO). Rows 2 and 3 are dimmed while roaming is off here. Roaming
+  is not in Quick settings: the nine tiles are taken (`information-architecture.md` 5) and roaming is set per zone,
+  not changed per call.
+- Toasts: "Roaming on for <zone>", "Roaming off", "Moved to <channel>" (after any move, the radio core's short scan
+  hold beep when beeps are on), "Searching sites", "Locked to <channel>", "Roaming again" (unlocked), "Turn roaming on
+  first" / "Can't roam on this channel" (rows 2 and 3 while roaming is off here).
 
 ### 6.3 Debug link
 
-View section 12 `roam` (`docs/spec/debuglink.md` 3.7): `roam.built roam.zone_on roam.state roam.why roam.blocked
-roam.sites roam.site roam.home roam.channel roam.rssi_dbm roam.searches roam.roams roam.stays roam.aborts roam.probes
+View section 12 `roam` (`docs/spec/debuglink.md` 3.7): `roam.built roam.zone_on roam.state roam.why roam.pending
+roam.blocked roam.weak roam.sites roam.site roam.home roam.channel roam.rssi_dbm roam.searches roam.roams roam.stays roam.aborts roam.probes
 roam.triggers set.roam_rssi_dbm set.roam_hyst_db set.roam_probe set.roam_check_s` and `site.<i>=<channel>:<rssi>` for
 each site (rssi 0 = not measured). RADIO op 26 `cmd u8` = `radio_req_roam`; settings 21 `roam_rssi_dbm` (i16 as u16,
 two's complement), 22 `roam_hyst_db`, 23 `roam_probe`, 24 `roam_check_s` through op 24.
@@ -258,11 +261,12 @@ two's complement), 22 `roam_hyst_db`, 23 `roam_probe`, 24 `roam_check_s` through
   search; wake probing finds a silent site; lock and roam now; the zone flag is stored; `CONFIG_DMR_ROAMING=0` builds.
 - UI flow (`tests/host/uiFlowTest.c`): Tools > Roaming toggles the zone flag in the press budget; "Roam now" asks the
   radio core.
-- HIL (`tests/hil/test_roaming.py`, `docs/testing` via `tests/hil/README.md`): radio only: the `roam` section, the
-  zone toggle and its storage, roam now on a zone with no live site stays put; with `--allow-rf
-  --allow-service-stop`: the SDR bench runs `bench_repeater.py` as a second site and the radio, started on a dead
-  site, finds it (passive while the bench repeater carries a bench call, and with the wake probe, which the bench
-  repeater answers).
+- HIL (`tests/hil/test_roaming.py`, listed in `tests/hil/README.md`): radio only: the `roam` section, the settings
+  round trip, the zone toggle and back, a passive roam now on the current zone (ends on one of its sites, nothing
+  sent), lock and roam now ending it; with `--allow-rf --allow-service-stop --roam-rx --roam-tx`: the SDR bench runs
+  `bench_repeater.py` as a second site and the radio, started on a dead site with the wake probe on, wakes it and
+  moves there. A passive variant (the bench repeater carrying a bench call while the radio searches) needs the bench
+  to transmit through its own repeater and is left for later.
 
 ## 9. Open decisions
 

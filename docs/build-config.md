@@ -40,6 +40,7 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_DMR_LRRP` | = DMR | LRRP location answers (a radio without GPS answers "no fix"); builds core/dmr/dmrLrrp.c into the image |
 | `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert and radio check, answered and sent |
 | `CONFIG_DMR_EMERGENCY` | = DMR | DMR emergency: the alarm CSBK, the emergency call with hot mic, the alert heard (`spec/dmr-emergency.md`) |
+| `CONFIG_DMR_ROAMING` | = DMR | DMR repeater roaming: per-zone roaming between repeater sites with the same talkgroup, chosen by base station sync with our color code and signal, passive (an optional wake probe sends a standard BS_Dwn_Act); Tools > Roaming, the Home chip (`docs/spec/dmr-roaming.md`). About 5.2 KB flash, 1 KB RAM on the DM-1701 |
 | `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter, carried by the data service (`docs/spec/usb-network.md`) |
 | `CONFIG_SFR` | n | single frequency repeater: the MMDVM hotspot's SFR mode (duplex with RX = TX); the stand-alone repeater and user roles on a channel are not wired yet (`docs/spec/sfr.md`) |
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |

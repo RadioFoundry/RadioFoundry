@@ -103,9 +103,10 @@ codeplug's callsign.
 | UI settings | `rs_reply_s` (the reply window in s, 0..30; `SETTINGS_UNSET8` = the codeplug's hang times; a radio core setting), `mic_gain` (0..9, default 5, not applied yet), `auto_lock_s` (0 = off), `long_press_ms`, `repeat_ms` (0 = the input layer's defaults), `gps`, `pos_format`, `pos_send_s` (stored for a GPS owner, act on nothing yet) (appended for glue) |
 | DMR emergency | `em_dst em_mode em_flags` (target is a radio, ETSI alarm FID, no alert tone) `em_alarm_tries em_hot_mic_s em_stored` (appended for dmr-ext, `dmr-emergency.md` 5) |
 | hotspot CW ID | `cw_wpm cw_tone_hz` (0 = 20 wpm / 800 Hz; appended for dmr-ext) |
+| DMR roaming | `roam_rssi_dbm roam_hyst_db roam_probe roam_stored roam_check_s` (the radio core's roaming settings, taken when `roam_stored` is 1) and `roam_zones[10]` (bit z: zone z is a roaming zone, zones 0..79; written by the radio core on RREQ_ROAM) (appended for roaming, `dmr-roaming.md` 5.1) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
-payload is 144 bytes now (at most 236).
+payload is 160 bytes now (at most 236).
 
 ### 3.0 Who writes, and storage jobs
 
