@@ -77,6 +77,13 @@ static const flow_t flows[] = {
 	{ "S long press time to input", "", "ok 6 8 ok up ok", "longpress=700", 6, false },
 	{ "S auto lock after 30 s", "ok 6 4 down ok long:back", "wait:31000", "locked=1", 0, false },
 	{ "S auto lock waits for keys", "ok 6 4 down ok long:back", "wait:20000 up wait:20000", "locked=0", 1, false },
+	// DMR repeater roaming (docs/spec/dmr-roaming.md 6.2): Tools 8
+	{ "R roaming on for this zone", "", "ok 5 8 1", "roamzone=1 roam=1 toast=Roaming_on_for", 4, false },
+	{ "R roaming off again", "ok 5 8 1", "1", "roamzone=0 roam=0 toast=Roaming_off", 1, false },
+	{ "R roam now", "ok 5 8 1 long:back", "ok 5 8 2", "roams=1 screen=home toast=Moved_to", 4, false },
+	{ "R lock to this site", "ok 5 8 1", "3", "roam=3 toast=Locked_to", 1, false },
+	{ "R roam now ends the lock", "ok 5 8 1 3", "2", "roam=1 roams=1", 1, false },
+	{ "R not on the VFO", "ok 4 up ok", "ok 5 8 1", "roamzone=0 toast=Roaming_works", 4, false },
 	{ "T22 Home and undo", "quick 2 back ok 6", "long:back back", "screen=home temporary=0", 2, false },
 };
 

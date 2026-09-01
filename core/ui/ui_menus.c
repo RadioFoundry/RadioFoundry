@@ -974,18 +974,158 @@ static const ui_scr_def_t info_screen = {
 	.select = info_select, .title = info_title, .body = info_body,
 };
 
-// ======================= Tools =======================
+// ======================= Roaming (Tools > Roaming, docs/spec/dmr-roaming.md 6.2) =======================
 
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_BATTERY, T_DIAG, T_COUNT };
+enum { RM_ZONE, RM_NOW, RM_LOCK, RM_COUNT };
 
-static uint16_t tools_count(void) { return CONFIG_DIAG ? T_COUNT : T_COUNT - 1; }
+#if CONFIG_DMR_ROAMING
+static bool roam_active(const radio_view_t *v) { return v->roam.state != RROAM_STATE_OFF; }
 
-static void tools_item(uint16_t i, ui_item_t *it)
+// Why roaming isn't working on this channel, NULL when it is
+static const char *roam_why_not(const radio_view_t *v)
 {
-	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single freq. repeater",
-					     "Battery", "Diagnostics" };
+	if (v->vfo)
+		return "Roaming works on channels, not the VFO.";
+	if (!v->roam.zone_on)
+		return "Turn it on for this zone: the radio then moves between the zone's repeaters with the same "
+		       "talkgroup.";
+	if (roam_active(v))
+		return NULL;
+	if (v->ch.mode != RADIO_MODE_DMR || v->ch.dmo || v->ch.rx_only || v->ch.tx_hz == v->ch.rx_hz)
+		return "This channel is not a repeater site.";
+	return "Needs two sites in the zone with the same talkgroup.";
+}
+#endif
+
+static const char *roam_body(void)
+{
+	static char t[120];
+	sbuf_t b;
+	sb_init(&b, t, sizeof t);
+#if CONFIG_DMR_ROAMING
+	const radio_view_t *v = ui_view();
+	const char *why = roam_why_not(v);
+	if (why != NULL) {
+		sb_str(&b, why);
+		return t;
+	}
+	if (v->roam.state == RROAM_STATE_SEARCH) {
+		sb_str(&b, "Searching sites...");
+		return t;
+	}
+	sb_str(&b, "Site ");
+	sb_u32(&b, v->roam.site + 1u, 1);
+	sb_str(&b, " of ");
+	sb_u32(&b, v->roam.sites, 1);
+	sb_str(&b, ": ");
+	sb_str(&b, v->ch.name);
+	if (v->roam.rssi_dbm != 0) {
+		sb_str(&b, "\nSignal ");
+		sb_i32(&b, v->roam.rssi_dbm);
+		sb_str(&b, v->roam.weak ? " dBm, weak" : " dBm");
+	}
+	if (v->roam.state == RROAM_STATE_LOCKED)
+		sb_str(&b, "\nLocked to this site");
+#else
+	sb_str(&b, "Roaming isn't in this build.");
+#endif
+	return t;
+}
+
+static uint16_t roam_count(void) { return RM_COUNT; }
+
+static void roam_item(uint16_t i, ui_item_t *it)
+{
+	static const char *const names[] = { "Roam in this zone", "Roam now", "Lock to this site" };
 	strcpy(it->label, names[i]);
 	item_num(it, (uint16_t)(i + 1u));
+#if CONFIG_DMR_ROAMING
+	const radio_view_t *v = ui_view();
+	if (i == RM_ZONE)
+		strcpy(it->value, v->roam.zone_on ? "On" : "Off");
+	else if (i == RM_LOCK)
+		strcpy(it->value, v->roam.state == RROAM_STATE_LOCKED ? "On" : "Off");
+	if (i == RM_ZONE ? v->vfo : !roam_active(v))
+		it->flags |= UI_ITEM_DIM;
+#else
+	it->flags |= UI_ITEM_DIM;
+#endif
+}
+
+static void roam_select(uint16_t i, bool hold)
+{
+	(void)hold;
+#if CONFIG_DMR_ROAMING
+	const radio_view_t *v = ui_view();
+	static char msg[20 + CODEPLUG_NAME_LEN];	// the toast keeps the pointer
+	sbuf_t b;
+	sb_init(&b, msg, sizeof msg);
+	const char *why = roam_why_not(v);
+	if (i == RM_ZONE) {
+		if (v->vfo) {
+			ui_toast("Roaming works on channels");
+			return;
+		}
+		bool on = !v->roam.zone_on;
+		ui_svc_roam(RROAM_ZONE_TOGGLE);
+		if (on) {
+			sb_str(&b, "Roaming on for ");
+			sb_str(&b, v->zone_name);
+			ui_toast(msg);
+		} else {
+			ui_toast("Roaming off");
+		}
+		return;
+	}
+	if (why != NULL) {
+		ui_toast(!v->roam.zone_on ? "Turn roaming on first" : "Can't roam on this channel");
+		return;
+	}
+	if (i == RM_NOW) {
+		if (v->roam.state == RROAM_STATE_SEARCH) {
+			ui_toast("Already searching");
+			return;
+		}
+		ui_svc_roam(RROAM_NOW);
+		ui_go_home();
+		ui_toast("Searching sites");
+	} else if (i == RM_LOCK) {
+		bool lock = v->roam.state != RROAM_STATE_LOCKED;
+		ui_svc_roam(lock ? RROAM_LOCK : RROAM_UNLOCK);
+		if (lock) {
+			sb_str(&b, "Locked to ");
+			sb_str(&b, v->ch.name);
+			ui_toast(msg);
+		} else {
+			ui_toast("Roaming again");
+		}
+	}
+#else
+	(void)i;
+	ui_toast("Roaming isn't in this build");
+#endif
+}
+
+static const ui_scr_def_t roam_screen = {
+	.name = "roaming", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Roaming", .hint = "1-3 pick  Back",
+	.count = roam_count, .item = roam_item, .select = roam_select, .body = roam_body,
+};
+
+// ======================= Tools =======================
+
+// Diagnostics keeps number 7 (tests/hil/test_ui.py); Roaming is the last row (8, or 7 without diagnostics)
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_BATTERY, T_DIAG, T_ROAM, T_COUNT };
+
+static uint16_t tools_count(void) { return CONFIG_DIAG ? T_COUNT : T_COUNT - 1; }
+static uint16_t tools_row(uint16_t i) { return !CONFIG_DIAG && i >= T_DIAG ? (uint16_t)(i + 1u) : i; }
+
+static void tools_item(uint16_t row, ui_item_t *it)
+{
+	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single freq. repeater",
+					     "Battery", "Diagnostics", "Roaming" };
+	uint16_t i = tools_row(row);
+	strcpy(it->label, names[i]);
+	item_num(it, (uint16_t)(row + 1u));
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
@@ -1017,15 +1157,22 @@ static void tools_item(uint16_t i, ui_item_t *it)
 		sb_u32(&b, ui_st.battery_pct, 1);
 		sb_chr(&b, '%');
 		break;
+	case T_ROAM:
+#if CONFIG_DMR_ROAMING
+		sb_str(&b, ui_view()->roam.zone_on ? "on" : "off");
+#else
+		it->flags |= UI_ITEM_DIM;
+#endif
+		break;
 	default:
 		break;
 	}
 }
 
-static void tools_select(uint16_t i, bool hold)
+static void tools_select(uint16_t row, bool hold)
 {
 	(void)hold;
-	switch (i) {
+	switch (tools_row(row)) {
 	case T_SCAN:
 		if (!(feats() & UI_FEAT_SCAN)) {
 			ui_toast("Scan isn't in this build yet");
@@ -1041,12 +1188,14 @@ static void tools_select(uint16_t i, bool hold)
 	case T_SFR: ui_push(SCR_INFO, INFO_SFR); break;
 	case T_BATTERY: ui_push(SCR_INFO, INFO_BATTERY); break;
 	case T_DIAG: ui_push(SCR_DIAG, 0); break;
+	case T_ROAM: ui_push(SCR_ROAM, 0); break;
 	default: break;
 	}
 }
 
 static const ui_scr_def_t tools_screen = {
-	.name = "tools", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Tools", .hint = "1-7 open  Back",
+	.name = "tools", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Tools",
+	.hint = CONFIG_DIAG ? "1-8 open  Back" : "1-7 open  Back",
 	.count = tools_count, .item = tools_item, .select = tools_select,
 };
 
@@ -1611,4 +1760,5 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
+	[SCR_ROAM] = &roam_screen,
 };

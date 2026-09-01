@@ -157,9 +157,17 @@ bool ui_svc_privacy(bool on)
 #endif
 #endif
 
+#if CONFIG_DMR_ROAMING
+bool ui_svc_roam(uint8_t cmd)
+{
+	radio_req_roam(cmd);
+	return true;
+}
+#endif
+
 uint32_t ui_svc_feat_radio(void)
 {
-	return CONFIG_SCAN ? UI_FEAT_SCAN : 0;
+	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0);
 }
 
 #if CONFIG_DMR

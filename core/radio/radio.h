@@ -144,6 +144,9 @@ typedef enum {
 	RROAM_BLOCK_REPLY, RROAM_BLOCK_QUIET, RROAM_BLOCK_OVERRIDE, RROAM_BLOCK_EMERGENCY,
 } radio_roam_block_t;
 
+// radio_roam_view_t.state (= roam_state_t in radio/roam.h)
+enum { RROAM_STATE_OFF, RROAM_STATE_WATCH, RROAM_STATE_SEARCH, RROAM_STATE_LOCKED };
+
 // Roaming for the screens and the debug link
 typedef struct {
 	bool zone_on;		// the current zone is a roaming zone

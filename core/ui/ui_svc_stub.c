@@ -33,6 +33,7 @@ WEAK bool ui_svc_save_channel(void) { return false; }
 WEAK bool ui_svc_save_talk_target(uint32_t id, bool private_call) { (void)id; (void)private_call; return false; }
 
 WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
+WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
 WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
 WEAK void ui_svc_poll(void) { }

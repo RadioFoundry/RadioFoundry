@@ -31,7 +31,7 @@
 #define ROAM_RSSI_DEFAULT	(-105)
 #define ROAM_HYST_DEFAULT	6
 
-typedef enum { ROAM_OFF, ROAM_WATCH, ROAM_SEARCH, ROAM_LOCKED } roam_state_t;
+typedef enum { ROAM_OFF, ROAM_WATCH, ROAM_SEARCH, ROAM_LOCKED } roam_state_t;	// = RROAM_STATE_* (radio.h)
 typedef enum { ROAM_WHY_NONE, ROAM_WHY_WEAK, ROAM_WHY_TX_FAIL, ROAM_WHY_MANUAL, ROAM_WHY_CHECK, ROAM_WHY_STALE } roam_why_t;
 typedef enum { ROAM_PROBE_PASSIVE, ROAM_PROBE_WAKE } roam_probe_t;
 typedef enum { ROAM_ACT_NONE, ROAM_ACT_TUNE, ROAM_ACT_PROBE, ROAM_ACT_DONE } roam_act_t;

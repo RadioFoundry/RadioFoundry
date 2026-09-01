@@ -1276,8 +1276,16 @@ static void list_draw(const ui_scr_def_t *d)
 
 // --- the app ---
 
+#if CONFIG_DMR_ROAMING
+static uint32_t roams_seen;	// radio_view_t.roam.roams last tick (a change: "Moved to")
+static bool roams_known;
+#endif
+
 void ui_app_init(void)
 {
+#if CONFIG_DMR_ROAMING
+	roams_known = false;
+#endif
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
 	recent_n = 0;
@@ -1445,6 +1453,19 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.scanning = scanning;
 		dirty = true;
 	}
+#if CONFIG_DMR_ROAMING
+	// An automatic move to another site (dmr-roaming.md 6.2)
+	if (roams_known && v->roam.roams != roams_seen && v->roam.state != RROAM_STATE_SEARCH) {
+		static char moved[12 + CODEPLUG_NAME_LEN];
+		sbuf_t b;
+		sb_init(&b, moved, sizeof moved);
+		sb_str(&b, "Moved to ");
+		sb_str(&b, v->ch.name);
+		ui_toast(moved);
+	}
+	roams_seen = v->roam.roams;
+	roams_known = true;
+#endif
 #if CONFIG_DMR
 	// The latches the radio keeps (it may drop them itself: hear all ends with the channel)
 	if ((ui_svc_features() & UI_FEAT_HEAR_ALL) && v->dmr.hear_all_latch != ui_st.hear_all) {

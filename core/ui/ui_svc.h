@@ -29,6 +29,7 @@
 #define UI_FEAT_EMERGENCY	(1u << 12)	// ui_svc_emergency
 #define UI_FEAT_MONITOR_LATCH	(1u << 13)	// ui_svc_monitor latch (FM)
 #define UI_FEAT_FACTORY_RESET	(1u << 14)	// ui_svc_factory_reset (storage-cps)
+#define UI_FEAT_ROAMING		(1u << 15)	// ui_svc_roam (DMR repeater roaming, the radio core)
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -67,6 +68,9 @@ bool ui_svc_save_talk_target(uint32_t id, bool private_call);
 // --- Scan (radio-features). Whether a scan runs is radio_view_t.scan ---
 bool ui_svc_scan(bool on);			// on: the zone (in the VFO: the band); off: stop where it is
 bool ui_svc_scan_skip(void);			// nuisance delete of the channel that stopped the scan
+
+// --- DMR repeater roaming (the radio core, docs/spec/dmr-roaming.md). Its state is radio_view_t.roam ---
+bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, lock / unlock
 
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
 typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR } ui_beep_t;

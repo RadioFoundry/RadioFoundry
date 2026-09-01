@@ -181,6 +181,10 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	int lx = gfx_text(f, x, ty, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", ui_col.fg);
 	if (s->scanning && lx + 5 * f->w <= rx)
 		lx = gfx_text(f, lx + f->w, ty, "SCAN", ui_col.warn);
+#if CONFIG_DMR_ROAMING
+	else if (v->roam.state == RROAM_STATE_SEARCH && lx + 5 * f->w <= rx)
+		lx = gfx_text(f, lx + f->w, ty, "ROAM", ui_col.warn);	// searching the zone's sites
+#endif
 	else if (v->monitor && lx + 4 * f->w <= rx)
 		lx = gfx_text(f, lx + f->w, ty, "MON", ui_col.warn);
 	if (!titled)
@@ -576,7 +580,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 	gfx_text(tf, x, L->talk_y + f->ascent - tf->ascent, fit, c);
 }
 
-// Chips: timeslot, color code, repeater / direct, power, hear all
+// Chips: timeslot, color code, repeater / direct, roaming, power, hear all
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -591,6 +595,14 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	if (v->dmr.rmo)
 		sb_str(&b, v->dmr.repeater_up ? " RPT" : " Rpt");
 	int x = gfx_text(f, 0, L->chips_y, buf, ui_col.fg) + f->w;
+#if CONFIG_DMR_ROAMING
+	// Roaming here: Roam, Lock when locked to the site, amber Roam? when the site is weak (dmr-roaming.md 6.2)
+	if (v->roam.state != RROAM_STATE_OFF) {
+		bool lock = v->roam.state == RROAM_STATE_LOCKED;
+		x = gfx_text(f, x, L->chips_y, lock ? "Lock" : v->roam.weak ? "Roam?" : "Roam",
+			     v->roam.weak ? ui_col.warn : ui_col.fg) + f->w;
+	}
+#endif
 	bool pw_temp = v->power != channel_power(v);
 	if (pw_temp)
 		x = gfx_text(f, x, L->chips_y, GLYPH_DOT, ui_col.warn);
