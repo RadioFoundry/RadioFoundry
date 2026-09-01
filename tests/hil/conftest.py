@@ -51,6 +51,11 @@ def pytest_addoption(parser):
                      "restored and verified afterwards)")
     g.addoption("--allow-reboot", action="store_true",
                 help="tests may restart the radio (marker reboot: the settings persistence check)")
+    g.addoption("--roam-rx", type=float, default=None,
+                help="MHz: test_roaming's bench repeater site as the radio sees it, the radio's receive frequency "
+                     "(bench_repeater.py --tx); no default: a pair you are licensed for")
+    g.addoption("--roam-tx", type=float, default=None,
+                help="MHz: the radio's transmit frequency of that site (bench_repeater.py --rx)")
     g.addoption("--radiodesk-text", default="OpenDigitalRadio HIL test call",
                 help="the alert text RadioDesk speaks in the private call")
 

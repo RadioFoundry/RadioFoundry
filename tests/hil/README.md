@@ -47,7 +47,8 @@ Other options: `--tx-power` (bench transmitter level 0-255, default 40), `--dmr-
 `--ambe` / `$ODR_HIL_AMBE` (speech recording for the voice test), `--shots DIR`, `--sdr-gain` (RTL-SDR gain for
 raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (the SDR's own frequency error: carrier
 offsets are corrected by it), `--max-foff` (largest carrier offset the TX tests accept, default 500 Hz), `--fm-mhz`
-(FM TX test frequency, default 461.6875), `--radiodesk-freq` / `--radiodesk-src` / `--radiodesk-text` (the alert
+(FM TX test frequency, default 461.6875), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
+sees it: its receive and transmit MHz; no default), `--radiodesk-freq` / `--radiodesk-src` / `--radiodesk-text` (the alert
 test's channel, RadioDesk's caller ID to check, the text it speaks).
 
 SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$ODR_SDR_BENCH_HOST` (ssh host or
@@ -94,6 +95,7 @@ put them in a file in the repository.
 | `test_dmr_emergency.py` | DMR emergency: the bench sends an emergency alarm CSBK and an emergency voice call to the channel's talkgroup (alerts raised); the radio sends its alarm (3 CSBKs) and an emergency call with the hot mic (the bench listens); the emergency settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio), firmware with `CONFIG_DMR_EMERGENCY` |
 | `test_hotspot_cwid.py` | MMDVM SEND_CWID in hotspot mode: the radio keys the callsign in Morse on FM on the hotspot TX frequency (the SDR bench records), then the hotspot's DMR set-up is back | `--allow-rf --allow-service-stop` |
 | `test_dmr_data.py` | DMR data: bench sends unconfirmed and confirmed data, a TMS and an ETSI text message, a call alert and radio checks to us (the radio's answers listened for); the radio sends a call alert, a radio check (Motorola and ETSI forms) and a text message (TMS and ETSI) to the bench (the bench modem listens); the data settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio) |
+| `test_roaming.py` | DMR repeater roaming: the `roam` view section, the roaming settings round trip (RAM), the zone flag toggled and back, roam now on the current zone (passive: listens only; the radio ends on one of the sites, no probe sent), lock and roam now ending it (radio only); the wake probe brings up the bench repeater (`tools/bench/bench_repeater.py`) as a second site and the radio moves there (`rf`, `radio_tx`, `bench_service`). The zone flag is put back | radio (the current zone with 2+ repeater channels on one talkgroup for roam now); `--allow-rf --allow-service-stop --roam-rx MHz --roam-tx MHz`, firmware with `CONFIG_DMR_ROAMING` |
 
 ### Pass criteria and tolerances
 
