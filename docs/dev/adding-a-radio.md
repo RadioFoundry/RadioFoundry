@@ -9,7 +9,8 @@ interface instead, used through a field that other radios leave at its default.
 Before writing code, the facts go into a hardware spec, `docs/spec/hardware-<b>.md`, written by the spec side under
 the [clean-room rules](contributing.md#clean-room). Use [hardware-dm1701.md](../spec/hardware-dm1701.md) and
 [hardware-dm32.md](../spec/hardware-dm32.md) as the model: MCU and memory map, pins, chips, keys, display, power,
-bootloader and image format, calibration, codec location.
+bootloader and image format, calibration, codec location. Start from the radio's entry in
+[radios.md](../spec/radios.md): its chip list, sources, confidence tags and which ODR drivers it can reuse.
 
 ## The files
 
