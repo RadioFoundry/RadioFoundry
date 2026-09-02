@@ -57,6 +57,12 @@ static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspo
 static uint32_t emerg_id;
 static uint32_t last_key_ms;		// the last key press (auto lock)
 static bool lock_armed;			// last_key_ms holds a time (from the first tick)
+static uint32_t last_use_ms;		// the last key press or call (auto power off)
+static bool off_warned;			// the "switching off in 1 min" banner is up for this idle spell
+static bool power_off_due;		// auto power off: the housekeeping task switches off (ui_app_power_off_due)
+static bool batt_warned;		// the low battery banner was shown at this level (cleared 3 % above it)
+static uint32_t batt_warned_ms;
+static uint32_t hear_all_key;		// the channel hear all by default last latched on (vfo, zone, position, mode)
 static char emerg_name[CODEPLUG_NAME_LEN + 1];
 
 // --- small helpers ---
@@ -88,6 +94,18 @@ static void entry_cancel(void)
 	ui_st.entry = false;
 	ui_st.entry_len = 0;
 	ui_st.entry_digits[0] = 0;
+	dirty = true;
+}
+
+// Lock or unlock the keys; PTT goes with them when Settings > Privacy > PTT when locked is off
+static void set_locked(bool locked)
+{
+	ui_st.locked = locked;
+	if (locked) {
+		ui_st.quick_edit = false;
+		entry_cancel();
+	}
+	ui_svc_ptt_block(locked && !ui_st.ptt_locked);
 	dirty = true;
 }
 
@@ -460,6 +478,8 @@ static void handle_event(const ui_event_t *ev)
 		station(&b, ev);
 		banner(UI_BANNER_MESSAGE, false, ev->id, title, ev->text);
 		ui_st.banner.msg = ev->index;
+		if (ui_st.message_tone)
+			ui_svc_beep(UI_BEEP_MESSAGE);
 		break;
 	case UI_EV_MESSAGE_SENT:
 		if (ev->ok) {
@@ -469,7 +489,7 @@ static void handle_event(const ui_event_t *ev)
 		} else {
 			sb_str(&b, "No answer from ");
 			station(&b, ev);
-			banner(UI_BANNER_RESULT, true, ev->id, title, "Message kept: retry from Messages");
+			banner(UI_BANNER_RESULT, true, ev->id, title, "Not delivered: send it again");
 		}
 		break;
 	case UI_EV_CALL_ALERT:
@@ -525,6 +545,13 @@ static void handle_event(const ui_event_t *ev)
 			station(&b, ev);
 			banner(UI_BANNER_RESULT, true, ev->id, title, "Off, out of range or elsewhere");
 		}
+		break;
+	case UI_EV_POWER_OFF_FAILED:
+		// The latch dropped but the knob keeps the radio on: say so, and wait a whole period again
+		power_off_due = false;
+		off_warned = false;
+		last_use_ms = now;
+		banner(UI_BANNER_INFO, true, 0, "Couldn't switch off", "Turn the knob off");
 		break;
 	case UI_EV_SCAN_STOPPED:
 		break;
@@ -687,7 +714,7 @@ static void zone_step(int dir)
 	}
 }
 
-static void scan_toggle(void)
+void ui_scan_toggle(void)
 {
 	bool on = !ui_st.scanning;
 	if (!ui_svc_scan(on)) {
@@ -698,6 +725,52 @@ static void scan_toggle(void)
 	ui_toast(!on ? "Scan stopped" : view->vfo ? "Scanning the band" : "Scanning this zone");
 }
 
+#if CONFIG_DMR
+// Up / Down on Home set to "Talk target" (Settings > Keys): the channel's default talkgroup, then its listen list,
+// each a temporary talk target (the default ends it). False when there is nothing to step through
+static bool talk_step(int dir)
+{
+	static listen_list_t l;		// static: not on the task's stack
+	static uint16_t idx[CODEPLUG_LIST_LEN + 1];
+	static char msg[48];
+	contact_t c;
+	uint8_t n = 0;
+	if (view->ch.contact)
+		idx[n++] = view->ch.contact;
+	if (view->ch.listen_list && codeplug_listen_list(view->ch.listen_list, &l)) {
+		for (uint8_t i = 0; i < l.count && n < CODEPLUG_LIST_LEN + 1; i++)
+			if (l.contacts[i] != view->ch.contact)
+				idx[n++] = l.contacts[i];
+	}
+	if (n < 2)
+		return false;
+	uint8_t cur = 0;
+	if (target_manual()) {
+		for (uint8_t i = 1; i < n; i++)
+			if (codeplug_contact(idx[i], &c) && c.id == view->dmr.target_id &&
+					(c.type == CONTACT_PRIVATE) == view->dmr.target_private)
+				cur = i;
+	}
+	uint8_t next = (uint8_t)((cur + n + dir) % n);
+	if (!codeplug_contact(idx[next], &c))
+		return false;
+	ui_target_t t;
+	memset(&t, 0, sizeof t);
+	t.id = c.id;
+	t.group = c.type != CONTACT_PRIVATE;
+	strcpy(t.name, c.name);
+	ui_svc_talk_to(next == 0 ? 0 : t.id, !t.group, next == 0 ? UI_TALK_DEFAULT : UI_TALK_TEMPORARY);
+	char name[32];
+	ui_sb_target(name, sizeof name, &t);
+	sbuf_t b;
+	sb_init(&b, msg, sizeof msg);
+	sb_str(&b, next == 0 ? "Default: " : "Talking to ");
+	sb_str(&b, name);
+	ui_toast(msg);
+	return true;
+}
+#endif
+
 bool ui_home_key(const input_event_t *ev)
 {
 	bool press = ev->gesture == GESTURE_PRESS;
@@ -705,6 +778,15 @@ bool ui_home_key(const input_event_t *ev)
 	if (is_nav(ev)) {
 		if (ui_st.entry)
 			entry_cancel();
+		// Settings > Keys > Up/Down on Home: the channel (default), the zone, or the talk target (DMR channels)
+		if (!view->vfo && ui_st.updown == 1) {
+			zone_step(nav_dir(ev));
+			return true;
+		}
+#if CONFIG_DMR
+		if (!view->vfo && ui_st.updown == 2 && view->ch.mode == RADIO_MODE_DMR && talk_step(nav_dir(ev)))
+			return true;
+#endif
 		for (int i = steps(ev); i > 0; i--) {
 			if (view->vfo)
 				radio_req_vfo_step(nav_dir(ev));
@@ -869,7 +951,7 @@ static void quick_unavailable(uint8_t kind)
 		break;
 	case QT_PRIVACY: ui_toast("Privacy isn't in this build yet"); break;
 	case QT_SCAN: ui_toast("Scan isn't in this build yet"); break;
-	case QT_MODE: ui_toast("Mode change isn't in this build yet"); break;
+	case QT_MODE: ui_toast(view->vfo ? "The VFO is FM only for now" : "Mode change isn't in this build yet"); break;
 	case QT_STEP: ui_toast("Step: set it in qdmr for now"); break;
 	default: ui_toast("Not in this build yet"); break;
 	}
@@ -917,7 +999,7 @@ static void quick_activate(int tile)
 			quick_unavailable(kind);
 		break;
 	case QT_SCAN:
-		scan_toggle();
+		ui_scan_toggle();
 		break;
 #if CONFIG_DMR
 	case QT_TIMESLOT: {
@@ -945,7 +1027,7 @@ static void quick_activate(int tile)
 			ui_st.privacy = !ui_st.privacy;
 			ui_toast(ui_st.privacy ? "Privacy on for now" : "Privacy off");
 		} else {
-			ui_toast("No key for this channel: add one in qdmr");
+			ui_toast("No privacy key: set one in Settings > Privacy");
 		}
 		break;
 	case QT_TALK_TO:
@@ -1296,13 +1378,14 @@ void ui_app_init(void)
 	stack[0].scr = SCR_HOME;
 	for (uint8_t id = 0; id < UI_SET_COUNT; id++)
 		ui_svc_apply(id, ui_svc_setting_get(id));
-	ui_st.hints = ui_svc_setting_get(UI_SET_HINTS) != 0;
-	ui_st.large_text = ui_svc_setting_get(UI_SET_LARGE_TEXT) != 0;
-	int32_t al = ui_svc_setting_get(UI_SET_AUTO_LOCK_S);
-	ui_st.auto_lock_s = (uint16_t)(al < 0 ? 0 : al > 0xFFFF ? 0xFFFF : al);
+	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
+					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
+					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME };
+	for (uint8_t i = 0; i < sizeof ui_ids; i++)
+		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
-	int32_t br = ui_svc_setting_get(UI_SET_BRIGHTNESS);
-	ui_st.brightness = (uint8_t)(br >= 10 && br <= 100 ? br : 100);
+	off_warned = power_off_due = batt_warned = false;
+	hear_all_key = 0;
 	has_quick_key = ui_has_action(ACT_QUICK);
 	has_context_key = ui_has_action(ACT_CONTEXT);
 	strcpy(home_hint, has_quick_key ? "OK Menu  * Quick" : "OK Menu  Hold OK Quick");
@@ -1311,14 +1394,46 @@ void ui_app_init(void)
 }
 
 uint8_t ui_app_brightness(void) { return ui_st.brightness; }
+bool ui_app_power_off_due(void) { return power_off_due; }
+
+static uint16_t clamp_u16(int32_t v) { return (uint16_t)(v < 0 ? 0 : v > 0xFFFF ? 0xFFFF : v); }
+
+// The settings the UI acts on itself (at start-up and on each change in Settings)
+void ui_apply_setting(uint8_t id, int32_t v)
+{
+	switch (id) {
+	case UI_SET_BRIGHTNESS: ui_st.brightness = (uint8_t)(v >= 10 && v <= 100 ? v : 100); break;
+	case UI_SET_HINTS: ui_st.hints = v != 0; break;
+	case UI_SET_LARGE_TEXT: ui_st.large_text = v != 0; break;
+	case UI_SET_AUTO_LOCK_S: ui_st.auto_lock_s = clamp_u16(v); break;
+	case UI_SET_ALIAS_SHOW: ui_st.alias_show = v != 0; break;
+	case UI_SET_HEAR_ALL_DEFAULT: ui_st.hear_all_default = v != 0; hear_all_key = 0; break;
+	case UI_SET_MESSAGE_TONE: ui_st.message_tone = v != 0; break;
+	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
+	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
+	case UI_SET_AUTO_OFF_MIN: ui_st.auto_off_min = clamp_u16(v); off_warned = false; break;
+	case UI_SET_PTT_LOCKED:
+		ui_st.ptt_locked = v != 0;
+		ui_svc_ptt_block(ui_st.locked && !ui_st.ptt_locked);
+		break;
+	case UI_SET_THEME:
+		ui_theme_set((uint8_t)v);
+		break;
+	default:
+		return;
+	}
+	dirty = true;
+}
 
 static bool emergency_key(const input_event_t *ev)
 {
 	if (ev->action != ACT_EMERGENCY || ev->gesture != GESTURE_LONG)
 		return false;
 	static bool on;
-	if (!ui_svc_emergency(!on)) {
-		ui_toast("Emergency is not set up on this radio");
+	if (!(ui_svc_features() & UI_FEAT_EMERGENCY)) {
+		ui_toast("Emergency isn't in this build");
+	} else if (!ui_svc_emergency(!on)) {
+		ui_toast("Can't start emergency here: DMR channel and DMR ID needed");
 	} else {
 		on = !on;
 		ui_toast(on ? "EMERGENCY sent: hold again to cancel" : "Emergency cancelled");
@@ -1330,6 +1445,15 @@ void ui_app_key(const input_event_t *ev)
 {
 	dirty = true;
 	last_key_ms = now;
+	last_use_ms = now;
+	off_warned = false;
+	if (ev->action == ACT_PTT && ev->gesture == GESTURE_DOWN && ui_st.locked && !ui_st.ptt_locked) {
+		// The input layer kept this press from the radio (Settings > Privacy > PTT when locked)
+		ui_svc_beep(UI_BEEP_ERROR);
+		ui_toast(has_quick_key ? "PTT is off while locked: hold * to unlock" :
+			"PTT is off while locked: hold Back to unlock");
+		return;
+	}
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
 	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)
@@ -1341,7 +1465,7 @@ void ui_app_key(const input_event_t *ev)
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	if (ui_st.locked) {
 		if (lock_key) {
-			ui_st.locked = false;
+			set_locked(false);
 			ui_toast("Keys unlocked");
 		} else if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG || ev->action == ACT_ENC_STEP) {
 			ui_toast(has_quick_key ? "Keys locked: hold * to unlock" : "Keys locked: hold Back to unlock");
@@ -1349,9 +1473,7 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (lock_key && has_quick_key) {
-		ui_st.locked = true;
-		ui_st.quick_edit = false;
-		entry_cancel();
+		set_locked(true);
 		ui_toast("Keys locked: hold * to unlock");
 		return;
 	}
@@ -1379,15 +1501,15 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (ev->action == ACT_USER_2 && ev->gesture == GESTURE_LONG) {
-		scan_toggle();	// long SK2 (DM-1701 key map): scan on / off
+		ui_scan_toggle();	// long SK2 (DM-1701 key map): scan on / off
 		return;
 	}
 	if (ev->action == ACT_USER_2 && ev->gesture == GESTURE_PRESS) {
-		scan_toggle();
+		ui_scan_toggle();
 		return;
 	}
 	if (ev->action == ACT_USER_3 && ev->gesture == GESTURE_LONG) {
-		ui_toast("Speak status: voice prompts aren't in this build yet");
+		ui_toast("Speak status: voice prompts aren't built yet");
 		return;
 	}
 	// A banner up: CONTEXT opens what it is about
@@ -1415,6 +1537,72 @@ void ui_app_key(const input_event_t *ev)
 	if (ev->gesture == GESTURE_PRESS && ev->action != ACT_ENC_STEP)
 		ui_toast("Not used here");
 }
+
+// Auto power off (Settings > Power): after auto_off_min without a key press, a call, a scan or the hotspot, a banner
+// a minute before, then the housekeeping task switches off (ui_app_power_off_due)
+static void use_tick(const radio_view_t *v)
+{
+	if (v->state != RS_IDLE || v->scan != 0 || v->hotspot) {
+		last_use_ms = now;
+		off_warned = false;
+	}
+	if (ui_st.auto_off_min == 0 || power_off_due)
+		return;
+	uint32_t idle = now - last_use_ms, limit = (uint32_t)ui_st.auto_off_min * 60000u;
+	if (!off_warned && idle + 60000u >= limit) {
+		off_warned = true;
+		banner(UI_BANNER_INFO, true, 0, "Switching off in 1 min", "Any key keeps it on");
+		ui_svc_beep(UI_BEEP_ERROR);
+	}
+	if (idle >= limit)
+		power_off_due = true;
+}
+
+// Low battery warning (Settings > Power): a banner when the battery falls to the level, again every 5 min while it
+// stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
+static void battery_tick(const radio_view_t *v)
+{
+	static char text[UI_BANNER_TEXT];
+	uint8_t pct = ui_st.battery_pct;
+	if (ui_st.low_batt_pct == 0 || pct == 0)
+		return;
+	if (pct >= ui_st.low_batt_pct + 3u) {
+		batt_warned = false;	// charged again
+		return;
+	}
+	if (pct > ui_st.low_batt_pct || (batt_warned && now - batt_warned_ms < 300000u))
+		return;
+	batt_warned = true;
+	batt_warned_ms = now;
+	sbuf_t b;
+	sb_init(&b, text, sizeof text);
+	sb_str(&b, "Battery ");
+	sb_u32(&b, pct, 1);
+	sb_str(&b, "%: charge soon");
+	banner(UI_BANNER_INFO, true, 0, text, NULL);
+	if (v->battery == RADIO_BATT_OK)
+		ui_svc_beep(UI_BEEP_BATTERY_LOW);
+}
+
+#if CONFIG_DMR
+// Hear all by default (Settings > Talk & listen): latched on each time a DMR channel is selected (not by a scan
+// passing through); BACK on Home still turns it off until the next channel
+static void hear_all_tick(const radio_view_t *v)
+{
+	if (!ui_st.hear_all_default || !(ui_svc_features() & UI_FEAT_HEAR_ALL) || v->scan != 0)
+		return;
+	if (v->vfo || v->hotspot || v->ch.mode != RADIO_MODE_DMR) {
+		hear_all_key = 0;	// back on a DMR channel later: on again
+		return;
+	}
+	uint32_t key = 0x80000000u | ((uint32_t)v->zone_index << 16) | v->channel_number;
+	if (key == hear_all_key)
+		return;
+	hear_all_key = key;
+	if (!v->dmr.hear_all_latch && ui_svc_hear_all(true))
+		ui_st.hear_all = true;
+}
+#endif
 
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
@@ -1481,14 +1669,16 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (!lock_armed) {
 		lock_armed = true;
 		last_key_ms = now;
+		last_use_ms = now;
 	}
 	if (ui_st.auto_lock_s != 0 && !ui_st.locked && v->state != RS_TX &&
 			now - last_key_ms >= (uint32_t)ui_st.auto_lock_s * 1000u) {
-		ui_st.locked = true;
-		ui_st.quick_edit = false;
-		entry_cancel();
-		dirty = true;
+		set_locked(true);
 	}
+	use_tick(v);
+#if CONFIG_DMR
+	hear_all_tick(v);
+#endif
 	// The hint names the last caller: "OK Menu  * Quick  # Joe"
 	ui_target_t t;
 	char name[12];
@@ -1519,6 +1709,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		dirty = true;
 	}
 	ui_st.battery_pct = bat;
+	battery_tick(v);
 	bool fast = v->state == RS_TX || stack[sp].scr == SCR_DIAG || ui_st.banner.kind != UI_BANNER_NONE;
 #if CONFIG_HOTSPOT
 	fast = fast || in_hotspot();

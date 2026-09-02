@@ -63,6 +63,13 @@ typedef struct {
 	bool privacy;		// the next DMR transmission is encrypted
 	bool hear_all;		// hear all latched (quick tile 5 on DMR); follows the radio view where the radio has it
 	uint16_t auto_lock_s;	// lock the keys after this long without a key press, 0 = never (Settings > Keys)
+	bool alias_show;	// show received talker aliases (Settings > Talk & listen)
+	bool ptt_locked;	// PTT works while the keys are locked (Settings > Privacy)
+	bool hear_all_default;	// hear all on whenever a DMR channel is selected (Settings > Talk & listen)
+	bool message_tone;	// a tone when a message arrives (Settings > Sound)
+	uint8_t updown;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target (Settings > Keys)
+	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power)
+	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power)
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
 	ui_banner_t banner;
@@ -96,6 +103,8 @@ typedef struct {
 	color_t bg, fg, dim, line, tx, rx, warn, idle, pill_fg, pill_dark_fg, focus, hint_bg, priv;
 } ui_colors_t;
 extern ui_colors_t ui_col;
+// Color theme on color displays (Settings > Display): 0 dark, 1 light, 2 high contrast. After ui_layout_init
+void ui_theme_set(uint8_t theme);
 
 // Pick fonts and place the regions; call after gfx_init
 void ui_layout_init(void);

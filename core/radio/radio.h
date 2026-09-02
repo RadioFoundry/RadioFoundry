@@ -52,6 +52,7 @@ typedef struct {
 	// Beeps (CONFIG_BEEP)
 	uint8_t beep_level;	// 0 = silent .. 100, relative to the volume knob
 	bool key_beep;		// radio_req_beep(BEEP_KEY) sounds
+	bool talk_permit;	// DMR: the talk permit tone when the voice goes on air (channels without no_beep)
 	// VOX (CONFIG_VOX)
 	uint8_t vox;		// radio_vox_t
 	uint8_t vox_level;	// sensitivity 1 (needs a loud voice) .. 10
@@ -304,6 +305,8 @@ bool radio_power_off_wanted(void);
 // true until that is done; the caller gives up after a few seconds (gotcha 7.4)
 void radio_req_power_off(void);
 bool radio_power_off_busy(void);
+// The radio is still running after a power off (the knob holds the supply): back to normal operation
+void radio_req_power_off_cancel(void);
 // The backlight percent for the UI: batt_backlight_pct with the settings and the current battery level
 uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms);
 #if CONFIG_HOTSPOT

@@ -11,6 +11,14 @@
 
 #define INPUT_SCAN_MS		10
 #define INPUT_KEYS_MAX		32	// key map entries handled (key bits are 0..31)
+#define INPUT_HOLD_MS		1500	// hold-to-activate: a key whose long action is EMERGENCY gives it only after this
+					// (or the long press time, if longer; docs/ux/principles.md P7)
+
+// The hold time that gives a key's long action
+static inline uint32_t input_long_threshold(uint8_t long_action, uint32_t long_ms)
+{
+	return long_action == ACT_EMERGENCY && long_ms < INPUT_HOLD_MS ? INPUT_HOLD_MS : long_ms;
+}
 
 typedef void (*input_emit_t)(const input_event_t *ev, void *ctx);
 

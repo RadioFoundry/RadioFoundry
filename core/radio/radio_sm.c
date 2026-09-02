@@ -61,6 +61,7 @@ void radio_settings_default(radio_settings_t *s)
 	s->scan_dwell_ms = RADIO_SCAN_DWELL_MS;
 	s->beep_level = 50;
 	s->key_beep = true;
+	s->talk_permit = true;
 	s->vox = RADIO_VOX_OFF;
 	s->vox_level = 5;
 	s->vox_tail_ms = 1500;
@@ -956,11 +957,12 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	}
 	outputs(sm);
 
-	// Talk permit when the voice goes on air, call end when a call we played ends (not on no-beep channels)
+	// Talk permit when the voice goes on air (unless turned off in the settings), call end when a call we played
+	// ends (neither on no-beep channels)
 	uint8_t st = sm->view.dmr.state;
 	if (st != sm->dmr_prev_state) {
 		if (!sm->view.ch.no_beep) {
-			if (st == RDMR_TX) {
+			if (st == RDMR_TX && sm->set.talk_permit) {
 				beep(sm, BEEP_TX_PERMIT);
 			} else if (sm->dmr_prev_state == RDMR_RX && (st == RDMR_IDLE || st == RDMR_RX_OTHER)) {
 				beep(sm, BEEP_CALL_END);
@@ -2514,6 +2516,7 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 	s->scan_priority = (st->rs_flags & SETTINGS_RS_SCAN_PRIORITY) != 0;
 	s->scan_beep = (st->rs_flags & SETTINGS_RS_SCAN_BEEP) != 0;
 	s->key_beep = (st->rs_flags & SETTINGS_RS_KEY_BEEP) != 0;
+	s->talk_permit = (st->rs_flags & SETTINGS_RS_NO_TALK_PERMIT) == 0;
 	s->scan_resume = st->rs_scan_resume;
 	s->scan_hold_s = st->rs_scan_hold_s;
 	s->scan_delay_ms = st->rs_scan_delay_ms;
@@ -2539,7 +2542,8 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_bcl = s->bcl;
 	st->rs_flags = (uint8_t)((s->roger_beep ? SETTINGS_RS_ROGER_BEEP : 0) | (s->tx_inhibit ? SETTINGS_RS_TX_INHIBIT : 0) |
 				 (s->scan_priority ? SETTINGS_RS_SCAN_PRIORITY : 0) |
-				 (s->scan_beep ? SETTINGS_RS_SCAN_BEEP : 0) | (s->key_beep ? SETTINGS_RS_KEY_BEEP : 0));
+				 (s->scan_beep ? SETTINGS_RS_SCAN_BEEP : 0) | (s->key_beep ? SETTINGS_RS_KEY_BEEP : 0) |
+				 (s->talk_permit ? 0 : SETTINGS_RS_NO_TALK_PERMIT));
 	st->rs_scan_resume = s->scan_resume;
 	st->rs_scan_hold_s = s->scan_hold_s;
 	st->rs_scan_delay_ms = s->scan_delay_ms;
@@ -3081,6 +3085,15 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 	case RREQ_POWER_OFF:
+		if (req->arg != 0) {
+			// Still running after all (auto power off with the knob on): back to normal, registration kept
+			sm->power_off_req = false;
+			sm->power_off_busy = false;
+#if CONFIG_DMR_DATA_CORE
+			dmrDataServicePowerOffCancelled();
+#endif
+			break;
+		}
 		sm->power_off_req = true;
 		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
 		break;

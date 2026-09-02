@@ -19,6 +19,15 @@ static const band_t bands[] = {
 
 static const char *const power_names[] = { "50m", "250m", "500m", "750m", "1W", "2W", "3W", "4W", "5W" };
 
+// The top side key (above PTT, row 2 D5): short = power level; held 1.5 s = emergency where it is built
+// (information-architecture.md 7.1), else speak status. Held with PTT at power-on it is the bootloader combination,
+// which the running firmware never sees
+#if CONFIG_DMR_EMERGENCY
+#define TOP_LONG	ACT_EMERGENCY
+#else
+#define TOP_LONG	ACT_USER_3
+#endif
+
 // docs/ux/information-architecture.md 7.1
 static const keymap_entry_t keymap[] = {
 	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false },
@@ -39,7 +48,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
 	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false },
 	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ KEY_TOP, ACT_USER_3, ACT_USER_3, false, false },
+	{ KEY_TOP, ACT_USER_3, TOP_LONG, false, false },
 	{ KEY_FN_LEFT, ACT_USER_1, ACT_USER_1, false, false },
 	{ KEY_FN_RIGHT, ACT_USER_4, ACT_USER_4, false, false },
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },

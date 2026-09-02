@@ -14,6 +14,54 @@ ui_layout_t ui_layout;
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper
 // and pills are inverse video
 ui_colors_t ui_col;
+static uint8_t ui_theme;
+
+void ui_theme_set(uint8_t theme)
+{
+	ui_theme = theme;
+	if (gfx_bpp() == 1)
+		return;		// ink on paper whatever the theme
+	if (theme == 1) {
+		// Light: dark text on white; the meaning colors darker so they read on white
+		ui_col.bg = RGB565(255, 255, 255);
+		ui_col.fg = RGB565(0, 0, 0);
+		ui_col.dim = RGB565(88, 88, 88);
+		ui_col.line = RGB565(176, 176, 176);
+		ui_col.tx = RGB565(200, 0, 0);
+		ui_col.rx = RGB565(0, 136, 40);
+		ui_col.warn = RGB565(176, 96, 0);
+		ui_col.idle = RGB565(128, 128, 128);
+		ui_col.focus = RGB565(64, 128, 232);
+		ui_col.hint_bg = RGB565(224, 224, 224);
+		ui_col.priv = RGB565(0, 72, 200);
+	} else if (theme == 2) {
+		// High contrast: pure black and white, saturated meaning colors, nothing gray
+		ui_col.bg = RGB565(0, 0, 0);
+		ui_col.fg = ui_col.dim = RGB565(255, 255, 255);
+		ui_col.line = RGB565(255, 255, 255);
+		ui_col.tx = RGB565(255, 0, 0);
+		ui_col.rx = RGB565(0, 255, 0);
+		ui_col.warn = RGB565(255, 255, 0);
+		ui_col.idle = RGB565(255, 255, 255);
+		ui_col.focus = RGB565(0, 0, 255);
+		ui_col.hint_bg = RGB565(0, 0, 0);
+		ui_col.priv = RGB565(0, 255, 255);
+	} else {
+		ui_col.bg = RGB565(0, 0, 0);
+		ui_col.fg = RGB565(255, 255, 255);
+		ui_col.dim = RGB565(168, 168, 168);
+		ui_col.line = RGB565(72, 72, 72);
+		ui_col.tx = RGB565(224, 32, 32);
+		ui_col.rx = RGB565(40, 184, 72);
+		ui_col.warn = RGB565(240, 168, 0);
+		ui_col.idle = RGB565(96, 96, 96);
+		ui_col.focus = RGB565(32, 96, 200);
+		ui_col.hint_bg = RGB565(32, 32, 32);
+		ui_col.priv = RGB565(64, 140, 255);
+	}
+	ui_col.pill_fg = RGB565(255, 255, 255);
+	ui_col.pill_dark_fg = RGB565(0, 0, 0);
+}
 
 void ui_layout_init(void)
 {
@@ -24,21 +72,9 @@ void ui_layout_init(void)
 		ui_col.bg = 0; ui_col.fg = ui_col.dim = ui_col.line = ui_col.tx = ui_col.rx = ui_col.warn = ui_col.idle = ui_col.focus = ui_col.priv = 1;
 		ui_col.pill_fg = ui_col.pill_dark_fg = 0;
 		ui_col.hint_bg = 0;
-	} else {
-		ui_col.bg = RGB565(0, 0, 0);
-		ui_col.fg = RGB565(255, 255, 255);
-		ui_col.dim = RGB565(168, 168, 168);
-		ui_col.line = RGB565(72, 72, 72);
-		ui_col.tx = RGB565(224, 32, 32);
-		ui_col.rx = RGB565(40, 184, 72);
-		ui_col.warn = RGB565(240, 168, 0);
-		ui_col.idle = RGB565(96, 96, 96);
-		ui_col.pill_fg = RGB565(255, 255, 255);
-		ui_col.pill_dark_fg = RGB565(0, 0, 0);
-		ui_col.focus = RGB565(32, 96, 200);
-		ui_col.hint_bg = RGB565(32, 32, 32);
-		ui_col.priv = RGB565(64, 140, 255);
 	}
+
+	ui_theme_set(ui_theme);
 
 	// Display classes (P10): about 128 px wide, about 160 px wide, 240 px and wider
 	if (w >= 220) {
@@ -808,7 +844,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	if (d->call.emergency)
 		sb_str(&b, " EMERGENCY");
 	y = call_line(L->small, y, buf, d->call.emergency ? ui_col.warn : ui_col.dim);
-	if (d->alias[0] != '\0') {
+	if (d->alias[0] != '\0' && s->alias_show) {
 		sb_init(&b, buf, sizeof buf);
 		sb_chr(&b, '"');
 		sb_str(&b, d->alias);
@@ -1380,7 +1416,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	}
 	case QT_MODE:
 		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? GLYPH_ARROW "FM" : GLYPH_ARROW "DMR");
-		return feat(UI_FEAT_MODE) && CONFIG_FM && CONFIG_DMR;
+		return feat(UI_FEAT_MODE) && CONFIG_FM && CONFIG_DMR && !v->vfo;	// the VFO is FM only for now
 	case QT_MONITOR:
 		sb_str(&b, v->monitor ? "On" : "Off");
 		return feat(UI_FEAT_MONITOR_LATCH);

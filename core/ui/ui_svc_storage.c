@@ -26,6 +26,9 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmr_data_api.h"
 #endif
+#if CONFIG_DMR_PRIVACY
+#include "dmr/dmrPrivacy.h"
+#endif
 
 uint32_t ui_svc_feat_storage(void)
 {
@@ -36,6 +39,48 @@ static uint16_t clamp16(int32_t v, int32_t lo, int32_t hi)
 {
 	return (uint16_t)(v < lo ? lo : v > hi ? hi : v);
 }
+
+// The UI's on / off settings kept as settings_t.ui_flags bits (0: not one of them)
+static uint8_t ui_flag(uint8_t id)
+{
+	switch (id) {
+	case UI_SET_LARGE_TEXT: return SETTINGS_UI_LARGE_TEXT;
+	case UI_SET_HINTS: return SETTINGS_UI_HINTS;
+	case UI_SET_MESSAGE_TONE: return SETTINGS_UI_MESSAGE_TONE;
+	case UI_SET_ALIAS_SHOW: return SETTINGS_UI_ALIAS;
+	case UI_SET_PTT_LOCKED: return SETTINGS_UI_PTT_LOCKED;
+	case UI_SET_HEAR_ALL_DEFAULT: return SETTINGS_UI_HEAR_ALL;
+	default: return 0;
+	}
+}
+
+static radio_view_t v;		// the radio's view (static: too big for the UI task's stack)
+
+#if CONFIG_DMR_PRIVACY
+// Privacy key slot 1 (settings-store.md 3.1), typed in on the radio. While privacy is on, the radio core holds the
+// key in use and writes it back to slot 1 itself, so it gets the new one too (type off turns privacy off)
+static void privacy_store(uint8_t type, uint32_t key)
+{
+	if (type >= DMR_PRIVACY_NUM_TYPES) {
+		type = DMR_PRIVACY_OFF;
+	}
+	if (type == DMR_PRIVACY_MOTOROLA_BP && (key < 1 || key > 255)) {
+		key = key == 0 ? 1 : 255;
+	}
+	key &= 0xFFFFu;
+	settings_t *st = settings_begin();
+	st->privacy_type[0] = type;
+	st->privacy_key[0] = type != DMR_PRIVACY_OFF ? key : 0;
+	if (type == DMR_PRIVACY_OFF && st->privacy_active == 1) {
+		st->privacy_active = 0;
+	}
+	settings_end(hal_millis());
+	radio_get_view(&v);
+	if (v.dmr.privacy) {
+		radio_req_dmr_privacy(type, (uint16_t)key);
+	}
+}
+#endif
 
 int32_t ui_svc_setting_get(uint8_t id)
 {
@@ -90,6 +135,37 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_POS_SEND_S:
 		settings_read(&st);
 		return st.pos_send_s;
+	case UI_SET_LARGE_TEXT:
+	case UI_SET_HINTS:
+	case UI_SET_MESSAGE_TONE:
+	case UI_SET_ALIAS_SHOW:
+	case UI_SET_PTT_LOCKED:
+	case UI_SET_HEAR_ALL_DEFAULT:
+		settings_read(&st);
+		return (st.ui_flags & ui_flag(id)) != 0;
+	case UI_SET_THEME:
+		settings_read(&st);
+		return st.theme <= 2 ? st.theme : 0;
+	case UI_SET_UPDOWN_HOME:
+		settings_read(&st);
+		return st.updown_home <= 2 ? st.updown_home : 0;
+	case UI_SET_LOW_BATTERY:
+		settings_read(&st);
+		return st.low_batt_pct;
+	case UI_SET_AUTO_OFF_MIN:
+		settings_read(&st);
+		return st.auto_off_min;
+	case UI_SET_TALK_PERMIT:
+		radio_get_settings(&rs);
+		return rs.talk_permit;
+#if CONFIG_DMR_PRIVACY
+	case UI_SET_PRIVACY_TYPE:
+		settings_read(&st);
+		return st.privacy_type[0] < DMR_PRIVACY_NUM_TYPES ? st.privacy_type[0] : DMR_PRIVACY_OFF;
+	case UI_SET_PRIVACY_KEY:
+		settings_read(&st);
+		return (int32_t)(st.privacy_key[0] & 0xFFFFu);
+#endif
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
@@ -115,7 +191,43 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BACKLIGHT_S:
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
+	case UI_SET_TALK_PERMIT:
 		return true;	// ui_svc_apply hands it to the radio core, which saves it
+	case UI_SET_LARGE_TEXT:
+	case UI_SET_HINTS:
+	case UI_SET_MESSAGE_TONE:
+	case UI_SET_ALIAS_SHOW:
+	case UI_SET_PTT_LOCKED:
+	case UI_SET_HEAR_ALL_DEFAULT:
+		st = settings_begin();
+		st->ui_flags = (uint8_t)(value != 0 ? st->ui_flags | ui_flag(id) : st->ui_flags & ~ui_flag(id));
+		settings_end(hal_millis());
+		return true;
+	case UI_SET_THEME:
+	case UI_SET_UPDOWN_HOME:
+	case UI_SET_LOW_BATTERY:
+	case UI_SET_AUTO_OFF_MIN:
+		st = settings_begin();
+		if (id == UI_SET_THEME) {
+			st->theme = (uint8_t)clamp16(value, 0, 2);
+		} else if (id == UI_SET_UPDOWN_HOME) {
+			st->updown_home = (uint8_t)clamp16(value, 0, 2);
+		} else if (id == UI_SET_LOW_BATTERY) {
+			st->low_batt_pct = (uint8_t)clamp16(value, 0, 50);
+		} else {
+			st->auto_off_min = clamp16(value, 0, 24u * 60u);
+		}
+		settings_end(hal_millis());
+		return true;
+#if CONFIG_DMR_PRIVACY
+	case UI_SET_PRIVACY_TYPE:
+		privacy_store((uint8_t)clamp16(value, 0, DMR_PRIVACY_NUM_TYPES - 1),
+			      (uint32_t)ui_svc_setting_get(UI_SET_PRIVACY_KEY));
+		return true;
+	case UI_SET_PRIVACY_KEY:
+		privacy_store((uint8_t)ui_svc_setting_get(UI_SET_PRIVACY_TYPE), (uint32_t)clamp16(value, 0, 0xFFFF));
+		return true;
+#endif
 	case UI_SET_MIC_GAIN:
 	case UI_SET_AUTO_LOCK_S:
 	case UI_SET_LONG_PRESS_MS:
@@ -241,9 +353,7 @@ static void save_channel_job(void *ctx)
 	radio_req_clear_temporary();
 }
 
-// The radio's view, and whether it is on a stored channel (static: too big for the UI task's stack)
-static radio_view_t v;
-
+// Whether the radio is on a stored channel (its view in v)
 static bool take_channel(void)
 {
 	if (storage_job_busy()) {

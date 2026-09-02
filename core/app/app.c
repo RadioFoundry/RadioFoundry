@@ -27,6 +27,7 @@
 #include "radio/radio.h"
 #include "input/input.h"
 #include "ui/ui.h"
+#include "ui/ui_svc.h"
 #include "config.h"
 #if CONFIG_HOSTLINK
 #include "hostlink/hostlink.h"
@@ -42,8 +43,11 @@
 #define HOUSEKEEPING_MS		100
 #define POWER_OFF_TX_MS		200	// after the PTT release, before the latch drops
 #define POWER_OFF_DEREG_MS	3000	// at most this long for the ARS deregistration (gotcha 7.4)
+#define POWER_OFF_STAY_MS	2000	// auto power off: still running this long after the latch dropped = the knob holds it
 
-static void power_off(void)
+// knob: the user switched off (or the battery is flat), so the supply is going away whatever happens; otherwise this
+// is the UI's auto power off, and the knob may still hold the supply: then the radio carries on and says so
+static void power_off(bool knob)
 {
 	radio_req_ptt(false);		// stop any transmission first
 	radio_req_power_off();		// then what has to go out before the supply drops (ARS deregistration)
@@ -54,9 +58,14 @@ static void power_off(void)
 	settings_flush();		// unsaved changes (the debounce hadn't run out yet)
 	board.display->set_backlight(0);
 	board.power->latch(false);
-	for (;;) {			// the supply goes away; nothing more to do
-		hal_delay_ms(1000);
+	for (uint32_t t = 0; knob || t < POWER_OFF_STAY_MS; t += 100) {	// the supply goes away; nothing more to do
+		hal_delay_ms(100);
 	}
+	board.power->latch(true);	// still here: the knob is on
+	radio_req_power_off_cancel();
+	input_inject_wake();		// the backlight comes back for the UI's banner
+	ui_event_t ev = { .kind = UI_EV_POWER_OFF_FAILED };
+	ui_notify(&ev);			// "Couldn't switch off"; the UI waits a whole period again
 }
 
 static void startup_task(void *arg)
@@ -88,7 +97,9 @@ static void startup_task(void *arg)
 		settings_poll(hal_millis());	// saves here, so no other task waits for the flash
 		storage_job_poll();		// and the codeplug writes the UI asks for (save to channel, factory reset)
 		if (!board.power->switch_on() || radio_power_off_wanted()) {
-			power_off();	// the knob, or the radio core after a long critical battery (battery_off_s)
+			power_off(true);	// the knob, or the radio core after a long critical battery (battery_off_s)
+		} else if (ui_app_power_off_due()) {
+			power_off(false);	// Settings > Power > Auto power off
 		}
 	}
 }

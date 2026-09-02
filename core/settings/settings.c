@@ -46,6 +46,8 @@ void settings_defaults(settings_t *s)
 	s->master_power = SETTINGS_UNSET8;
 	s->rs_reply_s = SETTINGS_UNSET8;
 	s->mic_gain = 5;
+	s->ui_flags = SETTINGS_UI_HINTS | SETTINGS_UI_MESSAGE_TONE | SETTINGS_UI_ALIAS | SETTINGS_UI_PTT_LOCKED;
+	s->low_batt_pct = 15;
 }
 
 static void put32(uint8_t *p, uint32_t v)

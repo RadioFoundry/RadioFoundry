@@ -23,6 +23,9 @@ int32_t input_encoder_total(void);
 // Clamped to 200..3000 and 40..1000; in effect from the next scan
 void input_set_timing(uint16_t long_ms, uint16_t repeat_ms);
 uint16_t input_long_ms(void);		// in effect now
+// PTT while the keys are locked and Settings > Privacy > PTT when locked is off: a PTT press is not handed to the
+// radio core (the UI still gets it, to say why). A release always is, so a transmission never sticks
+void input_set_ptt_block(bool blocked);
 
 // --- Injection (the debug link, core/debuglink): host-driven keys processed by the input task exactly like real ones.
 // Injected physical key bits are ORed into the scan mask, so they go through the same debounce and gesture engine

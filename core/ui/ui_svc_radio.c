@@ -14,6 +14,9 @@
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
+#if CONFIG_DMR
+#include "dmr/ambe/ambeVoice.h"
+#endif
 
 uint32_t ui_svc_feat_voice(void)
 {
@@ -209,9 +212,18 @@ bool ui_svc_scan_skip(void)
 #if CONFIG_BEEP
 void ui_svc_beep(uint8_t beep)
 {
-	radio_req_beep(beep == UI_BEEP_ERROR ? BEEP_ERROR : BEEP_KEY);
+	static const uint8_t map[] = {
+		[UI_BEEP_KEY] = BEEP_KEY, [UI_BEEP_ERROR] = BEEP_ERROR, [UI_BEEP_MESSAGE] = BEEP_MESSAGE,
+		[UI_BEEP_BATTERY_LOW] = BEEP_BATTERY_LOW,
+	};
+	radio_req_beep(beep < sizeof map ? map[beep] : BEEP_KEY);
 }
 #endif
+
+void ui_svc_ptt_block(bool blocked)
+{
+	input_set_ptt_block(blocked);
+}
 
 // The reply window the Settings screen shows: the radio's setting, else the codeplug's group hang time, else the
 // call stack's 10 s
@@ -241,6 +253,14 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_KEY_TONES:
 		rs.key_beep = value != 0;
 		break;
+	case UI_SET_TALK_PERMIT:
+		rs.talk_permit = value != 0;
+		break;
+#if CONFIG_DMR
+	case UI_SET_MIC_GAIN:		// DMR: the samples are scaled before the vocoder (no board has an FM mic gain hook)
+		ambeVoiceSetMicGain((uint8_t)(v16 > 10 ? 10 : v16));
+		return;
+#endif
 	case UI_SET_TONE_VOLUME:		// 0..10
 		rs.beep_level = (uint8_t)(v16 > 10 ? 100 : v16 * 10u);
 		break;

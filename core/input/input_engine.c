@@ -70,7 +70,7 @@ void input_engine_step(input_engine_t *e, uint32_t raw, int8_t enc, uint32_t now
 			}
 		} else if (down && !m->raw_edges) {
 			if (!k->long_done) {
-				if (now_ms - k->t_down >= long_ms) {
+				if (now_ms - k->t_down >= input_long_threshold(m->long_action, long_ms)) {
 					k->long_done = true;
 					k->t_next = now_ms + repeat_ms;
 					send(emit, ctx, m->long_action, GESTURE_LONG, 0);

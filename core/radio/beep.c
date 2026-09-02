@@ -27,6 +27,8 @@ static const beep_seg_t p_scan_hold[] = { { 1400, 40 } };
 // Two-tone warble, like no other beep: someone else's emergency
 static const beep_seg_t p_emergency[] = { { 1500, 160 }, { 900, 160 }, { 1500, 160 }, { 900, 160 }, { 1500, 160 },
 					  { 900, 160 } };
+// Rising three-note chime: a message
+static const beep_seg_t p_message[] = { { 1000, 60 }, { 0, 30 }, { 1300, 60 }, { 0, 30 }, { 1700, 90 } };
 
 #define PAT(p)	{ p, sizeof(p) / sizeof(p[0]) }
 static const struct {
@@ -43,6 +45,7 @@ static const struct {
 	[BEEP_BATTERY_CRIT] = PAT(p_batt_crit),
 	[BEEP_SCAN_HOLD] = PAT(p_scan_hold),
 	[BEEP_EMERGENCY] = PAT(p_emergency),
+	[BEEP_MESSAGE] = PAT(p_message),
 };
 
 // One period of a sine, Q15

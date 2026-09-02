@@ -1413,6 +1413,10 @@ static void test_persist(void)
 	req(RREQ_POWER_OFF, 0);
 	run(50);
 	CHECK(sm.power_off_req && !sm.power_off_busy);
+	// An auto power off that didn't cut the power (the knob still on): cancelled, the radio runs on
+	req(RREQ_POWER_OFF, 1);
+	run(50);
+	CHECK(!sm.power_off_req && !sm.power_off_busy);
 	setup_codeplug();
 	start();
 }
@@ -1921,6 +1925,8 @@ void radio_req_dmr_focus(uint32_t id, bool p)
 void radio_req_dmr_privacy(uint8_t type, uint16_t key) { req(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key)); }
 static uint16_t input_long, input_repeat;
 void input_set_timing(uint16_t l, uint16_t r) { input_long = l; input_repeat = r; }
+static bool ptt_blocked;
+void input_set_ptt_block(bool b) { ptt_blocked = b; }
 void hostlink_set_hotspot_allowed(bool on) { (void)on; }
 static int32_t ram[UI_SET_COUNT];
 int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_COUNT ? ram[id] : 0; }
@@ -2031,6 +2037,30 @@ static void test_ui_glue(void)
 	ui_svc_apply(UI_SET_LONG_PRESS_MS, 900);
 	ui_svc_apply(UI_SET_REPEAT_MS, 200);
 	CHECK(input_long == 900 && input_repeat == 200);
+	// The UI's own settings (settings_t.ui_flags and the fields after it)
+	CHECK(ui_svc_setting_get(UI_SET_HINTS) == 1 && ui_svc_setting_get(UI_SET_LARGE_TEXT) == 0);
+	CHECK(ui_svc_setting_get(UI_SET_PTT_LOCKED) == 1 && ui_svc_setting_get(UI_SET_LOW_BATTERY) == 15);
+	CHECK(ui_svc_setting_set(UI_SET_LARGE_TEXT, 1) && ui_svc_setting_set(UI_SET_HINTS, 0));
+	CHECK(ui_svc_setting_set(UI_SET_PTT_LOCKED, 0) && ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 1));
+	CHECK(ui_svc_setting_set(UI_SET_THEME, 2) && ui_svc_setting_set(UI_SET_UPDOWN_HOME, 1));
+	CHECK(ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 30) && ui_svc_setting_set(UI_SET_LOW_BATTERY, 20));
+	settings_read(&sv);
+	CHECK(sv.ui_flags == (SETTINGS_UI_LARGE_TEXT | SETTINGS_UI_MESSAGE_TONE | SETTINGS_UI_ALIAS | SETTINGS_UI_HEAR_ALL));
+	CHECK(sv.theme == 2 && sv.updown_home == 1 && sv.auto_off_min == 30 && sv.low_batt_pct == 20);
+	ui_svc_ptt_block(true);
+	CHECK(ptt_blocked);
+	ui_svc_ptt_block(false);
+	CHECK(!ptt_blocked);
+	// Talk permit tone: the radio core's, saved with its settings
+	CHECK(ui_svc_setting_get(UI_SET_TALK_PERMIT) == 1);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
+	run(20);
+	CHECK(!sm.set.talk_permit && ui_svc_setting_get(UI_SET_TALK_PERMIT) == 0);
+	settings_read(&sv);
+	CHECK(sv.rs_flags & SETTINGS_RS_NO_TALK_PERMIT);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
+	run(20);
+	CHECK(sm.set.talk_permit);
 	// Reply window: the value shown at start-up for "the codeplug's" keeps it; another value is the radio's own
 	CHECK(ui_svc_setting_get(UI_SET_REPLY_S) == 10);
 	ui_svc_apply(UI_SET_REPLY_S, 10);

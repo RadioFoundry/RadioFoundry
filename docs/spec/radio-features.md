@@ -31,6 +31,7 @@ link's SETTING op goes through `radio_set_settings()` too, so its changes are sa
 | `scan_beep` | off | a short beep when the scan stops on a signal |
 | `beep_level` | 50 | 0 (silent) to 100, relative to the volume knob |
 | `key_beep` | on | `radio_req_beep(BEEP_KEY)` sounds |
+| `talk_permit` | on | DMR: the talk permit tone when the voice goes on air (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |
 | `vox_level` | 5 | sensitivity 1 (loud voice needed) to 10 |
 | `vox_tail_ms` | 1500 | stays keyed this long after the voice stops |
@@ -115,7 +116,7 @@ early on CTCSS loss conflicts with the tone debounce (8 polls) that keeps fades 
 |---|---|---|
 | key | 1000 Hz 25 ms | `radio_req_beep(BEEP_KEY)` from the UI, if `key_beep` |
 | error | 400 Hz 150 ms | UI errors |
-| TX permit | 1600 Hz 50 ms twice | DMR: the channel is granted (unless the codeplug channel has "no beep") |
+| TX permit | 1600 Hz 50 ms twice | DMR: the channel is granted (unless the codeplug channel has "no beep", or `talk_permit` is off: Settings > Sound > Talk permit tone) |
 | TX deny | 300 Hz 400 ms | any TX refusal |
 | call end | 1200 Hz 50 ms, 900 Hz 70 ms | DMR: a played call ended (unless "no beep") |
 | TOT warning | 1000 Hz 100 ms twice | 3.2 |
@@ -123,6 +124,7 @@ early on CTCSS loss conflicts with the tone debounce (8 polls) that keeps fades 
 | battery critical | 600 Hz three times | entering critical, then every 30 s |
 | scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` |
 | emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (`dmr-emergency.md`) |
+| message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
 scale so a beep mixed over voice doesn't clip. Volume is relative to the knob: the beep goes through the same
