@@ -182,8 +182,14 @@ fixed scrambling of the voice. It keeps casual listeners out but isn't encryptio
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
-Loading a key: qdmr can't write privacy keys yet, and the radio has no key editor. Today a key is loaded over USB with
-the debug tool, and the radio keeps it across restarts:
+Setting the key on the radio: **Settings > Privacy** (**OK**, **6**, **4**).
+
+1. **Privacy key type**: press **OK** until it shows Motorola or Anytone.
+2. **Privacy key**: press **OK**, type the key with the number keys (Motorola 1 to 255, Anytone 0 to 65535, in
+   decimal), and press **OK** again.
+
+The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. qdmr
+can't write privacy keys yet. Developers can also load a key over USB with the debug tool:
 
 ```
 tools/odr_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
@@ -191,10 +197,11 @@ tools/odr_debug.py radio privacy anytone 4660    # Anytone basic privacy, key 46
 tools/odr_debug.py radio privacy off
 ```
 
-Without a key, the Privacy tile shows "No key for this channel: add one in qdmr". The keys are stored without
+Without a key, the Privacy tile shows "No privacy key: set one in Settings > Privacy". The keys are stored without
 protection in the radio's flash.
 
 ## Talker alias
 
-The radio shows the talker alias other radios send, as it arrives, on the receive screen. It sends your callsign from
+The radio shows the talker alias other radios send, as it arrives, on the receive screen (unless **Settings > Talk &
+listen > Show talker alias** is off). It sends your callsign from
 the codeplug (8 characters) as your own alias when the channel's talker alias setting in the codeplug asks for it.

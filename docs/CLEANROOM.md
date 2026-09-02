@@ -18,7 +18,7 @@ The UI is designed in `docs/ux/` from first principles of good radio usability, 
 
 The author's own work moves over; the legacy firmware's doesn't.
 
-- **(a) Whole files written entirely by us** (for example the DMR data service, LRRP, privacy, IP gateway, hotspot uplink/data/frame code, SFR, the DM-32 calibration reader, the host tests). They are copied into this repo with MIT SPDX headers and listed in `PROVENANCE.md` with their old commit.
+- **(a) Whole files written entirely by us** (for example the DMR data service, LRRP, privacy, IP gateway, hotspot uplink/data/frame code, SFR, the DM-32 calibration reader, the host tests). They are copied into this repo with MIT SPDX headers and their old commit is noted in a provenance record the maintainers keep outside this repository.
 - **(b) Every change we made inside imported files, on every old tree**, as diff hunks with 3 lines of context, each with a note: the commit, what the surrounding code did, the symptom, why the fix works, and what new code must do or avoid. The context and removed lines are legacy firmware text, so **(b) lives only in `the external reference folder` and is never committed here**. Implementers read it to learn the lessons, then write new code.
 - **(c) `docs/spec/gotchas.md`**: the same lessons in prose, grouped by subsystem. Committed here.
 
@@ -32,6 +32,6 @@ The author's own work moves over; the legacy firmware's doesn't.
 ## Records and checks
 
 - Every source file has an SPDX header. `reuse lint` passes.
-- `PROVENANCE.md` lists every file: `ours` (old commit), `clean` (spec section), or `third-party` (license, upstream, version).
+- Every file is accounted for in the maintainers' provenance record (kept outside this repository): `ours` (old commit), `clean` (spec section), or `third-party` (license, upstream, version).
 - Before each release, a similarity scan of this tree against the legacy-derived trees has no unreviewed hits (`tools/similarity_scan.py REF...`, or `ODR_SIMILARITY_REFS="REF..." tools/ci.sh`; docs/testing/README.md).
 - `tools/license_grep.sh` finds no `commercial`, `Micrium`, `GPL`, `G4KLX`, `Roger Clark`, `Kai Ludwig` or similar markers outside `docs/` and `LICENSES/`.

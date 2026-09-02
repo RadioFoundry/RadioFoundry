@@ -186,7 +186,8 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	sb_u32(&b, s->battery_pct, 1);
 	sb_chr(&b, '%');
 	int rx = w - gfx_text_width(f, pct);
-	color_t bc = s->battery_pct <= 15 ? ui_col.warn : ui_col.fg;
+	uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
+	color_t bc = s->battery_pct <= low ? ui_col.warn : ui_col.fg;
 	gfx_text(f, rx, ty, pct, bc);
 	if (!merged) {
 		int bh = f->ascent - 2 < 5 ? 5 : f->ascent - 2;

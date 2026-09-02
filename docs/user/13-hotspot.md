@@ -98,5 +98,6 @@ The host turns SFR mode on by running duplex with the receive and transmit frequ
 
 Limitations today: the DM-1701 keys its transmitter for the whole repeat, so it misses the rest of an inbound call
 after the first repeat. Not tested on air. The stand-alone repeater and the SFR user roles on a channel aren't built.
-**Tools > Single freq. repeater** shows only an information page. Details:
+**Tools > Single freq. repeater** shows only an information page: SFR runs in hotspot mode and the hotspot host turns
+it on. Details:
 [docs/spec/sfr.md](../spec/sfr.md).

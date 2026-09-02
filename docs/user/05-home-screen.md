@@ -46,7 +46,7 @@ The hint row changes with the situation. The most common ones:
 ## Receiving
 
 During a DMR call, Home shows the caller: name (from your contacts, else from the DMR ID database in the codeplug),
-DMR ID, timeslot, talker alias as it arrives, the talkgroup or "Private to you", and the signal strength.
+DMR ID, timeslot, talker alias as it arrives (unless **Settings > Talk & listen > Show talker alias** is off), the talkgroup or "Private to you", and the signal strength.
 
 <img src="../ux/screens/160x120i5/rx_group.png" width="200" alt="Receiving a group call">
 <img src="../ux/screens/160x120i5/rx_private.png" width="200" alt="Receiving a private call">
@@ -86,6 +86,6 @@ The low and critical battery levels also limit transmitting: see [Battery and po
 ## Large text
 
 **Settings > Display > Large text** shows only the status line, the channel name and the talk target, each as large as
-it fits.
+it fits. The radio keeps the setting across power off, as it does **Settings > Display > Hint row**.
 
 <img src="../ux/screens/160x120i5/home_large_text.png" width="200" alt="Home in large text">

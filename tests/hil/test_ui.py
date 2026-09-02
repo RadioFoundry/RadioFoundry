@@ -14,6 +14,7 @@ import time
 import pytest
 
 from odr_hil import LONG, as_int
+from odr_debug import DOWN, UP
 
 
 def diff_fraction(a, b):
@@ -352,7 +353,7 @@ def test_auto_lock(home):
     r = home
     if as_int(r.view(["storage"]).get("settings.auto_lock_s"), 0) != 0:
         pytest.skip("auto lock is already on")
-    settings_keys(r, "ok 6 4 down ok")
+    settings_keys(r, "ok 6 4 down down ok")
     try:
         r.wait_for(lambda x: x.get("settings.auto_lock_s") == "30", sections=("storage",), what="auto lock 30 s")
         assert ui(r)["ui.locked"] == "0"
@@ -366,12 +367,135 @@ def test_auto_lock(home):
         r.press("6")
         r.press("4")
         r.press("down")
+        r.press("down")
         for _ in range(4):
             if r.view(["storage"]).get("settings.auto_lock_s") == "0":
                 break
             r.press("ok")
         r.press("back", LONG)
     r.wait_for(lambda x: x.get("settings.auto_lock_s") == "0", sections=("storage",), what="auto lock off again")
+
+
+def storage(r):
+    return r.view(["storage"])
+
+
+def ui_flags(r):
+    return as_int(storage(r).get("settings.ui_flags"))
+
+
+def test_theme_is_kept(home):
+    """Settings > Display > Theme: Light is stored (settings.theme) and the screen changes; back to Dark after."""
+    r = home
+    s = storage(r)
+    if "settings.theme" not in s:
+        pytest.skip("firmware without settings.theme")
+    if s["settings.theme"] != "0":
+        pytest.skip("the theme isn't Dark")
+    _, before = r.shot_until(lambda d: True, what="Home")
+    settings_keys(r, "ok 6 2 down down ok")
+    try:
+        r.wait_for(lambda x: x.get("settings.theme") == "1", sections=("storage",), what="theme Light stored")
+        r.shot_until(lambda d: diff_fraction(before, d) > 0.2, what="Home in the light theme")
+    finally:
+        settings_keys(r, "ok 6 2 down down ok ok")
+    r.wait_for(lambda x: x.get("settings.theme") == "0", sections=("storage",), what="theme Dark again")
+
+
+def test_updown_changes_the_zone(home):
+    """Settings > Keys > Up/Down on Home = Zone: Up on Home moves to the next zone, not the next channel."""
+    r = home
+    s = storage(r)
+    if s.get("settings.updown_home") != "0":
+        pytest.skip("firmware without settings.updown_home, or it isn't Channel")
+    zone = as_int(r.core().get("zone_index"))
+    settings_keys(r, "ok 6 8 down down ok")
+    try:
+        r.wait_for(lambda x: x.get("settings.updown_home") == "1", sections=("storage",), what="Up/Down = Zone")
+        r.press("up")
+        v = r.wait_for(lambda x: as_int(x.get("zone_index")) != zone, what="zone change on UP")
+        if v["zone_index"] == str(zone):
+            pytest.skip("only one zone")
+        r.press("down")
+        r.wait_for(lambda x: as_int(x.get("zone_index")) == zone, what="the zone back on DOWN")
+    finally:
+        settings_keys(r, "ok 6 8 down down ok ok")
+    r.wait_for(lambda x: x.get("settings.updown_home") == "0", sections=("storage",), what="Up/Down = Channel again")
+
+
+def test_privacy_key_entry(home):
+    """Settings > Privacy: key type Motorola, key typed 123 (slot 1); type Off again removes it."""
+    r = home
+    s = storage(r)
+    if "settings.privacy_type" not in s:
+        pytest.skip("firmware without settings.privacy_type")
+    if s["settings.privacy_type"] != "0":
+        pytest.skip("a privacy key is set already: not overwriting it")
+    settings_keys(r, "ok 6 4 ok down ok 1 2 3 ok")
+    try:
+        r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type Motorola")
+        if r.core().get("mode") == "dmr":
+            r.press("quick")
+            wait_screen(r, "quick")
+            r.press("6")
+            r.wait_for(lambda x: "Privacy on" in x.get("ui.toast", ""), sections=("link",), what="privacy on")
+            leave_quick(r)
+            r.press("back")
+    finally:
+        settings_keys(r, "ok 6 4 ok ok")	# Motorola -> Anytone -> Off
+    r.wait_for(lambda x: x.get("settings.privacy_type") == "0", sections=("storage",), what="the key removed")
+
+
+@pytest.mark.radio_tx
+def test_ptt_when_locked_off(home):
+    """Settings > Privacy > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
+    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power)."""
+    r = home
+    flags = ui_flags(r)
+    if flags is None:
+        pytest.skip("firmware without settings.ui_flags")
+    if not flags & 0x10:
+        pytest.skip("PTT when locked is already off")
+    r.lowest_power()
+    settings_keys(r, "ok 6 4 down down down ok")
+    try:
+        r.wait_for(lambda x: not as_int(x.get("settings.ui_flags"), 0x10) & 0x10, sections=("storage",),
+                   what="PTT when locked off")
+        r.press("quick", LONG)
+        r.wait_for(lambda x: x.get("ui.locked") == "1", sections=("link",), what="keys locked")
+        r.link.key("ptt", DOWN)
+        try:
+            time.sleep(0.8)
+            v = r.view(["core", "link"])
+            assert v.get("state") != "tx", v
+            assert "PTT is off" in v.get("ui.toast", ""), v
+        finally:
+            r.link.key("ptt", UP)
+        r.press("quick", LONG)
+        r.wait_for(lambda x: x.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
+    finally:
+        if ui(r).get("ui.locked") == "1":
+            r.press("quick", LONG)
+        settings_keys(r, "ok 6 4 down down down ok")
+    r.wait_for(lambda x: as_int(x.get("settings.ui_flags"), 0) & 0x10, sections=("storage",),
+               what="PTT when locked on again")
+
+
+def test_usb_network_switch_row(home):
+    """Tools > USB network: the info page has the one "Switch USB to network" row. The test backs out without
+    switching (switching drops the serial link; see the HIL steps in docs/user/14-usb-network.md)."""
+    r = home
+    r.press("ok")
+    wait_screen(r, "hub")
+    r.press("5")
+    wait_screen(r, "tools")
+    r.press("4")
+    v = r.wait_for(lambda x: x.get("ui.screen") == "info", sections=("link",), what="the USB network page")
+    if v.get("ui.count") != "1":
+        pytest.skip("built without CONFIG_USB_NETWORK")
+    assert v.get("ui.focus") == "0", v
+    r.press("back", LONG)
+    wait_screen(r, "home")
 
 
 @pytest.mark.codeplug_write

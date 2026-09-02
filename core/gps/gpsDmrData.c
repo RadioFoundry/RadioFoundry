@@ -6,7 +6,8 @@
  */
 
 #include <string.h>
-// TODO(hal): legacy DM-32 tree headers: gpsData (interfaces/gps.h), nonVolatileSettings (functions/settings.h)
+// Not built yet: gpsData and nonVolatileSettings come from headers this tree doesn't have; the code waits for a native
+// GPS driver (CAP_GPS) and the settings store (core/settings) to stand in for them
 #include "functions/settings.h"
 #include "dmr/dmrDataService.h"
 #include "interfaces/gps.h"

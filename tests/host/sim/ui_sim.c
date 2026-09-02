@@ -691,7 +691,9 @@ bool ui_svc_position(ui_position_t *out)
 	out->alt_m = 43;
 	return true;
 }
-bool ui_svc_emergency(bool on) { (void)on; return true; }
+static bool emergency_on;
+bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
+bool ui_svc_emergency_active(void) { return emergency_on; }
 bool ui_svc_factory_reset(void) { return true; }
 
 static void add_message(uint32_t src, const char *text)
@@ -774,6 +776,7 @@ static void advance(uint32_t ms)
 
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
+	emergency_on = false;
 	disp.width = g->w;
 	disp.height = g->h;
 	disp.bpp = g->bpp;

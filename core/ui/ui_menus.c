@@ -896,7 +896,8 @@ static const char *info_body(void)
 	case INFO_BATTERY:
 		sb_str(&b, "Battery ");
 		sb_u32(&b, ui_st.battery_pct, 1);
-		sb_str(&b, ui_st.battery_pct <= 15 ? "%: charge soon." : "%.");
+		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ? "%: charge soon." :
+		       "%.");
 		break;
 	case INFO_FIRMWARE:
 		sb_str(&b, "OpenDigitalRadio\n");

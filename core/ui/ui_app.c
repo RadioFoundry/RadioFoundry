@@ -1429,14 +1429,13 @@ static bool emergency_key(const input_event_t *ev)
 {
 	if (ev->action != ACT_EMERGENCY || ev->gesture != GESTURE_LONG)
 		return false;
-	static bool on;
+	bool on = ui_svc_emergency_active();	// the radio core's state: a cancel over the debug link counts too
 	if (!(ui_svc_features() & UI_FEAT_EMERGENCY)) {
 		ui_toast("Emergency isn't in this build");
 	} else if (!ui_svc_emergency(!on)) {
 		ui_toast("Can't start emergency here: DMR channel and DMR ID needed");
 	} else {
-		on = !on;
-		ui_toast(on ? "EMERGENCY sent: hold again to cancel" : "Emergency cancelled");
+		ui_toast(!on ? "EMERGENCY sent: hold again to cancel" : "Emergency cancelled");
 	}
 	return true;
 }

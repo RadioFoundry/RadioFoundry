@@ -203,6 +203,10 @@ static void storage_section(dl_text_t *t)
 	settings_read(&sv);
 	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
 		sv.auto_lock_s, sv.long_press_ms, sv.repeat_ms, sv.mic_gain);
+	dl_text(t, "settings.theme=%u\nsettings.ui_flags=%u\nsettings.updown_home=%u\nsettings.low_batt_pct=%u\n", sv.theme,
+		sv.ui_flags, sv.updown_home, sv.low_batt_pct);
+	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", sv.auto_off_min,
+		sv.privacy_type[0], sv.privacy_active);
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);

@@ -116,6 +116,7 @@ static const flow_t flows[] = {
 static const flow_t flows_k[] = {
 	{ "S theme light (color screens)", "", "ok 6 2 down down ok", "set7=1", 6, false },
 	{ "E emergency: hold the top key", "", "long:emerg", "toast=EMERGENCY_sent", 1, false },
+	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_cancelled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
 	{ "P auto power off warns", "ok 6 7 down ok long:back", "wait:1741000", "banner=Switching_off poweroff=0", 0,
 	  false },
