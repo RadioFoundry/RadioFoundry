@@ -45,6 +45,8 @@ void scan_end(scan_t *s)
 void scan_tuned(scan_t *s, uint32_t now_ms)
 {
 	s->tuned_ms = now_ms;
+	s->heard = false;
+	s->synced = false;
 	s->steps++;
 	phase(s, SCAN_PH_LISTEN, now_ms);
 }
@@ -55,6 +57,8 @@ void scan_pause(scan_t *s, bool paused, uint32_t now_ms)
 		phase(s, SCAN_PH_PAUSED, now_ms);
 	} else if (!paused && s->phase == SCAN_PH_PAUSED) {
 		s->tuned_ms = now_ms;
+		s->heard = false;
+		s->synced = false;
 		phase(s, SCAN_PH_LISTEN, now_ms);
 	}
 }
@@ -66,7 +70,7 @@ static scan_act_t hold(scan_t *s, uint32_t now_ms)
 	return s->cfg.resume == SCAN_RESUME_STOP ? SCAN_ACT_STOP : SCAN_ACT_NONE;
 }
 
-scan_act_t scan_poll(scan_t *s, uint32_t now_ms, bool active, bool carrier)
+scan_act_t scan_poll(scan_t *s, uint32_t now_ms, bool active, bool carrier, bool sync)
 {
 	if (s->kind == SCAN_OFF || s->phase == SCAN_PH_PAUSED) {
 		return SCAN_ACT_NONE;
@@ -76,24 +80,38 @@ scan_act_t scan_poll(scan_t *s, uint32_t now_ms, bool active, bool carrier)
 	if (since_tune < SCAN_SETTLE_MS) {
 		return SCAN_ACT_NONE;
 	}
+	if (carrier || sync) {
+		s->heard_ms = now_ms;
+		s->heard = true;
+	}
+	if (sync && !s->synced) {
+		s->synced = true;
+		s->stats_synced++;
+	}
+	// A carrier now, or (carrier_hold_ms) a moment ago: a TDMA signal is off the air half the time
+	bool heard = s->heard && now_ms - s->heard_ms <= s->cfg.carrier_hold_ms;
 	switch (s->phase) {
 	case SCAN_PH_LISTEN:
 		if (active) {
 			return hold(s, now_ms);
 		}
 		if (since_tune >= s->cfg.dwell_ms) {
-			if (carrier && s->cfg.probe_ms != 0) {
+			if (heard && s->cfg.probe_ms != 0) {
+				s->probes++;
 				phase(s, SCAN_PH_PROBE, now_ms);
 				return SCAN_ACT_NONE;
 			}
 			return SCAN_ACT_NEXT;
 		}
 		return SCAN_ACT_NONE;
-	case SCAN_PH_PROBE:
+	case SCAN_PH_PROBE: {
 		if (active) {
 			return hold(s, now_ms);
 		}
-		return (!carrier || in_phase >= s->cfg.probe_ms) ? SCAN_ACT_NEXT : SCAN_ACT_NONE;
+		// Sync: a call of the channel's kind is on, give its late entry the time it needs
+		uint32_t limit = s->synced && s->cfg.sync_ms > s->cfg.probe_ms ? s->cfg.sync_ms : s->cfg.probe_ms;
+		return (!heard || in_phase >= limit) ? SCAN_ACT_NEXT : SCAN_ACT_NONE;
+	}
 	case SCAN_PH_HOLD:
 		if (!active) {
 			phase(s, SCAN_PH_RESUME, now_ms);

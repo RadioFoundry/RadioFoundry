@@ -229,6 +229,9 @@ void dmr_call_set_rx_trace(bool on);
 // Listen before talk for machine traffic (data, ACKs, CSBK answers; gotcha 3.6): DMO 120 ms without voice, data or
 // a call on our slot; RMO 180 ms without bursts on our slot, no call, and the last call over DMR_CALL_RMO_HANG_MS ago
 bool dmr_call_channel_clear(uint32_t now_ms);
+// Activity on the channel for the scan: the poll time of the last burst (not idle) on our slot with our color code,
+// a call or not (a late entry before its LC is known counts). False if none since the stack was initialized
+bool dmr_call_last_activity(uint32_t *ms);
 
 // --- Data and CSBK (core/dmr/dmrDataService.c sits on these) ---
 

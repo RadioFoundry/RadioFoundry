@@ -1479,6 +1479,12 @@ bool dmr_call_channel_clear(uint32_t now_ms)
 	       elapsed(now_ms, s.last_call_end_ms, s.call_end_seen, DMR_CALL_RMO_HANG_MS);
 }
 
+bool dmr_call_last_activity(uint32_t *ms)
+{
+	*ms = s.last_activity_ms;
+	return s.activity_seen;
+}
+
 void dmr_call_get_stats(dmr_call_stats_t *out)
 {
 	*out = stats;

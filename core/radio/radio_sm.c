@@ -1379,6 +1379,8 @@ static void scan_publish(radio_sm_t *sm)
 		sm->view.scan = sc->kind;
 		sm->view.scan_phase = sc->phase;
 		sm->view.scan_skipped = sc->skipped;
+		sm->view.scan_probes = (uint16_t)sc->probes;	// with the phase changes, not a change of their own
+		sm->view.scan_synced = (uint16_t)sc->stats_synced;
 		changed(sm);
 	}
 }
@@ -1505,18 +1507,28 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 	scan_pause(sc, sm->view.monitor, now_ms);
 	bool dmr = sm->view.ch.mode == RADIO_MODE_DMR;
 	bool carrier = carrier_heard(sm, st->noise);
-	bool active;
+	bool active, sync = false;
 #if CONFIG_DMR
 	if (dmr) {
 		active = sm->view.dmr.state == RDMR_RX;
+		// Sync: bursts with the channel's color code since this stop's settle, a call or a late entry still
+		// waiting for its LC. A call known not to be for us (another group, a private call) holds nothing
+		uint32_t heard_ms;
+		sync = dmr_call_last_activity(&heard_ms) && (int32_t)(heard_ms - sc->tuned_ms) >= SCAN_SETTLE_MS &&
+		       now_ms - heard_ms <= RADIO_SCAN_DMR_SYNC_AGE_MS;
+		if (sm->view.dmr.state == RDMR_RX_OTHER) {
+			carrier = sync = false;
+		}
 	} else
 #endif
 	{
 		active = sm->view.state == RS_RX && (sm->view.squelch != 0 || carrier);
 	}
 	sc->cfg.probe_ms = dmr ? RADIO_SCAN_DMR_PROBE_MS : tone_needed(sm) ? RADIO_SCAN_FM_PROBE_MS : 0;
+	sc->cfg.sync_ms = dmr ? RADIO_SCAN_DMR_SYNC_MS : 0;
+	sc->cfg.carrier_hold_ms = dmr ? RADIO_SCAN_DMR_CARRIER_MS : 0;
 	uint8_t was = sc->phase;
-	switch (scan_poll(sc, now_ms, active, carrier)) {
+	switch (scan_poll(sc, now_ms, active, carrier, sync)) {
 	case SCAN_ACT_NEXT:
 		scan_step(sm, now_ms);
 		return;

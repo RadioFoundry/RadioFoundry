@@ -26,10 +26,14 @@ typedef struct {
 	uint32_t hz;
 	uint8_t noise;
 	subtone_t tone;		// the sub-audio the transmitter sends
+	bool tdma;		// DMR direct mode: on air every other 30 ms slot (the noise reading drops between bursts)
 } sig_t;
+
+static uint32_t now;
 
 static struct {
 	uint32_t rx_hz;
+	uint32_t rx_ms;		// when rx() last tuned
 	subtone_t rx_tone;
 	int rx_calls;
 	int tx_calls;
@@ -60,6 +64,7 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 {
 	(void)bw;
 	hw.rx_hz = hz;
+	hw.rx_ms = now;
 	hw.rx_tone = *t;
 	hw.rx_calls++;
 	hw.asleep = false;
@@ -85,7 +90,7 @@ static void r_status(radio_status_t *st)
 	st->carrier = false;
 	st->tone_ok = hw.rx_tone.type == TONE_NONE;
 	for (int i = 0; i < MAX_SIG; i++) {
-		if (hw.sig[i].hz != 0 && hw.sig[i].hz == hw.rx_hz) {
+		if (hw.sig[i].hz != 0 && hw.sig[i].hz == hw.rx_hz && !(hw.sig[i].tdma && (now / 30u) % 2u != 0)) {
 			st->noise = hw.sig[i].noise;
 			st->rssi_dbm = -80;
 			st->tone_ok = hw.rx_tone.type == TONE_NONE || same_tone(hw.rx_tone, hw.sig[i].tone);
@@ -259,7 +264,6 @@ static void setup_codeplug(void)
 }
 
 static radio_sm_t sm;
-static uint32_t now;
 
 static void req2(uint8_t type, int32_t arg, uint32_t arg2)
 {
@@ -272,12 +276,28 @@ static void req(uint8_t type, int32_t arg) { req2(type, arg, 0); }
 // callback every 20 ms while a stream runs (so beeps play out and the own stream stops)
 static int16_t spk[AUDIO_BLOCK_SAMPLES];
 static int16_t mic[AUDIO_BLOCK_SAMPLES];
+static void air_burst(void);
+static struct {
+	bool on;		// a DMR voice call in progress (no header: it started before the radio came by)
+	uint32_t hz;
+	uint32_t t0;		// burst A of a superframe was on air then (bursts every 60 ms)
+	uint32_t dst;		// the talkgroup
+	uint8_t lc_at;		// the modem hands over the embedded LC at the F of this superframe after it joined (1:
+				// the first complete one; 2: the next, as with a sticky LC equal to this call's)
+	bool joined;
+	uint32_t join_rx_ms;	// the tune it joined on
+	uint8_t sf;		// superframes delivered since it joined
+} air;
+
 static void run(uint32_t ms)
 {
 	for (uint32_t t = 0; t < ms; t += 5) {
 		now += 5;
 		if (now % 30 == 0) {
 			sim_slot();
+		}
+		if (air.on && now >= air.t0 && (now - air.t0) % 60u == 0) {
+			air_burst();
 		}
 		if (now % RADIO_TICK_MS == 0) {
 			radio_sm_tick(&sm, now);
@@ -302,6 +322,7 @@ static const subtone_t no_tone = { TONE_NONE, 0 };
 
 static void start(void)
 {
+	memset(&air, 0, sizeof(air));
 	ambeVoiceStop();
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
@@ -354,45 +375,72 @@ static void test_scan_engine(void)
 
 	// Timing: settle, dwell, nothing heard -> next
 	scan_tuned(&s, 1000);
-	CHECK(scan_poll(&s, 1025, true, true) == SCAN_ACT_NONE && s.phase == SCAN_PH_LISTEN);	// settling
-	CHECK(scan_poll(&s, 1100, false, false) == SCAN_ACT_NONE);
-	CHECK(scan_poll(&s, 1150, false, false) == SCAN_ACT_NEXT);
+	CHECK(scan_poll(&s, 1025, true, true, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_LISTEN);	// settling
+	CHECK(scan_poll(&s, 1100, false, false, false) == SCAN_ACT_NONE);
+	CHECK(scan_poll(&s, 1150, false, false, false) == SCAN_ACT_NEXT);
 	// A carrier at the end of the dwell: probe, then give up after probe_ms
 	scan_tuned(&s, 2000);
-	CHECK(scan_poll(&s, 2150, false, true) == SCAN_ACT_NONE && s.phase == SCAN_PH_PROBE);
-	CHECK(scan_poll(&s, 2300, false, true) == SCAN_ACT_NONE);
-	CHECK(scan_poll(&s, 2450, false, true) == SCAN_ACT_NEXT);
+	CHECK(scan_poll(&s, 2150, false, true, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_PROBE);
+	CHECK(scan_poll(&s, 2300, false, true, false) == SCAN_ACT_NONE);
+	CHECK(scan_poll(&s, 2450, false, true, false) == SCAN_ACT_NEXT);
 	// ... or the carrier goes away
 	scan_tuned(&s, 3000);
-	scan_poll(&s, 3150, false, true);
-	CHECK(scan_poll(&s, 3175, false, false) == SCAN_ACT_NEXT);
+	scan_poll(&s, 3150, false, true, false);
+	CHECK(scan_poll(&s, 3175, false, false, false) == SCAN_ACT_NEXT);
 	// Hold on a signal, resume delay after it ends, back to hold if it returns
 	scan_tuned(&s, 4000);
-	CHECK(scan_poll(&s, 4075, true, true) == SCAN_ACT_NONE && s.phase == SCAN_PH_HOLD && s.holds == 1);
-	CHECK(scan_poll(&s, 20000, true, true) == SCAN_ACT_NONE);	// carrier mode: no hold limit
-	CHECK(scan_poll(&s, 20025, false, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_RESUME);
-	CHECK(scan_poll(&s, 21000, true, true) == SCAN_ACT_NONE && s.phase == SCAN_PH_HOLD);
-	scan_poll(&s, 21025, false, false);
-	CHECK(scan_poll(&s, 23000, false, false) == SCAN_ACT_NONE);
-	CHECK(scan_poll(&s, 23025, false, false) == SCAN_ACT_NEXT);
+	CHECK(scan_poll(&s, 4075, true, true, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_HOLD && s.holds == 1);
+	CHECK(scan_poll(&s, 20000, true, true, false) == SCAN_ACT_NONE);	// carrier mode: no hold limit
+	CHECK(scan_poll(&s, 20025, false, false, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_RESUME);
+	CHECK(scan_poll(&s, 21000, true, true, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_HOLD);
+	scan_poll(&s, 21025, false, false, false);
+	CHECK(scan_poll(&s, 23000, false, false, false) == SCAN_ACT_NONE);
+	CHECK(scan_poll(&s, 23025, false, false, false) == SCAN_ACT_NEXT);
 	// Time mode: moves on while the signal lasts
 	s.cfg.resume = SCAN_RESUME_TIME;
 	scan_tuned(&s, 30000);
-	scan_poll(&s, 30075, true, true);
-	CHECK(scan_poll(&s, 35000, true, true) == SCAN_ACT_NONE);
-	CHECK(scan_poll(&s, 35075, true, true) == SCAN_ACT_NEXT);
+	scan_poll(&s, 30075, true, true, false);
+	CHECK(scan_poll(&s, 35000, true, true, false) == SCAN_ACT_NONE);
+	CHECK(scan_poll(&s, 35075, true, true, false) == SCAN_ACT_NEXT);
 	// Stop mode: the first signal ends the scan
 	s.cfg.resume = SCAN_RESUME_STOP;
 	scan_tuned(&s, 40000);
-	CHECK(scan_poll(&s, 40075, true, true) == SCAN_ACT_STOP);
+	CHECK(scan_poll(&s, 40075, true, true, false) == SCAN_ACT_STOP);
 	// Paused: nothing moves; resuming listens afresh
 	s.cfg.resume = SCAN_RESUME_CARRIER;
 	scan_tuned(&s, 50000);
 	scan_pause(&s, true, 50050);
-	CHECK(scan_poll(&s, 60000, false, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_PAUSED);
+	CHECK(scan_poll(&s, 60000, false, false, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_PAUSED);
 	scan_pause(&s, false, 60000);
-	CHECK(scan_poll(&s, 60100, false, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_LISTEN);
-	CHECK(scan_poll(&s, 60150, false, false) == SCAN_ACT_NEXT);
+	CHECK(scan_poll(&s, 60100, false, false, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_LISTEN);
+	CHECK(scan_poll(&s, 60150, false, false, false) == SCAN_ACT_NEXT);
+	// DMR: a carrier seen in the last carrier_hold_ms still counts (direct mode is on air every other slot) ...
+	s.cfg.probe_ms = 700;
+	s.cfg.sync_ms = 1500;
+	s.cfg.carrier_hold_ms = 150;
+	uint32_t probes = s.probes;
+	scan_tuned(&s, 70000);
+	CHECK(scan_poll(&s, 70075, false, true, false) == SCAN_ACT_NONE);
+	CHECK(scan_poll(&s, 70150, false, false, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_PROBE);
+	CHECK(s.probes == probes + 1);
+	CHECK(scan_poll(&s, 70200, false, false, false) == SCAN_ACT_NONE);
+	CHECK(scan_poll(&s, 70250, false, false, false) == SCAN_ACT_NEXT);	// nothing for 175 ms
+	// ... a flickering carrier keeps the probe for probe_ms
+	scan_tuned(&s, 80000);
+	scan_act_t a = SCAN_ACT_NONE;
+	uint32_t t = 80050;
+	for (; t <= 82000 && a == SCAN_ACT_NONE; t += 25) {
+		a = scan_poll(&s, t, false, (t / 25) % 2 == 0, false);
+	}
+	CHECK(a == SCAN_ACT_NEXT && t - 25 == 80150 + 700);
+	// ... and sync (bursts with the channel's color code) extends it to sync_ms
+	scan_tuned(&s, 90000);
+	a = SCAN_ACT_NONE;
+	for (t = 90050; t <= 93000 && a == SCAN_ACT_NONE; t += 25) {
+		a = scan_poll(&s, t, false, (t / 25) % 2 == 0, t >= 90500);
+	}
+	CHECK(a == SCAN_ACT_NEXT && t - 25 == 90150 + 1500 && s.stats_synced == 1);
+	s.cfg.sync_ms = s.cfg.carrier_hold_ms = 0;
 	scan_end(&s);
 	CHECK(!scan_on(&s) && s.skipped == 0 && !scan_pos_skipped(&s, 2));
 
@@ -909,6 +957,123 @@ static void test_mixed_scan(void)
 	hw.sig[0].hz = 0;
 }
 
+// The modem on the call's frequency (as the HR_C6000 slot engine does it): nothing for AIR_LOCK_MS after a retune
+// (the receiver restarts and searches), then voice from the first burst A on, with the embedded LC at the lc_at-th F
+#define AIR_LOCK_MS	90
+static void air_burst(void)
+{
+	uint8_t idx = (uint8_t)(((now - air.t0) / 60u) % 6u);
+	bool tuned = hw.rx_hz == air.hz && sm.view.ch.mode == RADIO_MODE_DMR && sim.started;
+	if (!tuned || now < hw.rx_ms + AIR_LOCK_MS) {
+		air.joined = false;
+		return;
+	}
+	if (!air.joined || air.join_rx_ms != hw.rx_ms) {
+		if (idx != 0) {
+			air.joined = false;
+			return;
+		}
+		air.joined = true;
+		air.join_rx_ms = hw.rx_ms;
+		air.sf = 0;
+	}
+	if (idx == 0) {
+		air.sf++;
+	}
+	uint8_t lc[9];
+	mk_lc(lc, air.dst, 3105555);
+	burst_voice(idx, 1, idx == 5 && air.sf >= air.lc_at ? lc : NULL);
+}
+
+// Every channel but the scan-skip one a DMR channel (CC 1, TS 1, TG 9), as the HIL zone (all DMR): the retunes keep
+// the stack running
+static void all_dmr(void)
+{
+	static const uint16_t n[] = { 1, 2, 5, 7 };
+	for (unsigned i = 0; i < sizeof(n) / sizeof(n[0]); i++) {
+		chans[n[i]].mode = RADIO_MODE_DMR;
+		chans[n[i]].rx_tone = chans[n[i]].tx_tone = no_tone;
+		chans[n[i]].contact = 1;
+	}
+}
+
+// HIL 2026-10-10 (test_scan_stops_on_dmr_call): the zone scan visited the bench's DMR channel every 2.5 s during a
+// 20-superframe call (voice only by then: sync in burst A every 360 ms) and never held. A direct mode signal is on
+// air 30 ms in every 60, so the noise reading at the end of the dwell, or any poll in the probe, often missed it and
+// the probe ended at once; and the probe (700 ms) was shorter than a late entry that takes its LC from the second
+// superframe. Now: a carrier seen in the last 150 ms counts, and bursts with the channel's color code extend the
+// probe to 1.5 s. The call must hold the scan on the first visit, whatever the superframe phase
+static void test_scan_dmr_mid_call(void)
+{
+	for (uint8_t lc_at = 1; lc_at <= 2; lc_at++) {
+		for (uint32_t phase = 0; phase < 360; phase += 60) {
+			start();
+			all_dmr();
+			signal_on(0, 438500000, 30, no_tone);
+			hw.sig[0].tdma = true;
+			air.on = true;
+			air.hz = 438500000;
+			air.t0 = now + 300 + phase;
+			air.dst = 9;
+			air.lc_at = lc_at;
+			req(RREQ_ZONE_POS, 6);
+			req(RREQ_SCAN, RSCAN_ZONE);
+			uint32_t arrived = 0, held_ms = 0;
+			bool left = false;
+			for (int i = 0; i < 240 && held_ms == 0; i++) {
+				run(25);
+				if (sm.view.zone_pos == 5 && arrived == 0) {
+					arrived = now;
+				}
+				left |= arrived != 0 && sm.view.zone_pos != 5;
+				if (sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX) {
+					held_ms = now - arrived;
+				}
+			}
+			if (held_ms == 0 || left) {
+				printf("  mid-call DMR scan: LC at F %u, phase %u ms: held %u ms after arriving, left %d\n",
+				       lc_at, (unsigned)phase, (unsigned)held_ms, left);
+			}
+			CHECK(arrived != 0 && held_ms != 0 && !left && held_ms <= 1650);
+			req(RREQ_SCAN, RSCAN_STOP);
+		}
+	}
+
+	// Nothing on the air: the scan still moves on at the dwell time
+	start();
+	all_dmr();
+	req(RREQ_ZONE_POS, 6);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	uint32_t steps = sm.scan.steps;
+	run(1500);
+	CHECK(sm.scan.steps - steps >= 9);
+	req(RREQ_SCAN, RSCAN_STOP);
+
+	// A call to a talkgroup we don't listen to: no hold, and the scan goes on soon after it is known
+	start();
+	all_dmr();
+	signal_on(0, 438500000, 30, no_tone);
+	hw.sig[0].tdma = true;
+	air.on = true;
+	air.hz = 438500000;
+	air.t0 = now + 300;
+	air.dst = 99;
+	air.lc_at = 1;
+	req(RREQ_ZONE_POS, 6);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool held = false;
+	uint32_t on5 = 0, max5 = 0;
+	for (int i = 0; i < 200; i++) {
+		run(25);
+		held |= sm.view.scan_phase == SCAN_PH_HOLD;
+		on5 = sm.view.zone_pos == 5 ? on5 + 25 : 0;
+		max5 = on5 > max5 ? on5 : max5;
+	}
+	CHECK(!held && max5 > 0 && max5 <= 1300);
+	req(RREQ_SCAN, RSCAN_STOP);
+	hw.sig[0].hz = 0;
+}
+
 static void test_tot_and_beeps(void)
 {
 	start();
@@ -1256,6 +1421,7 @@ int main(void)
 	test_scan_ptt_and_modes();
 	test_vfo_scan();
 	test_mixed_scan();
+	test_scan_dmr_mid_call();
 	test_tot_and_beeps();
 	test_bcl_inhibit();
 	test_roger_burst();

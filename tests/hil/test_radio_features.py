@@ -357,5 +357,10 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
             done.set()
             t.join(2)
             scan_off(radio)
-    print(f"held on {sorted(set(held))} ({len(held)} views)")
+    f = radio.link.view(["features"])
+    # scan_probes: stops probed (a carrier at the end of the dwell); scan_synced: stops where bursts with the channel's
+    # color code were heard (the probe then waits up to 1.5 s for the call to play). Probes but no syncs: the modem
+    # never delivered a burst there; no probes at all: no carrier seen on the DMR channel (the noise reading)
+    print(f"held on {sorted(set(held))} ({len(held)} views); scan_probes={f.get('scan_probes')} "
+          f"scan_synced={f.get('scan_synced')}")
     assert str(hz) in held, f"the scan never held on {freq} MHz: {sorted(set(held))}"
