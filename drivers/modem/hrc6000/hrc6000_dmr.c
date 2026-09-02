@@ -673,17 +673,128 @@ static void held_drop(hrc6000_dmr_t *e, hrc6000_dmr_held_t *hd)
 	}
 }
 
-// A new reception: capture the sticky LC so a stale one isn't taken for this call's (5.2). Also for a lone burst A
-// held back, so the capture is from the start of the reception and not from when its B confirmed it
-static void capture_if_fresh(hrc6000_dmr_t *e)
+// --- The sticky LC rule (modem-hrc6000.md 5.2, 5.6) ---
+//
+// Page 2 keeps the last LC the chip decoded until it decodes another, so the first embedded LC read in a new reception
+// may be the previous call's. The engine captures page 2 when a reception starts and hands over an embedded LC only when
+// it differs from that capture, or after more than STALE_LC_VOICE voice bursts. Where the LC is looked for:
+//   - at burst F (B-E carry the embedded LC);
+//   - at the next burst A while this reception has no LC yet: HIL 2026-10-10 (c8c9b23, test_late_entry) took a new LC
+//     only at the second F of a late entry, as if page 2 still held the old LC at the first F's report (it is read at the
+//     F's first report, the EMB one; the chip may write the LC it assembled after that). By the next A it is there;
+//   - at F's repeated report and at the post-access interrupt (the chip acquired the call from its embedded signalling):
+//     an LC that differs then is kept and handed over with the next voice burst.
+// Every look until the LC is handed over goes into the LC trace (st.lc_tr) for the debug link.
+
+static uint32_t lc_src(const uint8_t lc[9])
 {
-	bool fresh = !e->heard_any || (uint32_t)(e->tick - e->heard_tick) > RX_LOST_TICKS;	// not reset by restarts
-	if (fresh) {
-		hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, e->stale_lc, sizeof(e->stale_lc));
+	return ((uint32_t)lc[6] << 16) | ((uint32_t)lc[7] << 8) | lc[8];
+}
+
+static void lc_note(hrc6000_dmr_t *e, char ev, char res, uint32_t src)
+{
+	hrc6000_dmr_stats_t *st = &e->st;
+	if (st->lc_n < HRC6000_LC_TRACE_N) {
+		hrc6000_lc_trace_t *t = &st->lc_tr[st->lc_n++];
+		uint32_t tk = e->tick - e->cap_tick;
+		t->ev = ev;
+		t->res = res;
+		t->tk = (uint8_t)(tk > 254u ? 255u : tk);
+		t->vss = e->voice_since_start;
+		t->src = src;
+	}
+	st->lc_serial++;
+}
+
+// Page 2 into lc; true when it differs from the capture
+static bool lc_read(hrc6000_dmr_t *e, uint8_t lc[9])
+{
+	hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, lc, 9);
+	return memcmp(lc, e->stale_lc, 9) != 0;
+}
+
+static bool lc_fresh(const hrc6000_dmr_t *e)
+{
+	return !e->heard_any || (uint32_t)(e->tick - e->heard_tick) > RX_LOST_TICKS;	// not reset by restarts
+}
+
+static bool lc_in_reception(const hrc6000_dmr_t *e)
+{
+	return e->heard_any && (uint32_t)(e->tick - e->heard_tick) <= RX_LOST_TICKS;
+}
+
+// A status report with no reception going on (class 0, no superframe open): page 2 now, the earliest look at a
+// reception that starts mid-call, before the chip can have assembled this call's LC. Used by the capture below when
+// the reception starts within RX_LOST_TICKS
+static void capture_early(hrc6000_dmr_t *e)
+{
+	if (!lc_fresh(e) || (e->scap_valid && (uint32_t)(e->tick - e->scap_tick) <= RX_LOST_TICKS)) {
+		return;
+	}
+	hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, e->scap_lc, sizeof(e->scap_lc));
+	e->scap_tick = e->tick;
+	e->scap_valid = true;
+}
+
+// A new reception: capture the sticky LC so a stale one isn't taken for this call's. Also for a lone burst A held back,
+// so the capture is from the start of the reception and not from when its B confirmed it
+static void capture_if_fresh(hrc6000_dmr_t *e, char how)
+{
+	if (lc_fresh(e)) {
+		if (e->scap_valid && (uint32_t)(e->tick - e->scap_tick) <= RX_LOST_TICKS) {
+			memcpy(e->stale_lc, e->scap_lc, sizeof(e->stale_lc));
+			how = '0';
+		} else {
+			hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, e->stale_lc, sizeof(e->stale_lc));
+		}
+		e->scap_valid = false;
 		e->voice_since_start = 0;
+		e->cap_tick = e->tick;
+		e->lc_given = false;
+		e->lc_kept = false;
+		e->f_crc_bad = false;
+		e->st.lc_n = 0;
+		e->st.lc_cap_how = how;
+		e->st.lc_cap_src = lc_src(e->stale_lc);
+		e->st.lc_cap_seq++;
+		e->st.lc_serial++;
+		if (e->pa_any && (uint32_t)(e->tick - e->pa_tick) <= RX_LOST_TICKS) {
+			lc_note(e, 'p', e->pa_src != e->st.lc_cap_src ? 'n' : 's', e->pa_src);
+		}
 	}
 	e->heard_tick = e->tick;
 	e->heard_any = true;
+}
+
+// Page 2 outside a voice burst's own report (F's repeat, the post-access interrupt): an LC that differs from the
+// capture is kept for the next voice burst taken
+static void lc_look_again(hrc6000_dmr_t *e, char ev, const uint8_t lc[9], uint32_t *counter)
+{
+	if (e->lc_given || !lc_in_reception(e)) {
+		return;
+	}
+	bool changed = memcmp(lc, e->stale_lc, 9) != 0;
+	bool keep = changed && !e->f_crc_bad;
+	if (keep && !e->lc_kept) {
+		memcpy(e->lc_keep, lc, sizeof(e->lc_keep));
+		e->lc_kept = true;
+		(*counter)++;
+	}
+	lc_note(e, ev, !changed ? 's' : keep ? 'k' : 'c', lc_src(lc));
+}
+
+// The post-access interrupt (0x82 bit 4)
+static void lc_post_access(hrc6000_dmr_t *e)
+{
+	uint8_t lc[9];
+	hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, lc, sizeof(lc));
+	e->pa_tick = e->tick;
+	e->pa_any = true;
+	e->pa_src = lc_src(lc);
+	bool was = e->f_crc_bad;
+	e->f_crc_bad = false;	// the chip's own word that the embedded LC is complete
+	lc_look_again(e, 'P', lc, &e->st.lc_pa_new);
+	e->f_crc_bad = was;
 }
 
 // Deliver a burst taken: reception bookkeeping, slot number, counters, the event. tick: the tick of its report (the
@@ -693,7 +804,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 {
 	bool voice = s->kind == DMR_BURST_VOICE;
 
-	capture_if_fresh(e);
+	capture_if_fresh(e, 'T');
 
 	// Slot numbers (see hrc6000_dmr.h): the report is for the slot that just ended
 	uint8_t ph = (uint8_t)((tick - 1u) & 1u);
@@ -746,16 +857,45 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)
 	if (voice) {
 		if (s->voice_index == 5) {	// the embedded LC of B-E is assembled by F
-			hrc6000_read_burst(e->dev, HRC6000_PAGE_DATA, 0x00, b->lc, sizeof(b->lc));
-			bool changed = memcmp(b->lc, e->stale_lc, sizeof(b->lc)) != 0;
+			bool changed = lc_read(e, b->lc);
 			b->lc_valid = s->crc_ok && (changed || e->voice_since_start > STALE_LC_VOICE);
+			e->f_crc_bad = !s->crc_ok;
+			if (!e->lc_given) {
+				char res = !s->crc_ok ? 'c' : changed ? 'n' : b->lc_valid ? 'v' : 's';
+				e->st.lc_f_new += res == 'n';
+				e->st.lc_f_stale += res == 's';
+				e->st.lc_f_count += res == 'v';
+				e->st.lc_f_crc += res == 'c';
+				lc_note(e, 'F', res, lc_src(b->lc));
+			}
+		} else if (s->voice_index == 0 && !e->lc_given && !e->lc_kept) {
+			// No LC yet: the last superframe's may have reached page 2 only after its F was read
+			bool changed = lc_read(e, b->lc);
+			b->lc_valid = changed && !e->f_crc_bad;
+			e->st.lc_a_new += b->lc_valid;
+			lc_note(e, 'A', !changed ? 's' : b->lc_valid ? 'n' : 'c', lc_src(b->lc));
+			e->f_crc_bad = false;
+		}
+		if (!b->lc_valid && e->lc_kept && !e->lc_given) {
+			memcpy(b->lc, e->lc_keep, sizeof(b->lc));	// seen at F's repeat or the post-access interrupt
+			b->lc_valid = true;
+			e->st.lc_kept++;
+		}
+		if (b->lc_valid) {
+			e->lc_given = true;
+			e->lc_kept = false;
 		}
 	} else if (s->kind == DMR_BURST_VOICE_LC_HEADER || s->kind == DMR_BURST_TERMINATOR_LC) {
 		memcpy(b->lc, b->payload, sizeof(b->lc));
 		b->lc_valid = s->crc_ok;
 		if (s->crc_ok) {	// this call's LC from its own header: the embedded one may now equal it
+			if (!e->lc_given && s->kind == DMR_BURST_VOICE_LC_HEADER) {
+				lc_note(e, 'H', memcmp(b->lc, e->stale_lc, sizeof(b->lc)) != 0 ? 'n' : 's', lc_src(b->lc));
+			}
 			memcpy(e->stale_lc, b->lc, sizeof(e->stale_lc));
 			e->voice_since_start = STALE_LC_VOICE + 1u;
+			e->lc_given = true;
+			e->lc_kept = false;
 		}
 	}
 	slot->ev.kind = DMR_EV_BURST_RX;
@@ -840,6 +980,11 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	if (same && (uint32_t)(t - e->t_report) < VOICE_DEDUP_US) {
 		e->st.rx_dup++;
 		e->st.rx_dup_repeat++;
+		if (voice && s.voice_index == 5 && !e->lc_given) {
+			uint8_t lc[9];
+			(void)lc_read(e, lc);
+			lc_look_again(e, 'f', lc, &e->st.lc_rep_new);	// the burst's own report, after the EMB one
+		}
 		return cc_real;
 	}
 	// The same voice number in the very next slot, whatever the delays (a late report and the empty slot's)
@@ -883,7 +1028,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 				hd->in_step = in_step;
 				hd->on_time = on_time;
 				hd->dms = e->report_dms;
-				capture_if_fresh(e);
+				capture_if_fresh(e, 'A');
 				note_report(e, &s, &nb, t);
 				return false;
 			}
@@ -894,6 +1039,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 		} else if (!live) {
 			if (!(hd->valid && (uint32_t)(e->tick - hd->tick) == 2u && s.voice_index == 1u)) {
 				e->st.rx_no_call++;	// stale status on the empty slot, or after the call: never voice
+				capture_early(e);
 				return cc_real;
 			}
 			// B after a lone A: the A was a call's (late entry). Deliver it first, with B's color code
@@ -1043,6 +1189,7 @@ static void sys_service(hrc6000_dmr_t *e, uint32_t t, bool at_tick)
 		}
 		if ((flags & INT_LATE_ENTRY) != 0) {
 			e->st.late_entry++;
+			lc_post_access(e);
 		}
 		bool cc_real = true;
 		if ((flags & INT_RX_DATA) != 0) {

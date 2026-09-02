@@ -203,6 +203,9 @@ typedef struct {
 	bool sticky;		// no system interrupt edge: a report waits with the line low until someone looks
 	unsigned late;		// late entry: no headers, the first n voice bursts not sent (the receiver joins at n + 1)
 	const uint8_t *page2_before;	// late: page 2 until this call's embedded LC is first complete (the sticky LC)
+	bool page2_at_f;	// ... and the chip has written the LC to page 2 by the first F's report (else only after it:
+				// the HIL behavior, see test_late_entry)
+	bool post_access;	// the post-access interrupt flagged with the report after that F
 } chip_t;
 
 typedef struct {
@@ -210,6 +213,7 @@ typedef struct {
 	bool voice;
 	unsigned burst_no;	// voice: 1-based number of the burst on air
 	uint8_t page2[12];
+	bool post_access;
 } report_t;
 
 static report_t sched[4096];	// per tick: the report at that tick (r51 0xFF = none)
@@ -219,6 +223,7 @@ static const uint8_t call_lc[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x23, 0x
 static unsigned build(const chip_t *c, unsigned start)
 {
 	for (unsigned i = 0; i < sizeof(sched) / sizeof(sched[0]); i++) {
+		memset(&sched[i], 0, sizeof(sched[i]));
 		sched[i].r51 = 0xFF;
 	}
 	unsigned k = start;
@@ -242,6 +247,7 @@ static unsigned build(const chip_t *c, unsigned start)
 			continue;
 		}
 		report_t *r = &sched[k];
+		bool late_f = false;
 		r->r52 = 0x20;
 		if (i < 8) {
 			r->r51 = 0x12;
@@ -261,11 +267,14 @@ static unsigned build(const chip_t *c, unsigned start)
 			}
 			memcpy(r->page2, call_lc, 9);	// the embedded LC, complete at F (and sticky)
 			if (c->page2_before != NULL) {
-				// Complete at the first F whose B-E were all on air: until then the chip holds the old LC
+				// Complete at the first F whose B-E were all on air: until then the chip holds the old LC (and
+				// at that F's own report too, unless page2_at_f)
 				unsigned first_full_f = (on_air_from / 6u + (on_air_from % 6u <= 1u ? 0u : 1u)) * 6u + 5u;
-				if ((unsigned)(i - 8) < first_full_f) {
+				unsigned n = (unsigned)(i - 8);
+				if (n < first_full_f || (n == first_full_f && !c->page2_at_f)) {
 					memcpy(r->page2, c->page2_before, 9);
 				}
+				late_f = n == first_full_f;
 			}
 		} else {
 			r->r51 = 0x22;
@@ -285,6 +294,16 @@ static unsigned build(const chip_t *c, unsigned start)
 			e->r52 = 0x20;
 		}
 		memcpy(e->page2, r->page2, 12);
+		if (late_f) {
+			memcpy(e->page2, call_lc, 9);	// written after F's report
+			if (c->post_access) {
+				e->post_access = true;
+				if (e->r51 == 0xFF) {
+					e->r51 = 0x00;	// a report for the interrupt to come with
+					e->r52 = 0x20;
+				}
+			}
+		}
 		k += 2;
 	}
 	unsigned end = k;
@@ -391,7 +410,7 @@ static void run_call(const chip_t *c, result_t *res)
 			r_seen = true;
 			uint32_t delay = first || c->late_us == 0 ? 3500 : c->late_us;
 			t_us = tick_t + delay;
-			rd[4][0x82] = 0x08;
+			rd[4][0x82] = r->post_access ? 0x18 : 0x08;
 			if (c->voice_lost_at != 0 && r->voice && r->burst_no == c->voice_lost_at) {
 				rd[4][0x82] = 0x08 | 0x02;	// received data, and voice abnormal: slot 0 voice sync lost
 				rd[4][0x98] = 0x02;
@@ -546,14 +565,43 @@ static void test_same_call_again(void)
 	CHECK(expect_clean("same LC again", &c));
 }
 
-// Late entry (HIL test_late_entry, 2026-10-10 on aa79493: 7 voice bursts played of a 36-burst call joined at burst 9).
-// No header; the first 8 bursts are not sent, so the receiver hears from burst C of the second superframe. The engine
-// takes voice only from a burst A on (C-F before it are status the chip reports with no superframe open), so the
-// first embedded LC it can give is at the F of the third superframe (burst 18), assembled from that superframe's B-E.
-//   - The previous call had another LC: the LC differs from the chip's sticky one, valid at once: play from 18.
-//   - The previous call had the same LC (the HIL tests all call from the same ID to the same TG): the engine trusts an
-//     unchanged LC only after more than one superframe of voice (the next F, burst 24), and the stack must take it
-//     then; it used to ask for one more superframe on top (its own stale LC rule), playing only from burst 30
+// The LC trace entry i of the last reception as "<ev><res>" (or "" past the end)
+static const char *lc_tr(unsigned i)
+{
+	static char t[3];
+	t[0] = t[1] = t[2] = '\0';
+	if (i < eng.st.lc_n) {
+		t[0] = eng.st.lc_tr[i].ev;
+		t[1] = eng.st.lc_tr[i].res;
+	}
+	return t;
+}
+
+static void late_run(const char *name, const chip_t *c, result_t *r)
+{
+	run_call(c, r);
+	printf("  late entry, %s: played %u from burst %u (late %u, calls %u, in order %d) cap %c lc", name,
+	       r->cs.rx_voice_bursts, sk.first_burst, r->cs.rx_late_entries, r->cs.rx_calls, sk.in_order,
+	       eng.st.lc_cap_how ? eng.st.lc_cap_how : '?');
+	for (unsigned i = 0; i < eng.st.lc_n; i++) {
+		printf(" %c%c@%u", eng.st.lc_tr[i].ev, eng.st.lc_tr[i].res, eng.st.lc_tr[i].tk);
+	}
+	printf("\n");
+	CHECK(r->cs.rx_calls == 1 && r->cs.rx_late_entries == 1 && sk.begins == 1 && sk.in_order && sk.losts == 0);
+}
+
+// Late entry (HIL test_late_entry). No header; the first 8 bursts are not sent, so the receiver hears from burst C of
+// the second superframe. The engine takes voice only from a burst A on (C-F before it are status the chip reports with
+// no superframe open: the capture of the sticky LC is made at the first of them), so the first embedded LC it can give
+// comes from the third superframe's B-E (bursts 14-17).
+//   - HIL 2026-10-10 on c8c9b23: a new LC (another talker before) was taken only at burst 24, 13 bursts played, where
+//     this model then had page 2 updated by the first F's report and predicted 18 / 19 bursts. The chip writes the LC
+//     after F's (first) report: page 2 still holds the old LC when F is read, and the new one from the next report on.
+//     The engine looks again at the next burst A while it has no LC: played from burst 19, 18 bursts.
+//   - With page 2 written by F's report (the earlier model): played from F, burst 18.
+//   - The previous call had the same LC: the engine trusts an unchanged LC only after more than one superframe of
+//     voice (the next F, burst 24), 13 bursts
+//   - The post-access interrupt with the report after F: the LC is kept and handed over with the next voice burst (A)
 static void test_late_entry(void)
 {
 	static const uint8_t other_lc[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x11, 0x11, 0x11 };
@@ -561,19 +609,34 @@ static void test_late_entry(void)
 	c.late = 8;
 	c.page2_before = other_lc;
 	result_t r;
-	run_call(&c, &r);
-	printf("  late entry, new LC: played %u from burst %u (late %u, calls %u, in order %d)\n", r.cs.rx_voice_bursts,
-	       sk.first_burst, r.cs.rx_late_entries, r.cs.rx_calls, sk.in_order);
-	CHECK(r.cs.rx_calls == 1 && r.cs.rx_late_entries == 1 && sk.begins == 1 && sk.in_order);
-	CHECK(sk.first_burst == 18 && r.cs.rx_voice_bursts == 96 - 17 && sk.losts == 0);
+	late_run("new LC", &c, &r);
+	CHECK(sk.first_burst == 19 && r.cs.rx_voice_bursts == 96 - 18);
+	// The trace: capture at a status report, held back at F (same as the capture), taken at the next A
+	CHECK(eng.st.lc_cap_how == '0' && eng.st.lc_cap_src == 0x111111);
+	CHECK(eng.st.lc_n == 3 && strcmp(lc_tr(0), "As") == 0 && strcmp(lc_tr(1), "Fs") == 0 &&
+	      strcmp(lc_tr(2), "An") == 0);
+	CHECK(eng.st.lc_tr[2].src == 0x234567 && eng.st.lc_tr[2].vss == 7 && eng.st.lc_f_stale == 1 &&
+	      eng.st.lc_a_new == 1);
 
+	c.page2_at_f = true;
+	late_run("new LC, page 2 by F", &c, &r);
+	CHECK(sk.first_burst == 18 && r.cs.rx_voice_bursts == 96 - 17);
+	CHECK(eng.st.lc_n == 2 && strcmp(lc_tr(1), "Fn") == 0);
+
+	c.page2_at_f = false;
+	c.post_access = true;
+	late_run("new LC, post access", &c, &r);
+	CHECK(sk.first_burst == 19 && r.cs.rx_voice_bursts == 96 - 18);
+	CHECK(eng.st.late_entry == 1 && eng.st.lc_pa_new == 1 && eng.st.lc_kept == 1);
+	CHECK(eng.st.lc_n == 3 && strcmp(lc_tr(2), "Pk") == 0);
+
+	c.post_access = false;
 	c.page2_before = call_lc;
 	c.same_lc_before = true;
-	run_call(&c, &r);
-	printf("  late entry, same LC: played %u from burst %u (late %u, calls %u, in order %d)\n", r.cs.rx_voice_bursts,
-	       sk.first_burst, r.cs.rx_late_entries, r.cs.rx_calls, sk.in_order);
-	CHECK(r.cs.rx_calls == 1 && r.cs.rx_late_entries == 1 && sk.begins == 1 && sk.in_order);
-	CHECK(sk.first_burst == 24 && r.cs.rx_voice_bursts == 96 - 23 && sk.losts == 0);
+	late_run("same LC", &c, &r);
+	CHECK(sk.first_burst == 24 && r.cs.rx_voice_bursts == 96 - 23);
+	CHECK(eng.st.lc_n == 4 && strcmp(lc_tr(1), "Fs") == 0 && strcmp(lc_tr(2), "As") == 0 &&
+	      strcmp(lc_tr(3), "Fv") == 0);
 }
 
 int main(void)
