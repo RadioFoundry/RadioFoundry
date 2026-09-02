@@ -7,6 +7,7 @@ feature target for the new firmware and the baseline users will compare it with.
 firmware presents these features (no menus, screens or keys): the new UI is designed separately in `docs/ux/`.
 
 Sources: the old trees' status files and docs (as of 2026-10-09, build `bf08887`), commit history, bench notes.
+The chip column is summarized; public sources and confidence for each chip are in [radios.md](radios.md).
 
 ## Radios
 
@@ -14,7 +15,7 @@ Sources: the old trees' status files and docs (as of 2026-10-09, build `bf08887`
 | --- | --- | --- | --- |
 | **1701** | Baofeng DM-1701 / Retevis RT-84; TYT MD-UV380 / Retevis RT-3S (same firmware family) | STM32F405, HR-C6000, AT1846S | The bench radio. The only radio with on-air results. MD-UV380 builds exist but haven't been tested by us |
 | **9600** | TYT MD-9600 / Retevis RT-90 mobile (board versions V1, V2, V4, V5 need different builds) | STM32F405, HR-C6000, per-band synthesizers | Never flashed by us. Upstream calls it experimental |
-| **380** | TYT MD-380 / MD-390, UHF only, with or without GPS | STM32F405, HR-C5000, SKY72310 PLL | Never flashed. FM base known working upstream; our DMR bring-up is untested |
+| **380** | TYT MD-380 / MD-390 / Retevis RT3, one band per radio (UHF or VHF models), with or without GPS | STM32F405, HR-C5000, SKY72310 PLL | Never flashed. FM base known working upstream; our DMR bring-up is untested |
 | **GD77** | Radioddity GD-77 (the same firmware family also covers GD-77S, DM-1801, RD-5R, which we don't build) | NXP MK22, HR-C6000, AT1846S | Never run on a radio by us. Flash nearly full (about 6 KB left with SFR) |
 | **DM32** | Baofeng DM-32UV | HR_C7000 (C-SKY CK803S, built-in DMR modem), FD6818 RF | Never flashed. Only about 20 KB of program flash free |
 

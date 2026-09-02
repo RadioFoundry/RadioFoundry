@@ -22,13 +22,15 @@ It's early. Read the status section before you flash anything.
 |---|:---:|:---:|:---:|---|
 | Baofeng DM-1701 | ● | ● | ◐ | First target. FM and DMR voice work on the radio; the other features wait on hardware tests (below) |
 | Baofeng DM-32UV | ● | ● | ○ | Builds and passes its host tests; hasn't run on a radio yet ([bring-up checklist](docs/testing/dm32-bringup.md)) |
-| TYT MD-UV380 | ○ | ○ | ○ | Planned. Close to the DM-1701 (STM32F405, HR_C6000), so it should be the next port |
-| TYT MD-9600 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair |
-| TYT MD-380 | ○ | ○ | ○ | Planned. Single band, older HR_C5000 modem |
-| Radioddity GD-77 | ○ | ○ | ○ | Planned. Different MCU (NXP), same HR_C6000 modem |
-| Radioddity GD-88 | ○ | ○ | ○ | Planned. Two HR_C7000 transceivers; reuses most of the DM-32UV port |
+| TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
+| TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
+| TYT MD-380 / MD-390, Retevis RT3 | ○ | ○ | ○ | Planned. Single band, STM32F405 with the older HR_C5000 modem and a SKY72310 synthesizer |
+| Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD |
+| Radioddity GD-88 | ○ | ○ | ○ | Planned. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
 
 ● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet
+
+The chips in each radio, their sources and the planned port order: [docs/spec/radios.md](docs/spec/radios.md).
 
 On the DM-1701, these are verified on the radio: boot, display, keys, calibration, FM receive and transmit, DMR voice
 receive, and DMR transmit (decoded by an MMDVM receiver on the SDR bench). Most everything else (data, emergency,
