@@ -271,6 +271,44 @@ static void trace_event(const dmr_event_t *ev)
 		tr_flush();
 	}
 }
+
+// The sticky LC trace (hrc6000_dmr.h, hrc6000_lc_trace_t): one line per capture and one per look at page 2 until the
+// reception's LC was handed over:
+//   dle cap<how> <src>                             how: 0 status report, A lone burst A, T burst taken
+//   dle <ev><res> @<ticks since the capture> v<voice bursts taken> <page 2's source ID>
+static struct {
+	uint16_t seq, serial;
+	uint8_t n;
+} lt;
+
+static void trace_lc(void)
+{
+	if (tr.off) {
+		return;
+	}
+	hrc6000_lc_trace_t t[HRC6000_LC_TRACE_N];
+	lock(NULL);
+	uint16_t serial = eng.st.lc_serial, seq = eng.st.lc_cap_seq;
+	uint8_t n = eng.st.lc_n;
+	char how = eng.st.lc_cap_how;
+	uint32_t cap = eng.st.lc_cap_src;
+	memcpy(t, eng.st.lc_tr, sizeof(t));
+	unlock(NULL);
+	if (serial == lt.serial) {
+		return;
+	}
+	lt.serial = serial;
+	if (seq != lt.seq) {
+		lt.seq = seq;
+		lt.n = 0;
+		tr_flush();
+		dlog("dle cap%c %u", how != 0 ? how : '?', (unsigned)cap);
+	}
+	for (; lt.n < n && lt.n < HRC6000_LC_TRACE_N; lt.n++) {
+		const hrc6000_lc_trace_t *x = &t[lt.n];
+		dlog("dle %c%c @%u v%u %u", x->ev, x->res, x->tk, x->vss, (unsigned)x->src);
+	}
+}
 #endif
 
 void dm1701_dmr_set_trace(bool on)
@@ -302,6 +340,7 @@ static void dmr_task(void *arg)
 		}
 		while (hrc6000_dmr_pop(&eng, &ev, &burst)) {
 #if CONFIG_DEBUGLINK
+			trace_lc();	// before the burst: an LC looked at when its report was taken
 			trace_event(&ev);
 #endif
 			dmr_event_cb_t cb = stack_cb;
@@ -477,6 +516,13 @@ static void put(out_t *o, const char *s)
 	}
 }
 
+static void put_c(out_t *o, char c)
+{
+	if (o->p < o->end) {
+		*o->p++ = c;
+	}
+}
+
 static void put_u(out_t *o, uint32_t v)
 {
 	char t[11];
@@ -613,6 +659,32 @@ bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " acc", m->rx_a_cc);
 		put_kv(&o, " at", m->sys_at_tick);
 		break;
+	case 18:	// the sticky LC rule at burst F (no LC yet): new (taken), same as the capture (held back), same
+			// but taken by the voice count, CRC error
+		put_kv(&o, "lc n=", m->lc_f_new);
+		put_kv(&o, " s=", m->lc_f_stale);
+		put_kv(&o, " v=", m->lc_f_count);
+		put_kv(&o, " c=", m->lc_f_crc);
+		break;
+	case 19:	// ... a new LC found at the next A, at F's repeated report, at a post-access interrupt; kept ones
+			// handed over with the next voice burst
+		put_kv(&o, "lc2 a=", m->lc_a_new);
+		put_kv(&o, " f=", m->lc_rep_new);
+		put_kv(&o, " p=", m->lc_pa_new);
+		put_kv(&o, " k=", m->lc_kept);
+		break;
+	case 20: {	// the last reception's LC trace: capture (how, source ID), then <ev><res><ticks> per look
+		put(&o, "lt ");
+		put_c(&o, m->lc_cap_how != 0 ? m->lc_cap_how : '?');
+		put_u(&o, m->lc_cap_src);
+		for (uint8_t k = 0; k < m->lc_n && k < HRC6000_LC_TRACE_N; k++) {
+			put_c(&o, ' ');
+			put_c(&o, m->lc_tr[k].ev);
+			put_c(&o, m->lc_tr[k].res);
+			put_u(&o, m->lc_tr[k].tk);
+		}
+		break;
+	}
 	case 15:
 		put_kv(&o, "tx", m->tx_bursts);
 		put_kv(&o, " rf", m->rftx_ints);

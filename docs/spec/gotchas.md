@@ -1,5 +1,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
+**14.8 Scanning DMR direct mode: the carrier is on air every other slot.**
+Symptom: the zone scan never held on a DMR call already in progress (HIL 2026-10-10). Cause: the noise reading follows
+the 30 ms bursts, so the reading at the end of the dwell, or any poll of the probe, often fell between two bursts and
+the probe ended at once; and a 700 ms probe was shorter than a late entry that has to wait for a second superframe's LC
+(about 1.1 s from the retune). Rule: a carrier seen in the last 150 ms counts; bursts with the channel's color code
+extend the probe to 1.5 s (`docs/spec/radio-features.md` 2).
+
 # Gotchas: lessons from the old firmware
 
 What went wrong on the legacy firmware that OpenDigitalRadio replaces, and what new code has to do so it
@@ -66,6 +73,14 @@ Symptom: a repeater (SFR) refused to send while the inbound slot was busy. Cause
 reg 0x21 = 0xA2 makes the chip polite to our color code, and it rejects the send ("send request rejected"
 interrupt). Rule: decide politeness explicitly per transmission (regs 0x20 / 0x21); repeater transmissions and replies
 in a repeater's hang time must be impolite. Commit da845c3.
+
+**1.4a The embedded LC reaches page 2 after F's first report (working conclusion, unconfirmed).**
+Symptom: a late entry with a new talker (an LC different from the chip's sticky one) was taken a superframe late, at
+the second F (13 of 36 bursts played instead of 18-19; HIL 2026-10-10 on c8c9b23). Cause, as far as one run shows: the
+driver reads page 2 at F's first report (the EMB one) and page 2 still held the old LC then. Rule: until a reception
+has its LC, look at page 2 again at the next burst A (and at F's repeated report and the post-access interrupt); the
+driver logs every look (`dle` lines, `lt` diagnostics line) so the next HIL run shows exactly when the LC appeared.
+Radios: HR_C6000.
 
 **1.9 Restore reg 0x10 to the driver's value, not the init value.**
 After a special mode, writing back the init value (0x6B) instead of the running value (0x6E: relay, aligned, slot 1)

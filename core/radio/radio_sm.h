@@ -43,7 +43,12 @@
 // Scan defaults and per-stop timing (docs/spec/radio-features.md 2)
 #define RADIO_SCAN_DWELL_MS	150	// listen per channel (from the retune) with nothing heard
 #define RADIO_SCAN_FM_PROBE_MS	350	// FM: a carrier without the RX tone yet (CTCSS detection takes 100-250 ms)
-#define RADIO_SCAN_DMR_PROBE_MS	700	// DMR: a carrier, waiting for a call to play (late entry needs a superframe)
+#define RADIO_SCAN_DMR_PROBE_MS	700	// DMR: a carrier, waiting for bursts with the channel's color code (they come
+					// within a superframe of the modem's lock)
+#define RADIO_SCAN_DMR_SYNC_MS	1500	// DMR: such bursts heard, waiting for the call to play (a late entry takes its
+					// LC from the second complete superframe at worst: about 1.1 s from the retune)
+#define RADIO_SCAN_DMR_CARRIER_MS 150	// DMR: a carrier this recent still counts (direct mode: 30 ms on air in 60)
+#define RADIO_SCAN_DMR_SYNC_AGE_MS 400	// DMR: bursts this recent are sync (a superframe and a slot)
 #define RADIO_SCAN_HOLD_S	5
 #define RADIO_SCAN_DELAY_MS	2000
 

@@ -266,8 +266,21 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   reception, the first LC read may be the last call's. Either wait for two superframes (burst A seen twice after the
   slot lock) before trusting it, or capture page 2 when the reception starts and accept an LC only when it differs
   from that capture, or after more than one superframe of voice.
+  The driver captures page 2 at the first report of a quiet period (a status report before any burst is taken, for a
+  late entry), else at the first burst.
 - The voice header's LC and the terminator's LC are read at their bursts; during voice, the embedded LC appears in
-  page 2 once the chip has assembled it from bursts B-E.
+  page 2 once the chip has assembled it from bursts B-E. Working conclusion from HIL 2026-10-10 (c8c9b23): not yet at
+  F's first report (the EMB one): a new LC was first seen there at the second F. So until a reception has its LC the
+  driver also reads page 2 at the next burst A, at F's repeated report and at the post-access interrupt (an LC that
+  differs there is handed over with the next voice burst).
+- **LC trace** (for the bench): every look at page 2 until the reception's LC is handed over is logged, with the ticks
+  since the capture, the voice bursts taken and page 2's source ID. DM-1701 debug link log lines
+  `dle cap<how> <src>` (how: `0` status report, `A` lone burst A, `T` burst taken) and
+  `dle <ev><res> @<ticks> v<voice> <src>` (ev: `F` burst F, `f` F's repeated report, `A` the next burst A, `P`
+  post-access, `p` post-access just before the reception, `H` header; res: `n` differs from the capture, taken; `s`
+  same, held back; `v` same, taken after more than one superframe; `k` differs, kept for the next voice burst; `c` CRC
+  error flagged). Diagnostics lines `lc n= s= v= c=` (at F), `lc2 a= f= p= k=` (found at A, at F's repeat, at
+  post-access; kept LCs handed over) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
 - Talker alias and GPS embedded data (FLCO 4-8) appear in the same page 2 location as the embedded LC.
 
 ### 5.3 Timeslot tracking (repeater signals)
@@ -311,7 +324,9 @@ the CC is held. Release the hold after 5 s of no received audio while idle.
 The post-access interrupt (0x82 bit 4) comes when the chip acquires a voice call in progress from its embedded
 signalling. If idle, with the CC held and matching: write 0x41=0x50 and start receiving as for a header. Skip voice
 until two bursts A have passed, unless the source ID is already known and isn't our own. The LC comes from page 2 once
-the embedded LC is complete (subject to the sticky-LC rule above).
+the embedded LC is complete (subject to the sticky-LC rule above). The driver reads page 2 at the interrupt and keeps an
+LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`); whether the interrupt
+comes on a late entry, and when relative to burst F, is what the trace shows.
 
 ### 5.7 Audio buffering
 

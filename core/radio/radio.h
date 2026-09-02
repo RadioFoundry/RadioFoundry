@@ -193,6 +193,8 @@ typedef struct {
 	uint8_t scan;		// scan_kind_t: 0 off, 1 zone, 2 VFO, 3 dual watch
 	uint8_t scan_phase;	// scan_phase_t: listen, probe, hold, resume, paused
 	uint8_t scan_skipped;	// nuisance-deleted stops
+	uint16_t scan_probes;	// this scan: stops probed (a carrier at the end of the dwell)
+	uint16_t scan_synced;	// ... stops where sync was heard (DMR: bursts with the channel's color code)
 	// FM extras
 	bool tot_warning;	// TX: the time-out is near (tot_warn_s)
 	bool tone_burst;	// TX: the 1750 Hz burst is on

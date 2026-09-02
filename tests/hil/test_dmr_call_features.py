@@ -46,6 +46,20 @@ def _bench_call(radio, sdr_bench, pytestconfig, **kw):
     return d, v
 
 
+def _print_lc_trace(radio):
+    """The HR_C6000 sticky LC trace of the last reception (DM-1701 and the other HR_C6000 radios; nothing elsewhere):
+    the dle lines of the debug link log (capture, then every look at the LC page until the call's LC was taken) and
+    the lc / lc2 / lt diagnostics lines."""
+    _, text = radio.log()
+    for line in text.splitlines():
+        if " dle " in f" {line}":
+            print("  " + line)
+    _, lines = radio.link.diag()
+    for line in lines:
+        if line.split()[:1] in (["lc"], ["lc2"], ["lt"]):
+            print("  " + line)
+
+
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_private_call_to_us(radio, sdr_bench, pytestconfig):
@@ -100,17 +114,23 @@ def test_talker_alias(radio, sdr_bench, pytestconfig):
 def test_late_entry(radio, sdr_bench, pytestconfig):
     """No header and the first 8 of 36 bursts left out: the call is taken from the embedded LC (one call, marked late).
     The radio hears from burst C of the second superframe, but takes voice only from a burst A on, so the first
-    embedded LC it can assemble is at burst 18 (the third superframe's F): played from there, 19 bursts. A call with
-    the same LC as the one before (the same talker again) can't be told from the modem's sticky LC buffer at first:
-    taken one superframe later (burst 24), 13 bursts. HIL 2026-10-10 on aa79493: 7 (the stack waited a superframe more
-    on top of the driver's rule)."""
+    embedded LC it can assemble is the third superframe's (bursts 14-17): played from its F (burst 18, 19 bursts) if
+    the modem has it in its LC page by F's report, else from the next A (burst 19, 18 bursts). A call with the same LC
+    as the one before (the same talker again) can't be told from the modem's sticky LC buffer at first: taken one
+    superframe later (burst 24), 13 bursts. HIL 2026-10-10: 7 on aa79493 (the stack waited a superframe more on top of
+    the driver's rule), 13 for the new LC on c8c9b23 (the page still held the old LC at F's report).
+    The modem's LC trace (dle log lines, lc / lc2 / lt diagnostics) is printed for each late call."""
     _on_dmr_channel(radio, pytestconfig)
     _bench_call(radio, sdr_bench, pytestconfig, src=BENCH_SRC + 1)    # another LC first: the next one is new
+    radio.log()                                                        # empty the log ring
     d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)
+    _print_lc_trace(radio)
     assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
     assert 18 <= d["call.rx_voice_bursts"] <= 20, d
     assert v["call.late_entry"] == "1" and v["last.src"] == str(BENCH_SRC), v
+    radio.log()
     d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)    # the same LC again
+    _print_lc_trace(radio)
     assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
     assert 12 <= d["call.rx_voice_bursts"] <= 14, d
     assert v["last.src"] == str(BENCH_SRC), v

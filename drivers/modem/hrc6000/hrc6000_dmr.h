@@ -93,6 +93,19 @@ enum {
 
 #define HRC6000_DT_BINS	6	// report delay after the timeslot interrupt: <1, <3, <6, <12, <22, >=22 ms
 
+// The LC trace of the last reception (the sticky LC rule, modem-hrc6000.md 5.2 / 5.6): every look at page 2 for an
+// embedded LC until the reception's LC was handed over, so one HIL run shows when this call's LC appeared there
+#define HRC6000_LC_TRACE_N	8
+typedef struct {
+	char ev;	// F burst F's report, f F reported again (a repeat, dropped), A burst A while no LC yet, P post-access
+			// interrupt, p post-access shortly before the reception started, H voice LC header
+	char res;	// n differs from the capture (taken), s same as the capture (held back), v same but taken (more than
+			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, - not used
+	uint8_t tk;	// ticks since the capture (255: 255 or more)
+	uint8_t vss;	// voice bursts taken in this reception at the time
+	uint32_t src;	// page 2's source ID (LC octets 6-8)
+} hrc6000_lc_trace_t;
+
 // Counters for bench bring-up and the diagnostics page (wrap freely)
 typedef struct {
 	uint32_t ticks;		// timeslot interrupts
@@ -135,6 +148,15 @@ typedef struct {
 	uint32_t by_type[16];	// ... by 0x51 bits 7-4
 	uint32_t by_r5f[4];	// ... by 0x5F bits 1-0
 	uint32_t dt_hist[HRC6000_DT_BINS];	// ... by delay after the timeslot interrupt
+	// The sticky LC rule (embedded LCs looked at before a reception's LC was handed over)
+	uint32_t lc_f_new;	// at F: differs from the capture, taken
+	uint32_t lc_f_stale;	// at F: same as the capture, held back
+	uint32_t lc_f_count;	// at F: same as the capture, taken by the voice count
+	uint32_t lc_f_crc;	// at F: CRC error flagged
+	uint32_t lc_a_new;	// at the next A: differs from the capture, taken (written to page 2 after F's report)
+	uint32_t lc_rep_new;	// at F's repeated report: differs, kept for the next voice burst
+	uint32_t lc_pa_new;	// at a post-access interrupt: differs, kept for the next voice burst
+	uint32_t lc_kept;	// kept LCs handed over with the next voice burst
 	uint8_t last_r5f;	// raw 0x5F of the last report
 	uint8_t last_data_r51;	// raw 0x51 of the last report classified as non-voice
 	uint8_t last_cc;	// last burst heard
@@ -145,6 +167,14 @@ typedef struct {
 	uint8_t last_pa_ms;	// last burst of ours: ms the PA was on
 	int8_t last_ts;		// slot number of the last burst heard (0 unknown)
 	uint8_t tx_state;	// engine TX state (0 idle)
+	// The LC trace of the last reception (not cleared by a counter reset)
+	uint16_t lc_serial;	// bumped at every capture and trace entry
+	uint16_t lc_cap_seq;	// bumped at every capture (a new trace)
+	uint8_t lc_n;		// entries in lc_tr
+	char lc_cap_how;	// the report the capture was made at: 0 a status report (class 0 before any burst), A a lone
+				// burst A, T a burst taken
+	uint32_t lc_cap_src;	// the capture's source ID (LC octets 6-8)
+	hrc6000_lc_trace_t lc_tr[HRC6000_LC_TRACE_N];
 } hrc6000_dmr_stats_t;
 
 typedef struct {
@@ -207,6 +237,17 @@ typedef struct {
 	bool heard_any;
 	uint8_t stale_lc[9];
 	uint8_t voice_since_start;	// voice bursts since the reception started (stale LC rule)
+	uint32_t cap_tick;	// tick of the capture
+	bool lc_given;		// this reception's LC was handed over (a header, a valid embedded LC)
+	bool lc_kept;		// lc_keep holds an LC seen outside a voice report, for the next voice burst taken
+	uint8_t lc_keep[9];
+	bool f_crc_bad;		// the last F taken flagged a CRC error (its LC isn't taken at the next A either)
+	uint8_t scap_lc[9];	// page 2 at the first status report of a quiet period (late entry: before any burst taken)
+	uint32_t scap_tick;
+	bool scap_valid;
+	uint32_t pa_tick;	// tick of the last post-access interrupt
+	bool pa_any;
+	uint32_t pa_src;	// page 2's source ID then
 	// CC acquisition (5.4) when the filter is off
 	uint8_t cc_last, cc_matches, cc_cur;
 	uint32_t t_cc;

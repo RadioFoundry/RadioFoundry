@@ -60,7 +60,13 @@ tuned channel or frequency is the core view's as usual.
 Each stop: 50 ms settle (readings from the previous frequency are ignored), then `scan_dwell_ms` listening. A signal
 is "active" when FM squelch opens (with the RX tone if the channel needs one) or DMR plays a call (`dmr.state` rx).
 A carrier that isn't active yet earns a probe: 350 ms on FM channels that need a tone (CTCSS detection takes 100 to
-250 ms), 700 ms on DMR (late entry needs a superframe); other FM channels move on at once. Active: the scan holds
+250 ms), 700 ms on DMR; other FM channels move on at once. On DMR a carrier seen in the last 150 ms still counts (direct
+mode is on air 30 ms in every 60, and the noise reading drops between bursts), and once the modem delivers bursts with
+the channel's color code since the stop's settle ("sync", from `dmr_call_last_activity`, a late entry still waiting for
+its LC included) the probe lasts up to 1.5 s: a call already in progress is taken from its embedded LC, which needs the
+next complete superframe at best and the one after it when the modem's sticky LC equals this call's (about 1.1 s from
+the retune). A call known not to be for us (another talkgroup) ends the probe. Empty channels still move on after the
+dwell. The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
 (`scan_phase=hold`), then follows `scan_resume`; after the signal ends it waits `scan_delay_ms` (`resume`) and picks
 up again if the signal comes back. MONITOR held pauses the scan (`paused`).
 
@@ -168,8 +174,9 @@ Checked, unchanged: the board clamps the power level, uses the calibration table
 
 ## 7. Verification status
 
-Host-tested (`radioFeaturesTest`, 424 checks): scan engine and glue (zone, skip flags, nuisance, resume modes,
-priority, dual watch, VFO band scan, mixed FM / DMR, PTT and retune behavior), battery levels and power off, beep
+Host-tested (`radioFeaturesTest`, 446 checks): scan engine and glue (zone, skip flags, nuisance, resume modes,
+priority, dual watch, VFO band scan, mixed FM / DMR, a DMR call already in progress with a direct mode carrier and a
+late entry at every superframe phase, PTT and retune behavior), battery levels and power off, beep
 patterns and mixing, TOT warning, BCL, inhibit, roger beep, burst, VOX, battery save, DMR permit / call-end beeps.
 Not yet on the radio: everything in `tests/hil/test_radio_features.py`, the DM-1701 `tx_tone`, `rx_sleep` and
 `mic_level` hooks, and whether PCM beeps play in FM mode (`beep.no_stream` / `beep.blocks` answer that).

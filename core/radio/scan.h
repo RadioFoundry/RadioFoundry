@@ -4,8 +4,9 @@
 // no channel reading here: the radio core (radio_sm.c) tunes, reads the codeplug and tells the engine what it hears.
 //
 // Phases on each stop: LISTEN (settle, then listen for the dwell time) -> PROBE (a carrier but nothing to stop for
-// yet: waiting for the RX tone on FM or a call on DMR) -> HOLD (stopped on a signal) -> RESUME (the signal ended:
-// waiting the resume delay before moving on). Resume modes: TIME also moves on after the hold time while the signal
+// yet: waiting for the RX tone on FM or a call on DMR; longer while the signal is of the channel's own kind, "sync":
+// DMR bursts with its color code) -> HOLD (stopped on a signal) -> RESUME (the signal ended: waiting the resume delay
+// before moving on). Resume modes: TIME also moves on after the hold time while the signal
 // lasts; CARRIER waits for the signal to end; STOP ends the scan on the first signal.
 #ifndef RADIO_SCAN_H
 #define RADIO_SCAN_H
@@ -26,6 +27,9 @@ typedef enum { SCAN_ACT_NONE, SCAN_ACT_NEXT, SCAN_ACT_STOP } scan_act_t;
 typedef struct {
 	uint16_t dwell_ms;	// listen time per stop with nothing heard (from the retune)
 	uint16_t probe_ms;	// a carrier without a tone match (FM) or a call (DMR): wait this long for one
+	uint16_t sync_ms;	// ... and this long (from the probe's start) once sync was heard on this stop (0 = probe_ms)
+	uint16_t carrier_hold_ms;	// a carrier (or sync) heard this recently still counts: DMR direct mode is on air
+				// 30 ms in every 60, and the noise reading follows the bursts (0 = only the reading now)
 	uint16_t hold_ms;	// TIME: move on after this long on a signal, 0 = never
 	uint16_t delay_ms;	// after the signal ends, move on after this long
 	uint8_t resume;		// scan_resume_t
@@ -37,6 +41,9 @@ typedef struct {
 	uint8_t phase;		// scan_phase_t
 	uint32_t phase_ms;	// when the phase began
 	uint32_t tuned_ms;	// when the current stop was tuned
+	uint32_t heard_ms;	// this stop: the last poll with a carrier or sync (heard: one since the settle)
+	bool heard;
+	bool synced;		// this stop: sync heard
 	scan_cfg_t cfg;
 	// Where the scan started (CANCEL goes back there; priority and dual watch revisit it)
 	uint16_t origin_pos;
@@ -54,6 +61,8 @@ typedef struct {
 	// Statistics for the debug link
 	uint32_t steps;
 	uint32_t holds;
+	uint32_t probes;	// stops probed
+	uint32_t stats_synced;	// stops with sync heard
 } scan_t;
 
 // Whether a zone position can be scanned (readable, not scan_skip); supplied by the radio core
@@ -66,8 +75,9 @@ static inline bool scan_on(const scan_t *s) { return s->kind != SCAN_OFF; }
 // The radio core tuned a new stop
 void scan_tuned(scan_t *s, uint32_t now_ms);
 // Every poll while scanning (not while paused). active: a signal worth stopping for (FM: the squelch is open with
-// the right tone; DMR: a call that passes the filters is playing). carrier: something on the frequency
-scan_act_t scan_poll(scan_t *s, uint32_t now_ms, bool active, bool carrier);
+// the right tone; DMR: a call that passes the filters is playing). carrier: something on the frequency. sync: a
+// signal of the channel's own kind (DMR: bursts with its color code; it counts as a carrier too)
+scan_act_t scan_poll(scan_t *s, uint32_t now_ms, bool active, bool carrier, bool sync);
 // Monitor held, or anything else that stops the stepping for a while; resume restarts the current stop's listen
 void scan_pause(scan_t *s, bool paused, uint32_t now_ms);
 
