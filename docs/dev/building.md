@@ -50,17 +50,18 @@ In short:
 
 ## Image size
 
-The DM-1701 has 418 KB of code space before the codec window, the DM-32UV 912 KB before its codec slot (the board's
-`config.mk` header). The linker's application region ends where the codec window starts, so an image that grows into
-it fails to link. `tools/ci.sh` writes every configuration's size and free space to `build/ci/size-report.md`.
+The DM-1701 has 336 KB of code space (flash sectors 3-6; the sectors holding the codec are kept whole so firmware
+updates can leave the codec alone, [release.md](release.md) "Sector map"), the DM-32UV 912 KB before its codec slot
+(the board's `config.mk` header). The linker's application region ends before the codec, so an image that grows
+into it fails to link. `tools/ci.sh` writes every configuration's size and free space to `build/ci/size-report.md`.
 
 ## Flashing
 
 The user manual covers it for users: [Installing](../user/02-installing.md). In short:
 
-| Radio | Merge the codec | Flash |
-|---|---|---|
-| DM-1701 | `tools/codec_extract.py --stock FILE --key dm1701.key` | `tools/stm32_dfu.py IMAGE --model dm1701 --key dm1701.key` in the bootloader |
-| DM-32UV | `tools/dm32_codec.py` | `tools/dm32_pack.py` wraps it for Baofeng's updater |
+| Radio | Flash |
+|---|---|
+| DM-1701 | `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701 [--stock FILE]` ([tools/odrflash](../../tools/odrflash/README.md)): keeps the radio's codec or merges it from the stock file, erases only the sectors it needs. The older two-step route still works: `tools/codec_extract.py --stock FILE` (key derived from the file, or `--key`), then `tools/stm32_dfu.py IMAGE --model dm1701 --key dm1701.key`, which erases every application sector |
+| DM-32UV | `tools/dm32_codec.py` merges the codec, `tools/dm32_pack.py` wraps it for Baofeng's updater |
 
 Without a codec the firmware runs, with FM only. See [The codec](codec.md).

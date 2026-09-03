@@ -1136,6 +1136,15 @@ MD-380. The loader script these facts come from (the legacy STM32 firmware loade
 pydfu and md380tools parts it was built from, but its directory's license file is the legacy non-commercial license:
 treat the key tables' provenance as unverified and re-derive or source them from MIT material.
 
+**Re-derived (2026-10-10), DM-1701.** The key needs no outside source: it falls out of any DM-1701 stock firmware
+file. The payload is plain XOR key[i mod 1024], and in a firmware image 0x00 is the most common plain byte in every
+key column, so the most common cipher byte of column j is key[j] for all but a few columns; those are settled by
+trying each close runner-up byte until the SHA-256 of the result matches the table above. On every stock file in
+`codec-dm1701.md` ("Stock files": V02.01, V02.02, V02.03 with and without CSV, V02.06 CSV and noCSV) this gives the key
+with hash `d983ce95...` in under 0.1 s, needing at most a few hundred hash checks. `tools/odrflash/odrflash/stockfw.py`
+(`derive_key`) does this on the user's machine; only the hash is in the repository. The same method should work for the
+other models' files (unverified: no MD-UV380, MD-380 or MD-9600 file was tried).
+
 Other loader facts:
 
 - An official TYT firmware file is recognized by its first 16 bytes "OutSecurityBin" followed by two zero bytes; it must

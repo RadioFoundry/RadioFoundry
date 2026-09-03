@@ -12,7 +12,7 @@ also carries this manual as a PDF, built from these files (`tools/build_manual.s
 ## Contents
 
 1. [Introduction](01-introduction.md): what ODR is, supported radios, project status, conventions
-2. [Installing](02-installing.md): the codec, flashing the DM-1701, updating, going back to stock
+2. [Installing](02-installing.md): odrflash, the codec, flashing the DM-1701, updating, going back to stock
 3. [First boot](03-first-boot.md): built-in channels, programming the radio, checks
 4. [Keys and navigation](04-keys-and-navigation.md): the five key rules, Find, temporary changes, key lock
 5. [The Home screen](05-home-screen.md): what each region shows, receiving, transmitting

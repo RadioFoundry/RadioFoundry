@@ -118,8 +118,12 @@ sequence, the state sizes and the call arguments are in "Codec state init and ca
 Run in place from flash at the stock addresses, as stock does. The STM32 executes from internal flash, so there is
 no copy and no patching.
 
-* The linker script for the V02.06 CSV build reserves the two windows. The app gets 0x0800C000..0x08074714
-  (about 426 KB), 0x08084930..0x080D19F0 (about 309 KB) and 0x080E4240..0x08100000 (about 111 KB).
+* The linker script for the V02.06 CSV build keeps the application out of every flash sector the windows touch:
+  the code window spans sectors 7 and 8 (0x08060000..0x0809FFFF), the table window sectors 10 and 11
+  (0x080C0000..0x080FFFFF). The app gets sectors 3-6, 0x0800C000..0x0805FFFF (336 KB), and sector 9,
+  0x080A0000..0x080BFFFF (128 KB), is free. A firmware update then erases and writes only sectors 3-6 and leaves the
+  codec in place (docs/dev/release.md, "Sector map" and "Codec handling"). Reserving only the windows would leave
+  about 426 KB below the code window, but every update would have to erase and rewrite the codec.
 * Call the entries with `BL`/`BLX` to the stock addresses above.
 * Support one version per build, keyed by sha256. The noCSV variants and older versions sit at other addresses and
   would need their own windows; patching the 63 literals is the fallback if a single layout is required.

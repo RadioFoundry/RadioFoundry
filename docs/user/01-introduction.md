@@ -21,8 +21,9 @@ supported radio. The screenshots are DM-1701 screens rendered by the UI simulato
 
 ## Project status
 
-ODR is early software. There are no release binaries: you build the firmware yourself and supply the codec
-(see [Installing](02-installing.md)).
+ODR is early software. Releases carry the firmware without the AMBE codec, and odrflash, the program that
+flashes it, keeps the codec already in your radio or writes it from your radio's stock firmware file (see
+[Installing](02-installing.md)).
 
 Features fall into three groups. This manual marks each feature that isn't verified on the radio yet.
 

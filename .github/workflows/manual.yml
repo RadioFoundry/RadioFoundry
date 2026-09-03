@@ -92,6 +92,6 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           if ! gh release view "$TAG" > /dev/null 2>&1; then
             gh release create "$TAG" --verify-tag --title "OpenDigitalRadio $TAG" \
-              --notes "User manual attached. There are no firmware binaries: build the image and merge your radio's codec (docs/user/02-installing.md)."
+              --notes "Firmware images (without the AMBE codec), odrflash and the user manual. Flash with: odrflash flash --release ${TAG} (docs/user/02-installing.md)."
           fi
           gh release upload "$TAG" "$MANUAL_PDF" --clobber

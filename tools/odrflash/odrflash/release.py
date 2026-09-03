@@ -45,6 +45,8 @@ def _get(url, accept="application/octet-stream"):
         with urllib.request.urlopen(req, timeout=60, context=_ssl_context()) as r:
             return r.read()
     except Exception as e:
+        if getattr(e, "code", None) == 404:
+            raise ReleaseError("not found: %s (no such release or file; the repository may also be private)" % url)
         raise ReleaseError("download of %s failed: %s" % (url, e))
 
 

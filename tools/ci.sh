@@ -136,7 +136,7 @@ build() {
 	fi
 	bin=$(ls "$dir"/odr_"$b".bin 2>/dev/null)
 	bytes=$(wc -c < "$bin" | tr -d ' ')
-	# --print-memory-usage: "FLASH:  123024 B  427796 B  28.76%" (the app region, codec windows excluded)
+	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
 	set -- $(grep -E '^ *FLASH:' "$log" | head -1)
 	used=$(tobytes "${2:-}" "${3:-}"); size=$(tobytes "${4:-}" "${5:-}")
 	if [ -n "$size" ] && [ "$used" -le "$size" ] 2>/dev/null; then

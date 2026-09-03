@@ -15,7 +15,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [CPS, codeplug and settings](cps-and-codeplug.md) | The legacy CPS shim qdmr uses, the codeplug layout, the settings store |
 | [The codec](codec.md) | How the stock AMBE+2 codec is extracted and hosted per radio |
 | [Contributing](contributing.md) | Clean-room rules, code style, commits, the release gate |
-| [Releases](release.md) | Versioning, the release checklist, the PDF manual and its CI workflow |
+| [Releases](release.md) | The release artifacts and manifests, the DM-1701 sector map, odrflash's codec handling and key, the release and manual workflows |
 
 ## Where the detailed documents are
 
