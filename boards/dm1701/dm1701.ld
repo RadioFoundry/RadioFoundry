@@ -2,7 +2,13 @@
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
 /* Baofeng DM-1701, STM32F405VG, application behind the stock bootloader (docs/spec/hardware-dm1701.md 1.4, 1.5).
  * Codec profile: stock DM-1701 V02.06 CSV runs in place (docs/spec/codec-dm1701.md "Recommended hosting"):
- * code window 0x08074714..0x08084930 and table window 0x080D19F0..0x080E4240 are reserved, never linked into. */
+ * code window 0x08074714..0x08084930 and table window 0x080D19F0..0x080E4240.
+ *
+ * Whole flash sectors, not just the windows, are kept free of our code, so the flashing tool can update the firmware
+ * without erasing the codec (docs/dev/release.md "Sector map"): the code window spans sectors 7 and 8
+ * (0x08060000..0x0809FFFF), the table window sectors 10 and 11 (0x080C0000..0x080FFFFF). The application gets
+ * sectors 3-6 (0x0800C000..0x0805FFFF, 336 KB); sector 9 (0x080A0000..0x080BFFFF, 128 KB) is free and reserved as
+ * FLASH2 for large constant data. Never link into sectors 7, 8, 10 or 11. */
 
 ENTRY(Reset_Handler)
 
@@ -12,8 +18,8 @@ _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts */
 
 MEMORY
 {
-	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x08074714 - 0x0800C000
-	FLASH2  (r)   : ORIGIN = 0x08084930, LENGTH = 0x080D19F0 - 0x08084930
+	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x08060000 - 0x0800C000	/* sectors 3-6 */
+	FLASH2  (r)   : ORIGIN = 0x080A0000, LENGTH = 0x080C0000 - 0x080A0000	/* sector 9 */
 	RAM     (xrw) : ORIGIN = 0x20000000, LENGTH = 128K - 4
 	CCMRAM  (rw)  : ORIGIN = 0x10000000, LENGTH = 64K
 }
@@ -33,7 +39,7 @@ SECTIONS
 
 	.rodata : { . = ALIGN(4); *(.rodata) *(.rodata*) . = ALIGN(4); } >FLASH
 
-	/* Large constant data (fonts, tables) may be placed in the space between the codec windows */
+	/* Large constant data (fonts, tables) may be placed in sector 9, between the codec sectors */
 	.rodata2 : { . = ALIGN(4); *(.rodata2) *(.rodata2*) . = ALIGN(4); } >FLASH2
 
 	.ARM.extab : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH
@@ -80,7 +86,9 @@ SECTIONS
 	/DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }
 	.ARM.attributes 0 : { *(.ARM.attributes) }
 
-	/* The .bin is one contiguous stream from 0x0800C000; data placed beyond the codec window needs the codec merged
-	 * (or padding) first, so keep it empty until that path exists */
+	/* The .bin is one contiguous stream from 0x0800C000; data in sector 9 would need the release tooling and the
+	 * flasher to write a second range (they can: image ranges in the manifest), so keep it empty until it's needed */
 	ASSERT(SIZEOF(.rodata2) == 0, ".rodata2 is not packed into the image yet")
+	/* Belt and braces for the sector rule above: everything loaded into flash ends before sector 7 */
+	ASSERT(_sidata + SIZEOF(.data) <= 0x08060000, "the image reaches into codec sector 7 (0x08060000)")
 }

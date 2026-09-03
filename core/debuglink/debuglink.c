@@ -272,6 +272,21 @@ static size_t cmd_reset(uint8_t *out)
 
 // --- version ---
 
+// codec=: the vocoder profile the board recognized in flash (signature and hash checked by the board), "absent" when
+// the board has a vocoder but its check failed, "none" without one (FM-only build). Read only
+static const char *codec_id(void)
+{
+	const hal_vocoder_t *v = board.vocoder;
+	if (v == NULL) {
+		return "none";
+	}
+	if (!v->present()) {
+		return "absent";
+	}
+	const char *id = v->profile != NULL ? v->profile() : NULL;
+	return id != NULL ? id : "present";
+}
+
 static size_t cmd_version(uint8_t *out, size_t cap)
 {
 	dl_text_t t;
@@ -283,6 +298,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	dl_text_kv_str(&t, "git", ODR_GIT);
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "%s", features);
+	dl_text_kv_str(&t, "codec", codec_id());
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,
 			d->inset_bottom, d->inset_left, d->inset_right);

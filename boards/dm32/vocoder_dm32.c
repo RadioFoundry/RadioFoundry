@@ -218,7 +218,18 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
 }
 
-const hal_vocoder_t dm32_vocoder = { .present = present, .reset = reset, .encode = encode, .decode = decode };
+// The id tools/odrflash and the release manifests use: which stock file the slot was carved from
+static const char *profile(void)
+{
+	if (!present()) {
+		return NULL;
+	}
+	return slot->stock_tag == 49u ? "dm32-049" : (slot->stock_tag == 46u ? "dm32-046" : "dm32-unknown");
+}
+
+const hal_vocoder_t dm32_vocoder = {
+	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
+};
 
 uint8_t dm32_vocoder_tag(void)
 {
