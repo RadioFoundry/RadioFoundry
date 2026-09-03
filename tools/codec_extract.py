@@ -16,7 +16,6 @@ your stock file and your key file and writes the merged image to a file you choo
 image, in build/, which git ignores). Flash the result with tools/stm32_dfu.py.
 """
 import argparse
-import hashlib
 import os
 import struct
 import subprocess
