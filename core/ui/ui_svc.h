@@ -73,8 +73,11 @@ bool ui_svc_scan_skip(void);			// nuisance delete of the channel that stopped th
 bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, lock / unlock
 
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
-typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR } ui_beep_t;
+typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW } ui_beep_t;
 void ui_svc_beep(uint8_t beep);
+// PTT while the keys are locked (Settings > Privacy > PTT when locked): blocked = the input layer doesn't hand PTT
+// presses to the radio core (a PTT already held is still released). Weak no-op without the input layer
+void ui_svc_ptt_block(bool blocked);
 
 // --- Messages and signaling (dmr-data) ---
 #define UI_MSG_TEXT_MAX	143
@@ -110,6 +113,8 @@ bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off
 // Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until
 // then the weak stub says "not set up"
 bool ui_svc_emergency(bool on);
+// Our own emergency is going (alarm, hot mic or in emergency until cancelled): the key then cancels it
+bool ui_svc_emergency_active(void);
 // dmr-ext: a new emergency alert heard becomes UI_EV_EMERGENCY (ok: an alarm, else a call); run from ui_svc_poll
 void ui_svc_emergency_poll(void);
 // The emergency screen was acknowledged: the received alert is dismissed (weak no-op without dmr-ext)
@@ -129,6 +134,7 @@ typedef enum {
 	UI_SET_HOTSPOT_AUTO, UI_SET_CHECK_REPLY, UI_SET_ALERT_ANSWER,
 	UI_SET_BATTERY_SAVER, UI_SET_AUTO_OFF_MIN, UI_SET_LOW_BATTERY,
 	UI_SET_LONG_PRESS_MS, UI_SET_REPEAT_MS, UI_SET_UPDOWN_HOME,
+	UI_SET_PRIVACY_TYPE, UI_SET_PRIVACY_KEY,	// key slot 1 (settings-store.md 3.1): dmrPrivacyType_t, key value
 	UI_SET_COUNT
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);
@@ -154,6 +160,7 @@ typedef enum {
 	UI_EV_SCAN_STOPPED,	// the scan stopped on a channel
 	UI_EV_CALL_ALERT_RESULT,	// our call alert: ok = the radio answered, else no answer after the retries
 	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (text: what failed)
+	UI_EV_POWER_OFF_FAILED,	// auto power off dropped the power latch but the radio is still on (the knob holds it)
 } ui_event_kind_t;
 
 typedef struct {

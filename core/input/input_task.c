@@ -34,11 +34,12 @@ static bool wake_set;
 static volatile uint8_t last_source = INPUT_SRC_KEYS;
 static volatile uint32_t timing;	// input_set_timing: long ms << 16 | repeat ms (one word: no lock needed)
 static volatile uint16_t long_now = INPUT_LONG_MS;
+static volatile bool ptt_blocked;	// input_set_ptt_block
 
 static void emit(const input_event_t *ev, void *ctx)
 {
 	(void)ctx;
-	if (ev->action == ACT_PTT && (ev->gesture == GESTURE_DOWN || ev->gesture == GESTURE_UP)) {
+	if (ev->action == ACT_PTT && (ev->gesture == GESTURE_UP || (ev->gesture == GESTURE_DOWN && !ptt_blocked))) {
 		radio_req_ptt(ev->gesture == GESTURE_DOWN);
 	} else if (ev->action == ACT_MONITOR && (ev->gesture == GESTURE_DOWN || ev->gesture == GESTURE_UP)) {
 		radio_req_monitor(ev->gesture == GESTURE_DOWN);
@@ -143,6 +144,11 @@ void input_set_timing(uint16_t long_ms, uint16_t repeat_ms)
 	}
 	timing = ((uint32_t)long_ms << 16) | repeat_ms;
 	long_now = long_ms != 0 ? long_ms : INPUT_LONG_MS;
+}
+
+void input_set_ptt_block(bool blocked)
+{
+	ptt_blocked = blocked;
 }
 
 uint16_t input_long_ms(void)
@@ -271,7 +277,8 @@ input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value
 		if (m != NULL && !m->raw_edges && (gesture == GESTURE_LONG || m->repeat)) {
 			uint32_t rep = (uint16_t)timing != 0 ? (uint16_t)timing : INPUT_REPEAT_MS;
 			uint32_t extra = gesture == GESTURE_REPEAT ? (uint32_t)(value > 0 ? value : 1) * rep : 0;
-			return input_inject_keys(1u << m->bit, long_now + INPUT_INJECT_LONG_EXTRA_MS + extra);
+			return input_inject_keys(1u << m->bit, input_long_threshold(m->long_action, long_now) +
+						 INPUT_INJECT_LONG_EXTRA_MS + extra);
 		}
 		break;
 	case GESTURE_DOWN:

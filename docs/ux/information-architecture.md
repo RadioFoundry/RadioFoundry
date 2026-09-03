@@ -183,7 +183,7 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | Channel knob | `CHANNEL_POS(1-16)` in the current zone |
 | Upper side key (row 2 D5) and middle side key (row 2 D7): see hardware-dm1701.md 20 | `MONITOR` (while held) on the middle key |
 | SK2 (lower side) | `TALK_TARGET` / Scan on/off |
-| Top (orange) key | `EMERGENCY` if enabled, else Power cycle / Speak status |
+| Top (orange) key | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
 | PTT | `PTT` |
 
 Notes: the knob has 16 positions; zones with more channels are reached with `NAV_UP`/`NAV_DOWN` (the knob then shows "Ch 17 (knob at 1)" until moved). No `NAV_LEFT`/`NAV_RIGHT`.

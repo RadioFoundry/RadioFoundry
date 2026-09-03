@@ -102,7 +102,7 @@ typedef enum {
 	RREQ_BEEP,		// arg: beep_t
 	RREQ_TONE_BURST,	// arg: 1 on, 0 off
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
-	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done)
+	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done); arg 1 = cancelled
 	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
 	RREQ_DMR_TS,		// DMR: arg = timeslot 1 / 2 (temporary)
 	RREQ_DMR_CC,		// DMR: arg = color code 0..15 (temporary)

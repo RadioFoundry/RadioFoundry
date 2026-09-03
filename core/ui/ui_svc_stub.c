@@ -37,6 +37,7 @@ WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
 WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
 WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
+WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_poll(void) { }
 WEAK void ui_svc_apply(uint8_t id, int32_t value) { (void)id; (void)value; }
 
@@ -52,6 +53,7 @@ WEAK bool ui_svc_call_alert(uint32_t id) { (void)id; return false; }
 WEAK bool ui_svc_position(ui_position_t *out) { (void)out; return false; }
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
+WEAK bool ui_svc_emergency_active(void) { return false; }
 WEAK bool ui_svc_factory_reset(void) { return false; }
 
 // Safe defaults (P7): no auto-transmit feature on, tones on, hints on

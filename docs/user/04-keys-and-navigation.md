@@ -24,7 +24,7 @@ The bottom line of most screens (the hint row) shows what the nearest keys do th
 |---|---|---|
 | **OK** | Home: open the hub. Lists: open or choose | Save or make permanent |
 | **Back** | Back one level. Home: undo one temporary change | Home |
-| **Up**, **Down** | Move the focus. Home: next or previous channel (VFO: frequency step). Editors: change the value | Repeats |
+| **Up**, **Down** | Move the focus. Home: next or previous channel (VFO: frequency step), or zone or talk target with **Settings > Keys > Up/Down on Home**. Editors: change the value | Repeats |
 | **\*** | Quick settings | Lock or unlock the keys |
 | **#** | Actions for the focused item. Home: actions for the last caller | Recent |
 | **0** to **9** | Home: start Find. Lists: pick a numbered row, or type to filter. VFO: type a frequency | Home: speed dial (not built yet) |
@@ -32,11 +32,14 @@ The bottom line of most screens (the hint row) shows what the nearest keys do th
 | **P2** | Home: next zone | |
 | **SK1** | Monitor while held: FM opens the squelch, DMR plays every talkgroup | |
 | **SK2** | Talk target picker (DMR channels) | Scan on or off |
-| **Top side key** | Home: next power level | Speak status (not built yet) |
+| **Top side key** | Home: next power level | Hold 1.5 s: emergency ([Emergency](10-emergency.md)). Builds without emergency: speak status (not built yet) |
 | **PTT** | Transmit | |
 | Channel knob | Each click: next or previous channel, the same as **Up** and **Down**. Lists: moves the focus. Editors: changes the value | |
 
 Each key press gives a short key beep unless **Settings > Sound > Key tones** is off.
+
+While the keys are locked (hold **\***), **PTT** still works unless **Settings > Privacy > PTT when locked** is off. Then
+**PTT** gives an error beep and "PTT is off while locked: hold * to unlock".
 
 ## Moving around
 

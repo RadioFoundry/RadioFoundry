@@ -51,6 +51,7 @@ static bool have_last;
 static ambe_voice_stats_t stats;
 static ambe_voice_mixer_t mixer;
 static bool cb_mixing;
+static uint16_t mic_gain_q8 = 256;	// ambeVoiceSetMicGain: the mic samples times this / 256 before encoding
 
 static void ensure_streaming(void)
 {
@@ -273,6 +274,15 @@ static void tx_block(const int16_t *mic)
 		}
 	}
 	uint8_t bits[VOCODER_BITS];
+	static int16_t scaled[AUDIO_BLOCK_SAMPLES];	// the audio callback only (off its stack)
+	uint16_t g = LOAD(mic_gain_q8);
+	if (g != 256) {
+		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+			int32_t v = ((int32_t)mic[i] * g) / 256;
+			scaled[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+		}
+		mic = scaled;
+	}
 	if (voc_ok()) {
 		voc->encode(mic, bits);
 	} else {
@@ -309,6 +319,13 @@ void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 }
 
 // --- set-up ---
+
+// 2 dB per step around step 5 (unity): -10 dB .. +10 dB, Q8
+void ambeVoiceSetMicGain(uint8_t step)
+{
+	static const uint16_t q8[11] = { 81, 102, 128, 161, 203, 256, 322, 406, 511, 643, 810 };
+	STORE(mic_gain_q8, q8[step > 10 ? 10 : step]);
+}
 
 static const dmr_voice_sink_t sink = {
 	.begin = sink_begin, .frame = sink_frame, .lost = sink_lost, .end = sink_end, .ctx = NULL,

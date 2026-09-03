@@ -9,7 +9,7 @@ static int failures;
 static int checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
-enum { K_OK, K_UP, K_PTT, K_MON, K_SIDE };
+enum { K_OK, K_UP, K_PTT, K_MON, K_SIDE, K_TOP };
 
 static const keymap_entry_t keymap[] = {
 	{ K_OK, ACT_SELECT, ACT_QUICK, false, false },
@@ -17,6 +17,7 @@ static const keymap_entry_t keymap[] = {
 	{ K_PTT, ACT_PTT, ACT_PTT, true, false },
 	{ K_MON, ACT_MONITOR, ACT_MONITOR, true, false },
 	{ K_SIDE, ACT_USER_1, ACT_NONE, false, false },
+	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false },
 };
 
 #define MAXEV 128
@@ -105,6 +106,29 @@ static void test_long(void)
 	keys = 0;
 	run(30, 0);
 	CHECK(nev == 0);
+}
+
+// Emergency is hold to activate: its key's long action needs INPUT_HOLD_MS, not the long press time
+static void test_emergency_hold(void)
+{
+	reset(0);
+	keys = 1u << K_TOP;
+	run(INPUT_HOLD_MS - 20, 0);
+	CHECK(nev == 0);
+	run(40, 0);
+	CHECK(nev == 1 && evs[0].action == ACT_EMERGENCY && evs[0].gesture == GESTURE_LONG);
+	keys = 0;
+	run(30, 0);
+	CHECK(nev == 1);
+
+	// Let go between the long press time and the hold: the short action, never emergency
+	reset(0);
+	keys = 1u << K_TOP;
+	run(INPUT_LONG_MS + 100, 0);
+	keys = 0;
+	run(30, 0);
+	CHECK(count(ACT_EMERGENCY, GESTURE_LONG) == 0);
+	CHECK(input_long_threshold(ACT_EMERGENCY, 2000) == 2000 && input_long_threshold(ACT_QUICK, 700) == 700);
 }
 
 static void test_repeat(void)
@@ -206,6 +230,7 @@ int main(void)
 	test_press();
 	test_bounce();
 	test_long();
+	test_emergency_hold();
 	test_repeat();
 	test_timing();
 	test_raw_edges();

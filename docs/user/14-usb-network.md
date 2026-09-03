@@ -16,14 +16,22 @@ network isn't in this build".
 
 ## Switching the radio to network mode
 
-The radio always starts as a USB serial port. There is no menu item to switch yet; switch it over the debug link:
+The radio always starts as a USB serial port. To switch it, open **Tools > USB network** (**OK**, **5**, **4**). The
+page says which mode USB is in and what changes. Focus "Switch USB to network" and press **OK**. The radio says "USB
+is a network adapter now" and returns to Home. While USB is a network adapter, qdmr, hotspot hosts and the debug link
+over serial don't reach the radio.
+
+To get back to serial, open **Tools > USB network** again and choose "Switch USB to serial" ("USB is a serial port
+again"), or restart the radio. The Tools row shows the current mode (serial or network).
+
+Developers can also switch over the debug link:
 
 ```
 tools/odr_debug.py radio usb network
 ```
 
 The radio drops off USB for a moment and comes back as a network adapter (USB ID 1FC9:0096). Linux, macOS and Windows
-11 use their built-in drivers; Windows 10 binds it automatically too. Restarting the radio returns it to serial mode.
+11 use their built-in drivers; Windows 10 binds it automatically too. Restarting the radio, or the switch in Tools, returns it to serial mode.
 
 ## Addresses
 

@@ -62,7 +62,19 @@ The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
 | PTT | talk to the focused person or talkgroup once (one-shot), else the channel's target | |
 
 Radios without some keys fall back as the key maps say (few-key map F in the tests). Up / Down on Home change the
-channel, USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a toast until voice prompts exist).
+channel (Settings > Keys > Up/Down on Home: or the zone, or on a DMR channel the talk target, stepping through the
+channel's contact and its listen list), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
+toast until voice prompts exist).
+
+EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
+whatever the long press time (`input_long_threshold`, core/input). On the DM-1701 it is the top side key's long
+action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above); the short press stays USER_3. A hold toggles:
+"EMERGENCY sent: hold again to cancel", "Emergency cancelled" (`ui_svc_emergency_active` reads the radio core's state,
+so a cancel from elsewhere counts). The DM-32 has no emergency key (its top key isn't located yet).
+
+PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
+layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
+UI gives an error beep and "PTT is off while locked: hold * to unlock".
 
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
 idle, the bars and battery icon give way, the battery percent stays, and only the name part of the title is
@@ -77,19 +89,30 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | Calls | Owner | State in this branch |
 |---|---|---|
 | `ui_svc_talk_to` temporary / default | dmr-voice (radio core) | `ui_svc_radio.c`: `radio_req_dmr_target`, `radio_req_dmr_target_clear` |
-| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, auto lock, long press and repeat times and the GPS options have `settings_t` fields (appended, settings-store.md); only the ones without a field stay in RAM. Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
+| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, auto lock, long press and repeat times, the GPS options, theme, Up/Down on Home, low battery level, auto power off and the `ui_flags` bits (large text, hint row, message tone, talker alias, PTT when locked, hear all by default) have `settings_t` fields (appended, settings-store.md); the talk permit tone is the radio core's (`radio_settings_t.talk_permit`); the privacy key type and key (Settings > Privacy) are key slot 1 of the key store (`privacy_type[0]`, `privacy_key[0]`, `privacy_active`), and a change while privacy is on goes to the radio core at once (`radio_req_dmr_privacy`); only the ones without a field stay in RAM (voice prompts). Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
 | `ui_svc_factory_reset` | storage-cps | `ui_svc_storage.c`, as a storage job: `settings_t` back to its defaults and saved, then `storage_native_erase` (the native area, only when it carries the `ODRN` magic or is already blank; never the legacy codeplug, calibration or a foreign region), then a restart (`board.system->reboot`), or a radio core reload where the board can't restart |
 | `ui_svc_focus_target` (one-shot PTT to the focused row), `ui_svc_dmr_timeslot`, `ui_svc_dmr_color_code`, `ui_svc_mode`, `ui_svc_hear_all` | dmr-voice / radio core | `ui_svc_radio.c` on the new requests `radio_req_dmr_focus`, `radio_req_dmr_timeslot`, `radio_req_dmr_color_code`, `radio_req_mode`, `radio_req_dmr_hear_all` (radio-features.md, dmr-voice.md). Timeslot, color code and mode are temporary changes (temp bits 0x20, 0x40, 0x80) that BACK on Home undoes and Save to channel keeps; the hear-all latch ends with the channel, a mode change or BACK on Home (not with the call) |
 | `ui_svc_privacy`, `ui_svc_monitor`, `ui_svc_vox` | radio core | `ui_svc_radio.c`: `radio_req_dmr_privacy` on the active privacy slot (else the first set one), `radio_req_monitor` as a latch, the `vox` setting (all / off) with `radio_view_t.vox_on` for the tile |
-| `ui_svc_emergency`, `ui_svc_feat_ext` | dmr-ext | weak seams: the Emergency screen calls `ui_svc_emergency`, and dmr-ext reports `UI_FEAT_EMERGENCY` through its own strong `ui_svc_feat_ext`; until then the screen says "not in this build" |
+| `ui_svc_emergency`, `ui_svc_feat_ext` | dmr-ext | weak seams: the EMERGENCY key action calls `ui_svc_emergency`, and dmr-ext reports `UI_FEAT_EMERGENCY` through its own strong `ui_svc_feat_ext`; without it the key says "Emergency isn't in this build" |
 | `ui_svc_scan`, `ui_svc_scan_skip`, `ui_svc_feat_radio`; scanning state from `radio_view_t.scan` | radio-features | `ui_svc_radio.c`: `radio_req_scan` (toggle, stop, nuisance) |
 | `ui_svc_roam` (`UI_FEAT_ROAMING`); roaming state from `radio_view_t.roam` (the Home chip, `ROAM` in the strip, Tools > Roaming, the "Moved to" toast) | radio core (CONFIG_DMR_ROAMING) | `ui_svc_radio.c`: `radio_req_roam` |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
-| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change |
+| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; mic gain goes to `ambeVoiceSetMicGain` (DMR: 2 dB a step on the samples before the vocoder, 5 = unity) |
+| `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
+| `ui_svc_ptt_block`, `ui_svc_emergency_active` | input / dmr-ext | `ui_svc_radio.c`: `input_set_ptt_block`; `ui_svc_emergency.c`: `dmr_emergency_state` |
 | backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too) |
 | `ui_svc_msg_*`, `ui_svc_radio_check`, `ui_svc_call_alert`, `ui_svc_poll`, `ui_svc_feat_data` | dmr-data | `ui_svc_data.c` on `dmr_data_api.h`; `ui_svc_msg_delete` is `sms_inbox_delete` |
-| `ui_svc_position` | GPS (no owner yet) | stub: "No GPS on this radio" |
+| `ui_svc_position` | GPS (no owner yet) | stub: "No GPS on this radio"; the GPS settings are dimmed with the same reason on boards without `CAP_GPS` |
+| USB mode (Tools > USB network) | hostlink | `hostlink_network_mode`, `hostlink_request_usb_network` (with `CONFIG_USB_NETWORK` and `CONFIG_HOSTLINK`) |
 | talker alias, private call start | dmr-voice | read from `radio_view_t.dmr`; `UI_EV_PRIVATE_CALL` is not raised by anyone yet |
+
+Auto power off is the UI's: `ui_app_power_off_due()` turns true after Settings > Power > Auto power off without use
+(keys, RX, TX, scan and hotspot count as use), with a banner and beep one minute before; the housekeeping loop
+(core/app) then powers off as for the knob, except that if the power is still on 2 s after releasing the latch it
+latches again, cancels the radio core's power off (`radio_req_power_off_cancel`) and raises `UI_EV_POWER_OFF_FAILED`
+("Couldn't switch off / Turn the knob off"). The low battery warning is the UI's too: a banner (and the low beep
+while the radio core's level is still OK) at Settings > Power > Low battery warning, repeated every 5 minutes, reset
+3 % above it.
 
 Inbound events go through `ui_notify()` (a ring of 4, safe from any task) or, for packages the UI polls, through
 `ui_svc_poll()` once per UI pass. They become banners for 8 s: message received, delivered / not delivered, call
@@ -138,7 +161,8 @@ Geometries: `160x120i5` (DM-1701: 160x128 panel, 5 px inset), `160x128`, `128x64
 | `rx:<src>,<dst>,g\|p[,name]`, `rxend`, `call:<src>,<dst>,g\|p` | a DMR call heard |
 | `msg:<src>,<text>`, `alert:<src>`, `emergency:<src>`, `privcall:<src>`, `hotspot:on\|off`, `battery:<pct>` | events |
 | `shot:<name>` | save the screen |
-| `expect:<key>=<value>` | check: `screen focus depth count zone pos vfo freq mode tx txid txpriv talk locked query banner toast power sq ts cc temporary writes checks sent text scanning privacy hearall monitor hotspot beeps radio_tot radio_backlight` (`_` = space, `*` = anything) |
+| `offfailed` | the auto power off didn't cut the power (`UI_EV_POWER_OFF_FAILED`) |
+| `expect:<key>=<value>` | check: `screen focus depth count zone pos vfo freq mode tx txid txpriv talk locked query banner toast power sq ts cc temporary writes checks sent text scanning privacy hearall monitor hotspot beeps radio_tot radio_backlight beep pttblock poweroff usbnet set<id>` (`beep` the last beep kind, `set<id>` a setting's stored value; `_` = space, `*` = anything) |
 
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
 and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
@@ -159,7 +183,15 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
 - The long-press and key-repeat times are stored in `settings_t` and handed to the input layer (`input_set_timing`,
   clamped to 200..3000 ms and 40..1000 ms); auto lock locks the keys after its time without a key press (counted on
   Home and in menus alike; injected keys count).
-- Mic gain and the GPS options are stored but act on nothing yet (no HAL hook for mic gain, no GPS owner).
+- Mic gain acts on DMR only, in software before the vocoder; FM's microphone path is the modem's (no hook yet). The
+  GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
+- Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
+- Theme switches the color palette (dark, light, high contrast); on 1 bpp displays the row is dimmed.
+- The VFO is FM only, so the Mode tile is dimmed in the VFO ("The VFO is FM only for now") instead of a refusal.
+- The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
+  between steps is refused with the range. Only key slot 1 is reachable from the menu.
+- Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.
+- A failed message isn't kept for a retry: the banner says "Not delivered: send it again".
 - Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"); free text is dimmed.
 - Deleting a message has no undo (`sms_inbox_delete` removes it from the RAM inbox).
 - Save to channel and the permanent talk target write the codeplug as a storage job on the housekeeping task, so the

@@ -29,8 +29,12 @@ alarm 3 times, then keys the transmitter for 10 s so the people listening hear y
 call you make until you cancel carries the emergency flag and goes to the channel's talk target. Pressing **PTT**
 during the hot mic takes over the transmission.
 
-The DM-1701's keys have no emergency function yet, so on the DM-1701 an emergency can be started only over the
-debug link:
+On the DM-1701, hold the **top side key** (above **PTT**) for 1.5 s. The screen says "EMERGENCY sent: hold again to
+cancel". Hold it again for 1.5 s to cancel ("Emergency cancelled"). A short press of the same key still changes the
+power level, and letting go before 1.5 s never starts an emergency. Where it can't start (see below) the radio says
+"Can't start emergency here: DMR channel and DMR ID needed". The DM-32 has no emergency key yet.
+
+Developers can also start and cancel it over the debug link:
 
 ```
 tools/odr_debug.py data emergency start

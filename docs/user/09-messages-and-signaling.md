@@ -8,7 +8,8 @@ been tested on air yet. None of them needs the codec. They need a DMR channel yo
 ## Receiving a message
 
 When a message arrives, the radio shows a banner with the sender and the first words for 8 s. Press **#** while the
-banner is up to open the message.
+banner is up to open the message. The radio plays a short three-note tone with the banner unless **Settings > Sound >
+Message tone** is off.
 
 <img src="../ux/screens/160x120i5/banner_message.png" width="200" alt="A message banner">
 
@@ -45,7 +46,8 @@ The radio keeps the last 4 messages received, in memory. They are lost when the 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">
 
 The radio shows "Sending to ..." and returns to Home. A message to a person asks for a confirmation and is tried twice;
-the result comes as a banner: "Delivered to ..." or "No answer from ...". A message to a talkgroup has no confirmation.
+the result comes as a banner: "Delivered to ..." or "No answer from ...", with "Not delivered: send it again" under it. The message
+isn't kept for a retry: send it again from the actions. A message to a talkgroup has no confirmation.
 
 Typing your own text isn't built yet: "Write..." is dimmed. Messages you send aren't stored in the radio.
 

@@ -258,6 +258,12 @@ void radio_req_power_off(void)
 	post(RREQ_POWER_OFF, 0, pdMS_TO_TICKS(50));
 }
 
+void radio_req_power_off_cancel(void)
+{
+	power_off_busy = false;
+	post(RREQ_POWER_OFF, 1, pdMS_TO_TICKS(50));
+}
+
 bool radio_power_off_busy(void)
 {
 	return power_off_busy;

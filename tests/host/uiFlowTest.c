@@ -75,8 +75,8 @@ static const flow_t flows[] = {
 	{ "S backlight time to the radio", "", "ok 6 2 down ok", "radio_backlight=60", 5, false },
 	{ "S key beep", "", "up", "beeps=1", 1, false },
 	{ "S long press time to input", "", "ok 6 8 ok up ok", "longpress=700", 6, false },
-	{ "S auto lock after 30 s", "ok 6 4 down ok long:back", "wait:31000", "locked=1", 0, false },
-	{ "S auto lock waits for keys", "ok 6 4 down ok long:back", "wait:20000 up wait:20000", "locked=0", 1, false },
+	{ "S auto lock after 30 s", "ok 6 4 down down ok long:back", "wait:31000", "locked=1", 0, false },
+	{ "S auto lock waits for keys", "ok 6 4 down down ok long:back", "wait:20000 up wait:20000", "locked=0", 1, false },
 	// DMR repeater roaming (docs/spec/dmr-roaming.md 6.2): Tools 8
 	{ "R roaming on for this zone", "", "ok 5 8 1", "roamzone=1 roam=1 toast=Roaming_on_for", 4, false },
 	{ "R roaming off again", "ok 5 8 1", "1", "roamzone=0 roam=0 toast=Roaming_off", 1, false },
@@ -85,6 +85,45 @@ static const flow_t flows[] = {
 	{ "R roam now ends the lock", "ok 5 8 1 3", "2", "roam=1 roams=1", 1, false },
 	{ "R not on the VFO", "ok 4 up ok", "ok 5 8 1", "roamzone=0 toast=Roaming_works", 4, false },
 	{ "T22 Home and undo", "quick 2 back ok 6", "long:back back", "screen=home temporary=0", 2, false },
+	// Settings that act now (uifix). set<N> = ui_setting_t N: 7 theme, 31 privacy key type, 32 privacy key
+	{ "S PTT on when locked (default)", "long:quick", "ptt", "tx=1 pttblock=0", 1, false },
+	{ "S PTT off when locked", "ok 6 4 down down down ok long:back long:quick", "ptt",
+	  "tx=0 pttblock=1 toast=PTT_is_off", 1, false },
+	{ "S PTT back with the unlock", "ok 6 4 down down down ok long:back long:quick", "long:quick ptt",
+	  "tx=1 pttblock=0", 2, false },
+	{ "S Up/Down on Home: zone", "ok 6 8 down down ok long:back", "up", "zone=1 screen=home", 1, false },
+	{ "S Up/Down on Home: talk target", "ok 6 8 down down ok ok long:back", "up", "talk=91 toast=Talking_to", 1,
+	  false },
+	{ "S Up/Down: back to the default", "ok 6 8 down down ok ok long:back up", "down", "talk=3100", 1, false },
+	{ "S hear all by default", "ok 6 3 down down down down ok long:back", "up up", "hearall=1 pos=5", 2, false },
+	{ "S hear all by default: BACK", "ok 6 3 down down down down ok long:back up up", "back", "hearall=0", 1, false },
+	{ "S message tone", "", "msg:3101234,Hi", "beep=2", 0, false },
+	{ "S low battery warning", "", "battery:14", "banner=Battery_14%", 0, false },
+	{ "S privacy key typed", "", "ok 6 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
+	{ "S privacy key out of range", "ok 6 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
+	{ "S privacy key needs a type", "ok 6 4 down", "ok", "toast=Pick_a_privacy", 1, false },
+	{ "S number typed", "", "ok 6 3 down down ok 3 ok", "sq=5 set12=3", 8, false },
+	{ "S voice prompts not built", "ok 6 1 down down down", "ok", "toast=Voice_prompts", 1, false },
+	{ "S mode tile in the VFO", "ok 4 up ok", "quick 4", "toast=The_VFO_is_FM mode=fm", 2, false },
+	{ "S scan in the VFO: the band", "ok 4 up ok", "ok 5 1", "toast=Scanning_the_band scanning=1", 3, false },
+	{ "S scan on a channel: the zone", "", "ok 5 1", "toast=Scanning_this_zone scanning=1", 3, false },
+	{ "S USB network on", "", "ok 5 4 ok", "usbnet=1 toast=USB_is_a_network screen=home", 4, false },
+	{ "S USB network off", "ok 5 4 ok", "ok 5 4 ok", "usbnet=0 toast=USB_is_a_serial", 4, false },
+	{ "S message failed text", "", "", "screen=home", 0, false },
+};
+
+// DM-1701 key map only: the top side key, long waits
+static const flow_t flows_k[] = {
+	{ "S theme light (color screens)", "", "ok 6 2 down down ok", "set7=1", 6, false },
+	{ "E emergency: hold the top key", "", "long:emerg", "toast=EMERGENCY_sent", 1, false },
+	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_cancelled", 1, false },
+	{ "E top key short: power", "", "user3", "power=5", 1, false },
+	{ "P auto power off warns", "ok 6 7 down ok long:back", "wait:1741000", "banner=Switching_off poweroff=0", 0,
+	  false },
+	{ "P auto power off", "ok 6 7 down ok long:back", "wait:1801000", "poweroff=1", 0, false },
+	{ "P a key keeps it on", "ok 6 7 down ok long:back wait:1700000", "up wait:200000", "poweroff=0", 1, false },
+	{ "P the knob holds it", "ok 6 7 down ok long:back wait:1801000", "offfailed", "poweroff=0 banner=Couldn't", 0,
+	  false },
 };
 
 // Few-key radios (7.5): fallbacks
@@ -298,6 +337,8 @@ int main(void)
 		for (size_t i = 0; i < sizeof flows / sizeof flows[0]; i++)
 			run_flow(&flows[i], g, runs[r].map, runs[r].name);
 	}
+	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)
+		run_flow(&flows_k[i], sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	const sim_geom_t *gf = sim_geom_find("160x128");
 	for (size_t i = 0; i < sizeof flows_f / sizeof flows_f[0]; i++)
 		run_flow(&flows_f[i], gf, SIM_MAP_F, "F few keys");

@@ -81,6 +81,10 @@ void ui_open_actions(const ui_target_t *t);
 void ui_talk(const ui_target_t *t, bool permanent);
 // The board has a key for this action (as a short or a long press)
 bool ui_has_action(uint8_t action);
+// A setting the UI acts on itself changed (brightness, hints, large text, theme, lock, Home keys, ...)
+void ui_apply_setting(uint8_t id, int32_t v);
+// Scan on / off (quick 7, Tools 1, long SK2), with a toast that says what scans: the zone, or the band in the VFO
+void ui_scan_toggle(void);
 
 // Filtered lists: row i -> raw index; the filter text
 uint16_t ui_filter_count(void);

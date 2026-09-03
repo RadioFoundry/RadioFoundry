@@ -148,3 +148,21 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
     lcs = [r for r in heard if r.get("so") is not None and r.get("dst") == tg and r.get("src") == own]
     assert lcs and all(r["so"] & 0x80 for r in lcs), heard
     radio.link.emergency("cancel")
+
+
+@pytest.mark.radio_tx
+def test_emergency_key_hold(radio, pytestconfig, em_settings):
+    """The EMERGENCY key action (the DM-1701's top side key held 1.5 s; injected as the action, held for the
+    hold-to-activate time): alarm-only, one try; the UI says "EMERGENCY sent", em.state leaves idle; a second hold
+    cancels ("Emergency cancelled", em.state idle). No bench: the alarm goes out at the lowest power."""
+    from odr_hil import LONG
+    _emergency_setup(radio, pytestconfig, tx=True)
+    radio.link.emergency_settings("alarm", 0, tries=1, hot_mic_s=0)
+    radio.wait_for(lambda x: x.get("em.mode") == "alarm", sections=("dmr_ext",), what="alarm mode")
+    radio.press("emergency", LONG)
+    radio.wait_for(lambda x: x.get("em.state") in ("alarm", "active") and "EMERGENCY sent" in x.get("ui.toast", ""),
+                   timeout=5.0, sections=("dmr_ext", "link"), what="emergency started by the key")
+    radio.wait_for(lambda x: x.get("em.state") == "active", timeout=8.0, sections=("dmr_ext",), what="alarm sent")
+    radio.press("emergency", LONG)
+    radio.wait_for(lambda x: x.get("em.state") == "idle" and "cancelled" in x.get("ui.toast", ""),
+                   sections=("dmr_ext", "link"), what="cancelled by the key")

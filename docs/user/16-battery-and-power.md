@@ -4,13 +4,19 @@
 
 ## Battery level
 
-The status line shows the battery as an icon and a percentage. The percentage turns to the warning color at 15 % and
-below. **OK**, **5** (Tools), **6** (Battery) shows the level ("charge soon" at 15 % and below). The radio reads the
+The status line shows the battery as an icon and a percentage. The percentage turns to the warning color at the low battery
+warning level (**Settings > Power > Low battery warning**, 15 % by default) and below. **OK**, **5** (Tools), **6**
+(Battery) shows the level ("charge soon" at that level and below). The radio reads the
 battery once a second, and not while transmitting or for 3 s after, because the voltage sags under transmit.
 
 The battery percentage scale hasn't been checked against a meter yet.
 
 ## Low and critical battery
+
+At the low battery warning level the radio shows the banner "Battery 15%: charge soon" (with the actual percentage)
+and plays the low battery beep. It repeats every 5 minutes while the battery stays at or below that level, and stops
+once the battery is 3 % above it (charged). The radio's own voltage thresholds below warn as well, whichever comes
+first.
 
 | Level | DM-1701 threshold | What the radio does |
 |---|---|---|
@@ -42,6 +48,16 @@ sets when it dims (to a fifth of the brightness) and when it goes off (four time
 receiver sleeps and wakes for 100 ms at a time to listen. Any signal in a listening window wakes it fully. A key
 press, monitor, scan, VOX, a DMR channel, hotspot mode and channels the codeplug marks "no battery saving" stop it.
 Off by default: it hasn't been tested on the radio yet.
+
+## Auto power off
+
+**Settings > Power > Auto power off** (Off, 30 min, 1 h, 2 h; Off by default) switches the radio off after that long
+without use. A key press, a call received or sent, a scan and hotspot mode count as use. One minute before, the
+radio beeps and shows "Switching off in 1 min / Any key keeps it on". Any key cancels it.
+
+The DM-1701's power switch is on the volume knob. Whether the radio can cut its own power while the knob is on hasn't
+been checked on the radio yet. If it can't, the radio comes back up after 2 s and shows "Couldn't switch off / Turn
+the knob off", and keeps running as before.
 
 ## Turning off
 

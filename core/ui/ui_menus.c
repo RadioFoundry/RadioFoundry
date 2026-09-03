@@ -10,7 +10,7 @@
 #include "fmt.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
-#if CONFIG_HOTSPOT
+#if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
 #endif
 
@@ -838,11 +838,14 @@ static const ui_scr_def_t zone_screen = {
 
 // ======================= Info pages =======================
 
-enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_MY_RADIO, INFO_KEYS,
-       INFO_USB_NET, INFO_SFR };
+enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_MY_RADIO, INFO_USB_NET,
+       INFO_SFR };
 
 static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "Firmware", "Codeplug", "My radio",
-					   "Privacy keys", "USB network", "SFR" };
+					   "USB network", "SFR" };
+
+// The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
+#define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 
 static const char *info_title(void) { return info_titles[ui_frame()->arg]; }
 
@@ -857,7 +860,7 @@ static void sb_deg(sbuf_t *b, int32_t e7, char pos, char neg)
 
 static const char *info_body(void)
 {
-	static char t[160];
+	static char t[200];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	switch (ui_frame()->arg) {
@@ -893,7 +896,8 @@ static const char *info_body(void)
 	case INFO_BATTERY:
 		sb_str(&b, "Battery ");
 		sb_u32(&b, ui_st.battery_pct, 1);
-		sb_str(&b, ui_st.battery_pct <= 15 ? "%: charge soon." : "%.");
+		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ? "%: charge soon." :
+		       "%.");
 		break;
 	case INFO_FIRMWARE:
 		sb_str(&b, "OpenDigitalRadio\n");
@@ -924,16 +928,22 @@ static const char *info_body(void)
 		sb_str(&b, "Radio ");
 		sb_str(&b, board.name);
 		break;
-	case INFO_KEYS:
-		sb_str(&b, "Privacy keys are loaded with the codeplug (qdmr). A channel or contact with a key can use "
-			"privacy from Quick settings (6).");
-		break;
 	case INFO_USB_NET:
-		sb_str(&b, CONFIG_USB_NETWORK ? "USB network: connect USB, the computer sees a network adapter." :
-			"USB network isn't in this build.");
+#if USB_NET_UI
+		if (hostlink_network_mode())
+			sb_str(&b, "USB is a network adapter now (IP over DMR). The serial port (qdmr, hotspot, debug link) "
+				"is off: switch back below, or restart the radio.");
+		else
+			sb_str(&b, "USB is a serial port now (qdmr, hotspot, debug link). As a network adapter the "
+				"computer reaches other radios by IP; serial tools stop until you switch back here or "
+				"restart.");
+#else
+		sb_str(&b, "USB network isn't in this build.");
+#endif
 		break;
 	case INFO_SFR:
-		sb_str(&b, CONFIG_SFR ? "Single frequency repeater: set the role in Settings > Connections." :
+		sb_str(&b, CONFIG_SFR ? "Single frequency repeater runs in hotspot mode: the hotspot host turns it on "
+			"(duplex, RX = TX). The repeater and user roles on a channel aren't built yet." :
 			"Single frequency repeater isn't in this build.");
 		break;
 	default:
@@ -948,12 +958,22 @@ static uint16_t info_count(void)
 	if (ui_frame()->arg == INFO_HOTSPOT && hostlink_mode() == HOSTLINK_HOTSPOT)
 		return 1;
 #endif
+#if USB_NET_UI
+	if (ui_frame()->arg == INFO_USB_NET)
+		return 1;
+#endif
 	return 0;
 }
 
 static void info_item(uint16_t i, ui_item_t *it)
 {
 	(void)i;
+#if USB_NET_UI
+	if (ui_frame()->arg == INFO_USB_NET) {
+		strcpy(it->label, hostlink_network_mode() ? "Switch USB to serial" : "Switch USB to network");
+		return;
+	}
+#endif
 	strcpy(it->label, "Stop hotspot");
 }
 
@@ -961,6 +981,18 @@ static void info_select(uint16_t i, bool hold)
 {
 	(void)i;
 	(void)hold;
+#if USB_NET_UI
+	if (ui_frame()->arg == INFO_USB_NET) {
+		bool net = !hostlink_network_mode();
+		if (!hostlink_request_usb_network(net)) {
+			ui_toast("No USB network on this radio");
+		} else {
+			ui_go_home();
+			ui_toast(net ? "USB is a network adapter now" : "USB is a serial port again");
+		}
+		return;
+	}
+#endif
 #if CONFIG_HOTSPOT
 	if (ui_frame()->arg == INFO_HOTSPOT) {
 		hostlink_hotspot_exit();
@@ -1146,8 +1178,11 @@ static void tools_item(uint16_t row, ui_item_t *it)
 #endif
 		break;
 	case T_USB_NET:
-		if (!CONFIG_USB_NETWORK)
-			it->flags |= UI_ITEM_DIM;
+#if USB_NET_UI
+		sb_str(&b, hostlink_network_mode() ? "network" : "serial");
+#else
+		it->flags |= UI_ITEM_DIM;
+#endif
 		break;
 	case T_SFR:
 		if (!CONFIG_SFR)
@@ -1176,10 +1211,9 @@ static void tools_select(uint16_t row, bool hold)
 	case T_SCAN:
 		if (!(feats() & UI_FEAT_SCAN)) {
 			ui_toast("Scan isn't in this build yet");
-		} else if (ui_svc_scan(!ui_st.scanning)) {
-			ui_st.scanning = !ui_st.scanning;
+		} else {
 			ui_go_home();
-			ui_toast(ui_st.scanning ? "Scanning this zone" : "Scan stopped");
+			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO
 		}
 		break;
 	case T_POSITION: ui_push(SCR_INFO, INFO_POSITION); break;
@@ -1204,7 +1238,7 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_KEYS };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO };
 
 typedef struct {
 	const char *name;
@@ -1240,6 +1274,8 @@ static const int16_t v_updown[] = { 0, 1, 2 };
 static const char *const n_updown[] = { "Channel", "Zone", "Talk target" };
 static const int16_t v_autooff[] = { 0, 30, 60, 120 };
 static const char *const n_autooff[] = { "Off", "30 min", "1 h", "2 h" };
+static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
+static const char *const n_ptype[] = { "Off", "Motorola", "Anytone" };
 
 #define TOGGLE(nm, syn_, sid) { nm, syn_, ST_TOGGLE, sid, 0, 1, 1, NULL, NULL, 0, NULL }
 #define NUMBER(nm, syn_, sid, lo, hi, st, u) { nm, syn_, ST_NUMBER, sid, lo, hi, st, NULL, NULL, 0, u }
@@ -1269,7 +1305,8 @@ static const set_item_t s_talk[] = {
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
 };
 static const set_item_t s_privacy[] = {
-	ACTION("Privacy keys", "encryption", SA_KEYS),
+	LIST("Privacy key type", "encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
+	NUMBER("Privacy key", "BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),	// the range follows the type (set_range)
 	LIST("Auto lock", "keylock", UI_SET_AUTO_LOCK_S, v_lock, n_lock),
 	TOGGLE("PTT when locked", NULL, UI_SET_PTT_LOCKED),
 };
@@ -1355,6 +1392,7 @@ static const ui_scr_def_t settings_screen = {
 // A group: each row shows its value; toggles and lists change on OK, numbers open an inline editor
 
 static bool set_editing;
+static bool set_typed;		// digits typed into the editor since it opened
 static int32_t set_value;
 
 static const set_item_t *set_item_at(uint16_t i)
@@ -1392,6 +1430,52 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 
 static uint16_t group_count(void) { return ui_set_item_count((uint8_t)ui_frame()->arg); }
 
+// Why a setting can't be used on this radio or in this build (the row is dimmed and OK says it), NULL if it can
+static const char *set_why_not(const set_item_t *s)
+{
+	if (s->type == ST_ACTION)
+		return NULL;
+	switch (s->id) {
+	case UI_SET_VOICE_PROMPTS:
+		return "Voice prompts aren't built yet: no recorded speech";
+	case UI_SET_TALK_PERMIT:
+		return CONFIG_DMR && CONFIG_BEEP ? NULL : "Talk permit is for DMR: not in this build";
+	case UI_SET_MESSAGE_TONE:
+		return feats() & UI_FEAT_SMS ? NULL : "Text messages aren't in this build";
+	case UI_SET_THEME:
+		return board.display != NULL && board.display->bpp == 1 ? "Themes are for color screens" : NULL;
+	case UI_SET_MIC_GAIN:
+		return CONFIG_DMR ? NULL : "Mic gain works on DMR: not in this build";
+	case UI_SET_HEAR_ALL_DEFAULT:
+		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Hear all is for DMR: not in this build";
+	case UI_SET_ALIAS_SHOW:
+		return CONFIG_DMR_TALKER_ALIAS ? NULL : "Talker alias isn't in this build";
+	case UI_SET_PRIVACY_TYPE:
+	case UI_SET_PRIVACY_KEY:
+		if (!(feats() & UI_FEAT_PRIVACY))
+			return "Privacy isn't in this build";
+		return s->id == UI_SET_PRIVACY_KEY && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0 ?
+			"Pick a privacy key type first" : NULL;
+	case UI_SET_GPS:
+	case UI_SET_POS_FORMAT:
+	case UI_SET_POS_SEND_S:
+		return board.caps & CAP_GPS ? NULL : "No GPS on this radio";
+	default:
+		return NULL;
+	}
+}
+
+// A number setting's range: the privacy key's follows its type (Motorola 1-255, Anytone 0-65535)
+static void set_range(const set_item_t *s, int32_t *lo, int32_t *hi)
+{
+	*lo = s->min;
+	*hi = s->max;
+	if (s->id == UI_SET_PRIVACY_KEY && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 2) {
+		*lo = 0;
+		*hi = 65535;
+	}
+}
+
 static void group_item(uint16_t i, ui_item_t *it)
 {
 	const set_item_t *s = set_item_at(i);
@@ -1401,28 +1485,19 @@ static void group_item(uint16_t i, ui_item_t *it)
 	bool edit = set_editing && i == ui_frame()->focus;
 	if (s->type != ST_ACTION)
 		set_value_text(s, edit ? set_value : ui_svc_setting_get(s->id), it->value, sizeof it->value);
+	if (s->id == UI_SET_PRIVACY_KEY && s->type == ST_NUMBER && !edit && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0)
+		strcpy(it->value, "-");
 	if (edit)
 		it->flags |= UI_ITEM_EDIT;
-}
-
-// Settings the UI itself uses take effect at once
-static void apply_setting(uint8_t id, int32_t v)
-{
-	if (id == UI_SET_BRIGHTNESS)
-		ui_st.brightness = (uint8_t)v;
-	else if (id == UI_SET_HINTS)
-		ui_st.hints = v != 0;
-	else if (id == UI_SET_LARGE_TEXT)
-		ui_st.large_text = v != 0;
-	else if (id == UI_SET_AUTO_LOCK_S)
-		ui_st.auto_lock_s = (uint16_t)(v < 0 ? 0 : v > 0xFFFF ? 0xFFFF : v);
+	if (set_why_not(s) != NULL)
+		it->flags |= UI_ITEM_DIM;
 }
 
 static void set_store(const set_item_t *s, int32_t v)
 {
 	if (ui_svc_setting_set(s->id, v)) {
-		apply_setting(s->id, v);
-		ui_svc_apply(s->id, v);
+		ui_apply_setting(s->id, v);	// the ones the UI acts on itself
+		ui_svc_apply(s->id, v);		// and the ones other packages do
 	} else {
 		ui_toast("Couldn't save the setting: try again");
 	}
@@ -1433,6 +1508,12 @@ static void group_select(uint16_t i, bool hold)
 	const set_item_t *s = set_item_at(i);
 	if (s == NULL)
 		return;
+	const char *why = set_why_not(s);
+	if (why != NULL) {
+		set_editing = false;
+		ui_toast(why);
+		return;
+	}
 	int32_t v = ui_svc_setting_get(s->id);
 	switch (s->type) {
 	case ST_TOGGLE:
@@ -1451,6 +1532,7 @@ static void group_select(uint16_t i, bool hold)
 			set_store(s, set_value);
 		} else {
 			set_editing = true;
+			set_typed = false;
 			set_value = v;
 		}
 		break;
@@ -1465,7 +1547,6 @@ static void group_select(uint16_t i, bool hold)
 		case SA_FIRMWARE: ui_push(SCR_INFO, INFO_FIRMWARE); break;
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
 		case SA_MY_RADIO: ui_push(SCR_INFO, INFO_MY_RADIO); break;
-		case SA_KEYS: ui_push(SCR_INFO, INFO_KEYS); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 		default: break;
 		}
@@ -1486,11 +1567,25 @@ static bool group_key(const input_event_t *ev)
 		set_editing = false;
 		return false;
 	}
+	int32_t lo, hi;
+	set_range(s, &lo, &hi);
 	int dir = ev->action == ACT_NAV_UP ? 1 : ev->action == ACT_NAV_DOWN ? -1 :
 		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
 	if (dir != 0 && ev->gesture != GESTURE_UP) {
 		int32_t v = set_value + dir * s->step;
-		set_value = v < s->min ? s->min : v > s->max ? s->max : v;
+		set_value = v < lo ? lo : v > hi ? hi : v;
+		ui_dirty();
+		return true;
+	}
+	// Digits type the value (a key, a level): each one appended, starting over when the number would be too big
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 &&
+			(ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
+		int32_t d = ev->action - ACT_DIGIT_0;
+		int32_t v = set_typed ? set_value * 10 + d : d;
+		set_value = v > hi ? d : v;
+		set_typed = true;
+		if (set_value < lo && set_value * 10 > hi)
+			set_value = lo;	// can't grow into the range any more
 		ui_dirty();
 		return true;
 	}
@@ -1501,7 +1596,23 @@ static bool group_key(const input_event_t *ev)
 	}
 	if (ev->action == ACT_SELECT && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
 		set_editing = false;
-		set_store(s, set_value);
+		if (set_value < lo || set_value > hi || (s->step > 1 && (set_value - lo) % s->step != 0)) {
+			// A typed value outside the range or between the steps: say what fits instead of guessing
+			static char msg[40];
+			sbuf_t b;
+			sb_init(&b, msg, sizeof msg);
+			sb_str(&b, "Not changed: ");
+			sb_i32(&b, lo);
+			sb_str(&b, " to ");
+			sb_i32(&b, hi);
+			if (s->step > 1) {
+				sb_str(&b, ", steps of ");
+				sb_i32(&b, s->step);
+			}
+			ui_toast(msg);
+		} else {
+			set_store(s, set_value);
+		}
 		ui_dirty();
 		return true;
 	}

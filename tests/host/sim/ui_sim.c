@@ -13,6 +13,7 @@
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //   hotspot:on|off      the host link enters / leaves hotspot mode
+//   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything
@@ -82,7 +83,7 @@ static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
 	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false },
+	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false },
 	{ K_FN2, ACT_USER_4, ACT_USER_4, false, false }, { K_PTT, ACT_PTT, ACT_PTT, true, false },
 };
 static const keymap_entry_t map_m[] = {	// GD-77 (7.3)
@@ -148,6 +149,9 @@ uint32_t sim_now(void) { return now_ms; }
 static bool hotspot_on;
 hostlink_mode_t hostlink_mode(void) { return hotspot_on ? HOSTLINK_HOTSPOT : HOSTLINK_IDLE; }
 void hostlink_hotspot_exit(void) { hotspot_on = false; }
+static bool usb_net;	// the USB personality (Tools > USB network)
+bool hostlink_request_usb_network(bool network) { usb_net = network; return true; }
+bool hostlink_network_mode(void) { return usb_net; }
 void hotspot_get_view(hotspot_view_t *v)
 {
 	memset(v, 0, sizeof *v);
@@ -630,7 +634,9 @@ bool ui_svc_roam(uint8_t cmd)
 	return false;
 #endif
 }
-void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; }
+void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; sim_rec.last_beep = beep; }
+static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
+void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	if (id == UI_SET_LONG_PRESS_MS)
@@ -685,7 +691,9 @@ bool ui_svc_position(ui_position_t *out)
 	out->alt_m = 43;
 	return true;
 }
-bool ui_svc_emergency(bool on) { (void)on; return true; }
+static bool emergency_on;
+bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
+bool ui_svc_emergency_active(void) { return emergency_on; }
 bool ui_svc_factory_reset(void) { return true; }
 
 static void add_message(uint32_t src, const char *text)
@@ -768,6 +776,7 @@ static void advance(uint32_t ms)
 
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
+	emergency_on = false;
 	disp.width = g->w;
 	disp.height = g->h;
 	disp.bpp = g->bpp;
@@ -789,7 +798,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.zone_index = 0;
 	view.zone_pos = 2;	// 3 COUNTY DMR
 	n_inbox = 0;
-	hotspot_on = rx_on = false;
+	hotspot_on = rx_on = usb_net = false;
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
@@ -803,6 +812,17 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_BACKLIGHT_S, 30);
 	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
+	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
+	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
+	ui_svc_setting_set(UI_SET_UPDOWN_HOME, 0);
+	ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 0);
+	ui_svc_setting_set(UI_SET_LOW_BATTERY, 15);
+	ui_svc_setting_set(UI_SET_THEME, 0);
+	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
+	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
+	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
+	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
+	ptt_blocked = false;
 	ui_app_init();
 	presses = 0;
 	advance(200);
@@ -925,11 +945,17 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "longpress") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.long_press_ms);
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
 	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
+	else if (strcmp(key, "beep") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_beep);	// ui_beep_t
+	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
+	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
+	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
+		snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get((uint8_t)atoi(key + 3)));
 	else if (strcmp(key, "radio_tot") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tot_s);
 	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.backlight_s);
 	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
+	else if (strcmp(key, "usbnet") == 0) snprintf(got, sizeof got, "%u", usb_net);
 #if CONFIG_DMR_ROAMING
 	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*
 	else if (strcmp(key, "roamzone") == 0) snprintf(got, sizeof got, "%u", view.roam.zone_on);
@@ -961,7 +987,8 @@ static bool run_token(char *t, char *err, size_t len)
 		presses++;
 		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0 };
 		ui_app_key(&ev);
-		ptt(true);
+		if (!ptt_blocked)
+			ptt(true);
 		ptt_up_at = now_ms + ms;
 		advance(ms + TICK_MS);
 		return true;
@@ -970,7 +997,8 @@ static bool run_token(char *t, char *err, size_t len)
 		presses++;
 		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0 };
 		ui_app_key(&ev);
-		ptt(true);
+		if (!ptt_blocked)
+			ptt(true);
 		advance(1500);
 		return true;
 	}
@@ -1043,6 +1071,14 @@ static bool run_token(char *t, char *err, size_t len)
 		char l1[17], l2[17];
 		ui_svc_boot_text(l1, l2);
 		ui_draw_splash(board.name, "a1b2c3d4", l1, l2);
+		return true;
+	}
+	if (strcmp(t, "offfailed") == 0) {	// the housekeeping task couldn't switch off (the knob holds the supply)
+		ui_event_t ev;
+		memset(&ev, 0, sizeof ev);
+		ev.kind = UI_EV_POWER_OFF_FAILED;
+		ui_notify(&ev);
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "battery") == 0 && arg != NULL) {

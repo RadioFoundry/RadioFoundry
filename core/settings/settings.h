@@ -115,7 +115,22 @@ typedef struct {
 	uint8_t roam_stored;		// 1 = the roam_ values are set
 	uint16_t roam_check_s;		// beacon check interval, 0 = off
 	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// bit z % 8 of byte z / 8: zone z is a roaming zone
+	// More of the UI's settings (docs/spec/ui.md 4; appended for uifix)
+	uint8_t theme;			// 0 dark, 1 light, 2 high contrast (color displays)
+	uint8_t ui_flags;		// SETTINGS_UI_* bits
+	uint8_t updown_home;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target
+	uint8_t low_batt_pct;		// warn at this battery percent (5-30), 0 = only the board's low voltage
+	uint16_t auto_off_min;		// switch off after this long without use, 0 = never
+	uint16_t reserved5;
 } settings_t;
+
+// settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)
+#define SETTINGS_UI_LARGE_TEXT		0x01u
+#define SETTINGS_UI_HINTS		0x02u
+#define SETTINGS_UI_MESSAGE_TONE	0x04u
+#define SETTINGS_UI_ALIAS		0x08u	// show received talker aliases
+#define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
+#define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
 
 // settings_t.rs_flags
 #define SETTINGS_RS_ROGER_BEEP		0x01u
@@ -123,6 +138,7 @@ typedef struct {
 #define SETTINGS_RS_SCAN_PRIORITY	0x04u
 #define SETTINGS_RS_SCAN_BEEP		0x08u
 #define SETTINGS_RS_KEY_BEEP		0x10u
+#define SETTINGS_RS_NO_TALK_PERMIT	0x20u	// the talk permit tone off (0 = on, as before)
 
 // settings_t.ds_flags
 #define SETTINGS_DS_RADIO_CHECK_REPLY	0x01u
