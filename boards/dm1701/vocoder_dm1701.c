@@ -165,6 +165,14 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
 }
 
-const hal_vocoder_t dm1701_vocoder = { .present = present, .reset = reset, .encode = encode, .decode = decode };
+// The id tools/odrflash and the release manifests use for this codec (signature and both CRCs above matched)
+static const char *profile(void)
+{
+	return present() ? "dm1701-v0206-csv" : NULL;
+}
+
+const hal_vocoder_t dm1701_vocoder = {
+	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
+};
 
 #endif	// CONFIG_DMR

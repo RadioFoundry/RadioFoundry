@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# odrflash as a Python package: pipx install ./tools/odrflash (or a git URL with #subdirectory=tools/odrflash).
+# The release workflow also builds single-file executables from it with PyInstaller (docs/dev/release.md).
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "odrflash"
+dynamic = ["version"]
+description = "Flash OpenDigitalRadio firmware, keeping or merging the radio's own AMBE codec"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+dependencies = [
+	"pyusb>=1.2.1",
+	"libusb-package>=1.0.26.1",
+	"pyserial>=3.5",
+	"certifi",
+]
+
+[project.scripts]
+odrflash = "odrflash.cli:main"
+
+[tool.setuptools]
+packages = ["odrflash"]
+
+[tool.setuptools.dynamic]
+version = { attr = "odrflash.__version__" }

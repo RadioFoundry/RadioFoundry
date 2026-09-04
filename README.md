@@ -37,8 +37,8 @@ receive, and DMR transmit (decoded by an MMDVM receiver on the SDR bench). Most 
 privacy, hotspot, USB network, SFR, CPS) is built and passes the host tests, but is still waiting on hardware tests.
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
-Releases carry the user manual as a PDF but no firmware. You build the firmware yourself and supply the codec (see
-below).
+Releases carry the DM-1701 firmware (everything except the codec), `odrflash` to flash it on Windows, macOS and
+Linux, and the user manual as a PDF. You don't build anything; see [Installing](docs/user/02-installing.md).
 
 ## What it does
 
@@ -88,13 +88,14 @@ the same thing.
 
 DMR voice needs DVSI's proprietary AMBE+2 vocoder. ODR never ships it, not in this repo and not in any binary.
 
-Each radio runs exactly the codec its own stock firmware came with. You download the stock firmware for your radio,
-and a tool here pulls the codec out of it and merges it into your ODR image on your own machine. The tool checks the
-stock file by SHA-256 and refuses anything it doesn't recognize.
+Each radio runs exactly the codec its own stock firmware came with. Release images leave it out, and
+[odrflash](tools/odrflash/README.md) handles it when you flash: if the radio already holds the right codec (it runs
+ODR with DMR voice working, or the matching stock firmware), odrflash writes only ODR's own flash sectors and the
+codec stays where it is. Otherwise it pulls the codec out of the stock firmware file you downloaded, on your own
+machine, and writes it to the radio. It checks the stock file by SHA-256 and refuses anything it doesn't recognize.
 
 ```
-make BOARD=dm1701
-tools/codec_extract.py --stock "DM-1701(CSV)-V02.06.bin" --key dm1701.key
+odrflash flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
 ```
 
 The DM-32UV uses `tools/dm32_codec.py`. Details, including which stock files work:
@@ -112,9 +113,11 @@ make -C tests/host          # host tests
 tools/ci.sh                 # full release gate: tests, build matrix, license checks
 ```
 
-To flash a DM-1701, hold PTT and the side key above it while powering on, then run `tools/stm32_dfu.py image.bin
---model dm1701 --key dm1701.key`. The bootloader key isn't in this repo either; you supply it. The DM-32UV image gets
-wrapped with `tools/dm32_pack.py` for Baofeng's updater.
+To flash your own DM-1701 build, run `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701` (add `--stock FILE`
+to write the codec too) and hold PTT and the side key above it while powering the radio on when it asks. The
+bootloader key isn't in this repo; odrflash derives it from the stock firmware file. Releases are built by
+`.github/workflows/release.yml` ([releases](docs/dev/release.md)). The DM-32UV image gets wrapped with
+`tools/dm32_pack.py` for Baofeng's updater.
 
 More: [build-config](docs/build-config.md), [testing](docs/testing/README.md),
 [DM-1701 hardware and bootloader](docs/spec/hardware-dm1701.md).
@@ -205,7 +208,7 @@ of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make su
 | `boards/` | One directory per radio: board descriptor, pins, feature defaults, linker script, codec hosting |
 | `config/` | Build-time feature switches |
 | `third_party/` | Permissively licensed upstream code, as submodules |
-| `tools/` | Flashing, codec merge, CPS client, debug link, CI, SDR bench tools |
+| `tools/` | Flashing (`odrflash`), release packaging, codec merge, CPS client, debug link, CI, SDR bench tools |
 | `tests/host/`, `tests/hil/` | Host tests and hardware-in-the-loop tests |
 | `docs/user/`, `docs/dev/` | User manual, developer documentation |
 | `docs/spec/`, `docs/ux/`, `docs/testing/` | Specs, UI design, test procedures |

@@ -11,8 +11,9 @@
 #
 # Steps, each reported as ok / FAIL / skip:
 #   1. host tests (make -C tests/host)
-#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); every relative
-#      link, image and anchor in the Markdown resolves (tools/check_doc_links.py)
+#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing
+#      tools' tests (tools/odrflash/tests, codec_extract and stm32_dfu self-tests); every relative link, image and
+#      anchor in the Markdown resolves (tools/check_doc_links.py)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
 #      notice: the DM-32's csky toolchain comes from tools/build-csky-toolchain.sh):
 #        default            the board's defaults
@@ -34,7 +35,7 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
 	--board) ONLY="$2"; shift ;;
-	-h|--help) sed -n '5,27p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,28p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -86,6 +87,16 @@ for f in sys.argv[1:]:
 	else
 		skip "HIL test collection: pytest not installed (pip install pytest pyserial)"
 	fi
+	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs) and
+	# the self-tests of the developer tools (no USB, synthetic keys and stock files)
+	if python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/codec_extract.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/stm32_dfu.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract and stm32_dfu self-tests"
+	else
+		tail -30 "$OUT/odrflash-tests.log"
+		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
+	fi
 	if python3 tools/check_doc_links.py > "$OUT/doc-links.log" 2>&1; then
 		ok "doc links: $(tail -1 "$OUT/doc-links.log" | sed 's/^check_doc_links: //')"
 	else
@@ -125,7 +136,7 @@ build() {
 	fi
 	bin=$(ls "$dir"/odr_"$b".bin 2>/dev/null)
 	bytes=$(wc -c < "$bin" | tr -d ' ')
-	# --print-memory-usage: "FLASH:  123024 B  427796 B  28.76%" (the app region, codec windows excluded)
+	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
 	set -- $(grep -E '^ *FLASH:' "$log" | head -1)
 	used=$(tobytes "${2:-}" "${3:-}"); size=$(tobytes "${4:-}" "${5:-}")
 	if [ -n "$size" ] && [ "$used" -le "$size" ] 2>/dev/null; then

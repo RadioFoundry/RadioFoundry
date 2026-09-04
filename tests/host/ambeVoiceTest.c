@@ -36,7 +36,7 @@ static void fake_decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FR
 		pcm[i] = bits[i];
 	pcm[159] = 1000;
 }
-static const hal_vocoder_t vocoder = { fake_present, fake_reset, fake_encode, fake_decode };
+static const hal_vocoder_t vocoder = { fake_present, fake_reset, fake_encode, fake_decode, NULL };
 
 static void makeFrame(int n, uint8_t bits[49], uint8_t frame[9])
 {

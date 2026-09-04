@@ -1,0 +1,594 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+"""odrflash command line (tools/odrflash/README.md)."""
+import argparse
+import os
+import random
+import sys
+import time
+
+from . import __version__, boards, debuglink, manifest as mf, plan as planmod, state, stockfw
+from . import dfu as dfumod
+from . import release as relmod
+
+EPILOG = """\
+examples:
+  odrflash flash --release latest                       download the newest release and flash it
+  odrflash flash odr-dm1701-v0.1.0.bin                  a downloaded image (its .json manifest next to it)
+  odrflash flash --release v0.1.0 --dry-run             print exactly which sectors would be erased and written
+  odrflash flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
+                                                        also write the codec from your stock firmware file
+  odrflash probe                                        ask the radio (running ODR) whether its codec can be kept
+  odrflash key --stock "DM-1701(CSV)-V02.06.bin" --save derive the bootloader key from the stock file, keep it
+
+entering the bootloader (DM-1701): turn the radio off, hold PTT and SK1 (the side key just above PTT), turn it on.
+The screen stays dark.
+"""
+
+STOCK_HINT = ("the DM-1701 stock firmware V02.06 CSV file, DM-1701(CSV)-V02.06.bin (sha256 0314efd4...): an archive "
+              "is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware")
+
+
+class UsageError(Exception):
+    pass
+
+
+def say(msg=""):
+    print(msg, flush=True)
+
+
+def warn(msg):
+    print("warning: " + msg, file=sys.stderr, flush=True)
+
+
+def ask_yes(question, default=False):
+    if not sys.stdin.isatty():
+        return default
+    try:
+        a = input(question + (" [Y/n] " if default else " [y/N] ")).strip().lower()
+    except EOFError:
+        return default
+    return default if not a else a in ("y", "yes")
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# inputs: image + manifest, key, stock file
+
+def load_image(args, board_hint):
+    """Returns (board, manifest, image bytes, description)."""
+    if args.release:
+        if args.image:
+            raise UsageError("give an image file or --release, not both")
+        board = boards.get(board_hint or "dm1701")
+        img_path, man_path = relmod.fetch(board.id, args.release, args.repo, log=say)
+    elif args.image:
+        img_path = args.image
+        man_path = args.manifest or os.path.splitext(img_path)[0] + ".json"
+    else:
+        raise UsageError("which firmware? Give an image file (with its .json manifest next to it) or --release "
+                         "VERSION (or --release latest)")
+    with open(os.path.expanduser(img_path), "rb") as f:
+        image = f.read()
+    if image.startswith(stockfw.MAGIC):
+        raise UsageError("%s is an official Baofeng/TYT firmware file, not an OpenDigitalRadio image. Use it with "
+                         "--stock to provide the codec" % img_path)
+    if os.path.exists(man_path):
+        m = mf.load(man_path)
+        board = mf.verify(m, image, board_hint)
+        say("image    %s: %s %s (git %s), %d bytes, SHA-256 verified against %s"
+            % (os.path.basename(img_path), board.name, m.get("version"), m.get("git"), len(image),
+               os.path.basename(man_path)))
+        return board, m, image
+    if not board_hint:
+        raise UsageError("no manifest %s next to the image. Release images come with one; for a local build say "
+                         "which radio it is for with --board dm1701" % man_path)
+    board = boards.get(board_hint)
+    m = mf.for_dev_build(board, image)
+    mf.verify(m, image, board.id)
+    warn("no manifest: treating %s as a local %s build (nothing to verify it against)" % (img_path, board.name))
+    return board, m, image
+
+
+def load_stock(args):
+    if not args.stock:
+        return None
+    if args.simulate and args.stock == "synthetic":
+        return "synthetic"
+    with open(os.path.expanduser(args.stock), "rb") as f:
+        return f.read()
+
+
+def get_key(args, board, stock, sim_key=None):
+    """The bootloader key: --key FILE, else derived from the stock file, else the saved key."""
+    if sim_key is not None:
+        return sim_key
+    if args.key:
+        return dfumod.load_key(args.key, board)
+    if isinstance(stock, bytes):
+        say("key      deriving the %s bootloader key from the stock file" % board.name)
+        try:
+            return dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)
+        except stockfw.StockError as e:
+            raise UsageError(str(e))
+    saved = state.key_path(board.id)
+    if os.path.exists(saved):
+        say("key      %s" % saved)
+        return dfumod.load_key(saved, board)
+    raise UsageError("the %s bootloader needs its 1024-byte key. Either give --stock with %s (odrflash derives the "
+                     "key from it), or --key FILE, or save it once with: odrflash key --stock FILE --save"
+                     % (board.name, STOCK_HINT))
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# the codec decision
+
+class Decision:
+    def __init__(self, mode, why, risk=None, expect_codec=True):
+        self.mode = mode
+        self.why = why
+        self.risk = risk
+        self.expect_codec = expect_codec
+
+
+def decide_codec(board, manifest, requested, have_stock, probe, stock_installed, ask=None):
+    """Pick keep or merge (docs/dev/release.md "Codec handling"). probe: a debug-link probe of the radio (this run or
+    remembered), or None. stock_installed: what the user says the radio runs ("V02.06 CSV"), or None. ask: a yes/no
+    callable for the interactive question, or None (non-interactive). Raises UsageError when neither is safe."""
+    profile = (manifest.get("codec") or {}).get("profile") or board.codec.id
+    merge_hint = "flash with --stock FILE to write the codec from your stock firmware (%s)" % STOCK_HINT
+    if requested == planmod.MERGE:
+        if not have_stock:
+            raise UsageError("--codec merge needs --stock: " + STOCK_HINT)
+        return Decision(planmod.MERGE, "asked for: the codec is written from your stock file")
+    if not board.keep_codec_supported:
+        if have_stock:
+            return Decision(planmod.MERGE, "the %s updater erases the codec on every update, so it is written again "
+                            "from your stock file" % board.name)
+        raise UsageError("the %s can't keep its codec across an update; %s" % (board.name, merge_hint))
+    if probe:
+        pb = boards.from_debuglink_name(probe.get("board") or "")
+        if pb is None or pb.id != board.id:
+            raise UsageError("the radio reported board %r over its debug link, but this image is for the %s: refusing"
+                             % (probe.get("board"), board.name))
+        codec = probe.get("codec")
+        if codec == profile:
+            return Decision(planmod.KEEP, "ODR on the radio checked its codec (%s, signature and CRC of both windows) "
+                            "and the codec sectors are left alone" % codec)
+        if codec is None:
+            what = "firmware too old to report its codec"
+        else:
+            what = "codec=%s" % codec
+        if have_stock and requested != planmod.KEEP:
+            return Decision(planmod.MERGE, "the radio has no codec to keep (%s), so it is written from your stock "
+                            "file" % what)
+        if requested == planmod.KEEP:
+            return Decision(planmod.KEEP, "asked for, although the radio reported %s" % what,
+                            risk="DMR voice will stay off (FM works) until you flash with --stock", expect_codec=False)
+        raise UsageError("the radio reported %s: there is no matching codec in it to keep; %s" % (what, merge_hint))
+    if stock_installed:
+        norm = stock_installed.upper().replace("-", " ").replace("_", " ")
+        if any(norm == v.upper() for v in board.codec.installed):
+            return Decision(planmod.KEEP, "you said the radio runs stock %s, which holds this codec at the right "
+                            "addresses" % stock_installed,
+                            risk="if the radio runs anything else, DMR voice stays off (FM works); the firmware checks "
+                                 "the codec before it uses it, and flashing again with --stock fixes it")
+        if have_stock:
+            return Decision(planmod.MERGE, "stock %s keeps its codec at other addresses, so it is written from your "
+                            "stock file" % stock_installed)
+        raise UsageError("stock %s keeps its codec at other addresses than %s; %s"
+                         % (stock_installed, ", ".join(board.codec.installed), merge_hint))
+    if have_stock and requested != planmod.KEEP:
+        return Decision(planmod.MERGE, "the radio's codec is unknown, so it is written from your stock file")
+    risk = ("if the radio doesn't hold that codec, DMR voice stays off (FM works) until you flash again with --stock; "
+            "the firmware checks the codec before using it, so nothing worse happens")
+    if requested == planmod.KEEP:
+        return Decision(planmod.KEEP, "asked for; the radio's codec could not be checked", risk=risk)
+    if ask is not None:
+        say("")
+        say("odrflash can keep the codec that is already in the radio instead of writing one, if the radio holds")
+        say("the right one: it is running Baofeng's stock firmware %s, or ODR with working DMR voice."
+            % " or ".join(board.codec.installed))
+        say("(Start the radio normally with ODR and run 'odrflash probe' first to have it checked instead.)")
+        if ask("Is the radio running stock %s (or ODR with DMR voice working)?" % " or ".join(board.codec.installed)):
+            return Decision(planmod.KEEP, "you confirmed the radio holds the codec", risk=risk)
+    raise UsageError("odrflash can't tell whether the radio holds the codec. Either start the radio with ODR and run "
+                     "'odrflash probe' first, or say --stock-installed \"%s\" if it runs that stock firmware, or %s"
+                     % (board.codec.installed[0] if board.codec.installed else "?", merge_hint))
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# radio discovery
+
+def get_probe(args, log=say):
+    """A probe of the running radio: now over the debug link, else a recent remembered one."""
+    if args.no_probe:
+        return None
+    p = debuglink.probe(args.port)
+    if p:
+        state.remember_probe(p)
+        log("radio    ODR running on %s: board %s, git %s, codec %s" % (p["port"], p["board"], p["git"], p["codec"]))
+        return p
+    p = state.recent_probe()
+    if p:
+        log("radio    remembered from %d min ago: board %s, git %s, codec %s (odrflash probe refreshes it)"
+            % (p["age_s"] // 60, p.get("board"), p.get("git"), p.get("codec")))
+    return p
+
+
+def wait_for_dfu(usb, board, wait_s, log=say):
+    devs = dfumod.find(usb, board)
+    if not devs and wait_s > 0:
+        log("")
+        log("Put the radio in its bootloader now: turn it off, hold PTT and SK1 (the side key just above PTT), and")
+        log("turn it on while holding both. The screen stays dark. Waiting up to %d s..." % wait_s)
+        end = time.monotonic() + wait_s
+        while not devs and time.monotonic() < end:
+            time.sleep(0.5)
+            devs = dfumod.find(usb, board)
+    if not devs:
+        raise UsageError("no radio bootloader found (USB %04X:%04X). Check that the cable carries data and that the "
+                         "radio is in its bootloader (screen dark after power-on with PTT + SK1)" % board.dfu_ids)
+    if len(devs) > 1:
+        raise UsageError("%d bootloaders found; connect only one radio" % len(devs))
+    return devs[0]
+
+
+def check_bootloader(usb, dev, board, log=say):
+    fp = dfumod.fingerprint(usb, dev)
+    log("found    bootloader: %r, product %r, serial %r" % (fp["string1"], fp["product"], fp["serial"]))
+    for i in fp["interfaces"]:
+        log("         layout %r" % i)
+    if board.dfu_string1 and board.dfu_string1.split()[0] not in (fp["string1"] or ""):
+        raise UsageError("this is not the radio's own bootloader (string 1 is %r, expected %r). ST's ROM bootloader "
+                         "would write the encrypted image as is: refusing" % (fp["string1"], board.dfu_string1))
+    return fp
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# commands
+
+def cmd_flash(args):
+    sim = args.simulate
+    probe = None
+    sim_key = None
+    if sim:
+        say("SIMULATION: a fake radio in state %r, nothing is sent to any device" % sim)
+        from . import fakedfu
+        sim_key = fakedfu.synthetic_key()
+    board, man, image = load_image(args, args.board)
+    stock = load_stock(args)
+
+    # the codec: what the radio says, what the user says
+    if sim:
+        probe = {"odr-codec": {"board": "DM-1701", "git": "00000000", "codec": board.codec.id, "port": "sim"},
+                 "odr-nocodec": {"board": "DM-1701", "git": "00000000", "codec": "absent", "port": "sim"}}.get(sim)
+        if probe:
+            say("radio    (simulated) ODR running: codec %s" % probe["codec"])
+    else:
+        probe = get_probe(args)
+    if probe and not args.board:
+        pb = boards.from_debuglink_name(probe.get("board") or "")
+        if pb and pb.id != board.id:
+            raise UsageError("the radio is a %s, the image is for the %s: refusing" % (pb.name, board.name))
+    interactive = None if (args.yes or args.dry_run) else ask_yes
+    d = decide_codec(board, man, args.codec, stock is not None, probe, args.stock_installed, interactive)
+    say("codec    %s: %s" % (d.mode.upper(), d.why))
+    if d.risk:
+        warn(d.risk)
+
+    codec_segs = []
+    key = None
+    if d.mode == planmod.MERGE:
+        if stock == "synthetic":
+            stock_bytes, profiles, _, _ = stockfw.build_synthetic_stock(sim_key, random.Random(7))
+            prof, code, tables = stockfw.extract(stock_bytes, sim_key, profiles)
+        else:
+            key = get_key(args, board, stock, sim_key)
+            try:
+                prof, code, tables = stockfw.extract(stock, key)
+            except stockfw.StockError as e:
+                raise UsageError(str(e))
+            if prof["codec_profile"] != board.codec.id:
+                raise UsageError("the stock file holds codec %s, the image expects %s"
+                                 % (prof["codec_profile"], board.codec.id))
+            say("stock    %s verified (SHA-256), codec windows decrypted and checked" % prof["name"])
+        codec_segs = stockfw.codec_segments(prof, code, tables)
+
+    p = planmod.make_plan(board, mf.segments(man, image), d.mode, codec_segs)
+    say("")
+    say("plan:")
+    for line in p.describe():
+        say("  " + line)
+    say("")
+    if args.dry_run:
+        say("dry run: nothing was erased or written")
+        return 0
+
+    if key is None:
+        key = get_key(args, board, stock if isinstance(stock, bytes) else None, sim_key)
+    if board.family != "anyroad-dfu":
+        raise UsageError("flashing the %s isn't supported by odrflash yet" % board.name)
+
+    if sim:
+        flash = fakedfu.stock_flash(board, random.Random(3), [] if sim == "blank" else
+                                    [(a, stockfw.random_bytes(random.Random(a), n))
+                                     for a, n in board.codec.windows])
+        dev = fakedfu.FakeUsbDevice(board, key, flash)
+        usb = fakedfu.FakeUsb([dev])
+        before = bytes(dev.flash)
+    else:
+        usb = dfumod.import_usb()
+        dev = wait_for_dfu(usb, board, args.wait)
+    check_bootloader(usb, dev, board)
+    if not args.yes and not sim and not ask_yes("Erase and write %d sector(s) now?" % len(p.erase), default=True):
+        say("nothing done")
+        return 1
+    intf = dfumod.open_device(usb, dev)
+
+    tty = sys.stdout.isatty()
+
+    def progress(done, total):
+        pct = done * 100 // total
+        if tty:
+            sys.stdout.write("\rwriting  %d/%d blocks (%d%%)" % (done, total, pct))
+            if done == total:
+                sys.stdout.write("\n")
+        elif done == total or pct // 25 != (done - 1) * 100 // total // 25:
+            sys.stdout.write("writing  %d/%d blocks (%d%%)\n" % (done, total, pct))
+        sys.stdout.flush()
+
+    try:
+        dfumod.Dfu(dev, intf, log=lambda m: say("         " + m), sleep=(lambda s: None) if sim else time.sleep) \
+            .run(p, key, progress)
+    except Exception as e:
+        if isinstance(e, dfumod.DfuError):
+            raise
+        raise dfumod.DfuError("USB error while flashing: %s. The bootloader is never erased: put the radio in its "
+                              "bootloader again (PTT + SK1 at power-on) and run the same command" % e)
+    finally:
+        dfumod.release(usb, dev)
+    if not sim:
+        state.forget_probe()
+    say("done     the radio restarts into ODR %s" % man.get("version"))
+
+    if sim:
+        return report_simulation(board, p, dev, before, d)
+    if args.no_verify:
+        return 0
+    return verify_after(args, board, man, d)
+
+
+def report_simulation(board, p, dev, before, d):
+    ok = True
+    erased = [hex(a) for a in dev.erased]
+    say("sim      erased %s; %d blocks written; vendor commands %s; exit %s"
+        % (", ".join(erased), dev.blocks, dev.vendor, "yes" if dev.exited else "NO"))
+    for s in board.codec_sectors():
+        same = dev.read(s.addr, s.size) == before[s.addr - 0x08000000:s.end - 0x08000000]
+        if d.mode == planmod.KEEP:
+            say("sim      codec sector %d %s" % (s.index, "unchanged" if same else "CHANGED"))
+            ok = ok and same
+    for st in p.writes:
+        want = b"".join(b for _, b in st.blocks)
+        got = dev.read(st.sector.addr, len(want))
+        if got != want:
+            say("sim      sector %d content MISMATCH" % st.sector.index)
+            ok = False
+    if dev.violations:
+        say("sim      %d bytes programmed over non-erased flash" % len(dev.violations))
+        ok = False
+    say("sim      %s" % ("PASS" if ok else "FAIL"))
+    return 0 if ok else 1
+
+
+def verify_after(args, board, man, d, wait_s=25):
+    """After the reset: wait for ODR's debug link and compare its git and codec with what was flashed."""
+    if debuglink.find_ports() is None:
+        say("(install pyserial to have odrflash check the radio after flashing)")
+        return 0
+    say("checking the radio after the restart (up to %d s; --no-verify skips this)..." % wait_s)
+    end = time.monotonic() + wait_s
+    p = None
+    while time.monotonic() < end and p is None:
+        time.sleep(1.0)
+        p = debuglink.probe(args.port)
+    if p is None:
+        say("the radio did not answer on its debug link. If its screen shows ODR, all is well (an FM-only build "
+            "without USB has no debug link). If the screen stays dark, flash again from the bootloader.")
+        return 0
+    state.remember_probe(p)
+    want_git = man.get("git")
+    if want_git and want_git != "unknown" and not (p.get("git") or "").startswith(want_git):
+        warn("the radio reports git %s, the image is %s" % (p.get("git"), want_git))
+        return 1
+    say("radio    running ODR git %s, codec %s" % (p.get("git"), p.get("codec")))
+    if p.get("codec") == board.codec.id:
+        say("ok       DMR voice is ready")
+        return 0
+    say("note     the radio has no usable codec (codec=%s): FM works, DMR voice is off. Flash again with --stock "
+        "FILE (%s)" % (p.get("codec"), STOCK_HINT))
+    return 0 if not d.expect_codec else 1
+
+
+def cmd_probe(args):
+    p = debuglink.probe(args.port, log=say)
+    if p is None:
+        if debuglink.find_ports() is None:
+            raise UsageError("pyserial is not installed (pip install pyserial, or use the odrflash executable)")
+        raise UsageError("no radio running ODR found on USB (1FC9:0094). Start it normally (not in the bootloader) "
+                         "and connect the cable; stock firmware has no debug link")
+    state.remember_probe(p)
+    b = boards.from_debuglink_name(p.get("board") or "")
+    say("radio    %s on %s, ODR git %s, chip %s" % (p.get("board"), p["port"], p.get("git"), p.get("uid") or "?"))
+    say("codec    %s" % p.get("codec"))
+    if b and p.get("codec") == b.codec.id:
+        say("ok       the codec can be kept: 'odrflash flash' will leave the codec sectors alone (remembered for "
+            "%d min)" % (state.PROBE_MAX_AGE_S // 60))
+    elif p.get("codec") is None:
+        say("note     this ODR build doesn't report its codec; flash with --stock once to be sure")
+    else:
+        say("note     no codec to keep; flash with --stock FILE (%s)" % STOCK_HINT)
+    return 0
+
+
+def cmd_detect(args):
+    p = debuglink.probe(args.port, log=say) if not args.no_probe else None
+    if p:
+        say("ODR      %s on %s: git %s, codec %s" % (p.get("board"), p["port"], p.get("git"), p.get("codec")))
+    elif debuglink.find_ports() is None:
+        say("ODR      (pyserial not installed: not checked)")
+    else:
+        say("ODR      no radio running ODR on USB")
+    usb = dfumod.import_usb()
+    board = boards.get(args.board or "dm1701")
+    devs = dfumod.find(usb, board)
+    if not devs:
+        say("DFU      no bootloader (%04X:%04X) found" % board.dfu_ids)
+        return 0 if p else 1
+    for dev in devs:
+        fp = dfumod.fingerprint(usb, dev)
+        say("DFU      %04X:%04X string 1 %r, manufacturer %r, product %r, serial %r"
+            % (board.dfu_ids + (fp["string1"], fp["manufacturer"], fp["product"], fp["serial"])))
+        for i in fp["interfaces"]:
+            say("         layout %r" % i)
+        if "AnyRoad" in (fp["string1"] or ""):
+            say("         a TYT/Baofeng AnyRoad bootloader (DM-1701, MD-UV380, MD-9600 and others share it; the model "
+                "isn't reported, odrflash goes by the image, the debug link probe or --board)")
+        else:
+            say("         not the radio's own bootloader (ST's ROM loader?): odrflash won't flash it")
+    return 0
+
+
+def cmd_key(args):
+    board = boards.get(args.board or "dm1701")
+    with open(os.path.expanduser(args.stock), "rb") as f:
+        stock = f.read()
+    what = stockfw.identify(stock)
+    say("stock    %s" % (what or "unknown file (trying anyway)"))
+    try:
+        key = dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)
+    except stockfw.StockError as e:
+        raise UsageError(str(e))
+    say("key      derived and verified (SHA-256 %s...)" % board.key_sha256[:16])
+    out = state.key_path(board.id) if args.save else args.output
+    if not out:
+        say("(use -o FILE or --save to keep it; flash commands also derive it from --stock each time)")
+        return 0
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with open(out, "wb") as f:
+        f.write(key)
+    say("wrote    %s (keep it to yourself; never commit it)" % out)
+    return 0
+
+
+def cmd_merge(args):
+    board = boards.get(args.board or "dm1701")
+    with open(os.path.expanduser(args.image), "rb") as f:
+        image = f.read()
+    with open(os.path.expanduser(args.stock), "rb") as f:
+        stock = f.read()
+    key = dfumod.load_key(args.key, board) if args.key else dfumod.check_key(stockfw.derive_key(stock), board)
+    try:
+        prof, code, tables = stockfw.extract(stock, key)
+        merged = stockfw.merge(image, prof, code, tables)
+    except stockfw.StockError as e:
+        raise UsageError(str(e))
+    with open(args.output, "wb") as f:
+        f.write(merged)
+    say("wrote    %s (%d bytes, contains the proprietary codec: keep it to yourself)" % (args.output, len(merged)))
+    return 0
+
+
+def cmd_download(args):
+    board = boards.get(args.board or "dm1701")
+    img, man = relmod.fetch(board.id, args.release, args.repo, dest=args.output, log=say)
+    with open(img, "rb") as f:
+        mf.verify(mf.load(man), f.read(), board.id)
+    say("ok       %s\n         %s" % (img, man))
+    return 0
+
+
+def build_parser():
+    ap = argparse.ArgumentParser(prog="odrflash", description="Flash OpenDigitalRadio onto a radio, keeping or "
+                                 "writing the radio's own AMBE codec.", epilog=EPILOG,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", action="version", version="odrflash " + __version__)
+    sub = ap.add_subparsers(dest="cmd")
+
+    def common(p):
+        p.add_argument("--board", help="radio model (dm1701); normally taken from the manifest and the radio")
+        p.add_argument("--port", help="the radio's serial port when it runs ODR (found by USB ID otherwise)")
+        p.add_argument("--no-probe", action="store_true", help="don't ask a running ODR radio over its debug link")
+
+    f = sub.add_parser("flash", help="flash a release image", formatter_class=argparse.RawDescriptionHelpFormatter)
+    f.add_argument("image", nargs="?", help="image file (.bin, with its .json manifest next to it)")
+    f.add_argument("--release", metavar="VERSION", help="download this release (v0.1.0, or latest) from GitHub")
+    f.add_argument("--manifest", help="the manifest, when it isn't next to the image")
+    f.add_argument("--repo", default=relmod.DEFAULT_REPO, help="GitHub repository (default %(default)s)")
+    f.add_argument("--codec", choices=("auto", "keep", "merge"), default="auto",
+                   help="auto (default): keep the radio's codec when that is known to be safe, else write it from "
+                        "--stock; keep: never touch the codec sectors; merge: write the codec from --stock")
+    f.add_argument("--stock", metavar="FILE", help="the radio's stock firmware file (codec source; also gives the key)")
+    f.add_argument("--stock-installed", metavar="VERSION",
+                   help="the stock firmware the radio runs now, e.g. \"V02.06 CSV\" (instead of the question)")
+    f.add_argument("--key", metavar="FILE", help="the 1024-byte bootloader key (else derived from --stock)")
+    f.add_argument("--dry-run", action="store_true", help="print the sectors that would be erased and written; "
+                   "touch nothing")
+    f.add_argument("--yes", "-y", action="store_true", help="don't ask")
+    f.add_argument("--wait", type=int, default=120, help="seconds to wait for the bootloader (default 120)")
+    f.add_argument("--no-verify", action="store_true", help="don't check the radio after it restarts")
+    f.add_argument("--simulate", choices=("stock", "odr-codec", "odr-nocodec", "blank"),
+                   help="run against a fake radio (testing: no USB); --stock synthetic gives a synthetic stock file")
+    common(f)
+    f.set_defaults(fn=cmd_flash)
+
+    p = sub.add_parser("probe", help="ask a radio running ODR whether its codec can be kept")
+    p.add_argument("--port")
+    p.set_defaults(fn=cmd_probe)
+
+    d = sub.add_parser("detect", help="look for the radio: running ODR and/or in its bootloader")
+    common(d)
+    d.set_defaults(fn=cmd_detect)
+
+    k = sub.add_parser("key", help="derive the bootloader key from a stock firmware file")
+    k.add_argument("--stock", required=True)
+    k.add_argument("-o", "--output")
+    k.add_argument("--save", action="store_true", help="keep it in odrflash's settings directory")
+    k.add_argument("--board")
+    k.set_defaults(fn=cmd_key)
+
+    m = sub.add_parser("merge", help="write an image with the codec merged in, to a file (for other tools)")
+    m.add_argument("image")
+    m.add_argument("--stock", required=True)
+    m.add_argument("--key")
+    m.add_argument("-o", "--output", required=True)
+    m.add_argument("--board")
+    m.set_defaults(fn=cmd_merge)
+
+    g = sub.add_parser("download", help="download a release image and manifest, verified")
+    g.add_argument("--release", default="latest")
+    g.add_argument("--repo", default=relmod.DEFAULT_REPO)
+    g.add_argument("-o", "--output", help="directory (default: odrflash's cache)")
+    g.add_argument("--board")
+    g.set_defaults(fn=cmd_download)
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
+    args = ap.parse_args(argv)
+    if not getattr(args, "fn", None):
+        ap.print_help()
+        return 2
+    try:
+        return args.fn(args)
+    except (UsageError, mf.ManifestError, planmod.PlanError, dfumod.DfuError, relmod.ReleaseError,
+            stockfw.StockError, KeyError) as e:
+        print("error: %s" % (e.args[0] if isinstance(e, KeyError) and e.args else e), file=sys.stderr)
+        return 2
+    except OSError as e:
+        print("error: %s" % e, file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130

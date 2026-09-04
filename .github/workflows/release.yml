@@ -1,0 +1,220 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# Firmware releases (docs/dev/release.md): on a v* tag, build the codec-less firmware for every releasable radio with
+# pinned toolchains, write a manifest and SHA256SUMS for each image, build odrflash as single-file executables for
+# Linux, macOS and Windows, and attach everything to the GitHub release (created when missing; the user manual
+# workflow attaches its PDF to the same release). The AMBE codec is never part of any of it.
+#
+# Pull requests and pushes to main touching the release tooling build everything as workflow artifacts and publish
+# nothing. The DM-32UV is built only when the repository variable ODR_RELEASE_DM32 is "true" (it isn't verified on
+# a radio yet, and its csky toolchain is built from source: docs/dev/release.md "Adding the DM-32UV").
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+    branches: [main]
+    paths:
+      - "tools/odrflash/**"
+      - "tools/release.py"
+      - ".github/workflows/release.yml"
+  pull_request:
+    paths:
+      - "tools/odrflash/**"
+      - "tools/release.py"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ARM_GCC_VERSION: "13.3.rel1"
+  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
+  PYINSTALLER_VERSION: "6.11.1"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - id: v
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME#v}" != "${GITHUB_REF_NAME}" ]; then
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  firmware-dm1701:
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install the Arm GNU Toolchain (pinned)
+        run: |
+          set -eu
+          f="arm-gnu-toolchain-${ARM_GCC_VERSION}-x86_64-arm-none-eabi.tar.xz"
+          curl -fsSL -o "$RUNNER_TEMP/$f" \
+            "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM_GCC_VERSION}/binrel/$f"
+          echo "${ARM_GCC_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
+          mkdir -p "$HOME/opt"
+          tar -xJf "$RUNNER_TEMP/$f" -C "$HOME/opt"   # the Makefile looks in ~/opt/arm-gnu-toolchain-*/bin first
+          make -s BOARD=dm1701 print-cc
+          "$(make -s BOARD=dm1701 print-cc)" --version | head -1
+
+      - name: Release gate (host tests, Python checks, DM-1701 build, license checks)
+        run: tools/ci.sh --quick --board dm1701
+
+      - name: Build and package
+        run: |
+          set -eu
+          make BOARD=dm1701 -j"$(nproc)"
+          python3 tools/release.py --board dm1701 --version "${{ needs.version.outputs.version }}" --out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-dm1701
+          path: dist/
+          if-no-files-found: error
+
+  # Off until the DM-32UV is verified on a radio (docs/testing/dm32-bringup.md). Set the repository variable
+  # ODR_RELEASE_DM32=true to build it. The toolchain build takes about 45 minutes the first time; the cache keeps it.
+  firmware-dm32:
+    needs: version
+    if: vars.ODR_RELEASE_DM32 == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: ~/toolchains/csky-elf
+          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh') }}
+      - name: Build the csky-elf toolchain (pinned versions in the script)
+        run: |
+          set -eu
+          if [ ! -x "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" ]; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev texinfo bison flex
+            tools/build-csky-toolchain.sh
+          fi
+          "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" --version | head -1
+      - name: Build and package
+        run: |
+          set -eu
+          tools/ci.sh --quick --board dm32
+          make BOARD=dm32 -j"$(nproc)"
+          python3 tools/release.py --board dm32 --version "${{ needs.version.outputs.version }}" --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-dm32
+          path: dist/
+          if-no-files-found: error
+
+  odrflash:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04      # the oldest glibc we build on, so the binary runs on older distributions
+            name: linux-x86_64
+          - os: macos-14
+            name: macos-arm64
+          - os: macos-13
+            name: macos-x86_64
+          - os: windows-2022
+            name: windows-x86_64
+            ext: .exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pyinstaller==${PYINSTALLER_VERSION}" ./tools/odrflash
+      - name: Test
+        run: python -W ignore -m unittest discover -s tools/odrflash/tests -v
+      - name: Build the executable
+        run: |
+          set -eu
+          out="odrflash-${{ needs.version.outputs.version }}-${{ matrix.name }}"
+          pyinstaller --onefile --clean --name "$out" --paths tools/odrflash \
+            --collect-binaries libusb_package --collect-data certifi --hidden-import usb.backend.libusb1 \
+            tools/odrflash/odrflash/__main__.py
+          "./dist/$out${{ matrix.ext }}" --version
+          "./dist/$out${{ matrix.ext }}" --help > /dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: odrflash-${{ matrix.name }}
+          path: dist/odrflash-*
+          if-no-files-found: error
+
+  publish:
+    needs: [version, firmware-dm1701, firmware-dm32, odrflash]
+    # firmware-dm32 may be skipped (variable off); publish anyway, but never after a failure
+    if: >-
+      always() && needs.version.outputs.publish == 'true' && needs.firmware-dm1701.result == 'success' &&
+      needs.odrflash.result == 'success' && needs.firmware-dm32.result != 'failure'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect the files and one SHA256SUMS
+        run: |
+          set -eu
+          mkdir -p out
+          find artifacts -type f ! -name SHA256SUMS -exec cp {} out/ \;
+          (cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+          # the manifests' own image hashes must agree with the files
+          for j in out/odr-*.json; do
+            python3 - "$j" <<'EOF'
+          import hashlib, json, os, sys
+          m = json.load(open(sys.argv[1]))
+          img = os.path.join(os.path.dirname(sys.argv[1]), m["image"]["file"])
+          assert hashlib.sha256(open(img, "rb").read()).hexdigest() == m["image"]["sha256"], img
+          assert m["codec"]["included"] is False, "a release image must never include the codec"
+          print("manifest ok:", sys.argv[1])
+          EOF
+          done
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="${GITHUB_REF_NAME}"
+          NOTES="Firmware images for the radios listed below, without the AMBE codec, and odrflash for Linux, macOS and
+          Windows. Flash with: odrflash flash --release ${TAG}. odrflash keeps the codec already in your radio when
+          that is known to be safe, or writes it from your radio's stock firmware file (--stock). See
+          docs/user/02-installing.md."
+          gh release view "$TAG" > /dev/null 2>&1 || \
+            gh release create "$TAG" --verify-tag --title "OpenDigitalRadio $TAG" --notes "$NOTES" || \
+            gh release view "$TAG" > /dev/null   # created meanwhile by the manual workflow
+          gh release upload "$TAG" out/* --clobber

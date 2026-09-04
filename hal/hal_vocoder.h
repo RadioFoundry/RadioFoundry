@@ -19,6 +19,10 @@ typedef struct {
 	// 49 bits, one per byte (0/1), MSB of the parameter frame first
 	void (*encode)(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS]);
 	void (*decode)(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES]);
+	// Optional (may be NULL): the id of the codec profile present() recognized, e.g. "dm1701-v0206-csv", or NULL when
+	// present() is false. Reported by the debug link's VERSION (codec=) so the flashing tool knows whether the codec
+	// in flash can be kept (docs/dev/release.md, tools/odrflash). Read only: it never changes flash
+	const char *(*profile)(void);
 } hal_vocoder_t;
 
 #endif

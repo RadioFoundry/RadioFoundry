@@ -108,6 +108,7 @@ view=1                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
 board=DM-1701
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
+codec=dm1701-v0206-csv  the codec profile found in flash (below)
 display=160x120x16      panel width x height x bpp
 inset=5,5,5,5           safe area insets: top, bottom, left, right
 uptime_ms=123456
@@ -115,6 +116,14 @@ req_max=64
 reply_max=1024
 inject_max_ms=10000     longest hold of an injected key, PTT included
 ```
+
+`codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
+profile id (`dm1701-v0206-csv`: signature word and the CRC-32 of both codec windows match stock V02.06 CSV;
+`dm32-049`, `dm32-046`: the DM-32 codec slot is valid and was carved from that stock file), `absent` (the board has a
+vocoder but the check failed: erased, another stock version, damaged), `present` (a valid codec whose board names no
+profile) or `none` (built without DMR). The first request after boot may take some 20 ms longer while the board
+computes the CRCs. It reads flash only. `tools/odrflash` asks for it before flashing to decide whether the codec
+sectors can be left alone ([docs/dev/release.md](../dev/release.md)).
 
 Unknown keys must be ignored by hosts; keys may be added without a version change.
 

@@ -36,10 +36,11 @@ distributes it.
 Yes. FM works fully, DMR calls show on the screen, and DMR data (messages, call alert, radio check) and hotspot mode
 work. DMR voice is off.
 
-**Why are there no release binaries?**
+**Why doesn't the release include the codec?**
 
-A firmware image with the codec merged can't be distributed, and the project is still early. When releases start,
-each release will carry this manual as a PDF; the firmware still needs your own codec merge.
+The AMBE+2 codec DMR voice needs is DVSI's, and ODR can't distribute it. Your radio already has it, in its stock
+firmware. odrflash leaves it in place when it's already there, or takes it from your radio's stock firmware file on
+your own computer ([Installing](02-installing.md)).
 
 **Will ODR damage my radio?**
 

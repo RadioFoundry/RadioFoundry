@@ -10,11 +10,13 @@ firmware, and a tool merges the codec into their ODR image on their own machine.
 
 | Radio | Tool | Stock file | Hosting | Spec |
 |---|---|---|---|---|
-| DM-1701 | `tools/codec_extract.py` | DM-1701(CSV) V02.06, encrypted container | Decrypted and placed at its stock flash addresses; runs in place, nothing relocated | [codec-dm1701.md](../spec/codec-dm1701.md) |
+| DM-1701 | `tools/odrflash` (`odrflash/stockfw.py`; also `tools/codec_extract.py`) | DM-1701(CSV) V02.06, encrypted container | Decrypted and placed at its stock flash addresses; runs in place, nothing relocated | [codec-dm1701.md](../spec/codec-dm1701.md) |
 | DM-32UV | `tools/dm32_codec.py` | DM32.01.01.049 or DM32.00.01.046HRVocoder | Placed in a codec slot at 0x030E8000 with a header; copied to its stock RAM addresses at boot | [codec-dm32.md](../spec/codec-dm32.md) |
 
 Both tools check the stock file by SHA-256 against a profile and refuse anything else, check the codec's first words
-after carving, and write the merged image into `build/` (ignored by git) or a path you choose.
+after carving, and write the merged image into `build/` (ignored by git) or a path you choose. For release images,
+odrflash merges in memory and writes straight to the radio, or keeps the codec already in the radio when the
+firmware reports it ([release.md](release.md), "Codec handling").
 
 ## In the firmware
 
