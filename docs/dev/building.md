@@ -65,3 +65,7 @@ The user manual covers it for users: [Installing](../user/02-installing.md). In 
 | DM-32UV | `tools/dm32_codec.py` merges the codec, `tools/dm32_pack.py` wraps it for Baofeng's updater |
 
 Without a codec the firmware runs, with FM only. See [The codec](codec.md).
+
+With the radio's stock firmware file in `codecs/`, `make` also writes `<image>_codec.bin`, the image with the codec
+merged in (`tools/codec_auto.py` picks the stock file by SHA-256 and runs the board's codec tool). Flash that file with
+any route above. Git ignores everything in `codecs/` except its [README](../../codecs/README.md).

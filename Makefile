@@ -2,7 +2,8 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 ## Firmware build, one tree for every radio:
 ##
-##   make BOARD=dm1701          -> build/dm1701/odr_dm1701.{elf,bin,map}
+##   make BOARD=dm1701          -> build/dm1701/odr_dm1701.{elf,bin,map}, plus odr_dm1701_codec.bin when the
+##                                 radio's stock firmware is in codecs/ (codecs/README.md)
 ##   make BOARD=dm1701 size     -> section sizes and the space left before the codec
 ##   make test                  -> host tests
 ##
@@ -94,8 +95,12 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
-.PHONY: all clean size test print-config print-cc
-all: $(TARGET).bin
+.PHONY: all codec clean size test print-config print-cc
+all: $(TARGET).bin codec
+
+# The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
+codec: $(TARGET).bin
+	@python3 tools/codec_auto.py --board $(BOARD) --image $<
 
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects

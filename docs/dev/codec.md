@@ -18,6 +18,9 @@ after carving, and write the merged image into `build/` (ignored by git) or a pa
 odrflash merges in memory and writes straight to the radio, or keeps the codec already in the radio when the
 firmware reports it ([release.md](release.md), "Codec handling").
 
+For source builds, drop the stock file into `codecs/` and `make` runs the board's tool after every build
+(`tools/codec_auto.py`, [codecs/README.md](../../codecs/README.md)).
+
 ## In the firmware
 
 | Part | Where |
