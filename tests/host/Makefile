@@ -422,3 +422,16 @@ run: run-tier3
 run-tier3: tier3ProtoTest
 	./tier3ProtoTest
 .PHONY: run-tier3
+
+# USB / network audio building blocks (docs/spec/usb-audio.md): USRP framing, G.711 mu-law, the link's PTT watchdogs,
+# the PCM jitter buffer between drifting clocks (core/usbaudio, not in the firmware yet)
+UAUDIO  := usrpTest.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c
+TESTS   += usrpTest
+
+usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(CFLAGS) -Wshadow -o $@ $(UAUDIO) -lm
+
+run: run-usbaudio
+run-usbaudio: usrpTest
+	./usrpTest
+.PHONY: run-usbaudio
