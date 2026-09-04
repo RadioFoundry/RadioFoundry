@@ -755,6 +755,44 @@ static void test_rx_call(void)
 	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.ends == 1);
 }
 
+// A call heard as not ours, then the listen rules change with the RF the same (a scan stop on another channel of the
+// same frequency, color code and slot, or a new talk target): the call is ours now and plays from the next burst
+static void test_rx_recheck_on_configure(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9];
+	unsigned frame = 1;
+
+	setup(&c);
+	mk_lc(lc, 0, 1234, 2345678);
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && sink_log.begins == 0 && sink_log.frames == 0);
+	c.talk_target.id = 1234;
+	dmr_call_configure(&c);
+	dmr_call_poll(now);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_VOICE && sink_log.begins == 1 && V()->caller.dst == 1234);
+	for (int i = 0; i < 6; i++) {
+		rx_voice((uint8_t)i, 1, 0, DMR_SYNC_MS, &frame, i == 5 ? lc : NULL, false);
+		run_ms(60);
+	}
+	CHECK(sink_log.frames == 18 && sink_log.begins == 1);
+
+	// Back to a target that doesn't take it: the call keeps playing (no cut mid-over)
+	c.talk_target.id = TG_TALK;
+	dmr_call_configure(&c);
+	dmr_call_poll(now);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_VOICE && sink_log.ends == 0);
+
+	// A color code change is a new channel: the call ends, nothing is rechecked
+	setup(&c);
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	c.cc = 2;
+	c.talk_target.id = 1234;
+	dmr_call_configure(&c);
+	dmr_call_poll(now);
+	CHECK(V()->phase != DMR_CALL_PHASE_RX_VOICE && sink_log.begins == 0);
+}
+
 static void test_rx_filters(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -1474,6 +1512,7 @@ int main(void)
 	test_rmo_wakeup();
 	test_rx_call();
 	test_rx_filters();
+	test_rx_recheck_on_configure();
 	test_rx_group_callback();
 	test_late_entry();
 	test_alias_and_privacy();

@@ -481,6 +481,22 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	s.dirty = true;
 }
 
+// The listen rules changed with the RF unchanged (a scan stop on another channel of the same frequency, color code and
+// slot, a new talk target): a call being heard as not ours may be ours now. A call already playing keeps playing
+static void rx_recheck(uint32_t now)
+{
+	dmr_lc_t l;
+
+	dmr_lc_unpack(s.call_lc, &l);
+	if (!rx_accept(&l, now))
+		return;
+	s.rx = RXC_PLAY;
+	stats.rx_calls_played++;
+	if (s.sink && s.sink->begin)
+		s.sink->begin(&s.view.caller, s.sink->ctx);
+	s.dirty = true;
+}
+
 // slot: the modem's slot counter for the burst (0 = none). Bursts may arrive in batches, so a repeat is told by the
 // burst index and the slot counter, never by arrival time (that is only the fallback for a modem without a counter)
 static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
@@ -1305,6 +1321,8 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 	s.dirty = true;
 	if (s.running && rf_change)
 		modem_apply();
+	if (!rf_change && s.rx == RXC_OTHER)
+		rx_recheck(s.now);
 }
 
 bool dmr_call_start(void)

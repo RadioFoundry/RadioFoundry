@@ -336,14 +336,20 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
     # start somewhere else so the scan has to find it
     radio.link.zone_pos((pos + 1) % as_int(radio.core()["zone_size"], 1))
     time.sleep(0.2)
-    held, done = [], threading.Event()
+    held, done, steps = [], threading.Event(), []
+    t0 = time.monotonic()
 
     def watch():
+        last = None
         while not done.is_set():
-            v = radio.link.view(["core", "features"])
+            v = radio.link.view(["core", "features", "dmr"])
             if v.get("scan_phase") == "hold":
                 held.append(v.get("rx_hz"))
-            time.sleep(0.1)
+            now = (v.get("rx_hz"), v.get("scan_phase"), v.get("dmr.state"))
+            if now != last:	# the stops and what the radio did at each, for the failure report
+                steps.append(f"{time.monotonic() - t0:6.2f} {now[0]} {now[1]} dmr={now[2]}")
+                last = now
+            time.sleep(0.05)
 
     with settings(radio, scan_resume=1):
         radio.link.scan("zone")
@@ -363,4 +369,8 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
     # never delivered a burst there; no probes at all: no carrier seen on the DMR channel (the noise reading)
     print(f"held on {sorted(set(held))} ({len(held)} views); scan_probes={f.get('scan_probes')} "
           f"scan_synced={f.get('scan_synced')}")
+    if str(hz) not in held:
+        print("\n".join(["steps (s, rx_hz, scan phase, dmr state):"] + steps))
+        _, text = radio.log()
+        print("\n".join(line for line in text.splitlines() if " dle " in f" {line}"))
     assert str(hz) in held, f"the scan never held on {freq} MHz: {sorted(set(held))}"
