@@ -95,6 +95,9 @@
 #ifndef CONFIG_BATTERY_SAVE
 #define CONFIG_BATTERY_SAVE		CONFIG_FM
 #endif
+#ifndef CONFIG_AUDIO_PROBE
+#define CONFIG_AUDIO_PROBE		(CONFIG_DEBUGLINK && CONFIG_DMR)
+#endif
 
 // Derived: the shared packet data / CSBK code
 #ifndef CONFIG_DMR_DATA_CORE
@@ -146,6 +149,9 @@
 #endif
 #if (CONFIG_FM_TX_TONES || CONFIG_VOX || CONFIG_BATTERY_SAVE) && !CONFIG_FM
 #error "an FM feature is on without CONFIG_FM"
+#endif
+#if CONFIG_AUDIO_PROBE && !(CONFIG_DEBUGLINK && CONFIG_DMR)
+#error "CONFIG_AUDIO_PROBE needs CONFIG_DEBUGLINK and CONFIG_DMR"
 #endif
 #if !CONFIG_FM && !CONFIG_DMR
 #error "at least one of CONFIG_FM and CONFIG_DMR"

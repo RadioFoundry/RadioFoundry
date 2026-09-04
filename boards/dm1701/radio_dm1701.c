@@ -859,3 +859,13 @@ void dm1701_radio_diag(dm1701_radio_diag_t *d)
 	*d = r.diag;
 	d->bus_errors = r.bus_errors;
 }
+
+#if CONFIG_AUDIO_PROBE
+// The audio probe's register access (hal_audio_tap_t.modem_reg, audio_dm1701.c): one HR_C6000 register, any task.
+// Each access is one masked transaction (modem_transfer), so it can't tear a driver's; it can of course change state
+// under the driver's feet, which is what the probe is for
+bool dm1701_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write)
+{
+	return write ? hrc6000_write(&r.modem, page, reg, *val) : hrc6000_read(&r.modem, page, reg, val);
+}
+#endif

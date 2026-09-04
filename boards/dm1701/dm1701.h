@@ -40,6 +40,11 @@ typedef struct {
 } dm1701_audio_stats_t;
 void dm1701_audio_stats(dm1701_audio_stats_t *out);
 void dm1701_audio_reset_stats(void);
+#if CONFIG_AUDIO_PROBE
+// The audio probe (CONFIG_AUDIO_PROBE, docs/spec/usb-audio.md 2.3): audio_dm1701.c, register access in radio_dm1701.c
+extern const hal_audio_tap_t dm1701_audio_tap;
+bool dm1701_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write);
+#endif
 
 // Physical key bits returned by dm1701_input.scan() (matrix positions in docs/spec/hardware-dm1701.md 10.1)
 enum {
