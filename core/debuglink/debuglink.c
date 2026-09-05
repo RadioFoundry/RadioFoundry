@@ -811,6 +811,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_dmr_data(req, len, out, cap);
 	case DL_CMD_STORAGE:
 		return cmd_storage(req, len, out, cap);
+	case DL_CMD_AUDIO_PROBE:
+		return debuglink_cmd_audio_probe(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

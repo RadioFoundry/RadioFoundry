@@ -56,6 +56,7 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
 | `CONFIG_FONT_XL` | n | 16x32 font, for 240 px and wider displays (the DM-32 draws at 120x160, so it stays off there) |
+| `CONFIG_AUDIO_PROBE` | n | diagnostics: debug link command 0x10 reads / writes the audio chip's registers and measures the PCM stream, for the USB audio bench tests (`docs/spec/usb-audio.md` 2.3, `docs/spec/debuglink.md` 3.14); needs DEBUGLINK and DMR; about 6 KB flash, 2 KB RAM on the DM-1701. Never for a release |
 | `CONFIG_UI_SETTINGS` | y | the Settings menu on the radio; off: settings keep their stored values and are set with qdmr (`docs/spec/ui.md` 5) |
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is.

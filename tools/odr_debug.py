@@ -23,6 +23,9 @@
     odr_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
     odr_debug.py storage dump [--out DIR]       the region and the calibration copy (SPI flash) to files outside git
     odr_debug.py storage claim [--out DIR]      dump first, then let the firmware erase a foreign region and use it
+    odr_debug.py aprobe OP [ARG...]             audio probe (CONFIG_AUDIO_PROBE builds; docs/spec/usb-audio.md 2.3):
+                                                status | reg PAGE REG | wreg PAGE REG VAL | start [HZ [AMP [spk]]] |
+                                                stop | samples [-o FILE.raw]
 
 Key names: up down left right select (ok) back (exit) quick (star) context (hash) 0-9 ptt monitor tt (talk target)
 emergency enc user1-user4.
@@ -56,6 +59,9 @@ PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, KEY, PTT, GET_LOG, GET_VIEW
 DMR_DATA = 0x0E
 STORAGE = 0x0F
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
+AUDIO_PROBE = 0x10
+PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES = range(6)
+PROBE_BLOCK = 160
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
 DATA_OP_EMERGENCY, DATA_OP_EMERGENCY_SETTINGS = 7, 8
@@ -314,6 +320,37 @@ class DebugLink:
         sa, ss, ja, js, ca, cs = struct.unpack_from("<6I", r, 2)
         return {"region": REGIONS.get(region, str(region)), "claim_pending": bool(pending),
                 "ranges": {"settings": (sa, ss), "journal": (ja, js), "calibration": (ca, cs)}}
+
+    # ── audio probe (CONFIG_AUDIO_PROBE, docs/spec/debuglink.md 3.14) ──
+    def probe_status(self):
+        """Levels of the last PCM block on both I2S channels (peak, RMS and peak since start, full scale 32767)."""
+        _, r = self.request(AUDIO_PROBE, bytes([PROBE_STATUS]))
+        flags, blocks = r[0], struct.unpack_from("<I", r, 1)[0]
+        lp, lr, lm, rp, rr, rm = struct.unpack_from("<6H", r, 5)
+        return {"ours": bool(flags & 1), "running": bool(flags & 2), "blocks": blocks,
+                "left": {"peak": lp, "rms": lr, "peak_max": lm}, "right": {"peak": rp, "rms": rr, "peak_max": rm}}
+
+    def probe_reg(self, page, reg, value=None):
+        """Read (value None) or write one audio chip register; returns what it reads back."""
+        if value is None:
+            _, r = self.request(AUDIO_PROBE, bytes([PROBE_REG_READ, page, reg]))
+        else:
+            _, r = self.request(AUDIO_PROBE, bytes([PROBE_REG_WRITE, page, reg, value & 0xFF]))
+        return r[0]
+
+    def probe_start(self, hz=0, amplitude=0, speaker=False):
+        """Run the PCM stream with the probe's callback, sending a hz tone at amplitude (0: silence)."""
+        self.request(AUDIO_PROBE, struct.pack("<BHHB", PROBE_START, hz, amplitude, 1 if speaker else 0))
+
+    def probe_stop(self):
+        self.request(AUDIO_PROBE, bytes([PROBE_STOP]))
+
+    def probe_samples(self):
+        """(blocks, left, right): the last 20 ms block of both channels as lists of ints."""
+        _, r = self.request(AUDIO_PROBE, bytes([PROBE_SAMPLES]))
+        (blocks,) = struct.unpack_from("<I", r)
+        x = struct.unpack_from(f"<{2 * PROBE_BLOCK}h", r, 4)
+        return blocks, list(x[:PROBE_BLOCK]), list(x[PROBE_BLOCK:])
 
     def storage_read(self, addr, n):
         out = bytearray()
@@ -1008,6 +1045,57 @@ def cmd_storage(link, a):
     return 1
 
 
+def tone_estimate(x, rate=8000):
+    """Rough frequency of a tone in a block from its zero crossings (0 when there is no signal)"""
+    m = sum(x) / len(x)
+    y = [v - m for v in x]
+    if max(abs(v) for v in y) < 64:
+        return 0.0
+    crossings = [i for i in range(1, len(y)) if (y[i - 1] < 0) != (y[i] < 0)]
+    if len(crossings) < 3:
+        return 0.0
+    return (len(crossings) - 1) / 2 / ((crossings[-1] - crossings[0]) / rate)
+
+
+def cmd_aprobe(link, a):
+    args = a.args
+    num = lambda v: int(v, 0)
+    if a.op == "status":
+        st = link.probe_status()
+        print(f"stream {'running' if st['running'] else 'stopped'}{' (probe)' if st['ours'] else ''}, "
+              f"blocks {st['blocks']}")
+        for ch in ("left", "right"):
+            c = st[ch]
+            print(f"{ch:<6} peak {c['peak']:5d}  rms {c['rms']:5d}  peak since start {c['peak_max']:5d}")
+    elif a.op == "reg":
+        if len(args) != 2:
+            raise SystemExit("aprobe reg PAGE REG")
+        p, r = num(args[0]), num(args[1])
+        print(f"{p}:0x{r:02X} = 0x{link.probe_reg(p, r):02X}")
+    elif a.op == "wreg":
+        if len(args) != 3:
+            raise SystemExit("aprobe wreg PAGE REG VALUE")
+        p, r, v = num(args[0]), num(args[1]), num(args[2])
+        print(f"{p}:0x{r:02X} <- 0x{v:02X}, reads 0x{link.probe_reg(p, r, v):02X}")
+    elif a.op == "start":
+        hz = num(args[0]) if len(args) > 0 else 0
+        amp = num(args[1]) if len(args) > 1 else 0
+        link.probe_start(hz, amp, len(args) > 2 and args[2] == "spk")
+        print(f"probe stream started, tone {hz} Hz at {amp}")
+    elif a.op == "stop":
+        link.probe_stop()
+        print("probe stream stopped")
+    elif a.op == "samples":
+        blocks, left, right = link.probe_samples()
+        print(f"block {blocks}: left ~{tone_estimate(left):.0f} Hz peak {max(map(abs, left))}, "
+              f"right ~{tone_estimate(right):.0f} Hz peak {max(map(abs, right))}")
+        if a.output:
+            with open(a.output, "wb") as f:
+                f.write(struct.pack(f"<{2 * PROBE_BLOCK}h", *(v for pair in zip(left, right) for v in pair)))
+            print(f"{a.output}: 8 kHz 16-bit stereo raw (left, right)")
+    return 0
+
+
 def cmd_reboot(link, a):
     c = link.chip()
     print_chip(c)
@@ -1088,6 +1176,10 @@ def main(argv=None):
     p = sub.add_parser("storage", help="the settings / journal region: info, dump, claim (docs/spec/settings-store.md 5)")
     p.add_argument("op", choices=["info", "dump", "claim"])
     p.add_argument("--out", default=DEFAULT_DUMP_DIR, help=f"dump directory outside any git tree (default {DEFAULT_DUMP_DIR})")
+    p = sub.add_parser("aprobe", help="audio probe: chip registers and PCM levels (CONFIG_AUDIO_PROBE builds)")
+    p.add_argument("op", choices=["status", "reg", "wreg", "start", "stop", "samples"])
+    p.add_argument("args", nargs="*")
+    p.add_argument("-o", "--output", help="samples: also write the block as raw 16-bit stereo")
     a = ap.parse_args(argv)
 
     if a.cmd == "ptt" and not 0 < a.seconds <= INJECT_MAX_S:
@@ -1127,6 +1219,8 @@ def main(argv=None):
                 return cmd_reboot(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
+            elif a.cmd == "aprobe":
+                return cmd_aprobe(link, a)
             elif a.cmd == "log":
                 while True:
                     dropped, text = link.log()

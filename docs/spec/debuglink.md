@@ -99,6 +99,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x0D` | REBOOT | mode u8 + token u32 | reason u8 (3.11) |
 | `0x0E` | DMR_DATA | operation u8 + arguments (3.12) | none, or an inbox message (3.12) |
 | `0x0F` | STORAGE | operation u8 + arguments (3.13) | region info, SPI flash bytes, or a reason (3.13) |
+| `0x10` | AUDIO_PROBE | operation u8 + arguments (3.14); `CONFIG_AUDIO_PROBE` builds only, else status 4 | levels, a register value, or a PCM block (3.14) |
 
 ### 3.1 VERSION
 
@@ -378,6 +379,27 @@ and the claim of a foreign region.
 
 `odr_debug.py storage info | dump | claim` drives it; `claim` always dumps first, outside any git tree.
 
+### 3.14 AUDIO_PROBE
+
+A bench tool for the USB audio feasibility work ([usb-audio.md](usb-audio.md) 2.3), only in firmware built with
+`CONFIG_AUDIO_PROBE=y` (off by default, never for a release). It reads and writes registers of the chip that owns
+the audio path (`board.audio_tap->modem_reg`; on the DM-1701 the HR_C6000, pages and registers as in
+`modem-hrc6000.md`), runs the board's PCM stream with its own block callback, which sends a test tone, and measures
+both I2S channels (`core/debuglink/debuglink_audio_probe.c`, `hal/hal_audio_tap.h`).
+
+| Op | Request | Reply after the status |
+|---|---|---|
+| 0 STATUS | none | flags u8 (bit 0 the probe owns the stream, bit 1 the stream runs), blocks u32, then for the left and the right channel: peak u16, RMS u16, peak since start u16 (of the last 20 ms block, full scale 32767) |
+| 1 REG_READ | page u8, register u8 | value u8 |
+| 2 REG_WRITE | page u8, register u8, value u8 | the value read back u8 (logged) |
+| 3 START | tone Hz u16 (0-3800), amplitude u16 (0 = silence), flags u8 (bit 0: route the PCM to the speaker) | none. `DL_ST_BUSY` while DMR voice owns the stream; `DL_ST_UNAVAILABLE` when the stream can't start (no I2S clock) |
+| 4 STOP | none | none |
+| 5 SAMPLES | none | blocks u32, the last block's 160 left then 160 right samples, i16 little endian |
+
+The probe borrows the stream: a beep or a DMR channel in the meantime may take it back (STATUS bit 0 then reads 0).
+Register writes change the chip under its driver; the radio's next mode change rewrites what it owns. `odr_debug.py
+aprobe status | reg | wreg | start | stop | samples` drives it; `tests/hil/test_audio_probe.py` runs the experiments.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -389,6 +411,8 @@ and the claim of a foreign region.
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).
+- AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; nothing else in the debug link writes
+  chip registers.
 - The debug link never enters hotspot or CPS mode, and never takes bytes that belong to an MMDVM frame or a CPS
   request (section 1).
 

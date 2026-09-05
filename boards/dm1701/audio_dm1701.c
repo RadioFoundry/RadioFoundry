@@ -48,6 +48,9 @@ static volatile uint8_t pending;	// bit 0: half 0 received, bit 1: half 1
 static volatile uint32_t overruns;	// blocks the task did not get to in time
 static volatile uint32_t blocks;	// blocks processed (one per 20 ms while streaming)
 static volatile uint32_t dropped;	// blocks skipped: both halves pending, the older one overwritten
+#if CONFIG_AUDIO_PROBE
+static int16_t probe_raw[2 * AUDIO_BLOCK_SAMPLES];	// the last block as received, left / right interleaved
+#endif
 
 // --- speaker routing ---
 
@@ -211,6 +214,9 @@ static void process(uint8_t half)
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 		mic[i] = in[2 * i];
 	}
+#if CONFIG_AUDIO_PROBE
+	memcpy(probe_raw, in, sizeof probe_raw);	// both channels, before the callback looks at them
+#endif
 	audio_block_cb_t cb = block_cb;
 	if (cb != NULL) {
 		cb(mic, spk, block_ctx);
@@ -308,5 +314,28 @@ void dm1701_audio_reset_stats(void)
 }
 
 const hal_audio_t dm1701_audio = { .start = start, .stop = stop, .speaker_pcm = speaker_pcm };
+
+#if CONFIG_AUDIO_PROBE
+// The probe's view of the stream (hal_audio_tap.h). Called from the probe's block callback, i.e. the audio task right
+// after process() copied the block, or from the debug link task (a torn block is fine for a diagnostic)
+static bool probe_last_block(int16_t *left, int16_t *right, uint32_t *count)
+{
+	if (!running) {
+		return false;
+	}
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		left[i] = probe_raw[2 * i];
+		right[i] = probe_raw[2 * i + 1];
+	}
+	*count = blocks;
+	return true;
+}
+
+const hal_audio_tap_t dm1701_audio_tap = {
+	.caps = AUDIO_TAP_DMR,
+	.modem_reg = dm1701_modem_reg,
+	.last_block = probe_last_block,
+};
+#endif
 
 #endif	// CONFIG_DMR

@@ -14,6 +14,7 @@
 #include "hal_flash.h"
 #include "hal_dmr_modem.h"
 #include "hal_audio.h"
+#include "hal_audio_tap.h"
 #include "hal_vocoder.h"
 #include "hal_stream.h"
 #include "hal_system.h"
@@ -67,6 +68,8 @@ typedef struct {
 	const hal_cps_t *cps;
 	// Optional: the USB network personality (hal_netif.h); NULL when not built
 	const hal_netif_t *netif;
+	// Optional: taps on the audio path (hal_audio_tap.h); NULL when the board has none
+	const hal_audio_tap_t *audio_tap;
 } board_t;
 
 extern const board_t board;

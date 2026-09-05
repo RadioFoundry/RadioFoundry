@@ -74,10 +74,14 @@ CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 CONFIG_VOX ?= n
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
+# audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
+# levels, for the USB audio feasibility tests on the bench (docs/spec/usb-audio.md 2.3; needs DEBUGLINK and DMR, whose
+# PCM stream it borrows). A diagnostic, never for a release
+CONFIG_AUDIO_PROBE ?= n
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE
+	VOX BATTERY_SAVE AUDIO_PROBE
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -129,6 +133,12 @@ ifneq ($(call feature_on,VFO_DMR),)
   endif
 endif
 $(foreach f,FM_TX_TONES VOX BATTERY_SAVE,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
+ifneq ($(call feature_on,AUDIO_PROBE),)
+  ifeq ($(call feature_on,DEBUGLINK)$(call feature_on,DMR),yy)
+  else
+    $(error CONFIG_AUDIO_PROBE=y needs CONFIG_DEBUGLINK=y and CONFIG_DMR=y)
+  endif
+endif
 ifeq ($(call feature_on,FM)$(call feature_on,DMR),)
   $(error at least one of CONFIG_FM and CONFIG_DMR must be y)
 endif
