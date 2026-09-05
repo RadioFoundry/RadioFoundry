@@ -210,6 +210,7 @@ typedef struct {
 	uint32_t evq_overflows;		// modem events dropped
 	uint32_t rx_cc_dropped;		// bursts dropped for another color code (never voice A: it has no CC on air)
 	uint32_t rx_ts_dropped;		// bursts of another slot than our call's / the channel's
+	uint32_t rx_term_dropped;	// late-entry starts refused: the call a terminator just ended (its late reports)
 	uint32_t rx_private_calls;	// rx_calls that were private (FLCO 3), to us or not
 	uint32_t rx_emergency_calls;	// rx_calls with the emergency service option
 	uint32_t rx_encrypted_calls;	// rx_calls marked private by the service options, PI or a PI header

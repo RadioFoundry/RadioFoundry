@@ -79,6 +79,9 @@ static struct {
 	bool any_seen;
 	uint32_t last_call_end_ms;
 	bool call_end_seen;
+	uint8_t term_lc[DMR_LC_BYTES];	// the LC of the last call a terminator ended, and when
+	uint32_t term_ms;
+	bool term_seen;
 	dmr_ta_t ta;
 	// late entry
 	bool le_active;
@@ -574,6 +577,13 @@ static void rx_late_entry(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 
 	if (!b->lc_valid || !dmr_lc_is_voice(b->lc))
 		return;
+	// The call a terminator just ended: its last voice bursts reported after the terminator (the modem's reports come
+	// in batches) are not a new call. HIL 2026-10-10: one bench call counted as two or three, the extra ones without
+	// voice of their own
+	if (s.term_seen && !elapsed(now, s.term_ms, true, fade_ms()) && memcmp(b->lc, s.term_lc, DMR_LC_BYTES) == 0) {
+		stats.rx_term_dropped++;
+		return;
+	}
 
 	if (!s.le_pair)
 		return;
@@ -730,6 +740,9 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			// Through a repeater only the call's own terminator ends it (the timeout does the rest)
 			if (s.cfg.rmo && memcmp(lc, s.call_lc, DMR_LC_BYTES) != 0)
 				break;
+			memcpy(s.term_lc, s.call_lc, DMR_LC_BYTES);
+			s.term_ms = now;
+			s.term_seen = true;
 			rx_end(now);
 			TR_WHAT('k');
 		}

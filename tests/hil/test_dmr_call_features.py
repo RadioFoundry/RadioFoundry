@@ -15,7 +15,7 @@ from odr_hil import counter_deltas
 BENCH_SRC = 9990301
 STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.rx_voice_bursts",
          "call.rx_enc_dropped", "call.rx_private_calls", "call.rx_emergency_calls", "call.rx_encrypted_calls",
-         "call.rx_alias_complete", "call.rx_pi_headers"]
+         "call.rx_alias_complete", "call.rx_pi_headers", "call.rx_term_dropped"]
 
 
 def _on_dmr_channel(radio, pytestconfig):

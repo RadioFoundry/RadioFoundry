@@ -755,6 +755,34 @@ static void test_rx_call(void)
 	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.ends == 1);
 }
 
+// The modem reports bursts in batches: the call's last voice bursts can come after its terminator. They must not start
+// a second call by late entry (HIL 2026-10-10: one bench call counted as two or three)
+static void test_rx_no_call_after_terminator(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	uint8_t lc[9];
+	unsigned frame = 1;
+
+	setup(&c);
+	dmr_call_reset_stats();
+	mk_lc(lc, 0, TG_TALK, 2345678);
+	rx_call(lc, 1, true, 0, 2, true, &frame);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.begins == 1 && sink_log.ends == 1);
+	rx_voice(4, 1, 0, DMR_SYNC_MS, &frame, NULL, false);
+	run_ms(1);
+	rx_voice(5, 1, 0, DMR_SYNC_MS, &frame, lc, false);
+	run_ms(60);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 1 && st.rx_term_dropped >= 1 && sink_log.begins == 1);
+
+	// The same talker again after the fade time, entered late: a new call
+	run_ms(DMR_CALL_FADE_MS);
+	rx_call(lc, 1, false, 4, 3, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 2 && st.rx_late_entries == 1 && sink_log.begins == 2);
+}
+
 // A call heard as not ours, then the listen rules change with the RF the same (a scan stop on another channel of the
 // same frequency, color code and slot, or a new talk target): the call is ours now and plays from the next burst
 static void test_rx_recheck_on_configure(void)
@@ -1513,6 +1541,7 @@ int main(void)
 	test_rx_call();
 	test_rx_filters();
 	test_rx_recheck_on_configure();
+	test_rx_no_call_after_terminator();
 	test_rx_group_callback();
 	test_late_entry();
 	test_alias_and_privacy();

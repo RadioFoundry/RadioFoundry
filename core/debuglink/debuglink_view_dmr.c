@@ -90,8 +90,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			(unsigned)c.rx_calls_played, (unsigned)c.rx_late_entries);
 		dl_text(t, "call.rx_voice_bursts=%u\ncall.rx_lost_frames=%u\n", (unsigned)c.rx_voice_bursts,
 			(unsigned)c.rx_lost_frames);
-		dl_text(t, "call.rx_dup_dropped=%u\ncall.rx_enc_dropped=%u\n", (unsigned)c.rx_dup_dropped,
-			(unsigned)c.rx_enc_dropped);
+		dl_text(t, "call.rx_dup_dropped=%u\ncall.rx_enc_dropped=%u\ncall.rx_term_dropped=%u\n",
+			(unsigned)c.rx_dup_dropped, (unsigned)c.rx_enc_dropped, (unsigned)c.rx_term_dropped);
 		dl_text(t, "call.tx_calls=%u\ncall.tx_denied=%u\ncall.tx_underruns=%u\ncall.evq_overflows=%u\n",
 			(unsigned)c.tx_calls, (unsigned)c.tx_denied, (unsigned)c.tx_underruns, (unsigned)c.evq_overflows);
 		dl_text(t, "call.rx_private_calls=%u\ncall.rx_emergency_calls=%u\ncall.rx_encrypted_calls=%u\n",
