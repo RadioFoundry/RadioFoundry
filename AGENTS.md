@@ -9,7 +9,7 @@ short version plus what an agent tends to get wrong.
 
 ## Hard rules
 
-1. **Clean room.** Never open, read, search or copy another radio firmware's source (the legacy OpenGD77-family trees,
+1. **Clean room.** Never open, read, search or copy another radio firmware's source (the legacy firmware trees,
    OpenRTX, MMDVMHost or any GPL code), vendor SDKs under restrictive licenses, or disassembly. Work from `docs/spec/`,
    datasheets, public standards (ETSI TS 102 361-1..4, the MMDVM protocol) and permissively licensed code. The full
    rules are in [docs/CLEANROOM.md](docs/CLEANROOM.md). If a task seems to need foreign code, stop and ask.
