@@ -219,6 +219,8 @@ typedef struct {
 	uint32_t tx_alias_lcs;		// superframes sent with a talker alias block instead of the voice LC
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
+// The talker alias our calls send now ("" = none: off for the channel, no callsign, or built without it)
+void dmr_call_tx_alias(char out[DMR_TA_TEXT_MAX + 1]);
 // Zero the counters only (the view's evq_overflows / tx_underruns keep counting). From any task; an increment racing
 // the reset may survive it
 void dmr_call_reset_stats(void);

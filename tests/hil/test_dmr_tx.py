@@ -17,10 +17,41 @@ transmission (from its first voice LC header, by source ID):
 - bench modem: exactly one call, started by a header (not late entry), ended by a terminator, source = the radio's
   ID, voice bursts in whole superframes, AMBE FEC corrections 0.
 - radio: the call stack counted one TX call (call.tx_calls + 1), no TX underruns.
+- talker alias: when the channel sends one (dmr.tx_alias not empty), the alias assembled from the embedded talker
+  alias LCs (FLCO 4-7) on air equals it.
 """
 import pytest
 
 PTT_S = 3.0
+
+
+def talker_alias_on_air(bursts):
+    """The talker alias in the embedded LCs sdrmon decoded (FLCO 4 header, 5-7 blocks; TS 102 361-2 7.2.18-7.2.21),
+    or None. Bit layout as core/dmr/call/dmr_lc.c: octet 2 = format (2) + length (5) + the first data bit, then 48 bits
+    in the header and 56 per block from octet 2; 8-bit text starts after one pad bit."""
+    lcs = {}
+    for b in bursts:
+        lc = b.get("lc") or {}
+        if 4 <= lc.get("emb_flco", -1) <= 7 and "raw" in lc:
+            lcs[lc["emb_flco"]] = bytes.fromhex(lc["raw"])
+    if 4 not in lcs:
+        return None
+    bits = lambda data: [(byte >> (7 - i)) & 1 for byte in data for i in range(8)]
+    h = lcs[4]
+    fmt, length = h[2] >> 6, (h[2] >> 1) & 0x1F
+    stream = [h[2] & 1] + bits(h[3:9])
+    for flco in (5, 6, 7):
+        if flco not in lcs:
+            break
+        stream += bits(lcs[flco][2:9])
+    width, at = (7, 0) if fmt == 0 else (8, 1)
+    chars = []
+    for _ in range(length):
+        if at + width > len(stream):
+            break
+        chars.append(int("".join(map(str, stream[at:at + width])), 2))
+        at += width
+    return bytes(chars).decode("latin-1")
 
 
 @pytest.mark.radio_tx
@@ -67,6 +98,12 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     c.add("radio: one TX call", tx_calls == 1, f"{tx_calls}")
     under = after.get("call.tx_underruns", 0) - before.get("call.tx_underruns", 0)
     c.add("radio: no TX underruns", under == 0, f"{under}")
+    alias = d.get("dmr.tx_alias", "")
+    if alias:
+        got = talker_alias_on_air(sdr.get("bursts", []))
+        c.add(f"talker alias on air = {alias!r}", got == alias, repr(got))
+    else:
+        print("talker alias: the channel sends none (dmr.tx_alias empty, or firmware without the key)")
     for i in c.items:
         print(f"{ {True: 'ok  ', False: 'FAIL', None: 'man '}[i['ok']]} {i['check']}  {i['detail']}")
     print(f"captures on the bench: ~/{sdr_bench.dir}/{rdir}/")

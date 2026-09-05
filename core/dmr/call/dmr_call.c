@@ -1516,6 +1516,12 @@ bool dmr_call_last_activity(uint32_t *ms)
 	return s.activity_seen;
 }
 
+void dmr_call_tx_alias(char out[DMR_TA_TEXT_MAX + 1])
+{
+	memcpy(out, s.cfg.tx_alias, DMR_TA_TEXT_MAX + 1);
+	out[DMR_TA_TEXT_MAX] = '\0';
+}
+
 void dmr_call_get_stats(dmr_call_stats_t *out)
 {
 	*out = stats;

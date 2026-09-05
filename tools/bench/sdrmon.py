@@ -427,7 +427,8 @@ def cmd_analyze(args) -> int:
                 lc9 = fec.embedded_lc_decode(sum((frags[k] for k in "BCDE"), []))
                 if lc9 is not None:
                     lc = pdu.parse_full_lc(lc9)
-                    b.lc = {"emb_flco": lc.flco, "fid": lc.fid, "src": lc.src_id, "dst": lc.dst_id}
+                    b.lc = {"emb_flco": lc.flco, "fid": lc.fid, "src": lc.src_id, "dst": lc.dst_id,
+                            "raw": bytes(lc9).hex()}     # talker alias / GPS blocks are decoded from the raw LC
                 else:
                     b.lc = {"emb": "bad"}
 
