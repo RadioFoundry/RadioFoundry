@@ -33,8 +33,10 @@ It's early. Read the status section before you flash anything.
 The chips in each radio, their sources and the planned port order: [docs/spec/radios.md](docs/spec/radios.md).
 
 On the DM-1701, these are verified on the radio: boot, display, keys, calibration, FM receive and transmit, DMR voice
-receive, and DMR transmit (decoded by an MMDVM receiver on the SDR bench). Most everything else (data, emergency,
-privacy, hotspot, USB network, SFR, CPS) is built and passes the host tests, but is still waiting on hardware tests.
+receive (including late entry), DMR transmit (decoded by an MMDVM receiver on the SDR bench), receiving the DMR
+calls and data the SDR bench can send (group and private calls, text messages, call alert, radio check), codeplug
+storage and qdmr reads. Transmitting data, emergency, privacy, hotspot, USB network, SFR, roaming and CPS writes are
+built and pass the host tests, but are still waiting on hardware tests.
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
 Releases carry the DM-1701 firmware (everything except the codec), `odrflash` to flash it on Windows, macOS and
@@ -49,7 +51,11 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
 - **SFR:** single frequency repeater mode on the hotspot, off by default ([sfr](docs/spec/sfr.md))
 - **USB network mode:** the radio becomes a USB network adapter and routes IP over DMR, off by default
   ([usb-network](docs/spec/usb-network.md))
-- **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, scan, dual watch ([radio-features](docs/spec/radio-features.md))
+- **Roaming:** moves to the strongest repeater of a zone when the one it's on gets weak; turned on per zone
+  ([dmr-roaming](docs/spec/dmr-roaming.md))
+- **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
+- **Scan:** zone, VFO and dual watch scan; on DMR it stops for calls in progress, using late entry
+  ([radio-features](docs/spec/radio-features.md))
 - **qdmr as the CPS:** program the radio with qdmr ([cps-protocol](docs/spec/cps-protocol.md))
 - **A UI designed from first principles**, not copied from anyone's menus, with press budgets checked by the host
   tests ([principles](docs/ux/principles.md), [screens](docs/ux/screens/))
@@ -72,13 +78,14 @@ people already have. We support the formats other radios use, not just our favor
 
 | Area | Supported now | Planned |
 |---|---|---|
-| Air interface | ETSI DMR Tier II: simplex, repeater, SFR (single frequency repeater) | repeater roaming, ETSI Tier III trunking |
+| Air interface | ETSI DMR Tier II: simplex, repeater, SFR (single frequency repeater), repeater roaming | ETSI Tier III trunking ([plan](docs/spec/dmr-tier3-plan.md)) |
 | Text messages | Motorola TMS; ETSI short data in 7-bit, ISO 8859, UTF-8 and UTF-16; ETSI UDT text | Hytera text format |
 | Location | Motorola LRRP location answers and ARS registration | NMEA from the radio's GPS receiver, ETSI UDT location, APRS on FM |
 | Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
 | Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
 | Programming | qdmr, over the GD-77-style CPS protocol | an open, published native codeplug format with its own qdmr driver; qdmr YAML and CSV import/export; RadioID user database |
-| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter | |
+| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter | two radios as one full duplex repeater (a TX radio and an RX radio on one host), with the base MMDVM protocol unchanged |
+| Audio to a computer | | USRP over UDP (AllStarLink, DVSwitch), USB sound card with serial-line PTT ([usb-audio](docs/spec/usb-audio.md)) |
 
 "Supported now" means built and passing its tests; see [Radios and status](#radios-and-status) for what has been
 checked on the air. Specs for every format are in [docs/spec](docs/spec), written so other projects can implement
@@ -115,7 +122,8 @@ tools/ci.sh                 # full release gate: tests, build matrix, license ch
 
 To flash your own DM-1701 build, run `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701` (add `--stock FILE`
 to write the codec too) and hold PTT and the side key above it while powering the radio on when it asks. The
-bootloader key isn't in this repo; odrflash derives it from the stock firmware file. Releases are built by
+bootloader key isn't in this repo; odrflash derives it from the stock firmware file. If you put the stock firmware
+file in [codecs/](codecs/README.md), every `make` also writes an image with the codec merged in. Releases are built by
 `.github/workflows/release.yml` ([releases](docs/dev/release.md)). The DM-32UV image gets wrapped with
 `tools/dm32_pack.py` for Baofeng's updater.
 

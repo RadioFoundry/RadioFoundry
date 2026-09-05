@@ -205,3 +205,31 @@ protection in the radio's flash.
 The radio shows the talker alias other radios send, as it arrives, on the receive screen (unless **Settings > Talk &
 listen > Show talker alias** is off). It sends your callsign from
 the codeplug (8 characters) as your own alias when the channel's talker alias setting in the codeplug asks for it.
+
+## Roaming
+
+*Built and host-tested, not yet tested on air.*
+
+On a system of DMR repeaters that carry the same talkgroups at different sites, the radio can move to a better
+repeater by itself when the one it's on gets weak. You turn roaming on per zone.
+
+1. Put the repeater channels of one system in a zone, each set to the same contact.
+2. Pick one of them, then open **Tools > Roaming** and turn on **Roam in this zone**.
+
+While idle, the radio watches the signal of the repeater it's on. When the signal stays below the threshold, the radio
+listens to the zone's other sites and moves to the strongest one it can hear. It never moves during a call, a scan or
+hotspot use, while you transmit, or in the 3 seconds after a call ends, when a reply may come. Home shows `Roam` next to the repeater chip, amber `Roam?` when the current
+site is weak, and the status strip shows `ROAM` during a search. A toast says "Moved to" and the new channel's name.
+
+| Row | Does |
+|---|---|
+| Roam in this zone | Turns roaming on or off for the current zone |
+| Roam now | Searches the sites at once |
+| Lock to this site | Stays on the current repeater until you unlock (Home shows `Lock`) |
+
+A site is a repeater channel in the zone (TX and RX frequencies differ) with the same contact as the channel you
+picked. When any channel in the zone has the codeplug's Roaming flag set, only flagged channels are sites. You need
+at least two sites. Changing channel or zone yourself makes the new channel home.
+
+The threshold (default -105 dBm), the hysteresis (6 dB) and the optional periodic check of the other sites are set
+over the debug link for now ([dmr-roaming](../spec/dmr-roaming.md) section 5.1).

@@ -29,8 +29,8 @@ Features fall into three groups. This manual marks each feature that isn't verif
 
 | Group | Meaning | Features on the DM-1701 |
 |---|---|---|
-| Verified on the radio | Tested on a DM-1701 | Boot, display, keys, calibration, FM receive and transmit, DMR voice receive, DMR transmit |
-| Built, host-tested | Works against simulated chips in the host tests. Nobody has heard it on air yet. | DMR data (messages, call alert, radio check), emergency, privacy, hotspot, USB network, SFR, programming with qdmr, scan, battery saver, VOX |
+| Verified on the radio | Tested on a DM-1701 | Boot, display, keys, calibration, FM receive and transmit, DMR voice receive (with late entry), DMR transmit, receiving DMR calls, text messages, call alerts and radio checks, reading the radio with qdmr |
+| Built, host-tested | Works against simulated chips in the host tests. Nobody has heard it on air yet. | Sending DMR data (messages, call alert, radio check), emergency, privacy, hotspot, USB network, SFR, roaming, writing the radio with qdmr, scan, battery saver, VOX |
 | Not built yet | Shown in the menus, dimmed, with a message when selected | Voice prompts, GPS position, typed text messages, speed dial, saving contacts on the radio |
 
 ## What ODR does
