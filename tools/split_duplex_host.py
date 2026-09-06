@@ -253,10 +253,13 @@ def busy_mask_from_uplink(open_calls, cmd, control):
 class Radio:
     """One radio's MMDVM port: a reader thread, replies matched by command (and 0xD6 sub-command)."""
 
-    def __init__(self, port, name="radio", log=None):
+    def __init__(self, port, name="radio", log=None, dtr=True):
         import serial
         self.name = name
-        self.ser = serial.Serial(port, 115200, timeout=0.02)
+        self.ser = serial.Serial()
+        self.ser.port, self.ser.baudrate, self.ser.timeout = port, 115200, 0.02
+        self.ser.dtr = dtr      # False: as MMDVMHost on Windows; closing then does not end the hotspot session
+        self.ser.open()
         self.buf = bytearray()
         self.lock = threading.Condition()
         self.replies = []
