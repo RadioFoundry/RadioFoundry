@@ -22,6 +22,8 @@
 #include "hotspot/hotspotSplit.h"
 #include "hotspot/dmrDataFrame.h"
 #include "sim/split_sim_modem.h"
+#include "debuglink/debuglink.h"
+#include "debuglink/debuglink_proto.h"
 
 static int failures, checks;
 #define CHECK(cond) do { checks++; if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
@@ -1226,6 +1228,33 @@ static void test_space_when_role_ends(void)
 	CHECK(last_out(MMDVM_GET_STATUS)[7] == 0 && !ssim.bs);
 }
 
+// The debug link's SPLIT command (debuglink_split.c): the experiment's variant reaches bs_start, the view text
+static void test_debuglink(void)
+{
+	uint8_t dl[DL_REPLY_MAX];
+	size_t n;
+
+	session(&ssim_modem);
+	CHECK(debuglink_cmd_split((const uint8_t[]){ 1, 255, 1, 0x0D, 0x5A }, 5, dl, sizeof(dl)) == 1 &&
+	      dl[0] == DL_ST_OK);
+	CHECK(debuglink_cmd_split((const uint8_t[]){ 1, 255, 5 }, 3, dl, sizeof(dl)) == 1 && dl[0] == DL_ST_BAD_ARG);
+	CHECK(debuglink_cmd_split((const uint8_t[]){ 1, 2, 1, 0x0D }, 4, dl, sizeof(dl)) == 1 && dl[0] == DL_ST_BAD_ARG);
+	CHECK(debuglink_cmd_split((const uint8_t[]){ 9 }, 1, dl, sizeof(dl)) == 1 && dl[0] == DL_ST_BAD_ARG);
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 1 }, 1) == 0);
+	CHECK(ssim.bs_cfg.variant == 255 && ssim.bs_cfg.nregs == 1 && ssim.bs_cfg.regs[0][0] == 0x0D &&
+	      ssim.bs_cfg.regs[0][1] == 0x5A);
+	n = debuglink_cmd_split((const uint8_t[]){ 2 }, 1, dl, sizeof(dl));
+	CHECK(n > 100 && dl[0] == DL_ST_OK);
+	dl[n < sizeof(dl) ? n : sizeof(dl) - 1] = 0;
+	const char *text = (const char *)dl + 1;
+	CHECK(strstr(text, "split.built=1\n") != NULL && strstr(text, "split.role=tx\n") != NULL);
+	CHECK(strstr(text, "split.variant=255\n") != NULL && strstr(text, "split.cach_method=ours\n") != NULL);
+	CHECK(strstr(text, "split.underruns1=") != NULL && strstr(text, "split.offset_us=") != NULL &&
+	      strstr(text, "split.epoch_us=") != NULL && strstr(text, "split.buf2=") != NULL);
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 0 }, 1) == 0);
+	CHECK(debuglink_cmd_split((const uint8_t[]){ 1, 0, 0 }, 3, dl, sizeof(dl)) == 1 && dl[0] == DL_ST_OK);
+}
+
 int main(void)
 {
 	test_tact();
@@ -1240,6 +1269,7 @@ int main(void)
 	test_tx_guard();
 	test_rx_half();
 	test_space_when_role_ends();
+	test_debuglink();
 	printf("# splitDuplexTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }
