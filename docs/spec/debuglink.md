@@ -99,6 +99,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x0D` | REBOOT | mode u8 + token u32 | reason u8 (3.11) |
 | `0x0E` | DMR_DATA | operation u8 + arguments (3.12) | none, or an inbox message (3.12) |
 | `0x0F` | STORAGE | operation u8 + arguments (3.13) | region info, SPI flash bytes, or a reason (3.13) |
+| `0x15` | SPLIT | operation u8 + arguments (3.14); only in `CONFIG_HOTSPOT_SPLIT` builds, unknown otherwise | none, or the split view text (3.14) |
 
 ### 3.1 VERSION
 
@@ -368,6 +369,26 @@ and the claim of a foreign region.
 | 2 CLAIM | token u32: the chip UID's low word (INFO_CHIP offset 7) | reason u8. `DL_ST_REFUSED` with reason 1 (bad token) or 4 (no chip info); `DL_ST_UNAVAILABLE` when the region isn't foreign. On OK the housekeeping task erases the region (10 sector erases, up to about 4 s, during which it does not watch the power knob); poll `storage.region` |
 
 `odr_debug.py storage info | dump | claim` drives it; `claim` always dumps first, outside any git tree.
+
+### 3.14 SPLIT
+
+The split duplex repeater (`split-duplex.md`), built only with `CONFIG_HOTSPOT_SPLIT` (without it the command answers
+`DL_ST_UNKNOWN_CMD` as before; VERSION's feature list then lacks `HOTSPOT_SPLIT`). The number 0x15 leaves 0x10-0x14
+to commands added meanwhile.
+
+| Op | Request | Reply after the status |
+|---|---|---|
+| 1 VARIANT | variant u8 (0-3, 255 raw), n u8 (0-4), n x (page 4 register u8, value u8) | none. The BS framing experiment (`split-duplex.md` 10.1): what the TX half's next key-up writes and the unkey restores. `DL_ST_BAD_ARG` for n > 4 or a length that does not match n |
+| 2 VIEW | none | the split view as key=value text |
+
+View keys: `split.built`, `split.role` (normal, tx, rx), `split.offered` (INFO byte 1), `split.flags` (INFO byte 9),
+`split.variant`, `split.cach_method` (none, ours, chip, unknown), `split.keyed_s`, `split.lease_expiries`,
+`split.time_requests`; TX half: `split.buf1` / `split.buf2` (bursts buffered per slot), `split.underruns1` /
+`split.underruns2`, `split.at_host` (the host's AT mask now), `split.at_on_air`, `split.cach` (CACH bursts sent),
+`split.idle`, `split.silence`, `split.closed`, `split.slc_taken`, `split.slc_bad`; RX half: `split.epoch_us`,
+`split.period_ns`, `split.epoch_age_s` (65535 never), `split.offset_us` (the last phase residual), `split.track_us`
+(the anchor's correction), `split.busy`, `split.labeled1` / `split.labeled2`, `split.unlabeled`. No GET_VIEW section
+is added, so section numbers stay the same in every build. `odr_debug.py split view | variant N [REG=VAL ...]`.
 
 ## 4. Safety
 

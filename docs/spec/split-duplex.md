@@ -253,8 +253,10 @@ The core hands the modem driver, for each slot, the burst and the CACH (fields a
   Until a variant shows valid TACT bits the INFO block says "3 unknown".
 - **HR_C7000** (DM-32, GD-88): LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS and BS_CACH (0x428-0x438) exist and are never
   written by working firmware (`modem-hrc7000.md` 2.5); the user guide's descriptions of them are not in our spec yet.
-  The driver hook (`hrc7000_dmr` gets the same `bs_*` entry points) is a stub that reports "no TX half" until the
-  register layout is specified; the RX half works on it (slot clock from its timeslot interrupts).
+  Until the register layout is specified the HR_C7000 has no `bs_*` operations, so INFO offers no TX half on it. The
+  DM-32 glue (`boards/dm32/dmr_dm32.c`) does not wire `now_us` / `slot_clock` yet either, so a DM-32 offers no role at
+  all (INFO byte 1 = 0, SET_ROLE answers 2); adding them (the engine's `tick` / `t_tick`, as `hrc6000_bs_slot_clock`
+  does) makes it an RX half. Not done here: the csky toolchain was not available to build it.
 - **Fallback when the chip can't make a CACH**: BS-synced continuous bursts without valid TACT bits. MMDVMHost-style
   receivers and most radios still decode the bursts, but a subscriber radio in repeater mode takes its slot numbering
   from TC and its channel access from AT, so it may not tell TS1 from TS2 and talks on the wrong slot. That is not a
@@ -430,11 +432,35 @@ constant `HRC6000_BS_CACH_METHOD` in a later build.
 
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout
 
-`tests/hil/test_split_duplex.py` (opt-in, `--allow-rf --allow-service-stop`, marker `radio_tx` for the TX test):
-the TX half keyed 10 s with idle bursts and SET_AT toggling (SDR checks as above); the RX half labeling `bench_tx.py`
-calls on a chosen slot while the script plays the TX half's timing role from the bench (`--bench-epoch`: the bench
-transmitter's own slot timing is the epoch); the time sync accuracy readout (RX half STATUS phase residual and the
-script's offset estimate, both printed).
+`tests/hil/test_split_duplex.py` (one radio flashed with `CONFIG_HOTSPOT_SPLIT=y`; the TX and RX tests opt-in with
+`--allow-rf --allow-service-stop`):
+
+- `test_split_protocol` (no RF): the suffix, INFO, SET_ROLE 2 and 0, STATUS, unknown sub-command (result 1) and
+  unknown command (NAK 1), the debug link's SPLIT view.
+- `test_split_tx_half_off_air` (marker `radio_tx`): the TX half keyed 10 s at the lowest power with idle bursts, a
+  short LC and SET_AT toggling; asserted off air: BS sync only, a burst every 30 ms (same-slot spacing 60 ms), one
+  key-up edge, the colour code; asserted on the radio: no underruns, short LC taken. The CACH decode is printed
+  (the experiment's result). `ODR_SPLIT_VARIANT` picks the variant.
+- `test_split_rx_half_labels` (marker `rf`): the RX half with an epoch made from its own clock; a first bench call
+  measures the phase residual and the epoch is centered on the bench's slots; a second call must go up under one
+  label, whole (header, voice, terminator), with a residual under 5 ms; a third call with the epoch moved by 30 ms
+  must go up under the other label.
+
+`tools/split_duplex_host.py --rx PORT --rx-only --flip-at 20` does the RX half part by hand, and `--tx A --rx B`
+runs a real pair (bring-up and timing readout, no upstream).
+
+### 10.3 What runs without hardware
+
+`make -C tests/host`: `splitDuplexTest` (CACH and short LC against tables B.13 and B.17 and figures B.6 and B.9, the
+idle message of table D.2, the outbound buffer, the epoch arithmetic, both roles and the guards through mmdvm.c and
+hotspot.c on a simulated modem, the debug link command), `mmdvmTestSplit` and `hotspotSfrTestSplit` (the standard
+host suites with the extension built in), `hrc6000BsTest` and `hrc6000DmrTestSplit` (the HR_C6000 BS outbound on a
+fake chip, and the slot engine's suite with the hand-over hooks built in), and `sim/splitPairTest.py`: two radios'
+cores in lockstep virtual time, with crystals 18-35 ppm apart, one modem clock wrapping through 2^32, USB jitter
+with spikes, and the host logic of `split_duplex_host.py`: two overlapping mobile calls are heard by the RX half,
+labeled, repeated into the TX half and checked on its outbound (whole, in order, own slot, TC on every CACH, AT busy,
+no underrun, repeat delay), then host silence and lease expiry. `tools/bench/dmr_cach.py selftest` checks the Python
+CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
 
 ## 11. Open questions
 
@@ -446,3 +472,6 @@ script's offset estimate, both printed).
    bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit).
 5. Whether AT should default to busy during the host's hang time (mode 0 does: the outbound slot is not idle) or only
    from the RX half (mode 1).
+6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`: idle fills at the driver, PA key failures, stalls,
+   embedded LC rewrites) are not reachable from the core; a board diagnostics line or a `hal_dmr_modem_t` stats
+   operation would show them.
