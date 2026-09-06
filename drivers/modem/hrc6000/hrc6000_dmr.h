@@ -254,6 +254,9 @@ typedef struct {
 	bool notify_req;	// events pushed since the task was last woken
 
 	hrc6000_dmr_stats_t st;
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	struct hrc6000_bs *bs;	// split duplex BS outbound in charge of the chip (hrc6000_bs.c), NULL otherwise
+#endif
 } hrc6000_dmr_t;
 
 void hrc6000_dmr_init(hrc6000_dmr_t *e, hrc6000_t *dev, const hrc6000_dmr_ops_t *ops);
