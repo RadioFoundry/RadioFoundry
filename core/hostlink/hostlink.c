@@ -11,6 +11,9 @@
 #if CONFIG_SFR
 #include "hotspot/hotspotSfr.h"
 #endif
+#if CONFIG_HOTSPOT_SPLIT
+#include "hotspot/hotspotSplit.h"
+#endif
 #endif
 #if CONFIG_DEBUGLINK
 #include "debuglink/debuglink.h"
@@ -294,6 +297,9 @@ static void hostlink_task(void *arg)
 	mmdvm_init(&mmdvm_io);
 #if CONFIG_SFR
 	hotspot_sfr_init();
+#endif
+#if CONFIG_HOTSPOT_SPLIT
+	hotspot_split_init();		// after the SFR's: the priority extension (docs/spec/split-duplex.md)
 #endif
 	mmdvm_framer_reset(&framer);
 #endif

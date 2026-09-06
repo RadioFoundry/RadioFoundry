@@ -69,6 +69,21 @@ uint16_t mmdvm_framer_byte(mmdvm_framer_t *f, uint8_t b)
 
 static const mmdvm_io_t *io;
 static const mmdvm_ext_t *ext;
+#if CONFIG_HOTSPOT_SPLIT
+static const mmdvm_ext_t *ext_prio;	// the split duplex extension
+
+// The SFR's extension, unless a split role owns the session (then the SFR's trigger and hooks stay out)
+static const mmdvm_ext_t *sfr_ext(void)
+{
+	if ((ext_prio != NULL) && (ext_prio->owns != NULL) && ext_prio->owns()) {
+		return NULL;
+	}
+	return ext;
+}
+#define EXT	(sfr_ext())
+#else
+#define EXT	ext
+#endif
 static uint32_t last_frame_ms;
 static uint8_t state = MMDVM_MODE_IDLE;
 static uint8_t modes = MMDVM_MODE_BIT_DMR;
@@ -114,8 +129,27 @@ void mmdvm_set_ext(const mmdvm_ext_t *e)
 	ext = e;
 }
 
+#if CONFIG_HOTSPOT_SPLIT
+void mmdvm_set_ext_priority(const mmdvm_ext_t *e)
+{
+	ext_prio = e;
+}
+
+void mmdvm_ext_refresh(void)
+{
+	if ((EXT != NULL) && (EXT->config_changed != NULL)) {
+		EXT->config_changed(simplex, rx_hz, tx_hz);
+	}
+}
+#endif
+
 void mmdvm_end(void)
 {
+#if CONFIG_HOTSPOT_SPLIT
+	if ((ext_prio != NULL) && (ext_prio->end != NULL)) {
+		ext_prio->end();	// a split role ends with the session (split-duplex.md 2)
+	}
+#endif
 	hotspot_stop();
 	last_frame_ms = 0;
 	state = MMDVM_MODE_IDLE;
@@ -123,8 +157,8 @@ void mmdvm_end(void)
 	simplex = true;
 	rx_hz = 0;
 	tx_hz = 0;
-	if ((ext != NULL) && (ext->config_changed != NULL)) {
-		ext->config_changed(simplex, rx_hz, tx_hz);	// a new session starts without the extension's mode
+	if ((EXT != NULL) && (EXT->config_changed != NULL)) {
+		EXT->config_changed(simplex, rx_hz, tx_hz);	// a new session starts without the extension's mode
 	}
 }
 
@@ -152,6 +186,16 @@ static void get_version(void)
 			p[1 + n++] = (uint8_t)suffix[i];
 		}
 	}
+#if CONFIG_HOTSPOT_SPLIT
+	if ((ext_prio != NULL) && (ext_prio->version_suffix != NULL) && (n < DESCRIPTION_MAX)) {
+		char suffix[DESCRIPTION_MAX];	// " SPLIT1", announced role or not (split-duplex.md 3.7)
+		uint8_t s = ext_prio->version_suffix(suffix, (uint8_t)(DESCRIPTION_MAX - n));
+
+		for (uint8_t i = 0; (i < s) && (n < DESCRIPTION_MAX); i++) {
+			p[1 + n++] = (uint8_t)suffix[i];
+		}
+	}
+#endif
 	mmdvm_send(MMDVM_GET_VERSION, p, (uint8_t)(1 + n));
 }
 
@@ -176,20 +220,28 @@ static void get_status(void)
 	if (hotspot_carrier()) {
 		flags |= MMDVM_STATUS_CD;
 	}
-	if ((ext != NULL) && (ext->status_flags != NULL)) {
-		flags |= ext->status_flags();
+	if ((EXT != NULL) && (EXT->status_flags != NULL)) {
+		flags |= EXT->status_flags();
 	}
-	if ((ext != NULL) && (ext->space != NULL)) {
-		ext->space(&slot1, &slot2);	// SFR: both carry the outbound slot's space (spec 6.2)
+	if ((EXT != NULL) && (EXT->space != NULL)) {
+		EXT->space(&slot1, &slot2);	// SFR: both carry the outbound slot's space (spec 6.2)
 	}
+#if CONFIG_HOTSPOT_SPLIT
+	if ((ext_prio != NULL) && (ext_prio->status_flags != NULL)) {
+		flags |= ext_prio->status_flags();
+	}
+	if ((ext_prio != NULL) && (ext_prio->space != NULL)) {
+		ext_prio->space(&slot1, &slot2);	// a split TX half: both slots' space (split-duplex.md 4.1)
+	}
+#endif
 	p[0] = modes & MODES_KNOWN;
 	p[1] = state;
 	p[2] = flags;
 	p[4] = slot1;		// DMR slot 1: 0 in simplex (the spec allows 0 or 10; the host then never writes DATA1)
 	p[5] = slot2;		// DMR slot 2: frames the host may send
 	p[9] = 0;		// POCSAG space: 0, the host never writes pages (spec 2.6)
-	if ((ext != NULL) && (ext->status_extra != NULL)) {
-		n = (uint8_t)(n + ext->status_extra(p + n, MMDVM_STATUS_EXTRA_MAX));
+	if ((EXT != NULL) && (EXT->status_extra != NULL)) {
+		n = (uint8_t)(n + EXT->status_extra(p + n, MMDVM_STATUS_EXTRA_MAX));
 	}
 	mmdvm_send(MMDVM_GET_STATUS, p, n);
 }
@@ -213,8 +265,8 @@ static void set_config(const uint8_t *p, uint8_t len)
 	state = p[3];
 	hotspot_set_uplink(state != MMDVM_MODE_POCSAG);
 	hotspot_config(p[6], simplex, (uint16_t)(p[2] * 10));
-	if ((ext != NULL) && (ext->config_changed != NULL)) {
-		ext->config_changed(simplex, rx_hz, tx_hz);
+	if ((EXT != NULL) && (EXT->config_changed != NULL)) {
+		EXT->config_changed(simplex, rx_hz, tx_hz);
 	}
 	ack(MMDVM_SET_CONFIG);
 }
@@ -240,8 +292,8 @@ static void set_freq(const uint8_t *p, uint8_t len)
 	}
 	rx_hz = rx;
 	tx_hz = tx;
-	if ((ext != NULL) && (ext->config_changed != NULL)) {
-		ext->config_changed(simplex, rx_hz, tx_hz);
+	if ((EXT != NULL) && (EXT->config_changed != NULL)) {
+		EXT->config_changed(simplex, rx_hz, tx_hz);
 	}
 	ack(MMDVM_SET_FREQ);
 }
@@ -331,6 +383,14 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 	uint8_t plen = (uint8_t)(len - 3);
 
 	last_frame_ms = (now_ms != 0) ? now_ms : 1;
+#if CONFIG_HOTSPOT_SPLIT
+	if ((ext_prio != NULL) && (ext_prio->frame != NULL) && ext_prio->frame(command, p, plen, now_ms)) {
+		if (!hotspot_running()) {
+			hotspot_start(now_ms);
+		}
+		return;		// command 0xD6, or a standard command a split role answers (split-duplex.md 3, 4)
+	}
+#endif
 
 	// The command is answered first (GET_VERSION and GET_STATUS from what is known now); taking the modem comes after
 	switch (command) {
@@ -383,8 +443,8 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 	case MMDVM_NAK:
 		break;		// dropped silently, never answered (spec 2.12)
 	case MMDVM_ODR_SFR_DEBUG:
-		if ((ext != NULL) && (ext->vendor != NULL)) {
-			uint8_t r = ext->vendor(command, p, plen);
+		if ((EXT != NULL) && (EXT->vendor != NULL)) {
+			uint8_t r = EXT->vendor(command, p, plen);
 
 			if (r == 0) {
 				ack(command);

@@ -15,6 +15,12 @@
 #include "dmr/fec/dmrFec.h"
 #include "dmr/call/dmr_lc.h"
 #include "sim/dmr_sim_modem.h"
+#if CONFIG_HOTSPOT_SPLIT
+#include "hotspot/hotspotSplit.h"
+#define SUITE "hotspotSfrTestSplit"
+#else
+#define SUITE "hotspotSfrTest"
+#endif
 
 static int failures, checks;
 #define CHECK(cond) do { checks++; if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
@@ -148,6 +154,9 @@ static void reset_world(void)
 	hotspot_set_radio(&radio_ops);
 	mmdvm_init(&io);
 	hotspot_sfr_init();
+#if CONFIG_HOTSPOT_SPLIT
+	hotspot_split_init();	// hotspotSfrTestSplit: the same suite with the split duplex extension registered
+#endif
 }
 
 // SFR on: duplex, RX = TX, colour code 1
@@ -574,6 +583,6 @@ int main(void)
 	test_rf_priority();
 	test_echo_and_late_entry();
 	test_vendor();
-	printf("# hotspotSfrTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
+	printf("# " SUITE ": %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

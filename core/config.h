@@ -56,6 +56,11 @@
 #ifndef CONFIG_HOTSPOT
 #define CONFIG_HOTSPOT			1
 #endif
+// The one switch that defaults off here too: it adds members to hal_dmr_modem_t (the split duplex operations), so
+// every file of a program must see the same value; host tests that want it pass -DCONFIG_HOTSPOT_SPLIT=1 to all
+#ifndef CONFIG_HOTSPOT_SPLIT
+#define CONFIG_HOTSPOT_SPLIT		0
+#endif
 #ifndef CONFIG_DEBUGLINK
 #define CONFIG_DEBUGLINK		CONFIG_HOSTLINK
 #endif
@@ -125,6 +130,9 @@
 #endif
 #if CONFIG_HOTSPOT && !CONFIG_HOSTLINK
 #error "CONFIG_HOTSPOT needs CONFIG_HOSTLINK"
+#endif
+#if CONFIG_HOTSPOT_SPLIT && !CONFIG_HOTSPOT
+#error "CONFIG_HOTSPOT_SPLIT needs CONFIG_HOTSPOT"
 #endif
 #if CONFIG_DEBUGLINK && !CONFIG_HOSTLINK
 #error "CONFIG_DEBUGLINK needs CONFIG_HOSTLINK"

@@ -110,8 +110,21 @@ typedef struct {
 	void (*net_abort)(void);
 	bool (*transmitting)(void);
 	void (*stopped)(void);		// the modem is being given back, or retuned: drop everything, inactive
+#if CONFIG_HOTSPOT_SPLIT
+	// Optional: event() with the event's arg (DMR_EV_BURST_RX: the slot counter it was heard in), called instead
+	void (*event_arg)(uint8_t kind, const dmr_burst_t *burst, uint32_t arg, uint32_t now_ms);
+#endif
 } hotspot_alt_t;
 void hotspot_set_alt(const hotspot_alt_t *alt);
+#if CONFIG_HOTSPOT_SPLIT
+// A second other mode ahead of the first (the split duplex roles, core/hotspot/hotspotSplit.c): while it is active it
+// gets everything above, and the first is stopped and not polled
+void hotspot_set_alt_priority(const hotspot_alt_t *alt);
+// The second RSSI byte after an uplink burst (the AT1846S raw scale, docs/spec/mmdvm-protocol.md 5.4); false: unknown
+bool hotspot_rssi_byte(int16_t rssi_dbm, uint8_t *raw);
+// A cap on SET_FREQ's RF level (the split duplex TX half's power cap); 0 or 255: none
+void hotspot_set_power_cap(uint8_t cap);
+#endif
 bool hotspot_alt_active(void);
 // A DMR_DATA1 / DMR_DATA2 frame while the other mode is active: 0 if taken, else the MMDVM NAK reason
 uint8_t hotspot_alt_net_frame(uint8_t command, uint8_t control, const uint8_t *frame, uint32_t now_ms);

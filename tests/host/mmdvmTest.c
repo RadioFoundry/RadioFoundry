@@ -16,6 +16,12 @@
 #include "dmr/call/dmr_lc.h"
 #include "hostlink/hostlink.h"
 #include "radio/morse.h"
+#if CONFIG_HOTSPOT_SPLIT
+#include "hotspot/hotspotSplit.h"	// mmdvmTestSplit: the same suite with the split duplex extension registered
+#define SPLIT_SUFFIX_LEN	7		// " SPLIT1" after the description (docs/spec/split-duplex.md 3.7)
+#else
+#define SPLIT_SUFFIX_LEN	0
+#endif
 
 static int failures;
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
@@ -360,6 +366,9 @@ static void reset_world(void)
 	hotspot_set_radio(&radio_ops);
 	mmdvm_init(&io);
 	mmdvm_set_ext(NULL);
+#if CONFIG_HOTSPOT_SPLIT
+	hotspot_split_init();
+#endif
 }
 
 static void configure(uint8_t cc)
@@ -437,7 +446,7 @@ static void test_version_status(void)
 	CHECK(v != NULL);
 	if (v != NULL) {
 		CHECK(v[3] == 1);
-		CHECK(v[1] == 4 + strlen(io.description));
+		CHECK(v[1] == 4 + strlen(io.description) + SPLIT_SUFFIX_LEN);
 		CHECK(memcmp(v + 4, "OpenDigitalRadio Test 0123abcd", strlen(io.description)) == 0);
 	}
 	const uint8_t *s = status();
@@ -1377,7 +1386,7 @@ int main(void)
 	test_hostlink_dtr();
 	test_end();
 	if (failures == 0) {
-		printf("mmdvmTest: all passed\n");
+		printf(SPLIT_SUFFIX_LEN ? "mmdvmTestSplit: all passed\n" : "mmdvmTest: all passed\n");
 	}
 	return failures != 0;
 }

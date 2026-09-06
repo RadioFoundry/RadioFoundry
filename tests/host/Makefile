@@ -300,6 +300,34 @@ run-hsfr: hotspotSfrTest
 	./hotspotSfrTest
 .PHONY: run-mmdvm
 
+# The split duplex extension (CONFIG_HOTSPOT_SPLIT, docs/spec/split-duplex.md): the CACH / short LC coding against
+# the standard's tables, the continuous outbound, the RX half's labels, the roles through mmdvm.c and hotspot.c on the
+# simulated split modem; and the standard-host suites again with the extension built in and registered (nothing a
+# host that never sends 0xD6 can see changes but the version suffix)
+SPLITF  := -DCONFIG_HOTSPOT_SPLIT=1
+SPLIT   := $(CORE)/hotspot/hotspotSplit.c $(CORE)/dmr/bsOutbound.c $(CORE)/dmr/slotEpoch.c $(CORE)/dmr/fec/dmrCach.c
+SPLITT  := splitDuplexTest.c $(SPLIT) sim/split_sim_modem.c $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c \
+           $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c $(FRAME) $(CORE)/dmr/call/dmr_lc.c
+TESTS   += splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit
+SPLITH  := $(wildcard $(CORE)/hotspot/*.h $(CORE)/dmr/bsOutbound.h $(CORE)/dmr/slotEpoch.h $(CORE)/dmr/fec/*.h sim/*.h) \
+           $(ROOT)/hal/hal_dmr_modem.h
+
+splitDuplexTest: $(SPLITT) $(SPLITH)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow $(SPLITF) -o $@ $(SPLITT)
+
+mmdvmTestSplit: $(MMDVM) $(SPLIT) $(SPLITH)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ $(MMDVM) $(SPLIT)
+
+hotspotSfrTestSplit: $(HSFR) $(SPLIT) $(SPLITH)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SFR=1 $(SPLITF) -o $@ $(HSFR) $(SPLIT)
+
+run: run-split
+run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit
+	./splitDuplexTest
+	./mmdvmTestSplit
+	./hotspotSfrTestSplit
+.PHONY: run-split
+
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
 DLINK   := debuglinkTest.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
 	$(CORE)/debuglink/dl_chip.c

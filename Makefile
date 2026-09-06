@@ -57,6 +57,11 @@ endif
 ifeq ($(CONFIG_SFR),y)
 APP_SRC += core/dmr/sfr.c core/dmr/sfrRunner.c
 endif
+# The split duplex repeater: the continuous BS outbound and the RX half's slot labels (the hotspot's extension is in
+# core/hotspot/hotspotSplit.c, the CACH coding in core/dmr/fec)
+ifeq ($(CONFIG_HOTSPOT_SPLIT),y)
+APP_SRC += core/dmr/bsOutbound.c core/dmr/slotEpoch.c
+endif
 # The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c

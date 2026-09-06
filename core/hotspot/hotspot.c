@@ -90,10 +90,40 @@ static hotspot_stats_t stats;
 
 static const hotspot_alt_t *alt;	// another mode on the modem (the SFR), when built in
 
+#if CONFIG_HOTSPOT_SPLIT
+static const hotspot_alt_t *alt_prio;	// ... and one ahead of it (the split duplex roles)
+static uint8_t power_cap = 255;		// the split duplex TX half's cap on the RF level
+
+// The other mode active now, the priority one first
+static const hotspot_alt_t *alt_cur(void)
+{
+	if (running && (alt_prio != NULL) && alt_prio->active()) {
+		return alt_prio;
+	}
+	return alt;
+}
+
+static bool alt_on(void)
+{
+	const hotspot_alt_t *a = alt_cur();
+
+	return (a != NULL) && running && a->active();
+}
+
+static uint8_t level_capped(uint8_t level)
+{
+	return (level < power_cap) ? level : power_cap;
+}
+#define ALT		(alt_cur())
+#define LEVEL(l)	(level_capped(l))
+#else
 static bool alt_on(void)
 {
 	return (alt != NULL) && running && alt->active();
 }
+#define ALT		alt
+#define LEVEL(l)	(l)
+#endif
 
 static void changed(void)
 {
@@ -267,8 +297,28 @@ uint8_t hotspot_alt_net_frame(uint8_t command, uint8_t control, const uint8_t *f
 		return MMDVM_NAK_WRONG_MODE;
 	}
 	stats.net_frames++;
-	return alt->net_frame(command, control, frame, now_ms);
+	return ALT->net_frame(command, control, frame, now_ms);
 }
+
+#if CONFIG_HOTSPOT_SPLIT
+void hotspot_set_alt_priority(const hotspot_alt_t *a)
+{
+	alt_prio = a;
+}
+
+void hotspot_set_power_cap(uint8_t cap)
+{
+	power_cap = (cap == 0) ? 255 : cap;
+	if (running && (radio->set_power != NULL)) {
+		radio->set_power(level_capped(rf_level));
+	}
+}
+
+bool hotspot_rssi_byte(int16_t rssi_dbm, uint8_t *raw)
+{
+	return rssi_raw(rssi_dbm, raw);
+}
+#endif
 
 const hal_dmr_modem_t *hotspot_modem(void)
 {
@@ -389,6 +439,9 @@ void hotspot_init(const hal_dmr_modem_t *m, hotspot_send_fn send)
 	rx_hz = 0;
 	tx_hz = 0;
 	rf_level = 255;
+#if CONFIG_HOTSPOT_SPLIT
+	power_cap = 255;
+#endif
 	enter_tried = false;
 	uplink_on = true;
 	memset(&stats, 0, sizeof(stats));
@@ -437,7 +490,7 @@ bool hotspot_start(uint32_t now_ms)
 		radio->set_freq(rx_hz, tx_hz);
 	}
 	if (radio->set_power != NULL) {
-		radio->set_power(rf_level);
+		radio->set_power(LEVEL(rf_level));
 	}
 	running = true;
 	view.running = true;
@@ -453,6 +506,11 @@ void hotspot_stop(void)
 	if (!running) {
 		return;
 	}
+#if CONFIG_HOTSPOT_SPLIT
+	if (alt_prio != NULL) {
+		alt_prio->stopped();
+	}
+#endif
 	if (alt != NULL) {
 		alt->stopped();
 	}
@@ -492,6 +550,11 @@ bool hotspot_set_freq(uint32_t rx, uint32_t tx, uint8_t level)
 {
 	if (running) {
 		// A retune drops what is in flight (docs/spec/gotchas.md 8.6: the host waits for idle first)
+#if CONFIG_HOTSPOT_SPLIT
+		if (alt_prio != NULL) {
+			alt_prio->stopped();	// a split role stays: its slot clock restarts (a new epoch)
+		}
+#endif
 		if (alt != NULL) {
 			alt->stopped();		// the other mode is chosen again after the ACK (config_changed)
 		}
@@ -509,7 +572,7 @@ bool hotspot_set_freq(uint32_t rx, uint32_t tx, uint8_t level)
 			return false;
 		}
 		if (radio->set_power != NULL) {
-			radio->set_power(level);
+			radio->set_power(LEVEL(level));
 		}
 		modem->rx_restart();
 	}
@@ -648,7 +711,7 @@ uint8_t hotspot_net_frame(uint8_t control, const uint8_t *frame, uint32_t now_ms
 void hotspot_net_abort(void)
 {
 	if (alt_on()) {
-		alt->net_abort();
+		ALT->net_abort();
 		return;
 	}
 	if (running && (tx_state != TX_IDLE)) {
@@ -664,7 +727,7 @@ void hotspot_net_idle(void)
 	tx_state_t st = tx_state;
 
 	if (alt_on()) {
-		alt->net_abort();
+		ALT->net_abort();
 		return;
 	}
 	if (!running || (st == TX_IDLE)) {
@@ -974,7 +1037,13 @@ static void rf_burst(const dmr_burst_t *b, uint32_t now_ms)
 static void handle_event(const queued_event_t *e, uint32_t now_ms)
 {
 	if (alt_on()) {
-		alt->event(e->kind, e->has_burst ? &e->burst : NULL, now_ms);
+#if CONFIG_HOTSPOT_SPLIT
+		if (ALT->event_arg != NULL) {
+			ALT->event_arg(e->kind, e->has_burst ? &e->burst : NULL, e->arg, now_ms);
+			return;
+		}
+#endif
+		ALT->event(e->kind, e->has_burst ? &e->burst : NULL, now_ms);
 		return;
 	}
 	switch (e->kind) {
@@ -1022,6 +1091,19 @@ void hotspot_poll(uint32_t now_ms)
 		handle_event(&events[ev_out], now_ms);
 		ev_out = (uint8_t)((ev_out + 1) % EVENT_QUEUE);
 	}
+#if CONFIG_HOTSPOT_SPLIT
+	if (alt_prio != NULL) {
+		alt_prio->poll(now_ms);
+		if (alt_prio->active()) {
+			if ((alt != NULL) && alt->active()) {
+				alt->stopped();		// a split role keeps the SFR off (split-duplex.md 4.1)
+			}
+			view.transmitting = hotspot_transmitting();
+			view.receiving = hotspot_carrier();
+			return;
+		}
+	}
+#endif
 	if (alt != NULL) {
 		alt->poll(now_ms);
 		if (alt_on()) {
@@ -1061,7 +1143,7 @@ uint8_t hotspot_space(void)
 bool hotspot_transmitting(void)
 {
 	if (alt_on()) {
-		return alt->transmitting() || ((radio->cw_busy != NULL) && radio->cw_busy());
+		return ALT->transmitting() || ((radio->cw_busy != NULL) && radio->cw_busy());
 	}
 	return running && ((tx_state != TX_IDLE) || (ring_count > 0) || hotspotDataIsBusy() || modem->is_transmitting() ||
 			   ((radio->cw_busy != NULL) && radio->cw_busy()));
