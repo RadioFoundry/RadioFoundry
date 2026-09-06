@@ -322,6 +322,14 @@ mmdvmTestSplit: $(MMDVM) $(SPLIT) $(SPLITH)
 hotspotSfrTestSplit: $(HSFR) $(SPLIT) $(SPLITH)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SFR=1 $(SPLITF) -o $@ $(HSFR) $(SPLIT)
 
+# The simulated pair (tests/host/splitPairTest.py): one radio per splitSim process, two in lockstep virtual time with
+# tools/split_duplex_host.py as the host; run when python3 is there
+SPLITSIM := sim/splitSim.c $(SPLIT) sim/split_sim_modem.c $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c \
+            $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c $(FRAME) $(CORE)/dmr/call/dmr_lc.c
+TESTS   += splitSim
+splitSim: $(SPLITSIM) $(SPLITH)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Isim -Wshadow $(SPLITF) -o $@ $(SPLITSIM)
+
 # The HR_C6000 BS outbound (drivers/modem/hrc6000/hrc6000_bs.c), and the slot engine's suite again with its hooks built in
 HRCBS   := $(HRCDMR)/hrc6000_bs.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c
 hrc6000BsTest: hrc6000BsTest.c $(HRCBS) $(wildcard $(HRCDMR)/*.h) $(ROOT)/hal/hal_dmr_modem.h
@@ -331,12 +339,15 @@ hrc6000DmrTestSplit: hrc6000DmrTest.c $(HRCBS) $(wildcard $(HRCDMR)/*.h) $(ROOT)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ hrc6000DmrTest.c $(HRCBS)
 
 run: run-split
-run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6000DmrTestSplit
+run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6000DmrTestSplit splitSim
 	./splitDuplexTest
 	./mmdvmTestSplit
 	./hotspotSfrTestSplit
 	./hrc6000BsTest
 	./hrc6000DmrTestSplit
+	@if command -v python3 > /dev/null; then python3 sim/splitPairTest.py ./splitSim && \
+		python3 $(ROOT)/tools/bench/dmr_cach.py selftest; \
+	else echo "# splitPairTest, dmr_cach selftest: skipped (no python3)"; fi
 .PHONY: run-split
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
