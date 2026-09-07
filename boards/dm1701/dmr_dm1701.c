@@ -25,6 +25,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "debuglink/dlog.h"
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+#include "modem/hrc6000/hrc6000_bs.h"
+#endif
 
 #define DMR_TASK_PRIORITY	(configMAX_PRIORITIES - 2)
 #define DMR_TASK_STACK		512	// words: the stack's callback runs on it
@@ -473,11 +476,65 @@ static bool is_transmitting(void)
 	return hrc6000_dmr_is_transmitting(&eng);
 }
 
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+// --- Split duplex (docs/spec/split-duplex.md 5): the slot clock and the TX half's BS outbound (hrc6000_bs.c) ---
+
+static hrc6000_bs_t bs;
+
+static uint32_t split_now_us(void)
+{
+	return now_us(NULL);
+}
+
+static bool slot_clock(uint32_t *counter, uint32_t *t_us, int8_t *ts)
+{
+	return active && hrc6000_bs_slot_clock(&eng, counter, t_us, ts);
+}
+
+static bool bs_start(const dmr_bs_config_t *cfg)
+{
+	return active && hrc6000_bs_start(&bs, &eng, cfg);
+}
+
+static void bs_key(bool on)
+{
+	hrc6000_bs_key(&eng, on);
+}
+
+static bool bs_queue(int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach, const uint8_t *emb_lc)
+{
+	return hrc6000_bs_queue(&eng, ts, b, cach, emb_lc);
+}
+
+static uint8_t bs_space(int8_t ts)
+{
+	return hrc6000_bs_space(&eng, ts);
+}
+
+static void bs_stop(void)
+{
+	if (hrc6000_bs_active(&eng)) {
+		hrc6000_bs_stop(&eng);
+	}
+}
+
+static bool bs_keyed(void)
+{
+	return hrc6000_bs_keyed(&eng);
+}
+#define SPLIT_OPS	.now_us = split_now_us, .slot_clock = slot_clock, .bs_start = bs_start, .bs_key = bs_key, \
+			.bs_queue = bs_queue, .bs_space = bs_space, .bs_stop = bs_stop, .bs_keyed = bs_keyed, \
+			.bs_cach = HRC6000_BS_CACH_METHOD,
+#else
+#define SPLIT_OPS
+#endif
+
 const hal_dmr_modem_t dm1701_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
 	.is_transmitting = is_transmitting,
+	SPLIT_OPS
 };
 
 // --- Bring-up counters ---

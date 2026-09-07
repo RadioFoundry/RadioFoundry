@@ -524,6 +524,26 @@ From our SFR work on the DM-1701 (on air in hotspot SFR mode):
 - 0x41 bit 3 (CC_Match_Ctrl) lets the chip deframe any CC while keyed (experiment switch, effect unconfirmed).
 - The AT1846S TX/RX switch per burst over I2C takes about 0.5 ms from the interrupt.
 
+### 9.1 Continuous BS outbound (split duplex TX half)
+
+`drivers/modem/hrc6000/hrc6000_bs.c` (`CONFIG_HOTSPOT_SPLIT`, `split-duplex.md` 5.4) takes the chip over from the slot
+engine while the split duplex TX half runs; the engine's three ISRs, its watchdog, halt and `is_transmitting` hand
+over to it while `e->bs` is set. Start: colour code, page 1 0x04 = BS data sync, 0x20 = 0x00, 0x21 impolite, 0x22 =
+0x86, 0x41 = 0x00, then 0x40 = 0xE3 (own timing: the timeslot interrupt runs free every 30 ms). Every timeslot
+interrupt while keyed sets up the next slot from that slot's queue (or the idle message on page 2 0x18, counted as an
+underrun): the MCU CRC bit of 0x40 per burst kind, the payload (voice on page 3, LC / data on page 2 0x00), 0x41 =
+0x80 and 0x50. Page 2 0x00 is shared by both slots, so a slot's embedded LC is written back before its voice A-E
+whenever the other slot's header or data overwrote it. The first burst after a key-up is an outbound TS1 slot
+(outbound slot = ((tick - base) & 1) ? TS1 : TS2). The PA is keyed once, at the first RF TX interrupt, and dropped
+at the first timeslot interrupt after the unkey, or by the watchdog when no timeslot interrupt came for 200 ms. Stop:
+0x10 / 0x11 back to 0x6E / 0x80, MS sync, 0x40 = 0xC3, the slot engine restarts the receiver.
+
+The CACH: what the chip sends in the 2.5 ms gap with these settings is unknown (no documented CACH register);
+`HRC6000_BS_CACH_METHOD` says "unknown" until the BS framing experiment (`split-duplex.md` 10.1) settles it. The
+experiment's variants are written at key-up and restored at unkey: 1 0x11 = 0x00; 2 0x10 = 0x4E, 0x11 = 0x00; 3
+0x10 = 0x6A, 0x11 = 0x00; 255 up to four raw page 4 pairs (left as written until the next DMR entry, except 0x10 /
+0x11 which are restored). Host test: `tests/host/hrc6000BsTest.c`.
+
 ---
 
 ## 10. Open questions

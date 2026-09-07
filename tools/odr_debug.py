@@ -26,6 +26,9 @@
     odr_debug.py aprobe OP [ARG...]             audio probe (CONFIG_AUDIO_PROBE builds; docs/spec/usb-audio.md 2.3):
                                                 status | reg PAGE REG | wreg PAGE REG VAL | start [HZ [AMP [spk]]] |
                                                 stop | samples [-o FILE.raw]
+    odr_debug.py split view                     the split duplex view (role, epoch, offset, buffers, underruns, CACH)
+    odr_debug.py split variant N [REG=VAL ...]  the BS framing experiment's variant for the next TX half key-up
+                                                (docs/spec/split-duplex.md 10.1; raw page 4 pairs with N = 255)
 
 Key names: up down left right select (ok) back (exit) quick (star) context (hash) 0-9 ptt monitor tt (talk target)
 emergency enc user1-user4.
@@ -58,6 +61,8 @@ PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, KEY, PTT, GET_LOG, GET_VIEW
     REBOOT = range(1, 14)
 DMR_DATA = 0x0E
 STORAGE = 0x0F
+SPLIT = 0x15                        # split duplex (CONFIG_HOTSPOT_SPLIT builds only; docs/spec/debuglink.md 3.15)
+SPLIT_OP_VARIANT, SPLIT_OP_VIEW = 1, 2
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
 AUDIO_PROBE = 0x10
 PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES = range(6)
@@ -362,6 +367,19 @@ class DebugLink:
                 raise DebugLinkError(f"STORAGE READ answer for 0x{raddr:08X} with {len(r) - 4} bytes")
             out += r[4:]
         return bytes(out)
+
+    def split_variant(self, variant, regs=()):
+        """SPLIT op 1: the BS framing experiment's variant (0-3, 255 raw) and up to 4 (page 4 register, value) pairs"""
+        regs = list(regs)
+        if len(regs) > 4:
+            raise DebugLinkError("at most 4 register pairs")
+        payload = bytes([SPLIT_OP_VARIANT, variant & 0xFF, len(regs)]) + b"".join(bytes([r & 0xFF, v & 0xFF])
+                                                                              for r, v in regs)
+        self.request(SPLIT, payload)
+
+    def split_view(self):
+        """SPLIT op 2: the split duplex view as a dict (status 1 'unknown command' without CONFIG_HOTSPOT_SPLIT)"""
+        return parse_kv(self.request(SPLIT, bytes([SPLIT_OP_VIEW]))[1].decode("ascii", "replace"))
 
     def storage_claim(self, token):
         """Raises DebugLinkError (status 7 with the reason, or 4: not foreign) when refused"""
@@ -1173,6 +1191,9 @@ def main(argv=None):
     p.add_argument("-o", "--output", help=f"file outside any git tree (default {DEFAULT_DUMP_DIR}/dump_ADDR_LEN.bin)")
     p = sub.add_parser("reboot")
     p.add_argument("--rom-dfu", action="store_true", help="into ST's ROM USB DFU (refused unless RDP level 0)")
+    p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
+    p.add_argument("op", choices=["view", "variant"])
+    p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
     p = sub.add_parser("storage", help="the settings / journal region: info, dump, claim (docs/spec/settings-store.md 5)")
     p.add_argument("op", choices=["info", "dump", "claim"])
     p.add_argument("--out", default=DEFAULT_DUMP_DIR, help=f"dump directory outside any git tree (default {DEFAULT_DUMP_DIR})")
@@ -1221,6 +1242,16 @@ def main(argv=None):
                 return cmd_storage(link, a)
             elif a.cmd == "aprobe":
                 return cmd_aprobe(link, a)
+            elif a.cmd == "split":
+                if a.op == "view":
+                    for k, v in link.split_view().items():
+                        print(f"{k}={v}")
+                else:
+                    if not a.args:
+                        ap.error("split variant N [REG=VAL ...]")
+                    regs = [tuple(int(x, 0) for x in r.split("=", 1)) for r in a.args[1:]]
+                    link.split_variant(int(a.args[0], 0), regs)
+                    print(f"variant {a.args[0]} set: used at the TX half's next key-up")
             elif a.cmd == "log":
                 while True:
                     dropped, text = link.log()

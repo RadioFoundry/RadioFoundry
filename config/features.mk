@@ -47,6 +47,9 @@ CONFIG_HOSTLINK ?= $(CONFIG_USB)
 CONFIG_USB_NETWORK ?= $(CONFIG_DMR_IP_GATEWAY)
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
+# split duplex repeater: two radios as one duplex MMDVM modem through the hotspot's vendor command 0xD6 (needs
+# HOTSPOT; core/hotspot/hotspotSplit.c, core/dmr/bsOutbound.c, core/dmr/slotEpoch.c, docs/spec/split-duplex.md)
+CONFIG_HOTSPOT_SPLIT ?= n
 # VFO: tune a frequency by hand (off: programmed channels only)
 CONFIG_VFO ?= y
 # analog FM VFO (needs VFO and FM)
@@ -80,7 +83,7 @@ CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
 CONFIG_AUDIO_PROBE ?= n
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
-	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
+	USB HOSTLINK USB_NETWORK HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE
 
 # Dependencies
@@ -94,6 +97,11 @@ $(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING 
 ifneq ($(call feature_on,HOTSPOT),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)
+  endif
+endif
+ifneq ($(call feature_on,HOTSPOT_SPLIT),)
+  ifeq ($(call feature_on,HOTSPOT),)
+    $(error CONFIG_HOTSPOT_SPLIT=y needs CONFIG_HOTSPOT=y)
   endif
 endif
 ifneq ($(call feature_on,DEBUGLINK),)

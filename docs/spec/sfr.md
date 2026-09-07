@@ -81,6 +81,10 @@ bursts while it is keyed (the rest of a call after the first repeat). Not tested
 - The HR_C6000 driver level parts: raw RX RAM classification (`sfrRawClassify`), per-burst RF switching, the
   register switches of command 0xD5.
 
+A two-frequency repeater made of two radios is the split duplex extension (`split-duplex.md`, `CONFIG_HOTSPOT_SPLIT`),
+not the SFR: it registers in mmdvm.c and hotspot.c ahead of the SFR (a priority extension), so while a split role
+is active the SFR stays off, and without a role the SFR works exactly as described here.
+
 ## 5. Tests
 
 - Host: `tests/host/sfrTest.c` (the logic), `tests/host/hotspotSfrTest.c` (the hotspot SFR mode through mmdvm.c and

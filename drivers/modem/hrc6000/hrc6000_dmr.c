@@ -6,6 +6,12 @@
 #include <string.h>
 #include "hrc6000_dmr.h"
 #include "config.h"
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+#include "hrc6000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
+#define BS_HOOK(call)	do { if (e->bs != NULL) { call; return; } } while (0)
+#else
+#define BS_HOOK(call)	do { } while (0)
+#endif
 
 #if CONFIG_DMR	// the whole file: DMR only
 
@@ -1103,6 +1109,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	if (!e->running) {
 		return;
 	}
+	BS_HOOK(hrc6000_bs_isr_timeslot(e));
 	uint32_t t = now(e);
 	// A report whose system interrupt was not taken in its slot (the line held low, no edge): service it now, before
 	// the tick advances, so it is read before the chip moves on and is counted for the slot it belongs to (the
@@ -1221,6 +1228,7 @@ void hrc6000_dmr_isr_sys(hrc6000_dmr_t *e)
 	if (!e->running) {
 		return;
 	}
+	BS_HOOK(hrc6000_bs_isr_sys(e));
 	uint32_t t = now(e);
 	e->st.sys_ints++;
 	sys_service(e, t, false);
@@ -1232,6 +1240,7 @@ void hrc6000_dmr_isr_rftx(hrc6000_dmr_t *e)
 	if (!e->running) {
 		return;
 	}
+	BS_HOOK(hrc6000_bs_isr_rftx(e));
 	uint32_t t = now(e);
 	e->st.rftx_ints++;
 	if (e->tx_state == TXS_IDLE) {
@@ -1295,6 +1304,11 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 
 void hrc6000_dmr_halt(hrc6000_dmr_t *e)
 {
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	if (e->bs != NULL) {
+		hrc6000_bs_stop(e);
+	}
+#endif
 	lock(e);
 	if (e->pa_on) {
 		pa_drop(e, now(e));
@@ -1334,6 +1348,7 @@ bool hrc6000_dmr_pop(hrc6000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 
 void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 {
+	BS_HOOK(hrc6000_bs_poll(e));
 	lock(e);
 	if (e->running) {
 		uint32_t t = now(e);
@@ -1501,6 +1516,11 @@ void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc)
 
 bool hrc6000_dmr_is_transmitting(const hrc6000_dmr_t *e)
 {
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	if (e->bs != NULL) {
+		return hrc6000_bs_keyed(e) || e->bs->keyed;	// the outbound on air (or keying up)
+	}
+#endif
 	return e->tx_state != TXS_IDLE;
 }
 

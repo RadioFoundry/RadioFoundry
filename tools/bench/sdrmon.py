@@ -28,6 +28,9 @@ Runs on the SDR bench with RadioDesk rfgw's venv (it uses rfgw's Channelizer / F
         embedded LC assembled from B-E); then the carrier key-up / key-down edges and ramps from the 0.1 ms power
         envelope, and a summary. --json OUT also writes all of it as JSON (dmr_bench.py checks pass criteria on
         it). The capture is read in 1 M-sample chunks; a 15 s capture needs about 150 MB of RAM to analyze.
+        --cach also decodes the CACH before every BS-sourced burst (dmr_cach.py: TACT Hamming(7,4) with AT, TC,
+        LCSS, the 17 payload bits, short LCs assembled from LCSS 1 3 3 2) and prints it per burst with a summary:
+        the split duplex TX half's check (docs/spec/split-duplex.md 10.1).
 """
 import argparse
 import json
@@ -401,9 +404,22 @@ def cmd_analyze(args) -> int:
                 letter = "BCDEF"[k - 1] if (direction == 1 and a.kind == "VOICE_A" and k <= 5) else "?"
                 bursts.append(Burst(start=float(q), fam="emb", voice=True, errs=e, cc=cc, dt=None, st_err=None,
                                     center=a.center, outer=a.outer, corr=0.0,
-                                    kind=f"VOICE_{letter} pi{pi} lcss{lcss}", slot=a.slot, raw=raw))
+                                    kind=f"VOICE_{letter} pi{pi} lcss{lcss}", slot=a.slot, raw=raw,
+                                    anchor_fam=a.fam))
                 pos = q
     bursts.sort(key=lambda b: b.start)
+    if args.cach:
+        # The 12 symbols before each BS-sourced burst are its CACH (24 bits, TX(23) first)
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import dmr_cach
+        cdec = dmr_cach.CachDecoder()
+        for b in bursts:
+            b.cach = None
+            if b.fam == "bs" or getattr(b, "anchor_fam", None) == "bs":
+                st = int(round(b.start))
+                if st - 12 * SPS >= 0:
+                    cb = _slice(f[st - 12 * SPS + np.arange(12) * SPS], b.center, b.outer)
+                    b.cach = cdec.push(dmr_cach.bits_to_int(cb))
 
     # LCs: voice LC header / terminator (RS(12,9) checked by pdu), CSBK opcode, embedded LC from B-E (voice E)
     frags = {}
@@ -557,6 +573,27 @@ def cmd_analyze(args) -> int:
     if unexpl:
         print("  carrier with no decoded burst (>5 ms): "
               + ", ".join(f"segment @{a:.1f}: {u:.1f} ms" for a, u in unexpl[:20]))
+    if args.cach:
+        cs = [b for b in sel if getattr(b, "cach", None) is not None]
+        print()
+        print("cach (BS-sourced bursts):")
+        for b in cs:
+            c = b.cach
+            if not c["ok"]:
+                print(f"  {ms(b.start):9.2f} tact bad")
+                continue
+            line = f"  {ms(b.start):9.2f} tact ok AT {c['at']} TC {c['tc']} LCSS {c['lcss']} payload {c['payload']:05X}"
+            if "slc" in c:
+                slc, ok = c["slc"]
+                line += f"  slc {slc:07X} {'ok' if ok else 'bad'} {dmr_cach.describe_slc(slc)}"
+            print(line)
+        good = [b.cach for b in cs if b.cach["ok"]]
+        alt = sum(1 for x, y in zip(good, good[1:]) if x["tc"] != y["tc"])
+        slcs = [b.cach["slc"] for b in cs if "slc" in b.cach]
+        print(f"  summary: {len(cs)} BS bursts, tact ok {len(good)}, TC alternating {alt}/{max(len(good) - 1, 0)}, "
+              f"AT busy {sum(c['at'] for c in good)}, short LCs {sum(1 for _, ok in slcs if ok)} ok / "
+              f"{sum(1 for _, ok in slcs if not ok)} bad"
+              + (f", last {dmr_cach.describe_slc(slcs[-1][0])}" if slcs else ""))
     if args.json:
         def slot_of(b):
             rel = ms(b.start - tref)
@@ -568,7 +605,8 @@ def cmd_analyze(args) -> int:
                         "sync_errors": b.errs, "slot_type_errors": b.st_err, "cc": b.cc, "dt": b.dt,
                         "kind": b.kind.split()[0], "detail": b.kind, "cach_ts": b.slot if b.fam == "bs" else None,
                         "dbfs": round(float(b.pwr), 1), "spread_db": round(b.spread, 1), "step": bool(b.step),
-                        "foff_hz": round(float(b.center)), "lc": b.lc} for b in sel],
+                        "foff_hz": round(float(b.center)), "lc": b.lc,
+                        "cach": getattr(b, "cach", None)} for b in sel],
             "edges": edges_out,
             "summary": {
                 "counts": {" ".join(k): v for k, v in sorted(counts.items())},
@@ -613,6 +651,7 @@ def main() -> int:
             s.add_argument("--max-sync-errors", type=int, default=8)
             s.add_argument("--keep-weak", action="store_true", help="also list sync matches with no carrier (noise)")
             s.add_argument("--json", default=None, help="also write bursts, edges and summary as JSON to this file")
+            s.add_argument("--cach", action="store_true", help="decode the CACH of BS-sourced bursts (split duplex)")
     args = ap.parse_args()
     if args.cmd == "capture":
         return cmd_capture(args)

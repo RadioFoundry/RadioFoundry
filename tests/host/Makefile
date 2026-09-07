@@ -300,6 +300,56 @@ run-hsfr: hotspotSfrTest
 	./hotspotSfrTest
 .PHONY: run-mmdvm
 
+# The split duplex extension (CONFIG_HOTSPOT_SPLIT, docs/spec/split-duplex.md): the CACH / short LC coding against
+# the standard's tables, the continuous outbound, the RX half's labels, the roles through mmdvm.c and hotspot.c on the
+# simulated split modem; and the standard-host suites again with the extension built in and registered (nothing a
+# host that never sends 0xD6 can see changes but the version suffix)
+SPLITF  := -DCONFIG_HOTSPOT_SPLIT=1
+SPLIT   := $(CORE)/hotspot/hotspotSplit.c $(CORE)/dmr/bsOutbound.c $(CORE)/dmr/slotEpoch.c $(CORE)/dmr/fec/dmrCach.c
+SPLITT  := splitDuplexTest.c $(SPLIT) sim/split_sim_modem.c $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c \
+           $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c $(FRAME) $(CORE)/dmr/call/dmr_lc.c \
+           $(CORE)/debuglink/debuglink_split.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6000DmrTestSplit
+SPLITH  := $(wildcard $(CORE)/hotspot/*.h $(CORE)/dmr/bsOutbound.h $(CORE)/dmr/slotEpoch.h $(CORE)/dmr/fec/*.h sim/*.h) \
+           $(ROOT)/hal/hal_dmr_modem.h
+
+splitDuplexTest: $(SPLITT) $(SPLITH)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow $(SPLITF) -o $@ $(SPLITT)
+
+mmdvmTestSplit: $(MMDVM) $(SPLIT) $(SPLITH)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ $(MMDVM) $(SPLIT)
+
+hotspotSfrTestSplit: $(HSFR) $(SPLIT) $(SPLITH)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SFR=1 $(SPLITF) -o $@ $(HSFR) $(SPLIT)
+
+# The simulated pair (tests/host/splitPairTest.py): one radio per splitSim process, two in lockstep virtual time with
+# tools/split_duplex_host.py as the host; run when python3 is there
+SPLITSIM := sim/splitSim.c $(SPLIT) sim/split_sim_modem.c $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c \
+            $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c $(FRAME) $(CORE)/dmr/call/dmr_lc.c
+TESTS   += splitSim
+splitSim: $(SPLITSIM) $(SPLITH)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Isim -Wshadow $(SPLITF) -o $@ $(SPLITSIM)
+
+# The HR_C6000 BS outbound (drivers/modem/hrc6000/hrc6000_bs.c), and the slot engine's suite again with its hooks built in
+HRCBS   := $(HRCDMR)/hrc6000_bs.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c
+hrc6000BsTest: hrc6000BsTest.c $(HRCBS) $(wildcard $(HRCDMR)/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ hrc6000BsTest.c $(HRCBS)
+
+hrc6000DmrTestSplit: hrc6000DmrTest.c $(HRCBS) $(wildcard $(HRCDMR)/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ hrc6000DmrTest.c $(HRCBS)
+
+run: run-split
+run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6000DmrTestSplit splitSim
+	./splitDuplexTest
+	./mmdvmTestSplit
+	./hotspotSfrTestSplit
+	./hrc6000BsTest
+	./hrc6000DmrTestSplit
+	@if command -v python3 > /dev/null; then python3 sim/splitPairTest.py ./splitSim && \
+		python3 $(ROOT)/tools/bench/dmr_cach.py selftest; \
+	else echo "# splitPairTest, dmr_cach selftest: skipped (no python3)"; fi
+.PHONY: run-split
+
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
 DLINK   := debuglinkTest.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
 	$(CORE)/debuglink/dl_chip.c

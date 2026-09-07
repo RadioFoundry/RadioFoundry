@@ -90,6 +90,9 @@ static const char features[] = "features="
 #if CONFIG_HOTSPOT
 	"HOTSPOT,"
 #endif
+#if CONFIG_HOTSPOT_SPLIT
+	"HOTSPOT_SPLIT,"
+#endif
 #if CONFIG_USB_NETWORK
 	"USB_NETWORK,"
 #endif
@@ -813,6 +816,10 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return cmd_storage(req, len, out, cap);
 	case DL_CMD_AUDIO_PROBE:
 		return debuglink_cmd_audio_probe(req, len, out, cap);
+#if CONFIG_HOTSPOT_SPLIT
+	case DL_CMD_SPLIT:
+		return debuglink_cmd_split(req, len, out, cap);
+#endif
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

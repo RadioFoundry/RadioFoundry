@@ -127,6 +127,7 @@ python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop           
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx" --sdr-ppm 0.7
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk         # needs $ODR_RADIODESK_MQTT_*
+ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s --allow-rf --allow-service-stop
 ```
 
 | Test | What is checked |
@@ -135,6 +136,7 @@ python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk 
 | `test_dmr_tx` | the radio keys 3 s; an SDR capture (`sdrmon.py`) and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
 | `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz; `tools/sdr_fm_check.py` decodes the tones and compares the deviations |
 | `test_dmr_data` | the bench sends data, a text message, a call alert and radio checks to the radio, which answers (its `dmr_data` counters, the answers heard by the bench modem); the radio sends a call alert, a radio check and a text message the bench modem hears (`docs/spec/dmr-data.md`) |
+| `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `ODR_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
 | `test_radiodesk_alert` | a sandbox alert (MQTT `ESS/RadioDesk/Alert/<radio id>/voice`) becomes a private call; the radio shows and plays it; RadioDesk's `AlertStatus` reports |
 
 The SDR bench's names come from the environment: `ODR_SDR_BENCH_HOST` (ssh host or alias, default `sdr-bench`),
@@ -148,3 +150,9 @@ they are never written into the repository.
 end to end by `tools/bench/dmr_bench.py` with automatic checks where possible; `--dry-run` prints every command
 first. `docs/testing/mmdvm-audit.md`: the MMDVM protocol audit of the hotspot. `docs/testing/dm32-bringup.md`: the
 DM-32UV port's first test on a radio, in order, with what to change when a step fails.
+
+The split duplex repeater has no hardware-free gap: `make -C tests/host` runs `splitDuplexTest` (the CACH and short
+LC against the standard's tables, the outbound buffer, the epoch, both roles through the MMDVM core),
+`hrc6000BsTest` (the HR_C6000 BS outbound engine on a fake chip) and `sim/splitPairTest.py` (two radios' cores in
+lockstep virtual time with drift, a clock wrap and USB jitter, a repeated call end to end); the bench steps are
+`docs/spec/split-duplex.md` 10.

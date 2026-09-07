@@ -58,6 +58,9 @@
 // Ours, in a range MMDVM leaves unused: the SFR on-air debug switches (core/dmr/sfr.h, hrcSfr.h); answered through
 // the extension hooks below, NAKed until the SFR is ported
 #define MMDVM_ODR_SFR_DEBUG	0xD5
+// Ours: the split duplex extension (docs/spec/split-duplex.md 3), answered by core/hotspot/hotspotSplit.c through its
+// frame hook below when CONFIG_HOTSPOT_SPLIT is built; NAKed with reason 1 (unknown) otherwise, like any command
+#define MMDVM_ODR_SPLIT		0xD6
 
 // NAK reasons
 #define MMDVM_NAK_UNKNOWN	1	// not a command this modem knows
@@ -136,10 +139,25 @@ typedef struct {
 	void (*config_changed)(bool simplex, uint32_t rx_hz, uint32_t tx_hz);
 	uint8_t (*status_flags)(void);							// ORed into byte 5
 	void (*space)(uint8_t *slot1, uint8_t *slot2);	// GET_STATUS bytes 7 and 8, given ours (0, the hotspot's): change them
+#if CONFIG_HOTSPOT_SPLIT
+	// For the split duplex extension (NULL for the SFR): a frame before the standard handling (true: taken and
+	// answered); true while it owns the session (a split role: the other extension isn't consulted meanwhile); the
+	// host session ended (mmdvm_end)
+	bool (*frame)(uint8_t command, const uint8_t *payload, uint8_t len, uint32_t now_ms);
+	bool (*owns)(void);
+	void (*end)(void);
+#endif
 } mmdvm_ext_t;
 
 void mmdvm_init(const mmdvm_io_t *io);
 void mmdvm_set_ext(const mmdvm_ext_t *ext);
+#if CONFIG_HOTSPOT_SPLIT
+// A second, priority extension (the split duplex one): its frame hook sees each frame first, its owns() keeps the
+// SFR's out; GET_VERSION gets both suffixes (the SFR's first), status flags are ORed, the space hooks run in turn
+void mmdvm_set_ext_priority(const mmdvm_ext_t *ext);
+// Hand the current SET_CONFIG / SET_FREQ state to the SFR's config_changed again (after owns() ends)
+void mmdvm_ext_refresh(void);
+#endif
 
 // One complete frame from the host (as the framer returns it)
 void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms);

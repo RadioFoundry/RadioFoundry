@@ -99,6 +99,30 @@ typedef struct {
 	uint8_t payload[DMR_PAYLOAD_MAX];
 } dmr_tx_burst_t;
 
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+// Split duplex TX half (docs/spec/split-duplex.md 5): the CACH before one outbound burst (core/dmr/fec/dmrCach.h)
+typedef struct {
+	uint8_t at;		// access type of the inbound slot with the same number: 1 busy
+	uint8_t tc;		// the outbound slot after the CACH: 0 TS1, 1 TS2
+	uint8_t lcss;		// short LC fragment: 1 first, 3 continuation, 2 last
+	uint32_t payload;	// 17 bits, P(16) in bit 16
+	uint32_t bits;		// all 24 bits interleaved (figure B.9), TX(23) in bit 23
+} dmr_cach_t;
+
+#define DMR_BS_REGS_MAX		4
+
+// The continuous BS outbound's setup (bs_start)
+typedef struct {
+	uint8_t cc;
+	uint8_t variant;	// BS framing experiment (split-duplex.md 10.1): 0 the driver default
+	uint8_t nregs;		// variant 255: raw (register, value) pairs written at key-up, restored at unkey
+	uint8_t regs[DMR_BS_REGS_MAX][2];
+} dmr_bs_config_t;
+
+// What the driver does with the CACH bits (split-duplex.md 3.1, INFO byte 4)
+enum { DMR_BS_CACH_NONE, DMR_BS_CACH_OURS, DMR_BS_CACH_CHIP, DMR_BS_CACH_UNKNOWN };
+#endif
+
 typedef struct {
 	// Chip on and in DMR mode (after the board's RF side is in DMR mode); events start flowing to cb
 	bool (*start)(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx);
@@ -115,6 +139,26 @@ typedef struct {
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	// Split duplex (docs/spec/split-duplex.md), all optional (NULL: the driver can't; the role is not offered).
+	// The modem clock: free-running microseconds (wraps), the clock slot_clock is stamped in. RX half and TIME
+	uint32_t (*now_us)(void);
+	// The latest slot boundary (timeslot interrupt): its count (as DMR_EV_SLOT_TICK's arg) and modem clock time; ts:
+	// the outbound slot that started there in the BS outbound (1 or 2), else 0. False while no slot clock runs
+	bool (*slot_clock)(uint32_t *counter, uint32_t *t_us, int8_t *ts);
+	// TX half: the continuous BS outbound. bs_start: receiver off, own slot clock running, not keyed yet (true when
+	// running). bs_key: key the continuous outbound, starting with an outbound TS1 slot (idle bursts where nothing
+	// is queued) / unkey after the slot on air, the queues dropped. bs_queue: the burst and its CACH for the next free outbound slot ts (1 or 2), in order per slot, and for
+	// voice burst A the embedded LC for B-E of its superframe (else NULL); false when that slot's queue is full.
+	// bs_stop: unkey at once, back to normal receive (the hotspot restarts it)
+	bool (*bs_start)(const dmr_bs_config_t *cfg);
+	void (*bs_key)(bool on);
+	bool (*bs_queue)(int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach, const uint8_t *emb_lc);
+	uint8_t (*bs_space)(int8_t ts);
+	void (*bs_stop)(void);
+	bool (*bs_keyed)(void);		// the PA is up for the outbound (keyed and on air)
+	uint8_t bs_cach;		// DMR_BS_CACH_xxx
+#endif
 } hal_dmr_modem_t;
 
 #endif

@@ -5,7 +5,8 @@
 What a radio acting as an MMDVM modem (a "hotspot") must send and accept so that every host that will talk to it
 works: MMDVMHost (current master), RadioDesk `rfgw`, our bench tools (`tools/bench/`), and the hosts the old firmware
 was tested with. Written from the public protocol, from observing what those hosts send and expect, and from our own
-earlier hotspot work. Section 6 lists our own additions (the SFR debug command 0xD5 and the extra status bytes).
+earlier hotspot work. Section 6 lists our own additions (the SFR debug command 0xD5 and the extra status bytes, and
+the split duplex command 0xD6).
 Section 7 is the test list for the host tests and `tools/mmdvm_probe.py`.
 
 Conventions: byte values are hex. "Frame offset" counts from the 0xE0 start byte (offset 0). "Payload offset" counts
@@ -63,6 +64,7 @@ up to the next 0xE0.
 | 90 | TRANSPARENT | both | silently dropped | no |
 | 91 | QSO_INFO | host to modem (old hosts, CAST display) | silently dropped, or ACK | no |
 | D5 | our SFR debug command | host to modem | ACK / NAK 4 (section 6) | no (ours) |
+| D6 | our split duplex command (CONFIG_HOTSPOT_SPLIT builds only) | host to modem | one D6 reply with a result byte (section 6.5) | no (ours) |
 | F1-F5, FA | DEBUG1-5, DEBUG_DUMP | modem to host | | no (host logs them) |
 | anything else | | | NAK 1 | |
 
@@ -142,6 +144,9 @@ host can't learn that the radio is DMR only, so a misconfigured host may try oth
   rfgw finds it with the regular expressions `\bSFR\b`, `\bTS([12])\s*>\s*TS([12])\b` and
   `\bSFR\s+TS[12]\s*>\s*TS[12]\s+([A-Z]+)\b`, and today also requires `OpenGD77` in the string. It refuses to run
   an SFR config whose slots differ from the radio's, and warns unless the framing is `TS`.
+- Split duplex capability is announced by the suffix ` SPLIT<version>` (` SPLIT1`), present whenever the firmware
+  has the extension, role or not (section 6.5). It contains no `MMDVM`, `SFR` or slot pattern, so none of the
+  detections above change.
 - Avoid the substrings `MMDVM_HS`, `ADF7021`, `ZUMSPOT` and the like (they'd make rfgw take the radio for an MMDVM_HS
   board). The old firmware's description also carried `(Radio:<model>, Mode:MMDVM)`; nothing parses that part.
 
@@ -589,6 +594,7 @@ SFR `repeater`), **bench** (our `hotspot_test.py`, `hs_normal.py`, `run_sfr_call
 | 29 | Transport | serial or UDP (`Protocol=udp`, ModemAddress / ModemPort 3334, LocalPort 3335; accepts only datagrams from ModemAddress:ModemPort) | serial or UDP (same rule; local port 3335) | **UDP 12.47.82.93:3334 from 12.47.82.92:3335**, one frame per datagram (copies: serial or UDP) | USB CDC, or UDP 3334 over its USB network adapter (CDC-NCM), reply from radio:3334 to the host's last source port |
 | 30 | DTR | Windows: **clears DTR**; Linux / macOS: raised by the OS on open | pyserial default (raised) | n/a (UDP) | ignored |
 | 31 | 0xD5 / extra status bytes | never sent / ignored | not used | `--debug` sends 0xD5; parses 13.. | ACK (≥ 5 bytes) / NAK 4 |
+| 31a | 0xD6 / ` SPLIT1` | never sent / suffix ignored | not used | not used (a split duplex host: `tools/split_duplex_host.py`) | D6 reply; NAK 1 without CONFIG_HOTSPOT_SPLIT |
 | 32 | BlueDV (Windows client) | | | | "Mode:BlueDV" variant: no 20 s timeout, DMR_DATA2 in idle forced DMR mode, voice accepted without an embedded-LC call start (old firmware only; not verified against BlueDV itself) |
 
 Row 1 is the one compatibility break a new name causes. Options for the lead: (a) change rfgw's detection to also
@@ -694,6 +700,17 @@ reg11 00, flags2 00. Meanings of each bit: the `HRC_SFR_DEBUG_*` and `HRC_SFR_DE
 `drivers/modem/hrc6000/sfr_glue/hrcSfr.h`; framing 0 = the channel setting, 1 MS, 2 TS, 3 BS (GET_VERSION shows the
 result). In a firmware without SFR, 0xD5 is an unknown command (NAK 1). The generic SFR layer acts on the framing and on flags2 0x40
 (data calls repeated as heard, no hold); it keeps and reports the other switches for a driver that uses them.
+
+### 6.5 Command 0xD6 (split duplex)
+
+Two radios run as one duplex repeater, each an MMDVM modem (`docs/spec/split-duplex.md`, the full definition). Built
+only with `CONFIG_HOTSPOT_SPLIT`; a firmware without it NAKs 0xD6 with 1, like any unknown command. Request
+`E0 <len> D6 <sub> [<data>]`, reply `E0 <len> D6 <sub> <result> [<data>]` (result 0 done, 1 unknown sub-command,
+2 wrong state, 4 invalid). Sub-commands: 00 INFO, 01 SET_ROLE, 02 TIME, 03 GET_EPOCH, 04 SET_EPOCH, 05 SET_AT,
+06 STATUS. Nothing changes for a host that never sends 0xD6 except the ` SPLIT1` description suffix: a role starts
+only with SET_ROLE 1 (TX half) or 2 (RX half) and ends with SET_ROLE 0, the end of the session (the port closed with
+DTR, the 20 s timeout) or a 10 s lease that any 0xD6 refreshes. In a role the standard commands keep their framing
+and change meaning as a duplex MMDVM board's (`split-duplex.md` 4); no other status bytes are added.
 
 ## 7. Conformance checklist and test list
 
