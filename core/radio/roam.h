@@ -123,7 +123,7 @@ typedef struct {
 	uint32_t force_ms;	// ... since
 	// The beacon schedule: the shared window (ROAM_SURVEY_SYNC), learned from any site's beacon
 	uint32_t win_ms;	// the start of a beacon window
-	uint8_t win_conf;	// beacons that matched it, 0 = unknown, 2+ = known
+	uint8_t win_conf;	// beacons that matched it: 0 unknown, 1 tried (one beacon), 2+ confirmed
 	uint32_t win_alt;	// a beacon off the schedule, 0 = none (two in step move the schedule)
 	uint32_t win_seen_ms;	// the last beacon that matched
 	uint32_t win_done;	// the window surveyed last

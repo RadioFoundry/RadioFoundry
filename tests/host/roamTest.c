@@ -340,18 +340,17 @@ static void test_survey_window(void)
 	roam_init(&r, &cfg_sync);
 	bs_window(4, 20000, (int16_t[]){ -90, -85, -100, 0 }, 0);
 	sites_n(&r, 4, 0, 1000);
-	// The schedule is learned from our own site's beacons: two in step make it known
-	uint32_t t = drive(&r, 1000, 30000, 0);
-	CHECK(r.win_conf == 1 && r.beacons == 1 && !roam_window(&r, t, NULL));
-	CHECK(r.surveys == 0 && st_away.away == 0);	// nothing to go by yet: the radio stays
-	t = drive(&r, t, 60000, 0);
+	// The schedule is learned from our own site's beacons: one is enough to try, the next ones confirm it
+	uint32_t t = drive(&r, 1000, 18000, 0);
+	CHECK(r.win_conf == 0 && !roam_window(&r, t, NULL) && r.surveys == 0 && st_away.away == 0);
+	t = drive(&r, t, 12000, 0);
 	uint32_t next = 0;
-	CHECK(r.win_conf >= 2 && roam_window(&r, t, &next) && (next - 20000u) % 60000u == 0);
-	CHECK(iabs_t((int)phase_of(r.win_ms) - 20000) <= 100);
-	// The next window: one round visits all three other sites (four fit in 4 s), back before the window ends
-	uint32_t surveys = r.surveys;
+	CHECK(r.win_conf == 1 && r.beacons == 1 && roam_window(&r, t, &next) && next == 80000);
+	CHECK(r.surveys == 0);
+	// The next window: one round visits all three other sites (six fit in 4 s), back before the window ends
 	t = drive(&r, t, 60000, 0);
-	CHECK(r.surveys == surveys + 1);
+	CHECK(r.surveys == 1 && r.win_conf >= 2);
+	CHECK(iabs_t((int)phase_of(r.win_ms) - 20000) <= 100);
 	CHECK(st_away.away_max <= 4000 - ROAM_WIN_LEAD_MS && st_away.away_max >= 2 * ROAM_SURVEY_SETTLE_MS);
 	CHECK(r.state == ROAM_WATCH && r.cur == 0);
 	CHECK(r.site[1].surv_dbm == -85 && r.site[2].surv_dbm == -100 && r.site[3].surv_ms == 0);	// 3: one miss so far
@@ -536,6 +535,26 @@ static void test_survey_per_site(void)
 	CHECK(st_away.tunes > tunes);
 	// Aligned visits are short: the extra time away averages well under one beacon per visit
 	CHECK((st_away.away - away) / (st_away.tunes - tunes) < 3000);
+}
+
+// Our own site silent (out of range): after a while one discovery visit listens to another site through an
+// interval, learns the window from its beacon, and the rounds measure it from then on
+static void test_survey_discovery(void)
+{
+	roam_t r;
+	roam_init(&r, &cfg_sync);
+	bs_window(3, 20000, (int16_t[]){ 0, -88, -95 }, 0);
+	sites_n(&r, 3, 0, 1000);
+	uint32_t t = drive(&r, 1000, 2 * 60000, 0);
+	CHECK(r.surveys == 0 && st_away.away == 0);		// waits for its own site's beacons first
+	t = drive(&r, t, 90000, 0);
+	CHECK(r.surveys >= 1 && r.win_conf >= 1 && r.beacons >= 1);	// the discovery visit
+	CHECK(st_away.away_max <= 60000 + 4000 + ROAM_WIN_TOL_MS + ROAM_SURVEY_SETTLE_MS + 25);
+	t = drive(&r, t, 12 * 60000, 0);
+	CHECK(roam_window(&r, t, NULL) && r.win_conf >= 2);
+	CHECK(roam_site_fresh(&r, 1, t) && r.site[1].surv_dbm == -88);
+	CHECK(roam_site_fresh(&r, 2, t) && r.site[2].surv_dbm == -95);
+	CHECK(st_away.away * 100u <= (t - 1000u) * ROAM_SURVEY_DUTY + 65000u * 100u);
 }
 
 static void test_survey_defaults_off_without_beacons(void)
@@ -1276,10 +1295,10 @@ static void test_rc_survey(void)
 	beacon(B, -80, 20000);
 	beacon(C, -95, 20000);
 	beacon(D, -70, 20000);	// color code 3: never counted
-	run(2 * 60000 - 1000);		// beacons at 20 s and 80 s: known, the third (140 s) not yet here
-	CHECK(RV->win_conf >= 2 && RV->win_next_ms != 0 && RV->beacons >= 2);
+	run(60000 - 1000);		// the beacon at 20 s: the window tried, the next one (80 s) not yet here
+	CHECK(RV->win_conf == 1 && RV->win_next_ms != 0 && RV->beacons == 1);
 	CHECK(RV->surveys == 0 && on_ch() == 1);
-	// The third window: a round; the screens keep showing site A while the radio is away
+	// The next window: a round; the screens keep showing site A while the radio is away
 	until_survey(60000);
 	CHECK(sm.roam.state == ROAM_SURVEY && RV->state == RROAM_STATE_SURVEY && RV->visit != 0xFF);
 	radio_view_t v = sm.view;
@@ -1389,6 +1408,7 @@ int main(void)
 	test_survey_stale_fallback();
 	test_survey_blocks_and_traffic();
 	test_survey_per_site();
+	test_survey_discovery();
 	test_survey_defaults_off_without_beacons();
 	test_sites_and_zone_flag();
 	test_weak_roams_to_strongest();

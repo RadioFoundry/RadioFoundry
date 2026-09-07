@@ -169,7 +169,7 @@ typedef struct {
 	int16_t site_rssi[RADIO_ROAM_SITES];	// last measurement (the current site: its average), 0 = none
 	// The survey (docs/spec/dmr-roaming.md 4.8 - 4.10)
 	uint8_t visit;		// the site a survey visit or search is on, 0xFF = none
-	uint8_t win_conf;	// the shared beacon window: beacons that matched it (2+ = known)
+	uint8_t win_conf;	// the shared beacon window: 0 unknown, 1 from one beacon, 2+ confirmed
 	uint32_t win_next_ms;	// ms until the next window, 0 = not known
 	uint8_t confirm;	// a confirm visit planned to this site + 1, 0 = none
 	uint32_t surveys, visits, cuts, beacons, confirms;

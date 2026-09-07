@@ -64,7 +64,8 @@ static uint32_t sched_last(uint32_t t, uint32_t a, uint32_t p)
 
 static bool window_known(const roam_t *r, uint32_t now_ms)
 {
-	return beacons(r) && r->cfg.survey == ROAM_SURVEY_SYNC && r->win_conf >= 2 &&
+	// One beacon is enough to try (a wrong one costs a round that hears nothing and is corrected by the next ones)
+	return beacons(r) && r->cfg.survey == ROAM_SURVEY_SYNC && r->win_conf >= 1 &&
 	       !since(now_ms, r->win_seen_ms, ROAM_WIN_STALE * interval_ms(r));
 }
 
@@ -676,6 +677,10 @@ static void record(roam_t *r, uint8_t i, uint32_t now_ms)
 		s->surv_ms = now_ms;
 		s->miss = 0;
 		r->vlive = true;	// a site heard: the beacons are on the air
+		if (r->vkind == ROAM_VISIT_SURVEY && r->cfg.survey == ROAM_SURVEY_SYNC && r->win_conf == 1) {
+			r->win_conf = 2;	// heard in the predicted window: the schedule holds
+			r->win_seen_ms = now_ms;
+		}
 		if (r->cfg.survey == ROAM_SURVEY_SITE && r->vkind == ROAM_VISIT_SURVEY && site_phase_known(r, i, now_ms)) {
 			// Heard on its schedule: the schedule still holds (a clean start refined it already)
 			s->phase_ms = sched_last(now_ms, s->phase_ms, interval_ms(r));

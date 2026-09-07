@@ -56,6 +56,10 @@ def pytest_addoption(parser):
                      "(bench_repeater.py --tx); no default: a pair you are licensed for")
     g.addoption("--roam-tx", type=float, default=None,
                 help="MHz: the radio's transmit frequency of that site (bench_repeater.py --rx)")
+    g.addoption("--roam-beacon", type=float, default=20.0,
+                help="s: test_roaming's beacon tests, the bench repeater's beacon interval (set on the radio too)")
+    g.addoption("--roam-beacon-len", type=int, default=3,
+                help="s: their beacon duration (bench_repeater.py --beacon-len, the radio's roam_beacon_len_s)")
     g.addoption("--radiodesk-text", default="OpenDigitalRadio HIL test call",
                 help="the alert text RadioDesk speaks in the private call")
 

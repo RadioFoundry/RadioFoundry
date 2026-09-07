@@ -13,7 +13,13 @@ call hang, AMBE FEC regenerated) without its HBlink4 link. Needs the dual modem 
 duplex) and rfgw's venv (/opt/radiodesk-rfgw/.venv/bin/python). rfgw must not hold the bench modem.
 
     bench_repeater.py --rx 466.6875 --tx 461.6875 [--cc 2] [--seconds 60] [--hang 4] [--call-hang 3]
-                    [--slots 1,2] [--power 255] [--json]
+                    [--slots 1,2] [--power 255] [--json] [--beacon S --beacon-len S [--beacon-phase S]]
+
+--beacon S: an idle repeater's roaming beacon (docs/spec/dmr-roaming.md 3): every S seconds, while the transmitter is
+down, the repeater keys its standard outbound (BS sync, CACH, idle bursts) for --beacon-len seconds and drops again,
+without a call. Made by handing the repeater a local BS_Dwn_Act (as if a radio had asked) with the hang time set to
+the beacon length, so nothing but the repeater's own outbound goes on air. The first beacon comes --beacon-phase
+seconds after the start (default 2). Emits "beacon" events with the time keyed. Not yet run on the bench.
 
 Frequencies: a split pair you are licensed for; there is no default on purpose. Prints one JSON line per event
 (--json): "key" (transmitter up / down), "wakeup" (BS_Dwn_Act heard, with the source), "rx" (each burst heard on the
@@ -51,7 +57,14 @@ def main() -> None:
     ap.add_argument("--rx-offset", type=int, default=-150)
     ap.add_argument("--tx-offset", type=int, default=-175)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--beacon", type=float, default=0, help="s between idle beacons (0: no beacons)")
+    ap.add_argument("--beacon-len", type=float, default=4.0, help="s each beacon lasts (the hang time in this mode)")
+    ap.add_argument("--beacon-phase", type=float, default=2.0, help="s from the start to the first beacon")
     args = ap.parse_args()
+    if args.beacon:
+        if not 0 < args.beacon_len < args.beacon:
+            raise SystemExit("--beacon-len must be shorter than --beacon")
+        args.hang = args.beacon_len	# a beacon is a wake-up with nothing to repeat: it lasts the hang time
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     if abs(args.rx - args.tx) < 0.0125:
         raise SystemExit("a duplex repeater needs separate RX and TX frequencies")
@@ -72,7 +85,13 @@ def main() -> None:
                   tuner=ModemTuner(modem, args.rx_offset, args.tx_offset))
     rpt = Repeater(radio, 0, int(round(args.rx * 1e6)), int(round(args.tx * 1e6)), args.cc, power=args.power,
                    slots=tuple(int(s) for s in args.slots.split(",")), hang_s=args.hang, call_hang_s=args.call_hang)
-    rpt.on_key = lambda keyed: emit({"key": bool(keyed)})
+    keyed_now = {"on": False}
+
+    def on_key(keyed):
+        keyed_now["on"] = bool(keyed)
+        emit({"key": bool(keyed)})
+
+    rpt.on_key = on_key
     rpt.start()
     logging.info("%s repeater RX %.4f TX %.4f MHz cc %d", modem.version, args.rx, args.tx, args.cc)
 
@@ -111,6 +130,29 @@ def main() -> None:
     stop = threading.Event()
     t = threading.Thread(target=rpt.run, args=(stop,), daemon=True)
     t.start()
+
+    def beacons():
+        # A local BS_Dwn_Act straight into the repeater's receive path (not on air): it keys its outbound for the
+        # hang time. Skipped while the transmitter is up (traffic: the radios hear the repeater anyway)
+        from bench_tx import one_csbk
+        burst = one_csbk(BS_DWN_ACT, 0, 0xFFFFFF, 0, args.cc)
+        start = time.monotonic()
+        n = 0
+        while not stop.is_set():
+            due = start + args.beacon_phase + n * args.beacon
+            if stop.wait(max(0.0, due - time.monotonic())):
+                break
+            n += 1
+            if keyed_now["on"]:
+                emit({"beacon": n, "skipped": "keyed"})
+                continue
+            heard(1, SYNC_DATA | pdu.DT_CSBK | CONTROL_IDLE, burst, -60)
+            emit({"beacon": n, "len_s": args.beacon_len})
+
+    if args.beacon:
+        threading.Thread(target=beacons, daemon=True).start()
+        logging.info("beacon every %.1f s for %.1f s, first after %.1f s", args.beacon, args.beacon_len,
+                     args.beacon_phase)
     try:
         time.sleep(args.seconds)
     except KeyboardInterrupt:
