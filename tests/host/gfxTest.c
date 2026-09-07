@@ -20,7 +20,7 @@ static void d_backlight(uint8_t p) { (void)p; }
 static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush, .set_backlight = d_backlight };
 
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
-static const char *const power_names[] = { "50m", "250m", "500m", "750m", "1W", "2W", "3W", "4W", "5W" };
+static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 const board_t board = {
 	.name = "Test radio", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp,
@@ -247,6 +247,26 @@ int main(void)
 	CHECK(strlen(fit) == 10 && fit[5] == GLYPH_ELLIPSIS[0] && memcmp(fit, "COUNT", 5) == 0);
 	gfx_text_fit(&font_12x24, "SHORT", 120, fit, sizeof fit);
 	CHECK(strcmp(fit, "SHORT") == 0);
+
+	// Ages: the longest alternate that fits, then an ellipsis on the shortest (12 px per glyph)
+	char age[64];
+	sb_init(&b, age, sizeof age); sb_str(&b, "TG9 "); sb_age(&b, 14u * 60000u);
+	CHECK(gfx_text_width(&font_12x24, age) == 13 * 12);	// "TG9 14min ago"
+	static const struct { int w; const char *want; } ages[] = {
+		{ 13 * 12, "TG9 14min ago" }, { 12 * 12, "TG9 14m ago" }, { 11 * 12, "TG9 14m ago" },
+		{ 10 * 12, "TG9 14min" }, { 8 * 12, "TG9 14m" }, { 7 * 12, "TG9 14m" },
+	};
+	for (size_t i = 0; i < sizeof ages / sizeof ages[0]; i++) {
+		gfx_text_fit(&font_12x24, age, ages[i].w, fit, sizeof fit);
+		CHECK(strcmp(fit, ages[i].want) == 0);
+	}
+	gfx_text_fit(&font_12x24, age, 5 * 12, fit, sizeof fit);
+	CHECK(strlen(fit) == 5 && fit[2] == GLYPH_ELLIPSIS[0] && strcmp(fit + 3, "4m") == 0);
+	sb_init(&b, age, sizeof age); sb_age(&b, 2u * 86400000u);
+	gfx_text_fit(&font_12x24, age, 5 * 12, fit, sizeof fit);
+	CHECK(strcmp(fit, "2d") == 0);
+	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
+	CHECK(strcmp(age, "30sec ago") == 0);
 
 	// 160x120 color: the DM-1701
 	ui_layout_init();

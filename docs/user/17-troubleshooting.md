@@ -60,6 +60,6 @@ Developers get the same and more over USB with `tools/odr_debug.py diag` and `to
 
 ## Reporting a problem
 
-Open an issue in the project repository. Include the firmware version (**Settings > Advanced > Firmware**), the radio
+Open an issue in the project repository. Include the firmware version (**Settings > Advanced > About**), the radio
 model, what you did, what you expected and what happened. A screenshot helps: `tools/odr_debug.py screenshot -o
 screen.png` saves one over USB.

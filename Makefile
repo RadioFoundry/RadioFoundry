@@ -68,7 +68,7 @@ ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c
 endif
 
-INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) $(PLATFORM_INC)
+INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 
 # Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
 # directories (both end up in the image). Only the files that use ODR_GIT get it, through their own stamp, so a new
@@ -117,6 +117,10 @@ $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP)' | cmp -s - $(BUILD)/flags || { e
 	rm -f $(OBJ); })
 $(shell echo '$(ODR_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(ODR_VERSION)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
+# The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
+ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l odr_about.h $(APP_SRC) 2>/dev/null))
+$(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/odr_about.h | grep -q changed \
+	&& rm -f $(ABOUT_OBJ))
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version

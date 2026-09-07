@@ -13,6 +13,7 @@
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
 #endif
+#include "odr_about.h"
 
 #ifndef ODR_GIT
 #define ODR_GIT "host"
@@ -559,10 +560,8 @@ static const char *msg_body(void)
 	}
 	sb_u32(&b, m.src, 1);
 	sb_str(&b, ", ");
-	char age[8];
-	ui_sb_age(age, sizeof age, m.age_ms);
-	sb_str(&b, age);
-	sb_str(&b, " ago\n");
+	sb_age_long(&b, m.age_ms);
+	sb_chr(&b, '\n');
 	sb_str(&b, m.text);
 	return t;
 }
@@ -622,9 +621,7 @@ static void recent_item(uint16_t i, ui_item_t *it)
 		}
 		sb_chr(&vb, ' ');
 	}
-	char age[8];
-	ui_sb_age(age, sizeof age, ui_st.now_ms - r->ms);
-	sb_str(&vb, age);
+	sb_age(&vb, ui_st.now_ms - r->ms);
 	if (r->to_us)
 		it->flags |= UI_ITEM_WARN;
 }
@@ -841,7 +838,7 @@ static const ui_scr_def_t zone_screen = {
 enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_MY_RADIO, INFO_USB_NET,
        INFO_SFR };
 
-static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "Firmware", "Codeplug", "My radio",
+static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "About", "Codeplug", "My radio",
 					   "USB network", "SFR" };
 
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
@@ -900,10 +897,11 @@ static const char *info_body(void)
 		       "%.");
 		break;
 	case INFO_FIRMWARE:
-		sb_str(&b, "OpenDigitalRadio\n");
-		sb_str(&b, board.name);
-		sb_str(&b, "\ngit ");
+		sb_str(&b, "OpenDigitalRadio ");
 		sb_str(&b, ODR_GIT);
+		sb_chr(&b, '\n');
+		sb_str(&b, board.name);
+		sb_str(&b, "\nMIT License. (c) 2026 The OpenDigitalRadio Authors");
 		break;
 	case INFO_CODEPLUG: {
 		static const char *const src[] = { "none (built-in channels)", "built-in channels", "from the CPS" };
@@ -952,8 +950,36 @@ static const char *info_body(void)
 	return t;
 }
 
+// About (Settings > Advanced): the authors, ODR's license, the third-party code in this image and the codec. From
+// AUTHORS and platform/<platform>/THIRD_PARTY, through the header make generates (tools/gen_about.py)
+static const char *const about_authors[] = ODR_ABOUT_AUTHORS;
+static const char *const about_third[][2] = ODR_ABOUT_THIRD_PARTY;
+#define ABOUT_ROWS	(ODR_ABOUT_AUTHOR_COUNT + 1u + ODR_ABOUT_THIRD_PARTY_COUNT + 1u)
+
+static void about_item(uint16_t i, ui_item_t *it)
+{
+	if (i < ODR_ABOUT_AUTHOR_COUNT) {
+		strcpy(it->label, about_authors[i]);
+		strcpy(it->value, "author");
+		return;
+	}
+	i = (uint16_t)(i - ODR_ABOUT_AUTHOR_COUNT);
+	if (i == 0) {
+		strcpy(it->label, "OpenDigitalRadio");
+		strcpy(it->value, "MIT");
+	} else if (i <= ODR_ABOUT_THIRD_PARTY_COUNT) {
+		strcpy(it->label, about_third[i - 1u][0]);
+		strcpy(it->value, about_third[i - 1u][1]);
+	} else {
+		strcpy(it->label, "AMBE+2 codec");
+		strcpy(it->value, "DVSI");
+	}
+}
+
 static uint16_t info_count(void)
 {
+	if (ui_frame()->arg == INFO_FIRMWARE)
+		return ABOUT_ROWS;
 #if CONFIG_HOTSPOT
 	if (ui_frame()->arg == INFO_HOTSPOT && hostlink_mode() == HOSTLINK_HOTSPOT)
 		return 1;
@@ -967,7 +993,10 @@ static uint16_t info_count(void)
 
 static void info_item(uint16_t i, ui_item_t *it)
 {
-	(void)i;
+	if (ui_frame()->arg == INFO_FIRMWARE) {
+		about_item(i, it);
+		return;
+	}
 #if USB_NET_UI
 	if (ui_frame()->arg == INFO_USB_NET) {
 		strcpy(it->label, hostlink_network_mode() ? "Switch USB to serial" : "Switch USB to network");
@@ -979,8 +1008,14 @@ static void info_item(uint16_t i, ui_item_t *it)
 
 static void info_select(uint16_t i, bool hold)
 {
-	(void)i;
 	(void)hold;
+	if (ui_frame()->arg == INFO_FIRMWARE) {
+		if (i == ABOUT_ROWS - 1u)
+			ui_toast("From your radio's own firmware; not part of ODR");
+		else if (i == ODR_ABOUT_AUTHOR_COUNT)
+			ui_toast("Free to use, change and sell");
+		return;
+	}
 #if USB_NET_UI
 	if (ui_frame()->arg == INFO_USB_NET) {
 		bool net = !hostlink_network_mode();
@@ -1335,7 +1370,7 @@ static const set_item_t s_my_radio[] = {
 	ACTION("DMR ID and name", "callsign", SA_MY_RADIO),
 };
 static const set_item_t s_advanced[] = {
-	ACTION("Firmware", "version", SA_FIRMWARE),
+	ACTION("About", "firmware version license authors", SA_FIRMWARE),
 	ACTION("Codeplug", NULL, SA_CODEPLUG),
 	ACTION("Diagnostics", "debug", SA_DIAG),
 	ACTION("Factory reset", "erase", SA_RESET),

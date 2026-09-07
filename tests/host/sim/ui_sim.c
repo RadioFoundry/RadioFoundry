@@ -134,7 +134,7 @@ static uint8_t p_battery(void) { return battery; }
 static hal_power_t power = { .battery_pct = p_battery };
 
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
-static const char *const power_names[] = { "50m", "250m", "500m", "750m", "1W", "2W", "3W", "4W", "5W" };
+static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,

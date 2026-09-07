@@ -13,6 +13,11 @@
 #define GLYPH_DOT	"\x81"	// middle dot: marks a temporary change
 #define GLYPH_ARROW	"\x82"	// right arrow
 #define GLYPH_DEGREE	"\x83"
+// Text alternates: TEXT_ALT_OPEN "14min ago" TEXT_ALT_NEXT "14m ago" ... TEXT_ALT_CLOSE offers the same text at
+// falling lengths. Drawing and measuring use the first; gfx_text_fit uses the longest that fits (gfx.c)
+#define TEXT_ALT_OPEN	"\x1d"
+#define TEXT_ALT_NEXT	"\x1f"
+#define TEXT_ALT_CLOSE	"\x1e"
 #define GLYPH_FIRST_EXTRA	0x80
 #define GLYPH_EXTRA_COUNT	4
 

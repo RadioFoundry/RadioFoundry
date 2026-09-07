@@ -184,9 +184,12 @@ gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 # __attribute__ override above so the weak service stubs (ui_svc_stub.c) give way to the simulator's.
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/radio/tones.c \
            sim/ui_sim.c sim/ui_png.c
-UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g -I$(CORE) -I$(ROOT)/hal -I. \
+# The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
+ABOUT_H := out/gen/odr_about.h
+$(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
+UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
            '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1
-UIDEPS  := $(UIAPP) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
+UIDEPS  := $(UIAPP) $(ABOUT_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiSim
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)

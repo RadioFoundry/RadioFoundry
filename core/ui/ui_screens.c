@@ -736,7 +736,7 @@ static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 {
 	const font_t *sm = ui_layout.small;
 	const radio_dmr_view_t *d = &v->dmr;
-	char buf[48], fit[48];
+	char buf[96], fit[48];
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 	if (d->last_ms != 0) {
@@ -883,7 +883,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	if (!two)
 		big = sm;
 	int y2 = y + big->h;
-	char buf[48], fit[48];
+	char buf[96], fit[48];
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 
@@ -943,7 +943,8 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		} else {
 			sb_str(&b, "No activity yet");
 		}
-		gfx_text(sm, 0, y, buf, ui_col.dim);
+		gfx_text_fit(sm, buf, gfx_width(), fit, sizeof fit);
+		gfx_text(sm, 0, y, fit, ui_col.dim);
 		if (v->monitor && L->activity_h >= 2 * sm->h)
 			gfx_text(sm, 0, y + sm->h, "Monitor: squelch open", ui_col.warn);
 		break;
@@ -1218,7 +1219,7 @@ void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l
 			char n[3] = { it.num, ' ', 0 };
 			x = gfx_text(f, x, ry + pad, n, focus ? fg : (gfx_bpp() == 1 ? fg : ui_col.dim));
 		}
-		char val[24], fit[40];
+		char val[48], fit[48];
 		if (it.flags & UI_ITEM_EDIT) {
 			sbuf_t b;
 			sb_init(&b, val, sizeof val);

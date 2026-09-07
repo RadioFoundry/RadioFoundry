@@ -221,6 +221,8 @@ def _radio_sends(radio, sdr_bench, freq, cc, send, seconds, done):
         send()
         v = radio.wait_for(done, timeout=seconds - 1, sections=("dmr_data",), what="request over")
         heard = sdr_bench.listen_result(lis)
+    for r in heard:                       # what the bench modem heard, for the failure report
+        print("bench heard:", {k: r[k] for k in r if k != "t"})
     return heard, v
 
 

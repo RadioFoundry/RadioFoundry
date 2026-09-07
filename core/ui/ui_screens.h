@@ -129,7 +129,7 @@ void ui_draw_banner(const ui_state_t *s);
 
 typedef struct {
 	char label[36];
-	char value[20];
+	char value[44];		// may hold text alternates (font.h)
 	char num;		// key shown before the label ('1'..'9', '0'), 0 = none
 	uint8_t flags;
 } ui_item_t;

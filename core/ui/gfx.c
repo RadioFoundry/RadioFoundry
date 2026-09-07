@@ -170,8 +170,52 @@ static void fallback_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 	}
 }
 
+// Expands the text alternates in s (font.h): every group gives its alternative number level, or its last one. *more
+// says whether a higher level would change the result
+static size_t alt_expand(const char *s, int level, char *out, size_t cap, bool *more)
+{
+	size_t n = 0;
+	*more = false;
+	while (*s) {
+		if (*s != TEXT_ALT_OPEN[0]) {
+			if (n + 1 < cap)
+				out[n++] = *s;
+			s++;
+			continue;
+		}
+		s++;
+		for (int alt = 0; *s && *s != TEXT_ALT_CLOSE[0]; alt++) {
+			const char *end = s;
+			while (*end && *end != TEXT_ALT_NEXT[0] && *end != TEXT_ALT_CLOSE[0])
+				end++;
+			bool last = *end != TEXT_ALT_NEXT[0];
+			if (alt == level || (alt < level && last)) {
+				for (; s < end; s++)
+					if (n + 1 < cap)
+						out[n++] = *s;
+			}
+			if (alt == level && !last)
+				*more = true;
+			s = last ? end : end + 1;
+		}
+		if (*s)
+			s++;
+	}
+	if (cap)
+		out[n] = 0;
+	return n;
+}
+
+#define ALT_TEXT_MAX	96
+
 static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool opaque, color_t bg)
 {
+	char first[ALT_TEXT_MAX];
+	if (strchr(s, TEXT_ALT_OPEN[0])) {
+		bool more;
+		alt_expand(s, 0, first, sizeof first, &more);
+		s = first;
+	}
 	int bytes = (f->w + 7) / 8;
 	for (; *s; s++, x += f->w) {
 		int px = x + ox, py = y + oy;	// panel coordinates for the clip tests and spans
@@ -214,17 +258,34 @@ int gfx_text_bg(const font_t *f, int x, int y, const char *s, color_t fg, color_
 
 int gfx_text_width(const font_t *f, const char *s)
 {
+	if (strchr(s, TEXT_ALT_OPEN[0])) {
+		char first[ALT_TEXT_MAX];
+		bool more;
+		return (int)alt_expand(s, 0, first, sizeof first, &more) * f->w;
+	}
 	return (int)strlen(s) * f->w;
 }
 
-void gfx_text_fit(const font_t *f, const char *s, int max_w, char *out, size_t out_len)
+void gfx_text_fit(const font_t *f, const char *src, int max_w, char *out, size_t out_len)
 {
-	size_t n = strlen(s);
 	size_t fit = max_w <= 0 ? 0 : (size_t)(max_w / f->w);
 	if (out_len == 0)
 		return;
 	if (fit > out_len - 1)
 		fit = out_len - 1;
+	// The longest set of alternates that fits; past the last one, shorten that with an ellipsis
+	char alt[ALT_TEXT_MAX];
+	const char *s = src;
+	size_t n = strlen(s);
+	if (strchr(src, TEXT_ALT_OPEN[0])) {
+		bool more = true;
+		for (int level = 0; more; level++) {
+			n = alt_expand(src, level, alt, sizeof alt, &more);
+			if (n <= fit)
+				break;
+		}
+		s = alt;
+	}
 	if (n <= fit) {
 		memcpy(out, s, n + 1);
 		return;

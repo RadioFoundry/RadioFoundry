@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Small text builders for the UI
 #include "fmt.h"
+#include "font.h"
 
 void sb_init(sbuf_t *b, char *buf, size_t len)
 {
@@ -91,20 +92,55 @@ void sb_mmss(sbuf_t *b, uint32_t seconds)
 	sb_u32(b, seconds % 60u, 2);
 }
 
-void sb_age(sbuf_t *b, uint32_t ms)
+// The age's number and unit: 14 "min" (long) or "m" (short)
+static uint32_t age_unit(uint32_t ms, const char **lng, char *shrt)
 {
 	uint32_t s = ms / 1000u;
 	if (s < 60u) {
-		sb_u32(b, s, 1);
-		sb_chr(b, 's');
-	} else if (s < 3600u) {
-		sb_u32(b, s / 60u, 1);
-		sb_chr(b, 'm');
-	} else if (s < 86400u) {
-		sb_u32(b, s / 3600u, 1);
-		sb_chr(b, 'h');
-	} else {
-		sb_u32(b, s / 86400u, 1);
-		sb_chr(b, 'd');
+		*lng = "sec", *shrt = 's';
+		return s;
 	}
+	if (s < 3600u) {
+		*lng = "min", *shrt = 'm';
+		return s / 60u;
+	}
+	if (s < 86400u) {
+		*lng = "hr", *shrt = 'h';
+		return s / 3600u;
+	}
+	*lng = "d", *shrt = 'd';
+	return s / 86400u;
+}
+
+void sb_age_long(sbuf_t *b, uint32_t ms)
+{
+	const char *lng;
+	char shrt;
+	sb_u32(b, age_unit(ms, &lng, &shrt), 1);
+	sb_str(b, lng);
+	sb_str(b, " ago");
+}
+
+// "14min ago", "14m ago", "14min", "14m" as text alternates: the drawing keeps the longest that fits (font.h)
+void sb_age(sbuf_t *b, uint32_t ms)
+{
+	const char *lng;
+	char shrt;
+	uint32_t v = age_unit(ms, &lng, &shrt);
+	bool same = lng[1] == 0;
+	sb_str(b, TEXT_ALT_OPEN);
+	for (int form = 0; form < 4; form++) {
+		if (same && (form == 1 || form == 3))
+			continue;
+		if (form)
+			sb_str(b, TEXT_ALT_NEXT);
+		sb_u32(b, v, 1);
+		if (form & 1)
+			sb_chr(b, shrt);
+		else
+			sb_str(b, lng);
+		if (form < 2)
+			sb_str(b, " ago");
+	}
+	sb_str(b, TEXT_ALT_CLOSE);
 }

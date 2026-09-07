@@ -27,6 +27,7 @@ void sb_tone(sbuf_t *b, const subtone_t *t);
 // m:ss
 void sb_mmss(sbuf_t *b, uint32_t seconds);
 // Elapsed time as a short age: 45s, 14m, 3h, 2d
-void sb_age(sbuf_t *b, uint32_t ms);
+void sb_age(sbuf_t *b, uint32_t ms);		// text alternates, longest first (font.h)
+void sb_age_long(sbuf_t *b, uint32_t ms);	// "14min ago"
 
 #endif

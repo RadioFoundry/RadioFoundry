@@ -17,7 +17,7 @@ static const band_t bands[] = {
 	{ 400000000, 480000000, true },
 };
 
-static const char *const power_names[] = { "50m", "250m", "500m", "750m", "1W", "2W", "3W", "4W", "5W" };
+static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 // The top side key (above PTT, row 2 D5): short = power level; held 1.5 s = emergency where it is built
 // (information-architecture.md 7.1), else speak status. Held with PTT at power-on it is the bootloader combination,
