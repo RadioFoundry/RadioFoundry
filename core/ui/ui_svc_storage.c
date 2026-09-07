@@ -158,6 +158,15 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_TALK_PERMIT:
 		radio_get_settings(&rs);
 		return rs.talk_permit;
+#if CONFIG_DMR_ROAMING
+	case UI_SET_ROAM_SURVEY:
+	case UI_SET_ROAM_BEACON_S:
+	case UI_SET_ROAM_BEACON_LEN:
+	case UI_SET_ROAM_PROBE:
+		radio_get_settings(&rs);
+		return id == UI_SET_ROAM_SURVEY ? rs.roam_survey : id == UI_SET_ROAM_BEACON_S ? rs.roam_beacon_s :
+			id == UI_SET_ROAM_BEACON_LEN ? rs.roam_beacon_len_s : rs.roam_probe;
+#endif
 #if CONFIG_DMR_PRIVACY
 	case UI_SET_PRIVACY_TYPE:
 		settings_read(&st);
@@ -192,6 +201,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
+#if CONFIG_DMR_ROAMING
+	case UI_SET_ROAM_SURVEY:
+	case UI_SET_ROAM_BEACON_S:
+	case UI_SET_ROAM_BEACON_LEN:
+	case UI_SET_ROAM_PROBE:
+#endif
 		return true;	// ui_svc_apply hands it to the radio core, which saves it
 	case UI_SET_LARGE_TEXT:
 	case UI_SET_HINTS:

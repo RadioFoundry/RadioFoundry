@@ -1669,8 +1669,7 @@ static void roam_publish(radio_sm_t *sm, uint32_t now_ms)
 		uint32_t age = here && s->surv_ms != 0 ? (now_ms - s->surv_ms) / 1000u : 0xFFFFu;
 		v->site_surv[i] = here ? s->surv_dbm : 0;
 		v->site_age_s[i] = (uint16_t)(age > 0xFFFEu && age != 0xFFFFu ? 0xFFFEu : age);
-		v->site_phase_ms[i] = here && s->phase_ms != 0 && period != 0 ? (uint16_t)(s->phase_ms % period > 0xFFFEu ?
-				      0xFFFEu : s->phase_ms % period) : 0xFFFFu;
+		v->site_phase_ms[i] = here && s->phase_ms != 0 && period != 0 ? s->phase_ms % period : UINT32_MAX;
 		if (here && roam_site_fresh(r, i, now_ms)) {
 			v->site_fresh16 |= (uint16_t)(1u << i);
 		}

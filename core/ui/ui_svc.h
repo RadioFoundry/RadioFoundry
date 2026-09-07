@@ -135,6 +135,9 @@ typedef enum {
 	UI_SET_BATTERY_SAVER, UI_SET_AUTO_OFF_MIN, UI_SET_LOW_BATTERY,
 	UI_SET_LONG_PRESS_MS, UI_SET_REPEAT_MS, UI_SET_UPDOWN_HOME,
 	UI_SET_PRIVACY_TYPE, UI_SET_PRIVACY_KEY,	// key slot 1 (settings-store.md 3.1): dmrPrivacyType_t, key value
+	// DMR roaming (Tools > Roaming, dmr-roaming.md 6.2): survey 0 off / 1 synced / 2 per site, the repeaters' beacon
+	// interval s (0 none) and duration s, the wake probe 0 / 1
+	UI_SET_ROAM_SURVEY, UI_SET_ROAM_BEACON_S, UI_SET_ROAM_BEACON_LEN, UI_SET_ROAM_PROBE,
 	UI_SET_COUNT
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);

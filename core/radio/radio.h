@@ -175,7 +175,7 @@ typedef struct {
 	uint32_t surveys, visits, cuts, beacons, confirms;
 	int16_t site_surv[RADIO_ROAM_SITES];	// the survey's average, 0 = none / not heard
 	uint16_t site_age_s[RADIO_ROAM_SITES];	// s since the survey measured it, 0xFFFF = never
-	uint16_t site_phase_ms[RADIO_ROAM_SITES];	// its last beacon's start in the interval (ms), 0xFFFF = unknown
+	uint32_t site_phase_ms[RADIO_ROAM_SITES];	// its last beacon's start in the interval (ms), UINT32_MAX = unknown
 	uint16_t site_fresh16;	// bit i: site i's survey data is fresh
 } radio_roam_view_t;
 #endif

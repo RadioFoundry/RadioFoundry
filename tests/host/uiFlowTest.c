@@ -84,6 +84,10 @@ static const flow_t flows[] = {
 	{ "R lock to this site", "ok 5 8 1", "3", "roam=3 toast=Locked_to", 1, false },
 	{ "R roam now ends the lock", "ok 5 8 1 3", "2", "roam=1 roams=1", 1, false },
 	{ "R not on the VFO", "ok 4 up ok", "ok 5 8 1", "roamzone=0 toast=Roaming_works", 4, false },
+	// The survey and beacon rows (set33 survey, set34 beacon interval, set36 wake probe): radio-wide, OK cycles
+	{ "R site survey per site", "", "ok 5 8 4", "set33=2", 4, false },
+	{ "R beacon interval", "", "ok 5 8 5", "set34=120 toast=Set_it_as", 4, false },
+	{ "R wake probe on", "", "ok 5 8 7", "set36=1 toast=Wake_probe_on", 4, false },
 	{ "T22 Home and undo", "quick 2 back ok 6", "long:back back", "screen=home temporary=0", 2, false },
 	// Settings that act now (uifix). set<N> = ui_setting_t N: 7 theme, 31 privacy key type, 32 privacy key
 	{ "S PTT on when locked (default)", "long:quick", "ptt", "tx=1 pttblock=0", 1, false },
