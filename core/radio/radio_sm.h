@@ -260,6 +260,9 @@ typedef struct {
 	uint8_t roam_probe_err;		// its result, 0xFF = still running
 	uint32_t roam_quiet_ms;		// last reception or transmission seen (ROAM_QUIET_MS)
 	uint8_t roam_prev_why;		// to notice a finished search (beep, toast)
+	bool roam_shown;		// a survey round is away: the screens keep showing the site it left
+	channel_t roam_shown_ch;	// ... that site's channel
+	uint16_t roam_shown_pos, roam_shown_number;
 #endif
 #if CONFIG_DMR_EMERGENCY
 	bool em_keyed;			// the emergency hot mic keyed the transmitter (not PTT)
@@ -286,6 +289,11 @@ uint8_t radio_sm_hotspot_power(uint8_t rf_level);
 
 // Settings in effect from now on (radio_task.c calls it for RREQ_SETTINGS; the tests call it directly)
 void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms);
+
+// The view as the screens and the debug link get it: during a roaming survey visit (a few hundred ms on another
+// site, docs/spec/dmr-roaming.md 4.9) it still shows the site the radio returns to. radio_task.c applies it when it
+// publishes
+void radio_sm_shown_view(const radio_sm_t *sm, radio_view_t *v);
 
 // Squelch thresholds for a level (exposed for the tests)
 uint8_t radio_sm_squelch_open_below(uint8_t level);

@@ -69,7 +69,11 @@ typedef struct {
 	int8_t roam_rssi_dbm;	// threshold: the site counts as weak below it, a candidate must reach it (-125 .. -60)
 	uint8_t roam_hyst_db;	// a candidate must beat the current site by this much (1 .. 30)
 	uint8_t roam_probe;	// 0 passive, 1 wake probe (a BS_Dwn_Act on each silent site visited: transmits)
-	uint16_t roam_check_s;	// beacon check: look at the other sites this often, 0 = off (30 .. 3600)
+	uint16_t roam_check_s;	// periodic search: look at the other sites this often, 0 = off (30 .. 3600)
+	uint16_t roam_beacon_s;	// the repeaters' idle beacon interval, 0 = none (10 .. 600); must match the repeaters
+	uint8_t roam_beacon_len_s;	// their beacon duration (1 .. 10)
+	uint8_t roam_survey;	// 0 off, 1 the sites beacon together (one window), 2 each on its own schedule
+	bool rpt_beacon;	// our repeater roles (SFR) key an idle beacon on that interval and duration
 } radio_settings_t;
 
 #define RADIO_REPLY_CODEPLUG	0xFFu	// radio_settings_t.reply_s: the codeplug's hang times (else the stack's 10 s)
@@ -146,7 +150,7 @@ typedef enum {
 } radio_roam_block_t;
 
 // radio_roam_view_t.state (= roam_state_t in radio/roam.h)
-enum { RROAM_STATE_OFF, RROAM_STATE_WATCH, RROAM_STATE_SEARCH, RROAM_STATE_LOCKED };
+enum { RROAM_STATE_OFF, RROAM_STATE_WATCH, RROAM_STATE_SEARCH, RROAM_STATE_LOCKED, RROAM_STATE_SURVEY };
 
 // Roaming for the screens and the debug link
 typedef struct {
@@ -163,6 +167,16 @@ typedef struct {
 	uint32_t searches, roams, stays, aborts, probes, triggers;
 	uint16_t site_number[RADIO_ROAM_SITES];	// codeplug channel numbers
 	int16_t site_rssi[RADIO_ROAM_SITES];	// last measurement (the current site: its average), 0 = none
+	// The survey (docs/spec/dmr-roaming.md 4.8 - 4.10)
+	uint8_t visit;		// the site a survey visit or search is on, 0xFF = none
+	uint8_t win_conf;	// the shared beacon window: beacons that matched it (2+ = known)
+	uint32_t win_next_ms;	// ms until the next window, 0 = not known
+	uint8_t confirm;	// a confirm visit planned to this site + 1, 0 = none
+	uint32_t surveys, visits, cuts, beacons, confirms;
+	int16_t site_surv[RADIO_ROAM_SITES];	// the survey's average, 0 = none / not heard
+	uint16_t site_age_s[RADIO_ROAM_SITES];	// s since the survey measured it, 0xFFFF = never
+	uint16_t site_phase_ms[RADIO_ROAM_SITES];	// its last beacon's start in the interval (ms), 0xFFFF = unknown
+	uint16_t site_fresh16;	// bit i: site i's survey data is fresh
 } radio_roam_view_t;
 #endif
 

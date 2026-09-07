@@ -122,6 +122,13 @@ typedef struct {
 	uint8_t low_batt_pct;		// warn at this battery percent (5-30), 0 = only the board's low voltage
 	uint16_t auto_off_min;		// switch off after this long without use, 0 = never
 	uint16_t reserved5;
+	// Roaming beacons and the survey (docs/spec/dmr-roaming.md 5.1; appended for roam2). Taken with the other roam_
+	// fields when roam_stored is 1; a record without them keeps these defaults (60 s, 4 s, synchronized survey)
+	uint16_t roam_beacon_s;		// the repeaters' beacon interval, 0 = no beacons, else 10..600
+	uint8_t roam_beacon_len_s;	// their beacon duration, 1..10
+	uint8_t roam_survey;		// 0 off, 1 the sites beacon together, 2 each site on its own schedule
+	uint8_t rpt_beacon;		// our repeater roles key an idle beacon (roam_beacon_s / _len_s): 0 off, 1 on
+	uint8_t reserved6[3];
 } settings_t;
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)
