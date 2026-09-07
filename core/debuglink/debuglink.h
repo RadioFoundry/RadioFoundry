@@ -65,7 +65,7 @@ void debuglink_view_dmr_ext(dl_text_t *t);
 void debuglink_view_roam(const radio_view_t *v, dl_text_t *t);
 
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-// The split duplex command SPLIT and its view text (debuglink_split.c, docs/spec/debuglink.md 3.14)
+// The split duplex command SPLIT and its view text (debuglink_split.c, docs/spec/debuglink.md 3.15)
 size_t debuglink_cmd_split(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_view_split(dl_text_t *t);
 #endif
