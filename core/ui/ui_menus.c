@@ -1010,6 +1010,7 @@ static const ui_scr_def_t info_screen = {
 
 enum { RM_ZONE, RM_NOW, RM_LOCK, RM_SURVEY, RM_BEACON, RM_LEN, RM_PROBE, RM_COUNT };
 
+#if CONFIG_DMR_ROAMING
 // The survey and beacon rows: radio-wide settings, cycled with OK (the values must match the repeaters)
 static const int16_t rm_survey_v[] = { 1, 2, 0 };
 static const char *const rm_survey_n[] = { "Synced", "Per site", "Off" };
@@ -1038,6 +1039,7 @@ static uint8_t rm_find(const rm_list_t *l, int32_t v)
 			return k;
 	return 0xFF;
 }
+#endif
 
 #if CONFIG_DMR_ROAMING
 static bool roam_active(const radio_view_t *v) { return v->roam.state != RROAM_STATE_OFF; }

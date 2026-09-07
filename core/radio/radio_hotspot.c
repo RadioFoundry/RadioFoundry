@@ -7,6 +7,9 @@
 #include <string.h>
 #include "radio/radio_hotspot.h"
 #include "radio/morse.h"
+#if CONFIG_SFR
+#include "hotspot/hotspotSfr.h"
+#endif
 
 static radio_hs_post_fn post_fn;
 static volatile bool hs_active;		// published: the radio is in hotspot mode
@@ -47,6 +50,10 @@ void radio_hs_publish(const radio_sm_t *sm)
 	hs_carrier = sm->hs_carrier;
 #endif
 	hs_rssi = sm->view.rssi_dbm;
+#if CONFIG_SFR
+	// The SFR mode's idle beacon follows the settings (rpt_beacon, on the roaming beacon interval and duration)
+	hotspot_sfr_set_beacon(sm->set.rpt_beacon ? sm->set.roam_beacon_s : 0, sm->set.roam_beacon_len_s);
+#endif
 }
 
 void radio_hs_watch(radio_sm_t *sm, uint32_t now_ms)

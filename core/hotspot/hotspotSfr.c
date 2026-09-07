@@ -34,6 +34,8 @@ static sfrChannelSettings_t settings = {
 	.role = SFR_ROLE_HOTSPOT, .framing = SFR_FRAMING_AUTO, .inboundSlot = 0, .hangIndex = 0,
 };
 static uint8_t tot15;
+static volatile uint16_t beacon_s;	// the idle beacon (hotspot_sfr_set_beacon), 0 = off
+static volatile uint8_t beacon_len_s;
 static struct {
 	uint8_t flags, framing, reg10, reg12, rssi_min, reg11, flags2;
 } dbg = { .reg12 = 0xFF };
@@ -94,7 +96,14 @@ static void start_runner(void)
 	build_config(&c);
 	sfrRunnerStart(&run, hotspot_modem(), &c, &uplink);
 	sfrRunnerSetNoDataHold(&run, (dbg.flags2 & DEBUG2_NO_DATA_HOLD) != 0);
+	sfrRunnerSetBeacon(&run, beacon_s, beacon_len_s, 0);
 	net_last_term = false;
+}
+
+void hotspot_sfr_set_beacon(uint16_t interval_s, uint8_t len_s)
+{
+	beacon_s = interval_s;
+	beacon_len_s = len_s;
 }
 
 static void turn_on(void)

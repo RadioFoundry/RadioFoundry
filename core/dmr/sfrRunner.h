@@ -47,6 +47,7 @@ typedef struct {
 	uint32_t rx_late_held;		// a voice A outside a call, waiting for its B
 	uint32_t rx_lc_rebuilt;		// headers / terminators heard while keyed, rebuilt from the call's LC
 	uint32_t tx_bursts, tx_idle, tx_starts, tx_rejected;
+	uint32_t tx_beacons;		// idle beacons keyed (sfrRunnerSetBeacon)
 	uint32_t up_bursts, up_lost;
 	uint8_t last_rx;		// sync (bits 7-6, sfrSync_t), data type or 0x0F voice (3-0)
 	uint8_t last_rx_cc;		// colour code, 0x80 checksum good
@@ -77,6 +78,12 @@ typedef struct {
 	uint8_t sent_next;
 	uint8_t fifo[4];		// what the modem holds, in order: an index into sent[], 0xFF idle
 	uint8_t fifo_head, fifo_count;
+	// The idle beacon (docs/spec/dmr-roaming.md 7): idle bursts for beacon_len_ms every beacon_ms while nothing is
+	// repeated, so roaming radios can measure this repeater when it carries no traffic. 0 = off
+	uint32_t beacon_ms, beacon_len_ms;
+	uint32_t beacon_next;		// the next one is due
+	uint32_t beacon_until;		// the one on the air ends
+	bool beaconing;
 	sfrRunnerStats_t stats;
 } sfrRunner_t;
 
@@ -101,6 +108,11 @@ bool sfrRunnerTransmitting(const sfrRunner_t *r);	// keyed, ending, or about to 
 bool sfrRunnerInboundBusy(const sfrRunner_t *r);	// an inbound call is being repeated (MMDVM status 0x80)
 const uint8_t *sfrRunnerCallLc(const sfrRunner_t *r);	// the inbound call's LC (all 0 until known)
 const sfrConfig_t *sfrRunnerConfig(const sfrRunner_t *r);
+
+// The idle beacon: every interval_s (0 = off), len_s of idle bursts on the outbound slot when nothing is being
+// repeated. The schedule starts now (now_ms 0: at the next poll); without network time it is not in step with other
+// repeaters' beacons
+void sfrRunnerSetBeacon(sfrRunner_t *r, uint16_t interval_s, uint8_t len_s, uint32_t now_ms);
 
 // The hrcSfrDebug-style switches that apply to any modem: data calls repeated as heard (no hold)
 void sfrRunnerSetNoDataHold(sfrRunner_t *r, bool on);
