@@ -340,11 +340,20 @@ keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROO
 hrc7000DmrTest: hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
 
+# The RDA5807M broadcast receiver driver and the bit-banged I2C master, on a simulated chip (airband-and-broadcast.md 4)
+TESTS   += rda5807mTest
+RDA     := $(ROOT)/drivers/bcast/rda5807m
+I2CG    := $(ROOT)/drivers/bus/i2c_gpio
+
+rda5807mTest: rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m.h $(I2CG)/i2c_gpio.c $(I2CG)/i2c_gpio.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ rda5807mTest.c $(RDA)/rda5807m.c $(I2CG)/i2c_gpio.c
+
 dm32CalTest: dm32CalTest.c $(DM32)/calibration_dm32.c $(DM32)/dm32.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DM32) -Wshadow -o $@ dm32CalTest.c $(DM32)/calibration_dm32.c
 
 run: run-dm32
-run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
+run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest
+	./rda5807mTest
 	./fd6818Test
 	./st7789Test
 	./keymatrixTest
