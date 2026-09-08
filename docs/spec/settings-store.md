@@ -105,9 +105,10 @@ codeplug's callsign.
 | hotspot CW ID | `cw_wpm cw_tone_hz` (0 = 20 wpm / 800 Hz; appended for dmr-ext) |
 | DMR roaming | `roam_rssi_dbm roam_hyst_db roam_probe roam_stored roam_check_s` (the radio core's roaming settings, taken when `roam_stored` is 1) and `roam_zones[10]` (bit z: zone z is a roaming zone, zones 0..79; written by the radio core on RREQ_ROAM) (appended for roaming, `dmr-roaming.md` 5.1) |
 | more UI settings | `theme` (0 dark, 1 light, 2 high contrast), `ui_flags` (large text, hint row, message tone, talker alias shown, PTT when locked, hear all by default; default hint row, message tone, talker alias and PTT when locked on), `updown_home` (0 channel, 1 zone, 2 talk target), `low_batt_pct` (5..30, default 15; 0 = the radio core's voltage levels only), `auto_off_min` (0 = never), `reserved5` (appended for uifix; a record without them keeps these defaults) |
+| roaming survey | `roam_beacon_s` (the repeaters' beacon interval, 0 = none, else 10..600, default 60), `roam_beacon_len_s` (1..10, default 4), `roam_survey` (0 off, 1 synced, 2 per site; default 1), `rpt_beacon` (our repeater roles' idle beacon, default 0), `reserved6[3]` (appended for roam2, `dmr-roaming.md` 5.1; a record without them keeps these defaults) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
-payload is 168 bytes now (at most 236).
+payload is 176 bytes now (at most 236).
 
 ### 3.0 Who writes, and storage jobs
 

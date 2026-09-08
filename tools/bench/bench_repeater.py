@@ -15,7 +15,7 @@ duplex) and rfgw's venv (/opt/radiodesk-rfgw/.venv/bin/python). rfgw must not ho
     bench_repeater.py --rx 466.6875 --tx 461.6875 [--cc 2] [--seconds 60] [--hang 4] [--call-hang 3]
                     [--slots 1,2] [--power 255] [--json] [--beacon S --beacon-len S [--beacon-phase S]]
 
---beacon S: an idle repeater's roaming beacon (docs/spec/dmr-roaming.md 3): every S seconds, while the transmitter is
+--beacon S: an idle repeater's roaming beacon (docs/spec/dmr-roaming.md 4.8): every S seconds, while the transmitter is
 down, the repeater keys its standard outbound (BS sync, CACH, idle bursts) for --beacon-len seconds and drops again,
 without a call. Made by handing the repeater a local BS_Dwn_Act (as if a radio had asked) with the hang time set to
 the beacon length, so nothing but the repeater's own outbound goes on air. The first beacon comes --beacon-phase
