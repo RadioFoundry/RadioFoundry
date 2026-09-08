@@ -98,6 +98,12 @@
 #ifndef CONFIG_AUDIO_PROBE
 #define CONFIG_AUDIO_PROBE		(CONFIG_DEBUGLINK && CONFIG_DMR)
 #endif
+#ifndef CONFIG_AM_RX
+#define CONFIG_AM_RX			CONFIG_FM
+#endif
+#ifndef CONFIG_BCAST_FM
+#define CONFIG_BCAST_FM			1
+#endif
 
 // Derived: the shared packet data / CSBK code
 #ifndef CONFIG_DMR_DATA_CORE
@@ -147,7 +153,7 @@
 #if (CONFIG_VFO_FM && !(CONFIG_VFO && CONFIG_FM)) || (CONFIG_VFO_DMR && !(CONFIG_VFO && CONFIG_DMR))
 #error "a VFO kind is on without CONFIG_VFO or its mode"
 #endif
-#if (CONFIG_FM_TX_TONES || CONFIG_VOX || CONFIG_BATTERY_SAVE) && !CONFIG_FM
+#if (CONFIG_FM_TX_TONES || CONFIG_VOX || CONFIG_BATTERY_SAVE || CONFIG_AM_RX) && !CONFIG_FM
 #error "an FM feature is on without CONFIG_FM"
 #endif
 #if CONFIG_AUDIO_PROBE && !(CONFIG_DEBUGLINK && CONFIG_DMR)

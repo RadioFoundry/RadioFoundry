@@ -32,6 +32,9 @@
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
 #endif
+#if CONFIG_AM_RX
+#include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
+#endif
 
 // The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
 #ifndef RADIO_DMR_ID_DEFAULT
@@ -217,7 +220,7 @@ static bool clear_temporary(radio_sm_t *sm)
 // (DMR channels never use one)
 static bool tone_needed(const radio_sm_t *sm)
 {
-	return sm->view.ch.rx_tone.type != TONE_NONE && sm->view.ch.mode == RADIO_MODE_FM;
+	return sm->view.ch.rx_tone.type != TONE_NONE && sm->view.ch.mode == RADIO_MODE_FM && !sm->view.am;
 }
 
 static void follow_tone(radio_sm_t *sm, bool raw)
@@ -298,6 +301,9 @@ static void dmr_end(radio_sm_t *sm);
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
 	end_reception(sm, now_ms);
+#if CONFIG_AM_RX
+	sm->view.am = radio_am_channel(&sm->view.ch);	// an FM channel in the air band: AM, no sub-audio
+#endif
 	reset_tone(sm);
 #if CONFIG_BATTERY_SAVE
 	sm->save_on = sm->save_asleep = false;	// rx() below wakes the receiver
@@ -311,6 +317,12 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 		sm->board_mode = mode;
 		board.radio->set_mode(mode);
 	}
+#if CONFIG_AM_RX
+	if (sm->view.am && !board.radio->rx_am(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw)) {
+		sm->view.am = false;	// the board refused: FM as before (TX stays refused in the air band)
+	}
+	if (!sm->view.am)
+#endif
 	board.radio->rx(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw, &sm->view.ch.rx_tone);
 	if (mode == RADIO_MODE_DMR) {
 		dmr_begin(sm);		// after set_mode(DMR): the modem only starts in DMR mode
@@ -459,7 +471,11 @@ static uint32_t band_wrap(uint32_t hz, int dir)
 
 static void vfo_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 {
+#if CONFIG_AM_RX
+	int64_t hz = radio_am_step(sm->view.ch.rx_hz, dir, sm->view.vfo_step_hz);	// the 8.33 kHz grid kept exact
+#else
 	int64_t hz = (int64_t)sm->view.ch.rx_hz + (int64_t)dir * sm->view.vfo_step_hz;
+#endif
 	uint32_t next;
 	if (hz > 0 && hz <= (int64_t)UINT32_MAX && in_band((uint32_t)hz, false)) {
 		next = (uint32_t)hz;
@@ -507,6 +523,11 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (sm->set.tx_inhibit) {
 		return TXDENY_INHIBIT;
 	}
+#if CONFIG_AM_RX
+	if (sm->view.am || radio_am_tx_refused(ch->tx_hz)) {
+		return TXDENY_AM;	// the air band is receive only, whatever the codeplug says
+	}
+#endif
 	if (ch->tx_hz == 0) {
 		return TXDENY_NO_FREQ;
 	}
@@ -2113,6 +2134,11 @@ static void ptt_up(radio_sm_t *sm, uint32_t now_ms)
 
 bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz)
 {
+#if CONFIG_AM_RX
+	if (radio_am_tx_refused(tx_hz)) {
+		return false;	// never a transmitter in the air band
+	}
+#endif
 	return rx_hz != 0 && tx_hz != 0 && in_band(rx_hz, false) && in_band(tx_hz, true);
 }
 
@@ -2855,6 +2881,17 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			enter_vfo(sm, now_ms);
 		}
 		break;
+#if CONFIG_AM_RX
+	case RREQ_VFO_STEP_SIZE:
+		if (req->arg >= 1000 && req->arg <= 1000000 && (uint32_t)req->arg != sm->view.vfo_step_hz) {
+			sm->view.vfo_step_hz = (uint32_t)req->arg;
+			settings_t *st = settings_begin();
+			st->vfo_step_hz = sm->view.vfo_step_hz;
+			settings_end(now_ms);
+			changed(sm);
+		}
+		break;
+#endif
 	case RREQ_PTT:
 #if CONFIG_FM_TX_TONES
 		if (sm->burst_keyed) {
@@ -3340,6 +3377,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	board.radio->status(&st);
+#if CONFIG_AM_RX
+	if (sm->view.am) {
+		st.noise = radio_am_noise(st.rssi_dbm);	// AM: the squelch (and scan) work on the signal strength
+		st.tone_ok = true;
+	}
+#endif
 	sm->view.rssi_dbm = st.rssi_dbm;
 	sm->view.noise = st.noise;
 	int drift = sm->view.rssi_dbm - sm->rssi_published;

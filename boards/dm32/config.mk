@@ -8,3 +8,7 @@ CONFIG_HOSTLINK ?= y
 # is 40 KB (core/ui/gfx.h), so CONFIG_FONT_XL buys nothing yet
 CONFIG_FONT_XL ?= n
 CONFIG_DISPLAY_INSET ?= 0
+# Air band AM receive on the FD6818 and the RDA5807M broadcast FM receiver (docs/spec/airband-and-broadcast.md;
+# the board glue is written from the specs and untested on the radio: docs/testing/dm32-bringup.md 9)
+CONFIG_AM_RX ?= $(CONFIG_FM)
+CONFIG_BCAST_FM ?= y

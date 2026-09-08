@@ -111,6 +111,7 @@ typedef enum {
 	RREQ_DMR_FOCUS,		// DMR: arg = ID (bits 23:0) | private (bit 24) of the focused row, 0 = none
 	RREQ_HS_CWID,		// hotspot: key the CW ID left by radio_hs_ops.cw_id (radio_hotspot.h)
 	RREQ_ROAM,		// DMR roaming: arg = radio_roam_cmd_t
+	RREQ_VFO_STEP_SIZE,	// arg: the VFO step in Hz
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
