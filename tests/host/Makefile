@@ -139,15 +139,22 @@ AMTEST  := radioAmTest.c $(filter-out radioFeaturesTest.c,$(RFTEST))
 radioAmTest: $(AMTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -o $@ $(AMTEST) -lm
 
+# The broadcast FM receiver's behavior (core/bcast, docs/spec/airband-and-broadcast.md 4) on a fake receiver
+TESTS   += bcastTest
+
+bcastTest: bcastTest.c $(CORE)/bcast/bcast.c $(CORE)/bcast/bcast.h $(ROOT)/hal/hal_bcast.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ bcastTest.c $(CORE)/bcast/bcast.c
+
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
 
 run: run-core
-run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest inputTest
+run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTest
 	./radioCoreTest
 	./radioFeaturesTest
 	./roamTest
 	./radioAmTest
+	./bcastTest
 	./inputTest
 .PHONY: run-core
 
