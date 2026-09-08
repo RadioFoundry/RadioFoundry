@@ -822,6 +822,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
+	ui_svc_setting_set(UI_SET_ROAM_SURVEY, 1);
+	ui_svc_setting_set(UI_SET_ROAM_BEACON_S, 60);
+	ui_svc_setting_set(UI_SET_ROAM_BEACON_LEN, 4);
+	ui_svc_setting_set(UI_SET_ROAM_PROBE, 0);
 	ptt_blocked = false;
 	ui_app_init();
 	presses = 0;

@@ -58,6 +58,7 @@ static void publish(void)
 {
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	shared_view = sm.view;
+	radio_sm_shown_view(&sm, &shared_view);	// a roaming survey visit: the screens keep the site it left
 	shared_serial = sm.serial;
 	shared_settings = sm.set;
 	xSemaphoreGive(view_lock);

@@ -279,6 +279,20 @@ void ui_svc_apply(uint8_t id, int32_t value)
 			rs.reply_s = value >= 0 && value <= 30 ? (uint8_t)value : RADIO_REPLY_CODEPLUG;
 		}
 		break;
+#if CONFIG_DMR_ROAMING
+	case UI_SET_ROAM_SURVEY:
+		rs.roam_survey = (uint8_t)(v16 > 2 ? 1 : v16);
+		break;
+	case UI_SET_ROAM_BEACON_S:	// the radio core clamps (0, 10..600)
+		rs.roam_beacon_s = v16;
+		break;
+	case UI_SET_ROAM_BEACON_LEN:
+		rs.roam_beacon_len_s = (uint8_t)(v16 > 10 ? 10 : v16);
+		break;
+	case UI_SET_ROAM_PROBE:
+		rs.roam_probe = value != 0;
+		break;
+#endif
 	case UI_SET_LONG_PRESS_MS:	// the input layer's gesture timing (not a radio core setting)
 	case UI_SET_REPEAT_MS: {
 		static uint16_t long_ms, repeat_ms;

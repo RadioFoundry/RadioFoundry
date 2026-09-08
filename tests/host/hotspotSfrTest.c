@@ -575,6 +575,41 @@ static void test_vendor(void)
 	slots(60);
 }
 
+// The idle beacon (dmr-roaming.md 7): off by default; on, idle bursts on the outbound slot for its duration every
+// interval while nothing is repeated, and a call heard during one is repeated as usual
+static void test_beacon(void)
+{
+	hotspot_sfr_view_t v;
+
+	sfr_on();
+	slots(400);	// 12 s
+	hotspot_sfr_get_view(&v);
+	CHECK(v.on && v.stats.tx_beacons == 0 && v.stats.tx_starts == 0);	// off: nothing keyed
+
+	hotspot_sfr_set_beacon(10, 2);
+	configure(true, 1);	// simplex and back: SFR mode starts again and takes the beacon
+	configure(false, 1);
+	CHECK(hotspot_alt_active());
+	int keyed_slots = 0, first = -1, last = -1;
+	for (int i = 0; i < 1100; i++) {	// 33 s
+		slot();
+		hotspot_sfr_get_view(&v);
+		if (v.keyed) {
+			keyed_slots++;
+			if (first < 0) {
+				first = i;
+			}
+			last = i;
+		}
+	}
+	CHECK(v.stats.tx_beacons == 3 && v.stats.tx_starts == 3);
+	CHECK(first >= 320 && first <= 340);			// the first one 10 s after the start
+	CHECK(last >= 960 && last <= 1080);
+	CHECK(keyed_slots >= 3 * 60 && keyed_slots <= 3 * 75);	// 2 s each (66 slots), plus the modem's drain
+	CHECK(v.stats.tx_idle >= 3 * 30 && v.stats.tx_bursts == 0);	// idle bursts only (every other slot)
+	hotspot_sfr_set_beacon(0, 2);
+}
+
 int main(void)
 {
 	test_trigger();
@@ -583,6 +618,7 @@ int main(void)
 	test_rf_priority();
 	test_echo_and_late_entry();
 	test_vendor();
+	test_beacon();
 	printf("# " SUITE ": %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

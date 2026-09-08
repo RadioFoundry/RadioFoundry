@@ -23,6 +23,11 @@ void hotspot_sfr_init(void);
 // TS1 in, TS2 out, TS framing, 1 s hang, 180 s TOT. tot_15s 0: the default TOT
 void hotspot_sfr_set_settings(const sfrChannelSettings_t *s, uint8_t tot_15s);
 
+// The idle beacon while SFR mode runs (docs/spec/dmr-roaming.md 7): idle bursts on the outbound slot for len_s every
+// interval_s when nothing is repeated; 0 = off (the default). Taken when SFR mode starts. The radio core sets it from
+// its settings (rpt_beacon, roam_beacon_s, roam_beacon_len_s)
+void hotspot_sfr_set_beacon(uint16_t interval_s, uint8_t len_s);
+
 typedef struct {
 	bool on;		// SFR mode active
 	bool keyed;

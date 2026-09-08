@@ -46,8 +46,12 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
   - keyed aligned to the inbound call (`DMR_TIMING_ALIGNED`, the outbound TS) when one is being heard, else on its own
     slot clock (`DMR_TIMING_OWN`), always impolite (gotchas 1.8); two bursts kept queued in the modem, one engine
     decision per outbound slot, idle bursts in the gaps and the hang; `DMR_EV_TX_REJECTED` unkeys.
+- **Idle beacon** (optional, off by default): with the radio setting `rpt_beacon` on, the runner keys its outbound
+  with idle bursts for `roam_beacon_len_s` every `roam_beacon_s` while it carries nothing, so roaming radios can
+  measure the site (`sfrRunnerSetBeacon`, `hotspot_sfr_set_beacon`; `dmr-roaming.md` 7). Traffic has priority. The
+  phase is the runner's own (no network time).
 - **Debug link** (section `hotspot`): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored
-  sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost`.
+  sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons`.
 
 ## 3. What the modem driver must do
 

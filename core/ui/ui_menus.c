@@ -1043,7 +1043,38 @@ static const ui_scr_def_t info_screen = {
 
 // ======================= Roaming (Tools > Roaming, docs/spec/dmr-roaming.md 6.2) =======================
 
-enum { RM_ZONE, RM_NOW, RM_LOCK, RM_COUNT };
+enum { RM_ZONE, RM_NOW, RM_LOCK, RM_SURVEY, RM_BEACON, RM_LEN, RM_PROBE, RM_COUNT };
+
+#if CONFIG_DMR_ROAMING
+// The survey and beacon rows: radio-wide settings, cycled with OK (the values must match the repeaters)
+static const int16_t rm_survey_v[] = { 1, 2, 0 };
+static const char *const rm_survey_n[] = { "Synced", "Per site", "Off" };
+static const int16_t rm_beacon_v[] = { 60, 120, 300, 600, 0, 10, 15, 20, 30 };
+static const char *const rm_beacon_n[] = { "60 s", "2 min", "5 min", "10 min", "None", "10 s", "15 s", "20 s", "30 s" };
+static const int16_t rm_len_v[] = { 4, 5, 6, 8, 10, 1, 2, 3 };
+static const char *const rm_len_n[] = { "4 s", "5 s", "6 s", "8 s", "10 s", "1 s", "2 s", "3 s" };
+
+typedef struct {
+	uint8_t id;		// ui_setting_t
+	const int16_t *v;
+	const char *const *n;
+	uint8_t count;
+} rm_list_t;
+
+static const rm_list_t rm_lists[] = {
+	{ UI_SET_ROAM_SURVEY, rm_survey_v, rm_survey_n, 3 },
+	{ UI_SET_ROAM_BEACON_S, rm_beacon_v, rm_beacon_n, 9 },
+	{ UI_SET_ROAM_BEACON_LEN, rm_len_v, rm_len_n, 8 },
+};
+
+static uint8_t rm_find(const rm_list_t *l, int32_t v)
+{
+	for (uint8_t k = 0; k < l->count; k++)
+		if (l->v[k] == v)
+			return k;
+	return 0xFF;
+}
+#endif
 
 #if CONFIG_DMR_ROAMING
 static bool roam_active(const radio_view_t *v) { return v->roam.state != RROAM_STATE_OFF; }
@@ -1093,6 +1124,8 @@ static const char *roam_body(void)
 	}
 	if (v->roam.state == RROAM_STATE_LOCKED)
 		sb_str(&b, "\nLocked to this site");
+	else if (ui_svc_setting_get(UI_SET_ROAM_SURVEY) == 1 && ui_svc_setting_get(UI_SET_ROAM_BEACON_S) != 0)
+		sb_str(&b, v->roam.win_conf >= 2 ? "\nBeacons: surveying" : "\nBeacons: learning");
 #else
 	sb_str(&b, "Roaming isn't in this build.");
 #endif
@@ -1103,11 +1136,33 @@ static uint16_t roam_count(void) { return RM_COUNT; }
 
 static void roam_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { "Roam in this zone", "Roam now", "Lock to this site" };
+	static const char *const names[] = { "Roam in this zone", "Roam now", "Lock to this site", "Site survey",
+					     "Beacon interval", "Beacon length", "Wake probe" };
 	strcpy(it->label, names[i]);
 	item_num(it, (uint16_t)(i + 1u));
 #if CONFIG_DMR_ROAMING
 	const radio_view_t *v = ui_view();
+	if (i >= RM_SURVEY && i <= RM_LEN) {
+		const rm_list_t *l = &rm_lists[i - RM_SURVEY];
+		int32_t val = ui_svc_setting_get(l->id);
+		uint8_t k = rm_find(l, val);
+		sbuf_t b;
+		sb_init(&b, it->value, sizeof it->value);
+		if (k != 0xFF) {
+			sb_str(&b, l->n[k]);
+		} else {
+			sb_i32(&b, val);	// a value set over the debug link
+			sb_str(&b, " s");
+		}
+		bool no_beacons = ui_svc_setting_get(UI_SET_ROAM_BEACON_S) == 0;
+		if ((i == RM_LEN && no_beacons) || (i != RM_SURVEY && ui_svc_setting_get(UI_SET_ROAM_SURVEY) == 0))
+			it->flags |= UI_ITEM_DIM;	// nothing uses it now
+		return;
+	}
+	if (i == RM_PROBE) {
+		strcpy(it->value, ui_svc_setting_get(UI_SET_ROAM_PROBE) ? "On" : "Off");
+		return;
+	}
 	if (i == RM_ZONE)
 		strcpy(it->value, v->roam.zone_on ? "On" : "Off");
 	else if (i == RM_LOCK)
@@ -1128,6 +1183,24 @@ static void roam_select(uint16_t i, bool hold)
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
 	const char *why = roam_why_not(v);
+	if (i >= RM_SURVEY && i <= RM_LEN) {
+		// Radio-wide: they apply in every roaming zone, roaming on here or not
+		const rm_list_t *l = &rm_lists[i - RM_SURVEY];
+		uint8_t k = rm_find(l, ui_svc_setting_get(l->id));
+		int32_t nv = l->v[k == 0xFF ? 0 : (k + 1u) % l->count];
+		if (ui_svc_setting_set(l->id, nv))
+			ui_svc_apply(l->id, nv);
+		if (i == RM_BEACON || i == RM_LEN)
+			ui_toast("Set it as the repeaters send it");
+		return;
+	}
+	if (i == RM_PROBE) {
+		bool on = !ui_svc_setting_get(UI_SET_ROAM_PROBE);
+		if (ui_svc_setting_set(UI_SET_ROAM_PROBE, on))
+			ui_svc_apply(UI_SET_ROAM_PROBE, on);
+		ui_toast(on ? "Wake probe on: transmits on silent sites" : "Wake probe off: listening only");
+		return;
+	}
 	if (i == RM_ZONE) {
 		if (v->vfo) {
 			ui_toast("Roaming works on channels");
@@ -1174,7 +1247,7 @@ static void roam_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t roam_screen = {
-	.name = "roaming", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Roaming", .hint = "1-3 pick  Back",
+	.name = "roaming", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Roaming", .hint = "1-7 pick  Back",
 	.count = roam_count, .item = roam_item, .select = roam_select, .body = roam_body,
 };
 

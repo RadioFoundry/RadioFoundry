@@ -226,10 +226,27 @@ site is weak, and the status strip shows `ROAM` during a search. A toast says "M
 | Roam in this zone | Turns roaming on or off for the current zone |
 | Roam now | Searches the sites at once |
 | Lock to this site | Stays on the current repeater until you unlock (Home shows `Lock`) |
+| Site survey | Synced (default), Per site, or Off: how the repeaters' beacons line up |
+| Beacon interval | How often the repeaters beacon: 60 s (default), 2, 5 or 10 min, 10 to 30 s, or None |
+| Beacon length | How long each beacon lasts: 4 s (default), 1 to 10 s |
+| Wake probe | On: the radio briefly keys up a quiet repeater to measure it (off by default; this transmits) |
+
+Many repeater systems make every repeater transmit briefly while idle, a "beacon", for example 4 seconds every
+minute, all at the same moment. The radio learns when the beacons come from the repeater it's on. During each
+beacon it hops to a few of the other sites for under a second each, measures them, and comes back. The screens
+keep showing your repeater while it does this. A key press or PTT brings it straight back, and so does a call on
+the visited site. Your own repeater can't be heard while the radio is away, so a call that starts in that moment
+is joined up to about 3 seconds late; the radio skips the survey for a while after traffic on your repeater. When
+your repeater gets weak, the radio checks the best site it measured at its next beacon and moves there, usually
+within a minute, with no full search. The settings must match the system: ask its operator for the beacon
+interval and length. If the repeaters beacon each on their own schedule, pick **Per site**; if they don't beacon,
+pick **None** (the radio then relies on calls it hears, as before). The body of the screen says "Beacons:
+surveying" once it knows the schedule, "Beacons: learning" before.
 
 A site is a repeater channel in the zone (TX and RX frequencies differ) with the same contact as the channel you
 picked. When any channel in the zone has the codeplug's Roaming flag set, only flagged channels are sites. You need
 at least two sites. Changing channel or zone yourself makes the new channel home.
 
-The threshold (default -105 dBm), the hysteresis (6 dB) and the optional periodic check of the other sites are set
-over the debug link for now ([dmr-roaming](../spec/dmr-roaming.md) section 5.1).
+The threshold (default -105 dBm), the hysteresis (6 dB) and the optional periodic search of the other sites are set
+over the debug link for now ([dmr-roaming](../spec/dmr-roaming.md) section 5.1). So is the idle beacon a hotspot in
+SFR mode can send for roaming radios (`rpt_beacon`, off by default).

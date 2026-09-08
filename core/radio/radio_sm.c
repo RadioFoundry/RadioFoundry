@@ -75,6 +75,10 @@ void radio_settings_default(radio_settings_t *s)
 	s->roam_hyst_db = 6;		// ROAM_HYST_DEFAULT
 	s->roam_probe = 0;		// passive: no automatic transmission (P7)
 	s->roam_check_s = 0;
+	s->roam_beacon_s = 60;		// ROAM_BEACON_DEFAULT_S: the common setting of networked repeaters
+	s->roam_beacon_len_s = 4;	// ROAM_BEACON_LEN_DEFAULT
+	s->roam_survey = 1;		// listening only (P7 allows it): the survey of the synchronized beacon window
+	s->rpt_beacon = false;		// transmits: off until the user turns it on (P7)
 }
 
 static void activity(radio_sm_t *sm, uint32_t now_ms)
@@ -1607,6 +1611,9 @@ static void roam_cfg_of(const radio_settings_t *s, roam_cfg_t *c)
 	c->hyst_db = s->roam_hyst_db;
 	c->probe = s->roam_probe;
 	c->check_s = s->roam_check_s;
+	c->beacon_s = s->roam_beacon_s;
+	c->beacon_len_s = s->roam_beacon_len_s;
+	c->survey = s->roam_survey;
 }
 
 // Where a channel talks: its contact's ID and call type, else the default talkgroup 9 (as dmr_load_channel)
@@ -1637,10 +1644,35 @@ static void roam_publish(radio_sm_t *sm, uint32_t now_ms)
 	bool zone_on = !sm->view.vfo && sm->have_channels && roam_zone_flag(sm, sm->view.zone_index);
 	bool weak = avg != 0 && avg < sm->set.roam_rssi_dbm;
 	uint8_t sites = on ? r->count : 0;
+	uint8_t visit = roam_searching(r) ? r->visit : 0xFF;
 	if (v->zone_on != zone_on || v->state != r->state || v->why != r->why || v->pending != r->pending ||
 	    v->sites != sites || v->site != r->cur || v->home != r->home || v->weak != weak ||
-	    v->searches != r->searches || v->roams != r->roams || v->aborts != r->aborts) {
+	    v->searches != r->searches || v->roams != r->roams || v->aborts != r->aborts || v->visit != visit ||
+	    v->surveys != r->surveys || v->beacons != r->beacons || v->win_conf != r->win_conf) {
 		changed(sm);
+	}
+	uint32_t next = 0;
+	v->visit = visit;
+	v->win_conf = r->win_conf;
+	v->win_next_ms = on && roam_window(r, now_ms, &next) ? next - now_ms : 0;
+	v->confirm = r->confirm;
+	v->surveys = r->surveys;
+	v->visits = r->visits;
+	v->cuts = r->cuts;
+	v->beacons = r->beacons;
+	v->confirms = r->confirms;
+	v->site_fresh16 = 0;
+	uint32_t period = (uint32_t)r->cfg.beacon_s * 1000u;
+	for (uint8_t i = 0; i < RADIO_ROAM_SITES; i++) {
+		const roam_site_t *s = &r->site[i];
+		bool here = i < sites;
+		uint32_t age = here && s->surv_ms != 0 ? (now_ms - s->surv_ms) / 1000u : 0xFFFFu;
+		v->site_surv[i] = here ? s->surv_dbm : 0;
+		v->site_age_s[i] = (uint16_t)(age > 0xFFFEu && age != 0xFFFFu ? 0xFFFEu : age);
+		v->site_phase_ms[i] = here && s->phase_ms != 0 && period != 0 ? s->phase_ms % period : UINT32_MAX;
+		if (here && roam_site_fresh(r, i, now_ms)) {
+			v->site_fresh16 |= (uint16_t)(1u << i);
+		}
 	}
 	v->zone_on = zone_on;
 	v->state = r->state;
@@ -1777,6 +1809,16 @@ static bool roam_tune(radio_sm_t *sm, uint8_t idx, bool force, uint32_t now_ms)
 	return true;
 }
 
+void radio_sm_shown_view(const radio_sm_t *sm, radio_view_t *v)
+{
+	if (!sm->roam_shown || sm->roam.state != ROAM_SURVEY) {
+		return;
+	}
+	v->ch = sm->roam_shown_ch;
+	v->zone_pos = sm->roam_shown_pos;
+	v->channel_number = sm->roam_shown_number;
+}
+
 // The wake probe: one BS_Dwn_Act CSBK through the stack's data path, which wakes the repeater first (its own
 // activation bursts and retries) when it isn't up (docs/spec/dmr-roaming.md 4.5)
 static uint8_t roam_probe_left;
@@ -1872,7 +1914,7 @@ static void roam_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		return;
 	}
 	bool heard = sm->dmr_running && dmr_call_view()->repeater_up;
-	roam_sample(r, now_ms, heard, st->rssi_dbm);
+	roam_sample(r, now_ms, heard, st->rssi_dbm, sm->view.state == RS_RX || sm->view.dmr.state != RDMR_IDLE);
 	uint8_t blocked = roam_blocked(sm, now_ms);
 	sm->view.roam.blocked = blocked;
 	if (roam_searching(r) && (sm->roam_probing || sm->dmr_keyed)) {
@@ -1880,8 +1922,16 @@ static void roam_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		return;
 	}
 	uint32_t roams = r->roams;
+	bool was_away = roam_searching(r);
 	switch (roam_poll(r, now_ms, blocked, sm->view.dmr.state == RDMR_RX)) {
 	case ROAM_ACT_TUNE:
+		if (roam_surveying(r) && !was_away) {
+			// A survey round leaves: the screens keep the site it returns to (radio_sm_shown_view)
+			sm->roam_shown = true;
+			sm->roam_shown_ch = sm->view.ch;
+			sm->roam_shown_pos = sm->view.zone_pos;
+			sm->roam_shown_number = sm->view.channel_number;
+		}
 		if (roam_tune(sm, r->visit, false, now_ms)) {
 			roam_tuned(r, now_ms);
 		} else {
@@ -1951,6 +2001,7 @@ static void roam_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 }
 #else
 static inline void roam_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
+void radio_sm_shown_view(const radio_sm_t *sm, radio_view_t *v) { (void)sm; (void)v; }
 #endif
 
 // --- FM transmit tones and the end of an FM transmission ---
@@ -2504,6 +2555,19 @@ static void clamp_settings(radio_settings_t *s)
 	} else if (s->roam_check_s > 3600) {
 		s->roam_check_s = 3600;
 	}
+	if (s->roam_beacon_s != 0 && s->roam_beacon_s < 10) {
+		s->roam_beacon_s = 10;
+	} else if (s->roam_beacon_s > 600) {
+		s->roam_beacon_s = 600;
+	}
+	if (s->roam_beacon_len_s < 1) {
+		s->roam_beacon_len_s = 1;
+	} else if (s->roam_beacon_len_s > 10) {
+		s->roam_beacon_len_s = 10;
+	}
+	if (s->roam_survey > 2) {
+		s->roam_survey = 1;
+	}
 }
 
 // The radio core's settings as kept in the settings store (docs/spec/settings-store.md 3); the defaults if never set
@@ -2515,6 +2579,10 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 		s->roam_hyst_db = st->roam_hyst_db;
 		s->roam_probe = st->roam_probe;
 		s->roam_check_s = st->roam_check_s;
+		s->roam_beacon_s = st->roam_beacon_s;
+		s->roam_beacon_len_s = st->roam_beacon_len_s;
+		s->roam_survey = st->roam_survey;
+		s->rpt_beacon = st->rpt_beacon == 1;
 		clamp_settings(s);
 	}
 	if (st->rs_stored != 1) {
@@ -2575,6 +2643,10 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->roam_hyst_db = s->roam_hyst_db;
 	st->roam_probe = s->roam_probe;
 	st->roam_check_s = s->roam_check_s;
+	st->roam_beacon_s = s->roam_beacon_s;
+	st->roam_beacon_len_s = s->roam_beacon_len_s;
+	st->roam_survey = s->roam_survey;
+	st->rpt_beacon = s->rpt_beacon ? 1 : 0;
 	st->roam_stored = 1;
 	settings_end(now_ms);
 }

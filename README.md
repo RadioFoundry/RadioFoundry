@@ -51,7 +51,8 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
 - **SFR:** single frequency repeater mode on the hotspot, off by default ([sfr](docs/spec/sfr.md))
 - **USB network mode:** the radio becomes a USB network adapter and routes IP over DMR, off by default
   ([usb-network](docs/spec/usb-network.md))
-- **Roaming:** moves to the strongest repeater of a zone when the one it's on gets weak; turned on per zone
+- **Roaming:** moves to the strongest repeater of a zone when the one it's on gets weak, surveying the other sites
+  during the repeaters' idle beacons; turned on per zone
   ([dmr-roaming](docs/spec/dmr-roaming.md))
 - **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
 - **Scan:** zone, VFO and dual watch scan; on DMR it stops for calls in progress, using late entry

@@ -134,7 +134,9 @@ position), erases ODR's own data area, and restarts the radio. The codeplug and 
 ## Settings without a menu
 
 A few settings exist in the radio but not yet on the menu: busy channel lockout, roger beep, the scan's resume mode
-and timing, VOX sensitivity, ARS server, the emergency settings, the text message format. Developers change them over
+and timing, VOX sensitivity, ARS server, the emergency settings, the text message format, the roaming threshold,
+hysteresis and periodic search, and the SFR idle beacon. The roaming survey and beacon settings are in **Tools >
+Roaming** ([DMR](08-dmr.md#roaming)). Developers change them over
 the debug link (`tools/odr_debug.py radio set ...`, `tools/odr_debug.py data settings ...`); the radio keeps them.
 
 A build without the Settings menu (`CONFIG_UI_SETTINGS=n`) shows "Set them with qdmr" instead, and keeps the stored

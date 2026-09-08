@@ -23,7 +23,11 @@ static int checks;
 // The engine on its own
 // ======================================================================================================================
 
-static const roam_cfg_t cfg_default = { ROAM_RSSI_DEFAULT, ROAM_HYST_DEFAULT, ROAM_PROBE_PASSIVE, 0 };
+// The classic engine (no survey) for the first tests; the survey's own tests set beacons
+static int iabs_t(int v) { return v < 0 ? -v : v; }
+static uint32_t phase_of(uint32_t t) { return t % 60000u; }
+
+static const roam_cfg_t cfg_default = { ROAM_RSSI_DEFAULT, ROAM_HYST_DEFAULT, ROAM_PROBE_PASSIVE, 0, 0, 0, ROAM_SURVEY_OFF };
 
 static void sites_n(roam_t *r, uint8_t n, int cur, uint32_t t)
 {
@@ -41,7 +45,7 @@ static uint32_t feed(roam_t *r, uint32_t t, uint32_t ms, int16_t dbm)
 {
 	for (uint32_t e = 0; e < ms; e += 25) {
 		t += 25;
-		roam_sample(r, t, true, dbm);
+		roam_sample(r, t, true, dbm, false);
 	}
 	return t;
 }
@@ -58,7 +62,7 @@ static uint32_t search(roam_t *r, uint32_t t, const int16_t *rssi, roam_act_t fi
 		}
 		t += 25;
 		uint8_t at = r->state == ROAM_SEARCH ? r->visit : r->cur;
-		roam_sample(r, t, rssi[at] != 0, rssi[at]);
+		roam_sample(r, t, rssi[at] != 0, rssi[at], false);
 		a = roam_poll(r, t, 0, false);
 	}
 	return t;
@@ -181,7 +185,7 @@ static void test_engine_choice(void)
 	a = roam_poll(&r, t, 0, false);
 	roam_tuned(&r, t);
 	t += ROAM_SETTLE_MS + 25;
-	roam_sample(&r, t, true, -92);
+	roam_sample(&r, t, true, -92, false);
 	CHECK(roam_poll(&r, t, 0, true) == ROAM_ACT_DONE && r.cur == 1 && r.roams == 1);
 }
 
@@ -242,6 +246,331 @@ static void test_engine_lock_abort(void)
 }
 
 // ======================================================================================================================
+// The survey on its own: sites that key up only for their beacons
+// ======================================================================================================================
+
+typedef struct {
+	int16_t dbm;		// 0 = not on the air at all
+	uint32_t phase;		// first beacon start
+	uint32_t period;	// 0 = always up
+	uint32_t len;
+	int jitter;		// each beacon starts up to this many ms early or late
+	bool busy;		// carrying traffic now (always up while set)
+} bsite_t;
+
+static bsite_t bs[ROAM_SITES_MAX];
+static struct {
+	uint32_t away, away_max, run, tunes;
+} st_away;
+
+static bool bs_up(int i, uint32_t t)
+{
+	const bsite_t *b = &bs[i];
+	if (b->dbm == 0) {
+		return false;
+	}
+	if (b->period == 0 || b->busy) {
+		return true;
+	}
+	int32_t d = (int32_t)(t - b->phase) + (int32_t)b->period;	// one period of margin for early beacons
+	if (d < 0) {
+		return false;
+	}
+	uint32_t k = (uint32_t)d / b->period, off = (uint32_t)d % b->period;
+	int j = b->jitter != 0 ? (int)((k * 7919u + (uint32_t)i * 104729u) % (uint32_t)(2 * b->jitter + 1)) - b->jitter : 0;
+	int32_t o = (int32_t)off - j;
+	if (o < 0) {
+		o += (int32_t)b->period;
+	}
+	return o < (int32_t)(b->len + ROAM_HOLD_MS);	// "heard" lasts the hold time past the last burst
+}
+
+static void bs_reset(void)
+{
+	memset(bs, 0, sizeof(bs));
+	memset(&st_away, 0, sizeof(st_away));
+}
+
+// Run the engine ms long against bs[]; blocked as given
+static uint32_t drive(roam_t *r, uint32_t t, uint32_t ms, uint8_t blocked)
+{
+	for (uint32_t e = 0; e < ms; e += 25) {
+		t += 25;
+		uint8_t at = roam_searching(r) ? r->visit : r->cur;
+		bool up = bs_up(at, t);
+		roam_sample(r, t, up, up ? bs[at].dbm : -125, up && bs[at].busy);
+		roam_act_t a = roam_poll(r, t, blocked, false);
+		if (a == ROAM_ACT_TUNE) {
+			roam_tuned(r, t);
+			st_away.tunes++;
+		} else if (a == ROAM_ACT_PROBE) {
+			roam_probe_sent(r, false);
+		}
+		if (roam_searching(r)) {
+			st_away.away += 25;
+			st_away.run += 25;
+			if (st_away.run > st_away.away_max) {
+				st_away.away_max = st_away.run;
+			}
+		} else {
+			st_away.run = 0;
+		}
+	}
+	return t;
+}
+
+static const roam_cfg_t cfg_sync = { ROAM_RSSI_DEFAULT, ROAM_HYST_DEFAULT, ROAM_PROBE_PASSIVE, 0, 60, 4, ROAM_SURVEY_SYNC };
+
+// n sites beaconing together every 60 s for 4 s from phase, at the levels given (0: none)
+static void bs_window(uint8_t n, uint32_t phase, const int16_t *dbm, int jitter)
+{
+	bs_reset();
+	for (uint8_t i = 0; i < n; i++) {
+		bs[i].dbm = dbm[i];
+		bs[i].phase = phase;
+		bs[i].period = 60000;
+		bs[i].len = 4000;
+		bs[i].jitter = jitter;
+	}
+}
+
+static void test_survey_window(void)
+{
+	roam_t r;
+	roam_init(&r, &cfg_sync);
+	bs_window(4, 20000, (int16_t[]){ -90, -85, -100, 0 }, 0);
+	sites_n(&r, 4, 0, 1000);
+	// The schedule is learned from our own site's beacons: one is enough to try, the next ones confirm it
+	uint32_t t = drive(&r, 1000, 18000, 0);
+	CHECK(r.win_conf == 0 && !roam_window(&r, t, NULL) && r.surveys == 0 && st_away.away == 0);
+	t = drive(&r, t, 12000, 0);
+	uint32_t next = 0;
+	CHECK(r.win_conf == 1 && r.beacons == 1 && roam_window(&r, t, &next) && next == 80000);
+	CHECK(r.surveys == 0);
+	// The next window: one round visits all three other sites (six fit in 4 s), back before the window ends
+	t = drive(&r, t, 60000, 0);
+	CHECK(r.surveys == 1 && r.win_conf >= 2);
+	CHECK(iabs_t((int)phase_of(r.win_ms) - 20000) <= 100);
+	CHECK(st_away.away_max <= 4000 - ROAM_WIN_LEAD_MS && st_away.away_max >= 2 * ROAM_SURVEY_SETTLE_MS);
+	CHECK(r.state == ROAM_WATCH && r.cur == 0);
+	CHECK(r.site[1].surv_dbm == -85 && r.site[2].surv_dbm == -100 && r.site[3].surv_ms == 0);	// 3: one miss so far
+	CHECK(roam_site_fresh(&r, 1, t) && roam_site_fresh(&r, 2, t) && !roam_site_fresh(&r, 3, t));
+	t = drive(&r, t, 3 * 60000, 0);
+	CHECK(r.site[3].surv_ms != 0 && r.site[3].surv_dbm == 0 && r.site[3].miss >= 2);	// missed twice: not heard
+	CHECK(r.searches == 0 && r.roams == 0 && r.cur == 0);
+	// Time away: at most a window's worth per interval (the duty cycle bound holds)
+	CHECK(st_away.away * 100u <= (t - 1000u) * ROAM_SURVEY_DUTY);
+}
+
+static void test_survey_jitter_and_rotation(void)
+{
+	roam_t r;
+	// 12 sites, beacons up to 400 ms early or late: the schedule holds, every site gets measured in turn
+	int16_t lv[12];
+	for (int i = 0; i < 12; i++) {
+		lv[i] = (int16_t)(-80 - i);
+	}
+	roam_init(&r, &cfg_sync);
+	bs_window(12, 5000, lv, 400);
+	sites_n(&r, 12, 0, 1000);
+	uint32_t t = drive(&r, 1000, 10 * 60000, 0);
+	CHECK(roam_window(&r, t, NULL) && r.win_conf >= 2);
+	int measured = 0;
+	for (int i = 1; i < 12; i++) {
+		measured += r.site[i].surv_ms != 0 && iabs_t(r.site[i].surv_dbm - lv[i]) <= 1;
+	}
+	CHECK(measured == 11);
+	for (int i = 1; i < 12; i++) {
+		CHECK(roam_site_fresh(&r, (uint8_t)i, t));
+	}
+	CHECK(st_away.away_max <= 4000);
+	CHECK(r.surveys >= 3);		// 11 sites over windows of about 9
+}
+
+static void test_survey_weak_confirm(void)
+{
+	roam_t r;
+	roam_init(&r, &cfg_sync);
+	bs_window(4, 20000, (int16_t[]){ -95, -85, -75, -100 }, 200);
+	sites_n(&r, 4, 0, 1000);
+	uint32_t t = drive(&r, 1000, 5 * 60000, 0);
+	CHECK(r.site[2].surv_dbm == -75 && roam_site_fresh(&r, 2, t));
+	// Our site fades: the weak trigger picks the best fresh site, confirms it in the next window and moves
+	bs[0].dbm = -112;
+	t = drive(&r, t, 3 * 60000, 0);
+	CHECK(r.roams == 1 && r.cur == 2 && r.searches == 0 && r.confirms == 1);
+	CHECK(r.why == ROAM_WHY_WEAK && r.home == 0);
+	// Hysteresis with survey data: a site only 3 dB better is not worth a move
+	roam_init(&r, &cfg_sync);
+	bs_window(3, 20000, (int16_t[]){ -95, -104, -120 }, 0);
+	sites_n(&r, 3, 0, 1000);
+	t = drive(&r, 1000, 5 * 60000, 0);
+	bs[0].dbm = -107;
+	t = drive(&r, t, 3 * 60000, 0);
+	CHECK(r.roams == 0 && r.searches == 0 && r.stays >= 1 && r.retry_until != 0);	// all fresh: stayed, no search
+	// The confirm visit fails (the site went quiet since): stay, and that site's data says so
+	roam_init(&r, &cfg_sync);
+	bs_window(3, 20000, (int16_t[]){ -95, -80, -120 }, 0);
+	sites_n(&r, 3, 0, 1000);
+	t = drive(&r, 1000, 5 * 60000, 0);
+	bs[1].dbm = 0;
+	bs[0].dbm = -112;
+	t = drive(&r, t, 90000, 0);
+	CHECK(r.confirms >= 1 && r.roams == 0 && r.cur == 0);
+}
+
+static void test_survey_stale_fallback(void)
+{
+	roam_t r;
+	// Beacons set but the schedule unknown (our site is always up, no beacon learned): a full search
+	roam_init(&r, &cfg_sync);
+	bs_reset();
+	bs[0].dbm = -90;
+	bs[1].dbm = -80;
+	sites_n(&r, 2, 0, 1000);
+	uint32_t t = drive(&r, 1000, ROAM_DWELL_MS, 0);
+	CHECK(r.surveys == 0);
+	bs[0].dbm = -115;
+	t = drive(&r, t, ROAM_WEAK_MS + 8000, 0);
+	CHECK(r.searches == 1 && r.cur == 1);
+	// The schedule known, but the data too old: the stale sites are surveyed first (past the duty cycle), then the
+	// move is decided on the fresh data without a full search
+	roam_init(&r, &cfg_sync);
+	bs_window(3, 20000, (int16_t[]){ -95, -80, -90 }, 0);
+	sites_n(&r, 3, 0, 1000);
+	t = drive(&r, 1000, 3 * 60000, 0);
+	CHECK(roam_window(&r, t, NULL));
+	r.site[1].surv_ms = r.site[2].surv_ms = 0;	// forgotten
+	bs[0].dbm = -112;
+	t = drive(&r, t, 3 * 60000, 0);
+	CHECK(r.searches == 0 && r.roams == 1 && r.cur == 1);
+	// Survey off: a weak site does the classic search
+	roam_cfg_t c = cfg_sync;
+	c.survey = ROAM_SURVEY_OFF;
+	roam_init(&r, &c);
+	bs_window(2, 20000, (int16_t[]){ -95, -80 }, 0);
+	bs[1].period = 0;	// traffic: always up
+	sites_n(&r, 2, 0, 1000);
+	t = drive(&r, 1000, 3 * 60000, 0);
+	CHECK(r.surveys == 0 && r.win_conf == 0);
+	bs[0].dbm = -112;
+	t = drive(&r, t, 2 * 60000, 0);
+	CHECK(r.searches >= 1 && r.cur == 1);
+}
+
+static void test_survey_blocks_and_traffic(void)
+{
+	roam_t r;
+	roam_init(&r, &cfg_sync);
+	bs_window(3, 20000, (int16_t[]){ -90, -85, -88 }, 0);
+	sites_n(&r, 3, 0, 1000);
+	uint32_t t = drive(&r, 1000, 2 * 60000, 0);
+	CHECK(roam_window(&r, t, NULL));
+	uint32_t surveys = r.surveys;
+	// Blocked (a call, the reply window, ...): no round
+	t = drive(&r, t, 2 * 60000, RROAM_BLOCK_CALL);
+	CHECK(r.surveys == surveys);
+	// Traffic on our site: the survey holds off ROAM_SURVEY_HOLD_MS after it, doubled per busy period
+	t = drive(&r, t, 60000, 0);
+	CHECK(r.surveys == surveys + 1);
+	surveys = r.surveys;
+	uint32_t w = 0;
+	roam_window(&r, t, &w);
+	t = drive(&r, t, w - t - 3000, 0);	// 3 s before the window
+	bs[0].busy = true;
+	t = drive(&r, t, 2500, 0);
+	bs[0].busy = false;
+	t = drive(&r, t, 4000, 0);		// the window: still in the hold-off
+	CHECK(r.surveys == surveys && r.busy_score >= 1);
+	// A call heard on the visited site ends the visit at once (it is likely on ours too)
+	t = drive(&r, t, 60000 - 4500, 0);
+	roam_window(&r, t, &w);
+	t = drive(&r, t, w - t + ROAM_WIN_LEAD_MS + 50, 0);
+	CHECK(r.state == ROAM_SURVEY);
+	uint32_t cuts = r.cuts;
+	CHECK(roam_poll(&r, t, RROAM_BLOCK_CALL, true) == ROAM_ACT_DONE && r.state == ROAM_WATCH && r.cuts == cuts + 1);
+	// The user's PTT during a visit: roam_abort, back at once
+	t = drive(&r, t, 60000, 0);
+	roam_window(&r, t, &w);
+	t = drive(&r, t, w - t + ROAM_WIN_LEAD_MS + 50, 0);
+	CHECK(r.state == ROAM_SURVEY && r.visit != r.cur);
+	roam_abort(&r, t);
+	CHECK(r.state == ROAM_WATCH && r.cuts == cuts + 2 && r.aborts == 0);
+	// Locked: no survey
+	roam_lock(&r, true, t);
+	surveys = r.surveys;
+	t = drive(&r, t, 3 * 60000, 0);
+	CHECK(r.surveys == surveys);
+}
+
+static void test_survey_per_site(void)
+{
+	roam_t r;
+	roam_cfg_t c = cfg_sync;
+	c.survey = ROAM_SURVEY_SITE;
+	c.beacon_s = 30;
+	c.beacon_len_s = 3;
+	roam_init(&r, &c);
+	bs_reset();
+	// Each site on its own schedule
+	const uint32_t ph[3] = { 4000, 13000, 22000 };
+	const int16_t lv[3] = { -90, -82, -97 };
+	for (int i = 0; i < 3; i++) {
+		bs[i].dbm = lv[i];
+		bs[i].phase = ph[i];
+		bs[i].period = 30000;
+		bs[i].len = 3000;
+		bs[i].jitter = 150;
+	}
+	sites_n(&r, 3, 0, 1000);
+	uint32_t t = drive(&r, 1000, 20 * 30000, 0);
+	// Each site's phase learned (a discovery visit listens through an interval once), then short aligned visits
+	for (int i = 1; i < 3; i++) {
+		CHECK(r.site[i].phase_ms != 0 && iabs_t((int)((r.site[i].phase_ms - ph[i] + 30000u * 40u) % 30000u)) <= 400);
+		CHECK(r.site[i].surv_ms != 0 && iabs_t(r.site[i].surv_dbm - lv[i]) <= 1);
+	}
+	CHECK(st_away.away * 100u <= (t - 1000u) * ROAM_SURVEY_DUTY + 30000u * 100u);
+	uint32_t tunes = st_away.tunes, away = st_away.away;
+	t = drive(&r, t, 10 * 30000, 0);
+	CHECK(st_away.tunes > tunes);
+	// Aligned visits are short: the extra time away averages well under one beacon per visit
+	CHECK((st_away.away - away) / (st_away.tunes - tunes) < 3000);
+}
+
+// Our own site silent (out of range): after a while one discovery visit listens to another site through an
+// interval, learns the window from its beacon, and the rounds measure it from then on
+static void test_survey_discovery(void)
+{
+	roam_t r;
+	roam_init(&r, &cfg_sync);
+	bs_window(3, 20000, (int16_t[]){ 0, -88, -95 }, 0);
+	sites_n(&r, 3, 0, 1000);
+	uint32_t t = drive(&r, 1000, 2 * 60000, 0);
+	CHECK(r.surveys == 0 && st_away.away == 0);		// waits for its own site's beacons first
+	t = drive(&r, t, 90000, 0);
+	CHECK(r.surveys >= 1 && r.win_conf >= 1 && r.beacons >= 1);	// the discovery visit
+	CHECK(st_away.away_max <= 60000 + 4000 + ROAM_WIN_TOL_MS + ROAM_SURVEY_SETTLE_MS + 25);
+	t = drive(&r, t, 12 * 60000, 0);
+	CHECK(roam_window(&r, t, NULL) && r.win_conf >= 2);
+	CHECK(roam_site_fresh(&r, 1, t) && r.site[1].surv_dbm == -88);
+	CHECK(roam_site_fresh(&r, 2, t) && r.site[2].surv_dbm == -95);
+	CHECK(st_away.away * 100u <= (t - 1000u) * ROAM_SURVEY_DUTY + 65000u * 100u);
+}
+
+static void test_survey_defaults_off_without_beacons(void)
+{
+	roam_t r;
+	roam_cfg_t c = cfg_sync;
+	c.beacon_s = 0;		// no beacons: nothing to survey
+	roam_init(&r, &c);
+	bs_window(2, 20000, (int16_t[]){ -90, -80 }, 0);
+	sites_n(&r, 2, 0, 1000);
+	uint32_t t = drive(&r, 1000, 5 * 60000, 0);
+	CHECK(r.surveys == 0 && st_away.away == 0 && r.beacons == 0);
+	(void)t;
+}
+
+// ======================================================================================================================
 // Through the radio core
 // ======================================================================================================================
 
@@ -254,6 +583,8 @@ typedef struct {
 	int16_t rssi_dbm;
 	bool beacon;		// always up (else up only after a wake)
 	bool wakeable;
+	uint32_t bcn_period;	// idle beacons: up bcn_len ms every bcn_period ms from bcn_phase (0 = none)
+	uint32_t bcn_len, bcn_phase;
 	uint32_t up_until;	// awake until
 	int wakes;
 } rpt_t;
@@ -282,7 +613,23 @@ static rpt_t *rpt_on_rx(void)
 
 static bool rpt_up(const rpt_t *p)
 {
-	return p != NULL && (p->beacon || (int32_t)(p->up_until - now) > 0);
+	if (p == NULL) {
+		return false;
+	}
+	if (p->bcn_period != 0 && (int32_t)(now - p->bcn_phase) >= 0 && (now - p->bcn_phase) % p->bcn_period < p->bcn_len) {
+		return true;
+	}
+	return p->beacon || (int32_t)(p->up_until - now) > 0;
+}
+
+// Repeater i beacons every 60 s for 4 s from phase (the network's shared window)
+static void beacon(int i, int16_t dbm, uint32_t phase)
+{
+	hw.rpt[i].rssi_dbm = dbm;
+	hw.rpt[i].beacon = false;
+	hw.rpt[i].bcn_period = 60000;
+	hw.rpt[i].bcn_len = 4000;
+	hw.rpt[i].bcn_phase = phase;
 }
 
 static void r_init(void) {}
@@ -902,11 +1249,167 @@ static void test_scan_blocks(void)
 #endif
 }
 
+// The defaults with roaming on: the beacon survey of a synchronized network (60 s / 4 s), listening only
+static void test_rc_defaults_and_store(void)
+{
+	start(true);
+	CHECK(sm.set.roam_beacon_s == 60 && sm.set.roam_beacon_len_s == 4 && sm.set.roam_survey == 1);
+	CHECK(sm.set.roam_probe == 0 && !sm.set.rpt_beacon);
+	settings_t s;
+	settings_defaults(&s);
+	CHECK(s.roam_beacon_s == 60 && s.roam_beacon_len_s == 4 && s.roam_survey == 1 && s.rpt_beacon == 0);
+	// A record from before these fields (roam_stored with the old fields; the new ones keep settings_defaults'):
+	// the new defaults apply
+	settings_t *w = settings_begin();
+	w->roam_stored = 1;
+	w->roam_rssi_dbm = -100;
+	settings_end(now);
+	radio_sm_init(&sm, now);
+	run(100);
+	CHECK(sm.set.roam_rssi_dbm == -100 && sm.set.roam_beacon_s == 60 && sm.set.roam_survey == 1);
+	// Stored and clamped
+	radio_settings_t rs = sm.set;
+	rs.roam_beacon_s = 5;
+	rs.roam_beacon_len_s = 30;
+	rs.roam_survey = 2;
+	rs.rpt_beacon = true;
+	radio_sm_set_settings(&sm, &rs, now);
+	CHECK(sm.set.roam_beacon_s == 10 && sm.set.roam_beacon_len_s == 10 && sm.set.roam_survey == 2 && sm.set.rpt_beacon);
+	settings_read(&s);
+	CHECK(s.roam_beacon_s == 10 && s.roam_beacon_len_s == 10 && s.roam_survey == 2 && s.rpt_beacon == 1);
+}
+
+// Run until the radio is on a survey visit (or ms ran out)
+static void until_survey(uint32_t ms)
+{
+	for (uint32_t t = 0; t < ms && sm.roam.state != ROAM_SURVEY; t += 5) {
+		run(5);
+	}
+}
+
+// Idle repeaters that only beacon: the survey learns the window from site A and measures the others in it
+static void test_rc_survey(void)
+{
+	start(true);
+	beacon(A, -85, 20000);
+	beacon(B, -80, 20000);
+	beacon(C, -95, 20000);
+	beacon(D, -70, 20000);	// color code 3: never counted
+	run(60000 - 1000);		// the beacon at 20 s: the window tried, the next one (80 s) not yet here
+	CHECK(RV->win_conf == 1 && RV->win_next_ms != 0 && RV->beacons == 1);
+	CHECK(RV->surveys == 0 && on_ch() == 1);
+	// The next window: a round; the screens keep showing site A while the radio is away
+	until_survey(60000);
+	CHECK(sm.roam.state == ROAM_SURVEY && RV->state == RROAM_STATE_SURVEY && RV->visit != 0xFF);
+	radio_view_t v = sm.view;
+	radio_sm_shown_view(&sm, &v);
+	CHECK(v.channel_number == 1 && strcmp(v.ch.name, "Site A") == 0);
+	run(5000);
+	CHECK(sm.roam.state == ROAM_WATCH && on_ch() == 1 && RV->surveys == 1);
+	CHECK(RV->site_surv[1] == -80 && RV->site_surv[2] == -95 && RV->site_surv[3] == 0);
+	CHECK((RV->site_fresh16 & 0x6) == 0x6);
+	run(3 * 60000);
+	CHECK(RV->site_age_s[3] != 0xFFFF && RV->site_surv[3] == 0);	// D: missed twice, "not heard"
+	CHECK(hw.tx_calls == 0 && RV->searches == 0 && RV->roams == 0);	// listening only
+	radio_view_t v2 = sm.view;
+	radio_sm_shown_view(&sm, &v2);
+	CHECK(v2.channel_number == 1);	// watching: the view is the radio's own
+
+	// Our site fades: the move uses the survey data (a confirm visit in the next window), no blind search
+	beacon(A, -112, 20000);
+	for (int k = 0; k < 4 * 60 && RV->roams == 0; k++) {
+		run(1000);
+	}
+	CHECK(RV->roams == 1 && on_ch() == 2 && RV->searches == 0 && RV->confirms >= 1);
+	settings_t s;
+	settings_read(&s);
+	CHECK(s.channel == 2);
+}
+
+// PTT during a survey visit: back on the site at once and the transmission starts there; the extra delay is the
+// retune (and the repeater's outbound seen again), not a visit's length
+static uint32_t ptt_latency(void)
+{
+	uint32_t t0 = now;
+	req(RREQ_PTT, 1);
+	while (now - t0 < 3000 && !(hw.keyed && hw.tx_hz == 430900000 && dmr_call_view()->phase == DMR_CALL_PHASE_TX_VOICE)) {
+		run(5);
+	}
+	uint32_t lat = now - t0;
+	req(RREQ_PTT, 0);
+	run(ROAM_QUIET_MS + 2000);
+	return lat;
+}
+
+static void test_rc_survey_ptt_and_traffic(void)
+{
+	start(true);
+	beacon(A, -85, 20000);
+	beacon(B, -80, 20000);
+	beacon(C, -95, 20000);
+	run(2 * 60000 + 30000);
+	CHECK(RV->win_conf >= 2);
+	// Baseline: PTT on site A during its beacon, no survey
+	radio_settings_t rs = sm.set;
+	rs.roam_survey = 0;
+	radio_sm_set_settings(&sm, &rs, now);
+	while ((now - 20000u) % 60000u != ROAM_WIN_LEAD_MS + 200u) {
+		run(5);
+	}
+	uint32_t base = ptt_latency();
+	rs.roam_survey = 1;
+	radio_sm_set_settings(&sm, &rs, now);
+	run(3 * 60000);			// the schedule again (a mode change forgets it)
+	CHECK(RV->win_conf >= 2);
+	until_survey(70000);
+	run(200);
+	CHECK(sm.roam.state == ROAM_SURVEY && on_ch() != 1);
+	uint32_t cuts = RV->cuts;
+	uint32_t lat = ptt_latency();
+	CHECK(RV->cuts == cuts + 1 && RV->aborts == 0);
+	CHECK(lat <= base + 100);
+	printf("# roamTest: PTT latency on a survey visit %u ms (on the site, no survey: %u ms)\n", (unsigned)lat,
+	       (unsigned)base);
+
+	// A call heard on the visited site: back on our own site at once (the call is likely carried there too)
+	until_survey(70000);
+	run(200);
+	CHECK(sm.roam.state == ROAM_SURVEY);
+	cuts = RV->cuts;
+	uint8_t lc[9];
+	dmr_lc_t l = { .flco = DMR_FLCO_GROUP_VOICE, .dst = 9, .src = 3101234 };
+	dmr_lc_pack(&l, lc);
+	for (int k = 0; k < 3 && sm.roam.state == ROAM_SURVEY; k++) {
+		dmr_burst_t b;
+		memset(&b, 0, sizeof(b));
+		b.sync = DMR_SYNC_BS;
+		b.cc = 1;
+		b.ts = 1;
+		b.crc_ok = true;
+		b.in_step = true;
+		b.rssi_dbm = -80;
+		b.kind = DMR_BURST_VOICE_LC_HEADER;
+		b.len = 12;
+		dmr_lc_encode_full(lc, DMR_RS_MASK_VOICE_HEADER, b.payload);
+		sim_rx(&b);
+		run(60);
+	}
+	CHECK(sm.roam.state == ROAM_WATCH && RV->cuts == cuts + 1 && on_ch() == 1);
+}
+
 int main(void)
 {
 	test_engine_basics();
 	test_engine_choice();
 	test_engine_lock_abort();
+	test_survey_window();
+	test_survey_jitter_and_rotation();
+	test_survey_weak_confirm();
+	test_survey_stale_fallback();
+	test_survey_blocks_and_traffic();
+	test_survey_per_site();
+	test_survey_discovery();
+	test_survey_defaults_off_without_beacons();
 	test_sites_and_zone_flag();
 	test_weak_roams_to_strongest();
 	test_hysteresis_stays();
@@ -916,6 +1419,9 @@ int main(void)
 	test_wake_probe();
 	test_lock_and_roam_now();
 	test_scan_blocks();
+	test_rc_defaults_and_store();
+	test_rc_survey();
+	test_rc_survey_ptt_and_traffic();
 	printf("# roamTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

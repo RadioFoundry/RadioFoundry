@@ -86,6 +86,10 @@ static bool set_one(radio_settings_t *s, uint8_t id, uint16_t v)
 	case 22: if (v < 1 || v > 30) return false; s->roam_hyst_db = (uint8_t)v; break;
 	case 23: if (v > 1) return false; s->roam_probe = (uint8_t)v; break;
 	case 24: if (v != 0 && (v < 30 || v > 3600)) return false; s->roam_check_s = v; break;
+	case 25: if (v != 0 && (v < 10 || v > 600)) return false; s->roam_beacon_s = v; break;
+	case 26: if (v < 1 || v > 10) return false; s->roam_beacon_len_s = (uint8_t)v; break;
+	case 27: if (v > 2) return false; s->roam_survey = (uint8_t)v; break;
+	case 28: s->rpt_beacon = v != 0; break;
 	default: return false;
 	}
 	return true;

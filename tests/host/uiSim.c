@@ -55,6 +55,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "position", "ok 5 2" },
 	{ "hotspot_info", "ok 5 3" },
 	{ "diagnostics", "ok 5 7" },
+	{ "roaming", "ok 5 8 1 wait:4000" },
 	{ "settings", "ok 6" },
 	{ "settings_display", "ok 6 2" },
 	{ "settings_editor", "ok 6 2 ok up" },

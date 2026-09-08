@@ -134,6 +134,22 @@ bool sfrRunnerRunning(const sfrRunner_t *r)
 	return r->state != SFR_RUN_OFF;
 }
 
+void sfrRunnerSetBeacon(sfrRunner_t *r, uint16_t interval_s, uint8_t len_s, uint32_t now_ms)
+{
+	r->beacon_ms = (len_s != 0) ? (uint32_t)interval_s * 1000U : 0U;
+	r->beacon_len_ms = (uint32_t)len_s * 1000U;
+	if (r->beacon_len_ms >= r->beacon_ms) {
+		r->beacon_ms = 0U;	// a beacon as long as the interval is a carrier, not a beacon
+	}
+	r->beacon_next = (now_ms != 0U) ? now_ms + r->beacon_ms : 0U;	// 0: from the first poll
+	r->beaconing = false;
+}
+
+static bool due(uint32_t now_ms, uint32_t t)
+{
+	return (int32_t)(now_ms - t) >= 0;
+}
+
 void sfrRunnerSetNoDataHold(sfrRunner_t *r, bool on)
 {
 	r->eng.noDataHold = on;
@@ -194,9 +210,17 @@ static void next_slot(sfrRunner_t *r, uint32_t now_ms)
 		break;
 	case SFR_TX_END:
 	case SFR_TX_NONE:
+		if (r->beaconing && !due(now_ms, r->beacon_until)) {
+			queue_burst(r, NULL, true, now_ms);	// the beacon goes on
+			break;
+		}
+		r->beaconing = false;
 		r->modem->tx_end();
 		r->state = SFR_RUN_ENDING;
 		break;
+	}
+	if (r->beaconing && (r->state == SFR_RUN_KEYED) && (r->eng.count > 0 || r->eng.rfCall || r->eng.netStream)) {
+		r->beaconing = false;	// traffic: the repeater's own rules from here (hang, end)
 	}
 }
 
@@ -208,7 +232,18 @@ static void try_key(sfrRunner_t *r, uint32_t now_ms)
 		sfrTxAction_t a = sfrEngineOutboundSlot(&r->eng, now_ms, &r->pending_burst);
 
 		if ((a != SFR_TX_BURST) && (a != SFR_TX_IDLE)) {
-			return;
+			if ((r->beacon_ms == 0U) || !due(now_ms, r->beacon_next) || r->eng.rfHold) {
+				return;
+			}
+			// Nothing to repeat and the beacon is due: idle bursts for its duration
+			r->beacon_next += r->beacon_ms;
+			if (due(now_ms, r->beacon_next)) {
+				r->beacon_next = now_ms + r->beacon_ms;	// fell behind (traffic): keep the interval from now
+			}
+			r->beacon_until = now_ms + r->beacon_len_ms;
+			r->beaconing = true;
+			r->stats.tx_beacons++;
+			a = SFR_TX_IDLE;
 		}
 		if (a == SFR_TX_IDLE) {
 			r->pending_burst.kind = 0xFF;	// marks an idle burst
@@ -234,6 +269,9 @@ void sfrRunnerPoll(sfrRunner_t *r, uint32_t now_ms)
 {
 	if (r->state == SFR_RUN_OFF) {
 		return;
+	}
+	if ((r->beacon_ms != 0U) && (r->beacon_next == 0U)) {
+		r->beacon_next = now_ms + r->beacon_ms;
 	}
 	if (r->state == SFR_RUN_IDLE) {
 		try_key(r, now_ms);
