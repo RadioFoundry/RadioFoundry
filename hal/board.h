@@ -20,6 +20,7 @@
 #include "hal_system.h"
 #include "hal_cps.h"
 #include "hal_netif.h"
+#include "hal_bcast.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -33,6 +34,11 @@ enum {
 	CAP_GPS		= 1u << 2,
 	CAP_DMR		= 1u << 3,
 	CAP_VOLUME_POT	= 1u << 4,
+	// The channel receiver demodulates AM in the air band (108-137 MHz, receive only; radio/radio_am.h). The band
+	// table must hold an RX-only band covering it, and board.radio->rx_am must be set
+	CAP_AM_RX	= 1u << 5,
+	// A separate broadcast FM receiver (board.bcast, hal_bcast.h)
+	CAP_BCAST_FM	= 1u << 6,
 };
 
 typedef struct {
@@ -70,6 +76,8 @@ typedef struct {
 	const hal_netif_t *netif;
 	// Optional: taps on the audio path (hal_audio_tap.h); NULL when the board has none
 	const hal_audio_tap_t *audio_tap;
+	// Optional: the broadcast FM receiver (hal_bcast.h); NULL when the board has none or it isn't built
+	const hal_bcast_t *bcast;
 } board_t;
 
 extern const board_t board;

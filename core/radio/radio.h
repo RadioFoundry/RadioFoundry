@@ -21,11 +21,12 @@ typedef enum {
 // DMR: NO_CODEC no vocoder merged (receive only), NO_DMR the modem didn't start, BUSY a call on our slot (polite
 // access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
 // NO_ID no DMR ID in the codeplug. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
-// settings. BATTERY: the battery is critical
+// settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
+// only, the radio never transmits there
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
-	TXDENY_INHIBIT, TXDENY_BATTERY,
+	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -222,6 +223,10 @@ typedef struct {
 	uint8_t battery_pct;	// board.power->battery_pct(), 0 if unknown
 	uint16_t battery_mv;
 	bool power_off;		// the radio core asks to be switched off (critical battery, battery_off_s)
+	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
+	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
+	// squelch's value from the RSSI (radio/radio_am.h)
+	bool am;
 #if CONFIG_DMR
 	radio_dmr_view_t dmr;
 #endif
@@ -258,6 +263,9 @@ void radio_req_zone(uint16_t index);
 void radio_req_vfo(bool on);
 void radio_req_vfo_step(int8_t dir);
 void radio_req_vfo_set(uint32_t hz);		// rx and tx frequency (simplex)
+// The VFO's step (Up / Down, VFO scan), kept in the settings: 1 kHz .. 1 MHz; RADIO_AM_STEP_833 (8333) is the exact
+// 8.33 kHz air band grid (radio/radio_am.h)
+void radio_req_vfo_step_size(uint32_t hz);
 void radio_req_ptt(bool down);
 void radio_req_monitor(bool down);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps

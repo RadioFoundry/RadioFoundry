@@ -8,3 +8,7 @@ CONFIG_HOSTLINK ?= y
 # is 40 KB (core/ui/gfx.h), so CONFIG_FONT_XL buys nothing yet
 CONFIG_FONT_XL ?= n
 CONFIG_DISPLAY_INSET ?= 0
+# Air band AM receive and the RDA5807M broadcast FM receiver (docs/spec/airband-and-broadcast.md, parked): the core
+# is built and host tested, the board glue isn't written yet (no CAP_AM_RX / CAP_BCAST_FM), so nothing runs yet
+CONFIG_AM_RX ?= $(CONFIG_FM)
+CONFIG_BCAST_FM ?= y

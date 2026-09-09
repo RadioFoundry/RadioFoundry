@@ -184,6 +184,8 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - TX 136–174 / 400–470 MHz. RX adds 400–480, AM air band 108–136 and FM broadcast 65–108 MHz. 10/4/1 W, 2.0" color
   screen, built-in GPS, USB-C charging. FCC ID 2AJGM-DM32UV (C)
   ([baofengradio.com](https://www.baofengradio.com/products/dm-32uv)).
+- The stock firmware receives air band AM (C, owner). Which chip demodulates it (the FD6818's AF output is the
+  working guess) and the broadcast chip (an RDA5807M on the pin map) are open: [airband-and-broadcast.md](airband-and-broadcast.md).
 - K1-style programming cable, with FTDI preferred (F) ([miklor](https://www.miklor.com/COM/Review_DM32.php)).
 - The HR_C7000 integrates a CK803S MCU, according to a vendor quote about a different radio (F)
   ([opengd77.org p=114](https://www.opengd77.org/viewtopic.php?p=114)).

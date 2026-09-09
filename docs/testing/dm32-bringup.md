@@ -137,6 +137,20 @@ Select a DMR channel with traffic (or let the SDR bench send a call), then `diag
 An hour on a busy DMR channel and an hour of FM scanning: `uo`, `ov` (event overflow), `aud ov / un` stay near 0,
 no stalls (`st`), no resets.
 
+## 11. Air band AM and broadcast FM (once the board glue exists)
+
+The glue isn't written yet ([airband-and-broadcast.md](../spec/airband-and-broadcast.md), parked). When it is:
+
+| Check | Settles |
+|---|---|
+| The stock radio (or a scanner) on the local ATIS; ODR on the same frequency: AM audio, `am=1` in the view, read back FD6818 0x47 / 0x30 | which chip demodulates AM, the 0x47 AF type (spec 2.3 A1) |
+| No audio: the other level of the speaker source switch (GPIO 0x2F), then the C7000 path | AM audio route (A2) |
+| A strong and a weak station; a generator at -100 dBm with `rssi` on the link | AM AGC and filter (A3), the AM squelch offset (A4) |
+| PTT on an air channel and on a split channel with TX in 108-137 MHz | deny screen, red LED off, nothing on the SDR |
+| The RDA5807M chip ID (0x58xx at 0x11) on PTA25 / PTA26 | it is there, the SDA pull-up (B1, B3) |
+| A strong local station with each reference clock setting; with and without the headset | reference clock (B2), audio path (B4), antenna (B5) |
+| A call on the channel while listening | the broadcast mutes and comes back 2 s after |
+
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source, assumed) or one autovector.
