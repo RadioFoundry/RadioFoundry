@@ -220,7 +220,12 @@ static bool clear_temporary(radio_sm_t *sm)
 // (DMR channels never use one)
 static bool tone_needed(const radio_sm_t *sm)
 {
-	return sm->view.ch.rx_tone.type != TONE_NONE && sm->view.ch.mode == RADIO_MODE_FM && !sm->view.am;
+#if CONFIG_AM_RX
+	if (sm->view.am) {
+		return false;	// AM: sub-audio ignored
+	}
+#endif
+	return sm->view.ch.rx_tone.type != TONE_NONE && sm->view.ch.mode == RADIO_MODE_FM;
 }
 
 static void follow_tone(radio_sm_t *sm, bool raw)

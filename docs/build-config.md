@@ -43,6 +43,8 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_DMR_ROAMING` | = DMR | DMR repeater roaming: per-zone roaming between repeater sites with the same talkgroup, chosen by base station sync with our color code and signal, passive (an optional wake probe sends a standard BS_Dwn_Act); Tools > Roaming, the Home chip (`docs/spec/dmr-roaming.md`). About 5.2 KB flash, 1 KB RAM on the DM-1701 |
 | `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter, carried by the data service (`docs/spec/usb-network.md`) |
 | `CONFIG_SFR` | n | single frequency repeater: the MMDVM hotspot's SFR mode (duplex with RX = TX); the stand-alone repeater and user roles on a channel are not wired yet (`docs/spec/sfr.md`) |
+| `CONFIG_AM_RX` | n (DM-32: = FM) | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. The DM-32 glue isn't written yet |
+| `CONFIG_BCAST_FM` | n (DM-32: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The task, settings, screen and DM-32 glue aren't written yet |
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
 | `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
