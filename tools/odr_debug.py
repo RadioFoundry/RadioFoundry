@@ -55,6 +55,15 @@ PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, KEY, PTT, GET_LOG, GET_VIEW
     REBOOT = range(1, 14)
 DMR_DATA = 0x0E
 STORAGE = 0x0F
+APRS = 0x10
+APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
+# DL_APRS_OP_SET fields (core/debuglink/debuglink_proto.h)
+APRS_FIELDS = {name: i for i, name in enumerate(
+    ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
+     "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay"])}
+APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
+APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
+APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
@@ -86,7 +95,7 @@ ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
-                 "storage", "dmr_ext", "dmr_data_stats", "roam"]
+                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -612,6 +621,42 @@ class DebugLink:
         self.data_request(DATA_OP_EMERGENCY_SETTINGS, struct.pack("<BIBBB", EMERGENCY_MODES[mode],
                                                                   int(dst) & 0xFFFFFF, flags, tries, hot_mic_s))
 
+    # APRS (docs/spec/debuglink.md 3.14, docs/spec/aprs.md 13). State: the aprs and aprs_set view sections
+    def aprs_request(self, op, args=b""):
+        return self.request(APRS, bytes([op]) + bytes(args))[1]
+
+    def aprs_send_now(self):
+        """A position beacon now (refused: no callsign, frequency or position)."""
+        self.aprs_request(APRS_OP_SEND_NOW)
+
+    def aprs_status(self, text):
+        self.aprs_request(APRS_OP_STATUS, text.encode("ascii", "replace")[:REQ_MAX - 2])
+
+    def aprs_message(self, to, text):
+        """A message with acks and retries (busy: one still waiting for its ack)."""
+        self.aprs_request(APRS_OP_MESSAGE, f"{to} {text}".encode("ascii", "replace")[:REQ_MAX - 2])
+
+    def aprs_test_call(self, call=""):
+        """A RAM-only callsign for bench tests ("" = back to the radio name)."""
+        self.aprs_request(APRS_OP_TEST_CALL, call.upper().encode("ascii")[:9])
+
+    def aprs_set(self, field, value):
+        """One APRS setting (saved): a name from APRS_FIELDS; lat / lon in degrees (float) or 1e-7 degree ints."""
+        if field in ("lat", "lon") and isinstance(value, float):
+            value = round(value * 1e7)
+        self.aprs_request(APRS_OP_SET, struct.pack("<BI", APRS_FIELDS[field] if isinstance(field, str) else field,
+                                                   int(value) & 0xFFFFFFFF))
+
+    def aprs_nmea(self, sentence):
+        """An NMEA sentence as from the host ("$GPRMC,...*hh"); the checksum is added when missing."""
+        if "*" not in sentence:
+            body = sentence.lstrip("$")
+            c = 0
+            for ch in body.encode("ascii"):
+                c ^= ch
+            sentence = f"${body}*{c:02X}"
+        self.aprs_request(APRS_OP_NMEA, sentence.encode("ascii")[:REQ_MAX - 2])
+
 
 # ── pictures ────────────────────────────────────────────────────────────────
 
@@ -823,6 +868,39 @@ def cmd_radio(link, a):
         link.roam(args[0] if args else "now")
     else:
         raise DebugLinkError(f"unknown radio op {op!r}")
+    return 0
+
+
+def cmd_aprs(link, a):
+    args = a.args
+    if a.op == "send":
+        link.aprs_send_now()
+    elif a.op == "status":
+        link.aprs_status(" ".join(args))
+    elif a.op == "msg":
+        if len(args) < 2:
+            print("aprs msg: CALL TEXT", file=sys.stderr)
+            return 2
+        link.aprs_message(args[0].upper(), " ".join(args[1:]))
+    elif a.op == "call":
+        link.aprs_test_call(args[0] if args else "")
+    elif a.op == "set":
+        if len(args) != 2 or args[0] not in APRS_FIELDS:
+            print(f"aprs set: FIELD VALUE, FIELD one of {', '.join(APRS_FIELDS)}", file=sys.stderr)
+            return 2
+        name, v = args
+        table = {"region": APRS_REGIONS, "pos_src": APRS_POS_SRCS, "via": APRS_VIAS}.get(name, {})
+        if v.lower() in table:
+            value = table[v.lower()]
+        elif name in ("lat", "lon"):
+            value = float(v)
+        elif name == "freq_hz" and "." in v:
+            value = round(float(v) * 1e6)       # MHz
+        else:
+            value = int(v, 0)
+        link.aprs_set(name, value)
+    elif a.op == "nmea":
+        link.aprs_nmea(" ".join(args))
     return 0
 
 
@@ -1062,6 +1140,11 @@ def main(argv=None):
     sub.add_parser("wake")
     p = sub.add_parser("ptt")
     p.add_argument("--seconds", type=float, required=True)
+    p = sub.add_parser("aprs", help="APRS: send now, status, message, test call, settings, NMEA (docs/spec/aprs.md)")
+    p.add_argument("op", choices=["send", "status", "msg", "call", "set", "nmea"])
+    p.add_argument("args", nargs="*", help="status: TEXT; msg: CALL TEXT; call: [CALLSIGN]; set: FIELD VALUE "
+                   f"(fields {', '.join(APRS_FIELDS)}; region na|eu|au|nz|jp|cn|custom, pos_src auto|gps|host|fixed, "
+                   "via rf|dmr|both, lat / lon in degrees, freq_hz in Hz or MHz with a point); nmea: SENTENCE")
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
@@ -1119,6 +1202,8 @@ def main(argv=None):
                 return cmd_radio(link, a)
             elif a.cmd == "data":
                 return cmd_data(link, a)
+            elif a.cmd == "aprs":
+                return cmd_aprs(link, a)
             elif a.cmd == "chip":
                 print_chip(link.chip())
             elif a.cmd == "dump":

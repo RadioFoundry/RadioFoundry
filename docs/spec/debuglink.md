@@ -99,6 +99,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x0D` | REBOOT | mode u8 + token u32 | reason u8 (3.11) |
 | `0x0E` | DMR_DATA | operation u8 + arguments (3.12) | none, or an inbox message (3.12) |
 | `0x0F` | STORAGE | operation u8 + arguments (3.13) | region info, SPI flash bytes, or a reason (3.13) |
+| `0x10` | APRS | operation u8 + arguments (3.14) | none (3.14) |
 
 ### 3.1 VERSION
 
@@ -219,6 +220,8 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 10 | `dmr_ext` | DMR extensions ([dmr-emergency.md](dmr-emergency.md), [dmr-data.md](dmr-data.md) 5.2): the ETSI forms `data.sms_format` (tms / etsi, the radio's default) `data.radio_check_etsi`, counters `data.etsi_sms_received etsi_sms_sent etsi_responses emergency_alarms_heard emergency_alarms_received emergency_alarms_sent`; emergency `em.built em.state` (idle / alarm / hot_mic / active / failed) `em.serial em.mode` (alarm / alarm_call / call) `em.dst em.dst_private em.tries em.hot_mic_s em.etsi_fid em.rx_tone`, the newest alert `em.alert` (1 = not dismissed) `em.alert_kind` (none / alarm / call) `em.alert_src em.alert_dst em.alert_group em.alert_pending em.alert_serial`, counters `em.started failed alarms_started hot_mic_keyed alerts alerts_alarm alerts_call tones`; hotspot builds the CW ID `hs.cw_requests hs.cw_sent hs.cw_refused hs.cw_last_ms hs.cw_wpm hs.cw_active` |
 | 11 | `dmr_data_stats` | the DMR data service counters, split from `dmr_data` because both together exceed one reply: `data.rx_bursts rx_csbk rx_headers rx_blocks rx_blocks_stale rx_crc_errors rx_crc_flag_mismatch rx_packets rx_for_us rx_confirmed sms_received sms_duplicates sms_sent sms_acked sms_failed tms_acks_sent responses_sent csbk_answers_sent call_alerts_received radio_checks_received call_alerts_sent call_alerts_acked radio_checks_sent radio_checks_answered ars_sent ars_acks lrrp_requests lrrp_answers lrrp_no_fix tx_lists tx_ok tx_failed tx_gave_up tx_last_error` |
 | 12 | `roam` | DMR repeater roaming ([dmr-roaming.md](dmr-roaming.md) 6.3): `roam.built roam.zone_on roam.state` (off / watch / search / locked) `roam.why roam.pending` (none / weak / tx_fail / manual / check / stale) `roam.blocked` (none / mode / hotspot / scan / tx / call / reply / quiet / override / emergency) `roam.sites roam.site roam.home roam.channel roam.rssi_dbm roam.weak`, counters `roam.searches roams stays aborts probes triggers`, `site.<i>=<channel>:<rssi>` per site (rssi 0 = not measured), the settings `set.roam_rssi_dbm set.roam_hyst_db set.roam_probe` (passive / wake) `set.roam_check_s`. Built without roaming: `roam.built=0` |
+| 13 | `aprs` | APRS ([aprs.md](aprs.md) 13): `aprs.built aprs.rx_built aprs.igate_built aprs.call` (with SSID, empty = none) `aprs.block` (ok / no_call / no_freq / not_amateur / no_position / no_afsk / busy: why RF can't send) `aprs.freq_hz aprs.pos_src` (none / gps / host / fixed) `aprs.pos_valid`, when valid `aprs.lat aprs.lon` (degrees, 7 decimals) `aprs.pos_age_s`, `aprs.next_s` (-1 = no time based beacon) `aprs.last_why` (none / interval / smart / turn / distance / ptt / manual / boot) `aprs.last_ms aprs.rf_active aprs.last_info`, counters `aprs.rf_sent rf_failed rf_busy dmr_sent dmr_failed rx_frames rx_bad host_in host_out host_dropped igated is_to_rf digi_sent`, `aprs.stations messages msg_pending msg_tries msg_acked`. Built without APRS: `aprs.built=0` |
+| 14 | `aprs_set` | the APRS settings, split from `aprs` for the reply size: `aprs.built set.aprs_tx aprs_region aprs_ssid aprs_symbol aprs_path aprs_interval_s aprs_smart aprs_distance_m aprs_after_ptt aprs_boot aprs_level aprs_txdelay aprs_via` (rf / dmr / both) `aprs_dmr_dst aprs_dmr_udt aprs_pos_src aprs_kiss aprs_rx aprs_igate aprs_igate_tx aprs_digi` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -368,6 +371,22 @@ and the claim of a foreign region.
 | 2 CLAIM | token u32: the chip UID's low word (INFO_CHIP offset 7) | reason u8. `DL_ST_REFUSED` with reason 1 (bad token) or 4 (no chip info); `DL_ST_UNAVAILABLE` when the region isn't foreign. On OK the housekeeping task erases the region (10 sector erases, up to about 4 s, during which it does not watch the power knob); poll `storage.region` |
 
 `odr_debug.py storage info | dump | claim` drives it; `claim` always dumps first, outside any git tree.
+
+### 3.14 APRS
+
+Bench control of APRS ([aprs.md](aprs.md) 13). Built without CONFIG_APRS every operation answers `DL_ST_UNAVAILABLE`.
+The state is in the `aprs` and `aprs_set` view sections.
+
+| Op | Request | Effect |
+|---|---|---|
+| 1 SEND_NOW | none | a position beacon on the configured way out; `DL_ST_REFUSED` when it can't go (no callsign, no position, RF blocked and not via DMR) |
+| 2 STATUS | text | a status packet (`>text`); `DL_ST_REFUSED` as above |
+| 3 MESSAGE | `CALL text` (addressee, one space, the text) | an APRS message with acks and retries; `DL_ST_BUSY` while one is still waiting |
+| 4 TEST_CALL | callsign, 0-9 characters | a RAM-only callsign override for bench tests; empty = back to the radio name. Not saved |
+| 5 SET | field u8, value u32 (signed as two's complement) | one APRS setting, saved like a UI change. Fields: 0 tx, 1 region (0 NA, 1 EU, 2 AU, 3 NZ, 4 JP, 5 CN, 6 custom), 2 freq_hz (custom), 3 ssid (0-15), 4 lat, 5 lon (fixed position, 1e-7 degree), 6 pos_src (0 auto, 1 GPS, 2 host, 3 fixed), 7 interval_s, 8 smart, 9 via (0 RF, 1 DMR, 2 both), 10 dmr_dst, 11 level (0-100), 12 path (0 none, 1 WIDE1-1, 2 WIDE1-1,WIDE2-1, 3 WIDE2-1, 4 WIDE2-2), 13 kiss, 14 dmr_udt, 15 after_ptt, 16 distance_m, 17 rx, 18 igate, 19 igate_tx, 20 digi, 21 txdelay (5-100, 10 ms units). Out of range: bad argument |
+| 6 NMEA | an NMEA sentence | taken as a host position (`$GPRMC` / `$GPGGA` with a valid checksum) |
+
+`odr_debug.py aprs send | status TEXT | msg CALL TEXT | call [CALL] | set FIELD VALUE | nmea SENTENCE`.
 
 ## 4. Safety
 

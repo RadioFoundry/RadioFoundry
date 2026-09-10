@@ -41,6 +41,7 @@ enum {
 	DL_CMD_REBOOT		= 0x0D,
 	DL_CMD_DMR_DATA		= 0x0E,	// DMR data service requests (debuglink_dmr_data.c)
 	DL_CMD_STORAGE		= 0x0F,	// the settings / journal region: info, SPI flash read, claim (docs/spec/debuglink.md 3.13)
+	DL_CMD_APRS		= 0x10,	// APRS: send now, status, message, test call, settings, NMEA (debuglink_aprs.c, 3.14)
 };
 
 // DL_CMD_DMR_DATA operations (first payload byte; docs/spec/debuglink.md 3.12). IDs are u32 little endian
@@ -65,6 +66,42 @@ enum {
 					// inside the three ranges
 	DL_STORAGE_OP_CLAIM,		// token u32 (the chip UID's low word) -> reason u8 (as REBOOT's); the erase follows in
 					// the housekeeping task: poll the view's storage.region
+};
+
+// DL_CMD_APRS operations (first payload byte; docs/spec/debuglink.md 3.14)
+enum {
+	DL_APRS_OP_SEND_NOW = 1,	// a position beacon now (-> REFUSED: no callsign, frequency or position)
+	DL_APRS_OP_STATUS,		// text: a status packet
+	DL_APRS_OP_MESSAGE,		// "CALL text": a message with acks (-> BUSY: one still waiting)
+	DL_APRS_OP_TEST_CALL,		// callsign (0-9 characters, empty = back to the settings): RAM only
+	DL_APRS_OP_SET,			// field u8 (DL_APRS_F_*), value u32 (signed as two's complement): saved
+	DL_APRS_OP_NMEA,		// an NMEA sentence, as from the host ("$GPRMC,...*hh")
+};
+
+// DL_APRS_OP_SET fields
+enum {
+	DL_APRS_F_TX = 0,		// automatic beacons 0/1
+	DL_APRS_F_REGION,		// aprs_region_t
+	DL_APRS_F_FREQ_HZ,		// the custom region's frequency
+	DL_APRS_F_SSID,			// 0-15
+	DL_APRS_F_LAT,			// fixed position, 1e-7 degree
+	DL_APRS_F_LON,
+	DL_APRS_F_POS_SRC,		// aprs_pos_src_t
+	DL_APRS_F_INTERVAL_S,		// 0 = none (the engine keeps its minimum)
+	DL_APRS_F_SMART,		// SmartBeaconing 0/1
+	DL_APRS_F_VIA,			// aprs_via_t
+	DL_APRS_F_DMR_DST,		// digital destination ID
+	DL_APRS_F_LEVEL,		// AFSK level 0-100
+	DL_APRS_F_PATH,			// aprs_path_t
+	DL_APRS_F_KISS,			// KISS TNC on the host port 0/1
+	DL_APRS_F_DMR_UDT,		// ETSI UDT instead of LRRP 0/1
+	DL_APRS_F_AFTER_PTT,		// beacon after an over 0/1
+	DL_APRS_F_DISTANCE_M,		// distance trigger, 0 = off
+	DL_APRS_F_RX,			// receive on the APRS frequency 0/1
+	DL_APRS_F_IGATE,		// RF -> APRS-IS 0/1
+	DL_APRS_F_IGATE_TX,		// APRS-IS -> RF 0/1
+	DL_APRS_F_DIGI,			// aprs_digi_mode_t
+	DL_APRS_F_TXDELAY,		// 10 ms units, 5-100
 };
 
 // Reply status (the first payload byte)

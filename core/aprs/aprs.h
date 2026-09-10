@@ -117,7 +117,6 @@ typedef struct {
 	uint32_t serial;	// bumped on every change worth a redraw
 } aprs_view_t;
 
-#if CONFIG_APRS_RX
 typedef struct {
 	char call[AX25_CALL_LEN + 4];	// with SSID
 	uint32_t heard_ms;
@@ -138,7 +137,6 @@ typedef struct {
 	uint32_t ms;
 	bool read;
 } aprs_msg_t;
-#endif
 
 // --- The radio task ---
 

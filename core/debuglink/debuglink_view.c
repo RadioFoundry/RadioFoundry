@@ -232,7 +232,7 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 {
 	static const char *const names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 							  "link", "features", "dmr_data", "storage", "dmr_ext",
-							  "dmr_data_stats", "roam" };
+							  "dmr_data_stats", "roam", "aprs", "aprs_set" };
 
 	if (section >= DL_VIEW_COUNT) {
 		return;
@@ -277,6 +277,12 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_ROAM:
 		debuglink_view_roam(v, t);
+		break;
+	case DL_VIEW_APRS:
+		debuglink_view_aprs(0, t);
+		break;
+	case DL_VIEW_APRS_SET:
+		debuglink_view_aprs(1, t);
 		break;
 	default:
 		break;
