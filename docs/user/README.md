@@ -30,6 +30,7 @@ also carries this manual as a PDF, built from these files (`tools/build_manual.s
 17. [Troubleshooting](17-troubleshooting.md)
 18. [FAQ](18-faq.md)
 19. [Glossary](19-glossary.md)
+20. [APRS](20-aprs.md): positions on FM and over DMR, beacons, KISS and iGate with a computer
 
 ## Quick reference
 

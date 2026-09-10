@@ -44,7 +44,7 @@ static void frame(const uint8_t *f, size_t n, uint32_t now_ms)
 		}
 		break;
 	default:
-		break;		// TXDELAY, persistence, slot time: the radio's own settings and CSMA apply (aprs.md 9.1)
+		break;		// TXDELAY, persistence, slot time: the radio's own settings and CSMA apply (aprs.md 9)
 	}
 }
 
