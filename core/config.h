@@ -95,6 +95,15 @@
 #ifndef CONFIG_BATTERY_SAVE
 #define CONFIG_BATTERY_SAVE		CONFIG_FM
 #endif
+#ifndef CONFIG_APRS
+#define CONFIG_APRS			CONFIG_FM
+#endif
+#ifndef CONFIG_APRS_RX
+#define CONFIG_APRS_RX			CONFIG_APRS
+#endif
+#ifndef CONFIG_APRS_IGATE
+#define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
+#endif
 
 // Derived: the shared packet data / CSBK code
 #ifndef CONFIG_DMR_DATA_CORE
@@ -146,6 +155,12 @@
 #endif
 #if (CONFIG_FM_TX_TONES || CONFIG_VOX || CONFIG_BATTERY_SAVE) && !CONFIG_FM
 #error "an FM feature is on without CONFIG_FM"
+#endif
+#if CONFIG_APRS && !CONFIG_FM
+#error "CONFIG_APRS needs CONFIG_FM"
+#endif
+#if (CONFIG_APRS_RX && !CONFIG_APRS) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
+#error "an APRS sub-feature is on without its parent (APRS_RX needs APRS; APRS_IGATE needs APRS_RX and HOSTLINK)"
 #endif
 #if !CONFIG_FM && !CONFIG_DMR
 #error "at least one of CONFIG_FM and CONFIG_DMR"

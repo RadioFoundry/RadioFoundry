@@ -23,8 +23,11 @@ static bool put(hdlc_enc_t *e, bool bit)
 	if (!bit) {
 		e->level ^= 1u;
 	}
+	uint8_t m = (uint8_t)(1u << (e->nbits & 7u));
 	if (e->level) {
-		e->buf[e->nbits >> 3] |= (uint8_t)(1u << (e->nbits & 7u));
+		e->buf[e->nbits >> 3] |= m;
+	} else {
+		e->buf[e->nbits >> 3] &= (uint8_t)~m;	// written both ways: an encoder state copied back can rewrite
 	}
 	e->nbits++;
 	return true;

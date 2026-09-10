@@ -19,6 +19,7 @@
 #include "hal_system.h"
 #include "hal_cps.h"
 #include "hal_netif.h"
+#include "hal_afsk.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -67,6 +68,9 @@ typedef struct {
 	const hal_cps_t *cps;
 	// Optional: the USB network personality (hal_netif.h); NULL when not built
 	const hal_netif_t *netif;
+	// Optional: APRS AFSK through the FM transmitter, and received audio for the demodulator (hal_afsk.h); NULL when
+	// not built or the radio can't
+	const hal_afsk_t *afsk;
 } board_t;
 
 extern const board_t board;

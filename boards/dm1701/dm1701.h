@@ -80,6 +80,13 @@ typedef struct {
 	int8_t ref_offset;	// reference oscillator tune - 128
 } dm1701_cal_point_t;
 
+// APRS AFSK through the FM transmitter (radio_dm1701.c for afsk_dm1701.c): begin and end at task level with FM TX
+// keyed, tone from the TIM6 interrupt
+bool dm1701_afsk_begin(uint16_t hz, uint8_t level);
+bool dm1701_afsk_tone(uint16_t hz);
+void dm1701_afsk_end(void);
+extern const hal_afsk_t dm1701_afsk;
+
 bool dm1701_cal_load(void);
 // Calibration values interpolated at a frequency (Hz); returns false if no calibration is loaded (safe defaults filled)
 bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out);

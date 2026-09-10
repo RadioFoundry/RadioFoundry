@@ -74,10 +74,18 @@ CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 CONFIG_VOX ?= n
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
+# APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions
+# over DMR (LRRP / UDT), a KISS TNC on the host port. Transmit stays off until the user turns it on (needs FM)
+CONFIG_APRS ?= $(CONFIG_FM)
+# APRS receive: the AFSK demodulator, station list, messages to us, digipeater (needs APRS; useful only on boards
+# whose board.afsk can sample received audio)
+CONFIG_APRS_RX ?= $(CONFIG_APRS)
+# APRS iGate rules, RF <-> APRS-IS through the host helper tools/aprs_gate.py (needs APRS_RX and HOSTLINK)
+CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE
+	VOX BATTERY_SAVE APRS APRS_RX APRS_IGATE
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -128,7 +136,17 @@ ifneq ($(call feature_on,VFO_DMR),)
     $(error CONFIG_VFO_DMR=y needs CONFIG_DMR=y)
   endif
 endif
-$(foreach f,FM_TX_TONES VOX BATTERY_SAVE,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
+$(foreach f,FM_TX_TONES VOX BATTERY_SAVE APRS,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
+ifneq ($(call feature_on,APRS_RX),)
+  ifeq ($(call feature_on,APRS),)
+    $(error CONFIG_APRS_RX=y needs CONFIG_APRS=y)
+  endif
+endif
+ifneq ($(call feature_on,APRS_IGATE),)
+  ifeq ($(and $(call feature_on,APRS_RX),$(call feature_on,HOSTLINK)),)
+    $(error CONFIG_APRS_IGATE=y needs CONFIG_APRS_RX=y and CONFIG_HOSTLINK=y)
+  endif
+endif
 ifeq ($(call feature_on,FM)$(call feature_on,DMR),)
   $(error at least one of CONFIG_FM and CONFIG_DMR must be y)
 endif

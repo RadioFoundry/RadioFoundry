@@ -104,6 +104,9 @@ const board_t board = {
 #if CONFIG_CPS_LEGACY
 	.cps = &cps,
 #endif
+#if CONFIG_APRS
+	.afsk = &dm1701_afsk,
+#endif
 };
 
 // docs/spec/hardware-dm1701.md 1.2

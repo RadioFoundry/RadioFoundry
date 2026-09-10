@@ -94,6 +94,23 @@ bool codeplug_set_radio_name(const char *name);
 // The two boot screen text lines the CPS writes (empty when unset or not in this codeplug)
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]);
 
+#if CONFIG_APRS
+// A legacy codeplug APRS configuration (legacy-cps-interop.md 7.3.8; qdmr writes them): what the APRS engine takes
+// from it. Not read: the fixed position and the frequency (their encodings aren't in the interop spec yet)
+#define CODEPLUG_APRS_CONFIGS	8
+#define CODEPLUG_APRS_COMMENT	23
+typedef struct {
+	uint8_t ssid;
+	char path[2][10];	// "WIDE1-1", "" = none
+	char sym_table;
+	char sym_code;
+	char comment[CODEPLUG_APRS_COMMENT + 1];
+	uint8_t ambiguity;	// 0-4
+} codeplug_aprs_t;
+// Configuration n (1..CODEPLUG_APRS_CONFIGS); false when empty, unknown or no legacy codeplug
+bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out);
+#endif
+
 // Re-read everything after the image was written underneath (the CPS); bumps the serial
 codeplug_source_t codeplug_reload(void);
 

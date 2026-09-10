@@ -115,6 +115,27 @@ typedef struct {
 	uint8_t roam_stored;		// 1 = the roam_ values are set
 	uint16_t roam_check_s;		// beacon check interval, 0 = off
 	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// bit z % 8 of byte z / 8: zone z is a roaming zone
+	// APRS (core/aprs/aprs.h aprs_cfg_t, docs/spec/aprs.md 11); taken only when aprs_stored is 1, else the defaults
+	// (automatic transmit off)
+	uint8_t aprs_flags;		// SETTINGS_APRS_* bits
+	uint8_t aprs_flags2;		// SETTINGS_APRS2_* bits
+	uint8_t aprs_region;		// aprs_region_t: the APRS frequency
+	uint8_t aprs_ssid;		// our SSID, 0-15
+	uint32_t aprs_freq_hz;		// the custom region's frequency
+	int32_t aprs_lat;		// the fixed position, 1e-7 degree (both 0 = not set)
+	int32_t aprs_lon;
+	uint32_t aprs_dmr_dst;		// digital APRS: the destination ID, 0 = the default
+	int16_t aprs_alt_m;		// the fixed position's altitude, INT16_MIN = none
+	uint16_t aprs_interval_s;	// fixed beacon interval, 0 = none
+	uint16_t aprs_distance_m;	// beacon after moving this far, 0 = off
+	char aprs_symbol[2];		// symbol table and code
+	uint8_t aprs_path;		// aprs_path_t
+	uint8_t aprs_pos_src;		// aprs_pos_src_t
+	uint8_t aprs_level;		// AFSK level, 0-100
+	uint8_t aprs_txdelay;		// preamble in 10 ms units
+	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
+	uint8_t aprs_stored;		// 1 = the aprs_ fields are set
+	uint16_t reserved5;
 } settings_t;
 
 // settings_t.rs_flags
@@ -135,6 +156,21 @@ typedef struct {
 #define SETTINGS_EM_DST_PRIVATE		0x01u
 #define SETTINGS_EM_ETSI_FID		0x02u
 #define SETTINGS_EM_NO_TONE		0x04u
+
+// settings_t.aprs_flags / aprs_flags2
+#define SETTINGS_APRS_TX		0x01u	// automatic beacons
+#define SETTINGS_APRS_SMART		0x02u	// SmartBeaconing
+#define SETTINGS_APRS_COMPRESSED	0x04u
+#define SETTINGS_APRS_AFTER_PTT		0x08u
+#define SETTINGS_APRS_BOOT		0x10u	// beacon on the first position after power-up
+#define SETTINGS_APRS_KISS		0x20u	// KISS TNC on the host port
+#define SETTINGS_APRS_NARROW		0x40u	// 12.5 kHz on the APRS frequency
+#define SETTINGS_APRS_RX		0x80u	// receive on the APRS frequency (boards that can)
+#define SETTINGS_APRS2_IGATE		0x01u	// RF -> APRS-IS
+#define SETTINGS_APRS2_IGATE_TX		0x02u	// APRS-IS -> RF (messages to local stations)
+#define SETTINGS_APRS2_MESSAGING	0x04u	// we take messages ('=' / '@' positions, acks)
+#define SETTINGS_APRS2_DMR_UDT		0x08u	// digital APRS as an ETSI UDT location (else Motorola LRRP)
+#define SETTINGS_APRS2_TO_IS		0x10u	// our own beacons to APRS-IS through the host helper
 
 typedef enum {
 	SETTINGS_RAM,		// no flash: defaults, nothing saved

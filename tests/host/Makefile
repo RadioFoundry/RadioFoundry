@@ -107,7 +107,7 @@ clean:
 CORE_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += radioCoreTest inputTest
 
-# With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
+# With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr (APRS: aprsRadioTest)
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
@@ -121,7 +121,7 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEA
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -o $@ $(RCORE) -lm
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_APRS=0 -o $@ $(RCORE) -lm
 
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
@@ -132,20 +132,34 @@ RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(
            $(CORE)/settings/settings.c $(CORE)/storage/storage.c
 
 radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -o $@ $(RFTEST) -lm
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 -o $@ \
+		$(RFTEST) -lm
 
 # DMR repeater roaming: the engine, and through the radio core against fake repeaters on the simulated modem
 TESTS   += roamTest
 ROAMT   := roamTest.c $(filter-out radioFeaturesTest.c,$(RFTEST))
 
 roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -o $@ $(ROAMT) -lm
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 -o $@ \
+		$(ROAMT) -lm
+
+# APRS through the radio core, FM only (the engine, radio_sm.c's APRS block, a fake AFSK transmitter)
+TESTS   += aprsRadioTest
+FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
+           -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
+APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
+           $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
+           $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB)
+
+aprsRadioTest: $(APRSRT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/aprs/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. $(FMONLY) -o $@ $(APRSRT) -lm
 
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
 
 run: run-core
-run-core: radioCoreTest radioFeaturesTest roamTest inputTest
+run-core: radioCoreTest radioFeaturesTest roamTest inputTest aprsRadioTest
+	./aprsRadioTest
 	./radioCoreTest
 	./radioFeaturesTest
 	./roamTest
