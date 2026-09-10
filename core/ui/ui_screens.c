@@ -815,6 +815,17 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		sb_chr(&b, '"');
 		y = call_line(L->small, y, buf, ui_col.fg);
 	}
+	if (d->call.gps_valid) {	// the caller's ETSI GPS Info: how far and which way, else where
+		sb_init(&b, buf, sizeof buf);
+		if (d->call.gps_range) {
+			sb_range(&b, d->call.gps_dist_m, d->call.gps_bearing);
+		} else {
+			sb_degrees(&b, d->call.gps_lat);
+			sb_chr(&b, ' ');
+			sb_degrees(&b, d->call.gps_lon);
+		}
+		y = call_line(L->small, y, buf, ui_col.fg);
+	}
 	sb_init(&b, buf, sizeof buf);
 	if (d->state == RDMR_RX_OTHER)
 		sb_str(&b, d->call.encrypted ? "Encrypted: not played" : "Other TG: not played");

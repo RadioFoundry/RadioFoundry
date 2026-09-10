@@ -194,6 +194,16 @@ tools/odr_debug.py radio privacy off
 Without a key, the Privacy tile shows "No key for this channel: add one in qdmr". The keys are stored without
 protection in the radio's flash.
 
+## Position in calls
+
+Some DMR radios send their position inside a voice call (ETSI GPS Info). When a caller does, the receive screen shows
+how far away it is and in which direction, for example "12.3 km NE", or its coordinates when the radio doesn't know
+your own position. Recent keeps the distance with the call.
+
+Your own position goes into your calls when **Tools > APRS > Position in DMR calls** is on (off by default) and the
+radio knows where it is (see [APRS](20-aprs.md#position)). Every other superframe carries it, taking turns with your
+talker alias.
+
 ## Talker alias
 
 The radio shows the talker alias other radios send, as it arrives, on the receive screen. It sends your callsign from

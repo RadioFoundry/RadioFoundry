@@ -102,6 +102,7 @@ enum {
 	DL_APRS_F_IGATE_TX,		// APRS-IS -> RF 0/1
 	DL_APRS_F_DIGI,			// aprs_digi_mode_t
 	DL_APRS_F_TXDELAY,		// 10 ms units, 5-100
+	DL_APRS_F_DMR_GPS,		// our position in DMR voice calls (ETSI GPS Info) 0/1
 };
 
 // Reply status (the first payload byte)

@@ -43,6 +43,18 @@ static void call(dl_text_t *t, const char *p, const radio_dmr_call_t *c)
 	dl_text_kv_str(t, k, c->src_name);
 	dl_fmt(k, sizeof(k), "%s.dst_name", p);
 	dl_text_kv_str(t, k, c->dst_name);
+	// ETSI GPS Info (CONFIG_DMR_GPS): degrees with 7 decimals, the error code, range and bearing from us
+	dl_text(t, "%s.gps_valid=%u\n", p, c->gps_valid);
+	if (c->gps_valid) {
+		uint32_t la = (uint32_t)(c->gps_lat < 0 ? -(int64_t)c->gps_lat : c->gps_lat);
+		uint32_t lo = (uint32_t)(c->gps_lon < 0 ? -(int64_t)c->gps_lon : c->gps_lon);
+
+		dl_text(t, "%s.gps_lat=%s%u.%07u\n%s.gps_lon=%s%u.%07u\n%s.gps_err=%u\n", p, c->gps_lat < 0 ? "-" : "",
+			(unsigned)(la / 10000000u), (unsigned)(la % 10000000u), p, c->gps_lon < 0 ? "-" : "",
+			(unsigned)(lo / 10000000u), (unsigned)(lo % 10000000u), p, c->gps_err);
+		if (c->gps_range)
+			dl_text(t, "%s.gps_dist_m=%u\n%s.gps_bearing=%u\n", p, (unsigned)c->gps_dist_m, p, c->gps_bearing);
+	}
 }
 
 void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
@@ -98,6 +110,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			(unsigned)c.rx_private_calls, (unsigned)c.rx_emergency_calls, (unsigned)c.rx_encrypted_calls);
 		dl_text(t, "call.rx_pi_headers=%u\ncall.rx_alias_complete=%u\ncall.tx_alias_lcs=%u\n",
 			(unsigned)c.rx_pi_headers, (unsigned)c.rx_alias_complete, (unsigned)c.tx_alias_lcs);
+		dl_text(t, "call.rx_gps=%u\ncall.tx_gps_lcs=%u\n", (unsigned)c.rx_gps, (unsigned)c.tx_gps_lcs);
 		dl_text(t, "voice.rx_in=%u\nvoice.rx_frames=%u\nvoice.rx_concealed=%u\nvoice.rx_silence=%u\n",
 			(unsigned)a.rx_in, (unsigned)a.rx_frames, (unsigned)a.rx_concealed, (unsigned)a.rx_silence);
 		dl_text(t, "voice.rx_calls=%u\nvoice.rx_queue_max=%u\nvoice.rx_bad=%u\nvoice.rx_lost=%u\n",

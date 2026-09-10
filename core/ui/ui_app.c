@@ -251,6 +251,16 @@ void ui_recent_target(const ui_recent_t *r, ui_target_t *t)
 }
 
 #if CONFIG_DMR
+// The caller's position (ETSI GPS Info) stays with its Recent entry; a later call without one keeps the last
+static void recent_gps(ui_recent_t *r, const radio_dmr_call_t *c)
+{
+	if (!c->gps_valid || !c->gps_range)
+		return;
+	r->gps_range = true;
+	r->gps_dist_m = c->gps_dist_m;
+	r->gps_bearing = c->gps_bearing;
+}
+
 static void recent_update(const radio_view_t *v)
 {
 	const radio_dmr_view_t *d = &v->dmr;
@@ -266,9 +276,11 @@ static void recent_update(const radio_view_t *v)
 			r.to_us = d->last.to_us;
 			r.ms = d->last_ms;
 			strcpy(r.name, d->last.src_name);
+			recent_gps(&r, &d->last);
 			recent_add(&r);
 		} else {
 			recent[0].ms = d->last_ms;
+			recent_gps(&recent[0], &d->last);
 		}
 	}
 	bool tx = v->state == RS_TX && d->active;

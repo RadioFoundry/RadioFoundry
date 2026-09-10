@@ -589,6 +589,42 @@ static void test_stations_digi_igate(void)
 }
 #endif
 
+// The position DMR GPS Info takes (aprs_position_now): the fixed position, the setting, ambiguity; and DMR callers'
+// positions in the station list
+static void test_dmr_position(void)
+{
+	aprs_cfg_t c;
+	int32_t lat, lon;
+	uint32_t err;
+	bool send = true;
+
+	reset();
+	CHECK(!aprs_position_now(&lat, &lon, &err, &send) && !send);	// no position, setting off by default
+	configure(0, false);
+	CHECK(aprs_position_now(&lat, &lon, &err, &send) && lat == 490583333 && lon == -720291667 && err == 200 &&
+	      !send);
+	aprs_get_cfg(&c);
+	c.dmr_gps = true;
+	c.ambiguity = 2;	// whole minutes: the middle of the minute, about 1.9 km
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_position_now(&lat, &lon, &err, &send) && send && err == 1852);
+	CHECK(lat == 490583334 && lon == -720250000);	// 49 03.5 N (already mid-minute), 072 01.5 W
+	aprs_get_cfg(&c);
+	CHECK(c.dmr_gps);	// saved and read back
+#if CONFIG_APRS_RX
+	uint8_t n0 = aprs_station_count();
+	aprs_dmr_heard(3112345, "kd9xyz Bob", 337490000, -843880000, now);
+	aprs_dmr_heard(3112345, "kd9xyz Bob", 337490000, -843880000, now + 1000);	// the same: not counted again
+	aprs_dmr_heard(3100001, "", 337000000, -843000000, now);
+	aprs_dmr_heard(3100002, "Not a call", 337000000, -843000000, now);
+	aprs_station_t st;
+	CHECK(aprs_station_count() == n0 + 3);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "3100002") == 0 && st.has_pos);
+	CHECK(aprs_station(1, &st) && strcmp(st.call, "3100001") == 0);
+	CHECK(aprs_station(2, &st) && strcmp(st.call, "KD9XYZ") == 0 && st.count == 1 && st.lat == 337490000);
+#endif
+}
+
 int main(void)
 {
 	test_defaults();
@@ -600,6 +636,7 @@ int main(void)
 	test_manual_and_ptt_trigger();
 	test_host_kiss_nmea();
 	test_messages();
+	test_dmr_position();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();
 #endif

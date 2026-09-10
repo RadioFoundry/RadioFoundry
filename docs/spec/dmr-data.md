@@ -159,6 +159,9 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
   later on its behalf.
 - `lrrpReply` off: requests are counted, not answered.
 - `dmrDataServiceGetPosition` is weak: a platform with a GPS overrides it and sets `hasGps`.
+- Positions elsewhere: the ETSI GPS Info LC in voice calls is in `dmr-voice.md` 3.1, positions to an APRS gateway ID
+  (LRRP triggered report or UDT location) in `aprs.md` 8. Neither feeds the LRRP answers yet (open: answer with the
+  APRS position when there is no GPS).
 - Not ported: the UDT location reports and the GPS power management (`dmrDataServiceLocationNeededInMs` exists for
   it).
 

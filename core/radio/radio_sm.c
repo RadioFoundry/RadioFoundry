@@ -850,6 +850,37 @@ static bool dmr_tx_phase(uint8_t phase)
 		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING || phase == DMR_CALL_PHASE_TX_DATA;
 }
 
+#if CONFIG_DMR_GPS
+// Our position for DMR GPS Info (docs/spec/dmr-voice.md): the APRS position source (GPS, host, fixed). send: the
+// "send position in DMR calls" setting
+static bool own_position(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *send)
+{
+#if CONFIG_APRS
+	return aprs_position_now(lat, lon, err_m, send);
+#else
+	(void)lat;
+	(void)lon;
+	(void)err_m;
+	*send = false;
+	return false;	// no position source without APRS
+#endif
+}
+
+// At PTT: our GPS Info for this transmission, or none
+static void dmr_gps_tx(void)
+{
+	int32_t lat, lon;
+	uint32_t err_m;
+	bool send;
+	if (own_position(&lat, &lon, &err_m, &send) && send) {
+		dmr_gps_t g = { .err = dmr_gps_err_code(err_m), .lat = lat, .lon = lon };
+		dmr_call_set_tx_gps(&g);
+	} else {
+		dmr_call_set_tx_gps(NULL);
+	}
+}
+#endif
+
 static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *out)
 {
 	out->src = c->src;
@@ -861,6 +892,23 @@ static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *o
 	out->pi_header = c->pi_header;
 	find_name(sm, c->src, false, out->src_name);
 	find_name(sm, c->dst, c->group, out->dst_name);
+	out->gps_valid = false;
+	out->gps_range = false;
+#if CONFIG_DMR_GPS
+	if (c->gps_valid) {
+		int32_t lat, lon;
+		uint32_t err_m;
+		bool send;
+		out->gps_valid = true;
+		out->gps_err = c->gps.err;
+		out->gps_lat = c->gps.lat;
+		out->gps_lon = c->gps.lon;
+		if (own_position(&lat, &lon, &err_m, &send)) {
+			out->gps_range = true;
+			dmr_gps_range(lat, lon, c->gps.lat, c->gps.lon, &out->gps_dist_m, &out->gps_bearing);
+		}
+	}
+#endif
 }
 
 // The stack's view into radio_view_t.dmr
@@ -943,6 +991,12 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		sm->view.tx_deny = TXDENY_NONE;
 		changed(sm);
 	}
+#if CONFIG_DMR_GPS && CONFIG_APRS_RX
+	// A caller's position (ETSI GPS Info) into the APRS station list, once per change of the call view
+	if (cv->serial != sm->dmr_serial && cv->phase <= DMR_CALL_PHASE_RX_BUSY && cv->caller.gps_valid) {
+		aprs_dmr_heard(cv->caller.src, cv->caller.alias, cv->caller.gps.lat, cv->caller.gps.lon, now_ms);
+	}
+#endif
 	dmr_publish(sm);
 	if (sm->view.state != RS_TX && sm->view.state != RS_TX_DENIED) {
 		bool rx = cv->state == DMR_CALL_STATE_RX;
@@ -1091,6 +1145,9 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;
 	changed(sm);
+#if CONFIG_DMR_GPS
+	dmr_gps_tx();
+#endif
 	dmr_call_ptt(true);
 	dmr_call_poll(now_ms);
 	dmr_follow(sm, now_ms);

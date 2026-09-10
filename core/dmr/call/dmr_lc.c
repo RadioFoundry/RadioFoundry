@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DMR voice link control: full LC, RS(12,9), embedded LC, CRC-CCITT, talker alias (see dmr_lc.h)
+// DMR voice link control: full LC, RS(12,9), embedded LC, CRC-CCITT, talker alias, GPS Info (see dmr_lc.h)
 #include <string.h>
 #include "dmr/call/dmr_lc.h"
 #include "dmr/fec/dmrFec.h"
@@ -492,4 +492,149 @@ int dmr_ta_encode(const char *text, uint8_t format, uint8_t lcs[DMR_TA_LC_MAX][D
 			bit_put(&lcs[b][2], i, bit_get(stream, TA_HEADER_BITS + (b - 1) * TA_BLOCK_BITS + i));
 	}
 	return blocks + 1;
+}
+
+// --- GPS Info ---
+
+#define GPS_LON_BITS	25
+#define GPS_LAT_BITS	24
+
+// e7 degrees to a field of bits bits covering span_e7 (two's complement, rounded half away from zero, clamped)
+static int32_t gps_to_field(int32_t e7, int64_t span_e7, int bits)
+{
+	int64_t num = (int64_t)e7 * ((int64_t)1 << bits);
+	int64_t v = num >= 0 ? (num + span_e7 / 2) / span_e7 : -((-num + span_e7 / 2) / span_e7);
+	int64_t max = ((int64_t)1 << (bits - 1)) - 1;
+
+	if (v > max)
+		v = max;
+	if (v < -max - 1)
+		v = -max - 1;
+	return (int32_t)v;
+}
+
+static int32_t gps_from_field(uint32_t raw, int64_t span_e7, int bits)
+{
+	int64_t v = (int64_t)(raw & ((1u << bits) - 1u));
+
+	if (v & ((int64_t)1 << (bits - 1)))
+		v -= (int64_t)1 << bits;
+	int64_t num = v * span_e7;
+	int64_t half = (int64_t)1 << (bits - 1);
+
+	return (int32_t)(num >= 0 ? (num + half) >> bits : -((-num + half) >> bits));
+}
+
+void dmr_gps_encode(const dmr_gps_t *g, uint8_t lc[DMR_LC_BYTES])
+{
+	uint32_t lon = (uint32_t)gps_to_field(g->lon, 3600000000LL, GPS_LON_BITS) & 0x1FFFFFFu;
+	uint32_t lat = (uint32_t)gps_to_field(g->lat, 1800000000LL, GPS_LAT_BITS) & 0xFFFFFFu;
+
+	lc[0] = DMR_FLCO_GPS;
+	lc[1] = 0;
+	lc[2] = (uint8_t)(((g->err & 7u) << 1) | (lon >> 24));
+	lc[3] = (uint8_t)(lon >> 16);
+	lc[4] = (uint8_t)(lon >> 8);
+	lc[5] = (uint8_t)lon;
+	lc[6] = (uint8_t)(lat >> 16);
+	lc[7] = (uint8_t)(lat >> 8);
+	lc[8] = (uint8_t)lat;
+}
+
+bool dmr_gps_decode(const uint8_t lc[DMR_LC_BYTES], dmr_gps_t *g)
+{
+	if ((lc[0] & 0x3F) != DMR_FLCO_GPS || lc[1] != 0)
+		return false;
+	uint32_t lon = ((uint32_t)(lc[2] & 1u) << 24) | ((uint32_t)lc[3] << 16) | ((uint32_t)lc[4] << 8) | lc[5];
+	uint32_t lat = ((uint32_t)lc[6] << 16) | ((uint32_t)lc[7] << 8) | lc[8];
+
+	if (lon == 0 && lat == 0)
+		return false;
+	g->err = (lc[2] >> 1) & 7u;
+	g->lon = gps_from_field(lon, 3600000000LL, GPS_LON_BITS);
+	g->lat = gps_from_field(lat, 1800000000LL, GPS_LAT_BITS);
+	return true;
+}
+
+uint8_t dmr_gps_err_code(uint32_t meters)
+{
+	uint32_t limit = 2;
+
+	if (meters == 0)
+		return DMR_GPS_ERR_UNKNOWN;
+	for (uint8_t code = 0; code < DMR_GPS_ERR_MORE; code++, limit *= 10)
+		if (meters < limit || (code == 5 && meters <= limit))
+			return code;
+	return DMR_GPS_ERR_MORE;
+}
+
+uint32_t dmr_gps_err_m(uint8_t code)
+{
+	static const uint32_t m[] = { 2, 20, 200, 2000, 20000, 200000 };
+
+	return code < 6 ? m[code] : 0;
+}
+
+// cos(x) for |x| <= pi/2 (the latitude), a 10th order Taylor polynomial: error under 1e-6
+static float gps_cos(float x)
+{
+	float x2 = x * x;
+
+	return 1.0f - x2 / 2.0f * (1.0f - x2 / 12.0f * (1.0f - x2 / 30.0f * (1.0f - x2 / 56.0f * (1.0f - x2 / 90.0f))));
+}
+
+static float gps_sqrt(float v)
+{
+	if (v <= 0.0f)
+		return 0.0f;
+	float r = v > 1.0f ? v / 2.0f : 1.0f;
+
+	for (int i = 0; i < 30; i++) {
+		float n = 0.5f * (r + v / r);
+
+		if (n == r)
+			break;
+		r = n;
+	}
+	return r;
+}
+
+// atan2 in degrees 0-359 for a compass bearing (x east, y north): an octant reduction and a 2nd order fit (error
+// under 0.3 degree)
+static uint16_t gps_bearing(float x, float y)
+{
+	float ax = x < 0.0f ? -x : x, ay = y < 0.0f ? -y : y;
+
+	if (ax == 0.0f && ay == 0.0f)
+		return 0;
+	bool swap = ax > ay;
+	float t = swap ? ay / ax : ax / ay;	// 0..1
+	float a = t * (45.0f + 15.64f * (1.0f - t));	// atan(t) ~ t (pi / 4 + 0.273 (1 - t)) rad, in degrees
+	if (swap)
+		a = 90.0f - a;
+	if (y < 0.0f)
+		a = 180.0f - a;
+	if (x < 0.0f)
+		a = 360.0f - a;
+	int d = (int)(a + 0.5f);
+
+	return (uint16_t)(d >= 360 ? d - 360 : d);
+}
+
+void dmr_gps_range(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2, uint32_t *meters, uint16_t *bearing)
+{
+	const float rad = 3.14159265f / 180.0f / 1e7f;
+	int64_t dlon = (int64_t)lon2 - lon1;
+
+	if (dlon > 1800000000LL)
+		dlon -= 3600000000LL;
+	if (dlon < -1800000000LL)
+		dlon += 3600000000LL;
+	float mid = (float)(((int64_t)lat1 + lat2) / 2) * rad;
+	float x = (float)dlon * rad * gps_cos(mid);	// radians of arc, east
+	float y = (float)((int64_t)lat2 - lat1) * rad;	// north
+	float d = gps_sqrt(x * x + y * y) * 6371008.8f;
+
+	*meters = d > 4.0e9f ? 4000000000u : (uint32_t)(d + 0.5f);
+	*bearing = gps_bearing(x, y);
 }

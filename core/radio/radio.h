@@ -98,6 +98,13 @@ typedef struct {
 	bool pi_header;		// a PI header was heard (an MI-based scheme: we can't decrypt it)
 	char src_name[CODEPLUG_NAME_LEN + 1];	// codeplug contact, else the DMR ID database's text cut short, "" if unknown
 	char dst_name[CODEPLUG_NAME_LEN + 1];	// talkgroup name, "" if unknown
+	// The caller's position from an ETSI GPS Info LC (CONFIG_DMR_GPS, docs/spec/dmr-voice.md)
+	bool gps_valid;
+	uint8_t gps_err;	// position error code: 0 < 2 m, 1 < 20 m ... 5 <= 200 km, 6 more, 7 unknown
+	int32_t gps_lat, gps_lon;	// 1e-7 degree
+	bool gps_range;		// our own position is known: distance and bearing below are valid
+	uint32_t gps_dist_m;
+	uint16_t gps_bearing;	// degrees from north, from us to the caller
 } radio_dmr_call_t;
 
 typedef struct {

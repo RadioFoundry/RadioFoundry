@@ -73,6 +73,31 @@ carries one alias LC instead of the voice LC (LC, header, LC, block 1, LC, heade
 voice LC within two superframes. The modem takes the new embedded LC at the next burst A it sets up; the stack hands
 it over before queueing that burst A.
 
+### 3.1 GPS Info
+
+`CONFIG_DMR_GPS` (= DMR). The GPS Info LC (TS 102 361-2 7.1.1, FLCO 8, FID 0) rides in the embedded LC like a talker
+alias block. After the FLCO and FID octets: 4 reserved bits, the position error (3 bits: below 2 m, 20 m, 200 m,
+2 km, 20 km, 200 km, more, 7 unknown), the longitude (25 bits, two's complement, 360 / 2^25 degree steps, east
+positive) and the latitude (24 bits, two's complement, 180 / 2^24 degree steps, north positive). One step is about
+1.2 m. `dmr_lc.c` (`dmr_gps_encode`, `dmr_gps_decode`) packs and unpacks it; a manufacturer FID or 0, 0 (no fix) is
+not a position.
+
+Receive: `dmr_call` decodes every GPS Info LC on the call into `dmr_caller_t.gps` / `gps_valid` (counter `rx_gps`);
+a new talker clears it, and `last_heard` keeps it after the call. The radio core adds the distance and bearing from
+our own position (the APRS position source, `aprs.md` 7) in `radio_dmr_call_t`, the receive screen shows "12.3 km NE"
+(or the coordinates when we have no position of our own), Recent keeps the distance with the entry, and in
+`CONFIG_APRS_RX` builds the caller goes into the APRS station list (named by its alias's callsign, else its DMR ID).
+
+Transmit: Tools > APRS > "Position in DMR calls" (radio-wide, off by default, `aprs_cfg_t.dmr_gps`, P7). At PTT the
+radio core takes the APRS position in use (GPS on boards with one, the host's NMEA, else the fixed position;
+position ambiguity applied) and hands it to the stack (`dmr_call_set_tx_gps`); no position, no GPS Info. The GPS Info
+LC is one more entry at the end of the talker alias rotation in the odd superframes: LC, header, LC, block 1, LC,
+block 2, LC, GPS, ... with an alias, or LC, GPS, LC, GPS without (counter `tx_gps_lcs`). The position error says 20 m
+for GPS and host fixes, 200 m for a typed position, or the ambiguity's blur. Without `CONFIG_APRS` there is no
+position source, so nothing is sent (receive still works).
+
+The hotspot already passes FLCO 4-8 embedded LCs through to the host (`hotspot.c`).
+
 ## 4. Late entry
 
 A call heard without its header is acquired from the embedded LC once two consecutive voice bursts were seen (a lone
@@ -105,8 +130,11 @@ privacy is recognized from the service options and PI headers only.
 
 Debug link (`debuglink.md`): the `dmr` view's `target_manual`, `privacy`, `alias_tx`; the `dmr_call` view's
 `emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
-`rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`. HIL tests:
-`tests/hil/test_dmr_call_features.py`.
+`rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`, `rx_gps`,
+`tx_gps_lcs`; GPS Info as `call.gps_valid gps_lat gps_lon gps_err gps_dist_m gps_bearing` (and `last.`). HIL tests:
+`tests/hil/test_dmr_call_features.py` (`test_gps_info`: the bench sends a call with a GPS block, `tools/bench/
+bench_tx.py voice --gps LAT,LON[,ERR]`), `tests/hil/test_dmr_tx.py` (`test_dmr_gps_tx`: our GPS Info decoded by the
+bench modem's listener).
 
 ## 7. Open points
 
@@ -118,4 +146,5 @@ Debug link (`debuglink.md`): the `dmr` view's `target_manual`, `privacy`, `alias
 - DMR ID database plain format: the 4-byte BCD ID is read as a little-endian word (the spec doesn't say).
 - A codeplug TOT of 0 means "off" to the legacy firmware; here it falls back to the radio's TOT.
 - Emergency alarm and emergency call TX are in `dmr-emergency.md` (host-tested, not on air yet). No enhanced
-  privacy, no APRS / GPS talker alias TX.
+  privacy. GPS Info is host-tested (`dmrCallTest`), not on air yet. Not done: GPS Info in the hotspot's own
+  transmissions (it relays the host's), a separate Settings > Location toggle for it (it lives on the APRS page).

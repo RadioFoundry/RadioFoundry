@@ -12,8 +12,8 @@ radiodesk-rfgw@<bench host>, or take ROAM1 out of its config); tools/bench/dmr_b
 
     bench_tx.py [--freq 461.6875] [--cc 2] [--power 255] voice [--src ID] [--dst ID] [--private] [--superframes N]
               [--headers N] [--terminators N] [--late K] [--calls N] [--gap-ms MS] [--src2 ID]
-              [--family ms|bs|ts1|ts2] [--ambe FILE] [--talker-alias TEXT] [--pi] [--service-options HEX]
-              [--emergency] [--burst-cc CC]
+              [--family ms|bs|ts1|ts2] [--ambe FILE] [--talker-alias TEXT] [--gps LAT,LON[,ERR]] [--pi]
+              [--service-options HEX] [--emergency] [--burst-cc CC]
     bench_tx.py ... csbk  [--src ID] [--dst ID] [--count N] [--opcode HEX [--fid HEX] [--octet3 HEX]] [--family ...]
                                             (preamble CSBK train, then optionally one CSBK, e.g. 1F call alert, or
                                             24 --fid 10 --octet3 80 radio check request)
@@ -35,6 +35,8 @@ voice:
   --ambe FILE        voice content: a file of 9-byte AMBE+2 channel frames (FEC applied, as RadioDesk's recorder
                      writes them, *.ambe), or a DSD .amb file is NOT accepted (it has no FEC). Default: AMBE silence
   --talker-alias T   send talker alias (ISO-8, up to 27 characters) in the embedded LC of odd superframes
+  --gps LAT,LON[,E]  send an ETSI GPS Info LC (FLCO 8, TS 102 361-2 7.1.1) in the odd superframes, after the talker
+                     alias LCs when both are given; degrees (north / east positive), E the position error code 0-7
   --pi               set the EMB PI bit on voice bursts B-F (a privacy-protected call to a radio without the key)
   --service-options  LC service options byte (hex): 0x80 emergency, 0x40 privacy, 0x08 broadcast, 0x04 OVCM
   --burst-cc CC      color code written into the bursts (default --cc): a wrong-CC test with the bench modem on --cc
@@ -42,8 +44,8 @@ voice:
 listen: logs what the bench modem hears (MS-synced DMO bursts only: the MMDVM_HS simplex receiver does not search for BS or
 TDMA direct-mode sync). --json prints one line per burst with data type / voice index, the 12 info octets of CSBKs,
 data headers and rate 1/2 blocks ("info", hex), header and terminator LC,
-EMB color code and PI, the embedded LC assembled per superframe (call LC or talker alias) and, at the end, a
-summary per call. --ambe-out PREFIX writes each call's AMBE frames to PREFIX_<n>.ambe (9-byte FEC frames) and
+EMB color code and PI, the embedded LC assembled per superframe (call LC, talker alias or GPS Info) and, at the end, a
+summary per call (with "gps": the last GPS Info position heard). --ambe-out PREFIX writes each call's AMBE frames to PREFIX_<n>.ambe (9-byte FEC frames) and
 PREFIX_<n>.amb (DSD .amb: 49 parameter bits per frame, for any AMBE+2 decoder you have; none is in this project).
 """
 import argparse
@@ -92,6 +94,26 @@ def talker_alias_lcs(text: str):
     return out
 
 
+def gps_lc(lat: float, lon: float, err: int = 1) -> bytes:
+    """ETSI GPS Info LC: FLCO 8, FID 0, reserved 4 bits, position error 3 bits, longitude 25 bits (360 / 2^25 degree
+    steps), latitude 24 bits (180 / 2^24), both two's complement."""
+    lo = max(-(1 << 24), min((1 << 24) - 1, round(lon * (1 << 25) / 360.0))) & 0x1FFFFFF
+    la = max(-(1 << 23), min((1 << 23) - 1, round(lat * (1 << 24) / 180.0))) & 0xFFFFFF
+    return bytes([8, 0, ((err & 7) << 1) | (lo >> 24)]) + (lo & 0xFFFFFF).to_bytes(3, "big") + la.to_bytes(3, "big")
+
+
+def gps_decode(lc9: bytes):
+    """(lat, lon, err) of a GPS Info LC, None for anything else."""
+    lc9 = bytes(lc9)
+    if lc9[0] & 0x3F != 8 or lc9[1] != 0:
+        return None
+    lo = ((lc9[2] & 1) << 24) | int.from_bytes(lc9[3:6], "big")
+    la = int.from_bytes(lc9[6:9], "big")
+    lo -= (1 << 25) if lo & (1 << 24) else 0
+    la -= (1 << 24) if la & (1 << 23) else 0
+    return round(la * 180.0 / (1 << 24), 6), round(lo * 360.0 / (1 << 25), 6), (lc9[2] >> 1) & 7
+
+
 def read_ambe(path: str):
     raw = open(path, "rb").read()
     if raw[:4] == b".amb":
@@ -109,12 +131,15 @@ def voice_call(args, src: int):
     superframes = max(1, -(-len(frames) // 18))
     frames += [sim.AMBE_SILENCE] * (18 * superframes - len(frames))
     ta = talker_alias_lcs(args.talker_alias) if args.talker_alias else []
+    if args.gps:
+        g = [float(x) for x in args.gps.split(",")]
+        ta.append(gps_lc(g[0], g[1], int(g[2]) if len(g) > 2 else 1))
     items = []
     if args.late is None:
         items.append((B.HEADER, L2.lc_burst(lc, pdu.DT_VOICE_LC_HEADER, cc, L2.data_sync(fam))))
     k = 0
     for sf in range(superframes):
-        # Embedded LC: the call's in even superframes, a talker alias LC in odd ones (in turn)
+        # Embedded LC: the call's in even superframes, a talker alias (or GPS Info) LC in odd ones (in turn)
         emb_lc = lc if (not ta or sf % 2 == 0) else ta[(sf // 2) % len(ta)]
         emb = fec.embedded_lc_encode(emb_lc)
         for n in range(6):
@@ -295,7 +320,7 @@ class Listener:
         if self.cur is None or self.cur.get("ended"):
             self.cur = {"src": src, "dst": dst, "flco": flco, "start": how, "t0": round(time.time(), 3),
                         "headers": 0, "voice": 0, "terminators": 0, "ended": None, "emb_lc": 0, "pi": 0,
-                        "talker_alias": None, "ta": {}, "ambe": [], "cc": set(), "after_end": 0}
+                        "talker_alias": None, "gps": None, "ta": {}, "ambe": [], "cc": set(), "after_end": 0}
             self.calls.append(self.cur)
         return self.cur
 
@@ -339,6 +364,11 @@ class Listener:
                     if lc9 is not None:
                         lc = pdu.parse_full_lc(lc9)
                         rec["emb_lc"] = {"flco": lc.flco, "fid": lc.fid, "src": lc.src_id, "dst": lc.dst_id}
+                        g = gps_decode(lc9)
+                        if g is not None:
+                            rec["emb_lc"]["gps"] = g
+                            if self.cur is not None:
+                                self.cur["gps"] = g
                         self._embedded(lc)
             else:
                 self.frags = {}
@@ -437,6 +467,7 @@ def main() -> None:
     v.add_argument("--src2", type=int, default=9990302)
     v.add_argument("--ambe", default=None)
     v.add_argument("--talker-alias", default=None)
+    v.add_argument("--gps", default=None, help="LAT,LON[,ERR]: an ETSI GPS Info LC in the odd superframes")
     v.add_argument("--pi", action="store_true")
     v.add_argument("--service-options", type=lambda s: int(s, 16), default=0)
     v.add_argument("--emergency", action="store_true")

@@ -66,6 +66,18 @@ static const char features[] = "features="
 #if CONFIG_DMR_TALKER_ALIAS
 	"DMR_TALKER_ALIAS,"
 #endif
+#if CONFIG_DMR_GPS
+	"DMR_GPS,"
+#endif
+#if CONFIG_APRS
+	"APRS,"
+#endif
+#if CONFIG_APRS_RX
+	"APRS_RX,"
+#endif
+#if CONFIG_APRS_IGATE
+	"APRS_IGATE,"
+#endif
 #if CONFIG_DMR_DATA_CORE
 	"DMR_DATA_CORE,"
 #endif

@@ -19,6 +19,9 @@ CONFIG_DMR ?= y
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
 # talker alias decode and TX of our radio name (needs DMR)
 CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
+# ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the APRS
+# position source when the radio-wide setting is on (needs DMR)
+CONFIG_DMR_GPS ?= $(CONFIG_DMR)
 # DMR text messages (SMS; needs DMR; not ported yet)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
 # ARS registration with a dispatcher (needs DMR; not ported yet)
@@ -83,7 +86,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 # APRS iGate rules, RF <-> APRS-IS through the host helper tools/aprs_gate.py (needs APRS_RX and HOSTLINK)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE APRS APRS_RX APRS_IGATE
 
@@ -94,7 +97,7 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
 ifneq ($(call feature_on,HOTSPOT),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)

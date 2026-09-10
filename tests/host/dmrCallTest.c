@@ -1461,6 +1461,146 @@ static void test_basic_privacy(void)
 	}
 }
 
+
+// GPS Info LC (TS 102 361-2 7.1.1, FLCO 8): vectors built by hand from the field layout
+static void test_gps_lc(void)
+{
+	// 45 N, 90 W, error < 20 m: longitude -90 * 2^25 / 360 = -0x800000 (25-bit 0x1800000), latitude 0x400000
+	static const uint8_t v1[9] = { 0x08, 0x00, 0x03, 0x80, 0x00, 0x00, 0x40, 0x00, 0x00 };
+	// 33.8688 S, 151.2093 E, error < 2 km: 0x0D70DA0 and 0xCFD4BF
+	static const uint8_t v2[9] = { 0x08, 0x00, 0x06, 0xD7, 0x0D, 0xA0, 0xCF, 0xD4, 0xBF };
+	uint8_t lc[9];
+	dmr_gps_t g = { .err = 1, .lat = 450000000, .lon = -900000000 }, out;
+
+	dmr_gps_encode(&g, lc);
+	CHECK(memcmp(lc, v1, 9) == 0);
+	CHECK(dmr_gps_decode(v1, &out) && out.err == 1 && out.lat == 450000000 && out.lon == -900000000);
+	g = (dmr_gps_t){ .err = 3, .lat = -338688000, .lon = 1512093000 };
+	dmr_gps_encode(&g, lc);
+	CHECK(memcmp(lc, v2, 9) == 0);
+	CHECK(dmr_gps_decode(v2, &out) && out.err == 3);
+	CHECK(out.lat - g.lat <= 54 && g.lat - out.lat <= 54 && out.lon - g.lon <= 54 && g.lon - out.lon <= 54);
+	// The field ends: +90 / +180 clamp to the largest step, -90 / -180 are exact
+	g = (dmr_gps_t){ .err = 7, .lat = 900000000, .lon = 1800000000 };
+	dmr_gps_encode(&g, lc);
+	CHECK(lc[2] == 0x0E && lc[3] == 0xFF && lc[5] == 0xFF && lc[6] == 0x7F && lc[8] == 0xFF);
+	g = (dmr_gps_t){ .err = 0, .lat = -900000000, .lon = -1800000000 };
+	dmr_gps_encode(&g, lc);
+	CHECK(lc[2] == 0x01 && lc[3] == 0x00 && lc[6] == 0x80 && lc[7] == 0x00);
+	CHECK(dmr_gps_decode(lc, &out) && out.lat == -900000000 && out.lon == -1800000000);
+	// Not GPS Info: another FLCO, a manufacturer's FID, or 0, 0 (no fix)
+	memcpy(lc, v1, 9);
+	lc[0] = DMR_FLCO_TA_HEADER;
+	CHECK(!dmr_gps_decode(lc, &out));
+	memcpy(lc, v1, 9);
+	lc[1] = 0x10;
+	CHECK(!dmr_gps_decode(lc, &out));
+	static const uint8_t zero[9] = { 0x08, 0x00, 0x0E, 0, 0, 0, 0, 0, 0 };
+	CHECK(!dmr_gps_decode(zero, &out));
+	// The protect flag doesn't matter
+	memcpy(lc, v1, 9);
+	lc[0] |= 0x80;
+	CHECK(dmr_gps_decode(lc, &out));
+	// Error codes
+	CHECK(dmr_gps_err_code(0) == 7 && dmr_gps_err_code(1) == 0 && dmr_gps_err_code(2) == 1 &&
+	      dmr_gps_err_code(19) == 1 && dmr_gps_err_code(20) == 2 && dmr_gps_err_code(1999) == 3 &&
+	      dmr_gps_err_code(200000) == 5 && dmr_gps_err_code(200001) == 6);
+	CHECK(dmr_gps_err_m(1) == 20 && dmr_gps_err_m(5) == 200000 && dmr_gps_err_m(6) == 0 && dmr_gps_err_m(7) == 0);
+	// Range and bearing: one degree east on the equator (111.2 km, 90), 0.1 degree north at 45 N (11.12 km, 0),
+	// south-west, and across the date line
+	uint32_t m;
+	uint16_t b;
+	dmr_gps_range(0, 0, 0, 10000000, &m, &b);
+	CHECK(m > 111000 && m < 111400 && b == 90);
+	dmr_gps_range(450000000, -900000000, 451000000, -900000000, &m, &b);
+	CHECK(m > 11100 && m < 11140 && b == 0);
+	dmr_gps_range(337490000, -843880000, 336490000, -844880000, &m, &b);	// 0.1 S, 0.1 W at 33.7 N
+	CHECK(m > 14390 && m < 14540 && b >= 219 && b <= 221);	// 14.46 km, 219.8
+	dmr_gps_range(0, 1795000000, 0, -1795000000, &m, &b);
+	CHECK(m > 111000 && m < 111400 && b == 90);
+	dmr_gps_range(100, 100, 100, 100, &m, &b);
+	CHECK(m == 0 && b == 0);
+}
+
+// GPS Info on the air: a caller's position is collected per call (and kept with the last heard), ours rides in the
+// alias rotation
+static void test_gps_call(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9], gps[9], ta[4][9], got[20][9];
+	unsigned frame = 1;
+	dmr_gps_t g = { .err = 1, .lat = 450000000, .lon = -900000000 };
+	dmr_call_stats_t st;
+
+	dmr_gps_encode(&g, gps);
+	setup(&c);
+	mk_lc(lc, 0, TG_TALK, 2345678);
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	CHECK(!V()->caller.gps_valid);
+	for (int i = 0; i < 6; i++) {
+		rx_voice((uint8_t)i, 1, 0, DMR_SYNC_MS, &frame, i == 5 ? gps : NULL, false);
+		run_ms(60);
+	}
+	CHECK(V()->caller.gps_valid && V()->caller.gps.lat == g.lat && V()->caller.gps.lon == g.lon &&
+	      V()->caller.gps.err == 1);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_gps == 1);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, true);	// terminator
+	run_ms(20);
+	CHECK(V()->last_heard.gps_valid && V()->last_heard.gps.lat == g.lat);
+	// A new talker starts without a position
+	mk_lc(lc, 0, TG_TALK, 3456789);
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	CHECK(V()->caller.src == 3456789 && !V()->caller.gps_valid);
+
+	// TX: GPS Info alone takes every other superframe
+	c = base_cfg();
+	setup(&c);
+	dmr_call_set_tx_gps(&g);
+	dmr_call_ptt(true);
+	run_ms(360 * 6);
+	dmr_call_ptt(false);
+	run_ms(1200);
+	mk_lc(lc, 0, TG_TALK, OWN_ID);
+	int sfs = air_superframe_lcs(got, 20);
+	CHECK(sfs >= 6);
+	for (int k = 0; k < sfs; k++)
+		CHECK(memcmp(got[k], (k & 1) ? gps : lc, 9) == 0);
+	dmr_call_get_stats(&st);
+	CHECK(st.tx_gps_lcs == (uint32_t)(sfs / 2) && st.tx_alias_lcs == 0);
+
+	// With a talker alias: header, block 1, block 2, GPS in the odd superframes
+	strcpy(c.tx_alias, "N0CALL Spencer");
+	c.tx_alias_format = DMR_TA_ISO8;
+	setup(&c);
+	dmr_call_set_tx_gps(&g);
+	int n = dmr_ta_encode(c.tx_alias, DMR_TA_ISO8, ta);
+	memcpy(ta[n], gps, 9);
+	dmr_call_ptt(true);
+	run_ms(360 * 10);
+	dmr_call_ptt(false);
+	run_ms(1200);
+	sfs = air_superframe_lcs(got, 20);
+	CHECK(sfs >= 10);
+	for (int k = 0; k < sfs; k++)
+		CHECK(memcmp(got[k], (k & 1) ? ta[(k / 2) % (n + 1)] : lc, 9) == 0);
+	dmr_call_get_stats(&st);
+	CHECK(st.tx_gps_lcs >= 1 && st.tx_alias_lcs >= 3);
+
+	// Cleared: the voice LC only
+	c = base_cfg();
+	setup(&c);
+	dmr_call_set_tx_gps(NULL);
+	dmr_call_ptt(true);
+	run_ms(360 * 3);
+	dmr_call_ptt(false);
+	run_ms(1200);
+	sfs = air_superframe_lcs(got, 20);
+	CHECK(sfs >= 3);
+	for (int k = 0; k < sfs; k++)
+		CHECK(memcmp(got[k], lc, 9) == 0);
+}
+
 int main(void)
 {
 	test_lc_pack();
@@ -1486,6 +1626,8 @@ int main(void)
 	test_pi_header_and_emergency();
 	test_private_calls();
 	test_basic_privacy();
+	test_gps_lc();
+	test_gps_call();
 	printf("# dmrCallTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

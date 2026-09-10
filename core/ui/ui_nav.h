@@ -105,6 +105,9 @@ typedef struct {
 	bool group, out, to_us;
 	uint32_t ms;
 	char name[CODEPLUG_NAME_LEN + 1];	// the other station's (or the talkgroup's, for calls we made) name
+	bool gps_range;		// the caller sent its position (ETSI GPS Info) and ours was known: how far, which way
+	uint16_t gps_bearing;
+	uint32_t gps_dist_m;
 } ui_recent_t;
 uint8_t ui_recent_count(void);
 const ui_recent_t *ui_recent_get(uint8_t i);

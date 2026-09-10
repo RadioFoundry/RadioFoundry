@@ -2,8 +2,8 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Tools > APRS (docs/spec/aprs.md 10): what APRS is doing (callsign, frequency, position, next beacon, or why nothing
 // can be sent) and the everyday choices, one row each: send now, automatic beacons, the frequency (region), the
-// interval, SmartBeaconing, the way out (radio / DMR / both), the position source, KISS on the host port, and the
-// stations heard (receive builds). The rest (symbol, path, comment, digital destination, iGate, digipeater) is set
+// interval, SmartBeaconing, the way out (radio / DMR / both), the position source, our position in DMR voice calls
+// (ETSI GPS Info, CONFIG_DMR_GPS), KISS on the host port, and the stations heard (receive builds). The rest (symbol, path, comment, digital destination, iGate, digipeater) is set
 // with qdmr, the debug link or tools/odr_debug.py (aprs.md 11).
 #include <string.h>
 #include "ui_nav.h"
@@ -20,7 +20,7 @@ WEAK bool ui_svc_aprs_send_now(void) { return false; }
 WEAK uint8_t ui_svc_aprs_station_count(void) { return 0; }
 WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)out; return false; }
 
-enum { AP_SEND, AP_AUTO, AP_FREQ, AP_INTERVAL, AP_SMART, AP_VIA, AP_POS, AP_KISS, AP_HEARD, AP_COUNT };
+enum { AP_SEND, AP_AUTO, AP_FREQ, AP_INTERVAL, AP_SMART, AP_VIA, AP_POS, AP_DMR_GPS, AP_KISS, AP_HEARD, AP_COUNT };
 
 static const uint16_t intervals[] = { 0, 60, 120, 300, 600, 1800 };
 static const char *const interval_names[] = { "Off", "1 min", "2 min", "5 min", "10 min", "30 min" };
@@ -39,17 +39,6 @@ static const char *why_text(uint8_t block)
 	case APRS_NO_AFSK: return "This radio can't send APRS tones; DMR positions still work.";
 	default: return NULL;
 	}
-}
-
-static void sb_deg(sbuf_t *b, int32_t e7)
-{
-	if (e7 < 0) {
-		sb_chr(b, '-');
-		e7 = -e7;
-	}
-	sb_u32(b, (uint32_t)e7 / 10000000u, 1);
-	sb_chr(b, '.');
-	sb_u32(b, (uint32_t)e7 % 10000000u / 1000u, 4);
 }
 
 static const char *aprs_body(void)
@@ -77,9 +66,9 @@ static const char *aprs_body(void)
 	if (v.pos_valid) {
 		sb_str(&b, pos_names[v.pos_src < 4 ? v.pos_src : 0]);
 		sb_chr(&b, ' ');
-		sb_deg(&b, v.lat);
+		sb_degrees(&b, v.lat);
 		sb_chr(&b, ' ');
-		sb_deg(&b, v.lon);
+		sb_degrees(&b, v.lon);
 	} else {
 		sb_str(&b, "No position");
 	}
@@ -109,7 +98,8 @@ static uint8_t interval_index(uint16_t s)
 static void aprs_item(uint16_t i, ui_item_t *it)
 {
 	static const char *const names[] = { "Send position now", "Automatic beacons", "Frequency", "Interval",
-					     "SmartBeaconing", "Send via", "Position", "KISS on USB", "Stations heard" };
+					     "SmartBeaconing", "Send via", "Position", "Position in DMR calls",
+					     "KISS on USB", "Stations heard" };
 	aprs_view_t v;
 	aprs_cfg_t c;
 	bool built = ui_svc_aprs_view(&v);
@@ -140,6 +130,13 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 	case AP_SMART: sb_str(&b, c.smart ? "On" : "Off"); break;
 	case AP_VIA: sb_str(&b, via_names[c.via < APRS_VIA_COUNT ? c.via : 0]); break;
 	case AP_POS: sb_str(&b, pos_names[c.pos_src < APRS_POS_COUNT ? c.pos_src : 0]); break;
+	case AP_DMR_GPS:
+		if (!CONFIG_DMR_GPS) {
+			it->flags |= UI_ITEM_DIM;
+		} else {
+			sb_str(&b, c.dmr_gps ? "On" : "Off");
+		}
+		break;
 	case AP_KISS: sb_str(&b, c.kiss ? "On" : "Off"); break;
 	case AP_HEARD:
 		if (!CONFIG_APRS_RX) {
@@ -184,6 +181,14 @@ static void aprs_select(uint16_t i, bool hold)
 	case AP_SMART: c.smart = !c.smart; break;
 	case AP_VIA: c.via = (uint8_t)((c.via + 1u) % APRS_VIA_COUNT); break;
 	case AP_POS: c.pos_src = (uint8_t)((c.pos_src + 1u) % APRS_POS_COUNT); break;
+	case AP_DMR_GPS:
+		if (!CONFIG_DMR_GPS) {
+			ui_toast("DMR position isn't in this build");
+			return;
+		}
+		c.dmr_gps = !c.dmr_gps;
+		ui_toast(c.dmr_gps ? "Position goes out in DMR calls" : "No position in DMR calls");
+		break;
 	case AP_KISS: c.kiss = !c.kiss; break;
 	case AP_HEARD:
 		if (!CONFIG_APRS_RX) {
@@ -199,7 +204,7 @@ static void aprs_select(uint16_t i, bool hold)
 }
 
 const ui_scr_def_t ui_aprs_screen = {
-	.name = "aprs", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "APRS", .hint = "1-9 pick  Back",
+	.name = "aprs", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "APRS", .hint = "0-9 pick  Back",
 	.count = aprs_count, .item = aprs_item, .select = aprs_select, .body = aprs_body,
 };
 

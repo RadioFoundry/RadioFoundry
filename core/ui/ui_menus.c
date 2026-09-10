@@ -622,6 +622,10 @@ static void recent_item(uint16_t i, ui_item_t *it)
 			sb_str(&vb, r->to_us ? "you" : "priv");
 		}
 		sb_chr(&vb, ' ');
+		if (r->gps_range) {	// the caller's position: how far
+			sb_u32(&vb, (r->gps_dist_m + 500u) / 1000u, 1);
+			sb_str(&vb, "km ");
+		}
 	}
 	char age[8];
 	ui_sb_age(age, sizeof age, ui_st.now_ms - r->ms);

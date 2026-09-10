@@ -69,6 +69,7 @@ typedef struct {
 	bool igate;		// RF -> APRS-IS
 	bool igate_tx;		// APRS-IS -> RF
 	uint8_t digi;		// aprs_digi_mode_t
+	bool dmr_gps;		// our position in DMR voice calls (ETSI GPS Info LC; Settings > DMR, CONFIG_DMR_GPS)
 } aprs_cfg_t;
 
 void aprs_cfg_default(aprs_cfg_t *c);
@@ -178,6 +179,9 @@ void aprs_rf_done(bool sent, bool busy, uint32_t now_ms);
 void aprs_rx_audio(const int16_t *s, size_t n, uint32_t now_ms);
 // A decoded AX.25 frame (without the FCS): from the demodulator, or the tests
 void aprs_rx_frame(const uint8_t *frame, size_t n, uint32_t now_ms);
+// A DMR caller's position (ETSI GPS Info) for the station list: named by its alias's callsign, else its DMR ID.
+// Any task. Not gated or sent anywhere: the list only
+void aprs_dmr_heard(uint32_t id, const char *alias, int32_t lat, int32_t lon, uint32_t now_ms);
 #endif
 
 // --- Any task ---
@@ -193,6 +197,9 @@ bool aprs_send_now(void);
 bool aprs_send_status(const char *text);
 // A message with acks and retries; false when one is still waiting or the text is unusable
 bool aprs_send_message(const char *to, const char *text);
+// The position in use now (GPS, host or fixed, as the beacons use it) for DMR: false when there is none. err_m is the
+// error estimate in meters (position ambiguity included), dmr_gps the "send position in DMR calls" setting
+bool aprs_position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps);
 // RAM-only override for bench tests (debug link): the callsign ("" = back to the settings / codeplug)
 void aprs_set_test_call(const char *call);
 #if CONFIG_APRS_RX

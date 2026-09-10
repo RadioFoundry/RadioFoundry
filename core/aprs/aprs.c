@@ -211,6 +211,7 @@ static void cfg_from_settings(const settings_t *s, aprs_cfg_t *c)
 	c->messaging = (f2 & SETTINGS_APRS2_MESSAGING) != 0;
 	c->dmr_udt = (f2 & SETTINGS_APRS2_DMR_UDT) != 0;
 	c->to_is = (f2 & SETTINGS_APRS2_TO_IS) != 0;
+	c->dmr_gps = (f2 & SETTINGS_APRS2_DMR_GPS) != 0;
 	c->region = s->aprs_region < APRS_REGION_COUNT ? s->aprs_region : APRS_REGION_NA;
 	c->ssid = s->aprs_ssid <= 15 ? s->aprs_ssid : APRS_SSID_DEFAULT;
 	c->freq_hz = s->aprs_freq_hz;
@@ -247,7 +248,8 @@ static void cfg_to_settings(const aprs_cfg_t *c, settings_t *s)
 				  (c->rx_on ? SETTINGS_APRS_RX : 0));
 	s->aprs_flags2 = (uint8_t)((c->igate ? SETTINGS_APRS2_IGATE : 0) | (c->igate_tx ? SETTINGS_APRS2_IGATE_TX : 0) |
 				   (c->messaging ? SETTINGS_APRS2_MESSAGING : 0) |
-				   (c->dmr_udt ? SETTINGS_APRS2_DMR_UDT : 0) | (c->to_is ? SETTINGS_APRS2_TO_IS : 0));
+				   (c->dmr_udt ? SETTINGS_APRS2_DMR_UDT : 0) | (c->to_is ? SETTINGS_APRS2_TO_IS : 0) |
+				   (c->dmr_gps ? SETTINGS_APRS2_DMR_GPS : 0));
 	s->aprs_region = c->region;
 	s->aprs_ssid = c->ssid;
 	s->aprs_freq_hz = c->freq_hz;
@@ -679,10 +681,9 @@ static bool heard_rf(const char *call, uint8_t ssid, uint32_t secs, void *ctx)
 	return heard(call, ssid, secs, false);
 }
 
-static void station_update(const ax25_frame_t *f, const aprs_parsed_t *p)
+// The station's entry, moved to the top (a new one at the top, the oldest dropped when full)
+static aprs_station_t *station_touch(const char *call)
 {
-	char call[AX25_CALL_LEN + 4];
-	addr_text(&f->src, call);
 	aprs_station_t *s = station_find(call);
 	if (s == NULL) {
 		if (a.nst < APRS_STATIONS) {
@@ -691,13 +692,21 @@ static void station_update(const ax25_frame_t *f, const aprs_parsed_t *p)
 		memmove(&a.st[1], &a.st[0], (size_t)(a.nst - 1u) * sizeof(aprs_station_t));
 		s = &a.st[0];
 		memset(s, 0, sizeof(*s));
-		memcpy(s->call, call, sizeof(call));
+		memcpy(s->call, call, strnlen(call, sizeof(s->call) - 1u));
 	} else if (s != &a.st[0]) {
 		aprs_station_t t = *s;	// most recent first
 		memmove(&a.st[1], &a.st[0], (size_t)(s - &a.st[0]) * sizeof(aprs_station_t));
 		a.st[0] = t;
 		s = &a.st[0];
 	}
+	return s;
+}
+
+static void station_update(const ax25_frame_t *f, const aprs_parsed_t *p)
+{
+	char call[AX25_CALL_LEN + 4];
+	addr_text(&f->src, call);
+	aprs_station_t *s = station_touch(call);
 	bool direct = true;
 	for (uint8_t i = 0; i < f->ndigi; i++) {
 		if (f->digi[i].h) {
@@ -722,6 +731,52 @@ static void station_update(const ax25_frame_t *f, const aprs_parsed_t *p)
 		memcpy(s->text, p->text, k);
 		s->text[k] = '\0';
 	}
+}
+
+void aprs_dmr_heard(uint32_t id, const char *alias, int32_t lat, int32_t lon, uint32_t now_ms)
+{
+	// The alias's first word when it is a callsign, else the DMR ID (AX.25 calls are 6 characters plus the SSID)
+	char call[AX25_CALL_LEN + 4];
+	size_t n = 0;
+	while (alias != NULL && alias[n] != '\0' && alias[n] != ' ' && n < AX25_CALL_LEN) {
+		call[n] = alias[n] >= 'a' && alias[n] <= 'z' ? (char)(alias[n] - 32) : alias[n];
+		n++;
+	}
+	call[n] = '\0';
+	if (n == 0 || (alias[n] != '\0' && alias[n] != ' ') || !aprs_callsign_ok(call)) {
+		uint32_t v = id % 100000000u;
+		char d[9];
+		uint8_t k = 0;
+		do {
+			d[k++] = (char)('0' + v % 10u);
+			v /= 10u;
+		} while (v != 0 && k < 8);
+		for (n = 0; n < k; n++) {
+			call[n] = d[k - 1u - n];
+		}
+		call[n] = '\0';
+	}
+	LOCK();
+	a.now = now_ms;
+	aprs_station_t *s = station_find(call);
+	bool same = s != NULL && s->has_pos && s->lat == lat && s->lon == lon && now_ms - s->heard_ms < 30000u;
+	if (!same) {
+		s = station_touch(call);
+		s->heard_ms = now_ms;
+		s->direct = true;
+		s->type = APRS_T_POSITION;
+		s->count++;
+		s->has_pos = true;
+		s->lat = lat;
+		s->lon = lon;
+		s->sym_table = '/';
+		s->sym_code = '[';
+		s->course = s->speed_kn = 0xFFFFu;
+		memcpy(s->text, "DMR", 4);
+		a.v.stations = a.nst;
+		changed();
+	}
+	UNLOCK();
 }
 
 static void message_in(const ax25_frame_t *f, const aprs_parsed_t *p)
@@ -863,6 +918,43 @@ void aprs_init(uint32_t now_ms)
 	aprs_beacon_init(&a.bc, &a.bcfg, now_ms);
 	a.block = rf_block();
 	UNLOCK();
+}
+
+// The middle of the ambiguity cell (grid in 1e-7 degree, within the whole degree) the position is in
+static int32_t blur(int32_t v, int32_t grid)
+{
+	int32_t m = v < 0 ? -v : v;
+	int32_t f = m % 10000000 / grid * grid + grid / 2;
+	m = m / 10000000 * 10000000 + (f < 10000000 ? f : 9999999);
+	return v < 0 ? -m : m;
+}
+
+bool aprs_position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps)
+{
+	// Position ambiguity (APRS101 ch. 8): the same blur for DMR. Grid in 1e-7 degree and the error it means
+	static const int32_t grid[] = { 1, 16667, 166667, 1666667, 10000000 };
+	static const uint32_t blur_m[] = { 0, 185, 1852, 18520, 111120 };
+	uint8_t src;
+	LOCK();
+	const fix_t *f = position(&src);
+	bool ok = f != NULL;
+	uint8_t amb = a.cfg.ambiguity <= 4 ? a.cfg.ambiguity : 0;
+	if (ok) {
+		*lat = f->lat;
+		*lon = f->lon;
+	}
+	*dmr_gps = a.cfg.dmr_gps;
+	UNLOCK();
+	if (!ok) {
+		return false;
+	}
+	*err_m = src == APRS_SRC_FIXED ? 200u : 20u;	// GPS / host fixes: tens of meters; a typed position: less sure
+	if (amb != 0) {
+		*lat = blur(*lat, grid[amb]);
+		*lon = blur(*lon, grid[amb]);
+		*err_m = blur_m[amb];
+	}
+	return true;
 }
 
 void aprs_reload(void)

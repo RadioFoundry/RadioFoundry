@@ -72,3 +72,41 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     print(f"captures on the bench: ~/{sdr_bench.dir}/{rdir}/")
     failed = [i for i in c.items if i["ok"] is False]
     assert not failed, "; ".join(f"{i['check']} ({i['detail']})" for i in failed)
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
+    """Our ETSI GPS Info (FLCO 8) in the alias superframes: a fixed APRS position and "position in DMR calls" set over
+    the debug link, a 4 s over, the bench modem's listener decodes the GPS Info LC (bench_tx.py listen: the call's
+    "gps"). The settings are put back afterwards."""
+    feats = radio.features()
+    if "DMR_GPS" not in feats or "APRS" not in feats:
+        pytest.skip("needs CONFIG_DMR_GPS and CONFIG_APRS (the position source)")
+    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    radio.go_home()
+    radio.find_channel(round(freq * 1e6), "dmr")
+    radio.lowest_power()
+    if int(radio.view(["dmr"])["dmr.own_id"]) == 0:
+        pytest.skip("the radio has no DMR ID (dmr.own_id=0)")
+    before = radio.view(["aprs_set"])
+    lat, lon = 33.7490, -84.3880
+    try:
+        radio.link.aprs_set("lat", lat)
+        radio.link.aprs_set("lon", lon)
+        radio.link.aprs_set("pos_src", 3)          # fixed
+        radio.link.aprs_set("dmr_gps", 1)
+        with sdr_bench.lease():
+            lis = sdr_bench.listen_start(freq, cc, seconds=4.0 + 6)
+            radio.ptt_for(4.0)
+            radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+            heard = sdr_bench.listen_result(lis)
+    finally:
+        radio.link.aprs_set("dmr_gps", 0)
+        radio.link.aprs_set("pos_src", int(before.get("set.aprs_pos_src", 0)))
+    calls = [r for r in heard if "call" in r]
+    print("bench heard:", calls)
+    assert len(calls) == 1 and calls[0].get("gps"), calls
+    glat, glon, err = calls[0]["gps"]
+    assert abs(glat - lat) < 2e-5 and abs(glon - lon) < 2e-5, calls[0]["gps"]
+    assert err == 3, err        # a typed position: 200 m estimate, error code 3 (< 2 km)

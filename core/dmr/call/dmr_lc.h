@@ -10,6 +10,8 @@
  *    first / continuation / continuation / last
  *  - CRC-CCITT (B.3.7) for the BS activation CSBK
  *  - talker alias (FLCO 4 header, FLCO 5-7 blocks) decoding (all four formats) and encoding (7-bit, ISO 8-bit)
+ *  - GPS Info (FLCO 8): position error, longitude, latitude, encoding and decoding, and the range / bearing between
+ *    two positions for the screens
  *
  * No board or modem knowledge: modems that build the embedded signalling themselves only need the 9 LC octets;
  * a software modem or a host test uses the fragment functions.
@@ -135,5 +137,34 @@ bool dmr_ta_push(dmr_ta_t *ta, const uint8_t lc[DMR_LC_BYTES]);
 // The talker alias LCs for text: header (FLCO 4) and as many blocks (FLCO 5-7) as the text needs, FID 0.
 // format DMR_TA_7BIT (up to 31 characters) or DMR_TA_ISO8 (anything else; up to 27). Returns the LC count, 0 for ""
 int dmr_ta_encode(const char *text, uint8_t format, uint8_t lcs[DMR_TA_LC_MAX][DMR_LC_BYTES]);
+
+// --- GPS Info LC (TS 102 361-2 7.1.1: FLCO 8; the Position Error, Longitude and Latitude elements of 7.2) ---
+//
+//   octet 0  PF, R, FLCO = 001000      octet 1  FID (0: the ETSI form)
+//   octet 2  reserved (4 bits), position error (3 bits), longitude bit 24
+//   octets 3-5  longitude bits 23-0: 25-bit two's complement, 360 / 2^25 degree per step (east positive)
+//   octets 6-8  latitude: 24-bit two's complement, 180 / 2^24 degree per step (north positive)
+
+// Position error (3 bits): the horizontal error is below 2 m, 20 m, 200 m, 2 km, 20 km, 200 km or more, 7 unknown
+#define DMR_GPS_ERR_2M			0
+#define DMR_GPS_ERR_MORE		6	// over 200 km
+#define DMR_GPS_ERR_UNKNOWN		7
+
+typedef struct {
+	uint8_t err;		// position error code 0-7
+	int32_t lat, lon;	// 1e-7 degree
+} dmr_gps_t;
+
+// The LC (FLCO 8, FID 0). Out of range latitude / longitude are clamped to the field's range
+void dmr_gps_encode(const dmr_gps_t *g, uint8_t lc[DMR_LC_BYTES]);
+// A GPS Info LC to a position: false when it isn't one (FLCO, FID) or carries 0, 0 (no fix)
+bool dmr_gps_decode(const uint8_t lc[DMR_LC_BYTES], dmr_gps_t *g);
+// The error code for an error in meters (0 = unknown)
+uint8_t dmr_gps_err_code(uint32_t meters);
+// The upper bound in meters of an error code (0: unknown or over 200 km)
+uint32_t dmr_gps_err_m(uint8_t code);
+// From position 1 to position 2: distance in meters and the initial bearing in degrees (0 north, 90 east). A flat
+// earth approximation around the mid latitude: within 0.5 % up to a few hundred km (DMR ranges), no libm needed
+void dmr_gps_range(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2, uint32_t *meters, uint16_t *bearing);
 
 #endif

@@ -12,6 +12,8 @@
  *      three voice LC headers, superframes A-F with the embedded LC, end at the superframe boundary with a terminator,
  *      TX time-out, reply window (separate lengths for group and private calls), talker alias in alternate
  *      superframes (CONFIG_DMR_TALKER_ALIAS), voice privacy through a hook (CONFIG_DMR_PRIVACY).
+ *  GPS Info (CONFIG_DMR_GPS): the caller's position from an embedded GPS Info LC (FLCO 8); ours in the alias
+ *      superframes when dmr_call_set_tx_gps gave one.
  *
  * Threading: the modem's event callback only copies events into a small single-producer / single-consumer queue
  * (slot ticks are counted, not queued). Everything else, including the voice sink and source calls, happens in
@@ -109,6 +111,8 @@ typedef struct {
 	uint8_t pi_key;
 	char alias[DMR_TA_TEXT_MAX + 1];	// talker alias so far, "" if none
 	bool alias_complete;
+	bool gps_valid;		// a GPS Info LC was heard from this talker (CONFIG_DMR_GPS)
+	dmr_gps_t gps;		// ... its position and error code
 } dmr_caller_t;
 
 // Where audio goes: the audio / vocoder side (core/dmr/ambe) FEC-decodes each 72-bit frame to 49 bits
@@ -188,6 +192,9 @@ bool dmr_call_start(void);
 void dmr_call_stop(void);
 
 void dmr_call_ptt(bool down);
+// Our position for the next transmissions (NULL: none). Taken when a transmission starts: one GPS Info LC in the
+// rotation of the alias superframes (docs/spec/dmr-voice.md). CONFIG_DMR_GPS builds; ignored without
+void dmr_call_set_tx_gps(const dmr_gps_t *gps);
 // Clear the reply window (BACK on Home)
 void dmr_call_reply_cancel(void);
 // The whole stack runs here: queued modem events, PTT, timeouts, TX queue filling. Call every 10-25 ms with the time
@@ -216,6 +223,8 @@ typedef struct {
 	uint32_t rx_pi_headers;		// PI headers with a good CRC on our call's slot
 	uint32_t rx_alias_complete;	// talker aliases completed
 	uint32_t tx_alias_lcs;		// superframes sent with a talker alias block instead of the voice LC
+	uint32_t rx_gps;		// GPS Info LCs decoded on our call
+	uint32_t tx_gps_lcs;		// superframes sent with our GPS Info instead of the voice LC
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // Zero the counters only (the view's evq_overflows / tx_underruns keep counting). From any task; an increment racing
