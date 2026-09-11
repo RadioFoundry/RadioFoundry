@@ -27,8 +27,8 @@ It's early. Read the status section before you flash anything.
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
 | TYT MD-380 / MD-390, Retevis RT3 | ○ | ○ | ○ | Planned. Single band, STM32F405 with the older HR_C5000 modem and a SKY72310 synthesizer |
-| Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD |
-| Radioddity GD-88 | ○ | ○ | ○ | Planned. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
+| Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Hardware needed. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD |
+| Radioddity GD-88 | ○ | ○ | ○ | Planned. Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
 
 ● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet
 
