@@ -10,6 +10,9 @@
 //             (the port's connected() going from true to false: a POSIX host closing it drops DTR, or USB unmounted
 //             while open), or when the UI asks (hostlink_hotspot_exit). Never because DTR is clear: MMDVMHost on
 //             Windows opens the port with DTR cleared (docs/spec/mmdvm-protocol.md 5.1)
+//   tnc       a request starting with a byte the TNC protocol claims (KISS 0xC0, NMEA '$'; core/aprs/aprs_host.c):
+//             its bytes go to it; back to idle after HOSTLINK_TNC_IDLE_MS without one. Its output (received
+//             packets, iGate lines) also goes out in idle mode when it has some (the user turned KISS on)
 //   cps       anything else goes to the CPS handler, when one is registered (docs/spec/legacy-cps-interop.md); back
 //             to idle after HOSTLINK_CPS_IDLE_MS without a CPS byte (side protocol frames don't count)
 //
@@ -28,8 +31,9 @@
 
 #define HOSTLINK_HOTSPOT_IDLE_MS	20000	// MMDVMHost polls GET_STATUS every 250 ms; 20 s of nothing = gone
 #define HOSTLINK_CPS_IDLE_MS		10000
+#define HOSTLINK_TNC_IDLE_MS		30000
 
-typedef enum { HOSTLINK_IDLE, HOSTLINK_HOTSPOT, HOSTLINK_CPS } hostlink_mode_t;
+typedef enum { HOSTLINK_IDLE, HOSTLINK_HOTSPOT, HOSTLINK_CPS, HOSTLINK_TNC } hostlink_mode_t;
 
 // Start the task (after the settings are loaded: the USB personality depends on them)
 void hostlink_start(void);
@@ -61,6 +65,16 @@ typedef struct {
 	bool (*in_frame)(uint32_t now_ms);
 } hostlink_side_t;
 void hostlink_set_side_protocol(const hostlink_side_t *side);
+// The TNC protocol (KISS for APRS): claims says whether a request starting with byte b is its own (checked in idle
+// mode at a request boundary); feed takes its bytes; in_frame says a frame is in progress (side protocol frames wait);
+// output copies bytes it has for the host (idle and TNC modes, every pass), 0 when none. Host link task only
+typedef struct {
+	bool (*claims)(uint8_t b);
+	void (*feed)(const uint8_t *buf, size_t len, uint32_t now_ms);
+	bool (*in_frame)(void);
+	size_t (*output)(uint8_t *buf, size_t max);
+} hostlink_tnc_t;
+void hostlink_set_tnc(const hostlink_tnc_t *tnc);
 // Bytes to the host; only from the host link task (the CPS handler, the hotspot, the side protocol)
 size_t hostlink_write(const uint8_t *buf, size_t len);
 

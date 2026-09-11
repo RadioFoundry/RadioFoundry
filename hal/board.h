@@ -21,6 +21,7 @@
 #include "hal_cps.h"
 #include "hal_netif.h"
 #include "hal_bcast.h"
+#include "hal_afsk.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -78,6 +79,9 @@ typedef struct {
 	const hal_audio_tap_t *audio_tap;
 	// Optional: the broadcast FM receiver (hal_bcast.h); NULL when the board has none or it isn't built
 	const hal_bcast_t *bcast;
+	// Optional: APRS AFSK through the FM transmitter, and received audio for the demodulator (hal_afsk.h); NULL when
+	// not built or the radio can't
+	const hal_afsk_t *afsk;
 } board_t;
 
 extern const board_t board;

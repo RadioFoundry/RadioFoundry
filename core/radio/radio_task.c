@@ -19,6 +19,9 @@
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
 #endif
+#if CONFIG_APRS
+#include "aprs/aprs.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -126,8 +129,17 @@ static void data_lock(void) { vTaskSuspendAll(); }
 static void data_unlock(void) { (void)xTaskResumeAll(); }
 #endif
 
+#if CONFIG_APRS
+// The APRS engine's any-task calls (core/aprs/aprs.h): short copies, the same way
+static void aprs_lock(void) { vTaskSuspendAll(); }
+static void aprs_unlock(void) { (void)xTaskResumeAll(); }
+#endif
+
 void radio_core_start(void)
 {
+#if CONFIG_APRS
+	aprs_set_lock(aprs_lock, aprs_unlock);
+#endif
 #if CONFIG_DMR_DATA_CORE
 	dmrDataServiceSetLock(data_lock, data_unlock);
 #endif

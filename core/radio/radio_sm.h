@@ -11,6 +11,9 @@
 #include "radio/scan.h"
 #include "radio/battery.h"
 #include "radio/morse.h"
+#if CONFIG_APRS
+#include "aprs/aprs.h"
+#endif
 #if CONFIG_DMR_ROAMING
 #include "radio/roam.h"
 #include "settings/settings.h"	// SETTINGS_ROAM_ZONE_BYTES
@@ -268,6 +271,15 @@ typedef struct {
 #if CONFIG_DMR_EMERGENCY
 	bool em_keyed;			// the emergency hot mic keyed the transmitter (not PTT)
 	uint32_t em_cfg_serial;		// dmr_emergency_config_serial() the call stack was configured with
+#endif
+#if CONFIG_APRS
+	// APRS transmissions (core/aprs, docs/spec/aprs.md 6): the radio leaves the channel for the APRS frequency
+	uint8_t aprs_phase;		// APRS_RF_* in radio_sm.c, 0 = not on the APRS frequency
+	uint32_t aprs_ms;		// start of the current phase (LISTEN: of the current slot)
+	uint32_t aprs_listen_ms;	// start of the wait for a clear channel
+	uint32_t aprs_rand;		// p-persistence
+	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
+	aprs_rf_job_t aprs_job;
 #endif
 } radio_sm_t;
 

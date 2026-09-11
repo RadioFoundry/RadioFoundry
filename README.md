@@ -81,7 +81,7 @@ people already have. We support the formats other radios use, not just our favor
 |---|---|---|
 | Air interface | ETSI DMR Tier II: simplex, repeater, SFR (single frequency repeater), repeater roaming | ETSI Tier III trunking ([plan](docs/spec/dmr-tier3-plan.md)) |
 | Text messages | Motorola TMS; ETSI short data in 7-bit, ISO 8859, UTF-8 and UTF-16; ETSI UDT text | Hytera text format |
-| Location | Motorola LRRP location answers and ARS registration | NMEA from the radio's GPS receiver, ETSI UDT location, APRS on FM |
+| Location | Motorola LRRP location answers and ARS registration; ETSI GPS Info in voice calls (the caller's position shown with distance and bearing, ours sent from the APRS position); APRS position, status and messages on FM (Bell 202 AFSK) and positions over DMR to an APRS gateway ID; KISS TNC on USB | NMEA from the radio's GPS receiver, ETSI UDT location reports, APRS receive and iGate on radios that can sample received audio |
 | Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
 | Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
 | Programming | qdmr, over the GD-77-style CPS protocol | an open, published native codeplug format with its own qdmr driver; qdmr YAML and CSV import/export; RadioID user database |

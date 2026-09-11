@@ -30,6 +30,8 @@ enum {
 	DL_VIEW_DMR_EXT,	// DMR emergency, ETSI short data, the hotspot CW ID (debuglink_view_ext.c)
 	DL_VIEW_DMR_DATA_STATS,	// the DMR data service counters (debuglink_dmr_data.c; split from dmr_data for the reply size)
 	DL_VIEW_ROAM,		// DMR repeater roaming: state, sites, counters, settings (debuglink_view_roam.c)
+	DL_VIEW_APRS,		// APRS: callsign, block reason, position, next beacon, counters (debuglink_aprs.c)
+	DL_VIEW_APRS_SET,	// the APRS settings (debuglink_aprs.c; split from aprs for the reply size)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		1	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -63,6 +65,9 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 void debuglink_view_dmr_ext(dl_text_t *t);
 // The roam section (debuglink_view_roam.c); built without CONFIG_DMR_ROAMING it says "roam.built=0"
 void debuglink_view_roam(const radio_view_t *v, dl_text_t *t);
+// APRS (debuglink_aprs.c): the aprs section and the APRS command; without CONFIG_APRS "aprs.built=0" / unavailable
+void debuglink_view_aprs(uint8_t part, dl_text_t *t);	// part 0: state and counters, 1: settings
+size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 // The split duplex command SPLIT and its view text (debuglink_split.c, docs/spec/debuglink.md 3.15)

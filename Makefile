@@ -41,6 +41,9 @@ endif
 ifeq ($(CONFIG_BCAST_FM),y)
 CORE_DIRS += core/bcast
 endif
+ifeq ($(CONFIG_APRS),y)
+CORE_DIRS += core/aprs
+endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))

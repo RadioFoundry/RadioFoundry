@@ -66,6 +66,18 @@ static const char features[] = "features="
 #if CONFIG_DMR_TALKER_ALIAS
 	"DMR_TALKER_ALIAS,"
 #endif
+#if CONFIG_DMR_GPS
+	"DMR_GPS,"
+#endif
+#if CONFIG_APRS
+	"APRS,"
+#endif
+#if CONFIG_APRS_RX
+	"APRS_RX,"
+#endif
+#if CONFIG_APRS_IGATE
+	"APRS_IGATE,"
+#endif
 #if CONFIG_DMR_DATA_CORE
 	"DMR_DATA_CORE,"
 #endif
@@ -820,6 +832,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	case DL_CMD_SPLIT:
 		return debuglink_cmd_split(req, len, out, cap);
 #endif
+	case DL_CMD_APRS:
+		return debuglink_cmd_aprs(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

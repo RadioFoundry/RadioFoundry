@@ -20,6 +20,7 @@
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
+extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen;	// ui_aprs.c
 
 static void item_num(ui_item_t *it, uint16_t n)
 {
@@ -620,6 +621,10 @@ static void recent_item(uint16_t i, ui_item_t *it)
 			sb_str(&vb, r->to_us ? "you" : "priv");
 		}
 		sb_chr(&vb, ' ');
+		if (r->gps_range) {	// the caller's position: how far
+			sb_u32(&vb, (r->gps_dist_m + 500u) / 1000u, 1);
+			sb_str(&vb, "km ");
+		}
 	}
 	sb_age(&vb, ui_st.now_ms - r->ms);
 	if (r->to_us)
@@ -1253,8 +1258,8 @@ static const ui_scr_def_t roam_screen = {
 
 // ======================= Tools =======================
 
-// Diagnostics keeps number 7 (tests/hil/test_ui.py); Roaming is the last row (8, or 7 without diagnostics)
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_BATTERY, T_DIAG, T_ROAM, T_COUNT };
+// Diagnostics keeps number 7 (tests/hil/test_ui.py); Roaming follows (8, or 7 without diagnostics), then APRS
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_BATTERY, T_DIAG, T_ROAM, T_APRS, T_COUNT };
 
 static uint16_t tools_count(void) { return CONFIG_DIAG ? T_COUNT : T_COUNT - 1; }
 static uint16_t tools_row(uint16_t i) { return !CONFIG_DIAG && i >= T_DIAG ? (uint16_t)(i + 1u) : i; }
@@ -1262,7 +1267,7 @@ static uint16_t tools_row(uint16_t i) { return !CONFIG_DIAG && i >= T_DIAG ? (ui
 static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single freq. repeater",
-					     "Battery", "Diagnostics", "Roaming" };
+					     "Battery", "Diagnostics", "Roaming", "APRS" };
 	uint16_t i = tools_row(row);
 	strcpy(it->label, names[i]);
 	item_num(it, (uint16_t)(row + 1u));
@@ -1307,6 +1312,10 @@ static void tools_item(uint16_t row, ui_item_t *it)
 		it->flags |= UI_ITEM_DIM;
 #endif
 		break;
+	case T_APRS:
+		if (!CONFIG_APRS)
+			it->flags |= UI_ITEM_DIM;
+		break;
 	default:
 		break;
 	}
@@ -1331,13 +1340,14 @@ static void tools_select(uint16_t row, bool hold)
 	case T_BATTERY: ui_push(SCR_INFO, INFO_BATTERY); break;
 	case T_DIAG: ui_push(SCR_DIAG, 0); break;
 	case T_ROAM: ui_push(SCR_ROAM, 0); break;
+	case T_APRS: ui_push(SCR_APRS, 0); break;
 	default: break;
 	}
 }
 
 static const ui_scr_def_t tools_screen = {
 	.name = "tools", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Tools",
-	.hint = CONFIG_DIAG ? "1-8 open  Back" : "1-7 open  Back",
+	.hint = CONFIG_DIAG ? "1-9 open  Back" : "1-8 open  Back",
 	.count = tools_count, .item = tools_item, .select = tools_select,
 };
 
@@ -1979,5 +1989,5 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
-	[SCR_ROAM] = &roam_screen,
+	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 };

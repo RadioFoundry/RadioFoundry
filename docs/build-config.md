@@ -32,9 +32,13 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_FM_TX_TONES` | = FM | roger beep and 1750 Hz burst sent over the air (`docs/spec/radio-features.md` 3) |
 | `CONFIG_VOX` | n | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
+| `CONFIG_APRS` | = FM | APRS (`core/aprs`, `docs/spec/aprs.md`): position, status and message packets as AX.25 / Bell 202 AFSK on FM through `board.afsk`, positions over DMR (LRRP / UDT), beacon triggers, a KISS TNC on the host port. Transmit stays off until the user turns it on. About 18 KB flash, 2.8 KB RAM on the DM-1701 |
+| `CONFIG_APRS_RX` | = APRS (DM-1701: n) | APRS receive: the AFSK demodulator on the board's received audio, station list, messages to us with acks, the digipeater. Useful only where `board.afsk` can sample received audio (the DM-1701 can't, `docs/spec/aprs.md` 5.3). About 10 KB flash, 4 KB RAM more |
+| `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
 | `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
+| `CONFIG_DMR_GPS` | = DMR | ETSI GPS Info in the embedded LC (FLCO 8): the caller's position on the receive screen (with distance and bearing when ours is known), in Recent and on the debug link; ours sent in the alias superframes when Settings > DMR > Send position is on and a position source has a fix (the APRS position: GPS, host, fixed; `docs/spec/dmr-voice.md`) |
 | `CONFIG_DMR_SMS` | = DMR | text messages: Motorola TMS receive (inbox, ACK) and send, with retries (docs/spec/dmr-data.md) |
 | `CONFIG_DMR_ARS` | = DMR | ARS registration with a presence server, at power-up and channel change, refreshed (off until a server ID is set) |
 | `CONFIG_DMR_LRRP` | = DMR | LRRP location answers (a radio without GPS answers "no fix"); builds core/dmr/dmrLrrp.c into the image |

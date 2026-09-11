@@ -15,7 +15,7 @@ from odr_hil import counter_deltas
 BENCH_SRC = 9990301
 STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.rx_voice_bursts",
          "call.rx_enc_dropped", "call.rx_private_calls", "call.rx_emergency_calls", "call.rx_encrypted_calls",
-         "call.rx_alias_complete", "call.rx_pi_headers", "call.rx_term_dropped"]
+         "call.rx_alias_complete", "call.rx_pi_headers", "call.rx_term_dropped", "call.rx_gps"]
 
 
 def _on_dmr_channel(radio, pytestconfig):
@@ -107,6 +107,21 @@ def test_talker_alias(radio, sdr_bench, pytestconfig):
     d, v = _bench_call(radio, sdr_bench, pytestconfig, talker_alias=alias, superframes=10)
     assert d["call.rx_calls"] == 1 and d["call.rx_alias_complete"] == 1, d
     assert v["call.alias"] == alias and v["call.alias_complete"] == "1", v
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_gps_info(radio, sdr_bench, pytestconfig):
+    """An ETSI GPS Info LC (FLCO 8) after a talker alias in the odd superframes: the caller's position on the call
+    (call.gps_*), kept with the last heard; one step of the fields is 1.1e-5 degree."""
+    _on_dmr_channel(radio, pytestconfig)
+    if "DMR_GPS" not in radio.features():
+        pytest.skip("built without CONFIG_DMR_GPS")
+    lat, lon = 33.7490, -84.3880
+    d, v = _bench_call(radio, sdr_bench, pytestconfig, talker_alias="ODR GPS", gps=(lat, lon, 1), superframes=10)
+    assert d["call.rx_calls"] == 1 and d["call.rx_gps"] >= 1, d
+    assert v["last.gps_valid"] == "1" and v["last.gps_err"] == "1", v
+    assert abs(float(v["last.gps_lat"]) - lat) < 2e-5 and abs(float(v["last.gps_lon"]) - lon) < 2e-5, v
 
 
 @pytest.mark.rf

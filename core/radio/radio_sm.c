@@ -35,6 +35,9 @@
 #if CONFIG_AM_RX
 #include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
 #endif
+#if CONFIG_APRS
+#include "aprs/afsk.h"			// AFSK_BAUD, the tones
+#endif
 
 // The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
 #ifndef RADIO_DMR_ID_DEFAULT
@@ -878,6 +881,37 @@ static bool dmr_tx_phase(uint8_t phase)
 		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING || phase == DMR_CALL_PHASE_TX_DATA;
 }
 
+#if CONFIG_DMR_GPS
+// Our position for DMR GPS Info (docs/spec/dmr-voice.md): the APRS position source (GPS, host, fixed). send: the
+// "send position in DMR calls" setting
+static bool own_position(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *send)
+{
+#if CONFIG_APRS
+	return aprs_position_now(lat, lon, err_m, send);
+#else
+	(void)lat;
+	(void)lon;
+	(void)err_m;
+	*send = false;
+	return false;	// no position source without APRS
+#endif
+}
+
+// At PTT: our GPS Info for this transmission, or none
+static void dmr_gps_tx(void)
+{
+	int32_t lat, lon;
+	uint32_t err_m;
+	bool send;
+	if (own_position(&lat, &lon, &err_m, &send) && send) {
+		dmr_gps_t g = { .err = dmr_gps_err_code(err_m), .lat = lat, .lon = lon };
+		dmr_call_set_tx_gps(&g);
+	} else {
+		dmr_call_set_tx_gps(NULL);
+	}
+}
+#endif
+
 static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *out)
 {
 	out->src = c->src;
@@ -889,6 +923,23 @@ static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *o
 	out->pi_header = c->pi_header;
 	find_name(sm, c->src, false, out->src_name);
 	find_name(sm, c->dst, c->group, out->dst_name);
+	out->gps_valid = false;
+	out->gps_range = false;
+#if CONFIG_DMR_GPS
+	if (c->gps_valid) {
+		int32_t lat, lon;
+		uint32_t err_m;
+		bool send;
+		out->gps_valid = true;
+		out->gps_err = c->gps.err;
+		out->gps_lat = c->gps.lat;
+		out->gps_lon = c->gps.lon;
+		if (own_position(&lat, &lon, &err_m, &send)) {
+			out->gps_range = true;
+			dmr_gps_range(lat, lon, c->gps.lat, c->gps.lon, &out->gps_dist_m, &out->gps_bearing);
+		}
+	}
+#endif
 }
 
 // The stack's view into radio_view_t.dmr
@@ -971,6 +1022,12 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		sm->view.tx_deny = TXDENY_NONE;
 		changed(sm);
 	}
+#if CONFIG_DMR_GPS && CONFIG_APRS_RX
+	// A caller's position (ETSI GPS Info) into the APRS station list, once per change of the call view
+	if (cv->serial != sm->dmr_serial && cv->phase <= DMR_CALL_PHASE_RX_BUSY && cv->caller.gps_valid) {
+		aprs_dmr_heard(cv->caller.src, cv->caller.alias, cv->caller.gps.lat, cv->caller.gps.lon, now_ms);
+	}
+#endif
 	dmr_publish(sm);
 	if (sm->view.state != RS_TX && sm->view.state != RS_TX_DENIED) {
 		bool rx = cv->state == DMR_CALL_STATE_RX;
@@ -1120,6 +1177,9 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;
 	changed(sm);
+#if CONFIG_DMR_GPS
+	dmr_gps_tx();
+#endif
 	dmr_call_ptt(true);
 	dmr_call_poll(now_ms);
 	dmr_follow(sm, now_ms);
@@ -2030,6 +2090,198 @@ static inline void roam_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (voi
 void radio_sm_shown_view(const radio_sm_t *sm, radio_view_t *v) { (void)sm; (void)v; }
 #endif
 
+#if CONFIG_APRS
+// --- APRS transmissions (core/aprs, docs/spec/aprs.md 6) ---
+// The engine (aprs_tick) decides what to send; here the radio leaves the user's channel for the APRS frequency (FM,
+// no subtone), waits for a clear channel (p-persistent CSMA on the noise reading), keys up, lets board.afsk send the
+// tones, and tunes back. Only from idle: no PTT, no reception, no scan, no hotspot, no DMR call or data, TX allowed.
+// Any user action (PTT, a request) cuts it short and the engine tries again later.
+
+#define APRS_SETTLE_MS		50	// the receiver settles on the APRS frequency before the first carrier check
+#define APRS_SLOT_MS		100	// CSMA slot time
+#define APRS_PERSIST		63	// p = (63 + 1) / 256 per clear slot
+#define APRS_KEYUP_MS		25	// carrier up before the tones (the preamble flags follow)
+#define APRS_SEND_MAX_MS	6000u	// longer than any tone buffer (4096 symbols = 3.4 s)
+enum { APRS_RF_OFF = 0, APRS_RF_LISTEN, APRS_RF_KEYUP, APRS_RF_SEND };
+
+static bool aprs_can_start(const radio_sm_t *sm)
+{
+	if (sm->aprs_phase != APRS_RF_OFF || sm->ptt || sm->hotspot || sm->view.state != RS_IDLE || sm->view.monitor ||
+	    sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL) {
+		return false;
+	}
+#if CONFIG_SCAN
+	if (scan_on(&sm->scan)) {
+		return false;
+	}
+#endif
+#if CONFIG_FM_TX_TONES
+	if (sm->roger_ms != 0 || sm->burst_keyed) {
+		return false;
+	}
+#endif
+#if CONFIG_VOX
+	if (sm->vox_keyed) {
+		return false;
+	}
+#endif
+#if CONFIG_DMR
+	if ((sm->dmr_running && sm->view.dmr.state != RDMR_IDLE) || sm->dmr_keyed) {
+		return false;
+	}
+#if CONFIG_HOTSPOT
+	if (sm->cw_phase != 0) {
+		return false;
+	}
+#endif
+#endif
+#if CONFIG_DMR_DATA_CORE
+	if (dmrDataServiceIsBusy()) {
+		return false;
+	}
+#endif
+#if CONFIG_DMR_ROAMING
+	if (sm->roam_probing) {
+		return false;
+	}
+#endif
+#if CONFIG_DMR_EMERGENCY
+	if (sm->em_keyed) {
+		return false;
+	}
+#endif
+	return true;
+}
+
+// Back to the user's channel; sent / busy (gave up on a busy channel) for the engine
+static void aprs_rf_end(radio_sm_t *sm, bool sent, bool busy, uint32_t now_ms)
+{
+	uint8_t phase = sm->aprs_phase;
+	if (phase == APRS_RF_OFF) {
+		return;
+	}
+	if (phase == APRS_RF_SEND) {
+		board.afsk->tx_stop();
+	}
+	if (phase >= APRS_RF_KEYUP) {
+		board.radio->tx_off();
+		sm->tx_end_ms = now_ms;
+	}
+	sm->aprs_phase = APRS_RF_OFF;
+	sm->view.state = RS_IDLE;
+	aprs_rf_done(sent, busy, now_ms);
+	tune(sm, now_ms);	// the channel again (DMR set up again if it was DMR)
+}
+
+static void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms)
+{
+	aprs_rf_end(sm, false, false, now_ms);
+}
+
+static void aprs_rf_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	if (!aprs_rf_take(&sm->aprs_job, now_ms)) {
+		return;
+	}
+	if (sm->board_mode == RADIO_MODE_DMR) {
+		dmr_end(sm);		// the call stack lets go of the modem before the chip leaves DMR
+	}
+	if (sm->board_mode != RADIO_MODE_FM) {
+		sm->board_mode = RADIO_MODE_FM;
+		board.radio->set_mode(RADIO_MODE_FM);
+	}
+	sm->aprs_phase = APRS_RF_LISTEN;
+	sm->aprs_ms = now_ms;
+	sm->aprs_listen_ms = now_ms;
+	sm->aprs_rand ^= now_ms;
+	board.radio->rx(sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K, &none);
+	outputs(sm);
+	changed(sm);
+}
+
+// Every poll while on the APRS frequency
+static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	switch (sm->aprs_phase) {
+	case APRS_RF_LISTEN:
+		if (now_ms - sm->aprs_listen_ms >= APRS_CSMA_GIVE_UP_MS) {
+			aprs_rf_end(sm, false, true, now_ms);
+			return;
+		}
+		if (now_ms - sm->aprs_ms < APRS_SETTLE_MS + APRS_SLOT_MS) {
+			return;
+		}
+		sm->aprs_ms = now_ms - APRS_SETTLE_MS;	// the next check a slot later
+		if (st->noise < radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT)) {
+			return;		// a carrier: wait
+		}
+		sm->aprs_rand = sm->aprs_rand * 1103515245u + 12345u;
+		if ((sm->aprs_rand >> 24) > APRS_PERSIST) {
+			return;		// clear, but not our turn this slot
+		}
+		sm->aprs_phase = APRS_RF_KEYUP;		// before tx(): aprs_rf_end unkeys from here on
+		sm->aprs_ms = now_ms;
+		sm->view.state = RS_TX;			// speaker off, red LED on, before keying
+		sm->view.tx_deny = TXDENY_NONE;
+		outputs(sm);
+		changed(sm);
+		if (!board.radio->tx(sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K, default_power(),
+				     &none)) {
+			aprs_rf_end(sm, false, false, now_ms);
+		}
+		break;
+	case APRS_RF_KEYUP:
+		if (now_ms - sm->aprs_ms < APRS_KEYUP_MS) {
+			return;
+		}
+		if (!board.afsk->tx_start(sm->aprs_job.tones, sm->aprs_job.nbits, AFSK_BAUD, AFSK_MARK_HZ, AFSK_SPACE_HZ,
+					  sm->aprs_job.level)) {
+			aprs_rf_end(sm, false, false, now_ms);
+			return;
+		}
+		sm->aprs_phase = APRS_RF_SEND;
+		sm->aprs_ms = now_ms;
+		break;
+	case APRS_RF_SEND:
+		if (!board.afsk->tx_busy()) {
+			aprs_rf_end(sm, true, false, now_ms);
+		} else if (now_ms - sm->aprs_ms > APRS_SEND_MAX_MS) {
+			aprs_rf_end(sm, false, false, now_ms);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+// Every poll, before anything else: the engine, the "after PTT" trigger, a transmission to start
+static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	bool tx_now = sm->view.state == RS_TX && sm->aprs_phase == APRS_RF_OFF;
+	if (sm->aprs_was_tx && !tx_now) {
+		aprs_ptt_end(now_ms);
+	}
+	sm->aprs_was_tx = tx_now;
+	aprs_radio_t r;
+	memset(&r, 0, sizeof(r));
+	r.can_rf = aprs_can_start(sm);
+	r.fm_rx = sm->aprs_phase == APRS_RF_OFF && sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot &&
+		  sm->view.state != RS_TX;
+#if CONFIG_DMR
+	r.on_dmr = sm->dmr_running && !sm->hotspot;
+	r.own_dmr_id = sm->own_id;
+#endif
+	aprs_tick(&r, now_ms);
+	if (r.can_rf && aprs_rf_pending()) {
+		aprs_rf_start(sm, now_ms);
+	}
+}
+#else
+static inline void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
+#endif
+
 // --- FM transmit tones and the end of an FM transmission ---
 
 // Back to receive after an FM transmission (PTT released, roger beep done, burst released)
@@ -2092,6 +2344,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->ptt) {
 		return;
 	}
+	aprs_rf_abort(sm, now_ms);	// back on the channel first: PTT talks there
 	activity(sm, now_ms);
 	roam_cancel(sm, now_ms);	// PTT transmits on the site the user saw before a roaming search
 #if CONFIG_FM_TX_TONES
@@ -2823,6 +3076,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 		tune(sm, now_ms);
 	}
 	sm->rssi_published = sm->view.rssi_dbm;
+#if CONFIG_APRS
+	aprs_init(now_ms);
+#endif
 }
 
 
@@ -2875,6 +3131,9 @@ static bool retunes(uint8_t type)
 
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
+	if (req->type != RREQ_BEEP && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS) {
+		aprs_rf_abort(sm, now_ms);	// the user does something: an APRS transmission gives way
+	}
 	bool busy = sm->view.state == RS_TX || sm->hotspot;	// no retuning while transmitting or a hotspot
 	int dir = req->arg > 0 ? 1 : -1;
 	int steps = req->arg > 0 ? req->arg : -req->arg;
@@ -3224,6 +3483,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
 		break;
 	case RREQ_RELOAD:
+#if CONFIG_APRS
+		aprs_reload();
+#endif
 		if (busy || sm->ptt) {
 			sm->reload_pending = true;	// after the transmission or the hotspot (radio_sm_poll)
 		} else {
@@ -3318,6 +3580,11 @@ static bool save_allowed(const radio_sm_t *sm, uint32_t now_ms)
 			sm->view.state != RS_IDLE || sm->view.monitor || sm->ptt || sm->view.ch.no_eco) {
 		return false;
 	}
+#if CONFIG_APRS
+	if (sm->aprs_phase != APRS_RF_OFF || aprs_rf_pending()) {
+		return false;
+	}
+#endif
 #if CONFIG_SCAN
 	if (scan_on(&sm->scan)) {
 		return false;
@@ -3447,6 +3714,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	beep_service(shared);
 #endif
+#if CONFIG_APRS
+	aprs_poll(sm, now_ms);	// before battery saving: beacons are due while the receiver sleeps too
+#endif
 #if CONFIG_BATTERY_SAVE
 	if (save_poll(sm, now_ms)) {
 		outputs(sm);
@@ -3467,6 +3737,13 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->rssi_published = sm->view.rssi_dbm;
 		changed(sm);
 	}
+#if CONFIG_APRS
+	if (sm->aprs_phase != APRS_RF_OFF) {
+		aprs_rf_service(sm, &st, now_ms);	// on the APRS frequency: no squelch, scan or time-out here
+		outputs(sm);
+		return;
+	}
+#endif
 #if CONFIG_SCAN
 	if (scan_on(&sm->scan) && !sm->ptt && sm->view.state != RS_TX && sm->view.state != RS_TX_DENIED && !sm->hotspot) {
 		uint32_t steps = sm->scan.steps;

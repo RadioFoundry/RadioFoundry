@@ -21,6 +21,9 @@
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net.h"
 #endif
+#if CONFIG_APRS
+#include "aprs/aprs_host.h"
+#endif
 #include "debuglink/dlog.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -46,6 +49,7 @@ static volatile bool exit_requested;
 static volatile int8_t usb_switch = -1;		// a personality switch asked for: 1 network, 0 serial, -1 none
 static hostlink_cps_fn cps_handler;
 static const hostlink_side_t *side;
+static const hostlink_tnc_t *tnc;
 static uint32_t last_byte_ms;
 static uint32_t last_main_ms;		// the last byte for the mode's own protocol (side frames don't count)
 static bool side_ended;			// a side frame just ended: the next byte is at a request boundary
@@ -101,6 +105,11 @@ void hostlink_set_cps_handler(hostlink_cps_fn fn)
 void hostlink_set_side_protocol(const hostlink_side_t *p)
 {
 	side = p;
+}
+
+void hostlink_set_tnc(const hostlink_tnc_t *t)
+{
+	tnc = t;
 }
 
 size_t hostlink_write(const uint8_t *buf, size_t len)
@@ -199,6 +208,11 @@ static size_t side_take(const uint8_t *buf, size_t len, uint32_t now, bool new_r
 				return 0;
 			}
 			break;
+		case HOSTLINK_TNC:
+			if (tnc->in_frame()) {
+				return 0;
+			}
+			break;
 		case HOSTLINK_IDLE:
 			break;
 		}
@@ -220,9 +234,15 @@ static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool n
 	if (mode == HOSTLINK_HOTSPOT) {
 		return feed_mmdvm(buf, len, now);
 	}
-#else
-	(void)new_request;
 #endif
+	if ((tnc != NULL) && (mode == HOSTLINK_IDLE) && new_request && tnc->claims(buf[0])) {
+		mode = HOSTLINK_TNC;
+		dlog("hostlink: TNC (KISS)");
+	}
+	if (mode == HOSTLINK_TNC) {
+		tnc->feed(buf, len, now);
+		return len;
+	}
 	if (cps_handler != NULL) {
 		mode = HOSTLINK_CPS;
 		cps_handler(buf, len, now);
@@ -363,8 +383,20 @@ static void hostlink_task(void *arg)
 				mode = HOSTLINK_IDLE;
 			}
 			break;
+		case HOSTLINK_TNC:
+			if ((now - last_main_ms) > HOSTLINK_TNC_IDLE_MS) {
+				mode = HOSTLINK_IDLE;
+			}
+			break;
 		case HOSTLINK_IDLE:
 			break;
+		}
+		if ((tnc != NULL) && ((mode == HOSTLINK_IDLE) || (mode == HOSTLINK_TNC))) {
+			size_t n;
+
+			while ((n = tnc->output(buf, sizeof(buf))) > 0) {	// received packets, iGate lines
+				hostlink_write(buf, n);
+			}
 		}
 	}
 }
@@ -373,6 +405,9 @@ void hostlink_start(void)
 {
 #if CONFIG_DEBUGLINK
 	debuglink_start();	// registers itself as the side protocol
+#endif
+#if CONFIG_APRS
+	aprs_host_start();	// registers the KISS TNC
 #endif
 	xTaskCreate(hostlink_task, "host", HOSTLINK_TASK_STACK, NULL, HOSTLINK_TASK_PRIORITY, NULL);
 }

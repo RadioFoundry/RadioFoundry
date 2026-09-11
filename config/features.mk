@@ -19,6 +19,9 @@ CONFIG_DMR ?= y
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
 # talker alias decode and TX of our radio name (needs DMR)
 CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
+# ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the APRS
+# position source when the radio-wide setting is on (needs DMR)
+CONFIG_DMR_GPS ?= $(CONFIG_DMR)
 # DMR text messages (SMS; needs DMR; not ported yet)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
 # ARS registration with a dispatcher (needs DMR; not ported yet)
@@ -88,9 +91,19 @@ CONFIG_BCAST_FM ?= n
 # PCM stream it borrows). A diagnostic, never for a release
 CONFIG_AUDIO_PROBE ?= n
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
+# APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions
+# over DMR (LRRP / UDT), a KISS TNC on the host port. Transmit stays off until the user turns it on (needs FM)
+CONFIG_APRS ?= $(CONFIG_FM)
+# APRS receive: the AFSK demodulator, station list, messages to us, digipeater (needs APRS; useful only on boards
+# whose board.afsk can sample received audio)
+CONFIG_APRS_RX ?= $(CONFIG_APRS)
+# APRS iGate rules, RF <-> APRS-IS through the host helper tools/aprs_gate.py (needs APRS_RX and HOSTLINK)
+CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
+
+
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM
+	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -99,7 +112,7 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
 ifneq ($(call feature_on,HOTSPOT),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)
@@ -146,11 +159,21 @@ ifneq ($(call feature_on,VFO_DMR),)
     $(error CONFIG_VFO_DMR=y needs CONFIG_DMR=y)
   endif
 endif
-$(foreach f,FM_TX_TONES VOX BATTERY_SAVE AM_RX,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
+$(foreach f,FM_TX_TONES VOX BATTERY_SAVE AM_RX APRS,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
 ifneq ($(call feature_on,AUDIO_PROBE),)
   ifeq ($(call feature_on,DEBUGLINK)$(call feature_on,DMR),yy)
   else
     $(error CONFIG_AUDIO_PROBE=y needs CONFIG_DEBUGLINK=y and CONFIG_DMR=y)
+  endif
+endif
+ifneq ($(call feature_on,APRS_RX),)
+  ifeq ($(call feature_on,APRS),)
+    $(error CONFIG_APRS_RX=y needs CONFIG_APRS=y)
+  endif
+endif
+ifneq ($(call feature_on,APRS_IGATE),)
+  ifeq ($(and $(call feature_on,APRS_RX),$(call feature_on,HOSTLINK)),)
+    $(error CONFIG_APRS_IGATE=y needs CONFIG_APRS_RX=y and CONFIG_HOSTLINK=y)
   endif
 endif
 ifeq ($(call feature_on,FM)$(call feature_on,DMR),)

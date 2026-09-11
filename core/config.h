@@ -20,6 +20,9 @@
 #ifndef CONFIG_DMR_TALKER_ALIAS
 #define CONFIG_DMR_TALKER_ALIAS		1
 #endif
+#ifndef CONFIG_DMR_GPS
+#define CONFIG_DMR_GPS			CONFIG_DMR
+#endif
 #ifndef CONFIG_DMR_SMS
 #define CONFIG_DMR_SMS			1
 #endif
@@ -109,6 +112,15 @@
 #ifndef CONFIG_BCAST_FM
 #define CONFIG_BCAST_FM			1
 #endif
+#ifndef CONFIG_APRS
+#define CONFIG_APRS			CONFIG_FM
+#endif
+#ifndef CONFIG_APRS_RX
+#define CONFIG_APRS_RX			CONFIG_APRS
+#endif
+#ifndef CONFIG_APRS_IGATE
+#define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
+#endif
 
 // Derived: the shared packet data / CSBK code
 #ifndef CONFIG_DMR_DATA_CORE
@@ -133,7 +145,7 @@
 #if CONFIG_SUBTONE && !CONFIG_FM
 #error "CONFIG_SUBTONE needs CONFIG_FM"
 #endif
-#if (CONFIG_DMR_PRIVACY || CONFIG_DMR_TALKER_ALIAS || CONFIG_DMR_DATA_CORE || CONFIG_DMR_ROAMING || CONFIG_SFR || \
+#if (CONFIG_DMR_PRIVACY || CONFIG_DMR_TALKER_ALIAS || CONFIG_DMR_GPS || CONFIG_DMR_DATA_CORE || CONFIG_DMR_ROAMING || CONFIG_SFR || \
      CONFIG_HOTSPOT) && !CONFIG_DMR
 #error "a DMR feature is on without CONFIG_DMR"
 #endif
@@ -166,6 +178,12 @@
 #endif
 #if CONFIG_AUDIO_PROBE && !(CONFIG_DEBUGLINK && CONFIG_DMR)
 #error "CONFIG_AUDIO_PROBE needs CONFIG_DEBUGLINK and CONFIG_DMR"
+#endif
+#if CONFIG_APRS && !CONFIG_FM
+#error "CONFIG_APRS needs CONFIG_FM"
+#endif
+#if (CONFIG_APRS_RX && !CONFIG_APRS) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
+#error "an APRS sub-feature is on without its parent (APRS_RX needs APRS; APRS_IGATE needs APRS_RX and HOSTLINK)"
 #endif
 #if !CONFIG_FM && !CONFIG_DMR
 #error "at least one of CONFIG_FM and CONFIG_DMR"

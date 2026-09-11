@@ -14,7 +14,7 @@
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_CHANNELS, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
-	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM,
+	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD,
 	SCR_COUNT
 } ui_scr_t;
 
@@ -109,6 +109,9 @@ typedef struct {
 	bool group, out, to_us;
 	uint32_t ms;
 	char name[CODEPLUG_NAME_LEN + 1];	// the other station's (or the talkgroup's, for calls we made) name
+	bool gps_range;		// the caller sent its position (ETSI GPS Info) and ours was known: how far, which way
+	uint16_t gps_bearing;
+	uint32_t gps_dist_m;
 } ui_recent_t;
 uint8_t ui_recent_count(void);
 const ui_recent_t *ui_recent_get(uint8_t i);

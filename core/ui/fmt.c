@@ -144,3 +144,33 @@ void sb_age(sbuf_t *b, uint32_t ms)
 	}
 	sb_str(b, TEXT_ALT_CLOSE);
 }
+
+void sb_degrees(sbuf_t *b, int32_t e7)
+{
+	uint32_t v = (uint32_t)(e7 < 0 ? -(int64_t)e7 : e7);
+	v = (v + 500u) / 1000u;	// 1e-4 degree
+	if (e7 < 0)
+		sb_chr(b, '-');
+	sb_u32(b, v / 10000u, 1);
+	sb_chr(b, '.');
+	sb_u32(b, v % 10000u, 4);
+}
+
+void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
+{
+	static const char *const points[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+	if (meters < 1000u) {
+		sb_u32(b, meters, 1);
+		sb_str(b, " m ");
+	} else if (meters < 100000u) {
+		uint32_t h = (meters + 50u) / 100u;	// 0.1 km
+		sb_u32(b, h / 10u, 1);
+		sb_chr(b, '.');
+		sb_u32(b, h % 10u, 1);
+		sb_str(b, " km ");
+	} else {
+		sb_u32(b, (meters + 500u) / 1000u, 1);
+		sb_str(b, " km ");
+	}
+	sb_str(b, points[((bearing % 360u) * 2u + 45u) / 90u % 8u]);
+}

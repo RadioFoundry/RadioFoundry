@@ -815,6 +815,65 @@ void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_N
 	storage_unlock();
 }
 
+#if CONFIG_APRS
+// APRS configuration records (legacy-cps-interop.md 7.3.8)
+#define APRS_BASE	EE(0x1588u)
+#define APRS_SIZE	0x40u
+#define APRS_MAGIC	0x4153u	// 0x4152: the older layout, ambiguity one bit lower
+
+static void aprs_path(char *out, const uint8_t *p)
+{
+	char call[7];
+	copy_name(call, p, 6);
+	unsigned n = 0;
+	while (call[n] != '\0' && call[n] != ' ') {
+		n++;
+	}
+	call[n] = '\0';
+	out[0] = '\0';
+	if (n == 0) {
+		return;
+	}
+	memcpy(out, call, n);
+	if (p[6] >= 1 && p[6] <= 15) {
+		out[n++] = '-';
+		if (p[6] >= 10) {
+			out[n++] = '1';
+		}
+		out[n++] = (char)('0' + p[6] % 10u);
+	}
+	out[n] = '\0';
+}
+
+bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
+{
+	uint8_t b[APRS_SIZE];
+	memset(out, 0, sizeof(*out));
+	if (n < 1 || n > CODEPLUG_APRS_CONFIGS) {
+		return false;
+	}
+	storage_lock();
+	bool ok = source == CODEPLUG_LEGACY && flash_read(APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE, b, sizeof(b));
+	storage_unlock();
+	uint16_t magic = le16(&b[0x3E]);
+	if (!ok || b[0] == 0xFF || b[0] == 0x00 || (magic != APRS_MAGIC && magic != APRS_MAGIC - 1u)) {
+		return false;
+	}
+	out->ssid = b[0x08] <= 15 ? b[0x08] : 0;
+	aprs_path(out->path[0], &b[0x0F]);
+	aprs_path(out->path[1], &b[0x16]);
+	out->sym_table = (char)b[0x1D];
+	out->sym_code = (char)b[0x1E];
+	if (out->sym_code < '!' || out->sym_code > '~') {
+		out->sym_table = out->sym_code = 0;
+	}
+	copy_name(out->comment, &b[0x1F], CODEPLUG_APRS_COMMENT);
+	uint8_t amb = magic == APRS_MAGIC ? (uint8_t)(b[0x3D] >> 5) : (uint8_t)((b[0x3D] >> 4) & 7u);
+	out->ambiguity = amb <= 4 ? amb : 4;
+	return true;
+}
+#endif
+
 bool codeplug_set_radio_name(const char *name)
 {
 	uint8_t b[GEN_NAME_LEN];

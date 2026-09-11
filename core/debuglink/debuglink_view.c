@@ -99,13 +99,13 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 
 static void hotspot_section(dl_text_t *t)
 {
-	static const char *const modes[] = { "idle", "hotspot", "cps" };
+	static const char *const modes[] = { "idle", "hotspot", "cps", "tnc" };
 	hostlink_mode_t m = hostlink_mode();
 
 	static const char *const leaves[] = { "none", "user", "closed", "gone", "idle" };
 	hostlink_leave_t l = hostlink_last_leave();
 
-	dl_text(t, "hostlink=%s\n", (unsigned)m < 3 ? modes[m] : "?");
+	dl_text(t, "hostlink=%s\n", (unsigned)m < 4 ? modes[m] : "?");
 	dl_text(t, "hostlink.left=%s\n", (unsigned)l < 5 ? leaves[l] : "?");
 	dl_text(t, "usb.network=%u\nusb.net_up=%u\n", hostlink_network_mode(),
 		(board.netif != NULL) && board.netif->up());
@@ -237,7 +237,7 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 {
 	static const char *const names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 							  "link", "features", "dmr_data", "storage", "dmr_ext",
-							  "dmr_data_stats", "roam" };
+							  "dmr_data_stats", "roam", "aprs", "aprs_set" };
 
 	if (section >= DL_VIEW_COUNT) {
 		return;
@@ -282,6 +282,12 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_ROAM:
 		debuglink_view_roam(v, t);
+		break;
+	case DL_VIEW_APRS:
+		debuglink_view_aprs(0, t);
+		break;
+	case DL_VIEW_APRS_SET:
+		debuglink_view_aprs(1, t);
 		break;
 	default:
 		break;

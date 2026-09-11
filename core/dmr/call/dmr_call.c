@@ -116,11 +116,14 @@ static struct {
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
 	uint32_t tx_start_ms;
-	// talker alias in alternate superframes
-	uint8_t tx_ta[DMR_TA_LC_MAX][DMR_LC_BYTES];
-	uint8_t tx_ta_n;
+	// talker alias (and GPS Info) in alternate superframes
+	uint8_t tx_ta[DMR_TA_LC_MAX + 1][DMR_LC_BYTES];	// the alias LCs, then our GPS Info
+	uint8_t tx_ta_n;	// LCs in the rotation (alias and GPS)
+	uint8_t tx_gps_at;	// tx_ta index of the GPS Info, 0xFF none
 	uint8_t tx_sf;		// superframes started in this transmission
-	uint8_t tx_emb_cur;	// what the modem spreads now: 0 the voice LC, 1 + n talker alias LC n
+	uint8_t tx_emb_cur;	// what the modem spreads now: 0 the voice LC, 1 + n rotation LC n
+	bool tx_gps_set;	// dmr_call_set_tx_gps
+	dmr_gps_t tx_gps;
 
 	// reply window
 	dmr_target_t reply;
@@ -432,8 +435,10 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	memcpy(s.call_lc, lc, DMR_LC_BYTES);
 	s.call_ts = b->ts;
 	s.last_rx_ms = now;
-	if (new_talker)
+	if (new_talker) {
 		dmr_ta_reset(&s.ta);
+		s.view.caller.gps_valid = false;
+	}
 
 	dmr_caller_t *c = &s.view.caller;
 	c->src = l.src;
@@ -617,6 +622,19 @@ static void rx_embedded(const dmr_burst_t *b, uint32_t now)
 			if (s.ta.complete && !was)
 				stats.rx_alias_complete++;
 			s.dirty = true;
+		}
+#endif
+	} else if (flco == DMR_FLCO_GPS) {
+#if CONFIG_DMR_GPS
+		dmr_gps_t g;
+
+		if (dmr_gps_decode(b->lc, &g)) {
+			stats.rx_gps++;
+			if (!s.view.caller.gps_valid || memcmp(&g, &s.view.caller.gps, sizeof(g)) != 0) {
+				s.view.caller.gps = g;
+				s.view.caller.gps_valid = true;
+				s.dirty = true;
+			}
 		}
 #endif
 	}
@@ -844,6 +862,7 @@ static bool tx_put(uint8_t kind, uint8_t index, bool host_crc, const uint8_t *pa
 
 // What bursts B-E of the superframe about to start carry: the voice LC, or with a talker alias set, one alias LC in
 // every other superframe (LC, header, LC, block 1, ... from the second superframe on, docs/spec/dmr-modem.md 4).
+// Our GPS Info, when set, is one more LC at the end of that rotation (LC, GPS, LC, GPS ... without an alias).
 // Given to the modem before burst A is queued: it takes a new embedded LC at the next burst A it sets up
 static void tx_superframe_lc(void)
 {
@@ -855,7 +874,9 @@ static void tx_superframe_lc(void)
 		return;
 	s.modem->set_embedded_lc(want ? s.tx_ta[want - 1] : s.tx_lc);
 	s.tx_emb_cur = want;
-	if (want)
+	if (want && want - 1 == s.tx_gps_at)
+		stats.tx_gps_lcs++;
+	else if (want)
 		stats.tx_alias_lcs++;
 }
 
@@ -949,6 +970,13 @@ static void tx_start_voice(uint32_t now)
 	s.tx_ta_n = 0;
 #if CONFIG_DMR_TALKER_ALIAS
 	s.tx_ta_n = (uint8_t)dmr_ta_encode(s.cfg.tx_alias, s.cfg.tx_alias_format, s.tx_ta);
+#endif
+	s.tx_gps_at = 0xFF;
+#if CONFIG_DMR_GPS
+	if (s.tx_gps_set) {
+		dmr_gps_encode(&s.tx_gps, s.tx_ta[s.tx_ta_n]);
+		s.tx_gps_at = s.tx_ta_n++;
+	}
 #endif
 	s.queue_cap = s.modem->tx_queue_space();
 	s.headers_left = DMR_CALL_TX_HEADERS;
@@ -1378,6 +1406,13 @@ void dmr_call_stop(void)
 void dmr_call_ptt(bool down)
 {
 	s.ptt = down;
+}
+
+void dmr_call_set_tx_gps(const dmr_gps_t *gps)
+{
+	s.tx_gps_set = gps != NULL;
+	if (gps)
+		s.tx_gps = *gps;
 }
 
 void dmr_call_reply_cancel(void)

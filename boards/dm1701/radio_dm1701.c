@@ -13,6 +13,7 @@
 // on-air measurement found no offset, so DM1701_TX_OFFSET_HZ_* default to 0. Measure the carrier with this exact
 // sequence and put the measured correction there; do not copy the +3 kHz of the other sequence.
 #include <stddef.h>
+#include "config.h"
 #include "dm1701.h"
 #include "pins.h"
 #include "hal_time.h"
@@ -64,6 +65,7 @@ static struct {
 	uint16_t tone_hz;		// FM TX tone in place of the microphone (tx_tone), 0 = none
 	uint16_t saved_59, saved_79;	// AT1846S tone deviation and tone select before the tone
 	bool asleep;			// rx_sleep(true): receiver off
+	volatile bool afsk;		// APRS AFSK running (afsk_dm1701.c): the TIM6 interrupt owns I2C3
 
 	// DMR per-burst keying (shared with the modem ISRs)
 	volatile bool dmr_armed;	// tx() in DMR mode: TX frequency and drive known
@@ -745,8 +747,8 @@ static void tx_off(void)
 
 static void status(radio_status_t *st)
 {
-	if (dm1701_dmr_tx_active()) {
-		*st = r.last_status;	// keep I2C3 free for the per-burst switching
+	if (dm1701_dmr_tx_active() || r.afsk) {
+		*st = r.last_status;	// keep I2C3 free for the per-burst switching / the AFSK tone switching
 		return;
 	}
 	uint8_t rssi, noise;
@@ -823,6 +825,41 @@ static bool tx_tone_key(bool down)
 	count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));
 	return true;
 }
+
+#if CONFIG_APRS
+// APRS AFSK (afsk_dm1701.c, docs/spec/aprs.md 5.2): the FM TX tone generator as for tx_tone, at hz with the deviation
+// from level (50 = the tone deviation tx_tone uses), then the TIM6 interrupt retunes tone1 (reg 0x35) every symbol
+// with single I2C3 writes. status() keeps off I2C3 meanwhile. Unverified on the bench, like tx_tone
+bool dm1701_afsk_begin(uint16_t hz, uint8_t level)
+{
+	if (!tx_tone(hz)) {
+		return false;
+	}
+	uint32_t dev = (0x40u * level + 25u) / 50u;
+	if (dev > 0x3FFu) {
+		dev = 0x3FFu;
+	}
+	count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));
+	r.afsk = true;		// the last writes were on page 0, as rf_isr_write needs
+	return true;
+}
+
+// From the TIM6 interrupt: tone1 to hz. False when the write didn't happen
+bool dm1701_afsk_tone(uint16_t hz)
+{
+	return r.afsk && rf_isr_write(0x35, (uint16_t)(hz * 10u));
+}
+
+void dm1701_afsk_end(void)
+{
+	if (r.afsk) {
+		r.afsk = false;
+		count(at1846s_write_force(&r.rf, 0, 0x35, (uint16_t)(r.tone_hz * 10u)));	// the interrupt wrote it behind
+											// the driver's cache
+		tone_restore();
+	}
+}
+#endif
 
 // Receiver battery saving (FM receive only): the AT1846S idle and the RX supply off; waking retunes with rx()
 static void rx_sleep(bool sleep)

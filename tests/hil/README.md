@@ -87,17 +87,18 @@ put them in a file in the repository.
 | `test_usb_network.py` | USB network personality: re-enumerates as CDC-NCM, DHCP gives the host 12.<ID>, ping and the debug link over UDP 3334 at the radio's address, back to serial | `--allow-usb-switch`, firmware with `CONFIG_DMR_IP_GATEWAY` |
 | `test_dmr_rx.py` | bench sends 2 group calls (10 superframes, 8 headers, 3 terminators each); counter deltas | `--allow-rf --allow-service-stop` |
 | `test_dmr_voice.py` | bench sends a speech recording; every frame reaches the speaker path | the same, and `--ambe` |
-| `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset | `--allow-rf --allow-service-stop` |
+| `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset; our ETSI GPS Info from a fixed APRS position decoded by the bench modem's listener (`CONFIG_DMR_GPS` and `CONFIG_APRS`) | `--allow-rf --allow-service-stop` |
 | `test_fm_tx.py` | radio FM VFO keys 3 s with CTCSS 100.0, DCS D023N, and at 12.5 / 25 kHz; `tools/sdr_fm_check.py` on an SDR capture | `--allow-rf --allow-service-stop` |
 | `test_radiodesk_alert.py` | a RadioDesk sandbox alert (MQTT `ESS/RadioDesk/Alert/<id>/voice`) becomes a private call; the radio shows and plays it; `AlertStatus` reports | `--allow-rf --allow-radiodesk`, `$ODR_RADIODESK_MQTT_*` |
 | `test_cps.py` | legacy CPS over USB with `tools/cps_client.py`: radio info (type 8 / 10, struct 3), two reads of the qdmr regions identical, the current channel's record matches the view, a channel change saved by the settings store within 2 s (the `storage` view section); opt-in: one channel renamed, read back and the backup restored and verified; the channel position survives a restart | radio; `--allow-codeplug-write`, `--allow-reboot` |
-| `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
+| `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, an ETSI GPS Info (after an alias), a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
 | `test_radio_features.py` | the `features` view section, settings round trip, beep counters (does PCM play in this mode), zone scan + cancel, nuisance delete, VFO band scan, dual watch (radio only); TX inhibit, TOT warning and time-out, roger beep, 1750 Hz burst on the FM VFO at lowest power (`radio_tx`); the scan holds on a bench DMR call (`rf`) | radio; `--allow-rf` (radio_tx); `--allow-rf --allow-service-stop` (the last) |
 | `test_dmr_emergency.py` | DMR emergency: the bench sends an emergency alarm CSBK and an emergency voice call to the channel's talkgroup (alerts raised); the radio sends its alarm (3 CSBKs) and an emergency call with the hot mic (the bench listens); the emergency settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio), firmware with `CONFIG_DMR_EMERGENCY` |
 | `test_split_duplex.py` | split duplex (`docs/spec/split-duplex.md` 10): 0xD6 INFO / SET_ROLE / STATUS, unknown sub-command and command answers, the SPLIT debug view (no RF); the TX half keyed 10 s at the lowest power, the SDR bench's `sdrmon.py analyze --cach` (BS sync only, 30 ms slots, one key-up edge, CACH decode printed; variant from `$ODR_SPLIT_VARIANT`); the RX half labeling bench calls and the label flipping with the epoch | firmware with `CONFIG_HOTSPOT_SPLIT`; the TX and RX tests `--allow-rf --allow-service-stop` |
 | `test_hotspot_cwid.py` | MMDVM SEND_CWID in hotspot mode: the radio keys the callsign in Morse on FM on the hotspot TX frequency (the SDR bench records), then the hotspot's DMR set-up is back | `--allow-rf --allow-service-stop` |
 | `test_dmr_data.py` | DMR data: bench sends unconfirmed and confirmed data, a TMS and an ETSI text message, a call alert and radio checks to us (the radio's answers listened for); the radio sends a call alert, a radio check (Motorola and ETSI forms) and a text message (TMS and ETSI) to the bench (the bench modem listens); the data settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio) |
 | `test_roaming.py` | DMR repeater roaming: the `roam` view section, the roaming settings round trip (RAM), the zone flag toggled and back, roam now on the current zone (passive: listens only; the radio ends on one of the sites, no probe sent), lock and roam now ending it (radio only); the wake probe brings up the bench repeater (`tools/bench/bench_repeater.py`) as a second site and the radio moves there (`rf`, `radio_tx`, `bench_service`); the survey settings round trip; the bench repeater keys an idle beacon (`bench_repeater.py --beacon`) and the radio, listening only, learns the beacon window from it as its own site and surveys the other sites in the window, or (slow) finds it from a silent site with a discovery visit and measures it (`rf`, `bench_service`). The zone flag and the roaming settings are put back | radio (the current zone with 2+ repeater channels on one talkgroup for roam now); `--allow-rf --allow-service-stop --roam-rx MHz --roam-tx MHz [--roam-beacon S --roam-beacon-len S]`, firmware with `CONFIG_DMR_ROAMING` |
+| `test_aprs.py` | APRS (`docs/spec/aprs.md` 13): the `aprs` / `aprs_set` view sections and a setting round trip, the RAM test callsign and host NMEA as the position (radio only); one position sent on the APRS frequency at lowest power, the radio back on its channel (`radio_tx`; decode it with an SDR or a second receiver and Direwolf) | radio; `--allow-rf` and `ODR_APRS_CALL=<your callsign>` (`ODR_APRS_REGION=eu` for 144.800), firmware with `CONFIG_APRS` |
 
 ### Pass criteria and tolerances
 
@@ -124,7 +125,8 @@ UI tests use `shot_until`.
 
 `test_dmr_call_features`: one call heard per RF test (`call.rx_calls` delta 1). Private to us: played, `last.to_us=1`,
 the reply target is the bench ID. Private to another ID: counted, 0 bursts played. Emergency: `last.emergency=1`.
-Talker alias: `call.alias` equals the text sent, `call.rx_alias_complete` 1. Late entry (after a call from
+Talker alias: `call.alias` equals the text sent, `call.rx_alias_complete` 1. GPS Info: `call.rx_gps` 1 or more,
+`last.gps_valid=1`, `last.gps_err=1`, latitude and longitude within 2e-5 degree of what was sent. Late entry (after a call from
 another ID): `call.rx_late_entries` 1, 18 to 20 voice bursts played of the 28 sent after the gap (voice is taken from
 the first burst A, the embedded LC is complete at the next F, burst 18 of 36); the same late call again (same LC as the
 last one, so the modem's sticky LC rule waits one superframe more): 12 to 14. Privacy option without a key: 0 bursts played, 20 or more
@@ -153,6 +155,12 @@ emergency_alarm`, nothing transmitted (`data.tx_lists` unchanged). An emergency 
 `data.emergency_alarms_sent` +3, `em.state=active`, 3 CSBKs heard with FID 0x10, the talkgroup in octets 4-6 and us
 in 7-9, at least 0.9 s apart. Emergency call out (call mode, 3 s hot mic, needs the codec): the radio keys by itself
 and unkeys, the LCs heard to the talkgroup from us all carry service options bit 0x80, `em.hot_mic_keyed` 1 or more.
+
+`test_aprs`: the view keys present, the SSID round trip; with a test call and host NMEA `aprs.pos_src=host`,
+`aprs.lat` / `aprs.lon` within 1e-3 degree; on air: `aprs.block=ok`, `aprs.freq_hz` the region's, `aprs.rf_sent` +1
+within 15 s (`rf_busy` instead means the APRS channel stayed busy for 10 s), `aprs.rf_active=0` and `ch.rx_hz`
+unchanged afterwards. The receiver should decode `CALL-7>APZODR,WIDE1-1,WIDE2-1:` with no FCS errors.
+`test_dmr_gps_tx`: one call heard by the bench modem, its `gps` within 2e-5 degree of 33.7490, -84.3880, error code 3.
 
 `test_hotspot_cwid` (DM-1701 or another board with `tx_tone_key`): SEND_CWID "N0CALL" (73 units) ACKed, the
 GET_STATUS TX flag set while keying and clear after, `hs.cw_sent` +1, `hs.cw_wpm=20`, `hs.cw_last_ms` within 10 %

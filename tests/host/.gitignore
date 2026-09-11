@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Everything the host tests build or write (test binaries, their .dSYM bundles, .out / .pcap / .expert, out/*.ppm)
-# is ignored: only sources, the Makefile and the sim/ and stubs/ trees are tracked. A new test needs no entry here.
+# is ignored: only sources, scripts, the Makefile and the sim/ and stubs/ trees are tracked. A new test needs no entry here.
 /*
 !/.gitignore
 !/Makefile
@@ -8,3 +8,4 @@
 !/*.h
 !/sim/
 !/stubs/
+!/*.sh
