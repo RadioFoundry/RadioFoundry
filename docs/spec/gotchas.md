@@ -168,6 +168,14 @@ in hotspot mode. Commit d226b9a.
 **3.9 Data TX deadline.** 10 s plus 60 ms per burst covers repeater wakeup; abort if wakeup fails. In repeater mode
 queue a data burst only on the channel's timeslot and once per slot. Commits 74e90a4, 455e466.
 
+**3.10 AT1846S voice source is reg 0x3A bits 14:12.** Symptom: APRS AFSK and the 1750 Hz burst keyed a carrier with
+no tone (SDR bench: 0.6 s at 145.090 MHz with about 25 Hz RMS deviation; the burst's 300-3000 Hz band 226 Hz peak while
+the CTCSS on the same carrier showed 2 kHz). Cause: `tx_tone` wrote the tone select into bits 6:4, which are squelch
+and sub-audio detect enables; voice_sel (bits 14:12: 000 nothing, 001 tone1, 010 tone2, 011 both, 100 microphone,
+AT1846S programming guide, TX voice channel select) stayed 000, and the HR_C6000 microphone input was muted. Rule:
+tones go out with 0x3A bits 14:12 = 001 and 0x7A bit 14 (single tone enable), both put back after. Radios: DM-1701
+(any AT1846S board where the HR_C6000 modulates the voice).
+
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
 unoptimized stack frame; at -Os DMR voice TX crashed the radio. Rule for new code: call the codec through a proper ABI
 shim (explicit function pointers or a hand-written assembly veneer with declared clobbers), never through inline asm
