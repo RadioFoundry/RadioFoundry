@@ -29,9 +29,9 @@ Features fall into three groups. This manual marks each feature that isn't verif
 
 | Group | Meaning | Features on the DM-1701 |
 |---|---|---|
-| Verified on the radio | Tested on a DM-1701 | Boot, display, keys, calibration, FM receive and transmit, DMR voice receive (with late entry), DMR transmit, receiving DMR calls, text messages, call alerts and radio checks, reading the radio with qdmr |
-| Built, host-tested | Works against simulated chips in the host tests. Nobody has heard it on air yet. | Sending DMR data (messages, call alert, radio check), emergency, privacy, hotspot, USB network, SFR, roaming, writing the radio with qdmr, scan, battery saver, VOX |
-| Not built yet | Shown in the menus, dimmed, with a message when selected | Voice prompts, GPS position, typed text messages, speed dial, saving contacts on the radio |
+| Verified on the radio | Tested on a DM-1701 | Boot, display, keys, calibration, FM receive and transmit, DMR voice receive (with late entry), DMR transmit, receiving DMR calls, text messages, call alerts and radio checks, reading the radio with qdmr, zone scan |
+| Built, host-tested | Works against simulated chips in the host tests. Nobody has heard it on air yet. | Sending DMR data (messages, call alert, radio check), emergency, privacy, hotspot, USB network, SFR, roaming (with beacon surveys), APRS transmit, positions in DMR calls, writing the radio with qdmr, VFO scan, battery saver, VOX |
+| Not built yet | Shown in the menus, dimmed, with a message when selected | Voice prompts, APRS receive (the DM-1701 can't sample received audio yet), typed text messages, speed dial, saving contacts on the radio |
 
 ## What ODR does
 
@@ -43,6 +43,9 @@ Features fall into three groups. This manual marks each feature that isn't verif
 - Hotspot: the radio works as an MMDVM modem for MMDVMHost and Pi-Star style hosts over USB.
 - Single frequency repeater (SFR) mode on the hotspot (optional build).
 - USB network mode (optional build): the radio becomes a USB network adapter and routes IP over DMR.
+- DMR repeater roaming per zone, surveying the other sites during the repeaters' beacons.
+- APRS: position, status and messages on FM, positions over DMR, a KISS TNC on USB.
+- Positions in DMR calls (ETSI GPS Info): the caller's distance and bearing; ours sent when turned on.
 - Programming with qdmr through a compatibility layer.
 
 ## The AMBE codec

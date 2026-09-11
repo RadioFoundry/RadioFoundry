@@ -21,7 +21,7 @@ It's early. Read the status section before you flash anything.
 | Radio | Builds | Host tests | On the radio | Support |
 |---|:---:|:---:|:---:|---|
 | Baofeng DM-1701 | ● | ● | ◐ | First target. FM and DMR voice work on the radio; the other features wait on hardware tests (below) |
-| Baofeng DM-32UV | ● | ● | ○ | Builds and passes its host tests; hasn't run on a radio yet ([bring-up checklist](docs/testing/dm32-bringup.md)) |
+| Baofeng DM-32UV | ● | ● | ○ | Builds and passes its host tests; hasn't run on a radio yet ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core, parked until bring-up ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
 | TYT MD-380 / MD-390, Retevis RT3 | ○ | ○ | ○ | Planned. Single band, STM32F405 with the older HR_C5000 modem and a SKY72310 synthesizer |
@@ -35,7 +35,8 @@ The chips in each radio, their sources and the planned port order: [docs/spec/ra
 On the DM-1701, these are verified on the radio: boot, display, keys, calibration, FM receive and transmit, DMR voice
 receive (including late entry), DMR transmit (decoded by an MMDVM receiver on the SDR bench), receiving the DMR
 calls and data the SDR bench can send (group and private calls, text messages, call alert, radio check), codeplug
-storage and qdmr reads. Transmitting data, emergency, privacy, hotspot, USB network, SFR, roaming and CPS writes are
+storage, qdmr reads and zone scan (stopping for DMR calls). Transmitting data, emergency, privacy, hotspot, USB
+network, SFR, roaming with beacon surveys, APRS, ETSI GPS Info in calls, the split duplex repeater and CPS writes are
 built and pass the host tests, but are still waiting on hardware tests.
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
@@ -54,6 +55,10 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
 - **Roaming:** moves to the strongest repeater of a zone when the one it's on gets weak, surveying the other sites
   during the repeaters' idle beacons; turned on per zone
   ([dmr-roaming](docs/spec/dmr-roaming.md))
+- **APRS:** position, status and messages on FM (1200 baud AFSK), positions over DMR to an APRS gateway, KISS TNC;
+  transmit only on the DM-1701 ([aprs](docs/spec/aprs.md))
+- **Split duplex repeater (experimental):** two radios on one MMDVM host as a full duplex repeater, off by default
+  ([split-duplex](docs/spec/split-duplex.md))
 - **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
 - **Scan:** zone, VFO and dual watch scan; on DMR it stops for calls in progress, using late entry
   ([radio-features](docs/spec/radio-features.md))
@@ -85,7 +90,7 @@ people already have. We support the formats other radios use, not just our favor
 | Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
 | Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
 | Programming | qdmr, over the GD-77-style CPS protocol | an open, published native codeplug format with its own qdmr driver; qdmr YAML and CSV import/export; RadioID user database |
-| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter | two radios as one full duplex repeater (a TX radio and an RX radio on one host), with the base MMDVM protocol unchanged |
+| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter; two radios as one full duplex repeater (experimental, build switch; the HR_C6000's CACH still needs a bench test) | the split duplex host side in RadioDesk |
 | Audio to a computer | | USRP over UDP (AllStarLink, DVSwitch), USB sound card with serial-line PTT ([usb-audio](docs/spec/usb-audio.md)) |
 
 "Supported now" means built and passing its tests; see [Radios and status](#radios-and-status) for what has been
