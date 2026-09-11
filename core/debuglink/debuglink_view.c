@@ -285,6 +285,10 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_APRS:
 		debuglink_view_aprs(0, t);
+#if CONFIG_APRS
+		// The level an APRS RF transmission keys at (the radio's current one; HIL tests check it before keying)
+		dl_text(t, "aprs.tx_power=%u\n", v->power);
+#endif
 		break;
 	case DL_VIEW_APRS_SET:
 		debuglink_view_aprs(1, t);

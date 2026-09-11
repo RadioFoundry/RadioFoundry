@@ -29,6 +29,7 @@ static struct {
 	uint32_t rx_hz;
 	int tx_calls;
 	uint32_t tx_hz;
+	uint8_t tx_power;
 	int tx_off_calls;
 	bool keyed;
 	uint8_t noise_on_aprs;	// noise reading on 144.390 (low = a carrier)
@@ -57,10 +58,10 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	(void)bw;
-	(void)p;
 	(void)t;
 	hw.tx_calls++;
 	hw.tx_hz = hz;
+	hw.tx_power = p;
 	hw.keyed = true;
 	return true;
 }
@@ -443,6 +444,28 @@ static void test_manual_and_ptt_trigger(void)
 	CHECK(hw.starts == 2);
 }
 
+// APRS keys at the radio's current power level, a temporary change included (it used the settings' default, so a
+// radio stepped down to its lowest level still sent APRS at the default: 1 W on the DM-1701)
+static void test_tx_power(void)
+{
+	reset();
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	CHECK(sm.view.power == 0);
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	CHECK(hw.tx_power == 0);
+	wait_idle();
+	req(RREQ_POWER, 1);		// temporary: H
+	CHECK(sm.view.power == 1 && sm.view.temporary);
+	run(6000);			// past the 5 s "send now" repeat guard
+	CHECK(aprs_send_now());
+	CHECK(wait_start(2, 5000));
+	CHECK(hw.tx_power == 1);
+	wait_idle();
+	CHECK(sm.view.power == 1 && hw.rx_hz == CH_HZ);
+}
+
 static void test_host_kiss_nmea(void)
 {
 	reset();
@@ -634,6 +657,7 @@ int main(void)
 	test_ptt_cuts();
 	test_not_amateur();
 	test_manual_and_ptt_trigger();
+	test_tx_power();
 	test_host_kiss_nmea();
 	test_messages();
 	test_dmr_position();
