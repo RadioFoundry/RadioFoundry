@@ -136,8 +136,8 @@ static void flip(uint8_t *burst, int n)
 
 static void testBptc(void)
 {
-	// ETSI TS 102 361-1 figure D.1: the idle message's info bits
-	static const uint8_t IDLE[12] = { 0xFF, 0x83, 0xDF, 0x17, 0x32, 0x09, 0x4E, 0xD1, 0xCF, 0xCD, 0x8A, 0x41 };
+	// ETSI TS 102 361-1 table D.2: the idle message's info bits, I(95) first
+	static const uint8_t IDLE[12] = { 0xFF, 0x83, 0xDF, 0x17, 0x32, 0x09, 0x4E, 0xD1, 0xE7, 0xCD, 0x8A, 0x91 };
 	uint8_t burst[33], back[12], payload[12];
 
 	memset(burst, 0xA5, sizeof(burst));

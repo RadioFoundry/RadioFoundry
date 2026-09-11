@@ -125,7 +125,7 @@ def ms_data(dt, info, cc):
 
 def net_voice_frames(src, dst, cc, superframes, control_bytes):
     """6 idle (jitter), 8 headers, the voice, 3 terminators, 2 idle; control 0 as MMDVMHost (or set, as rfgw)."""
-    idle = ms_data(DT_IDLE, bytes.fromhex("ff83df1732094ed1cfcd8a41"), cc)
+    idle = ms_data(DT_IDLE, bytes.fromhex("ff83df1732094ed1e7cd8a91"), cc)
     call = sim.voice_call(src, dst, cc, superframes, family="ms", slot=1, voice=[sim.AMBE_SILENCE] * (18 * superframes))
     out = [(SYNC_DATA | DT_IDLE, idle)] * 6
     for tb in call:

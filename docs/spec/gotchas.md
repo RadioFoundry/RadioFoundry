@@ -483,6 +483,10 @@ ported (HR_C5000 register page 0 and no CRC_MCU_Control; no C7000 layer 2 docs).
 none. On the GD-77 the repeater ends its own burst at the RF RX interrupt once the PA has been on 20 ms. Commits
 9369391, 10d57bd.
 
+**14.8 The idle message's info bits come from table D.2, I(95) first.** `SFR_IDLE_INFO` once had bytes 8 and 11 as
+`CF` and `41`; table D.2 gives `FF 83 DF 17 32 09 4E D1 E7 CD 8A 91`. The BPTC round trip passed anyway, so only a
+check against the table catches it (sfrTest).
+
 ## 15. Testing practice
 
 - An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests

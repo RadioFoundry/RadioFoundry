@@ -402,7 +402,8 @@ static void testIdle(void)
 	dmrFecBptcEncode(SFR_IDLE_INFO, frame);
 	dmrFecBptcDecode(frame, back);
 	CHECK(memcmp(back, SFR_IDLE_INFO, 12) == 0, "BPTC round trip");
-	CHECK((SFR_IDLE_INFO[0] == 0xFF) && (SFR_IDLE_INFO[1] == 0x83), "D.1 rows 0-1: I(95..80) = FF 83");
+	static const uint8_t D2[12] = { 0xFF, 0x83, 0xDF, 0x17, 0x32, 0x09, 0x4E, 0xD1, 0xE7, 0xCD, 0x8A, 0x91 };
+	CHECK(memcmp(SFR_IDLE_INFO, D2, 12) == 0, "ETSI table D.2: I(95..0) = FF 83 DF 17 32 09 4E D1 E7 CD 8A 91");
 }
 
 static void testUplink(void)
