@@ -17,8 +17,9 @@ Facts are not copyrightable. Every claim carries a source link and a confidence 
 | **?** | Not found or contradictory. Needs checking before a port starts |
 
 **FCC internal photos.** FCC IDs are listed per radio, but the fccid.io and fcc.report exhibit PDFs couldn't be
-fetched by script for this survey. No chip below is confirmed from an FCC photo yet. Reading the internal-photo
-exhibits by hand is the cheapest way to turn D and F tags into C, and it should happen before a port starts.
+fetched by script for this survey. Opened in a browser, they download fine. So far only the DB25-D PRO and DB40-D
+chips below are confirmed from FCC photos. Reading the internal-photo exhibits by hand is the cheapest way to turn D
+and F tags into C, and it should happen before a port starts.
 
 ## Summary table
 
@@ -31,9 +32,13 @@ exhibits by hand is the cheapest way to turn D and F tags into C, and it should 
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (D) | HR_C6000 (D) | AT1846S (D) | 128x64 mono, UC1701 (D) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (D) | none (D) | USB HID bootloader, .sgl files (F) | Planned: new platform |
 | Radioddity GD-88 | HR_C7000 class SoC (F) | HR_C7000 (F) | ? (two transceivers, F) | 2" color TFT (C), controller ? | ? | yes (C), module ? | Radioddity updater over K-plug cable (C) | Planned |
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (F, BIN) | HR_C7000 (F, BIN) | FD6818 (community pin map) | 240x320 color, ST7789 class (community, BIN) | 16 MB data flash (F); program flash size ? | yes (C), ATGM336H (community) | Baofeng bootloader over UART cable (BIN, F) | Builds, not on a radio yet |
+| Radioddity DB25-D / DB25-D PRO, Retevis RT73, Kydera CDR-300UV (mobile) | HR_C7000 SoC (C, FCC photo) | HR_C7000 (C) | 2x BK4819 on the PRO (C, FCC photo); 2021 boards ? | 1.77" color TFT (C), controller ? | 2 Gbit SPI NAND, Kioxia TC58CVG1S3 (C, FCC photo) | yes (C), module ? | Vendor IAP loader over a UART cable, plain images (C, IMG) | Wish list, hardware needed |
+| Radioddity DB40-D, Kydera CDR-700UV (mobile) | two processors "A" and "B", likely two HR_C7000 (C for two, ? for the part) | HR_C7000 (IMG) | ? (separate VHF and UHF chains and PA modules, C) | 2.4" color TFT (C), controller ? | SPI NAND, TC58 family (IMG) | yes (C), module ? | Vendor IAP loader over RJ-45 only, two plain images (C, IMG) | Wish list, hardware needed |
 
 BIN and "community" mean the facts come from our own disassembly and the community pin map recorded in
-[hardware-dm32.md](hardware-dm32.md), not from a public teardown.
+[hardware-dm32.md](hardware-dm32.md), not from a public teardown. IMG means our own look at a vendor's public update
+image: its container layout, its readable strings and the range of its address constants, with no disassembly.
+Treat IMG like D.
 
 ## Per-radio notes
 
@@ -199,6 +204,111 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - Open firmware: OpenDM32 (credited to RA4FHE) is binary-only (F)
   ([radioreference](https://forums.radioreference.com/threads/opendm32-software.495804/post-4244981)).
 
+### Radioddity DB25-D / DB25-D PRO / Retevis RT73 / Kydera CDR-300UV
+
+The DB25-D is Kydera's CDR-300UV under Radioddity's name. Radioddity's FCC ID 2AN62-DB25D is a change in ID of
+VO6CDR-300UV (Fujian New Century Communications, granted 2021-08-19). That filing keeps its internal photos,
+schematics and parts list confidential (C) ([fccid.io 2AN62-DB25D](https://fccid.io/2AN62-DB25D),
+[fccid.io VO6CDR-300UV](https://fccid.io/VO6CDR-300UV)). The 2025 **DB25-D PRO** has its own filing, 2AN62-DB25DPRO,
+with public internal photos. Those photos are the source of the C tags below, so they hold for the PRO. Its display
+board is dated 2020.08.21 and carried over, but its control, RX and TX boards are 2024 redesigns
+("CDR300UV-MCU-BT-AI-TDA-1.0", "C7DR300UV-RX-BT-AD-3.0", "C7DR300UV-TX-RD35-BT-AD-3.5") (C)
+([2AN62-DB25DPRO internal photos](https://fccid.io/2AN62-DB25DPRO/Internal-Photos/Internal-photos-8316141)).
+One firmware image covers the DB25-D and the DB25-D PRO (C, readme in the
+[2025-02-10 package](https://radioddity.s3.amazonaws.com/2025-02-10_DB25-D_firmware_update_release_2025-02-10.zip)).
+The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://kydera-ham.boards.net/thread/315/thoughts-radioddity-db25-mini-mobile),
+[miklor RT73](https://miklor.com/COM/Review_RT73.php)). No RT73 FCC ID was found (?).
+
+- **MCU and DMR:** one HR_C7000, marked "HR_C7000 D56323MP1" (C, FCC photo). The HR_C7000 integrates a C-SKY CK803S
+  core, as on the DM-32UV ([hardware-dm32.md](hardware-dm32.md)). The stock update file is named
+  `C7000_DR300UV_Ham_DB25D_20210902.bin` (C) ([Radioddity update guide](https://radioddity.s3.amazonaws.com/2023-03-30%20How%20to%20update%20firmware%20on%20DB25-D%20and%20GD-88%20v2.2.pdf)).
+  Program flash part and size: ?. The 846 KB image fits a 1 MB program flash like the DM-32's (IMG).
+- **RF:** the PRO's RF board has **two Beken BK4819** transceivers with a TCXO (C, FCC photo). The receiver IF is
+  51.550 MHz (C) ([extended manual v3.4](https://radioddity.s3.amazonaws.com/2025-05-01_Extended_manual_for_Radioddity_DB25-D_PRO_-_DB40-D_-_GD-88_-_v3.4.pdf),
+  section 18.2), so the BK4819s probably work at the IF and as the LO or modulator, not as direct-conversion receivers
+  (?). The firmware has no "BK4819" string but names an "rda1846" driver and an "AT1141/AT1411" LO PLL table (IMG).
+  **Whether the 2021 boards use the same RF chips is open (?)**.
+- **Bands and power:** 136–174 / 400–480 MHz, 20 W or 5 W, 13.8 V (C) ([radioddity.com](https://radioddity.com/products/radioddity-db25d)).
+  The FCC grant lists 19.7 W conducted (C). The PA is a discrete RF MOSFET on the TX board (C, photo). PA power is set
+  by an APC value ("u16ApcVal") (IMG).
+- **Display:** 1.77" color TFT (C) ([radioddity.com](https://radioddity.com/products/radioddity-db25d)). Miklor's
+  RT73 review says 2" diagonal (F). Controller and resolution: ?. The firmware reads a panel ID ("LCDid"), and
+  Radioddity's "white screen after update" fix covers different panels on different production batches (C, manual
+  14.4). So expect more than one controller.
+- **Controls:** front keys power, P1, P2, P3, VOL/SQL, TONE/T.SEL, B/E and Menu/OK, plus one push encoder. The
+  16-key hand mic adds PTT and P4–P7 (DTMF A–D) (C) (extended manual v3.4, section 5.5). The mic board ("CKS-10A-2")
+  carries a small QFN, likely an MCU, so the keys probably reach the radio as serial codes on RJ-45 pin 2 (?).
+- **Mic connector:** RJ-45. 1 power off (to ground), 2 PTT / radio RXD, 3 mic audio, 4 shield, 5 radio TXD, 6 ground,
+  7 +8 V, 8 speaker. 3.3 V logic, 115200 baud (C) (extended manual v3.4, section 17.6). The side K1 jack has the same
+  serial pair (3.5 mm sleeve RXD, 2.5 mm ring TXD) (C, section 17.5).
+- **Audio:** NXP TDA8542AT (2 x 1.5 W BTL) speaker amplifier (C, FCC photo). An "AI" noise-reduction daughter module
+  ("CC1157G") sits between the C7000 and the mic and speaker paths. Its pads read AFES_IN/OUT, MICES_IN/OUT, SCL, SDA,
+  NR_ON/OFF, ES_SW (C, FCC photo). Mic and speaker otherwise go through the C7000's codec as on the DM-32 (?).
+- **Storage:** Kioxia TC58CVG1S3HRAIJ, a 2 Gbit (256 MB) 3.3 V SPI NAND (C, FCC photo; part decode
+  [Elnec](https://www.elnec.com/en/device/KIOXIA/TC58CVG1S3HRAIJ+%5BWSON8%5D)). The firmware's storage code is
+  NAND with a bad-block table ("TC58_INTF_BlocksErase", "g_TC58BufBlock") (IMG).
+- **Other:** RDA5802N FM broadcast receiver (C, FCC photo). GPS: built in, SMA antenna port, module ? (C). Bluetooth:
+  none on the DB25-D per the product page (C). The PRO's board name says "BT", but no module was fitted in the FCC
+  unit (?). Coin-cell RTC backup (C, photo).
+- **Programming and update:** the vendor "IAP" Windows tool over a serial cable. Hold P1 and press power, and the
+  display stays blank with the backlight on (C) (update guide). The original cable has a Prolific PL2303 (C)
+  ([2021 addendum](https://radioddity.s3.amazonaws.com/2021-09-13%20Radioddity%20Addendum%20to%20DB25-D%20manual%20V1.1.pdf)).
+  FTDI cables work since firmware 909E.D4.EARSAB.018 (C, release notes). A ".flash" file mode updates the IAP loader
+  itself (C, manual 14.6).
+- **Image format:** raw code with no header, not encrypted. Entropy is about 7.0 bits per byte and there are
+  thousands of readable strings (IMG). Address constants start at 0x0300C000, which points to the DM-32's layout: a
+  48 KB loader at 0x03000000 and the app at 0x0300C000 (IMG, unverified).
+- **Codec:** the image links **`libc7000_hrvocoder_V1.9.6.a`** beside `libHRC7000Lib_V1.0.16.a` (IMG). The AMBE+2
+  vocoder is software on the CK803S core, and no vocoder chip shows in the photos (C). The DM-32's
+  [own-stock codec](codec-dm32.md) model carries over: extract the codec from the user's own DB25-D file. Whether it
+  is byte-identical to the DM-32's codec is unknown (?).
+- **Open firmware:** none. OpenGD77 and OpenRTX don't list it, and a 2021 forum thread calls it unlikely without
+  C-SKY tools (F) ([kydera-ham forum](https://kydera-ham.boards.net/thread/315/thoughts-radioddity-db25-mini-mobile)).
+  qdmr's support request has been open since 2021 (C) ([qdmr #165](https://github.com/hmatuschek/qdmr/issues/165)).
+  MM7DBT's CPEditor edits stock codeplugs (F) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
+- **Not DMR:** the DB25-G, DB20-G, DB40-G and DB35-G GMRS mobiles and the "DB25 Pro" (no D) are analog FM radios
+  (C, [radioddity.com DB25-G](https://radioddity.com/products/radioddity-db25g)). They aren't ODR targets.
+- **ODR:** reuses `platform/hrc7000`, `drivers/modem/hrc7000`, the DM-32 codec-carving tool (with a new recipe), a
+  small color UI class (160x128 if that's the panel, ?) and the GPS NMEA reader the DM-32 needs. New: a BK4819 driver for two instances (or the 2021 RF
+  chip), an SPI NAND driver with bad-block handling plus a storage adapter (ODR's stores assume NOR sectors), a panel
+  driver once the controller is known, the mic keypad protocol, an image packer without a header, and the APC power
+  table. Effort: weeks, after the DM-32UV is on air. Blockers: no hardware, the RF chip on older boards, the panel
+  controller, where calibration lives, and an unbrick path. The DM-32's ROM serial boot should exist on the same SoC,
+  but it needs checking on this board.
+
+### Radioddity DB40-D / Kydera CDR-700UV
+
+- The DB40-D's FCC ID is VO6CDR-700UV, the Kydera CDR-700UV, granted 2023-08-16 with Bluetooth (2402–2480 MHz) in the
+  grant (C) ([radioddity.com](https://radioddity.com/products/radioddity-db40-d), [fccid.io](https://fccid.io/VO6CDR-700UV)).
+  The internal photos are public (C) ([internal photos](https://fccid.io/VO6CDR-700UV/Internal-Photos/Internal-Photos-6738006)).
+  The firmware names its siblings "CDR-300UV(DB25-D)", "DR880UV(GD-88)" and an unreleased "DB45-D" (IMG).
+- **Processors:** the main board has two identical large packages marked "A" and "B" on the silkscreen. Their
+  markings can't be read in the photos (C for two, ? for the part). Updates take two files, (A) and (B), written
+  separately in IAP_A and IAP_B mode, and the B update shows no progress on the radio (C) (extended manual v3.4,
+  section 14.3). Both images link the HR_C7000 library and vocoder (IMG). So the radio very likely has two HR_C7000
+  SoCs, one per VFO, like the GD-88. The DB40-D's B firmware shares the GD-88's B49C prefix (C, release notes).
+- **RF:** separate VHF and UHF receive chains and two PA modules, one per band. Shielded cans hide the RF chips (C,
+  photos). RF chip: ?. 136–174 / 400–480 MHz, 40 W or 25 W (C) (extended manual v3.4, section 18.6). The product page
+  says 20/40 W (C). Fan cooled (C).
+- **Display and controls:** 2.4" color TFT (C) ([radioddity.com](https://radioddity.com/products/radioddity-db40-d)),
+  controller ?. The front has three push encoders (VFO A volume, VFO B volume, channel), PF1, PF2, on-hook and
+  off-hook keys, Back/Zone and Menu/OK (C) (extended manual v3.4, section 5.6; photo). The mic is the same 16-key
+  RJ-45 mic as the DB25-D's, with P5–P8 (C).
+- **Storage:** TC58-family SPI NAND per the firmware strings (IMG), part ?.
+- **Other:** GPS (active antenna supported), Bluetooth 5.0 module with an external antenna, RDA5802 FM broadcast
+  ("rda5802" string), external speaker jack (C, IMG). The CDR-700UV board has a SIM footprint for an LTE option the
+  DB40-D doesn't use (C, photo).
+- **Programming and update:** only through the RJ-45 at 3.3 V and 115200 baud (C) (extended manual v3.4, section 17.6).
+  The box contains an FTDI cable (C). IAP mode: hold the on-hook key and press power (C). The images are raw, plain
+  and headerless like the DB25-D's: A is 814 KB, B is 419 KB (IMG).
+- **Codec:** `libc7000_hrvocoder_V1.9.6.a` in both images (IMG). It's software in each C7000, so own-stock extraction
+  works as for the DB25-D, once per image if both processors decode voice.
+- **Open firmware:** none.
+- **ODR:** needs two cooperating images (A runs the UI, GPS and Bluetooth; B is a second modem and receiver) and an
+  A↔B link protocol. That's the GD-88's problem too, so it should follow the GD-88 port. New beyond the DB25-D:
+  the dual-SoC core support, the 2.4" panel, two PA power tables and fan control. Effort: months. Blockers: the two
+  chips' identity, the A↔B protocol and hardware.
+
 ## Relatives worth supporting
 
 | Radio | Chips | Reuse | Notes |
@@ -207,7 +317,7 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 | Baofeng DM-1702 / DM-X | STM32 or MK22 + HR_C6000 (F) | hrc6000; platform ? | USB protocol reverse-engineered by MD1702-tools (F) ([dmrconfig issue 39](https://github.com/OpenRTX/dmrconfig/issues/39)) |
 | Ailunce HD1 (v1) | MK22FN512, HR_C6000, AT1846S, 160x128 color, GPS (D) | GD-77 port + 160x128 class | Out of production, so used units only. Encrypted stock firmware, decoder exists (F) |
 | Connect Systems CS7000-M17 | STM32F405VG, HR_C6000, SKY72310, HX8302A, 25Q128FV (D) ([OpenRTX table](https://openrtx.org/#/hardware/hardware)) | stm32f4, hrc6000, SKY72310 driver from the MD-9600 / MD-380 | Free once the SKY72310 driver exists. The Plus model has an STM32H743 |
-| Retevis RT73 / Kydera CDR-300UV / Radioddity DB25-D, GD-73, TYT MD-9800 | HR_C7000 (F) ([opengd77.org p=26](https://www.opengd77.org/viewtopic.php?p=26)) | hrc7000 platform and modem | Popular mobiles. Encrypted vendor loaders (DB25-D, F). Need per-radio hardware facts |
+| TYT MD-9800 | HR_C7000 (F) ([opengd77.org p=26](https://www.opengd77.org/viewtopic.php?p=26)) | hrc7000 platform and modem | Relation to the Kydera platform unverified (?). The RT73 / CDR-300UV / DB25-D and the DB40-D have their own sections above. The GD-73 is a handheld, not part of that family |
 | Anytone AT-D868UV / AT-D878UV / 878UVII, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6 (D) ([OpenRTX UV878](https://openrtx.org/#/hardware/uv878)), **SCT3258 DMR baseband with built-in AMBE+2, not an HR_C6000** (D, F), AT1846S, 160x128 color (D, F) ([VK7ZJA mods guide](https://pnwdigital.net/wp-content/files/documents/Anytone/Mods_868_878_878-II_information_VK7ZJA(sk)-4-2-23_.pdf)) | at1846s | No update encryption or signing (D). The vocoder lives in the SCT3258, so no codec merge is needed. New: a GD32F30x platform and an SCT3258 driver. The 878 and DMR-6X2 are the same hardware (F) |
 | Anytone AT-D578UV (mobile) | GD32F303VKT6, AT32F43x after mid-2022, SCT3258 (F) | as the 878 | MCU change mid-run |
 
@@ -221,7 +331,7 @@ different architecture from anything in ODR. The Retevis C62 and Quansheng-style
 | Building block | In ODR now | Needed by |
 |---|---|---|
 | `platform/stm32f4` | yes | DM-1701, MD-UV380, MD-9600, MD-380, MD-2017, CS7000 |
-| `platform/hrc7000` | yes | DM-32UV, GD-88, RT73 family |
+| `platform/hrc7000` | yes | DM-32UV, GD-88, DB25-D family, DB40-D |
 | `drivers/modem/hrc6000` | yes | every HR_C6000 radio above |
 | `drivers/modem/hrc7000` | yes | the HR_C7000 radios |
 | `drivers/rf/at1846s` | yes | DM-1701, MD-UV380, GD-77 family, HD1, Anytone |
@@ -233,7 +343,11 @@ different architecture from anything in ODR. The Retevis C62 and Quansheng-style
 | `drivers/rf/sky72310` (+ receive chain) | **new** | MD-380, MD-9600 (older boards), CS7000 |
 | UC1701 / ST7567 mono display driver | **new** | GD-77 family (UC1701), MD-9600 (ST7567). Both are 128x64-class page-addressed controllers, so one driver may cover both (?) |
 | I2C EEPROM | **new** | GD-77 family |
-| GPS NMEA reader on a UART | **new** (as a board driver) | MD-UV380G, MD-9600G, MD-380G, DM-32UV, GD-88 |
+| GPS NMEA reader on a UART | **new** (as a board driver) | MD-UV380G, MD-9600G, MD-380G, DM-32UV, GD-88, DB25-D, DB40-D |
+| BK4819 transceiver | **new** | DB25-D PRO (two per radio) |
+| SPI NAND + storage adapter | **new** | DB25-D, DB40-D (Kioxia TC58CVG1S3, bad-block handling) |
+| `drivers/bcast/rda5807m` | yes | DM-32UV; the RDA5802 in the DB25-D and DB40-D is a close relative (register compatibility ?) |
+| Dual-SoC (A/B) core support | **new** | GD-88, DB40-D |
 | GD32F30x platform + SCT3258 modem | **new** | Anytone family |
 
 ## Suggested port order
@@ -249,8 +363,10 @@ By effort, then by how many radios a port unlocks and how popular they are:
    the GD-77's mono driver) and the board-version problem. Effort: weeks, and the V4/V5 PLL needs identifying first.
 4. **TYT MD-380 / MD-390 / RT3.** It reuses the STM32 platform and the MD-9600's SKY72310 driver. The HR_C5000 modem
    is the main new work, and the radios are older and single band. Effort: weeks.
-5. **HR_C7000 family after the DM-32UV is on air**: GD-88, then RT73 / CDR-300UV / DB25-D. Start by reading the FCC
-   internal photos, since the GD-88's chip list is mostly unknown.
+5. **HR_C7000 family after the DM-32UV is on air**: the DB25-D (one HR_C7000, the closest to the DM-32, but a new RF
+   chip and SPI NAND), then the GD-88, then the DB40-D (two SoCs, reusing the GD-88's A/B work). All three are wish
+   list items until hardware is on the bench. Start by reading the FCC internal photos, since the GD-88's chip list is
+   mostly unknown.
 6. **Opportunistic:** CS7000-M17 (nearly free after step 3), MD-2017 (dual receive) and DM-1702. The Anytone family
    is the biggest prize by popularity, but it needs a new MCU platform and a new DMR chip driver for the SCT3258, so
    it comes last.
