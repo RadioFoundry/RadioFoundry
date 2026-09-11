@@ -122,12 +122,18 @@
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
 #endif
 
-// Large core state that only the CPU touches can go in RAM the board keeps for that (the STM32F4's CCM), named by
-// the board as ODR_CPU_RAM_SECTION. It isn't zeroed at start-up: such state is cleared by its init function
+// Large state that only the CPU touches (never a DMA buffer) can go in RAM the board keeps for that, the STM32F4's
+// CCM: faster, and off the bus the DMA uses. ODR_CPU_RAM is zeroed at start-up like .bss; ODR_CPU_RAM_NOINIT isn't
+// (for state written before it's read). Without the board's sections both are ordinary RAM
 #ifdef ODR_CPU_RAM_SECTION
-#define ODR_CPU_RAM	__attribute__((section(ODR_CPU_RAM_SECTION)))
+#define ODR_CPU_RAM		__attribute__((section(ODR_CPU_RAM_SECTION)))
 #else
 #define ODR_CPU_RAM
+#endif
+#ifdef ODR_CPU_RAM_NOINIT_SECTION
+#define ODR_CPU_RAM_NOINIT	__attribute__((section(ODR_CPU_RAM_NOINIT_SECTION)))
+#else
+#define ODR_CPU_RAM_NOINIT
 #endif
 
 // Derived: the shared packet data / CSBK code

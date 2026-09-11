@@ -110,7 +110,7 @@ static struct {
 	int16_t rxbuf[160];
 	char gate[AX25_TNC2_MAX + 20];
 #endif
-} a ODR_CPU_RAM;	// CPU only; aprs_init clears it
+} a ODR_CPU_RAM;	// CPU only
 
 static void changed(void);
 static uint8_t rf_block(void);

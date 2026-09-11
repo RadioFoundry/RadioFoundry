@@ -36,7 +36,7 @@
 #endif
 #define RADIO_QUEUE_LEN		16
 
-static radio_sm_t sm;			// owned by the radio task
+static radio_sm_t sm ODR_CPU_RAM;	// owned by the radio task; CPU only
 static radio_settings_t pending_settings;	// radio_set_settings -> the radio task, under view_lock
 static radio_settings_t shared_settings;	// the published copy, under view_lock
 static radio_view_t shared_view;	// the published copy, under view_lock

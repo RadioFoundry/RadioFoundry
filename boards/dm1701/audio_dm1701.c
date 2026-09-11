@@ -143,6 +143,7 @@ static bool hw_start(void)
 
 	// RX: SPI3 DR -> rx_buf, half and full interrupts
 	DMA1_Stream0->PAR = (uint32_t)&SPI3->DR;
+	DMA_RAM_OK(rx_buf);
 	DMA1_Stream0->M0AR = (uint32_t)rx_buf;
 	DMA1_Stream0->NDTR = 2 * HALF_WORDS;
 	DMA1_Stream0->FCR = 0;	// direct mode
@@ -150,6 +151,7 @@ static bool hw_start(void)
 			   DMA_SxCR_CIRC | DMA_SxCR_HTIE | DMA_SxCR_TCIE;	// P->M, priority low
 	// TX: tx_buf -> I2S3ext DR
 	DMA1_Stream5->PAR = (uint32_t)&I2S3ext->DR;
+	DMA_RAM_OK(tx_buf);
 	DMA1_Stream5->M0AR = (uint32_t)tx_buf;
 	DMA1_Stream5->NDTR = 2 * HALF_WORDS;
 	DMA1_Stream5->FCR = 0;
