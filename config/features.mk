@@ -51,7 +51,7 @@ CONFIG_USB ?= y
 # programming cable's UART on radios without USB, e.g. the DM-32)
 CONFIG_HOSTLINK ?= $(CONFIG_USB)
 # USB network adapter personality (CDC-NCM, switched with the serial one at run time; needs USB)
-CONFIG_USB_NETWORK ?= $(CONFIG_USB)
+CONFIG_USB_NETWORK ?= $(if $(and $(filter y,$(CONFIG_USB)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # split duplex repeater: two radios as one duplex MMDVM modem through the hotspot's vendor command 0xD6 (needs
@@ -138,8 +138,9 @@ ifneq ($(call feature_on,CPS_LEGACY),)
   endif
 endif
 ifneq ($(call feature_on,USB_NETWORK),)
-  ifeq ($(call feature_on,USB),)
-    $(error CONFIG_USB_NETWORK=y needs CONFIG_USB=y)
+  ifeq ($(call feature_on,USB)$(call feature_on,HOSTLINK),yy)
+  else
+    $(error CONFIG_USB_NETWORK=y needs CONFIG_USB=y and CONFIG_HOSTLINK=y)
   endif
 endif
 ifneq ($(call feature_on,DMR_IP_GATEWAY),)

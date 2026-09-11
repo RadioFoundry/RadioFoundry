@@ -55,7 +55,7 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_BCAST_FM` | n (DM-32: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The task, settings, screen and DM-32 glue aren't written yet |
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
-| `CONFIG_USB_NETWORK` | = USB | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
+| `CONFIG_USB_NETWORK` | = USB and HOSTLINK | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
 | `CONFIG_HOTSPOT` | = DMR and HOSTLINK | MMDVM modem / hotspot over the host port |
 | `CONFIG_HOTSPOT_SPLIT` | = HOTSPOT | split duplex repeater: two radios, each an MMDVM modem, as one duplex repeater (the TX half sends the continuous BS outbound with the CACH, the RX half labels both inbound slots from the TX half's slot clock); the vendor command 0xD6 and the version suffix " SPLIT1", roles only after SET_ROLE, the HR_C6000 BS outbound engine, the debug link's SPLIT command (`docs/spec/split-duplex.md`). Needs `CONFIG_HOTSPOT`. Off, the image is unchanged. About 12.8 KB flash, 2.1 KB RAM on the DM-1701 |
 | `CONFIG_DEBUGLINK` | = HOSTLINK | debug link for bench automation on the host port: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
