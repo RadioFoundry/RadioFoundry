@@ -18,6 +18,23 @@
 #define FIND_KEYS	12
 #define FIND_MAX	16
 
+// Places Find opens by name or synonym; the Tools pages hold settings of their own that aren't in Settings
+static const struct {
+	const char *name, *syn;
+	uint8_t scr;
+} places[] = {
+	{ "Contacts", NULL, SCR_CONTACTS }, { "Messages", NULL, SCR_MESSAGES }, { "Recent", NULL, SCR_RECENT },
+	{ "Channels", NULL, SCR_CHANNELS }, { "Tools", NULL, SCR_TOOLS }, { "Settings", NULL, SCR_SETTINGS },
+	{ "VFO", NULL, SCR_CHANNELS },
+#if CONFIG_DMR_ROAMING
+	{ "Roaming", "roam site survey beacon interval length wake probe lock", SCR_ROAM },
+#endif
+#if CONFIG_APRS
+	{ "APRS", "position beacon smartbeaconing symbol path kiss tnc gps", SCR_APRS },
+#endif
+};
+#define PLACES_N	((uint8_t)(sizeof places / sizeof places[0]))
+
 typedef enum { FR_CHANNEL, FR_ZONE, FR_CONTACT, FR_TG, FR_PRIVATE, FR_SETTING, FR_PLACE } find_kind_t;
 
 typedef struct {
@@ -156,12 +173,9 @@ void ui_find_run(void)
 		}
 	}
 	// Places and settings by name (and synonyms: "promiscuous" finds Hear all)
-	static const char *const places[] = { "Contacts", "Messages", "Recent", "Channels", "Tools", "Settings", "VFO" };
-	static const uint8_t place_scr[] = { SCR_CONTACTS, SCR_MESSAGES, SCR_RECENT, SCR_CHANNELS, SCR_TOOLS,
-					     SCR_SETTINGS, SCR_CHANNELS };
-	for (uint8_t i = 0; i < sizeof places / sizeof places[0]; i++)
-		if (len >= 2 && ui_t9_match(places[i], query))
-			add(FR_PLACE, (uint32_t)i << 8 | place_scr[i]);
+	for (uint8_t i = 0; i < PLACES_N; i++)
+		if (len >= 2 && (ui_t9_match(places[i].name, query) || (places[i].syn && ui_t9_match(places[i].syn, query))))
+			add(FR_PLACE, (uint32_t)i << 8 | places[i].scr);
 	found = 0;
 	for (uint8_t g = 0; g < ui_set_group_count() && len >= 2; g++) {
 		for (uint8_t i = 0; i < ui_set_item_count(g) && found < 3; i++) {
@@ -295,9 +309,7 @@ static void find_item(uint16_t i, ui_item_t *it)
 		break;
 	}
 	case FR_PLACE: {
-		static const char *const places[] = { "Contacts", "Messages", "Recent", "Channels", "Tools", "Settings",
-						      "VFO" };
-		sb_str(&b, places[(r->ref >> 8) % 7]);
+		sb_str(&b, places[(r->ref >> 8) % PLACES_N].name);
 		sb_str(&vb, "open");
 		break;
 	}
