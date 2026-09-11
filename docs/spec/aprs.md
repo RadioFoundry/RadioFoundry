@@ -134,7 +134,8 @@ job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags
 
 1. LISTEN: tunes the APRS frequency (25 kHz, or 12.5 kHz when narrow is set), 50 ms to settle, then 100 ms slots with
    p-persistence 64/256 while the squelch is closed; gives up after 10 s (`rf_busy`, retried later).
-2. KEYUP: keys the FM transmitter on the APRS frequency at the radio's default power level, 25 ms.
+2. KEYUP: keys the FM transmitter on the APRS frequency at the radio's current power level (a temporary change
+   included, as for PTT; `aprs.tx_power` on the debug link), 25 ms.
 3. SEND: `board.afsk->tx_start`; at most 6 s.
 4. Back: transmitter off, the user's channel retuned exactly as it was.
 
