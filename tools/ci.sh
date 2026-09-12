@@ -97,6 +97,18 @@ for f in sys.argv[1:]:
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
 	fi
+	# the APRS AFSK decoder the HIL tests run on the SDR bench: frames, synthesized I/Q and the firmware's own WAV
+	if python3 -c 'import numpy' 2>/dev/null; then
+		if tests/host/aprsTest --wav "$OUT" > /dev/null 2>&1 &&
+		   python3 tools/aprs_afsk_check.py --self-test --wav "$OUT/aprs_test_44k1.wav" > "$OUT/aprs-afsk.log" 2>&1; then
+			ok "APRS AFSK decoder self-test ($(grep -c '^ok' "$OUT/aprs-afsk.log") checks)"
+		else
+			tail -20 "$OUT/aprs-afsk.log"
+			bad "APRS AFSK decoder self-test (see $OUT/aprs-afsk.log)"
+		fi
+	else
+		skip "APRS AFSK decoder self-test: numpy not installed"
+	fi
 	if python3 tools/check_doc_links.py > "$OUT/doc-links.log" 2>&1; then
 		ok "doc links: $(tail -1 "$OUT/doc-links.log" | sed 's/^check_doc_links: //')"
 	else

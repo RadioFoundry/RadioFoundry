@@ -60,6 +60,15 @@ def pytest_addoption(parser):
                 help="s: test_roaming's beacon tests, the bench repeater's beacon interval (set on the radio too)")
     g.addoption("--roam-beacon-len", type=int, default=3,
                 help="s: their beacon duration (bench_repeater.py --beacon-len, the radio's roam_beacon_len_s)")
+    g.addoption("--aprs-call", default=os.environ.get("ODR_APRS_CALL"),
+                help="test_aprs on air: the licensed operator's callsign ($ODR_APRS_CALL), set as the RAM-only test "
+                     "call (never saved)")
+    g.addoption("--aprs-ssid", type=int, default=15, help="test_aprs on air: the SSID sent (restored afterwards)")
+    g.addoption("--aprs-test-mhz", type=float, default=145.090,
+                help="MHz: test_aprs AFSK frequency, a 2 m packet simplex channel that is not an APRS frequency "
+                     "(test_aprs.py docstring); never 144.390")
+    g.addoption("--aprs-dmr-dst", type=int, default=9990301,
+                help="test_aprs DMR position: the destination ID (the bench modem listens to any)")
     g.addoption("--radiodesk-text", default="OpenDigitalRadio HIL test call",
                 help="the alert text RadioDesk speaks in the private call")
 
