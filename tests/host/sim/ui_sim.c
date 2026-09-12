@@ -41,6 +41,20 @@
 
 sim_record_t sim_rec;
 
+static void (*fit_hook)(const char *src, const char *out);
+
+void sim_set_fit_hook(void (*hook)(const char *src, const char *out))
+{
+	fit_hook = hook;
+}
+
+void gfx_fit_trace(const char *src, const char *out)
+{
+	sim_rec.shortened++;
+	if (fit_hook != NULL)
+		fit_hook(src, out);
+}
+
 const sim_geom_t sim_geoms[] = {
 	{ "160x120i5", 160, 120, 16, 5 },	// DM-1701 with its lens inset (CONFIG_DISPLAY_INSET=5)
 	{ "160x128", 160, 128, 16, 0 },		// MD-UV380 / MD-9600 class

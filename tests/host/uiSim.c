@@ -5,6 +5,8 @@
 //   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F] [--scale N] [--out FILE.png]
 //         [--script "ok 4 down ok expect:zone=1"]
 //   uiSim --gallery DIR      every screen at every display class: DIR/<geom>/<screen>.png
+//   uiSim --ellipsis [GEOM]  every text shortened with an ellipsis on the gallery screens and the settings pages
+//                            (lists scrolled to their end), at one display class or all of them
 //
 // The script runs from Home after a reset (see tests/host/sim/ui_sim.c for the tokens); the screen at the end is
 // written to --out. Exit status 1 if a key isn't on the key map or an expect: fails.
@@ -13,6 +15,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "sim/ui_sim.h"
+#include "ui/ui_app.h"
 
 // Screens for the gallery: a name and the script that reaches it from Home (zone 0, channel 3, a DMR channel)
 static const struct { const char *name, *script; } gallery[] = {
@@ -67,6 +70,121 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "hotspot", "hotspot:on" },
 };
 
+// More screens for --ellipsis: every settings group and the pages under them, lists scrolled through
+#define DOWN12 " down down down down down down down down down down down down"
+static const struct { const char *name, *script; } audit_extra[] = {
+	{ "hub", "ok" DOWN12 },
+	{ "tools", "ok 5" DOWN12 },
+	{ "settings", "ok 6" DOWN12 },
+	{ "settings_sound", "ok 6 1" DOWN12 },
+	{ "settings_display", "ok 6 2" DOWN12 },
+	{ "settings_talk", "ok 6 3" DOWN12 },
+	{ "settings_privacy", "ok 6 4" DOWN12 },
+	{ "settings_location", "ok 6 5" DOWN12 },
+	{ "settings_connections", "ok 6 6" DOWN12 },
+	{ "settings_power", "ok 6 7" DOWN12 },
+	{ "settings_keys", "ok 6 8" DOWN12 },
+	{ "settings_my_radio", "ok 6 9" DOWN12 },
+	{ "settings_advanced", "ok 6 0" DOWN12 },
+	{ "about", "ok 6 0 ok" DOWN12 DOWN12 },
+	{ "codeplug", "ok 6 0 down ok" },
+	{ "battery", "ok 5 4" },
+	{ "my_radio", "ok 6 9 ok" },
+	{ "caller_actions", "call:3101234,91,g wait:11000 ctx" DOWN12 },
+	{ "contact_actions", "ok 1 5 6 ctx" DOWN12 },
+	{ "recent", "call:3101234,91,g call:3105678,3100,g call:3102222,0,p long:ctx" DOWN12 },
+	{ "quick_dmr_all", "quick" DOWN12 },
+	{ "quick_fm_all", "down quick" DOWN12 },
+	{ "picker", "call:3101234,91,g tt" DOWN12 },
+};
+
+static const char *audit_geom, *audit_screen;
+static char audit_seen[512][96];
+static int audit_seen_n, audit_total;
+// Texts shortened while the script ran, with the screen they were on; only the final screen's are listed
+static struct { char scr[24], key[64], src[64], out[64]; } audit_run[256];
+static int audit_run_n;
+
+// Printable copy: the ellipsis and the dot glyphs as UTF-8; digits as # when key (so ages count once)
+static void audit_text(const char *s, char *o, size_t len, bool key)
+{
+	size_t n = 0;
+	for (; *s && n + 4 < len; s++) {
+		unsigned char c = (unsigned char)*s;
+		if (c == 0x80 || c == 0x81) {	// GLYPH_ELLIPSIS, GLYPH_DOT
+			memcpy(o + n, c == 0x80 ? "\xe2\x80\xa6" : "\xc2\xb7", c == 0x80 ? 3 : 2);
+			n += c == 0x80 ? 3 : 2;
+		} else {
+			o[n++] = key && c >= '0' && c <= '9' ? '#' : (char)c;
+		}
+	}
+	o[n] = 0;
+}
+
+static void audit_where(char *scr, size_t len)
+{
+	ui_app_status_t st;
+	ui_app_status(&st);
+	snprintf(scr, len, "%s|%u", st.screen, (unsigned)st.depth);
+}
+
+static void audit_hook(const char *src, const char *out)
+{
+	if (audit_run_n >= 256)
+		return;
+	audit_where(audit_run[audit_run_n].scr, sizeof audit_run[0].scr);
+	audit_text(src, audit_run[audit_run_n].key, sizeof audit_run[0].key, true);
+	audit_text(src, audit_run[audit_run_n].src, sizeof audit_run[0].src, false);
+	audit_text(out, audit_run[audit_run_n].out, sizeof audit_run[0].out, false);
+	audit_run_n++;
+}
+
+static void audit_flush(void)
+{
+	char scr[24], line[96];
+	audit_where(scr, sizeof scr);
+	for (int r = 0; r < audit_run_n; r++) {
+		if (strcmp(audit_run[r].scr, scr) != 0)
+			continue;
+		snprintf(line, sizeof line, "%s|%s|%s", audit_geom, audit_screen, audit_run[r].key);
+		bool seen = false;
+		for (int i = 0; i < audit_seen_n && !seen; i++)
+			seen = strcmp(audit_seen[i], line) == 0;
+		if (seen)
+			continue;
+		if (audit_seen_n < 512)
+			strcpy(audit_seen[audit_seen_n++], line);
+		audit_total++;
+		printf("%-10s %-22s \"%s\" -> \"%s\"\n", audit_geom, audit_screen, audit_run[r].src, audit_run[r].out);
+	}
+	audit_run_n = 0;
+}
+
+static int run_audit(const char *only)
+{
+	char err[256];
+	sim_set_fit_hook(audit_hook);
+	for (int g = 0; g < sim_geom_count; g++) {
+		if (only != NULL && strcmp(only, sim_geoms[g].name) != 0)
+			continue;
+		audit_geom = sim_geoms[g].name;
+		for (int pass = 0; pass < 2; pass++) {
+			size_t n = pass == 0 ? sizeof gallery / sizeof gallery[0] : sizeof audit_extra / sizeof audit_extra[0];
+			for (size_t i = 0; i < n; i++) {
+				audit_screen = pass == 0 ? gallery[i].name : audit_extra[i].name;
+				sim_reset(&sim_geoms[g], SIM_MAP_K);
+				audit_run_n = 0;
+				if (!sim_run(pass == 0 ? gallery[i].script : audit_extra[i].script, err, sizeof err))
+					printf("FAIL %s %s: %s\n", audit_geom, audit_screen, err);
+				audit_flush();
+			}
+		}
+	}
+	sim_set_fit_hook(NULL);
+	printf("# %d texts shortened with an ellipsis\n", audit_total);
+	return 0;
+}
+
 static int run_gallery(const char *dir)
 {
 	char path[512], err[256];
@@ -105,6 +223,8 @@ int main(int argc, char **argv)
 		const char *v = i + 1 < argc ? argv[i + 1] : NULL;
 		if (strcmp(a, "--gallery") == 0 && v != NULL)
 			return run_gallery(v);
+		if (strcmp(a, "--ellipsis") == 0)
+			return run_audit(v);
 		if (strcmp(a, "--geom") == 0 && v != NULL) {
 			g = sim_geom_find(v);
 			if (g == NULL) {
