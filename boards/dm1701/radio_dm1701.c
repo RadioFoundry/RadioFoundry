@@ -64,6 +64,7 @@ static struct {
 	radio_status_t last_status;	// returned without bus traffic while DMR transmits
 	uint16_t tone_hz;		// FM TX tone in place of the microphone (tx_tone), 0 = none
 	uint16_t saved_59, saved_79;	// AT1846S tone deviation and tone select before the tone
+	uint16_t saved_3a, saved_7a;	// AT1846S voice source (0x3A bits 14:12) and single tone enable before the tone
 	bool asleep;			// rx_sleep(true): receiver off
 	volatile bool afsk;		// APRS AFSK running (afsk_dm1701.c): the TIM6 interrupt owns I2C3
 
@@ -609,7 +610,8 @@ static void tone_restore(void)
 		return;
 	}
 	uint8_t e0;
-	count(at1846s_modify(&r.rf, 0, 0x3A, 0xFF8F, 0x40));	// voice source: microphone
+	count(at1846s_modify(&r.rf, 0, 0x3A, 0x8FFF, (uint16_t)(r.saved_3a & 0x7000u)));	// voice source back
+	count(at1846s_write(&r.rf, 0, 0x7A, r.saved_7a));
 	count(at1846s_write(&r.rf, 0, 0x59, r.saved_59));
 	count(at1846s_write(&r.rf, 0, 0x79, r.saved_79));
 	if (hrc6000_read(&r.modem, 4, 0xE0, &e0)) {
@@ -784,8 +786,9 @@ static void volume(uint8_t percent)
 }
 
 // FM TX tone (hardware-dm1701.md 5.8): the AT1846S tone generator as the voice source with the HR_C6000 microphone
-// input muted (4:0xE0 bit 6 cleared). Unverified on the bench: how the AT1846S tone reaches the modulator while the
-// HR_C6000 does the two-point modulation. Only during FM TX; the next tx() / rx() reapplies the mode tables
+// input muted (4:0xE0 bit 6 cleared). The AT1846S modulates it as it does its CTCSS (seen on the SDR bench) once
+// voice_sel selects tone1; with voice_sel left at "nothing" the carrier was unmodulated (gotchas 3.10). Only during FM
+// TX; the next tx() / rx() reapplies the mode tables
 static bool tx_tone(uint16_t hz)
 {
 	if (!r.tx_on || r.mode != RADIO_MODE_FM) {
@@ -798,6 +801,8 @@ static bool tx_tone(uint16_t hz)
 			uint16_t v;
 			r.saved_59 = at1846s_read(&r.rf, 0, 0x59, &v) ? v : 0;
 			r.saved_79 = at1846s_read(&r.rf, 0, 0x79, &v) ? v : 0;
+			r.saved_3a = at1846s_read(&r.rf, 0, 0x3A, &v) ? v : 0;
+			r.saved_7a = at1846s_read(&r.rf, 0, 0x7A, &v) ? v : 0;
 		}
 		if (ok) {
 			count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)(e0 & ~0x40u)));	// microphone muted
@@ -805,7 +810,11 @@ static bool tx_tone(uint16_t hz)
 		count(at1846s_write(&r.rf, 0, 0x35, (uint16_t)(hz * 10u)));		// tone1 = Hz x 10
 		count(at1846s_write(&r.rf, 0, 0x79, 0xC000));				// single tone
 		count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((0x40u << 6) | (r.saved_59 & 0x3Fu))));	// tone deviation
-		count(at1846s_modify(&r.rf, 0, 0x3A, 0xFF8F, 0x10));			// voice source: tone1
+		count(at1846s_modify(&r.rf, 0, 0x7A, 0xBFFF, 0x4000));			// single tone enable
+		// voice_sel, 0x3A bits 14:12 = 001: TX the tone1 frequency (AT1846S programming guide, TX voice channel
+		// select). Bits 6:4 are squelch and sub-audio detect enables, not the voice source: writing the tone there
+		// left voice_sel at 000 (TX nothing), an unmodulated carrier
+		count(at1846s_modify(&r.rf, 0, 0x3A, 0x8FFF, 0x1000));
 		r.tone_hz = hz;
 	} else {
 		tone_restore();
