@@ -17,6 +17,21 @@ static const band_t bands[] = {
 	{ 400000000, 480000000, true },
 };
 
+// The RTOS heap, and with it every task stack, in the CCM: zero wait states and no contention with the audio,
+// ADC and backlight DMA on the main SRAM. Nothing on a stack or from pvPortMalloc may be a DMA buffer (DMA can't
+// reach the CCM): the DMA buffers are statics in main RAM, checked where each stream is set up (dm1701.h DMA_RAM_OK)
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
+
+// Zero the CCM's .ccmbss (ODR_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
+// (the CCM clock is on from reset)
+extern uint32_t _sccmbss[], _eccmbss[];
+static void ccm_zero(void)
+{
+	for (uint32_t *p = _sccmbss; p < _eccmbss; p++)
+		*p = 0;
+}
+__attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
+
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 // The top side key (above PTT, row 2 D5): short = power level; held 1.5 s = emergency where it is built

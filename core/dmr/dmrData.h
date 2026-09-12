@@ -9,15 +9,10 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "config.h"
 
-// Big buffers that need no initial value. On the STM32F405 they go to the CCM RAM (which the startup code doesn't clear),
-// except on the MD-380, where the CCM is full and the main RAM isn't, and on the MD-9600, whose linker script doesn't
-// map the CCM
-#if defined(STM32F405xx) && !defined(PLATFORM_MD380) && !defined(PLATFORM_MD9600)
-#define DMR_DATA_BUFFER __attribute__((section(".ccmram")))
-#else
-#define DMR_DATA_BUFFER
-#endif
+// Big buffers only the CPU touches: in the board's CPU-only RAM where it has one (config.h ODR_CPU_RAM)
+#define DMR_DATA_BUFFER ODR_CPU_RAM
 
 // ETSI TS 102 361-1 data types (same values as the hotspot's DT_xxx)
 #ifndef DT_CSBK

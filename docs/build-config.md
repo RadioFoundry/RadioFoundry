@@ -20,6 +20,10 @@ unless it is set: `CONFIG_DMR=n` turns off every DMR feature, and asking for a s
 error. Changing a switch rebuilds everything (the build keeps the flags in `build/<board>/flags`, checked when make
 starts). `make BOARD=<b> print-config` lists the resolved switches.
 
+Every feature is on by default wherever the radio has what it needs. A board turns a feature off only for hardware
+it lacks (the DM-1701 has no receive path for APRS receive) or when the image doesn't fit, and then the most obscure
+large features go first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
+
 The firmware version (`ODR_GIT`) is the commit plus `-dirty` when the tree differs from it (tracked changes, or
 untracked sources in the built directories); only the few files that use it are rebuilt when it changes.
 
@@ -30,7 +34,7 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_FM` | y | analog FM receive and transmit |
 | `CONFIG_SUBTONE` | = FM | CTCSS / DCS encode and decode |
 | `CONFIG_FM_TX_TONES` | = FM | roger beep and 1750 Hz burst sent over the air (`docs/spec/radio-features.md` 3) |
-| `CONFIG_VOX` | n | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
+| `CONFIG_VOX` | = FM | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
 | `CONFIG_APRS` | = FM | APRS (`core/aprs`, `docs/spec/aprs.md`): position, status and message packets as AX.25 / Bell 202 AFSK on FM through `board.afsk`, positions over DMR (LRRP / UDT), beacon triggers, a KISS TNC on the host port. Transmit stays off until the user turns it on. About 18 KB flash, 2.8 KB RAM on the DM-1701 |
 | `CONFIG_APRS_RX` | = APRS (DM-1701: n) | APRS receive: the AFSK demodulator on the board's received audio, station list, messages to us with acks, the digipeater. Useful only where `board.afsk` can sample received audio (the DM-1701 can't, `docs/spec/aprs.md` 5.3). About 10 KB flash, 4 KB RAM more |
@@ -45,15 +49,15 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert and radio check, answered and sent |
 | `CONFIG_DMR_EMERGENCY` | = DMR | DMR emergency: the alarm CSBK, the emergency call with hot mic, the alert heard (`spec/dmr-emergency.md`) |
 | `CONFIG_DMR_ROAMING` | = DMR | DMR repeater roaming: per-zone roaming between repeater sites with the same talkgroup, chosen by base station sync with our color code and signal, passive (an optional wake probe sends a standard BS_Dwn_Act); Tools > Roaming, the Home chip (`docs/spec/dmr-roaming.md`). About 5.2 KB flash, 1 KB RAM on the DM-1701 |
-| `CONFIG_DMR_IP_GATEWAY` | n | IP over DMR packet data through the USB network adapter, carried by the data service (`docs/spec/usb-network.md`) |
-| `CONFIG_SFR` | n | single frequency repeater: the MMDVM hotspot's SFR mode (duplex with RX = TX); the stand-alone repeater and user roles on a channel are not wired yet (`docs/spec/sfr.md`) |
+| `CONFIG_DMR_IP_GATEWAY` | = DMR and USB_NETWORK | IP over DMR packet data through the USB network adapter, carried by the data service (`docs/spec/usb-network.md`) |
+| `CONFIG_SFR` | = DMR | single frequency repeater: the MMDVM hotspot's SFR mode (duplex with RX = TX); the stand-alone repeater and user roles on a channel are not wired yet (`docs/spec/sfr.md`) |
 | `CONFIG_AM_RX` | n (DM-32: = FM) | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. The DM-32 glue isn't written yet |
 | `CONFIG_BCAST_FM` | n (DM-32: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The task, settings, screen and DM-32 glue aren't written yet |
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
-| `CONFIG_USB_NETWORK` | = IP_GATEWAY | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
+| `CONFIG_USB_NETWORK` | = USB and HOSTLINK | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) |
 | `CONFIG_HOTSPOT` | = DMR and HOSTLINK | MMDVM modem / hotspot over the host port |
-| `CONFIG_HOTSPOT_SPLIT` | n | split duplex repeater: two radios, each an MMDVM modem, as one duplex repeater (the TX half sends the continuous BS outbound with the CACH, the RX half labels both inbound slots from the TX half's slot clock); the vendor command 0xD6 and the version suffix " SPLIT1", roles only after SET_ROLE, the HR_C6000 BS outbound engine, the debug link's SPLIT command (`docs/spec/split-duplex.md`). Needs `CONFIG_HOTSPOT`. Off, the image is unchanged. About 12.8 KB flash, 2.1 KB RAM on the DM-1701 |
+| `CONFIG_HOTSPOT_SPLIT` | = HOTSPOT | split duplex repeater: two radios, each an MMDVM modem, as one duplex repeater (the TX half sends the continuous BS outbound with the CACH, the RX half labels both inbound slots from the TX half's slot clock); the vendor command 0xD6 and the version suffix " SPLIT1", roles only after SET_ROLE, the HR_C6000 BS outbound engine, the debug link's SPLIT command (`docs/spec/split-duplex.md`). Needs `CONFIG_HOTSPOT`. Off, the image is unchanged. About 12.8 KB flash, 2.1 KB RAM on the DM-1701 |
 | `CONFIG_DEBUGLINK` | = HOSTLINK | debug link for bench automation on the host port: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
 | `CONFIG_CPS_LEGACY` | = HOSTLINK | legacy CPS protocol on the host port (USB serial, or the DM-32 programming cable UART; qdmr, the legacy CPS, `tools/cps_client.py`): codeplug read / write, radio info (`docs/spec/cps-protocol.md` 2). The settings store and the sector journal (`docs/spec/settings-store.md`) are always built |
 | `CONFIG_VFO` | y | tuning a frequency by hand |

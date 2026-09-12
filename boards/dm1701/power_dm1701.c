@@ -4,6 +4,7 @@
 // ADC1 scans volume, battery, mic level and the temperature sensor continuously; DMA2 Stream4 keeps the last
 // SCANS results in a circular buffer, so a reading is a short average with no interrupt and no locking.
 #include "dm1701.h"
+#include "FreeRTOS.h"
 #include "pins.h"
 #include "hal_time.h"
 
@@ -38,6 +39,7 @@ static void adc_start(void)
 	}
 	DMA2->HIFCR = DMA_HIFCR_CTCIF4 | DMA_HIFCR_CHTIF4 | DMA_HIFCR_CTEIF4 | DMA_HIFCR_CDMEIF4 | DMA_HIFCR_CFEIF4;
 	DMA2_Stream4->PAR = (uint32_t)&ADC1->DR;
+	DMA_RAM_OK(samples);
 	DMA2_Stream4->M0AR = (uint32_t)samples;
 	DMA2_Stream4->NDTR = SCANS * CH_COUNT;
 	DMA2_Stream4->FCR = 0;	// direct mode

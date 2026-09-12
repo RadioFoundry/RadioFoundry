@@ -8,6 +8,10 @@
 ## Each switch reaches C as CONFIG_<NAME> = 0 or 1 (always defined, so use #if, not #ifdef) and can leave whole
 ## source directories out of the build. Sub-features follow their parent unless set (CONFIG_DMR=n turns off every
 ## DMR feature; asking for a sub-feature without its parent is an error). See docs/build-config.md. Add a feature here, in core/config.h and in the doc.
+##
+## Policy: every feature is on by default wherever the radio has what it needs (hardware, a parent feature). A board
+## turns features off only for hardware it lacks, or when the image doesn't fit; then the most obscure large features
+## go first. Bench diagnostics (AUDIO_PROBE) stay off.
 
 # analog FM receive and transmit
 CONFIG_FM ?= y
@@ -37,22 +41,22 @@ CONFIG_DMR_EMERGENCY ?= $(CONFIG_DMR)
 # core/radio/roam.c, docs/spec/dmr-roaming.md)
 CONFIG_DMR_ROAMING ?= $(CONFIG_DMR)
 # IP over DMR packet data through the USB network adapter (needs DMR and USB_NETWORK; core/hostlink/hostlink_net.c)
-CONFIG_DMR_IP_GATEWAY ?= n
+CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK))),y,n)
 # single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
 # the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
-CONFIG_SFR ?= n
+CONFIG_SFR ?= $(CONFIG_DMR)
 # USB device (CDC serial)
 CONFIG_USB ?= y
 # the host link (core/hostlink): MMDVM hotspot, CPS and debug link over the board's host port (USB CDC, or the
 # programming cable's UART on radios without USB, e.g. the DM-32)
 CONFIG_HOSTLINK ?= $(CONFIG_USB)
 # USB network adapter personality (CDC-NCM, switched with the serial one at run time; needs USB)
-CONFIG_USB_NETWORK ?= $(CONFIG_DMR_IP_GATEWAY)
+CONFIG_USB_NETWORK ?= $(if $(and $(filter y,$(CONFIG_USB)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # split duplex repeater: two radios as one duplex MMDVM modem through the hotspot's vendor command 0xD6 (needs
 # HOTSPOT; core/hotspot/hotspotSplit.c, core/dmr/bsOutbound.c, core/dmr/slotEpoch.c, docs/spec/split-duplex.md)
-CONFIG_HOTSPOT_SPLIT ?= n
+CONFIG_HOTSPOT_SPLIT ?= $(CONFIG_HOTSPOT)
 # VFO: tune a frequency by hand (off: programmed channels only)
 CONFIG_VFO ?= y
 # analog FM VFO (needs VFO and FM)
@@ -77,7 +81,7 @@ CONFIG_BEEP ?= y
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
 CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 # FM VOX: voice-operated transmit from the microphone level (needs FM; unverified on the bench)
-CONFIG_VOX ?= n
+CONFIG_VOX ?= $(CONFIG_FM)
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
 # air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on boards with
@@ -134,8 +138,9 @@ ifneq ($(call feature_on,CPS_LEGACY),)
   endif
 endif
 ifneq ($(call feature_on,USB_NETWORK),)
-  ifeq ($(call feature_on,USB),)
-    $(error CONFIG_USB_NETWORK=y needs CONFIG_USB=y)
+  ifeq ($(call feature_on,USB)$(call feature_on,HOSTLINK),yy)
+  else
+    $(error CONFIG_USB_NETWORK=y needs CONFIG_USB=y and CONFIG_HOSTLINK=y)
   endif
 endif
 ifneq ($(call feature_on,DMR_IP_GATEWAY),)
