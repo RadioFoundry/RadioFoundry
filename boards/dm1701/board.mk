@@ -6,7 +6,8 @@ MCU_DEFS   := -DSTM32F405xx -DHSE_VALUE=8000000U -DUSER_VECT_TAB_ADDRESS -DVECT_
 LDSCRIPT   := boards/dm1701/dm1701.ld
 # The linker script's CPU-only RAM (CCM: no DMA, not zeroed at start-up) for core state marked ODR_CPU_RAM
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmram"'
-BOARD_DIRS := boards/dm1701 drivers/rf/at1846s drivers/modem/hrc6000 drivers/display/st7735 drivers/flash/spi_nor
+BOARD_DIRS := boards/dm1701 drivers/rf/at1846s drivers/modem/hrc6000 drivers/display/st7735 drivers/flash/spi_nor \
+	drivers/input/quadrature
 # Built only with CONFIG_USB
 BOARD_USB_DIRS := drivers/usb
 HAL_MODULES := hal hal_cortex hal_rcc hal_rcc_ex hal_gpio hal_pwr hal_pwr_ex hal_flash hal_flash_ex hal_dma hal_i2c \

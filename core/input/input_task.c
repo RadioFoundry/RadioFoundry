@@ -22,6 +22,8 @@ static input_engine_t engine;
 static QueueHandle_t events;
 static volatile uint32_t raw_keys;
 static volatile int32_t enc_total;
+static int16_t enc_carry;		// detents the full queue couldn't take: sent with the next scan (input task only)
+static volatile uint32_t enc_deferred;	// how often that happened
 
 // Injection state, shared with the callers of input_inject_* (any task): every access in a critical section
 static uint32_t inj_mask, inj_until, inj_released_ms;	// generic injected keys
@@ -44,7 +46,12 @@ static void emit(const input_event_t *ev, void *ctx)
 	} else if (ev->action == ACT_MONITOR && (ev->gesture == GESTURE_DOWN || ev->gesture == GESTURE_UP)) {
 		radio_req_monitor(ev->gesture == GESTURE_DOWN);
 	}
-	xQueueSend(events, ev, 0);	// a full queue drops the event (the UI is far behind anyway)
+	if (xQueueSend(events, ev, 0) != pdTRUE && ev->action == ACT_ENC_STEP) {
+		// The UI is behind: keep the detents for the next scan instead of losing them (a full queue drops key
+		// events, but a lost encoder step is a wrong channel or row)
+		enc_carry = (int16_t)(enc_carry + ev->value);
+		enc_deferred++;
+	}
 }
 
 static bool due(uint32_t now, uint32_t t)
@@ -96,7 +103,13 @@ static void input_task(void *arg)
 		}
 		uint32_t tm = timing;
 		input_engine_set_timing(&engine, (uint16_t)(tm >> 16), (uint16_t)tm);
-		input_engine_step(&engine, keys | inj, (int8_t)(enc + ienc), now, emit, NULL);
+		int32_t steps = enc_carry + enc + ienc;
+		enc_carry = 0;
+		if (steps > 127 || steps < -127) {	// the rest waits for the next scan
+			enc_carry = (int16_t)(steps > 0 ? steps - 127 : steps + 127);
+			steps = steps > 0 ? 127 : -127;
+		}
+		input_engine_step(&engine, keys | inj, (int8_t)steps, now, emit, NULL);
 		vTaskDelayUntil(&wake, pdMS_TO_TICKS(INPUT_SCAN_MS));
 	}
 }
@@ -164,6 +177,15 @@ uint32_t input_raw_keys(void)
 int32_t input_encoder_total(void)
 {
 	return enc_total;
+}
+
+bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred)
+{
+	*deferred = enc_deferred;
+	if (board.input == NULL || board.input->encoder_stats == NULL)
+		return false;
+	board.input->encoder_stats(st);
+	return true;
 }
 
 // --- Injection ---

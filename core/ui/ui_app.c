@@ -667,6 +667,14 @@ static int8_t nav_dir(const input_event_t *ev)
 	}
 }
 
+// Moving focus through a list or the quick tiles: NAV_UP goes up (toward the first row), and the encoder's forward
+// direction (the one that steps to the next channel on Home) goes down to the next row, like a scroll wheel. Values
+// (quick tile editors, Settings numbers) and Home keep nav_dir: forward = up = more
+static int8_t focus_dir(const input_event_t *ev)
+{
+	return ev->action == ACT_ENC_STEP ? (int8_t)-nav_dir(ev) : nav_dir(ev);
+}
+
 static bool is_nav(const input_event_t *ev)
 {
 	return nav_dir(ev) != 0 && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_REPEAT ||
@@ -1076,7 +1084,7 @@ bool ui_quick_key(const input_event_t *ev)
 			if (ui_st.quick_edit)
 				quick_change(kind, nav_dir(ev));
 			else
-				ui_st.quick_focus = (uint8_t)((ui_st.quick_focus + UI_QUICK_TILES - nav_dir(ev)) % UI_QUICK_TILES);
+				ui_st.quick_focus = (uint8_t)((ui_st.quick_focus + UI_QUICK_TILES - focus_dir(ev)) % UI_QUICK_TILES);
 		}
 		dirty = true;
 		return true;
@@ -1269,7 +1277,7 @@ static bool list_key(const ui_scr_def_t *d, const input_event_t *ev)
 		f->focus = (uint16_t)(n - 1);
 	if (is_nav(ev)) {
 		for (int i = steps(ev); i > 0; i--)
-			list_move(d, nav_dir(ev));
+			list_move(d, focus_dir(ev));
 		return true;
 	}
 	if (dg >= 0 && (press || ev->gesture == GESTURE_LONG)) {

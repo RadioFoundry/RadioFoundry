@@ -7,4 +7,4 @@ PLATFORM   := hrc7000
 MCU_DEFS   := -DCODEPLUG_LEGACY_EEPROM_BASE=0x700000u -DCODEPLUG_LEGACY_FLASH_BASE=0x720000u
 LDSCRIPT   := boards/dm32/dm32.ld
 BOARD_DIRS := boards/dm32 drivers/rf/fd6818 drivers/modem/hrc7000 drivers/display/st7789 drivers/flash/spi_nor \
-	drivers/input/keymatrix
+	drivers/input/keymatrix drivers/input/quadrature

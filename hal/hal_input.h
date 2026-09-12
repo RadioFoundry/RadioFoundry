@@ -44,12 +44,24 @@ typedef struct {
 	bool repeat;
 } keymap_entry_t;
 
+// The encoder decoder's own counts, for the debug link (core/input, input_encoder_stats)
+typedef struct {
+	int32_t detents;	// detents decoded since start (before the UI takes them)
+	uint32_t transitions;	// valid quadrature steps seen (2 or 4 per detent, depending on the encoder)
+	uint32_t illegal;	// samples with both lines changed (a missed sample; ignored)
+	uint32_t reversals;	// steps opposite to the one before (contact bounce, or a turn back)
+	uint32_t steps_per_detent;
+} hal_encoder_stats_t;
+
 typedef struct {
 	void (*init)(void);
 	// Bit mask of physical keys held now (bits defined by the board, matching its key map)
 	uint32_t (*scan)(void);
-	// Encoder detents since the last call (0 if the board has no encoder)
+	// Encoder detents since the last call (0 if the board has no encoder). Positive = "forward": the next channel on
+	// Home, down a list (core/ui). What doesn't fit in the int8_t stays for the next call
 	int8_t (*encoder)(void);
+	// The decoder's counts (NULL: none)
+	void (*encoder_stats)(hal_encoder_stats_t *st);
 } hal_input_t;
 
 #endif

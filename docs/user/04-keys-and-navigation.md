@@ -34,7 +34,7 @@ The bottom line of most screens (the hint row) shows what the nearest keys do th
 | **SK2** | Talk target picker (DMR channels) | Scan on or off |
 | **Top side key** | Home: next power level | Hold 1.5 s: emergency ([Emergency](10-emergency.md)). Builds without emergency: speak status (not built yet) |
 | **PTT** | Transmit | |
-| Channel knob | Each click: next or previous channel, the same as **Up** and **Down**. Lists: moves the focus. Editors: changes the value | |
+| Channel knob | Each click is one step. Clockwise: the next channel on Home (as **Up**), the next row down in a list or menu, a higher value in an editor. Counterclockwise: the opposite | |
 
 Each key press gives a short key beep unless **Settings > Sound > Key tones** is off.
 

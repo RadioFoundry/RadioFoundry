@@ -19,6 +19,9 @@ uint32_t input_idle_ms(void);
 // Raw state for the diagnostics page: physical key bits held now, encoder detents since start
 uint32_t input_raw_keys(void);
 int32_t input_encoder_total(void);
+// The board's encoder decoder counts (false: none) and how often the UI's queue was full and detents waited for the
+// next scan (debug link: input.enc_*)
+bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred);
 // Gesture timing (Settings > Keys): the long press threshold and the repeat period in ms, 0 = the defaults above.
 // Clamped to 200..3000 and 40..1000; in effect from the next scan
 void input_set_timing(uint16_t long_ms, uint16_t repeat_ms);
