@@ -564,7 +564,7 @@ polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Datasheet check: cod
 | 0x36 | tone2 frequency = Hz x 10 |
 | 0x79 = 0xC000 | single tone select |
 | 0x57 bit 0 | audio feedback (TX audio looped to the speaker) |
-| 0x59 bits 15:6 | tone deviation; 0x40 used for tones, restore the saved value after |
+| 0x59 bits 15:6 | tone deviation; 0x1C used for tones (about 3.1 kHz peak; 0x40 measured 7.2 kHz on air), restore the saved value after |
 | 0x41 bits 6:0 | voice TX gain; save before tones, restore after |
 
 On these radios FM microphone audio is processed and modulated by the HR_C6000 (two-point modulation), not by the
@@ -574,7 +574,7 @@ voice_sel left at 000 the carrier went out unmodulated (gotchas 3.10); the fixed
 `tests/hil/test_aprs.py` on air.
 
 Morse keying for the hotspot's CW ID (`tx_tone_key`, `boards/dm1701/radio_dm1701.c`): with the tone set up by
-`tx_tone`, key up writes the 0x59 tone deviation bits 15:6 to 0 and key down back to 0x40 (bits 5:0 kept from the
+`tx_tone`, key up writes the 0x59 tone deviation bits 15:6 to 0 and key down back to the tone value (0x1C) (bits 5:0 kept from the
 saved value), so the carrier stays up and the tone switches without a retune. Unverified on the bench, like the tone
 path itself.
 
