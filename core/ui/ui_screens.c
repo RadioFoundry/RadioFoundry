@@ -85,7 +85,10 @@ void ui_layout_init(void)
 		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = &font_6x12; L->large = &font_8x16;
 	}
 
-	L->strip_h = L->small->h + 1;
+	// No padding beyond the font's own cell on the small displays (the cell already has a blank row above the capitals
+	// and room for descenders; the DM-1701's lens inset is outside gfx_width / gfx_height): more rows per screen
+	bool tall = h >= UI_TALL_PX;
+	L->strip_h = L->small->h + (tall ? 1 : 0);
 	L->hint_y = h - L->small->h;
 	int y = L->strip_h;
 	// Rows that are dropped when the display is short: the zone line, then the separator
@@ -108,7 +111,7 @@ void ui_layout_init(void)
 	}
 	L->activity_y = y;
 	L->activity_h = L->hint_y - y;
-	L->row_h = L->small->h + (h >= UI_TALL_PX ? 3 : h >= 100 ? 1 : 0);
+	L->row_h = L->small->h + (tall ? 3 : 0);
 }
 
 // --- shared pieces ---
@@ -160,7 +163,7 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->small;
 	int w = gfx_width();
-	int ph = L->strip_h - 1;
+	int ph = f->h;		// the pill: one text cell high
 	bool titled = prefix != NULL || name != NULL;
 	bool merged = titled && gfx_height() < UI_TALL_PX;
 	const char *word = "IDLE";
@@ -253,9 +256,13 @@ void ui_draw_title(const font_t *f, int x, int y, int max_w, const char *prefix,
 	}
 }
 
+// The hint row. Hints are groups separated by two spaces ("OK open  # more  Back"); the group for the Back key
+// ("Back", "Back keeps", ...) is pinned to the right edge, under the key, and the others run from the left. A toast is
+// one centered line
 void ui_draw_hint(const char *text, bool toast)
 {
 	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
 	int w = gfx_width();
 	char fit[48];
 	color_t bg = toast ? ui_col.fg : ui_col.hint_bg;
@@ -265,8 +272,47 @@ void ui_draw_hint(const char *text, bool toast)
 	gfx_fill(0, L->hint_y, w, gfx_height() - L->hint_y, bg);
 	if (gfx_bpp() == 1 && !toast)
 		gfx_hline(0, L->hint_y, w, ui_col.line);
-	gfx_text_fit(L->small, text, w - 2, fit, sizeof fit);
-	gfx_text(L->small, toast ? (w - gfx_text_width(L->small, fit)) / 2 : 1, L->hint_y, fit, fg);
+	if (toast) {
+		gfx_text_fit(f, text, w - 2, fit, sizeof fit);
+		gfx_text(f, (w - gfx_text_width(f, fit)) / 2, L->hint_y, fit, fg);
+		return;
+	}
+	// Split off the Back group
+	char left[48], right[24];
+	size_t ln = 0, rn = 0;
+	right[0] = 0;
+	for (const char *g = text; *g;) {
+		const char *end = strstr(g, "  ");
+		size_t n = end != NULL ? (size_t)(end - g) : strlen(g);
+		bool back = rn == 0 && n >= 4 && strncmp(g, "Back", 4) == 0 && n < sizeof right;
+		if (back) {
+			memcpy(right, g, n);
+			right[n] = 0;
+			rn = n;
+		} else if (ln + n + 3 < sizeof left) {
+			if (ln) {
+				left[ln++] = ' ';
+				left[ln++] = ' ';
+			}
+			memcpy(left + ln, g, n);
+			ln += n;
+		}
+		g += n;
+		while (*g == ' ')
+			g++;
+	}
+	left[ln] = 0;
+	int rw = rn ? gfx_text_width(f, right) : 0;
+	if (rw > w - 2)
+		rw = w - 2;
+	if (rn) {
+		gfx_text_fit(f, right, rw, fit, sizeof fit);
+		gfx_text(f, w - 1 - gfx_text_width(f, fit), L->hint_y, fit, fg);
+	}
+	if (ln) {
+		gfx_text_fit(f, left, w - 1 - (rn ? rw + f->w : 0), fit, sizeof fit);
+		gfx_text(f, 1, L->hint_y, fit, fg);
+	}
 }
 
 // --- boot splash ---

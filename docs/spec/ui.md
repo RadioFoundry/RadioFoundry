@@ -22,6 +22,15 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 `ui_app.c` and `ui_menus.c` never call the RTOS. The firmware drives them from `ui.c`; the host simulator
 (section 7) drives the same files.
 
+Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip, list rows and the hint row are exactly one
+text cell high, with no padding of their own. The font's cell already holds a blank row above the capitals and the
+descenders, and the DM-1701's 5 px lens inset is outside the drawing area (`gfx_width` / `gfx_height`). At 160x120i5
+a list shows 7 rows, at 160x128 8, at 128x64 6. The 240x320 class keeps 3 px per row and a separate title row.
+
+The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The group for the Back key (it starts with
+"Back") is drawn against the right edge, under the key; the other groups run from the left. A toast is one centered
+line instead.
+
 Core code never includes a board header and never tests a radio define. What differs by radio comes from the board
 descriptor: the display geometry and insets (`hal_display_t`), and the key map (`board.keymap`), which turns keys
 into logical actions (`hal_input.h`).
