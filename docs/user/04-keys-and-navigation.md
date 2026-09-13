@@ -16,7 +16,8 @@ from them.
 5. **PTT** talks to the person or talkgroup with the focus in any list, once. With nothing focused, it talks to the
    channel's talk target.
 
-The bottom line of most screens (the hint row) shows what the nearest keys do there.
+The bottom line of most screens (the hint row) shows what the nearest keys do there. What **Back** does is at its
+right end, above the **Back** key.
 
 ## Key reference (DM-1701)
 
@@ -111,5 +112,5 @@ unlock.
 ## Toasts and banners
 
 Short messages ("toasts") appear in the hint row for about two seconds: the result of an action, or why something
-isn't available. Banners announce events (a message, a call alert, a radio check result) for eight seconds. While a
+isn't available. A long one takes a second line above the hint row rather than being cut short. Banners announce events (a message, a call alert, a radio check result) for eight seconds. While a
 banner about a message or a call alert is up, **#** opens what it is about. **Back** on Home hides it.

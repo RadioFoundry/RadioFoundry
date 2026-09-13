@@ -119,6 +119,8 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Diagnostics | The diagnostics page (also **OK**, **5**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |
 
+<img src="../ux/screens/160x120i5/about.png" width="200" alt="Settings > Advanced > About">
+
 <img src="../ux/screens/160x120i5/settings_advanced.png" width="200" alt="Settings, Advanced">
 
 ## Factory reset

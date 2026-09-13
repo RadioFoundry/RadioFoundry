@@ -29,7 +29,8 @@ The battery percentage turns to the warning color at 15 % and below.
 
 ## Hint row messages
 
-The hint row changes with the situation. The most common ones:
+The hint row changes with the situation. What the **Back** key does is always at the right end of the row, above the
+key. The most common ones:
 
 | Hint | Meaning |
 |---|---|
@@ -41,7 +42,7 @@ The hint row changes with the situation. The most common ones:
 | Back stops scan  # skip | Scan is running |
 | No codec: voice off | DMR channel without the codec merged |
 | 0-9 freq  \* Quick  Up/Dn | In the VFO |
-| Keys locked: hold \* to unlock | The keys are locked |
+| Keys locked: hold \* to unlock | The keys are locked ("Locked: hold \* to unlock" where the row is narrow) |
 
 ## Receiving
 
