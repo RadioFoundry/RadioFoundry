@@ -114,7 +114,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 | Item | What it does |
 |---|---|
-| About | "OpenDigitalRadio", the radio model and the firmware version (commit), then the authors and the license of each part: ODR (MIT), the third-party libraries, and the AMBE+2 codec (from your radio's own firmware, not part of ODR) |
+| About | "OpenDigitalRadio" and the firmware version (commit), the radio model, then the authors and the license of each part: ODR (MIT), the third-party libraries, and the AMBE+2 codec ("stock": from your radio's own firmware, not part of ODR). A page of text in small print with nothing cut short and no status bar (it comes back during a call); **Up**, **Down** or the knob scroll when it is longer than the screen |
 | Codeplug | Where the channels come from (built-in or from the CPS), the number of zones and channels |
 | Diagnostics | The diagnostics page (also **OK**, **5**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |

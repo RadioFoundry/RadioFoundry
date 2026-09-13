@@ -901,13 +901,6 @@ static const char *info_body(void)
 		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ? "%: charge soon." :
 		       "%.");
 		break;
-	case INFO_FIRMWARE:
-		sb_str(&b, "OpenDigitalRadio ");
-		sb_str(&b, ODR_GIT);
-		sb_chr(&b, '\n');
-		sb_str(&b, board.name);
-		sb_str(&b, "\nMIT License. (c) 2026 The OpenDigitalRadio Authors");
-		break;
 	case INFO_CODEPLUG: {
 		static const char *const src[] = { "none (built-in channels)", "built-in channels", "from the CPS" };
 		codeplug_source_t s = codeplug_source();
@@ -955,36 +948,8 @@ static const char *info_body(void)
 	return t;
 }
 
-// About (Settings > Advanced): the authors, ODR's license, the third-party code in this image and the codec. From
-// AUTHORS and platform/<platform>/THIRD_PARTY, through the header make generates (tools/gen_about.py)
-static const char *const about_authors[] = ODR_ABOUT_AUTHORS;
-static const char *const about_third[][2] = ODR_ABOUT_THIRD_PARTY;
-#define ABOUT_ROWS	(ODR_ABOUT_AUTHOR_COUNT + 1u + ODR_ABOUT_THIRD_PARTY_COUNT + 1u)
-
-static void about_item(uint16_t i, ui_item_t *it)
-{
-	if (i < ODR_ABOUT_AUTHOR_COUNT) {
-		strcpy(it->label, about_authors[i]);
-		strcpy(it->value, "author");
-		return;
-	}
-	i = (uint16_t)(i - ODR_ABOUT_AUTHOR_COUNT);
-	if (i == 0) {
-		strcpy(it->label, "OpenDigitalRadio");
-		strcpy(it->value, "MIT");
-	} else if (i <= ODR_ABOUT_THIRD_PARTY_COUNT) {
-		strcpy(it->label, about_third[i - 1u][0]);
-		strcpy(it->value, about_third[i - 1u][1]);
-	} else {
-		strcpy(it->label, "AMBE+2 codec");
-		strcpy(it->value, "DVSI");
-	}
-}
-
 static uint16_t info_count(void)
 {
-	if (ui_frame()->arg == INFO_FIRMWARE)
-		return ABOUT_ROWS;
 #if CONFIG_HOTSPOT
 	if (ui_frame()->arg == INFO_HOTSPOT && hostlink_mode() == HOSTLINK_HOTSPOT)
 		return 1;
@@ -998,10 +963,6 @@ static uint16_t info_count(void)
 
 static void info_item(uint16_t i, ui_item_t *it)
 {
-	if (ui_frame()->arg == INFO_FIRMWARE) {
-		about_item(i, it);
-		return;
-	}
 #if USB_NET_UI
 	if (ui_frame()->arg == INFO_USB_NET) {
 		strcpy(it->label, hostlink_network_mode() ? "Switch USB to serial" : "Switch USB to network");
@@ -1014,13 +975,6 @@ static void info_item(uint16_t i, ui_item_t *it)
 static void info_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	if (ui_frame()->arg == INFO_FIRMWARE) {
-		if (i == ABOUT_ROWS - 1u)
-			ui_toast("From your radio's own firmware; not part of ODR");
-		else if (i == ODR_ABOUT_AUTHOR_COUNT)
-			ui_toast("Free to use, change and sell");
-		return;
-	}
 #if USB_NET_UI
 	if (ui_frame()->arg == INFO_USB_NET) {
 		bool net = !hostlink_network_mode();
@@ -1044,6 +998,71 @@ static void info_select(uint16_t i, bool hold)
 static const ui_scr_def_t info_screen = {
 	.name = "info", .flags = SF_LIST | SF_FIELD, .hint = "Back", .count = info_count, .item = info_item,
 	.select = info_select, .title = info_title, .body = info_body,
+};
+
+// ======================= About (Settings > Advanced) =======================
+// A text page, every word shown (nothing shortened), no status strip while idle: the version, ODR's license, the
+// authors, the third-party code in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
+// through the header make generates (tools/gen_about.py)
+
+static const char *const about_authors[] = ODR_ABOUT_AUTHORS;
+static const char *const about_third[][2] = ODR_ABOUT_THIRD_PARTY;
+static uint16_t about_first;	// first line shown
+static uint16_t about_max;	// the largest first line (from the last draw)
+
+static const char *about_text(void)
+{
+	static char t[400];
+	sbuf_t b;
+	sb_init(&b, t, sizeof t);
+	sb_str(&b, "OpenDigitalRadio ");
+	sb_str(&b, ODR_GIT);
+	sb_str(&b, "\nRadio: ");
+	sb_str(&b, board.name);
+	sb_str(&b, "\nMIT License, (c) 2026 The OpenDigitalRadio Authors\n");
+	sb_str(&b, ODR_ABOUT_AUTHOR_COUNT > 1 ? "Authors: " : "Author: ");
+	for (unsigned i = 0; i < ODR_ABOUT_AUTHOR_COUNT; i++) {
+		if (i)
+			sb_str(&b, ", ");
+		sb_str(&b, about_authors[i]);
+	}
+	for (unsigned i = 0; i < ODR_ABOUT_THIRD_PARTY_COUNT; i++) {
+		sb_chr(&b, '\n');
+		sb_str(&b, about_third[i][0]);
+		sb_str(&b, ": ");
+		sb_str(&b, about_third[i][1]);
+	}
+	sb_str(&b, "\nAMBE+2 codec: DVSI (stock)");	// from the radio's own firmware, not part of ODR
+	return t;
+}
+
+static void about_enter(void)
+{
+	about_first = 0;
+}
+
+static void about_draw(void)
+{
+	about_max = (uint16_t)ui_draw_text_page(ui_view(), &ui_st, "About", about_text(), &about_first);
+}
+
+// Up / Down and the knob scroll a line (the knob's forward = down, as in lists); BACK leaves
+static bool about_key(const input_event_t *ev)
+{
+	int dir = ev->action == ACT_NAV_UP ? -1 : ev->action == ACT_NAV_DOWN ? 1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir == 0 || (ev->gesture != GESTURE_PRESS && ev->gesture != GESTURE_REPEAT && ev->gesture != GESTURE_LONG &&
+			ev->action != ACT_ENC_STEP))
+		return false;
+	int n = ev->action == ACT_ENC_STEP ? (ev->value < 0 ? -ev->value : ev->value) : 1;
+	int f = about_first + dir * n;
+	about_first = (uint16_t)(f < 0 ? 0 : f > about_max ? about_max : f);
+	ui_dirty();
+	return true;
+}
+
+static const ui_scr_def_t about_screen = {
+	.name = "about", .flags = SF_FIELD | SF_NO_STRIP, .key = about_key, .draw = about_draw, .enter = about_enter,
 };
 
 // ======================= Roaming (Tools > Roaming, docs/spec/dmr-roaming.md 6.2) =======================
@@ -1662,7 +1681,7 @@ static void group_select(uint16_t i, bool hold)
 			else
 				ui_toast("Diagnostics aren't in this build");
 			break;
-		case SA_FIRMWARE: ui_push(SCR_INFO, INFO_FIRMWARE); break;
+		case SA_FIRMWARE: ui_push(SCR_ABOUT, 0); break;
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
 		case SA_MY_RADIO: ui_push(SCR_INFO, INFO_MY_RADIO); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
@@ -1990,4 +2009,5 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
+	[SCR_ABOUT] = &about_screen,
 };

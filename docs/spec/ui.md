@@ -53,6 +53,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Talk target picker | `picker` | TALK_TARGET (SK2), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
+| About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
 The gallery (section 7) shows every screen at every display class.
 
@@ -176,8 +177,13 @@ Geometries: `160x120i5` (DM-1701: 160x128 panel, 5 px inset), `160x128`, `128x64
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
 and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
-BACK reaches Home, long QUICK locks, long CONTEXT opens Recent, the status strip is drawn, PTT shows TX, and every
-field-use screen is at most 3 presses deep.
+BACK reaches Home, long QUICK locks, long CONTEXT opens Recent, the status strip is drawn (except About while idle),
+PTT shows TX, and every field-use screen is at most 3 presses deep. The About check scrolls the page to its end at
+every display class and fails if any text was shortened.
+
+`uiSim --ellipsis [GEOM]` lists every text shortened with a middle ellipsis on the gallery screens and the settings
+pages (lists scrolled through): `gfx_text_fit` reports each one through `gfx_fit_trace` in host builds
+(`GFX_FIT_TRACE`). Use it after changing wording or layout.
 
 HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences on the radio over the debug link.
 

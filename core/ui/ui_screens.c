@@ -1176,34 +1176,98 @@ static int list_bottom(const ui_state_t *s)
 	return s == NULL || s->hints || s->toast ? ui_layout.hint_y : gfx_height();
 }
 
-// Word wrap into lines of at most max_w pixels; draws them (when draw) and returns the y after the last line
+// One line of word-wrapped text: copies into line what fits in max_w pixels (breaking at the last space, or inside a
+// word longer than the line, never shortening), returns where the next line starts
+static const char *wrap_line(const font_t *f, const char *t, int max_w, char *line, size_t cap)
+{
+	int n = 0, cut = 0;
+	while (t[n] && t[n] != '\n' && n < (int)cap - 1) {
+		line[n] = t[n];
+		line[n + 1] = 0;
+		if (gfx_text_width(f, line) > max_w)
+			break;
+		if (t[n] == ' ')
+			cut = n;
+		n++;
+	}
+	bool fits_all = t[n] == 0 || t[n] == '\n';
+	if (!fits_all && cut > 0)
+		n = cut;
+	if (n == 0 && t[0] && t[0] != '\n')
+		n = 1;		// narrower than one glyph: still move on
+	line[n] = 0;
+	t += n;
+	if (*t == '\n')
+		t++;		// an empty line ("\n\n") stays one line
+	else
+		while (*t == ' ')
+			t++;
+	return t;
+}
+
+// Word wrap into lines of the screen's width; draws them (when draw) and returns the y after the last line
 static int wrap_text(const font_t *f, const char *t, int y, int y_end, bool draw, color_t c)
 {
-	int w = gfx_width();
-	char line[48];
+	char line[64];
 	while (*t && y + f->h <= y_end) {
-		int n = 0, cut = 0;
-		while (t[n] && t[n] != '\n' && n < (int)sizeof line - 1) {
-			line[n] = t[n];
-			line[n + 1] = 0;
-			if (gfx_text_width(f, line) > w)
-				break;
-			if (t[n] == ' ')
-				cut = n;
-			n++;
-		}
-		bool fits_all = t[n] == 0 || t[n] == '\n';
-		if (!fits_all && cut > 0)
-			n = cut;
-		line[n] = 0;
+		t = wrap_line(f, t, gfx_width(), line, sizeof line);
 		if (draw)
 			gfx_text(f, 0, y, line, c);
 		y += f->h;
-		t += n;
-		while (*t == ' ' || *t == '\n')
-			t++;
 	}
 	return y;
+}
+
+int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
+	uint16_t *first)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->tiny;
+	int w = gfx_width();
+	char line[64];
+	gfx_clear(ui_col.bg);
+	// No status strip while idle: the page gets the whole height. A call or a transmission brings it back (P2: the
+	// TX / RX pill is never hidden)
+	int y = v->state != RS_IDLE ? ui_draw_top(v, s, NULL, title) : 0;
+	int y_end = list_bottom(s);
+	int rows = (y_end - y) / f->h;
+	if (rows < 1)
+		rows = 1;
+	int total = 0;
+	for (const char *t = text; *t; total++)
+		t = wrap_line(f, t, w, line, sizeof line);
+	int max_first = total > rows ? total - rows : 0;
+	if (*first > max_first)
+		*first = (uint16_t)max_first;
+	const char *t = text;
+	for (int i = 0; *t; i++) {
+		t = wrap_line(f, t, w, line, sizeof line);
+		int r = i - *first;
+		if (r < 0)
+			continue;
+		if (r >= rows)
+			break;
+		// "Label: value" lines show the label dim
+		const char *colon = strstr(line, ": ");
+		int x = 0;
+		if (colon != NULL && colon - line < 20) {
+			char label[24];
+			size_t n = (size_t)(colon - line) + 1;
+			memcpy(label, line, n);
+			label[n] = 0;
+			x = gfx_text(f, 0, y + r * f->h, label, gfx_bpp() == 1 ? ui_col.fg : ui_col.dim);
+			gfx_text(f, x, y + r * f->h, colon + 1, ui_col.fg);
+		} else {
+			gfx_text(f, 0, y + r * f->h, line, ui_col.fg);
+		}
+	}
+	if (*first > 0)
+		gfx_fill(w - 3, y, 3, 2, ui_col.dim);
+	if (*first < max_first)
+		gfx_fill(w - 3, y + rows * f->h - 2, 3, 2, ui_col.dim);
+	ui_draw_banner(s);
+	ui_draw_bottom(s, max_first > 0 ? "Up/Down more  Back" : "Back");
+	return max_first;
 }
 
 int ui_list_rows(const ui_list_t *l)

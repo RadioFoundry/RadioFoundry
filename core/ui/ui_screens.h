@@ -149,6 +149,10 @@ typedef struct {
 } ui_list_t;
 
 void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l);
+// A page of text (About) in the smallest font, word-wrapped, never shortened: lines from *first on (clamped so the
+// last page is full). The status strip only while the radio isn't idle. Returns the largest *first (0: all fits)
+int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
+	uint16_t *first);
 // Rows that fit below the title (and header) on this display, for paging
 int ui_list_rows(const ui_list_t *l);
 

@@ -289,7 +289,8 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 		if (!replay(g, map, nodes[i].path, &s0) || s0.locked)
 			continue;
 		screens++;
-		if (!s0.strip_drawn && strcmp(s0.screen, "diag") != 0) {
+		// About has no strip while idle (the owner's call); it comes back with RX / TX (checked below with PTT)
+		if (!s0.strip_drawn && strcmp(s0.screen, "diag") != 0 && strcmp(s0.screen, "about") != 0) {
 			printf("FAIL crawl [%s] %s: no status strip (P2)\n", mapname, s0.screen);
 			fails++;
 		}
@@ -335,6 +336,42 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 	printf("# crawl [%s]: %d screens and states checked\n", mapname, screens);
 }
 
+// About (Settings > Advanced): every word readable at every display class (nothing shortened with an ellipsis, all
+// the way to the end), no status strip while idle, the strip back while transmitting
+static void about_checks(void)
+{
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		const char *gn = sim_geoms[g].name;
+		ui_app_status_t st;
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		if (!sim_run("ok 6 0 ok", err, sizeof err)) {
+			printf("FAIL about [%s]: %s\n", gn, err);
+			fails++;
+			continue;
+		}
+		sim_rec.shortened = 0;
+		sim_run("wait:200 down down down down down down down down down down down down down down down down down down down "
+			"down down down", err, sizeof err);
+		ui_app_status(&st);
+		if (strcmp(st.screen, "about") != 0 || sim_rec.shortened != 0) {
+			printf("FAIL about [%s]: on %s, %u texts shortened\n", gn, st.screen, (unsigned)sim_rec.shortened);
+			fails++;
+		}
+		if (st.strip_drawn) {
+			printf("FAIL about [%s]: the status strip is drawn while idle\n", gn);
+			fails++;
+		}
+		sim_run("pttdown wait:200", err, sizeof err);
+		ui_app_status(&st);
+		if (!st.strip_drawn) {
+			printf("FAIL about [%s]: no strip while transmitting (P2)\n", gn);
+			fails++;
+		}
+		sim_run("pttup", err, sizeof err);
+	}
+}
+
 int main(void)
 {
 	static const struct { sim_map_t map; const char *name, *geom; } runs[] = {
@@ -354,6 +391,7 @@ int main(void)
 	for (size_t i = 0; i < sizeof flows_f / sizeof flows_f[0]; i++)
 		run_flow(&flows_f[i], gf, SIM_MAP_F, "F few keys");
 	printf("# %d flows run\n", flows_run);
+	about_checks();
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
