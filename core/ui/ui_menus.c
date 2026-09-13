@@ -57,7 +57,10 @@ static void hub_item(uint16_t i, ui_item_t *it)
 		sb_str(&b, " new");
 		it->flags |= UI_ITEM_WARN;
 	} else if (e == HUB_CHANNELS) {
+		// The zone (or VFO), left out where it doesn't fit beside the label (an empty last alternate)
+		sb_str(&b, TEXT_ALT_OPEN);
 		sb_str(&b, ui_view()->vfo ? "VFO" : ui_view()->zone_name);
+		sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 	} else if (e == HUB_TOOLS && ui_st.scanning) {
 		sb_str(&b, "scanning");
 	}
@@ -450,6 +453,7 @@ static void msgs_item(uint16_t i, ui_item_t *it)
 	sb_str(&b, ": ");
 	sb_str(&b, m.text);
 	ui_sb_age(it->value, sizeof it->value, m.age_ms);
+	it->flags |= UI_ITEM_PREVIEW;	// the start of the message: cut at its end
 	if (m.unread)
 		it->flags |= UI_ITEM_WARN;
 }
@@ -568,7 +572,7 @@ static const char *msg_body(void)
 }
 
 static const ui_scr_def_t message_screen = {
-	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = "Msg", .hint = "OK send  # more  Back",
+	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = "Message", .hint = "OK send  # more  Back",
 	.count = msg_count, .item = msg_item, .select = msg_select, .context = msgs_context, .target = msg_target,
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
 };
@@ -703,10 +707,21 @@ static void chans_item(uint16_t i, ui_item_t *it)
 	if (!codeplug_zone(zi, &z))
 		return;
 	strcpy(it->label, z.name);
-	if (!v->vfo && zi == v->zone_index)
-		sb_str(&vb, "here ");
-	sb_u32(&vb, z.count, 1);
-	sb_str(&vb, " ch");
+	// The zone's name whole; beside it "here" for the zone in use and the channel count, as much as fits:
+	// "here, 16 channels", "here, 16 ch", "here" (or "16 channels", "16 ch", nothing)
+	bool here = !v->vfo && zi == v->zone_index;
+	sb_str(&vb, TEXT_ALT_OPEN);
+	for (int form = 0; form < 3; form++) {
+		if (form)
+			sb_str(&vb, TEXT_ALT_NEXT);
+		if (here)
+			sb_str(&vb, form < 2 ? "here, " : "here");
+		if (form < 2) {
+			sb_u32(&vb, z.count, 1);
+			sb_str(&vb, form == 0 ? (z.count == 1 ? " channel" : " channels") : " ch");
+		}
+	}
+	sb_str(&vb, TEXT_ALT_CLOSE);
 }
 
 static void chans_select(uint16_t i, bool hold)
@@ -746,7 +761,8 @@ static void chans_context(uint16_t i)
 
 static const ui_scr_def_t channels_screen = {
 	.name = "channels", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = "Channels",
-	.hint = "OK go  # channels  0-9 find", .empty = "No zones",
+	.hint = TEXT_ALT_OPEN "OK go  # channels  0-9 find" TEXT_ALT_NEXT "OK go  # channels" TEXT_ALT_CLOSE,
+	.empty = "No zones",
 	.count = ui_filter_count, .item = chans_item, .select = chans_select, .context = chans_context,
 	.enter = chans_enter, .raw_count = chans_raw_count, .raw_label = chans_raw_label,
 };
@@ -901,13 +917,6 @@ static const char *info_body(void)
 		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ? "%: charge soon." :
 		       "%.");
 		break;
-	case INFO_FIRMWARE:
-		sb_str(&b, "OpenDigitalRadio ");
-		sb_str(&b, ODR_GIT);
-		sb_chr(&b, '\n');
-		sb_str(&b, board.name);
-		sb_str(&b, "\nMIT License. (c) 2026 The OpenDigitalRadio Authors");
-		break;
 	case INFO_CODEPLUG: {
 		static const char *const src[] = { "none (built-in channels)", "built-in channels", "from the CPS" };
 		codeplug_source_t s = codeplug_source();
@@ -955,36 +964,8 @@ static const char *info_body(void)
 	return t;
 }
 
-// About (Settings > Advanced): the authors, ODR's license, the third-party code in this image and the codec. From
-// AUTHORS and platform/<platform>/THIRD_PARTY, through the header make generates (tools/gen_about.py)
-static const char *const about_authors[] = ODR_ABOUT_AUTHORS;
-static const char *const about_third[][2] = ODR_ABOUT_THIRD_PARTY;
-#define ABOUT_ROWS	(ODR_ABOUT_AUTHOR_COUNT + 1u + ODR_ABOUT_THIRD_PARTY_COUNT + 1u)
-
-static void about_item(uint16_t i, ui_item_t *it)
-{
-	if (i < ODR_ABOUT_AUTHOR_COUNT) {
-		strcpy(it->label, about_authors[i]);
-		strcpy(it->value, "author");
-		return;
-	}
-	i = (uint16_t)(i - ODR_ABOUT_AUTHOR_COUNT);
-	if (i == 0) {
-		strcpy(it->label, "OpenDigitalRadio");
-		strcpy(it->value, "MIT");
-	} else if (i <= ODR_ABOUT_THIRD_PARTY_COUNT) {
-		strcpy(it->label, about_third[i - 1u][0]);
-		strcpy(it->value, about_third[i - 1u][1]);
-	} else {
-		strcpy(it->label, "AMBE+2 codec");
-		strcpy(it->value, "DVSI");
-	}
-}
-
 static uint16_t info_count(void)
 {
-	if (ui_frame()->arg == INFO_FIRMWARE)
-		return ABOUT_ROWS;
 #if CONFIG_HOTSPOT
 	if (ui_frame()->arg == INFO_HOTSPOT && hostlink_mode() == HOSTLINK_HOTSPOT)
 		return 1;
@@ -998,10 +979,6 @@ static uint16_t info_count(void)
 
 static void info_item(uint16_t i, ui_item_t *it)
 {
-	if (ui_frame()->arg == INFO_FIRMWARE) {
-		about_item(i, it);
-		return;
-	}
 #if USB_NET_UI
 	if (ui_frame()->arg == INFO_USB_NET) {
 		strcpy(it->label, hostlink_network_mode() ? "Switch USB to serial" : "Switch USB to network");
@@ -1014,13 +991,6 @@ static void info_item(uint16_t i, ui_item_t *it)
 static void info_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	if (ui_frame()->arg == INFO_FIRMWARE) {
-		if (i == ABOUT_ROWS - 1u)
-			ui_toast("From your radio's own firmware; not part of ODR");
-		else if (i == ODR_ABOUT_AUTHOR_COUNT)
-			ui_toast("Free to use, change and sell");
-		return;
-	}
 #if USB_NET_UI
 	if (ui_frame()->arg == INFO_USB_NET) {
 		bool net = !hostlink_network_mode();
@@ -1044,6 +1014,71 @@ static void info_select(uint16_t i, bool hold)
 static const ui_scr_def_t info_screen = {
 	.name = "info", .flags = SF_LIST | SF_FIELD, .hint = "Back", .count = info_count, .item = info_item,
 	.select = info_select, .title = info_title, .body = info_body,
+};
+
+// ======================= About (Settings > Advanced) =======================
+// A text page, every word shown (nothing shortened), no status strip while idle: the version, ODR's license, the
+// authors, the third-party code in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
+// through the header make generates (tools/gen_about.py)
+
+static const char *const about_authors[] = ODR_ABOUT_AUTHORS;
+static const char *const about_third[][2] = ODR_ABOUT_THIRD_PARTY;
+static uint16_t about_first;	// first line shown
+static uint16_t about_max;	// the largest first line (from the last draw)
+
+static const char *about_text(void)
+{
+	static char t[400];
+	sbuf_t b;
+	sb_init(&b, t, sizeof t);
+	sb_str(&b, "OpenDigitalRadio ");
+	sb_str(&b, ODR_GIT);
+	sb_str(&b, "\nRadio: ");
+	sb_str(&b, board.name);
+	sb_str(&b, "\nMIT License, (c) 2026 The OpenDigitalRadio Authors\n");
+	sb_str(&b, ODR_ABOUT_AUTHOR_COUNT > 1 ? "Authors: " : "Author: ");
+	for (unsigned i = 0; i < ODR_ABOUT_AUTHOR_COUNT; i++) {
+		if (i)
+			sb_str(&b, ", ");
+		sb_str(&b, about_authors[i]);
+	}
+	for (unsigned i = 0; i < ODR_ABOUT_THIRD_PARTY_COUNT; i++) {
+		sb_chr(&b, '\n');
+		sb_str(&b, about_third[i][0]);
+		sb_str(&b, ": ");
+		sb_str(&b, about_third[i][1]);
+	}
+	sb_str(&b, "\nAMBE+2 codec: DVSI (stock)");	// from the radio's own firmware, not part of ODR
+	return t;
+}
+
+static void about_enter(void)
+{
+	about_first = 0;
+}
+
+static void about_draw(void)
+{
+	about_max = (uint16_t)ui_draw_text_page(ui_view(), &ui_st, "About", about_text(), &about_first);
+}
+
+// Up / Down and the knob scroll a line (the knob's forward = down, as in lists); BACK leaves
+static bool about_key(const input_event_t *ev)
+{
+	int dir = ev->action == ACT_NAV_UP ? -1 : ev->action == ACT_NAV_DOWN ? 1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir == 0 || (ev->gesture != GESTURE_PRESS && ev->gesture != GESTURE_REPEAT && ev->gesture != GESTURE_LONG &&
+			ev->action != ACT_ENC_STEP))
+		return false;
+	int n = ev->action == ACT_ENC_STEP ? (ev->value < 0 ? -ev->value : ev->value) : 1;
+	int f = about_first + dir * n;
+	about_first = (uint16_t)(f < 0 ? 0 : f > about_max ? about_max : f);
+	ui_dirty();
+	return true;
+}
+
+static const ui_scr_def_t about_screen = {
+	.name = "about", .flags = SF_FIELD | SF_NO_STRIP, .key = about_key, .draw = about_draw, .enter = about_enter,
 };
 
 // ======================= Roaming (Tools > Roaming, docs/spec/dmr-roaming.md 6.2) =======================
@@ -1432,7 +1467,7 @@ static const set_item_t s_location[] = {
 	TOGGLE("GPS", NULL, UI_SET_GPS),
 	LIST("Position format", NULL, UI_SET_POS_FORMAT, v_posfmt, n_posfmt),
 	LIST("Send position", "APRS", UI_SET_POS_SEND_S, v_possend, n_possend),
-	TOGGLE("Answer position requests", "LRRP", UI_SET_POS_REPLY),
+	TOGGLE("Answer GPS requests", "LRRP position location", UI_SET_POS_REPLY),
 };
 static const set_item_t s_connections[] = {
 	TOGGLE("Hotspot allowed", "MMDVM", UI_SET_HOTSPOT_AUTO),
@@ -1662,7 +1697,7 @@ static void group_select(uint16_t i, bool hold)
 			else
 				ui_toast("Diagnostics aren't in this build");
 			break;
-		case SA_FIRMWARE: ui_push(SCR_INFO, INFO_FIRMWARE); break;
+		case SA_FIRMWARE: ui_push(SCR_ABOUT, 0); break;
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
 		case SA_MY_RADIO: ui_push(SCR_INFO, INFO_MY_RADIO); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
@@ -1927,7 +1962,8 @@ static const char *picker_title(void)
 }
 
 static const ui_scr_def_t picker_screen = {
-	.name = "picker", .flags = SF_LIST | SF_FIELD, .prefix = "Talk to", .hint = "PTT once  OK use  Hold OK set",
+	.name = "picker", .flags = SF_LIST | SF_FIELD, .prefix = "Talk to",
+	.hint = TEXT_ALT_OPEN "PTT once  OK use  Hold OK set" TEXT_ALT_NEXT "OK use  Hold OK set" TEXT_ALT_CLOSE,
 	.count = picker_count, .item = picker_item, .select = picker_select, .context = picker_context,
 	.target = picker_target, .enter = picker_enter, .title = picker_title,
 };
@@ -1938,7 +1974,7 @@ static uint16_t scan_count(void) { return 3; }
 
 static void scan_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { "Skip this channel for now", "Stay here", "Always skip" };
+	static const char *const names[] = { "Skip channel for now", "Stay here", "Always skip" };
 	strcpy(it->label, names[i]);
 	item_num(it, (uint16_t)(i + 1u));
 	if (i == 2)
@@ -1990,4 +2026,5 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
+	[SCR_ABOUT] = &about_screen,
 };

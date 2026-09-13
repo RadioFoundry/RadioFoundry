@@ -179,6 +179,16 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "input.raw_keys=0x%08x\ninput.injected=0x%08x\n", (unsigned)input_raw_keys(),
 		(unsigned)input_injected_keys());
 	dl_text(t, "input.encoder_total=%d\n", (int)input_encoder_total());
+	hal_encoder_stats_t es;
+	uint32_t deferred;
+	if (input_encoder_stats(&es, &deferred)) {
+		// The decoder's view, before the UI: transitions / detents should be enc_steps; illegal stays near 0
+		dl_text(t, "input.enc_detents=%d\ninput.enc_transitions=%u\ninput.enc_illegal=%u\n", (int)es.detents,
+			(unsigned)es.transitions, (unsigned)es.illegal);
+		dl_text(t, "input.enc_reversals=%u\ninput.enc_steps=%u\n", (unsigned)es.reversals,
+			(unsigned)es.steps_per_detent);
+	}
+	dl_text(t, "input.enc_deferred=%u\n", (unsigned)deferred);
 	dl_text(t, "input.long_ms=%u\n", (unsigned)input_long_ms());
 	dl_text(t, "dl.frames=%u\ndl.bad_crc=%u\ndl.too_long=%u\ndl.timeouts=%u\n", (unsigned)c[0], (unsigned)c[1],
 		(unsigned)c[2], (unsigned)c[3]);

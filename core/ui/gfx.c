@@ -208,6 +208,11 @@ static size_t alt_expand(const char *s, int level, char *out, size_t cap, bool *
 
 #define ALT_TEXT_MAX	96
 
+size_t gfx_text_alt(const char *s, int level, char *out, size_t cap, bool *more)
+{
+	return alt_expand(s, level, out, cap, more);
+}
+
 static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool opaque, color_t bg)
 {
 	char first[ALT_TEXT_MAX];
@@ -292,6 +297,9 @@ void gfx_text_fit(const font_t *f, const char *src, int max_w, char *out, size_t
 	}
 	if (fit == 0) {
 		out[0] = 0;
+#ifdef GFX_FIT_TRACE
+		gfx_fit_trace(s, out);
+#endif
 		return;
 	}
 	// Keep the start and the end, one glyph for the ellipsis between them (start gets the odd one)
@@ -301,6 +309,9 @@ void gfx_text_fit(const font_t *f, const char *src, int max_w, char *out, size_t
 	out[head] = GLYPH_ELLIPSIS[0];
 	memcpy(out + head + 1, s + n - tail, tail);
 	out[fit] = 0;
+#ifdef GFX_FIT_TRACE
+	gfx_fit_trace(s, out);
+#endif
 }
 
 void gfx_icon_battery(int x, int y, int w, int h, uint8_t pct, color_t outline, color_t fill)
