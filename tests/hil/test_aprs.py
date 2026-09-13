@@ -61,7 +61,7 @@ PATHS = ["", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2"]
 VIAS = {"rf": 0, "dmr": 1, "both": 2}
 REGION_CUSTOM, POS_FIXED, PATH_NONE = 6, 3, 0
 RF_TRIES, MSG_TRIES = 3, 3
-CAPTURE_S = 8
+CAPTURE_S = 14       # a message waits for the engine's next service pass: it went out 5.7 s after the request once
 
 
 def _need_aprs(radio):
