@@ -49,6 +49,8 @@ def pytest_addoption(parser):
     g.addoption("--allow-codeplug-write", action="store_true",
                 help="tests may write the radio's codeplug over CPS (marker codeplug_write: backed up first, "
                      "restored and verified afterwards)")
+    g.addoption("--manual", action="store_true",
+                help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
     g.addoption("--allow-reboot", action="store_true",
                 help="tests may restart the radio (marker reboot: the settings persistence check)")
     g.addoption("--roam-rx", type=float, default=None,
@@ -75,6 +77,7 @@ def pytest_configure(config):
                             "(needs --allow-codeplug-write)")
     config.addinivalue_line("markers", "reboot: restarts the radio (needs --allow-reboot)")
     config.addinivalue_line("markers", "usb_switch: switches the USB personality (needs --allow-usb-switch)")
+    config.addinivalue_line("markers", "manual: asks a person at the radio to do something (needs --manual and -s)")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -94,6 +97,8 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.skip(reason="writes the codeplug: run with --allow-codeplug-write"))
         elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):
             item.add_marker(pytest.mark.skip(reason="restarts the radio: run with --allow-reboot"))
+        elif "manual" in item.keywords and not config.getoption("--manual"):
+            item.add_marker(pytest.mark.skip(reason="needs a person at the radio: run with --manual -s"))
 
 
 @pytest.fixture(scope="session")
