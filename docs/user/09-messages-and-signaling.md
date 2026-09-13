@@ -90,4 +90,4 @@ ARS registers the radio with a presence server at power-up and after a channel c
 set, and there is no menu item for it yet; developers set it over the debug link.
 
 LRRP answers location requests from a dispatcher. The DM-1701 has no GPS, so it answers "no fix". **Settings >
-Location > Answer position requests** turns the answers off.
+Location > Answer GPS requests** turns the answers off.

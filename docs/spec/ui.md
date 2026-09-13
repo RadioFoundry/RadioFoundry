@@ -31,6 +31,19 @@ The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The 
 "Back") is drawn against the right edge, under the key; the other groups run from the left. A toast is one centered
 line instead.
 
+Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
+
+- A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
+  a short form or nothing (Hub's zone name, Find's kind, Channels' "here, 16 channels" / "here, 16 ch" / "here", ages).
+  A row marked `UI_ITEM_PREVIEW` (a message) is cut at its end, at a word.
+- Hints and toasts take the longest alternate that fits; a toast that still doesn't fit takes a second line above the
+  hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
+  banner shows two lines of the message from the inbox.
+- Home's talk target line drops to the small font, then the prefix too, then leaves out the target's name; large-text
+  Home picks the largest font each line fits in.
+
+`uiSim --ellipsis` (section 7) lists what is still shortened.
+
 Core code never includes a board header and never tests a radio define. What differs by radio comes from the board
 descriptor: the display geometry and insets (`hal_display_t`), and the key map (`board.keymap`), which turns keys
 into logical actions (`hal_input.h`).

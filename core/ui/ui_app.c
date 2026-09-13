@@ -486,9 +486,14 @@ static void handle_event(const ui_event_t *ev)
 	sb_init(&b, title, sizeof title);
 	switch (ev->kind) {
 	case UI_EV_MESSAGE:
-		sb_str(&b, "Msg from ");
+		sb_str(&b, "Message from ");
 		station(&b, ev);
-		banner(UI_BANNER_MESSAGE, false, ev->id, title, ev->text);
+		{
+			// The banner shows two lines of the message: more than the event carries, from the inbox
+			ui_msg_t m;
+			bool got = ui_svc_msg_get(ev->index, &m);
+			banner(UI_BANNER_MESSAGE, false, ev->id, title, got ? m.text : ev->text);
+		}
 		ui_st.banner.msg = ev->index;
 		if (ui_st.message_tone)
 			ui_svc_beep(UI_BEEP_MESSAGE);
@@ -656,6 +661,11 @@ static void entry_commit(void)
 }
 
 // --- input helpers ---
+
+// The key lock toasts, with a shorter form for the narrow displays (text alternates, font.h)
+#define UI_LOCKED_STAR	TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE
+#define UI_LOCKED_BACK	TEXT_ALT_OPEN "Keys locked: hold Back to unlock" TEXT_ALT_NEXT "Locked: hold Back to unlock" \
+	TEXT_ALT_CLOSE
 
 static int8_t nav_dir(const input_event_t *ev)
 {
@@ -1487,13 +1497,13 @@ void ui_app_key(const input_event_t *ev)
 			set_locked(false);
 			ui_toast("Keys unlocked");
 		} else if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG || ev->action == ACT_ENC_STEP) {
-			ui_toast(has_quick_key ? "Keys locked: hold * to unlock" : "Keys locked: hold Back to unlock");
+			ui_toast(has_quick_key ? UI_LOCKED_STAR : UI_LOCKED_BACK);
 		}
 		return;
 	}
 	if (lock_key && has_quick_key) {
 		set_locked(true);
-		ui_toast("Keys locked: hold * to unlock");
+		ui_toast(UI_LOCKED_STAR);
 		return;
 	}
 #if CONFIG_HOTSPOT
@@ -1806,6 +1816,13 @@ void ui_app_status(ui_app_status_t *s)
 	s->field_use = (d->flags & SF_FIELD) != 0;
 	s->banner = ui_st.banner.kind != UI_BANNER_NONE ? ui_st.banner.title : "";
 	s->toast = ui_st.toast != NULL ? ui_st.toast : "";
+	if (strchr(s->toast, TEXT_ALT_OPEN[0]) != NULL) {
+		// The long form of a toast with text alternates, as words (the debug link, scripted checks)
+		static char toast_text[64];
+		bool more;
+		gfx_text_alt(s->toast, 0, toast_text, sizeof toast_text, &more);
+		s->toast = toast_text;
+	}
 	s->query = stack[sp].scr == SCR_FIND ? ui_find_query() : (d->flags & SF_FILTER) ? filter_keys : "";
 	s->draws = draws;
 	s->strip_drawn = strip_ok;

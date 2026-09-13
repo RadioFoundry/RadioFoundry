@@ -266,13 +266,13 @@ static void find_item(uint16_t i, ui_item_t *it)
 			sb_chr(&b, ' ');
 			sb_str(&b, ch.name);
 		}
-		sb_str(&vb, "channel");
+		sb_str(&vb, TEXT_ALT_OPEN "channel" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	}
 	case FR_ZONE:
 		if (codeplug_zone((uint16_t)r->ref, &z))
 			sb_str(&b, z.name);
-		sb_str(&vb, "zone");
+		sb_str(&vb, TEXT_ALT_OPEN "zone" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	case FR_CONTACT:
 		if (find_target(i, &t)) {
@@ -280,19 +280,19 @@ static void find_item(uint16_t i, ui_item_t *it)
 			if (t.group) {
 				ui_sb_target(name, sizeof name, &t);
 				sb_str(&b, name);
-				sb_str(&vb, "TG");
+				sb_str(&vb, TEXT_ALT_OPEN "TG" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 			} else {
 				sb_str(&b, t.name);
 				sb_chr(&b, ' ');
 				sb_u32(&b, t.id, 1);
-				sb_str(&vb, "person");
+				sb_str(&vb, TEXT_ALT_OPEN "person" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 			}
 		}
 		break;
 	case FR_TG:
 		sb_str(&b, "Talk to TG ");
 		sb_u32(&b, r->ref, 1);
-		sb_str(&vb, "not saved");
+		sb_str(&vb, TEXT_ALT_OPEN "not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	case FR_PRIVATE:
 		sb_str(&b, "Private call ");

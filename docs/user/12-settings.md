@@ -78,7 +78,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | GPS | On, Off | Off | GPS receiver, on radios that have one. Dimmed with "No GPS on this radio" on the DM-1701. The DM-32 keeps the value; it has no GPS driver yet | Dimmed without GPS |
 | Position format | Degrees, Deg min sec, Grid | Degrees | How positions are shown | Dimmed without GPS |
 | Send position | Off, 1 min, 5 min, 15 min | Off | Send your position at this interval | Dimmed without GPS |
-| Answer position requests | On, Off | On | Answer LRRP location requests. Without GPS the answer is "no fix" | Works |
+| Answer GPS requests | On, Off | On | Answer LRRP location requests (Find also finds it as "position"). Without GPS the answer is "no fix" | Works |
 
 ### Connections (key 6)
 

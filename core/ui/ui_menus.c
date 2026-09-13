@@ -57,7 +57,10 @@ static void hub_item(uint16_t i, ui_item_t *it)
 		sb_str(&b, " new");
 		it->flags |= UI_ITEM_WARN;
 	} else if (e == HUB_CHANNELS) {
+		// The zone (or VFO), left out where it doesn't fit beside the label (an empty last alternate)
+		sb_str(&b, TEXT_ALT_OPEN);
 		sb_str(&b, ui_view()->vfo ? "VFO" : ui_view()->zone_name);
+		sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 	} else if (e == HUB_TOOLS && ui_st.scanning) {
 		sb_str(&b, "scanning");
 	}
@@ -450,6 +453,7 @@ static void msgs_item(uint16_t i, ui_item_t *it)
 	sb_str(&b, ": ");
 	sb_str(&b, m.text);
 	ui_sb_age(it->value, sizeof it->value, m.age_ms);
+	it->flags |= UI_ITEM_PREVIEW;	// the start of the message: cut at its end
 	if (m.unread)
 		it->flags |= UI_ITEM_WARN;
 }
@@ -568,7 +572,7 @@ static const char *msg_body(void)
 }
 
 static const ui_scr_def_t message_screen = {
-	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = "Msg", .hint = "OK send  # more  Back",
+	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = "Message", .hint = "OK send  # more  Back",
 	.count = msg_count, .item = msg_item, .select = msg_select, .context = msgs_context, .target = msg_target,
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
 };
@@ -703,10 +707,21 @@ static void chans_item(uint16_t i, ui_item_t *it)
 	if (!codeplug_zone(zi, &z))
 		return;
 	strcpy(it->label, z.name);
-	if (!v->vfo && zi == v->zone_index)
-		sb_str(&vb, "here ");
-	sb_u32(&vb, z.count, 1);
-	sb_str(&vb, " ch");
+	// The zone's name whole; beside it "here" for the zone in use and the channel count, as much as fits:
+	// "here, 16 channels", "here, 16 ch", "here" (or "16 channels", "16 ch", nothing)
+	bool here = !v->vfo && zi == v->zone_index;
+	sb_str(&vb, TEXT_ALT_OPEN);
+	for (int form = 0; form < 3; form++) {
+		if (form)
+			sb_str(&vb, TEXT_ALT_NEXT);
+		if (here)
+			sb_str(&vb, form < 2 ? "here, " : "here");
+		if (form < 2) {
+			sb_u32(&vb, z.count, 1);
+			sb_str(&vb, form == 0 ? (z.count == 1 ? " channel" : " channels") : " ch");
+		}
+	}
+	sb_str(&vb, TEXT_ALT_CLOSE);
 }
 
 static void chans_select(uint16_t i, bool hold)
@@ -746,7 +761,8 @@ static void chans_context(uint16_t i)
 
 static const ui_scr_def_t channels_screen = {
 	.name = "channels", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = "Channels",
-	.hint = "OK go  # channels  0-9 find", .empty = "No zones",
+	.hint = TEXT_ALT_OPEN "OK go  # channels  0-9 find" TEXT_ALT_NEXT "OK go  # channels" TEXT_ALT_CLOSE,
+	.empty = "No zones",
 	.count = ui_filter_count, .item = chans_item, .select = chans_select, .context = chans_context,
 	.enter = chans_enter, .raw_count = chans_raw_count, .raw_label = chans_raw_label,
 };
@@ -1451,7 +1467,7 @@ static const set_item_t s_location[] = {
 	TOGGLE("GPS", NULL, UI_SET_GPS),
 	LIST("Position format", NULL, UI_SET_POS_FORMAT, v_posfmt, n_posfmt),
 	LIST("Send position", "APRS", UI_SET_POS_SEND_S, v_possend, n_possend),
-	TOGGLE("Answer position requests", "LRRP", UI_SET_POS_REPLY),
+	TOGGLE("Answer GPS requests", "LRRP position location", UI_SET_POS_REPLY),
 };
 static const set_item_t s_connections[] = {
 	TOGGLE("Hotspot allowed", "MMDVM", UI_SET_HOTSPOT_AUTO),
@@ -1946,7 +1962,8 @@ static const char *picker_title(void)
 }
 
 static const ui_scr_def_t picker_screen = {
-	.name = "picker", .flags = SF_LIST | SF_FIELD, .prefix = "Talk to", .hint = "PTT once  OK use  Hold OK set",
+	.name = "picker", .flags = SF_LIST | SF_FIELD, .prefix = "Talk to",
+	.hint = TEXT_ALT_OPEN "PTT once  OK use  Hold OK set" TEXT_ALT_NEXT "OK use  Hold OK set" TEXT_ALT_CLOSE,
 	.count = picker_count, .item = picker_item, .select = picker_select, .context = picker_context,
 	.target = picker_target, .enter = picker_enter, .title = picker_title,
 };
@@ -1957,7 +1974,7 @@ static uint16_t scan_count(void) { return 3; }
 
 static void scan_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { "Skip this channel for now", "Stay here", "Always skip" };
+	static const char *const names[] = { "Skip channel for now", "Stay here", "Always skip" };
 	strcpy(it->label, names[i]);
 	item_num(it, (uint16_t)(i + 1u));
 	if (i == 2)
