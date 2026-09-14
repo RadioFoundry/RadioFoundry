@@ -20,6 +20,7 @@
 #        no-<FEATURE>       each switch that is on by default, turned off alone (sub-features follow)
 #        fm-minimal         FM only: no DMR, USB, VFO, diagnostics, sub-audio tones
 #        maximal            every switch on
+#        vhf                (MD-380 only) the VHF band image, default config
 #      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
 #   5. tools/similarity_scan.py against the trees in $ODR_SIMILARITY_REFS (space separated), only when it is set:
@@ -181,6 +182,8 @@ for bm in boards/*/board.mk boards/*/; do
 	fi
 	default_bytes=""
 	build "$b" default
+	# Single-band radios built per band: the other band's image too (default config)
+	[ "$b" = md380 ] && build "$b" vhf MD380_BAND=vhf
 	[ "$QUICK" = 1 ] && continue
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
