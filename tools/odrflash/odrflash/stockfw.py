@@ -22,6 +22,10 @@ CODEC_SIG = 0x4FF0E92D
 
 # DM-1701 bootloader key identity (docs/spec/hardware-dm1701.md 15.3); the key bytes are never stored here
 DM1701_KEY_SHA256 = "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff"
+# MD-380 / MD-390 / RT3 (docs/spec/hardware-md380.md 14.2, as tools/stm32_dfu.py's md380 model)
+MD380_KEY_SHA256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
+# The count word of the single-segment container form (the MD-380 D002.032 file: one segment, count 0xFFFFFFFF)
+SINGLE_SEGMENT = 0xFFFFFFFF
 
 # One profile per supported stock file, keyed by its SHA-256 (codec-dm1701.md, "Stock files" and "Codec in the stock
 # image"). Window = (flash address, length, SHA-256 of the decrypted bytes). "codec_profile" is the id the firmware
@@ -63,6 +67,8 @@ def parse_container(data):
     if len(data) < HEADER_LEN or not data.startswith(MAGIC):
         raise StockError("not a TYT/Baofeng OutSecurityBin firmware file (no \"OutSecurityBin\" header)")
     count = struct.unpack_from("<I", data, 0x7C)[0]
+    if count == SINGLE_SEGMENT:
+        count = 1	# the TYT MD-380 files (docs/spec/hardware-md380.md 14.1): one segment in the first table entry
     if not 1 <= count <= 15:
         raise StockError("implausible segment count %d" % count)
     segs = [struct.unpack_from("<II", data, 0x80 + 8 * i) for i in range(count)]
