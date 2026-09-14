@@ -11,6 +11,8 @@ make BOARD=dm1701 CONFIG_DMR=n           # FM only
 make BOARD=dm1701 CONFIG_VFO=n           # programmed channels only
 make BOARD=dm1701 CONFIG_DISPLAY_INSET=3 # smaller screen margins
 make BOARD=dm32                          # DM-32UV (csky-elf toolchain: tools/build-csky-toolchain.sh)
+make BOARD=md380                         # MD-380 / MD-390 / RT3, UHF
+make BOARD=md380 MD380_BAND=vhf          # the VHF radios (one band per radio, one image per band)
 ```
 
 Each switch reaches C as `CONFIG_<NAME>` = 0 or 1, always defined: test it with `#if CONFIG_X`, never `#ifdef`.
@@ -74,6 +76,18 @@ Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK
 |---|---|---|
 | `CONFIG_DISPLAY_INSET` | 0 (DM-1701: 5) | pixels hidden by the bezel or lens at each edge; the UI draws inside them |
 | `CONFIG_DISPLAY_INSET_TOP` / `_BOTTOM` / `_LEFT` / `_RIGHT` | = `CONFIG_DISPLAY_INSET` | one edge |
+
+### Board build variables
+
+Not feature switches: they pick the hardware variant or set bench knobs, and `print-config` doesn't list them.
+
+| Variable | Board | Meaning |
+|---|---|---|
+| `MD380_BAND` | md380 | `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz): the band table, the frequency plan and the board name ("MD-380 VHF") |
+| `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_GRAY=1` / `-DMD380_CH_ACTIVE_HIGH=1` (channel switch code), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
+
+The MD-380's defaults (`boards/md380/config.mk`) switch off `CONFIG_SUBTONE`, `CONFIG_FM_TX_TONES` and `CONFIG_APRS_RX`
+(no sub-audio or tone path written for that board yet) and `CONFIG_SFR` / `CONFIG_HOTSPOT_SPLIT` (HR_C6000 only).
 
 ## Adding a feature
 

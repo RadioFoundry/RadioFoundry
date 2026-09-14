@@ -17,7 +17,8 @@ supported radio. The screenshots are DM-1701 screens rendered by the UI simulato
 |---|---|
 | Baofeng DM-1701 | Supported. On the test bench now. |
 | Baofeng DM-32UV | Builds and passes its host tests. Not run on a radio yet, not released. |
-| TYT MD-UV380, MD-9600, MD-380, Radioddity GD-77, GD-88 | Planned. See [the radio survey](../spec/radios.md) for the rebadged models each covers. |
+| TYT MD-380 / MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not released. FM only for now. |
+| TYT MD-UV380, MD-9600, Radioddity GD-77, GD-88 | Planned. See [the radio survey](../spec/radios.md) for the rebadged models each covers. |
 
 ## Project status
 

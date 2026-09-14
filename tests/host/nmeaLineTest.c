@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // NMEA line framing for board GPS drivers (drivers/gps/nmea_line): checksums, any talker, CR / LF handling, noise and
-// overlong lines (docs/spec/hardware-md380.md 12, gotchas 13.7)
+// overlong lines (docs/spec/hardware-md380.md 13, gotchas 13.7)
 #include <stdio.h>
 #include <string.h>
 #include "gps/nmea_line/nmea_line.h"

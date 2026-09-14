@@ -15,7 +15,9 @@
 // DMR (modem-hrc6000.md 4.3 with the HR_C5000 notes of hardware-md380.md 4): the synthesizer is moved to the TX
 // frequency at the first burst of a transmission (from the RF TX interrupt, without waiting for lock: the interrupt
 // comes some milliseconds before the burst) and back with tx_off(); between bursts only the PA supply and loop are
-// switched, so no burst waits for the synthesizer.
+// switched, so no burst waits for the synthesizer. Each burst's PA is dropped 30 ms after its RF TX interrupt by a
+// TIM7 one-shot, as the stock firmware does (gotchas 3.4: the phase of the HR_C5000's timeslot interrupt against the
+// burst is unknown); the slot engine's own PA-off at the next timeslot interrupt is the fallback.
 #include <stddef.h>
 #include "config.h"
 #include "md380.h"
@@ -53,6 +55,8 @@
 #define FM_MIC_GAIN		7
 #define DMR_MIC_GAIN		7
 #define C5000_PWD_WAIT_MS	12	// as the HR_C6000: at least 10 ms after PWD low before the first access
+#define PA_HOLD_TICKS		300u	// TIM7 at 10 kHz: the PA stays keyed 30 ms after the RF TX interrupt
+#define PA_TIMER_PRIORITY	5	// the modem interrupts' level
 
 // Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
@@ -242,6 +246,38 @@ static void dac2_set(uint32_t value)
 	DAC->DHR12R2 = value > DAC_MAX ? DAC_MAX : value;
 }
 
+static volatile bool pa_timer_running;
+
+// TIM7: one-shot, 10 kHz count (APB1 timer clock 72 MHz)
+static void pa_timer_setup(void)
+{
+	__HAL_RCC_TIM7_CLK_ENABLE();
+	TIM7->CR1 = 0;
+	TIM7->PSC = (uint16_t)(2u * HAL_RCC_GetPCLK1Freq() / 10000u - 1u);
+	TIM7->ARR = PA_HOLD_TICKS - 1u;
+	TIM7->EGR = TIM_EGR_UG;		// load the prescaler
+	TIM7->SR = 0;
+	TIM7->DIER = TIM_DIER_UIE;
+	HAL_NVIC_SetPriority(TIM7_IRQn, PA_TIMER_PRIORITY, 0);
+	HAL_NVIC_EnableIRQ(TIM7_IRQn);
+}
+
+static void pa_timer_stop(void)
+{
+	TIM7->CR1 = 0;
+	TIM7->SR = 0;
+	pa_timer_running = false;
+}
+
+static void pa_timer_start(void)
+{
+	TIM7->CR1 = 0;
+	TIM7->CNT = 0;
+	TIM7->SR = 0;
+	pa_timer_running = true;
+	TIM7->CR1 = TIM_CR1_OPM | TIM_CR1_CEN;
+}
+
 // PA loop and transmitter supply off; DAC1 left at 0 until the receiver takes it
 static void pa_off(void)
 {
@@ -255,6 +291,15 @@ static void pa_on(uint32_t drive)
 	dac1_set(drive);
 	PIN_WRITE(PIN_TX_5V, true);
 	PIN_WRITE(PIN_APC_EN, true);
+}
+
+void TIM7_IRQHandler(void)
+{
+	TIM7->SR = 0;
+	if (pa_timer_running) {
+		pa_timer_running = false;
+		pa_off();
+	}
 }
 
 static void set_wide(bool wide)
@@ -335,7 +380,9 @@ static void rx_path(bool on)
 bool md380_rf_dmr_switch(bool tx)
 {
 	if (!tx) {
-		pa_off();
+		if (!pa_timer_running) {
+			pa_off();	// else the one-shot ends the burst on time
+		}
 		return true;
 	}
 	if (!r.dmr_armed) {
@@ -353,6 +400,7 @@ bool md380_rf_dmr_switch(bool tx)
 		r.dmr_tx_tuned = true;
 	}
 	pa_on(r.dmr_drive);
+	pa_timer_start();
 	return true;
 }
 
@@ -369,6 +417,7 @@ static void dmr_disarm(void)
 	if (md380_dmr_tx_active()) {
 		md380_dmr_tx_drop();
 	}
+	pa_timer_stop();
 	pa_off();
 }
 
@@ -466,6 +515,7 @@ static void init(void)
 	rx_path(false);
 	dac_setup();
 	pa_off();
+	pa_timer_setup();
 	voice_spi_setup();
 
 	PIN_WRITE(PIN_C5000_PWD, false);

@@ -7,6 +7,9 @@ PLATFORM   := stm32f4
 MD380_BAND ?= uhf
 MCU_DEFS   := -DSTM32F405xx -DHSE_VALUE=8000000U -DUSER_VECT_TAB_ADDRESS -DVECT_TAB_OFFSET=0xC000U
 MCU_DEFS   += -DMD380_VHF=$(if $(filter vhf,$(MD380_BAND)),1,0)
+# Bench knobs (docs/testing/md380-bringup.md), e.g. MD380_DEFS="-DMD380_PANEL_TYPE=1 -DMD380_KEEP_SWD"
+MD380_DEFS ?=
+MCU_DEFS   += $(MD380_DEFS)
 LDSCRIPT   := boards/md380/md380.ld
 # The linker script's CPU-only RAM (CCM: no DMA, not zeroed at start-up) for core state marked ODR_CPU_RAM
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmram"'
