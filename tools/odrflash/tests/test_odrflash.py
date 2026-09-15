@@ -258,6 +258,25 @@ class StockLibrary(unittest.TestCase):
         k = stockfw.derive_key(bytes(s), hashlib.sha256(KEY).hexdigest())
         self.assertEqual(k, KEY)
 
+    def test_single_segment_container(self):
+        """The MD-380 files: count word 0xFFFFFFFF, one segment in the first table entry."""
+        hdr = bytearray(stockfw.HEADER_LEN)
+        hdr[:len(stockfw.MAGIC)] = stockfw.MAGIC
+        struct.pack_into("<I", hdr, 0x7C, 0xFFFFFFFF)
+        struct.pack_into("<II", hdr, 0x80, 0x0800C000, 0x400)
+        data = bytes(hdr) + bytes(0x400) + bytes(0x100)
+        self.assertEqual(stockfw.parse_container(data), [(0x0800C000, 0x400)])
+        with self.assertRaises(stockfw.StockError):
+            stockfw.parse_container(data[:0x300])		# the segment runs past the end
+
+    def test_md380_board(self):
+        b = boards.get("md380")
+        self.assertFalse(b.releasable)
+        self.assertEqual([s.index for s in b.codec_sectors()], [7, 8, 9, 10, 11])
+        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "md380", "md380.ld")).read()
+        self.assertIn("0x08060000", ld)
+        self.assertIs(boards.from_debuglink_name("MD-380 VHF"), b)
+
     def test_real_profile_table(self):
         p = stockfw.PROFILES["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
         self.assertEqual(p["codec_profile"], DM1701.codec.id)

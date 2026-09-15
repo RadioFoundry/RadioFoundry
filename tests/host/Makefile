@@ -214,6 +214,28 @@ run-rf: at1846sTest
 	./at1846sTest
 .PHONY: run-rf
 
+# The MD-380's chips (docs/spec/hardware-md380.md): the SKY72310 synthesizer's divider words against the data sheet
+# and a register model, the HR_C5000 variant of the HR_C6000 driver, and the GPS NMEA line framing
+TESTS   += sky72310Test hrc5000Test nmeaLineTest
+
+sky72310Test: sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c $(ROOT)/drivers/rf/sky72310/sky72310.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c
+
+hrc5000Test: hrc5000Test.c $(ROOT)/drivers/modem/hrc6000/hrc6000_dmr.c $(ROOT)/drivers/modem/hrc6000/hrc6000.c \
+             $(wildcard $(ROOT)/drivers/modem/hrc6000/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc5000Test.c $(ROOT)/drivers/modem/hrc6000/hrc6000_dmr.c \
+		$(ROOT)/drivers/modem/hrc6000/hrc6000.c
+
+nmeaLineTest: nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c $(ROOT)/drivers/gps/nmea_line/nmea_line.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
+
+run: run-md380
+run-md380: sky72310Test hrc5000Test nmeaLineTest
+	./sky72310Test
+	./hrc5000Test
+	./nmeaLineTest
+.PHONY: run-md380
+
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
 UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c
 TESTS   += gfxTest

@@ -82,9 +82,18 @@ typedef struct {
 	// Optional: APRS AFSK through the FM transmitter, and received audio for the demodulator (hal_afsk.h); NULL when
 	// not built or the radio can't
 	const hal_afsk_t *afsk;
+	// Optional, with CAP_GPS: whether the GPS module is there, for radios sold with and without one on the same board
+	// (the MD-380 / MD-380G): true once the module has been heard. NULL = CAP_GPS alone says
+	bool (*gps_present)(void);
 } board_t;
 
 extern const board_t board;
+
+// The radio has a GPS receiver now: CAP_GPS and, where the board detects the module at run time, its answer
+static inline bool board_has_gps(void)
+{
+	return (board.caps & CAP_GPS) != 0 && (board.gps_present == NULL || board.gps_present());
+}
 
 // Clocks, pins, anything that must happen before the RTOS starts. Called from the platform's main()
 void board_early_init(void);

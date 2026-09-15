@@ -1612,7 +1612,7 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_GPS:
 	case UI_SET_POS_FORMAT:
 	case UI_SET_POS_SEND_S:
-		return board.caps & CAP_GPS ? NULL : "No GPS on this radio";
+		return board_has_gps() ? NULL : "No GPS on this radio";
 	default:
 		return NULL;
 	}

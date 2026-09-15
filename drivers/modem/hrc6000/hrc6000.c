@@ -4,6 +4,7 @@
 // docs/spec/hardware-dm1701.md 12.4, 12.5). Values marked (trace) in the spec are kept as given.
 #include <stddef.h>
 #include "hrc6000.h"
+#include "hal_dmr_modem.h"
 
 #define CMD_READ	0x80u
 #define CMD_EXT		0x40u
@@ -77,36 +78,97 @@ static const hrc_row_t fm_rx_rows[] = {
 
 void hrc6000_attach(hrc6000_t *dev, const hrc6000_bus_t *bus)
 {
-	dev->bus = bus;
+	hrc6000_attach_chip(dev, bus, HRC6000_CHIP_C6000);
 }
+
+void hrc6000_attach_chip(hrc6000_t *dev, const hrc6000_bus_t *bus, hrc6000_chip_t chip)
+{
+	dev->bus = bus;
+	dev->chip = (uint8_t)chip;
+}
+
+// --- Chip differences (hardware-md380.md 4.2) ---
+
+uint8_t hrc6000_page(const hrc6000_t *dev, uint8_t page)
+{
+	page &= 7u;
+	return (hrc6000_is_c5000(dev) && page == HRC6000_PAGE_SYS) ? 0u : page;
+}
+
+uint8_t hrc6000_dmr_mode_value(const hrc6000_t *dev, bool repeater)
+{
+	if (hrc6000_is_c5000(dev)) {
+		return repeater ? 0x4F : 0x6B;	// relay + continuous / Tier II, layer 2, aligned, timeslot mode
+	}
+	return 0x6E;
+}
+
+bool hrc6000_has_mcu_crc(const hrc6000_t *dev)
+{
+	return !hrc6000_is_c5000(dev);
+}
+
+bool hrc6000_has_sync_reg(const hrc6000_t *dev)
+{
+	return !hrc6000_is_c5000(dev);
+}
+
+uint8_t hrc6000_chip_crc_len(const hrc6000_t *dev, uint8_t kind)
+{
+	if (!hrc6000_is_c5000(dev)) {
+		return 0;
+	}
+	switch (kind) {
+	case DMR_BURST_CSBK:
+	case DMR_BURST_MBC_HEADER:
+	case DMR_BURST_DATA_HEADER:
+		return 10;
+	default:
+		return 0;
+	}
+}
+
+uint8_t hrc6000_voice_lcss(const hrc6000_t *dev, uint8_t voice_index)
+{
+	static const uint8_t lcss[6] = { 0, 1, 3, 3, 2, 0 };
+	return hrc6000_is_c5000(dev) ? lcss[voice_index % 6u] : 0u;
+}
+
+bool hrc6000_tx_start_access(const hrc6000_t *dev)
+{
+	return !hrc6000_is_c5000(dev);
+}
+
+// --- Register access ---
 
 bool hrc6000_write(hrc6000_t *dev, uint8_t page, uint8_t reg, uint8_t val)
 {
-	uint8_t hdr[2] = { (uint8_t)(page & 7u), reg };
+	uint8_t hdr[2] = { hrc6000_page(dev, page), reg };
 	return dev->bus->transfer(dev->bus->ctx, hdr, 2, &val, NULL, 1);
 }
 
 bool hrc6000_read(hrc6000_t *dev, uint8_t page, uint8_t reg, uint8_t *val)
 {
-	uint8_t hdr[2] = { (uint8_t)(CMD_READ | (page & 7u)), reg };
+	uint8_t hdr[2] = { (uint8_t)(CMD_READ | hrc6000_page(dev, page)), reg };
 	return dev->bus->transfer(dev->bus->ctx, hdr, 2, NULL, val, 1);
 }
 
 bool hrc6000_write_burst(hrc6000_t *dev, uint8_t page, uint8_t reg, const uint8_t *data, uint16_t len)
 {
-	uint8_t hdr[2] = { (uint8_t)(page & 7u), reg };
+	uint8_t hdr[2] = { hrc6000_page(dev, page), reg };
 	return dev->bus->transfer(dev->bus->ctx, hdr, 2, data, NULL, len);
 }
 
 bool hrc6000_read_burst(hrc6000_t *dev, uint8_t page, uint8_t reg, uint8_t *data, uint16_t len)
 {
-	uint8_t hdr[2] = { (uint8_t)(CMD_READ | (page & 7u)), reg };
+	uint8_t hdr[2] = { (uint8_t)(CMD_READ | hrc6000_page(dev, page)), reg };
 	return dev->bus->transfer(dev->bus->ctx, hdr, 2, NULL, data, len);
 }
 
 bool hrc6000_write_ext(hrc6000_t *dev, uint8_t page, uint16_t addr, uint8_t val)
 {
-	uint8_t hdr[3] = { (uint8_t)(CMD_EXT | (page & 7u)), (uint8_t)(addr & 0xFFu), (uint8_t)((addr >> 8) & 7u) };
+	uint8_t hdr[3] = { (uint8_t)(CMD_EXT | hrc6000_page(dev, page)), (uint8_t)(addr & 0xFFu),
+			   (uint8_t)((addr >> 8) & 7u) };
 	return dev->bus->transfer(dev->bus->ctx, hdr, 3, &val, NULL, 1);
 }
 
@@ -114,6 +176,10 @@ static bool write_rows(hrc6000_t *dev, const hrc_row_t *rows, uint32_t n)
 {
 	bool ok = true;
 	for (uint32_t i = 0; i < n; i++) {
+		// 0x5F is the HR_C6000's sync type register; on the HR_C5000 the address is something else (never written)
+		if (rows[i].page == HRC6000_PAGE_SYS && rows[i].reg == 0x5F && !hrc6000_has_sync_reg(dev)) {
+			continue;
+		}
 		ok &= hrc6000_write(dev, rows[i].page, rows[i].reg, rows[i].val);
 	}
 	return ok;
@@ -159,9 +225,10 @@ static bool write_dtmf_table(hrc6000_t *dev)
 
 bool hrc6000_set_dmr_id(hrc6000_t *dev, uint32_t id)
 {
-	bool ok = hrc6000_write(dev, 4, 0x14, (uint8_t)(id >> 16));
+	bool c5000 = hrc6000_is_c5000(dev);
+	bool ok = hrc6000_write(dev, 4, 0x14, (uint8_t)(c5000 ? id : id >> 16));
 	ok &= hrc6000_write(dev, 4, 0x15, (uint8_t)(id >> 8));
-	ok &= hrc6000_write(dev, 4, 0x16, (uint8_t)id);
+	ok &= hrc6000_write(dev, 4, 0x16, (uint8_t)(c5000 ? id >> 16 : id));
 	return ok;
 }
 
@@ -192,6 +259,47 @@ bool hrc6000_power_on_init(hrc6000_t *dev, uint8_t dmr_mic_gain)
 	ok &= write_rows(dev, ROWS(init_step13));			// 13
 	ok &= hrc6000_set_mic_gain(dev, dmr_mic_gain);			// 14
 	ok &= write_dtmf_table(dev);
+	if (hrc6000_is_c5000(dev)) {
+		// hardware-md380.md 4.3: access policy and vocoder control set once here, never at TX start
+		ok &= hrc6000_write(dev, 4, 0x21, 0x00);
+		ok &= hrc6000_write(dev, 4, 0x22, 0x07);
+	}
+	return ok;
+}
+
+bool hrc6000_c5000_dmr_path(hrc6000_t *dev, bool tx, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
+{
+	if (!hrc6000_is_c5000(dev)) {
+		return false;
+	}
+	bool ok = true;
+	if (tx) {
+		ok &= hrc6000_write(dev, 4, 0x0D, 0x8C);
+	}
+	ok &= hrc6000_write(dev, 4, 0x0E, 0x44);
+	ok &= hrc6000_set_mic_gain(dev, mic_gain);
+	ok &= hrc6000_write(dev, 4, 0x37, 0xC2);
+	ok &= hrc6000_write(dev, 4, 0x25, 0x0E);
+	ok &= hrc6000_write(dev, 4, 0x26, tx ? 0xFE : 0xFD);	// RX IF and audio disconnected while transmitting
+	if (tx) {
+		ok &= hrc6000_set_mod_gain(dev, mod2, mod1);
+		ok &= hrc6000_write(dev, 4, 0x35, 0x1E);	// modulation factor
+		ok &= hrc6000_write(dev, 4, 0x3F, 0x04);	// TX limiter
+	}
+	return ok;
+}
+
+uint16_t hrc6000_c5000_ref_dac(uint8_t ref_tune)
+{
+	return (uint16_t)(ref_tune * 4u + 0x600u);
+}
+
+bool hrc6000_c5000_set_ref(hrc6000_t *dev, uint8_t ref_tune)
+{
+	uint8_t v = (uint8_t)(0x7Fu - ref_tune);
+	bool ok = hrc6000_write(dev, 4, 0x47, v);
+	ok &= hrc6000_write(dev, 4, 0x48, ref_tune < 0x80u ? 0x00 : 0x03);
+	ok &= hrc6000_write(dev, 4, 0x04, v);
 	return ok;
 }
 
