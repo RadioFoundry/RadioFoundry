@@ -45,6 +45,7 @@ typedef struct {
 typedef struct {
 	uint32_t now_ms;
 	uint8_t battery_pct;
+	bool dmr_off;			// the DMR channel's modem has been off a while (ui_app.c), not just a moment
 	bool entry;			// VFO frequency entry in progress
 	uint8_t entry_len;
 	char entry_digits[UI_ENTRY_MAX + 1];
