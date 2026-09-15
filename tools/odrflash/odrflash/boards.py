@@ -126,9 +126,12 @@ DM32 = Board(
 )
 
 # Not released yet (docs/testing/md380-bringup.md). The TYT bootloader takes the same DFU protocol and sector order as
-# the DM-1701's, with its own key (tools/stm32_dfu.py --model md380). The codec windows inside the stock firmware are
-# not known yet (docs/spec/hardware-md380.md 14): the application is kept in sectors 3-6 (boards/md380/md380.ld) and
-# sectors 7-11 stand for the codec, so "keep" never erases what the stock firmware left there.
+# the DM-1701's, with its own key (tools/stm32_dfu.py --model md380). The stock D002.032 codec runs in place at its
+# stock addresses (docs/spec/codec-md380.md): the code window starts at 0x08050C44, inside sector 6, so the application
+# ends there (boards/md380/md380.ld) and shares sector 6 with the codec. An update erases sector 6 and with it part of
+# the codec, so the codec can't be kept: every flash merges it from the stock file again.
+_D2032 = stockfw.PROFILES["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]
+
 MD380 = Board(
     id="md380",
     name="TYT MD-380",
@@ -136,11 +139,11 @@ MD380 = Board(
     app_base=0x0800C000,
     flash_end=0x08100000,
     sectors=_f405_sectors(),
-    codec=CodecProfile(id="md380-unlocated", windows=[(0x08060000, 0x08100000 - 0x08060000)], installed=[],
-                       sources=[]),
+    codec=CodecProfile(id=_D2032["codec_profile"], windows=[(a, n) for a, n, _ in stockfw.windows(_D2032)],
+                       installed=[], sources=[_D2032["name"]]),
     debuglink_names=["MD-380", "MD-380 VHF", "md380"],
     releasable=False,
-    keep_codec_supported=True,
+    keep_codec_supported=False,
     key_sha256=stockfw.MD380_KEY_SHA256,
     dfu_ids=(0x0483, 0xDF11),
     dfu_string1="AnyRoad Technology",

@@ -18,7 +18,7 @@ ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 
 # Board -> codec tool (each takes --stock, --image, -o and keeps its supported stock files in PROFILES)
-CODEC_TOOLS = {"dm1701": "codec_extract", "dm32": "dm32_codec"}
+CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "dm32_codec"}
 SKIP = ("README.md", ".gitignore")
 
 
@@ -39,11 +39,12 @@ def candidates(folder):
 
 
 def find_key(folder, board):
-    """A DM-1701 key file in the folder (optional: the codec tool derives the key from the stock file without one)."""
-    if board != "dm1701":
+    """The board's key file in the folder (optional: the codec tool derives the key from the stock file without one;
+    DM-1701 and MD-380, the boards with an encrypted stock container)."""
+    if board not in ("dm1701", "md380"):
         return None
     import stm32_dfu
-    want = stm32_dfu.KEYS.get("dm1701", (None,))[0]
+    want = stm32_dfu.KEYS.get(board, (None,))[0]
     for path in candidates(folder):
         if os.path.getsize(path) == 1024 and sha256_file(path) == want:
             return path
@@ -61,7 +62,8 @@ def main():
     tool = CODEC_TOOLS.get(args.board)
     if tool is None or not os.path.isdir(args.dir):
         return 0
-    profiles = __import__(tool).PROFILES
+    # one tool may serve several boards (codec_extract: DM-1701 and MD-380): only this board's stock files count
+    profiles = {h: p for h, p in __import__(tool).PROFILES.items() if p.get("board", args.board) == args.board}
     stock = next((p for p in candidates(args.dir) if os.path.getsize(p) > 4096 and sha256_file(p) in profiles), None)
     out = args.output or os.path.splitext(args.image)[0] + "_codec.bin"
     if stock is None:
@@ -71,6 +73,8 @@ def main():
             os.remove(out)	# a merged image from an older build would be flashed by mistake
         return 0
     cmd = [sys.executable, os.path.join(TOOLS, tool + ".py"), "--stock", stock, "--image", args.image, "-o", out]
+    if tool == "codec_extract":
+        cmd += ["--board", args.board]
     key = find_key(args.dir, args.board)
     if key:
         cmd += ["--key", key]

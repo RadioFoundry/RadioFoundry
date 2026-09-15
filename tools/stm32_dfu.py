@@ -61,12 +61,13 @@ ALIASES = {
     "md9600": "md9600",
 }
 
-# DM-1701 stock V02.06 codec windows (docs/spec/codec-dm1701.md). An image that reaches into them must carry the
-# merged codec, recognized by its first word.
+# Stock codec windows: DM-1701 V02.06 (docs/spec/codec-dm1701.md), MD-380 D002.032 code and main table window
+# (docs/spec/codec-md380.md). An image that reaches into them must carry the merged codec, recognized by its first word.
 CODEC_WINDOWS = {
     "dm1701": [(0x08074714, 0x08084930), (0x080D19F0, 0x080E4240)],
+    "md380": [(0x08050C44, 0x080614C8), (0x0808FC64, 0x0809AC5C)],
 }
-CODEC_SIG_ADDR = {"dm1701": 0x08074714}
+CODEC_SIG_ADDR = {"dm1701": 0x08074714, "md380": 0x08050C44}
 CODEC_SIG = 0x4FF0E92D
 
 STOCK_MAGIC = b"OutSecurityBin"

@@ -43,6 +43,17 @@ def image_name(board_id, version, ext="bin"):
     return "odr-%s-%s.%s" % (board_id, version, ext)
 
 
+def codec_conflicts(board, lo, hi):
+    """The codec sectors [lo, hi) must stay out of: all of them on a board that keeps the codec across updates; on one
+    that merges it on every flash (the MD-380, whose code window shares sector 6 with the application) only the
+    sectors where [lo, hi) would overlap a codec window itself."""
+    secs = board.codec_sectors()
+    if not board.keep_codec_supported:
+        if not any(lo < a + n and hi > a for a, n in board.codec.windows):
+            return []
+    return [s.index for s in secs if s.overlaps(lo, hi)]
+
+
 def generate(board, image, version, git_full, features="", toolchain="", file_name=None):
     """The manifest dict for a codec-less raw image linked at board.app_base."""
     lo, hi = board.app_base, board.app_base + len(image)
@@ -50,8 +61,7 @@ def generate(board, image, version, git_full, features="", toolchain="", file_na
         raise ManifestError("empty image")
     if hi > board.flash_end:
         raise ManifestError("image ends at 0x%08X, past the end of flash 0x%08X" % (hi, board.flash_end))
-    codec_secs = board.codec_sectors()
-    hit = [s.index for s in codec_secs if s.overlaps(lo, hi)]
+    hit = codec_conflicts(board, lo, hi)
     if hit:
         raise ManifestError("the image (0x%08X..0x%08X) reaches into codec sector(s) %s: the linker script must keep "
                             "the application out of them" % (lo, hi, hit))
@@ -72,7 +82,7 @@ def generate(board, image, version, git_full, features="", toolchain="", file_na
         "codec": {
             "included": False,
             "profile": board.codec.id,
-            "sectors": [s.index for s in codec_secs],
+            "sectors": [s.index for s in board.codec_sectors()],
             "windows": [{"addr": _hex(a), "size": n} for a, n in board.codec.windows],
             "keep_supported": board.keep_codec_supported,
         },
@@ -131,14 +141,13 @@ def verify(manifest, image, board_id=None):
     rs = ranges(manifest)
     if not rs or sum(n for _, n in rs) != len(image):
         raise ManifestError("the manifest's ranges don't add up to the image size")
-    codec_secs = board.codec_sectors()
     for addr, n in rs:
         if addr < board.app_base or addr + n > board.flash_end:
             raise ManifestError("range 0x%08X+0x%X is outside the application flash" % (addr, n))
         for lo, hi in board.protected:
             if addr < hi and addr + n > lo:
                 raise ManifestError("range 0x%08X+0x%X overlaps the bootloader" % (addr, n))
-        hit = [s.index for s in codec_secs if s.overlaps(addr, addr + n)]
+        hit = codec_conflicts(board, addr, addr + n)
         if hit and not (manifest.get("codec") or {}).get("included"):
             raise ManifestError("range 0x%08X+0x%X reaches into codec sector(s) %s" % (addr, n, hit))
     codec = manifest.get("codec") or {}
