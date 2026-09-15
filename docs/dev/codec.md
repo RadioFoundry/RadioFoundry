@@ -12,7 +12,7 @@ firmware, and a tool merges the codec into their ODR image on their own machine.
 |---|---|---|---|---|
 | DM-1701 | `tools/odrflash` (`odrflash/stockfw.py`; also `tools/codec_extract.py`) | DM-1701(CSV) V02.06, encrypted container | Decrypted and placed at its stock flash addresses; runs in place, nothing relocated | [codec-dm1701.md](../spec/codec-dm1701.md) |
 | DM-32UV | `tools/dm32_codec.py` | DM32.01.01.049 or DM32.00.01.046HRVocoder | Placed in a codec slot at 0x030E8000 with a header; copied to its stock RAM addresses at boot | [codec-dm32.md](../spec/codec-dm32.md) |
-| MD-380 | none yet | TYT D002.032 or newer, encrypted container (single segment) | Not located yet: flash sectors 7-11 are kept free for it; FM only until a spec exists | [hardware-md380.md](../spec/hardware-md380.md) 14.4 |
+| MD-380 | `tools/codec_extract.py` (and odrflash) | TYT D002.032 ("Firmware 2.32"), encrypted container (single segment) | Decrypted and placed at its stock flash addresses, six windows; runs in place. The code window shares sector 6 with the application, so every flash merges it again | [codec-md380.md](../spec/codec-md380.md) |
 
 Both tools check the stock file by SHA-256 against a profile and refuse anything else, check the codec's first words
 after carving, and write the merged image into `build/` (ignored by git) or a path you choose. For release images,
@@ -28,6 +28,7 @@ For source builds, drop the stock file into `codecs/` and `make` runs the board'
 |---|---|
 | The interface the core calls | `hal/hal_vocoder.h` (`board.vocoder`) |
 | DM-1701 hosting: state init, per-frame calls | `boards/dm1701/vocoder_dm1701.c` |
+| MD-380 hosting: the same, other addresses and window checks | `boards/md380/vocoder_md380.c` |
 | DM-32UV hosting: the slot header, the copy to RAM | `boards/dm32/vocoder_dm32.c`, `platform/hrc7000/codec_call.c` |
 | The window kept free in flash | the board's linker script |
 | AMBE frame FEC and the voice path around the codec | `core/dmr/ambe` |
@@ -38,7 +39,7 @@ Without a codec merged, the vocoder reports itself absent and the radio runs FM 
 
 The spec side finds the codec in the radio's stock firmware and writes `docs/spec/codec-<b>.md`: the stock files and
 their hashes, the container format, the code and table windows, entry points, calling convention, state sizes and
-whether the code is position dependent. Use the two existing specs as the model. The clean side then writes the
+whether the code is position dependent. Use the existing specs as the model. The clean side then writes the
 merge tool and the hosting from that spec.
 
 A merge tool must:

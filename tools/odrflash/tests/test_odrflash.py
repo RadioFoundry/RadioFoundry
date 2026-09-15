@@ -109,7 +109,7 @@ class Planning(unittest.TestCase):
         _, profiles, code, tables = synthetic_stock()
         prof = list(profiles.values())[0]
         img = app_image(100000)
-        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.MERGE, stockfw.codec_segments(prof, code, tables))
+        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.MERGE, [(prof["code"][0], code), (prof["tables"][0], tables)])
         self.assertEqual([s.index for s in p.erase], [3, 4, 5, 7, 8, 10, 11])
         self.assertEqual(p.kept, [])
         s7 = [st for st in p.writes if st.sector.index == 7][0]
@@ -124,7 +124,7 @@ class Planning(unittest.TestCase):
     def test_merge_needs_whole_codec(self):
         _, profiles, code, tables = synthetic_stock()
         prof = list(profiles.values())[0]
-        segs = stockfw.codec_segments(prof, code, tables)[:1]
+        segs = [(prof["code"][0], code), (prof["tables"][0], tables)][:1]
         with self.assertRaises(plan.PlanError):
             plan.make_plan(DM1701, [(DM1701.app_base, app_image(1000))], plan.MERGE, segs)
 
@@ -214,10 +214,10 @@ class Manifests(unittest.TestCase):
 class StockLibrary(unittest.TestCase):
     def test_extract_and_merge(self):
         stock, profiles, code, tables = synthetic_stock()
-        prof, c, t = stockfw.extract(stock, KEY, profiles)
-        self.assertEqual((c, t), (code, tables))
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        self.assertEqual(segs, [(0x08074714, code), (0x080D19F0, tables)])
         img = app_image(5000)
-        merged = stockfw.merge(img, prof, c, t)
+        merged = stockfw.merge(img, prof, segs)
         self.assertEqual(len(merged), 0x080E4240 - 0x0800C000)
         self.assertEqual(merged[:len(img)], img)
         self.assertEqual(merged[0x08074714 - 0x0800C000:0x08084930 - 0x0800C000], code)
@@ -232,7 +232,7 @@ class StockLibrary(unittest.TestCase):
         with self.assertRaises(stockfw.StockError):
             stockfw.parse_container(b"x" * 300)
         with self.assertRaises(stockfw.StockError):
-            stockfw.merge(stock, list(profiles.values())[0], b"", b"")
+            stockfw.merge(stock, list(profiles.values())[0], [(0x08074714, b"")])
 
     def test_derive_key(self):
         stock, _, _, _ = synthetic_stock()
@@ -272,10 +272,76 @@ class StockLibrary(unittest.TestCase):
     def test_md380_board(self):
         b = boards.get("md380")
         self.assertFalse(b.releasable)
-        self.assertEqual([s.index for s in b.codec_sectors()], [7, 8, 9, 10, 11])
+        self.assertFalse(b.keep_codec_supported)	# the code window shares sector 6 with the application
+        self.assertEqual(b.codec.id, "md380-d2032")
+        self.assertEqual([s.index for s in b.codec_sectors()], [6, 7, 8, 10, 11])
         ld = open(os.path.join(HERE, "..", "..", "..", "boards", "md380", "md380.ld")).read()
-        self.assertIn("0x08060000", ld)
+        self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x08050C44 - 0x0800C000", ld)
+        self.assertEqual(b.codec.windows[0][0], 0x08050C44)
         self.assertIs(boards.from_debuglink_name("MD-380 VHF"), b)
+
+    def test_md380_profile(self):
+        p = stockfw.PROFILES["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]
+        self.assertEqual((p["board"], p["key_sha256"]), ("md380", stockfw.MD380_KEY_SHA256))
+        self.assertEqual(p["segments"], [(0x0800C000, 0xF2C00)])
+        self.assertEqual([(a, n) for a, n, _ in stockfw.windows(p)],
+                         [(0x08050C44, 0x10884), (0x0808FC64, 0xAFF8), (0x080D0FC8, 0x24), (0x080F9698, 0x18),
+                          (0x080F9E74, 0x14), (0x080FD490, 0x20)])
+        self.assertEqual(stockfw.profile_for_board("md380"),
+                         "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43")
+        self.assertEqual(stockfw.identify(b"x"), None)
+
+    def test_md380_extract_merge_and_plan(self):
+        """A synthetic file with the D002.032 layout: six windows out, merge, and a merge plan that shares sector 6."""
+        b = boards.get("md380")
+        stock, profiles, code, tables = stockfw.build_synthetic_stock(KEY, random.Random(380),
+                                                                      stockfw.profile_for_board("md380"))
+        self.assertEqual(stockfw.parse_container(stock), [(0x0800C000, 0xF2C00)])
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        self.assertEqual(len(segs), 6)
+        self.assertEqual(segs[0], (0x08050C44, code))
+        img = app_image(0x08050C44 - 0x0800C000)
+        merged = stockfw.merge(img, prof, segs)
+        self.assertEqual(merged[0x08050C44 - 0x0800C000:0x08050C44 - 0x0800C000 + len(code)], code)
+        with self.assertRaises(stockfw.StockError):
+            stockfw.merge(img + b"\0", prof, segs)
+        p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs)
+        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 8, 10, 11])
+        s6 = [st for st in p.writes if st.sector.index == 6][0]
+        self.assertEqual(s6.content, "app+codec")
+        flat = b"".join(d for _, d in s6.blocks)
+        self.assertEqual(flat[:0x08050C44 - 0x08040000], img[0x08040000 - 0x0800C000:])
+        self.assertEqual(flat[0x08050C44 - 0x08040000:], code[:0x08060000 - 0x08050C44])
+        with self.assertRaises(plan.PlanError):		# keep would erase the codec's part of sector 6
+            plan.make_plan(b, [(b.app_base, app_image(0x08040000 - 0x0800C000 + 4))], plan.KEEP)
+        with self.assertRaises(plan.PlanError):		# the application can't overlap the code window
+            plan.make_plan(b, [(b.app_base, app_image(0x08050C44 - 0x0800C000 + 4))], plan.MERGE, segs)
+
+    def test_derive_key_refines_a_bad_vote(self):
+        """Plain text like Thumb code (a Markov chain over a vocabulary of halfwords) where 0x00 is common but not
+        dominant, as in the MD-380 image: the vote gets about a third of the columns wrong, the pair model fixes them."""
+        rng = random.Random(1)
+        vocab = [rng.randrange(1, 65536) for _ in range(48)] + [0]
+        weights = [1.0 / (i + 1) for i in range(48)] + [1.0]
+        n = 0xF2C00
+        nxt = {w: rng.choices(vocab, weights, k=3) for w in vocab}
+        pool = rng.choices(vocab, weights, k=n // 2)
+        hw = []
+        cur = 0
+        for i in range(n // 2):
+            cur = nxt[cur][i % 3] if rng.random() < 0.6 else pool[i]
+            hw.append(cur)
+        plain = struct.pack("<%dH" % (n // 2), *hw)
+        hdr = bytearray(stockfw.HEADER_LEN)
+        hdr[:len(stockfw.MAGIC)] = stockfw.MAGIC
+        struct.pack_into("<I", hdr, 0x7C, 0xFFFFFFFF)
+        struct.pack_into("<II", hdr, 0x80, 0x0800C000, n)
+        stream = (KEY * (n // 1024 + 1))[:n]
+        stock = bytes(hdr) + bytes(a ^ b for a, b in zip(plain, stream)) + bytes(0x100)
+        payload = stock[stockfw.HEADER_LEN:stockfw.HEADER_LEN + n]
+        vote = bytes(collections.Counter(payload[j::1024]).most_common(1)[0][0] for j in range(1024))
+        self.assertGreater(sum(a != b for a, b in zip(vote, KEY)), 200)	# the plain vote is far off
+        self.assertEqual(stockfw.derive_key(stock, hashlib.sha256(KEY).hexdigest()), KEY)
 
     def test_real_profile_table(self):
         p = stockfw.PROFILES["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
@@ -365,7 +431,8 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
         segs = []
         if mode == plan.MERGE:
             _, profiles, code, tables = synthetic_stock()
-            segs = stockfw.codec_segments(list(profiles.values())[0], code, tables)
+            prof = list(profiles.values())[0]
+            segs = [(prof["code"][0], code), (prof["tables"][0], tables)]
         p = plan.make_plan(DM1701, [(DM1701.app_base, img)], mode, segs)
         dfumod.Dfu(dev, 0, log=lambda *a: None, sleep=lambda s: None).run(p, KEY)
         return dev, before, img, p, segs
@@ -436,6 +503,18 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             rc, out, err = run_cli(["flash", sp, "--board", "dm1701", "--simulate", "odr-codec", "--yes"])
             self.assertEqual(rc, 2)
             self.assertIn("official", err)
+
+    def test_md380_merge_simulation(self):
+        """A local MD-380 build up to the code window: merged from a synthetic D002.032 file, sector 6 shared."""
+        with tempfile.TemporaryDirectory() as d:
+            bp = os.path.join(d, "odr_md380.bin")
+            open(bp, "wb").write(app_image(0x08050C44 - 0x0800C000 - 100))
+            rc, out, err = run_cli(["flash", bp, "--board", "md380", "--simulate", "odr-nocodec", "--stock", "synthetic",
+                                    "--yes"])
+            self.assertEqual(rc, 0, out + err)
+            self.assertIn("MERGE", out)
+            self.assertIn("ERASE + WRITE app+codec", out)
+            self.assertIn("sim      PASS", out)
 
     def test_dev_build_without_manifest(self):
         with tempfile.TemporaryDirectory() as d:

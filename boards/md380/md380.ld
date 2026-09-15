@@ -4,10 +4,11 @@
  * 1.3, 13). The bootloader starts the application at 0x0800C000 like the DM-1701's, so the vector table, stack rule and
  * start-up are the same.
  *
- * Codec windows: not known yet (hardware-md380.md 14). Until the spec gives the stock D002.032 codec's code and table
- * windows, the application keeps to sectors 3-6 (0x0800C000..0x0805FFFF, 336 KB, the DM-1701's budget) and sectors 7-11
- * (0x08060000..0x080FFFFF) are reserved for it. If the codec turns out to sit below 0x08060000 in the stock image,
- * this script and tools/odrflash/odrflash/boards.py change together. Never link into sectors 7-11. */
+ * Codec: the stock D002.032 AMBE+2 codec runs in place at its stock addresses (docs/spec/codec-md380.md). Its code
+ * window starts at 0x08050C44, inside sector 6, so the application ends there: 0x0800C000..0x08050C43 (275 KB). The
+ * rest of flash holds the codec's code and table windows (0x08050C44..0x080614C7, 0x0808FC64..0x0809AC5B and four
+ * small windows in sectors 10 and 11) and is never linked into. This script, tools/odrflash/odrflash/boards.py and
+ * the profile in tools/odrflash/odrflash/stockfw.py change together. */
 
 ENTRY(Reset_Handler)
 
@@ -17,7 +18,7 @@ _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts */
 
 MEMORY
 {
-	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x08060000 - 0x0800C000	/* sectors 3-6 */
+	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x08050C44 - 0x0800C000	/* sectors 3-5, sector 6 to the codec */
 	RAM     (xrw) : ORIGIN = 0x20000000, LENGTH = 128K - 4
 	CCMRAM  (rw)  : ORIGIN = 0x10000000, LENGTH = 64K
 }
@@ -83,6 +84,6 @@ SECTIONS
 	/DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }
 	.ARM.attributes 0 : { *(.ARM.attributes) }
 
-	/* Everything loaded into flash ends before sector 7 (the reserved codec sectors) */
-	ASSERT(_sidata + SIZEOF(.data) <= 0x08060000, "the image reaches into reserved codec sector 7 (0x08060000)")
+	/* Everything loaded into flash ends before the codec code window */
+	ASSERT(_sidata + SIZEOF(.data) <= 0x08050C44, "the image reaches into the codec code window (0x08050C44)")
 }

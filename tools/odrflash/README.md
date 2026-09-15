@@ -72,7 +72,7 @@ for later runs without `--stock`; `--key FILE` takes a key file you already have
 | `odrflash/boards.py` | per radio: flash sectors, application base, codec windows and profile, bootloader IDs, key hash |
 | `odrflash/plan.py` | which sectors to erase and write for an image and a codec mode |
 | `odrflash/manifest.py` | release manifests: generate (used by `tools/release.py`) and verify |
-| `odrflash/stockfw.py` | the DM-1701 stock file: container, decryption, codec extraction and merge, key derivation (also used by `tools/codec_extract.py`) |
+| `odrflash/stockfw.py` | the DM-1701 and MD-380 stock files: container, decryption, codec extraction and merge, key derivation (also used by `tools/codec_extract.py`) |
 | `odrflash/dfu.py` | the AnyRoad DFU bootloader: find, open, run a plan |
 | `odrflash/debuglink.py` | VERSION / INFO_CHIP over the debug link (read only) |
 | `odrflash/fakedfu.py` | a fake bootloader with a flash model, for the tests and `--simulate` |

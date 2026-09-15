@@ -280,19 +280,20 @@ def cmd_flash(args):
     key = None
     if d.mode == planmod.MERGE:
         if stock == "synthetic":
-            stock_bytes, profiles, _, _ = stockfw.build_synthetic_stock(sim_key, random.Random(7))
-            prof, code, tables = stockfw.extract(stock_bytes, sim_key, profiles)
+            stock_bytes, profiles, _, _ = stockfw.build_synthetic_stock(sim_key, random.Random(7),
+                                                                        stockfw.profile_for_board(board.id))
+            prof, csegs = stockfw.extract(stock_bytes, sim_key, profiles)
         else:
             key = get_key(args, board, stock, sim_key)
             try:
-                prof, code, tables = stockfw.extract(stock, key)
+                prof, csegs = stockfw.extract(stock, key)
             except stockfw.StockError as e:
                 raise UsageError(str(e))
             if prof["codec_profile"] != board.codec.id:
                 raise UsageError("the stock file holds codec %s, the image expects %s"
                                  % (prof["codec_profile"], board.codec.id))
             say("stock    %s verified (SHA-256), codec windows decrypted and checked" % prof["name"])
-        codec_segs = stockfw.codec_segments(prof, code, tables)
+        codec_segs = stockfw.codec_segments(prof, csegs)
 
     p = planmod.make_plan(board, mf.segments(man, image), d.mode, codec_segs)
     say("")

@@ -6,7 +6,8 @@ Codec modes (docs/dev/release.md "Codec handling"):
   keep    write only the sectors the firmware image covers; the codec sectors are never erased or written, so the
           codec already in the radio stays. Refused when the image itself reaches into a codec sector.
   merge   the image plus the codec taken from the user's stock file: the codec sectors are erased and rewritten with
-          the codec at its stock addresses (0xFF around it). Refused unless every codec window is covered.
+          the codec at its stock addresses (0xFF around it). Refused unless every codec window is covered. The image
+          may share a sector with a codec window (never the window itself); that sector is written with both.
 
 A written sector is always erased first and written from its start through its last data block (0xFF filling the
 gaps), as one run of 1024-byte blocks numbered from 2: the AnyRoad bootloader's region form (hardware-dm1701.md 15.2).
@@ -112,8 +113,16 @@ def make_plan(board, segments, mode, codec_segments=()):
     codec_secs = board.codec_sectors()
     codec_idx = {s.index for s in codec_secs}
     for addr, data in segments:
-        hit = sorted(s.index for s in codec_secs if data and s.overlaps(addr, addr + len(data)))
-        if hit:
+        if not data:
+            continue
+        win = [(lo, n) for lo, n in board.codec.windows if addr < lo + n and addr + len(data) > lo]
+        if win:
+            raise PlanError("the firmware image (0x%08X..0x%08X) overlaps the codec window 0x%08X+0x%X; the linker "
+                            "keeps the codec windows free" % (addr, addr + len(data), win[0][0], win[0][1]))
+        hit = sorted(s.index for s in codec_secs if s.overlaps(addr, addr + len(data)))
+        # A board whose codec shares a sector with the application (the MD-380: the code window starts inside sector
+        # 6) can only be flashed in merge mode: that sector is erased and gets both
+        if hit and mode == KEEP:
             raise PlanError("the firmware image reaches into codec sector(s) %s (0x%08X..0x%08X); a release image "
                             "never does (the linker keeps the codec sectors free)" % (hit, addr, addr + len(data)))
     if mode == KEEP and codec_segments:
