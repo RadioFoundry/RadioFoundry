@@ -851,8 +851,9 @@ PTT.
 
 Quadrature, A on PE14, B on PB11 (both pull-up), with detents. The legacy firmware interrupts on both edges of B only
 and counts one step per B edge (-1 if A equals B after the edge, else +1). One B edge per detent means two quadrature
-steps per detent, resting where A equals B (00 and 11); this is the assumption ODR builds on (unverified by
-measurement: the `input.enc_transitions` / `input.enc_detents` view keys check it, 2 expected).
+steps per detent, resting where A equals B (00 and 11). Measured on the bench (2026-10-10, a76da0d): 10 slow and 10
+fast detents each gave exactly 10 detents and 20 transitions, 11 counterclockwise gave -11 / 22, a wobble without a
+detent gave 0 detents (14 transitions, 12 reversals), never an illegal state.
 
 ODR interrupts on both edges of both lines (EXTI14 for A, EXTI11 for B, one handler) and feeds every sample of the two
 levels to the table decoder in `drivers/input/quadrature`: each sample against the previous one is no change, one
@@ -871,7 +872,8 @@ Why counting B edges went wrong (seen as missed steps and steps backward, 2026-1
   (a fast turn) gives the wrong direction.
 
 The decoder makes all three harmless: bounce is a step and the same step back (net zero), merged edges are a repeated
-level (no change), and only whole detents count. Positive (forward) is the direction the legacy firmware counted +1.
+level (no change), and only whole detents count. Positive (forward) is the direction the legacy firmware counted +1. Clockwise is
+positive (forward): the next channel on Home, focus down in lists (confirmed on the radio by the owner, 2026-10-10).
 
 ### 10.4 Power switch
 
