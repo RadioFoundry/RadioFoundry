@@ -50,8 +50,9 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
 | Sectors | Addresses | Use |
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (D) [PoC] |
-| 3-6 | 0x0800C000-0x0805FFFF | ODR application, 336 KB (`boards/md380/md380.ld`) |
-| 7-11 | 0x08060000-0x080FFFFF | Kept for the stock codec (section 14.4) until its windows are known |
+| 3-5, 6 up to 0x08050C43 | 0x0800C000-0x08050C43 | ODR application, 275 KB (`boards/md380/md380.ld`) |
+| 6 from 0x08050C44, 7, 8, 10, 11 | see [codec-md380.md](codec-md380.md) | The stock D002.032 codec's code and table windows, run in place (C) |
+| 9 | 0x080A0000-0x080BFFFF | Free |
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (D) [PoC], [md380tools].
 
@@ -528,10 +529,10 @@ table entry).
 
 The payload is XOR-encrypted with a 1024-byte key held in the bootloader (D) [PoC]. The key's SHA-256 is
 5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd and its first bytes 2E DF 40 B5 (D,
-`tools/stm32_dfu.py` md380 model). Deriving the key from the stock file the way odrflash does for the DM-1701 (the
-most common byte per key column) did not reproduce it on D2.32: the column vote gave 3E DF 42 B5 for the first bytes,
-and the hash-checked correction didn't converge (C, 2026-10-10). The D2.32 plaintext is evidently less zero-dominated
-than the DM-1701's. The user supplies the key file for now (`--key`).
+`tools/stm32_dfu.py` md380 model). It can be derived from the D2.32 stock file and checked by that hash (C,
+2026-10-10): the plain column vote is wrong in a third of the columns, and a byte-pair refinement learned from the file
+fixes them ([codec-md380.md](codec-md380.md), "Key recovery"; `odrflash/stockfw.derive_key`). A key file still works
+(`--key`).
 
 ### 14.3 Bootloader and DFU
 
@@ -542,20 +543,12 @@ tool encrypts it for the loader. odrflash knows the board (`boards.py` MD380: no
 
 ### 14.4 The codec
 
-The AMBE+2 codec is inside the stock application (D) [PoC], [md380tools]. Its code and table windows, entry points,
-calling convention and state sizes in D002.032 (and the "S013" / D13.20 family) have **not been located**: that is
-spec-side work under [CLEANROOM.md](../CLEANROOM.md) and belongs in a `docs/spec/codec-md380.md` written like
-[codec-dm1701.md](codec-dm1701.md). What the clean side needs from it:
-
-1. Each supported stock file's SHA-256, container form and key (14.1, 14.2).
-2. The decrypted windows: code and tables, flash addresses and lengths, SHA-256 of each.
-3. Entry points (encode, decode, init calls), argument order and the state block sizes.
-4. Whether the code is position dependent (where it must sit in flash) and what RAM it touches.
-
-Then: a `stockfw.PROFILES` entry with `codec_profile` "md380-d2032" (or similar) and the windows, the same windows in
-`boards.py` in place of sectors 7-11, the linker script narrowed to keep only those sectors, `vocoder_md380.c` filled in
-from the DM-1701's, and `tools/codec_auto.py` given the board. Until then `vocoder_md380.c` reports no codec and the
-radio is FM only.
+The AMBE+2 codec is inside the stock application (D) [PoC]. Located in D002.032 (C, 2026-10-10): the same library as the
+DM-1701's, at other addresses; code window 0x08050C44+0x10884, table window 0x0808FC64+0xAFF8 and four small table
+windows in sectors 10 and 11, run in place. Entry points, calling convention, state sizes and the extraction recipe
+are in [codec-md380.md](codec-md380.md). `stockfw.PROFILES` has the profile (`md380-d2032`), `boards.py` the windows,
+`md380.ld` ends the application at the code window, `vocoder_md380.c` hosts it, and `make BOARD=md380` merges it when
+the stock file is in `codecs/`. Without the codec merged the radio is FM only.
 
 ---
 
@@ -605,8 +598,8 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 18 | RF TX interrupt lead time and the 30 ms PA hold | Stage 8: scope the PA supply (PC5) against the burst on an SDR |
 | 19 | VHF I / Q swap (0x01 = 0xF0) | Stage 8 on a VHF radio: DMR receive and transmit against a known radio |
 | 20 | GPS UART pin, baud rate, power pin polarity | Stage 9: on a G model "gps yes" with counts rising; on a non-G model "gps no" and no flash errors |
-| 21 | Codec windows in D002.032 | Spec-side (14.4), then stage 7 |
-| 22 | Whether the bootloader key can be derived from a stock file | Spec-side: improve the column vote for TYT plaintext (14.2) |
+| 21 | Codec windows in D002.032 | Located and verified in an emulator (14.4); stage 7 checks voice on the radio |
+| 22 | Whether the bootloader key can be derived from a stock file | Done (14.2): derived from D2.32 and checked by its hash |
 
 ## 18. Sources
 

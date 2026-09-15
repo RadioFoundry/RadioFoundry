@@ -100,4 +100,6 @@ The MD-380's defaults (`boards/md380/config.mk`) switch off `CONFIG_SUBTONE`, `C
 3. Guard the code, and leave a directory out in the Makefile when the whole directory belongs to the feature.
 4. Add a row here, and check the build links with the switch off (`make BOARD=<b> CONFIG_X=n BUILD=build/test-x`).
    `tools/ci.sh` builds every board with each default-on switch off alone, an FM-minimal and a maximal
-   configuration, all with zero warnings, and reports the image sizes (`docs/testing/README.md`).
+   configuration, all with zero warnings, and reports the image sizes (`docs/testing/README.md`). The maximal
+   configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its `config.mk`): features its
+   hardware support doesn't have, such as the HR_C6000-only SFR glue on the MD-380.
