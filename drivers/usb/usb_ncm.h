@@ -31,6 +31,7 @@ void usbNcmMacs(uint8_t host[6], uint8_t radio[6]);
 
 typedef struct {
 	uint32_t rx_frames, rx_dropped, tx_frames, tx_busy, reconnects;
+	uint32_t switch_fallbacks;	// run-time switches to network mode the host never configured (back to serial)
 } usb_ncm_stats_t;
 void usbNcmStats(usb_ncm_stats_t *s);
 
