@@ -106,7 +106,7 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
-.PHONY: all codec clean size test print-config print-cc
+.PHONY: all codec clean size test print-config print-cc print-unsupported
 all: $(TARGET).bin codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
@@ -118,7 +118,7 @@ codec: $(TARGET).bin
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
-ifeq ($(filter clean test print-config print-cc,$(MAKECMDGOALS)),)
+ifeq ($(filter clean test print-config print-cc print-unsupported,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP)' | cmp -s - $(BUILD)/flags || { echo '$(CFLAGS_APP)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
 $(shell echo '$(ODR_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(ODR_VERSION)' > $(BUILD)/version; \
@@ -163,6 +163,10 @@ print-config:
 	@$(foreach f,$(FEATURES),echo '$(f)=$(CONFIG_$(f))';)
 print-cc:
 	@echo '$(CC)'
+# Switches the board's hardware support doesn't cover (boards/<board>/config.mk BOARD_UNSUPPORTED): ci's maximal
+# configuration leaves them off
+print-unsupported:
+	@echo '$(BOARD_UNSUPPORTED)'
 
 clean:
 	rm -rf $(BUILD)

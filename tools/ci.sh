@@ -19,7 +19,7 @@
 #        default            the board's defaults
 #        no-<FEATURE>       each switch that is on by default, turned off alone (sub-features follow)
 #        fm-minimal         FM only: no DMR, USB, VFO, diagnostics, sub-audio tones
-#        maximal            every switch on
+#        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED)
 #        vhf                (MD-380 only) the VHF band image, default config
 #      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
@@ -199,9 +199,10 @@ for bm in boards/*/board.mk boards/*/; do
 	[ "$QUICK" = 1 ] && continue
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
+	unsupported=" $(make -s BOARD="$b" print-unsupported 2>/dev/null) "
 	for kv in $features; do
 		f=${kv%%=*}
-		all_on="$all_on CONFIG_$f=y"
+		case "$unsupported" in *" $f "*) ;; *) all_on="$all_on CONFIG_$f=y" ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
 	build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
