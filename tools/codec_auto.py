@@ -34,8 +34,9 @@ def candidates(folder):
     for dirpath, dirnames, filenames in os.walk(folder):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         for name in sorted(filenames):
-            if name not in SKIP and not name.startswith("."):
-                yield os.path.join(dirpath, name)
+            path = os.path.join(dirpath, name)
+            if name not in SKIP and not name.startswith(".") and os.path.isfile(path):	# not a dangling link
+                yield path
 
 
 def find_key(folder, board):
