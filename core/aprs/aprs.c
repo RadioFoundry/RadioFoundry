@@ -657,6 +657,8 @@ static aprs_station_t *station_find(const char *call)
 	return NULL;
 }
 
+#if CONFIG_APRS_IGATE
+// The iGate rules' view of the station list
 static bool heard(const char *call, uint8_t ssid, uint32_t secs, bool direct_only)
 {
 	char key[AX25_CALL_LEN + 4];
@@ -680,6 +682,7 @@ static bool heard_rf(const char *call, uint8_t ssid, uint32_t secs, void *ctx)
 	(void)ctx;
 	return heard(call, ssid, secs, false);
 }
+#endif
 
 // The station's entry, moved to the top (a new one at the top, the oldest dropped when full)
 static aprs_station_t *station_touch(const char *call)
