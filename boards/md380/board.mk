@@ -11,8 +11,8 @@ MCU_DEFS   += -DMD380_VHF=$(if $(filter vhf,$(MD380_BAND)),1,0)
 MD380_DEFS ?=
 MCU_DEFS   += $(MD380_DEFS)
 LDSCRIPT   := boards/md380/md380.ld
-# The linker script's CPU-only RAM (CCM: no DMA, not zeroed at start-up) for core state marked ODR_CPU_RAM
-MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmram"'
+# The linker script's CPU-only RAM (CCM: no DMA): zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
+MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmbss"' -DODR_CPU_RAM_NOINIT_SECTION='".ccmram"'
 BOARD_DIRS := boards/md380 drivers/rf/sky72310 drivers/modem/hrc6000 drivers/display/st7735 drivers/flash/spi_nor \
 	drivers/gps/nmea_line
 # Built only with CONFIG_USB

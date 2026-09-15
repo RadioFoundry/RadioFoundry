@@ -99,4 +99,8 @@ void md380_radio_diag(md380_radio_diag_t *d);
 bool md380_diag_line(uint8_t i, char *buf, uint8_t len);
 void md380_diag_reset(void);
 
+// A DMA stream's memory address must be in main SRAM (0x2000_0000): the DMA controllers can't reach the CCM, where
+// ODR_CPU_RAM state and every task stack live
+#define DMA_RAM_OK(p)	configASSERT(((uintptr_t)(p) >> 24) == 0x20u)
+
 #endif

@@ -13,6 +13,20 @@
 #include "usb/usb_ncm.h"
 #endif
 
+// The RTOS heap, and with it every task stack, in the CCM: zero wait states and off the bus the audio and ADC DMA
+// use. Nothing on a stack or from pvPortMalloc may be a DMA buffer (DMA can't reach the CCM): the DMA buffers are
+// statics in main RAM, checked where each stream is set up (md380.h DMA_RAM_OK)
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
+
+// Zero the CCM's .ccmbss (ODR_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
+extern uint32_t _sccmbss[], _eccmbss[];
+static void ccm_zero(void)
+{
+	for (uint32_t *p = _sccmbss; p < _eccmbss; p++)
+		*p = 0;
+}
+__attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
+
 // One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk MD380_BAND)
 #if MD380_VHF
 static const band_t bands[] = {

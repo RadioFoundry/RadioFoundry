@@ -65,8 +65,10 @@ SECTIONS
 		__bss_end__ = _ebss;
 	} >RAM
 
-	/* CCM: CPU only (no DMA), not zeroed or initialized by the start-up code: users clear it themselves */
-	.ccmram (NOLOAD) : { . = ALIGN(4); *(.ccmram) *(.ccmram*) . = ALIGN(4); } >CCMRAM
+	/* CCM: CPU only (no DMA can reach it). .ccmbss (ODR_CPU_RAM) is zeroed before main by board.c's .preinit_array
+	 * entry, like .bss; .ccmram (ODR_CPU_RAM_NOINIT: the RTOS heap with every task stack) is left as it is */
+	.ccmbss (NOLOAD) : { . = ALIGN(4); _sccmbss = .; *(.ccmbss) *(.ccmbss*) . = ALIGN(4); _eccmbss = .; } >CCMRAM
+	.ccmram (NOLOAD) : { . = ALIGN(8); *(.ccmram) *(.ccmram*) . = ALIGN(4); } >CCMRAM
 
 	._user_heap_stack :
 	{
