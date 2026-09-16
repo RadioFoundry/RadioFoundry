@@ -1,9 +1,11 @@
 # OpenDigitalRadio
 
-OpenDigitalRadio (ODR) is free, MIT-licensed firmware for inexpensive DMR radios. One radio-independent core handles
-the DMR stack, the UI, the codeplug and the host tools, and each radio adds a thin board layer underneath. The goal
-is firmware that's good to use, does the DMR features stock firmware usually skips, and can be used by anyone for
-anything, commercial products included.
+OpenDigitalRadio (ODR) is free, MIT-licensed firmware for inexpensive DMR radios. One radio-independent software core handles
+the DMR stack, the UI, the codeplug and the host tools, and each radio adds a thin board layer underneath. 
+
+The goal is a nearly-universal software framework that can be used to build firmware for any available radio, 
+with an intuitive user interface and powerful feature set, including the advanced Analog/DMR features low-cost 
+radio stock firmwares usually omit. This project can be used by anyone for anything, commercial products included.
 
 It's early. Read the status section before you flash anything.
 
