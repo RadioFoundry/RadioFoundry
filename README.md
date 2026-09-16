@@ -29,6 +29,8 @@ It's early. Read the status section before you flash anything.
 | TYT MD-380 / MD-390, Retevis RT3 | ○ | ○ | ○ | Planned. Single band, STM32F405 with the older HR_C5000 modem and a SKY72310 synthesizer |
 | Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Hardware needed. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD |
 | Radioddity GD-88 | ○ | ○ | ○ | Planned. Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
+| Radioddity DB25-D / DB25-D PRO, Retevis RT73 (mobile) | ○ | ○ | ○ | Wish list — hardware needed. One HR_C7000 like the DM-32UV, but BK4819 RF chips (on the PRO) and SPI NAND storage |
+| Radioddity DB40-D (mobile) | ○ | ○ | ○ | Wish list — hardware needed. Two HR_C7000-class processors (A/B), like the GD-88; follows the GD-88 port |
 
 ● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet
 

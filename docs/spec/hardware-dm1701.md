@@ -558,7 +558,8 @@ polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Datasheet check: cod
 
 | Register | Use |
 |---|---|
-| 0x3A bits 6:4 | voice source: 0x10 tone1, 0x20 tone2, 0x30 DTMF, 0x40 microphone (write with mask 0x8F on the high nibble of the low byte) |
+| 0x3A bits 14:12 | voice_sel: 000 nothing (the mode tables' 0x00C3), 001 tone1, 010 tone2, 011 tone1 + tone2, 100 microphone (AT1846S programming guide, TX voice channel select). Bits 6:4 are squelch / sub-audio detect enables (gotchas 3.10) |
+| 0x7A bit 14 | single tone enable (bit 15 DTMF enable) |
 | 0x35 | tone1 frequency = Hz x 10 |
 | 0x36 | tone2 frequency = Hz x 10 |
 | 0x79 = 0xC000 | single tone select |
@@ -568,7 +569,9 @@ polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Datasheet check: cod
 
 On these radios FM microphone audio is processed and modulated by the HR_C6000 (two-point modulation), not by the
 AT1846S. The AT1846S tone generator is still used for the 1750 Hz burst and for AFSK (with the HR_C6000 microphone input
-muted, HR_C6000 0xE0 bit 6 cleared). How the AT1846S tone reaches the modulator in this configuration is unverified.
+muted, HR_C6000 0xE0 bit 6 cleared): voice_sel = tone1 makes the AT1846S modulate it, as it does its CTCSS. With
+voice_sel left at 000 the carrier went out unmodulated (gotchas 3.10); the fixed path is to be verified by
+`tests/hil/test_aprs.py` on air.
 
 Morse keying for the hotspot's CW ID (`tx_tone_key`, `boards/dm1701/radio_dm1701.c`): with the tone set up by
 `tx_tone`, key up writes the 0x59 tone deviation bits 15:6 to 0 and key down back to 0x40 (bits 5:0 kept from the

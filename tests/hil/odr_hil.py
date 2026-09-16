@@ -472,6 +472,18 @@ class SdrBench:
                        f"--json {capture}.json > {capture}.txt 2>&1; cat {capture}.json", timeout=600)
         return json.loads(txt)
 
+    def analyze_aprs(self, capture, bw_khz=25.0):
+        """tools/aprs_afsk_check.py on the bench (Bell 202 AFSK / AX.25 decode and the tone measurements); returns
+        its JSON result (frames with a valid FCS, segments)."""
+        self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))     # its filters
+        tool = self.sync_tool(os.path.join(ROOT, "tools", "aprs_afsk_check.py"))
+        out = self.ssh(f"cd ~/{self.dir} && {self.py} {tool} {capture} --offset {self.offset_khz * 1000:.0f} "
+                       f"--bw {bw_khz} --json", timeout=600, check=False)
+        lines = [ln for ln in out.splitlines() if ln.startswith("{")]
+        if not lines:
+            raise RuntimeError(f"aprs_afsk_check.py printed no result: {out[-1500:]}")
+        return json.loads(lines[-1])
+
     def analyze_fm(self, capture, bw_khz=12.5, ctcss=None, dcs=None, ppm=None, freq=None, tones=False):
         """tools/sdr_fm_check.py on the bench; returns (exit status, text). tones: also report the audio tones."""
         tool = self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))
