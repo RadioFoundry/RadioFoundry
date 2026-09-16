@@ -4,7 +4,7 @@
 """FM transmit checker for an RTL-SDR capture (rtl_sdr raw unsigned-centered int8 I/Q, "CS8").
 
     tools/sdr_fm_check.py CAPTURE.cs8 --offset -25000 [--center 461887500 --ppm 0.7] [--bw 12.5]
-                          [--expect-ctcss 100.0 | --expect-dcs 023N] [--wav voice.wav]
+                          [--expect-ctcss 100.0 | --expect-dcs 023N] [--wav voice.wav] [--tones]
 
 The channel sits --offset Hz from the tuner center (an offset keeps it away from the RTL's DC spike). For every
 keyed segment (carrier above the capture's noise floor) it reports:
@@ -15,6 +15,9 @@ keyed segment (carrier above the capture's noise floor) it reports:
   - the 4-7.5 kHz band RMS of the discriminator output, a reference for the noise / residual FM floor
   - sub-audio: a CTCSS tone (60-260 Hz) with its frequency and peak deviation, or a DCS code (134.4 bit/s NRZ,
     23-bit Golay word) with its polarity and deviation; checked against --expect-ctcss / --expect-dcs
+  - with --tones: the audio tones in the voice band (a roger beep, a 1750 Hz burst): each run of 40 ms windows whose
+    strongest 300-3000 Hz line holds most of the band's power, with its frequency, start and end (s from the start
+    of the capture) and peak deviation, as "tone 1750.0 Hz 0.52-2.47 s (1.95 s), deviation 2400 Hz peak"
 The exit status is 1 when an expectation fails (or no keyed segment is found), else 0.
 
 Processing is streamed in chunks (0.25 s of I/Q at a time) and only a 16 kHz discriminator output is kept, so
@@ -298,6 +301,50 @@ def ctcss_find(x, fs):
     return freq, float(np.sqrt(2.0) * np.std(tone)), float(ratio)
 
 
+# --- audio tones (roger beep, 1750 Hz burst) ---
+
+TONE_WIN_S, TONE_HOP_S = 0.04, 0.01
+TONE_PURITY = 0.6               # the line (+-40 Hz) holds this share of the 300-3000 Hz power
+TONE_MIN_DEV_HZ = 150.0
+TONE_SAME_HZ = 25.0
+
+
+def tone_runs(x, fs, t_first):
+    """Runs of one steady audio tone in a voice band signal x (Hz of deviation, sample 0 at t_first s): a list of
+    (frequency Hz, start s, end s, peak deviation Hz)."""
+    win, hop = int(TONE_WIN_S * fs), int(TONE_HOP_S * fs)
+    nfft = 4096
+    f = np.fft.rfftfreq(nfft, 1.0 / fs)
+    band = (f >= 300) & (f <= 3000)
+    w = np.hanning(win)
+    hits = []
+    for i in range(0, len(x) - win, hop):
+        seg = x[i:i + win]
+        spec = np.abs(np.fft.rfft(seg * w, nfft)) ** 2
+        j = int(np.argmax(np.where(band, spec, 0)))
+        near = band & (np.abs(f - f[j]) <= 40.0)
+        purity = spec[near].sum() / (spec[band].sum() + 1e-12)
+        dev = float(np.sqrt(2.0) * np.std(seg))
+        if purity >= TONE_PURITY and dev >= TONE_MIN_DEV_HZ and 0 < j < len(spec) - 1:
+            a, b, c = np.log(spec[j - 1:j + 2] + 1e-12)
+            p = 0.5 * (a - c) / (a - 2 * b + c) if (a - 2 * b + c) != 0 else 0.0
+            hits.append((t_first + (i + win / 2) / fs, f[j] + p * (f[1] - f[0]), dev))
+        else:
+            hits.append(None)
+    runs, cur = [], None
+    for h in hits + [None]:
+        if h is not None and cur is not None and abs(h[1] - np.median(cur[1])) <= TONE_SAME_HZ:
+            cur[0].append(h[0])
+            cur[1].append(h[1])
+            cur[2].append(h[2])
+            continue
+        if cur is not None and len(cur[0]) >= 3:
+            runs.append((float(np.median(cur[1])), cur[0][0] - TONE_WIN_S / 2, cur[0][-1] + TONE_WIN_S / 2,
+                         float(np.median(cur[2]))))
+        cur = ([h[0]], [h[1]], [h[2]]) if h is not None else None
+    return runs
+
+
 # --- report ---
 
 def parse_dcs(s):
@@ -358,6 +405,15 @@ def analyze(args):
         print('  noise 4-7.5 kHz: rms %.0f Hz' % np.std(noise))
         if wav is not None:
             wav[s0:s1] = voice
+        if args.tones:
+            # the whole segment, edges included (a roger beep sits in its last 200 ms)
+            e0, e1 = int(a * POWER_WIN_S * FS_AUDIO), min(int(b * POWER_WIN_S * FS_AUDIO), len(audio))
+            xt = fir(audio[e0:e1] - carrier, voice_bp)
+            runs = tone_runs(xt, FS_AUDIO, e0 / FS_AUDIO)
+            for hz, r0, r1, dev in runs:
+                print('  tone %.1f Hz %.2f-%.2f s (%.2f s), deviation %.0f Hz peak' % (hz, r0, r1, r1 - r0, dev))
+            if not runs:
+                print('  tones: none')
 
         freq, tone_dev, ratio = ctcss_find(sub, sub_fs)
         tone_found = ratio >= CTCSS_MIN_DB and tone_dev >= CTCSS_MIN_DEV_HZ
@@ -413,6 +469,7 @@ def main():
     ap.add_argument('--expect-ctcss', type=float, help='expected CTCSS tone, Hz (e.g. 100.0)')
     ap.add_argument('--expect-dcs', help='expected DCS code and polarity (e.g. 023N, D754I)')
     ap.add_argument('--wav', help='write the voice band (300-3000 Hz) of the keyed segments to this WAV')
+    ap.add_argument('--tones', action='store_true', help='report the steady audio tones (roger beep, 1750 Hz burst)')
     ap.add_argument('--chunk', type=int, default=384000, help='I/Q samples per processing chunk')
     args = ap.parse_args()
     if args.chunk % (D1 * D2 * D3):

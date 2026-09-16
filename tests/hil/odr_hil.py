@@ -441,13 +441,15 @@ class SdrBench:
         return self.dmr_bench.jsonl(out)
 
     # ── the RTL-SDR ──
-    def capture_start(self, run_dir, freq, seconds, name="cap0"):
+    def capture_start(self, run_dir, freq, seconds, name="cap0", gain=None):
         """A raw I/Q capture (cs8, 1.536 MS/s, the channel offset_khz from the tuner center) in the background;
-        returns once the capture is running. The file stays on the bench (about 3 MB/s)."""
+        returns once the capture is running. The file stays on the bench (about 3 MB/s). gain: this capture's RTL-SDR
+        gain instead of --sdr-gain (level measurements want the ADC far from its rails)."""
         self._need_lease()
         f = f"~/{self.dir}/{run_dir}/{name}.cs8"
+        g = self.gain if gain is None else gain
         self.ssh(f"cd ~/{self.dir} && (setsid nohup {self.py} sdrmon.py capture --service '' --seconds {seconds} "
-                 f"--freq {freq} --offset-khz {self.offset_khz:.1f} --gain {self.gain} --out {f} > {f}.log 2>&1 &) ; "
+                 f"--freq {freq} --offset-khz {self.offset_khz:.1f} --gain {g} --out {f} > {f}.log 2>&1 &) ; "
                  f"for i in $(seq 1 60); do grep -q READY {f}.log && break; sleep 0.25; done; sleep 2; "
                  f"grep READY {f}.log")
         return f
@@ -456,16 +458,24 @@ class SdrBench:
         self.ssh(f"for i in $(seq 1 {timeout * 2}); do pgrep -f 'sdrmon[.]py capture' > /dev/null || exit 0; "
                  f"sleep 0.5; done; exit 1", timeout=timeout + 30)
 
+    def capture_meta(self, capture):
+        """The capture's FILE.json (sdrmon.py capture): gain, samples, overflows, clip_pct (I/Q samples at the ADC
+        rails, over the whole file)."""
+        try:
+            return json.loads(self.ssh(f"cat {capture}.json", timeout=30))
+        except (RuntimeError, ValueError):
+            return {}
+
     def analyze_dmr(self, capture, freq, cc):
         """sdrmon.py analyze: every burst with its sync, CC, LC, timing, frequency offset, edges (a dict)."""
         txt = self.ssh(f"cd ~/{self.dir} && {self.py} sdrmon.py analyze {capture} --freq {freq} --cc {cc} "
                        f"--json {capture}.json > {capture}.txt 2>&1; cat {capture}.json", timeout=600)
         return json.loads(txt)
 
-    def analyze_fm(self, capture, bw_khz=12.5, ctcss=None, dcs=None, ppm=None, freq=None):
-        """tools/sdr_fm_check.py on the bench; returns (exit status, text)."""
+    def analyze_fm(self, capture, bw_khz=12.5, ctcss=None, dcs=None, ppm=None, freq=None, tones=False):
+        """tools/sdr_fm_check.py on the bench; returns (exit status, text). tones: also report the audio tones."""
         tool = self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))
-        a = f"--offset {self.offset_khz * 1000:.0f} --bw {bw_khz}"
+        a = f"--offset {self.offset_khz * 1000:.0f} --bw {bw_khz}" + (" --tones" if tones else "")
         if ctcss is not None:
             a += f" --expect-ctcss {ctcss}"
         if dcs is not None:

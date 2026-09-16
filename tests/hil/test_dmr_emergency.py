@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from test_dmr_data import BENCH_SRC, DT_CSBK, _ids, _need, _radio_sends, _setup
+from test_dmr_data import BENCH_SRC, _need, _radio_sends, _setup, heard_tries
 
 CSBK_EMERGENCY_ALARM = 0x27
 FID_MOTOROLA = 0x10
@@ -113,15 +113,13 @@ def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
     heard, _ = _radio_sends(radio, sdr_bench, freq, cc, lambda: radio.link.emergency("start"), 10,
                             lambda v: v.get("data.event") in ("emergency_sent", "emergency_failed"))
     xa = _ext(radio)
-    assert xa["data.emergency_alarms_sent"] - xb["data.emergency_alarms_sent"] == 3, xa
+    sent = xa["data.emergency_alarms_sent"] - xb["data.emergency_alarms_sent"]
+    assert sent == 3, xa
     assert xa["em.state"] == "active", xa
-    alarms = [r for r in heard if r.get("dt") == DT_CSBK and r.get("info") and
-              _ids(r["info"])[0] == CSBK_EMERGENCY_ALARM]
-    assert len(alarms) == 3, heard
-    for r in alarms:
-        op, fid, _o3, a, b = _ids(r["info"])
-        assert fid == FID_MOTOROLA and a == tg and b == own, r
-    gaps = [alarms[i + 1]["t"] - alarms[i]["t"] for i in range(2)]
+    alarms = heard_tries(heard, CSBK_EMERGENCY_ALARM, sent,
+                         lambda x: x[1] == FID_MOTOROLA and x[3] == tg and x[4] == own, "emergency alarm")
+    # the tries are about a second apart; with some missed, any two heard are still at least that far apart
+    gaps = [alarms[i + 1]["t"] - alarms[i]["t"] for i in range(len(alarms) - 1)]
     assert all(g >= 0.9 for g in gaps), gaps
     radio.link.emergency("cancel")
     radio.wait_for(lambda x: x.get("em.state") == "idle", sections=("dmr_ext",), what="emergency cancelled")

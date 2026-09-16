@@ -200,12 +200,7 @@ class Cps:
     def write_image(self, img, regions, reboot=True, block=BLOCK, progress=None, base=None):
         """Write the regions of img; with base (what the radio holds now) only the sectors that differ"""
         self.opening(True)
-        jobs = []
-        for start, end in regions:
-            for sector in range(start // SECTOR, (end + SECTOR - 1) // SECTOR):
-                lo, hi = max(start, sector * SECTOR), min(end, (sector + 1) * SECTOR)
-                if base is None or bytes(img[lo:hi]) != bytes(base[lo:hi]):
-                    jobs.append((sector, start, end))
+        jobs = plan_write(img, regions, base)
         for i, (sector, start, end) in enumerate(jobs):
             self.write_sector(img, sector, start, end, block)
             if progress:
@@ -213,6 +208,26 @@ class Cps:
         self.control(5)
         if reboot:
             self.control(6, bytes([0]))
+
+
+def plan_write(img, regions, base=None):
+    """The (sector, region start, region end) jobs write_image sends for img: every sector part of a region, or with
+    base only those whose bytes differ from it. Each job writes img's bytes of that sector inside the region."""
+    jobs = []
+    for start, end in regions:
+        for sector in range(start // SECTOR, (end + SECTOR - 1) // SECTOR):
+            lo, hi = max(start, sector * SECTOR), min(end, (sector + 1) * SECTOR)
+            if base is None or bytes(img[lo:hi]) != bytes(base[lo:hi]):
+                jobs.append((sector, start, end))
+    return jobs
+
+
+def apply_plan(target, img, jobs):
+    """What the radio would hold after write_image's jobs: img's bytes copied into target (a dry run)."""
+    for sector, start, end in jobs:
+        lo, hi = max(start, sector * SECTOR), min(end, (sector + 1) * SECTOR)
+        target[lo:hi] = img[lo:hi]
+    return target
 
 
 # ── the legacy channel records (docs/spec/legacy-cps-interop.md), enough for tests to find and edit a channel ──
@@ -254,6 +269,15 @@ def set_channel_name(img, number, name):
     _, a = channel_addr(number)
     raw = name.encode("ascii")[:16]
     img[a:a + 16] = raw + b"\xff" * (16 - len(raw))
+
+
+CH_FLAG1 = 0x30                 # talker alias per timeslot: bits 1 (TS1 text) and 3 (TS2 text) (core/codeplug)
+
+
+def set_channel_alias(img, number, ts1=True, ts2=False):
+    """Turn on the channel's talker alias TX (our radio name as text) on TS1 / TS2."""
+    _, a = channel_addr(number)
+    img[a + CH_FLAG1] = (img[a + CH_FLAG1] & ~0x0A) | (0x02 if ts1 else 0) | (0x08 if ts2 else 0)
 
 
 def open_cps(port=None, exec_cmd=None, timeout=2.0):

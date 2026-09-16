@@ -14,7 +14,9 @@ system's CA store). Needs the paho-mqtt package (skipped without it).
 
 Pass criteria:
 - the radio shows the call: within 60 s the dmr_call view has a call with call.group=0 and call.to_us=1 (a private
-  call to us), from --radiodesk-src when given, and the UI is on Home (the call is drawn there);
+  call to us), from --radiodesk-src when given, and the UI is on Home (the call is drawn there); the call has ended
+  (dmr.state idle, call.ms 0) within 60 s more: the call.* keys keep the last caller after the end, so they don't
+  show it;
 - the radio plays it: the call stack counts one more call played (call.rx_calls_played), the voice layer plays at
   least 25 frames (0.5 s), and at most 5 % of the frames it took in were concealed;
 - RadioDesk reports on AlertStatus at least once, and no report says "fail" or "error".
@@ -84,8 +86,10 @@ def test_radiodesk_alert_private_call(radio, pytestconfig):
         client.publish(alert_topic, pytestconfig.getoption("--radiodesk-text"), qos=1).wait_for_publish(10)
         shown = None
         while time.monotonic() - t0 < TIMEOUT_S:
-            v = radio.view(["dmr_call", "link"])
-            if v.get("call.group") == "0" and v.get("call.to_us") == "1" and v.get("call.src", "0") != "0":
+            v = radio.view(["dmr_call", "link", "dmr"])
+            # dmr.state rx: a call is running (the call.* keys alone could still show an earlier run's call)
+            if v.get("dmr.state") == "rx" and v.get("call.group") == "0" and v.get("call.to_us") == "1" and \
+                    v.get("call.src", "0") != "0":
                 shown = v
                 break
             time.sleep(0.1)
@@ -96,8 +100,10 @@ def test_radiodesk_alert_private_call(radio, pytestconfig):
         assert int(shown["call.dst"]) == rid, shown
         if want_src:
             assert int(shown["call.src"]) == want_src, f"caller {shown['call.src']} != --radiodesk-src {want_src}"
-        radio.wait_for(lambda x: x.get("call.src", "0") == "0" or x.get("call.to_us") == "0", timeout=TIMEOUT_S,
-                       sections=("dmr_call",), what="the call to end")
+        # The call view keeps the last caller after the call (Home shows it), so the end is the DMR state going idle
+        # (dmr.state; call.ms, the running call's length, back to 0)
+        radio.wait_for(lambda x: x.get("dmr.state") == "idle" and x.get("call.ms") == "0", timeout=TIMEOUT_S,
+                       sections=("dmr", "dmr_call"), what="the call to end (dmr.state idle)")
         time.sleep(2.0)                                  # playback drains, the last status report arrives
         _, after = radio.counters()
     finally:

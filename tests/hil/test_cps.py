@@ -6,7 +6,11 @@ radio, through tools/cps_client.py the way qdmr talks to it.
 Radio only, nothing written to the codeplug by default: radio info, two reads of the qdmr regions match, the current
 channel decoded from the read matches the radio view, a settings save after a channel change. Opt-in:
 --allow-codeplug-write backs the codeplug up, writes one channel name, reads it back, restores the backup and
-verifies it; --allow-reboot checks the channel position survives a restart."""
+verifies it; --allow-reboot checks the channel position survives a restart. test_cps_write_dry_run checks the backup and
+restore steps without writing; run it (and look at its output) before the first --allow-codeplug-write run on a
+radio. Backups go to --codeplug-backup-dir (default the test's tmp directory)."""
+import contextlib
+import os
 import time
 
 import pytest
@@ -115,38 +119,101 @@ def test_settings_survive_restart(radio):
     assert s["settings.load"] in ("loaded", "upgraded"), s
 
 
-@pytest.mark.codeplug_write
-def test_cps_write_restore(radio, tmp_path):
-    """Back up, rename one channel over CPS, read it back, restore the backup and verify it byte for byte"""
-    backup = cps_session(radio, lambda c: c.read_image(QDMR))
-    path = tmp_path / "codeplug-backup.bin"
-    path.write_bytes(backup)
+def read_backup(radio, backup_dir, tag):
+    """Two reads of the qdmr regions, identical byte for byte (else the codeplug isn't stable enough to restore
+    exactly), saved to backup_dir and read back from the file. Returns (image, path)."""
+    a = cps_session(radio, lambda c: c.read_image(QDMR))
+    b = cps_session(radio, lambda c: c.read_image(QDMR))
+    d = cps_client.compare(a, b, QDMR, skip=())
+    assert not d, f"two codeplug reads differ at {len(d)} bytes: not writing (first {d[:4]})"
+    os.makedirs(backup_dir, exist_ok=True)
+    path = os.path.join(str(backup_dir), f"codeplug-{tag}-{time.strftime('%Y%m%d-%H%M%S')}.bin")
+    with open(path, "wb") as f:
+        f.write(a)
+    assert cps_client.load_image(path)[:len(a)] == a, f"the backup file {path} doesn't read back"
     print(f"codeplug backup: {path} (restore: tools/cps_client.py write {path} --no-reboot)")
+    return a, path
 
-    v = radio.core()
-    number = as_int(v.get("channel_number"), 0) if v.get("vfo") != "1" else 0
-    if number == 0 or cps_client.decode_channel(backup, number) is None:
-        number = next((n for n in range(1, 1025) if cps_client.decode_channel(backup, n)), 0)
-    if number == 0:
-        pytest.skip("no stored channel to edit")
-    old = cps_client.decode_channel(backup, number)["name"]
-    edit = bytearray(backup)
-    new = "ODR HIL" if old != "ODR HIL" else "ODR HIL 2"
-    cps_client.set_channel_name(edit, number, new)
 
+@contextlib.contextmanager
+def codeplug_edited(radio, backup_dir, edit, tag):
+    """Back the codeplug up (read_backup), write edit(copy of the backup) over CPS (only the sectors that differ),
+    check the radio reads back exactly the edit, yield (backup, edited); afterwards write the backup again over
+    whatever the radio holds then and verify it byte for byte (the radio's own quick keys excepted)."""
+    backup, path = read_backup(radio, backup_dir, tag)
+    edited = bytearray(backup)
+    edit(edited)
+    changed = cps_client.compare(backup, edited, QDMR, skip=())
+    assert changed, "the edit changes nothing"
     try:
-        cps_session(radio, lambda c: c.write_image(edit, QDMR, reboot=False, base=backup))
+        cps_session(radio, lambda c: c.write_image(edited, QDMR, reboot=False, base=backup))
         back = cps_session(radio, lambda c: c.read_image(QDMR))
-        d = cps_client.compare(edit, back, QDMR)
+        d = cps_client.compare(edited, back, QDMR)
         assert not d, f"read back differs at {len(d)} bytes, first {[(hex(x), y, z) for x, y, z in d[:4]]}"
-        assert cps_client.decode_channel(back, number)["name"] == new
-        if number == as_int(v.get("channel_number"), 0) and v.get("vfo") != "1":
-            radio.wait_for(lambda c: c.get("channel_name") == new, timeout=3.0, what="the radio shows the edit")
+        yield backup, edited
     finally:
-        cps_session(radio, lambda c: c.write_image(backup, QDMR, reboot=False, base=edit))
+        try:
+            now = cps_session(radio, lambda c: c.read_image(QDMR))
+        except Exception:                       # write every sector of the edit's plan if the read fails
+            now = edited
+        cps_session(radio, lambda c: c.write_image(backup, QDMR, reboot=False, base=now))
         restored = cps_session(radio, lambda c: c.read_image(QDMR))
         d = cps_client.compare(backup, restored, QDMR)
         assert not d, f"RESTORE FAILED at {len(d)} bytes: write {path} back with tools/cps_client.py"
+        print(f"codeplug restored and verified ({len(changed)} bytes had been changed)")
+
+
+def pick_channel(radio, image):
+    """The current channel's number when it is stored, else the first stored channel (0: none)."""
+    v = radio.core()
+    number = as_int(v.get("channel_number"), 0) if v.get("vfo") != "1" else 0
+    if number == 0 or cps_client.decode_channel(image, number) is None:
+        number = next((n for n in range(1, 1025) if cps_client.decode_channel(image, n)), 0)
+    return number
+
+
+def test_cps_write_dry_run(radio, backup_dir):
+    """Radio only, nothing written: everything test_cps_write_restore relies on, checked before any write. Two reads
+    identical, the backup file reads back, the channel rename changes only that name's 16 bytes, writing the edit
+    and writing the backup back plan the same sectors, and the restore plan applied to the edited image gives the
+    backup back in every qdmr region byte."""
+    backup, _ = read_backup(radio, backup_dir, "dryrun")
+    number = pick_channel(radio, backup)
+    if number == 0:
+        pytest.skip("no stored channel to edit")
+    old = cps_client.decode_channel(backup, number)["name"]
+    edited = bytearray(backup)
+    cps_client.set_channel_name(edited, number, "ODR HIL" if old != "ODR HIL" else "ODR HIL 2")
+    _, rec = cps_client.channel_addr(number)
+    changed = cps_client.compare(backup, edited, QDMR, skip=())
+    assert changed and all(rec <= a < rec + 16 for a, _, _ in changed), f"the edit touches {changed}"
+    write_plan = cps_client.plan_write(edited, QDMR, base=backup)
+    restore_plan = cps_client.plan_write(backup, QDMR, base=edited)
+    assert write_plan and write_plan == restore_plan, (write_plan, restore_plan)
+    radio_after_write = cps_client.apply_plan(bytearray(backup), edited, write_plan)
+    assert not cps_client.compare(edited, radio_after_write, QDMR, skip=()), "the write plan misses edited bytes"
+    radio_after_restore = cps_client.apply_plan(radio_after_write, backup, restore_plan)
+    assert not cps_client.compare(backup, radio_after_restore, QDMR, skip=()), "the restore plan doesn't restore"
+    print(f"dry run: channel {number} {old!r}: {len(changed)} bytes, sectors {[hex(j[0]) for j in write_plan]}")
+
+
+@pytest.mark.codeplug_write
+def test_cps_write_restore(radio, backup_dir):
+    """Back up, rename one channel over CPS, read it back, restore the backup and verify it byte for byte"""
+    probe, _ = read_backup(radio, backup_dir, "probe")
+    number = pick_channel(radio, probe)
+    if number == 0:
+        pytest.skip("no stored channel to edit")
+    v = radio.core()
+    old = cps_client.decode_channel(probe, number)["name"]
+    new = "ODR HIL" if old != "ODR HIL" else "ODR HIL 2"
+    with codeplug_edited(radio, backup_dir, lambda img: cps_client.set_channel_name(img, number, new), "rename") \
+            as (_, edited):
+        assert cps_client.decode_channel(edited, number)["name"] == new
+        if number == as_int(v.get("channel_number"), 0) and v.get("vfo") != "1":
+            radio.wait_for(lambda c: c.get("channel_name") == new, timeout=3.0, what="the radio shows the edit")
+    if number == as_int(v.get("channel_number"), 0) and v.get("vfo") != "1":
+        radio.wait_for(lambda c: c.get("channel_name") == old, timeout=3.0, what="the radio shows the old name")
     s = storage(radio)
     assert as_int(s["cps.commits"]) >= 2 and as_int(s["storage.errors"]) == 0, s
 
