@@ -34,7 +34,7 @@
 #define DMR_POLL_MS		10
 #define MODEM_IRQ_PRIORITY	5	// hardware-dm1701.md 3.1; must stay >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
 
-static hrc6000_dmr_t eng;
+static hrc6000_dmr_t eng ODR_CPU_RAM;	// the slot ISRs' state: CCM, off the DMA bus
 static TaskHandle_t task;
 static volatile bool active;
 static dmr_event_cb_t volatile stack_cb;

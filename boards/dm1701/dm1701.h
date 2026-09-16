@@ -96,4 +96,8 @@ bool dm1701_cal_load(void);
 // Calibration values interpolated at a frequency (Hz); returns false if no calibration is loaded (safe defaults filled)
 bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out);
 
+// A DMA stream's memory address must be in main SRAM (0x2000_0000): the DMA controllers can't reach the CCM, where
+// ODR_CPU_RAM state and every task stack live. Stops here, at set-up, instead of a silent transfer error later
+#define DMA_RAM_OK(p)	configASSERT(((uintptr_t)(p) >> 24) == 0x20u)
+
 #endif

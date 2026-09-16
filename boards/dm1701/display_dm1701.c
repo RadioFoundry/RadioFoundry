@@ -7,6 +7,7 @@
 // calling dm1701_lcd_pins_fsmc() itself, so the keypad scan may leave the lines in GPIO mode when it unlocks. Each
 // burst ends with CS high and a 0x00 write to the data address so the lines rest low for the next key scan.
 #include "dm1701.h"
+#include "FreeRTOS.h"
 #include "config.h"
 #include "pins.h"
 #include "hal_time.h"
@@ -158,6 +159,7 @@ static void bl_dma_stop(void)
 static void bl_dma_start(void)
 {
 	DMA2_Stream1->PAR = (uint32_t)&PIN_PORT(PIN_LCD_BACKLIGHT)->BSRR;
+	DMA_RAM_OK(bl_table);
 	DMA2_Stream1->M0AR = (uint32_t)bl_table;
 	DMA2_Stream1->NDTR = BL_STEPS;
 	DMA2_Stream1->FCR = 0;	// direct mode
