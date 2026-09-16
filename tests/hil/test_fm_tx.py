@@ -21,6 +21,8 @@ Pass criteria:
 - test_fm_tx_power_levels: 1.5 s overs at the three lowest power levels (DM-1701: 50, 250, 500 mW) captured at the
   SDR's lowest gain: each level's carrier is at least 1 dB stronger than the one below, and the lowest to the third
   differs by 5-15 dB (nominally 10). Relative only: the SDR isn't calibrated, and the radio is in its near field.
+  Skipped when the SDR's ADC clips at gain 0 (more than 0.5 % of the samples at the rails): the bench then needs an
+  attenuator before levels mean anything.
 The VFO's bandwidth and TX tone are put back afterwards (restore_radio does the rest: channel, power, temporary
 changes).
 """
@@ -234,7 +236,11 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
         levels.append((step, name, r["levels"][0], meta.get("clip_pct")))
     print("power levels (step, name, dBFS, ADC clip %):", levels)
     clipped = [x for x in levels if (x[3] or 0) > 0.5]
-    assert not clipped, f"the SDR's ADC clipped at gain 0: levels can't be compared {clipped}"
+    if clipped:
+        # Not a radio failure: the receiver is saturated, so every level reads the same. The bench needs an
+        # attenuator (or more distance) between the radio and the RTL-SDR for this test.
+        pytest.skip(f"the SDR's ADC clips even at gain 0 ({clipped[0][3]} % of samples at 50 mW): power levels "
+                    f"can't be compared on this bench without an attenuator; levels {levels}")
     d = [levels[i + 1][2] - levels[i][2] for i in range(2)]
     assert all(x >= 1.0 for x in d), f"a higher power level is not stronger on air: steps {d} dB ({levels})"
     assert 5.0 <= levels[2][2] - levels[0][2] <= 15.0, \
