@@ -134,10 +134,16 @@ ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s -
 |---|---|
 | `test_dmr_rx`, `test_dmr_voice` | the bench modem sends calls; the radio's counters show every burst, every voice frame reaches the speaker path |
 | `test_dmr_tx` | the radio keys 3 s; an SDR capture (`sdrmon.py`) and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
-| `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz; `tools/sdr_fm_check.py` decodes the tones and compares the deviations |
+| `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz, the 1750 Hz burst, the roger beep, three power levels; `tools/sdr_fm_check.py` decodes the tones (`--tones`: audio tones) and compares the deviations |
 | `test_dmr_data` | the bench sends data, a text message, a call alert and radio checks to the radio, which answers (its `dmr_data` counters, the answers heard by the bench modem); the radio sends a call alert, a radio check and a text message the bench modem hears (`docs/spec/dmr-data.md`) |
 | `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `ODR_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
+| `test_hotspot_voice` | the hotspot on air both ways: bench calls and data up the USB link, host calls and data heard on air |
+| `test_radio_features` (rf) | the zone scan, VFO scan and dual watch holding on a bench call; battery save waking for it |
 | `test_radiodesk_alert` | a sandbox alert (MQTT `ESS/RadioDesk/Alert/<radio id>/voice`) becomes a private call; the radio shows and plays it; RadioDesk's `AlertStatus` reports |
+
+Which feature is covered on air, and what the last run found: [on-air-coverage.md](on-air-coverage.md). On this
+bench the radio overloads both receivers even at 50 mW; `tests/hil/README.md` ("On this bench") says what the tests
+do about it.
 
 The SDR bench's names come from the environment: `ODR_SDR_BENCH_HOST` (ssh host or alias, default `sdr-bench`),
 `ODR_SDR_BENCH_SERVICE`, `ODR_SDR_BENCH_DIR`, `ODR_SDR_BENCH_PY` (`docs/testing/dmr-bench.md` section 1). The

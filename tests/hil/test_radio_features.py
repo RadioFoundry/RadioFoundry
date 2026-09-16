@@ -37,6 +37,11 @@ Pass criteria:
   superframe call there: the scan holds (scan_phase hold) with rx_hz the test frequency.
 - test_dual_watch_stops_on_call (rf): dual watch between another channel of the zone and the DMR test channel,
   started on the other one: while the bench calls, the scan holds on the test channel's position.
+- test_vox_quiet (radio_tx): VOX all, level 5 (the default), tail 500 ms, TOT 5 s as a guard, on the FM VFO at the
+  lowest power, nobody talking at the bench: vox_on=1 and the radio does not key (vox_keyed 0, state never tx) in 5 s.
+  Then a TOT warning beep (1000 Hz) plays in the speaker: whether it keys VOX through the air is printed (not
+  judged; received audio and MONITOR are excluded by design, beeps are not). A voice-triggered key-up needs sound at
+  the microphone, which the bench can't make.
 - test_battery_save (radio only): rx_save 1 (200 ms asleep, 100 ms listening), rx_save_idle_s 3, the FM VFO on the
   DMR test frequency (quiet): rx_sleeping=1 within 3 + 3 s, and it alternates (asleep and awake both seen within 2 s);
   MONITOR on wakes it (rx_sleeping=0 within 0.5 s and stays 0 for 2 s); the settings are put back.
@@ -515,3 +520,22 @@ def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
     assert t_open - t_start <= 4.0, f"opened {t_open - t_start:.2f} s after the bench started (it keys after ~2 s)"
     assert not asleep_during, f"asleep during the call at {asleep_during}"
     assert rx[-1][0] - t_open >= 3.0, f"open for only {rx[-1][0] - t_open:.1f} s of the 6 s call"
+
+
+@pytest.mark.radio_tx
+def test_vox_quiet(fm_tx):
+    if "VOX" not in fm_tx.features():
+        pytest.skip("built without CONFIG_VOX")
+    with settings(fm_tx, tot_s=5, vox_tail_ms=500, vox_level=5, vox=2):
+        try:
+            wait_features(fm_tx, lambda x: x.get("vox_on") == "1", 1.0, "VOX armed (vox_on)")
+            seen, f = collect(fm_tx, "state", 5.0, sections=("core", "features"))
+            keyed = f.get("vox_keyed")
+            print(f"quiet: states {seen}, vox_keyed {keyed}")
+            assert "tx" not in seen, f"VOX keyed with nobody talking (level 5): {seen}"
+            fm_tx.link.beep("tot_warn")
+            seen, f = collect(fm_tx, "state", 3.0, sections=("core", "features"))
+            print(f"beep in the speaker: states {seen} (VOX {'keyed' if 'tx' in seen else 'did not key'})")
+        finally:
+            fm_tx.link.setting("vox", 0)
+            fm_tx.wait_for(lambda x: x.get("state") != "tx", 3.0, what="VOX off, not transmitting")

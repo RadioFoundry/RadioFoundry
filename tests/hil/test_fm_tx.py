@@ -14,7 +14,8 @@ Pass criteria:
 - test_fm_tx_bandwidth: the same CTCSS 100.0 Hz tone at 12.5 and at 25 kHz: the tone deviation at 25 kHz is 1.5 to
   2.6 times the one at 12.5 kHz (the radio scales every deviation with the channel bandwidth; nominally 2).
 - test_fm_tx_tone_burst: TONE_BURST on for 2 s (radio-features.md 3.3): one keyed segment holding a 1750 Hz tone
-  (+-10 Hz) for at least 1.5 s, deviation 500-3000 Hz peak at 12.5 kHz (sdr_fm_check.py --tones).
+  (+-10 Hz) for at least 1.5 s, deviation 500-2500 Hz peak at 12.5 kHz (the narrow band limit; sdr_fm_check.py
+  --tones).
 - test_fm_tx_roger_beep: roger_beep 1, a 1.5 s over: the segment ends with 1200 Hz then 900 Hz (+-15 Hz), each 60-160
   ms (nominally 100), the 900 Hz tone within 80 ms of the end of the carrier; the same over with roger_beep 0 ends with
   no tone.
@@ -171,7 +172,7 @@ def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
     assert burst_runs, f"no 1750 Hz tone on air: {r['tones']}"
     hz, t0, t1, dev = max(burst_runs, key=lambda t: t[2] - t[1])
     assert t1 - t0 >= 1.5, f"1750 Hz for only {t1 - t0:.2f} s of the 2 s burst"
-    assert 500 <= dev <= 3000, f"1750 Hz burst deviation {dev} Hz peak at 12.5 kHz"
+    assert 500 <= dev <= 2500, f"1750 Hz burst deviation {dev} Hz peak at 12.5 kHz (at most 2500)"
 
 
 @pytest.mark.radio_tx

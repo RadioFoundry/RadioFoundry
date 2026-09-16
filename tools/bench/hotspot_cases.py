@@ -205,6 +205,8 @@ def air_calls(recs):
     calls, cur = [], None
     for r in recs:
         if r.get("dt") == DT_HEADER:
+            if r.get("src") is None:
+                continue        # its LC didn't decode (the bench modem, overloaded by the radio next to it)
             if cur is None or cur.get("terminated") or cur["src"] != r.get("src"):
                 cur = {"src": r.get("src"), "dst": r.get("dst"), "headers": 0, "voice": 0, "terminated": False,
                        "voice_after_end": 0}
@@ -213,7 +215,7 @@ def air_calls(recs):
         elif r.get("dt") == DT_TERM:
             if cur is not None:
                 cur["terminated"] = True
-        elif "voice" in r and cur is not None:
+        elif "voice" in r and "call" not in r and cur is not None:     # not the listener's per-call summary line
             if cur["terminated"]:
                 cur["voice_after_end"] += 1
             else:

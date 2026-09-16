@@ -5,7 +5,10 @@ re-enumerates as a CDC-NCM adapter, gives the host its address by DHCP (12.<DMR 
 address xor 1, and its debug link answers over UDP port 3334 there; then it switches back to the serial port.
 
 Nothing is transmitted (no IP goes to another radio). Needs the host to bring the adapter up with DHCP (macOS and
-Linux do by default); on a cold first plug macOS may take up to 10 s."""
+Linux do by default); on a cold first plug macOS may take up to 10 s. If the host never brings the adapter up, the
+radio stays a network adapter with no way back over USB (the switch back goes over UDP): power it off and on, it
+boots as a serial port. On the bench Mac (macOS 26, 2026-10-10) the NCM device was never configured (IOKit:
+IOUSBHostDevice not matched, no interfaces)."""
 import ipaddress
 import subprocess
 import sys
