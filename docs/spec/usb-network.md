@@ -72,4 +72,8 @@ not built yet.
   then the default air side against a fake data service: the mailbox, the bursts decoded back by the codec's receiver
   into the IP / SAP 10 packet, a busy service retried, the 2 s give-up, the packet hook),
   and the gateway's own `ipGatewayTest*` with pcaps checked by tshark.
-- HIL: `tests/hil/test_usb_network.py` (`--allow-usb-switch`).
+- HIL: `tests/hil/test_usb_network.py` (`--allow-usb-switch`). `tests/hil/test_usb_network_services.py` runs the host
+  port's protocols over UDP 3334: the split duplex extension (protocol, and the RX half's labels against a bench call
+  with `--allow-rf --allow-service-stop`) and the KISS TNC (TNC mode, a host position from SetHardware 'N'). All pass
+  on 4a9c002. One protocol at a time: the radio answers the sender of the last frame, so a tool closes its socket
+  before another protocol's tool opens one.

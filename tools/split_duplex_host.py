@@ -18,6 +18,8 @@ relays (time sync, epoch). Reference implementation of the RadioDesk contract (s
     split_duplex_host.py --info PORT
         GET_VERSION, INFO and STATUS of one radio.
 
+PORT is a USB serial port, or udp:<radio IP>[:3334] for a radio in USB network mode (usb-network.md).
+
 Only the standard MMDVM commands and the vendor command 0xD6 (ODR_SPLIT) are used; a radio without " SPLIT1" in
 its GET_VERSION description is refused. Needs pyserial for the radios (pip install pyserial); the classes below
 (ClockSync, epoch_for_rx, VirtualStatus, the frame codecs) have no dependencies and are what tests/host/sim/
@@ -254,12 +256,17 @@ class Radio:
     """One radio's MMDVM port: a reader thread, replies matched by command (and 0xD6 sub-command)."""
 
     def __init__(self, port, name="radio", log=None, dtr=True):
-        import serial
         self.name = name
-        self.ser = serial.Serial()
-        self.ser.port, self.ser.baudrate, self.ser.timeout = port, 115200, 0.02
-        self.ser.dtr = dtr      # False: as MMDVMHost on Windows; closing then does not end the hotspot session
-        self.ser.open()
+        if str(port).startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
+            from odr_debug import UdpPort
+            host, _, udp_port = port[4:].partition(":")
+            self.ser = UdpPort(host, int(udp_port or 3334))
+        else:
+            import serial
+            self.ser = serial.Serial()
+            self.ser.port, self.ser.baudrate, self.ser.timeout = port, 115200, 0.02
+            self.ser.dtr = dtr  # False: as MMDVMHost on Windows; closing then does not end the hotspot session
+            self.ser.open()
         self.buf = bytearray()
         self.lock = threading.Condition()
         self.replies = []
@@ -541,8 +548,8 @@ def run_info(port):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--tx")
-    ap.add_argument("--rx")
+    ap.add_argument("--tx", help="serial port or udp:<radio IP>")
+    ap.add_argument("--rx", help="serial port or udp:<radio IP>")
     ap.add_argument("--info", metavar="PORT")
     ap.add_argument("--exp", type=lambda s: int(s, 0), metavar="VARIANT")
     ap.add_argument("--reg", action="append", default=[], help="raw R=V page 4 pair for --exp 255 (up to 4)")

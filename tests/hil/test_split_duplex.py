@@ -142,76 +142,74 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     print(f"BS framing experiment variant {variant}: tact ok {len(ok)}/{len(cach)}")
 
 
-@pytest.mark.rf
-@pytest.mark.bench_service
-def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
-    need_split(radio)
+def rx_half_labels(port, sdr_bench, freq, cc, tg, dtr=False):
+    """The RX half against one long bench call on an MMDVM port (serial, or udp:<ip>): the epoch centered on the
+    call's first burst, then moved by one slot half way through. Returns what check_rx_labels judges."""
     import split_duplex_host as sdh
     import threading
-    freq, cc, tg = (pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc"),
-                    pytestconfig.getoption("--dmr-tg"))
     hz = round(freq * 1e6)
-    results = []
-    with sdr_bench.lease():
-        with radio.released() as port:
-            r = sdh.Radio(port, "rx", dtr=False)
-            stop = threading.Event()
+    results, first, marks, ups = [], None, [], []
+    r = sdh.Radio(port, "rx", dtr=dtr)
+    stop = threading.Event()
 
-            def keep_lease():
-                while not stop.wait(1.0):
-                    try:
-                        r.split(sdh.SUB_TIME, bytes(8))
-                    except Exception:
-                        pass
+    def keep_lease():
+        while not stop.wait(1.0):
             try:
-                sdh.require_split(r)
-                sdh.setup_half(r, hz, hz, 0, cc)
-                sdh.set_role(r, sdh.ROLE_RX)
-                sync = sdh.ClockSync()
-                sdh.sync_burst(r, sync)
-                e = sync.to_modem(sdh.Radio.host_us())
+                r.split(sdh.SUB_TIME, bytes(8))
+            except Exception:
+                pass
+    try:
+        sdh.require_split(r)
+        sdh.setup_half(r, hz, hz, 0, cc)
+        sdh.set_role(r, sdh.ROLE_RX)
+        sync = sdh.ClockSync()
+        sdh.sync_burst(r, sync)
+        e = sync.to_modem(sdh.Radio.host_us())
+        r.split(sdh.SUB_SET_EPOCH, sdh.epoch_payload(e))
+        threading.Thread(target=keep_lease, daemon=True).start()
+        # The bench is a simplex modem: every call starts its slots where it keys up, so no epoch holds from one
+        # call to the next, not even which slot it lands on. One long call: the epoch is centered on its first
+        # burst, then moved by one slot half way through; the label must flip there.
+        with r.lock:
+            r.uplink.clear()
+        before = sdh.get_status(r)
+        n0 = before["labeled1"] + before["labeled2"]
+        call = threading.Thread(target=sdr_bench.voice_call, args=(freq, cc, tg), kwargs={"superframes": 8},
+                                daemon=True)
+        call.start()
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 30 and call.is_alive():
+            st = sdh.get_status(r)
+            if st["labeled1"] + st["labeled2"] > n0:
+                first = st["residual_us"]
+                e = (e + first) % sdh.WRAP           # residuals are measured from the epoch set last
                 r.split(sdh.SUB_SET_EPOCH, sdh.epoch_payload(e))
-                th = threading.Thread(target=keep_lease, daemon=True)
-                th.start()
-                # The bench is a simplex modem: every call starts its slots where it keys up, so no epoch holds from
-                # one call to the next, not even which slot it lands on. One long call: the epoch is centered on its
-                # first burst, then moved by one slot half way through; the label must flip there.
                 with r.lock:
-                    r.uplink.clear()
-                before = sdh.get_status(r)
-                n0 = before["labeled1"] + before["labeled2"]
-                call = threading.Thread(target=sdr_bench.voice_call, args=(freq, cc, tg),
-                                        kwargs={"superframes": 8}, daemon=True)
-                call.start()
-                t0, first, marks = time.monotonic(), None, []
-                while time.monotonic() - t0 < 30 and call.is_alive():
-                    st = sdh.get_status(r)
-                    if st["labeled1"] + st["labeled2"] > n0:
-                        first = st["residual_us"]
-                        e = (e + first) % sdh.WRAP           # residuals are measured from the epoch set last
-                        r.split(sdh.SUB_SET_EPOCH, sdh.epoch_payload(e))
-                        with r.lock:
-                            marks.append(len(r.uplink))
-                        time.sleep(1.2)
-                        results.append(("centered", sdh.get_status(r)))
-                        r.split(sdh.SUB_SET_EPOCH, sdh.epoch_payload((e + 30_000) % sdh.WRAP))
-                        with r.lock:
-                            marks.append(len(r.uplink))
-                        break
-                    time.sleep(0.02)
-                call.join(60)
-                time.sleep(1.0)
+                    marks.append(len(r.uplink))
+                time.sleep(1.2)
+                results.append(("centered", sdh.get_status(r)))
+                r.split(sdh.SUB_SET_EPOCH, sdh.epoch_payload((e + 30_000) % sdh.WRAP))
                 with r.lock:
-                    ups = list(r.uplink)
-                results.append(("shifted", sdh.get_status(r)))
-            finally:
-                stop.set()
-                try:
-                    sdh.set_role(r, sdh.ROLE_NORMAL)
-                except Exception:
-                    pass
-                r.close()
-    leave_hotspot(radio)
+                    marks.append(len(r.uplink))
+                break
+            time.sleep(0.02)
+        call.join(60)
+        time.sleep(1.0)
+        with r.lock:
+            ups = list(r.uplink)
+        results.append(("shifted", sdh.get_status(r)))
+    finally:
+        stop.set()
+        try:
+            sdh.set_role(r, sdh.ROLE_NORMAL)
+        except Exception:
+            pass
+        r.close()
+    return first, marks, ups, results
+
+
+def check_rx_labels(first, marks, ups, results):
+    import split_duplex_host as sdh
     assert first is not None and len(marks) == 2, "the radio labeled nothing of the bench's call"
     a = [f for _, f in ups[marks[0]:marks[1]] if f[2] in (sdh.DMR_DATA1, sdh.DMR_DATA2)]
     b = [f for _, f in ups[marks[1]:] if f[2] in (sdh.DMR_DATA1, sdh.DMR_DATA2)]
@@ -225,3 +223,16 @@ def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
     assert sum(1 for f in a if f[3] & 0x40 == 0) >= 12, "voice bursts went up"
     assert 0x42 in [f[3] for f in b], "the terminator went up"
     assert all(abs(st["residual_us"]) < 5000 for _, st in results), results
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
+    need_split(radio)
+    freq, cc, tg = (pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc"),
+                    pytestconfig.getoption("--dmr-tg"))
+    with sdr_bench.lease():
+        with radio.released() as port:
+            got = rx_half_labels(port, sdr_bench, freq, cc, tg)
+    leave_hotspot(radio)
+    check_rx_labels(*got)
