@@ -442,7 +442,7 @@ constant `HRC6000_BS_CACH_METHOD` in a later build.
 The continuous outbound works in every variant. The CACH does not: TS2's CACH is all zero and TS1's mostly zero, so the
 2.5 ms gap holds a valid but empty TACT and no short LC, and none of these registers makes the chip number its slots.
 `HRC6000_BS_CACH_METHOD` stays "unknown" (INFO byte 4 = 3); a standard radio can't tell TS1 from TS2 on this outbound.
-Next: raw variant (255) sweeps of the page 4 registers near 0x10/0x11, or BS framing without a CACH (5.4). The same
+On 4a9c002 (ring fixed) TS2 sends only idle bursts (167 of 167). Next: raw variant (255) sweeps of the page 4 registers near 0x10/0x11, or BS framing without a CACH (5.4). The same
 runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas 8.9), fixed after them.
 
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout

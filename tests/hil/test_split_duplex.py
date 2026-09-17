@@ -13,9 +13,9 @@ test skips on a build without it.
   for the whole outbound, the channel's colour code, no driver underruns in STATUS. Printed, not asserted (the
   experiment's result): the CACH decode (tact ok share, TC alternation, AT, short LCs).
 - test_split_rx_half_labels (rf, bench_service): the radio as the RX half, the bench transmitting voice calls. The
-  bench is simplex, so its slot phase is new with every call: each call's epoch is centered on its first burst, then
-  the rest of the call goes up under one label (voice and terminator) with a residual under 5 ms, and the epoch moved
-  by one slot flips the label.
+  bench is simplex, so its slot phase (and which slot it lands on) is new with every call: one long call, the epoch
+  centered on its first burst, then moved by one slot half way; each part goes up under one label, the labels differ,
+  the residual stays under 5 ms.
 """
 import os
 import sys
@@ -174,33 +174,36 @@ def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
                 th = threading.Thread(target=keep_lease, daemon=True)
                 th.start()
                 # The bench is a simplex modem: every call starts its slots where it keys up, so no epoch holds from
-                # one call to the next. Each call is centered on its own first burst: the epoch moves by that burst's
-                # residual (plus the shift) and only what goes up after that is judged.
-                for shift in (0, 30_000):
-                    with r.lock:
-                        r.uplink.clear()
-                    before = sdh.get_status(r)
-                    n0 = before["labeled1"] + before["labeled2"]
-                    call = threading.Thread(target=sdr_bench.voice_call, args=(freq, cc, tg),
-                                            kwargs={"superframes": 4}, daemon=True)
-                    call.start()
-                    t0, first = time.monotonic(), None
-                    while time.monotonic() - t0 < 30 and call.is_alive():
-                        st = sdh.get_status(r)
-                        if st["labeled1"] + st["labeled2"] > n0:
-                            first = st["residual_us"]
-                            e = (e + first + shift) % sdh.WRAP     # residuals are measured from the epoch set last
-                            r.split(sdh.SUB_SET_EPOCH, sdh.epoch_payload(e))
-                            with r.lock:
-                                mark = len(r.uplink)
-                            break
-                        time.sleep(0.02)
-                    call.join(60)
-                    time.sleep(1.0)
-                    with r.lock:
-                        ups = list(r.uplink)[mark:] if first is not None else []
+                # one call to the next, not even which slot it lands on. One long call: the epoch is centered on its
+                # first burst, then moved by one slot half way through; the label must flip there.
+                with r.lock:
+                    r.uplink.clear()
+                before = sdh.get_status(r)
+                n0 = before["labeled1"] + before["labeled2"]
+                call = threading.Thread(target=sdr_bench.voice_call, args=(freq, cc, tg),
+                                        kwargs={"superframes": 8}, daemon=True)
+                call.start()
+                t0, first, marks = time.monotonic(), None, []
+                while time.monotonic() - t0 < 30 and call.is_alive():
                     st = sdh.get_status(r)
-                    results.append((shift, first, ups, st))
+                    if st["labeled1"] + st["labeled2"] > n0:
+                        first = st["residual_us"]
+                        e = (e + first) % sdh.WRAP           # residuals are measured from the epoch set last
+                        r.split(sdh.SUB_SET_EPOCH, sdh.epoch_payload(e))
+                        with r.lock:
+                            marks.append(len(r.uplink))
+                        time.sleep(1.2)
+                        results.append(("centered", sdh.get_status(r)))
+                        r.split(sdh.SUB_SET_EPOCH, sdh.epoch_payload((e + 30_000) % sdh.WRAP))
+                        with r.lock:
+                            marks.append(len(r.uplink))
+                        break
+                    time.sleep(0.02)
+                call.join(60)
+                time.sleep(1.0)
+                with r.lock:
+                    ups = list(r.uplink)
+                results.append(("shifted", sdh.get_status(r)))
             finally:
                 stop.set()
                 try:
@@ -209,17 +212,16 @@ def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
                     pass
                 r.close()
     leave_hotspot(radio)
-    labels = []
-    for shift, first, ups, st in results:
-        data = [f for _, f in ups if f[2] in (sdh.DMR_DATA1, sdh.DMR_DATA2)]
-        cmds = {f[2] for f in data}
-        print(f"epoch shift {shift}: first burst residual {first} us; then {len(data)} bursts on "
-              f"{sorted(hex(c) for c in cmds)}, residual {st['residual_us']} us, labeled {st['labeled1']}/{st['labeled2']}")
-        assert first is not None, "the radio labeled nothing of the bench's call"
-        assert len(cmds) == 1, f"one call, one label: {sorted(hex(c) for c in cmds)}"
-        controls = [f[3] for f in data]
-        assert 0x42 in controls, "the terminator went up"
-        assert sum(1 for c in controls if c & 0x40 == 0) >= 12, "voice bursts went up"
-        assert abs(st["residual_us"]) < 5000, st
-        labels.append(cmds.pop())
-    assert labels[0] != labels[1], "moving the epoch by one slot flips the label"
+    assert first is not None and len(marks) == 2, "the radio labeled nothing of the bench's call"
+    a = [f for _, f in ups[marks[0]:marks[1]] if f[2] in (sdh.DMR_DATA1, sdh.DMR_DATA2)]
+    b = [f for _, f in ups[marks[1]:] if f[2] in (sdh.DMR_DATA1, sdh.DMR_DATA2)]
+    la, lb = {f[2] for f in a}, {f[2] for f in b}
+    for name, st in results:
+        print(f"{name}: residual {st['residual_us']} us, labeled {st['labeled1']}/{st['labeled2']}")
+    print(f"first burst residual {first} us; centered {len(a)} bursts on {sorted(hex(c) for c in la)}, "
+          f"shifted {len(b)} bursts on {sorted(hex(c) for c in lb)}")
+    assert len(la) == 1 and len(lb) == 1, "one label each side of the shift"
+    assert la != lb, "moving the epoch by one slot flips the label"
+    assert sum(1 for f in a if f[3] & 0x40 == 0) >= 12, "voice bursts went up"
+    assert 0x42 in [f[3] for f in b], "the terminator went up"
+    assert all(abs(st["residual_us"]) < 5000 for _, st in results), results
