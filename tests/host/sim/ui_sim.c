@@ -537,7 +537,7 @@ uint32_t ui_svc_features(void) { return 0xFFFFFFFFu; }
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
 	strcpy(line1, "N0CALL");
-	strcpy(line2, "Search & Rescue");
+	strcpy(line2, "Your Name");	// placeholders: the codeplug's boot text is the user's own
 }
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 {
