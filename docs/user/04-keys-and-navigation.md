@@ -16,7 +16,8 @@ from them.
 5. **PTT** talks to the person or talkgroup with the focus in any list, once. With nothing focused, it talks to the
    channel's talk target.
 
-The bottom line of most screens (the hint row) shows what the nearest keys do there.
+The bottom line of most screens (the hint row) shows what the nearest keys do there. What **Back** does is at its
+right end, above the **Back** key.
 
 ## Key reference (DM-1701)
 
@@ -34,7 +35,7 @@ The bottom line of most screens (the hint row) shows what the nearest keys do th
 | **SK2** | Talk target picker (DMR channels) | Scan on or off |
 | **Top side key** | Home: next power level | Hold 1.5 s: emergency ([Emergency](10-emergency.md)). Builds without emergency: speak status (not built yet) |
 | **PTT** | Transmit | |
-| Channel knob | Each click: next or previous channel, the same as **Up** and **Down**. Lists: moves the focus. Editors: changes the value | |
+| Channel knob | Each click is one step. Clockwise: the next channel on Home (as **Up**), the next row down in a list or menu, a higher value in an editor. Counterclockwise: the opposite | |
 
 Each key press gives a short key beep unless **Settings > Sound > Key tones** is off.
 
@@ -111,5 +112,5 @@ unlock.
 ## Toasts and banners
 
 Short messages ("toasts") appear in the hint row for about two seconds: the result of an action, or why something
-isn't available. Banners announce events (a message, a call alert, a radio check result) for eight seconds. While a
+isn't available. A long one takes a second line above the hint row rather than being cut short. Banners announce events (a message, a call alert, a radio check result) for eight seconds. While a
 banner about a message or a call alert is up, **#** opens what it is about. **Back** on Home hides it.

@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "input/keymatrix/keymatrix.h"
+#include "input/quadrature/quadrature.h"
 
 #define DIPLEX2_DB0_DB6_GPIO	(0x7Fu << 9)	// IO_DIPLEX2 bits 9-15: DB0-DB6 as GPIOs
 #define N			KEYMATRIX_NONE
@@ -24,7 +25,12 @@ static const uint8_t direct[KEY_COLS] = { N, N, KEY_SK1, KEY_SK2 };
 static const keymatrix_t matrix = { .rows = KEY_ROWS, .cols = KEY_COLS, .map = map, .direct = direct };
 
 static uint32_t last_raw, stable;
-static volatile int32_t enc_count;
+
+// Encoder (6.3): both lines on both edges into the table decoder, two steps per detent resting where A == B (as on
+// the DM-1701; "one count per B edge" in the stock firmware means the same detent). The interrupt is the only writer
+#define ENC_STEPS	2
+static quad_t enc;
+static int32_t enc_taken;
 
 static uint8_t read_columns_low(void)
 {
@@ -63,13 +69,14 @@ static uint32_t scan_matrix(void)
 	return keymatrix_decode(&matrix, idle_low, row_low);
 }
 
-// GPIO B bank interrupt: only the encoder's B line has its interrupt on
+// GPIO B bank interrupt: only the encoder's two lines have their interrupts on. Acked before the lines are read, so
+// an edge during the read raises it again
 static void gpiob_isr(void)
 {
 	uint32_t pending = hrc_gpio_pending(GPIOB_BASE);
 	hrc_gpio_ack(GPIOB_BASE, pending);
-	if (pending & hrc_gpio_bit(PIN_ENC_B)) {
-		enc_count += keymatrix_encoder_step(hrc_pin_read(PIN_ENC_A), hrc_pin_read(PIN_ENC_B));
+	if (pending & (hrc_gpio_bit(PIN_ENC_A) | hrc_gpio_bit(PIN_ENC_B))) {
+		quad_sample(&enc, QUAD_AB(hrc_pin_read(PIN_ENC_A), hrc_pin_read(PIN_ENC_B)));
 	}
 }
 
@@ -78,8 +85,10 @@ static void init(void)
 	hrc_pin_in(PIN_PTT);
 	hrc_pin_in(PIN_ENC_A);
 	hrc_pin_in(PIN_ENC_B);
-	enc_count = 0;
+	quad_init(&enc, ENC_STEPS, QUAD_REST_EQUAL, QUAD_AB(hrc_pin_read(PIN_ENC_A), hrc_pin_read(PIN_ENC_B)));
+	enc_taken = 0;
 	hrc_irq_register(IRQ_GPIOB, gpiob_isr);
+	hrc_pin_irq(PIN_ENC_A, true, true, false);
 	hrc_pin_irq(PIN_ENC_B, true, true, false);
 	hrc_irq_enable(IRQ_GPIOB, true);
 }
@@ -100,15 +109,21 @@ static uint32_t scan(void)
 
 static int8_t encoder(void)
 {
-	uint32_t s = hrc_irq_save();
-	int32_t n = enc_count;
-	enc_count = 0;
-	hrc_irq_restore(s);
-	return (int8_t)(n > 127 ? 127 : n < -127 ? -127 : n);
+	return quad_take(&enc, &enc_taken);
+}
+
+static void encoder_stats(hal_encoder_stats_t *st)
+{
+	st->detents = enc.detents;
+	st->transitions = enc.transitions;
+	st->illegal = enc.illegal;
+	st->reversals = enc.reversals;
+	st->steps_per_detent = ENC_STEPS;
 }
 
 const hal_input_t dm32_input = {
 	.init = init,
 	.scan = scan,
 	.encoder = encoder,
+	.encoder_stats = encoder_stats,
 };

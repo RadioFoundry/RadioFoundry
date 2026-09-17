@@ -785,6 +785,10 @@ static void volume(uint8_t percent)
 	}
 }
 
+// Tone deviation, reg 0x59 bits 15:6, for the 1750 Hz burst, CW ID and APRS AFSK (at its default level 50): about
+// 3.1 kHz peak, about linear in the field. HIL 2026-10-10: 0x40 measured 7.2 kHz peak on air (SDR bench), too wide
+#define TONE_DEV	0x1Cu
+
 // FM TX tone (hardware-dm1701.md 5.8): the AT1846S tone generator as the voice source with the HR_C6000 microphone
 // input muted (4:0xE0 bit 6 cleared). The AT1846S modulates it as it does its CTCSS (seen on the SDR bench) once
 // voice_sel selects tone1; with voice_sel left at "nothing" the carrier was unmodulated (gotchas 3.10). Only during FM
@@ -809,7 +813,7 @@ static bool tx_tone(uint16_t hz)
 		}
 		count(at1846s_write(&r.rf, 0, 0x35, (uint16_t)(hz * 10u)));		// tone1 = Hz x 10
 		count(at1846s_write(&r.rf, 0, 0x79, 0xC000));				// single tone
-		count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((0x40u << 6) | (r.saved_59 & 0x3Fu))));	// tone deviation
+		count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((TONE_DEV << 6) | (r.saved_59 & 0x3Fu))));	// tone deviation
 		count(at1846s_modify(&r.rf, 0, 0x7A, 0xBFFF, 0x4000));			// single tone enable
 		// voice_sel, 0x3A bits 14:12 = 001: TX the tone1 frequency (AT1846S programming guide, TX voice channel
 		// select). Bits 6:4 are squelch and sub-audio detect enables, not the voice source: writing the tone there
@@ -830,7 +834,7 @@ static bool tx_tone_key(bool down)
 	if (!r.tx_on || r.mode != RADIO_MODE_FM || r.tone_hz == 0) {
 		return false;
 	}
-	uint16_t dev = down ? 0x40u : 0x00u;
+	uint16_t dev = down ? TONE_DEV : 0x00u;
 	count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));
 	return true;
 }
@@ -844,7 +848,7 @@ bool dm1701_afsk_begin(uint16_t hz, uint8_t level)
 	if (!tx_tone(hz)) {
 		return false;
 	}
-	uint32_t dev = (0x40u * level + 25u) / 50u;
+	uint32_t dev = (TONE_DEV * level + 25u) / 50u;
 	if (dev > 0x3FFu) {
 		dev = 0x3FFu;
 	}

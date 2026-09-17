@@ -53,7 +53,7 @@ Screens consume only these. Each board maps physical inputs to them (`boards/<ra
 | `TALK_TARGET` | Open the talk target picker | assignable |
 | `EMERGENCY` | Hold 1.5 s to start or cancel emergency (if enabled in codeplug) | optional |
 | `CHANNEL_POS(n)` | Absolute channel selector position (1 to 16) | from knob |
-| `ENC_STEP(+/-)` | Encoder detent: same as `NAV_UP`/`NAV_DOWN` on Home (channel), value change in editors, focus in lists | from encoder |
+| `ENC_STEP(+/-)` | Encoder detent. Forward (+, clockwise): next channel on Home (as `NAV_UP`), value up in editors, focus **down** in lists and quick tiles (the next row, like a scroll wheel). Back (-): the opposite | from encoder |
 | `USER_1` to `USER_4` | Side and top keys; each has a short and a long function from the assignable list | optional |
 
 Assignable functions for `USER_n` keys (short and long, chosen in Settings > Keys or in qdmr): Monitor, Talk target, Quick, Context, Recent, Power cycle, Scan on/off, Hear all on/off, Privacy on/off, Zone picker, Speak status, Backlight, Mode FM/DMR, Lock, Reply, Radio check last caller, Silent (mute tones and prompts), None.
@@ -81,8 +81,7 @@ Home keys:
 
 | Input | Short | Long |
 |---|---|---|
-| `NAV_UP` / `NAV_DOWN`, encoder | Channel +1 / -1 in zone (VFO: frequency step) | repeat |
-| Channel knob | Channel at that position | - |
+| `NAV_UP` / `NAV_DOWN`, encoder forward / back | Channel +1 / -1 in zone (VFO: frequency step) | repeat |
 | `SELECT` | Open Hub (top-level destinations) | Make temporary changes permanent ("Saved to channel") |
 | `BACK` | Clear temporary state: end reply window, revert temporary TG and fields, dismiss banner | Already Home: tick |
 | `QUICK` | Quick settings | Lock keys |
@@ -170,7 +169,7 @@ Rule: each setting lives in exactly one group, and Find also reaches it by name 
 
 Notation: `short / long`. "-" means none. All maps also follow the text-field rules in section 2.
 
-### 7.1 Baofeng DM-1701 (and TYT MD-UV380 class): keypad, 16-position channel knob, volume knob, 2 side keys, top key, 160x128 color
+### 7.1 Baofeng DM-1701 (and TYT MD-UV380 class): keypad, channel encoder, volume knob, 2 side keys, top key, 160x128 color
 
 | Physical | Logical (short / long) |
 |---|---|
@@ -180,13 +179,14 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | `*` | `QUICK` / lock |
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
-| Channel knob | `CHANNEL_POS(1-16)` in the current zone |
+| Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
 | Upper side key (row 2 D5) and middle side key (row 2 D7): see hardware-dm1701.md 20 | `MONITOR` (while held) on the middle key |
 | SK2 (lower side) | `TALK_TARGET` / Scan on/off |
 | Top (orange) key | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
 | PTT | `PTT` |
 
-Notes: the knob has 16 positions; zones with more channels are reached with `NAV_UP`/`NAV_DOWN` (the knob then shows "Ch 17 (knob at 1)" until moved). No `NAV_LEFT`/`NAV_RIGHT`.
+Notes: the channel knob is a quadrature encoder with detents, not a 16-position switch (hardware-dm1701.md 10.3), so
+zones of any size step through it. No `NAV_LEFT`/`NAV_RIGHT`.
 
 ### 7.2 Baofeng DM-32UV: keypad, channel encoder, volume knob, side keys, color display
 
@@ -195,7 +195,7 @@ Notes: the knob has 16 positions; zones with more channels are reached with `NAV
 | Menu / OK | `SELECT` / save |
 | Back / Exit | `BACK` / Home |
 | Up / Down | `NAV_UP` / `NAV_DOWN` |
-| Encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus) |
+| Encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
 | Encoder push (if present) | `SELECT` / save |
 | `*` | `QUICK` / lock |
 | `#` | `CONTEXT` / Recent |
@@ -205,7 +205,9 @@ Notes: the knob has 16 positions; zones with more channels are reached with `NAV
 | Top / alarm key (if present) | `EMERGENCY` or assignable |
 | PTT | `PTT` |
 
-The encoder always does the same as Up/Down (no hidden encoder modes; survey: Yaesu knob complaints). Display resolution comes from the board descriptor; the layouts for its class apply.
+The encoder has no hidden modes (survey: Yaesu knob complaints). Forward is "next" everywhere: the next channel on
+Home (as Up), a higher value in an editor (as Up), the next row down a list (as Down). Lists follow the knob the way a
+scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the knob moved list focus up, which read as backward on the radio.) Display resolution comes from the board descriptor; the layouts for its class apply.
 
 ### 7.3 Radioddity GD-77: keypad, no encoder, channel knob absent, 128x64 monochrome
 

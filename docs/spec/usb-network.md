@@ -24,6 +24,10 @@ adapter (PID 0x0096), with the descriptors of `docs/spec/hardware-dm1701.md` 16.
   ID "WINNCM" for interface 0); Windows 11, Linux and macOS bind it by class.
 - macOS sometimes never activates the link after a cold boot in network mode: with the device configured and no frame
   from the host within 5 s, the radio re-enumerates once.
+- A host that never configures the network personality at all (seen on macOS 26, Apple Silicon, 2026-10-10: the
+  device shows unmatched, no interfaces) would leave no serial port and no debug link to switch back. After a run-time
+  switch to network mode, the radio goes back to serial when the host hasn't configured it within 10 s
+  (`usb_ncm.c`, `switch_fallbacks`). A cold boot in network mode keeps the old behavior.
 
 ## 2. Frames
 

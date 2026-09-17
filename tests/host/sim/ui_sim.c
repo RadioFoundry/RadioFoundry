@@ -41,6 +41,20 @@
 
 sim_record_t sim_rec;
 
+static void (*fit_hook)(const char *src, const char *out);
+
+void sim_set_fit_hook(void (*hook)(const char *src, const char *out))
+{
+	fit_hook = hook;
+}
+
+void gfx_fit_trace(const char *src, const char *out)
+{
+	sim_rec.shortened++;
+	if (fit_hook != NULL)
+		fit_hook(src, out);
+}
+
 const sim_geom_t sim_geoms[] = {
 	{ "160x120i5", 160, 120, 16, 5 },	// DM-1701 with its lens inset (CONFIG_DISPLAY_INSET=5)
 	{ "160x128", 160, 128, 16, 0 },		// MD-UV380 / MD-9600 class
@@ -118,7 +132,7 @@ static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / 
 	{ K_PTT, ACT_PTT, ACT_PTT, true, false },
 };
 static const struct { const keymap_entry_t *m; uint8_t n; uint32_t caps; } maps[SIM_MAP_COUNT] = {
-	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_DMR },
+	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR },	// the DM-1701 has the channel knob
 	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR },
 	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR },
 	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR },

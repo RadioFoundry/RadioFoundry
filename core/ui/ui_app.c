@@ -486,9 +486,14 @@ static void handle_event(const ui_event_t *ev)
 	sb_init(&b, title, sizeof title);
 	switch (ev->kind) {
 	case UI_EV_MESSAGE:
-		sb_str(&b, "Msg from ");
+		sb_str(&b, "Message from ");
 		station(&b, ev);
-		banner(UI_BANNER_MESSAGE, false, ev->id, title, ev->text);
+		{
+			// The banner shows two lines of the message: more than the event carries, from the inbox
+			ui_msg_t m;
+			bool got = ui_svc_msg_get(ev->index, &m);
+			banner(UI_BANNER_MESSAGE, false, ev->id, title, got ? m.text : ev->text);
+		}
 		ui_st.banner.msg = ev->index;
 		if (ui_st.message_tone)
 			ui_svc_beep(UI_BEEP_MESSAGE);
@@ -657,6 +662,11 @@ static void entry_commit(void)
 
 // --- input helpers ---
 
+// The key lock toasts, with a shorter form for the narrow displays (text alternates, font.h)
+#define UI_LOCKED_STAR	TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE
+#define UI_LOCKED_BACK	TEXT_ALT_OPEN "Keys locked: hold Back to unlock" TEXT_ALT_NEXT "Locked: hold Back to unlock" \
+	TEXT_ALT_CLOSE
+
 static int8_t nav_dir(const input_event_t *ev)
 {
 	switch (ev->action) {
@@ -665,6 +675,14 @@ static int8_t nav_dir(const input_event_t *ev)
 	case ACT_ENC_STEP: return ev->value > 0 ? 1 : ev->value < 0 ? -1 : 0;
 	default: return 0;
 	}
+}
+
+// Moving focus through a list or the quick tiles: NAV_UP goes up (toward the first row), and the encoder's forward
+// direction (the one that steps to the next channel on Home) goes down to the next row, like a scroll wheel. Values
+// (quick tile editors, Settings numbers) and Home keep nav_dir: forward = up = more
+static int8_t focus_dir(const input_event_t *ev)
+{
+	return ev->action == ACT_ENC_STEP ? (int8_t)-nav_dir(ev) : nav_dir(ev);
 }
 
 static bool is_nav(const input_event_t *ev)
@@ -1076,7 +1094,7 @@ bool ui_quick_key(const input_event_t *ev)
 			if (ui_st.quick_edit)
 				quick_change(kind, nav_dir(ev));
 			else
-				ui_st.quick_focus = (uint8_t)((ui_st.quick_focus + UI_QUICK_TILES - nav_dir(ev)) % UI_QUICK_TILES);
+				ui_st.quick_focus = (uint8_t)((ui_st.quick_focus + UI_QUICK_TILES - focus_dir(ev)) % UI_QUICK_TILES);
 		}
 		dirty = true;
 		return true;
@@ -1269,7 +1287,7 @@ static bool list_key(const ui_scr_def_t *d, const input_event_t *ev)
 		f->focus = (uint16_t)(n - 1);
 	if (is_nav(ev)) {
 		for (int i = steps(ev); i > 0; i--)
-			list_move(d, nav_dir(ev));
+			list_move(d, focus_dir(ev));
 		return true;
 	}
 	if (dg >= 0 && (press || ev->gesture == GESTURE_LONG)) {
@@ -1479,13 +1497,13 @@ void ui_app_key(const input_event_t *ev)
 			set_locked(false);
 			ui_toast("Keys unlocked");
 		} else if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG || ev->action == ACT_ENC_STEP) {
-			ui_toast(has_quick_key ? "Keys locked: hold * to unlock" : "Keys locked: hold Back to unlock");
+			ui_toast(has_quick_key ? UI_LOCKED_STAR : UI_LOCKED_BACK);
 		}
 		return;
 	}
 	if (lock_key && has_quick_key) {
 		set_locked(true);
-		ui_toast("Keys locked: hold * to unlock");
+		ui_toast(UI_LOCKED_STAR);
 		return;
 	}
 #if CONFIG_HOTSPOT
@@ -1798,6 +1816,13 @@ void ui_app_status(ui_app_status_t *s)
 	s->field_use = (d->flags & SF_FIELD) != 0;
 	s->banner = ui_st.banner.kind != UI_BANNER_NONE ? ui_st.banner.title : "";
 	s->toast = ui_st.toast != NULL ? ui_st.toast : "";
+	if (strchr(s->toast, TEXT_ALT_OPEN[0]) != NULL) {
+		// The long form of a toast with text alternates, as words (the debug link, scripted checks)
+		static char toast_text[64];
+		bool more;
+		gfx_text_alt(s->toast, 0, toast_text, sizeof toast_text, &more);
+		s->toast = toast_text;
+	}
 	s->query = stack[sp].scr == SCR_FIND ? ui_find_query() : (d->flags & SF_FILTER) ? filter_keys : "";
 	s->draws = draws;
 	s->strip_drawn = strip_ok;

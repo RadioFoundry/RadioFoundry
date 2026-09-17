@@ -85,7 +85,10 @@ void ui_layout_init(void)
 		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = &font_6x12; L->large = &font_8x16;
 	}
 
-	L->strip_h = L->small->h + 1;
+	// No padding beyond the font's own cell on the small displays (the cell already has a blank row above the capitals
+	// and room for descenders; the DM-1701's lens inset is outside gfx_width / gfx_height): more rows per screen
+	bool tall = h >= UI_TALL_PX;
+	L->strip_h = L->small->h + (tall ? 1 : 0);
 	L->hint_y = h - L->small->h;
 	int y = L->strip_h;
 	// Rows that are dropped when the display is short: the zone line, then the separator
@@ -108,7 +111,7 @@ void ui_layout_init(void)
 	}
 	L->activity_y = y;
 	L->activity_h = L->hint_y - y;
-	L->row_h = L->small->h + (h >= UI_TALL_PX ? 3 : h >= 100 ? 1 : 0);
+	L->row_h = L->small->h + (tall ? 3 : 0);
 }
 
 // --- shared pieces ---
@@ -160,7 +163,7 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->small;
 	int w = gfx_width();
-	int ph = L->strip_h - 1;
+	int ph = f->h;		// the pill: one text cell high
 	bool titled = prefix != NULL || name != NULL;
 	bool merged = titled && gfx_height() < UI_TALL_PX;
 	const char *word = "IDLE";
@@ -253,20 +256,105 @@ void ui_draw_title(const font_t *f, int x, int y, int max_w, const char *prefix,
 	}
 }
 
+static const char *wrap_line(const font_t *f, const char *t, int max_w, char *line, size_t cap);
+
+// Split a hint into the Back group (it starts with "Back") and the rest, joined by two spaces
+static void hint_split(const char *text, char *left, size_t lcap, char *right, size_t rcap)
+{
+	size_t ln = 0, rn = 0;
+	right[0] = 0;
+	for (const char *g = text; *g;) {
+		const char *end = strstr(g, "  ");
+		size_t n = end != NULL ? (size_t)(end - g) : strlen(g);
+		if (rn == 0 && n >= 4 && strncmp(g, "Back", 4) == 0 && n < rcap) {
+			memcpy(right, g, n);
+			right[n] = 0;
+			rn = n;
+		} else if (ln + n + 3 < lcap) {
+			if (ln) {
+				left[ln++] = ' ';
+				left[ln++] = ' ';
+			}
+			memcpy(left + ln, g, n);
+			ln += n;
+		}
+		g += n;
+		while (*g == ' ')
+			g++;
+	}
+	left[ln] = 0;
+}
+
+// The hint row. Hints are groups separated by two spaces ("OK open  # more  Back"); the group for the Back key
+// ("Back", "Back keeps", ...) is pinned to the right edge, under the key, and the others run from the left. A hint may
+// hold text alternates (font.h): the longest form that fits is used. A toast is centered; one too long for the row
+// takes a second line above it, so it is never shortened
 void ui_draw_hint(const char *text, bool toast)
 {
 	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
 	int w = gfx_width();
-	char fit[48];
+	char fit[64];
 	color_t bg = toast ? ui_col.fg : ui_col.hint_bg;
 	color_t fg = toast ? ui_col.bg : ui_col.dim;
 	if (gfx_bpp() == 1 && !toast)
 		fg = ui_col.fg;
+	if (toast) {
+		char first[64], second[64];
+		bool more = true;
+		// One line in the longest alternate that fits it, else two lines of the first
+		for (int level = 0; more; level++) {
+			gfx_text_alt(text, level, first, sizeof first, &more);
+			if (gfx_text_width(f, first) <= w - 2)
+				break;
+		}
+		if (gfx_text_width(f, first) > w - 2)
+			gfx_text_alt(text, 0, first, sizeof first, &more);
+		const char *rest = wrap_line(f, first, w - 2, fit, sizeof fit);
+		int y = L->hint_y;
+		second[0] = 0;
+		if (*rest) {
+			// Two lines: the first ends at a word, the rest goes below it
+			size_t n = strlen(rest);
+			n = n < sizeof second - 1 ? n : sizeof second - 1;
+			memcpy(second, rest, n);
+			second[n] = 0;
+			y -= f->h;
+		}
+		gfx_fill(0, y, w, gfx_height() - y, bg);
+		gfx_text(f, (w - gfx_text_width(f, fit)) / 2, y, fit, fg);
+		if (second[0]) {
+			gfx_text_fit(f, second, w - 2, fit, sizeof fit);
+			gfx_text(f, (w - gfx_text_width(f, fit)) / 2, y + f->h, fit, fg);
+		}
+		return;
+	}
 	gfx_fill(0, L->hint_y, w, gfx_height() - L->hint_y, bg);
-	if (gfx_bpp() == 1 && !toast)
+	if (gfx_bpp() == 1)
 		gfx_hline(0, L->hint_y, w, ui_col.line);
-	gfx_text_fit(L->small, text, w - 2, fit, sizeof fit);
-	gfx_text(L->small, toast ? (w - gfx_text_width(L->small, fit)) / 2 : 1, L->hint_y, fit, fg);
+	// The longest alternate whose groups fit side by side (or the shortest there is)
+	char form[64], left[64], right[24];
+	bool more = true;
+	int lw = 0, rw = 0;
+	for (int level = 0; more; level++) {
+		gfx_text_alt(text, level, form, sizeof form, &more);
+		hint_split(form, left, sizeof left, right, sizeof right);
+		lw = gfx_text_width(f, left);
+		rw = gfx_text_width(f, right);
+		if (lw + (rw && lw ? f->w : 0) + rw <= w)
+			break;
+	}
+	int margin = lw + (rw && lw ? f->w : 0) + rw <= w - 2 ? 1 : 0;
+	if (rw > w - 2 * margin)
+		rw = w - 2 * margin;
+	if (right[0]) {
+		gfx_text_fit(f, right, rw, fit, sizeof fit);
+		gfx_text(f, w - margin - gfx_text_width(f, fit), L->hint_y, fit, fg);
+	}
+	if (left[0]) {
+		gfx_text_fit(f, left, w - 2 * margin - (right[0] ? rw + f->w : 0), fit, sizeof fit);
+		gfx_text(f, margin, L->hint_y, fit, fg);
+	}
 }
 
 // --- boot splash ---
@@ -669,13 +757,11 @@ static void draw_talk_dmr(const radio_view_t *v)
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
 	const radio_dmr_view_t *d = &v->dmr;
-	char buf[48], fit[48];
+	char buf[88], fit[48];
 	sbuf_t b;
 	color_t c = ui_col.fg;
 
-	sb_init(&b, buf, sizeof buf);
-	sb_str(&b, d->reply_active ? "Reply" GLYPH_ARROW " " : "PTT" GLYPH_ARROW " ");
-	int x = gfx_text(f, 0, L->talk_y, buf, d->reply_active ? ui_col.warn : ui_col.dim);
+	const char *prefix = d->reply_active ? "Reply" GLYPH_ARROW " " : "PTT" GLYPH_ARROW " ";
 	sb_init(&b, buf, sizeof buf);
 	if (v->ch.rx_only) {
 		sb_str(&b, "RX only");
@@ -684,18 +770,40 @@ static void draw_talk_dmr(const radio_view_t *v)
 		sb_str(&b, "DMR modem off");
 		c = ui_col.warn;
 	} else {
-		sb_target(&b, d->target_id, d->target_private, d->target_name);
+		// The target with its name, and as a shorter alternate without it (font.h): "TG 91 World (9s)", "TG 91 (9s)"
+		char secs[8] = "";
 		if (d->reply_active) {
-			sb_str(&b, " (");
-			sb_u32(&b, d->reply_s, 1);
-			sb_str(&b, "s)");
+			sbuf_t sb;
+			sb_init(&sb, secs, sizeof secs);
+			sb_str(&sb, " (");
+			sb_u32(&sb, d->reply_s, 1);
+			sb_str(&sb, "s)");
 			c = ui_col.warn;
 		}
+		bool named = d->target_name[0] != '\0' && d->target_id != 0xFFFFFFu;
+		if (named)
+			sb_str(&b, TEXT_ALT_OPEN);
+		sb_target(&b, d->target_id, d->target_private, d->target_name);
+		sb_str(&b, secs);
+		if (named) {
+			sb_str(&b, TEXT_ALT_NEXT);
+			sb_target(&b, d->target_id, d->target_private, "");
+			sb_str(&b, secs);
+			sb_str(&b, TEXT_ALT_CLOSE);
+		}
 	}
-	// Too wide for the medium font: the small one, baseline aligned, before shortening anything
-	const font_t *tf = gfx_text_width(f, buf) <= gfx_width() - x ? f : L->small;
-	gfx_text_fit(tf, buf, gfx_width() - x, fit, sizeof fit);
-	gfx_text(tf, x, L->talk_y + f->ascent - tf->ascent, fit, c);
+	// Too wide: the target in the small font (baseline aligned), then the prefix too, before the name is dropped
+	int w = gfx_width();
+	const font_t *pf = f, *tf = f;
+	if (gfx_text_width(f, prefix) + gfx_text_width(f, buf) > w) {
+		tf = L->small;
+		if (gfx_text_width(f, prefix) + gfx_text_width(tf, buf) > w)
+			pf = L->small;
+	}
+	int base = L->talk_y + f->ascent;
+	int x = gfx_text(pf, 0, base - pf->ascent, prefix, d->reply_active ? ui_col.warn : ui_col.dim);
+	gfx_text_fit(tf, buf, w - x, fit, sizeof fit);
+	gfx_text(tf, x, base - tf->ascent, fit, c);
 }
 
 // Chips: timeslot, color code, repeater / direct, roaming, power, hear all
@@ -969,7 +1077,7 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 	if (s->entry)
 		return "OK tune  Back delete";
 	if (s->locked)
-		return "Keys locked: hold * to unlock";
+		return TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE;
 	if (s->scanning)
 		return "Back stops scan  # skip";
 #if CONFIG_DMR
@@ -993,6 +1101,17 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 	return s->home_hint != NULL ? s->home_hint : "OK Menu  * Quick";
 }
 
+// The largest font no taller than room in which text fits the width (at least the medium font)
+static const font_t *large_font(const char *text, int room)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *fonts[] = { FONT_LARGEST, L->large, L->medium };
+	for (unsigned i = 0; i < sizeof fonts / sizeof fonts[0]; i++)
+		if (fonts[i]->h <= room && gfx_text_width(fonts[i], text) <= gfx_width())
+			return fonts[i];
+	return L->medium;
+}
+
 // Large-text Home (accessibility): the status strip, the channel and the talk target, each as large as fits
 static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 {
@@ -1002,16 +1121,12 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	sbuf_t b;
 	int y = L->strip_h + 2;
 	int room = (L->hint_y - y) / 2;
-	const font_t *f = FONT_LARGEST;
-	if (f->h > room)
-		f = L->large;
-	if (f->h > room)
-		f = L->medium;
 	sb_init(&b, buf, sizeof buf);
 	if (v->vfo)
 		sb_freq(&b, v->ch.rx_hz);
 	else
 		sb_str(&b, v->ch.name);
+	const font_t *f = large_font(buf, room);
 	gfx_text_fit(f, buf, w, fit, sizeof fit);
 	gfx_text(f, 0, y, fit, ui_col.fg);
 	y += room;
@@ -1027,6 +1142,7 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 		sb_chr(&b, ' ');
 		sb_str(&b, ui_power_name(v->power));
 	}
+	f = large_font(buf, room);
 	gfx_text_fit(f, buf, w, fit, sizeof fit);
 	gfx_text(f, 0, y, fit, v->state == RS_TX ? ui_col.tx : v->state == RS_RX ? ui_col.rx : ui_col.fg);
 }
@@ -1066,7 +1182,29 @@ void ui_draw_bottom(const ui_state_t *s, const char *hint)
 		ui_draw_hint(hint, false);
 }
 
-// Banner: a framed box above the hint row with a title line, a text line and how to act on it
+static void fit_end(const font_t *f, const char *s, int max_w, char *out, size_t len);
+
+// Up to max lines of t wrapped to max_w: lines[] filled, the count returned. Text left after the last line shortens
+// it (at the end for a preview, else from the middle), so nothing is silently dropped
+static int wrap_lines(const font_t *f, const char *t, int max_w, int max, char lines[][64], bool preview)
+{
+	int n = 0;
+	while (*t && n < max) {
+		const char *next = wrap_line(f, t, max_w, lines[n], sizeof lines[0]);
+		if (n == max - 1 && *next) {
+			if (preview)
+				fit_end(f, t, max_w, lines[n], sizeof lines[0]);
+			else
+				gfx_text_fit(f, t, max_w, lines[n], sizeof lines[0]);
+		}
+		t = next;
+		n++;
+	}
+	return n;
+}
+
+// Banner: a framed box above the hint row with the title, the text and how to act on it. Title and text take a second
+// line each when they need it, so they are shown whole
 void ui_draw_banner(const ui_state_t *s)
 {
 	const ui_banner_t *bn = &s->banner;
@@ -1075,8 +1213,21 @@ void ui_draw_banner(const ui_state_t *s)
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->small;
 	int w = gfx_width();
-	int lines = bn->text[0] ? 3 : 2;
-	int h = lines * f->h + 4;
+	char title[2][64], text[2][64];
+	int nt;
+	const char *from = strstr(bn->title, " from ");
+	if (gfx_text_width(f, bn->title) > w - 4 && from != NULL && (from - bn->title) + 5 < (int)sizeof title[0]) {
+		// "Call alert from" / "Jodi Ruiz": the station's name together on the second line
+		size_t n = (size_t)(from - bn->title) + 5;
+		memcpy(title[0], bn->title, n);
+		title[0][n] = 0;
+		nt = 1 + wrap_lines(f, from + 6, w - 4, 1, &title[1], false);
+	} else {
+		nt = wrap_lines(f, bn->title, w - 4, 2, title, false);
+	}
+	int nx = bn->text[0] ? wrap_lines(f, bn->text, w - 4, 2, text, bn->kind == UI_BANNER_MESSAGE) : 0;
+	int pad = gfx_height() >= UI_TALL_PX ? 2 : 1;
+	int h = (nt + nx + 1) * f->h + 2 * pad;
 	int y = L->hint_y - h;
 	color_t edge = bn->warn ? ui_col.warn : ui_col.focus;
 	if (gfx_bpp() == 1) {
@@ -1087,15 +1238,11 @@ void ui_draw_banner(const ui_state_t *s)
 		gfx_rect(0, y, w, h, edge);
 	}
 	color_t fg = gfx_bpp() == 1 ? ui_col.bg : ui_col.fg;
-	char fit[48];
-	gfx_text_fit(f, bn->title, w - 4, fit, sizeof fit);
-	gfx_text(f, 2, y + 2, fit, gfx_bpp() == 1 ? fg : bn->warn ? ui_col.warn : ui_col.fg);
-	int ty = y + 2 + f->h;
-	if (bn->text[0]) {
-		gfx_text_fit(f, bn->text, w - 4, fit, sizeof fit);
-		gfx_text(f, 2, ty, fit, fg);
-		ty += f->h;
-	}
+	int ty = y + pad;
+	for (int i = 0; i < nt; i++, ty += f->h)
+		gfx_text(f, 2, ty, title[i], gfx_bpp() == 1 ? fg : bn->warn ? ui_col.warn : ui_col.fg);
+	for (int i = 0; i < nx; i++, ty += f->h)
+		gfx_text(f, 2, ty, text[i], fg);
 	const char *act = bn->kind == UI_BANNER_MESSAGE ? "# Open" :
 		(bn->kind == UI_BANNER_CALL_ALERT || bn->kind == UI_BANNER_PRIVATE) ? "# Actions" : "Back hides";
 	gfx_text(f, 2, ty, act, gfx_bpp() == 1 ? fg : ui_col.dim);
@@ -1130,34 +1277,165 @@ static int list_bottom(const ui_state_t *s)
 	return s == NULL || s->hints || s->toast ? ui_layout.hint_y : gfx_height();
 }
 
-// Word wrap into lines of at most max_w pixels; draws them (when draw) and returns the y after the last line
+// One line of word-wrapped text: copies into line what fits in max_w pixels (breaking at the last space, or inside a
+// word longer than the line, never shortening), returns where the next line starts
+static const char *wrap_line(const font_t *f, const char *t, int max_w, char *line, size_t cap)
+{
+	int n = 0, cut = 0;
+	while (t[n] && t[n] != '\n' && n < (int)cap - 1) {
+		line[n] = t[n];
+		line[n + 1] = 0;
+		if (gfx_text_width(f, line) > max_w)
+			break;
+		if (t[n] == ' ')
+			cut = n;
+		n++;
+	}
+	bool fits_all = t[n] == 0 || t[n] == '\n';
+	if (!fits_all && cut > 0)
+		n = cut;
+	if (n == 0 && t[0] && t[0] != '\n')
+		n = 1;		// narrower than one glyph: still move on
+	line[n] = 0;
+	t += n;
+	if (*t == '\n')
+		t++;		// an empty line ("\n\n") stays one line
+	else
+		while (*t == ' ')
+			t++;
+	return t;
+}
+
+// Word wrap into lines of the screen's width; draws them (when draw) and returns the y after the last line
 static int wrap_text(const font_t *f, const char *t, int y, int y_end, bool draw, color_t c)
 {
-	int w = gfx_width();
-	char line[48];
+	char line[64];
 	while (*t && y + f->h <= y_end) {
-		int n = 0, cut = 0;
-		while (t[n] && t[n] != '\n' && n < (int)sizeof line - 1) {
-			line[n] = t[n];
-			line[n + 1] = 0;
-			if (gfx_text_width(f, line) > w)
-				break;
-			if (t[n] == ' ')
-				cut = n;
-			n++;
-		}
-		bool fits_all = t[n] == 0 || t[n] == '\n';
-		if (!fits_all && cut > 0)
-			n = cut;
-		line[n] = 0;
+		t = wrap_line(f, t, gfx_width(), line, sizeof line);
 		if (draw)
 			gfx_text(f, 0, y, line, c);
 		y += f->h;
-		t += n;
-		while (*t == ' ' || *t == '\n')
-			t++;
 	}
 	return y;
+}
+
+int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
+	uint16_t *first)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->tiny;
+	int w = gfx_width();
+	char line[64];
+	gfx_clear(ui_col.bg);
+	// No status strip while idle: the page gets the whole height. A call or a transmission brings it back (P2: the
+	// TX / RX pill is never hidden)
+	int y = v->state != RS_IDLE ? ui_draw_top(v, s, NULL, title) : 0;
+	int y_end = list_bottom(s);
+	int rows = (y_end - y) / f->h;
+	if (rows < 1)
+		rows = 1;
+	int total = 0;
+	for (const char *t = text; *t; total++)
+		t = wrap_line(f, t, w, line, sizeof line);
+	int max_first = total > rows ? total - rows : 0;
+	if (*first > max_first)
+		*first = (uint16_t)max_first;
+	const char *t = text;
+	for (int i = 0; *t; i++) {
+		t = wrap_line(f, t, w, line, sizeof line);
+		int r = i - *first;
+		if (r < 0)
+			continue;
+		if (r >= rows)
+			break;
+		// "Label: value" lines show the label dim
+		const char *colon = strstr(line, ": ");
+		int x = 0;
+		if (colon != NULL && colon - line < 20) {
+			char label[24];
+			size_t n = (size_t)(colon - line) + 1;
+			memcpy(label, line, n);
+			label[n] = 0;
+			x = gfx_text(f, 0, y + r * f->h, label, gfx_bpp() == 1 ? ui_col.fg : ui_col.dim);
+			gfx_text(f, x, y + r * f->h, colon + 1, ui_col.fg);
+		} else {
+			gfx_text(f, 0, y + r * f->h, line, ui_col.fg);
+		}
+	}
+	if (*first > 0)
+		gfx_fill(w - 3, y, 3, 2, ui_col.dim);
+	if (*first < max_first)
+		gfx_fill(w - 3, y + rows * f->h - 2, 3, 2, ui_col.dim);
+	ui_draw_banner(s);
+	ui_draw_bottom(s, max_first > 0 ? "Up/Down more  Back" : "Back");
+	return max_first;
+}
+
+// s shortened at the end, at a word if one ends late enough, with an ellipsis: for a preview of longer text (a
+// message), where the start is what matters
+static void fit_end(const font_t *f, const char *s, int max_w, char *out, size_t len)
+{
+	size_t n = strlen(s), fit = max_w <= 0 ? 0 : (size_t)(max_w / f->w);
+	if (fit >= len)
+		fit = len - 1;
+	if (n <= fit) {
+		memcpy(out, s, n + 1);
+		return;
+	}
+	if (fit == 0) {
+		out[0] = 0;
+		return;
+	}
+	size_t keep = fit - 1;
+	size_t cut = keep;
+	while (cut > 0 && s[cut] != ' ')
+		cut--;
+	if (cut >= keep / 2)
+		keep = cut;		// end at a word unless that throws away more than half
+	while (keep > 0 && s[keep - 1] == ' ')
+		keep--;
+	memcpy(out, s, keep);
+	out[keep] = GLYPH_ELLIPSIS[0];
+	out[keep + 1] = 0;
+#ifdef GFX_FIT_TRACE
+	gfx_fit_trace(s, out);
+#endif
+}
+
+// A row's label (left) and value (right, may hold text alternates). The label says what the row is, so it is kept
+// whole whenever it can be: the value gets the room that is left, as the longest of its alternates that fits (an
+// alternate may be empty: the value is left out). Only a label too long even next to the shortest value is shortened:
+// at the end for a preview, else from the middle (gfx_text_fit). Margins shrink to nothing before anything is cut
+static void row_text(const font_t *f, int x, int y, int w, const char *label, const char *value, color_t fg,
+	color_t vfg, bool preview)
+{
+	char lab[48], val[48];
+	bool more = true;
+	int gap = f->w / 2 + 1;
+	int lw = gfx_text_width(f, label);
+	int vw = 0;
+	val[0] = 0;
+	// The longest value alternate that fits next to the whole label (or the shortest one there is)
+	for (int level = 0; value[0] && more; level++) {
+		size_t n = gfx_text_alt(value, level, val, sizeof val, &more);
+		vw = (int)n * f->w;
+		if (x + lw + (vw ? gap + vw : 0) <= w)
+			break;
+	}
+	int room = w - x - (vw ? vw + gap : 0);
+	if (lw <= room) {
+		gfx_text(f, x, y, label, fg);
+	} else {
+		if (preview && !strchr(label, TEXT_ALT_OPEN[0]))
+			fit_end(f, label, room, lab, sizeof lab);
+		else
+			gfx_text_fit(f, label, room, lab, sizeof lab);
+		gfx_text(f, x, y, lab, fg);
+	}
+	if (vw) {
+		int right = x + (lw < room ? lw : room) + gap + vw < w ? 1 : 0;	// a pixel of margin if it is free
+		gfx_text(f, w - vw - right, y, val, vfg);
+	}
 }
 
 int ui_list_rows(const ui_list_t *l)
@@ -1230,7 +1508,7 @@ void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l
 			char n[3] = { it.num, ' ', 0 };
 			x = gfx_text(f, x, ry + pad, n, focus ? fg : (gfx_bpp() == 1 ? fg : ui_col.dim));
 		}
-		char val[48], fit[48];
+		char val[48];
 		if (it.flags & UI_ITEM_EDIT) {
 			sbuf_t b;
 			sb_init(&b, val, sizeof val);
@@ -1240,16 +1518,7 @@ void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l
 		} else {
 			strcpy(val, it.value);
 		}
-		int vw = val[0] ? gfx_text_width(f, val) : 0;
-		if (vw > w / 2)
-			vw = w / 2;
-		int lw = w - x - (vw ? vw + f->w : 0);
-		gfx_text_fit(f, it.label, lw, fit, sizeof fit);
-		gfx_text(f, x, ry + pad, fit, fg);
-		if (vw) {
-			gfx_text_fit(f, val, vw, fit, sizeof fit);
-			gfx_text(f, w - gfx_text_width(f, fit) - 1, ry + pad, fit, vfg);
-		}
+		row_text(f, x, ry + pad, w, it.label, val, fg, vfg, (it.flags & UI_ITEM_PREVIEW) != 0);
 	}
 	// Scroll marks: more above / below
 	if (top > 0)

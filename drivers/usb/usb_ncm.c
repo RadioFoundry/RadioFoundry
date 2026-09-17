@@ -16,6 +16,7 @@
 
 #define COLD_BOOT_QUIET_MS	5000	// configured but nothing from the host this long after mounting: re-enumerate once
 #define RECONNECT_GAP_MS	100
+#define SWITCH_CONFIG_MS	10000	// switched to network mode at run time and the host never configured it: back to serial
 
 typedef struct {
 	uint16_t len;
@@ -31,6 +32,8 @@ static usb_ncm_stats_t stats;
 static uint32_t mounted_ms;			// when the host configured the device, 0 = not
 static bool host_heard;				// a frame came from the host since mounting
 static bool reconnected;			// the cold boot re-enumeration was done
+static bool switch_armed;			// switched to network mode at run time, not configured yet
+static uint32_t switch_ms;			// when the armed switch was first seen by usbNcmTick, 0 = not yet
 
 static void make_macs(uint8_t host[6], uint8_t radio[6])
 {
@@ -151,6 +154,20 @@ int usbNcmReceive(uint8_t *buf, int max)
 
 void usbNcmTick(uint32_t now_ms)
 {
+	// A host that never configures the network personality (seen on macOS 26) would leave the radio with no serial
+	// port, no network and no debug link: after a run-time switch, give up and go back to serial
+	if (switch_armed) {
+		if (usb_device_mode() != USB_MODE_NETWORK || usb_device_configured()) {
+			switch_armed = false;
+		} else if (switch_ms == 0) {
+			switch_ms = (now_ms != 0) ? now_ms : 1;
+		} else if ((now_ms - switch_ms) >= SWITCH_CONFIG_MS) {
+			switch_armed = false;
+			stats.switch_fallbacks++;
+			usb_device_switch_mode(USB_MODE_SERIAL);
+			return;
+		}
+	}
 	if (!usbNcmIsUp()) {
 		mounted_ms = 0;
 		return;
@@ -179,6 +196,8 @@ void usbNcmStats(usb_ncm_stats_t *s)
 
 static bool netif_select(bool network)
 {
+	switch_armed = network;
+	switch_ms = 0;
 	return usb_device_switch_mode(network ? USB_MODE_NETWORK : USB_MODE_SERIAL);
 }
 

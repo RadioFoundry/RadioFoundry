@@ -19,7 +19,7 @@
 #define UI_ENTRY_MHZ	3
 #define UI_QUICK_TILES	9
 #define UI_TALL_PX	200	// displays at least this high keep the whole status strip above a screen's title row
-#define UI_BANNER_TEXT	40
+#define UI_BANNER_TEXT	64	// two lines at the widest display class
 
 // Banners (information-architecture.md 3, "Banners and interruptions"): over any screen, no focus change
 typedef enum {
@@ -126,10 +126,11 @@ void ui_draw_banner(const ui_state_t *s);
 #define UI_ITEM_WARN	0x04u
 #define UI_ITEM_EDIT	0x08u	// the row's inline editor is open
 #define UI_ITEM_INFO	0x10u	// a text line, not something to pick (never focused)
+#define UI_ITEM_PREVIEW	0x20u	// the label is the start of a longer text (a message): shortened at its end, not the middle
 
 typedef struct {
 	char label[36];
-	char value[44];		// may hold text alternates (font.h)
+	char value[44];		// may hold text alternates (font.h); an empty last alternate leaves the value out
 	char num;		// key shown before the label ('1'..'9', '0'), 0 = none
 	uint8_t flags;
 } ui_item_t;
@@ -149,6 +150,10 @@ typedef struct {
 } ui_list_t;
 
 void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l);
+// A page of text (About) in the smallest font, word-wrapped, never shortened: lines from *first on (clamped so the
+// last page is full). The status strip only while the radio isn't idle. Returns the largest *first (0: all fits)
+int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
+	uint16_t *first);
 // Rows that fit below the title (and header) on this display, for paging
 int ui_list_rows(const ui_list_t *l);
 

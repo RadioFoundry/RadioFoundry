@@ -42,7 +42,8 @@ aprx can stand in.
 | iGate | IS -> RF messages only after RX exists; RF -> IS needs RX (designed only) | with RX |
 | GPS | none: host NMEA or the fixed position | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)` |
 
-Everything is host tested; nothing has been on the air yet (section 13 lists the bench steps).
+Everything is host tested. On the SDR bench (section 13): positions over DMR (LRRP and UDT) decode; FM AFSK keyed an
+unmodulated carrier until the AT1846S voice source fix (5.2), which waits for its on-air run.
 
 ## 2. Model
 
@@ -114,8 +115,10 @@ symbol). The radio core keeps the I2C bus free meanwhile (`status()` returns its
 force-writes 0x35 at the end because the interrupt bypassed the driver's cache. The level (0-100, 50 default) scales
 the tone deviation register 0x59 around the driver's value.
 
-Not verified on the bench: whether the tone stays phase continuous across a retune, the deviation the level gives,
-the mark / space flatness (section 13).
+The tone generator is the AT1846S's voice source only with reg 0x3A bits 14:12 (voice_sel) = 001 and 0x7A bit 14
+(single tone) set: an earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.10). Measured by
+`tests/hil/test_aprs.py` once on air: the phase continuity across a retune, the deviation the level gives, the mark /
+space flatness, the TX delay (section 13).
 
 ### 5.3 DM-1701 receive: designed only
 
@@ -249,21 +252,33 @@ manual and after-PTT triggers, KISS and NMEA from the host, messages with acks, 
 the iGate both ways, the DMR position source). `tests/host/aprs_wav_check.sh` feeds the WAV to Direwolf's `atest`
 when it is installed (a black-box check).
 
-HIL (opt-in, `tests/hil/test_aprs.py`, `--allow-rf`; the lead runs it): on the DM-1701 with an SDR or a second
-receiver decoding (Direwolf on the SDR's FM audio):
+HIL (opt-in, `tests/hil/test_aprs.py`, README there): `--allow-rf --allow-service-stop --aprs-call CALL` (a licensed
+operator's callsign, set as the RAM-only test call; SSID `--aprs-ssid`, default 15).
 
-1. Debug link: `odr_debug.py aprs call N0CALL-like-yours` (your callsign), `aprs set region na` (144.390; `eu` for
-   144.800), `aprs set lat 33.7490`, `aprs set lon -84.3880`, `aprs set pos_src fixed`, low power.
-2. `odr_debug.py aprs send`: the radio leaves the channel, listens, keys about 1 s, returns. `view aprs`:
-   `aprs.rf_sent` + 1, `aprs.last_info`.
-3. On the receiver: the frame decodes (`CALL-7>APZODR,WIDE1-1,WIDE2-1:...`), no FCS errors. Check the deviation
-   (about 3 kHz peak at level 50; adjust `aprs set level`), the mark / space amplitude difference, and the tone
-   phase at symbol changes on the SDR waterfall / audio.
-4. Digital: on a DMR channel through a BrandMeister repeater or hotspot, `aprs set via dmr`, `aprs send`; the
-   position shows on aprs.fi under the radio's DMR callsign with the 5057 SSID. If not: try `aprs set dmr_udt 1`,
-   then capture the LRRP report for the request ID question (8.1).
-5. KISS: `aprs set kiss 1`, then `tools/aprs_gate.py --serial PORT --kiss-tcp 8001` and APRSdroid / Xastir on TCP
-   8001 send a position; it goes out on RF.
+Where the AFSK tests transmit, so nothing reaches the APRS network: the custom region on `--aprs-test-mhz`, default
+145.090 MHz (US band plans put 2 m packet at 145.01-145.09; 144.390 would be digipeated and gated to APRS-IS, and every
+regional APRS frequency is refused), no path, the radio's lowest power (checked through `aprs.tx_power` before keying;
+6 RF says APRS keys at the radio's current level). Each transmission is about 0.6 s. Every APRS setting touched is
+saved and put back once the queued frames and message retries have gone out on the test frequency.
+
+1. Position, status, message: the bench's RTL-SDR records I/Q while the radio sends; `tools/aprs_afsk_check.py`
+   FM demodulates it on the bench and decodes Bell 202 / AX.25 (its own demodulator: tone envelopes, a bit clock PLL,
+   NRZI, HDLC, the X.25 CRC; `--self-test` checks it on synthesized I/Q and on `aprsTest --wav`). Asserted: a valid
+   FCS, `CALL-SSID>APZODR` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
+   `:ADDRESSEE:text{N`), `aprs.rf_sent` +1, the radio back on its channel, deviation peak 2.0-4.5 kHz, twist under
+   6 dB. Printed: mark and space deviation, TX delay (flags before the frame, and carrier to first frame bit), the
+   phase residual at tone changes after the fitted switching delay (continuous phase: about 10 degrees RMS; random
+   restarts: about 100). The position is sent from the DMR channel and from the FM VFO.
+2. Digital: on the DMR test channel the position goes to `--aprs-dmr-dst` as an LRRP report and as a UDT location;
+   the bench modem's listener hears the header and blocks, the test checks the CRCs, the IPv4 / UDP 4001 / LRRP or
+   UDT NMEA layers and the position (within 2e-5 degree). Passed on air (DM-1701, 467.375 MHz CC 2, 50 mW).
+3. Still manual: BrandMeister (`aprs set via dmr` through a BrandMeister repeater or hotspot; the position on aprs.fi
+   with the 5057 SSID, else `dmr_udt 1`, and the LRRP request ID question, 8.1) and KISS (`aprs set kiss 1`,
+   `tools/aprs_gate.py --serial PORT --kiss-tcp 8001`, a position from APRSdroid / Xastir goes out on RF).
+
+Results so far: DMR LRRP and UDT pass. AFSK from 23469a2 / 0229a72 keyed a 0.59 s carrier on 145.090 MHz with no
+tones (about 25 Hz RMS deviation; the 1750 Hz burst likewise silent while CTCSS on the same carrier deviated 2 kHz):
+the voice source bug in 5.2, fixed in 694249b, on air after the next flash.
 
 ## 14. Open decisions
 

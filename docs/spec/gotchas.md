@@ -501,3 +501,13 @@ check against the table catches it (sfrTest).
   against independent decoders (RadioDesk) caught the protocol ones. Keep both.
 - On-air debug counters readable over the host protocol, plus runtime switches, let the SFR work go through 17 test
   rounds without reflashing for each experiment.
+
+## 16. Input
+
+**16.1 Rotary encoder counted on the edges of one line.**
+Symptom: on the DM-1701 the knob sometimes skipped a step, counted two, or stepped back (ODR, 2026-10-10). Cause: one
+count per edge of B with A read in the interrupt; a knob leaving a detent and settling back counts a step and a step
+back, and bounce edges merged by the single pending flag count twice. Rule: interrupt on both lines (or poll both fast)
+and decode with a table that counts only whole detents at a rest state and ignores samples where both lines changed
+(`drivers/input/quadrature`, hardware-dm1701.md 10.3). Radios: all with an encoder (DM-1701, DM-32UV, MD-9600). Also:
+when the UI's event queue is full, carry the detents over to the next scan instead of dropping them.

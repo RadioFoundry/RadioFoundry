@@ -61,7 +61,7 @@ PATHS = ["", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2"]
 VIAS = {"rf": 0, "dmr": 1, "both": 2}
 REGION_CUSTOM, POS_FIXED, PATH_NONE = 6, 3, 0
 RF_TRIES, MSG_TRIES = 3, 3
-CAPTURE_S = 8
+CAPTURE_S = 14       # a message waits for the engine's next service pass: it went out 5.7 s after the request once
 
 
 def _need_aprs(radio):
@@ -122,6 +122,11 @@ class AprsSession:
         self.radio = radio
         L = radio.link
         v = _aprs(radio)
+        # a message from an earlier test keeps msg_pending for its ack wait (up to 120 s after the last try)
+        end = time.monotonic() + 150
+        while (v["aprs.rf_active"] != "0" or v["aprs.msg_pending"] != "0") and time.monotonic() < end:
+            time.sleep(2.0)
+            v = _aprs(radio)
         assert v["aprs.rf_active"] == "0" and v["aprs.msg_pending"] == "0", \
             f"APRS busy before the test (rf_active / msg_pending): {v}"
         self.keep = {"tx": _n(v, "set.aprs_tx"), "region": _n(v, "set.aprs_region"), "ssid": _n(v, "set.aprs_ssid"),

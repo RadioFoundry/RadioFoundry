@@ -210,7 +210,7 @@ All 100 pins that matter, by port. "In" pins have the pull noted. Active levels 
 | PE10 | AF12 / in pull-down | LCD D7 / keypad column 7 | |
 | PE11 | in, pull-up | PTT (side) | active low |
 | PE12 | in, pull-up | external PTT (accessory jack) | active low |
-| PE14 | in, pull-up | rotary encoder A | no interrupt needed (sampled on B edges) |
+| PE14 | in, pull-up, EXTI14 both edges | rotary encoder A | sampled with B on every edge of either (10.3) |
 
 ### 2.6 Port H
 
@@ -243,7 +243,7 @@ RTOS kernel at 7 (lowest); RTOS "max syscall" priority 5: ISRs that call RTOS AP
 | EXTI1 | 5 | HR_C6000 system interrupt (PC1) |
 | EXTI2 | 5 | HR_C6000 RF TX interrupt (PC2) |
 | TIM6_DAC | 5 | AFSK bit clock (TIM6), DAC underrun |
-| EXTI15_10 | 6 | rotary encoder B (PB11) |
+| EXTI15_10 | 6 | rotary encoder A (PE14, EXTI14) and B (PB11, EXTI11) |
 | DMA1_Stream0 | 6 | I2S3 RX |
 | DMA1_Stream5 | 6 | I2S3ext TX |
 | USART1 | 6 | GPS |
@@ -564,7 +564,7 @@ polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Datasheet check: cod
 | 0x36 | tone2 frequency = Hz x 10 |
 | 0x79 = 0xC000 | single tone select |
 | 0x57 bit 0 | audio feedback (TX audio looped to the speaker) |
-| 0x59 bits 15:6 | tone deviation; 0x40 used for tones, restore the saved value after |
+| 0x59 bits 15:6 | tone deviation; 0x1C used for tones (about 3.1 kHz peak; 0x40 measured 7.2 kHz on air), restore the saved value after |
 | 0x41 bits 6:0 | voice TX gain; save before tones, restore after |
 
 On these radios FM microphone audio is processed and modulated by the HR_C6000 (two-point modulation), not by the
@@ -574,7 +574,7 @@ voice_sel left at 000 the carrier went out unmodulated (gotchas 3.10); the fixed
 `tests/hil/test_aprs.py` on air.
 
 Morse keying for the hotspot's CW ID (`tx_tone_key`, `boards/dm1701/radio_dm1701.c`): with the tone set up by
-`tx_tone`, key up writes the 0x59 tone deviation bits 15:6 to 0 and key down back to 0x40 (bits 5:0 kept from the
+`tx_tone`, key up writes the 0x59 tone deviation bits 15:6 to 0 and key down back to the tone value (0x1C) (bits 5:0 kept from the
 saved value), so the carrier stays up and the tone switches without a retune. Unverified on the bench, like the tone
 path itself.
 
@@ -849,8 +849,29 @@ PTT.
 
 ### 10.3 Rotary channel encoder
 
-Quadrature, A on PE14, B on PB11 (both pull-up). Interrupt on both edges of B. On each change of B: if A equals B the
-step is -1, otherwise +1 (one step per B edge). Counting only on B edges ignores bounce on A.
+Quadrature, A on PE14, B on PB11 (both pull-up), with detents. The legacy firmware interrupts on both edges of B only
+and counts one step per B edge (-1 if A equals B after the edge, else +1). One B edge per detent means two quadrature
+steps per detent, resting where A equals B (00 and 11); this is the assumption ODR builds on (unverified by
+measurement: the `input.enc_transitions` / `input.enc_detents` view keys check it, 2 expected).
+
+ODR interrupts on both edges of both lines (EXTI14 for A, EXTI11 for B, one handler) and feeds every sample of the two
+levels to the table decoder in `drivers/input/quadrature`: each sample against the previous one is no change, one
+step either way, or both lines changed (a missed sample, ignored). A detent counts only when the lines reach a rest
+state with two steps the same way since the last one. The interrupt clears its pending flags before it reads the pins,
+so an edge during the read interrupts again.
+
+Why counting B edges went wrong (seen as missed steps and steps backward, 2026-10-10):
+
+- Going one way, B is the first line to change when the knob leaves a detent. A light touch or a knob that settles
+  back counts a step and then a step back: the focus jumps a row and returns.
+- Contact bounce on B gives several edges. EXTI has one pending flag per line, so edges close together (or while the
+  interrupt is masked or preempted) merge, and the handler reads the level after all of them: a rise-fall-rise reads
+  "high" twice and counts two steps for one, never in step with the detent.
+- Bounce on A was ignored, but A's level was sampled at B edges only, so a sample taken while A was still settling
+  (a fast turn) gives the wrong direction.
+
+The decoder makes all three harmless: bounce is a step and the same step back (net zero), merged edges are a repeated
+level (no change), and only whole detents count. Positive (forward) is the direction the legacy firmware counted +1.
 
 ### 10.4 Power switch
 

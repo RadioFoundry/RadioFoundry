@@ -14,7 +14,7 @@
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_CHANNELS, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
-	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD,
+	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_ABOUT,
 	SCR_COUNT
 } ui_scr_t;
 
@@ -24,6 +24,7 @@ typedef enum {
 #define SF_FILTER	0x04u	// digits type a T9 filter that narrows the rows
 #define SF_FIELD	0x08u	// "field use": at most 3 levels from Home (P4)
 #define SF_FIND		0x10u	// digits type the query (Find)
+#define SF_NO_STRIP	0x20u	// no status strip while the radio is idle (About: the owner's call); RX / TX bring it back
 
 typedef struct {
 	uint8_t scr;

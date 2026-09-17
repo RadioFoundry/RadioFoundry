@@ -5,7 +5,8 @@
 Status: research, 2026-10-10. This page collects the main chips of every radio ODR supports or plans to support, plus
 close relatives, from public sources only. It also says which ODR platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
-([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md)). This page is the overview.
+([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
+[hardware-md380.md](hardware-md380.md)). This page is the overview.
 
 Facts are not copyrightable. Every claim carries a source link and a confidence tag:
 
@@ -28,7 +29,7 @@ and F tags into C, and it should happen before a port starts.
 | Baofeng DM-1701, Retevis RT84 | STM32F405VG (C, bench) | HR_C6000 (C, bench) | AT1846S (C, bench) | 160x128 color, 8080 bus (C, bench) | 16 MB SPI NOR (C, bench) | none (C) | USB DFU on the MCU, wrapped images (D) | First target, on the radio |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG (D) | HR_C6000 (D) | AT1846S (D) | 160x128 color, HX8302A (D) | 25Q128FV, 16 MB (D) | optional, JS-H210 (D) | USB DFU on the MCU (D) | Planned: board variant of the DM-1701 |
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG (D) | HR_C6000 (D) | 2x SKY72310 PLL on older boards; later boards changed (D, F) | 128x64 mono, ST7567 (D) | 25Q128FV, 16 MB (D) | optional, JS-M710 (D) | USB DFU on the MCU (D) | Planned |
-| TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (D) | HR_C5000 (D) | SKY72310 PLL + GT3136 receiver (D, F) | 160x128 color, HX8302A (D, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (D) | optional "G" models (D, module ?) | USB DFU, encrypted images (D) | Planned |
+| TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (D) | HR_C5000 (D) | SKY72310 PLL + GT3136 receiver (D, F) | 160x128 color, HX8302A (D, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (D) | optional "G" models (D, module ?) | USB DFU, encrypted images (D) | Builds, not on a radio yet |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (D) | HR_C6000 (D) | AT1846S (D) | 128x64 mono, UC1701 (D) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (D) | none (D) | USB HID bootloader, .sgl files (F) | Planned: new platform |
 | Radioddity GD-88 | HR_C7000 class SoC (F) | HR_C7000 (F) | ? (two transceivers, F) | 2" color TFT (C), controller ? | ? | yes (C), module ? | Radioddity updater over K-plug cable (C) | Planned |
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (F, BIN) | HR_C7000 (F, BIN) | FD6818 (community pin map) | 240x320 color, ST7789 class (community, BIN) | 16 MB data flash (F); program flash size ? | yes (C), ATGM336H (community) | Baofeng bootloader over UART cable (BIN, F) | Builds, not on a radio yet |
@@ -136,10 +137,12 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   ([fccid.io](https://fccid.io/PODMD-380/Internal-Photos/Internal-Photos-2688727)).
 - Open firmware: OpenRTX supports FM and M17 but not DMR (D) ([OpenRTX status](https://openrtx.org/#/dev_status)).
   md380tools patches the stock firmware. The OpenGD77 project has a port.
-- **ODR:** reuses `platform/stm32f4`, `drivers/flash/spi_nor`, `drivers/input/keymatrix`, probably
-  `drivers/display/st7735` (if the panel really is HX8302A). New: an HR_C5000 modem driver (how much of
-  `drivers/modem/hrc6000` carries over is unknown until the two datasheets are compared), a SKY72310 driver (shared
-  with the MD-9600), and the analog receive chain.
+- **ODR:** `boards/md380` builds (UHF and VHF images) and passes its host tests; not run on a radio
+  ([hardware-md380.md](hardware-md380.md), [md380-bringup.md](../testing/md380-bringup.md)). It reuses
+  `platform/stm32f4`, `drivers/flash/spi_nor` and `drivers/display/st7735` (HX8302A assumed compatible, ?). The
+  HR_C5000 is a variant of `drivers/modem/hrc6000` (a chip flag selects the register differences). New:
+  `drivers/rf/sky72310` (shared with the MD-9600 later), `drivers/gps/nmea_line`, run-time GPS detection
+  (`board.gps_present`). The codec in the stock firmware isn't located yet, so it runs FM only.
 
 ### Radioddity GD-77 family
 
@@ -339,11 +342,11 @@ different architecture from anything in ODR. The Retevis C62 and Quansheng-style
 | `drivers/display/st7735` | yes | 160x128 color radios (HX8302A compatibility per radio ?) |
 | `drivers/display/st7789` | yes | DM-32UV |
 | `platform/mk22` | **new** | GD-77 family, HD1 |
-| `drivers/modem/hrc5000` | **new** | MD-380 |
-| `drivers/rf/sky72310` (+ receive chain) | **new** | MD-380, MD-9600 (older boards), CS7000 |
+| `drivers/modem/hrc6000`, C5000 variant | yes (`hrc6000_attach_chip`) | MD-380 |
+| `drivers/rf/sky72310` (+ receive chain) | yes (MD-380 board glue) | MD-380, MD-9600 (older boards), CS7000 |
 | UC1701 / ST7567 mono display driver | **new** | GD-77 family (UC1701), MD-9600 (ST7567). Both are 128x64-class page-addressed controllers, so one driver may cover both (?) |
 | I2C EEPROM | **new** | GD-77 family |
-| GPS NMEA reader on a UART | **new** (as a board driver) | MD-UV380G, MD-9600G, MD-380G, DM-32UV, GD-88, DB25-D, DB40-D |
+| GPS NMEA reader on a UART | yes (`drivers/gps/nmea_line`; the UART in the board) | MD-UV380G, MD-9600G, MD-380G, DM-32UV, GD-88, DB25-D, DB40-D |
 | BK4819 transceiver | **new** | DB25-D PRO (two per radio) |
 | SPI NAND + storage adapter | **new** | DB25-D, DB40-D (Kioxia TC58CVG1S3, bad-block handling) |
 | `drivers/bcast/rda5807m` | yes | DM-32UV; the RDA5802 in the DB25-D and DB40-D is a close relative (register compatibility ?) |
@@ -361,8 +364,8 @@ By effort, then by how many radios a port unlocks and how popular they are:
    needs a new MK22 platform and a mono display driver, and has a tight 512 KB of flash. Effort: weeks.
 3. **TYT MD-9600 / RT90.** STM32 + HR_C6000 again. New are the SKY72310 driver, the ST7567 display (shared work with
    the GD-77's mono driver) and the board-version problem. Effort: weeks, and the V4/V5 PLL needs identifying first.
-4. **TYT MD-380 / MD-390 / RT3.** It reuses the STM32 platform and the MD-9600's SKY72310 driver. The HR_C5000 modem
-   is the main new work, and the radios are older and single band. Effort: weeks.
+4. **TYT MD-380 / MD-390 / RT3.** Builds now (2026-10-10), with the SKY72310 driver the MD-9600 can reuse; it needs a
+   radio for bring-up and the codec windows in the stock firmware for DMR voice.
 5. **HR_C7000 family after the DM-32UV is on air**: the DB25-D (one HR_C7000, the closest to the DM-32, but a new RF
    chip and SPI NAND), then the GD-88, then the DB40-D (two SoCs, reusing the GD-88's A/B work). All three are wish
    list items until hardware is on the bench. Start by reading the FCC internal photos, since the GD-88's chip list is

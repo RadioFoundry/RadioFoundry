@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Key matrix decode with column-to-ground keys (DM-32 SK1 / SK2 on columns 3 / 4) and the encoder step rule
-// (docs/spec/hardware-dm32.md 6.1-6.3)
+// Key matrix decode with column-to-ground keys (DM-32 SK1 / SK2 on columns 3 / 4) (docs/spec/hardware-dm32.md 6.1,
+// 6.2; the encoder is quadratureTest's)
 #include <stdio.h>
 #include "input/keymatrix/keymatrix.h"
 
@@ -44,11 +44,6 @@ int main(void)
 	CHECK(decode(0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C) == ((1u << SK1) | (1u << SK2)));
 	// A column low at idle with no direct key (a stuck line) reports nothing for that column
 	CHECK(decode(0x01, 0x01, 0x01, 0x01, 0x01, 0x01) == 0);
-	// Encoder: one count per B edge, -1 when A equals B after the edge
-	CHECK(keymatrix_encoder_step(true, true) == -1);
-	CHECK(keymatrix_encoder_step(false, false) == -1);
-	CHECK(keymatrix_encoder_step(true, false) == 1);
-	CHECK(keymatrix_encoder_step(false, true) == 1);
 	if (failures) {
 		printf("keymatrixTest: %d failures\n", failures);
 		return 1;

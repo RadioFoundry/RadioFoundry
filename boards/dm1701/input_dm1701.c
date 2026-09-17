@@ -5,6 +5,7 @@
 #include "dm1701.h"
 #include "pins.h"
 #include "hal_time.h"
+#include "input/quadrature/quadrature.h"
 
 #define MODER_INPUT	0u
 #define MODER_OUTPUT	1u
@@ -28,7 +29,12 @@ static const uint16_t row_pin[ROW_COUNT] = { PIN_MASK(PIN_KEY_ROW0), PIN_MASK(PI
 
 static uint32_t last_raw;
 static uint32_t stable;
-static volatile int32_t enc_count;
+
+// Encoder (spec 10.3): both lines on both edges, a table decoder (drivers/input/quadrature) with two steps per detent,
+// resting where A == B. The interrupt is the only writer of enc; the input task takes detents with enc_taken
+#define ENC_STEPS	2
+static quad_t enc;
+static int32_t enc_taken;
 
 // Two-bit fields (MODER, PUPDR) of every pin in mask set to value
 static uint32_t field2(uint32_t reg, uint16_t mask, uint32_t value)
@@ -133,17 +139,21 @@ static void init(void)
 		stm32_pin_in(row_port[r], row_pin[r], GPIO_PULLDOWN);
 	}
 	stm32_pin_in(PIN_PORT(PIN_PTT), PIN_MASK(PIN_PTT) | PIN_MASK(PIN_PTT_EXT), GPIO_PULLUP);
-	stm32_pin_in(PIN_PORT(PIN_ENC_A), PIN_MASK(PIN_ENC_A), GPIO_PULLUP);
-
-	stm32_gpio_clock(PIN_PORT(PIN_ENC_B));
-	GPIO_InitTypeDef b = {
-		.Pin = PIN_MASK(PIN_ENC_B),
+	// Both encoder lines interrupt on both edges (A = PE14 on EXTI14, B = PB11 on EXTI11, both in EXTI15_10)
+	GPIO_InitTypeDef enc_pin = {
 		.Mode = GPIO_MODE_IT_RISING_FALLING,
 		.Pull = GPIO_PULLUP,
 		.Speed = GPIO_SPEED_FREQ_LOW,
 	};
-	HAL_GPIO_Init(PIN_PORT(PIN_ENC_B), &b);	// also routes EXTI11 to port B
-	enc_count = 0;
+	stm32_gpio_clock(PIN_PORT(PIN_ENC_A));
+	stm32_gpio_clock(PIN_PORT(PIN_ENC_B));
+	enc_pin.Pin = PIN_MASK(PIN_ENC_A);
+	HAL_GPIO_Init(PIN_PORT(PIN_ENC_A), &enc_pin);	// also routes EXTI14 to port E
+	enc_pin.Pin = PIN_MASK(PIN_ENC_B);
+	HAL_GPIO_Init(PIN_PORT(PIN_ENC_B), &enc_pin);	// also routes EXTI11 to port B
+	hal_delay_us(10);				// let the pull-ups settle before the first sample
+	quad_init(&enc, ENC_STEPS, QUAD_REST_EQUAL, QUAD_AB(PIN_READ(PIN_ENC_A), PIN_READ(PIN_ENC_B)));
+	enc_taken = 0;
 	HAL_NVIC_SetPriority(EXTI15_10_IRQn, 6, 0);	// spec 3.1; must stay numerically >= 5 for FreeRTOS
 	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
@@ -162,31 +172,31 @@ static uint32_t scan(void)
 	return stable;
 }
 
+// Detents since the last call (the running total is one 32-bit word the interrupt writes: no lock needed)
 static int8_t encoder(void)
 {
-	uint32_t primask = __get_PRIMASK();
-	__disable_irq();
-	int32_t n = enc_count;
-	if (n > 127) {
-		n = 127;
-	} else if (n < -127) {
-		n = -127;
-	}
-	enc_count -= n;
-	__set_PRIMASK(primask);
-	return (int8_t)n;
+	return quad_take(&enc, &enc_taken);
 }
 
-// Encoder B edge (spec 10.3): A equal to B is one step down, otherwise one step up
+static void encoder_stats(hal_encoder_stats_t *st)
+{
+	st->detents = enc.detents;
+	st->transitions = enc.transitions;
+	st->illegal = enc.illegal;
+	st->reversals = enc.reversals;
+	st->steps_per_detent = ENC_STEPS;
+}
+
+// An edge on either encoder line (spec 10.3): the flags are cleared before the lines are read, so an edge that comes
+// while this runs raises the interrupt again and its level is sampled too. Bounce is harmless: each sample is the
+// levels as they are, and the decoder only counts whole detents
 void EXTI15_10_IRQHandler(void)
 {
-	uint32_t pending = EXTI->PR & PIN_MASK(PIN_ENC_B);
+	uint32_t pending = EXTI->PR & (PIN_MASK(PIN_ENC_A) | PIN_MASK(PIN_ENC_B));
 	if (pending) {
 		EXTI->PR = pending;
-		bool a = PIN_READ(PIN_ENC_A);
-		bool b = PIN_READ(PIN_ENC_B);
-		enc_count += (a == b) ? -1 : 1;
+		quad_sample(&enc, QUAD_AB(PIN_READ(PIN_ENC_A), PIN_READ(PIN_ENC_B)));
 	}
 }
 
-const hal_input_t dm1701_input = { .init = init, .scan = scan, .encoder = encoder };
+const hal_input_t dm1701_input = { .init = init, .scan = scan, .encoder = encoder, .encoder_stats = encoder_stats };

@@ -22,6 +22,28 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 `ui_app.c` and `ui_menus.c` never call the RTOS. The firmware drives them from `ui.c`; the host simulator
 (section 7) drives the same files.
 
+Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip, list rows and the hint row are exactly one
+text cell high, with no padding of their own. The font's cell already holds a blank row above the capitals and the
+descenders, and the DM-1701's 5 px lens inset is outside the drawing area (`gfx_width` / `gfx_height`). At 160x120i5
+a list shows 7 rows, at 160x128 8, at 128x64 6. The 240x320 class keeps 3 px per row and a separate title row.
+
+The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The group for the Back key (it starts with
+"Back") is drawn against the right edge, under the key; the other groups run from the left. A toast is one centered
+line instead.
+
+Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
+
+- A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
+  a short form or nothing (Hub's zone name, Find's kind, Channels' "here, 16 channels" / "here, 16 ch" / "here", ages).
+  A row marked `UI_ITEM_PREVIEW` (a message) is cut at its end, at a word.
+- Hints and toasts take the longest alternate that fits; a toast that still doesn't fit takes a second line above the
+  hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
+  banner shows two lines of the message from the inbox.
+- Home's talk target line drops to the small font, then the prefix too, then leaves out the target's name; large-text
+  Home picks the largest font each line fits in.
+
+`uiSim --ellipsis` (section 7) lists what is still shortened.
+
 Core code never includes a board header and never tests a radio define. What differs by radio comes from the board
 descriptor: the display geometry and insets (`hal_display_t`), and the key map (`board.keymap`), which turns keys
 into logical actions (`hal_input.h`).
@@ -44,6 +66,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Talk target picker | `picker` | TALK_TARGET (SK2), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
+| About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
 The gallery (section 7) shows every screen at every display class.
 
@@ -167,8 +190,13 @@ Geometries: `160x120i5` (DM-1701: 160x128 panel, 5 px inset), `160x128`, `128x64
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
 and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
-BACK reaches Home, long QUICK locks, long CONTEXT opens Recent, the status strip is drawn, PTT shows TX, and every
-field-use screen is at most 3 presses deep.
+BACK reaches Home, long QUICK locks, long CONTEXT opens Recent, the status strip is drawn (except About while idle),
+PTT shows TX, and every field-use screen is at most 3 presses deep. The About check scrolls the page to its end at
+every display class and fails if any text was shortened.
+
+`uiSim --ellipsis [GEOM]` lists every text shortened with a middle ellipsis on the gallery screens and the settings
+pages (lists scrolled through): `gfx_text_fit` reports each one through `gfx_fit_trace` in host builds
+(`GFX_FIT_TRACE`). Use it after changing wording or layout.
 
 HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences on the radio over the debug link.
 

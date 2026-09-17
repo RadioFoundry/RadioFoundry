@@ -125,7 +125,29 @@ DM32 = Board(
     protected=[(0x03000000, 0x0300C000)],
 )
 
-BOARDS = {b.id: b for b in (DM1701, DM32)}
+# Not released yet (docs/testing/md380-bringup.md). The TYT bootloader takes the same DFU protocol and sector order as
+# the DM-1701's, with its own key (tools/stm32_dfu.py --model md380). The codec windows inside the stock firmware are
+# not known yet (docs/spec/hardware-md380.md 14): the application is kept in sectors 3-6 (boards/md380/md380.ld) and
+# sectors 7-11 stand for the codec, so "keep" never erases what the stock firmware left there.
+MD380 = Board(
+    id="md380",
+    name="TYT MD-380",
+    family="anyroad-dfu",
+    app_base=0x0800C000,
+    flash_end=0x08100000,
+    sectors=_f405_sectors(),
+    codec=CodecProfile(id="md380-unlocated", windows=[(0x08060000, 0x08100000 - 0x08060000)], installed=[],
+                       sources=[]),
+    debuglink_names=["MD-380", "MD-380 VHF", "md380"],
+    releasable=False,
+    keep_codec_supported=True,
+    key_sha256=stockfw.MD380_KEY_SHA256,
+    dfu_ids=(0x0483, 0xDF11),
+    dfu_string1="AnyRoad Technology",
+    protected=[(0x08000000, 0x0800C000)],
+)
+
+BOARDS = {b.id: b for b in (DM1701, DM32, MD380)}
 
 
 def get(board_id):

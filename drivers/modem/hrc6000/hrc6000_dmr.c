@@ -127,7 +127,7 @@ bool hrc6000_dmr_enter(hrc6000_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_g
 	bool ok = w(dev, 0x60, 0x00);			// analog voice TX off (FM leftovers)
 	ok &= w(dev, 0x01, 0xF0);			// two-point modulation TX, IF RX
 	ok &= hrc6000_set_mod_gain(dev, mod2, mod1);	// DMR pair
-	ok &= w(dev, R_MODE, 0x6E);			// DMR, Tier II, layer 2 (operation value, not the init 0x6B)
+	ok &= w(dev, R_MODE, hrc6000_dmr_mode_value(dev, false));	// DMR, Tier II, layer 2 (HR_C6000 0x6E, HR_C5000 0x6B)
 	ok &= w(dev, 0xE0, 0xC9);			// codec under MCU control, mic on
 	ok &= hrc6000_set_mic_gain(dev, mic_gain);
 	ok &= w(dev, 0x26, 0xFD);
@@ -400,7 +400,7 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 	}
 
 	// CRC_MCU_Control only for bursts that carry their own CRC; voice and idle never (gotchas 5.1)
-	bool mcu_crc = !voice && kind != DMR_BURST_IDLE && b->host_crc;
+	bool mcu_crc = !voice && kind != DMR_BURST_IDLE && b->host_crc && hrc6000_has_mcu_crc(e->dev);
 	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u));
 	if (r40 != e->reg40) {
 		w(e->dev, R_L2_CTL, r40);
@@ -423,6 +423,11 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 		if (!b->host_crc && (kind == DMR_BURST_VOICE_LC_HEADER || kind == DMR_BURST_TERMINATOR_LC) && len > 9) {
 			len = 9;	// the chip computes the RS(12,9) parity
 		}
+		uint8_t chip_crc = hrc6000_chip_crc_len(e->dev, kind);
+		if (chip_crc != 0) {
+			size = chip_crc;	// the HR_C5000 appends the CRC to these 80 bits itself (gotchas 5.2)
+			len = len < size ? len : size;
+		}
 		write_page2(e, 0x00, b->payload, len, size);
 		if (kind == DMR_BURST_TERMINATOR_LC) {
 			uint8_t frame[DMR_VOICE_BYTES];
@@ -431,7 +436,7 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 		}
 	}
 	w(e->dev, R_SLOT_CTL, CTL_TX);
-	w(e->dev, R_TX_TYPE, hrc6000_dmr_reg50(kind, idx));
+	w(e->dev, R_TX_TYPE, (uint8_t)(hrc6000_dmr_reg50(kind, idx) | (voice ? hrc6000_voice_lcss(e->dev, idx) : 0u)));
 	e->ctl_next = CTL_TX;
 
 	e->last_kind = kind;
@@ -919,7 +924,8 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 {
 	uint8_t r51 = r(e->dev, R_RX_TYPE);
-	uint8_t r5f = r(e->dev, R_SYNC_TYPE);
+	// The HR_C5000 has no sync type register: the family the channel expects (direct MS, repeater BS)
+	uint8_t r5f = hrc6000_has_sync_reg(e->dev) ? r(e->dev, R_SYNC_TYPE) : (e->cfg.repeater ? 1u : 0u);
 	hrc6000_rx_status_t s;
 	hrc6000_dmr_decode(r51, r52, r5f, &s);
 
@@ -1378,6 +1384,9 @@ void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg)
 	lock(e);
 	e->cfg = *cfg;
 	hrc6000_set_dmr_id(e->dev, cfg->own_id);
+	if (hrc6000_is_c5000(e->dev)) {
+		w(e->dev, R_MODE, hrc6000_dmr_mode_value(e->dev, cfg->repeater));	// the HR_C5000's 0x10 differs by channel
+	}
 	e->cc_filter = cfg->cc;
 	if (cfg->cc >= 0) {
 		e->cc_cur = (uint8_t)cfg->cc;
@@ -1432,9 +1441,11 @@ bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->restart_pending = false;
 		e->tx_state = TXS_START;
 		// modem-hrc6000.md 6.2: access policy and encoder start, then own timing for direct mode
-		w(e->dev, R_ACCESS0, 0x00);
-		w(e->dev, R_ACCESS1, hrc6000_dmr_access_reg(access));
-		w(e->dev, R_CODEC_CTL, 0x86);
+		if (hrc6000_tx_start_access(e->dev)) {	// the HR_C5000 keeps its init values (gotchas 2.6)
+			w(e->dev, R_ACCESS0, 0x00);
+			w(e->dev, R_ACCESS1, hrc6000_dmr_access_reg(access));
+			w(e->dev, R_CODEC_CTL, 0x86);
+		}
 		e->reg40 = timing == DMR_TIMING_OWN ? L2_ACTIVE : L2_PASSIVE;
 		if (timing == DMR_TIMING_OWN) {
 			w(e->dev, R_L2_CTL, L2_ACTIVE);

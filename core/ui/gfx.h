@@ -50,8 +50,15 @@ int gfx_text(const font_t *f, int x, int y, const char *s, color_t fg);
 // The same with each glyph cell filled with bg first
 int gfx_text_bg(const font_t *f, int x, int y, const char *s, color_t fg, color_t bg);
 int gfx_text_width(const font_t *f, const char *s);
+// Text alternates (font.h): s with every group at its alternative number level (or its last one) into out; *more says
+// whether a higher level would give something different. Returns the length
+size_t gfx_text_alt(const char *s, int level, char *out, size_t cap, bool *more);
 // Copy s into out, shortened from the middle with an ellipsis so it is at most max_w pixels wide
 void gfx_text_fit(const font_t *f, const char *s, int max_w, char *out, size_t out_len);
+#ifdef GFX_FIT_TRACE
+// Host builds only: called whenever gfx_text_fit had to shorten a text (the simulator lists them per screen)
+void gfx_fit_trace(const char *src, const char *out);
+#endif
 
 // Icons drawn from primitives
 // Battery outline w x h with a fill proportional to pct (0..100)

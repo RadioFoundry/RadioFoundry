@@ -397,7 +397,7 @@ static bool fresh(const fix_t *f)
 static const fix_t *position(uint8_t *src)
 {
 	static fix_t fixed;
-	bool gps_ok = (board.caps & CAP_GPS) != 0 && fresh(&a.gps);
+	bool gps_ok = board_has_gps() && fresh(&a.gps);
 	bool host_ok = fresh(&a.host);
 	bool fixed_ok = a.cfg.fix_lat != 0 || a.cfg.fix_lon != 0;
 	uint8_t s = a.cfg.pos_src;

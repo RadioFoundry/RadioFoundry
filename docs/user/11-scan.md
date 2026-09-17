@@ -41,7 +41,7 @@ The scan actions:
 
 | # | Action | Does |
 |---|---|---|
-| 1 | Skip this channel for now | Skips the channel until the scan stops ("Skipped until the scan stops") |
+| 1 | Skip channel for now | Skips the channel until the scan stops ("Skipped until the scan stops") |
 | 2 | Stay here | Stops the scan on this channel |
 | 3 | Always skip | Not built yet: edit scan lists in qdmr |
 

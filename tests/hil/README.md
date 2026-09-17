@@ -20,6 +20,8 @@ python3 -m pytest tests/hil -k ui --shots /tmp/odr-shots                    # ke
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"   # radio TX off air
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk         # RadioDesk alert call
 python3 -m pytest tests/hil -v -rs -s -k cps --allow-codeplug-write --allow-reboot      # CPS write + restart
+python3 -m pytest tests/hil -v -rs -s -k aprs --allow-rf --allow-service-stop --aprs-call N0CALL --dmr-freq 467.375  # APRS on air (your call)
+python3 -m pytest tests/hil -v -rs -s -k encoder --manual                              # turn the knob when asked
 ```
 
 Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094;
@@ -35,6 +37,7 @@ Without a radio every test is skipped with the reason (no failure). The radio is
 | `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver |
 | `--allow-codeplug-write` | tests that write the codeplug over CPS (marker `codeplug_write`): the qdmr regions are read and saved to the test's tmp directory first, one channel name is changed, and the backup is written back and verified in a `finally` block |
 | `--allow-reboot` | tests that restart the radio (marker `reboot`) through the debug link's REBOOT (mode 0) |
+| `--manual` | tests that ask a person at the radio to do something (marker `manual`; run with `-s` to see the prompts), e.g. turn the channel knob |
 | `--allow-radiodesk` | tests that publish to the RadioDesk sandbox broker (marker `radiodesk`), whose gateway then calls the radio; also needs `--allow-rf` and `$ODR_RADIODESK_MQTT_*` |
 
 The RF tests need both flags. The gateway service is stopped through `tools/bench/dmr_bench.py`'s lease: a detached
@@ -47,7 +50,7 @@ Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their ba
 `--ambe` / `$ODR_HIL_AMBE` (speech recording for the voice test), `--shots DIR`, `--sdr-gain` (RTL-SDR gain for
 raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (the SDR's own frequency error: carrier
 offsets are corrected by it), `--max-foff` (largest carrier offset the TX tests accept, default 500 Hz), `--fm-mhz`
-(FM TX test frequency, default 461.6875), `--roam-beacon` / `--roam-beacon-len` (test_roaming's beacon interval and duration, default 20 s / 3 s), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
+(FM TX test frequency, default 461.6875), `--aprs-call` / `$ODR_APRS_CALL` (test_aprs: the licensed operator's callsign, RAM only), `--aprs-ssid` (default 15), `--aprs-test-mhz` (APRS AFSK test frequency, default 145.090; why in test_aprs.py), `--aprs-dmr-dst` (the DMR position's destination ID, default 9990301), `--roam-beacon` / `--roam-beacon-len` (test_roaming's beacon interval and duration, default 20 s / 3 s), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
 sees it: its receive and transmit MHz; no default), `--radiodesk-freq` / `--radiodesk-src` / `--radiodesk-text` (the alert
 test's channel, RadioDesk's caller ID to check, the text it speaks).
 
@@ -80,6 +83,7 @@ put them in a file in the repository.
 | `test_dm32.py` | DM-32UV bring-up: display geometry and features, data flash JEDEC ID and factory calibration, battery reading, FD6818 reads alive, DMR timeslot interrupts, stock codec merged (docs/testing/dm32-bringup.md); skipped on other boards | DM-32 on its programming cable: `--radio-port /dev/cu.usbserial-...` |
 | `test_boot.py` | version / features, ping latency, screenshot geometry, firmware clock vs wall clock (no stalls), view sections, diagnostics clock, error replies (unknown command, bad CRC, oversized request), log ring | radio |
 | `test_ui.py` | UP / DOWN change the channel on Home; OK opens the Hub (6 rows), digits open its destinations, BACK goes up, long BACK goes Home from depth 3; Quick settings open and close (BACK and QUICK); digits on Home start Find (`ui.query`); long QUICK locks and unlocks; long # opens Recent; diagnostics through Tools (Hub 5, 7); screenshots `ui_quick.png` and `ui_find.png`; injected keys count as activity; the Quick tiles for now (DMR: slot `dmr.ts` + temp 0x20, color code `dmr.cc` + 0x40, mode + 0x80, hear all `dmr.hear_all_latch`; FM: monitor latch, VOX `vox_on`), each undone by BACK on Home or a second press; the picker's focus row (`dmr.focus_id`, cleared by long BACK); Settings long press time (`input.long_ms`, set back) and auto lock 30 s (`ui.locked` after 30 s, set back to Off); opt-in: the timeslot saved to the channel and back (`storage.job_busy`, `temporary`), deleting the newest message (`$ODR_HIL_DELETE_MESSAGE=1`), factory reset with a restart (`$ODR_HIL_FACTORY_RESET=1`). State is read from the link section (`ui.screen`, `ui.depth`, `ui.count`, `ui.locked`, `ui.query`, `ui.toast`) | radio; `--allow-codeplug-write`, `--allow-reboot` |
+| `test_encoder.py` | The channel knob: injected detents move to the next channel on Home and down a list (forward), back the other way; with `--manual`, asks for 10 clicks each way and a wobble and checks the decoder's counts (`input.enc_detents` = clicks, `input.enc_transitions` = clicks x `input.enc_steps`, `input.enc_illegal` near 0, no count from the wobble) | radio; a zone of 3+ channels; `--manual -s` and a person for the second test |
 | `test_fm.py` | VFO on NOAA weather: squelch opens or RSSI above the floor within 10 s (receive only); RX tone squelch: with CTCSS 100.0 and then DCS D023N required, untoned NOAA stays muted (`tone_ok=0`, never `rx`), and opens again without the tone (the squelch stepped down until NOAA opens it) | radio with the FM VFO |
 | `test_hotspot.py` | MMDVM GET_VERSION / GET_STATUS answered (client with DTR clear, so its close doesn't end the session), the hotspot takes the modem (slot 2 space, `hs.running`, `hs.starts`), the debug link answers in hotspot mode, hotspot left through the debug link (no transmission) | radio with the hotspot |
 | `test_hotspot_sfr.py` | MMDVM SFR mode on the radio's channel: the version suffix, duplex with RX = TX turns it on (121-byte status, both space bytes 16, `sfr.on`), command 0xD5 ACK / NAK 4, simplex turns it off; sends nothing and expects a quiet channel (`sfr.tx_starts` unchanged). `test_sfr_repeats_bench_call`: the bench sends a TS1-synced call, its header goes up as DMR_DATA1 and the repeat with the bench's LC is on air on TS2 (SDR); the whole call repeated is an expected failure (xfail) until the modem driver receives between its own bursts (`docs/spec/sfr.md` 3) | `--allow-rf` (the repeat test also `--allow-service-stop`), firmware with `CONFIG_SFR` |
@@ -99,7 +103,7 @@ put them in a file in the repository.
 | `test_dmr_data.py` | DMR data: bench sends unconfirmed and confirmed data, a TMS and an ETSI text message, a call alert and radio checks to us (the radio's answers listened for); the radio sends a call alert, a radio check (Motorola and ETSI forms) and a text message (TMS and ETSI) to the bench (the bench modem listens); the data settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio) |
 | `test_hotspot_voice.py` | the hotspot on air both ways (`tools/bench/hotspot_cases.py` under the lease): bench call and data up the USB link as MMDVMHost would see them (`rf_voice8`, `rf_data_unconf`), a network call and data sent by the host heard on air by the bench modem (`net_voice`, `net_data`) | `--allow-rf --allow-service-stop`, RadioDesk's Python packages and numpy on this machine |
 | `test_roaming.py` | DMR repeater roaming: the `roam` view section, the roaming settings round trip (RAM), the zone flag toggled and back, roam now on the current zone (passive: listens only; the radio ends on one of the sites, no probe sent), lock and roam now ending it (radio only); the wake probe brings up the bench repeater (`tools/bench/bench_repeater.py`) as a second site and the radio moves there (`rf`, `radio_tx`, `bench_service`); the survey settings round trip; the bench repeater keys an idle beacon (`bench_repeater.py --beacon`) and the radio, listening only, learns the beacon window from it as its own site and surveys the other sites in the window, or (slow) finds it from a silent site with a discovery visit and measures it (`rf`, `bench_service`). The zone flag and the roaming settings are put back | radio (the current zone with 2+ repeater channels on one talkgroup for roam now); `--allow-rf --allow-service-stop --roam-rx MHz --roam-tx MHz [--roam-beacon S --roam-beacon-len S]`, firmware with `CONFIG_DMR_ROAMING` |
-| `test_aprs.py` | APRS (`docs/spec/aprs.md` 13): the `aprs` / `aprs_set` view sections and a setting round trip, the RAM test callsign and host NMEA as the position (radio only); one position sent on the APRS frequency at lowest power, the radio back on its channel (`radio_tx`; decode it with an SDR or a second receiver and Direwolf) | radio; `--allow-rf` and `ODR_APRS_CALL=<your callsign>` (`ODR_APRS_REGION=eu` for 144.800), firmware with `CONFIG_APRS` |
+| `test_aprs.py` | APRS (`docs/spec/aprs.md` 13): the `aprs` / `aprs_set` view sections and a setting round trip, the RAM test callsign and host NMEA as the position (radio only); on air at the lowest power on `--aprs-test-mhz` (default 145.090 MHz, never an APRS frequency, no path, the RAM test call `--aprs-call` with `--aprs-ssid`): a position (from the channel and from the FM VFO), a status and a message decoded off air by `tools/aprs_afsk_check.py` on the SDR bench, with deviation, twist, phase continuity and TX delay measured; positions over DMR as LRRP and UDT decoded from the bench modem's listener. Every APRS setting touched is put back | radio; `--allow-rf --allow-service-stop --aprs-call CALL`, firmware with `CONFIG_APRS` and the `aprs.tx_power` view key (the AFSK tests skip without it) |
 
 ### Pass criteria and tolerances
 
@@ -160,9 +164,15 @@ talkgroup in octets 4-6 and us in 7-9, at least 0.9 s apart. Emergency call out 
 and unkeys, the LCs heard to the talkgroup from us all carry service options bit 0x80, `em.hot_mic_keyed` 1 or more.
 
 `test_aprs`: the view keys present, the SSID round trip; with a test call and host NMEA `aprs.pos_src=host`,
-`aprs.lat` / `aprs.lon` within 1e-3 degree; on air: `aprs.block=ok`, `aprs.freq_hz` the region's, `aprs.rf_sent` +1
-within 15 s (`rf_busy` instead means the APRS channel stayed busy for 10 s), `aprs.rf_active=0` and `ch.rx_hz`
-unchanged afterwards. The receiver should decode `CALL-7>APZODR,WIDE1-1,WIDE2-1:` with no FCS errors.
+`aprs.lat` / `aprs.lon` within 1e-3 degree. On air (AFSK): `aprs.tx_power=0` before keying (else skipped), one frame
+with a valid FCS from `CALL-SSID` to `APZODR` with no digipeaters, control 0x03, PID 0xF0; the position within 1e-4
+degree of 33.7490, -84.3880, the status `>` + its text, the message `:ADDRESSEE:text{N`; `aprs.rf_sent` +1 within
+15 s, `aprs.rf_active=0`, the radio idle on its channel afterwards; deviation peak (99.9th percentile) 2.0-4.5 kHz,
+|twist| under 6 dB; printed: mark and space deviation, TX delay (flags and carrier to first frame bit), the phase
+residual at tone changes (about 10 degrees RMS for a continuous phase generator, about 100 for random restarts).
+The message's two retries follow (`aprs.rf_sent` +3, `aprs.msg_tries=3`). DMR (LRRP and UDT): `aprs.dmr_sent` +1, a
+data header from our ID to `--aprs-dmr-dst` with a good CRC, all its blocks; LRRP: CRC-32, IPv4 / UDP 4001, document
+0x0D; UDT: DPF 0, format 5, block CRC; the position within 2e-5 degree.
 `test_dmr_gps_tx`: one call heard by the bench modem, its `gps` within 2e-5 degree of 33.7490, -84.3880, error code 3.
 
 `test_hotspot_cwid` (DM-1701 or another board with `tx_tone_key`): SEND_CWID "N0CALL" (73 units) ACKed, the
