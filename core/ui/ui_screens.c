@@ -752,6 +752,8 @@ static bool dmr_call_screen(const radio_view_t *v)
 }
 
 // Talk target line on Home: "PTT-> TG 201 Main Ops", or "Reply-> TG 9 (8s)" during the reply window
+static bool ui_st_dmr_off;		// ui_state_t.dmr_off of the frame being drawn
+
 static void draw_talk_dmr(const radio_view_t *v)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -766,7 +768,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 	if (v->ch.rx_only) {
 		sb_str(&b, "RX only");
 		c = ui_col.warn;
-	} else if (!d->active) {
+	} else if (!d->active && ui_st_dmr_off) {
 		sb_str(&b, "DMR modem off");
 		c = ui_col.warn;
 	} else {
@@ -1150,6 +1152,7 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 {
 #if CONFIG_DMR
+	ui_st_dmr_off = s->dmr_off;
 	if (dmr_call_screen(v)) {
 		draw_dmr_call(v, s);
 		ui_draw_banner(s);

@@ -1633,6 +1633,8 @@ static void hear_all_tick(const radio_view_t *v)
 }
 #endif
 
+#define DMR_OFF_SHOW_MS	1500u	// "DMR modem off" after the modem has been off this long
+
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
@@ -1649,6 +1651,20 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	}
 #if CONFIG_DMR
 	recent_update(v);
+	// "DMR modem off" only once it's been off a while: a channel or mode change (APRS on FM and back, a retune)
+	// turns the modem off for a moment, and a warning that flashes up for a few frames only worries
+	static uint32_t dmr_off_since;
+	if (v->ch.mode == RADIO_MODE_DMR && !v->dmr.active) {
+		if (dmr_off_since == 0)
+			dmr_off_since = now != 0 ? now : 1;
+	} else {
+		dmr_off_since = 0;
+	}
+	bool dmr_off = dmr_off_since != 0 && now - dmr_off_since >= DMR_OFF_SHOW_MS;
+	if (dmr_off != ui_st.dmr_off) {
+		ui_st.dmr_off = dmr_off;
+		dirty = true;
+	}
 #endif
 	if (ui_st.toast != NULL && (int32_t)(now - toast_until) >= 0) {
 		ui_st.toast = NULL;
