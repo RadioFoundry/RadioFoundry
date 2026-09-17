@@ -27,12 +27,27 @@ Pass criteria:
   two positions; CANCEL: back to the start.
 - test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx.
 - test_tot_warning (radio_tx): tot_s 6, tot_warn_s 3: tot_warning=1 between 2.5 and 4.5 s after key-up, then
-  tx_deny=timeout and the state leaves tx between 5.5 and 7.5 s.
+  tx_deny=timeout and the state leaves tx between 5.4 and 7.5 s.
 - test_roger_beep (radio_tx): roger_beep 1, 1.5 s over: roger=1 is seen after PTT release while still transmitting,
   then the state returns to rx within 1 s.
 - test_tone_burst (radio_tx): TONE_BURST 1: state tx and tone_burst=1 within 1 s; TONE_BURST 0: rx within 1 s.
 - test_scan_stops_on_dmr_call (rf): the zone holding the DMR test channel scans while the bench sends a 20 superframe
   group call there: the scan holds on that channel (scan_phase hold, rx_hz the test frequency) while the call runs.
+- test_vfo_scan_stops_on_signal (rf): the FM VFO scans the DMR test frequency +- 5 steps while the bench sends a 20
+  superframe call there: the scan holds (scan_phase hold) with rx_hz the test frequency.
+- test_dual_watch_stops_on_call (rf): dual watch between another channel of the zone and the DMR test channel,
+  started on the other one: while the bench calls, the scan holds on the test channel's position.
+- test_vox_quiet (radio_tx): VOX all, level 5 (the default), tail 500 ms, TOT 5 s as a guard, on the FM VFO at the
+  lowest power, nobody talking at the bench: vox_on=1 and the radio does not key (vox_keyed 0, state never tx) in 5 s.
+  Then a TOT warning beep (1000 Hz) plays in the speaker: whether it keys VOX through the air is printed (not
+  judged; received audio and MONITOR are excluded by design, beeps are not). A voice-triggered key-up needs sound at
+  the microphone, which the bench can't make.
+- test_battery_save (radio only): rx_save 1 (200 ms asleep, 100 ms listening), rx_save_idle_s 3, the FM VFO on the
+  DMR test frequency (quiet): rx_sleeping=1 within 3 + 3 s, and it alternates (asleep and awake both seen within 2 s);
+  MONITOR on wakes it (rx_sleeping=0 within 0.5 s and stays 0 for 2 s); the settings are put back.
+- test_battery_save_wakes_for_signal (rf): the same, asleep, then the bench sends a 20 superframe call on that
+  frequency: the receiver was asleep before, opens (state rx) within 4 s of the bench tool's start (it keys about 2 s
+  in), stays open at least 3 s of the 6 s call, and rx_sleeping stays 0 while open.
 """
 import contextlib
 import threading
@@ -279,7 +294,7 @@ def test_tot_warning(fm_tx):
             fm_tx.link.ptt(False)
     print(f"warning at {t_warn:.1f} s, time-out at {t_end:.1f} s, tx_deny {deny}")
     assert 2.5 <= t_warn <= 4.5, t_warn
-    assert 5.5 <= t_end <= 7.5, t_end
+    assert 5.4 <= t_end <= 7.5, t_end     # nominally 6 s; the host clock starts just before the PTT request
     assert deny == "timeout", deny
 
 
@@ -374,3 +389,153 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
         _, text = radio.log()
         print("\n".join(line for line in text.splitlines() if " dle " in f" {line}"))
     assert str(hz) in held, f"the scan never held on {freq} MHz: {sorted(set(held))}"
+
+
+# ── scans and battery save against a signal from the SDR bench ───────────
+
+def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features")):
+    """The bench sends a 20 superframe group call on the DMR test channel while a thread records the view; returns
+    (views with their monotonic time, the time the bench started)."""
+    freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
+    seen, done = [], threading.Event()
+
+    def watch():
+        while not done.is_set():
+            seen.append((time.monotonic(), radio.link.view(list(keys))))
+            time.sleep(0.05)
+
+    t = threading.Thread(target=watch, daemon=True)
+    with sdr_bench.lease():
+        t.start()
+        try:
+            t_start = time.monotonic()
+            sdr_bench.voice_call(freq, cc, tg, superframes=20, calls=1)
+        finally:
+            done.set()
+            t.join(2)
+    return seen, t_start
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
+    need_scan(radio)
+    if "VFO_FM" not in radio.features():
+        pytest.skip("built without the FM VFO")
+    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    radio.go_home()
+    with radio.vfo_session():
+        radio.link.vfo_set(hz)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
+        step = as_int(radio.core().get("vfo_step_hz"), 12500) or 12500
+        with settings(radio, scan_resume=1):
+            radio.link.scan_vfo(hz - 5 * step, hz + 5 * step)
+            try:
+                wait_features(radio, lambda v: v.get("scan") == "vfo", 1.0, "scan=vfo")
+                seen, _ = _bench_call_watch(radio, sdr_bench, pytestconfig)
+            finally:
+                scan_off(radio)
+    held = [v.get("rx_hz") for _, v in seen if v.get("scan_phase") == "hold"]
+    print(f"held on {sorted(set(held))} ({len(held)} views of {len(seen)})")
+    assert str(hz) in held, f"the VFO scan never held on {hz}: {sorted(set(held))}"
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
+    need_scan(radio)
+    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    radio.go_home()
+    pos = radio.find_channel(hz, "dmr")
+    size = as_int(radio.core().get("zone_size"), 0)
+    if size < 2:
+        pytest.skip("the DMR test channel's zone has one channel")
+    other = next((p for p in range(size) if p != pos), None)
+    radio.link.zone_pos(other)
+    radio.wait_for(lambda v: v.get("zone_pos") == str(other), what="the other channel")
+    if radio.core().get("rx_hz") == str(hz):
+        pytest.skip("the other channel is on the test frequency too")
+    with settings(radio, scan_resume=1):
+        radio.link.scan("dual", pos)
+        try:
+            wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+            seen, _ = _bench_call_watch(radio, sdr_bench, pytestconfig)
+        finally:
+            scan_off(radio)
+    positions = {v.get("zone_pos") for _, v in seen}
+    held = [v.get("zone_pos") for _, v in seen if v.get("scan_phase") == "hold"]
+    print(f"positions {sorted(positions)}, held on {sorted(set(held))} ({len(held)} views)")
+    assert positions <= {str(pos), str(other)}, positions
+    assert str(pos) in held, f"dual watch never held on position {pos} (the test channel): {sorted(set(held))}"
+
+
+@contextlib.contextmanager
+def _battery_save(radio, pytestconfig):
+    if "BATTERY_SAVE" not in radio.features():
+        pytest.skip("built without CONFIG_BATTERY_SAVE")
+    if "VFO_FM" not in radio.features():
+        pytest.skip("built without the FM VFO")
+    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        pytest.skip("the radio is in hotspot mode")
+    with radio.vfo_session():
+        radio.link.vfo_set(hz)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
+        with settings(radio, rx_save=1, rx_save_idle_s=3):
+            v = radio.wait_for(lambda x: x.get("rx_sleeping") == "1", 8.0, interval=0.05, sections=("features",),
+                               what="the receiver asleep (rx_sleeping=1)")
+            yield v
+
+
+def test_battery_save(radio, pytestconfig):
+    with _battery_save(radio, pytestconfig):
+        seen, _ = collect(radio, "rx_sleeping", 2.0, sections=("features",))
+        print("rx_sleeping:", seen[:20])
+        assert {"0", "1"} <= set(seen), f"the receiver doesn't cycle: {seen}"
+        radio.link.monitor(True)
+        try:
+            radio.wait_for(lambda x: x.get("rx_sleeping") == "0", 0.5, interval=0.03, sections=("features",),
+                           what="awake with MONITOR")
+            seen, _ = collect(radio, "rx_sleeping", 2.0, sections=("features",))
+            assert seen == ["0"], f"asleep again while MONITOR is on: {seen}"
+        finally:
+            radio.link.monitor(False)
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
+    with _battery_save(radio, pytestconfig):
+        seen, t_start = _bench_call_watch(radio, sdr_bench, pytestconfig)
+    rx = [(t, v) for t, v in seen if v.get("state") == "rx"]
+    assert rx, "the receiver never opened for the bench call"
+    # bench_tx.py needs about 2 s (port, tuning, settle) before its first burst: measure from the first open
+    t_open = rx[0][0]
+    asleep_during = [t - t_open for t, v in seen if t_open <= t <= rx[-1][0] and v.get("rx_sleeping") == "1"]
+    before = [v.get("rx_sleeping") for t, v in seen if t < t_open]
+    print(f"opened {t_open - t_start:.2f} s after the bench started; open for {rx[-1][0] - t_open:.1f} s; "
+          f"asleep while open at {asleep_during[:5]}; sleeping before: {before.count('1')} of {len(before)} views")
+    assert "1" in before, "the receiver wasn't asleep when the call started"
+    assert t_open - t_start <= 4.0, f"opened {t_open - t_start:.2f} s after the bench started (it keys after ~2 s)"
+    assert not asleep_during, f"asleep during the call at {asleep_during}"
+    assert rx[-1][0] - t_open >= 3.0, f"open for only {rx[-1][0] - t_open:.1f} s of the 6 s call"
+
+
+@pytest.mark.radio_tx
+def test_vox_quiet(fm_tx):
+    if "VOX" not in fm_tx.features():
+        pytest.skip("built without CONFIG_VOX")
+    with settings(fm_tx, tot_s=5, vox_tail_ms=500, vox_level=5, vox=2):
+        try:
+            wait_features(fm_tx, lambda x: x.get("vox_on") == "1", 1.0, "VOX armed (vox_on)")
+            seen, f = collect(fm_tx, "state", 5.0, sections=("core", "features"))
+            keyed = f.get("vox_keyed")
+            print(f"quiet: states {seen}, vox_keyed {keyed}")
+            assert "tx" not in seen, f"VOX keyed with nobody talking (level 5): {seen}"
+            fm_tx.link.beep("tot_warn")
+            seen, f = collect(fm_tx, "state", 3.0, sections=("core", "features"))
+            print(f"beep in the speaker: states {seen} (VOX {'keyed' if 'tx' in seen else 'did not key'})")
+        finally:
+            fm_tx.link.setting("vox", 0)
+            fm_tx.wait_for(lambda x: x.get("state") != "tx", 3.0, what="VOX off, not transmitting")

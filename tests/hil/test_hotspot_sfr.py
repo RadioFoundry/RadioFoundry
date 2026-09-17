@@ -6,7 +6,17 @@ space, the debug link shows sfr.on=1), the simplex flag turns it off again (docs
 docs/spec/sfr.md). The radio keys only for something heard or sent: this test sends nothing, but a call heard on
 the channel would be repeated, so it is marked radio_tx (needs --allow-rf) and runs on the radio's current channel
 frequency (the bench's). It expects a quiet channel (sfr.tx_starts stays put). The MMDVM client keeps DTR clear (see
-test_hotspot.py)."""
+test_hotspot.py).
+
+test_sfr_repeats_bench_call (rf, radio_tx, bench_service): the radio in SFR mode on the DMR test channel
+(tools/bench/mmdvm_hotspot.py's MmdvmLink as the host, RF level 12: the lowest power); the bench modem sends a 3
+superframe group call with TS1 direct mode sync (the default inbound slot) while the RTL-SDR records. Pass: the call's
+header goes up the USB link as DMR_DATA1; on air a TS2 direct mode sync burst (the outbound slot) carries the bench
+call's LC (source ID and talkgroup); the session's sfr.repeated and sfr.tx_starts (counted from 0 per session) are at
+least 1. The
+whole call (at least 15 voice frames and the terminator up, at least 15 voice bursts repeated on TS2) is expected to
+fail (xfail) until the modem driver receives between its own bursts (docs/spec/sfr.md 3 item 1): today the radio
+hears nothing on the inbound slot once it keys."""
 import struct
 import time
 
@@ -73,3 +83,66 @@ def test_hotspot_sfr_mode(radio):
     assert v.get("sfr.tx_starts") == tx0, "the SFR keyed on a quiet channel"
     radio.link.hotspot_exit()
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
+
+
+@pytest.mark.rf
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
+    feats = radio.features()
+    if "SFR" not in feats or "HOTSPOT" not in feats:
+        pytest.skip("built without the SFR (make CONFIG_SFR=y)")
+    import mmdvm_hotspot as M
+    freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
+    src = 9990301
+    hz = round(freq * 1e6)
+    radio.go_home()
+    radio.find_channel(hz, "dmr")
+    v0 = radio.view(["hotspot"])
+    rdir = sdr_bench.run_dir("hil_sfr_repeat")
+    with sdr_bench.lease():
+        cap = sdr_bench.capture_start(rdir, freq, seconds=12)
+        with radio.released() as port:
+            t = M.Transport(port)
+            hs = M.MmdvmLink(t, hz, cc, 12, simplex=False)
+            try:
+                mark = hs.mark()
+                sdr_bench.transmit(f"voice --src {src} --dst {tg} --superframes 3 --family ts1", freq, cc)
+                time.sleep(2.0)
+                frames, naks = hs.since(mark)
+            finally:
+                hs.stop = True
+                time.sleep(0.3)
+                t.close()
+        sdr_bench.capture_wait()
+    v1 = radio.view(["hotspot"])
+    sdr = sdr_bench.analyze_dmr(cap, freq, cc)
+    up = [d for _, cmd, d in frames if cmd == M.DMR_DATA1]
+    ctl = [d[3] for d in up if len(d) > 3]
+    voice = [c for c in ctl if not c & 0x40]
+    bursts = sdr.get("bursts", [])
+    fams = {}
+    for b in bursts:
+        fams[b.get("family")] = fams.get(b.get("family"), 0) + 1
+    ts2 = [b for b in bursts if b.get("family") == "ts2"]
+    ts2_lc = [b["lc"] for b in ts2 if (b.get("lc") or {}).get("src") is not None and "flco" in b["lc"]]
+    cmds = {}
+    for _, cmd, d in frames:
+        cmds[M.NAMES.get(cmd, hex(cmd))] = cmds.get(M.NAMES.get(cmd, hex(cmd)), 0) + 1
+    print(f"frames up: {cmds}; sfr view after: " + " ".join(f"{k}={v1[k]}" for k in sorted(v1) if k.startswith("sfr.")))
+    print(f"uplink: {len(up)} DMR_DATA1 (controls {sorted(set(ctl))}), NAKs {naks}; SDR families {fams}; "
+          f"TS2 LCs {ts2_lc[:3]}; sfr.repeated {v0.get('sfr.repeated')} -> {v1.get('sfr.repeated')}, "
+          f"sfr.tx_starts {v0.get('sfr.tx_starts')} -> {v1.get('sfr.tx_starts')}")
+    print(f"capture on the bench: ~/{sdr_bench.dir}/{rdir}/")
+    # What works with today's driver: the call's start heard, sent up and repeated on the outbound slot
+    assert 0x41 in ctl, f"the call's header didn't go up as DMR_DATA1: {ctl}"
+    assert any(x["src"] == src and x["dst"] == tg for x in ts2_lc), f"no repeat of the bench call's LC on TS2: {ts2_lc}"
+    # the sfr.* counters start from 0 with each SFR session and stay readable after it: this session's
+    assert int(v1.get("sfr.repeated", 0)) >= 1 and int(v1.get("sfr.tx_starts", 0)) >= 1, v1
+    # The whole call: needs per-burst RX / TX switching in the modem driver (docs/spec/sfr.md 3 item 1); until then
+    # the radio hears nothing on the inbound slot once it keys, so the rest of the call is neither sent up nor repeated
+    ts2_voice = [b for b in ts2 if b.get("voice")]
+    whole = 0x42 in ctl and len(voice) >= 15 and len(ts2_voice) >= 15
+    if not whole:
+        pytest.xfail(f"only the call's start is repeated: {len(voice)} voice frames up, {len(ts2_voice)} voice bursts "
+                     f"repeated on TS2, terminator up {0x42 in ctl} (sfr.md 3 item 1: no RX between our bursts yet)")

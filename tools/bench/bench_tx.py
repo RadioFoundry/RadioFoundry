@@ -43,7 +43,8 @@ voice:
 
 listen: logs what the bench modem hears (MS-synced DMO bursts only: the MMDVM_HS simplex receiver does not search for BS or
 TDMA direct-mode sync). --json prints one line per burst with data type / voice index, the 12 info octets of CSBKs,
-data headers and rate 1/2 blocks ("info", hex), header and terminator LC,
+data headers and rate 1/2 blocks ("info", hex, after the BPTC's corrections; "info_raw" as received; "crc_ok" for CSBKs
+and data headers), header and terminator LC,
 EMB color code and PI, the embedded LC assembled per superframe (call LC, talker alias or GPS Info) and, at the end, a
 summary per call (with "gps": the last GPS Info position heard). --ambe-out PREFIX writes each call's AMBE frames to PREFIX_<n>.ambe (9-byte FEC frames) and
 PREFIX_<n>.amb (DSD .amb: 49 parameter bits per frame, for any AMBE+2 decoder you have; none is in this project).
@@ -331,8 +332,17 @@ class Listener:
             rec["dt"] = dt
             cc, _dt, _ = L2.decode_slot_type(burst)
             rec["cc"] = cc
-            if dt in (pdu.DT_CSBK, 6, 7):     # CSBK, data header, rate 1/2 block: the raw info octets for tests
-                rec["info"] = bptc_info(burst).hex()
+            if dt in (pdu.DT_CSBK, 6, 7):     # CSBK, data header, rate 1/2 block: the info octets for tests
+                # "info": after the BPTC's Hamming corrections (what a receiver acts on); "info_raw": as received;
+                # "crc_ok": the CSBK's or data header's CRC-CCITT over the corrected octets (an overloaded or weak
+                # burst can arrive with bit errors the FEC can't fix: tests count only CRC-good ones)
+                corrected, fec_ok = fec.bptc196_decode(burst)
+                rec["info"] = bytes(corrected[:12]).hex()
+                rec["info_raw"] = bptc_info(burst).hex()
+                if dt == pdu.DT_CSBK:
+                    rec["crc_ok"] = bool(fec_ok and fec.check_crc16(corrected, fec.MASK_CSBK))
+                elif dt == 6:
+                    rec["crc_ok"] = bool(fec_ok and fec.check_crc16(corrected, fec.MASK_DATA_HEADER))
             if dt in (pdu.DT_VOICE_LC_HEADER, pdu.DT_TERMINATOR_WITH_LC):
                 lc = pdu.decode_voice_lc(burst, dt)
                 if lc is not None:

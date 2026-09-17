@@ -8,7 +8,8 @@ Opt-in: radio_tx + bench_service (--allow-rf --allow-service-stop). The bench on
 tools/sdr_fm_check.py finds the keyed segment. The MMDVM client keeps DTR clear (see test_hotspot.py).
 
 Pass criteria: SEND_CWID ACKed; the GET_STATUS TX flag set while keying; hs.cw_sent +1, hs.cw_wpm 20, hs.cw_last_ms
-within 10 % of 150 + 60 x units + 150 ms; one keyed segment of about that length off air; the hotspot answers
+within 10 % of 150 + 60 x units + 150 ms; one keyed segment of about that length off air, with the Morse in it (at
+least 8 runs of one audio tone, sdr_fm_check.py --tones: the 12 dashes of N0CALL); the hotspot answers
 GET_STATUS again with the TX flag clear and DMR slot space."""
 import struct
 import time
@@ -80,7 +81,11 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
     print({k: x1[k] for k in x1 if k.startswith("hs.cw")})
     assert int(x1["hs.cw_sent"]) == int(x0["hs.cw_sent"]) + 1 and x1["hs.cw_wpm"] == "20", x1
     assert abs(int(x1["hs.cw_last_ms"]) - expect_ms) <= expect_ms // 10, (x1["hs.cw_last_ms"], expect_ms)
-    rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz)
+    rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz, tones=True)
     print(text)
     r = parse_fm(text)
     assert r["segments"] == 1, f"keyed segments: {r['segments']} (~/{sdr_bench.dir}/{rdir}/)"
+    # The Morse itself: the dashes (180 ms at 20 wpm; "N0CALL" has 12) as tone runs at one audio frequency
+    tones = r["tones"]
+    best = max((sum(1 for u in tones if abs(u[0] - t[0]) <= 25) for t in tones), default=0)
+    assert best >= 8, f"the CW tone isn't on air: {best} tone runs at one frequency (tones {tones})"

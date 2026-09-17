@@ -10,6 +10,13 @@ The radio's own counters (the dmr_data view section) are the pass criteria; an a
 reported as a warning only (its TX to RX turnaround can swallow an answer sent within a few frames). Pass criteria
 are in README.md.
 
+The bench modem sits a meter from the radio and is overloaded by it even at the radio's lowest power: it misses some
+bursts and hears others with bit errors. So what it heard is judged like this (heard_tries, heard_header): only
+bursts whose CRC checks after the FEC count (bench_tx.py listen's "crc_ok"); every one of those must carry exactly the
+expected content (opcode, FID, addresses: a wrong one fails); when the radio's counters say it sent N tries, at least
+one and at most N must be heard, fewer than N is a warning. A single packet (a text message) the bench didn't hear is
+sent again, up to 3 times, each send checked on the radio's counters.
+
 LRRP and ARS need a dispatcher's packets and answers; they are covered on the host (dmrDataServiceTest,
 dmrDataChainTest), not here."""
 import time
@@ -59,7 +66,7 @@ def _heard_csbks(lines, opcode):
     """(octet 3, octets 4-6, octets 7-9) of every CSBK with this opcode the bench modem heard."""
     out = []
     for r in lines:
-        if r.get("dt") == DT_CSBK and r.get("info"):
+        if r.get("dt") == DT_CSBK and r.get("info") and r.get("crc_ok", True):
             op, _fid, o3, a, b = _ids(r["info"])
             if op == opcode:
                 out.append((o3, a, b))
@@ -70,7 +77,7 @@ def _heard_headers(lines):
     """(destination, source) of every data header heard (ETSI header octets 2-4, 5-7)."""
     out = []
     for r in lines:
-        if r.get("dt") == DT_DATA_HEADER and r.get("info"):
+        if r.get("dt") == DT_DATA_HEADER and r.get("info") and r.get("crc_ok", True):
             b = bytes.fromhex(r["info"])
             out.append((int.from_bytes(b[2:5], "big"), int.from_bytes(b[5:8], "big")))
     return out
@@ -79,6 +86,59 @@ def _heard_headers(lines):
 def _soft(cond, what):
     if not cond:
         warnings.warn(f"not heard by the bench modem: {what}")
+
+
+def _crc_good(r):
+    """A burst whose CRC checks after the FEC (older bench tools without "crc_ok": taken as heard)."""
+    return r.get("crc_ok", True)
+
+
+def heard_tries(heard, opcode, sent, match, what):
+    """The CSBKs with this opcode the bench modem heard with a good CRC. Each must satisfy match((opcode, fid, octet 3,
+    octets 4-6, octets 7-9)); the radio counted `sent` tries, and 1 to `sent` of them must be heard (fewer than `sent`
+    only warns: the bench modem, overloaded by the radio next to it, misses bursts). Returns the records heard."""
+    csbks = [r for r in heard if r.get("dt") == DT_CSBK and r.get("info") and _ids(r["info"])[0] == opcode]
+    good = [r for r in csbks if _crc_good(r)]
+    bad_crc = len(csbks) - len(good)
+    wrong = [r for r in good if not match(_ids(r["info"]))]
+    print(f"{what}: radio sent {sent}, bench heard {len(good)} with a good CRC ({bad_crc} more with a bad one)")
+    assert not wrong, f"{what}: wrong content heard: {[r['info'] for r in wrong]}"
+    assert 1 <= len(good) <= sent, f"{what}: {len(good)} of {sent} tries heard ({bad_crc} with a bad CRC): {heard}"
+    if len(good) < sent:
+        warnings.warn(f"{what}: the bench modem heard {len(good)} of the {sent} tries the radio sent "
+                      f"({bad_crc} more with CRC errors)")
+    return good
+
+
+def heard_headers(heard, own):
+    """Data headers from us (octets 5-7) the bench heard with a good CRC: the raw 12 octets of each."""
+    out = []
+    for r in heard:
+        if r.get("dt") == DT_DATA_HEADER and r.get("info") and _crc_good(r):
+            b = bytes.fromhex(r["info"])
+            if int.from_bytes(b[5:8], "big") == own:
+                out.append(b)
+    return out
+
+
+def send_until_heard(radio, sdr_bench, freq, cc, send, done, check, match, what, seconds=10, tries=3):
+    """A single-packet send (no retries of its own): send(), wait for done(view), check(view) asserts on the radio's
+    counters; repeated up to `tries` times until the bench hears a data header from us with a good CRC. Every such
+    header must satisfy match(octets) (a wrong one fails at once). Returns the matching headers heard."""
+    own = int(radio.view(["dmr"])["dmr.own_id"])
+    for attempt in range(1, tries + 1):
+        before = radio.data_view()
+        heard, _ = _radio_sends(radio, sdr_bench, freq, cc, send, seconds, done)
+        check(before, radio.data_view())
+        hdrs = heard_headers(heard, own)
+        wrong = [h.hex() for h in hdrs if not match(h)]
+        assert not wrong, f"{what}: a data header from us with the wrong content: {wrong}"
+        if hdrs:
+            if attempt > 1:
+                warnings.warn(f"{what}: heard by the bench modem on send {attempt} of {tries}")
+            return hdrs
+        print(f"{what}: send {attempt}: the bench modem heard no data header from us with a good CRC")
+    raise AssertionError(f"{what}: the bench modem heard none of {tries} sends (the radio counted each as sent)")
 
 
 @pytest.fixture
@@ -241,8 +301,8 @@ def test_call_alert_tx(radio, sdr_bench, pytestconfig):
     print("radio deltas:", d)
     assert after["data.signal_state"] == "failed" and after["data.signal_kind"] == "call_alert", after
     assert d["data.call_alerts_sent"] == 3 and d["data.tx_ok"] == 3 and d["data.tx_failed"] == 0, d
-    alerts = [x for x in _heard_csbks(heard, CSBK_CALL_ALERT) if x[1] == BENCH_SRC and x[2] == own]
-    assert len(alerts) == 3, heard
+    heard_tries(heard, CSBK_CALL_ALERT, d["data.call_alerts_sent"],
+                lambda x: x[1] == 0 and x[3] == BENCH_SRC and x[4] == own, "call alert")
 
 
 @pytest.mark.radio_tx
@@ -260,8 +320,8 @@ def test_radio_check_tx(radio, sdr_bench, pytestconfig):
     print("radio deltas:", d)
     assert after["data.signal_state"] == "failed" and after["data.signal_kind"] == "radio_check", after
     assert d["data.radio_checks_sent"] == 3 and d["data.tx_failed"] == 0, d
-    checks = [x for x in _heard_csbks(heard, CSBK_RADIO_CHECK) if x[0] == 0x80 and x[1] == BENCH_SRC and x[2] == own]
-    assert len(checks) == 3, heard
+    heard_tries(heard, CSBK_RADIO_CHECK, d["data.radio_checks_sent"],
+                lambda x: x[1] == FID_MOTOROLA and x[2] == 0x80 and x[3] == BENCH_SRC and x[4] == own, "radio check")
 
 
 @pytest.mark.radio_tx
@@ -271,14 +331,15 @@ def test_sms_tx(radio, sdr_bench, pytestconfig):
     the blocks), then sent."""
     freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
     _need(feats, "DMR_SMS")
-    before = radio.data_view()
-    heard, _ = _radio_sends(radio, sdr_bench, freq, cc, lambda: radio.link.sms(BENCH_SRC, "ODR HIL TX", ack=False),
-                            10, lambda v: v.get("data.sms_state") in ("ok", "failed"))
-    after = radio.data_view()
-    d = _deltas(before, after, ["data.sms_sent", "data.tx_ok", "data.tx_failed"])
-    print("radio deltas:", d)
-    assert after["data.sms_state"] == "ok" and d["data.sms_sent"] == 1 and d["data.tx_ok"] == 1, (after, d)
-    assert (BENCH_SRC, own) in _heard_headers(heard), heard
+
+    def check(before, after):
+        d = _deltas(before, after, ["data.sms_sent", "data.tx_ok", "data.tx_failed"])
+        print("radio deltas:", d)
+        assert after["data.sms_state"] == "ok" and d["data.sms_sent"] == 1 and d["data.tx_ok"] == 1, (after, d)
+
+    send_until_heard(radio, sdr_bench, freq, cc, lambda: radio.link.sms(BENCH_SRC, "ODR HIL TX", ack=False),
+                     lambda v: v.get("data.sms_state") in ("ok", "failed"), check,
+                     lambda b: int.from_bytes(b[2:5], "big") == BENCH_SRC, "text message")
 
 
 # --- ETSI short data and the ETSI radio check form (docs/spec/dmr-data.md 5.2, 6) ---
@@ -324,15 +385,19 @@ def test_etsi_sms_tx(radio, sdr_bench, pytestconfig):
     bench from us, then sent."""
     freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
     _need(feats, "DMR_SMS")
-    xb = _ext(radio)
-    heard, _ = _radio_sends(radio, sdr_bench, freq, cc,
-                            lambda: radio.link.sms(BENCH_SRC, "ODR HIL ETSI", ack=False, fmt="etsi"), 10,
-                            lambda v: v.get("data.sms_state") in ("ok", "failed"))
-    after, xa = radio.data_view(), _ext(radio)
-    assert after["data.sms_state"] == "ok" and xa["data.etsi_sms_sent"] - xb["data.etsi_sms_sent"] == 1, (after, xa)
-    hdrs = [bytes.fromhex(r["info"]) for r in heard if r.get("dt") == DT_DATA_HEADER and r.get("info")]
-    assert any((b[0] & 0x0F) == 13 and (b[1] >> 4) == 10 and int.from_bytes(b[2:5], "big") == BENCH_SRC and
-               int.from_bytes(b[5:8], "big") == own for b in hdrs), heard
+    xb = [_ext(radio)]
+
+    def check(before, after):
+        xa = _ext(radio)
+        assert after["data.sms_state"] == "ok" and xa["data.etsi_sms_sent"] - xb[0]["data.etsi_sms_sent"] == 1, \
+            (after, xa)
+        xb[0] = xa
+
+    send_until_heard(radio, sdr_bench, freq, cc,
+                     lambda: radio.link.sms(BENCH_SRC, "ODR HIL ETSI", ack=False, fmt="etsi"),
+                     lambda v: v.get("data.sms_state") in ("ok", "failed"), check,
+                     lambda b: (b[0] & 0x0F) == 13 and (b[1] >> 4) == 10 and
+                     int.from_bytes(b[2:5], "big") == BENCH_SRC, "ETSI text message")
 
 
 @pytest.mark.radio_tx
@@ -343,8 +408,13 @@ def test_radio_check_tx_etsi(radio, sdr_bench, pytestconfig, data_settings):
     _need(feats, "DMR_SIGNALING")
     radio.link.data_settings(0, radio_check_etsi=True)
     radio.wait_for(lambda v: v.get("data.radio_check_etsi") == "1", sections=("dmr_ext",), what="ETSI form on")
+    before = radio.data_view()
     heard, _ = _radio_sends(radio, sdr_bench, freq, cc, lambda: radio.link.radio_check(BENCH_SRC), 14,
                             lambda v: v.get("data.signal_state") in ("ok", "failed"))
-    fids = [_ids(r["info"])[1] for r in heard if r.get("dt") == DT_CSBK and r.get("info") and
-            _ids(r["info"])[0] == CSBK_RADIO_CHECK and _ids(r["info"])[3] == BENCH_SRC]
-    assert len(fids) == 3 and all(f == 0 for f in fids), heard
+    after = radio.data_view()
+    d = _deltas(before, after, ["data.radio_checks_sent", "data.tx_failed"])
+    print("radio deltas:", d)
+    assert after["data.signal_state"] == "failed" and d["data.radio_checks_sent"] == 3 and d["data.tx_failed"] == 0, \
+        (after, d)
+    heard_tries(heard, CSBK_RADIO_CHECK, d["data.radio_checks_sent"],
+                lambda x: x[1] == 0 and x[3] == BENCH_SRC and x[4] == own, "ETSI radio check")

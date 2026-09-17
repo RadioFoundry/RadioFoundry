@@ -49,6 +49,9 @@ def pytest_addoption(parser):
     g.addoption("--allow-codeplug-write", action="store_true",
                 help="tests may write the radio's codeplug over CPS (marker codeplug_write: backed up first, "
                      "restored and verified afterwards)")
+    g.addoption("--codeplug-backup-dir", default=None,
+                help="keep the codeplug backups the codeplug_write tests take here (default: the test's tmp "
+                     "directory, which pytest prunes after a few runs); outside the repository")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
     g.addoption("--allow-reboot", action="store_true",
@@ -164,3 +167,9 @@ def shots(pytestconfig, tmp_path):
         os.makedirs(d, exist_ok=True)
         return d
     return str(tmp_path)
+
+
+@pytest.fixture
+def backup_dir(pytestconfig, tmp_path):
+    """Where codeplug_write tests keep their codeplug backups (--codeplug-backup-dir, else the test's tmp dir)."""
+    return pytestconfig.getoption("--codeplug-backup-dir") or str(tmp_path)
