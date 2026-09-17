@@ -149,15 +149,14 @@ bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, cons
 	bool ok = (bs != NULL) && (q_count(bs, k) < HRC6000_BS_Q);
 
 	if (ok) {
-		// A ring of HRC6000_BS_Q + 1 places, so that q_count tells full from empty
-		uint8_t at = (uint8_t)(bs->head[k] % (HRC6000_BS_Q + 1u));
+		// Every place of the ring holds a burst: one place was once left without storage, and the ISR read
+		// past q[k] there (every fourth TS2 burst went out as a zeroed PI header; gotchas 8.x)
+		uint8_t at = bs->head[k];
 
-		if (at < HRC6000_BS_Q) {
-			bs->q[k][at] = *b;
-			bs->q_lc_valid[k][at] = emb_lc != NULL;
-			if (emb_lc != NULL) {
-				memcpy(bs->q_lc[k][at], emb_lc, 9);
-			}
+		bs->q[k][at] = *b;
+		bs->q_lc_valid[k][at] = emb_lc != NULL;
+		if (emb_lc != NULL) {
+			memcpy(bs->q_lc[k][at], emb_lc, 9);
 		}
 		bs->head[k] = (uint8_t)((bs->head[k] + 1u) % (HRC6000_BS_Q + 1u));
 		bs->st.cach_given++;

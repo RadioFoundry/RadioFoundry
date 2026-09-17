@@ -46,9 +46,9 @@ typedef struct hrc6000_bs {
 	uint32_t base_tick;	// the tick at bs_start (slot base_tick + 1 is an outbound TS1 slot)
 	int8_t ts_tick;		// the outbound slot that started at the last tick
 	int8_t page2_slot;	// whose embedded LC page 2 0x00 holds (0 none)
-	dmr_tx_burst_t q[2][HRC6000_BS_Q];
-	uint8_t q_lc[2][HRC6000_BS_Q][9];
-	bool q_lc_valid[2][HRC6000_BS_Q];
+	dmr_tx_burst_t q[2][HRC6000_BS_Q + 1];		// a ring of Q + 1 places: q_count tells full from empty
+	uint8_t q_lc[2][HRC6000_BS_Q + 1][9];
+	bool q_lc_valid[2][HRC6000_BS_Q + 1];
 	volatile uint8_t head[2], tail[2];
 	uint8_t lc[2][9];	// each slot's embedded LC (from its last voice A)
 	bool lc_valid[2];

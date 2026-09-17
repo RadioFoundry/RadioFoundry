@@ -325,6 +325,11 @@ refused); commercial use needs a configurable band plan. Commit debe508.
 transmission (stale headers later). Separate the RX queue (lock-free from the ISR) from the TX buffer and clear per
 direction change. Commit 772b874.
 
+**8.9 A ring buffer needs storage for every place it counts.** The split duplex TX half's per-slot ring had
+`HRC6000_BS_Q + 1` places (so full and empty differ) but `HRC6000_BS_Q` entries. At the spare place the queue stored
+nothing and the ISR read past the array, so every fourth TS2 burst went out as a zeroed burst, a PI header on air
+(TS1's overrun landed in TS2's first entry and looked right). `hrc6000BsTest` test_ring_wrap queues through many wraps.
+
 ## 9. USB and CDC-NCM
 
 **8.9 One MMDVM module, not per-radio copies.** The hotspot was copied per radio tree and the copies drifted: the

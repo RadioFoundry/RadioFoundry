@@ -430,6 +430,21 @@ then whether TC alternates in step with our slot numbering, whether AT follows `
 2 s) and whether the short LC decodes (`slc` lines) tell whose content it is. INFO byte 4 is then set by the driver
 constant `HRC6000_BS_CACH_METHOD` in a later build.
 
+**Result, DM-1701, 2026-10-11** (467.375 MHz, lowest power, 10 s per variant, about 335 BS bursts each):
+
+| Variant | Bursts 30.00 ms apart, one key-up | BS sync, idle, our colour code | CACH | TC alternating | AT follows SET_AT | Short LC |
+|---|---|---|---|---|---|---|
+| 0 | yes | yes | `tact ok` on all | 17 of 334 | no (2 busy) | none decoded |
+| 1 | yes | yes | `tact ok` on all | 0 of 334 | no | none |
+| 2 | yes | yes | `tact ok` on all | 1 of 334 | no | none |
+| 3 | yes | yes | `tact ok` on all | 1 of 334 | no | none |
+
+The continuous outbound works in every variant. The CACH does not: TS2's CACH is all zero and TS1's mostly zero, so the
+2.5 ms gap holds a valid but empty TACT and no short LC, and none of these registers makes the chip number its slots.
+`HRC6000_BS_CACH_METHOD` stays "unknown" (INFO byte 4 = 3); a standard radio can't tell TS1 from TS2 on this outbound.
+Next: raw variant (255) sweeps of the page 4 registers near 0x10/0x11, or BS framing without a CACH (5.4). The same
+runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas 8.9), fixed after them.
+
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout
 
 `tests/hil/test_split_duplex.py` (one radio flashed with `CONFIG_HOTSPOT_SPLIT=y`; the TX and RX tests opt-in with

@@ -397,12 +397,42 @@ static void test_stall_and_halt(void)
 	hrc6000_bs_stop(&eng);
 }
 
+// Every place of each slot's ring holds the burst queued there, through many wraps: the ring once had a place
+// without storage, and every fourth TS2 burst went out as a zeroed PI header (HIL 2026-10-11)
+static void test_ring_wrap(void)
+{
+	fresh();
+	start(0);
+	tick();
+	tick();
+	hrc6000_bs_key(&eng, true);
+	while (!bs.on_air) {
+		tick();
+	}
+	dmr_tx_burst_t c = burst(DMR_BURST_CSBK, 0, 0x5A);
+	int bad = 0;
+	uint32_t under = bs.st.underruns;
+
+	for (int i = 0; i < 4 * (HRC6000_BS_Q + 1) * 3; i++) {
+		CHECK(hrc6000_bs_queue(&eng, bs.ts_tick, &c, NULL, NULL));	// the next tick sets up this slot again
+		nx = 0;
+		tick();
+		if (last_write(HRC6000_PAGE_SYS, 0x50) != hrc6000_dmr_reg50(DMR_BURST_CSBK, 0)) {
+			bad++;
+		}
+	}
+	CHECK(bad == 0);
+	CHECK(bs.st.underruns == under);
+	hrc6000_bs_stop(&eng);
+}
+
 int main(void)
 {
 	hrc6000_attach(&dev, &bus);
 	test_start_stop();
 	test_keyup();
 	test_embedded_lc();
+	test_ring_wrap();
 	test_variants();
 	test_stall_and_halt();
 	printf("# hrc6000BsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
