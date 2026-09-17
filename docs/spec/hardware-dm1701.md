@@ -445,7 +445,7 @@ tx_on/rx_on, then set rx_on.
 | 0x15 | 0x1100 | 0x1F00 | IF tuning bits 12:9 |
 | 0x32 | 0x4495 | 0x7564 | AGC target power |
 | 0x3A | 0x00C3 | 0x00C3 | modu_det_sel (rewritten) |
-| 0x59 | 0x0B90 | 0x0BA0 | deviation |
+| 0x59 | 0x0B90 | 0x0B90 | deviation; bits 5:0 are the AT1846S CTCSS/DCS deviation. Not doubled for 25 kHz: the 25 kHz mode already doubles it (0x0BA0 measured 4.0× the 12.5 kHz tone deviation on air, 0x0B90 gives 2.0×) |
 | 0x3F | 0x29D1 | 0x29D1 | rssi3_th |
 | 0x3C | 0x1B34 | 0x1B34 | pk_det_th |
 | 0x48 | 0x19B1 | 0x1E38 | noise1_th |

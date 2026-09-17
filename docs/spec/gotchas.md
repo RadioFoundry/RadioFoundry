@@ -159,6 +159,10 @@ tolerance (200-400 ms) and is not a channel-clear signal. Commit 5d1bfdd.
 **3.7 Only saved settings count for background services.** ARS registered from an unsaved menu edit, then deregistered
 when the user backed out. Rule: services read committed settings, never in-progress edits. Commit 1d785c1.
 
+**3.8 Don't double the AT1846S tone deviation for 25 kHz.** The 25 kHz mode already doubles FM deviation. The
+bandwidth table also doubled reg 0x59 bits 5:0 (0x0B90 to 0x0BA0), so CTCSS went out 4.0× the 12.5 kHz level (366 to
+1464 Hz, SDR bench). With 0x0B90 for both it's 368 and 733 Hz (2.0×). `test_fm_tx_bandwidth` checks the ratio.
+
 ## 4. AMBE codec calling
 
 **3.8 Report "our call ended" from the modem state, not from PTT.** Location-after-call reports trigger on the end of
