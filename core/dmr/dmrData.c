@@ -13,8 +13,13 @@
 
 // Compressed UDP/IP (TS 102 361-3) port IDs
 #define UDPC_PORT_ID_ETSI_TEXT		1
+#define UDPC_PORT_ID_LIP			2
 #define UDPC_PORT_ID_MOTOROLA_TMS	98
 #define DMR_UDP_PORT_ETSI_TEXT		5016
+#define DMR_UDP_PORT_LIP			5017
+// IP address IDs (Tables 7.15 / 7.16)
+#define UDPC_ID_RADIO_NETWORK		0
+#define UDPC_ID_GROUP_NETWORK		2
 
 DMR_DATA_BUFFER dmrDataPacket_t dmrDataRxPacket;
 
@@ -314,18 +319,26 @@ static uint16_t onesComplementSum(uint32_t sum, const uint8_t *data, int length)
 }
 
 DMR_DATA_BUFFER static uint8_t ipPacket[DMR_DATA_MAX_PACKET];
+#define IP_PDU_MAX		(DMR_DATA_MAX_PACKET - 16)	// user data that still fits the blocks with padding and the CRC-32
+
+static uint8_t udpCompression = DMR_UDPC_AUTO;
+static dmrDataIpTxStats_t ipTxStats;
+
+static uint16_t getU16(const uint8_t *p)
+{
+	return (uint16_t)((p[0] << 8) | p[1]);
+}
 
 // The IPv4 header (Motorola CAI addresses) in front of the length bytes of layer 4 already at ipPacket[20]. A UDP
 // checksum covers the addresses, so it is worked out here; ICMP and SCTP checksums don't, they are kept
-static int buildIPPacket(bool group, uint32_t dst, uint32_t src, uint8_t protocol, int length, uint8_t blockType,
-							int preambles, dmrBurst_t *out, int maxBursts)
+static int ipHeader(bool group, uint32_t dst, uint32_t src, uint8_t protocol, int length, uint16_t ipId)
 {
 	int total = 20 + length;
 
 	memset(ipPacket, 0, 20);
 	ipPacket[0] = 0x45;// IPv4, 20 byte header
 	putU16(&ipPacket[2], total);
-	putU16(&ipPacket[4], ipIdentification++);
+	putU16(&ipPacket[4], ipId);
 	ipPacket[8] = group ? 1 : 64;// TTL
 	ipPacket[9] = protocol;
 	ipPacket[12] = CAI_NETWORK_INDIVIDUAL;
@@ -343,38 +356,225 @@ static int buildIPPacket(bool group, uint32_t dst, uint32_t src, uint8_t protoco
 		putU16(&ipPacket[26], (sum == 0) ? 0xFFFF : sum);
 	}
 
-	return dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, group, dst, src, ipPacket, total, blockType, preambles, out, maxBursts);
+	return total;
+}
+
+// Compressed UDP/IPv4 port IDs (TS 102 361-3 Tables 7.17 / 7.18): the standard's two, and the manufacturer specific 98
+// MOTOTRBO uses for TMS (seen in an over the air capture, dmrDataTest)
+static const struct { uint8_t id; uint16_t port; } udpcPorts[] = {
+	{ UDPC_PORT_ID_ETSI_TEXT, DMR_UDP_PORT_ETSI_TEXT },
+	{ UDPC_PORT_ID_LIP, DMR_UDP_PORT_LIP },
+	{ UDPC_PORT_ID_MOTOROLA_TMS, DMR_UDP_PORT_TMS },
+};
+
+static uint8_t udpcPortId(uint16_t port)
+{
+	for (unsigned i = 0; i < sizeof(udpcPorts) / sizeof(udpcPorts[0]); i++)
+	{
+		if (udpcPorts[i].port == port)
+		{
+			return udpcPorts[i].id;
+		}
+	}
+	return 0;// in an extended header
+}
+
+void dmrDataSetUdpCompression(uint8_t mode)
+{
+	udpCompression = (mode <= DMR_UDPC_ALL) ? mode : DMR_UDPC_AUTO;
+}
+
+uint8_t dmrDataGetUdpCompression(void)
+{
+	return CONFIG_DMR_UDP_COMPRESS ? udpCompression : DMR_UDPC_OFF;
+}
+
+static bool isAppPort(uint16_t port)
+{
+	return (port >= DMR_APP_PORT_FIRST) && (port <= DMR_APP_PORT_LAST);
+}
+
+bool dmrDataUdpCompress(uint16_t srcPort, uint16_t dstPort)
+{
+	switch (dmrDataGetUdpCompression())
+	{
+		case DMR_UDPC_ALL:
+			return true;
+		case DMR_UDPC_AUTO:
+			return !isAppPort(srcPort) && !isAppPort(dstPort);
+		default:
+			return false;
+	}
+}
+
+int dmrDataCompressUDPHeader(uint16_t ipId, bool group, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX])
+{
+	uint8_t spid = udpcPortId(srcPort);
+	uint8_t dpid = udpcPortId(dstPort);
+	int n = 5;
+
+	putU16(&out[0], ipId);
+	out[2] = (UDPC_ID_RADIO_NETWORK << 4) | (group ? UDPC_ID_GROUP_NETWORK : UDPC_ID_RADIO_NETWORK);// SAID, DAID
+	out[3] = spid;// opcode 00: its MSB here, its LSB in the next octet
+	out[4] = dpid;
+	// Extended header 1 holds the source port when it has no ID, else the destination port; extended header 2 the
+	// destination port when neither has one (Tables 7.20 / 7.21)
+	if (spid == 0)
+	{
+		putU16(&out[n], srcPort);
+		n += 2;
+	}
+	if (dpid == 0)
+	{
+		putU16(&out[n], dstPort);
+		n += 2;
+	}
+	return n;
+}
+
+uint16_t dmrDataNextIpId(void)
+{
+	return ipIdentification++;
+}
+
+// UDP into ipPacket: compressed header and payload, or the IPv4 and UDP headers and payload. payload may not be in
+// ipPacket. Returns the length, 0 when it doesn't fit
+static int encodeUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload,
+						int length, bool compress, uint16_t ipId, uint8_t *sap)
+{
+	if (CONFIG_DMR_UDP_COMPRESS && compress)
+	{
+		uint8_t h[DMR_UDPC_HEADER_MAX];
+		int n = dmrDataCompressUDPHeader(ipId, group, srcPort, dstPort, h);
+
+		if ((n + length) > IP_PDU_MAX)
+		{
+			return 0;
+		}
+		memmove(&ipPacket[n], payload, length);
+		memcpy(ipPacket, h, n);
+		*sap = DMR_SAP_UDPIP_COMPRESSION;
+		return n + length;
+	}
+
+	if ((28 + length) > IP_PDU_MAX)
+	{
+		return 0;
+	}
+	memmove(&ipPacket[28], payload, length);
+	putU16(&ipPacket[20], srcPort);
+	putU16(&ipPacket[22], dstPort);
+	putU16(&ipPacket[24], 8 + length);
+	*sap = DMR_SAP_IP;
+	return ipHeader(group, dst, src, DMR_IP_PROTO_UDP, 8 + length, ipId);
+}
+
+int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, const uint8_t *l4, int length, bool compress,
+					uint16_t ipId, const uint8_t **pdu, uint8_t *sap)
+{
+	*pdu = ipPacket;
+	if (protocol == DMR_IP_PROTO_UDP)
+	{
+		if (length < 8)
+		{
+			return 0;
+		}
+		int udpLength = getU16(&l4[4]);
+
+		// The compressed header has no length: the receiver takes it from the packet, so only a datagram whose UDP
+		// length agrees with what we have goes compressed (octets past the UDP length are dropped, as padding)
+		bool fits = CONFIG_DMR_UDP_COMPRESS && compress && (udpLength >= 8) && (udpLength <= length);
+
+		return encodeUDP(group, dst, src, getU16(&l4[0]), getU16(&l4[2]), &l4[8], fits ? (udpLength - 8) : (length - 8),
+							fits, ipId, sap);
+	}
+
+	if ((length < 1) || ((20 + length) > IP_PDU_MAX))
+	{
+		return 0;
+	}
+	memmove(&ipPacket[20], l4, length);
+	*sap = DMR_SAP_IP;
+	return ipHeader(group, dst, src, protocol, length, ipId);
+}
+
+static int blocksFor(int length, int perBlock)
+{
+	return (perBlock > 0) ? ((length + 4 + perBlock - 1) / perBlock) : 0;
+}
+
+// The user data with the full header is 28 octets longer than the compressed one's 5 + extended headers
+static int fullUDPLength(const uint8_t *pdu, int length)
+{
+	return length - 5 - (((pdu[3] & 0x7F) == 0) ? 2 : 0) - (((pdu[4] & 0x7F) == 0) ? 2 : 0) + 28;
+}
+
+void dmrDataCountIpTx(uint8_t sap, const uint8_t *pdu, int length, uint8_t blockType, bool confirmed)
+{
+	if (sap != DMR_SAP_UDPIP_COMPRESSION)
+	{
+		ipTxStats.sap4++;
+		return;
+	}
+	int per = confirmed ? dmrDataConfirmedBlockData(blockType) : dmrDataBlockLength(blockType);
+	int full = fullUDPLength(pdu, length);
+
+	ipTxStats.sap3++;
+	ipTxStats.octetsSaved += full - length;
+	ipTxStats.blocksSaved += blocksFor(full, per) - blocksFor(length, per);
+}
+
+void dmrDataGetIpTxStats(dmrDataIpTxStats_t *stats)
+{
+	*stats = ipTxStats;
+}
+
+void dmrDataResetIpTxStats(void)
+{
+	memset(&ipTxStats, 0, sizeof(ipTxStats));
 }
 
 int dmrDataBuildIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, const uint8_t *l4, int length,
 					uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts)
 {
-	if ((length < ((protocol == DMR_IP_PROTO_UDP) ? 8 : 1)) || ((20 + length) > (DMR_DATA_MAX_PACKET - 16)))
+	const uint8_t *pdu;
+	uint8_t sap;
+	bool compress = (protocol == DMR_IP_PROTO_UDP) && (length >= 8) && dmrDataUdpCompress(getU16(&l4[0]), getU16(&l4[2]));
+	int n = dmrDataEncodeIP(group, dst, src, protocol, l4, length, compress, dmrDataNextIpId(), &pdu, &sap);
+
+	if (n <= 0)
 	{
 		return 0;
 	}
-
-	memmove(&ipPacket[20], l4, length);
-	if (protocol == DMR_IP_PROTO_UDP)
+	int bursts = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, src, pdu, n, blockType, preambles, out, maxBursts);
+	if (bursts > 0)
 	{
-		putU16(&ipPacket[24], length);
+		dmrDataCountIpTx(sap, pdu, n, blockType, false);
 	}
-	return buildIPPacket(group, dst, src, protocol, length, blockType, preambles, out, maxBursts);
+	return bursts;
 }
 
 int dmrDataBuildUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, uint16_t dstPort,
 						const uint8_t *payload, int length, uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts)
 {
-	if ((length < 0) || ((28 + length) > (DMR_DATA_MAX_PACKET - 16)))
+	uint8_t sap;
+
+	if (length < 0)
 	{
 		return 0;
 	}
-
-	memmove(&ipPacket[28], payload, length);
-	putU16(&ipPacket[20], srcPort);
-	putU16(&ipPacket[22], dstPort);
-	putU16(&ipPacket[24], 8 + length);
-	return buildIPPacket(group, dst, src, DMR_IP_PROTO_UDP, 8 + length, blockType, preambles, out, maxBursts);
+	int n = encodeUDP(group, dst, src, srcPort, dstPort, payload, length,
+						CONFIG_DMR_UDP_COMPRESS && dmrDataUdpCompress(srcPort, dstPort), dmrDataNextIpId(), &sap);
+	if (n <= 0)
+	{
+		return 0;
+	}
+	int bursts = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, src, ipPacket, n, blockType, preambles, out, maxBursts);
+	if (bursts > 0)
+	{
+		dmrDataCountIpTx(sap, ipPacket, n, blockType, false);
+	}
+	return bursts;
 }
 
 // Motorola TMS simple text message: length, header (0xA0, or 0xE0 to request an ACK), no address,
@@ -406,8 +606,9 @@ int dmrDataBuildTMS(bool group, uint32_t dst, uint32_t src, const char *text, ui
 	return dmrDataBuildUDP(group, dst, src, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, tms, length, blockType, preambles, out, maxBursts);
 }
 
-// Figure 8.5 response header: class 0, type 1 (ACK), status = N(S) of the packet being acknowledged
-int dmrDataBuildResponseAck(uint8_t sap, uint32_t dst, uint32_t src, uint8_t sendSeq, dmrBurst_t *out)
+// Figure 8.5 response header (G/I and A clear, class / type / status in octet 9); a selective ACK appends one rate 1/2
+// block: the 64 flags in octets 0-7 (Figure 8.17), the CRC-32 of those in octets 8-11 as a last block carries it
+int dmrDataBuildResponse(uint8_t sap, uint32_t dst, uint32_t src, uint8_t response, const uint8_t flags[8], dmrBurst_t *out)
 {
 	uint8_t buf[12];
 
@@ -415,12 +616,158 @@ int dmrDataBuildResponseAck(uint8_t sap, uint32_t dst, uint32_t src, uint8_t sen
 	buf[1] = sap << 4;
 	putId(&buf[2], dst);
 	putId(&buf[5], src);
-	buf[8] = 0x00;
-	buf[9] = (0x01 << 3) | (sendSeq & 0x07);
+	buf[8] = (flags != NULL) ? 1 : 0;// blocks to follow
+	buf[9] = response;
 	addCRC16(buf, 0xCC);
 	setBurst(out, DT_DATA_HEADER, buf, 12);
+	if (flags == NULL)
+	{
+		return 1;
+	}
 
-	return 1;
+	memcpy(buf, flags, 8);
+	uint32_t crc = dmrDataCRC32(buf, 8);
+	buf[8] = crc & 0xFF;
+	buf[9] = (crc >> 8) & 0xFF;
+	buf[10] = (crc >> 16) & 0xFF;
+	buf[11] = (crc >> 24) & 0xFF;
+	setBurst(out + 1, DT_RATE_12_DATA, buf, 12);
+	return 2;
+}
+
+int dmrDataBuildResponseAck(uint8_t sap, uint32_t dst, uint32_t src, uint8_t sendSeq, dmrBurst_t *out)
+{
+	return dmrDataBuildResponse(sap, dst, src, DMR_RESPONSE_ACK(sendSeq), NULL, out);
+}
+
+// --- Confirmed data (TS 102 361-1 8.2.2.2, 9.2.1, B.3.10) ---
+
+int dmrDataConfirmedBlockData(uint8_t blockType)
+{
+	int n = dmrDataBlockLength(blockType);
+
+	return (n > 0) ? (n - 2) : 0;// the serial number and the CRC-9 take two octets
+}
+
+int dmrDataConfirmedBlocks(int length, uint8_t blockType)
+{
+	int blocks = blocksFor(length, dmrDataConfirmedBlockData(blockType));
+
+	return (blocks <= DMR_CONFIRMED_MAX_BLOCKS) ? blocks : 0;
+}
+
+static uint16_t crc9Mask(uint8_t blockType)
+{
+	switch (blockType)
+	{
+		case DT_RATE_12_DATA:
+			return DMR_CRC9_MASK_RATE_12;
+		case DT_RATE_34_DATA:
+			return DMR_CRC9_MASK_RATE_34;
+		default:
+			return DMR_CRC9_MASK_RATE_1;
+	}
+}
+
+// x^9 M(x) mod G9(x), G9 = x^9 + x^6 + x^4 + x^3 + 1, M(x) the data bits MSB first then the 7 serial number bits, zero
+// initial remainder; plus I9(x) = all ones (B.25)
+uint16_t dmrDataCRC9(const uint8_t *data, int length, uint8_t serial)
+{
+	uint16_t crc = 0;
+
+	for (int i = 0; i < (length * 8) + 7; i++)
+	{
+		int bit = (i < (length * 8)) ? ((data[i >> 3] >> (7 - (i & 7))) & 1) : ((serial >> (6 - (i - (length * 8)))) & 1);
+		int feedback = ((crc >> 8) & 1) ^ bit;
+
+		crc = (crc << 1) & 0x1FF;
+		if (feedback)
+		{
+			crc ^= 0x059;
+		}
+	}
+
+	return crc ^ 0x1FF;
+}
+
+int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t blockType,
+						uint8_t ns, bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts)
+{
+	int blockLen = dmrDataBlockLength(blockType);
+	int dataLen = blockLen - 2;
+	int total = dmrDataConfirmedBlocks(length, blockType);
+
+	if ((blockLen == 0) || (length <= 0) || (total == 0) || ((total * dataLen) > DMR_DATA_MAX_PACKET))
+	{
+		return 0;
+	}
+
+	uint64_t all = (total >= 64) ? ~0ULL : ((1ULL << total) - 1);
+	uint64_t send = firstTry ? all : (blocks & all);
+	int count = 0;
+
+	for (int k = 0; k < total; k++)
+	{
+		count += (send >> k) & 1;
+	}
+
+	int padOctets = (total * dataLen) - 4 - length;
+	int bursts = preambles + 1 + count;
+	uint8_t buf[DMR_BURST_PAYLOAD_MAX];
+
+	if ((count == 0) || (padOctets > 31) || (bursts > maxBursts))
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < preambles; i++)
+	{
+		buf[0] = 0x80 | DMR_CSBKO_PREAMBLE;
+		buf[1] = 0x00;
+		buf[2] = 0x80;// data follows, individual
+		buf[3] = bursts - 1 - i;
+		putId(&buf[4], dst);
+		putId(&buf[7], src);
+		dmrDataBuildCSBK(buf, out++);
+	}
+
+	// C_HEAD (Table 9.10): individual, response requested, POC, DPF 3; SAP; addresses; F and the blocks in this
+	// transmission (the POC stays the first try's, 9.3.22); S clear, N(S), FSN 1000 (a single fragment)
+	buf[0] = 0x40 | ((padOctets & 0x10) ? 0x10 : 0x00) | DMR_DPF_CONFIRMED;
+	buf[1] = (sap << 4) | (padOctets & 0x0F);
+	putId(&buf[2], dst);
+	putId(&buf[5], src);
+	buf[8] = (firstTry ? 0x80 : 0x00) | count;
+	buf[9] = ((ns & 0x07) << 4) | 0x08;
+	addCRC16(buf, 0xCC);
+	setBurst(out++, DT_DATA_HEADER, buf, 12);
+
+	memmove(txPacket, pdu, length);
+	memset(&txPacket[length], 0, padOctets);
+	uint32_t crc = dmrDataCRC32(txPacket, length + padOctets);
+	uint8_t *crcPos = &txPacket[length + padOctets];
+	crcPos[0] = crc & 0xFF;
+	crcPos[1] = (crc >> 8) & 0xFF;
+	crcPos[2] = (crc >> 16) & 0xFF;
+	crcPos[3] = (crc >> 24) & 0xFF;
+
+	uint16_t mask = crc9Mask(blockType);
+	for (int k = 0; k < total; k++)
+	{
+		if (!((send >> k) & 1))
+		{
+			continue;
+		}
+		const uint8_t *d = &txPacket[k * dataLen];
+		uint16_t crc9 = dmrDataCRC9(d, dataLen, k) ^ mask;
+
+		buf[0] = (k << 1) | ((crc9 >> 8) & 1);// serial number, CRC-9 MSB
+		buf[1] = crc9 & 0xFF;
+		memcpy(&buf[2], d, dataLen);
+		setBurst(out++, blockType, buf, blockLen);
+	}
+
+	return bursts;
 }
 
 // As a MOTOTRBO radio sends it (ok-dmrlib's capture: 00 04 9F 00 95 20): first header 0x9F (more headers, control,
@@ -702,6 +1049,183 @@ void dmrDataRxReset(void)
 	rxCollecting = false;
 }
 
+#if CONFIG_DMR_CONFIRMED
+// A confirmed packet being received, or held for its selective retry (the blocks stay in dmrDataRxPacket.data, at
+// their serial number's place). Another packet's header ends it
+static struct
+{
+	bool held;
+	bool retry;							// this transmission is a selective retry of the held packet
+	bool unmatched;						// F clear but nothing held to match: a retry of a packet we lost
+	uint32_t src, dst;
+	uint8_t sap, ns, total, padOctets, dataType;
+	uint8_t arrived;					// data blocks in this transmission so far
+	uint64_t good;						// blocks received with a good CRC-9
+	uint64_t filled;					// blocks with data in place (a bad CRC-9 on the first try is kept: the CRC-32 decides)
+} cnf;
+static uint32_t crc9Mismatches;
+
+static uint64_t cnfAll(void)
+{
+	return (cnf.total >= 64) ? ~0ULL : ((1ULL << cnf.total) - 1);
+}
+
+static void confirmedHeader(const dmrDataPacket_t *p)
+{
+	bool retry = !p->firstTry && cnf.held && (cnf.src == p->src) && (cnf.dst == p->dst) && (cnf.sap == p->sap) &&
+					(cnf.ns == p->sendSeq);
+
+	if (!retry)
+	{
+		// A first try, or a whole packet sent again (F clear without one held): its blocks come in order
+		cnf.src = p->src;
+		cnf.dst = p->dst;
+		cnf.sap = p->sap;
+		cnf.ns = p->sendSeq;
+		cnf.total = p->blocksToFollow;
+		cnf.padOctets = p->padOctets;
+		cnf.good = 0;
+		cnf.filled = 0;
+	}
+	cnf.held = true;
+	cnf.retry = retry;
+	cnf.unmatched = !p->firstTry && !retry;
+	cnf.arrived = 0;
+}
+
+// The blocks so far: the CRC-32 decides once every place holds a block (our CRC-9 isn't trusted over it); a failure
+// with bad or missing blocks asks for those, with every block good it is a NACK
+static dmrDataRxResult_t confirmedFinish(dmrDataPacket_t *p)
+{
+	int dataLen = dmrDataConfirmedBlockData(cnf.dataType);
+	int bytes = cnf.total * dataLen;
+
+	if ((cnf.filled == cnfAll()) && (bytes >= (4 + cnf.padOctets)))
+	{
+		const uint8_t *c = &p->data[bytes - 4];
+		uint32_t rxCrc = c[0] | (c[1] << 8) | (c[2] << 16) | ((uint32_t)c[3] << 24);
+
+		if (dmrDataCRC32(p->data, bytes - 4) == rxCrc)
+		{
+			if (cnf.good != cnfAll())
+			{
+				crc9Mismatches++;
+			}
+			cnf.held = false;
+			p->length = bytes - 4 - cnf.padOctets;
+			p->padOctets = cnf.padOctets;
+			p->blocksToFollow = cnf.total;
+			p->dataType = cnf.dataType;
+			return DMR_DATA_RX_PACKET;
+		}
+		if (cnf.good == cnfAll())
+		{
+			cnf.held = false;
+			return DMR_DATA_RX_NACK;
+		}
+	}
+	if (cnf.unmatched)
+	{
+		// Its serial numbers needn't be ours to place: a NACK has the sender send the whole packet again
+		cnf.held = false;
+		return DMR_DATA_RX_NACK;
+	}
+	cnf.filled = cnf.good;// the bad ones are replaced by the retry
+	return DMR_DATA_RX_RETRY;
+}
+
+static dmrDataRxResult_t confirmedBlock(dmrDataPacket_t *p, const dmrBurst_t *burst)
+{
+	int dataLen = burst->length - 2;
+
+	if ((dataLen <= 0) || (dataLen != dmrDataConfirmedBlockData(burst->dataType)) || (cnf.total == 0) ||
+			(cnf.total > DMR_CONFIRMED_MAX_BLOCKS) || ((cnf.total * dataLen) > DMR_DATA_MAX_PACKET) ||
+			(cnf.filled && (burst->dataType != cnf.dataType)))
+	{
+		rxCollecting = false;
+		cnf.held = false;
+		return DMR_DATA_RX_ERROR;
+	}
+	cnf.dataType = burst->dataType;
+	p->dataType = burst->dataType;
+
+	uint8_t serial = burst->payload[0] >> 1;
+	uint16_t rxCrc9 = ((burst->payload[0] & 1) << 8) | burst->payload[1];
+	bool ok = (dmrDataCRC9(&burst->payload[2], dataLen, serial) ^ crc9Mask(burst->dataType)) == rxCrc9;
+	// A block whose CRC-9 failed can't be trusted for its serial number either: in a first try (blocks in order) it
+	// goes where it arrived, in a selective retry it is dropped
+	int place = ok ? serial : (cnf.retry ? -1 : cnf.arrived);
+
+	cnf.arrived++;
+	if ((place >= 0) && (place < cnf.total) && !((cnf.good >> place) & 1))
+	{
+		memcpy(&p->data[place * dataLen], &burst->payload[2], dataLen);
+		cnf.filled |= 1ULL << place;
+		if (ok)
+		{
+			cnf.good |= 1ULL << place;
+		}
+	}
+
+	if (++rxBlocksReceived < p->blocksToFollow)
+	{
+		return DMR_DATA_RX_NONE;
+	}
+	rxCollecting = false;
+	return confirmedFinish(p);
+}
+
+void dmrDataRxRetryFlags(uint8_t flags[8])
+{
+	uint64_t f = cnf.good | ~cnfAll();
+
+	for (int i = 0; i < 8; i++)
+	{
+		flags[i] = (f >> (8 * i)) & 0xFF;
+	}
+}
+
+bool dmrDataRxConfirmedActive(void)
+{
+	return rxCollecting && (dmrDataRxPacket.dpf == DMR_DPF_CONFIRMED);
+}
+
+dmrDataRxResult_t dmrDataRxConfirmedEnd(void)
+{
+	if (!dmrDataRxConfirmedActive())
+	{
+		return DMR_DATA_RX_NONE;
+	}
+	rxCollecting = false;
+	return (cnf.dataType != 0) ? confirmedFinish(&dmrDataRxPacket) : DMR_DATA_RX_RETRY;
+}
+
+uint32_t dmrDataRxCrc9Mismatches(void)
+{
+	return crc9Mismatches;
+}
+#else
+void dmrDataRxRetryFlags(uint8_t flags[8])
+{
+	memset(flags, 0xFF, 8);
+}
+
+bool dmrDataRxConfirmedActive(void)
+{
+	return false;
+}
+
+dmrDataRxResult_t dmrDataRxConfirmedEnd(void)
+{
+	return DMR_DATA_RX_NONE;
+}
+
+uint32_t dmrDataRxCrc9Mismatches(void)
+{
+	return 0;
+}
+#endif
+
 static bool parseHeader(const uint8_t *h, dmrDataPacket_t *p)
 {
 	p->dpf = h[0] & 0x0F;
@@ -715,6 +1239,7 @@ static bool parseHeader(const uint8_t *h, dmrDataPacket_t *p)
 	p->ddFormat = 0;
 	p->padBits = 0;
 	p->response = 0;
+	p->firstTry = false;
 
 	switch (p->dpf)
 	{
@@ -723,6 +1248,7 @@ static bool parseHeader(const uint8_t *h, dmrDataPacket_t *p)
 			p->blocksToFollow = h[8] & 0x7F;
 			p->padOctets = ((h[0] & 0x10) ? 0x10 : 0x00) | (h[1] & 0x0F);
 			p->sendSeq = (h[9] >> 4) & 0x07;
+			p->firstTry = (h[8] & 0x80) != 0;
 			break;
 		case DMR_DPF_DEFINED_SHORT:
 		case DMR_DPF_RAW_SHORT:
@@ -767,6 +1293,12 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 			// SAP 9 in the first header means a proprietary second header follows, it counts as one of the blocks to follow
 			if (rxCollecting && (rxBlocksReceived == 0) && (p->sap == DMR_SAP_PROPRIETARY))
 			{
+#if CONFIG_DMR_CONFIRMED
+				if ((p->dpf == DMR_DPF_CONFIRMED) && !cnf.retry && (cnf.total > 0))
+				{
+					cnf.total--;// the second header is one of the blocks to follow
+				}
+#endif
 				if (++rxBlocksReceived >= p->blocksToFollow)
 				{
 					rxCollecting = false;
@@ -785,6 +1317,16 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 				p->dataType = DT_DATA_HEADER;
 				return DMR_DATA_RX_PACKET;
 			}
+#if CONFIG_DMR_CONFIRMED
+			if (p->dpf == DMR_DPF_CONFIRMED)
+			{
+				confirmedHeader(p);
+			}
+			else
+			{
+				cnf.held = false;// its blocks overwrite the held ones
+			}
+#endif
 			rxCollecting = true;
 			rxBlocksReceived = 0;
 			rxBytes = 0;
@@ -798,6 +1340,12 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 				{
 					return DMR_DATA_RX_NONE;
 				}
+#if CONFIG_DMR_CONFIRMED
+				if (p->dpf == DMR_DPF_CONFIRMED)
+				{
+					return confirmedBlock(p, burst);
+				}
+#endif
 
 				// Confirmed blocks start with the 7 bit serial number and the CRC-9
 				int skip = (p->dpf == DMR_DPF_CONFIRMED) ? 2 : 0;
@@ -851,21 +1399,21 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 
 static uint16_t compressedPort(uint8_t portId, const uint8_t **ptr)
 {
-	uint16_t port;
-
-	switch (portId)
+	if (portId == 0)
 	{
-		case 0:
-			port = ((*ptr)[0] << 8) | (*ptr)[1];
-			*ptr += 2;
-			return port;
-		case UDPC_PORT_ID_ETSI_TEXT:
-			return DMR_UDP_PORT_ETSI_TEXT;
-		case UDPC_PORT_ID_MOTOROLA_TMS:
-			return DMR_UDP_PORT_TMS;
-		default:
-			return 0x8000 | portId;// Unknown, but still reported to the caller
+		uint16_t port = getU16(*ptr);
+
+		*ptr += 2;
+		return port;
 	}
+	for (unsigned i = 0; i < sizeof(udpcPorts) / sizeof(udpcPorts[0]); i++)
+	{
+		if (udpcPorts[i].id == portId)
+		{
+			return udpcPorts[i].port;
+		}
+	}
+	return 0x8000 | portId;// Unknown, but still reported to the caller
 }
 
 static bool isWellKnownPort(uint16_t port)
@@ -926,7 +1474,8 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 	}
 	else if (packet->sap == DMR_SAP_UDPIP_COMPRESSION)
 	{
-		if (len < 5)
+		// Opcode 00 (the MSBs of octets 3 and 4) is the only format defined (Table 7.19)
+		if ((len < 5) || ((d[3] | d[4]) & 0x80))
 		{
 			return false;
 		}

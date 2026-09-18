@@ -97,6 +97,7 @@ typedef struct
 	uint8_t  padBits;						// defined short data: the bit padding; UDT: the pad nibbles x 4
 	uint8_t  response;						// response packets: class (7-6), type (5-3), status (2-0)
 	uint8_t  dataType;						// DT of the blocks
+	bool     firstTry;						// confirmed: the header's F (full message) flag
 	uint16_t length;						// user data length
 	uint8_t  data[DMR_DATA_MAX_PACKET];
 } dmrDataPacket_t;
@@ -106,7 +107,11 @@ typedef enum
 	DMR_DATA_RX_NONE,							// burst consumed, nothing complete yet
 	DMR_DATA_RX_PACKET,							// a complete packet is in dmrDataRxPacket
 	DMR_DATA_RX_CSBK,							// a non preamble CSBK is in the burst passed in
-	DMR_DATA_RX_ERROR							// header or packet CRC failed, reassembly reset
+	DMR_DATA_RX_ERROR,							// header or packet CRC failed, reassembly reset
+	// Confirmed data (CONFIG_DMR_CONFIRMED), the header's fields in dmrDataRxPacket:
+	DMR_DATA_RX_RETRY,							// blocks are missing or failed their CRC-9: a selective ACK asks for
+												// them (dmrDataRxRetryFlags); the packet is held for the retry
+	DMR_DATA_RX_NACK							// every block arrived good but the CRC-32 failed: a NACK
 } dmrDataRxResult_t;
 
 extern dmrDataPacket_t dmrDataRxPacket;
@@ -125,16 +130,84 @@ int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out);
 int dmrDataBlockLength(uint8_t blockType);
 int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint32_t src,
 						const uint8_t *data, int length, uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
+// UDP and IP packets go with the compressed UDP/IPv4 header (SAP 3) when the compression setting allows it for their
+// ports (dmrDataUdpCompress), else with the full IPv4 header (SAP 4)
 int dmrDataBuildUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, uint16_t dstPort,
 						const uint8_t *payload, int length, uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
 // An IPv4 packet of any protocol from layer 4 on (the header and its checksum included; a UDP checksum is redone)
 int dmrDataBuildIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, const uint8_t *l4, int length,
 						uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
+
+// --- Compressed UDP/IPv4 headers on transmit (TS 102 361-3 5.6, 7.2; CONFIG_DMR_UDP_COMPRESS) ---
+// Which UDP packets we send compressed: none, those whose ports are both outside the DMR application ports
+// 4000-4099 (MOTOTRBO TMS, ARS, LRRP and the like keep the full header their servers expect; the default), or all
+#define DMR_UDPC_OFF				0
+#define DMR_UDPC_AUTO				1
+#define DMR_UDPC_ALL				2
+#define DMR_APP_PORT_FIRST			4000
+#define DMR_APP_PORT_LAST			4099
+void dmrDataSetUdpCompression(uint8_t mode);
+uint8_t dmrDataGetUdpCompression(void);
+// True when a datagram between these ports goes compressed under the current mode (false when built without it)
+bool dmrDataUdpCompress(uint16_t srcPort, uint16_t dstPort);
+// The compressed header (Table 7.14) into out: IPv4 identification, SAID 0 (radio network: the source is the source
+// LLID), DAID 0 or 2 (group network), opcode 00, the port IDs (1 = 5016, 2 = 5017, 98 = 4007 as MOTOTRBO uses it) and
+// the ports without an ID in extended headers 1 / 2. Returns its length: 5, 7 or 9
+#define DMR_UDPC_HEADER_MAX			9
+int dmrDataCompressUDPHeader(uint16_t ipId, bool group, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX]);
+// The user data of an IP packet (layer 4 from l4) in the module's IP buffer: with the compressed header (SAP 3) when
+// compress is set and it is UDP with a consistent length, else with the full IPv4 header (SAP 4, Motorola CAI
+// addresses). ipId: the IPv4 identification (a retry keeps it; dmrDataNextIpId() for a new packet). Returns the length
+// (0: too long or malformed), *pdu points at it (valid until the next build) and *sap says which
+int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, const uint8_t *l4, int length, bool compress,
+					uint16_t ipId, const uint8_t **pdu, uint8_t *sap);
+uint16_t dmrDataNextIpId(void);
+// What the compression saved, for the debug link (wrap freely)
+typedef struct
+{
+	uint32_t sap3;							// IP packets built with the compressed header
+	uint32_t sap4;							// ... with the full header (UDP and the rest)
+	uint32_t octetsSaved;					// header octets the compressed ones didn't send
+	uint32_t blocksSaved;					// data blocks they didn't send (at the rate they went at)
+} dmrDataIpTxStats_t;
+void dmrDataGetIpTxStats(dmrDataIpTxStats_t *stats);
+void dmrDataResetIpTxStats(void);
+// Count a packet sent: its user data (as dmrDataEncodeIP gave it) and the block type it goes in
+void dmrDataCountIpTx(uint8_t sap, const uint8_t *pdu, int length, uint8_t blockType, bool confirmed);
 int dmrDataBuildTMS(bool group, uint32_t dst, uint32_t src, const char *text, uint8_t seq, bool ackRequested,
 						uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
 int dmrDataBuildResponseAck(uint8_t sap, uint32_t dst, uint32_t src, uint8_t sendSeq, dmrBurst_t *out);
 // The ACK class / type of a response packet (dmrDataPacket_t.response): class 0, type 1
 #define DMR_RESPONSE_IS_ACK(r)		(((r) & 0xF8) == 0x08)
+// Response class / type / status octets (TS 102 361-1 Table 8.3, -3 Table 5.7): status the N(S) answered
+#define DMR_RESPONSE_ACK(ns)			(0x08 | ((ns) & 0x07))	// class 0, type 1
+#define DMR_RESPONSE_NACK_CRC(ns)		(0x48 | ((ns) & 0x07))	// class 1, type 1: the packet CRC failed
+#define DMR_RESPONSE_SACK(ns)			(0x80 | ((ns) & 0x07))	// class 2, type 0: the blocks flagged 0 again
+#define DMR_RESPONSE_CLASS(r)			((r) >> 6)
+#define DMR_RESPONSE_TYPE(r)			(((r) >> 3) & 0x07)
+#define DMR_RESPONSE_NACK_SEQUENCE		5						// class 1 type 5: N(S) out of sequence, status = VI
+// A response packet: the header, and for a selective ACK one rate 1/2 block with the 64 retry flags (flags[k / 8]
+// bit k % 8 is block k: 1 received, 0 send it again) and their CRC-32 (Figure 8.17). flags NULL: header only
+int dmrDataBuildResponse(uint8_t sap, uint32_t dst, uint32_t src, uint8_t response, const uint8_t flags[8], dmrBurst_t *out);
+
+// Confirmed data (TS 102 361-1 8.2.1.2, 8.2.2.2, 9.2.1): data octets per block (rate 1/2 10, rate 3/4 16, rate 1 22:
+// each block starts with the 7-bit serial number and the CRC-9), at most 64 blocks (one selective ACK block)
+#define DMR_CONFIRMED_MAX_BLOCKS	64
+int dmrDataConfirmedBlockData(uint8_t blockType);
+// The CRC-9 of a confirmed block (B.3.10): over the block's data octets then the 7 serial number bits, inverted, not
+// masked (the rate's mask: DMR_CRC9_MASK_xxx, B.21)
+uint16_t dmrDataCRC9(const uint8_t *data, int length, uint8_t serial);
+#define DMR_CRC9_MASK_RATE_12		0x0F0
+#define DMR_CRC9_MASK_RATE_34		0x1FF
+#define DMR_CRC9_MASK_RATE_1		0x10F
+// A confirmed packet (DPF 3, individual, response requested) of the user data pdu: the header (N(S) ns, FSN single
+// fragment, F set on the first try) and the blocks whose bits are set in blocks (bit k: block k; all of them on the
+// first try), each with its serial number and CRC-9; the last data block ends with the CRC-32. The preambles count the
+// header and the blocks. 0 if it doesn't fit
+int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t blockType,
+						uint8_t ns, bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts);
+// The number of blocks a confirmed packet of length octets takes (0: more than DMR_CONFIRMED_MAX_BLOCKS)
+int dmrDataConfirmedBlocks(int length, uint8_t blockType);
 // seq: the 7 bit sequence number of the message being acknowledged
 int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, dmrBurst_t *out, int maxBursts);
 
@@ -190,6 +263,14 @@ bool dmrDataDecodeEtsiText(const dmrDataPacket_t *packet, char *text, int textSi
 // RX
 void dmrDataRxReset(void);
 dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst);
+// After DMR_DATA_RX_RETRY: the selective ACK's 64 flags (1 received, 0 send again; unused ones 1)
+void dmrDataRxRetryFlags(uint8_t flags[8]);
+// A confirmed packet whose blocks stopped coming (some bursts were lost): ends its reassembly and returns
+// DMR_DATA_RX_RETRY (or what the blocks so far give), DMR_DATA_RX_NONE when no confirmed packet is being received
+dmrDataRxResult_t dmrDataRxConfirmedEnd(void);
+bool dmrDataRxConfirmedActive(void);
+// Confirmed blocks whose CRC-9 failed in packets the CRC-32 then passed (our CRC-9 disagreeing with a sender's)
+uint32_t dmrDataRxCrc9Mismatches(void);
 typedef struct
 {
 	uint16_t srcPort;
