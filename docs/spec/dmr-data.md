@@ -1,7 +1,7 @@
 # DMR data services
 
 Text messages, packet data answers, CSBK call alert and radio check, ARS registration and LRRP location answers on
-the DMR call stack. Status: built and host-tested on the DM-1701 (`dmrDataServiceTest`, `dmrDataChainTest`); not yet
+the DMR call stack; IP packets with compressed headers and confirmed delivery (11, 12). Status: built and host-tested on the DM-1701 (`dmrDataServiceTest`, `dmrDataChainTest`); not yet
 checked on air (`tests/hil/test_dmr_data.py`).
 
 Sources: ETSI TS 102 361-1 (bursts, data headers, blocks, CRCs, CSBK), TS 102 361-2 (call alert, radio check),
@@ -18,8 +18,10 @@ already decoded), `docs/spec/gotchas.md` 3.6-3.9, 5, 7, 14.1.
 | `CONFIG_DMR_SIGNALING` | call alert and radio check CSBKs: answered, and sent by the user |
 | `CONFIG_DMR_EMERGENCY` | the emergency alarm CSBK, sent and heard (`dmr-emergency.md`; the rest of the emergency is in the radio core) |
 | `CONFIG_DMR_DATA_CORE` | derived, on when any of the above is: the packet data core (`core/dmr/dmrData.c`), the service, the ETSI responses to confirmed data |
+| `CONFIG_DMR_UDP_COMPRESS` | compressed UDP/IPv4 headers (SAP 3) on transmit (11) |
+| `CONFIG_DMR_CONFIRMED` | confirmed delivery of our IP packets, and the CRC-9 check, selective ACK, NACK and duplicate drop for confirmed data to us (12) |
 
-All five default to on with DMR. A feature switched off is compiled out of the service (`if (!CONFIG_...)` guards,
+All of them default to on with DMR. A feature switched off is compiled out of the service (`if (!CONFIG_...)` guards,
 the linker drops what is unused); its API calls return false. With all five off nothing of the data path is built,
 and `core/dmr/dmr_data_api.h` turns into inline no-ops so UI code needs no `#if`.
 
@@ -69,7 +71,9 @@ dmr_data_api.h (UI, debug link)                  sms_inbox_*, sms_send, dmr_sign
   (`data.rx_blocks_stale`). Rate 1/2, 3/4 and 1 blocks, confirmed (serial number and CRC-9 skipped) and unconfirmed;
   the packet's CRC-32 decides.
 - Addressed to us: our ID, or a group that is the channel's talkgroup or in its listen list.
-- Confirmed data to us gets an ETSI response (ACK with its N(S)) before anything else (gotcha 5.6).
+- Confirmed data to us gets an ETSI response (ACK with its N(S)) before anything else (gotcha 5.6); bad or lost
+  blocks a selective ACK, a CRC-32 failure with good blocks a NACK, a repeat of the packet we ACKed last an ACK only
+  (12.3).
 - TMS to us: kept in the inbox (4 messages, newest first, the oldest replaced), the sender's ACK request answered
   with a TMS ACK. The same message again from the same radio within 60 s (sender, sequence number, text) is a retry:
   ACKed again, not kept twice (gotcha 5.8).
@@ -176,6 +180,9 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 | `hasGps` | false | the DM-1701 has none |
 | `smsFormat` | TMS | the format most radios in the field read; ETSI for radios that only speak the standard |
 | `radioCheckEtsi` | off | the Motorola form is what most radios answer |
+| `udpCompress` | auto | SAP 3 saves 19-23 octets per UDP packet; auto leaves the DMR application ports (MOTOTRBO servers) on the full header (11.2) |
+| `ipConfirmed`, `ipConfirmedRule[2]` | rules, none | confirmed only where the user names a destination or UDP port: an unanswered confirmed packet costs every retry on air (12.4) |
+| `ipConfirmedTries` | 4 | the first transmission and 3 retries (N_RtryLmt at most 8) |
 
 The settings are kept in the settings store (the `ds_*` fields, `settings-store.md` 3): the radio core loads them
 at start and, from its data tick, saves any change made by `dmr_data_set_settings` or the debug link's DMR_DATA
@@ -218,3 +225,172 @@ Debug link: the `dmr_data` and `dmr_ext` view sections and the DMR_DATA command 
   an ETSI message in and its response out, ours out and done on the response; the radio check in the ETSI form
   both ways. Run by `make -C tests/host` (`run-rxchain`).
 - `tests/hil/test_dmr_data.py`: the same on air against the SDR bench (opt-in RF).
+- IP packets (11, 12): `tests/host/dmrDataTest.c` (testSap3: the compressed header's 5 / 7 / 9 octet forms against
+  vectors, auto / all / off, a UDP length that disagrees, a reserved opcode; testCRC9; testConfirmedTx: our confirmed
+  packet and a selective ACK byte for byte against vectors, the selective retry round trip through the receiver with a
+  bad block and with a lost block, the NACK cases; testAirtime: the table in 11.3), `tests/host/dmrDataServiceTest.c`
+  (testIpTx: unconfirmed SAP 3, confirmed with ACK, selective ACK, N(S) resync, time-outs to failure, tries, repeater
+  mode, group, too long, no channel; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
+  bursts, NACK), `tests/host/hostlinkNetTest.c` (the gateway's datagrams through the service path: SAP 3 for ports
+  outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
+  the standard's text, apart from the C code).
+- `tests/hil/test_dmr_ip.py`: on air, the bench modem decoding with `tools/bench/dmr_packet.py` (opt-in RF; 11.4).
+
+## 11. Compressed UDP/IPv4 headers on transmit (SAP 3)
+
+Source: ETSI TS 102 361-3 V1.3.1 5.6 and 7.2. Receive was already built (`dmrDataGetUDP`, the gateway delivers SAP 3 as
+UDP); transmit is `CONFIG_DMR_UDP_COMPRESS`.
+
+### 11.1 Format
+
+The packet is an ordinary data packet with SAP 3 in its header; the first data block starts with the compressed header
+(Table 7.14), the UDP payload follows:
+
+| Octets | Field | Ours |
+|---|---|---|
+| 0-1 | IPv4 identification | the same counter as our SAP 4 packets; a confirmed retry keeps it |
+| 2 | SAID (7-4), DAID (3-0) | SAID 0 (radio network: the source is the source LLID), DAID 0, or 2 (group network) for a talkgroup |
+| 3 | opcode MSB (7), SPID (6-0) | opcode 00 (the only format defined); SPID 1 = 5016 (UTF-16BE text), 2 = 5017 (LIP), 98 = 4007 (TMS, the manufacturer specific ID MOTOTRBO uses: an over the air capture, `dmrDataTest`), 0 = in an extended header |
+| 4 | opcode LSB (7), DPID (6-0) | the same for the destination port |
+| 5-6 | extended header 1 | the source port when SPID is 0, else the destination port when DPID is 0 |
+| 7-8 | extended header 2 | the destination port when both are 0 |
+
+Not sent, rebuilt by the receiver: version, IHL 5, TOS 0, total length, flags 0, fragment offset 0, TTL 64, protocol 17,
+both checksums, the UDP length (from the packet length). So a datagram goes compressed only when its UDP length agrees
+with what we have (octets past a shorter UDP length are padding and dropped; a longer one goes with the full header).
+IP options never reach the air: the gateway strips them for SAP 4 too, so the rule that options need the full header
+holds. Receive takes opcode 00 only (others are reserved) and SPID / DPID 1, 2, 98; an unknown ID is reported as
+0x8000 | ID.
+
+### 11.2 When (the setting `udpCompress`)
+
+| Value | UDP packets sent compressed |
+|---|---|
+| off | none |
+| auto (default) | those whose ports are both outside 4000-4099 |
+| all | every one, TMS / ARS / LRRP included |
+
+It applies to every UDP packet the radio builds: the gateway's datagrams from the host (`dmrDataServiceSendIP`) and
+the service's own (`dmrDataBuildUDP`: TMS, TMS ACK, ARS, LRRP, `dmrDataServiceSendUDP`, digital APRS). ICMP and SCTP
+always go as SAP 4.
+
+Why auto: the receive side of SAP 3 is in the standard every DMR packet data radio implements, and ours reads it, so
+traffic between our radios and anything new the host sends gains the 19-23 octets. The DMR application ports
+4000-4099 are where MOTOTRBO presence, text and location servers listen; whether a given control station or server
+decompresses depends on its configuration ("compressed UDP data header" in MOTOTRBO CPS), and our TMS / ARS / LRRP
+worked with the full header before, so auto leaves them as they were. `all` is for a fleet known to take SAP 3 (the
+capture above shows MOTOTRBO sending TMS that way).
+
+### 11.3 Air time
+
+Unconfirmed rate 1/2 packets with 2 preamble CSBKs (as we send them): one burst per 60 ms frame. Bursts = 2 + 1 header +
+blocks, blocks = (user data + 4 CRC octets) / 12 rounded up (confirmed: / 10). `testAirtime` in `dmrDataTest` prints
+and checks these.
+
+| Packet | UDP payload | SAP 4 bursts | SAP 3 bursts | Saved | Confirmed SAP 4 / SAP 3 |
+|---|---|---|---|---|---|
+| ARS registration (7 digit ID; 4005) | 14 | 7 (420 ms) | 6 (360 ms) | 1 burst | 8 / 6 |
+| TMS, 16 characters (4007, IDs 98: 5 octet header) | 38 | 9 (540 ms) | 7 (420 ms) | 2 | 10 / 8 |
+| TMS ACK | 5 | 7 | 5 | 2 | 7 / 5 |
+| LRRP immediate answer with a position (4001) | 26 | 8 | 7 | 1 | 9 / 7 |
+| SNMP GET (UDP 161 from an ephemeral port: 9 octet header) | 60 | 11 (660 ms) | 10 (600 ms) | 1 | 13 / 11 |
+| SNMP response | 120 | 16 | 15 | 1 | 19 / 17 |
+| ETSI LIP short report (5017, ID 2) | 9 | 7 | 5 | 2 | 8 / 5 |
+
+The 4000-4099 rows save only with `all`. The saving is 19 octets with both ports in extended headers, 21 with one, 23
+with none: one or two rate 1/2 blocks (60-120 ms) per packet, more for confirmed data (10 octets per block). The
+debug link counts what was saved (`ip.octets_saved`, `ip.blocks_saved`).
+
+### 11.4 Tests on air
+
+`tests/hil/test_dmr_ip.py` (radio_tx + bench_service): the debug link's IP_SEND puts a UDP datagram into the gateway's
+air path as the host would, the bench modem listens, and `tools/bench/dmr_packet.py` (the standard read apart from the
+firmware) reassembles and decodes it: SAP 3 with the 9 octet header in auto, SAP 4 with compression off, and the
+confirmed retries (12). With `--allow-usb-switch` the last test sends a real datagram from the host over the USB
+network.
+
+## 12. Confirmed data
+
+Source: ETSI TS 102 361-1 V2.7.1 8.2.1.2, 8.2.2.2-8.2.2.4, 9.2.1, 9.3.20-9.3.27, B.3.10, B.21; TS 102 361-3 V1.3.1 5.4
+(stop and wait), Annex A. `CONFIG_DMR_CONFIRMED`.
+
+### 12.1 What already existed
+
+Receive: confirmed packets to us were reassembled (serial number and CRC-9 skipped, the CRC-32 deciding) and ACKed
+with their N(S) (3). TMS, ARS and LRRP send unconfirmed with their own application ACKs and retries (5, 6, 7); nothing
+sent confirmed data. The new code reuses the response builder (now `dmrDataBuildResponse`: ACK, NACK, selective ACK),
+the reply queue and its 5 s age limit, and the service's TX list and listen before talk.
+
+### 12.2 Ours (dmrDataServiceSendIP)
+
+- Packet: C_HEAD (DPF 3, individual, A set, the pad octet count, SAP 3 or 4, F set on the first try, the blocks in this
+  transmission, S clear, N(S), FSN 1000 single fragment), then the blocks: octet 0 the 7-bit serial number and the
+  CRC-9's MSB, octet 1 its other 8 bits, 10 data octets (rate 1/2); the last block ends with the CRC-32 of all data
+  octets (pad included). CRC-9 (B.3.10): the block's data octets then the 7 serial bits, x^9 M(x) mod
+  x^9 + x^6 + x^4 + x^3 + 1, inverted, then masked with the rate's mask (0x0F0 rate 1/2, 0x1FF rate 3/4, 0x10F rate 1).
+  At most 64 blocks (one selective ACK block) and the 40-burst list: about 360 octets of user data at rate 1/2; a
+  longer packet goes unconfirmed (`ip.cnf_too_long`).
+- In direct mode the transmission ends with the Data Terminator LC (FLCO 0x30; octet 8: G/I, A, F, S, N(S)) that
+  opens the receiver's response window (TS 102 361-3 5.4.1); through a repeater nothing follows the last block.
+- Then it waits `DMR_IPC_RESPONSE_MS` (1.5 s) after the list has gone for a response from the destination with the
+  packet's SAP. The standard recommends 180 ms (2 s on simulcast); ours is longer because our own receiver answers
+  after its listen before talk (120 ms) and a repeater wake-up.
+- ACK (class 0, type 1) with our N(S): done; the next packet to that radio takes N(S) + 1 (mod 8).
+- Selective ACK (class 2, type 0): the blocks whose flag is 0 again, with the same N(S) and POC and F clear; flags
+  all 1: done.
+- NACK class 1 type 5 (N(S) out of sequence, status = the receiver's VI): the packet again as N(S) = VI + 1, a first
+  try. Type 4 (undeliverable) and 6 (not allowed): failed at once. Other NACKs (format, CRC, memory full): the whole
+  packet again, F clear.
+- No response in time: as a NACK (TS 102 361-3 5.4.3.1.3), the whole packet again, F clear.
+- `ipConfirmedTries` transmissions in all (default 4: the first and 3 retries; N_RtryLmt recommends at most 8), then
+  failed. A packet that finds no clear channel we may send on within 10 s fails too.
+- N(S) per destination: the last 4 radios; a radio not in the table starts at a number from the clock, so a receiver
+  still holding our number from before a restart doesn't take the first packet as a duplicate (a strict receiver's
+  out of sequence NACK resynchronizes either way).
+- One IP packet at a time: the gateway's mailbox stays taken until the service is done (`net.to_air_refused` counts
+  the host's packets meanwhile; the host's stack retries or drops, as for any lost IP packet).
+
+### 12.3 Confirmed data to us
+
+- Each block's CRC-9 is checked; a good one is placed by its serial number. A bad one is kept in arrival order on a
+  first try (the CRC-32 may still pass: then it is counted in `ip.rx_crc9_mismatch`, a sign our CRC-9 disagrees with
+  the sender's) and dropped in a selective retry (its serial number can't be trusted).
+- The CRC-32 decides once every block has a place. A failure with blocks bad or missing: a selective ACK with their
+  flags 0 (`ip.rx_sacks_sent`); the blocks stay held for the retry (F clear, same source, destination, SAP and N(S)).
+  Every block good and the CRC-32 wrong: a NACK (class 1 type 1, `ip.rx_nacks_sent`). Blocks that stop coming before
+  the header's count (lost bursts): the selective ACK 300 ms after the last one.
+- A selective retry for a packet we don't hold (another packet came between): a NACK, so the sender sends it whole.
+- The packet again with the N(S) we ACKed last from that radio, within 20 s: ACKed, not passed on (`ip.rx_duplicates`).
+  Any other N(S) is taken as new (no out of sequence NACK: senders restart their numbers).
+- Built without `CONFIG_DMR_CONFIRMED` receive behaves as before (ACK, the CRC-32 alone).
+
+### 12.4 Which packets (the settings `ipConfirmed`, `ipConfirmedRule`, `ipConfirmedTries`)
+
+| `ipConfirmed` | Confirmed |
+|---|---|
+| off | none |
+| rules (default) | individual packets to a radio ID in a rule, or UDP with a rule's port at either end |
+| all | every individual IP packet |
+
+Two rules (`ipConfirmedRule[2]`): 0 unused, a radio ID, or 0x80000000 | a UDP port. Group packets are never
+confirmed (nobody answers for a group). Only the gateway's packets (`dmrDataServiceSendIP`) are confirmed; the
+service's own TMS, ARS and LRRP keep their application ACKs. Default rules: none, because an unanswered confirmed packet
+costs every retry on air, and a radio that doesn't answer confirmed data (or isn't there) turns one packet into four
+transmissions.
+
+### 12.5 Debug link
+
+The `dmr_ip` view section (`docs/spec/debuglink.md` 4.9): settings `ip.compress ip.confirmed ip.tries ip.rule0
+ip.rule1`, `ip.busy ip.result`, compression `ip.sap3 ip.sap4 ip.octets_saved ip.blocks_saved`, the gateway's packets
+`ip.packets ip.sent ip.failed`, confirmed `ip.cnf ip.cnf_tx ip.cnf_retries ip.cnf_acks ip.cnf_sacks ip.cnf_nacks
+ip.cnf_resyncs ip.cnf_timeouts ip.cnf_failed ip.cnf_too_long`, receive `ip.rx_sacks_sent ip.rx_nacks_sent
+ip.rx_duplicates ip.rx_crc9_mismatch`. DMR_DATA ops 9 IP_SETTINGS and 10 IP_SEND (`debuglink.md` 3.12;
+`odr_debug.py data ip-settings|ip-send`).
+
+### 12.6 Open
+
+- No commercial radio has answered our confirmed packets yet, nor sent us a selective retry: the CRC-9 and the
+  response formats are from the standard and the vectors (`dmr_ip_vectors.py`); `ip.rx_crc9_mismatch` on air will
+  show a disagreement.
+- Rate 3/4 for confirmed IP (16 octets per block) and the sliding window (TS 102 361-3 5.4.4) are not used.
+- Fragmentation (FSN chains) is not built: one packet per datagram.

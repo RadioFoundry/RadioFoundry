@@ -48,6 +48,28 @@ Packets to another radio's or a talkgroup's address go out over the air on the c
 radios arrive on the network adapter. DMR packet data is much slower than any wired network. A packet
 that can't go out within 2 s is dropped.
 
+## Shorter packets and confirmed delivery
+
+UDP packets to other radios go with a compressed header (5 to 9 bytes instead of 28, ETSI's "UDP/IP header
+compression"), unless one of their ports is in 4000-4099, where MOTOTRBO text, location and presence servers listen.
+That saves one or two data blocks (60-120 ms on air) per packet. Radios that can't read it are rare; for them, or to
+compress those ports too:
+
+```
+tools/odr_debug.py data ip-settings off        # always the full header
+tools/odr_debug.py data ip-settings all        # compress every UDP packet
+```
+
+Packets to a radio can also go as confirmed data: the other radio acknowledges each one, and the radio sends again
+what didn't arrive (up to 4 times by default). Name up to two destinations (DMR IDs) or UDP ports:
+
+```
+tools/odr_debug.py data ip-settings auto rules id=3101234 port=161 tries=4
+```
+
+Talkgroup packets are never confirmed. A packet to a radio that doesn't answer is sent every try before it is dropped,
+so confirm only where it helps. The settings are saved in the radio.
+
 ## Serial tools in network mode
 
 The debug link, the MMDVM hotspot protocol and the CPS protocol stay reachable over UDP port 3334 at the radio's
