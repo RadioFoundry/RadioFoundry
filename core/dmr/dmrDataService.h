@@ -34,6 +34,16 @@ typedef struct
 	char     text[sizeof(((dmrDataTMS_t *)0)->text)];
 } dmrDataMessage_t;
 
+// Confirmed delivery of IP packets: off, for the destinations and UDP ports in the rules, or every individual packet
+#define DMR_IPC_OFF					0
+#define DMR_IPC_RULES				1
+#define DMR_IPC_ALL					2
+#define DMR_IPC_RULES_MAX			2
+#define DMR_IPC_PORT				0x80000000u	// rule: a UDP port (source or destination), else a radio ID
+#define DMR_IPC_TRIES_DEFAULT		4			// the first transmission and 3 retries (N_RtryLmt 8 at most)
+#define DMR_IPC_TRIES_MAX			8
+#define DMR_IPC_RESPONSE_MS			1500		// T_RspnsWait: our transmission over to the response
+
 // What the service needs to know about the channel, from its host at every tick
 typedef struct
 {
@@ -54,6 +64,11 @@ typedef struct
 	bool     hasGps;						// the radio has a position source (else LRRP says "no fix")
 	uint8_t  smsFormat;						// dmr_sms_format_t of sms_send(..., DMR_SMS_FORMAT_DEFAULT): TMS or ETSI
 	bool     radioCheckEtsi;				// our radio checks in the ETSI form (FID 0x00), else Motorola's (FID 0x10)
+	// IP packets (docs/spec/dmr-data.md 11, 12)
+	uint8_t  udpCompress;					// DMR_UDPC_OFF / AUTO / ALL: compressed UDP/IPv4 headers (SAP 3)
+	uint8_t  ipConfirmed;					// DMR_IPC_OFF / RULES / ALL: which IP packets go as confirmed data
+	uint8_t  ipConfirmedTries;				// transmissions per confirmed packet, 1-DMR_IPC_TRIES_MAX (0: the default)
+	uint32_t ipConfirmedRule[DMR_IPC_RULES_MAX];	// 0 unused, a radio ID (that destination), or DMR_IPC_PORT | a UDP port
 } dmrDataSettings_t;
 
 // Events for the UI (dmr_data_api.h: dmr_data_last_event)
@@ -145,6 +160,24 @@ typedef struct
 	uint32_t txFailed;						// ... dropped by the stack (no repeater, refused, time-out)
 	uint32_t txGaveUp;						// lists never started: no clear channel in time
 	uint8_t  txLastError;					// dmr_tx_error_t of the last list
+	// IP packets given to dmrDataServiceSendIP (docs/spec/dmr-data.md 11, 12)
+	uint32_t ipPackets;						// taken
+	uint32_t ipSent;						// ... delivered: on air (unconfirmed) or acknowledged (confirmed)
+	uint32_t ipFailed;						// ... not: no clear channel, no answer after the tries, refused
+	uint32_t ipConfirmed;					// ... sent as confirmed data
+	uint32_t ipCnfTransmissions;			// confirmed transmissions, the retries included
+	uint32_t ipCnfRetries;					// ... of those, retries (whole packet or selected blocks)
+	uint32_t ipCnfAcks;						// ACKs received for ours
+	uint32_t ipCnfSacks;					// selective ACKs (some blocks again)
+	uint32_t ipCnfNacks;					// NACKs
+	uint32_t ipCnfResyncs;					// ... of those, N(S) out of sequence: the receiver's next number taken
+	uint32_t ipCnfTimeouts;					// no response within DMR_IPC_RESPONSE_MS
+	uint32_t ipCnfFailed;					// confirmed packets given up after the tries (or refused)
+	uint32_t ipCnfTooLong;					// wanted confirmed but too long for it: sent unconfirmed
+	// Confirmed data to us (CONFIG_DMR_CONFIRMED)
+	uint32_t rxSacksSent;					// selective ACKs asking for bad or lost blocks
+	uint32_t rxNacksSent;					// NACKs (every block good, the CRC-32 not)
+	uint32_t rxConfirmedDuplicates;			// a packet again with the N(S) we last ACKed: ACKed, not passed on
 } dmrDataStats_t;
 
 // --- The host's calls (the radio task) ---
@@ -170,6 +203,17 @@ void dmrDataServicePowerOffCancelled(void);
 bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested);
 bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
+// An IP packet from layer 4 on (ICMP, UDP, SCTP; the IP gateway's packets from the host): built with the compressed
+// UDP/IPv4 header when the setting allows it, sent as confirmed data with retries when a confirmed rule matches (an
+// individual destination), else unconfirmed; rate 1/2, 2 preamble CSBKs. l4 is not copied: it must stay unchanged
+// until dmrDataServiceIpBusy() is false. False when one is still going or it can't be sent now
+bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length);
+bool dmrDataServiceIpBusy(void);
+// The last one's outcome: DMR_REQ_OK (on air; confirmed: acknowledged) or DMR_REQ_FAILED
+uint8_t dmrDataServiceIpResult(void);
+// Whether an IP packet to dst between these ports goes confirmed under the settings
+bool dmrDataServiceIpWantConfirmed(const dmrDataSettings_t *s, bool group, uint32_t dst, uint8_t protocol, uint16_t srcPort,
+									uint16_t dstPort);
 bool dmrDataServiceCallAlert(uint32_t dst);
 bool dmrDataServiceRadioCheck(uint32_t dst);
 // format: dmr_sms_format_t (TMS or ETSI; not DEFAULT)

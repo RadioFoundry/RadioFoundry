@@ -10,6 +10,7 @@
 #include "hostlink/hostlink_net.h"
 #include "hostlink/hostlink_net_air.h"
 #include "dmr/dmrDataService.h"
+#include "dmr/dmr_data_api.h"
 #include "dmr/ipGateway.h"
 #include "dmr/dmrData.h"
 
@@ -122,6 +123,22 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 	svc_lists++;
 	return true;
 }
+
+// The service's IP path: built by the codec as the service builds an unconfirmed packet (the compression setting
+// applied; confirmed delivery is dmrDataServiceTest's), done at once unless ip_pending says otherwise
+static bool ip_pending;
+static uint8_t ip_result = DMR_REQ_OK;
+bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+{
+	if (service_busy) {
+		return false;
+	}
+	svc_count = dmrDataBuildIP(group, dst, RADIO_ID, protocol, l4, length, DT_RATE_12_DATA, 2, svc_bursts, DMR_DATA_MAX_BURSTS);
+	svc_lists++;
+	return svc_count > 0;
+}
+bool dmrDataServiceIpBusy(void) { return ip_pending; }
+uint8_t dmrDataServiceIpResult(void) { return ip_result; }
 
 // The packet the bursts carry, decoded by the codec's receiver; NULL if none
 static const dmrDataPacket_t *svc_packet(void)
@@ -308,9 +325,27 @@ int main(void)
 	CHECK(svc_lists == 1 && svc_count > 2);
 	const dmrDataPacket_t *pk = svc_packet();
 	dmrDataUDP_t u;
-	CHECK(pk != NULL && pk->sap == DMR_SAP_IP && pk->dst == 100 && pk->src == RADIO_ID && !pk->group);
+	// Ports outside 4000-4099: the compressed UDP/IPv4 header (SAP 3), read back by the receive decoder
+	CHECK(pk != NULL && pk->sap == DMR_SAP_UDPIP_COMPRESSION && pk->dst == 100 && pk->src == RADIO_ID && !pk->group);
 	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.srcPort == 5000 && u.dstPort == 5001 &&
 	      u.length == (int)sizeof(hello) && memcmp(u.payload, hello, sizeof(hello)) == 0);
+	// A DMR application port (TMS 4007) keeps the full header the MOTOTRBO side expects; the service holds the
+	// mailbox until it is done (a confirmed packet waits for its response)
+	hostlink_net_air_tick(RADIO_ID, now_ms);	// the service is done with the first: the mailbox is free
+	ip_pending = true;
+	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 100u, 4007, 4007, hello, sizeof(hello)));
+	hostlink_net_air_tick(RADIO_ID, now_ms);
+	CHECK(svc_lists == 2);
+	pk = svc_packet();
+	CHECK(pk != NULL && pk->sap == DMR_SAP_IP && dmrDataGetUDP(pk, &u) && u.dstPort == 4007);
+	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 101u, 5000, 5001, hello, sizeof(hello)));
+	hostlink_net_stats(&st);
+	CHECK(st.to_air_refused == 3);
+	ip_pending = false;
+	ip_result = DMR_REQ_FAILED;
+	hostlink_net_air_tick(RADIO_ID, now_ms);
+	ip_result = DMR_REQ_OK;
+	svc_lists = 1;
 
 	// Raw data to a talkgroup: an unconfirmed short data packet (SAP 10); a busy service is tried again
 	service_busy = true;
@@ -334,7 +369,7 @@ int main(void)
 	service_busy = false;
 	hostlink_net_air_stats_t as;
 	hostlink_net_air_stats(&as);
-	CHECK(as.queued == 3 && as.sent == 2 && as.dropped == 1 && as.refused_busy == 3);
+	CHECK(as.queued == 4 && as.sent == 2 && as.failed == 1 && as.dropped == 1 && as.refused_busy == 3);
 	// The packet hook passes what the service hears on to the host
 	memset(&p, 0, sizeof(p));
 	p.sap = DMR_SAP_SHORT_DATA;

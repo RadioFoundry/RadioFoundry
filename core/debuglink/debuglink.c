@@ -111,6 +111,12 @@ static const char features[] = "features="
 #if CONFIG_DMR_IP_GATEWAY
 	"DMR_IP_GATEWAY,"
 #endif
+#if CONFIG_DMR_UDP_COMPRESS && CONFIG_DMR_DATA_CORE
+	"DMR_UDP_COMPRESS,"
+#endif
+#if CONFIG_DMR_CONFIRMED && CONFIG_DMR_DATA_CORE
+	"DMR_CONFIRMED,"
+#endif
 #if CONFIG_VFO
 	"VFO,"
 #endif

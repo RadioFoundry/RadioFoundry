@@ -56,7 +56,7 @@ ipGatewayTestShared: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=8 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
 
 # The data service (replies, signaling, our SMS, ARS, LRRP, the API mailbox) on a fake host
-SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c
+SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/call/dmr_lc.c
 
 dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
 	$(CC) $(CFLAGS) -o $@ $(SVC) -lm
@@ -484,6 +484,7 @@ hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostl
 run: run-hlnet
 run-hlnet: hostlinkNetTest
 	./hostlinkNetTest
+	python3 -I $(ROOT)/tools/bench/dmr_packet.py --self-test
 .PHONY: run-hlnet
 
 # The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write

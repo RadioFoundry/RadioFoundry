@@ -121,8 +121,8 @@ static void hotspot_section(dl_text_t *t)
 	hostlink_net_air_stats_t as;
 
 	hostlink_net_air_stats(&as);
-	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\n", (unsigned)as.sent,
-		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long));
+	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\n", (unsigned)as.sent,
+		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long), (unsigned)as.failed);
 #endif
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;
@@ -247,7 +247,7 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 {
 	static const char *const names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 							  "link", "features", "dmr_data", "storage", "dmr_ext",
-							  "dmr_data_stats", "roam", "aprs", "aprs_set" };
+							  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip" };
 
 	if (section >= DL_VIEW_COUNT) {
 		return;
@@ -302,6 +302,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_APRS_SET:
 		debuglink_view_aprs(1, t);
+		break;
+	case DL_VIEW_DMR_IP:
+		debuglink_view_dmr_data(2, t);
 		break;
 	default:
 		break;
