@@ -11,6 +11,9 @@
 #include "dmr/dmr_data_api.h"
 #include "dmr/dmr_emergency.h"
 #endif
+#if CONFIG_DMR_IP_GATEWAY
+#include "dmr/ipGateway.h"
+#endif
 
 #if CONFIG_DMR_DATA_CORE
 
@@ -35,6 +38,49 @@ static const char *event_key(uint8_t e)
 	return e < sizeof(names) / sizeof(names[0]) ? names[e] : "?";
 }
 
+static void rule_text(dl_text_t *t, int i, uint32_t r)
+{
+	if (r == 0) {
+		dl_text(t, "ip.rule%d=none\n", i);
+	} else if (r & DMR_IPC_PORT) {
+		dl_text(t, "ip.rule%d=port:%u\n", i, (unsigned)(r & 0xFFFFu));
+	} else {
+		dl_text(t, "ip.rule%d=id:%u\n", i, (unsigned)r);
+	}
+}
+
+// The dmr_ip section (docs/spec/debuglink.md 4.9, dmr-data.md 11, 12)
+static void ip_section(const dmrDataStats_t *s, const dmrDataSettings_t *set, dl_text_t *t)
+{
+	static const char *const compress[] = { "off", "auto", "all" };
+	static const char *const confirmed[] = { "off", "rules", "all" };
+	dmrDataIpTxStats_t x;
+
+	dmrDataGetIpTxStats(&x);
+	dl_text(t, "ip.built=1\nip.compress_built=%u\nip.confirmed_built=%u\n", CONFIG_DMR_UDP_COMPRESS,
+		CONFIG_DMR_CONFIRMED);
+	dl_text(t, "ip.compress=%s\nip.confirmed=%s\nip.tries=%u\n", set->udpCompress <= 2 ? compress[set->udpCompress] : "?",
+		set->ipConfirmed <= 2 ? confirmed[set->ipConfirmed] : "?",
+		(set->ipConfirmedTries >= 1 && set->ipConfirmedTries <= DMR_IPC_TRIES_MAX) ? set->ipConfirmedTries
+											   : DMR_IPC_TRIES_DEFAULT);
+	for (int i = 0; i < DMR_IPC_RULES_MAX; i++) {
+		rule_text(t, i, set->ipConfirmedRule[i]);
+	}
+	dl_text(t, "ip.busy=%u\nip.result=%s\n", dmrDataServiceIpBusy(), req_key(dmrDataServiceIpResult()));
+	dl_text(t, "ip.sap3=%u\nip.sap4=%u\nip.octets_saved=%u\nip.blocks_saved=%u\n", (unsigned)x.sap3,
+		(unsigned)x.sap4, (unsigned)x.octetsSaved, (unsigned)x.blocksSaved);
+	dl_text(t, "ip.packets=%u\nip.sent=%u\nip.failed=%u\n", (unsigned)s->ipPackets, (unsigned)s->ipSent,
+		(unsigned)s->ipFailed);
+	dl_text(t, "ip.cnf=%u\nip.cnf_tx=%u\nip.cnf_retries=%u\nip.cnf_acks=%u\nip.cnf_sacks=%u\nip.cnf_nacks=%u\n",
+		(unsigned)s->ipConfirmed, (unsigned)s->ipCnfTransmissions, (unsigned)s->ipCnfRetries,
+		(unsigned)s->ipCnfAcks, (unsigned)s->ipCnfSacks, (unsigned)s->ipCnfNacks);
+	dl_text(t, "ip.cnf_resyncs=%u\nip.cnf_timeouts=%u\nip.cnf_failed=%u\nip.cnf_too_long=%u\n",
+		(unsigned)s->ipCnfResyncs, (unsigned)s->ipCnfTimeouts, (unsigned)s->ipCnfFailed, (unsigned)s->ipCnfTooLong);
+	dl_text(t, "ip.rx_sacks_sent=%u\nip.rx_nacks_sent=%u\nip.rx_duplicates=%u\nip.rx_crc9_mismatch=%u\n",
+		(unsigned)s->rxSacksSent, (unsigned)s->rxNacksSent, (unsigned)s->rxConfirmedDuplicates,
+		(unsigned)dmrDataRxCrc9Mismatches());
+}
+
 void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 {
 	dmrDataStats_t s;
@@ -46,6 +92,10 @@ void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 
 	dmrDataServiceGetStats(&s);
 	dmr_data_get_settings(&set);
+	if (part == 2) {
+		ip_section(&s, &set, t);
+		return;
+	}
 	if (part == 1) {	// the counters: their own section (dmr_data_stats), the whole set doesn't fit one reply
 		goto counters;
 	}
@@ -221,6 +271,47 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		dmr_emergency_set_settings(&es);	// clamped by the module
 		break;
 	}
+	case DL_DATA_OP_IP_SETTINGS: {
+		dmrDataSettings_t set;
+
+		if (n < 11 || a[0] > DMR_UDPC_ALL || a[1] > DMR_IPC_ALL || a[2] > DMR_IPC_TRIES_MAX) {
+			st = DL_ST_BAD_ARG;
+			break;
+		}
+		dmr_data_get_settings(&set);
+		set.udpCompress = a[0];
+		set.ipConfirmed = a[1];
+		set.ipConfirmedTries = a[2] ? a[2] : DMR_IPC_TRIES_DEFAULT;
+		set.ipConfirmedRule[0] = get32(a + 3);
+		set.ipConfirmedRule[1] = get32(a + 7);
+		dmr_data_set_settings(&set);
+		break;
+	}
+	case DL_DATA_OP_IP_SEND: {
+#if CONFIG_DMR_IP_GATEWAY
+		uint8_t l4[8 + DL_REQ_MAX];
+		uint16_t pl = (uint16_t)(n - 9u);
+
+		if (n < 9 || pl > DL_REQ_MAX) {
+			st = DL_ST_BAD_ARG;
+			break;
+		}
+		l4[0] = a[6];	// the ports little endian in the request, big endian in the UDP header
+		l4[1] = a[5];
+		l4[2] = a[8];
+		l4[3] = a[7];
+		l4[4] = (uint8_t)((8u + pl) >> 8);
+		l4[5] = (uint8_t)(8u + pl);
+		l4[6] = 0;
+		l4[7] = 0;
+		memcpy(l4 + 8, a + 9, pl);
+		st = ipGatewayIPToAir((a[4] & 1u) != 0, get32(a) & 0xFFFFFFu, DMR_IP_PROTO_UDP, l4, 8 + pl) ? DL_ST_OK
+													    : DL_ST_BUSY;
+#else
+		st = DL_ST_UNAVAILABLE;
+#endif
+		break;
+	}
 	default:
 		st = DL_ST_BAD_ARG;
 		break;
@@ -232,6 +323,7 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 void debuglink_dmr_data_reset(void)
 {
 	dmrDataServiceResetStats();
+	dmrDataResetIpTxStats();
 #if CONFIG_DMR_EMERGENCY
 	dmr_emergency_reset_stats();
 #endif
@@ -241,8 +333,7 @@ void debuglink_dmr_data_reset(void)
 
 void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 {
-	(void)part;
-	dl_text(t, "data.built=0\n");
+	dl_text(t, part == 2 ? "ip.built=0\n" : "data.built=0\n");
 }
 
 size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)

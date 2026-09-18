@@ -86,7 +86,8 @@ typedef struct {
 	uint32_t ds_ars_server;		// ARS server ID, 0 = ARS off
 	uint8_t ds_flags;		// SETTINGS_DS_* bits
 	uint8_t ds_stored;		// 1 = the ds_ fields hold the data service's settings
-	uint16_t reserved4;
+	uint8_t ds_ip_cnf;		// confirmed IP packets: bits 0-3 tries (0 = the default), bits 4-5 SETTINGS_DS_IPC_*
+	uint8_t reserved4;
 	// Appended for the UI's settings (docs/spec/ui.md 4). The radio core's DMR reply window belongs with the rs_
 	// fields (taken only when rs_stored is 1); the others are the UI's
 	uint8_t rs_reply_s;		// radio_settings_t.reply_s: 0-30 s, SETTINGS_UNSET8 = the codeplug's hang times
@@ -150,6 +151,9 @@ typedef struct {
 	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
 	uint8_t aprs_stored;		// 1 = the aprs_ fields are set
 	uint16_t reserved7;
+	// The data service's confirmed IP rules (dmrDataSettings_t.ipConfirmedRule, docs/spec/dmr-data.md 12; appended
+	// for sap3), taken with the other ds_ fields: 0 unused, a radio ID, or 0x80000000 | a UDP port
+	uint32_t ds_ip_rule[2];
 } settings_t;
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)
@@ -174,6 +178,12 @@ typedef struct {
 #define SETTINGS_DS_LRRP_REPLY		0x04u
 #define SETTINGS_DS_SMS_ETSI		0x08u	// sms_send's default format is ETSI, else TMS
 #define SETTINGS_DS_RADIO_CHECK_ETSI	0x10u	// our radio checks in the ETSI form (FID 0x00)
+#define SETTINGS_DS_UDPC_OFF		0x20u	// compressed UDP/IPv4 headers off (neither bit: auto)
+#define SETTINGS_DS_UDPC_ALL		0x40u	// ... for every UDP packet, the DMR application ports too
+// settings_t.ds_ip_cnf bits 4-5 (0: the confirmed rules, the default)
+#define SETTINGS_DS_IPC_SHIFT		4
+#define SETTINGS_DS_IPC_OFF		1u
+#define SETTINGS_DS_IPC_ALL		2u
 
 // settings_t.em_flags
 #define SETTINGS_EM_DST_PRIVATE		0x01u

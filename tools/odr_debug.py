@@ -80,6 +80,11 @@ PROBE_BLOCK = 160
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
 DATA_OP_EMERGENCY, DATA_OP_EMERGENCY_SETTINGS = 7, 8
+DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND = 9, 10
+IP_COMPRESS = {"off": 0, "auto": 1, "all": 2}
+IP_CONFIRMED = {"off": 0, "rules": 1, "all": 2}
+IP_RULE_PORT = 0x80000000
+IP_SEND_MAX = REQ_MAX - 10          # op, u32 destination, flags, two u16 ports
 EMERGENCY_MODES = {"alarm": 0, "alarm_call": 1, "call": 2}
 SMS_TEXT_MAX = REQ_MAX - 6          # op, u32 destination, flags
 CMD_ERROR = 0xFF
@@ -107,7 +112,7 @@ ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
-                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set"]
+                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -678,6 +683,22 @@ class DebugLink:
         self.data_request(DATA_OP_EMERGENCY_SETTINGS, struct.pack("<BIBBB", EMERGENCY_MODES[mode],
                                                                   int(dst) & 0xFFFFFF, flags, tries, hot_mic_s))
 
+    def ip_settings(self, compress="auto", confirmed="rules", tries=0, rules=()):
+        """IP packets over DMR (docs/spec/dmr-data.md 11, 12): compressed headers off / auto / all, confirmed delivery
+        off / rules / all, tries per confirmed packet (0 = the default), up to 2 rules: a radio ID (int) or
+        ("port", N). State: the dmr_ip view section."""
+        r = [0, 0]
+        for i, x in enumerate(list(rules)[:2]):
+            r[i] = (IP_RULE_PORT | (int(x[1]) & 0xFFFF)) if isinstance(x, tuple) else (int(x) & 0xFFFFFF)
+        self.data_request(DATA_OP_IP_SETTINGS, struct.pack("<BBBII", IP_COMPRESS[compress], IP_CONFIRMED[confirmed],
+                                                           int(tries), r[0], r[1]))
+
+    def ip_send(self, dst, src_port, dst_port, payload, group=False):
+        """A UDP datagram into the IP gateway's air path, as if from the host on the USB network (needs
+        CONFIG_DMR_IP_GATEWAY); payload at most IP_SEND_MAX bytes."""
+        self.data_request(DATA_OP_IP_SEND, struct.pack("<IBHH", int(dst) & 0xFFFFFF, 1 if group else 0,
+                                                       int(src_port), int(dst_port)) + bytes(payload)[:IP_SEND_MAX])
+
     # APRS (docs/spec/debuglink.md 3.16, docs/spec/aprs.md 13). State: the aprs and aprs_set view sections
     def aprs_request(self, op, args=b""):
         return self.request(APRS, bytes([op]) + bytes(args))[1]
@@ -991,6 +1012,21 @@ def cmd_data(link, a):
             print("data emergency: start|cancel|dismiss", file=sys.stderr)
             return 2
         link.emergency(what)
+    elif a.op == "ip-settings":
+        if not args or args[0] not in IP_COMPRESS:
+            print("data ip-settings: off|auto|all [off|rules|all] [tries=N] [id=ID] [port=N] (two rules at most)",
+                  file=sys.stderr)
+            return 2
+        mode = next((x for x in args[1:] if x in IP_CONFIRMED), "rules")
+        kv = [x.split("=", 1) for x in args[1:] if "=" in x]
+        tries = next((int(v) for k, v in kv if k == "tries"), 0)
+        rules = [int(v, 0) if k == "id" else ("port", int(v, 0)) for k, v in kv if k in ("id", "port")]
+        link.ip_settings(args[0], mode, tries, rules)
+    elif a.op == "ip-send":
+        if len(args) < 3:
+            print("data ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]", file=sys.stderr)
+            return 2
+        link.ip_send(int(args[0], 0), int(args[1], 0), int(args[2], 0), " ".join(args[3:]).encode(), group=a.group)
     elif a.op == "em-settings":
         if not args or args[0] not in EMERGENCY_MODES:
             print("data em-settings: alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]",
@@ -1259,11 +1295,13 @@ def main(argv=None):
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
-    p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings"])
+    p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
+                                  "ip-settings", "ip-send"])
     p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack] [--format tms|etsi|default]; alert / "
                    "check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi] [check-etsi]; "
                    "inbox / read: [INDEX]; emergency: start|cancel|dismiss; em-settings: alarm|alarm_call|call [DST] "
-                   "[private] [etsi] [no-tone] [tries=N] [hot=S]")
+                   "[private] [etsi] [no-tone] [tries=N] [hot=S]; ip-settings: off|auto|all [off|rules|all] "
+                   "[tries=N] [id=ID] [port=N]; ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]")
     p.add_argument("--format", choices=["tms", "etsi", "default"], default="tms")
     p.add_argument("--group", action="store_true")
     p.add_argument("--no-ack", action="store_true")

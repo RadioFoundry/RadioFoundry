@@ -470,6 +470,12 @@ error path restarts it; accept any NMEA talker and an 82-character line plus CR 
 **13.8 Cancelled menu edits must re-apply hardware state** (GPS and USB modes) after restoring the old values.
 Commits f6e4b81, 31b52ef.
 
+**13.9 No git stash in a worktree with symlinked submodules.** In an agent worktree whose `third_party/*` are symlinks
+to another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
+duration: the baseline build failed on `FreeRTOS.h`, and git refuses most operations on the paths ("expected submodule
+path not to be a symbolic link"). The pop put them back. Build a baseline from `git archive HEAD` into a scratch
+directory with its own `third_party` symlinks instead, and delete it afterwards.
+
 ## 14. SFR (single frequency repeater)
 
 **14.1 The HR_C6000's RX status is unreliable while it transmits.** CRC flag, color code (reg 0x52), sync type

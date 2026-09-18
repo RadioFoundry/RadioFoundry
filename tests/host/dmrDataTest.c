@@ -455,6 +455,237 @@ static void testConfirmedRx(void)
 	dumpBursts("response-ack", &ack, 1);
 }
 
+
+static void hex(const char *h, uint8_t *out)
+{
+	for (int i = 0; h[2 * i]; i++)
+	{
+		unsigned v;
+		sscanf(&h[2 * i], "%2x", &v);
+		out[i] = (uint8_t)v;
+	}
+}
+
+// Compressed UDP/IPv4 headers (SAP 3) on transmit, read back by the receive decoder. The vectors here and in
+// testCRC9 / testConfirmedTx come from tests/host/dmr_ip_vectors.py, written from TS 102 361-1 B.3.8-B.3.10, 9.2.1
+// and TS 102 361-3 7.2 apart from this code (polynomial division, not the shift register used here)
+static void testSap3(void)
+{
+	uint8_t h[DMR_UDPC_HEADER_MAX], want[16];
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	dmrDataUDP_t udp;
+	dmrDataIP_t ip;
+
+	// SNMP GET from an ephemeral port: no IDs, both ports in the extended headers (9 octets)
+	CHECK(dmrDataCompressUDPHeader(0x1234, false, 50000, 161, h) == 9);
+	hex("1234000000c35000a1", want);
+	CHECK(memcmp(h, want, 9) == 0);
+	// ETSI text both ways to a group: IDs 1, DAID 2 (5 octets)
+	CHECK(dmrDataCompressUDPHeader(7, true, 5016, 5016, h) == 5);
+	hex("0007020101", want);
+	CHECK(memcmp(h, want, 5) == 0);
+	// LIP source (ID 2), destination without an ID: in extended header 1 (7 octets)
+	CHECK(dmrDataCompressUDPHeader(7, false, 5017, 6000, h) == 7);
+	hex("00070002001770", want);
+	CHECK(memcmp(h, want, 7) == 0);
+
+	// A datagram from the host (layer 4) in auto mode: SAP 3, back to the same ports and payload
+	uint8_t l4[8 + 60];
+	l4[0] = 50000 >> 8; l4[1] = 50000 & 0xFF; l4[2] = 0; l4[3] = 161; l4[4] = 0; l4[5] = sizeof(l4); l4[6] = 0xAB; l4[7] = 0xCD;
+	for (int i = 8; i < (int)sizeof(l4); i++) l4[i] = (uint8_t)(0x30 + i);
+	dmrDataSetUdpCompression(DMR_UDPC_AUTO);
+	dmrDataResetIpTxStats();
+	int n = dmrDataBuildIP(false, 100, 10005, DMR_IP_PROTO_UDP, l4, sizeof(l4), DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(n == 2 + 1 + 7);// 9 + 60 + 4 = 73 octets: 7 blocks; with the full header 28 + 60 + 4 = 92: 8
+	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.sap == DMR_SAP_UDPIP_COMPRESSION && dmrDataRxPacket.dst == 100 && dmrDataRxPacket.src == 10005);
+	CHECK(dmrDataRxPacket.length == 9 + 60 && (dmrDataRxPacket.data[2] == 0x00));
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcPort == 50000 && udp.dstPort == 161 && udp.length == 60 &&
+	      memcmp(udp.payload, &l4[8], 60) == 0);
+	CHECK(!dmrDataGetIP(&dmrDataRxPacket, &ip));
+	dumpBursts("udp-sap3-snmp", bursts, n);
+	dmrDataIpTxStats_t st;
+	dmrDataGetIpTxStats(&st);
+	CHECK(st.sap3 == 1 && st.sap4 == 0 && st.octetsSaved == 19 && st.blocksSaved == 1);
+
+	// A DMR application port keeps the full header in auto mode, goes compressed (ID 98 for TMS) in all
+	uint8_t tms[8 + 6] = { 0x0F, 0xA7, 0x0F, 0xA7, 0, 14, 0, 0, 0x00, 0x04, 0x9F, 0x00, 0x95, 0x20 };
+	n = dmrDataBuildIP(false, 100, 10005, DMR_IP_PROTO_UDP, tms, sizeof(tms), DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_IP);
+	dmrDataSetUdpCompression(DMR_UDPC_ALL);
+	n = dmrDataBuildIP(false, 100, 10005, DMR_IP_PROTO_UDP, tms, sizeof(tms), DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_UDPIP_COMPRESSION);
+	CHECK(dmrDataRxPacket.length == 5 + 6 && dmrDataRxPacket.data[3] == 98 && dmrDataRxPacket.data[4] == 98);
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.appPort == DMR_UDP_PORT_TMS && udp.length == 6);
+	// The service's own UDP builder follows the same setting
+	n = dmrDataBuildUDP(true, 9, 10005, 5016, 5016, (const uint8_t *)"hi", 2, DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_UDPIP_COMPRESSION &&
+	      dmrDataRxPacket.group && dmrDataRxPacket.length == 7 && dmrDataRxPacket.data[2] == 0x02);
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcPort == 5016 && udp.length == 2 && memcmp(udp.payload, "hi", 2) == 0);
+	// Off: the full header
+	dmrDataSetUdpCompression(DMR_UDPC_OFF);
+	n = dmrDataBuildIP(false, 100, 10005, DMR_IP_PROTO_UDP, l4, sizeof(l4), DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(n == 2 + 1 + 8 && feed(bursts, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_IP);
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcPort == 50000 && udp.length == 60);
+	// A UDP length that disagrees with the datagram can't be compressed (the receiver would take the wrong length)
+	dmrDataSetUdpCompression(DMR_UDPC_AUTO);
+	l4[5] = sizeof(l4) + 2;
+	n = dmrDataBuildIP(false, 100, 10005, DMR_IP_PROTO_UDP, l4, sizeof(l4), DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_IP);
+	// ... octets past a shorter UDP length are padding: dropped, the rest compressed
+	l4[5] = 8 + 20;
+	n = dmrDataBuildIP(false, 100, 10005, DMR_IP_PROTO_UDP, l4, sizeof(l4), DT_RATE_12_DATA, 2, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_UDPIP_COMPRESSION);
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.length == 20);
+	l4[5] = sizeof(l4);
+
+	// A reserved opcode isn't read
+	static dmrDataPacket_t p;
+	p.sap = DMR_SAP_UDPIP_COMPRESSION;
+	hex("0001000101", p.data);
+	p.data[3] |= 0x80;
+	p.length = 8;
+	CHECK(!dmrDataGetUDP(&p, &udp));
+}
+
+// The CRC-9 (B.3.10), vectors from a polynomial division of the clause's M(x) apart from this code
+static void testCRC9(void)
+{
+	uint8_t d[22];
+
+	memset(d, 0, sizeof(d));
+	CHECK(dmrDataCRC9(d, 10, 0) == 0x1FF);
+	for (int i = 0; i < 22; i++) d[i] = i;
+	CHECK(dmrDataCRC9(d, 10, 0) == 0x0FC);
+	CHECK(dmrDataCRC9(d, 10, 5) == 0x1C1);
+	CHECK(dmrDataCRC9(d, 22, 3) == 0x142);
+	memset(d, 0xFF, 16);
+	CHECK(dmrDataCRC9(d, 16, 127) == 0x1D8);
+}
+
+static int dropBurst(dmrBurst_t *b, int n, int i)
+{
+	memmove(&b[i], &b[i + 1], (size_t)(n - i - 1) * sizeof(dmrBurst_t));
+	return n - 1;
+}
+
+// Our confirmed packets (TS 102 361-1 9.2.1, 8.2.2.2) byte for byte against the vectors, and the selective retry
+// round trip through the receiver: a bad block, a lost block, a CRC-32 failure with good blocks
+static void testConfirmedTx(void)
+{
+	dmrBurst_t b[DMR_DATA_MAX_BURSTS], r[2];
+	uint8_t pdu[8], want[12], flags[8];
+
+	hex("0001000101", pdu);
+	memcpy(&pdu[5], "ODR", 3);
+	CHECK(dmrDataConfirmedBlocks(8, DT_RATE_12_DATA) == 2 && dmrDataConfirmedBlockData(DT_RATE_34_DATA) == 16);
+	int n = dmrDataBuildConfirmed(DMR_SAP_UDPIP_COMPRESSION, 100, 10005, pdu, 8, DT_RATE_12_DATA, 5, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
+	CHECK(n == 4 && b[0].dataType == DT_CSBK && b[0].payload[3] == 3);
+	hex("433800006400271582581c55", want);
+	CHECK(b[1].dataType == DT_DATA_HEADER && memcmp(b[1].payload, want, 12) == 0);
+	hex("01ef00010001014f44520000", want);
+	CHECK(b[2].dataType == DT_RATE_12_DATA && b[2].length == 12 && memcmp(b[2].payload, want, 12) == 0);
+	hex("03fb000000000000a4625e72", want);
+	CHECK(memcmp(b[3].payload, want, 12) == 0);
+	dumpBursts("confirmed-sap3", b, n);
+
+	CHECK(feed(b, n) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.dpf == DMR_DPF_CONFIRMED && dmrDataRxPacket.firstTry && dmrDataRxPacket.sendSeq == 5 &&
+	      dmrDataRxPacket.responseRequested && dmrDataRxPacket.length == 8 && memcmp(dmrDataRxPacket.data, pdu, 8) == 0);
+	uint32_t mism = dmrDataRxCrc9Mismatches();
+
+	// A longer one at rate 3/4: block 2 arrives with a bit error, so the receiver asks for it alone
+	uint8_t big[100];
+	for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 13);
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DT_RATE_34_DATA, 2, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
+	CHECK(n == 1 + 7);// 104 octets in 16: 7 blocks
+	b[3].payload[9] ^= 0x10;
+	CHECK(feed(b, n) == DMR_DATA_RX_RETRY);
+	dmrDataRxRetryFlags(flags);
+	CHECK(flags[0] == 0xFB && flags[1] == 0xFF && flags[7] == 0xFF);
+	// The retry has only the asked for blocks, F clear, the same N(S)
+	uint64_t missing = 0;
+	for (int k = 0; k < 64; k++) if (!((flags[k / 8] >> (k % 8)) & 1)) missing |= 1ULL << k;
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DT_RATE_34_DATA, 2, false, missing, 0, b, DMR_DATA_MAX_BURSTS);
+	CHECK(n == 2 && (b[0].payload[8] == 0x01) && ((b[1].payload[0] >> 1) == 2));
+	dmrDataRxReset();
+	CHECK(dmrDataRxBurst(&b[0]) == DMR_DATA_RX_NONE);
+	CHECK(dmrDataRxBurst(&b[1]) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.length == sizeof(big) && memcmp(dmrDataRxPacket.data, big, sizeof(big)) == 0 &&
+	      !dmrDataRxPacket.firstTry);
+	CHECK(dmrDataRxCrc9Mismatches() == mism);
+	// The selective ACK itself (header and flags block against the vector), read back by the sender
+	CHECK(dmrDataBuildResponse(DMR_SAP_IP, 10005, 100, DMR_RESPONSE_SACK(2), flags, r) == 2);
+	CHECK(feed(r, 2) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.dpf == DMR_DPF_RESPONSE && dmrDataRxPacket.length == 8 &&
+	      DMR_RESPONSE_CLASS(dmrDataRxPacket.response) == 2 && (dmrDataRxPacket.response & 7) == 2 &&
+	      memcmp(dmrDataRxPacket.data, flags, 8) == 0);
+	CHECK(dmrDataBuildResponse(DMR_SAP_UDPIP_COMPRESSION, 10005, 100, DMR_RESPONSE_SACK(5), (const uint8_t *)"\xfd\xff\xff\xff\xff\xff\xff\xff", r) == 2);
+	hex("0130002715000064018533f4", want);
+	CHECK(memcmp(r[0].payload, want, 12) == 0);
+	hex("fdffffffffffffff00b6ae30", want);
+	CHECK(r[1].dataType == DT_RATE_12_DATA && memcmp(r[1].payload, want, 12) == 0);
+
+	// A lost block (no burst at all): the reassembly is ended from outside, and the same retry completes it
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DT_RATE_34_DATA, 3, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
+	n = dropBurst(b, n, 5);// block 4
+	CHECK(feed(b, n) == DMR_DATA_RX_NONE && dmrDataRxConfirmedActive());
+	CHECK(dmrDataRxConfirmedEnd() == DMR_DATA_RX_RETRY && !dmrDataRxConfirmedActive());
+	dmrDataRxRetryFlags(flags);
+	CHECK(flags[0] == 0xEF);
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DT_RATE_34_DATA, 3, false, 1ULL << 4, 1, b, DMR_DATA_MAX_BURSTS);
+	CHECK(feed(b, n) == DMR_DATA_RX_PACKET && memcmp(dmrDataRxPacket.data, big, sizeof(big)) == 0);
+
+	// Every CRC-9 good but the CRC-32 wrong (the sender's data changed between blocks): a NACK
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DT_RATE_34_DATA, 4, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
+	b[2].payload[5] ^= 1;
+	uint16_t c9 = dmrDataCRC9(&b[2].payload[2], 16, 1) ^ DMR_CRC9_MASK_RATE_34;
+	b[2].payload[0] = (1 << 1) | (c9 >> 8);
+	b[2].payload[1] = c9 & 0xFF;
+	CHECK(feed(b, n) == DMR_DATA_RX_NACK);
+
+	// A selective retry for a packet we don't hold (another packet came between): a NACK asks for the whole packet
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DT_RATE_34_DATA, 6, false, 1ULL << 5, 0, b, DMR_DATA_MAX_BURSTS);
+	CHECK(feed(b, n) == DMR_DATA_RX_NACK);
+
+	// Too big for one selective ACK block (64 blocks) or the burst list
+	static uint8_t huge[DMR_DATA_MAX_PACKET];
+	CHECK(dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, huge, 400, DT_RATE_12_DATA, 0, true, 0, 0, b, DMR_DATA_MAX_BURSTS) == 0);
+	CHECK(dmrDataConfirmedBlocks(700, DT_RATE_12_DATA) == 0);
+}
+
+// Air time of typical packets, unconfirmed rate 1/2 with 2 preamble CSBKs (docs/spec/dmr-data.md 11.3): the bursts
+// with the full and the compressed header. Printed for the spec, and checked
+static int burstsFor(int userData, int perBlock)
+{
+	return 2 + 1 + ((userData + 4 + perBlock - 1) / perBlock);
+}
+
+static void testAirtime(void)
+{
+	uint8_t ars[DMR_ARS_MAX_PDU];
+	int arsLen = dmrDataBuildARSRegistration(3101234, ars);
+	struct { const char *what; int payload; int header3; } t[] = {
+		{ "ARS registration (7 digit ID)", arsLen, 9 },
+		{ "TMS, 16 characters", 6 + 32, 5 },		// ID 98 both ways
+		{ "TMS ACK", 5, 5 },
+		{ "LRRP immediate answer with a position", 26, 9 },
+		{ "SNMP GET, 60 octets", 60, 9 },
+		{ "SNMP response, 120 octets", 120, 9 },
+		{ "ETSI LIP short report, 9 octets", 9, 5 },
+	};
+
+	printf("# airtime: packet, user octets, bursts SAP 4 / SAP 3 at rate 1/2 (2 preambles), confirmed rate 1/2\n");
+	for (unsigned i = 0; i < sizeof(t) / sizeof(t[0]); i++)
+	{
+		int full = 28 + t[i].payload, comp = t[i].header3 + t[i].payload;
+		printf("# airtime %s: %d / %d bursts, confirmed %d / %d\n", t[i].what, burstsFor(full, 12), burstsFor(comp, 12),
+		       burstsFor(full, 10), burstsFor(comp, 10));
+	}
+	CHECK(arsLen == 14);
+	CHECK(burstsFor(28 + 60, 12) == 11 && burstsFor(9 + 60, 12) == 10);
+}
+
 // Bursts to 33 byte MMDVM frames and back, the frames are printed for the external decoder
 static void testFrames(void)
 {
@@ -561,6 +792,10 @@ int main(void)
 	testUDTLocation();
 	testCSBKAnswers();
 	testConfirmedRx();
+	testSap3();
+	testCRC9();
+	testConfirmedTx();
+	testAirtime();
 	testFrames();
 	testCodedFrames();
 

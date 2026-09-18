@@ -68,6 +68,9 @@ static bool deliver(const dmrDataPacket_t *q)
 	dmrDataIP_t ip;
 	dmrDataUDP_t udp;
 
+	if (q->dpf == DMR_DPF_RESPONSE) {
+		return true;	// a confirmed data response: the data service's (dmr-data.md 12), not the host's
+	}
 	if ((q->sap == DMR_SAP_IP) && dmrDataGetIP(q, &ip)) {
 		return ipGatewayDeliverIP(q->group, q->dst, q->src, ip.protocol, ip.payload, ip.length);
 	}

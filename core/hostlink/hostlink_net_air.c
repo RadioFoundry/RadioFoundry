@@ -7,10 +7,13 @@
 #include "hostlink/hostlink_net_air.h"
 #include "hostlink/hostlink_net.h"
 #include "dmr/dmrDataService.h"
+#include "dmr/dmr_data_api.h"
 
 #define PREAMBLES	2	// preamble CSBKs before the packet, as for an SMS (receivers get time to sync)
 
-typedef enum { MB_EMPTY, MB_FULL } mb_state_t;
+// FULL: waiting for the radio task; SERVICE: an IP packet the data service has (compressed / confirmed there), read
+// from mb.data until dmrDataServiceIpBusy() is false
+typedef enum { MB_EMPTY, MB_FULL, MB_SERVICE } mb_state_t;
 
 // One packet from the host link task to the radio task (single producer, single consumer)
 static struct {
@@ -74,6 +77,17 @@ void hostlink_net_air_start(void)
 void hostlink_net_air_tick(uint32_t own_id, uint32_t now_ms)
 {
 	own = own_id & 0xFFFFFFu;
+	if (mb_state == MB_SERVICE) {
+		if (!dmrDataServiceIpBusy()) {
+			if (dmrDataServiceIpResult() == DMR_REQ_OK) {
+				stats.sent++;
+			} else {
+				stats.failed++;	// no clear channel in time, or confirmed and never acknowledged
+			}
+			mb_state = MB_EMPTY;
+		}
+		return;
+	}
 	if (mb_state != MB_FULL) {
 		return;
 	}
@@ -86,10 +100,21 @@ void hostlink_net_air_tick(uint32_t own_id, uint32_t now_ms)
 		mb_state = MB_EMPTY;
 		return;
 	}
-	int n = mb.raw ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, mb.group, mb.dst, own, mb.data,
-					    mb.length, DT_RATE_12_DATA, PREAMBLES, bursts, DMR_DATA_MAX_BURSTS)
-		       : dmrDataBuildIP(mb.group, mb.dst, own, mb.protocol, mb.data, mb.length, DT_RATE_12_DATA,
-					PREAMBLES, bursts, DMR_DATA_MAX_BURSTS);
+	if (!mb.raw) {
+		// The service builds it (compressed header, confirmed delivery: its settings) and keeps reading mb.data
+		if (dmrDataServiceSendIP(mb.group, mb.dst, mb.protocol, mb.data, mb.length)) {
+			mb_state = MB_SERVICE;
+			return;
+		}
+		stats.refused_busy++;
+		if ((now_ms - mb.since_ms) >= HOSTLINK_NET_AIR_GIVE_UP_MS) {
+			stats.dropped++;
+			mb_state = MB_EMPTY;
+		}
+		return;
+	}
+	int n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, mb.group, mb.dst, own, mb.data, mb.length,
+				   DT_RATE_12_DATA, PREAMBLES, bursts, DMR_DATA_MAX_BURSTS);
 
 	if (n <= 0) {
 		stats.too_long++;	// more bursts than a list holds

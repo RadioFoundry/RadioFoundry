@@ -1300,7 +1300,10 @@ static void data_save_settings(uint32_t now_ms)
 	dmrDataServiceGetSettings(&cur);
 	if (cur.arsServer == data_saved.arsServer && cur.radioCheckReply == data_saved.radioCheckReply &&
 	    cur.callAlertAck == data_saved.callAlertAck && cur.lrrpReply == data_saved.lrrpReply &&
-	    cur.smsFormat == data_saved.smsFormat && cur.radioCheckEtsi == data_saved.radioCheckEtsi) {
+	    cur.smsFormat == data_saved.smsFormat && cur.radioCheckEtsi == data_saved.radioCheckEtsi &&
+	    cur.udpCompress == data_saved.udpCompress && cur.ipConfirmed == data_saved.ipConfirmed &&
+	    cur.ipConfirmedTries == data_saved.ipConfirmedTries &&
+	    memcmp(cur.ipConfirmedRule, data_saved.ipConfirmedRule, sizeof(cur.ipConfirmedRule)) == 0) {
 		return;
 	}
 	data_saved = cur;
@@ -1310,7 +1313,13 @@ static void data_save_settings(uint32_t now_ms)
 				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
 				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0) |
 				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI ? SETTINGS_DS_SMS_ETSI : 0) |
-				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0));
+				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
+				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
+				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
+	st->ds_ip_cnf = (uint8_t)((cur.ipConfirmedTries & 0x0F) |
+				  ((cur.ipConfirmed == DMR_IPC_OFF ? SETTINGS_DS_IPC_OFF :
+				    cur.ipConfirmed == DMR_IPC_ALL ? SETTINGS_DS_IPC_ALL : 0u) << SETTINGS_DS_IPC_SHIFT));
+	memcpy(st->ds_ip_rule, cur.ipConfirmedRule, sizeof(st->ds_ip_rule));
 	st->ds_stored = 1;
 	settings_end(now_ms);
 }
@@ -1397,8 +1406,10 @@ static void data_init(radio_sm_t *sm)
 	// No auto-transmit features until the user turns them on (docs/ux/principles.md): no ARS server, no radio
 	// check auto-reply. Call alerts are acknowledged (that is what makes them work); LRRP answers "no fix" without
 	// a position source
+	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
-				  .hasGps = false };
+				  .hasGps = false, .udpCompress = DMR_UDPC_AUTO, .ipConfirmed = DMR_IPC_RULES,
+				  .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 	settings_t st;
 	settings_read(&st);
 	if (st.ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
@@ -1408,6 +1419,13 @@ static void data_init(radio_sm_t *sm)
 		set.lrrpReply = (st.ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
 		set.smsFormat = (st.ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
+		set.udpCompress = (st.ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
+				  (st.ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
+		uint8_t ipc = (uint8_t)(st.ds_ip_cnf >> SETTINGS_DS_IPC_SHIFT) & 3u;
+		set.ipConfirmed = ipc == SETTINGS_DS_IPC_OFF ? DMR_IPC_OFF : ipc == SETTINGS_DS_IPC_ALL ? DMR_IPC_ALL :
+				  DMR_IPC_RULES;
+		set.ipConfirmedTries = (st.ds_ip_cnf & 0x0F) ? (st.ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
+		memcpy(set.ipConfirmedRule, st.ds_ip_rule, sizeof(set.ipConfirmedRule));
 	}
 	data_saved = set;
 	data_tx.list = NULL;
