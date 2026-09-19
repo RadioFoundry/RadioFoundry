@@ -70,7 +70,7 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
 - **A UI designed from first principles**, not copied from anyone's menus, with press budgets checked by the host
   tests ([principles](docs/ux/principles.md), [screens](docs/ux/screens/))
 
-Each feature that costs flash has a build switch. See [docs/build-config.md](docs/build-config.md).
+Each feature that costs flash has a build switch. See [docs/build-config.md](docs/build-config.md); sizes and per-radio defaults are in [docs/feature-matrix.md](docs/feature-matrix.md).
 
 ## Interoperability
 
