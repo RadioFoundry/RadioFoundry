@@ -31,6 +31,7 @@ also carries this manual as a PDF, built from these files (`tools/build_manual.s
 18. [FAQ](18-faq.md)
 19. [Glossary](19-glossary.md)
 20. [APRS](20-aprs.md): positions on FM and over DMR, beacons, KISS and iGate with a computer
+21. [Moving from stock or md380tools firmware](21-moving-from-stock-md380.md): MD-380 / MD-390 / RT3, keeping the codeplug
 
 ## Quick reference
 

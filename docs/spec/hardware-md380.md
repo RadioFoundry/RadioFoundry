@@ -481,7 +481,7 @@ size.
 
 On a 16 MB part ODR uses the DM-1701's map (settings 0x011000, journal 0x019000, legacy codeplug 0x000000 and
 0x020000-0xE00000, native area 0xE00000), so the legacy CPS works the same. The stock TYT codeplug at 0 is overwritten
-by the first legacy write: read it out with the stock CPS first if it matters. There is no calibration window in the
+by the first legacy write: read it out with the stock CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
 main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written.
 
 ---
