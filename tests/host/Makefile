@@ -475,7 +475,7 @@ run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
-           $(DATA) $(FRAME)
+           $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
 TESTS   += hostlinkNetTest
 
 hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
@@ -563,3 +563,19 @@ run: run-usbaudio
 run-usbaudio: usrpTest
 	./usrpTest
 .PHONY: run-usbaudio
+
+# The minimal TCP (core/net/tcp.c) against a scripted peer; tshark checks the segments it wrote to tcpTest.pcap
+TESTS   += tcpTest
+
+tcpTest: tcpTest.c $(CORE)/net/tcp.c $(CORE)/net/tcp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ tcpTest.c $(CORE)/net/tcp.c
+
+run: run-tcp
+run-tcp: tcpTest
+	./tcpTest
+ifneq ($(TSHARK),)
+	@"$(TSHARK)" -r tcpTest.pcap -o ip.check_checksum:TRUE -o tcp.check_checksum:TRUE -T fields -e _ws.malformed -e _ws.expert.message 2>&1 \
+		| grep -i -E "malformed|bad checksum|checksum.*incorrect" > tcpTest.expert || true
+	@if [ -s tcpTest.expert ]; then echo "# tshark found problems in tcpTest.pcap"; cat tcpTest.expert; exit 1; else echo "# tshark: tcpTest.pcap has no malformed segments or bad checksums"; fi
+endif
+.PHONY: run-tcp

@@ -6,7 +6,8 @@
  * Ethernet, ARP (on a /31 for the radio's address, on a shared link for every address but the host's), ICMP echo to the
  * radio's address,
  * a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
- * ipGateway.h), and raw DMR data on IPGW_RAW_PORT. No TCP or other protocols, no fragments.
+ * ipGateway.h), and raw DMR data on IPGW_RAW_PORT. TCP only to the radio itself, for its own services (ipGatewaySetTCP);
+ * no other protocols, no fragments.
  */
 
 #include <string.h>
@@ -17,6 +18,7 @@
 #define ETHERTYPE_IPV4		0x0800
 #define ETHERTYPE_ARP		0x0806
 #define IP_PROTO_ICMP		1
+#define IP_PROTO_TCP		6
 #define IP_PROTO_UDP		17
 #define IP_PROTO_SCTP		132
 #define DHCP_SERVER_PORT	67
@@ -38,6 +40,7 @@ static uint8_t monitorMac[6];				// a unicast address the host doesn't have, for
 DMR_DATA_BUFFER static uint8_t tx[IPGW_MAX_FRAME];
 static uint16_t ipId = 0;
 static uint16_t serialPeerPort = 0;		// host port of the serial protocol, 0 until the host has sent to IPGW_SERIAL_PORT
+static ipGatewayLocalFn localTCP;			// the radio's own TCP, NULL without it
 
 static const uint8_t BROADCAST_MAC[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
@@ -388,6 +391,15 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 		return;
 	}
 
+	if (ip[9] == IP_PROTO_TCP)
+	{
+		if ((localTCP != NULL) && (dst == ipGatewayRadioIP()) && (dst != 0))
+		{
+			localTCP(src, l4, l4Length);// any source: replies to the radio's own connections come through the host
+		}
+		return;// never over the air
+	}
+
 	uint16_t dstPort = 0;
 
 	if (ip[9] == IP_PROTO_UDP)
@@ -595,4 +607,25 @@ bool ipGatewaySerialOut(const uint8_t *data, int length)
 bool ipGatewayDeliverMonitor(const uint8_t *record, int length)
 {
 	return sendUDP(BROADCAST_MAC, ipGatewayRadioIP(), IPGW_BROADCAST_IP, IPGW_MONITOR_PORT, IPGW_MONITOR_PORT, record, length);
+}
+
+void ipGatewaySetTCP(ipGatewayLocalFn fn)
+{
+	localTCP = fn;
+}
+
+uint8_t *ipGatewayLocalPayload(void)
+{
+	return &tx[ETH_HEADER + 20];
+}
+
+bool ipGatewaySendLocal(uint8_t protocol, uint32_t dst, int length)
+{
+	uint32_t radioIp = ipGatewayRadioIP();
+
+	if ((radioIp == 0) || (length < 0) || (length > IPGW_LOCAL_MAX))
+	{
+		return false;
+	}
+	return sendIPv4(hostMac, protocol, radioIp, dst, length);// the host is the only neighbor, and the router
 }

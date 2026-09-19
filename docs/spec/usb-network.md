@@ -62,6 +62,9 @@ Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGat
 - Debug link view, section `hotspot`: `usb.network usb.net_up net.host_ip net.radio_ip net.frames_in net.to_air
   net.to_air_refused net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped`.
 
+The radio's own TCP services on its address (status page, KISS TNC, rigctld, APRS-IS) are in
+[tcp-services.md](tcp-services.md); TCP to other radios is not carried.
+
 Voice over the network personality (USRP audio, host PTT, COS) is designed in [usb-audio.md](usb-audio.md) 4.2;
 not built yet.
 
