@@ -43,6 +43,11 @@ so qdmr reads them.
   key assignments are ignored.
 - Emergency, ARS, text message format and SFR settings.
 
+## Coming from an MD-380 with stock firmware
+
+On a TYT MD-380, MD-390 or RT3, `tools/md380_migrate.py` reads the stock codeplug, flashes ODR and writes the
+codeplug back, all in one run. See [Moving from stock or md380tools firmware](21-moving-from-stock-md380.md).
+
 ## Backups
 
 Read the codeplug with qdmr and save it before you change it. Developers can also take a raw backup with
