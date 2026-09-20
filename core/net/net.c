@@ -14,6 +14,16 @@
 
 static bool was_up;
 
+#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL
+static radio_view_t view;
+
+const radio_view_t *net_radio_view(void)
+{
+	radio_get_view(&view);
+	return &view;
+}
+#endif
+
 #if CONFIG_NET_KISS
 #include "aprs/aprs.h"
 #include "aprs/kiss.h"
@@ -111,6 +121,9 @@ void net_start(uint32_t salt)
 #if CONFIG_NET_HTTP
 	http_start();
 #endif
+#if CONFIG_NET_RIGCTL
+	rigctld_start();
+#endif
 }
 
 void net_poll(uint32_t now_ms, bool link_up)
@@ -129,6 +142,9 @@ void net_poll(uint32_t now_ms, bool link_up)
 #if CONFIG_NET_HTTP
 	http_poll(now_ms);
 #endif
+#if CONFIG_NET_RIGCTL
+	rigctld_poll(now_ms);
+#endif
 	tcp_poll(now_ms);
 }
 
@@ -140,6 +156,9 @@ void net_view(dl_text_t *t)
 #endif
 #if CONFIG_NET_HTTP
 	http_view(t);
+#endif
+#if CONFIG_NET_RIGCTL
+	rigctld_view(t);
 #endif
 }
 

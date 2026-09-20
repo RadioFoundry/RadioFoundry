@@ -55,7 +55,6 @@ typedef struct {
 static hconn_t hc[TCP_CONNS];
 static char buf[BUF_MAX];
 static int buf_owner = -1;
-static radio_view_t view;	// static: too large for the host link task's stack
 static struct {
 	uint32_t requests, ok, not_found, bad, busy_waits;
 } st;
@@ -112,27 +111,25 @@ static const char *bool_s(bool b)
 static void status_json(dl_text_t *t)
 {
 	static const char *const states[] = { "idle", "rx", "tx", "tx_denied" };
-	const channel_t *ch = &view.ch;
-
-	radio_get_view(&view);
-	const char *pw = ((view.power < board.power_count) && (board.power_names != NULL)) ? board.power_names[view.power]
-											      : "?";
+	const radio_view_t *v = net_radio_view();
+	const channel_t *ch = &v->ch;
+	const char *pw = ((v->power < board.power_count) && (board.power_names != NULL)) ? board.power_names[v->power] : "?";
 	dl_text(t, "{\"radio\":");
 	json_str(t, board.name);
 	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"zone\":%u,\"channel_number\":%u,"
-		"\"channel\":", ODR_GIT, (unsigned)(hal_millis() / 1000u), (view.state < 4) ? states[view.state] : "?",
-		bool_s(view.vfo), view.zone_index, view.channel_number);
+		"\"channel\":", ODR_GIT, (unsigned)(hal_millis() / 1000u), (v->state < 4) ? states[v->state] : "?",
+		bool_s(v->vfo), v->zone_index, v->channel_number);
 	json_str(t, ch->name);
 	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\",\"power\":", (unsigned)ch->rx_hz,
 		(unsigned)ch->tx_hz, (ch->mode == RADIO_MODE_DMR) ? "dmr" : "fm", (ch->bw == RADIO_BW_25K) ? "25" : "12.5");
 	json_str(t, pw);
-	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u,\"battery_pct\":%u,\"battery_mv\":%u,\"hotspot\":%s", view.rssi_dbm,
-		view.squelch, view.battery_pct, view.battery_mv, bool_s(view.hotspot));
+	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u,\"battery_pct\":%u,\"battery_mv\":%u,\"hotspot\":%s", v->rssi_dbm,
+		v->squelch, v->battery_pct, v->battery_mv, bool_s(v->hotspot));
 #if CONFIG_DMR
 	if (ch->mode == RADIO_MODE_DMR) {
 		dl_text(t, ",\"dmr\":{\"own_id\":%u,\"cc\":%u,\"ts\":%u,\"target\":%u,\"private\":%s,\"heard\":%u}",
-			(unsigned)view.dmr.own_id, ch->color_code, ch->timeslot, (unsigned)view.dmr.target_id,
-			bool_s(view.dmr.target_private), (unsigned)view.dmr.call.src);
+			(unsigned)v->dmr.own_id, ch->color_code, ch->timeslot, (unsigned)v->dmr.target_id,
+			bool_s(v->dmr.target_private), (unsigned)v->dmr.call.src);
 	}
 #endif
 	dl_text(t, ",\"tcp_open\":%u}\n", (unsigned)tcp_open_count());
@@ -190,9 +187,8 @@ static bool view_json(dl_text_t *t, const char *query)
 	}
 	dl_text_t v;
 
-	radio_get_view(&view);
 	dl_text_init(&v, buf + VIEW_AT, BUF_MAX - VIEW_AT);
-	debuglink_view_section((uint8_t)section, &view, &v);
+	debuglink_view_section((uint8_t)section, net_radio_view(), &v);
 	const char *p = buf + VIEW_AT, *end = p + v.len;
 	bool first = true;
 

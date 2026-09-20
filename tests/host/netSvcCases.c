@@ -249,8 +249,112 @@ static void test_http(void)
 	CHECK(tcp_open_count() == 0);
 }
 
+// ---- fake radio core requests ----
+static int req_vfo_on, req_vfo_set, req_bw = -1, req_mode = -1;
+static uint32_t req_hz;
+static bool req_ptt;
+static int ptt_downs;
+void radio_req_vfo(bool on) { req_vfo_on += on; }
+void radio_req_vfo_set(uint32_t hz) { req_vfo_set++; req_hz = hz; }
+void radio_req_ptt(bool down) { ptt_downs += down && !req_ptt; req_ptt = down; }
+void radio_req_bandwidth(radio_bw_t bw) { req_bw = bw; }
+void radio_req_mode(uint8_t mode) { req_mode = mode; }
+
+// One command line, the answer (waits for it)
+static const char *rig(peer_t *p, const char *line)
+{
+	peer_clear(p);
+	peer_send(p, line, (int)strlen(line));
+	run_for(10);
+	p->rx[p->rxn] = 0;
+	return (const char *)p->rx;
+}
+
+static void test_rigctl(void)
+{
+	static peer_t a, far;
+	memset(&fake_view, 0, sizeof(fake_view));
+	fake_view.ch.rx_hz = 145500000;
+	fake_view.ch.tx_hz = 145500000;
+	fake_view.rssi_dbm = -73;
+	CHECK(peer_connect(&a, net_test_host_ip(), 52000, NET_RIGCTL_PORT));
+
+	CHECK(strcmp(rig(&a, "f\n"), "145500000\n") == 0);
+	CHECK(strcmp(rig(&a, "\\get_freq\n"), "145500000\n") == 0);
+	CHECK(strcmp(rig(&a, "f VFOA\n"), "145500000\n") == 0);
+	CHECK(strcmp(rig(&a, "+f\n"), "get_freq:\nFrequency: 145500000\nRPRT 0\n") == 0);
+
+	// A frequency moves a channel to the VFO; read back at once it is the new one, before the radio shows it
+	CHECK(strcmp(rig(&a, "F 146520000.000000\n"), "RPRT 0\n") == 0);
+	CHECK(req_vfo_on == 1 && req_vfo_set == 1 && req_hz == 146520000u);
+	CHECK(strcmp(rig(&a, "f\n"), "146520000\n") == 0);
+	// Two at once: the second waits out the request gap, then goes
+	fake_view.vfo = true;
+	peer_clear(&a);
+	peer_send(&a, "F 146530000\nF 146540000\n", 24);
+	a.rx[a.rxn] = 0;
+	CHECK(strcmp((char *)a.rx, "RPRT 0\nRPRT 0\n") == 0);
+	run_for(50);
+	CHECK(req_hz == 146540000u && req_vfo_on == 1);
+	CHECK(strcmp(rig(&a, "F 50000000\n"), "RPRT -1\n") == 0);	// no band there
+	CHECK(strcmp(rig(&a, "F abc\n"), "RPRT -1\n") == 0);
+	run_for(1100);
+	CHECK(strcmp(rig(&a, "f\n"), "145500000\n") == 0);	// the hold is over: what the radio shows
+
+	// Mode
+	CHECK(strcmp(rig(&a, "m\n"), "FM\n12500\n") == 0);
+	CHECK(strcmp(rig(&a, "M FM 25000\n"), "RPRT 0\n") == 0 && req_bw == RADIO_BW_25K);
+	CHECK(strcmp(rig(&a, "M FMN 0\n"), "RPRT 0\n") == 0 && req_bw == RADIO_BW_12K5);
+	CHECK(strcmp(rig(&a, "M USB 2400\n"), "RPRT -1\n") == 0);
+	CHECK(strcmp(rig(&a, "+m\n"), "get_mode:\nMode: FM\nPassband: 12500\nRPRT 0\n") == 0);
+
+	// PTT: keyed, released, rate limited, released when the client goes
+	CHECK(strcmp(rig(&a, "t\n"), "0\n") == 0);
+	CHECK(strcmp(rig(&a, "T 1\n"), "RPRT 0\n") == 0 && req_ptt);
+	fake_view.state = RS_TX;
+	CHECK(strcmp(rig(&a, "t\n"), "1\n") == 0);
+	CHECK(strcmp(rig(&a, "T 0\n"), "RPRT 0\n") == 0 && !req_ptt);
+	fake_view.state = RS_IDLE;
+	CHECK(strcmp(rig(&a, "T 1\n"), "RPRT -9\n") == 0 && !req_ptt);
+	run_for(1000);
+	CHECK(strcmp(rig(&a, "T 1\n"), "RPRT 0\n") == 0 && req_ptt);
+	// The safety limit
+	run_for(181000);
+	CHECK(!req_ptt);
+	run_for(1000);
+	CHECK(strcmp(rig(&a, "\\set_ptt 1\n"), "RPRT 0\n") == 0 && req_ptt);
+
+	// The S meter, other levels, VFO, split, info, chk_vfo, dump_state, unknown commands
+	CHECK(strcmp(rig(&a, "l STRENGTH\n"), "20\n") == 0);
+	CHECK(strcmp(rig(&a, "l RFPOWER\n"), "0.00\n") == 0);
+	CHECK(strcmp(rig(&a, "l AF\n"), "RPRT -11\n") == 0);
+	CHECK(strcmp(rig(&a, "v\n"), "VFOA\n") == 0);
+	CHECK(strcmp(rig(&a, "V VFOA\n"), "RPRT 0\n") == 0);
+	CHECK(strcmp(rig(&a, "V VFOB\n"), "RPRT -1\n") == 0);
+	CHECK(strcmp(rig(&a, "s\n"), "0\nVFOA\n") == 0);
+	CHECK(strcmp(rig(&a, "\\get_info\n"), "OpenDigitalRadio fake\n") == 0);
+	CHECK(strcmp(rig(&a, "\\chk_vfo\n"), "0\n") == 0);
+	const char *ds = rig(&a, "\\dump_state\n");
+	CHECK(strncmp(ds, "0\n2\n2\n136000000.000000 174000000.000000 0x20 -1 -1", 49) == 0);
+	CHECK(strstr(ds, "0x40000000\n0x0\n0x0\n0x0\n") != NULL);
+	CHECK(strcmp(rig(&a, "xyz\n"), "RPRT -4\n") == 0);
+
+	// The client goes while keyed: released
+	peer_close(&a);
+	CHECK(!req_ptt);
+
+	// PTT only from the computer the radio is plugged into
+	CHECK(peer_connect(&far, 0xC0000201u, 52001, NET_RIGCTL_PORT));
+	CHECK(strcmp(rig(&far, "f\n"), "145500000\n") == 0);
+	CHECK(strcmp(rig(&far, "T 1\n"), "RPRT -9\n") == 0 && !req_ptt);
+	CHECK(strcmp(rig(&far, "q\n"), "") == 0 && far.fin);
+	peer_close(&far);
+	run_for(3000);
+}
+
 void tests_run(void)
 {
 	test_kiss();
 	test_http();
+	test_rigctl();
 }

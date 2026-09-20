@@ -17,6 +17,7 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | the TCP (`core/net/tcp.c`) and its glue to the gateway (`core/net/net.c`) |
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP, port 8001 (`core/net/kiss_tcp.c`, section 4) |
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server, port 80 (`core/net/http.c`, section 5) |
+| `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 
 ## 2. TCP
 
@@ -97,7 +98,40 @@ the start never overtakes it), and a second JSON request waits until the first r
 
 View keys: `http.requests http.ok http.not_found http.bad http.busy_waits`.
 
-## 6. Changes in the IP gateway
+## 6. rigctld (port 4532)
+
+Hamlib's network rig control protocol as the rigctld(1) and rigctl(1) manual pages describe it, so loggers, SDR
+programs and satellite trackers can follow and set the radio (`rigctl -m 2 -r <radio>:4532`, or a program's "Hamlib
+NET rigctl" rig). One command per line (CR ignored), the short form or the backslash long name, arguments separated
+by spaces. A "get" answers its value lines; a "set" answers `RPRT 0`, an error `RPRT -<Hamlib error>` (1 invalid
+argument, 4 not implemented, 9 refused, 11 not available). A leading `+` (or `;` `|` `,`) asks for the extended answer:
+the command's long name with a colon, the values with their labels, then `RPRT`. A VFO argument right after the
+command (clients started with `--vfo`) is skipped.
+
+| Command | Answer / action |
+|---|---|
+| `f` `\get_freq` | the receive frequency in Hz; a frequency just set is reported until the radio shows it (at most 1 s) |
+| `F` `\set_freq <Hz>` | the VFO to that frequency (simplex); on a channel the radio moves to the VFO first. Outside the board's bands -1, in hotspot mode -9. Requests go at most every 20 ms: a burst of updates (Doppler tracking) ends at its latest value |
+| `m` `\get_mode` | `FM` and the passband, 12500 or 25000 (a DMR channel answers FM too: DMR is 4FSK on an FM carrier, and Hamlib has no DMR mode) |
+| `M` `\set_mode FM\|FMN <passband>` | FM on the channel (a DMR channel turns FM for now) and the bandwidth: 0 / -1 unchanged, up to 12500 narrow, above wide; FMN narrow. Other modes -1 |
+| `t` `\get_ptt`, `T` `\set_ptt 0-3` | PTT; keyed only from the computer the radio is plugged into (else -9), at most 3 minutes per keying (the radio's own TX time-out may end it sooner), again only 1 s after a release (else -9), released when the connection ends |
+| `\get_dcd` | 1 while the squelch is open |
+| `l STRENGTH` | dB over S9, S9 = -93 dBm (IARU VHF / UHF); `l RFPOWER` 0.00-1.00 from the power level; other levels -11 |
+| `v`, `V VFOA` | `VFOA`; `V` takes VFOA, currVFO, VFO, Main |
+| `s`, `S 0`, `i` | no split (`0`, `VFOA`); `i` the transmit frequency |
+| `_` `\get_info` | `OpenDigitalRadio <radio>` |
+| `\chk_vfo` | `0` |
+| `\get_powerstat` | `1` |
+| `\dump_state` | a minimal protocol 0 state: model 2, ITU region 2, the board's bands as receive ranges (FM, 0x20) and its transmit bands, FM tuning steps and filters, no RIT / XIT / preamp / attenuator, `STRENGTH` as the only level |
+| `q` `Q` `\quit` | closes the connection |
+| anything else | `RPRT -4` |
+
+`\dump_state` is written from the manual's description and the line layout clients are known to parse; the HIL test
+checks it with Hamlib's own `rigctl -m 2` where it is installed.
+
+View keys: `rigctl.conns rigctl.commands rigctl.errors rigctl.freq_sets rigctl.ptt rigctl.ptt_downs`.
+
+## 7. Changes in the IP gateway
 
 `core/dmr/ipGateway.{c,h}`: TCP (protocol 6) to the radio's own address goes to the function set with
 `ipGatewaySetTCP` (NULL by default: dropped, as before), from any source and before the "only what the host itself
@@ -118,6 +152,9 @@ send a packet from the radio's address to any destination through the host's MAC
   client replacing the first, the KISS setting off, the client closing. HTTP: the page, HEAD, the status JSON with an
   escaped name, view sections as JSON (numbers, strings, escapes, by name and number, the list, unknown), the screen
   BMP against the frame buffer, 405 / 404 / 400 / 414, a client sending a byte at a time, two JSON requests at once
-  (the second waits for the buffer), the 10 s request timeout. `netSvcTest.pcap` is checked by tshark.
+  (the second waits for the buffer), the 10 s request timeout. rigctld: get / set frequency (the VFO move, the read
+  back before the radio shows it, the request gap, out of band), mode, PTT (the rate limit, the 3 minute limit, the
+  release on disconnect, refused from beyond the host), levels, VFO, split, info, chk_vfo, dump_state, extended
+  answers, unknown commands, quit. `netSvcTest.pcap` is checked by tshark.
 - The host OS stack is the other end in the HIL tests (curl, nc); a tap / utun test on the host would need root and
   is not done.

@@ -49,6 +49,9 @@ CONFIG_NET_TCP ?= $(CONFIG_DMR_IP_GATEWAY)
 CONFIG_NET_KISS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS))),y,n)
 # the HTTP status server on port 80: a page, JSON status and view sections, the screen (needs NET_TCP; core/net/http.c)
 CONFIG_NET_HTTP ?= $(CONFIG_NET_TCP)
+# Hamlib rigctld on port 4532: frequency, mode, PTT, S meter for loggers and SDR programs (needs NET_TCP;
+# core/net/rigctld.c)
+CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
 # single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
 # the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
 CONFIG_SFR ?= $(CONFIG_DMR)
@@ -112,7 +115,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY NET_TCP NET_KISS NET_HTTP SFR \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY NET_TCP NET_KISS NET_HTTP NET_RIGCTL SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
@@ -160,7 +163,7 @@ ifneq ($(call feature_on,NET_TCP),)
     $(error CONFIG_NET_TCP=y needs CONFIG_DMR_IP_GATEWAY=y)
   endif
 endif
-$(foreach f,NET_HTTP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
+$(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
 ifneq ($(call feature_on,NET_KISS),)
   ifeq ($(call feature_on,NET_TCP)$(call feature_on,APRS),yy)
   else
