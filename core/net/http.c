@@ -60,14 +60,11 @@ static struct {
 } st;
 
 static const char page[] =
-	"<!DOCTYPE html><html><head><meta charset=utf-8><meta name=viewport content=\"width=device-width\">"
-	"<title>OpenDigitalRadio</title><style>body{font:15px sans-serif;margin:1em}td{padding:2px 8px}"
-	"img{image-rendering:pixelated;width:320px;border:1px solid #888}</style></head><body>"
-	"<h3>OpenDigitalRadio</h3><img id=s alt=screen><table id=t></table><script>"
-	"function u(){fetch('/status').then(r=>r.json()).then(j=>{t.textContent='';for(const k in j){"
-	"const r=t.insertRow();r.insertCell().textContent=k;"
-	"r.insertCell().textContent=typeof j[k]=='object'?JSON.stringify(j[k]):j[k]}"
-	"s.src='/api/screen.bmp?'+Date.now()})}u();setInterval(u,3000)</script></body></html>";
+	"<!DOCTYPE html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>OpenDigitalRadio"
+	"</title><style>body{font:15px sans-serif}img{width:320px;image-rendering:pixelated}</style><img id=s>"
+	"<table id=t></table><script>function u(){fetch('/status').then(r=>r.json()).then(j=>{t.textContent='';"
+	"for(const k in j){const r=t.insertRow();r.insertCell().textContent=k;r.insertCell().textContent="
+	"JSON.stringify(j[k])}s.src='/api/screen.bmp?'+Date.now()})}u();setInterval(u,3000)</script>";
 
 static void put16le(uint8_t *p, uint32_t v)
 {
@@ -268,9 +265,7 @@ static void respond(int c, int code, const char *type, uint8_t src, const void *
 
 static void fail(int c, int code)
 {
-	static const char msg[] = "error\n";
-
-	respond(c, code, "text/plain", SRC_MEM, msg, sizeof(msg) - 1u);
+	respond(c, code, "text/plain", SRC_MEM, NULL, 0);	// the status line says it all
 }
 
 static bool screen_ok(void)
@@ -365,11 +360,11 @@ static void dispatch(int c)
 	if (query != NULL) {
 		*query++ = '\0';
 	}
-	if ((strcmp(path, "/") == 0) || (strcmp(path, "/index.html") == 0)) {
+	if (strcmp(path, "/") == 0) {
 		respond(c, 200, "text/html; charset=utf-8", SRC_MEM, page, sizeof(page) - 1u);
 		return;
 	}
-	if ((strcmp(path, "/api/screen.bmp") == 0) || (strcmp(path, "/api/screen") == 0)) {
+	if (strcmp(path, "/api/screen.bmp") == 0) {
 		if (!screen_ok()) {
 			fail(c, 404);
 			return;
@@ -377,7 +372,7 @@ static void dispatch(int c)
 		respond(c, 200, "image/bmp", SRC_BMP, NULL, BMP_HEADER + bmp_row() * board.display->height);
 		return;
 	}
-	bool status = (strcmp(path, "/status") == 0) || (strcmp(path, "/api/status") == 0);
+	bool status = strcmp(path, "/status") == 0;
 	bool viewp = strcmp(path, "/api/view") == 0;
 #if CONFIG_NET_APRSIS
 	bool setp = strcmp(path, "/api/aprsis") == 0;

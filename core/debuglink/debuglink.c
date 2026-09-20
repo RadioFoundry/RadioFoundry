@@ -111,6 +111,21 @@ static const char features[] = "features="
 #if CONFIG_DMR_IP_GATEWAY
 	"DMR_IP_GATEWAY,"
 #endif
+#if CONFIG_NET_TCP
+	"NET_TCP,"
+#endif
+#if CONFIG_NET_KISS
+	"NET_KISS,"
+#endif
+#if CONFIG_NET_HTTP
+	"NET_HTTP,"
+#endif
+#if CONFIG_NET_RIGCTL
+	"NET_RIGCTL,"
+#endif
+#if CONFIG_NET_APRSIS
+	"NET_APRSIS,"
+#endif
 #if CONFIG_VFO
 	"VFO,"
 #endif

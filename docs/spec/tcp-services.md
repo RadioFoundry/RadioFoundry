@@ -18,6 +18,10 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP, port 8001 (`core/net/kiss_tcp.c`, section 4) |
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server, port 80 (`core/net/http.c`, section 5) |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
+| `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
+
+The MD-380 builds none of them: TCP and HTTP fit its default image but not the maximal configuration `tools/ci.sh`
+builds, and APRS has no RF path there (`boards/md380/config.mk`).
 
 ## 2. TCP
 
@@ -84,13 +88,13 @@ header lines are skipped; a request not complete within 10 s is reset. Responses
 
 | Path | Response |
 |---|---|
-| `/`, `/index.html` | a page of about 700 bytes from flash: the status as a table and the screen, refreshed every 3 s |
-| `/status`, `/api/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open` |
+| `/` | a page of about 450 bytes from flash: the status as a table and the screen, refreshed every 3 s |
+| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open` |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
-| `/api/screen.bmp`, `/api/screen` | the frame buffer as a BMP: top-down (negative height), 16 bit BI_BITFIELDS (RGB565 masks), about 40 KB on a 160 x 128 screen; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame. 404 on a 1 bpp display |
+| `/api/screen.bmp` | the frame buffer as a BMP: top-down (negative height), 16 bit BI_BITFIELDS (RGB565 masks), about 40 KB on a 160 x 128 screen; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame. 404 on a 1 bpp display |
 | `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
-| anything else | 404; another method 405; a malformed request line 400 |
+| anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
 Bodies stream into TCP as its buffer frees up: the page from flash and the screen straight from the frame buffer;
 JSON is rendered once into a shared 1.5 KB buffer (a view section's text into its upper part, the JSON written from
@@ -131,7 +135,51 @@ checks it with Hamlib's own `rigctl -m 2` where it is installed.
 
 View keys: `rigctl.conns rigctl.commands rigctl.errors rigctl.freq_sets rigctl.ptt rigctl.ptt_downs`.
 
-## 7. Changes in the IP gateway
+## 7. APRS-IS client
+
+The radio connects to an APRS-IS server itself, out through the host, instead of the host helper
+`tools/aprs_gate.py` doing it over USB (aprs-is.net "Connecting to APRS-IS", "IGate Design"). It carries lines only;
+the iGate rules stay in the APRS engine ([aprs.md](aprs.md) 9.1).
+
+- Off until a server address is set (settings `aprsis_ip`, `aprsis_port` 0 = 14580, `aprsis_range_km`) and the APRS
+  callsign is. IPv4 addresses only: no DNS client (pick a server's address, e.g. `dig +short rotate.aprs2.net`, or run
+  a local aprsc / aprs_gate-like relay on the host).
+- Set over HTTP from the host only (a request from beyond the host gets 403): `GET /api/aprsis?server=a.b.c.d[:port]`
+  (`off` clears it), `&range=<km>`; `GET /api/aprsis` alone answers the state as JSON (`state server range_km call
+  connects logins unverified lines_out lines_in`).
+- Login: `user <CALL-SSID> pass <passcode> vers OpenDigitalRadio <version>[ filter m/<km>]`, the passcode computed
+  from the callsign by the published 15-bit hash (`aprsis_passcode`, the same as `tools/aprs_gate.py`). Online once
+  the server's `# logresp ... verified` line comes; an "unverified" answer drops the connection and waits 5 minutes.
+- Online, the TNC pump (section 3) sends it the engine's SetHardware 'G' lines with CR LF: our beacons, status and
+  messages as `CALL>APZODR,TCPIP*:...` when the APRS settings "KISS on USB" and "to APRS-IS" (`to_is`) are on, and on
+  receive builds the RF packets the iGate passes. Server lines that aren't comments go to the engine
+  (`aprs_host_is_line`), whose IS -> RF rules decide (iGate builds; elsewhere they are dropped).
+- Reconnects 30 s after a failure, doubling up to 5 minutes; a server silent for 2 minutes (servers comment every
+  20 s) or no logresp within 30 s is dropped; a settings or callsign change reconnects at once.
+- View keys: `aprsis.state aprsis.server aprsis.connects aprsis.logins aprsis.unverified aprsis.lines_out
+  aprsis.lines_in aprsis.drops`.
+
+### 7.1 Routing through the host
+
+The radio's address (12.x.y.z, the host's xor 1) is only known to the host, which must forward and NAT it. With
+`RADIO=12.0.39.20` (the radio's address) and the host's Internet interface `en0` / `eth0`:
+
+```
+# macOS
+sudo sysctl -w net.inet.ip.forwarding=1
+echo "nat on en0 from $RADIO to any -> (en0)" | sudo pfctl -ef -
+
+# Linux (usb0: the radio's interface)
+sudo sysctl -w net.ipv4.ip_forward=1
+sudo iptables -t nat -A POSTROUTING -s $RADIO/32 -o eth0 -j MASQUERADE
+sudo iptables -A FORWARD -i usb0 -o eth0 -j ACCEPT
+sudo iptables -A FORWARD -i eth0 -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+```
+
+The replies come back translated to the radio's address and reach it over the host route the radio's DHCP gave
+(option 121). A server address inside 12.0.0.0/8 can't be used (the host routes that range to the radio).
+
+## 8. Changes in the IP gateway
 
 `core/dmr/ipGateway.{c,h}`: TCP (protocol 6) to the radio's own address goes to the function set with
 `ipGatewaySetTCP` (NULL by default: dropped, as before), from any source and before the "only what the host itself
@@ -155,6 +203,10 @@ send a packet from the radio's address to any destination through the host's MAC
   (the second waits for the buffer), the 10 s request timeout. rigctld: get / set frequency (the VFO move, the read
   back before the radio shows it, the request gap, out of band), mode, PTT (the rate limit, the 3 minute limit, the
   release on disconnect, refused from beyond the host), levels, VFO, split, info, chk_vfo, dump_state, extended
-  answers, unknown commands, quit. `netSvcTest.pcap` is checked by tshark.
+  answers, unknown commands, quit. APRS-IS: the passcode, off without a server, settings over HTTP (403 from beyond
+  the host, 400 for a bad address), the login line, logresp verified / unverified and the waits, the engine's 'G'
+  lines to the server and nothing else, server lines to the engine without comments, a silent server dropped and
+  tried again, a callsign change, turned off. `netSvcTest.pcap` is checked by tshark.
+- HIL: `tests/hil/test_tcp_services.py` (opt-in, below).
 - The host OS stack is the other end in the HIL tests (curl, nc); a tap / utun test on the host would need root and
   is not done.

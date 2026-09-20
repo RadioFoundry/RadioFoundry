@@ -133,6 +133,9 @@
 #ifndef CONFIG_NET_KISS
 #define CONFIG_NET_KISS			(CONFIG_NET_TCP && CONFIG_APRS)
 #endif
+#ifndef CONFIG_NET_APRSIS
+#define CONFIG_NET_APRSIS		(CONFIG_NET_TCP && CONFIG_APRS)
+#endif
 
 // Large state that only the CPU touches (never a DMA buffer) can go in RAM the board keeps for that, the STM32F4's
 // CCM: faster, and off the bus the DMA uses. ODR_CPU_RAM is zeroed at start-up like .bss; ODR_CPU_RAM_NOINIT isn't
@@ -199,8 +202,8 @@
 #if (CONFIG_NET_HTTP || CONFIG_NET_RIGCTL) && !CONFIG_NET_TCP
 #error "CONFIG_NET_HTTP and CONFIG_NET_RIGCTL need CONFIG_NET_TCP"
 #endif
-#if CONFIG_NET_KISS && !(CONFIG_NET_TCP && CONFIG_APRS)
-#error "CONFIG_NET_KISS needs CONFIG_NET_TCP and CONFIG_APRS"
+#if (CONFIG_NET_KISS || CONFIG_NET_APRSIS) && !(CONFIG_NET_TCP && CONFIG_APRS)
+#error "CONFIG_NET_KISS and CONFIG_NET_APRSIS need CONFIG_NET_TCP and CONFIG_APRS"
 #endif
 #if CONFIG_USB_NETWORK && !CONFIG_USB
 #error "CONFIG_USB_NETWORK needs CONFIG_USB"

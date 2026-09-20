@@ -125,7 +125,7 @@ static void peer_segment(peer_t *p, uint8_t flags, const void *data, int len)
 	ipGatewayEthernetIn(f, 54 + len);
 }
 
-static peer_t *peers[8];
+static peer_t *peers[32];
 static int npeers;
 
 void peer_add(peer_t *p)
@@ -135,7 +135,9 @@ void peer_add(peer_t *p)
 			return;
 		}
 	}
-	peers[npeers++] = p;
+	if (npeers < 32) {
+		peers[npeers++] = p;
+	}
 }
 
 // The radio's segments to the peers: data collected and acknowledged, SYN / FIN / RST noted

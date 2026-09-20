@@ -48,7 +48,8 @@ static void view_settings(dl_text_t *t)
 		c.boot, c.level, c.txdelay, word(c.via, vias, 3), (unsigned)c.dmr_dst);
 	dl_text(t, "set.aprs_dmr_udt=%u\nset.aprs_pos_src=%u\nset.aprs_kiss=%u\nset.aprs_rx=%u\nset.aprs_igate=%u\n",
 		c.dmr_udt, c.pos_src, c.kiss, c.rx_on, c.igate);
-	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_dmr_gps=%u\n", c.igate_tx, c.digi, c.dmr_gps);
+	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_dmr_gps=%u\nset.aprs_to_is=%u\n", c.igate_tx, c.digi,
+		c.dmr_gps, c.to_is);
 }
 
 void debuglink_view_aprs(uint8_t part, dl_text_t *t)
@@ -158,6 +159,7 @@ static uint8_t set_field(uint8_t field, uint32_t val)
 	case DL_APRS_F_IGATE_TX: c.igate_tx = val != 0; break;
 	case DL_APRS_F_DIGI: c.digi = (uint8_t)val; break;
 	case DL_APRS_F_DMR_GPS: c.dmr_gps = val != 0; break;
+	case DL_APRS_F_TO_IS: c.to_is = val != 0; break;
 	case DL_APRS_F_TXDELAY:
 		if (val < 5 || val > 100) {
 			return DL_ST_BAD_ARG;

@@ -12,6 +12,9 @@
 #include "ui/gfx.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/dl_fmt.h"
+#include "settings/settings.h"
+#include "aprs/aprs.h"
+#include "net/aprsis.h"
 
 // ---- fake APRS engine (aprs.h / aprs_host.h) ----
 static bool kiss_on = true;
@@ -133,9 +136,9 @@ void debuglink_view_section(uint8_t s, const radio_view_t *v, dl_text_t *t)
 	}
 }
 
-static int http_get(peer_t *p, uint16_t port, const char *req)
+static int http_get_from(peer_t *p, uint32_t ip, uint16_t port, const char *req)
 {
-	if (!peer_connect(p, net_test_host_ip(), port, NET_HTTP_PORT)) {
+	if (!peer_connect(p, ip, port, NET_HTTP_PORT)) {
 		return -1;
 	}
 	peer_send(p, req, (int)strlen(req));
@@ -147,6 +150,11 @@ static int http_get(peer_t *p, uint16_t port, const char *req)
 		peer_close(p);
 	}
 	return p->rxn;
+}
+
+static int http_get(peer_t *p, uint16_t port, const char *req)
+{
+	return http_get_from(p, net_test_host_ip(), port, req);
 }
 
 static const char *body_of(peer_t *p)
@@ -162,7 +170,7 @@ static void test_http(void)
 	// The page
 	CHECK(http_get(&a, 51000, "GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n") > 0);
 	CHECK(strncmp((char *)a.rx, "HTTP/1.0 200 OK\r\n", 17) == 0 && strstr((char *)a.rx, "Content-Type: text/html"));
-	CHECK(a.fin && strncmp(body_of(&a), "<!DOCTYPE html>", 15) == 0 && strstr(body_of(&a), "</html>"));
+	CHECK(a.fin && strncmp(body_of(&a), "<!DOCTYPE html>", 15) == 0 && strstr(body_of(&a), "</script>"));
 	const char *cl = strstr((char *)a.rx, "Content-Length: ");
 	CHECK(cl && atoi(cl + 16) == (int)strlen(body_of(&a)));
 
@@ -352,9 +360,108 @@ static void test_rigctl(void)
 	run_for(3000);
 }
 
+// ---- fake settings store and APRS view for the APRS-IS client ----
+static settings_t settings;
+static int settings_writes;
+void settings_read(settings_t *out) { *out = settings; }
+settings_t *settings_begin(void) { return &settings; }
+void settings_end(uint32_t t) { (void)t; settings_writes++; }
+static char my_call[12] = "N0CALL-7";
+void aprs_get_view(aprs_view_t *v) { memset(v, 0, sizeof(*v)); strcpy(v->call, my_call); }
+static char is_line[256];
+static int is_lines;
+void aprs_host_is_line(const char *line, size_t n, uint32_t t)
+{
+	(void)t;
+	memcpy(is_line, line, n);
+	is_line[n] = 0;
+	is_lines++;
+}
+
+#define SERVER_IP	0xC000020Au	// 192.0.2.10, beyond the host
+
+static void test_aprsis(void)
+{
+	static peer_t srv, h, far;
+
+	CHECK(aprsis_passcode("N0CALL") == 13023 && aprsis_passcode("n0call-7") == 13023 && aprsis_passcode("W1AW") == 25988);
+
+	// Off: no server set
+	peer_listen(&srv, SERVER_IP, 14580);
+	run_for(2000);
+	CHECK(srv.syns == 0);
+
+	// Set from beyond the host: refused; from the host: stored, the client connects and logs in
+	CHECK(http_get_from(&far, 0xC0000201u, 53000, "GET /api/aprsis?server=192.0.2.10 HTTP/1.0\r\n\r\n") > 0);
+	CHECK(strstr((char *)far.rx, " 403 ") && settings.aprsis_ip == 0);
+	CHECK(http_get(&h, 53001, "GET /api/aprsis?server=999.0.2.10 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)h.rx, " 400 "));
+	CHECK(http_get(&h, 53002, "GET /api/aprsis?server=192.0.2.10%3A14580&range=50 HTTP/1.0\r\n\r\n") > 0);
+	CHECK(strstr(body_of(&h), "\"server\":\"192.0.2.10:14580\"") && strstr(body_of(&h), "\"range_km\":50"));
+	CHECK(settings.aprsis_ip == SERVER_IP && settings.aprsis_port == 14580 && settings.aprsis_range_km == 50);
+	run_for(2000);
+	CHECK(srv.syns == 1 && srv.established);
+	srv.rx[srv.rxn] = 0;
+	CHECK(strcmp((char *)srv.rx, "user N0CALL-7 pass 13023 vers OpenDigitalRadio unknown filter m/50\r\n") == 0);
+	CHECK(!net_tnc_taken());
+	static const char hello[] = "# aprsc 2.1.14\r\n# logresp N0CALL-7 verified, server T2TEST\r\n";
+	peer_send(&srv, hello, sizeof(hello) - 1);
+	CHECK(aprsis_online() && net_tnc_taken());
+
+	// The engine's lines for APRS-IS go to the server; other frames don't
+	peer_clear(&srv);
+	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', '-', '7', '>', 'A', 'P', 'Z', 'O', 'D',
+				     'R', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
+	static const uint8_t data[] = { 0xC0, 0x00, 'x', 0xC0 };
+	ring_put(data, sizeof(data));
+	ring_put(g, sizeof(g));
+	pump();
+	srv.rx[srv.rxn] = 0;
+	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "N0CALL-7>APZODR,TCPIP*:>hi\r\n") == 0);
+
+	// The server's lines go to the engine (its iGate rules decide); comments don't
+	is_lines = 0;
+	static const char msg[] = "# filter active\r\nW1AW>APRS,TCPIP*,qAC,T2TEST::N0CALL-7 :hello{12\r\n";
+	peer_send(&srv, msg, sizeof(msg) - 1);
+	CHECK(is_lines == 1 && strcmp(is_line, "W1AW>APRS,TCPIP*,qAC,T2TEST::N0CALL-7 :hello{12") == 0);
+
+	// A silent server: dropped after 2 minutes, tried again 30 s later
+	run_for(APRSIS_SILENCE_MS + 1000);
+	CHECK(srv.reset && !aprsis_online());
+	peer_listen(&srv, SERVER_IP, 14580);
+	run_for(APRSIS_RETRY_MS + 1000);
+	CHECK(srv.syns == 1 && srv.established);
+
+	// Unverified (a wrong passcode): dropped, the next try much later
+	static const char unv[] = "# logresp N0CALL-7 unverified, server T2TEST\r\n";
+	peer_send(&srv, unv, sizeof(unv) - 1);
+	CHECK(srv.reset && !aprsis_online());
+	peer_listen(&srv, SERVER_IP, 14580);
+	run_for(APRSIS_RETRY_MS * 2);
+	CHECK(srv.syns == 0);
+	run_for(APRSIS_RETRY_MAX_MS - APRSIS_RETRY_MS * 2 + 1000);
+	CHECK(srv.syns == 1);
+	peer_send(&srv, hello, sizeof(hello) - 1);
+	CHECK(aprsis_online());
+
+	// The callsign changes: a new login with the new one
+	strcpy(my_call, "W1AW");
+	peer_listen(&srv, SERVER_IP, 14580);
+	run_for(2000);
+	CHECK(srv.syns == 1);
+	srv.rx[srv.rxn] = 0;
+	CHECK(strncmp((char *)srv.rx, "user W1AW pass 25988 ", 21) == 0);
+
+	// Turned off from the host: the connection goes
+	CHECK(http_get(&h, 53003, "GET /api/aprsis?server=off HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&h), "\"state\""));
+	run_for(2000);
+	CHECK(srv.reset && settings.aprsis_ip == 0 && !aprsis_online());
+	run_for(5000);
+}
+
 void tests_run(void)
 {
 	test_kiss();
 	test_http();
 	test_rigctl();
+	test_aprsis();
 }

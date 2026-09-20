@@ -150,6 +150,10 @@ typedef struct {
 	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
 	uint8_t aprs_stored;		// 1 = the aprs_ fields are set
 	uint16_t reserved7;
+	// The radio's own APRS-IS client on the USB network link (CONFIG_NET_APRSIS, docs/spec/tcp-services.md 7)
+	uint32_t aprsis_ip;		// server IPv4 address, 0 = off
+	uint16_t aprsis_port;		// 0 = 14580
+	uint16_t aprsis_range_km;	// the server filter "m/<km>" around us, 0 = no filter
 } settings_t;
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)

@@ -24,9 +24,21 @@ const radio_view_t *net_radio_view(void)
 }
 #endif
 
-#if CONFIG_NET_KISS
+#if CONFIG_NET_KISS || CONFIG_NET_APRSIS
 #include "aprs/aprs.h"
 #include "aprs/kiss.h"
+#if CONFIG_NET_APRSIS
+#include "net/aprsis.h"
+#else
+#define aprsis_online()		false
+#define aprsis_room(n)		false
+#define aprsis_line(l, n)	do { } while (0)
+#endif
+#if !CONFIG_NET_KISS
+#define kiss_tcp_active()	false
+#define kiss_tcp_room(n)	false
+#define kiss_tcp_frame(f, n)	do { } while (0)
+#endif
 
 #define KISS_WIRE_MAX	(2u * KISS_FRAME_MAX + 2u)	// the longest frame, every byte escaped
 #define PUMP_CHUNK	32
@@ -35,18 +47,22 @@ static kiss_dec_t tnc_out;	// the APRS engine's KISS output, decoded again to ro
 
 bool net_tnc_taken(void)
 {
-	return kiss_tcp_active();
+	return kiss_tcp_active() || aprsis_online();
 }
 
 // Room for any frame that may complete in the next chunk
 static bool tnc_room(void)
 {
-	return !kiss_tcp_active() || kiss_tcp_room(KISS_WIRE_MAX + PUMP_CHUNK);
+	return (!kiss_tcp_active() || kiss_tcp_room(KISS_WIRE_MAX + PUMP_CHUNK)) &&
+	       (!aprsis_online() || aprsis_room(KISS_FRAME_MAX + 2u + PUMP_CHUNK));
 }
 
+// SetHardware 'G' lines to APRS-IS while it is logged in, everything else to the KISS client
 static void tnc_route(const uint8_t *f, size_t n)
 {
-	if (kiss_tcp_active()) {
+	if ((n >= 2) && (f[0] == KISS_CMD_SETHW) && (f[1] == KISS_TAG_IS_LINE) && aprsis_online()) {
+		aprsis_line(f + 2, n - 2u);
+	} else if (kiss_tcp_active()) {
 		kiss_tcp_frame(f, n);
 	}
 }
@@ -114,9 +130,14 @@ void net_start(uint32_t salt)
 {
 	tcp_init(&io, salt);
 	ipGatewaySetTCP(tcp_in);
-#if CONFIG_NET_KISS
+#if CONFIG_NET_KISS || CONFIG_NET_APRSIS
 	kiss_dec_init(&tnc_out);
+#endif
+#if CONFIG_NET_KISS
 	kiss_tcp_start();
+#endif
+#if CONFIG_NET_APRSIS
+	aprsis_start();
 #endif
 #if CONFIG_NET_HTTP
 	http_start();
@@ -136,7 +157,10 @@ void net_poll(uint32_t now_ms, bool link_up)
 		return;
 	}
 	was_up = true;
-#if CONFIG_NET_KISS
+#if CONFIG_NET_APRSIS
+	aprsis_poll(now_ms);
+#endif
+#if CONFIG_NET_KISS || CONFIG_NET_APRSIS
 	tnc_pump();
 #endif
 #if CONFIG_NET_HTTP
@@ -159,6 +183,9 @@ void net_view(dl_text_t *t)
 #endif
 #if CONFIG_NET_RIGCTL
 	rigctld_view(t);
+#endif
+#if CONFIG_NET_APRSIS
+	aprsis_view(t);
 #endif
 }
 
