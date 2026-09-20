@@ -16,6 +16,8 @@
 void net_start(uint32_t salt);
 // Every pass of the host link task in network mode; link_up false drops every connection
 void net_poll(uint32_t now_ms, bool link_up);
+// A TCP service takes the APRS engine's KISS output now (KISS over TCP, APRS-IS): the host link leaves it alone
+bool net_tnc_taken(void);
 
 // The services' state and counters as key=value lines (the debug link's net view section)
 #include "debuglink/dl_fmt.h"

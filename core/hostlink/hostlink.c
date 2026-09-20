@@ -24,6 +24,9 @@
 #if CONFIG_APRS
 #include "aprs/aprs_host.h"
 #endif
+#if CONFIG_NET_TCP
+#include "net/net.h"
+#endif
 #include "debuglink/dlog.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -391,7 +394,12 @@ static void hostlink_task(void *arg)
 		case HOSTLINK_IDLE:
 			break;
 		}
-		if ((tnc != NULL) && ((mode == HOSTLINK_IDLE) || (mode == HOSTLINK_TNC))) {
+#if CONFIG_NET_TCP
+		bool tnc_out = !net_tnc_taken();	// else KISS over TCP or APRS-IS takes it (core/net)
+#else
+		bool tnc_out = true;
+#endif
+		if ((tnc != NULL) && tnc_out && ((mode == HOSTLINK_IDLE) || (mode == HOSTLINK_TNC))) {
 			size_t n;
 
 			while ((n = tnc->output(buf, sizeof(buf))) > 0) {	// received packets, iGate lines

@@ -124,6 +124,9 @@
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
 #endif
+#ifndef CONFIG_NET_KISS
+#define CONFIG_NET_KISS			(CONFIG_NET_TCP && CONFIG_APRS)
+#endif
 
 // Large state that only the CPU touches (never a DMA buffer) can go in RAM the board keeps for that, the STM32F4's
 // CCM: faster, and off the bus the DMA uses. ODR_CPU_RAM is zeroed at start-up like .bss; ODR_CPU_RAM_NOINIT isn't
@@ -186,6 +189,9 @@
 #endif
 #if CONFIG_NET_TCP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_NET_TCP needs CONFIG_DMR_IP_GATEWAY"
+#endif
+#if CONFIG_NET_KISS && !(CONFIG_NET_TCP && CONFIG_APRS)
+#error "CONFIG_NET_KISS needs CONFIG_NET_TCP and CONFIG_APRS"
 #endif
 #if CONFIG_USB_NETWORK && !CONFIG_USB
 #error "CONFIG_USB_NETWORK needs CONFIG_USB"

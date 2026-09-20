@@ -15,6 +15,7 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | Switch | Default | What |
 |---|---|---|
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | the TCP (`core/net/tcp.c`) and its glue to the gateway (`core/net/net.c`) |
+| `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP, port 8001 (`core/net/kiss_tcp.c`, section 4) |
 
 ## 2. TCP
 
@@ -46,7 +47,33 @@ connections come back through the host when it routes. The checksum is checked; 
 Debug link view, section `net`: `tcp.open tcp.segs_in tcp.segs_out tcp.retransmits tcp.rst_out tcp.bad_checksum
 tcp.accepted tcp.refused tcp.no_slot tcp.timeouts net.link_up`, and the services' keys below.
 
-## 3. Changes in the IP gateway
+## 3. The TNC pump
+
+The APRS engine has one output for the host: KISS frames in a ring (`aprs_host_output`: received packets on RX
+builds, SetHardware 'G' lines for APRS-IS), which the host link sends to the serial or UDP port. While a TCP service
+takes it (`net_tnc_taken`: a KISS client is connected and the APRS KISS setting is on, or the APRS-IS client is
+logged in), `core/net/net.c` drains the ring instead, decodes it frame by frame and routes each frame: 'G' lines to
+APRS-IS when it is logged in, everything else to the KISS client. It pulls only while the receivers have room for a
+whole frame (every byte escaped), so nothing is dropped for want of TCP buffer; the ring holds the rest. The host link
+leaves the output alone meanwhile (`hostlink.c`).
+
+## 4. KISS over TCP (port 8001)
+
+The de facto network TNC port of APRS programs (APRSdroid, Xastir, YAAC, Dire Wolf clients). The stream carries KISS
+frames as on the serial port (Chepponis and Karn, "The KISS TNC", 1987; [aprs.md](aprs.md) 9): FEND-delimited, FESC
+escapes, a type byte. Frames from the client go to the same handler as the serial port's (`aprs_host_kiss_frame`):
+port 0 data frames are checked by the APRS engine (our callsign as the source, the amateur frequency, the rate limit)
+and queued for RF; SetHardware 'G' and 'N' lines as on the serial port; TXDELAY and the other parameters are ignored.
+The client receives the engine's output (section 3) exactly as the serial port would.
+
+- One client at a time: a new connection replaces the old one (reset), so a client that vanished without closing
+  doesn't hold the port.
+- Needs the APRS KISS setting (Tools > APRS > KISS on USB), as on the serial port: without it the engine neither
+  takes frames nor produces output.
+- The DM-1701 has no APRS receive path: only transmit works there; a client sees no received packets.
+- View keys (`net` section): `kiss.client kiss.conns kiss.frames_in kiss.frames_out kiss.dropped`.
+
+## 5. Changes in the IP gateway
 
 `core/dmr/ipGateway.{c,h}`: TCP (protocol 6) to the radio's own address goes to the function set with
 `ipGatewaySetTCP` (NULL by default: dropped, as before), from any source and before the "only what the host itself
@@ -54,13 +81,16 @@ sends" check; any other TCP is dropped and never goes over the air. `ipGatewayLo
 send a packet from the radio's address to any destination through the host's MAC address. The TCP's glue
 (`core/net/net.c`) waits up to 20 ms for a busy USB IN endpoint before giving a segment up to the retransmission timer.
 
-## 4. Tests
+## 9. Tests
 
 - Host: `tests/host/tcpTest.c`, the TCP against a scripted peer: handshakes both ways, data within the window and the
   MSS, retransmission with backoff, a zero window probed, in-order receive with trimming, RST for unknown ports,
   RFC 5961 challenge ACKs, closes from either side (simultaneous too), TIME_WAIT reuse, slot exhaustion, keepalive, a
   lost SYN-ACK, a busy IP layer. Every segment goes to `tcpTest.pcap`, which tshark checks for malformed segments and
   bad checksums. `tests/host/hostlinkNetTest.c`: TCP through the gateway (RST from the radio's address, a source
-  beyond the host, no TCP to the air, the link going down).
+  beyond the host, no TCP to the air, the link going down). `tests/host/netSvcTest.c` (+ `netSvcCases.c`): the
+  services through the real gateway and TCP against a scripted TCP peer, with fakes for the APRS engine and the radio
+  core; KISS: frames both ways with escapes and split segments, bulk output paced by the client's ACKs, a second
+  client replacing the first, the KISS setting off, the client closing. `netSvcTest.pcap` is checked by tshark.
 - The host OS stack is the other end in the HIL tests (curl, nc); a tap / utun test on the host would need root and
   is not done.

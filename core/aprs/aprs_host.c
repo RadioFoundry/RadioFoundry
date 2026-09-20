@@ -26,7 +26,7 @@ bool aprs_host_in_frame(void)
 	return nmea_on || !kiss_dec_idle(&kiss);
 }
 
-static void frame(const uint8_t *f, size_t n, uint32_t now_ms)
+void aprs_host_kiss_frame(const uint8_t *f, size_t n, uint32_t now_ms)
 {
 	uint8_t type = f[0];
 	if (type == KISS_CMD_RETURN || (type >> 4) != 0) {
@@ -69,7 +69,7 @@ void aprs_host_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 		}
 		size_t n = kiss_dec_byte(&kiss, b);
 		if (n != 0) {
-			frame(kiss.buf, n, now_ms);
+			aprs_host_kiss_frame(kiss.buf, n, now_ms);
 		}
 	}
 }
