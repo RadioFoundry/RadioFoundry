@@ -24,4 +24,11 @@ void kiss_tcp_frame(const uint8_t *f, size_t n);	// one frame (type byte first) 
 void kiss_tcp_view(dl_text_t *t);
 #endif
 
+#if CONFIG_NET_HTTP
+// The status server (http.c)
+void http_start(void);
+void http_poll(uint32_t now_ms);
+void http_view(dl_text_t *t);
+#endif
+
 #endif

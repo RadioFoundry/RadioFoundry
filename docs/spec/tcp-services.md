@@ -16,6 +16,7 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 |---|---|---|
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | the TCP (`core/net/tcp.c`) and its glue to the gateway (`core/net/net.c`) |
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP, port 8001 (`core/net/kiss_tcp.c`, section 4) |
+| `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server, port 80 (`core/net/http.c`, section 5) |
 
 ## 2. TCP
 
@@ -25,12 +26,12 @@ address, the host being the only neighbor and the router.
 
 | Item | Value |
 |---|---|
-| Connections | 3 in all, TIME_WAIT included; 4 listening ports |
+| Connections | 4 in all, TIME_WAIT included; 4 listening ports. A SYN takes a free slot, else the oldest TIME_WAIT, else the oldest FIN_WAIT_2 (reset) |
 | MSS | 536 (14 + 20 + 20 + 536 = 590 bytes, within the gateway's 600 byte frames); a smaller MSS option from the peer is honored |
 | Options | MSS only (sent on SYN); no window scaling, SACK or timestamps |
 | Transmit | one buffer per connection, 1072 bytes (two segments) from SND.UNA on; data is sent as soon as it is written (no Nagle: the services write whole messages) |
 | Receive | in order only; a segment that doesn't start at RCV.NXT is dropped and answered with an ACK for RCV.NXT; old data overlapping new data is trimmed. The window offered is what the service can take |
-| Retransmission | RFC 6298 RTO, initial 1 s, minimum 200 ms (a USB round trip is about 1 ms), maximum 16 s, doubled per timeout; Karn's rule; after a timeout one segment at a time until new data is acknowledged; 7 retransmissions, then RST |
+| Retransmission | RFC 6298 RTO, initial 1 s, minimum 200 ms (a USB round trip is about 1 ms), maximum 16 s, doubled per timeout; Karn's rule; after a timeout SND.NXT goes back to SND.UNA and one segment goes at a time until new data is acknowledged; an ACK up to the highest sequence number sent (SND.MAX) is accepted, so a peer that had it all doesn't get it twice; 7 retransmissions, then RST |
 | SYN | ours: 4 retries (about 31 s); a peer's repeated SYN gets the same SYN-ACK again |
 | Zero window | the persist timer probes with one byte, for as long as the peer answers |
 | Unknown port or connection | RST (RFC 9293 3.10.7.1); a SYN while every slot is busy gets nothing (the client tries again a second later) |
@@ -73,7 +74,30 @@ The client receives the engine's output (section 3) exactly as the serial port w
 - The DM-1701 has no APRS receive path: only transmit works there; a client sees no received packets.
 - View keys (`net` section): `kiss.client kiss.conns kiss.frames_in kiss.frames_out kiss.dropped`.
 
-## 5. Changes in the IP gateway
+## 5. HTTP status server (port 80)
+
+HTTP/1.0 (RFC 1945): GET and HEAD, one request per connection, `Connection: close`, `Content-Length` always, no
+keep-alive or chunking (HTTP/1.1 clients accept a 1.0 answer). The request line may be 95 bytes long (else 414);
+header lines are skipped; a request not complete within 10 s is reset. Responses carry `Cache-Control: no-store` and
+`Access-Control-Allow-Origin: *` (a web page on the host may poll the radio).
+
+| Path | Response |
+|---|---|
+| `/`, `/index.html` | a page of about 700 bytes from flash: the status as a table and the screen, refreshed every 3 s |
+| `/status`, `/api/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open` |
+| `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
+| `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
+| `/api/screen.bmp`, `/api/screen` | the frame buffer as a BMP: top-down (negative height), 16 bit BI_BITFIELDS (RGB565 masks), about 40 KB on a 160 x 128 screen; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame. 404 on a 1 bpp display |
+| `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
+| anything else | 404; another method 405; a malformed request line 400 |
+
+Bodies stream into TCP as its buffer frees up: the page from flash and the screen straight from the frame buffer;
+JSON is rendered once into a shared 1.5 KB buffer (a view section's text into its upper part, the JSON written from
+the start never overtakes it), and a second JSON request waits until the first response is all in TCP's buffer.
+
+View keys: `http.requests http.ok http.not_found http.bad http.busy_waits`.
+
+## 6. Changes in the IP gateway
 
 `core/dmr/ipGateway.{c,h}`: TCP (protocol 6) to the radio's own address goes to the function set with
 `ipGatewaySetTCP` (NULL by default: dropped, as before), from any source and before the "only what the host itself
@@ -91,6 +115,9 @@ send a packet from the radio's address to any destination through the host's MAC
   beyond the host, no TCP to the air, the link going down). `tests/host/netSvcTest.c` (+ `netSvcCases.c`): the
   services through the real gateway and TCP against a scripted TCP peer, with fakes for the APRS engine and the radio
   core; KISS: frames both ways with escapes and split segments, bulk output paced by the client's ACKs, a second
-  client replacing the first, the KISS setting off, the client closing. `netSvcTest.pcap` is checked by tshark.
+  client replacing the first, the KISS setting off, the client closing. HTTP: the page, HEAD, the status JSON with an
+  escaped name, view sections as JSON (numbers, strings, escapes, by name and number, the list, unknown), the screen
+  BMP against the frame buffer, 405 / 404 / 400 / 414, a client sending a byte at a time, two JSON requests at once
+  (the second waits for the buffer), the 10 s request timeout. `netSvcTest.pcap` is checked by tshark.
 - The host OS stack is the other end in the HIL tests (curl, nc); a tap / utun test on the host would need root and
   is not done.

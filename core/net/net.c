@@ -108,6 +108,9 @@ void net_start(uint32_t salt)
 	kiss_dec_init(&tnc_out);
 	kiss_tcp_start();
 #endif
+#if CONFIG_NET_HTTP
+	http_start();
+#endif
 }
 
 void net_poll(uint32_t now_ms, bool link_up)
@@ -123,6 +126,9 @@ void net_poll(uint32_t now_ms, bool link_up)
 #if CONFIG_NET_KISS
 	tnc_pump();
 #endif
+#if CONFIG_NET_HTTP
+	http_poll(now_ms);
+#endif
 	tcp_poll(now_ms);
 }
 
@@ -131,6 +137,9 @@ void net_view(dl_text_t *t)
 	dl_text(t, "net.link_up=%u\n", was_up);
 #if CONFIG_NET_KISS
 	kiss_tcp_view(t);
+#endif
+#if CONFIG_NET_HTTP
+	http_view(t);
 #endif
 }
 

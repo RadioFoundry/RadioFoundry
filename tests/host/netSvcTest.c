@@ -57,7 +57,10 @@ static int n_receive(uint8_t *buf, int max) { (void)buf; (void)max; return 0; }
 static void n_tick(uint32_t t) { (void)t; }
 static void n_macs(uint8_t host[6], uint8_t radio[6]) { memcpy(host, HOST_MAC, 6); memcpy(radio, RADIO_MAC, 6); }
 static const hal_netif_t fake_netif = { n_select, n_selected, n_up, n_send, n_receive, n_tick, n_macs, 600 };
-const board_t board = { .name = "fake", .netif = &fake_netif };
+static const hal_display_t fake_display = { .width = 160, .height = 128, .bpp = 16 };
+static const char *const power_names[] = { "Low", "High" };
+const board_t board = { .name = "fake", .netif = &fake_netif, .display = &fake_display, .power_count = 2,
+			.power_names = power_names };
 
 // ---- what the gateway needs from its user ----
 bool ipGatewaySendFrame(const uint8_t *f, int length) { return board.netif->send(f, length); }

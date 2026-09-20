@@ -39,6 +39,8 @@ enum {
 
 // Render one section of v into t. Every section starts with "section=<name>"
 void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t);
+// A section's name ("core", ...), NULL past the last
+const char *debuglink_view_name(uint8_t section);
 
 // The DMR sections (part 0: DL_VIEW_DMR, 1: DL_VIEW_DMR_CALL, 2: DL_VIEW_DMR_STATS), in their own file so the DMR
 // integration can change them without touching the rest; built without DMR they say "dmr.built=0"

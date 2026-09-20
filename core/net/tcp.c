@@ -38,7 +38,7 @@ typedef struct {
 	const tcp_app_t *app;
 	uint32_t rip;
 	uint16_t rport, lport;
-	uint32_t iss, snd_una, snd_nxt, rcv_nxt;
+	uint32_t iss, snd_una, snd_nxt, snd_max, rcv_nxt;	// snd_max: the highest sent (SND.NXT goes back on a timeout)
 	uint16_t snd_wnd, mss;
 	uint16_t txhead, txlen, txsent;	// the ring: data from SND.UNA on, of which txsent bytes were sent
 	uint16_t rto, srtt, rttvar;	// ms; srtt 0 = no sample yet
@@ -211,10 +211,11 @@ static void time_wait(conn_t *c, uint32_t now)
 	c->flags &= (uint8_t)~F_OWNED;	// the application is told nothing more
 }
 
-// The slot for a new connection: a free one, else the oldest TIME_WAIT (RFC 6191 allows reuse; ours is short anyway)
+// The slot for a new connection: a free one, else the oldest TIME_WAIT (RFC 6191 allows reuse; ours is short anyway),
+// else the oldest FIN_WAIT_2 (we are done sending and the application has let go; the peer just never closed)
 static int alloc(void)
 {
-	int tw = -1;
+	int tw = -1, fw = -1;
 
 	for (int i = 0; i < TCP_CONNS; i++) {
 		if (conns[i].state == TCP_CLOSED) {
@@ -223,6 +224,13 @@ static int alloc(void)
 		if ((conns[i].state == TCP_TIME_WAIT) && ((tw < 0) || SEQ_LT(conns[i].timer, conns[tw].timer))) {
 			tw = i;
 		}
+		if ((conns[i].state == TCP_FIN_WAIT_2) && ((fw < 0) || SEQ_LT(conns[i].timer, conns[fw].timer))) {
+			fw = i;
+		}
+	}
+	if ((tw < 0) && (fw >= 0)) {
+		send_reset(conns[fw].rip, conns[fw].lport, conns[fw].rport, conns[fw].snd_nxt, 0, false);
+		return fw;
 	}
 	return tw;
 }
@@ -240,6 +248,7 @@ static void setup(int i, const tcp_app_t *app, uint32_t now)
 	c->iss = isn_salt + (now * 250u) + (isn_count++ * 0x01000193u);
 	c->snd_una = c->iss;
 	c->snd_nxt = c->iss;
+	c->snd_max = c->iss;
 	c->last_rx = now;
 }
 
@@ -253,6 +262,7 @@ static void output(int i, uint32_t now)
 		if (c->snd_nxt == c->iss) {
 			send_segment(i, (c->state == TCP_SYN_RCVD) ? (SYN | ACK) : SYN, c->iss, 0, 0);
 			c->snd_nxt = c->iss + 1u;
+			c->snd_max = c->snd_nxt;
 			if (c->timer == 0) {
 				arm(c, now);
 			}
@@ -297,6 +307,9 @@ static void output(int i, uint32_t now)
 		}
 		c->txsent = (uint16_t)(c->txsent + n);
 		c->snd_nxt += (uint32_t)n + (fin ? 1u : 0u);
+		if (SEQ_GT(c->snd_nxt, c->snd_max)) {
+			c->snd_max = c->snd_nxt;
+		}
 		if (c->timer == 0) {
 			arm(c, now);
 		}
@@ -472,7 +485,7 @@ static void segment_for(int i, uint8_t flags, uint32_t seq, uint32_t ackn, uint1
 			return;
 		}
 	}
-	if (SEQ_GT(ackn, c->snd_nxt)) {
+	if (SEQ_GT(ackn, c->snd_max)) {
 		send_segment(i, ACK, c->snd_nxt, 0, 0);	// acknowledges something not sent yet
 		return;
 	}
@@ -483,16 +496,19 @@ static void segment_for(int i, uint8_t flags, uint32_t seq, uint32_t ackn, uint1
 	}
 	if (SEQ_GT(ackn, c->snd_una)) {
 		uint32_t n = ackn - c->snd_una;
-		bool fin_acked = (c->flags & F_FIN_SENT) && (ackn == c->snd_nxt);
-		uint32_t d = fin_acked ? (n - 1u) : n;
+		bool fin_acked = (c->flags & F_FIN_PENDING) && (n > c->txlen);	// the FIN follows the last byte
+		uint32_t d = (n > c->txlen) ? c->txlen : n;
 
-		if (d > c->txlen) {
-			d = c->txlen;
-		}
 		c->txhead = (uint16_t)((c->txhead + d) % TCP_TXBUF);
 		c->txlen = (uint16_t)(c->txlen - d);
-		c->txsent = (uint16_t)((c->txsent > d) ? (c->txsent - d) : 0u);
 		c->snd_una = ackn;
+		if (SEQ_LT(c->snd_nxt, ackn)) {
+			c->snd_nxt = ackn;	// after a go back: the peer already had more than was sent again
+		}
+		uint32_t out = c->snd_nxt - c->snd_una;
+
+		c->txsent = (uint16_t)((out > c->txlen) ? c->txlen : out);
+		c->flags = (uint8_t)((out > c->txlen) ? (c->flags | F_FIN_SENT) : (c->flags & ~F_FIN_SENT));
 		if ((c->flags & F_TIMING) && SEQ_GE(ackn, c->rtt_seq)) {
 			c->flags &= (uint8_t)~F_TIMING;
 			rtt_sample(c, now - c->rtt_start);
@@ -500,7 +516,7 @@ static void segment_for(int i, uint8_t flags, uint32_t seq, uint32_t ackn, uint1
 		c->retries = 0;
 		c->timer = 0;
 		c->flags &= (uint8_t)~F_ONE;
-		if (c->snd_nxt != c->snd_una) {
+		if (c->snd_max != c->snd_una) {
 			arm(c, now);	// RFC 6298 5.3
 		}
 		acked_data = d > 0;
@@ -686,7 +702,7 @@ static void expire(int i, uint32_t now)
 	bool syn = (c->state == TCP_SYN_SENT) || (c->state == TCP_SYN_RCVD);
 	bool persist = !syn && (c->snd_wnd == 0) && (c->txlen > 0);
 
-	if (!syn && !persist && (c->snd_nxt == c->snd_una)) {
+	if (!syn && !persist && (c->snd_max == c->snd_una)) {
 		return;	// nothing outstanding
 	}
 	if (persist && ((now - c->last_rx) < c->rto)) {
@@ -734,7 +750,7 @@ void tcp_poll(uint32_t now_ms)
 			}
 		}
 		// Keepalive (RFC 1122 4.2.3.6): a segment one byte behind, which the peer must acknowledge
-		if (((c->state == TCP_ESTABLISHED) || (c->state == TCP_CLOSE_WAIT)) && (c->snd_nxt == c->snd_una) &&
+		if (((c->state == TCP_ESTABLISHED) || (c->state == TCP_CLOSE_WAIT)) && (c->snd_max == c->snd_una) &&
 		    ((now_ms - c->last_rx) >= TCP_KEEPALIVE_MS) && ((c->ka_next == 0) || DUE(now_ms, c->ka_next))) {
 			if (c->probes >= TCP_KEEPALIVE_PROBES) {
 				stats.timeouts++;

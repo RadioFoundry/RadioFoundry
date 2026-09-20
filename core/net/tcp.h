@@ -22,7 +22,7 @@
 #include <stdint.h>
 
 #ifndef TCP_CONNS
-#define TCP_CONNS		3	// connections in all states, TIME_WAIT included
+#define TCP_CONNS		4	// connections in all states, TIME_WAIT included
 #endif
 #define TCP_LISTENERS		4
 #define TCP_MSS			536	// 14 + 20 + 20 + 536 = 590 bytes, within the gateway's 600 byte frames

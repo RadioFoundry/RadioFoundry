@@ -514,6 +514,29 @@ static void test_lost_synack_and_send_failure(void)
 	tcp_abort(opened_c);
 }
 
+// The peer had both segments, only its ACK was lost: after the timeout one segment goes again, and the peer's ACK for
+// everything (beyond SND.NXT after the go back, within what was sent) is taken
+static void test_ack_after_go_back(void)
+{
+	uint32_t rs;
+	reset_app();
+	echo = false;
+	int c = handshake(7, 9000, &rs);
+	uint8_t d[TCP_TXBUF];
+	memset(d, 'z', sizeof(d));
+	tcp_write(c, d, sizeof(d));
+	tcp_poll(now);
+	nout = 0;
+	advance(TCP_RTO_MIN_MS + 10);
+	CHECK(nout == 1 && out[0].seq == rs);
+	peer(7, 9001, rs + TCP_TXBUF, ACK, 8192, NULL, 0);
+	CHECK(tcp_unacked(c) == 0 && sent_calls >= 1);
+	nout = 0;
+	advance(3000);
+	CHECK(nout == 0);	// nothing left to resend
+	tcp_abort(c);
+}
+
 int main(void)
 {
 	pcap = fopen("tcpTest.pcap", "wb");
@@ -533,6 +556,7 @@ int main(void)
 	test_active_open();
 	test_keepalive();
 	test_lost_synack_and_send_failure();
+	test_ack_after_go_back();
 
 	fclose(pcap);
 	printf("# tcpTest: %d checks, %d failures\n", checks, failures);
