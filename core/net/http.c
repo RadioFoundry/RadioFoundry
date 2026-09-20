@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// A read-only HTTP/1.0 status server on port 80 (RFC 1945; docs/spec/tcp-services.md 6): one small page, the radio's
+// An HTTP/1.0 status server on port 80 (RFC 1945; docs/spec/tcp-services.md 5): one small page, the radio's
 // state as JSON, the debug link's view sections as JSON, the screen as a BMP. GET and HEAD, one request per
 // connection (Connection: close), no keep-alive, no chunking. Responses are streamed into TCP as its buffer frees up:
 // the page from flash, the screen straight from the frame buffer, JSON from one shared buffer (a second JSON request
