@@ -110,6 +110,8 @@ static const hal_flash_map_t map = {
 	.calibration_size = 0,
 	.native_addr = 0xE00000u,
 	.native_size = 0x100000u,
+	.staging_addr = 0xF00000u,	// 256 KB of the unused top megabyte (docs/spec/tftp.md 4)
+	.staging_size = 0x040000u,
 };
 
 static bool init(void)

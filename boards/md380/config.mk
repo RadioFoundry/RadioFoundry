@@ -15,5 +15,6 @@ CONFIG_APRS_RX ?= n
 # The SFR and split duplex glue is HR_C6000 only (docs/spec/sfr.md: the HR_C5000 lacks CRC_MCU_Control)
 CONFIG_SFR ?= n
 CONFIG_HOTSPOT_SPLIT ?= n
-# Not written for this radio (above): tools/ci.sh's maximal configuration leaves these off
-BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT
+# Not written for this radio (above), or no use on it (FONT_XL is for 240 px and wider panels, this one is 160 px):
+# tools/ci.sh's maximal configuration leaves these off
+BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL

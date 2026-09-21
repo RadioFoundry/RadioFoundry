@@ -42,6 +42,12 @@ CONFIG_DMR_EMERGENCY ?= $(CONFIG_DMR)
 CONFIG_DMR_ROAMING ?= $(CONFIG_DMR)
 # IP over DMR packet data through the USB network adapter (needs DMR and USB_NETWORK; core/hostlink/hostlink_net.c)
 CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK))),y,n)
+# mDNS / DNS-SD responder on the USB network link: <host>.local and the radio's services (needs DMR_IP_GATEWAY, the
+# IP stack it runs on; core/net/mdns.c, docs/spec/mdns.md)
+CONFIG_MDNS ?= $(CONFIG_DMR_IP_GATEWAY)
+# TFTP server on the USB network link: codeplug.bin read and (staged, checked) written, info.txt (needs
+# DMR_IP_GATEWAY; core/net/tftp.c, docs/spec/tftp.md)
+CONFIG_TFTP ?= $(CONFIG_DMR_IP_GATEWAY)
 # single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
 # the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
 CONFIG_SFR ?= $(CONFIG_DMR)
@@ -105,7 +111,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY MDNS TFTP SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
@@ -148,6 +154,7 @@ ifneq ($(call feature_on,DMR_IP_GATEWAY),)
     $(error CONFIG_DMR_IP_GATEWAY=y needs CONFIG_USB_NETWORK=y)
   endif
 endif
+$(foreach f,MDNS TFTP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
 ifneq ($(call feature_on,VFO_FM),)
   ifeq ($(call feature_on,VFO),)
     $(error CONFIG_VFO_FM=y needs CONFIG_VFO=y)

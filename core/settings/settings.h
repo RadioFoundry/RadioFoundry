@@ -42,7 +42,7 @@ typedef struct {
 	uint8_t vfo_ts;			// DMR timeslot 1 / 2
 	uint8_t vfo_rx_tone_type;	// tone_type_t
 	uint8_t vfo_tx_tone_type;
-	uint8_t reserved0;
+	uint8_t net_flags;		// SETTINGS_NET_* bits (was reserved0: 0 = as before)
 	uint16_t vfo_rx_tone;		// subtone value
 	uint16_t vfo_tx_tone;
 	// Preferences (independent of the volume knob)
@@ -160,6 +160,8 @@ typedef struct {
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
 
+// settings_t.net_flags (the USB network personality's services, docs/spec/tftp.md)
+#define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB)
 // settings_t.rs_flags
 #define SETTINGS_RS_ROGER_BEEP		0x01u
 #define SETTINGS_RS_TX_INHIBIT		0x02u

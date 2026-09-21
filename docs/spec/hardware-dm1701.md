@@ -1099,7 +1099,8 @@ records are in `legacy-cps-interop.md`.
 | 0x100000 | flash 0xE0000 | | old voice prompt location (read for compatibility) |
 | 0x120000 - 0xDFFFFF | | about 12.9 MB | unused by the codeplug layout; GPS logs use the ID database areas when enabled |
 | 0xE00000 - 0xEFFFFF | (ours) | 1 MB | reserved for the native codeplug (`codeplug-native.md` 4); the CPS shim refuses writes from here up |
-| 0xF00000 - 0xFFFFFF | | 1 MB | unused |
+| 0xF00000 - 0xF3FFFF | (ours) | 256 KB | staging area for a codeplug written over TFTP (`tftp.md` 4): the commit record, then the staged image |
+| 0xF40000 - 0xFFFFFF | | 768 KB | unused |
 | security register 1-2 | | 512 B | factory calibration (read only) |
 | security register 3 | | 256 B | factory flags: 0x1C (0xF4 = MD-UV390 Plus 10 W), 0x1D (LCD type) |
 

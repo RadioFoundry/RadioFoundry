@@ -32,6 +32,9 @@
 #if CONFIG_HOSTLINK
 #include "hostlink/hostlink.h"
 #endif
+#if CONFIG_TFTP
+#include "net/tftp_codeplug.h"
+#endif
 #if CONFIG_CPS_LEGACY
 #include "cps/cps_legacy.h"
 #endif
@@ -76,6 +79,9 @@ static void startup_task(void *arg)
 	board.display->set_backlight(100);
 	board.input->init();
 	storage_init();			// finishes a codeplug sector rewrite a power cut interrupted
+#if CONFIG_TFTP
+	tftp_codeplug_resume();		// and a TFTP codeplug write's commit (before the codeplug is read)
+#endif
 	settings_init();
 	codeplug_init();
 	board.radio->init();
@@ -86,6 +92,9 @@ static void startup_task(void *arg)
 	settings_t st;
 	settings_read(&st);
 	hostlink_set_hotspot_allowed(st.hotspot_allowed != 0);
+#if CONFIG_TFTP
+	tftp_codeplug_allow_write((st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0);
+#endif
 #if CONFIG_CPS_LEGACY
 	cps_legacy_start();		// registers the CPS handler with the host link
 #endif

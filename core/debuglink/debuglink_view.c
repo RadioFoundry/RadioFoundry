@@ -26,6 +26,13 @@
 #include "hostlink/hostlink_net_air.h"
 #include "dmr/ipGateway.h"
 #endif
+#if CONFIG_MDNS
+#include "net/mdns.h"
+#endif
+#if CONFIG_TFTP
+#include "net/tftp.h"
+#include "net/tftp_codeplug.h"
+#endif
 
 static const char *state_key(uint8_t s)
 {
@@ -123,6 +130,25 @@ static void hotspot_section(dl_text_t *t)
 	hostlink_net_air_stats(&as);
 	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\n", (unsigned)as.sent,
 		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long));
+#endif
+#if CONFIG_MDNS
+	mdns_stats_t md;
+
+	mdnsStats(&md);
+	dl_text(t, "mdns.state=%u\nmdns.name=%s\nmdns.queries=%u\nmdns.answered=%u\n", md.state, mdnsHostName(),
+		(unsigned)md.queries, (unsigned)md.answered);
+	dl_text(t, "mdns.sent=%u\nmdns.busy=%u\nmdns.conflicts=%u\nmdns.bad=%u\n", (unsigned)md.sent, (unsigned)md.busy,
+		(unsigned)md.conflicts, (unsigned)md.bad);
+#endif
+#if CONFIG_TFTP
+	tftp_stats_t tf;
+
+	tftpStats(&tf);
+	dl_text(t, "tftp.state=%u\ntftp.reads=%u\ntftp.writes=%u\ntftp.errors=%u\n", tf.state, (unsigned)tf.reads,
+		(unsigned)tf.writes, (unsigned)tf.errors);
+	dl_text(t, "tftp.timeouts=%u\ntftp.retransmits=%u\ntftp.last_size=%u\ntftp.blksize=%u\ntftp.write_allowed=%u\n",
+		(unsigned)tf.timeouts, (unsigned)tf.retransmits, (unsigned)tf.last_size, tf.blksize,
+		tftp_codeplug_write_allowed());
 #endif
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;

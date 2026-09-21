@@ -98,6 +98,7 @@ ifneq ($(TSHARK),)
 endif
 
 clean:
+	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert
 	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTest.expert
 	rm -rf *.dSYM out
 
@@ -473,18 +474,45 @@ run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807
 	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
 .PHONY: run-dm32
 
-# The host link's network personality: the IP gateway between a fake USB network interface and fake air ops
+# The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
+# radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
            $(DATA) $(FRAME)
 TESTS   += hostlinkNetTest
 
 hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HLNET)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -o $@ $(HLNET)
 
 run: run-hlnet
 run-hlnet: hostlinkNetTest
 	./hostlinkNetTest
 .PHONY: run-hlnet
+
+# The radio's own services on the USB network link, behind the real gateway (core/net): the mDNS responder, and the
+# TFTP server with codeplug.bin on a simulated flash. Their frames go to pcaps that tshark checks when it's there
+MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c
+TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/dmr/ipGateway.c $(CORE)/codeplug/codeplug.c \
+           $(CORE)/storage/storage.c sim/sim_flash.c
+TESTS   += mdnsTest tftpTest
+
+mdnsTest: $(MDNST) $(CORE)/net/mdns.h $(CORE)/dmr/ipGateway.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ $(MDNST)
+
+tftpTest: $(TFTPT) $(CORE)/net/tftp.h $(CORE)/net/tftp_codeplug.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ $(TFTPT)
+
+run: run-net
+run-net: mdnsTest tftpTest
+	./mdnsTest
+	./tftpTest
+ifneq ($(TSHARK),)
+	@"$(TSHARK)" -r mdnsTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q > netTest.expert
+	@"$(TSHARK)" -r tftpTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q >> netTest.expert
+	@# the TFTP ERROR packets the tests ask for are expected; anything else malformed or bad is not
+	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|^Errors" | grep -q .; then \
+		echo "# tshark found problems"; cat netTest.expert; exit 1; else echo "# tshark: mDNS and TFTP frames well formed"; fi
+endif
+.PHONY: run-net
 
 # The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
 STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c

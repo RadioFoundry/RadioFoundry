@@ -2,17 +2,18 @@
 
 # USB network mode
 
-USB network mode is an optional build. In it the radio becomes a USB network adapter for the computer, and routes IPv4
-packets to other radios over DMR packet data. Built and host-tested, not tested on air.
+In USB network mode the radio becomes a USB network adapter for the computer, and routes IPv4 packets to other
+radios over DMR packet data. Built and host-tested, not tested on air.
 
 ## Building it
 
+USB network mode is in the default build of radios with USB (the DM-1701 and MD-380). A build without it:
+
 ```
-make BOARD=dm1701 CONFIG_DMR_IP_GATEWAY=y
+make BOARD=dm1701 CONFIG_USB_NETWORK=n
 ```
 
-`CONFIG_DMR_IP_GATEWAY` turns on `CONFIG_USB_NETWORK` with it. In a default build, **Tools > USB network** says "USB
-network isn't in this build".
+Then **Tools > USB network** says "USB network isn't in this build".
 
 ## Switching the radio to network mode
 
@@ -59,3 +60,42 @@ tools/odr_debug.py --port udp:12.47.82.51 version
 
 MMDVMHost connects the same way (`Protocol=udp`, `ModemAddress=<radio address>`, `ModemPort=3334`). qdmr finds radios
 only by their serial USB ID, so program the radio in serial mode.
+
+## Finding the radio by name
+
+The radio answers Multicast DNS (Bonjour, Avahi) on the network adapter: it is `odr-<DMR ID>.local`, for example
+`odr-3101234.local`, and it advertises its services, so a browser for Bonjour services lists it as
+"N0CALL DM-1701 (3101234)" (your call sign, the radio, your DMR ID):
+
+```
+ping odr-3101234.local
+dns-sd -B _odr-debug._udp            # macOS; avahi-browse -r _odr-debug._udp on Linux
+tools/odr_debug.py --port udp:odr-3101234.local version
+```
+
+| Service | Port | What |
+|---|---|---|
+| `_odr-debug._udp` | 3334 | the debug link (and the other serial protocols) over UDP |
+| `_mmdvm._udp` | 3334 | the MMDVM modem, for MMDVMHost |
+| `_tftp._udp` | 69 | the codeplug over TFTP (below) |
+
+Each one carries the board, the DMR ID, the call sign and the firmware version in its TXT record.
+
+## Programming over the network
+
+The radio runs a TFTP server at its address. Any TFTP client works:
+
+```
+curl tftp://odr-3101234.local/codeplug.bin -o backup.bin       # read the codeplug
+curl -T edited.bin tftp://odr-3101234.local/codeplug.bin        # write it
+curl tftp://odr-3101234.local/info.txt                          # board, firmware, IDs, addresses
+```
+
+`codeplug.bin` is the same image `tools/cps_client.py read` makes (716,384 bytes; file offset = the address the
+legacy CPS uses), so a file from either one can be written with either one. A write is checked before anything is
+stored: the size, then that the file is a codeplug at all. A wrong file, a transfer that stops half way, or a cable
+pulled during the transfer leaves the codeplug as it was; a power cut while the new codeplug is being stored is
+finished at the next power on. The radio keeps its own quick keys, as with the CPS. The radio re-reads the codeplug
+right after the write.
+
+To stop writes over the network, turn off **Settings > Connections > TFTP codeplug write**. Reading stays possible.

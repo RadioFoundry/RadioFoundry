@@ -26,6 +26,9 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmr_data_api.h"
 #endif
+#if CONFIG_TFTP
+#include "net/tftp_codeplug.h"
+#endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
@@ -158,6 +161,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_TALK_PERMIT:
 		radio_get_settings(&rs);
 		return rs.talk_permit;
+	case UI_SET_TFTP_WRITE:
+		settings_read(&st);
+		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:
@@ -285,6 +291,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		settings_end(hal_millis());
 #if CONFIG_HOSTLINK
 		hostlink_set_hotspot_allowed(value != 0);
+#endif
+		return true;
+	case UI_SET_TFTP_WRITE:
+		st = settings_begin();
+		st->net_flags = (uint8_t)(value != 0 ? (st->net_flags & ~SETTINGS_NET_TFTP_NO_WRITE) :
+					  (st->net_flags | SETTINGS_NET_TFTP_NO_WRITE));
+		settings_end(hal_millis());
+#if CONFIG_TFTP
+		tftp_codeplug_allow_write(value != 0);
 #endif
 		return true;
 #if CONFIG_DMR_DATA_CORE

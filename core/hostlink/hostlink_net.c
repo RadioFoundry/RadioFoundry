@@ -9,6 +9,9 @@
 #include "dmr/ipGateway.h"
 #include "board.h"
 #include "hal_time.h"
+#if CONFIG_MDNS || CONFIG_TFTP
+#include "net/net_services.h"
+#endif
 
 #define PACKETS_UP		2	// packets from the air waiting for the host
 #define SERIAL_CHUNK		512	// UDP serial datagrams at most this long (the gateway's frames are 600 bytes)
@@ -44,6 +47,9 @@ void hostlink_net_init(hostlink_net_serial_fn serial_in)
 	serial_fn = serial_in;
 	board.netif->macs(host_mac, radio_mac);
 	ipGatewayInit(radio_mac, host_mac);
+#if CONFIG_MDNS || CONFIG_TFTP
+	net_services_init();	// the radio's own UDP services bind their ports
+#endif
 	started = true;
 }
 
@@ -107,6 +113,9 @@ void hostlink_net_poll(uint32_t now_ms)
 		stats.packets_up++;
 		up_out = (uint8_t)((up_out + 1) % PACKETS_UP);
 	}
+#if CONFIG_MDNS || CONFIG_TFTP
+	net_services_poll(now_ms, net_up());
+#endif
 }
 
 size_t hostlink_net_write(const uint8_t *buf, size_t len)

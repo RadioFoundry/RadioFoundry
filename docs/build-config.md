@@ -52,6 +52,8 @@ untracked sources in the built directories); only the few files that use it are 
 | `CONFIG_DMR_EMERGENCY` | = DMR | DMR emergency: the alarm CSBK, the emergency call with hot mic, the alert heard (`spec/dmr-emergency.md`) |
 | `CONFIG_DMR_ROAMING` | = DMR | DMR repeater roaming: per-zone roaming between repeater sites with the same talkgroup, chosen by base station sync with our color code and signal, passive (an optional wake probe sends a standard BS_Dwn_Act); Tools > Roaming, the Home chip (`docs/spec/dmr-roaming.md`). About 5.2 KB flash, 1 KB RAM on the DM-1701 |
 | `CONFIG_DMR_IP_GATEWAY` | = DMR and USB_NETWORK | IP over DMR packet data through the USB network adapter, carried by the data service (`docs/spec/usb-network.md`) |
+| `CONFIG_MDNS` | = DMR_IP_GATEWAY | mDNS / DNS-SD responder on the USB network link: the radio answers for `odr-<DMR ID>.local` and advertises its debug link, MMDVM modem and TFTP server (`docs/spec/mdns.md`). About 7 KB flash, 0.4 KB RAM on the DM-1701 |
+| `CONFIG_TFTP` | = DMR_IP_GATEWAY | TFTP server on the USB network link: `codeplug.bin` read and written (staged in `hal_flash_map_t.staging_*`, checked, then committed through the journal), `info.txt` (`docs/spec/tftp.md`). About 6.7 KB flash, 0.1 KB RAM on the DM-1701 |
 | `CONFIG_SFR` | = DMR | single frequency repeater: the MMDVM hotspot's SFR mode (duplex with RX = TX); the stand-alone repeater and user roles on a channel are not wired yet (`docs/spec/sfr.md`) |
 | `CONFIG_AM_RX` | n (DM-32: = FM) | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. The DM-32 glue isn't written yet |
 | `CONFIG_BCAST_FM` | n (DM-32: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The task, settings, screen and DM-32 glue aren't written yet |
@@ -92,6 +94,8 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 
 The MD-380's defaults (`boards/md380/config.mk`) switch off `CONFIG_SUBTONE`, `CONFIG_FM_TX_TONES` and `CONFIG_APRS_RX`
 (no sub-audio or tone path written for that board yet) and `CONFIG_SFR` / `CONFIG_HOTSPOT_SPLIT` (HR_C6000 only).
+Its maximal configuration also leaves out `CONFIG_FONT_XL` (a 160 px panel has no use for it, and the image doesn't
+fit with it and every network service).
 
 ## Adding a feature
 

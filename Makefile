@@ -73,6 +73,16 @@ endif
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c
 endif
+# The radio's own services on the USB network link (core/net/net_services.c is their glue to the gateway)
+ifeq ($(CONFIG_MDNS),y)
+APP_SRC += core/net/mdns.c
+endif
+ifeq ($(CONFIG_TFTP),y)
+APP_SRC += core/net/tftp.c core/net/tftp_codeplug.c
+endif
+ifneq ($(filter y,$(CONFIG_MDNS) $(CONFIG_TFTP)),)
+APP_SRC += core/net/net_services.c
+endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 

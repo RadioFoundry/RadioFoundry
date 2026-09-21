@@ -1473,6 +1473,9 @@ static const set_item_t s_connections[] = {
 	TOGGLE("Hotspot allowed", "MMDVM", UI_SET_HOTSPOT_AUTO),
 	TOGGLE("Answer radio checks", NULL, UI_SET_CHECK_REPLY),
 	TOGGLE("Answer call alerts", NULL, UI_SET_ALERT_ANSWER),
+#if CONFIG_TFTP
+	TOGGLE("TFTP codeplug write", "network USB programming", UI_SET_TFTP_WRITE),
+#endif
 };
 static const set_item_t s_power[] = {
 	TOGGLE("Battery saver", NULL, UI_SET_BATTERY_SAVER),

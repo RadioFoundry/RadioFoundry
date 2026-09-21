@@ -4,7 +4,8 @@
 
 The radio can be a USB network adapter instead of a serial port, and route IPv4 between the host and other radios
 over DMR packet data. Switches: `CONFIG_USB_NETWORK` (the adapter) and `CONFIG_DMR_IP_GATEWAY` (the gateway on top of
-it), both off by default (`docs/build-config.md`).
+it), on by default on radios with USB (`docs/build-config.md`); on the link the radio also runs mDNS (`mdns.md`) and
+a TFTP server for the codeplug (`tftp.md`).
 
 ## 1. One personality at a time
 
@@ -59,6 +60,11 @@ Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGat
   hook). Two packets wait for the host link task, which delivers SAP 4 as IP (ICMP, UDP, SCTP), SAP 3 as UDP, and
   anything else as raw data on port 40078; a packet that finds the IN endpoint busy goes on the next pass, and packets
   are dropped while the link is down.
+- The radio's own UDP services: datagrams to the radio's address, or to the link-local block 224.0.0.0/24, on a port
+  in the gateway's table (`ipGatewayUdpBind`, at most `IPGW_UDP_PORTS` = 8) go to that service in the host link task
+  instead of over the air, from any source address on the link; replies go out with `ipGatewayUdpSend` (IP TTL 255,
+  the multicast MAC for a group). 224.0.0.0/24 never goes over the air. Bound now: mDNS on 5353 (`mdns.md`), TFTP on 69
+  and its transfer's own port (`tftp.md`). Started and polled by `core/net/net_services.c` from `hostlink_net.c`.
 - Debug link view, section `hotspot`: `usb.network usb.net_up net.host_ip net.radio_ip net.frames_in net.to_air
   net.to_air_refused net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped`.
 
@@ -72,4 +78,5 @@ not built yet.
   then the default air side against a fake data service: the mailbox, the bursts decoded back by the codec's receiver
   into the IP / SAP 10 packet, a busy service retried, the 2 s give-up, the packet hook),
   and the gateway's own `ipGatewayTest*` with pcaps checked by tshark.
-- HIL: `tests/hil/test_usb_network.py` (`--allow-usb-switch`).
+- HIL: `tests/hil/test_usb_network.py` (`--allow-usb-switch`); the services: `tests/hil/test_net_services.py` (`mdns.md`
+  5, `tftp.md` 5).
