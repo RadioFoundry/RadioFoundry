@@ -22,8 +22,9 @@
 //                                      121 has a route to the radio on the link (router 0.0.0.0) and routes the
 //                                      individual, multicast (and group) ranges through the radio. Each radio has an
 //                                      address of its own, so several radios can be plugged into one host. The radio
-//                                      answers at that address for ping, DHCP and IPGW_SERIAL_PORT only, anything else
-//                                      to it goes over the air to the radio with that ID. The radio answers ARP for
+//                                      answers at that address for ping, DHCP, IPGW_SERIAL_PORT and the UDP ports its
+//                                      own services bind (ipGatewayUdpBind) only, anything else to it goes over the air
+//                                      to the radio with that ID. The radio answers ARP for
 //                                      every address but the host's, in case the host ignores the on link route.
 //                or /31                the same with the host and the radio as a /31 (RFC 3021), the radio answering
 //                                      ARP for its own address only. macOS treats both ends of a /31 as broadcast
@@ -120,6 +121,24 @@ bool ipGatewayDeliverMonitor(const uint8_t *record, int length);
 // Bytes from the radio's serial protocol, as one UDP datagram to the host and port that last sent to IPGW_SERIAL_PORT.
 // False if the USB IN endpoint is busy; dropped (true) while no host has sent anything yet.
 bool ipGatewaySerialOut(const uint8_t *data, int length);
+
+// Local UDP services on the radio (mDNS, TFTP, ...). A datagram from the link to the radio's own address, or to the
+// local network control block 224.0.0.0/24 (mDNS: 224.0.0.251), on a bound port goes to its handler instead of over
+// the air; 224.0.0.0/24 never goes over the air, bound or not. Handlers run in the caller of ipGatewayEthernetIn (the
+// host link task) and may reply at once with ipGatewayUdpSend. One small table: a service binds its port at start-up
+#define IPGW_UDP_PORTS			8
+#define IPGW_LOCAL_MULTICAST	0xE0000000u		// 224.0.0.0/24, link local: never forwarded (RFC 5771)
+#define IPGW_UDP_PAYLOAD_MAX	(IPGW_MAX_FRAME - 14 - 20 - 8)
+typedef void (*ipGatewayUdpHandler)(uint32_t srcIp, uint16_t srcPort, uint32_t dstIp, uint16_t dstPort, const uint8_t *data, int length);
+// handler NULL unbinds the port. False if the table is full
+bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler);
+// Room for a reply's payload (IPGW_UDP_PAYLOAD_MAX bytes), in the gateway's frame buffer: build the payload there and
+// pass it to ipGatewayUdpSend, with nothing else sent in between
+uint8_t *ipGatewayUdpPayload(void);
+// A datagram from the radio's own address to the host (any unicast address on the link), the broadcast address or a
+// multicast group, with IP TTL 255 (mDNS checks it). False if the USB IN endpoint is busy (try again) or the radio
+// has no address
+bool ipGatewayUdpSend(uint32_t dstIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
 
 // Provided by the user of the gateway
 bool ipGatewaySendFrame(const uint8_t *frame, int length);
