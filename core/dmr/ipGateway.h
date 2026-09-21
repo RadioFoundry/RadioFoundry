@@ -121,6 +121,18 @@ bool ipGatewayDeliverMonitor(const uint8_t *record, int length);
 // False if the USB IN endpoint is busy; dropped (true) while no host has sent anything yet.
 bool ipGatewaySerialOut(const uint8_t *data, int length);
 
+// The radio's own TCP (core/net, CONFIG_NET_TCP): segments to the radio's address, from any source (the host, or
+// through it a server the radio connected to), go to fn, layer 4 on; NULL (the default) drops them. TCP never goes
+// over the air
+typedef void (*ipGatewayLocalFn)(uint32_t src, const uint8_t *l4, int length);
+void ipGatewaySetTCP(ipGatewayLocalFn fn);
+// A packet from the radio itself to dst (the host, or beyond it when the host routes): build layer 4 (at most
+// IPGW_LOCAL_MAX bytes) at ipGatewayLocalPayload(), then send it. False if the USB IN endpoint is busy or there is no
+// address yet
+#define IPGW_LOCAL_MAX		(IPGW_MAX_FRAME - 14 - 20)
+uint8_t *ipGatewayLocalPayload(void);
+bool ipGatewaySendLocal(uint8_t protocol, uint32_t dst, int length);
+
 // Provided by the user of the gateway
 bool ipGatewaySendFrame(const uint8_t *frame, int length);
 uint32_t ipGatewayRadioId(void);

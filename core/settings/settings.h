@@ -154,6 +154,10 @@ typedef struct {
 	// The data service's confirmed IP rules (dmrDataSettings_t.ipConfirmedRule, docs/spec/dmr-data.md 12; appended
 	// for sap3), taken with the other ds_ fields: 0 unused, a radio ID, or 0x80000000 | a UDP port
 	uint32_t ds_ip_rule[2];
+	// The radio's own APRS-IS client on the USB network link (CONFIG_NET_APRSIS, docs/spec/tcp-services.md 7)
+	uint32_t aprsis_ip;		// server IPv4 address, 0 = off
+	uint16_t aprsis_port;		// 0 = 14580
+	uint16_t aprsis_range_km;	// the server filter "m/<km>" around us, 0 = no filter
 } settings_t;
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)

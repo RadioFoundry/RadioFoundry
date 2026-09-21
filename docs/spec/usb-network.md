@@ -69,6 +69,9 @@ Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGat
 - Test hook: the debug link's DMR_DATA IP_SEND hands a UDP datagram to `ipGatewayIPToAir`, the same path as a datagram
   from the host, without switching USB (`tests/hil/test_dmr_ip.py`).
 
+The radio's own TCP services on its address (status page, KISS TNC, rigctld, APRS-IS) are in
+[tcp-services.md](tcp-services.md); TCP to other radios is not carried.
+
 Voice over the network personality (USRP audio, host PTT, COS) is designed in [usb-audio.md](usb-audio.md) 4.2;
 not built yet.
 

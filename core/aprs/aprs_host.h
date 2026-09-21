@@ -18,5 +18,7 @@ void aprs_host_start(void);
 bool aprs_host_claims(uint8_t b);
 void aprs_host_feed(const uint8_t *buf, size_t len, uint32_t now_ms);
 bool aprs_host_in_frame(void);
+// One decoded KISS frame (type byte first) from any transport: the serial / UDP port, or KISS over TCP (core/net)
+void aprs_host_kiss_frame(const uint8_t *f, size_t n, uint32_t now_ms);
 
 #endif

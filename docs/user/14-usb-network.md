@@ -81,3 +81,42 @@ tools/odr_debug.py --port udp:12.47.82.51 version
 
 MMDVMHost connects the same way (`Protocol=udp`, `ModemAddress=<radio address>`, `ModemPort=3334`). qdmr finds radios
 only by their serial USB ID, so program the radio in serial mode.
+
+## Services on the radio
+
+In network mode the radio itself answers at its address (your computer's address with the last bit flipped) on a few
+TCP ports. They work only over the USB cable, never over the air.
+
+| Port | Service |
+|---|---|
+| 80 | A status page: open `http://<radio address>/` in a browser. It shows the channel, frequency, signal and battery, and the radio's screen. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core` |
+| 8001 | KISS over TCP for APRS programs (APRSdroid, Xastir, YAAC): set the program's TNC to "KISS over TCP", the radio's address, port 8001. Turn on **KISS on USB** in Tools > APRS first. The radio sends only packets from your own callsign. The DM-1701 can't receive APRS, so programs see only what they send |
+| 4532 | Hamlib rig control for loggers, SDR and satellite programs: choose "Hamlib NET rigctl" with the radio's address and port 4532, or `rigctl -m 2 -r <radio address>:4532 f`. Programs can read and set the frequency (a channel switches to the VFO), read the mode and the S meter, and key the transmitter. Transmit works only from your computer, at most 3 minutes per keying |
+
+### APRS-IS from the radio
+
+The radio can connect to an APRS-IS server itself and send your position there. Your computer must pass the radio's
+traffic on to the Internet:
+
+```
+# macOS (en0: your Internet connection)
+sudo sysctl -w net.inet.ip.forwarding=1
+echo "nat on en0 from 12.47.82.51 to any -> (en0)" | sudo pfctl -ef -
+# Linux (eth0: your Internet connection, usb0: the radio)
+sudo sysctl -w net.ipv4.ip_forward=1
+sudo iptables -t nat -A POSTROUTING -s 12.47.82.51/32 -o eth0 -j MASQUERADE
+sudo iptables -A FORWARD -i usb0 -o eth0 -j ACCEPT
+sudo iptables -A FORWARD -i eth0 -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+```
+
+Use your radio's address instead of 12.47.82.51. Then give the radio a server's IP address (it can't look up names;
+`dig +short rotate.aprs2.net` gives some) and, if you like, a range in km for the messages and packets it receives:
+
+```
+curl "http://12.47.82.51/api/aprsis?server=44.31.12.34:14580&range=50"
+curl "http://12.47.82.51/api/aprsis"              # the state
+curl "http://12.47.82.51/api/aprsis?server=off"   # stop
+```
+
+The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
+USB** and "to APRS-IS" are on (`tools/odr_debug.py aprs set to_is 1`). The MD-380 build has none of these services.

@@ -107,9 +107,10 @@ codeplug's callsign.
 | more UI settings | `theme` (0 dark, 1 light, 2 high contrast), `ui_flags` (large text, hint row, message tone, talker alias shown, PTT when locked, hear all by default; default hint row, message tone, talker alias and PTT when locked on), `updown_home` (0 channel, 1 zone, 2 talk target), `low_batt_pct` (5..30, default 15; 0 = the radio core's voltage levels only), `auto_off_min` (0 = never), `reserved5` (appended for uifix; a record without them keeps these defaults) |
 | roaming survey | `roam_beacon_s` (the repeaters' beacon interval, 0 = none, else 10..600, default 60), `roam_beacon_len_s` (1..10, default 4), `roam_survey` (0 off, 1 synced, 2 per site; default 1), `rpt_beacon` (our repeater roles' idle beacon, default 0), `reserved6[3]` (appended for roam2, `dmr-roaming.md` 5.1; a record without them keeps these defaults) |
 | APRS | `aprs_flags aprs_flags2` (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX; iGate, iGate TX, messaging, UDT, to APRS-IS, DMR GPS Info) `aprs_region aprs_ssid aprs_freq_hz aprs_lat aprs_lon aprs_dmr_dst aprs_alt_m aprs_interval_s aprs_distance_m aprs_symbol[2] aprs_path aprs_pos_src aprs_level aprs_txdelay aprs_misc aprs_stored` and a reserved byte; taken when `aprs_stored` is 1 (appended for aprs, `aprs.md` 11) |
+| APRS-IS client | `aprsis_ip` (the server's IPv4 address, 0 = off) `aprsis_port` (0 = 14580) `aprsis_range_km` (the filter `m/<km>`, 0 = none) (appended for tcp, `tcp-services.md` 7) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
-payload is 220 bytes now (at most 236).
+payload is 228 bytes now (at most 236).
 
 ### 3.0 Who writes, and storage jobs
 

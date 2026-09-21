@@ -13,6 +13,7 @@
 #include "dmr/dmr_data_api.h"
 #include "dmr/ipGateway.h"
 #include "dmr/dmrData.h"
+#include "net/tcp.h"
 
 static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -195,6 +196,38 @@ static int host_udp(uint8_t *f, uint32_t dst_ip, uint16_t sport, uint16_t dport,
 	memcpy(udp + 8, data, len);
 	return 14 + 20 + 8 + len;
 }
+
+// A TCP segment (20 byte header, no options) from src in an Ethernet frame to the radio's MAC: its length
+static int host_tcp(uint8_t *f, uint32_t src_ip, uint32_t dst_ip, uint16_t sport, uint16_t dport, uint32_t seq,
+		    uint32_t ack, uint8_t flags)
+{
+	memcpy(f, RADIO_MAC, 6);
+	memcpy(f + 6, HOST_MAC, 6);
+	put16(f + 12, 0x0800);
+	uint8_t *ip = f + 14;
+	memset(ip, 0, 40);
+	ip[0] = 0x45;
+	put16(ip + 2, 40);
+	ip[8] = 64;
+	ip[9] = 6;
+	put32(ip + 12, src_ip);
+	put32(ip + 16, dst_ip);
+	put16(ip + 10, ip_checksum(ip, 20));
+	uint8_t *t = ip + 20;
+	put16(t, sport);
+	put16(t + 2, dport);
+	put32(t + 4, seq);
+	put32(t + 8, ack);
+	t[12] = 0x50;
+	t[13] = flags;
+	put16(t + 14, 8192);
+	put16(t + 16, tcp_checksum(src_ip, dst_ip, t, 20));
+	return 14 + 40;
+}
+
+static int tcp_opened = -1;
+static void t_opened(int c) { tcp_opened = c; }
+static const tcp_app_t tcp_app = { .opened = t_opened };
 
 static void from_host(const uint8_t *f, int len)
 {
@@ -381,6 +414,36 @@ int main(void)
 	hostlink_net_air_packet(&p, NULL);
 	hostlink_net_poll(now_ms);
 	CHECK(sent_count == 1);
+
+	// TCP to the radio itself (CONFIG_NET_TCP): a port nobody listens on is refused with a RST from the radio's
+	// address, also from a source beyond the host (the radio's own connections get their replies that way)
+	uint32_t radio_ip = HOST_IP ^ 1u;
+	sent_count = 0;
+	from_host(f, host_tcp(f, HOST_IP, radio_ip, 40000, 9, 1000, 0, 0x02));
+	CHECK(sent_count == 1 && sent[0][14 + 9] == 6 && get32(sent[0] + 14 + 12) == radio_ip);
+	CHECK(get32(sent[0] + 14 + 16) == HOST_IP && sent[0][14 + 20 + 13] == 0x14 && get32(sent[0] + 14 + 28) == 1001);
+	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && ip_checksum(sent[0] + 14, 20) == 0);
+	CHECK(tcp_checksum(radio_ip, HOST_IP, sent[0] + 34, 20) == 0);
+	sent_count = 0;
+	from_host(f, host_tcp(f, 0xC0000201u, radio_ip, 40000, 9, 1000, 0, 0x02));
+	CHECK(sent_count == 1 && get32(sent[0] + 14 + 16) == 0xC0000201u);
+	// TCP to another radio's address never goes over the air
+	int before = air.ip_calls;
+	sent_count = 0;
+	from_host(f, host_tcp(f, HOST_IP, IPGW_INDIVIDUAL_NET | 100u, 40000, 80, 1000, 0, 0x02));
+	CHECK(air.ip_calls == before && sent_count == 0);
+	// A listener: SYN, SYN-ACK, ACK opens the connection; the link going down drops it
+	CHECK(tcp_listen(7, &tcp_app));
+	sent_count = 0;
+	from_host(f, host_tcp(f, HOST_IP, radio_ip, 40001, 7, 5000, 0, 0x02));
+	CHECK(sent_count == 1 && sent[0][14 + 20 + 13] == 0x12 && sent_len[0] == 14 + 20 + 24);
+	uint32_t iss = get32(sent[0] + 34 + 4);
+	from_host(f, host_tcp(f, HOST_IP, radio_ip, 40001, 7, 5001, iss + 1, 0x10));
+	CHECK(tcp_opened >= 0 && tcp_state(tcp_opened) == TCP_ESTABLISHED);
+	link_up = false;
+	hostlink_net_poll(now_ms);
+	link_up = true;
+	CHECK(tcp_state(tcp_opened) == TCP_CLOSED);
 
 	printf("# hostlinkNetTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;

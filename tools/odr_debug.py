@@ -69,7 +69,7 @@ APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SE
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
      "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay",
-     "dmr_gps"])}
+     "dmr_gps", "to_is"])}
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
@@ -112,7 +112,7 @@ ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
-                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip"]
+                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \

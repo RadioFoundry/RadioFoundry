@@ -15,5 +15,9 @@ CONFIG_APRS_RX ?= n
 # The SFR and split duplex glue is HR_C6000 only (docs/spec/sfr.md: the HR_C5000 lacks CRC_MCU_Control)
 CONFIG_SFR ?= n
 CONFIG_HOTSPOT_SPLIT ?= n
-# Not written for this radio (above): tools/ci.sh's maximal configuration leaves these off
-BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT
+# The TCP services (docs/spec/tcp-services.md) are off for flash: TCP and HTTP alone fit the default image (97.3 %),
+# but not tools/ci.sh's maximal configuration (it overflowed by 180 bytes); KISS over TCP and APRS-IS would carry APRS,
+# which has no RF path here (no AFSK, above)
+CONFIG_NET_TCP ?= n
+# Not written for this radio (above), or left out for flash: tools/ci.sh's maximal configuration leaves these off
+BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT NET_TCP NET_KISS NET_HTTP NET_RIGCTL NET_APRSIS

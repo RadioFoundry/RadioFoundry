@@ -44,6 +44,9 @@ endif
 ifeq ($(CONFIG_APRS),y)
 CORE_DIRS += core/aprs
 endif
+ifeq ($(CONFIG_NET_TCP),y)
+CORE_DIRS += core/net
+endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
