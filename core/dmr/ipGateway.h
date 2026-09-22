@@ -96,11 +96,22 @@ void ipGatewayInit(const uint8_t gatewayMac[6], const uint8_t hostMac[6]);
 // An Ethernet frame from the host
 void ipGatewayEthernetIn(const uint8_t *frame, int length);
 
-// The host's address, from the radio's DMR ID, 0 if the ID can't be used
+// The host's address, from the radio's DMR ID (or the fixed link's), 0 if the ID can't be used
 uint32_t ipGatewayHostIP(void);
 
 // The radio's own address (the host's router, DHCP server, ping and IPGW_SERIAL_PORT), 0 if the ID can't be used
 uint32_t ipGatewayRadioIP(void);
+
+// A fixed link (control station mode, docs/spec/usb-network.md 5.3), chosen at run time: the radio is radioIp, the
+// host the next address, both in a /24 (IPGW_FIXED_NETMASK). DHCP gives the host that address with the same option
+// 121 routes through the radio (the individual, multicast and group ranges), the radio answers ARP for its own address
+// only, and packets over the air to the radio's own DMR ID reach the host at its fixed address (the destination is
+// rewritten, as a NAT would). One radio per host. 0 (or an address that can't be used: not unicast, a range of the
+// gateway's own, or a last octet outside 1-253) goes back to the addressing by DMR ID; false then if it wasn't 0
+#define IPGW_FIXED_LINK_DEFAULT	0xC0A80A01u		// 192.168.10.1, the host 192.168.10.2
+#define IPGW_FIXED_NETMASK		0xFFFFFF00u
+bool ipGatewaySetFixedLink(uint32_t radioIp);
+uint32_t ipGatewayFixedLink(void);				// the radio's fixed address, 0 = addressed by DMR ID
 
 // A UDP datagram received over the air, to the host from the source's individual address. Private data to another radio
 // is sent to a MAC address the host doesn't use, so the host ignores it but a packet capture shows it. Group data goes

@@ -125,8 +125,8 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		}
 		memcpy(text, a + 5, tl);
 		text[tl] = '\0';
-		uint8_t format = (a[4] & 8u) ? DMR_SMS_FORMAT_DEFAULT : (a[4] & 4u) ? DMR_SMS_FORMAT_ETSI
-											: DMR_SMS_FORMAT_TMS;
+		uint8_t format = (a[4] & 8u) ? DMR_SMS_FORMAT_DEFAULT : (a[4] & 16u) ? DMR_SMS_FORMAT_ETSI_IP :
+				 (a[4] & 4u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		st = sms_send(get32(a), (a[4] & 1u) != 0, text, (a[4] & 2u) != 0, format) ? DL_ST_OK : DL_ST_BUSY;
 		break;
 	}
@@ -151,7 +151,7 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		set.radioCheckReply = (a[4] & 1u) != 0;
 		set.callAlertAck = (a[4] & 2u) != 0;
 		set.lrrpReply = (a[4] & 4u) != 0;
-		set.smsFormat = (a[4] & 8u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		set.smsFormat = (a[4] & 32u) ? DMR_SMS_FORMAT_ETSI_IP : (a[4] & 8u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (a[4] & 16u) != 0;
 		dmr_data_set_settings(&set);
 		break;
@@ -175,7 +175,8 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		put32(out + 1, m.src);
 		put32(out + 5, m.dst);
 		out[9] = m.group;
-		out[10] = (uint8_t)((m.unread ? 1u : 0u) | (m.format == DMR_SMS_FORMAT_ETSI ? 2u : 0u));
+		out[10] = (uint8_t)((m.unread ? 1u : 0u) | (m.format == DMR_SMS_FORMAT_ETSI ? 2u : 0u) |
+				    (m.format == DMR_SMS_FORMAT_ETSI_IP ? 4u : 0u));
 		memcpy(out + 11, m.text, tl);
 		return 11u + tl;
 	}

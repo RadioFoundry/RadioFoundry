@@ -118,6 +118,7 @@ TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
 OP_SCAN, OP_SCAN_VFO, OP_BEEP, OP_TONE_BURST, OP_SETTING = range(20, 25)
 OP_USB_NETWORK = 25
 OP_ROAM = 26
+OP_USB_NET_SETTINGS = 27
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
@@ -600,6 +601,14 @@ class DebugLink:
         re-enumerates; in network mode the debug link answers over UDP (--port udp:<radio IP>)."""
         self.radio(OP_USB_NETWORK, bytes([1 if on else 0]))
 
+    def usb_net_settings(self, boot_network=False, passthrough=False, fixed_link=False, link_ip="0.0.0.0"):
+        """Store the USB network settings (docs/spec/usb-network.md 5): the network personality at power-on, control
+        station passthrough (the PC is the endpoint of the radio's own IP data), the fixed link pair (link_ip: the
+        radio's address, "0.0.0.0" = 192.168.10.1; the PC is the next address)."""
+        ip = struct.unpack(">I", bytes(int(x) for x in link_ip.split(".")))[0]
+        flags = (1 if boot_network else 0) | (2 if passthrough else 0) | (4 if fixed_link else 0)
+        self.radio(OP_USB_NET_SETTINGS, struct.pack("<BI", flags, ip))
+
     def scan(self, cmd, pos=None):
         """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle."""
         c = SCAN_CMDS[cmd] if isinstance(cmd, str) else cmd
@@ -632,10 +641,10 @@ class DebugLink:
         return self.request(DMR_DATA, bytes([op]) + bytes(args))[1]
 
     def sms(self, dst, text, group=False, ack=True, fmt="tms"):
-        """Send a text message; fmt "tms" (Motorola TMS), "etsi" (ETSI defined short data) or "default" (the radio's
-        setting); text is Latin-1, at most SMS_TEXT_MAX characters here."""
+        """Send a text message; fmt "tms" (Motorola TMS), "etsi" (ETSI defined short data), "etsi_ip" (ETSI IP text,
+        UDP 5016) or "default" (the radio's setting); text is Latin-1, at most SMS_TEXT_MAX characters here."""
         t = text.encode("latin-1", "replace")[:SMS_TEXT_MAX]
-        f = {"tms": 0, "etsi": 4, "default": 8}[fmt]
+        f = {"tms": 0, "etsi": 4, "default": 8, "etsi_ip": 16}[fmt]
         self.data_request(DATA_OP_SMS, struct.pack("<IB", int(dst) & 0xFFFFFF, (1 if group else 0) |
                                                    (2 if ack else 0) | f) + t)
 
@@ -646,10 +655,14 @@ class DebugLink:
         self.data_request(DATA_OP_RADIO_CHECK, struct.pack("<I", int(dst) & 0xFFFFFF))
 
     def data_settings(self, ars_server=0, radio_check_reply=False, call_alert_ack=True, lrrp_reply=True,
-                      sms_etsi=False, radio_check_etsi=False):
-        """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms."""
+                      sms_etsi=False, radio_check_etsi=False, sms_format=None):
+        """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms. sms_format: the
+        default text message format, "etsi_ip" (the radio's default), "etsi" or "tms"; None: "etsi" when sms_etsi,
+        else "etsi_ip"."""
+        if sms_format is None:
+            sms_format = "etsi" if sms_etsi else "etsi_ip"
         flags = (1 if radio_check_reply else 0) | (2 if call_alert_ack else 0) | (4 if lrrp_reply else 0) | \
-            (8 if sms_etsi else 0) | (16 if radio_check_etsi else 0)
+            {"tms": 0, "etsi": 8, "etsi_ip": 32}[sms_format] | (16 if radio_check_etsi else 0)
         self.data_request(DATA_OP_SETTINGS, struct.pack("<IB", int(ars_server) & 0xFFFFFF, flags))
 
     def inbox(self, index=0):
@@ -662,7 +675,7 @@ class DebugLink:
             raise
         src, dst, group, flags = struct.unpack_from("<IIBB", r)
         return {"src": src, "dst": dst, "group": bool(group), "unread": bool(flags & 1),
-                "format": "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
+                "format": "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
 
     def mark_read(self, index=0):
         self.data_request(DATA_OP_MARK_READ, bytes([index]))
@@ -921,6 +934,10 @@ def cmd_radio(link, a):
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
         link.usb_network(args[:1] == ["network"])
+    elif op == "usb-settings":        # usb-settings [boot] [passthrough] [fixed[=IP]] (stored; none: all off)
+        fixed = [x for x in args if x.startswith("fixed")]
+        link.usb_net_settings("boot" in args, "passthrough" in args, bool(fixed),
+                              fixed[0].split("=", 1)[1] if fixed and "=" in fixed[0] else "0.0.0.0")
     elif op == "roam":                # roam zone_on|zone_off|zone_toggle|now|lock|unlock|lock_toggle
         link.roam(args[0] if args else "now")
     else:
@@ -978,7 +995,8 @@ def cmd_data(link, a):
             print("data settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp]", file=sys.stderr)
             return 2
         link.data_settings(int(args[0], 0), "check-reply" in args, "no-alert-ack" not in args, "no-lrrp" not in args,
-                           "sms-etsi" in args, "check-etsi" in args)
+                           radio_check_etsi="check-etsi" in args,
+                           sms_format="tms" if "sms-tms" in args else "etsi" if "sms-etsi" in args else "etsi_ip")
     elif a.op == "inbox":
         m = link.inbox(int(args[0]) if args else 0)
         print("empty" if m is None else f"from {m['src']} to {m['dst']}{' (group)' if m['group'] else ''}"
@@ -1256,15 +1274,16 @@ def main(argv=None):
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
-                                  "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb"])
+                                  "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
+                                  "usb-settings"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings"])
-    p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack] [--format tms|etsi|default]; alert / "
-                   "check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi] [check-etsi]; "
+    p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack] [--format tms|etsi|etsi_ip|default]; alert / "
+                   "check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi|sms-tms] [check-etsi]; "
                    "inbox / read: [INDEX]; emergency: start|cancel|dismiss; em-settings: alarm|alarm_call|call [DST] "
                    "[private] [etsi] [no-tone] [tries=N] [hot=S]")
-    p.add_argument("--format", choices=["tms", "etsi", "default"], default="tms")
+    p.add_argument("--format", choices=["tms", "etsi", "etsi_ip", "default"], default="default")
     p.add_argument("--group", action="store_true")
     p.add_argument("--no-ack", action="store_true")
     p = sub.add_parser("log")

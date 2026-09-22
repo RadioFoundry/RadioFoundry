@@ -67,8 +67,8 @@ bool ui_svc_msg_delete(uint16_t i)
 
 bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 {
-	// A message to a person asks for the acknowledgment ("Delivered"); a group message can't have one. The format
-	// (TMS or ETSI) is the radio's setting (dmrDataSettings_t smsFormat)
+	// A message to a person asks for the acknowledgment ("Delivered") where its format has one; a group message
+	// can't. The format (ETSI IP text, ETSI short data or TMS) is the radio's setting (dmrDataSettings_t smsFormat)
 	return sms_send(dst, group, text, !group, DMR_SMS_FORMAT_DEFAULT);
 }
 
@@ -113,6 +113,7 @@ void ui_svc_poll(void)
 	case DMR_DATA_EV_SMS_FAILED:
 		ev.kind = UI_EV_MESSAGE_SENT;
 		ev.ok = d.kind == DMR_DATA_EV_SMS_SENT;
+		ev.index = (ev.ok && !sms_send_confirmed()) ? 1 : 0;	// on air, but nothing confirms delivery
 		break;
 	case DMR_DATA_EV_CALL_ALERT:
 		ev.kind = UI_EV_CALL_ALERT;

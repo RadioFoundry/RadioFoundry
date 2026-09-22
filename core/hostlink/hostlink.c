@@ -20,11 +20,13 @@
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net.h"
+#include "dmr/ipGateway.h"
 #endif
 #if CONFIG_APRS
 #include "aprs/aprs_host.h"
 #endif
 #include "debuglink/dlog.h"
+#include "settings/settings.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -305,6 +307,18 @@ static void usb_switch_now(void)
 	board.netif->select(s != 0);
 }
 
+void hostlink_settings_changed(void)
+{
+#if CONFIG_DMR_IP_GATEWAY
+	settings_t st;
+
+	settings_read(&st);
+	hostlink_net_set_control((st.net_flags & SETTINGS_NET_PASSTHROUGH) != 0,
+				 (st.net_flags & SETTINGS_NET_FIXED_LINK) ?
+					 (st.net_link_ip != 0 ? st.net_link_ip : IPGW_FIXED_LINK_DEFAULT) : 0);
+#endif
+}
+
 static void hostlink_task(void *arg)
 {
 	(void)arg;
@@ -325,6 +339,18 @@ static void hostlink_task(void *arg)
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 	hostlink_net_init(net_serial_in);
+	hostlink_settings_changed();
+#endif
+#if CONFIG_USB_NETWORK
+	settings_t st;
+
+	settings_read(&st);
+	if ((st.usb_mode == 1) && (board.netif != NULL) && (board.netif->select != NULL)) {
+		// Before the stack starts: enumerates as the adapter straight away. The select arms the fallback to serial
+		// for a host that never configures it (usb_ncm.c), counted from the host's first bus reset
+		dlog("hostlink: USB network at power-on");
+		board.netif->select(true);
+	}
 #endif
 	if ((port == NULL) || !port->start()) {
 		vTaskDelete(NULL);

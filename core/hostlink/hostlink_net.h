@@ -43,6 +43,14 @@ void hostlink_net_poll(uint32_t now_ms);
 // The serial protocols' bytes to the host as UDP datagrams (hostlink_write in network mode)
 size_t hostlink_net_write(const uint8_t *buf, size_t len);
 
+// Control station mode (CONFIG_DMR_CONTROL_STATION, docs/spec/usb-network.md 5), any task. passthrough: the PC is
+// the endpoint of the radio's own IP data while the link is up; fixed_link_ip: the radio's address on a fixed link
+// pair (ipGatewaySetFixedLink), 0 = addressed by DMR ID. The link addressing changes in the host link task's next
+// poll; the host picks it up at its next DHCP exchange (the radio refuses a renewal of the old address)
+void hostlink_net_set_control(bool passthrough, uint32_t fixed_link_ip);
+// Passthrough is on and the PC can take the packets now (the network link is up): what the data service is told
+bool hostlink_net_passthrough_active(void);
+
 typedef struct {
 	uint32_t frames_in, packets_air, packets_up, packets_dropped, to_air, to_air_refused;
 } hostlink_net_stats_t;

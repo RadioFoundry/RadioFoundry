@@ -19,6 +19,7 @@
 #include "input/input.h"
 #include "radio/radio.h"
 #include "storage/storage.h"
+#include "settings/settings.h"
 #include "ui/gfx.h"
 
 #ifndef ODR_GIT
@@ -39,6 +40,7 @@ enum {
 	// 20-24: the radio features' (DL_OP_SCAN .. DL_OP_SETTING, debuglink_view_radio.c)
 	OP_USB_NETWORK = 25,
 	// 26: DMR roaming (DL_OP_ROAM, debuglink_view_radio.c)
+	OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
 };
 
 static dl_parser_t parser;
@@ -481,7 +483,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		[OP_POWER] = 1, [OP_SQUELCH] = 1, [OP_BANDWIDTH] = 1, [OP_TONE] = 4, [OP_MONITOR] = 1, [OP_CLEAR_TEMP] = 0,
 		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0,
 		[OP_DMR_TARGET] = 4, [OP_DMR_CONTACT] = 2, [OP_DMR_CALL_BACK] = 0, [OP_DMR_TARGET_CLEAR] = 0,
-		[OP_DMR_PRIVACY] = 3, [OP_USB_NETWORK] = 1,
+		[OP_DMR_PRIVACY] = 3, [OP_USB_NETWORK] = 1, [OP_USB_NET_SETTINGS] = 5,
 	};
 	uint32_t now = hal_millis();
 
@@ -591,6 +593,22 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 			return status_only(out, DL_ST_UNAVAILABLE);
 		}
 		break;
+	case OP_USB_NET_SETTINGS: {	// bit 0 network at power-on, 1 passthrough, 2 fixed link; the link IP (0 = default)
+#if CONFIG_USB_NETWORK
+		uint32_t ip = (uint32_t)a[1] | ((uint32_t)a[2] << 8) | ((uint32_t)a[3] << 16) | ((uint32_t)a[4] << 24);
+		settings_t *st = settings_begin();
+
+		st->usb_mode = (a[0] & 1u) ? 1 : 0;
+		st->net_flags = (uint8_t)((CONFIG_DMR_CONTROL_STATION && (a[0] & 2u) ? SETTINGS_NET_PASSTHROUGH : 0) |
+					  (CONFIG_DMR_CONTROL_STATION && (a[0] & 4u) ? SETTINGS_NET_FIXED_LINK : 0));
+		st->net_link_ip = ip;
+		settings_end(now);
+		hostlink_settings_changed();
+		break;
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
+	}
 	default:
 		return status_only(out, DL_ST_BAD_ARG);
 	}

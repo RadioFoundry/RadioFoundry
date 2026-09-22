@@ -43,7 +43,8 @@
 #define ARS_REFRESH_DEFAULT_MS	(30U * 60U * 1000U)
 
 static dmrDataEnv_t env;
-static dmrDataSettings_t settings = { .callAlertAck = true, .lrrpReply = true };
+static dmrDataSettings_t settings = { .callAlertAck = true, .lrrpReply = true, .smsFormat = DMR_SMS_FORMAT_ETSI_IP };
+static bool passthrough;				// control station: IP based packets to us belong to the PC
 static dmrDataChannel_t channel;
 static uint32_t now;
 static dmrDataStats_t stats;
@@ -302,11 +303,27 @@ static bool smsTransmit(void)
 		smsSeq = (smsSeq + 1) & 0x1F;
 		sms.seq = smsSeq;
 	}
-	int count = (sms.format == DMR_SMS_FORMAT_ETSI)
-			? dmrDataBuildEtsiText(sms.group, sms.dst, channel.ownId, sms.text, sms.ack, DMR_DATA_SMS_PREAMBLES, txBursts,
-								   DMR_DATA_MAX_BURSTS)
-			: dmrDataBuildTMS(sms.group, sms.dst, channel.ownId, sms.text, sms.seq, sms.ack, SMS_BLOCK_TYPE,
-							  DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS);
+	int count = 0;
+
+	switch (sms.format)
+	{
+		case DMR_SMS_FORMAT_ETSI:
+			count = dmrDataBuildEtsiText(sms.group, sms.dst, channel.ownId, sms.text, sms.ack, DMR_DATA_SMS_PREAMBLES,
+										 txBursts, DMR_DATA_MAX_BURSTS);
+			break;
+		case DMR_SMS_FORMAT_ETSI_IP:
+			count = dmrDataBuildIPText(sms.group, sms.dst, channel.ownId, sms.text, SMS_BLOCK_TYPE, DMR_DATA_SMS_PREAMBLES,
+									   txBursts, DMR_DATA_MAX_BURSTS);
+			break;
+#if CONFIG_DMR_TMS
+		case DMR_SMS_FORMAT_TMS:
+			count = dmrDataBuildTMS(sms.group, sms.dst, channel.ownId, sms.text, sms.seq, sms.ack, SMS_BLOCK_TYPE,
+									DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS);
+			break;
+#endif
+		default:
+			break;
+	}
 	if (!queueTx(count, TXK_SMS))
 	{
 		return false;
@@ -315,21 +332,30 @@ static bool smsTransmit(void)
 	sms.state = DMR_REQ_SENDING;
 	stats.smsSent++;
 	stats.etsiSmsSent += (sms.format == DMR_SMS_FORMAT_ETSI) ? 1 : 0;
+	stats.ipTextSent += (sms.format == DMR_SMS_FORMAT_ETSI_IP) ? 1 : 0;
 	return true;
 }
 
 bool dmrDataServiceSendSMS(bool group, uint32_t dst, const char *text, bool ackRequested)
 {
-	return dmrDataServiceSendSMSFormat(group, dst, text, ackRequested, DMR_SMS_FORMAT_TMS);
+	return dmrDataServiceSendSMSFormat(group, dst, text, ackRequested, DMR_SMS_FORMAT_DEFAULT);
+}
+
+// A format the build can send (TMS only with CONFIG_DMR_TMS)
+static bool smsFormatBuilt(uint8_t format)
+{
+	return (format == DMR_SMS_FORMAT_ETSI) || (format == DMR_SMS_FORMAT_ETSI_IP) ||
+			(CONFIG_DMR_TMS && (format == DMR_SMS_FORMAT_TMS));
 }
 
 bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t format)
 {
 	if (format == DMR_SMS_FORMAT_DEFAULT)
 	{
-		format = settings.smsFormat;
+		// A setting this build can't send (TMS stored by a build with it): the standard default instead
+		format = smsFormatBuilt(settings.smsFormat) ? settings.smsFormat : DMR_SMS_FORMAT_ETSI_IP;
 	}
-	if ((format != DMR_SMS_FORMAT_TMS) && (format != DMR_SMS_FORMAT_ETSI))
+	if (!smsFormatBuilt(format))
 	{
 		return false;
 	}
@@ -341,7 +367,8 @@ bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, boo
 
 	sms.dst = dst;
 	sms.group = group;
-	sms.ack = ackRequested && !group;
+	// ETSI IP text has no acknowledgment of its own (it goes unconfirmed): done once on air
+	sms.ack = ackRequested && !group && (format != DMR_SMS_FORMAT_ETSI_IP);
 	sms.format = format;
 	sms.tries = 0;
 	sms.waiting = false;
@@ -640,9 +667,9 @@ static bool arsSend(uint32_t server, bool registration)
 
 static void arsTick(void)
 {
-	if (!CONFIG_DMR_ARS || (ars.powerOff != ARS_POWER_OFF_NONE))
+	if (!CONFIG_DMR_ARS || (ars.powerOff != ARS_POWER_OFF_NONE) || passthrough)
 	{
-		return;
+		return;// passthrough: the dispatch PC registers on the radio's behalf; our state is kept for afterwards
 	}
 
 	uint32_t server = settings.arsServer;
@@ -748,7 +775,7 @@ static void arsTick(void)
 
 dmrArsState_t dmrDataServiceArsState(void)
 {
-	if (!CONFIG_DMR_ARS || (settings.arsServer == 0))
+	if (!CONFIG_DMR_ARS || (settings.arsServer == 0) || passthrough)
 	{
 		return DMR_ARS_STATE_OFF;
 	}
@@ -973,7 +1000,7 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 
 static void lrrpTick(void)
 {
-	if (!CONFIG_DMR_LRRP)
+	if (!CONFIG_DMR_LRRP || passthrough)
 	{
 		return;
 	}
@@ -1070,9 +1097,9 @@ uint32_t dmrDataServiceLocationNeededInMs(void)
 // deregistration still has to go out; the caller gives up on it after a while (3 s, gotcha 7.4)
 bool dmrDataServicePowerOff(void)
 {
-	if (!CONFIG_DMR_ARS)
+	if (!CONFIG_DMR_ARS || passthrough)
 	{
-		return false;
+		return false;// passthrough: the PC owns the registration
 	}
 	if (ars.powerOff == ARS_POWER_OFF_NONE)
 	{
@@ -1111,7 +1138,7 @@ static void takeMailbox(void)
 	bool smsReq = false, sigReq = false, setReq = false;
 	uint32_t smsDst = 0, sigDst = 0;
 	bool smsGroup = false, smsAck = false;
-	uint8_t smsFormat = DMR_SMS_FORMAT_TMS;
+	uint8_t smsFormat = DMR_SMS_FORMAT_DEFAULT;
 	uint8_t sigKind = 0;
 	static char text[sizeof(mailbox.smsText)];
 	dmrDataSettings_t newSettings;
@@ -1219,6 +1246,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 		break;
 	}
 
+#if CONFIG_DMR_TMS
 	// After the response has gone (the service is busy until then)
 	if (tmsAckPending && !dmrDataServiceIsBusy() && canTransmit())
 	{
@@ -1226,6 +1254,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 		queueReply(dmrDataBuildTMSAck(tmsAckDst, channel.ownId, tmsAckSeq, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS));
 		stats.tmsAcksSent++;
 	}
+#endif
 
 	emergencyTick();// ahead of the user's other requests and the automatic traffic
 	signalTick();
@@ -1338,8 +1367,15 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		stats.rxConfirmed++;
 	}
 
+	// Control station passthrough: what has an IP header belongs to the PC, which got it through env.packet; only the
+	// link layer (the response above) and the ACK of our own message, which sends nothing, are looked at here
+	bool toPc = CONFIG_DMR_CONTROL_STATION && passthrough &&
+			((packet->sap == DMR_SAP_IP) || (packet->sap == DMR_SAP_UDPIP_COMPRESSION));
+
+	stats.ptYielded += toPc ? 1 : 0;
+
 	// The presence server's answer to our registration, or its request for one
-	if (CONFIG_DMR_ARS && isUDP && (udp.appPort == DMR_UDP_PORT_ARS) && !packet->group && (packet->src == ars.server) && (ars.server != 0))
+	if (CONFIG_DMR_ARS && !toPc && isUDP && (udp.appPort == DMR_UDP_PORT_ARS) && !packet->group && (packet->src == ars.server) && (ars.server != 0))
 	{
 		switch (dmrDataDecodeARS(udp.payload, udp.length))
 		{
@@ -1371,13 +1407,24 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		}
 	}
 
-	if (CONFIG_DMR_LRRP && isUDP && (udp.appPort == DMR_UDP_PORT_LRRP) && !packet->group)
+	if (CONFIG_DMR_LRRP && !toPc && isUDP && (udp.appPort == DMR_UDP_PORT_LRRP) && !packet->group)
 	{
 		lrrpReceived(packet->src, udp.payload, udp.length);
 	}
 
+	// Motorola TMS: without CONFIG_DMR_TMS not decoded, so neither ACKed nor kept (the gateway still forwards it, and
+	// confirmed data still gets its ETSI response above)
+#if CONFIG_DMR_TMS
 	bool isTMS = CONFIG_DMR_SMS && isUDP && (udp.appPort == DMR_UDP_PORT_TMS) && dmrDataDecodeTMS(udp.payload, udp.length, &tms);
+#else
+	bool isTMS = false;
+#endif
 	uint8_t format = DMR_SMS_FORMAT_TMS;
+
+	if (toPc && !(isTMS && tms.isAck))
+	{
+		isTMS = false;// not ours to keep or to ACK (an ACK of our own message is still noted below)
+	}
 
 	// The ETSI response to our ETSI message
 	if (CONFIG_DMR_SMS && (packet->dpf == DMR_DPF_RESPONSE) && !packet->group && (sms.state == DMR_REQ_SENDING) && sms.ack &&
@@ -1387,6 +1434,18 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		stats.smsAcked++;
 		smsFinish(DMR_REQ_OK);
 		return;
+	}
+
+	// ETSI IP text (TS 102 361-3 5.7.1, UDP 5016): into the inbox; no acknowledgment of its own (confirmed data got
+	// its response above)
+	if (CONFIG_DMR_SMS && !toPc && !isTMS && isUDP && (udp.dstPort == DMR_UDP_PORT_ETSI_TEXT) &&
+			dmrDataDecodeIPText(udp.payload, udp.length, tms.text, sizeof(tms.text)))
+	{
+		isTMS = true;
+		format = DMR_SMS_FORMAT_ETSI_IP;
+		tms.isAck = false;
+		tms.ackRequested = false;
+		tms.seq = 0;
 	}
 
 	// ETSI short data text (defined short data, UDT text): into the same inbox; the sender's response request (A) is
@@ -1468,6 +1527,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	unlock();
 	stats.smsReceived++;
 	stats.etsiSmsReceived += (format == DMR_SMS_FORMAT_ETSI) ? 1 : 0;
+	stats.ipTextReceived += (format == DMR_SMS_FORMAT_ETSI_IP) ? 1 : 0;
 	post(DMR_DATA_EV_SMS_RECEIVED, packet->src);
 }
 
@@ -1679,6 +1739,23 @@ void dmrDataServiceGetSettings(dmrDataSettings_t *s)
 	*s = settings;
 }
 
+void dmrDataServiceSetPassthrough(bool on)
+{
+	on = on && CONFIG_DMR_CONTROL_STATION;
+	if (on && !passthrough)
+	{
+		// Location requests and triggers belong to the PC from now on: nothing queued is answered later
+		lrrpReadIdx = lrrpWriteIdx;
+		memset(lrrpTriggers, 0, sizeof(lrrpTriggers));
+	}
+	passthrough = on;
+}
+
+bool dmrDataServicePassthrough(void)
+{
+	return passthrough;
+}
+
 void dmrDataServiceSetLock(void (*l)(void), void (*u)(void))
 {
 	lockFn = l;
@@ -1783,7 +1860,7 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 	bool ok = false;
 
 	if (!CONFIG_DMR_SMS || (text == NULL) || (text[0] == '\0') || (dst == 0) ||
-			((format != DMR_SMS_FORMAT_TMS) && (format != DMR_SMS_FORMAT_ETSI) && (format != DMR_SMS_FORMAT_DEFAULT)))
+			(!smsFormatBuilt(format) && (format != DMR_SMS_FORMAT_DEFAULT)))
 	{
 		return false;
 	}
@@ -1800,6 +1877,11 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 	}
 	unlock();
 	return ok;
+}
+
+bool sms_send_confirmed(void)
+{
+	return sms.ack;
 }
 
 dmr_req_state_t sms_send_state(void)

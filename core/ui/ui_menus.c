@@ -1427,6 +1427,18 @@ static const int16_t v_updown[] = { 0, 1, 2 };
 static const char *const n_updown[] = { "Channel", "Zone", "Talk target" };
 static const int16_t v_autooff[] = { 0, 30, 60, 120 };
 static const char *const n_autooff[] = { "Off", "30 min", "1 h", "2 h" };
+#if CONFIG_DMR_SMS
+static const int16_t v_msgfmt[] = { 2, 1,	// dmr_sms_format_t: ETSI IP text, ETSI short data, Motorola TMS
+#if CONFIG_DMR_TMS
+				    0,
+#endif
+};
+static const char *const n_msgfmt[] = { "ETSI", "ETSI short", "Motorola" };
+#endif
+#if CONFIG_DMR_CONTROL_STATION
+static const int16_t v_netlink[] = { 0, 1 };
+static const char *const n_netlink[] = { "By DMR ID", "192.168.10.x" };
+#endif
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const char *const n_ptype[] = { "Off", "Motorola", "Anytone" };
 
@@ -1473,6 +1485,16 @@ static const set_item_t s_connections[] = {
 	TOGGLE("Hotspot allowed", "MMDVM", UI_SET_HOTSPOT_AUTO),
 	TOGGLE("Answer radio checks", NULL, UI_SET_CHECK_REPLY),
 	TOGGLE("Answer call alerts", NULL, UI_SET_ALERT_ANSWER),
+#if CONFIG_DMR_SMS
+	LIST("Message format", "SMS text ETSI TMS", UI_SET_MSG_FORMAT, v_msgfmt, n_msgfmt),
+#endif
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+	TOGGLE("USB network at start", "dispatch control station", UI_SET_USB_BOOT_NET),
+#endif
+#if CONFIG_DMR_CONTROL_STATION
+	TOGGLE("PC answers data", "dispatch control station passthrough", UI_SET_PC_ENDPOINT),
+	LIST("USB link address", "dispatch IP", UI_SET_USB_FIXED_LINK, v_netlink, n_netlink),
+#endif
 };
 static const set_item_t s_power[] = {
 	TOGGLE("Battery saver", NULL, UI_SET_BATTERY_SAVER),

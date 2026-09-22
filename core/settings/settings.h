@@ -51,7 +51,7 @@ typedef struct {
 	uint8_t beeps;			// key and status beeps: 0 off, 1 on
 	uint8_t hotspot_allowed;	// the host may make the radio an MMDVM hotspot
 	uint8_t master_power;		// power for channels set to "default", SETTINGS_UNSET8 = the board's default
-	uint8_t usb_mode;		// usb_mode_t (serial / network)
+	uint8_t usb_mode;		// the USB personality at power-on: 0 serial, 1 network (docs/spec/usb-network.md 1)
 	uint16_t reserved1;
 	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's
 	char radio_name[SETTINGS_NAME_LEN];	// NUL padded, "" = the codeplug's callsign
@@ -150,6 +150,11 @@ typedef struct {
 	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
 	uint8_t aprs_stored;		// 1 = the aprs_ fields are set
 	uint16_t reserved7;
+	// Control station mode on the USB network link (docs/spec/usb-network.md 5; appended for dispatch). 0 = off, the
+	// link addressed by the DMR ID
+	uint8_t net_flags;		// SETTINGS_NET_* bits
+	uint8_t reserved8[3];
+	uint32_t net_link_ip;		// the radio's address on a fixed link (the PC's is the next one), 0 = 192.168.10.1
 } settings_t;
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)
@@ -172,8 +177,13 @@ typedef struct {
 #define SETTINGS_DS_RADIO_CHECK_REPLY	0x01u
 #define SETTINGS_DS_CALL_ALERT_ACK	0x02u
 #define SETTINGS_DS_LRRP_REPLY		0x04u
-#define SETTINGS_DS_SMS_ETSI		0x08u	// sms_send's default format is ETSI, else TMS
+#define SETTINGS_DS_SMS_ETSI		0x08u	// sms_send's default format is ETSI defined short data
 #define SETTINGS_DS_RADIO_CHECK_ETSI	0x10u	// our radio checks in the ETSI form (FID 0x00)
+#define SETTINGS_DS_SMS_ETSI_IP		0x20u	// sms_send's default format is ETSI IP text (neither bit: Motorola TMS)
+
+// settings_t.net_flags
+#define SETTINGS_NET_PASSTHROUGH	0x01u	// the PC is the endpoint of the radio's own IP data (docs/spec/usb-network.md 5.2)
+#define SETTINGS_NET_FIXED_LINK		0x02u	// the link is a fixed private pair (net_link_ip), not 12.<ID>/32 (5.3)
 
 // settings_t.em_flags
 #define SETTINGS_EM_DST_PRIVATE		0x01u

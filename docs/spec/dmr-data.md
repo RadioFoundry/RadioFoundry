@@ -5,21 +5,23 @@ the DMR call stack. Status: built and host-tested on the DM-1701 (`dmrDataServic
 checked on air (`tests/hil/test_dmr_data.py`).
 
 Sources: ETSI TS 102 361-1 (bursts, data headers, blocks, CRCs, CSBK), TS 102 361-2 (call alert, radio check),
-TS 102 361-3 (packet data, responses), the public Motorola TMS / ARS / LRRP descriptions (the formats the service
+TS 102 361-3 V1.3.1 (packet data, responses, the IP text application of 5.7.1), the public Motorola TMS / ARS / LRRP
+descriptions (the formats the service
 already decoded), `docs/spec/gotchas.md` 3.6-3.9, 5, 7, 14.1.
 
 ## 1. Switches
 
 | Switch | What it adds |
 |---|---|
-| `CONFIG_DMR_SMS` | text messages, Motorola TMS and ETSI defined short data: receive (inbox, TMS ACK or ETSI response, duplicate suppression), send with ACK and retries |
+| `CONFIG_DMR_SMS` | text messages: ETSI IP text (5.3, the default) and ETSI defined short data (5.2): receive (inbox, ETSI response, duplicate suppression), send |
+| `CONFIG_DMR_TMS` | Motorola TMS format support (5.1), needs `CONFIG_DMR_SMS`: TMS receive (inbox, TMS ACK), send with ACK and retries |
 | `CONFIG_DMR_ARS` | ARS registration with a presence server |
 | `CONFIG_DMR_LRRP` | LRRP answers (immediate and triggered location requests) |
 | `CONFIG_DMR_SIGNALING` | call alert and radio check CSBKs: answered, and sent by the user |
 | `CONFIG_DMR_EMERGENCY` | the emergency alarm CSBK, sent and heard (`dmr-emergency.md`; the rest of the emergency is in the radio core) |
 | `CONFIG_DMR_DATA_CORE` | derived, on when any of the above is: the packet data core (`core/dmr/dmrData.c`), the service, the ETSI responses to confirmed data |
 
-All five default to on with DMR. A feature switched off is compiled out of the service (`if (!CONFIG_...)` guards,
+All default to on with DMR (`CONFIG_DMR_TMS` follows `CONFIG_DMR_SMS`). A feature switched off is compiled out of the service (`if (!CONFIG_...)` guards,
 the linker drops what is unused); its API calls return false. With all five off nothing of the data path is built,
 and `core/dmr/dmr_data_api.h` turns into inline no-ops so UI code needs no `#if`.
 
@@ -70,9 +72,11 @@ dmr_data_api.h (UI, debug link)                  sms_inbox_*, sms_send, dmr_sign
   the packet's CRC-32 decides.
 - Addressed to us: our ID, or a group that is the channel's talkgroup or in its listen list.
 - Confirmed data to us gets an ETSI response (ACK with its N(S)) before anything else (gotcha 5.6).
-- TMS to us: kept in the inbox (4 messages, newest first, the oldest replaced), the sender's ACK request answered
-  with a TMS ACK. The same message again from the same radio within 60 s (sender, sequence number, text) is a retry:
-  ACKed again, not kept twice (gotcha 5.8).
+- Text to us (any format, 5): kept in the inbox (4 messages, newest first, the oldest replaced). A TMS ACK request is
+  answered with a TMS ACK. The same message again from the same radio within 60 s (sender, format, sequence number,
+  text) is a retry: answered again, not kept twice (gotcha 5.8).
+- Control station passthrough (`usb-network.md` 5.2): IP based packets to us are left to the PC; only the ETSI
+  response above is still sent.
 - Replies (responses, TMS ACKs, CSBK answers) wait in a 4-entry queue; one still queued after 5 s, or not started
   within 3 s for want of a clear channel, is dropped: the sender has given up (gotcha 5.7).
 
@@ -102,7 +106,19 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 
 ## 5. Text messages
 
-### 5.1 Motorola TMS
+Three formats. Which one a message goes in: per message (`sms_send(..., DMR_SMS_FORMAT_ETSI_IP / _ETSI / _TMS)`,
+`dmrDataServiceSendSMSFormat`) or the radio's default (`DMR_SMS_FORMAT_DEFAULT`: the setting `smsFormat`, used by
+the UI, Settings > Connections > Message format). A reply uses the received message's format
+(`dmrDataMessage_t.format`). A per-contact format is not stored yet (the codeplug's contact has no field for it).
+All three are read whatever the setting.
+
+| Format | `dmr_sms_format_t` | Carried as | Delivery confirmed by |
+|---|---|---|---|
+| ETSI IP text (5.3), the default | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | nothing yet (unconfirmed packet) |
+| ETSI defined short data (5.2) | `ETSI` (1) | DD_HEAD, SAP 10, ISO 8859-1 | the ETSI response (A bit) |
+| Motorola TMS (5.1), `CONFIG_DMR_TMS` | `TMS` (0) | UDP 4007, UTF-16LE with the TMS header | the TMS ACK |
+
+### 5.1 Motorola TMS (`CONFIG_DMR_TMS`)
 
 - Format: IPv4 / UDP port 4007 to 4007, user data SAP 4, unconfirmed data. TMS header 0xE0 (ACK requested) or 0xA0,
   sequence number in 5 bits (with bit 7 set), encoding 4, the text as UTF-16LE (Latin-1 characters only on the
@@ -110,6 +126,11 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 - Ours (`sms_send`): rate 1/2 blocks (gotcha 5.3), 2 preamble CSBKs. With an ACK requested: waits 8 s for the TMS
   ACK with our sequence number, 2 tries, then `SMS_FAILED`. To a group or without an ACK: `SMS_SENT` once on air.
   One message at a time, at most 140 characters.
+- Built without `CONFIG_DMR_TMS` (the TMS builder, decoder and ACK are left out): a TMS heard is not decoded, so it
+  is neither kept nor acknowledged; as confirmed data it still gets its ETSI response (3), and the IP gateway still
+  forwards it to the PC like any datagram. `sms_send(..., TMS)` is refused; a stored default of TMS (a record
+  written by a build with it) sends ETSI IP text instead. The UI's format list has no Motorola entry. Host test:
+  `dmrDataServiceTestNoTms`.
 
 ### 5.2 ETSI short data text
 
@@ -134,9 +155,39 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
   response ACK from the destination arrives, waiting 4 s per try, 2 tries, then `SMS_FAILED` (a NACK response is not acted on: the message
   fails when the tries run out).
   To a group: `SMS_SENT` once on air.
-- Which format a message goes in: per message (`sms_send(..., DMR_SMS_FORMAT_TMS / _ETSI)`,
-  `dmrDataServiceSendSMSFormat`) or the radio's default (`DMR_SMS_FORMAT_DEFAULT`: the setting `smsFormat`, used
-  by the UI). A per-contact format is not stored yet (the codeplug's contact has no field for it).
+
+### 5.3 ETSI IP text
+
+TS 102 361-3 V1.3.1 5.7.1: text messaging over the IP bearer uses UTF-16BE (plane 0) on the default UDP port 5016.
+The compressed UDP/IPv4 header (5.6, 7.2.4) has a port index for it: SPID / DPID 1 = 5016 (Table 7.17 / 7.18).
+
+- Ours (`dmrDataBuildIPText`): the text as UTF-16BE (Latin-1 on the radio side: one code unit per character, no byte
+  order mark, no terminator), UDP from and to port 5016, the full IPv4 / UDP header with the 12.x.y.z / 225.x.y.z
+  addresses of 5.1, SAP 4, unconfirmed, rate 1/2, 2 preamble CSBKs, at most 140 characters (29 bursts). The full
+  header and not the compressed one (SAP 3): every receiver of the IP bearer reads SAP 4, the compression is an
+  option a receiver may lack. 5.7.1 defines no acknowledgment of its own, so the message is done (`SMS_SENT`) once on
+  air; the UI says "Sent to" rather than "Delivered to" (`sms_send_confirmed()` false). Open: sent as confirmed data
+  (C_HEAD), the ETSI response would confirm delivery; the TX side of confirmed data is not built yet.
+- Received (SAP 4 or SAP 3, destination port 5016): the payload decoded as UTF-16BE (`dmrDataDecodeIPText`; a byte
+  order mark first is honored, either way), into the inbox with format `ETSI_IP`. No reply of its own; confirmed
+  data gets its ETSI response (3). Duplicates as in 5.2.
+- Through the IP gateway the PC sends and receives the same datagrams on UDP 5016 (`usb-network.md` 5).
+
+### 5.4 The default: ETSI IP text
+
+The default for messages the radio sends is ETSI IP text. Why this one of the two ETSI forms:
+
+- It is the text application TS 102 361-3 defines (5.7.1). Defined short data (5.2) is a bearer with a character set
+  code; no ETSI clause defines a text messaging service around it, and receivers differ in which DD formats they
+  show (open point in 5.2).
+- It rides the IP bearer, which any radio that takes packet data decodes for its other services too (location,
+  registration, the vendor text formats): a full IPv4 / UDP header on SAP 4. A receiver needs no DPF 13 header
+  support, only the UDP port and UTF-16 text. Radios and dispatch software that do ETSI text over IP read it; radios
+  configured for "DMR standard" text in their CPS are expected to (to confirm on air, open point).
+- Group and individual messages are sent the same way; nothing waits for an answer that a receiver may never send.
+
+Defined short data stays available (Settings > Connections > Message format: "ETSI short") for radios that only show
+that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for MOTOTRBO fleets.
 
 ## 6. ARS
 
@@ -174,7 +225,7 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 | `callAlertAck` | on | the ack is what makes a call alert work for the caller |
 | `lrrpReply` | on | answers only a dispatcher's request; without GPS it says "no fix" |
 | `hasGps` | false | the DM-1701 has none |
-| `smsFormat` | TMS | the format most radios in the field read; ETSI for radios that only speak the standard |
+| `smsFormat` | ETSI IP text | the standard text application (5.4); ETSI short data and Motorola TMS (`CONFIG_DMR_TMS`) for radios that need them. A settings record from before this default (no format bit in `ds_flags`, `settings-store.md` 3) keeps TMS: only the default changed |
 | `radioCheckEtsi` | off | the Motorola form is what most radios answer |
 
 The settings are kept in the settings store (the `ds_*` fields, `settings-store.md` 3): the radio core loads them
@@ -193,7 +244,7 @@ waiting after 10 s (3 s for replies) is given up (`data.tx_gave_up`).
 |---|---|
 | `sms_inbox_count()`, `sms_inbox_unread()` | inbox size and unread count |
 | `sms_inbox_get(i, &msg)`, `sms_inbox_mark_read(i)` | message i, 0 = newest: source, destination, group, time, unread, text |
-| `sms_send(dst, group, text, ack, format)`, `sms_send_state()` | queue a message (format TMS, ETSI or DEFAULT = the setting); state idle / queued / sending / ok / failed |
+| `sms_send(dst, group, text, ack, format)`, `sms_send_state()`, `sms_send_confirmed()` | queue a message (format ETSI_IP, ETSI, TMS or DEFAULT = the setting); state idle / queued / sending / ok / failed; whether the last one done was acknowledged |
 | `dmr_signal_call_alert(dst)`, `dmr_signal_radio_check(dst)`, `dmr_signal_state(&kind, &dst)` | start one; the last one's state |
 | `dmr_data_serial()`, `dmr_data_last_event()` | bumped on every event and inbox change; the last event (kind, ID, time) |
 | `dmr_data_ars_state()` | off / registering / registered / refused / no_answer |
@@ -205,11 +256,31 @@ screens belong to the Hub.
 
 Debug link: the `dmr_data` and `dmr_ext` view sections and the DMR_DATA command (`docs/spec/debuglink.md` 3.7, 3.12).
 
-## 10. Tests
+## 10. Control station passthrough
+
+With control station mode's passthrough on and the USB network link up (`usb-network.md` 5.2), the radio core calls
+`dmrDataServiceSetPassthrough(true)` at every tick. Then, for packets to us or our groups that carry an IP header
+(SAP 4, SAP 3):
+
+| Service | Passthrough |
+|---|---|
+| ETSI response to confirmed data (3) | still sent by the radio |
+| ETSI IP text (5.3), Motorola TMS (5.1) | not kept, no TMS ACK; the ACK of our own pending TMS is still noted (it sends nothing) |
+| ARS answers and queries (6) | ignored; our own registration, refresh and power-off deregistration stop; the state shows `off` |
+| LRRP requests (7) | not answered; queued requests and running triggers are dropped when passthrough starts |
+| any other UDP, ICMP, SCTP | (the radio has no service for them) |
+| defined short data and UDT text, CSBK signaling, emergency alarms | unchanged: no IP header, the PC can't answer them |
+
+Every packet still reaches the PC through the packet hook (`dmrDataEnv_t.packet`). Counted in `data.pt_yielded`.
+
+## 11. Tests
 
 - `tests/host/dmrDataServiceTest.c`: the service on a fake host: replies and duplicates, confirmed data, queue
   overflow and aging, CSBK both ways, our SMS and its ACK, ARS, LRRP with and without a position, the block window,
-  the mailbox.
+  the mailbox; ETSI IP text (the builder's octets, the decoder with and without a byte order mark, ours by default,
+  received, confirmed, group, duplicates, a stored TMS default), the passthrough table above. Built a second time
+  with `CONFIG_DMR_TMS=0` (`dmrDataServiceTestNoTms`): a TMS heard is neither kept nor ACKed, confirmed still gets
+  its response, TMS sends are refused.
 - `tests/host/dmrDataChainTest.c`: end to end through the real slot engine (a model of the chip's receive reports
   and its page 2 / 0x40 / 0x50 writes), the real call stack and the service: call alert in and its ack out (CRC
   with CRC_MCU_Control), TMS in at rate 1/2, 3/4 and 1 and its ACK packet out, our radio check out and its answer

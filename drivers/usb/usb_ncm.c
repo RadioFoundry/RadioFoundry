@@ -155,10 +155,13 @@ int usbNcmReceive(uint8_t *buf, int max)
 void usbNcmTick(uint32_t now_ms)
 {
 	// A host that never configures the network personality (seen on macOS 26) would leave the radio with no serial
-	// port, no network and no debug link: after a run-time switch, give up and go back to serial
+	// port, no network and no debug link: after a switch (at run time, or the power-on setting), give up and go back
+	// to serial. The time counts from the host's bus reset: a radio switched on away from any host waits for one
 	if (switch_armed) {
 		if (usb_device_mode() != USB_MODE_NETWORK || usb_device_configured()) {
 			switch_armed = false;
+		} else if (!tud_connected()) {
+			switch_ms = 0;
 		} else if (switch_ms == 0) {
 			switch_ms = (now_ms != 0) ? now_ms : 1;
 		} else if ((now_ms - switch_ms) >= SWITCH_CONFIG_MS) {

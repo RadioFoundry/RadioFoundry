@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 /*
- * DMR data service: text messages (Motorola TMS and ETSI defined short data) with their ACKs, ETSI responses to
+ * DMR data service: text messages (ETSI IP text, ETSI defined short data and, with CONFIG_DMR_TMS, Motorola TMS)
+ * with their ACKs, ETSI responses to
  * confirmed data, CSBK signaling (call alert, radio check in the Motorola and the ETSI form: answered and sent), the
  * emergency alarm (sent, heard: core/dmr/dmr_emergency.c), Motorola ARS registration and LRRP location answers.
  *
@@ -52,7 +53,7 @@ typedef struct
 	bool     callAlertAck;					// acknowledge call alerts (they ring either way)
 	bool     lrrpReply;						// answer LRRP location requests
 	bool     hasGps;						// the radio has a position source (else LRRP says "no fix")
-	uint8_t  smsFormat;						// dmr_sms_format_t of sms_send(..., DMR_SMS_FORMAT_DEFAULT): TMS or ETSI
+	uint8_t  smsFormat;						// dmr_sms_format_t of sms_send(..., DMR_SMS_FORMAT_DEFAULT): ETSI_IP, ETSI or TMS
 	bool     radioCheckEtsi;				// our radio checks in the ETSI form (FID 0x00), else Motorola's (FID 0x10)
 } dmrDataSettings_t;
 
@@ -137,6 +138,9 @@ typedef struct
 	uint32_t etsiSmsReceived;				// ... of smsReceived, ETSI short data (defined short data, UDT text)
 	uint32_t etsiSmsSent;					// ... of smsSent, ETSI
 	uint32_t etsiResponsesReceived;			// ETSI response ACKs for ours
+	uint32_t ipTextReceived;				// ... of smsReceived, ETSI IP text (UDP 5016)
+	uint32_t ipTextSent;					// ... of smsSent, ETSI IP text
+	uint32_t ptYielded;						// IP based packets to us left to the PC (passthrough, docs/spec/usb-network.md 5)
 	uint32_t emergencyAlarmsHeard;			// emergency alarm CSBKs with a good CRC, to anyone
 	uint32_t emergencyAlarmsReceived;		// ... to us or a group we listen to (the alert)
 	uint32_t emergencyAlarmsSent;			// alarm CSBKs sent, repeats included
@@ -172,7 +176,7 @@ bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t 
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
 bool dmrDataServiceCallAlert(uint32_t dst);
 bool dmrDataServiceRadioCheck(uint32_t dst);
-// format: dmr_sms_format_t (TMS or ETSI; not DEFAULT)
+// format: dmr_sms_format_t (ETSI_IP, ETSI or TMS; DEFAULT: the setting)
 bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t format);
 // The emergency alarm (CONFIG_DMR_EMERGENCY): the CSBK to dst (group or individual) with the feature set ID fid,
 // tries times, DMR_DATA_EMERGENCY_GAP_MS apart. Ahead of everything but a reply already queued. Ends with the event
@@ -183,6 +187,13 @@ void dmrDataServiceEmergencyAlarmCancel(void);
 bool dmrDataServiceEmergencyAlarmBusy(void);
 // The 10 octets of an emergency alarm CSBK (docs/spec/dmr-emergency.md 2)
 void dmrDataBuildEmergencyAlarm(uint32_t dst, uint32_t src, bool group, uint8_t fid, uint8_t out[10]);
+
+// Control station passthrough (CONFIG_DMR_CONTROL_STATION, docs/spec/usb-network.md 5): while on, IP based packets
+// (SAP 4, SAP 3) to us or our groups are left to the PC on the USB network link: no TMS ACK, no inbox entry, no ARS
+// or LRRP handling; our own ARS registration and LRRP reports stop. The link layer stays here (ETSI responses to
+// confirmed data, CSBK signaling, defined short data text). The radio core sets it every tick
+void dmrDataServiceSetPassthrough(bool on);
+bool dmrDataServicePassthrough(void);
 
 dmrArsState_t dmrDataServiceArsState(void);
 int dmrDataServiceLrrpTriggerCount(void);

@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The host link's network personality (core/hostlink/hostlink_net.c) with the real IP gateway (core/dmr/ipGateway.c)
 // and packet codec (core/dmr/dmrData.c), against a fake USB network interface (board.netif) and fake air ops: frames
-// from the host reach the air ops, packets from the air reach the host, UDP serial both ways
+// from the host reach the air ops, packets from the air reach the host, UDP serial both ways; control station mode
+// (passthrough follows the link, the fixed link pair end to end)
 #include <stdio.h>
 #include <string.h>
 #include "board.h"
@@ -155,6 +156,8 @@ static uint16_t ip_checksum(const uint8_t *p, int len)
 	return (uint16_t)~sum;
 }
 
+static uint32_t host_src = HOST_IP;		// the host's address (the fixed link's in control station mode)
+
 // A UDP datagram from the host (no UDP checksum) in an Ethernet frame to the radio's MAC: its length
 static int host_udp(uint8_t *f, uint32_t dst_ip, uint16_t sport, uint16_t dport, const uint8_t *data, int len)
 {
@@ -167,7 +170,7 @@ static int host_udp(uint8_t *f, uint32_t dst_ip, uint16_t sport, uint16_t dport,
 	put16(ip + 2, (uint16_t)(20 + 8 + len));
 	ip[8] = 64;
 	ip[9] = 17;
-	put32(ip + 12, HOST_IP);
+	put32(ip + 12, host_src);
 	put32(ip + 16, dst_ip);
 	put16(ip + 10, ip_checksum(ip, 20));
 	uint8_t *udp = ip + 20;
@@ -346,6 +349,59 @@ int main(void)
 	hostlink_net_air_packet(&p, NULL);
 	hostlink_net_poll(now_ms);
 	CHECK(sent_count == 1);
+
+	// Control station mode (docs/spec/usb-network.md 5). Passthrough: active only while the link is up
+	CHECK(!hostlink_net_passthrough_active());
+	hostlink_net_set_control(true, 0);
+	CHECK(hostlink_net_passthrough_active() == (bool)CONFIG_DMR_CONTROL_STATION);
+	link_up = false;
+	CHECK(!hostlink_net_passthrough_active());
+	link_up = true;
+
+	// The fixed link: applied at the next poll; an ETSI IP text to our ID reaches the PC at 192.168.10.2 ...
+	hostlink_net_set_control(true, IPGW_FIXED_LINK_DEFAULT);
+	hostlink_net_poll(now_ms);
+	CHECK(ipGatewayRadioIP() == IPGW_FIXED_LINK_DEFAULT && ipGatewayHostIP() == IPGW_FIXED_LINK_DEFAULT + 1);
+	dmrBurst_t tb[DMR_DATA_MAX_BURSTS];
+	int tn = dmrDataBuildIPText(false, RADIO_ID, 3101234, "to the dispatcher", DT_RATE_12_DATA, 0, tb, DMR_DATA_MAX_BURSTS);
+	const dmrDataPacket_t *rx = NULL;
+	dmrDataRxReset();
+	for (int i = 0; i < tn; i++) {
+		if (dmrDataRxBurst(&tb[i]) == DMR_DATA_RX_PACKET) {
+			rx = &dmrDataRxPacket;
+		}
+	}
+	CHECK(rx != NULL);
+	sent_count = 0;
+	if (rx != NULL) {
+		hostlink_net_packet(rx);
+	}
+	hostlink_net_poll(now_ms);
+	ip = sent[0] + 14;
+	udp = ip + 20;
+	CHECK(sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 && get32(ip + 16) == IPGW_FIXED_LINK_DEFAULT + 1 &&
+	      get32(ip + 12) == (IPGW_INDIVIDUAL_NET | 3101234u) && get16(udp + 2) == DMR_UDP_PORT_ETSI_TEXT);
+	// ... and the PC's answer from there goes over the air from the radio's own ID
+	static const uint8_t answer[] = { 0x00, 'O', 0x00, 'K' };
+	host_src = IPGW_FIXED_LINK_DEFAULT + 1;
+	svc_lists = 0;
+	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 3101234u, DMR_UDP_PORT_ETSI_TEXT, DMR_UDP_PORT_ETSI_TEXT, answer,
+			      sizeof(answer)));
+	hostlink_net_air_tick(RADIO_ID, now_ms);
+	pk = svc_packet();
+	CHECK(svc_lists == 1 && pk != NULL && pk->src == RADIO_ID && pk->dst == 3101234 && !pk->group);
+	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstPort == DMR_UDP_PORT_ETSI_TEXT && u.length == 4 &&
+	      memcmp(u.payload, answer, 4) == 0);
+	// The serial protocols at the fixed address
+	serial_len = 0;
+	from_host(f, host_udp(f, IPGW_FIXED_LINK_DEFAULT, 40123, IPGW_SERIAL_PORT, version_req, sizeof(version_req)));
+	CHECK(serial_len == 3);
+
+	// Off: the addressing by DMR ID again
+	hostlink_net_set_control(false, 0);
+	hostlink_net_poll(now_ms);
+	host_src = HOST_IP;
+	CHECK(!hostlink_net_passthrough_active() && ipGatewayHostIP() == HOST_IP);
 
 	printf("# hostlinkNetTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;

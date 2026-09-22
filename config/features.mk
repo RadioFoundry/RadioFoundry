@@ -26,8 +26,10 @@ CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 # ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the APRS
 # position source when the radio-wide setting is on (needs DMR)
 CONFIG_DMR_GPS ?= $(CONFIG_DMR)
-# DMR text messages (SMS; needs DMR; not ported yet)
+# DMR text messages (SMS; needs DMR): ETSI IP text and ETSI defined short data, sent and received (docs/spec/dmr-data.md 5)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
+# Motorola TMS format support for text messages: send, receive, the TMS ACK (needs DMR_SMS; docs/spec/dmr-data.md 5.1)
+CONFIG_DMR_TMS ?= $(CONFIG_DMR_SMS)
 # ARS registration with a dispatcher (needs DMR; not ported yet)
 CONFIG_DMR_ARS ?= $(CONFIG_DMR)
 # LRRP location request / response (needs DMR; uses GPS where the board has it; not ported yet)
@@ -42,6 +44,9 @@ CONFIG_DMR_EMERGENCY ?= $(CONFIG_DMR)
 CONFIG_DMR_ROAMING ?= $(CONFIG_DMR)
 # IP over DMR packet data through the USB network adapter (needs DMR and USB_NETWORK; core/hostlink/hostlink_net.c)
 CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK))),y,n)
+# control station mode for PC dispatch software on the USB network link: the PC as the endpoint of the radio's own
+# data ports (passthrough) and a fixed private link address pair (needs DMR_IP_GATEWAY; docs/spec/usb-network.md 5)
+CONFIG_DMR_CONTROL_STATION ?= $(CONFIG_DMR_IP_GATEWAY)
 # single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
 # the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
 CONFIG_SFR ?= $(CONFIG_DMR)
@@ -105,7 +110,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY SFR \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_CONTROL_STATION SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
@@ -146,6 +151,16 @@ endif
 ifneq ($(call feature_on,DMR_IP_GATEWAY),)
   ifeq ($(call feature_on,USB_NETWORK),)
     $(error CONFIG_DMR_IP_GATEWAY=y needs CONFIG_USB_NETWORK=y)
+  endif
+endif
+ifneq ($(call feature_on,DMR_TMS),)
+  ifeq ($(call feature_on,DMR_SMS),)
+    $(error CONFIG_DMR_TMS=y needs CONFIG_DMR_SMS=y)
+  endif
+endif
+ifneq ($(call feature_on,DMR_CONTROL_STATION),)
+  ifeq ($(call feature_on,DMR_IP_GATEWAY),)
+    $(error CONFIG_DMR_CONTROL_STATION=y needs CONFIG_DMR_IP_GATEWAY=y)
   endif
 endif
 ifneq ($(call feature_on,VFO_FM),)

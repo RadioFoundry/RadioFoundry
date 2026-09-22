@@ -3,7 +3,8 @@
 /*
  * Host unit test for the DMR data service (core/dmr/dmrDataService.c): the reply queue and retried message handling,
  * CSBK signaling both ways, our SMS with its ACK, ARS registration, LRRP answers with and without a position, the
- * 400 ms block window, and the dmr_data_api.h mailbox.
+ * 400 ms block window, and the dmr_data_api.h mailbox; ETSI IP text, the control station passthrough. Built twice: as
+ * the firmware has it, and with CONFIG_DMR_TMS=0 (dmrDataServiceTestNoTms: TMS heard but neither kept nor ACKed).
  *
  *   make -C tests/host
  *
@@ -53,9 +54,10 @@ bool dmrDataServiceGetPosition(lrrpPosition_t *position)
 }
 
 // What went on air, decoded: 'R' ETSI response, 'T' TMS ACK, 'S' TMS message, 'L' LRRP, 'A' ARS, 'C' CSBK (seq: the
-// opcode), '?' anything else
+// opcode), 'I' ETSI IP text (text), 'D' ETSI defined short data text, '?' anything else
 #define MAX_SENT	16
-static struct { char kind; uint32_t dst; uint8_t seq; uint8_t extra; } sent[MAX_SENT];
+static struct { char kind; uint32_t dst; uint8_t seq; uint8_t extra; bool group; char text[64]; } sent[MAX_SENT];
+static char sentText[64];
 static int sentCount = 0;
 static bool txOpen = false;
 
@@ -78,24 +80,42 @@ static bool fakeTxStart(const dmrBurst_t *bursts, int count, void *ctx)
 	}
 
 	dmrDataRxReset();
+	sentText[0] = '\0';
+	bool group = false;
 	for (int i = 0; (i < count) && (kind == '?'); i++)
 	{
 		if (dmrDataRxBurst(&bursts[i]) == DMR_DATA_RX_PACKET)
 		{
 			dmrDataUDP_t udp;
+#if CONFIG_DMR_TMS
 			dmrDataTMS_t tms;
+#endif
 
 			dst = dmrDataRxPacket.dst;
+			group = dmrDataRxPacket.group;
 			if (dmrDataRxPacket.dpf == DMR_DPF_RESPONSE)
 			{
 				kind = 'R';
 			}
+			else if (dmrDataRxPacket.dpf == DMR_DPF_DEFINED_SHORT)
+			{
+				kind = 'D';
+				dmrDataDecodeEtsiText(&dmrDataRxPacket, sentText, sizeof(sentText));
+			}
+			else if (dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.dstPort == DMR_UDP_PORT_ETSI_TEXT))
+			{
+				kind = 'I';
+				extra = (udp.srcPort == DMR_UDP_PORT_ETSI_TEXT);
+				dmrDataDecodeIPText(udp.payload, udp.length, sentText, sizeof(sentText));
+			}
+#if CONFIG_DMR_TMS
 			else if (dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.appPort == DMR_UDP_PORT_TMS) &&
 						dmrDataDecodeTMS(udp.payload, udp.length, &tms))
 			{
 				kind = tms.isAck ? 'T' : 'S';
 				seq = tms.seq;
 			}
+#endif
 			else if (dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.appPort == DMR_UDP_PORT_LRRP))
 			{
 				kind = 'L';// seq: the LRRP document ID, extra: the result token when there is one
@@ -123,6 +143,8 @@ static bool fakeTxStart(const dmrBurst_t *bursts, int count, void *ctx)
 		sent[sentCount].dst = dst;
 		sent[sentCount].seq = seq;
 		sent[sentCount].extra = extra;
+		sent[sentCount].group = group;
+		snprintf(sent[sentCount].text, sizeof(sent[sentCount].text), "%s", sentText);
 		sentCount++;
 	}
 	txOpen = true;
@@ -160,6 +182,7 @@ static void rxBursts(const dmrBurst_t *bursts, int count)
 	}
 }
 
+#if CONFIG_DMR_TMS
 // A TMS message from src to us, burst by burst (seq: dmrDataBuildTMS sends 5 bits)
 static void receiveTMS(uint32_t src, const char *text, uint8_t seq)
 {
@@ -193,6 +216,7 @@ static void receiveConfirmedTMS(uint32_t src, const char *text, uint8_t seq, uin
 	handlePacket(&packet);
 	dmrDataRxReset();
 }
+#endif
 
 static void receiveCSBK(uint8_t opcode, uint8_t fid, uint8_t octet3, uint32_t target, uint32_t source)
 {
@@ -531,6 +555,7 @@ static void testSignaling(void)
 	CHECK(events[DMR_DATA_EV_CALL_ALERT_ACKED] == 1);
 }
 
+#if CONFIG_DMR_TMS
 // Our text messages: to a radio with an ACK, to a group, and unanswered
 static void testOurSms(void)
 {
@@ -694,10 +719,9 @@ static void testNotOnChannel(void)
 	ch.canTransmit = true;
 }
 
-int main(void)
+// The reply queue and duplicate handling, with TMS messages
+static void testTmsReplies(void)
 {
-	dmrDataServiceInit(&fakeEnv);
-
 	// Two messages from different radios before the main task runs: each gets its ACK, in order
 	reset();
 	receiveTMS(RADIO_A, "hello from A", 3);
@@ -795,13 +819,280 @@ int main(void)
 	CHECK(millis < 0x10000000u);
 	CHECK(sentCount == 2);
 	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 1);
+}
+#endif	// CONFIG_DMR_TMS
 
+// A built packet handed to the service whole (as the reassembly gives it), optionally as confirmed data
+static void receiveBuilt(const dmrBurst_t *bursts, int count, bool confirmed, uint8_t sendSeq)
+{
+	static dmrDataPacket_t packet;
+	dmrDataRxResult_t result = DMR_DATA_RX_NONE;
+
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (result != DMR_DATA_RX_PACKET); i++)
+	{
+		result = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK(result == DMR_DATA_RX_PACKET);
+	packet = dmrDataRxPacket;
+	if (confirmed)
+	{
+		packet.dpf = DMR_DPF_CONFIRMED;
+		packet.responseRequested = true;
+		packet.sendSeq = sendSeq;
+	}
+	millis += 60;
+	now = millis;
+	handlePacket(&packet);
+	dmrDataRxReset();
+}
+
+static void receiveIPText(bool group, uint32_t dst, uint32_t src, const char *text, bool confirmed)
+{
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	int count = dmrDataBuildIPText(group, dst, src, text, DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+
+	CHECK(count > 0);
+	receiveBuilt(bursts, count, confirmed, 3);
+}
+
+// ETSI IP text (TS 102 361-3 5.7.1): the default format, sent and received
+static void testIpText(void)
+{
+	dmrDataMessage_t m;
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	dmrDataUDP_t udp;
+
+	// The default (docs/spec/dmr-data.md 8)
+	CHECK(settings.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+
+	// The builder: UTF-16BE, UDP 5016 to 5016, full IPv4 header (SAP 4), unconfirmed
+	int count = dmrDataBuildIPText(false, RADIO_A, OUR_ID, "Hi\xE9", DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	dmrDataRxResult_t r = DMR_DATA_RX_NONE;
+
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (r != DMR_DATA_RX_PACKET); i++)
+	{
+		r = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK((r == DMR_DATA_RX_PACKET) && (dmrDataRxPacket.sap == DMR_SAP_IP) && (dmrDataRxPacket.dpf == DMR_DPF_UNCONFIRMED));
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.srcPort == 5016) && (udp.dstPort == 5016) && (udp.length == 6));
+	CHECK((udp.payload[0] == 0x00) && (udp.payload[1] == 'H') && (udp.payload[4] == 0x00) && (udp.payload[5] == 0xE9));
+	dmrDataRxReset();
+	CHECK(dmrDataBuildIPText(false, RADIO_A, OUR_ID, "", DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS) == 0);
+
+	// The decoder: big endian, a byte order mark either way, characters outside Latin-1
+	char text[32];
+	static const uint8_t be[] = { 0x00, 'O', 0x00, 'K' };
+	static const uint8_t bomLe[] = { 0xFF, 0xFE, 'l', 0x00, 'e', 0x00 };
+	static const uint8_t bomBe[] = { 0xFE, 0xFF, 0x00, 'b', 0x04, 0x10 };
+	CHECK(dmrDataDecodeIPText(be, sizeof(be), text, sizeof(text)) && (strcmp(text, "OK") == 0));
+	CHECK(dmrDataDecodeIPText(bomLe, sizeof(bomLe), text, sizeof(text)) && (strcmp(text, "le") == 0));
+	CHECK(dmrDataDecodeIPText(bomBe, sizeof(bomBe), text, sizeof(text)) && (strcmp(text, "b?") == 0));
+	CHECK(!dmrDataDecodeIPText(be, 1, text, sizeof(text)));
+
+	// Ours, in the default format: one unconfirmed packet, done once on air (no ACK of its own)
+	reset();
+	CHECK(sms_send(RADIO_A, false, "hello ETSI", true, DMR_SMS_FORMAT_DEFAULT));
+	runMainTask(300);
+	CHECK((sentCount == 1) && (sent[0].kind == 'I') && (sent[0].dst == RADIO_A) && sent[0].extra &&
+		  (strcmp(sent[0].text, "hello ETSI") == 0));
+	CHECK(sms_send_state() == DMR_REQ_OK);
+	CHECK((events[DMR_DATA_EV_SMS_SENT] == 1) && (stats.ipTextSent >= 1));
+	runMainTask(SMS_ACK_MS + 1000);
+	CHECK(sentCount == 1);// never sent again
+
+	// To a group
+	reset();
+	CHECK(sms_send(91, true, "group ETSI", false, DMR_SMS_FORMAT_ETSI_IP));
+	runMainTask(300);
+	CHECK((sentCount == 1) && (sent[0].kind == 'I') && (sent[0].dst == 91) && sent[0].group);
+
+	// Received: into the inbox in its format, nothing sent back
+	reset();
+	uint32_t received = stats.ipTextReceived;
+	receiveIPText(false, OUR_ID, RADIO_B, "from B", false);
+	runMainTask(2000);
+	CHECK(sms_inbox_get(0, &m) && (strcmp(m.text, "from B") == 0) && (m.format == DMR_SMS_FORMAT_ETSI_IP) &&
+		  (m.src == RADIO_B) && m.unread);
+	CHECK((sentCount == 0) && (stats.ipTextReceived == received + 1) && (events[DMR_DATA_EV_SMS_RECEIVED] == 1));
+
+	// The same again within the duplicate window: kept once
+	receiveIPText(false, OUR_ID, RADIO_B, "from B", false);
+	runMainTask(500);
+	CHECK(stats.ipTextReceived == received + 1);
+
+	// Confirmed: the ETSI response, and kept
+	reset();
+	receiveIPText(false, OUR_ID, RADIO_A, "confirmed IP text", true);
+	runMainTask(2000);
+	CHECK((sentCount == 1) && (sent[0].kind == 'R') && (sent[0].dst == RADIO_A));
+	CHECK(sms_inbox_get(0, &m) && (strcmp(m.text, "confirmed IP text") == 0));
+
+	// To a group we listen to: kept; to one we don't: not
+	reset();
+	receiveIPText(true, 91, RADIO_A, "to 91 in IP", false);
+	receiveIPText(true, 92, RADIO_A, "to 92 in IP", false);
+	runMainTask(500);
+	CHECK(sms_inbox_get(0, &m) && (strcmp(m.text, "to 91 in IP") == 0) && m.group && (sentCount == 0));
+
+	// A stored TMS default: sent as TMS where it's built, else as ETSI IP text; an explicit TMS refused without it
+	reset();
+	settings.smsFormat = DMR_SMS_FORMAT_TMS;
+	CHECK(sms_send(RADIO_A, false, "stored default", false, DMR_SMS_FORMAT_DEFAULT));
+	runMainTask(300);
+	CHECK((sentCount == 1) && (sent[0].kind == (CONFIG_DMR_TMS ? 'S' : 'I')));
+	CHECK(sms_send(RADIO_A, false, "explicit", false, DMR_SMS_FORMAT_TMS) == (bool)CONFIG_DMR_TMS);
+	settings.smsFormat = DMR_SMS_FORMAT_ETSI_IP;
+	runMainTask(2000);
+}
+
+// Control station passthrough (docs/spec/usb-network.md 5): IP based packets to us are the PC's; the link layer stays
+static void testPassthrough(void)
+{
+	dmrDataMessage_t m;
+
+	// A running trigger and a queued request are dropped when the PC takes over
+	reset();
+	settings.hasGps = true;
+	haveLocation = true;
+	receiveLrrp("090922041122334434313c");
+	runMainTask(8000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 1);
+	dmrDataServiceSetPassthrough(true);
+	CHECK(dmrDataServicePassthrough() == (bool)CONFIG_DMR_CONTROL_STATION);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
+	// LRRP requests: not answered
+	sentCount = 0;
+	uint32_t yielded = stats.ptYielded;
+	receiveLrrp("050922040a0b0c0d516257");
+	runMainTask(70000);
+	CHECK(countLrrp(0x07) == 0);
+	CHECK(countLrrp(0x0D) == 0);
+	CHECK(stats.ptYielded == yielded + 1);
+
+	// IP text to us: not kept, nothing sent; confirmed: the ETSI response still goes (the PC can't send it)
+	int count = sms_inbox_count();
+	uint32_t received = stats.smsReceived;
+	reset();
+	receiveIPText(false, OUR_ID, RADIO_A, "for the PC", false);
+	receiveIPText(false, OUR_ID, RADIO_B, "for the PC, confirmed", true);
+	runMainTask(3000);
+	CHECK((stats.smsReceived == received) && (sms_inbox_count() == count));
+	CHECK((sentCount == 1) && (sent[0].kind == 'R') && (sent[0].dst == RADIO_B));
+
+	// ETSI defined short data text has no IP header: still the radio's (kept, response sent)
+	reset();
+	{
+		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+		int n = dmrDataBuildEtsiText(false, OUR_ID, RADIO_A, "short data", true, 1, bursts, DMR_DATA_MAX_BURSTS);
+
+		receiveBuilt(bursts, n, false, 0);
+	}
+	runMainTask(2000);
+	CHECK(sms_inbox_get(0, &m) && (strcmp(m.text, "short data") == 0) && (m.format == DMR_SMS_FORMAT_ETSI));
+	CHECK((sentCount == 1) && (sent[0].kind == 'R'));
+
+	// CSBK signaling stays: a call alert is acknowledged
+	reset();
+	receiveCSBK(DMR_CSBKO_CALL_ALERT, DMR_FID_ETSI, 0, OUR_ID, RADIO_A);
+	runMainTask(500);
+	CHECK((sentCount == 1) && (sent[0].kind == 'C') && (sent[0].seq == DMR_CSBKO_CALL_ALERT_ACK));
+
+	// Our own ARS registration: suppressed, shown as off
+	reset();
+	settings.arsServer = ARS_SERVER;
+	runMainTask(30000);
+	CHECK(countSent('A', DMR_ARS_DEVICE_REGISTRATION) == 0);
+	CHECK(dmrDataServiceArsState() == DMR_ARS_STATE_OFF);
+	CHECK(!dmrDataServicePowerOff());
+
+#if CONFIG_DMR_TMS
+	// TMS to us: neither kept nor ACKed
+	reset();
+	{
+		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+		int n = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "TMS for the PC", 12, true, DT_RATE_12_DATA, 1, bursts,
+								DMR_DATA_MAX_BURSTS);
+
+		rxBursts(bursts, n);
+	}
+	runMainTask(3000);
+	CHECK((sentCount == 0) && (stats.smsReceived == received + 1));
+
+	// Our own message's ACK is still noted (it sends nothing)
+	reset();
+	CHECK(sms_send(RADIO_A, false, "ours", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(300);
+	CHECK((sentCount == 1) && (sent[0].kind == 'S'));
+	{
+		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+		int n = dmrDataBuildTMSAck(OUR_ID, RADIO_A, sent[0].seq, 1, bursts, DMR_DATA_MAX_BURSTS);
+
+		rxBursts(bursts, n);
+	}
+	runMainTask(300);
+	CHECK(sms_send_state() == DMR_REQ_OK);
+#endif
+
+	// Off again: the radio's services are back (the registration after the settle time)
+	dmrDataServiceSetPassthrough(false);
+	sentCount = 0;
+	runMainTask(10000);
+	CHECK(countSent('A', DMR_ARS_DEVICE_REGISTRATION) == 1);
+	reset();
+	receiveIPText(false, OUR_ID, RADIO_A, "back to the radio", false);
+	runMainTask(500);
+	CHECK(sms_inbox_get(0, &m) && (strcmp(m.text, "back to the radio") == 0));
+	settings.arsServer = 0;
+	settings.hasGps = false;
+	haveLocation = false;
+	runMainTask(10000);
+}
+
+#if !CONFIG_DMR_TMS
+// Motorola TMS left out (CONFIG_DMR_TMS=0): a TMS heard is neither decoded, kept nor ACKed; confirmed data still gets
+// its ETSI response (docs/spec/dmr-data.md 5.1)
+static void testTmsOff(void)
+{
+	static const uint8_t tms[] = { 0x00, 0x08, 0xE0, 0x00, 0x85, 0x04, 'h', 0x00, 'i', 0x00 };
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	int n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, tms, sizeof(tms), DT_RATE_12_DATA,
+							1, bursts, DMR_DATA_MAX_BURSTS);
+	uint32_t received = stats.smsReceived;
+
+	reset();
+	rxBursts(bursts, n);
+	runMainTask(3000);
+	CHECK((sentCount == 0) && (stats.smsReceived == received) && (stats.tmsAcksSent == 0));
+	receiveBuilt(bursts, n, true, 6);
+	runMainTask(3000);
+	CHECK((sentCount == 1) && (sent[0].kind == 'R') && (stats.smsReceived == received));
+	CHECK(!sms_send(RADIO_A, false, "no TMS here", true, DMR_SMS_FORMAT_TMS));
+}
+#endif
+
+int main(void)
+{
+	dmrDataServiceInit(&fakeEnv);
+
+#if CONFIG_DMR_TMS
+	testTmsReplies();
+#endif
 	testARS();
 	testLrrp();
 	testSignaling();
+#if CONFIG_DMR_TMS
 	testOurSms();
 	testBlockWindow();
 	testNotOnChannel();
+#endif
+	testIpText();
+	testPassthrough();
+#if !CONFIG_DMR_TMS
+	testTmsOff();
+#endif
 
 	printf(failures ? "# FAILED (%d failures)\n" : "# PASSED (%d failures)\n", failures);
 	return failures ? 1 : 0;
