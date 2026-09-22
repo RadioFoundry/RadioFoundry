@@ -138,6 +138,7 @@ typedef enum {
 	// DMR roaming (Tools > Roaming, dmr-roaming.md 6.2): survey 0 off / 1 synced / 2 per site, the repeaters' beacon
 	// interval s (0 none) and duration s, the wake probe 0 / 1
 	UI_SET_ROAM_SURVEY, UI_SET_ROAM_BEACON_S, UI_SET_ROAM_BEACON_LEN, UI_SET_ROAM_PROBE,
+	UI_SET_TFTP_WRITE,	// codeplug writes over TFTP allowed (CONFIG_TFTP; settings_t.net_flags)
 	UI_SET_COUNT
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);

@@ -59,6 +59,12 @@
 #ifndef CONFIG_NET_RIGCTL
 #define CONFIG_NET_RIGCTL		CONFIG_NET_TCP
 #endif
+#ifndef CONFIG_MDNS
+#define CONFIG_MDNS			CONFIG_DMR_IP_GATEWAY
+#endif
+#ifndef CONFIG_TFTP
+#define CONFIG_TFTP			CONFIG_DMR_IP_GATEWAY
+#endif
 #ifndef CONFIG_SFR
 #define CONFIG_SFR			1
 #endif
@@ -158,6 +164,8 @@
 #endif
 
 // Derived: the shared packet data / CSBK code
+// Any of the radio's own services on the USB network link (core/net/net.c starts and polls them)
+#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP)
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
 					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY)
@@ -210,6 +218,9 @@
 #endif
 #if (CONFIG_NET_KISS || CONFIG_NET_APRSIS) && !(CONFIG_NET_TCP && CONFIG_APRS)
 #error "CONFIG_NET_KISS and CONFIG_NET_APRSIS need CONFIG_NET_TCP and CONFIG_APRS"
+#endif
+#if (CONFIG_MDNS || CONFIG_TFTP) && !CONFIG_DMR_IP_GATEWAY
+#error "CONFIG_MDNS and CONFIG_TFTP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
 #endif
 #if CONFIG_USB_NETWORK && !CONFIG_USB
 #error "CONFIG_USB_NETWORK needs CONFIG_USB"

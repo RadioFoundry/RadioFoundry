@@ -87,6 +87,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Hotspot allowed | On, Off | On | Lets a hotspot host on USB put the radio in hotspot mode ([Hotspot](13-hotspot.md)) | Works |
 | Answer radio checks | On, Off | Off | Answer radio checks from other radios ([Radio check](09-messages-and-signaling.md#radio-check)) | Works |
 | Answer call alerts | On, Off | On | Acknowledge call alerts, so the caller knows the page arrived | Works |
+| TFTP codeplug write | On, Off | On | Lets a computer write the codeplug over TFTP in USB network mode ([USB network](14-usb-network.md#programming-over-the-network)). Reading is always possible | Host-tested |
 
 ### Power (key 7)
 

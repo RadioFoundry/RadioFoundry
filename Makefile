@@ -44,9 +44,6 @@ endif
 ifeq ($(CONFIG_APRS),y)
 CORE_DIRS += core/aprs
 endif
-ifeq ($(CONFIG_NET_TCP),y)
-CORE_DIRS += core/net
-endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
@@ -76,6 +73,13 @@ endif
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c
 endif
+# The radio's own services on the USB network link (core/net): net.c starts and polls them all, net_services.c is the
+# UDP services' glue to the gateway; each service's file only with its switch
+NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/net/kiss_tcp.c core/net/rigctld.c \
+	core/net/aprsis.c
+NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
+NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
+APP_SRC += $(sort $(NET_SRC-y))
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 

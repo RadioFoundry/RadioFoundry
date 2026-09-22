@@ -199,7 +199,7 @@ class UdpPort:
 
     def __init__(self, host, port=3334, timeout=0.02):
         import socket
-        self.addr = (host, port)
+        self.addr = (socket.gethostbyname(host), port)     # a name (odr-<id>.local, docs/spec/mdns.md) resolved once
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(timeout)
         self.pending = bytearray()

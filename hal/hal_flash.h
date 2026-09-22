@@ -27,6 +27,10 @@ typedef struct {
 	// Reserved for the native codeplug (docs/spec/codeplug-native.md); never written by the legacy CPS
 	uint32_t native_addr;
 	uint32_t native_size;
+	// Scratch for a whole new codeplug image before it replaces the stored one (the TFTP codeplug write,
+	// docs/spec/tftp.md 4): outside every area above, never written by the legacy CPS. 0 size: no staged writes
+	uint32_t staging_addr;
+	uint32_t staging_size;
 } hal_flash_map_t;
 
 typedef struct {

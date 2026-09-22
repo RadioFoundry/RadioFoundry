@@ -21,6 +21,7 @@ settings start from the defaults at every boot and nothing can be written.
 | `legacy_end` | 0xE00000 | the end of the area a legacy CPS may write |
 | `calibration_addr` / `_size` | 0x010000, 512 B | the calibration working copy (the CPS window, `cps-protocol.md` 2.4) |
 | `native_addr` / `native_size` | 0xE00000, 1 MB | reserved for the native codeplug (`codeplug-native.md` 4) |
+| `staging_addr` / `staging_size` | 0xF00000, 256 KB | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the legacy CPS (above `legacy_end`) |
 
 The DM-1701's settings ring and journal sit in the gap between the calibration sector and the legacy flash image
 (`hardware-dm1701.md` 13.2). No legacy tool reads or writes there, and the CPS shim refuses to write there.
@@ -94,7 +95,7 @@ codeplug's callsign.
 | Group | Fields |
 |---|---|
 | position | `vfo`, `squelch`, `zone_index`, `channel`, `zone_pos` (used when the channel number is gone after a codeplug write) |
-| VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz`, `vfo_mode`, `vfo_bw`, `vfo_power`, `vfo_cc`, `vfo_ts`, tone types and values |
+| VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz`, `vfo_mode`, `vfo_bw`, `vfo_power`, `vfo_cc`, `vfo_ts`, tone types and values; `net_flags` sits in the VFO block's spare byte (was `reserved0`): bit 0 refuses TFTP codeplug writes (`tftp.md` 4), 0 = allowed as before |
 | preferences | `brightness`, `backlight_s`, `beeps`, `hotspot_allowed`, `master_power`, `usb_mode` |
 | identity | `dmr_id` (0 = the codeplug's), `radio_name[16]` ("" = the codeplug's callsign) |
 | privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (appended for dmr-voice) |

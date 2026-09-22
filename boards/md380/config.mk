@@ -19,5 +19,10 @@ CONFIG_HOTSPOT_SPLIT ?= n
 # but not tools/ci.sh's maximal configuration (it overflowed by 180 bytes); KISS over TCP and APRS-IS would carry APRS,
 # which has no RF path here (no AFSK, above)
 CONFIG_NET_TCP ?= n
-# Not written for this radio (above), or left out for flash: tools/ci.sh's maximal configuration leaves these off
-BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT NET_TCP NET_KISS NET_HTTP NET_RIGCTL NET_APRSIS
+# mDNS and TFTP too, for now (with the TCP services the default image overflows by 2.9 KB)
+CONFIG_MDNS ?= n
+CONFIG_TFTP ?= n
+# Not written for this radio (above), left out for flash, or no use on it (FONT_XL is for 240 px and wider panels,
+# this one is 160 px): tools/ci.sh's maximal configuration leaves these off
+BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL NET_TCP NET_KISS NET_HTTP NET_RIGCTL \
+	NET_APRSIS MDNS TFTP

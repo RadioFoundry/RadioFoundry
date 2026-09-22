@@ -1,18 +1,24 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The TCP services' glue to the IP gateway and the host link task (see net.h)
+// The radio's own services' entry point from the host link task (see net.h): the TCP services' glue to the IP gateway
+// here, the UDP services' in net_services.c
 #include "config.h"
-#if CONFIG_NET_TCP	// the whole file
+#if CONFIG_NET_LOCAL	// the whole file
 #include "net/net.h"
-#include "net/tcp.h"
-#include "net/net_svc.h"
 #include "dmr/ipGateway.h"
 #include "board.h"
 #include "hal_time.h"
-
-#define IP_PROTO_TCP	6
+#if CONFIG_MDNS || CONFIG_TFTP
+#include "net/net_services.h"
+#endif
 
 static bool was_up;
+
+#if CONFIG_NET_TCP
+#include "net/tcp.h"
+#include "net/net_svc.h"
+
+#define IP_PROTO_TCP	6
 
 #if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL
 static radio_view_t view;
@@ -125,9 +131,19 @@ static void tcp_in(uint32_t src, const uint8_t *seg, int length)
 {
 	tcp_input(src, seg, length, hal_millis());
 }
+#else
+bool net_tnc_taken(void)
+{
+	return false;
+}
+#endif	// CONFIG_NET_TCP
 
 void net_start(uint32_t salt)
 {
+#if CONFIG_MDNS || CONFIG_TFTP
+	net_services_init();	// the UDP services bind their ports
+#endif
+#if CONFIG_NET_TCP
 	tcp_init(&io, salt);
 	ipGatewaySetTCP(tcp_in);
 #if CONFIG_NET_KISS || CONFIG_NET_APRSIS
@@ -145,14 +161,22 @@ void net_start(uint32_t salt)
 #if CONFIG_NET_RIGCTL
 	rigctld_start();
 #endif
+#else
+	(void)salt;
+#endif
 }
 
 void net_poll(uint32_t now_ms, bool link_up)
 {
+#if CONFIG_MDNS || CONFIG_TFTP
+	net_services_poll(now_ms, link_up);
+#endif
 	if (!link_up) {
+#if CONFIG_NET_TCP
 		if (was_up) {
 			tcp_abort_all();	// the host is gone (unplugged, switched to serial): nobody to send a RST to
 		}
+#endif
 		was_up = false;
 		return;
 	}
@@ -169,7 +193,9 @@ void net_poll(uint32_t now_ms, bool link_up)
 #if CONFIG_NET_RIGCTL
 	rigctld_poll(now_ms);
 #endif
+#if CONFIG_NET_TCP
 	tcp_poll(now_ms);
+#endif
 }
 
 void net_view(dl_text_t *t)
@@ -187,6 +213,9 @@ void net_view(dl_text_t *t)
 #if CONFIG_NET_APRSIS
 	aprsis_view(t);
 #endif
+#if CONFIG_MDNS || CONFIG_TFTP
+	net_services_view(t);
+#endif
 }
 
-#endif	// CONFIG_NET_TCP
+#endif	// CONFIG_NET_LOCAL

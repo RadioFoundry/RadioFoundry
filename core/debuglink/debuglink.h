@@ -73,7 +73,7 @@ void debuglink_view_roam(const radio_view_t *v, dl_text_t *t);
 void debuglink_view_aprs(uint8_t part, dl_text_t *t);	// part 0: state and counters, 1: settings
 size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
-// The net section (debuglink_view_net.c); built without CONFIG_NET_TCP it says "net.built=0"
+// The net section (debuglink_view_net.c); built without any of the radio's own services (CONFIG_NET_LOCAL) it says "net.built=0"
 void debuglink_view_net(dl_text_t *t);
 
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT

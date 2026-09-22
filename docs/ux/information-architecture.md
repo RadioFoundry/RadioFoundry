@@ -155,7 +155,7 @@ Settings has a search field on top (T9). Groups, in this order:
 | **Talk & listen** | Reply window, TX timeout, default squelch, VOX sensitivity and delay, mic gain, hear all default, talker alias show/send, name source (contacts, ID database, alias) |
 | **Privacy** | Basic Privacy keys (per channel and per contact), lock behavior (auto-lock, what stays active when locked: PTT, side keys), PIN for settings |
 | **Location** | GPS on/off, position format, send position (UDT, LRRP, APRS) and interval, reply to position requests |
-| **Connections** | Hotspot defaults, USB network, single frequency repeater role, ARS registration, radio check auto-reply, call alert answer |
+| **Connections** | Hotspot defaults, USB network (TFTP codeplug write), single frequency repeater role, ARS registration, radio check auto-reply, call alert answer |
 | **Power** | Battery saver, auto power off, low-battery warning level, power level defaults |
 | **Keys** | Side/top key functions (short and long), long-press time, key repeat, Up/Down on Home (channel / zone / talk target), speed dial slots |
 | **My radio** | DMR ID, callsign, name, talker alias text, radio name, region/band limits, time and date |

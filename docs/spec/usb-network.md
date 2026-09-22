@@ -4,7 +4,8 @@
 
 The radio can be a USB network adapter instead of a serial port, and route IPv4 between the host and other radios
 over DMR packet data. Switches: `CONFIG_USB_NETWORK` (the adapter) and `CONFIG_DMR_IP_GATEWAY` (the gateway on top of
-it), both off by default (`docs/build-config.md`).
+it), on by default on radios with USB (`docs/build-config.md`); on the link the radio also runs mDNS (`mdns.md`) and
+a TFTP server for the codeplug (`tftp.md`).
 
 ## 1. One personality at a time
 
@@ -63,6 +64,15 @@ Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGat
   hook). Two packets wait for the host link task, which delivers SAP 4 as IP (ICMP, UDP, SCTP), SAP 3 as UDP, and
   anything else as raw data on port 40078; a packet that finds the IN endpoint busy goes on the next pass, and packets
   are dropped while the link is down. Confirmed data responses are the data service's and don't go up.
+- The radio's own services (`core/net`), never over the air, all in the host link task, started and polled by
+  `core/net/net.c` (`net_start` / `net_poll` from `hostlink_net.c`). Receive: TCP segments to the radio's address go
+  to the one TCP handler (`ipGatewaySetTCP`, [tcp-services.md](tcp-services.md)); UDP datagrams to the radio's
+  address, or to the link-local block 224.0.0.0/24, on a port in the gateway's table (`ipGatewayUdpBind`, at most
+  `IPGW_UDP_PORTS` = 8) go to that service, from any source address on the link. 224.0.0.0/24 never goes over the air,
+  bound or not. Bound now: mDNS on 5353 (`mdns.md`), TFTP on 69 and its transfer's own port (`tftp.md`). Send: one
+  buffer and one path for both, layer 4 built at `ipGatewayLocalPayload()` and sent with `ipGatewaySendLocal`
+  (`ipGatewayUdpSend` adds the UDP header first): from the radio's address, IP TTL 255, to the host's MAC, the
+  broadcast MAC or a group's multicast MAC.
 - Debug link view, section `hotspot`: `usb.network usb.net_up net.host_ip net.radio_ip net.frames_in net.to_air
   net.to_air_refused net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped
   net.air_failed`; the compression and confirmed delivery counters are in the `dmr_ip` section (`dmr-data.md` 12.5).
@@ -88,4 +98,5 @@ not built yet.
   with `--allow-rf --allow-service-stop`) and the KISS TNC (TNC mode, a host position from SetHardware 'N'). All pass
   on 4a9c002. One protocol at a time: the radio answers the sender of the last frame, so a tool closes its socket
   before another protocol's tool opens one. `tests/hil/test_dmr_ip.py` (on air, the bench modem decoding; its last
-  test sends from the host over the USB network).
+  test sends from the host over the USB network). The radio's own services: `tests/hil/test_tcp_services.py`,
+  `tests/hil/test_net_services.py` (`mdns.md` 5, `tftp.md` 5).

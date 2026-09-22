@@ -22,8 +22,9 @@
 //                                      121 has a route to the radio on the link (router 0.0.0.0) and routes the
 //                                      individual, multicast (and group) ranges through the radio. Each radio has an
 //                                      address of its own, so several radios can be plugged into one host. The radio
-//                                      answers at that address for ping, DHCP and IPGW_SERIAL_PORT only, anything else
-//                                      to it goes over the air to the radio with that ID. The radio answers ARP for
+//                                      answers at that address for ping, DHCP, IPGW_SERIAL_PORT and the UDP ports its
+//                                      own services bind (ipGatewayUdpBind) only, anything else to it goes over the air
+//                                      to the radio with that ID. The radio answers ARP for
 //                                      every address but the host's, in case the host ignores the on link route.
 //                or /31                the same with the host and the radio as a /31 (RFC 3021), the radio answering
 //                                      ARP for its own address only. macOS treats both ends of a /31 as broadcast
@@ -121,17 +122,36 @@ bool ipGatewayDeliverMonitor(const uint8_t *record, int length);
 // False if the USB IN endpoint is busy; dropped (true) while no host has sent anything yet.
 bool ipGatewaySerialOut(const uint8_t *data, int length);
 
-// The radio's own TCP (core/net, CONFIG_NET_TCP): segments to the radio's address, from any source (the host, or
-// through it a server the radio connected to), go to fn, layer 4 on; NULL (the default) drops them. TCP never goes
-// over the air
+// The radio's own services (core/net: TCP and its services, mDNS, TFTP, ...). Everything for them runs in the caller of
+// ipGatewayEthernetIn (the host link task) and never goes over the air.
+//
+// Receive. TCP: segments to the radio's address, from any source (the host, or through it a server the radio
+// connected to), go to the one TCP handler, layer 4 on; NULL (the default) drops them. UDP: a datagram from the link to
+// the radio's own address, or to the local network control block 224.0.0.0/24 (mDNS: 224.0.0.251), on a bound port
+// goes to that port's handler instead of over the air; 224.0.0.0/24 never goes over the air, bound or not. One small
+// table: a service binds its port at start-up (handler NULL unbinds; false if the table is full)
 typedef void (*ipGatewayLocalFn)(uint32_t src, const uint8_t *l4, int length);
 void ipGatewaySetTCP(ipGatewayLocalFn fn);
-// A packet from the radio itself to dst (the host, or beyond it when the host routes): build layer 4 (at most
-// IPGW_LOCAL_MAX bytes) at ipGatewayLocalPayload(), then send it. False if the USB IN endpoint is busy or there is no
-// address yet
+#define IPGW_UDP_PORTS			8
+#define IPGW_LOCAL_MULTICAST	0xE0000000u		// 224.0.0.0/24, link local: never forwarded (RFC 5771)
+typedef void (*ipGatewayUdpHandler)(uint32_t srcIp, uint16_t srcPort, uint32_t dstIp, uint16_t dstPort, const uint8_t *data, int length);
+bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler);
+//
+// Send. One buffer and one path for both: build layer 4 (at most IPGW_LOCAL_MAX bytes) at ipGatewayLocalPayload(),
+// in the gateway's frame buffer, then ipGatewaySendLocal it with nothing else sent in between. From the radio's own
+// address to dst: the host (any unicast address on the link, or beyond it when the host routes), the broadcast
+// address or a multicast group (its multicast MAC), with IP TTL 255 (mDNS checks it). False if the USB IN endpoint is
+// busy (try again) or the radio has no address yet. UDP: the payload at ipGatewayUdpPayload() (IPGW_UDP_PAYLOAD_MAX
+// bytes, after the 8 byte header), or anywhere, then ipGatewayUdpSend adds the header and checksum
 #define IPGW_LOCAL_MAX		(IPGW_MAX_FRAME - 14 - 20)
+#define IPGW_UDP_PAYLOAD_MAX	(IPGW_LOCAL_MAX - 8)
 uint8_t *ipGatewayLocalPayload(void);
 bool ipGatewaySendLocal(uint8_t protocol, uint32_t dst, int length);
+static inline uint8_t *ipGatewayUdpPayload(void)
+{
+	return ipGatewayLocalPayload() + 8;
+}
+bool ipGatewayUdpSend(uint32_t dstIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
 
 // Provided by the user of the gateway
 bool ipGatewaySendFrame(const uint8_t *frame, int length);

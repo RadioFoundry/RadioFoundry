@@ -132,6 +132,12 @@ static const char features[] = "features="
 #if CONFIG_NET_APRSIS
 	"NET_APRSIS,"
 #endif
+#if CONFIG_MDNS
+	"MDNS,"
+#endif
+#if CONFIG_TFTP
+	"TFTP,"
+#endif
 #if CONFIG_VFO
 	"VFO,"
 #endif

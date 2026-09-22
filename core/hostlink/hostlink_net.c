@@ -9,7 +9,7 @@
 #include "dmr/ipGateway.h"
 #include "board.h"
 #include "hal_time.h"
-#if CONFIG_NET_TCP
+#if CONFIG_NET_LOCAL
 #include "net/net.h"
 #endif
 
@@ -47,7 +47,7 @@ void hostlink_net_init(hostlink_net_serial_fn serial_in)
 	serial_fn = serial_in;
 	board.netif->macs(host_mac, radio_mac);
 	ipGatewayInit(radio_mac, host_mac);
-#if CONFIG_NET_TCP
+#if CONFIG_NET_LOCAL
 	net_start(((uint32_t)radio_mac[2] << 24) | ((uint32_t)radio_mac[3] << 16) | ((uint32_t)radio_mac[4] << 8) |
 		  radio_mac[5]);
 #endif
@@ -105,8 +105,8 @@ void hostlink_net_poll(uint32_t now_ms)
 		stats.frames_in++;
 		ipGatewayEthernetIn(frame, n);
 	}
-#if CONFIG_NET_TCP
-	net_poll(now_ms, net_up());	// the radio's own TCP services: timers, output
+#if CONFIG_NET_LOCAL
+	net_poll(now_ms, net_up());	// the radio's own services: timers, output
 #endif
 	while (up_out != up_in) {
 		__sync_synchronize();
