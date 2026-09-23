@@ -59,3 +59,33 @@ tools/odr_debug.py --port udp:12.47.82.51 version
 
 MMDVMHost connects the same way (`Protocol=udp`, `ModemAddress=<radio address>`, `ModemPort=3334`). qdmr finds radios
 only by their serial USB ID, so program the radio in serial mode.
+
+## Monitoring the radio with SNMP
+
+Builds with the SNMP agent (`CONFIG_SNMP`, on with the USB network) answer SNMP version 2c requests at the radio's
+address, port 161. Any SNMP manager works; the repository has a small one:
+
+```
+tools/odr_snmp.py walk 12.47.82.51                 # everything the radio reports
+tools/odr_snmp.py get 12.47.82.51 odrBatteryVoltage.0 odrChannelName.0
+tools/odr_snmp.py traps                            # events as they happen (needs port 162: root on Linux)
+```
+
+The radio reports its identity (DMR ID, radio name, model, firmware), battery, channel, frequencies, power, the DMR
+call in progress and the last one heard, message and data counters, ARS state and the USB network counters. The
+objects are described in `docs/spec/ODR-MIB.txt`; load it into your manager to see names instead of numbers.
+
+While USB is a network adapter, the radio also sends events to your computer (port 162): power-up, calls starting
+and ending, text messages received, emergencies, ARS changes and low battery.
+
+The read community is `public`. Changing settings needs a write community, which is off until you set one:
+
+```
+tools/odr_debug.py snmp write MySecret             # over the serial port, before switching to network mode
+tools/odr_snmp.py -c MySecret set 12.47.82.51 sysName.0 s:N0CALL
+tools/odr_debug.py snmp status                     # the agent's settings and counters
+```
+
+Other radios can query this radio over the air at its own 12.x.y.z address (read only unless you allow writes).
+Events over the air go only to a manager radio you name (`tools/odr_debug.py snmp set rf_manager <DMR ID>`), at most
+one a minute apart from emergencies. Nothing is encrypted; SNMP community names travel as plain text.

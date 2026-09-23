@@ -1,0 +1,563 @@
+-- SPDX-License-Identifier: MIT
+-- Copyright (c) 2026 The OpenDigitalRadio Authors
+--
+-- The OpenDigitalRadio enterprise MIB (docs/spec/snmp.md). The enterprise number 32473 is the one IANA reserves for
+-- documentation (RFC 5612): a placeholder until the project has its own Private Enterprise Number. When it is
+-- assigned, change it here, in core/snmp/snmpMib.h (ODR_SNMP_PEN) and in tools/odr_snmp.py (PEN).
+
+ODR-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, enterprises, Integer32, Unsigned32, Counter32, TimeTicks
+        FROM SNMPv2-SMI
+    DisplayString, TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+        FROM SNMPv2-CONF;
+
+odrMIB MODULE-IDENTITY
+    LAST-UPDATED "202610110000Z"
+    ORGANIZATION "The OpenDigitalRadio Authors"
+    CONTACT-INFO "https://github.com/OpenDigitalRadio"
+    DESCRIPTION
+        "Objects and notifications of a radio running OpenDigitalRadio firmware: identity, power, the channel and
+        the DMR call state, the DMR data service, the USB network link and the agent's own settings."
+    REVISION     "202610110000Z"
+    DESCRIPTION  "First version."
+    ::= { odr 2 }
+
+odr                OBJECT IDENTIFIER ::= { enterprises 32473 }
+odrProducts        OBJECT IDENTIFIER ::= { odr 1 }
+-- sysObjectID of every ODR radio (the board is in odrBoard)
+odrRadioProduct    OBJECT IDENTIFIER ::= { odrProducts 1 }
+
+odrNotifications   OBJECT IDENTIFIER ::= { odrMIB 0 }
+odrObjects         OBJECT IDENTIFIER ::= { odrMIB 1 }
+odrConformance     OBJECT IDENTIFIER ::= { odrMIB 2 }
+
+odrIdentity        OBJECT IDENTIFIER ::= { odrObjects 1 }
+odrPower           OBJECT IDENTIFIER ::= { odrObjects 2 }
+odrRadio           OBJECT IDENTIFIER ::= { odrObjects 3 }
+odrDmr             OBJECT IDENTIFIER ::= { odrObjects 4 }
+odrData            OBJECT IDENTIFIER ::= { odrObjects 5 }
+odrNet             OBJECT IDENTIFIER ::= { odrObjects 6 }
+odrAgent           OBJECT IDENTIFIER ::= { odrObjects 7 }
+odrEvent           OBJECT IDENTIFIER ::= { odrObjects 8 }
+
+-- Identity
+
+odrDmrId OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The radio's own DMR ID (the settings' override, else the codeplug's)."
+    ::= { odrIdentity 1 }
+
+odrCallsign OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..16))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The radio name or callsign, the same as sysName."
+    ::= { odrIdentity 2 }
+
+odrBoard OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The radio model the firmware was built for (dm1701, md380, ...)."
+    ::= { odrIdentity 3 }
+
+odrFirmware OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The firmware version: its git commit, with -dirty for a modified tree."
+    ::= { odrIdentity 4 }
+
+-- Power
+
+odrBatteryVoltage OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "millivolts"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The battery voltage."
+    ::= { odrPower 1 }
+
+odrBatteryPercent OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..100)
+    UNITS       "percent"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The battery charge estimate, 0 when unknown."
+    ::= { odrPower 2 }
+
+odrBatteryState OBJECT-TYPE
+    SYNTAX      INTEGER { ok(1), low(2), critical(3) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The battery monitor's level: low warns, critical refuses to transmit."
+    ::= { odrPower 3 }
+
+-- The channel
+
+odrRadioState OBJECT-TYPE
+    SYNTAX      INTEGER { idle(1), receiving(2), transmitting(3), transmitDenied(4) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "What the radio is doing on its channel."
+    ::= { odrRadio 1 }
+
+odrRssi OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "dBm"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The received signal strength on the channel."
+    ::= { odrRadio 2 }
+
+odrMode OBJECT-TYPE
+    SYNTAX      INTEGER { fm(1), dmr(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The channel's mode."
+    ::= { odrRadio 3 }
+
+odrZoneName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..16))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The current zone."
+    ::= { odrRadio 4 }
+
+odrChannelNumber OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The codeplug channel number, 0 in the VFO."
+    ::= { odrRadio 5 }
+
+odrChannelName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..16))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The channel's name (VFO in the VFO)."
+    ::= { odrRadio 6 }
+
+odrRxFrequency OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "Hz"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The receive frequency."
+    ::= { odrRadio 7 }
+
+odrTxFrequency OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "Hz"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The transmit frequency."
+    ::= { odrRadio 8 }
+
+odrTxPowerLevel OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The transmit power level in effect, 0 the lowest of the radio's levels."
+    ::= { odrRadio 9 }
+
+odrTxPowerName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The name of that power level."
+    ::= { odrRadio 10 }
+
+odrColorCode OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..15)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The DMR color code. No instance on an FM channel."
+    ::= { odrRadio 11 }
+
+odrTimeslot OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..2)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The DMR timeslot. No instance on an FM channel."
+    ::= { odrRadio 12 }
+
+odrTalkTarget OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Where PTT transmits to now: a talkgroup or a radio ID. No instance on an FM channel."
+    ::= { odrRadio 13 }
+
+odrTalkTargetType OBJECT-TYPE
+    SYNTAX      INTEGER { group(1), private(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Whether odrTalkTarget is a talkgroup or a radio. No instance on an FM channel."
+    ::= { odrRadio 14 }
+
+odrRole OBJECT-TYPE
+    SYNTAX      INTEGER { radio(1), hotspot(2), sfr(3), splitTx(4), splitRx(5) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The radio's role: a radio on its channel, an MMDVM hotspot, the hotspot's single frequency repeater mode,
+        or the transmit or receive half of a split duplex repeater."
+    ::= { odrRadio 15 }
+
+-- DMR calls
+
+odrCallState OBJECT-TYPE
+    SYNTAX      INTEGER { idle(1), receiving(2), receivingOther(3), transmitWait(4), transmitting(5),
+                          transmitEnding(6), transmittingData(7) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The DMR side: receivingOther is a call on our slot not played (another talkgroup, encrypted);
+        transmitWait is PTT held while the channel or repeater is not ready."
+    ::= { odrDmr 1 }
+
+odrCallSource OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The current call's source ID, 0 when idle."
+    ::= { odrDmr 2 }
+
+odrCallDestination OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The current call's destination (talkgroup or radio), 0 when idle."
+    ::= { odrDmr 3 }
+
+odrLastSource OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The last call heard: its source ID, 0 if none yet."
+    ::= { odrDmr 4 }
+
+odrLastDestination OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The last call heard: its destination."
+    ::= { odrDmr 5 }
+
+odrLastGroup OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The last call heard was a group call."
+    ::= { odrDmr 6 }
+
+odrLastAge OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Time since the last call heard ended. No instance until a call has been heard."
+    ::= { odrDmr 7 }
+
+-- DMR data
+
+odrDataRxPackets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Complete data packets received."
+    ::= { odrData 1 }
+
+odrDataRxForUs OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Of those, addressed to us or a group we listen to."
+    ::= { odrData 2 }
+
+odrSmsReceived OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Text messages received and kept."
+    ::= { odrData 3 }
+
+odrSmsSent OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Text messages sent."
+    ::= { odrData 4 }
+
+odrSmsFailed OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Text messages not delivered."
+    ::= { odrData 5 }
+
+odrSmsInbox OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Messages in the inbox."
+    ::= { odrData 6 }
+
+odrSmsUnread OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Messages in the inbox not read yet."
+    ::= { odrData 7 }
+
+odrArsState OBJECT-TYPE
+    SYNTAX      INTEGER { off(1), registering(2), registered(3), refused(4), noAnswer(5) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "ARS registration with the presence server (off: no server set)."
+    ::= { odrData 8 }
+
+-- The USB network link (the gateway's other counters are on the debug link: docs/spec/usb-network.md 3)
+
+odrUsbNetwork OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "USB is the network adapter personality (else the serial port)."
+    ::= { odrNet 1 }
+
+
+odrNetToAir OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Packets handed to the air side."
+    ::= { odrNet 3 }
+
+
+
+odrNetPacketsUp OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Of those, delivered to the host."
+    ::= { odrNet 6 }
+
+
+
+
+-- The agent's settings (saved in the radio)
+
+odrAgentRfManager OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The DMR ID notifications are sent to over the air (to UDP 162 at its 12.x.y.z address), 0 = none
+        (the default)."
+    ::= { odrAgent 1 }
+
+odrAgentRfTrapInterval OBJECT-TYPE
+    SYNTAX      Unsigned32 (10..3600)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "At most one notification over the air per this many seconds; the others are dropped. Emergency
+        notifications are exempt. Default 60."
+    ::= { odrAgent 2 }
+
+odrAgentRfAnswers OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "The agent answers requests received over the air (default true)."
+    ::= { odrAgent 3 }
+
+odrAgentRfWrite OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "SET requests received over the air are carried out (with the write community; default false)."
+    ::= { odrAgent 4 }
+
+odrAgentUsbTraps OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "Notifications go to the host over the USB network link (default true)."
+    ::= { odrAgent 5 }
+
+odrAgentRfCallTraps OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "odrCallStart and odrCallEnd also go to the RF manager (default false: the host only)."
+    ::= { odrAgent 6 }
+
+odrAgentTrapsSent OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Notifications sent, to the host and over the air."
+    ::= { odrAgent 7 }
+
+odrAgentTrapsDropped OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Notifications given up (the queue full, the RF rate limit, the channel busy too long)."
+    ::= { odrAgent 8 }
+
+-- Notification objects
+
+odrEventSource OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "The radio an event came from."
+    ::= { odrEvent 1 }
+
+odrEventDestination OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "The talkgroup or radio an event was addressed to."
+    ::= { odrEvent 2 }
+
+odrEventGroup OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "The destination is a talkgroup."
+    ::= { odrEvent 3 }
+
+odrEventSlot OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..2)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "The DMR timeslot of a call."
+    ::= { odrEvent 4 }
+
+odrEventDuration OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "How long a call lasted."
+    ::= { odrEvent 5 }
+
+odrEventText OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..64))
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "A text message's text (Latin-1, cut at 64 characters)."
+    ::= { odrEvent 6 }
+
+odrEventValue OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "odrArsChange: the new odrArsState; odrLowBattery: the battery voltage in millivolts."
+    ::= { odrEvent 7 }
+
+-- Notifications (coldStart and authenticationFailure from SNMPv2-MIB are also sent)
+
+odrCallStart NOTIFICATION-TYPE
+    OBJECTS     { odrEventSource, odrEventDestination, odrEventGroup, odrEventSlot }
+    STATUS      current
+    DESCRIPTION "A DMR call started: received on our slot, or ours."
+    ::= { odrNotifications 1 }
+
+odrCallEnd NOTIFICATION-TYPE
+    OBJECTS     { odrEventSource, odrEventDestination, odrEventGroup, odrEventSlot, odrEventDuration }
+    STATUS      current
+    DESCRIPTION "A DMR call ended."
+    ::= { odrNotifications 2 }
+
+odrSmsReceivedNotification NOTIFICATION-TYPE
+    OBJECTS     { odrEventSource, odrEventDestination, odrEventText }
+    STATUS      current
+    DESCRIPTION "A text message for us arrived."
+    ::= { odrNotifications 3 }
+
+odrEmergency NOTIFICATION-TYPE
+    OBJECTS     { odrEventSource, odrEventDestination, odrEventGroup }
+    STATUS      current
+    DESCRIPTION
+        "An emergency: an emergency alarm heard (destination 0), or a call with the emergency service option.
+        Exempt from the RF rate limit."
+    ::= { odrNotifications 4 }
+
+odrArsChange NOTIFICATION-TYPE
+    OBJECTS     { odrEventValue }
+    STATUS      current
+    DESCRIPTION "The ARS registration state changed."
+    ::= { odrNotifications 5 }
+
+odrLowBattery NOTIFICATION-TYPE
+    OBJECTS     { odrEventValue }
+    STATUS      current
+    DESCRIPTION "The battery went low or critical."
+    ::= { odrNotifications 6 }
+
+-- Conformance
+
+odrCompliances     OBJECT IDENTIFIER ::= { odrConformance 1 }
+odrGroups          OBJECT IDENTIFIER ::= { odrConformance 2 }
+
+odrCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION "What every ODR radio with the SNMP agent implements."
+    MODULE
+        MANDATORY-GROUPS { odrStatusGroup, odrAgentGroup, odrEventGroupObjects, odrNotificationGroup }
+    ::= { odrCompliances 1 }
+
+odrStatusGroup OBJECT-GROUP
+    OBJECTS {
+        odrDmrId, odrCallsign, odrBoard, odrFirmware,
+        odrBatteryVoltage, odrBatteryPercent, odrBatteryState,
+        odrRadioState, odrRssi, odrMode, odrZoneName, odrChannelNumber, odrChannelName, odrRxFrequency,
+        odrTxFrequency, odrTxPowerLevel, odrTxPowerName, odrColorCode, odrTimeslot, odrTalkTarget, odrTalkTargetType,
+        odrRole,
+        odrCallState, odrCallSource, odrCallDestination, odrLastSource, odrLastDestination, odrLastGroup, odrLastAge,
+        odrDataRxPackets, odrDataRxForUs, odrSmsReceived, odrSmsSent, odrSmsFailed, odrSmsInbox, odrSmsUnread,
+        odrArsState,
+        odrUsbNetwork, odrNetToAir, odrNetPacketsUp
+    }
+    STATUS      current
+    DESCRIPTION "The radio's state."
+    ::= { odrGroups 1 }
+
+odrAgentGroup OBJECT-GROUP
+    OBJECTS {
+        odrAgentRfManager, odrAgentRfTrapInterval, odrAgentRfAnswers, odrAgentRfWrite, odrAgentUsbTraps,
+        odrAgentRfCallTraps, odrAgentTrapsSent, odrAgentTrapsDropped
+    }
+    STATUS      current
+    DESCRIPTION "The agent's settings and counters."
+    ::= { odrGroups 2 }
+
+odrEventGroupObjects OBJECT-GROUP
+    OBJECTS {
+        odrEventSource, odrEventDestination, odrEventGroup, odrEventSlot, odrEventDuration, odrEventText,
+        odrEventValue
+    }
+    STATUS      current
+    DESCRIPTION "The objects the notifications carry."
+    ::= { odrGroups 3 }
+
+odrNotificationGroup NOTIFICATION-GROUP
+    NOTIFICATIONS {
+        odrCallStart, odrCallEnd, odrSmsReceivedNotification, odrEmergency, odrArsChange, odrLowBattery
+    }
+    STATUS      current
+    DESCRIPTION "The radio's notifications."
+    ::= { odrGroups 4 }
+
+END

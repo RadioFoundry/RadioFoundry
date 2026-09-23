@@ -59,6 +59,12 @@ Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGat
   hook). Two packets wait for the host link task, which delivers SAP 4 as IP (ICMP, UDP, SCTP), SAP 3 as UDP, and
   anything else as raw data on port 40078; a packet that finds the IN endpoint busy goes on the next pass, and packets
   are dropped while the link is down.
+- Local UDP services: the gateway keeps a small table of ports on the radio's own address (`ipGatewayBindUDP`,
+  `IPGW_LOCAL_PORTS` entries). A datagram from the host to the radio's address on a bound port goes to the service
+  (in the host link task) instead of over the air; one received over the air for our own DMR ID on a bound port
+  (SAP 4 UDP or SAP 3) goes to the service from the radio task (`hostlink_net_packet`, link up or not) instead of to
+  the host. Services answer the host with `ipGatewayLocalSendUDP`, and the air through the air ops. The SNMP agent
+  ([snmp.md](snmp.md), port 161) uses it.
 - Debug link view, section `hotspot`: `usb.network usb.net_up net.host_ip net.radio_ip net.frames_in net.to_air
   net.to_air_refused net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped`.
 

@@ -4,7 +4,7 @@
  * Minimal IPv4 gateway between a USB network link and DMR packet data
  *
  * Ethernet, ARP (on a /31 for the radio's address, on a shared link for every address but the host's), ICMP echo to the
- * radio's address,
+ * radio's address, the local UDP services bound to ports of the radio's address (ipGatewayBindUDP),
  * a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
  * ipGateway.h), and raw DMR data on IPGW_RAW_PORT. No TCP or other protocols, no fragments.
  */
@@ -38,6 +38,10 @@ static uint8_t monitorMac[6];				// a unicast address the host doesn't have, for
 DMR_DATA_BUFFER static uint8_t tx[IPGW_MAX_FRAME];
 static uint16_t ipId = 0;
 static uint16_t serialPeerPort = 0;		// host port of the serial protocol, 0 until the host has sent to IPGW_SERIAL_PORT
+static struct {
+	uint16_t port;
+	ipGatewayUdpFn fn;
+} localPorts[IPGW_LOCAL_PORTS];
 
 static const uint8_t BROADCAST_MAC[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
@@ -428,6 +432,11 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 		ipGatewaySerialIn(&l4[8], l4Length - 8);
 		return;
 	}
+	if ((ip[9] == IP_PROTO_UDP) && (dst == ipGatewayRadioIP()) &&
+	    ipGatewayLocalUDP(false, src, get16(&l4[0]), dstPort, &l4[8], l4Length - 8))
+	{
+		return;
+	}
 
 	bool group = true;
 	uint32_t id;
@@ -590,6 +599,45 @@ bool ipGatewaySerialOut(const uint8_t *data, int length)
 		return true;// nobody to send it to
 	}
 	return sendUDP(hostMac, ipGatewayRadioIP(), hostIp, IPGW_SERIAL_PORT, serialPeerPort, data, length);
+}
+
+bool ipGatewayBindUDP(uint16_t port, ipGatewayUdpFn fn)
+{
+	for (int i = 0; i < IPGW_LOCAL_PORTS; i++)
+	{
+		if ((localPorts[i].fn == NULL) || (localPorts[i].port == port))
+		{
+			localPorts[i].port = port;
+			localPorts[i].fn = fn;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ipGatewayLocalUDP(bool fromAir, uint32_t src, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
+{
+	for (int i = 0; i < IPGW_LOCAL_PORTS; i++)
+	{
+		if ((localPorts[i].fn != NULL) && (localPorts[i].port == dstPort))
+		{
+			localPorts[i].fn(fromAir, src, srcPort, payload, length);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ipGatewayLocalSendUDP(uint32_t dstIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
+{
+	uint32_t hostIp = ipGatewayHostIP();
+
+	if (hostIp == 0)
+	{
+		return true;
+	}
+	return sendUDP((dstIp == hostIp) ? hostMac : BROADCAST_MAC, ipGatewayRadioIP(), dstIp, srcPort, dstPort, payload,
+				   length);
 }
 
 bool ipGatewayDeliverMonitor(const uint8_t *record, int length)

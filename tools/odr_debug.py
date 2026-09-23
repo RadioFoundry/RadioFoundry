@@ -65,6 +65,12 @@ SPLIT = 0x15                        # split duplex (CONFIG_HOTSPOT_SPLIT builds 
 SPLIT_OP_VARIANT, SPLIT_OP_VIEW = 1, 2
 APRS = 0x11
 APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
+SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
+SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
+SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
+# SNMP_CFG_* bits (core/snmp/snmpMib.h)
+SNMP_FLAGS = {"off": 0x01, "rf_off": 0x02, "rf_write": 0x04, "usb_traps_off": 0x08, "auth_traps": 0x10,
+              "rf_call_traps": 0x20}
 # DL_APRS_OP_SET fields (core/debuglink/debuglink_proto.h)
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
@@ -107,7 +113,7 @@ ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
-                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set"]
+                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "snmp"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -704,6 +710,22 @@ class DebugLink:
         self.aprs_request(APRS_OP_SET, struct.pack("<BI", APRS_FIELDS[field] if isinstance(field, str) else field,
                                                    int(value) & 0xFFFFFFFF))
 
+    # The SNMP agent (docs/spec/debuglink.md 3.17). State: the snmp view section
+    def snmp_request(self, op, args=b""):
+        return self.request(SNMP, bytes([op]) + bytes(args))[1]
+
+    def snmp_set(self, field, value):
+        """One agent setting (saved; trap_port RAM only): a name from SNMP_FIELDS."""
+        self.snmp_request(SNMP_OP_SET, struct.pack("<BI", SNMP_FIELDS[field] if isinstance(field, str) else field,
+                                                   value))
+
+    def snmp_community(self, write, text=""):
+        """The read (write=False) or write community; "" = the default (read "public", write none)."""
+        self.snmp_request(SNMP_OP_COMMUNITY, bytes([1 if write else 0]) + text.encode("latin-1")[:32])
+
+    def snmp_test_trap(self):
+        self.snmp_request(SNMP_OP_TEST_TRAP)
+
     def aprs_nmea(self, sentence):
         """An NMEA sentence as from the host ("$GPRMC,...*hh"); the checksum is added when missing."""
         if "*" not in sentence:
@@ -958,6 +980,32 @@ def cmd_aprs(link, a):
         link.aprs_set(name, value)
     elif a.op == "nmea":
         link.aprs_nmea(" ".join(args))
+    return 0
+
+
+def cmd_snmp(link, a):
+    args = a.args
+    if a.op == "set":
+        if len(args) != 2 or args[0] not in SNMP_FIELDS:
+            print(f"snmp set: FIELD VALUE, FIELD one of {', '.join(SNMP_FIELDS)}", file=sys.stderr)
+            return 2
+        name, v = args
+        if name == "flags" and not v[0].isdigit():
+            value = 0
+            for f in filter(None, v.split(",")):
+                value |= SNMP_FLAGS[f]
+        else:
+            value = int(v, 0)
+        link.snmp_set(name, value)
+    elif a.op in ("read", "write"):
+        link.snmp_community(a.op == "write", args[0] if args else "")
+    elif a.op == "trap":
+        link.snmp_test_trap()
+    else:
+        v = link.view(["snmp"])
+        for k in sorted(v):
+            if k.startswith("snmp."):
+                print(f"{k}={v[k]}")
     return 0
 
 
@@ -1253,6 +1301,11 @@ def main(argv=None):
     p.add_argument("args", nargs="*", help="status: TEXT; msg: CALL TEXT; call: [CALLSIGN]; set: FIELD VALUE "
                    f"(fields {', '.join(APRS_FIELDS)}; region na|eu|au|nz|jp|cn|custom, pos_src auto|gps|host|fixed, "
                    "via rf|dmr|both, lat / lon in degrees, freq_hz in Hz or MHz with a point); nmea: SENTENCE")
+    p = sub.add_parser("snmp", help="the SNMP agent: status, settings, communities, test notification "
+                       "(docs/spec/snmp.md)")
+    p.add_argument("op", choices=["status", "set", "read", "write", "trap"])
+    p.add_argument("args", nargs="*", help="set: FIELD VALUE (fields " + ", ".join(SNMP_FIELDS) + "; flags as a "
+                   "number or names " + ",".join(SNMP_FLAGS) + "); read / write: [COMMUNITY] (none: the default)")
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
@@ -1319,6 +1372,8 @@ def main(argv=None):
                 return cmd_data(link, a)
             elif a.cmd == "aprs":
                 return cmd_aprs(link, a)
+            elif a.cmd == "snmp":
+                return cmd_snmp(link, a)
             elif a.cmd == "chip":
                 print_chip(link.chip())
             elif a.cmd == "dump":

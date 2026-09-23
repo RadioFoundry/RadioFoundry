@@ -108,6 +108,25 @@ static void serial_in(const uint8_t *buf, size_t len)
 	serial_len = (int)len;
 }
 
+// ---- a local UDP service (ipGatewayBindUDP) ----
+static struct {
+	int calls;
+	bool from_air;
+	uint32_t src;
+	uint16_t port;
+	uint8_t data[64];
+	int len;
+} local;
+static void local_udp(bool from_air, uint32_t src, uint16_t port, const uint8_t *p, int len)
+{
+	local.calls++;
+	local.from_air = from_air;
+	local.src = src;
+	local.port = port;
+	local.len = len;
+	memcpy(local.data, p, (size_t)len);
+}
+
 // ---- fake data service (hostlink_net_air.c's radio task side) ----
 static bool service_busy;
 static dmrBurst_t svc_bursts[DMR_DATA_MAX_BURSTS];
@@ -293,6 +312,57 @@ int main(void)
 	hostlink_net_poll(now_ms);
 	hostlink_net_stats(&st);
 	CHECK(sent_count == 0 && st.packets_dropped == 1 && st.packets_up == 2 && st.packets_air == 3);
+
+	// Local UDP services: port 161 on the radio's own address from the host goes to the bound service, not to the air
+	CHECK(ipGatewayBindUDP(161, local_udp));
+	int ip_before = air.ip_calls;
+	from_host(f, host_udp(f, HOST_IP ^ 1u, 40000, 161, hello, sizeof(hello)));
+	CHECK(local.calls == 1 && !local.from_air && local.src == HOST_IP && local.port == 40000 &&
+	      local.len == (int)sizeof(hello) && memcmp(local.data, hello, sizeof(hello)) == 0 && air.ip_calls == ip_before);
+	// Another port of the radio's address still goes over the air (to the radio with that ID)
+	from_host(f, host_udp(f, HOST_IP ^ 1u, 40000, 162, hello, sizeof(hello)));
+	CHECK(local.calls == 1 && air.ip_calls == ip_before + 1 && air.dst == (RADIO_ID ^ 1u));
+	// UDP over the air (SAP 4) to our ID and port 161: the service, from the radio task, with the link down too;
+	// nothing goes to the host
+	memset(&p, 0, sizeof(p));
+	p.sap = DMR_SAP_IP;
+	p.dst = RADIO_ID;
+	p.src = 3101234;
+	pip[0] = 0x45;
+	put16(pip + 2, (uint16_t)(20 + 8 + sizeof(hello)));
+	pip[8] = 64;
+	pip[9] = 17;
+	put32(pip + 12, IPGW_INDIVIDUAL_NET | 3101234u);
+	put32(pip + 16, IPGW_INDIVIDUAL_NET | RADIO_ID);
+	put16(pip + 10, ip_checksum(pip, 20));
+	put16(pip + 20, 4321);
+	put16(pip + 22, 161);
+	put16(pip + 24, (uint16_t)(8 + sizeof(hello)));
+	memcpy(pip + 28, hello, sizeof(hello));
+	p.length = (uint16_t)(28 + sizeof(hello));
+	link_up = false;
+	sent_count = 0;
+	hostlink_net_packet(&p);
+	link_up = true;
+	hostlink_net_poll(now_ms);
+	CHECK(local.calls == 2 && local.from_air && local.src == 3101234 && local.port == 4321 &&
+	      local.len == (int)sizeof(hello) && sent_count == 0);
+	// ... but not when it is for a talkgroup, or for another ID: those go to the host as before
+	p.group = true;
+	hostlink_net_packet(&p);
+	hostlink_net_poll(now_ms);
+	p.group = false;
+	p.dst = RADIO_ID + 1;
+	hostlink_net_packet(&p);
+	hostlink_net_poll(now_ms);
+	CHECK(local.calls == 2 && sent_count == 2);
+	// The service's answer to the host: from the radio's address and port 161
+	sent_count = 0;
+	CHECK(ipGatewayLocalSendUDP(HOST_IP, 161, 40000, hello, sizeof(hello)) && sent_count == 1);
+	ip = sent[0] + 14;
+	udp = ip + 20;
+	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && get32(ip + 12) == (HOST_IP ^ 1u) && get32(ip + 16) == HOST_IP &&
+	      get16(udp) == 161 && get16(udp + 2) == 40000 && memcmp(udp + 8, hello, sizeof(hello)) == 0);
 
 	// The default air side (hostlink_net_air.c): the host link task's packet waits in the mailbox for the radio
 	// task's tick, which builds the bursts and hands them to the data service

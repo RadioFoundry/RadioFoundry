@@ -150,6 +150,14 @@ typedef struct {
 	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
 	uint8_t aprs_stored;		// 1 = the aprs_ fields are set
 	uint16_t reserved7;
+	// The SNMP agent (core/snmp/snmpMib.h snmpConfig_t, docs/spec/snmp.md 6). All zero = the defaults: read community
+	// "public", no write community, no RF manager, 60 s between RF notifications, answers over RF, no SET over RF
+	uint32_t snmp_read_hash;	// read community (FNV-1a of the text), 0 = "public"
+	uint32_t snmp_write_hash;	// write community, 0 = none (SET refused)
+	uint32_t snmp_rf_manager;	// DMR ID notifications go to over RF, 0 = none
+	uint16_t snmp_rf_gap_s;		// at most one RF notification per this many seconds, 0 = 60
+	uint8_t snmp_flags;		// SNMP_CFG_* bits
+	uint8_t reserved8;
 } settings_t;
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)

@@ -563,3 +563,25 @@ run: run-usbaudio
 run-usbaudio: usrpTest
 	./usrpTest
 .PHONY: run-usbaudio
+
+# The SNMP agent (docs/spec/snmp.md): the BER codec against hand-worked X.690 encodings, SNMPv2c processing, the MIB and
+# the notifications (snmpTest); then the agent on a loopback UDP socket against tools/odr_snmp.py and, when installed,
+# the system's SNMP command line tools (snmp_peer_check.sh)
+SNMPLIB := $(CORE)/snmp/snmp.c $(CORE)/snmp/snmpBer.c $(CORE)/snmp/snmpMib.c
+TESTS   += snmpTest snmpPeer
+
+snmpTest: snmpTest.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
+	$(CC) $(CFLAGS) -Wshadow -o $@ snmpTest.c $(SNMPLIB)
+
+snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
+	$(CC) $(CFLAGS) -Wshadow -o $@ snmpPeer.c $(SNMPLIB)
+
+run: run-snmp
+run-snmp: snmpTest snmpPeer
+	./snmpTest
+ifneq ($(PYTHON),)
+	./snmp_peer_check.sh
+else
+	@echo "# snmp_peer_check skipped (no python3)"
+endif
+.PHONY: run-snmp

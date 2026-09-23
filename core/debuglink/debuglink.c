@@ -111,6 +111,9 @@ static const char features[] = "features="
 #if CONFIG_DMR_IP_GATEWAY
 	"DMR_IP_GATEWAY,"
 #endif
+#if CONFIG_SNMP
+	"SNMP,"
+#endif
 #if CONFIG_VFO
 	"VFO,"
 #endif
@@ -834,6 +837,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 #endif
 	case DL_CMD_APRS:
 		return debuglink_cmd_aprs(req, len, out, cap);
+	case DL_CMD_SNMP:
+		return debuglink_cmd_snmp(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

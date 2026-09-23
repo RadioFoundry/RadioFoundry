@@ -22,8 +22,9 @@
 //                                      121 has a route to the radio on the link (router 0.0.0.0) and routes the
 //                                      individual, multicast (and group) ranges through the radio. Each radio has an
 //                                      address of its own, so several radios can be plugged into one host. The radio
-//                                      answers at that address for ping, DHCP and IPGW_SERIAL_PORT only, anything else
-//                                      to it goes over the air to the radio with that ID. The radio answers ARP for
+//                                      answers at that address for ping, DHCP, IPGW_SERIAL_PORT and the local UDP
+//                                      services (ipGatewayBindUDP) only, anything else to it goes over the air to the
+//                                      radio with that ID. The radio answers ARP for
 //                                      every address but the host's, in case the host ignores the on link route.
 //                or /31                the same with the host and the radio as a /31 (RFC 3021), the radio answering
 //                                      ARP for its own address only. macOS treats both ends of a /31 as broadcast
@@ -120,6 +121,20 @@ bool ipGatewayDeliverMonitor(const uint8_t *record, int length);
 // Bytes from the radio's serial protocol, as one UDP datagram to the host and port that last sent to IPGW_SERIAL_PORT.
 // False if the USB IN endpoint is busy; dropped (true) while no host has sent anything yet.
 bool ipGatewaySerialOut(const uint8_t *data, int length);
+
+// Local UDP services on the radio itself (SNMP, ...), one table entry per port. A datagram from the host to the
+// radio's own address on a bound port goes to the service instead of over the air; so does one received over the air
+// for our own DMR ID (the air side calls ipGatewayLocalUDP with fromAir), instead of going to the host. src is the
+// host's IP address, or with fromAir the sender's DMR ID. Air datagrams arrive in the radio task: the handler must
+// copy and return, never block. Bind once at start.
+#define IPGW_LOCAL_PORTS	4
+typedef void (*ipGatewayUdpFn)(bool fromAir, uint32_t src, uint16_t srcPort, const uint8_t *payload, int length);
+bool ipGatewayBindUDP(uint16_t port, ipGatewayUdpFn fn);	// false when the table is full
+// True when a bound service took the datagram
+bool ipGatewayLocalUDP(bool fromAir, uint32_t src, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
+// A datagram from the radio's own address to the host (dstIp: the host's address or the broadcast address). False if
+// the USB IN endpoint is busy (try again), dropped (true) without a host address
+bool ipGatewayLocalSendUDP(uint32_t dstIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
 
 // Provided by the user of the gateway
 bool ipGatewaySendFrame(const uint8_t *frame, int length);

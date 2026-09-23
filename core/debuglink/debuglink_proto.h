@@ -44,6 +44,7 @@ enum {
 	DL_CMD_AUDIO_PROBE	= 0x10,	// audio chip registers and PCM levels, CONFIG_AUDIO_PROBE (docs/spec/debuglink.md 3.14)
 	DL_CMD_SPLIT		= 0x15,	// split duplex (CONFIG_HOTSPOT_SPLIT only; docs/spec/debuglink.md 3.15)
 	DL_CMD_APRS		= 0x11,	// APRS: send now, status, message, test call, settings, NMEA (debuglink_aprs.c, 3.16)
+	DL_CMD_SNMP		= 0x19,	// the SNMP agent: settings, communities, notification port, test (debuglink_snmp.c, 3.17)
 };
 
 // DL_CMD_DMR_DATA operations (first payload byte; docs/spec/debuglink.md 3.12). IDs are u32 little endian
@@ -105,6 +106,22 @@ enum {
 	DL_APRS_F_DIGI,			// aprs_digi_mode_t
 	DL_APRS_F_TXDELAY,		// 10 ms units, 5-100
 	DL_APRS_F_DMR_GPS,		// our position in DMR voice calls (ETSI GPS Info) 0/1
+};
+
+// DL_CMD_SNMP operations (first payload byte; docs/spec/debuglink.md 3.17)
+enum {
+	DL_SNMP_OP_SET = 0,		// field u8 (DL_SNMP_F_*), value u32: saved (the trap port: RAM only)
+	DL_SNMP_OP_COMMUNITY,		// which u8 (0 read, 1 write), the text (0-32 bytes; empty: read "public", write none)
+	DL_SNMP_OP_TEST_TRAP,		// queue a coldStart notification now
+};
+#define DL_SNMP_COMMUNITY_MAX	32
+
+// DL_SNMP_OP_SET fields
+enum {
+	DL_SNMP_F_FLAGS = 0,		// SNMP_CFG_* bits (core/snmp/snmpMib.h)
+	DL_SNMP_F_RF_MANAGER,		// DMR ID for RF notifications, 0 = none
+	DL_SNMP_F_RF_GAP_S,		// seconds between RF notifications, 0 = 60, else 10-3600
+	DL_SNMP_F_TRAP_PORT,		// the host's notification port, 0 = 162 (RAM only)
 };
 
 // Reply status (the first payload byte)

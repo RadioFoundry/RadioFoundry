@@ -233,6 +233,7 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 12 | `roam` | DMR repeater roaming ([dmr-roaming.md](dmr-roaming.md) 6.3): `roam.built roam.zone_on roam.state` (off / watch / search / survey / locked) `roam.why roam.pending` (none / weak / tx_fail / manual / check / stale) `roam.blocked` (none / mode / hotspot / scan / tx / call / reply / quiet / override / emergency) `roam.sites roam.site roam.home roam.channel roam.rssi_dbm roam.weak`, counters `roam.searches roams stays aborts probes triggers`, `site.<i>=<channel>:<rssi>` per site (rssi 0 = not measured), the survey `roam.visit` (site being visited, -1 at home) `roam.win_conf` (0 no beacon schedule, 1..3) `roam.win_next_ms` (to the next beacon window, -1 unknown) `roam.confirm` (a confirm visit is pending), counters `roam.surveys visits cuts beacons confirms`, `surv.<i>=<dbm>:<age_s>:<phase_ms>:<fresh>` per site (dbm 0 = never surveyed, age and phase -1 = unknown), the settings `set.roam_rssi_dbm set.roam_hyst_db set.roam_probe` (passive / wake) `set.roam_check_s set.roam_beacon_s set.roam_beacon_len_s set.roam_survey` (off / sync / site) `set.rpt_beacon`. Built without roaming: `roam.built=0` |
 | 13 | `aprs` | APRS ([aprs.md](aprs.md) 13): `aprs.built aprs.rx_built aprs.igate_built aprs.call` (with SSID, empty = none) `aprs.block` (ok / no_call / no_freq / not_amateur / no_position / no_afsk / busy: why RF can't send) `aprs.freq_hz aprs.pos_src` (none / gps / host / fixed) `aprs.pos_valid`, when valid `aprs.lat aprs.lon` (degrees, 7 decimals) `aprs.pos_age_s`, `aprs.next_s` (-1 = no time based beacon) `aprs.last_why` (none / interval / smart / turn / distance / ptt / manual / boot) `aprs.last_ms aprs.rf_active aprs.last_info`, counters `aprs.rf_sent rf_failed rf_busy dmr_sent dmr_failed rx_frames rx_bad host_in host_out host_dropped igated is_to_rf digi_sent`, `aprs.stations messages msg_pending msg_tries msg_acked`, `aprs.tx_power` (the power level an APRS RF transmission keys at: the radio's current one, `power` in `core`). Built without APRS: `aprs.built=0` |
 | 14 | `aprs_set` | the APRS settings, split from `aprs` for the reply size: `aprs.built set.aprs_tx aprs_region aprs_ssid aprs_symbol aprs_path aprs_interval_s aprs_smart aprs_distance_m aprs_after_ptt aprs_boot aprs_level aprs_txdelay aprs_via` (rf / dmr / both) `aprs_dmr_dst aprs_dmr_udt aprs_pos_src aprs_kiss aprs_rx aprs_igate aprs_igate_tx aprs_digi aprs_dmr_gps` |
+| 15 | `snmp` | the SNMP agent ([snmp.md](snmp.md) 7): `snmp.built snmp.flags snmp.write_set snmp.trap_port`, counters `snmp.rf_requests rf_answers rf_dropped traps_usb traps_rf traps_dropped` (the protocol counters and the other settings: the MIB). Built without the agent: `snmp.built=0` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -439,6 +440,20 @@ The state is in the `aprs` and `aprs_set` view sections.
 | 6 NMEA | an NMEA sentence | taken as a host position (`$GPRMC` / `$GPGGA` with a valid checksum) |
 
 `odr_debug.py aprs send | status TEXT | msg CALL TEXT | call [CALL] | set FIELD VALUE | nmea SENTENCE`.
+
+### 3.17 SNMP
+
+The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP every operation answers
+`DL_ST_UNAVAILABLE`. The state is in the `snmp` view section.
+
+| Op | Request | Effect |
+|---|---|---|
+| 0 SET | field u8, value u32 | saved like a UI change. Fields: 0 flags (`SNMP_CFG_*`: 0x01 agent off, 0x02 no answers over RF, 0x04 SET over RF, 0x08 no notifications to the host, 0x10 authenticationFailure, 0x20 call notifications over RF), 1 rf_manager (DMR ID, 0 = none), 2 rf_gap_s (0 = 60, else 10-3600), 3 trap_port (the host's notification port, 0 = 162; RAM only). Out of range: bad argument |
+| 1 COMMUNITY | which u8 (0 read, 1 write), the text (0-32 bytes) | sets the community (stored as its hash); empty: read back to "public", write none (SET refused) |
+| 2 TEST_TRAP | none | queues a coldStart notification (the HIL test's check of the path) |
+
+`odr_debug.py snmp status | set FIELD VALUE | read [TEXT] | write [TEXT] | trap` (flags as a number or names:
+`off,rf_off,rf_write,usb_traps_off,auth_traps,rf_call_traps`).
 
 ## 4. Safety
 

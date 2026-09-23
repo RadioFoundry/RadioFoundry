@@ -108,8 +108,10 @@ codeplug's callsign.
 | roaming survey | `roam_beacon_s` (the repeaters' beacon interval, 0 = none, else 10..600, default 60), `roam_beacon_len_s` (1..10, default 4), `roam_survey` (0 off, 1 synced, 2 per site; default 1), `rpt_beacon` (our repeater roles' idle beacon, default 0), `reserved6[3]` (appended for roam2, `dmr-roaming.md` 5.1; a record without them keeps these defaults) |
 | APRS | `aprs_flags aprs_flags2` (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX; iGate, iGate TX, messaging, UDT, to APRS-IS, DMR GPS Info) `aprs_region aprs_ssid aprs_freq_hz aprs_lat aprs_lon aprs_dmr_dst aprs_alt_m aprs_interval_s aprs_distance_m aprs_symbol[2] aprs_path aprs_pos_src aprs_level aprs_txdelay aprs_misc aprs_stored` and a reserved byte; taken when `aprs_stored` is 1 (appended for aprs, `aprs.md` 11) |
 
+| SNMP agent | `snmp_read_hash snmp_write_hash` (FNV-1a hashes of the communities, 0 = "public" / none) `snmp_rf_manager snmp_rf_gap_s snmp_flags` and a reserved byte; all zero = the defaults (appended for snmp, `snmp.md` 6) |
+
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
-payload is 212 bytes now (at most 236).
+payload is 228 bytes now (at most 236).
 
 ### 3.0 Who writes, and storage jobs
 
