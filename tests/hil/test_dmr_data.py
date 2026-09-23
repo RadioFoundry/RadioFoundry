@@ -149,8 +149,8 @@ def data_settings(radio):
     if v.get("data.built") == 1:
         x = radio.view(["dmr_ext"])
         radio.link.data_settings(v["data.ars_server"], v["data.radio_check_reply"] == 1, v["data.call_alert_ack"] == 1,
-                                 v["data.lrrp_reply"] == 1, x.get("data.sms_format") == "etsi",
-                                 x.get("data.radio_check_etsi") == "1")
+                                 v["data.lrrp_reply"] == 1, radio_check_etsi=x.get("data.radio_check_etsi") == "1",
+                                 sms_format=x.get("data.sms_format", "etsi_ip"))
 
 
 def test_data_view_and_settings(radio, pytestconfig, data_settings):

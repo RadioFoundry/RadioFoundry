@@ -26,6 +26,9 @@ static volatile uint8_t up_in, up_out;		// producer: the radio task; consumer: t
 #define FRAME_MAX		IPGW_MAX_FRAME
 static DMR_DATA_BUFFER uint8_t frame[FRAME_MAX];
 static hostlink_net_stats_t stats;
+static volatile bool passthrough;		// control station: the PC is the endpoint (the setting)
+static volatile uint32_t link_wanted;		// the fixed link asked for, applied by the host link task
+static volatile bool link_changed;
 
 static bool net_up(void)
 {
@@ -90,10 +93,28 @@ static bool deliver(const dmrDataPacket_t *q)
 	return ipGatewayDeliverRaw(q->group, q->dst, q->src, q->data, q->length);
 }
 
+void hostlink_net_set_control(bool pt, uint32_t fixed_link_ip)
+{
+	passthrough = pt && CONFIG_DMR_CONTROL_STATION;
+	link_wanted = CONFIG_DMR_CONTROL_STATION ? fixed_link_ip : 0;
+	__sync_synchronize();
+	link_changed = true;
+}
+
+bool hostlink_net_passthrough_active(void)
+{
+	return passthrough && started && net_up();
+}
+
 void hostlink_net_poll(uint32_t now_ms)
 {
 	if (!started) {
 		return;
+	}
+	if (link_changed) {
+		link_changed = false;
+		__sync_synchronize();
+		ipGatewaySetFixedLink(link_wanted);	// an address that can't be used leaves the DMR ID addressing
 	}
 	board.netif->tick(now_ms);
 	for (int i = 0; i < 4; i++) {

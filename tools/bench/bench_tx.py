@@ -18,9 +18,10 @@ radiodesk-rfgw@<bench host>, or take ROAM1 out of its config); tools/bench/dmr_b
                                             (preamble CSBK train, then optionally one CSBK, e.g. 1F call alert, or
                                             24 --fid 10 --octet3 80 radio check request)
     bench_tx.py ... data  [--src ID] [--dst ID] [--confirmed] [--octets N | --tms TEXT [--tms-seq N] [--tms-no-ack]
-                           | --etsi TEXT [--etsi-no-response] [--group]]
+                           | --etsi TEXT [--etsi-no-response] [--group] | --ip-text TEXT]
                           [--preambles N] [--family ...]
-                                            (--tms: a Motorola TMS text message in IPv4 / UDP 4007 user data)
+                                            (--tms: a Motorola TMS text message in IPv4 / UDP 4007 user data;
+                                            --ip-text: an ETSI IP text, UTF-16BE in IPv4 / UDP 5016)
     bench_tx.py [--ambe-out PREFIX] ... listen [--seconds N] [--json]
     bench_tx.py --listen-after S [--ambe-out PREFIX] voice|data|csbk ...  (send, then listen S seconds, JSON lines)
 
@@ -172,20 +173,29 @@ def ip_checksum(data: bytes) -> int:
     return ~s & 0xFFFF
 
 
-def tms_user_data(src: int, dst: int, text: str, seq: int, ack: bool) -> bytes:
-    """IPv4 / UDP 4007 -> 4007 carrying a TMS simple text message (header 0xE0 with an ACK requested, else 0xA0;
-    sequence number with bit 7; encoding 4; UTF-16LE text). Radio IDs map to 12.x.x.x (the CAI network)."""
-    body = bytes([0xE0 if ack else 0xA0, 0x00, 0x80 | (seq & 0x1F), 0x04]) + text.encode("utf-16-le")
-    tms = len(body).to_bytes(2, "big") + body
+def udp_user_data(src: int, dst: int, port: int, payload: bytes) -> bytes:
+    """IPv4 / UDP port -> port with the payload, radio IDs as 12.x.x.x (the CAI network), checksums filled in."""
     sip, dip = bytes([12]) + src.to_bytes(3, "big"), bytes([12]) + dst.to_bytes(3, "big")
-    udp_len = 8 + len(tms)
-    udp = (4007).to_bytes(2, "big") * 2 + udp_len.to_bytes(2, "big") + b"\0\0" + tms
+    udp_len = 8 + len(payload)
+    udp = port.to_bytes(2, "big") * 2 + udp_len.to_bytes(2, "big") + b"\0\0" + payload
     csum = ip_checksum(sip + dip + bytes([0, 17]) + udp_len.to_bytes(2, "big") + udp) or 0xFFFF
     udp = udp[:6] + csum.to_bytes(2, "big") + udp[8:]
     total = 20 + udp_len
     ip = bytes([0x45, 0]) + total.to_bytes(2, "big") + b"\0\x01\0\0" + bytes([64, 17]) + b"\0\0" + sip + dip
     ip = ip[:10] + ip_checksum(ip).to_bytes(2, "big") + ip[12:]
     return ip + udp
+
+
+def tms_user_data(src: int, dst: int, text: str, seq: int, ack: bool) -> bytes:
+    """IPv4 / UDP 4007 -> 4007 carrying a TMS simple text message (header 0xE0 with an ACK requested, else 0xA0;
+    sequence number with bit 7; encoding 4; UTF-16LE text)."""
+    body = bytes([0xE0 if ack else 0xA0, 0x00, 0x80 | (seq & 0x1F), 0x04]) + text.encode("utf-16-le")
+    return udp_user_data(src, dst, 4007, len(body).to_bytes(2, "big") + body)
+
+
+def ip_text_user_data(src: int, dst: int, text: str) -> bytes:
+    """An ETSI IP text (TS 102 361-3 5.7.1): the text as UTF-16BE in IPv4 / UDP 5016 -> 5016."""
+    return udp_user_data(src, dst, 5016, text.encode("utf-16-be"))
 
 
 def bptc_info(burst: bytes) -> bytes:
@@ -244,6 +254,8 @@ def data_items(args):
         return [(SYNC_DATA | dt, L2.data_burst(info, dt, args.burst_cc, sync)) for dt, info in infos]
     if args.tms is not None:
         user = tms_user_data(args.src, args.dst, args.tms, args.tms_seq, not args.tms_no_ack)
+    elif args.ip_text is not None:
+        user = ip_text_user_data(args.src, args.dst, args.ip_text)
     else:
         user = bytes((i * 7 + 1) & 0xFF for i in range(args.octets))
     if args.confirmed:
@@ -492,6 +504,7 @@ def main() -> None:
     d.add_argument("--etsi", default=None, help="an ETSI text message (defined short data, ISO 8859-1) with this text")
     d.add_argument("--etsi-no-response", action="store_true", help="ETSI text without a response requested")
     d.add_argument("--group", action="store_true", help="--etsi to a talkgroup (--dst)")
+    d.add_argument("--ip-text", default=None, help="an ETSI IP text (UTF-16BE on UDP 5016) with this text")
     c = sub.add_parser("csbk")
     common(c, 3101276)
     c.add_argument("--count", type=int, default=4, help="preamble CSBKs (opcode 0x3D)")

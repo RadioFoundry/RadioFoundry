@@ -15,7 +15,6 @@
 #define UDPC_PORT_ID_ETSI_TEXT		1
 #define UDPC_PORT_ID_LIP			2
 #define UDPC_PORT_ID_MOTOROLA_TMS	98
-#define DMR_UDP_PORT_ETSI_TEXT		5016
 #define DMR_UDP_PORT_LIP			5017
 // IP address IDs (Tables 7.15 / 7.16)
 #define UDPC_ID_RADIO_NETWORK		0
@@ -577,6 +576,7 @@ int dmrDataBuildUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, ui
 	return bursts;
 }
 
+#if CONFIG_DMR_TMS
 // Motorola TMS simple text message: length, header (0xA0, or 0xE0 to request an ACK), no address,
 // sequence number, encoding, then the text as UTF-16LE
 int dmrDataBuildTMS(bool group, uint32_t dst, uint32_t src, const char *text, uint8_t seq, bool ackRequested,
@@ -605,6 +605,7 @@ int dmrDataBuildTMS(bool group, uint32_t dst, uint32_t src, const char *text, ui
 
 	return dmrDataBuildUDP(group, dst, src, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, tms, length, blockType, preambles, out, maxBursts);
 }
+#endif
 
 // Figure 8.5 response header (G/I and A clear, class / type / status in octet 9); a selective ACK appends one rate 1/2
 // block: the 64 flags in octets 0-7 (Figure 8.17), the CRC-32 of those in octets 8-11 as a last block carries it
@@ -770,6 +771,7 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 	return bursts;
 }
 
+#if CONFIG_DMR_TMS
 // As a MOTOTRBO radio sends it (ok-dmrlib's capture: 00 04 9F 00 95 20): first header 0x9F (more headers, control,
 // type 0xF), no address, then the sequence number: its low 5 bits, and only when it needs them bits 5-6 in a second
 // octet (extension bit set in the first)
@@ -789,6 +791,7 @@ int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, d
 
 	return dmrDataBuildUDP(false, dst, src, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, ack, length, DT_RATE_12_DATA, preambles, out, maxBursts);
 }
+#endif
 
 // Defined short data header (DD_HEAD, TS 102 361-1 9.2.12, DPF 13): G/I, A (response requested), the appended
 // blocks' high bits and the DPF; SAP 10 (short data) and their low bits; the addresses; the DD format (0x03, ISO
@@ -850,6 +853,51 @@ int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *tex
 		setBurst(out++, DT_RATE_12_DATA, &txPacket[i * blockLen], blockLen);
 	}
 
+	return bursts;
+}
+
+// ETSI IP text (TS 102 361-3 V1.3.1 5.7.1): the text as UTF-16BE (plane 0; Latin-1 here, one code unit per
+// character, no byte order mark, no terminator) in a UDP datagram from and to port 5016, with the full IPv4 / UDP
+// header (SAP 4, as every receiver of the IP bearer reads it; the compressed header of 5.6 is optional)
+int dmrDataIPTextUDP(const char *text, uint8_t l4[DMR_ETSI_TEXT_UDP_MAX])
+{
+	int n = 0;
+
+	for (; (text[n] != '\0') && (n < DMR_ETSI_TEXT_MAX); n++)
+	{
+		l4[8 + (2 * n)] = 0x00;
+		l4[8 + (2 * n) + 1] = (uint8_t)text[n];
+	}
+	if (n == 0)
+	{
+		return 0;
+	}
+	putU16(&l4[0], DMR_UDP_PORT_ETSI_TEXT);
+	putU16(&l4[2], DMR_UDP_PORT_ETSI_TEXT);
+	putU16(&l4[4], 8 + (2 * n));
+	putU16(&l4[6], 0);// computed with the IPv4 header
+	return 8 + (2 * n);
+}
+
+int dmrDataBuildIPText(bool group, uint32_t dst, uint32_t src, const char *text, uint8_t blockType, int preambles,
+						dmrBurst_t *out, int maxBursts)
+{
+	uint8_t l4[DMR_ETSI_TEXT_UDP_MAX];
+	const uint8_t *pdu;
+	uint8_t sap;
+	int length = dmrDataIPTextUDP(text, l4);
+	// Always the full header, whatever the compression setting (docs/spec/dmr-data.md 5.3)
+	int n = (length > 0) ? dmrDataEncodeIP(group, dst, src, DMR_IP_PROTO_UDP, l4, length, false, dmrDataNextIpId(), &pdu, &sap) : 0;
+
+	if (n <= 0)
+	{
+		return 0;
+	}
+	int bursts = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, src, pdu, n, blockType, preambles, out, maxBursts);
+	if (bursts > 0)
+	{
+		dmrDataCountIpTx(sap, pdu, n, blockType, false);
+	}
 	return bursts;
 }
 
@@ -1042,6 +1090,27 @@ bool dmrDataDecodeEtsiText(const dmrDataPacket_t *packet, char *text, int textSi
 
 	text[n] = '\0';
 	return true;
+}
+
+bool dmrDataDecodeIPText(const uint8_t *payload, int length, char *text, int textSize)
+{
+	int n = 0;
+	bool bigEndian = true;
+
+	if ((textSize <= 0) || (length < 2))
+	{
+		return false;
+	}
+	// UTF-16BE is the format; a byte order mark some senders put first is honored
+	if (((payload[0] == 0xFE) && (payload[1] == 0xFF)) || ((payload[0] == 0xFF) && (payload[1] == 0xFE)))
+	{
+		bigEndian = (payload[0] == 0xFE);
+		payload += 2;
+		length -= 2;
+	}
+	decodeUTF16(payload, length, bigEndian, text, textSize, &n);
+	text[n] = '\0';
+	return n > 0;
 }
 
 void dmrDataRxReset(void)
@@ -1499,6 +1568,7 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 	return true;
 }
 
+#if CONFIG_DMR_TMS
 bool dmrDataDecodeTMS(const uint8_t *payload, int length, dmrDataTMS_t *tms)
 {
 	if (length < 4)
@@ -1577,6 +1647,7 @@ bool dmrDataDecodeTMS(const uint8_t *payload, int length, dmrDataTMS_t *tms)
 
 	return true;
 }
+#endif
 
 int dmrDataBuildARSRegistration(uint32_t radioId, uint8_t *out)
 {

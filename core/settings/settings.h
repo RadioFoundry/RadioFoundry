@@ -51,7 +51,7 @@ typedef struct {
 	uint8_t beeps;			// key and status beeps: 0 off, 1 on
 	uint8_t hotspot_allowed;	// the host may make the radio an MMDVM hotspot
 	uint8_t master_power;		// power for channels set to "default", SETTINGS_UNSET8 = the board's default
-	uint8_t usb_mode;		// usb_mode_t (serial / network)
+	uint8_t usb_mode;		// the USB personality at power-on: 0 serial, 1 network (docs/spec/usb-network.md 1)
 	uint16_t reserved1;
 	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's
 	char radio_name[SETTINGS_NAME_LEN];	// NUL padded, "" = the codeplug's callsign
@@ -158,6 +158,9 @@ typedef struct {
 	uint32_t aprsis_ip;		// server IPv4 address, 0 = off
 	uint16_t aprsis_port;		// 0 = 14580
 	uint16_t aprsis_range_km;	// the server filter "m/<km>" around us, 0 = no filter
+	// Control station mode on the USB network link (docs/spec/usb-network.md 5; appended for dispatch): the radio's
+	// address on a fixed link (the PC's is the next one), 0 = 192.168.10.1; on with net_flags SETTINGS_NET_FIXED_LINK
+	uint32_t net_link_ip;
 } settings_t;
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)
@@ -168,8 +171,10 @@ typedef struct {
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
 
-// settings_t.net_flags (the USB network personality's services, docs/spec/tftp.md)
-#define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB)
+// settings_t.net_flags (the USB network personality; 0 = as before)
+#define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)
+#define SETTINGS_NET_PASSTHROUGH	0x02u	// the PC is the endpoint of the radio's own IP data (docs/spec/usb-network.md 5.2)
+#define SETTINGS_NET_FIXED_LINK		0x04u	// the link is a fixed private pair (net_link_ip), not 12.<ID>/32 (5.3)
 // settings_t.rs_flags
 #define SETTINGS_RS_ROGER_BEEP		0x01u
 #define SETTINGS_RS_TX_INHIBIT		0x02u
@@ -182,7 +187,7 @@ typedef struct {
 #define SETTINGS_DS_RADIO_CHECK_REPLY	0x01u
 #define SETTINGS_DS_CALL_ALERT_ACK	0x02u
 #define SETTINGS_DS_LRRP_REPLY		0x04u
-#define SETTINGS_DS_SMS_ETSI		0x08u	// sms_send's default format is ETSI, else TMS
+#define SETTINGS_DS_SMS_ETSI		0x08u	// sms_send's default format is ETSI defined short data
 #define SETTINGS_DS_RADIO_CHECK_ETSI	0x10u	// our radio checks in the ETSI form (FID 0x00)
 #define SETTINGS_DS_UDPC_OFF		0x20u	// compressed UDP/IPv4 headers off (neither bit: auto)
 #define SETTINGS_DS_UDPC_ALL		0x40u	// ... for every UDP packet, the DMR application ports too
@@ -190,6 +195,7 @@ typedef struct {
 #define SETTINGS_DS_IPC_SHIFT		4
 #define SETTINGS_DS_IPC_OFF		1u
 #define SETTINGS_DS_IPC_ALL		2u
+#define SETTINGS_DS_SMS_ETSI_IP		0x80u	// sms_send's default format is ETSI IP text (neither ETSI bit: Motorola TMS)
 
 // settings_t.em_flags
 #define SETTINGS_EM_DST_PRIVATE		0x01u

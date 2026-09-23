@@ -70,7 +70,9 @@ changes have rested `SETTINGS_SAVE_DELAY_MS` (2 s), so turning the knob through 
 - The radio core, for `radio_set_settings()`: the `rs_*` fields (TOT, busy channel lockout, scan, beeps, VOX,
   battery saving, backlight times; `radio-features.md` 1). `rs_stored` 0 means the radio core's defaults.
 - The radio core's data tick, for the DMR data service (`dmr-data.md`): the `ds_*` fields (ARS server, radio
-  check reply, call alert ACK, LRRP reply). `ds_stored` 0 means the service's defaults.
+  check reply, call alert ACK, LRRP reply, the formats). `ds_stored` 0 means the service's defaults.
+- The UI and the debug link's radio op 27: `usb_mode`, `net_flags`, `net_link_ip` (`usb-network.md` 5.4); the host
+  link reads them at start and on `hostlink_settings_changed()`.
 - The UI: brightness.
 - The CPS shim: the VFO when a CPS writes a changed VFO A record (`cps-protocol.md` 2.3).
 
@@ -95,12 +97,12 @@ codeplug's callsign.
 | Group | Fields |
 |---|---|
 | position | `vfo`, `squelch`, `zone_index`, `channel`, `zone_pos` (used when the channel number is gone after a codeplug write) |
-| VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz`, `vfo_mode`, `vfo_bw`, `vfo_power`, `vfo_cc`, `vfo_ts`, tone types and values; `net_flags` sits in the VFO block's spare byte (was `reserved0`): bit 0 refuses TFTP codeplug writes (`tftp.md` 4), 0 = allowed as before |
-| preferences | `brightness`, `backlight_s`, `beeps`, `hotspot_allowed`, `master_power`, `usb_mode` |
+| VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz`, `vfo_mode`, `vfo_bw`, `vfo_power`, `vfo_cc`, `vfo_ts`, tone types and values; `net_flags` sits in the VFO block's spare byte (was `reserved0`; 0 = as before): bit 0 refuses TFTP codeplug writes (`tftp.md` 4, appended for mdnstftp), bit 1 control station passthrough, bit 2 the fixed link (`usb-network.md` 5.4, appended for dispatch) |
+| preferences | `brightness`, `backlight_s`, `beeps`, `hotspot_allowed`, `master_power`, `usb_mode` (the USB personality at power-on: 0 serial, 1 network; `usb-network.md` 1) |
 | identity | `dmr_id` (0 = the codeplug's), `radio_name[16]` ("" = the codeplug's callsign) |
 | privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (appended for dmr-voice) |
 | radio core settings | `rs_tot_s rs_tot_warn_s rs_bcl rs_flags` (roger beep, TX inhibit, scan priority, scan beep, key beep, no talk permit tone: 0 = on, as before) `rs_scan_resume rs_scan_hold_s rs_beep_level rs_scan_delay_ms rs_scan_dwell_ms rs_vox rs_vox_level rs_vox_tail_ms rs_rx_save rs_stored rs_rx_save_idle_s rs_battery_off_s rs_backlight_dim_s rs_backlight_off_s` (appended for radio-features) |
-| DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply, SMS format ETSI, radio check ETSI form, UDP compression off, UDP compression all) `ds_stored` (appended for dmr-data; the two ETSI bits for dmr-ext, 0 = as before), `ds_ip_cnf` (in the old reserved4: confirmed IP tries in bits 0-3, 0 = the default 4; bits 4-5 0 rules, 1 off, 2 all) and `ds_ip_rule[2]` (appended at the end for sap3: 0 unused, a radio ID, or 0x80000000 \| a UDP port); the two compression bits 0 = auto ([dmr-data.md](dmr-data.md) 11, 12) |
+| DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply, SMS format ETSI short data, radio check ETSI form, UDP compression off, UDP compression all, SMS format ETSI IP text) `ds_stored` (appended for dmr-data; the ETSI bits for dmr-ext and dispatch, 0 = as before: a record with neither SMS format bit sends TMS, while the default without a record is ETSI IP text, `dmr-data.md` 8), `ds_ip_cnf` (in the old reserved4: confirmed IP tries in bits 0-3, 0 = the default 4; bits 4-5 0 rules, 1 off, 2 all) and `ds_ip_rule[2]` (appended at the end for sap3: 0 unused, a radio ID, or 0x80000000 \| a UDP port); the two compression bits 0 = auto ([dmr-data.md](dmr-data.md) 11, 12) |
 | UI settings | `rs_reply_s` (the reply window in s, 0..30; `SETTINGS_UNSET8` = the codeplug's hang times; a radio core setting), `mic_gain` (0..10, default 5 = unity; applied to DMR audio), `auto_lock_s` (0 = off), `long_press_ms`, `repeat_ms` (0 = the input layer's defaults), `gps`, `pos_format`, `pos_send_s` (stored for a GPS owner, act on nothing yet) (appended for glue) |
 | DMR emergency | `em_dst em_mode em_flags` (target is a radio, ETSI alarm FID, no alert tone) `em_alarm_tries em_hot_mic_s em_stored` (appended for dmr-ext, `dmr-emergency.md` 5) |
 | hotspot CW ID | `cw_wpm cw_tone_hz` (0 = 20 wpm / 800 Hz; appended for dmr-ext) |
@@ -109,9 +111,10 @@ codeplug's callsign.
 | roaming survey | `roam_beacon_s` (the repeaters' beacon interval, 0 = none, else 10..600, default 60), `roam_beacon_len_s` (1..10, default 4), `roam_survey` (0 off, 1 synced, 2 per site; default 1), `rpt_beacon` (our repeater roles' idle beacon, default 0), `reserved6[3]` (appended for roam2, `dmr-roaming.md` 5.1; a record without them keeps these defaults) |
 | APRS | `aprs_flags aprs_flags2` (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX; iGate, iGate TX, messaging, UDT, to APRS-IS, DMR GPS Info) `aprs_region aprs_ssid aprs_freq_hz aprs_lat aprs_lon aprs_dmr_dst aprs_alt_m aprs_interval_s aprs_distance_m aprs_symbol[2] aprs_path aprs_pos_src aprs_level aprs_txdelay aprs_misc aprs_stored` and a reserved byte; taken when `aprs_stored` is 1 (appended for aprs, `aprs.md` 11) |
 | APRS-IS client | `aprsis_ip` (the server's IPv4 address, 0 = off) `aprsis_port` (0 = 14580) `aprsis_range_km` (the filter `m/<km>`, 0 = none) (appended for tcp, `tcp-services.md` 7) |
+| control station | `net_link_ip` (the radio's fixed link address, 0 = 192.168.10.1; in force with `net_flags` bit 2), 0 = off, the link by DMR ID (appended for dispatch after the APRS-IS client, `usb-network.md` 5.4) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
-payload is 228 bytes now (at most 236).
+payload is 232 bytes now (at most 236).
 
 ### 3.0 Who writes, and storage jobs
 

@@ -31,6 +31,7 @@
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
+#include "hostlink/hostlink_net.h"	// control station passthrough
 #endif
 #if CONFIG_AM_RX
 #include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
@@ -1313,6 +1314,7 @@ static void data_save_settings(uint32_t now_ms)
 				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
 				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0) |
 				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI ? SETTINGS_DS_SMS_ETSI : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP ? SETTINGS_DS_SMS_ETSI_IP : 0) |
 				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
 				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
 				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
@@ -1408,8 +1410,8 @@ static void data_init(radio_sm_t *sm)
 	// a position source
 	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
-				  .hasGps = false, .udpCompress = DMR_UDPC_AUTO, .ipConfirmed = DMR_IPC_RULES,
-				  .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
+				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 	settings_t st;
 	settings_read(&st);
 	if (st.ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
@@ -1417,7 +1419,10 @@ static void data_init(radio_sm_t *sm)
 		set.radioCheckReply = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st.ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st.ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
-		set.smsFormat = (st.ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
+		// changed, docs/spec/dmr-data.md 8)
+		set.smsFormat = (st.ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
+				(st.ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
 		set.udpCompress = (st.ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
 				  (st.ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
@@ -1452,6 +1457,10 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 		h = (h ^ vals[i]) * 16777619u;
 	}
 	c.channelKey = h;
+#if CONFIG_DMR_IP_GATEWAY
+	// Control station passthrough while the PC can take the packets (docs/spec/usb-network.md 5.2)
+	dmrDataServiceSetPassthrough(hostlink_net_passthrough_active());
+#endif
 	dmrDataServiceTick(now_ms, &c);
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {

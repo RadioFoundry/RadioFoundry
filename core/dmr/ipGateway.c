@@ -41,6 +41,7 @@ static uint8_t monitorMac[6];				// a unicast address the host doesn't have, for
 DMR_DATA_BUFFER static uint8_t tx[IPGW_MAX_FRAME];
 static uint16_t ipId = 0;
 static uint16_t serialPeerPort = 0;		// host port of the serial protocol, 0 until the host has sent to IPGW_SERIAL_PORT
+static uint32_t fixedLink = 0;			// the radio's address on a fixed link, 0 = addressed by DMR ID
 static ipGatewayLocalFn localTCP;			// the radio's own TCP, NULL without it
 static struct {
 	uint16_t port;
@@ -108,8 +109,38 @@ void ipGatewayInit(const uint8_t gatewayMac[6], const uint8_t defaultHostMac[6])
 	monitorMac[0] = 0x0A;// locally administered, unicast
 }
 
+bool ipGatewaySetFixedLink(uint32_t radioIp)
+{
+	uint8_t last = radioIp & 0xFF;
+	bool usable = (radioIp != 0) && (last >= 1) && (last <= 253) && ((radioIp >> 28) < 0xE) && ((radioIp >> 24) != 127) &&
+			!IN_RANGE(INDIVIDUAL, radioIp) && !IN_RANGE(MULTICAST, radioIp)
+#if defined(IPGW_GROUP_NET)
+			&& !IN_RANGE(GROUP, radioIp)
+#endif
+			;
+
+	fixedLink = usable ? radioIp : 0;
+	return usable || (radioIp == 0);
+}
+
+uint32_t ipGatewayFixedLink(void)
+{
+	return fixedLink;
+}
+
+// The host's broadcast address: on a fixed link the limited broadcast, as on a /31 or /32
+static uint32_t broadcastIP(void)
+{
+	return (fixedLink != 0) ? 0xFFFFFFFFu : IPGW_BROADCAST_IP;
+}
+
 uint32_t ipGatewayHostIP(void)
 {
+	if (fixedLink != 0)
+	{
+		return fixedLink + 1;
+	}
+
 	uint32_t id = ipGatewayRadioId();
 
 	uint32_t ip = ADDRESS(INDIVIDUAL, id);
@@ -123,6 +154,10 @@ uint32_t ipGatewayHostIP(void)
 
 uint32_t ipGatewayRadioIP(void)
 {
+	if (fixedLink != 0)
+	{
+		return fixedLink;
+	}
 #if IPGW_POINT_TO_POINT
 	uint32_t hostIp = ipGatewayHostIP();
 
@@ -173,12 +208,10 @@ static void handleARP(const uint8_t *frame, const uint8_t *arp)
 	{
 		return;
 	}
-#if (IPGW_LINK_PREFIX == 31)
-	if (targetIp != ipGatewayRadioIP())
+	if (((IPGW_LINK_PREFIX == 31) || (fixedLink != 0)) && (targetIp != ipGatewayRadioIP()))
 	{
 		return;// everything else is routed through the radio
 	}
-#endif
 
 	memcpy(hostMac, &arp[8], 6);
 
@@ -232,15 +265,19 @@ static uint8_t *putRoutes(uint8_t *o, uint8_t code, uint32_t router)
 
 	*o++ = code;
 	start = o++;
-#if (IPGW_LINK_PREFIX == 32)
-	o = putRoute(o, router, 32, 0);
-#endif
-#if IPGW_POINT_TO_POINT
-	o = putRoute(o, IPGW_INDIVIDUAL_NET, IPGW_INDIVIDUAL_PREFIX, router);
-#endif
+	// A fixed link: the radio is on the host's /24, so only the ranges go through it
+	if ((IPGW_LINK_PREFIX == 32) && (fixedLink == 0))
+	{
+		o = putRoute(o, router, 32, 0);
+	}
+	if (IPGW_POINT_TO_POINT || (fixedLink != 0))
+	{
+		o = putRoute(o, IPGW_INDIVIDUAL_NET, IPGW_INDIVIDUAL_PREFIX, router);
+	}
 	o = putRoute(o, IPGW_MULTICAST_NET, IPGW_MULTICAST_PREFIX, router);
 #if defined(IPGW_GROUP_NET)
-	if ((IPGW_LINK_PREFIX > IPGW_GROUP_PREFIX) || ((IPGW_GROUP_NET & IPGW_NETMASK) != (IPGW_INDIVIDUAL_NET & IPGW_NETMASK)))
+	if ((fixedLink != 0) || (IPGW_LINK_PREFIX > IPGW_GROUP_PREFIX) ||
+			((IPGW_GROUP_NET & IPGW_NETMASK) != (IPGW_INDIVIDUAL_NET & IPGW_NETMASK)))
 	{
 		o = putRoute(o, IPGW_GROUP_NET, IPGW_GROUP_PREFIX, router);// not on the link
 	}
@@ -317,7 +354,7 @@ static void handleDHCP(const uint8_t *bootp, int length)
 	if (!nak)
 	{
 		o = putOption(o, 51, 4, DHCP_LEASE_SECONDS);
-		o = putOption(o, 1, 4, IPGW_NETMASK);
+		o = putOption(o, 1, 4, (fixedLink != 0) ? IPGW_FIXED_NETMASK : IPGW_NETMASK);
 		o = putRoutes(o, 121, radioIp);
 		o = putRoutes(o, 249, radioIp);
 	}
@@ -447,7 +484,8 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 	bool group = true;
 	uint32_t id;
 
-	if ((dst == IPGW_ALL_CALL_IP) || (dst == IPGW_BROADCAST_IP) || (dst == 0xFFFFFFFF))
+	if ((dst == IPGW_ALL_CALL_IP) || (dst == IPGW_BROADCAST_IP) || (dst == 0xFFFFFFFF) ||
+			((fixedLink != 0) && (dst == (fixedLink | ~IPGW_FIXED_NETMASK))))
 	{
 		if ((ip[9] != IP_PROTO_UDP) || (((dstPort < DMR_APP_PORT_FIRST) || (dstPort > DMR_APP_PORT_LAST)) && (dstPort != IPGW_RAW_PORT)))
 		{
@@ -540,7 +578,7 @@ static bool deliver(bool group, uint32_t dst, uint32_t src, uint8_t protocol, in
 
 	if (dst == IPGW_ALL_CALL_ID)
 	{
-		dstIp = IPGW_BROADCAST_IP;
+		dstIp = broadcastIP();
 		dstMac = BROADCAST_MAC;
 	}
 	else if (group)
@@ -556,7 +594,12 @@ static bool deliver(bool group, uint32_t dst, uint32_t src, uint8_t protocol, in
 		{
 			return true;
 		}
-		dstMac = (dstIp == ipGatewayHostIP()) ? hostMac : monitorMac;
+		dstMac = monitorMac;
+		if ((dstIp == ADDRESS(INDIVIDUAL, ipGatewayRadioId())) && (ipGatewayHostIP() != 0))
+		{
+			dstIp = ipGatewayHostIP();// to this radio: the host (its own address, or the fixed link's)
+			dstMac = hostMac;
+		}
 	}
 
 	if (protocol == IP_PROTO_UDP)
@@ -621,7 +664,7 @@ bool ipGatewaySerialOut(const uint8_t *data, int length)
 
 bool ipGatewayDeliverMonitor(const uint8_t *record, int length)
 {
-	return sendUDP(BROADCAST_MAC, ipGatewayRadioIP(), IPGW_BROADCAST_IP, IPGW_MONITOR_PORT, IPGW_MONITOR_PORT, record, length);
+	return sendUDP(BROADCAST_MAC, ipGatewayRadioIP(), broadcastIP(), IPGW_MONITOR_PORT, IPGW_MONITOR_PORT, record, length);
 }
 
 void ipGatewaySetTCP(ipGatewayLocalFn fn)

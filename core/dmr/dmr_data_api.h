@@ -30,8 +30,9 @@ typedef enum {
 } dmr_req_state_t;
 
 typedef enum {
-	DMR_SMS_FORMAT_TMS = 0,		// Motorola TMS (IP / UDP 4007)
+	DMR_SMS_FORMAT_TMS = 0,		// Motorola TMS (IP / UDP 4007; CONFIG_DMR_TMS)
 	DMR_SMS_FORMAT_ETSI = 1,	// ETSI defined short data, ISO 8859-1 text (docs/spec/dmr-data.md 5.2)
+	DMR_SMS_FORMAT_ETSI_IP = 2,	// ETSI IP text, UTF-16BE on UDP 5016 (docs/spec/dmr-data.md 5.3): the default
 	DMR_SMS_FORMAT_DEFAULT = 0xFF,	// sms_send only: the radio's setting (dmrDataSettings_t.smsFormat)
 } dmr_sms_format_t;
 
@@ -46,10 +47,14 @@ void sms_inbox_mark_read(int i);
 // Delete message i (0 = newest): the older ones move up. False when there is none
 bool sms_inbox_delete(int i);
 // Queue a message (group: to a talkgroup, no ACK). False when the mailbox is full (one SMS at a time) or the text is
-// empty. The text is cut at DMR_DATA_TEXT_MAX characters (Latin-1; ETSI: DMR_ETSI_TEXT_MAX). format: TMS, ETSI, or
-// DEFAULT for the radio's setting; a reply uses the message's own dmrDataMessage_t.format
+// empty. The text is cut at DMR_DATA_TEXT_MAX characters (Latin-1; ETSI: DMR_ETSI_TEXT_MAX). format: ETSI_IP, ETSI, TMS
+// (refused when CONFIG_DMR_TMS is off), or DEFAULT for the radio's setting; a reply uses the message's own
+// dmrDataMessage_t.format
 bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dmr_sms_format_t format);
 dmr_req_state_t sms_send_state(void);
+// The last message finished OK was acknowledged by the receiver (false: sent without a confirmation: to a group, or in
+// a format without one, ETSI IP text)
+bool sms_send_confirmed(void);
 
 // --- CSBK signaling ---
 bool dmr_signal_call_alert(uint32_t dst);
@@ -75,6 +80,7 @@ static inline bool sms_inbox_delete(int i) { (void)i; return false; }
 static inline bool sms_send(uint32_t dst, bool group, const char *text, bool ack, dmr_sms_format_t f)
 { (void)dst; (void)group; (void)text; (void)ack; (void)f; return false; }
 static inline dmr_req_state_t sms_send_state(void) { return DMR_REQ_IDLE; }
+static inline bool sms_send_confirmed(void) { return false; }
 static inline bool dmr_signal_call_alert(uint32_t dst) { (void)dst; return false; }
 static inline bool dmr_signal_radio_check(uint32_t dst) { (void)dst; return false; }
 static inline dmr_req_state_t dmr_signal_state(uint8_t *kind, uint32_t *dst)

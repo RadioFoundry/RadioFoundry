@@ -111,6 +111,14 @@ static void hotspot_section(dl_text_t *t)
 		(board.netif != NULL) && board.netif->up());
 #if CONFIG_DMR_IP_GATEWAY
 	hostlink_net_stats_t ns;
+	settings_t st;
+
+	settings_read(&st);
+	// Control station mode (docs/spec/usb-network.md 5): the stored settings and what is in force
+	dl_text(t, "usb.boot_network=%u\nnet.passthrough=%u\nnet.passthrough_active=%u\nnet.fixed_link=%u\n",
+		st.usb_mode == 1, (st.net_flags & SETTINGS_NET_PASSTHROUGH) != 0, hostlink_net_passthrough_active(),
+		(st.net_flags & SETTINGS_NET_FIXED_LINK) != 0);
+	dl_text(t, "net.link_ip=%08x\nnet.link_in_force=%08x\n", (unsigned)st.net_link_ip, (unsigned)ipGatewayFixedLink());
 
 	hostlink_net_stats(&ns);
 	dl_text(t, "net.host_ip=%08x\nnet.radio_ip=%08x\n", (unsigned)ipGatewayHostIP(), (unsigned)ipGatewayRadioIP());

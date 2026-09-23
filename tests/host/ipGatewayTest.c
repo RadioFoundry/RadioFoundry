@@ -530,6 +530,137 @@ static void testIdChange(void)
 	radioId = RADIO_ID;
 }
 
+// A DHCP request of the host's: the reply's BOOTP part (NULL when there was none)
+static const uint8_t *dhcpExchange(uint8_t type, uint32_t requested, int *rlen)
+{
+	uint8_t bootp[300] = { 1, 1, 6, 0, 0x12, 0x34, 0x56, 0x78 };
+	uint8_t f[400];
+
+	memcpy(&bootp[28], HOST_MAC, 6);
+	bootp[236] = 0x63; bootp[237] = 0x82; bootp[238] = 0x53; bootp[239] = 0x63;
+	bootp[240] = 53; bootp[241] = 1; bootp[242] = type;
+	bootp[243] = 50; bootp[244] = 4;
+	for (int i = 0; i < 4; i++) bootp[245 + i] = requested >> (24 - 8 * i);
+	bootp[249] = 255;
+	in(f, hostUdp(f, BCAST_MAC, 0, 0xFFFFFFFF, 68, 67, bootp, sizeof(bootp)));
+	*rlen = lastLength - 42;
+	return (framesSent == 1) ? &lastFrame[42] : NULL;
+}
+
+// Control station mode's fixed link (docs/spec/usb-network.md 5.3): 192.168.10.1 the radio, .2 the host, a /24, the
+// same routes through the radio; packets to our own DMR ID reach the host at .2
+static void testFixedLink(void)
+{
+	const uint32_t radio = IPGW_FIXED_LINK_DEFAULT, host = IPGW_FIXED_LINK_DEFAULT + 1;
+	uint8_t f[200];
+	int rlen;
+
+	// Addresses that can't be used: refused, the DMR ID addressing stays
+	CHECK(!ipGatewaySetFixedLink(0xE0000001u) && !ipGatewaySetFixedLink(IPGW_INDIVIDUAL_NET | 5) &&
+		  !ipGatewaySetFixedLink(0xC0A80AFEu) && !ipGatewaySetFixedLink(0xC0A80A00u) && !ipGatewaySetFixedLink(0x7F000001u));
+	CHECK((ipGatewayFixedLink() == 0) && (ipGatewayHostIP() == HOST_IP));
+
+	CHECK(ipGatewaySetFixedLink(radio));
+	CHECK((ipGatewayRadioIP() == radio) && (ipGatewayHostIP() == host) && (ipGatewayFixedLink() == radio));
+
+	// DHCP: the fixed address, a /24, the radio as server; the individual and multicast ranges through it, no route to
+	// the radio itself (it's on the link) and no default route
+	const uint8_t *r = dhcpExchange(1, 0, &rlen);
+	CHECK(r != NULL);
+	if (r != NULL)
+	{
+		const uint8_t *o = dhcpOption(r, rlen, 53);
+		CHECK(o && (o[2] == 2) && (get32(&r[16]) == host));
+		o = dhcpOption(r, rlen, 1);
+		CHECK(o && (get32(&o[2]) == IPGW_FIXED_NETMASK));
+		o = dhcpOption(r, rlen, 54);
+		CHECK(o && (get32(&o[2]) == radio));
+		o = dhcpOption(r, rlen, 121);
+		bool individual = false, multicast = false;
+		int routes = 0;
+		for (int i = 2; o && (i < 2 + o[1]);)
+		{
+			int prefix = o[i], octets = (prefix + 7) / 8;
+			uint32_t net = 0;
+			for (int k = 0; k < octets; k++) net |= (uint32_t)o[i + 1 + k] << (24 - 8 * k);
+			CHECK(get32(&o[i + 1 + octets]) == radio);
+			individual |= (prefix == IPGW_INDIVIDUAL_PREFIX) && (net == IPGW_INDIVIDUAL_NET);
+			multicast |= (prefix == IPGW_MULTICAST_PREFIX) && (net == IPGW_MULTICAST_NET);
+			i += 1 + octets + 4;
+			routes++;
+		}
+#if defined(IPGW_GROUP_NET)
+		CHECK(individual && multicast && (routes == 3));
+#else
+		CHECK(individual && multicast && (routes == 2));
+#endif
+		CHECK(dhcpOption(r, rlen, 3) == NULL);
+	}
+	r = dhcpExchange(3, host, &rlen);
+	CHECK(r && (dhcpOption(r, rlen, 53)[2] == 5));
+	r = dhcpExchange(3, HOST_IP, &rlen);// renewing the address by DMR ID: refused, the host starts again
+	CHECK(r && (dhcpOption(r, rlen, 53)[2] == 6));
+
+	// ARP: the radio's address only
+	uint8_t a[42] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	memcpy(a + 6, HOST_MAC, 6); a[12] = 0x08; a[13] = 0x06;
+	uint8_t arp[28] = { 0, 1, 8, 0, 6, 4, 0, 1 };
+	memcpy(arp + 8, HOST_MAC, 6);
+	put32(&arp[14], host);
+	put32(&arp[24], radio + 4);
+	memcpy(a + 14, arp, 28);
+	in(a, 42);
+	CHECK(framesSent == 0);
+	put32(&a[38], radio);
+	in(a, 42);
+	CHECK((framesSent == 1) && (lastFrame[21] == 2) && (get32(&lastFrame[28]) == radio));
+
+	// To the air from the fixed address; the old one isn't the host's any more
+	const uint8_t text[] = { 0x00, 'h', 0x00, 'i' };
+	air.calls = 0;
+	in(f, hostUdp(f, GW_MAC, host, IPGW_INDIVIDUAL_NET | 235, 5016, 5016, text, sizeof(text)));
+	CHECK((air.calls == 1) && !air.group && (air.dst == 235) && (air.dstPort == 5016));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_INDIVIDUAL_NET | 235, 5016, 5016, text, sizeof(text)));
+	CHECK(air.calls == 1);
+	in(f, hostUdp(f, BCAST_MAC, host, radio | 0xFF, 4005, 4005, text, sizeof(text)));// the link's broadcast: all call
+	CHECK((air.calls == 2) && air.group && (air.dst == 0xFFFFFF));
+
+	// The serial protocol at the radio's fixed address
+	serial.calls = 0;
+	in(f, hostUdp(f, GW_MAC, host, radio, 3340, IPGW_SERIAL_PORT, text, sizeof(text)));
+	CHECK(serial.calls == 1);
+	CHECK(ipGatewaySerialOut(text, sizeof(text)) && (get32(&lastFrame[26]) == radio) && (get32(&lastFrame[30]) == host));
+
+	// From the air: to our ID reaches the host at its fixed address (UDP checksum redone: tshark checks the pcap)
+	const uint8_t report[] = { 0x0D, 0x0A, 0x22, 0x04, 0x00, 0x00, 0x00, 0x01, 0x66, 0x10, 0x23, 0x45 };
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, 4001, 4001, report, sizeof(report)));
+	CHECK((memcmp(lastFrame, HOST_MAC, 6) == 0) && (get32(&lastFrame[30]) == host));
+	CHECK(get32(&lastFrame[26]) == (IPGW_INDIVIDUAL_NET | 235));
+	CHECK(ipGatewayDeliverUDP(false, 236, 235, 4001, 4001, report, sizeof(report)));// between other radios
+	CHECK((memcmp(lastFrame, HOST_MAC, 6) != 0) && (get32(&lastFrame[30]) == (IPGW_INDIVIDUAL_NET | 236)));
+	CHECK(ipGatewayDeliverUDP(true, 0xFFFFFF, 235, 4007, 4007, report, sizeof(report)));// all call
+	CHECK(get32(&lastFrame[30]) == 0xFFFFFFFFu);
+	CHECK(ipGatewayDeliverMonitor(report, 4) && (get32(&lastFrame[26]) == radio) && (get32(&lastFrame[30]) == 0xFFFFFFFFu));
+
+	// Ping the radio
+	uint8_t p[100];
+	memcpy(p, GW_MAC, 6); memcpy(p + 6, HOST_MAC, 6); p[12] = 0x08; p[13] = 0x00;
+	uint8_t *ip = p + 14, *ic = ip + 20;
+	memset(ip, 0, 20);
+	ip[0] = 0x45; ip[3] = 20 + 8; ip[8] = 64; ip[9] = 1;
+	put32(&ip[12], host);
+	put32(&ip[16], radio);
+	uint16_t c = sum16(ip, 20, 0); ip[10] = c >> 8; ip[11] = c;
+	memset(ic, 0, 8); ic[0] = 8;
+	c = sum16(ic, 8, 0); ic[2] = c >> 8; ic[3] = c;
+	in(p, 14 + 28);
+	CHECK((framesSent == 1) && (lastFrame[34] == 0) && (get32(&lastFrame[26]) == radio));
+
+	// Back to the addressing by DMR ID
+	CHECK(ipGatewaySetFixedLink(0));
+	CHECK((ipGatewayFixedLink() == 0) && (ipGatewayHostIP() == HOST_IP));
+}
+
 int main(void)
 {
 	uint32_t header[6] = { 0xA1B2C3D4, 0x00040002, 0, 0, 65535, 1 };// pcap, Ethernet
@@ -548,6 +679,7 @@ int main(void)
 	testOtherProtocols();
 	testRaw();
 	testIdChange();
+	testFixedLink();
 
 	fclose(pcap);
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);

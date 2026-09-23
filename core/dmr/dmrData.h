@@ -81,6 +81,7 @@ typedef struct
 #define DMR_UDP_PORT_LRRP			4001
 #define DMR_UDP_PORT_ARS			4005
 #define DMR_UDP_PORT_TMS			4007
+#define DMR_UDP_PORT_ETSI_TEXT		5016		// ETSI IP text (TS 102 361-3 5.7.1; compressed port ID 1)
 
 typedef struct
 {
@@ -174,8 +175,6 @@ void dmrDataGetIpTxStats(dmrDataIpTxStats_t *stats);
 void dmrDataResetIpTxStats(void);
 // Count a packet sent: its user data (as dmrDataEncodeIP gave it) and the block type it goes in
 void dmrDataCountIpTx(uint8_t sap, const uint8_t *pdu, int length, uint8_t blockType, bool confirmed);
-int dmrDataBuildTMS(bool group, uint32_t dst, uint32_t src, const char *text, uint8_t seq, bool ackRequested,
-						uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
 int dmrDataBuildResponseAck(uint8_t sap, uint32_t dst, uint32_t src, uint8_t sendSeq, dmrBurst_t *out);
 // The ACK class / type of a response packet (dmrDataPacket_t.response): class 0, type 1
 #define DMR_RESPONSE_IS_ACK(r)		(((r) & 0xF8) == 0x08)
@@ -208,8 +207,12 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 						uint8_t ns, bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts);
 // The number of blocks a confirmed packet of length octets takes (0: more than DMR_CONFIRMED_MAX_BLOCKS)
 int dmrDataConfirmedBlocks(int length, uint8_t blockType);
+#if CONFIG_DMR_TMS	// Motorola TMS format support (docs/spec/dmr-data.md 5.1)
+int dmrDataBuildTMS(bool group, uint32_t dst, uint32_t src, const char *text, uint8_t seq, bool ackRequested,
+						uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
 // seq: the 7 bit sequence number of the message being acknowledged
 int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, dmrBurst_t *out, int maxBursts);
+#endif
 
 // A position for the location reports, as NMEA gives it
 typedef struct
@@ -259,6 +262,17 @@ int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *tex
 // The text of a received defined short data (any of the text DD formats above) or UDT text packet, as Latin-1 ('?'
 // for characters outside it). False when the packet isn't one, or its format isn't text
 bool dmrDataDecodeEtsiText(const dmrDataPacket_t *packet, char *text, int textSize);
+// ETSI IP text (TS 102 361-3 5.7.1): Latin-1 text (NUL terminated, DMR_ETSI_TEXT_MAX characters at most) as UTF-16BE
+// in UDP from and to DMR_UDP_PORT_ETSI_TEXT, full IPv4 header (SAP 4). 0 if it doesn't fit or the text is empty
+// The same text as the UDP datagram (header, checksum left 0 for the IPv4 layer, then the payload) into l4: its
+// length, 0 if the text is empty. The data service sends an individual one as confirmed data with it
+#define DMR_ETSI_TEXT_UDP_MAX			(8 + (2 * DMR_ETSI_TEXT_MAX))
+int dmrDataIPTextUDP(const char *text, uint8_t l4[DMR_ETSI_TEXT_UDP_MAX]);
+int dmrDataBuildIPText(bool group, uint32_t dst, uint32_t src, const char *text, uint8_t blockType, int preambles,
+						dmrBurst_t *out, int maxBursts);
+// The text of an ETSI IP text datagram's payload (UTF-16BE; a byte order mark is honored) as Latin-1 ('?' outside
+// it). False when nothing printable is in it
+bool dmrDataDecodeIPText(const uint8_t *payload, int length, char *text, int textSize);
 
 // RX
 void dmrDataRxReset(void);
@@ -301,7 +315,9 @@ typedef struct
 	char    text[160];
 } dmrDataTMS_t;
 
+#if CONFIG_DMR_TMS
 bool dmrDataDecodeTMS(const uint8_t *payload, int length, dmrDataTMS_t *tms);
+#endif
 
 // Motorola ARS (Automatic Registration Service, UDP 4005): the radio registers with a presence server, the "ARS radio
 // ID". PDU types (the low 4 bits of the header octet)
