@@ -83,6 +83,12 @@ NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/
 NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
 NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
 APP_SRC += $(sort $(NET_SRC-y))
+# Their text formatting (key=value views, JSON, protocol lines) is the debug link's dl_fmt.c, built here without it
+ifneq ($(NET_SRC-y),)
+ifneq ($(CONFIG_DEBUGLINK),y)
+APP_SRC += core/debuglink/dl_fmt.c
+endif
+endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 
