@@ -88,7 +88,7 @@ header lines are skipped; a request not complete within 10 s is reset. Responses
 
 | Path | Response |
 |---|---|
-| `/` | a page of about 450 bytes from flash: the status as a table and the screen, refreshed every 3 s |
+| `/` and `/<file>` | the static files (below); `/` is `index.html`, the status as a table and the screen, refreshed every 3 s |
 | `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open` |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
@@ -96,7 +96,17 @@ header lines are skipped; a request not complete within 10 s is reset. Responses
 | `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
 | anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
-Bodies stream into TCP as its buffer frees up: the page from flash and the screen straight from the frame buffer;
+Static files: every file in `core/net/http_assets/` (html, css, js, svg, ...: add one there and it is served at
+`/<name>`, the type from its extension) is put into a table at build time by `tools/gen_http_assets.py` (run by make
+into the build's `gen/http_assets_gen.h`: path, Content-Type, bytes, length, gzip flag). With `CONFIG_NET_HTTP_GZIP`
+(the default with `CONFIG_NET_HTTP`) the files are stored gzip compressed (level 9, mtime 0: the same bytes on every
+build machine) and served with `Content-Encoding: gzip`; off, stored and served as they are. A gzip response goes
+whatever the request's `Accept-Encoding` says: a request without the header accepts any coding (RFC 9110 12.5.3),
+every browser takes gzip, and keeping a plain copy too would cost the flash the compression saves; `curl` needs
+`--compressed`. `index.html` today: 498 bytes, 360 gzip compressed. Host test: `httpAssetsTest` (the table, gzip and
+plain, decompresses to the sources), `netSvcTest` (the bytes and headers served).
+
+Bodies stream into TCP as its buffer frees up: the files from flash and the screen straight from the frame buffer;
 JSON is rendered once into a shared 1.5 KB buffer (a view section's text into its upper part, the JSON written from
 the start never overtakes it), and a second JSON request waits until the first response is all in TCP's buffer.
 

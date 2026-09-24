@@ -15,6 +15,8 @@
 #include "settings/settings.h"
 #include "aprs/aprs.h"
 #include "net/aprsis.h"
+#include "net/http_assets.h"
+#include "http_assets_gen.h"	// generated here by the Makefile (gzip, as the firmware's default)
 
 // ---- fake APRS engine (aprs.h / aprs_host.h) ----
 static bool kiss_on = true;
@@ -167,12 +169,19 @@ static void test_http(void)
 {
 	static peer_t a, b;
 
-	// The page
+	// The page: the asset table's bytes as they are, gzip compressed with Content-Encoding (httpAssetsTest checks the
+	// table against core/net/http_assets)
 	CHECK(http_get(&a, 51000, "GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n") > 0);
 	CHECK(strncmp((char *)a.rx, "HTTP/1.0 200 OK\r\n", 17) == 0 && strstr((char *)a.rx, "Content-Type: text/html"));
-	CHECK(a.fin && strncmp(body_of(&a), "<!DOCTYPE html>", 15) == 0 && strstr(body_of(&a), "</script>"));
+	CHECK(strcmp(http_assets[0].path, "/") == 0 && http_assets[0].gzip &&
+	      strstr((char *)a.rx, "\r\nContent-Encoding: gzip\r\n"));
+	int body_at = (int)(body_of(&a) - (const char *)a.rx);
+	CHECK(a.fin && (a.rxn - body_at) == (int)http_assets[0].length &&
+	      memcmp(a.rx + body_at, http_assets[0].data, http_assets[0].length) == 0 && a.rx[body_at] == 0x1F);
 	const char *cl = strstr((char *)a.rx, "Content-Length: ");
-	CHECK(cl && atoi(cl + 16) == (int)strlen(body_of(&a)));
+	CHECK(cl && atoi(cl + 16) == (int)http_assets[0].length);
+	// Not a file: 404
+	CHECK(http_get(&a, 51020, "GET /index.htm HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 404 "));
 
 	// HEAD: the header only
 	CHECK(http_get(&a, 51001, "HEAD / HTTP/1.0\r\n\r\n") > 0);

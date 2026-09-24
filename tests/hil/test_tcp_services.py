@@ -9,6 +9,7 @@ Nothing is transmitted without --allow-rf: the KISS frame sent has a foreign sou
 refuses (counted, not sent); rigctld only reads and sets the VFO (the radio's channel / VFO state is restored); PTT is
 not touched. With --allow-rf the KISS test also sends one frame from the radio's own callsign (an APRS RF burst on
 the APRS frequency at the radio's current power)."""
+import gzip
 import ipaddress
 import json
 import os
@@ -87,7 +88,10 @@ def net(radio, request):
 
 def _get(ip, path, timeout=10):
     with urllib.request.urlopen(f"http://{ip}{path}", timeout=timeout) as r:
-        return r.status, r.headers.get("Content-Type", ""), r.read()
+        body = r.read()
+        if r.headers.get("Content-Encoding", "") == "gzip":     # the static files (CONFIG_NET_HTTP_GZIP)
+            body = gzip.decompress(body)
+        return r.status, r.headers.get("Content-Type", ""), body
 
 
 def _net_view(link):

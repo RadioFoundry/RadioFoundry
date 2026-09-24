@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// An HTTP/1.0 status server on port 80 (RFC 1945; docs/spec/tcp-services.md 5): one small page, the radio's
-// state as JSON, the debug link's view sections as JSON, the screen as a BMP. GET and HEAD, one request per
+// An HTTP/1.0 status server on port 80 (RFC 1945; docs/spec/tcp-services.md 5): static files (http_assets.h), the
+// radio's state as JSON, the debug link's view sections as JSON, the screen as a BMP. GET and HEAD, one request per
 // connection (Connection: close), no keep-alive, no chunking. Responses are streamed into TCP as its buffer frees up:
-// the page from flash, the screen straight from the frame buffer, JSON from one shared buffer (a second JSON request
+// the files from flash, the screen straight from the frame buffer, JSON from one shared buffer (a second JSON request
 // waits for it).
 #include "config.h"
 #if CONFIG_NET_HTTP	// the whole file
@@ -21,13 +21,15 @@
 #if CONFIG_NET_APRSIS
 #include "net/aprsis.h"
 #endif
+#include "net/http_assets.h"
+#include "http_assets_gen.h"	// the build's gen directory: core/net/http_assets/* (tools/gen_http_assets.py)
 
 #ifndef ODR_GIT
 #define ODR_GIT "unknown"
 #endif
 
 #define LINE_MAX	96	// request line ("GET /api/view?section=dmr_data_stats HTTP/1.1" and room)
-#define HDR_MAX		160
+#define HDR_MAX		192	// the longest header: an asset's, with Content-Encoding
 #define BUF_MAX		1536	// JSON bodies; a view section's text is rendered into its upper part first
 #define VIEW_AT		512	// where the section's text goes (the JSON written from 0 never catches up with it)
 #define REQ_TIMEOUT_MS	10000u
@@ -58,13 +60,6 @@ static int buf_owner = -1;
 static struct {
 	uint32_t requests, ok, not_found, bad, busy_waits;
 } st;
-
-static const char page[] =
-	"<!DOCTYPE html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>OpenDigitalRadio"
-	"</title><style>body{font:15px sans-serif}img{width:320px;image-rendering:pixelated}</style><img id=s>"
-	"<table id=t></table><script>function u(){fetch('/status').then(r=>r.json()).then(j=>{t.textContent='';"
-	"for(const k in j){const r=t.insertRow();r.insertCell().textContent=k;r.insertCell().textContent="
-	"JSON.stringify(j[k])}s.src='/api/screen.bmp?'+Date.now()})}u();setInterval(u,3000)</script>";
 
 static void put16le(uint8_t *p, uint32_t v)
 {
@@ -240,14 +235,14 @@ static const char *reason(int code)
 	}
 }
 
-static void respond(int c, int code, const char *type, uint8_t src, const void *body, uint32_t len)
+static void respond_enc(int c, int code, const char *type, uint8_t src, const void *body, uint32_t len, bool gz)
 {
 	hconn_t *h = &hc[c];
 
 	h->hlen = (uint16_t)dl_fmt(h->hdr, sizeof(h->hdr),
-				   "HTTP/1.0 %d %s\r\nContent-Type: %s\r\nContent-Length: %u\r\nConnection: close\r\n"
+				   "HTTP/1.0 %d %s\r\nContent-Type: %s\r\n%sContent-Length: %u\r\nConnection: close\r\n"
 				   "Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n\r\n",
-				   code, reason(code), type, (unsigned)len);
+				   code, reason(code), type, gz ? "Content-Encoding: gzip\r\n" : "", (unsigned)len);
 	h->hoff = 0;
 	h->src = src;
 	h->body = body;
@@ -261,6 +256,11 @@ static void respond(int c, int code, const char *type, uint8_t src, const void *
 	} else {
 		st.bad++;
 	}
+}
+
+static void respond(int c, int code, const char *type, uint8_t src, const void *body, uint32_t len)
+{
+	respond_enc(c, code, type, src, body, len, false);
 }
 
 static void fail(int c, int code)
@@ -360,9 +360,14 @@ static void dispatch(int c)
 	if (query != NULL) {
 		*query++ = '\0';
 	}
-	if (strcmp(path, "/") == 0) {
-		respond(c, 200, "text/html; charset=utf-8", SRC_MEM, page, sizeof(page) - 1u);
-		return;
+	// The static files, gzip compressed with CONFIG_NET_HTTP_GZIP: sent so whatever the request's Accept-Encoding
+	// (without one any coding is acceptable, RFC 9110 12.5.3; every browser takes gzip; curl needs --compressed)
+	for (int i = 0; i < HTTP_ASSET_COUNT; i++) {
+		if (strcmp(path, http_assets[i].path) == 0) {
+			respond_enc(c, 200, http_assets[i].type, SRC_MEM, http_assets[i].data, http_assets[i].length,
+				    http_assets[i].gzip != 0);
+			return;
+		}
 	}
 	if (strcmp(path, "/api/screen.bmp") == 0) {
 		if (!screen_ok()) {

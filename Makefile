@@ -137,6 +137,13 @@ $(shell echo '$(ODR_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(ODR_VERSI
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l odr_about.h $(APP_SRC) 2>/dev/null))
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/odr_about.h | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
+# The HTTP status server's static files (core/net/http_assets/*, tools/gen_http_assets.py): a table in the gen
+# directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
+ifeq ($(CONFIG_NET_HTTP),y)
+HTTP_ASSETS := $(sort $(wildcard core/net/http_assets/*))
+$(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)),--gzip) $(BUILD)/gen/http_assets_gen.h \
+	$(HTTP_ASSETS) | grep -q changed && rm -f $(BUILD)/core/net/http.o)
+endif
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version

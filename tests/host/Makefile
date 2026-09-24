@@ -105,6 +105,7 @@ endif
 
 clean:
 	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert
+	rm -rf gen
 	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTest.expert
 	rm -rf *.dSYM out
 
@@ -623,8 +624,8 @@ NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE
            $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c
 TESTS   += netSvcTest
 
-netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -o $@ $(NETSVC)
+netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h gen/gz/http_assets_gen.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -o $@ $(NETSVC)
 
 run: run-netsvc
 run-netsvc: netSvcTest
@@ -656,3 +657,28 @@ else
 	@echo "# snmp_peer_check skipped (no python3)"
 endif
 .PHONY: run-snmp
+
+# The HTTP status server's asset table (tools/gen_http_assets.py), gzip (CONFIG_NET_HTTP_GZIP) and plain, as the
+# firmware compiles it: every entry decompresses (or is) its file in core/net/http_assets, at its path, with its type
+HTTP_ASSETS := $(sort $(wildcard $(ROOT)/core/net/http_assets/*))
+TESTS   += httpAssetsTest httpAssetsTestPlain
+
+gen/gz/http_assets_gen.h: $(HTTP_ASSETS) $(ROOT)/tools/gen_http_assets.py
+	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(HTTP_ASSETS) > /dev/null
+	@touch $@
+gen/plain/http_assets_gen.h: $(HTTP_ASSETS) $(ROOT)/tools/gen_http_assets.py
+	@python3 -I $(ROOT)/tools/gen_http_assets.py $@ $(HTTP_ASSETS) > /dev/null
+	@touch $@
+httpAssetsTest: httpAssetsTest.c $(CORE)/net/http_assets.h gen/gz/http_assets_gen.h
+	$(CC) $(CFLAGS) -Igen/gz -o $@ httpAssetsTest.c
+httpAssetsTestPlain: httpAssetsTest.c $(CORE)/net/http_assets.h gen/plain/http_assets_gen.h
+	$(CC) $(CFLAGS) -Igen/plain -o $@ httpAssetsTest.c
+
+run: run-httpassets
+run-httpassets: httpAssetsTest httpAssetsTestPlain
+	@mkdir -p out/http_gz out/http_plain
+	./httpAssetsTest out/http_gz
+	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_gz $(HTTP_ASSETS)
+	./httpAssetsTestPlain out/http_plain
+	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_plain $(HTTP_ASSETS)
+.PHONY: run-httpassets
