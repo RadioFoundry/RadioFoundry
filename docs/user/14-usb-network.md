@@ -111,7 +111,8 @@ curl "http://12.47.82.51/api/aprsis?server=off"   # stop
 ```
 
 The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
-USB** and "to APRS-IS" are on (`tools/odr_debug.py aprs set to_is 1`). The MD-380 build has none of these services.
+USB** and "to APRS-IS" are on (`tools/odr_debug.py aprs set to_is 1`). The MD-380 has all of these services, but no MMDVM hotspot mode (no room
+for it).
 ## Finding the radio by name
 
 The radio answers Multicast DNS (Bonjour, Avahi) on the network adapter: it is `odr-<DMR ID>.local`, for example

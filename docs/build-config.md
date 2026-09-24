@@ -103,10 +103,29 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `MD380_BAND` | md380 | `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz): the band table, the frequency plan and the board name ("MD-380 VHF") |
 | `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_GRAY=1` / `-DMD380_CH_ACTIVE_HIGH=1` (channel switch code), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
 
+| `LTO` | 0 (MD-380: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller on the STM32 radios. The DM-1701 image stays without it until it has been tested on the radio (`LTO=1` to try it); its CI maximal build uses it (`MAXIMAL_VARS`). The DM-32 (csky) doesn't use it |
+| `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
+| `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
+
+### The MD-380's image
+
 The MD-380's defaults (`boards/md380/config.mk`) switch off `CONFIG_SUBTONE`, `CONFIG_FM_TX_TONES` and `CONFIG_APRS_RX`
-(no sub-audio or tone path written for that board yet), `CONFIG_SFR` / `CONFIG_HOTSPOT_SPLIT` (HR_C6000 only) and
-`CONFIG_NET_TCP` with its services (flash). Its maximal configuration also leaves out `CONFIG_FONT_XL` (a 160 px panel has no use for it, and the image doesn't
-fit with it and every network service).
+(no sub-audio or tone path written for that board yet) and `CONFIG_SFR` / `CONFIG_HOTSPOT_SPLIT` (HR_C6000 only): those
+are missing hardware code, not space. Its app region is 281,668 bytes (0x0800C000..0x08050C43, the codec runs in place
+after it). Everything else is on, all the IP services included, which fits only with link time optimization
+(`LTO=1 LTO_3P=1`, the MD-380's default) and one feature off for flash: `CONFIG_HOTSPOT` (the MMDVM hotspot, 12 KB; it
+needs a host running MMDVMHost, the MD-380's DMR is untested on air, and the same USB link carries IP over DMR and the
+radio's services instead). `CONFIG_DMR_ROAMING` (also 12 KB) is the alternative, should the hotspot matter more there.
+The maximal configuration also leaves out `CONFIG_FONT_XL` (a 160 px panel has no use for it).
+
+Sizes of the default image (UHF; VHF within 30 bytes), 2026-10-11:
+
+| Build | Bytes used | Free |
+|---|---|---|
+| `LTO=0` | 297,036 | overflows by 15,368 |
+| `LTO=1 LTO_3P=0` | 281,556 | 112 |
+| `LTO=1 LTO_3P=1` (default) | 278,628 | 3,040 |
+| maximal (default + `AM_RX BCAST_FM AUDIO_PROBE`) | 279,008 | 2,660 |
 
 ## Adding a feature
 

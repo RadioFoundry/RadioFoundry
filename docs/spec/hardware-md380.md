@@ -56,6 +56,9 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (D) [PoC], [md380tools].
 
+The 275 KB hold every feature written for this radio only with link time optimization, on by default here, and the
+MMDVM hotspot left out: [build-config.md](../build-config.md#the-md-380s-image).
+
 ### 1.4 RAM
 
 128 KB SRAM for data and every DMA buffer (minus 4 bytes at the top, as the DM-1701 keeps them for the boot request
