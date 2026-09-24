@@ -38,9 +38,12 @@ One table in `core/net/net_services.c`, one line per service, built in when its 
 | `_odr-debug._udp` | 3334 | `CONFIG_DEBUGLINK` (the serial protocols over UDP, `usb-network.md` 1) |
 | `_mmdvm._udp` | 3334 | `CONFIG_HOTSPOT` |
 | `_tftp._udp` | 69 | `CONFIG_TFTP` (`tftp.md`) |
+| `_snmp._udp` | 161 | `CONFIG_SNMP` (`snmp.md`) |
+| `_http._tcp` | 80 | `CONFIG_NET_HTTP` (`tcp-services.md` 5) |
+| `_kiss-tnc._tcp` | 8001 | `CONFIG_NET_KISS` (`tcp-services.md` 4) |
+| `_rigctld._tcp` | 4532 | `CONFIG_NET_RIGCTL` (`tcp-services.md` 6) |
 
-Other services add their line there, for example `{ "_snmp._udp", 161 }`, `{ "_http._tcp", 80 }`,
-`{ "_kiss-tnc._tcp", 8001 }`, `{ "_rigctld._tcp", 4532 }`. At most `MDNS_SERVICES_MAX` (8). Every instance has the same
+Other services add their line there. At most `MDNS_SERVICES_MAX` (8; 7 in use with everything on). Every instance has the same
 TXT record.
 
 ## 3. Behavior

@@ -57,8 +57,38 @@ void hostlink_net_init(hostlink_net_serial_fn serial_in)
 	started = true;
 }
 
+// UDP over the air to our own DMR ID, for a local service of the gateway (ipGatewayUdpBindAir): taken here, in the
+// radio task, whether or not the network link is up; true when a service took it
+static bool local_udp(const dmrDataPacket_t *p)
+{
+	uint32_t own = ipGatewayRadioId();
+	dmrDataIP_t ip;
+	dmrDataUDP_t udp;
+
+	if (p->group || (own == 0) || ((p->dst & 0xFFFFFFu) != own)) {
+		return false;
+	}
+	if ((p->sap == DMR_SAP_IP) && dmrDataGetIP(p, &ip) && (ip.protocol == 17) && (ip.length >= 8)) {
+		const uint8_t *u = ip.payload;
+		int n = (u[4] << 8) | u[5];
+
+		if ((n < 8) || (n > ip.length)) {
+			return false;
+		}
+		return ipGatewayUdpFromAir(p->src, (uint16_t)((u[0] << 8) | u[1]), (uint16_t)((u[2] << 8) | u[3]),
+					 u + 8, n - 8);
+	}
+	if ((p->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(p, &udp)) {
+		return ipGatewayUdpFromAir(p->src, udp.srcPort, udp.dstPort, udp.payload, udp.length);
+	}
+	return false;
+}
+
 void hostlink_net_packet(const dmrDataPacket_t *p)
 {
+	if (local_udp(p)) {
+		return;
+	}
 	uint8_t next = (uint8_t)((up_in + 1) % PACKETS_UP);
 
 	stats.packets_air++;

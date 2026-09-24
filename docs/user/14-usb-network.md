@@ -129,6 +129,10 @@ tools/odr_debug.py --port udp:odr-3101234.local version
 | `_odr-debug._udp` | 3334 | the debug link (and the other serial protocols) over UDP |
 | `_mmdvm._udp` | 3334 | the MMDVM modem, for MMDVMHost |
 | `_tftp._udp` | 69 | the codeplug over TFTP (below) |
+| `_snmp._udp` | 161 | the SNMP agent (below) |
+| `_http._tcp` | 80 | the status page |
+| `_kiss-tnc._tcp` | 8001 | KISS over TCP |
+| `_rigctld._tcp` | 4532 | Hamlib rig control |
 
 Each one carries the board, the DMR ID, the call sign and the firmware version in its TXT record.
 
@@ -175,3 +179,32 @@ In the dispatch software, set the control station's address to the radio's addre
 your DMR ID with the last bit flipped), the radio network to 12.0.0.0/8 and the talkgroup network to 225.0.0.0/8, and
 your radio's DMR ID. What the computer sends goes over the air from your radio's DMR ID. Only one radio per computer
 can use the fixed addresses.
+## Monitoring the radio with SNMP
+
+Builds with the SNMP agent (`CONFIG_SNMP`, on with the USB network) answer SNMP version 2c requests at the radio's
+address, port 161. Any SNMP manager works; the repository has a small one:
+
+```
+tools/odr_snmp.py walk 12.47.82.51                 # everything the radio reports
+tools/odr_snmp.py get 12.47.82.51 odrBatteryVoltage.0 odrChannelName.0
+tools/odr_snmp.py traps                            # events as they happen (needs port 162: root on Linux)
+```
+
+The radio reports its identity (DMR ID, radio name, model, firmware), battery, channel, frequencies, power, the DMR
+call in progress and the last one heard, message and data counters, ARS state and the USB network counters. The
+objects are described in `docs/spec/ODR-MIB.txt`; load it into your manager to see names instead of numbers.
+
+While USB is a network adapter, the radio also sends events to your computer (port 162): power-up, calls starting
+and ending, text messages received, emergencies, ARS changes and low battery.
+
+The read community is `public`. Changing settings needs a write community, which is off until you set one:
+
+```
+tools/odr_debug.py snmp write MySecret             # over the serial port, before switching to network mode
+tools/odr_snmp.py -c MySecret set 12.47.82.51 sysName.0 s:N0CALL
+tools/odr_debug.py snmp status                     # the agent's settings and counters
+```
+
+Other radios can query this radio over the air at its own 12.x.y.z address (read only unless you allow writes).
+Events over the air go only to a manager radio you name (`tools/odr_debug.py snmp set rf_manager <DMR ID>`), at most
+one a minute apart from emergencies. Nothing is encrypted; SNMP community names travel as plain text.

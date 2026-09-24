@@ -33,7 +33,8 @@ typedef struct {
 
 void hostlink_net_set_air(const hostlink_net_air_t *air);
 
-// A packet the data service received (any task; copied): goes to the host when the network link is up
+// A packet the data service received (any task; copied): goes to the host when the network link is up. UDP to our
+// own DMR ID on a port a local service bound (ipGatewayUdpBindAir) goes to that service instead, link up or not
 void hostlink_net_packet(const dmrDataPacket_t *packet);
 
 // The host link task (hostlink.c): start once, then poll every pass while in network mode. bytes_in feeds UDP serial

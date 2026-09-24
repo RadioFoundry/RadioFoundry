@@ -22,6 +22,9 @@
 #include "hostlink/hostlink_net.h"
 #include "dmr/ipGateway.h"
 #endif
+#if CONFIG_SNMP
+#include "snmp/snmp_agent.h"
+#endif
 #if CONFIG_APRS
 #include "aprs/aprs_host.h"
 #endif
@@ -355,6 +358,9 @@ static void hostlink_task(void *arg)
 		board.netif->select(true);
 	}
 #endif
+#if CONFIG_SNMP
+	snmp_agent_init();	// binds UDP 161 in the gateway (docs/spec/snmp.md)
+#endif
 	if ((port == NULL) || !port->start()) {
 		vTaskDelete(NULL);
 		return;
@@ -382,6 +388,9 @@ static void hostlink_task(void *arg)
 			hostlink_net_poll(now);		// frames from the host (UDP serial among them), packets from the air
 			now = hal_millis();
 		}
+#endif
+#if CONFIG_SNMP
+		snmp_agent_poll(now);		// requests over RF, notifications (in either USB personality)
 #endif
 		usb_switch_now();
 

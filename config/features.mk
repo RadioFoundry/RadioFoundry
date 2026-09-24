@@ -73,6 +73,9 @@ CONFIG_TFTP ?= $(CONFIG_DMR_IP_GATEWAY)
 # control station mode for PC dispatch software on the USB network link: the PC as the endpoint of the radio's own
 # data ports (passthrough) and a fixed private link address pair (needs DMR_IP_GATEWAY; docs/spec/usb-network.md 5)
 CONFIG_DMR_CONTROL_STATION ?= $(CONFIG_DMR_IP_GATEWAY)
+# SNMP agent (SNMPv2c) on UDP 161 of the radio's address, over the USB network and over the air, with notifications
+# (needs DMR_IP_GATEWAY; core/snmp, docs/spec/snmp.md)
+CONFIG_SNMP ?= $(CONFIG_DMR_IP_GATEWAY)
 # single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
 # the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
 CONFIG_SFR ?= $(CONFIG_DMR)
@@ -136,7 +139,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_RIGCTL NET_APRSIS MDNS TFTP DMR_CONTROL_STATION SFR \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_RIGCTL NET_APRSIS MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
@@ -195,6 +198,11 @@ endif
 ifneq ($(call feature_on,DMR_CONTROL_STATION),)
   ifeq ($(call feature_on,DMR_IP_GATEWAY),)
     $(error CONFIG_DMR_CONTROL_STATION=y needs CONFIG_DMR_IP_GATEWAY=y)
+  endif
+endif
+ifneq ($(call feature_on,SNMP),)
+  ifeq ($(call feature_on,DMR_IP_GATEWAY),)
+    $(error CONFIG_SNMP=y needs CONFIG_DMR_IP_GATEWAY=y)
   endif
 endif
 ifneq ($(call feature_on,VFO_FM),)

@@ -235,6 +235,7 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 14 | `aprs_set` | the APRS settings, split from `aprs` for the reply size: `aprs.built set.aprs_tx aprs_region aprs_ssid aprs_symbol aprs_path aprs_interval_s aprs_smart aprs_distance_m aprs_after_ptt aprs_boot aprs_level aprs_txdelay aprs_via` (rf / dmr / both) `aprs_dmr_dst aprs_dmr_udt aprs_pos_src aprs_kiss aprs_rx aprs_igate aprs_igate_tx aprs_digi aprs_dmr_gps aprs_to_is` |
 | 15 | `dmr_ip` | IP packets over DMR ([dmr-data.md](dmr-data.md) 12.5): `ip.built ip.compress_built ip.confirmed_built`, the settings `ip.compress` (off / auto / all) `ip.confirmed` (off / rules / all) `ip.tries ip.rule0 ip.rule1` (none, `id:N` or `port:N`), the gateway packet in the service `ip.busy ip.result` (idle / ok / failed ...), compression `ip.sap3 ip.sap4 ip.octets_saved ip.blocks_saved`, the gateway's packets `ip.packets ip.sent ip.failed`, confirmed `ip.cnf ip.cnf_tx ip.cnf_retries ip.cnf_acks ip.cnf_sacks ip.cnf_nacks ip.cnf_resyncs ip.cnf_timeouts ip.cnf_failed ip.cnf_too_long`, confirmed data to us `ip.rx_sacks_sent ip.rx_nacks_sent ip.rx_duplicates ip.rx_crc9_mismatch`. Built without the data features: `ip.built=0` |
 | 16 | `net` | the radio's own services on the USB network link: with TCP (`tcp-services.md`) `tcp.open tcp.segs_in tcp.segs_out tcp.retransmits tcp.rst_out tcp.bad_checksum tcp.accepted tcp.refused tcp.no_slot tcp.timeouts` and the TCP services' keys, `net.link_up`; with mDNS `mdns.state mdns.name mdns.queries mdns.answered mdns.sent mdns.busy mdns.conflicts mdns.bad` (`mdns.md` 5), with TFTP `tftp.state tftp.reads tftp.writes tftp.errors tftp.timeouts tftp.retransmits tftp.last_size tftp.blksize tftp.write_allowed` (`tftp.md` 5); `net.built=0` without any of them |
+| 17 | `snmp` | the SNMP agent ([snmp.md](snmp.md) 7): `snmp.built snmp.flags snmp.write_set snmp.trap_port`, counters `snmp.rf_requests rf_answers rf_dropped traps_usb traps_rf traps_dropped` (the protocol counters and the other settings: the MIB). Built without the agent: `snmp.built=0` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -444,6 +445,20 @@ The state is in the `aprs` and `aprs_set` view sections.
 | 6 NMEA | an NMEA sentence | taken as a host position (`$GPRMC` / `$GPGGA` with a valid checksum) |
 
 `odr_debug.py aprs send | status TEXT | msg CALL TEXT | call [CALL] | set FIELD VALUE | nmea SENTENCE`.
+
+### 3.17 SNMP
+
+The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP every operation answers
+`DL_ST_UNAVAILABLE`. The state is in the `snmp` view section.
+
+| Op | Request | Effect |
+|---|---|---|
+| 0 SET | field u8, value u32 | saved like a UI change. Fields: 0 flags (`SNMP_CFG_*`: 0x01 agent off, 0x02 no answers over RF, 0x04 SET over RF, 0x08 no notifications to the host, 0x10 authenticationFailure, 0x20 call notifications over RF), 1 rf_manager (DMR ID, 0 = none), 2 rf_gap_s (0 = 60, else 10-3600), 3 trap_port (the host's notification port, 0 = 162; RAM only). Out of range: bad argument |
+| 1 COMMUNITY | which u8 (0 read, 1 write), the text (0-32 bytes) | sets the community (stored as its hash); empty: read back to "public", write none (SET refused) |
+| 2 TEST_TRAP | none | queues a coldStart notification (the HIL test's check of the path) |
+
+`odr_debug.py snmp status | set FIELD VALUE | read [TEXT] | write [TEXT] | trap` (flags as a number or names:
+`off,rf_off,rf_write,usb_traps_off,auth_traps,rf_call_traps`).
 
 ## 4. Safety
 

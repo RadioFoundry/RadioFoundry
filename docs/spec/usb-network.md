@@ -72,15 +72,19 @@ mode can replace the link pair with a fixed one (5.3).
   hook). Two packets wait for the host link task, which delivers SAP 4 as IP (ICMP, UDP, SCTP), SAP 3 as UDP, and
   anything else as raw data on port 40078; a packet that finds the IN endpoint busy goes on the next pass, and packets
   are dropped while the link is down. Confirmed data responses are the data service's and don't go up.
-- The radio's own services (`core/net`), never over the air, all in the host link task, started and polled by
-  `core/net/net.c` (`net_start` / `net_poll` from `hostlink_net.c`). Receive: TCP segments to the radio's address go
-  to the one TCP handler (`ipGatewaySetTCP`, [tcp-services.md](tcp-services.md)); UDP datagrams to the radio's
-  address, or to the link-local block 224.0.0.0/24, on a port in the gateway's table (`ipGatewayUdpBind`, at most
-  `IPGW_UDP_PORTS` = 8) go to that service, from any source address on the link. 224.0.0.0/24 never goes over the air,
-  bound or not. Bound now: mDNS on 5353 (`mdns.md`), TFTP on 69 and its transfer's own port (`tftp.md`). Send: one
-  buffer and one path for both, layer 4 built at `ipGatewayLocalPayload()` and sent with `ipGatewaySendLocal`
-  (`ipGatewayUdpSend` adds the UDP header first): from the radio's address, IP TTL 255, to the host's MAC, the
-  broadcast MAC or a group's multicast MAC.
+- The radio's own services (`core/net`, `core/snmp`; `ipGateway.h` "The radio's own services"). The `core/net` ones run
+  in the host link task, started and polled by `core/net/net.c` (`net_start` / `net_poll` from `hostlink_net.c`); the
+  SNMP agent is started by `hostlink.c` (it answers over the air in either USB personality). Receive: TCP segments to
+  the radio's address go to the one TCP handler (`ipGatewaySetTCP`, [tcp-services.md](tcp-services.md)); UDP
+  datagrams to the radio's address, or to the link-local block 224.0.0.0/24, on a port in the gateway's one table
+  (`ipGatewayUdpBind`, at most `IPGW_UDP_PORTS` = 8) go to that service, from any source address on the link.
+  224.0.0.0/24 never goes over the air, bound or not. A port bound with `ipGatewayUdpBindAir` also takes UDP received
+  over the air for our own DMR ID (SAP 4 UDP or SAP 3, handed to `ipGatewayUdpFromAir` by `hostlink_net_packet` in the
+  radio task, link up or not) instead of the host, with the sender's DMR ID and `fromAir` set; the service answers
+  over the air itself. Bound now: mDNS on 5353 (`mdns.md`), TFTP on 69 and its transfer's own port (`tftp.md`), SNMP on
+  161, from the air too ([snmp.md](snmp.md)). Send to the link: one buffer and one path for TCP and UDP, layer 4 built
+  at `ipGatewayLocalPayload()` and sent with `ipGatewaySendLocal` (`ipGatewayUdpSend` adds the UDP header first): from
+  the radio's address, IP TTL 255, to the host's MAC, the broadcast MAC or a group's multicast MAC.
 - Debug link view, section `hotspot`: `usb.network usb.net_up usb.boot_network net.passthrough net.passthrough_active
   net.fixed_link net.link_ip net.link_in_force net.host_ip net.radio_ip net.frames_in net.to_air net.to_air_refused
   net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped net.air_failed`; the

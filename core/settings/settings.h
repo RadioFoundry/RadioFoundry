@@ -60,7 +60,8 @@ typedef struct {
 	uint32_t privacy_key[SETTINGS_PRIVACY_KEYS];	// key value per slot (0 = empty)
 	uint8_t privacy_type[SETTINGS_PRIVACY_KEYS];	// dmrPrivacyType_t per slot
 	uint8_t privacy_active;		// slot in use radio-wide, 1..SETTINGS_PRIVACY_KEYS, 0 = privacy off
-	uint8_t reserved2[3];
+	// SNMP (was reserved2; snmp.md 6): the DMR ID notifications go to over RF, little endian, 0 = none
+	uint8_t snmp_rf_manager[3];
 	// The radio core's settings (radio_settings_t, docs/spec/radio-features.md), field by field so the layout stays
 	// fixed; rs_stored 0 = never set (the radio core's defaults apply)
 	uint16_t rs_tot_s;
@@ -81,13 +82,13 @@ typedef struct {
 	uint16_t rs_battery_off_s;
 	uint16_t rs_backlight_dim_s;
 	uint16_t rs_backlight_off_s;
-	uint16_t reserved3;
+	uint16_t aprsis_range_km;	// APRS-IS: the server filter "m/<km>" around us, 0 = no filter (was reserved3)
 	// The DMR data service's settings (dmrDataSettings_t, docs/spec/dmr-data.md); ds_stored 0 = never set
 	uint32_t ds_ars_server;		// ARS server ID, 0 = ARS off
 	uint8_t ds_flags;		// SETTINGS_DS_* bits
 	uint8_t ds_stored;		// 1 = the ds_ fields hold the data service's settings
 	uint8_t ds_ip_cnf;		// confirmed IP packets: bits 0-3 tries (0 = the default), bits 4-5 SETTINGS_DS_IPC_*
-	uint8_t reserved4;
+	uint8_t snmp_flags;		// SNMP: SNMP_CFG_* bits (was reserved4; 0 = the defaults)
 	// Appended for the UI's settings (docs/spec/ui.md 4). The radio core's DMR reply window belongs with the rs_
 	// fields (taken only when rs_stored is 1); the others are the UI's
 	uint8_t rs_reply_s;		// radio_settings_t.reply_s: 0-30 s, SETTINGS_UNSET8 = the codeplug's hang times
@@ -122,7 +123,7 @@ typedef struct {
 	uint8_t updown_home;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target
 	uint8_t low_batt_pct;		// warn at this battery percent (5-30), 0 = only the board's low voltage
 	uint16_t auto_off_min;		// switch off after this long without use, 0 = never
-	uint16_t reserved5;
+	uint16_t aprsis_port;		// APRS-IS: the server's port, 0 = 14580 (was reserved5)
 	// Roaming beacons and the survey (docs/spec/dmr-roaming.md 5.1; appended for roam2). Taken with the other roam_
 	// fields when roam_stored is 1; a record without them keeps these defaults (60 s, 4 s, synchronized survey)
 	uint16_t roam_beacon_s;		// the repeaters' beacon interval, 0 = no beacons, else 10..600
@@ -150,17 +151,20 @@ typedef struct {
 	uint8_t aprs_txdelay;		// preamble in 10 ms units
 	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
 	uint8_t aprs_stored;		// 1 = the aprs_ fields are set
-	uint16_t reserved7;
+	uint16_t snmp_rf_gap_s;		// SNMP: at most one RF notification per this many seconds, 0 = 60 (was reserved7)
 	// The data service's confirmed IP rules (dmrDataSettings_t.ipConfirmedRule, docs/spec/dmr-data.md 12; appended
 	// for sap3), taken with the other ds_ fields: 0 unused, a radio ID, or 0x80000000 | a UDP port
 	uint32_t ds_ip_rule[2];
-	// The radio's own APRS-IS client on the USB network link (CONFIG_NET_APRSIS, docs/spec/tcp-services.md 7)
+	// The radio's own APRS-IS client on the USB network link (CONFIG_NET_APRSIS, docs/spec/tcp-services.md 7; appended
+	// for tcp; its port and range are in reserved3 / reserved5 above)
 	uint32_t aprsis_ip;		// server IPv4 address, 0 = off
-	uint16_t aprsis_port;		// 0 = 14580
-	uint16_t aprsis_range_km;	// the server filter "m/<km>" around us, 0 = no filter
 	// Control station mode on the USB network link (docs/spec/usb-network.md 5; appended for dispatch): the radio's
 	// address on a fixed link (the PC's is the next one), 0 = 192.168.10.1; on with net_flags SETTINGS_NET_FIXED_LINK
 	uint32_t net_link_ip;
+	// The SNMP agent's communities (core/snmp/snmpMib.h snmpConfig_t, docs/spec/snmp.md 6; appended for snmp; its other
+	// settings are in snmp_rf_manager, snmp_flags and snmp_rf_gap_s above). 0 = the defaults
+	uint32_t snmp_read_hash;	// read community (FNV-1a of the text), 0 = "public"
+	uint32_t snmp_write_hash;	// write community, 0 = none (SET refused)
 } settings_t;
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)

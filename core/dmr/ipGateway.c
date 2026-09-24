@@ -7,8 +7,8 @@
  * radio's address,
  * a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
  * ipGateway.h), raw DMR data on IPGW_RAW_PORT, and the radio's own services (core/net): TCP to the radio's address
- * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind), both sending through ipGatewaySendLocal.
- * No other protocols, no fragments; the radio's own traffic never goes over the air.
+ * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind; SNMP also from the air,
+ * ipGatewayUdpFromAir), all sending to the link through ipGatewaySendLocal. No other protocols, no fragments.
  */
 
 #include <string.h>
@@ -45,6 +45,7 @@ static uint32_t fixedLink = 0;			// the radio's address on a fixed link, 0 = add
 static ipGatewayLocalFn localTCP;			// the radio's own TCP, NULL without it
 static struct {
 	uint16_t port;
+	bool air;						// also over the air to our own DMR ID
 	ipGatewayUdpHandler handler;
 } udpPorts[IPGW_UDP_PORTS];				// the radio's own UDP services
 static uint8_t txTtl = 64;				// IP TTL of the next sendIPv4 (the radio's own packets: 255)
@@ -672,7 +673,7 @@ void ipGatewaySetTCP(ipGatewayLocalFn fn)
 	localTCP = fn;
 }
 
-bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler)
+static bool bindPort(uint16_t port, ipGatewayUdpHandler handler, bool air)
 {
 	int free = -1;
 
@@ -681,6 +682,7 @@ bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler)
 		if ((udpPorts[i].handler != NULL) && (udpPorts[i].port == port))
 		{
 			udpPorts[i].handler = handler;// rebound, or unbound with NULL
+			udpPorts[i].air = air;
 			return true;
 		}
 		if ((udpPorts[i].handler == NULL) && (free < 0))
@@ -697,8 +699,32 @@ bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler)
 		return false;
 	}
 	udpPorts[free].port = port;
+	udpPorts[free].air = air;
 	udpPorts[free].handler = handler;
 	return true;
+}
+
+bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler)
+{
+	return bindPort(port, handler, false);
+}
+
+bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpHandler handler)
+{
+	return bindPort(port, handler, true);
+}
+
+bool ipGatewayUdpFromAir(uint32_t srcId, uint16_t srcPort, uint16_t dstPort, const uint8_t *data, int length)
+{
+	for (int i = 0; i < IPGW_UDP_PORTS; i++)
+	{
+		if ((udpPorts[i].handler != NULL) && udpPorts[i].air && (udpPorts[i].port == dstPort))
+		{
+			udpPorts[i].handler(true, srcId, srcPort, ADDRESS(INDIVIDUAL, ipGatewayRadioId()), dstPort, data, length);
+			return true;
+		}
+	}
+	return false;
 }
 
 // The radio's own services, from any source on the link (a host without its lease yet uses another address; replies
@@ -724,7 +750,7 @@ static bool deliverLocal(uint8_t protocol, uint32_t src, uint32_t dst, const uin
 	{
 		if ((udpPorts[i].handler != NULL) && (udpPorts[i].port == dstPort))
 		{
-			udpPorts[i].handler(src, get16(&l4[0]), dst, dstPort, &l4[8], length - 8);
+			udpPorts[i].handler(false, src, get16(&l4[0]), dst, dstPort, &l4[8], length - 8);
 			return true;
 		}
 	}

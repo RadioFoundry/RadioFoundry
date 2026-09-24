@@ -61,7 +61,7 @@ static void read_callsign(char *out, size_t size)
 }
 
 #if CONFIG_MDNS
-// One line per service the radio offers on its address. Other services add theirs here (e.g. { "_snmp._udp", 161 })
+// One line per service the radio offers on its address; other services add theirs here
 static const mdns_service_t services[] = {
 #if CONFIG_DEBUGLINK
 	{ "_odr-debug._udp", IPGW_SERIAL_PORT },
@@ -71,6 +71,9 @@ static const mdns_service_t services[] = {
 #endif
 #if CONFIG_TFTP
 	{ "_tftp._udp", TFTP_PORT },
+#endif
+#if CONFIG_SNMP
+	{ "_snmp._udp", 161 },
 #endif
 #if CONFIG_NET_HTTP
 	{ "_http._tcp", NET_HTTP_PORT },
@@ -113,7 +116,7 @@ static uint32_t mdns_random(void)
 
 static const mdns_io_t mdns_io = { .identity = mdns_identity, .buffer = payload, .send = mdns_send, .random = mdns_random };
 
-static void mdns_udp(uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
+static void mdns_udp(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
 {
 	mdnsReceive(src, sport, data, length, hal_millis());
 }
@@ -208,7 +211,7 @@ static bool info_read(uint32_t off, uint8_t *buf, uint16_t len)
 static const tftp_file_t info_file = { .name = "info.txt", .open_read = info_open, .read = info_read };
 static const tftp_file_t *const files[] = { &info_file, &tftp_codeplug_file };
 
-static void tftp_udp(uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
+static void tftp_udp(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
 {
 	tftpReceive(src, sport, dport, data, length, hal_millis());
 }

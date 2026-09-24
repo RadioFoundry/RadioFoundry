@@ -133,27 +133,37 @@ bool ipGatewayDeliverMonitor(const uint8_t *record, int length);
 // False if the USB IN endpoint is busy; dropped (true) while no host has sent anything yet.
 bool ipGatewaySerialOut(const uint8_t *data, int length);
 
-// The radio's own services (core/net: TCP and its services, mDNS, TFTP, ...). Everything for them runs in the caller of
-// ipGatewayEthernetIn (the host link task) and never goes over the air.
+// The radio's own services (core/net: TCP and its services, mDNS, TFTP; core/snmp: SNMP). What comes from the link
+// runs in the caller of ipGatewayEthernetIn (the host link task); nothing of theirs is forwarded over the air.
 //
 // Receive. TCP: segments to the radio's address, from any source (the host, or through it a server the radio
 // connected to), go to the one TCP handler, layer 4 on; NULL (the default) drops them. UDP: a datagram from the link to
 // the radio's own address, or to the local network control block 224.0.0.0/24 (mDNS: 224.0.0.251), on a bound port
-// goes to that port's handler instead of over the air; 224.0.0.0/24 never goes over the air, bound or not. One small
-// table: a service binds its port at start-up (handler NULL unbinds; false if the table is full)
+// goes to that port's handler instead of over the air (fromAir false, src / dst the IPv4 addresses); 224.0.0.0/24
+// never goes over the air, bound or not. A port bound with ipGatewayUdpBindAir also takes UDP received over the air
+// for our own DMR ID (the air side hands it to ipGatewayUdpFromAir, in the radio task, before the host would get it):
+// fromAir true, src the sender's DMR ID, dst our individual address; such a handler must copy and return, never block,
+// and answers over the air itself (ipGatewayIPToAir). One small table for every service: bind at start-up (handler
+// NULL unbinds; false if the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 (from the air
+// too)
 typedef void (*ipGatewayLocalFn)(uint32_t src, const uint8_t *l4, int length);
 void ipGatewaySetTCP(ipGatewayLocalFn fn);
 #define IPGW_UDP_PORTS			8
 #define IPGW_LOCAL_MULTICAST	0xE0000000u		// 224.0.0.0/24, link local: never forwarded (RFC 5771)
-typedef void (*ipGatewayUdpHandler)(uint32_t srcIp, uint16_t srcPort, uint32_t dstIp, uint16_t dstPort, const uint8_t *data, int length);
-bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler);
+typedef void (*ipGatewayUdpHandler)(bool fromAir, uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstPort,
+									const uint8_t *data, int length);
+bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler);	// from the link only
+bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpHandler handler);	// from the link and the air
+// A datagram over the air to our own DMR ID: true when a port bound for the air took it
+bool ipGatewayUdpFromAir(uint32_t srcId, uint16_t srcPort, uint16_t dstPort, const uint8_t *data, int length);
 //
-// Send. One buffer and one path for both: build layer 4 (at most IPGW_LOCAL_MAX bytes) at ipGatewayLocalPayload(),
-// in the gateway's frame buffer, then ipGatewaySendLocal it with nothing else sent in between. From the radio's own
-// address to dst: the host (any unicast address on the link, or beyond it when the host routes), the broadcast
-// address or a multicast group (its multicast MAC), with IP TTL 255 (mDNS checks it). False if the USB IN endpoint is
-// busy (try again) or the radio has no address yet. UDP: the payload at ipGatewayUdpPayload() (IPGW_UDP_PAYLOAD_MAX
-// bytes, after the 8 byte header), or anywhere, then ipGatewayUdpSend adds the header and checksum
+// Send to the link. One buffer and one path for TCP and UDP: build layer 4 (at most IPGW_LOCAL_MAX bytes) at
+// ipGatewayLocalPayload(), in the gateway's frame buffer, then ipGatewaySendLocal it with nothing else sent in
+// between (the host link task only). From the radio's own address to dst: the host (any unicast address on the link,
+// or beyond it when the host routes), the broadcast address or a multicast group (its multicast MAC), with IP TTL 255
+// (mDNS checks it). False if the USB IN endpoint is busy (try again) or the radio has no address yet. UDP: the payload
+// at ipGatewayUdpPayload() (IPGW_UDP_PAYLOAD_MAX bytes, after the 8 byte header), or anywhere, then ipGatewayUdpSend
+// adds the header and checksum
 #define IPGW_LOCAL_MAX		(IPGW_MAX_FRAME - 14 - 20)
 #define IPGW_UDP_PAYLOAD_MAX	(IPGW_LOCAL_MAX - 8)
 uint8_t *ipGatewayLocalPayload(void);
