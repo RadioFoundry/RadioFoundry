@@ -15,6 +15,9 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | `manual.yml` | `ubuntu-24.04` | docs changes, `v*` tags | the user manual PDF ([release.md](release.md)) |
 | `release.yml` | `ubuntu-24.04` and the hosted macOS / Windows runners | `v*` tags, release tooling changes | release images and odrflash ([release.md](release.md)) |
 
+On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `ODR_CI_GITHUB` is `true`: the
+repository is private, so hosted runners use paid minutes (about 6 per push). On Gitea they always run.
+
 ## Per push: `ci.yml`
 
 Triggered by changes under `boards/`, `config/`, `core/`, `drivers/`, `hal/`, `platform/`, `tests/`, `tools/`,

@@ -66,6 +66,7 @@ env:
 
 jobs:
   host:
+    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -101,6 +102,7 @@ jobs:
           if-no-files-found: ignore
 
   coverage:
+    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -122,6 +124,7 @@ jobs:
           if-no-files-found: ignore
 
   firmware:
+    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -154,6 +157,7 @@ jobs:
           if-no-files-found: ignore
 
   dm32:
+    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
