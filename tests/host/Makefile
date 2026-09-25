@@ -61,6 +61,11 @@ SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/d
 dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
 	$(CC) $(CFLAGS) -o $@ $(SVC) -lm
 
+# The same without Motorola TMS format support (CONFIG_DMR_TMS=0, docs/spec/dmr-data.md 5.1)
+TESTS   += dmrDataServiceTestNoTms
+dmrDataServiceTestNoTms: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
+	$(CC) $(CFLAGS) -DCONFIG_DMR_TMS=0 -o $@ $(SVC) -lm
+
 dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
 
@@ -82,6 +87,7 @@ run: $(TESTS)
 	./dmrFecTest
 	./dmrDataTest > dmrDataTest.out; status=$$?; grep -E "^(FAIL|# (PASSED|FAILED))" dmrDataTest.out; exit $$status
 	./dmrDataServiceTest
+	./dmrDataServiceTestNoTms
 	./hotspotDataTest
 	./hotspotUplinkTest
 	./dmrPrivacyTest
@@ -98,6 +104,8 @@ ifneq ($(TSHARK),)
 endif
 
 clean:
+	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert
+	rm -rf gen
 	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTest.expert
 	rm -rf *.dSYM out
 
@@ -473,19 +481,47 @@ run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807
 	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
 .PHONY: run-dm32
 
-# The host link's network personality: the IP gateway between a fake USB network interface and fake air ops
+# The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
+# radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
-           $(DATA) $(FRAME)
+           $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
+HLNET_OFF := -DCONFIG_NET_KISS=0 -DCONFIG_NET_HTTP=0 -DCONFIG_NET_RIGCTL=0 -DCONFIG_NET_APRSIS=0 -DCONFIG_MDNS=0 -DCONFIG_TFTP=0
 TESTS   += hostlinkNetTest
 
 hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HLNET)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(HLNET_OFF) -o $@ $(HLNET)
 
 run: run-hlnet
 run-hlnet: hostlinkNetTest
 	./hostlinkNetTest
 	python3 -I $(ROOT)/tools/bench/dmr_packet.py --self-test
 .PHONY: run-hlnet
+
+# The radio's own services on the USB network link, behind the real gateway (core/net): the mDNS responder, and the
+# TFTP server with codeplug.bin on a simulated flash. Their frames go to pcaps that tshark checks when it's there
+MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c
+TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/dmr/ipGateway.c $(CORE)/codeplug/codeplug.c \
+           $(CORE)/storage/storage.c sim/sim_flash.c
+TESTS   += mdnsTest tftpTest
+
+mdnsTest: $(MDNST) $(CORE)/net/mdns.h $(CORE)/dmr/ipGateway.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ $(MDNST)
+
+tftpTest: $(TFTPT) $(CORE)/net/tftp.h $(CORE)/net/tftp_codeplug.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ $(TFTPT)
+
+run: run-net
+run-net: mdnsTest tftpTest
+	./mdnsTest
+	./tftpTest
+ifneq ($(TSHARK),)
+	@"$(TSHARK)" -r mdnsTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q > netTest.expert
+	@"$(TSHARK)" -r tftpTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q >> netTest.expert
+	@# the TFTP ERROR packets the tests ask for are expected; anything else malformed or bad is not
+	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|^Errors" | grep -q .; then \
+		echo "# tshark found problems"; cat netTest.expert; exit 1; else echo "# tshark: mDNS and TFTP frames well formed"; fi
+endif
+.PHONY: run-net
 
 # The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
 STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
@@ -564,3 +600,85 @@ run: run-usbaudio
 run-usbaudio: usrpTest
 	./usrpTest
 .PHONY: run-usbaudio
+
+# The minimal TCP (core/net/tcp.c) against a scripted peer; tshark checks the segments it wrote to tcpTest.pcap
+TESTS   += tcpTest
+
+tcpTest: tcpTest.c $(CORE)/net/tcp.c $(CORE)/net/tcp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ tcpTest.c $(CORE)/net/tcp.c
+
+run: run-tcp
+run-tcp: tcpTest
+	./tcpTest
+ifneq ($(TSHARK),)
+	@"$(TSHARK)" -r tcpTest.pcap -o ip.check_checksum:TRUE -o tcp.check_checksum:TRUE -T fields -e _ws.malformed -e _ws.expert.message 2>&1 \
+		| grep -i -E "malformed|bad checksum|checksum.*incorrect" > tcpTest.expert || true
+	@if [ -s tcpTest.expert ]; then echo "# tshark found problems in tcpTest.pcap"; cat tcpTest.expert; exit 1; else echo "# tshark: tcpTest.pcap has no malformed segments or bad checksums"; fi
+endif
+.PHONY: run-tcp
+
+# The TCP services (core/net) through the real gateway and TCP, against a scripted TCP peer and fakes of the APRS
+# engine and the radio core; tshark checks netSvcTest.pcap
+NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
+           $(CORE)/net/http.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c \
+           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += netSvcTest
+
+netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h gen/gz/http_assets_gen.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -o $@ $(NETSVC)
+
+run: run-netsvc
+run-netsvc: netSvcTest
+	./netSvcTest
+ifneq ($(TSHARK),)
+	@"$(TSHARK)" -r netSvcTest.pcap -o ip.check_checksum:TRUE -o tcp.check_checksum:TRUE -T fields -e _ws.malformed -e _ws.expert.message 2>&1 \
+		| grep -i -E "malformed|bad checksum|checksum.*incorrect" > netSvcTest.expert || true
+	@if [ -s netSvcTest.expert ]; then echo "# tshark found problems in netSvcTest.pcap"; cat netSvcTest.expert; exit 1; else echo "# tshark: netSvcTest.pcap has no malformed segments or bad checksums"; fi
+endif
+.PHONY: run-netsvc
+# The SNMP agent (docs/spec/snmp.md): the BER codec against hand-worked X.690 encodings, SNMPv2c processing, the MIB and
+# the notifications (snmpTest); then the agent on a loopback UDP socket against tools/odr_snmp.py and, when installed,
+# the system's SNMP command line tools (snmp_peer_check.sh)
+SNMPLIB := $(CORE)/snmp/snmp.c $(CORE)/snmp/snmpBer.c $(CORE)/snmp/snmpMib.c
+TESTS   += snmpTest snmpPeer
+
+snmpTest: snmpTest.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
+	$(CC) $(CFLAGS) -Wshadow -o $@ snmpTest.c $(SNMPLIB)
+
+snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
+	$(CC) $(CFLAGS) -Wshadow -o $@ snmpPeer.c $(SNMPLIB)
+
+run: run-snmp
+run-snmp: snmpTest snmpPeer
+	./snmpTest
+ifneq ($(PYTHON),)
+	./snmp_peer_check.sh
+else
+	@echo "# snmp_peer_check skipped (no python3)"
+endif
+.PHONY: run-snmp
+
+# The HTTP status server's asset table (tools/gen_http_assets.py), gzip (CONFIG_NET_HTTP_GZIP) and plain, as the
+# firmware compiles it: every entry decompresses (or is) its file in core/net/http_assets, at its path, with its type
+HTTP_ASSETS := $(sort $(wildcard $(ROOT)/core/net/http_assets/*))
+TESTS   += httpAssetsTest httpAssetsTestPlain
+
+gen/gz/http_assets_gen.h: $(HTTP_ASSETS) $(ROOT)/tools/gen_http_assets.py
+	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(HTTP_ASSETS) > /dev/null
+	@touch $@
+gen/plain/http_assets_gen.h: $(HTTP_ASSETS) $(ROOT)/tools/gen_http_assets.py
+	@python3 -I $(ROOT)/tools/gen_http_assets.py $@ $(HTTP_ASSETS) > /dev/null
+	@touch $@
+httpAssetsTest: httpAssetsTest.c $(CORE)/net/http_assets.h gen/gz/http_assets_gen.h
+	$(CC) $(CFLAGS) -Igen/gz -o $@ httpAssetsTest.c
+httpAssetsTestPlain: httpAssetsTest.c $(CORE)/net/http_assets.h gen/plain/http_assets_gen.h
+	$(CC) $(CFLAGS) -Igen/plain -o $@ httpAssetsTest.c
+
+run: run-httpassets
+run-httpassets: httpAssetsTest httpAssetsTestPlain
+	@mkdir -p out/http_gz out/http_plain
+	./httpAssetsTest out/http_gz
+	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_gz $(HTTP_ASSETS)
+	./httpAssetsTestPlain out/http_plain
+	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_plain $(HTTP_ASSETS)
+.PHONY: run-httpassets

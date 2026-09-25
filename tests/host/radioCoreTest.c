@@ -1391,7 +1391,7 @@ static void test_persist(void)
 	// The DMR data service's settings: saved when they change, back after a reboot
 	dmrDataSettings_t ds;
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck);
+	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 	ds.arsServer = 3100999;
 	ds.radioCheckReply = true;
 	ds.callAlertAck = false;
@@ -1399,15 +1399,21 @@ static void test_persist(void)
 	run(50);
 	settings_read(&cur);
 	CHECK(cur.ds_stored == 1 && cur.ds_ars_server == 3100999 && cur.ds_flags == (SETTINGS_DS_RADIO_CHECK_REPLY |
-											SETTINGS_DS_LRRP_REPLY));
+											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP));
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 3100999 && ds.radioCheckReply && !ds.callAlertAck && ds.lrrpReply);
+	// A record from before ETSI IP text (no format bit) keeps TMS: only the default changed
+	settings_begin()->ds_flags = SETTINGS_DS_CALL_ALERT_ACK | SETTINGS_DS_LRRP_REPLY;
+	settings_end(now);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.smsFormat == DMR_SMS_FORMAT_TMS && ds.callAlertAck);
 	settings_begin()->ds_stored = 0;
 	settings_end(now);
 	boot();
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck);
+	CHECK(ds.arsServer == 0 && !ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 
 	// Power off: nothing to deregister, so the radio core is done at once
 	req(RREQ_POWER_OFF, 0);
@@ -1928,6 +1934,7 @@ void input_set_timing(uint16_t l, uint16_t r) { input_long = l; input_repeat = r
 static bool ptt_blocked;
 void input_set_ptt_block(bool b) { ptt_blocked = b; }
 void hostlink_set_hotspot_allowed(bool on) { (void)on; }
+void hostlink_settings_changed(void) { }
 static int32_t ram[UI_SET_COUNT];
 int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_COUNT ? ram[id] : 0; }
 bool ui_svc_ram_set(uint8_t id, int32_t v) { if (id >= UI_SET_COUNT) return false; ram[id] = v; return true; }

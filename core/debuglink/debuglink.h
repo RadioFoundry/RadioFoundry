@@ -33,12 +33,16 @@ enum {
 	DL_VIEW_APRS,		// APRS: callsign, block reason, position, next beacon, counters (debuglink_aprs.c)
 	DL_VIEW_APRS_SET,	// the APRS settings (debuglink_aprs.c; split from aprs for the reply size)
 	DL_VIEW_DMR_IP,		// IP packets over DMR: compression, confirmed delivery, their counters (debuglink_dmr_data.c)
+	DL_VIEW_NET,		// the radio's own TCP and its services (debuglink_view_net.c)
+	DL_VIEW_SNMP,		// the SNMP agent: settings and counters (debuglink_snmp.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		1	// bumped when a key changes meaning or goes away (new keys don't bump it)
 
 // Render one section of v into t. Every section starts with "section=<name>"
 void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t);
+// A section's name ("core", ...), NULL past the last
+const char *debuglink_view_name(uint8_t section);
 
 // The DMR sections (part 0: DL_VIEW_DMR, 1: DL_VIEW_DMR_CALL, 2: DL_VIEW_DMR_STATS), in their own file so the DMR
 // integration can change them without touching the rest; built without DMR they say "dmr.built=0"
@@ -69,6 +73,13 @@ void debuglink_view_roam(const radio_view_t *v, dl_text_t *t);
 // APRS (debuglink_aprs.c): the aprs section and the APRS command; without CONFIG_APRS "aprs.built=0" / unavailable
 void debuglink_view_aprs(uint8_t part, dl_text_t *t);	// part 0: state and counters, 1: settings
 size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+
+// The net section (debuglink_view_net.c); built without any of the radio's own services (CONFIG_NET_LOCAL) it says "net.built=0"
+void debuglink_view_net(dl_text_t *t);
+// The SNMP agent (debuglink_snmp.c): the snmp section and the SNMP command; without CONFIG_SNMP "snmp.built=0" /
+// unavailable
+void debuglink_view_snmp(dl_text_t *t);
+size_t debuglink_cmd_snmp(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 // The split duplex command SPLIT and its view text (debuglink_split.c, docs/spec/debuglink.md 3.15)

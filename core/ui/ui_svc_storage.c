@@ -26,6 +26,9 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmr_data_api.h"
 #endif
+#if CONFIG_TFTP
+#include "net/tftp_codeplug.h"
+#endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
@@ -158,6 +161,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_TALK_PERMIT:
 		radio_get_settings(&rs);
 		return rs.talk_permit;
+	case UI_SET_TFTP_WRITE:
+		settings_read(&st);
+		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:
@@ -178,12 +184,26 @@ int32_t ui_svc_setting_get(uint8_t id)
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
-	case UI_SET_POS_REPLY: {
+	case UI_SET_POS_REPLY:
+	case UI_SET_MSG_FORMAT: {
 		dmrDataSettings_t ds;
 		dmr_data_get_settings(&ds);
+		if (id == UI_SET_MSG_FORMAT)
+			return ds.smsFormat;
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
+#endif
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+	case UI_SET_USB_BOOT_NET:
+		settings_read(&st);
+		return st.usb_mode == 1;
+	case UI_SET_PC_ENDPOINT:
+		settings_read(&st);
+		return (st.net_flags & SETTINGS_NET_PASSTHROUGH) != 0;
+	case UI_SET_USB_FIXED_LINK:
+		settings_read(&st);
+		return (st.net_flags & SETTINGS_NET_FIXED_LINK) != 0;
 #endif
 	default:
 		return ui_svc_ram_get(id);
@@ -287,6 +307,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		hostlink_set_hotspot_allowed(value != 0);
 #endif
 		return true;
+	case UI_SET_TFTP_WRITE:
+		st = settings_begin();
+		st->net_flags = (uint8_t)(value != 0 ? (st->net_flags & ~SETTINGS_NET_TFTP_NO_WRITE) :
+					  (st->net_flags | SETTINGS_NET_TFTP_NO_WRITE));
+		settings_end(hal_millis());
+#if CONFIG_TFTP
+		tftp_codeplug_allow_write(value != 0);
+#endif
+		return true;
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
@@ -302,6 +331,31 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		dmr_data_set_settings(&ds);	// the radio core saves the data service's settings when they change
 		return true;
 	}
+	case UI_SET_MSG_FORMAT: {
+		dmrDataSettings_t ds;
+		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
+		    !(CONFIG_DMR_TMS && (value == DMR_SMS_FORMAT_TMS)))
+			return false;
+		dmr_data_get_settings(&ds);
+		ds.smsFormat = (uint8_t)value;
+		dmr_data_set_settings(&ds);
+		return true;
+	}
+#endif
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+	case UI_SET_USB_BOOT_NET:
+	case UI_SET_PC_ENDPOINT:
+	case UI_SET_USB_FIXED_LINK:
+		st = settings_begin();
+		if (id == UI_SET_USB_BOOT_NET)
+			st->usb_mode = value != 0;
+		else if (CONFIG_DMR_CONTROL_STATION) {
+			uint8_t bit = id == UI_SET_PC_ENDPOINT ? SETTINGS_NET_PASSTHROUGH : SETTINGS_NET_FIXED_LINK;
+			st->net_flags = (uint8_t)(value ? (st->net_flags | bit) : (st->net_flags & ~bit));
+		}
+		settings_end(hal_millis());
+		hostlink_settings_changed();
+		return true;
 #endif
 	default:
 		return ui_svc_ram_set(id, value);

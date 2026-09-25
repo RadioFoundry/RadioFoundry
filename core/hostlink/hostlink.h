@@ -35,8 +35,13 @@
 
 typedef enum { HOSTLINK_IDLE, HOSTLINK_HOTSPOT, HOSTLINK_CPS, HOSTLINK_TNC } hostlink_mode_t;
 
-// Start the task (after the settings are loaded: the USB personality depends on them)
+// Start the task (after the settings are loaded: the USB personality depends on them). With settings_t.usb_mode 1
+// (CONFIG_USB_NETWORK) the radio comes up as the network adapter; a host that doesn't configure it within 10 s of
+// enumerating it gets the serial port back for this boot (docs/spec/usb-network.md 1)
 void hostlink_start(void);
+// The USB network settings changed in the settings store (usb_mode, net_flags, net_link_ip): apply what applies at
+// run time (control station passthrough, the link addressing). usb_mode takes effect at the next power-on
+void hostlink_settings_changed(void);
 
 hostlink_mode_t hostlink_mode(void);
 

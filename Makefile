@@ -44,6 +44,9 @@ endif
 ifeq ($(CONFIG_APRS),y)
 CORE_DIRS += core/aprs
 endif
+ifeq ($(CONFIG_SNMP),y)
+CORE_DIRS += core/snmp
+endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
@@ -73,6 +76,19 @@ endif
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c
 endif
+# The radio's own services on the USB network link (core/net): net.c starts and polls them all, net_services.c is the
+# UDP services' glue to the gateway; each service's file only with its switch
+NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/net/kiss_tcp.c core/net/rigctld.c \
+	core/net/aprsis.c
+NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
+NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
+APP_SRC += $(sort $(NET_SRC-y))
+# Their text formatting (key=value views, JSON, protocol lines) is the debug link's dl_fmt.c, built here without it
+ifneq ($(NET_SRC-y),)
+ifneq ($(CONFIG_DEBUGLINK),y)
+APP_SRC += core/debuglink/dl_fmt.c
+endif
+endif
 
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 
@@ -97,6 +113,23 @@ CFLAGS_3P := $(COMMON) -std=gnu11 -w $(DEFS) $(INCLUDES)
 # The C library flavor and linker extras come from the platform (platform.mk); these are the arm-none-eabi ones
 LDSPECS ?= --specs=nano.specs --specs=nosys.specs -Wl,--no-warn-rwx-segments
 LDFLAGS := $(CPUFLAGS) -T$(LDSCRIPT) -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--print-memory-usage $(LDSPECS)
+# Link time optimization: LTO=1 compiles our sources to GCC's IR and optimizes them together at the link (inlining and
+# dead code across files: about 17 KB smaller on the STM32 radios, 20 KB with LTO_3P). A board's config.mk may default
+# it (the MD-380 does: without it the image doesn't hold its features); the DM-1701 keeps LTO=0 until it has been
+# tested on the radio, but its maximal CI build uses it (MAXIMAL_VARS). LTO_3P=1 takes the third-party code (HAL,
+# CMSIS, FreeRTOS, TinyUSB) along: FreeRTOS marks what its port's inline assembly reaches portDONT_DISCARD, and the
+# vectors and SystemInit are referenced from the assembly start-up, which the linker sees. Files with file-scope
+# assembly are never in it (LTO_EXCLUDE). The optimization flags go to the link too, where the code is generated
+LTO ?= 0
+LTO_3P ?= 0
+LTO_EXCLUDE ?= platform/stm32f4/codec_call.c
+ifeq ($(LTO),1)
+CFLAGS_APP += -flto=auto
+LDFLAGS += $(OPT) -flto=auto
+ifeq ($(LTO_3P),1)
+CFLAGS_3P += -flto=auto
+endif
+endif
 # Sections copied into the .bin (one contiguous image from the start of the application)
 BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data
 
@@ -106,7 +139,7 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
-.PHONY: all codec clean size test print-config print-cc print-unsupported
+.PHONY: all codec clean size test print-config print-cc print-unsupported print-maximal-vars
 all: $(TARGET).bin codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
@@ -118,8 +151,9 @@ codec: $(TARGET).bin
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
-ifeq ($(filter clean test print-config print-cc print-unsupported,$(MAKECMDGOALS)),)
-$(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP)' | cmp -s - $(BUILD)/flags || { echo '$(CFLAGS_APP)' > $(BUILD)/flags; \
+ifeq ($(filter clean test print-config print-cc print-unsupported print-maximal-vars,$(MAKECMDGOALS)),)
+$(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
+	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
 $(shell echo '$(ODR_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(ODR_VERSION)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
@@ -127,10 +161,20 @@ $(shell echo '$(ODR_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(ODR_VERSI
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l odr_about.h $(APP_SRC) 2>/dev/null))
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/odr_about.h | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
+# The HTTP status server's static files (core/net/http_assets/*, tools/gen_http_assets.py): a table in the gen
+# directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
+ifeq ($(CONFIG_NET_HTTP),y)
+HTTP_ASSETS := $(sort $(wildcard core/net/http_assets/*))
+$(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)),--gzip) $(BUILD)/gen/http_assets_gen.h \
+	$(HTTP_ASSETS) | grep -q changed && rm -f $(BUILD)/core/net/http.o)
+endif
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version
 $(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\"
+ifeq ($(LTO),1)
+$(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
+endif
 
 $(TARGET).elf: $(OBJ) $(LDSCRIPT)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) -lm
@@ -167,6 +211,9 @@ print-cc:
 # configuration leaves them off
 print-unsupported:
 	@echo '$(BOARD_UNSUPPORTED)'
+# Make variables ci's maximal configuration adds for this board (boards/<board>/config.mk MAXIMAL_VARS)
+print-maximal-vars:
+	@echo '$(MAXIMAL_VARS)'
 
 clean:
 	rm -rf $(BUILD)

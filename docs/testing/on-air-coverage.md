@@ -35,6 +35,7 @@ runs and finds a real firmware problem (left failing on purpose); **none** = no 
 | SFR (hotspot SFR mode) | `test_hotspot_sfr` | partial, xfail | mode switching and the first repeat on TS2 pass; the whole call needs RX between our bursts (`docs/spec/sfr.md` 3) |
 | Split duplex repeater (experimental) | `test_split_duplex` | fails | protocol passes; TX half: no same-slot spacing in the (clipped) capture; RX half: epoch residual 13.9 ms (limit 5 ms), 0 of 45 bursts labeled |
 | USB network adapter | `test_usb_network` | radio | DHCP, ping and the debug link over UDP, back to serial (macOS 26). With `ff6268b` the Mac once never configured the adapter and the radio stayed in network mode; since `5a13814` it falls back to serial after 10 s |
+| TCP services (HTTP, KISS over TCP, rigctld, APRS-IS) | `test_tcp_services` | radio | not run yet; host-tested against a scripted TCP peer (`netSvcTest`, `tcpTest`) |
 | IP over DMR | none | none (rig) | needs a second station that speaks IP over DMR data |
 | Roaming (settings, zone flag, roam now) | `test_roaming` radio tests | radio | |
 | Roaming to the bench repeater, beacon surveys | `test_roaming` rf tests | none (rig) | need a repeater-pair channel and a second frequency; only 467.375 MHz is approved |

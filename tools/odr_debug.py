@@ -65,11 +65,17 @@ SPLIT = 0x15                        # split duplex (CONFIG_HOTSPOT_SPLIT builds 
 SPLIT_OP_VARIANT, SPLIT_OP_VIEW = 1, 2
 APRS = 0x11
 APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
+SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
+SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
+SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
+# SNMP_CFG_* bits (core/snmp/snmpMib.h)
+SNMP_FLAGS = {"off": 0x01, "rf_off": 0x02, "rf_write": 0x04, "usb_traps_off": 0x08, "auth_traps": 0x10,
+              "rf_call_traps": 0x20}
 # DL_APRS_OP_SET fields (core/debuglink/debuglink_proto.h)
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
      "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay",
-     "dmr_gps"])}
+     "dmr_gps", "to_is"])}
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
@@ -112,7 +118,7 @@ ACTIONS.update({str(d): 9 + d for d in range(10)})
 PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
-                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip"]
+                 "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -123,6 +129,7 @@ TONE_TYPES = {"none": 0, "ctcss": 1, "dcs": 2, "dcs_inv": 3}
 OP_SCAN, OP_SCAN_VFO, OP_BEEP, OP_TONE_BURST, OP_SETTING = range(20, 25)
 OP_USB_NETWORK = 25
 OP_ROAM = 26
+OP_USB_NET_SETTINGS = 27
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
@@ -199,7 +206,7 @@ class UdpPort:
 
     def __init__(self, host, port=3334, timeout=0.02):
         import socket
-        self.addr = (host, port)
+        self.addr = (socket.gethostbyname(host), port)     # a name (odr-<id>.local, docs/spec/mdns.md) resolved once
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(timeout)
         self.pending = bytearray()
@@ -605,6 +612,14 @@ class DebugLink:
         re-enumerates; in network mode the debug link answers over UDP (--port udp:<radio IP>)."""
         self.radio(OP_USB_NETWORK, bytes([1 if on else 0]))
 
+    def usb_net_settings(self, boot_network=False, passthrough=False, fixed_link=False, link_ip="0.0.0.0"):
+        """Store the USB network settings (docs/spec/usb-network.md 5): the network personality at power-on, control
+        station passthrough (the PC is the endpoint of the radio's own IP data), the fixed link pair (link_ip: the
+        radio's address, "0.0.0.0" = 192.168.10.1; the PC is the next address)."""
+        ip = struct.unpack(">I", bytes(int(x) for x in link_ip.split(".")))[0]
+        flags = (1 if boot_network else 0) | (2 if passthrough else 0) | (4 if fixed_link else 0)
+        self.radio(OP_USB_NET_SETTINGS, struct.pack("<BI", flags, ip))
+
     def scan(self, cmd, pos=None):
         """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle."""
         c = SCAN_CMDS[cmd] if isinstance(cmd, str) else cmd
@@ -637,10 +652,10 @@ class DebugLink:
         return self.request(DMR_DATA, bytes([op]) + bytes(args))[1]
 
     def sms(self, dst, text, group=False, ack=True, fmt="tms"):
-        """Send a text message; fmt "tms" (Motorola TMS), "etsi" (ETSI defined short data) or "default" (the radio's
-        setting); text is Latin-1, at most SMS_TEXT_MAX characters here."""
+        """Send a text message; fmt "tms" (Motorola TMS), "etsi" (ETSI defined short data), "etsi_ip" (ETSI IP text,
+        UDP 5016) or "default" (the radio's setting); text is Latin-1, at most SMS_TEXT_MAX characters here."""
         t = text.encode("latin-1", "replace")[:SMS_TEXT_MAX]
-        f = {"tms": 0, "etsi": 4, "default": 8}[fmt]
+        f = {"tms": 0, "etsi": 4, "default": 8, "etsi_ip": 16}[fmt]
         self.data_request(DATA_OP_SMS, struct.pack("<IB", int(dst) & 0xFFFFFF, (1 if group else 0) |
                                                    (2 if ack else 0) | f) + t)
 
@@ -651,10 +666,14 @@ class DebugLink:
         self.data_request(DATA_OP_RADIO_CHECK, struct.pack("<I", int(dst) & 0xFFFFFF))
 
     def data_settings(self, ars_server=0, radio_check_reply=False, call_alert_ack=True, lrrp_reply=True,
-                      sms_etsi=False, radio_check_etsi=False):
-        """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms."""
+                      sms_etsi=False, radio_check_etsi=False, sms_format=None):
+        """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms. sms_format: the
+        default text message format, "etsi_ip" (the radio's default), "etsi" or "tms"; None: "etsi" when sms_etsi,
+        else "etsi_ip"."""
+        if sms_format is None:
+            sms_format = "etsi" if sms_etsi else "etsi_ip"
         flags = (1 if radio_check_reply else 0) | (2 if call_alert_ack else 0) | (4 if lrrp_reply else 0) | \
-            (8 if sms_etsi else 0) | (16 if radio_check_etsi else 0)
+            {"tms": 0, "etsi": 8, "etsi_ip": 32}[sms_format] | (16 if radio_check_etsi else 0)
         self.data_request(DATA_OP_SETTINGS, struct.pack("<IB", int(ars_server) & 0xFFFFFF, flags))
 
     def inbox(self, index=0):
@@ -667,7 +686,7 @@ class DebugLink:
             raise
         src, dst, group, flags = struct.unpack_from("<IIBB", r)
         return {"src": src, "dst": dst, "group": bool(group), "unread": bool(flags & 1),
-                "format": "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
+                "format": "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
 
     def mark_read(self, index=0):
         self.data_request(DATA_OP_MARK_READ, bytes([index]))
@@ -724,6 +743,22 @@ class DebugLink:
             value = round(value * 1e7)
         self.aprs_request(APRS_OP_SET, struct.pack("<BI", APRS_FIELDS[field] if isinstance(field, str) else field,
                                                    int(value) & 0xFFFFFFFF))
+
+    # The SNMP agent (docs/spec/debuglink.md 3.17). State: the snmp view section
+    def snmp_request(self, op, args=b""):
+        return self.request(SNMP, bytes([op]) + bytes(args))[1]
+
+    def snmp_set(self, field, value):
+        """One agent setting (saved; trap_port RAM only): a name from SNMP_FIELDS."""
+        self.snmp_request(SNMP_OP_SET, struct.pack("<BI", SNMP_FIELDS[field] if isinstance(field, str) else field,
+                                                   value))
+
+    def snmp_community(self, write, text=""):
+        """The read (write=False) or write community; "" = the default (read "public", write none)."""
+        self.snmp_request(SNMP_OP_COMMUNITY, bytes([1 if write else 0]) + text.encode("latin-1")[:32])
+
+    def snmp_test_trap(self):
+        self.snmp_request(SNMP_OP_TEST_TRAP)
 
     def aprs_nmea(self, sentence):
         """An NMEA sentence as from the host ("$GPRMC,...*hh"); the checksum is added when missing."""
@@ -942,6 +977,10 @@ def cmd_radio(link, a):
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
         link.usb_network(args[:1] == ["network"])
+    elif op == "usb-settings":        # usb-settings [boot] [passthrough] [fixed[=IP]] (stored; none: all off)
+        fixed = [x for x in args if x.startswith("fixed")]
+        link.usb_net_settings("boot" in args, "passthrough" in args, bool(fixed),
+                              fixed[0].split("=", 1)[1] if fixed and "=" in fixed[0] else "0.0.0.0")
     elif op == "roam":                # roam zone_on|zone_off|zone_toggle|now|lock|unlock|lock_toggle
         link.roam(args[0] if args else "now")
     else:
@@ -982,6 +1021,32 @@ def cmd_aprs(link, a):
     return 0
 
 
+def cmd_snmp(link, a):
+    args = a.args
+    if a.op == "set":
+        if len(args) != 2 or args[0] not in SNMP_FIELDS:
+            print(f"snmp set: FIELD VALUE, FIELD one of {', '.join(SNMP_FIELDS)}", file=sys.stderr)
+            return 2
+        name, v = args
+        if name == "flags" and not v[0].isdigit():
+            value = 0
+            for f in filter(None, v.split(",")):
+                value |= SNMP_FLAGS[f]
+        else:
+            value = int(v, 0)
+        link.snmp_set(name, value)
+    elif a.op in ("read", "write"):
+        link.snmp_community(a.op == "write", args[0] if args else "")
+    elif a.op == "trap":
+        link.snmp_test_trap()
+    else:
+        v = link.view(["snmp"])
+        for k in sorted(v):
+            if k.startswith("snmp."):
+                print(f"{k}={v[k]}")
+    return 0
+
+
 def cmd_data(link, a):
     args = a.args
     if a.op == "sms":
@@ -999,7 +1064,8 @@ def cmd_data(link, a):
             print("data settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp]", file=sys.stderr)
             return 2
         link.data_settings(int(args[0], 0), "check-reply" in args, "no-alert-ack" not in args, "no-lrrp" not in args,
-                           "sms-etsi" in args, "check-etsi" in args)
+                           radio_check_etsi="check-etsi" in args,
+                           sms_format="tms" if "sms-tms" in args else "etsi" if "sms-etsi" in args else "etsi_ip")
     elif a.op == "inbox":
         m = link.inbox(int(args[0]) if args else 0)
         print("empty" if m is None else f"from {m['src']} to {m['dst']}{' (group)' if m['group'] else ''}"
@@ -1289,20 +1355,26 @@ def main(argv=None):
     p.add_argument("args", nargs="*", help="status: TEXT; msg: CALL TEXT; call: [CALLSIGN]; set: FIELD VALUE "
                    f"(fields {', '.join(APRS_FIELDS)}; region na|eu|au|nz|jp|cn|custom, pos_src auto|gps|host|fixed, "
                    "via rf|dmr|both, lat / lon in degrees, freq_hz in Hz or MHz with a point); nmea: SENTENCE")
+    p = sub.add_parser("snmp", help="the SNMP agent: status, settings, communities, test notification "
+                       "(docs/spec/snmp.md)")
+    p.add_argument("op", choices=["status", "set", "read", "write", "trap"])
+    p.add_argument("args", nargs="*", help="set: FIELD VALUE (fields " + ", ".join(SNMP_FIELDS) + "; flags as a "
+                   "number or names " + ",".join(SNMP_FLAGS) + "); read / write: [COMMUNITY] (none: the default)")
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
-                                  "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb"])
+                                  "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
+                                  "usb-settings"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
                                   "ip-settings", "ip-send"])
-    p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack] [--format tms|etsi|default]; alert / "
-                   "check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi] [check-etsi]; "
-                   "inbox / read: [INDEX]; emergency: start|cancel|dismiss; em-settings: alarm|alarm_call|call [DST] "
-                   "[private] [etsi] [no-tone] [tries=N] [hot=S]; ip-settings: off|auto|all [off|rules|all] "
-                   "[tries=N] [id=ID] [port=N]; ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]")
-    p.add_argument("--format", choices=["tms", "etsi", "default"], default="tms")
+    p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack] [--format tms|etsi|etsi_ip|default]; "
+                   "alert / check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi|sms-tms] "
+                   "[check-etsi]; inbox / read: [INDEX]; emergency: start|cancel|dismiss; em-settings: "
+                   "alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]; ip-settings: off|auto|all "
+                   "[off|rules|all] [tries=N] [id=ID] [port=N]; ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]")
+    p.add_argument("--format", choices=["tms", "etsi", "etsi_ip", "default"], default="default")
     p.add_argument("--group", action="store_true")
     p.add_argument("--no-ack", action="store_true")
     p = sub.add_parser("log")
@@ -1357,6 +1429,8 @@ def main(argv=None):
                 return cmd_data(link, a)
             elif a.cmd == "aprs":
                 return cmd_aprs(link, a)
+            elif a.cmd == "snmp":
+                return cmd_snmp(link, a)
             elif a.cmd == "chip":
                 print_chip(link.chip())
             elif a.cmd == "dump":

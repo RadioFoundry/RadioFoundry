@@ -500,7 +500,7 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_MESSAGE_SENT:
 		if (ev->ok) {
-			sb_str(&b, "Delivered to ");
+			sb_str(&b, ev->index == 1 ? "Sent to " : "Delivered to ");
 			station(&b, ev);
 			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
 		} else {

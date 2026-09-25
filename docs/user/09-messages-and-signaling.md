@@ -45,15 +45,27 @@ The radio keeps the last 4 messages received, in memory. They are lost when the 
 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">
 
-The radio shows "Sending to ..." and returns to Home. A message to a person asks for a confirmation and is tried twice;
-the result comes as a banner: "Delivered to ..." or "No answer from ...", with "Not delivered: send it again" under it. The message
-isn't kept for a retry: send it again from the actions. A message to a talkgroup has no confirmation.
+The radio shows "Sending to ..." and returns to Home. A message to a person asks for a confirmation and is tried
+again when none comes (in every format); the result comes as a banner: "Delivered to ..." or "No answer from ...",
+with "Not delivered: send it again" under it. The message isn't kept for a retry: send it again from the actions. A
+message to a talkgroup has no confirmation: the banner says "Sent to ..." once it has gone out (also in the ETSI
+format when confirmed IP data is turned off, `tools/odr_debug.py data ip-settings auto off`).
 
 Typing your own text isn't built yet: "Write..." is dimmed. Messages you send aren't stored in the radio.
 
-The radio sends messages in the Motorola text message format (TMS), which most radios read, and reads both TMS and
-ETSI short data text. Developers can switch sending to the ETSI format over the debug link
-(`tools/odr_debug.py data settings ... sms-etsi`).
+## Message formats
+
+**Settings > Connections > Message format** picks the format of the messages you send. The radio reads all three,
+whatever the setting, and a reply goes in the format of the message it answers.
+
+| Format | Use it for |
+|---|---|
+| ETSI (default) | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. No delivery confirmation |
+| ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
+| Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
+
+If your radio was set up before ETSI became the default and its data settings were saved, it keeps sending Motorola
+messages until you change the setting.
 
 ## Call alert
 

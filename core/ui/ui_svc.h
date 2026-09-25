@@ -138,6 +138,13 @@ typedef enum {
 	// DMR roaming (Tools > Roaming, dmr-roaming.md 6.2): survey 0 off / 1 synced / 2 per site, the repeaters' beacon
 	// interval s (0 none) and duration s, the wake probe 0 / 1
 	UI_SET_ROAM_SURVEY, UI_SET_ROAM_BEACON_S, UI_SET_ROAM_BEACON_LEN, UI_SET_ROAM_PROBE,
+	UI_SET_TFTP_WRITE,	// codeplug writes over TFTP allowed (CONFIG_TFTP; settings_t.net_flags)
+	// Text messages (dmr-data.md 5): the format ours go in, dmr_sms_format_t (2 ETSI IP text, 1 ETSI short data, 0
+	// Motorola TMS)
+	UI_SET_MSG_FORMAT,
+	// USB network (usb-network.md 1, 5): the network personality at power-on, control station passthrough (the PC
+	// answers the radio's data), the fixed link pair (192.168.10.x) instead of the address by DMR ID
+	UI_SET_USB_BOOT_NET, UI_SET_PC_ENDPOINT, UI_SET_USB_FIXED_LINK,
 	UI_SET_COUNT
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);
@@ -154,7 +161,8 @@ int32_t ui_svc_reply_shown(const radio_settings_t *s);
 // --- Inbound: events other packages hand to the UI (any task; the UI picks them up on its next pass) ---
 typedef enum {
 	UI_EV_MESSAGE,		// a message arrived: index (inbox), id, name, text
-	UI_EV_MESSAGE_SENT,	// ok = delivered (confirmed) / failed after retries
+	UI_EV_MESSAGE_SENT,	// ok = delivered (confirmed; index 1: sent, the format or a group has no confirmation) /
+				// failed after retries
 	UI_EV_CALL_ALERT,	// call alert received from id
 	UI_EV_RADIO_CHECK,	// answer to our radio check: ok, ms
 	UI_EV_PRIVATE_CALL,	// a private call to us from id started

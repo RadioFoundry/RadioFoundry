@@ -20,11 +20,19 @@
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net.h"
+#include "dmr/ipGateway.h"
+#endif
+#if CONFIG_SNMP
+#include "snmp/snmp_agent.h"
 #endif
 #if CONFIG_APRS
 #include "aprs/aprs_host.h"
 #endif
+#if CONFIG_NET_TCP
+#include "net/net.h"
+#endif
 #include "debuglink/dlog.h"
+#include "settings/settings.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -305,6 +313,18 @@ static void usb_switch_now(void)
 	board.netif->select(s != 0);
 }
 
+void hostlink_settings_changed(void)
+{
+#if CONFIG_DMR_IP_GATEWAY
+	settings_t st;
+
+	settings_read(&st);
+	hostlink_net_set_control((st.net_flags & SETTINGS_NET_PASSTHROUGH) != 0,
+				 (st.net_flags & SETTINGS_NET_FIXED_LINK) ?
+					 (st.net_link_ip != 0 ? st.net_link_ip : IPGW_FIXED_LINK_DEFAULT) : 0);
+#endif
+}
+
 static void hostlink_task(void *arg)
 {
 	(void)arg;
@@ -325,6 +345,21 @@ static void hostlink_task(void *arg)
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 	hostlink_net_init(net_serial_in);
+	hostlink_settings_changed();
+#endif
+#if CONFIG_USB_NETWORK
+	settings_t st;
+
+	settings_read(&st);
+	if ((st.usb_mode == 1) && (board.netif != NULL) && (board.netif->select != NULL)) {
+		// Before the stack starts: enumerates as the adapter straight away. The select arms the fallback to serial
+		// for a host that never configures it (usb_ncm.c), counted from the host's first bus reset
+		dlog("hostlink: USB network at power-on");
+		board.netif->select(true);
+	}
+#endif
+#if CONFIG_SNMP
+	snmp_agent_init();	// binds UDP 161 in the gateway (docs/spec/snmp.md)
 #endif
 	if ((port == NULL) || !port->start()) {
 		vTaskDelete(NULL);
@@ -353,6 +388,9 @@ static void hostlink_task(void *arg)
 			hostlink_net_poll(now);		// frames from the host (UDP serial among them), packets from the air
 			now = hal_millis();
 		}
+#endif
+#if CONFIG_SNMP
+		snmp_agent_poll(now);		// requests over RF, notifications (in either USB personality)
 #endif
 		usb_switch_now();
 
@@ -391,7 +429,12 @@ static void hostlink_task(void *arg)
 		case HOSTLINK_IDLE:
 			break;
 		}
-		if ((tnc != NULL) && ((mode == HOSTLINK_IDLE) || (mode == HOSTLINK_TNC))) {
+#if CONFIG_NET_TCP
+		bool tnc_out = !net_tnc_taken();	// else KISS over TCP or APRS-IS takes it (core/net)
+#else
+		bool tnc_out = true;
+#endif
+		if ((tnc != NULL) && tnc_out && ((mode == HOSTLINK_IDLE) || (mode == HOSTLINK_TNC))) {
 			size_t n;
 
 			while ((n = tnc->output(buf, sizeof(buf))) > 0) {	// received packets, iGate lines

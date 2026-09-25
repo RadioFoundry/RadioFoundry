@@ -56,6 +56,9 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (D) [PoC], [md380tools].
 
+The 275 KB hold every feature written for this radio only with link time optimization, on by default here, and the
+MMDVM hotspot left out: [build-config.md](../build-config.md#the-md-380s-image).
+
 ### 1.4 RAM
 
 128 KB SRAM for data and every DMA buffer (minus 4 bytes at the top, as the DM-1701 keeps them for the boot request
@@ -480,7 +483,7 @@ size.
 ### 12.2 Map
 
 On a 16 MB part ODR uses the DM-1701's map (settings 0x011000, journal 0x019000, legacy codeplug 0x000000 and
-0x020000-0xE00000, native area 0xE00000), so the legacy CPS works the same. The stock TYT codeplug at 0 is overwritten
+0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the legacy CPS works the same. The stock TYT codeplug at 0 is overwritten
 by the first legacy write: read it out with the stock CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
 main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written.
 

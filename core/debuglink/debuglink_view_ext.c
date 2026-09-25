@@ -37,10 +37,14 @@ void debuglink_view_dmr_ext(dl_text_t *t)
 
 	dmrDataServiceGetStats(&s);
 	dmr_data_get_settings(&set);
-	dl_text(t, "data.sms_format=%s\ndata.radio_check_etsi=%u\n", set.smsFormat == DMR_SMS_FORMAT_ETSI ? "etsi" : "tms",
-		set.radioCheckEtsi);
+	dl_text(t, "data.sms_format=%s\ndata.radio_check_etsi=%u\ndata.tms_built=%u\n",
+		set.smsFormat == DMR_SMS_FORMAT_ETSI ? "etsi" : set.smsFormat == DMR_SMS_FORMAT_ETSI_IP ? "etsi_ip" : "tms",
+		set.radioCheckEtsi, (unsigned)CONFIG_DMR_TMS);
 	dl_text(t, "data.etsi_sms_received=%u\ndata.etsi_sms_sent=%u\ndata.etsi_responses=%u\n",
 		(unsigned)s.etsiSmsReceived, (unsigned)s.etsiSmsSent, (unsigned)s.etsiResponsesReceived);
+	dl_text(t, "data.ip_text_received=%u\ndata.ip_text_sent=%u\ndata.pt_active=%u\ndata.pt_yielded=%u\n",
+		(unsigned)s.ipTextReceived, (unsigned)s.ipTextSent, (unsigned)dmrDataServicePassthrough(),
+		(unsigned)s.ptYielded);
 	dl_text(t, "data.emergency_alarms_heard=%u\ndata.emergency_alarms_received=%u\ndata.emergency_alarms_sent=%u\n",
 		(unsigned)s.emergencyAlarmsHeard, (unsigned)s.emergencyAlarmsReceived, (unsigned)s.emergencyAlarmsSent);
 #endif

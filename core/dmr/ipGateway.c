@@ -6,7 +6,9 @@
  * Ethernet, ARP (on a /31 for the radio's address, on a shared link for every address but the host's), ICMP echo to the
  * radio's address,
  * a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
- * ipGateway.h), and raw DMR data on IPGW_RAW_PORT. No TCP or other protocols, no fragments.
+ * ipGateway.h), raw DMR data on IPGW_RAW_PORT, and the radio's own services (core/net): TCP to the radio's address
+ * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind; SNMP also from the air,
+ * ipGatewayUdpFromAir), all sending to the link through ipGatewaySendLocal. No other protocols, no fragments.
  */
 
 #include <string.h>
@@ -17,6 +19,7 @@
 #define ETHERTYPE_IPV4		0x0800
 #define ETHERTYPE_ARP		0x0806
 #define IP_PROTO_ICMP		1
+#define IP_PROTO_TCP		6
 #define IP_PROTO_UDP		17
 #define IP_PROTO_SCTP		132
 #define DHCP_SERVER_PORT	67
@@ -38,6 +41,15 @@ static uint8_t monitorMac[6];				// a unicast address the host doesn't have, for
 DMR_DATA_BUFFER static uint8_t tx[IPGW_MAX_FRAME];
 static uint16_t ipId = 0;
 static uint16_t serialPeerPort = 0;		// host port of the serial protocol, 0 until the host has sent to IPGW_SERIAL_PORT
+static uint32_t fixedLink = 0;			// the radio's address on a fixed link, 0 = addressed by DMR ID
+static ipGatewayLocalFn localTCP;			// the radio's own TCP, NULL without it
+static struct {
+	uint16_t port;
+	bool air;						// also over the air to our own DMR ID
+	ipGatewayUdpHandler handler;
+} udpPorts[IPGW_UDP_PORTS];				// the radio's own UDP services
+static uint8_t txTtl = 64;				// IP TTL of the next sendIPv4 (the radio's own packets: 255)
+static bool deliverLocal(uint8_t protocol, uint32_t src, uint32_t dst, const uint8_t *l4, int length);
 
 static const uint8_t BROADCAST_MAC[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
@@ -98,8 +110,38 @@ void ipGatewayInit(const uint8_t gatewayMac[6], const uint8_t defaultHostMac[6])
 	monitorMac[0] = 0x0A;// locally administered, unicast
 }
 
+bool ipGatewaySetFixedLink(uint32_t radioIp)
+{
+	uint8_t last = radioIp & 0xFF;
+	bool usable = (radioIp != 0) && (last >= 1) && (last <= 253) && ((radioIp >> 28) < 0xE) && ((radioIp >> 24) != 127) &&
+			!IN_RANGE(INDIVIDUAL, radioIp) && !IN_RANGE(MULTICAST, radioIp)
+#if defined(IPGW_GROUP_NET)
+			&& !IN_RANGE(GROUP, radioIp)
+#endif
+			;
+
+	fixedLink = usable ? radioIp : 0;
+	return usable || (radioIp == 0);
+}
+
+uint32_t ipGatewayFixedLink(void)
+{
+	return fixedLink;
+}
+
+// The host's broadcast address: on a fixed link the limited broadcast, as on a /31 or /32
+static uint32_t broadcastIP(void)
+{
+	return (fixedLink != 0) ? 0xFFFFFFFFu : IPGW_BROADCAST_IP;
+}
+
 uint32_t ipGatewayHostIP(void)
 {
+	if (fixedLink != 0)
+	{
+		return fixedLink + 1;
+	}
+
 	uint32_t id = ipGatewayRadioId();
 
 	uint32_t ip = ADDRESS(INDIVIDUAL, id);
@@ -113,6 +155,10 @@ uint32_t ipGatewayHostIP(void)
 
 uint32_t ipGatewayRadioIP(void)
 {
+	if (fixedLink != 0)
+	{
+		return fixedLink;
+	}
 #if IPGW_POINT_TO_POINT
 	uint32_t hostIp = ipGatewayHostIP();
 
@@ -143,7 +189,7 @@ static bool sendIPv4(const uint8_t *dstMac, uint8_t protocol, uint32_t src, uint
 	put16(&ip[2], 20 + payloadLength);
 	put16(&ip[4], ipId++);
 	put16(&ip[6], 0x4000);// Don't fragment
-	ip[8] = 64;
+	ip[8] = txTtl;
 	ip[9] = protocol;
 	put16(&ip[10], 0);
 	put32(&ip[12], src);
@@ -163,12 +209,10 @@ static void handleARP(const uint8_t *frame, const uint8_t *arp)
 	{
 		return;
 	}
-#if (IPGW_LINK_PREFIX == 31)
-	if (targetIp != ipGatewayRadioIP())
+	if (((IPGW_LINK_PREFIX == 31) || (fixedLink != 0)) && (targetIp != ipGatewayRadioIP()))
 	{
 		return;// everything else is routed through the radio
 	}
-#endif
 
 	memcpy(hostMac, &arp[8], 6);
 
@@ -222,15 +266,19 @@ static uint8_t *putRoutes(uint8_t *o, uint8_t code, uint32_t router)
 
 	*o++ = code;
 	start = o++;
-#if (IPGW_LINK_PREFIX == 32)
-	o = putRoute(o, router, 32, 0);
-#endif
-#if IPGW_POINT_TO_POINT
-	o = putRoute(o, IPGW_INDIVIDUAL_NET, IPGW_INDIVIDUAL_PREFIX, router);
-#endif
+	// A fixed link: the radio is on the host's /24, so only the ranges go through it
+	if ((IPGW_LINK_PREFIX == 32) && (fixedLink == 0))
+	{
+		o = putRoute(o, router, 32, 0);
+	}
+	if (IPGW_POINT_TO_POINT || (fixedLink != 0))
+	{
+		o = putRoute(o, IPGW_INDIVIDUAL_NET, IPGW_INDIVIDUAL_PREFIX, router);
+	}
 	o = putRoute(o, IPGW_MULTICAST_NET, IPGW_MULTICAST_PREFIX, router);
 #if defined(IPGW_GROUP_NET)
-	if ((IPGW_LINK_PREFIX > IPGW_GROUP_PREFIX) || ((IPGW_GROUP_NET & IPGW_NETMASK) != (IPGW_INDIVIDUAL_NET & IPGW_NETMASK)))
+	if ((fixedLink != 0) || (IPGW_LINK_PREFIX > IPGW_GROUP_PREFIX) ||
+			((IPGW_GROUP_NET & IPGW_NETMASK) != (IPGW_INDIVIDUAL_NET & IPGW_NETMASK)))
 	{
 		o = putRoute(o, IPGW_GROUP_NET, IPGW_GROUP_PREFIX, router);// not on the link
 	}
@@ -307,7 +355,7 @@ static void handleDHCP(const uint8_t *bootp, int length)
 	if (!nak)
 	{
 		o = putOption(o, 51, 4, DHCP_LEASE_SECONDS);
-		o = putOption(o, 1, 4, IPGW_NETMASK);
+		o = putOption(o, 1, 4, (fixedLink != 0) ? IPGW_FIXED_NETMASK : IPGW_NETMASK);
 		o = putRoutes(o, 121, radioIp);
 		o = putRoutes(o, 249, radioIp);
 	}
@@ -411,9 +459,14 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 		}
 		dstPort = get16(&l4[2]);
 	}
-	else if ((ip[9] != IP_PROTO_ICMP) && (ip[9] != IP_PROTO_SCTP))
+	else if ((ip[9] != IP_PROTO_ICMP) && (ip[9] != IP_PROTO_SCTP) && (ip[9] != IP_PROTO_TCP))
 	{
-		return;// ICMP, UDP and SCTP only
+		return;// ICMP, UDP and SCTP only, and TCP to the radio itself
+	}
+
+	if (deliverLocal(ip[9], src, dst, l4, l4Length))
+	{
+		return;
 	}
 
 	// Only what the host itself sends, never anything a host that forwards packets sends back
@@ -432,7 +485,8 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 	bool group = true;
 	uint32_t id;
 
-	if ((dst == IPGW_ALL_CALL_IP) || (dst == IPGW_BROADCAST_IP) || (dst == 0xFFFFFFFF))
+	if ((dst == IPGW_ALL_CALL_IP) || (dst == IPGW_BROADCAST_IP) || (dst == 0xFFFFFFFF) ||
+			((fixedLink != 0) && (dst == (fixedLink | ~IPGW_FIXED_NETMASK))))
 	{
 		if ((ip[9] != IP_PROTO_UDP) || (((dstPort < DMR_APP_PORT_FIRST) || (dstPort > DMR_APP_PORT_LAST)) && (dstPort != IPGW_RAW_PORT)))
 		{
@@ -472,13 +526,14 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 	ipGatewayIPToAir(group, id, ip[9], l4, l4Length);
 }
 
-static bool sendUDP(const uint8_t *dstMac, uint32_t srcIp, uint32_t dstIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
+// The UDP header and payload at tx[34] (payload may already be in place): the layer 4 length, or -1 when too long
+static int buildUDP(uint32_t srcIp, uint32_t dstIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
 {
 	uint8_t *udp = &tx[ETH_HEADER + 20];
 
 	if ((length < 0) || ((ETH_HEADER + 20 + 8 + length) > IPGW_MAX_FRAME))
 	{
-		return false;
+		return -1;
 	}
 
 	memmove(&udp[8], payload, length);
@@ -488,8 +543,25 @@ static bool sendUDP(const uint8_t *dstMac, uint32_t srcIp, uint32_t dstIp, uint1
 	put16(&udp[6], 0);
 	uint16_t sum = checksum(udp, 8 + length, pseudoHeaderSum(srcIp, dstIp, 8 + length));
 	put16(&udp[6], (sum == 0) ? 0xFFFF : sum);
+	return 8 + length;
+}
 
-	return sendIPv4(dstMac, IP_PROTO_UDP, srcIp, dstIp, 8 + length);
+static bool sendUDP(const uint8_t *dstMac, uint32_t srcIp, uint32_t dstIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
+{
+	int l4 = buildUDP(srcIp, dstIp, srcPort, dstPort, payload, length);
+
+	return (l4 > 0) && sendIPv4(dstMac, IP_PROTO_UDP, srcIp, dstIp, l4);
+}
+
+// IPv4 multicast MAC: 01:00:5E and the low 23 bits of the address
+static void setMulticastMac(uint8_t mac[6], uint32_t ip)
+{
+	mac[0] = 0x01;
+	mac[1] = 0x00;
+	mac[2] = 0x5E;
+	mac[3] = (ip >> 16) & 0x7F;
+	mac[4] = ip >> 8;
+	mac[5] = ip;
 }
 
 // Layer 4 (length bytes) is already in tx after the IPv4 header. A UDP checksum covers the addresses, so it is redone
@@ -507,19 +579,13 @@ static bool deliver(bool group, uint32_t dst, uint32_t src, uint8_t protocol, in
 
 	if (dst == IPGW_ALL_CALL_ID)
 	{
-		dstIp = IPGW_BROADCAST_IP;
+		dstIp = broadcastIP();
 		dstMac = BROADCAST_MAC;
 	}
 	else if (group)
 	{
 		dstIp = ADDRESS(MULTICAST, dst);
-		// IPv4 multicast MAC, 01:00:5E and the low 23 bits of the address
-		multicastMac[0] = 0x01;
-		multicastMac[1] = 0x00;
-		multicastMac[2] = 0x5E;
-		multicastMac[3] = (dstIp >> 16) & 0x7F;
-		multicastMac[4] = dstIp >> 8;
-		multicastMac[5] = dstIp;
+		setMulticastMac(multicastMac, dstIp);
 		dstMac = multicastMac;
 	}
 	else
@@ -529,7 +595,12 @@ static bool deliver(bool group, uint32_t dst, uint32_t src, uint8_t protocol, in
 		{
 			return true;
 		}
-		dstMac = (dstIp == ipGatewayHostIP()) ? hostMac : monitorMac;
+		dstMac = monitorMac;
+		if ((dstIp == ADDRESS(INDIVIDUAL, ipGatewayRadioId())) && (ipGatewayHostIP() != 0))
+		{
+			dstIp = ipGatewayHostIP();// to this radio: the host (its own address, or the fixed link's)
+			dstMac = hostMac;
+		}
 	}
 
 	if (protocol == IP_PROTO_UDP)
@@ -594,5 +665,136 @@ bool ipGatewaySerialOut(const uint8_t *data, int length)
 
 bool ipGatewayDeliverMonitor(const uint8_t *record, int length)
 {
-	return sendUDP(BROADCAST_MAC, ipGatewayRadioIP(), IPGW_BROADCAST_IP, IPGW_MONITOR_PORT, IPGW_MONITOR_PORT, record, length);
+	return sendUDP(BROADCAST_MAC, ipGatewayRadioIP(), broadcastIP(), IPGW_MONITOR_PORT, IPGW_MONITOR_PORT, record, length);
+}
+
+void ipGatewaySetTCP(ipGatewayLocalFn fn)
+{
+	localTCP = fn;
+}
+
+static bool bindPort(uint16_t port, ipGatewayUdpHandler handler, bool air)
+{
+	int free = -1;
+
+	for (int i = 0; i < IPGW_UDP_PORTS; i++)
+	{
+		if ((udpPorts[i].handler != NULL) && (udpPorts[i].port == port))
+		{
+			udpPorts[i].handler = handler;// rebound, or unbound with NULL
+			udpPorts[i].air = air;
+			return true;
+		}
+		if ((udpPorts[i].handler == NULL) && (free < 0))
+		{
+			free = i;
+		}
+	}
+	if (handler == NULL)
+	{
+		return true;
+	}
+	if (free < 0)
+	{
+		return false;
+	}
+	udpPorts[free].port = port;
+	udpPorts[free].air = air;
+	udpPorts[free].handler = handler;
+	return true;
+}
+
+bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler)
+{
+	return bindPort(port, handler, false);
+}
+
+bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpHandler handler)
+{
+	return bindPort(port, handler, true);
+}
+
+bool ipGatewayUdpFromAir(uint32_t srcId, uint16_t srcPort, uint16_t dstPort, const uint8_t *data, int length)
+{
+	for (int i = 0; i < IPGW_UDP_PORTS; i++)
+	{
+		if ((udpPorts[i].handler != NULL) && udpPorts[i].air && (udpPorts[i].port == dstPort))
+		{
+			udpPorts[i].handler(true, srcId, srcPort, ADDRESS(INDIVIDUAL, ipGatewayRadioId()), dstPort, data, length);
+			return true;
+		}
+	}
+	return false;
+}
+
+// The radio's own services, from any source on the link (a host without its lease yet uses another address; replies
+// to the radio's own TCP connections come through the host): true when the packet was for one of them
+static bool deliverLocal(uint8_t protocol, uint32_t src, uint32_t dst, const uint8_t *l4, int length)
+{
+	bool radio = (dst == ipGatewayRadioIP()) && (dst != 0);
+
+	if (protocol == IP_PROTO_TCP)
+	{
+		if (radio && (localTCP != NULL))
+		{
+			localTCP(src, l4, length);
+		}
+		return true;// TCP never goes over the air
+	}
+	if ((protocol != IP_PROTO_UDP) || !(radio || ((dst & 0xFFFFFF00u) == IPGW_LOCAL_MULTICAST)))
+	{
+		return false;
+	}
+	uint16_t dstPort = get16(&l4[2]);
+	for (int i = 0; i < IPGW_UDP_PORTS; i++)
+	{
+		if ((udpPorts[i].handler != NULL) && (udpPorts[i].port == dstPort))
+		{
+			udpPorts[i].handler(false, src, get16(&l4[0]), dst, dstPort, &l4[8], length - 8);
+			return true;
+		}
+	}
+	return (dst & 0xFFFFFF00u) == IPGW_LOCAL_MULTICAST;// link local: never over the air, bound or not
+}
+
+uint8_t *ipGatewayLocalPayload(void)
+{
+	return &tx[ETH_HEADER + 20];
+}
+
+bool ipGatewaySendLocal(uint8_t protocol, uint32_t dst, int length)
+{
+	uint32_t radioIp = ipGatewayRadioIP();
+	uint8_t multicastMac[6];
+	const uint8_t *dstMac = hostMac;// the host is the only neighbor, and the router
+
+	if ((radioIp == 0) || (length < 0) || (length > IPGW_LOCAL_MAX))
+	{
+		return false;
+	}
+	if ((dst >> 28) == 0xE)
+	{
+		setMulticastMac(multicastMac, dst);
+		dstMac = multicastMac;
+	}
+	else if ((dst == 0xFFFFFFFF) || (dst == IPGW_BROADCAST_IP))
+	{
+		dstMac = BROADCAST_MAC;
+	}
+
+	txTtl = 255;// on link (mDNS checks it, RFC 6762 11), and plenty beyond the host
+	bool ok = sendIPv4(dstMac, protocol, radioIp, dst, length);
+	txTtl = 64;
+	return ok;
+}
+
+bool ipGatewayUdpSend(uint32_t dstIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
+{
+	uint32_t radioIp = ipGatewayRadioIP();
+
+	if ((radioIp == 0) || (length < 0) || (length > IPGW_UDP_PAYLOAD_MAX))
+	{
+		return false;
+	}
+	return ipGatewaySendLocal(IP_PROTO_UDP, dstIp, buildUDP(radioIp, dstIp, srcPort, dstPort, payload, length));
 }

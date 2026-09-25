@@ -26,8 +26,10 @@ CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 # ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the APRS
 # position source when the radio-wide setting is on (needs DMR)
 CONFIG_DMR_GPS ?= $(CONFIG_DMR)
-# DMR text messages (SMS; needs DMR; not ported yet)
+# DMR text messages (SMS; needs DMR): ETSI IP text and ETSI defined short data, sent and received (docs/spec/dmr-data.md 5)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
+# Motorola TMS format support for text messages: send, receive, the TMS ACK (needs DMR_SMS; docs/spec/dmr-data.md 5.1)
+CONFIG_DMR_TMS ?= $(CONFIG_DMR_SMS)
 # ARS registration with a dispatcher (needs DMR; not ported yet)
 CONFIG_DMR_ARS ?= $(CONFIG_DMR)
 # LRRP location request / response (needs DMR; uses GPS where the board has it; not ported yet)
@@ -49,6 +51,34 @@ CONFIG_DMR_UDP_COMPRESS ?= $(CONFIG_DMR)
 # responses, selective retry, retry limit), and the selective retry asked for when confirmed data to us has bad blocks
 # (needs DMR; docs/spec/dmr-data.md 12)
 CONFIG_DMR_CONFIRMED ?= $(CONFIG_DMR)
+# a minimal TCP for the radio's own services on the USB network link, never over RF (needs DMR_IP_GATEWAY, whose IPv4
+# layer it uses; core/net, docs/spec/tcp-services.md)
+CONFIG_NET_TCP ?= $(CONFIG_DMR_IP_GATEWAY)
+# KISS over TCP on port 8001, bridged to the APRS KISS TNC (needs NET_TCP and APRS; core/net/kiss_tcp.c)
+CONFIG_NET_KISS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS))),y,n)
+# the HTTP status server on port 80: a page, JSON status and view sections, the screen (needs NET_TCP; core/net/http.c)
+CONFIG_NET_HTTP ?= $(CONFIG_NET_TCP)
+# the status server's static files (core/net/http_assets) stored gzip compressed at build time and served with
+# Content-Encoding: gzip; off: stored and served as they are (needs NET_HTTP; tools/gen_http_assets.py)
+CONFIG_NET_HTTP_GZIP ?= $(CONFIG_NET_HTTP)
+# Hamlib rigctld on port 4532: frequency, mode, PTT, S meter for loggers and SDR programs (needs NET_TCP;
+# core/net/rigctld.c)
+CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
+# the radio's own APRS-IS client through the host: our beacons and the iGate's lines, off until a server is set
+# (needs NET_TCP and APRS; core/net/aprsis.c)
+CONFIG_NET_APRSIS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS))),y,n)
+# mDNS / DNS-SD responder on the USB network link: <host>.local and the radio's services (needs DMR_IP_GATEWAY, the
+# IP stack it runs on; core/net/mdns.c, docs/spec/mdns.md)
+CONFIG_MDNS ?= $(CONFIG_DMR_IP_GATEWAY)
+# TFTP server on the USB network link: codeplug.bin read and (staged, checked) written, info.txt (needs
+# DMR_IP_GATEWAY; core/net/tftp.c, docs/spec/tftp.md)
+CONFIG_TFTP ?= $(CONFIG_DMR_IP_GATEWAY)
+# control station mode for PC dispatch software on the USB network link: the PC as the endpoint of the radio's own
+# data ports (passthrough) and a fixed private link address pair (needs DMR_IP_GATEWAY; docs/spec/usb-network.md 5)
+CONFIG_DMR_CONTROL_STATION ?= $(CONFIG_DMR_IP_GATEWAY)
+# SNMP agent (SNMPv2c) on UDP 161 of the radio's address, over the USB network and over the air, with notifications
+# (needs DMR_IP_GATEWAY; core/snmp, docs/spec/snmp.md)
+CONFIG_SNMP ?= $(CONFIG_DMR_IP_GATEWAY)
 # single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
 # the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
 CONFIG_SFR ?= $(CONFIG_DMR)
@@ -112,7 +142,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED SFR \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
 	USB HOSTLINK USB_NETWORK HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
@@ -123,7 +153,7 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
 ifneq ($(call feature_on,HOTSPOT),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)
@@ -153,6 +183,30 @@ endif
 ifneq ($(call feature_on,DMR_IP_GATEWAY),)
   ifeq ($(call feature_on,USB_NETWORK),)
     $(error CONFIG_DMR_IP_GATEWAY=y needs CONFIG_USB_NETWORK=y)
+  endif
+endif
+ifneq ($(call feature_on,NET_TCP),)
+  ifeq ($(call feature_on,DMR_IP_GATEWAY),)
+    $(error CONFIG_NET_TCP=y needs CONFIG_DMR_IP_GATEWAY=y)
+  endif
+endif
+$(foreach f,NET_HTTP_GZIP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
+$(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
+$(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS=y))))
+$(foreach f,MDNS TFTP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
+ifneq ($(call feature_on,DMR_TMS),)
+  ifeq ($(call feature_on,DMR_SMS),)
+    $(error CONFIG_DMR_TMS=y needs CONFIG_DMR_SMS=y)
+  endif
+endif
+ifneq ($(call feature_on,DMR_CONTROL_STATION),)
+  ifeq ($(call feature_on,DMR_IP_GATEWAY),)
+    $(error CONFIG_DMR_CONTROL_STATION=y needs CONFIG_DMR_IP_GATEWAY=y)
+  endif
+endif
+ifneq ($(call feature_on,SNMP),)
+  ifeq ($(call feature_on,DMR_IP_GATEWAY),)
+    $(error CONFIG_SNMP=y needs CONFIG_DMR_IP_GATEWAY=y)
   endif
 endif
 ifneq ($(call feature_on,VFO_FM),)

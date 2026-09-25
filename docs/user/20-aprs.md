@@ -67,3 +67,7 @@ Turn on **KISS on USB**, then run `tools/aprs_gate.py --port <radio port>`:
 - In USB network mode use `--port udp:<radio address>`.
 
 The radio can't be in hotspot mode at the same time.
+
+In USB network mode the radio can do both without the helper (see [USB network mode](14-usb-network.md)): APRS
+programs connect to the radio's address on TCP port 8001 directly, and the radio can log in to an APRS-IS server
+itself. KISS on USB must be on for both.
