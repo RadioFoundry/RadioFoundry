@@ -29,7 +29,7 @@ static uint32_t last_raw, stable;
 // Encoder (6.3): both lines on both edges into the table decoder, two steps per detent resting where A == B (as on
 // the DM-1701; "one count per B edge" in the stock firmware means the same detent). The interrupt is the only writer
 #define ENC_STEPS	2
-static quad_t enc;
+static quad_dec_t enc;
 static int32_t enc_taken;
 
 static uint8_t read_columns_low(void)

@@ -13,7 +13,7 @@ static int checks;
 // The Gray sequence forward (+1 per step): 00 01 11 10
 static const uint8_t gray[4] = { 0, 1, 3, 2 };
 
-static quad_t q;
+static quad_dec_t q;
 static int pos;			// index into gray[] of the lines' state now
 static int events;		// nonzero results of quad_sample
 static int backward;		// results against the direction being turned

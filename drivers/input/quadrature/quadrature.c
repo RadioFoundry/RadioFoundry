@@ -14,7 +14,7 @@ static const int8_t step_table[16] = {
 	/* 11 */ ILL,  -1,   +1,   0,
 };
 
-void quad_init(quad_t *q, uint8_t steps, uint8_t rest, uint8_t ab)
+void quad_init(quad_dec_t *q, uint8_t steps, uint8_t rest, uint8_t ab)
 {
 	q->ab = ab & 3u;
 	q->steps = steps == 1 || steps == 4 ? steps : 2;
@@ -25,7 +25,7 @@ void quad_init(quad_t *q, uint8_t steps, uint8_t rest, uint8_t ab)
 	q->transitions = q->illegal = q->reversals = 0;
 }
 
-int8_t quad_sample(quad_t *q, uint8_t ab)
+int8_t quad_sample(quad_dec_t *q, uint8_t ab)
 {
 	ab &= 3u;
 	int8_t s = step_table[(q->ab << 2) | ab];
@@ -54,7 +54,7 @@ int8_t quad_sample(quad_t *q, uint8_t ab)
 	return d;
 }
 
-int8_t quad_take(const quad_t *q, int32_t *taken)
+int8_t quad_take(const quad_dec_t *q, int32_t *taken)
 {
 	int32_t n = q->detents - *taken;
 	n = n > 127 ? 127 : n < -127 ? -127 : n;
