@@ -185,9 +185,12 @@ def test_unconfirmed_data_rx(radio, sdr_bench, pytestconfig):
 def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
     """Confirmed data to our ID: an ETSI response (ACK) goes back to the sender."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
+    # A sender ID of its own per run: the bench sends the same N(S) every time, and the same packet from one sender within
+    # 20 s is a retry the radio ACKs again without counting it (ip.rx_duplicates)
+    src = BENCH_SRC + 100 + int(time.time()) % 100
     before = radio.data_view()
     with sdr_bench.lease():
-        heard = sdr_bench.data(freq, cc, own, octets=40, confirmed=True, src=BENCH_SRC, listen_after=3)
+        heard = sdr_bench.data(freq, cc, own, octets=40, confirmed=True, src=src, listen_after=3)
     time.sleep(0.5)
     after = radio.data_view()
     d = _deltas(before, after, ["data.rx_packets", "data.rx_confirmed", "data.responses_sent", "data.tx_ok",
@@ -195,7 +198,7 @@ def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
     print("radio deltas:", d)
     assert d["data.rx_confirmed"] == 1 and d["data.responses_sent"] == 1, d
     assert d["data.tx_ok"] >= 1 and d["data.tx_failed"] == 0, d
-    _soft((BENCH_SRC, own) in _heard_headers(heard), "the response header to the bench")
+    _soft((src, own) in _heard_headers(heard), "the response header to the bench")
 
 
 @pytest.mark.rf
