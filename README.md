@@ -169,8 +169,9 @@ wants to touch old code. We test at four levels instead, and most of it runs on 
   calls and texts to the radio and checks what the radio transmits. See [tests/hil/README.md](tests/hil/README.md).
 
 On top of that, every change builds every radio with each feature switched on and off, checks the image still fits,
-and runs the license and clean-room checks (`tools/ci.sh`). How to run each level and where a new test goes:
-[developer docs, testing](docs/dev/testing.md) and [docs/testing](docs/testing/README.md).
+and runs the license and clean-room checks (`tools/ci.sh`). CI runs the host tests, coverage and every radio's
+default build on each push, the full matrix nightly ([CI](docs/dev/ci.md)). How to run each level and where a new
+test goes: [developer docs, testing](docs/dev/testing.md) and [docs/testing](docs/testing/README.md).
 
 What that buys: you can change the DMR stack, the UI or the storage code and know within a couple of minutes, on
 your own machine, whether you broke something. You don't need our exact radio or our bench to contribute, and a bug

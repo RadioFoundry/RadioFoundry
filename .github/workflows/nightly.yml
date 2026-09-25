@@ -1,0 +1,165 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
+#   matrix       DM-1701 and MD-380: a build per feature switch turned off alone, fm-minimal and maximal (LTO), each
+#                with zero warnings and its size (tools/ci.sh --matrix; about 4-5 minutes per board on the runner)
+#   dm32-matrix  the same for the DM-32UV in the csky-elf image (skipped where the image isn't available)
+#   reuse        `reuse lint`, reported as a warning until the tree passes it
+# A scheduled run does nothing when the commit it would test already passed a nightly run: a successful run saves
+# an empty cache entry named after the commit (nightly-ok-<sha>), and the next scheduled run looks that name up
+# first. That works the same on Gitea and GitHub (no API token, no clock arithmetic), catches up after nights the
+# runner was off, and an evicted entry only costs one repeated run. A manual run (workflow_dispatch) always builds.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "17 7 * * *"   # 07:17 UTC, early morning in the US
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ARM_GCC_VERSION: "13.3.rel1"
+  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Look up this commit's nightly pass
+        id: tested
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .nightly-ok
+          key: nightly-ok-${{ github.sha }}
+          lookup-only: true
+      - id: decide
+        run: |
+          if [ "${{ steps.tested.outputs.cache-hit }}" = true ]; then
+            echo "::notice::${GITHUB_SHA::8} already passed a nightly run; nothing new to build"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  matrix:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [dm1701, md380]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/cache@v4
+        with:
+          path: ~/opt/arm-gnu-toolchain-${{ env.ARM_GCC_VERSION }}-x86_64-arm-none-eabi
+          key: arm-gnu-${{ env.ARM_GCC_VERSION }}-${{ hashFiles('tools/install-arm-toolchain.sh') }}
+      - name: Arm GNU Toolchain (pinned, trimmed to the Cortex-M4 multilib)
+        run: tools/install-arm-toolchain.sh
+      - name: Feature matrix
+        env:
+          ODR_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
+        run: |
+          set -u
+          rc=0
+          tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
+          cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: matrix-${{ matrix.board }}
+          path: |
+            build/ci/size-report.md
+            build/ci/*.log
+          if-no-files-found: ignore
+
+  dm32-matrix:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read   # pulling a private ghcr.io image with the job token
+    env:
+      ODR_CSKY_IMAGE: ${{ vars.ODR_CSKY_IMAGE || 'odr/csky-gcc14:latest' }}
+      ODR_CI_PRUNE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Log in to the image's registry
+        if: vars.ODR_CSKY_REGISTRY != ''
+        env:
+          # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
+          # own token (packages: read)
+          REGISTRY_TOKEN: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
+          REGISTRY_USER: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
+        run: echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
+      - name: DM-32UV feature matrix in the csky-elf image
+        run: |
+          set -u
+          rc=0
+          tools/docker/csky-toolchain/run.sh tools/ci.sh --matrix --steps firmware --board dm32 || rc=$?
+          if [ "$rc" = 3 ]; then
+            echo "::notice::DM-32UV matrix skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            exit 0
+          fi
+          [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - name: Log out of the registry
+        if: always() && vars.ODR_CSKY_REGISTRY != ''
+        run: docker logout "${{ vars.ODR_CSKY_REGISTRY }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: matrix-dm32
+          path: |
+            build/ci/size-report.md
+            build/ci/*.log
+          if-no-files-found: ignore
+
+  reuse:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: reuse lint (a warning until the tree passes)
+        run: |
+          set -u
+          pipx install reuse > /dev/null
+          if ! "$HOME/.local/bin/reuse" lint; then
+            echo "::warning::reuse lint does not pass yet (see the log; docs/dev/ci.md)"
+          fi
+
+  mark:
+    needs: [matrix, dm32-matrix]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Remember that this commit passed
+        run: mkdir -p .nightly-ok && date -u > .nightly-ok/stamp
+      - uses: actions/cache/save@v4
+        with:
+          path: .nightly-ok
+          key: nightly-ok-${{ github.sha }}

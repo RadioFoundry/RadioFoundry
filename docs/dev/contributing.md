@@ -49,5 +49,6 @@ against the reference trees (run by the project lead, never in public CI). All t
 JOBS=8 tools/ci.sh
 ```
 
-It must end with "all checks passed". Skips (a missing compiler, `reuse` not installed) are reported; install what
-you can. Commit in small steps with messages that say what changed and why.
+It must end with "all checks passed". Skips (a missing compiler, `reuse` not installed) are reported; install what you
+can. CI runs the quick part on every push and the feature matrix nightly ([CI](ci.md)); run the whole gate before you
+open the pull request. Commit in small steps with messages that say what changed and why.

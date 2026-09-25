@@ -14,7 +14,8 @@ what each level is for and where a new test goes.
 | Manual bench cases | the SDR bench and a person | `tools/bench/dmr_bench.py run CASE` | What can't be scripted yet ([dmr-bench.md](../testing/dmr-bench.md)) |
 
 `tools/ci.sh` runs the host tests, checks the Python, builds every board's feature matrix with zero warnings and runs
-the license checks. It must pass before every merge. See [Contributing](contributing.md).
+the license checks. It must pass before every merge. See [Contributing](contributing.md). The CI workflows run its
+pieces per push and nightly, and `tools/coverage.sh` reports the host tests' coverage ([CI](ci.md)).
 
 ## Host tests
 
