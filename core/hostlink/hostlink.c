@@ -384,6 +384,7 @@ static void hostlink_task(void *arg)
 			now = hal_millis();
 		}
 #if CONFIG_DMR_IP_GATEWAY
+		hostlink_net_control_poll();
 		if (hostlink_network_mode()) {
 			hostlink_net_poll(now);		// frames from the host (UDP serial among them), packets from the air
 			now = hal_millis();

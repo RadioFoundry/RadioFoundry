@@ -50,6 +50,9 @@ size_t hostlink_net_write(const uint8_t *buf, size_t len);
 // pair (ipGatewaySetFixedLink), 0 = addressed by DMR ID. The link addressing changes in the host link task's next
 // poll; the host picks it up at its next DHCP exchange (the radio refuses a renewal of the old address)
 void hostlink_net_set_control(bool passthrough, uint32_t fixed_link_ip);
+// In the host link task in either USB personality: puts hostlink_net_set_control's link address in force, so the view
+// shows it before the network link is up
+void hostlink_net_control_poll(void);
 // Passthrough is on and the PC can take the packets now (the network link is up): what the data service is told
 bool hostlink_net_passthrough_active(void);
 

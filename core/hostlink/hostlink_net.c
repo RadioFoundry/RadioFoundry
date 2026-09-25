@@ -136,16 +136,21 @@ bool hostlink_net_passthrough_active(void)
 	return passthrough && started && net_up();
 }
 
-void hostlink_net_poll(uint32_t now_ms)
+void hostlink_net_control_poll(void)
 {
-	if (!started) {
-		return;
-	}
 	if (link_changed) {
 		link_changed = false;
 		__sync_synchronize();
 		ipGatewaySetFixedLink(link_wanted);	// an address that can't be used leaves the DMR ID addressing
 	}
+}
+
+void hostlink_net_poll(uint32_t now_ms)
+{
+	if (!started) {
+		return;
+	}
+	hostlink_net_control_poll();
 	board.netif->tick(now_ms);
 	for (int i = 0; i < 4; i++) {
 		int n = board.netif->receive(frame, sizeof(frame));
