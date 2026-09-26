@@ -776,6 +776,102 @@ static void test_settings_worn_sector(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+
+// A record that crosses a sector end (a legacy channel, zone or contact record can): a power cut at every unit of
+// storage_write, and again inside the replay at the next boot, leaves the whole record old or new, never half of
+// each; nothing else in the flash changes (the calibration copy included)
+static void test_write_across_sectors(void)
+{
+	uint8_t old[200], neu[200], back[200];
+	const uint32_t at = 0x5FA0u;		// 0x60 bytes before the sector end, 0x68 after
+	uint8_t cal[0x200];
+
+	for (unsigned i = 0; i < sizeof(old); i++) {
+		old[i] = (uint8_t)(0xA0 ^ i);
+		neu[i] = (uint8_t)(0x31 + 3u * i);
+	}
+	for (unsigned i = 0; i < sizeof(cal); i++) {
+		cal[i] = (uint8_t)(i * 5u + 2u);
+	}
+	sim_flash_create(FLASH_SIZE, &map);
+	memcpy(&sim_flash_data[map.calibration_addr], cal, sizeof(cal));
+	boot();
+	CHECK(storage_write(at, old, sizeof(old)));
+	uint8_t *snap = malloc(FLASH_SIZE);
+	memcpy(snap, sim_flash_data, FLASH_SIZE);
+	uint32_t u0 = sim_flash_units();
+	CHECK(storage_write(at, neu, sizeof(neu)));
+	uint32_t total = sim_flash_units() - u0;
+	CHECK(memcmp(&sim_flash_data[at], neu, sizeof(neu)) == 0);
+	CHECK(storage_write(at, neu, sizeof(neu)));		// the same again: skipped, nothing programmed
+	CHECK(sim_flash_units() - u0 == total);
+
+	int o = 0, n = 0, bad = 0;
+	for (uint32_t cut = 1; cut <= total + 1; cut += (cut < 300 || total - cut < 300) ? 1 : 37) {
+		memcpy(sim_flash_data, snap, FLASH_SIZE);
+		sim_flash_power_on();
+		CHECK(storage_init());
+		sim_flash_cut_after(cut);
+		storage_write(at, neu, sizeof(neu));
+		bool was_cut = sim_flash_is_cut();
+		// The boot's replay cut too, at a point that moves with the first cut
+		sim_flash_power_on();
+		sim_flash_cut_after(was_cut ? 1u + cut % 4111u : 0);
+		storage_init();
+		sim_flash_power_on();
+		CHECK(storage_init());
+		memcpy(back, &sim_flash_data[at], sizeof(back));
+		if (memcmp(back, neu, sizeof(back)) == 0) {
+			n++;
+		} else if (memcmp(back, old, sizeof(back)) == 0) {
+			o++;
+		} else {
+			bad++;
+			if (bad < 4) {
+				printf("FAIL write across sectors: cut after %u of %u units leaves a mixed record\n", cut, total);
+			}
+		}
+		// Outside the two sectors, the journal and the settings ring (the ownership mark), nothing changed
+		CHECK(memcmp(&sim_flash_data[map.calibration_addr], cal, sizeof(cal)) == 0);
+		CHECK(memcmp(sim_flash_data + 0x7000u, snap + 0x7000u, map.settings_addr - 0x7000u) == 0);
+		CHECK(memcmp(sim_flash_data, snap, 0x5000u) == 0);
+		// The journal is idle again
+		CHECK(storage_write(at, old, sizeof(old)) && memcmp(&sim_flash_data[at], old, sizeof(old)) == 0);
+	}
+	failures += bad;
+	CHECK(o > 0 && n > 0);
+	printf("write across sectors: %d cut points, old %d new %d (write = %u units)\n", o + n + bad, o, n, total);
+
+	// Longer than the journal takes in one transaction: sector by sector (the CPS-sized path)
+	uint8_t *big = malloc(3 * STORAGE_SECTOR);
+	memset(big, 0x3C, 3 * STORAGE_SECTOR);
+	CHECK(storage_write(0x20800u, big, 3 * STORAGE_SECTOR));
+	CHECK(sim_flash_data[0x207FF] == 0xFF && sim_flash_data[0x20800] == 0x3C && sim_flash_data[0x237FF] == 0x3C &&
+	      sim_flash_data[0x23800] == 0xFF);
+	// Edges: nothing to write, past the end, wrapping round
+	CHECK(storage_write(0x3000u, big, 0));
+	CHECK(!storage_write(FLASH_SIZE - 4u, big, 8) && !storage_write(0xFFFFFFF0u, big, 0x20));
+	free(big);
+
+	// A patch transaction pending in J0 at boot is ours (the foreign guard), even with the settings ring blank
+	storage_stats_t ss;
+	storage_get_stats(&ss);
+	uint32_t replays = ss.replays;
+	memcpy(sim_flash_data, snap, FLASH_SIZE);
+	sim_flash_power_on();
+	storage_init();
+	sim_flash_cut_after(STORAGE_SECTOR + 300u);	// J0 programmed, the first sector staged, not yet rewritten
+	storage_write(at, neu, sizeof(neu));
+	sim_flash_power_on();
+	memset(&sim_flash_data[map.settings_addr], 0xFF, map.settings_size);
+	CHECK(storage_init() && storage_region() == STORAGE_REGION_OURS);
+	CHECK(memcmp(&sim_flash_data[at], neu, sizeof(neu)) == 0);
+	storage_get_stats(&ss);
+	CHECK(ss.replays == replays + 1);
+	free(snap);
+	CHECK(sim_flash_violations() == 0);
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -789,6 +885,7 @@ int main(void)
 	test_settings_layout();
 	test_settings_bad_records();
 	test_settings_worn_sector();
+	test_write_across_sectors();
 	sim_flash_free();
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;
