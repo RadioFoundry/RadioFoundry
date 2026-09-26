@@ -535,9 +535,19 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest
+run-settings: settingsTest spiNorTest
 	./settingsTest
+	./spiNorTest
 .PHONY: run-settings
+
+# The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
+# 1 MB parts, power cuts tearing page programs and erases)
+TESTS   += spiNorTest
+
+spiNorTest: spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c $(ROOT)/drivers/flash/spi_nor/spi_nor.h $(STORE) \
+            $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c \
+		$(CORE)/storage/storage.c $(CORE)/settings/settings.c
 
 # Codeplug editing: the legacy record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit
