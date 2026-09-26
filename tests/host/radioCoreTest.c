@@ -19,6 +19,7 @@
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
 #include "dmr/dmrPrivacy.h"
+#include "dmr/dmrData.h"
 
 static int failures;
 static int checks;
@@ -2269,6 +2270,115 @@ static void test_ui_settings(void)
 	run(20);
 }
 
+// ---- The DMR data service on the radio core (radio_sm.c's data glue): what it lets out, keyed like PTT, and the
+// answers it hands back ----
+
+static void csbk_rx(uint8_t opcode, uint32_t target, uint32_t from, uint8_t cc)
+{
+	uint8_t c[10] = { (uint8_t)(0x80 | opcode), DMR_FID_ETSI, 0, 0, (uint8_t)(target >> 16), (uint8_t)(target >> 8),
+			  (uint8_t)target, (uint8_t)(from >> 16), (uint8_t)(from >> 8), (uint8_t)from };
+	dmrBurst_t d;
+	CHECK(dmrDataBuildCSBK(c, &d) == 1);
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_CSBK;
+	b.sync = DMR_SYNC_MS;
+	b.cc = cc;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = (uint8_t)d.length;
+	memcpy(b.payload, d.payload, d.length);
+	sim_rx(&b);
+}
+
+// Bursts on air since n0 of this kind, with this CSBK opcode (0xFF: any)
+static int air_count(unsigned n0, uint8_t kind, uint8_t opcode)
+{
+	int n = 0;
+	for (unsigned i = n0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == kind && (opcode == 0xFF || (sim.air[i].payload[0] & 0x3F) == opcode)) {
+			n++;
+		}
+	}
+	return n;
+}
+
+static void test_dmr_data_glue(void)
+{
+	uint8_t kind;
+	uint32_t dst;
+
+	// A call alert: listen before talk, keyed like PTT, one CSBK with the MCU's CRC; the ack ends it
+	dmr_start(true);
+	unsigned n0 = sim.air_count;
+	int tx0 = hw.tx_calls;
+	CHECK(dmr_signal_call_alert(3101234));
+	run(600);
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1 && hw.tx_calls > tx0);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_SENDING && dst == 3101234);
+	for (unsigned i = n0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK) {
+			CHECK(sim.air[i].host_crc);
+		}
+	}
+	csbk_rx(DMR_CSBKO_CALL_ALERT_ACK, 3101276, 3101234, 2);
+	run(200);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK);
+	CHECK(!(sm.view.state == RS_TX));
+
+	// No answer: the retries, then failed; the keying released each time
+	n0 = sim.air_count;
+	CHECK(dmr_signal_radio_check(3105555));
+	run(30000);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_FAILED);
+	CHECK(air_count(n0, DMR_BURST_CSBK, 0xFF) >= 2 && !sm.dmr_keyed);
+
+	// A call alert to us: alerted, and the ack goes out through the same glue
+	n0 = sim.air_count;
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3101276, 3109876, 2);
+	run(1000);
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT_ACK) == 1);
+	// ... not to us: nothing
+	n0 = sim.air_count;
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3100001, 3109876, 2);
+	run(1000);
+	CHECK(sim.air_count == n0);
+
+	// A group SMS: a whole packet on air (preamble, header, blocks), sent once heard clear
+	n0 = sim.air_count;
+	CHECK(sms_send(9, true, "hello group", false, DMR_SMS_FORMAT_ETSI_IP));
+	run(3000);
+	CHECK(sms_send_state() == DMR_REQ_OK);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) >= 1 && sim.air_count - n0 >= 3);
+
+	// While the user transmits voice, data waits: nothing goes out in the middle of the call
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK((sm.view.state == RS_TX));
+	unsigned voice0 = sim.air_count;
+	CHECK(dmr_signal_call_alert(3101234));
+	run(600);
+	CHECK(air_count(voice0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) == 0);
+	req(RREQ_PTT, 0);
+	run(3000);
+	CHECK(air_count(voice0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1);
+	run(30000);
+
+	// An RX only DMR channel and an FM channel: refused, the request fails instead of keying
+	chans[4].rx_only = true;
+	reload_channel();
+	tx0 = hw.tx_calls;
+	CHECK(!dmr_signal_call_alert(3101234) || (run(3000), dmr_signal_state(&kind, &dst) == DMR_REQ_FAILED));
+	CHECK(hw.tx_calls == tx0);
+	chans[4].rx_only = false;
+	reload_channel();
+	req(RREQ_ZONE_POS, 0);		// channel 1, FM
+	run(50);
+	tx0 = hw.tx_calls;
+	CHECK(!sms_send(3101234, false, "x", true, DMR_SMS_FORMAT_ETSI) || (run(5000), sms_send_state() == DMR_REQ_FAILED));
+	CHECK(hw.tx_calls == tx0);
+}
+
 int main(void)
 {
 	test_startup();
@@ -2295,6 +2405,7 @@ int main(void)
 	test_hotspot_session();
 	test_hotspot_cwid();
 	test_dmr_emergency();
+	test_dmr_data_glue();	// (last: the data service's state carries over)
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }
