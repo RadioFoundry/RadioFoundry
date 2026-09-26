@@ -23,8 +23,10 @@ typedef struct {
 
 #define SPI_NOR_PAGE_SIZE	256u
 #define SPI_NOR_SECTOR_SIZE	4096u
+#define SPI_NOR_MAX_SIZE	0x1000000u	// what 3-byte addresses reach: a larger part is used as 16 MB
 
-// Read the JEDEC ID (0x9F) and fill in manufacturer, device and size. False if the bus fails or nothing answers
+// Read the JEDEC ID (0x9F) and fill in manufacturer, device and size (at most SPI_NOR_MAX_SIZE). False if the bus fails
+// or nothing answers
 bool spi_nor_probe(spi_nor_t *nor);
 bool spi_nor_read(const spi_nor_t *nor, uint32_t addr, void *buf, uint32_t len);
 // Program already erased bytes; split at page boundaries, waits for each page

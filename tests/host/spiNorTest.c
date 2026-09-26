@@ -256,6 +256,11 @@ static void test_probe(void)
 		{ 0xEF, 0x40, 0x10, 64u << 10, true },	// W25X05 class: 64 KB
 		{ 0xEF, 0x40, 0x0F, 0, true },		// capacity code not known: size 0
 		{ 0x85, 0x20, 0x01, 0, true },
+		// Larger than 3-byte addresses reach: the driver can only address the first 16 MB (above that a read
+		// or a program would wrap to the bottom of the chip, where the codeplug and the calibration are)
+		{ 0xEF, 0x40, 0x19, 16u << 20, true },	// W25Q256: 32 MB
+		{ 0xEF, 0x40, 0x20, 16u << 20, true },	// W25Q512: 64 MB (Winbond's code after 0x19 is 0x20)
+		{ 0xEF, 0x40, 0x21, 16u << 20, true },	// W25Q01: 128 MB
 		{ 0x00, 0x00, 0x00, 0, false },		// bus stuck low
 		{ 0xFF, 0xFF, 0xFF, 0, false },		// nothing drives MISO
 		{ 0x00, 0x00, 0x18, 0, false },
