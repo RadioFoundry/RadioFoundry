@@ -40,6 +40,10 @@ static struct {
 	uint32_t afsk_end_ms;
 	bool afsk_busy;
 	uint8_t level;
+	// Faults
+	bool tx_fail;		// the transmitter won't key
+	bool afsk_fail;		// the AFSK transmitter won't start
+	bool afsk_stuck;	// ... or never finishes
 } hw;
 
 static uint32_t now;
@@ -59,6 +63,9 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	(void)bw;
 	(void)t;
+	if (hw.tx_fail) {
+		return false;
+	}
 	hw.tx_calls++;
 	hw.tx_hz = hz;
 	hw.tx_power = p;
@@ -107,7 +114,7 @@ static void decode_tones(void)
 
 static bool a_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
 {
-	if (!hw.keyed || baud != 1200 || mark != 1200 || space != 2200 || (n + 7u) / 8u > sizeof(hw.tones)) {
+	if (hw.afsk_fail || !hw.keyed || baud != 1200 || mark != 1200 || space != 2200 || (n + 7u) / 8u > sizeof(hw.tones)) {
 		return false;
 	}
 	memcpy(hw.tones, t, (n + 7u) / 8u);
@@ -121,7 +128,7 @@ static bool a_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mar
 }
 static bool a_tx_busy(void)
 {
-	if (hw.afsk_busy && (int32_t)(now - hw.afsk_end_ms) >= 0) {
+	if (hw.afsk_busy && !hw.afsk_stuck && (int32_t)(now - hw.afsk_end_ms) >= 0) {
 		hw.afsk_busy = false;
 	}
 	return hw.afsk_busy;
@@ -648,6 +655,126 @@ static void test_dmr_position(void)
 #endif
 }
 
+// The configuration kept in the settings (settings_t aprs_*): back exactly after a reload, and a stored record with
+// values out of range (another firmware's, a damaged one) loads field by field with the defaults for the bad ones
+static void test_cfg_store(void)
+{
+	reset();
+	aprs_cfg_t c, b;
+	aprs_get_cfg(&c);
+	c.tx_on = c.smart = c.compressed = c.after_ptt = c.boot = c.kiss = c.narrow = c.rx_on = true;
+	c.igate = c.igate_tx = c.messaging = c.dmr_udt = c.to_is = c.dmr_gps = true;
+	c.region = APRS_REGION_CUSTOM;
+	c.freq_hz = 145825000;
+	c.ssid = 9;
+	c.sym_table = '\\';
+	c.sym_code = 'k';
+	c.path = APRS_PATH_WIDE2_2;
+	c.ambiguity = 3;
+	c.pos_src = APRS_POS_FIXED;
+	c.fix_lat = -337000000;
+	c.fix_lon = 1512000000;
+	c.fix_alt_m = -12;
+	c.interval_s = 900;
+	c.distance_m = 2500;
+	c.level = 63;
+	c.txdelay = 45;
+	c.via = APRS_VIA_BOTH;
+	c.dmr_dst = 5057;
+	c.digi = 2;
+	aprs_set_cfg(&c, now);
+	aprs_reload();
+	run(200);			// (taken on the radio task's next tick)
+	aprs_get_cfg(&b);
+	CHECK(b.tx_on && b.smart && b.compressed && b.after_ptt && b.boot && b.kiss && b.narrow && b.rx_on);
+	CHECK(b.igate && b.igate_tx && b.messaging && b.dmr_udt && b.to_is && b.dmr_gps);
+	CHECK(b.region == APRS_REGION_CUSTOM && b.freq_hz == 145825000 && b.ssid == 9 && b.sym_table == '\\' &&
+	      b.sym_code == 'k' && b.path == APRS_PATH_WIDE2_2 && b.ambiguity == 3 && b.pos_src == APRS_POS_FIXED);
+	CHECK(b.fix_lat == -337000000 && b.fix_lon == 1512000000 && b.fix_alt_m == -12 && b.interval_s == 900 &&
+	      b.distance_m == 2500 && b.level == 63 && b.txdelay == 45 && b.via == APRS_VIA_BOTH && b.dmr_dst == 5057 &&
+	      b.digi == 2);
+	// Out of range on the way in: kept in range
+	c.ssid = 40;
+	c.level = 200;
+	c.ambiguity = 9;
+	aprs_set_cfg(&c, now);
+	aprs_get_cfg(&b);
+	CHECK(b.ssid == 7 && b.level <= 100 && b.ambiguity == 4);
+	// A damaged record
+	settings_t *st = settings_begin();
+	st->aprs_region = 99;
+	st->aprs_ssid = 77;
+	st->aprs_dmr_dst = 0x1000000u;
+	st->aprs_symbol[0] = '/';
+	st->aprs_symbol[1] = 0x7F;
+	st->aprs_path = 50;
+	st->aprs_pos_src = 50;
+	st->aprs_level = 101;
+	st->aprs_txdelay = 0;
+	st->aprs_misc = 3u | (3u << 2) | (7u << 4);	// via, digipeater mode and ambiguity all out of range
+	settings_end(now);
+	aprs_reload();
+	run(200);			// (taken on the radio task's next tick)
+	aprs_get_cfg(&b);
+	aprs_cfg_t d;
+	aprs_cfg_default(&d);
+	CHECK(b.region == APRS_REGION_NA && b.ssid == d.ssid && b.dmr_dst == d.dmr_dst && b.sym_code == d.sym_code &&
+	      b.sym_table == d.sym_table);
+	CHECK(b.path == APRS_PATH_WIDE1_WIDE2 && b.pos_src == APRS_POS_AUTO && b.level == d.level &&
+	      b.txdelay == d.txdelay && b.via == APRS_VIA_RF && b.digi == 0 && b.ambiguity == 0);
+	CHECK(b.tx_on && b.freq_hz == 145825000);	// the good fields stay
+	// Not stored at all: the defaults
+	st = settings_begin();
+	st->aprs_stored = 0;
+	settings_end(now);
+	aprs_reload();
+	run(200);			// (taken on the radio task's next tick)
+	aprs_get_cfg(&b);
+	CHECK(!b.tx_on && b.region == d.region && b.interval_s == d.interval_s);
+}
+
+// The transmission's failures: the transmitter won't key, the AFSK won't start, the AFSK never finishes. Each time
+// the radio goes back to its channel unkeyed, and the frame is tried again later, then given up
+static void test_rf_failures(void)
+{
+	aprs_view_t v;
+	reset();
+	strcpy(cp_name, "N0TST");
+	configure(0, false);
+	for (int fault = 0; fault < 3; fault++) {
+		hw.tx_fail = fault == 0;
+		hw.afsk_fail = fault == 1;
+		hw.afsk_stuck = fault == 2;
+		aprs_get_view(&v);
+		uint32_t failed = v.rf_failed;
+		CHECK(aprs_send_now());
+		run(30000);
+		aprs_get_view(&v);
+		CHECK(v.rf_failed > failed && v.rf_sent == 0);
+		CHECK(!hw.keyed && hw.rx_hz == CH_HZ && sm.view.state == RS_IDLE && sm.aprs_phase == 0);
+		run(60000);		// the retries, then given up
+		aprs_get_view(&v);
+		CHECK(!aprs_rf_pending() && !v.rf_active && !hw.keyed && hw.rx_hz == CH_HZ);
+	}
+	hw.tx_fail = hw.afsk_fail = hw.afsk_stuck = false;
+	// Working again: a status goes out; with the longest preamble a long one still fits (the preamble shortened)
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.txdelay = 255;
+	aprs_set_cfg(&c, now);
+	int starts = hw.starts;
+	nframes = 0;
+	CHECK(aprs_send_status("A status text long enough to make the frame and a 2.5 s preamble overflow the tones"));
+	CHECK(wait_start(starts + 1, 20000));
+	wait_idle();
+	aprs_get_view(&v);
+	CHECK(v.rf_sent >= 1 && nframes >= 1 && strstr(frames[0], ">A status text") != NULL);
+	// No callsign: a status isn't sent
+	strcpy(cp_name, "");
+	aprs_set_cfg(&c, now);
+	CHECK(!aprs_send_status("x"));
+}
+
 int main(void)
 {
 	test_defaults();
@@ -661,6 +788,8 @@ int main(void)
 	test_host_kiss_nmea();
 	test_messages();
 	test_dmr_position();
+	test_cfg_store();
+	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();
 #endif
