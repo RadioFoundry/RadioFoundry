@@ -54,8 +54,10 @@ know, and the rest keep their defaults (`upgraded`).
 the ring is erased first. It holds only older records, because the newest is in the sector before it. The record
 is programmed, then the commit word, then the slot is read back. A cut before the commit word leaves an unfinished
 slot that the next load skips, so the previous record stays in force. A slot that doesn't read back is skipped and
-the next one is tried, up to 4 slots. Erases go round the ring: the DM-1701's 8 sectors take 128 saves per pass,
-so a sector is erased once every 128 saves.
+the next one is tried, up to 4 slots. The walk past such slots never erases the sector holding the newest valid
+record (with a worn sector it could come round to it): that save fails instead, and the record stays in force.
+Erases go round the ring: the DM-1701's 8 sectors take 128 saves per pass, so a sector is erased once every 128
+saves.
 
 **When**: `settings_begin()` returns the live copy under a short RAM-only lock (`storage_quick_lock`) and
 `settings_end(now)` releases it. If anything changed, it notes the time. No flash operation happens inside, so the

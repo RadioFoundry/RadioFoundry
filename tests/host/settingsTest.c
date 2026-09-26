@@ -719,6 +719,63 @@ static void test_settings_bad_records(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+// A worn sector that no longer programs (its slots fail to read back): saves skip its slots, but never by erasing
+// the sector that holds the newest valid record, which would leave nothing valid in the ring until the next write
+// worked (a power cut there: the settings gone)
+static const hal_flash_map_t map_two = {
+	.settings_addr = 0x11000u, .settings_size = 0x2000u, .journal_addr = 0x19000u,
+	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = FLASH_SIZE,
+	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+};
+
+static void test_settings_worn_sector(void)
+{
+	settings_t s;
+	settings_stats_t st;
+
+	sim_flash_create(FLASH_SIZE, &map_two);
+	boot();
+	// Sector 0 full: the ownership mark and 15 records
+	for (uint32_t i = 1; i <= 15; i++) {
+		settings_begin()->vfo_rx_hz = 440000000u + i;
+		settings_end(i);
+		CHECK(settings_flush());
+	}
+	settings_get_stats(&st);
+	CHECK(st.sector == 0 && st.slot == 15);
+	sim_flash_bad_range(map_two.settings_addr + STORAGE_SECTOR, STORAGE_SECTOR);
+	// Saves fail while sector 1 doesn't program; each one walks past 4 of its slots (the first erases sector 1).
+	// From the second on, a power cut is armed at the first flash operation of the save: the one that would
+	// erase sector 0 is cut. After that boot the last saved value must be there
+	bool cut_seen = false;
+	for (uint32_t i = 0; i < 8 && !cut_seen; i++) {
+		settings_begin()->vfo_rx_hz = 145000000u + i;
+		settings_end(100 + i);
+		sim_flash_cut_after(i == 0 ? 0 : 1);
+		CHECK(!settings_flush());
+		cut_seen = sim_flash_is_cut();
+		sim_flash_cut_after(0);
+	}
+	boot();
+	settings_read(&s);
+	if (s.vfo_rx_hz != 440000015u) {
+		printf("FAIL worn sector: failed saves and a cut lose the settings (vfo_rx_hz %u, cut %d)\n", s.vfo_rx_hz,
+		       cut_seen);
+		failures++;
+	}
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_LOADED);
+	// The sector works again: saves go on
+	sim_flash_bad_range(0, 0);
+	settings_begin()->vfo_rx_hz = 150000000u;
+	settings_end(1000);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	CHECK(s.vfo_rx_hz == 150000000u);
+	CHECK(sim_flash_violations() == 0);
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -731,6 +788,7 @@ int main(void)
 	test_native_and_jobs();
 	test_settings_layout();
 	test_settings_bad_records();
+	test_settings_worn_sector();
 	sim_flash_free();
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;
