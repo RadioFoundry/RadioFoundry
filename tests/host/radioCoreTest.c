@@ -55,8 +55,12 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 	hw.rx_calls++;
 	return true;
 }
+static bool tx_fail;			// the board refuses to key (synthesizer won't lock, PA fault)
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
+	if (tx_fail) {
+		return false;
+	}
 	hw.tx_calls++;
 	hw.tx_hz = hz;
 	hw.tx_bw = bw;
@@ -2379,6 +2383,123 @@ static void test_dmr_data_glue(void)
 	CHECK(hw.tx_calls == tx0);
 }
 
+// ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while
+// transmitting, the stack's own refusals, targets that end with their channel, stored emergency settings ----
+static void test_error_paths(void)
+{
+	// The squelch threshold's ends
+	CHECK(radio_sm_squelch_open_below(0) == 255);
+	CHECK(radio_sm_squelch_open_below(200) == radio_sm_squelch_open_below(RADIO_SQUELCH_MAX));
+
+	// FM: no TX frequency, and a transmitter that won't key
+	setup_codeplug();
+	chans[1].tx_hz = 0;
+	start();
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_FREQ && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE);
+	chans[1].tx_hz = 146520000;
+	reload_channel();
+	req(RREQ_ZONE_POS, 0);
+	run(20);
+	tx_fail = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && !hw.led[LED_RED]);
+	req(RREQ_PTT, 0);
+	tx_fail = false;
+
+	// No retuning while transmitting: channel, zone, VFO and scan requests wait for the release
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	uint16_t pos = sm.view.zone_pos;
+	uint16_t zone = sm.view.zone_index;
+	req(RREQ_CH_STEP, 1);
+	req(RREQ_ZONE_POS, 3);
+	req(RREQ_ZONE, 1);
+	req(RREQ_VFO, 1);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(50);
+	CHECK(sm.view.state == RS_TX && sm.view.zone_pos == pos && sm.view.zone_index == zone && !sm.view.vfo);
+	CHECK(!(sm.view.scan != 0));
+	CHECK(hw.tx_calls == 1 && hw.tx_hz == 146520000);
+	req(RREQ_PTT, 0);
+	req(RREQ_CH_STEP, 1);
+	run(20);
+	CHECK(sm.view.zone_pos != pos);
+	// PTT while scanning: the scan stops where it is and the radio transmits there
+	req(RREQ_ZONE_POS, 0);
+	run(20);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(400);
+	CHECK(sm.view.scan != 0);
+	req(RREQ_PTT, 1);
+	run(20);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == sm.view.ch.tx_hz);
+	req(RREQ_PTT, 0);
+	run(20);
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(20);
+	CHECK(sm.view.scan == 0);
+
+	// DMR: the transmitter won't key; the stack reports a rejection
+	dmr_start(true);
+	tx_fail = true;
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && sim.tx_begins == 0);
+	req(RREQ_PTT, 0);
+	run(100);
+	tx_fail = false;
+	sim.reject_next = true;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REJECTED);
+	req(RREQ_PTT, 0);
+	run(1000);
+	sim.reject_next = false;
+	CHECK(sm.view.state != RS_TX && !sm.dmr_keyed);
+
+	// A talk target, the hear all latch and the channel's own target: chosen ones end with their channel
+	req(RREQ_DMR_TARGET, 3101234 | (1 << 24));
+	req(RREQ_DMR_HEAR_ALL, 1);
+	run(20);
+	CHECK(sm.view.dmr.target_manual && sm.view.dmr.hear_all_latch);
+	req(RREQ_ZONE_POS, 0);		// FM
+	run(50);
+	req(RREQ_ZONE_POS, 3);		// back on the DMR channel
+	run(50);
+	CHECK(!sm.view.dmr.target_manual && !sm.view.dmr.hear_all_latch && sm.view.dmr.target_id == 201);
+	// Targets out of range or off DMR: ignored
+	req(RREQ_DMR_TARGET, 0);
+	run(20);
+	CHECK(!sm.view.dmr.target_manual);
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	req(RREQ_DMR_TARGET, 9);
+	run(20);
+	CHECK(!sm.view.dmr.target_manual);
+
+	// Stored emergency settings are what the emergency engine starts with
+	settings_t *st = settings_begin();
+	st->em_stored = 1;
+	st->em_mode = DMR_EMERGENCY_MODE_ALARM_CALL;
+	st->em_dst = 3109999;
+	st->em_flags = SETTINGS_EM_DST_PRIVATE | SETTINGS_EM_ETSI_FID | SETTINGS_EM_NO_TONE;
+	st->em_alarm_tries = 3;
+	st->em_hot_mic_s = 15;
+	settings_end(now);
+	boot();				// (start() would load the defaults: no flash here)
+	run(50);
+	dmr_emergency_settings_t es;
+	dmr_emergency_get_settings_now(&es);
+	CHECK(es.dst == 3109999 && es.dst_private && es.etsi_fid && !es.rx_tone && es.alarm_tries == 3 &&
+	      es.hot_mic_s == 15);
+	st = settings_begin();
+	st->em_stored = 0;
+	settings_end(now);
+}
+
 int main(void)
 {
 	test_startup();
@@ -2401,6 +2522,7 @@ int main(void)
 	test_ui_requests();
 	test_ui_glue();
 	test_ui_settings();
+	test_error_paths();
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();
