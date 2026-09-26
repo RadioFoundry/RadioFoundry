@@ -114,6 +114,23 @@ static const flow_t flows[] = {
 	{ "S USB network on", "", "ok 5 4 ok", "usbnet=1 toast=USB_is_a_network screen=home", 4, false },
 	{ "S USB network off", "ok 5 4 ok", "ok 5 4 ok", "usbnet=0 toast=USB_is_a_serial", 4, false },
 	{ "S message failed text", "", "", "screen=home", 0, false },
+	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
+	{ "A APRS page", "", "ok 5 9", "screen=aprs", 3, false },
+	{ "A send position now", "", "ok 5 9 1", "aprs_sent=1 toast=Sending_position", 4, false },
+	{ "A send without a callsign", "aprs:nocall", "ok 5 9 1", "aprs_sent=0 toast=Set_your_callsign", 4, false },
+	{ "A beacons on", "", "ok 5 9 2", "aprs_auto=1 toast=Beacons_on", 4, false },
+	{ "A beacons off again", "ok 5 9 2", "2", "aprs_auto=0 toast=Beacons_off", 1, false },
+	{ "A next region", "", "ok 5 9 3", "aprs_region=1", 4, false },
+	{ "A regions skip an unset custom", "ok 5 9 3 3 3 3 3", "3", "aprs_region=0", 1, false },
+	{ "A regions with a custom frequency", "aprs:custom ok 5 9 3 3 3 3 3", "3", "aprs_region=6", 1, false },
+	{ "A interval", "", "ok 5 9 4", "aprs_interval=60", 4, false },
+	{ "A SmartBeaconing", "", "ok 5 9 5", "aprs_smart=1", 4, false },
+	{ "A send via DMR", "", "ok 5 9 6", "aprs_via=1", 4, false },
+	{ "A position source", "", "ok 5 9 7", "aprs_pos=1", 4, false },
+	{ "A position in DMR calls", "", "ok 5 9 8", "aprs_dmrgps=1 toast=Position_goes_out", 4, false },
+	{ "A KISS on USB", "", "ok 5 9 9", "aprs_kiss=1", 4, false },
+	{ "A stations heard", "", "ok 5 9 0", "screen=aprs-heard count=2", 4, false },
+	{ "A not in this build", "aprs:off", "ok 5 9 2", "toast=APRS_isn't aprs_auto=0", 4, false },
 };
 
 // DM-1701 key map only: the top side key, long waits
