@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# Hardware-in-the-loop tests (tests/hil/README.md, docs/dev/ci.md "HIL runner"): pytest against the radio on USB and
+# the SDR bench, on a self-hosted runner with the label odr-hil (the bench Mac). Nothing is flashed: the run tests
+# the firmware already on the radio (entering its bootloader takes a person), and prints that firmware's version
+# first. Everything beyond the radio-only tests is opt-in through the run's inputs, like the pytest flags.
+#
+# A scheduled run happens only when the repository variable ODR_HIL_SCHEDULE is "true", with the radio-only tests
+# plus ODR_HIL_SCHEDULE_FLAGS (for example "--allow-rf --allow-service-stop"). The runner's own environment gives
+# ODR_SDR_BENCH_HOST, ODR_PORT, ODR_HIL_AMBE and ODR_RADIO_LOCK (docs/dev/ci.md); never put them in this file.
+name: HIL
+
+on:
+  workflow_dispatch:
+    inputs:
+      rf:
+        description: "Transmit tests: --allow-rf --allow-service-stop (SDR bench TX and the radio's own, lowest power)"
+        type: boolean
+        default: false
+      usb_switch:
+        description: "--allow-usb-switch (USB network personality; macOS may miss the NCM carrier: power cycle)"
+        type: boolean
+        default: false
+      codeplug_write:
+        description: "--allow-codeplug-write (backed up and restored)"
+        type: boolean
+        default: false
+      reboot:
+        description: "--allow-reboot"
+        type: boolean
+        default: false
+      select:
+        description: "pytest -k expression (empty: every test)"
+        type: string
+        default: ""
+      extra:
+        description: "More pytest options (e.g. --ambe PATH --sdr-gain 0)"
+        type: string
+        default: ""
+  schedule:
+    - cron: "41 8 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hil   # one radio: never two runs at once, and never cancel one that's transmitting or writing
+  cancel-in-progress: false
+
+jobs:
+  hil:
+    if: github.event_name == 'workflow_dispatch' || vars.ODR_HIL_SCHEDULE == 'true'
+    runs-on: odr-hil
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Pytest options
+        id: opts
+        env:
+          RF: ${{ inputs.rf }}
+          USB: ${{ inputs.usb_switch }}
+          CPW: ${{ inputs.codeplug_write }}
+          REBOOT: ${{ inputs.reboot }}
+          EXTRA: ${{ inputs.extra }}
+          SCHEDULED: ${{ vars.ODR_HIL_SCHEDULE_FLAGS }}
+        run: |
+          set -eu
+          o=""
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            o="$SCHEDULED"
+          else
+            [ "$RF" = true ] && o="$o --allow-rf --allow-service-stop"
+            [ "$USB" = true ] && o="$o --allow-usb-switch"
+            [ "$CPW" = true ] && o="$o --allow-codeplug-write --codeplug-backup-dir $RUNNER_TEMP/codeplug-backup"
+            [ "$REBOOT" = true ] && o="$o --allow-reboot"
+            o="$o $EXTRA"
+          fi
+          echo "flags=$o" >> "$GITHUB_OUTPUT"
+          echo "pytest flags: ${o:-(radio only)}"
+
+      - name: HIL tests
+        env:
+          FLAGS: ${{ steps.opts.outputs.flags }}
+          SELECT: ${{ inputs.select }}
+        run: |
+          set -u
+          mkdir -p build/hil/shots
+          # the radio is shared with people and agents at the bench: hold its lock for the whole run, the version
+          # query included
+          LOCK=${ODR_RADIO_LOCK:-$HOME/.odr-radio.lock}
+          locked() {
+            if command -v lockf > /dev/null; then lockf -k "$LOCK" "$@"
+            elif command -v flock > /dev/null; then flock "$LOCK" "$@"
+            else "$@"; fi
+          }
+          # shellcheck disable=SC2086,SC2016
+          locked sh -c 'python3 tools/odr_debug.py version ||
+              echo "::warning::the radio does not answer; its tests will be skipped"
+            exec python3 -m pytest "$@"' sh \
+            tests/hil -v -rs -p no:cacheprovider --junitxml=build/hil/junit.xml --shots build/hil/shots \
+            ${SELECT:+-k "$SELECT"} $FLAGS
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hil-results
+          path: build/hil/
+          if-no-files-found: ignore

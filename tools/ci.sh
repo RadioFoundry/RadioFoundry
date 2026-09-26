@@ -7,7 +7,14 @@
 #   tools/ci.sh                 host tests, Python checks, every board with its feature matrix, license checks
 #   tools/ci.sh --quick         the same with only each board's default build (no matrix)
 #   tools/ci.sh --board dm1701  one board only
+#   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
+#   tools/ci.sh --steps host,python   only these steps (host, python, firmware, licenses, similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
+#   ODR_CI_PRUNE=1 tools/ci.sh  remove each build tree once its size is in the report (the log and the .bin stay;
+#                               the matrix otherwise leaves about 65 MB per configuration)
+#
+# The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps host,python,licenses` and
+# `--quick --steps firmware --board <b>`; nightly `--matrix --steps firmware --board <b>`.
 #
 # Steps, each reported as ok / FAIL / skip:
 #   1. host tests (make -C tests/host)
@@ -32,16 +39,25 @@ set -u
 cd "$(dirname "$0")/.." || exit 2
 
 QUICK=0
+MATRIX=0
 ONLY=""
+STEPS="host,python,firmware,licenses,similarity"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
+	--matrix) MATRIX=1 ;;
 	--board) ONLY="$2"; shift ;;
-	-h|--help) sed -n '5,28p' "$0"; exit 0 ;;
+	--steps) STEPS="$2"; shift ;;
+	-h|--help) sed -n '5,37p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
 done
+for s in $(echo "$STEPS" | tr ',' ' '); do
+	case "$s" in host|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
+done
+[ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick and --matrix exclude each other" >&2; exit 2; }
+step() { case ",$STEPS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 JOBS=${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}
 OUT=build/ci
 mkdir -p "$OUT"
@@ -56,6 +72,7 @@ skip() { echo "ci: skip  $*"; SKIPPED="$SKIPPED
   $*"; }
 
 # ── 1. host tests ────────────────────────────────────────────────────────────
+if step host; then
 echo "== host tests"
 if make -C tests/host > "$OUT/host-tests.log" 2>&1; then
 	ok "host tests ($(grep -cE 'PASS|passed' "$OUT/host-tests.log") suites reported passing)"
@@ -68,7 +85,10 @@ if grep -q 'warning:' "$OUT/host-tests.log"; then
 	bad "host tests built with warnings"
 fi
 
+fi
+
 # ── 2. Python ────────────────────────────────────────────────────────────────
+if step python; then
 echo "== python"
 PY_FILES=$(git ls-files 'tools/*.py' 'tools/**/*.py' 'tests/hil/*.py' 2>/dev/null)
 if command -v python3 > /dev/null; then
@@ -102,8 +122,9 @@ for f in sys.argv[1:]:
 	fi
 	# the APRS AFSK decoder the HIL tests run on the SDR bench: frames, synthesized I/Q and the firmware's own WAV
 	if python3 -c 'import numpy' 2>/dev/null; then
-		if tests/host/aprsTest --wav "$OUT" > /dev/null 2>&1 &&
-		   python3 tools/aprs_afsk_check.py --self-test --wav "$OUT/aprs_test_44k1.wav" > "$OUT/aprs-afsk.log" 2>&1; then
+		if make -s -C tests/host aprsTest > "$OUT/aprs-afsk.log" 2>&1 &&	# built by the host step, unless skipped
+		   tests/host/aprsTest --wav "$OUT" > /dev/null 2>&1 &&
+		   python3 tools/aprs_afsk_check.py --self-test --wav "$OUT/aprs_test_44k1.wav" >> "$OUT/aprs-afsk.log" 2>&1; then
 			ok "APRS AFSK decoder self-test ($(grep -c '^ok' "$OUT/aprs-afsk.log") checks)"
 		else
 			tail -20 "$OUT/aprs-afsk.log"
@@ -120,6 +141,7 @@ for f in sys.argv[1:]:
 	fi
 else
 	skip "python checks: no python3"
+fi
 fi
 
 # ── 3. firmware: every board, the feature matrix, sizes ──────────────────────
@@ -159,17 +181,23 @@ build() {
 		pct=$(awk "BEGIN { printf \"%.1f\", 100 * $used / $size }")
 	else
 		free="?"; pct="?"
+		# the app region's fit: the linker fails on an overflow; this catches a log it couldn't be read from
+		[ -n "$size" ] && [ -n "$used" ] && bad "$b $name: $used bytes used in a $size byte app region"
 	fi
 	delta=""
-	if [ "$name" != default ] && [ -n "${default_bytes:-}" ]; then
-		delta=$((bytes - default_bytes))
-	else
+	if [ "$name" = default ]; then
 		default_bytes=$bytes
+	elif [ -n "${default_bytes:-}" ]; then
+		delta=$((bytes - default_bytes))
 	fi
 	echo "| $b | $name | $bytes | $delta | $free | $pct % |" >> "$REPORT"
 	ok "$b $name: $bytes bytes, $free bytes free in the app region"
+	if [ "${ODR_CI_PRUNE:-0}" = 1 ]; then
+		cp "$bin" "$dir.bin" && rm -rf "$dir"
+	fi
 }
 
+if step firmware; then
 {
 	echo "# Image sizes ($(git rev-parse --short=8 HEAD 2>/dev/null), $(date '+%Y-%m-%d %H:%M'))"
 	echo
@@ -195,9 +223,11 @@ for bm in boards/*/board.mk boards/*/; do
 		continue
 	fi
 	default_bytes=""
-	build "$b" default
-	# Single-band radios built per band: the other band's image too (default config)
-	[ "$b" = md380 ] && build "$b" vhf MD380_BAND=vhf
+	if [ "$MATRIX" = 0 ]; then
+		build "$b" default
+		# Single-band radios built per band: the other band's image too (default config)
+		[ "$b" = md380 ] && build "$b" vhf MD380_BAND=vhf
+	fi
 	[ "$QUICK" = 1 ] && continue
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
@@ -214,8 +244,10 @@ done
 echo
 cat "$REPORT"
 echo
+fi
 
 # ── 4. license checks ────────────────────────────────────────────────────────
+if step licenses; then
 echo "== licenses"
 if tools/license_grep.sh; then ok "license_grep"; else bad "license_grep: markers of foreign code found"; fi
 # third_party must stay submodule links (mode 160000) in HEAD: a worktree that symlinks them must never commit the
@@ -227,10 +259,13 @@ if command -v reuse > /dev/null; then
 else
 	skip "reuse lint: reuse not installed (pipx install reuse, or pip install --user reuse)"
 fi
+fi
 
 # ── 5. similarity scan (author's machine only) ──────────────────────────────
 REFS=${ODR_SIMILARITY_REFS:-}
-if [ -n "$REFS" ]; then
+if ! step similarity; then
+	:
+elif [ -n "$REFS" ]; then
 	echo "== similarity scan"
 	# shellcheck disable=SC2086
 	if python3 tools/similarity_scan.py --report "$OUT/similarity.txt" $REFS; then

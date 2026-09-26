@@ -32,15 +32,15 @@ typedef struct {
 	volatile uint32_t transitions;	// valid single steps seen
 	volatile uint32_t illegal;	// samples where both lines changed (ignored)
 	volatile uint32_t reversals;	// valid steps opposite to the one before (bounce, or a turn back)
-} quad_t;
+} quad_dec_t;
 
 // steps per detent (1, 2 or 4) and its rest-state mask; ab = the lines' levels now (QUAD_AB)
-void quad_init(quad_t *q, uint8_t steps, uint8_t rest, uint8_t ab);
+void quad_init(quad_dec_t *q, uint8_t steps, uint8_t rest, uint8_t ab);
 // One sample of both lines; returns the detents it completed (-1, 0 or +1). Safe to call from an interrupt; with a
 // single writer the counters can be read from anywhere (32-bit reads)
-int8_t quad_sample(quad_t *q, uint8_t ab);
+int8_t quad_sample(quad_dec_t *q, uint8_t ab);
 // For the consumer (another task): detents since the last call, clamped to -127..127; what doesn't fit stays for the
 // next call, nothing is dropped. *taken is the consumer's own copy of the total it has taken so far
-int8_t quad_take(const quad_t *q, int32_t *taken);
+int8_t quad_take(const quad_dec_t *q, int32_t *taken);
 
 #endif

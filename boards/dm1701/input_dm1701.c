@@ -33,7 +33,7 @@ static uint32_t stable;
 // Encoder (spec 10.3): both lines on both edges, a table decoder (drivers/input/quadrature) with two steps per detent,
 // resting where A == B. The interrupt is the only writer of enc; the input task takes detents with enc_taken
 #define ENC_STEPS	2
-static quad_t enc;
+static quad_dec_t enc;
 static int32_t enc_taken;
 
 // Two-bit fields (MODER, PUPDR) of every pin in mask set to value

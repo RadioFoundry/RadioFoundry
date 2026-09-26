@@ -14,6 +14,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [Debug link](debug-link.md) | The USB debug protocol and `tools/odr_debug.py` |
 | [CPS, codeplug and settings](cps-and-codeplug.md) | The legacy CPS shim qdmr uses, the codeplug layout, the settings store |
 | [The codec](codec.md) | How the stock AMBE+2 codec is extracted and hosted per radio |
+| [CI](ci.md) | What the CI workflows run per push, nightly and on the radio, how long, coverage, the runners, the csky image |
 | [Contributing](contributing.md) | Clean-room rules, code style, commits, the release gate |
 | [Releases](release.md) | The release artifacts and manifests, the DM-1701 sector map, odrflash's codec handling and key, the release and manual workflows |
 

@@ -20,8 +20,13 @@ repeatable and each skipping cleanly what it can't reach:
 tools/ci.sh                    # everything below
 tools/ci.sh --quick            # each board's default build only (no feature matrix)
 tools/ci.sh --board dm1701     # one board
+tools/ci.sh --matrix           # only the feature matrix (no default builds)
+tools/ci.sh --steps host,python   # only some steps: host, python, firmware, licenses, similarity
 JOBS=8 tools/ci.sh             # parallel make jobs (default: the CPU count)
+ODR_CI_PRUNE=1 tools/ci.sh     # drop each build tree once its size is recorded (logs and images stay)
 ```
+
+The CI workflows run these pieces per push and nightly ([docs/dev/ci.md](../dev/ci.md)).
 
 It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing failed):
 
