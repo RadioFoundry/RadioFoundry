@@ -427,6 +427,69 @@ static void test_iddb(void)
 	CHECK(!dmr_iddb_init());
 }
 
+#if CONFIG_APRS
+// The APRS configuration records a CPS writes (legacy-cps-interop.md 7.3.8, 0x40 bytes each at EEPROM 0x1588):
+// the two magic numbers (the older one keeps the ambiguity one bit lower), and whatever is out of range in a
+// record from another tool comes back as a safe value; an empty or foreign record is no configuration
+static uint8_t *aprs_rec(unsigned n) { return &image[EE + 0x1588u + 0x40u * (n - 1u)]; }
+
+static void put_aprs(unsigned n, uint16_t magic)
+{
+	uint8_t *r = aprs_rec(n);
+	memset(r, 0, 0x40);
+	memcpy(r, "APRS1", 5);			// the record's name: only its first byte matters (not 0x00 / 0xFF)
+	r[0x08] = 9;				// our SSID
+	memcpy(&r[0x0F], "WIDE1 ", 6);
+	r[0x15] = 1;
+	memcpy(&r[0x16], "WIDE2 ", 6);
+	r[0x1C] = 12;				// two digit SSID
+	r[0x1D] = '/';
+	r[0x1E] = '>';
+	memset(&r[0x1F], 0xFF, 23);
+	memcpy(&r[0x1F], "Mobile", 6);
+	r[0x3D] = (uint8_t)(magic == 0x4153 ? 3u << 5 : 3u << 4);	// ambiguity 3
+	put16(&r[0x3E], magic);
+}
+
+static void test_aprs_records(void)
+{
+	codeplug_aprs_t a;
+
+	build_legacy();
+	put_aprs(1, 0x4153);
+	put_aprs(2, 0x4152);			// the older layout
+	put_aprs(3, 0x4153);
+	aprs_rec(3)[0x08] = 22;			// SSID out of range
+	aprs_rec(3)[0x1E] = 0x07;		// not a printable symbol
+	aprs_rec(3)[0x3D] = 7u << 5;		// ambiguity 7
+	memcpy(&aprs_rec(3)[0x0F], "      ", 6);	// no first path
+	put_aprs(4, 0x1234);			// unknown magic
+	put_aprs(5, 0x4153);
+	aprs_rec(5)[0] = 0x00;			// unnamed: empty
+	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+	CHECK(codeplug_aprs(1, &a) && a.ssid == 9 && strcmp(a.path[0], "WIDE1-1") == 0 &&
+	      strcmp(a.path[1], "WIDE2-12") == 0 && a.sym_table == '/' && a.sym_code == '>' &&
+	      strcmp(a.comment, "Mobile") == 0 && a.ambiguity == 3);
+	CHECK(codeplug_aprs(2, &a) && a.ambiguity == 3);
+	CHECK(codeplug_aprs(3, &a) && a.ssid == 0 && a.sym_table == 0 && a.sym_code == 0 && a.ambiguity == 4 &&
+	      a.path[0][0] == '\0');
+	CHECK(!codeplug_aprs(4, &a) && !codeplug_aprs(5, &a) && !codeplug_aprs(6, &a));	// 6: erased
+	CHECK(!codeplug_aprs(0, &a) && !codeplug_aprs(CODEPLUG_APRS_CONFIGS + 1, &a));
+
+	// The boot text (two 16-byte lines at EEPROM 0x7540), padding dropped
+	put_name(&image[EE + 0x7540], "Welcome");
+	put_name(&image[EE + 0x7550], "N0CALL");
+	char l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+	codeplug_boot_text(l1, l2);
+	CHECK(strcmp(l1, "Welcome") == 0 && strcmp(l2, "N0CALL") == 0);
+	// Without a legacy codeplug: nothing
+	memset(image, 0xFF, IMAGE_SIZE);
+	codeplug_init();
+	codeplug_boot_text(l1, l2);
+	CHECK(l1[0] == 0 && l2[0] == 0 && !codeplug_aprs(1, &a));
+}
+#endif
+
 int main(void)
 {
 	image = malloc(IMAGE_SIZE);
@@ -434,6 +497,9 @@ int main(void)
 		return 1;
 	}
 	test_legacy();
+#if CONFIG_APRS
+	test_aprs_records();
+#endif
 	test_dmr_records();
 	test_iddb();
 	test_erased();
