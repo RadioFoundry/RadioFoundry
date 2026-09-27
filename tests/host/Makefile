@@ -76,6 +76,11 @@ TESTS   += dmrDataServiceTestNoTms
 dmrDataServiceTestNoTms: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
 	$(CC) $(CFLAGS) -DCONFIG_DMR_TMS=0 -o $@ $(SVC) -lm
 
+# LRRP on its own: request decoding (malformed and mutated too), the answers' bounds, the distance
+TESTS   += lrrpTest
+lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c -lm
+
 dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
 
@@ -101,6 +106,7 @@ run: $(TESTS)
 	./hotspotDataTest
 	./hotspotUplinkTest
 	./dmrPrivacyTest
+	./lrrpTest
 	./ipGatewayTest
 	./ipGatewayTest16
 	./ipGatewayTest31
