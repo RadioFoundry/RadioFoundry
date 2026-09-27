@@ -334,8 +334,10 @@ static bool parse_position(const char *s, size_t n, aprs_parsed_t *p)
 		}
 		q->sym_table = (s[0] >= 'a' && s[0] <= 'j') ? (char)('0' + (s[0] - 'a')) : s[0];
 		q->sym_code = s[9];
-		char c = s[10], sp = s[11], t = s[12];
-		if (c != ' ' && (uint8_t)c >= 33 && (uint8_t)sp >= 33 && (uint8_t)t >= 33) {
+		// cs and T are base-91 ('!'..'{'): anything else carries no course, speed or altitude (unsigned: char is
+		// signed on some compilers, and 0x80 and up must not become negative values)
+		uint8_t c = (uint8_t)s[10], sp = (uint8_t)s[11], t = (uint8_t)s[12];
+		if (c != ' ' && c >= 33 && c <= 123 && sp >= 33 && sp <= 123 && t >= 33 && t <= 123) {
 			uint8_t tv = (uint8_t)(t - 33);
 			if (((tv >> 3) & 3u) == 2u) {		// GGA source: cs is the altitude
 				float ft = powf(1.002f, (float)((c - 33) * 91 + (sp - 33)));

@@ -743,6 +743,23 @@ static int write_wav(const char *dir)
 	return 0;
 }
 
+// Compressed positions whose course / speed / altitude bytes are outside base-91 (APRS101 chapter 9: '!' to '{'):
+// no course, speed or altitude from them
+static void test_compressed_cs(void)
+{
+	aprs_parsed_t p;
+	ax25_addr_t dst = addr("APRS");
+	const char *s = "=/5L!!<*e7>\xFF\xFF\x40";
+	CHECK(aprs_parse(&dst, (const uint8_t *)s, 14, &p) && p.has_pos && p.pos.speed_kn == APRS_SPEED_NONE &&
+	      p.pos.course == APRS_COURSE_NONE, "cs 0xFF: %u %u", p.pos.speed_kn, p.pos.course);
+	s = "=/5L!!<*e7>\xFFSS";	// GGA altitude from c = 0xFF
+	CHECK(aprs_parse(&dst, (const uint8_t *)s, 14, &p) && p.has_pos && p.pos.alt_m == APRS_ALT_NONE, "alt 0xFF: %d",
+	      p.pos.alt_m);
+	s = "=/5L!!<*e7>7\x90[";	// s past '{'
+	CHECK(aprs_parse(&dst, (const uint8_t *)s, 14, &p) && p.has_pos && p.pos.speed_kn == APRS_SPEED_NONE, "s 0x90: %u",
+	      p.pos.speed_kn);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc == 2 && strcmp(argv[1], "--sweep") == 0) {
@@ -764,6 +781,7 @@ int main(int argc, char **argv)
 	test_position_parse();
 	test_mice();
 	test_messages();
+	test_compressed_cs();
 	test_geo();
 	test_nmea();
 	test_kiss();
