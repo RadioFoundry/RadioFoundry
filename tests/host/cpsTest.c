@@ -482,6 +482,69 @@ static void test_foreign(void)
 	free(snap);
 }
 
+// Requests a host shouldn't send: reads of nothing, past the image or the flash, too long for a reply, a security
+// register out of range, a data block cut short, a commit the flash fails; and a commit cut by a power loss comes
+// back whole at the next boot
+static bool r_nak(uint8_t area, uint32_t addr, uint16_t len)
+{
+	uint8_t r[8] = { 'R', area, (uint8_t)(addr >> 24), (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr,
+			 (uint8_t)(len >> 8), (uint8_t)len };
+	request(r, sizeof(r), 0);
+	return is_nak();
+}
+
+static void test_bad_requests(void)
+{
+	uint8_t b[64], d[32];
+	CHECK(r_nak(1, 0x5000, 0));			// nothing
+	CHECK(r_nak(2, 0xFFF0, 0x20));			// past the 64 KB EEPROM image
+	CHECK(r_nak(2, 0x10000, 1));
+	CHECK(r_nak(1, FLASH_SIZE - 0x10, 0x20));	// past the flash
+	CHECK(r_nak(1, 0xFFFFFFF0u, 0x20));		// wrapping round
+	uint8_t rl[8] = { 'R', 1, 0, 0, 0x50, 0x00, (uint8_t)((CPS_REPLY_MAX + 1) >> 8), (uint8_t)(CPS_REPLY_MAX + 1) };
+	request(rl, sizeof(rl), 0);			// longer than a reply: clipped to the longest
+	CHECK(out_len == 3u + CPS_REPLY_MAX && ((out[1] << 8) | out[2]) == CPS_REPLY_MAX);
+	CHECK(r_nak(10, 0x2000, 0x20));			// a security register the board doesn't have
+	CHECK(r_nak(10, 0x10F0, 0x20));			// ... running past one
+	CHECK(r_nak(200, 0, 0x20));			// no such area
+	CHECK(read_block(2, 0x5000, 16, b) && memcmp(b, sim_flash_data + EE + 0x5000, 16) == 0);
+	CHECK(read_block(1, FLASH_SIZE - 0x20, 0x20, b));	// the very end: fine
+
+	// A data block shorter than its header says: taken at the gap, only the bytes that came
+	memset(d, 0x5C, sizeof(d));
+	CHECK(x_prepare(0x6));
+	uint8_t r[8 + 10] = { 'X', 2, 0, 0, 0x60, 0x00, 0, 100 };
+	memcpy(r + 8, d, 10);
+	uint8_t before = sim_flash_data[0x600A];
+	request(r, sizeof(r), 0);
+	CHECK(out_len == 2 && out[0] == 'X' && out[1] == 2);
+	CHECK(x_commit());
+	CHECK(sim_flash_data[0x6000] == 0x5C && sim_flash_data[0x6009] == 0x5C && sim_flash_data[0x600A] == before);
+
+	// The flash fails the commit: '-', nothing pending afterwards, the sector as it was
+	uint8_t old[4096];
+	memcpy(old, sim_flash_data + 0x7000, sizeof(old));
+	CHECK(x_prepare(0x7) && x_data(0x7000, d, 32, 0));
+	sim_flash_bad_range(0x7000, 0x1000);
+	CHECK(!x_commit());
+	sim_flash_bad_range(0, 0);
+	CHECK(!x_commit());				// dropped
+	cps_stats_t st;
+	cps_get_stats(&st);
+	CHECK(!st.pending);
+
+	// A power cut in the middle of a commit: the next boot finishes it from the journal
+	memcpy(old, sim_flash_data + 0x8000, sizeof(old));
+	CHECK(x_prepare(0x8) && x_data(0x8100, d, 32, 0));
+	sim_flash_cut_after(4096 + 50);		// J1 written (1 + 4096 units), J0's header (1 + 16), the target erased
+						// (1), 31 bytes of it programmed
+	CHECK(!x_commit());
+	boot();
+	CHECK(memcmp(sim_flash_data + 0x8100, d, 32) == 0 && memcmp(sim_flash_data + 0x8000, old, 0x100) == 0 &&
+	      memcmp(sim_flash_data + 0x8120, old + 0x120, 4096 - 0x120) == 0);
+	CHECK(sim_flash_violations() == 0);
+}
+
 int main(void)
 {
 	populate();
@@ -490,6 +553,7 @@ int main(void)
 	test_write_session();
 	test_protected();
 	test_assembly();
+	test_bad_requests();
 	test_vfo();
 	test_session_timeout();
 	test_foreign();
