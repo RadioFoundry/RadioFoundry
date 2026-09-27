@@ -661,6 +661,41 @@ static void testFixedLink(void)
 	CHECK((ipGatewayFixedLink() == 0) && (ipGatewayHostIP() == HOST_IP));
 }
 
+// ARP that isn't a request for an IPv4 address over Ethernet (RFC 826: hardware type 1, protocol 0x0800, address
+// lengths 6 and 4) is not answered, nor learned from
+static void testARPTypes(void)
+{
+	uint8_t a[42] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	memcpy(a + 6, HOST_MAC, 6); a[12] = 0x08; a[13] = 0x06;
+	const uint8_t arp[28] = { 0, 1, 8, 0, 6, 4, 0, 1 };
+	memcpy(a + 14, arp, 28);
+	memcpy(a + 22, HOST_MAC, 6);
+	put32(&a[28], HOST_IP);
+	put32(&a[38], RADIO_IP);
+	in(a, 42);
+	CHECK(framesSent == 1);// the good one
+	a[16] = 0x86; a[17] = 0xDD;// IPv6
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[16] = 0x08; a[17] = 0x00; a[18] = 8;// 8-byte hardware addresses
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[18] = 6; a[19] = 16;// 16-byte protocol addresses
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[19] = 4; a[15] = 6;// hardware type 6 (IEEE 802)
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[15] = 1; a[21] = 2;// a reply
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[21] = 1;
+	in(a, 41);// one short
+	CHECK(framesSent == 0);
+	in(a, 42);
+	CHECK(framesSent == 1);
+}
+
 int main(void)
 {
 	uint32_t header[6] = { 0xA1B2C3D4, 0x00040002, 0, 0, 65535, 1 };// pcap, Ethernet
@@ -672,6 +707,7 @@ int main(void)
 	testDHCP(1, 0, 2);
 	testDHCP(3, HOST_IP, 5);
 	testARP();
+	testARPTypes();
 	testPing();
 	testToAir();
 	testDeliver();
