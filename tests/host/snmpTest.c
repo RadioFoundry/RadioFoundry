@@ -5,7 +5,9 @@
 // radio's MIB (core/snmp/snmpMib.c) on a filled snapshot, and the notifications (detection, queue, RF rate limit,
 // SNMPv2-Trap encoding).
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "fuzz.h"
 #include "snmp/snmp.h"
 #include "snmp/snmpMib.h"
 #include "dmr/dmrDataService.h"
@@ -13,7 +15,7 @@
 static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
-// ---- a tiny independent encoder for the requests (short-form lengths only, so every message here stays < 128) ----
+// ---- a tiny independent encoder for the requests (short-form lengths below 128, the 82 form above) ----
 
 typedef struct {
 	uint8_t b[600];
@@ -29,8 +31,14 @@ static void raw(buf_t *o, const void *p, int n)
 static void tlv(buf_t *o, uint8_t tag, const void *p, int n)
 {
 	o->b[o->n++] = tag;
+	if (n >= 0x80) {	// (the long form only for the oversized requests of test_malformed)
+		o->b[o->n++] = 0x82;
+		o->b[o->n++] = (uint8_t)(n >> 8);
+	}
 	o->b[o->n++] = (uint8_t)n;
-	raw(o, p, n);
+	if (n > 0) {
+		raw(o, p, n);
+	}
 }
 
 static void wrap(buf_t *o, uint8_t tag, const buf_t *inner)
@@ -719,6 +727,362 @@ static void test_events(void)
 	      valNum(&r, 0) == 5);
 }
 
+// ---- malformed requests (from the USB network or the air: anything can arrive) ----
+
+// Every TLV of p[0..n) parses, the envelope's constructed ones (message, PDU, list, binding) recursively, and nothing
+// is left over. A binding's value is opaque here: an error answer echoes the request's bindings as they came.
+static bool wellFormed(const uint8_t *p, int n, int depth)
+{
+	berReader_t r;
+	uint8_t tag;
+	const uint8_t *v;
+	int len;
+
+	berReaderInit(&r, p, n);
+	while (!berAtEnd(&r)) {
+		if (!berGet(&r, &tag, &v, &len)) {
+			return false;
+		}
+		if ((depth < 3) && ((tag == BER_SEQUENCE) || ((tag & 0xE0u) == 0xA0u)) && !wellFormed(v, len, depth + 1)) {
+			return false;
+		}
+	}
+	return !r.err;
+}
+
+// The request p[0..n) on the heap at its exact size, the answer into a heap buffer of exactly cap bytes: an
+// answer is 0 or a well-formed message within cap
+static int processExact(const snmpRequestCfg_t *c, const uint8_t *p, int n, int cap, bool *ok)
+{
+	uint8_t *q = fuzz_exact(p, n);
+	uint8_t *o = malloc((cap > 0) ? (size_t)cap : 1u);
+	bool auth;
+	int m = snmpProcess(c, q, n, o, cap, &auth);
+
+	*ok = (m == 0) || ((m > 0) && (m <= cap) && wellFormed(o, m, 0));
+	free(q);
+	free(o);
+	return m;
+}
+
+static void test_malformed(void)
+{
+	setup();
+	snmpRequestCfg_t c = rcfg(true);
+	uint8_t q[600];
+	bool ok;
+	// A good GET of sysDescr.0 to cut up: 30 29 | 02 01 01 | 04 06 public | A0 1C | 02 04 .. | 02 01 00 | 02 01 00 |
+	// 30 0E 30 0C 06 08 <oid> 05 00
+	const uint8_t good[] = {
+		0x30, 0x29, 0x02, 0x01, 0x01, 0x04, 0x06, 'p', 'u', 'b', 'l', 'i', 'c',
+		0xA0, 0x1C, 0x02, 0x04, 0x12, 0x34, 0x56, 0x78, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00,
+		0x30, 0x0E, 0x30, 0x0C, 0x06, 0x08, 0x2B, 0x06, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x05, 0x00,
+	};
+	CHECK(processExact(&c, good, sizeof(good), 548, &ok) > 0 && ok);
+
+	// Every truncation: never an answer, never a read past the end (ASan), always counted as a parse error
+	int bad = 0;
+	stats.inASNParseErrs = 0;
+	for (int n = 0; n < (int)sizeof(good); n++) {
+		if (processExact(&c, good, n, 548, &ok) != 0 || !ok) {
+			bad++;
+		}
+	}
+	CHECK(bad == 0 && stats.inASNParseErrs == sizeof(good));
+
+	// Lengths: one past the buffer at each level, long forms (81 / 82) that are fine, three length octets, the
+	// indefinite form, a long form whose length octets are cut off, a multi-octet tag
+	const int lenAt[] = { 1, 6, 14, 28, 30, 32 };	// the message, community, PDU, list, binding, OID lengths
+	for (unsigned i = 0; i < sizeof(lenAt) / sizeof(lenAt[0]); i++) {
+		memcpy(q, good, sizeof(good));
+		q[lenAt[i]]++;
+		CHECK(processExact(&c, q, sizeof(good), 548, &ok) == 0 && ok);
+		memcpy(q, good, sizeof(good));
+		q[lenAt[i]] = 0xFF;
+		CHECK(processExact(&c, q, sizeof(good), 548, &ok) == 0 && ok);
+	}
+	// 30 81 29 and 30 82 00 29 for the message: accepted (X.690 allows any definite form)
+	q[0] = 0x30;
+	q[1] = 0x81;
+	memcpy(q + 2, good + 1, sizeof(good) - 1);
+	CHECK(processExact(&c, q, sizeof(good) + 1, 548, &ok) > 0 && ok);
+	q[1] = 0x82;
+	q[2] = 0x00;
+	memcpy(q + 3, good + 1, sizeof(good) - 1);
+	CHECK(processExact(&c, q, sizeof(good) + 2, 548, &ok) > 0 && ok);
+	q[1] = 0x83;	// 83 00 00 29: three length octets, refused
+	q[2] = 0x00;
+	q[3] = 0x00;
+	memcpy(q + 4, good + 1, sizeof(good) - 1);
+	CHECK(processExact(&c, q, sizeof(good) + 3, 548, &ok) == 0 && ok);
+	const uint8_t cut81[] = { 0x30, 0x81 }, cut82[] = { 0x30, 0x82, 0x00 }, indef[] = { 0x30, 0x80, 0x02, 0x01, 0x01, 0x00, 0x00 };
+	const uint8_t bigTag[] = { 0x1F, 0x81, 0x01, 0x00 }, lenFFFF[] = { 0x30, 0x82, 0xFF, 0xFF, 0x02 };
+	CHECK(processExact(&c, cut81, 2, 548, &ok) == 0 && ok && processExact(&c, cut82, 3, 548, &ok) == 0 && ok);
+	CHECK(processExact(&c, indef, sizeof(indef), 548, &ok) == 0 && ok);
+	CHECK(processExact(&c, bigTag, sizeof(bigTag), 548, &ok) == 0 && ok);
+	CHECK(processExact(&c, lenFFFF, sizeof(lenFFFF), 548, &ok) == 0 && ok);
+
+	// Integers: a 5-octet version, an empty request ID; a binding with three parts (a nested sequence); a binding
+	// that isn't a sequence; a value that is itself a sequence (taken: GET ignores values)
+	memcpy(q, good, sizeof(good));
+	q[3] = 0x00;	// version 02 00 01 ...: zero-length INTEGER, then garbage
+	CHECK(processExact(&c, q, sizeof(good), 548, &ok) == 0 && ok);
+	buf_t vb = { .n = 0 }, list = { .n = 0 }, pdu = { .n = 0 }, m = { .n = 0 }, msg = { .n = 0 };
+	const uint8_t sysDescr[] = { 0x2B, 6, 1, 2, 1, 1, 1, 0 };
+	tlv(&vb, 0x06, sysDescr, 8);
+	tlv(&vb, 0x05, NULL, 0);
+	tlv(&vb, 0x05, NULL, 0);	// a third element
+	wrap(&list, 0x30, &vb);
+	intv(&pdu, 1, 1);
+	intv(&pdu, 0, 1);
+	intv(&pdu, 0, 1);
+	wrap(&pdu, 0x30, &list);
+	intv(&m, 1, 1);
+	tlv(&m, 0x04, "public", 6);
+	wrap(&m, SNMP_PDU_GET, &pdu);
+	wrap(&msg, 0x30, &m);
+	uint32_t before = stats.inASNParseErrs;
+	CHECK(processExact(&c, msg.b, msg.n, 548, &ok) == 0 && ok && stats.inASNParseErrs == before + 1);
+	// the list holding an INTEGER instead of a binding
+	list.n = pdu.n = m.n = msg.n = 0;
+	intv(&list, 5, 1);
+	intv(&pdu, 1, 1);
+	intv(&pdu, 0, 1);
+	intv(&pdu, 0, 1);
+	wrap(&pdu, 0x30, &list);
+	intv(&m, 1, 1);
+	tlv(&m, 0x04, "public", 6);
+	wrap(&m, SNMP_PDU_GETNEXT, &pdu);
+	wrap(&msg, 0x30, &m);
+	CHECK(processExact(&c, msg.b, msg.n, 548, &ok) == 0 && ok && stats.inASNParseErrs == before + 2);
+	// an empty community and an empty binding list: wrong community, then a good empty GET
+	const uint8_t *none[] = { NULL };
+	const int zero[] = { 0 };
+	int qn = request(q, 1, "", SNMP_PDU_GET, 0, 0, none, zero, 0);
+	before = stats.inBadCommunityNames;
+	CHECK(processExact(&c, q, qn, 548, &ok) == 0 && ok && stats.inBadCommunityNames == before + 1);
+	qn = request(q, 1, "public", SNMP_PDU_GET, 0, 0, none, zero, 0);
+	resp_t r;
+	uint8_t out[600];
+	bool auth;
+	int n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 0 && r.status == 0);
+	// A request ID that is negative and four octets long comes back as sent
+	memcpy(q, good, sizeof(good));
+	q[17] = 0x80;
+	n = snmpProcess(&c, q, sizeof(good), out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.requestId == (int32_t)0x80345678);
+
+	// An inform, a report, an unknown context tag: not requests, no answer
+	const uint8_t notReq[] = { SNMP_PDU_INFORM, SNMP_PDU_REPORT, SNMP_PDU_TRAP2, 0xA4, 0xAF };
+	for (unsigned i = 0; i < sizeof(notReq); i++) {
+		memcpy(q, good, sizeof(good));
+		q[13] = notReq[i];
+		CHECK(processExact(&c, q, sizeof(good), 548, &ok) == 0 && ok);
+	}
+
+	// Oversized binding lists: 40 GETs of sysDescr.0 (32 octets each): tooBig at the USB and the RF answer limit,
+	// and the same list ending in a broken binding: no answer (it all has to parse first)
+	const uint8_t *many[40];
+	int manyLens[40];
+	for (int i = 0; i < 40; i++) {
+		many[i] = sysDescr;
+		manyLens[i] = 8;
+	}
+	qn = request(q, 1, "public", SNMP_PDU_GET, 0, 0, many, manyLens, 7);
+	n = snmpProcess(&c, q, qn, out, 300, &auth);
+	CHECK(n > 0 && n <= 300 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == SNMP_ERR_TOO_BIG && r.count == 0);
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 300 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == 0 && r.count == 7);
+	// the last binding's OID made invalid (an open subidentifier): no answer, not tooBig
+	q[qn - 3] = 0x81;
+	before = stats.inASNParseErrs;
+	CHECK(snmpProcess(&c, q, qn, out, 300, &auth) == 0 && stats.inASNParseErrs == before + 1);
+	// every answer size from 0 to 548 for a GetBulk from the start: never past cap, whole message or nothing
+	const uint8_t start[] = { 0x2B };
+	const uint8_t *o1[] = { start };
+	const int l1[] = { 1 };
+	qn = request(q, 1, "public", SNMP_PDU_GETBULK, 0, 32, o1, l1, 1);
+	bad = 0;
+	for (int cap = 0; cap <= 548; cap++) {
+		if (!(processExact(&c, q, qn, cap, &ok) >= 0 && ok)) {
+			bad++;
+		}
+	}
+	CHECK(bad == 0);
+	// ... and for a GET of 7 bindings (the tooBig answer itself has to fit)
+	qn = request(q, 1, "public", SNMP_PDU_GET, 0, 0, many, manyLens, 7);
+	bad = 0;
+	for (int cap = 0; cap <= 548; cap++) {
+		if (!(processExact(&c, q, qn, cap, &ok) >= 0 && ok)) {
+			bad++;
+		}
+	}
+	CHECK(bad == 0);
+
+	// GetNext / GetBulk at and past the end of the MIB: endOfMibView, named as asked
+	const uint8_t past[] = { 0x2B, 7 }, joint[] = { 0x51, 1 }, mid[] = { 0x2B, 6, 1, 2, 1, 1, 1, 0 };
+	const uint8_t *o2[] = { past, joint, mid };
+	const int l2[] = { sizeof(past), sizeof(joint), sizeof(mid) };
+	qn = request(q, 1, "public", SNMP_PDU_GETNEXT, 0, 0, o2, l2, 3);
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 3 && r.vb[0].tag == BER_END_OF_MIB_VIEW &&
+	      r.vb[1].tag == BER_END_OF_MIB_VIEW && r.vb[2].tag != BER_END_OF_MIB_VIEW && r.vb[1].oidLen == 2 &&
+	      r.vb[1].oid[0] == 0x51 && r.vb[0].oidLen == 2 && r.vb[0].oid[1] == 7);
+	// GetBulk: non-repeaters past the list, negative max-repetitions, zero, more columns than the bulk state
+	qn = request(q, 1, "public", SNMP_PDU_GETBULK, 5, 2, o2, l2, 3);	// all three non-repeaters
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 3);
+	qn = request(q, 1, "public", SNMP_PDU_GETBULK, 0, 0xFF, o1, l1, 1);	// 02 01 FF: -1
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 0);
+	qn = request(q, 1, "public", SNMP_PDU_GETBULK, 0xFF, 0, o1, l1, 1);	// negative non-repeaters: 0
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 0);
+	const uint8_t *cols[20];
+	int colLens[20];
+	for (int i = 0; i < 20; i++) {
+		cols[i] = start;
+		colLens[i] = 1;
+	}
+	qn = request(q, 1, "public", SNMP_PDU_GETBULK, 0, 5, cols, colLens, 20);	// 20 > 16 columns: one round
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count > 5 && r.count < 20);	// as many as fit
+	bool same = true;
+	for (int i = 1; i < r.count; i++) {
+		same = same && (r.vb[i].oidLen == r.vb[0].oidLen) && (memcmp(r.vb[i].oid, r.vb[0].oid, (size_t)r.vb[0].oidLen) == 0);
+	}
+	CHECK(same);	// every column's first instance, no second round
+	qn = request(q, 1, "public", SNMP_PDU_GETBULK, 0, 5, cols, colLens, 4);	// 4 columns, 5 rounds: 20 bindings
+	n = snmpProcess(&c, q, qn, out, sizeof(out), &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 20 && r.vb[4].oid[6] == 2);
+
+	// SET with wrong encodings for the right tag: Gauge32 of 6 octets, negative, an INTEGER of 5 octets, OCTETS
+	// with control characters
+	cfg.writeHash = snmpCommunityHash((const uint8_t *)"private", 7);
+	c = rcfg(true);
+	const uint8_t g6[] = { 0, 0, 0, 0, 0, 1 }, gneg[] = { 0x80 }, i5[] = { 0, 0, 0, 0, 1 };
+	const uint8_t *oG[] = { ODR_RF_MANAGER };
+	const int lG[] = { sizeof(ODR_RF_MANAGER) };
+	const uint8_t tG[] = { BER_GAUGE32 };
+	const uint8_t *vG[] = { g6 };
+	const int vlG[] = { 6 };
+	qn = setRequest(q, "private", oG, lG, tG, vG, vlG, 1);
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == SNMP_ERR_WRONG_ENCODING && r.index == 1);
+	vG[0] = gneg;
+	const int vl1[] = { 1 };
+	qn = setRequest(q, "private", oG, lG, tG, vG, vl1, 1);
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == SNMP_ERR_WRONG_ENCODING);
+	const uint8_t authOid[] = { 0x2B, 6, 1, 2, 1, 11, 30, 0 };
+	const uint8_t *oA[] = { authOid };
+	const int lA[] = { sizeof(authOid) };
+	const uint8_t tA[] = { BER_INTEGER };
+	const uint8_t *vA[] = { i5 };
+	const int vl5[] = { 5 };
+	qn = setRequest(q, "private", oA, lA, tA, vA, vl5, 1);
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == SNMP_ERR_WRONG_ENCODING);
+	const uint8_t *oN[] = { SYS_NAME };
+	const int lN[] = { sizeof(SYS_NAME) };
+	const uint8_t tN[] = { BER_OCTETS };
+	const uint8_t *vN[] = { (const uint8_t *)"A\nB" };
+	const int vlN[] = { 3 };
+	qn = setRequest(q, "private", oN, lN, tN, vN, vlN, 1);
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == SNMP_ERR_WRONG_VALUE && !ctx.nameChanged);
+	// a name of exactly SNMP_NAME_MAX characters is taken, terminated
+	vN[0] = (const uint8_t *)"ABCDEFGHIJKLMNOP";
+	const int vl16[] = { SNMP_NAME_MAX };
+	qn = setRequest(q, "private", oN, lN, tN, vN, vl16, 1);
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == 0 && strcmp(ctx.newName, "ABCDEFGHIJKLMNOP") == 0);
+	// a SET whose second binding is malformed: no answer, nothing applied
+	ctx.nameChanged = false;
+	const uint8_t *oB[] = { SYS_NAME, SYS_NAME };
+	const int lB[] = { sizeof(SYS_NAME), sizeof(SYS_NAME) };
+	const uint8_t tB[] = { BER_OCTETS, BER_OCTETS };
+	const uint8_t *vB[] = { (const uint8_t *)"OK", (const uint8_t *)"OK" };
+	const int vlB[] = { 2, 2 };
+	qn = setRequest(q, "private", oB, lB, tB, vB, vlB, 2);
+	q[qn - 8] = 0x80;	// the second OID: 2B 06 01 02 01 01 05 00 -> a leading 0x80 octet
+	n = snmpProcess(&c, q, qn, out, 548, &auth);
+	CHECK(n == 0 && !ctx.nameChanged);
+	// the SET answer echoes the bindings: with a small cap it is dropped, never overrun
+	qn = setRequest(q, "private", oB, lB, tB, vB, vlB, 2);
+	bad = 0;
+	for (int cap = 0; cap <= 120; cap++) {
+		if (!(processExact(&c, q, qn, cap, &ok) >= 0 && ok)) {
+			bad++;
+		}
+	}
+	CHECK(bad == 0);
+}
+
+// Seeded mutations of good requests of every kind; the answer is always none or a well-formed message within cap,
+// and the counters add up (ODR_FUZZ_ITERS for longer runs, under make SANITIZE=1)
+static void test_fuzz(void)
+{
+	setup();
+	cfg.writeHash = snmpCommunityHash((const uint8_t *)"private", 7);
+	uint8_t seeds[6][300];
+	int seedLen[6];
+	const uint8_t start[] = { 0x2B }, sysDescr[] = { 0x2B, 6, 1, 2, 1, 1, 1, 0 };
+	const uint8_t *o3[] = { SYS_UPTIME, ODR_DMR_ID, start };
+	const int l3[] = { sizeof(SYS_UPTIME), sizeof(ODR_DMR_ID), 1 };
+	seedLen[0] = request(seeds[0], 1, "public", SNMP_PDU_GET, 0, 0, o3, l3, 3);
+	seedLen[1] = request(seeds[1], 1, "public", SNMP_PDU_GETNEXT, 0, 0, o3, l3, 3);
+	seedLen[2] = request(seeds[2], 1, "public", SNMP_PDU_GETBULK, 1, 10, o3, l3, 3);
+	const uint8_t *oS[] = { SYS_NAME, ODR_RF_MANAGER };
+	const int lS[] = { sizeof(SYS_NAME), sizeof(ODR_RF_MANAGER) };
+	const uint8_t tS[] = { BER_OCTETS, BER_GAUGE32 };
+	const uint8_t mgr[] = { 0x0F, 0x42, 0x40 };
+	const uint8_t *vS[] = { (const uint8_t *)"W1AW", mgr };
+	const int vlS[] = { 4, 3 };
+	seedLen[3] = setRequest(seeds[3], "private", oS, lS, tS, vS, vlS, 2);
+	const uint8_t *o1[] = { sysDescr };
+	const int l1[] = { 8 };
+	seedLen[4] = request(seeds[4], 1, "private", SNMP_PDU_GET, 0, 0, o1, l1, 1);
+	seedLen[5] = request(seeds[5], 1, "public", SNMP_PDU_GETBULK, 0, 32, o1, l1, 1);
+
+	fuzz_t f;
+	fuzz_init(&f, 0x534E4D50u);
+	long iters = fuzz_iters(30000), bad = 0, answered = 0;
+	uint8_t buf[600];
+
+	for (long i = 0; i < iters; i++) {
+		int s = (int)fuzz_below(&f, 6);
+		memcpy(buf, seeds[s], (size_t)seedLen[s]);
+		int n = fuzz_mutate(&f, buf, seedLen[s], (int)sizeof(buf));
+		int cap = (fuzz_below(&f, 4) == 0) ? (int)fuzz_below(&f, 549) : ((fuzz_below(&f, 2) == 0) ? 548 : 300);
+		snmpRequestCfg_t c = rcfg(fuzz_below(&f, 2) == 0);
+		uint32_t in = stats.inPkts, outp = stats.outPkts;
+		bool ok;
+		int m = processExact(&c, buf, n, cap, &ok);
+
+		if (!ok || (stats.inPkts != in + 1) || (stats.outPkts != outp + ((m > 0) ? 1u : 0u))) {
+			if (bad++ < 5) {
+				printf("  fuzz #%ld: seed %d, %d octets, cap %d -> %d (ok %d, in +%u, out +%u):", i, s, n, cap, m, ok,
+				       stats.inPkts - in, stats.outPkts - outp);
+				for (int k = 0; k < n; k++) {
+					printf(" %02X", buf[k]);
+				}
+				printf("\n");
+			}
+		}
+		answered += (m > 0);
+		if ((i % 1000) == 999) {
+			uint32_t w = cfg.writeHash;
+			setup();	// SETs may have changed the snapshot and the settings
+			cfg.writeHash = w;
+		}
+	}
+	CHECK(bad == 0);
+	CHECK(answered > iters / 20);	// the mutations still reach the processing, not only the first length check
+	printf("# snmp fuzz: %ld requests, %ld answered\n", iters, answered);
+}
+
 int main(void)
 {
 	test_ber();
@@ -729,6 +1093,8 @@ int main(void)
 	test_too_big();
 	test_set();
 	test_events();
+	test_malformed();
+	test_fuzz();
 	printf("snmpTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }
