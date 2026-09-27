@@ -242,6 +242,13 @@ static void test_ber(void)
 	CHECK(berOidCompare(a127, 2, a128, 3) < 0 && berOidCompare(a128, 3, a16384, 4) < 0);
 	CHECK(berOidCompare(a128, 3, a1281, 4) < 0 && berOidCompare(a1281, 4, a16384, 4) < 0);
 	CHECK(berOidCompare(sysDescr, 8, sysDescr, 8) == 0);
+	// A subidentifier's encodings don't order byte by byte across lengths: 16383 = FF 7F, 16384 = 81 80 00
+	// (X.690 8.19.2); numerically 16383 comes first, so does 1.3.6.1.4.1.10000 before the enterprise 32473
+	const uint8_t a16383[] = { 0x2B, 0xFF, 0x7F }, a16383x[] = { 0x2B, 0xFF, 0x7F, 0x05 };
+	const uint8_t pen10000[] = { 0x2B, 6, 1, 4, 1, 0xCE, 0x10 }, pen32473[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59 };
+	CHECK(berOidCompare(a16383, 3, a16384, 4) < 0 && berOidCompare(a16384, 4, a16383, 3) > 0);
+	CHECK(berOidCompare(a16383x, 4, a16384, 4) < 0 && berOidCompare(a16383, 3, a16383x, 4) < 0);
+	CHECK(berOidCompare(pen10000, 7, pen32473, 8) < 0 && berOidCompare(pen32473, 8, pen10000, 7) > 0);
 }
 
 // ---- the radio's MIB on a snapshot ----
@@ -419,6 +426,15 @@ static void test_walk(void)
 		CHECK(berOidCompare(a, an, b, bn) < 0 && berOidValid(b, bn));
 	}
 	CHECK(snmpFind(&mib, SYS_NAME, sizeof(SYS_NAME)) == 4);	// the fifth instance
+
+	// GetNext from an enterprise number below ours whose encoding is shorter (10000 = CE 10): our first instance
+	const uint8_t pen10000[] = { 0x2B, 6, 1, 4, 1, 0xCE, 0x10 };
+	const uint8_t *o1[] = { pen10000 };
+	const int l1[] = { sizeof(pen10000) };
+	int qn = request(q, 1, "public", SNMP_PDU_GETNEXT, 0, 0, o1, l1, 1);
+	int n = process(false, q, qn, out, sizeof(out), &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 1 && r.vb[0].tag != BER_END_OF_MIB_VIEW &&
+	      r.vb[0].oidLen > 8 && memcmp(r.vb[0].oid, ODR_DMR_ID, 8) == 0);
 }
 
 static void test_bulk(void)
