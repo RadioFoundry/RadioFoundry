@@ -659,9 +659,17 @@ snmpTest: snmpTest.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ snmpPeer.c $(SNMPLIB)
 
+# The agent's firmware glue (snmp_agent.c: the USB and RF request paths, the RF mailbox and limits, settings, traps)
+# on fakes of the radio, the settings and the gateway
+TESTS   += snmpAgentTest
+snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_SNMP=1 -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_HOTSPOT=0 -o $@ \
+		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(SNMPLIB)
+
 run: run-snmp
-run-snmp: snmpTest snmpPeer
+run-snmp: snmpTest snmpPeer snmpAgentTest
 	./snmpTest
+	./snmpAgentTest
 ifneq ($(PYTHON),)
 	./snmp_peer_check.sh
 else
