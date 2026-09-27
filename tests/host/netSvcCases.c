@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "netSvcFakes.h"
+#include "fuzz.h"
 #include "net/net.h"
 #include "net/net_svc.h"
 #include "net/tcp.h"
@@ -492,10 +493,148 @@ static void test_aprsis(void)
 	run_for(5000);
 }
 
+// ---- mutated input to every service (fuzz.h; ODR_FUZZ_ITERS) ----
+
+// KISS: frames with escapes at the ends, cut, doubled FENDs, over the decoder's buffer; HTTP: mutated requests, each
+// on its own connection, always answered with a status line and closed; rigctld: mutated command lines on one
+// connection, each answered with something and the connection kept unless it was a quit; APRS-IS: mutated server
+// lines. All through the real TCP; afterwards the services still work and nothing is left open.
+static void test_fuzz(void)
+{
+	static peer_t a;
+	fuzz_t f;
+	uint8_t buf[700];
+	long iters = fuzz_iters(1500), bad = 0;
+	net_capture = false;
+	fuzz_init(&f, 0x4E455453u);
+
+	// KISS
+	CHECK(peer_connect(&a, net_test_host_ip(), 50100, NET_KISS_PORT));
+	static const uint8_t kseeds[3][12] = {
+		{ 0xC0, 0x00, 'A', 0xDB, 0xDC, 'B', 0xDB, 0xDD, 'C', 0xC0 },
+		{ 0xC0, 0x00, 0xDB, 0xC0, 0xDB, 0xDB, 0xDC, 0xC0, 0xC0 },	// an escape right before a FEND
+		{ 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', 0xDB },	// ends inside an escape
+	};
+	static const int klen[3] = { 10, 9, 10 };
+	int frames0 = got_frames;
+	for (long i = 0; i < iters; i++) {
+		int s = (int)fuzz_below(&f, 4);
+		int n;
+		if (s == 3) {	// longer than the decoder's buffer
+			n = 2 + (int)fuzz_below(&f, 600);
+			memset(buf, 'z', (size_t)n);
+			buf[0] = 0xC0;
+			buf[1] = 0x00;
+		} else {
+			memcpy(buf, kseeds[s], (size_t)klen[s]);
+			n = fuzz_mutate(&f, buf, klen[s], (int)sizeof(buf));
+		}
+		got_n = 0;
+		peer_send(&a, buf, n);
+		if (got_n > sizeof(got) || !a.established || a.reset) {
+			bad++;
+		}
+	}
+	CHECK(bad == 0 && got_frames > frames0);
+	static const uint8_t frame[] = { 0xC0, 0xC0, 0x00, 'O', 'K', 0xC0 };	// after all that: decoded as usual
+	got_n = 0;
+	peer_send(&a, frame, sizeof(frame));
+	CHECK(got_n == 3 && got[1] == 'O');
+	peer_close(&a);
+	run_for(3000);
+
+	// HTTP
+	static const char *const hseeds[] = {
+		"GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n",
+		"GET /status HTTP/1.0\r\n\r\n",
+		"GET /api/view?section=core&x=1 HTTP/1.0\r\n\r\n",
+		"HEAD /api/view?section=1 HTTP/1.0\r\nX: y\r\n\r\n",
+		"GET /api/screen.bmp HTTP/1.0\r\n\r\n",
+		"GET /api/aprsis?server=off HTTP/1.0\r\n\r\n",
+	};
+	bad = 0;
+	long answered = 0;
+	for (long i = 0; i < iters / 3; i++) {
+		int s = (int)fuzz_below(&f, 6);
+		int n = (int)strlen(hseeds[s]);
+		memcpy(buf, hseeds[s], (size_t)n);
+		n = fuzz_mutate(&f, buf, n, (int)sizeof(buf) - 4);
+		if (fuzz_below(&f, 2) == 0) {
+			memcpy(buf + n, "\r\n\r\n", 4);	// mostly complete requests: the mutation is in the request
+			n += 4;
+		}
+		uint16_t port = (uint16_t)(40000 + (i % 20000));
+		if (!peer_connect(&a, net_test_host_ip(), port, NET_HTTP_PORT)) {
+			bad++;
+			continue;
+		}
+		peer_send(&a, buf, n);
+		for (int k = 0; k < 40 && !a.fin && !a.reset; k++) {
+			run_for(5);
+		}
+		if (a.fin) {
+			answered++;
+			if (strncmp((char *)a.rx, "HTTP/1.0 ", 9) != 0) {
+				bad++;
+			}
+		}
+		peer_close(&a);
+		if (!a.fin) {
+			run_for(10100);	// an incomplete request: the server drops it after 10 s
+			if (!a.reset && !a.fin) {
+				bad++;
+			}
+		}
+	}
+	run_for(3000);
+	CHECK(bad == 0 && answered > iters / 12);
+	CHECK(http_get(&a, 39999, "GET /status HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, "200 OK"));
+	run_for(3000);
+
+	// rigctld (from beyond the host: PTT refused, so the fuzz never keys the radio)
+	static const char *const rseeds[] = { "f\n", "F 146520000\n", "+M FM 12500\n", "\\set_ptt 1\n", "l STRENGTH\n",
+					      "V VFOA\n", "\\dump_state\n", ";\\get_info\n", "f VFOA\n" };
+	CHECK(peer_connect(&a, 0xC0000201u, 52100, NET_RIGCTL_PORT));
+	bad = 0;
+	for (long i = 0; i < iters; i++) {
+		int s = (int)fuzz_below(&f, 9);
+		int n = (int)strlen(rseeds[s]);
+		memcpy(buf, rseeds[s], (size_t)n);
+		n = fuzz_mutate(&f, buf, n, 200);
+		if ((n == 0) || (buf[n - 1] != '\n')) {
+			buf[n++] = '\n';
+		}
+		// q / Q / \quit would close: replace a line that starts so
+		for (int k = 0; k < n; k++) {
+			if ((k == 0 || buf[k - 1] == '\n') && (buf[k] == 'q' || buf[k] == 'Q' || buf[k] == '\\')) {
+				buf[k] = 'x';
+			}
+		}
+		peer_clear(&a);
+		peer_send(&a, buf, n);
+		run_for(25);
+		if (!a.established || a.reset || a.fin || req_ptt) {
+			bad++;
+			if (a.reset || a.fin) {
+				break;
+			}
+		}
+	}
+	CHECK(bad == 0);
+	CHECK(strcmp(rig(&a, "\nf\n"), "") != 0);	// still answering
+	peer_close(&a);
+	run_for(3000);
+	CHECK(tcp_open_count() == 0);
+	net_capture = true;
+	printf("# services fuzz: %ld KISS chunks (%d frames), %ld HTTP requests (%ld answered), %ld rigctld lines\n", iters,
+	       got_frames - frames0, iters / 3, answered, iters);
+}
+
 void tests_run(void)
 {
 	test_kiss();
 	test_http();
 	test_rigctl();
 	test_aprsis();
+	test_fuzz();
 }

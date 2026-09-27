@@ -30,8 +30,12 @@ void hal_delay_ms(uint32_t ms) { now_ms += ms; }
 
 // ---- pcap ----
 static FILE *pcap;
+bool net_capture = true;
 static void pcap_write(const uint8_t *f, int len)
 {
+	if (!net_capture) {
+		return;
+	}
 	uint32_t rec[4] = { now_ms / 1000, (now_ms % 1000) * 1000, (uint32_t)len, (uint32_t)len };
 	fwrite(rec, sizeof(rec), 1, pcap);
 	fwrite(f, (size_t)len, 1, pcap);
