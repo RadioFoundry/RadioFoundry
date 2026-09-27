@@ -356,6 +356,31 @@ static void test_rigctl(void)
 	CHECK(strstr(ds, "0x40000000\n0x0\n0x0\n0x0\n") != NULL);
 	CHECK(strcmp(rig(&a, "xyz\n"), "RPRT -4\n") == 0);
 
+	// A line longer than the line buffer is refused whole, never run cut short: 4.4652 GHz cut by a digit would be
+	// 446.52 MHz, in band
+	char longline[96];
+	memset(longline, ' ', sizeof(longline));
+	strcpy(longline + 52, "F 4465200000\n");	// 64 characters before the newline (63 fit)
+	uint32_t sets = (uint32_t)req_vfo_set;
+	run_for(1100);
+	CHECK(strcmp(rig(&a, longline), "RPRT -1\n") == 0);
+	run_for(50);
+	CHECK((uint32_t)req_vfo_set == sets);
+	// exactly 63 characters is still a line; the next line after a long one is taken as usual
+	strcpy(longline + 52, "F 446520000\n");
+	CHECK(strlen(longline) == 64 && strcmp(rig(&a, longline), "RPRT 0\n") == 0);
+	run_for(50);
+	CHECK(req_hz == 446520000u);
+	memset(longline, 'x', 90);
+	strcpy(longline + 90, "\n");
+	peer_clear(&a);
+	peer_send(&a, longline, 91);
+	peer_send(&a, "f\n", 2);
+	run_for(10);
+	a.rx[a.rxn] = 0;
+	CHECK(strncmp((char *)a.rx, "RPRT -1\n", 8) == 0 && strchr((char *)a.rx + 8, 'R') == NULL);
+	run_for(1100);
+
 	// The client goes while keyed: released
 	peer_close(&a);
 	CHECK(!req_ptt);

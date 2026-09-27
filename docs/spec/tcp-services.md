@@ -120,7 +120,7 @@ NET rigctl" rig). One command per line (CR ignored), the short form or the backs
 by spaces. A "get" answers its value lines; a "set" answers `RPRT 0`, an error `RPRT -<Hamlib error>` (1 invalid
 argument, 4 not implemented, 9 refused, 11 not available). A leading `+` (or `;` `|` `,`) asks for the extended answer:
 the command's long name with a colon, the values with their labels, then `RPRT`. A VFO argument right after the
-command (clients started with `--vfo`) is skipped.
+command (clients started with `--vfo`) is skipped. A line longer than 63 characters is answered -1 and not run.
 
 | Command | Answer / action |
 |---|---|
