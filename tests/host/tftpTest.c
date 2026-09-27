@@ -15,6 +15,7 @@
 #include "codeplug/codeplug.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
+#include "fuzz.h"
 
 static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -712,6 +713,170 @@ static void test_power_cuts(void)
 	capture = true;
 }
 
+// codeplug.bin writes at the edges: a size between the image and the full cps_client image, more than the full image,
+// duplicate and out-of-order DATA in the middle of a write, the smallest blksize (block numbers roll over from 65535
+// to 0 inside the image). Refused ones leave every stored byte as it was.
+static void test_codeplug_edges(void)
+{
+	static uint8_t img[TFTP_CODEPLUG_FULL + 1024], before[FLASH_SIZE];
+	channel_t ch;
+	capture = false;
+	populate();
+	expected_image(img);
+	memset(img + TFTP_CODEPLUG_SIZE, 0xFF, sizeof(img) - TFTP_CODEPLUG_SIZE);
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+
+	// sizes: one block past the image (no tsize: refused at the end), past the full image (refused on the way)
+	CHECK(put("codeplug.bin", NULL, img, TFTP_CODEPLUG_SIZE + 512, 512) == -(TFTP_ERR_OTHER + 1));
+	CHECK(memcmp(before, sim_flash_data, STAGING) == 0);
+	CHECK(put("codeplug.bin", NULL, img, TFTP_CODEPLUG_FULL + 1024, 512) == -(TFTP_ERR_FULL + 1));
+	CHECK(memcmp(before, sim_flash_data, STAGING) == 0);
+	const char *one_less[] = { "tsize", "716383", NULL };
+	CHECK(put("codeplug.bin", one_less, img, TFTP_CODEPLUG_SIZE - 1, 512) == -(TFTP_ERR_FULL + 1));
+	CHECK(memcmp(before, sim_flash_data, STAGING) == 0 && !tftp_codeplug_resume());
+
+	// Duplicates and a block from the future in the middle: each block taken once, the image stored as sent
+	rename_channel(img, 3, "Dup test");
+	drain();
+	request(2, CPORT, "codeplug.bin", "octet", NULL);
+	pkt_t k;
+	CHECK(next_pkt(&k) && get16(k.p) == 4 && get16(k.p + 2) == 0);
+	uint16_t tid = k.sport;
+	uint32_t blocks = TFTP_CODEPLUG_SIZE / 512u + 1u;
+	int acks = 0;
+	for (uint32_t b = 1; b <= blocks; b++) {
+		int n = (b < blocks) ? 512 : (int)(TFTP_CODEPLUG_SIZE % 512u);
+		if ((b % 97u) == 0) {
+			send_data(tid, (uint16_t)(b + 1u), img + b * 512u, 512);	// ahead of time: ignored
+			CHECK(!next_pkt(&k));
+		}
+		send_data(tid, (uint16_t)b, img + (b - 1u) * 512u, n);
+		if ((b % 89u) == 0 && b < blocks) {
+			send_data(tid, (uint16_t)b, img + (b - 1u) * 512u, n);	// again: ACKed again, not written again
+			send_data(tid, (uint16_t)(b - 1u), img + (b - 2u) * 512u, 512);	// an older one: ignored
+		}
+		while (next_pkt(&k)) {
+			acks += get16(k.p) == 4;
+		}
+	}
+	tick(3000);
+	drain();
+	CHECK(acks > (int)blocks - 2 && regions_equal(img, true) && codeplug_channel(3, &ch) && strcmp(ch.name, "Dup test") == 0);
+	CHECK(sim_flash_data[STAGING] == 0xFF && sim_flash_violations() == 0);
+
+	// blksize 8: 89548 blocks, the block number rolls over (65535 -> 0) in the middle of the image
+	rename_channel(img, 5, "Rollover");
+	rename_channel(img, 260, "Rollover far");	// in the flash part, after the roll-over
+	const char *tiny[] = { "blksize", "8", NULL };
+	CHECK(put("codeplug.bin", tiny, img, TFTP_CODEPLUG_SIZE, 8) == 0);
+	CHECK(regions_equal(img, true) && codeplug_channel(5, &ch) && strcmp(ch.name, "Rollover") == 0);
+	CHECK(codeplug_channel(260, &ch) && strcmp(ch.name, "Rollover far") == 0);
+	tftp_stats_t st;
+	tftpStats(&st);
+	CHECK(st.state == TFTP_DALLYING || st.state == TFTP_IDLE);
+	tick(10000);
+	capture = true;
+}
+
+// The packet entry point straight from the gateway with mutated requests, ACKs, DATA and errors, in exact-size buffers:
+// the server keeps one transfer at a time, every packet it sends is well formed, and nothing of the codeplug changes
+// unless a whole image arrives (none can here: the RAM file and wr.bin take the writes)
+static void test_fuzz(void)
+{
+	static uint8_t before[FLASH_SIZE];
+	uint8_t seeds[8][80], buf[600];
+	int seedLen[8];
+	capture = false;
+	populate();
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+	tftpInit(&io, files, 2);	// ram.bin and wr.bin only
+	int n = 0;
+	seedLen[n++] = sprintf((char *)seeds[0] + 2, "ram.bin%coctet%cblksize%c1024%ctsize%c0%ctimeout%c2", 0, 0, 0, 0, 0, 0, 0) + 3;
+	seedLen[n++] = sprintf((char *)seeds[1] + 2, "wr.bin%cOCTET%ctsize%c600%cblksize%c16", 0, 0, 0, 0, 0) + 3;
+	seedLen[n++] = sprintf((char *)seeds[2] + 2, "/ram.bin%coctet", 0) + 3;
+	put16(seeds[0], 1);
+	put16(seeds[1], 2);
+	put16(seeds[2], 1);
+	put16(seeds[3], 4);	// ACK 1
+	put16(seeds[3] + 2, 1);
+	seedLen[3] = 4;
+	put16(seeds[4], 3);	// DATA 1, 16 bytes
+	put16(seeds[4] + 2, 1);
+	memset(seeds[4] + 4, 0x5A, 16);
+	seedLen[4] = 20;
+	put16(seeds[5], 4);	// ACK 0 (after an OACK)
+	put16(seeds[5] + 2, 0);
+	seedLen[5] = 4;
+	put16(seeds[6], 5);	// ERROR
+	put16(seeds[6] + 2, 0);
+	seeds[6][4] = 'x';
+	seeds[6][5] = 0;
+	seedLen[6] = 6;
+	put16(seeds[7], 3);	// DATA 2, short: the last
+	put16(seeds[7] + 2, 2);
+	seedLen[7] = 7;
+
+	fuzz_t f;
+	fuzz_init(&f, 0x7F7Fu);
+	long iters = fuzz_iters(20000), bad = 0, answers = 0;
+	uint16_t last_op = 0, last_block = 0, last_port = 0;
+	for (long i = 0; i < iters; i++) {
+		int s = (int)fuzz_below(&f, 8);
+		memcpy(buf, seeds[s], (size_t)seedLen[s]);
+		int len = seedLen[s];
+		// requests to port 69; the rest to the transfer's port (49152 on), sometimes from a foreign port
+		uint16_t dport = (s < 3) ? TFTP_PORT : (uint16_t)(49152u + fuzz_below(&f, 4));
+		if ((last_op != 0) && (fuzz_below(&f, 2) == 0)) {
+			// the right answer to the server's last packet (ACK for DATA / OACK, the next DATA for an ACK), to get
+			// deep into transfers; sometimes mutated too
+			dport = last_port;
+			put16(buf, (last_op == 4) ? 3 : 4);
+			put16(buf + 2, (last_op == 3) ? last_block : (last_op == 4) ? (uint16_t)(last_block + 1u) : 0);
+			len = 4;
+			if (last_op == 4) {
+				len += (int)fuzz_below(&f, 2) ? 16 : (int)fuzz_below(&f, 16);
+				memset(buf + 4, 0x33, 16);
+			}
+			s = 3;
+		}
+		if ((s != 3) || (fuzz_below(&f, 4) == 0)) {
+			len = fuzz_mutate(&f, buf, len, (int)sizeof(buf));
+		}
+		uint8_t *p = fuzz_exact(buf, len);
+		uint16_t sport = (fuzz_below(&f, 8) == 0) ? (uint16_t)(CPORT + 1) : (uint16_t)CPORT;
+		ring_out = ring_in;
+		tftpReceive(HOST_IP, sport, dport, p, len, now);
+		free(p);
+		now += (fuzz_below(&f, 8) == 0) ? fuzz_below(&f, 6000) : fuzz_below(&f, 20);
+		tftpTick(now);
+		pkt_t k;
+		while (next_pkt(&k)) {
+			uint16_t op = get16(k.p);
+			bool ok = k.len >= 4 && op >= 3 && op <= 6 && k.len <= IPGW_UDP_PAYLOAD_MAX;
+			answers++;
+			last_op = (op == 5) ? 0 : op;
+			last_block = get16(k.p + 2);
+			last_port = k.sport;
+			if (op == 5) {
+				ok = ok && k.p[k.len - 1] == 0;	// the message is NUL terminated
+			}
+			if (!ok && bad++ < 3) {
+				printf("  fuzz #%ld: bad packet op %u len %d\n", i, op, k.len);
+			}
+		}
+	}
+	tick(20000);	// whatever was going on times out
+	tftp_stats_t st;
+	tftpStats(&st);
+	CHECK(bad == 0 && st.state == TFTP_IDLE && answers > iters / 4);
+	CHECK(memcmp(before, sim_flash_data, FLASH_SIZE) == 0);
+	tftpStats(&st);
+	printf("# tftp fuzz: %ld packets, %ld answers (%u reads, %u writes done)\n", iters, answers, (unsigned)st.reads,
+	       (unsigned)st.writes);
+	tftpInit(&io, files, 3);
+	capture = true;
+}
+
 int main(void)
 {
 	uint32_t header[6] = { 0xA1B2C3D4, 0x00040002, 0, 0, 65535, 1 };
@@ -727,6 +892,8 @@ int main(void)
 	test_writes();
 	test_codeplug();
 	test_power_cuts();
+	test_codeplug_edges();
+	test_fuzz();
 
 	fclose(pcap);
 	sim_flash_free();
