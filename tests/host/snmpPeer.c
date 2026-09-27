@@ -81,7 +81,9 @@ int main(int argc, char **argv)
 		perror("snmpPeer: bind");
 		return 1;
 	}
-	struct timeval tv = { .tv_sec = 1 };
+	// Up to 20 s for the first request (a loaded machine, e.g. make -j, can take seconds to start the Python
+	// manager), then 1 s idle ends the run
+	struct timeval tv = { .tv_sec = 20 };
 	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	for (;;) {
 		struct sockaddr_in from;
@@ -90,6 +92,10 @@ int main(int argc, char **argv)
 
 		if (n <= 0) {
 			break;	// idle: done
+		}
+		if (tv.tv_sec != 1) {
+			tv.tv_sec = 1;
+			setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 		}
 		snmpRequestCfg_t rc = { .mib = &mib, .readHash = cfg.readHash, .writeHash = cfg.writeHash,
 					.writeAllowed = true, .maxRepetitions = 32, .stats = &stats };
