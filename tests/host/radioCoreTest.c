@@ -20,6 +20,7 @@
 #include "storage/storage.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrData.h"
+#include "sim/sim_flash.h"
 
 static int failures;
 static int checks;
@@ -144,6 +145,7 @@ const board_t board = {
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
 	.vocoder = &fake_vocoder,
+	.flash = &sim_flash,		// no map until test_factory_reset: RAM only, as on a radio without one
 };
 
 // ---- fake codeplug ----
@@ -2267,6 +2269,28 @@ static void test_ui_settings(void)
 	storage_job_poll();
 	settings_read(&sv);
 	CHECK(sv.squelch == sq && cp_writes == w + 1);
+	req(RREQ_CLEAR_TEMP, 0);
+	run(20);
+	// Every temporary change goes into the channel: power, bandwidth, both tones, the mode
+	req(RREQ_ZONE_POS, 0);			// channel 1, FM simplex
+	run(50);
+	req(RREQ_POWER, 1);
+	req(RREQ_BANDWIDTH, RADIO_BW_12K5);
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_TX, (subtone_t){ TONE_CTCSS, 1000 }));
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_RX, (subtone_t){ TONE_CTCSS, 1230 }));
+	run(20);
+	uint8_t pw = sm.view.power;
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(chans[1].power == pw && chans[1].bw == RADIO_BW_12K5 && chans[1].tx_tone.type == TONE_CTCSS &&
+	      chans[1].tx_tone.value == 1000 && chans[1].rx_tone.value == 1230);
+	run(100);				// the radio core re-reads the channel (codeplug serial)
+	CHECK(ui_svc_mode(RADIO_MODE_DMR) && (sm.view.temp & RADIO_TEMP_MODE));
+	run(20);
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(chans[1].mode == RADIO_MODE_DMR);
+	setup_codeplug();
 	char l1[17], l2[17];
 	ui_svc_boot_text(l1, l2);
 	CHECK(l1[0] == 0 && l2[0] == 0);
@@ -2500,6 +2524,65 @@ static void test_error_paths(void)
 	settings_end(now);
 }
 
+// Factory reset on a flash: the defaults saved at once, the native area emptied when ours, a toast when either
+// fails (the settings can't be written; the native area won't erase), never the legacy codeplug or calibration
+static const hal_flash_map_t reset_map = {
+	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = 0x30000u,
+	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+	.native_addr = 0x30000u, .native_size = 0x4000u,
+};
+
+static void test_factory_reset(void)
+{
+	settings_t sv;
+	sim_flash_create(0x40000u, &reset_map);
+	CHECK(storage_init());
+	settings_init();
+	dmr_start(true);
+	memset(&sim_flash_data[0x20000u], 0x42, 64);		// a legacy codeplug byte or two
+	memset(&sim_flash_data[0x10000u], 0x24, 64);		// the calibration copy
+	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
+	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
+	settings_begin()->squelch = 2;
+	settings_end(now);
+	CHECK(settings_flush());
+	n_ev = 0;
+	CHECK(ui_svc_factory_reset());
+	storage_job_poll();
+	settings_read(&sv);
+	CHECK(n_ev == 0 && sv.squelch == SETTINGS_UNSET8 && sim_flash_data[reset_map.native_addr] == 0xFF);
+	CHECK(sim_flash_data[0x20000u] == 0x42 && sim_flash_data[0x10000u] == 0x24);
+	settings_init();				// what the next boot finds
+	settings_read(&sv);
+	CHECK(sv.squelch == SETTINGS_UNSET8);
+	// The settings can't be written (a worn ring): the toast says so
+	settings_begin()->squelch = 4;
+	settings_end(now);
+	CHECK(settings_flush());		// stored: the reset has something to write
+	sim_flash_bad_range(reset_map.settings_addr, reset_map.settings_size);
+	CHECK(ui_svc_factory_reset());
+	storage_job_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "settings") != NULL);
+	sim_flash_bad_range(0, 0);
+	// The native area won't erase (ours, then the flash cut out under it)
+	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
+	CHECK(sim_flash.write(reset_map.native_addr + 0x2000u, magic, 4));
+	settings_begin()->squelch = 5;
+	settings_end(now);
+	CHECK(settings_flush());
+	n_ev = 0;
+	CHECK(ui_svc_factory_reset());
+	sim_flash_cut_after(256);	// the settings record (252 + 4 bytes) goes in, the native erase fails
+	storage_job_poll();
+	sim_flash_power_on();
+	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
+	sim_flash.map = NULL;
+	storage_init();			// back to no flash for anything after
+	settings_init();
+	sim_flash_free();
+}
+
 int main(void)
 {
 	test_startup();
@@ -2528,6 +2611,7 @@ int main(void)
 	test_hotspot_cwid();
 	test_dmr_emergency();
 	test_dmr_data_glue();	// (last: the data service's state carries over)
+	test_factory_reset();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }
