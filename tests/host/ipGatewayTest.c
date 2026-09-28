@@ -8,7 +8,9 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "fuzz.h"
 #include "dmr/ipGateway.h"
 
 static int failures = 0;
@@ -43,7 +45,7 @@ static struct
 	uint8_t protocol;
 	uint16_t srcPort;
 	uint16_t dstPort;
-	uint8_t payload[600];// UDP: the datagram's payload; ICMP, SCTP: the whole message
+	uint8_t payload[2048];// UDP: the datagram's payload; ICMP, SCTP: the whole message
 	int length;
 } air;
 
@@ -89,7 +91,7 @@ static struct
 	int calls;
 	bool group;
 	uint32_t dst;
-	uint8_t data[600];
+	uint8_t data[2048];
 	int length;
 } raw;
 
@@ -106,7 +108,7 @@ bool ipGatewayRawToAir(bool group, uint32_t dst, const uint8_t *data, int length
 static struct
 {
 	int calls;
-	uint8_t data[64];
+	uint8_t data[2048];
 	int length;
 } serial;
 
@@ -661,6 +663,223 @@ static void testFixedLink(void)
 	CHECK((ipGatewayFixedLink() == 0) && (ipGatewayHostIP() == HOST_IP));
 }
 
+// ARP that isn't a request for an IPv4 address over Ethernet (RFC 826: hardware type 1, protocol 0x0800, address
+// lengths 6 and 4) is not answered, nor learned from
+static void testARPTypes(void)
+{
+	uint8_t a[42] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	memcpy(a + 6, HOST_MAC, 6); a[12] = 0x08; a[13] = 0x06;
+	const uint8_t arp[28] = { 0, 1, 8, 0, 6, 4, 0, 1 };
+	memcpy(a + 14, arp, 28);
+	memcpy(a + 22, HOST_MAC, 6);
+	put32(&a[28], HOST_IP);
+	put32(&a[38], RADIO_IP);
+	in(a, 42);
+	CHECK(framesSent == 1);// the good one
+	a[16] = 0x86; a[17] = 0xDD;// IPv6
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[16] = 0x08; a[17] = 0x00; a[18] = 8;// 8-byte hardware addresses
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[18] = 6; a[19] = 16;// 16-byte protocol addresses
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[19] = 4; a[15] = 6;// hardware type 6 (IEEE 802)
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[15] = 1; a[21] = 2;// a reply
+	in(a, 42);
+	CHECK(framesSent == 0);
+	a[21] = 1;
+	in(a, 41);// one short
+	CHECK(framesSent == 0);
+	in(a, 42);
+	CHECK(framesSent == 1);
+}
+
+
+// The IP header's checksum set right (after a mutation, so the frame gets past the header check)
+static void fixIpChecksum(uint8_t *f, int length)
+{
+	if ((length < 34) || (f[12] != 0x08) || (f[13] != 0x00))
+	{
+		return;
+	}
+	int ihl = (f[14] & 0x0F) * 4;
+	if ((ihl < 20) || (14 + ihl > length))
+	{
+		return;
+	}
+	f[24] = f[25] = 0;
+	uint16_t c = sum16(f + 14, ihl, 0);
+	f[24] = c >> 8;
+	f[25] = c;
+}
+
+// Frames from the host that must be dropped without a word: every length short of a header, bad IHL, total length
+// past the frame or under the header, a bad header checksum, fragments, UDP lengths outside the datagram, DHCP short
+// or without the magic cookie or with options running off the end
+static void testMalformed(void)
+{
+	uint8_t f[1600], g[1600];
+	const uint8_t data[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+	int calls = air.calls, raws = raw.calls;
+	int n = hostUdp(f, GW_MAC, HOST_IP, IPGW_INDIVIDUAL_NET | 9, 4000, 4001, data, 8);// a good one to cut up
+
+	in(f, n);
+	CHECK(air.calls == calls + 1);
+	calls = air.calls;
+	int bad = 0;
+	for (int len = 0; len < n; len++)
+	{
+		uint8_t *p = fuzz_exact(f, len);// exactly len bytes: a read past them is an ASan report
+		in(p, len);
+		free(p);
+		bad += (framesSent != 0);
+	}
+	CHECK(bad == 0 && air.calls == calls);
+
+	// IHL 4 (16 bytes), IHL 15 with total 28, total 19, total past the frame, a bad checksum, MF set, an offset
+	static const struct { int at; uint8_t v; bool fix; } edits[] = {
+		{ 14, 0x44, true }, { 14, 0x4F, true }, { 17, 19, true }, { 17, 200, true }, { 25, 0x00, false },
+		{ 20, 0x20, true }, { 21, 0x08, true }, { 14, 0x65, true },
+	};
+	for (unsigned i = 0; i < sizeof(edits) / sizeof(edits[0]); i++)
+	{
+		memcpy(g, f, n);
+		g[edits[i].at] = edits[i].v;
+		if (edits[i].fix)
+		{
+			fixIpChecksum(g, n);
+		}
+		if (edits[i].at == 25)
+		{
+			g[25] ^= 0x01;// the checksum off by one
+		}
+		in(g, n);
+		CHECK(framesSent == 0 && air.calls == calls);
+	}
+	// DF alone is fine (hostUdp sets it): delivered
+	in(f, n);
+	CHECK(air.calls == calls + 1);
+	calls = air.calls;
+	// UDP length 7, and one past the IP payload
+	memcpy(g, f, n);
+	g[39] = 7;
+	in(g, n);
+	g[39] = 8 + 8 + 1;
+	in(g, n);
+	CHECK(air.calls == calls && raw.calls == raws);
+
+	// DHCP: 239 bytes, no cookie, an option whose length runs off the end, a pad-only option field
+	uint8_t bootp[300] = { 1, 1, 6, 0, 0x12, 0x34, 0x56, 0x78 };
+	memcpy(&bootp[28], HOST_MAC, 6);
+	bootp[236] = 0x63; bootp[237] = 0x82; bootp[238] = 0x53; bootp[239] = 0x63;
+	bootp[240] = 53; bootp[241] = 1; bootp[242] = 1;
+	bootp[243] = 255;
+	in(g, hostUdp(g, BCAST_MAC, 0, 0xFFFFFFFF, 68, 67, bootp, 239));
+	CHECK(framesSent == 0);
+	bootp[236] = 0;
+	in(g, hostUdp(g, BCAST_MAC, 0, 0xFFFFFFFF, 68, 67, bootp, 300));
+	CHECK(framesSent == 0);
+	bootp[236] = 0x63;
+	bootp[240] = 50; bootp[241] = 200;// the requested address option says 200 bytes; the field ends first
+	memset(bootp + 242, 0, 58);
+	uint8_t *p = fuzz_exact(bootp, 244);
+	in(g, hostUdp(g, BCAST_MAC, 0, 0xFFFFFFFF, 68, 67, p, 244));
+	free(p);
+	CHECK(framesSent == 0);// no message type: nothing answered
+	memset(bootp + 240, 0, 60);// only pads, no end option
+	in(g, hostUdp(g, BCAST_MAC, 0, 0xFFFFFFFF, 68, 67, bootp, 300));
+	CHECK(framesSent == 0);
+
+	// An echo request as long as a frame can be: answered; one byte longer than the gateway's frame: dropped
+	uint8_t ic[1600];
+	memset(ic, 0x5A, sizeof(ic));
+	ic[0] = 8; ic[1] = 0; ic[2] = ic[3] = 0;
+	int icmax = IPGW_MAX_FRAME - 14 - 20;
+	uint16_t c = sum16(ic, icmax, 0); ic[2] = c >> 8; ic[3] = c;
+	in(g, hostIp(g, GW_MAC, HOST_IP, RADIO_IP, 1, ic, icmax));
+	CHECK(framesSent == 1 && lastLength == IPGW_MAX_FRAME && sum16(&lastFrame[34], icmax, 0) == 0);
+	ic[2] = ic[3] = 0;
+	c = sum16(ic, icmax + 1, 0); ic[2] = c >> 8; ic[3] = c;
+	in(g, hostIp(g, GW_MAC, HOST_IP, RADIO_IP, 1, ic, icmax + 1));
+	CHECK(framesSent == 0);
+}
+
+// Mutated frames of every kind the host sends, half with the IP checksum made right again, in exact-size buffers:
+// every frame the gateway sends has a good IP header checksum and fits IPGW_MAX_FRAME, and what goes to the air is
+// inside the frame it came in
+static void testFuzz(void)
+{
+	uint8_t seeds[8][700], buf[1600];
+	int seedLen[8];
+	const uint8_t data[16] = "fuzzing payload";
+	uint8_t bootp[300] = { 1, 1, 6, 0, 0x12, 0x34, 0x56, 0x78 };
+	memcpy(&bootp[28], HOST_MAC, 6);
+	bootp[236] = 0x63; bootp[237] = 0x82; bootp[238] = 0x53; bootp[239] = 0x63;
+	bootp[240] = 53; bootp[241] = 1; bootp[242] = 3; bootp[243] = 50; bootp[244] = 4;
+	put32(&bootp[245], HOST_IP);
+	bootp[249] = 255;
+	seedLen[0] = hostUdp(seeds[0], BCAST_MAC, 0, 0xFFFFFFFF, 68, 67, bootp, sizeof(bootp));
+	seedLen[1] = hostUdp(seeds[1], GW_MAC, HOST_IP, IPGW_INDIVIDUAL_NET | 9, 4000, 4001, data, 16);
+	seedLen[2] = hostUdp(seeds[2], GW_MAC, HOST_IP, RADIO_IP, 4000, IPGW_SERIAL_PORT, data, 16);
+	seedLen[3] = hostUdp(seeds[3], GW_MAC, HOST_IP, IPGW_ALL_CALL_IP, 4000, IPGW_RAW_PORT, data, 16);
+	uint8_t ic[24] = { 8, 0, 0, 0, 0, 1, 0, 1, 'p', 'i', 'n', 'g' };
+	uint16_t c = sum16(ic, 24, 0); ic[2] = c >> 8; ic[3] = c;
+	seedLen[4] = hostIp(seeds[4], GW_MAC, HOST_IP, RADIO_IP, 1, ic, 24);
+	uint8_t sctp[28] = { 0x13, 0x88, 0x13, 0x88 };
+	seedLen[5] = hostIp(seeds[5], GW_MAC, HOST_IP, IPGW_MULTICAST_NET | 91, 132, sctp, 28);
+	uint8_t a[42] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	memcpy(a + 6, HOST_MAC, 6); a[12] = 0x08; a[13] = 0x06;
+	const uint8_t arp[8] = { 0, 1, 8, 0, 6, 4, 0, 1 };
+	memcpy(a + 14, arp, 8);
+	memcpy(a + 22, HOST_MAC, 6);
+	put32(&a[28], HOST_IP);
+	put32(&a[38], IPGW_INDIVIDUAL_NET | 9);
+	memcpy(seeds[6], a, 42);
+	seedLen[6] = 42;
+	seedLen[7] = hostUdp(seeds[7], GW_MAC, HOST_IP, 0xE00000FBu, 5353, 5353, data, 16);
+
+	fuzz_t f;
+	fuzz_init(&f, 0x49504757u);
+	long iters = fuzz_iters(20000), bad = 0, out = 0;
+	for (long i = 0; i < iters; i++)
+	{
+		int s = (int)fuzz_below(&f, 8);
+		memcpy(buf, seeds[s], seedLen[s]);
+		int len = fuzz_mutate(&f, buf, seedLen[s], (int)sizeof(buf));
+		if (fuzz_below(&f, 2) == 0)
+		{
+			fixIpChecksum(buf, len);
+		}
+		uint8_t *p = fuzz_exact(buf, len);
+		int calls = air.calls + raw.calls + serial.calls;
+		in(p, len);
+		free(p);
+		out += framesSent;
+		if (framesSent > 0)
+		{
+			bool ok = (lastLength <= IPGW_MAX_FRAME) && (lastLength >= 14);
+			if (ok && (lastFrame[12] == 0x08) && (lastFrame[13] == 0x00))
+			{
+				ok = (lastLength >= 34) && (sum16(&lastFrame[14], 20, 0) == 0);
+			}
+			if (!ok && (bad++ < 3))
+			{
+				printf("  fuzz #%ld: a bad frame out (%d bytes)\n", i, lastLength);
+			}
+		}
+		if ((air.calls + raw.calls + serial.calls) > calls + 1)
+		{
+			bad++;// one input, at most one thing out
+		}
+	}
+	CHECK(bad == 0 && out > 0);
+	printf("# ipGateway fuzz: %ld frames in, %ld out\n", iters, out);
+}
+
 int main(void)
 {
 	uint32_t header[6] = { 0xA1B2C3D4, 0x00040002, 0, 0, 65535, 1 };// pcap, Ethernet
@@ -672,6 +891,7 @@ int main(void)
 	testDHCP(1, 0, 2);
 	testDHCP(3, HOST_IP, 5);
 	testARP();
+	testARPTypes();
 	testPing();
 	testToAir();
 	testDeliver();
@@ -680,6 +900,8 @@ int main(void)
 	testRaw();
 	testIdChange();
 	testFixedLink();
+	testMalformed();
+	testFuzz();
 
 	fclose(pcap);
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);

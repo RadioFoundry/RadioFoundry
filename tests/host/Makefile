@@ -4,13 +4,20 @@
 ##
 ##   make -C tests/host
 ##   make -C tests/host COVERAGE=1     instrumented for line coverage (tools/coverage.sh makes the report)
+##   make -C tests/host SANITIZE=1     under AddressSanitizer and UndefinedBehaviorSanitizer (any report fails the test)
 
 ROOT    := ../..
 CORE    := $(ROOT)/core
 CC      ?= cc
 # COVERAGE=1: gcov instrumentation (GCC and clang both take --coverage); each test writes its .gcda files here
 COVFLAGS := $(if $(filter 1,$(COVERAGE)),--coverage -O0)
-CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) -I$(CORE) -I$(ROOT)/drivers '-D__attribute__(x)='  # the firmware's linker section attributes are ARM ELF only
+# SANITIZE=1: ASan + UBSan (Apple clang and GCC); UBSan stops at the first report instead of printing and going on.
+# Build from clean when switching (make clean): the binaries don't depend on the flags.
+SANITIZERS := address,undefined
+SANFLAGS := $(if $(filter 1,$(SANITIZE)),-fsanitize=$(SANITIZERS) -fno-sanitize-recover=undefined -fno-omit-frame-pointer -O1)
+export ASAN_OPTIONS ?= abort_on_error=0:detect_stack_use_after_return=1:strict_string_checks=1
+export UBSAN_OPTIONS ?= print_stacktrace=1:halt_on_error=1
+CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers '-D__attribute__(x)='  # the firmware's linker section attributes are ARM ELF only
 
 DATA    := $(CORE)/dmr/dmrData.c
 FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c
@@ -69,6 +76,11 @@ TESTS   += dmrDataServiceTestNoTms
 dmrDataServiceTestNoTms: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
 	$(CC) $(CFLAGS) -DCONFIG_DMR_TMS=0 -o $@ $(SVC) -lm
 
+# LRRP on its own: request decoding (malformed and mutated too), the answers' bounds, the distance
+TESTS   += lrrpTest
+lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c -lm
+
 dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
 
@@ -94,6 +106,7 @@ run: $(TESTS)
 	./hotspotDataTest
 	./hotspotUplinkTest
 	./dmrPrivacyTest
+	./lrrpTest
 	./ipGatewayTest
 	./ipGatewayTest16
 	./ipGatewayTest31
@@ -265,7 +278,7 @@ UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c 
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
 ABOUT_H := out/gen/odr_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
-UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
+UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
            '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DGFX_FIT_TRACE
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiSim
@@ -662,9 +675,17 @@ snmpTest: snmpTest.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ snmpPeer.c $(SNMPLIB)
 
+# The agent's firmware glue (snmp_agent.c: the USB and RF request paths, the RF mailbox and limits, settings, traps)
+# on fakes of the radio, the settings and the gateway
+TESTS   += snmpAgentTest
+snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_SNMP=1 -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_HOTSPOT=0 -o $@ \
+		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(SNMPLIB)
+
 run: run-snmp
-run-snmp: snmpTest snmpPeer
+run-snmp: snmpTest snmpPeer snmpAgentTest
 	./snmpTest
+	./snmpAgentTest
 ifneq ($(PYTHON),)
 	./snmp_peer_check.sh
 else

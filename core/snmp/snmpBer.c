@@ -135,13 +135,36 @@ bool berOidValid(const uint8_t *p, int len)
 	return true;
 }
 
+// Octets of the subidentifier starting at p[i] (up to the one without bit 8, or the end)
+static int subidLen(const uint8_t *p, int i, int len)
+{
+	int n = 1;
+
+	while (((i + n) <= len - 1) && (p[i + n - 1] & 0x80)) {
+		n++;
+	}
+	return n;
+}
+
 int berOidCompare(const uint8_t *a, int alen, const uint8_t *b, int blen)
 {
-	int n = (alen < blen) ? alen : blen;
-	int c = memcmp(a, b, (size_t)n);
+	int i = 0;
 
-	if (c != 0) {
-		return c;
+	// Subidentifier by subidentifier: in the shortest form (berOidValid) a longer encoding is a larger number, and
+	// two of the same length order like their octets. (Byte by byte across lengths would put FF 7F = 16383 after
+	// 81 80 00 = 16384.)
+	while ((i < alen) && (i < blen)) {
+		int na = subidLen(a, i, alen), nb = subidLen(b, i, blen);
+
+		if (na != nb) {
+			return na - nb;
+		}
+		int c = memcmp(a + i, b + i, (size_t)na);
+
+		if (c != 0) {
+			return c;
+		}
+		i += na;
 	}
 	return alen - blen;
 }

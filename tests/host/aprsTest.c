@@ -21,6 +21,7 @@
 #include "aprs/aprs_nmea.h"
 #include "aprs/aprs_beacon.h"
 #include "aprs/aprs_igate.h"
+#include "fuzz.h"
 
 static int failures = 0;
 
@@ -743,6 +744,171 @@ static int write_wav(const char *dir)
 	return 0;
 }
 
+// Compressed positions whose course / speed / altitude bytes are outside base-91 (APRS101 chapter 9: '!' to '{'):
+// no course, speed or altitude from them
+static void test_compressed_cs(void)
+{
+	aprs_parsed_t p;
+	ax25_addr_t dst = addr("APRS");
+	const char *s = "=/5L!!<*e7>\xFF\xFF\x40";
+	CHECK(aprs_parse(&dst, (const uint8_t *)s, 14, &p) && p.has_pos && p.pos.speed_kn == APRS_SPEED_NONE &&
+	      p.pos.course == APRS_COURSE_NONE, "cs 0xFF: %u %u", p.pos.speed_kn, p.pos.course);
+	s = "=/5L!!<*e7>\xFFSS";	// GGA altitude from c = 0xFF
+	CHECK(aprs_parse(&dst, (const uint8_t *)s, 14, &p) && p.has_pos && p.pos.alt_m == APRS_ALT_NONE, "alt 0xFF: %d",
+	      p.pos.alt_m);
+	s = "=/5L!!<*e7>7\x90[";	// s past '{'
+	CHECK(aprs_parse(&dst, (const uint8_t *)s, 14, &p) && p.has_pos && p.pos.speed_kn == APRS_SPEED_NONE, "s 0x90: %u",
+	      p.pos.speed_kn);
+}
+
+
+// What's heard over the air at the edges of the formats, parsed from exact-size heap copies (ASan sees a read past
+// the end): compressed positions whose course / speed / altitude bytes are outside base-91 (APRS101 chapter 9: '!'
+// to '{'), every truncation of each format, Mic-E with and without the altitude and type characters, messages at
+// the field limits
+static bool parse_exact(const ax25_addr_t *dst, const char *s, size_t n, aprs_parsed_t *p)
+{
+	uint8_t *q = fuzz_exact((const uint8_t *)s, (int)n);
+	bool ok = aprs_parse(dst, q, n, p);
+	// text inside the info field, whatever the type
+	if (ok && p->text_len > 0 && ((const uint8_t *)p->text < q || (const uint8_t *)p->text + p->text_len > q + n)) {
+		ok = false;
+	}
+	free(q);
+	return ok;
+}
+
+static void test_parse_edges(void)
+{
+	aprs_parsed_t p;
+	ax25_addr_t dst = addr("APRS"), mice = addr("SSRUVT");
+	char s[64];
+
+	// the largest base-91 values are taken (test_compressed_cs has the bytes past '{')
+	strcpy(s, "=/5L!!<*e7>{{[");
+	CHECK(parse_exact(&dst, s, 14, &p) && p.has_pos && p.pos.course == APRS_COURSE_NONE, "c '{'");
+
+	// every truncation of each format: parsed or refused, never read past
+	static const char *const formats[] = {
+		"=4903.50N/07201.75W-088/036/A=003281Hello", "@092345z4903.50N/07201.75W>", "=/5L!!<*e7>7P[comment",
+		";LEADER   *092345z4903.50N/07201.75W>088/036", ")AID #2!4903.50N/07201.75WA", ":N0CALL-7 :hello{12}AB",
+		":N0CALL   :ack123", "`(_fn\"Oj/`\"4T}text", ">status", "}N0CALL>APRS:>third",
+	};
+	int bad = 0;
+	for (unsigned f = 0; f < sizeof(formats) / sizeof(formats[0]); f++) {
+		size_t n = strlen(formats[f]);
+		for (size_t k = 0; k <= n; k++) {
+			bool ok = parse_exact(formats[f][0] == '`' ? &mice : &dst, formats[f], k, &p);
+			bad += (k > 0) && !ok;
+		}
+	}
+	CHECK(bad == 0, "truncations: %d not parsed", bad);
+
+	// Mic-E: the altitude after the type character, the old place (bytes 9-12), none; a 5-character destination
+	strcpy(s, "`(_fn\"Oj/`\"4T}");
+	CHECK(parse_exact(&mice, s, 14, &p) && p.pos.alt_m != APRS_ALT_NONE && p.text_len == 0, "mic-e alt %d", p.pos.alt_m);
+	strcpy(s, "`(_fn\"Oj/\"4T}x");
+	CHECK(parse_exact(&mice, s, 14, &p) && p.pos.alt_m != APRS_ALT_NONE && p.text_len == 1, "mic-e alt 2");
+	ax25_addr_t five = addr("SSRUV");
+	CHECK(parse_exact(&five, s, 14, &p) && p.type == APRS_T_UNKNOWN, "5-char dest");
+	CHECK(parse_exact(NULL, s, 14, &p) && p.type == APRS_T_UNKNOWN, "no dest");
+	// latitude 91 degrees in the destination: refused
+	ax25_addr_t lat91 = addr("YQRUVT");
+	CHECK(parse_exact(&lat91, s, 14, &p) && p.type == APRS_T_UNKNOWN, "mic-e lat 91");
+
+	// Messages: addressee all spaces, message number at its limit and past it, an ack with no number
+	strcpy(s, ":         :x");
+	CHECK(parse_exact(NULL, s, strlen(s), &p) && p.type == APRS_T_MESSAGE && p.addressee[0] == '\0', "blank addressee");
+	strcpy(s, ":N0CALL   :hi{123456789");
+	CHECK(parse_exact(NULL, s, strlen(s), &p) && strlen(p.msgno) == APRS_MSGNO_MAX && p.text_len == 2, "msgno max");
+	strcpy(s, ":N0CALL   :ack");
+	CHECK(parse_exact(NULL, s, strlen(s), &p) && !p.ack && p.text_len == 3, "ack without number");
+	strcpy(s, ":N0CALL   :ack ");
+	CHECK(parse_exact(NULL, s, strlen(s), &p) && !p.ack, "ack space");
+	// objects: one short of the position, killed; items with names of 3 and 9 characters, 10 is too long
+	strcpy(s, ";LEADER   _092345z4903.50N/07201.75W>");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.type == APRS_T_OBJECT && p.killed, "killed object");
+	CHECK(parse_exact(&dst, s, 17, &p) && p.type == APRS_T_UNKNOWN, "short object");
+	strcpy(s, ")ABC_4903.50N/07201.75WA");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.type == APRS_T_ITEM && p.killed && strcmp(p.name, "ABC") == 0, "item 3");
+	strcpy(s, ")ABCDEFGHI!4903.50N/07201.75WA");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.type == APRS_T_ITEM && strcmp(p.name, "ABCDEFGHI") == 0, "item 9");
+	strcpy(s, ")ABCDEFGHIJ!4903.50N/07201.75WA");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.type == APRS_T_UNKNOWN, "item 10");
+	// an uncompressed position at the extremes, ambiguity, a bad table character
+	strcpy(s, "!9000.00S/18000.00E-");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.pos.lat == -900000000 && p.pos.lon == 1800000000, "extremes");
+	strcpy(s, "!9001.00N/18000.00E-");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.type == APRS_T_POSITION, "lat 90 01 taken as written");
+	strcpy(s, "!49  .  N/072  .  W-");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.has_pos, "ambiguity");
+	strcpy(s, "!4903.50N 07201.75W-");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.type == APRS_T_UNKNOWN, "table ' '");
+	// "/A=" at the very end of a comment, and with a sign and five digits
+	strcpy(s, "!4903.50N/07201.75W-/A=00");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.pos.alt_m == APRS_ALT_NONE, "cut altitude");
+	strcpy(s, "!4903.50N/07201.75W-/A=-00100");
+	CHECK(parse_exact(&dst, s, strlen(s), &p) && p.pos.alt_m == -30, "negative altitude %d", p.pos.alt_m);
+}
+
+// Mutated frames off the air: AX.25 decode, then the APRS parse of the info field and the TNC2 text, in exact-size
+// buffers; whatever is decoded stays inside its buffers (ODR_FUZZ_ITERS)
+static void test_parse_fuzz(void)
+{
+	static const char *const lines[] = {
+		"K1ABC-9>APZODR,W1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-088/036/A=003281Test",
+		"N0CALL>APRS:=/5L!!<*e7>7P[compressed",
+		"N0CALL>SSRUVT,WIDE1-1:`(_fn\"Oj/`\"4T}mic-e",
+		"N0CALL>APRS::N0CALL-7 :hello{12}AB",
+		"N0CALL>APRS:;LEADER   *092345z4903.50N/07201.75W>088/036",
+		"N0CALL>APRS:)AID #2!4903.50N/07201.75WA",
+		"N0CALL>APRS:}W1AW>APRS,TCPIP,N0CALL*:>third party",
+		"N0CALL>APRS:@092345z4903.50N/07201.75W_220/004g005t077",
+	};
+	uint8_t seeds[8][AX25_FRAME_MAX];
+	size_t seedLen[8];
+	for (int i = 0; i < 8; i++) {
+		seedLen[i] = make_frame(lines[i], seeds[i], sizeof(seeds[i]));
+	}
+	fuzz_t f;
+	fuzz_init(&f, 0x41505253u);
+	long iters = fuzz_iters(50000), decoded = 0, parsed = 0, bad = 0;
+	uint8_t buf[AX25_FRAME_MAX + 64];
+	for (long i = 0; i < iters; i++) {
+		int s = (int)fuzz_below(&f, 8);
+		memcpy(buf, seeds[s], seedLen[s]);
+		int n = fuzz_mutate(&f, buf, (int)seedLen[s], (int)sizeof(buf));
+		uint8_t *q = fuzz_exact(buf, n);
+		ax25_frame_t fr;
+		if (ax25_decode(q, (size_t)n, &fr)) {
+			decoded++;
+			if (fr.info_len > AX25_INFO_MAX || fr.ndigi > AX25_MAX_DIGIS) {
+				bad++;
+			}
+			char tnc2[AX25_TNC2_MAX + 1];
+			size_t t = ax25_to_tnc2(&fr, tnc2, sizeof(tnc2));
+			if (t >= sizeof(tnc2)) {
+				bad++;
+			}
+			aprs_parsed_t p;
+			uint8_t *info = fuzz_exact(fr.info, (int)fr.info_len);
+			if (aprs_parse(&fr.dst, info, fr.info_len, &p)) {
+				parsed++;
+				if (p.text_len > 0 && ((const uint8_t *)p.text < info || (const uint8_t *)p.text + p.text_len > info + fr.info_len)) {
+					bad++;
+				}
+				if (p.name[APRS_NAME_MAX] != '\0' || p.addressee[APRS_ADDRESSEE_LEN] != '\0' || p.msgno[APRS_MSGNO_MAX] != '\0') {
+					bad++;
+				}
+			}
+			free(info);
+		}
+		free(q);
+	}
+	CHECK(bad == 0 && decoded > iters / 10, "fuzz: %ld bad, %ld decoded", bad, decoded);
+	printf("# aprs fuzz: %ld frames, %ld decoded, %ld parsed\n", iters, decoded, parsed);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc == 2 && strcmp(argv[1], "--sweep") == 0) {
@@ -764,6 +930,9 @@ int main(int argc, char **argv)
 	test_position_parse();
 	test_mice();
 	test_messages();
+	test_compressed_cs();
+	test_parse_edges();
+	test_parse_fuzz();
 	test_geo();
 	test_nmea();
 	test_kiss();

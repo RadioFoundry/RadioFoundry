@@ -6,7 +6,9 @@
 // endpoint; and the gateway's local port table (224.0.0.0/24 never to the air, TTL 255, the multicast MAC). Every
 // frame is written to mdnsTest.pcap for tshark's DNS dissector (Makefile).
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "fuzz.h"
 #include "dmr/ipGateway.h"
 #include "net/mdns.h"
 
@@ -724,6 +726,155 @@ static void test_gateway_ports(void)
 	CHECK(csum(ip + 20, 13, pseudo) == 0 && csum(ip, 20, 0) == 0);
 }
 
+// Compressed names from the network (RFC 1035 4.1.4): pointer loops over two and three names, pointers past the end,
+// into the header, cut off after their first octet, the reserved label types 01 and 10, 17 pointers in a row (more
+// than the 16 followed), and a forward pointer to our name that is fine. Records whose rdata runs past the end; a
+// response holding our instance's SRV with rdata too short to hold a target.
+static void test_names(void)
+{
+	bring_up();
+	hear_host();
+	mdns_stats_t st0, st;
+	uint8_t m[300];
+	q_t q;
+
+	mdnsStats(&st0);
+	out_count = 0;
+	const uint8_t loop2[] = { 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0xC0, 18, 0, 1, 0, 1, 0xC0, 12, 0, 1, 0, 1 };
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, loop2, sizeof(loop2));
+	const uint8_t loop3[] = { 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 'a', 0xC0, 17, 1, 'b', 0xC0, 20, 1, 'c', 0xC0, 12, 0, 1, 0, 1 };
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, loop3, sizeof(loop3));
+	const uint8_t past[] = { 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0xC1, 0x00, 0, 1, 0, 1 };
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, past, sizeof(past));
+	const uint8_t header[] = { 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0xC0, 2, 0, 1, 0, 1 };	// into the header
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, header, sizeof(header));
+	const uint8_t cut[] = { 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0xC0 };
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, cut, sizeof(cut));
+	const uint8_t type01[] = { 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0x41, 'a', 0, 0, 1, 0, 1 };
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, type01, sizeof(type01));
+	const uint8_t type10[] = { 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0x81, 'a', 0, 0, 1, 0, 1 };
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, type10, sizeof(type10));
+	// 17 pointers, each to the next, then the end of a name: refused (more than 16 followed)
+	memset(m, 0, sizeof(m));
+	m[5] = 1;
+	for (int i = 0; i < 17; i++) {
+		m[12 + 2 * i] = 0xC0;
+		m[13 + 2 * i] = (uint8_t)(14 + 2 * i);
+	}
+	m[12 + 34] = 0;
+	put16(m + 47, 1);
+	put16(m + 49, 1);
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, m, 51);
+	// a record whose rdlen runs past the end
+	q_begin(&q, 0);
+	q_question(&q, HOST, 1, 1);
+	q_rr(&q, HOST, 1, 1, 120, (const uint8_t *)"\x0C\x00\x27\x14", 4, NULL);
+	q.an = 1;
+	q.b[q.len - 5] = 0x20;	// rdlen 0x2004
+	q_send(&q, 0, HOST_IP, MDNS_PORT, MDNS_GROUP);
+	tick_for(5);
+	mdnsStats(&st);
+	CHECK(st.bad == st0.bad + 8 && out_count == 0);	// all but the pointer into the header (a root name there)
+	CHECK(st.state == MDNS_RUNNING);
+
+	// A forward pointer to our host name later in the message: a good question, answered
+	memset(m, 0, sizeof(m));
+	m[5] = 1;
+	m[12] = 0xC0;
+	m[13] = 18;
+	put16(m + 14, 1);
+	put16(m + 16, 1);
+	int n = 18;
+	m[n++] = 9;
+	memcpy(m + n, "odr-10005", 9);
+	n += 9;
+	m[n++] = 5;
+	memcpy(m + n, "local", 5);
+	n += 5;
+	m[n++] = 0;
+	out_count = 0;
+	from_host(HOST_IP, MDNS_GROUP, MDNS_PORT, MDNS_PORT, m, n);
+	tick_for(300);
+	dns_t d;
+	CHECK(out_count == 1 && parse(0, &d) && find(&d, HOST, 1, 1) != NULL);
+
+	// Someone's response with our instance's SRV, 3 bytes of rdata: a conflict, never a read past the rdata
+	q_begin(&q, 0);
+	q_rr(&q, INST "._odr-debug._udp.local", 33, 0x8001, 120, (const uint8_t *)"\0\0\0", 3, NULL);
+	q.an = 1;
+	q_send(&q, 0x8400, OTHER_IP, MDNS_PORT, MDNS_GROUP);
+	tick_for(5);
+	mdnsStats(&st);
+	CHECK(st.state == MDNS_PROBING);	// renamed, probing the new name
+	tick_for(3000);
+}
+
+// Mutated queries, probes and responses straight into mdnsReceive in exact-size buffers, with the timers running:
+// every message the responder sends parses, and it never stops (no state it can't leave)
+static void test_fuzz(void)
+{
+	q_t seeds[5];
+	q_begin(&seeds[0], 0);
+	q_question(&seeds[0], HOST, 1, 1);
+	q_question(&seeds[0], "_services._dns-sd._udp.local", 12, 0x8001);
+	q_begin(&seeds[1], 0);
+	q_question(&seeds[1], "_odr-debug._udp.local", 12, 1);
+	q_rr(&seeds[1], "_odr-debug._udp.local", 12, 1, 4500, NULL, 0, INST "._odr-debug._udp.local");
+	seeds[1].an = 1;
+	q_begin(&seeds[2], 0);	// a probe for our host name with an authority record
+	q_question(&seeds[2], HOST, 255, 1);
+	q_rr(&seeds[2], HOST, 1, 1, 120, (const uint8_t *)"\x0C\x00\x27\x99", 4, NULL);
+	seeds[2].ns = 1;
+	q_begin(&seeds[3], 0);	// someone's response
+	q_rr(&seeds[3], INST "._tftp._udp.local", 16, 0x8001, 4500, (const uint8_t *)"\x05x=abc", 6, NULL);
+	seeds[3].an = 1;
+	q_begin(&seeds[4], 0x1234);	// a legacy unicast query
+	q_question(&seeds[4], INST "._tftp._udp.local", 33, 1);
+	const uint16_t flags[5] = { 0, 0, 0, 0x8400, 0 };
+	for (int i = 0; i < 5; i++) {
+		put16(seeds[i].b + 2, flags[i]);
+		put16(seeds[i].b + 4, (uint16_t)seeds[i].qd);
+		put16(seeds[i].b + 6, (uint16_t)seeds[i].an);
+		put16(seeds[i].b + 8, (uint16_t)seeds[i].ns);
+	}
+
+	bring_up();
+	hear_host();
+	fuzz_t f;
+	fuzz_init(&f, 0x4D444E53u);
+	long iters = fuzz_iters(20000), bad = 0, sent = 0;
+	uint8_t buf[600];
+	for (long i = 0; i < iters; i++) {
+		int s = (int)fuzz_below(&f, 5);
+		memcpy(buf, seeds[s].b, (size_t)seeds[s].len);
+		int len = fuzz_mutate(&f, buf, seeds[s].len, (int)sizeof(buf));
+		uint8_t *p = fuzz_exact(buf, len);
+		out_count = 0;
+		mdnsReceive(HOST_IP, (s == 4) ? 40000 : MDNS_PORT, p, len, now);
+		free(p);
+		uint32_t dt = (fuzz_below(&f, 16) == 0) ? 1000u : 50u;
+		for (uint32_t t = 0; t < dt; t += 25) {
+			now += 25;
+			mdnsTick(now, true);
+		}
+		for (int k = 0; k < out_count && k < 16; k++) {
+			dns_t d;
+			if (!parse(k, &d) || out_len[k] > 42 + IPGW_UDP_PAYLOAD_MAX) {
+				if (bad++ < 3) {
+					printf("  fuzz #%ld: a message that doesn't parse (%d bytes)\n", i, out_len[k]);
+				}
+			}
+		}
+		sent += out_count;
+	}
+	tick_for(5000);
+	mdns_stats_t st;
+	mdnsStats(&st);
+	CHECK(bad == 0 && sent > 0);
+	CHECK(st.state == MDNS_RUNNING || st.state == MDNS_PROBING || st.state == MDNS_ANNOUNCING);
+	printf("# mdns fuzz: %ld messages, %ld sent\n", iters, sent);
+}
+
 int main(void)
 {
 	uint32_t header[6] = { 0xA1B2C3D4, 0x00040002, 0, 0, 65535, 1 };
@@ -737,6 +888,8 @@ int main(void)
 	test_conflict();
 	test_identity_and_link();
 	test_malformed();
+	test_names();
+	test_fuzz();
 	test_gateway_ports();
 
 	fclose(pcap);

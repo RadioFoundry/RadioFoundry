@@ -103,10 +103,9 @@ of 2451) and 73.9 % of branches, over 120 files. The most uncovered lines:
 | `core/ui/ui_screens.c`, `ui_app.c`, `ui_menus.c` | 3800 | 81 % | screens and menu actions no flow test opens |
 | `core/aprs/aprs.c` | 1008 | 91 % | |
 | `drivers/modem/hrc7000/hrc7000.c` | 165 | 3 % | the DM-32 modem's chip layer (its DMR layer is tested) |
-| `core/dmr/dmrLrrp.c` | 203 | 71 % | |
 
-Not built into any host test (26 files, about 7450 lines): the debug link commands (`core/debuglink/debuglink*.c`
-except the protocol and split parts), `hostlink.c`, `snmp_agent.c`, `net_services.c`, the RTOS task wrappers
+Not built into any host test (25 files, about 7150 lines): the debug link commands (`core/debuglink/debuglink*.c`
+except the protocol and split parts), `hostlink.c`, `net_services.c`, the RTOS task wrappers
 (`radio_task.c`, `input_task.c`, `storage_rtos.c`, `ui.c`, `app.c`), the USB device and NCM drivers,
 `st7735.c` and the SFR glue (`hrcSfr.c`). The HIL tests cover most of these on the radio.
 
@@ -116,6 +115,17 @@ it needs a small handler that dumps the counters on request.
 
 Hosted coverage services (Codecov, Coveralls) would need the report, with source excerpts, sent to a third party; the private repository doesn't use them, and the
 HTML artifact serves the same purpose.
+
+### Sanitizers and fuzzing
+
+`make -C tests/host SANITIZE=1` builds every host test with AddressSanitizer and UndefinedBehaviorSanitizer (Apple
+clang and GCC; UBSan stops at the first report). CI's coverage job runs it after the report (leak checks off: job
+containers may not allow ptrace), `ODR_CI_SANITIZE=1 tools/ci.sh` runs it in the host step; build from clean when
+switching (`make -C tests/host clean`). The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's Ethernet
+input, KISS / HTTP / rigctld, LRRP, AX.25 / APRS, DMR data) have seeded mutation fuzz loops (`tests/host/fuzz.h`)
+that feed exact-size heap buffers, so a read past the end is an ASan report; `ODR_FUZZ_ITERS=<n>` replaces the small
+default counts and `ODR_FUZZ_SEED=<n>` varies the seed, e.g. `ODR_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1`
+for a long run by hand.
 
 ## Runners
 
