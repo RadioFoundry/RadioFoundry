@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include "dmr/dmrData.h"
 #include "hotspot/dmrDataFrame.h"
+#include "fuzz.h"
 
 static int failures = 0;
 
@@ -774,6 +775,42 @@ static void testCodedFrames(void)
 	CHECK(!dmrDataBurstToFrame(&wrong, 2, frame));
 }
 
+// Received payloads too short for their own headers: the ARS PDU's length octets read only when they are there
+// (exact-size heap copies: ASan sees a read past the end), an IPv4 header length under 20 octets isn't UDP
+static void testShortPayloads(void)
+{
+	uint8_t *one = fuzz_exact((const uint8_t *)"\x00", 1);
+	uint8_t *none = fuzz_exact(NULL, 0);
+	bool accepted;
+	uint16_t refresh;
+	CHECK(dmrDataDecodeARS(one, 1) == -1);
+	CHECK(dmrDataDecodeARS(none, 0) == -1);
+	CHECK(!dmrDataDecodeARSResponse(one, 1, &accepted, &refresh));
+	free(one);
+	free(none);
+	uint8_t *two = fuzz_exact((const uint8_t *)"\x00\x02\xBF", 3);	// says 2 octets, has 1
+	CHECK(dmrDataDecodeARS(two, 3) == -1);
+	free(two);
+
+	// SAP 4 with IHL 0 or 4 (0, 16 octets): not a UDP datagram, whatever follows
+	dmrDataPacket_t p;
+	dmrDataUDP_t udp;
+	memset(&p, 0, sizeof(p));
+	p.sap = DMR_SAP_IP;
+	p.length = 40;
+	p.data[9] = 17;
+	for (int ihl = 0; ihl < 5; ihl++)
+	{
+		p.data[0] = 0x40 | ihl;
+		CHECK(!dmrDataGetUDP(&p, &udp));
+	}
+	p.data[0] = 0x45;
+	p.data[3] = 40;
+	CHECK(dmrDataGetUDP(&p, &udp) && (udp.length == 12));
+	p.data[6] = 0x20;// MF: the first fragment is not the datagram
+	CHECK(!dmrDataGetUDP(&p, &udp));
+}
+
 int main(void)
 {
 	testCRC32();
@@ -798,6 +835,7 @@ int main(void)
 	testAirtime();
 	testFrames();
 	testCodedFrames();
+	testShortPayloads();
 
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

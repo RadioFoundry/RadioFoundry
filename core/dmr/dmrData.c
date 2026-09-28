@@ -1525,7 +1525,9 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 	{
 		int ihl = (d[0] & 0x0F) * 4;
 
-		if ((len < 28) || ((d[0] >> 4) != 4) || (d[9] != 17) || (len < (ihl + 8)))
+		// (an IHL under 5 isn't IPv4, and a fragment isn't the whole datagram: as dmrDataGetIP)
+		if ((len < 28) || ((d[0] >> 4) != 4) || (ihl < 20) || (d[9] != 17) || (len < (ihl + 8)) ||
+				((((d[6] << 8) | d[7]) & 0x3FFF) != 0))
 		{
 			return false;
 		}
@@ -1688,11 +1690,16 @@ int dmrDataBuildARSDeregistration(uint8_t *out)
 
 int dmrDataDecodeARS(const uint8_t *payload, int length)
 {
+	if (length < 3)
+	{
+		return -1;// too short (the length octets aren't read then)
+	}
+
 	int pduLength = (payload[0] << 8) | payload[1];
 
-	if ((length < 3) || (pduLength < 1) || ((pduLength + 2) > length) || ((payload[2] & 0x10) == 0))
+	if ((pduLength < 1) || ((pduLength + 2) > length) || ((payload[2] & 0x10) == 0))
 	{
-		return -1;// too short, or not a control PDU
+		return -1;// cut, or not a control PDU
 	}
 
 	return payload[2] & 0x0F;
