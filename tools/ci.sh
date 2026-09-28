@@ -10,6 +10,7 @@
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
 #   tools/ci.sh --steps host,python   only these steps (host, python, firmware, licenses, similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
+#   ODR_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
 #   ODR_CI_PRUNE=1 tools/ci.sh  remove each build tree once its size is in the report (the log and the .bin stay;
 #                               the matrix otherwise leaves about 65 MB per configuration)
 #
@@ -17,7 +18,7 @@
 # `--quick --steps firmware --board <b>`; nightly `--matrix --steps firmware --board <b>`.
 #
 # Steps, each reported as ok / FAIL / skip:
-#   1. host tests (make -C tests/host)
+#   1. host tests (make -C tests/host), and with ODR_CI_SANITIZE=1 again under ASan and UBSan
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing
 #      tools' tests (tools/odrflash/tests, codec_extract, stm32_dfu and md380_migrate self-tests); every relative link, image and
 #      anchor in the Markdown resolves (tools/check_doc_links.py)
@@ -48,7 +49,7 @@ while [ $# -gt 0 ]; do
 	--matrix) MATRIX=1 ;;
 	--board) ONLY="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,37p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,38p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -83,6 +84,18 @@ fi
 if grep -q 'warning:' "$OUT/host-tests.log"; then
 	grep 'warning:' "$OUT/host-tests.log" | sort -u | head -20
 	bad "host tests built with warnings"
+fi
+if [ "${ODR_CI_SANITIZE:-0}" = 1 ]; then
+	# the binaries don't depend on the flags: clean before and after, so later steps get normal builds
+	make -s -C tests/host clean > /dev/null
+	if make -C tests/host -j"$JOBS" SANITIZE=1 > "$OUT/host-sanitize.log" 2>&1; then
+		ok "host tests under ASan and UBSan"
+	else
+		grep -E -A12 'ERROR: AddressSanitizer|runtime error:' "$OUT/host-sanitize.log" | head -40
+		tail -15 "$OUT/host-sanitize.log"
+		bad "host tests under ASan and UBSan (see $OUT/host-sanitize.log)"
+	fi
+	make -s -C tests/host clean > /dev/null
 fi
 
 fi

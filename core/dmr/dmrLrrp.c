@@ -111,9 +111,11 @@ bool lrrpDecodeRequest(const uint8_t *payload, int length, lrrpRequest_t *reques
 		return false;
 	}
 
-	if ((r.i + (int)docLength) < r.end)
+	// A document shorter than the datagram ends there; a longer one (cut in transit) at the datagram's end. Compared
+	// unsigned: a length near 2^32 must not wrap
+	if (docLength < (uint32_t)(r.end - r.i))
 	{
-		r.end = r.i + docLength;
+		r.end = r.i + (int)docLength;
 	}
 
 	switch (docId)

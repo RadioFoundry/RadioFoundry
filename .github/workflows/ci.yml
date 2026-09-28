@@ -5,7 +5,8 @@
 # firmware sources, tests, build tools or this workflow (docs-only changes run only the manual workflow). The pieces
 # are tools/ci.sh's steps, so a local `tools/ci.sh --quick` runs the same checks:
 #   host       host tests (64 suites, tshark pcap checks), Python checks, license checks, the UI screen gallery
-#   coverage   the host tests built with --coverage, gcovr's report (HTML artifact, totals in the job summary)
+#   coverage   the host tests built with --coverage, gcovr's report (HTML artifact, totals in the job summary); then
+#              the host tests under ASan and UBSan (make SANITIZE=1)
 #   firmware   DM-1701 and MD-380 (UHF and VHF) default builds with zero warnings, the size report, app region fit
 #   dm32       the DM-32UV default build in the csky-elf image (repository variable ODR_CSKY_IMAGE, default
 #              odr/csky-gcc14:latest); skipped with a notice where that image isn't available (GitHub's runners
@@ -116,6 +117,10 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark python3-numpy
       - name: Coverage of the host tests
         run: tools/coverage.sh
+      - name: Host tests under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1   # LeakSanitizer needs ptrace, which job containers may not allow
+        run: make -C tests/host -j"$(nproc)" SANITIZE=1
       - uses: actions/upload-artifact@v4
         if: always()
         with:

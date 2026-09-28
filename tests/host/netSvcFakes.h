@@ -12,6 +12,7 @@ extern int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
 extern uint32_t now_ms;
+extern bool net_capture;	// frames go to netSvcTest.pcap (off for the fuzz loop: tshark sees good traffic only)
 
 typedef struct {
 	uint32_t ip;		// the peer's address (the host, or a server beyond it)

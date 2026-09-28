@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include "dmr/dmrData.h"
 #include "hotspot/dmrDataFrame.h"
+#include "fuzz.h"
 
 static int failures = 0;
 
@@ -774,6 +775,202 @@ static void testCodedFrames(void)
 	CHECK(!dmrDataBurstToFrame(&wrong, 2, frame));
 }
 
+// Received payloads too short for their own headers: the ARS PDU's length octets read only when they are there
+// (exact-size heap copies: ASan sees a read past the end), an IPv4 header length under 20 octets isn't UDP
+static void testShortPayloads(void)
+{
+	uint8_t *one = fuzz_exact((const uint8_t *)"\x00", 1);
+	uint8_t *none = fuzz_exact(NULL, 0);
+	bool accepted;
+	uint16_t refresh;
+	CHECK(dmrDataDecodeARS(one, 1) == -1);
+	CHECK(dmrDataDecodeARS(none, 0) == -1);
+	CHECK(!dmrDataDecodeARSResponse(one, 1, &accepted, &refresh));
+	free(one);
+	free(none);
+	uint8_t *two = fuzz_exact((const uint8_t *)"\x00\x02\xBF", 3);	// says 2 octets, has 1
+	CHECK(dmrDataDecodeARS(two, 3) == -1);
+	free(two);
+
+	// SAP 4 with IHL 0 or 4 (0, 16 octets): not a UDP datagram, whatever follows
+	dmrDataPacket_t p;
+	dmrDataUDP_t udp;
+	memset(&p, 0, sizeof(p));
+	p.sap = DMR_SAP_IP;
+	p.length = 40;
+	p.data[9] = 17;
+	for (int ihl = 0; ihl < 5; ihl++)
+	{
+		p.data[0] = 0x40 | ihl;
+		CHECK(!dmrDataGetUDP(&p, &udp));
+	}
+	p.data[0] = 0x45;
+	p.data[3] = 40;
+	CHECK(dmrDataGetUDP(&p, &udp) && (udp.length == 12));
+	p.data[6] = 0x20;// MF: the first fragment is not the datagram
+	CHECK(!dmrDataGetUDP(&p, &udp));
+}
+
+// The decoders of what arrives over the air, on mutated payloads: text in every DD / UDT format into small text
+// buffers (always terminated within them), IP / UDP layer 4 always inside the packet, TMS, ARS and IP text from
+// exact-size heap copies (ODR_FUZZ_ITERS)
+static void fuzzDecoders(fuzz_t *f, long iters, long *bad)
+{
+	static dmrDataPacket_t p;
+	uint8_t seed[64] = { 0x45, 0x00, 0x00, 0x30, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 0x0C, 0x00, 0x27, 0x15,
+			     0x0E, 0x00, 0x00, 0x5B, 0x0F, 0xA7, 0x0F, 0xA7, 0x00, 0x1C, 0x00, 0x00, 0x00, 0x16, 0xE0, 0x00,
+			     0x80, 0x04, 'h', 0, 'i', 0, 0xD8, 0x3D, 0xDE, 0x00, 0xC3, 0xA9, 0xE2, 0x82, 0xAC, 0x00 };
+	static const uint8_t formats[] = { DMR_DD_7BIT, DMR_DD_ISO8859_1, 0x05, DMR_DD_UTF8, DMR_DD_UTF16, DMR_DD_UTF16BE,
+					   DMR_DD_UTF16LE, DMR_UDT_FORMAT_ISO7, DMR_UDT_FORMAT_ISO8, DMR_UDT_FORMAT_UTF16BE, 0x3F };
+	uint8_t buf[DMR_DATA_MAX_PACKET];
+
+	for (long i = 0; i < iters; i++)
+	{
+		memcpy(buf, seed, sizeof(seed));
+		int n = fuzz_mutate(f, buf, 48, sizeof(buf));
+		memset(&p, 0, sizeof(p));
+		memcpy(p.data, buf, n);
+		p.length = n;
+		p.sap = (fuzz_below(f, 2) == 0) ? DMR_SAP_IP : DMR_SAP_UDPIP_COMPRESSION;
+		p.dpf = (fuzz_below(f, 2) == 0) ? DMR_DPF_DEFINED_SHORT : DMR_DPF_UDT;
+		p.ddFormat = formats[fuzz_below(f, sizeof(formats))];
+		p.padBits = (uint8_t)fuzz_below(f, 128);
+
+		char text[17];
+		int size = 1 + (int)fuzz_below(f, sizeof(text) - 1);
+		memset(text, 0x7E, sizeof(text));
+		if (dmrDataDecodeEtsiText(&p, text, size) && (memchr(text, 0, size) == NULL))
+		{
+			(*bad)++;
+		}
+		if (text[size] != 0x7E && size < (int)sizeof(text))
+		{
+			(*bad)++;// written past the size given
+		}
+		dmrDataIP_t ip;
+		if (dmrDataGetIP(&p, &ip) && ((ip.payload < p.data) || (ip.length < 0) || (ip.payload + ip.length > p.data + p.length)))
+		{
+			(*bad)++;
+		}
+		dmrDataUDP_t udp;
+		if (dmrDataGetUDP(&p, &udp) && ((udp.payload < p.data) || (udp.length < 0) || (udp.payload + udp.length > p.data + p.length)))
+		{
+			(*bad)++;
+		}
+		uint8_t *q = fuzz_exact(buf, n);
+		dmrDataTMS_t tms;
+		if (dmrDataDecodeTMS(q, n, &tms) && (memchr(tms.text, 0, sizeof(tms.text)) == NULL))
+		{
+			(*bad)++;
+		}
+		int ars = dmrDataDecodeARS(q, n);
+		bool accepted;
+		uint16_t refresh;
+		dmrDataDecodeARSResponse(q, n, &accepted, &refresh);
+		if (dmrDataDecodeIPText(q, n, text, size) && (memchr(text, 0, size) == NULL))
+		{
+			(*bad)++;
+		}
+		(*bad) += (ars < -1) || (ars > 15);
+		free(q);
+	}
+}
+
+// Whole packets on air with bursts mutated, dropped, repeated or retyped, headers' CRC made good again half the time,
+// into the receive state machine: a finished packet's length is within DMR_DATA_MAX_PACKET and the decoders take it
+static void fuzzBursts(fuzz_t *f, long iters, long *bad, long *packets)
+{
+	static dmrBurst_t seeds[6][DMR_DATA_MAX_BURSTS], b[DMR_DATA_MAX_BURSTS * 2];
+	int count[6];
+	uint8_t pdu[60];
+	for (int i = 0; i < (int)sizeof(pdu); i++) pdu[i] = (uint8_t)(i * 7);
+	count[0] = dmrDataBuildUDP(false, 9990100, 3101276, 4001, 4001, pdu, 30, DT_RATE_12_DATA, 0, seeds[0], DMR_DATA_MAX_BURSTS);
+	count[1] = dmrDataBuildTMS(false, 3101276, 9990100, "fuzz text", 3, true, DT_RATE_34_DATA, 0, seeds[1], DMR_DATA_MAX_BURSTS);
+	count[2] = dmrDataBuildEtsiText(true, 91, 3101276, "short data", false, 0, seeds[2], DMR_DATA_MAX_BURSTS);
+	dmrDataLocation_t loc = { .fixValid = true, .north = true, .latDegrees = 33, .latMinutes10000 = 461230, .lonDegrees = 84,
+				  .lonMinutes10000 = 231234, .speedKnots = 12 };
+	count[3] = dmrDataBuildUDTLocation(false, 9990100, 3101276, &loc, 0, seeds[3], DMR_DATA_MAX_BURSTS);
+	count[4] = dmrDataBuildIPText(false, 9990100, 3101276, "ip text", DT_RATE_1_DATA, 0, seeds[4], DMR_DATA_MAX_BURSTS);
+	count[5] = dmrDataBuildConfirmed(DMR_SAP_IP, 9990100, 3101276, pdu, 40, DT_RATE_12_DATA, 1, true, ~0ull, 0, seeds[5], DMR_DATA_MAX_BURSTS);
+
+	for (long i = 0; i < iters; i++)
+	{
+		int s = (int)fuzz_below(f, 6), n = 0;
+		for (int k = 0; k < count[s] && n < (int)(sizeof(b) / sizeof(b[0])); k++)
+		{
+			uint32_t op = fuzz_below(f, 12);
+			if (op == 0)
+			{
+				continue;// dropped
+			}
+			b[n] = seeds[s][k];
+			if (op == 1 && n + 1 < (int)(sizeof(b) / sizeof(b[0])))
+			{
+				b[n + 1] = b[n];// repeated
+				n++;
+			}
+			else if (op == 2)
+			{
+				b[n].dataType = (uint8_t)fuzz_below(f, 12);
+			}
+			else if (op <= 5)
+			{
+				int len = fuzz_mutate(f, b[n].payload, b[n].length, DMR_BURST_PAYLOAD_MAX);
+				b[n].length = (uint8_t)len;
+				if ((b[n].dataType == DT_DATA_HEADER) && (len >= 12) && (fuzz_below(f, 2) == 0))
+				{
+					addHeaderCRC(b[n].payload);
+					b[n].payload[10] ^= 0xCC;
+					b[n].payload[11] ^= 0xCC;
+				}
+			}
+			n++;
+		}
+		dmrDataRxReset();
+		for (int k = 0; k < n; k++)
+		{
+			dmrDataRxResult_t r = dmrDataRxBurst(&b[k]);
+			if (r == DMR_DATA_RX_PACKET)
+			{
+				(*packets)++;
+				if (dmrDataRxPacket.length > DMR_DATA_MAX_PACKET)
+				{
+					(*bad)++;
+				}
+				char text[40];
+				dmrDataUDP_t udp;
+				dmrDataIP_t ip;
+				dmrDataDecodeEtsiText(&dmrDataRxPacket, text, sizeof(text));
+				if (dmrDataGetUDP(&dmrDataRxPacket, &udp) &&
+						(udp.payload + udp.length > dmrDataRxPacket.data + dmrDataRxPacket.length))
+				{
+					(*bad)++;
+				}
+				if (dmrDataGetIP(&dmrDataRxPacket, &ip) && (ip.payload + ip.length > dmrDataRxPacket.data + dmrDataRxPacket.length))
+				{
+					(*bad)++;
+				}
+			}
+		}
+#if CONFIG_DMR_CONFIRMED
+		dmrDataRxConfirmedEnd();
+#endif
+	}
+}
+
+static void testFuzz(void)
+{
+	fuzz_t f;
+	long bad = 0, packets = 0;
+	fuzz_init(&f, 0x444D5244u);
+	fuzzDecoders(&f, fuzz_iters(30000), &bad);
+	CHECK(bad == 0);
+	bad = 0;
+	fuzzBursts(&f, fuzz_iters(10000), &bad, &packets);
+	CHECK(bad == 0 && packets > 0);
+	printf("# dmr data fuzz: %ld packets reassembled from mutated bursts\n", packets);
+}
+
 int main(void)
 {
 	testCRC32();
@@ -798,6 +995,8 @@ int main(void)
 	testAirtime();
 	testFrames();
 	testCodedFrames();
+	testShortPayloads();
+	testFuzz();
 
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

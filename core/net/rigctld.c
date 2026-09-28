@@ -33,6 +33,7 @@
 
 typedef struct {
 	bool used;
+	bool too_long;		// the line under way didn't fit: answered -1 at its end, not run
 	uint8_t ln;
 	char line[LINE_MAX];
 } rconn_t;
@@ -360,13 +361,23 @@ static void r_recv(int c, const uint8_t *d, int n)
 		if (ch != '\n') {
 			if (r->ln < LINE_MAX - 1) {
 				r->line[r->ln++] = ch;
+			} else {
+				r->too_long = true;
 			}
 			continue;
 		}
 		r->line[r->ln] = '\0';
 		r->ln = 0;
 		dl_text_init(&ot, out, sizeof(out));
-		bool more = command(c, r->line);
+		bool more = true;
+
+		if (r->too_long) {
+			r->too_long = false;	// never run cut short (a digit less is another frequency)
+			st.errors++;
+			dl_text(&ot, "RPRT -%d\n", RIG_EINVAL);
+		} else {
+			more = command(c, r->line);
+		}
 
 		if (ot.len > 0) {
 			tcp_write(c, out, (int)ot.len);	// at most OUT_MAX: fits the transmit buffer of a client that reads

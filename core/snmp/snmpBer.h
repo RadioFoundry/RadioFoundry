@@ -60,7 +60,7 @@ bool berDecodeUnsigned(const uint8_t *p, int len, uint32_t *v);
 // OBJECT IDENTIFIER contents well formed: at least one octet, no subidentifier with a leading 0x80 octet or over 32
 // bits, the last octet ends a subidentifier, at most BER_OID_MAX octets
 bool berOidValid(const uint8_t *p, int len);
-// The order of two OIDs given as their contents (a prefix sorts first; base-128 contents compare byte by byte)
+// The order of two OIDs given as their contents (shortest form): subidentifier by subidentifier, a prefix first
 int berOidCompare(const uint8_t *a, int alen, const uint8_t *b, int blen);
 
 void berWriterInit(berWriter_t *w, uint8_t *p, int cap);

@@ -204,6 +204,12 @@ static void handleARP(const uint8_t *frame, const uint8_t *arp)
 	uint32_t senderIp = get32(&arp[14]);
 	uint32_t targetIp = get32(&arp[24]);
 
+	// IPv4 over Ethernet only (RFC 826: hardware type 1, protocol 0x0800, address lengths 6 and 4): the reply copies
+	// these fields, and the sender's hardware address is learned
+	if ((get16(&arp[0]) != 1) || (get16(&arp[2]) != ETHERTYPE_IPV4) || (arp[4] != 6) || (arp[5] != 4))
+	{
+		return;
+	}
 	// Requests only, and not the host's own probes and announcements
 	if ((get16(&arp[6]) != 1) || (targetIp == senderIp) || (targetIp == ipGatewayHostIP()) || (senderIp == 0))
 	{
