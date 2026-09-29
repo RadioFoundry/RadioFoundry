@@ -26,6 +26,8 @@ void sim_flash_power_on(void);
 // Units used so far (programmed bytes + erases), and erases per sector so far
 uint32_t sim_flash_units(void);
 uint32_t sim_flash_erases(uint32_t addr);
+// A worn range: programs there fail (nothing programmed); erases still work. len 0 clears it
+void sim_flash_bad_range(uint32_t addr, uint32_t len);
 // Count an operation that programs a 1 where the flash holds a 0 (a missing erase), as an error
 uint32_t sim_flash_violations(void);
 

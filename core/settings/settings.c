@@ -90,7 +90,9 @@ static slot_state_t read_slot(uint16_t sector, uint16_t slot, uint8_t *r)
 	}
 }
 
-static bool have_newest;		// stats.sector / stats.slot point at the newest valid record
+static bool have_newest;		// stats.sector / stats.slot point at the newest valid record (or a slot past it that failed)
+static bool have_valid;			// valid_sector holds the newest valid record
+static uint16_t valid_sector;
 // Slot buffers, used only under the storage lock (kept off the small housekeeping and start-up task stacks)
 static uint8_t slot_buf[SLOT_SIZE];
 static uint8_t slot_buf2[SLOT_SIZE];
@@ -105,6 +107,7 @@ settings_load_t settings_init(void)
 	settings_defaults(&live);
 	inited = true;
 	have_newest = false;
+	have_valid = false;
 	have_flash = storage_ready() && m != NULL && m->settings_size >= 2u * STORAGE_SECTOR;
 	if (!have_flash) {
 		saved = live;
@@ -120,6 +123,8 @@ settings_load_t settings_init(void)
 				stats.skipped++;
 			} else if (st == SLOT_VALID && (!have_newest || (int32_t)(get32(&r[4]) - stats.seq) > 0)) {
 				have_newest = true;
+				have_valid = true;
+				valid_sector = sec;
 				stats.seq = get32(&r[4]);
 				stats.sector = sec;
 				stats.slot = sl;
@@ -175,7 +180,8 @@ void settings_end(uint32_t now_ms)
 }
 
 // Where the next record goes: the first free slot after the newest one in its sector, else slot 0 of the next
-// sector (erased first). Returns false if the flash fails
+// sector (erased first). False when that sector holds the newest valid record: after slots that failed to program
+// the walk can come round to it, and erasing it would leave nothing valid until a write works
 static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 {
 	uint8_t *r = slot_buf2;
@@ -193,7 +199,7 @@ static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 	*sector = have_newest ? (uint16_t)((sec + 1u) % sectors) : 0;
 	*slot = 0;
 	*erase = true;
-	return true;
+	return !(have_valid && *sector == valid_sector);
 }
 
 static bool save(const settings_t *s)
@@ -235,6 +241,8 @@ static bool save(const settings_t *s)
 		// Whatever happened, this slot is used now: the next attempt (or save) goes past it
 		have_newest = have_newest || written;
 		if (written) {
+			have_valid = true;
+			valid_sector = sec;
 			stats.sector = sec;
 			stats.slot = sl;
 			stats.seq = seq;
@@ -290,6 +298,7 @@ static void attach(uint32_t now_ms)
 	ensure();
 	sectors = (uint16_t)(m->settings_size / STORAGE_SECTOR);
 	have_newest = false;
+	have_valid = false;
 	stats.seq = 0;
 	stats.sector = 0;
 	stats.slot = 0;

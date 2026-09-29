@@ -33,6 +33,7 @@
 #include "input/input.h"
 #include "hostlink/hostlink.h"
 #include "hotspot/hotspot.h"
+#include "ui/ui_svc_aprs.h"
 
 #define TICK_MS		50
 #define PRESS_MS	150
@@ -164,6 +165,62 @@ static bool hotspot_on;
 hostlink_mode_t hostlink_mode(void) { return hotspot_on ? HOSTLINK_HOTSPOT : HOSTLINK_IDLE; }
 void hostlink_hotspot_exit(void) { hotspot_on = false; }
 static bool usb_net;	// the USB personality (Tools > USB network)
+
+// APRS (Tools > APRS, core/ui/ui_aprs.c): a small stand-in for the engine's view and configuration
+static struct {
+	bool off;		// "aprs:off": not in this build
+	bool no_call;		// "aprs:nocall": no callsign anywhere
+	aprs_cfg_t cfg;
+	uint32_t sent;
+} aprs_sim;
+static void aprs_sim_reset(void)
+{
+	memset(&aprs_sim, 0, sizeof aprs_sim);
+	aprs_sim.cfg.region = APRS_REGION_NA;
+	aprs_sim.cfg.ssid = 7;
+	aprs_sim.cfg.path = APRS_PATH_WIDE1_WIDE2;
+	aprs_sim.cfg.level = 50;
+}
+bool ui_svc_aprs_view(aprs_view_t *v)
+{
+	static const uint32_t hz[APRS_REGION_COUNT] = { 144390000, 144800000, 145175000, 144575000, 144640000, 144640000, 0 };
+	memset(v, 0, sizeof *v);
+	if (aprs_sim.off)
+		return false;
+	if (!aprs_sim.no_call)
+		strcpy(v->call, "N0SIM-7");
+	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
+	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
+	v->pos_valid = !aprs_sim.no_call;
+	v->pos_src = APRS_SRC_FIXED;
+	v->lat = 337000000;
+	v->lon = -841000000;
+	v->next_s = aprs_sim.cfg.tx_on ? 245 : 0xFFFFu;
+	v->rf_sent = aprs_sim.sent;
+	v->stations = 2;
+	return true;
+}
+void ui_svc_aprs_cfg(aprs_cfg_t *c) { *c = aprs_sim.cfg; }
+void ui_svc_aprs_set_cfg(const aprs_cfg_t *c) { aprs_sim.cfg = *c; }
+bool ui_svc_aprs_send_now(void)
+{
+	if (aprs_sim.off || aprs_sim.no_call)
+		return false;
+	aprs_sim.sent++;
+	return true;
+}
+uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off ? 0 : 2; }
+bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
+{
+	static const char *const calls[] = { "W4ABC-9", "KJ4XYZ" };
+	if (aprs_sim.off || i >= 2)
+		return false;
+	memset(out, 0, sizeof *out);
+	strcpy(out->call, calls[i]);
+	out->heard_ms = now_ms > 60000u * (i + 1u) ? now_ms - 60000u * (i + 1u) : 0;
+	out->direct = i == 0;
+	return true;
+}
 bool hostlink_request_usb_network(bool network) { usb_net = network; return true; }
 bool hostlink_network_mode(void) { return usb_net; }
 void hotspot_get_view(hotspot_view_t *v)
@@ -813,6 +870,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.zone_pos = 2;	// 3 COUNTY DMR
 	n_inbox = 0;
 	hotspot_on = rx_on = usb_net = false;
+	aprs_sim_reset();
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
@@ -974,6 +1032,15 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
 	else if (strcmp(key, "usbnet") == 0) snprintf(got, sizeof got, "%u", usb_net);
+	else if (strcmp(key, "aprs_sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)aprs_sim.sent);
+	else if (strcmp(key, "aprs_auto") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.tx_on);
+	else if (strcmp(key, "aprs_region") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.region);
+	else if (strcmp(key, "aprs_interval") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.interval_s);
+	else if (strcmp(key, "aprs_smart") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.smart);
+	else if (strcmp(key, "aprs_via") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.via);
+	else if (strcmp(key, "aprs_pos") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.pos_src);
+	else if (strcmp(key, "aprs_dmrgps") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.dmr_gps);
+	else if (strcmp(key, "aprs_kiss") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.kiss);
 #if CONFIG_DMR_ROAMING
 	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*
 	else if (strcmp(key, "roamzone") == 0) snprintf(got, sizeof got, "%u", view.roam.zone_on);
@@ -1078,6 +1145,13 @@ static bool run_token(char *t, char *err, size_t len)
 		strcpy(ev.name, contact_name(ev.id, false));
 		ui_notify(&ev);
 		advance(200);
+		return true;
+	}
+	if (strcmp(t, "aprs") == 0 && arg != NULL) {	// aprs:off (not built), aprs:nocall, aprs:custom (a custom frequency set)
+		aprs_sim.off = strcmp(arg, "off") == 0;
+		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
+		if (strcmp(arg, "custom") == 0)
+			aprs_sim.cfg.freq_hz = 144930000;
 		return true;
 	}
 	if (strcmp(t, "hotspot") == 0 && arg != NULL) {

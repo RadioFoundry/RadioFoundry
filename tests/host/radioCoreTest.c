@@ -18,6 +18,9 @@
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
+#include "dmr/dmrPrivacy.h"
+#include "dmr/dmrData.h"
+#include "sim/sim_flash.h"
 
 static int failures;
 static int checks;
@@ -53,8 +56,12 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 	hw.rx_calls++;
 	return true;
 }
+static bool tx_fail;			// the board refuses to key (synthesizer won't lock, PA fault)
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
+	if (tx_fail) {
+		return false;
+	}
 	hw.tx_calls++;
 	hw.tx_hz = hz;
 	hw.tx_bw = bw;
@@ -138,6 +145,7 @@ const board_t board = {
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
 	.vocoder = &fake_vocoder,
+	.flash = &sim_flash,		// no map until test_factory_reset: RAM only, as on a radio without one
 };
 
 // ---- fake codeplug ----
@@ -1955,6 +1963,9 @@ bool codeplug_set_channel(uint16_t n, const channel_t *ch)
 	return true;
 }
 
+static int job_runs;
+static void test_job(void *ctx) { (void)ctx; job_runs++; }
+
 static void test_ui_glue(void)
 {
 	const radio_dmr_view_t *d = &sm.view.dmr;
@@ -2094,6 +2105,484 @@ static void test_ui_glue(void)
 	CHECK(sm.set.reply_s == RADIO_REPLY_CODEPLUG && sm.set.vox == RADIO_VOX_OFF);
 }
 
+// Every setting ui_svc_storage.c answers: where it is read from, the clamps on the way in, the privacy key slot,
+// and the codeplug jobs' refusals (no channel, a job still pending, the channel unreadable)
+static void test_ui_settings(void)
+{
+	settings_t sv;
+	radio_settings_t rs;
+
+	dmr_start(true);
+	// The radio core's own settings, read back through radio_get_settings
+	radio_get_settings(&rs);
+	rs.key_beep = true;
+	rs.beep_level = 65;		// shown in tenths, rounded: 7
+	rs.tot_s = 90;
+	rs.backlight_dim_s = 20;
+	rs.rx_save = 2;
+	rs.roam_survey = 2;
+	rs.roam_beacon_s = 120;
+	rs.roam_beacon_len_s = 6;
+	rs.roam_probe = 1;
+	radio_set_settings(&rs);
+	CHECK(ui_svc_setting_get(UI_SET_KEY_TONES) == 1 && ui_svc_setting_get(UI_SET_TONE_VOLUME) == 7);
+	CHECK(ui_svc_setting_get(UI_SET_TOT_S) == 90 && ui_svc_setting_get(UI_SET_BACKLIGHT_S) == 20);
+	CHECK(ui_svc_setting_get(UI_SET_BATTERY_SAVER) == 1);
+	CHECK(ui_svc_setting_get(UI_SET_ROAM_SURVEY) == 2 && ui_svc_setting_get(UI_SET_ROAM_BEACON_S) == 120 &&
+	      ui_svc_setting_get(UI_SET_ROAM_BEACON_LEN) == 6 && ui_svc_setting_get(UI_SET_ROAM_PROBE) == 1);
+	// ... which the store leaves to ui_svc_apply (nothing written here)
+	settings_read(&sv);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_TONES, 0) && ui_svc_setting_set(UI_SET_ROAM_PROBE, 0));
+	settings_t sv2;
+	settings_read(&sv2);
+	CHECK(memcmp(&sv, &sv2, sizeof(sv)) == 0);
+
+	// Preferences in settings_t, with their clamps and the fallbacks for out of range stored values
+	CHECK(ui_svc_setting_set(UI_SET_BRIGHTNESS, 3) && ui_svc_setting_get(UI_SET_BRIGHTNESS) == 10);
+	CHECK(ui_svc_setting_set(UI_SET_BRIGHTNESS, 250) && ui_svc_setting_get(UI_SET_BRIGHTNESS) == 100);
+	CHECK(ui_svc_setting_set(UI_SET_SQUELCH, -4) && ui_svc_setting_get(UI_SET_SQUELCH) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_SQUELCH, 12) && ui_svc_setting_get(UI_SET_SQUELCH) == 9);
+	CHECK(ui_svc_setting_set(UI_SET_HOTSPOT_AUTO, 0) && ui_svc_setting_get(UI_SET_HOTSPOT_AUTO) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_HOTSPOT_AUTO, 5) && ui_svc_setting_get(UI_SET_HOTSPOT_AUTO) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_MIC_GAIN, 40) && ui_svc_setting_get(UI_SET_MIC_GAIN) == 10);
+	CHECK(ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 99999) && ui_svc_setting_get(UI_SET_AUTO_LOCK_S) == 3600);
+	CHECK(ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 10) && ui_svc_setting_get(UI_SET_LONG_PRESS_MS) == 200);
+	CHECK(ui_svc_setting_set(UI_SET_REPEAT_MS, 5000) && ui_svc_setting_get(UI_SET_REPEAT_MS) == 1000);
+	CHECK(ui_svc_setting_set(UI_SET_POS_FORMAT, 9) && ui_svc_setting_get(UI_SET_POS_FORMAT) == 2);
+	CHECK(ui_svc_setting_set(UI_SET_POS_SEND_S, -1) && ui_svc_setting_get(UI_SET_POS_SEND_S) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_GPS, 0) && ui_svc_setting_get(UI_SET_GPS) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_THEME, -3) && ui_svc_setting_get(UI_SET_THEME) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_UPDOWN_HOME, 7) && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 2);
+	CHECK(ui_svc_setting_set(UI_SET_LOW_BATTERY, 80) && ui_svc_setting_get(UI_SET_LOW_BATTERY) == 50);
+	CHECK(ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 100000) && ui_svc_setting_get(UI_SET_AUTO_OFF_MIN) == 1440);
+	CHECK(ui_svc_setting_set(UI_SET_MESSAGE_TONE, 0) && ui_svc_setting_get(UI_SET_MESSAGE_TONE) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_ALIAS_SHOW, 0) && ui_svc_setting_get(UI_SET_ALIAS_SHOW) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_TFTP_WRITE, 0) && ui_svc_setting_get(UI_SET_TFTP_WRITE) == 0);
+	settings_read(&sv);
+	CHECK(sv.net_flags & SETTINGS_NET_TFTP_NO_WRITE);
+	CHECK(ui_svc_setting_set(UI_SET_TFTP_WRITE, 1) && ui_svc_setting_get(UI_SET_TFTP_WRITE) == 1);
+	// Stored values another firmware (or a damaged record) left out of range: the defaults shown
+	settings_t *st = settings_begin();
+	st->brightness = 3;
+	st->squelch = 0xEE;
+	st->mic_gain = 77;
+	st->long_press_ms = 0;
+	st->repeat_ms = 0;
+	st->pos_format = 9;
+	st->theme = 9;
+	st->updown_home = 9;
+	st->privacy_type[0] = 99;
+	settings_end(now);
+	ram[UI_SET_SQUELCH] = 3;
+	ram[UI_SET_LONG_PRESS_MS] = 777;
+	ram[UI_SET_REPEAT_MS] = 111;
+	CHECK(ui_svc_setting_get(UI_SET_BRIGHTNESS) == 100 && ui_svc_setting_get(UI_SET_SQUELCH) == 3 &&
+	      ui_svc_setting_get(UI_SET_MIC_GAIN) == 5);
+	CHECK(ui_svc_setting_get(UI_SET_LONG_PRESS_MS) == 777 && ui_svc_setting_get(UI_SET_REPEAT_MS) == 111);
+	CHECK(ui_svc_setting_get(UI_SET_POS_FORMAT) == 0 && ui_svc_setting_get(UI_SET_THEME) == 0 &&
+	      ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 0);
+	CHECK(ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == DMR_PRIVACY_OFF);
+	// Settings nobody stores: the RAM table
+	CHECK(ui_svc_setting_set(UI_SET_VOICE_PROMPTS, 1) && ram[UI_SET_VOICE_PROMPTS] == 1 &&
+	      ui_svc_setting_get(UI_SET_VOICE_PROMPTS) == 1);
+
+	// The data service's answers and message format
+	CHECK(ui_svc_setting_set(UI_SET_CHECK_REPLY, 0) && ui_svc_setting_get(UI_SET_CHECK_REPLY) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_ALERT_ANSWER, 0) && ui_svc_setting_get(UI_SET_ALERT_ANSWER) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_POS_REPLY, 1) && ui_svc_setting_get(UI_SET_POS_REPLY) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI) &&
+	      ui_svc_setting_get(UI_SET_MSG_FORMAT) == DMR_SMS_FORMAT_ETSI);
+	CHECK(!ui_svc_setting_set(UI_SET_MSG_FORMAT, 9) && ui_svc_setting_get(UI_SET_MSG_FORMAT) == DMR_SMS_FORMAT_ETSI);
+	CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI_IP));
+
+	// USB personality and the control station switches (no control station in this build: those stay off)
+	CHECK(ui_svc_setting_set(UI_SET_USB_BOOT_NET, 1) && ui_svc_setting_get(UI_SET_USB_BOOT_NET) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_PC_ENDPOINT, 1) && ui_svc_setting_set(UI_SET_USB_FIXED_LINK, 1));
+	CHECK(ui_svc_setting_get(UI_SET_PC_ENDPOINT) == CONFIG_DMR_CONTROL_STATION &&
+	      ui_svc_setting_get(UI_SET_USB_FIXED_LINK) == CONFIG_DMR_CONTROL_STATION);
+	CHECK(ui_svc_setting_set(UI_SET_USB_BOOT_NET, 0) && ui_svc_setting_get(UI_SET_USB_BOOT_NET) == 0);
+
+	// Privacy key slot 1: the type and the key, kept in range; off clears the key and turns privacy off when
+	// slot 1 was the active one; with privacy on, the radio core gets the new key at once
+	CHECK(ui_svc_setting_set(UI_SET_PRIVACY_TYPE, DMR_PRIVACY_MOTOROLA_BP));
+	settings_read(&sv);
+	CHECK(sv.privacy_type[0] == DMR_PRIVACY_MOTOROLA_BP && sv.privacy_key[0] == 1);	// key 0: the lowest valid
+	CHECK(ui_svc_setting_set(UI_SET_PRIVACY_KEY, 70000) && ui_svc_setting_get(UI_SET_PRIVACY_KEY) == 255);
+	CHECK(ui_svc_setting_set(UI_SET_PRIVACY_KEY, 42) && ui_svc_setting_get(UI_SET_PRIVACY_KEY) == 42);
+	CHECK(ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 50) &&
+	      ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == DMR_PRIVACY_NUM_TYPES - 1);
+	CHECK(ui_svc_setting_set(UI_SET_PRIVACY_TYPE, DMR_PRIVACY_MOTOROLA_BP));
+	CHECK(ui_svc_setting_set(UI_SET_PRIVACY_KEY, 42));
+	st = settings_begin();
+	st->privacy_active = 1;
+	settings_end(now);
+	CHECK(ui_svc_privacy(true));
+	run(20);
+	CHECK(sm.view.dmr.privacy);
+	CHECK(ui_svc_setting_set(UI_SET_PRIVACY_KEY, 43));
+	run(20);
+	settings_read(&sv);
+	CHECK(sv.privacy_key[0] == 43 && sm.view.dmr.privacy);
+	CHECK(ui_svc_setting_set(UI_SET_PRIVACY_TYPE, DMR_PRIVACY_OFF));
+	run(20);
+	settings_read(&sv);
+	CHECK(sv.privacy_type[0] == DMR_PRIVACY_OFF && sv.privacy_key[0] == 0 && sv.privacy_active == 0);
+	CHECK(!sm.view.dmr.privacy);
+
+	// Codeplug jobs: refused off a stored channel and while one is pending; a channel that can't be read is
+	// reported, nothing written
+	int w = cp_writes;
+	req(RREQ_VFO, 1);
+	run(50);
+	CHECK(sm.view.vfo && !ui_svc_save_channel() && !ui_svc_save_talk_target(9, false));
+	req(RREQ_VFO, 0);
+	run(50);
+	CHECK(!sm.view.vfo && sm.view.channel_number == 4);
+	CHECK(!ui_svc_save_talk_target(0, false));
+	CHECK(storage_job_post(test_job, NULL));
+	CHECK(!ui_svc_save_channel() && !ui_svc_save_talk_target(9, false) && !ui_svc_factory_reset());
+	storage_job_poll();
+	used[4] = false;			// the channel is gone from the codeplug before the job runs
+	n_ev = 0;
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "read the channel") != NULL);
+	n_ev = 0;
+	CHECK(ui_svc_save_talk_target(9, false));
+	storage_job_poll();
+	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL);
+	used[4] = true;
+	cp_write_fails = true;			// the contact found, the write fails
+	n_ev = 0;
+	CHECK(ui_svc_save_talk_target(9, false));
+	storage_job_poll();
+	CHECK(n_ev == 1 && strstr(last_ev.text, "write the codeplug") != NULL);
+	cp_write_fails = false;
+	CHECK(cp_writes == w);
+	// The squelch saved with the channel goes to the default squelch preference
+	ui_svc_setting_set(UI_SET_SQUELCH, 2);
+	req(RREQ_SQUELCH, 1);
+	run(20);
+	CHECK(sm.view.temp & RADIO_TEMP_SQUELCH);
+	uint8_t sq = sm.view.squelch;
+	CHECK(sq != 2 && ui_svc_save_channel());
+	storage_job_poll();
+	settings_read(&sv);
+	CHECK(sv.squelch == sq && cp_writes == w + 1);
+	req(RREQ_CLEAR_TEMP, 0);
+	run(20);
+	// Every temporary change goes into the channel: power, bandwidth, both tones, the mode
+	req(RREQ_ZONE_POS, 0);			// channel 1, FM simplex
+	run(50);
+	req(RREQ_POWER, 1);
+	req(RREQ_BANDWIDTH, RADIO_BW_12K5);
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_TX, (subtone_t){ TONE_CTCSS, 1000 }));
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_RX, (subtone_t){ TONE_CTCSS, 1230 }));
+	run(20);
+	uint8_t pw = sm.view.power;
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(chans[1].power == pw && chans[1].bw == RADIO_BW_12K5 && chans[1].tx_tone.type == TONE_CTCSS &&
+	      chans[1].tx_tone.value == 1000 && chans[1].rx_tone.value == 1230);
+	run(100);				// the radio core re-reads the channel (codeplug serial)
+	CHECK(ui_svc_mode(RADIO_MODE_DMR) && (sm.view.temp & RADIO_TEMP_MODE));
+	run(20);
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(chans[1].mode == RADIO_MODE_DMR);
+	setup_codeplug();
+	char l1[17], l2[17];
+	ui_svc_boot_text(l1, l2);
+	CHECK(l1[0] == 0 && l2[0] == 0);
+	req(RREQ_CLEAR_TEMP, 0);
+	run(20);
+}
+
+// ---- The DMR data service on the radio core (radio_sm.c's data glue): what it lets out, keyed like PTT, and the
+// answers it hands back ----
+
+static void csbk_rx(uint8_t opcode, uint32_t target, uint32_t from, uint8_t cc)
+{
+	uint8_t c[10] = { (uint8_t)(0x80 | opcode), DMR_FID_ETSI, 0, 0, (uint8_t)(target >> 16), (uint8_t)(target >> 8),
+			  (uint8_t)target, (uint8_t)(from >> 16), (uint8_t)(from >> 8), (uint8_t)from };
+	dmrBurst_t d;
+	CHECK(dmrDataBuildCSBK(c, &d) == 1);
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_CSBK;
+	b.sync = DMR_SYNC_MS;
+	b.cc = cc;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = (uint8_t)d.length;
+	memcpy(b.payload, d.payload, d.length);
+	sim_rx(&b);
+}
+
+// Bursts on air since n0 of this kind, with this CSBK opcode (0xFF: any)
+static int air_count(unsigned n0, uint8_t kind, uint8_t opcode)
+{
+	int n = 0;
+	for (unsigned i = n0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == kind && (opcode == 0xFF || (sim.air[i].payload[0] & 0x3F) == opcode)) {
+			n++;
+		}
+	}
+	return n;
+}
+
+static void test_dmr_data_glue(void)
+{
+	uint8_t kind;
+	uint32_t dst;
+
+	// A call alert: listen before talk, keyed like PTT, one CSBK with the MCU's CRC; the ack ends it
+	dmr_start(true);
+	unsigned n0 = sim.air_count;
+	int tx0 = hw.tx_calls;
+	CHECK(dmr_signal_call_alert(3101234));
+	run(600);
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1 && hw.tx_calls > tx0);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_SENDING && dst == 3101234);
+	for (unsigned i = n0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK) {
+			CHECK(sim.air[i].host_crc);
+		}
+	}
+	csbk_rx(DMR_CSBKO_CALL_ALERT_ACK, 3101276, 3101234, 2);
+	run(200);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK);
+	CHECK(!(sm.view.state == RS_TX));
+
+	// No answer: the retries, then failed; the keying released each time
+	n0 = sim.air_count;
+	CHECK(dmr_signal_radio_check(3105555));
+	run(30000);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_FAILED);
+	CHECK(air_count(n0, DMR_BURST_CSBK, 0xFF) >= 2 && !sm.dmr_keyed);
+
+	// A call alert to us: alerted, and the ack goes out through the same glue
+	n0 = sim.air_count;
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3101276, 3109876, 2);
+	run(1000);
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT_ACK) == 1);
+	// ... not to us: nothing
+	n0 = sim.air_count;
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3100001, 3109876, 2);
+	run(1000);
+	CHECK(sim.air_count == n0);
+
+	// A group SMS: a whole packet on air (preamble, header, blocks), sent once heard clear
+	n0 = sim.air_count;
+	CHECK(sms_send(9, true, "hello group", false, DMR_SMS_FORMAT_ETSI_IP));
+	run(3000);
+	CHECK(sms_send_state() == DMR_REQ_OK);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) >= 1 && sim.air_count - n0 >= 3);
+
+	// While the user transmits voice, data waits: nothing goes out in the middle of the call
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK((sm.view.state == RS_TX));
+	unsigned voice0 = sim.air_count;
+	CHECK(dmr_signal_call_alert(3101234));
+	run(600);
+	CHECK(air_count(voice0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) == 0);
+	req(RREQ_PTT, 0);
+	run(3000);
+	CHECK(air_count(voice0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1);
+	run(30000);
+
+	// An RX only DMR channel and an FM channel: refused, the request fails instead of keying
+	chans[4].rx_only = true;
+	reload_channel();
+	tx0 = hw.tx_calls;
+	CHECK(!dmr_signal_call_alert(3101234) || (run(3000), dmr_signal_state(&kind, &dst) == DMR_REQ_FAILED));
+	CHECK(hw.tx_calls == tx0);
+	chans[4].rx_only = false;
+	reload_channel();
+	req(RREQ_ZONE_POS, 0);		// channel 1, FM
+	run(50);
+	tx0 = hw.tx_calls;
+	CHECK(!sms_send(3101234, false, "x", true, DMR_SMS_FORMAT_ETSI) || (run(5000), sms_send_state() == DMR_REQ_FAILED));
+	CHECK(hw.tx_calls == tx0);
+}
+
+// ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while
+// transmitting, the stack's own refusals, targets that end with their channel, stored emergency settings ----
+static void test_error_paths(void)
+{
+	// The squelch threshold's ends
+	CHECK(radio_sm_squelch_open_below(0) == 255);
+	CHECK(radio_sm_squelch_open_below(200) == radio_sm_squelch_open_below(RADIO_SQUELCH_MAX));
+
+	// FM: no TX frequency, and a transmitter that won't key
+	setup_codeplug();
+	chans[1].tx_hz = 0;
+	start();
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_FREQ && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE);
+	chans[1].tx_hz = 146520000;
+	reload_channel();
+	req(RREQ_ZONE_POS, 0);
+	run(20);
+	tx_fail = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && !hw.led[LED_RED]);
+	req(RREQ_PTT, 0);
+	tx_fail = false;
+
+	// No retuning while transmitting: channel, zone, VFO and scan requests wait for the release
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	uint16_t pos = sm.view.zone_pos;
+	uint16_t zone = sm.view.zone_index;
+	req(RREQ_CH_STEP, 1);
+	req(RREQ_ZONE_POS, 3);
+	req(RREQ_ZONE, 1);
+	req(RREQ_VFO, 1);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(50);
+	CHECK(sm.view.state == RS_TX && sm.view.zone_pos == pos && sm.view.zone_index == zone && !sm.view.vfo);
+	CHECK(!(sm.view.scan != 0));
+	CHECK(hw.tx_calls == 1 && hw.tx_hz == 146520000);
+	req(RREQ_PTT, 0);
+	req(RREQ_CH_STEP, 1);
+	run(20);
+	CHECK(sm.view.zone_pos != pos);
+	// PTT while scanning: the scan stops where it is and the radio transmits there
+	req(RREQ_ZONE_POS, 0);
+	run(20);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(400);
+	CHECK(sm.view.scan != 0);
+	req(RREQ_PTT, 1);
+	run(20);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == sm.view.ch.tx_hz);
+	req(RREQ_PTT, 0);
+	run(20);
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(20);
+	CHECK(sm.view.scan == 0);
+
+	// DMR: the transmitter won't key; the stack reports a rejection
+	dmr_start(true);
+	tx_fail = true;
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && sim.tx_begins == 0);
+	req(RREQ_PTT, 0);
+	run(100);
+	tx_fail = false;
+	sim.reject_next = true;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REJECTED);
+	req(RREQ_PTT, 0);
+	run(1000);
+	sim.reject_next = false;
+	CHECK(sm.view.state != RS_TX && !sm.dmr_keyed);
+
+	// A talk target, the hear all latch and the channel's own target: chosen ones end with their channel
+	req(RREQ_DMR_TARGET, 3101234 | (1 << 24));
+	req(RREQ_DMR_HEAR_ALL, 1);
+	run(20);
+	CHECK(sm.view.dmr.target_manual && sm.view.dmr.hear_all_latch);
+	req(RREQ_ZONE_POS, 0);		// FM
+	run(50);
+	req(RREQ_ZONE_POS, 3);		// back on the DMR channel
+	run(50);
+	CHECK(!sm.view.dmr.target_manual && !sm.view.dmr.hear_all_latch && sm.view.dmr.target_id == 201);
+	// Targets out of range or off DMR: ignored
+	req(RREQ_DMR_TARGET, 0);
+	run(20);
+	CHECK(!sm.view.dmr.target_manual);
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	req(RREQ_DMR_TARGET, 9);
+	run(20);
+	CHECK(!sm.view.dmr.target_manual);
+
+	// Stored emergency settings are what the emergency engine starts with
+	settings_t *st = settings_begin();
+	st->em_stored = 1;
+	st->em_mode = DMR_EMERGENCY_MODE_ALARM_CALL;
+	st->em_dst = 3109999;
+	st->em_flags = SETTINGS_EM_DST_PRIVATE | SETTINGS_EM_ETSI_FID | SETTINGS_EM_NO_TONE;
+	st->em_alarm_tries = 3;
+	st->em_hot_mic_s = 15;
+	settings_end(now);
+	boot();				// (start() would load the defaults: no flash here)
+	run(50);
+	dmr_emergency_settings_t es;
+	dmr_emergency_get_settings_now(&es);
+	CHECK(es.dst == 3109999 && es.dst_private && es.etsi_fid && !es.rx_tone && es.alarm_tries == 3 &&
+	      es.hot_mic_s == 15);
+	st = settings_begin();
+	st->em_stored = 0;
+	settings_end(now);
+}
+
+// Factory reset on a flash: the defaults saved at once, the native area emptied when ours, a toast when either
+// fails (the settings can't be written; the native area won't erase), never the legacy codeplug or calibration
+static const hal_flash_map_t reset_map = {
+	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = 0x30000u,
+	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+	.native_addr = 0x30000u, .native_size = 0x4000u,
+};
+
+static void test_factory_reset(void)
+{
+	settings_t sv;
+	sim_flash_create(0x40000u, &reset_map);
+	CHECK(storage_init());
+	settings_init();
+	dmr_start(true);
+	memset(&sim_flash_data[0x20000u], 0x42, 64);		// a legacy codeplug byte or two
+	memset(&sim_flash_data[0x10000u], 0x24, 64);		// the calibration copy
+	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
+	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
+	settings_begin()->squelch = 2;
+	settings_end(now);
+	CHECK(settings_flush());
+	n_ev = 0;
+	CHECK(ui_svc_factory_reset());
+	storage_job_poll();
+	settings_read(&sv);
+	CHECK(n_ev == 0 && sv.squelch == SETTINGS_UNSET8 && sim_flash_data[reset_map.native_addr] == 0xFF);
+	CHECK(sim_flash_data[0x20000u] == 0x42 && sim_flash_data[0x10000u] == 0x24);
+	settings_init();				// what the next boot finds
+	settings_read(&sv);
+	CHECK(sv.squelch == SETTINGS_UNSET8);
+	// The settings can't be written (a worn ring): the toast says so
+	settings_begin()->squelch = 4;
+	settings_end(now);
+	CHECK(settings_flush());		// stored: the reset has something to write
+	sim_flash_bad_range(reset_map.settings_addr, reset_map.settings_size);
+	CHECK(ui_svc_factory_reset());
+	storage_job_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "settings") != NULL);
+	sim_flash_bad_range(0, 0);
+	// The native area won't erase (ours, then the flash cut out under it)
+	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
+	CHECK(sim_flash.write(reset_map.native_addr + 0x2000u, magic, 4));
+	settings_begin()->squelch = 5;
+	settings_end(now);
+	CHECK(settings_flush());
+	n_ev = 0;
+	CHECK(ui_svc_factory_reset());
+	sim_flash_cut_after(256);	// the settings record (252 + 4 bytes) goes in, the native erase fails
+	storage_job_poll();
+	sim_flash_power_on();
+	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
+	sim_flash.map = NULL;
+	storage_init();			// back to no flash for anything after
+	settings_init();
+	sim_flash_free();
+}
+
 int main(void)
 {
 	test_startup();
@@ -2115,10 +2604,14 @@ int main(void)
 	test_dmr_voice_features();
 	test_ui_requests();
 	test_ui_glue();
+	test_ui_settings();
+	test_error_paths();
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();
 	test_dmr_emergency();
+	test_dmr_data_glue();	// (last: the data service's state carries over)
+	test_factory_reset();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

@@ -54,8 +54,10 @@ know, and the rest keep their defaults (`upgraded`).
 the ring is erased first. It holds only older records, because the newest is in the sector before it. The record
 is programmed, then the commit word, then the slot is read back. A cut before the commit word leaves an unfinished
 slot that the next load skips, so the previous record stays in force. A slot that doesn't read back is skipped and
-the next one is tried, up to 4 slots. Erases go round the ring: the DM-1701's 8 sectors take 128 saves per pass,
-so a sector is erased once every 128 saves.
+the next one is tried, up to 4 slots. The walk past such slots never erases the sector holding the newest valid
+record (with a worn sector it could come round to it): that save fails instead, and the record stays in force.
+Erases go round the ring: the DM-1701's 8 sectors take 128 saves per pass, so a sector is erased once every 128
+saves.
 
 **When**: `settings_begin()` returns the live copy under a short RAM-only lock (`storage_quick_lock`) and
 `settings_end(now)` releases it. If anything changed, it notes the time. No flash operation happens inside, so the
@@ -177,9 +179,29 @@ done byte means a cut after step 3. If J1's CRC matches, steps 4 and 5 run again
 the header is complete leaves the target untouched, because the header is the commit point. A cut during the replay
 is replayed again at the next boot.
 
-`storage_write(addr, buf, len)` writes any range. For each sector it touches, it reads the sector into the shared
-4 KB buffer, merges the bytes in and rewrites the sector as above. The buffer is shared with the CPS shim's pending
-sector (`storage_buffer_acquire`), so an edit while a CPS write is going on fails cleanly instead of waiting.
+`storage_write(addr, buf, len)` writes any range (the codeplug editor's records, names and bitmaps). Legacy
+channel, zone and contact records don't divide 4 KB, so some cross a sector end; two separate sector rewrites would
+leave such a record half old, half new after a cut between them (a channel with the new frequency and the old
+timeslot). So a write of up to 4072 bytes, which touches one or two sectors, is one transaction:
+
+| J0 offset | Content |
+|---|---|
+| 0 | magic `0x324E4A4F` ("OJN2"), then the address, the length and the CRC-32 of bytes 0 to 11 and the data |
+| 16 | marks, 0xFF = not yet: first sector staged, first sector done, second sector staged, second sector done |
+| 20 | all done |
+| 24 | the data |
+
+1. If the flash already holds exactly the data, nothing is done.
+2. Erase J0, program the header and the data, read them back (the commit point).
+3. For each sector: J1 erased and programmed with the sector merged with the data, "staged"; the sector erased and
+   programmed from J1, read back, "done".
+4. Program "all done".
+
+Replay: a header with a good CRC and "all done" pending finishes the sectors not done. A sector not staged has not
+been erased yet, so it is merged with the data from J0 again; a staged one is copied from J1. A longer write
+(none of the core's callers makes one) goes sector by sector through `storage_sector_write`. The bytes are merged
+in the shared 4 KB buffer, which is shared with the CPS shim's pending sector (`storage_buffer_acquire`), so an edit
+while a CPS write is going on fails cleanly instead of waiting.
 
 Wear: J0 and J1 are erased once per sector rewrite. A full qdmr write is about 46 sectors, so the journal sectors
 take 46 erases per write. At 100,000 cycles, that is about 2,000 full codeplug writes. Spreading the journal over a
@@ -199,7 +221,7 @@ there, `storage_init()` classifies the region:
 | Part | Ours | Anything else |
 |---|---|---|
 | settings slot | all 0xFF; a valid record; our magic with a torn rest; a save cut inside the magic (the bytes so far on their way to "OSET", the rest 0xFF) | other bytes |
-| J0 | all 0xFF; our header (magic "OJNL"), nothing after the done byte | other bytes |
+| J0 | all 0xFF; our header (magic "OJNL"), nothing after the done byte; our patch header ("OJN2"), nothing after its data | other bytes |
 | J1 | all 0xFF, or anything once J0 holds our header | non-blank while J0 is blank |
 
 **Foreign** = some part holds other bytes **and** no valid record of ours (a settings record or a J0 header with

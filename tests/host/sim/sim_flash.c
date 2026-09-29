@@ -10,6 +10,7 @@ static uint32_t *erase_count;
 static uint32_t budget;		// units left before the cut, 0 = not armed
 static bool armed, cut;
 static uint32_t units, violations;
+static uint32_t bad_addr, bad_len;
 
 static bool sim_init(void) { return true; }
 
@@ -48,6 +49,9 @@ static bool sim_write(uint32_t addr, const void *buf, uint32_t len)
 {
 	const uint8_t *p = buf;
 	if (cut || !in_range(addr, len)) {
+		return false;
+	}
+	if (bad_len != 0 && addr < bad_addr + bad_len && addr + len > bad_addr) {
 		return false;
 	}
 	for (uint32_t i = 0; i < len; i++) {
@@ -96,6 +100,7 @@ void sim_flash_create(uint32_t size, const hal_flash_map_t *map)
 	sim_flash.map = map;
 	armed = cut = false;
 	units = violations = 0;
+	bad_len = 0;
 }
 
 void sim_flash_free(void)
@@ -123,3 +128,9 @@ void sim_flash_power_on(void)
 uint32_t sim_flash_units(void) { return units; }
 uint32_t sim_flash_erases(uint32_t addr) { return erase_count[addr / SIM_FLASH_SECTOR]; }
 uint32_t sim_flash_violations(void) { return violations; }
+
+void sim_flash_bad_range(uint32_t addr, uint32_t len)
+{
+	bad_addr = addr;
+	bad_len = len;
+}

@@ -99,16 +99,14 @@ of 2451) and 73.9 % of branches, over 120 files. The most uncovered lines:
 
 | File | Lines | Covered | Notes |
 |---|---|---|---|
-| `core/radio/radio_sm.c` | 2714 | 90 % | the largest file; the misses are rare error paths and feature corners |
+| `core/radio/radio_sm.c` | 2714 | 93 % | the largest file; the misses are rare feature corners (roaming probes, hotspot keying, GPS in calls) |
 | `core/ui/ui_screens.c`, `ui_app.c`, `ui_menus.c` | 3800 | 81 % | screens and menu actions no flow test opens |
-| `core/aprs/aprs.c` | 1008 | 83 % | |
-| `core/ui/ui_svc_storage.c` | 283 | 48 % | |
-| `core/ui/ui_aprs.c` | 132 | 0 % | built into the UI tests, never opened |
+| `core/aprs/aprs.c` | 1008 | 91 % | |
 | `drivers/modem/hrc7000/hrc7000.c` | 165 | 3 % | the DM-32 modem's chip layer (its DMR layer is tested) |
 
-Not built into any host test (26 files, about 7300 lines): the debug link commands (`core/debuglink/debuglink*.c`
+Not built into any host test (25 files, about 7150 lines): the debug link commands (`core/debuglink/debuglink*.c`
 except the protocol and split parts), `hostlink.c`, `net_services.c`, the RTOS task wrappers
-(`radio_task.c`, `input_task.c`, `storage_rtos.c`, `ui.c`, `app.c`), the USB device and NCM drivers, `spi_nor.c`,
+(`radio_task.c`, `input_task.c`, `storage_rtos.c`, `ui.c`, `app.c`), the USB device and NCM drivers,
 `st7735.c` and the SFR glue (`hrcSfr.c`). The HIL tests cover most of these on the radio.
 
 Coverage on the radio itself (gcov counters read out over the debug link after a HIL run) is feasible but not set

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include "storage/storage.h"
 #include "settings/settings.h"
 #include "sim/sim_flash.h"
@@ -529,6 +530,348 @@ static void test_native_and_jobs(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+
+// --- records and the ring at their limits ---
+
+// A record built from the format in docs/spec/settings-store.md 2, written straight into the simulated flash
+static void put_record(const hal_flash_map_t *m, unsigned sector, unsigned slot, uint32_t seq, uint16_t layout,
+		       uint16_t n, const void *payload, bool commit, bool crc_ok)
+{
+	uint8_t r[256];
+	memset(r, 0xFF, sizeof(r));
+	memcpy(r, "OSET", 4);
+	memcpy(&r[4], &seq, 4);		// the host is little endian like the radios
+	memcpy(&r[8], &layout, 2);
+	memcpy(&r[10], &n, 2);
+	if (n <= 236) {
+		memcpy(&r[12], payload, n);
+		uint32_t crc = storage_crc32(0, r, 12u + n) ^ (crc_ok ? 0 : 0x10u);
+		memcpy(&r[12 + n], &crc, 4);
+	}
+	if (commit) {
+		memset(&r[252], 0, 4);
+	}
+	memcpy(&sim_flash_data[m->settings_addr + sector * STORAGE_SECTOR + slot * 256u], r, sizeof(r));
+}
+
+// The payload is settings_t as in RAM, and layout 1 is frozen: fields are only appended (settings-store.md 3). A
+// field that moved would make every stored record load into the wrong fields
+static void test_settings_layout(void)
+{
+	static const struct { size_t got, want; } offs[] = {
+		{ offsetof(settings_t, vfo), 0 },
+		{ offsetof(settings_t, squelch), 1 },
+		{ offsetof(settings_t, zone_index), 2 },
+		{ offsetof(settings_t, channel), 4 },
+		{ offsetof(settings_t, zone_pos), 6 },
+		{ offsetof(settings_t, vfo_rx_hz), 8 },
+		{ offsetof(settings_t, vfo_tx_hz), 12 },
+		{ offsetof(settings_t, vfo_step_hz), 16 },
+		{ offsetof(settings_t, vfo_mode), 20 },
+		{ offsetof(settings_t, net_flags), 27 },
+		{ offsetof(settings_t, vfo_rx_tone), 28 },
+		{ offsetof(settings_t, brightness), 32 },
+		{ offsetof(settings_t, usb_mode), 37 },
+		{ offsetof(settings_t, reserved1), 38 },
+		{ offsetof(settings_t, dmr_id), 40 },
+		{ offsetof(settings_t, radio_name), 44 },
+		{ offsetof(settings_t, privacy_key), 60 },
+		{ offsetof(settings_t, privacy_type), 76 },
+		{ offsetof(settings_t, privacy_active), 80 },
+		{ offsetof(settings_t, snmp_rf_manager), 81 },
+		{ offsetof(settings_t, rs_tot_s), 84 },
+		{ offsetof(settings_t, rs_stored), 101 },
+		{ offsetof(settings_t, rs_backlight_off_s), 108 },
+		{ offsetof(settings_t, aprsis_range_km), 110 },
+		{ offsetof(settings_t, ds_ars_server), 112 },
+		{ offsetof(settings_t, snmp_flags), 119 },
+		{ offsetof(settings_t, rs_reply_s), 120 },
+		{ offsetof(settings_t, pos_send_s), 130 },
+		{ offsetof(settings_t, em_dst), 132 },
+		{ offsetof(settings_t, em_stored), 140 },
+		{ offsetof(settings_t, cw_wpm), 141 },
+		{ offsetof(settings_t, cw_tone_hz), 142 },
+		{ offsetof(settings_t, roam_rssi_dbm), 144 },
+		{ offsetof(settings_t, roam_check_s), 148 },
+		{ offsetof(settings_t, roam_zones), 150 },
+		{ offsetof(settings_t, theme), 160 },
+		{ offsetof(settings_t, auto_off_min), 164 },
+		{ offsetof(settings_t, aprsis_port), 166 },
+		{ offsetof(settings_t, roam_beacon_s), 168 },
+		{ offsetof(settings_t, rpt_beacon), 172 },
+		{ offsetof(settings_t, reserved6), 173 },
+		{ offsetof(settings_t, aprs_flags), 176 },
+		{ offsetof(settings_t, aprs_freq_hz), 180 },
+		{ offsetof(settings_t, aprs_lat), 184 },
+		{ offsetof(settings_t, aprs_alt_m), 196 },
+		{ offsetof(settings_t, aprs_symbol), 202 },
+		{ offsetof(settings_t, aprs_stored), 209 },
+		{ offsetof(settings_t, snmp_rf_gap_s), 210 },
+		{ offsetof(settings_t, ds_ip_rule), 212 },
+		{ offsetof(settings_t, aprsis_ip), 220 },
+		{ offsetof(settings_t, net_link_ip), 224 },
+		{ offsetof(settings_t, snmp_read_hash), 228 },
+		{ offsetof(settings_t, snmp_write_hash), 232 },
+	};
+	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
+		if (offs[i].got != offs[i].want) {
+			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);
+			failures++;
+		}
+	}
+	// A full 236-byte record as another build of the same layout writes it, byte by byte
+	uint8_t pl[236];
+	memset(pl, 0, sizeof(pl));
+	pl[1] = 4;					// squelch
+	pl[8] = 0xA0; pl[9] = 0x69; pl[10] = 0xBB; pl[11] = 0x08;	// vfo_rx_hz 146500000
+	memcpy(&pl[44], "W1AW", 4);			// radio_name
+	pl[232] = 0x78; pl[233] = 0x56; pl[234] = 0x34; pl[235] = 0x12;	// snmp_write_hash, the last field
+	sim_flash_create(FLASH_SIZE, &map);
+	put_record(&map, 1, 0, 9, SETTINGS_LAYOUT, sizeof(pl), pl, true, true);
+	boot();
+	settings_t s;
+	settings_stats_t st;
+	settings_read(&s);
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_LOADED && st.seq == 9 && st.sector == 1 && st.slot == 0);
+	CHECK(s.squelch == 4 && s.vfo_rx_hz == 146500000u && strcmp(s.radio_name, "W1AW") == 0 &&
+	      s.snmp_write_hash == 0x12345678u);
+}
+
+// Records that must not load: a bad CRC, no commit word, a length past the slot, a newer layout; the older valid
+// record is in force, and the sequence numbers compare modulo 2^32
+static void test_settings_bad_records(void)
+{
+	settings_t pl, s;
+	settings_stats_t st;
+
+	settings_defaults(&pl);
+	for (int variant = 0; variant < 4; variant++) {
+		sim_flash_create(FLASH_SIZE, &map);
+		pl.squelch = 2;
+		put_record(&map, 2, 0, 40, SETTINGS_LAYOUT, sizeof(pl), &pl, true, true);
+		pl.squelch = 8;
+		if (variant == 0) {
+			put_record(&map, 2, 1, 41, SETTINGS_LAYOUT, sizeof(pl), &pl, true, false);	// CRC
+		} else if (variant == 1) {
+			put_record(&map, 2, 1, 41, SETTINGS_LAYOUT, sizeof(pl), &pl, false, true);	// no commit
+		} else if (variant == 2) {
+			put_record(&map, 2, 1, 41, SETTINGS_LAYOUT, 237, &pl, true, true);		// too long
+			// (no room for its CRC in the slot: whatever is there can't make it valid)
+			memset(&sim_flash_data[map.settings_addr + 2 * STORAGE_SECTOR + 256 + 12], 0, 236);
+		} else {
+			put_record(&map, 2, 1, 41, SETTINGS_LAYOUT + 1, sizeof(pl), &pl, true, true);	// newer layout
+		}
+		boot();
+		settings_read(&s);
+		settings_get_stats(&st);
+		if (variant < 3) {
+			CHECK(st.load == SETTINGS_LOADED && st.seq == 40 && s.squelch == 2 && st.skipped == 1);
+		} else {
+			// The newest record is a layout this firmware doesn't know: the defaults, and the next save
+			// follows it (a newer firmware's records stay until the ring comes round)
+			CHECK(st.load == SETTINGS_DEFAULTS && st.seq == 41 && s.squelch == SETTINGS_UNSET8);
+			settings_begin()->squelch = 3;
+			settings_end(1);
+			CHECK(settings_flush());
+			settings_get_stats(&st);
+			CHECK(st.seq == 42 && st.sector == 2 && st.slot == 2);
+		}
+		CHECK(sim_flash_violations() == 0);
+	}
+
+	// Sequence wraparound: 0xFFFFFFFF then 0 then 1; the newest is 1, the next save 2
+	sim_flash_create(FLASH_SIZE, &map);
+	pl.squelch = 5;
+	put_record(&map, 4, 15, 0xFFFFFFFFu, SETTINGS_LAYOUT, sizeof(pl), &pl, true, true);
+	pl.squelch = 6;
+	put_record(&map, 5, 0, 0, SETTINGS_LAYOUT, sizeof(pl), &pl, true, true);
+	pl.squelch = 7;
+	put_record(&map, 5, 1, 1, SETTINGS_LAYOUT, sizeof(pl), &pl, true, true);
+	boot();
+	settings_read(&s);
+	settings_get_stats(&st);
+	CHECK(st.seq == 1 && s.squelch == 7 && st.sector == 5 && st.slot == 1);
+	settings_begin()->squelch = 1;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	settings_get_stats(&st);
+	CHECK(st.seq == 2 && s.squelch == 1);
+
+	// A ring with no free slot and nothing valid (every slot torn): the save erases a sector and works
+	sim_flash_create(FLASH_SIZE, &map);
+	for (unsigned sec = 0; sec < map.settings_size / STORAGE_SECTOR; sec++) {
+		for (unsigned sl = 0; sl < 16; sl++) {
+			put_record(&map, sec, sl, sec * 16u + sl, SETTINGS_LAYOUT, sizeof(pl), &pl, false, true);
+		}
+	}
+	boot();
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_DEFAULTS && st.skipped == 8 * 16);
+	settings_begin()->squelch = 9;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	CHECK(s.squelch == 9);
+	CHECK(sim_flash_violations() == 0);
+}
+
+// A worn sector that no longer programs (its slots fail to read back): saves skip its slots, but never by erasing
+// the sector that holds the newest valid record, which would leave nothing valid in the ring until the next write
+// worked (a power cut there: the settings gone)
+static const hal_flash_map_t map_two = {
+	.settings_addr = 0x11000u, .settings_size = 0x2000u, .journal_addr = 0x19000u,
+	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = FLASH_SIZE,
+	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+};
+
+static void test_settings_worn_sector(void)
+{
+	settings_t s;
+	settings_stats_t st;
+
+	sim_flash_create(FLASH_SIZE, &map_two);
+	boot();
+	// Sector 0 full: the ownership mark and 15 records
+	for (uint32_t i = 1; i <= 15; i++) {
+		settings_begin()->vfo_rx_hz = 440000000u + i;
+		settings_end(i);
+		CHECK(settings_flush());
+	}
+	settings_get_stats(&st);
+	CHECK(st.sector == 0 && st.slot == 15);
+	sim_flash_bad_range(map_two.settings_addr + STORAGE_SECTOR, STORAGE_SECTOR);
+	// Saves fail while sector 1 doesn't program; each one walks past 4 of its slots (the first erases sector 1).
+	// From the second on, a power cut is armed at the first flash operation of the save: the one that would
+	// erase sector 0 is cut. After that boot the last saved value must be there
+	bool cut_seen = false;
+	for (uint32_t i = 0; i < 8 && !cut_seen; i++) {
+		settings_begin()->vfo_rx_hz = 145000000u + i;
+		settings_end(100 + i);
+		sim_flash_cut_after(i == 0 ? 0 : 1);
+		CHECK(!settings_flush());
+		cut_seen = sim_flash_is_cut();
+		sim_flash_cut_after(0);
+	}
+	boot();
+	settings_read(&s);
+	if (s.vfo_rx_hz != 440000015u) {
+		printf("FAIL worn sector: failed saves and a cut lose the settings (vfo_rx_hz %u, cut %d)\n", s.vfo_rx_hz,
+		       cut_seen);
+		failures++;
+	}
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_LOADED);
+	// The sector works again: saves go on
+	sim_flash_bad_range(0, 0);
+	settings_begin()->vfo_rx_hz = 150000000u;
+	settings_end(1000);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	CHECK(s.vfo_rx_hz == 150000000u);
+	CHECK(sim_flash_violations() == 0);
+}
+
+
+// A record that crosses a sector end (a legacy channel, zone or contact record can): a power cut at every unit of
+// storage_write, and again inside the replay at the next boot, leaves the whole record old or new, never half of
+// each; nothing else in the flash changes (the calibration copy included)
+static void test_write_across_sectors(void)
+{
+	uint8_t old[200], neu[200], back[200];
+	const uint32_t at = 0x5FA0u;		// 0x60 bytes before the sector end, 0x68 after
+	uint8_t cal[0x200];
+
+	for (unsigned i = 0; i < sizeof(old); i++) {
+		old[i] = (uint8_t)(0xA0 ^ i);
+		neu[i] = (uint8_t)(0x31 + 3u * i);
+	}
+	for (unsigned i = 0; i < sizeof(cal); i++) {
+		cal[i] = (uint8_t)(i * 5u + 2u);
+	}
+	sim_flash_create(FLASH_SIZE, &map);
+	memcpy(&sim_flash_data[map.calibration_addr], cal, sizeof(cal));
+	boot();
+	CHECK(storage_write(at, old, sizeof(old)));
+	uint8_t *snap = malloc(FLASH_SIZE);
+	memcpy(snap, sim_flash_data, FLASH_SIZE);
+	uint32_t u0 = sim_flash_units();
+	CHECK(storage_write(at, neu, sizeof(neu)));
+	uint32_t total = sim_flash_units() - u0;
+	CHECK(memcmp(&sim_flash_data[at], neu, sizeof(neu)) == 0);
+	CHECK(storage_write(at, neu, sizeof(neu)));		// the same again: skipped, nothing programmed
+	CHECK(sim_flash_units() - u0 == total);
+
+	int o = 0, n = 0, bad = 0;
+	for (uint32_t cut = 1; cut <= total + 1; cut += (cut < 300 || total - cut < 300) ? 1 : 37) {
+		memcpy(sim_flash_data, snap, FLASH_SIZE);
+		sim_flash_power_on();
+		CHECK(storage_init());
+		sim_flash_cut_after(cut);
+		storage_write(at, neu, sizeof(neu));
+		bool was_cut = sim_flash_is_cut();
+		// The boot's replay cut too, at a point that moves with the first cut
+		sim_flash_power_on();
+		sim_flash_cut_after(was_cut ? 1u + cut % 4111u : 0);
+		storage_init();
+		sim_flash_power_on();
+		CHECK(storage_init());
+		memcpy(back, &sim_flash_data[at], sizeof(back));
+		if (memcmp(back, neu, sizeof(back)) == 0) {
+			n++;
+		} else if (memcmp(back, old, sizeof(back)) == 0) {
+			o++;
+		} else {
+			bad++;
+			if (bad < 4) {
+				printf("FAIL write across sectors: cut after %u of %u units leaves a mixed record\n", cut, total);
+			}
+		}
+		// Outside the two sectors, the journal and the settings ring (the ownership mark), nothing changed
+		CHECK(memcmp(&sim_flash_data[map.calibration_addr], cal, sizeof(cal)) == 0);
+		CHECK(memcmp(sim_flash_data + 0x7000u, snap + 0x7000u, map.settings_addr - 0x7000u) == 0);
+		CHECK(memcmp(sim_flash_data, snap, 0x5000u) == 0);
+		// The journal is idle again
+		CHECK(storage_write(at, old, sizeof(old)) && memcmp(&sim_flash_data[at], old, sizeof(old)) == 0);
+	}
+	failures += bad;
+	CHECK(o > 0 && n > 0);
+	printf("write across sectors: %d cut points, old %d new %d (write = %u units)\n", o + n + bad, o, n, total);
+
+	// Longer than the journal takes in one transaction: sector by sector (the CPS-sized path)
+	uint8_t *big = malloc(3 * STORAGE_SECTOR);
+	memset(big, 0x3C, 3 * STORAGE_SECTOR);
+	CHECK(storage_write(0x20800u, big, 3 * STORAGE_SECTOR));
+	CHECK(sim_flash_data[0x207FF] == 0xFF && sim_flash_data[0x20800] == 0x3C && sim_flash_data[0x237FF] == 0x3C &&
+	      sim_flash_data[0x23800] == 0xFF);
+	// Edges: nothing to write, past the end, wrapping round
+	CHECK(storage_write(0x3000u, big, 0));
+	CHECK(!storage_write(FLASH_SIZE - 4u, big, 8) && !storage_write(0xFFFFFFF0u, big, 0x20));
+	free(big);
+
+	// A patch transaction pending in J0 at boot is ours (the foreign guard), even with the settings ring blank
+	storage_stats_t ss;
+	storage_get_stats(&ss);
+	uint32_t replays = ss.replays;
+	memcpy(sim_flash_data, snap, FLASH_SIZE);
+	sim_flash_power_on();
+	storage_init();
+	sim_flash_cut_after(STORAGE_SECTOR + 300u);	// J0 programmed, the first sector staged, not yet rewritten
+	storage_write(at, neu, sizeof(neu));
+	sim_flash_power_on();
+	memset(&sim_flash_data[map.settings_addr], 0xFF, map.settings_size);
+	CHECK(storage_init() && storage_region() == STORAGE_REGION_OURS);
+	CHECK(memcmp(&sim_flash_data[at], neu, sizeof(neu)) == 0);
+	storage_get_stats(&ss);
+	CHECK(ss.replays == replays + 1);
+	free(snap);
+	CHECK(sim_flash_violations() == 0);
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -539,6 +882,10 @@ int main(void)
 	test_settings_versions();
 	test_foreign();
 	test_native_and_jobs();
+	test_settings_layout();
+	test_settings_bad_records();
+	test_settings_worn_sector();
+	test_write_across_sectors();
 	sim_flash_free();
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

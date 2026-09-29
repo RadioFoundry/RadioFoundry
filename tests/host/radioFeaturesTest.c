@@ -1412,6 +1412,62 @@ static void test_dmr_beeps(void)
 	chans[6].no_beep = false;
 }
 
+// The TX time-out while a tone is on the air: a 1750 Hz burst held past it, a roger beep running into it. And
+// settings out of range (another firmware's record, a host tool) clamped when they arrive
+static void set_tot5_roger(radio_settings_t *s) { s->tot_s = 5; s->tot_warn_s = 0; s->roger_beep = true; }
+
+static void test_tot_tones_and_clamps(void)
+{
+	start();
+	settings(set_tot5_roger);
+	// The burst held: cut at the time-out, the tone off with the transmitter, denied until released
+	int off = hw.tx_off_calls;
+	req(RREQ_TONE_BURST, 1);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == RADIO_BURST_HZ);
+	run(5200);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TIMEOUT);
+	CHECK(!sm.view.tone_burst && hw.tone_hz == 0 && hw.tx_off_calls == off + 1);
+	req(RREQ_TONE_BURST, 0);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE);
+	// PTT released just before the time-out: the roger beep starts and runs into it; nothing holds the deny
+	req(RREQ_PTT, 1);
+	run(4950);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && sm.view.roger);
+	run(300);
+	CHECK(sm.view.state != RS_TX && !sm.view.roger && hw.tone_hz == 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off + 2);
+
+	radio_settings_t r = sm.set;
+	r.beep_level = 250;
+	r.vox_level = 40;
+	r.rx_save = 9;
+	r.reply_s = 99;
+	r.roam_rssi_dbm = -127;
+	r.roam_hyst_db = 0;
+	r.roam_probe = 7;
+	r.roam_check_s = 5;
+	r.roam_beacon_s = 3;
+	r.roam_beacon_len_s = 0;
+	r.roam_survey = 9;
+	radio_sm_set_settings(&sm, &r, now);
+	CHECK(sm.set.beep_level == 100 && sm.set.vox_level == 10 && sm.set.rx_save == 3 && sm.set.reply_s == 30);
+	CHECK(sm.set.roam_rssi_dbm == -125 && sm.set.roam_hyst_db == 1 && sm.set.roam_probe == 1);
+	CHECK(sm.set.roam_check_s == 30 && sm.set.roam_beacon_s == 10 && sm.set.roam_beacon_len_s == 1 &&
+	      sm.set.roam_survey == 1);
+	r.reply_s = RADIO_REPLY_CODEPLUG;
+	r.roam_rssi_dbm = -20;
+	r.roam_hyst_db = 90;
+	r.roam_check_s = 9000;
+	r.roam_beacon_s = 9000;
+	r.roam_beacon_len_s = 60;
+	radio_sm_set_settings(&sm, &r, now);
+	CHECK(sm.set.reply_s == RADIO_REPLY_CODEPLUG && sm.set.roam_rssi_dbm == -60 && sm.set.roam_hyst_db == 30);
+	CHECK(sm.set.roam_check_s == 3600 && sm.set.roam_beacon_s == 600 && sm.set.roam_beacon_len_s == 10);
+}
+
 int main(void)
 {
 	test_scan_engine();
@@ -1425,6 +1481,7 @@ int main(void)
 	test_tot_and_beeps();
 	test_bcl_inhibit();
 	test_roger_burst();
+	test_tot_tones_and_clamps();
 	test_vox();
 	test_battery();
 	test_battery_save();

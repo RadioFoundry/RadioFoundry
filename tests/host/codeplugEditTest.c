@@ -429,16 +429,20 @@ static void test_round_trip(void)
 }
 
 // Power cut at every unit of a channel edit: after the boot the channel reads as before or as after
-static void test_edit_cuts(void)
+static void edit_cuts(uint16_t ch)
 {
 	channel_t old = make("Old", 145500000, 145500000), neu = make("New", 438500000, 430900000), back;
 	neu.mode = RADIO_MODE_DMR;
+	neu.color_code = 7;		// fields in the record's second half differ too
+	neu.timeslot = 2;
+	neu.contact = 3;
+	neu.rx_only = true;
 	fresh();
-	CHECK(codeplug_set_channel(100, &old));
+	CHECK(codeplug_set_channel(ch, &old));
 	uint8_t *snap = malloc(FLASH_SIZE);
 	memcpy(snap, sim_flash_data, FLASH_SIZE);
 	uint32_t u0 = sim_flash_units();
-	CHECK(codeplug_set_channel(100, &neu));
+	CHECK(codeplug_set_channel(ch, &neu));
 	uint32_t total = sim_flash_units() - u0;
 	int o = 0, n = 0;
 	for (uint32_t cut = 1; cut <= total; cut += cut < 300 ? 1 : 61) {
@@ -447,23 +451,29 @@ static void test_edit_cuts(void)
 		storage_init();
 		codeplug_init();
 		sim_flash_cut_after(cut);
-		codeplug_set_channel(100, &neu);
+		codeplug_set_channel(ch, &neu);
 		sim_flash_power_on();
 		storage_init();
 		codeplug_init();
-		bool ok = codeplug_channel(100, &back);
+		bool ok = codeplug_channel(ch, &back);
 		if (ok && same_channel(&back, &neu)) {
 			n++;
 		} else if (ok && same_channel(&back, &old)) {
 			o++;
 		} else {
-			printf("FAIL edit cut after %u of %u units\n", cut, total);
+			printf("FAIL edit of channel %u: cut after %u of %u units\n", ch, cut, total);
 			failures++;
 		}
 		CHECK(codeplug_channel(1, &back) && strcmp(back.name, "Simplex 145.500") == 0);
 	}
 	CHECK(o > 0 && n > 0);
 	free(snap);
+}
+
+static void test_edit_cuts(void)
+{
+	edit_cuts(100);
+	edit_cuts(39);		// its record crosses a sector end (0x3FE0..0x4017)
 }
 
 int main(void)

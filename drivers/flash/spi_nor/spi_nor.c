@@ -93,8 +93,12 @@ bool spi_nor_probe(spi_nor_t *nor)
 	}
 	nor->manufacturer = id[0];
 	nor->device = (uint16_t)((id[1] << 8) | id[2]);
-	if (id[2] >= 0x10 && id[2] <= 0x20) {
+	if (id[2] >= 0x10 && id[2] <= 0x18) {
 		nor->size = 1u << id[2];	// W25Q / GD25Q capacity code: 2^n bytes (0x18 = 16 MB)
+	} else if (id[2] >= 0x19 && id[2] <= 0x22) {
+		// Larger parts (0x19 32 MB; Winbond goes on 0x20 64 MB, 0x21 128 MB, others 0x1A...): 3-byte addresses
+		// reach only the first 16 MB, and an address above that would wrap to the bottom of the chip
+		nor->size = SPI_NOR_MAX_SIZE;
 	}
 	return true;
 }
