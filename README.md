@@ -1,11 +1,11 @@
 # OpenDigitalRadio
 
 OpenDigitalRadio (ODR) is free, MIT-licensed firmware for inexpensive DMR radios. One radio-independent software core handles
-the DMR stack, the UI, the codeplug and the host tools, and each radio adds a thin board layer underneath. 
+the DMR stack, the UI, the codeplug and the host tools, and each radio adds a thin board layer underneath.
 
-The goal is a nearly-universal software framework that can be used to build firmware for any available radio, 
-with an intuitive user interface and powerful feature set, including the advanced Analog/DMR features low-cost 
-radio stock firmwares usually omit. This project can be used by anyone for anything, commercial products included.
+The goal is one framework that can build firmware for any of these radios, with a UI designed from first principles
+and the FM and DMR features low-cost stock firmware usually omits. Anyone can use it for anything, commercial
+products included.
 
 It's early. Read the status section before you flash anything.
 
@@ -26,7 +26,7 @@ It's early. Read the status section before you flash anything.
 | Baofeng DM-32UV | ● | ● | ○ | Builds and passes its host tests; hasn't run on a radio yet ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core, parked until bring-up ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
-| TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ○ | Builds (UHF and VHF images) and passes its host tests; hardware needed: it hasn't run on a radio yet ([bring-up checklist](docs/testing/md380-bringup.md)). DMR voice with the codec from the stock D2.32 file, merged at build time ([codec-md380](docs/spec/codec-md380.md)); untested on a radio |
+| TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ○ | Builds (UHF and VHF images) and passes its host tests; hardware needed: it hasn't run on a radio yet ([bring-up checklist](docs/testing/md380-bringup.md)). DMR voice with the codec from the stock D2.32 file, merged at build time ([codec-md380](docs/spec/codec-md380.md)); untested on a radio. No CTCSS / DCS or FM TX tones yet, and the default image leaves out the hotspot to fit |
 | Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Hardware needed. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD |
 | Radioddity GD-88 | ○ | ○ | ○ | Planned. Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
 | Radioddity DB25-D / DB25-D PRO, Retevis RT73 (mobile) | ○ | ○ | ○ | Wish list — hardware needed. One HR_C7000 like the DM-32UV, but BK4819 RF chips (on the PRO) and SPI NAND storage |
@@ -36,12 +36,13 @@ It's early. Read the status section before you flash anything.
 
 The chips in each radio, their sources and the planned port order: [docs/spec/radios.md](docs/spec/radios.md).
 
-On the DM-1701, these are verified on the radio: boot, display, keys, calibration, FM receive and transmit, DMR voice
-receive (including late entry), DMR transmit (decoded by an MMDVM receiver on the SDR bench), receiving the DMR
-calls and data the SDR bench can send (group and private calls, text messages, call alert, radio check), codeplug
-storage, qdmr reads and zone scan (stopping for DMR calls). Transmitting data, emergency, privacy, hotspot, USB
-network, SFR, roaming with beacon surveys, APRS, ETSI GPS Info in calls, the split duplex repeater and CPS writes are
-built and pass the host tests, but are still waiting on hardware tests.
+On the DM-1701, automated tests against the SDR bench pass on air for: FM receive and transmit, CTCSS / DCS encode,
+the 1750 Hz burst and roger beep, DMR group and private calls both ways (late entry, talker alias, ETSI GPS Info, the
+basic privacy signaling), text messages, call alert, radio check and emergency both ways, hotspot voice and data,
+battery saver, zone scan, VFO scan and dual watch. qdmr reads and writes, the USB network adapter and the roaming
+settings are checked on the radio without RF. Still open: the SFR hotspot mode (partly), the split duplex repeater
+(fails), IP over DMR, roaming between real repeaters, ARS and LRRP, and the TCP services; they pass the host tests
+only. Per-feature results: [on-air coverage](docs/testing/on-air-coverage.md).
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
 Releases carry the DM-1701 firmware (everything except the codec), `odrflash` to flash it on Windows, macOS and
@@ -54,13 +55,17 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
 - **Emergency:** alarm, emergency call with hot mic, alerts ([dmr-emergency](docs/spec/dmr-emergency.md))
 - **Hotspot:** the radio works as an MMDVM modem over USB ([mmdvm-protocol](docs/spec/mmdvm-protocol.md))
 - **SFR:** single frequency repeater mode on the hotspot, off by default ([sfr](docs/spec/sfr.md))
-- **USB network mode:** the radio becomes a USB network adapter and routes IP over DMR, off by default
-  ([usb-network](docs/spec/usb-network.md))
+- **USB network mode:** the radio becomes a USB network adapter and routes IP over DMR, with confirmed data and
+  compressed headers; control station mode for PC dispatch software ([usb-network](docs/spec/usb-network.md))
+- **Services on the USB network link:** HTTP status page (port 80), Hamlib rigctld (4532), KISS over TCP (8001), an
+  APRS-IS client, mDNS (`odr-<DMR ID>.local`), TFTP codeplug read and write, and an SNMPv2c agent
+  ([tcp-services](docs/spec/tcp-services.md), [mdns](docs/spec/mdns.md), [tftp](docs/spec/tftp.md),
+  [snmp](docs/spec/snmp.md))
 - **Roaming:** moves to the strongest repeater of a zone when the one it's on gets weak, surveying the other sites
   during the repeaters' idle beacons; turned on per zone
   ([dmr-roaming](docs/spec/dmr-roaming.md))
 - **APRS:** position, status and messages on FM (1200 baud AFSK), positions over DMR to an APRS gateway, KISS TNC;
-  transmit only on the DM-1701 ([aprs](docs/spec/aprs.md))
+  transmit only on the DM-1701, DMR positions only on the MD-380 ([aprs](docs/spec/aprs.md))
 - **Split duplex repeater (experimental):** two radios on one MMDVM host as a full duplex repeater, off by default
   ([split-duplex](docs/spec/split-duplex.md))
 - **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
@@ -79,9 +84,9 @@ Interoperability is a priority, in two directions.
 **Across hardware.** One core runs on every radio. A radio is a board file that picks its chips (DMR modem, RF
 chip, display, keypad or encoder, flash) and describes its bands, power levels and screen. The core never checks
 which radio it's on. The same UI lays itself out on a 128x64 monochrome LCD or a 240x320 color panel, and works
-with a full keypad or just a knob and a couple of buttons. Today that's two different MCUs (STM32F405 and C-SKY
-CK803S), two DMR modems (HR_C6000 and HR_C7000) and two RF chips (AT1846S and FD6818) sharing all the code above
-them.
+with a full keypad or just a knob and a couple of buttons. Today that's two MCUs (STM32F405 and C-SKY CK803S),
+three DMR modems (HR_C5000, HR_C6000 and HR_C7000) and three RF designs (AT1846S, FD6818, and the MD-380's SKY72310
+synthesizer) sharing all the code above them.
 
 **With everything else on the air and on your desk.** A radio is only useful if it talks to the radios and software
 people already have. We support the formats other radios use, not just our favorite:
@@ -89,12 +94,12 @@ people already have. We support the formats other radios use, not just our favor
 | Area | Supported now | Planned |
 |---|---|---|
 | Air interface | ETSI DMR Tier II: simplex, repeater, SFR (single frequency repeater), repeater roaming | ETSI Tier III trunking ([plan](docs/spec/dmr-tier3-plan.md)) |
-| Text messages | Motorola TMS; ETSI short data in 7-bit, ISO 8859, UTF-8 and UTF-16; ETSI UDT text | Hytera text format |
+| Text messages | ETSI IP text (the default; individual texts confirmed); Motorola TMS; ETSI short data in 7-bit, ISO 8859, UTF-8 and UTF-16; ETSI UDT text | Hytera text format |
 | Location | Motorola LRRP location answers and ARS registration; ETSI GPS Info in voice calls (the caller's position shown with distance and bearing, ours sent from the APRS position); APRS position, status and messages on FM (Bell 202 AFSK) and positions over DMR to an APRS gateway ID; KISS TNC on USB | NMEA from the radio's GPS receiver, ETSI UDT location reports, APRS receive and iGate on radios that can sample received audio |
 | Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
 | Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
 | Programming | qdmr, over the GD-77-style CPS protocol | an open, published native codeplug format with its own qdmr driver; qdmr YAML and CSV import/export; RadioID user database |
-| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter; two radios as one full duplex repeater (experimental, build switch; the HR_C6000's CACH still needs a bench test) | the split duplex host side in RadioDesk |
+| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter (confirmed data, SAP 3 compressed UDP headers, control station mode for dispatch software); HTTP status, Hamlib rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMPv2c on the USB link; two radios as one full duplex repeater (experimental, build switch; the HR_C6000's CACH still needs a bench test) | the split duplex host side in RadioDesk |
 | Audio to a computer | | USRP over UDP (AllStarLink, DVSwitch), USB sound card with serial-line PTT ([usb-audio](docs/spec/usb-audio.md)) |
 
 "Supported now" means built and passing its tests; see [Radios and status](#radios-and-status) for what has been
@@ -115,17 +120,18 @@ machine, and writes it to the radio. It checks the stock file by SHA-256 and ref
 odrflash flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
 ```
 
-The DM-32UV uses `tools/dm32_codec.py`. Details, including which stock files work:
-[codec-dm1701](docs/spec/codec-dm1701.md), [codec-dm32](docs/spec/codec-dm32.md). Without a codec the firmware runs FM
-only.
+The DM-32UV uses `tools/dm32_codec.py`. The MD-380 isn't in the releases yet: put its stock file in
+[codecs/](codecs/README.md) and the build merges the codec, or let `tools/md380_migrate.py` do it. Details, including
+which stock files work: [codec-dm1701](docs/spec/codec-dm1701.md), [codec-dm32](docs/spec/codec-dm32.md),
+[codec-md380](docs/spec/codec-md380.md). Without a codec the firmware runs FM only.
 
 ## Building and flashing
 
-You need make, Python 3, and `arm-none-eabi-gcc` (DM-1701) or a `csky-elf` GCC (DM-32UV, built by
+You need make, Python 3, and `arm-none-eabi-gcc` (DM-1701, MD-380) or a `csky-elf` GCC (DM-32UV, built by
 `tools/build-csky-toolchain.sh`).
 
 ```
-make BOARD=dm1701           # or BOARD=dm32
+make BOARD=dm1701           # or BOARD=md380 (MD380_BAND=vhf for VHF), BOARD=dm32
 make -C tests/host          # host tests
 tools/ci.sh                 # full release gate: tests, build matrix, license checks
 ```
@@ -135,7 +141,8 @@ to write the codec too) and hold PTT and the side key above it while powering th
 bootloader key isn't in this repo; odrflash derives it from the stock firmware file. If you put the stock firmware
 file in [codecs/](codecs/README.md), every `make` also writes an image with the codec merged in. Releases are built by
 `.github/workflows/release.yml` ([releases](docs/dev/release.md)). The DM-32UV image gets wrapped with
-`tools/dm32_pack.py` for Baofeng's updater.
+`tools/dm32_pack.py` for Baofeng's updater. MD-380 owners moving from stock or md380tools firmware use
+`tools/md380_migrate.py`, which keeps the codeplug ([moving from stock](docs/user/21-moving-from-stock-md380.md)).
 
 More: [build-config](docs/build-config.md), [testing](docs/testing/README.md),
 [DM-1701 hardware and bootloader](docs/spec/hardware-dm1701.md).
@@ -169,7 +176,7 @@ wants to touch old code. We test at four levels instead, and most of it runs on 
   calls and texts to the radio and checks what the radio transmits. See [tests/hil/README.md](tests/hil/README.md).
 
 On top of that, every change builds every radio with each feature switched on and off, checks the image still fits,
-and runs the license and clean-room checks (`tools/ci.sh`). CI runs the host tests, coverage and every radio's
+and runs the license and clean-room checks (`tools/ci.sh`). CI runs the host tests (also under ASan and UBSan), coverage and every radio's
 default build on each push, the full matrix nightly ([CI](docs/dev/ci.md)). How to run each level and where a new
 test goes: [developer docs, testing](docs/dev/testing.md) and [docs/testing](docs/testing/README.md).
 
@@ -195,8 +202,8 @@ their additions to the project.
 
 **Why another radio firmware?**
 
-DMR is filled with cool features that cheaper radios almost never implement. These are incredibly useful for
-commercial applications, and offer very powerful, useful capabilities for amateur use as well.
+DMR has features that cheaper radios almost never implement: data, location, emergency, roaming, IP. They are
+useful in commercial service and to hams alike.
 
 **How can I help?**
 
