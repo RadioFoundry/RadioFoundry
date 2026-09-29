@@ -23,7 +23,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Analog FM receive and transmit | `FM` | 29,304 | 28,188 | ● | ● | ● | Includes its children (tones, VOX, APRS, FM VFO) |
 | CTCSS / DCS encode and decode | `SUBTONE` | 912 | — | ● | ✕ | ● | MD-380: software decode (ADC) and PWM encode not written |
-| FM TX tones: roger beep, 1750 Hz burst, CW ID | `FM_TX_TONES` | 568 | — | ● | ✕ | ● | MD-380: TX tone path not written |
+| FM TX tones: roger beep, 1750 Hz burst | `FM_TX_TONES` | 568 | — | ● | ✕ | ● | MD-380: TX tone path not written |
 | FM VOX | `VOX` | 504 | 1,036 | ● | ● | ● |  |
 | Receiver battery saver | `BATTERY_SAVE` | 296 | 740 | ● | ● | ● |  |
 | Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | ✕ | ✕ | ● | Needs a receiver that does AM; DM-32 board glue not written yet, so nothing runs |

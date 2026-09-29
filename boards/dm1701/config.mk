@@ -9,6 +9,6 @@ CONFIG_DISPLAY_INSET ?= 5
 # No receive path for APRS: FM audio goes AT1846S -> HR_C6000 -> speaker, no MCU ADC sees it (docs/spec/aprs.md 5.3);
 # the demodulator's buffers would only cost RAM
 CONFIG_APRS_RX ?= n
-# Link time optimization stays off in the image until it has been tested on the radio (LTO=1 to try it: about 17 KB
+# Link time optimization stays off in the image until it has been tested on the radio (LTO=1 to try it: about 20 KB
 # smaller); tools/ci.sh's maximal configuration (every switch on) only fits with it
 MAXIMAL_VARS := LTO=1
