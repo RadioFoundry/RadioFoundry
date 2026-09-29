@@ -11,8 +11,14 @@ TPORT=$((PORT + 1))
 
 ./snmpPeer $PORT > snmpPeer.out &
 PEER=$!
-sleep 0.3
 fail() { echo "snmp_peer_check: $*"; kill $PEER 2>/dev/null; exit 1; }
+# Up when it answers (a loaded -j build can take seconds to start it), at most about 5 s
+i=0
+until $PY -p $PORT -t 0.2 get 127.0.0.1 sysName.0 > /dev/null 2>&1; do
+	i=$((i + 1))
+	[ $i -lt 25 ] || fail "snmpPeer didn't answer on port $PORT"
+	kill -0 $PEER 2>/dev/null || fail "snmpPeer exited: $(cat snmpPeer.out)"
+done
 
 $PY -p $PORT get 127.0.0.1 sysName.0 odrDmrId.0 odrRssi.0 > snmpPeer.get || fail "odr_snmp get"
 grep -q "sysName.0 = N0CALL" snmpPeer.get || fail "sysName: $(cat snmpPeer.get)"

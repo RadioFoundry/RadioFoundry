@@ -94,8 +94,8 @@ Counted are the `core/`, `drivers/`, `hal/`, `boards/` and `platform/` sources a
 percentage is of the code under host test, not of the whole firmware. The same file built into several tests with
 different switches is merged (`--merge-mode-functions=separate`).
 
-At the time of writing (GCC 13 on the runner): **88.1 % of lines** (24633 of 27974), **92.0 % of functions** (2255
-of 2451) and 73.9 % of branches, over 120 files. The most uncovered lines:
+At the time of writing (Apple clang, 2026-10-11): **90.9 % of lines** (28217 of 31047), **93.1 % of functions** (2313
+of 2484) and 78.6 % of branches, over 122 files (it was 88.3 % / 92.0 % / 74.5 % before the parser and storage tests). The most uncovered lines:
 
 | File | Lines | Covered | Notes |
 |---|---|---|---|
