@@ -251,10 +251,9 @@ int main(void)
 	// Ages: the longest alternate that fits, then an ellipsis on the shortest (12 px per glyph)
 	char age[64];
 	sb_init(&b, age, sizeof age); sb_str(&b, "TG9 "); sb_age(&b, 14u * 60000u);
-	CHECK(gfx_text_width(&font_12x24, age) == 13 * 12);	// "TG9 14min ago"
+	CHECK(gfx_text_width(&font_12x24, age) == 11 * 12);	// "TG9 14m ago"
 	static const struct { int w; const char *want; } ages[] = {
-		{ 13 * 12, "TG9 14min ago" }, { 12 * 12, "TG9 14m ago" }, { 11 * 12, "TG9 14m ago" },
-		{ 10 * 12, "TG9 14min" }, { 8 * 12, "TG9 14m" }, { 7 * 12, "TG9 14m" },
+		{ 12 * 12, "TG9 14m ago" }, { 11 * 12, "TG9 14m ago" }, { 10 * 12, "TG9 14m" }, { 7 * 12, "TG9 14m" },
 	};
 	for (size_t i = 0; i < sizeof ages / sizeof ages[0]; i++) {
 		gfx_text_fit(&font_12x24, age, ages[i].w, fit, sizeof fit);
@@ -266,7 +265,7 @@ int main(void)
 	gfx_text_fit(&font_12x24, age, 5 * 12, fit, sizeof fit);
 	CHECK(strcmp(fit, "2d") == 0);
 	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
-	CHECK(strcmp(age, "30sec ago") == 0);
+	CHECK(strcmp(age, "30s ago") == 0);
 
 	// 160x120 color: the DM-1701
 	ui_layout_init();

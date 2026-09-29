@@ -86,7 +86,7 @@ static const flow_t flows[] = {
 	{ "R not on the VFO", "ok 4 up ok", "ok 5 8 1", "roamzone=0 toast=Roaming_works", 4, false },
 	// The survey and beacon rows (set33 survey, set34 beacon interval, set36 wake probe): radio-wide, OK cycles
 	{ "R site survey per site", "", "ok 5 8 4", "set33=2", 4, false },
-	{ "R beacon interval", "", "ok 5 8 5", "set34=120 toast=Set_it_as", 4, false },
+	{ "R beacon interval", "", "ok 5 8 5", "set34=120 toast=Must_match", 4, false },
 	{ "R wake probe on", "", "ok 5 8 7", "set36=1 toast=Wake_probe_on", 4, false },
 	{ "T22 Home and undo", "quick 2 back ok 6", "long:back back", "screen=home temporary=0", 2, false },
 	// Settings that act now (uifix). set<N> = ui_setting_t N: 7 theme, 31 privacy key type, 32 privacy key
@@ -105,10 +105,10 @@ static const flow_t flows[] = {
 	{ "S low battery warning", "", "battery:14", "banner=Battery_14%", 0, false },
 	{ "S privacy key typed", "", "ok 6 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 6 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
-	{ "S privacy key needs a type", "ok 6 4 down", "ok", "toast=Pick_a_privacy", 1, false },
+	{ "S privacy key needs a type", "ok 6 4 down", "ok", "toast=Pick_a_key", 1, false },
 	{ "S number typed", "", "ok 6 3 down down ok 3 ok", "sq=5 set12=3", 8, false },
 	{ "S voice prompts not built", "ok 6 1 down down down", "ok", "toast=Voice_prompts", 1, false },
-	{ "S mode tile in the VFO", "ok 4 up ok", "quick 4", "toast=The_VFO_is_FM mode=fm", 2, false },
+	{ "S mode tile in the VFO", "ok 4 up ok", "quick 4", "toast=VFO:_FM_only mode=fm", 2, false },
 	{ "S scan in the VFO: the band", "ok 4 up ok", "ok 5 1", "toast=Scanning_the_band scanning=1", 3, false },
 	{ "S scan on a channel: the zone", "", "ok 5 1", "toast=Scanning_this_zone scanning=1", 3, false },
 	{ "S USB network on", "", "ok 5 4 ok", "usbnet=1 toast=USB_is_a_network screen=home", 4, false },
@@ -130,7 +130,7 @@ static const flow_t flows[] = {
 	{ "A position in DMR calls", "", "ok 5 9 8", "aprs_dmrgps=1 toast=Position_goes_out", 4, false },
 	{ "A KISS on USB", "", "ok 5 9 9", "aprs_kiss=1", 4, false },
 	{ "A stations heard", "", "ok 5 9 0", "screen=aprs-heard count=2", 4, false },
-	{ "A not in this build", "aprs:off", "ok 5 9 2", "toast=APRS_isn't aprs_auto=0", 4, false },
+	{ "A not in this build", "aprs:off", "ok 5 9 2", "toast=APRS:_not aprs_auto=0", 4, false },
 };
 
 // DM-1701 key map only: the top side key, long waits

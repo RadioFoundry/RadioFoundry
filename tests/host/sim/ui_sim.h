@@ -12,17 +12,18 @@
 
 // Display classes (information-architecture.md, wireframes) and key maps (7.1 - 7.5)
 typedef struct {
-	const char *name;	// "160x120i5", "160x128", "128x64", "240x320"
+	const char *name;	// "160x120i5", "160x128", "120x160", "128x64", "240x320"
 	uint16_t w, h;
 	uint8_t bpp;
-	uint8_t inset;
+	uint8_t inset;		// left and right
+	uint8_t inset_tb;	// top and bottom
 } sim_geom_t;
 
 typedef enum { SIM_MAP_K, SIM_MAP_M, SIM_MAP_V, SIM_MAP_F, SIM_MAP_COUNT } sim_map_t;
 
 extern const sim_geom_t sim_geoms[];
 extern const int sim_geom_count;
-const sim_geom_t *sim_geom_find(const char *name);	// also "WxH", "WxHiN" (inset N), "WxHm" (mono)
+const sim_geom_t *sim_geom_find(const char *name);	// also "WxH", "WxHiN" (inset N all round), "WxHm" (mono)
 
 // Start over: the radio on zone 0 channel 1 (DMR), no calls heard, an empty inbox, Home
 void sim_reset(const sim_geom_t *g, sim_map_t map);
@@ -38,6 +39,15 @@ void sim_set_shot_dir(const char *dir, const char *prefix);
 
 // Every text gfx_text_fit shortens (with an ellipsis) goes to this hook (NULL: none); sim_rec.shortened counts them
 void sim_set_fit_hook(void (*hook)(const char *src, const char *out));
+
+// Worst-case content (on until the next sim_reset): every channel, zone and contact name at the codeplug's 16
+// characters, 4-digit channel numbers, 8-digit talkgroups, 7-digit IDs, 80-channel zones. Script token "worst"
+void sim_worst(bool on);
+
+// The layout check: problems on the screen as last drawn. A text outside the safe area, a text its box (clip) cuts,
+// two texts on top of each other, a box drawn over part of a text. Each problem is one line of text
+#define SIM_LAYOUT_MAX	16
+int sim_layout_issues(char out[][160], int max);
 
 // State for checks
 typedef struct {

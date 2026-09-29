@@ -266,13 +266,13 @@ static void find_item(uint16_t i, ui_item_t *it)
 			sb_chr(&b, ' ');
 			sb_str(&b, ch.name);
 		}
-		sb_str(&vb, TEXT_ALT_OPEN "channel" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		sb_str(&vb, TEXT_ALT_OPEN "Channel" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	}
 	case FR_ZONE:
 		if (codeplug_zone((uint16_t)r->ref, &z))
 			sb_str(&b, z.name);
-		sb_str(&vb, TEXT_ALT_OPEN "zone" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		sb_str(&vb, TEXT_ALT_OPEN "Zone" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	case FR_CONTACT:
 		if (find_target(i, &t)) {
@@ -280,19 +280,18 @@ static void find_item(uint16_t i, ui_item_t *it)
 			if (t.group) {
 				ui_sb_target(name, sizeof name, &t);
 				sb_str(&b, name);
-				sb_str(&vb, TEXT_ALT_OPEN "TG" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 			} else {
 				sb_str(&b, t.name);
 				sb_chr(&b, ' ');
 				sb_u32(&b, t.id, 1);
-				sb_str(&vb, TEXT_ALT_OPEN "person" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 			}
+			sb_str(&vb, TEXT_ALT_OPEN "Contact" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		}
 		break;
 	case FR_TG:
 		sb_str(&b, "Talk to TG ");
 		sb_u32(&b, r->ref, 1);
-		sb_str(&vb, TEXT_ALT_OPEN "not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		sb_str(&vb, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	case FR_PRIVATE:
 		sb_str(&b, "Private call ");
@@ -305,12 +304,14 @@ static void find_item(uint16_t i, ui_item_t *it)
 	case FR_SETTING: {
 		const char *syn;
 		sb_str(&b, ui_set_item_name((uint8_t)(r->ref >> 8), (uint8_t)r->ref, &syn));
+		sb_str(&vb, TEXT_ALT_OPEN);	// the group, left out where the setting's name needs the room
 		sb_str(&vb, ui_set_group_name((uint8_t)(r->ref >> 8)));
+		sb_str(&vb, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	}
 	case FR_PLACE: {
 		sb_str(&b, places[(r->ref >> 8) % PLACES_N].name);
-		sb_str(&vb, "open");
+		sb_str(&vb, "Menu");
 		break;
 	}
 	default:
@@ -390,7 +391,7 @@ static bool find_key(const input_event_t *ev)
 
 const ui_scr_def_t ui_find_screen = {
 	.name = "find", .flags = SF_LIST | SF_FIND | SF_FIELD,
-	.hint = "PTT talk OK open # more", .empty = "Nothing matches: Back deletes a key",
+	.hint = "PTT talk  OK open  # more", .empty = "No match: Back deletes a key",
 	.count = find_count, .item = find_item, .select = find_select, .context = find_context, .target = find_target,
 	.key = find_key,
 };

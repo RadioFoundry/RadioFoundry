@@ -56,11 +56,160 @@ void gfx_fit_trace(const char *src, const char *out)
 		fit_hook(src, out);
 }
 
+// ---------------- the layout check (gfx_draw_trace) ----------------
+// Each frame starts with a clear. Texts drawn since then are "live" until a box (a fill at least 2 px each way) is
+// drawn over them: a box as wide as the screen is an overlay (banner, toast, hint row) and may hide whole texts, but
+// not half a line; a narrower box over part of a text is a problem too. Two texts side by side with no space between
+// them read as one word. Marks of 6 px or less (scroll marks, ellipsis dots) and lines (one pixel thick) are left out.
+
+static bool worst;	// sim_worst: worst-case codeplug content
+
+#define LIVE_MAX	160
+static struct { int x0, y0, x1, y1; char s[40]; } live[LIVE_MAX];
+static int live_n;
+static char issues[SIM_LAYOUT_MAX][160];
+static int issue_n;
+
+static void layout_reset(void)
+{
+	live_n = 0;
+	issue_n = 0;
+}
+
+static void issue(const char *what, const char *s, int x, int y, int w, int h, const char *other)
+{
+	if (issue_n >= SIM_LAYOUT_MAX)
+		return;
+	char a[40], b[40];
+	snprintf(a, sizeof a, "%s", s);
+	snprintf(b, sizeof b, "%s", other != NULL ? other : "");
+	for (char *p = a; *p; p++)
+		if ((unsigned char)*p >= 0x80 || (unsigned char)*p < 0x20)
+			*p = '~';
+	for (char *p = b; *p; p++)
+		if ((unsigned char)*p >= 0x80 || (unsigned char)*p < 0x20)
+			*p = '~';
+	for (int i = 0; i < issue_n; i++)
+		if (strstr(issues[i], a) != NULL && strncmp(issues[i], what, strlen(what)) == 0)
+			return;		// the same text, the same problem: once
+	if (other != NULL)
+		snprintf(issues[issue_n++], sizeof issues[0], "%s: \"%s\" at %d,%d %dx%d and \"%s\"", what, a, x, y, w, h, b);
+	else
+		snprintf(issues[issue_n++], sizeof issues[0], "%s: \"%s\" at %d,%d %dx%d", what, a, x, y, w, h);
+}
+
+int sim_layout_issues(char out[][160], int max)
+{
+	int n = issue_n < max ? issue_n : max;
+	for (int i = 0; i < n; i++)
+		memcpy(out[i], issues[i], sizeof issues[0]);
+	return n;
+}
+
+void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int clip[4], const char *s)
+{
+	int vw = gfx_width(), vh = gfx_height();
+	if (kind == GFX_TRACE_CLEAR) {
+		layout_reset();
+		return;
+	}
+	// The part drawn: inside the clip rectangle
+	int x0 = x > clip[0] ? x : clip[0], y0 = y > clip[1] ? y : clip[1];
+	int x1 = x + w < clip[2] ? x + w : clip[2], y1 = y + h < clip[3] ? y + h : clip[3];
+	if (kind == GFX_TRACE_FILL) {
+		if (w < 2 || h < 2 || w * h <= 6 || x0 >= x1 || y0 >= y1)
+			return;
+		bool overlay = x0 <= 0 && x1 >= vw;
+		for (int i = 0; i < live_n; i++) {
+			if (live[i].x0 >= x1 || live[i].x1 <= x0 || live[i].y0 >= y1 || live[i].y1 <= y0)
+				continue;
+			// Covered: no ink of the text (a pixel unlike the cell's background, its top-left corner) is left
+			// outside the box, or none is under it (only the cell's blank margin is)
+			bool covers = true, touches = false;
+			color_t paper = gfx_get_pixel(live[i].x0, live[i].y0);
+			for (int py = live[i].y0; py < live[i].y1; py++) {
+				for (int px = live[i].x0; px < live[i].x1; px++) {
+					if (gfx_get_pixel(px, py) == paper)
+						continue;
+					bool in = px >= x0 && px < x1 && py >= y0 && py < y1;
+					touches |= in;
+					covers &= in;
+				}
+			}
+			if (!touches) {
+				// The box only meets the blank margin of the cell: the text stays whole, its cell ends at the box
+				if (x0 <= live[i].x0 && x1 >= live[i].x1) {
+					if (y0 > live[i].y0)
+						live[i].y1 = y0;
+					else
+						live[i].y0 = y1;
+				} else if (x0 > live[i].x0) {
+					live[i].x1 = x0;
+				} else {
+					live[i].x0 = x1;
+				}
+				continue;
+			}
+
+			if (!covers)
+
+				issue(overlay ? "partly under an overlay" : "box over text", live[i].s, live[i].x0, live[i].y0,
+				      live[i].x1 - live[i].x0, live[i].y1 - live[i].y0, NULL);
+			live[i--] = live[--live_n];	// hidden now
+		}
+		return;
+	}
+	if (w <= 0 || s == NULL || s[0] == 0)
+		return;
+	// Spaces at either end draw nothing: measure the ink's cells only
+	size_t n = strlen(s), a = 0, e = n;
+	int cw = w / (int)n;
+	while (a < n && s[a] == ' ')
+		a++;
+	while (e > a && s[e - 1] == ' ')
+		e--;
+	if (a == e)
+		return;
+	x += (int)a * cw;
+	w = (int)(e - a) * cw;
+	x0 = x > clip[0] ? x : clip[0];
+	x1 = x + w < clip[2] ? x + w : clip[2];
+	if (x < 0 || y < 0 || x + w > vw || y + h > vh)
+		issue("outside the screen", s, x, y, w, h, NULL);
+	else if (x0 > x || y0 > y || x1 < x + w || y1 < y + h)
+		issue("cut by its box", s, x, y, w, h, NULL);
+	if (x0 >= x1 || y0 >= y1)
+		return;
+	for (int i = 0; i < live_n; i++) {
+		if (live[i].y0 >= y1 || live[i].y1 <= y0)
+			continue;
+		if (live[i].x1 == x0 || live[i].x0 == x1) {
+			// Two words run together. A mark of one glyph (the temporary dot) sits next to its value on purpose,
+			// and the wordmark is two colors of one word
+			bool mark = e - a == 1 || live[i].s[1] == 0;
+			bool wordmark = strcmp(live[i].s, "Open") == 0 && strcmp(s + a, "DigitalRadio") == 0;
+			if (!mark && !wordmark)
+				issue("no space between", s, x, y, w, h, live[i].s);
+		} else if (live[i].x0 < x1 && live[i].x1 > x0) {
+			issue("overlap", s, x, y, w, h, live[i].s);
+		}
+	}
+	if (live_n < LIVE_MAX) {
+		live[live_n].x0 = x0;
+		live[live_n].y0 = y0;
+		live[live_n].x1 = x1;
+		live[live_n].y1 = y1;
+		snprintf(live[live_n].s, sizeof live[0].s, "%.*s", (int)(e - a), s + a);
+		live_n++;
+	}
+}
+
 const sim_geom_t sim_geoms[] = {
-	{ "160x120i5", 160, 120, 16, 5 },	// DM-1701 with its lens inset (CONFIG_DISPLAY_INSET=5)
-	{ "160x128", 160, 128, 16, 0 },		// MD-UV380 / MD-9600 class
-	{ "128x64", 128, 64, 1, 0 },		// GD-77 class, mono
-	{ "240x320", 240, 320, 16, 0 },		// DM-32 class
+	{ "160x120i5", 160, 120, 16, 5, 0 },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
+	{ "160x128", 160, 128, 16, 0, 0 },	// MD-380 / MD-UV380 / MD-9600 class
+	{ "120x160", 120, 160, 16, 0, 0 },	// DM-32UV: its 240x320 panel at half resolution (boards/dm32)
+	{ "128x64", 128, 64, 1, 0, 0 },		// GD-77 class, mono
+	{ "240x320", 240, 320, 16, 0, 0 },	// 240x320 class at full resolution
 };
 const int sim_geom_count = sizeof sim_geoms / sizeof sim_geoms[0];
 
@@ -79,7 +228,7 @@ const sim_geom_t *sim_geom_find(const char *name)
 	custom.w = (uint16_t)w;
 	custom.h = (uint16_t)h;
 	custom.bpp = tail == 'm' ? 1 : 16;
-	custom.inset = tail == 'i' ? (uint8_t)inset : 0;
+	custom.inset = custom.inset_tb = tail == 'i' ? (uint8_t)inset : 0;
 	return &custom;
 }
 
@@ -286,16 +435,38 @@ static const sim_contact_t contacts[] = {
 };
 #define N_CONTACTS	(sizeof contacts / sizeof contacts[0])
 
+// Worst case (sim_worst): the same channels with 16-character names, numbered 985 to 1024; the same contacts with
+// 16-character names, 8-digit talkgroups and 7-digit IDs; three zones of 80 channels with 16-character names
+static const char *const worst_ch[16] = {
+	"Johnson Peak Rpt", "COUNTY FIRE DISP", "Metro DMR Wide 2", "North Link TS2 B",
+	"Harbor Pilots Ch", "Airport Ops DMR1", "Lakeshore Rpt 22", "Ridge DMR Statew",
+	"Downtown Tac 310", "College Rpt 147.", "Tower DMR Local9", "Mill Valley Rpt.",
+	"Base Repeater 01", "Valley Repeat 02", "Hill Top DMR 003", "County Fire 0004"
+};
+static const char *const worst_zone[3] = { "Northeast Region", "Simplex & Call 2", "Hotspots & Links" };
+static const sim_contact_t worst_contacts[] = {
+	{ "North America TG", 16776415, CONTACT_GROUP }, { "Worldwide Englsh", 9100091, CONTACT_GROUP },
+	{ "Christopher Wood", 3109999, CONTACT_PRIVATE }, { "Alexandra Nguyen", 3108765, CONTACT_PRIVATE },
+	{ "Massachusetts St", 3125000, CONTACT_GROUP }, { "TAC 310 Tactical", 31010, CONTACT_GROUP },
+};
+#define N_WORST	(sizeof worst_contacts / sizeof worst_contacts[0])
+#define WORST_FIRST	985u
+
 codeplug_source_t codeplug_source(void) { return CODEPLUG_LEGACY; }
-uint16_t codeplug_channel_count(void) { return 40; }
+uint16_t codeplug_channel_count(void) { return worst ? CODEPLUG_CHANNELS_MAX : 40; }
 
 bool codeplug_channel(uint16_t number, channel_t *out)
 {
+	if (worst) {
+		if (number < WORST_FIRST || number >= WORST_FIRST + 40u)
+			return false;
+		number = (uint16_t)(number - WORST_FIRST + 1u);
+	}
 	if (number < 1 || number > 40)
 		return false;
 	const sim_ch_t *c = &chans[number - 1];
 	memset(out, 0, sizeof *out);
-	strncpy(out->name, c->name, CODEPLUG_NAME_LEN);
+	strncpy(out->name, worst ? worst_ch[(number - 1) % 16] : c->name, CODEPLUG_NAME_LEN);
 	out->rx_hz = out->tx_hz = c->hz;
 	if (number <= 2 || number == 10 || number == 13 || number == 16)
 		out->tx_hz = c->hz + (c->hz > 147000000 ? 600000 : -600000);	// repeaters
@@ -321,6 +492,13 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 	if (index >= 3)
 		return false;
 	memset(out, 0, sizeof *out);
+	if (worst) {
+		strncpy(out->name, worst_zone[index], CODEPLUG_NAME_LEN);
+		out->count = CODEPLUG_ZONE_MAX;
+		for (uint16_t i = 0; i < out->count; i++)
+			out->channels[i] = (uint16_t)(WORST_FIRST + (index * 13u + i) % 40u);
+		return true;
+	}
 	strncpy(out->name, zones[index].name, CODEPLUG_NAME_LEN);
 	out->count = zones[index].count;
 	for (uint16_t i = 0; i < out->count; i++)
@@ -332,6 +510,15 @@ uint32_t codeplug_dmr_id(void) { return 3101276; }
 
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
+	if (worst) {
+		if (index < 1 || index > N_WORST)
+			return false;
+		memset(out, 0, sizeof *out);
+		strncpy(out->name, worst_contacts[index - 1].name, CODEPLUG_NAME_LEN);
+		out->id = worst_contacts[index - 1].id;
+		out->type = worst_contacts[index - 1].type;
+		return true;
+	}
 	if (index < 1 || index > N_CONTACTS)
 		return false;
 	memset(out, 0, sizeof *out);
@@ -355,6 +542,12 @@ bool codeplug_listen_list(uint16_t index, listen_list_t *out)
 
 static const char *contact_name(uint32_t id, bool group)
 {
+	if (worst) {
+		for (size_t i = 0; i < N_WORST; i++)
+			if (worst_contacts[i].id == id && (worst_contacts[i].type == CONTACT_GROUP) == group)
+				return worst_contacts[i].name;
+		return "";
+	}
 	for (size_t i = 0; i < N_CONTACTS; i++)
 		if (contacts[i].id == id && (contacts[i].type == CONTACT_GROUP) == group)
 			return contacts[i].name;
@@ -421,6 +614,15 @@ static void load_channel(void)
 	reply_until = 0;
 	default_target();
 	changed();
+}
+
+void sim_worst(bool on)
+{
+	worst = on;
+	if (on) {
+		view.zone_pos = 2;
+		load_channel();
+	}
 }
 
 static void set_temp(uint8_t bit)
@@ -851,7 +1053,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	disp.width = g->w;
 	disp.height = g->h;
 	disp.bpp = g->bpp;
-	disp.inset_top = disp.inset_bottom = disp.inset_left = disp.inset_right = g->inset;
+	disp.inset_left = disp.inset_right = g->inset;
+	disp.inset_top = disp.inset_bottom = g->inset_tb;
+	worst = false;
+	layout_reset();
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
 	board.caps = maps[map].caps;
@@ -1189,6 +1394,17 @@ static bool run_token(char *t, char *err, size_t len)
 				return false;
 			}
 		}
+		return true;
+	}
+	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)
+		sim_worst(true);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "power") == 0 && arg != NULL) {	// power:<level>, the board's level index
+		view.power = (uint8_t)atoi(arg);
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "expect") == 0 && arg != NULL)
