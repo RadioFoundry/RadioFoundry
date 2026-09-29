@@ -174,9 +174,9 @@ stdin (it never appears in a command line, a file in the repository or a log), p
 
 ```
 gh auth refresh -h github.com -s write:packages
-gh auth token | ssh pps@192.0.2.10 'docker login ghcr.io -u sfowlr --password-stdin'
-ssh pps@192.0.2.10 'cd <a checkout> && tools/docker/csky-toolchain/push.sh ghcr.io/sfowlr/odr-csky-gcc14'
-ssh pps@192.0.2.10 'docker logout ghcr.io'
+gh auth token | ssh <runner-vm> 'docker login ghcr.io -u <github-user> --password-stdin'
+ssh <runner-vm> 'cd <a checkout> && tools/docker/csky-toolchain/push.sh ghcr.io/<owner>/odr-csky-gcc14'
+ssh <runner-vm> 'docker logout ghcr.io'
 gh auth refresh -h github.com -r write:packages          # optional: drop the scope again
 ```
 
@@ -186,14 +186,14 @@ The same script pushes to Docker Hub (`push.sh docker.io/<user>/odr-csky-gcc14` 
 
 A new package on ghcr.io is **private**. Then:
 
-1. Set `ODR_CSKY_IMAGE` to the dated tag, e.g. `ghcr.io/sfowlr/odr-csky-gcc14:20261011b` (a fixed tag keeps CI
+1. Set `ODR_CSKY_IMAGE` to the dated tag, e.g. `ghcr.io/<owner>/odr-csky-gcc14:20261011b` (a fixed tag keeps CI
    reproducible; `latest` follows each push), and `ODR_CSKY_REGISTRY=ghcr.io`, in both Gitea's and GitHub's
    repository variables.
 2. GitHub's hosted runners: in the package's settings, under "Manage Actions access", add the OpenDigitalRadio
    repository with read access. The jobs log in with their own token (`packages: read`); no secret is needed.
 3. The Gitea runner: either pull the image once on the VM (`docker login ghcr.io`, `docker pull`, `docker logout`;
    `run.sh` then finds it locally), or give the jobs a token: create a classic personal access token with only
-   `read:packages`, and set it as the Gitea repository secret `ODR_CSKY_REGISTRY_TOKEN` and `sfowlr` as the variable
+   `read:packages`, and set it as the Gitea repository secret `ODR_CSKY_REGISTRY_TOKEN` and your GitHub user name as the variable
    `ODR_CSKY_REGISTRY_USER`. The jobs log in through stdin and log out at the end.
 
 Making the package public instead removes steps 2 and 3.
@@ -205,7 +205,7 @@ which has to be the machine with the radio on USB and SSH access to the SDR benc
 one up on the bench Mac:
 
 - **Gitea** (the primary): download `gitea-runner` (act_runner) for macOS arm64, then
-  `gitea-runner register --instance https://git.example.com --token <registration token from the
+  `gitea-runner register --instance https://<gitea-host> --token <registration token from the
   repository's Settings, Actions, Runners> --name bench-mac --labels odr-hil:host` and run
   `gitea-runner daemon` (a LaunchAgent keeps it up). The `:host` label runs jobs directly on the Mac, not in Docker,
   so the job sees the USB serial ports; the JavaScript actions need `node` on the PATH (`brew install node`).

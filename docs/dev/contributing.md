@@ -14,11 +14,13 @@ The short version:
 - Don't open, copy or paraphrase GPL or non-commercial firmware, vendor SDKs or disassembly while writing code
   for this repository. If you have read them, write specs (facts, not code) and let someone else implement.
 - Never add the AMBE codec, a stock firmware image, a bootloader key or a memory dump to the repository.
-- Every file carries an SPDX header (`SPDX-License-Identifier: MIT` for our files). `reuse lint` must pass.
+- Every file carries an SPDX header (`SPDX-License-Identifier: MIT` and the copyright line, in the style of its
+  neighbors). `reuse lint` must not report your files (the whole tree doesn't pass yet, [CI](ci.md)).
 - Test vectors come from standards, from your own captures, or from the stock codec's output on your own radio.
 
-The checks: `tools/license_grep.sh` (markers of foreign code), `reuse lint`, and before a release a similarity scan
-against the reference trees (run by the project lead, never in public CI). All three are part of `tools/ci.sh`.
+The checks, all in `tools/ci.sh`: `tools/license_grep.sh` (markers of foreign code), `reuse lint` (when installed),
+and before a release a similarity scan against the reference trees (only when `ODR_SIMILARITY_REFS` is set; run by
+the project lead, never in public CI).
 
 ## Code
 
@@ -34,12 +36,14 @@ against the reference trees (run by the project lead, never in public CI). All t
 
 - New behavior gets a host test. A bug fix gets the test that would have caught it.
 - A UI change updates the gallery (`make -C tests/host ui-gallery`) and commits the PNGs it meant to change.
+- A parser of outside input gets a fuzz loop (`tests/host/fuzz.h`); run it under `SANITIZE=1` ([Testing](testing.md)).
 - A change that touches hardware gets a HIL test when it can be scripted ([Testing](testing.md)).
 
 ## Documentation
 
 - A behavior change updates its spec in `docs/spec/` and, if users see it, the user manual in `docs/user/`.
 - A new setting goes into [Settings](../user/12-settings.md) with its default and status.
+- A new feature switch goes into [build-config.md](../build-config.md) and [feature-matrix.md](../feature-matrix.md).
 - Docs use US English, short sentences and tables. Links are relative so they work on GitHub and in the PDF.
 - `python3 tools/check_doc_links.py` checks every relative link, image and anchor in the docs (ci.sh runs it).
 

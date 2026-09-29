@@ -119,19 +119,19 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 ### A-3 High: uplink voice B-F carry a wrong EMB and empty embedded signalling
 
 - **Where**: `core/hotspot/hotspot.c:148-169` (voice_to_frame).
-- **Spec**: 2.8, modem to host. The 33 bytes must be a well-formed burst: correct EMB (colour code, LCSS, QR(16,7)
+- **Spec**: 2.8, modem to host. The 33 bytes must be a well-formed burst: correct EMB (color code, LCSS, QR(16,7)
   parity) and the embedded signalling for B-E made from the call's LC, as the old firmware did. Test U-10.
 - **Code**: the EMB's 7 information bits are set, but its 9 parity bits and all 32 embedded-signalling bits are 0.
-  MMDVMHost decodes the EMB with error correction, so with zero parity it "corrects" most bursts to a wrong colour
+  MMDVMHost decodes the EMB with error correction, so with zero parity it "corrects" most bursts to a wrong color
   code or LCSS. Then:
-  - Its own late entry fails, because it requires the EMB colour code to match.
+  - Its own late entry fails, because it requires the EMB color code to match.
   - It collects embedded fragments in the wrong order.
-  - For some colour codes the decoded LCSS sequence lines up, and the all-zero fragments form a valid embedded LC
+  - For some color codes the decoded LCSS sequence lines up, and the all-zero fragments form a valid embedded LC
     (all-zero rows are valid Hamming codewords, and the checksum of nine zero octets is 0). MMDVMHost then accepts
     an LC of group, TG 0, source 0 and puts it into later superframes going to the network.
   - Talker alias and in-call GPS from the sender never reach the host.
 - **Fix**:
-  - Build B-F the way a transmitter does. The EMB is colour code, PI 0 and the LCSS of the position, with QR(16,7,6)
+  - Build B-F the way a transmitter does. The EMB is color code, PI 0 and the LCSS of the position, with QR(16,7,6)
     parity per ETSI TS 102 361-1 B.3.2 (not in `core/dmr/fec` yet: add it there, clean, from the standard).
   - The embedded bits of B-E are the four fragments of the call's LC (`dmr_emb_lc_encode` in `core/dmr/call/dmr_lc.h`
     already makes them). F carries null embedded signalling.

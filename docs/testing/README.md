@@ -2,12 +2,14 @@
 
 # Testing
 
-How to run every test of OpenDigitalRadio, from the host tests to the radio on the SDR bench. Three tiers, each
-repeatable and each skipping cleanly what it can't reach:
+How to run every test of OpenDigitalRadio, from the host tests to the radio on the SDR bench. Each tier is
+repeatable and skips cleanly what it can't reach. What each level is for and where a new test goes:
+[docs/dev/testing.md](../dev/testing.md).
 
 | Tier | Needs | Command | Where it is described |
 |---|---|---|---|
 | Release gate (host tests, build matrix, license checks) | a Mac or Linux host with the ARM toolchain | `tools/ci.sh` | this page, section 1 |
+| Coverage, sanitizers, fuzzing | the host (gcovr for coverage) | `tools/coverage.sh`, `make -C tests/host SANITIZE=1` | [docs/dev/ci.md](../dev/ci.md#coverage) |
 | Hardware in the loop, radio only | the radio on USB | `python3 -m pytest tests/hil -v -rs` | `tests/hil/README.md` |
 | Hardware in the loop, on air | the radio and the SDR bench (and the RadioDesk sandbox for one test) | the same with opt-in flags | `tests/hil/README.md`, section 3 here |
 | Manual bench cases | the SDR bench, a person at the radio | `tools/bench/dmr_bench.py run CASE` | `docs/testing/dmr-bench.md` |
@@ -24,6 +26,7 @@ tools/ci.sh --matrix           # only the feature matrix (no default builds)
 tools/ci.sh --steps host,python   # only some steps: host, python, firmware, licenses, similarity
 JOBS=8 tools/ci.sh             # parallel make jobs (default: the CPU count)
 ODR_CI_PRUNE=1 tools/ci.sh     # drop each build tree once its size is recorded (logs and images stay)
+ODR_CI_SANITIZE=1 tools/ci.sh  # the host step also runs the host tests under ASan and UBSan
 ```
 
 The CI workflows run these pieces per push and nightly ([docs/dev/ci.md](../dev/ci.md)).
@@ -36,18 +39,21 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
 2. **Python**: every tool and HIL test parses, and pytest collects `tests/hil` (skipped without pytest:
    `pip install pytest pyserial`). The flashing tools' tests run: `tools/odrflash/tests` (sector planning, manifests,
    the codec library and key derivation, the codec decision, whole flashes against a fake bootloader with a flash
-   model; [release.md](../dev/release.md)) and the `--self-test` of `tools/codec_extract.py` and `tools/stm32_dfu.py`.
+   model; [release.md](../dev/release.md)) and the `--self-test` of `tools/codec_extract.py`, `tools/stm32_dfu.py`
+   and `tools/md380_migrate.py`.
    `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves.
 3. **Firmware, every board with the feature matrix**. For each `boards/<b>/board.mk` whose compiler is installed:
    - `default`: the board's defaults;
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
      `docs/build-config.md`);
    - `fm-minimal`: FM only, without DMR, USB, VFO, diagnostics and sub-audio tones;
-   - `maximal`: every switch on.
+   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, with its `MAXIMAL_VARS` (the DM-1701:
+     `LTO=1`);
+   - `vhf`: the MD-380's VHF image (MD-380 only).
 
-   Every configuration must build with zero compiler and linker warnings. A board directory without `board.mk` (the
-   DM-32 until its platform lands) or without its compiler (the DM-32's csky GCC comes from
-   `tools/build-csky-toolchain.sh`) is skipped with a notice. Build trees are `build/ci/<board>-<config>/`, each
+   Every configuration must build with zero compiler and linker warnings. A board without its compiler (the DM-32's
+   csky GCC comes from `tools/build-csky-toolchain.sh` or the Docker image, [docs/dev/ci.md](../dev/ci.md#the-csky-elf-image))
+   is skipped with a notice. Build trees are `build/ci/<board>-<config>/`, each
    with its log next to it. The sizes go to `build/ci/size-report.md`: image bytes, the change against the board's
    default, and the space left in the linker's application region (the codec windows lie outside it, so "free" is
    what code can still grow into).
@@ -91,7 +97,11 @@ python3 -m pytest tests/hil -v -rs
 
 The radio on USB with firmware built with `CONFIG_DEBUGLINK` (the default). Nothing transmits: version and features,
 screenshots, injected keys, FM receive on NOAA weather, MMDVM requests. Without a radio every test is skipped with
-the reason. Details, rig assumptions and pass criteria: `tests/hil/README.md`.
+the reason. Every test file, rig assumptions and pass criteria: `tests/hil/README.md`.
+
+The USB network tests (`test_usb_network*.py`, `test_tcp_services.py`, `test_net_services.py`, `test_snmp.py`) switch
+the radio to the network personality and back, so they need `--allow-usb-switch`. On macOS a missed NCM carrier can
+leave the radio a network adapter until it is power cycled ([docs/dev/ci.md](../dev/ci.md#hil-runner), "Gotchas").
 
 CPS and settings (`test_cps.py`): the radio-only tests read the codeplug twice over the legacy CPS protocol and
 compare, and check a channel change is saved. Two opt-in flags change the radio but don't transmit:
@@ -127,6 +137,7 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 | `--allow-rf` | anything that transmits: the SDR bench's modem, the radio itself, RadioDesk's gateway |
 | `--allow-service-stop` | stopping the SDR bench's gateway service (always restarted by a bench-side guard) to use its modem and RTL-SDR |
 | `--allow-radiodesk` | publishing to the RadioDesk sandbox broker |
+| `--allow-usb-switch`, `--allow-codeplug-write`, `--allow-reboot` | as in section 2 (no RF) |
 
 ```
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX

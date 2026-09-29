@@ -2,7 +2,7 @@
 
 # Testing
 
-Four levels, from a laptop with no radio to a radio on the SDR bench. The commands, flags and pass criteria are in
+From a laptop with no radio to a radio on the SDR bench. The commands, flags and pass criteria are in
 [docs/testing/README.md](../testing/README.md) and [tests/hil/README.md](../../tests/hil/README.md); this page says
 what each level is for and where a new test goes.
 
@@ -12,10 +12,17 @@ what each level is for and where a new test goes.
 | Software in the loop | the host | `make -C tests/host` | Whole features against simulated chips: calls, data, hotspot, CPS, storage, the UI |
 | Hardware in the loop | a radio on USB | `python3 -m pytest tests/hil -v -rs` | The real chips and timing; with flags, transmit and receive on air |
 | Manual bench cases | the SDR bench and a person | `tools/bench/dmr_bench.py run CASE` | What can't be scripted yet ([dmr-bench.md](../testing/dmr-bench.md)) |
+| Release gate | the host | `JOBS=8 tools/ci.sh` | Everything above that needs no radio, plus every board's feature matrix with zero warnings, doc links and the license checks |
 
-`tools/ci.sh` runs the host tests, checks the Python, builds every board's feature matrix with zero warnings and runs
-the license checks. It must pass before every merge. See [Contributing](contributing.md). The CI workflows run its
-pieces per push and nightly, and `tools/coverage.sh` reports the host tests' coverage ([CI](ci.md)).
+`tools/ci.sh` must pass before every merge ([Contributing](contributing.md)); what it runs step by step is in
+[docs/testing/README.md](../testing/README.md) section 1. The CI workflows run its pieces per push and nightly
+([CI](ci.md)).
+
+| Also | Command | Details |
+|---|---|---|
+| Coverage | `tools/coverage.sh` (needs gcovr) | `build/coverage/index.html`; [CI, Coverage](ci.md#coverage) |
+| Sanitizers | `make -C tests/host clean && make -C tests/host SANITIZE=1` | ASan and UBSan; any report fails the test. `ODR_CI_SANITIZE=1 tools/ci.sh` adds it to the host step |
+| Fuzzing | `ODR_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1` | Seeded mutation loops over the parsers of untrusted input (`tests/host/fuzz.h`); `ODR_FUZZ_SEED` varies the seed |
 
 ## Host tests
 
@@ -26,7 +33,10 @@ pieces per push and nightly, and `tools/coverage.sh` reports the host tests' cov
 | `sim/dmr_sim_modem.c` | A DMR modem: plays bursts into the call stack and records what it sends |
 | `sim/sim_flash.c` | SPI flash, for the codeplug, the settings ring and the journal |
 | `sim/ui_sim.c`, `sim/ui_png.c` | The UI's display and keys, with a script language and PNG output |
+| `sim/split_sim_modem.c`, `sim/splitSim.c`, `sim/splitPairTest.py` | Two radios' cores in lockstep virtual time, for the split duplex repeater |
 | `cpsSim.c` | The radio's side of the CPS protocol, for `tools/cps_client.py` and `cpsClientTest.py` |
+| `snmpPeer.c` | An SNMP manager, for the agent's end-to-end test |
+| `fuzz.h` | The seeded mutation fuzzer the parser tests use |
 | `stubs/` | Stand-ins for services a test doesn't exercise |
 
 The Makefile groups the tests into `run-*` targets (`run-core`, `run-ui`, `run-call`, `run-mmdvm`, `run-settings`,
@@ -35,7 +45,8 @@ compiler, so a test exercises the code that ships. Test vectors come from the st
 radios and the stock codec, never from other firmware.
 
 To add a test: write `tests/host/<area>Test.c`, add its rule and a `run-<area>` target to `tests/host/Makefile`, and
-hook it into `run`. Build without warnings; ci.sh fails on any.
+hook it into `run` (`run: run-<area>`). Build without warnings; ci.sh fails on any. A parser of bytes from outside
+(USB, the air, the network) also gets a fuzz loop with `fuzz.h`.
 
 ## The UI simulator and the gallery
 

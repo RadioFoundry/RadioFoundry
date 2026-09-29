@@ -4,9 +4,8 @@
 """
 Adapted from our earlier bench tool hs_normal.py.
 
-On-air test cases of the radio's normal (simplex) MMDVM hotspot, run from the Mac. Planned firmware capability:
-needs USB CDC + MMDVM in OpenDigitalRadio (not there yet, 2026-10). They exercise the DMR modem driver and the call
-stack far better than key presses can: every burst the radio hears comes back over USB, and every burst it sends
+On-air test cases of the radio's normal (simplex) MMDVM hotspot, run from the Mac. They exercise the DMR modem driver
+and the call stack far better than key presses can: every burst the radio hears comes back over USB, and every burst it sends
 is under our control.
 
 The radio under test is driven as MMDVMHost drives a simplex modem (mmdvm_hotspot.MmdvmLink, over USB serial or the

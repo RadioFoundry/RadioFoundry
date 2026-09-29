@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MIT -->
+
 # Clean-room rules
 
 OpenDigitalRadio replaces firmware that was built on a legacy open firmware, whose license forbids commercial use. None of that code, or code derived from it, may enter this repository or its history. These rules say how the work is split so that holds.
@@ -10,7 +12,7 @@ OpenDigitalRadio replaces firmware that was built on a legacy open firmware, who
 - `docs/spec/capabilities.md`: what the radios can do, as user-level capabilities. No menu trees, screen layouts or key mappings from the legacy firmware.
 - the carry-over package (below).
 
-**Implementers (the "clean" side)** work only in this repository plus the read-only reference directory `the external reference folder`. They never open the old trees, legacy upstream, or any legacy-derived source. Their inputs are `docs/`, the carry-over package, datasheets and manuals, public standards (ETSI TS 102 361, the MMDVM protocol) and permissively licensed third-party code.
+**Implementers (the "clean" side)** work only in this repository plus a read-only reference directory kept outside it (`the external reference folder`, next to the checkout). They never open the old trees, legacy upstream, or any legacy-derived source. Their inputs are `docs/`, the carry-over package, datasheets and manuals, public standards (ETSI TS 102 361, the MMDVM protocol) and permissively licensed third-party code.
 
 The UI is designed in `docs/ux/` from first principles of good radio usability, not from the legacy firmware's menus.
 
@@ -19,7 +21,7 @@ The UI is designed in `docs/ux/` from first principles of good radio usability, 
 The author's own work moves over; the legacy firmware's doesn't.
 
 - **(a) Whole files written entirely by us** (for example the DMR data service, LRRP, privacy, IP gateway, hotspot uplink/data/frame code, SFR, the DM-32 calibration reader, the host tests). They are copied into this repo with MIT SPDX headers and their old commit is noted in a provenance record the maintainers keep outside this repository.
-- **(b) Every change we made inside imported files, on every old tree**, as diff hunks with 3 lines of context, each with a note: the commit, what the surrounding code did, the symptom, why the fix works, and what new code must do or avoid. The context and removed lines are legacy firmware text, so **(b) lives only in `the external reference folder` and is never committed here**. Implementers read it to learn the lessons, then write new code.
+- **(b) Every change we made inside imported files, on every old tree**, as diff hunks with 3 lines of context, each with a note: the commit, what the surrounding code did, the symptom, why the fix works, and what new code must do or avoid. The context and removed lines are legacy firmware text, so **(b) lives only in the reference directory and is never committed here**. Implementers read it to learn the lessons, then write new code.
 - **(c) `docs/spec/gotchas.md`**: the same lessons in prose, grouped by subsystem. Committed here.
 
 ## Not allowed in this repository
@@ -31,7 +33,7 @@ The author's own work moves over; the legacy firmware's doesn't.
 
 ## Records and checks
 
-- Every source file has an SPDX header. `reuse lint` passes.
+- Every source file has an SPDX header, and `reuse lint` must pass (`docs/dev/ci.md` says what it still reports).
 - Every file is accounted for in the maintainers' provenance record (kept outside this repository): `ours` (old commit), `clean` (spec section), or `third-party` (license, upstream, version).
 - Before each release, a similarity scan of this tree against the legacy-derived trees has no unreviewed hits (`tools/similarity_scan.py REF...`, or `ODR_SIMILARITY_REFS="REF..." tools/ci.sh`; docs/testing/README.md).
 - `tools/license_grep.sh` finds no `commercial`, `Micrium`, `GPL`, `G4KLX`, `Roger Clark`, `Kai Ludwig` or similar markers outside `docs/` and `LICENSES/`.
