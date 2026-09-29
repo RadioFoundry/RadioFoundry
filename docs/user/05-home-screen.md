@@ -80,7 +80,7 @@ do:
 | No repeater answered | The repeater didn't wake up | Check frequency, color code and range |
 | Hotspot mode: PTT off | The radio is a hotspot | Press **OK** to leave hotspot mode |
 | No DMR ID in codeplug | The codeplug has no DMR ID | Set your ID in qdmr |
-| DMR modem not running | The DMR chip didn't start | Restart the radio; see [Troubleshooting](17-troubleshooting.md) |
+| DMR modem not running | The DMR chip didn't start | Restart the radio; see [Troubleshooting](19-troubleshooting.md) |
 
 The low and critical battery levels also limit transmitting: see [Battery and power](16-battery-and-power.md).
 

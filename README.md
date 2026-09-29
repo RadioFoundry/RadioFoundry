@@ -54,7 +54,7 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
 - **DMR data:** text messages, ARS, LRRP, call alert, radio check ([dmr-data](docs/spec/dmr-data.md))
 - **Emergency:** alarm, emergency call with hot mic, alerts ([dmr-emergency](docs/spec/dmr-emergency.md))
 - **Hotspot:** the radio works as an MMDVM modem over USB ([mmdvm-protocol](docs/spec/mmdvm-protocol.md))
-- **SFR:** single frequency repeater mode on the hotspot, off by default ([sfr](docs/spec/sfr.md))
+- **SFR:** single frequency repeater mode on the hotspot, chosen by the MMDVM host ([sfr](docs/spec/sfr.md))
 - **USB network mode:** the radio becomes a USB network adapter and routes IP over DMR, with confirmed data and
   compressed headers; control station mode for PC dispatch software ([usb-network](docs/spec/usb-network.md))
 - **Services on the USB network link:** HTTP status page (port 80), Hamlib rigctld (4532), KISS over TCP (8001), an
@@ -66,7 +66,7 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
   ([dmr-roaming](docs/spec/dmr-roaming.md))
 - **APRS:** position, status and messages on FM (1200 baud AFSK), positions over DMR to an APRS gateway, KISS TNC;
   transmit only on the DM-1701, DMR positions only on the MD-380 ([aprs](docs/spec/aprs.md))
-- **Split duplex repeater (experimental):** two radios on one MMDVM host as a full duplex repeater, off by default
+- **Split duplex repeater (experimental):** two radios on one MMDVM host as a full duplex repeater, idle until the host assigns roles
   ([split-duplex](docs/spec/split-duplex.md))
 - **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
 - **Scan:** zone, VFO and dual watch scan; on DMR it stops for calls in progress, using late entry
@@ -142,7 +142,7 @@ bootloader key isn't in this repo; odrflash derives it from the stock firmware f
 file in [codecs/](codecs/README.md), every `make` also writes an image with the codec merged in. Releases are built by
 `.github/workflows/release.yml` ([releases](docs/dev/release.md)). The DM-32UV image gets wrapped with
 `tools/dm32_pack.py` for Baofeng's updater. MD-380 owners moving from stock or md380tools firmware use
-`tools/md380_migrate.py`, which keeps the codeplug ([moving from stock](docs/user/21-moving-from-stock-md380.md)).
+`tools/md380_migrate.py`, which keeps the codeplug ([moving from stock](docs/user/18-moving-from-stock-md380.md)).
 
 More: [build-config](docs/build-config.md), [testing](docs/testing/README.md),
 [DM-1701 hardware and bootloader](docs/spec/hardware-dm1701.md).

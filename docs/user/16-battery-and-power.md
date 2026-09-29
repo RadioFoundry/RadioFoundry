@@ -47,7 +47,7 @@ sets when it dims (to a fifth of the brightness) and when it goes off (four time
 **Settings > Power > Battery saver** puts the receiver to sleep on an idle FM channel. After 10 s without activity the
 receiver sleeps and wakes for 100 ms at a time to listen. Any signal in a listening window wakes it fully. A key
 press, monitor, scan, VOX, a DMR channel, hotspot mode and channels the codeplug marks "no battery saving" stop it.
-Off by default: it hasn't been tested on the radio yet.
+Off by default. Verified on the DM-1701: it cycles when idle, and monitor and an incoming call wake it.
 
 ## Auto power off
 

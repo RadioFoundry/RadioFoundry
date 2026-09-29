@@ -2,8 +2,9 @@
 
 # Messages, call alert and radio check
 
-Text messages, call alert and radio check work on DMR channels. They are built and pass the host tests, but haven't
-been tested on air yet. None of them needs the codec. They need a DMR channel you may transmit on and your DMR ID.
+Text messages, call alert and radio check work on DMR channels. Sending and receiving all three is verified on
+the DM-1701. None of them needs the codec. Sending needs a DMR channel you may transmit on
+and your DMR ID.
 
 ## Receiving a message
 
@@ -46,10 +47,10 @@ The radio keeps the last 4 messages received, in memory. They are lost when the 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">
 
 The radio shows "Sending to ..." and returns to Home. A message to a person asks for a confirmation and is tried
-again when none comes (in every format); the result comes as a banner: "Delivered to ..." or "No answer from ...",
+again when none comes, in every format. The result comes as a banner: "Delivered to ..." or "No answer from ...",
 with "Not delivered: send it again" under it. The message isn't kept for a retry: send it again from the actions. A
-message to a talkgroup has no confirmation: the banner says "Sent to ..." once it has gone out (also in the ETSI
-format when confirmed IP data is turned off, `tools/odr_debug.py data ip-settings auto off`).
+message to a talkgroup has no confirmation: the banner says "Sent to ..." once it has gone out. With confirmed IP data
+turned off (`tools/odr_debug.py data ip-settings auto off`), ETSI messages to a person also go once, with "Sent to".
 
 Typing your own text isn't built yet: "Write..." is dimmed. Messages you send aren't stored in the radio.
 
@@ -60,7 +61,7 @@ whatever the setting, and a reply goes in the format of the message it answers.
 
 | Format | Use it for |
 |---|---|
-| ETSI (default) | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. No delivery confirmation |
+| ETSI (default) | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
 | ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
 | Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
 

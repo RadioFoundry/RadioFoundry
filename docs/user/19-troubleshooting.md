@@ -6,13 +6,15 @@
 
 | Problem | Cause and fix |
 |---|---|
-| `codec_extract.py` refuses the stock file | It accepts only the stock files it knows by SHA-256 (DM-1701: V02.06 CSV). Download that exact file |
-| `codec_extract.py` or `stm32_dfu.py` refuses the key | The key file must be the 1024-byte DM-1701 key (SHA-256 `d983ce95...`) |
-| `stm32_dfu.py --list` shows nothing | The radio isn't in its bootloader. Turn it off, hold **PTT** and **SK1**, turn it on, keep holding until the computer sees it. Try another USB port or cable |
-| Access denied on Linux | Add the udev rule for 0483:DF11 that `stm32_dfu.py` prints, then unplug and replug |
-| `pyusb` can't find a backend | Install libusb (`brew install libusb`, or `apt install libusb-1.0-0`) |
-| The tool refuses the file as an official firmware | You passed a Baofeng "OutSecurityBin" file. Flash the ODR image, not the stock file |
+| "no radio bootloader found" | The radio isn't in its bootloader, or the cable is charge-only. Turn the radio off, hold **PTT** and **SK1**, turn it on; the screen stays dark. Try another USB port or cable |
+| "access denied" | Linux: add the udev rule odrflash prints, then unplug and replug. Windows: install WinUSB for "STM32 BOOTLOADER" (0483:DF11) with Zadig |
+| "the bootloader is busy" | Another program has it open (a CPS, a virtual machine with USB passthrough). Close it and replug |
+| "unknown stock file ... not a supported codec source" | odrflash knows the stock files by SHA-256 (DM-1701: V02.06 CSV). Download that exact file |
+| "... is an official Baofeng/TYT firmware file, not an OpenDigitalRadio image" | You gave the stock file as the image. Give the ODR image (or `--release`) and the stock file with `--stock` |
+| "odrflash can't tell whether the radio holds the codec" | Start the radio with ODR and run `odrflash probe`, or give `--stock` so odrflash writes the codec |
+| "no libusb found" (running from source) | Install libusb (`brew install libusb`, or `apt install libusb-1.0-0`), or use the odrflash executable, which carries it |
 | The screen stays dark after flashing | The radio is still in its bootloader. Turn it off and on again without holding any key |
+| Flashing stopped half way | Put the radio in its bootloader and run the same command again. odrflash never erases the bootloader |
 
 ## Everyday use
 
@@ -30,6 +32,8 @@
 | "... isn't in this build" | The feature is switched off in this build, or isn't built yet |
 | The radio is stuck on the hotspot screen | A host has the serial port open. Press **OK**, or stop the host program. Turn **Settings > Connections > Hotspot allowed** off to prevent it |
 | Zone or channel changed by itself | A scan is running (SCAN in the status line). Press **Back** on Home |
+| qdmr, odrflash or a hotspot host doesn't find the radio's serial port | USB is in network mode. Switch back in **Tools > USB network**, or turn off **Settings > Connections > USB network at start** and restart. The debug link and MMDVM also answer on UDP port 3334 ([USB network](14-usb-network.md#serial-tools-in-network-mode)) |
+| In network mode the computer gets no address | The radio goes back to serial when the computer doesn't set the adapter up within 10 s. Check that the computer shows a new network adapter, then switch again |
 
 ## Settings are not kept
 

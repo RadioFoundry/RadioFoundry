@@ -2,8 +2,8 @@
 
 # Emergency
 
-The emergency features are built and pass the host tests. They haven't been tested on air yet. Don't rely on them
-for safety.
+Sending and receiving the alarm and emergency calls is tested on air against the SDR bench, not yet with other
+radios on a real system. Don't rely on them for safety.
 
 ## When someone else declares an emergency
 
@@ -32,7 +32,7 @@ during the hot mic takes over the transmission.
 On the DM-1701, hold the **top side key** (above **PTT**) for 1.5 s. The screen says "EMERGENCY sent: hold again to
 cancel". Hold it again for 1.5 s to cancel ("Emergency cancelled"). A short press of the same key still changes the
 power level, and letting go before 1.5 s never starts an emergency. Where it can't start (see below) the radio says
-"Can't start emergency here: DMR channel and DMR ID needed". The DM-32 has no emergency key yet.
+"Can't start emergency here: DMR channel and DMR ID needed". The MD-380 and the DM-32 have no emergency key yet.
 
 Developers can also start and cancel it over the debug link:
 

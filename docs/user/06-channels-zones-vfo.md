@@ -38,7 +38,7 @@ A save that fails shows "Couldn't save: ..." and the change stays for now only.
 
 ## The VFO
 
-The VFO is FM only on the DM-1701. A digital VFO isn't built yet.
+The VFO is FM only. A DMR VFO isn't built yet.
 
 1. **OK**, **4** (Channels). The VFO is the first row.
 2. Press **OK**. Home shows the frequency large, and the radio says "VFO: type a frequency".
