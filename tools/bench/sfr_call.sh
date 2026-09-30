@@ -7,7 +7,6 @@
 # sfr_call.sh <name> <modem: voice|none> <seconds> [0xD5 payload, e.g. 00,00]
 # One SFR test call: the radio under test as an SFR over its USB MMDVM link (mmdvm_hotspot.py --sfr), the bench modem
 # sending one voice call on the inbound slot, and rfgw's SDR receiver (sdr_watch.py) showing what went out on air.
-# Planned firmware capability (USB + MMDVM + SFR in OpenDigitalRadio).
 #
 # Precondition: the bench modem is NOT in rfgw's config (ROAM1 removed) while rfgw itself keeps running for the SDR decode.
 # That is a config change on the SDR bench: the lead arranges it with the owner. With the stock config use

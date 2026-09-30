@@ -4,7 +4,7 @@
 
 How `tools/md380_migrate.py` moves a TYT MD-380, MD-390 or Retevis RT3 from its stock firmware (or the md380tools /
 KD4Z toolkit patched firmware) to ODR and keeps the codeplug and the DMR ID database. The user guide is
-[Moving from stock or md380tools firmware](../user/21-moving-from-stock-md380.md).
+[Moving from stock or md380tools firmware](../user/18-moving-from-stock-md380.md).
 
 The codeplug conversion uses qdmr's command line tool `dmrconf` as an external program. qdmr is GPL: ODR runs it,
 reads its manual and `--help`, and contains none of its code. Facts below marked (T) were tested with dmrconf

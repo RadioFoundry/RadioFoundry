@@ -12,7 +12,7 @@ firmware (the init values below come from it), and on-air measurements on a DM-1
 decode of every burst). Values marked "(trace)" were captured from the TYT firmware and are not explained by the
 manual. Values marked "(unverified)" have not been confirmed on our hardware.
 
-Datasheets available (in the old tree's `docs/data_sheets/C6000/`, to be copied to `the external reference folder`):
+Datasheets available (in the old tree's `docs/data_sheets/C6000/`, kept outside this repository):
 `HR_C6000_updated_chinese_translated_english.pdf` (the most complete), `HR_C6000_translated.pdf`, `HR_C6000_simple.pdf`,
 `HR_C6000_chinese.docx`, `HR-C6000 Registers_G4EML.docx`, `HRC6000_VK3KYY.docx`. These are vendor documents, fine to
 read on the clean side.
@@ -528,7 +528,7 @@ From our SFR work on the DM-1701 (on air in hotspot SFR mode):
 
 `drivers/modem/hrc6000/hrc6000_bs.c` (`CONFIG_HOTSPOT_SPLIT`, `split-duplex.md` 5.4) takes the chip over from the slot
 engine while the split duplex TX half runs; the engine's three ISRs, its watchdog, halt and `is_transmitting` hand
-over to it while `e->bs` is set. Start: colour code, page 1 0x04 = BS data sync, 0x20 = 0x00, 0x21 impolite, 0x22 =
+over to it while `e->bs` is set. Start: color code, page 1 0x04 = BS data sync, 0x20 = 0x00, 0x21 impolite, 0x22 =
 0x86, 0x41 = 0x00, then 0x40 = 0xE3 (own timing: the timeslot interrupt runs free every 30 ms). Every timeslot
 interrupt while keyed sets up the next slot from that slot's queue (or the idle message on page 2 0x18, counted as an
 underrun): the MCU CRC bit of 0x40 per burst kind, the payload (voice on page 3, LC / data on page 2 0x00), 0x41 =

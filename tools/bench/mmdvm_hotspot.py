@@ -5,8 +5,7 @@
 Adapted from our earlier bench tool hotspot_test.py.
 
 Talk to the radio under test as an MMDVM modem (the public MMDVM serial protocol, as MMDVMHost drives a modem), for
-bench tests of its hotspot and single frequency repeater (SFR) modes. Planned firmware capability: OpenDigitalRadio
-has no USB yet (2026-10); this is for when USB CDC + MMDVM land.
+bench tests of its hotspot and single frequency repeater (SFR) modes (CONFIG_HOTSPOT, CONFIG_SFR).
 
     mmdvm_hotspot.py [--port /dev/tty.usbmodemXXXX | --udp 192.168.x.y:3334 [--local :3335]]
                      [--freq 461.6875] [--cc 2] [--power 12] [--seconds 20] [--simplex | --sfr]

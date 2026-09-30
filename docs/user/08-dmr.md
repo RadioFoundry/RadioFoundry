@@ -174,7 +174,8 @@ While hear all is on, the reply window lets you answer any call you heard with *
 ## Privacy
 
 ODR has basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy. Basic privacy is a
-fixed scrambling of the voice. It keeps casual listeners out but isn't encryption. Not tested on air yet.
+fixed scrambling of the voice. It keeps casual listeners out but isn't encryption. On air, the privacy signaling is verified; the scrambling
+itself hasn't been checked against another radio.
 
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
@@ -207,7 +208,7 @@ how far away it is and in which direction, for example "12.3 km NE", or its coor
 your own position. Recent keeps the distance with the call.
 
 Your own position goes into your calls when **Tools > APRS > Position in DMR calls** is on (off by default) and the
-radio knows where it is (see [APRS](20-aprs.md#position)). Every other superframe carries it, taking turns with your
+radio knows where it is (see [APRS](17-aprs.md#position)). Every other superframe carries it, taking turns with your
 talker alias.
 
 ## Talker alias
@@ -228,8 +229,9 @@ repeater by itself when the one it's on gets weak. You turn roaming on per zone.
 
 While idle, the radio watches the signal of the repeater it's on. When the signal stays below the threshold, the radio
 listens to the zone's other sites and moves to the strongest one it can hear. It never moves during a call, a scan or
-hotspot use, while you transmit, or in the 3 seconds after a call ends, when a reply may come. Home shows `Roam` next to the repeater chip, amber `Roam?` when the current
-site is weak, and the status strip shows `ROAM` during a search. A toast says "Moved to" and the new channel's name.
+hotspot use, while you transmit, or in the 3 seconds after a call ends, when a reply may come. Home shows `Roam` next
+to the repeater chip, amber `Roam?` when the current site is weak, and the status strip shows `ROAM` during a search.
+A toast says "Moved to" and the new channel's name.
 
 | Row | Does |
 |---|---|
@@ -241,17 +243,15 @@ site is weak, and the status strip shows `ROAM` during a search. A toast says "M
 | Beacon length | How long each beacon lasts: 4 s (default), 1 to 10 s |
 | Wake probe | On: the radio briefly keys up a quiet repeater to measure it (off by default; this transmits) |
 
-Many repeater systems make every repeater transmit briefly while idle, a "beacon", for example 4 seconds every
-minute, all at the same moment. The radio learns when the beacons come from the repeater it's on. During each
-beacon it hops to a few of the other sites for under a second each, measures them, and comes back. The screens
-keep showing your repeater while it does this. A key press or PTT brings it straight back, and so does a call on
-the visited site. Your own repeater can't be heard while the radio is away, so a call that starts in that moment
-is joined up to about 3 seconds late; the radio skips the survey for a while after traffic on your repeater. When
-your repeater gets weak, the radio checks the best site it measured at its next beacon and moves there, usually
-within a minute, with no full search. The settings must match the system: ask its operator for the beacon
-interval and length. If the repeaters beacon each on their own schedule, pick **Per site**; if they don't beacon,
-pick **None** (the radio then relies on calls it hears, as before). The body of the screen says "Beacons:
-surveying" once it knows the schedule, "Beacons: learning" before.
+Many repeater systems make every repeater transmit briefly while idle, a "beacon" (for example 4 s every minute,
+all at the same moment). The radio learns when its repeater's beacons come. During each beacon it hops to a few of
+the other sites for under a second each, measures them and comes back; the screens keep showing your repeater. A key
+press, **PTT** or a call on the visited site brings it straight back. A call that starts on your repeater while the
+radio is away is joined up to about 3 s late, so the radio skips the survey for a while after traffic. When your
+repeater gets weak, the radio checks the best site it measured at the next beacon and moves there, usually within a
+minute. Set **Beacon interval** and **Beacon length** to match the system (ask its operator). If the repeaters beacon
+each on their own schedule, pick **Per site**; if they don't beacon, pick **None** and the radio relies on calls it
+hears. The screen says "Beacons: surveying" once it knows the schedule, "Beacons: learning" before.
 
 A site is a repeater channel in the zone (TX and RX frequencies differ) with the same contact as the channel you
 picked. When any channel in the zone has the codeplug's Roaming flag set, only flagged channels are sites. You need

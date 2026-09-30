@@ -6,8 +6,8 @@
 
 | Radio | Compiler | Where it comes from |
 |---|---|---|
-| DM-1701 (`BOARD=dm1701`) | `arm-none-eabi-gcc` | Arm GNU Toolchain. The Makefile looks in `~/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/` first, then `/usr/bin/`; set `CROSS=` to override |
-| DM-32UV (`BOARD=dm32`) | `csky-elf-gcc` (GCC 14) | Build it once with `tools/build-csky-toolchain.sh` |
+| DM-1701 (`BOARD=dm1701`), MD-380 (`BOARD=md380`) | `arm-none-eabi-gcc` | Arm GNU Toolchain (CI pins 13.3.rel1; `tools/install-arm-toolchain.sh` installs it on Linux x86_64). The Makefile looks in `~/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/` first, then `/usr/bin/`; `CROSS=` overrides |
+| DM-32UV (`BOARD=dm32`) | `csky-elf-gcc` (GCC 14) | Build it once with `tools/build-csky-toolchain.sh` (into `~/toolchains/csky-elf`, about 45 minutes), or use the Docker image: `tools/docker/csky-toolchain/run.sh make BOARD=dm32` ([CI](ci.md#the-csky-elf-image)). The Makefile looks in `~/toolchains/csky-elf/bin/`, then `PATH` |
 | Host tests | the host's `cc` and zlib | Xcode command line tools or the distribution's compiler |
 
 You also need make, git and Python 3. Clone with submodules: `git submodule update --init` fetches FreeRTOS, TinyUSB
@@ -17,14 +17,17 @@ and ST's HAL and CMSIS into `third_party/`.
 
 | Command | Does |
 |---|---|
-| `make BOARD=dm1701` | Builds `build/dm1701/odr_dm1701.{elf,bin,map}`. `BOARD` defaults to `dm1701` |
+| `make BOARD=dm1701` | Builds `build/dm1701/odr_dm1701.{elf,bin,map}`, plus `odr_dm1701_codec.bin` when `codecs/` holds the stock file (below). `BOARD` defaults to `dm1701` |
+| `make BOARD=md380 MD380_BAND=vhf` | The MD-380 VHF image (default `uhf`; one image per band) |
 | `make BOARD=dm1701 size` | Section sizes and the space left before the codec |
 | `make test` | The host tests (the same as `make -C tests/host`) |
 | `make BOARD=dm1701 print-config` | The feature switches this board builds with, as `NAME=y/n` |
 | `make BOARD=dm1701 print-cc` | The compiler the board uses (ci.sh checks it is installed) |
+| `make BOARD=md380 print-unsupported`, `print-maximal-vars` | `BOARD_UNSUPPORTED` and `MAXIMAL_VARS` from the board's `config.mk`, for ci.sh's maximal build |
 | `make BOARD=dm1701 clean` | Removes `build/dm1701` |
 | `make BOARD=dm1701 BUILD=dir` | Builds into another directory (ci.sh does this for each configuration) |
 | `make ... OPT=-O0` | Changes the optimization level (default `-Os`) |
+| `make ... LTO=1 [LTO_3P=1]` | Link time optimization, third-party code too with `LTO_3P` (on by default only on the MD-380; [build-config.md](../build-config.md#board-build-variables)) |
 
 Every `*.c` and `*.S` file in the directories a build lists is compiled, so a new file needs no Makefile change. The
 directories are the core's (some only with their switch), the platform's (`platform/<p>/platform.mk`) and the
@@ -45,15 +48,21 @@ In short:
 - The command line has the last word: `make BOARD=dm1701 CONFIG_HOTSPOT=n CONFIG_SFR=y`.
 - Each switch reaches C as `CONFIG_X=0/1` (`core/config.h` gives defaults for the host tests). Test it with
   `#if CONFIG_X`, never `#ifdef`.
-- A new feature that costs flash gets a switch. Add it to `config/features.mk`, `core/config.h` and
-  `docs/build-config.md`. ci.sh then builds each board with it off alone (when on by default) and with every switch on.
+- A new feature that costs flash gets a switch: the steps are in [build-config.md, "Adding a feature"](../build-config.md#adding-a-feature).
+  ci.sh then builds each board with it off alone (when on by default) and with every switch on.
 
 ## Image size
 
-The DM-1701 has 336 KB of code space (flash sectors 3-6; the sectors holding the codec are kept whole so firmware
-updates can leave the codec alone, [release.md](release.md) "Sector map"), the DM-32UV 912 KB before its codec slot
-(the board's `config.mk` header). The linker's application region ends before the codec, so an image that grows
-into it fails to link. `tools/ci.sh` writes every configuration's size and free space to `build/ci/size-report.md`.
+| Radio | Code space | Ends at |
+|---|---|---|
+| DM-1701 | 336 KB (344,064 B), flash sectors 3-6 | the codec's sectors, kept whole so an update can leave the codec alone ([release.md](release.md#sector-map-dm-1701)) |
+| MD-380 | 281,668 B, 0x0800C000..0x08050C43 | the codec, which runs in place from 0x08050C44 |
+| DM-32UV | 912 KB | the codec slot at 0x030E8000 |
+
+The linker's application region ends before the codec, so an image that grows into it fails to link. The DM-1701
+and MD-380 default images have only a few KB left; the current figures and each feature's cost are in
+[feature-matrix.md](../feature-matrix.md). `tools/ci.sh` writes every configuration's size and free space to
+`build/ci/size-report.md`.
 
 ## Flashing
 
@@ -62,6 +71,7 @@ The user manual covers it for users: [Installing](../user/02-installing.md). In 
 | Radio | Flash |
 |---|---|
 | DM-1701 | `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701 [--stock FILE]` ([tools/odrflash](../../tools/odrflash/README.md)): keeps the radio's codec or merges it from the stock file, erases only the sectors it needs. The older two-step route still works: `tools/codec_extract.py --stock FILE` (key derived from the file, or `--key`), then `tools/stm32_dfu.py IMAGE --model dm1701 --key dm1701.key`, which erases every application sector |
+| MD-380 | `tools/md380_migrate.py flash --image IMAGE --stock FILE` (merges the codec; every flash needs it, the codec shares sector 6 with the application), or `tools/codec_extract.py` then `tools/stm32_dfu.py --model md380`. Moving a radio from stock with its codeplug: [md380-migration.md](../spec/md380-migration.md) |
 | DM-32UV | `tools/dm32_codec.py` merges the codec, `tools/dm32_pack.py` wraps it for Baofeng's updater |
 
 Without a codec the firmware runs, with FM only. See [The codec](codec.md).

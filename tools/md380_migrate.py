@@ -18,7 +18,7 @@ The codeplug conversion is done by qdmr's command line tool dmrconf (an external
 the stock codeplug is read with dmrconf's TyT MD-390 driver (the MD-380, MD-390 and RT3 share one codeplug format),
 turned into qdmr's radio-independent YAML, and written to ODR with the driver for qdmr's open firmware family
 (OpenUV380), which is what ODR's CPS compatibility layer speaks. docs/spec/md380-migration.md has the details,
-docs/user/21-moving-from-stock-md380.md the user guide.
+docs/user/18-moving-from-stock-md380.md the user guide.
 
 Needs Python 3.8+, dmrconf (qdmr 0.12 or newer) on PATH, pyusb with libusb (flashing) and pyserial (talking to the
 radio once it runs ODR). The flash and debug link helpers (stm32_dfu.py, odr_debug.py, odrflash's stockfw.py) are

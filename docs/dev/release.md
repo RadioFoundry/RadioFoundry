@@ -87,7 +87,7 @@ in place at its stock addresses ([codec-dm1701.md](../spec/codec-dm1701.md)): co
 
 A flash sector can only be erased whole. Before this layout the linker reserved only the codec bytes, so ODR could
 grow into sectors 7, 8 and 10, and updating it would have meant erasing the codec too. Now
-`boards/dm1701/dm1701.ld` gives the application sectors 3-6 (336 KB; today's image is 216 KB) and asserts that the
+`boards/dm1701/dm1701.ld` gives the application sectors 3-6 (336 KB; the default image fills all but a few KB, [feature-matrix.md](../feature-matrix.md)) and asserts that the
 image ends before 0x08060000; FLASH2 is sector 9. The bytes around the codec windows in sectors 7, 8, 10 and 11 are
 whatever was there (stock code, or 0xFF after a merge); they are never executed. The DM-1701's settings and codeplug
 live in the external SPI flash, so nothing else writes internal flash.
@@ -123,8 +123,8 @@ written, sector 9 isn't touched. The merged codec exists only in memory on the u
 **Downloading the stock file for the user (not implemented).** The supported V02.06 CSV file is not on a Baofeng or
 dealer URL; the known copy is a third-party archive (BG7QVB's GitHub repository). Radioddity's public bucket has
 V02.01-V02.03, whose codec sits at other addresses (a second codec profile would be needed), and neither source states
-a license for redistribution or automated download. odrflash therefore only reads a file the user downloaded. An owner
-decision (below).
+a license for redistribution or automated download. odrflash therefore only reads a file the user downloaded;
+changing that is an owner decision.
 
 ## The bootloader key
 
@@ -158,6 +158,14 @@ as workflow artifacts and publish nothing. A manual run on a tag rebuilds and re
 
 The executables are not code-signed. macOS marks downloads as quarantined: `xattr -d com.apple.quarantine
 odrflash-*` (or right-click, Open). Windows SmartScreen asks once.
+
+## The MD-380
+
+Not released yet: `releasable=False` in `tools/odrflash/odrflash/boards.py` and no job in `release.yml` until
+[docs/testing/md380-bringup.md](../testing/md380-bringup.md) passes. Its codec shares flash sector 6 with the
+application, so keep is impossible (`keep_codec_supported=False`): every flash merges the codec from TYT's D002.032
+file. `tools/md380_migrate.py` flashes it today and keeps the codeplug
+([md380-migration.md](../spec/md380-migration.md)).
 
 ## Adding the DM-32UV
 

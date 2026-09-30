@@ -99,10 +99,11 @@ keys up if needed and sends 1750 Hz until `false` (repeater access); `tone_burst
 `tx_tone` gets neither.
 
 DM-1701 (`boards/dm1701/radio_dm1701.c`): the AT1846S tone generator 1 (reg 0x35 = Hz x 10, 0x79 = 0xC000, tone
-deviation in 0x59, source in 0x3A) with the HR_C6000's microphone path muted (page 4 reg 0xE0 bit 6). Restored on
-`tx_tone(0)` and on every return to receive. **Not verified on the bench yet.**
+deviation 0x1C in 0x59 bits 15:6, about 3.1 kHz peak; source in 0x3A) with the HR_C6000's microphone path muted
+(page 4 reg 0xE0 bit 6). Restored on `tx_tone(0)` and on every return to receive. On air (HIL 2026-10-10): the
+burst, the roger beep and APRS AFSK (`docs/testing/on-air-coverage.md`, `hardware-dm1701.md`).
 
-### 3.4 VOX (CONFIG_VOX, off by default)
+### 3.4 VOX (CONFIG_VOX; the `vox` setting is off by default)
 
 On FM channels (all, or those with the codeplug VOX flag) the microphone level (`mic_level()`, 0-100 logarithmic) at
 or above `100 - 8 x vox_level` for 2 polls (50 ms) keys up; below it for `vox_tail_ms` unkeys (with the roger beep
@@ -166,8 +167,8 @@ The UI owns the backlight and calls it; the radio core doesn't drive the backlig
 On an idle FM channel after `rx_save_idle_s` without activity (keys, requests, receptions, PTT), the receiver sleeps
 200 / 400 / 800 ms and listens 100 ms (`rx_sleeping` in the view). Any signal in the listen window keeps it awake;
 anything else (a key, a request, MONITOR, scan, VOX, DMR channel, hotspot, a channel with the codeplug "no eco" flag)
-stops it. DM-1701: `rx_sleep` puts the AT1846S in idle and switches the receive supply off; waking retunes. Not
-verified on the bench; off by default until it is.
+stops it. DM-1701: `rx_sleep` puts the AT1846S in idle and switches the receive supply off; waking retunes. On air
+since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
 
 ## 6. TX power, calibration, band limits
 
@@ -180,5 +181,7 @@ Host-tested (`radioFeaturesTest`, 446 checks): scan engine and glue (zone, skip 
 priority, dual watch, VFO band scan, mixed FM / DMR, a DMR call already in progress with a direct mode carrier and a
 late entry at every superframe phase, PTT and retune behavior), battery levels and power off, beep
 patterns and mixing, TOT warning, BCL, inhibit, roger beep, burst, VOX, battery save, DMR permit / call-end beeps.
-Not yet on the radio: everything in `tests/hil/test_radio_features.py`, the DM-1701 `tx_tone`, `rx_sleep` and
-`mic_level` hooks, and whether PCM beeps play in FM mode (`beep.no_stream` / `beep.blocks` answer that).
+On the radio (`docs/testing/on-air-coverage.md`, HIL 2026-10-10): zone scan stopping for DMR calls, VFO scan, dual
+watch, the battery saver, the 1750 Hz burst and the roger beep on air; TX inhibit and the TOT warning on the radio's
+state; VOX only in silence (the `mic_level` hook is unverified); whether PCM beeps play in FM mode is still open
+(`beep.no_stream` / `beep.blocks` answer that).

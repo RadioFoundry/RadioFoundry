@@ -10,7 +10,8 @@ run showed. Features come from the README's "What it does" and area table, the m
 Status: **on air** = a test checks it over the air and passed; **radio** = a test checks it on the radio without
 RF (or only the radio's side of an RF exchange); **partial** = only part of the feature can be checked on this
 bench (why in the notes); **xfail** = the test runs and fails for a known, documented gap; **fails** = the test
-runs and finds a real firmware problem (left failing on purpose); **none** = no automated test. Last run:
+runs and finds a real firmware problem (left failing on purpose); **not run** = a test exists but wasn't in the last
+run; **none** = no automated test. Last run:
 2026-10-10, firmware `5a13814` (main, every feature built), radio at its lowest power on 467.375 MHz.
 
 | Feature | Test | Status | Notes |
@@ -33,16 +34,21 @@ runs and finds a real firmware problem (left failing on purpose); **none** = no 
 | Hotspot voice and data, both ways | `test_hotspot_voice` | on air | `hotspot_cases.py` rf_voice8, rf_data_unconf, net_voice, net_data |
 | Hotspot CW ID | `test_hotspot_cwid` | on air | the Morse tone itself checked since the tone fix |
 | SFR (hotspot SFR mode) | `test_hotspot_sfr` | partial, xfail | mode switching and the first repeat on TS2 pass; the whole call needs RX between our bursts (`docs/spec/sfr.md` 3) |
-| Split duplex repeater (experimental) | `test_split_duplex` | fails | protocol passes; TX half: no same-slot spacing in the (clipped) capture; RX half: epoch residual 13.9 ms (limit 5 ms), 0 of 45 bursts labeled |
+| Split duplex repeater (experimental) | `test_split_duplex` | fails | protocol passes; TX half: no same-slot spacing in the (clipped) capture; RX half: epoch residual 13.9 ms (limit 5 ms), 0 of 45 bursts labeled. The framing runs of 2026-10-11 show the continuous outbound working but the CACH empty (`docs/spec/split-duplex.md` 10.1) |
 | USB network adapter | `test_usb_network` | radio | DHCP, ping and the debug link over UDP, back to serial (macOS 26). With `ff6268b` the Mac once never configured the adapter and the radio stayed in network mode; since `5a13814` it falls back to serial after 10 s |
-| TCP services (HTTP, KISS over TCP, rigctld, APRS-IS) | `test_tcp_services` | radio | not run yet; host-tested against a scripted TCP peer (`netSvcTest`, `tcpTest`) |
-| IP over DMR | none | none (rig) | needs a second station that speaks IP over DMR data |
+| Host port protocols over UDP 3334 (split duplex extension, KISS) | `test_usb_network_services` | not run | `--allow-usb-switch` |
+| TCP services (HTTP, KISS over TCP, rigctld, APRS-IS) | `test_tcp_services` | not run | host-tested against a scripted TCP peer (`netSvcTest`, `tcpTest`) |
+| mDNS, TFTP codeplug | `test_net_services` | not run | host-tested (`mdnsTest`, `tftpTest`) |
+| SNMP agent over USB | `test_snmp` | not run | host-tested against an independent manager (`snmpPeer`); over the air untested |
+| Control station mode (settings, boot as network, fixed link, passthrough) | `test_control_station` | not run | passthrough tests need `--allow-rf --allow-service-stop` |
+| IP over DMR, our side (SAP 3 compressed and full headers, confirmed data retries) | `test_dmr_ip` | not run | decoded off air by the bench modem with `tools/bench/dmr_packet.py`; the bench can't answer confirmed data, so ACKs and selective retry are host-tested only |
+| IP over DMR, end to end | none | none (rig) | needs a second station that speaks IP over DMR data |
 | Roaming (settings, zone flag, roam now) | `test_roaming` radio tests | radio | |
 | Roaming to the bench repeater, beacon surveys | `test_roaming` rf tests | none (rig) | need a repeater-pair channel and a second frequency; only 467.375 MHz is approved |
 | FM receive | `test_fm::test_noaa_receive` | on air | |
 | CTCSS / DCS encode | `test_fm_tx` | on air | |
 | CTCSS / DCS decode | `test_fm::test_rx_tone_squelch` | partial | untoned NOAA stays muted with a tone required; a toned FM source would be needed for the positive case |
-| 12.5 / 25 kHz deviation | `test_fm_tx::test_fm_tx_bandwidth` | fails | 25 / 12.5 kHz CTCSS deviation ratio 4.0 (nominally 2) |
+| 12.5 / 25 kHz deviation | `test_fm_tx::test_fm_tx_bandwidth` | on air | 25 / 12.5 kHz CTCSS deviation ratio 1.99 (368 / 733 Hz) since `0458936` (25 kHz keeps the 12.5 kHz tone deviation field; the mode doubles it); 4.0 on this run |
 | 1750 Hz burst | `test_fm_tx::test_fm_tx_tone_burst` | on air | 2 s of 1750.0 Hz at 1.43 kHz peak; silent before `ff6268b` (voice source in the wrong register bits), 3.3 kHz peak at `ff6268b` |
 | Roger beep | `test_fm_tx::test_fm_tx_roger_beep` | on air | 1200 / 900 Hz at the end of the over, none when off; silent before `ff6268b` |
 | TX inhibit, TOT warning and time-out | `test_radio_features` | radio | the radio's state, not the RF |

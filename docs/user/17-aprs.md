@@ -10,8 +10,9 @@ The radio sends APRS two ways:
 - **Over DMR**: as a position report to an APRS gateway ID (BrandMeister's 5057 by default), when you are on a DMR
   channel.
 
-APRS is in every build that has FM. It is host-tested, not tested on air yet. The DM-1701 can't hear APRS packets: its
-received audio never reaches the processor. It sends only.
+APRS is in every build that has FM. Packets the DM-1701 sends on FM and over DMR decode off air on the SDR bench. The DM-1701 can't hear APRS packets: its
+received audio never reaches the processor, so it sends only. The MD-380 can't send APRS on FM yet (no tone path); it
+sends positions over DMR.
 
 ## Before you start
 
@@ -29,7 +30,7 @@ position and where it comes from, and when the next beacon goes out. If the radi
 |---|---|
 | Send position now | One position at once |
 | Automatic beacons | On: positions go out by themselves (see Triggers) |
-| Frequency | Your region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand 144.575, Japan 144.660, China 144.640 MHz |
+| Frequency | Your region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand 144.575, Japan 144.660, China 144.640 MHz, or Custom (`tools/odr_debug.py aprs set region custom`, then `aprs set freq_hz 144390000`) |
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |
 | SmartBeaconing | More often when you move fast, at once after a turn, rarely when you stand still |
 | Send via | Radio (FM), DMR, or both |
@@ -51,7 +52,8 @@ always wins: an APRS transmission in progress stops and your channel comes back.
 
 The DM-1701 has no GPS. Its position comes from:
 
-- **Computer**: NMEA from a GPS on the computer, sent over USB by `tools/aprs_gate.py --nmea` (KISS on USB must be on).
+- **Computer**: NMEA from a GPS on the computer, sent over USB by `tools/aprs_gate.py --nmea <GPS port>` (KISS on USB
+  must be on).
 - **Fixed**: a position you enter.
 
 Auto takes a fresh GPS position, else the computer's, else the fixed one.
@@ -68,6 +70,7 @@ Turn on **KISS on USB**, then run `tools/aprs_gate.py --port <radio port>`:
 
 The radio can't be in hotspot mode at the same time.
 
-In USB network mode the radio can do both without the helper (see [USB network mode](14-usb-network.md)): APRS
-programs connect to the radio's address on TCP port 8001 directly, and the radio can log in to an APRS-IS server
-itself. KISS on USB must be on for both.
+In USB network mode the radio does both without the helper: APRS programs connect to the radio's address on TCP
+port 8001 directly ([Services on the radio](14-usb-network.md#services-on-the-radio)), and the radio logs in to an
+APRS-IS server itself ([APRS-IS from the radio](14-usb-network.md#aprs-is-from-the-radio)). KISS on USB must be on
+for both.

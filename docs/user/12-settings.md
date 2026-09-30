@@ -47,7 +47,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 |---|---|---|---|---|
 | Brightness | 10 to 100 %, steps of 10 | 100 % | Backlight brightness. Also in quick settings, tile 9 | Works |
 | Backlight time | 5 s, 10 s, 30 s, 1 min, 2 min, Never | 30 s | The backlight dims after this time without a key press and goes off after four times as long | Works |
-| Theme | Dark, Light, High contrast | Dark | The screen colors. Dimmed on black and white screens (GD-77) | Works |
+| Theme | Dark, Light, High contrast | Dark | The screen colors. Dimmed on monochrome screens | Works |
 | Large text | On, Off | Off | Home shows only the status line, the channel and the talk target, large | Works |
 | Hint row | On, Off | On | The bottom line with key hints | Works |
 
@@ -87,7 +87,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Hotspot allowed | On, Off | On | Lets a hotspot host on USB put the radio in hotspot mode ([Hotspot](13-hotspot.md)) | Works |
 | Answer radio checks | On, Off | Off | Answer radio checks from other radios ([Radio check](09-messages-and-signaling.md#radio-check)) | Works |
 | Answer call alerts | On, Off | On | Acknowledge call alerts, so the caller knows the page arrived | Works |
-| TFTP codeplug write | On, Off | On | Lets a computer write the codeplug over TFTP in USB network mode ([USB network](14-usb-network.md#programming-over-the-network)). Reading is always possible | Host-tested |
+| TFTP codeplug write | On, Off | On | Lets a computer write the codeplug over TFTP in USB network mode ([USB network](14-usb-network.md#programming-over-the-network)). Reading is always possible | Works (not tested on the radio yet) |
 | Message format | ETSI, ETSI short, Motorola | ETSI | The format of the text messages you send ([Messages](09-messages-and-signaling.md#message-formats)). Messages in any format are received | Works (not tested on air yet) |
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](14-usb-network.md#starting-in-network-mode)) | Works (not tested on the radio yet) |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](14-usb-network.md#control-station-for-dispatch-software)) | Works (not tested on the radio yet) |
@@ -97,7 +97,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
-| Battery saver | On, Off | Off | On an idle FM channel the receiver sleeps between short listening windows ([Battery and power](16-battery-and-power.md)) | Works (not tested on the radio yet) |
+| Battery saver | On, Off | Off | On an idle FM channel the receiver sleeps between short listening windows ([Battery and power](16-battery-and-power.md)) | Works |
 | Auto power off | Off, 30 min, 1 h, 2 h | Off | Switch off after this time without use ([Battery and power](16-battery-and-power.md#auto-power-off)) | Works |
 | Low battery warning | 5 to 30 %, steps of 5 | 15 % | Warn when the battery falls to this level ([Battery and power](16-battery-and-power.md)) | Works |
 
@@ -141,10 +141,11 @@ position), erases ODR's own data area, and restarts the radio. The codeplug and 
 ## Settings without a menu
 
 A few settings exist in the radio but not yet on the menu: busy channel lockout, roger beep, the scan's resume mode
-and timing, VOX sensitivity, ARS server, the emergency settings, the text message format, the roaming threshold,
-hysteresis and periodic search, and the SFR idle beacon. The roaming survey and beacon settings are in **Tools >
-Roaming** ([DMR](08-dmr.md#roaming)). Developers change them over
-the debug link (`tools/odr_debug.py radio set ...`, `tools/odr_debug.py data settings ...`); the radio keeps them.
+and timing, VOX sensitivity, the ARS server, the emergency settings, the IP data settings (header compression,
+confirmed data), the SNMP communities, the roaming threshold, hysteresis and periodic search, and the SFR idle
+beacon. Developers change them over the debug link (`tools/odr_debug.py radio set ...`, `data settings ...`,
+`data ip-settings ...`, `snmp ...`); the radio keeps them. The roaming survey and beacon settings are in **Tools >
+Roaming** ([DMR](08-dmr.md#roaming)).
 
 A build without the Settings menu (`CONFIG_UI_SETTINGS=n`) shows "Set them with qdmr" instead, and keeps the stored
 values.

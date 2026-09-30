@@ -4,8 +4,9 @@
 
 A single frequency repeater receives a DMR call on one TDMA slot of a frequency (the inbound slot) and repeats it on
 the other slot of the same frequency (the outbound slot), 90 ms later. Radios in direct mode hear both copies. Switch:
-`CONFIG_SFR`, off by default (`docs/build-config.md`). Background and the HR_C6000 findings: `docs/spec/gotchas.md`
-8.11, 8.12 and 14; the host protocol: `docs/spec/mmdvm-protocol.md` 6.
+`CONFIG_SFR`, on with DMR except on the MD-380, whose HR_C5000 has no CRC_MCU_Control for the idle bursts of section
+3 item 4 (gotchas 14.6; `docs/build-config.md`). Background and the HR_C6000 findings: `docs/spec/gotchas.md` 8.11,
+8.12 and 14; the host protocol: `docs/spec/mmdvm-protocol.md` 6.
 
 ## 1. Layers
 
@@ -32,7 +33,7 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
     into), 5 full, 4 a burst type that can't be sent. Idle bursts and repeated terminators are ACKed and dropped.
     DMR_ABORT, DMR_START and DMR_SHORTLC are ACKed (the radio owns its keying and sends no CACH).
   - Defaults: TS1 in, TS2 out, TS framing (the ETSI direct mode sync of the outbound slot), 1 s hang, 180 s TOT, the
-    colour code from SET_CONFIG. `hotspot_sfr_set_settings()` takes a channel's settings once a UI or codeplug
+    color code from SET_CONFIG. `hotspot_sfr_set_settings()` takes a channel's settings once a UI or codeplug
     provides them; command 0xD5 overrides the framing at run time.
 - **Runner behavior** (gotchas 14):
   - a burst the modem places on the outbound slot (`ts` = the outbound slot) is ignored: our echo or another
@@ -74,14 +75,15 @@ side: the radio keys the transmitter for the whole transmission, so nothing is r
 our bursts. An SFR needs the RF switched between receive and transmit per burst, inside the guard time (the legacy
 glue did it from the slot interrupts: `radioSfrSwitch` in `drivers/modem/hrc6000/sfr_glue/hrcSfr.h`). Until a driver
 does, the hotspot SFR mode answers the host correctly and repeats what it heard before keying, but misses inbound
-bursts while it is keyed (the rest of a call after the first repeat). Not tested on air.
+bursts while it is keyed (the rest of a call after the first repeat). On air (HIL 2026-10-10): mode switching and the
+first repeat on TS2 pass; the rest of the call fails as expected (`docs/testing/on-air-coverage.md`).
 
 ## 4. Not built yet
 
 - The stand-alone repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) on a channel: they need the
   codeplug's SFR bytes (`sfrChannelDecode`), a radio core mode that hands the modem to the runner (repeater) and
   call stack changes for the users (transmit on the inbound slot aligned to the repeater, hear both copies with
-  `sfrDedupVoice`, the ERDM outbound colour code). The call stack is `core/dmr/call/dmr_call.c`.
+  `sfrDedupVoice`, the ERDM outbound color code). The call stack is `core/dmr/call/dmr_call.c`.
 - The HR_C6000 driver level parts: raw RX RAM classification (`sfrRawClassify`), per-burst RF switching, the
   register switches of command 0xD5.
 

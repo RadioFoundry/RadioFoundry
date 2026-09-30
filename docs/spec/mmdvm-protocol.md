@@ -82,7 +82,7 @@ tools drop ACKs). Pick one and keep it; ACKing costs 4 bytes per 60 ms.
 | 1 | unknown command |
 | 2 | wrong mode: the mode isn't enabled, or the command doesn't apply now (other digital modes, DMR_DATA1 in plain simplex, SFR not on) |
 | 3 | (unused by the hosts; "too long" in our numbering) |
-| 4 | invalid: bad length, bad value (colour code above 15, unknown state, TX delay out of range), a burst type the radio can't send, a frequency the radio can't tune |
+| 4 | invalid: bad length, bad value (color code above 15, unknown state, TX delay out of range), a burst type the radio can't send, a frequency the radio can't tune |
 | 5 | no space (TX buffer full); also SEND_CWID while not idle |
 | 6 | MMDVM_HS: duplex not supported by this build. **Ours (SFR only): RF busy**, the inbound call is being repeated (section 6) |
 
@@ -190,7 +190,7 @@ reply shorter than 9 bytes. The bench tools read offsets 5, 7, 8 and, from 13 on
 | 04 RX overflow | Uplink frames were lost because the queue to the host was full since the last status. Event, cleared once reported. |
 | 08 TX overflow | The TX buffer was full and a frame was refused since the last status. Event. |
 | 10 lockout | **Never set.** MMDVMHost switches to its lockout mode and sends SET_MODE idle while it is set (MMDVM's "COS as lockout" input). |
-| 40 carrier detect | Something is on the channel (from the receiver's noise / RSSI, so analog and other colour codes count too), evaluated only while not transmitting. rfgw uses it for listen before talk; MMDVMHost stores it. |
+| 40 carrier detect | Something is on the channel (from the receiver's noise / RSSI, so analog and other color codes count too), evaluated only while not transmitting. rfgw uses it for listen before talk; MMDVMHost stores it. |
 | 80 | Not defined by MMDVM. Ours, SFR mode only (section 6). |
 
 **Space** (offsets 7 and 8): the number of further 33-byte DMR bursts the modem will accept for that slot right now
@@ -234,7 +234,7 @@ accepted 13 or more; rfgw and the bench tools send 23):
 | 3 | modem state to enter: 00 idle (MMDVMHost always sends 00), 02 DMR (rfgw and the bench tools send 02), 06 POCSAG | accept 00, 02, 06; NAK 4 for others |
 | 4 | RX level, percent × 2.55 | ignore |
 | 5 | CW ID TX level | ignore (or use for the CW tone level) |
-| 6 | DMR colour code 0-15 | honor; NAK 4 above 15 |
+| 6 | DMR color code 0-15 | honor; NAK 4 above 15 |
 | 7 | DMR delay (duplex RX timing) | ignore in simplex |
 | 8 | 80 (formerly oscillator offset) | ignore |
 | 9 | D-Star TX level | ignore |
@@ -255,11 +255,11 @@ accepted 13 or more; rfgw and the bench tools send 23):
 0 flags (as above), 1 modes (01 D-Star, 02 DMR, 04 YSF, 08 P25, 10 NXDN, 20 FM), 2 modes 2 (01 POCSAG), 3 TX delay,
 4 state, 5 TX DC offset + 128, 6 RX DC offset + 128, 7 RX level, 8 CW ID level, 9 D-Star level, 10 DMR level,
 11 YSF level, 12 P25 level, 13 NXDN level, 14 reserved, 15 POCSAG level, 16 FM level, 17-19 reserved, 20 YSF hang,
-21 P25 hang, 22 NXDN hang, 23-24 reserved, 25 DMR flags (80 trunking), 26 colour code, 27 DMR delay, 28 80, 29-36
+21 P25 hang, 22 NXDN hang, 23-24 reserved, 25 DMR flags (80 trunking), 26 color code, 27 DMR delay, 28 80, 29-36
 reserved 00.
 
-Effects to apply: colour code (RX acceptance and TX framing), simplex / duplex, the state byte (as SET_MODE would),
-debug flag. SET_CONFIG must not reset a transmission in progress unless the colour code or duplex flag changed. In SFR
+Effects to apply: color code (RX acceptance and TX framing), simplex / duplex, the state byte (as SET_MODE would),
+debug flag. SET_CONFIG must not reset a transmission in progress unless the color code or duplex flag changed. In SFR
 builds, re-evaluate the SFR trigger after it (section 6).
 
 ### 2.6 SET_MODE (03)
@@ -317,7 +317,7 @@ carry 2 more bytes of RSSI: length 27 (39).
 The 33 bytes are the whole 264-bit burst, first bit in the top bit of byte 0: 108 bits of payload, the 48-bit
 sync / EMB / embedded-signalling field (bits 108-155: low nibble of byte 13, bytes 14-18, high nibble of byte 19),
 108 bits of payload. For data-sync bursts the slot type (Golay(20,8), systematic) occupies the 10 bits on each side
-of the sync: colour code in bits 98-101 (frame byte 12, mask 3C), data type in bits 102-105 (byte 12 mask 03, then
+of the sync: color code in bits 98-101 (frame byte 12, mask 3C), data type in bits 102-105 (byte 12 mask 03, then
 byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
 
 | Source | Voice | Data |
@@ -383,7 +383,7 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
   exactly 42 as the end of the call.
 - The 33 bytes must be a well-formed burst: MMDVMHost decodes the full LC of headers and terminators (BPTC(196,96)
   and RS(12,9) with the header / terminator masks; an undecodable header is dropped), regenerates the voice FEC,
-  reads the EMB (its colour code must match the configured one for late entry) and collects embedded LC, talker alias
+  reads the EMB (its color code must match the configured one for late entry) and collects embedded LC, talker alias
   and GPS from B-E. Send the embedded signalling for B-E made from the call's LC (as the old firmware did) or as
   received if it decoded.
 - Sequence: after voice A (20), MMDVMHost accepts B-F only as 01, 02, 03, 04, 05 in order; a repeated or skipped
@@ -533,7 +533,7 @@ burst per 60 ms per slot after a prebuffer (6 by default), also gated on space a
 - One timeslot on air. The host uses DMR_DATA2 / DMR_LOST2 only (slot 1 space is the constant 10).
 - TX: MS-sourced framing on air regardless of the sync in the host's frames (MMDVMHost puts MS sync on simplex
   traffic; HBlink traffic forwarded by rfgw is regenerated to MS sync). The radio builds its own slot type, EMB and
-  sync with the configured colour code.
+  sync with the configured color code.
 - The radio can't receive while it transmits; RF heard right after a transmission goes up normally.
 - No DMR_START, no DMR_ABORT, short LC ignored, no CACH.
 - After the host's terminator, the TX flag stays set until the radio's own terminator is on air (about 0.7 s after
@@ -671,7 +671,7 @@ no sense for a real duplex board.)
 | GET_STATUS flag 80 | **inbound slot busy**: an RF call is being repeated, until its terminator has been repeated. rfgw refuses new network streams while it is set. |
 | GET_STATUS offsets 7 and 8 | both carry the outbound slot's free space (up to 16 bursts), so the host can write either slot's command. Outside SFR mode offset 7 is 10 as usual. |
 | SEND_CWID | works while idle, as in simplex. |
-| SFR settings | colour code from SET_CONFIG, frequency and RF level from SET_FREQ; inbound / outbound slot, framing, hang and TOT from the radio's own channel settings (defaults TS1 in, TS2 out, TS framing, 1 s hang, 180 s TOT). No SET_CONFIG byte is used for them. |
+| SFR settings | color code from SET_CONFIG, frequency and RF level from SET_FREQ; inbound / outbound slot, framing, hang and TOT from the radio's own channel settings (defaults TS1 in, TS2 out, TS framing, 1 s hang, 180 s TOT). No SET_CONFIG byte is used for them. |
 
 ### 6.3 GET_STATUS extra bytes (SFR mode only)
 
@@ -686,7 +686,7 @@ old bench tool versions stay correct.
 
 The generic SFR layer (`core/hotspot/hotspotSfr.c` on `core/dmr/sfrRunner.c`, any modem behind `hal_dmr_modem_t`)
 fills the members it knows: 14 bursts written, 15 bursts heard, 16 repeated, 17 send rejected, 24 state (01 keyed,
-02 own timing, 10 RF call, 20 busy), 25 flags, 28 echo, 29 ignored, 30 duplicate, 31 last burst, 32 its colour code,
+02 own timing, 10 RF call, 20 busy), 25 flags, 28 echo, 29 ignored, 30 duplicate, 31 last burst, 32 its color code,
 35 reg10, 36 reg12, 38 ignored on the outbound slot, 39 bad checksum, 55 rssiMin, 60 raw area (FF: not used), 99 LC
 rebuilt, 106 reg11, 107 flags2, 117 late entry held. The rest (register reads, RF switch timing, raw bursts) belong
 to an HR_C6000 driver level SFR and stay 0 until one fills them.
@@ -758,10 +758,10 @@ Example frames (typical MMDVMHost defaults: levels 50 %, CC 1, TX delay 100 ms, 
 | C-1 | the three frames above, in that order, each within 2 ms of the last reply | three ACKs, each within 10 ms |
 | C-2 | SET_MODE DMR before any SET_CONFIG (fresh power on) | `E0 04 70 03` |
 | C-3 | SET_CONFIG with modes byte 3F (all modes) | ACK (unsupported mode bits ignored) |
-| C-4 | SET_CONFIG with colour code 10 hex (16) | `E0 05 7F 02 04` |
+| C-4 | SET_CONFIG with color code 10 hex (16) | `E0 05 7F 02 04` |
 | C-5 | SET_CONFIG with TX delay 64 hex (1 s) | ACK |
 | C-6 | SET_CONFIG with state 01 (D-Star) | `E0 05 7F 02 04` |
-| C-7 | SET_CONFIG of 13 payload bytes (old hosts) | ACK, colour code taken from payload 6 |
+| C-7 | SET_CONFIG of 13 payload bytes (old hosts) | ACK, color code taken from payload 6 |
 | C-8 | SET_FREQ of 9 and of 10 payload bytes | ACK each; 9 means full power |
 | C-9 | SET_FREQ at 461.6875 MHz with POCSAG 433 MHz, and at 146.52 MHz (if the radio has VHF) | ACK (no amateur-band check, POCSAG frequency ignored) |
 | C-10 | SET_FREQ outside the hardware range (e.g. 1 GHz) | `E0 05 7F 04 04` |
@@ -805,8 +805,8 @@ Tests with the bench modem (`bench_tx.py`) or the host-test model of MMDVMHost's
 | U-6 | 4 CSBKs | ≥ 3 frames with control 43, no voice call |
 | U-7 | unconfirmed data, header + 3 blocks | 46 then three 47 |
 | U-8 | every frame | length 25 (no RSSI) or 27 (RSSI); if 27, the RSSI bytes give a sane dBm with the 5.4 formula |
-| U-9 | a burst heard with a wrong colour code | not sent up |
-| U-10 | every header / terminator sent up | full LC decodes (BPTC + RS with the right mask); EMB colour code = configured |
+| U-9 | a burst heard with a wrong color code | not sent up |
+| U-10 | every header / terminator sent up | full LC decodes (BPTC + RS with the right mask); EMB color code = configured |
 
 ### 7.6 Timing and robustness
 

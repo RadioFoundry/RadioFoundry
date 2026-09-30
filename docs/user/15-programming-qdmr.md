@@ -3,9 +3,8 @@
 # Programming with qdmr
 
 ODR is programmed with qdmr, the free codeplug editor (github.com/hmatuschek/qdmr). The radio speaks the protocol of
-qdmr's open-firmware drivers through a compatibility layer, and stores the codeplug in the layout qdmr writes. The
-layer is built and passes the host tests with a client that does what qdmr does; it hasn't been tried with qdmr on
-the radio yet.
+qdmr's open-firmware drivers through a compatibility layer, and stores the codeplug in the layout qdmr writes. Reads
+and writes are tested on the DM-1701 with `tools/cps_client.py`, which talks to the radio the way qdmr does.
 
 ## Reading and writing the codeplug
 
@@ -46,16 +45,17 @@ so qdmr reads them.
 ## Coming from an MD-380 with stock firmware
 
 On a TYT MD-380, MD-390 or RT3, `tools/md380_migrate.py` reads the stock codeplug, flashes ODR and writes the
-codeplug back, all in one run. See [Moving from stock or md380tools firmware](21-moving-from-stock-md380.md).
+codeplug back, all in one run. See [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
 
 ## Backups
 
-Read the codeplug with qdmr and save it before you change it. Developers can also take a raw backup with
-`tools/cps_client.py read backup.bin` and write it back with `tools/cps_client.py write backup.bin`.
+Read the codeplug with qdmr and save it before you change it. A raw backup works too: `tools/cps_client.py read
+backup.bin` and `tools/cps_client.py write backup.bin` over the serial port, or TFTP in USB network mode
+([USB network](14-usb-network.md#programming-over-the-network)).
 
 ## Limits and notes
 
 - Writes are refused while the radio's settings area holds another firmware's data. See "Settings are not kept" in
-  [Troubleshooting](17-troubleshooting.md).
+  [Troubleshooting](19-troubleshooting.md).
 - The calibration area accepts writes only to its own bytes. Don't edit calibration with a CPS.
 - The DM-32UV reports a radio type qdmr doesn't know yet.

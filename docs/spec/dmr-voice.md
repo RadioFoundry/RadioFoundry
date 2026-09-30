@@ -145,6 +145,6 @@ bench modem's listener).
   (set a known hang time, read the byte) on the bench; the reply time setting (`rs_reply_s`) overrides it meanwhile.
 - DMR ID database plain format: the 4-byte BCD ID is read as a little-endian word (the spec doesn't say).
 - A codeplug TOT of 0 means "off" to the legacy firmware; here it falls back to the radio's TOT.
-- Emergency alarm and emergency call TX are in `dmr-emergency.md` (host-tested, not on air yet). No enhanced
-  privacy. GPS Info is host-tested (`dmrCallTest`), not on air yet. Not done: GPS Info in the hotspot's own
+- Emergency alarm and emergency call TX are in `dmr-emergency.md`. No enhanced privacy. GPS Info is host-tested
+  (`dmrCallTest`) and on air both ways against the SDR bench (`docs/testing/on-air-coverage.md`). Not done: GPS Info in the hotspot's own
   transmissions (it relays the host's), a separate Settings > Location toggle for it (it lives on the APRS page).

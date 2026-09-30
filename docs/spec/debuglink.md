@@ -8,7 +8,7 @@ PTT with a firmware time-out, send radio requests, read a log ring, read the chi
 internal flash and the other read-only memories, and reboot. It lives beside the MMDVM hotspot and the
 legacy CPS protocol on the same port (`core/hostlink`), and it never changes the host link's mode.
 
-- Firmware: `core/debuglink/` (switch `CONFIG_DEBUGLINK`, default on with `CONFIG_USB`), key injection in
+- Firmware: `core/debuglink/` (switch `CONFIG_DEBUGLINK`, default on with `CONFIG_HOSTLINK`), key injection in
   `core/input/input_task.c`, the hook in `core/hostlink/hostlink.c`.
 - Chip commands: the portable checks in `core/debuglink/dl_chip.c` (host tested), the platform side in `hal/hal_system.h`
   (`board.system`) and `platform/stm32f4/sysboot.c`.
@@ -100,8 +100,9 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x0E` | DMR_DATA | operation u8 + arguments (3.12) | none, or an inbox message (3.12) |
 | `0x0F` | STORAGE | operation u8 + arguments (3.13) | region info, SPI flash bytes, or a reason (3.13) |
 | `0x10` | AUDIO_PROBE | operation u8 + arguments (3.14); `CONFIG_AUDIO_PROBE` builds only, else status 4 | levels, a register value, or a PCM block (3.14) |
-| `0x15` | SPLIT | operation u8 + arguments (3.15); only in `CONFIG_HOTSPOT_SPLIT` builds, unknown otherwise | none, or the split view text (3.15) |
 | `0x11` | APRS | operation u8 + arguments (3.16) | none (3.16) |
+| `0x15` | SPLIT | operation u8 + arguments (3.15); only in `CONFIG_HOTSPOT_SPLIT` builds, unknown otherwise | none, or the split view text (3.15) |
+| `0x19` | SNMP | operation u8 + arguments (3.17) | none (3.17) |
 
 ### 3.1 VERSION
 
@@ -276,8 +277,8 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 23 | on u8 | `radio_req_tone_burst`: the 1750 Hz burst, keys up while on (FM channels, CONFIG_FM_TX_TONES builds) |
 | 24 | id u8, value u16 | one radio setting in RAM (`radio_set_settings`; not stored): 1 tot_s, 2 tot_warn_s, 3 bcl (0 off, 1 carrier, 2 wrong tone), 4 roger_beep, 5 tx_inhibit, 6 scan_resume (0 time, 1 carrier, 2 stop), 7 scan_hold_s, 8 scan_delay_ms, 9 scan_dwell_ms, 10 scan_priority, 11 beep_level (0-100), 12 key_beep, 13 vox (0 off, 1 channel, 2 all), 14 vox_level (0-10), 15 vox_tail_ms, 16 rx_save (0-3), 17 rx_save_idle_s, 18 battery_off_s, 19 scan_beep, 20 reply_s (0-30, 255 = the codeplug's hang times), 21 roam_rssi_dbm (-125..-60, two's complement), 22 roam_hyst_db (1-30), 23 roam_probe (0 passive, 1 wake), 24 roam_check_s (0 or 30-3600), 25 roam_beacon_s (0 or 10-600), 26 roam_beacon_len_s (1-10), 27 roam_survey (0 off, 1 synced, 2 per site), 28 rpt_beacon (0/1). Out of range: bad argument |
 | 25 | on u8: 1 network, 0 serial | switch the USB personality once the reply has gone out (`CONFIG_USB_NETWORK`; status 4 without it). The radio re-enumerates; in network mode this link answers over UDP to the radio's address, port 3334 (`docs/spec/usb-network.md`) |
-| 27 | flags u8, link IP u32 | the USB network settings, stored and applied at once (`docs/spec/usb-network.md` 5.4): bit 0 the network personality at power-on, bit 1 control station passthrough, bit 2 the fixed link pair; the radio's link address (0 = 192.168.10.1). Bits 1 and 2 need `CONFIG_DMR_CONTROL_STATION` (ignored without); UNAVAILABLE without `CONFIG_USB_NETWORK`. `odr_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]` |
 | 26 | cmd u8 | `radio_req_roam` (CONFIG_DMR_ROAMING builds; status 4 without): 0 zone off, 1 zone on, 2 zone toggle (the current zone's roaming flag, stored), 3 roam now, 4 lock to this site, 5 unlock, 6 lock toggle ([dmr-roaming.md](dmr-roaming.md) 6.1) |
+| 27 | flags u8, link IP u32 | the USB network settings, stored and applied at once (`docs/spec/usb-network.md` 5.4): bit 0 the network personality at power-on, bit 1 control station passthrough, bit 2 the fixed link pair; the radio's link address (0 = 192.168.10.1). Bits 1 and 2 need `CONFIG_DMR_CONTROL_STATION` (ignored without); UNAVAILABLE without `CONFIG_USB_NETWORK`. `odr_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]` |
 
 Ops 15-18 last until the channel changes (`dmr.target_manual`). Unavailable ops answer UNAVAILABLE.
 
