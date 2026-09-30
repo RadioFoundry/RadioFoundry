@@ -13,11 +13,11 @@ Status words as in `docs/spec/gotchas.md`: "on air" = checked with the SDR or an
 
 | Part | What | Normally run by |
 |---|---|---|
-| Radio under test | Baofeng DM-1701 with OpenDigitalRadio, on the bench. No USB in the firmware yet: it is driven by its keys (PTT, channel, P1/P2, side keys) and shows a diagnostics page (long press of the top side key) | the user |
+| Radio under test | Baofeng DM-1701 with OpenDigitalRadio, on the bench, on USB: driven by the debug link (`tools/odr_debug.py`, the HIL tests) or its keys; diagnostics page on a long press of the top side key | the user |
 | SDR bench (`ssh $ODR_SDR_BENCH_HOST`, default `sdr-bench`: an ssh alias for the bench board) | a small ARM Linux board, 824 MB RAM, Debian, RadioDesk rfgw in `/opt/radiodesk-rfgw/.venv` | `radiodesk-rfgw@<bench host>` |
 | MMDVM_HS dual modem board | `/dev/ttyS0`, two ADF7021 (simplex or duplex), firmware MMDVM_HS. The other DMR station | rfgw receiver `ROAM1` (in the current config) |
 | RTL-SDR | RTL2832U + R820T on USB, bias tee powering an LNA. The instrument | rfgw receivers SDR02..SDR15 (461-462 MHz group, tuner center 461.52875 MHz). SDR15 = 461.6875 MHz |
-| RadioDesk server | 192.0.2.10: MQTT broker (rfgw publishes `DMR/<receiver>/sdr/...`), call recording, call audio | the owner |
+| RadioDesk server | the owner's server: MQTT broker (rfgw publishes `DMR/<receiver>/sdr/...`), call recording, call audio | the owner |
 
 Configuration: the tools take the bench's names from the environment, so no host name lives in the repository.
 The easiest setup is an ssh config alias `Host sdr-bench` pointing at the bench board (with its user and key).
@@ -42,7 +42,7 @@ running), so any bench modem test stops the service. `dmr_bench.py` does this wi
 All in `tools/bench/`, MIT. The bench-side ones run in rfgw's venv and use RadioDesk code (the `rfgw` package's
 MMDVM modem driver, channelizer, FM demodulator, layer 2 helpers, burst simulator; the `radiodesk` server package's
 DMR FEC / PDU / packet / AMBE FEC code). That dependency stays outside this repository: the RadioDesk tree is the
-owner's own project, installed on the SDR bench and at `~/RadioDesk` on the Mac. Copy the bench-side
+owner's own project, installed on the SDR bench and on the Mac (`$RADIODESK` names its checkout). Copy the bench-side
 tools with `dmr_bench.py sync` (to `$ODR_SDR_BENCH_HOST:~/odr-bench/`).
 
 | Tool | Runs on | What | Needs |
@@ -52,9 +52,9 @@ tools with `dmr_bench.py sync` (to `$ODR_SDR_BENCH_HOST:~/odr-bench/`).
 | `bench_repeater.py` | SDR bench | The dual modem as a local duplex repeater (no network): wakes on the radio's BS_Dwn_Act CSBK, BS sync, CACH with short LC, both slots, call hang; JSON log of wakeups, key-ups and every burst heard on the input | rfgw venv, bench modem free, a split frequency pair |
 | `sdrmon.py` | SDR bench | Raw IQ capture (`capture`, stops / restarts rfgw itself unless `--service ''`) and burst analysis (`analyze`): every burst incl. idle with time to 0.01 ms, slot phase, sync family and bit errors, CC, data type, LCs (header, terminator, embedded), power, frequency offset, key-up / key-down edges and ramps, ADC clipping, `--json` | rfgw venv, numpy, SoapySDR |
 | `sdr_watch.py` | SDR bench | rfgw's own decode of one SDR receiver from MQTT, with the sync family read from the burst bits. No service stop | rfgw venv, `MQTT_PASSWORD` |
-| `mmdvm_hotspot.py` | Mac | Planned firmware capability. The radio as an MMDVM modem over USB CDC (or the optional MMDVM UDP transport): configure simplex or SFR, poll status, log what it sends up, send a network call; our extensions: command 0xD5 (SFR experiment switches) and the SFR counters at the end of GET_STATUS | pyserial; RadioDesk for `--send` |
-| `hotspot_cases.py` | Mac | Planned. The automated `rf_*` / `net_*` hotspot cases (bench modem sends, radio reports over MMDVM; MMDVM sends, bench modem listens) | RadioDesk server venv |
-| `sfr_call.sh` | Mac | Planned. One SFR call: radio as SFR over MMDVM + bench modem voice + rfgw's SDR decode | ROAM1 out of rfgw's config |
+| `mmdvm_hotspot.py` | Mac | The radio as an MMDVM modem over USB CDC (or the optional MMDVM UDP transport): configure simplex or SFR, poll status, log what it sends up, send a network call; our extensions: command 0xD5 (SFR experiment switches) and the SFR counters at the end of GET_STATUS | pyserial; RadioDesk for `--send` |
+| `hotspot_cases.py` | Mac | The automated `rf_*` / `net_*` hotspot cases (bench modem sends, radio reports over MMDVM; MMDVM sends, bench modem listens) | RadioDesk server venv |
+| `sfr_call.sh` | Mac | One SFR call: radio as SFR over MMDVM + bench modem voice + rfgw's SDR decode | ROAM1 out of rfgw's config |
 
 Where they came from: `bench_tx.py`, `sdrmon.py`, `sdr_watch.py`, `hotspot_cases.py` (from `hs_normal.py`),
 `mmdvm_hotspot.py` (from `hotspot_test.py`) and `sfr_call.sh` (from `run_sfr_call.sh`) are adapted from our own
@@ -128,13 +128,11 @@ checks on saved results with `dmr_bench.py check T1 <sdrmon.json> --modem <liste
 ## 5. Bring-up order and the test cases
 
 Run them in this order. The key-press cases (C, T0, R, T, Q, P) need only the radio's keys and its diagnostics page.
-The hotspot cases (H, S) wait for USB + MMDVM in the firmware; once that lands they give much better automated
-coverage of the modem driver and the call stack, because every burst the radio hears comes back over USB and every
-burst it sends is under our control: run H1 after every driver change then.
+The hotspot cases (H, S) cover the modem driver and the call stack better, because every burst the radio hears comes
+back over USB and every burst it sends is under our control: run H1 after every driver change. Most of these cases
+are now also automated in `tests/hil` ([README.md](README.md) section 3).
 
-What the radio's diagnostics page should show for these tests (firmware request 1): slot ticks, bursts by kind,
-CRC errors, last CC, last sync family, last LC. Note the counters before each case; the cases ask for the new
-values.
+Note the diagnostics counters (the page, or `odr_debug.py diag`) before each case; the cases ask for the new values.
 
 ### 5.0 Setup
 
@@ -246,7 +244,7 @@ voice E, FLCO 4-8); basic privacy both ways (needs AMBE scrambling in `bench_tx.
 can check the radio's encrypted TX off air); SMS both ways (`bench_tx.py data` sends a 40-octet test payload; a real
 SMS payload builder is still to write; the radio's SMS is heard by `bench_tx.py listen` as a data header + blocks).
 
-### 5.6 Hotspot and SFR (planned: USB + MMDVM in the firmware)
+### 5.6 Hotspot and SFR
 
 | Case | What | Pass |
 |---|---|---|
@@ -258,7 +256,11 @@ sends our 0xD5 experiment switches and prints the SFR counters from GET_STATUS.
 
 ## 6. Firmware requests (radio-side observation)
 
-Smallest useful first.
+Historical: the requests made before the firmware had USB. Requests 1 and 2 became the diagnostics page and the
+debug link's `diag` and `view` sections ([debuglink.md](../spec/debuglink.md)); request 4 became the USB MMDVM
+hotspot, with the counters in debug link view sections instead of a vendor command (0xD6 is now the split duplex
+command, [split-duplex.md](../spec/split-duplex.md)); request 5 is in (`core/hotspot/hotspotSfr.c`). Request 3 (a
+fixed TX test pattern) was not built; the HIL TX tests key the radio through the debug link instead.
 
 1. **DMR diagnostics page** (key presses only, now). One page, decimal, counters 16 bit: slot ticks; bursts
    received by kind (voice LC header, terminator, voice A, voice B-F, CSBK, data header, rate 1/2, 3/4, 1, idle, PI

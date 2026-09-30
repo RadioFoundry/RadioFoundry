@@ -142,8 +142,8 @@ VALUE | read [TEXT] | write [TEXT] | trap`.
 ## 8. Resources
 
 Default builds: DM-1701 8.6 KB flash and 3.2 KB RAM (the radio view and settings copies the snapshot is filled from,
-the answer buffer, the RF mailboxes); MD-380 the same, 97.2% of its code space. The MD-380 with every feature on
-fits with about 0.1 KB to spare. Off, the image grows by about 0.35 KB flash and 0.1 KB RAM (the gateway's port table
+the answer buffer, the RF mailboxes); MD-380 about 8 KB with LTO. Per-radio figures and the free space left:
+`docs/feature-matrix.md` (the MD-380's default image has about 2 KB free). Off, the image grows by about 0.35 KB flash and 0.1 KB RAM (the gateway's port table
 and the air-side check).
 
 ## 9. Tests
@@ -191,8 +191,8 @@ bench's attenuated path, an amateur DMR simplex channel, both radios on the same
 
 - SNMPv3 (USM authNoPriv with HMAC-SHA-96 or the RFC 7860 SHA-2 variants). It needs an engine ID, a persistent
   engineBoots counter (no room left in the settings record), discovery with Report PDUs, timeliness checks and the
-  HMAC code; with the MD-380 at 97% of its code space (every feature on: full) it doesn't fit. TODO when the settings get a second
-  record and flash allows. Privacy (encryption) is never offered over RF.
+  HMAC code; the MD-380 has about 3 KB of code space left (`docs/feature-matrix.md`), so it doesn't fit there. Possible
+  once the settings get a second record and flash allows. Privacy (encryption) is never offered over RF.
 - A trap community setting (traps use "public"), informs, a configurable trap target other than the host.
 - Writing channels, zones or the talk target through SNMP.
 - A radio menu for the agent's settings.

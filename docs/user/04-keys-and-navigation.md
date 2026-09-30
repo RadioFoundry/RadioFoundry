@@ -2,8 +2,7 @@
 
 # Keys and navigation
 
-Each key does the same kind of thing on every screen. Learn the five rules below and the rest of the radio follows
-from them.
+Each key does the same kind of thing on every screen.
 
 ## The five rules
 

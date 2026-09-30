@@ -9,13 +9,16 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
 ## Layers
 
 ```
- core/        DMR stack, radio core, UI, codeplug, settings, storage, hotspot, host link, CPS, debug link
+ core/        DMR stack, radio core, UI, codeplug, settings, storage, hotspot, host link, CPS, debug link,
+              APRS, IP services (TCP, HTTP, mDNS, TFTP, SNMP)
    |  calls only hal/*.h and board.<field>
- hal/         interfaces: board_t, radio, DMR modem, audio, vocoder, display, input, flash, power, stream, netif
+ hal/         interfaces: board_t, radio, DMR modem, audio, vocoder, display, input, flash, power, stream, netif,
+              system, AFSK, broadcast receiver
    |  implemented by
  boards/<b>/  the radio: board_t, pins, key map, feature defaults, linker script, codec hosting, chip glue
    |  uses
- drivers/     chips shared by several radios: AT1846S, FD6818, HR_C6000, HR_C7000, ST7735, ST7789, SPI NOR, USB
+ drivers/     chips shared by several radios: AT1846S, FD6818, SKY72310, HR_C6000, HR_C7000, ST7735, ST7789,
+              RDA5807M, SPI NOR, key matrix, encoder, NMEA GPS, USB
  platform/<p>/ the SoC: start-up, clocks, interrupts, time base, FreeRTOS port glue (stm32f4, hrc7000)
  third_party/ FreeRTOS, TinyUSB, ST HAL and CMSIS (submodules, permissive licenses)
 ```
@@ -40,9 +43,10 @@ sizes):
 | dmr | board | Modem events to the DMR call stack or the hotspot |
 | audio | board | PCM blocks; the vocoder runs here |
 | input | `core/input` | Key scan, gestures; PTT and monitor go straight to the radio core |
-| host | `core/hostlink` | The host port: MMDVM hotspot, CPS shim, debug link, USB network |
+| host | `core/hostlink` | The host port: MMDVM hotspot, CPS shim, debug link; in network mode the IP gateway and the radio's own services (`core/net`, `core/snmp`) |
 | usb | `drivers/usb` | TinyUSB device stack |
 | ui | `core/ui` | Frame pacing, drawing, the UI's behavior |
+| gps | board (MD-380) | NMEA from the GPS module, on radios that have one |
 
 Other tasks talk to the radio core through requests (`radio_req_*`, queued, never waiting) and read a copy of its
 state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so the host simulator runs it unchanged.
@@ -51,11 +55,16 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 
 | Directory | Spec | Contents |
 |---|---|---|
-| `core/radio` | [radio-features](../spec/radio-features.md) | The radio state machine (`radio_sm.c`), its task, scan, beeps, battery, Morse |
+| `core/radio` | [radio-features](../spec/radio-features.md), [dmr-roaming](../spec/dmr-roaming.md) | The radio state machine (`radio_sm.c`), its task, scan, beeps, battery, Morse, roaming, AM receive |
 | `core/dmr/call` | [dmr-voice](../spec/dmr-voice.md), [dmr-modem](../spec/dmr-modem.md) | The DMR call stack: talk targets, filters, late entry, talker alias |
 | `core/dmr/fec`, `core/dmr/ambe` | [dmr-modem](../spec/dmr-modem.md) | ETSI FEC, AMBE frame FEC and the voice path around the codec |
-| `core/dmr/*.c` | [dmr-data](../spec/dmr-data.md), [dmr-emergency](../spec/dmr-emergency.md), [sfr](../spec/sfr.md), [usb-network](../spec/usb-network.md) | Data service (SMS, CSBK signaling, ARS, LRRP), emergency, privacy, SFR, IP gateway |
-| `core/hotspot` | [mmdvm-protocol](../spec/mmdvm-protocol.md) | MMDVM modem protocol and the hotspot |
+| `core/dmr/*.c` | [dmr-data](../spec/dmr-data.md), [dmr-emergency](../spec/dmr-emergency.md), [sfr](../spec/sfr.md), [usb-network](../spec/usb-network.md) | Data service (SMS, CSBK signaling, ARS, LRRP, confirmed data, SAP 3 compression), emergency, privacy, SFR, IP gateway |
+| `core/hotspot` | [mmdvm-protocol](../spec/mmdvm-protocol.md), [split-duplex](../spec/split-duplex.md) | MMDVM modem protocol, the hotspot, its SFR mode and the split duplex repeater |
+| `core/net` | [tcp-services](../spec/tcp-services.md), [mdns](../spec/mdns.md), [tftp](../spec/tftp.md) | The minimal TCP and the radio's services on the USB network link: KISS, HTTP, rigctld, APRS-IS, mDNS, TFTP |
+| `core/snmp` | [snmp](../spec/snmp.md) | SNMPv2c agent, the ODR MIB, notifications |
+| `core/aprs` | [aprs](../spec/aprs.md) | AX.25 / AFSK, beacons, messages, KISS TNC, iGate rules |
+| `core/bcast` | [airband-and-broadcast](../spec/airband-and-broadcast.md) | The broadcast FM receiver (DM-32UV, parked) |
+| `core/usbaudio` | [usb-audio](../spec/usb-audio.md) | USRP and the jitter buffer (host tested, not in an image yet) |
 | `core/hostlink` | [cps-protocol](../spec/cps-protocol.md) 1 | Dispatch of the host port by first byte; the USB network side |
 | `core/cps` | [cps-protocol](../spec/cps-protocol.md) | The legacy CPS shim |
 | `core/codeplug` | [legacy-cps-interop](../spec/legacy-cps-interop.md), [codeplug-native](../spec/codeplug-native.md) | Codeplug reading and editing, the DMR ID database |

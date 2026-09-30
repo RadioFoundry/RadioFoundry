@@ -6,8 +6,8 @@ In hotspot mode the radio is a DMR modem for a computer running MMDVMHost, Pi-St
 connects the radio to a DMR network (BrandMeister, TGIF and others); the radio carries the calls to and from radios
 nearby on one frequency. The radio speaks the MMDVM modem protocol over its USB serial port.
 
-Hotspot mode is built and passes the host tests, and the radio answers the host's requests on the bench. Calls
-through it haven't been tested on air yet.
+Hotspot voice and data calls, both ways, are verified on air with the DM-1701 on the SDR bench. The MD-380's default image leaves hotspot mode out for space; **Tools >
+Hotspot** is dimmed there.
 
 ## What you need
 
@@ -89,15 +89,19 @@ To stop the radio from entering hotspot mode at all, turn **Settings > Connectio
 
 ## Single frequency repeater (SFR) mode
 
-SFR is an optional build (`make BOARD=dm1701 CONFIG_SFR=y`). In SFR mode the hotspot repeats a call heard on
-timeslot 1 on timeslot 2 of the same frequency, and also sends it to the network. Radios nearby in direct mode hear
-both.
+In SFR mode the hotspot repeats a call heard on timeslot 1 on timeslot 2 of the same frequency, and also sends it to
+the network. Radios nearby in direct mode hear both. It is in the DM-1701 image, not in the MD-380's.
 
 The host turns SFR mode on by running duplex with the receive and transmit frequencies equal (`Duplex=1`,
 `RXFrequency` = `TXFrequency`). Setting `Duplex=0` or different frequencies turns it off.
 
 Limitations today: the DM-1701 keys its transmitter for the whole repeat, so it misses the rest of an inbound call
 after the first repeat. Not tested on air. The stand-alone repeater and the SFR user roles on a channel aren't built.
-**Tools > Single freq. repeater** shows only an information page: SFR runs in hotspot mode and the hotspot host turns
-it on. Details:
-[docs/spec/sfr.md](../spec/sfr.md).
+**Tools > Single freq. repeater** shows only an information page. Details: [docs/spec/sfr.md](../spec/sfr.md).
+
+## Two radios as a duplex repeater
+
+Experimental: two DM-1701s, each on its own USB port of one computer, act as one full duplex repeater, one
+receiving, one transmitting. The computer runs `tools/split_duplex_host.py`. The slot numbering is still being
+checked on the bench. Details:
+[docs/spec/split-duplex.md](../spec/split-duplex.md).

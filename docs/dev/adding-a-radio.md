@@ -17,15 +17,15 @@ bootloader and image format, calibration, codec location. Start from the radio's
 | File | Contents |
 |---|---|
 | `boards/<b>/board.mk` | `PLATFORM`, `MCU_DEFS`, `LDSCRIPT`, `BOARD_DIRS` (the board directory and each driver it uses), optional `BOARD_USB_DIRS` (built only with `CONFIG_USB`) and `HAL_MODULES` (STM32) |
-| `boards/<b>/config.mk` | Feature defaults for this radio, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`) |
+| `boards/<b>/config.mk` | Feature defaults for this radio, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware support lacks; ci.sh's maximal build leaves them off) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
 | `boards/<b>/<b>.ld` | Linker script: the application's start, the end of its region, and the codec window kept free. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec; list the sectors in `tools/odrflash/odrflash/boards.py` ([release.md](release.md)) |
 | `boards/<b>/FreeRTOSConfig.h` | The RTOS settings: tick, heap, priorities |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |
 | `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations |
 | `boards/<b>/*_<b>.c` | One file per interface: radio, DMR, audio, vocoder, display, input, flash, power, calibration, diagnostics, USB |
 
-Look at `boards/dm1701/` (STM32F405, HR_C6000, AT1846S, USB) and `boards/dm32/` (HR_C7000 SoC, FD6818, UART host
-link) for the two shapes that exist.
+Look at `boards/dm1701/` (STM32F405, HR_C6000, AT1846S, USB), `boards/md380/` (the same platform with an HR_C5000,
+GPS, link time optimization to fit) and `boards/dm32/` (HR_C7000 SoC, FD6818, UART host link).
 
 ## board_t
 
@@ -34,7 +34,7 @@ link) for the two shapes that exist.
 | Field | Fill with |
 |---|---|
 | `name` | The model as shown in About and the hotspot's description |
-| `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT` |
+| `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM` |
 | `bands`, `band_count` | Receive ranges, each with `tx` true where transmit is allowed |
 | `power_count`, `power_names`, `power_default` | Power levels as short labels, lowest first, and the default index |
 | `display`, `input`, `keymap`, `keymap_len` | Display and key interfaces, and the key map (below) |
@@ -43,6 +43,8 @@ link) for the two shapes that exist.
 | `host_port`, `cps`, `netif` | The link to a computer (NULL if none), CPS and USB network hooks |
 | `system`, `diag_line`, `diag_reset` | Optional: chip identity and reboot modes, a diagnostics page |
 | `battery_low_mv`, `battery_critical_mv` | Battery warning levels; 0 for none |
+| `audio_tap`, `bcast`, `afsk` | Optional: audio path taps, a broadcast FM receiver, APRS AFSK transmit and receive audio |
+| `gps_present` | Optional, with `CAP_GPS`: whether the GPS module is fitted (radios sold with and without one) |
 
 Optional hooks may be NULL; the core checks them.
 
@@ -86,4 +88,7 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 - Add host tests for each new driver against a simulated chip (`tests/host/*Test.c`; see the existing driver tests).
 - `tools/ci.sh` finds the board by its `board.mk` and builds its feature matrix when the compiler is installed. A
   board without its compiler is skipped with a notice.
-- Add the radio to the status table in the top-level README and to [the user manual's introduction](../user/01-introduction.md).
+- Add the radio to the status table in the top-level README, to [feature-matrix.md](../feature-matrix.md) and to
+  [the user manual's introduction](../user/01-introduction.md).
+- Before it can be released: a board entry in `tools/odrflash/odrflash/boards.py` (sectors, codec profile,
+  `releasable`) and a job in `release.yml` ([release.md](release.md)).

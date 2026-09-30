@@ -5,13 +5,14 @@
 
 APRS (Automatic Packet Reporting System) on OpenDigitalRadio: our position, status and messages as AX.25 UI frames in
 Bell 202 AFSK on FM; positions over DMR to an APRS gateway ID; automatic beaconing from several trigger sources; a
-KISS TNC on the host port; the iGate rules with a host helper holding the APRS-IS connection; and, on radios that can
-sample their received audio, a demodulator, a station list, messages to us and a digipeater.
+KISS TNC on the host port (and on TCP port 8001 in USB network mode); the iGate rules, with the APRS-IS connection
+held by a host helper or by the radio's own client (`tcp-services.md` 4, 7); and, on radios that can sample their
+received audio, a demodulator, a station list, messages to us and a digipeater.
 
 Code: `core/aprs` (portable, host tested), the RF part in `core/radio/radio_sm.c` (the APRS block), the board's tone
 path behind `hal/hal_afsk.h`, the UI in `core/ui/ui_aprs.c`, the debug link in `core/debuglink/debuglink_aprs.c`, the
-host helper `tools/aprs_gate.py`. Build switches: `CONFIG_APRS`, `CONFIG_APRS_RX`, `CONFIG_APRS_IGATE`
-(`docs/build-config.md`). The DMR GPS Info LC, which shares the position source, is in `dmr-voice.md` 3.1.
+host helper `tools/aprs_gate.py`. Build switches: `CONFIG_APRS`, `CONFIG_APRS_RX`, `CONFIG_APRS_IGATE`, and on the
+USB network link `CONFIG_NET_KISS` and `CONFIG_NET_APRSIS` (`docs/build-config.md`). The DMR GPS Info LC, which shares the position source, is in `dmr-voice.md` 3.1.
 
 Sources (all public, read for the formats only; no implementation was used as a source, `CLEANROOM.md`):
 
@@ -38,12 +39,12 @@ aprx can stand in.
 | FM AFSK transmit | yes: AT1846S tone generator retuned per symbol (5.2) | when the board provides `board.afsk->tx_*` |
 | FM AFSK receive, station list, digipeater, messages to us | designed only: no received audio reaches the MCU (5.3) | when the board provides `board.afsk->rx_*` and builds `CONFIG_APRS_RX` |
 | Positions over DMR (LRRP / UDT) | yes, on a DMR channel | every DMR radio |
-| KISS TNC on USB (and UDP 3334 in network mode) | yes (TX path; RX frames only with RX) | yes |
+| KISS TNC on USB (UDP 3334 and TCP 8001 in network mode) | yes (TX path; RX frames only with RX) | yes |
 | iGate | IS -> RF messages only after RX exists; RF -> IS needs RX (designed only) | with RX |
 | GPS | none: host NMEA or the fixed position | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)` |
 
-Everything is host tested. On the SDR bench (section 13): positions over DMR (LRRP and UDT) decode; FM AFSK keyed an
-unmodulated carrier until the AT1846S voice source fix (5.2), which waits for its on-air run.
+Everything is host tested. On the SDR bench (section 13): positions over DMR (LRRP and UDT) decode, and FM AFSK
+decodes with a valid FCS since the AT1846S voice source fix (5.2).
 
 ## 2. Model
 
@@ -117,7 +118,7 @@ the tone deviation register 0x59 around the driver's value.
 
 The tone generator is the AT1846S's voice source only with reg 0x3A bits 14:12 (voice_sel) = 001 and 0x7A bit 14
 (single tone) set: an earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.10). Measured by
-`tests/hil/test_aprs.py` once on air: the phase continuity across a retune, the deviation the level gives, the mark /
+`tests/hil/test_aprs.py` on air: the phase continuity across a retune, the deviation the level gives, the mark /
 space flatness, the TX delay (section 13).
 
 ### 5.3 DM-1701 receive: designed only
@@ -193,7 +194,8 @@ received frames (RX builds) as KISS DATA, and lines for APRS-IS as SetHardware '
 
 The rules are in firmware (`aprs_igate.c`, after aprs-is.net "IGate Design" and "q Construct"); the APRS-IS TCP
 connection is in the host helper `tools/aprs_gate.py`, which logs in with the callsign and passcode, applies a
-filter, and passes lines both ways as KISS SetHardware 'G' frames (serial port or UDP 3334).
+filter, and passes lines both ways as KISS SetHardware 'G' frames (serial port or UDP 3334), or, in USB network mode,
+in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), which carries the same lines.
 
 - RF -> IS: never a packet whose path holds TCPIP, TCPXX, NOGATE or RFONLY, nor a query; a third-party packet is
   gated as the packet it carries unless that one came from the Internet; the line gets `,qAR,<our call>`; each
@@ -274,11 +276,14 @@ saved and put back once the queued frames and message retries have gone out on t
    UDT NMEA layers and the position (within 2e-5 degree). Passed on air (DM-1701, 467.375 MHz CC 2, 50 mW).
 3. Still manual: BrandMeister (`aprs set via dmr` through a BrandMeister repeater or hotspot; the position on aprs.fi
    with the 5057 SSID, else `dmr_udt 1`, and the LRRP request ID question, 8.1) and KISS (`aprs set kiss 1`,
-   `tools/aprs_gate.py --serial PORT --kiss-tcp 8001`, a position from APRSdroid / Xastir goes out on RF).
+   `tools/aprs_gate.py --port PORT --kiss-tcp 8001`, or in USB network mode the radio's own KISS port 8001; a position
+   from APRSdroid / Xastir goes out on RF).
 
 Results so far: DMR LRRP and UDT pass. AFSK from 23469a2 / 0229a72 keyed a 0.59 s carrier on 145.090 MHz with no
 tones (about 25 Hz RMS deviation; the 1750 Hz burst likewise silent while CTCSS on the same carrier deviated 2 kHz):
-the voice source bug in 5.2, fixed in 694249b, on air after the next flash.
+the voice source bug in 5.2, fixed in 694249b. On ff6268b (HIL 2026-10-10) AFSK decoded off air with a valid FCS,
+twist 0.4-1.4 dB, continuous phase (6.5 degrees residual), but 7.2 kHz peak deviation at tone level 0x40; 237211a set
+0x1C (about 3.1 kHz, `hardware-dm1701.md`).
 
 ## 14. Open decisions
 

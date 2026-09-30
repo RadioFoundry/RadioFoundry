@@ -46,9 +46,9 @@ DMR needs your DMR ID. Without one, the radio refuses to transmit on DMR channel
 
 ## Checks after installing
 
-1. **Settings > Advanced > About** shows "OpenDigitalRadio" with the version you built, the radio model, then the authors and the licenses of everything in the firmware.
+1. **Settings > Advanced > About** shows "OpenDigitalRadio" with the version you flashed, the radio model, then the authors and the licenses of everything in the firmware.
 2. On an FM channel, open the squelch with **SK1** (hold it). You hear noise: the receiver and the audio path work.
 3. On a DMR channel, the Home screen shows "No codec: voice off" in its bottom line if the codec isn't merged. See
    [Installing, no codec](02-installing.md#no-codec-no-codec-voice-off).
 4. Change a setting, for example **Settings > Display > Brightness**, turn the radio off and on again, and check that
-   the setting stayed. If it didn't, see "Settings are not kept" in [Troubleshooting](17-troubleshooting.md).
+   the setting stayed. If it didn't, see "Settings are not kept" in [Troubleshooting](19-troubleshooting.md).

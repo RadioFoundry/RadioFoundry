@@ -188,7 +188,7 @@ blocks, so the runs use block hooks only and check flash use by what is mapped.
   deliberately misaligned caller stack. `present()` passes, and the encoded bits and decoded PCM over 30 frames are
   bit-identical to the direct stock calls.
 
-Scripts and notes: `the external reference folder` (outside the repository).
+Scripts and notes: kept outside the repository.
 
 ## Only a radio can check
 
@@ -202,6 +202,7 @@ Scripts and notes: `the external reference folder` (outside the repository).
 ## Open items
 
 * Other stock versions (D13.20 and similar) need their own profile; only D002.032 is supported.
-* 275 KB for the application is tight (the default build uses 94 %). If the application outgrows it, the choices are
+* 275 KB for the application is tight: the default build fits only with link time optimization and the hotspot off
+  (`docs/build-config.md`, "The MD-380's image"). If the application outgrows it, the choices are
   relocating the codec (moving both windows and patching 70 literal sites and one code pointer) or a smaller
   application.

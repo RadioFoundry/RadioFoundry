@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Moving from stock or md380tools firmware (MD-380, MD-390, RT3)
+# Moving from stock MD-380 firmware
 
 This chapter is for a TYT MD-380, MD-390 or Retevis RT3 that runs TYT's stock firmware or the md380tools patched
 firmware (the KD4Z toolkit). One program, `md380_migrate.py`, does the whole move:
@@ -19,12 +19,23 @@ firmware (the KD4Z toolkit). One program, `md380_migrate.py`, does the whole mov
 | Python 3.8 or newer | macOS and Linux tested on files only, Windows untested |
 | qdmr 0.12 or newer | Brings the `dmrconf` command that converts the codeplug. macOS: `brew install qdmr`. Linux: your distribution's `qdmr` package. Windows: the installer from dm3mat.darc.de/qdmr |
 | `pip install pyusb pyserial` and libusb | libusb: macOS `brew install libusb`, Linux `apt install libusb-1.0-0` |
-| The ODR image for your band | `odr_md380_codec.bin` (codec included). A UHF image for a UHF radio, a VHF image for a VHF radio |
+| The ODR image for your band | `odr_md380_codec.bin` (codec included), or `odr_md380.bin` with `--stock` (the tool merges the codec). A UHF image for a UHF radio, a VHF image for a VHF radio. See [Getting the image](#getting-the-image) |
 | TYT's `MD-380-D2.32(AD).bin`, or the bootloader key file | The tool derives the bootloader key from the stock file and checks it. A key file (`--key`) works too |
 | The programming cable | The radio's USB cable |
 
 A tester kit (`md380_migrate.py package`) is one folder with the script, its helpers, the image, a `README.txt` and
 a `requirements.txt`.
+
+## Getting the image
+
+The MD-380 isn't in the releases yet. Build the image from the source ([building](../dev/building.md)):
+
+```
+make BOARD=md380                                         # UHF: build/md380/odr_md380.bin
+make BOARD=md380 MD380_BAND=vhf BUILD=build/md380-vhf    # VHF
+```
+
+With TYT's `MD-380-D2.32(AD).bin` in `codecs/`, the build also writes `odr_md380_codec.bin` with the codec merged in.
 
 ## Run it
 
@@ -66,6 +77,7 @@ If you have the codeplug as a file, the program doesn't need to read the radio f
 |---|---|
 | `.rdt` (262,709 bytes) | The TYT CPS, or the KD4Z toolkit |
 | a 256 KB `.img` / `.bin` | md380tools' codeplug dump |
+| `.dfu` | dmrconf |
 | `.yaml` | qdmr |
 
 ```

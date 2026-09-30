@@ -6,7 +6,7 @@ APRS host helper for an OpenDigitalRadio radio in KISS mode (docs/spec/aprs.md 9
 radio's iGate, a KISS TCP port for APRS programs (APRSdroid, Xastir, YAAC ...), and NMEA forwarding from a GPS on the
 computer.
 
-    aprs_gate.py --port /dev/cu.usbmodemXXXX | --port udp:192.168.7.1  [--call N0CALL] [--passcode N]
+    aprs_gate.py --port /dev/cu.usbmodemXXXX | --port udp:192.168.10.1 [--call N0CALL] [--passcode N]
                  [--server rotate.aprs2.net:14580] [--filter "m/50"] [--no-is]
                  [--kiss-tcp 8001] [--nmea /dev/cu.gps | --nmea-file track.nmea] [-v]
 

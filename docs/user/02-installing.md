@@ -2,9 +2,10 @@
 
 # Installing
 
-You don't build anything. Each ODR release carries the firmware for the DM-1701 and a small program, **odrflash**,
-that puts it on the radio. Installing takes four steps: get odrflash, get the stock firmware file, flash, first boot.
-Nothing here changes the radio's calibration.
+Each ODR release carries the DM-1701 firmware and **odrflash**, the program that puts it on the radio. You don't
+build anything. Installing takes four steps: get odrflash, get the stock firmware file, flash, first boot. Nothing
+here changes the radio's calibration. For an MD-380, see [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md)
+instead.
 
 ## What you need
 
@@ -15,10 +16,10 @@ Nothing here changes the radio's calibration.
 | The DM-1701 stock firmware, V02.06 CSV | Baofeng's file `DM-1701(CSV)-V02.06.bin`. An archive is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware |
 | The radio's USB programming cable | The cable that came with the radio |
 
-The release firmware has everything except the AMBE codec, the proprietary part DMR voice needs, which ODR can't
-ship. odrflash either keeps the codec that is already in your radio, or takes it out of the stock firmware file on
-your computer and writes it to the radio. The stock file also gives odrflash the key the radio's bootloader expects.
-odrflash checks the file by SHA-256 and refuses files it doesn't recognize; V02.06 CSV is the one it knows today.
+The release firmware has everything except the AMBE codec. odrflash either keeps the codec already in your radio,
+or takes it out of the stock firmware file on your computer and writes it to the radio. The stock file also gives
+odrflash the key the radio's bootloader expects. odrflash checks the file by SHA-256 and refuses files it doesn't
+recognize; V02.06 CSV is the one it knows today.
 
 Back up the radio's current codeplug with the program you use now (the Baofeng CPS, or qdmr) before you flash. ODR
 uses a different codeplug layout from the stock firmware. If you go back to stock later, you need that backup.
@@ -31,7 +32,7 @@ Download the odrflash file for your system from the release page and put it some
 |---|---|
 | Windows | Run Zadig (zadig.akeo.ie) with the radio in its bootloader (step 3), pick "STM32 BOOTLOADER" (0483:DF11) and install WinUSB. Windows may warn about the unsigned odrflash file once |
 | macOS | In Terminal: `xattr -d com.apple.quarantine odrflash-*` and `chmod +x odrflash-*` (the file isn't signed) |
-| Linux | `chmod +x odrflash-*`. If odrflash says access is denied, it prints the udev rule to add |
+| Linux | `chmod +x odrflash-*`. If odrflash says access is denied, it prints the udev rule to add. To reach the radio's serial port once it runs ODR (`odrflash probe`, updates), join the `dialout` group: `sudo usermod -aG dialout $USER`, then log in again |
 
 The examples below call it `odrflash`.
 

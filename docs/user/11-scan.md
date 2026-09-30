@@ -2,7 +2,7 @@
 
 # Scan and dual watch
 
-Scan is built and passes the host tests. It hasn't been tested on the radio yet.
+Zone scan (including stopping for DMR calls), VFO band scan and dual watch are verified on the DM-1701.
 
 ## Starting and stopping
 
