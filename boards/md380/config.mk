@@ -23,7 +23,7 @@ LTO ?= 1
 LTO_3P ?= 1
 # The one feature left out for flash: the MMDVM hotspot (12 KB). Least useful here: it needs a host running MMDVMHost,
 # the MD-380's DMR is untested on air, and the same USB link carries IP over DMR and the radio's own services instead.
-# With it off the default image has about 3 KB free; DMR_ROAMING (also 12 KB) is the alternative
+# With it off the default image has about 2 KB free; DMR_ROAMING (also 12 KB) is the alternative
 CONFIG_HOTSPOT ?= n
 # Not written for this radio (above), left out for flash, or no use on it (FONT_XL is for 240 px and wider panels,
 # this one is 160 px): tools/ci.sh's maximal configuration leaves these off

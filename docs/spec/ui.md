@@ -150,8 +150,7 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_SCAN`, data features) are
-left out or dimmed with the feature. The DM-1701 default image is 339,528 of 344,064 bytes (`docs/feature-matrix.md`,
-2026-10-11); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB) bounds the display: 240x320 at
+left out or dimmed with the feature. The DM-1701 default image leaves only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB) bounds the display: 240x320 at
 16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`.
 
 ## 6. Debug link

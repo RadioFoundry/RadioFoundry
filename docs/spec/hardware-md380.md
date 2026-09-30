@@ -625,7 +625,7 @@ hashed and its container header read (14.1).
 ## 19. Sizes
 
 Flash: the table in [build-config.md](../build-config.md#the-md-380s-image) and the per-feature figures in
-[feature-matrix.md](../feature-matrix.md) (default UHF image 278,600 of 281,668 bytes with LTO, 2026-10-11).
+[feature-matrix.md](../feature-matrix.md) (the default UHF image, with LTO, leaves about 2 KB of 281,668 bytes).
 
 Obsolete (2026-10-10, before the 275 KB limit of `md380.ld`, LTO and the CCM move): default UHF 252,136 B flash,
 116,248 B SRAM, 8,516 B CCM; maximal 299,808 B flash, 127,784 B SRAM, 15,520 B CCM.

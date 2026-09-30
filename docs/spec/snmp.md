@@ -143,7 +143,7 @@ VALUE | read [TEXT] | write [TEXT] | trap`.
 
 Default builds: DM-1701 8.6 KB flash and 3.2 KB RAM (the radio view and settings copies the snapshot is filled from,
 the answer buffer, the RF mailboxes); MD-380 about 8 KB with LTO. Per-radio figures and the free space left:
-`docs/feature-matrix.md` (the MD-380's default image has about 3 KB free). Off, the image grows by about 0.35 KB flash and 0.1 KB RAM (the gateway's port table
+`docs/feature-matrix.md` (the MD-380's default image has about 2 KB free). Off, the image grows by about 0.35 KB flash and 0.1 KB RAM (the gateway's port table
 and the air-side check).
 
 ## 9. Tests

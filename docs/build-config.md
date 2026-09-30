@@ -120,14 +120,14 @@ needs a host running MMDVMHost, the MD-380's DMR is untested on air, and the sam
 radio's services instead). `CONFIG_DMR_ROAMING` (also 12 KB) is the alternative, should the hotspot matter more there.
 The maximal configuration also leaves out `CONFIG_FONT_XL` (a 160 px panel has no use for it).
 
-Sizes of the default image (UHF; VHF within 30 bytes), 2026-10-11:
+Sizes of the default image (UHF; VHF within 30 bytes), 2026-10-11 at 3ec14e3:
 
 | Build | Bytes used | Free |
 |---|---|---|
-| `LTO=0` | 297,036 | overflows by 15,368 |
-| `LTO=1 LTO_3P=0` | 281,556 | 112 |
-| `LTO=1 LTO_3P=1` (default) | 278,628 | 3,040 |
-| maximal (default + `AM_RX BCAST_FM AUDIO_PROBE`) | 279,008 | 2,660 |
+| `LTO=0` | | overflows by 16,504 |
+| `LTO=1 LTO_3P=0` | | overflows by 972 |
+| `LTO=1 LTO_3P=1` (default) | 279,668 | 2,000 |
+| maximal (default + `AM_RX BCAST_FM AUDIO_PROBE`) | 280,048 | 1,620 |
 
 ## Adding a feature
 
