@@ -1,18 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-**14.8 Scanning DMR direct mode: the carrier is on air every other slot.**
-Symptom: the zone scan never held on a DMR call already in progress (HIL 2026-10-10). Cause: the noise reading follows
-the 30 ms bursts, so the reading at the end of the dwell, or any poll of the probe, often fell between two bursts and
-the probe ended at once; and a 700 ms probe was shorter than a late entry that has to wait for a second superframe's LC
-(about 1.1 s from the retune). Rule: a carrier seen in the last 150 ms counts; bursts with the channel's color code
-extend the probe to 1.5 s (`docs/spec/radio-features.md` 2).
-
 # Gotchas: lessons from the old firmware
 
 What went wrong on the legacy firmware that OpenDigitalRadio replaces, and what new code has to do so it
 doesn't happen again. Each entry gives the symptom, the cause, the rule for new code, the radios it applies to, and the
-old repository commit where it was found or fixed (for the dirty-side reference in
-`the external reference folder`; implementers don't need the commit to apply the rule).
+old repository commit where it was found or fixed (for the dirty-side reference notes kept outside this
+repository; implementers don't need the commit to apply the rule).
 
 This file is prose only: register names, state names, timing numbers and standard fields are named, but nothing here
 is legacy firmware code or follows its structure. Radios: DM-1701 / RT-84 / MD-UV380 (STM32F405 + HR_C6000 + AT1846S),
@@ -159,12 +152,6 @@ tolerance (200-400 ms) and is not a channel-clear signal. Commit 5d1bfdd.
 **3.7 Only saved settings count for background services.** ARS registered from an unsaved menu edit, then deregistered
 when the user backed out. Rule: services read committed settings, never in-progress edits. Commit 1d785c1.
 
-**3.8 Don't double the AT1846S tone deviation for 25 kHz.** The 25 kHz mode already doubles FM deviation. The
-bandwidth table also doubled reg 0x59 bits 5:0 (0x0B90 to 0x0BA0), so CTCSS went out 4.0× the 12.5 kHz level (366 to
-1464 Hz, SDR bench). With 0x0B90 for both it's 368 and 733 Hz (2.0×). `test_fm_tx_bandwidth` checks the ratio.
-
-## 4. AMBE codec calling
-
 **3.8 Report "our call ended" from the modem state, not from PTT.** Location-after-call reports trigger on the end of
 the voice TX state; a flag must keep the end of a data transmission from triggering another report, and none are sent
 in hotspot mode. Commit d226b9a.
@@ -179,6 +166,12 @@ and sub-audio detect enables; voice_sel (bits 14:12: 000 nothing, 001 tone1, 010
 AT1846S programming guide, TX voice channel select) stayed 000, and the HR_C6000 microphone input was muted. Rule:
 tones go out with 0x3A bits 14:12 = 001 and 0x7A bit 14 (single tone enable), both put back after. Radios: DM-1701
 (any AT1846S board where the HR_C6000 modulates the voice).
+
+**3.11 Don't double the AT1846S tone deviation for 25 kHz.** The 25 kHz mode already doubles FM deviation. The
+bandwidth table also doubled reg 0x59 bits 5:0 (0x0B90 to 0x0BA0), so CTCSS went out 4.0× the 12.5 kHz level (366 to
+1464 Hz, SDR bench). With 0x0B90 for both it's 368 and 733 Hz (2.0×). `test_fm_tx_bandwidth` checks the ratio.
+
+## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
 unoptimized stack frame; at -Os DMR voice TX crashed the radio. Rule for new code: call the codec through a proper ABI
@@ -325,13 +318,6 @@ refused); commercial use needs a configurable band plan. Commit debe508.
 transmission (stale headers later). Separate the RX queue (lock-free from the ISR) from the TX buffer and clear per
 direction change. Commit 772b874.
 
-**8.9 A ring buffer needs storage for every place it counts.** The split duplex TX half's per-slot ring had
-`HRC6000_BS_Q + 1` places (so full and empty differ) but `HRC6000_BS_Q` entries. At the spare place the queue stored
-nothing and the ISR read past the array, so every fourth TS2 burst went out as a zeroed burst, a PI header on air
-(TS1's overrun landed in TS2's first entry and looked right). `hrc6000BsTest` test_ring_wrap queues through many wraps.
-
-## 9. USB and CDC-NCM
-
 **8.9 One MMDVM module, not per-radio copies.** The hotspot was copied per radio tree and the copies drifted: the
 MD-380 and DM-32 missed four or more fixes for days. Keep one MMDVM implementation behind the modem API. Commits
 7ccdb5e, b8a315f.
@@ -350,6 +336,13 @@ the uplink uses the inbound slot's command (DMR_DATA1 / DMR_LOST1 for TS1). Comm
 
 **8.13 CW ID side effect (MD-9600, upstream).** The HR_C6000 tone configuration must be restored after a CW ID or DMR
 fails until a power cycle.
+
+**8.14 A ring buffer needs storage for every place it counts.** The split duplex TX half's per-slot ring had
+`HRC6000_BS_Q + 1` places (so full and empty differ) but `HRC6000_BS_Q` entries. At the spare place the queue stored
+nothing and the ISR read past the array, so every fourth TS2 burst went out as a zeroed burst, a PI header on air
+(TS1's overrun landed in TS2's first entry and looked right). `hrc6000BsTest` test_ring_wrap queues through many wraps.
+
+## 9. USB and CDC-NCM
 
 **9.1 STM32 OTG_FS doesn't have the endpoints for ACM + NCM.** Choose serial or network mode (VID 0x1FC9, PID 0x0096 NCM
 only, with an IAD) and tunnel the serial protocol over UDP 3334. The MK22 can do a composite (PID 0x0095). Commit 6804e11.
@@ -526,3 +519,12 @@ back, and bounce edges merged by the single pending flag count twice. Rule: inte
 and decode with a table that counts only whole detents at a rest state and ignores samples where both lines changed
 (`drivers/input/quadrature`, hardware-dm1701.md 10.3). Radios: all with an encoder (DM-1701, DM-32UV, MD-9600). Also:
 when the UI's event queue is full, carry the detents over to the next scan instead of dropping them.
+
+## 17. Scan
+
+**17.1 Scanning DMR direct mode: the carrier is on air every other slot.**
+Symptom: the zone scan never held on a DMR call already in progress (HIL 2026-10-10). Cause: the noise reading follows
+the 30 ms bursts, so the reading at the end of the dwell, or any poll of the probe, often fell between two bursts and
+the probe ended at once; and a 700 ms probe was shorter than a late entry that has to wait for a second superframe's LC
+(about 1.1 s from the retune). Rule: a carrier seen in the last 150 ms counts; bursts with the channel's color code
+extend the probe to 1.5 s (`docs/spec/radio-features.md` 2).

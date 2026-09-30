@@ -570,13 +570,13 @@ polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Datasheet check: cod
 On these radios FM microphone audio is processed and modulated by the HR_C6000 (two-point modulation), not by the
 AT1846S. The AT1846S tone generator is still used for the 1750 Hz burst and for AFSK (with the HR_C6000 microphone input
 muted, HR_C6000 0xE0 bit 6 cleared): voice_sel = tone1 makes the AT1846S modulate it, as it does its CTCSS. With
-voice_sel left at 000 the carrier went out unmodulated (gotchas 3.10); the fixed path is to be verified by
-`tests/hil/test_aprs.py` on air.
+voice_sel left at 000 the carrier went out unmodulated (gotchas 3.10); the fixed path is verified on air (HIL
+2026-10-10: the burst, the roger beep and APRS AFSK, `docs/testing/on-air-coverage.md`).
 
 Morse keying for the hotspot's CW ID (`tx_tone_key`, `boards/dm1701/radio_dm1701.c`): with the tone set up by
 `tx_tone`, key up writes the 0x59 tone deviation bits 15:6 to 0 and key down back to the tone value (0x1C) (bits 5:0 kept from the
-saved value), so the carrier stays up and the tone switches without a retune. Unverified on the bench, like the tone
-path itself.
+saved value), so the carrier stays up and the tone switches without a retune. On air: `test_hotspot_cwid` checks the
+Morse tone (`docs/testing/on-air-coverage.md`).
 
 ### 5.9 RSSI, noise, squelch
 

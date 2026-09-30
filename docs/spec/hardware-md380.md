@@ -27,7 +27,7 @@ addresses. Every fact carries a confidence tag as in [radios.md](radios.md):
 
 The sources are listed in section 18 and cited by the short names used there ([DL4YHF], [holger], [OpenRTX],
 [PoC], [SKY], [ST], [miklor], [md380tools], [gotchas], [ref]). [gotchas] is [gotchas.md](gotchas.md) in this repo;
-[ref] is the prose notes of the reference port (`the external reference folder`), facts only.
+[ref] is the prose notes of the reference port (kept outside the repository), facts only.
 
 ---
 
@@ -62,8 +62,8 @@ MMDVM hotspot left out: [build-config.md](../build-config.md#the-md-380s-image).
 ### 1.4 RAM
 
 128 KB SRAM for data and every DMA buffer (minus 4 bytes at the top, as the DM-1701 keeps them for the boot request
-word); 64 KB CCM for CPU-only state (`ODR_CPU_RAM`, the vocoder state once hosted). Default build: 116 KB SRAM and
-8.5 KB CCM used (section 19).
+word); 64 KB CCM for CPU-only state (`ODR_CPU_RAM`: the task stacks and the slot engine, as on the DM-1701, a76da0d;
+main RAM use went from 89 % to 68 % of the default build with that move).
 
 Sources: STM32F405 data sheet [ST]; PoC||GTFO 10:8 [PoC]; OpenRTX MD-380 page [OpenRTX].
 
@@ -617,14 +617,15 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | [miklor] | https://miklor.com/MD380/380-Specs.php | Specifications (F) |
 | [md380tools] | md380tools README prose, https://github.com/travisgoodspeed/md380tools | Project notes (D) |
 | [gotchas] | [gotchas.md](gotchas.md) 2.6, 3.3, 3.4, 5.2, 11.1, 13.7 | This repo |
-| [ref] | `the external reference folder` (prose notes only, not the hunk code) | Facts from the reference port's notes (F) |
+| [ref] | the reference port's prose notes, outside the repository (not the hunk code) | Facts from the reference port's notes (F) |
 
 No GPL source, no disassembly and no binary of another project were read for this file. The stock D2.32 file was only
 hashed and its container header read (14.1).
 
-## 19. Sizes (2026-10-10, arm-none-eabi-gcc 13.3)
+## 19. Sizes
 
-| Build | Flash (of 336 KB) | SRAM (of 128 KB) | CCM (of 64 KB) |
-|---|---|---|---|
-| default UHF | 252 136 B (73 %) | 116 248 B (89 %) | 8 516 B |
-| maximal (every feature) | 299 808 B (87 %) | 127 784 B (97 %) | 15 520 B |
+Flash: the table in [build-config.md](../build-config.md#the-md-380s-image) and the per-feature figures in
+[feature-matrix.md](../feature-matrix.md) (default UHF image 278,600 of 281,668 bytes with LTO, 2026-10-11).
+
+Obsolete (2026-10-10, before the 275 KB limit of `md380.ld`, LTO and the CCM move): default UHF 252,136 B flash,
+116,248 B SRAM, 8,516 B CCM; maximal 299,808 B flash, 127,784 B SRAM, 15,520 B CCM.

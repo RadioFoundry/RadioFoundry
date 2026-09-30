@@ -19,7 +19,7 @@ the PTT watchdog and the jitter buffer as tested host code (`core/usbaudio`), a 
 | MCU audio into the FM modulator | **Unproven**, same chip, same probe. AFSK for APRS can fall back to the AT1846S tone generator either way (2.3) |
 | An MCU ADC on the RX audio line, or a free DAC on the mic line | **No.** ADC1 sees only the volume pot, the battery and a mic level tap; DAC1 drives the PA power, the DAC2 pin is a GPIO (2.1) |
 | USB composite with a sound card | **Fits**: CDC-ACM + UAC1 (3 IN, 2 OUT endpoints of the F405's 3 + 3), or CDC-NCM + UAC1; not all three, and not serial + sound card + HID together (3) |
-| Recommended protocols | IP: the USRP voice protocol over UDP (AllStarLink, DVSwitch Analog_Bridge, M17 and DMR bridges speak it) with PTT by its keyup flag; Hamlib's rigctld protocol through a small host bridge first, on the radio later. Serial: Kenwood-style CAT plus RTS/DTR PTT. Sound card: UAC1, PTT by the serial port's RTS/DTR (CM108-style HID as an alternative personality) (4) |
+| Recommended protocols | IP: the USRP voice protocol over UDP (AllStarLink, DVSwitch Analog_Bridge, M17 and DMR bridges speak it) with PTT by its keyup flag; Hamlib's rigctld protocol, now on the radio (`CONFIG_NET_RIGCTL`, [tcp-services.md](tcp-services.md) 6). Serial: Kenwood-style CAT plus RTS/DTR PTT. Sound card: UAC1, PTT by the serial port's RTS/DTR (CM108-style HID as an alternative personality) (4) |
 | Effort | About 6 to 9 working weeks for everything, in five phases; phase 0 (the probe) is done and needs one bench session (7) |
 
 The DM-32UV has no usable USB (its controller isn't wired); it could carry DMR voice audio over the programming
@@ -138,9 +138,9 @@ report both I2S channels' levels. `tests/hil/test_audio_probe.py` runs the exper
 | DMA | none new | I2S already on DMA1 S0 / S5; the OTG_FS core has no DMA (TinyUSB runs it in slave mode), so isochronous packets are copied by the CPU: 1000 interrupts a second per streaming endpoint, about 100 bytes each at 48 kHz |
 | USB bandwidth | under 2 % of full speed | 48 kHz mono 16-bit is 96 bytes per 1 ms frame each way |
 | RAM | about 3-4 KB | jitter buffer 2 KB (1024 samples), resampler state and two isochronous packet buffers about 0.5 KB, USRP datagram buffer 0.4 KB, UAC class state; the OTG FIFOs are in the peripheral (3) |
-| Flash | about 12-18 KB for everything | TinyUSB audio class and descriptors about 6-8 KB, resampler 1 KB, USRP and router 2 KB, CAT parser 2-3 KB, rigctld on the radio (with a minimal TCP) 4-6 KB more. The default image is 221 KB of 428 KB usable |
+| Flash | about 12-18 KB for everything | TinyUSB audio class and descriptors about 6-8 KB, resampler 1 KB, USRP and router 2 KB, CAT parser 2-3 KB (rigctld is already built: `docs/feature-matrix.md`). The DM-1701 default image now leaves about 4.5 KB of its 336 KB free (`docs/feature-matrix.md`, 2026-10-11), so this needs room made first (LTO, about 20 KB, or features off) |
 
-Main RAM is the tight resource (88 % used in the default build); the buffers above can live in main RAM only where DMA
+Main RAM was the tight resource when this was written (88 % used; since then the task stacks moved to the CCM); the buffers above can live in main RAM only where DMA
 or USB touches them, the rest in CCM.
 
 ## 3. USB: what fits
@@ -208,7 +208,7 @@ The rule: implement what existing software already speaks; add our own only wher
 |---|---|---|---|---|
 | **RTS / DTR PTT** on a serial port | fldigi, WSJT-X, JS8Call, VARA, Direwolf, Hamlib, almost everything | CDC-ACM SET_CONTROL_LINE_STATE | trivial, universal | the MMDVM hotspot and the CPS share the port and toggle DTR: PTT must be enabled only in audio sessions (6.3) |
 | **Kenwood-style CAT** (TS-480 / TS-2000 subset: `FA`, `FB`, `IF`, `MD`, `TX`, `RX`, `ID`, `PS`, `BY` for busy) | Hamlib, fldigi, WSJT-X, JS8Call, VARA's own CAT, Direwolf through Hamlib | the serial port | the most widely supported CAT set; ASCII, `;`-terminated, small parser | ASCII letters collide with the legacy CPS's request bytes (`R`, `W`, `X`, `C`, `D`): needs a recognizer (two uppercase letters, then digits or `;`) or a session mode (6.4) |
-| **Hamlib rigctld protocol** ("NET rigctl", model 2) | Hamlib clients (WSJT-X, fldigi, JS8Call, GridTracker, Direwolf `PTT RIG`), default TCP port 4532 | TCP | one implementation serves every Hamlib client over the network personality; simple line protocol (`F`, `f`, `T`, `t`, `M`, `m`, `\dump_state`, `\chk_vfo`, `\get_dcd`) | **TCP**: the radio's IP stack ([usb-network.md](usb-network.md) 3) is UDP only. `\dump_state` is long and version sensitive |
+| **Hamlib rigctld protocol** ("NET rigctl", model 2) | Hamlib clients (WSJT-X, fldigi, JS8Call, GridTracker, Direwolf `PTT RIG`), default TCP port 4532 | TCP | one implementation serves every Hamlib client over the network personality; simple line protocol (`F`, `f`, `T`, `t`, `M`, `m`, `\dump_state`, `\chk_vfo`, `\get_dcd`) | needs TCP, built since (`core/net`, [tcp-services.md](tcp-services.md)). `\dump_state` is long and version sensitive |
 | flrig XML-RPC (TCP 12345) | fldigi, WSJT-X, JS8Call (as "FLRig") | HTTP over TCP | well supported | XML and HTTP on the radio: too heavy |
 | CM108-style HID GPIO | Direwolf (`PTT CM108`), Hamlib (CM108 PTT type), AllStarLink usbradio / simpleusb (COS on an input, PTT on GPIO 3) | USB HID | Linux stacks key PTT with no serial port; COS can be an input report | its own personality (doesn't fit beside CDC + UAC, 3); software matching C-Media IDs needs our ID added (AIOC got it into AllStarLink 3) |
 | our debug link | our tools and HIL tests | serial, UDP 3334 | already has PTT with a firmware time-out, channel, VFO frequency, power, squelch, tones (debug link ops) | nobody else speaks it |
@@ -218,10 +218,8 @@ The rule: implement what existing software already speaks; add our own only wher
 - On the serial port: **RTS/DTR PTT** (configurable which line and polarity; default PTT = RTS asserted, as most
   software defaults to RTS; AIOC uses DTR=1 and RTS=0 after finding that CHIRP-style programmers toggle DTR) and a
   **Kenwood TS-480-style CAT subset** recognized beside the other protocols.
-- Over IP: **rigctld via a host bridge first** (`tools/odr_rig.py`: rigctld on localhost:4532 on the host, our debug
-  link to the radio over the serial port or UDP 3334), so every Hamlib client works in phase 2 without TCP on the
-  radio; **rigctld on the radio** later, with a minimal single-connection TCP (lossless USB link: no congestion
-  control, one segment in flight) if the owner wants no host software at all.
+- Over IP: **rigctld on the radio**. Built: port 4532 on the USB network link with a minimal TCP (`CONFIG_NET_RIGCTL`,
+  [tcp-services.md](tcp-services.md) 6), so the host bridge first planned here (`tools/odr_rig.py`) isn't needed.
 - In the sound-card-only personality: **CM108-compatible HID** report layout (PTT on GPIO 3 as an output report, COS
   as an input report bit), under our own VID/PID.
 
@@ -412,10 +410,10 @@ Effort in working days for one developer who knows the code base, including host
 |---|---|---|---|---|
 | 0 | the probe (done, in this branch) and **one bench session**: answers 2.3 | `CONFIG_AUDIO_PROBE` (diagnostic) | 6 KB / 2 KB, diagnostic builds only | 1 (bench) |
 | 1 | audio router (5.1) with the DMR voice and beep consumers moved onto it; the DM-1701 tap for whichever candidate won (A or B: a few register writes; C: a RAM-page driver, add 5-8 days); APRS can build on it | (part of DMR / FM) | 1-2 KB / 0.5 KB | 4-6 (+5-8 for C) |
-| 2 | network audio: USRP on the IP gateway's address, COS and keyup PTT with the watchdogs, the jitter buffer; host bridge `tools/odr_rig.py` (rigctld on the host) and a USRP reference client for tests; HIL test against the SDR bench | `CONFIG_USB_AUDIO_NET` (needs `CONFIG_USB_NETWORK`) | 3 KB / 2.5 KB | 6-8 |
+| 2 | network audio: USRP on the IP gateway's address, COS and keyup PTT with the watchdogs, the jitter buffer; a USRP reference client (rigctld is already on the radio, [tcp-services.md](tcp-services.md) 6) for tests; HIL test against the SDR bench | `CONFIG_USB_AUDIO_NET` (needs `CONFIG_USB_NETWORK`) | 3 KB / 2.5 KB | 6-8 |
 | 3 | sound card: the composite personalities with UAC1 (descriptors, alternate settings, resampler, adaptive OUT into the jitter buffer), CDC SERIAL_STATE, RTS/DTR PTT with its arming rules, the Kenwood CAT subset and the host link's second side protocol; HIL test with a host audio loopback | `CONFIG_USB_AUDIO` (needs `CONFIG_USB`) | 9-11 KB / 3 KB | 10-14 |
 | 4 | DMR as a voice endpoint over all three transports (5.5), metadata to the host | follows `CONFIG_DMR` | 1 KB | 3-4 |
-| 5 | options: audio fob personality (UAC1 + CM108-style HID), SLIP-framed USRP on the serial port and the DM-32 UART, rigctld on the radio with a minimal TCP | `CONFIG_USB_AUDIO_HID`, `CONFIG_USRP_SERIAL`, `CONFIG_RIGCTLD` | 2 / 1.5 / 5 KB | 3 + 3 + 6 |
+| 5 | options: audio fob personality (UAC1 + CM108-style HID), SLIP-framed USRP on the serial port and the DM-32 UART (rigctld on the radio: done, `CONFIG_NET_RIGCTL`) | `CONFIG_USB_AUDIO_HID`, `CONFIG_USRP_SERIAL` | 2 / 1.5 KB | 3 + 3 |
 
 Total: about 30-45 working days for phases 1-4 (6-9 weeks), plus phase 5 options. Phases 2 and 3 are independent
 after phase 1; phase 4 needs only phase 1 and one of 2 / 3. If 2.3 finds no FM path, phases 2-4 still deliver DMR
@@ -504,7 +502,7 @@ is well above the "mic muted, no tone" row.
 5. Which personality should a stock radio boot into: serial (today), or serial + audio once phase 3 is done?
 6. USRP: confirm the wire format with a capture from the owner's AllStar node or Analog_Bridge before the firmware
    relies on it; which ports and peer address as defaults?
-7. rigctld on the radio (needs a minimal TCP, about 5 KB), or is the host bridge enough?
+7. ~~rigctld on the radio, or a host bridge?~~ Settled: on the radio (`CONFIG_NET_RIGCTL`, [tcp-services.md](tcp-services.md) 6).
 8. DMR voice endpoint: send DMR call metadata (IDs, talker alias) to the host as USRP TEXT frames (Analog_Bridge's
    convention), on the debug link only, or both?
 

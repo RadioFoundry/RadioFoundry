@@ -145,13 +145,13 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 
 | Switch | Default | Off |
 |---|---|---|
-| `CONFIG_UI_SETTINGS` | y | the Settings menu is left out (about 3.7 KB); settings keep their stored values and are set with qdmr; Settings shows one row saying so, Find finds no settings |
+| `CONFIG_UI_SETTINGS` | y | the Settings menu is left out (about 5.3 KB, `docs/feature-matrix.md`); settings keep their stored values and are set with qdmr; Settings shows one row saying so, Find finds no settings |
 | `CONFIG_DIAG` | y | no diagnostics page (Tools has no Diagnostics row; Roaming moves up to 7) |
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_SCAN`, data features) are
-left out or dimmed with the feature. The DM-1701 default image is about 188 KB of 428 KB; the UI is about 50 KB of it
-(`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB) bounds the display: 240x320 at
+left out or dimmed with the feature. The DM-1701 default image is 339,528 of 344,064 bytes (`docs/feature-matrix.md`,
+2026-10-11); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB) bounds the display: 240x320 at
 16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`.
 
 ## 6. Debug link

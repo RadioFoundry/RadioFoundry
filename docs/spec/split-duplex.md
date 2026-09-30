@@ -8,7 +8,7 @@ repeater: the **TX half** transmits the repeater output (BS sourced, continuous,
 half's slot timing. The host (RadioDesk, or `tools/split_duplex_host.py`) coordinates the pair and can present it to
 MMDVMHost as one ordinary duplex modem (section 8).
 
-Switch: `CONFIG_HOTSPOT_SPLIT`, off by default, a child of `CONFIG_HOTSPOT` (`docs/build-config.md`). Built in, the
+Switch: `CONFIG_HOTSPOT_SPLIT`, on wherever `CONFIG_HOTSPOT` is (not on the MD-380), a child of `CONFIG_HOTSPOT` (`docs/build-config.md`). Built in, the
 radio still behaves exactly as a simplex hotspot (and as the SFR of `sfr.md`) until a host that knows this extension
 enables a role with the new vendor command (section 3). No existing MMDVM implementation splits TX and RX across two
 modems, so this document defines the small extension; everything else uses the standard MMDVM commands with their
@@ -172,7 +172,7 @@ the extension version). Find it with `\bSPLIT(\d+)\b`; send 0xD6 only to a modem
 | Command | Meaning in the TX half (a duplex MMDVM board's) |
 |---|---|
 | SET_FREQ | the repeater pair: RX = f_in (not used by this half), TX = f_out; RF level capped by the power cap. A retune restarts the slot clock (new epoch) and drops the buffers |
-| SET_CONFIG | duplex flag clear (simplex flag set is accepted too); colour code for the outbound; the rest as `mmdvm-protocol.md` 2.5. The SFR trigger never fires in a role |
+| SET_CONFIG | duplex flag clear (simplex flag set is accepted too); color code for the outbound; the rest as `mmdvm-protocol.md` 2.5. The SFR trigger never fires in a role |
 | SET_MODE | 02 DMR: normal; 00 idle: buffers dropped, keying ends after the burst on air |
 | DMR_START `1D 01` / `1D 00` | key the continuous outbound / unkey once what is buffered has gone out (at most 1 s). ACKed |
 | DMR_DATA1 / DMR_DATA2 | one 33-byte burst for outbound slot 1 / 2, as MMDVMHost builds it (BS sync, control byte 00 allowed: classified from the burst as in 2.8). Queued per slot. The first frame while unkeyed keys up too. Silent on success (as MMDVM boards); NAK 5 when that slot's buffer is full, NAK 2 in the cool-down, NAK 4 wrong length |
@@ -185,7 +185,7 @@ the extension version). Find it with `\bSPLIT(\d+)\b`; send 0xD6 only to a modem
 | Command | Meaning |
 |---|---|
 | SET_FREQ | the repeater pair: RX = f_in, TX = f_out (not used: this half never transmits) |
-| SET_CONFIG | colour code of the inbound |
+| SET_CONFIG | color code of the inbound |
 | DMR_DATA1 / DMR_DATA2 | NAK 2 (receive only) |
 | DMR_START, DMR_SHORTLC, DMR_ABORT | ACKed, no effect |
 | GET_STATUS | flag 40 carrier detect while bursts are heard; flag 04 RX overflow when uplink frames were lost; space bytes 0 |
@@ -199,7 +199,7 @@ While keyed the TX half sends a burst in **every** slot, alternately outbound TS
 CACH, with BS-sourced sync (voice 755FD7DF75F7, data DFF57D75DF5D, -1 9.1.1): a "traffic channel with CACH",
 transmitted without gaps. A slot with nothing buffered gets the idle message (-1 7.3); a slot whose stream underruns
 mid voice superframe gets a silence voice burst at the next position (so the superframe stays whole), mid data an idle
-burst. The chip makes the FEC, slot type and EMB (with its colour code from SET_CONFIG); the host's sync and EMB bits are
+burst. The chip makes the FEC, slot type and EMB (with its color code from SET_CONFIG); the host's sync and EMB bits are
 not sent as given (the HR_C6000 / HR_C7000 build bursts from information bits: `modem-hrc6000.md` 6.1). So voice keeps
 its AMBE and position, headers / terminators / CSBK / data keep their 96 (or 144 / 196) information bits including the
 host's CRC (sent verbatim, CRC_MCU_Control), and the embedded LC of B-E is taken per slot from the host's own B-E
@@ -316,7 +316,7 @@ chip delays, estimated under 3 ms and tracked away; drift between resyncs, 40 pp
 
 ## 7. RX half: labeling
 
-The RX half's modem receives on both slots (`rx_lock_slot(0)`, colour code from SET_CONFIG) and reports each burst
+The RX half's modem receives on both slots (`rx_lock_slot(0)`, color code from SET_CONFIG) and reports each burst
 with the slot counter of its report (`DMR_EV_BURST_RX` arg); `hal_dmr_modem_t.slot_clock` gives the latest slot
 boundary's counter and µs time, so the boundary at which burst k's slot started is t(k-1) = t_last - (c_last - k + 1)
 x 30 ms (the report comes in the slot after the one the burst was in, `hrc6000_dmr.h`). With the epoch E (start of an
@@ -340,7 +340,7 @@ the two radios.
 ### 8.1 Start-up
 
 1. Open both ports. On each: GET_VERSION; require ` SPLIT1` in the description. SET_FREQ with the repeater pair (RX =
-   f_in, TX = f_out, RF level from upstream) and SET_CONFIG (duplex flag clear, upstream's colour code) to **both**.
+   f_in, TX = f_out, RF level from upstream) and SET_CONFIG (duplex flag clear, upstream's color code) to **both**.
 2. INFO on each; require bit 0 of byte 1 on TX, bit 1 on RX. SET_ROLE 1 on TX, SET_ROLE 2 on RX (lease 10 s; the power
    cap and prebuffer you want).
 3. Time sync (section 6): TIME to each, at least 8 samples 20 ms apart, then every 1 s. GET_EPOCH from TX, SET_EPOCH to
@@ -424,7 +424,7 @@ keys the outbound with idle bursts and a short LC for 10 s.
 
 On the SDR bench `sdrmon.py capture` then `sdrmon.py analyze --cach` prints per burst the family (`bs`), the CACH
 decode (`tact ok AT TC LCSS` or `tact bad`) and a summary. Look for: (1) bursts every 30.000 ms alternating TC 0 / 1
-with BS data sync and data type 9 (idle) with our colour code: the continuous outbound works; (2) the carrier stays up
+with BS data sync and data type 9 (idle) with our color code: the continuous outbound works; (2) the carrier stays up
 between bursts (one key-up edge, no ramps every 30 ms); (3) `tact ok` on nearly every burst: the chip sends a CACH;
 then whether TC alternates in step with our slot numbering, whether AT follows `SET_AT` (the script toggles it every
 2 s) and whether the short LC decodes (`slc` lines) tell whose content it is. INFO byte 4 is then set by the driver
@@ -432,7 +432,7 @@ constant `HRC6000_BS_CACH_METHOD` in a later build.
 
 **Result, DM-1701, 2026-10-11** (467.375 MHz, lowest power, 10 s per variant, about 335 BS bursts each):
 
-| Variant | Bursts 30.00 ms apart, one key-up | BS sync, idle, our colour code | CACH | TC alternating | AT follows SET_AT | Short LC |
+| Variant | Bursts 30.00 ms apart, one key-up | BS sync, idle, our color code | CACH | TC alternating | AT follows SET_AT | Short LC |
 |---|---|---|---|---|---|---|
 | 0 | yes | yes | `tact ok` on all | 17 of 334 | no (2 busy) | none decoded |
 | 1 | yes | yes | `tact ok` on all | 0 of 334 | no | none |
@@ -443,7 +443,7 @@ The continuous outbound works in every variant. The CACH does not: TS2's CACH is
 2.5 ms gap holds a valid but empty TACT and no short LC, and none of these registers makes the chip number its slots.
 `HRC6000_BS_CACH_METHOD` stays "unknown" (INFO byte 4 = 3); a standard radio can't tell TS1 from TS2 on this outbound.
 On 4a9c002 (ring fixed) TS2 sends only idle bursts (167 of 167). Next: raw variant (255) sweeps of the page 4 registers near 0x10/0x11, or BS framing without a CACH (5.4). The same
-runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas 8.9), fixed after them.
+runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas 8.14), fixed after them.
 
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout
 
@@ -454,7 +454,7 @@ runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotc
   unknown command (NAK 1), the debug link's SPLIT view.
 - `test_split_tx_half_off_air` (marker `radio_tx`): the TX half keyed 10 s at the lowest power with idle bursts, a
   short LC and SET_AT toggling; asserted off air: BS sync only, a burst every 30 ms (same-slot spacing 60 ms), one
-  key-up edge, the colour code; asserted on the radio: no underruns, short LC taken. The CACH decode is printed
+  key-up edge, the color code; asserted on the radio: no underruns, short LC taken. The CACH decode is printed
   (the experiment's result). `ODR_SPLIT_VARIANT` picks the variant.
 - `test_split_rx_half_labels` (marker `rf`): the RX half with an epoch made from its own clock; a first bench call
   measures the phase residual and the epoch is centered on the bench's slots; a second call must go up under one

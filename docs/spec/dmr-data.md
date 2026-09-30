@@ -1,8 +1,10 @@
 # DMR data services
 
 Text messages, packet data answers, CSBK call alert and radio check, ARS registration and LRRP location answers on
-the DMR call stack; IP packets with compressed headers and confirmed delivery (11, 12). Status: built and host-tested on the DM-1701 (`dmrDataServiceTest`, `dmrDataChainTest`); not yet
-checked on air (`tests/hil/test_dmr_data.py`).
+the DMR call stack; IP packets with compressed headers and confirmed delivery (11, 12). Status: built and host-tested
+on the DM-1701 (`dmrDataServiceTest`, `dmrDataChainTest`). On air against the SDR bench: text messages, call alert
+and radio check, both ways (`tests/hil/test_dmr_data.py`); ARS and LRRP not yet (`docs/testing/on-air-coverage.md`);
+IP over DMR: 11.4.
 
 Sources: ETSI TS 102 361-1 (bursts, data headers, blocks, CRCs, CSBK), TS 102 361-2 (call alert, radio check),
 TS 102 361-3 V1.3.1 (packet data, responses, the IP text application of 5.7.1), the public Motorola TMS / ARS / LRRP
@@ -118,7 +120,7 @@ All three are read whatever the setting.
 
 | Format | `dmr_sms_format_t` | Carried as | Delivery confirmed by |
 |---|---|---|---|
-| ETSI IP text (5.3), the default | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | nothing yet (unconfirmed packet) |
+| ETSI IP text (5.3), the default | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
 | ETSI defined short data (5.2) | `ETSI` (1) | DD_HEAD, SAP 10, ISO 8859-1 | the ETSI response (A bit) |
 | Motorola TMS (5.1), `CONFIG_DMR_TMS` | `TMS` (0) | UDP 4007, UTF-16LE with the TMS header | the TMS ACK |
 
@@ -285,33 +287,6 @@ With control station mode's passthrough on and the USB network link up (`usb-net
 
 Every packet still reaches the PC through the packet hook (`dmrDataEnv_t.packet`). Counted in `data.pt_yielded`.
 
-## 11. Tests
-
-- `tests/host/dmrDataServiceTest.c`: the service on a fake host: replies and duplicates, confirmed data, queue
-  overflow and aging, CSBK both ways, our SMS and its ACK, ARS, LRRP with and without a position, the block window,
-  the mailbox; ETSI IP text (the builder's octets, the decoder with and without a byte order mark, ours by default,
-  received, confirmed, group, duplicates, a stored TMS default), the passthrough table above. Built a second time
-  with `CONFIG_DMR_TMS=0` (`dmrDataServiceTestNoTms`): a TMS heard is neither kept nor ACKed, confirmed still gets
-  its response, TMS sends are refused.
-- `tests/host/dmrDataChainTest.c`: end to end through the real slot engine (a model of the chip's receive reports
-  and its page 2 / 0x40 / 0x50 writes), the real call stack and the service: call alert in and its ack out (CRC
-  with CRC_MCU_Control), TMS in at rate 1/2, 3/4 and 1 and its ACK packet out, our radio check out and its answer
-  in, an unanswered call alert (3 tries), a request sent 600 ms after a reception; the emergency alarm in and out;
-  the ETSI text formats (ISO 8859-1, 7-bit, UTF-16 BE / LE / BOM, UTF-8, binary refused, our builder read back),
-  an ETSI message in and its response out, ours out and done on the response; the radio check in the ETSI form
-  both ways. Run by `make -C tests/host` (`run-rxchain`).
-- `tests/hil/test_dmr_data.py`: the same on air against the SDR bench (opt-in RF).
-- IP packets (11, 12): `tests/host/dmrDataTest.c` (testSap3: the compressed header's 5 / 7 / 9 octet forms against
-  vectors, auto / all / off, a UDP length that disagrees, a reserved opcode; testCRC9; testConfirmedTx: our confirmed
-  packet and a selective ACK byte for byte against vectors, the selective retry round trip through the receiver with a
-  bad block and with a lost block, the NACK cases; testAirtime: the table in 11.3), `tests/host/dmrDataServiceTest.c`
-  (testIpTx: unconfirmed SAP 3, confirmed with ACK, selective ACK, N(S) resync, time-outs to failure, tries, repeater
-  mode, group, too long, no channel; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
-  bursts, NACK), `tests/host/hostlinkNetTest.c` (the gateway's datagrams through the service path: SAP 3 for ports
-  outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
-  the standard's text, apart from the C code).
-- `tests/hil/test_dmr_ip.py`: on air, the bench modem decoding with `tools/bench/dmr_packet.py` (opt-in RF; 11.4).
-
 ## 11. Compressed UDP/IPv4 headers on transmit (SAP 3)
 
 Source: ETSI TS 102 361-3 V1.3.1 5.6 and 7.2. Receive was already built (`dmrDataGetUDP`, the gateway delivers SAP 3 as
@@ -456,7 +431,7 @@ transmissions.
 
 ### 12.5 Debug link
 
-The `dmr_ip` view section (`docs/spec/debuglink.md` 4.9): settings `ip.compress ip.confirmed ip.tries ip.rule0
+The `dmr_ip` view section (`docs/spec/debuglink.md` 3.7, section 15): settings `ip.compress ip.confirmed ip.tries ip.rule0
 ip.rule1`, `ip.busy ip.result`, compression `ip.sap3 ip.sap4 ip.octets_saved ip.blocks_saved`, the gateway's packets
 `ip.packets ip.sent ip.failed`, confirmed `ip.cnf ip.cnf_tx ip.cnf_retries ip.cnf_acks ip.cnf_sacks ip.cnf_nacks
 ip.cnf_resyncs ip.cnf_timeouts ip.cnf_failed ip.cnf_too_long`, receive `ip.rx_sacks_sent ip.rx_nacks_sent
@@ -470,3 +445,30 @@ ip.rx_duplicates ip.rx_crc9_mismatch`. DMR_DATA ops 9 IP_SETTINGS and 10 IP_SEND
   show a disagreement.
 - Rate 3/4 for confirmed IP (16 octets per block) and the sliding window (TS 102 361-3 5.4.4) are not used.
 - Fragmentation (FSN chains) is not built: one packet per datagram.
+
+## 13. Tests
+
+- `tests/host/dmrDataServiceTest.c`: the service on a fake host: replies and duplicates, confirmed data, queue
+  overflow and aging, CSBK both ways, our SMS and its ACK, ARS, LRRP with and without a position, the block window,
+  the mailbox; ETSI IP text (the builder's octets, the decoder with and without a byte order mark, ours by default,
+  received, confirmed, group, duplicates, a stored TMS default), the passthrough table above. Built a second time
+  with `CONFIG_DMR_TMS=0` (`dmrDataServiceTestNoTms`): a TMS heard is neither kept nor ACKed, confirmed still gets
+  its response, TMS sends are refused.
+- `tests/host/dmrDataChainTest.c`: end to end through the real slot engine (a model of the chip's receive reports
+  and its page 2 / 0x40 / 0x50 writes), the real call stack and the service: call alert in and its ack out (CRC
+  with CRC_MCU_Control), TMS in at rate 1/2, 3/4 and 1 and its ACK packet out, our radio check out and its answer
+  in, an unanswered call alert (3 tries), a request sent 600 ms after a reception; the emergency alarm in and out;
+  the ETSI text formats (ISO 8859-1, 7-bit, UTF-16 BE / LE / BOM, UTF-8, binary refused, our builder read back),
+  an ETSI message in and its response out, ours out and done on the response; the radio check in the ETSI form
+  both ways. Run by `make -C tests/host` (`run-rxchain`).
+- `tests/hil/test_dmr_data.py`: the same on air against the SDR bench (opt-in RF).
+- IP packets (11, 12): `tests/host/dmrDataTest.c` (testSap3: the compressed header's 5 / 7 / 9 octet forms against
+  vectors, auto / all / off, a UDP length that disagrees, a reserved opcode; testCRC9; testConfirmedTx: our confirmed
+  packet and a selective ACK byte for byte against vectors, the selective retry round trip through the receiver with a
+  bad block and with a lost block, the NACK cases; testAirtime: the table in 11.3), `tests/host/dmrDataServiceTest.c`
+  (testIpTx: unconfirmed SAP 3, confirmed with ACK, selective ACK, N(S) resync, time-outs to failure, tries, repeater
+  mode, group, too long, no channel; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
+  bursts, NACK), `tests/host/hostlinkNetTest.c` (the gateway's datagrams through the service path: SAP 3 for ports
+  outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
+  the standard's text, apart from the C code).
+- `tests/hil/test_dmr_ip.py`: on air, the bench modem decoding with `tools/bench/dmr_packet.py` (opt-in RF; 11.4).

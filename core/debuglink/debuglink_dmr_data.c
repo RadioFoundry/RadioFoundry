@@ -49,7 +49,7 @@ static void rule_text(dl_text_t *t, int i, uint32_t r)
 	}
 }
 
-// The dmr_ip section (docs/spec/debuglink.md 4.9, dmr-data.md 11, 12)
+// The dmr_ip section (docs/spec/debuglink.md 3.7, dmr-data.md 11, 12)
 static void ip_section(const dmrDataStats_t *s, const dmrDataSettings_t *set, dl_text_t *t)
 {
 	static const char *const compress[] = { "off", "auto", "all" };

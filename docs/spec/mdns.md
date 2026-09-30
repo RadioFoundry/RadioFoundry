@@ -3,8 +3,8 @@
 # mDNS and DNS-SD on the USB network link
 
 In USB network mode (`usb-network.md`) the radio answers Multicast DNS for its own name and advertises its services,
-so a host finds it as `odr-<DMR ID>.local` and browses its debug link, MMDVM modem and TFTP server with Bonjour or
-Avahi. Switch: `CONFIG_MDNS` (= `CONFIG_DMR_IP_GATEWAY`, the IP stack it runs on). Code: `core/net/mdns.c` (the
+so a host finds it as `odr-<DMR ID>.local` and browses its services (debug link, MMDVM modem, TFTP, SNMP, HTTP, KISS,
+rigctld: section 2) with Bonjour or Avahi. Switch: `CONFIG_MDNS` (= `CONFIG_DMR_IP_GATEWAY`, the IP stack it runs on). Code: `core/net/mdns.c` (the
 responder, no RTOS), `core/net/net_services.c` (the glue to the gateway). Written from RFC 6762 and RFC 6763. IPv4
 only; there is no IPv6 on the link.
 

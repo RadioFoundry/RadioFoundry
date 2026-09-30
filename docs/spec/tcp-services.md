@@ -20,8 +20,8 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
-The MD-380 builds none of them: TCP and HTTP fit its default image but not the maximal configuration `tools/ci.sh`
-builds, and APRS has no RF path there (`boards/md380/config.mk`).
+The MD-380 builds all of them too, which fits only with link time optimization (its default; `docs/build-config.md`,
+"The MD-380's image"). APRS has no AFSK transmit path there yet (`boards/md380/config.mk`).
 
 ## 2. TCP
 
