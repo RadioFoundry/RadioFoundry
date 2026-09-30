@@ -297,6 +297,7 @@ run: run-ui
 run-ui: gfxTest uiFlowTest uiSim
 	./gfxTest
 	./uiFlowTest
+	./uiSim --layout
 .PHONY: run-ui ui-gallery
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC

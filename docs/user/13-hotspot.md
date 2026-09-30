@@ -73,7 +73,7 @@ caller and the talkgroup.
 
 - **\*** switches between the hotspot screen and the diagnostics page.
 - **PTT** doesn't transmit ("Hotspot mode: PTT off").
-- Any other key shows "Hotspot: OK exits".
+- Any other key shows "Hotspot on: OK stops it".
 - If the host asks for a CW ID, the radio sends it in Morse on FM on the hotspot frequency (20 words per minute, 800
   Hz), then returns to DMR.
 
@@ -81,7 +81,7 @@ caller and the talkgroup.
 
 The radio leaves hotspot mode and returns to its channel when:
 
-- you press **OK** or hold **Back** ("Leaving hotspot mode");
+- you press **OK** or hold **Back** ("Hotspot stopped");
 - the host closes the port, or the USB cable is unplugged;
 - the host sends nothing for 20 s.
 
@@ -97,7 +97,7 @@ The host turns SFR mode on by running duplex with the receive and transmit frequ
 
 Limitations today: the DM-1701 keys its transmitter for the whole repeat, so it misses the rest of an inbound call
 after the first repeat. Not tested on air. The stand-alone repeater and the SFR user roles on a channel aren't built.
-**Tools > Single freq. repeater** shows only an information page. Details: [docs/spec/sfr.md](../spec/sfr.md).
+**Tools > Single-freq repeater** shows only an information page. Details: [docs/spec/sfr.md](../spec/sfr.md).
 
 ## Two radios as a duplex repeater
 

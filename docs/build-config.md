@@ -94,7 +94,7 @@ Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK
 
 | Value | Default | Meaning |
 |---|---|---|
-| `CONFIG_DISPLAY_INSET` | 0 (DM-1701: 5) | pixels hidden by the bezel or lens at each edge; the UI draws inside them |
+| `CONFIG_DISPLAY_INSET` | 0 (DM-1701: 5) | pixels hidden by the bezel or lens at each edge; the UI draws inside them. The DM-1701 sets its top and bottom to 0 (only left and right are under the lens) |
 | `CONFIG_DISPLAY_INSET_TOP` / `_BOTTOM` / `_LEFT` / `_RIGHT` | = `CONFIG_DISPLAY_INSET` | one edge |
 
 ### Board build variables

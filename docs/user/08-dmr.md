@@ -101,11 +101,11 @@ On Home, **#** opens the actions for the current or last caller. A digit picks a
 | 6 | Position | Not built yet |
 | 7 | Save as contact | Not built yet: add contacts in qdmr |
 | 8 | Speak status | Not built yet |
-| 9 | Save changes to channel | Shown only when the channel has temporary changes |
+| 9 | Save to channel | Shown only when the channel has temporary changes |
 
-For a talkgroup the actions are: Talk to, Make default here, Message the group.
+For a talkgroup the actions are: Talk to, Make channel default, Message.
 
-Without anyone heard yet, **#** shows "No one heard yet: callers show up here".
+Without anyone heard yet, **#** shows "No calls heard yet".
 
 ## Recent
 
@@ -166,7 +166,7 @@ to save them to the channel.
 ## Hear all
 
 - Hold **SK1**: the radio plays every talkgroup on this frequency and timeslot while you hold it.
-- **\***, **5** latches hear all on ("Hear all: every talkgroup"). It stays on until you turn it off, change the
+- **\***, **5** latches hear all on (toast "Hear all: every talkgroup", "All" in the chips). It stays on until you turn it off, change the
   channel or the mode, or press **Back** on Home.
 
 While hear all is on, the reply window lets you answer any call you heard with **PTT**.
@@ -185,8 +185,8 @@ itself hasn't been checked against another radio.
 
 Setting the key on the radio: **Settings > Privacy** (**OK**, **6**, **4**).
 
-1. **Privacy key type**: press **OK** until it shows Motorola or Anytone.
-2. **Privacy key**: press **OK**, type the key with the number keys (Motorola 1 to 255, Anytone 0 to 65535, in
+1. **Key type**: press **OK** until it shows Motorola or Anytone.
+2. **Key**: press **OK**, type the key with the number keys (Motorola 1 to 255, Anytone 0 to 65535, in
    decimal), and press **OK** again.
 
 The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. qdmr

@@ -24,25 +24,34 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 
 Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip, list rows and the hint row are exactly one
 text cell high, with no padding of their own. The font's cell already holds a blank row above the capitals and the
-descenders, and the DM-1701's 5 px lens inset is outside the drawing area (`gfx_width` / `gfx_height`). At 160x120i5
-a list shows 7 rows, at 160x128 8, at 128x64 6. The 240x320 class keeps 3 px per row and a separate title row.
+descenders, and the board's safe-area insets are outside the drawing area (`gfx_width` / `gfx_height`): on the
+DM-1701 5 px left and right under the lens, none top and bottom. At 160x120i5 a list shows 8 rows, at 160x128 8, at
+120x160 (the DM-32) 18, at 128x64 6. The 240x320 class keeps 3 px per row and a separate title row. The 120x160
+portrait panel keeps the 128 px class's small font (24 characters a line) and takes the 160 px class's channel and
+talk target fonts. Home's Activity region shows the last caller on two lines (name, then "TG 91 11s ago") where it has
+the rows for them, else one line where the name gives way first.
 
 The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The group for the Back key (it starts with
-"Back") is drawn against the right edge, under the key; the other groups run from the left. A toast is one centered
-line instead.
+"Back") is drawn against the right edge, under the key; the other groups run from the left, and those that don't fit
+are left out whole from the right. A toast is one centered line instead. A banner or a two-line toast starts in a gap
+between lines of the screen under it (a row all one color), never through a line of text.
 
 Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
 
 - A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
-  a short form or nothing (Hub's zone name, Find's kind, Channels' "here, 16 channels" / "here, 16 ch" / "here", ages).
+  a short form or nothing (Hub's zone name, Find's kind, Channels' "Here, 16 channels" / "Here, 16 ch" / "Here", ages: "11s ago" / "11s").
   A row marked `UI_ITEM_PREVIEW` (a message) is cut at its end, at a word.
 - Hints and toasts take the longest alternate that fits; a toast that still doesn't fit takes a second line above the
   hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
   banner shows two lines of the message from the inbox.
-- Home's talk target line drops to the small font, then the prefix too, then leaves out the target's name; large-text
-  Home picks the largest font each line fits in.
+- Home's talk target line (DMR target or FM frequency) drops to the small font as a whole, then leaves out the
+  target's name; a frequency is never shortened. Large-text Home picks the largest font each line fits in, and drops
+  the talkgroup's name before it would go below the medium font.
+- The RX and TX screens put the number in the title ("TG 91") and the talkgroup's or contact's name on a line of its
+  own; a talker alias takes two lines when it needs them.
 
-`uiSim --ellipsis` (section 7) lists what is still shortened.
+`uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
+with ordinary content.
 
 Core code never includes a board header and never tests a radio define. What differs by radio comes from the board
 descriptor: the display geometry and insets (`hal_display_t`), and the key map (`board.keymap`), which turns keys
@@ -166,13 +175,14 @@ maps K DM-1701, M GD-77 style, V MD-380 style, F few keys), radio core, the usab
 40 channels, 30 contacts) and the services of section 4.
 
 ```
-make -C tests/host run-ui                                      # gfxTest and uiFlowTest
+make -C tests/host run-ui                                      # gfxTest, uiFlowTest, the layout check
 make -C tests/host ui-gallery                                  # docs/ux/screens/<class>/<screen>.png
 tests/host/uiSim --geom 160x120i5 --script "ok 4 down ok expect:zone=1" --out zone.png --scale 3
 ```
 
-Geometries: `160x120i5` (DM-1701: 160x128 panel, 5 px inset), `160x128`, `128x64` (mono), `240x320`, or any
-`WxH`, `WxHiN` (inset N), `WxHm` (mono). Script tokens:
+Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class), `120x160`
+(DM-32: the 240x320 panel at half resolution), `128x64` (mono), `240x320`, or any `WxH`, `WxHiN` (inset N all round),
+`WxHm` (mono). Script tokens:
 
 | Token | Meaning |
 |---|---|
@@ -184,6 +194,8 @@ Geometries: `160x120i5` (DM-1701: 160x128 panel, 5 px inset), `160x128`, `128x64
 | `msg:<src>,<text>`, `alert:<src>`, `emergency:<src>`, `privcall:<src>`, `hotspot:on\|off`, `battery:<pct>` | events |
 | `shot:<name>` | save the screen |
 | `offfailed` | the auto power off didn't cut the power (`UI_EV_POWER_OFF_FAILED`) |
+| `worst` | worst-case codeplug content from here on (`sim_worst`: 16-character names, 8-digit talkgroups, 7-digit IDs, channels 985-1024, 80-channel zones) |
+| `power:<n>` | the radio's power level index |
 | `expect:<key>=<value>` | check: `screen focus depth count zone pos vfo freq mode tx txid txpriv talk locked query banner toast power sq ts cc temporary writes checks sent text scanning privacy hearall monitor hotspot beeps radio_tot radio_backlight beep pttblock poweroff usbnet set<id>` (`beep` the last beep kind, `set<id>` a setting's stored value; `_` = space, `*` = anything) |
 
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
@@ -196,6 +208,13 @@ every display class and fails if any text was shortened.
 `uiSim --ellipsis [GEOM]` lists every text shortened with a middle ellipsis on the gallery screens and the settings
 pages (lists scrolled through): `gfx_text_fit` reports each one through `gfx_fit_trace` in host builds
 (`GFX_FIT_TRACE`). Use it after changing wording or layout.
+
+`uiSim --layout [GEOM]` (run by `run-ui`, so CI) is the layout check: the gallery screens, the settings pages and the
+worst-case screens at every geometry, with ordinary and worst-case content. `gfx_draw_trace` (host builds) reports
+every text, fill and clear with its rectangle; the check fails on a text outside the safe area or cut by its clip box,
+overlapping texts, words with no space between them, a box over part of a text, an overlay cutting a line in half, and
+a middle ellipsis with ordinary content (`docs/ux/wireframes/README.md`). `ODR_LAYOUT_SHOTS=DIR` saves every screen
+checked.
 
 HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences on the radio over the debug link.
 
@@ -214,7 +233,7 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
 - Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
 - Theme switches the color palette (dark, light, high contrast); on 1 bpp displays the row is dimmed.
-- The VFO is FM only, so the Mode tile is dimmed in the VFO ("The VFO is FM only for now") instead of a refusal.
+- The VFO is FM only, so the Mode tile is dimmed in the VFO ("VFO: FM only") instead of a refusal.
 - The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
   between steps is refused with the range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.

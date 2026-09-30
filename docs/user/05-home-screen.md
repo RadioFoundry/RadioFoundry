@@ -36,10 +36,10 @@ key. The most common ones:
 |---|---|
 | OK Menu  \* Quick  # Joe | The normal hint. The name after # is the last caller: **#** opens actions for them |
 | Back undo  Hold OK save | The channel has temporary changes |
-| Back ends reply  # caller | The reply window is running: **PTT** answers the last call |
+| # caller  Back end reply | The reply window is running: **PTT** answers the last call |
 | Back: channel's talkgroup | A talk target chosen for now is in use |
-| Hear all on  Back clears | Hear all is latched on |
-| Back stops scan  # skip | Scan is running |
+| Hear all on  Back off | Hear all is latched on |
+| # skip  Back stop scan | Scan is running |
 | No codec: voice off | DMR channel without the codec merged |
 | 0-9 freq  \* Quick  Up/Dn | In the VFO |
 | Keys locked: hold \* to unlock | The keys are locked ("Locked: hold \* to unlock" where the row is narrow) |
@@ -55,12 +55,12 @@ DMR ID, timeslot, talker alias as it arrives (unless **Settings > Talk & listen 
 A call that the radio hears but doesn't play shows why: "Other TG: not played" (a talkgroup you don't listen to),
 "Encrypted: not played", or "No codec: voice off". Hold **SK1** to hear a call on another talkgroup.
 
-On FM, the activity region shows "Receiving" while the squelch is open, or "Monitor (squelch open)".
+On FM, the activity region shows "Receiving" while the squelch is open, or "Squelch open" (monitor).
 
 ## Transmitting
 
 While you hold **PTT**, the screen shows TALKING, the target, the timeslot and color code (DMR), the time on air and
-the time left before the transmit timeout ("TOT 3:00").
+the transmit timeout (DMR: "0:07 of 3:00"; FM: "2:53 left of 3:00").
 
 <img src="../ux/screens/160x120i5/tx.png" width="200" alt="Transmitting">
 
@@ -75,9 +75,9 @@ do:
 | Outside ... | The frequency is outside the radio's transmit bands | Pick another channel, or tune into a band in the VFO |
 | TX time-out reached | You talked longer than the transmit timeout | Release **PTT** and press it again |
 | No TX frequency set | The channel has no transmit frequency | Fix the channel in qdmr |
-| No codec: voice off | DMR voice without the codec | Merge the codec ([Installing](02-installing.md)) |
-| Channel busy (polite) | Someone else is talking on the slot | Wait for the call to end |
-| No repeater answered | The repeater didn't wake up | Check frequency, color code and range |
+| No codec: voice off | DMR voice without the codec | "Add codec with odrflash" ([Installing](02-installing.md)) |
+| Channel busy | Someone else is talking on the slot | Wait for the call to end |
+| No repeater answered | The repeater didn't wake up | "Check CC and range" |
 | Hotspot mode: PTT off | The radio is a hotspot | Press **OK** to leave hotspot mode |
 | No DMR ID in codeplug | The codeplug has no DMR ID | Set your ID in qdmr |
 | DMR modem not running | The DMR chip didn't start | Restart the radio; see [Troubleshooting](19-troubleshooting.md) |

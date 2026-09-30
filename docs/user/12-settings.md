@@ -66,8 +66,8 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
-| Privacy key type | Off, Motorola, Anytone | Off | The kind of basic privacy key ([DMR](08-dmr.md#privacy)). Off removes the key | Works |
-| Privacy key | Motorola 1 to 255, Anytone 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
+| Key type | Off, Motorola, Anytone | Off | The kind of basic privacy key ([DMR](08-dmr.md#privacy)). Off removes the key | Works |
+| Key | Motorola 1 to 255, Anytone 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
 | Auto lock | Off, 30 s, 1 min, 5 min | Off | Locks the keys after this time without a key press | Works |
 | PTT when locked | On, Off | On | Whether **PTT** works while the keys are locked. Off: **PTT** does nothing until you unlock | Works |
 
@@ -91,7 +91,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Message format | ETSI, ETSI short, Motorola | ETSI | The format of the text messages you send ([Messages](09-messages-and-signaling.md#message-formats)). Messages in any format are received | Works (not tested on air yet) |
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](14-usb-network.md#starting-in-network-mode)) | Works (not tested on the radio yet) |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](14-usb-network.md#control-station-for-dispatch-software)) | Works (not tested on the radio yet) |
-| USB link address | By DMR ID, 192.168.10.x | By DMR ID | The addresses of the USB network link: from your DMR ID, or the fixed pair 192.168.10.1 (radio) and 192.168.10.2 (computer) | Works (not tested on the radio yet) |
+| USB address | By DMR ID, 192.168.10.x | By DMR ID | The addresses of the USB network link: from your DMR ID, or the fixed pair 192.168.10.1 (radio) and 192.168.10.2 (computer) | Works (not tested on the radio yet) |
 
 ### Power (key 7)
 
@@ -130,8 +130,8 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 ## Factory reset
 
-**Settings > Advanced > Factory reset** asks "Erase all settings and go back to factory defaults? Channels stay. This
-can't be undone." The focus starts on "No, keep everything". Focus "Yes, reset" and press **OK**.
+**Settings > Advanced > Factory reset** asks "Reset all settings to factory defaults? Channels stay. This can't be
+undone." The focus starts on "No, keep settings". Focus "Yes, reset" and press **OK**.
 
 <img src="../ux/screens/160x120i5/factory_reset.png" width="200" alt="Factory reset confirmation">
 

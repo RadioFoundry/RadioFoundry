@@ -6,7 +6,7 @@ In USB network mode the radio is a USB network adapter for the computer. It rout
 DMR packet data, and serves a status page, rig control, KISS, TFTP and SNMP to the computer. It is in the images for
 the DM-1701 and the MD-380 (the DM-32UV has no USB). The switch, the address from the computer and ping are tested on the DM-1701
 with macOS; IP over DMR to another radio and the services are host-tested only. A build made without
-it (`CONFIG_DMR_IP_GATEWAY=n`) says "USB network isn't in this build" in **Tools > USB network**.
+it (`CONFIG_DMR_IP_GATEWAY=n`) says "USB network: not in this build" in **Tools > USB network**.
 
 ## Switching the radio to network mode
 
@@ -183,7 +183,7 @@ sends and receives the fleet's messages, locations and registrations through the
    messages in its inbox and doesn't register with a presence server. It still confirms data packets that ask for a
    confirmation, and still answers call alerts and radio checks. Unplug the computer and the radio answers for itself
    again.
-3. If the software expects fixed addresses, set **USB link address** to 192.168.10.x: the radio is 192.168.10.1 and
+3. If the software expects fixed addresses, set **USB address** to 192.168.10.x: the radio is 192.168.10.1 and
    the computer gets 192.168.10.2. Unplug and plug in the cable so the computer picks up the new address.
 
 In the dispatch software, set the control station's address to the radio's address (192.168.10.1, or 12.x.y.z from
