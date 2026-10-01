@@ -92,56 +92,46 @@ void sb_mmss(sbuf_t *b, uint32_t seconds)
 	sb_u32(b, seconds % 60u, 2);
 }
 
-// The age's number and unit: 14 "min" (long) or "m" (short)
-static uint32_t age_unit(uint32_t ms, const char **lng, char *shrt)
+// The age's number and unit letter: 45 's', 14 'm', 3 'h', 2 'd'
+static uint32_t age_unit(uint32_t ms, char *unit)
 {
 	uint32_t s = ms / 1000u;
 	if (s < 60u) {
-		*lng = "sec", *shrt = 's';
+		*unit = 's';
 		return s;
 	}
 	if (s < 3600u) {
-		*lng = "min", *shrt = 'm';
+		*unit = 'm';
 		return s / 60u;
 	}
 	if (s < 86400u) {
-		*lng = "hr", *shrt = 'h';
+		*unit = 'h';
 		return s / 3600u;
 	}
-	*lng = "d", *shrt = 'd';
+	*unit = 'd';
 	return s / 86400u;
 }
 
 void sb_age_long(sbuf_t *b, uint32_t ms)
 {
-	const char *lng;
-	char shrt;
-	sb_u32(b, age_unit(ms, &lng, &shrt), 1);
-	sb_str(b, lng);
+	char unit;
+	sb_u32(b, age_unit(ms, &unit), 1);
+	sb_chr(b, unit);
 	sb_str(b, " ago");
 }
 
-// "14min ago", "14m ago", "14min", "14m" as text alternates: the drawing keeps the longest that fits (font.h)
+// "14m ago", "14m" as text alternates: the drawing keeps the longest that fits (font.h). One unit style everywhere,
+// so two ages on one screen always read alike
 void sb_age(sbuf_t *b, uint32_t ms)
 {
-	const char *lng;
-	char shrt;
-	uint32_t v = age_unit(ms, &lng, &shrt);
-	bool same = lng[1] == 0;
+	char unit;
+	uint32_t v = age_unit(ms, &unit);
 	sb_str(b, TEXT_ALT_OPEN);
-	for (int form = 0; form < 4; form++) {
-		if (same && (form == 1 || form == 3))
-			continue;
-		if (form)
-			sb_str(b, TEXT_ALT_NEXT);
-		sb_u32(b, v, 1);
-		if (form & 1)
-			sb_chr(b, shrt);
-		else
-			sb_str(b, lng);
-		if (form < 2)
-			sb_str(b, " ago");
-	}
+	sb_u32(b, v, 1);
+	sb_chr(b, unit);
+	sb_str(b, " ago" TEXT_ALT_NEXT);
+	sb_u32(b, v, 1);
+	sb_chr(b, unit);
 	sb_str(b, TEXT_ALT_CLOSE);
 }
 

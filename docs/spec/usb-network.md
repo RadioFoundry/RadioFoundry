@@ -194,7 +194,7 @@ vendor control head.
 |---|---|---|---|
 | `usb_mode` | 0 serial (default), 1 network at power-on | USB network at start | radio op 27 bit 0, `usb.boot_network` |
 | `net_flags` & `SETTINGS_NET_PASSTHROUGH` | off (default) / on | PC answers data | op 27 bit 1, `net.passthrough`, `net.passthrough_active` |
-| `net_flags` & `SETTINGS_NET_FIXED_LINK` | off (default: by DMR ID) / on | USB link address | op 27 bit 2, `net.fixed_link` |
+| `net_flags` & `SETTINGS_NET_FIXED_LINK` | off (default: by DMR ID) / on | USB address | op 27 bit 2, `net.fixed_link` |
 | `net_link_ip` | 0 = 192.168.10.1 | (the default only) | op 27 IP, `net.link_ip`, `net.link_in_force` |
 
 Radio op 27 (`debuglink.md` 3.8): flags u8, link IP u32 little endian; stored, and applied at once

@@ -94,7 +94,8 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 
 ## 9. Messages say what happened and what to do
 
-- Every error or refusal has three parts: what happened, why if known, what to do. "Can't transmit: 520 MHz is outside this radio's bands (136-174, 400-480). Pick another frequency."
+- Every error or refusal says what happened (and why, if known) and what to do, in at most two short lines at the smallest display (about 2 x 20 characters): the pill says NO TX, the Activity line "Bands 136-174 400-480 MHz", the hint "Pick another channel". A longer explanation goes on an information page or in the manual, never in a toast.
+- A feature left out of the build says so the same way everywhere: "Scan: not in this build".
 - No error codes alone, no "Invalid", no "Error 3". A code may follow the text for support.
 - Input limits are shown before the user hits them ("TG 1 to 16777215", "Message 0 of 144 characters").
 - Success is confirmed quietly (a tone and a brief banner), failure is never silent ("Radio check: no answer from N0CALL after 3 tries").
@@ -108,6 +109,14 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 - Works with gloves: no timing-critical presses, no chords required, large hit tolerance on encoders (one detent = one step, no acceleration below 4 detents/s).
 - Accessibility is built in, not a setting buried away: voice prompts, large-text mode (Home with two lines: channel and talk target), high-contrast theme, adjustable long-press time, key-repeat rate, tone volume.
 - Text is plain US English, short, no abbreviations beyond the standard radio ones (TG, TS, CC, ID, FM, DMR, GPS), with translations through string tables.
+
+**Wording rules** (checked in the UI audit of 2026-10-11):
+
+- One term per thing: talkgroup is "TG" before a number ("TG 91", always with a space) and "talkgroup" in sentences; "contact", "channel", "zone", "talk target", "hear all" are used the same everywhere.
+- Labels start with the action or the noun ("Make channel default", "Key type"), and don't repeat the menu they are in (Settings > Privacy > "Key", not "Privacy key").
+- Hint groups are a key and a verb in its plain form: "OK send", "Back cancel", "# skip". A lone "Back" means Back just goes back.
+- Values start with a capital ("On", "Off", "Here", "Scanning"); units have a space where they are words ("30 s", "-71 dBm", "5 min") and none in compact radio forms ("5W", "25k", "TS1", "SQ5"). Ages are one style everywhere: "11s ago", "4m ago", shortened to "11s".
+- No filler, no chat, no marketing. "For now" only where it means a temporary change ("Timeslot 2 for now"), "yet" only where something is expected to come ("No calls heard yet"), never as a promise about the firmware ("not in this build", not "not in this build yet").
 
 **Test:** every task flow in `task-flows.md` is run on all four reference key maps in the simulator; a task that's impossible on any map fails the build. Accessibility pass: the top 10 tasks done blindfolded with voice prompts by at least one tester per release.
 

@@ -62,7 +62,7 @@ static void hub_item(uint16_t i, ui_item_t *it)
 		sb_str(&b, ui_view()->vfo ? "VFO" : ui_view()->zone_name);
 		sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 	} else if (e == HUB_TOOLS && ui_st.scanning) {
-		sb_str(&b, "scanning");
+		sb_str(&b, "Scanning");
 	}
 }
 
@@ -74,7 +74,7 @@ static void hub_select(uint16_t i, bool hold)
 	uint8_t e = hub_entry(i);
 	if (e == HUB_LAST_CALLER) {
 		if (ui_recent_count() == 0) {
-			ui_toast("No one heard yet: callers show up here");
+			ui_toast("No calls heard yet");
 			return;
 		}
 		ui_target_t t;
@@ -86,7 +86,7 @@ static void hub_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t hub_screen = {
-	.name = "hub", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .hint = "1-6 open  Back home",
+	.name = "hub", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .hint = "1-6 open  Back",
 	.count = hub_count, .item = hub_item, .select = hub_select,
 };
 
@@ -151,6 +151,8 @@ static void act_item(uint16_t i, ui_item_t *it)
 	switch (l[i]) {
 	case A_TALK:
 		act_target(i, &t);
+		if (t.group)
+			t.name[0] = 0;	// "Talk to TG 91": the name is in the title
 		ui_sb_target(name, sizeof name, &t);
 		sb_str(&b, "Talk to ");
 		sb_str(&b, name);
@@ -163,7 +165,7 @@ static void act_item(uint16_t i, ui_item_t *it)
 			it->flags |= UI_ITEM_DIM;
 		break;
 	case A_MESSAGE:
-		sb_str(&b, ui_target.group ? "Message the group" : "Message");
+		sb_str(&b, "Message");
 		if (!(feats() & UI_FEAT_SMS))
 			it->flags |= UI_ITEM_DIM;
 		break;
@@ -190,12 +192,12 @@ static void act_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_DIM;
 		break;
 	case A_SAVE_CHANNEL:
-		sb_str(&b, "Save changes to channel");
+		sb_str(&b, "Save to channel");
 		if (!(feats() & UI_FEAT_SAVE_CHANNEL))
 			it->flags |= UI_ITEM_DIM;
 		break;
 	case A_MAKE_DEFAULT:
-		sb_str(&b, "Make default here");
+		sb_str(&b, "Make channel default");
 		if (!(feats() & UI_FEAT_TALK_TARGET))
 			it->flags |= UI_ITEM_DIM;
 		break;
@@ -233,7 +235,7 @@ static void act_select(uint16_t i, bool hold)
 		if (feats() & UI_FEAT_SMS)
 			ui_push(SCR_COMPOSE, 0);
 		else
-			ui_toast("Text messages aren't in this build yet");
+			ui_toast("Messages: not in this build");
 		break;
 	case A_CHECK:
 		if (ui_svc_radio_check(ui_target.id)) {
@@ -243,7 +245,7 @@ static void act_select(uint16_t i, bool hold)
 			ui_go_home();
 			ui_toast(msg);
 		} else {
-			ui_toast("Radio check isn't in this build yet");
+			ui_toast("Radio check: not in this build");
 		}
 		break;
 	case A_ALERT:
@@ -253,24 +255,24 @@ static void act_select(uint16_t i, bool hold)
 			ui_go_home();
 			ui_toast(msg);
 		} else {
-			ui_toast("Call alert isn't in this build yet");
+			ui_toast("Call alert: not in this build");
 		}
 		break;
 	case A_POSITION:
-		ui_toast("Position requests aren't in this build yet");
+		ui_toast("Position requests: not in this build");
 		break;
 	case A_SAVE_CONTACT:
-		ui_toast(ui_target.saved ? "Already in your contacts" : "Add contacts in qdmr for now");
+		ui_toast(ui_target.saved ? "Already in your contacts" : "Add contacts in qdmr");
 		break;
 	case A_SPEAK:
-		ui_toast("Voice prompts aren't in this build yet");
+		ui_toast("Voice prompts: not in this build");
 		break;
 	case A_SAVE_CHANNEL:
 		if (ui_svc_save_channel()) {
 			ui_go_home();
 			ui_toast("Saved to channel");
 		} else {
-			ui_toast("Saving needs the codeplug writer: use qdmr");
+			ui_toast("Can't save here: use qdmr");
 		}
 		break;
 	default:
@@ -278,16 +280,15 @@ static void act_select(uint16_t i, bool hold)
 	}
 }
 
+// The station or talkgroup by name ("Joe Smith", "Main Ops"), else by number; the rows give the numbers
 static const char *act_title(void)
 {
 	static char t[40];
-	ui_sb_target(t, sizeof t, &ui_target);
-	if (!ui_target.group && ui_target.heard_tg) {
-		sbuf_t b;
-		sb_init(&b, t + strlen(t), sizeof t - strlen(t));
-		sb_str(&b, " on TG");
-		sb_u32(&b, ui_target.heard_tg, 1);
+	if (ui_target.group && ui_target.name[0] != '\0') {
+		strcpy(t, ui_target.name);
+		return t;
 	}
+	ui_sb_target(t, sizeof t, &ui_target);
 	return t;
 }
 
@@ -323,7 +324,7 @@ static void send_text(const char *text)
 	char name[24];
 	ui_sb_target(name, sizeof name, &ui_target);
 	if (!ui_svc_msg_send(ui_target.id, ui_target.group, text)) {
-		ui_toast("Couldn't queue the message: try again");
+		ui_toast("Couldn't send: try again");
 		return;
 	}
 	sbuf_t b;
@@ -340,7 +341,7 @@ static void compose_select(uint16_t i, bool hold)
 	if (i < CANNED_N)
 		send_text(canned[i]);
 	else
-		ui_toast("Typed messages come later: pick a canned one");
+		ui_toast("Typing: not in this build");
 }
 
 static const char *compose_title(void)
@@ -397,9 +398,15 @@ static void contacts_item(uint16_t i, ui_item_t *it)
 	sb_init(&vb, it->value, sizeof it->value);
 	sb_str(&b, t.name[0] ? t.name : "(no name)");
 	if (t.id == 0xFFFFFFu) {
-		sb_str(&vb, "All");
+		sb_str(&vb, "All call");
+	} else if (t.group) {
+		// "TG 3100", or the number alone where the name needs the room (text alternates)
+		sb_str(&vb, TEXT_ALT_OPEN "TG ");
+		sb_u32(&vb, t.id, 1);
+		sb_str(&vb, TEXT_ALT_NEXT);
+		sb_u32(&vb, t.id, 1);
+		sb_str(&vb, TEXT_ALT_CLOSE);
 	} else {
-		sb_str(&vb, t.group ? "TG " : "");
 		sb_u32(&vb, t.id, 1);
 	}
 }
@@ -429,7 +436,7 @@ static uint16_t none_count(void) { return 0; }
 static void none_item(uint16_t i, ui_item_t *it) { (void)i; (void)it; }
 static const ui_scr_def_t contacts_screen = {
 	.name = "contacts", .flags = SF_LIST | SF_FIELD, .prefix = "Contacts", .hint = "Back",
-	.empty = "Contacts are for DMR: not in this build", .count = none_count, .item = none_item,
+	.empty = "Contacts: not in this build", .count = none_count, .item = none_item,
 };
 #endif
 
@@ -484,7 +491,7 @@ static void msgs_context(uint16_t i)
 
 static const ui_scr_def_t messages_screen = {
 	.name = "messages", .flags = SF_LIST | SF_FIELD, .prefix = "Messages", .hint = "OK open  # reply  Back",
-	.empty = "No messages yet. Messages you get show up here.",
+	.empty = "No messages yet",
 	.count = msgs_count, .item = msgs_item, .select = msgs_select, .context = msgs_context,
 };
 
@@ -524,7 +531,7 @@ static void msg_select(uint16_t i, bool hold)
 			ui_pop();
 			ui_toast("Message deleted");
 		} else {
-			ui_toast("Couldn't delete it: try again");
+			ui_toast("Couldn't delete: try again");
 		}
 		break;
 	default:
@@ -555,15 +562,15 @@ static const char *msg_body(void)
 	static char t[UI_MSG_TEXT_MAX + 48];
 	ui_msg_t m;
 	if (!ui_svc_msg_get(ui_frame()->arg, &m))
-		return "This message is gone.";
+		return "Message deleted";
+	// "From Joe Smith, 2m ago" (the ID where there is no name; # gives the station's actions), then the text
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	sb_str(&b, m.sent ? "To " : "From ");
-	if (m.name[0]) {
+	if (m.name[0])
 		sb_str(&b, m.name);
-		sb_chr(&b, ' ');
-	}
-	sb_u32(&b, m.src, 1);
+	else
+		sb_u32(&b, m.src, 1);
 	sb_str(&b, ", ");
 	sb_age_long(&b, m.age_ms);
 	sb_chr(&b, '\n');
@@ -572,7 +579,7 @@ static const char *msg_body(void)
 }
 
 static const ui_scr_def_t message_screen = {
-	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = "Message", .hint = "OK send  # more  Back",
+	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = "Message", .hint = "OK choose  # more  Back",
 	.count = msg_count, .item = msg_item, .select = msg_select, .context = msgs_context, .target = msg_target,
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
 };
@@ -619,10 +626,10 @@ static void recent_item(uint16_t i, ui_item_t *it)
 		else
 			sb_u32(&b, r->src, 1);
 		if (r->group) {
-			sb_str(&vb, "TG");
+			sb_str(&vb, "TG ");
 			sb_u32(&vb, r->dst, 1);
 		} else {
-			sb_str(&vb, r->to_us ? "you" : "priv");
+			sb_str(&vb, r->to_us ? "To you" : "Private");
 		}
 		sb_chr(&vb, ' ');
 		if (r->gps_range) {	// the caller's position: how far
@@ -654,7 +661,7 @@ static void recent_context(uint16_t i)
 
 static const ui_scr_def_t recent_screen = {
 	.name = "recent", .flags = SF_LIST | SF_FIELD, .prefix = "Recent", .hint = "PTT talk  # more  Back",
-	.empty = "No calls yet. Stations you hear show up here.",
+	.empty = "No calls heard yet",
 	.count = recent_count, .item = recent_item, .select = recent_select, .context = recent_context,
 	.target = recent_target,
 };
@@ -700,22 +707,22 @@ static void chans_item(uint16_t i, ui_item_t *it)
 	if (chans_is_vfo(raw)) {
 		strcpy(it->label, "VFO");
 		if (v->vfo)
-			sb_str(&vb, "on");
+			sb_str(&vb, "On");
 		return;
 	}
 	uint16_t zi = (uint16_t)(raw - CH_VFO);
 	if (!codeplug_zone(zi, &z))
 		return;
 	strcpy(it->label, z.name);
-	// The zone's name whole; beside it "here" for the zone in use and the channel count, as much as fits:
-	// "here, 16 channels", "here, 16 ch", "here" (or "16 channels", "16 ch", nothing)
+	// The zone's name whole; beside it "Here" for the zone in use and the channel count, as much as fits:
+	// "Here, 16 channels", "Here, 16 ch", "Here" (or "16 channels", "16 ch", nothing)
 	bool here = !v->vfo && zi == v->zone_index;
 	sb_str(&vb, TEXT_ALT_OPEN);
 	for (int form = 0; form < 3; form++) {
 		if (form)
 			sb_str(&vb, TEXT_ALT_NEXT);
 		if (here)
-			sb_str(&vb, form < 2 ? "here, " : "here");
+			sb_str(&vb, form < 2 ? "Here, " : "Here");
 		if (form < 2) {
 			sb_u32(&vb, z.count, 1);
 			sb_str(&vb, form == 0 ? (z.count == 1 ? " channel" : " channels") : " ch");
@@ -732,9 +739,10 @@ static void chans_select(uint16_t i, bool hold)
 	const radio_view_t *v = ui_view();
 	uint16_t raw = ui_filter_raw(i);
 	if (chans_is_vfo(raw)) {
-		radio_req_vfo(!v->vfo);
+		bool was = v->vfo;	// the view may change at once (the host simulator)
+		radio_req_vfo(!was);
 		ui_go_home();
-		ui_toast(v->vfo ? "Back to channels" : "VFO: type a frequency");
+		ui_toast(was ? "Back to channels" : "VFO: type a frequency");
 		return;
 	}
 	uint16_t zi = (uint16_t)(raw - CH_VFO);
@@ -849,7 +857,7 @@ static const char *zone_title(void)
 
 static const ui_scr_def_t zone_screen = {
 	.name = "zone", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = NULL,
-	.hint = "OK go  0-9 find  Back", .empty = "This zone is empty",
+	.hint = "OK go  0-9 find  Back", .empty = "Empty zone",
 	.count = ui_filter_count, .item = zone_item, .select = zone_select, .title = zone_title,
 	.enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
 };
@@ -860,7 +868,7 @@ enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, 
        INFO_SFR };
 
 static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "About", "Codeplug", "My radio",
-					   "USB network", "SFR" };
+					   "USB network", "Single-freq repeater" };
 
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
 #define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
@@ -885,11 +893,11 @@ static const char *info_body(void)
 	case INFO_POSITION: {
 		ui_position_t p;
 		if (!ui_svc_position(&p)) {
-			sb_str(&b, "No GPS on this radio, or it is off (Settings > Location).");
+			sb_str(&b, "No GPS, or it is off (Settings > Location)");
 		} else if (!p.fix) {
-			sb_str(&b, "Searching for satellites: ");
+			sb_str(&b, "No fix yet: ");
 			sb_u32(&b, p.sats, 1);
-			sb_str(&b, " seen. Go outside for a fix.");
+			sb_str(&b, " satellites seen. Go outside.");
 		} else {
 			sb_str(&b, "Fix, ");
 			sb_u32(&b, p.sats, 1);
@@ -905,58 +913,51 @@ static const char *info_body(void)
 	}
 	case INFO_HOTSPOT:
 #if CONFIG_HOTSPOT
-		sb_str(&b, "Connect USB and start MMDVMHost (or Pi-Star) on the computer: the radio becomes the hotspot "
-			"by itself. OK or hold Back leaves hotspot mode.");
+		sb_str(&b, "Start MMDVMHost or Pi-Star on a computer on USB: hotspot mode starts by itself.");
 #else
-		sb_str(&b, "The hotspot isn't in this build.");
+		sb_str(&b, "Hotspot: not in this build");
 #endif
 		break;
 	case INFO_BATTERY:
-		sb_str(&b, "Battery ");
 		sb_u32(&b, ui_st.battery_pct, 1);
-		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ? "%: charge soon." :
-		       "%.");
+		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ? "%: charge soon" : "%");
 		break;
 	case INFO_CODEPLUG: {
-		static const char *const src[] = { "none (built-in channels)", "built-in channels", "from the CPS" };
+		static const char *const src[] = { "None: built-in channels", "Built-in channels", "Written by the CPS" };
 		codeplug_source_t s = codeplug_source();
-		sb_str(&b, "Codeplug: ");
 		sb_str(&b, (unsigned)s < 3 ? src[s] : "?");
-		sb_str(&b, "\n");
+		sb_str(&b, "\nZones: ");
 		sb_u32(&b, codeplug_zone_count(), 1);
-		sb_str(&b, " zones, channels up to ");
+		sb_str(&b, "\nChannels: up to ");
 		sb_u32(&b, codeplug_channel_count(), 1);
 		break;
 	}
 	case INFO_MY_RADIO:
 #if CONFIG_DMR
-		sb_str(&b, "DMR ID ");
+		sb_str(&b, "DMR ID: ");
 		if (codeplug_dmr_id())
 			sb_u32(&b, codeplug_dmr_id(), 1);
 		else
-			sb_str(&b, "not set: set it in qdmr");
+			sb_str(&b, "not set (set it in qdmr)");
 		sb_chr(&b, '\n');
 #endif
-		sb_str(&b, "Radio ");
+		sb_str(&b, "Radio: ");
 		sb_str(&b, board.name);
 		break;
 	case INFO_USB_NET:
 #if USB_NET_UI
 		if (hostlink_network_mode())
-			sb_str(&b, "USB is a network adapter now (IP over DMR). The serial port (qdmr, hotspot, debug link) "
-				"is off: switch back below, or restart the radio.");
+			sb_str(&b, "USB is a network adapter: IP over DMR. qdmr and the hotspot are off until you switch "
+				"back.");
 		else
-			sb_str(&b, "USB is a serial port now (qdmr, hotspot, debug link). As a network adapter the "
-				"computer reaches other radios by IP; serial tools stop until you switch back here or "
-				"restart.");
+			sb_str(&b, "USB is a serial port: qdmr, hotspot. As a network adapter it carries IP over DMR.");
 #else
-		sb_str(&b, "USB network isn't in this build.");
+		sb_str(&b, "USB network: not in this build");
 #endif
 		break;
 	case INFO_SFR:
-		sb_str(&b, CONFIG_SFR ? "Single frequency repeater runs in hotspot mode: the hotspot host turns it on "
-			"(duplex, RX = TX). The repeater and user roles on a channel aren't built yet." :
-			"Single frequency repeater isn't in this build.");
+		sb_str(&b, CONFIG_SFR ? "Runs in hotspot mode: the hotspot host turns it on. Repeater and user roles on a "
+			"channel: not built yet." : "Single-freq repeater: not in this build");
 		break;
 	default:
 		break;
@@ -1125,8 +1126,7 @@ static const char *roam_why_not(const radio_view_t *v)
 	if (v->vfo)
 		return "Roaming works on channels, not the VFO.";
 	if (!v->roam.zone_on)
-		return "Turn it on for this zone: the radio then moves between the zone's repeaters with the same "
-		       "talkgroup.";
+		return "Off in this zone. On, the radio moves between the zone's repeaters.";
 	if (roam_active(v))
 		return NULL;
 	if (v->ch.mode != RADIO_MODE_DMR || v->ch.dmo || v->ch.rx_only || v->ch.tx_hz == v->ch.rx_hz)
@@ -1167,7 +1167,7 @@ static const char *roam_body(void)
 	else if (ui_svc_setting_get(UI_SET_ROAM_SURVEY) == 1 && ui_svc_setting_get(UI_SET_ROAM_BEACON_S) != 0)
 		sb_str(&b, v->roam.win_conf >= 2 ? "\nBeacons: surveying" : "\nBeacons: learning");
 #else
-	sb_str(&b, "Roaming isn't in this build.");
+	sb_str(&b, "Roaming: not in this build");
 #endif
 	return t;
 }
@@ -1231,7 +1231,7 @@ static void roam_select(uint16_t i, bool hold)
 		if (ui_svc_setting_set(l->id, nv))
 			ui_svc_apply(l->id, nv);
 		if (i == RM_BEACON || i == RM_LEN)
-			ui_toast("Set it as the repeaters send it");
+			ui_toast("Must match the repeaters");
 		return;
 	}
 	if (i == RM_PROBE) {
@@ -1282,7 +1282,7 @@ static void roam_select(uint16_t i, bool hold)
 	}
 #else
 	(void)i;
-	ui_toast("Roaming isn't in this build");
+	ui_toast("Roaming: not in this build");
 #endif
 }
 
@@ -1301,7 +1301,7 @@ static uint16_t tools_row(uint16_t i) { return !CONFIG_DIAG && i >= T_DIAG ? (ui
 
 static void tools_item(uint16_t row, ui_item_t *it)
 {
-	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single freq. repeater",
+	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single-freq repeater",
 					     "Battery", "Diagnostics", "Roaming", "APRS" };
 	uint16_t i = tools_row(row);
 	strcpy(it->label, names[i]);
@@ -1310,7 +1310,7 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
 	case T_SCAN:
-		sb_str(&b, ui_st.scanning ? "on" : "off");
+		sb_str(&b, ui_st.scanning ? "On" : "Off");
 		if (!(feats() & UI_FEAT_SCAN))
 			it->flags |= UI_ITEM_DIM;
 		break;
@@ -1320,14 +1320,14 @@ static void tools_item(uint16_t row, ui_item_t *it)
 		break;
 	case T_HOTSPOT:
 #if CONFIG_HOTSPOT
-		sb_str(&b, hostlink_mode() == HOSTLINK_HOTSPOT ? "on" : "off");
+		sb_str(&b, hostlink_mode() == HOSTLINK_HOTSPOT ? "On" : "Off");
 #else
 		it->flags |= UI_ITEM_DIM;
 #endif
 		break;
 	case T_USB_NET:
 #if USB_NET_UI
-		sb_str(&b, hostlink_network_mode() ? "network" : "serial");
+		sb_str(&b, hostlink_network_mode() ? "Network" : "Serial");
 #else
 		it->flags |= UI_ITEM_DIM;
 #endif
@@ -1342,7 +1342,7 @@ static void tools_item(uint16_t row, ui_item_t *it)
 		break;
 	case T_ROAM:
 #if CONFIG_DMR_ROAMING
-		sb_str(&b, ui_view()->roam.zone_on ? "on" : "off");
+		sb_str(&b, ui_view()->roam.zone_on ? "On" : "Off");
 #else
 		it->flags |= UI_ITEM_DIM;
 #endif
@@ -1362,7 +1362,7 @@ static void tools_select(uint16_t row, bool hold)
 	switch (tools_row(row)) {
 	case T_SCAN:
 		if (!(feats() & UI_FEAT_SCAN)) {
-			ui_toast("Scan isn't in this build yet");
+			ui_toast("Scan: not in this build");
 		} else {
 			ui_go_home();
 			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO
@@ -1470,8 +1470,8 @@ static const set_item_t s_talk[] = {
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
 };
 static const set_item_t s_privacy[] = {
-	LIST("Privacy key type", "encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
-	NUMBER("Privacy key", "BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),	// the range follows the type (set_range)
+	LIST("Key type", "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
+	NUMBER("Key", "privacy BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),	// the range follows the type (set_range)
 	LIST("Auto lock", "keylock", UI_SET_AUTO_LOCK_S, v_lock, n_lock),
 	TOGGLE("PTT when locked", NULL, UI_SET_PTT_LOCKED),
 };
@@ -1496,7 +1496,7 @@ static const set_item_t s_connections[] = {
 #endif
 #if CONFIG_DMR_CONTROL_STATION
 	TOGGLE("PC answers data", "dispatch control station passthrough", UI_SET_PC_ENDPOINT),
-	LIST("USB link address", "dispatch IP", UI_SET_USB_FIXED_LINK, v_netlink, n_netlink),
+	LIST("USB address", "dispatch IP link", UI_SET_USB_FIXED_LINK, v_netlink, n_netlink),
 #endif
 };
 static const set_item_t s_power[] = {
@@ -1615,25 +1615,25 @@ static const char *set_why_not(const set_item_t *s)
 		return NULL;
 	switch (s->id) {
 	case UI_SET_VOICE_PROMPTS:
-		return "Voice prompts aren't built yet: no recorded speech";
+		return "Voice prompts: not in this build";
 	case UI_SET_TALK_PERMIT:
-		return CONFIG_DMR && CONFIG_BEEP ? NULL : "Talk permit is for DMR: not in this build";
+		return CONFIG_DMR && CONFIG_BEEP ? NULL : "Talk permit tone: not in this build";
 	case UI_SET_MESSAGE_TONE:
-		return feats() & UI_FEAT_SMS ? NULL : "Text messages aren't in this build";
+		return feats() & UI_FEAT_SMS ? NULL : "Messages: not in this build";
 	case UI_SET_THEME:
 		return board.display != NULL && board.display->bpp == 1 ? "Themes are for color screens" : NULL;
 	case UI_SET_MIC_GAIN:
-		return CONFIG_DMR ? NULL : "Mic gain works on DMR: not in this build";
+		return CONFIG_DMR ? NULL : "Mic gain: not in this build";
 	case UI_SET_HEAR_ALL_DEFAULT:
-		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Hear all is for DMR: not in this build";
+		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Hear all: not in this build";
 	case UI_SET_ALIAS_SHOW:
-		return CONFIG_DMR_TALKER_ALIAS ? NULL : "Talker alias isn't in this build";
+		return CONFIG_DMR_TALKER_ALIAS ? NULL : "Talker alias: not in this build";
 	case UI_SET_PRIVACY_TYPE:
 	case UI_SET_PRIVACY_KEY:
 		if (!(feats() & UI_FEAT_PRIVACY))
-			return "Privacy isn't in this build";
+			return "Privacy: not in this build";
 		return s->id == UI_SET_PRIVACY_KEY && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0 ?
-			"Pick a privacy key type first" : NULL;
+			"Pick a key type first" : NULL;
 	case UI_SET_GPS:
 	case UI_SET_POS_FORMAT:
 	case UI_SET_POS_SEND_S:
@@ -1677,7 +1677,7 @@ static void set_store(const set_item_t *s, int32_t v)
 		ui_apply_setting(s->id, v);	// the ones the UI acts on itself
 		ui_svc_apply(s->id, v);		// and the ones other packages do
 	} else {
-		ui_toast("Couldn't save the setting: try again");
+		ui_toast("Couldn't save: try again");
 	}
 }
 
@@ -1720,7 +1720,7 @@ static void group_select(uint16_t i, bool hold)
 			if (CONFIG_DIAG)
 				ui_push(SCR_DIAG, 0);
 			else
-				ui_toast("Diagnostics aren't in this build");
+				ui_toast("Diagnostics: not in this build");
 			break;
 		case SA_FIRMWARE: ui_push(SCR_ABOUT, 0); break;
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
@@ -1813,7 +1813,7 @@ static uint16_t confirm_count(void) { return 2; }
 
 static void confirm_item(uint16_t i, ui_item_t *it)
 {
-	strcpy(it->label, i == 0 ? "No, keep everything" : "Yes, reset");
+	strcpy(it->label, i == 0 ? "No, keep settings" : "Yes, reset");
 	if (i == 1)
 		it->flags |= UI_ITEM_WARN;
 }
@@ -1827,17 +1827,17 @@ static void confirm_select(uint16_t i, bool hold)
 		ui_go_home();
 		ui_toast("Factory settings restored");
 	} else {
-		ui_toast("Reset isn't in this build yet: nothing changed");
+		ui_toast("Reset: not in this build");
 	}
 }
 
 static const char *confirm_body(void)
 {
-	return "Erase all settings and go back to factory defaults? Channels stay. This can't be undone.";
+	return "Reset all settings to factory defaults? Channels stay. This can't be undone.";
 }
 
 static const ui_scr_def_t confirm_screen = {
-	.name = "confirm", .flags = SF_LIST, .prefix = "Factory reset", .hint = "OK choose  Back keeps",
+	.name = "confirm", .flags = SF_LIST, .prefix = "Factory reset", .hint = "OK choose  Back cancel",
 	.count = confirm_count, .item = confirm_item, .select = confirm_select, .body = confirm_body,
 };
 #else
@@ -1900,7 +1900,7 @@ static void picker_enter(void)
 		t.id = c.id;
 		t.group = c.type != CONTACT_PRIVATE;
 		strcpy(t.name, c.name);
-		pick_add(&t, "default");
+		pick_add(&t, "Default");
 	}
 	// Reply to the last heard
 	if (v->dmr.last_ms != 0 && v->dmr.last.src != 0) {
@@ -1913,7 +1913,7 @@ static void picker_enter(void)
 			t.id = v->dmr.last.src;
 			strcpy(t.name, v->dmr.last.src_name);
 		}
-		pick_add(&t, "reply");
+		pick_add(&t, "Reply");
 	}
 	// The channel's listen list
 	listen_list_t l;
@@ -1924,7 +1924,7 @@ static void picker_enter(void)
 				t.id = c.id;
 				t.group = c.type != CONTACT_PRIVATE;
 				strcpy(t.name, c.name);
-				pick_add(&t, "listen");
+				pick_add(&t, "Listen");
 			}
 		}
 	}
@@ -1935,13 +1935,13 @@ static void picker_enter(void)
 			memset(&t, 0, sizeof t);
 			t.id = r->dst;
 			t.group = true;
-			pick_add(&t, "recent");
+			pick_add(&t, "Recent");
 		}
 	}
 #endif
-	// Focus the reply target when there is one (task-flows.md 3: "TG 91 reply" second)
+	// Focus the reply target when there is one (task-flows.md 3: "TG 91 Reply" second)
 	for (uint8_t i = 0; i < n_picks; i++)
-		if (picks[i].tag[0] == 'r' && picks[i].tag[1] == 'e' && picks[i].tag[2] == 'p')
+		if (picks[i].tag[0] == 'R' && picks[i].tag[1] == 'e' && picks[i].tag[2] == 'p')
 			ui_frame()->focus = i;
 }
 
@@ -1954,7 +1954,11 @@ static void picker_item(uint16_t i, ui_item_t *it)
 		return;
 	}
 	ui_sb_target(it->label, sizeof it->label, &picks[i].t);
-	strcpy(it->value, picks[i].tag);
+	sbuf_t b;	// the tag, left out where the target needs the room
+	sb_init(&b, it->value, sizeof it->value);
+	sb_str(&b, TEXT_ALT_OPEN);
+	sb_str(&b, picks[i].tag);
+	sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 }
 
 static bool picker_target(uint16_t i, ui_target_t *t)
@@ -2018,7 +2022,7 @@ static void scan_select(uint16_t i, bool hold)
 		ui_go_home();
 		ui_toast("Scan stopped here");
 	} else {
-		ui_toast("Edit scan lists in qdmr for now");
+		ui_toast("Edit scan lists in qdmr");
 	}
 }
 

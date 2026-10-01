@@ -33,10 +33,10 @@ static const char *const region_names[APRS_REGION_COUNT] = { "N America", "Europ
 static const char *why_text(uint8_t block)
 {
 	switch (block) {
-	case APRS_NO_CALL: return "Needs your callsign: the radio name (codeplug or Settings > My radio).";
+	case APRS_NO_CALL: return "Set your callsign (the radio name) in qdmr.";
 	case APRS_NO_FREQ: return "No APRS frequency: pick a region.";
-	case APRS_NOT_AMATEUR: return "The APRS frequency must be in an amateur band this radio transmits in.";
-	case APRS_NO_AFSK: return "This radio can't send APRS tones; DMR positions still work.";
+	case APRS_NOT_AMATEUR: return "Pick a frequency in a ham band this radio sends on.";
+	case APRS_NO_AFSK: return "No APRS tones on this radio; DMR positions work.";
 	default: return NULL;
 	}
 }
@@ -48,7 +48,7 @@ static const char *aprs_body(void)
 	aprs_view_t v;
 	sb_init(&b, t, sizeof t);
 	if (!ui_svc_aprs_view(&v)) {
-		sb_str(&b, "APRS isn't in this build.");
+		sb_str(&b, "APRS: not in this build");
 		return t;
 	}
 	sb_str(&b, v.call[0] != '\0' ? v.call : "No callsign");
@@ -155,7 +155,7 @@ static void aprs_select(uint16_t i, bool hold)
 	aprs_view_t v;
 	aprs_cfg_t c;
 	if (!ui_svc_aprs_view(&v)) {
-		ui_toast("APRS isn't in this build");
+		ui_toast("APRS: not in this build");
 		return;
 	}
 	ui_svc_aprs_cfg(&c);
@@ -183,7 +183,7 @@ static void aprs_select(uint16_t i, bool hold)
 	case AP_POS: c.pos_src = (uint8_t)((c.pos_src + 1u) % APRS_POS_COUNT); break;
 	case AP_DMR_GPS:
 		if (!CONFIG_DMR_GPS) {
-			ui_toast("DMR position isn't in this build");
+			ui_toast("DMR position: not in this build");
 			return;
 		}
 		c.dmr_gps = !c.dmr_gps;

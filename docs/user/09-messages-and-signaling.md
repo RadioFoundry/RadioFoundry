@@ -41,7 +41,7 @@ The radio keeps the last 4 messages received, in memory. They are lost when the 
 ## Sending a message
 
 1. Open the actions for the person or talkgroup: **#** on Home for the last caller, or **#** on a contact.
-2. Press **3** (Message, or "Message the group").
+2. Press **3** (Message).
 3. Pick a text: "OK", "On my way", "Call me" or "Can't talk now". Press **OK** to send.
 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">

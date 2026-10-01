@@ -79,8 +79,19 @@ static void span(int x0, int x1, int y, color_t c)
 	}
 }
 
+#ifdef GFX_FIT_TRACE
+static void trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const char *s)
+{
+	const int clip[4] = { clip_x0 - ox, clip_y0 - oy, clip_x1 - ox, clip_y1 - oy };
+	gfx_draw_trace(kind, x, y, w, h, clip, s);
+}
+#endif
+
 void gfx_fill(int x, int y, int w, int h, color_t c)
 {
+#ifdef GFX_FIT_TRACE
+	trace(GFX_TRACE_FILL, x, y, w, h, NULL);
+#endif
 	x += ox;
 	y += oy;
 	int x0 = x < clip_x0 ? clip_x0 : x;
@@ -114,6 +125,9 @@ color_t gfx_get_pixel(int x, int y)
 
 void gfx_clear(color_t c)
 {
+#ifdef GFX_FIT_TRACE
+	trace(GFX_TRACE_CLEAR, 0, 0, vw, vh, NULL);
+#endif
 	for (int y = 0; y < height; y++)	// the whole panel, margins included
 		span(0, width, y, c);
 }
@@ -221,6 +235,10 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 		alt_expand(s, 0, first, sizeof first, &more);
 		s = first;
 	}
+#ifdef GFX_FIT_TRACE
+	const char *s0 = s;
+	int x0 = x;
+#endif
 	int bytes = (f->w + 7) / 8;
 	for (; *s; s++, x += f->w) {
 		int px = x + ox, py = y + oy;	// panel coordinates for the clip tests and spans
@@ -248,6 +266,9 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 			}
 		}
 	}
+#ifdef GFX_FIT_TRACE
+	trace(GFX_TRACE_TEXT, x0, y, (int)strlen(s0) * f->w, f->h, s0);	// after the glyph cells gfx_text_bg fills
+#endif
 	return x;
 }
 

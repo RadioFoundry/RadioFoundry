@@ -7,6 +7,9 @@
 //   uiSim --gallery DIR      every screen at every display class: DIR/<geom>/<screen>.png
 //   uiSim --ellipsis [GEOM]  every text shortened with an ellipsis on the gallery screens and the settings pages
 //                            (lists scrolled to their end), at one display class or all of them
+//   uiSim --layout [GEOM]    the layout check (sim_layout_issues) on the gallery screens, the settings pages and
+//                            the worst-case screens (longest names, IDs, aliases, messages, every status mark),
+//                            normal and worst-case content, every display class: exit status 1 on any problem
 //
 // The script runs from Home after a reset (see tests/host/sim/ui_sim.c for the tokens); the screen at the end is
 // written to --out. Exit status 1 if a key isn't on the key map or an expect: fails.
@@ -98,6 +101,135 @@ static const struct { const char *name, *script; } audit_extra[] = {
 	{ "quick_fm_all", "down quick" DOWN12 },
 	{ "picker", "call:3101234,91,g tt" DOWN12 },
 };
+
+// Worst-case screens for --layout (they run with sim_worst on, as the gallery screens do a second time)
+#define LONG_MSG "Meet_at_the_north_lot_of_the_county_fairgrounds_at_1500._Bring_the_spare_battery,_the_mag_mount_" \
+	"antenna_and_the_printed_ICS-205_for_the_net_control."
+static const struct { const char *name, *script; } worst_screens[] = {
+	{ "w_rx_alias", "rx:3109999,16776415,g,KD9ABC_Christopher_W,_Boston_MA" },
+	{ "w_rx_unknown", "rx:3101999,16776414,g,KD9ABC_Christopher_W,_Boston_MA" },
+	{ "w_rx_private", "rx:3108765,0,p" },
+	{ "w_reply", "call:3109999,16776415,g" },
+	{ "w_lastheard", "call:3109999,16776415,g wait:11000" },
+	{ "w_lastheard_unknown", "call:3101999,16776414,g wait:11000" },
+	{ "w_status_marks", "msg:3109999," LONG_MSG " msg:3108765,OK wait:9000 quick 5 6 back quick 7 back power:3 "
+		"battery:5 long:quick" },
+	{ "w_fm_marks", "down quick 5 7 1 back battery:100" },
+	{ "w_tx", "power:3 pttdown" },
+	{ "w_tx_private", "ok 1 3 ctx 2" },
+	{ "w_banner_message", "msg:3109999," LONG_MSG },
+	{ "w_banner_unknown", "msg:3101999," LONG_MSG },
+	{ "w_message_view", "msg:3109999," LONG_MSG " ctx" },
+	{ "w_messages", "msg:3109999," LONG_MSG " msg:3101999,On_my_way wait:9000 ok 2" },
+	{ "w_banner_alert", "alert:3109999" },
+	{ "w_banner_check", "call:3109999,16776415,g wait:11000 ctx 4 wait:1000" },
+	{ "w_caller_actions", "call:3109999,16776415,g wait:11000 ctx" },
+	{ "w_compose", "call:3109999,16776415,g wait:11000 ctx 3" },
+	{ "w_recent", "call:3109999,16776415,g call:3108765,9100091,g call:3101999,0,p call:3102999,16776414,g long:ctx" },
+	{ "w_picker", "call:3109999,16776415,g tt" },
+	{ "w_contacts", "ok 1" },
+	{ "w_contact_actions", "ok 1 ctx" },
+	{ "w_find", "2 7" },
+	{ "w_find_number", "1 6 7 7 6 4 1 5" },
+	{ "w_channels", "ok 4" },
+	{ "w_zone", "ok 4 ctx" },
+	{ "w_zone_end", "ok 4 ctx up" },
+	{ "w_quick", "quick" },
+	{ "w_quick_fm", "down quick" },
+	{ "w_quick_cc", "quick 3 1 5" },
+	{ "w_emergency", "emergency:3109999" },
+	{ "w_emergency_unknown", "emergency:3101999" },
+	{ "w_vfo", "ok 4 up ok 4 4 6 0 0 6 2 5 ok" },
+	{ "w_vfo_entry", "ok 4 up ok 4 4 6 0 0 6 2" },
+	{ "w_temporary", "quick 1 2 3 1 5 ok back" },
+	{ "w_scan", "quick 7 back" },
+	{ "w_lock_toast", "long:quick 5" },
+	{ "w_large", "ok 6 2 down down down ok long:back" },
+	{ "w_large_fm", "ok 6 2 down down down ok long:back down" },
+	{ "w_off_banner", "offfailed" },
+	{ "w_low_battery", "battery:5" },
+	{ "w_hub_unread", "msg:3109999,OK msg:3108765,OK wait:9000 quick 7 back ok" },
+	{ "w_roaming", "ok 5 8 1 wait:4000" },
+	{ "w_aprs", "ok 5 9" },
+	{ "w_aprs_nocall", "aprs:nocall ok 5 9" },
+	{ "w_usb", "ok 5 4" },
+	{ "w_sfr", "ok 5 5" },
+	{ "w_battery", "battery:5 ok 5 6" },
+	{ "w_my_radio", "ok 6 9 ok" },
+	{ "w_codeplug", "ok 6 0 down ok" },
+	{ "w_settings_number", "ok 6 3 ok up" },
+	{ "w_settings_privacy", "ok 6 4 ok ok down ok up" },
+	{ "w_settings_range", "ok 6 7 down down ok 9 9 ok" },
+	{ "w_hotspot", "hotspot:on" },
+	{ "w_hotspot_tx", "hotspot:on pttdown" },
+};
+
+// The layout check also counts texts shortened in the middle (gfx_text_fit) with the usability-test codeplug: a name
+// or label of ordinary length must fit. A preview cut at its end (a message) is fine; so is worst-case content
+static void audit_text(const char *s, char *o, size_t len, bool key);
+static int layout_cut;
+static char layout_cut_text[64];
+static void layout_fit_hook(const char *src, const char *out)
+{
+	size_t n = strlen(out);
+	if (n > 0 && (unsigned char)out[n - 1] != 0x80) {
+		layout_cut++;
+		audit_text(src, layout_cut_text, sizeof layout_cut_text, false);
+	}
+}
+
+static int run_layout(const char *only)
+{
+	char err[256], found[SIM_LAYOUT_MAX][160];
+	int problems = 0, screens = 0;
+	const char *shots = getenv("ODR_LAYOUT_SHOTS");
+	for (int g = 0; g < sim_geom_count; g++) {
+		if (only != NULL && strcmp(only, sim_geoms[g].name) != 0)
+			continue;
+		for (int pass = 0; pass < 4; pass++) {
+			size_t n = pass < 2 ? sizeof gallery / sizeof gallery[0] : pass == 2 ?
+				sizeof audit_extra / sizeof audit_extra[0] : sizeof worst_screens / sizeof worst_screens[0];
+			for (size_t i = 0; i < n; i++) {
+				const char *name = pass < 2 ? gallery[i].name : pass == 2 ? audit_extra[i].name : worst_screens[i].name;
+				const char *script = pass < 2 ? gallery[i].script : pass == 2 ? audit_extra[i].script :
+					worst_screens[i].script;
+				sim_reset(&sim_geoms[g], SIM_MAP_K);
+				if (pass == 1 || pass == 3)
+					sim_worst(true);
+				layout_cut = 0;
+				sim_set_fit_hook(pass == 0 || pass == 2 ? layout_fit_hook : NULL);
+				bool ran = sim_run(script, err, sizeof err);
+				sim_set_fit_hook(NULL);
+				if (ran && layout_cut) {
+					printf("%-10s %-20s shortened in the middle: \"%s\"\n", sim_geoms[g].name, name,
+					       layout_cut_text);
+					problems++;
+				}
+				if (!ran) {
+					printf("FAIL %s %s: %s\n", sim_geoms[g].name, name, err);
+					problems++;
+					continue;
+				}
+				screens++;
+				if (shots != NULL) {	// ODR_LAYOUT_SHOTS=DIR: every screen checked, as DIR/<geom>/<name>.png
+					char path[512];
+					snprintf(path, sizeof path, "%s/%s", shots, sim_geoms[g].name);
+					mkdir(shots, 0755);
+					mkdir(path, 0755);
+					snprintf(path, sizeof path, "%s/%s/%s%s%s.png", shots, sim_geoms[g].name,
+						 pass == 1 ? "worst_" : "", pass == 2 ? "x_" : "", name);
+					sim_save_png(path, 1);
+				}
+				int k = sim_layout_issues(found, SIM_LAYOUT_MAX);
+				for (int j = 0; j < k; j++)
+					printf("%-10s %s%-20s %s\n", sim_geoms[g].name, pass == 1 ? "worst " : "", name, found[j]);
+				problems += k;
+			}
+		}
+	}
+	printf("# layout: %d screens checked, %d problems\n", screens, problems);
+	return problems != 0;
+}
 
 static const char *audit_geom, *audit_screen;
 static char audit_seen[512][96];
@@ -226,6 +358,8 @@ int main(int argc, char **argv)
 			return run_gallery(v);
 		if (strcmp(a, "--ellipsis") == 0)
 			return run_audit(v);
+		if (strcmp(a, "--layout") == 0)
+			return run_layout(v);
 		if (strcmp(a, "--geom") == 0 && v != NULL) {
 			g = sim_geom_find(v);
 			if (g == NULL) {

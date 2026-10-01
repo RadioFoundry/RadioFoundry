@@ -377,26 +377,21 @@ void ui_talk(const ui_target_t *t, bool permanent)
 		// No codeplug writer yet: use it for now and say so
 		if (ui_svc_talk_to(t->id, !t->group, UI_TALK_TEMPORARY)) {
 			ui_go_home();
-			ui_toast("For now only: saving needs qdmr");
+			ui_toast("For now only: save it in qdmr");
 		} else {
-			ui_toast("Can't change the talk target in this build");
+			ui_toast("Talk target: not in this build");
 		}
 		return;
 	}
 	if (!permanent && !ui_svc_talk_to(t->id, !t->group, UI_TALK_TEMPORARY)) {
-		ui_toast("Can't change the talk target in this build");
+		ui_toast("Talk target: not in this build");
 		return;
 	}
 	ui_go_home();
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	if (permanent) {
-		sb_str(&b, name);
-		sb_str(&b, " is the default now");
-	} else {
-		sb_str(&b, "Talking to ");
-		sb_str(&b, name);
-	}
+	sb_str(&b, permanent ? "Default now: " : "Talking to ");
+	sb_str(&b, name);
 	ui_toast(msg);
 }
 
@@ -435,7 +430,7 @@ static void open_caller_actions(void)
 	if (caller_target(&t))
 		ui_open_actions(&t);
 	else
-		ui_toast("No one heard yet: callers show up here");
+		ui_toast("No calls heard yet");
 }
 
 // --- banners and events ---
@@ -468,6 +463,7 @@ static void banner(uint8_t kind, bool warn, uint32_t id, const char *title, cons
 	b->title[sizeof b->title - 1] = 0;
 	strncpy(b->text, text != NULL ? text : "", sizeof b->text - 1);
 	b->text[sizeof b->text - 1] = 0;
+	ui_st.toast = NULL;	// the banner has the news now ("Checking Joe..." is answered)
 	dirty = true;
 }
 
@@ -506,7 +502,7 @@ static void handle_event(const ui_event_t *ev)
 		} else {
 			sb_str(&b, "No answer from ");
 			station(&b, ev);
-			banner(UI_BANNER_RESULT, true, ev->id, title, "Not delivered: send it again");
+			banner(UI_BANNER_RESULT, true, ev->id, title, "Not delivered: send again");
 		}
 		break;
 	case UI_EV_CALL_ALERT:
@@ -517,7 +513,7 @@ static void handle_event(const ui_event_t *ev)
 	case UI_EV_PRIVATE_CALL:
 		sb_str(&b, "Private call from ");
 		station(&b, ev);
-		banner(UI_BANNER_PRIVATE, false, ev->id, title, "PTT replies to them");
+		banner(UI_BANNER_PRIVATE, false, ev->id, title, "PTT replies");
 		break;
 	case UI_EV_RADIO_CHECK:
 		station(&b, ev);
@@ -532,8 +528,10 @@ static void handle_event(const ui_event_t *ev)
 			sb_str(&tb, " s)");
 			banner(UI_BANNER_RESULT, false, ev->id, title, t);
 		} else {
-			sb_str(&b, ": no answer");
-			banner(UI_BANNER_RESULT, true, ev->id, title, "Off, out of range or elsewhere");
+			sb_init(&b, title, sizeof title);
+			sb_str(&b, "No answer from ");
+			station(&b, ev);
+			banner(UI_BANNER_RESULT, true, ev->id, title, "Off or out of range: try later");
 		}
 		break;
 	case UI_EV_EMERGENCY:
@@ -543,7 +541,7 @@ static void handle_event(const ui_event_t *ev)
 			ui_push(SCR_EMERGENCY, 0);
 		break;
 	case UI_EV_HOTSPOT_STARTED:
-		banner(UI_BANNER_INFO, false, 0, "Hotspot started by host", "Back to stop");
+		banner(UI_BANNER_INFO, false, 0, "Hotspot started by host", "OK stops it");
 		break;
 	case UI_EV_SAVE_FAILED: {
 		static char msg[sizeof ev->text];
@@ -560,7 +558,7 @@ static void handle_event(const ui_event_t *ev)
 		} else {
 			sb_str(&b, "No answer from ");
 			station(&b, ev);
-			banner(UI_BANNER_RESULT, true, ev->id, title, "Off, out of range or elsewhere");
+			banner(UI_BANNER_RESULT, true, ev->id, title, "Off or out of range: try later");
 		}
 		break;
 	case UI_EV_POWER_OFF_FAILED:
@@ -623,7 +621,7 @@ static void entry_digit(char d)
 {
 	static char hint[40];
 	if (ui_st.entry_len >= UI_ENTRY_MAX) {
-		ui_toast("That's all the digits: OK tunes");
+		ui_toast("All digits typed: OK tunes");
 		return;
 	}
 	ui_st.entry_digits[ui_st.entry_len] = d;
@@ -631,7 +629,7 @@ static void entry_digit(char d)
 		ui_st.entry_digits[ui_st.entry_len] = 0;
 		char bands[32];
 		ui_bands_text(bands, sizeof bands);
-		strcpy(hint, "Bands ");
+		strcpy(hint, "Bands: ");
 		strncat(hint, bands, sizeof hint - strlen(hint) - 1);
 		ui_toast(hint);
 		return;
@@ -711,7 +709,7 @@ static void save_channel(void)
 	} else if (ui_svc_save_channel()) {
 		ui_toast("Saved to channel");
 	} else {
-		ui_toast("Saving needs the codeplug writer: use qdmr");
+		ui_toast("Can't save here: use qdmr");
 	}
 }
 
@@ -748,7 +746,7 @@ void ui_scan_toggle(void)
 {
 	bool on = !ui_st.scanning;
 	if (!ui_svc_scan(on)) {
-		ui_toast("Scan isn't in this build yet");
+		ui_toast("Scan: not in this build");
 		return;
 	}
 	ui_st.scanning = on;
@@ -794,7 +792,7 @@ static bool talk_step(int dir)
 	ui_sb_target(name, sizeof name, &t);
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, next == 0 ? "Default: " : "Talking to ");
+	sb_str(&b, next == 0 ? "Default: " : "Talking to ");	// the channel's own talkgroup again, or a listen list one
 	sb_str(&b, name);
 	ui_toast(msg);
 	return true;
@@ -966,7 +964,7 @@ static void quick_close_editor(void)
 {
 	uint8_t kind = ui_quick_kind(ui_st.quick_focus, view);
 	if (kind == QT_CC && ui_st.quick_edit && !ui_svc_dmr_color_code(ui_st.cc_edit))
-		ui_toast("Color code: not in this build yet");
+		ui_toast("Color code: not in this build");
 	if (kind == QT_BRIGHTNESS)
 		ui_svc_setting_set(UI_SET_BRIGHTNESS, ui_st.brightness);
 	ui_st.quick_edit = false;
@@ -979,11 +977,11 @@ static void quick_unavailable(uint8_t kind)
 	case QT_BANDWIDTH:
 		ui_toast(view->ch.mode == RADIO_MODE_DMR ? "FM only: this is a DMR channel" : "Not in this build");
 		break;
-	case QT_PRIVACY: ui_toast("Privacy isn't in this build yet"); break;
-	case QT_SCAN: ui_toast("Scan isn't in this build yet"); break;
-	case QT_MODE: ui_toast(view->vfo ? "The VFO is FM only for now" : "Mode change isn't in this build yet"); break;
-	case QT_STEP: ui_toast("Step: set it in qdmr for now"); break;
-	default: ui_toast("Not in this build yet"); break;
+	case QT_PRIVACY: ui_toast("Privacy: not in this build"); break;
+	case QT_SCAN: ui_toast("Scan: not in this build"); break;
+	case QT_MODE: ui_toast(view->vfo ? "VFO: FM only" : "Mode change: not in this build"); break;
+	case QT_STEP: ui_toast("Step: set it in qdmr"); break;
+	default: ui_toast("Not in this build"); break;
 	}
 }
 
@@ -1240,11 +1238,11 @@ static void hotspot_key(const input_event_t *ev)
 	if ((ev->action == ACT_SELECT && press) || (ev->action == ACT_BACK && ev->gesture == GESTURE_LONG)) {
 		hostlink_hotspot_exit();
 		hs_diag = false;
-		ui_toast("Leaving hotspot mode");
+		ui_toast("Hotspot stopped");
 	} else if (ev->action == ACT_QUICK && press) {
 		hs_diag = !hs_diag;
 	} else if (press && !(hs_diag && ev->action == ACT_BACK)) {
-		ui_toast("Hotspot: OK exits");
+		ui_toast("Hotspot on: OK stops it");
 	}
 }
 #endif
@@ -1461,9 +1459,9 @@ static bool emergency_key(const input_event_t *ev)
 		return false;
 	bool on = ui_svc_emergency_active();	// the radio core's state: a cancel over the debug link counts too
 	if (!(ui_svc_features() & UI_FEAT_EMERGENCY)) {
-		ui_toast("Emergency isn't in this build");
+		ui_toast("Emergency: not in this build");
 	} else if (!ui_svc_emergency(!on)) {
-		ui_toast("Can't start emergency here: DMR channel and DMR ID needed");
+		ui_toast("Emergency needs a DMR channel and ID");
 	} else {
 		ui_toast(!on ? "EMERGENCY sent: hold again to cancel" : "Emergency cancelled");
 	}
@@ -1538,7 +1536,7 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (ev->action == ACT_USER_3 && ev->gesture == GESTURE_LONG) {
-		ui_toast("Speak status: voice prompts aren't built yet");
+		ui_toast("Voice prompts: not in this build");
 		return;
 	}
 	// A banner up: CONTEXT opens what it is about

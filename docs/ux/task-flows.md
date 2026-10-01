@@ -31,7 +31,7 @@ Numbered, so a digit picks directly:
 6. Position (request or show)
 7. Save as contact
 8. Speak status
-9. Save changes to channel (shown only when the channel has temporary changes)
+9. Save to channel (shown only when the channel has temporary changes)
 
 ---
 
@@ -215,7 +215,7 @@ Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. D
 2. `SELECT`, `5` (Tools), `3` (Hotspot) or `4` (USB network).
 3. `SELECT` = Start. Screen shows link state (host connected, mode, frequency, TS/CC, traffic and the current talker).
 
-Option (Connections): "Start hotspot when a hotspot host connects", default off. When on, a banner says "Hotspot started by host. Back to stop."
+Option (Connections): "Start hotspot when a hotspot host connects", default off. When on, a banner says "Hotspot started by host. OK stops it."
 
 While active: `BACK` goes Home; the hotspot keeps running and Home's status strip shows "HOTSPOT" with the traffic. Stop: `SELECT` = Stop on the hotspot screen or `CONTEXT` on Home > "Stop hotspot". PTT on the radio while in hotspot mode explains "Hotspot mode: the radio relays network traffic. Stop hotspot to talk locally."
 

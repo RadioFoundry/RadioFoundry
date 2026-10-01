@@ -58,6 +58,10 @@ void gfx_text_fit(const font_t *f, const char *s, int max_w, char *out, size_t o
 #ifdef GFX_FIT_TRACE
 // Host builds only: called whenever gfx_text_fit had to shorten a text (the simulator lists them per screen)
 void gfx_fit_trace(const char *src, const char *out);
+// Host builds only: every text, fill and clear with its rectangle in safe-area coordinates (text: the whole string,
+// before clipping) and the clip rectangle in force (x0, y0 inclusive, x1, y1 exclusive), for the layout check
+typedef enum { GFX_TRACE_TEXT, GFX_TRACE_FILL, GFX_TRACE_CLEAR } gfx_trace_kind_t;
+void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int clip[4], const char *s);
 #endif
 
 // Icons drawn from primitives

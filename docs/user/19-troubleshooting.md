@@ -24,12 +24,12 @@
 | A DMR call shows "Other TG: not played" | Its talkgroup isn't the talk target, in the listen list or the reply target. Hold **SK1**, use hear all, or add the talkgroup to the channel's RX group list in qdmr |
 | "Encrypted: not played" | The call uses basic privacy and the radio has no matching key, or stronger encryption the radio can't play |
 | "No DMR ID in codeplug" when transmitting | Write a codeplug with your DMR ID ([Programming with qdmr](15-programming-qdmr.md)) |
-| "Channel busy (polite)" | Someone is talking on the timeslot. Wait for the call to end |
+| "Channel busy" | Someone is talking on the timeslot. Wait for the call to end |
 | "No repeater answered" | The repeater didn't respond. Check the frequency, the color code, the timeslot and your distance to the repeater |
 | No audio on FM | The squelch is closed or the channel needs a tone. Hold **SK1** to open the squelch; check the tone with **\***, **3** |
 | A key does nothing and the screen says "Keys locked" | Hold **\*** to unlock. Check **Settings > Privacy > Auto lock** |
 | "Not used here" | That key has no function on this screen |
-| "... isn't in this build" | The feature is switched off in this build, or isn't built yet |
+| "...: not in this build" | The feature is switched off in this build, or isn't built yet |
 | The radio is stuck on the hotspot screen | A host has the serial port open. Press **OK**, or stop the host program. Turn **Settings > Connections > Hotspot allowed** off to prevent it |
 | Zone or channel changed by itself | A scan is running (SCAN in the status line). Press **Back** on Home |
 | qdmr, odrflash or a hotspot host doesn't find the radio's serial port | USB is in network mode. Switch back in **Tools > USB network**, or turn off **Settings > Connections > USB network at start** and restart. The debug link and MMDVM also answer on UDP port 3334 ([USB network](14-usb-network.md#serial-tools-in-network-mode)) |

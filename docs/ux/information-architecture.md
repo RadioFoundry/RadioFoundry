@@ -29,7 +29,7 @@ The talk target has three lifetimes:
 
 1. **One-shot**: press PTT while a talkgroup or contact is focused in any list. Transmits to it now. It stays the talk target for the reply window (default 10 s after the last transmission or reception on it), then Home reverts to the channel default.
 2. **Temporary**: `SELECT` on a talkgroup or contact ("Talk to"). Stays until the channel changes or `BACK` on Home.
-3. **Permanent**: long `SELECT` on it ("Make default for this channel"). Writes the channel.
+3. **Permanent**: long `SELECT` on it ("Make channel default"). Writes the channel.
 
 Replying to whoever just spoke is automatic during the reply window: if a station calls on TG 91 while the channel default is TG 3100, Home shows "Reply → TG 91 (8 s)" and PTT goes to TG 91 until the countdown ends. The setting "Reply window" (Talk & listen) allows 0 (off) to 30 s.
 

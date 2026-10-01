@@ -32,7 +32,7 @@ during the hot mic takes over the transmission.
 On the DM-1701, hold the **top side key** (above **PTT**) for 1.5 s. The screen says "EMERGENCY sent: hold again to
 cancel". Hold it again for 1.5 s to cancel ("Emergency cancelled"). A short press of the same key still changes the
 power level, and letting go before 1.5 s never starts an emergency. Where it can't start (see below) the radio says
-"Can't start emergency here: DMR channel and DMR ID needed". The MD-380 and the DM-32 have no emergency key yet.
+"Emergency needs a DMR channel and ID". The MD-380 and the DM-32 have no emergency key yet.
 
 Developers can also start and cancel it over the debug link:
 

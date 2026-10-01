@@ -49,6 +49,7 @@ The Home screen is the base. Every other screen is at most three levels away fro
 Home
  |-- *        Quick settings
  |-- OK       Hub: 1 Contacts, 2 Messages, 3 Recent, 4 Channels, 5 Tools, 6 Settings
+ |                (a key map without # adds 0 Last caller at the top)
  |-- #        Actions for the last caller
  |-- hold #   Recent
  |-- 0-9      Find
