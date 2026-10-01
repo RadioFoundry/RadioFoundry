@@ -508,7 +508,7 @@ static void test_emergency_alarm_in(void)
 }
 
 // The emergency key in "alarm only" mode: three alarm CSBKs about a second apart to the channel's talkgroup, then the
-// radio stays in emergency until cancelled
+// radio stays in emergency until canceled
 static void test_emergency_alarm_out(void)
 {
 	setup();

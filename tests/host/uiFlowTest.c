@@ -137,7 +137,7 @@ static const flow_t flows[] = {
 static const flow_t flows_k[] = {
 	{ "S theme light (color screens)", "", "ok 6 2 down down ok", "set7=1", 6, false },
 	{ "E emergency: hold the top key", "", "long:emerg", "toast=EMERGENCY_sent", 1, false },
-	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_cancelled", 1, false },
+	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
 	// The encoder: forward = the next channel on Home, the next row down a list, the next quick tile; back = up
 	{ "N encoder: next channel", "", "enc+", "pos=4 screen=home", 1, false },

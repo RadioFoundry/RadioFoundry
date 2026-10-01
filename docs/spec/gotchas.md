@@ -460,7 +460,7 @@ no-op entry points (about 27 KB). Commits 0a9bf50, 11a3ff4.
 NMEA has been heard (listen 5 s at power on). A UART framing or noise error stops DMA reception for good unless the
 error path restarts it; accept any NMEA talker and an 82-character line plus CR LF. Commit 84b6c20.
 
-**13.8 Cancelled menu edits must re-apply hardware state** (GPS and USB modes) after restoring the old values.
+**13.8 Canceled menu edits must re-apply hardware state** (GPS and USB modes) after restoring the old values.
 Commits f6e4b81, 31b52ef.
 
 **13.9 No git stash in a worktree with symlinked submodules.** In an agent worktree whose `third_party/*` are symlinks

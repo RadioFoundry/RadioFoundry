@@ -1427,7 +1427,7 @@ static void test_persist(void)
 	req(RREQ_POWER_OFF, 0);
 	run(50);
 	CHECK(sm.power_off_req && !sm.power_off_busy);
-	// An auto power off that didn't cut the power (the knob still on): cancelled, the radio runs on
+	// An auto power off that didn't cut the power (the knob still on): canceled, the radio runs on
 	req(RREQ_POWER_OFF, 1);
 	run(50);
 	CHECK(!sm.power_off_req && !sm.power_off_busy);
@@ -1644,7 +1644,7 @@ static void test_dmr_emergency(void)
 	tx_once();
 	air_lc(first, &l);
 	CHECK((l.svc & DMR_SVC_EMERGENCY) && l.dst == 201);
-	// Cancelled: the next call doesn't
+	// Canceled: the next call doesn't
 	dmr_emergency_cancel();
 	run(20);
 	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE);

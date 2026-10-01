@@ -106,6 +106,6 @@ Debug link view section `dmr_ext` (`debuglink.md` 3.7): `em.state em.mode em.dst
 - `dmrDataChainTest`: alarms in (alert once for repeats, another group only counted, our own ignored, nothing sent)
   and out (3 CSBKs, opcode, FID, IDs, at least 1 s apart, `EMERGENCY_SENT`, state active, cancel).
 - `radioCoreTest` `test_dmr_emergency`: the hot mic keys a call with the option to the talk target, released after
-  the hot mic, the user's own calls keep the option until cancelled, PTT takes the hot mic over, a set target, an
+  the hot mic, the user's own calls keep the option until canceled, PTT takes the hot mic over, a set target, an
   emergency call heard raises one alert and one tone, `UI_EV_EMERGENCY`, the UI's key.
 - HIL (opt-in RF): `tests/hil/test_dmr_emergency.py`, pass criteria in `tests/hil/README.md`.

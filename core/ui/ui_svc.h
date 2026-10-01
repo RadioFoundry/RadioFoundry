@@ -113,7 +113,7 @@ bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off
 // Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until
 // then the weak stub says "not set up"
 bool ui_svc_emergency(bool on);
-// Our own emergency is going (alarm, hot mic or in emergency until cancelled): the key then cancels it
+// Our own emergency is going (alarm, hot mic or in emergency until canceled): the key then cancels it
 bool ui_svc_emergency_active(void);
 // dmr-ext: a new emergency alert heard becomes UI_EV_EMERGENCY (ok: an alarm, else a call); run from ui_svc_poll
 void ui_svc_emergency_poll(void);

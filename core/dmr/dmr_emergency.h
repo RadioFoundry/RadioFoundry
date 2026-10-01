@@ -7,7 +7,7 @@
  *  Ours:  the emergency alarm (a CSBK, sent by the data service, repeated alarm_tries times), then, per the mode,
  *         an emergency call: the voice LC carries the emergency service option (TS 102 361-2 7.2.1) to the emergency
  *         target, with the microphone keyed by itself for hot_mic_s ("hot mic"). The radio stays in emergency until
- *         cancelled: every call made meanwhile carries the emergency option and goes to the emergency target.
+ *         canceled: every call made meanwhile carries the emergency option and goes to the emergency target.
  *  Heard: an emergency alarm to us or a group we listen to, or a voice call with the emergency option, raises an
  *         alert: a banner (dmr_emergency_alert) and the emergency tone, once per radio: its emergency heard again
  *         within DMR_EMERGENCY_REALERT_MS of the last (repeated alarms, the call after the alarm, the next over) adds
@@ -41,7 +41,7 @@ typedef enum {
 	DMR_EMERGENCY_IDLE = 0,
 	DMR_EMERGENCY_ALARM,		// the alarm is going out
 	DMR_EMERGENCY_HOT_MIC,		// the emergency call is keyed by itself
-	DMR_EMERGENCY_ACTIVE,		// in emergency: calls carry the emergency option (until cancelled)
+	DMR_EMERGENCY_ACTIVE,		// in emergency: calls carry the emergency option (until canceled)
 	DMR_EMERGENCY_FAILED,		// couldn't start (not a DMR channel we may transmit on, no target); until the next start
 } dmr_emergency_state_t;
 

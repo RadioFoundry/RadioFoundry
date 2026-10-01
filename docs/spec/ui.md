@@ -101,7 +101,7 @@ toast until voice prompts exist).
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
 whatever the long press time (`input_long_threshold`, core/input). On the DM-1701 it is the top side key's long
 action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above); the short press stays USER_3. A hold toggles:
-"EMERGENCY sent: hold again to cancel", "Emergency cancelled" (`ui_svc_emergency_active` reads the radio core's state,
+"EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
 so a cancel from elsewhere counts). The DM-32 has no emergency key (its top key isn't located yet).
 
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input

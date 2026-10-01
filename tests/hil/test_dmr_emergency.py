@@ -105,7 +105,7 @@ def test_emergency_call_rx(radio, sdr_bench, pytestconfig, em_settings):
 @pytest.mark.bench_service
 def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
     """The emergency key in alarm-only mode: three alarm CSBKs about a second apart (opcode 0x27, Motorola FID,
-    octets 4-6 the channel's talkgroup, 7-9 us), then em.state active until cancelled."""
+    octets 4-6 the channel's talkgroup, 7-9 us), then em.state active until canceled."""
     freq, cc, own, tg, feats = _emergency_setup(radio, pytestconfig, tx=True)
     radio.link.emergency_settings("alarm", 0, tries=3, hot_mic_s=0)
     radio.wait_for(lambda x: x.get("em.mode") == "alarm", sections=("dmr_ext",), what="alarm mode")
@@ -122,7 +122,7 @@ def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
     gaps = [alarms[i + 1]["t"] - alarms[i]["t"] for i in range(len(alarms) - 1)]
     assert all(g >= 0.9 for g in gaps), gaps
     radio.link.emergency("cancel")
-    radio.wait_for(lambda x: x.get("em.state") == "idle", sections=("dmr_ext",), what="emergency cancelled")
+    radio.wait_for(lambda x: x.get("em.state") == "idle", sections=("dmr_ext",), what="emergency canceled")
 
 
 @pytest.mark.radio_tx
@@ -152,7 +152,7 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
 def test_emergency_key_hold(radio, pytestconfig, em_settings):
     """The EMERGENCY key action (the DM-1701's top side key held 1.5 s; injected as the action, held for the
     hold-to-activate time): alarm-only, one try; the UI says "EMERGENCY sent", em.state leaves idle; a second hold
-    cancels ("Emergency cancelled", em.state idle). No bench: the alarm goes out at the lowest power."""
+    cancels ("Emergency canceled", em.state idle). No bench: the alarm goes out at the lowest power."""
     from odr_hil import LONG
     _emergency_setup(radio, pytestconfig, tx=True)
     radio.link.emergency_settings("alarm", 0, tries=1, hot_mic_s=0)
@@ -162,5 +162,5 @@ def test_emergency_key_hold(radio, pytestconfig, em_settings):
                    timeout=5.0, sections=("dmr_ext", "link"), what="emergency started by the key")
     radio.wait_for(lambda x: x.get("em.state") == "active", timeout=8.0, sections=("dmr_ext",), what="alarm sent")
     radio.press("emergency", LONG)
-    radio.wait_for(lambda x: x.get("em.state") == "idle" and "cancelled" in x.get("ui.toast", ""),
-                   sections=("dmr_ext", "link"), what="cancelled by the key")
+    radio.wait_for(lambda x: x.get("em.state") == "idle" and "canceled" in x.get("ui.toast", ""),
+                   sections=("dmr_ext", "link"), what="canceled by the key")

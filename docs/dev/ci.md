@@ -148,7 +148,7 @@ Things to know:
   with baseline optimizations (X86_V2)"). The workflows install NumPy from Ubuntu's packages instead, which works;
   a Proxmox CPU type of `x86-64-v2-AES` or `host` would remove the limit.
 - Gitea runs `schedule`, `workflow_dispatch` (with inputs), path filters, `vars`, `concurrency` (older Gitea
-  versions ignore it, so superseded runs then finish instead of being cancelled), the cache
+  versions ignore it, so superseded runs then finish instead of being canceled), the cache
   (`actions/cache@v4` on the runner's built-in cache server) and `actions/upload-artifact@v4`. The job summary
   (`$GITHUB_STEP_SUMMARY`) is written but not shown by Gitea; the size and coverage tables are also in the logs.
 

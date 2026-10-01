@@ -96,7 +96,7 @@ Targets are for regular DMR users; new users get 2x the time target. "Presses" =
 | T21 | Switch to timeslot 2 and color code 7 for now. | Temporary TS2 CC7 on Home | 7 | 20 s |
 | T22 | (any screen, after T21) Get back to the start screen and undo the temporary changes. | Home, defaults restored | 2 | 5 s |
 | T23 | Five-second test: show Home for 2 s, cover it. "Which channel? Where will PTT go? Is the battery OK?" | 3 of 3 correct | - | 2 s look |
-| T24 | Emergency (radio with emergency configured, in a shielded setup or dummy load). Start, then cancel. | Started and cancelled, no accidental start in other tasks | 1 + 1 | 10 s |
+| T24 | Emergency (radio with emergency configured, in a shielded setup or dummy load). Start, then cancel. | Started and canceled, no accidental start in other tasks | 1 + 1 | 10 s |
 
 Accessibility subset (voice prompts on, no looking): T1, T3, T5, T6, T9, T11, T15, T18. Target: all completed, time at most 2x the sighted target.
 

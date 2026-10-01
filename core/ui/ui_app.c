@@ -1463,7 +1463,7 @@ static bool emergency_key(const input_event_t *ev)
 	} else if (!ui_svc_emergency(!on)) {
 		ui_toast("Emergency needs a DMR channel and ID");
 	} else {
-		ui_toast(!on ? "EMERGENCY sent: hold again to cancel" : "Emergency cancelled");
+		ui_toast(!on ? "EMERGENCY sent: hold again to cancel" : "Emergency canceled");
 	}
 	return true;
 }
