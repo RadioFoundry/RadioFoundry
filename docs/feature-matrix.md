@@ -10,7 +10,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 - Figures from tools/ci.sh at 3ec14e3 (2026-10-11).
   - DM-1701: plain build (LTO off), default image 340,680 B of 344,064 B (3,384 free).
   - MD-380: link time optimization on (`LTO=1 LTO_3P=1`, its default and the only way everything fits), default
-    image 279,464 B of 281,668 B (2,204 free). With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are approximate.
+    image 279,444 B of 281,668 B (2,224 free). With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are approximate.
   - `*` = off by default; measured by turning it on in the DM-1701 build (main c0022b4).
 - **Radios:** ● on by default · ○ optional (supported, off by default) · ✕ not compatible (the hardware lacks it, or
   the board code isn't written: the note says which) · — in a bytes column: not built there, so not measured.
