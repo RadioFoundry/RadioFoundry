@@ -10,7 +10,12 @@ docs/spec/cps-protocol.md 2), the way qdmr's open-firmware UV380 driver does it.
   cps_client.py verify image.bin                     read back and compare
 
 Transport: the radio's USB serial port (--port, $ODR_PORT, or the only 1FC9:0094 device), or a command speaking
-the protocol on stdin / stdout (--exec "tests/host/cpsSim --populate", for tests).
+the protocol on stdin / stdout (--exec "tests/host/cpsSim --populate", for tests). The DM-32UV has no USB: give the
+programming cable's port with --port.
+
+--offset ADDR adds ADDR to every flash address on the wire. The DM-32UV keeps the legacy image at +0x700000 in its
+data flash (boards/dm32/flash_dm32.c, legacy-cps-interop.md 7.4) and its shim takes physical addresses, so it needs
+--offset 0x700000; image files keep the STM32 addresses either way.
 
 Regions (wire addresses = flash addresses on the STM32 radios):
   qdmr      what qdmr transfers: EEPROM image 0x80-0x6060 and 0x7500-0xB000, custom data 0x20000-0x211A0,
@@ -107,9 +112,12 @@ def find_port():
 
 
 class Cps:
-    def __init__(self, transport, timeout=2.0):
+    def __init__(self, transport, timeout=2.0, offset=0):
+        if offset % SECTOR:
+            raise CpsError(f"offset {offset:#x} is not a multiple of the {SECTOR}-byte sector")
         self.t = transport
         self.timeout = timeout
+        self.offset = offset    # added to flash addresses on the wire (DM-32UV: 0x700000)
 
     def close(self):
         self.t.close()
@@ -170,7 +178,7 @@ class Cps:
             a = start
             while a < end:
                 n = min(block, end - a)
-                img[a:a + n] = self.read(1, a, n)
+                img[a:a + n] = self.read(1, a + self.offset, n)
                 a += n
                 done += n
                 if progress:
@@ -186,12 +194,14 @@ class Cps:
 
     def write_sector(self, img, sector, start, end, block=BLOCK):
         base = sector * SECTOR
-        self.t.write(bytes([0x58, 1]) + sector.to_bytes(3, "big"))
-        self._ack(f"prepare sector {sector:#x}", 1)
+        wire = sector + self.offset // SECTOR
+        self.t.write(bytes([0x58, 1]) + wire.to_bytes(3, "big"))
+        self._ack(f"prepare sector {wire:#x}", 1)
         a = max(base, start)
         while a < min(base + SECTOR, end):
             n = min(block, min(base + SECTOR, end) - a)
-            self.t.write(bytes([0x58, 2]) + a.to_bytes(4, "big") + n.to_bytes(2, "big") + bytes(img[a:a + n]))
+            self.t.write(bytes([0x58, 2]) + (a + self.offset).to_bytes(4, "big") + n.to_bytes(2, "big") +
+                         bytes(img[a:a + n]))
             self._ack(f"data {a:#x}", 2)
             a += n
         self.t.write(bytes([0x58, 3]))
@@ -280,13 +290,13 @@ def set_channel_alias(img, number, ts1=True, ts2=False):
     img[a + CH_FLAG1] = (img[a + CH_FLAG1] & ~0x0A) | (0x02 if ts1 else 0) | (0x08 if ts2 else 0)
 
 
-def open_cps(port=None, exec_cmd=None, timeout=2.0):
+def open_cps(port=None, exec_cmd=None, timeout=2.0, offset=0):
     if exec_cmd:
-        return Cps(ExecTransport(exec_cmd), timeout)
+        return Cps(ExecTransport(exec_cmd), timeout, offset)
     port = port or os.environ.get("ODR_PORT") or find_port()
     if not port:
         raise CpsError("no radio found (1FC9:0094): give --port")
-    return Cps(SerialTransport(port), timeout)
+    return Cps(SerialTransport(port), timeout, offset)
 
 
 def load_image(path):
@@ -321,6 +331,8 @@ def main(argv=None):
     ap.add_argument("--exec", dest="exec_cmd", help="command speaking the protocol on stdin / stdout (tests)")
     ap.add_argument("--regions", choices=sorted(REGIONS), default="qdmr")
     ap.add_argument("--block", type=int, default=BLOCK, help="bytes per read / data request (qdmr: 32)")
+    ap.add_argument("--offset", type=lambda x: int(x, 0), default=0,
+                    help="added to flash addresses on the wire (DM-32UV: 0x700000)")
     ap.add_argument("--quiet", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info")
@@ -336,7 +348,7 @@ def main(argv=None):
     regions = REGIONS[a.regions]
     progress = None if a.quiet else bar
     try:
-        cps = open_cps(a.port, a.exec_cmd)
+        cps = open_cps(a.port, a.exec_cmd, offset=a.offset)
     except CpsError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

@@ -779,6 +779,8 @@ stock CPS also sends seven 130-byte zero blocks before rebooting; they are not n
 
 If the radio does not boot the new image, remove and refit the battery; update mode still works (COM).
 
+`tools/dm32_flash.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1).
+
 ### 13.3 ROM serial boot (recovery, no bootloader needed)
 
 The HR_C7000 ROM listens on the serial port after reset (DS). Dahua's DH_SOC_TOOLS (Windows) with a script first loads

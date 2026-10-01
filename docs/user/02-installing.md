@@ -123,5 +123,6 @@ dm1701` (same codec choices). See [building](../dev/building.md).
 
 The DM-32UV port builds and passes its host tests, but it hasn't run on a radio yet and isn't in the releases. There
 is no supported install procedure. Developers who want to try it follow the bring-up checklist in
-[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md). It uses `tools/dm32_codec.py` for the codec and
-`tools/dm32_pack.py` to wrap the image for Baofeng's updater.
+[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md). It uses `tools/dm32_codec.py` for the codec. Testers
+flash with `tools/dm32_flash.py` over the programming cable, or move from stock with their codeplug using
+`tools/dm32_migrate.py` ([Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md)).

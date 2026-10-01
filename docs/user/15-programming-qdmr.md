@@ -47,6 +47,13 @@ so qdmr reads them.
 On a TYT MD-380, MD-390 or RT3, `tools/md380_migrate.py` reads the stock codeplug, flashes ODR and writes the
 codeplug back, all in one run. See [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
 
+## DM-32UV
+
+qdmr can't program a DM-32UV running ODR directly. ODR keeps the codeplug at +7 MB in the radio's data flash, so the
+addresses qdmr's driver uses land in the stock area, where ODR refuses writes. Edit the codeplug in qdmr, save it as
+YAML, and write it with `dm32_migrate.py restore --yaml FILE` ([Moving from stock DM-32UV
+firmware](19-moving-from-stock-dm32.md)), which adds the offset.
+
 ## Backups
 
 Read the codeplug with qdmr and save it before you change it. A raw backup works too: `tools/cps_client.py read
@@ -56,6 +63,6 @@ backup.bin` and `tools/cps_client.py write backup.bin` over the serial port, or 
 ## Limits and notes
 
 - Writes are refused while the radio's settings area holds another firmware's data. See "Settings are not kept" in
-  [Troubleshooting](19-troubleshooting.md).
+  [Troubleshooting](20-troubleshooting.md).
 - The calibration area accepts writes only to its own bytes. Don't edit calibration with a CPS.
-- The DM-32UV reports a radio type qdmr doesn't know yet.
+- The DM-32UV reports radio type 6 (MD-UV380) for now; see [DM-32UV](#dm-32uv) above.

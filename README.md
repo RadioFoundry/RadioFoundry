@@ -141,8 +141,10 @@ to write the codec too) and hold PTT and the side key above it while powering th
 bootloader key isn't in this repo; odrflash derives it from the stock firmware file. If you put the stock firmware
 file in [codecs/](codecs/README.md), every `make` also writes an image with the codec merged in. Releases are built by
 `.github/workflows/release.yml` ([releases](docs/dev/release.md)). The DM-32UV image gets wrapped with
-`tools/dm32_pack.py` for Baofeng's updater. MD-380 owners moving from stock or md380tools firmware use
-`tools/md380_migrate.py`, which keeps the codeplug ([moving from stock](docs/user/18-moving-from-stock-md380.md)).
+`tools/dm32_pack.py` for Baofeng's updater, or flashed with `tools/dm32_flash.py`; `tools/dm32_migrate.py` moves a
+DM-32UV from stock with its codeplug ([moving from stock DM-32UV](docs/user/19-moving-from-stock-dm32.md)). MD-380
+owners moving from stock or md380tools firmware use `tools/md380_migrate.py`, which keeps the codeplug
+([moving from stock](docs/user/18-moving-from-stock-md380.md)).
 
 More: [build-config](docs/build-config.md), [testing](docs/testing/README.md),
 [DM-1701 hardware and bootloader](docs/spec/hardware-dm1701.md).

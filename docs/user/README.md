@@ -30,9 +30,11 @@ introduction lists what differs on the MD-380. Each release also carries this ma
 16. [Battery and power](16-battery-and-power.md)
 17. [APRS](17-aprs.md): positions on FM and over DMR, beacons, KISS and iGate with a computer
 18. [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md): MD-380 / MD-390 / RT3, keeping the codeplug
-19. [Troubleshooting](19-troubleshooting.md)
-20. [FAQ](20-faq.md)
-21. [Glossary](21-glossary.md)
+19. [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md): flashing over the programming cable, keeping
+    the codeplug (untested on a radio)
+20. [Troubleshooting](20-troubleshooting.md)
+21. [FAQ](21-faq.md)
+22. [Glossary](22-glossary.md)
 
 ## Quick reference
 

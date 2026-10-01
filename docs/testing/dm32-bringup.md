@@ -30,8 +30,13 @@ Hardware facts: `docs/spec/hardware-dm32.md`, `docs/spec/modem-hrc7000.md`, `doc
    tools/dm32_pack.py build/dm32/odr_dm32_codec.bin build/dm32/odr_dm32_codec_BFUV32.bin
    ```
 
-4. Load the `_BFUV32.bin` file with the Baofeng updater (stock CPS firmware update) or a loader that speaks the
-   13.2 protocol, in update mode.
+4. Load the image in update mode: `tools/dm32_flash.py build/dm32/odr_dm32_codec.bin` (a raw image or the
+   `_BFUV32.bin` file, over the programming cable; `--stock DM32.01.01.049.bin` goes back), or the Baofeng updater
+   with the `_BFUV32.bin` file. To keep the stock codeplug and get it onto ODR, run `tools/dm32_migrate.py all
+   --image build/dm32/odr_dm32_codec.bin` instead: it backs the codeplug up with qdmr, flashes, and writes it back
+   once ODR runs ([dm32-migration.md](../spec/dm32-migration.md), users:
+   [the manual](../user/19-moving-from-stock-dm32.md)). Both tools are untested on a radio: run them with `--dry-run`
+   first, and the codeplug part only after step 2 works.
 
 Run the first boots with the antenna on and **no PTT**. Transmit only into a dummy load, from step 7 on.
 
