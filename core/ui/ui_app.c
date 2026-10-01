@@ -987,7 +987,7 @@ static void quick_unavailable(uint8_t kind)
 
 static void quick_activate(int tile)
 {
-	char label[12], value[12];
+	char label[20], value[12];
 	ui_st.quick_focus = (uint8_t)tile;
 	uint8_t kind = ui_quick_kind(tile, view);
 	if (!ui_quick_tile(tile, view, &ui_st, label, sizeof label, value, sizeof value)) {

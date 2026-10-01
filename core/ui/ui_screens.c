@@ -89,10 +89,10 @@ void ui_layout_init(void)
 		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = &font_6x12; L->large = &font_8x16;
 	}
 
-	// No padding beyond the font's own cell on the small displays (the cell already has a blank row above the capitals
-	// and room for descenders; the DM-1701's lens inset is outside gfx_width / gfx_height): more rows per screen
+	// A pixel between the status strip and what is below it, and a pixel between list rows on displays 100 px and
+	// higher (3 on tall ones): easy to read comes before one more row
 	bool tall = h >= UI_TALL_PX;
-	L->strip_h = L->small->h + (tall ? 1 : 0);
+	L->strip_h = L->small->h + 1;
 	L->hint_y = h - L->small->h;
 	int y = L->strip_h;
 	// Rows that are dropped when the display is short: the zone line, then the separator
@@ -115,7 +115,7 @@ void ui_layout_init(void)
 	}
 	L->activity_y = y;
 	L->activity_h = L->hint_y - y;
-	L->row_h = L->small->h + (tall ? 3 : 0);
+	L->row_h = L->small->h + (tall ? 3 : h >= 100 ? 1 : 0);
 }
 
 // --- shared pieces ---
@@ -614,17 +614,18 @@ static void draw_talk(const radio_view_t *v)
 		sb_str(&b, "No TX frequency");
 		c = ui_col.warn;
 	} else {
+		// " MHz" goes before the frequency is cut (font.h alternates)
+		sb_str(&b, TEXT_ALT_OPEN);
 		sb_freq(&b, v->ch.tx_hz);
-		sb_str(&b, " MHz");
+		sb_str(&b, " MHz" TEXT_ALT_NEXT);
+		sb_freq(&b, v->ch.tx_hz);
+		sb_str(&b, TEXT_ALT_CLOSE);
 	}
-	// Too wide: the whole line in the small font (baseline aligned), so a frequency is never cut
-	const char *prefix = "PTT" GLYPH_ARROW " ";
-	const font_t *tf = gfx_text_width(f, prefix) + gfx_text_width(f, buf) <= gfx_width() ? f : L->small;
-	int y = L->talk_y + f->ascent - tf->ascent;
-	int x = gfx_text(tf, 0, y, prefix, ui_col.dim);
+	// Too wide: shorter text, never a smaller font
+	int x = gfx_text(f, 0, L->talk_y, "PTT" GLYPH_ARROW " ", ui_col.dim);
 	char fit[40];
-	gfx_text_fit(tf, buf, gfx_width() - x, fit, sizeof fit);
-	gfx_text(tf, x, y, fit, c);
+	gfx_text_fit(f, buf, gfx_width() - x, fit, sizeof fit);
+	gfx_text(f, x, L->talk_y, fit, c);
 }
 
 // Chips: tone, bandwidth, power, squelch. A dot marks a temporary change
@@ -830,8 +831,9 @@ static void draw_talk_dmr(const radio_view_t *v)
 			sb_str(&sb, "s)");
 			c = ui_col.warn;
 		}
+		// and last without the reply seconds (the hint still says the reply is on)
 		bool named = d->target_name[0] != '\0' && d->target_id != 0xFFFFFFu;
-		if (named)
+		if (named || secs[0])
 			sb_str(&b, TEXT_ALT_OPEN);
 		sb_target(&b, d->target_id, d->target_private, d->target_name);
 		sb_str(&b, secs);
@@ -839,18 +841,19 @@ static void draw_talk_dmr(const radio_view_t *v)
 			sb_str(&b, TEXT_ALT_NEXT);
 			sb_target(&b, d->target_id, d->target_private, "");
 			sb_str(&b, secs);
-			sb_str(&b, TEXT_ALT_CLOSE);
 		}
+		if (secs[0]) {
+			sb_str(&b, TEXT_ALT_NEXT);
+			sb_target(&b, d->target_id, d->target_private, "");
+		}
+		if (named || secs[0])
+			sb_str(&b, TEXT_ALT_CLOSE);
 	}
-	// Too wide: the whole line in the small font (baseline aligned) before the name is dropped
+	// Too wide: the name goes (the shorter alternate), never a smaller font
 	int w = gfx_width();
-	const font_t *pf = f, *tf = f;
-	if (gfx_text_width(f, prefix) + gfx_text_width(f, buf) > w)
-		pf = tf = L->small;
-	int base = L->talk_y + f->ascent;
-	int x = gfx_text(pf, 0, base - pf->ascent, prefix, d->reply_active ? ui_col.warn : ui_col.dim);
-	gfx_text_fit(tf, buf, w - x, fit, sizeof fit);
-	gfx_text(tf, x, base - tf->ascent, fit, c);
+	int x = gfx_text(f, 0, L->talk_y, prefix, d->reply_active ? ui_col.warn : ui_col.dim);
+	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
+	gfx_text(f, x, L->talk_y, fit, c);
 }
 
 // Chips: timeslot, color code, repeater / direct, roaming, power, hear all
@@ -901,7 +904,7 @@ static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 	char who[24], where[48], fit[48];
 	sbuf_t b;
 	if (d->last_ms == 0) {
-		gfx_text(sm, 0, y, "No calls heard yet", ui_col.dim);
+		gfx_text(sm, 0, y + (ui_layout.activity_h - sm->h) / 2, "No calls heard yet", ui_col.dim);	// centered
 		return;
 	}
 	sb_init(&b, who, sizeof who);
@@ -923,6 +926,7 @@ static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 		return;
 	}
 	// One line: where and when on the right as the longest form that leaves the name 6 characters, the name before it
+	y += (ui_layout.activity_h - sm->h) / 2;
 	gfx_text_fit(sm, where, w - 7 * sm->w, fit, sizeof fit);
 	int ww = gfx_text_width(sm, fit);
 	gfx_text(sm, w - ww, y, fit, ui_col.dim);
@@ -934,8 +938,6 @@ static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 static int call_line(const font_t *f, int y, const char *text, color_t c)
 {
 	char fit[48];
-	if (gfx_text_width(f, text) > gfx_width())
-		f = ui_layout.small;	// too wide: the small font before shortening
 	if (y + f->h > ui_layout.hint_y)
 		return y;
 	gfx_text_fit(f, text, gfx_width(), fit, sizeof fit);
@@ -952,12 +954,9 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	char buf[48], title[40];
 	sbuf_t b;
 
-	// The title: where the call goes, as a number ("TG 91", "Private to you"); the name gets a line of its own
 	sb_init(&b, title, sizeof title);
 	if (v->state == RS_TX) {
 		sb_target(&b, d->target_id, d->target_private, "");
-	} else if (d->call.group) {
-		sb_target(&b, d->call.dst, false, "");
 	} else {
 		sb_call_dst(&b, &d->call);
 	}
@@ -974,8 +973,18 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		const font_t *big = gfx_text_width(L->large, word) <= w ? L->large : L->medium;
 		gfx_text(big, 0, y, word, ui_col.tx);
 		y += big->h + 2;
-		if (d->target_name[0] != '\0' && d->target_id != 0xFFFFFFu)
-			y = call_line(L->medium, y, d->target_name, ui_col.fg);	// the number is in the title
+		// The target with its name, or without the name when that doesn't fit (font.h alternates)
+		bool named = d->target_name[0] != '\0' && d->target_id != 0xFFFFFFu;
+		sb_init(&b, buf, sizeof buf);
+		if (named)
+			sb_str(&b, TEXT_ALT_OPEN);
+		sb_target(&b, d->target_id, d->target_private, d->target_name);
+		if (named) {
+			sb_str(&b, TEXT_ALT_NEXT);
+			sb_target(&b, d->target_id, d->target_private, "");
+			sb_str(&b, TEXT_ALT_CLOSE);
+		}
+		y = call_line(L->medium, y, buf, ui_col.fg);
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "TS");
 		sb_u32(&b, d->ts, 1);
@@ -1043,13 +1052,16 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		}
 		y = call_line(L->small, y, buf, ui_col.fg);
 	}
-	// Then why it isn't heard, or the talkgroup's name (its number is in the title)
+	// Then why it isn't heard, or where the call goes ("TG 91 World")
 	const char *why = d->state == RDMR_RX_OTHER ? (d->call.encrypted ? "Encrypted: not played" :
 		"Other TG: not played") : !d->codec ? "No codec: voice off" : NULL;
-	if (why != NULL)
+	if (why != NULL) {
 		y = call_line(L->small, y, why, ui_col.warn);
-	else if (d->call.group && d->call.dst_name[0] != '\0')
-		y = call_line(L->small, y, d->call.dst_name, ui_col.fg);
+	} else {
+		sb_init(&b, buf, sizeof buf);
+		sb_call_dst(&b, &d->call);
+		y = call_line(L->small, y, buf, ui_col.fg);
+	}
 	if (y + L->small->h <= L->hint_y) {
 		int16_t dbm = d->rssi_dbm != 0 ? d->rssi_dbm : v->rssi_dbm;
 		sb_init(&b, buf, sizeof buf);
@@ -1130,9 +1142,11 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		} else {
 			sb_str(&b, "No activity yet");
 		}
+		bool mon = v->monitor && L->activity_h >= 2 * sm->h;
+		y += (L->activity_h - (mon ? 2 : 1) * sm->h) / 2;	// centered in the activity area
 		gfx_text_fit(sm, buf, gfx_width(), fit, sizeof fit);
 		gfx_text(sm, 0, y, fit, ui_col.dim);
-		if (v->monitor && L->activity_h >= 2 * sm->h)
+		if (mon)
 			gfx_text(sm, 0, y + sm->h, "Squelch open", ui_col.warn);
 		break;
 	}
@@ -1732,12 +1746,17 @@ static bool feat(uint32_t f)
 bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *label, size_t label_len,
 	char *value, size_t value_len)
 {
+	// The whole word, and an abbreviation of 6 characters at most for a tile (font.h alternates), so a tile's name
+	// never runs into the next tile's digit in the label font
+#define QT_NAME(full, abbr) TEXT_ALT_OPEN full TEXT_ALT_NEXT abbr TEXT_ALT_CLOSE
 	static const char *const names[] = {
-		[QT_POWER] = "Power", [QT_SQUELCH] = "Squelch", [QT_TONE] = "Tone", [QT_MODE] = "Mode",
-		[QT_MONITOR] = "Monitor", [QT_VOX] = "VOX", [QT_SCAN] = "Scan", [QT_BANDWIDTH] = "Width",
-		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = "Timeslot", [QT_CC] = "Color", [QT_HEAR_ALL] = "Hear all",
-		[QT_PRIVACY] = "Privacy", [QT_TALK_TO] = "Talk to", [QT_STEP] = "Step",
+		[QT_POWER] = "Power", [QT_SQUELCH] = QT_NAME("Squelch", "SQL"), [QT_TONE] = "Tone", [QT_MODE] = "Mode",
+		[QT_MONITOR] = QT_NAME("Monitor", "MON"), [QT_VOX] = "VOX", [QT_SCAN] = "Scan", [QT_BANDWIDTH] = "Width",
+		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
+		[QT_HEAR_ALL] = QT_NAME("Hear all", "All TG"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
+		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_STEP] = "Step",
 	};
+#undef QT_NAME
 	uint8_t kind = ui_quick_kind(tile, v);
 	bool editing = s->quick_edit && s->quick_focus == tile;
 	sbuf_t b;
@@ -1852,10 +1871,10 @@ static const ui_state_t *quick_s;
 
 static void quick_list_item(uint16_t i, ui_item_t *it)
 {
-	char label[16];
+	char label[20];
 	bool ok = ui_quick_tile(i, quick_v, quick_s, label, sizeof label, it->value, sizeof it->value);
 	it->num = label[0];
-	strcpy(it->label, label + 1);
+	strcpy(it->label, label + 1);	// the whole word: a list row has room for it
 	if (!ok)
 		it->flags |= UI_ITEM_DIM;
 	if (quick_s->quick_edit && quick_s->quick_focus == i)
@@ -1892,19 +1911,11 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 		vf = lf;
 	if (gh / 3 < lf->h + vf->h)
 		lf = L->tiny;
-	// The names in the label font, or all in the tiny font when one of them has no room in it (one size for all)
-	const font_t *nf = lf;
-	for (int i = 0; i < UI_QUICK_TILES; i++) {
-		char label[12], value[12];
-		ui_quick_tile(i, v, s, label, sizeof label, value, sizeof value);
-		if (gfx_text_width(lf, label + 1) + lf->w + 1 > w / 3 - 3)
-			nf = L->tiny;
-	}
 	for (int i = 0; i < UI_QUICK_TILES; i++) {
 		int cx = i % 3, cy = i / 3;
 		int x0 = w * cx / 3, x1 = w * (cx + 1) / 3 - (cx == 2 ? 1 : 0);
 		int y0 = top + gh * cy / 3, y1 = top + gh * (cy + 1) / 3 - (cy == 2 ? 1 : 0);
-		char label[12], value[12], fit[12];
+		char label[20], value[12], fit[12];
 		bool ok = ui_quick_tile(i, v, s, label, sizeof label, value, sizeof value);
 		bool focus = i == s->quick_focus;
 		color_t fg = ok ? ui_col.fg : ui_col.line, bg = ui_col.bg;
@@ -1917,11 +1928,11 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 		}
 		gfx_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, ui_col.line);
 		gfx_clip(x0 + 1, y0 + 1, x1 - x0 - 1, y1 - y0 - 1);
-		// The key's digit, then the name a pixel apart
+		// The key's digit, half a character, then the name (it ends before the next tile's digit)
 		char key[2] = { label[0], 0 };
-		int ny = y0 + 1 + lf->ascent - nf->ascent;
-		int nx = gfx_text(nf, x0 + 2, ny, key, fg) + 1;
-		gfx_text(nf, nx, ny, label + 1, focus ? fg : ok ? ui_col.dim : fg);
+		int nx = gfx_text(lf, x0 + 2, y0 + 1, key, fg) + lf->w / 2;
+		gfx_text_fit(lf, label + 1, x1 - nx - (cx < 2 ? lf->w / 2 : 1), fit, sizeof fit);	// a gap before the next tile
+		gfx_text(lf, nx, y0 + 1, fit, focus ? fg : ok ? ui_col.dim : fg);
 		if (focus && s->quick_edit) {
 			// Editing: arrows around the value say Up/Dn changes it
 			sbuf_t vb;
@@ -1933,11 +1944,9 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 			memcpy(value, tmp, sizeof value - 1);
 			value[sizeof value - 1] = 0;
 		}
-		const font_t *tf = vf;	// a value too wide for the tile ("<D023N>") drops to the label font, then tiny
+		const font_t *tf = vf;	// a value too wide for the tile ("<D023N>") drops to the label font
 		if (gfx_text_width(tf, value) > x1 - x0 - 3)
 			tf = lf;
-		if (gfx_text_width(tf, value) > x1 - x0 - 3)
-			tf = L->tiny;
 		gfx_text_fit(tf, value, x1 - x0 - 3, fit, sizeof fit);
 		int vx = x0 + (x1 - x0 + 1 - gfx_text_width(tf, fit)) / 2;
 		int vy = y0 + 1 + lf->h + (y1 - y0 - 1 - lf->h - tf->h) / 2;

@@ -19,6 +19,8 @@
 #include <sys/stat.h>
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
+#include "ui/ui_screens.h"
+#include "ui/gfx.h"
 
 // Screens for the gallery: a name and the script that reaches it from Home (zone 0, channel 3, a DMR channel)
 static const struct { const char *name, *script; } gallery[] = {
@@ -186,6 +188,16 @@ static int run_layout(const char *only)
 	for (int g = 0; g < sim_geom_count; g++) {
 		if (only != NULL && strcmp(only, sim_geoms[g].name) != 0)
 			continue;
+		// Readability (principles.md 5): list rows and the status strip keep a pixel between them and the next
+		// line on displays 100 px and higher, never squeezed to the font's bare cell to fit one more row
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		const ui_layout_t *L = &ui_layout;
+		int pitch = L->small->h + (gfx_height() >= UI_TALL_PX ? 3 : gfx_height() >= 100 ? 1 : 0);
+		if (L->row_h < pitch || (gfx_height() >= 100 && L->strip_h < L->small->h + 1)) {
+			printf("%-10s rows squeezed: row pitch %d, strip %d (small font %d px high)\n", sim_geoms[g].name,
+				L->row_h, L->strip_h, L->small->h);
+			problems++;
+		}
 		for (int pass = 0; pass < 4; pass++) {
 			size_t n = pass < 2 ? sizeof gallery / sizeof gallery[0] : pass == 2 ?
 				sizeof audit_extra / sizeof audit_extra[0] : sizeof worst_screens / sizeof worst_screens[0];
