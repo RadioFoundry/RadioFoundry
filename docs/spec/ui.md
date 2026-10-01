@@ -22,14 +22,16 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 `ui_app.c` and `ui_menus.c` never call the RTOS. The firmware drives them from `ui.c`; the host simulator
 (section 7) drives the same files.
 
-Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip, list rows and the hint row are exactly one
-text cell high, with no padding of their own. The font's cell already holds a blank row above the capitals and the
-descenders, and the board's safe-area insets are outside the drawing area (`gfx_width` / `gfx_height`): on the
-DM-1701 5 px left and right under the lens, none top and bottom. At 160x120i5 a list shows 8 rows, at 160x128 8, at
-120x160 (the DM-32) 18, at 128x64 6. The 240x320 class keeps 3 px per row and a separate title row. The 120x160
-portrait panel keeps the 128 px class's small font (24 characters a line) and takes the 160 px class's channel and
-talk target fonts. Home's Activity region shows the last caller on two lines (name, then "TG 91 11s ago") where it has
-the rows for them, else one line where the name gives way first.
+Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip and, from 100 px high, each list row take
+one pixel more than the text cell, so lines never touch (easy to read comes before one more row; principles.md 5).
+The board's safe-area insets are outside the drawing area (`gfx_width` / `gfx_height`): on the DM-1701 5 px left and
+right under the lens, none top and bottom. At 160x120i5 a list shows 7 rows, at 160x128 7, at 120x160 (the DM-32) 15,
+at 128x64 5. The 240x320 class keeps 3 px per row and a separate title row; `uiSim --layout` fails a class whose row
+pitch drops below these. The 120x160 portrait panel keeps the 128 px class's small font (24 characters a line) and
+takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
+(name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
+line ("No calls heard yet") is centered in the region. Text that doesn't fit is shortened (an alternate, the name
+dropped, then an ellipsis), never drawn in a smaller font.
 
 The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The group for the Back key (it starts with
 "Back") is drawn against the right edge, under the key; the other groups run from the left, and those that don't fit

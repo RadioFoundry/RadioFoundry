@@ -57,6 +57,7 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 
 - Home is readable at arm's length in one glance: the channel name and talk target are the two largest text items. Secondary items are smaller and in fixed places.
 - Each screen region has one job and always the same position (status strip at top, hint row at bottom, content in between).
+- Easy to read beats one more item: fonts are never made smaller and line spacing never squeezed to fit more; a fit problem is fixed with shorter text first (an alternate, a dropped name, an abbreviation). `uiSim --layout` fails a display class whose list or strip spacing drops below its normal pitch.
 - No scrolling text on Home. Long names are shortened from the middle with an ellipsis, not marquee-scrolled.
 - Color carries meaning only (TX red, RX green, warning amber, privacy blue); every color cue also has a word or icon, so monochrome and color-blind users get the same information.
 - Glance budget follows vehicle HMI guidance: no screen requires a look longer than 2 s to understand, and no common task requires more than 12 s of eyes-on-screen.
@@ -108,7 +109,7 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 - Every logical action is reachable on every supported key set. Radios with few keys get fallbacks (for example long `SELECT` = `QUICK`), documented in the key map.
 - Works with gloves: no timing-critical presses, no chords required, large hit tolerance on encoders (one detent = one step, no acceleration below 4 detents/s).
 - Accessibility is built in, not a setting buried away: voice prompts, large-text mode (Home with two lines: channel and talk target), high-contrast theme, adjustable long-press time, key-repeat rate, tone volume.
-- Text is plain US English, short, no abbreviations beyond the standard radio ones (TG, TS, CC, ID, FM, DMR, GPS), with translations through string tables.
+- Text is plain US English, short, no abbreviations beyond the standard radio ones (TG, TS, CC, ID, FM, DMR, GPS, SQL, MON, Priv), with translations through string tables.
 
 **Wording rules** (checked in the UI audit of 2026-10-11):
 
