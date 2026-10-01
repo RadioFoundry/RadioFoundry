@@ -943,7 +943,7 @@ def self_test():
 
     # DfuSe files, laid out as dmrconf 0.15.1 writes them for openuv380 (an empty EEPROM target, four elements)
     flash = [(0x80, bytes(range(256)) * 2), (0x7500, b"\x11" * 300), (0x20000, b"\x22" * 64), (0x9B000, b"\x33" * 5000)]
-    targets = [("OpenGD77 Codeplug EEPROM", []), ("OpenGD77 Codeplug FLASH", flash)]
+    targets = [("Codeplug EEPROM", []), ("Codeplug FLASH", flash)]
     data = build_dfuse(targets)
     check(parse_dfuse(data) == targets, "DfuSe round trip")
     check(data[-16:-4] == b"\xff" * 6 + b"\x1a\x01UFD\x10", "DfuSe suffix as dmrconf writes it")
@@ -1136,7 +1136,7 @@ def main(argv=None):
         sess.say("finished%s. Files: %s" % (" (dry run: nothing was written to the radio)" if sess.dry else "",
                                             sess.workdir or "-"))
         return 0
-    except MigrateError as e:
+    except (MigrateError, mod("md380_migrate").MigrateError) as e:      # the shared session code raises its own
         sess.say("")
         sess.say("stopped: %s" % e)
         if sess.state.get("flashed") and sess.state.get("odr_dfu") and args.cmd in ("all", "restore"):

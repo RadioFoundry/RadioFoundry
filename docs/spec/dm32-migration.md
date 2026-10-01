@@ -58,10 +58,10 @@ So the tool uses dmrconf only offline (encode, decode) and writes with `tools/cp
 
 | Item | Fact |
 |---|---|
-| Radio keys (0.15.1) | `dm32uv` (stock Baofeng DM-32UV), `openuv380` (qdmr's driver for the OpenGD77-family STM32 radios, the legacy layout ODR serves) |
+| Radio keys (0.15.1) | `dm32uv` (stock Baofeng DM-32UV), `openuv380` (qdmr's open firmware driver for the STM32 radios: the legacy layout ODR serves) |
 | Stock read | `dmrconf read --radio dm32uv [--device PORT] backup-stock.dfu` over the programming cable. Untested: whether `--device` wants the full path, and whether detection works on its own |
 | dm32uv binary (T) | One DfuSe target "Baofeng DM32UV Codeplug", 4 KB elements at data flash addresses (0x4000, 0xB000, 0xF000..0x12000, 0x42000, ...) |
-| openuv380 binary (T) | DfuSe with an empty target "OpenGD77 Codeplug EEPROM" and a target "OpenGD77 Codeplug FLASH" of four elements at the wire addresses 0x80 (0x5FE0 bytes), 0x7500 (0x3B00), 0x20000 (0x11A0), 0x9B000 (0x13E60). These are exactly qdmr's write regions ([cps-protocol.md](cps-protocol.md) 2.5) |
+| openuv380 binary (T) | DfuSe with an empty "EEPROM" target and a "FLASH" target of four elements at the wire addresses 0x80 (0x5FE0 bytes), 0x7500 (0x3B00), 0x20000 (0x11A0), 0x9B000 (0x13E60). These are exactly qdmr's write regions ([cps-protocol.md](cps-protocol.md) 2.5) |
 | DfuSe framing (T) | Prefix `DfuSe` 01, size, target count; targets with alternate setting 1, named; suffix FF FF FF FF FF FF 1A 01 "UFD" 10 and a CRC-32 that is the bitwise NOT of zlib's. The tool's writer reproduces dmrconf's files byte for byte |
 | Conversion (T) | `decode --radio dm32uv` then `encode --radio openuv380` works on a dm32uv file; the round trip keeps channels, zones up to 68, contacts, RX group lists and the radio ID; scan lists are dropped |
 | Callsign DB (T) | `encode-db --radio openuv380 --id ID [--database FILE] [--limit N]` gives one element at wire address 0x50000 (header "IdN..."), within ODR's flash image (0x750000 physical) |
