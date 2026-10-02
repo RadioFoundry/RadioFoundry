@@ -172,6 +172,21 @@ Other radios can query this radio over the air at its own 12.x.y.z address (read
 Events over the air go only to a manager radio you name (`tools/odr_debug.py snmp set rf_manager <DMR ID>`), at most
 one a minute apart from emergencies. Nothing is encrypted; SNMP community names travel as plain text.
 
+## Network over the programming cable (PPP)
+
+Radios without USB, such as the DM-32UV, can get the same network over their programming cable with PPP. It is not in
+the release images yet: a build needs `CONFIG_NET_PPP=y`, and it hasn't been tried on a radio. With such a build, run
+on the computer (as root, pppd comes with macOS and most Linux systems):
+
+```
+sudo tools/odr_ppp.sh /dev/ttyUSB0                 # Linux
+sudo tools/odr_ppp.sh /dev/cu.usbserial-XXXX       # macOS
+```
+
+The radio switches to PPP by itself when pppd starts, gives the computer the same address as in USB network mode, and
+the services above work the same, only slower (about 10 KB/s at 115200 baud). `sudo tools/odr_ppp.sh --stop` hangs up
+and the cable goes back to programming and the debug link. The details are in `docs/spec/ppp.md`.
+
 ## Control station for dispatch software
 
 Dispatch software (RadioDesk, TRBOnet, SmartPTT and similar) can use the radio as its control station: the computer

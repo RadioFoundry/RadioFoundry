@@ -6,7 +6,8 @@ The radio can be a USB network adapter instead of a serial port, and route IPv4 
 over DMR packet data. Switches: `CONFIG_USB_NETWORK` (the adapter), `CONFIG_DMR_IP_GATEWAY` (the gateway on top of
 it) and `CONFIG_DMR_CONTROL_STATION` (section 5), on wherever the radio has USB and DMR (`docs/build-config.md`). On
 the link the radio also runs its own services: mDNS (`mdns.md`), a TFTP server for the codeplug (`tftp.md`) and the
-TCP services (`tcp-services.md`).
+TCP services (`tcp-services.md`). The same gateway and services also run over PPP on the serial host port, for radios
+without USB (`ppp.md`).
 
 ## 1. One personality at a time
 
