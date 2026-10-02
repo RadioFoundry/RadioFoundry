@@ -16,7 +16,7 @@ Every fact carries one tag.
 | Tag | Meaning |
 |---|---|
 | **DS** | HR_C7000 user guide (Chinese original with English translation, v2.7, 2016), or another datasheet |
-| **BIN** | Observed in the stock DM32.01.01.049 / 046 image or the 2026 OpenDM32 images by disassembly |
+| **BIN** | Observed in the stock DM32.01.01.049 / 046 image or the 2026 OpenDM32 images by disassembly (facts only: addresses, values, command words; no code is carried over) |
 | **KP** | Taken from another firmware's source port (FM reportedly worked; DMR did not). Unverified on hardware |
 | **COM** | Community pin map (infotex58.ru forum topic 1168, `pinmap_14.06.26`), bench probing by others, unverified |
 | **INF** | Inferred by us from the above; not seen directly |
@@ -48,7 +48,7 @@ core clock matches what UART divisors and timers assume and FM worked in another
 | 2 | QUAD_ENABLE (0x05C) | 0x01000001 | XIP flash controller (LCSFC) quad mode on, input sample delay 1 |
 | 3 | LCSFC_BAUDR (0x030) | 0x02 | XIP flash SCLK divider (reset default 4) |
 | 4 | CLK_MGR 0x010 | clear bits 23:0, then set refdiv=1 at bit 18, fbdiv=28 at bits 6+, postdiv1=2 at bits 5:3, postdiv2=2 at bits 2:0 | 24 MHz / 1 x 28 = 672 MHz VCO, / 2 / 2 = 168 MHz |
-| 5 | CLK_MGR 0x028 | (7 << 16) or 6 | USB clock = VCO / 2 / 7 = 48 MHz; SDIO divider 6 |
+| 5 | CLK_MGR 0x028 | (7 << 16) or 6 | DS field meanings: bits 4:0 usb_clk_div_num = 6, USB clock = BPLL VCO / 2 / (6 + 1) = 48 MHz; bits 20:16 sdio_clk_div_num = 7, SDIO 2x clock = VCO / 2 / 8 = 42 MHz |
 | 6 | CLK_MGR 0x024 | clear bits 3:0, set bit 1 | PLL:AHB = 1:1. The port's comment says AHB:APB = 1:4 but every peripheral divisor in the port assumes **APB = 84 MHz (sys / 2)** |
 | 7 | CLK_MGR 0x004 | set bits 1:0 | release APLL / BPLL reset |
 | 8 | CLK_MGR 0x004 | poll bit 31 every 100 us | PLL locked |
@@ -101,7 +101,7 @@ Controller at 0xE000F000 (KP, same sequence in stock-style start-up):
 | 0x04000000 | | LCSFC flash controller register window (port name FLASH_SPI_BASE; not used directly) | KP |
 | 0x11000000 – 0x1100FFFF | | Modem / system registers (clock, reset, IO mux, baseband) | DS |
 | 0x12000000 – 0x1200FFFF | | i8080 LCD controller | DS |
-| 0x13000000 – 0x1303FFFF | | USB controller (not wired to anything useful on the DM-32: programming is over UART0) | DS, INF |
+| 0x13000000 – 0x1303FFFF | 256 KB | USB 1.1 full-speed device controller (Synopsys DesignWare OTG core built device-only). Present on the SoC but the DM-32UV has no USB data connector and the stock firmware never touches it (3.11) | DS, BIN, COM |
 | 0x14000000 – 0x1415FFFF | | APB peripherals (section 3) | DS |
 | 0x15000000 | | SDIO | DS |
 | 0x16000000 – 0x1600FFFF | | Modem buffer RAM (DMR TX/RX RAM, AMBE voice RAM, prompt FIFO, codec registers; `modem-hrc7000.md`) | DS |
@@ -280,9 +280,100 @@ The bus pins (CS, RS, WR, DB0–DB7) are handed to the controller by clearing IO
 IO_DIPLEX2 &= 0xFFF80107). RD (PTC6) stays a GPIO held high; NRESET is GPIO 0x42. A short delay (a few cycles) after
 each byte was needed in the port (KP).
 
----
+### 3.11 USB controller (present on the SoC, not usable on the DM-32UV)
 
-## 4. Interrupt controller and vectors
+**Summary.** The HR_C7000 has a USB 1.1 full-speed device controller, but the DM-32UV gives it nothing to talk to.
+The USB-C socket people see is on the BC-32UV battery pack: it charges the pack through the pack's own charger,
+with red (charging) and green (full) LEDs on the pack (COM: Baofeng and Radioddity battery listings; reviewers
+note that the included USB-C cable cannot program the radio). The radio body has no USB connector; programming and
+firmware updates use the two-pin K1 jack, which carries UART0 through a USB-serial cable (COM, BIN). So ODR keeps
+`CONFIG_USB=n` on this board. The controller facts below are kept for a future HR_C7000 radio that does wire the
+USB pins, and to settle the question for good.
+
+#### What the stock firmware does with it
+
+| Item | Finding | Tag |
+|---|---|---|
+| USB register accesses in the stock app (049 and 046) | None. No literal-pool word or `movih` builds an address in 0x13000000–0x1303FFFF; the only 0x13xxxxxx words found are instruction bytes, not referenced as data | BIN |
+| USB clock gates | The app only changes bits 6 and 7 of CLK_MGR 0x02C (never bits 16/17, the USB gates) | BIN |
+| USB interrupt (vector 53) | No handler found; nothing enables PIC source 21 | BIN, INF |
+| USB descriptors | None in the image: no device descriptor (`12 01 ..`), no configuration descriptor (`09 02 ..`), no UTF-16 strings | BIN |
+| "task usb" | An RTOS task of that name (created with priority 11 and a 200-word stack) runs the stock PC programming protocol. Its transmit routine polls UART0 USR (0x1403007C) bit 1 and writes THR (0x14030000): the "USB" in the name is the USB-serial programming cable, not the USB controller. The protocol is in [dm32-stock-cps.md](dm32-stock-cps.md) | BIN |
+| "USB模式" / "USB Mode", "电脑编程" / "PC Program", "在线调试" / "TestMode OnLine" | Text pairs in the per-language string tables, shown while a PC session (programming, or PC test mode) is running on the cable | BIN, INF |
+| Charging | The stock UI has no charging text or state (only battery-low warnings); the radio only sees the battery voltage | BIN, INF |
+| Bootloader (0x03000000–0x0300BFFF) | Not in the update file and no dump is available, so not inspected. Its update mode speaks the serial protocol of 13.2 on the same cable (COM), so it has no reason to use USB | COM, INF |
+| ROM boot | Serial port boot or SPI flash boot only; no USB boot mode (DS) | DS |
+| another firmware's port and the old OpenGD77-based tree | Define the USB base and two register addresses (DAINT 0x818, DTXFSTS1 0x938) but never use them; their "USB" debug print and CPS functions write to UART0 | KP |
+| OpenDM32 releases (July–September 2026) | No USB register addresses in the binaries | BIN |
+
+#### Controller (DS: HR_C7000 user guide, USB chapter)
+
+| Item | Value | Tag |
+|---|---|---|
+| Core | Synopsys DesignWare USB 2.0 OTG core, configured as a non-OTG device. GSNPSID (0x040) reads 0x4F54270A (core release 2.70a); GUID (0x03C) resets to 0x45700322 | DS |
+| Speed and PHY | Full speed (12 Mbit/s) only, through a dedicated on-chip USB 1.1 FS transceiver. No high-speed PHY, no ULPI/UTMI. GUSBCFG.PHYSel (bit 6) is read-only 1 | DS |
+| Endpoints | 5 in all, with **fixed directions**: EP0 control (IN/OUT), EP1 IN, EP2 OUT, EP3 IN, EP4 OUT (GHWCFG1 = EP4 OUT, EP3 IN, EP2 OUT, EP1 IN, EP0 bidirectional). No extra control endpoints | DS |
+| TX FIFO mode | Dedicated TX FIFO per IN endpoint: FIFO 0 for EP0, two more for EP1 and EP3 (GHWCFG4.INEPs = 2, DedFifoMode = 1) | DS |
+| FIFO RAM | The overview says 128 entries in all (35-bit wide); GHWCFG3.DfifoDepth says 122 usable 32-bit words. Dynamic FIFO sizing is supported. **The reset values do not fit**: GRXFSIZ = 0x80, GNPTXFSIZ = depth 0x80 at 0x80, DIEPTXF1 = depth 0x80 at 0x100, the second IN FIFO at 0x180. Software must size all FIFOs inside 122 words; RX minimum 16 words | DS |
+| GUSRSTS (0x054, vendor) | Reports 0x10 words of RX FIFO reserved for control transfers and 0x70 available for the rest, plus the MAC state machine and last token PID (debug aid) | DS |
+| DMA | Internal (buffer) DMA available: GHWCFG2.OtgArch = 2, GAHBCFG.DMAEn (bit 5) selects slave (0) or DMA (1) mode. No scatter-gather (descriptor) DMA | DS |
+| Transfer counters | XferSize 11 bits (at most 2047 bytes per transfer), PktCnt 4 bits (at most 15 packets per transfer); EP0: XferSize 7 bits, PktCnt 2 bits | DS |
+| Other GHWCFG facts | No OTG (GHWCFG3.OtgEn = 0), no vendor-control or I2C interface, no power optimization (GHWCFG4.EnablePwrOpt = 0), AHB faster than 60 MHz (GHWCFG4.AhbFreq = 1), 8-bit PHY data width, asynchronous reset | DS |
+| Interrupt | PIC source 21, vector 53, level triggered, high active | DS |
+| Register window | 0x13000000–0x1303FFFF; FIFO push/pop windows at +0x1000 (EP0) to +0x5000 (EP4), one 4 KB window per endpoint as in the standard core | DS |
+
+#### Clocks, reset, pins, power
+
+| Item | Value | Tag |
+|---|---|---|
+| Clock gates | CLK_MGR 0x02C (0x1100002C): bit 16 usb_clk_en (48 MHz PHY clock), bit 17 usb_hclk_en (AHB clock to the core); both reset to 0 (off). ODR's clock set-up writes 0x02C = 0xFFFFFFFF (1.1 step 11), which turns them on | DS, KP |
+| 48 MHz clock | CLK_MGR 0x028 bits 4:0 usb_clk_div_num: USB clock = BPLL VCO / 2 / (n + 1); reset value 4. With the 672 MHz BPLL VCO of 1.1, n = 6 gives 48 MHz (CLK_MGR 0x010 is the BPLL configuration register) | DS, KP |
+| Clock tree | The 48 MHz PHY clock is also gated by the core's suspend output, so it stops while the bus is suspended | DS |
+| Reset | No USB bit in SYS_SOFT_RSTN (0x11000000 bits 8:0 cover CPU, system, ADCs, codec, audio, FM, modem PHY and protocol). Reset the core with GRSTCTL.CSftRst (bit 0) and wait for it to clear; GRSTCTL.AHBIdle (bit 31) shows the AHB master is idle | DS |
+| DP / DM | Dedicated balls F1 (USB_DP) and F2 (USB_DM), 3.3 V signalling; no IO mux | DS |
+| Supply | USB_AVDD33, ball G3, 3.3 V; USB_AVSS33 analog ground | DS |
+| VBUS | No VBUS ball and no OTG session logic, so the controller cannot sense cable plug or unplug by itself. A design that wants plug detection needs a GPIO on VBUS, or watches the bus events (USB reset, suspend, early suspend) | DS, INF |
+| Pull-ups | The pad has software-controllable D+ and D- pull-ups: GGPIO (0x038) bits 29:28 D+ pull-up (0/1 = driven by the core, 2 = forced on, 3 = forced off), bits 27:26 a second D+ pull-up, bits 25:22 the D- pull-ups, bit 21 pull-down enable. No external pull-up or GPIO is needed for soft connect (INF from the register set) | DS, INF |
+| Soft connect / disconnect | DCTL.SftDiscon (bit 1): 1 = disconnected, 0 = connect. GGPIO's forced pull-up settings are a second method | DS |
+| Pad power | GGPIO bit 16 PADPowerDown: 0 = transceiver powered (reset value), 1 = off. Bit 19 PADSpeed (1 = FS, reset), bit 30 PADRcvEn differential receiver (1 = on, reset), bits 18:17 suspend control | DS |
+| Board wiring on the DM-32UV | Not known whether F1/F2 leave the BGA at all. With no connector for them, using USB on this radio would mean soldering to the BGA nets, which is not practical | INF |
+
+#### Register map against the standard DWC2 layout (what a TinyUSB `dwc2` port has to know)
+
+The documented registers sit at the standard offsets (GAHBCFG 0x008, GUSBCFG 0x00C, GRSTCTL 0x010, GINTSTS 0x014,
+GINTMSK 0x018, GRXSTSR/P 0x01C/0x020, GRXFSIZ 0x024, GNPTXFSIZ 0x028, GHWCFG1–4 0x044–0x050, DCFG 0x800, DCTL 0x804,
+DSTS 0x808, DIEPMSK 0x810, DOEPMSK 0x814, DAINT 0x818, DAINTMSK 0x81C, DTHRCTL 0x830, DIEPEMPMSK 0x834, DIEPCTLn
+0x900 + 0x20n, DOEPCTLn 0xB00 + 0x20n, PCGCCTL 0xE00) (DS). The differences:
+
+| # | Difference | What to do | Tag |
+|---|---|---|---|
+| 1 | Endpoint directions are fixed in hardware (EP1/EP3 IN, EP2/EP4 OUT) | Descriptors may only use 0x81, 0x02, 0x83, 0x04. One CDC-ACM interface fits exactly: notification IN on 0x81 or 0x83, data IN on the other, data OUT on 0x02; EP4 OUT is spare. A composite device beyond that does not fit | DS, INF |
+| 2 | Only two IN TX FIFO size registers after FIFO 0: 0x104 (the manual's "DIEPTXF1", for EP1) and 0x108 (the manual's "DIEPTXF3", for EP3). In the standard layout 0x108 is TX FIFO 2 | A driver that sets DIEPCTLn.TxFNum = n and writes DIEPTXF at 0x104 + 4(n − 1) would use the nonexistent 0x10C for EP3. Give EP3 TX FIFO 2 (DIEPCTL3.TxFNum = 2, size in 0x108); confirm on hardware | DS, INF |
+| 3 | 0x038 is GGPIO (vendor pad control), not STM32's GCCFG. Bit 16 is PADPowerDown (1 = **off**), the opposite sense of GCCFG.PWRDWN (1 = on) | Never run STM32-style PHY set-up (setting GCCFG.PWRDWN or the VBUS-sensing bits) on this core: it would power the transceiver down. Leave 0x038 at its reset value or write only the pull-up fields | DS |
+| 4 | No GOTGCTL / GOTGINT (0x000 / 0x004 not documented), no OTG, no VBUS sensing | No B-session override is needed or possible; skip VBUS-sense configuration | DS, INF |
+| 5 | GUSBCFG bits 30:29 (force host / force device) are "not used": the core is device-only | Writing ForceDevMode is harmless; no mode switch wait is needed | DS |
+| 6 | DCFG.DevSpd encodings: 3 = FS with the 48 MHz USB 1.1 PHY clock (the one to use here); 1 = FS on a USB 2.0 PHY (not present); 2 = LS | Set DevSpd = 3. DSTS.EnumSpd reports with the same encoding | DS |
+| 7 | GUSBCFG.USBTrdTim (bits 13:10) resets to 5; TOutCal (bits 2:0) resets to 0 | 5 is the usual full-speed value; keep it | DS |
+| 8 | FIFO RAM is 122 words and the reset FIFO map overlaps it (see above) | Size explicitly at init, for example RX 64 words, TX0 16, TX1 16, TX2 16 (112 words in all); check against the driver's own formula | DS, INF |
+| 9 | 4-bit packet counter, 11-bit transfer size | Make sure the driver splits transfers at 15 packets (960 bytes at 64-byte packets) and 2047 bytes, either by reading GHWCFG3 or by a board limit | DS, INF |
+| 10 | Buffer DMA works through the core's AHB master; which RAM it can reach is not documented | Start in slave mode (DMAEn = 0). Try DMA only after checking it can reach the RAM the buffers live in | DS, INF |
+| 11 | Dedicated FIFO "TxFEmp" level: GAHBCFG bit 7 (0 = half empty, 1 = completely empty) | Standard meaning | DS |
+
+#### Open questions for the first hardware test
+
+These need only the debug link on UART0 and a host computer; nothing here transmits.
+
+1. Plug a USB-C cable from a computer into the battery pack with the radio on and off. Expected: the pack's charge
+   LED lights and **no USB device appears** on the host (macOS: System Information, USB; Linux: `lsusb`). If any
+   device does appear, report its VID:PID and product string: that would mean the pack or the radio has a USB data
+   path we don't know about.
+2. With ODR running, read CLK_MGR 0x02C and GSNPSID (0x13000040) through the debug link once a register-peek command
+   exists. Expected 0x4F54270A with the USB gates on; this confirms the core is present and clocked on this die
+   revision.
+3. Read CLK_MGR 0x02C before ODR's clock set-up runs, to learn whether the Baofeng bootloader leaves the USB gates on.
+4. Optional, only if the radio is opened for another reason: look for test pads or vias near the SoC on the USB_DP /
+   USB_DM nets (balls F1/F2). Report a photo; don't probe them live.
+
 
 ### 4.1 PIC (0x17000000)
 
@@ -324,7 +415,8 @@ table 30), all level-triggered, high active:
 | 15 | 47 | GPIO A | — | DS |
 | 16 | 48 | SPI0 | — | DS |
 | 17 | 49 | GPIO C | — | DS |
-| 18 / 19 / 20 / 21 | 50–53 | PWM / RTC / SDIO / USB | — | DS |
+| 18 / 19 / 20 | 50–52 | PWM / RTC / SDIO | — | DS |
+| 21 | 53 | USB (level, high active) | not used by stock or OpenDM32 (3.11) | DS, BIN |
 | 22 / 23 / 24 | 54–56 | SPI1 / SPI2 / LCSFC | — | DS |
 | 25 / 26 | 57 / 58 | DAC / ADC | — | DS |
 | 27 | 59 | PCM_rd_data_interp: decoded-audio buffer read, every 10 ms | speaker PCM refill | DS, KP |
@@ -344,7 +436,9 @@ code used PIC_MASK_1 bits 29–31, which are vectors 93–95, and so masked noth
 
 ## 5. Pin map
 
-Index = GPIO pin index (3.9). "Dir" is as configured; "Act" is the active level.
+Index = GPIO pin index (3.9). "Dir" is as configured; "Act" is the active level. The USB pins are dedicated balls,
+not GPIOs, and have no IO mux setting: USB_DP ball F1, USB_DM ball F2, USB_AVDD33 (3.3 V) ball G3, USB_AVSS33 analog
+ground (DS). Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (3.11).
 
 | Index | Port pin | Function | Dir | Act / notes | Tag |
 |---|---|---|---|---|---|
@@ -684,7 +778,8 @@ Values written at init by the port (KP); field meanings from DS:
 | 0x710000 (0x175 bytes) | OpenDM32's local copy of the decoded calibration (header 00 40 00 47 FF FF FF FF) | read only if no factory page is found | BIN |
 
 The stock CPS protocol on UART0 (115200) is a raw 24-bit window on this flash: `52 addr3 len2` reads, `57 addr3 00 10
-<4096 bytes>` writes, entered with `PSEARCH` / `PASSSTA` / `SYSINFO` and `FF FF FF FF 0C "PROGRAM"` (BIN, COM).
+<4096 bytes>` writes, entered with `PSEARCH` / `PASSSTA` / `SYSINFO` and `FF FF FF FF 0C "PROGRAM"` (BIN, COM). The
+full command set of the stock firmware's programming task is in [dm32-stock-cps.md](dm32-stock-cps.md).
 
 ---
 
@@ -853,7 +948,7 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock) | `platform/hrc7000/time.c`, `boards/dm32/dmr_dm32.c` |
 | RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
-| Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot; no USB on this radio (`CONFIG_USB=n`, `CONFIG_HOSTLINK=y`) | `platform/hrc7000/uart.c` |
+| Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
 | Display | 240x320 at 2x: the core draws 120x160 (its frame buffer is 40 KB); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
 | Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused | `flash_dm32.c` |

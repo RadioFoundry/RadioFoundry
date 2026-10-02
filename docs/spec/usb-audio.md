@@ -22,7 +22,8 @@ the PTT watchdog and the jitter buffer as tested host code (`core/usbaudio`), a 
 | Recommended protocols | IP: the USRP voice protocol over UDP (AllStarLink, DVSwitch Analog_Bridge, M17 and DMR bridges speak it) with PTT by its keyup flag; Hamlib's rigctld protocol, now on the radio (`CONFIG_NET_RIGCTL`, [tcp-services.md](tcp-services.md) 6). Serial: Kenwood-style CAT plus RTS/DTR PTT. Sound card: UAC1, PTT by the serial port's RTS/DTR (CM108-style HID as an alternative personality) (4) |
 | Effort | About 6 to 9 working weeks for everything, in five phases; phase 0 (the probe) is done and needs one bench session (7) |
 
-The DM-32UV has no usable USB (its controller isn't wired); it could carry DMR voice audio over the programming
+The DM-32UV has no usable USB (the SoC's controller has no connector: the USB-C socket is on the battery and only
+charges it; [hardware-dm32.md](hardware-dm32.md) 3.11); it could carry DMR voice audio over the programming
 cable's UART, and its HR_C7000 documents FM sample paths that look usable, unverified (8).
 
 ## 1. Use cases and transports
@@ -421,8 +422,9 @@ over USB, and FM is limited to receive (candidate A) or nothing.
 
 ## 8. The DM-32UV
 
-- **USB**: the HR_C7000's USB controller isn't wired to anything useful; the host port is the programming cable's
-  UART0 at 115200 baud ([hardware-dm32.md](hardware-dm32.md) 2, 3.1). USB audio and the network personality are out.
+- **USB**: the HR_C7000's USB controller has no connector on this radio (the USB-C socket is on the battery and only
+  charges it); the host port is the programming cable's UART0 at 115200 baud ([hardware-dm32.md](hardware-dm32.md)
+  3.1, 3.11). USB audio and the network personality are out.
 - **Serial audio**: 8 kHz mu-law is 64 kbit/s plus framing, about 70 % of a 115200 baud line one way: workable half
   duplex, not full duplex. The UART (16550 style on an 84 MHz APB clock) can run faster if the cable's USB-serial chip
   does (most do 460800 or more); a higher host port rate is a setting both ends must agree on.
