@@ -72,7 +72,7 @@ The user manual covers it for users: [Installing](../user/02-installing.md). In 
 |---|---|
 | DM-1701 | `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701 [--stock FILE]` ([tools/odrflash](../../tools/odrflash/README.md)): keeps the radio's codec or merges it from the stock file, erases only the sectors it needs. The older two-step route still works: `tools/codec_extract.py --stock FILE` (key derived from the file, or `--key`), then `tools/stm32_dfu.py IMAGE --model dm1701 --key dm1701.key`, which erases every application sector |
 | MD-380 | `tools/md380_migrate.py flash --image IMAGE --stock FILE` (merges the codec; every flash needs it, the codec shares sector 6 with the application), or `tools/codec_extract.py` then `tools/stm32_dfu.py --model md380`. Moving a radio from stock with its codeplug: [md380-migration.md](../spec/md380-migration.md) |
-| DM-32UV | `tools/dm32_codec.py` merges the codec, `tools/dm32_pack.py` wraps it for Baofeng's updater |
+| DM-32UV | `tools/dm32_codec.py` merges the codec; `tools/dm32_flash.py IMAGE` writes it through the Baofeng bootloader over the programming cable (or `tools/dm32_pack.py` wraps it for Baofeng's updater). Moving a radio from stock with its codeplug: [dm32-migration.md](../spec/dm32-migration.md) |
 
 Without a codec the firmware runs, with FM only. See [The codec](codec.md).
 

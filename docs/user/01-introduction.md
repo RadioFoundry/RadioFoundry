@@ -17,7 +17,7 @@ differs there. The screenshots are DM-1701 screens rendered by the UI simulator.
 |---|---|
 | Baofeng DM-1701 | Supported and in the releases. On the test bench now |
 | TYT MD-380 / MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases. You build the image yourself and move to it with `md380_migrate.py` ([Moving from stock MD-380 firmware](18-moving-from-stock-md380.md)) |
-| Baofeng DM-32UV | Builds and passes its host tests. Not run on a radio yet, not in the releases |
+| Baofeng DM-32UV | Builds and passes its host tests. Not run on a radio yet, not in the releases. Testers move to it with `dm32_migrate.py` ([Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md)) |
 | TYT MD-UV380, MD-9600, Radioddity GD-77, GD-88 | Planned. [The radio survey](../spec/radios.md) lists the rebadged models each covers |
 
 ## Project status

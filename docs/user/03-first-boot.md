@@ -51,4 +51,4 @@ DMR needs your DMR ID. Without one, the radio refuses to transmit on DMR channel
 3. On a DMR channel, the Home screen shows "No codec: voice off" in its bottom line if the codec isn't merged. See
    [Installing, no codec](02-installing.md#no-codec-no-codec-voice-off).
 4. Change a setting, for example **Settings > Display > Brightness**, turn the radio off and on again, and check that
-   the setting stayed. If it didn't, see "Settings are not kept" in [Troubleshooting](19-troubleshooting.md).
+   the setting stayed. If it didn't, see "Settings are not kept" in [Troubleshooting](20-troubleshooting.md).
