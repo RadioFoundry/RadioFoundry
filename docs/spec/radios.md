@@ -6,7 +6,7 @@ Status: research, 2026-10-10. This page collects the main chips of every radio O
 close relatives, from public sources only. It also says which ODR platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md)). This page is the overview.
+[hardware-md380.md](hardware-md380.md), [hardware-gd88.md](hardware-gd88.md)). This page is the overview.
 
 Facts are not copyrightable. Every claim carries a source link and a confidence tag:
 
@@ -185,6 +185,9 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   internal photos are the next thing to read.
 - Shares a CPS with the Retevis RT73 / Kydera CDR-300UV / Radioddity DB25-D and DB40-D, which points to one OEM
   platform (F) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
+- Programming and updates go over a USB-serial cable (FTDI-class chip in the cable) into the K1 jack, to SoC A's
+  UART1 at 115200. The radio has no USB port, and neither stock image uses the HR_C7000 USB core (COM, BIN):
+  [hardware-gd88.md](hardware-gd88.md).
 - **ODR:** reuses `platform/hrc7000` and `drivers/modem/hrc7000` from the DM-32UV. New: the RF chip(s), the display,
   and core support for two simultaneous receivers if the hardware really has two independent DMR paths.
 
