@@ -181,8 +181,9 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - "2 separate transceivers both usable at same time, even on same band" (C)
   ([Radioddity blog](https://www.radioddity.com/blogs/all/radioddity-gd-88-review)).
 - Uses "the new C7000, DMR and combined CPU chip" (F) ([opengd77.org p=26](https://www.opengd77.org/viewtopic.php?p=26)).
-  **No public source confirms two HR_C7000 chips, or names the RF chip or display controller (?)**. The FCC
-  internal photos are the next thing to read.
+  No public source confirms two HR_C7000 chips; the stock firmware does (two images, A and B, linked a UART apart:
+  [hardware-gd88.md](hardware-gd88.md)). The RF chip and display controller aren't confirmed (?); the FCC internal
+  photos are the next thing to read.
 - Shares a CPS with the Retevis RT73 / Kydera CDR-300UV / Radioddity DB25-D and DB40-D, which points to one OEM
   platform (F) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
 - Programming and updates go over a USB-serial cable (FTDI-class chip in the cable) into the K1 jack, to SoC A's
