@@ -7,7 +7,7 @@
 // header added in place (ipGatewayEthernetIn), the gateway's IPv4 frames go out with it taken off (ARP and the like
 // have no meaning on PPP and are dropped). On a board that also has the USB network adapter, it wraps that one
 // (hostlink_ppp_set_usb from board_init): PPP while a PPP link runs on the serial port, the adapter otherwise.
-// The host link (hostlink.c) starts the link and feeds it the port's bytes in its PPP mode.
+// The host link (hostlink.c) starts the link and feeds it the port's bytes while PPP has the port.
 #ifndef ODR_HOSTLINK_PPP_H
 #define ODR_HOSTLINK_PPP_H
 

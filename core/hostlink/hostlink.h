@@ -15,12 +15,6 @@
 //             packets, iGate lines) also goes out in idle mode when it has some (the user turned KISS on)
 //   cps       anything else goes to the CPS handler, when one is registered (docs/spec/legacy-cps-interop.md); back
 //             to idle after HOSTLINK_CPS_IDLE_MS without a CPS byte (side protocol frames don't count)
-//   ppp       (CONFIG_NET_PPP) a request starting with the PPP flag 0x7E (an LCP Configure-Request from pppd), or the
-//             debug link's PPP op: every byte goes to PPP (core/net/ppp.c), the network personality is in use (the
-//             IP gateway and its services, UDP serial) and no side protocol frame is looked for. Back to idle when
-//             the PPP link ends: LCP Terminate either way, negotiation timed out, 60 s without a frame from the
-//             peer, or a frame that starts with another protocol's first byte (whose bytes then go to that
-//             protocol; docs/spec/ppp.md 4)
 //
 // A side protocol (the debug link, docs/spec/debuglink.md) may be registered beside these: its frames start with a
 // byte no other protocol starts a request with (0xA5; MMDVM is 0xE0, CPS requests are ASCII letters). It never
@@ -28,6 +22,13 @@
 // after the CPS_GAP_MS quiet that starts a new request or right after another side frame, in hotspot mode only between MMDVM frames (where the MMDVM
 // framer would throw the byte away as junk). Once a side frame has started, its bytes go to it until it ends or
 // times out.
+//
+// PPP (CONFIG_NET_PPP, docs/spec/ppp.md 4) is a personality of a serial port, as the network adapter is of the USB
+// one: in idle mode a request starting with the PPP flag 0x7E (pppd's first LCP frame), or the debug link's PPP op,
+// gives the port to PPP (core/net/ppp.c). The network personality is then in use: the IP gateway and its services,
+// and the protocols above over UDP serial, with their modes as on the adapter. The port is the protocols' again when
+// the PPP link ends: LCP Terminate either way, negotiation timed out, 60 s without a frame from the peer, or a frame
+// starting with another protocol's first byte (those bytes then go to that protocol at once).
 #ifndef ODR_HOSTLINK_H
 #define ODR_HOSTLINK_H
 
@@ -40,12 +41,7 @@
 #define HOSTLINK_CPS_IDLE_MS		10000
 #define HOSTLINK_TNC_IDLE_MS		30000
 
-typedef enum {
-	HOSTLINK_IDLE, HOSTLINK_HOTSPOT, HOSTLINK_CPS, HOSTLINK_TNC,
-#if CONFIG_NET_PPP
-	HOSTLINK_PPP,
-#endif
-} hostlink_mode_t;
+typedef enum { HOSTLINK_IDLE, HOSTLINK_HOTSPOT, HOSTLINK_CPS, HOSTLINK_TNC } hostlink_mode_t;
 
 // Start the task (after the settings are loaded: the USB personality depends on them). With settings_t.usb_mode 1
 // (CONFIG_USB_NETWORK) the radio comes up as the network adapter; a host that doesn't configure it within 10 s of

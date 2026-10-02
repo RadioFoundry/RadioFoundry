@@ -17,7 +17,7 @@ Written from RFC 1661 (PPP, LCP), RFC 1662 (HDLC-like framing) and RFC 1332 (IPC
 |---|---|
 | `core/net/ppp.c`, `ppp.h` | framing, LCP and IPCP; no RTOS calls, no hardware |
 | `core/hostlink/hostlink_ppp.c` | the netif (`board_t.netif`) between PPP and the gateway, the engine's I/O |
-| `core/hostlink/hostlink.c` | the `ppp` mode of the host link: entering, feeding, leaving |
+| `core/hostlink/hostlink.c` | PPP as a personality of the host port: entering, feeding, leaving |
 | `tests/host/pppTest.c` | host test and fuzz loop; `tests/host/pppPeer.c` the same code on a pseudo-terminal |
 | `tools/odr_ppp.sh` | host side: pppd on the radio's serial port, routes |
 | `tools/odr_ppp_interop.sh` | interop test against pppd (Linux, root) |
@@ -74,10 +74,12 @@ exactly as on the adapter.
 pppd installs a host route to the radio only. The radio IDs (12.0.0.0/8) and talkgroups (225.0.0.0/8) need routes
 through the PPP interface, as the adapter's DHCP option 121 gives: `tools/odr_ppp.sh` adds them.
 
-## 4. The host link's ppp mode
+## 4. PPP as a personality of the host port
 
-The host link (`core/hostlink/hostlink.h`) dispatches the port's bytes to one protocol at a time. PPP is one more
-mode beside idle, hotspot, CPS and TNC.
+The host link (`core/hostlink/hostlink.h`) dispatches the port's bytes to one protocol at a time (idle, hotspot, CPS,
+TNC, and the debug link beside them). PPP isn't one more of those modes: it is a personality of the serial port, as
+the network adapter is of the USB one. While PPP has the port, the protocols run over UDP serial with their own
+modes, exactly as on the adapter, so MMDVMHost over UDP gets hotspot mode while the port carries PPP.
 
 **Entering.**
 
@@ -89,13 +91,15 @@ mode beside idle, hotspot, CPS and TNC.
   Configure-Request goes out at once and every 3 s, ten times. Not needed with pppd, which starts PPP itself; useful
   with a peer that waits for the other end. Refused (ignored) while the USB network adapter is the personality.
 
-**While in it.** Every byte goes to PPP; no debug link frame is looked for on the port. The network personality is
-in use (`hostlink_network_mode()`): the gateway, the radio's services, and the serial protocols over UDP 3334
-(`usb-network.md` 1), so `odr_debug.py --port udp:<radio IP>`, MMDVMHost over UDP and the HTTP / SNMP / TFTP / mDNS
-services work as over the adapter. The view section `hotspot` shows `hostlink=ppp`, `usb.network=1`, `usb.net_up`
-(IPCP open) and the `ppp.*` keys.
+**While in it.** Every byte from the port goes to PPP; no debug link frame is looked for on the port. The network
+personality is in use (`hostlink_network_mode()`): the gateway, the radio's services, and the serial protocols over
+UDP 3334 (`usb-network.md` 1), so `odr_debug.py --port udp:<radio IP>`, MMDVMHost over UDP and the HTTP / SNMP / TFTP
+/ mDNS services work as over the adapter. UDP serial bytes never reach PPP, whatever they start with. The view
+section `hotspot` shows `usb.network=1`, `usb.net_up` (IPCP open) and the `ppp.*` keys; `hostlink` is the mode of
+the protocols over UDP.
 
-**Leaving**, back to idle:
+**Leaving** gives the port back to the serial protocols in idle mode; a hotspot session over UDP ends with the link,
+as when the USB personality switches.
 
 | Cause | Detail |
 |---|---|

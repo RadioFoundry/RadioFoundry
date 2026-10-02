@@ -9,7 +9,7 @@
 #   sudo tools/odr_ppp.sh /dev/cu.usbserial-XXXX       macOS (/usr/sbin/pppd)
 #   sudo tools/odr_ppp.sh --stop                       hang up (LCP Terminate: the radio goes back to serial)
 #
-# pppd's first LCP frame puts the radio's host link in PPP mode by itself. The radio assigns the addresses (the same
+# pppd's first LCP frame gives the radio's host port to PPP by itself. The radio assigns the addresses (the same
 # pair as on the USB network adapter: the host 12.<DMR ID>, the radio that xor 1); this script adds the routes to the
 # other radios (12.0.0.0/8) and the talkgroups (225.0.0.0/8) through the link, as the adapter's DHCP does.
 set -e

@@ -102,17 +102,13 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 
 static void hotspot_section(dl_text_t *t)
 {
-	static const char *const modes[] = { "idle", "hotspot", "cps", "tnc",
-#if CONFIG_NET_PPP
-		"ppp",
-#endif
-	};
+	static const char *const modes[] = { "idle", "hotspot", "cps", "tnc" };
 	hostlink_mode_t m = hostlink_mode();
 
 	static const char *const leaves[] = { "none", "user", "closed", "gone", "idle" };
 	hostlink_leave_t l = hostlink_last_leave();
 
-	dl_text(t, "hostlink=%s\n", (unsigned)m < (sizeof(modes) / sizeof(modes[0])) ? modes[m] : "?");
+	dl_text(t, "hostlink=%s\n", (unsigned)m < 4 ? modes[m] : "?");
 	dl_text(t, "hostlink.left=%s\n", (unsigned)l < 5 ? leaves[l] : "?");
 	dl_text(t, "usb.network=%u\nusb.net_up=%u\n", hostlink_network_mode(),
 		(board.netif != NULL) && board.netif->up());
