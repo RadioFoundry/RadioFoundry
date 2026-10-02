@@ -56,6 +56,11 @@ void hostlink_net_control_poll(void);
 // Passthrough is on and the PC can take the packets now (the network link is up): what the data service is told
 bool hostlink_net_passthrough_active(void);
 
+#if CONFIG_NET_PPP
+// The adapter's receive buffer (IPGW_MAX_FRAME bytes), lent to PPP: the two never run at once
+uint8_t *hostlink_net_frame(void);
+#endif
+
 typedef struct {
 	uint32_t frames_in, packets_air, packets_up, packets_dropped, to_air, to_air_refused;
 } hostlink_net_stats_t;

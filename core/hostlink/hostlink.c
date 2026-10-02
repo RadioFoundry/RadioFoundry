@@ -31,6 +31,10 @@
 #if CONFIG_NET_TCP
 #include "net/net.h"
 #endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
+#include "net/ppp.h"
+#endif
 #include "debuglink/dlog.h"
 #include "settings/settings.h"
 #include "FreeRTOS.h"
@@ -45,6 +49,7 @@
 #define POLL_MS			5	// hotspot housekeeping while nothing arrives
 #define READ_CHUNK		64
 #define CPS_GAP_MS		3	// a new CPS request starts after this much quiet (legacy-cps-interop.md 1.2)
+#define PPP_FLAG		0x7E	// starts every PPP frame (RFC 1662); no other protocol here starts a request with it
 
 #ifndef ODR_GIT
 #define ODR_GIT "unknown"
@@ -55,6 +60,10 @@ static volatile hostlink_leave_t last_leave = HOSTLINK_STAY;
 static volatile bool hotspot_allowed = true;
 static volatile bool exit_requested;
 static volatile int8_t usb_switch = -1;		// a personality switch asked for: 1 network, 0 serial, -1 none
+#if CONFIG_NET_PPP
+static volatile int8_t ppp_switch = -1;		// PPP asked for: 1 start, 0 end, -1 none
+static bool ppp_left;				// the PPP link just ended inside a chunk: the rest starts a new request
+#endif
 static hostlink_cps_fn cps_handler;
 static const hostlink_side_t *side;
 static const hostlink_tnc_t *tnc;
@@ -104,6 +113,13 @@ bool hostlink_network_mode(void)
 {
 	return (board.netif != NULL) && board.netif->selected();
 }
+
+#if CONFIG_NET_PPP
+void hostlink_request_ppp(bool on)
+{
+	ppp_switch = on ? 1 : 0;
+}
+#endif
 
 void hostlink_set_cps_handler(hostlink_cps_fn fn)
 {
@@ -221,6 +237,10 @@ static size_t side_take(const uint8_t *buf, size_t len, uint32_t now, bool new_r
 				return 0;
 			}
 			break;
+#if CONFIG_NET_PPP
+		case HOSTLINK_PPP:
+			return 0;	// every byte is PPP's; the debug link runs over UDP meanwhile
+#endif
 		case HOSTLINK_IDLE:
 			break;
 		}
@@ -228,9 +248,46 @@ static size_t side_take(const uint8_t *buf, size_t len, uint32_t now, bool new_r
 	return side->feed(buf, len, now);
 }
 
-// The other protocols: returns the bytes taken (all of them, except in hotspot mode before a side frame)
+#if CONFIG_NET_PPP
+// A request of one of the other protocols starts with b: where a PPP frame should start, it means the host moved on
+bool ppp_foreign_start(uint8_t b)
+{
+	uint8_t lower = (uint8_t)(b | 0x20);
+
+	return ((side != NULL) && (b == side->start)) ||
+#if CONFIG_HOTSPOT
+	       ((b == MMDVM_FRAME_START) && hotspot_allowed) ||
+#endif
+	       ((tnc != NULL) && tnc->claims(b)) || ((cps_handler != NULL) && (lower >= 'a') && (lower <= 'z'));
+}
+
+static void ppp_end(void)
+{
+	mode = HOSTLINK_IDLE;
+	dlog("hostlink: PPP ended");
+}
+#endif
+
+// The other protocols: returns the bytes taken (all of them, except in hotspot mode before a side frame, and when a
+// PPP link ends before the end of buf)
 static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
 {
+#if CONFIG_NET_PPP
+	if ((mode == HOSTLINK_IDLE) && new_request && (buf[0] == PPP_FLAG)) {
+		mode = HOSTLINK_PPP;
+		hostlink_ppp_begin(false, now);
+		dlog("hostlink: PPP (passive)");
+	}
+	if (mode == HOSTLINK_PPP) {
+		size_t n = ppp_input(buf, len, now);
+
+		if (!ppp_running()) {
+			ppp_end();
+			ppp_left = true;
+		}
+		return n;
+	}
+#endif
 #if CONFIG_HOTSPOT
 	if ((mode != HOSTLINK_HOTSPOT) && new_request && (buf[0] == MMDVM_FRAME_START) && hotspot_allowed) {
 		mode = HOSTLINK_HOTSPOT;
@@ -276,6 +333,15 @@ static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
 			last_main_ms = now;
 			n = dispatch_main(buf, len, now, new_request);
 			new_request = false;
+#if CONFIG_NET_PPP
+			if (ppp_left) {
+				ppp_left = false;
+				new_request = true;	// what follows the end of a PPP link (n may be 0: it ended on this byte)
+				buf += n;
+				len -= n;
+				continue;
+			}
+#endif
 			if (n == 0) {
 				break;
 			}
@@ -312,6 +378,31 @@ static void usb_switch_now(void)
 	hal_delay_ms(20);	// the reply's last USB packet
 	board.netif->select(s != 0);
 }
+
+#if CONFIG_NET_PPP
+// PPP asked for by the debug link (its reply is out by now)
+static void ppp_switch_now(uint32_t now)
+{
+	int8_t s = ppp_switch;
+
+	if (s < 0) {
+		return;
+	}
+	ppp_switch = -1;
+	if ((s == 0) && (mode == HOSTLINK_PPP)) {
+		ppp_close(now);		// back to idle once the link has ended
+	} else if ((s == 1) && (mode != HOSTLINK_PPP) && !hostlink_network_mode()) {
+#if CONFIG_HOTSPOT
+		if (mode == HOSTLINK_HOTSPOT) {
+			leave_hotspot(HOSTLINK_LEAVE_USER);
+		}
+#endif
+		mode = HOSTLINK_PPP;
+		hostlink_ppp_begin(true, now);
+		dlog("hostlink: PPP (active)");
+	}
+}
+#endif
 
 void hostlink_settings_changed(void)
 {
@@ -394,6 +485,9 @@ static void hostlink_task(void *arg)
 		snmp_agent_poll(now);		// requests over RF, notifications (in either USB personality)
 #endif
 		usb_switch_now();
+#if CONFIG_NET_PPP
+		ppp_switch_now(now);
+#endif
 
 		switch (mode) {
 		case HOSTLINK_HOTSPOT:
@@ -427,6 +521,13 @@ static void hostlink_task(void *arg)
 				mode = HOSTLINK_IDLE;
 			}
 			break;
+#if CONFIG_NET_PPP
+		case HOSTLINK_PPP:
+			if (!ppp_running()) {	// ended in its timers (board.netif->tick in hostlink_net_poll)
+				ppp_end();
+			}
+			break;
+#endif
 		case HOSTLINK_IDLE:
 			break;
 		}

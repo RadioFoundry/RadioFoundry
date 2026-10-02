@@ -11,6 +11,9 @@
 #include "usb/usb_device.h"
 #include "usb/usb_ncm.h"
 #endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
+#endif
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -119,7 +122,9 @@ const board_t board = {
 #endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
-#if CONFIG_USB_NETWORK
+#if CONFIG_NET_PPP
+	.netif = &hostlink_ppp_netif,	// PPP on the USB serial port, the network adapter under it (board_init)
+#elif CONFIG_USB_NETWORK
 	.netif = &usb_ncm_netif,
 #endif
 #endif
@@ -220,4 +225,7 @@ void board_init(void)
 	dm1701_power.init();
 	dm1701_flash.init();
 	dm1701_cal_load();
+#if CONFIG_NET_PPP && CONFIG_USB_NETWORK
+	hostlink_ppp_set_usb(&usb_ncm_netif);
+#endif
 }

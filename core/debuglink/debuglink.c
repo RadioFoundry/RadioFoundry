@@ -41,6 +41,7 @@ enum {
 	OP_USB_NETWORK = 25,
 	// 26: DMR roaming (DL_OP_ROAM, debuglink_view_radio.c)
 	OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
+	OP_PPP = 28,			// on u8: PPP on the serial host port (docs/spec/ppp.md; CONFIG_NET_PPP builds)
 };
 
 static dl_parser_t parser;
@@ -121,6 +122,9 @@ static const char features[] = "features="
 #endif
 #if CONFIG_NET_TCP
 	"NET_TCP,"
+#endif
+#if CONFIG_NET_PPP
+	"NET_PPP,"
 #endif
 #if CONFIG_NET_KISS
 	"NET_KISS,"
@@ -517,6 +521,9 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0,
 		[OP_DMR_TARGET] = 4, [OP_DMR_CONTACT] = 2, [OP_DMR_CALL_BACK] = 0, [OP_DMR_TARGET_CLEAR] = 0,
 		[OP_DMR_PRIVACY] = 3, [OP_USB_NETWORK] = 1, [OP_USB_NET_SETTINGS] = 5,
+#if CONFIG_NET_PPP
+		[OP_PPP] = 1,
+#endif
 	};
 	uint32_t now = hal_millis();
 
@@ -626,6 +633,11 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 			return status_only(out, DL_ST_UNAVAILABLE);
 		}
 		break;
+#if CONFIG_NET_PPP
+	case OP_PPP:
+		hostlink_request_ppp(a[0] != 0);
+		break;
+#endif
 	case OP_USB_NET_SETTINGS: {	// bit 0 network at power-on, 1 passthrough, 2 fixed link; the link IP (0 = default)
 #if CONFIG_USB_NETWORK
 		uint32_t ip = (uint32_t)a[1] | ((uint32_t)a[2] << 8) | ((uint32_t)a[3] << 16) | ((uint32_t)a[4] << 24);

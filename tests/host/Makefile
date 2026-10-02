@@ -515,6 +515,27 @@ run-hlnet: hostlinkNetTest
 	python3 -I $(ROOT)/tools/bench/dmr_packet.py --self-test
 .PHONY: run-hlnet
 
+# PPP on the serial host link (core/net/ppp.c) and its glue to the real gateway (core/hostlink/hostlink_ppp.c), against
+# a scripted peer, with a seeded fuzz loop (ODR_FUZZ_ITERS); pppPeer runs the same on a pseudo-terminal for pppd
+# (tools/odr_ppp_interop.sh)
+PPPT    := $(CORE)/net/ppp.c $(CORE)/hostlink/hostlink_ppp.c $(CORE)/dmr/ipGateway.c
+TESTS   += pppTest
+
+pppTest: pppTest.c fuzz.h $(PPPT) $(CORE)/net/ppp.h $(CORE)/hostlink/hostlink_ppp.h $(CORE)/dmr/ipGateway.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_NET_PPP=1 -o $@ pppTest.c $(PPPT)
+
+PPPPEER := pppPeer.c $(PPPT) $(CORE)/net/tcp.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/snmp/snmp.c \
+           $(CORE)/snmp/snmpBer.c $(CORE)/snmp/snmpMib.c
+TESTS   += pppPeer
+
+pppPeer: $(PPPPEER) $(CORE)/net/ppp.h $(CORE)/net/tcp.h $(CORE)/hostlink/hostlink_ppp.h $(wildcard $(CORE)/snmp/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_NET_PPP=1 -o $@ $(PPPPEER)
+
+run: run-ppp
+run-ppp: pppTest pppPeer
+	./pppTest
+.PHONY: run-ppp
+
 # The radio's own services on the USB network link, behind the real gateway (core/net): the mDNS responder, and the
 # TFTP server with codeplug.bin on a simulated flash. Their frames go to pcaps that tshark checks when it's there
 MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c
