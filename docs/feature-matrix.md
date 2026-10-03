@@ -14,7 +14,8 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
   - `*` = off by default; measured by turning it on in the DM-1701 build (main c0022b4).
 - **Radios:** ● on by default · ○ optional (supported, off by default) · ✕ not compatible (the hardware lacks it, or
   the board code isn't written: the note says which) · — in a bytes column: not built there, so not measured.
-- The DM-32UV builds with csky-elf GCC; its sizes aren't listed (ARM only for now).
+- The DM-32UV builds with csky-elf GCC; its sizes aren't listed in the tables (ARM only for now; its network build is
+  measured below).
 
 
 ## Radio and voice
@@ -72,31 +73,36 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | USB network adapter (CDC-NCM) | `USB_NETWORK` | 48,344 | 47,468 | ● | ● | ✕ | Includes everything below |
-| IP over DMR gateway | `DMR_IP_GATEWAY` | 44,128 | 43,220 | ● | ● | ✕ | Includes the radio's own services below |
-| Control station mode (boot as network, PC answers data, fixed link) | `DMR_CONTROL_STATION` | 288 | 484 | ● | ● | ✕ |  |
-| Minimal TCP | `NET_TCP` | 16,240 | 15,656 | ● | ● | ✕ | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
-| KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 | ● | ● | ✕ |  |
-| HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 | ● | ● | ✕ |  |
-| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -64 | -96 | ● | ● | ✕ | Negative: saves flash |
-| rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 | ● | ● | ✕ |  |
-| APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ● | ✕ | Needs NAT on the host |
-| mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ✕ |  |
-| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ✕ |  |
-| SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ● | ✕ |  |
-| PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ○ | New, untested on hardware; interop tested with pppd. Fits neither default image as it is (DM-1701 688 B short, MD-380 1,588 B short; DM-1701 with LTO: +3,948, fits). DM-32: brings the gateway and services, which don't all fit its RAM yet: see below |
+| IP over DMR gateway | `DMR_IP_GATEWAY` | 44,128 | 43,220 | ● | ● | ● | Includes the radio's own services below |
+| Control station mode (boot as network, PC answers data, fixed link) | `DMR_CONTROL_STATION` | 288 | 484 | ● | ● | ● |  |
+| Minimal TCP | `NET_TCP` | 16,240 | 15,656 | ● | ● | ● | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
+| KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 | ● | ● | ● |  |
+| HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 | ● | ● | ● |  |
+| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -64 | -96 | ● | ● | ● | Negative: saves flash |
+| rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 | ● | ● | ● |  |
+| APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ● | ● | Needs NAT on the host |
+| mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ● |  |
+| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ● |  |
+| SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ● | ● |  |
+| PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ● | New, untested on hardware; interop tested with pppd. Fits neither default image as it is (DM-1701 688 B short, MD-380 1,588 B short; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service: see below |
 
 ### DM-32UV network build (PPP)
 
-The DM-32UV has no USB: its network is PPP on the programming cable (`NET_PPP`, `docs/spec/ppp.md` 7.1). Measured
-with csky-elf GCC 14 at agent/ppp f52d6b9; default image RAM 153,740 of 165,612 B (92.8%, 11.9 KB free).
+The DM-32UV has no USB: its network is PPP on the programming cable (`NET_PPP`, `docs/spec/ppp.md` 7.1), on by
+default with the IP gateway and every service above, `TCP_CONNS=3` (`boards/dm32/config.mk`). It fits because the
+state the core marks `ODR_CPU_RAM` lives in the DM-32's low RAM below the codec window (`hardware-dm32.md` 17.1).
+Measured with csky-elf GCC 14 (bytes of the image, RAM of the linker's regions):
 
-- PPP and the IP gateway with no services: +10,736 B flash, +4,080 B RAM. Each service's RAM on top: TCP 4.7 KB
-  (4 connections), HTTP 3.5 KB, SNMP 3.2 KB, rigctld 1.4 KB, KISS 0.8 KB, APRS-IS 0.7 KB, mDNS 0.4 KB, TFTP 0.1 KB.
-  Everything together is 5.9 KB more RAM than the radio has.
-- Proposed default set, not on yet: PPP, gateway, mDNS, TFTP, control station (+25.3 KB flash, +4.6 KB RAM, 7.3 KB
-  RAM left). With the CPU-only state the core already marks `ODR_CPU_RAM` moved to the DM-32's RAM_LO (69% empty
-  today; the network buffers stay in main RAM), every network service fits with `TCP_CONNS=3`: about 93% RAM, 11 KB
-  free (measured: 94.2% with 4 connections, 92.3% with 2).
+| DM-32UV build | Image | RAM (165,612 B) | RAM_LO (27,868 B) |
+|---|---:|---:|---:|
+| before (no network, `ODR_CPU_RAM` in main RAM) | 313,804 | 153,740 (11,872 free) | 8,800 |
+| default now (PPP, gateway, every service, 3 TCP connections) | 365,236 | 154,428 (11,184 free) | 24,392 (3,476 free) |
+| maximal (also `AUDIO_PROBE`, `FONT_XL`) | 372,856 | 155,740 (9,872 free) | 24,392 |
+
+Flash each network switch costs on the DM-32 (default minus the build with it off): the gateway with PPP and every
+service 51,428 (`NET_PPP` or `DMR_IP_GATEWAY` off), TCP and what runs on it 17,028, SNMP 9,116, mDNS 7,220, TFTP
+6,584, HTTP 5,076, rigctld 4,020, APRS-IS 2,964, KISS 688, control station 272. Each TCP connection is about 1.5 KB
+of RAM (TCP, HTTP, rigctld): `make BOARD=dm32 TCP_CONNS=4` builds with 9.6 KB free.
 
 ## User interface
 

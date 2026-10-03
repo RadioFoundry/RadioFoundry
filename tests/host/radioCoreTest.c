@@ -1189,7 +1189,7 @@ static void mm_cmd(uint8_t cmd, const uint8_t *p, uint8_t n)
 	f[0] = MMDVM_FRAME_START;
 	f[1] = (uint8_t)(n + 3);
 	f[2] = cmd;
-	memcpy(f + 3, p, n);
+	if (n > 0) memcpy(f + 3, p, n);	// p may be NULL for a command without a payload
 	mmdvm_frame(f, (uint16_t)(n + 3), now);
 }
 

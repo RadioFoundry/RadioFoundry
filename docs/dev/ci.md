@@ -49,7 +49,7 @@ the current tree yet (run it to see the files), and the nightly reports it as a 
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
 | `matrix` (dm1701, md380) | `ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board <b>`: each switch off alone, fm-minimal, maximal | DM-1701 4.4 min (47 builds), MD-380 3.8 min (42) |
-| `dm32-matrix` | the same for `dm32` in the csky-elf image | 1.9 min (38) |
+| `dm32-matrix` | the same for `dm32` in the csky-elf image | 2.9 min (50 builds; measured on the CI VM) |
 | `reuse` | `reuse lint`, a warning until it passes | under a minute |
 
 `--matrix` leaves out the default builds the per-push run already made; `ODR_CI_PRUNE=1` removes each build tree
@@ -121,7 +121,9 @@ HTML artifact serves the same purpose.
 `make -C tests/host SANITIZE=1` builds every host test with AddressSanitizer and UndefinedBehaviorSanitizer (Apple
 clang and GCC; UBSan stops at the first report). CI's coverage job runs it after the report (leak checks off: job
 containers may not allow ptrace), `ODR_CI_SANITIZE=1 tools/ci.sh` runs it in the host step; build from clean when
-switching (`make -C tests/host clean`). The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's Ethernet
+switching (`make -C tests/host clean`). It isn't optimized, like the plain build: with `__OPTIMIZE__` glibc's headers
+switch on extern inline and fortified functions, which don't build with the host flags' `__attribute__` override.
+The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's Ethernet
 input, KISS / HTTP / rigctld, LRRP, AX.25 / APRS, DMR data) have seeded mutation fuzz loops (`tests/host/fuzz.h`)
 that feed exact-size heap buffers, so a read past the end is an ASan report; `ODR_FUZZ_ITERS=<n>` replaces the small
 default counts and `ODR_FUZZ_SEED=<n>` varies the seed, e.g. `ODR_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1`

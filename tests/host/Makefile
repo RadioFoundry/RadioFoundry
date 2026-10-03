@@ -12,9 +12,11 @@ CC      ?= cc
 # COVERAGE=1: gcov instrumentation (GCC and clang both take --coverage); each test writes its .gcda files here
 COVFLAGS := $(if $(filter 1,$(COVERAGE)),--coverage -O0)
 # SANITIZE=1: ASan + UBSan (Apple clang and GCC); UBSan stops at the first report instead of printing and going on.
-# Build from clean when switching (make clean): the binaries don't depend on the flags.
+# Build from clean when switching (make clean): the binaries don't depend on the flags. Not optimized, like the plain
+# build: with __OPTIMIZE__ glibc's headers use extern inline and fortified functions, which don't build with
+# __attribute__ defined away below.
 SANITIZERS := address,undefined
-SANFLAGS := $(if $(filter 1,$(SANITIZE)),-fsanitize=$(SANITIZERS) -fno-sanitize-recover=undefined -fno-omit-frame-pointer -O1)
+SANFLAGS := $(if $(filter 1,$(SANITIZE)),-fsanitize=$(SANITIZERS) -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
 export ASAN_OPTIONS ?= abort_on_error=0:detect_stack_use_after_return=1:strict_string_checks=1
 export UBSAN_OPTIONS ?= print_stacktrace=1:halt_on_error=1
 CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers '-D__attribute__(x)='  # the firmware's linker section attributes are ARM ELF only

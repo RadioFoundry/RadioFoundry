@@ -167,7 +167,7 @@ static void host(uint8_t cmd, const uint8_t *payload, uint8_t len)
 	f[0] = 0xE0;
 	f[1] = (uint8_t)(len + 3);
 	f[2] = cmd;
-	memcpy(f + 3, payload, len);
+	if (len > 0) memcpy(f + 3, payload, len);	// payload may be NULL for a command without one
 	mmdvm_frame(f, (uint16_t)(len + 3), now);
 }
 

@@ -7,10 +7,15 @@
  * code and tables are merged there on the user's machine; never linked into).
  *
  * SRAM (288 KB at 0x10000): the stock codec runs at its own RAM address, so the union of the 049 and 046 code windows,
- * 0x16CDC..0x2F914, is reserved. Below it (RAM_LO): the vector table, code that must not run from flash (.ramfunc:
- * interrupt entry, modem slot handlers), the interrupt stack and buffers placed with section ".ram_lo". Above it: data,
- * bss, the RTOS heap (inside bss) and the start-up stack at the top. The modem SRAM window the codec's tables are
- * copied to, 0x18000E48..0x18003E20, is reserved by not being in this script at all. */
+ * 0x16CDC..0x2F914, is reserved. Below it (RAM_LO, 27,868 B): the vector table, code that must not run from flash
+ * (.ramfunc: interrupt entry, modem slot handlers), then the zeroed section .ram_lo: the state the core marks
+ * ODR_CPU_RAM (board.mk sets ODR_CPU_RAM_SECTION to ".ram_lo": the radio task's state machine, APRS, the hotspot's
+ * rings, the DMR data buffers) and the interrupt stack. The network's ODR_CPU_RAM buffers (TCP connections, the
+ * network personality's packets and frame, the gateway's air bursts and frame) go to main RAM instead: RAM_LO can't
+ * hold them as well, and main RAM has the room. Above the codec window (RAM): data, bss, the RTOS heap (inside bss) and
+ * the start-up stack at the top. Both regions are checked at the end. No DMA on this board, so either region can
+ * hold any buffer. The modem SRAM window the codec's tables are copied to, 0x18000E48..0x18003E20, is reserved by
+ * not being in this script at all. */
 
 ENTRY(Reset_Handler)
 
@@ -65,7 +70,7 @@ SECTIONS
 	{
 		. = ALIGN(8);
 		__ram_lo_bss_start = .;
-		*(.ram_lo .ram_lo.*)
+		*(EXCLUDE_FILE(*core/net/*.o *hostlink_net*.o *ipGateway.o) .ram_lo EXCLUDE_FILE(*core/net/*.o *hostlink_net*.o *ipGateway.o) .ram_lo.*)
 		. = ALIGN(8);
 		. = . + _Irq_Stack_Size;
 		__irq_stack_top = .;
@@ -87,6 +92,7 @@ SECTIONS
 		. = ALIGN(4);
 		__bss_start = .;
 		*(.bss .bss.* .sbss .sbss.* COMMON)
+		*(.ram_lo .ram_lo.*)	/* what RAM_LO leaves out (the network's buffers): zeroed with .bss */
 		. = ALIGN(4);
 		__bss_end = .;
 	} >RAM
@@ -101,5 +107,6 @@ SECTIONS
 
 	ASSERT(Reset_Handler == ORIGIN(FLASH), "crt0 must be the first byte of the image (the bootloader jumps there)") ASSERT(ADDR(.vectors) == 0x00010000, "the vector table must start RAM_LO (1 KB aligned for VBR)")
 	ASSERT(. <= __stack_top, "RAM overflows into the start-up stack")
+	ASSERT(__ram_lo_bss_end <= ORIGIN(RAM_LO) + LENGTH(RAM_LO), "RAM_LO overflows into the codec's RAM window: move ODR_CPU_RAM state out (dm32.ld .ram_lo)")
 	ASSERT(__data_load + SIZEOF(.data) <= __codec_slot, "the image runs into the codec slot")
 }

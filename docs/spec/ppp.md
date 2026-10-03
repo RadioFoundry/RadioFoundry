@@ -7,8 +7,8 @@ IPv4 over PPP on the radio's serial host port, into the same IP gateway and serv
 (`hardware-dm32.md` 3.11) and the GD-88 (`hardware-gd88.md`). On the DM-1701 and MD-380 it can also run on the USB
 serial port, as a fallback when a host doesn't bring up the network adapter.
 
-Switch `CONFIG_NET_PPP` (`docs/build-config.md`), off everywhere for now: new, host tested and interop tested with
-pppd, not yet tried on a radio. It needs `CONFIG_HOSTLINK` and `CONFIG_DMR_IP_GATEWAY`; the gateway needs a link to
+Switch `CONFIG_NET_PPP` (`docs/build-config.md`), on for the DM-32UV (its only IP link, with the gateway and every
+service: 7.1) and off on the USB radios: new, host tested and interop tested with pppd, not yet tried on a radio. It needs `CONFIG_HOSTLINK` and `CONFIG_DMR_IP_GATEWAY`; the gateway needs a link to
 the host, `CONFIG_USB_NETWORK` or `CONFIG_NET_PPP`, and follows PPP by default.
 
 Written from RFC 1661 (PPP, LCP), RFC 1662 (HDLC-like framing) and RFC 1332 (IPCP) only.
@@ -179,7 +179,7 @@ rest is the gateway, its air side and the network personality (`hostlink_net*.c`
 
 ### 7.1 A DM-32 network build
 
-DM-32UV default: flash 313,804 B of 880 KB, RAM 153,740 B of 165,612 B (92.83%, 11,872 B free), RAM_LO 8,800 B of
+DM-32UV default before the network went in: flash 313,804 B of 880 KB, RAM 153,740 B of 165,612 B (92.83%, 11,872 B free), RAM_LO 8,800 B of
 27,868 B. Each service on top of PPP and the gateway (324,540 B flash, 157,820 B RAM):
 
 | Added | Flash | RAM |
@@ -197,7 +197,7 @@ DM-32UV default: flash 313,804 B of 880 KB, RAM 153,740 B of 165,612 B (92.83%, 
 
 Each TCP connection costs about 1.5 KB RAM across TCP, HTTP and rigctld (`TCP_CONNS`, `tcp.h`).
 
-Sets that fit, as the RAM is laid out today:
+Sets that fit with the old RAM layout (everything `ODR_CPU_RAM` in main RAM):
 
 | Set | Flash | RAM used | Free |
 |---|---:|---:|---:|
@@ -205,25 +205,23 @@ Sets that fit, as the RAM is laid out today:
 | S2: S1 + SNMP | 348,200 | 161,452 (97.5%) | 4,160 |
 | S3: S1 + TCP (2 connections), rigctld, KISS | 348,940 | 162,796 (98.3%) | 2,816 |
 
-And with the RAM laid out differently (placement B, measured on a patched copy, not in the tree): the state the core
-already marks `ODR_CPU_RAM` (APRS 5.9 KB, radio task 3.1 KB, hotspot 2.8 KB, DMR data 3.8 KB) goes to RAM_LO, which
-is 69% empty, and the network buffers that carry the same mark (TCP connections, the adapter frame and packets, the
-air bursts, the gateway frame) stay in main RAM. A board-only change: `-DODR_CPU_RAM_SECTION='".ram_lo"'` in
-`boards/dm32/board.mk`, and in `dm32.ld` the network objects' `.ram_lo` input sections placed in `.bss` instead
-(`EXCLUDE_FILE`).
+**Done: the DM-32 default.** The state the core already marks `ODR_CPU_RAM` (APRS 5.9 KB, radio task 3.1 KB, hotspot
+2.8 KB, DMR data 3.8 KB) now goes to RAM_LO (`-DODR_CPU_RAM_SECTION='".ram_lo"'` in `boards/dm32/board.mk`), and the
+network buffers that carry the same mark (TCP connections, the adapter frame and packets, the air bursts, the gateway
+frame) stay in main RAM (`EXCLUDE_FILE` in `dm32.ld`; `hardware-dm32.md` 17.1). The DM-32 default is everything: PPP,
+gateway, TCP with `TCP_CONNS=3`, HTTP, rigctld, KISS, APRS-IS, mDNS, TFTP, SNMP, control station.
 
-| Placement B | RAM used | Free | RAM_LO used |
-|---|---:|---:|---:|
-| default switches | 138,148 (83.4%) | 27,464 | 24,392 (87.5%) |
-| everything, 4 TCP connections | 155,956 (94.2%) | 9,656 | 24,392 |
-| everything, 2 TCP connections | 152,892 (92.3%) | 12,720 | 24,392 |
+| DM-32UV, csky-elf GCC 14 | Flash | RAM used | Free | RAM_LO used |
+|---|---:|---:|---:|---:|
+| default (everything, 3 TCP connections) | 365,236 | 154,428 (93.2%) | 11,184 | 24,392 (87.5%) |
+| default, `TCP_CONNS=4` | 365,236 | 155,956 (94.2%) | 9,656 | 24,392 |
+| default, `TCP_CONNS=2` | 365,276 | 152,892 (92.3%) | 12,720 | 24,392 |
+| maximal (default + `FONT_XL`, `AUDIO_PROBE`) | 372,856 | 155,740 (94.0%) | 9,872 | 24,392 |
 
-**Proposed DM-32 default set** (not turned on yet): first S1, which fits as the RAM is laid out today with 7.3 KB to
-spare. Then, with placement B, everything (PPP, gateway, TCP with `TCP_CONNS=3`, HTTP, rigctld, KISS, APRS-IS, mDNS,
-TFTP, SNMP, control station): about 93% RAM, about 11 KB free, as much margin as the image has today without any
-network. Safe trims: `TCP_CONNS` 3 (browsers open two connections, rigctld one; TIME_WAIT slots are reused), and
-PPP's receive buffer is already the adapter's (602 B saved). Not safe: the HTTP body buffer (1,536 B: JSON views
-would be cut) or the gateway's 600 B frames (TCP's MSS depends on them).
+Three connections keep about as much RAM free as the image had before the network (11.9 KB): browsers open two,
+rigctld one, and TIME_WAIT slots are reused. PPP's receive buffer is already the adapter's (602 B saved). Not worth
+trimming: the HTTP body buffer (1,536 B: JSON views would be cut) or the gateway's 600 B frames (TCP's MSS depends on
+them).
 
 ## 8. Tests
 

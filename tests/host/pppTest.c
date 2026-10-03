@@ -178,7 +178,7 @@ static void peer_ctl(uint16_t proto, uint8_t code, uint8_t id, const uint8_t *da
 	p[0] = code;
 	p[1] = id;
 	put16(p + 2, (uint16_t)(4 + n));
-	memcpy(p + 4, data, (size_t)n);
+	if (n > 0) memcpy(p + 4, data, (size_t)n);	// data may be NULL for an empty packet
 	peer_send(proto, p, 4 + n);
 }
 
