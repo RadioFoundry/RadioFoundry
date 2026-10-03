@@ -220,6 +220,21 @@ rules and the checks behind them are in [docs/CLEANROOM.md](docs/CLEANROOM.md).
 Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's HAL and CMSIS) keeps its own permissive license; see
 [LICENSES/](LICENSES/) and each submodule.
 
+## Acknowledgements
+
+ODR builds on years of community work that opened these radios up. None of that code is in ODR (see above), but
+the reverse engineering and documentation behind it made this project possible. Thanks to:
+
+- Travis Goodspeed KK4VCZ and the md380tools contributors, for the first open work on the MD-380 family.
+- Warren Merkel KD4Z, for md380tools-vm and for support of the open DMR software development community.
+- Roger Clark VK3KYY, Kai Ludwig DG4KLU, Daniel Caujolle-Bert F1RMB and the OpenGD77 contributors, for open
+  firmware on the GD-77, MD-UV380, DM-1701, MD-9600 and others.
+- The OpenRTX team, for their hardware documentation.
+- The OpenDM32 project, for its DM-32UV research.
+- Jonathan Naylor G4KLX and the MMDVM and MMDVMHost contributors, for open hotspots and repeaters.
+- Cortney Buffington N0MJS and the HBlink contributors, for open DMR networking.
+- Hannes Matuschek DM3MAT and the qdmr contributors, for qdmr, ODR's main programming software.
+
 ## Contributing
 
 Issues and pull requests are welcome. Read [docs/CLEANROOM.md](docs/CLEANROOM.md) first, keep radio-specific code out
