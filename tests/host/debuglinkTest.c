@@ -70,7 +70,7 @@ static size_t fake_handler(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_
 
 static size_t make_frame(uint8_t *f, uint8_t cmd, uint8_t seq, const uint8_t *payload, uint16_t len)
 {
-	memcpy(f + DL_HDR, payload, len);
+	if (len > 0) memcpy(f + DL_HDR, payload, len);	// payload may be NULL for a command without one
 	return dl_frame(f, cmd, seq, len);
 }
 
