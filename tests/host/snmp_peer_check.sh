@@ -50,7 +50,11 @@ if command -v snmpwalk > /dev/null 2>&1; then
 		> snmpPeer.nget || fail "snmpget 2"
 	grep -q "Timeticks" snmpPeer.nget && grep -q "Gauge32: 439412500" snmpPeer.nget || fail "$(cat snmpPeer.nget)"
 	echo "# system tools: snmpget, snmpwalk ($M), snmpbulkwalk, snmpset agree"
-	# docs/spec/ODR-MIB.txt names every enterprise instance the agent has
+	# docs/spec/ODR-MIB.txt names every enterprise instance the agent has. It imports the standard SMI MIBs, which
+	# Debian and Ubuntu leave out of net-snmp (snmp-mibs-downloader): without them the check is skipped
+	if ! snmptranslate -m SNMPv2-SMI:SNMPv2-TC .1.3.6.1.4.1 2>/dev/null | grep -q '^SNMPv2-SMI::enterprises'; then
+		echo "# ODR-MIB.txt check skipped (standard MIBs SNMPv2-SMI/SNMPv2-TC not installed)"
+	else
 	snmpwalk -v2c -c public -t 1 -r 1 -OS -M "+$PWD/../../docs/spec" -m +ODR-MIB -Ln 127.0.0.1:$PORT \
 		.1.3.6.1.4.1.32473 > snmpPeer.mwalk 2> snmpPeer.merr || fail "snmpwalk with ODR-MIB"
 	U=$(grep -v -c '^ODR-MIB::odr[A-Za-z]*\.0 = ' snmpPeer.mwalk || true)
@@ -58,6 +62,7 @@ if command -v snmpwalk > /dev/null 2>&1; then
 	[ "$U" = "0" ] && [ "$E" -ge 40 ] || fail "ODR-MIB doesn't name ($E instances): $(grep -v '^ODR-MIB::' snmpPeer.mwalk | head -3)"
 	grep -q -i -E "error|unlinked|cannot" snmpPeer.merr && fail "ODR-MIB.txt: $(head -3 snmpPeer.merr)"
 	echo "# ODR-MIB.txt parses and names all $E enterprise instances"
+	fi
 else
 	echo "# system SNMP tools not installed: skipped"
 fi
