@@ -74,7 +74,7 @@ below are for the DM-1701.
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
 | `CONFIG_USB_NETWORK` | = USB and HOSTLINK | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) or chosen at power-on by the stored setting (`docs/spec/usb-network.md` 1) |
-| `CONFIG_NET_PPP` | n (everywhere for now) | IPv4 over PPP on the serial host port into the IP gateway and its services (`core/net/ppp.c`, `core/hostlink/hostlink_ppp.c`, `docs/spec/ppp.md`): for radios whose only host link is a USB-serial cable (DM-32UV, GD-88), and a fallback on the USB serial port. The host link enters it on pppd's first LCP frame or debug link radio op 28. Needs HOSTLINK and DMR_IP_GATEWAY, and turns the gateway (with its services) on by default. New, untested on hardware. About 3.9 KB flash and 90 B RAM on its own (it borrows the adapter's receive buffer); on the DM-32 with the gateway about 10.7 KB flash and 4.1 KB RAM (`docs/spec/ppp.md` 7) |
+| `CONFIG_NET_PPP` | n (DM-32: = HOSTLINK and DMR; off with `CONFIG_DMR_IP_GATEWAY=n`) | IPv4 over PPP on the serial host port into the IP gateway and its services (`core/net/ppp.c`, `core/hostlink/hostlink_ppp.c`, `docs/spec/ppp.md`): for radios whose only host link is a USB-serial cable (DM-32UV, GD-88), and a fallback on the USB serial port. The host link enters it on pppd's first LCP frame or debug link radio op 28. Needs HOSTLINK and DMR_IP_GATEWAY, and turns the gateway (with its services) on by default. New, untested on hardware. About 3.9 KB flash and 90 B RAM on its own (it borrows the adapter's receive buffer); on the DM-32 with the gateway about 10.7 KB flash and 4.1 KB RAM (`docs/spec/ppp.md` 7). On by default on the DM-32UV, its only IP link (see "The DM-32UV's image" below) |
 | `CONFIG_HOTSPOT` | = DMR and HOSTLINK (MD-380: n) | MMDVM modem / hotspot over the host port |
 | `CONFIG_HOTSPOT_SPLIT` | = HOTSPOT (MD-380: n) | split duplex repeater: two radios, each an MMDVM modem, as one duplex repeater (the TX half sends the continuous BS outbound with the CACH, the RX half labels both inbound slots from the TX half's slot clock); the vendor command 0xD6 and the version suffix " SPLIT1", roles only after SET_ROLE, the HR_C6000 BS outbound engine, the debug link's SPLIT command (`docs/spec/split-duplex.md`). Needs `CONFIG_HOTSPOT`. Off, the image is unchanged. About 2.1 KB RAM on the DM-1701 |
 | `CONFIG_DEBUGLINK` | = HOSTLINK | debug link for bench automation on the host port: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
@@ -108,6 +108,7 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_GRAY=1` / `-DMD380_CH_ACTIVE_HIGH=1` (channel switch code), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
 | `LTO` | 0 (MD-380: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller on the DM-1701 (20 KB with `LTO_3P=1`). The DM-1701 image stays without it until it has been tested on the radio (`LTO=1` to try it); its CI maximal build uses it (`MAXIMAL_VARS`). The DM-32 (csky) doesn't use it |
 | `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
+| `TCP_CONNS` | dm32 | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the DM-32UV, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
 
 ### The MD-380's image
@@ -129,6 +130,29 @@ Sizes of the default image (UHF; VHF within 30 bytes), 2026-10-11 at 3ec14e3:
 | `LTO=1 LTO_3P=0` | | overflows by 972 |
 | `LTO=1 LTO_3P=1` (default) | 279,668 | 2,000 |
 | maximal (default + `AM_RX BCAST_FM AUDIO_PROBE`) | 280,048 | 1,620 |
+
+### The DM-32UV's image
+
+The DM-32UV (`boards/dm32/config.mk`) has 880 KB of code space, so RAM is what limits it: 165,612 bytes above the stock
+codec's RAM window and 27,868 below it (RAM_LO). The state the core marks `ODR_CPU_RAM` (the radio task, APRS, the
+hotspot's rings, the DMR data buffers) goes to RAM_LO, the network's buffers stay in main RAM
+(`docs/spec/hardware-dm32.md` 17.1). With that, everything is on: PPP on the programming cable and with it the IP
+gateway and every service, `TCP_CONNS=3`. Off: `CONFIG_USB` and `CONFIG_USB_NETWORK` (no USB on the radio, so the
+maximal configuration leaves them out too: `BOARD_UNSUPPORTED`), `CONFIG_FONT_XL` (the core draws at 120x160) and
+`CONFIG_AUDIO_PROBE` (a bench diagnostic); the maximal configuration builds both of those.
+
+Sizes with csky-elf GCC 14 (RAM free is main RAM; the RTOS heap, 40 KB with every task stack in it, is inside the
+used part):
+
+| Build | Image bytes | RAM used | RAM free | RAM_LO used |
+|---|---:|---:|---:|---:|
+| default | 365,236 | 154,428 | 11,184 | 24,392 |
+| maximal (default + `FONT_XL AUDIO_PROBE`) | 372,856 | 155,740 | 9,872 | 24,392 |
+| default, `TCP_CONNS=4` | 365,236 | 155,956 | 9,656 | 24,392 |
+| default, `TCP_CONNS=2` | 365,276 | 152,892 | 12,720 | 24,392 |
+
+The margin kept, about 11 KB of main RAM, is what the image had before the network went in. RAM_LO has 3.5 KB left for
+the RAM code (`.ramfunc`) and the core's `ODR_CPU_RAM` state to grow.
 
 ## Adding a feature
 

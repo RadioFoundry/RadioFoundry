@@ -942,7 +942,7 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 |---|---|---|
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; packed with `tools/dm32_pack.py` for the Baofeng updater | `boards/dm32/dm32.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/dm32_codec.py` | `dm32.ld` |
-| SRAM | 0x10000..0x16CDC: vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows). 0x2F914..0x58000: data, bss (RTOS heap inside), start-up stack | `dm32.ld` |
+| SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `dm32.ld` |
 | Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E20 the codec's tables (copied at first use) | `audio_dm32.c`, `vocoder_dm32.c` |
 | Clocks | PLL sequence of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
@@ -955,3 +955,21 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Calibration | 11, read only; OpenDM32's copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `calibration_dm32.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM with its own sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `dmr_dm32.c` |
+
+### 17.1 SRAM layout
+
+The application has two RAM regions on either side of the codec's window (`dm32.ld`; the linker fails the build when
+either overflows). No DMA reaches SRAM on this board, so any buffer can sit in either. crt0 (`platform/hrc7000/crt0.S`)
+copies `.ramfunc` and `.data` from flash and zeroes `.bss` and `.ram_lo` before `main`; nothing in `.ram_lo` may have
+an initializer (it is `NOLOAD`: an initial value would be dropped).
+
+| Region | Contents | Default build | Maximal build |
+|---|---|---:|---:|
+| RAM_LO 0x10000..0x16CDC, 27,868 B | `.vectors` 512 B, `.ramfunc` 6,240 B, `.ram_lo`: `ODR_CPU_RAM` state (radio task 3,072, APRS 5,936, hotspot 2,760, DMR data 3,824) and the 2 KB interrupt stack | 24,392 B (3,476 free) | 24,392 B |
+| RAM 0x2F914..0x58000, 165,612 B | `.data`, `.bss` (frame buffer 40 KB, RTOS heap 40 KB, vocoder states 13 KB, the network's `ODR_CPU_RAM` buffers: TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack | 154,428 B (11,184 free) | 155,740 B (9,872 free) |
+
+The network's `ODR_CPU_RAM` buffers (`core/net/*.o`, `hostlink_net*.o`, `ipGateway.o`, 6.7 KB with three TCP
+connections) are excluded from RAM_LO by file name: RAM_LO can't hold them as well, and main RAM has the room. An
+`LTO=1` build would lose the file names and overflow RAM_LO (the DM-32 doesn't use LTO). The RTOS heap holds every
+task stack (20 KB of stacks with DMR, audio 6 KB the largest) and the queues; the network adds no task (it runs in the host
+link task, as on the DM-1701).

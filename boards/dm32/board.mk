@@ -8,3 +8,5 @@ MCU_DEFS   := -DCODEPLUG_LEGACY_EEPROM_BASE=0x700000u -DCODEPLUG_LEGACY_FLASH_BA
 LDSCRIPT   := boards/dm32/dm32.ld
 BOARD_DIRS := boards/dm32 drivers/rf/fd6818 drivers/modem/hrc7000 drivers/display/st7789 drivers/flash/spi_nor \
 	drivers/input/keymatrix drivers/input/quadrature
+# State the core marks ODR_CPU_RAM goes to the low SRAM below the codec window (dm32.ld RAM_LO; zeroed by crt0)
+MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ram_lo"'
