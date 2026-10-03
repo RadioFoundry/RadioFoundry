@@ -25,6 +25,9 @@
 #include "hostlink/hostlink_net.h"
 #include "hostlink/hostlink_net_air.h"
 #include "dmr/ipGateway.h"
+#if CONFIG_NET_PPP
+#include "net/ppp.h"
+#endif
 #endif
 
 static const char *state_key(uint8_t s)
@@ -131,6 +134,15 @@ static void hotspot_section(dl_text_t *t)
 	hostlink_net_air_stats(&as);
 	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\n", (unsigned)as.sent,
 		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long), (unsigned)as.failed);
+#endif
+#if CONFIG_NET_PPP
+	// The PPP link on the serial host port (docs/spec/ppp.md): LCP / IPCP states as RFC 1661 numbers them (9 open)
+	ppp_stats_t ps;
+
+	ppp_stats(&ps);
+	dl_text(t, "ppp.running=%u\nppp.ip_up=%u\nppp.lcp=%u\nppp.ipcp=%u\n", ppp_running(), ppp_ip_up(), ps.lcp, ps.ipcp);
+	dl_text(t, "ppp.rx_frames=%u\nppp.tx_frames=%u\nppp.rx_errors=%u\n", (unsigned)ps.rx_frames,
+		(unsigned)ps.tx_frames, (unsigned)ps.rx_errors);
 #endif
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;

@@ -12,6 +12,9 @@
 #include "usb/usb_device.h"
 #include "usb/usb_ncm.h"
 #endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
+#endif
 
 // The RTOS heap, and with it every task stack, in the CCM: zero wait states and off the bus the audio and ADC DMA
 // use. Nothing on a stack or from pvPortMalloc may be a DMA buffer (DMA can't reach the CCM): the DMA buffers are
@@ -111,7 +114,9 @@ const board_t board = {
 #endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
-#if CONFIG_USB_NETWORK
+#if CONFIG_NET_PPP
+	.netif = &hostlink_ppp_netif,	// PPP on the USB serial port, the network adapter under it (board_init)
+#elif CONFIG_USB_NETWORK
 	.netif = &usb_ncm_netif,
 #endif
 #endif
@@ -217,5 +222,8 @@ void board_init(void)
 	md380_power.init();
 	md380_flash.init();
 	md380_cal_load();
+#if CONFIG_NET_PPP && CONFIG_USB_NETWORK
+	hostlink_ppp_set_usb(&usb_ncm_netif);
+#endif
 	md380_gps_init();
 }

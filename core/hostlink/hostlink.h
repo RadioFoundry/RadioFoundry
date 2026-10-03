@@ -22,12 +22,20 @@
 // after the CPS_GAP_MS quiet that starts a new request or right after another side frame, in hotspot mode only between MMDVM frames (where the MMDVM
 // framer would throw the byte away as junk). Once a side frame has started, its bytes go to it until it ends or
 // times out.
+//
+// PPP (CONFIG_NET_PPP, docs/spec/ppp.md 4) is a personality of a serial port, as the network adapter is of the USB
+// one: in idle mode a request starting with the PPP flag 0x7E (pppd's first LCP frame), or the debug link's PPP op,
+// gives the port to PPP (core/net/ppp.c). The network personality is then in use: the IP gateway and its services,
+// and the protocols above over UDP serial, with their modes as on the adapter. The port is the protocols' again when
+// the PPP link ends: LCP Terminate either way, negotiation timed out, 60 s without a frame from the peer, or a frame
+// starting with another protocol's first byte (those bytes then go to that protocol at once).
 #ifndef ODR_HOSTLINK_H
 #define ODR_HOSTLINK_H
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "config.h"
 
 #define HOSTLINK_HOTSPOT_IDLE_MS	20000	// MMDVMHost polls GET_STATUS every 250 ms; 20 s of nothing = gone
 #define HOSTLINK_CPS_IDLE_MS		10000
@@ -52,8 +60,13 @@ void hostlink_hotspot_exit(void);
 // Switch the USB personality to the network adapter (true) or the serial port, after the current request's reply has
 // gone out (the host link task does it between passes). False if the board has no network personality
 bool hostlink_request_usb_network(bool network);
-// The network personality is the one in use (UDP serial, the IP gateway)
+// The network personality is the one in use (UDP serial, the IP gateway): the USB adapter, or a PPP link
 bool hostlink_network_mode(void);
+#if CONFIG_NET_PPP
+// Start PPP on the serial host port (true; our LCP Configure-Request goes out at once) or end it (false: LCP
+// Terminate), after the current request's reply has gone out
+void hostlink_request_ppp(bool on);
+#endif
 
 // The CPS protocol, when it exists: called from the host link task with each chunk of bytes in a CPS session
 // (requests are not framed here; the handler splits them, e.g. by the 3 ms gap), and with len 0 (buf NULL) as a tick

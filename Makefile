@@ -76,6 +76,10 @@ endif
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c
 endif
+# PPP on the serial host port (its host link glue is core/hostlink/hostlink_ppp.c)
+ifeq ($(CONFIG_NET_PPP),y)
+APP_SRC += core/net/ppp.c
+endif
 # The radio's own services on the USB network link (core/net): net.c starts and polls them all, net_services.c is the
 # UDP services' glue to the gateway; each service's file only with its switch
 NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/net/kiss_tcp.c core/net/rigctld.c \

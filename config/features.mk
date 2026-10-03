@@ -42,8 +42,9 @@ CONFIG_DMR_EMERGENCY ?= $(CONFIG_DMR)
 # DMR repeater roaming: move between the repeater sites of a roaming zone by signal strength (needs DMR;
 # core/radio/roam.c, docs/spec/dmr-roaming.md)
 CONFIG_DMR_ROAMING ?= $(CONFIG_DMR)
-# IP over DMR packet data through the USB network adapter (needs DMR and USB_NETWORK; core/hostlink/hostlink_net.c)
-CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK))),y,n)
+# IP over DMR packet data through a network link to the host: the USB network adapter or PPP on the serial host port
+# (needs DMR and USB_NETWORK or NET_PPP; core/hostlink/hostlink_net.c)
+CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK) $(CONFIG_NET_PPP))),y,n)
 # compressed UDP/IPv4 headers on transmit (SAP 3, ETSI TS 102 361-3 5.6 / 7.2): UDP packets whose header fits the
 # compression rules go with a 5 to 9 octet header instead of 28 (needs DMR; docs/spec/dmr-data.md 11)
 CONFIG_DMR_UDP_COMPRESS ?= $(CONFIG_DMR)
@@ -89,6 +90,11 @@ CONFIG_USB ?= y
 CONFIG_HOSTLINK ?= $(CONFIG_USB)
 # USB network adapter personality (CDC-NCM, switched with the serial one at run time; needs USB)
 CONFIG_USB_NETWORK ?= $(if $(and $(filter y,$(CONFIG_USB)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
+# IPv4 over PPP on the serial host port, into the IP gateway and its services: for radios whose only host link is a
+# USB-serial cable (DM-32UV, GD-88), and a fallback on the USB serial port (needs HOSTLINK and DMR_IP_GATEWAY, which
+# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). New, untested on hardware:
+# off everywhere for now
+CONFIG_NET_PPP ?= n
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # split duplex repeater: two radios as one duplex MMDVM modem through the hotspot's vendor command 0xD6 (needs
@@ -143,7 +149,7 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
-	USB HOSTLINK USB_NETWORK HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
 # Dependencies
@@ -181,8 +187,14 @@ ifneq ($(call feature_on,USB_NETWORK),)
   endif
 endif
 ifneq ($(call feature_on,DMR_IP_GATEWAY),)
-  ifeq ($(call feature_on,USB_NETWORK),)
-    $(error CONFIG_DMR_IP_GATEWAY=y needs CONFIG_USB_NETWORK=y)
+  ifeq ($(call feature_on,USB_NETWORK)$(call feature_on,NET_PPP),)
+    $(error CONFIG_DMR_IP_GATEWAY=y needs CONFIG_USB_NETWORK=y or CONFIG_NET_PPP=y)
+  endif
+endif
+ifneq ($(call feature_on,NET_PPP),)
+  ifeq ($(call feature_on,HOSTLINK)$(call feature_on,DMR_IP_GATEWAY),yy)
+  else
+    $(error CONFIG_NET_PPP=y needs CONFIG_HOSTLINK=y and CONFIG_DMR_IP_GATEWAY=y)
   endif
 endif
 ifneq ($(call feature_on,NET_TCP),)

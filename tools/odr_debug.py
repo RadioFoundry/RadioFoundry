@@ -130,6 +130,7 @@ OP_SCAN, OP_SCAN_VFO, OP_BEEP, OP_TONE_BURST, OP_SETTING = range(20, 25)
 OP_USB_NETWORK = 25
 OP_ROAM = 26
 OP_USB_NET_SETTINGS = 27
+OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
@@ -612,6 +613,12 @@ class DebugLink:
         re-enumerates; in network mode the debug link answers over UDP (--port udp:<radio IP>)."""
         self.radio(OP_USB_NETWORK, bytes([1 if on else 0]))
 
+    def ppp(self, on):
+        """Start PPP on the serial host port after the reply (CONFIG_NET_PPP builds; docs/spec/ppp.md), or end it
+        (LCP Terminate). Starting it isn't needed with pppd: its first LCP frame starts PPP too. Once IPCP is up the
+        debug link answers over UDP (--port udp:<radio IP>), as in USB network mode."""
+        self.radio(OP_PPP, bytes([1 if on else 0]))
+
     def usb_net_settings(self, boot_network=False, passthrough=False, fixed_link=False, link_ip="0.0.0.0"):
         """Store the USB network settings (docs/spec/usb-network.md 5): the network personality at power-on, control
         station passthrough (the PC is the endpoint of the radio's own IP data), the fixed link pair (link_ip: the
@@ -977,6 +984,8 @@ def cmd_radio(link, a):
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
         link.usb_network(args[:1] == ["network"])
+    elif op == "ppp":                 # ppp on|off
+        link.ppp(args[:1] != ["off"])
     elif op == "usb-settings":        # usb-settings [boot] [passthrough] [fixed[=IP]] (stored; none: all off)
         fixed = [x for x in args if x.startswith("fixed")]
         link.usb_net_settings("boot" in args, "passthrough" in args, bool(fixed),
@@ -1364,7 +1373,7 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings"])
+                                  "usb-settings", "ppp"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

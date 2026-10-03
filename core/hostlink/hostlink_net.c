@@ -198,6 +198,13 @@ size_t hostlink_net_write(const uint8_t *buf, size_t len)
 	return done;
 }
 
+#if CONFIG_NET_PPP
+uint8_t *hostlink_net_frame(void)
+{
+	return frame;
+}
+#endif
+
 void hostlink_net_stats(hostlink_net_stats_t *s)
 {
 	*s = stats;
