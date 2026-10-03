@@ -83,17 +83,17 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ✕ |  |
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ✕ |  |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ● | ✕ |  |
-| PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,280* | 3,836* | ○ | ○ | ○ | New, untested on hardware; interop tested with pppd. Fits neither default image as it is (DM-1701 600 B short, MD-380 1,608 B short; DM-1701 with LTO: +3,932, fits). DM-32: brings the gateway and services, which don't all fit its RAM yet: see below |
+| PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ○ | New, untested on hardware; interop tested with pppd. Fits neither default image as it is (DM-1701 688 B short, MD-380 1,588 B short; DM-1701 with LTO: +3,948, fits). DM-32: brings the gateway and services, which don't all fit its RAM yet: see below |
 
 ### DM-32UV network build (PPP)
 
 The DM-32UV has no USB: its network is PPP on the programming cable (`NET_PPP`, `docs/spec/ppp.md` 7.1). Measured
-with csky-elf GCC 14 at agent/ppp 62f753e; default image RAM 153,740 of 165,612 B (92.8%, 11.9 KB free).
+with csky-elf GCC 14 at agent/ppp f52d6b9; default image RAM 153,740 of 165,612 B (92.8%, 11.9 KB free).
 
-- PPP and the IP gateway with no services: +10,676 B flash, +4,080 B RAM. Each service's RAM on top: TCP 4.7 KB
+- PPP and the IP gateway with no services: +10,736 B flash, +4,080 B RAM. Each service's RAM on top: TCP 4.7 KB
   (4 connections), HTTP 3.5 KB, SNMP 3.2 KB, rigctld 1.4 KB, KISS 0.8 KB, APRS-IS 0.7 KB, mDNS 0.4 KB, TFTP 0.1 KB.
   Everything together is 5.9 KB more RAM than the radio has.
-- Proposed default set, not on yet: PPP, gateway, mDNS, TFTP, control station (+25.2 KB flash, +4.6 KB RAM, 7.3 KB
+- Proposed default set, not on yet: PPP, gateway, mDNS, TFTP, control station (+25.3 KB flash, +4.6 KB RAM, 7.3 KB
   RAM left). With the CPU-only state the core already marks `ODR_CPU_RAM` moved to the DM-32's RAM_LO (69% empty
   today; the network buffers stay in main RAM), every network service fits with `TCP_CONNS=3`: about 93% RAM, 11 KB
   free (measured: 94.2% with 4 connections, 92.3% with 2).

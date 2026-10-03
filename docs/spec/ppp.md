@@ -162,16 +162,16 @@ full one). Its receive ring is 1,024 bytes, so one full frame in each direction 
 
 ## 7. Cost
 
-Flash and RAM of `CONFIG_NET_PPP=y` against the default image (agent/ppp at 62f753e, `SOURCE_DATE_EPOCH` fixed so the
+Flash and RAM of `CONFIG_NET_PPP=y` against the default image (agent/ppp at f52d6b9, `SOURCE_DATE_EPOCH` fixed so the
 default images compare byte for byte with main). The STM32 radios already have the gateway and its services, so the
 figure is PPP alone; on the DM-32 the gateway comes with it.
 
 | Board, build | Flash | RAM | Fits |
 |---|---:|---:|---|
-| DM-1701, LTO off (default) | +4,280 | +88 | no: 3,680 B free, 600 B short |
-| DM-1701, `LTO=1 LTO_3P=1` | +3,932 | +96 | yes: 20,440 B left |
-| MD-380 (its default, `LTO=1 LTO_3P=1`) | +3,836 | +88 | no: 2,228 B free, 1,608 B short |
-| DM-32UV, PPP and the IP gateway, no services | +10,676 | +4,080 | yes: RAM 95.3%, 7,792 B left |
+| DM-1701, LTO off (default) | +4,368 | +88 | no: 3,680 B free, 688 B short |
+| DM-1701, `LTO=1 LTO_3P=1` | +3,948 | +104 | yes: 20,424 B left |
+| MD-380 (its default, `LTO=1 LTO_3P=1`) | +3,816 | +88 | no: 2,228 B free, 1,588 B short |
+| DM-32UV, PPP and the IP gateway, no services | +10,736 | +4,080 | yes: RAM 95.3%, 7,792 B left |
 
 Of the DM-32's figure PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B RAM; the
 rest is the gateway, its air side and the network personality (`hostlink_net*.c`, 1.6 KB RAM each, the gateway's
@@ -180,20 +180,20 @@ rest is the gateway, its air side and the network personality (`hostlink_net*.c`
 ### 7.1 A DM-32 network build
 
 DM-32UV default: flash 313,804 B of 880 KB, RAM 153,740 B of 165,612 B (92.83%, 11,872 B free), RAM_LO 8,800 B of
-27,868 B. Each service on top of PPP and the gateway (324,480 B flash, 157,820 B RAM):
+27,868 B. Each service on top of PPP and the gateway (324,540 B flash, 157,820 B RAM):
 
 | Added | Flash | RAM |
 |---|---:|---:|
-| TCP (4 connections) | +4,744 | +4,680 |
+| TCP (4 connections) | +4,748 | +4,680 |
 | TCP + HTTP | +9,416 | +8,152 (does not link: 360 B short) |
-| TCP + rigctld | +9,152 | +6,112 |
-| TCP + KISS over TCP | +5,916 | +5,496 |
-| TCP + APRS-IS | +7,308 | +5,408 |
+| TCP + rigctld | +9,156 | +6,112 |
+| TCP + KISS over TCP | +5,920 | +5,496 |
+| TCP + APRS-IS | +7,312 | +5,408 |
 | mDNS | +7,660 | +360 |
 | TFTP | +7,096 | +136 |
 | SNMP | +9,404 | +3,160 |
 | control station | +284 | 0 |
-| everything (default switches with PPP on) | +40,700 (+51,376 over the default) | +13,728 (+17,808): RAM 103.6%, 5,936 B short |
+| everything (default switches with PPP on) | +40,700 (+51,436 over the default) | +13,728 (+17,808): RAM 103.6%, 5,936 B short |
 
 Each TCP connection costs about 1.5 KB RAM across TCP, HTTP and rigctld (`TCP_CONNS`, `tcp.h`).
 
@@ -201,9 +201,9 @@ Sets that fit, as the RAM is laid out today:
 
 | Set | Flash | RAM used | Free |
 |---|---:|---:|---:|
-| S1: PPP, gateway, mDNS, TFTP, control station | 339,016 | 158,292 (95.6%) | 7,320 |
-| S2: S1 + SNMP | 348,144 | 161,452 (97.5%) | 4,160 |
-| S3: S1 + TCP (2 connections), rigctld, KISS | 348,880 | 162,796 (98.3%) | 2,816 |
+| S1: PPP, gateway, mDNS, TFTP, control station | 339,072 | 158,292 (95.6%) | 7,320 |
+| S2: S1 + SNMP | 348,200 | 161,452 (97.5%) | 4,160 |
+| S3: S1 + TCP (2 connections), rigctld, KISS | 348,940 | 162,796 (98.3%) | 2,816 |
 
 And with the RAM laid out differently (placement B, measured on a patched copy, not in the tree): the state the core
 already marks `ODR_CPU_RAM` (APRS 5.9 KB, radio task 3.1 KB, hotspot 2.8 KB, DMR data 3.8 KB) goes to RAM_LO, which
