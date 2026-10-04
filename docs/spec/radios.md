@@ -6,7 +6,7 @@ Status: research, 2026-10-10. This page collects the main chips of every radio O
 close relatives, from public sources only. It also says which ODR platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md), [hardware-gd88.md](hardware-gd88.md)). This page is the overview.
+[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md)). This page is the overview.
 
 Facts are not copyrightable. Every claim carries a source link and a confidence tag:
 
@@ -27,7 +27,7 @@ and F tags into C, and it should happen before a port starts.
 | Radio (and rebadges) | MCU | DMR chip | RF | Display | Ext. memory | GPS | Update path | ODR today |
 |---|---|---|---|---|---|---|---|---|
 | Baofeng DM-1701, Retevis RT84 | STM32F405VG (C, bench) | HR_C6000 (C, bench) | AT1846S (C, bench) | 160x128 color, 8080 bus (C, bench) | 16 MB SPI NOR (C, bench) | none (C) | USB DFU on the MCU, wrapped images (D) | First target, on the radio |
-| TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG (D) | HR_C6000 (D) | AT1846S (D) | 160x128 color, HX8302A (D) | 25Q128FV, 16 MB (D) | optional, JS-H210 (D) | USB DFU on the MCU (D) | Planned: board variant of the DM-1701 |
+| TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG (D) | HR_C6000 (D) | AT1846S (D) | 160x128 color, HX8302A (D) | 25Q128FV, 16 MB (D) | optional, JS-H210 (D) | USB DFU on the MCU, XOR-keyed images (C, key derived from stock 19.26) | Planned: board variant of the DM-1701 ([hardware-mduv380.md](hardware-mduv380.md)) |
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG (D) | HR_C6000 (D) | 2x SKY72310 PLL on older boards; later boards changed (D, F) | 128x64 mono, ST7567 (D) | 25Q128FV, 16 MB (D) | optional, JS-M710 (D) | USB DFU on the MCU (D) | Planned |
 | TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (D) | HR_C5000 (D) | SKY72310 PLL + GT3136 receiver (D, F) | 160x128 color, HX8302A (D, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (D) | optional "G" models (D, module ?) | USB DFU, encrypted images (D) | Builds, not on a radio yet |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (D) | HR_C6000 (D) | AT1846S (D) | 128x64 mono, UC1701 (D) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (D) | none (D) | USB HID bootloader, .sgl files (F) | Planned: new platform |
@@ -86,9 +86,13 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   ([OpenRTX status](https://openrtx.org/#/dev_status)). md380tools does not support it (D)
   ([md380tools README](https://raw.githubusercontent.com/travisgoodspeed/md380tools/master/README.md)). The
   OpenGD77 project supports it.
-- **ODR:** the same board family as the DM-1701 ([hardware-dm1701.md](hardware-dm1701.md) section 17). It needs a key
-  map, battery and volume ADC scaling, a power table, its own DFU key and GPS on USART3. No new drivers except a GPS
-  NMEA reader.
+- **ODR:** the same board family as the DM-1701 ([hardware-mduv380.md](hardware-mduv380.md) lists every difference).
+  It needs a key map, no LCD row offset and its own panel-type table, battery and volume ADC scaling, power tables
+  (5 W and Plus 10 W, whose PA band select and backlight pins are swapped), its own DFU key and GPS on USART1 (PA10,
+  power PA9; an earlier note here said USART3, which is the MD-380's). No new drivers.
+- Stock codec (C, 2026-10-12): TYT 19.26 files (V/D non-GPS, P/S GPS) carry the DM-1701's codec library with the same
+  entry offsets, in the same flash sectors; V19.26 runs bit-identical to the DM-1701 codec in an emulator
+  ([codec-mduv380.md](codec-mduv380.md)).
 
 ### TYT MD-9600 / Retevis RT90
 
