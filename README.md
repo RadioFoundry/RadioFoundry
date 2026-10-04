@@ -22,7 +22,7 @@ It's early. Read the status section before you flash anything.
 
 | Radio | Builds | Host tests | On the radio | Support |
 |---|:---:|:---:|:---:|---|
-| Baofeng DM-1701 | ● | ● | ◐ | First target. FM and DMR voice work on the radio; the other features wait on hardware tests (below) |
+| Baofeng DM-1701 | ● | ● | ◐ | First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, scan, and the network services. Still open: SFR and split duplex (below) |
 | Baofeng DM-32UV | ● | ● | ○ | Builds and passes its host tests; hasn't run on a radio yet ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core, parked until bring-up ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
 | TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ○ | Builds (UHF and VHF images) and passes its host tests; hardware needed: it hasn't run on a radio yet ([bring-up checklist](docs/testing/md380-bringup.md)). DMR voice with the codec from the stock D2.32 file, merged at build time ([codec-md380](docs/spec/codec-md380.md)); untested on a radio. No CTCSS / DCS or FM TX tones yet, and the default image leaves out the hotspot to fit |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
@@ -39,10 +39,9 @@ The chips in each radio, their sources and the planned port order: [docs/spec/ra
 On the DM-1701, automated tests against the SDR bench pass on air for: FM receive and transmit, CTCSS / DCS encode,
 the 1750 Hz burst and roger beep, DMR group and private calls both ways (late entry, talker alias, ETSI GPS Info, the
 basic privacy signaling), text messages, call alert, radio check and emergency both ways, hotspot voice and data,
-battery saver, zone scan, VFO scan and dual watch. qdmr reads and writes, the USB network adapter and the roaming
-settings are checked on the radio without RF. Still open: the SFR hotspot mode (partly), the split duplex repeater
-(fails), IP over DMR, roaming between real repeaters, ARS and LRRP, and the TCP services; they pass the host tests
-only. Per-feature results: [on-air coverage](docs/testing/on-air-coverage.md).
+battery saver, zone scan, VFO scan and dual watch. qdmr reads and writes, the USB network adapter, the network
+services and the roaming settings are checked on the radio. Still open: the SFR hotspot mode (partly) and the split
+duplex repeater (fails). Per-feature results: [on-air coverage](docs/testing/on-air-coverage.md).
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
 Releases carry the DM-1701 firmware (everything except the codec), `odrflash` to flash it on Windows, macOS and
