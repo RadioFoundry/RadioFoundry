@@ -78,13 +78,17 @@ def need(radio, feature):
 
 def _run_for(cmd, seconds, until=None):
     """Output of a command that never ends by itself (dns-sd), after seconds or once `until` matches it"""
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out = ""
     end = time.monotonic() + seconds
-    os.set_blocking(p.stdout.fileno(), False)
+    fd = p.stdout.fileno()
+    os.set_blocking(fd, False)     # raw reads: a text-mode read of an empty non-blocking pipe fails on Python 3.12
     try:
         while time.monotonic() < end:
-            chunk = p.stdout.read()
+            try:
+                chunk = os.read(fd, 65536).decode(errors="replace")
+            except BlockingIOError:
+                chunk = ""
             if chunk:
                 out += chunk
                 if until is not None and re.search(until, out):
