@@ -28,7 +28,7 @@ and F tags into C, and it should happen before a port starts.
 |---|---|---|---|---|---|---|---|---|
 | Baofeng DM-1701, Retevis RT84 | STM32F405VG (C, bench) | HR_C6000 (C, bench) | AT1846S (C, bench) | 160x128 color, 8080 bus (C, bench) | 16 MB SPI NOR (C, bench) | none (C) | USB DFU on the MCU, wrapped images (D) | First target, on the radio |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG (D) | HR_C6000 (D) | AT1846S (D) | 160x128 color, HX8302A (D) | 25Q128FV, 16 MB (D) | optional, JS-H210 (D) | USB DFU on the MCU, XOR-keyed images (C, key derived from stock 19.26) | Planned: board variant of the DM-1701 ([hardware-mduv380.md](hardware-mduv380.md)) |
-| TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG (D) | HR_C6000 (D) | 2x SKY72310 (V1-V3), AK1590-class (V4, ?), LMX2571 (V4A/V5, F) PLLs; AK2365A IF x2 on V1-V4 (D) | 128x64 mono, ST7567 (D) | 25Q128FV, 16 MB (D) | optional, JS-M710 (D) | USB DFU on the MCU (D) | Planned |
+| TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG (D) | HR_C6000 (D) | 2x SKY72310 (V1-V3), "PLL1590" (V4, C for the name; TYT's V4 firmware folder), LMX2571 (V4A/V5, F) PLLs; AK2365A IF x2 on V1-V4 (D) | 128x64 mono, ST7567 (D) | 25Q128FV, 16 MB (D) | optional, JS-M710 (D) | USB DFU on the MCU (D) | Planned |
 | TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (D) | HR_C5000 (D) | SKY72310 PLL + GT3136 receiver (D, F) | 160x128 color, HX8302A (D, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (D) | optional "G" models (D, module ?) | USB DFU, encrypted images (D) | Builds, not on a radio yet |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (D) | HR_C6000 (D) | AT1846S (D) | 128x64 mono, UC1701 (D) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (D) | none (D) | USB HID bootloader, .sgl files (F) | Planned: new platform |
 | Radioddity GD-88 | HR_C7000 class SoC (F) | HR_C7000 (F) | ? (two transceivers, F) | 2" color TFT (C), controller ? | ? | yes (C), module ? | Radioddity updater over K-plug cable (C) | Planned |
@@ -104,7 +104,7 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   ([opengd77.org t=83](https://www.opengd77.org/viewtopic.php?t=83),
   [opengd77.org p=15](https://www.opengd77.org/viewtopic.php?p=15)). A retailer ties V4/V5 to "PLL 2571" (F)
   ([passion-radio](https://www.passion-radio.com/mobile/md9600-505.html)). The reference port's register writes give: V1-V3
-  SKY72310 x2 with AK2365A IF chips, V4 an AK1590-class synthesizer (part ?) with AK2365A, V4A/V5 the LMX2571 register
+  SKY72310 x2 with AK2365A IF chips, V4 a "PLL1590" synthesizer (TYT's V4 firmware folder name; exact part ?) with AK2365A, V4A/V5 the LMX2571 register
   set (F) and no programmable IF chip. Details, pin map and per-revision programming: [hardware-md9600.md](hardware-md9600.md);
   codec: [codec-md9600.md](codec-md9600.md) (V26.45 is the radio's own donor).
 - Front 4x3 key matrix, channel encoder, and hand-mic keys read as analog levels. The mic has 16 keys on an RJ-45

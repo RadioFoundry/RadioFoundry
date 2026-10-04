@@ -57,8 +57,9 @@ key (D) [ref].
 ### 1.3 Internal flash layout
 
 Same TYT loader and layout as the DM-1701 and MD-380: loader in sectors 0-2 (0x08000000-0x0800BFFF, never written),
-application from 0x0800C000, VTOR 0xC000 (D) [ref]. The stock codec sits at 0x0807537C in the stock image
-([codec-md9600.md](codec-md9600.md)); the old tree linked its application below that address and the codec there.
+application from 0x0800C000, VTOR 0xC000 (D) [ref]. The stock codec sits at a different address in every stock version and variant
+(0x08074B18 to 0x08079630 for the code; 0x0807537C in V26.45; [codec-md9600.md](codec-md9600.md)); the old tree linked
+its application below 0x0807537C and the V26.45 codec there.
 
 ### 1.4 RAM
 
@@ -251,7 +252,11 @@ N = VCO / f_pd; reg 0 = N - 32; 18-bit fraction (x 2^18), reg 1 = fraction >> 8,
 0x01F, reg 7 = 0x3D0, reg 8 = 0, reg 9 = 0. Write order: 8, 9, 5, 0, 2, 1, 6, 7 ("the order the TYT firmware uses")
 (D) [ref].
 
-**V4: AK1590-class synthesizer (the reference port's name; the part is not confirmed (?)), one per band** (D) [ref]. 24-bit
+**V4: "PLL1590" synthesizer, one per band** (D) [ref]. TYT's own folder for the V4 firmware (V16.45) is named "firmware for
+PLL1590" (C) [TYT-fw], which confirms the part family the reference port calls AK1590; the exact part number is still
+unconfirmed (?). The V16.45 stock images (all four variants) hold the 24-bit words 0x1FF404 and 0x19F404 as literals,
+that is reg 4 = 0x1FF40 (VHF) and 0x19F40 (UHF) in the format below; the V06.09 images hold neither (C, our own
+reading of the decrypted images). 24-bit
 words: 20 data bits then the 4-bit address in the low nibble. N in reg 2 (VHF 0x20000 | N, UHF 0x38000 | N), the
 18-bit fraction in reg 1, reg 3 = 0x6000 | R, reg 4 = 0x1FF40 (VHF) or 0x19F40 (UHF), reg 5 = reg 6 = 0. R: VHF 12,
 UHF RX 8, UHF TX 4. **No x2 on VHF** here (VCO on the LO). Write order 5, 6, 3, 4, 1, 2. The V4 VHF synthesizer must
@@ -509,13 +514,27 @@ USB DFU 0483:DF11 with TYT's commands, the DM-1701's protocol ([hardware-dm1701.
 [ref]. The image is XORed with the MD-9600's 1024-byte key, index from the start of the application image; key SHA-256
 c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae, first bytes A2 FA BB 4B
 ([hardware-dm1701.md](hardware-dm1701.md) 15.3) (D). Deriving it from a stock file (as done for the DM-1701 and MD-380)
-has not been tried: no MD-9600 stock file is on hand (codec-md9600.md).
+works: on every V06.09 and V16.45 stock file the plain column vote alone gives the key with that hash (C, 2026-10-12;
+[codec-md9600.md](codec-md9600.md)).
 
 ### 14.3 Stock firmware files
 
 TYT names the files by feature: P = CSV + GPS, V = CSV, S = recorder + GPS, D = recorder (F) [miklor-fw]. TYT's V4
 firmware and CPS (for the "new updated PLL", V4 and later boards) are not compatible with V1-V3 radios (F)
 [miklor-fw]. TYT's download page (checked 2026-10-12) offers only CPS installers for the MD-9600, no firmware (C) [TYT].
+
+Files examined (C, [TYT-fw]; container header only here, the codec in [codec-md9600.md](codec-md9600.md)):
+
+| Version | Boards | Files | Container |
+|---|---|---|---|
+| 06.09 | V1-V3 (SKY72310) | `MD9600-CSV-V06.09.bin`, `-CSV-GPS-P06.09`, `-REC-D06.09`, `-GPS-REC-S06.09` | model string "MD-9600" at 0x10 |
+| 16.45 | V4 ("PLL1590") | `MD9600-CSV(V4)-V16.45.bin`, `-CSV-GPS(V4)-P16.45`, `-REC(V4)-D16.45`, `-GPS-REC(V4)-S16.45` | model string blank |
+| 26.45 | V5 ("2571") | `MD9600-CSV(2571V5)-V26.45.bin` | not on hand |
+
+All eight: two segments, (0x00060000, 0x59800) for the external flash resources and (0x0800C000, 0xB1800..0xB6800)
+for the application, payload at 0x100, 0x100 trailing bytes. The leading digit of the version number is the board
+family (0 = V1-V3, 1 = V4, 2 = V5) (F: inferred from the three known files). The V06.09 images report SP 0x20001BA0,
+the V16.45 ones 0x20001BB0.
 
 ---
 
@@ -532,10 +551,11 @@ separate (14.2).
 |---|---|---|---|---|---|
 | V1 (first boards, some labeled V2) | SKY72310 x2 | AK2365A x2 | VERSION=1 | backlight not dimmable the V2 way (7.3) | (D), (F) [ogd77-t83] |
 | V2, V3 | SKY72310 x2 | AK2365A x2 | VERSION=2 | | (D) |
-| V4 | AK1590-class x2 (?) | AK2365A x2 | VERSION=4 | VHF synthesizer must be set at power-on | (D) |
+| V4 | "PLL1590" x2 (C for the name, part ?) | AK2365A x2 | VERSION=4 | VHF synthesizer must be set at power-on | (D) |
 | V4A, V5 | LMX2571 x2 (F) | none programmable; PE11-PE14 switches | VERSION=5 | RSSI curve differs | (D) |
 
-TYT sometimes changed chips without changing the label; a wrong build boots but neither receives nor transmits, and does
+Stock firmware follows the same split: V06.09 for V1-V3, V16.45 for V4, V26.45 for V5 (C for the file names). TYT
+sometimes changed chips without changing the label; a wrong build boots but neither receives nor transmits, and does
 no harm (F) [ogd77-t83], [ogd77-p15]. GPS models have been reported working with the V5 build (F). Radios needing
 TYT's V4 firmware are V4 or later (F).
 
@@ -555,7 +575,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | # | Unknown | How to settle it |
 |---|---|---|
 | 1 | Which revision the test radio is | Open the top cover, read the PCB label; then try the V5 image's RX |
-| 2 | V4 synthesizer part, V5 IF part, V5 use of PE15 | Photos of the board (and FCC internal photos [FCC]) |
+| 2 | V4 synthesizer exact part ("PLL1590"), V5 IF part, V5 use of PE15 | Photos of the board (and FCC internal photos [FCC]) |
 | 3 | Lock detect pin (none mapped) | Scope / board photos; otherwise lock is inferred from RX |
 | 4 | LMX2571 delays after reset and calibration | Scope the PLL on retune; measure the relock time (also [gotchas] 14.6, SFR / DMR burst switching) |
 | 5 | RF TX interrupt usefulness and the 20 ms burst-off workaround | Scope T5 against the burst on an SDR |
@@ -581,6 +601,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | [miklor-fw] | https://www.miklor.com/MD9600/9600-FWupdate.php | Guide (F) |
 | [passion-radio] | https://www.passion-radio.com/mobile/md9600-505.html | Retailer (F) |
 | [TYT] | https://www.tyt888.com/download.html (2026-10-12: CPS 1.27, 1.33, 1.43 and a product photo; no firmware) | Vendor (C) |
+| [TYT-fw] | TYT stock firmware V06.09 and V16.45 ("firmware for PLL1590"), kept outside the repository; container headers and literal constants only | Vendor files (C) |
 | [FCC] | FCC ID POD-DMR3, https://fccid.io/POD-DMR3 | (C) |
 | [SKY] | Skyworks SKY72310-11 data sheet | (C) |
 | [ST] | STM32F405 data sheet, RM0090 | (C) |
