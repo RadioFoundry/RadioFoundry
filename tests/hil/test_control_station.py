@@ -128,7 +128,8 @@ def test_fixed_link(radio):
         count = "-c" if sys.platform != "win32" else "-n"
         r = subprocess.run(["ping", count, "3", FIXED_RADIO], capture_output=True, text=True, timeout=20)
         assert r.returncode == 0, f"ping {FIXED_RADIO}: {r.stdout} {r.stderr}"
-        udp.usb_net_settings()
+        # Serial first: clearing the settings here would move the radio off 192.168.10.1 at once, and the host keeps
+        # 192.168.10.2, which the DMR ID address doesn't take the debug link from. _back_to_serial clears them
         udp.usb_network(False)
     finally:
         if udp is not None:
