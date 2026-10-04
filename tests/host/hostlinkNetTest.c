@@ -65,7 +65,7 @@ static int n_receive(uint8_t *buf, int max)
 }
 static void n_tick(uint32_t t) { (void)t; }
 static void n_macs(uint8_t host[6], uint8_t radio[6]) { memcpy(host, HOST_MAC, 6); memcpy(radio, RADIO_MAC, 6); }
-static const hal_netif_t fake_netif = { n_select, n_selected, n_up, n_send, n_receive, n_tick, n_macs, 600 };
+static const hal_netif_t fake_netif = { n_select, n_selected, n_up, n_send, n_receive, n_tick, n_macs, NULL, 600 };
 const board_t board = { .name = "fake", .netif = &fake_netif };
 
 // ---- fake air ops ----

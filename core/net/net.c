@@ -201,6 +201,15 @@ void net_poll(uint32_t now_ms, bool link_up)
 void net_view(dl_text_t *t)
 {
 	dl_text(t, "net.link_up=%u\n", was_up);
+	if ((board.netif != NULL) && (board.netif->stats != NULL)) {
+		hal_netif_stats_t s = { 0 };
+
+		board.netif->stats(&s);
+		dl_text(t, "netif.rx=%u\nnetif.rx_dropped=%u\nnetif.tx=%u\nnetif.tx_busy=%u\nnetif.reconnects=%u\n"
+			"netif.switch_fallbacks=%u\nnetif.tx_stalls=%u\n", (unsigned)s.rx_frames, (unsigned)s.rx_dropped,
+			(unsigned)s.tx_frames, (unsigned)s.tx_busy, (unsigned)s.reconnects, (unsigned)s.switch_fallbacks,
+			(unsigned)s.tx_stalls);
+	}
 #if CONFIG_NET_KISS
 	kiss_tcp_view(t);
 #endif

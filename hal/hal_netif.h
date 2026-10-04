@@ -9,6 +9,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Link counters for the debug link's view (all optional to fill)
+typedef struct {
+	uint32_t rx_frames, rx_dropped, tx_frames, tx_busy, reconnects;
+	uint32_t switch_fallbacks;	// switches to network mode the host never brought up (back to serial)
+	uint32_t tx_stalls;		// frames to the host stuck so long the link was re-enumerated
+} hal_netif_stats_t;
+
 typedef struct {
 	// Switch the USB personality: network (true) or serial (false). The host sees an unplug and enumerates the other
 	// one (blocks about 100 ms). False if it can't
@@ -22,6 +29,7 @@ typedef struct {
 	void (*tick)(uint32_t now_ms);	// every few ms from the user's task
 	// The host adapter's MAC address and the radio's side of the link
 	void (*macs)(uint8_t host[6], uint8_t radio[6]);
+	void (*stats)(hal_netif_stats_t *s);	// optional: NULL when the interface keeps none
 	uint16_t frame_max;		// longest frame receive() returns
 } hal_netif_t;
 
