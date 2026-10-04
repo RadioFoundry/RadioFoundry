@@ -384,6 +384,12 @@ NXP stack's SetInterface refused the NCM interfaces and had to accept them. Comm
 **9.8 UDP broadcasts.** Only forward broadcasts for UDP ports 4000-4099 so a host's own discovery traffic never keys
 the radio. Commit bf16c8d.
 
+**9.12 TinyUSB NCM: call tud_network_recv_renew after every received frame.** The class driver hands over the next
+datagram of an NTB only after it. macOS packs several frames into one NTB in a burst (a TCP close and a new connect),
+and with one receive NTB the link then went dead both ways for good, re-enumeration included. Also: TinyUSB after
+0.21.0 fixes a DWC2 race on the TX FIFO empty interrupt mask (an IN transfer that never completes), and our copy of
+the NCM class (drivers/usb/ncm_device.c) cancels the bulk transfers on SET_INTERFACE.
+
 ## 10. Flash and storage
 
 **10.1 DM-32 data flash driver was stubbed.** Read returned an uninitialized value and program / erase did nothing, so

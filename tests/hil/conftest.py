@@ -134,7 +134,9 @@ def radio(pytestconfig):
 @pytest.fixture(autouse=True)
 def restore_radio(request):
     """Every test that uses the radio leaves it as it found it (channel / VFO, zone, power, squelch, monitor)."""
-    if "radio" not in request.fixturenames:
+    # test_tcp_services.py's module fixture "net" has the radio on the network (its serial link closed) for the whole
+    # module and puts it back on serial itself: nothing to snapshot over serial then
+    if "radio" not in request.fixturenames or "net" in request.fixturenames:
         yield
         return
     r = request.getfixturevalue("radio")

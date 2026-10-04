@@ -72,6 +72,16 @@ bool usbNcmIsUp(void)
 
 // ---- TinyUSB's callbacks (USB task) ----
 
+// The data interface was reset by a SET_INTERFACE (drivers/usb/ncm_device.c): count it
+void tud_network_alt_cb(uint8_t alt, bool xmit_aborted)
+{
+	(void)alt;
+	stats.alt_changes++;
+	if (xmit_aborted) {
+		stats.xmit_aborts++;
+	}
+}
+
 void tud_network_init_cb(void)
 {
 	rx_in = rx_out = 0;
@@ -92,7 +102,12 @@ bool tud_network_recv_cb(const uint8_t *src, uint16_t size)
 		rx_in = next;
 		stats.rx_frames++;
 	}
-	return true;	// always taken: the driver's buffer is free again at once
+	// Always taken (copied above, or dropped and counted). The class driver gives the next datagram of the same NTB
+	// only after tud_network_recv_renew: macOS packs several frames into one NTB in a burst, and without this call
+	// the rest of it, and every NTB after it, never came (the link went dead both ways). Called from here it is
+	// re-entrant safe: the driver notes it and goes on with the next datagram once this returns
+	tud_network_recv_renew();
+	return true;
 }
 
 uint16_t tud_network_xmit_cb(uint8_t *dst, void *ref, uint16_t arg)

@@ -14,6 +14,8 @@ typedef struct {
 	uint32_t rx_frames, rx_dropped, tx_frames, tx_busy, reconnects;
 	uint32_t switch_fallbacks;	// switches to network mode the host never brought up (back to serial)
 	uint32_t tx_stalls;		// frames to the host stuck so long the link was re-enumerated
+	uint32_t alt_changes;		// the host took the link down or up (SET_INTERFACE on the data interface)
+	uint32_t xmit_aborts;		// ... while a frame to it was still in flight (cancelled)
 } hal_netif_stats_t;
 
 typedef struct {
