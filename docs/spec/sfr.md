@@ -82,7 +82,7 @@ keying (HIL 2026-10-10: mode switching and the first repeat on TS2 passed, the r
 only; `hrc6000DmrTest` test_tx_listen checks it. Two more things were needed on air (gotchas 14.9): the per-burst
 switch back to RX goes receiver off, RX frequency, RX supply, RX on (it went from DMR TX straight to RX on), and a gap
 in the inbound call leaves our slot empty (`DMR_BURST_EMPTY`) instead of an idle burst. On air (HIL 2026-10-12,
-e91fabc): the bench's 3-superframe call goes up whole (18 voice frames and the terminator) and is repeated whole on
+06c5bc6): the bench's 3-superframe call goes up whole (18 voice frames and the terminator) and is repeated whole on
 TS2 (17-18 of 18 voice bursts, the terminator, then the hang's idle bursts). Open: the voice repeat comes 210 ms after
 the inbound burst, not 90 ms (two frames of queue built up in the header phase, where only 2 of the bench's 8 headers
 were repeated).

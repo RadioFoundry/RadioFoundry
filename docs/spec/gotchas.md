@@ -513,7 +513,7 @@ between our bursts must be written "receive" (0x41 = 0x50), not 0x00; the AT1846
 through receiver off (reg 0x30 idle), the RX frequency, the band's RX supply, then RX on (one write straight from DMR TX
 to RX on heard 6-36 of a call's bursts, varying run to run; the RX supply goes off while the PA is up); and a gap in
 the inbound call leaves our slot empty, never an idle burst (14.4: one missed burst then cascaded into DMR_LOST).
-HIL 2026-10-12. Commits 23f6794, bb952c3, e91fabc.
+HIL 2026-10-12. Commits 7efcef1, 5ae989b, 06c5bc6.
 
 ## 15. Testing practice
 
