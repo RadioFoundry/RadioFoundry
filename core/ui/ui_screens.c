@@ -482,6 +482,20 @@ void ui_draw_splash(const char *board_name, const char *git, const char *line1, 
 	if (r > h / 4)
 		r = h / 4;
 	bool mark = r >= 12;		// smaller than this the arcs merge into noise
+	// Too short for the mark above the name (128x64): the mark left of the name instead, at the smallest size that
+	// stays clear, with the name in the largest font that leaves it room. The owner's lines keep their size
+	int side_r = 0;
+	if (!mark) {
+		int sr = 12, sw = 2 * sr + 4;
+		const font_t *sf = gfx_text_width(L->medium, word) <= w - 4 - sw ? L->medium :
+			gfx_text_width(L->small, word) <= w - 4 - sw ? L->small : NULL;
+		int row_h = sr * 14 / 10 > (sf != NULL ? sf->h : 0) ? sr * 14 / 10 : (sf != NULL ? sf->h : 0);
+		if (sf != NULL && text_h - wf->h + row_h <= foot_y - gap) {
+			side_r = sr;
+			wf = sf;
+			text_h += row_h - wf->h;
+		}
+	}
 	int mark_h = mark ? r * 14 / 10 : 0;
 	int total = mark_h + (mark ? gap : 0) + text_h;
 	int y = (foot_y - total) / 2;
@@ -491,7 +505,15 @@ void ui_draw_splash(const char *board_name, const char *git, const char *line1, 
 		draw_mark(w / 2, y + r * 64 / 100 + 1, r);	// the arcs reach 0.64 r above the dot
 		y += mark_h + gap;
 	}
-	y += draw_wordmark(wf, y);
+	if (side_r > 0) {
+		int sw = 2 * side_r + 4, ww = gfx_text_width(wf, word);
+		int x0 = (w - sw - ww) / 2, row_h = side_r * 14 / 10 > wf->h ? side_r * 14 / 10 : wf->h;
+		draw_mark(x0 + side_r, y + (row_h - side_r * 14 / 10) / 2 + side_r * 64 / 100 + 1, side_r);
+		gfx_text(wf, x0 + sw, y + (row_h - wf->h) / 2, "Open", gfx_bpp() == 1 ? ui_col.fg : ui_col.priv);
+		gfx_text(wf, x0 + sw + gfx_text_width(wf, "Open"), y + (row_h - wf->h) / 2, "DigitalRadio", ui_col.fg);
+		y += row_h;
+	} else
+		y += draw_wordmark(wf, y);
 	gfx_hline(w / 2 - w / 6, y + gap / 2, w / 3, gfx_bpp() == 1 ? ui_col.fg : ui_col.focus);
 	y += gap;
 	if (n_lines > 0) {
