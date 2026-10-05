@@ -210,7 +210,7 @@ def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings):
                 udp = None
                 time.sleep(0.5)
         assert udp is not None, f"no debug link over UDP at {radio_ip} (DHCP on the host's adapter?)"
-        before = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if v.isdigit()}
+        before = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
         heard_pkts = []
         with sdr_bench.lease():
             lis = sdr_bench.listen_start(freq, cc, seconds=10)
@@ -219,7 +219,7 @@ def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings):
                 s.sendto(PAYLOAD, (bench_ip, DST_PORT))
             time.sleep(4)
             heard_pkts = dmr_packet.packets(sdr_bench.listen_result(lis))
-        after = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if v.isdigit()}
+        after = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
         assert after["ip.sap3"] - before["ip.sap3"] == 1 and after["ip.sent"] - before["ip.sent"] == 1, (before, after)
         mine = _ours(heard_pkts, own)
         assert all(p["sap"] == dmr_packet.SAP_UDPIP_COMPRESSION for p in mine), mine

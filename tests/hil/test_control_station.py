@@ -184,8 +184,11 @@ def _passthrough_session(radio, pytestconfig):
 
 
 def _counters(udp):
-    v = udp.view(["dmr_data", "dmr_ext"])
-    return {k: int(x) for k, x in v.items() if x.isdigit()}
+    # One section per request: over UDP a long reply is cut short (truncated=1) and the later keys go missing
+    v = {}
+    for section in ("dmr_data_stats", "dmr_ext"):
+        v.update(udp.view([section]))
+    return {k: int(x) for k, x in v.items() if str(x).isdigit()}
 
 
 def _listen(host_ip, port):
