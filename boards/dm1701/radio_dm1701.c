@@ -376,7 +376,21 @@ bool dm1701_rf_dmr_switch(bool tx)
 	if (!tx) {
 		pa_off();
 		r.rf_isr_dirty = true;
-		if (rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
+		// As the TX side: transmitter off first, the RX frequency, then the RX supply and the receiver on. Straight from
+		// DMR TX to RX on (one 0x30 write) left the receiver marginal between an SFR's bursts (inbound bursts lost at
+		// random, HIL 2026-10-12), and the receiver stayed on the TX frequency where RX != TX
+		uint16_t idle = at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE);
+		bool ok = rf_isr_write(0x30, idle);
+		if (ok && r.rf_tuned_hz != r.rx_hz) {
+			uint32_t word = at1846s_freq_word(r.rx_hz);
+			r.rf_tuned_hz = 0;
+			ok = rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu)) && rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
+			if (ok) {
+				r.rf_tuned_hz = r.rx_hz;
+			}
+		}
+		rx_supply(true, r.rx_uhf);
+		if (ok && rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
 			r.rf_rx_pending = false;
 			return true;
 		}
@@ -411,6 +425,7 @@ bool dm1701_rf_dmr_switch(bool tx)
 		return false;	// no RF without the AT1846S in TX: leave the PA off
 	}
 	r.rf_rx_pending = false;
+	rx_supply(false, false);	// the RX pre-amps off while the PA is up (hardware-dm1701.md 6)
 	apc_set(r.dmr_drive);
 	PIN_WRITE(PIN_PA_EN1, true);
 	PIN_WRITE(PIN_PA_BAND, r.dmr_uhf);
@@ -422,9 +437,7 @@ void dm1701_rf_dmr_service(void)
 {
 	if (r.rf_rx_pending) {
 		r.rf_rx_retries++;
-		if (rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
-			r.rf_rx_pending = false;
-		}
+		(void)dm1701_rf_dmr_switch(false);	// the whole sequence again (it clears rf_rx_pending)
 	}
 }
 

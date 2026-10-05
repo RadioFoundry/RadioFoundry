@@ -614,8 +614,10 @@ Ordering:
   enable 1 high, PA band select, then PA enable 2 high. The DAC drive is set when the TX frequency is written.
 - Enter RX: PA enable 1 and 2 low first; RX supply for the band; AT1846S reg 0x30 to the RX value; HR_C6000 to FM RX or
   DMR.
-- Burst-by-burst DMR TX (the PA follows the bursts): only the PA enables and reg 0x30 (DMR TX value / RX on value)
-  change. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
+- Burst-by-burst DMR TX (the PA follows the bursts): to TX, reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX,
+  both RX supplies off, then the PA; back to RX, the PA enables low, reg 0x30 receiver off, the RX frequency if it
+  differs, the RX supply for the band, reg 0x30 RX on. The receiver must work between bursts (an SFR's inbound slot,
+  `sfr.md` 3). The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
   pins: the last burst of a call (the terminator) is still in flight after the PA logic has gone back to RX once.
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
