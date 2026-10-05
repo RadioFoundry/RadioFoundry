@@ -178,7 +178,8 @@ maps K DM-1701, M GD-77 style, V MD-380 style, F few keys), radio core, the usab
 
 ```
 make -C tests/host run-ui                                      # gfxTest, uiFlowTest, the layout check
-make -C tests/host ui-gallery                                  # docs/ux/screens/<class>/<screen>.png
+make -C tests/host ui-gallery                                  # docs/ux/screens/<class>/<screen>.png, sheets/<class>.png
+make -C tests/host ui-sheets GEOM=128x64                       # contact sheet only, tests/host/out/sheets/
 tests/host/uiSim --geom 160x120i5 --script "ok 4 down ok expect:zone=1" --out zone.png --scale 3
 ```
 

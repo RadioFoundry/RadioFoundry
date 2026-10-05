@@ -4,7 +4,10 @@
 //
 //   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F] [--scale N] [--out FILE.png]
 //         [--script "ok 4 down ok expect:zone=1"]
-//   uiSim --gallery DIR      every screen at every display class: DIR/<geom>/<screen>.png
+//   uiSim --gallery DIR      every screen at every display class: DIR/<geom>/<screen>.png, plus the contact sheets
+//                            in DIR/sheets
+//   uiSim --sheets DIR [GEOM] contact sheets only: DIR/<geom>.png, every gallery screen at 2x under its name in one
+//                            palette PNG, at one display class or all of them (a quick layout audit)
 //   uiSim --ellipsis [GEOM]  every text shortened with an ellipsis on the gallery screens and the settings pages
 //                            (lists scrolled to their end), at one display class or all of them
 //   uiSim --layout [GEOM]    the layout check (sim_layout_issues) on the gallery screens, the settings pages and
@@ -330,30 +333,74 @@ static int run_audit(const char *only)
 	return 0;
 }
 
-static int run_gallery(const char *dir)
+// One display class's screens: DIR/<geom>/<screen>.png when shots, and the contact sheet (2x, every screen under its
+// name) as SHEET_DIR/<geom>.png
+static int render_geom(const sim_geom_t *g, const char *dir, bool shots, const char *sheet_dir)
 {
 	char path[512], err[256];
 	int fails = 0;
-	mkdir(dir, 0755);
-	for (int g = 0; g < sim_geom_count; g++) {
-		snprintf(path, sizeof path, "%s/%s", dir, sim_geoms[g].name);
+	size_t n = sizeof gallery / sizeof gallery[0];
+	if (shots) {
+		snprintf(path, sizeof path, "%s/%s", dir, g->name);
 		mkdir(path, 0755);
-		for (size_t i = 0; i < sizeof gallery / sizeof gallery[0]; i++) {
-			sim_reset(&sim_geoms[g], SIM_MAP_K);
-			if (!sim_run(gallery[i].script, err, sizeof err)) {
-				printf("FAIL gallery %s %s: %s\n", sim_geoms[g].name, gallery[i].name, err);
-				fails++;
-				continue;
-			}
-			snprintf(path, sizeof path, "%s/%s/%s.png", dir, sim_geoms[g].name, gallery[i].name);
-			if (!sim_save_png(path, 1)) {
-				printf("FAIL can't write %s\n", path);
-				fails++;
-			}
+	}
+	sim_sheet_begin((int)n, 2);
+	for (size_t i = 0; i < n; i++) {
+		sim_reset(g, SIM_MAP_K);
+		if (!sim_run(gallery[i].script, err, sizeof err)) {
+			printf("FAIL gallery %s %s: %s\n", g->name, gallery[i].name, err);
+			fails++;
+			continue;
+		}
+		snprintf(path, sizeof path, "%s/%s/%s.png", dir, g->name, gallery[i].name);
+		if (shots && !sim_save_png(path, 1)) {
+			printf("FAIL can't write %s\n", path);
+			fails++;
+		}
+		if (!sim_sheet_add(gallery[i].name)) {
+			printf("FAIL sheet %s %s\n", g->name, gallery[i].name);
+			fails++;
 		}
 	}
-	printf("# gallery: %zu screens x %d display classes in %s\n", sizeof gallery / sizeof gallery[0],
-	       sim_geom_count, dir);
+	snprintf(path, sizeof path, "%s/%s.png", sheet_dir, g->name);
+	if (!sim_sheet_save(path)) {
+		printf("FAIL can't write %s\n", path);
+		fails++;
+	}
+	return fails;
+}
+
+static int run_gallery(const char *dir)
+{
+	char sheets[512];
+	int fails = 0;
+	mkdir(dir, 0755);
+	snprintf(sheets, sizeof sheets, "%s/sheets", dir);
+	mkdir(sheets, 0755);
+	for (int g = 0; g < sim_geom_count; g++)
+		fails += render_geom(&sim_geoms[g], dir, true, sheets);
+	printf("# gallery: %zu screens x %d display classes in %s, contact sheets in %s\n",
+	       sizeof gallery / sizeof gallery[0], sim_geom_count, dir, sheets);
+	return fails != 0;
+}
+
+// Contact sheets only, at one display class (any geometry --geom takes) or every class
+static int run_sheets(const char *dir, const char *geom)
+{
+	int fails = 0;
+	mkdir(dir, 0755);
+	if (geom != NULL) {
+		const sim_geom_t *g = sim_geom_find(geom);
+		if (g == NULL) {
+			fprintf(stderr, "unknown geometry %s\n", geom);
+			return 2;
+		}
+		fails += render_geom(g, dir, false, dir);
+	} else {
+		for (int g = 0; g < sim_geom_count; g++)
+			fails += render_geom(&sim_geoms[g], dir, false, dir);
+	}
+	printf("# contact sheets in %s\n", dir);
 	return fails != 0;
 }
 
@@ -368,6 +415,8 @@ int main(int argc, char **argv)
 		const char *v = i + 1 < argc ? argv[i + 1] : NULL;
 		if (strcmp(a, "--gallery") == 0 && v != NULL)
 			return run_gallery(v);
+		if (strcmp(a, "--sheets") == 0 && v != NULL)
+			return run_sheets(v, i + 2 < argc ? argv[i + 2] : NULL);
 		if (strcmp(a, "--ellipsis") == 0)
 			return run_audit(v);
 		if (strcmp(a, "--layout") == 0)
@@ -399,7 +448,7 @@ int main(int argc, char **argv)
 			i++;
 		} else {
 			fprintf(stderr, "usage: uiSim [--geom G] [--map K|M|V|F] [--script S] [--out F.png] [--scale N] | "
-				"--gallery DIR\n");
+				"--gallery DIR | --sheets DIR [GEOM]\n");
 			return 2;
 		}
 	}

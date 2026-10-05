@@ -34,6 +34,11 @@ int sim_presses(void);
 void sim_count_reset(void);
 // Save the frame buffer as a PNG (scale 1..4)
 bool sim_save_png(const char *path, int scale);
+// Contact sheet: begin with the number of screens, add the frame buffer under a label after each, save as one
+// palette PNG (all cells must be the same display class)
+void sim_sheet_begin(int count, int scale);
+bool sim_sheet_add(const char *label);
+bool sim_sheet_save(const char *path);
 // The out directory for "shot:" in scripts (NULL: shots are skipped)
 void sim_set_shot_dir(const char *dir, const char *prefix);
 

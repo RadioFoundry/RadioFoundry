@@ -273,8 +273,9 @@ gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 # The UI host simulator (tests/host/sim/ui_sim.c): the whole of core/ui against a simulated radio, codeplug and
 # board at any display geometry and key map. uiFlowTest runs the task flows of docs/ux/task-flows.md against their
 # press budgets, crawls every screen (BACK leaves it, long BACK reaches Home, the status strip is drawn) and checks
-# the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/). Built without the
-# __attribute__ override above so the weak service stubs (ui_svc_stub.c) give way to the simulator's.
+# the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
+# docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
+# (ui_svc_stub.c) give way to the simulator's.
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/radio/tones.c \
            sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -295,12 +296,16 @@ ui-gallery: uiSim
 	rm -rf $(ROOT)/docs/ux/screens/*/
 	./uiSim --gallery $(ROOT)/docs/ux/screens
 
+# Contact sheets only (every screen of a display class on one page, to audit layouts), outside docs/: GEOM=128x64
+ui-sheets: uiSim
+	./uiSim --sheets out/sheets $(GEOM)
+
 run: run-ui
 run-ui: gfxTest uiFlowTest uiSim
 	./gfxTest
 	./uiFlowTest
 	./uiSim --layout
-.PHONY: run-ui ui-gallery
+.PHONY: run-ui ui-gallery ui-sheets
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC
 # and the DMR voice glue between the call stack, the FEC, the vocoder and the audio driver (fakes)

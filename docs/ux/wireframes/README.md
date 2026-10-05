@@ -18,7 +18,7 @@ Conventions:
 
 Region order is identical on every class (status strip, place, talk target, activity, hint row), so a user who moves between radios finds things in the same place.
 
-The drawings are the design intent. What the firmware draws is in `../screens/<geometry>/` (`make -C tests/host ui-gallery`), one folder per display: `160x120i5` the DM-1701 (160x120, the lens hides 5 px left and right; top and bottom are used to the edge), `160x128` the MD-380 class, `120x160` the DM-32 (its 240x320 panel at half resolution), `128x64` mono, `240x320` full resolution. Words on the screens follow the firmware, not these sketches (for example "TG 91" with a space, ages as "2m ago", hints as `Back` alone where Back just goes back).
+The drawings are the design intent. What the firmware draws is in `../screens/<geometry>/` (`make -C tests/host ui-gallery`), one folder per display: `160x120i5` the DM-1701 (160x120, the lens hides 5 px left and right; top and bottom are used to the edge), `160x128` the MD-380 class, `120x160` the DM-32 (its 240x320 panel at half resolution), `128x64` mono, `240x320` full resolution. `../screens/sheets/<geometry>.png` shows every screen of a display on one page. Words on the screens follow the firmware, not these sketches (for example "TG 91" with a space, ages as "2m ago", hints as `Back` alone where Back just goes back).
 
 ## The layout check
 
