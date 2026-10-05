@@ -86,7 +86,7 @@ below are for the DM-1701.
 | `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
 | `CONFIG_FONT_XL` | n | 16x32 font, for 240 px and wider displays (the DM-32 draws at 120x160, so it stays off there) |
-| `CONFIG_AUDIO_PROBE` | n | diagnostics: debug link command 0x10 reads / writes the audio chip's registers and measures the PCM stream, for the USB audio bench tests (`docs/spec/usb-audio.md` 2.3, `docs/spec/debuglink.md` 3.14); needs DEBUGLINK and DMR; about 2 KB RAM on the DM-1701. Never for a release |
+| `CONFIG_AUDIO_PROBE` | n | diagnostics: debug link command 0x10 reads / writes the audio chip's registers and measures the PCM stream, for the USB audio bench tests (`docs/spec/usb-audio.md` 2.3, `docs/spec/debuglink.md` 3.14); needs DEBUGLINK and DMR; about 2 KB RAM and 2.2 KB flash on the DM-1701. Never for a release; CI builds it in the DM-1701's `audio-probe` configuration, not in maximal |
 | `CONFIG_UI_SETTINGS` | y | the Settings menu on the radio; off: settings keep their stored values and are set with qdmr (`docs/spec/ui.md` 5) |
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is.
@@ -110,6 +110,8 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
 | `TCP_CONNS` | dm32 | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the DM-32UV, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
+| `BOARD_UNSUPPORTED` | MD-380, DM-32: see their sections | set in a board's `config.mk`: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
+| `MAXIMAL_SKIP` | DM-1701, MD-380: `NET_PPP` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
 
 ### The MD-380's image
 
@@ -120,7 +122,7 @@ after it). Everything else is on, all the IP services included, which fits only 
 (`LTO=1 LTO_3P=1`, the MD-380's default) and one feature off for flash: `CONFIG_HOTSPOT` (the MMDVM hotspot, 12 KB; it
 needs a host running MMDVMHost, the MD-380's DMR is untested on air, and the same USB link carries IP over DMR and the
 radio's services instead). `CONFIG_DMR_ROAMING` (also 12 KB) is the alternative, should the hotspot matter more there.
-The maximal configuration also leaves out `CONFIG_FONT_XL` (a 160 px panel has no use for it).
+The maximal configuration also leaves out `CONFIG_FONT_XL` (a 160 px panel has no use for it) and `CONFIG_NET_PPP`.
 
 Sizes of the default image (UHF; VHF within 30 bytes), 2026-10-11 at 3ec14e3:
 
@@ -129,7 +131,7 @@ Sizes of the default image (UHF; VHF within 30 bytes), 2026-10-11 at 3ec14e3:
 | `LTO=0` | | overflows by 16,504 |
 | `LTO=1 LTO_3P=0` | | overflows by 972 |
 | `LTO=1 LTO_3P=1` (default) | 279,668 | 2,000 |
-| maximal (default + `AM_RX BCAST_FM AUDIO_PROBE`) | 280,048 | 1,620 |
+| maximal (default + `AM_RX BCAST_FM`), 2026-10-12 | 280,760 | 908 |
 
 ### The DM-32UV's image
 
@@ -139,7 +141,7 @@ hotspot's rings, the DMR data buffers) goes to RAM_LO, the network's buffers sta
 (`docs/spec/hardware-dm32.md` 17.1). With that, everything is on: PPP on the programming cable and with it the IP
 gateway and every service, `TCP_CONNS=3`. Off: `CONFIG_USB` and `CONFIG_USB_NETWORK` (no USB on the radio, so the
 maximal configuration leaves them out too: `BOARD_UNSUPPORTED`), `CONFIG_FONT_XL` (the core draws at 120x160) and
-`CONFIG_AUDIO_PROBE` (a bench diagnostic); the maximal configuration builds both of those.
+`CONFIG_AUDIO_PROBE` (a bench diagnostic); the maximal configuration builds `CONFIG_FONT_XL`.
 
 Sizes with csky-elf GCC 14 (RAM free is main RAM; the RTOS heap, 40 KB with every task stack in it, is inside the
 used part):
@@ -147,7 +149,7 @@ used part):
 | Build | Image bytes | RAM used | RAM free | RAM_LO used |
 |---|---:|---:|---:|---:|
 | default | 365,236 | 154,428 | 11,184 | 24,392 |
-| maximal (default + `FONT_XL AUDIO_PROBE`) | 372,856 | 155,740 | 9,872 | 24,392 |
+| default + `FONT_XL AUDIO_PROBE` | 372,856 | 155,740 | 9,872 | 24,392 |
 | default, `TCP_CONNS=4` | 365,236 | 155,956 | 9,656 | 24,392 |
 | default, `TCP_CONNS=2` | 365,276 | 152,892 | 12,720 | 24,392 |
 

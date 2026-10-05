@@ -15,3 +15,6 @@ CONFIG_APRS_RX ?= n
 # Link time optimization stays off in the image until it has been tested on the radio (LTO=1 to try it: about 17 KB
 # smaller); tools/ci.sh's maximal configuration (every switch on) only fits with it
 MAXIMAL_VARS := LTO=1
+# Supported but not needed here, so tools/ci.sh's maximal configuration leaves it off: PPP stands in for the USB
+# network adapter on UART-only radios (docs/spec/ppp.md), and this one has the adapter
+MAXIMAL_SKIP := NET_PPP
