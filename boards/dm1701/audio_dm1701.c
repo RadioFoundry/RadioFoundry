@@ -336,6 +336,7 @@ static bool probe_last_block(int16_t *left, int16_t *right, uint32_t *count)
 const hal_audio_tap_t dm1701_audio_tap = {
 	.caps = AUDIO_TAP_DMR,
 	.modem_reg = dm1701_modem_reg,
+	.modem_ram = dm1701_modem_ram,
 	.last_block = probe_last_block,
 };
 #endif

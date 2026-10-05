@@ -408,10 +408,19 @@ both I2S channels (`core/debuglink/debuglink_audio_probe.c`, `hal/hal_audio_tap.
 | 3 START | tone Hz u16 (0-3800), amplitude u16 (0 = silence), flags u8 (bit 0: route the PCM to the speaker) | none. `DL_ST_BUSY` while DMR voice owns the stream; `DL_ST_UNAVAILABLE` when the stream can't start (no I2S clock) |
 | 4 STOP | none | none |
 | 5 SAMPLES | none | blocks u32, the last block's 160 left then 160 right samples, i16 little endian |
+| 6 RAM_READ | page u8, address u16 (11 bit), length u16 (1 to reply_max - 1) | the bytes (`board.audio_tap->modem_ram`; HR_C6000 page 2 reads the RX RAM) |
+| 7 RAM_WRITE | page u8, address u16, 1 to 60 bytes | none (page 2 writes the TX RAM) |
+| 8 WATCH | time ms u16 (1-2000), flag page u8, flag register u8, clear register u8, mask u8, RAM page u8, RAM address u16 (0xFFFF = none) | elapsed ms u32, polls u16, for flag bits 0-7: count u16 and first ms u16, RAM word changes u16 |
+
+WATCH polls the flag register about once a millisecond, counts each flag in the mask that it finds set and clears it
+by writing it to the clear register, and counts the changes of the two-byte RAM word at the address. It blocks the
+debug link for the whole time. On the DM-1701 in FM mode no handler serves the HR_C6000's interrupt lines, so it sees
+every flag (`modem-hrc6000.md` 8.1).
 
 The probe borrows the stream: a beep or a DMR channel in the meantime may take it back (STATUS bit 0 then reads 0).
-Register writes change the chip under its driver; the radio's next mode change rewrites what it owns. `odr_debug.py
-aprobe status | reg | wreg | start | stop | samples` drives it; `tests/hil/test_audio_probe.py` runs the experiments.
+Register and RAM writes change the chip under its driver; the radio's next mode change rewrites what it owns.
+`odr_debug.py aprobe status | reg | wreg | start | stop | samples | ram | wram | watch` drives it;
+`tests/hil/test_audio_probe.py` runs the experiments.
 
 ### 3.15 SPLIT
 

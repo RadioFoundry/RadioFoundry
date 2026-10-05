@@ -918,4 +918,19 @@ bool dm1701_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write)
 {
 	return write ? hrc6000_write(&r.modem, page, reg, *val) : hrc6000_read(&r.modem, page, reg, val);
 }
+
+// RAM access (hal_audio_tap_t.modem_ram), in 64-byte transactions so interrupts are masked for well under a
+// millisecond at a time
+bool dm1701_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write)
+{
+	bool ok = true;
+	while (ok && len > 0) {
+		uint16_t n = len > 64u ? 64u : len;
+		ok = hrc6000_ram(&r.modem, page, addr, buf, n, write);
+		addr = (uint16_t)(addr + n);
+		buf += n;
+		len = (uint16_t)(len - n);
+	}
+	return ok;
+}
 #endif

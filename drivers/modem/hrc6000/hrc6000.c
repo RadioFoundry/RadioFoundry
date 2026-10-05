@@ -172,6 +172,13 @@ bool hrc6000_write_ext(hrc6000_t *dev, uint8_t page, uint16_t addr, uint8_t val)
 	return dev->bus->transfer(dev->bus->ctx, hdr, 3, &val, NULL, 1);
 }
 
+bool hrc6000_ram(hrc6000_t *dev, uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write)
+{
+	uint8_t hdr[3] = { (uint8_t)((write ? 0u : CMD_READ) | CMD_EXT | hrc6000_page(dev, page)),
+			   (uint8_t)(addr & 0xFFu), (uint8_t)((addr >> 8) & 7u) };
+	return dev->bus->transfer(dev->bus->ctx, hdr, 3, write ? buf : NULL, write ? NULL : buf, len);
+}
+
 static bool write_rows(hrc6000_t *dev, const hrc_row_t *rows, uint32_t n)
 {
 	bool ok = true;

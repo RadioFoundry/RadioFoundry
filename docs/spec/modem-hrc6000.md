@@ -506,6 +506,21 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
   0x126/7 1477 (0x0BD1), 0x128/9 1633 (0x0D10). A single arbitrary
   tone: put its value in both the 697 and 1209 entries and send DTMF "1"; restore the entries after.
 
+### 8.1 FM audio paths in the manual (unverified)
+
+What the manual documents about where FM audio can come from and go to, beyond the codec. None of it is used or
+tested yet; `tests/hil/test_audio_probe.py` tries it ([usb-audio.md](usb-audio.md) 2.3).
+
+| Item | Manual | Meaning |
+|---|---|---|
+| FM data RAM | TX RAM table (5.2): "FM data address 1 / 2", 0x030-0x22F and 0x230-0x42F, 512 bytes each, "can be written externally for FM send; voice data can also come internally from the codec". The RX RAM table has the same two buffers | a ping-pong buffer each way over U_SPI (page 2, 11-bit addresses). If the samples are 16-bit at 8 kHz, each half is 256 samples, 32 ms. Format, rate and the bit that picks the RAM over the codec are not stated |
+| 0x82 in FM mode | bit 7 "sending data request", bit 1 "receiving data", bit 2 "FM function detection" | the buffer handshake. FM RX sets 0x81 = 0x19, which masks bits 7 and 1 |
+| 0x06 bit 2 CodeCMode | 0 built-in codec, 1 external codec (appendix A2: chosen for the FM path) | external: the FM chain's audio goes through the external-codec I2S port (pins 17-20: LRCK, BCLK, ADCDAT, DACDAT, chip as master, 8 kHz from 0x30-0x33, BCLK and LRCK enabled by 0x36 bit 7 = 0). That is not the vocoder I2S port (pins 34-37) the MCU uses on the DM-1701; pins 17-20 double as RF enable outputs, and their wiring on our radios is unknown |
+| 0x06 bit 1 OpenMusic | "prompt tone" path (appendix A1) | the MCU writes 16-bit DAC samples over U_SPI (command 0x03, address 0x00, 32 samples per write) into a 64-sample FIFO, polling 0x88 bit 0 every 1 ms. Speaker only |
+| 0xE3 bit 0 | "codec internal DAC and ADC pass-through" (G4EML: "CODEC Internal Passthrough") | loops the DAC into the ADC. With the I2S or prompt-tone path feeding the DAC, this may put MCU audio into the FM transmit chain |
+| 0x36 bit 7 | external codec BCLK / LRCK off | |
+| 0xDB bit 1 | "send FM voice" (vs. MSK signaling) | |
+
 ---
 
 ## 9. Single-frequency repeater (SFR) facts on the HR_C6000

@@ -3,7 +3,9 @@
 // The audio probe (CONFIG_AUDIO_PROBE; docs/spec/debuglink.md 3.14, docs/spec/usb-audio.md 2.3): a bench tool to find
 // out which audio-chip settings put FM receive audio on the PCM stream and PCM into the FM modulator. It reads and
 // writes the audio chip's registers (board.audio_tap->modem_reg), runs the board's PCM stream with its own callback
-// (optionally sending a test tone), and reports the levels of both I2S channels. Diagnostics only: it borrows the
+// (optionally sending a test tone), and reports the levels of both I2S channels. It also reads and writes the chip's
+// RAM (board.audio_tap->modem_ram: the HR_C6000's FM data buffers) and watches its interrupt flags and one RAM word
+// for a while, to find the chip's own FM sample path (usb-audio.md 2.3, candidate C). Diagnostics only: it borrows the
 // stream, so it refuses while DMR voice owns it, and a beep in the meantime may stop it (status says so).
 #include <string.h>
 #include <math.h>
@@ -12,6 +14,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dlog.h"
+#include "hal_time.h"
 #if CONFIG_AUDIO_PROBE
 #include "dmr/ambe/ambeVoice.h"
 #endif
@@ -25,7 +28,14 @@ enum {
 	PROBE_OP_START		= 3,	// tone_hz u16, amplitude u16 (0 = silence out), flags u8 (bit 0: speaker PCM route)
 	PROBE_OP_STOP		= 4,
 	PROBE_OP_SAMPLES	= 5,	// -> blocks u32, 160 left then 160 right samples (i16 little endian)
+	PROBE_OP_RAM_READ	= 6,	// page u8, addr u16, len u16 -> the bytes
+	PROBE_OP_RAM_WRITE	= 7,	// page u8, addr u16, the bytes
+	PROBE_OP_WATCH		= 8,	// ms u16, flag page u8, flag reg u8, clear reg u8, mask u8, RAM page u8, RAM addr u16
+					// -> elapsed ms u32, polls u16, 8 x (count u16, first ms u16), RAM changes u16
 };
+
+#define PROBE_WATCH_MAX_MS	2000u
+#define PROBE_NO_RAM		0xFFFFu
 
 #define PROBE_FLAG_SPEAKER	0x01u
 
@@ -57,6 +67,71 @@ static void put32(uint8_t *p, uint32_t v)
 static uint16_t get16(const uint8_t *p)
 {
 	return (uint16_t)(p[0] | (p[1] << 8));
+}
+
+static uint16_t sat16(uint32_t v)
+{
+	return (uint16_t)(v > 0xFFFFu ? 0xFFFFu : v);
+}
+
+// Polls an interrupt flag register about once a millisecond for ms: counts each flag in mask that it finds set and
+// clears it (writing the flags to the clear register), and counts the changes of a two-byte RAM word. With the chip's
+// interrupt lines unused in FM (the DMR engine's handlers are off), this gives the rate of the FM data interrupts and
+// shows whether the chip refills its RAM buffers. Blocks the debug link task meanwhile
+static size_t probe_watch(const uint8_t *req, uint8_t *out, size_t cap)
+{
+	const hal_audio_tap_t *tap = board.audio_tap;
+	uint16_t ms = get16(req);
+	uint8_t fpage = req[2], freg = req[3], creg = req[4], mask = req[5], rpage = req[6];
+	uint16_t raddr = get16(req + 7);
+	if (ms == 0 || ms > PROBE_WATCH_MAX_MS || cap < 41 || (raddr != PROBE_NO_RAM && tap->modem_ram == NULL)) {
+		out[0] = ms == 0 || ms > PROBE_WATCH_MAX_MS ? DL_ST_BAD_ARG : DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	uint32_t count[8] = { 0 }, first[8] = { 0 }, polls = 0, changes = 0;
+	uint8_t word[2] = { 0, 0 }, prev[2] = { 0, 0 };
+	bool have_prev = false, ok = true;
+	uint32_t t0 = hal_millis(), t = 0;
+	do {
+		uint8_t f = 0;
+		ok = tap->modem_reg(fpage, freg, &f, false);
+		f &= mask;
+		if (ok && f != 0) {
+			ok = tap->modem_reg(fpage, creg, &f, true);
+			for (int b = 0; b < 8; b++) {
+				if ((f >> b) & 1u) {
+					if (count[b]++ == 0) {
+						first[b] = t;
+					}
+				}
+			}
+		}
+		if (ok && raddr != PROBE_NO_RAM) {
+			ok = tap->modem_ram(rpage, raddr, word, 2, false);
+			if (have_prev && (word[0] != prev[0] || word[1] != prev[1])) {
+				changes++;
+			}
+			prev[0] = word[0];
+			prev[1] = word[1];
+			have_prev = true;
+		}
+		polls++;
+		hal_delay_ms(1);
+		t = hal_millis() - t0;
+	} while (ok && t < ms);
+	if (!ok) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	out[0] = DL_ST_OK;
+	put32(out + 1, t);
+	put16(out + 5, sat16(polls));
+	for (int b = 0; b < 8; b++) {
+		put16(out + 7 + 4 * b, sat16(count[b]));
+		put16(out + 9 + 4 * b, sat16(first[b]));
+	}
+	put16(out + 39, sat16(changes));
+	return 41;
 }
 
 static void measure(const int16_t *x, chan_level_t *c)
@@ -214,6 +289,33 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 		}
 		return 5 + 4 * AUDIO_BLOCK_SAMPLES;
 	}
+	case PROBE_OP_RAM_READ: {
+		uint16_t n = len == 6 ? get16(req + 4) : 0;
+		if (tap->modem_ram == NULL || n == 0 || n > cap - 1u || len != 6) {
+			out[0] = tap->modem_ram == NULL ? DL_ST_UNAVAILABLE : DL_ST_BAD_ARG;
+			return 1;
+		}
+		bool ok = tap->modem_ram(req[1], get16(req + 2), out + 1, n, false);
+		out[0] = ok ? DL_ST_OK : DL_ST_UNAVAILABLE;
+		return ok ? 1u + n : 1u;
+	}
+	case PROBE_OP_RAM_WRITE: {
+		if (tap->modem_ram == NULL || len < 5) {
+			out[0] = tap->modem_ram == NULL ? DL_ST_UNAVAILABLE : DL_ST_BAD_ARG;
+			return 1;
+		}
+		uint8_t buf[DL_REQ_MAX];
+		uint16_t n = (uint16_t)(len - 4u);
+		memcpy(buf, req + 4, n);
+		out[0] = tap->modem_ram(req[1], get16(req + 2), buf, n, true) ? DL_ST_OK : DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	case PROBE_OP_WATCH:
+		if (len != 10 || tap->modem_reg == NULL) {
+			out[0] = tap->modem_reg == NULL ? DL_ST_UNAVAILABLE : DL_ST_BAD_ARG;
+			return 1;
+		}
+		return probe_watch(req + 1, out, cap);
 	default:
 		out[0] = DL_ST_BAD_ARG;
 		return 1;

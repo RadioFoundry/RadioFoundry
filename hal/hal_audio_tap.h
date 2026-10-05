@@ -54,6 +54,9 @@ typedef struct {
 	// Read (write false) or write (write true) one register of the chip that owns the audio path (DM-1701: the
 	// HR_C6000, page and register as in docs/spec/modem-hrc6000.md). Returns false when the bus failed
 	bool (*modem_reg)(uint8_t page, uint8_t reg, uint8_t *val, bool write);
+	// Read or write len bytes of the same chip's RAM from an 11-bit address (the HR_C6000's 1.2K TX / RX RAMs on
+	// page 2, which hold its FM data buffers). NULL when the chip has none. Returns false when the bus failed
+	bool (*modem_ram)(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write);
 	// The last 20 ms block as received from the codec, both I2S channels (AUDIO_BLOCK_SAMPLES each), and the stream's
 	// block counter; false when the stream isn't running
 	bool (*last_block)(int16_t *left, int16_t *right, uint32_t *blocks);

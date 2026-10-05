@@ -99,7 +99,14 @@ What the HR_C6000 manual says, in short:
   can also come internally from the codec") and two in the RX RAM (manual 5.3 tables), and FM-mode interrupts in 0x82:
   bit 7 "FM: sending data request", bit 1 "FM: receiving data". Register 0xDB bit 1 selects "send FM voice" over MSK
   signaling. This looks like the MCU can exchange FM audio samples with the chip through its RAM pages, but the
-  format, rate and control are not documented.
+  format, rate and control are not documented. Our FM RX set-up writes 0x81 = 0x19, which masks both FM data flags.
+- The FM chain can use an external codec instead of the built-in one (0x06 bit 2, appendix A2), over a second I2S
+  port on pins 17-20 with the chip as master. The MCU sits on the other one, the vocoder port (pins 34-37), so this
+  only helps if pins 17-20 reach the MCU, which nothing we have shows. The block diagram's "I2S" next to the FM
+  transmit chain is this port.
+- A "prompt tone" path (0x06 bit 1, appendix A1) lets the MCU write DAC samples over U_SPI without I2S: speaker only,
+  but with 0xE3 bit 0 it is another way into the ADC and so the FM transmit chain if the I2S clock stops in FM.
+  [modem-hrc6000.md](modem-hrc6000.md) 8.1 has the details of all of these.
 
 Candidates, in order of preference:
 
@@ -107,7 +114,7 @@ Candidates, in order of preference:
 |---|---|---|---|
 | A | 0xE0 bit 5: LINEIN2 into the codec ADC, if the AT1846S audio (or the speaker line) is wired to it; I2S then carries it as it carries the microphone in DMR | (none) | nothing: same I2S stream |
 | B | 0xE3 bit 0 with FM feed-through on: the DAC's signal (FM receive audio) looped into the ADC and out on I2S | 0xE3 bit 0 with feed-through off: I2S PCM to the DAC, looped into the ADC, which feeds the FM transmit chain | nothing: same I2S stream |
-| C | FM data RAM read on the "receiving data" interrupt | FM data RAM written on the "sending data request" interrupt | 16 KB/s each way over the bit-banged config port (about 1-2 Mbit/s with interrupts masked per transfer): a few percent of the bus and CPU, but it competes with the modem ISRs; format to be reverse engineered |
+| C | FM data RAM (page 2, 0x030-0x42F) read on the "receiving data" flag | FM data RAM written on the "sending data request" flag | 16 KB/s each way over the bit-banged config port (about 1-2 Mbit/s, so roughly 8-16 % of the bus per direction, in 64-byte transactions); FM only, when the modem ISRs don't run. Format, rate and the TX source bit to be found on the bench |
 | D | a hardware modification | none | not for users |
 
 If B works it gives both directions with one bit, and keeps the HR_C6000's sub-audio tone generation, limiter,
@@ -128,6 +135,13 @@ report both I2S channels' levels. `tests/hil/test_audio_probe.py` runs the exper
    receive audio. It also tells which I2S channel the chip fills (`audio_dm1701.c` assumes the left one, unverified).
 3. Transmit (opt-in RF, SDR bench): key FM with the microphone muted (0xE0 bit 6 off) while the probe sends a 1 kHz
    tone into I2S; for "no tone", "tone", B and A, the voice band deviation the bench measures.
+4. Candidate C, receive: on NOAA and on a quiet frequency, the rate of the 0x82 FM flags with 0x81 as set and with
+   bits 7 and 1 unmasked, whether the RX RAM buffers change, and their level read as 16-bit (both byte orders) and
+   8-bit samples.
+5. Candidate C, transmit (opt-in RF): both TX RAM buffers hold a 1 kHz tone, a whole number of cycles in 256 samples,
+   so a chip that replays them sends a steady tone without refills. Keyed with the microphone muted, for the likely
+   source settings (FM flags unmasked, 0xDB bit 1, 0x60 = 0x40 or 0xC0, 0x06 bit 0, big endian samples): the FM flag
+   rate and the voice band deviation against a silent-RAM baseline.
 
 ### 2.4 Budgets
 
@@ -440,6 +454,17 @@ over USB, and FM is limited to receive (candidate A) or nothing.
 - So the DM-32 can be a DMR voice endpoint over its UART (phase 5, USRP in SLIP frames), FM likely but unverified,
   with the UART's bandwidth as the limit.
 
+### 8.1 The other STM32 radios
+
+| Radio | FM receive to the MCU | FM transmit from the MCU |
+|---|---|---|
+| MD-380 (HR_C5000) | yes: the GT3136 discriminator on PC3 (ADC1 IN13, also on ADC2 / ADC3), unused so far ([hardware-md380.md](hardware-md380.md) 6.1) | as the DM-1701 (mic into the HR_C5000 codec), but the C5000's FM registers are unconfirmed: needs its own probe run |
+| MD-9600 (HR_C6000) | yes: the IF chip's discriminator on PC3 (ADC2 IN13); FM never passes through the HR_C6000 here ([hardware-md9600.md](hardware-md9600.md) 4.2, 6.1) | as the DM-1701: the probe's result carries over |
+
+The discriminator signal is flat (before de-emphasis and the voice filters): voice needs de-emphasis and a 300 Hz high
+pass in software; 9600 baud packet and AFSK get the flat path they prefer. Sampled by a timer-triggered ADC at 8-48
+kHz on a second ADC, so the existing scan stays as it is.
+
 ## 9. Risks
 
 | Risk | Effect | Mitigation |
@@ -460,7 +485,7 @@ over USB, and FM is limited to receive (candidate A) or nothing.
 | USRP framing, G.711 mu-law, the link state (keyup PTT, keyup watchdog, TX limit with lockout, sequence accounting) | `core/usbaudio/usrp.h`, `usrp.c` | `tests/host/usrpTest.c` |
 | jitter buffer with sample slipping | `core/usbaudio/pcm_slip.h`, `pcm_slip.c` | `tests/host/usrpTest.c` (±200 ppm and 15 ms jitter for 10 minutes) |
 | audio tap interface for USB audio and APRS (sketch; the probe part implemented) | `hal/hal_audio_tap.h`, `board_t.audio_tap` | builds |
-| the probe | `core/debuglink/debuglink_audio_probe.c`, `boards/dm1701/audio_dm1701.c` and `radio_dm1701.c` (`CONFIG_AUDIO_PROBE` parts), `tools/odr_debug.py aprobe` | `tests/hil/test_audio_probe.py` |
+| the probe: registers, PCM levels, HR_C6000 RAM, FM flag watch | `core/debuglink/debuglink_audio_probe.c`, `boards/dm1701/audio_dm1701.c` and `radio_dm1701.c` (`CONFIG_AUDIO_PROBE` parts), `hrc6000_ram()`, `tools/odr_debug.py aprobe` | `tests/hil/test_audio_probe.py` |
 
 `core/usbaudio` is not built into the firmware yet (no switch selects it); phases 2 and 3 will add it.
 
@@ -468,8 +493,8 @@ over USB, and FM is limited to receive (candidate A) or nothing.
 
 ```
 make BOARD=dm1701 CONFIG_AUDIO_PROBE=y BUILD=build/dm1701-probe   # flash build/dm1701-probe/odr_dm1701.bin
-python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs          # stream in FM, the receive variants (NOAA)
-python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs --allow-rf --allow-service-stop -k tx   # transmit variants
+python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs          # stream in FM, the receive variants (NOAA), RX RAM
+python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs --allow-rf --allow-service-stop -k tx   # I2S and RAM TX variants
 ```
 
 By hand (an FM channel or the VFO):
@@ -484,6 +509,9 @@ tools/odr_debug.py aprobe wreg 4 0xE3 0x53 # candidate B (0xE3 is 0x52 at init: 
 tools/odr_debug.py aprobe wreg 4 0xE3 0x52
 tools/odr_debug.py aprobe samples -o /tmp/blk.raw   # one block of both channels, tone estimate printed
 tools/odr_debug.py aprobe stop
+tools/odr_debug.py aprobe wreg 4 0x81 0x9B # unmask the FM data flags (0x19 | 0x82)
+tools/odr_debug.py aprobe watch 1000 0x82 0x030   # FM flag rates, RX RAM word changes
+tools/odr_debug.py aprobe ram 2 0x030 64   # the start of the RX FM buffer
 ```
 
 Expected readings: in FM receive with the defaults, both channels near silence (the microphone is off). A candidate

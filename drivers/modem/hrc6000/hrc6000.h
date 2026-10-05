@@ -94,6 +94,8 @@ bool hrc6000_write_burst(hrc6000_t *dev, uint8_t page, uint8_t reg, const uint8_
 bool hrc6000_read_burst(hrc6000_t *dev, uint8_t page, uint8_t reg, uint8_t *data, uint16_t len);
 // 11-bit address write (page 1 tone table)
 bool hrc6000_write_ext(hrc6000_t *dev, uint8_t page, uint16_t addr, uint8_t val);
+// 11-bit address burst, read or write (the 1.2K RAMs: page 2 writes the TX RAM, reads the RX RAM)
+bool hrc6000_ram(hrc6000_t *dev, uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write);
 
 // --- Chip operations ---
 
