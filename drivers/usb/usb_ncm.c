@@ -72,16 +72,6 @@ bool usbNcmIsUp(void)
 
 // ---- TinyUSB's callbacks (USB task) ----
 
-// The data interface was reset by a SET_INTERFACE (drivers/usb/ncm_device.c): count it
-void tud_network_alt_cb(uint8_t alt, bool xmit_aborted)
-{
-	(void)alt;
-	stats.alt_changes++;
-	if (xmit_aborted) {
-		stats.xmit_aborts++;
-	}
-}
-
 void tud_network_init_cb(void)
 {
 	rx_in = rx_out = 0;

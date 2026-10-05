@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -98,6 +99,25 @@ def _run_for(cmd, seconds, until=None):
         p.kill()
         p.wait()
     return out
+
+
+def _legacy_query(radio_ip, host):
+    """The A record for host, asked of the radio with a legacy unicast mDNS query: the address, None if no answer"""
+    q = struct.pack(">6H", 0x4f44, 0, 1, 0, 0, 0)
+    for label in host.split("."):
+        q += bytes([len(label)]) + label.encode()
+    q += b"\0" + struct.pack(">HH", 1, 1)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.settimeout(2)
+        for _ in range(3):
+            s.sendto(q, (radio_ip, 5353))
+            try:
+                d, _a = s.recvfrom(1500)
+            except socket.timeout:
+                continue
+            if len(d) >= 16 and d[:2] == q[:2] and struct.unpack(">H", d[6:8])[0] > 0:
+                return socket.inet_ntoa(d[-4:])     # the answer's A record data ends the message
+    return None
 
 
 def _browse_dns_sd(service):
@@ -188,6 +208,9 @@ def test_mdns(radio):
         assert target.rstrip(".").lower() == host.lower(), res
         assert f"({own_id})" in name, res
         assert txt.get("id") == str(own_id) and txt.get("board") and txt.get("fw"), res
+        # The host's resolver may answer from what the radio announced and never ask it: one query of our own (a
+        # legacy unicast one, RFC 6762 6.7) checks that the radio answers and counts it
+        assert _legacy_query(radio_ip, host) == radio_ip, f"no legacy unicast answer for {host} from {radio_ip}"
         v2 = udp.view(["net"])
         assert as_int(v2.get("mdns.queries"), 0) > 0 and as_int(v2.get("mdns.conflicts"), 0) == 0, v2
         print(f"mDNS: {host} = {addr}, instance {name!r}, TXT {txt}, {v2.get('mdns.queries')} queries")

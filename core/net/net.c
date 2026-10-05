@@ -206,9 +206,9 @@ void net_view(dl_text_t *t)
 
 		board.netif->stats(&s);
 		dl_text(t, "netif.rx=%u\nnetif.rx_dropped=%u\nnetif.tx=%u\nnetif.tx_busy=%u\nnetif.reconnects=%u\n"
-			"netif.switch_fallbacks=%u\nnetif.tx_stalls=%u\nnetif.alt_changes=%u\nnetif.xmit_aborts=%u\n", (unsigned)s.rx_frames, (unsigned)s.rx_dropped,
+			"netif.switch_fallbacks=%u\nnetif.tx_stalls=%u\n", (unsigned)s.rx_frames, (unsigned)s.rx_dropped,
 			(unsigned)s.tx_frames, (unsigned)s.tx_busy, (unsigned)s.reconnects, (unsigned)s.switch_fallbacks,
-			(unsigned)s.tx_stalls, (unsigned)s.alt_changes, (unsigned)s.xmit_aborts);
+			(unsigned)s.tx_stalls);
 	}
 #if CONFIG_NET_KISS
 	kiss_tcp_view(t);
