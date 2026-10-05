@@ -487,7 +487,13 @@ static void tx_slot(hrc6000_dmr_t *e)
 	}
 	if (txq_count(e) > 0) {
 		dmr_tx_burst_t *b = &e->txq[e->txq_tail];
-		setup_burst(e, b);
+		if (b->kind == DMR_BURST_EMPTY) {
+			set_ctl(e, e->tx_listen ? rx_ctl(e) : CTL_NONE);
+			e->st.tx_empty++;
+			push(e, DMR_EV_TX_SLOT_STARTED, e->phase_ts[e->tx_phase], e->tick);
+		} else {
+			setup_burst(e, b);
+		}
 		__atomic_thread_fence(__ATOMIC_RELEASE);
 		e->txq_tail = (uint8_t)((e->txq_tail + 1u) % TXQ_N);
 		return;

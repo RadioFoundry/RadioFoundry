@@ -597,6 +597,40 @@ static void test_tx_listen(void)
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !eng.tx_listen);	// per transmission
 }
 
+// DMR_BURST_EMPTY: our slot left empty and received (an SFR's gap), counted as taken, no PA
+static void test_tx_empty_slot(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_listen(&eng);
+	static const uint8_t kinds[] = { DMR_BURST_IDLE, DMR_BURST_EMPTY, DMR_BURST_EMPTY, DMR_BURST_IDLE };
+	for (unsigned i = 0; i < sizeof(kinds); i++) {
+		dmr_tx_burst_t b = mk(kinds[i], 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	nev = 0;
+	char seq[16] = { 0 };
+	int n = 0, started = 0;
+	uint32_t t = 8000000;
+	for (int k = 0; k < 30 && hrc6000_dmr_is_transmitting(&eng); k++) {
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		if (n < 15 && (r41 == 0x80 || (r41 == 0x50 && n > 0))) {
+			seq[n++] = r41 == 0x80 ? 'T' : 'r';
+		}
+		drain();
+		started = count_ev(DMR_EV_TX_SLOT_STARTED);
+		t += 30000;
+	}
+	// our slots T r r T, every slot between them received
+	CHECK(strncmp(seq, "TrrrrrT", 7) == 0);
+	CHECK(started == 4);	// the empty ones count as taken
+	CHECK(rf_on_calls == 2);	// the PA only for the two bursts
+	CHECK(eng.st.tx_empty == 2 && eng.st.tx_bursts == 2);
+}
+
 static void test_tx_crc_and_underrun(void)
 {
 	fresh_engine();
@@ -969,6 +1003,7 @@ int main(void)
 	test_out_of_step_resync();
 	test_tx_voice_dmo();
 	test_tx_listen();
+	test_tx_empty_slot();
 	test_tx_crc_and_underrun();
 	test_tx_aligned_rmo();
 	test_tx_rejected_and_stall();

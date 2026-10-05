@@ -347,17 +347,22 @@ static void test_rf_call(void)
 	slot();
 	for (int sf = 0; sf < 2; sf++) {
 		for (uint8_t i = 0; i < 6; i++) {
+			if (sf == 1 && i == 3) {
+				slots(2);	// voice D lost on the inbound slot: a gap in the call
+				continue;
+			}
 			rx_voice(i, (uint8_t)(0x10 * sf + i), LC1, 1);
 			rx_then_wait();
 		}
 	}
 	rx_lc(DMR_BURST_TERMINATOR_LC, LC1, 1, DMR_SYNC_TS1);
 	rx_then_wait();
+	unsigned in_call = sim.air_count;
 	rx_lc(DMR_BURST_TERMINATOR_LC, LC1, 1, DMR_SYNC_TS1);	// the second terminator: not repeated again
 	slots(6);
 
-	// Up as DMR_DATA1 (inbound TS1): header, 12 voice, terminators, never on DATA2
-	CHECK(count_out(MMDVM_DMR_DATA1, o) >= 14);
+	// Up as DMR_DATA1 (inbound TS1): header, 11 voice, terminators, never on DATA2
+	CHECK(count_out(MMDVM_DMR_DATA1, o) >= 13);
 	CHECK(count_out(MMDVM_DMR_DATA2, o) == 0);
 	for (int i = o; i < out_count; i++) {
 		if (out[i].b[2] == MMDVM_DMR_DATA1) {
@@ -376,15 +381,19 @@ static void test_rf_call(void)
 	CHECK(sim.tx_listens == sim.tx_begins);	// the inbound slot heard between our bursts (sfr.md 3 item 1)
 	int h = air_find(DMR_BURST_VOICE_LC_HEADER, DMR_SYNC_TS2, 0);
 	CHECK(h >= 0 && sim.air[h].host_crc && memcmp(sim.air[h].payload, LC1, 9) == 0);
-	CHECK(air_count_kind(DMR_BURST_VOICE, 0) == 12);
+	CHECK(air_count_kind(DMR_BURST_VOICE, 0) == 11);
 	int n = 0;
 	for (unsigned i = 0; i < sim.air_count; i++) {
 		if (sim.air[i].kind == DMR_BURST_VOICE) {
+			n += n == 9;	// the lost D of the second superframe
 			CHECK(sim.air[i].voice_index == n % 6 && sim.air[i].payload[0] == (uint8_t)(0x10 * (n / 6) + n % 6));
 			CHECK(sim.air[i].sync == DMR_SYNC_TS2);
 			n++;
 		}
 	}
+	// The gap and the slots before the repeat started stay empty (received), never an idle burst (gotchas 14.4)
+	CHECK(air_count_kind(DMR_BURST_IDLE, 0) == 0 || air_find(DMR_BURST_IDLE, DMR_SYNC_TS2, 0) >= (int)in_call);
+	CHECK(sim.empty_slots >= 1);
 	CHECK(sim.emb_lc_set && memcmp(sim.emb_lc, LC1, 9) == 0);
 	CHECK(air_count_kind(DMR_BURST_TERMINATOR_LC, 0) == 1);
 	st = status();
@@ -397,7 +406,7 @@ static void test_rf_call(void)
 	CHECK(!sim.tx_active && !hotspot_transmitting());
 	hotspot_sfr_view_t v;
 	hotspot_sfr_get_view(&v);
-	CHECK(v.on && !v.keyed && v.stats.rx_repeated == 14 && v.stats.up_lost == 0);
+	CHECK(v.on && !v.keyed && v.stats.rx_repeated == 13 && v.stats.up_lost == 0 && v.stats.tx_gaps >= 1);
 }
 
 static void test_net_stream(void)

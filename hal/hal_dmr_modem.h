@@ -38,6 +38,9 @@ typedef enum {
 	DMR_BURST_IDLE = 0x9,
 	DMR_BURST_RATE_1_DATA = 0xA,
 	DMR_BURST_USBD = 0xB,		// unified single block data
+	// Not a burst: our slot is left empty, and received with tx_listen (an SFR's gap inside an inbound call: an idle
+	// burst framed there corrupts the inbound burst decoded next to it, gotchas 14.4). Counts as taken (TX_SLOT_STARTED)
+	DMR_BURST_EMPTY = 0x1F,
 } dmr_burst_kind_t;
 
 #define DMR_VOICE_BYTES		27	// three 72-bit AMBE+2 frames

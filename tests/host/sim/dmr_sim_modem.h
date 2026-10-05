@@ -32,7 +32,8 @@ typedef struct {
 	int8_t cc_filter;
 	int8_t locked_ts;
 	unsigned tx_begins;
-	unsigned tx_listens;	// tx_listen calls during a transmission
+	unsigned tx_listens;
+	unsigned empty_slots;	// DMR_BURST_EMPTY taken: our slot left empty	// tx_listen calls during a transmission
 	dmr_timing_t first_timing;	// of the first tx_begin since sim_reset
 	int8_t first_ts;
 	dmr_timing_t last_timing;

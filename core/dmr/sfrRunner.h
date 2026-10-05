@@ -48,6 +48,7 @@ typedef struct {
 	uint32_t rx_late_held;		// a voice A outside a call, waiting for its B
 	uint32_t rx_lc_rebuilt;		// headers / terminators heard while keyed, rebuilt from the call's LC
 	uint32_t tx_bursts, tx_idle, tx_starts, tx_rejected;
+	uint32_t tx_gaps;	// outbound slots left empty in an inbound call's gaps
 	uint32_t tx_beacons;		// idle beacons keyed (sfrRunnerSetBeacon)
 	uint32_t up_bursts, up_lost;
 	uint8_t last_rx;		// sync (bits 7-6, sfrSync_t), data type or 0x0F voice (3-0)

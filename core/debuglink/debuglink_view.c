@@ -174,7 +174,7 @@ static void hotspot_section(dl_text_t *t)
 	dl_text(t, "sfr.tx_bursts=%u\nsfr.tx_idle=%u\nsfr.tx_starts=%u\nsfr.up=%u\nsfr.up_lost=%u\n",
 		(unsigned)f.stats.tx_bursts, (unsigned)f.stats.tx_idle, (unsigned)f.stats.tx_starts,
 		(unsigned)f.stats.up_bursts, (unsigned)f.stats.up_lost);
-	dl_text(t, "sfr.tx_beacons=%u\n", (unsigned)f.stats.tx_beacons);
+	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\n", (unsigned)f.stats.tx_beacons, (unsigned)f.stats.tx_gaps);
 #endif
 #else
 	dl_text(t, "hs.built=0\n");

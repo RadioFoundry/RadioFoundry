@@ -163,7 +163,10 @@ static void queue_burst(sfrRunner_t *r, const sfrBurst_t *b, bool idle, uint32_t
 
 	memset(&t, 0, sizeof(t));
 	t.sync_override = to_family(sfrOutboundSync(&r->eng.cfg));
-	if (idle) {
+	if (idle && r->eng.rfCall) {
+		t.kind = DMR_BURST_EMPTY;	// a gap inside the inbound call: no idle burst, the slot is received (gotchas 14.4)
+		r->stats.tx_gaps++;
+	} else if (idle) {
 		t.kind = DMR_BURST_IDLE;
 		t.host_crc = false;	// the idle message has no CRC (gotchas 14.4)
 		t.len = sizeof(SFR_IDLE_INFO);

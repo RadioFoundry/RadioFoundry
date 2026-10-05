@@ -141,6 +141,7 @@ typedef struct {
 	uint32_t tx_underrun;	// our slot came with an empty queue mid-transmission
 	uint32_t tx_rejected;	// send request rejected (polite access)
 	uint32_t tx_done;	// transmissions finished
+	uint32_t tx_empty;	// slots left empty on request (DMR_BURST_EMPTY)
 	uint32_t rf_fail;	// RF switches the board could not do
 	uint32_t stalls;	// timing stopped while busy (200 ms without a timeslot interrupt)
 	uint32_t rs_why[HRC6000_RS_COUNT];	// receiver restarts by reason

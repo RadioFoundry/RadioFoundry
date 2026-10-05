@@ -115,6 +115,10 @@ static void send_one(void)
 	sim.q_head = (uint8_t)((sim.q_head + 1) % SIM_QUEUE_DEPTH);
 	sim.q_count--;
 	emit(DMR_EV_TX_SLOT_STARTED, 0, sim.slot, NULL);
+	if (b.kind == DMR_BURST_EMPTY) {
+		sim.empty_slots++;	// nothing on air
+		return;
+	}
 	if (b.kind == DMR_BURST_VOICE && b.voice_index == 0 && sim.pending_emb) {
 		memcpy(sim.cur_emb_lc, sim.pending_emb_lc, 9);	// new embedded LC from this superframe
 		sim.pending_emb = false;

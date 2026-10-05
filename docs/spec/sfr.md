@@ -46,13 +46,15 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
     that fails and matches the call's LC in its first five bytes is rebuilt from the call's LC (`sfrLcBurstGuess`);
   - keyed aligned to the inbound call (`DMR_TIMING_ALIGNED`, the outbound TS) when one is being heard, else on its own
     slot clock (`DMR_TIMING_OWN`), always impolite (gotchas 1.8); two bursts kept queued in the modem, one engine
-    decision per outbound slot, idle bursts in the gaps and the hang; `DMR_EV_TX_REJECTED` unkeys.
+    decision per outbound slot; a gap inside an inbound call (a burst missed) is `DMR_BURST_EMPTY`: the slot stays
+    empty and is received, never an idle burst, which corrupts the inbound burst decoded next to it (gotchas 14.4,
+    `sfr.tx_gaps`); idle bursts only in the hang and a network stream's gaps; `DMR_EV_TX_REJECTED` unkeys.
 - **Idle beacon** (optional, off by default): with the radio setting `rpt_beacon` on, the runner keys its outbound
   with idle bursts for `roam_beacon_len_s` every `roam_beacon_s` while it carries nothing, so roaming radios can
   measure the site (`sfrRunnerSetBeacon`, `hotspot_sfr_set_beacon`; `dmr-roaming.md` 7). Traffic has priority. The
   phase is the runner's own (no network time).
 - **Debug link** (section `hotspot`): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored
-  sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons`.
+  sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps`.
 
 ## 3. What the modem driver must do
 
@@ -65,7 +67,7 @@ The runner assumes these of `hal_dmr_modem_t`; they are the open work for each r
    (the repeat goes out 90 ms after the burst, gotchas 14.3). `DMR_TIMING_OWN` with a ts: its own slot clock.
 3. `dmr_tx_burst_t.sync_override`: the outbound sync (MS, BS, or TS1 / TS2 direct mode sync) on every burst.
 4. `DMR_BURST_IDLE` with the payload given (the ETSI idle message) and no CRC of its own (gotchas 14.4); data bursts
-   with `host_crc` sent as they are.
+   with `host_crc` sent as they are; `DMR_BURST_EMPTY`: nothing sent in that slot (received with `tx_listen`).
 5. `DMR_EV_TX_SLOT_STARTED` once per burst taken from its queue, `DMR_EV_TX_DONE` after `tx_end` has drained it.
 6. An SFR channel never switches to repeater (RMO) mode on BS sync (gotchas 14.7).
 
