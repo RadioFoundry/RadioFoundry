@@ -508,8 +508,11 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 
 ### 8.1 FM audio paths in the manual (unverified)
 
-What the manual documents about where FM audio can come from and go to, beyond the codec. None of it is used or
-tested yet; `tests/hil/test_audio_probe.py` tries it ([usb-audio.md](usb-audio.md) 2.3).
+What the manual documents about where FM audio can come from and go to, beyond the codec. None of it is used yet;
+`tests/hil/test_audio_probe.py` tries it, and [usb-audio.md](usb-audio.md) 2.3.1 has the bench results. Measured
+on the DM-1701: the RX FM buffers hold 8 kHz big endian 16-bit receive audio, ungated, after 0x34's de-emphasis
+and filters, one half per 32 ms with 0x82 bit 1 (once 0x81 unmasks it); keyed, 0x82 bit 7 comes every 32 ms, but no
+setting tried makes the TX buffers the modulation source.
 
 | Item | Manual | Meaning |
 |---|---|---|

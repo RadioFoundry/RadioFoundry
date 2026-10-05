@@ -15,8 +15,8 @@ the PTT watchdog and the jitter buffer as tested host code (`core/usbaudio`), a 
 | Question | Answer on the DM-1701 |
 |---|---|
 | DMR voice as PCM, both ways | **Yes, today.** The I2S link to the HR_C6000 already carries 8 kHz 16-bit PCM both ways, and the MCU runs the AMBE codec. Decoded calls can go to the host and host audio can be encoded and sent, at no new CPU cost (2.2) |
-| FM receive audio to the MCU | **Unproven.** The FM receive chain runs inside the HR_C6000 and ends at its codec DAC; nothing in the datasheet routes it to I2S. Three candidate settings and one costly fallback, decided by a bench probe in one session (2.3) |
-| MCU audio into the FM modulator | **Unproven**, same chip, same probe. AFSK for APRS can fall back to the AT1846S tone generator either way (2.3) |
+| FM receive audio to the MCU | **Yes, two ways** (bench, 2026-10-12, 2.3.1). The I2S stream carries it with the stock settings, squelch gated. The HR_C6000's RX RAM carries it ungated, 8 kHz big endian 16-bit, one 256-sample half per 32 ms, with de-emphasis switchable (0x34 bit 5): the voice and flat modes of 5.5, flat from about 300 Hz up |
+| MCU audio into the FM modulator | **Not found yet.** None of A, B or the RAM settings tried puts MCU audio on air, though the chip runs its TX RAM handshake at 8 kHz while keyed. The bit that selects the RAM as the source is the open question; AFSK for APRS can use the AT1846S tone generator meanwhile (2.3.1) |
 | An MCU ADC on the RX audio line, or a free DAC on the mic line | **No.** ADC1 sees only the volume pot, the battery and a mic level tap; DAC1 drives the PA power, the DAC2 pin is a GPIO (2.1) |
 | USB composite with a sound card | **Fits**: CDC-ACM + UAC1 (3 IN, 2 OUT endpoints of the F405's 3 + 3), or CDC-NCM + UAC1; not all three, and not serial + sound card + HID together (3) |
 | Recommended protocols | IP: the USRP voice protocol over UDP (AllStarLink, DVSwitch Analog_Bridge, M17 and DMR bridges speak it) with PTT by its keyup flag; Hamlib's rigctld protocol, now on the radio (`CONFIG_NET_RIGCTL`, [tcp-services.md](tcp-services.md) 6). Serial: Kenwood-style CAT plus RTS/DTR PTT. Sound card: UAC1, PTT by the serial port's RTS/DTR (CM108-style HID as an alternative personality) (4) |
@@ -107,6 +107,24 @@ What the HR_C6000 manual says, in short:
 - A "prompt tone" path (0x06 bit 1, appendix A1) lets the MCU write DAC samples over U_SPI without I2S: speaker only,
   but with 0xE3 bit 0 it is another way into the ADC and so the FM transmit chain if the I2S clock stops in FM.
   [modem-hrc6000.md](modem-hrc6000.md) 8.1 has the details of all of these.
+
+### 2.3.1 Bench results (DM-1701, 2026-10-12)
+
+Probe firmware, `tests/hil/test_audio_probe.py`, NOAA WX3 (162.475 MHz) for receive, 467.375 MHz into the SDR bench
+for transmit.
+
+| Question | Result |
+|---|---|
+| I2S clock in FM | runs: 50 blocks a second |
+| FM RX on I2S | **yes, with the stock settings** (0xE0 = 0x89): RMS about 2000 on NOAA, both channels the same, exactly 0 with the squelch closed (the feed-through, 0x36, gates the digital stream too). LINEIN1, LINEIN2 and 0xE3 bit 0 only lower it |
+| FM RX in the RX RAM | **yes, ungated.** 0x82 bit 1 comes 31.0 times a second once 0x81 unmasks it (0x19 masks it, apart from about 1 a second): one 512-byte half per 32 ms, so 256 samples at 8 kHz. Samples are 16-bit **big endian**. The chip fills a half progressively: read both halves twice and take the one that didn't change (98-100 % of the audio captured at about 47 reads a second over the debug link). NOAA speech: 50 ms envelope CV 0.82; a quiet channel: steady noise, CV 0.06, louder than the signal (noise quieting) |
+| What the RX RAM tap sits after | 0x34's processing: with de-emphasis (bit 5) the noise falls 12 dB from 500 Hz to 2.5 kHz, without it it is flat (-1 dB). Bit 7 adds the 300-3400 Hz band pass, bit 2 the wider RX filter. Below 300 Hz stays about 20 dB down in every setting: a fixed sub-audio high pass |
+| FM TX from I2S (A, B) | **no.** 0xE3 bit 0 changes nothing. LINEIN2 on (0xE0 bit 5) puts a steady 2.49 kHz tone on air at about 1.7 kHz RMS deviation whether the probe sends nothing, 1 kHz or 600 Hz: something on that input, not MCU audio. Don't enable LINEIN2 |
+| FM TX from the TX RAM (C) | **not found.** Keyed, 0x82 bit 7 ("sending data request") comes 31.0 times a second once unmasked: the chip runs the TX handshake at 8 kHz. But a 1 kHz tone in both halves (either byte order) never reaches the air with any of: the flags unmasked, 0xDB bit 1, 0x60 = 0x40 or 0xC0, 0x06 bits 0, 2, 3 or 4, 0xE0 bit 7 off, the codec ADC off (0xE2 bit 4). The chip doesn't clear or rewrite the TX RAM |
+
+What is left for FM transmit: the RAM source bit (a register sweep while keyed, watching the deviation; candidates
+the undocumented bits of 0x25 / 0x26, 0xE1, 0xE5 and page 1), the prompt tone path into the DAC with 0xE3 bit 0,
+and candidate D. Receive is settled.
 
 Candidates, in order of preference:
 
@@ -372,9 +390,10 @@ Where each radio can do it:
   TX goes through the HR_C6000 / C5000 with 0x34's pre-emphasis, compressor and band-pass bits off
   ([modem-hrc6000.md](modem-hrc6000.md) 8, 8.1). Whether the chip's transmit path has a DC-coupled or low-corner
   response (9600 baud needs content down to a few tens of Hz) is a bench measurement.
-- DM-1701: whatever path the probe finds runs at the HR_C6000's 8 kHz, so flat is limited to about 3.5 kHz of
-  bandwidth: enough for 1200 AFSK and 2400-4800 baud schemes, not 9600. Flat RX also needs the chip's de-emphasis and
-  filters off on the receive side (0x34), and only works if the RAM or I2S tap sits before them.
+- DM-1701: receive comes from the HR_C6000's RX RAM (2.3.1) at 8 kHz, so flat is limited to about 300 Hz-3.5 kHz:
+  enough for 1200 AFSK and 2400-4800 baud schemes, not 9600. Measured: the tap follows 0x34, so voice is the radio's
+  0x34 and flat is de-emphasis (bit 5) and the band pass (bit 7) off; a fixed sub-audio high pass stays. The RAM path
+  is ungated, so the squelch gating of 5.4 is done in software from the radio's COS. Flat TX waits for a transmit path.
 
 The setting lives with the other USB audio settings, and the host can change it on the control channel (a CAT
 extension and a debug link / rigctld command), so a modem program can switch to flat for a session. `hal_audio_tap_t`

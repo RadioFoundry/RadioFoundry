@@ -20,9 +20,10 @@ buffers in each of the TX and RX RAMs (page 2, 0x030-0x22F and 0x230-0x42F; the 
 for FM send"), and 0x82 has FM-mode flags bit 7 "sending data request" and bit 1 "receiving data". Neither the sample
 format nor the control bit that picks the RAM over the codec is documented, so these tests try the likely ones:
 
-- test_probe_fm_ram_rx (radio only, NOAA): with the FM flags unmasked, how often each 0x82 flag comes and whether the
-  RX RAM buffers change, then the buffers' level read as 16-bit samples (both byte orders) and as 8-bit, with the
-  NOAA signal and on a quiet frequency.
+- test_probe_fm_ram_rx (radio only, NOAA): how often each 0x82 flag comes with 0x81 as set and with the FM flags
+  unmasked, then 4 s of audio from the RX RAM (8 kHz big endian 16-bit, found on the bench) with the NOAA signal, on
+  a quiet frequency, and there with de-emphasis off. Speech shows as a varying envelope, noise as a steady one (the
+  path is ungated); the noise tilt shows whether 0x34's de-emphasis comes before the tap.
 - test_probe_fm_ram_tx_variants (--allow-rf --allow-service-stop): both TX RAM buffers hold a whole number of cycles
   of a 1 kHz tone (8 samples per cycle at 8 kHz), so a chip that replays them sends a steady tone without the MCU
   refilling them. Keyed with the microphone muted, per candidate control setting: the 0x82 flag rate and the voice
@@ -48,12 +49,16 @@ RX_VARIANTS = [
     ("codec pass-through (0xE3 |= 0x01)", 0xE3, 0x01, 0),
 ]
 
-# FM transmit candidates: applied while keyed (the TX set-up writes 0xE0 = 0xC9), microphone (LINEIN1) muted in all
+# FM transmit candidates: applied while keyed (the TX set-up writes 0xE0 = 0xC9), microphone (LINEIN1) muted in all.
+# (name, [(register, set, clear)], amplitude, tone Hz): the LINEIN2 rows without a tone and at another frequency tell
+# MCU audio from whatever else LINEIN2 might hear
 TX_VARIANTS = [
-    ("mic muted, no tone", [], 0),
-    ("mic muted, tone", [], TONE_AMP),
-    ("mic muted, tone, codec pass-through (0xE3 |= 0x01)", [(0xE3, 0x01, 0)], TONE_AMP),
-    ("mic muted, tone, LINEIN2 on (0xE0 |= 0x20)", [(0xE0, 0x20, 0)], TONE_AMP),
+    ("mic muted, no tone", [], 0, TONE_HZ),
+    ("mic muted, tone", [], TONE_AMP, TONE_HZ),
+    ("mic muted, tone, codec pass-through (0xE3 |= 0x01)", [(0xE3, 0x01, 0)], TONE_AMP, TONE_HZ),
+    ("mic muted, no tone, LINEIN2 on (0xE0 |= 0x20)", [(0xE0, 0x20, 0)], 0, TONE_HZ),
+    ("mic muted, tone, LINEIN2 on (0xE0 |= 0x20)", [(0xE0, 0x20, 0)], TONE_AMP, TONE_HZ),
+    ("mic muted, 600 Hz tone, LINEIN2 on", [(0xE0, 0x20, 0)], TONE_AMP, 600),
 ]
 
 
@@ -74,8 +79,13 @@ RAM_TX_VARIANTS = [
     ("RAM tone, 0x60 = 0x40 (data request)", [(0x81, FM_FLAG_MASK, 0), (0x60, None, 0x40)], "<"),
     ("RAM tone, 0x06 |= 0x01 (MCU vocoder control)", [(0x81, FM_FLAG_MASK, 0), (0x06, 0x01, 0)], "<"),
     ("RAM tone big endian, 0xDB |= 0x02", [(0x81, FM_FLAG_MASK, 0), (0xDB, 0x02, 0)], ">"),
+    ("RAM tone BE, 0x06 |= 0x04 (CodeCMode external)", [(0x81, FM_FLAG_MASK, 0), (0x06, 0x04, 0)], ">"),
+    ("RAM tone BE, 0x06 |= 0x08 (SPIFrom)", [(0x81, FM_FLAG_MASK, 0), (0x06, 0x08, 0)], ">"),
+    ("RAM tone BE, 0x06 |= 0x10 (VocoderFrom)", [(0x81, FM_FLAG_MASK, 0), (0x06, 0x10, 0)], ">"),
+    ("RAM tone BE, 0xE0 &= ~0x80 (chip controls codec)", [(0x81, FM_FLAG_MASK, 0), (0xE0, 0, 0x80)], ">"),
+    ("RAM tone BE, 0xE2 |= 0x10 (codec ADC off)", [(0x81, FM_FLAG_MASK, 0), (0xE2, 0x10, 0)], ">"),
 ]
-RAM_TX_SAVED = {0x81, 0xDB, 0x60, 0x06, 0xE0}
+RAM_TX_SAVED = {0x81, 0xDB, 0x60, 0x06, 0xE0, 0xE2}
 
 
 def tone_bytes(order, amp=TONE_AMP, n=RAM_FM_LEN // 2):
@@ -85,19 +95,48 @@ def tone_bytes(order, amp=TONE_AMP, n=RAM_FM_LEN // 2):
     return struct.pack(f"{order}{n}h", *x)
 
 
-def ram_levels(data):
-    """RMS of the buffer read as 16-bit little / big endian and as signed 8-bit, and its distinct byte count"""
+def ram_capture(link, seconds):
+    """Continuous FM receive audio from the RX RAM buffers: read both halves twice in a row; the half that differs
+    is being filled, the other one is complete. Big endian 16-bit, 8 kHz (measured: one half per 32 ms).
+    Returns (samples, fraction of the time covered)."""
     import struct
-    out = {}
-    for tag, fmt in (("le16", "<"), ("be16", ">")):
-        x = struct.unpack(f"{fmt}{len(data) // 2}h", data)
-        m = sum(x) / len(x)
-        out[tag] = math.sqrt(sum((v - m) ** 2 for v in x) / len(x))
-    x8 = [b - 256 if b > 127 else b for b in data]
-    m = sum(x8) / len(x8)
-    out["s8"] = math.sqrt(sum((v - m) ** 2 for v in x8) / len(x8))
-    out["distinct"] = len(set(data))
-    return out
+    halves, last = [], None
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < seconds:
+        a = link.probe_ram(RAM_PAGE, RAM_FM, RAM_FM_LEN)
+        b = link.probe_ram(RAM_PAGE, RAM_FM, RAM_FM_LEN)
+        moving = [a[:512] != b[:512], a[512:] != b[512:]]
+        if moving[0] == moving[1]:
+            continue
+        done = b[512:] if moving[0] else b[:512]
+        if done != last:
+            halves.append(done)
+            last = done
+    el = time.monotonic() - t0
+    x = [v for h in halves for v in struct.unpack(">256h", h)]
+    return x, len(halves) * 0.032 / el
+
+
+def audio_stats(x):
+    """RMS, the coefficient of variation of the 50 ms envelope (speech about 0.5 and up, steady noise about 0.1) and
+    the power at 2.5 kHz relative to 500 Hz in dB (the noise tilt: negative with de-emphasis)"""
+    env = [math.sqrt(sum(v * v for v in x[i:i + 400]) / 400) for i in range(0, len(x) - 400, 400)]
+    m = sum(env) / max(len(env), 1)
+    cv = math.sqrt(sum((e - m) ** 2 for e in env) / max(len(env), 1)) / max(m, 1)
+    win = [0.5 - 0.5 * math.cos(2 * math.pi * i / 255) for i in range(256)]
+
+    def power(f):
+        acc = 0.0
+        for k in range(0, len(x) - 256, 256):
+            seg = x[k:k + 256]
+            mean = sum(seg) / 256
+            re = sum((seg[i] - mean) * win[i] * math.cos(2 * math.pi * f * i / 8000) for i in range(256))
+            im = sum((seg[i] - mean) * win[i] * math.sin(2 * math.pi * f * i / 8000) for i in range(256))
+            acc += re * re + im * im
+        return acc
+
+    tilt = 10 * math.log10(max(power(2500), 1e-9) / max(power(500), 1e-9))
+    return {"rms": math.sqrt(sum(v * v for v in x) / max(len(x), 1)), "cv": cv, "tilt": tilt}
 
 
 def watch_text(w):
@@ -239,8 +278,12 @@ def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag):
                     probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
                     sdr_bench.capture_wait()
                 L.probe_stop()
-                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz)
+                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
+                                                tones=True)
                 m = re.search(r"voice 300-3000 Hz: peak (\d+) Hz \(99\.5%\), (\d+) Hz \(99\.9%\), rms (\d+) Hz", text)
+                tones = re.findall(r"tone (\d+(?:\.\d)?) Hz [\d.]+-[\d.]+ s \(([\d.]+) s\)", text)
+                tone_note = "tones " + ", ".join(f"{hz} Hz {d} s" for hz, d in tones) if tones else "no steady tone"
+                note = f"{note}; {tone_note}" if note else tone_note
                 rows.append((name, tuple(int(x) for x in m.groups()) if m else None, note))
                 if not m:
                     print(text)
@@ -266,13 +309,13 @@ def test_probe_fm_tx_variants(probe, sdr_bench, pytestconfig):
         pytest.skip("built without the FM VFO")
     L = probe.link
 
-    def run(regs, amp):
+    def run(regs, amp, hz):
         def during():
             for reg, s_, c in regs:
                 apply(L, reg, s_, c)
-        return (lambda: L.probe_start(TONE_HZ, amp)), during
+        return (lambda: L.probe_start(hz, amp)), during
 
-    runs = [(name, *run(regs, amp)) for name, regs, amp in TX_VARIANTS]
+    runs = [(name, *run(regs, amp, hz)) for name, regs, amp, hz in TX_VARIANTS]
     rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "tx")
     print_tx_rows("FM TX from the I2S link", rows)
     assert len(rows) == len(TX_VARIANTS)
@@ -286,38 +329,38 @@ def test_probe_fm_ram_rx(probe, pytestconfig):
     quiet = noaa + 2_000_000
     res = {}
     with probe.vfo_session():
-        saved = regs_saved(L, {0x81})
+        saved = regs_saved(L, {0x81, 0x34})
         try:
-            for tag, hz in (("signal", noaa), ("quiet", quiet)):
+            for tag, hz, regs in (("signal", noaa, {}), ("quiet", quiet, {}),
+                                  ("quiet, de-emphasis off (0x34 &= ~0x20)", quiet, {0x34: saved[0x34] & ~0x20})):
                 L.vfo_set(hz)
                 probe.wait_for(lambda v: v.get("rx_hz") == str(hz), what=f"VFO on {hz}")
-                if tag == "signal":
+                if hz == noaa:
                     probe.wait_for(lambda v: v.get("state") == "rx", timeout=6, what="NOAA squelch open")
                 for r, v in saved.items():
                     L.probe_reg(PAGE, r, v)
                 masked = L.probe_watch(1000, FM_FLAGS, ram_addr=RAM_FM)
                 apply(L, 0x81, FM_FLAG_MASK, 0)
                 unmasked = L.probe_watch(1000, FM_FLAGS, ram_addr=RAM_FM)
-                a = L.probe_ram(RAM_PAGE, RAM_FM, RAM_FM_LEN)
-                time.sleep(0.05)
-                b = L.probe_ram(RAM_PAGE, RAM_FM, RAM_FM_LEN)
-                res[tag] = (masked, unmasked, ram_levels(a), sum(x != y for x, y in zip(a, b)), a)
+                for r, v in regs.items():
+                    L.probe_reg(PAGE, r, v)
+                x, cover = ram_capture(L, 4.0)
+                res[tag] = (masked, unmasked, cover, audio_stats(x))
         finally:
             for r, v in saved.items():
                 L.probe_reg(PAGE, r, v)
-    print("\nFM RX through the RX RAM FM buffers (page 2 0x030-0x42F):")
-    for tag in ("signal", "quiet"):
-        masked, unmasked, lv, diff, a = res[tag]
-        print(f"{tag:<7} 0x81 as set: {watch_text(masked)}")
-        print(f"{'':<7} FM flags unmasked: {watch_text(unmasked)}")
-        print(f"{'':<7} RMS le16 {lv['le16']:7.0f}  be16 {lv['be16']:7.0f}  s8 {lv['s8']:5.1f}  "
-              f"{lv['distinct']} distinct bytes, {diff} bytes changed in 50 ms")
-        print(f"{'':<7} first bytes: {a[:32].hex(' ')}")
-    for fmt in ("le16", "be16", "s8"):
-        s_, q = res["signal"][2][fmt], res["quiet"][2][fmt]
-        if s_ > 4 * max(q, 1) and res["signal"][3] > 0:
-            print(f"  -> the RX RAM carries receive audio read as {fmt} (RMS {s_:.0f} vs {q:.0f})")
-    assert set(res) == {"signal", "quiet"}
+    print("\nFM RX through the RX RAM FM buffers (page 2 0x030-0x42F, big endian 16-bit, 8 kHz):")
+    for tag, (masked, unmasked, cover, st) in res.items():
+        print(f"{tag}: 0x81 as set: {watch_text(masked)}; FM flags unmasked: {watch_text(unmasked)}")
+        print(f"    {cover * 100:.0f} % captured, RMS {st['rms']:.0f}, envelope CV {st['cv']:.2f}, "
+              f"2.5 kHz vs 500 Hz {st['tilt']:+.0f} dB")
+    sig, q = res["signal"][3], res["quiet"][3]
+    if sig["cv"] > 0.3 and q["cv"] < 0.2:
+        print(f"  -> the RX RAM carries receive audio (envelope CV {sig['cv']:.2f} vs noise {q['cv']:.2f}), ungated")
+    off = res["quiet, de-emphasis off (0x34 &= ~0x20)"][3]
+    if off["tilt"] > q["tilt"] + 10:
+        print(f"  -> the RX RAM tap follows 0x34's de-emphasis (noise tilt {q['tilt']:+.0f} -> {off['tilt']:+.0f} dB)")
+    assert res["signal"][2] > 0.9, "RX RAM capture lost halves"
 
 
 @pytest.mark.radio_tx
