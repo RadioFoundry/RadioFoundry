@@ -334,7 +334,8 @@ terminal types, fall back to the generic microphone (0x0201) and speaker (0x0301
 ### 5.3 Rates and the radio side
 
 The stream stays 8 kHz. Toward UAC at 48 or 16 kHz a polyphase FIR interpolates and decimates (3.4 kHz passband,
-fixed point, about 1 KB of code). The jitter buffer sits on the host-to-radio side (`pcm_slip`, target 60 ms); the
+fixed point, about 1 KB of code). The exception is flat FM audio from an MCU ADC (5.5): it goes to the host at the
+ADC's rate, without the voice band filter. The jitter buffer sits on the host-to-radio side (`pcm_slip`, target 60 ms); the
 radio-to-host side needs none (the asynchronous IN endpoint carries the radio's own clock). USRP frames are exactly
 one 160-sample block each way.
 
@@ -354,7 +355,33 @@ RX audio sent to the host is gated by the same bit (silence otherwise), so softw
 prefer to see noise (some packet modems); that needs the FM feed-through on in the chip regardless of the squelch, which
 the probe will show is or isn't independent of the speaker.
 
-### 5.5 DMR as a USB voice endpoint
+### 5.5 FM audio: voice or flat
+
+A setting picks what FM audio the host gets and gives, so the same radio serves voice linking and data modems that
+bring their own waveform (9600 baud G3RUH, VARA FM, M17 or other 4FSK, anything a soft modem generates):
+
+| | Voice (default) | Flat |
+|---|---|---|
+| RX | de-emphasized, voice band (300-3000 Hz), gated by the squelch and tone (5.4) | the discriminator before de-emphasis and the voice filters, DC coupled where the hardware allows; gated by carrier squelch only, or ungated |
+| TX | pre-emphasis, compressor if the channel has it, voice filter, limiter, the channel's sub-audio tone | no pre-emphasis, no compressor, no voice band filter; the limiter stays as deviation protection (it clips, so the host keeps its level below it); sub-audio tone per a separate setting (off by default in flat) |
+| Rate | 8 kHz | the source's rate: 24 or 48 kHz from an MCU ADC on the discriminator; 8 kHz where the audio comes from the HR_C6000 |
+
+Where each radio can do it:
+
+- MD-380, MD-9600: flat RX is the native path (the discriminator on PC3, 8.1). At 48 kHz it carries 9600 baud. Flat
+  TX goes through the HR_C6000 / C5000 with 0x34's pre-emphasis, compressor and band-pass bits off
+  ([modem-hrc6000.md](modem-hrc6000.md) 8, 8.1). Whether the chip's transmit path has a DC-coupled or low-corner
+  response (9600 baud needs content down to a few tens of Hz) is a bench measurement.
+- DM-1701: whatever path the probe finds runs at the HR_C6000's 8 kHz, so flat is limited to about 3.5 kHz of
+  bandwidth: enough for 1200 AFSK and 2400-4800 baud schemes, not 9600. Flat RX also needs the chip's de-emphasis and
+  filters off on the receive side (0x34), and only works if the RAM or I2S tap sits before them.
+
+The setting lives with the other USB audio settings, and the host can change it on the control channel (a CAT
+extension and a debug link / rigctld command), so a modem program can switch to flat for a session. `hal_audio_tap_t`
+carries it: `fm_rx_capture()` and `fm_tx_inject()` take the mode, and `caps` says which modes and rates a board has
+(`AUDIO_TAP_FM_RX_RAW`, `AUDIO_TAP_FM_TX_FLAT`).
+
+### 5.6 DMR as a USB voice endpoint
 
 Receive: every DMR call that the radio would play (talkgroup and contact filters as for the speaker) goes to the host
 as PCM, with COS for the call's duration; the call's metadata (source, destination, talker alias) goes to the host on
@@ -427,7 +454,7 @@ Effort in working days for one developer who knows the code base, including host
 | 1 | audio router (5.1) with the DMR voice and beep consumers moved onto it; the DM-1701 tap for whichever candidate won (A or B: a few register writes; C: a RAM-page driver, add 5-8 days); APRS can build on it | (part of DMR / FM) | 1-2 KB / 0.5 KB | 4-6 (+5-8 for C) |
 | 2 | network audio: USRP on the IP gateway's address, COS and keyup PTT with the watchdogs, the jitter buffer; a USRP reference client (rigctld is already on the radio, [tcp-services.md](tcp-services.md) 6) for tests; HIL test against the SDR bench | `CONFIG_USB_AUDIO_NET` (needs `CONFIG_USB_NETWORK`) | 3 KB / 2.5 KB | 6-8 |
 | 3 | sound card: the composite personalities with UAC1 (descriptors, alternate settings, resampler, adaptive OUT into the jitter buffer), CDC SERIAL_STATE, RTS/DTR PTT with its arming rules, the Kenwood CAT subset and the host link's second side protocol; HIL test with a host audio loopback | `CONFIG_USB_AUDIO` (needs `CONFIG_USB`) | 9-11 KB / 3 KB | 10-14 |
-| 4 | DMR as a voice endpoint over all three transports (5.5), metadata to the host | follows `CONFIG_DMR` | 1 KB | 3-4 |
+| 4 | DMR as a voice endpoint over all three transports (5.6), metadata to the host | follows `CONFIG_DMR` | 1 KB | 3-4 |
 | 5 | options: audio fob personality (UAC1 + CM108-style HID), SLIP-framed USRP on the serial port and the DM-32 UART (rigctld on the radio: done, `CONFIG_NET_RIGCTL`) | `CONFIG_USB_AUDIO_HID`, `CONFIG_USRP_SERIAL` | 2 / 1.5 KB | 3 + 3 |
 
 Total: about 30-45 working days for phases 1-4 (6-9 weeks), plus phase 5 options. Phases 2 and 3 are independent

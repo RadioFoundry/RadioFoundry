@@ -32,19 +32,30 @@ enum {
 	AUDIO_TAP_FM_TX		= 1u << 1,	// the stream's output as the FM modulation source
 	AUDIO_TAP_DMR		= 1u << 2,	// DMR voice as PCM both ways: always there with a vocoder (the stream itself)
 	AUDIO_TAP_FM_RX_RAW	= 1u << 3,	// FM receive audio before de-emphasis and the voice filter (better for AFSK)
+	AUDIO_TAP_FM_TX_FLAT	= 1u << 4,	// the modulator without pre-emphasis, compressor and voice filter
 };
+
+// What the FM taps carry (usb-audio.md 5.5): voice audio, or the flat signal for data modems with their own waveform
+typedef enum {
+	AUDIO_TAP_VOICE = 0,	// RX de-emphasized, voice band; TX with the radio's pre-emphasis, filters and tone
+	AUDIO_TAP_FLAT	= 1,	// RX the discriminator; TX straight to the modulator (limiter kept)
+} audio_tap_mode_t;
 
 typedef struct {
 	uint32_t caps;
 
 	// --- routing (sketch, not implemented by any board yet) ---
 
-	// The stream's input becomes FM receive audio (true) or the microphone again (false). FM receive mode only; the
-	// speaker keeps working as before. False if the board can't
-	bool (*fm_rx_capture)(bool on);
+	// The stream's input becomes FM receive audio in the given mode (true) or the microphone again (false). FM
+	// receive mode only; the speaker keeps working as before. False if the board can't (or not in that mode)
+	bool (*fm_rx_capture)(bool on, audio_tap_mode_t mode);
 	// While transmitting FM: the stream's output becomes the modulation source instead of the microphone (true), or
-	// the microphone again (false). The deviation and the sub-audio tone stay the radio's. False if the board can't
-	bool (*fm_tx_inject)(bool on);
+	// the microphone again (false). The deviation stays the radio's; in AUDIO_TAP_VOICE the sub-audio tone too, in
+	// AUDIO_TAP_FLAT the caller says (tone). False if the board can't (or not in that mode)
+	bool (*fm_tx_inject)(bool on, audio_tap_mode_t mode, bool tone);
+	// Sample rate of AUDIO_TAP_FLAT receive audio when it doesn't come through the 8 kHz stream (an MCU ADC on the
+	// discriminator); 0 = it rides the stream
+	uint32_t fm_rx_flat_rate_hz;
 	// Level of injected TX audio that gives the channel's nominal deviation (60 % of the peak, e.g. 1.5 kHz on a
 	// 12.5 kHz channel), as a 16-bit sample peak; lets the core scale host audio. 0 = unknown
 	int16_t fm_tx_nominal_peak;
