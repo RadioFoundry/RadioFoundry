@@ -33,8 +33,8 @@ run; **none** = no automated test. Last run:
 | Hotspot protocol | `test_hotspot` | radio | |
 | Hotspot voice and data, both ways | `test_hotspot_voice` | on air | `hotspot_cases.py` rf_voice8, rf_data_unconf, net_voice, net_data |
 | Hotspot CW ID | `test_hotspot_cwid` | on air | the Morse tone itself checked since the tone fix |
-| SFR (hotspot SFR mode) | `test_hotspot_sfr` | partial, xfail | mode switching and the first repeat on TS2 pass; the whole call needs RX between our bursts (`docs/spec/sfr.md` 3) |
-| Split duplex repeater (experimental) | `test_split_duplex` | fails | protocol passes; TX half: no same-slot spacing in the (clipped) capture; RX half: epoch residual 13.9 ms (limit 5 ms), 0 of 45 bursts labeled. The framing runs of 2026-10-11 show the continuous outbound working but the CACH empty (`docs/spec/split-duplex.md` 10.1) |
+| SFR (hotspot SFR mode) | `test_hotspot_sfr` | passes (2026-10-12) | mode switching; a 3-superframe bench call goes up whole and is repeated whole on TS2 (17-18 of 18 voice bursts, terminator). Repeat delay 210 ms, not 90 ms (`docs/spec/sfr.md` 3) |
+| Split duplex repeater (experimental) | `test_split_duplex` | partial | protocol passes; RX half passes (2026-10-12: residual 4 µs after centering, the label flips with the epoch); TX half: no same-slot spacing in the (clipped) capture. The framing runs of 2026-10-11 show the continuous outbound working but the CACH empty (`docs/spec/split-duplex.md` 10.1) |
 | USB network adapter | `test_usb_network` | radio | DHCP, ping and the debug link over UDP, back to serial (macOS 26). With `ff6268b` the Mac once never configured the adapter and the radio stayed in network mode; since `5a13814` it falls back to serial after 10 s |
 | Host port protocols over UDP 3334 (split duplex extension, KISS) | `test_usb_network_services` | not run | `--allow-usb-switch` |
 | TCP services (HTTP, KISS over TCP, rigctld, APRS-IS) | `test_tcp_services` | not run | host-tested against a scripted TCP peer (`netSvcTest`, `tcpTest`) |

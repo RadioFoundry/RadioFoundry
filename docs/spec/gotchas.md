@@ -508,6 +508,13 @@ none. On the GD-77 the repeater ends its own burst at the RF RX interrupt once t
 `CF` and `41`; table D.2 gives `FF 83 DF 17 32 09 4E D1 E7 CD 8A 91`. The BPTC round trip passed anyway, so only a
 check against the table catches it (sfrTest).
 
+**14.9 Hearing the inbound slot while keyed (DM-1701).** Three things, each lost most of the call on air: the slot
+between our bursts must be written "receive" (0x41 = 0x50), not 0x00; the AT1846S must go back to RX as it goes to TX,
+through receiver off (reg 0x30 idle), the RX frequency, the band's RX supply, then RX on (one write straight from DMR TX
+to RX on heard 6-36 of a call's bursts, varying run to run; the RX supply goes off while the PA is up); and a gap in
+the inbound call leaves our slot empty, never an idle burst (14.4: one missed burst then cascaded into DMR_LOST).
+HIL 2026-10-12. Commits 23f6794, bb952c3, e91fabc.
+
 ## 15. Testing practice
 
 - An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests

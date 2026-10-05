@@ -13,10 +13,8 @@ test_sfr_repeats_bench_call (rf, radio_tx, bench_service): the radio in SFR mode
 superframe group call with TS1 direct mode sync (the default inbound slot) while the RTL-SDR records. Pass: the call's
 header goes up the USB link as DMR_DATA1; on air a TS2 direct mode sync burst (the outbound slot) carries the bench
 call's LC (source ID and talkgroup); the session's sfr.repeated and sfr.tx_starts (counted from 0 per session) are at
-least 1. The
-whole call (at least 15 voice frames and the terminator up, at least 15 voice bursts repeated on TS2) is expected to
-fail (xfail) until the modem driver receives between its own bursts (docs/spec/sfr.md 3 item 1): today the radio
-hears nothing on the inbound slot once it keys."""
+least 1; the whole call is heard while keyed (docs/spec/sfr.md 3 item 1): at least 15 voice frames and the
+terminator up, at least 15 voice bursts and the terminator repeated on the outbound slot."""
 import struct
 import time
 
@@ -139,10 +137,13 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     assert any(x["src"] == src and x["dst"] == tg for x in ts2_lc), f"no repeat of the bench call's LC on TS2: {ts2_lc}"
     # the sfr.* counters start from 0 with each SFR session and stay readable after it: this session's
     assert int(v1.get("sfr.repeated", 0)) >= 1 and int(v1.get("sfr.tx_starts", 0)) >= 1, v1
-    # The whole call: needs per-burst RX / TX switching in the modem driver (docs/spec/sfr.md 3 item 1); until then
-    # the radio hears nothing on the inbound slot once it keys, so the rest of the call is neither sent up nor repeated
-    ts2_voice = [b for b in ts2 if b.get("voice")]
-    whole = 0x42 in ctl and len(voice) >= 15 and len(ts2_voice) >= 15
-    if not whole:
-        pytest.xfail(f"only the call's start is repeated: {len(voice)} voice frames up, {len(ts2_voice)} voice bursts "
-                     f"repeated on TS2, terminator up {0x42 in ctl} (sfr.md 3 item 1: no RX between our bursts yet)")
+    # The whole call, heard while keyed (sfr.md 3 item 1): sent up and repeated. Voice B-F carry an EMB, not a sync, so
+    # the repeat's voice is counted by the SDR's slot letter of our TS2-synced bursts
+    out_slot = {b.get("slot") for b in ts2}
+    rep_voice = [b for b in bursts if b.get("voice") and b.get("slot") in out_slot]
+    print(f"repeat on slot {sorted(out_slot)}: {len(rep_voice)} voice bursts, "
+          f"{''.join(b['kind'][-1] for b in rep_voice)}")
+    assert 0x42 in ctl, f"the terminator didn't go up: {ctl}"
+    assert len(voice) >= 15, f"only {len(voice)} of 18 voice frames went up"
+    assert len(out_slot) == 1 and len(rep_voice) >= 15, f"only {len(rep_voice)} of 18 voice bursts repeated"
+    assert any(b.get("kind") == "TERM_LC" for b in ts2), "no repeated terminator on TS2"
