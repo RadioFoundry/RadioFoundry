@@ -327,6 +327,8 @@ void hrc6000_dmr_rx_restart(hrc6000_dmr_t *e);
 void hrc6000_dmr_rx_lock_slot(hrc6000_dmr_t *e, int8_t ts);
 // The transmission begun last receives in the slots between its bursts (the SFR's inbound slot); ignored when idle
 void hrc6000_dmr_tx_listen(hrc6000_dmr_t *e);
+// b in place of the oldest queued DMR_BURST_EMPTY; the number of entries queued after it, -1 when there is none
+int8_t hrc6000_dmr_tx_fill(hrc6000_dmr_t *e, const dmr_tx_burst_t *b);
 bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_access_t access);
 bool hrc6000_dmr_tx_queue(hrc6000_dmr_t *e, const dmr_tx_burst_t *b);
 uint8_t hrc6000_dmr_tx_queue_space(const hrc6000_dmr_t *e);

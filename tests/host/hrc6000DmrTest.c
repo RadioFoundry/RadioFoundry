@@ -631,6 +631,37 @@ static void test_tx_empty_slot(void)
 	CHECK(eng.st.tx_empty == 2 && eng.st.tx_bursts == 2);
 }
 
+// tx_fill: a burst takes the oldest placeholder still queued; none left: -1
+static void test_tx_fill(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	dmr_tx_burst_t v = mk(DMR_BURST_VOICE, 2, false);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_listen(&eng);
+	CHECK(hrc6000_dmr_tx_fill(&eng, &v) == -1);	// nothing queued
+	static const uint8_t kinds[] = { DMR_BURST_IDLE, DMR_BURST_EMPTY, DMR_BURST_EMPTY };
+	for (unsigned i = 0; i < sizeof(kinds); i++) {
+		dmr_tx_burst_t b = mk(kinds[i], 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	CHECK(hrc6000_dmr_tx_fill(&eng, &v) == 1);	// the first placeholder, one entry after it
+	CHECK(hrc6000_dmr_tx_fill(&eng, &v) == 0);	// the second, the last entry
+	CHECK(hrc6000_dmr_tx_fill(&eng, &v) == -1);
+	hrc6000_dmr_tx_end(&eng);
+	nev = 0;
+	int voice = 0;
+	uint32_t t = 9000000;
+	for (int k = 0; k < 30 && hrc6000_dmr_is_transmitting(&eng); k++) {
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		voice += r41 == 0x80 && (r50 & 0x0F) == 0x08;
+		drain();
+		t += 30000;
+	}
+	CHECK(voice == 2 && eng.st.tx_bursts == 3 && eng.st.tx_empty == 0);
+}
+
 static void test_tx_crc_and_underrun(void)
 {
 	fresh_engine();
@@ -1004,6 +1035,7 @@ int main(void)
 	test_tx_voice_dmo();
 	test_tx_listen();
 	test_tx_empty_slot();
+	test_tx_fill();
 	test_tx_crc_and_underrun();
 	test_tx_aligned_rmo();
 	test_tx_rejected_and_stall();

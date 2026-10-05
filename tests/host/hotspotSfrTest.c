@@ -345,11 +345,19 @@ static void test_rf_call(void)
 	CHECK(st && (st[5] & MMDVM_STATUS_INBOUND_BUSY));	// an inbound call is being repeated
 	CHECK(st && (st[5] & MMDVM_STATUS_TX));
 	slot();
+	for (int k = 0; k < 3; k++) {	// the rest of the header run: identical copies, not our echo
+		rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1, 1, DMR_SYNC_TS1);
+		rx_then_wait();
+	}
+	uint32_t rx_e_slot = 0;
 	for (int sf = 0; sf < 2; sf++) {
 		for (uint8_t i = 0; i < 6; i++) {
 			if (sf == 1 && i == 3) {
 				slots(2);	// voice D lost on the inbound slot: a gap in the call
 				continue;
+			}
+			if (sf == 1 && i == 4) {
+				rx_e_slot = sim.slot;
 			}
 			rx_voice(i, (uint8_t)(0x10 * sf + i), LC1, 1);
 			rx_then_wait();
@@ -381,6 +389,14 @@ static void test_rf_call(void)
 	CHECK(sim.tx_listens == sim.tx_begins);	// the inbound slot heard between our bursts (sfr.md 3 item 1)
 	int h = air_find(DMR_BURST_VOICE_LC_HEADER, DMR_SYNC_TS2, 0);
 	CHECK(h >= 0 && sim.air[h].host_crc && memcmp(sim.air[h].payload, LC1, 9) == 0);
+	CHECK(air_count_kind(DMR_BURST_VOICE_LC_HEADER, 0) == 4);	// the whole header run
+	// After the gap, E takes a placeholder's slot: on air at our first slot after it, not behind the placeholders
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_VOICE && sim.air[i].payload[0] == 0x14) {
+			CHECK(sim.air[i].slot - rx_e_slot <= 2);
+		}
+	}
+	CHECK(sim.fills >= 1);
 	CHECK(air_count_kind(DMR_BURST_VOICE, 0) == 11);
 	int n = 0;
 	for (unsigned i = 0; i < sim.air_count; i++) {
@@ -406,7 +422,7 @@ static void test_rf_call(void)
 	CHECK(!sim.tx_active && !hotspot_transmitting());
 	hotspot_sfr_view_t v;
 	hotspot_sfr_get_view(&v);
-	CHECK(v.on && !v.keyed && v.stats.rx_repeated == 13 && v.stats.up_lost == 0 && v.stats.tx_gaps >= 1);
+	CHECK(v.on && !v.keyed && v.stats.rx_repeated == 16 && v.stats.up_lost == 0 && v.stats.tx_gaps >= 1);
 }
 
 static void test_net_stream(void)

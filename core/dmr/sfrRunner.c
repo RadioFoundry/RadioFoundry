@@ -51,21 +51,28 @@ static void hash_payload(const uint8_t *p, uint8_t len, uint8_t out[4])
 	out[3] = (uint8_t)(h >> 24);
 }
 
-// A burst queued in the modem (idle: b NULL); its echo window starts when it goes on air (aired())
-static void remember_queued(sfrRunner_t *r, const sfrBurst_t *b)
+#define FIFO_IDLE	0xFF	// fifo[]: an idle burst
+#define FIFO_EMPTY	0xFE	// fifo[]: a placeholder (DMR_BURST_EMPTY) a burst may take (tx_fill)
+
+// A burst going to the modem: its index in sent[], whose echo window starts when it goes on air (aired())
+static uint8_t remember_sent(sfrRunner_t *r, const sfrBurst_t *b)
 {
-	uint8_t idx = 0xFF;
+	sfrRunnerSent_t *s = &r->sent[r->sent_next];
+	uint8_t idx = r->sent_next;
 
-	if (b != NULL) {
-		sfrRunnerSent_t *s = &r->sent[r->sent_next];
+	r->sent_next = (uint8_t)((r->sent_next + 1) % SFR_RUNNER_ECHO_NUM);
+	hash_payload(b->payload, b->length, s->hash);
+	s->kind = b->kind;
+	s->type = b->type;
+	s->ms = 0;
+	return idx;
+}
 
-		idx = r->sent_next;
-		r->sent_next = (uint8_t)((r->sent_next + 1) % SFR_RUNNER_ECHO_NUM);
-		hash_payload(b->payload, b->length, s->hash);
-		s->kind = b->kind;
-		s->type = b->type;
-		s->ms = 0;
-	}
+// A burst queued in the modem (idle or a placeholder: b NULL)
+static void remember_queued(sfrRunner_t *r, const sfrBurst_t *b, bool placeholder)
+{
+	uint8_t idx = (b != NULL) ? remember_sent(r, b) : (placeholder ? FIFO_EMPTY : FIFO_IDLE);
+
 	if (r->fifo_count < sizeof(r->fifo)) {
 		r->fifo[(r->fifo_head + r->fifo_count) % sizeof(r->fifo)] = idx;
 		r->fifo_count++;
@@ -81,7 +88,7 @@ static void aired(sfrRunner_t *r, uint32_t now_ms)
 
 	r->fifo_head = (uint8_t)((r->fifo_head + 1) % sizeof(r->fifo));
 	r->fifo_count--;
-	if (idx != 0xFF) {
+	if (idx < SFR_RUNNER_ECHO_NUM) {
 		r->sent[idx].ms = (now_ms != 0) ? now_ms : 1;
 	}
 }
@@ -157,7 +164,7 @@ void sfrRunnerSetNoDataHold(sfrRunner_t *r, bool on)
 
 // ---- Outbound ----
 
-static void queue_burst(sfrRunner_t *r, const sfrBurst_t *b, bool idle, uint32_t now_ms)
+static void make_tx(sfrRunner_t *r, const sfrBurst_t *b, bool idle, dmr_tx_burst_t *out)
 {
 	dmr_tx_burst_t t;
 
@@ -192,10 +199,55 @@ static void queue_burst(sfrRunner_t *r, const sfrBurst_t *b, bool idle, uint32_t
 		memcpy(t.payload, b->payload, t.len);
 		r->stats.tx_bursts++;
 	}
+	*out = t;
+}
+
+static void queue_burst(sfrRunner_t *r, const sfrBurst_t *b, bool idle, uint32_t now_ms)
+{
+	dmr_tx_burst_t t;
+
 	(void)now_ms;
+	make_tx(r, b, idle, &t);
 	if (r->modem->tx_queue(&t)) {
 		r->in_modem++;
-		remember_queued(r, idle ? NULL : b);
+		remember_queued(r, idle ? NULL : b, t.kind == DMR_BURST_EMPTY);
+	}
+}
+
+static bool has_placeholder(const sfrRunner_t *r)
+{
+	for (uint8_t i = 0; i < r->fifo_count; i++) {
+		if (r->fifo[(r->fifo_head + i) % sizeof(r->fifo)] == FIFO_EMPTY) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// A burst to repeat while placeholders for the call's gap wait in the modem: it takes the oldest one's slot, so it
+// goes out 90 ms after the inbound burst (gotchas 14.3) instead of behind them
+static void fill_gaps(sfrRunner_t *r, uint32_t now_ms)
+{
+	while ((r->modem->tx_fill != NULL) && (r->state == SFR_RUN_KEYED) && (r->eng.count > 0) && has_placeholder(r)) {
+		sfrBurst_t b;
+		dmr_tx_burst_t t;
+
+		if (sfrEngineOutboundSlot(&r->eng, now_ms, &b) != SFR_TX_BURST) {
+			return;
+		}
+		make_tx(r, &b, false, &t);
+		int8_t after = r->modem->tx_fill(&t);
+
+		if ((after < 0) || ((uint8_t)after >= r->fifo_count)) {
+			// The placeholders went on air meanwhile: queued as usual
+			if (r->modem->tx_queue(&t)) {
+				r->in_modem++;
+				remember_queued(r, &b, false);
+			}
+			return;
+		}
+		r->fifo[(r->fifo_head + r->fifo_count - 1u - (uint8_t)after) % sizeof(r->fifo)] = remember_sent(r, &b);
+		r->stats.tx_filled++;
 	}
 }
 
@@ -282,6 +334,7 @@ void sfrRunnerPoll(sfrRunner_t *r, uint32_t now_ms)
 	if (r->state == SFR_RUN_IDLE) {
 		try_key(r, now_ms);
 	}
+	fill_gaps(r, now_ms);
 	while ((r->state == SFR_RUN_KEYED) && (r->in_modem < SFR_RUNNER_IN_MODEM) && (r->modem->tx_queue_space() > 0)) {
 		uint8_t before = r->in_modem;
 
@@ -390,7 +443,11 @@ static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 	if (!to_sfr_burst(r, b, keyed, &s)) {
 		return;
 	}
-	if (is_echo(r, &s, now_ms)) {
+	// A call's header run and its terminators are identical copies: in an open inbound call they are the caller's,
+	// not our echo (HIL 2026-10-12: 2 of the bench's 8 headers repeated; the SFR glue never echo-checked them)
+	bool lc_copy = r->eng.rfCall && (s.kind == SFR_BURST_DATA) &&
+		       ((s.type == DT_VOICE_LC_HEADER) || (s.type == DT_TERMINATOR_WITH_LC));
+	if (!lc_copy && is_echo(r, &s, now_ms)) {
 		r->stats.rx_echo++;
 		return;
 	}
@@ -408,6 +465,7 @@ static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 	switch (res) {
 	case SFR_RX_REPEATED:
 		r->stats.rx_repeated++;
+		fill_gaps(r, now_ms);
 		break;
 	case SFR_RX_IGNORED:
 		r->stats.rx_ignored++;

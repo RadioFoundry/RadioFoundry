@@ -145,6 +145,10 @@ typedef struct {
 	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and
 	// report what is heard there, with the RF switched back to receive per burst (an SFR's inbound slot, sfr.md 3)
 	void (*tx_listen)(void);
+	// Optional: b takes the place of the oldest DMR_BURST_EMPTY still queued (not yet set up). Returns how many queued
+	// entries come after it, -1 when none is left (an SFR's repeat then goes out 90 ms after the inbound burst instead
+	// of behind the placeholders queued for the gap)
+	int8_t (*tx_fill)(const dmr_tx_burst_t *b);
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	// Split duplex (docs/spec/split-duplex.md), all optional (NULL: the driver can't; the role is not offered).
 	// The modem clock: free-running microseconds (wraps), the clock slot_clock is stamped in. RX half and TIME

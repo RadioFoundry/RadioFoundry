@@ -1491,6 +1491,23 @@ void hrc6000_dmr_tx_listen(hrc6000_dmr_t *e)
 	unlock(e);
 }
 
+int8_t hrc6000_dmr_tx_fill(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
+{
+	int8_t after = -1;
+	lock(e);
+	uint8_t n = txq_count(e);
+	for (uint8_t i = 0; i < n; i++) {
+		dmr_tx_burst_t *q = &e->txq[(e->txq_tail + i) % TXQ_N];
+		if (q->kind == DMR_BURST_EMPTY) {
+			*q = *b;
+			after = (int8_t)(n - 1u - i);
+			break;
+		}
+	}
+	unlock(e);
+	return after;
+}
+
 void hrc6000_dmr_tx_end(hrc6000_dmr_t *e)
 {
 	lock(e);

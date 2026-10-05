@@ -39,7 +39,8 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
   - a burst the modem places on the outbound slot (`ts` = the outbound slot) is ignored: our echo or another
     repeater's;
   - own echo: a burst with the kind, position and payload of one we put on air in the last 250 ms is dropped (the
-    HR_C6000 reports what it sent in empty inbound slots);
+    HR_C6000 reports what it sent in empty inbound slots), except a voice header or terminator while an inbound call
+    is open: a header run is identical copies (gotchas 14.10);
   - late entry: outside a voice call a lone voice A is held; a B 60 ms after it starts the call;
   - while keyed (or for a burst the modem reports out of step) the checksums are checked here, not taken from the
     chip: RS(12,9) of headers and terminators, CRC-CCITT of PI, CSBK, MBC and data headers. A header or terminator
@@ -48,7 +49,9 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
     slot clock (`DMR_TIMING_OWN`), always impolite (gotchas 1.8); two bursts kept queued in the modem, one engine
     decision per outbound slot; a gap inside an inbound call (a burst missed) is `DMR_BURST_EMPTY`: the slot stays
     empty and is received, never an idle burst, which corrupts the inbound burst decoded next to it (gotchas 14.4,
-    `sfr.tx_gaps`); idle bursts only in the hang and a network stream's gaps; `DMR_EV_TX_REJECTED` unkeys.
+    `sfr.tx_gaps`); a burst heard while such placeholders wait in the modem takes the oldest one's slot (`tx_fill`),
+    so it still goes out 90 ms later; idle bursts only in the hang and a network stream's gaps; `DMR_EV_TX_REJECTED`
+    unkeys.
 - **Idle beacon** (optional, off by default): with the radio setting `rpt_beacon` on, the runner keys its outbound
   with idle bursts for `roam_beacon_len_s` every `roam_beacon_s` while it carries nothing, so roaming radios can
   measure the site (`sfrRunnerSetBeacon`, `hotspot_sfr_set_beacon`; `dmr-roaming.md` 7). Traffic has priority. The
@@ -83,9 +86,10 @@ only; `hrc6000DmrTest` test_tx_listen checks it. Two more things were needed on 
 switch back to RX goes receiver off, RX frequency, RX supply, RX on (it went from DMR TX straight to RX on), and a gap
 in the inbound call leaves our slot empty (`DMR_BURST_EMPTY`) instead of an idle burst. On air (HIL 2026-10-12,
 06c5bc6): the bench's 3-superframe call goes up whole (18 voice frames and the terminator) and is repeated whole on
-TS2 (17-18 of 18 voice bursts, the terminator, then the hang's idle bursts). Open: the voice repeat comes 210 ms after
-the inbound burst, not 90 ms (two frames of queue built up in the header phase, where only 2 of the bench's 8 headers
-were repeated).
+TS2 (17-18 of 18 voice bursts, the terminator, then the hang's idle bursts). The voice repeat came 210 ms after the
+inbound burst, not 90 ms, and only 2 of the bench's 8 headers were repeated: the echo rule dropped the identical
+headers, and the gap left two placeholders queued ahead of the voice (gotchas 14.10). Both fixed in the runner
+(host tested), to be confirmed on air.
 
 ## 4. Not built yet
 

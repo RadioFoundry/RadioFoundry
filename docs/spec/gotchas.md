@@ -515,6 +515,12 @@ to RX on heard 6-36 of a call's bursts, varying run to run; the RX supply goes o
 the inbound call leaves our slot empty, never an idle burst (14.4: one missed burst then cascaded into DMR_LOST).
 HIL 2026-10-12. Commits 7efcef1, 5ae989b, 06c5bc6.
 
+**14.10 Repeat latency and header runs.** The runner keeps two outbound slots queued in the modem; in a call's gap
+those are placeholders, and a burst heard next queued behind them went out 210 ms after the inbound one instead of
+90 ms. Rule: a burst heard while placeholders wait takes the oldest one's place (`tx_fill`). A caller's header run is
+identical copies: the own-echo rule (same kind and payload within 250 ms) dropped 6 of the bench's 8 headers. Rule:
+in an open inbound call, voice headers and terminators are never echo-checked (the SFR glue never did).
+
 ## 15. Testing practice
 
 - An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests
