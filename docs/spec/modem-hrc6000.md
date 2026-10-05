@@ -187,6 +187,8 @@ What the MCU must do in it, every time: decide the **next** slot and write 0x41 
 and the MCU's data must be written in the window t2 before it. In practice everything is written at the start of the
 timeslot handler and the burst goes out in the following slot. A setup that arrives late slips the burst by one
 slot (30 ms) or by a frame (60 ms).
+While transmitting, the slot between our bursts gets 0x00, or 0x50 for an SFR, which hears its inbound slot there
+(`hrc6000_dmr_tx_listen`, `sfr.md` 3).
 
 The CACH TC bit (0x52 bit 2) can be read here; it's only refreshed in slots being received.
 

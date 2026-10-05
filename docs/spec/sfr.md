@@ -58,8 +58,9 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
 
 The runner assumes these of `hal_dmr_modem_t`; they are the open work for each radio's driver:
 
-1. Keep receiving, and report bursts, while it transmits: the inbound slot is heard between our bursts. Report `ts`
-   when it knows the slot, and `in_step` false for a burst whose status it can't trust.
+1. Keep receiving, and report bursts, while it transmits: the inbound slot is heard between our bursts. The runner
+   asks for it with `tx_listen()` after every `tx_begin` (a plain call never does). Report `ts` when it knows the slot,
+   and `in_step` false for a burst whose status it can't trust.
 2. `tx_begin(DMR_TIMING_ALIGNED, ts)`: send in the slot opposite to the bursts being received, in step with them
    (the repeat goes out 90 ms after the burst, gotchas 14.3). `DMR_TIMING_OWN` with a ts: its own slot clock.
 3. `dmr_tx_burst_t.sync_override`: the outbound sync (MS, BS, or TS1 / TS2 direct mode sync) on every burst.
@@ -70,13 +71,13 @@ The runner assumes these of `hal_dmr_modem_t`; they are the open work for each r
 
 Today's DM-1701 driver (`drivers/modem/hrc6000/hrc6000_dmr.c`, owned by the DMR modem work) already honors
 `sync_override`, idle bursts, `host_crc`, `DMR_TIMING_ALIGNED` (to the slot numbering it learned from the bursts
-heard) and the TX slot events, and it keeps passing reports up while it transmits. What it lacks is item 1 at the RF
-side: the radio keys the transmitter for the whole transmission, so nothing is received in the inbound slots between
-our bursts. An SFR needs the RF switched between receive and transmit per burst, inside the guard time (the legacy
-glue did it from the slot interrupts: `radioSfrSwitch` in `drivers/modem/hrc6000/sfr_glue/hrcSfr.h`). Until a driver
-does, the hotspot SFR mode answers the host correctly and repeats what it heard before keying, but misses inbound
-bursts while it is keyed (the rest of a call after the first repeat). On air (HIL 2026-10-10): mode switching and the
-first repeat on TS2 pass; the rest of the call fails as expected (`docs/testing/on-air-coverage.md`).
+heard) and the TX slot events, and it keeps passing reports up while it transmits. The RF is switched per burst: the
+RF TX interrupt keys the PA (AT1846S to TX), the timeslot interrupt that starts the next slot drops it (AT1846S back to
+RX, about 1.3 ms into the slot, gotchas 3.4). Item 1 was missing in the chip: the slot between our bursts was written
+"no receive" (0x41 = 0x00), so nothing was heard there and the hotspot SFR mode repeated only what it heard before
+keying (HIL 2026-10-10: mode switching and the first repeat on TS2 passed, the rest of the call failed). With
+`tx_listen` (`hrc6000_dmr_tx_listen`) the engine writes "receive" (0x50) for that slot instead, for that transmission
+only; `hrc6000DmrTest` test_tx_listen checks it. Not yet confirmed on air.
 
 ## 4. Not built yet
 
@@ -84,8 +85,8 @@ first repeat on TS2 pass; the rest of the call fails as expected (`docs/testing/
   codeplug's SFR bytes (`sfrChannelDecode`), a radio core mode that hands the modem to the runner (repeater) and
   call stack changes for the users (transmit on the inbound slot aligned to the repeater, hear both copies with
   `sfrDedupVoice`, the ERDM outbound color code). The call stack is `core/dmr/call/dmr_call.c`.
-- The HR_C6000 driver level parts: raw RX RAM classification (`sfrRawClassify`), per-burst RF switching, the
-  register switches of command 0xD5.
+- The HR_C6000 driver level parts: raw RX RAM classification (`sfrRawClassify`), the register switches of command
+  0xD5.
 
 A two-frequency repeater made of two radios is the split duplex extension (`split-duplex.md`, `CONFIG_HOTSPOT_SPLIT`),
 not the SFR: it registers in mmdvm.c and hotspot.c ahead of the SFR (a priority extension), so while a split role

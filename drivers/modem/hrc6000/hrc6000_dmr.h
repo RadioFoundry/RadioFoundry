@@ -270,6 +270,7 @@ typedef struct {
 	uint8_t tx_timing;	// dmr_timing_t
 	int8_t tx_ts;
 	uint8_t tx_access;
+	bool tx_listen;		// receive in the slots between our bursts (hrc6000_dmr_tx_listen)
 	uint8_t tx_phase;	// phase (tick & 1) of our slots
 	bool tx_end_req;
 	bool tx_abort_req;
@@ -323,6 +324,8 @@ void hrc6000_dmr_poll(hrc6000_dmr_t *e);
 void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg);
 void hrc6000_dmr_rx_restart(hrc6000_dmr_t *e);
 void hrc6000_dmr_rx_lock_slot(hrc6000_dmr_t *e, int8_t ts);
+// The transmission begun last receives in the slots between its bursts (the SFR's inbound slot); ignored when idle
+void hrc6000_dmr_tx_listen(hrc6000_dmr_t *e);
 bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_access_t access);
 bool hrc6000_dmr_tx_queue(hrc6000_dmr_t *e, const dmr_tx_burst_t *b);
 uint8_t hrc6000_dmr_tx_queue_space(const hrc6000_dmr_t *e);

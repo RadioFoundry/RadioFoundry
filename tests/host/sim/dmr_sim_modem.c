@@ -76,6 +76,12 @@ static void set_embedded_lc(const uint8_t lc[9])
 	sim.emb_lc_set = true;
 }
 
+static void tx_listen(void)
+{
+	if (sim.tx_active)
+		sim.tx_listens++;
+}
+
 static void set_cc_filter(int8_t cc) { sim.cc_filter = cc; }
 static bool is_transmitting(void) { return sim.tx_active; }
 
@@ -83,7 +89,7 @@ const hal_dmr_modem_t sim_modem = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
-	.is_transmitting = is_transmitting,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen,
 };
 
 void sim_reset(void)

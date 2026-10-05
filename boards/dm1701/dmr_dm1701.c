@@ -441,6 +441,11 @@ static bool tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 	return active && hrc6000_dmr_tx_begin(&eng, timing, ts, access);
 }
 
+static void tx_listen(void)
+{
+	hrc6000_dmr_tx_listen(&eng);
+}
+
 static bool tx_queue(const dmr_tx_burst_t *b)
 {
 	return hrc6000_dmr_tx_queue(&eng, b);
@@ -533,7 +538,7 @@ const hal_dmr_modem_t dm1701_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
-	.is_transmitting = is_transmitting,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen,
 	SPLIT_OPS
 };
 

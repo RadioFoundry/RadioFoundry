@@ -139,6 +139,9 @@ typedef struct {
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA
+	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and
+	// report what is heard there, with the RF switched back to receive per burst (an SFR's inbound slot, sfr.md 3)
+	void (*tx_listen)(void);
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	// Split duplex (docs/spec/split-duplex.md), all optional (NULL: the driver can't; the role is not offered).
 	// The modem clock: free-running microseconds (wraps), the clock slot_clock is stamped in. RX half and TIME

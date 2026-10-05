@@ -548,6 +548,55 @@ static void test_tx_voice_dmo(void)
 	CHECK(memcmp(voice_tx_last, (const uint8_t[]){ 0xB9, 0xE8, 0x81 }, 3) == 0);	// terminator: silence AMBE
 }
 
+// An SFR's transmission (tx_listen): the slots between our bursts are received, and a burst heard there is reported
+// while we are keyed (sfr.md 3 item 1). Without it they stay closed (test_tx_voice_dmo)
+static void test_tx_listen(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	hrc6000_dmr_tx_listen(&eng);	// idle: ignored
+	CHECK(!eng.tx_listen);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_listen(&eng);
+	for (int i = 0; i < 6; i++) {
+		dmr_tx_burst_t b = mk(DMR_BURST_IDLE, 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	nev = 0;
+
+	int bursts_set = 0, rx_slots = 0, heard = 0, closed = 0;
+	bool prev_rx = false;
+	uint32_t t = 7000000;
+	for (int k = 0; k < 30 && hrc6000_dmr_is_transmitting(&eng); k++) {
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		if (prev_rx) {	// the inbound slot just ended: its burst is reported now
+			memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 77, 0, 0, (uint8_t)k }, 9);
+			report_at(t + 4000, 0x12, 0x20, 0x00);
+			heard++;
+		}
+		prev_rx = false;
+		if (r41 == 0x80) {
+			bursts_set++;
+		} else if (r41 == 0x50 && bursts_set > 0 && bursts_set < 6) {
+			rx_slots++;
+			prev_rx = true;
+		} else if (r41 == 0x00 && bursts_set > 0 && bursts_set < 6) {
+			closed++;
+		}
+		drain();
+		t += 30000;
+	}
+	drain();
+	CHECK(bursts_set == 6);
+	CHECK(rx_slots == 5);	// every slot between our six bursts
+	CHECK(closed == 0);
+	CHECK(heard == 5 && count_ev(DMR_EV_BURST_RX) == 5);
+	CHECK(rf_on_calls == 6 && rf_off_calls == 6);	// the RF back to receive after each burst
+	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !eng.tx_listen);	// per transmission
+}
+
 static void test_tx_crc_and_underrun(void)
 {
 	fresh_engine();
@@ -919,6 +968,7 @@ int main(void)
 	test_rx_stale_lc();
 	test_out_of_step_resync();
 	test_tx_voice_dmo();
+	test_tx_listen();
 	test_tx_crc_and_underrun();
 	test_tx_aligned_rmo();
 	test_tx_rejected_and_stall();

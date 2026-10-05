@@ -12,7 +12,8 @@
 //     DMR_TIMING_OWN with a ts: its own slot clock, our bursts on every other slot;
 //   - honor dmr_tx_burst_t.sync_override (the outbound sync: MS, BS, or the direct mode sync of the outbound slot);
 //   - send DMR_BURST_IDLE bursts with the payload given (the ETSI idle message) and no CRC of its own;
-//   - DMR_EV_TX_SLOT_STARTED once per burst taken from its queue, DMR_EV_TX_DONE after tx_end has drained it.
+//   - DMR_EV_TX_SLOT_STARTED once per burst taken from its queue, DMR_EV_TX_DONE after tx_end has drained it;
+//   - tx_listen (optional, called after every tx_begin): receive the inbound slot between our bursts.
 //
 // No RTOS, no board headers: the host link task (hotspot) or the radio task (repeater role) runs it, and the host
 // tests drive it against the simulated modem.

@@ -373,6 +373,7 @@ static void test_rf_call(void)
 
 	// Repeated on the outbound slot: aligned to the call, TS2 sync, the header from its LC, the voice in order
 	CHECK(sim.first_timing == DMR_TIMING_ALIGNED && sim.first_ts == 2);
+	CHECK(sim.tx_listens == sim.tx_begins);	// the inbound slot heard between our bursts (sfr.md 3 item 1)
 	int h = air_find(DMR_BURST_VOICE_LC_HEADER, DMR_SYNC_TS2, 0);
 	CHECK(h >= 0 && sim.air[h].host_crc && memcmp(sim.air[h].payload, LC1, 9) == 0);
 	CHECK(air_count_kind(DMR_BURST_VOICE, 0) == 12);

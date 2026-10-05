@@ -471,6 +471,7 @@ static void tx_finish(hrc6000_dmr_t *e)
 	}
 	txq_flush(e);
 	e->tx_state = TXS_IDLE;
+	e->tx_listen = false;
 	e->tx_end_req = false;
 	e->tx_abort_req = false;
 	e->st.tx_done++;
@@ -552,7 +553,9 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 		if (next_phase == e->tx_phase) {
 			tx_slot(e);
 		} else {
-			set_ctl(e, CTL_NONE);
+			// The other slot: an SFR's inbound one is received (the PA dropped at its timeslot interrupt puts the
+			// RF back to receive), else left closed
+			set_ctl(e, e->tx_listen ? rx_ctl(e) : CTL_NONE);
 		}
 		return;
 	case TXS_ENDING: {
@@ -1471,6 +1474,15 @@ bool hrc6000_dmr_tx_queue(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 uint8_t hrc6000_dmr_tx_queue_space(const hrc6000_dmr_t *e)
 {
 	return (uint8_t)(TXQ_N - 1u - txq_count(e));
+}
+
+void hrc6000_dmr_tx_listen(hrc6000_dmr_t *e)
+{
+	lock(e);
+	if (e->tx_state != TXS_IDLE) {
+		e->tx_listen = true;
+	}
+	unlock(e);
 }
 
 void hrc6000_dmr_tx_end(hrc6000_dmr_t *e)

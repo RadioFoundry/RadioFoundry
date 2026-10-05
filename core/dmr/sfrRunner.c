@@ -257,6 +257,9 @@ static void try_key(sfrRunner_t *r, uint32_t now_ms)
 		r->stats.tx_rejected++;
 		return;		// the burst waits for the next poll
 	}
+	if (r->modem->tx_listen != NULL) {
+		r->modem->tx_listen();	// the inbound slot is heard between our bursts (sfr.md 3 item 1)
+	}
 	r->stats.tx_starts++;
 	r->state = SFR_RUN_KEYED;
 	r->in_modem = 0;
