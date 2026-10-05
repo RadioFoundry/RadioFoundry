@@ -512,7 +512,9 @@ What the manual documents about where FM audio can come from and go to, beyond t
 `tests/hil/test_audio_probe.py` tries it, and [usb-audio.md](usb-audio.md) 2.3.1 has the bench results. Measured
 on the DM-1701: the RX FM buffers hold 8 kHz big endian 16-bit receive audio, ungated, after 0x34's de-emphasis
 and filters, one half per 32 ms with 0x82 bit 1 (once 0x81 unmasks it); keyed, 0x82 bit 7 comes every 32 ms, but no
-setting tried makes the TX buffers the modulation source.
+setting tried makes the TX buffers the modulation source. The prompt tone FIFO drains at 8000 samples a second
+whether 0x06 bit 1 is set or not, and doesn't reach the modulator either, with or without 0xE3 bit 0. LINEIN2 (0xE0
+bit 5) puts a 2.5-2.6 kHz tone of its own on air when enabled during FM TX: keep it off.
 
 | Item | Manual | Meaning |
 |---|---|---|

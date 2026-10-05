@@ -28,6 +28,16 @@ format nor the control bit that picks the RAM over the codec is documented, so t
   of a 1 kHz tone (8 samples per cycle at 8 kHz), so a chip that replays them sends a steady tone without the MCU
   refilling them. Keyed with the microphone muted, per candidate control setting: the 0x82 flag rate and the voice
   band deviation the SDR bench measures.
+
+The prompt tone path (manual appendix A1) and a register sweep, the last candidates for FM transmit:
+
+- test_probe_music_fifo (radio only): the FIFO's drain rate with the path (0x06 bit 1) closed and open.
+- test_probe_fm_tx_music (--allow-rf --allow-service-stop): a 1400 Hz tone through the FIFO, keyed, with and without
+  the codec's DAC-ADC pass-through.
+- test_probe_fm_tx_sweep (--allow-rf --allow-service-stop): each bit of the codec area registers flipped for 0.5 s
+  while keyed, with tones on I2S and in the TX RAM; the SDR's tone timeline says which flip put which on air.
+
+Results on the DM-1701 (2026-10-12): docs/spec/usb-audio.md 2.3.1.
 """
 import math
 import time
@@ -399,3 +409,171 @@ def test_probe_fm_ram_tx_variants(probe, sdr_bench, pytestconfig):
         restore()
     print_tx_rows("FM TX from the TX RAM FM buffers", rows)
     assert len(rows) == len(runs)
+
+
+# --- FM transmit: the prompt tone path, and a sweep of the undocumented bits ---
+
+MUSIC_HZ = 1400
+MUSIC_MS = 2000
+
+
+def test_probe_music_fifo(probe, pytestconfig):
+    """Radio only: with the prompt tone path open (0x06 bit 1), does the chip drain the FIFO (about 8000 samples a
+    second = 250 writes of 32), and with it closed, not? Tells whether the path runs at all in FM."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    rows = []
+    with probe.vfo_session():
+        saved = regs_saved(L, {0x06})
+        try:
+            for name, v in (("path closed", saved[0x06] & ~0x02), ("path open (0x06 |= 0x02)", saved[0x06] | 0x02)):
+                L.probe_reg(PAGE, 0x06, v)
+                m = L.probe_music(1000, MUSIC_HZ, 0)        # silence: the speaker stays quiet
+                rows.append((name, m))
+        finally:
+            for r, v in saved.items():
+                L.probe_reg(PAGE, r, v)
+    print("\nPrompt tone FIFO (page 3 address 0, 32 samples per write when 0x88 bit 0 reads 0):")
+    for name, m in rows:
+        rate = m["writes"] * 32 * 1000 / max(m["elapsed_ms"], 1)
+        print(f"{name:<28} {m['writes']:5d} writes in {m['elapsed_ms']} ms = {rate:6.0f} samples/s, {m['polls']} polls")
+    assert len(rows) == 2
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_music(probe, sdr_bench, pytestconfig):
+    """The prompt tone path into the modulator: the FIFO feeds the codec DAC; with 0xE3 bit 0 the DAC loops into the
+    ADC that feeds the FM transmit chain. Keyed with the microphone muted, a 1400 Hz tone through the FIFO."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    saved = regs_saved(L, {0x06, 0xE3})
+
+    def restore():
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+
+    def run(regs, le):
+        def during():
+            for reg, s_, c in regs:
+                apply(L, reg, s_, c)
+            m = L.probe_music(MUSIC_MS, MUSIC_HZ, TONE_AMP, little_endian=le)
+            return f"{m['writes'] * 32 * 1000 / max(m['elapsed_ms'], 1):.0f} samples/s into the FIFO"
+        return restore, during
+
+    runs = [(name, *run(regs, le)) for name, regs, le in (
+        ("FIFO, path closed (baseline)", [], False),
+        ("FIFO, path open (0x06 |= 0x02)", [(0x06, 0x02, 0)], False),
+        ("FIFO, path open, DAC-ADC pass-through (0xE3 |= 0x01)", [(0x06, 0x02, 0), (0xE3, 0x01, 0)], False),
+        ("FIFO little endian, path open, pass-through", [(0x06, 0x02, 0), (0xE3, 0x01, 0)], True),
+    )]
+    try:
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "music")
+    finally:
+        restore()
+    print_tx_rows(f"FM TX from the prompt tone FIFO ({MUSIC_HZ} Hz)", rows)
+    assert len(rows) == len(runs)
+
+
+# Registers whose bits the sweep flips one at a time while keyed: the codec and audio routing area, none of the
+# modulation, reference or synthesizer registers (0x04, 0x45-0x4A, 0x35, 0x3E stay as the TX set-up wrote them)
+SWEEP_REGS = [0x25, 0x26, 0xE1, 0xE2, 0xE3, 0xE5, 0x0D, 0x0E, 0x0F, 0x38]
+SWEEP_ON_S, SWEEP_GAP_S = 0.5, 0.25
+SWEEP_PER_KEY = 8
+SWEEP_MARK_S = 1.5        # LINEIN2's tone takes most of a second to build up
+I2S_HZ = 600             # the I2S stream's tone during the sweep; the TX RAM holds TONE_HZ, the marker is LINEIN2's
+MARK_HZ = (2300, 2800)  # LINEIN2's tone: 2.49 kHz one day, 2.60 kHz the next
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
+    """Keyed with the microphone muted, a 600 Hz tone on the I2S stream and a 1000 Hz tone in both TX RAM halves
+    (big endian, FM flags unmasked), each bit of SWEEP_REGS flipped for 0.5 s in turn. Each key-up starts with
+    LINEIN2 on for 1.5 s, whose own 2.49 kHz tone marks the time (it shows up for the last 0.3-0.8 s of it); a tone the SDR finds during a flip says which bit
+    and which source (600 Hz: I2S, 1000 Hz: TX RAM) reach the modulator."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    import re
+    L = probe.link
+    mhz = pytestconfig.getoption("--fm-mhz")
+    hz = round(mhz * 1e6)
+    flips = [(r, b) for r in SWEEP_REGS for b in range(8)]
+    batches = [flips[i:i + SWEEP_PER_KEY] for i in range(0, len(flips), SWEEP_PER_KEY)]
+    key_s = SWEEP_MARK_S + 0.2 + len(batches[0]) * (SWEEP_ON_S + SWEEP_GAP_S) + 0.3
+    hits, unmapped, missing_marker = [], [], []
+    with probe.vfo_session():
+        L.vfo_set(hz)
+        probe.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
+        probe.lowest_power()
+        saved = regs_saved(L, set(SWEEP_REGS) | {0x81, 0xE0})
+        try:
+            for k, batch in enumerate(batches):
+                for r, v in saved.items():
+                    L.probe_reg(PAGE, r, v)
+                L.probe_ram(RAM_PAGE, RAM_FM, data=tone_bytes(">") * 2)
+                L.probe_start(I2S_HZ, TONE_AMP)
+                rdir = sdr_bench.run_dir(f"hil_aprobe_sweep{k}")
+                with sdr_bench.lease():
+                    cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
+                    L.ptt(True, int(key_s * 1000) + 1500)
+                    try:
+                        probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
+                        time.sleep(0.2)
+                        apply(L, 0xE0, 0, 0x40)          # microphone off
+                        apply(L, 0x81, FM_FLAG_MASK, 0)
+                        e0 = L.probe_reg(PAGE, 0xE0)
+                        t_mark = time.monotonic()
+                        L.probe_reg(PAGE, 0xE0, e0 | 0x20)
+                        time.sleep(SWEEP_MARK_S)
+                        L.probe_reg(PAGE, 0xE0, e0)
+                        time.sleep(0.2)
+                        slots = []
+                        for r, b in batch:
+                            v = L.probe_reg(PAGE, r)
+                            t_on = time.monotonic() - t_mark
+                            L.probe_reg(PAGE, r, v ^ (1 << b))
+                            time.sleep(SWEEP_ON_S)
+                            L.probe_reg(PAGE, r, v)
+                            slots.append((r, b, v, t_on, time.monotonic() - t_mark))
+                            time.sleep(SWEEP_GAP_S)
+                    finally:
+                        L.ptt(False)
+                    probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+                    sdr_bench.capture_wait()
+                L.probe_stop()
+                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
+                                                tones=True)
+                runs = [(float(f), float(a), float(e)) for f, a, e in
+                        re.findall(r"tone (\d+(?:\.\d)?) Hz ([\d.]+)-([\d.]+) s", text)]
+                marks = [t for t in runs if MARK_HZ[0] <= t[0] <= MARK_HZ[1]]
+                if not marks:
+                    missing_marker.append(k)
+                    print(f"key-up {k}: no marker tone; tones {runs}\n{text}")
+                    continue
+                t0 = marks[0][1]
+                for f, a, e in runs:
+                    if (f, a, e) == marks[0]:
+                        continue
+                    rel = a - t0
+                    slot = next((s for s in slots if s[3] - 0.15 <= rel <= s[4] + 0.15), None)
+                    src = "I2S" if abs(f - I2S_HZ) < 40 else "TX RAM" if abs(f - TONE_HZ) < 40 else "?"
+                    if slot is None:
+                        unmapped.append((k, f, rel, e - a))
+                    else:
+                        hits.append((slot[0], slot[1], slot[2], f, src, e - a))
+        finally:
+            L.ptt(False)
+            L.probe_stop()
+            for r, v in saved.items():
+                L.probe_reg(PAGE, r, v)
+    print(f"\nFM TX bit sweep: {len(flips)} flips in {len(batches)} key-ups")
+    for r, b, v, f, src, d in hits:
+        print(f"  -> 4:0x{r:02X} bit {b} (0x{v:02X} -> 0x{v ^ (1 << b):02X}): {f:.0f} Hz for {d:.2f} s, from {src}")
+    for k, f, rel, d in unmapped:
+        print(f"  key-up {k}: {f:.0f} Hz at +{rel:.2f} s for {d:.2f} s outside any flip")
+    if not hits:
+        print("  no flip put a tone on air")
+    assert not missing_marker, f"key-ups without the marker tone: {missing_marker}"

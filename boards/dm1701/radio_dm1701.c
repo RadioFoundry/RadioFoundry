@@ -933,4 +933,11 @@ bool dm1701_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, b
 	}
 	return ok;
 }
+
+// A burst write over the config port (hal_audio_tap_t.modem_burst): page 3 goes to the chip's prompt tone FIFO here,
+// not through the voice port as the vocoder's frames do
+bool dm1701_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len)
+{
+	return hrc6000_write_burst(&r.modem, page, reg, buf, len);
+}
 #endif

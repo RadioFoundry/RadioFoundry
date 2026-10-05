@@ -16,7 +16,7 @@ the PTT watchdog and the jitter buffer as tested host code (`core/usbaudio`), a 
 |---|---|
 | DMR voice as PCM, both ways | **Yes, today.** The I2S link to the HR_C6000 already carries 8 kHz 16-bit PCM both ways, and the MCU runs the AMBE codec. Decoded calls can go to the host and host audio can be encoded and sent, at no new CPU cost (2.2) |
 | FM receive audio to the MCU | **Yes, two ways** (bench, 2026-10-12, 2.3.1). The I2S stream carries it with the stock settings, squelch gated. The HR_C6000's RX RAM carries it ungated, 8 kHz big endian 16-bit, one 256-sample half per 32 ms, with de-emphasis switchable (0x34 bit 5): the voice and flat modes of 5.5, flat from about 300 Hz up |
-| MCU audio into the FM modulator | **Not found yet.** None of A, B or the RAM settings tried puts MCU audio on air, though the chip runs its TX RAM handshake at 8 kHz while keyed. The bit that selects the RAM as the source is the open question; AFSK for APRS can use the AT1846S tone generator meanwhile (2.3.1) |
+| MCU audio into the FM modulator | **Not found.** None of A, B, the TX RAM (13 settings), the prompt tone FIFO or an 80-bit sweep of the codec registers puts MCU audio on air, though the chip runs its TX RAM handshake at 8 kHz while keyed. AFSK for APRS uses the AT1846S tone generator (2.3.1) |
 | An MCU ADC on the RX audio line, or a free DAC on the mic line | **No.** ADC1 sees only the volume pot, the battery and a mic level tap; DAC1 drives the PA power, the DAC2 pin is a GPIO (2.1) |
 | USB composite with a sound card | **Fits**: CDC-ACM + UAC1 (3 IN, 2 OUT endpoints of the F405's 3 + 3), or CDC-NCM + UAC1; not all three, and not serial + sound card + HID together (3) |
 | Recommended protocols | IP: the USRP voice protocol over UDP (AllStarLink, DVSwitch Analog_Bridge, M17 and DMR bridges speak it) with PTT by its keyup flag; Hamlib's rigctld protocol, now on the radio (`CONFIG_NET_RIGCTL`, [tcp-services.md](tcp-services.md) 6). Serial: Kenwood-style CAT plus RTS/DTR PTT. Sound card: UAC1, PTT by the serial port's RTS/DTR (CM108-style HID as an alternative personality) (4) |
@@ -122,9 +122,13 @@ for transmit.
 | FM TX from I2S (A, B) | **no.** 0xE3 bit 0 changes nothing. LINEIN2 on (0xE0 bit 5) puts a steady 2.49 kHz tone on air at about 1.7 kHz RMS deviation whether the probe sends nothing, 1 kHz or 600 Hz: something on that input, not MCU audio. Don't enable LINEIN2 |
 | FM TX from the TX RAM (C) | **not found.** Keyed, 0x82 bit 7 ("sending data request") comes 31.0 times a second once unmasked: the chip runs the TX handshake at 8 kHz. But a 1 kHz tone in both halves (either byte order) never reaches the air with any of: the flags unmasked, 0xDB bit 1, 0x60 = 0x40 or 0xC0, 0x06 bits 0, 2, 3 or 4, 0xE0 bit 7 off, the codec ADC off (0xE2 bit 4). The chip doesn't clear or rewrite the TX RAM |
 
-What is left for FM transmit: the RAM source bit (a register sweep while keyed, watching the deviation; candidates
-the undocumented bits of 0x25 / 0x26, 0xE1, 0xE5 and page 1), the prompt tone path into the DAC with 0xE3 bit 0,
-and candidate D. Receive is settled.
+| FM TX from the prompt tone FIFO | **no.** The FIFO (page 3 address 0, 32 samples when 0x88 bit 0 reads 0) drains at exactly 8000 samples a second whether 0x06 bit 1 is set or not, and a 1400 Hz tone through it never reaches the air: path open, with 0xE3 bit 0, either byte order |
+| Bit sweep while keyed | **no.** Each bit of 0x25, 0x26, 0xE1, 0xE2, 0xE3, 0xE5, 0x0D, 0x0E, 0x0F and 0x38 flipped for 0.5 s (80 flips, 10 key-ups) with a 600 Hz tone on I2S and a 1 kHz tone in the TX RAM: neither tone on air during any flip. LINEIN2's tone, used as the time marker, came at 2.59-2.61 kHz this time (2.49 kHz before): an oscillation on that input |
+
+So no MCU-to-modulator path exists on the DM-1701 through anything the manual documents or the codec registers
+around it. What is left: the rest of page 4 and page 1 (with care: modulation, reference and synthesizer
+registers), or transmit audio that doesn't pass the HR_C6000: AFSK through the AT1846S tone generator (APRS does
+this), or candidate D. Receive is settled; on this board the product is FM receive plus DMR both ways over USB.
 
 Candidates, in order of preference:
 

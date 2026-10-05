@@ -32,7 +32,12 @@ enum {
 	PROBE_OP_RAM_WRITE	= 7,	// page u8, addr u16, the bytes
 	PROBE_OP_WATCH		= 8,	// ms u16, flag page u8, flag reg u8, clear reg u8, mask u8, RAM page u8, RAM addr u16
 					// -> elapsed ms u32, polls u16, 8 x (count u16, first ms u16), RAM changes u16
+	PROBE_OP_MUSIC		= 9,	// ms u16, tone Hz u16, amplitude u16, flags u8 (bit 0 little endian)
+					// -> writes u16, polls u16, elapsed ms u32
 };
+
+#define PROBE_MUSIC_SAMPLES	32u	// per FIFO write (manual appendix A1: 32 samples when 0x88 bit 0 reads 0)
+#define PROBE_MUSIC_LE		0x01u
 
 #define PROBE_WATCH_MAX_MS	2000u
 #define PROBE_NO_RAM		0xFFFFu
@@ -218,6 +223,60 @@ static void probe_stop(void)
 	aud->stop();
 }
 
+// Feeds the HR_C6000's prompt tone FIFO (manual appendix A1) with a tone for ms: every millisecond or so, when
+// 0x88 bit 0 reads 0, 32 samples go to page 3 address 0 over the config port. The caller opens the path first
+// (0x06 bit 1). Blocks the debug link task meanwhile
+static size_t probe_music(const uint8_t *req, uint8_t *out)
+{
+	const hal_audio_tap_t *tap = board.audio_tap;
+	uint16_t ms = get16(req), hz = get16(req + 2);
+	float amp = (float)(get16(req + 4) > 32767 ? 32767 : get16(req + 4));
+	bool le = (req[6] & PROBE_MUSIC_LE) != 0;
+	if (tap->modem_burst == NULL || tap->modem_reg == NULL) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	if (ms == 0 || ms > PROBE_WATCH_MAX_MS || hz > 3800) {
+		out[0] = DL_ST_BAD_ARG;
+		return 1;
+	}
+	float step = 2.0f * 3.14159265f * (float)hz / (float)AUDIO_RATE_HZ, ph = 0.0f;
+	uint8_t buf[2 * PROBE_MUSIC_SAMPLES];
+	uint32_t writes = 0, polls = 0, t0 = hal_millis(), t = 0;
+	bool ok = true;
+	do {
+		uint8_t st = 1;
+		ok = tap->modem_reg(4, 0x88, &st, false);
+		polls++;
+		if (ok && (st & 1u) == 0) {
+			for (uint32_t i = 0; i < PROBE_MUSIC_SAMPLES; i++) {
+				uint16_t v = (uint16_t)(int16_t)(sinf(ph) * amp);
+				ph += step;
+				if (ph > 6.2831853f) {
+					ph -= 6.2831853f;
+				}
+				buf[2 * i] = le ? (uint8_t)v : (uint8_t)(v >> 8);
+				buf[2 * i + 1] = le ? (uint8_t)(v >> 8) : (uint8_t)v;
+			}
+			ok = tap->modem_burst(3, 0x00, buf, sizeof buf);
+			writes++;
+			t = hal_millis() - t0;
+			continue;	// the FIFO holds 64: see whether it takes another 32 at once
+		}
+		hal_delay_ms(1);
+		t = hal_millis() - t0;
+	} while (ok && t < ms);
+	if (!ok) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	out[0] = DL_ST_OK;
+	put16(out + 1, sat16(writes));
+	put16(out + 3, sat16(polls));
+	put32(out + 5, hal_millis() - t0);
+	return 9;
+}
+
 size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	const hal_audio_tap_t *tap = board.audio_tap;
@@ -316,6 +375,12 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 			return 1;
 		}
 		return probe_watch(req + 1, out, cap);
+	case PROBE_OP_MUSIC:
+		if (len != 8) {
+			out[0] = DL_ST_BAD_ARG;
+			return 1;
+		}
+		return probe_music(req + 1, out);
 	default:
 		out[0] = DL_ST_BAD_ARG;
 		return 1;

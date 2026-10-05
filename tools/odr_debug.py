@@ -26,7 +26,8 @@
     odr_debug.py aprobe OP [ARG...]             audio probe (CONFIG_AUDIO_PROBE builds; docs/spec/usb-audio.md 2.3):
                                                 status | reg PAGE REG | wreg PAGE REG VAL | start [HZ [AMP [spk]]] |
                                                 stop | samples [-o FILE.raw] | ram PAGE ADDR LEN [-o FILE] |
-                                                wram PAGE ADDR HEXBYTES | watch MS MASK [RAMADDR]
+                                                wram PAGE ADDR HEXBYTES | watch MS MASK [RAMADDR] |
+                                                music MS HZ AMP [le]
     odr_debug.py split view                     the split duplex view (role, epoch, offset, buffers, underruns, CACH)
     odr_debug.py split variant N [REG=VAL ...]  the BS framing experiment's variant for the next TX half key-up
                                                 (docs/spec/split-duplex.md 10.1; raw page 4 pairs with N = 255)
@@ -83,7 +84,7 @@ APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
 AUDIO_PROBE = 0x10
 (PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES, PROBE_RAM_READ,
- PROBE_RAM_WRITE, PROBE_WATCH) = range(9)
+ PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC) = range(10)
 PROBE_RAM_CHUNK = 56          # bytes per RAM_WRITE request (request payload 64: op, page, address, data)
 PROBE_RAM_READ_MAX = 1000
 PROBE_NO_RAM = 0xFFFF
@@ -399,11 +400,19 @@ class DebugLink:
             self.request(AUDIO_PROBE, struct.pack("<BBH", PROBE_RAM_WRITE, page, addr + i) + bytes(data[i:i + PROBE_RAM_CHUNK]))
         return None
 
+    def probe_music(self, ms, hz, amplitude, little_endian=False):
+        """Feed the audio chip's prompt tone FIFO with a tone for ms (<= 2000); the caller opens the path (HR_C6000
+        0x06 bit 1). Returns {writes, polls, elapsed_ms}."""
+        _, r = self.request(AUDIO_PROBE, struct.pack("<BHHHB", PROBE_MUSIC, ms, hz, amplitude, 1 if little_endian else 0),
+                            timeout=ms / 1000 + 2)
+        writes, polls, elapsed = struct.unpack_from("<HHI", r)
+        return {"writes": writes, "polls": polls, "elapsed_ms": elapsed}
+
     def probe_watch(self, ms, mask, page=4, flag_reg=0x82, clear_reg=0x83, ram_page=2, ram_addr=PROBE_NO_RAM):
         """Poll an interrupt flag register for ms (<= 2000), counting and clearing the flags in mask, and count the
         changes of the RAM word at ram_addr. Returns {elapsed_ms, polls, bits: {bit: (count, first_ms)}, ram_changes}."""
         _, r = self.request(AUDIO_PROBE, struct.pack("<BHBBBBBH", PROBE_WATCH, ms, page, flag_reg, clear_reg, mask,
-                                                     ram_page, ram_addr))
+                                                     ram_page, ram_addr), timeout=ms / 1000 + 2)
         elapsed, polls = struct.unpack_from("<IH", r)
         bits = {b: struct.unpack_from("<HH", r, 6 + 4 * b) for b in range(8)}
         (changes,) = struct.unpack_from("<H", r, 38)
@@ -1347,6 +1356,12 @@ def cmd_aprobe(link, a):
         p, addr, data = num(args[0]), num(args[1]), bytes.fromhex(args[2])
         link.probe_ram(p, addr, data=data)
         print(f"{p}:0x{addr:03X} <- {len(data)} bytes")
+    elif a.op == "music":
+        if len(args) not in (3, 4):
+            raise SystemExit("aprobe music MS HZ AMP [le]   (open the path first: aprobe wreg 4 0x06 <value | 0x02>)")
+        m = link.probe_music(num(args[0]), num(args[1]), num(args[2]), len(args) == 4 and args[3] == "le")
+        print(f"{m['writes']} FIFO writes of 32 samples in {m['elapsed_ms']} ms "
+              f"({m['writes'] * 32 * 1000 / max(m['elapsed_ms'], 1):.0f} samples/s), {m['polls']} polls")
     elif a.op == "watch":
         if len(args) not in (2, 3):
             raise SystemExit("aprobe watch MS MASK [RAMADDR]   (page 4 flags 0x82 cleared through 0x83; RAM page 2)")
@@ -1456,7 +1471,7 @@ def main(argv=None):
     p.add_argument("op", choices=["info", "dump", "claim"])
     p.add_argument("--out", default=DEFAULT_DUMP_DIR, help=f"dump directory outside any git tree (default {DEFAULT_DUMP_DIR})")
     p = sub.add_parser("aprobe", help="audio probe: chip registers and PCM levels (CONFIG_AUDIO_PROBE builds)")
-    p.add_argument("op", choices=["status", "reg", "wreg", "start", "stop", "samples", "ram", "wram", "watch"])
+    p.add_argument("op", choices=["status", "reg", "wreg", "start", "stop", "samples", "ram", "wram", "watch", "music"])
     p.add_argument("args", nargs="*")
     p.add_argument("-o", "--output", help="samples: also write the block as raw 16-bit stereo; ram: the bytes")
     a = ap.parse_args(argv)

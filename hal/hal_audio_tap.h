@@ -68,6 +68,9 @@ typedef struct {
 	// Read or write len bytes of the same chip's RAM from an 11-bit address (the HR_C6000's 1.2K TX / RX RAMs on
 	// page 2, which hold its FM data buffers). NULL when the chip has none. Returns false when the bus failed
 	bool (*modem_ram)(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write);
+	// Write len bytes from an 8-bit address of a page in one transaction (the HR_C6000's prompt tone FIFO: page 3,
+	// address 0, 32 samples). NULL when the chip has none
+	bool (*modem_burst)(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len);
 	// The last 20 ms block as received from the codec, both I2S channels (AUDIO_BLOCK_SAMPLES each), and the stream's
 	// block counter; false when the stream isn't running
 	bool (*last_block)(int16_t *left, int16_t *right, uint32_t *blocks);
