@@ -6,7 +6,7 @@ Status: research, 2026-10-10. This page collects the main chips of every radio O
 close relatives, from public sources only. It also says which ODR platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md)). This page is the overview.
+[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
 
 Facts are not copyrightable. Every claim carries a source link and a confidence tag:
 
@@ -333,8 +333,8 @@ The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://k
 | Ailunce HD1 (v1) | MK22FN512, HR_C6000, AT1846S, 160x128 color, GPS (D) | GD-77 port + 160x128 class | Out of production, so used units only. Encrypted stock firmware, decoder exists (F) |
 | Connect Systems CS7000-M17 | STM32F405VG, HR_C6000, SKY72310, HX8302A, 25Q128FV (D) ([OpenRTX table](https://openrtx.org/#/hardware/hardware)) | stm32f4, hrc6000, SKY72310 driver from the MD-9600 / MD-380 | Free once the SKY72310 driver exists. The Plus model has an STM32H743 |
 | TYT MD-9800 | HR_C7000 (F) ([opengd77.org p=26](https://www.opengd77.org/viewtopic.php?p=26)) | hrc7000 platform and modem | Relation to the Kydera platform unverified (?). The RT73 / CDR-300UV / DB25-D and the DB40-D have their own sections above. The GD-73 is a handheld, not part of that family |
-| Anytone AT-D868UV / AT-D878UV / 878UVII, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6 (D) ([OpenRTX UV878](https://openrtx.org/#/hardware/uv878)), **SCT3258 DMR baseband with built-in AMBE+2, not an HR_C6000** (D, F), AT1846S, 160x128 color (D, F) ([VK7ZJA mods guide](https://pnwdigital.net/wp-content/files/documents/Anytone/Mods_868_878_878-II_information_VK7ZJA(sk)-4-2-23_.pdf)) | at1846s | No update encryption or signing (D). The vocoder lives in the SCT3258, so no codec merge is needed. New: a GD32F30x platform and an SCT3258 driver. The 878 and DMR-6X2 are the same hardware (F) |
-| Anytone AT-D578UV (mobile) | GD32F303VKT6, AT32F43x after mid-2022, SCT3258 (F) | as the 878 | MCU change mid-run |
+| Anytone AT-D868UV / AT-D878UV / 878UVII, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6; early 868UVs GD32F303VET6 (512 KB, 64 KB RAM) (D, F) ([OpenRTX UV878](https://openrtx.org/#/hardware/uv878)), **SCT3258 DMR baseband with built-in AMBE+2, not an HR_C6000** (D, F), AT1846S, TLV320AIC3204 codec, 1-2 Gbit SPI NAND, 160x128 color (D, F) ([VK7ZJA mods guide](https://pnwdigital.net/wp-content/files/documents/Anytone/Mods_868_878_878-II_information_VK7ZJA(sk)-4-2-23_.pdf)) | at1846s | Native USB CDC update mode; encryption and signing not documented, images not yet examined (F). SWD with no read-out protection on documented units (F). The SCT3258 runs DMR layers 1-2 and the vocoder, so the MCU never sees AMBE bits (no privacy or hotspot voice unless a bypass exists) and needs a Sicomm boot block at every reset. New: a GD32F30x platform, an SCT3258 driver, SPI NAND. Details: [hardware-anytone.md](hardware-anytone.md). The 878 and DMR-6X2 are the same hardware (F) |
+| Anytone AT-D578UV (mobile) | GD32F303VKT6, AT32F435/437 after 2022-07 (separate firmware per MCU), SCT3258, 4x QA4818N (AT1846S-compatible), true dual receive (F) | as the 878 | MCU change mid-run: two platforms. [hardware-anytone.md](hardware-anytone.md) |
 
 Not DMR candidates: the BK4819 and BK4829 are analog FM transceivers, and the BK4829 adds only an FSK modem (C)
 ([datasheet listing](https://www.alldatasheet.net/datasheet-pdf/pdf/2171272/BEKEN/BK4829.html)). The Radtel RT-4D does
