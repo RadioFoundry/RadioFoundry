@@ -6,7 +6,7 @@ Status: research, 2026-10-10. This page collects the main chips of every radio O
 close relatives, from public sources only. It also says which ODR platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
+[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
 
 Facts are not copyrightable. Every claim carries a source link and a confidence tag:
 
@@ -331,7 +331,7 @@ The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://k
   MM7DBT's CPEditor edits stock codeplugs (F) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
 - **Not DMR:** the DB25-G, DB20-G, DB40-G and DB35-G GMRS mobiles and the "DB25 Pro" (no D) are analog FM radios
   (C, [radioddity.com DB25-G](https://radioddity.com/products/radioddity-db25g)). They aren't ODR targets.
-- **ODR:** reuses `platform/hrc7000`, `drivers/modem/hrc7000`, the DM-32 codec-carving tool (with a new recipe), a
+- **ODR:** bring-up started, `make BOARD=db25d` ([hardware-db25d.md](hardware-db25d.md) 9). Reuses `platform/hrc7000`, `drivers/modem/hrc7000`, the DM-32 codec-carving tool (with a new recipe), a
   small color UI class (160x128 if that's the panel, ?) and the GPS NMEA reader the DM-32 needs. New: a BK4819 driver for two instances (or the 2021 RF
   chip), an SPI NAND driver with bad-block handling plus a storage adapter (ODR's stores assume NOR sectors), a panel
   driver once the controller is known, the mic keypad protocol, an image packer without a header, and the APC power
