@@ -12,6 +12,9 @@ test skips on a build without it.
   (sdrmon.py analyze --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
   one key-up edge for the whole outbound, the channel's colour code, no driver underruns in STATUS; with our framing
   also the CACH: TC alternating, AT following SET_AT, the short LC decoding.
+- test_split_tx_half_voice (radio_tx, bench_service): the same outbound (our framing) with a group call from the host
+  on TS2: three LC headers, three superframes A-F with the embedded LC in each, the terminator, decoded off air on
+  one slot without sync errors; the CACH stays right.
 - test_split_rx_half_labels (rf, bench_service): the radio as the RX half, the bench transmitting voice calls. The
   bench is simplex, so its slot phase (and which slot it lands on) is new with every call: one long call, the epoch
   centered on its first burst, then moved by one slot half way; each part goes up under one label, the labels differ,
@@ -68,20 +71,27 @@ def test_split_protocol(radio):
     leave_hotspot(radio)
 
 
-@pytest.mark.radio_tx
-@pytest.mark.bench_service
-def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
-    need_split(radio)
+# A group call for the voice test as host frames (control byte, 33-byte burst), made with the core's encoders
+# (dmr_lc_encode_full, dmrFecBptcEncode): LC 201 from 9990301; voice is AMBE silence, the middle 48 bits left zero
+CALL_HEADER = bytes.fromhex("003c0a120b0c0ac870f090218870000000000008986815c01de0b8e0c2813b80c9")
+CALL_VOICE = bytes.fromhex("b9e881526173002a6bb9e881526000000000000173002a6bb9e881526173002a6b")
+CALL_TERM = bytes.fromhex("00530ac60bbc0ab07080908188b000000000000fcd7c16f81a80b4a0ca812280fa")
+CALL = ([(0x41, CALL_HEADER)] * 3 + [(0x20 if n == 0 else n, CALL_VOICE) for _ in range(3) for n in range(6)]
+        + [(0x42, CALL_TERM)])
+
+
+def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
+    """The radio as the TX half for TX_SECONDS at its lowest power: idle bursts and a short LC, SET_AT toggled every
+    2 s, the host frames of call on TS2 half a second in. Returns the SDR decode and STATUS keyed / after unkey."""
     import split_duplex_host as sdh
     dmr_cach = sdh.dmr_cach
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     hz = round(freq * 1e6)
-    variant = int(os.environ.get("ODR_SPLIT_VARIANT", "0"), 0)
-    regs = [tuple(int(x, 0) for x in kv.split("=")) for kv in os.environ.get("ODR_SPLIT_REGS", "").split()]
-    radio.link.split_variant(variant, regs)    # $ODR_SPLIT_REGS: "REG=VAL ..." for variant 255
+    radio.link.split_variant(variant, regs)
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "sdrmon.py"))
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
     rdir = sdr_bench.run_dir("hil_split_tx")
+    call = list(call)
     with sdr_bench.lease():
         cap = sdr_bench.capture_start(rdir, freq, seconds=TX_SECONDS + 6)
         with radio.released() as port:
@@ -97,6 +107,13 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
                 while time.monotonic() - t0 < TX_SECONDS:
                     mask ^= 1
                     r.split(sdh.SUB_SET_AT, bytes([mask]))
+                    if call:
+                        time.sleep(0.5)
+                        t1 = time.monotonic()
+                        for i, (c, f) in enumerate(call):     # paced at the slot's 60 ms (no reply to data frames)
+                            time.sleep(max(0.0, t1 + i * 0.06 - time.monotonic()))
+                            r.send(sdh.frame(sdh.DMR_DATA2, bytes([c]) + f))
+                        call = []
                     for _ in range(4):
                         time.sleep(0.5)
                         r.split(sdh.SUB_TIME, bytes(8))
@@ -114,6 +131,28 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     import json
     sdr = json.loads(sdr_bench.ssh(f"cat {cap}.json"))
     leave_hotspot(radio)
+    return sdr, st, end
+
+
+def tx_half_cach(bs):
+    """The CACH decode of the BS bursts: (CACHs, tact ok, TC alternations, AT values, short LCs decoded, bad)"""
+    cach = [b["cach"] for b in bs if b.get("cach")]
+    ok = [c for c in cach if c["ok"]]
+    alt = sum(1 for x, y in zip(ok, ok[1:]) if x["tc"] != y["tc"])
+    slcs = [c["slc"] for c in cach if "slc" in c]
+    good = sum(1 for _, g in slcs if g)
+    return cach, ok, alt, {c["at"] for c in ok}, good, len(slcs) - good
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
+    need_split(radio)
+    import split_duplex_host as sdh
+    cc = pytestconfig.getoption("--dmr-cc")
+    variant = int(os.environ.get("ODR_SPLIT_VARIANT", "0"), 0)
+    regs = [tuple(int(x, 0) for x in kv.split("=")) for kv in os.environ.get("ODR_SPLIT_REGS", "").split()]
+    sdr, st, end = tx_half_run(radio, sdr_bench, pytestconfig, variant, regs)   # $ODR_SPLIT_REGS: "REG=VAL ..."
     print(f"STATUS keyed: {st}\nSTATUS after unkey: {end}")
     assert st["flags"] & sdh.FLAG_KEYED and not end["flags"] & sdh.FLAG_KEYED
     assert st["underruns1"] == 0 and st["underruns2"] == 0, st
@@ -138,22 +177,43 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     assert len(ups) == 1, f"key-up edges: {[(e['up_ms'], e['level_dbfs']) for e in ups]} (the outbound must stay keyed)"
     other = [b for b in bs if b["kind"] != "IDLE" and not b["kind"].startswith("slottype?")]   # an undecoded slot type
     assert not other, f"only idle bursts were queued: {sdr['summary']['counts']}"
-    cach = [b["cach"] for b in bs if b.get("cach")]
-    ok = [c for c in cach if c["ok"]]
-    alt = sum(1 for x, y in zip(ok, ok[1:]) if x["tc"] != y["tc"])
-    at_seen = {c["at"] for c in ok}
-    slcs = [c["slc"] for c in cach if "slc" in c]
-    slc_ok = [s for s, good in slcs if good]
+    cach, ok, alt, at_seen, slc_good, slc_bad = tx_half_cach(bs)
     _, cnt = radio.counters()
     bs_cnt = {k: v for k, v in cnt.items() if k.startswith("bs.")}
     print(f"BS framing variant {variant}: tact ok {len(ok)}/{len(cach)}, TC alternating {alt} of "
-          f"{max(len(ok) - 1, 0)}, AT values {sorted(at_seen)}, short LC {len(slc_ok)} ok / {len(slcs) - len(slc_ok)} "
+          f"{max(len(ok) - 1, 0)}, AT values {sorted(at_seen)}, short LC {slc_good} ok / {slc_bad} "
           f"bad; radio {bs_cnt}")
     assert bs_cnt.get("bs.cach", 0) > 0.9 * TX_SECONDS / 0.03, bs_cnt
     if variant != 1:    # our framing (modem-hrc6000.md 9.1): the CACH on air is the core's
         assert len(ok) >= 0.98 * len(cach) and alt >= 0.98 * (len(ok) - 1), "TC must alternate"
         assert at_seen == {0, 1}, f"AT must follow SET_AT: {sorted(at_seen)}"
-        assert len(slc_ok) >= 10 and len(slc_ok) == len(slcs), f"short LC {len(slc_ok)} ok of {len(slcs)}"
+        assert slc_good >= 10 and slc_bad == 0, f"short LC {slc_good} ok, {slc_bad} bad"
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_split_tx_half_voice(radio, sdr_bench, pytestconfig):
+    """A group call from the host on TS2 of the outbound, our framing: headers, three superframes with the embedded
+    LC, the terminator, decoded off air; the CACH stays right around it"""
+    need_split(radio)
+    sdr, st, end = tx_half_run(radio, sdr_bench, pytestconfig, 0, call=CALL)
+    assert st["underruns1"] == 0 and st["underruns2"] == 0, st
+    bursts = [b for b in sdr["bursts"] if b["family"] in ("bs", "emb")]
+    ours = [b for b in bursts if b["kind"] != "IDLE"]
+    kinds = [b["kind"] for b in ours]
+    print("call on air:", kinds)
+    assert all(b["sync_errors"] == 0 for b in ours)
+    assert len({b["slot"] for b in ours}) == 1, "the call must stay on one slot"
+    hdr = [b for b in ours if b["kind"] == "VLC_HDR"]
+    term = [b for b in ours if b["kind"] == "TERM_LC"]
+    voice = [b["kind"][-1] for b in ours if b["kind"].startswith("VOICE_")]
+    emb = [b["lc"] for b in ours if b["kind"].startswith("VOICE_") and b.get("lc")]
+    assert len(hdr) == 3 and all(b["lc"] and b["lc"]["src"] == 9990301 and b["lc"]["dst"] == 201 for b in hdr), hdr
+    assert "".join(voice) == "ABCDEF" * 3, voice
+    assert len(emb) == 3 and all(x["src"] == 9990301 and x["dst"] == 201 for x in emb), emb
+    assert len(term) == 1 and term[0]["lc"]["src"] == 9990301, term
+    cach, ok, alt, _, slc_good, slc_bad = tx_half_cach([b for b in sdr["bursts"] if b.get("cach")])
+    assert len(ok) >= 0.98 * len(cach) and alt >= 0.98 * (len(ok) - 1) and slc_bad == 0
 
 
 def rx_half_labels(port, sdr_bench, freq, cc, tg, dtr=False):
