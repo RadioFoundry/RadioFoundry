@@ -351,6 +351,8 @@ static void test_outbound(void)
 		dmrCachDeinterleave(c.bits, &tact, &p);
 		CHECK(dmrCachTactDecode(tact, &at, &tc, &lcss) == 0 && at == c.at && tc == c.tc && lcss == c.lcss);
 		CHECK(p == c.payload);
+		// The first fragment carries the whole short LC for a chip that encodes it (the HR_C6000's TX RAM)
+		CHECK(i % 4 != 0 || (c.slc == dmrShortLcNull() && c.slc_crc == dmrShortLcCrc8(c.slc)));
 	}
 	uint32_t slc;
 	CHECK(dmrShortLcDecode(rows, &slc) && slc == dmrShortLcNull());

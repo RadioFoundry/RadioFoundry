@@ -157,7 +157,7 @@ void bsOutboundSetShortLc(bsOutbound_t *o, const uint32_t rows[4])
 	o->slc_pending = true;
 }
 
-static uint32_t slc_row(bsOutbound_t *o, uint32_t s)
+static uint32_t slc_row(bsOutbound_t *o, uint32_t s, const uint32_t **set)
 {
 	if (o->slc_pending && (next_s(o, 0) >= o->switch_s) && (next_s(o, 1) >= o->switch_s)) {
 		memcpy(o->slc_cur, o->slc_new, sizeof(o->slc_cur));	// both slots are past the switch
@@ -169,6 +169,7 @@ static uint32_t slc_row(bsOutbound_t *o, uint32_t s)
 	}
 	const uint32_t *rows = (o->slc_pending && (s >= o->switch_s)) ? o->slc_new : o->slc_cur;
 
+	*set = rows;
 	return rows[s % 4u];
 }
 
@@ -274,8 +275,15 @@ void bsOutboundNext(bsOutbound_t *o, int8_t ts, uint32_t now_ms, dmr_tx_burst_t 
 	cach->at = at;
 	cach->tc = (ts == 1) ? 0u : 1u;
 	cach->lcss = LCSS[row];
-	cach->payload = slc_row(o, sidx);
+	const uint32_t *set;
+
+	cach->payload = slc_row(o, sidx, &set);
 	cach->bits = dmrCachBuild(cach->at, cach->tc, cach->lcss, cach->payload);
+	cach->slc = 0;
+	cach->slc_crc = 0;
+	if ((row == 0) && dmrShortLcDecode(set, &cach->slc)) {	// the HR_C6000 takes the short LC whole (page 2 0x24)
+		cach->slc_crc = dmrShortLcCrc8(cach->slc);
+	}
 	o->at_on_air = (uint8_t)((o->at_on_air & (uint8_t)~bit) | (at ? bit : 0u));
 	o->st.cach++;
 	s->n++;

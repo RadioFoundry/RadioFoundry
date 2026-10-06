@@ -62,6 +62,9 @@ data bytes are used; burst reads of up to 96.
 The manual's command table lists page 2 as the RX ("receive end") RAM and page 6 as the TX ("write end") RAM; in
 practice writes to page 2 land in the TX RAM and are sent (on air, bit exact). Page 6 has not been tried.
 
+TX RAM layout (the manual): 0x00-0x17 LC / CSBK / data header / data blocks, 0x18-0x23 the idle message, 0x24-0x28
+the CACH short LC (28 bits in 0x24-0x26 and 0x27 bits 7-4, its CRC-8 in 0x28), 0x29-0x2C voice F's EMB fill.
+
 V_SPI uses the same command / address framing (page 3, address 0x00, then 27 bytes; read command 0x83).
 
 ### 1.2 Clock
@@ -84,7 +87,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0x07-0x09 | IF frequency H/M/L | 0x0B, 0xB8, 0x00 (450 kHz) |
 | 0x0A-0x0C, 0xB9-0xBB | clock source, PLL M/N, system clock dividers | section 3 |
 | 0x10 | ModulatorMode / TierMode / ContinueMode / LayerMode / ISRepeater / ISAligned / RepeaterSlot | bit 7 FM(1)/DMR(0); bit 6 Tier II; bit 5 timeslot mode; bits 4-3 layer (01 = layer 2); bit 2 relay (BS); bit 1 aligned; bit 0 slot. **0x6E in DMR operation**, 0x6B at init (trace), 0x80 for FM |
-| 0x11 | LocalChanMode | 0x80 (bit 7: direct simplex in direct mode). bit 6 direct duplex, bit 3 single-frequency simplex (not used) |
+| 0x11 | LocalChanMode | 0x80 (bit 7: direct simplex in direct mode, repeated simplex in relay mode). bit 6 direct duplex / repeated duplex in relay mode, bit 3 single-frequency simplex (not used) |
 | 0x14-0x16 | local DMR ID (H/M/L) | set at init to a placeholder, then the radio ID |
 | 0x1D | unaddressed mask | 0xFF |
 | 0x1E | broadcast address | 0xF1 |
@@ -108,6 +111,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0x50 | LocalDataType (7-4), LocalVoD (3, 1 = voice), data-header-2 (2), LCSS (1-0) | the burst to send in the next slot: data burst = DT << 4; voice burst = 0x08 \| (n << 4) with n = 0..5 for A..F |
 | 0x51 (R) | DLLRecvDataType (7-4), DLLRecvPI (3), DLLRecvCRC (2, 1 = error), SyncClass (1-0: 0 none / EMB only, 1 voice, 2 data, 3 RC) | read on every "received data" interrupt. For voice, bit 7 is set and bits 6-4 are 1..6 for A..F, so the 4-bit field reads 0x9..0xE: **use the low 3 bits** |
 | 0x52 (R) | DLLCC (7-4), AT (3), TC (2), CACH LCSS (1-0) | received color code; the CACH TC bit gives the slot number (repeater signals only) |
+| 0x52 (W) | CACH AT (3), TC (2) | the BS downstream CACH's AT and TC for the burst being set up (relay mode) |
 | 0x53 / 0x54 (R) | RC info / EMB LCSS | not used |
 | 0x55 (R) | per-check error flags (CRC8, golay, QR, CS, CRC16, CRC24, CRC9) | not used |
 | 0x56 / 0x57 | unknown; 0x56 = 0x00 at init (trace). A note from the original authors says the TYT firmware reads 0x57 for the time code | not used |
@@ -541,8 +545,8 @@ From our SFR work on the DM-1701 (on air in hotspot SFR mode):
   checksum: bit clear, written to page 2 0x18).
 - Measured: repeats 90.02-90.05 ms after each inbound burst (a burst reported just after the timeslot interrupt that set
   up the next outbound slot goes out in the one after), bursts 31.3 ms with 0.2 ms ramps, within 25 Hz.
-- 0x10 bit 2 (relay) should give BS framing with the CACH; untested. An ETSI single-frequency BS uses guard-time
-  framing without a CACH (TS 102 361-1 4.6.2).
+- 0x10 bit 2 (relay) gives BS framing with a CACH whose AT / TC come from 0x52 (written) and short LC from TX RAM
+  0x24 (9.1). An ETSI single-frequency BS uses guard-time framing without a CACH (TS 102 361-1 4.6.2).
 - 0x41 bit 3 (CC_Match_Ctrl) lets the chip deframe any CC while keyed (experiment switch, effect unconfirmed).
 - The AT1846S TX/RX switch per burst over I2C takes about 0.5 ms from the interrupt.
 
@@ -560,11 +564,16 @@ whenever the other slot's header or data overwrote it. The first burst after a k
 at the first timeslot interrupt after the unkey, or by the watchdog when no timeslot interrupt came for 200 ms. Stop:
 0x10 / 0x11 back to 0x6E / 0x80, MS sync, 0x40 = 0xC3, the slot engine restarts the receiver.
 
-The CACH: what the chip sends in the 2.5 ms gap with these settings is unknown (no documented CACH register);
-`HRC6000_BS_CACH_METHOD` says "unknown" until the BS framing experiment (`split-duplex.md` 10.1) settles it. The
-experiment's variants are written at key-up and restored at unkey: 1 0x11 = 0x00; 2 0x10 = 0x4E, 0x11 = 0x00; 3
-0x10 = 0x6A, 0x11 = 0x00; 255 up to four raw page 4 pairs (left as written until the next DMR entry, except 0x10 /
-0x11 which are restored). Host test: `tests/host/hrc6000BsTest.c`.
+The CACH: the manual has the MCU give the BS downstream CACH's AT and TC in 0x52 (written) and the short LC in TX RAM
+0x24-0x28; the chip encodes and interleaves it. Every burst set up writes 0x52 from the core's CACH, and the slot that
+carries a short LC's first fragment writes the whole short LC (28 bits and its CRC-8). Before this (the runs of
+2026-10-11) nothing was written there and the CACH went out empty (TC 0, no short LC). Not in the manual: where the
+chip takes the CACH LCSS from (its own count, or 0x50 bits 1-0, "LocalLCSS, every time slot", which the HR_C6000 does
+not use for the EMB). `HRC6000_BS_CACH_METHOD` says "unknown" until the bench confirms the CACH on air (`split-duplex.md`
+10.1). The experiment's variants are written at key-up and restored at unkey: 1 0x11 = 0x00; 2 0x10 = 0x4E, 0x11 =
+0x00; 3 0x10 = 0x6A, 0x11 = 0x00; 4 0x11 = 0x40 (relay mode's repeated duplex); 5 as 4 and the CACH LCSS in 0x50 bits
+1-0; 255 up to four raw page 4 pairs (left as written until the next DMR entry, except 0x10 / 0x11 which are
+restored). Host test: `tests/host/hrc6000BsTest.c`.
 
 ---
 

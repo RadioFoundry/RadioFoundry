@@ -318,7 +318,8 @@ static void test_embedded_lc(void)
 static void test_variants(void)
 {
 	static const struct { uint8_t v, r10, r11; } want[] = {
-		{ 0, 0x6E, 0x80 }, { 1, 0x6E, 0x00 }, { 2, 0x4E, 0x00 }, { 3, 0x6A, 0x00 },
+		{ 0, 0x6E, 0x80 }, { 1, 0x6E, 0x00 }, { 2, 0x4E, 0x00 }, { 3, 0x6A, 0x00 }, { 4, 0x6E, 0x40 },
+		{ 5, 0x6E, 0x40 },
 	};
 
 	for (unsigned k = 0; k < sizeof(want) / sizeof(want[0]); k++) {
@@ -349,6 +350,62 @@ static void test_variants(void)
 	CHECK(last_write(HRC6000_PAGE_SYS, 0x0E) == 0xA5);
 	hrc6000_bs_stop(&eng);
 	CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x6E && last_write(HRC6000_PAGE_SYS, 0x11) == 0x80);
+}
+
+// The core's CACH reaches the chip: AT / TC in 0x52 every slot, the short LC (28 bits + CRC-8) in page 2 0x24 at the
+// first fragment; variant 5 also puts the LCSS in 0x50 bits 1-0
+static void test_cach(void)
+{
+	for (uint8_t variant = 0; variant <= 5; variant += 5) {
+		fresh();
+		start(variant);
+		static const uint8_t lcss[4] = { 1, 3, 3, 2 };
+		for (int i = 0; i < 4; i++) {
+			dmr_tx_burst_t b = burst(DMR_BURST_IDLE, 0, 0);
+			dmr_cach_t c = { .at = (uint8_t)(i & 1), .tc = 0, .lcss = lcss[i] };
+			if (i == 0) {
+				c.slc = 0x0ABCDEF1u;
+				c.slc_crc = 0x5A;
+			}
+			CHECK(hrc6000_bs_queue(&eng, 1, &b, &c, NULL));
+			dmr_tx_burst_t b2 = burst(DMR_BURST_IDLE, 0, 0);
+			dmr_cach_t c2 = { .at = 1, .tc = 1, .lcss = lcss[i] };
+			if (i < 3) {
+				CHECK(hrc6000_bs_queue(&eng, 2, &b2, &c2, NULL));
+			}
+			if (i == 2) {
+				break;	// the queue holds three per slot
+			}
+		}
+		hrc6000_bs_key(&eng, true);
+		nx = 0;
+		uint8_t r52[8];
+		int n52 = 0, slc_at = -1, lcss50 = 0;
+		for (int k = 0; k < 8; k++) {
+			tick();
+		}
+		for (int i = 0; i < nx; i++) {
+			if (xlog[i].read) {
+				continue;
+			}
+			if (xlog[i].page == HRC6000_PAGE_SYS && xlog[i].reg == 0x52 && n52 < 8) {
+				r52[n52++] = xlog[i].data[0];
+			}
+			if (xlog[i].page == HRC6000_PAGE_DATA && xlog[i].reg == 0x24 && slc_at < 0) {
+				slc_at = i;
+			}
+			if (xlog[i].page == HRC6000_PAGE_SYS && xlog[i].reg == 0x50) {
+				lcss50 |= xlog[i].data[0] & 3;
+			}
+		}
+		// TS1 first: AT 0 TC 0, then TS2 AT 1 TC 1, TS1 AT 1 TC 0, TS2 AT 1 TC 1, TS1 AT 0 TC 0
+		CHECK(n52 >= 5 && r52[0] == 0x00 && r52[1] == 0x0C && r52[2] == 0x08 && r52[3] == 0x0C && r52[4] == 0x00);
+		CHECK(slc_at >= 0 && xlog[slc_at].n == 5 && xlog[slc_at].data[0] == 0xAB && xlog[slc_at].data[1] == 0xCD &&
+		      xlog[slc_at].data[2] == 0xEF && xlog[slc_at].data[3] == 0x10 && xlog[slc_at].data[4] == 0x5A);
+		CHECK((lcss50 != 0) == (variant == 5));
+		CHECK(bs.st.cach_written == 6 && bs.st.cach_given == 6);
+		hrc6000_bs_stop(&eng);
+	}
 }
 
 // No timeslot interrupt for 200 ms while keyed: unkeyed, PA off; halt while the outbound runs ends it too
@@ -434,6 +491,7 @@ int main(void)
 	test_embedded_lc();
 	test_ring_wrap();
 	test_variants();
+	test_cach();
 	test_stall_and_halt();
 	printf("# hrc6000BsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

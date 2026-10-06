@@ -243,14 +243,15 @@ MMDVMHost sends is to be confirmed on the bench (section 11, open question 1): b
 The core hands the modem driver, for each slot, the burst and the CACH (fields and the 24 interleaved bits:
 `dmr_cach_t`). What the driver can do with the CACH depends on the chip:
 
-- **HR_C6000** (DM-1701, MD-9600, GD-77): 0x10 = 0x6E already has bit 2 (ISRepeater) set in normal operation, so the
-  relay bit alone does not give BS framing; the chip's CACH generation, if any, is undocumented. What is known: page 1
-  0x04 sets the transmitted sync (BS data sync gives BS voice sync too, `modem-hrc6000.md` 2), active timing (0x40 =
-  0xE3) gives a free-running slot clock, and 0x41 = 0x80 in every slot sends in both slots. The driver therefore runs
-  the continuous outbound with BS sync and the chip's own handling of the CACH gap, and the **BS framing experiment**
-  (section 10.1) tries the register variants that may switch on its CACH: 0x11 bit 7 clear (not direct mode), 0x10 bit
-  5 (ContinueMode) clear, and raw register writes from the debug link, while the SDR bench decodes what is on air.
-  Until a variant shows valid TACT bits the INFO block says "3 unknown".
+- **HR_C6000** (DM-1701, MD-9600, GD-77): 0x10 = 0x6E already has bit 2 (ISRepeater) set in normal operation. The
+  manual gives the CACH's inputs: AT and TC written to 0x52 for each burst, the short LC (28 bits and CRC-8) in TX
+  RAM 0x24-0x28 (`modem-hrc6000.md` 1, 2); the driver writes both from `dmr_cach_t` (its `slc` / `slc_crc` with the
+  first fragment). Relay mode's 0x11 bit 6 is "repeated duplex", which a duplex BS should be (variant 4). Also known:
+  page 1 0x04 sets the transmitted sync (BS data sync gives BS voice sync too, `modem-hrc6000.md` 2), active timing
+  (0x40 = 0xE3) gives a free-running slot clock, and 0x41 = 0x80 in every slot sends in both slots. The **BS framing
+  experiment** (section 10.1) runs the register variants (0x11, 0x10 bit 5, where the LCSS goes, raw writes from the
+  debug link) while the SDR bench decodes what is on air. Until one shows the CACH right on air the INFO block says
+  "3 unknown".
 - **HR_C7000** (DM-32, GD-88): LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS and BS_CACH (0x428-0x438) exist and are never
   written by working firmware (`modem-hrc7000.md` 2.5); the user guide's descriptions of them are not in our spec yet.
   Until the register layout is specified the HR_C7000 has no `bs_*` operations, so INFO offers no TX half on it. The
@@ -442,7 +443,10 @@ constant `HRC6000_BS_CACH_METHOD` in a later build.
 The continuous outbound works in every variant. The CACH does not: TS2's CACH is all zero and TS1's mostly zero, so the
 2.5 ms gap holds a valid but empty TACT and no short LC, and none of these registers makes the chip number its slots.
 `HRC6000_BS_CACH_METHOD` stays "unknown" (INFO byte 4 = 3); a standard radio can't tell TS1 from TS2 on this outbound.
-On 4a9c002 (ring fixed) TS2 sends only idle bursts (167 of 167). Next: raw variant (255) sweeps of the page 4 registers near 0x10/0x11, or BS framing without a CACH (5.4). The same
+On 4a9c002 (ring fixed) TS2 sends only idle bursts (167 of 167). Why the CACH was empty: the manual has the MCU write
+AT / TC to 0x52 and the short LC to TX RAM 0x24 for every burst, and nothing wrote them. The driver does now; next
+run: variants 0, 4 and 5 (4: 0x11 = 0x40, relay mode's repeated duplex; 5: also the CACH LCSS in 0x50 bits 1-0),
+looking for TC alternating, AT following SET_AT and the short LC decoding. The same
 runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas 8.14), fixed after them.
 
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout
@@ -480,8 +484,8 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
 ## 11. Open questions
 
 1. The 9-byte layout of DMR_SHORTLC as MMDVMHost sends it (5.3): both forms are accepted; the bench decode settles it.
-2. HR_C6000 CACH generation (5.4, 10.1): which register setting, if any, makes the chip send a CACH, and whether its
-   AT / short LC can be ours.
+2. HR_C6000 CACH (5.4, 10.1): AT / TC (0x52) and the short LC (TX RAM 0x24) are now written per the manual; open
+   until the bench shows them on air: the 0x11 value, and where the chip takes the CACH LCSS from.
 3. HR_C7000 BS mode register layout (0x428-0x438): needs the user guide's description in `modem-hrc7000.md`.
 4. The constant delay between the TX half's slot boundary and the RX half's (chip pipelines, air): measured on the
    bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit).

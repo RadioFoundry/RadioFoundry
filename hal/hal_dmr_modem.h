@@ -110,6 +110,8 @@ typedef struct {
 	uint8_t lcss;		// short LC fragment: 1 first, 3 continuation, 2 last
 	uint32_t payload;	// 17 bits, P(16) in bit 16
 	uint32_t bits;		// all 24 bits interleaved (figure B.9), TX(23) in bit 23
+	uint32_t slc;		// lcss first: the short LC (28 bits) these four fragments carry, for a chip that encodes it
+	uint8_t slc_crc;	// ... and its CRC-8 (-1 B.3.7)
 } dmr_cach_t;
 
 #define DMR_BS_REGS_MAX		4

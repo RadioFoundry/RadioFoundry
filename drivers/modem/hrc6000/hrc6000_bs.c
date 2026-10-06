@@ -14,6 +14,7 @@
 #define R_L2_CTL	0x40
 #define R_SLOT_CTL	0x41
 #define R_TX_TYPE	0x50
+#define R_CACH_TX	0x52	// written: the BS downstream CACH's AT (bit 3) and TC (bit 2) (modem-hrc6000.md 2)
 #define R_INT_FLAGS	0x82
 #define R_INT_CLEAR	0x83
 
@@ -24,6 +25,8 @@
 #define CTL_NONE	0x00
 #define MODE_DMR	0x6E	// the operation value (hrc6000_dmr_enter)
 #define CHAN_DIRECT	0x80	// direct simplex (modem-hrc6000.md 2)
+#define CHAN_RPT_DUPLEX	0x40	// relay mode: repeated duplex (bit 6)
+#define PAGE2_SLC	0x24	// TX RAM: the short LC, 28 bits (0x24-0x27 bits 7-4) and its CRC-8 (0x28)
 #define STALL_US	200000u
 
 static const uint8_t SILENCE[DMR_VOICE_BYTES] = {
@@ -73,6 +76,10 @@ static void variant_regs(hrc6000_dmr_t *e, hrc6000_bs_t *bs, bool on)
 		case 3:
 			mode = 0x6A;	// relay (bit 2) clear
 			chan = 0x00;
+			break;
+		case 4:
+		case 5:
+			chan = CHAN_RPT_DUPLEX;	// relay mode's repeated duplex (5: also the CACH LCSS in 0x50, setup())
 			break;
 		default:
 			break;
@@ -142,7 +149,6 @@ static uint8_t q_count(const hrc6000_bs_t *bs, int k)
 bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
 		      const uint8_t *emb_lc)
 {
-	(void)cach;
 	lock(e);
 	hrc6000_bs_t *bs = e->bs;
 	int k = (ts == 1) ? 0 : 1;
@@ -154,12 +160,16 @@ bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, cons
 		uint8_t at = bs->head[k];
 
 		bs->q[k][at] = *b;
+		bs->q_cach_valid[k][at] = cach != NULL;
+		if (cach != NULL) {
+			bs->q_cach[k][at] = *cach;
+		}
 		bs->q_lc_valid[k][at] = emb_lc != NULL;
 		if (emb_lc != NULL) {
 			memcpy(bs->q_lc[k][at], emb_lc, 9);
 		}
 		bs->head[k] = (uint8_t)((bs->head[k] + 1u) % (HRC6000_BS_Q + 1u));
-		bs->st.cach_given++;
+		bs->st.cach_given += cach != NULL;
 	}
 	unlock(e);
 	return ok;
@@ -235,7 +245,8 @@ static void write_page2(hrc6000_dmr_t *e, uint8_t addr, const uint8_t *data, uin
 }
 
 // One burst for the next slot (modem-hrc6000.md 6.1, 6.4); ts is that slot
-static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_burst_t *b, const uint8_t *lc)
+static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_burst_t *b, const uint8_t *lc,
+		  const dmr_cach_t *cach)
 {
 	int k = ts - 1;
 	bool voice = b->kind == DMR_BURST_VOICE;
@@ -283,8 +294,24 @@ static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_bu
 			hrc6000_dmr_voice(e->dev, true, frame);
 		}
 	}
+	// The CACH before this burst: the chip frames it from AT / TC in 0x52 and the short LC in page 2 (the manual's
+	// register and TX RAM tables); where it takes the LCSS from is the bench's question (variant 5: 0x50 bits 1-0)
+	uint8_t lcss = 0;
+
+	if (cach != NULL) {
+		w(e, R_CACH_TX, (uint8_t)(((cach->at & 1u) << 3) | ((cach->tc & 1u) << 2)));
+		if (cach->lcss == 1u) {	// the first fragment (dmr_cach_t): the set's short LC
+			uint8_t slc[5] = { (uint8_t)(cach->slc >> 20), (uint8_t)(cach->slc >> 12), (uint8_t)(cach->slc >> 4),
+					   (uint8_t)(cach->slc << 4), cach->slc_crc };
+			hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, PAGE2_SLC, slc, sizeof(slc));
+		}
+		if (bs->cfg.variant == 5) {
+			lcss = (uint8_t)(cach->lcss & 3u);
+		}
+		bs->st.cach_written++;
+	}
 	w(e, R_SLOT_CTL, CTL_TX);
-	w(e, R_TX_TYPE, hrc6000_dmr_reg50(b->kind, idx));
+	w(e, R_TX_TYPE, (uint8_t)(hrc6000_dmr_reg50(b->kind, idx) | lcss));
 	bs->st.bursts++;
 }
 
@@ -334,14 +361,14 @@ void hrc6000_bs_isr_timeslot(hrc6000_dmr_t *e)
 
 		b = &bs->q[k][at];
 		lc = bs->q_lc_valid[k][at] ? bs->q_lc[k][at] : NULL;
-		setup(e, bs, next, b, lc);
+		setup(e, bs, next, b, lc, bs->q_cach_valid[k][at] ? &bs->q_cach[k][at] : NULL);
 		bs->tail[k] = (uint8_t)((at + 1u) % (HRC6000_BS_Q + 1u));
 	} else {
 		memset(&idle, 0, sizeof(idle));
 		idle.kind = DMR_BURST_IDLE;
 		idle.len = sizeof(IDLE_INFO);
 		memcpy(idle.payload, IDLE_INFO, sizeof(IDLE_INFO));
-		setup(e, bs, next, &idle, NULL);
+		setup(e, bs, next, &idle, NULL, NULL);
 		bs->st.underruns++;
 	}
 }

@@ -7,11 +7,13 @@
 // the first RF TX interrupt and stays up until unkeyed. Each outbound slot plays its own queue in order; an empty one
 // gets an idle burst (counted). Key-up starts with an outbound TS1 slot.
 //
-// The CACH: the chip's CACH generation is undocumented, so the bits from the core are kept (stats) but not written
-// anywhere; INFO reports "unknown" (HRC6000_BS_CACH_METHOD) until the bench experiment finds the setting.
+// The CACH: the manual has the chip frame it from the BS downstream AT / TC written to 0x52 and the short LC in TX RAM
+// (page 2 0x24-0x28), written here from the core's CACH for every burst (the first fragment's slot writes the short LC).
+// INFO reports "unknown" (HRC6000_BS_CACH_METHOD) until the bench confirms what goes on air.
 // The experiment (split-duplex.md 10.1): variant 0 the operation values 0x10 = 0x6E, 0x11 = 0x80; 1 0x11 = 0x00; 2
-// 0x10 = 0x4E and 0x11 = 0x00; 3 0x10 = 0x6A and 0x11 = 0x00; 255 up to four raw (page 4 register, value) pairs.
-// Written at key-up after the variant's values, restored at unkey.
+// 0x10 = 0x4E and 0x11 = 0x00; 3 0x10 = 0x6A and 0x11 = 0x00; 4 0x11 = 0x40 (relay mode's repeated duplex); 5 as 4,
+// and the CACH LCSS in 0x50 bits 1-0; 255 up to four raw (page 4 register, value) pairs. Written at key-up after the
+// variant's values, restored at unkey.
 #ifndef HRC6000_BS_H
 #define HRC6000_BS_H
 
@@ -32,7 +34,8 @@ typedef struct {
 	uint32_t keyups;
 	uint32_t rf_fail;	// PA key / drop the board could not do
 	uint32_t stalls;	// no timeslot interrupt for 200 ms while keyed: unkeyed
-	uint32_t cach_given;	// CACH handed over by the core (not sent: HRC6000_BS_CACH_METHOD)
+	uint32_t cach_given;	// CACH handed over by the core
+	uint32_t cach_written;	// ... written to the chip (0x52, the short LC); an underrun's idle burst has none
 	uint32_t page2_lc;	// embedded LC rewrites (two slots share page 2)
 } hrc6000_bs_stats_t;
 
@@ -47,6 +50,8 @@ typedef struct hrc6000_bs {
 	int8_t ts_tick;		// the outbound slot that started at the last tick
 	int8_t page2_slot;	// whose embedded LC page 2 0x00 holds (0 none)
 	dmr_tx_burst_t q[2][HRC6000_BS_Q + 1];		// a ring of Q + 1 places: q_count tells full from empty
+	dmr_cach_t q_cach[2][HRC6000_BS_Q + 1];
+	bool q_cach_valid[2][HRC6000_BS_Q + 1];
 	uint8_t q_lc[2][HRC6000_BS_Q + 1][9];
 	bool q_lc_valid[2][HRC6000_BS_Q + 1];
 	volatile uint8_t head[2], tail[2];
