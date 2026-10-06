@@ -425,7 +425,20 @@ Variants: 0 the driver default (0x10 = 0x6E, 0x11 = 0x80), 1 0x11 = 0x00, 2 0x10
 (`bsOutboundRawSlot`: the CACH, then the burst BPTC coded with its slot type and BS data sync) and the driver writes
 the 36 bytes to TX RAM page 2 0x00. 6 sets the physical layer mode (0x10 = 0x66, LayerMode 00), 7 keeps layer 2 with
 Decode_Mode 00 (0x40 = 0xE0, the manual's "physical layer test mode without coding"). The manual documents neither
-for transmit; if one sends our bits as given, the CACH (and everything else) is ours. `tools/split_duplex_host.py --exp <variant>` sets it, takes the TX half role,
+for transmit; if one sends our bits as given, the CACH (and everything else) is ours. 8-12 are 6 with each frame also
+written to a second place (page 2 0x24, 0x30, 0x48, 0x60, page 6 0x00).
+
+**Result, raw slot, DM-1701, 2026-10-12** (b10b7b7):
+
+| Variant | On air |
+|---|---|
+| 6 (0x10 = 0x66) | every other slot only (168 bursts in 10 s, 60.000 ms apart), each one exactly our frame: BS sync, 0 sync errors, idle with CC 2, our CACH (TC, LCSS 1/3 or 2/3 in order, the short LC fragments' payloads) |
+| 6 + 0x10 = 0x46 / 0x62 / 0x64 | the same, other slot parity this time (TC 0); AT follows SET_AT (busy on 97 of 168) |
+| 7 (0x40 = 0xE0) | the chip's own framing, CACH all zero (Decode_Mode 00 changes nothing on TX) |
+
+The physical layer mode sends our 288 bits as given: CACH, sync, slot type and payload are ours. The driver writes
+both slots' frames (337 set up in 386 slot interrupts) but the chip sends only every other one from page 2 0x00, and
+which parity depends on the key-up. Next: variants 8-12, looking for the other slot's buffer. `tools/split_duplex_host.py --exp <variant>` sets it, takes the TX half role,
 keys the outbound with idle bursts and a short LC for 10 s.
 
 On the SDR bench `sdrmon.py capture` then `sdrmon.py analyze --cach` prints per burst the family (`bs`), the CACH

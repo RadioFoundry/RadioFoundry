@@ -15,7 +15,8 @@
 // and the CACH LCSS in 0x50 bits 1-0; 6 and 7 the raw slot: the MCU builds all 288 bits (CACH and burst, raw_slot) and
 // writes them to TX RAM page 2 0x00, with 6 the physical layer mode (0x10 bits 4-3 = 00) and 7 layer 2 with
 // Decode_Mode 00 (0x40 bits 1-0, "physical layer test mode without coding"); the manual documents neither for
-// transmit. Up to four raw (page 4 register, value) pairs are written after the variant's values (255: on top of
+// transmit; 8-12 as 6, each frame also written to a second place (page 2 0x24, 0x30, 0x48, 0x60, page 6 0x00), as
+// variant 6 sent every other slot only. Up to four raw (page 4 register, value) pairs are written after the variant's values (255: on top of
 // variant 0's). Written at key-up, 0x10 / 0x11 / 0x40 restored at unkey.
 #ifndef HRC6000_BS_H
 #define HRC6000_BS_H

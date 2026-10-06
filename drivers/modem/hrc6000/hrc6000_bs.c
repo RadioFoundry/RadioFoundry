@@ -84,6 +84,11 @@ static void variant_regs(hrc6000_dmr_t *e, hrc6000_bs_t *bs, bool on)
 			chan = CHAN_RPT_DUPLEX;	// relay mode's repeated duplex (5: also the CACH LCSS in 0x50, setup())
 			break;
 		case 6:
+		case 8:
+		case 9:
+		case 10:
+		case 11:
+		case 12:
 			mode = MODE_DMR & (uint8_t)~MODE_LAYER_MASK;	// physical layer mode
 			break;
 		default:
@@ -253,12 +258,24 @@ static void write_page2(hrc6000_dmr_t *e, uint8_t addr, const uint8_t *data, uin
 static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_burst_t *b, const uint8_t *lc,
 		  const dmr_cach_t *cach)
 {
-	if (((bs->cfg.variant == 6) || (bs->cfg.variant == 7)) && (bs->raw_slot != NULL)) {
+	uint8_t v = bs->cfg.variant;
+
+	if (((v == 6) || (v == 7) || ((v >= 8) && (v <= 12))) && (bs->raw_slot != NULL)) {
+		// 8-12: the same frame also at a second place, looking for the other slot's TX buffer (variant 6 on air:
+		// every other slot only, split-duplex.md 10.1)
+		static const struct { uint8_t page, addr; } MIRROR[5] = {
+			{ HRC6000_PAGE_DATA, 0x24 }, { HRC6000_PAGE_DATA, 0x30 }, { HRC6000_PAGE_DATA, 0x48 },
+			{ HRC6000_PAGE_DATA, 0x60 }, { 6, 0x00 },
+		};
 		uint8_t raw[HRC6000_BS_RAW_BYTES];
 
 		bs->raw_slot(b, cach, bs->cfg.cc, raw);
 		hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, 0x00, raw, sizeof(raw));
+		if (v >= 8) {
+			hrc6000_write_burst(e->dev, MIRROR[v - 8].page, MIRROR[v - 8].addr, raw, sizeof(raw));
+		}
 		bs->st.raw++;
+		bs->st.cach_written += cach != NULL;
 		w(e, R_SLOT_CTL, CTL_TX);
 		w(e, R_TX_TYPE, hrc6000_dmr_reg50(DMR_BURST_IDLE, 0));
 		bs->st.bursts++;

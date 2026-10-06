@@ -461,6 +461,39 @@ static void test_raw_slot(void)
 	}
 }
 
+// Variants 8-12: variant 6 with every frame also at a second place
+static void test_raw_mirror(void)
+{
+	static const struct { uint8_t page, addr; } want[5] = {
+		{ HRC6000_PAGE_DATA, 0x24 }, { HRC6000_PAGE_DATA, 0x30 }, { HRC6000_PAGE_DATA, 0x48 },
+		{ HRC6000_PAGE_DATA, 0x60 }, { 6, 0x00 },
+	};
+
+	for (uint8_t variant = 8; variant <= 12; variant++) {
+		fresh();
+		start_raw = fake_raw;
+		start(variant);
+		start_raw = NULL;
+		hrc6000_bs_key(&eng, true);
+		nx = 0;
+		do {
+			tick();
+		} while (!bs.on_air);
+		tick();
+		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x66);
+		int at0 = 0, at2 = 0;
+		for (int i = 0; i < nx; i++) {
+			if (xlog[i].read || xlog[i].n != HRC6000_BS_RAW_BYTES) {
+				continue;
+			}
+			at0 += (xlog[i].page == HRC6000_PAGE_DATA) && (xlog[i].reg == 0x00);
+			at2 += (xlog[i].page == want[variant - 8].page) && (xlog[i].reg == want[variant - 8].addr);
+		}
+		CHECK(at0 == 2 && at2 == 2);
+		hrc6000_bs_stop(&eng);
+	}
+}
+
 // No timeslot interrupt for 200 ms while keyed: unkeyed, PA off; halt while the outbound runs ends it too
 static void test_stall_and_halt(void)
 {
@@ -546,6 +579,7 @@ int main(void)
 	test_variants();
 	test_cach();
 	test_raw_slot();
+	test_raw_mirror();
 	test_stall_and_halt();
 	printf("# hrc6000BsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
