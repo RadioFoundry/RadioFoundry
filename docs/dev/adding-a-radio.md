@@ -17,7 +17,7 @@ bootloader and image format, calibration, codec location. Start from the radio's
 | File | Contents |
 |---|---|
 | `boards/<b>/board.mk` | `PLATFORM`, `MCU_DEFS`, `LDSCRIPT`, `BOARD_DIRS` (the board directory and each driver it uses), optional `BOARD_USB_DIRS` (built only with `CONFIG_USB`) and `HAL_MODULES` (STM32) |
-| `boards/<b>/config.mk` | Feature defaults for this radio, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware support lacks; ci.sh's maximal build leaves them off) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
+| `boards/<b>/config.mk` | Feature defaults for this radio, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware support lacks; ci.sh's maximal build leaves them off), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
 | `boards/<b>/<b>.ld` | Linker script: the application's start, the end of its region, and the codec window kept free. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec; list the sectors in `tools/odrflash/odrflash/boards.py` ([release.md](release.md)) |
 | `boards/<b>/FreeRTOSConfig.h` | The RTOS settings: tick, heap, priorities |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |

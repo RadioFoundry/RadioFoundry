@@ -143,7 +143,7 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
-.PHONY: all codec clean size test print-config print-cc print-unsupported print-maximal-skip print-maximal-vars
+.PHONY: all codec clean size test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
 all: $(TARGET).bin codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
@@ -155,7 +155,7 @@ codec: $(TARGET).bin
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
-ifeq ($(filter clean test print-config print-cc print-unsupported print-maximal-skip print-maximal-vars,$(MAKECMDGOALS)),)
+ifeq ($(filter clean test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
@@ -215,6 +215,10 @@ print-cc:
 # configuration leaves them off
 print-unsupported:
 	@echo '$(BOARD_UNSUPPORTED)'
+# Switches the board can't build without (boards/<board>/config.mk BOARD_REQUIRED): ci builds no "no-" configuration
+# for them
+print-required:
+	@echo '$(BOARD_REQUIRED)'
 # Switches the board supports but has no need of, which ci's maximal configuration also leaves off
 # (boards/<board>/config.mk MAXIMAL_SKIP)
 print-maximal-skip:

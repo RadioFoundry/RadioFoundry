@@ -25,7 +25,8 @@
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
 #      notice: the DM-32's csky toolchain comes from tools/build-csky-toolchain.sh):
 #        default            the board's defaults
-#        no-<FEATURE>       each switch that is on by default, turned off alone (sub-features follow)
+#        no-<FEATURE>       each switch that is on by default, turned off alone (sub-features follow), except those
+#                           the board can't build without (BOARD_REQUIRED: FM on the DB25-D while DMR isn't built)
 #        fm-minimal         FM only: no DMR, USB, VFO, diagnostics, sub-audio tones
 #        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED) or as
 #                           not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
@@ -253,9 +254,11 @@ for bm in boards/*/board.mk boards/*/; do
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
 	unsupported=" $(make -s BOARD="$b" print-unsupported 2>/dev/null) $(make -s BOARD="$b" print-maximal-skip 2>/dev/null) $MAXIMAL_SKIP "
+	required=" $(make -s BOARD="$b" print-required 2>/dev/null) "
 	for kv in $features; do
 		f=${kv%%=*}
 		case "$unsupported" in *" $f "*) ;; *) all_on="$all_on CONFIG_$f=y" ;; esac
+		case "$required" in *" $f "*) continue ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
 	[ "$b" = dm1701 ] && build "$b" audio-probe CONFIG_AUDIO_PROBE=y
