@@ -18,8 +18,8 @@ Facts are not copyrightable. Every claim carries a source link and a confidence 
 | **?** | Not found or contradictory. Needs checking before a port starts |
 
 **FCC internal photos.** FCC IDs are listed per radio, but the fccid.io and fcc.report exhibit PDFs couldn't be
-fetched by script for this survey. Opened in a browser, they download fine. So far only the DB25-D PRO and DB40-D
-chips below are confirmed from FCC photos. Reading the internal-photo exhibits by hand is the cheapest way to turn D
+fetched by script for this survey. Opened in a browser, they download fine. So far the DB25-D PRO, DB40-D, DM-1801 (2026) and
+DR-1801 chips below are confirmed from FCC photos. Reading the internal-photo exhibits by hand is the cheapest way to turn D
 and F tags into C, and it should happen before a port starts.
 
 ## Summary table
@@ -33,6 +33,8 @@ and F tags into C, and it should happen before a port starts.
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (D) | HR_C6000 (D) | AT1846S (D) | 128x64 mono, UC1701 (D) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (D) | none (D) | USB HID bootloader, .sgl files (F) | Planned: new platform |
 | Radioddity GD-88 | HR_C7000 class SoC (F) | HR_C7000 (F) | ? (two transceivers, F) | 2" color TFT (C), controller ? | ? | yes (C), module ? | Radioddity updater over K-plug cable (C) | Planned |
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (F, BIN) | HR_C7000 (F, BIN) | FD6818 (community pin map) | 240x320 color, ST7789 class (community, BIN) | 16 MB data flash (F); program flash size ? | yes (C), ATGM336H (community) | Baofeng bootloader over UART cable (BIN, F) | Builds, not on a radio yet |
+| Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (C for the HR_C7000, FCC photo; the MCU part ?) | HR_C7000 (C, FCC photo) | ? | 1.77" (C), type and controller ? | ? | none (C) | ? | Wish list, hardware needed. Not the GD-77 family |
+| Baofeng DR-1801 / DR-1801UV | ? (inside the AM6102 module ?) | Auctus AM6102 module (C, FCC photo) | ? | ? | ? | ? | ? | Not planned. Looks like a DM-1801 |
 | Radioddity DB25-D / DB25-D PRO, Retevis RT73, Kydera CDR-300UV (mobile) | HR_C7000 SoC (C, FCC photo) | HR_C7000 (C) | 2x BK4819 on the PRO (C, FCC photo); 2021 boards ? | 1.77" color TFT (C), controller ? | 2 Gbit SPI NAND, Kioxia TC58CVG1S3 (C, FCC photo) | yes (C), module ? | Vendor IAP loader over a UART cable, plain images (C, IMG) | Wish list, hardware needed |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | two processors "A" and "B", likely two HR_C7000 (C for two, ? for the part) | HR_C7000 (IMG) | ? (separate VHF and UHF chains and PA modules, C) | 2.4" color TFT (C), controller ? | SPI NAND, TC58 family (IMG) | yes (C), module ? | Vendor IAP loader over RJ-45 only, two plain images (C, IMG) | Wish list, hardware needed |
 
@@ -168,7 +170,9 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   of the .sgl encryption was found (?).
 - Rebadges: the TYT MD-760 is the GD-77 (three sources agree). The GD-77S is the TYT MD-750 (keyless, no display).
   The DM-1801 is also sold as the DM-860, and only its version 1 hardware is in this family; the 2022 DM-1801 and
-  DM-1801A are reported different. The RD-5R is the DM-5R Tier II in a new case (F)
+  DM-1801A are reported different, and the DM-1801 sold in 2026 is an HR_C7000 radio
+  ([Baofeng DM-1801 Pro and DM-1801 (current)](#baofeng-dm-1801-pro-and-dm-1801-current)). The DR-1801 has the same
+  case but no part of this platform ([Baofeng DR-1801](#baofeng-dr-1801--dr-1801uv)). The RD-5R is the DM-5R Tier II in a new case (F)
   ([opengd77.org p=26](https://www.opengd77.org/viewtopic.php?p=26),
   [w0chp](https://w0chp.radio/ogd77-webcpsd/supported-radios/),
   [swenton.com](https://swenton.com/ham-radio/ham-radio-articles/opengd77)). Sources contradict each other on the
@@ -218,6 +222,50 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   ([hardware-dm32.md](hardware-dm32.md)). No public teardown ties them to the radio (?).
 - Open firmware: OpenDM32 (credited to RA4FHE) is binary-only (F)
   ([radioreference](https://forums.radioreference.com/threads/opendm32-software.495804/post-4244981)).
+
+### Baofeng DM-1801 Pro and DM-1801 (current)
+
+Two listings sold new in 2026 under the DM-1801 name. Neither is the DM-1801 v1 of the GD-77 family.
+
+| | DM-1801 Pro | DM-1801 (current listing) |
+|---|---|---|
+| Power | 7 / 4 / 1 W (C) | 5 W (F, retailer) |
+| Memory | 4000 channels, 250 zones, 800 contacts plus 50,000 by CSV import (C) | 1024 channels and zones, 1024 contacts (F, retailer) |
+| Programmable keys | 5: SK1, SK2, the top key and the left and right arrows (C) | 3: SK1, SK2 and the top key (F, retailer) |
+
+- **DM-1801 Pro:**
+  - TX 136–174 / 400–470 MHz; RX adds AM air band 108–136 MHz and FM broadcast 65–108 MHz (C).
+  - 1.77" display, 7.4 V 2200 mAh battery, Kenwood 2-pin accessory jack, no GPS, no USB-C charging (C).
+  - Records DMR calls (about 10 hours) and exports them as WAV through the CPS (V1.60) (C).
+  - FCC ID 2AJGM-DM1801PRO; the English manual is dated 2026-09-16 (C)
+    ([baofengradio.com](https://www.baofengradio.com/products/dm-1801-pro),
+    [manual](https://baofeng.s3.amazonaws.com/Baofeng_DM-1801_Pro_User_Manual_EN_20260916.pdf),
+    [fccid.io](https://fccid.io/2AJGM-DM1801PRO)).
+- **Chips:** an HR_C7000 is on the PCB in the FCC internal photos (C, owner). The RF chip, the broadcast receiver,
+  the flash and the display controller aren't identified yet (?).
+- **Same hardware as the DM-1801:** the filing includes an attestation that the DM-1801 and the DM-1801 Pro are
+  identical except for color and distributor (C, FCC filing). The listings' different power, memory and key counts
+  don't fit "identical" unless they're firmware and marketing differences (?).
+- **Which DM-1801 revision this is:** the hardware matches neither v1 (MK22 + HR_C6000) nor the 2022 redesign
+  described as a single module (F) ([OpenGD77 user guide](https://github.com/LibreDMR/OpenGD77_UserGuide/blob/master/OpenGD77_User_Guide.md)).
+  It may be a third revision, or the 2022 redesign may already have used the HR_C7000 (?). Buying "a DM-1801" new
+  doesn't get the v1 board.
+- **Telling them apart:** v1 has a 128x64 mono display (D). The model and FCC ID label under the battery is the
+  reliable check; the case alone isn't (see the DR-1801 below).
+- **ODR:** the air band and broadcast receive match the DM-32UV, so `platform/hrc7000`, `drivers/modem/hrc7000` and
+  perhaps the DM-32UV's RF and broadcast drivers apply (? until the photos or a teardown name the RF chip). Needs:
+  the chip list, the update path and the stock image's codec.
+
+### Baofeng DR-1801 / DR-1801UV
+
+- FCC ID 2AJGM-DR1801 ([fccid.io](https://fccid.io/2AJGM-DR1801)).
+- **Chips:** one large LCC module marked "Auctus AM6102". Under the module's RF shield is an IC marked
+  "EP8277 ABE10" (C, owner, FCC internal photos). What the AM6102 integrates (MCU, DMR baseband, RF) and what the
+  EP8277 is are not documented (?). Auctus also makes the AT1846S (C).
+- **Easily mistaken for a DM-1801:** the case looks identical (C, FCC photos). The OpenGD77 FAQ calls the DR-1801
+  completely different hardware from the DM-1801 (F) ([OpenGD77 FAQ](https://opengd77.org/viewtopic.php?t=7)). A
+  forum claim that Baofeng renamed the redesigned DM-1801 to DR-1801 is unverified (F).
+- **ODR:** not planned. Nothing in ODR drives an Auctus DMR module, and no public documentation for it was found.
 
 ### Radioddity DB25-D / DB25-D PRO / Retevis RT73 / Kydera CDR-300UV
 
@@ -346,7 +394,7 @@ different architecture from anything in ODR. The Retevis C62 and Quansheng-style
 | Building block | In ODR now | Needed by |
 |---|---|---|
 | `platform/stm32f4` | yes | DM-1701, MD-UV380, MD-9600, MD-380, MD-2017, CS7000 |
-| `platform/hrc7000` | yes | DM-32UV, GD-88, DB25-D family, DB40-D |
+| `platform/hrc7000` | yes | DM-32UV, GD-88, DB25-D family, DB40-D, DM-1801 Pro / DM-1801 (2026) |
 | `drivers/modem/hrc6000` | yes | every HR_C6000 radio above |
 | `drivers/modem/hrc7000` | yes | the HR_C7000 radios |
 | `drivers/rf/at1846s` | yes | DM-1701, MD-UV380, GD-77 family, HD1, Anytone |
@@ -378,8 +426,9 @@ By effort, then by how many radios a port unlocks and how popular they are:
    the GD-77's mono driver) and the board-version problem. Effort: weeks, and the V4/V5 PLL needs identifying first.
 4. **TYT MD-380 / MD-390 / RT3.** Builds now, with the SKY72310 driver the MD-9600 can reuse, and runs the stock
    D002.032 codec in place for DMR voice ([codec-md380.md](codec-md380.md)); it needs a radio for bring-up.
-5. **HR_C7000 family after the DM-32UV is on air**: the DB25-D (one HR_C7000, the closest to the DM-32, but a new RF
-   chip and SPI NAND), then the GD-88, then the DB40-D (two SoCs, reusing the GD-88's A/B work). All three are wish
+5. **HR_C7000 family after the DM-32UV is on air**: the DM-1801 Pro (air band and broadcast like the DM-32UV, chip
+   list still open), then the DB25-D (one HR_C7000, but a new RF
+   chip and SPI NAND), then the GD-88, then the DB40-D (two SoCs, reusing the GD-88's A/B work). All four are wish
    list items until hardware is on the bench. Start by reading the FCC internal photos, since the GD-88's chip list is
    mostly unknown.
 6. **Opportunistic:** CS7000-M17 (nearly free after step 3), MD-2017 (dual receive) and DM-1702. The Anytone family
