@@ -22,7 +22,7 @@ It's early. Read the status section before you flash anything.
 
 | Radio | Builds | Host tests | On the radio | Support |
 |---|:---:|:---:|:---:|---|
-| Baofeng DM-1701 | ● | ● | ◐ | First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, scan, and the network services. Still open: SFR and split duplex (below) |
+| Baofeng DM-1701 | ● | ● | ◐ | First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, SFR hotspot mode, split duplex (one radio), scan, and the network services. Still open: SFR on channels and a two-radio split duplex pair (below) |
 | Baofeng DM-32UV | ● | ● | ○ | Builds and passes its host tests; hasn't run on a radio yet ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core, parked until bring-up ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
 | TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ○ | Builds (UHF and VHF images) and passes its host tests; hardware needed: it hasn't run on a radio yet ([bring-up checklist](docs/testing/md380-bringup.md)). DMR voice with the codec from the stock D2.32 file, merged at build time ([codec-md380](docs/spec/codec-md380.md)); untested on a radio. No CTCSS / DCS or FM TX tones yet, and the default image leaves out the hotspot to fit |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
@@ -39,9 +39,10 @@ The chips in each radio, their sources and the planned port order: [docs/spec/ra
 On the DM-1701, automated tests against the SDR bench pass on air for: FM receive and transmit, CTCSS / DCS encode,
 the 1750 Hz burst and roger beep, DMR group and private calls both ways (late entry, talker alias, ETSI GPS Info, the
 basic privacy signaling), text messages, call alert, radio check and emergency both ways, hotspot voice and data,
-battery saver, zone scan, VFO scan and dual watch. qdmr reads and writes, the USB network adapter, the network
-services and the roaming settings are checked on the radio. Still open: the SFR hotspot mode (partly) and the split
-duplex repeater (fails). Per-feature results: [on-air coverage](docs/testing/on-air-coverage.md).
+the SFR hotspot mode (a bench call repeated whole), each half of the split duplex repeater (TX with our own framing
+and CACH, RX), battery saver, zone scan, VFO scan and dual watch. qdmr reads and writes, the USB network adapter, the network
+services and the roaming settings are checked on the radio. Still open: the SFR repeater and user roles on ordinary
+channels, the SFR repeat delay (210 ms measured, 90 ms intended) and a split duplex test with two radios. Per-feature results: [on-air coverage](docs/testing/on-air-coverage.md).
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
 Releases carry the DM-1701 firmware (everything except the codec), `odrflash` to flash it on Windows, macOS and
@@ -53,7 +54,8 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
 - **DMR data:** text messages, ARS, LRRP, call alert, radio check ([dmr-data](docs/spec/dmr-data.md))
 - **Emergency:** alarm, emergency call with hot mic, alerts ([dmr-emergency](docs/spec/dmr-emergency.md))
 - **Hotspot:** the radio works as an MMDVM modem over USB ([mmdvm-protocol](docs/spec/mmdvm-protocol.md))
-- **SFR:** single frequency repeater mode on the hotspot, chosen by the MMDVM host ([sfr](docs/spec/sfr.md))
+- **SFR:** single frequency repeater mode on the hotspot, chosen by the MMDVM host; the repeater and user roles on
+  ordinary channels are not built yet ([sfr](docs/spec/sfr.md))
 - **USB network mode:** the radio becomes a USB network adapter and routes IP over DMR, with confirmed data and
   compressed headers; control station mode for PC dispatch software ([usb-network](docs/spec/usb-network.md))
 - **Services on the USB network link:** HTTP status page (port 80), Hamlib rigctld (4532), KISS over TCP (8001), an
@@ -65,7 +67,8 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
   ([dmr-roaming](docs/spec/dmr-roaming.md))
 - **APRS:** position, status and messages on FM (1200 baud AFSK), positions over DMR to an APRS gateway, KISS TNC;
   transmit only on the DM-1701, DMR positions only on the MD-380 ([aprs](docs/spec/aprs.md))
-- **Split duplex repeater (experimental):** two radios on one MMDVM host as a full duplex repeater, idle until the host assigns roles
+- **Split duplex repeater (experimental):** two radios on one MMDVM host as a full duplex repeater, idle until the host assigns roles;
+  each half passes on air, a two-radio pair hasn't been tested yet
   ([split-duplex](docs/spec/split-duplex.md))
 - **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
 - **Scan:** zone, VFO and dual watch scan; on DMR it stops for calls in progress, using late entry
@@ -92,13 +95,13 @@ people already have. We support the formats other radios use, not just our favor
 
 | Area | Supported now | Planned |
 |---|---|---|
-| Air interface | ETSI DMR Tier II: simplex, repeater, SFR (single frequency repeater), repeater roaming | ETSI Tier III trunking ([plan](docs/spec/dmr-tier3-plan.md)) |
+| Air interface | ETSI DMR Tier II: simplex, repeater, SFR (single frequency repeater) through the hotspot, repeater roaming | SFR repeater and user roles on a channel; ETSI Tier III trunking ([plan](docs/spec/dmr-tier3-plan.md)) |
 | Text messages | ETSI IP text (the default; individual texts confirmed); Motorola TMS; ETSI short data in 7-bit, ISO 8859, UTF-8 and UTF-16; ETSI UDT text | Hytera text format |
 | Location | Motorola LRRP location answers and ARS registration; ETSI GPS Info in voice calls (the caller's position shown with distance and bearing, ours sent from the APRS position); APRS position, status and messages on FM (Bell 202 AFSK) and positions over DMR to an APRS gateway ID; KISS TNC on USB | NMEA from the radio's GPS receiver, ETSI UDT location reports, APRS receive and iGate on radios that can sample received audio |
 | Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
 | Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
 | Programming | qdmr, over the GD-77-style CPS protocol | an open, published native codeplug format with its own qdmr driver; qdmr YAML and CSV import/export; RadioID user database |
-| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter (confirmed data, SAP 3 compressed UDP headers, control station mode for dispatch software); HTTP status, Hamlib rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMPv2c on the USB link; two radios as one full duplex repeater (experimental, build switch; the HR_C6000's CACH still needs a bench test) | the split duplex host side in RadioDesk |
+| Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter (confirmed data, SAP 3 compressed UDP headers, control station mode for dispatch software); HTTP status, Hamlib rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMPv2c on the USB link; two radios as one full duplex repeater (experimental, build switch; each half passes on air, a two-radio pair is untested) | the split duplex host side in RadioDesk |
 | Audio to a computer | | USRP over UDP (AllStarLink, DVSwitch), USB sound card with serial-line PTT ([usb-audio](docs/spec/usb-audio.md)) |
 
 "Supported now" means built and passing its tests; see [Radios and status](#radios-and-status) for what has been
