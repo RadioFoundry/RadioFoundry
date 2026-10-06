@@ -449,6 +449,20 @@ run: variants 0, 4 and 5 (4: 0x11 = 0x40, relay mode's repeated duplex; 5: also 
 looking for TC alternating, AT following SET_AT and the short LC decoding. The same
 runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas 8.14), fixed after them.
 
+**Result with the CACH written, DM-1701, 2026-10-12** (ab23567: 0x52 = AT / TC and TX RAM 0x24-0x28 = short LC for
+every burst, `bs.cach` = bursts on the radio):
+
+| Variant / raw writes (255) | TC alternating | AT follows SET_AT | Short LC |
+|---|---|---|---|
+| 0, 1, 2, 3, 4, 5 | 0 of 334 | no (one busy) | none |
+| 0x10 = 0x4E, 0x11 = 0x40 (ContinueMode clear, repeated duplex) | 0 of 334 | no | none |
+| 0x11 = 0x40 and 0x57 = 0x0C, 0x56 = 0x0C, or both = 0xFF | 0 of 334 | no | none |
+
+Writing the manual's CACH inputs changes nothing on air: the CACH stays all zero (a valid TACT codeword) in every mode
+tried. The chip either takes the CACH from somewhere the manual doesn't name or doesn't frame one in this mode
+(single-chip, both slots ours). Open, without a further idea for the register side; the TX half stays "CACH unknown"
+(INFO byte 4 = 3). `ODR_SPLIT_REGS="REG=VAL ..."` with `ODR_SPLIT_VARIANT=255` runs raw writes from the HIL test.
+
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout
 
 `tests/hil/test_split_duplex.py` (one radio flashed with `CONFIG_HOTSPOT_SPLIT=y`; the TX and RX tests opt-in with
@@ -460,7 +474,7 @@ runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotc
   short LC and SET_AT toggling; asserted off air: BS sync only, a burst every 30 ms (same-slot spacing 60 ms), one
   key-up edge, the color code; asserted on the radio: no underruns, short LC taken, the CACH written to the chip for
   every burst (`bs.cach`). The CACH decode is printed (TACT ok, TC alternating, AT values, short LCs: the experiment's
-  result). `ODR_SPLIT_VARIANT` picks the variant.
+  result). `ODR_SPLIT_VARIANT` picks the variant, `ODR_SPLIT_REGS` the raw writes of variant 255.
 - `test_split_rx_half_labels` (marker `rf`): the RX half with an epoch made from its own clock; a first bench call
   measures the phase residual and the epoch is centered on the bench's slots; a second call must go up under one
   label, whole (header, voice, terminator), with a residual under 5 ms; a third call with the epoch moved by 30 ms

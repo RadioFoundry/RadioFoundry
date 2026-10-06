@@ -77,7 +77,8 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     hz = round(freq * 1e6)
     variant = int(os.environ.get("ODR_SPLIT_VARIANT", "0"), 0)
-    radio.link.split_variant(variant)
+    regs = [tuple(int(x, 0) for x in kv.split("=")) for kv in os.environ.get("ODR_SPLIT_REGS", "").split()]
+    radio.link.split_variant(variant, regs)    # $ODR_SPLIT_REGS: "REG=VAL ..." for variant 255
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "sdrmon.py"))
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
     rdir = sdr_bench.run_dir("hil_split_tx")
