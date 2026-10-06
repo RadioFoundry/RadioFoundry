@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// UART0, the programming cable, as the host port (hal_stream.h): 115200 8N1 (docs/spec/hardware-dm32.md 3.1). Receive
-// by interrupt into a ring buffer; transmit by polling the TX FIFO (the host link task is the only writer).
+// The programming cable's UART as the host port (hal_stream.h): 115200 8N1 (docs/spec/hardware-dm32.md 3.1). UART0 on
+// the DM-32UV, UART1 on the DB25-D (the board sets HRC_HOST_UART). Receive by interrupt into a ring buffer; transmit by
+// polling the TX FIFO (the host link task is the only writer).
 #include "platform.h"
 #include "hal_stream.h"
 #include "FreeRTOS.h"
@@ -25,7 +26,20 @@
 #define RX_SIZE		1024u	// power of two; MMDVM frames are at most 255 bytes, CPS writes 4 KB in 32-byte chunks
 #define TX_SPIN		200000u	// per byte, about 2 ms at 168 MHz: a stalled UART gives up rather than hangs
 
-#define U(off)		REG32(UART0_BASE + (off))
+#ifndef HRC_HOST_UART
+#define HRC_HOST_UART	0
+#endif
+#if HRC_HOST_UART == 0
+#define HOST_BASE	UART0_BASE
+#define HOST_IRQ	IRQ_UART0
+#elif HRC_HOST_UART == 1
+#define HOST_BASE	UART1_BASE
+#define HOST_IRQ	IRQ_UART1
+#else
+#error "HRC_HOST_UART must be 0 or 1"
+#endif
+
+#define U(off)		REG32(HOST_BASE + (off))
 
 static uint8_t rx_buf[RX_SIZE];
 static volatile uint32_t rx_head, rx_tail;
@@ -56,7 +70,7 @@ static void uart_isr(void)
 	portYIELD_FROM_ISR(woken);
 }
 
-void hrc_uart0_init(void)
+void hrc_host_uart_init(void)
 {
 	uint32_t div = (HRC_APB_HZ + 8u * BAUD) / (16u * BAUD);	// 46 (45.6): 0.9 % slow
 	U(UART_IER) = 0;
@@ -75,11 +89,11 @@ static bool start(void)
 	if (rx_sem == NULL) {
 		rx_sem = xSemaphoreCreateBinary();
 	}
-	hrc_uart0_init();
+	hrc_host_uart_init();
 	rx_head = rx_tail = 0;
-	hrc_irq_register(IRQ_UART0, uart_isr);
+	hrc_irq_register(HOST_IRQ, uart_isr);
 	U(UART_IER) = IER_RX;
-	hrc_irq_enable(IRQ_UART0, true);
+	hrc_irq_enable(HOST_IRQ, true);
 	started = true;
 	return true;
 }
@@ -124,12 +138,12 @@ static size_t wr(const uint8_t *buf, size_t len)
 	return len;
 }
 
-uint32_t hrc_uart0_overruns(void)
+uint32_t hrc_host_uart_overruns(void)
 {
 	return rx_overruns;
 }
 
-const hal_stream_t hrc_uart0_stream = {
+const hal_stream_t hrc_host_uart_stream = {
 	.start = start,
 	.connected = connected,
 	.read = rd,

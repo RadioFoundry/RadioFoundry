@@ -75,7 +75,7 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "fd wr ");
 		put_u(&o, d.fd_writes);
 		put(&o, " uo ");
-		put_u(&o, hrc_uart0_overruns());
+		put_u(&o, hrc_host_uart_overruns());
 		break;
 	case 3:
 		put(&o, "flash ");

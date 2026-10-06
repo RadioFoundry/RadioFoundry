@@ -71,7 +71,7 @@ const board_t board = {
 	.vocoder = &dm32_vocoder,
 #endif
 #if CONFIG_HOSTLINK
-	.host_port = &hrc_uart0_stream,
+	.host_port = &hrc_host_uart_stream,
 #endif
 #if CONFIG_NET_PPP
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)

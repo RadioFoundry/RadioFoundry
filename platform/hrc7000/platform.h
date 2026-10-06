@@ -202,10 +202,10 @@ void hrc_soft_reset(void) __attribute__((noreturn));
 
 extern const hal_system_t hrc_system;
 
-// UART0 (the programming cable) as the board's host port (uart.c)
+// The programming cable's UART as the board's host port (uart.c): UART0 unless the board sets HRC_HOST_UART=1
 #include "hal_stream.h"
-extern const hal_stream_t hrc_uart0_stream;
-void hrc_uart0_init(void);
-uint32_t hrc_uart0_overruns(void);
+extern const hal_stream_t hrc_host_uart_stream;
+void hrc_host_uart_init(void);
+uint32_t hrc_host_uart_overruns(void);
 
 #endif
