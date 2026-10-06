@@ -102,10 +102,13 @@ void bsOutboundSetShortLc(bsOutbound_t *o, const uint32_t rows[4]);
 void bsOutboundNext(bsOutbound_t *o, int8_t ts, uint32_t now_ms, dmr_tx_burst_t *out, dmr_cach_t *cach,
 		    const uint8_t **emb_lc);
 
-// The slot as sent, for a modem that frames nothing itself (split-duplex.md 10.1, variants 6 and 7): the CACH (24
-// bits) then the 264-bit burst with BS data sync, most significant bit of byte 0 first. Idle, and rate 1/2 bursts whose
-// 12 bytes carry their CRC (host_crc), are BPTC coded; anything else goes out as the idle message. cach NULL: zeros.
+// The slot as sent, for a modem that only modulates (the HR_C6000's physical layer mode, modem-hrc6000.md 9.1): the
+// CACH (24 bits) then the 264-bit burst, most significant bit of byte 0 first. Voice with BS voice sync on A, the EMB
+// and emb_lc's fragments on B-E (emb_lc: the superframe's embedded LC, NULL: null fragments); data and control bursts
+// coded by rate with BS data sync, a voice LC header / terminator without parity (host_crc false) given its RS(12,9).
+// cach NULL: TC from ts, AT 0. Returns false when the burst couldn't be coded and the idle message went out instead.
 #define BS_RAW_SLOT_BYTES	36
-void bsOutboundRawSlot(const dmr_tx_burst_t *b, const dmr_cach_t *cach, uint8_t cc, uint8_t *out);
+bool bsOutboundRawSlot(const dmr_tx_burst_t *b, const dmr_cach_t *cach, int8_t ts, uint8_t cc, const uint8_t *emb_lc,
+		       uint8_t *out);
 
 #endif

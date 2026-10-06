@@ -5,9 +5,12 @@
 #include "dmr/bsOutbound.h"
 #include "dmr/fec/dmrCach.h"
 #include "dmr/fec/dmrFec.h"
+#include "dmr/call/dmr_lc.h"
+#include "hotspot/dmrDataFrame.h"
 
 #define NAK_FULL	5	// MMDVM_NAK_FULL
 #define BS_DATA_SYNC	0xDFF57D75DF5DULL	// ETSI TS 102 361-1 9.1.1
+#define BS_VOICE_SYNC	0x755FD7DF75F7ULL
 #define SYNC_FIRST_BIT	108
 
 const uint8_t BS_IDLE_INFO[12] = { 0xFF, 0x83, 0xDF, 0x17, 0x32, 0x09, 0x4E, 0xD1, 0xE7, 0xCD, 0x8A, 0x91 };
@@ -292,27 +295,101 @@ void bsOutboundNext(bsOutbound_t *o, int8_t ts, uint32_t now_ms, dmr_tx_burst_t 
 	s->n++;
 }
 
-void bsOutboundRawSlot(const dmr_tx_burst_t *b, const dmr_cach_t *cach, uint8_t cc, uint8_t *out)
+static void put_sync(uint8_t *burst, uint64_t sync)
+{
+	for (int i = 0; i < 48; i++) {
+		uint8_t m = (uint8_t)(0x80u >> ((SYNC_FIRST_BIT + i) % 8));
+
+		if (((sync >> (47 - i)) & 1u) != 0) {
+			burst[(SYNC_FIRST_BIT + i) / 8] |= m;
+		} else {
+			burst[(SYNC_FIRST_BIT + i) / 8] &= (uint8_t)~m;
+		}
+	}
+}
+
+// A voice burst (ETSI TS 102 361-1 9.1): 108 + 108 AMBE bits around the middle 48, which is the BS voice sync on A,
+// else the EMB (8 + 8 bits, LCSS by position) around 32 embedded bits: the fragments of emb_lc on B-E, null on F
+static void raw_voice(const dmr_tx_burst_t *b, uint8_t cc, const uint8_t *emb_lc, uint8_t *burst)
+{
+	const uint8_t *v = (b->len >= DMR_VOICE_BYTES) ? b->payload : SILENCE;
+	uint8_t index = (uint8_t)(b->voice_index % 6u), middle[6] = { 0, 0, 0, 0, 0, 0 };
+
+	if (index > 0) {
+		uint16_t emb = dmrFecEmbEncode(cc, false, dmr_emb_lcss(index));
+
+		middle[0] = (uint8_t)(emb >> 8);
+		if ((index <= 4) && (emb_lc != NULL)) {
+			uint8_t frag[4][4];
+
+			dmr_emb_lc_encode(emb_lc, frag);
+			memcpy(middle + 1, frag[index - 1], 4);
+		}
+		middle[5] = (uint8_t)emb;
+	}
+	memcpy(burst, v, 13);
+	burst[13] = (uint8_t)((v[13] & 0xF0) | (middle[0] >> 4));
+	for (int i = 0; i < 5; i++) {
+		burst[14 + i] = (uint8_t)((middle[i] << 4) | (middle[i + 1] >> 4));
+	}
+	burst[19] = (uint8_t)((middle[5] << 4) | (v[13] & 0x0F));
+	memcpy(burst + 20, v + 14, 13);
+	if (index == 0) {
+		put_sync(burst, BS_VOICE_SYNC);
+	}
+}
+
+// A data / control burst through the hotspot's frame coder (BPTC, trellis, rate 1), BS data sync. A voice LC header
+// or terminator without its parity (the core's own terminator) gets RS(12,9) here; anything it can't code: false
+static bool raw_data(const dmr_tx_burst_t *b, uint8_t cc, uint8_t *burst)
+{
+	dmrBurst_t d;
+
+	memset(&d, 0, sizeof(d));
+	d.dataType = b->kind;
+	d.length = (b->len <= DMR_BURST_PAYLOAD_MAX) ? b->len : DMR_BURST_PAYLOAD_MAX;
+	memcpy(d.payload, b->payload, d.length);
+	if (!b->host_crc && (b->len >= DMR_LC_BYTES) &&
+	    ((b->kind == DMR_BURST_VOICE_LC_HEADER) || (b->kind == DMR_BURST_TERMINATOR_LC))) {
+		dmr_lc_encode_full(b->payload, (b->kind == DMR_BURST_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER :
+				   DMR_RS_MASK_TERMINATOR, d.payload);
+		d.length = DMR_LC_FULL_BYTES;
+	} else if (!b->host_crc && (b->kind != DMR_BURST_IDLE)) {
+		return false;		// the chip would have added the CRC: the core's outbound never asks for that
+	}
+	if (b->kind == DMR_BURST_IDLE) {
+		memcpy(d.payload, (b->len >= 12) ? b->payload : BS_IDLE_INFO, 12);
+		d.length = 12;
+	}
+	if (!dmrDataBurstToFrame(&d, cc, burst)) {
+		return false;
+	}
+	put_sync(burst, BS_DATA_SYNC);
+	return true;
+}
+
+bool bsOutboundRawSlot(const dmr_tx_burst_t *b, const dmr_cach_t *cach, int8_t ts, uint8_t cc, const uint8_t *emb_lc,
+		       uint8_t *out)
 {
 	uint8_t *burst = out + 3;
-	bool bptc = b->host_crc && (b->len >= 12) && (b->kind <= DMR_BURST_RATE_12_DATA);
-	uint8_t type = bptc ? b->kind : DMR_BURST_IDLE;
-	const uint8_t *info = bptc ? b->payload : BS_IDLE_INFO;
+	// Without the core's CACH (a driver underrun): TC from the slot, AT idle, a null payload
+	uint32_t c = (cach != NULL) ? cach->bits : dmrCachBuild(0, (ts == 2) ? 1u : 0u, DMR_LCSS_LAST, 0);
+	bool ok = true;
 
-	if ((b->kind == DMR_BURST_IDLE) && (b->len >= 12)) {
-		info = b->payload;
-	}
 	memset(out, 0, BS_RAW_SLOT_BYTES);
-	uint32_t c = (cach != NULL) ? cach->bits : 0u;
-
 	out[0] = (uint8_t)(c >> 16);
 	out[1] = (uint8_t)(c >> 8);
 	out[2] = (uint8_t)c;
-	dmrFecBptcEncode(info, burst);
-	dmrFecSlotTypeEncode(cc, type, burst);
-	for (int i = 0; i < 48; i++) {
-		if (((BS_DATA_SYNC >> (47 - i)) & 1u) != 0) {
-			burst[(SYNC_FIRST_BIT + i) / 8] |= (uint8_t)(0x80u >> ((SYNC_FIRST_BIT + i) % 8));
-		}
+	if (b->kind == DMR_BURST_VOICE) {
+		raw_voice(b, cc, emb_lc, burst);
+	} else if (!raw_data(b, cc, burst)) {
+		dmr_tx_burst_t idle;
+
+		memset(&idle, 0, sizeof(idle));
+		idle.kind = DMR_BURST_IDLE;
+		memset(burst, 0, DMR_FEC_BURST_BYTES);
+		(void)raw_data(&idle, cc, burst);
+		ok = false;
 	}
+	return ok;
 }

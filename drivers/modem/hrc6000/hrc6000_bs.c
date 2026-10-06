@@ -25,9 +25,9 @@
 #define CTL_NONE	0x00
 #define MODE_DMR	0x6E	// the operation value (hrc6000_dmr_enter)
 #define MODE_LAYER_MASK	0x18	// 0x10 bits 4-3: 00 physical layer, 01 layer 2, 10 layer 3
-#define L2_DECODE_MASK	0x03	// 0x40 bits 1-0, Decode_Mode: 11 normal, 00 physical layer test without coding
+#define RAW_HALF0	0x00	// TX RAM (page 2): the physical layer mode's two slot buffers
+#define RAW_HALF1	0x24
 #define CHAN_DIRECT	0x80	// direct simplex (modem-hrc6000.md 2)
-#define CHAN_RPT_DUPLEX	0x40	// relay mode: repeated duplex (bit 6)
 #define PAGE2_SLC	0x24	// TX RAM: the short LC, 28 bits (0x24-0x27 bits 7-4) and its CRC-8 (0x28)
 #define STALL_US	200000u
 
@@ -62,48 +62,24 @@ static int8_t ts_of(const hrc6000_bs_t *bs, uint32_t tick)
 	return (((tick - bs->base_tick) & 1u) != 0) ? 1 : 2;	// base_tick + 1 starts TS1
 }
 
+// Our framing (variants 0, 255 with a raw slot builder): the physical layer mode; variant 1: the chip's layer 2 BS
+// framing (0x10 = 0x6E as in normal operation)
+static bool raw_mode(const hrc6000_bs_t *bs)
+{
+	return (bs->cfg.variant != HRC6000_BS_VARIANT_CHIP) && (bs->raw_slot != NULL);
+}
+
 static void variant_regs(hrc6000_dmr_t *e, hrc6000_bs_t *bs, bool on)
 {
-	uint8_t mode = MODE_DMR, chan = CHAN_DIRECT;
-
-	if (on) {
-		switch (bs->cfg.variant) {
-		case 1:
-			chan = 0x00;
-			break;
-		case 2:
-			mode = 0x4E;	// ContinueMode (bit 5) clear
-			chan = 0x00;
-			break;
-		case 3:
-			mode = 0x6A;	// relay (bit 2) clear
-			chan = 0x00;
-			break;
-		case 4:
-		case 5:
-			chan = CHAN_RPT_DUPLEX;	// relay mode's repeated duplex (5: also the CACH LCSS in 0x50, setup())
-			break;
-		case 6:
-		case 8:
-		case 9:
-		case 10:
-		case 11:
-		case 12:
-			mode = MODE_DMR & (uint8_t)~MODE_LAYER_MASK;	// physical layer mode
-			break;
-		default:
-			break;
-		}
-	}
-	// Variant 7's Decode_Mode 00; setup() keeps bs->reg40 and only changes bit 3
-	bs->reg40 = (on && (bs->cfg.variant == 7)) ? (uint8_t)(L2_ACTIVE & ~L2_DECODE_MASK) : L2_ACTIVE;
-	w(e, R_L2_CTL, bs->reg40);
-	w(e, R_MODE, mode);
-	w(e, R_CHAN, chan);
+	w(e, R_MODE, (on && raw_mode(bs)) ? (uint8_t)(MODE_DMR & ~MODE_LAYER_MASK) : MODE_DMR);
 	for (uint8_t i = 0; on && (i < bs->cfg.nregs) && (i < DMR_BS_REGS_MAX); i++) {
-		// Restored at unkey to the values of the init sequence the registers came from: only 0x10 / 0x11 / 0x40
-		// are known, so a raw write elsewhere stays until the next DMR entry (hrc6000_dmr_enter)
+		// Restored at unkey to the values of the init sequence the registers came from: only 0x10 is known, so a
+		// raw write elsewhere stays until the next DMR entry (hrc6000_dmr_enter)
 		w(e, bs->cfg.regs[i][0], bs->cfg.regs[i][1]);
+	}
+	if (!on && (bs->cfg.nregs > 0)) {
+		w(e, R_CHAN, CHAN_DIRECT);
+		w(e, R_L2_CTL, bs->reg40);
 	}
 	bs->regs_written = on;
 }
@@ -258,30 +234,28 @@ static void write_page2(hrc6000_dmr_t *e, uint8_t addr, const uint8_t *data, uin
 static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_burst_t *b, const uint8_t *lc,
 		  const dmr_cach_t *cach)
 {
-	uint8_t v = bs->cfg.variant;
+	int k = ts - 1;
 
-	if (((v == 6) || (v == 7) || ((v >= 8) && (v <= 12))) && (bs->raw_slot != NULL)) {
-		// 8-12: the same frame also at a second place, looking for the other slot's TX buffer (variant 6 on air:
-		// every other slot only, split-duplex.md 10.1)
-		static const struct { uint8_t page, addr; } MIRROR[5] = {
-			{ HRC6000_PAGE_DATA, 0x24 }, { HRC6000_PAGE_DATA, 0x30 }, { HRC6000_PAGE_DATA, 0x48 },
-			{ HRC6000_PAGE_DATA, 0x60 }, { 6, 0x00 },
-		};
+	if (raw_mode(bs)) {
+		// The whole slot is ours: the chip sends TX RAM 0x00-0x23 and 0x24-0x47 in alternate slots and takes its half
+		// at the slot start, so the frame goes to both (the parity isn't known; modem-hrc6000.md 9.1)
 		uint8_t raw[HRC6000_BS_RAW_BYTES];
 
-		bs->raw_slot(b, cach, bs->cfg.cc, raw);
-		hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, 0x00, raw, sizeof(raw));
-		if (v >= 8) {
-			hrc6000_write_burst(e->dev, MIRROR[v - 8].page, MIRROR[v - 8].addr, raw, sizeof(raw));
+		if ((b->kind == DMR_BURST_VOICE) && ((b->voice_index % 6u) == 0) && (lc != NULL)) {
+			memcpy(bs->lc[k], lc, 9);
+			bs->lc_valid[k] = true;
 		}
+		if (!bs->raw_slot(b, cach, ts, bs->cfg.cc, bs->lc_valid[k] ? bs->lc[k] : NULL, raw)) {
+			bs->st.uncoded++;
+		}
+		hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, RAW_HALF0, raw, sizeof(raw));
+		hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, RAW_HALF1, raw, sizeof(raw));
 		bs->st.raw++;
 		bs->st.cach_written += cach != NULL;
 		w(e, R_SLOT_CTL, CTL_TX);
-		w(e, R_TX_TYPE, hrc6000_dmr_reg50(DMR_BURST_IDLE, 0));
 		bs->st.bursts++;
 		return;
 	}
-	int k = ts - 1;
 	bool voice = b->kind == DMR_BURST_VOICE;
 	uint8_t idx = (uint8_t)(b->voice_index % 6u);
 	bool mcu_crc = !voice && (b->kind != DMR_BURST_IDLE) && b->host_crc;
@@ -327,9 +301,8 @@ static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_bu
 			hrc6000_dmr_voice(e->dev, true, frame);
 		}
 	}
-	// The CACH before this burst: the chip frames it from AT / TC in 0x52 and the short LC in page 2 (the manual's
-	// register and TX RAM tables); where it takes the LCSS from is the bench's question (variant 5: 0x50 bits 1-0)
-	uint8_t lcss = 0;
+	// The CACH before this burst: the manual has the chip frame it from AT / TC in 0x52 and the short LC in page 2;
+	// on air it stays all zero (split-duplex.md 10.1), which is why our framing is the default
 
 	if (cach != NULL) {
 		w(e, R_CACH_TX, (uint8_t)(((cach->at & 1u) << 3) | ((cach->tc & 1u) << 2)));
@@ -338,13 +311,10 @@ static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_bu
 					   (uint8_t)(cach->slc << 4), cach->slc_crc };
 			hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, PAGE2_SLC, slc, sizeof(slc));
 		}
-		if (bs->cfg.variant == 5) {
-			lcss = (uint8_t)(cach->lcss & 3u);
-		}
 		bs->st.cach_written++;
 	}
 	w(e, R_SLOT_CTL, CTL_TX);
-	w(e, R_TX_TYPE, (uint8_t)(hrc6000_dmr_reg50(b->kind, idx) | lcss));
+	w(e, R_TX_TYPE, hrc6000_dmr_reg50(b->kind, idx));
 	bs->st.bursts++;
 }
 

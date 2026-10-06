@@ -565,18 +565,14 @@ at the first timeslot interrupt after the unkey, or by the watchdog when no time
 0x10 / 0x11 back to 0x6E / 0x80, MS sync, 0x40 = 0xC3, the slot engine restarts the receiver.
 
 The CACH: the manual has the MCU give the BS downstream CACH's AT and TC in 0x52 (written) and the short LC in TX RAM
-0x24-0x28; the chip encodes and interleaves it. Every burst set up writes 0x52 from the core's CACH, and the slot that
-carries a short LC's first fragment writes the whole short LC (28 bits and its CRC-8). Before this (the runs of
-2026-10-11) nothing was written there and the CACH went out empty (TC 0, no short LC). Not in the manual: where the
-chip takes the CACH LCSS from (its own count, or 0x50 bits 1-0, "LocalLCSS, every time slot", which the HR_C6000 does
-not use for the EMB). `HRC6000_BS_CACH_METHOD` says "unknown" until the bench confirms the CACH on air (`split-duplex.md`
-10.1). The experiment's variants are written at key-up and restored at unkey: 1 0x11 = 0x00; 2 0x10 = 0x4E, 0x11 =
-0x00; 3 0x10 = 0x6A, 0x11 = 0x00; 4 0x11 = 0x40 (relay mode's repeated duplex); 5 as 4 and the CACH LCSS in 0x50 bits
-1-0; 6 and 7 the raw slot: the MCU builds the CACH and burst (288 bits) and writes the 36 bytes to page 2 0x00, with 6
-in the physical layer mode (0x10 = 0x66) and 7 in layer 2 with Decode_Mode 00 (0x40 = 0xE0); 255 variant 0. Up to four
-raw page 4 pairs follow any variant's values (left as written until the next DMR entry, except 0x10 / 0x11 / 0x40 which
-are restored). Bench, 2026-10-12: with 0x52 and the short LC written, variants 0-5 and the raw pairs tried still send an
-all-zero CACH (`split-duplex.md` 10.1). Host test: `tests/host/hrc6000BsTest.c`.
+0x24-0x28, and the chip encode it. On air (DM-1701, 2026-10-12) the layer 2 CACH stays all zero whatever is written
+there, in every 0x10 / 0x11 / 0x50 combination tried (`split-duplex.md` 10.1). What works is the **physical layer
+mode** (0x10 = 0x66, LayerMode 00), which the manual documents only for receive: the chip then modulates TX RAM page
+2 as given, 288 bits per slot (24 CACH, 264 burst, MSB of the first byte first), from 0x00-0x23 and 0x24-0x47 in
+alternate slots, and takes its half at the slot start. The slot interrupt, 0x41 = 0x80 and the PA keying work as in
+layer 2. The driver writes each slot's frame (`bsOutboundRawSlot`) to both halves, since which half is which slot
+isn't known, and nothing to 0x50, 0x52 or the vocoder. Variant 1 keeps the layer 2 framing (0x52 and the short LC
+written for every burst) for comparison; 255 adds up to four raw page 4 pairs at key-up. Host test: `tests/host/hrc6000BsTest.c`.
 
 ---
 

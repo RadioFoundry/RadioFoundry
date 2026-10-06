@@ -243,15 +243,14 @@ MMDVMHost sends is to be confirmed on the bench (section 11, open question 1): b
 The core hands the modem driver, for each slot, the burst and the CACH (fields and the 24 interleaved bits:
 `dmr_cach_t`). What the driver can do with the CACH depends on the chip:
 
-- **HR_C6000** (DM-1701, MD-9600, GD-77): 0x10 = 0x6E already has bit 2 (ISRepeater) set in normal operation. The
-  manual gives the CACH's inputs: AT and TC written to 0x52 for each burst, the short LC (28 bits and CRC-8) in TX
-  RAM 0x24-0x28 (`modem-hrc6000.md` 1, 2); the driver writes both from `dmr_cach_t` (its `slc` / `slc_crc` with the
-  first fragment). Relay mode's 0x11 bit 6 is "repeated duplex", which a duplex BS should be (variant 4). Also known:
-  page 1 0x04 sets the transmitted sync (BS data sync gives BS voice sync too, `modem-hrc6000.md` 2), active timing
-  (0x40 = 0xE3) gives a free-running slot clock, and 0x41 = 0x80 in every slot sends in both slots. The **BS framing
-  experiment** (section 10.1) runs the register variants (0x11, 0x10 bit 5, where the LCSS goes, raw writes from the
-  debug link) while the SDR bench decodes what is on air. Until one shows the CACH right on air the INFO block says
-  "3 unknown".
+- **HR_C6000** (DM-1701, MD-9600, GD-77): the chip's layer 2 BS framing sends a CACH, but it stays all zero whatever is
+  written to the inputs the manual names (AT / TC in 0x52, the short LC in TX RAM 0x24-0x28; section 10.1). So the
+  driver runs the chip in the physical layer mode (0x10 = 0x66), where it only modulates: the core builds each slot's
+  288 bits (`bsOutboundRawSlot`: the CACH, then the burst with BS sync, slot type and coded payload, or for voice the
+  AMBE around the sync or EMB and embedded LC) and the driver writes them to TX RAM page 2. The chip sends 0x00-0x23
+  and 0x24-0x47 in alternate slots and takes its half at the slot start; which half is which slot isn't known, so
+  each frame goes to both. INFO byte 4 says 1 (ours). Active timing (0x40 = 0xE3) gives the free-running slot clock
+  and 0x41 = 0x80 in every slot sends in both slots (`modem-hrc6000.md` 9.1).
 - **HR_C7000** (DM-32, GD-88): LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS and BS_CACH (0x428-0x438) exist and are never
   written by working firmware (`modem-hrc7000.md` 2.5); the user guide's descriptions of them are not in our spec yet.
   Until the register layout is specified the HR_C7000 has no `bs_*` operations, so INFO offers no TX half on it. The
@@ -415,71 +414,31 @@ from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by
 
 ## 10. Bench tests (the lead's HIL)
 
-### 10.1 BS framing experiment (HR_C6000, one flash)
+### 10.1 BS framing on the HR_C6000 (bench, 2026-10-11 and 12)
 
-Debug link command `SPLIT` (0x15) op 1 sets the variant the next TX half key-up uses; op 2 reads the split view.
-Variants: 0 the driver default (0x10 = 0x6E, 0x11 = 0x80), 1 0x11 = 0x00, 2 0x10 = 0x4E and 0x11 = 0x00, 3 0x10 =
-0x6A (relay bit clear) and 0x11 = 0x00, 4 0x11 = 0x40 (repeated duplex), 5 as 4 with the CACH LCSS in 0x50 bits 1-0,
-255 variant 0's values. Up to 4 raw (page 4 register, value) pairs are written after any variant's values at key-up;
-0x10, 0x11 and 0x40 are restored at unkey. Variants 6 and 7 are the raw slot: the core builds all 288 bits of each slot
-(`bsOutboundRawSlot`: the CACH, then the burst BPTC coded with its slot type and BS data sync) and the driver writes
-the 36 bytes to TX RAM page 2 0x00. 6 sets the physical layer mode (0x10 = 0x66, LayerMode 00), 7 keeps layer 2 with
-Decode_Mode 00 (0x40 = 0xE0, the manual's "physical layer test mode without coding"). The manual documents neither
-for transmit; if one sends our bits as given, the CACH (and everything else) is ours. 8-12 are 6 with each frame also
-written to a second place (page 2 0x24, 0x30, 0x48, 0x60, page 6 0x00).
+Debug link command `SPLIT` (0x15) op 1 sets the framing variant the next TX half key-up uses; op 2 reads the split
+view. Variants: 0 ours (the default: physical layer mode, the core's 288 bits per slot), 1 the chip's layer 2
+framing (0x10 = 0x6E; AT / TC written to 0x52 and the short LC to TX RAM 0x24 for every burst), 255 ours with up to
+4 raw (page 4 register, value) pairs written at key-up (0x10 restored at unkey; 0x11 and 0x40 too when pairs were
+given). `tools/split_duplex_host.py --exp <variant>` or the HIL test (`ODR_SPLIT_VARIANT`, `ODR_SPLIT_REGS="REG=VAL
+..."`) keys the outbound with idle bursts and a short LC for 10 s; `sdrmon.py analyze --cach` on the SDR bench
+decodes per burst the family, the CACH (`tact ok AT TC LCSS`) and the short LC.
 
-**Result, raw slot, DM-1701, 2026-10-12** (b10b7b7):
+How it was found (DM-1701, 467.375 MHz, lowest power, 10 s and about 335 bursts per run):
 
-| Variant | On air |
+| Build / variant | On air |
 |---|---|
-| 6 (0x10 = 0x66) | every other slot only (168 bursts in 10 s, 60.000 ms apart), each one exactly our frame: BS sync, 0 sync errors, idle with CC 2, our CACH (TC, LCSS 1/3 or 2/3 in order, the short LC fragments' payloads) |
-| 6 + 0x10 = 0x46 / 0x62 / 0x64 | the same, other slot parity this time (TC 0); AT follows SET_AT (busy on 97 of 168) |
-| 7 (0x40 = 0xE0) | the chip's own framing, CACH all zero (Decode_Mode 00 changes nothing on TX) |
+| Layer 2 framing, 0x10 / 0x11 variants (0x6E, 0x4E, 0x6A; 0x11 0x80, 0x00, 0x40), nothing written to the CACH inputs | the continuous outbound right (30.00 ms, one key-up, BS sync, our color code); the CACH all zero (a valid TACT codeword), TC never alternating |
+| The same with AT / TC in 0x52 and the short LC in TX RAM 0x24-0x28 every burst, LCSS also in 0x50 bits 1-0, raw 0x56 / 0x57 | unchanged: CACH all zero, no short LC |
+| Layer 2 with Decode_Mode 00 (0x40 = 0xE0), our 288 bits at TX RAM 0x00 | the chip's own framing, CACH all zero |
+| Physical layer mode (0x10 = 0x66), our 288 bits at TX RAM 0x00 | exactly our frames (sync, slot type, payload, CACH with TC, LCSS and the short LC fragments; AT following SET_AT), but every other slot only: 168 bursts, 60 ms apart, the parity changing between key-ups |
+| ... and also at 0x24 | both slots: 335 bursts, TC alternating 334 of 334, AT following SET_AT, 83 short LCs decoded, none bad |
+| ... also at 0x30, 0x48, 0x60, page 6 0x00 (not 0x24) | the other slot repeats a stale frame (whatever 0x24 last held) |
+| 0x00 and 0x24, voice LC headers queued on TS2 with idle on TS1 | 168 idle (B), 154 idle and 15 headers (A), no sync or slot type errors: the half on air isn't disturbed by the next frame written over it at the slot start |
 
-The physical layer mode sends our 288 bits as given: CACH, sync, slot type and payload are ours. The driver writes
-both slots' frames (337 set up in 386 slot interrupts) but the chip sends only every other one from page 2 0x00, and
-which parity depends on the key-up. Next: variants 8-12, looking for the other slot's buffer. `tools/split_duplex_host.py --exp <variant>` sets it, takes the TX half role,
-keys the outbound with idle bursts and a short LC for 10 s.
-
-On the SDR bench `sdrmon.py capture` then `sdrmon.py analyze --cach` prints per burst the family (`bs`), the CACH
-decode (`tact ok AT TC LCSS` or `tact bad`) and a summary. Look for: (1) bursts every 30.000 ms alternating TC 0 / 1
-with BS data sync and data type 9 (idle) with our color code: the continuous outbound works; (2) the carrier stays up
-between bursts (one key-up edge, no ramps every 30 ms); (3) `tact ok` on nearly every burst: the chip sends a CACH;
-then whether TC alternates in step with our slot numbering, whether AT follows `SET_AT` (the script toggles it every
-2 s) and whether the short LC decodes (`slc` lines) tell whose content it is. INFO byte 4 is then set by the driver
-constant `HRC6000_BS_CACH_METHOD` in a later build.
-
-**Result, DM-1701, 2026-10-11** (467.375 MHz, lowest power, 10 s per variant, about 335 BS bursts each):
-
-| Variant | Bursts 30.00 ms apart, one key-up | BS sync, idle, our color code | CACH | TC alternating | AT follows SET_AT | Short LC |
-|---|---|---|---|---|---|---|
-| 0 | yes | yes | `tact ok` on all | 17 of 334 | no (2 busy) | none decoded |
-| 1 | yes | yes | `tact ok` on all | 0 of 334 | no | none |
-| 2 | yes | yes | `tact ok` on all | 1 of 334 | no | none |
-| 3 | yes | yes | `tact ok` on all | 1 of 334 | no | none |
-
-The continuous outbound works in every variant. The CACH does not: TS2's CACH is all zero and TS1's mostly zero, so the
-2.5 ms gap holds a valid but empty TACT and no short LC, and none of these registers makes the chip number its slots.
-`HRC6000_BS_CACH_METHOD` stays "unknown" (INFO byte 4 = 3); a standard radio can't tell TS1 from TS2 on this outbound.
-On 4a9c002 (ring fixed) TS2 sends only idle bursts (167 of 167). Why the CACH was empty: the manual has the MCU write
-AT / TC to 0x52 and the short LC to TX RAM 0x24 for every burst, and nothing wrote them. The driver does now; next
-run: variants 0, 4 and 5 (4: 0x11 = 0x40, relay mode's repeated duplex; 5: also the CACH LCSS in 0x50 bits 1-0),
-looking for TC alternating, AT following SET_AT and the short LC decoding. The same
-runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas 8.14), fixed after them.
-
-**Result with the CACH written, DM-1701, 2026-10-12** (ab23567: 0x52 = AT / TC and TX RAM 0x24-0x28 = short LC for
-every burst, `bs.cach` = bursts on the radio):
-
-| Variant / raw writes (255) | TC alternating | AT follows SET_AT | Short LC |
-|---|---|---|---|
-| 0, 1, 2, 3, 4, 5 | 0 of 334 | no (one busy) | none |
-| 0x10 = 0x4E, 0x11 = 0x40 (ContinueMode clear, repeated duplex) | 0 of 334 | no | none |
-| 0x11 = 0x40 and 0x57 = 0x0C, 0x56 = 0x0C, or both = 0xFF | 0 of 334 | no | none |
-
-Writing the manual's CACH inputs changes nothing on air: the CACH stays all zero (a valid TACT codeword) in every mode
-tried. The chip either takes the CACH from somewhere the manual doesn't name or doesn't frame one in this mode
-(single-chip, both slots ours). Open, without a further idea for the register side; the TX half stays "CACH unknown"
-(INFO byte 4 = 3). `ODR_SPLIT_REGS="REG=VAL ..."` with `ODR_SPLIT_VARIANT=255` runs raw writes from the HIL test.
+So in the physical layer mode the chip sends TX RAM 0x00-0x23 and 0x24-0x47 in alternate slots and latches its half
+at the slot start. Earlier runs also found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas
+8.14).
 
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout
 
@@ -490,9 +449,9 @@ tried. The chip either takes the CACH from somewhere the manual doesn't name or 
   unknown command (NAK 1), the debug link's SPLIT view.
 - `test_split_tx_half_off_air` (marker `radio_tx`): the TX half keyed 10 s at the lowest power with idle bursts, a
   short LC and SET_AT toggling; asserted off air: BS sync only, a burst every 30 ms (same-slot spacing 60 ms), one
-  key-up edge, the color code; asserted on the radio: no underruns, short LC taken, the CACH written to the chip for
-  every burst (`bs.cach`). The CACH decode is printed (TACT ok, TC alternating, AT values, short LCs: the experiment's
-  result). `ODR_SPLIT_VARIANT` picks the variant, `ODR_SPLIT_REGS` the raw writes of variant 255.
+  key-up edge, the color code, and with our framing (variant 0) the CACH: TC alternating, AT following SET_AT, the
+  short LC decoding; asserted on the radio: no underruns, short LC taken, a CACH for every burst (`bs.cach`).
+  `ODR_SPLIT_VARIANT` picks the variant, `ODR_SPLIT_REGS` the raw writes of variant 255.
 - `test_split_rx_half_labels` (marker `rf`): the RX half with an epoch made from its own clock; a first bench call
   measures the phase residual and the epoch is centered on the bench's slots; a second call must go up under one
   label, whole (header, voice, terminator), with a residual under 5 ms; a third call with the epoch moved by 30 ms

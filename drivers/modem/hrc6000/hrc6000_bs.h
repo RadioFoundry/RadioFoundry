@@ -7,17 +7,13 @@
 // the first RF TX interrupt and stays up until unkeyed. Each outbound slot plays its own queue in order; an empty one
 // gets an idle burst (counted). Key-up starts with an outbound TS1 slot.
 //
-// The CACH: the manual has the chip frame it from the BS downstream AT / TC written to 0x52 and the short LC in TX RAM
-// (page 2 0x24-0x28), written here from the core's CACH for every burst (the first fragment's slot writes the short LC).
-// INFO reports "unknown" (HRC6000_BS_CACH_METHOD) until the bench confirms what goes on air.
-// The experiment (split-duplex.md 10.1): variant 0 the operation values 0x10 = 0x6E, 0x11 = 0x80; 1 0x11 = 0x00; 2
-// 0x10 = 0x4E and 0x11 = 0x00; 3 0x10 = 0x6A and 0x11 = 0x00; 4 0x11 = 0x40 (relay mode's repeated duplex); 5 as 4,
-// and the CACH LCSS in 0x50 bits 1-0; 6 and 7 the raw slot: the MCU builds all 288 bits (CACH and burst, raw_slot) and
-// writes them to TX RAM page 2 0x00, with 6 the physical layer mode (0x10 bits 4-3 = 00) and 7 layer 2 with
-// Decode_Mode 00 (0x40 bits 1-0, "physical layer test mode without coding"); the manual documents neither for
-// transmit; 8-12 as 6, each frame also written to a second place (page 2 0x24, 0x30, 0x48, 0x60, page 6 0x00), as
-// variant 6 sent every other slot only. Up to four raw (page 4 register, value) pairs are written after the variant's values (255: on top of
-// variant 0's). Written at key-up, 0x10 / 0x11 / 0x40 restored at unkey.
+// Framing (split-duplex.md 10.1, bench 2026-10-12): in layer 2 the chip frames the bursts but its CACH stays all zero
+// whatever is written to the inputs the manual names (0x52 AT / TC, TX RAM 0x24 short LC). So by default the chip
+// runs in the physical layer mode (0x10 bits 4-3 = 00) and only modulates: the core builds each slot's 288 bits (CACH
+// and burst, bsOutboundRawSlot) and they go to TX RAM page 2, where the chip sends 0x00-0x23 and 0x24-0x47 in
+// alternate slots. Variant 1 is the chip's layer 2 framing (0x52 and the short LC written for every burst), 255 our
+// framing with up to four raw (page 4 register, value) pairs written at key-up (0x10 restored at unkey, 0x11 and
+// 0x40 too when pairs were given).
 #ifndef HRC6000_BS_H
 #define HRC6000_BS_H
 
@@ -28,12 +24,15 @@
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 
 #define HRC6000_BS_Q		3	// bursts queued per slot (the core keeps two ahead)
-#define HRC6000_BS_CACH_METHOD	DMR_BS_CACH_UNKNOWN
+#define HRC6000_BS_CACH_METHOD	DMR_BS_CACH_OURS
+#define HRC6000_BS_VARIANT_CHIP	1	// the chip's layer 2 framing (its CACH is empty)
 #define HRC6000_BS_VARIANT_RAW	255
-#define HRC6000_BS_RAW_BYTES	36	// the raw slot: CACH (24 bits) and burst (264)
+#define HRC6000_BS_RAW_BYTES	36	// one slot: CACH (24 bits) and burst (264)
 
-// Builds one raw slot (variants 6, 7): core/dmr/bsOutbound.h bsOutboundRawSlot, set by the board
-typedef void (*hrc6000_bs_raw_fn)(const dmr_tx_burst_t *b, const dmr_cach_t *cach, uint8_t cc, uint8_t *out);
+// Builds one slot (core/dmr/bsOutbound.h bsOutboundRawSlot, passed by the board; NULL: the chip's framing). False:
+// the burst couldn't be coded and the idle message is in its place
+typedef bool (*hrc6000_bs_raw_fn)(const dmr_tx_burst_t *b, const dmr_cach_t *cach, int8_t ts, uint8_t cc,
+				  const uint8_t *emb_lc, uint8_t *out);
 
 typedef struct {
 	uint32_t slots;		// slot boundaries since bs_start
@@ -43,14 +42,15 @@ typedef struct {
 	uint32_t rf_fail;	// PA key / drop the board could not do
 	uint32_t stalls;	// no timeslot interrupt for 200 ms while keyed: unkeyed
 	uint32_t cach_given;	// CACH handed over by the core
-	uint32_t cach_written;	// ... written to the chip (0x52, the short LC); an underrun's idle burst has none
+	uint32_t cach_written;	// ... sent (in our framing, or 0x52 / short LC in the chip's); an underrun has none
 	uint32_t page2_lc;	// embedded LC rewrites (two slots share page 2)
-	uint32_t raw;		// raw slots written (variants 6, 7)
+	uint32_t raw;		// slots of our framing written
+	uint32_t uncoded;	// ... of those, a burst the builder couldn't code (idle sent instead)
 } hrc6000_bs_stats_t;
 
 typedef struct hrc6000_bs {
 	dmr_bs_config_t cfg;
-	hrc6000_bs_raw_fn raw_slot;	// NULL: variants 6 and 7 frame as variant 0
+	hrc6000_bs_raw_fn raw_slot;	// NULL: the chip's framing
 	volatile bool keyed;	// asked
 	bool on_air;		// keyed and the first TS1 slot set up
 	bool pa;

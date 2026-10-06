@@ -324,30 +324,76 @@ static dmr_tx_burst_t lcb(uint8_t kind, uint8_t tag)
 	return b;
 }
 
-// The raw slot (variants 6, 7 of the HR_C6000 experiment): CACH bits, then a burst our own decoders read back as the
-// payload with the slot type and BS data sync; a burst it can't code goes out as the idle message
+static uint64_t raw_sync(const uint8_t *burst)
+{
+	uint64_t v = 0;
+
+	for (int i = 0; i < 48; i++) {
+		int bit = 108 + i;
+		v = (v << 1) | (uint64_t)((burst[bit / 8] >> (7 - bit % 8)) & 1);
+	}
+	return v;
+}
+
+// One slot in our framing (the HR_C6000's physical layer mode): CACH bits, then a burst our own decoders read back
 static void test_raw_slot(void)
 {
-	static const uint8_t BS_SYNC[6] = { 0xDF, 0xF5, 0x7D, 0x75, 0xDF, 0x5D };
 	uint8_t raw[BS_RAW_SLOT_BYTES], pl[12], cc = 0, dt = 0;
 	dmr_cach_t c = { .at = 1, .tc = 1, .lcss = DMR_LCSS_FIRST, .payload = 0x1ABCDu };
 	dmr_tx_burst_t b = lcb(DMR_BURST_CSBK, 0x5A);
 
 	c.bits = dmrCachBuild(c.at, c.tc, c.lcss, c.payload);
-	bsOutboundRawSlot(&b, &c, 7, raw);
+	CHECK(bsOutboundRawSlot(&b, &c, 2, 7, NULL, raw));
 	CHECK(((uint32_t)raw[0] << 16 | (uint32_t)raw[1] << 8 | raw[2]) == c.bits);
 	CHECK(dmrFecBptcDecode(raw + 3, pl) == 0 && memcmp(pl, b.payload, 12) == 0);
 	CHECK(dmrFecSlotTypeDecode(raw + 3, &cc, &dt) && cc == 7 && dt == DMR_BURST_CSBK);
-	// sync: burst bits 108-155 = bytes 13.5-19.5 of the burst
-	for (int i = 0; i < 48; i++) {
-		int bit = 108 + i;
-		CHECK(((raw[3 + bit / 8] >> (7 - bit % 8)) & 1) == ((BS_SYNC[i / 8] >> (7 - i % 8)) & 1));
-	}
-	dmr_tx_burst_t v = voice(0, 0x33);
-	bsOutboundRawSlot(&v, NULL, 1, raw);
-	CHECK(raw[0] == 0 && raw[1] == 0 && raw[2] == 0);
+	CHECK(raw_sync(raw + 3) == 0xDFF57D75DF5DULL);	// BS data
+
+	// Idle, and no CACH from the core: TC from the slot
+	dmr_tx_burst_t idle = { .kind = DMR_BURST_IDLE };
+	uint8_t at, tc, lcss;
+	uint32_t payload;
+	CHECK(bsOutboundRawSlot(&idle, NULL, 2, 1, NULL, raw));
+	dmrCachDeinterleave((uint32_t)raw[0] << 16 | (uint32_t)raw[1] << 8 | raw[2], &at, &payload);
+	CHECK(dmrCachTactDecode(at, &at, &tc, &lcss) == 0 && tc == 1 && at == 0);
 	CHECK(dmrFecBptcDecode(raw + 3, pl) == 0 && memcmp(pl, BS_IDLE_INFO, 12) == 0);
 	CHECK(dmrFecSlotTypeDecode(raw + 3, &cc, &dt) && cc == 1 && dt == DMR_BURST_IDLE);
+
+	// The core's own terminator (LC without parity): RS(12,9) with the terminator mask
+	uint8_t lc[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0xC9, 0x2F, 0x56, 0x2C }, full[12];
+	dmr_tx_burst_t t = { .kind = DMR_BURST_TERMINATOR_LC, .len = 9 };
+	memcpy(t.payload, lc, 9);
+	dmr_lc_encode_full(lc, DMR_RS_MASK_TERMINATOR, full);
+	CHECK(bsOutboundRawSlot(&t, &c, 1, 2, NULL, raw));
+	CHECK(dmrFecBptcDecode(raw + 3, pl) == 0 && memcmp(pl, full, 12) == 0);
+
+	// Voice: A has the BS voice sync, B-E the EMB (LCSS by position) and the embedded LC's fragments, F a null one;
+	// the AMBE bits sit either side of the middle 48 as in a hotspot frame
+	uint8_t frag[4][4], voice27[DMR_VOICE_BYTES];
+	dmr_emb_lc_encode(lc, frag);
+	for (uint8_t index = 0; index < 6; index++) {
+		dmr_tx_burst_t v = voice(index, (uint8_t)(0x30 + index));
+		CHECK(bsOutboundRawSlot(&v, &c, 1, 5, lc, raw));
+		hotspot_frame_voice(raw + 3, voice27);
+		CHECK(memcmp(voice27, v.payload, DMR_VOICE_BYTES) == 0);
+		uint64_t mid = raw_sync(raw + 3);
+		if (index == 0) {
+			CHECK(mid == 0x755FD7DF75F7ULL);
+			continue;
+		}
+		uint16_t emb = (uint16_t)(((mid >> 40) & 0xFF) << 8 | (mid & 0xFF));
+		uint32_t sig = (uint32_t)((mid >> 8) & 0xFFFFFFFFu);
+		bool pi;
+		CHECK(dmrFecEmbDecode(emb, &cc, &pi, &lcss) == 0 && cc == 5 && !pi && lcss == dmr_emb_lcss(index));
+		uint32_t want = (index <= 4) ? ((uint32_t)frag[index - 1][0] << 24 | (uint32_t)frag[index - 1][1] << 16 |
+						(uint32_t)frag[index - 1][2] << 8 | frag[index - 1][3]) : 0u;
+		CHECK(sig == want);
+	}
+
+	// A burst it can't code (rate 3/4 without its 18 bytes) goes out as idle and says so
+	dmr_tx_burst_t bad = { .kind = DMR_BURST_RATE_34_DATA, .host_crc = true, .len = 3 };
+	CHECK(!bsOutboundRawSlot(&bad, &c, 1, 2, NULL, raw));
+	CHECK(dmrFecSlotTypeDecode(raw + 3, &cc, &dt) && dt == DMR_BURST_IDLE);
 }
 
 static void test_outbound(void)

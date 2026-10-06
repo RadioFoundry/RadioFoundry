@@ -342,6 +342,12 @@ fails until a power cycle.
 nothing and the ISR read past the array, so every fourth TS2 burst went out as a zeroed burst, a PI header on air
 (TS1's overrun landed in TS2's first entry and looked right). `hrc6000BsTest` test_ring_wrap queues through many wraps.
 
+**8.15 The HR_C6000's layer 2 BS framing sends an empty CACH.** Writing the CACH inputs the manual names (AT / TC in
+0x52, the short LC in TX RAM 0x24) changes nothing on air: TC never alternates, so a radio can't tell TS1 from TS2 on
+the split duplex outbound. The physical layer mode (0x10 LayerMode 00) sends TX RAM as given, from two 36-byte halves
+(0x00, 0x24) in alternate slots; a frame written only to 0x00 goes out in every other slot. Build the whole slot and
+write it to both halves (`modem-hrc6000.md` 9.1, `split-duplex.md` 10.1). Commits e94a375 and the one after.
+
 ## 9. USB and CDC-NCM
 
 **9.1 STM32 OTG_FS doesn't have the endpoints for ACM + NCM.** Choose serial or network mode (VID 0x1FC9, PID 0x0096 NCM

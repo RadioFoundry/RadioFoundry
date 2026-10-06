@@ -317,50 +317,59 @@ static void test_embedded_lc(void)
 }
 
 // The framing experiment: the variant's values at key-up, the operation values back at unkey
+static int raw_built;
+
+static bool fake_raw(const dmr_tx_burst_t *b, const dmr_cach_t *cach, int8_t ts, uint8_t cc, const uint8_t *emb_lc,
+		     uint8_t *out)
+{
+	memset(out, 0, HRC6000_BS_RAW_BYTES);
+	out[0] = (uint8_t)(0xA0u | ((cach != NULL) ? cach->tc : 0x0Fu));
+	out[1] = (uint8_t)ts;
+	out[35] = (uint8_t)(b->kind ^ cc);
+	(void)emb_lc;
+	raw_built++;
+	return b->kind != DMR_BURST_RATE_1_DATA;	// stands in for a burst the builder can't code
+}
+
+// Without a builder, or with variant 1, the chip frames (0x10 stays 0x6E); with one, variants 0 and 255 put the chip
+// in the physical layer mode (0x10 = 0x66), 255 with its raw pairs; all of it restored at unkey / stop
 static void test_variants(void)
 {
-	static const struct { uint8_t v, r10, r11; } want[] = {
-		{ 0, 0x6E, 0x80 }, { 1, 0x6E, 0x00 }, { 2, 0x4E, 0x00 }, { 3, 0x6A, 0x00 }, { 4, 0x6E, 0x40 },
-		{ 5, 0x6E, 0x40 },
+	static const struct { uint8_t v; bool raw; uint8_t r10; } want[] = {
+		{ 0, false, 0x6E }, { 0, true, 0x66 }, { 1, true, 0x6E }, { HRC6000_BS_VARIANT_RAW, true, 0x66 },
 	};
 
 	for (unsigned k = 0; k < sizeof(want) / sizeof(want[0]); k++) {
 		fresh();
+		start_raw = want[k].raw ? fake_raw : NULL;
 		start(want[k].v);
+		start_raw = NULL;
 		hrc6000_bs_key(&eng, true);
 		nx = 0;
 		do {
 			tick();
 		} while (!bs.on_air);
 		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == want[k].r10);
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x11) == want[k].r11);
+		if (want[k].v == HRC6000_BS_VARIANT_RAW) {
+			CHECK(last_write(HRC6000_PAGE_SYS, 0x0D) == 0x5A);
+			CHECK(last_write(HRC6000_PAGE_SYS, 0x0E) == 0xA5);
+		}
 		hrc6000_bs_key(&eng, false);
 		nx = 0;
 		tick();
 		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x6E);
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x11) == 0x80);
 		hrc6000_bs_stop(&eng);
+		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x6E);
 	}
-	fresh();
-	start(HRC6000_BS_VARIANT_RAW);
-	hrc6000_bs_key(&eng, true);
-	nx = 0;
-	do {
-		tick();
-	} while (!bs.on_air);
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x0D) == 0x5A);
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x0E) == 0xA5);
-	hrc6000_bs_stop(&eng);
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x6E && last_write(HRC6000_PAGE_SYS, 0x11) == 0x80);
 }
 
-// The core's CACH reaches the chip: AT / TC in 0x52 every slot, the short LC (28 bits + CRC-8) in page 2 0x24 at the
-// first fragment; variant 5 also puts the LCSS in 0x50 bits 1-0
+// The chip's framing: the core's CACH goes to AT / TC in 0x52 every slot and the short LC (28 bits + CRC-8) in page 2
+// 0x24 at the first fragment
 static void test_cach(void)
 {
-	for (uint8_t variant = 0; variant <= 5; variant += 5) {
+	{
 		fresh();
-		start(variant);
+		start(HRC6000_BS_VARIANT_CHIP);
 		static const uint8_t lcss[4] = { 1, 3, 3, 2 };
 		for (int i = 0; i < 4; i++) {
 			dmr_tx_burst_t b = burst(DMR_BURST_IDLE, 0, 0);
@@ -382,7 +391,7 @@ static void test_cach(void)
 		hrc6000_bs_key(&eng, true);
 		nx = 0;
 		uint8_t r52[8];
-		int n52 = 0, slc_at = -1, lcss50 = 0;
+		int n52 = 0, slc_at = -1;
 		for (int k = 0; k < 8; k++) {
 			tick();
 		}
@@ -396,102 +405,53 @@ static void test_cach(void)
 			if (xlog[i].page == HRC6000_PAGE_DATA && xlog[i].reg == 0x24 && slc_at < 0) {
 				slc_at = i;
 			}
-			if (xlog[i].page == HRC6000_PAGE_SYS && xlog[i].reg == 0x50) {
-				lcss50 |= xlog[i].data[0] & 3;
-			}
 		}
 		// TS1 first: AT 0 TC 0, then TS2 AT 1 TC 1, TS1 AT 1 TC 0, TS2 AT 1 TC 1, TS1 AT 0 TC 0
 		CHECK(n52 >= 5 && r52[0] == 0x00 && r52[1] == 0x0C && r52[2] == 0x08 && r52[3] == 0x0C && r52[4] == 0x00);
 		CHECK(slc_at >= 0 && xlog[slc_at].n == 5 && xlog[slc_at].data[0] == 0xAB && xlog[slc_at].data[1] == 0xCD &&
 		      xlog[slc_at].data[2] == 0xEF && xlog[slc_at].data[3] == 0x10 && xlog[slc_at].data[4] == 0x5A);
-		CHECK((lcss50 != 0) == (variant == 5));
 		CHECK(bs.st.cach_written == 6 && bs.st.cach_given == 6);
 		hrc6000_bs_stop(&eng);
 	}
 }
 
-static int raw_built;
-
-static void fake_raw(const dmr_tx_burst_t *b, const dmr_cach_t *cach, uint8_t cc, uint8_t *out)
-{
-	memset(out, 0, HRC6000_BS_RAW_BYTES);
-	out[0] = (uint8_t)(0xA0u | ((cach != NULL) ? cach->tc : 0x0Fu));
-	out[35] = (uint8_t)(b->kind ^ cc);
-	raw_built++;
-}
-
-// Variants 6 and 7: every slot is the builder's 36 bytes in page 2 0x00, nothing written to 0x52; 6 puts the chip in
-// the physical layer mode (0x10 bits 4-3 = 00), 7 sets Decode_Mode 00 (0x40 bits 1-0); both restored at unkey
+// Our framing: every slot is the builder's 36 bytes, written to both slot buffers (page 2 0x00 and 0x24), nothing to
+// 0x52 or the vocoder; voice A's LC goes to the builder for B-E; a burst it can't code is counted
 static void test_raw_slot(void)
 {
-	for (uint8_t variant = 6; variant <= 7; variant++) {
-		fresh();
-		start_raw = fake_raw;
-		start(variant);
-		start_raw = NULL;
-		raw_built = 0;
-		dmr_tx_burst_t b = burst(DMR_BURST_CSBK, 0, 0x11);
-		dmr_cach_t c = { .tc = 1 };
-		CHECK(hrc6000_bs_queue(&eng, 2, &b, &c, NULL));
-		hrc6000_bs_key(&eng, true);
-		nx = 0;
-		do {
-			tick();
-		} while (!bs.on_air);
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == ((variant == 6) ? 0x66 : 0x6E));
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x40) == ((variant == 7) ? 0xE0 : 0xE3));
+	fresh();
+	start_raw = fake_raw;
+	start(0);
+	start_raw = NULL;
+	raw_built = 0;
+	uint8_t lc[9] = { 0, 0, 0, 0, 0, 0xC9, 0, 0, 1 };
+	dmr_tx_burst_t a = burst(DMR_BURST_VOICE, 0, 0x11), bb = burst(DMR_BURST_VOICE, 1, 0x22);
+	dmr_tx_burst_t r1 = burst(DMR_BURST_RATE_1_DATA, 0, 0x33);
+	dmr_cach_t c = { .tc = 1 };
+	CHECK(hrc6000_bs_queue(&eng, 2, &a, &c, lc));
+	CHECK(hrc6000_bs_queue(&eng, 2, &bb, &c, NULL));
+	CHECK(hrc6000_bs_queue(&eng, 2, &r1, &c, NULL));
+	hrc6000_bs_key(&eng, true);
+	nx = 0;
+	voice_writes = 0;
+	do {
 		tick();
-		int raws = 0, last = -1;
-		for (int i = 0; i < nx; i++) {
-			if (!xlog[i].read && xlog[i].page == HRC6000_PAGE_DATA && xlog[i].reg == 0x00) {
-				CHECK(xlog[i].n == HRC6000_BS_RAW_BYTES);
-				raws++;
-				last = i;
-			}
-		}
-		// TS1's underrun (no CACH) then TS2's CSBK with its CACH
-		CHECK(raws == 2 && raw_built == 2 && bs.st.raw == 2);
-		CHECK(last >= 0 && xlog[last].data[0] == 0xA1 && xlog[last].data[35] == (DMR_BURST_CSBK ^ 1));
-		CHECK(count_writes(HRC6000_PAGE_SYS, 0x52, -1) == 0);
-		hrc6000_bs_key(&eng, false);
-		nx = 0;
+	} while (!bs.on_air);
+	for (int i = 0; i < 6; i++) {
 		tick();
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x6E && last_write(HRC6000_PAGE_SYS, 0x40) == 0xE3);
-		hrc6000_bs_stop(&eng);
 	}
-}
-
-// Variants 8-12: variant 6 with every frame also at a second place
-static void test_raw_mirror(void)
-{
-	static const struct { uint8_t page, addr; } want[5] = {
-		{ HRC6000_PAGE_DATA, 0x24 }, { HRC6000_PAGE_DATA, 0x30 }, { HRC6000_PAGE_DATA, 0x48 },
-		{ HRC6000_PAGE_DATA, 0x60 }, { 6, 0x00 },
-	};
-
-	for (uint8_t variant = 8; variant <= 12; variant++) {
-		fresh();
-		start_raw = fake_raw;
-		start(variant);
-		start_raw = NULL;
-		hrc6000_bs_key(&eng, true);
-		nx = 0;
-		do {
-			tick();
-		} while (!bs.on_air);
-		tick();
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x66);
-		int at0 = 0, at2 = 0;
-		for (int i = 0; i < nx; i++) {
-			if (xlog[i].read || xlog[i].n != HRC6000_BS_RAW_BYTES) {
-				continue;
-			}
-			at0 += (xlog[i].page == HRC6000_PAGE_DATA) && (xlog[i].reg == 0x00);
-			at2 += (xlog[i].page == want[variant - 8].page) && (xlog[i].reg == want[variant - 8].addr);
+	int half0 = 0, half1 = 0;
+	for (int i = 0; i < nx; i++) {
+		if (!xlog[i].read && xlog[i].page == HRC6000_PAGE_DATA && xlog[i].n == HRC6000_BS_RAW_BYTES) {
+			half0 += xlog[i].reg == 0x00;
+			half1 += xlog[i].reg == 0x24;
 		}
-		CHECK(at0 == 2 && at2 == 2);
-		hrc6000_bs_stop(&eng);
 	}
+	CHECK(half0 == raw_built && half1 == raw_built && raw_built >= 6 && bs.st.raw == (uint32_t)raw_built);
+	CHECK(count_writes(HRC6000_PAGE_SYS, 0x52, -1) == 0 && voice_writes == 0);
+	CHECK(bs.st.uncoded == 1 && bs.st.cach_written == 3);
+	CHECK(bs.lc_valid[1] && memcmp(bs.lc[1], lc, 9) == 0);	// TS2's superframe LC kept for B-E
+	hrc6000_bs_stop(&eng);
 }
 
 // No timeslot interrupt for 200 ms while keyed: unkeyed, PA off; halt while the outbound runs ends it too
@@ -579,7 +539,6 @@ int main(void)
 	test_variants();
 	test_cach();
 	test_raw_slot();
-	test_raw_mirror();
 	test_stall_and_halt();
 	printf("# hrc6000BsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

@@ -7,11 +7,11 @@ test skips on a build without it.
   half never transmits) and back to 0; STATUS; an unknown 0xD6 sub-command answers result 1; an unknown command is
   still NAKed 1; the debug link's SPLIT view answers.
 - test_split_tx_half_off_air (radio_tx, bench_service: --allow-rf --allow-service-stop): the radio as the TX half on
-  --dmr-freq at its lowest power for 10 s, idle bursts with a short LC, SET_AT toggled every 2 s, the BS framing
-  experiment's variant from $ODR_SPLIT_VARIANT (default 0). The SDR bench captures and decodes it (sdrmon.py analyze
-  --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms), one key-up edge
-  for the whole outbound, the channel's colour code, no driver underruns in STATUS. Printed, not asserted (the
-  experiment's result): the CACH decode (tact ok share, TC alternation, AT, short LCs).
+  --dmr-freq at its lowest power for 10 s, idle bursts with a short LC, SET_AT toggled every 2 s, the framing variant
+  from $ODR_SPLIT_VARIANT (default 0, ours; 1 the chip's, whose CACH is empty). The SDR bench captures and decodes it
+  (sdrmon.py analyze --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
+  one key-up edge for the whole outbound, the channel's colour code, no driver underruns in STATUS; with our framing
+  also the CACH: TC alternating, AT following SET_AT, the short LC decoding.
 - test_split_rx_half_labels (rf, bench_service): the radio as the RX half, the bench transmitting voice calls. The
   bench is simplex, so its slot phase (and which slot it lands on) is new with every call: one long call, the epoch
   centered on its first burst, then moved by one slot half way; each part goes up under one label, the labels differ,
@@ -146,12 +146,14 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     slc_ok = [s for s, good in slcs if good]
     _, cnt = radio.counters()
     bs_cnt = {k: v for k, v in cnt.items() if k.startswith("bs.")}
-    print(f"BS framing experiment variant {variant}: tact ok {len(ok)}/{len(cach)}, TC alternating {alt} of "
+    print(f"BS framing variant {variant}: tact ok {len(ok)}/{len(cach)}, TC alternating {alt} of "
           f"{max(len(ok) - 1, 0)}, AT values {sorted(at_seen)}, short LC {len(slc_ok)} ok / {len(slcs) - len(slc_ok)} "
           f"bad; radio {bs_cnt}")
-    # The CACH from the core reaches the chip (AT / TC in 0x52, the short LC in TX RAM; modem-hrc6000.md 9.1). Whether
-    # it shows on air is the experiment's result above (split-duplex.md 10.1)
     assert bs_cnt.get("bs.cach", 0) > 0.9 * TX_SECONDS / 0.03, bs_cnt
+    if variant != 1:    # our framing (modem-hrc6000.md 9.1): the CACH on air is the core's
+        assert len(ok) >= 0.98 * len(cach) and alt >= 0.98 * (len(ok) - 1), "TC must alternate"
+        assert at_seen == {0, 1}, f"AT must follow SET_AT: {sorted(at_seen)}"
+        assert len(slc_ok) >= 10 and len(slc_ok) == len(slcs), f"short LC {len(slc_ok)} ok of {len(slcs)}"
 
 
 def rx_half_labels(port, sdr_bench, freq, cc, tg, dtr=False):
