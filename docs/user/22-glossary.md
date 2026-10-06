@@ -41,7 +41,7 @@
 | Recent | ODR's list of stations heard and calls made |
 | Reply window | The time after a call during which **PTT** answers it |
 | rigctld | Hamlib's network rig control protocol, used by loggers and SDR programs |
-| SFR | Single frequency repeater: repeats a call from one timeslot on the other timeslot of the same frequency |
+| SFR | Single frequency repeater: repeats a call from one timeslot on the other timeslot of the same frequency. MMDVM SFR: the hotspot does it, turned on by its host. Standalone SFR: a channel does it on its own (not built yet) |
 | SNMP | Simple Network Management Protocol: reading a device's state over the network |
 | Squelch | The level a received signal must exceed before the radio plays it |
 | Talk target | Where **PTT** goes: a talkgroup, a person or all call |

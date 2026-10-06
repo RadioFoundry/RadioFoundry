@@ -393,7 +393,7 @@ complement), 22 `roam_hyst_db`, 23 `roam_probe`, 24 `roam_check_s`, 25 `roam_bea
 
 ## 7. Our repeaters' beacons
 
-The SFR runner (`docs/spec/sfr.md`: today the hotspot's SFR mode, later the stand-alone repeater roles) can send
+The SFR runner (`docs/spec/sfr.md`: today MMDVM SFR, later Standalone SFR's repeater roles) can send
 the beacon itself: with `rpt_beacon` on (debug link setting 28, off by default by P7), the runner keys its outbound with idle bursts for
 `roam_beacon_len_s` every `roam_beacon_s` while it carries nothing (`sfrRunnerSetBeacon`, counted in
 `sfr.tx_beacons` in the debug link's `hotspot` section). Traffic always has priority: a beacon due during a call is skipped, and a call that starts during a

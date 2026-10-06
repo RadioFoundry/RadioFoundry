@@ -108,9 +108,9 @@ All of this is our own code (`shared/`), the same on every radio, with the chip-
 | Hotspot data passthrough both ways (CSBK, MBC, headers, all block rates), every RF burst passed up as heard, back-to-back calls, NAK when full | T | B | B | B | B | Data RX in hotspot mode not on air yet |
 | Carrier detect in status (from the receiver noise level) | T | B | B | B | B | |
 | Hotspot frequencies outside amateur bands (band limit removed in hotspot) | T | B | B | B | B | |
-| SFR, user roles: standard (Hytera / Retevis style) and Motorola ERDM style (inbound/outbound color codes); hears both copies, transmits aligned to the repeater | B | B | — | B | — | Not on air yet in any role |
-| SFR, repeater roles: the radio repeats one slot on the other, 90 ms later, on one frequency (standard and Motorola style, TS or MS or BS framing, hang 1/2/4 s) | B | B | — | B | — | Standalone repeater untested. While keyed the HR-C6000 misreports heard bursts: headers rebuilt from the call's LC, data calls held and repeated after they end. BS framing has no CACH. 9600: synthesizer relock per burst may not fit the guard time. 380 (C5000) and DM32 (C7000) lack the chip glue |
-| SFR in hotspot mode (repeats locally, links to a network host) | T | B | — | B | — | On air 10/10 calls clean on the DM-1701; per-channel SFR settings aren't stored by the CPS (spare channel bytes) |
+| Standalone SFR, user roles: standard (Hytera / Retevis style) and Motorola ERDM style (inbound/outbound color codes); hears both copies, transmits aligned to the repeater | B | B | — | B | — | Not on air yet in any role |
+| Standalone SFR, repeater roles: the radio repeats one slot on the other, 90 ms later, on one frequency (standard and Motorola style, TS or MS or BS framing, hang 1/2/4 s) | B | B | — | B | — | Standalone repeater untested. While keyed the HR-C6000 misreports heard bursts: headers rebuilt from the call's LC, data calls held and repeated after they end. BS framing has no CACH. 9600: synthesizer relock per burst may not fit the guard time. 380 (C5000) and DM32 (C7000) lack the chip glue |
+| MMDVM SFR: the hotspot (repeats locally, links to a network host) | T | B | — | B | — | On air 10/10 calls clean on the DM-1701; per-channel SFR settings aren't stored by the CPS (spare channel bytes) |
 
 ## GPS and location
 

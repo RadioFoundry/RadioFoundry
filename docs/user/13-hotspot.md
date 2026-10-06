@@ -87,16 +87,16 @@ The radio leaves hotspot mode and returns to its channel when:
 
 To stop the radio from entering hotspot mode at all, turn **Settings > Connections > Hotspot allowed** off.
 
-## Single frequency repeater (SFR) mode
+## MMDVM SFR (single frequency repeater)
 
-In SFR mode the hotspot repeats a call heard on timeslot 1 on timeslot 2 of the same frequency, and also sends it to
+In MMDVM SFR the hotspot repeats a call heard on timeslot 1 on timeslot 2 of the same frequency, and also sends it to
 the network. Radios nearby in direct mode hear both. It is in the DM-1701 image, not in the MD-380's.
 
-The host turns SFR mode on by running duplex with the receive and transmit frequencies equal (`Duplex=1`,
+The host turns MMDVM SFR on by running duplex with the receive and transmit frequencies equal (`Duplex=1`,
 `RXFrequency` = `TXFrequency`). Setting `Duplex=0` or different frequencies turns it off.
 
-Limitations today: the DM-1701 keys its transmitter for the whole repeat, so it misses the rest of an inbound call
-after the first repeat. Not tested on air. The stand-alone repeater and the SFR user roles on a channel aren't built.
+On air, the DM-1701 repeats a whole call. The repeat comes about 210 ms after the original, not the intended 90 ms.
+Standalone SFR, the repeater and user roles on a channel without a host, isn't built yet.
 **Tools > Single-freq repeater** shows only an information page. Details: [docs/spec/sfr.md](../spec/sfr.md).
 
 ## Two radios as a duplex repeater

@@ -33,7 +33,7 @@ run; **none** = no automated test. Last run:
 | Hotspot protocol | `test_hotspot` | radio | |
 | Hotspot voice and data, both ways | `test_hotspot_voice` | on air | `hotspot_cases.py` rf_voice8, rf_data_unconf, net_voice, net_data |
 | Hotspot CW ID | `test_hotspot_cwid` | on air | the Morse tone itself checked since the tone fix |
-| SFR (hotspot SFR mode) | `test_hotspot_sfr` | passes (2026-10-12) | mode switching; a 3-superframe bench call goes up whole and is repeated whole on TS2 (17-18 of 18 voice bursts, terminator). Repeat delay 210 ms, not 90 ms (`docs/spec/sfr.md` 3) |
+| MMDVM SFR | `test_hotspot_sfr` | passes (2026-10-12) | mode switching; a 3-superframe bench call goes up whole and is repeated whole on TS2 (17-18 of 18 voice bursts, terminator). Repeat delay 210 ms, not 90 ms (`docs/spec/sfr.md` 3) |
 | Split duplex repeater (experimental) | `test_split_duplex` | pass | 2026-10-12 (b027277): protocol; TX half with our framing (335 bursts, TC alternating 334/334, AT following SET_AT, 83 short LCs, one key-up); TX half voice (3 headers, 3 superframes with the embedded LC, terminator, no sync errors); RX half (residual 11 µs, the label flips with the epoch). Not yet: a real TX / RX pair (`docs/spec/split-duplex.md` 10.1) |
 | USB network adapter | `test_usb_network` | radio | DHCP, ping and the debug link over UDP, back to serial (macOS 26). With `ff6268b` the Mac once never configured the adapter and the radio stayed in network mode; since `5a13814` it falls back to serial after 10 s |
 | Host port protocols over UDP 3334 (split duplex extension, KISS) | `test_usb_network_services` | not run | `--allow-usb-switch` |

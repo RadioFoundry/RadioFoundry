@@ -8,20 +8,27 @@ the other slot of the same frequency (the outbound slot), 90 ms later. Radios in
 3 item 4 (gotchas 14.6; `docs/build-config.md`). Background and the HR_C6000 findings: `docs/spec/gotchas.md` 8.11,
 8.12 and 14; the host protocol: `docs/spec/mmdvm-protocol.md` 6.
 
+There are two kinds:
+
+| Name | What | State |
+|---|---|---|
+| **MMDVM SFR** | The hotspot repeats; an MMDVM host turns it on and links it to a network (section 2) | Built, passes on air |
+| **Standalone SFR** | A channel set up for SFR in the codeplug, no host: the repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) | Not built (section 4) |
+
 ## 1. Layers
 
 | Layer | File | What it does |
 |---|---|---|
 | Logic | `core/dmr/sfr.c` | roles, channel settings, framing, the repeat queue and its rules (`sfrEngine_t`: RF priority, TOT, data hold, hang), voice dedup, late entry, the uplink rules, checksums, version suffix, the MMDVM trigger. No hardware |
 | Runner | `core/dmr/sfrRunner.c` | the repeater roles on any modem behind `hal_dmr_modem_t`: received bursts filtered and fed to the engine, the outbound slot kept fed, an optional uplink to a host |
-| Hotspot SFR mode | `core/hotspot/hotspotSfr.c` | the MMDVM extension (version suffix, status flag 0x80, the space bytes, 108 extra status bytes, command 0xD5) and `hotspot.c`'s other mode (`hotspot_alt_t`) |
+| MMDVM SFR | `core/hotspot/hotspotSfr.c` | the MMDVM extension (version suffix, status flag 0x80, the space bytes, 108 extra status bytes, command 0xD5) and `hotspot.c`'s other mode (`hotspot_alt_t`) |
 
 The legacy-flavored HR_C6000 glue in `drivers/modem/hrc6000/sfr_glue/` is not built; it documents what a driver
 level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra status bytes' layout.
 
 ## 2. What is built
 
-- **Hotspot SFR mode.** The host turns it on with SET_CONFIG's simplex flag clear and SET_FREQ RX = TX (both non-zero),
+- **MMDVM SFR.** The host turns it on with SET_CONFIG's simplex flag clear and SET_FREQ RX = TX (both non-zero),
   evaluated after either command; the simplex flag set, RX != TX, a retune or the session's end turns it off.
   - Uplink: every burst heard on the inbound slot goes up as DMR_DATA1 (inbound TS1) or DMR_DATA2, framed as the
     simplex uplink frames them (headers and terminators from their LC, voice with the EMB of its position and the
@@ -79,7 +86,7 @@ Today's DM-1701 driver (`drivers/modem/hrc6000/hrc6000_dmr.c`, owned by the DMR 
 heard) and the TX slot events, and it keeps passing reports up while it transmits. The RF is switched per burst: the
 RF TX interrupt keys the PA (AT1846S to TX), the timeslot interrupt that starts the next slot drops it (AT1846S back to
 RX, about 1.3 ms into the slot, gotchas 3.4). Item 1 was missing in the chip: the slot between our bursts was written
-"no receive" (0x41 = 0x00), so nothing was heard there and the hotspot SFR mode repeated only what it heard before
+"no receive" (0x41 = 0x00), so nothing was heard there and MMDVM SFR repeated only what it heard before
 keying (HIL 2026-10-10: mode switching and the first repeat on TS2 passed, the rest of the call failed). With
 `tx_listen` (`hrc6000_dmr_tx_listen`) the engine writes "receive" (0x50) for that slot instead, for that transmission
 only; `hrc6000DmrTest` test_tx_listen checks it. Two more things were needed on air (gotchas 14.9): the per-burst
@@ -93,7 +100,7 @@ headers, and the gap left two placeholders queued ahead of the voice (gotchas 14
 
 ## 4. Not built yet
 
-- The stand-alone repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) on a channel: they need the
+- Standalone SFR: the repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) on a channel: they need the
   codeplug's SFR bytes (`sfrChannelDecode`), a radio core mode that hands the modem to the runner (repeater) and
   call stack changes for the users (transmit on the inbound slot aligned to the repeater, hear both copies with
   `sfrDedupVoice`, the ERDM outbound color code). The call stack is `core/dmr/call/dmr_call.c`.
@@ -106,9 +113,9 @@ is active the SFR stays off, and without a role the SFR works exactly as describ
 
 ## 5. Tests
 
-- Host: `tests/host/sfrTest.c` (the logic), `tests/host/hotspotSfrTest.c` (the hotspot SFR mode through mmdvm.c and
+- Host: `tests/host/sfrTest.c` (the logic), `tests/host/hotspotSfrTest.c` (MMDVM SFR through mmdvm.c and
   hotspot.c against the simulated modem: trigger and suffix, status bytes, an RF call repeated and sent up, a network
   stream, RF priority, echo, late entry, DMR_LOST1, command 0xD5, DMR_ABORT, back to simplex).
-- HIL: `tests/hil/test_hotspot_sfr.py` (SFR mode on and off through MMDVM on the radio's channel, no traffic sent;
+- HIL: `tests/hil/test_hotspot_sfr.py` (MMDVM SFR on and off through MMDVM on the radio's channel, no traffic sent;
   marked `radio_tx` because a call heard would be repeated). On-air repeat tests need the driver work of section 3
   and the SDR bench (`tools/bench/mmdvm_hotspot.py --sfr`, `tools/bench/sfr_call.sh`).

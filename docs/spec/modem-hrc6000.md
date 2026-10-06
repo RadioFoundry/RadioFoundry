@@ -536,7 +536,7 @@ bit 5) puts a 2.5-2.6 kHz tone of its own on air when enabled during FM TX: keep
 
 ## 9. Single-frequency repeater (SFR) facts on the HR_C6000
 
-From our SFR work on the DM-1701 (on air in hotspot SFR mode):
+From our SFR work on the DM-1701 (on air in MMDVM SFR):
 
 - Repeating on the other slot: write the outbound sync pattern (page 1 0x04, e.g. direct mode TS2 data sync) before
   keying and restore the MS pattern after; save and restore 0x10; keep 0x11=0x80; impolite access (0x20=0x00,

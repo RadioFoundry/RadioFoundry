@@ -258,5 +258,5 @@ picked. When any channel in the zone has the codeplug's Roaming flag set, only f
 at least two sites. Changing channel or zone yourself makes the new channel home.
 
 The threshold (default -105 dBm), the hysteresis (6 dB) and the optional periodic search of the other sites are set
-over the debug link for now ([dmr-roaming](../spec/dmr-roaming.md) section 5.1). So is the idle beacon a hotspot in
-SFR mode can send for roaming radios (`rpt_beacon`, off by default).
+over the debug link for now ([dmr-roaming](../spec/dmr-roaming.md) section 5.1). So is the idle beacon a hotspot running
+MMDVM SFR can send for roaming radios (`rpt_beacon`, off by default).

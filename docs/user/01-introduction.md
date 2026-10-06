@@ -26,8 +26,8 @@ ODR is early software. This manual marks each feature that isn't verified on the
 
 | Group | Meaning | Features on the DM-1701 |
 |---|---|---|
-| Verified on the radio | Tested on a DM-1701, on air against the SDR bench where RF is involved | Boot, display, keys, calibration, FM receive and transmit, CTCSS / DCS sent, 1750 Hz burst, roger beep, DMR group and private calls both ways (late entry, talker alias, positions in calls, the privacy signaling), text messages, call alert, radio check and emergency both ways, hotspot calls, APRS on FM and over DMR, battery saver, zone scan, VFO scan, dual watch, reading and writing the radio with qdmr's protocol, switching to USB network mode |
-| Built, host-tested | Works against simulated chips in the host tests, or only partly checked on the radio | SFR, the split duplex repeater, IP over DMR and the services in USB network mode, control station mode, roaming between repeaters, ARS and LRRP, VOX |
+| Verified on the radio | Tested on a DM-1701, on air against the SDR bench where RF is involved | Boot, display, keys, calibration, FM receive and transmit, CTCSS / DCS sent, 1750 Hz burst, roger beep, DMR group and private calls both ways (late entry, talker alias, positions in calls, the privacy signaling), text messages, call alert, radio check and emergency both ways, hotspot calls, MMDVM SFR, APRS on FM and over DMR, battery saver, zone scan, VFO scan, dual watch, reading and writing the radio with qdmr's protocol, switching to USB network mode |
+| Built, host-tested | Works against simulated chips in the host tests, or only partly checked on the radio | The split duplex repeater, IP over DMR and the services in USB network mode, control station mode, roaming between repeaters, ARS and LRRP, VOX |
 | Not built yet | Shown in the menus, dimmed, with a message when selected | Voice prompts, APRS receive (the DM-1701 can't sample received audio), typed text messages, speed dial, saving contacts on the radio |
 
 ## What ODR does
@@ -39,8 +39,8 @@ ODR is early software. This manual marks each feature that isn't verified on the
 - FM: CTCSS and DCS tones, squelch, monitor, 12.5 and 25 kHz bandwidth, VOX.
 - Scan of a zone or of the VFO band.
 - APRS: position, status and messages on FM, positions over DMR, a KISS TNC.
-- Hotspot: the radio is an MMDVM modem for MMDVMHost and Pi-Star style hosts, with a single frequency repeater (SFR)
-  mode.
+- Hotspot: the radio is an MMDVM modem for MMDVMHost and Pi-Star style hosts, with a single frequency repeater mode
+  (MMDVM SFR).
 - USB network mode: the radio is a USB network adapter and routes IP over DMR. On that link the radio serves a status
   page, rig control, KISS over TCP, TFTP codeplug access, SNMP and mDNS, and can act as a control station for
   dispatch software.

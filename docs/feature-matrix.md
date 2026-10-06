@@ -52,7 +52,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | LRRP location | `DMR_LRRP` | 8,548 | 2,048 | ● | ● | ● |  |
 | Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 408 | 356 | ● | ● | ● | Auto: not for ports 4000-4099 or ETSI IP text |
 | Confirmed packet data | `DMR_CONFIRMED` | 2,880 | 2,920 | ● | ● | ● |  |
-| Single frequency repeater (hotspot SFR mode) | `SFR` | 6,884 | — | ● | ✕ | ● | MD-380: HR_C5000 lacks what the SFR glue uses |
+| Single frequency repeater (MMDVM SFR) | `SFR` | 6,884 | — | ● | ✕ | ● | MD-380: HR_C5000 lacks what the SFR glue uses |
 | APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 26,568 | 26,628 | ● | ● | ● | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
 | APRS receive: demodulator, station list, digipeater | `APRS_RX` | 8,464* | — | ✕ | ✕ | ● | DM-1701: no ADC sees receive audio. MD-380: not written |
 | APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,888* | — | ✕ | ✕ | ● | Needs APRS receive |
@@ -63,7 +63,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | USB device | `USB` | 127,300 | 87,848 | ● | ● | ✕ | DM-32 has no USB (host link on the programming cable's UART). Includes everything on USB |
 | Host link: hotspot, CPS, debug link on the host port | `HOSTLINK` | 115,640 | 77,644 | ● | ● | ● | Includes its children |
-| MMDVM hotspot | `HOTSPOT` | 34,196 | ~12,400 | ● | ○ | ● | Includes split duplex and the SFR hotspot mode where built. MD-380: left out for flash (DMR_ROAMING off is the alternative); size estimated |
+| MMDVM hotspot | `HOTSPOT` | 34,196 | ~12,400 | ● | ○ | ● | Includes split duplex and MMDVM SFR where built. MD-380: left out for flash (DMR_ROAMING off is the alternative); size estimated |
 | Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 12,584 | — | ● | ✕ | ● | MD-380: HR_C6000-only glue. Slot numbering (CACH) still open |
 | Debug link | `DEBUGLINK` | 32,376 | 29,084 | ● | ● | ● |  |
 | Legacy CPS protocol (qdmr) | `CPS_LEGACY` | 3,064 | 3,008 | ● | ● | ● |  |
