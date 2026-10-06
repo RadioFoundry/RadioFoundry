@@ -458,8 +458,9 @@ runs found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotc
   unknown command (NAK 1), the debug link's SPLIT view.
 - `test_split_tx_half_off_air` (marker `radio_tx`): the TX half keyed 10 s at the lowest power with idle bursts, a
   short LC and SET_AT toggling; asserted off air: BS sync only, a burst every 30 ms (same-slot spacing 60 ms), one
-  key-up edge, the color code; asserted on the radio: no underruns, short LC taken. The CACH decode is printed
-  (the experiment's result). `ODR_SPLIT_VARIANT` picks the variant.
+  key-up edge, the color code; asserted on the radio: no underruns, short LC taken, the CACH written to the chip for
+  every burst (`bs.cach`). The CACH decode is printed (TACT ok, TC alternating, AT values, short LCs: the experiment's
+  result). `ODR_SPLIT_VARIANT` picks the variant.
 - `test_split_rx_half_labels` (marker `rf`): the RX half with an epoch made from its own clock; a first bench call
   measures the phase residual and the epoch is centered on the bench's slots; a second call must go up under one
   label, whole (header, voice, terminator), with a residual under 5 ms; a third call with the epoch moved by 30 ms
@@ -491,6 +492,6 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
    bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit).
 5. Whether AT should default to busy during the host's hang time (mode 0 does: the outbound slot is not idle) or only
    from the RX half (mode 1).
-6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`: idle fills at the driver, PA key failures, stalls,
-   embedded LC rewrites) are not reachable from the core; a board diagnostics line or a `hal_dmr_modem_t` stats
-   operation would show them.
+6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`) are on the DM-1701's diagnostics line `bs` (slots,
+   bursts, underruns, key-ups, CACH written, PA failures, stalls; `odr_debug.py` parses them as `bs.*`). Not reachable
+   from the core itself (no `hal_dmr_modem_t` stats operation).

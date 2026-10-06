@@ -872,7 +872,7 @@ def write_png(path, w, h, rows, scale=1):
 def parse_counters(lines):
     """Counters from the diagnostics lines as a flat dict: 'k=v' tokens (prefixed by the line's first word, e.g.
     call.rx, voice.play), the DM-1701 board tokens (V H T I C D crc rc, as modem.voice etc.) and its audio line
-    (audio.blk, audio.ov, audio.dr)."""
+    (audio.blk, audio.ov, audio.dr) and BS outbound line (bs.slots, bs.cach, ...)."""
     import re
     out = {}
     board = {"V": "modem.voice", "H": "modem.headers", "T": "modem.terminators", "I": "modem.idle",
@@ -881,6 +881,14 @@ def parse_counters(lines):
     for line in lines:
         words = line.split()
         if not words:
+            continue
+        if words[0] == "bs":            # "bs slN bN uN kN cN rfN stN": the split duplex TX half's BS outbound
+            names = {"sl": "slots", "b": "bursts", "u": "underruns", "k": "keyups", "c": "cach", "rf": "rf_fail",
+                     "st": "stalls"}
+            for w in words[1:]:
+                m = re.fullmatch(r"([a-z]+)(\d+)", w)
+                if m and m.group(1) in names:
+                    out[f"bs.{names[m.group(1)]}"] = int(m.group(2))
             continue
         if words[0] == "aud":           # "aud blk N ov N dr N": the DM-1701 DMR audio counters
             for k, v in zip(words[1::2], words[2::2]):

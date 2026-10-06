@@ -139,7 +139,18 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     assert not other, f"only idle bursts were queued: {sdr['summary']['counts']}"
     cach = [b["cach"] for b in bs if b.get("cach")]
     ok = [c for c in cach if c["ok"]]
-    print(f"BS framing experiment variant {variant}: tact ok {len(ok)}/{len(cach)}")
+    alt = sum(1 for x, y in zip(ok, ok[1:]) if x["tc"] != y["tc"])
+    at_seen = {c["at"] for c in ok}
+    slcs = [c["slc"] for c in cach if "slc" in c]
+    slc_ok = [s for s, good in slcs if good]
+    _, cnt = radio.counters()
+    bs_cnt = {k: v for k, v in cnt.items() if k.startswith("bs.")}
+    print(f"BS framing experiment variant {variant}: tact ok {len(ok)}/{len(cach)}, TC alternating {alt} of "
+          f"{max(len(ok) - 1, 0)}, AT values {sorted(at_seen)}, short LC {len(slc_ok)} ok / {len(slcs) - len(slc_ok)} "
+          f"bad; radio {bs_cnt}")
+    # The CACH from the core reaches the chip (AT / TC in 0x52, the short LC in TX RAM; modem-hrc6000.md 9.1). Whether
+    # it shows on air is the experiment's result above (split-duplex.md 10.1)
+    assert bs_cnt.get("bs.cach", 0) > 0.9 * TX_SECONDS / 0.03, bs_cnt
 
 
 def rx_half_labels(port, sdr_bench, freq, cc, tg, dtr=False):

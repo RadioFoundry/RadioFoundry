@@ -752,6 +752,19 @@ bool dm1701_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
+	case 21:	// the split duplex TX half's BS outbound (split-duplex.md 11.6)
+#if CONFIG_HOTSPOT_SPLIT
+		put_kv(&o, "bs sl", bs.st.slots);
+		put_kv(&o, " b", bs.st.bursts);
+		put_kv(&o, " u", bs.st.underruns);
+		put_kv(&o, " k", bs.st.keyups);
+		put_kv(&o, " c", bs.st.cach_written);
+		put_kv(&o, " rf", bs.st.rf_fail);
+		put_kv(&o, " st", bs.st.stalls);
+#else
+		put(&o, "bs -");
+#endif
+		break;
 	case 15:
 		put_kv(&o, "tx", m->tx_bursts);
 		put_kv(&o, " rf", m->rftx_ints);
