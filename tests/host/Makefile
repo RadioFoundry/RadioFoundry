@@ -506,6 +506,17 @@ run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807
 	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
 .PHONY: run-dm32
 
+# The DB25-D PRO's BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
+TESTS   += bk4819Test
+
+bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c
+
+run: run-db25d
+run-db25d: bk4819Test
+	./bk4819Test
+.PHONY: run-db25d
+
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
 # radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
