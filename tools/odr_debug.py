@@ -430,7 +430,8 @@ class DebugLink:
         return bytes(out)
 
     def split_variant(self, variant, regs=()):
-        """SPLIT op 1: the BS framing experiment's variant (0-3, 255 raw) and up to 4 (page 4 register, value) pairs"""
+        """SPLIT op 1: the BS framing experiment's variant (0-7, 255) and up to 4 (page 4 register, value) pairs
+        written after the variant's values"""
         regs = list(regs)
         if len(regs) > 4:
             raise DebugLinkError("at most 4 register pairs")

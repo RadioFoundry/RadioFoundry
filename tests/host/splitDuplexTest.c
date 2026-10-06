@@ -324,6 +324,32 @@ static dmr_tx_burst_t lcb(uint8_t kind, uint8_t tag)
 	return b;
 }
 
+// The raw slot (variants 6, 7 of the HR_C6000 experiment): CACH bits, then a burst our own decoders read back as the
+// payload with the slot type and BS data sync; a burst it can't code goes out as the idle message
+static void test_raw_slot(void)
+{
+	static const uint8_t BS_SYNC[6] = { 0xDF, 0xF5, 0x7D, 0x75, 0xDF, 0x5D };
+	uint8_t raw[BS_RAW_SLOT_BYTES], pl[12], cc = 0, dt = 0;
+	dmr_cach_t c = { .at = 1, .tc = 1, .lcss = DMR_LCSS_FIRST, .payload = 0x1ABCDu };
+	dmr_tx_burst_t b = lcb(DMR_BURST_CSBK, 0x5A);
+
+	c.bits = dmrCachBuild(c.at, c.tc, c.lcss, c.payload);
+	bsOutboundRawSlot(&b, &c, 7, raw);
+	CHECK(((uint32_t)raw[0] << 16 | (uint32_t)raw[1] << 8 | raw[2]) == c.bits);
+	CHECK(dmrFecBptcDecode(raw + 3, pl) == 0 && memcmp(pl, b.payload, 12) == 0);
+	CHECK(dmrFecSlotTypeDecode(raw + 3, &cc, &dt) && cc == 7 && dt == DMR_BURST_CSBK);
+	// sync: burst bits 108-155 = bytes 13.5-19.5 of the burst
+	for (int i = 0; i < 48; i++) {
+		int bit = 108 + i;
+		CHECK(((raw[3 + bit / 8] >> (7 - bit % 8)) & 1) == ((BS_SYNC[i / 8] >> (7 - i % 8)) & 1));
+	}
+	dmr_tx_burst_t v = voice(0, 0x33);
+	bsOutboundRawSlot(&v, NULL, 1, raw);
+	CHECK(raw[0] == 0 && raw[1] == 0 && raw[2] == 0);
+	CHECK(dmrFecBptcDecode(raw + 3, pl) == 0 && memcmp(pl, BS_IDLE_INFO, 12) == 0);
+	CHECK(dmrFecSlotTypeDecode(raw + 3, &cc, &dt) && cc == 1 && dt == DMR_BURST_IDLE);
+}
+
 static void test_outbound(void)
 {
 	bsOutbound_t o;
@@ -1265,6 +1291,7 @@ int main(void)
 	test_short_lc();
 	test_idle_info();
 	test_outbound();
+	test_raw_slot();
 	test_epoch();
 	test_normal();
 	test_tx_half();

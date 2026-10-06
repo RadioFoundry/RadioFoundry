@@ -27,6 +27,7 @@
 #include "debuglink/dlog.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "modem/hrc6000/hrc6000_bs.h"
+#include "dmr/bsOutbound.h"
 #endif
 
 #define DMR_TASK_PRIORITY	(configMAX_PRIORITIES - 2)
@@ -503,7 +504,7 @@ static bool slot_clock(uint32_t *counter, uint32_t *t_us, int8_t *ts)
 
 static bool bs_start(const dmr_bs_config_t *cfg)
 {
-	return active && hrc6000_bs_start(&bs, &eng, cfg);
+	return active && hrc6000_bs_start(&bs, &eng, cfg, bsOutboundRawSlot);
 }
 
 static void bs_key(bool on)

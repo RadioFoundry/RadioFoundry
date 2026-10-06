@@ -572,8 +572,11 @@ chip takes the CACH LCSS from (its own count, or 0x50 bits 1-0, "LocalLCSS, ever
 not use for the EMB). `HRC6000_BS_CACH_METHOD` says "unknown" until the bench confirms the CACH on air (`split-duplex.md`
 10.1). The experiment's variants are written at key-up and restored at unkey: 1 0x11 = 0x00; 2 0x10 = 0x4E, 0x11 =
 0x00; 3 0x10 = 0x6A, 0x11 = 0x00; 4 0x11 = 0x40 (relay mode's repeated duplex); 5 as 4 and the CACH LCSS in 0x50 bits
-1-0; 255 up to four raw page 4 pairs (left as written until the next DMR entry, except 0x10 / 0x11 which are
-restored). Host test: `tests/host/hrc6000BsTest.c`.
+1-0; 6 and 7 the raw slot: the MCU builds the CACH and burst (288 bits) and writes the 36 bytes to page 2 0x00, with 6
+in the physical layer mode (0x10 = 0x66) and 7 in layer 2 with Decode_Mode 00 (0x40 = 0xE0); 255 variant 0. Up to four
+raw page 4 pairs follow any variant's values (left as written until the next DMR entry, except 0x10 / 0x11 / 0x40 which
+are restored). Bench, 2026-10-12: with 0x52 and the short LC written, variants 0-5 and the raw pairs tried still send an
+all-zero CACH (`split-duplex.md` 10.1). Host test: `tests/host/hrc6000BsTest.c`.
 
 ---
 

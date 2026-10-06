@@ -102,4 +102,10 @@ void bsOutboundSetShortLc(bsOutbound_t *o, const uint32_t rows[4]);
 void bsOutboundNext(bsOutbound_t *o, int8_t ts, uint32_t now_ms, dmr_tx_burst_t *out, dmr_cach_t *cach,
 		    const uint8_t **emb_lc);
 
+// The slot as sent, for a modem that frames nothing itself (split-duplex.md 10.1, variants 6 and 7): the CACH (24
+// bits) then the 264-bit burst with BS data sync, most significant bit of byte 0 first. Idle, and rate 1/2 bursts whose
+// 12 bytes carry their CRC (host_crc), are BPTC coded; anything else goes out as the idle message. cach NULL: zeros.
+#define BS_RAW_SLOT_BYTES	36
+void bsOutboundRawSlot(const dmr_tx_burst_t *b, const dmr_cach_t *cach, uint8_t cc, uint8_t *out);
+
 #endif

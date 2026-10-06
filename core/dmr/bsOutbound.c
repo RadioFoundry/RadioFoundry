@@ -4,8 +4,11 @@
 #include <string.h>
 #include "dmr/bsOutbound.h"
 #include "dmr/fec/dmrCach.h"
+#include "dmr/fec/dmrFec.h"
 
 #define NAK_FULL	5	// MMDVM_NAK_FULL
+#define BS_DATA_SYNC	0xDFF57D75DF5DULL	// ETSI TS 102 361-1 9.1.1
+#define SYNC_FIRST_BIT	108
 
 const uint8_t BS_IDLE_INFO[12] = { 0xFF, 0x83, 0xDF, 0x17, 0x32, 0x09, 0x4E, 0xD1, 0xE7, 0xCD, 0x8A, 0x91 };
 
@@ -287,4 +290,29 @@ void bsOutboundNext(bsOutbound_t *o, int8_t ts, uint32_t now_ms, dmr_tx_burst_t 
 	o->at_on_air = (uint8_t)((o->at_on_air & (uint8_t)~bit) | (at ? bit : 0u));
 	o->st.cach++;
 	s->n++;
+}
+
+void bsOutboundRawSlot(const dmr_tx_burst_t *b, const dmr_cach_t *cach, uint8_t cc, uint8_t *out)
+{
+	uint8_t *burst = out + 3;
+	bool bptc = b->host_crc && (b->len >= 12) && (b->kind <= DMR_BURST_RATE_12_DATA);
+	uint8_t type = bptc ? b->kind : DMR_BURST_IDLE;
+	const uint8_t *info = bptc ? b->payload : BS_IDLE_INFO;
+
+	if ((b->kind == DMR_BURST_IDLE) && (b->len >= 12)) {
+		info = b->payload;
+	}
+	memset(out, 0, BS_RAW_SLOT_BYTES);
+	uint32_t c = (cach != NULL) ? cach->bits : 0u;
+
+	out[0] = (uint8_t)(c >> 16);
+	out[1] = (uint8_t)(c >> 8);
+	out[2] = (uint8_t)c;
+	dmrFecBptcEncode(info, burst);
+	dmrFecSlotTypeEncode(cc, type, burst);
+	for (int i = 0; i < 48; i++) {
+		if (((BS_DATA_SYNC >> (47 - i)) & 1u) != 0) {
+			burst[(SYNC_FIRST_BIT + i) / 8] |= (uint8_t)(0x80u >> ((SYNC_FIRST_BIT + i) % 8));
+		}
+	}
 }

@@ -3,7 +3,7 @@
 // The debug link's SPLIT command (0x15, docs/spec/debuglink.md 3.15, docs/spec/split-duplex.md 10.1), built only with
 // CONFIG_HOTSPOT_SPLIT (without it the command is unknown, as before):
 //   op 1  variant u8, nregs u8 (<= 4), nregs x (page 4 register u8, value u8) -> status: the BS framing experiment's
-//         variant the TX half's next key-up uses (raw pairs with variant 255)
+//         variant the TX half's next key-up uses (raw pairs written after any variant's values)
 //   op 2  -> status, then the split view as key=value text (role, epoch, offset, buffer levels, underruns, CACH)
 #include "config.h"
 

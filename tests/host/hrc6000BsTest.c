@@ -16,7 +16,7 @@ static int failures, checks;
 typedef struct {
 	uint8_t page, reg, n;
 	bool read;
-	uint8_t data[32];
+	uint8_t data[40];
 } xfer_t;
 
 static xfer_t xlog[8192];
@@ -37,7 +37,7 @@ static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const 
 		x->n = (uint8_t)len;
 		x->read = read;
 		if (!read && tx != NULL) {
-			memcpy(x->data, tx, len < 32 ? len : 32);
+			memcpy(x->data, tx, len < sizeof(x->data) ? len : sizeof(x->data));
 		}
 		nx++;
 	}
@@ -135,6 +135,8 @@ static dmr_tx_burst_t burst(uint8_t kind, uint8_t index, uint8_t fill)
 	return b;
 }
 
+static hrc6000_bs_raw_fn start_raw;	// the raw slot builder start() hands over
+
 static void start(uint8_t variant)
 {
 	dmr_bs_config_t c = { .cc = 1, .variant = variant };
@@ -146,7 +148,7 @@ static void start(uint8_t variant)
 		c.regs[1][0] = 0x0E;
 		c.regs[1][1] = 0xA5;
 	}
-	CHECK(hrc6000_bs_start(&bs, &eng, &c));
+	CHECK(hrc6000_bs_start(&bs, &eng, &c, start_raw));
 }
 
 static void test_start_stop(void)
@@ -155,11 +157,11 @@ static void test_start_stop(void)
 	dmr_bs_config_t c = { .cc = 3 };
 
 	hrc6000_dmr_halt(&eng);
-	CHECK(!hrc6000_bs_start(&bs, &eng, &c));	// the engine must be running
+	CHECK(!hrc6000_bs_start(&bs, &eng, &c, NULL));	// the engine must be running
 	fresh();
-	CHECK(hrc6000_bs_start(&bs, &eng, &c));
+	CHECK(hrc6000_bs_start(&bs, &eng, &c, NULL));
 	CHECK(hrc6000_bs_active(&eng));
-	CHECK(!hrc6000_bs_start(&bs, &eng, &c));	// once
+	CHECK(!hrc6000_bs_start(&bs, &eng, &c, NULL));	// once
 	CHECK(last_write(HRC6000_PAGE_SYS, 0x40) == 0xE3);
 	CHECK(last_write(HRC6000_PAGE_SYS, 0x1F) == 0x30);
 	CHECK(last_write(HRC6000_PAGE_SYS, 0x41) == 0x00);
@@ -408,6 +410,57 @@ static void test_cach(void)
 	}
 }
 
+static int raw_built;
+
+static void fake_raw(const dmr_tx_burst_t *b, const dmr_cach_t *cach, uint8_t cc, uint8_t *out)
+{
+	memset(out, 0, HRC6000_BS_RAW_BYTES);
+	out[0] = (uint8_t)(0xA0u | ((cach != NULL) ? cach->tc : 0x0Fu));
+	out[35] = (uint8_t)(b->kind ^ cc);
+	raw_built++;
+}
+
+// Variants 6 and 7: every slot is the builder's 36 bytes in page 2 0x00, nothing written to 0x52; 6 puts the chip in
+// the physical layer mode (0x10 bits 4-3 = 00), 7 sets Decode_Mode 00 (0x40 bits 1-0); both restored at unkey
+static void test_raw_slot(void)
+{
+	for (uint8_t variant = 6; variant <= 7; variant++) {
+		fresh();
+		start_raw = fake_raw;
+		start(variant);
+		start_raw = NULL;
+		raw_built = 0;
+		dmr_tx_burst_t b = burst(DMR_BURST_CSBK, 0, 0x11);
+		dmr_cach_t c = { .tc = 1 };
+		CHECK(hrc6000_bs_queue(&eng, 2, &b, &c, NULL));
+		hrc6000_bs_key(&eng, true);
+		nx = 0;
+		do {
+			tick();
+		} while (!bs.on_air);
+		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == ((variant == 6) ? 0x66 : 0x6E));
+		CHECK(last_write(HRC6000_PAGE_SYS, 0x40) == ((variant == 7) ? 0xE0 : 0xE3));
+		tick();
+		int raws = 0, last = -1;
+		for (int i = 0; i < nx; i++) {
+			if (!xlog[i].read && xlog[i].page == HRC6000_PAGE_DATA && xlog[i].reg == 0x00) {
+				CHECK(xlog[i].n == HRC6000_BS_RAW_BYTES);
+				raws++;
+				last = i;
+			}
+		}
+		// TS1's underrun (no CACH) then TS2's CSBK with its CACH
+		CHECK(raws == 2 && raw_built == 2 && bs.st.raw == 2);
+		CHECK(last >= 0 && xlog[last].data[0] == 0xA1 && xlog[last].data[35] == (DMR_BURST_CSBK ^ 1));
+		CHECK(count_writes(HRC6000_PAGE_SYS, 0x52, -1) == 0);
+		hrc6000_bs_key(&eng, false);
+		nx = 0;
+		tick();
+		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x6E && last_write(HRC6000_PAGE_SYS, 0x40) == 0xE3);
+		hrc6000_bs_stop(&eng);
+	}
+}
+
 // No timeslot interrupt for 200 ms while keyed: unkeyed, PA off; halt while the outbound runs ends it too
 static void test_stall_and_halt(void)
 {
@@ -492,6 +545,7 @@ int main(void)
 	test_ring_wrap();
 	test_variants();
 	test_cach();
+	test_raw_slot();
 	test_stall_and_halt();
 	printf("# hrc6000BsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

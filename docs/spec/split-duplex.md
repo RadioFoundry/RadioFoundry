@@ -419,8 +419,13 @@ from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by
 
 Debug link command `SPLIT` (0x15) op 1 sets the variant the next TX half key-up uses; op 2 reads the split view.
 Variants: 0 the driver default (0x10 = 0x6E, 0x11 = 0x80), 1 0x11 = 0x00, 2 0x10 = 0x4E and 0x11 = 0x00, 3 0x10 =
-0x6A (relay bit clear) and 0x11 = 0x00, 255 raw: up to 4 (page 4 register, value) pairs written after the variant's
-writes at key-up and restored at unkey. `tools/split_duplex_host.py --exp <variant>` sets it, takes the TX half role,
+0x6A (relay bit clear) and 0x11 = 0x00, 4 0x11 = 0x40 (repeated duplex), 5 as 4 with the CACH LCSS in 0x50 bits 1-0,
+255 variant 0's values. Up to 4 raw (page 4 register, value) pairs are written after any variant's values at key-up;
+0x10, 0x11 and 0x40 are restored at unkey. Variants 6 and 7 are the raw slot: the core builds all 288 bits of each slot
+(`bsOutboundRawSlot`: the CACH, then the burst BPTC coded with its slot type and BS data sync) and the driver writes
+the 36 bytes to TX RAM page 2 0x00. 6 sets the physical layer mode (0x10 = 0x66, LayerMode 00), 7 keeps layer 2 with
+Decode_Mode 00 (0x40 = 0xE0, the manual's "physical layer test mode without coding"). The manual documents neither
+for transmit; if one sends our bits as given, the CACH (and everything else) is ours. `tools/split_duplex_host.py --exp <variant>` sets it, takes the TX half role,
 keys the outbound with idle bursts and a short LC for 10 s.
 
 On the SDR bench `sdrmon.py capture` then `sdrmon.py analyze --cach` prints per burst the family (`bs`), the CACH

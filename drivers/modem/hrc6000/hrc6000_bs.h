@@ -12,8 +12,11 @@
 // INFO reports "unknown" (HRC6000_BS_CACH_METHOD) until the bench confirms what goes on air.
 // The experiment (split-duplex.md 10.1): variant 0 the operation values 0x10 = 0x6E, 0x11 = 0x80; 1 0x11 = 0x00; 2
 // 0x10 = 0x4E and 0x11 = 0x00; 3 0x10 = 0x6A and 0x11 = 0x00; 4 0x11 = 0x40 (relay mode's repeated duplex); 5 as 4,
-// and the CACH LCSS in 0x50 bits 1-0; 255 up to four raw (page 4 register, value) pairs. Written at key-up after the
-// variant's values, restored at unkey.
+// and the CACH LCSS in 0x50 bits 1-0; 6 and 7 the raw slot: the MCU builds all 288 bits (CACH and burst, raw_slot) and
+// writes them to TX RAM page 2 0x00, with 6 the physical layer mode (0x10 bits 4-3 = 00) and 7 layer 2 with
+// Decode_Mode 00 (0x40 bits 1-0, "physical layer test mode without coding"); the manual documents neither for
+// transmit. Up to four raw (page 4 register, value) pairs are written after the variant's values (255: on top of
+// variant 0's). Written at key-up, 0x10 / 0x11 / 0x40 restored at unkey.
 #ifndef HRC6000_BS_H
 #define HRC6000_BS_H
 
@@ -26,6 +29,10 @@
 #define HRC6000_BS_Q		3	// bursts queued per slot (the core keeps two ahead)
 #define HRC6000_BS_CACH_METHOD	DMR_BS_CACH_UNKNOWN
 #define HRC6000_BS_VARIANT_RAW	255
+#define HRC6000_BS_RAW_BYTES	36	// the raw slot: CACH (24 bits) and burst (264)
+
+// Builds one raw slot (variants 6, 7): core/dmr/bsOutbound.h bsOutboundRawSlot, set by the board
+typedef void (*hrc6000_bs_raw_fn)(const dmr_tx_burst_t *b, const dmr_cach_t *cach, uint8_t cc, uint8_t *out);
 
 typedef struct {
 	uint32_t slots;		// slot boundaries since bs_start
@@ -37,10 +44,12 @@ typedef struct {
 	uint32_t cach_given;	// CACH handed over by the core
 	uint32_t cach_written;	// ... written to the chip (0x52, the short LC); an underrun's idle burst has none
 	uint32_t page2_lc;	// embedded LC rewrites (two slots share page 2)
+	uint32_t raw;		// raw slots written (variants 6, 7)
 } hrc6000_bs_stats_t;
 
 typedef struct hrc6000_bs {
 	dmr_bs_config_t cfg;
+	hrc6000_bs_raw_fn raw_slot;	// NULL: variants 6 and 7 frame as variant 0
 	volatile bool keyed;	// asked
 	bool on_air;		// keyed and the first TS1 slot set up
 	bool pa;
@@ -62,7 +71,7 @@ typedef struct hrc6000_bs {
 } hrc6000_bs_t;
 
 // Task level (each takes the engine's lock)
-bool hrc6000_bs_start(hrc6000_bs_t *bs, hrc6000_dmr_t *e, const dmr_bs_config_t *cfg);
+bool hrc6000_bs_start(hrc6000_bs_t *bs, hrc6000_dmr_t *e, const dmr_bs_config_t *cfg, hrc6000_bs_raw_fn raw_slot);
 void hrc6000_bs_key(hrc6000_dmr_t *e, bool on);
 bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
 		      const uint8_t *emb_lc);

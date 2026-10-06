@@ -24,6 +24,8 @@
 #define CTL_TX		0x80
 #define CTL_NONE	0x00
 #define MODE_DMR	0x6E	// the operation value (hrc6000_dmr_enter)
+#define MODE_LAYER_MASK	0x18	// 0x10 bits 4-3: 00 physical layer, 01 layer 2, 10 layer 3
+#define L2_DECODE_MASK	0x03	// 0x40 bits 1-0, Decode_Mode: 11 normal, 00 physical layer test without coding
 #define CHAN_DIRECT	0x80	// direct simplex (modem-hrc6000.md 2)
 #define CHAN_RPT_DUPLEX	0x40	// relay mode: repeated duplex (bit 6)
 #define PAGE2_SLC	0x24	// TX RAM: the short LC, 28 bits (0x24-0x27 bits 7-4) and its CRC-8 (0x28)
@@ -81,25 +83,27 @@ static void variant_regs(hrc6000_dmr_t *e, hrc6000_bs_t *bs, bool on)
 		case 5:
 			chan = CHAN_RPT_DUPLEX;	// relay mode's repeated duplex (5: also the CACH LCSS in 0x50, setup())
 			break;
+		case 6:
+			mode = MODE_DMR & (uint8_t)~MODE_LAYER_MASK;	// physical layer mode
+			break;
 		default:
 			break;
 		}
 	}
+	// Variant 7's Decode_Mode 00; setup() keeps bs->reg40 and only changes bit 3
+	bs->reg40 = (on && (bs->cfg.variant == 7)) ? (uint8_t)(L2_ACTIVE & ~L2_DECODE_MASK) : L2_ACTIVE;
+	w(e, R_L2_CTL, bs->reg40);
 	w(e, R_MODE, mode);
 	w(e, R_CHAN, chan);
-	if (bs->cfg.variant == HRC6000_BS_VARIANT_RAW) {
-		for (uint8_t i = 0; (i < bs->cfg.nregs) && (i < DMR_BS_REGS_MAX); i++) {
-			// Restored at unkey to the values of the init sequence the registers came from: only 0x10 / 0x11
-			// are known, so a raw write elsewhere stays until the next DMR entry (hrc6000_dmr_enter)
-			if (on) {
-				w(e, bs->cfg.regs[i][0], bs->cfg.regs[i][1]);
-			}
-		}
+	for (uint8_t i = 0; on && (i < bs->cfg.nregs) && (i < DMR_BS_REGS_MAX); i++) {
+		// Restored at unkey to the values of the init sequence the registers came from: only 0x10 / 0x11 / 0x40
+		// are known, so a raw write elsewhere stays until the next DMR entry (hrc6000_dmr_enter)
+		w(e, bs->cfg.regs[i][0], bs->cfg.regs[i][1]);
 	}
 	bs->regs_written = on;
 }
 
-bool hrc6000_bs_start(hrc6000_bs_t *bs, hrc6000_dmr_t *e, const dmr_bs_config_t *cfg)
+bool hrc6000_bs_start(hrc6000_bs_t *bs, hrc6000_dmr_t *e, const dmr_bs_config_t *cfg, hrc6000_bs_raw_fn raw_slot)
 {
 	lock(e);
 	bool ok = e->running && (e->bs == NULL) && (e->tx_state == 0);
@@ -107,6 +111,7 @@ bool hrc6000_bs_start(hrc6000_bs_t *bs, hrc6000_dmr_t *e, const dmr_bs_config_t 
 	if (ok) {
 		memset(bs, 0, sizeof(*bs));
 		bs->cfg = *cfg;
+		bs->raw_slot = raw_slot;
 		hrc6000_dmr_set_cc(e->dev, cfg->cc);
 		hrc6000_dmr_set_sync(e->dev, DMR_SYNC_BS);	// BS data sync; the chip sends BS voice sync as its inverse
 		w(e, R_ACCESS0, 0x00);
@@ -248,6 +253,17 @@ static void write_page2(hrc6000_dmr_t *e, uint8_t addr, const uint8_t *data, uin
 static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_burst_t *b, const uint8_t *lc,
 		  const dmr_cach_t *cach)
 {
+	if (((bs->cfg.variant == 6) || (bs->cfg.variant == 7)) && (bs->raw_slot != NULL)) {
+		uint8_t raw[HRC6000_BS_RAW_BYTES];
+
+		bs->raw_slot(b, cach, bs->cfg.cc, raw);
+		hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, 0x00, raw, sizeof(raw));
+		bs->st.raw++;
+		w(e, R_SLOT_CTL, CTL_TX);
+		w(e, R_TX_TYPE, hrc6000_dmr_reg50(DMR_BURST_IDLE, 0));
+		bs->st.bursts++;
+		return;
+	}
 	int k = ts - 1;
 	bool voice = b->kind == DMR_BURST_VOICE;
 	uint8_t idx = (uint8_t)(b->voice_index % 6u);
