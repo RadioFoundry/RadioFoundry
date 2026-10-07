@@ -32,8 +32,8 @@
 #                           not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
 #                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE), with the board's MAXIMAL_VARS
 #                           (the DM-1701: LTO=1)
-#        audio-probe        (DM-1701 only, the board with an audio tap) the default config with CONFIG_AUDIO_PROBE=y,
-#                           so the probe keeps building
+#        audio-probe        (DM-1701 only, the board with an audio tap) the default config with CONFIG_AUDIO_PROBE=y
+#                           and LTO=1 (without LTO it no longer fits), so the probe keeps building
 #        vhf                (MD-380 only) the VHF band image, default config
 #      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
@@ -261,7 +261,7 @@ for bm in boards/*/board.mk boards/*/; do
 		case "$required" in *" $f "*) continue ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
-	[ "$b" = dm1701 ] && build "$b" audio-probe CONFIG_AUDIO_PROBE=y
+	[ "$b" = dm1701 ] && build "$b" audio-probe CONFIG_AUDIO_PROBE=y LTO=1
 	build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
