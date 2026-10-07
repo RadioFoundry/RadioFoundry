@@ -85,7 +85,7 @@ APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
 AUDIO_PROBE = 0x10
 (PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES, PROBE_RAM_READ,
- PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED, PROBE_PIN_TONE, PROBE_PIN_SCAN) = range(14)
+ PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED, PROBE_PIN_TONE, PROBE_PIN_SCAN, PROBE_PIN_PWM) = range(15)
 PROBE_RAM_CHUNK = 56          # bytes per RAM_WRITE request (request payload 64: op, page, address, data)
 PROBE_RAM_READ_MAX = 1000
 PROBE_NO_RAM = 0xFFFF
@@ -431,6 +431,12 @@ class DebugLink:
     def probe_pin_tone(self, hz):
         """A hz square wave on the board's spare output (DM-1701: PC8, the stock beep PWM); 0 = off."""
         self.request(AUDIO_PROBE, struct.pack("<BH", PROBE_PIN_TONE, hz))
+
+    def probe_pin_pwm(self, top, hz, amp_permille):
+        """PWM audio on the board's spare output: a carrier of top + 1 counts of 72 MHz, its duty a hz sine of
+        amp_permille (0-1000) around 50 %; hz 0 = off. Returns the carrier in Hz (0: not running)."""
+        _, r = self.request(AUDIO_PROBE, struct.pack("<BHHH", PROBE_PIN_PWM, top, hz, amp_permille))
+        return struct.unpack_from("<I", r)[0]
 
     def probe_pin_scan(self, ms):
         """Sample the MCU's GPIO inputs for ms (<= 2000). Returns {"A": mask, "B": mask, ...} of the pins that changed."""

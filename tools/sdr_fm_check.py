@@ -412,6 +412,15 @@ def analyze(args):
             vals = [float(np.median(audio[i:i + w])) for i in range(e0, e1 - w + 1, w)]
             print('  track %.2f s, 0.05 s steps: %s' % (e0 / FS_AUDIO, ' '.join('%.0f' % v for v in vals)))
         if args.tone_snr:
+            # the tone's level over the whole demodulated band (to 7.5 kHz): the response above the voice band
+            blk = int(0.1 * FS_AUDIO)
+            n_ = np.arange(blk) / FS_AUDIO
+            A = np.stack([np.cos(2 * np.pi * args.tone_snr * n_), np.sin(2 * np.pi * args.tone_snr * n_)], axis=1)
+            fits = [A @ np.linalg.lstsq(A, x[i:i + blk].astype(np.float64), rcond=None)[0]
+                    for i in range(0, len(x) - blk + 1, blk)]
+            if fits:
+                print('  tone %.0f Hz: wideband tone rms %.0f Hz' % (args.tone_snr, np.sqrt(np.mean(np.concatenate(fits) ** 2))))
+        if args.tone_snr and args.tone_snr <= 3000:
             # a test tone's SNR in the voice band: fit the tone (and its harmonics up to 3 kHz) in 0.1 s blocks,
             # the rest of the 300-3000 Hz signal is noise and distortion
             vb = fir(x, voice_bp)

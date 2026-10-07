@@ -292,7 +292,7 @@ def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag, ptt_s=PTT_S, **analyze
                 rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
                                                 tones=True, **analyze)
                 m = re.search(r"voice 300-3000 Hz: peak (\d+) Hz \(99\.5%\), (\d+) Hz \(99\.9%\), rms (\d+) Hz", text)
-                extra = re.findall(r"(SINAD [-\d.]+ dB|noise 4-7\.5 kHz: rms \d+ Hz)", text)
+                extra = re.findall(r"(SINAD [-\d.]+ dB|noise 4-7\.5 kHz: rms \d+ Hz|wideband tone rms \d+ Hz)", text)
                 if extra:
                     note = "; ".join(([note] if note else []) + extra)
                 tones = re.findall(r"tone (\d+(?:\.\d)?) Hz [\d.]+-[\d.]+ s \(([\d.]+) s\)", text)
@@ -1601,3 +1601,121 @@ def test_probe_fm_tx_pin_tone(probe, sdr_bench, pytestconfig):
             L.probe_reg(PAGE, r, v)
     print_tx_rows("FM TX with a 1 kHz square wave on PC8", rows)
     assert len(rows) == len(runs)
+
+
+# PWM audio on PC8 into MIC_P / MIC_N (test_probe_fm_tx_pin_tone, 2026-10-12: the beep net reaches the differential
+# mic input). Whatever RC the board has on that net, plus the codec ADC's own decimation filter, has to remove the
+# carrier. (name, timer top, tone Hz, amplitude per mille); the carrier is 72 MHz / (top + 1)
+PWM_VARIANTS = [
+    ("70 kHz carrier, 1 kHz, 10 %", 1023, 1000, 100),
+    ("70 kHz carrier, 1 kHz, 30 %", 1023, 1000, 300),
+    ("140 kHz carrier, 1 kHz, 30 %", 511, 1000, 300),
+    ("35 kHz carrier, 1 kHz, 30 %", 2047, 1000, 300),
+    ("17.6 kHz carrier, 1 kHz, 30 %", 4095, 1000, 300),
+    ("70 kHz carrier, 400 Hz, 30 %", 1023, 400, 300),
+    ("70 kHz carrier, 2 kHz, 30 %", 1023, 2000, 300),
+]
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_pin_pwm(probe, sdr_bench, pytestconfig):
+    """Keyed FM with MIC_P / MIC_N on and a PWM sine on PC8: the quality (SINAD) of PWM audio through the board's own
+    filtering and the chip's FM chain, by carrier and level."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    from odr_debug import DebugLinkError
+    try:
+        L.probe_pin_pwm(1023, 0, 0)
+    except DebugLinkError:
+        pytest.skip("the board has no PWM audio output (probe op 14)")
+
+    rows = pwm_runs(probe, sdr_bench, pytestconfig, [(n, t, h, a, []) for n, t, h, a in PWM_VARIANTS])
+    print_tx_rows("FM TX with PWM audio on PC8 into MIC_P / MIC_N", rows)
+    assert len(rows) == len(PWM_VARIANTS)
+
+
+def pwm_runs(probe, sdr_bench, pytestconfig, variants):
+    """Key once per (name, top, tone Hz, amplitude per mille, [(register, set, clear)]) with MIC_P / MIC_N on and the
+    PWM sine on PC8; the registers written while keyed are restored after each run."""
+    L = probe.link
+    from odr_debug import DebugLinkError
+    try:
+        L.probe_pin_pwm(1023, 0, 0)
+    except DebugLinkError:
+        pytest.skip("the board has no PWM audio output (probe op 14)")
+
+    def run(top, hz, amp, writes):
+        def during():
+            saved = {r: L.probe_reg(PAGE, r) for r in {0xE0} | {w[0] for w in writes}}
+            apply(L, 0xE0, 0x06, 0)          # MIC_P, MIC_N on
+            for reg, s_, c in writes:
+                apply(L, reg, s_, c)
+            fs = L.probe_pin_pwm(top, hz, amp)
+            time.sleep(2.5)
+            L.probe_pin_pwm(top, 0, 0)
+            for r, v in saved.items():
+                L.probe_reg(PAGE, r, v)
+            return f"carrier {fs} Hz" if fs else "PWM DMA not running"
+        return lambda: None, during
+
+    rows = []
+    try:
+        for name, top, hz, amp, writes in variants:
+            rows += keyed_runs(probe, sdr_bench, pytestconfig, [(name, *run(top, hz, amp, writes))], "pwm",
+                               ptt_s=3.0, tone_snr=hz)
+    finally:
+        L.probe_pin_pwm(1023, 0, 0)
+    return rows
+
+
+# test_probe_fm_tx_pin_pwm (2026-10-12): 10 % already drives the chip's limiter (2.6 kHz rms). Lower levels, the mic
+# first stage at -12 dB (0xE4 bits 5-4), then flat (0x34 bits 7-5 off: band-pass, compressor, pre-emphasis) across
+# the band: how wide is this path for data (4800 / 9600 baud FSK needs flat to 2.4 / 4.8 kHz)?
+FLAT = (0x34, 0, 0xE0)
+PWM_SWEEP = [
+    ("1 kHz, 1 %", 1023, 1000, 10, []),
+    ("1 kHz, 2 %", 1023, 1000, 20, []),
+    ("1 kHz, 4 %", 1023, 1000, 40, []),
+    ("1 kHz, 10 %, mic -12 dB", 1023, 1000, 100, [(0xE4, 0x20, 0x10)]),
+    ("1 kHz, 30 %, mic -12 dB", 1023, 1000, 300, [(0xE4, 0x20, 0x10)]),
+] + [(f"flat, {hz} Hz, 3 %", 1023, hz, 30, [FLAT]) for hz in (300, 1000, 2000, 2500, 3000, 3500, 3800, 4500, 5500)]
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_pin_pwm_sweep(probe, sdr_bench, pytestconfig):
+    """PWM audio on PC8 below the limiter, and the flat path's frequency response."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    rows = pwm_runs(probe, sdr_bench, pytestconfig, PWM_SWEEP)
+    print_tx_rows("FM TX with PWM audio on PC8: level and response", rows)
+    assert len(rows) == len(PWM_SWEEP)
+
+
+# What sets the PWM path's floor (about 120 Hz rms in the voice band with MIC_P / MIC_N on, 50 Hz with them off), and
+# does the 0x04 path, which skips the 8 kHz codec, reach the 4.8 kHz that 9600 baud FSK needs?
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_wideband(probe, sdr_bench, pytestconfig):
+    """The PWM path's noise with no audio, and 0x04 tones up to 6 kHz."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    rows = pwm_runs(probe, sdr_bench, pytestconfig, [
+        ("PC8 low, MIC_P / MIC_N on, flat", 1023, 0, 0, [FLAT]),
+        ("PWM 50 % carrier, no audio, flat", 1023, 1000, 0, [FLAT]),
+    ])
+    L = probe.link
+
+    def mod(hz):
+        def during():
+            r = L.probe_mod(2000, hz, 16)
+            return f"{r['writes'] * 1000 // max(r['elapsed_ms'], 1)} writes/s"
+        return lambda: None, during
+
+    for hz in (1000, 3000, 3800):        # the probe takes tones up to 3800 Hz
+        rows += keyed_runs(probe, sdr_bench, pytestconfig, [(f"0x04, {hz} Hz, 16 steps", *mod(hz))], "wb",
+                           ptt_s=2.5, tone_snr=hz)
+    print_tx_rows("FM TX noise floor and the 0x04 path's response", rows)
+    assert len(rows) == 5

@@ -21,6 +21,9 @@
 #include "task.h"
 
 #include <string.h>
+#if CONFIG_AUDIO_PROBE
+#include <math.h>
+#endif
 
 #define AUDIO_TASK_PRIORITY	5	// above the radio task: a late block is an audible gap
 #define AUDIO_TASK_STACK	1280	// words: the vocoder in the callback needs about 4 KB (vocoder_dm1701.c)
@@ -336,8 +339,10 @@ static bool probe_last_block(int16_t *left, int16_t *right, uint32_t *count)
 // PC8 (the stock beep PWM, TIM8_CH3 on AF3): a 50 % square wave; off puts it back as the low output board.c makes it
 static void probe_pin_tone(uint16_t hz)
 {
+	TIM8->CR1 = 0;
+	TIM8->DIER = 0;
+	DMA2_Stream2->CR = 0;				// the PWM audio's DMA, if it ran
 	if (hz == 0) {
-		TIM8->CR1 = 0;
 		stm32_pin_out(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), false, false);
 		return;
 	}
@@ -352,6 +357,63 @@ static void probe_pin_tone(uint16_t hz)
 	TIM8->EGR = TIM_EGR_UG;
 	TIM8->CR1 = TIM_CR1_CEN;
 	stm32_pin_af(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), GPIO_AF3_TIM8, false, GPIO_NOPULL);
+}
+
+// PWM audio on PC8: TIM8 CH3, its compare request on DMA2 stream 2 channel 0 rewriting CCR3 from a circular table each
+// carrier period. The table holds whole periods of the tone (as near hz as its length allows)
+#define PWM_TABLE_MAX		1024u
+static uint16_t pwm_table[PWM_TABLE_MAX];
+
+static uint32_t probe_pin_pwm(uint16_t top, uint16_t hz, uint16_t amp_permille)
+{
+	DMA2_Stream2->CR = 0;
+	while (DMA2_Stream2->CR & DMA_SxCR_EN) {
+	}
+	if (hz == 0 || top < 15u) {
+		probe_pin_tone(0);
+		return 0;
+	}
+	uint32_t fs = 72000000u / (top + 1u);
+	uint32_t k = (PWM_TABLE_MAX * hz) / fs;		// whole tone periods that fit the table
+	if (k == 0) {
+		k = 1;
+	}
+	uint32_t n = (fs * k + hz / 2u) / hz;
+	if (n > PWM_TABLE_MAX || n < 4u) {
+		return 0;
+	}
+	float half = (float)(top + 1u) / 2.0f, a = half * (float)(amp_permille > 1000u ? 1000u : amp_permille) / 1000.0f;
+	for (uint32_t i = 0; i < n; i++) {
+		int32_t v = (int32_t)(half + a * sinf(6.2831853f * (float)(i * k) / (float)n) + 0.5f);
+		pwm_table[i] = (uint16_t)(v < 0 ? 0 : v > (int32_t)top ? top : v);
+	}
+	__HAL_RCC_TIM8_CLK_ENABLE();
+	__HAL_RCC_DMA2_CLK_ENABLE();
+	TIM8->CR1 = 0;
+	TIM8->DIER = 0;
+	TIM8->PSC = 0;					// 72 MHz counts
+	TIM8->ARR = top;
+	TIM8->CCR3 = pwm_table[0];
+	TIM8->CCMR2 = (6u << TIM_CCMR2_OC3M_Pos) | TIM_CCMR2_OC3PE;	// PWM mode 1, preload: a new duty each period
+	TIM8->CCER = TIM_CCER_CC3E;
+	TIM8->BDTR = TIM_BDTR_MOE;
+	TIM8->EGR = TIM_EGR_UG;
+	DMA2->LIFCR = 0x3Fu << 16;			// stream 2's flags
+	DMA2_Stream2->PAR = (uint32_t)&TIM8->CCR3;
+	DMA2_Stream2->M0AR = (uint32_t)pwm_table;
+	DMA2_Stream2->NDTR = n;
+	DMA2_Stream2->FCR = 0;
+	DMA2_Stream2->CR = (0u << DMA_SxCR_CHSEL_Pos) | DMA_SxCR_PL_1 | DMA_SxCR_MSIZE_0 | DMA_SxCR_PSIZE_0 |
+			   DMA_SxCR_MINC | DMA_SxCR_CIRC | DMA_SxCR_DIR_0;
+	DMA2_Stream2->CR |= DMA_SxCR_EN;
+	TIM8->DIER = TIM_DIER_CC3DE;
+	TIM8->CR1 = TIM_CR1_CEN;
+	stm32_pin_af(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), GPIO_AF3_TIM8, false, GPIO_NOPULL);
+	uint32_t ndtr = DMA2_Stream2->NDTR;
+	uint32_t t0 = hal_millis();
+	while (DMA2_Stream2->NDTR == ndtr && hal_millis() - t0 < 2u) {
+	}
+	return DMA2_Stream2->NDTR != ndtr ? fs : 0;	// the DMA must be moving
 }
 
 // Sample GPIOA-E's inputs back to back for ms; output pins read their own level, so a diff of two scans is the answer
@@ -381,6 +443,7 @@ const hal_audio_tap_t dm1701_audio_tap = {
 	.last_block = probe_last_block,
 	.pin_tone = probe_pin_tone,
 	.pin_scan = probe_pin_scan,
+	.pin_pwm = probe_pin_pwm,
 };
 #endif
 

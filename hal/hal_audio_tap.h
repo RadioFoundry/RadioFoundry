@@ -80,6 +80,9 @@ typedef struct {
 	// Sample every MCU GPIO input for ms and set, per port (A, B, ...), the pins that changed; returns the ports
 	// filled (at most max). Finds which MCU pins a clock from the audio chip reaches. NULL when not supported
 	uint8_t (*pin_scan)(uint16_t ms, uint16_t *changed, uint8_t max);
+	// PWM audio on the same output: a carrier of top + 1 timer counts, its duty a sine of hz at amplitude (0-1000 of
+	// half the range) around 50 %, one sample per carrier period (0 = off). Returns the carrier in Hz, 0 on failure
+	uint32_t (*pin_pwm)(uint16_t top, uint16_t hz, uint16_t amp_permille);
 } hal_audio_tap_t;
 
 #endif
