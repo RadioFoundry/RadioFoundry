@@ -174,11 +174,80 @@ bit 7 set (BIN).
 |---|---|---|
 | NAND | Kioxia TC58CVG1S3HRAIJ, 2 Gbit SPI NAND: 2 KB pages, 128 KB blocks. Standard SPI NAND opcodes (0x9F ID, 0x13 page read, 0x06, 0x84, 0x0F / 0xC0 status, 0xD8 erase). The stock firmware builds a bad-block table at boot | FCC, BIN |
 | Calibration | A 2 KB page at **NAND 0x280000** (block 20) starting with "TUNE", and a copy in program flash at 0x031FE000 (4 KB sector). The stock firmware repairs one copy from the other at boot | BIN |
-| Calibration layout | Not traced yet | ? |
+| Calibration layout | 6.1 – 6.4 | BIN |
 | Stock NAND areas | 0x40000, 0x110000, 0x3C0000, 0x1100000, 0x2980000 (codeplug and databases, INF) | BIN |
 
 **Rule:** ODR reads both calibration copies and never writes them. It never writes program flash at 0x031FE000 or NAND
 block 20.
+
+### 6.1 Page header and the two copies
+
+| Offset | Size | Field | Tag |
+|---|---|---|---|
+| 0x000 | 4 | Magic "TUNE" | BIN |
+| 0x004 | 4 | Save counter, u32 little-endian. The stock tuning mode adds 1 on every save | BIN |
+
+At boot the stock firmware reads 8 bytes of each copy. If both carry "TUNE", the copy with the higher counter wins and
+is copied over the other. If only one does, it's copied over the other. If neither does, the radio runs untuned ("No
+tune"). There's no checksum. ODR applies the same choice when it reads, without writing anything back (BIN).
+
+### 6.2 Bands and frequency points
+
+The page has two 1 KB halves with the same layout: **0x000–0x3FF for UHF and 0x400–0x7FF for VHF**. The stock
+firmware picks the half from the band of the frequency in use. Offsets below are UHF; add 0x400 for VHF. The few
+fields that exist only once are marked (BIN).
+
+Most tables hold one value per **frequency point**, 8 points per band (BIN):
+
+| Point | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| UHF (MHz) | 403.175 | 414.175 | 425.175 | 436.625 | 447.775 | 458.775 | 469.825 | 478.825 |
+| VHF (MHz) | 136.125 | 142.125 | 146.125 | 152.125 | 156.125 | 162.125 | 166.125 | 173.125 |
+
+A per-point table is one leading byte, then 8 entries in point order, so entry p (1–8) of size n starts at
+table + 1 + n·(p − 1). The leading byte isn't used by any per-point lookup (BIN).
+
+**Interpolation (BIN):** for f at or below point 1, use point 1. Otherwise take the first point p ≥ 2 at or above f
+and interpolate linearly between points p − 1 and p, rounding half up. Above point 8 (478.825–480 MHz, 173.125–174
+MHz), the stock code reads past the table into the next one. ODR uses point 8 there instead.
+
+The squelch table works by **segment**: 8 segments per band. VHF: below 142, 142–146, 146–152, 152–156, 156–162,
+162–166, 166–173, from 173 MHz. UHF: below 410, then 10 MHz steps (410–420 … 460–470), from 470 MHz. A segment's
+upper edge belongs to the next segment (BIN).
+
+### 6.3 Fields
+
+| Offset (UHF) | Size | Content | Used for | Tag |
+|---|---|---|---|---|
+| 0x02C | 1 + 8 × u16 | RX front-end tuning, per point | DAC A, written when the receiver is set up for a frequency. The tuning voltage of the receive band-pass filter (INF) | BIN |
+| 0x43E (VHF half only) | 7 | Global bytes, both bands. Byte 0x43F is the **TX center** (128 = mid-scale, as on the DM-32); the other six aren't traced | Modem SIG_CENTER and RF_MOD_BIAS_CTRL, 6.4 | BIN |
+| 0x045 | 1 + 8 × u16 | **PA drive, power level 1** (H, INF), per point. DAC B value: the APC ramp's end value | TX power | BIN |
+| 0x056 | 1 + 8 × u16 | **PA drive, every other power level** (L, INF), per point | TX power | BIN |
+| 0x067 | 1 + 8 × (u8, u8) + 1 | Modulation, per point. The first byte of each pair goes to the modem (6.4). The second is read but then cleared before use | TX modulation level | BIN |
+| 0x09B | 1 + 8 × u8 | A per-point value capped at 15, written into the RF chip driver's state (use not traced). The leading byte is read on its own and kept with the channel's RF parameters | ? | BIN |
+| 0x0AE | 1 + 8 × (u16, u16) | TX timing in µs, per point: the delay between tuning the transmitter and selecting the PA, and the delay at TX end before the ramp down. A value above 2000 counts as 0 | TX switching | BIN |
+| 0x0CF | 1 + 8 × 9 × u16 | **Squelch**, per segment: one value for each squelch level 1–9 (level 0 doesn't use the table) | RF chip squelch, 6.4 | BIN |
+| 0x160, 0x1B1 | 1 + 8 × 5 × u16 each | Five values for each of 8 ranges: up to point 2, then between points (2–3 … 7–8), then above point 8. No interpolation. Two variants chosen by channel mode (use not traced) | ? | BIN |
+| 0x202 / 0x206 / 0x207 / 0x208 / 0x20B | 4 / 1 / 1 / 3 / ? | Small items the tuning mode reads and writes. 0x20B is in the UHF half only (use not traced) | ? | BIN |
+
+The tuning mode moves each table as a unit (the sizes above), plus 198 bytes from the start of each half. Everything
+not listed is unused as far as the image shows.
+
+### 6.4 What the values drive
+
+| Output | Value | Tag |
+|---|---|---|
+| PA drive (DAC B, 12 bit) | The interpolated 0x045 or 0x056 value for the TX frequency, chosen by power level. The APC ramp runs up to it at TX start and down from it at TX end, as on the DM-32 | BIN |
+| RX front end (DAC A) | The interpolated 0x02C value for the RX frequency | BIN |
+| DAC C | 1780 when receive is set up, not from the page (the TCXO trim, INF) | BIN |
+| SIG_CENTER (modem 0x108) | (c << 24) or (c << 16) or ((m & 0xFF) << 8) or (m & 0xFF), with c = the TX center byte and m below | BIN |
+| RF_MOD_BIAS_CTRL (modem 0x114) | ((m & 0x3FF) << 16) or a. m = round((1.228 + c × 0.422 / 128) × 1023 / 3.3): 381 at c = 0, 512 at c = 128, close to the DM-32's c + 384. a = the interpolated first byte of 0x067 | BIN, DM32 |
+| BK4819 squelch (reg 0x78) | For level n (1–9), v = low byte of entry n of the segment's 0x0CF table: v is the open threshold in dB below 0 dBm at the main chip. Register = (o << 8) or (o − 4), o = 2 × (160 − v), i.e. open at −v dBm and close 2 dB lower. Level 0 uses v = 136 | BIN |
+| Untuned radio | No page: the stock firmware keeps running, values unknown | BIN |
+
+ODR's use: TX stays refused until a reader exists. Then TX power comes from 0x045 / 0x056, and refuses when the page
+is missing or a PA value is 0 or 0xFFFF. The RSSI that ODR shows stays the chip's own reading: the page has no RSSI
+offset, only squelch thresholds (INF).
 
 ## 7. PC link, update and recovery
 
@@ -208,7 +277,7 @@ Bring-up state, nothing run on a radio yet:
 |---|---|
 | Platform | `platform/hrc7000`, image at 0x0300C000 behind the IAP loader; the host port on UART1 |
 | RF | `drivers/rf/bk4819`: main and LO on one 3-wire bus. FM receive by the main chip at the IF with the LO at f + 51.55 MHz |
-| TX | **Refused** until the calibration reader exists: the PA power control has no known safe value without it |
+| TX | **Refused** until the calibration reader exists: the PA power control has no known safe value without it. The page layout is known (6.1 – 6.4); the reader needs the NAND driver |
 | Display | `st7735` on a bit-banged 4-wire serial bus |
 | Keys | Matrix and encoder decoded; the key positions are provisional until checked on the radio |
 | Storage | None yet: the core runs without stored settings. Needs an SPI NAND driver and a 4 KB sector layer over it |
@@ -222,7 +291,7 @@ Bring-up state, nothing run on a radio yet:
 | 1 | Firmware version in Device Info (expect 909E.DBB...) | Yes, menu only |
 | 2 | Program flash part and size; JTAG and UART0 pads | Yes, photos of the control board |
 | 3 | Panel size and which bus mode the PRO uses (ADC 2) | Yes |
-| 4 | Layout of the 2 KB "TUNE" calibration page | No |
+| 4 | Calibration page: which of 0x045 / 0x056 is the high level, the 0x09B / 0x160 / 0x1B1 / 0x2xx items, real values (6.3) | A page read from a radio |
 | 5 | Can a stock CPS read back the calibration page (a backup path)? | Yes, serial capture of a CPS read |
 | 6 | IAP loader protocol and any model check | Capture of a vendor update, or the vendor tool |
 | 7 | Hand-mic key protocol on RJ-45 pin 2 | Yes, logic analyzer |
