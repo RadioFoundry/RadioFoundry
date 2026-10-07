@@ -412,6 +412,8 @@ both I2S channels (`core/debuglink/debuglink_audio_probe.c`, `hal/hal_audio_tap.
 | 7 RAM_WRITE | page u8, address u16, 1 to 60 bytes | none (page 2 writes the TX RAM) |
 | 9 MUSIC | time ms u16 (1-2000), tone Hz u16 (0-3800), amplitude u16, flags u8 (bit 0 little endian samples) | FIFO writes u16, polls u16, elapsed ms u32. Feeds the HR_C6000's prompt tone FIFO (`modem-hrc6000.md` 8.1): 32 samples to page 3 address 0 whenever 0x88 bit 0 reads 0 (`board.audio_tap->modem_burst`); the caller opens the path (0x06 bit 1). Blocks the debug link for the time |
 | 8 WATCH | time ms u16 (1-2000), flag page u8, flag register u8, clear register u8, mask u8, RAM page u8, RAM address u16 (0xFFFF = none) | elapsed ms u32, polls u16, for flag bits 0-7: count u16 and first ms u16, RAM word changes u16 |
+| 10 MOD | time ms u16 (1-2000), page u8, register u8, tone Hz u16 (0-3800), amplitude u8 (register steps), optional flags u8 (bit 0: second order noise shaping) | writes u32, elapsed ms u32, the register's value u8. Writes the register = its signed value + amplitude x sine back to back (about 37,000 writes a second on the DM-1701), the phase from the microsecond clock, then restores it. On the HR_C6000's 0x04 (two-point MOD1 offset) this is MCU audio on air ([usb-audio.md](usb-audio.md) 2.3.1). Blocks the debug link and lower priority tasks for the time |
+| 11 RAMFEED | hold ms u16, gap ms u16, tone Hz u16, amplitude u16, n u8 (0-16), n x (page u8, register u8, xor mask u8); n x (hold + gap) + gap at most 9000 ms | half switches u16, writes u16, longest write lag ms u16, flips done u8. Keeps a big endian tone in the HR_C6000 TX RAM FM halves (written through page 2, watched through page 6) by rewriting each half as soon as the codec moves to the other, while applying each flip for hold ms with gap ms between. Blocks the debug link for the time |
 
 WATCH polls the flag register about once a millisecond, counts each flag in the mask that it finds set and clears it
 by writing it to the clear register, and counts the changes of the two-byte RAM word at the address. It blocks the
@@ -420,7 +422,7 @@ every flag (`modem-hrc6000.md` 8.1).
 
 The probe borrows the stream: a beep or a DMR channel in the meantime may take it back (STATUS bit 0 then reads 0).
 Register and RAM writes change the chip under its driver; the radio's next mode change rewrites what it owns.
-`odr_debug.py aprobe status | reg | wreg | start | stop | samples | ram | wram | watch | music` drives it;
+`odr_debug.py aprobe status | reg | wreg | start | stop | samples | ram | wram | watch | music | mod` drives it;
 `tests/hil/test_audio_probe.py` runs the experiments.
 
 ### 3.15 SPLIT

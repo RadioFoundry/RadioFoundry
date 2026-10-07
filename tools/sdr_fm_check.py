@@ -405,6 +405,39 @@ def analyze(args):
         print('  noise 4-7.5 kHz: rms %.0f Hz' % np.std(noise))
         if wav is not None:
             wav[s0:s1] = voice
+        if args.track:
+            # the carrier every 50 ms over the whole segment: a register that moves the carrier shows as a step
+            e0, e1 = int(a * POWER_WIN_S * FS_AUDIO), min(int(b * POWER_WIN_S * FS_AUDIO), len(audio))
+            w = int(0.05 * FS_AUDIO)
+            vals = [float(np.median(audio[i:i + w])) for i in range(e0, e1 - w + 1, w)]
+            print('  track %.2f s, 0.05 s steps: %s' % (e0 / FS_AUDIO, ' '.join('%.0f' % v for v in vals)))
+        if args.tone_snr:
+            # a test tone's SNR in the voice band: fit the tone (and its harmonics up to 3 kHz) in 0.1 s blocks,
+            # the rest of the 300-3000 Hz signal is noise and distortion
+            vb = fir(x, voice_bp)
+            blk = int(0.1 * FS_AUDIO)
+            tp = npow = 0.0
+            for i in range(0, len(vb) - blk + 1, blk):
+                seg = vb[i:i + blk].astype(np.float64)
+                n_ = np.arange(blk) / FS_AUDIO
+                cols = []
+                for k in range(1, int(3000 // args.tone_snr) + 1):
+                    cols += [np.cos(2 * np.pi * k * args.tone_snr * n_), np.sin(2 * np.pi * k * args.tone_snr * n_)]
+                A = np.stack(cols, axis=1)
+                c, *_ = np.linalg.lstsq(A, seg, rcond=None)
+                fund = A[:, :2] @ c[:2]
+                tp += float(np.sum(fund ** 2))
+                npow += float(np.sum((seg - fund) ** 2))
+            print('  tone %.0f Hz: SINAD %.1f dB (voice band), tone rms %.0f Hz' %
+                  (args.tone_snr, 10 * np.log10(tp / max(npow, 1e-9)), np.sqrt(tp / max(len(vb) // blk * blk, 1))))
+        if args.levels:
+            # the voice band level every 50 ms over the whole segment: an on-off source (a choppy tone) shows here
+            # even when it is not a steady tone
+            e0, e1 = int(a * POWER_WIN_S * FS_AUDIO), min(int(b * POWER_WIN_S * FS_AUDIO), len(audio))
+            xv = fir(audio[e0:e1] - carrier, voice_bp)
+            w = int(0.05 * FS_AUDIO)
+            vals = [float(np.std(xv[i:i + w])) for i in range(0, len(xv) - w + 1, w)]
+            print('  levels %.2f s, 0.05 s steps: %s' % (e0 / FS_AUDIO, ' '.join('%.0f' % v for v in vals)))
         if args.tones:
             # the whole segment, edges included (a roger beep sits in its last 200 ms)
             e0, e1 = int(a * POWER_WIN_S * FS_AUDIO), min(int(b * POWER_WIN_S * FS_AUDIO), len(audio))
@@ -470,6 +503,9 @@ def main():
     ap.add_argument('--expect-dcs', help='expected DCS code and polarity (e.g. 023N, D754I)')
     ap.add_argument('--wav', help='write the voice band (300-3000 Hz) of the keyed segments to this WAV')
     ap.add_argument('--tones', action='store_true', help='report the steady audio tones (roger beep, 1750 Hz burst)')
+    ap.add_argument('--tone-snr', type=float, help='report the SINAD of a test tone at this frequency, Hz')
+    ap.add_argument('--levels', action='store_true', help='print the voice band rms deviation every 50 ms')
+    ap.add_argument('--track', action='store_true', help='print the carrier frequency every 50 ms of each segment')
     ap.add_argument('--chunk', type=int, default=384000, help='I/Q samples per processing chunk')
     args = ap.parse_args()
     if args.chunk % (D1 * D2 * D3):

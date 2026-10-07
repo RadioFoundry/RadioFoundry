@@ -46,6 +46,11 @@ uint32_t hal_millis(void)
 	return (uint32_t)(cycles_now() / (HRC_APB_HZ / 1000u));
 }
 
+uint32_t hal_micros(void)
+{
+	return (uint32_t)(cycles_now() / CYCLES_PER_US);
+}
+
 void hal_delay_us(uint32_t us)
 {
 	uint64_t end = cycles_now() + (uint64_t)us * CYCLES_PER_US;

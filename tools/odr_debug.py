@@ -27,6 +27,7 @@
                                                 status | reg PAGE REG | wreg PAGE REG VAL | start [HZ [AMP [spk]]] |
                                                 stop | samples [-o FILE.raw] | ram PAGE ADDR LEN [-o FILE] |
                                                 wram PAGE ADDR HEXBYTES | watch MS MASK [RAMADDR] |
+                                                mod MS HZ STEPS [PAGE REG] |
                                                 music MS HZ AMP [le]
     odr_debug.py split view                     the split duplex view (role, epoch, offset, buffers, underruns, CACH)
     odr_debug.py split variant N [REG=VAL ...]  the BS framing experiment's variant for the next TX half key-up
@@ -84,7 +85,7 @@ APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
 AUDIO_PROBE = 0x10
 (PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES, PROBE_RAM_READ,
- PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC) = range(10)
+ PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED) = range(12)
 PROBE_RAM_CHUNK = 56          # bytes per RAM_WRITE request (request payload 64: op, page, address, data)
 PROBE_RAM_READ_MAX = 1000
 PROBE_NO_RAM = 0xFFFF
@@ -407,6 +408,25 @@ class DebugLink:
                             timeout=ms / 1000 + 2)
         writes, polls, elapsed = struct.unpack_from("<HHI", r)
         return {"writes": writes, "polls": polls, "elapsed_ms": elapsed}
+
+    def probe_mod(self, ms, hz, amplitude, page=4, reg=0x04, shaped=False):
+        """Play a hz tone of amplitude register steps into a register for ms (<= 2000), written back to back around
+        its signed value (shaped: second order noise shaping), then restored. Returns {writes, elapsed_ms, base}."""
+        _, r = self.request(AUDIO_PROBE, struct.pack("<BHBBHBB", PROBE_MOD, ms, page, reg, hz, amplitude,
+                                                     1 if shaped else 0), timeout=ms / 1000 + 2)
+        writes, elapsed = struct.unpack_from("<II", r)
+        return {"writes": writes, "elapsed_ms": elapsed, "base": r[8]}
+
+    def probe_ramfeed(self, hold_ms, gap_ms, hz, amplitude, flips):
+        """Keep a big endian hz tone in the TX RAM FM halves behind the codec while applying each flip (page, register,
+        xor mask) for hold_ms with gap_ms between (and first). Up to 16 flips, 9 s in all. Returns {switches,
+        writes, max_lag_ms, done}."""
+        req = struct.pack("<BHHHHB", PROBE_RAMFEED, hold_ms, gap_ms, hz, amplitude, len(flips))
+        req += b"".join(bytes([p, r, m]) for p, r, m in flips)
+        total = len(flips) * (hold_ms + gap_ms) + gap_ms
+        _, r = self.request(AUDIO_PROBE, req, timeout=total / 1000 + 3)
+        switches, writes, lag = struct.unpack_from("<HHH", r)
+        return {"switches": switches, "writes": writes, "max_lag_ms": lag, "done": r[6]}
 
     def probe_watch(self, ms, mask, page=4, flag_reg=0x82, clear_reg=0x83, ram_page=2, ram_addr=PROBE_NO_RAM):
         """Poll an interrupt flag register for ms (<= 2000), counting and clearing the flags in mask, and count the
@@ -1371,6 +1391,13 @@ def cmd_aprobe(link, a):
         m = link.probe_music(num(args[0]), num(args[1]), num(args[2]), len(args) == 4 and args[3] == "le")
         print(f"{m['writes']} FIFO writes of 32 samples in {m['elapsed_ms']} ms "
               f"({m['writes'] * 32 * 1000 / max(m['elapsed_ms'], 1):.0f} samples/s), {m['polls']} polls")
+    elif a.op == "mod":
+        if len(args) not in (3, 5):
+            raise SystemExit("aprobe mod MS HZ STEPS [PAGE REG]   (default 4 0x04, the FM Mod2 offset)")
+        pr = (num(args[3]), num(args[4])) if len(args) == 5 else (4, 0x04)
+        m = link.probe_mod(num(args[0]), num(args[1]), num(args[2]), *pr)
+        print(f"{m['writes']} writes in {m['elapsed_ms']} ms ({m['writes'] * 1000 / max(m['elapsed_ms'], 1):.0f}/s) "
+              f"around 0x{m['base']:02X}")
     elif a.op == "watch":
         if len(args) not in (2, 3):
             raise SystemExit("aprobe watch MS MASK [RAMADDR]   (page 4 flags 0x82 cleared through 0x83; RAM page 2)")
@@ -1480,7 +1507,8 @@ def main(argv=None):
     p.add_argument("op", choices=["info", "dump", "claim"])
     p.add_argument("--out", default=DEFAULT_DUMP_DIR, help=f"dump directory outside any git tree (default {DEFAULT_DUMP_DIR})")
     p = sub.add_parser("aprobe", help="audio probe: chip registers and PCM levels (CONFIG_AUDIO_PROBE builds)")
-    p.add_argument("op", choices=["status", "reg", "wreg", "start", "stop", "samples", "ram", "wram", "watch", "music"])
+    p.add_argument("op", choices=["status", "reg", "wreg", "start", "stop", "samples", "ram", "wram", "watch", "music",
+                                     "mod"])
     p.add_argument("args", nargs="*")
     p.add_argument("-o", "--output", help="samples: also write the block as raw 16-bit stereo; ram: the bytes")
     a = ap.parse_args(argv)

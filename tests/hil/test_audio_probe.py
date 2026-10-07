@@ -40,6 +40,7 @@ The prompt tone path (manual appendix A1) and a register sweep, the last candida
 Results on the DM-1701 (2026-10-12): docs/spec/usb-audio.md 2.3.1.
 """
 import math
+import re
 import time
 
 import pytest
@@ -256,7 +257,7 @@ def test_probe_fm_rx_variants(probe, pytestconfig):
     assert len(rows) == len(RX_VARIANTS)
 
 
-def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag):
+def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag, ptt_s=PTT_S, **analyze):
     """Key FM on --fm-mhz once per run with the microphone muted. Each run is (name, before, during): before() runs
     unkeyed, during() keyed once the TX set-up has written its registers and returns a note (or None). Returns
     [(name, (peak 99.5 %, peak 99.9 %, rms) of the voice band deviation in Hz or None, note)]."""
@@ -274,23 +275,26 @@ def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag):
                 before()
                 rdir = sdr_bench.run_dir(f"hil_aprobe_{tag}{i}")
                 with sdr_bench.lease():
-                    cap = sdr_bench.capture_start(rdir, mhz, seconds=PTT_S + 5)
-                    L.ptt(True, int(PTT_S * 1000) + 1500)
+                    cap = sdr_bench.capture_start(rdir, mhz, seconds=ptt_s + 5)
+                    L.ptt(True, int(ptt_s * 1000) + 1500)
                     try:
                         probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
                         time.sleep(0.2)          # after the TX set-up has written its registers
                         apply(L, 0xE0, 0, 0x40)  # microphone (LINEIN1) off
                         t0 = time.monotonic()
                         note = during()
-                        time.sleep(max(0.0, PTT_S - (time.monotonic() - t0)))
+                        time.sleep(max(0.0, ptt_s - (time.monotonic() - t0)))
                     finally:
                         L.ptt(False)
                     probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
                     sdr_bench.capture_wait()
                 L.probe_stop()
                 rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
-                                                tones=True)
+                                                tones=True, **analyze)
                 m = re.search(r"voice 300-3000 Hz: peak (\d+) Hz \(99\.5%\), (\d+) Hz \(99\.9%\), rms (\d+) Hz", text)
+                extra = re.findall(r"(SINAD [-\d.]+ dB|noise 4-7\.5 kHz: rms \d+ Hz)", text)
+                if extra:
+                    note = "; ".join(([note] if note else []) + extra)
                 tones = re.findall(r"tone (\d+(?:\.\d)?) Hz [\d.]+-[\d.]+ s \(([\d.]+) s\)", text)
                 tone_note = "tones " + ", ".join(f"{hz} Hz {d} s" for hz, d in tones) if tones else "no steady tone"
                 note = f"{note}; {tone_note}" if note else tone_note
@@ -577,3 +581,870 @@ def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
     if not hits:
         print("  no flip put a tone on air")
     assert not missing_marker, f"key-ups without the marker tone: {missing_marker}"
+
+
+# --- FM transmit: the mode register and the modulation offsets (usb-audio.md 2.3.1, after the split duplex work) ---
+#
+# In DMR the chip ignored the TX RAM until 0x10's layer bits picked the physical layer mode (0x66), which the manual
+# documents only for receive. FM sets 0x10 = 0x80 and its low bits were never varied in FM, and the FM TX RAM failure
+# looks the same (the chip asks for samples, then ignores them). Page 1 0x50 / 0x51 (FM writes 0) and 0x01 (H/W
+# config) were never swept either.
+
+def tx_ram_tone():
+    """Both FM buffers and the DMR physical layer area (0x000-0x047) of the TX RAM: one big endian 1 kHz tone"""
+    return tone_bytes(">", n=RAM_FM // 2) + tone_bytes(">") * 2
+
+
+def marked_steps(probe, sdr_bench, pytestconfig, steps, tag, per_key=8):
+    """Keyed with the microphone muted, a 600 Hz tone on the I2S stream and a 1000 Hz tone in the TX RAM (FM flags
+    unmasked), each step (label, page, register, value) written for SWEEP_ON_S and then restored. Each key-up starts
+    with LINEIN2's marker tone, as in test_probe_fm_tx_sweep. Returns (hits, unmapped, key-ups without the marker,
+    texts): a hit is (label, Hz, source, seconds)."""
+    import re
+    L = probe.link
+    mhz = pytestconfig.getoption("--fm-mhz")
+    hz = round(mhz * 1e6)
+    batches = [steps[i:i + per_key] for i in range(0, len(steps), per_key)]
+    key_s = SWEEP_MARK_S + 0.2 + per_key * (SWEEP_ON_S + SWEEP_GAP_S) + 0.3
+    hits, unmapped, missing, texts = [], [], [], []
+    with probe.vfo_session():
+        L.vfo_set(hz)
+        probe.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
+        probe.lowest_power()
+        regs = {(p, r) for _, p, r, _ in steps} | {(PAGE, 0x81), (PAGE, 0xE0)}
+        saved = {(p, r): L.probe_reg(p, r) for p, r in regs}
+        try:
+            for k, batch in enumerate(batches):
+                for (p, r), v in saved.items():
+                    L.probe_reg(p, r, v)
+                L.probe_ram(RAM_PAGE, 0, data=tx_ram_tone())
+                L.probe_start(I2S_HZ, TONE_AMP)
+                rdir = sdr_bench.run_dir(f"hil_aprobe_{tag}{k}")
+                with sdr_bench.lease():
+                    for attempt in range(3):      # the bench service sometimes still holds the SDR for a moment
+                        try:
+                            cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
+                            break
+                        except RuntimeError:
+                            if attempt == 2:
+                                raise
+                            time.sleep(5)
+                    L.ptt(True, int(key_s * 1000) + 1500)
+                    try:
+                        probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
+                        time.sleep(0.2)
+                        apply(L, 0xE0, 0, 0x40)          # microphone off
+                        apply(L, 0x81, FM_FLAG_MASK, 0)
+                        L.probe_ram(RAM_PAGE, 0, data=tx_ram_tone())
+                        e0 = L.probe_reg(PAGE, 0xE0)
+                        t_mark = time.monotonic()
+                        L.probe_reg(PAGE, 0xE0, e0 | 0x20)
+                        time.sleep(SWEEP_MARK_S)
+                        L.probe_reg(PAGE, 0xE0, e0)
+                        time.sleep(0.2)
+                        slots = []
+                        for label, p, r, val in batch:
+                            v = L.probe_reg(p, r)
+                            if isinstance(val, tuple):           # ("xor", mask): flip bits of the live value
+                                label = f"{label} (0x{v:02X} -> 0x{v ^ val[1]:02X})"
+                                val = v ^ val[1]
+                            t_on = time.monotonic() - t_mark
+                            L.probe_reg(p, r, val)
+                            time.sleep(SWEEP_ON_S)
+                            L.probe_reg(p, r, v)
+                            slots.append((label, t_on, time.monotonic() - t_mark))
+                            time.sleep(SWEEP_GAP_S)
+                    finally:
+                        L.ptt(False)
+                    probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+                    sdr_bench.capture_wait()
+                L.probe_stop()
+                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
+                                                tones=True)
+                texts.append((k, [s[0] for s in slots], text))
+                runs = [(float(f), float(a), float(e)) for f, a, e in
+                        re.findall(r"tone (\d+(?:\.\d)?) Hz ([\d.]+)-([\d.]+) s", text)]
+                print(f"key-up {k}/{len(batches)} ({slots[0][0]} .. {slots[-1][0]}): tones "
+                      f"{[(round(f), round(e - a, 2)) for f, a, e in runs]}", flush=True)  # survives a later failure
+                marks = [t for t in runs if MARK_HZ[0] <= t[0] <= MARK_HZ[1]]
+                if not marks:
+                    missing.append(k)
+                    continue
+                t0 = marks[0][1]
+                for f, a, e in runs:
+                    if (f, a, e) == marks[0]:
+                        continue
+                    rel = a - t0
+                    slot = next((s for s in slots if s[1] - 0.15 <= rel <= s[2] + 0.15), None)
+                    src = "I2S" if abs(f - I2S_HZ) < 40 else "TX RAM" if abs(f - TONE_HZ) < 40 else "?"
+                    if slot is None:
+                        unmapped.append((k, f, rel, e - a))
+                    else:
+                        hits.append((slot[0], f, src, e - a))
+        finally:
+            L.ptt(False)
+            L.probe_stop()
+            for (p, r), v in saved.items():
+                L.probe_reg(p, r, v)
+    return hits, unmapped, missing, texts
+
+
+def print_steps(title, n, hits, unmapped, missing, texts):
+    print(f"\n{title}: {n} steps")
+    for label, f, src, d in hits:
+        print(f"  -> {label}: {f:.0f} Hz for {d:.2f} s, from {src}")
+    for k, f, rel, d in unmapped:
+        print(f"  key-up {k}: {f:.0f} Hz at +{rel:.2f} s for {d:.2f} s outside any step")
+    if not hits:
+        print("  no step put a tone on air")
+    for k, labels, text in texts:
+        segs = re.search(r"(\d+) keyed segment", text)
+        if k in missing or (segs and segs.group(1) != "1"):
+            print(f"  key-up {k} ({', '.join(labels)}): {'no marker; ' if k in missing else ''}"
+                  f"{segs.group(1) if segs else '?'} keyed segments\n{text}")
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_mode_sweep(probe, sdr_bench, pytestconfig):
+    """Experiment 1: every FM value of 0x10 (bit 7 set, 0x81-0xFF), keyed with tones on I2S (600 Hz) and in the TX
+    RAM (1000 Hz). On the DM-1701 (2026-10-12): none put a tone on air, none dropped the carrier."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    steps = [(f"4:0x10 = 0x{v:02X}", PAGE, 0x10, v) for v in range(0x81, 0x100)]
+    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "mode")
+    print_steps("FM TX mode sweep (0x10 values)", len(steps), hits, unmapped, missing, texts)
+    assert not missing, f"key-ups without the marker tone: {missing}"
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_hwcfg_sweep(probe, sdr_bench, pytestconfig):
+    """Each bit of 0x01 (H/W config: two-point modulation) and page 1 0x50 / 0x51 (FM writes 0) flipped while keyed,
+    tones as in test_probe_fm_tx_mode_sweep."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    steps = [(f"{p}:0x{r:02X} bit {b}", p, r, ("xor", 1 << b)) for p, r in ((PAGE, 0x01), (1, 0x50), (1, 0x51))
+             for b in range(8)]
+    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "hwcfg")
+    print_steps("FM TX sweep (0x01, page 1 0x50 / 0x51 bits)", len(steps), hits, unmapped, missing, texts)
+    assert not missing, f"key-ups without the marker tone: {missing}"
+
+
+# Experiment 2: the modulation registers. 0x04 is rewritten in FM with the calibration "Mod2 offset", a DC level on
+# the two-point modulation's reference path: if a step moves the carrier, the MCU can write audio into it. Each
+# register gets one key-up: a base period, a few values, then a fast toggle from the host.
+OFFSET_REGS = [0x04, 0x02, 0x03, 0x05, 0x47, 0x48, 0x46, 0x45]
+OFFSET_HOLD_S = 0.4
+OFFSET_TOGGLE_S = 1.5
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_offsets(probe, sdr_bench, pytestconfig):
+    """Keyed with the microphone muted, per register: 0.6 s as set, then the value +8, +32, -8, -32 and with bit 7
+    flipped (OFFSET_HOLD_S each, back to the base between them), then a toggle between the base and +32 as fast as
+    the debug link writes. The SDR's carrier track (50 ms) shows which steps move the carrier and by how much."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    mhz = pytestconfig.getoption("--fm-mhz")
+    hz = round(mhz * 1e6)
+    deltas = [8, 32, -8, -32, "x80"]
+    key_s = 0.6 + len(deltas) * 2 * OFFSET_HOLD_S + OFFSET_TOGGLE_S + 0.6
+    rows = []
+    with probe.vfo_session():
+        L.vfo_set(hz)
+        probe.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
+        probe.lowest_power()
+        saved = regs_saved(L, set(OFFSET_REGS) | {0xE0})
+        try:
+            for k, reg in enumerate(OFFSET_REGS):
+                for r, v in saved.items():
+                    L.probe_reg(PAGE, r, v)
+                rdir = sdr_bench.run_dir(f"hil_aprobe_offset{k}")
+                with sdr_bench.lease():
+                    cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
+                    t_ptt = time.monotonic()
+                    L.ptt(True, int(key_s * 1000) + 1500)
+                    try:
+                        probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
+                        time.sleep(0.2)
+                        apply(L, 0xE0, 0, 0x40)          # microphone off
+                        base = L.probe_reg(PAGE, reg)
+                        sched = [("base", 0.0, None)]
+                        time.sleep(0.6)
+                        for d in deltas:
+                            val = base ^ 0x80 if d == "x80" else (base + d) & 0xFF
+                            t_on = time.monotonic() - t_ptt
+                            L.probe_reg(PAGE, reg, val)
+                            time.sleep(OFFSET_HOLD_S)
+                            L.probe_reg(PAGE, reg, base)
+                            sched.append((f"0x{val:02X}", t_on, time.monotonic() - t_ptt))
+                            time.sleep(OFFSET_HOLD_S)
+                        t_on = time.monotonic() - t_ptt
+                        n = 0
+                        while time.monotonic() - t_ptt - t_on < OFFSET_TOGGLE_S:
+                            L.probe_reg(PAGE, reg, (base + 32) & 0xFF if n % 2 == 0 else base)
+                            n += 1
+                        L.probe_reg(PAGE, reg, base)
+                        el = time.monotonic() - t_ptt - t_on
+                        sched.append((f"toggle {n} writes = {n / el:.0f}/s (square wave {n / el / 2:.0f} Hz)",
+                                      t_on, t_on + el))
+                        time.sleep(0.4)
+                    finally:
+                        L.ptt(False)
+                    probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+                    sdr_bench.capture_wait()
+                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
+                                                tones=True, track=True)
+                rows.append((reg, base, sched, text))
+        finally:
+            L.ptt(False)
+            for r, v in saved.items():
+                L.probe_reg(PAGE, r, v)
+    print("\nFM TX modulation offsets (times from PTT; the track starts when the carrier comes up):")
+    for reg, base, sched, text in rows:
+        print(f"\n4:0x{reg:02X} as set 0x{base:02X}: " +
+              "; ".join(f"{lab} {a:.2f}-{b:.2f} s" if b else lab for lab, a, b in sched))
+        for line in text.splitlines():
+            if re.match(r"\s*(track|carrier|voice|tone|segment|\S+: [\d.]+ s)", line):
+                print("  " + line.strip())
+    assert len(rows) == len(OFFSET_REGS)
+
+
+# Tones played into 0x04 by the firmware (probe op MOD): (Hz, amplitude in register steps). 16 steps at about 75 Hz
+# a step is about 1.2 kHz deviation
+MOD_TONES = [(1000, 16), (300, 16), (2000, 16), (3000, 16), (1000, 32), (1000, 4)]
+MOD_MS = 2000
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_mod_tone(probe, sdr_bench, pytestconfig):
+    """FM transmit from the MCU through 0x04: keyed with the microphone muted, the firmware writes base + a sine into
+    0x04 for 2 s; the SDR reports the tone and its deviation. The frequency response and the deviation per step."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+
+    def run(hz, steps):
+        def during():
+            m = L.probe_mod(MOD_MS, hz, steps)
+            return f"{m['writes'] * 1000 / max(m['elapsed_ms'], 1):.0f} writes/s around 0x{m['base']:02X}"
+        return (lambda: None), during
+
+    runs = [("0x04 as set (baseline)", lambda: None, lambda: None)]
+    runs += [(f"0x04 tone {hz} Hz, {steps} steps", *run(hz, steps)) for hz, steps in MOD_TONES]
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "mod")
+    print_tx_rows("FM TX from the MCU through 0x04", rows)
+    assert len(rows) == len(runs)
+
+
+# Registers the first sweep left out, from the manual's register table: 0x11 LocalChanMode (bit 0: digital and analog
+# receive together), 0x21 / 0x22 the vocoder buffer controls (0x22: EncodeStart / EncodeStop / DecodeStart /
+# DecodeStop, sel_I2S_mode, sel_I2StoI2S: the vocoder PCM interface), 0x30-0x34 the external codec clock and the FM
+# audio processing, 0x37 the DAC data shift, 0x40 / 0x41 / 0x50-0x52 (what makes the chip send the TX RAM in DMR),
+# 0x60 TransControl, 0xD0-0xDF
+SWEEP2_REGS = [0x11, 0x21, 0x22, 0x30, 0x31, 0x32, 0x33, 0x34, 0x37, 0x40, 0x41, 0x50, 0x51, 0x52, 0x60] + \
+    list(range(0xD0, 0xE0))
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_sweep2(probe, sdr_bench, pytestconfig):
+    """As test_probe_fm_tx_sweep, over SWEEP2_REGS: each bit of the keyed value flipped for 0.5 s, tones on I2S
+    (600 Hz) and in the TX RAM (1000 Hz, both FM buffers and 0x000-0x02F)."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    steps = [(f"4:0x{r:02X} bit {b}", PAGE, r, ("xor", 1 << b)) for r in SWEEP2_REGS for b in range(8)]
+    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "sweep2")
+    print_steps("FM TX bit sweep 2", len(steps), hits, unmapped, missing, texts)
+    assert not missing, f"key-ups without the marker tone: {missing}"
+
+
+# Answers to the FM "sending data request" (0x82 bit 7), written at every request as DMR answers its slot interrupt
+# (0x41 = 0x80: send in the next slot). (name, [(register, value)]): an absolute write per request
+ACK_VARIANTS = [
+    ("flag cleared only", []),
+    ("0x41 = 0x80 (TxNxtSlotEn)", [(0x41, 0x80)]),
+    ("0x41 = 0xC0", [(0x41, 0xC0)]),
+    ("0x22 = 0x80 (EncodeStart)", [(0x22, 0x80)]),
+    ("0x22 = 0x20 (DecodeStart)", [(0x22, 0x20)]),
+    ("0x60 = 0xC0 (voice + data request)", [(0x60, 0xC0)]),
+    ("0x60 = 0x40 (data request)", [(0x60, 0x40)]),
+    ("0x50 = 0x10, 0x41 = 0x80 (DMR data send)", [(0x50, 0x10), (0x41, 0x80)]),
+]
+ACK_S = 3.0
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ram_ack(probe, sdr_bench, pytestconfig):
+    """Keyed with the microphone muted, the TX RAM holding a 1 kHz tone (big endian) and the FM flags unmasked, the
+    host polls 0x82 and answers each "sending data request" (clear it, then the variant's writes)."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    saved = regs_saved(L, {0x81, 0x22, 0x41, 0x50, 0x60})
+
+    def restore():
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+
+    def run(writes):
+        def before():
+            restore()
+            L.probe_ram(RAM_PAGE, 0, data=tx_ram_tone())
+
+        def during():
+            apply(L, 0x81, FM_FLAG_MASK, 0)
+            t0, reqs, polls = time.monotonic(), 0, 0
+            while time.monotonic() - t0 < ACK_S:
+                f = L.probe_reg(PAGE, FM_FLAGS)
+                polls += 1
+                if f & 0x80:
+                    L.probe_reg(PAGE, 0x83, 0x80)
+                    for r, v in writes:
+                        L.probe_reg(PAGE, r, v)
+                    reqs += 1
+            return f"{reqs / ACK_S:.0f} requests/s answered, {polls / ACK_S:.0f} polls/s"
+        return before, during
+
+    runs = [(name, *run(w)) for name, w in ACK_VARIANTS]
+    try:
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "ack")
+    finally:
+        restore()
+    print_tx_rows("FM TX from the TX RAM, each data request answered", rows)
+    assert len(rows) == len(runs)
+
+
+# The manual's U_SPI command (5.2, the Chinese edition): OPMode 010 writes the TX RAM and reads the RX RAM (page 2),
+# 110 writes the RX RAM and reads the TX RAM (page 6). Reading the TX RAM back shows whether the chip fills the FM
+# buffers itself (the RAM table: "externally written FM voice data, or internally sent voice data from the Codec")
+TX_RAM_READ_PAGE = 6
+
+
+def tx_ram_activity(L, seconds=1.0):
+    """Reads both TX RAM FM buffers repeatedly for seconds: (reads, reads that differ from the previous one, the
+    first 16 bytes of the last read)"""
+    t0, n, changed, last = time.monotonic(), 0, 0, None
+    while time.monotonic() - t0 < seconds:
+        b = L.probe_ram(TX_RAM_READ_PAGE, RAM_FM, RAM_FM_LEN)
+        n += 1
+        if last is not None and b != last:
+            changed += 1
+        last = b
+    return n, changed, last
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ram_readback(probe, sdr_bench, pytestconfig):
+    """Unkeyed: a pattern written through page 2 reads back through page 6 (the TX RAM). Keyed (microphone on, then
+    muted), the FM buffers read through page 6: does the chip write the codec's samples there, and does what we
+    wrote survive?"""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    pattern = bytes(range(64))
+    notes = {}
+    with probe.vfo_session():
+        L.probe_ram(RAM_PAGE, RAM_FM, data=pattern)
+        back = L.probe_ram(TX_RAM_READ_PAGE, RAM_FM, len(pattern))
+        rx = L.probe_ram(RAM_PAGE, RAM_FM, len(pattern))
+        notes["unkeyed"] = (f"page 6 reads back the pattern: {back == pattern} ({back[:8].hex()}); "
+                            f"page 2 read (RX RAM) {rx[:8].hex()}; idle activity {tx_ram_activity(L, 0.5)[:2]}")
+
+    def run(mic):
+        def before():
+            L.probe_ram(RAM_PAGE, 0, data=tx_ram_tone())
+
+        def during():
+            if mic:
+                apply(L, 0xE0, 0x40, 0)
+            n, changed, last = tx_ram_activity(L, 1.0)
+            ours = last == tx_ram_tone()[RAM_FM:RAM_FM + RAM_FM_LEN]
+            w = L.probe_watch(500, FM_FLAGS, ram_addr=RAM_FM)
+            return f"{changed}/{n} reads changed, still our tone: {ours}, first bytes {last[:16].hex()}; {watch_text(w)}"
+        return before, during
+
+    runs = [("keyed, microphone on", *run(True)), ("keyed, microphone muted", *run(False))]
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "rback")
+    print(f"\nTX RAM read back through page 6:\n  unkeyed: {notes['unkeyed']}")
+    for name, _, note in rows:
+        print(f"  {name}: {note}")
+    assert len(rows) == len(runs)
+
+
+def chase_halves(L, seconds, data_for_half, settle=0.0):
+    """While keyed: watch which TX RAM FM half the codec is writing (its first word changes) and, when it moves on,
+    write our samples into the half it just finished (data_for_half(h) -> 512 bytes), after settle seconds.
+    Returns (half switches seen, writes, mean ms from the switch to the end of our write)"""
+    addr = (RAM_FM, RAM_FM + 512)
+    prev = [L.probe_ram(TX_RAM_READ_PAGE, a, 4) for a in addr]
+    active, switches, writes, lag = None, 0, 0, 0.0
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < seconds:
+        cur = [L.probe_ram(TX_RAM_READ_PAGE, a, 4) for a in addr]
+        moving = [cur[h] != prev[h] for h in (0, 1)]
+        prev = cur
+        if moving[0] == moving[1]:
+            continue
+        now = 0 if moving[0] else 1
+        if active is not None and now != active:
+            switches += 1
+            ts = time.monotonic()
+            if settle:
+                time.sleep(settle)
+            L.probe_ram(RAM_PAGE, addr[active], data=data_for_half(active))
+            writes += 1
+            lag += time.monotonic() - ts
+        active = now
+    return switches, writes, 1000 * lag / max(writes, 1)
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ram_chase(probe, sdr_bench, pytestconfig):
+    """The codec fills the TX RAM FM halves while keyed (test_probe_fm_tx_ram_readback). Keyed with the microphone
+    muted, overwrite each half with a 1 kHz tone (big endian, then little endian) as soon as the codec moves to the
+    other one. If the modulator reads a half after the codec, the tone goes on air."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+
+    def run(order, settle=0.0):
+        half = tone_bytes(order)
+
+        def during():
+            s, w, lag = chase_halves(L, PTT_S - 0.3, lambda h: half, settle)
+            after = L.probe_ram(TX_RAM_READ_PAGE, RAM_FM, 16)
+            return f"{s} half switches ({s / (PTT_S - 0.3):.0f}/s), {w} writes, {lag:.1f} ms to write; RAM {after[:8].hex()}"
+        return (lambda: None), during
+
+    runs = [("mic muted, nothing written (baseline)", lambda: None, lambda: None),
+            ("chase, tone big endian", *run(">")),
+            ("chase, tone little endian", *run("<")),
+            ("chase, big endian, 10 ms after the switch", *run(">", 0.010))]
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "chase")
+    print_tx_rows("FM TX: TX RAM halves overwritten behind the codec", rows)
+    assert len(rows) == len(runs)
+
+
+# Registers whose bits might stop the codec writing the TX RAM FM buffers (then the modulator could take ours)
+WRITER_REGS = [(PAGE, r) for r in [0x06, 0x0D, 0x0E, 0x11, 0x21, 0x22, 0x25, 0x26, 0x30, 0x31, 0x32, 0x33, 0x34,
+                                  0x36, 0x37, 0x60, 0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5] + list(range(0xD0, 0xE0))]
+WRITER_KEY_S = 8.0
+
+
+def ram_moving(L, gap=0.045):
+    """True when either TX RAM FM half's first 4 bytes change within gap (one half takes 32 ms)"""
+    a = [L.probe_ram(TX_RAM_READ_PAGE, x, 4) for x in (RAM_FM, RAM_FM + 512)]
+    time.sleep(gap)
+    b = [L.probe_ram(TX_RAM_READ_PAGE, x, 4) for x in (RAM_FM, RAM_FM + 512)]
+    return a != b
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ram_writer_sweep(probe, sdr_bench, pytestconfig):
+    """Keyed with the microphone muted, each bit of WRITER_REGS flipped in turn: does the codec stop writing the TX RAM
+    FM buffers (read back through page 6)? Prints the flips that stop it (no RF analysis; the SDR records anyway)."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    mhz = pytestconfig.getoption("--fm-mhz")
+    hz = round(mhz * 1e6)
+    flips = [(p, r, b) for p, r in WRITER_REGS for b in range(8)]
+    stops, i = [], 0
+    with probe.vfo_session():
+        L.vfo_set(hz)
+        probe.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
+        probe.lowest_power()
+        try:
+            while i < len(flips):
+                with sdr_bench.lease():
+                    L.ptt(True, int(WRITER_KEY_S * 1000) + 1500)
+                    try:
+                        probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
+                        time.sleep(0.2)
+                        apply(L, 0xE0, 0, 0x40)
+                        assert ram_moving(L), "the codec does not write the TX RAM in this key-up"
+                        t0 = time.monotonic()
+                        while i < len(flips) and time.monotonic() - t0 < WRITER_KEY_S - 1.0:
+                            p, r, b = flips[i]
+                            v = L.probe_reg(p, r)
+                            L.probe_reg(p, r, v ^ (1 << b))
+                            time.sleep(0.03)
+                            if not ram_moving(L) and not ram_moving(L):
+                                stops.append((p, r, b, v))
+                                print(f"  -> {p}:0x{r:02X} bit {b} (0x{v:02X} -> 0x{v ^ (1 << b):02X}) stops the "
+                                      f"TX RAM writes", flush=True)
+                            L.probe_reg(p, r, v)
+                            time.sleep(0.03)
+                            i += 1
+                    finally:
+                        L.ptt(False)
+                    probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+        finally:
+            L.ptt(False)
+    print(f"\nTX RAM writer sweep: {len(flips)} flips, {len(stops)} stop the codec's writes")
+    for p, r, b, v in stops:
+        print(f"  {p}:0x{r:02X} bit {b} (0x{v:02X} -> 0x{v ^ (1 << b):02X})")
+    assert i == len(flips)
+
+
+# --- The TX RAM kept full of our tone (firmware RAMFEED) while candidate settings are tried ---
+#
+# Every static TX RAM test above was moot: the codec overwrites both halves every 64 ms while keyed (readback test).
+# RAMFEED rewrites each half about 4 ms after the codec finishes it, so if any setting makes the modulator read the
+# RAM after the codec, the tone (or a 31 Hz chopped tone) goes on air during that setting.
+FEED_HOLD_MS, FEED_GAP_MS, FEED_PER_KEY = 500, 250, 10
+FEED_REGS = [0x01, 0x06, 0x0D, 0x0E, 0x11, 0x21, 0x22, 0x25, 0x26] + list(range(0x30, 0x38)) + \
+    [0x40, 0x41, 0x50, 0x51, 0x52, 0x60, 0xA1] + list(range(0xD0, 0xE0)) + list(range(0xE0, 0xE6))
+
+
+def feed_flips():
+    """(label, page, register, xor mask): first nothing (the default settings, fed), then every FM value of 0x10,
+    then each bit of FEED_REGS and of page 1 0x50 / 0x51; not 0x60 bit 7 (the analog transmit chain off)"""
+    out = [("fed, nothing changed", PAGE, 0x60, 0x00)]
+    out += [(f"4:0x10 ^ 0x{m:02X}", PAGE, 0x10, m) for m in range(1, 0x80)]
+    out += [(f"4:0x{r:02X} bit {b}", PAGE, r, 1 << b) for r in FEED_REGS for b in range(8) if (r, b) != (0x60, 7)]
+    out += [(f"1:0x{r:02X} bit {b}", 1, r, 1 << b) for r in (0x50, 0x51) for b in range(8)]
+    return out
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ramfeed_sweep(probe, sdr_bench, pytestconfig):
+    """Keyed with the microphone muted, the firmware keeps a 1 kHz tone in the TX RAM FM halves and applies each flip
+    for 0.5 s. A flip during which the voice band level jumps (or a 1 kHz tone shows) makes the modulator read the
+    RAM. On the DM-1701 (2026-10-12): none of 511; 0x01 bit 4 and 0x25 bit 1 drop the carrier."""
+    ramfeed_sweep(probe, sdr_bench, pytestconfig, feed_flips(), "feed")
+
+
+# The flips the first run lost to a dropped carrier (0x01 bit 4, 0x25 bit 1 ended their key-ups); those two last
+FEED_RERUN = [(f"4:0x{r:02X} bit {b}", PAGE, r, 1 << b) for r, bits in ((0x01, (5, 6, 7)), (0x06, (0, 1, 2, 3)),
+                                                                       (0x25, (2, 3, 4, 5, 0))) for b in bits] + \
+    [("4:0x01 bit 4", PAGE, 0x01, 0x10), ("4:0x25 bit 1", PAGE, 0x25, 0x02)]
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ramfeed_rerun(probe, sdr_bench, pytestconfig):
+    """FEED_RERUN through the fed sweep, in key-ups of their own"""
+    ramfeed_sweep(probe, sdr_bench, pytestconfig, FEED_RERUN, "rerun")
+
+
+def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    mhz = pytestconfig.getoption("--fm-mhz")
+    hz = round(mhz * 1e6)
+    batches = [flips[i:i + FEED_PER_KEY] for i in range(0, len(flips), FEED_PER_KEY)]
+    feed_s = (FEED_PER_KEY * (FEED_HOLD_MS + FEED_GAP_MS) + FEED_GAP_MS) / 1000
+    key_s = feed_s + 0.8
+    hits = []
+    with probe.vfo_session():
+        L.vfo_set(hz)
+        probe.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
+        probe.lowest_power()
+        try:
+            for k, batch in enumerate(batches):
+                rdir = sdr_bench.run_dir(f"hil_aprobe_{tag}{k}")
+                with sdr_bench.lease():
+                    for attempt in range(3):
+                        try:
+                            cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
+                            break
+                        except RuntimeError:
+                            if attempt == 2:
+                                raise
+                            time.sleep(5)
+                    t_ptt = time.monotonic()
+                    L.ptt(True, int(key_s * 1000) + 1500)
+                    try:
+                        probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
+                        time.sleep(0.2)
+                        apply(L, 0xE0, 0, 0x40)
+                        t_feed = time.monotonic() - t_ptt
+                        f = L.probe_ramfeed(FEED_HOLD_MS, FEED_GAP_MS, TONE_HZ, TONE_AMP,
+                                            [(p, r, m) for _, p, r, m in batch])
+                    finally:
+                        L.ptt(False)
+                    probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+                    sdr_bench.capture_wait()
+                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
+                                                tones=True, levels=True)
+                m = re.search(r"levels ([\d.]+) s, 0\.05 s steps: ([\d ]+)", text)
+                if not m:
+                    print(f"key-up {k}: no levels\n{text}")
+                    continue
+                t_seg, lv = float(m.group(1)), [float(v) for v in m.group(2).split()]
+                # the segment starts when the carrier comes up, about when the PTT command went out
+                base = sorted(lv)[len(lv) // 4]
+                summary = []
+                for j, (label, *_rest) in enumerate(batch):
+                    a = t_feed + (FEED_GAP_MS + j * (FEED_HOLD_MS + FEED_GAP_MS)) / 1000 + 0.1
+                    w = lv[int(a / 0.05):int((a + FEED_HOLD_MS / 1000 - 0.2) / 0.05)]
+                    lvl = sum(w) / max(len(w), 1)
+                    summary.append(f"{label} {lvl:.0f}")
+                    if lvl > 3 * max(base, 30):
+                        hits.append((label, lvl, base))
+                        print(f"  -> {label}: voice band {lvl:.0f} Hz rms vs {base:.0f} Hz", flush=True)
+                tones = re.findall(r"tone (\d+(?:\.\d)?) Hz ([\d.]+)-([\d.]+) s", text)
+                print(f"key-up {k}/{len(batches)}: {f['switches']} half switches, {f['writes']} writes, max lag "
+                      f"{f['max_lag_ms']} ms; base {base:.0f} Hz; tones {tones}; " + ", ".join(summary), flush=True)
+        finally:
+            L.ptt(False)
+    print(f"\nTX RAM fed sweep: {len(flips)} settings, {len(hits)} raise the voice band level")
+    for label, lvl, base in hits:
+        print(f"  {label}: {lvl:.0f} Hz rms (base {base:.0f})")
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_mod_shaped(probe, sdr_bench, pytestconfig):
+    """The 0x04 path's quality: a 1 kHz tone at 32 and 16 steps, plain and noise shaped; SINAD in the voice band."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+
+    def run(steps, shaped):
+        def during():
+            m = L.probe_mod(MOD_MS, 1000, steps, shaped=shaped)
+            return f"{m['writes'] * 1000 / max(m['elapsed_ms'], 1):.0f} writes/s"
+        return (lambda: None), during
+
+    runs = [(f"0x04 1 kHz, {s} steps, {'shaped' if sh else 'plain'}", *run(s, sh))
+            for s in (32, 16, 4) for sh in (False, True)]
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "shaped", ptt_s=2.5, tone_snr=1000)
+    print_tx_rows("FM TX through 0x04, plain and noise shaped", rows)
+    assert len(rows) == len(runs)
+
+
+# The manual's "send FM voice" bit is 0xD7 bit 1 (msk_voice_send_en: 0 MSK signaling, 1 FM voice), in the MSK block,
+# whose transmit data comes from a ping-pong buffer the MCU fills (half full: 0x82 bit 6) before 0xD5 starts it
+# (OperationType, TranOrRecFlag); 0xA1 bit 6 enables MSK mode (hrc6000-registers.md 7, 8). Applied together while
+# the firmware keeps the tone in the TX RAM. (name, [(register, set mask, clear mask) or (register, None, value)])
+FEED_COMBOS = [
+    ("fed, nothing changed (baseline)", []),
+    ("0xD7 |= 0x02 (FM voice)", [(0xD7, 0x02, 0)]),
+    ("0xD7 |= 0x12 (FM voice, bit 4)", [(0xD7, 0x12, 0)]),
+    ("0xA1 |= 0x40 (MSK mode), 0xD7 |= 0x02", [(0xA1, 0x40, 0), (0xD7, 0x02, 0)]),
+    ("0xA1 |= 0x40, 0xD7 |= 0x02, 0xD5 = 0x48 (start TX)", [(0xA1, 0x40, 0), (0xD7, 0x02, 0), (0xD5, None, 0x48)]),
+    ("0xA1 |= 0x40, 0xD7 |= 0x12, 0xD5 = 0x48", [(0xA1, 0x40, 0), (0xD7, 0x12, 0), (0xD5, None, 0x48)]),
+    ("0xA1 |= 0x40, 0xD5 = 0x48 (MSK TX)", [(0xA1, 0x40, 0), (0xD5, None, 0x48)]),
+    ("0x81 |= 0xC2, 0xD7 |= 0x02, 0xD5 = 0x48", [(0x81, 0xC2, 0), (0xD7, 0x02, 0), (0xD5, None, 0x48)]),
+]
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ramfeed_combos(probe, sdr_bench, pytestconfig):
+    """Keyed with the microphone muted: FEED_COMBOS applied together while the firmware keeps a 1 kHz tone in the TX
+    RAM FM halves for 2 s; the voice band level and tones per combination."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    regs = {r for _, w in FEED_COMBOS for r, _, _ in w}
+    saved = regs_saved(L, regs)
+
+    def restore():
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+
+    def run(writes):
+        def during():
+            for reg, s_, c in writes:
+                if s_ is None:
+                    L.probe_reg(PAGE, reg, c)
+                else:
+                    apply(L, reg, s_, c)
+            f = L.probe_ramfeed(2000, 100, TONE_HZ, TONE_AMP, [(PAGE, 0x60, 0x00)])
+            restore()
+            return f"{f['switches']} half switches, {f['writes']} writes, max lag {f['max_lag_ms']} ms"
+        return restore, during
+
+    runs = [(name, *run(w)) for name, w in FEED_COMBOS]
+    try:
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "combo")
+    finally:
+        restore()
+    print_tx_rows("FM TX from the fed TX RAM, MSK / FM voice settings", rows)
+    assert len(rows) == len(runs)
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_mod_gain(probe, sdr_bench, pytestconfig):
+    """Does 0x46 (two-point MOD1 amplitude, hrc6000-registers.md 5.1) scale the 0x04 offset? The same 16-step 1 kHz
+    tone through 0x04 with 0x46 as set, halved and quartered: if the deviation follows, a small 0x46 gives finer
+    steps (more resolution, less range)."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+
+    def run(div):
+        def during():
+            v = L.probe_reg(PAGE, 0x46)
+            L.probe_reg(PAGE, 0x46, max(1, v // div))
+            m = L.probe_mod(MOD_MS, 1000, 16)
+            L.probe_reg(PAGE, 0x46, v)
+            return f"0x46 0x{v:02X} -> 0x{max(1, v // div):02X}"
+        return (lambda: None), during
+
+    runs = [(f"0x04 1 kHz 16 steps, 0x46 / {d}", *run(d)) for d in (1, 2, 4)]
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "gain", ptt_s=2.5)
+    print_tx_rows("FM TX through 0x04 against the MOD1 amplitude 0x46", rows)
+    assert len(rows) == len(runs)
+
+
+def aux_write16(L, addr, value):
+    """A 16-bit value low byte first into the auxiliary table (page 1) at an extended address (manual 5.2)"""
+    L.probe_ram(1, addr, data=bytes([value & 0xFF, value >> 8]))
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_tone_gen(probe, sdr_bench, pytestconfig):
+    """The chip's selcall tone generator (hrc6000-registers.md 7.8): eight 16-bit phase steps at aux 0x11A-0x129
+    (f / 32000 x 2^16), deviation 0xA0. Keyed with the microphone muted: 2-tone mode, "long A" with tone A set to
+    1000 Hz, retriggered by 0x60 0x00 -> 0x80; then tone A's step rewritten from the host every 100 ms between 1200
+    and 2200 Hz (AFSK-style). Shows whether the generator is programmable and follows step writes while it plays."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    regs = (0xA0, 0xA1, 0xA3, 0xA4, 0xA5, 0xA6, 0xAE, 0xAF, 0x60)
+    saved = regs_saved(L, set(regs))
+    step = lambda f: round(f / 32000 * 65536)
+
+    def restore():
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+
+    def setup(a_hz):
+        aux_write16(L, 0x11A, step(a_hz))
+        for r, v in ((0xA1, 0x10), (0xA0, 0x39), (0xA6, 0x0A), (0xA3, 0x05), (0xA4, 0x05), (0xA5, 0x05)):
+            L.probe_reg(PAGE, r, v)
+        # TX code "long A": {0xAF bits 3-0, 0xAE bits 7-4}; the long-tone code is not stated, so try A in both nibbles
+        L.probe_reg(PAGE, 0xAF, 0x0A)
+        L.probe_reg(PAGE, 0xAE, 0xA0)
+
+    def run_long():
+        def during():
+            setup(1000)
+            L.probe_reg(PAGE, 0x60, 0x00)
+            time.sleep(0.05)
+            L.probe_reg(PAGE, 0x60, 0x80)
+            time.sleep(1.5)
+            return "2-tone long A = 1000 Hz, retriggered"
+        return restore, during
+
+    def run_afsk():
+        def during():
+            setup(1200)
+            L.probe_reg(PAGE, 0x60, 0x00)
+            time.sleep(0.05)
+            L.probe_reg(PAGE, 0x60, 0x80)
+            t0, n = time.monotonic(), 0
+            while time.monotonic() - t0 < 1.5:
+                aux_write16(L, 0x11A, step(2200 if n % 2 else 1200))
+                n += 1
+                time.sleep(0.1)
+            return f"tone A step rewritten {n} times (1200 / 2200 Hz, 100 ms each)"
+        return restore, during
+
+    def run_before_key():
+        def before():
+            setup(1000)
+        return before, (lambda: "set up before keying (the TX set-up may rewrite 0xA0 / 0xA1)")
+
+    runs = [("2-tone set up before keying", *run_before_key()), ("2-tone long A, retriggered", *run_long()),
+            ("2-tone, step rewritten 1200 / 2200", *run_afsk())]
+    try:
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "tgen")
+    finally:
+        restore()
+    print_tx_rows("FM TX from the chip's tone generator", rows)
+    assert len(rows) == len(runs)
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ext_codec_switch(probe, sdr_bench, pytestconfig):
+    """Does 0x06 bit 2 (CodeCMode external) move the FM transmit chain's input to the external codec port (pins 16-20,
+    chip block diagram figure 1.1)? LINEIN2's own 2.5 kHz oscillation is a known source on the built-in codec: keyed
+    with LINEIN2 on for 1.5 s, then 0x06 bit 2 set for 1.5 s. If the tone stops, the chain reads the external port,
+    and a wire from the MCU's PCM line to ADCDAT (pin 19) would be full quality FM transmit audio."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    saved = regs_saved(L, {0x06, 0x36})
+
+    def during():
+        e0 = L.probe_reg(PAGE, 0xE0)
+        L.probe_reg(PAGE, 0xE0, e0 | 0x20)
+        time.sleep(1.5)
+        apply(L, 0x06, 0x04, 0)
+        time.sleep(1.5)
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+        L.probe_reg(PAGE, 0xE0, e0)
+        return "LINEIN2 on 0-1.5 s, then 0x06 |= 0x04 1.5-3 s"
+
+    runs = [("LINEIN2 marker, then external codec mode", lambda: None, during)]
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "ext", ptt_s=3.5, levels=True)
+    print_tx_rows("FM TX source switch 0x06 bit 2", rows)
+    assert len(rows) == 1
+
+
+# 0x06 bit 2 moves the FM transmit input off the built-in codec (test_probe_fm_tx_ext_codec_switch, 2026-10-12: the
+# LINEIN2 tone stops at once). Does external-codec mode read the vocoder I2S port the MCU drives? The probe's I2S
+# tone (1 kHz) runs throughout. (name, [(register, set mask, clear mask)])
+EXT_I2S_VARIANTS = [
+    ("I2S tone, built-in codec (baseline)", []),
+    ("I2S tone, 0x06 |= 0x04 (external codec)", [(0x06, 0x04, 0)]),
+    ("I2S tone, external, 0x36 &= ~0x80 (external clocks on)", [(0x06, 0x04, 0), (0x36, 0, 0x80)]),
+    ("I2S tone, external, 0x22 |= 0x02 (vocoder PCM over I2S)", [(0x06, 0x04, 0), (0x22, 0x02, 0)]),
+    ("I2S tone, external, 0x22 |= 0x06 (I2S master)", [(0x06, 0x04, 0), (0x22, 0x06, 0)]),
+    ("I2S tone, external, clocks on, 0x22 |= 0x02", [(0x06, 0x04, 0), (0x36, 0, 0x80), (0x22, 0x02, 0)]),
+]
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_ext_i2s(probe, sdr_bench, pytestconfig):
+    """Keyed with the microphone muted and the probe sending a 1 kHz tone on the I2S stream, the external-codec
+    settings of EXT_I2S_VARIANTS: a 1 kHz tone on air means the FM chain reads the MCU's I2S samples."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    saved = regs_saved(L, {0x06, 0x36, 0x22})
+
+    def restore():
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+
+    def run(writes):
+        def before():
+            restore()
+            L.probe_start(TONE_HZ, TONE_AMP)
+
+        def during():
+            for reg, s_, c in writes:
+                apply(L, reg, s_, c)
+            st = L.probe_status()
+            return f"stream {'running' if st['running'] else 'stopped'}, probe owns it: {st['ours']}, I2S in rms L {st['left']['rms']} R {st['right']['rms']}"
+        return before, during
+
+    runs = [(name, *run(w)) for name, w in EXT_I2S_VARIANTS]
+    try:
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "exti2s")
+    finally:
+        restore()
+    print_tx_rows("FM TX in external codec mode, MCU tone on I2S", rows)
+    assert len(rows) == len(runs)

@@ -37,6 +37,11 @@ uint32_t hal_millis(void)
 	return (uint32_t)(cycles_now() / (SystemCoreClock / 1000u));
 }
 
+uint32_t hal_micros(void)
+{
+	return (uint32_t)(cycles_now() / (SystemCoreClock / 1000000u));
+}
+
 void hal_delay_us(uint32_t us)
 {
 	uint64_t end = cycles_now() + (uint64_t)us * (SystemCoreClock / 1000000u);

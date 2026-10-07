@@ -34,7 +34,14 @@ enum {
 					// -> elapsed ms u32, polls u16, 8 x (count u16, first ms u16), RAM changes u16
 	PROBE_OP_MUSIC		= 9,	// ms u16, tone Hz u16, amplitude u16, flags u8 (bit 0 little endian)
 					// -> writes u16, polls u16, elapsed ms u32
+	PROBE_OP_MOD		= 10,	// ms u16, page u8, reg u8, tone Hz u16, amplitude u8 (register steps)[, flags u8]
+					// -> writes u32, elapsed ms u32, base u8
+	PROBE_OP_RAMFEED	= 11,	// hold ms u16, gap ms u16, tone Hz u16, amplitude u16, n u8, n x (page, reg, xor)
+					// -> half switches u16, writes u16, max write lag ms u16, flips done u8
 };
+
+#define PROBE_MOD_SHAPED	0x01u	// MOD flags: second order noise shaping of the register steps
+#define PROBE_FEED_MAX_FLIPS	16u
 
 #define PROBE_MUSIC_SAMPLES	32u	// per FIFO write (manual appendix A1: 32 samples when 0x88 bit 0 reads 0)
 #define PROBE_MUSIC_LE		0x01u
@@ -277,6 +284,167 @@ static size_t probe_music(const uint8_t *req, uint8_t *out)
 	return 9;
 }
 
+// Plays a tone into a register for ms: the register is read as a signed base, then written base + amplitude x sine
+// back to back, as fast as the config port goes (about 37,000 writes a second), and restored. The phase follows the
+// microsecond clock. Found on the bench (usb-audio.md 2.3.1): the HR_C6000's 0x04 (two-point
+// modulation's Mod2 offset) moves the FM carrier about 75 Hz a step, so this is MCU audio on air. Blocks the debug
+// link task meanwhile and takes the CPU from lower priority tasks
+static size_t probe_mod(const uint8_t *req, uint16_t len, uint8_t *out)
+{
+	const hal_audio_tap_t *tap = board.audio_tap;
+	uint16_t ms = get16(req), hz = get16(req + 4);
+	uint8_t page = req[2], reg = req[3], base = 0;
+	float amp = (float)req[6];
+	bool shaped = len > 7u && (req[7] & PROBE_MOD_SHAPED) != 0;
+	if (tap->modem_reg == NULL) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	if (ms == 0 || ms > PROBE_WATCH_MAX_MS || hz > 3800) {
+		out[0] = DL_ST_BAD_ARG;
+		return 1;
+	}
+	bool ok = tap->modem_reg(page, reg, &base, false);
+	float e1 = 0.0f, e2 = 0.0f;				// the last two quantization errors (shaping)
+	uint32_t writes = 0, t0 = hal_millis(), now = t0, u0 = hal_micros();
+	while (ok && now - t0 < ms) {
+		// the phase from the microsecond clock: each write carries the tone's value at the moment it is made
+		uint32_t us = hal_micros() - u0;
+		float ph = 6.2831853f * (float)(((uint64_t)us * hz) % 1000000u) / 1e6f;
+		float x = (float)(int8_t)base + sinf(ph) * amp;
+		if (shaped) {
+			// error feedback with (1 - z^-1)^2: the quantization noise moves up, above the voice band, at
+			// the write rate (about 37 kHz, 4-5 writes a sample)
+			x = x - 2.0f * e1 + e2;
+		}
+		int32_t v = (int32_t)(x + (x >= 0.0f ? 0.5f : -0.5f));
+		v = v > 127 ? 127 : v < -128 ? -128 : v;
+		e2 = e1;
+		e1 = (float)v - x;
+		uint8_t b = (uint8_t)v;
+		ok = tap->modem_reg(page, reg, &b, true);
+		writes++;
+		now = hal_millis();
+	}
+	ok = tap->modem_reg(page, reg, &base, true) && ok;
+	if (!ok) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	out[0] = DL_ST_OK;
+	put32(out + 1, writes);
+	put32(out + 5, hal_millis() - t0);
+	out[9] = base;
+	return 10;
+}
+
+// The HR_C6000 TX RAM (manual 5.2: page 2 writes it, page 6 reads it) FM halves, 0x030 and 0x230, 512 bytes each:
+// in FM transmit the chip writes the codec's samples there, one half per 32 ms (usb-audio.md 2.3.1)
+#define FEED_HALF0		0x030u
+#define FEED_HALF_LEN		512u
+#define FEED_PAGE_WRITE		2u
+#define FEED_PAGE_READ		6u
+
+// Keeps a big endian tone in the TX RAM FM halves while the codec fills them: each time the codec moves to the
+// other half, the half it finished is overwritten at once (about 4 ms over the config port). Meanwhile each flip
+// (page, register, xor mask) is applied for hold ms, then undone for gap ms, in order, starting with gap ms of
+// nothing. If a setting makes the modulator read the RAM after the codec, the tone goes on air during its flip.
+// Blocks the debug link task meanwhile and takes the CPU from lower priority tasks
+static size_t probe_ramfeed(const uint8_t *req, uint8_t *out)
+{
+	const hal_audio_tap_t *tap = board.audio_tap;
+	uint16_t hold = get16(req), gap = get16(req + 2), hz = get16(req + 4);
+	float amp = (float)(get16(req + 6) > 32767 ? 32767 : get16(req + 6));
+	uint8_t n = req[8];
+	const uint8_t *flips = req + 9;
+	if (tap->modem_ram == NULL || tap->modem_reg == NULL) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	if (hold > PROBE_WATCH_MAX_MS || gap > PROBE_WATCH_MAX_MS || hz > 3800 ||
+	    (uint32_t)n * (hold + gap) + gap > 9000u) {
+		out[0] = DL_ST_BAD_ARG;
+		return 1;
+	}
+	static uint8_t buf[FEED_HALF_LEN];
+	float step = 2.0f * 3.14159265f * (float)hz / (float)AUDIO_RATE_HZ, ph = 0.0f;
+	uint8_t prev[2][4] = { { 0 } }, cur[2][4];
+	int active = -1;
+	uint32_t switches = 0, writes = 0, max_lag = 0;
+	bool ok = true;
+	uint8_t done = 0, saved = 0;
+	bool flipped = false;
+	uint32_t t0 = hal_millis(), t_next = t0 + gap;
+	for (int h = 0; h < 2; h++) {
+		ok = ok && tap->modem_ram(FEED_PAGE_READ, (uint16_t)(FEED_HALF0 + h * FEED_HALF_LEN), prev[h], 4, false);
+	}
+	while (ok && (done < n || flipped || hal_millis() < t_next)) {
+		uint32_t now = hal_millis();
+		if ((int32_t)(now - t_next) >= 0) {
+			const uint8_t *f = flips + 3u * done;
+			if (!flipped && done < n) {
+				ok = tap->modem_reg(f[0], f[1], &saved, false);
+				uint8_t v = (uint8_t)(saved ^ f[2]);
+				ok = ok && tap->modem_reg(f[0], f[1], &v, true);
+				flipped = true;
+				t_next = now + hold;
+			} else if (flipped) {
+				ok = tap->modem_reg(f[0], f[1], &saved, true);
+				flipped = false;
+				done++;
+				t_next = now + gap;
+			} else {
+				break;
+			}
+		}
+		for (int h = 0; ok && h < 2; h++) {
+			ok = tap->modem_ram(FEED_PAGE_READ, (uint16_t)(FEED_HALF0 + h * FEED_HALF_LEN), cur[h], 4, false);
+		}
+		bool mv0 = memcmp(cur[0], prev[0], 4) != 0, mv1 = memcmp(cur[1], prev[1], 4) != 0;
+		memcpy(prev, cur, sizeof prev);
+		if (mv0 == mv1) {
+			continue;
+		}
+		int now_h = mv0 ? 0 : 1;
+		if (active >= 0 && now_h != active) {
+			switches++;
+			uint32_t ts = hal_millis();
+			for (uint32_t i = 0; i < FEED_HALF_LEN / 2u; i++) {
+				uint16_t v = (uint16_t)(int16_t)(sinf(ph) * amp);
+				ph += step;
+				if (ph > 6.2831853f) {
+					ph -= 6.2831853f;
+				}
+				buf[2 * i] = (uint8_t)(v >> 8);
+				buf[2 * i + 1] = (uint8_t)v;
+			}
+			ok = tap->modem_ram(FEED_PAGE_WRITE, (uint16_t)(FEED_HALF0 + active * FEED_HALF_LEN), buf,
+					    FEED_HALF_LEN, true);
+			writes++;
+			// our own write changes the half's first word: read it back so it isn't taken for the codec's
+			ok = ok && tap->modem_ram(FEED_PAGE_READ, (uint16_t)(FEED_HALF0 + active * FEED_HALF_LEN),
+						  prev[active], 4, false);
+			uint32_t lag = hal_millis() - ts;
+			max_lag = lag > max_lag ? lag : max_lag;
+		}
+		active = now_h;
+	}
+	if (flipped) {
+		const uint8_t *f = flips + 3u * done;
+		(void)tap->modem_reg(f[0], f[1], &saved, true);
+	}
+	if (!ok) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	out[0] = DL_ST_OK;
+	put16(out + 1, sat16(switches));
+	put16(out + 3, sat16(writes));
+	put16(out + 5, sat16(max_lag));
+	out[7] = done;
+	return 8;
+}
+
 size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	const hal_audio_tap_t *tap = board.audio_tap;
@@ -381,6 +549,18 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 			return 1;
 		}
 		return probe_music(req + 1, out);
+	case PROBE_OP_MOD:
+		if (len != 8 && len != 9) {
+			out[0] = DL_ST_BAD_ARG;
+			return 1;
+		}
+		return probe_mod(req + 1, (uint16_t)(len - 1u), out);
+	case PROBE_OP_RAMFEED:
+		if (len < 10 || len != 10u + 3u * req[9] || req[9] > PROBE_FEED_MAX_FLIPS) {
+			out[0] = DL_ST_BAD_ARG;
+			return 1;
+		}
+		return probe_ramfeed(req + 1, out);
 	default:
 		out[0] = DL_ST_BAD_ARG;
 		return 1;
