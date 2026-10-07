@@ -19,7 +19,7 @@ differs there. The screenshots are DM-1701 screens rendered by the UI simulator.
 | TYT MD-380 / MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases. You build the image yourself and move to it with `md380_migrate.py` ([Moving from stock MD-380 firmware](18-moving-from-stock-md380.md)) |
 | Baofeng DM-32UV | Builds and passes its host tests. Not run on a radio yet, not in the releases. Testers move to it with `dm32_migrate.py` ([Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md)) |
 | Radioddity DB25-D PRO | Early bring-up: builds, receives FM only, not run on a radio yet. Not for use |
-| TYT MD-UV380, MD-9600, Radioddity GD-77, GD-88 | Planned. [The radio survey](../spec/radios.md) lists the rebadged models each covers |
+| TYT MD-UV380, MD-9600, Radioddity GD-77, GD-88, Baofeng DM-1801 Pro | Planned. [The radio survey](../spec/radios.md) lists the rebadged models each covers |
 
 ## Project status
 
