@@ -38,6 +38,8 @@ enum {
 					// -> writes u32, elapsed ms u32, base u8
 	PROBE_OP_RAMFEED	= 11,	// hold ms u16, gap ms u16, tone Hz u16, amplitude u16, n u8, n x (page, reg, xor)
 					// -> half switches u16, writes u16, max write lag ms u16, flips done u8
+	PROBE_OP_PIN_TONE	= 12,	// hz u16 (0 = off): square wave on the board's spare output (DM-1701: PC8)
+	PROBE_OP_PIN_SCAN	= 13,	// ms u16 -> n u8, n x changed-pin mask u16 (GPIOA, GPIOB, ...)
 };
 
 #define PROBE_MOD_SHAPED	0x01u	// MOD flags: second order noise shaping of the register steps
@@ -561,6 +563,28 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 			return 1;
 		}
 		return probe_ramfeed(req + 1, out);
+	case PROBE_OP_PIN_TONE:
+	case PROBE_OP_PIN_SCAN: {
+		bool tone = req[0] == PROBE_OP_PIN_TONE;
+		if (len != 3 || tap == NULL || (tone ? tap->pin_tone == NULL : tap->pin_scan == NULL)) {
+			out[0] = len != 3 ? DL_ST_BAD_ARG : DL_ST_UNAVAILABLE;
+			return 1;
+		}
+		uint16_t v = (uint16_t)(req[1] | (req[2] << 8));
+		out[0] = DL_ST_OK;
+		if (tone) {
+			tap->pin_tone(v);
+			return 1;
+		}
+		uint16_t changed[8];
+		uint8_t n = tap->pin_scan(v > 2000u ? 2000u : v, changed, 8);
+		out[1] = n;
+		for (uint8_t i = 0; i < n; i++) {
+			out[2 + 2 * i] = (uint8_t)changed[i];
+			out[3 + 2 * i] = (uint8_t)(changed[i] >> 8);
+		}
+		return 2u + 2u * n;
+	}
 	default:
 		out[0] = DL_ST_BAD_ARG;
 		return 1;

@@ -1504,3 +1504,100 @@ def test_probe_fm_tx_linein2_loop(probe, sdr_bench, pytestconfig):
         restore()
     print_tx_rows("FM TX through LINEIN2 with a 1 kHz tone on I2S", rows)
     assert len(rows) == len(runs)
+
+
+def skip_without_pins(link):
+    from odr_debug import DebugLinkError
+    try:
+        link.probe_pin_scan(10)
+    except DebugLinkError:
+        pytest.skip("the board has no pin tone / scan (probe ops 12, 13)")
+
+
+def scan_text(scan):
+    return " ".join(f"{p}:{m:04X}" for p, m in scan.items())
+
+
+def test_probe_pin_scan_ext_codec(probe):
+    """Which MCU pins toggle, with the built-in codec and with 0x06 bit 2 (external codec)? The I2S clocks the MCU
+    receives (PA15 WS, PC10 CK) come from the chip; a pin that starts toggling in external mode would be wired to the
+    external codec port (pins 16-20, the chip is its master)."""
+    L = probe.link
+    skip_without_pins(L)
+    r06 = L.probe_reg(PAGE, 0x06)
+    try:
+        internal = [L.probe_pin_scan(1000) for _ in range(2)]
+        L.probe_reg(PAGE, 0x06, r06 | 0x04)
+        time.sleep(0.2)
+        external = [L.probe_pin_scan(1000) for _ in range(2)]
+    finally:
+        L.probe_reg(PAGE, 0x06, r06)
+    for name, scans in (("built-in codec", internal), ("external codec", external)):
+        for s_ in scans:
+            print(f"{name:16s} changed: {scan_text(s_)}")
+    base = {p: internal[0][p] | internal[1][p] for p in internal[0]}
+    new = {p: external[0][p] & external[1][p] & ~base[p] for p in base}
+    stopped = {p: base[p] & ~(external[0][p] | external[1][p]) for p in base}
+    print("toggle only in external mode:", scan_text(new))
+    print("stop in external mode:", scan_text(stopped))
+    assert base["A"] & 0x8000 and base["C"] & 0x0400, "the I2S clocks (PA15, PC10) should run with the built-in codec"
+
+
+# PC8 is the stock firmware's beep PWM: if its net reaches the HR_C6000's audio inputs, filtered PWM is MCU audio into
+# the FM chain without a mod. A 1 kHz square wave on PC8 while keyed, with each codec input on. The last run toggles
+# pins 16-20 as the chip's timed GPIO outputs (0xC7-0xD0) and scans the MCU's pins for one that follows.
+PIN_TONE_VARIANTS = [
+    ("no tone (baseline)", 0, []),
+    ("PC8 1 kHz, microphone off", 1000, []),
+    ("PC8 1 kHz, LINEIN1 (microphone) on", 1000, [(0xE0, 0x40, 0)]),
+    ("PC8 1 kHz, LINEIN2 on", 1000, [(0xE0, 0x20, 0)]),
+    ("PC8 1 kHz, MIC_P / MIC_N on", 1000, [(0xE0, 0x06, 0)]),
+]
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_pin_tone(probe, sdr_bench, pytestconfig):
+    """Keyed FM with a 1 kHz square wave on PC8 (the stock beep PWM) and each codec input on in turn: a 1 kHz tone on
+    air means the beep net reaches the transmit audio. Then, keyed, pins 16-20 as timed GPIO outputs while the MCU's
+    pins are scanned."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    skip_without_pins(L)
+    timed = list(range(0xC7, 0xD1))
+    saved = regs_saved(L, set(timed))
+
+    def run(hz, writes):
+        def during():
+            e0 = L.probe_reg(PAGE, 0xE0)
+            for reg, s_, c in writes:
+                apply(L, reg, s_, c)
+            L.probe_pin_tone(hz)
+            time.sleep(2.5)
+            L.probe_pin_tone(0)
+            L.probe_reg(PAGE, 0xE0, e0)
+            return None
+        return lambda: None, during
+
+    def scan_timed():
+        before = L.probe_pin_scan(1000)
+        for on in (0xC7, 0xC9, 0xCB, 0xCD, 0xCF):
+            L.probe_reg(PAGE, on, 0xC1)      # high 100 us after the 30 ms boundary
+            L.probe_reg(PAGE, on + 1, 0x4A)  # low 1 ms after it
+        after = L.probe_pin_scan(1000)
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+        new = {p: after[p] & ~before[p] for p in before}
+        return f"scan {scan_text(before)}; timed outputs {scan_text(after)}; new {scan_text(new)}"
+
+    runs = [(name, *run(hz, w)) for name, hz, w in PIN_TONE_VARIANTS]
+    runs.append(("pins 16-20 as timed GPIO, MCU pin scan", lambda: None, scan_timed))
+    try:
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "pin", ptt_s=3.0, tone_snr=TONE_HZ)
+    finally:
+        L.probe_pin_tone(0)
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+    print_tx_rows("FM TX with a 1 kHz square wave on PC8", rows)
+    assert len(rows) == len(runs)

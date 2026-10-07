@@ -333,12 +333,54 @@ static bool probe_last_block(int16_t *left, int16_t *right, uint32_t *count)
 	return true;
 }
 
+// PC8 (the stock beep PWM, TIM8_CH3 on AF3): a 50 % square wave; off puts it back as the low output board.c makes it
+static void probe_pin_tone(uint16_t hz)
+{
+	if (hz == 0) {
+		TIM8->CR1 = 0;
+		stm32_pin_out(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), false, false);
+		return;
+	}
+	__HAL_RCC_TIM8_CLK_ENABLE();
+	TIM8->CR1 = 0;
+	TIM8->PSC = 72 - 1;				// APB2 timer clock 72 MHz -> 1 MHz
+	TIM8->ARR = 1000000u / hz - 1u;
+	TIM8->CCR3 = 500000u / hz;
+	TIM8->CCMR2 = 6u << TIM_CCMR2_OC3M_Pos;		// PWM mode 1
+	TIM8->CCER = TIM_CCER_CC3E;
+	TIM8->BDTR = TIM_BDTR_MOE;			// TIM8 is an advanced timer: main output enable
+	TIM8->EGR = TIM_EGR_UG;
+	TIM8->CR1 = TIM_CR1_CEN;
+	stm32_pin_af(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), GPIO_AF3_TIM8, false, GPIO_NOPULL);
+}
+
+// Sample GPIOA-E's inputs back to back for ms; output pins read their own level, so a diff of two scans is the answer
+static uint8_t probe_pin_scan(uint16_t ms, uint16_t *changed, uint8_t max)
+{
+	GPIO_TypeDef *const ports[] = { GPIOA, GPIOB, GPIOC, GPIOD, GPIOE };
+	uint8_t n = max < 5 ? max : 5;
+	uint16_t first[5];
+	for (uint8_t i = 0; i < n; i++) {
+		first[i] = (uint16_t)ports[i]->IDR;
+		changed[i] = 0;
+	}
+	uint32_t t0 = hal_millis();
+	while (hal_millis() - t0 < ms) {
+		for (uint8_t i = 0; i < n; i++) {
+			changed[i] |= (uint16_t)(ports[i]->IDR ^ first[i]);
+		}
+	}
+	return n;
+}
+
 const hal_audio_tap_t dm1701_audio_tap = {
 	.caps = AUDIO_TAP_DMR,
 	.modem_reg = dm1701_modem_reg,
 	.modem_ram = dm1701_modem_ram,
 	.modem_burst = dm1701_modem_burst,
 	.last_block = probe_last_block,
+	.pin_tone = probe_pin_tone,
+	.pin_scan = probe_pin_scan,
 };
 #endif
 

@@ -85,7 +85,7 @@ APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
 AUDIO_PROBE = 0x10
 (PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES, PROBE_RAM_READ,
- PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED) = range(12)
+ PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED, PROBE_PIN_TONE, PROBE_PIN_SCAN) = range(14)
 PROBE_RAM_CHUNK = 56          # bytes per RAM_WRITE request (request payload 64: op, page, address, data)
 PROBE_RAM_READ_MAX = 1000
 PROBE_NO_RAM = 0xFFFF
@@ -427,6 +427,15 @@ class DebugLink:
         _, r = self.request(AUDIO_PROBE, req, timeout=total / 1000 + 3)
         switches, writes, lag = struct.unpack_from("<HHH", r)
         return {"switches": switches, "writes": writes, "max_lag_ms": lag, "done": r[6]}
+
+    def probe_pin_tone(self, hz):
+        """A hz square wave on the board's spare output (DM-1701: PC8, the stock beep PWM); 0 = off."""
+        self.request(AUDIO_PROBE, struct.pack("<BH", PROBE_PIN_TONE, hz))
+
+    def probe_pin_scan(self, ms):
+        """Sample the MCU's GPIO inputs for ms (<= 2000). Returns {"A": mask, "B": mask, ...} of the pins that changed."""
+        _, r = self.request(AUDIO_PROBE, struct.pack("<BH", PROBE_PIN_SCAN, ms), timeout=ms / 1000 + 2)
+        return {"ABCDEFGH"[i]: struct.unpack_from("<H", r, 1 + 2 * i)[0] for i in range(r[0])}
 
     def probe_watch(self, ms, mask, page=4, flag_reg=0x82, clear_reg=0x83, ram_page=2, ram_addr=PROBE_NO_RAM):
         """Poll an interrupt flag register for ms (<= 2000), counting and clearing the flags in mask, and count the

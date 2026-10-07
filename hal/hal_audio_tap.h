@@ -74,6 +74,12 @@ typedef struct {
 	// The last 20 ms block as received from the codec, both I2S channels (AUDIO_BLOCK_SAMPLES each), and the stream's
 	// block counter; false when the stream isn't running
 	bool (*last_block)(int16_t *left, int16_t *right, uint32_t *blocks);
+	// A square wave of hz (0 = off, back to its idle level) on a spare output the board names (DM-1701: the stock
+	// beep PWM, PC8), to find out whether that net reaches the transmit audio. NULL when the board has none
+	void (*pin_tone)(uint16_t hz);
+	// Sample every MCU GPIO input for ms and set, per port (A, B, ...), the pins that changed; returns the ports
+	// filled (at most max). Finds which MCU pins a clock from the audio chip reaches. NULL when not supported
+	uint8_t (*pin_scan)(uint16_t ms, uint16_t *changed, uint8_t max);
 } hal_audio_tap_t;
 
 #endif
