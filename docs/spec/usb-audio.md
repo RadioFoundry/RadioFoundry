@@ -85,11 +85,11 @@ What the HR_C6000 manual says, in short:
   LINEIN2 enable**, bit 4 LINEOUT1, bit 3 LINEOUT2, bit 2 MIC_N, bit 1 MIC_P, bit 0 I2S slave. Our 0xC9 (DMR, FM TX) is
   MCU control + LINEIN1 + LINEOUT2 + I2S; 0x89 (FM RX) the same without LINEIN1. So the microphone is wired to
   LINEIN1, and [modem-hrc6000.md](modem-hrc6000.md) 2 calls bit 6 "mic input enable", which is right in effect.
-  What LINEIN2 is wired to on the DM-1701 is unknown (no schematic). FM receive audio plays with 0xE0 = 0x89, both
+  On a DM-1701 board photo, pin 8 (LINEIN2) has no trace and pins 6 (MIC_N) and 7 (LINEIN1) share a via; the bench
+  agrees (2.3.1, LINEIN2 loop). FM receive audio plays with 0xE0 = 0x89, both
   line inputs off, and the HR_C6000 detects the sub-audio tones, so the receive audio reaches its FM chain through
   the baseband ADC (the path DMR uses), not the codec inputs: [hardware-dm1701.md](hardware-dm1701.md) 8's "line in"
-  for FM RX is probably that. LINEIN2 may still carry something (the AT1846S audio output also feeds the RX audio
-  mux), which is why it is a candidate.
+  for FM RX is probably that. Pin 8 is the free analog input for a mod (candidate D).
 - 0xE3 bit 0: "codec internal DAC and ADC pass-through enable, normally 0". The direction is not stated.
 - The FM transmit chain takes the codec ADC's samples; the FM receive chain ends at the codec DAC (manual 6, figure
   6.1). The I2S "vocoder interface" carries the codec ADC's samples to an external vocoder and the vocoder's PCM to
@@ -124,6 +124,7 @@ for transmit.
 | FM TX through the MOD1 offset (0x04) | **yes.** Stepped while keyed, 0x04 moves the carrier linearly, about 75 Hz a step as a signed byte (0xCF as set; +8 steps +595 Hz, +32 +2395 Hz, -32 -2395 Hz, bit 7 flipped +9.5 kHz). Manual 4.7.2: 0x04 is the MOD1 (reference crystal) offset, 0x02 the MOD2 (VCO) one; 0x02, 0x03, 0x05, 0x45-0x48 moved nothing. Probe op 10 writes 0x04 = as set + a sine back to back (37,500 writes a second): 300, 1000, 2000 and 3000 Hz tones on air, about 57 Hz deviation a step at 1 kHz (16 steps: 650 Hz rms), flat 1-2 kHz. 0x46 (MOD1 amplitude) doesn't scale it. The first SINAD figures (about 4 dB) came from phase jitter in the probe's millisecond-clock timing, not the path; the microsecond-clock build is not measured yet |
 | FM TX from the chip's tone generator | **yes, AFSK-class.** 2-tone mode (0xA1 = 0x10, 0xA0 = 0x39), "long A", retriggered by 0x60 0x00 -> 0x80 while keyed: tone A comes from its 16-bit phase step at aux 0x11A (f / 32000 x 2^16, written through page 1 with an extended address). Rewritten every 100 ms from the host it switches cleanly between 1200 and 2200 Hz at about 2.2 kHz rms deviation: a phase-continuous AFSK generator inside the FM chain |
 | FM TX source switch | 0x06 bit 2 (external codec) moves the FM chain's input off the built-in codec: LINEIN2's tone stops the moment it is set. The external port (pins 16-20) isn't wired to the MCU, and the MCU's I2S tone doesn't reach the air in that mode (with 0x36 bit 7 and 0x22 bits 1-2 too). A wire from the MCU's PCM output (PC11) to ADCDAT (pin 19) would make it a full-quality path (candidate D) |
+| LINEIN2 loop | **no loop: an open input.** LINEIN2's tone stays with LINEOUT2 off (and with LINEOUT1 on instead) and stops when the input gain drops (0xE4 = 0x20); the 1 kHz I2S tone never reaches the air. A floating high-gain input oscillates; nothing on the board drives pin 8 |
 | MSK mode | 0xA1 bit 6 with 0xD5 = 0x48 keys the chip's MSK modem: a steady 1800 Hz at 2.7 kHz rms deviation, not the RAM |
 
 | FM TX from the prompt tone FIFO | **no.** The FIFO (page 3 address 0, 32 samples when 0x88 bit 0 reads 0) drains at exactly 8000 samples a second whether 0x06 bit 1 is set or not, and a 1400 Hz tone through it never reaches the air: path open, with 0xE3 bit 0, either byte order |
@@ -142,7 +143,7 @@ Candidates, in order of preference:
 | A | 0xE0 bit 5: LINEIN2 into the codec ADC, if the AT1846S audio (or the speaker line) is wired to it; I2S then carries it as it carries the microphone in DMR | (none) | nothing: same I2S stream |
 | B | 0xE3 bit 0 with FM feed-through on: the DAC's signal (FM receive audio) looped into the ADC and out on I2S | 0xE3 bit 0 with feed-through off: I2S PCM to the DAC, looped into the ADC, which feeds the FM transmit chain | nothing: same I2S stream |
 | C | FM data RAM (page 2, 0x030-0x42F) read on the "receiving data" flag | FM data RAM written on the "sending data request" flag | 16 KB/s each way over the bit-banged config port (about 1-2 Mbit/s, so roughly 8-16 % of the bus per direction, in 64-byte transactions); FM only, when the modem ISRs don't run. Format, rate and the TX source bit to be found on the bench |
-| D | a hardware modification | none | not for users |
+| D | a hardware modification | a wire from PC11 (I2S3ext_SD) to ADCDAT (pin 19) with 0x06 bit 2; or MCU PWM through an RC filter and a 10 µF capacitor into LINEIN2 (pin 8) with 0xE0 bit 5 (PC8, the old beep PWM, is a candidate) | not for users |
 
 If B works it gives both directions with one bit, and keeps the HR_C6000's sub-audio tone generation, limiter,
 pre-emphasis and channel filter on transmit (the host audio is processed like microphone audio). If only A works,

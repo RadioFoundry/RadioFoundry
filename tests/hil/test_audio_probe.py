@@ -1448,3 +1448,59 @@ def test_probe_fm_tx_ext_i2s(probe, sdr_bench, pytestconfig):
         restore()
     print_tx_rows("FM TX in external codec mode, MCU tone on I2S", rows)
     assert len(rows) == len(runs)
+
+
+# LINEIN2 (pin 8) puts a steady 2.5-2.6 kHz tone on air when enabled while keyed: an oscillation, so a loop. If it is
+# LINEOUT2 (on in TX, 0xE0 bit 3) -> the board's audio net -> LINEIN2 -> ADC, then MCU audio has a full-quality path:
+# I2S -> codec DAC -> LINEOUT2 -> LINEIN2 -> the FM chain, once the loop gain is below oscillation. The probe sends a
+# 1 kHz tone on I2S throughout. (name, [(register, set mask, clear mask) or (register, None, value)])
+LOOP_VARIANTS = [
+    ("LINEIN2 on (the oscillation)", [(0xE0, 0x20, 0)]),
+    ("LINEIN2 on, LINEOUT2 off", [(0xE0, 0x20, 0x08)]),
+    ("LINEIN2 on, LINEOUT1 on, LINEOUT2 off", [(0xE0, 0x30, 0x08)]),
+    ("LINEIN2 on, mic gain lowest (0xE4 = 0x20)", [(0xE0, 0x20, 0), (0xE4, None, 0x20)]),
+    ("LINEIN2 on, mic -12 dB (0xE4 = 0x20), DAC -15 dB (0x37 = 0x8A)", [(0xE0, 0x20, 0), (0xE4, None, 0x20),
+                                                                       (0x37, None, 0x8A)]),
+    ("LINEIN2 on, mic lowest, DAC -30 dB (0x37 = 0x94)", [(0xE0, 0x20, 0), (0xE4, None, 0x20), (0x37, None, 0x94)]),
+]
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_linein2_loop(probe, sdr_bench, pytestconfig):
+    """Keyed with the microphone (LINEIN1) muted and a 1 kHz tone on the I2S stream: does LINEIN2 hear LINEOUT2, and
+    with the loop gain lowered, does the I2S tone reach the air through DAC -> LINEOUT2 -> LINEIN2?"""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    saved = regs_saved(L, {0xE4, 0x37})
+
+    def restore():
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+
+    def run(writes):
+        def before():
+            restore()
+            L.probe_start(TONE_HZ, TONE_AMP)
+
+        def during():
+            e0 = L.probe_reg(PAGE, 0xE0)
+            for reg, s_, c in writes:
+                if s_ is None:
+                    L.probe_reg(PAGE, reg, c)
+                else:
+                    apply(L, reg, s_, c)
+            time.sleep(2.5)
+            L.probe_reg(PAGE, 0xE0, e0)
+            restore()
+            return None
+        return before, during
+
+    runs = [(name, *run(w)) for name, w in LOOP_VARIANTS]
+    try:
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "loop", ptt_s=3.0, tone_snr=TONE_HZ)
+    finally:
+        restore()
+    print_tx_rows("FM TX through LINEIN2 with a 1 kHz tone on I2S", rows)
+    assert len(rows) == len(runs)
