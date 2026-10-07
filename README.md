@@ -29,7 +29,7 @@ It's early. Read the status section before you flash anything.
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
 | Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Hardware needed. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated ([radios](docs/spec/radios.md)) |
 | Radioddity GD-88 | ○ | ○ | ○ | Planned. Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
-| Radioddity DB25-D / DB25-D PRO, Retevis RT73 (mobile) | ○ | ○ | ○ | Wish list — hardware needed. One HR_C7000 like the DM-32UV, but BK4819 RF chips (on the PRO) and SPI NAND storage |
+| Radioddity DB25-D PRO (mobile) | ● | ● | ○ | Bring-up started: FM receive on the two BK4819s, display, keys, host link. No TX, DMR or storage yet; not run on a radio ([hardware-db25d](docs/spec/hardware-db25d.md) 9). The older DB25-D batches (FD6818) and the Retevis RT73 aren't covered yet |
 | Radioddity DB40-D (mobile) | ○ | ○ | ○ | Wish list — hardware needed. Two HR_C7000-class processors (A/B), like the GD-88; follows the GD-88 port |
 
 ● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet
