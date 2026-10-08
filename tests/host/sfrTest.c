@@ -106,14 +106,14 @@ static void testConfig(void)
 
 	sfrConfigBuild(&s, 3, 0, &cfg);
 	CHECK(cfg.framing == SFR_FRAMING_TS, "standard: TS by default");
-	CHECK((cfg.inboundCC == 3) && (cfg.outboundCC == 3), "standard: one colour code (%d %d)", cfg.inboundCC, cfg.outboundCC);
+	CHECK((cfg.inboundCC == 3) && (cfg.outboundCC == 3), "standard: one color code (%d %d)", cfg.inboundCC, cfg.outboundCC);
 	CHECK(cfg.totMs == SFR_TOT_DEFAULT_MS, "no channel TOT: the default");
 	CHECK(cfg.hangMs == 1000, "hang default 1 s");
 
 	s.role = SFR_ROLE_RPT_MOTOROLA;
 	sfrConfigBuild(&s, 3, 4, &cfg);
 	CHECK(cfg.framing == SFR_FRAMING_BS, "Motorola: BS by default");
-	CHECK((cfg.inboundCC == 3) && (cfg.outboundCC == 7), "Motorola: its outbound colour code");
+	CHECK((cfg.inboundCC == 3) && (cfg.outboundCC == 7), "Motorola: its outbound color code");
 	CHECK(cfg.totMs == 60000, "channel TOT 4 x 15 s");
 
 	s.outboundCCSet = false;
@@ -196,7 +196,7 @@ static void testEngineRepeat(void)
 	CHECK(sfrEngineSpace(&e) == SFR_QUEUE_SIZE, "empty");
 
 	b = data(DT_VOICE_LC_HEADER, LC1);
-	CHECK(sfrEngineRfBurst(&e, &b, 2, SFR_SYNC_MS, t) == SFR_RX_IGNORED, "other colour code ignored");
+	CHECK(sfrEngineRfBurst(&e, &b, 2, SFR_SYNC_MS, t) == SFR_RX_IGNORED, "other color code ignored");
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_BS, t) == SFR_RX_IGNORED, "BS sync ignored");
 	b = data(DT_TERMINATOR_WITH_LC, LC1);
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t) == SFR_RX_IGNORED, "a terminator alone isn't a call");
@@ -264,7 +264,7 @@ static void testEngineLossAndTot(void)
 	CHECK(sfrEngineOutboundSlot(&e, t + SFR_RF_LOSS_MS + 30, &out) == SFR_TX_IDLE, "lost: hang");
 	CHECK(!sfrEngineRfBusy(&e), "not busy after the loss");
 
-	// Late entry: the LC from the embedded signalling
+	// Late entry: the LC from the embedded signaling
 	sfrEngineInit(&e, &cfg);
 	b = voice(3, 1);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t);
@@ -567,7 +567,7 @@ static void testRaw(void)
 	putMiddle(frame, 0xD5D7F77FD757ULL);
 	CHECK(sfrRawClassify(frame, 2, &dt, info, &sync) == SFR_RAW_DATA, "terminator");
 	CHECK((dt == DT_TERMINATOR_WITH_LC) && (sync == SFR_SYNC_MS) && (memcmp(info, in, 12) == 0), "its type, sync and info");
-	CHECK(sfrRawClassify(frame, 3, &dt, info, &sync) == SFR_RAW_NONE, "another colour code");
+	CHECK(sfrRawClassify(frame, 3, &dt, info, &sync) == SFR_RAW_NONE, "another color code");
 
 	frame[19] ^= 0x60;// 2 sync bit errors: still found
 	CHECK(sfrRawClassify(frame, 2, &dt, info, &sync) == SFR_RAW_DATA, "sync errors");

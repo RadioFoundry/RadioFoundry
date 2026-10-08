@@ -235,7 +235,7 @@ the reverse engineering and documentation behind it made this project possible. 
 - The OpenRTX team, for their hardware documentation.
 - The OpenDM32 project, for its DM-32UV research.
 - Jonathan Naylor G4KLX and the MMDVM and MMDVMHost contributors, for open hotspots and repeaters.
-- Cortney Buffington N0MJS and the HBlink contributors, for open DMR networking.
+- Cort Buffington N0MJS and the HBlink contributors, for open DMR networking.
 - Hannes Matuschek DM3MAT and the qdmr contributors, for qdmr, ODR's main programming software.
 
 ## Contributing

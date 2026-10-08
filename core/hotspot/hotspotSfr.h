@@ -19,7 +19,7 @@
 // After hotspot_init() and mmdvm_init()
 void hotspot_sfr_init(void);
 
-// The SFR settings the hotspot uses (inbound slot, framing, hang, TOT); the colour code is SET_CONFIG's. Defaults:
+// The SFR settings the hotspot uses (inbound slot, framing, hang, TOT); the color code is SET_CONFIG's. Defaults:
 // TS1 in, TS2 out, TS framing, 1 s hang, 180 s TOT. tot_15s 0: the default TOT
 void hotspot_sfr_set_settings(const sfrChannelSettings_t *s, uint8_t tot_15s);
 

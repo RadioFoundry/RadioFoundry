@@ -482,7 +482,7 @@ static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 	}
 	if (s.kind == SFR_BURST_VOICE) {
 		r->voice_since_header = true;
-		// Late entry: the call's LC from the embedded signalling (the modem gives it complete with F)
+		// Late entry: the call's LC from the embedded signaling (the modem gives it complete with F)
 		if (b->lc_valid && !sfrLcKnown(r->eng.rfLc) && dmr_lc_is_voice(b->lc)) {
 			sfrEngineRfLc(&r->eng, b->lc);
 		}

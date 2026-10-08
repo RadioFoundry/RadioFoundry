@@ -1582,7 +1582,7 @@ bool dmrDataServicePowerOff(void)
 }
 
 // Switched back on before the power off finished: register again if we deregistered
-void dmrDataServicePowerOffCancelled(void)
+void dmrDataServicePowerOffCanceled(void)
 {
 	if (ars.powerOff == ARS_POWER_OFF_SENDING)
 	{

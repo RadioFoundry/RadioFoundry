@@ -81,7 +81,7 @@ static uint32_t last_rx_ms;
 static uint32_t poll_ms;		// the time of the last hotspot_poll()
 static bool heard_any;
 static bool uplink_on = true;		// false in the POCSAG state: heard, not passed up
-static uint8_t sf_frag[4][4];		// the embedded signalling of B-E for the superframe going up
+static uint8_t sf_frag[4][4];		// the embedded signaling of B-E for the superframe going up
 static uint8_t alias_lc[LC_LEN];	// an embedded LC heard that isn't the call's (talker alias, GPS): sent next
 static bool alias_pending;
 
@@ -153,9 +153,9 @@ static void frame_to_voice(const uint8_t *frame, uint8_t *voice)
 static const uint8_t MS_VOICE_SYNC[6] = { 0x7F, 0x7D, 0x5D, 0xD5, 0x7D, 0xFD };
 
 // A voice burst for the host, well formed as a transmitter makes it (docs/spec/mmdvm-protocol.md 2.8): A gets the MS
-// voice sync; B-F the EMB (our colour code, PI 0, the LCSS of the position: B first, C-D continuation, E last,
+// voice sync; B-F the EMB (our color code, PI 0, the LCSS of the position: B first, C-D continuation, E last,
 // F single) with its QR(16,7,6) parity, B-E the four fragments of the superframe's embedded LC, F null embedded
-// signalling
+// signaling
 static void voice_to_frame(const uint8_t *voice, uint8_t index, uint8_t *frame)
 {
 	uint8_t middle[6] = { 0, 0, 0, 0, 0, 0 };

@@ -21,7 +21,7 @@ typedef struct {
 	uint8_t len;
 	uint8_t payload[DMR_PAYLOAD_MAX];
 	uint8_t lcss;		// voice: the EMB LCSS sent
-	uint8_t emb[4];		// voice B-E: the 32 embedded signalling bits
+	uint8_t emb[4];		// voice B-E: the 32 embedded signaling bits
 	uint32_t slot;		// slot counter when sent
 } sim_air_t;
 

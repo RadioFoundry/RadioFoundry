@@ -308,7 +308,7 @@ magic.
 | 0x0000 | 0x80 | Unused by the firmware |
 | 0x0080 | 0x60 | Device info (7.3.1) |
 | 0x00E0 | 0x28 | General settings: callsign at 0x00E0 (8 bytes), DMR ID at 0x00E8 (7.3.2) |
-| 0x1400 | 0x78 | DTMF signalling settings (7.3.9). The DTMF durations are at 0x1472 (5 bytes) |
+| 0x1400 | 0x78 | DTMF signaling settings (7.3.9). The DTMF durations are at 0x1472 (5 bytes) |
 | 0x1588 | 8 x 0x40 | APRS configurations (7.3.8), to 0x1788 |
 | 0x2F88 | 63 x 0x20 | DTMF contacts (7.3.7), to 0x3768 |
 | 0x3780 | 0x10 + 128 x 0x38 | Channel bank 0: a 16 byte in-use bitmap, then channels 1-128 at 0x3790 (to 0x538F) |
@@ -491,7 +491,7 @@ but a 64th would overlap the channel bank 0 bitmap at 0x3780. Use 63.
 | 0x3D | 1 | Flags: bit 0 300 baud (else 1200); bit 1 use the fixed position; bit 2 transmit QSY info; bit 3 beacon silently; bits 5-7 position ambiguity |
 | 0x3E | 2 | Magic / version, LE: 0x4153 now. 0x4152 was the older layout, whose ambiguity field sat one bit lower; firmware upgrades a 0x4152 record by moving it and rewriting the magic. **Our DM-32 tree still uses 0x4152** |
 
-#### 7.3.9 DTMF signalling (EEPROM 0x1400, 120 bytes)
+#### 7.3.9 DTMF signaling (EEPROM 0x1400, 120 bytes)
 
 | Offset | Size | Field |
 | --- | --- | --- |

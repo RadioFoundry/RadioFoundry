@@ -159,7 +159,7 @@ static void reset_world(void)
 #endif
 }
 
-// SFR on: duplex, RX = TX, colour code 1
+// SFR on: duplex, RX = TX, color code 1
 static void sfr_on(void)
 {
 	reset_world();

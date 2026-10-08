@@ -10,7 +10,7 @@
 #include <string.h>
 // TODO(hal): legacy firmware headers. Used from them: SPI0/SPI1 page register access (SPI0ReadPageRegByte,
 // SPI0WritePageRegByte, SPI0ClearPageRegByteWithMask, SPI0Read/WritePageRegByteArray, SPI1Read/WritePageRegByteArray),
-// HRC6000InitDigitalDmrRx, trxGetDMRColourCode, trxSetDMRColourCode, trxGetPowerLevel, trxSetFrequency,
+// HRC6000InitDigitalDmrRx, trxGetDMRColorCode, trxSetDMRColorCode, trxGetPowerLevel, trxSetFrequency,
 // settingsIsOptionBitSet, settingsUsbMode, codeplugChannelGetFlag, currentChannelData, uiDataGlobal, LedWrite,
 // taskENTER/EXIT_CRITICAL, DWT / SystemCoreClock. The radio supplies radioSfrSwitch() etc. (hrcSfr.h).
 #include "FreeRTOS.h"
@@ -198,7 +198,7 @@ static void sessionStart(void)
 		spiW(0x04, 0x11, debug.reg11);
 	}
 
-	// The HR-C6000 doesn't transmit when the channel is busy with our colour code and its access policy is polite
+	// The HR-C6000 doesn't transmit when the channel is busy with our color code and its access policy is polite
 	// (reg 0x21 0xA2, set by the driver's transmissions): the radios on the inbound slot keep it busy
 	if ((debug.flags & HRC_SFR_DEBUG_POLITE) == 0)
 	{
@@ -244,7 +244,7 @@ static void sessionEnd(void)
 	{
 		SPI0WritePageRegByte(0x04, 0x11, 0x80);// the init's
 	}
-	SPI0WritePageRegByte(0x04, 0x1F, (trxGetDMRColourCode() << 4));
+	SPI0WritePageRegByte(0x04, 0x1F, (trxGetDMRColorCode() << 4));
 	setMcuCrc(0x00);
 
 	if (sfr.activeTiming)
@@ -262,7 +262,7 @@ static bool txDataIsOurs(const uint8_t *info, uint32_t now);
 
 static void writeBurst(const sfrBurst_t *b)
 {
-	// Whatever colour code the receiver was set to (the CC probe), the outbound one
+	// Whatever color code the receiver was set to (the CC probe), the outbound one
 	ccWrite(sfr.cfg.outboundCC);
 
 	if (b->kind == SFR_BURST_VOICE)
@@ -740,24 +740,24 @@ bool hrcSfrRxInterrupt(void)
 	return true;
 }
 
-// Sys ISR: a burst received (the driver read reg 0x51 and 0x5F, and the colour code from reg 0x52)
+// Sys ISR: a burst received (the driver read reg 0x51 and 0x5F, and the color code from reg 0x52)
 static uint32_t ambeHash(const uint8_t *ambe);
 // The AMBE of one of the last 6 inbound voice bursts (the HR-C6000's stale voice data)
 static bool rxAmbeRecent(uint32_t hash);
-static void queueHeard(const sfrBurst_t *heard, uint8_t colourCode, uint8_t sync, uint32_t now);
+static void queueHeard(const sfrBurst_t *heard, uint8_t colorCode, uint8_t sync, uint32_t now);
 
 // A burst heard, queued for the repeat (and the uplink). keyed: heard while we send (its status isn't reliable)
 static bool txVoiceIsOurs(const uint8_t *ambe, uint8_t seq, uint32_t now);
 
-static void captureBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colourCode, uint32_t now, bool keyed);
+static void captureBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colorCode, uint32_t now, bool keyed);
 
 // A slot's report, and a header's place kept: in a call's header phase (headers heard, no voice yet), a slot whose
 // report couldn't be used (on-air test 13: every third header heard while keyed came out unusable) gets a header with
 // the call's LC, so the header run is repeated whole
-static void capture(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colourCode, uint32_t now, bool keyed)
+static void capture(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colorCode, uint32_t now, bool keyed)
 {
 	sfr.taken = false;
-	captureBurst(syncClass, dataType, syncType, crcValid, colourCode, now, keyed);
+	captureBurst(syncClass, dataType, syncType, crcValid, colorCode, now, keyed);
 
 	if (sfr.taken && !keyed && (sfr.reportStep != SFR_STEP_OUT))
 	{
@@ -782,7 +782,7 @@ static void capture(int syncClass, int dataType, int syncType, bool crcValid, ui
 	}
 }
 
-static void captureBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colourCode, uint32_t now, bool keyed)
+static void captureBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colorCode, uint32_t now, bool keyed)
 {
 	sfrBurst_t b;
 
@@ -797,21 +797,21 @@ static void captureBurst(int syncClass, int dataType, int syncType, bool crcVali
 		return;
 	}
 
-	// The slot's first report, taken or not. Not keyed, only one with our colour code: the noise the HR-C6000 reports
-	// in the other slot (random colour codes) mustn't shadow the real bursts 30 ms later (on-air test 14: a whole
+	// The slot's first report, taken or not. Not keyed, only one with our color code: the noise the HR-C6000 reports
+	// in the other slot (random color codes) mustn't shadow the real bursts 30 ms later (on-air test 14: a whole
 	// header run lost)
-	if (keyed || (colourCode == engine.cfg.inboundCC))
+	if (keyed || (colorCode == engine.cfg.inboundCC))
 	{
 		sfr.lastHeardMs = now;
 	}
 
-	// While we send, the HR-C6000's status for the burst heard (reg 0x51 CRC, 0x52 colour code, 0x5F sync type) is
-	// wrong (on-air tests 3 and 4: inbound headers and terminators dropped as the wrong sync, then the wrong colour
-	// code, CRC bad). The info bits read out are right: their own checksum is checked instead, and the colour code taken
+	// While we send, the HR-C6000's status for the burst heard (reg 0x51 CRC, 0x52 color code, 0x5F sync type) is
+	// wrong (on-air tests 3 and 4: inbound headers and terminators dropped as the wrong sync, then the wrong color
+	// code, CRC bad). The info bits read out are right: their own checksum is checked instead, and the color code taken
 	// as the inbound one. Our own bursts are told apart by their slot (above)
 	if (keyed)
 	{
-		colourCode = engine.cfg.inboundCC;
+		colorCode = engine.cfg.inboundCC;
 	}
 
 	if (syncClass == 2)// data
@@ -978,7 +978,7 @@ static void captureBurst(int syncClass, int dataType, int syncType, bool crcVali
 		return;
 	}
 
-	queueHeard(&b, colourCode, (keyed ? SFR_SYNC_MS : (uint8_t)syncType), now);
+	queueHeard(&b, colorCode, (keyed ? SFR_SYNC_MS : (uint8_t)syncType), now);
 }
 
 static bool rxAmbeRecent(uint32_t hash)
@@ -995,7 +995,7 @@ static bool rxAmbeRecent(uint32_t hash)
 }
 
 // A burst heard, for the repeat and the uplink
-static void queueHeard(const sfrBurst_t *heard, uint8_t colourCode, uint8_t sync, uint32_t now)
+static void queueHeard(const sfrBurst_t *heard, uint8_t colorCode, uint8_t sync, uint32_t now)
 {
 	sfrBurst_t b = *heard;
 
@@ -1022,7 +1022,7 @@ static void queueHeard(const sfrBurst_t *heard, uint8_t colourCode, uint8_t sync
 		sfr.lastDataMs = now;
 	}
 
-	if (colourCode != engine.cfg.inboundCC)
+	if (colorCode != engine.cfg.inboundCC)
 	{
 		debug.rxIgnoredCC++;
 	}
@@ -1032,7 +1032,7 @@ static void queueHeard(const sfrBurst_t *heard, uint8_t colourCode, uint8_t sync
 	}
 
 	bool wasHolding = engine.rfHold;
-	sfrRxResult_t result = sfrEngineRfBurst(&engine, &b, colourCode, sync, now);
+	sfrRxResult_t result = sfrEngineRfBurst(&engine, &b, colorCode, sync, now);
 
 	if (engine.rfHold && !wasHolding)
 	{
@@ -1097,7 +1097,7 @@ static void queueHeard(const sfrBurst_t *heard, uint8_t colourCode, uint8_t sync
 	}
 }
 
-void hrcSfrRxBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colourCode)
+void hrcSfrRxBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colorCode)
 {
 	uint32_t now = ticksGetMillis();
 
@@ -1107,7 +1107,7 @@ void hrcSfrRxBurst(int syncClass, int dataType, int syncType, bool crcValid, uin
 	}
 
 	debug.lastRx = (uint8_t)(((syncType & 0x03) << 6) | ((syncClass & 0x03) << 4) | (dataType & 0x0F));
-	debug.lastRxCC = (colourCode & 0x0F) | (crcValid ? 0x80 : 0);
+	debug.lastRxCC = (colorCode & 0x0F) | (crcValid ? 0x80 : 0);
 
 	// The Sys interrupt comes a few ms into the next slot, for the slot that just ended (debug byte 19). If that was one
 	// of ours (our PA went off at its end, at the last timeslot interrupt), what's heard is our own burst: never repeated
@@ -1151,7 +1151,7 @@ void hrcSfrRxBurst(int syncClass, int dataType, int syncType, bool crcValid, uin
 	}
 
 	sfr.reportStep = sfrReportStep(now - sfr.lastTimeslotMs);
-	capture(syncClass, dataType, syncType, crcValid, colourCode, now, false);
+	capture(syncClass, dataType, syncType, crcValid, colorCode, now, false);
 	sfr.reportStep = SFR_STEP_UNKNOWN;
 }
 
@@ -1254,9 +1254,9 @@ static const uint8_t RAW_AREAS[2] = { 0x30, 0x60 };
 
 // The timeslot ISR, before the outbound slot is set up: a burst heard while we send, read now. While the HR-C6000
 // sends, its status registers and decoded info bits for the burst heard are wrong at times (on-air tests 3-7: wrong
-// colour code, sync type and CRC flag, a header taken for voice A, a terminator's info bits half wrong). The burst is
+// color code, sync type and CRC flag, a header taken for voice A, a terminator's info bits half wrong). The burst is
 // decoded here from the raw bits instead: data by its sync, slot type and own checksum, voice A by its sync, B-F by the
-// EMB's colour code, following the burst before. Until a raw area has given a burst, the HR-C6000's status is used
+// EMB's color code, following the burst before. Until a raw area has given a burst, the HR-C6000's status is used
 static void capturePending(void)
 {
 	uint8_t raw[2][SFR_RAW_LENGTH];
@@ -1506,28 +1506,28 @@ bool hrcSfrUserVoiceAccept(int seq)
 	return sfrDedupVoice(&sfr.userDedup, (uint8_t)seq, ticksGetMillis());
 }
 
-// ERDM user: the receiver follows the colour code heard, the channel's (direct) or the outbound one (the repeat)
-void hrcSfrUserRxColourCode(uint8_t rxCC, bool idle)
+// ERDM user: the receiver follows the color code heard, the channel's (direct) or the outbound one (the repeat)
+void hrcSfrUserRxColorCode(uint8_t rxCC, bool idle)
 {
 	if ((sfr.role == SFR_ROLE_USER_ERDM) && idle && (sfr.cfg.outboundCC != sfr.cfg.inboundCC) &&
-			(rxCC != trxGetDMRColourCode()) && (sfrUserRxColourCode(&sfr.cfg, rxCC) >= 0))
+			(rxCC != trxGetDMRColorCode()) && (sfrUserRxColorCode(&sfr.cfg, rxCC) >= 0))
 	{
-		trxSetDMRColourCode(rxCC);
+		trxSetDMRColorCode(rxCC);
 	}
 }
 
-// ERDM user: it transmits with the channel's (inbound) colour code
-void hrcSfrUserTxColourCode(void)
+// ERDM user: it transmits with the channel's (inbound) color code
+void hrcSfrUserTxColorCode(void)
 {
-	if ((sfr.role == SFR_ROLE_USER_ERDM) && (trxGetDMRColourCode() != sfr.cfg.inboundCC))
+	if ((sfr.role == SFR_ROLE_USER_ERDM) && (trxGetDMRColorCode() != sfr.cfg.inboundCC))
 	{
-		trxSetDMRColourCode(sfr.cfg.inboundCC);
+		trxSetDMRColorCode(sfr.cfg.inboundCC);
 	}
 }
 
 // The hotspot SFR's settings: the radio's channel's when it's an SFR repeater channel (its inbound slot, framing and
-// hang), else TS1 in, TS2 out, TS framing, 1 s hang. The colour code is the host's
-void hrcSfrHotspotConfig(uint8_t colourCode, sfrConfig_t *cfg)
+// hang), else TS1 in, TS2 out, TS framing, 1 s hang. The color code is the host's
+void hrcSfrHotspotConfig(uint8_t colorCode, sfrConfig_t *cfg)
 {
 	sfrChannelSettings_t settings;
 
@@ -1545,13 +1545,13 @@ void hrcSfrHotspotConfig(uint8_t colourCode, sfrConfig_t *cfg)
 		settings.framing = debugFraming;
 	}
 
-	sfrConfigBuild(&settings, colourCode, currentChannelData->tot, cfg);
+	sfrConfigBuild(&settings, colorCode, currentChannelData->tot, cfg);
 }
 
-void hrcSfrHotspotSet(bool on, uint8_t colourCode)
+void hrcSfrHotspotSet(bool on, uint8_t colorCode)
 {
 	sfr.hotspotOn = on;
-	sfr.hotspotCC = colourCode;
+	sfr.hotspotCC = colorCode;
 	hrcSfrChannelChanged(currentChannelData, sfr.rxFreq, sfr.txFreq);
 }
 

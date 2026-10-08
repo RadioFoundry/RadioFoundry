@@ -245,7 +245,7 @@ bool dmrDataFrameToBurst(uint8_t dataType, const uint8_t *frame, dmrBurst_t *bur
 }
 
 // MS sourced, as the hotspot is on the mobile side of the air interface
-bool dmrDataBurstToFrame(const dmrBurst_t *burst, uint8_t colourCode, uint8_t *frame)
+bool dmrDataBurstToFrame(const dmrBurst_t *burst, uint8_t colorCode, uint8_t *frame)
 {
 	if ((burst->dataType == DT_RATE_34_DATA) && (burst->length == 18))
 	{
@@ -264,7 +264,7 @@ bool dmrDataBurstToFrame(const dmrBurst_t *burst, uint8_t colourCode, uint8_t *f
 		return false;
 	}
 
-	dmrFecSlotTypeEncode(colourCode, burst->dataType, frame);
+	dmrFecSlotTypeEncode(colorCode, burst->dataType, frame);
 	for (int i = 0; i < SYNC_BITS; i++)
 	{
 		setBit(frame, SYNC_FIRST_BIT + i, (int)((MS_DATA_SYNC >> (SYNC_BITS - 1 - i)) & 1));

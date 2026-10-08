@@ -40,20 +40,20 @@ uint32_t dmrFecGolay2087Encode(uint8_t data);
 // Nearest codeword's data (up to 3 bit errors corrected). Returns the number of bit errors, or -1 if there were too many.
 int dmrFecGolay2087Decode(uint32_t codeword, uint8_t *data);
 
-// Slot type: colour code (4 bits) and data type (4 bits), Golay(20,8) coded, into / out of the burst
-void dmrFecSlotTypeEncode(uint8_t colourCode, uint8_t dataType, uint8_t *burst);
-bool dmrFecSlotTypeDecode(const uint8_t *burst, uint8_t *colourCode, uint8_t *dataType);
+// Slot type: color code (4 bits) and data type (4 bits), Golay(20,8) coded, into / out of the burst
+void dmrFecSlotTypeEncode(uint8_t colorCode, uint8_t dataType, uint8_t *burst);
+bool dmrFecSlotTypeDecode(const uint8_t *burst, uint8_t *colorCode, uint8_t *dataType);
 
 // QR(16,7,6): the 16 bit codeword for 7 data bits, data in bits 15-9, then 9 parity bits
 uint16_t dmrFecQr1676Encode(uint8_t data);
 // Nearest codeword's data (up to 2 bit errors corrected). Returns the number of bit errors, or -1 if there were too many.
 int dmrFecQr1676Decode(uint16_t codeword, uint8_t *data);
 
-// The EMB of voice bursts B-F (ETSI TS 102 361-1 9.1.2): colour code (4 bits), PI (1), LCSS (2), QR(16,7,6) coded.
+// The EMB of voice bursts B-F (ETSI TS 102 361-1 9.1.2): color code (4 bits), PI (1), LCSS (2), QR(16,7,6) coded.
 // In a burst, codeword bits 15-8 are burst bits 108-115 and bits 7-0 are burst bits 148-155 (the 32 embedded
-// signalling bits sit between them)
-uint16_t dmrFecEmbEncode(uint8_t colourCode, bool pi, uint8_t lcss);
+// signaling bits sit between them)
+uint16_t dmrFecEmbEncode(uint8_t colorCode, bool pi, uint8_t lcss);
 // Returns the number of bit errors corrected, or -1 if the EMB can't be trusted
-int dmrFecEmbDecode(uint16_t emb, uint8_t *colourCode, bool *pi, uint8_t *lcss);
+int dmrFecEmbDecode(uint16_t emb, uint8_t *colorCode, bool *pi, uint8_t *lcss);
 
 #endif

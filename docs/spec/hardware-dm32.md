@@ -330,7 +330,7 @@ USB pins, and to settle the question for good.
 | 48 MHz clock | CLK_MGR 0x028 bits 4:0 usb_clk_div_num: USB clock = BPLL VCO / 2 / (n + 1); reset value 4. With the 672 MHz BPLL VCO of 1.1, n = 6 gives 48 MHz (CLK_MGR 0x010 is the BPLL configuration register) | DS, KP |
 | Clock tree | The 48 MHz PHY clock is also gated by the core's suspend output, so it stops while the bus is suspended | DS |
 | Reset | No USB bit in SYS_SOFT_RSTN (0x11000000 bits 8:0 cover CPU, system, ADCs, codec, audio, FM, modem PHY and protocol). Reset the core with GRSTCTL.CSftRst (bit 0) and wait for it to clear; GRSTCTL.AHBIdle (bit 31) shows the AHB master is idle | DS |
-| DP / DM | Dedicated balls F1 (USB_DP) and F2 (USB_DM), 3.3 V signalling; no IO mux | DS |
+| DP / DM | Dedicated balls F1 (USB_DP) and F2 (USB_DM), 3.3 V signaling; no IO mux | DS |
 | Supply | USB_AVDD33, ball G3, 3.3 V; USB_AVSS33 analog ground | DS |
 | VBUS | No VBUS ball and no OTG session logic, so the controller cannot sense cable plug or unplug by itself. A design that wants plug detection needs a GPIO on VBUS, or watches the bus events (USB reset, suspend, early suspend) | DS, INF |
 | Pull-ups | The pad has software-controllable D+ and D- pull-ups: GGPIO (0x038) bits 29:28 D+ pull-up (0/1 = driven by the core, 2 = forced on, 3 = forced off), bits 27:26 a second D+ pull-up, bits 25:22 the D- pull-ups, bit 21 pull-down enable. No external pull-up or GPIO is needed for soft connect (INF from the register set) | DS, INF |

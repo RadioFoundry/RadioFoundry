@@ -257,7 +257,7 @@ static void set_config(const uint8_t *p, uint8_t len)
 		return;
 	}
 	if (p[6] > 15) {
-		nak(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID);	// colour code
+		nak(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID);	// color code
 		return;
 	}
 	simplex = (p[0] & MMDVM_CONFIG_SIMPLEX) != 0;

@@ -74,7 +74,7 @@ _Static_assert(((IPGW_LINK_PREFIX <= 32) && IPGW_POINT_TO_POINT) || ((IPGW_LINK_
 _Static_assert((IPGW_MULTICAST_NET >> 28) == 0xE, "the multicast range must be in 224.0.0.0/4");
 
 // Every data burst received over the air also goes to the host, as a UDP broadcast from the radio to this port:
-// version (1), timeslot (1-2), colour code, DT, flags (dmrBurst_t), length, payload.
+// version (1), timeslot (1-2), color code, DT, flags (dmrBurst_t), length, payload.
 #define IPGW_MONITOR_PORT	40077
 
 // UDP to the radio itself on this port carries the radio's serial protocol, so that MMDVMHost (Modem Protocol=udp,

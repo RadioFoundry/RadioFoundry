@@ -241,7 +241,7 @@ static void test_embedded(void)
 	CHECK(dmr_emb_lc_checksum(lc) == 10);
 	memset(lc, 0xFF, 9);
 	CHECK(dmr_emb_lc_checksum(lc) == (9 * 255) % 31);
-	// The all-zero LC is the all-zero embedded signalling (linear code, zero checksum)
+	// The all-zero LC is the all-zero embedded signaling (linear code, zero checksum)
 	memset(lc, 0, 9);
 	dmr_emb_lc_encode_bits(lc, bits);
 	for (int i = 0; i < 16; i++)

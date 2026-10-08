@@ -105,7 +105,7 @@ static void testSlotType(void)
 
 	memset(burst, 0x5A, sizeof(burst));
 	dmrFecSlotTypeEncode(2, 0x2, burst);
-	CHECK(((burst[12] >> 2) & 0x0F) == 2, "colour code in bits 98-101");
+	CHECK(((burst[12] >> 2) & 0x0F) == 2, "color code in bits 98-101");
 	CHECK((((burst[12] & 0x03) << 2) | (burst[13] >> 6)) == 0x2, "data type in bits 102-105");
 	CHECK((burst[13] & 0x0F) == 0x0A, "sync bits 108-111 untouched");
 	CHECK((burst[19] & 0xF0) == 0x50, "sync bits 152-155 untouched");
@@ -259,7 +259,7 @@ static void testQr1676(void)
 	}
 	CHECK(bad == 0, "QR(16,7,6): %d error patterns mishandled", bad);
 
-	// EMB: colour code 1, PI 0, LCSS first (data 0001 0 01 = 9); round trip of every field combination
+	// EMB: color code 1, PI 0, LCSS first (data 0001 0 01 = 9); round trip of every field combination
 	CHECK(dmrFecEmbEncode(1, false, 1) == (dmrFecQr1676Encode(8) ^ dmrFecQr1676Encode(1)), "EMB CC1 LCSS1");
 	bad = 0;
 	for (uint8_t cc = 0; cc < 16; cc++)

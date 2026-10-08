@@ -26,7 +26,7 @@ programming port switches to hotspot mode), `dmr-modem.md` (the burst layer unde
 | Command | Frame offset 2. |
 | Payload | Frame offset 3 up to the length. |
 | Long frames | Length byte 0 means a long frame: the real length is (frame offset 2) + 255, and the command moves to frame offset 3, the payload to offset 4. Total lengths 256 to 510. Only FM audio uses them; a DMR-only modem never sends one, but its parser must skip a whole long frame (consume LL + 255 bytes) and stay in sync. A frame of exactly 255 bytes uses the short form (length FF). |
-| Checksum | None. No escaping, no byte stuffing. 0xE0 can appear inside a payload; resynchronising on 0xE0 is only for after a bad length. |
+| Checksum | None. No escaping, no byte stuffing. 0xE0 can appear inside a payload; resynchronizing on 0xE0 is only for after a bad length. |
 | Byte order | Multi-byte numbers are little endian (frequencies), except the RSSI and DEBUG values, which are big endian. |
 | Transport | A byte stream: USB CDC ACM (baud rate ignored; MMDVMHost and rfgw open it at 115200 8N1), a UART at 115200 8N1, or UDP (section 5.3). Frames can be split across USB packets or arrive several to a packet; never assume one frame per packet. |
 
@@ -315,7 +315,7 @@ One DMR burst. Frame: `E0 25 1A <control> <33 bytes>` (length 37) for slot 2, 18
 carry 2 more bytes of RSSI: length 27 (39).
 
 The 33 bytes are the whole 264-bit burst, first bit in the top bit of byte 0: 108 bits of payload, the 48-bit
-sync / EMB / embedded-signalling field (bits 108-155: low nibble of byte 13, bytes 14-18, high nibble of byte 19),
+sync / EMB / embedded-signaling field (bits 108-155: low nibble of byte 13, bytes 14-18, high nibble of byte 19),
 108 bits of payload. For data-sync bursts the slot type (Golay(20,8), systematic) occupies the 10 bits on each side
 of the sync: color code in bits 98-101 (frame byte 12, mask 3C), data type in bits 102-105 (byte 12 mask 03, then
 byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
@@ -333,7 +333,7 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
 | --- | --- |
 | 40 + data type | a data-sync burst; low nibble = data type: 40 PI header, 41 voice LC header, 42 terminator with LC, 43 CSBK, 44 MBC header, 45 MBC continuation, 46 data header, 47 rate 1/2 data, 48 rate 3/4 data, 49 idle, 4A rate 1 data |
 | 20 | voice burst A (voice sync) |
-| 01-05 | voice bursts B-F (embedded signalling), the number is the position in the superframe |
+| 01-05 | voice bursts B-F (embedded signaling), the number is the position in the superframe |
 | 00 | (host to modem) nothing said: classify from the burst |
 | 80 + ... | (duplex MMDVM firmware, modem to host) what the idle receiver heard while the transmitter was off; rfgw's repeater reads it; a simplex radio never sends it |
 
@@ -384,7 +384,7 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
 - The 33 bytes must be a well-formed burst: MMDVMHost decodes the full LC of headers and terminators (BPTC(196,96)
   and RS(12,9) with the header / terminator masks; an undecodable header is dropped), regenerates the voice FEC,
   reads the EMB (its color code must match the configured one for late entry) and collects embedded LC, talker alias
-  and GPS from B-E. Send the embedded signalling for B-E made from the call's LC (as the old firmware did) or as
+  and GPS from B-E. Send the embedded signaling for B-E made from the call's LC (as the old firmware did) or as
   received if it decoded.
 - Sequence: after voice A (20), MMDVMHost accepts B-F only as 01, 02, 03, 04, 05 in order; a repeated or skipped
   number makes it drop the rest of that superframe up to the next voice A. Fill a missed burst with a silence burst at
@@ -583,7 +583,7 @@ SFR `repeater`), **bench** (our `hotspot_test.py`, `hs_normal.py`, `run_sfr_call
 | 18 | DMR_SHORTLC | sent every call, simplex too | duplex only, not SFR | never | ACKed |
 | 19 | DMR_START / DMR_ABORT | duplex only | START duplex only; ABORT in SFR for the outbound slot | never | ACKed; ABORT dropped the SFR outbound queue |
 | 20 | Uplink slot | DMR_DATA2 in simplex | roamer: only DMR_DATA2 is used; SFR: inbound slot's command (DATA1 for TS1) | `rf_*`: DATA2; SFR log: DATA1/2 | DATA2 simplex, inbound slot in SFR |
-| 21 | Uplink control byte | 41 / 20 / 01-05 / 42 / 4x; 42 = end of call | same (rx.py reads data type and N) | modelled on MMDVMHost (sequence check) | all headers heard, late-entry header from embedded LC + silence fill, one terminator |
+| 21 | Uplink control byte | 41 / 20 / 01-05 / 42 / 4x; 42 = end of call | same (rx.py reads data type and N) | modeled on MMDVMHost (sequence check) | all headers heard, late-entry header from embedded LC + silence fill, one terminator |
 | 22 | RSSI after burst | optional; user RSSI table | optional; `opengd77`: dBm = raw − 151 (≥ 300 MHz), −164 + raw × 32 / 27 (VHF) | printed | 00, AT1846S reg 0x1B high byte |
 | 23 | DMR_LOST | required (no RF watchdog) | used; own fallback 1 s (SFR) / 1.5 s | `rf_lost`: 0.4-0.8 s after last burst | 500 ms (300 ms SFR) |
 | 24 | TX flag | gates CW ID and beacons | waits for clear + 0.5 s before retune / CW / end | `transmitting()` | set from buffering to own terminator on air, data busy, CW |

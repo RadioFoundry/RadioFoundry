@@ -548,7 +548,7 @@ static void test_config(void)
 	host(MMDVM_FM_PARAMS1, junk, 7);
 	host(MMDVM_FM_PARAMS4, junk, 3);
 	CHECK(out_count == 2 && ack_for(MMDVM_FM_PARAMS1) && ack_for(MMDVM_FM_PARAMS4));
-	// C-4: colour code above 15
+	// C-4: color code above 15
 	out_count = 0;
 	configure(16);
 	CHECK(nak_for(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID) && m.cc == 2);
@@ -975,7 +975,7 @@ static void read_emb(const uint8_t *frame33, uint16_t *emb, uint8_t frag[4])
 	*emb = e;
 }
 
-// Checks every voice B-F frame up in out[from..]: the EMB decodes cleanly with our colour code, PI 0 and the LCSS of
+// Checks every voice B-F frame up in out[from..]: the EMB decodes cleanly with our color code, PI 0 and the LCSS of
 // its position, and B-E reassemble to embedded LCs. Returns the number of embedded LCs; the last ones in lcs[]
 static int check_uplink_emb(int from, uint8_t cc, uint8_t lcs[][9], int max)
 {
@@ -998,7 +998,7 @@ static int check_uplink_emb(int from, uint8_t cc, uint8_t lcs[][9], int max)
 		CHECK(dmrFecEmbDecode(emb, &fcc, &pi, &lcss) == 0);
 		CHECK(fcc == cc && !pi && lcss == dmr_emb_lcss(ctl));
 		if (ctl == 5) {
-			CHECK(frag[0] == 0 && frag[1] == 0 && frag[2] == 0 && frag[3] == 0);	// F: null embedded signalling
+			CHECK(frag[0] == 0 && frag[1] == 0 && frag[2] == 0 && frag[3] == 0);	// F: null embedded signaling
 		}
 		if (dmr_emb_rx_push(&rx, frag, lcss, lc)) {
 			if (n < max) {
@@ -1035,7 +1035,7 @@ static void test_uplink_emb(void)
 		CHECK(memcmp(lcs[2], LC2, 9) == 0);
 	}
 
-	// Late entry: the silence from A and the voice after it carry the same well-formed signalling
+	// Late entry: the silence from A and the voice after it carry the same well-formed signaling
 	reset_world();
 	configure(5);
 	out_count = 0;

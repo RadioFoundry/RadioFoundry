@@ -179,7 +179,7 @@ uint8_t hotspotNetFrameControl(uint8_t control, const uint8_t *frame)
 
 	if (syncMatches(sync, DATA_SYNCS))
 	{
-		// The slot type's Golay(20,8) is systematic: colour code bits 98-101, data type bits 102-105 (the low 2 bits of
+		// The slot type's Golay(20,8) is systematic: color code bits 98-101, data type bits 102-105 (the low 2 bits of
 		// byte 12, the top 2 of byte 13). The host's frames are clean, no correction needed (a full Golay decode isn't worth its flash here)
 		return (uint8_t)(HOTSPOT_NET_SYNC_DATA | ((frame[12] & 0x03) << 2) | (frame[13] >> 6));
 	}

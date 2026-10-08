@@ -380,17 +380,17 @@ int dmrFecQr1676Decode(uint16_t codeword, uint8_t *data)
 	return (best <= 2) ? best : -1;
 }
 
-uint16_t dmrFecEmbEncode(uint8_t colourCode, bool pi, uint8_t lcss)
+uint16_t dmrFecEmbEncode(uint8_t colorCode, bool pi, uint8_t lcss)
 {
-	return dmrFecQr1676Encode((uint8_t)(((colourCode & 0x0F) << 3) | (pi ? 0x04 : 0) | (lcss & 0x03)));
+	return dmrFecQr1676Encode((uint8_t)(((colorCode & 0x0F) << 3) | (pi ? 0x04 : 0) | (lcss & 0x03)));
 }
 
-int dmrFecEmbDecode(uint16_t emb, uint8_t *colourCode, bool *pi, uint8_t *lcss)
+int dmrFecEmbDecode(uint16_t emb, uint8_t *colorCode, bool *pi, uint8_t *lcss)
 {
 	uint8_t d;
 	int errors = dmrFecQr1676Decode(emb, &d);
 
-	*colourCode = d >> 3;
+	*colorCode = d >> 3;
 	*pi = (d & 0x04) != 0;
 	*lcss = d & 0x03;
 	return errors;
@@ -401,9 +401,9 @@ int dmrFecEmbDecode(uint16_t emb, uint8_t *colourCode, bool *pi, uint8_t *lcss)
 #define SLOT_TYPE_FIRST		98		// bits 98-107: codeword bits 19-10
 #define SLOT_TYPE_SECOND	156		// bits 156-165: codeword bits 9-0
 
-void dmrFecSlotTypeEncode(uint8_t colourCode, uint8_t dataType, uint8_t *burst)
+void dmrFecSlotTypeEncode(uint8_t colorCode, uint8_t dataType, uint8_t *burst)
 {
-	uint32_t cw = dmrFecGolay2087Encode((uint8_t)(((colourCode & 0x0F) << 4) | (dataType & 0x0F)));
+	uint32_t cw = dmrFecGolay2087Encode((uint8_t)(((colorCode & 0x0F) << 4) | (dataType & 0x0F)));
 
 	for (int i = 0; i < 10; i++)
 	{
@@ -412,7 +412,7 @@ void dmrFecSlotTypeEncode(uint8_t colourCode, uint8_t dataType, uint8_t *burst)
 	}
 }
 
-bool dmrFecSlotTypeDecode(const uint8_t *burst, uint8_t *colourCode, uint8_t *dataType)
+bool dmrFecSlotTypeDecode(const uint8_t *burst, uint8_t *colorCode, uint8_t *dataType)
 {
 	uint32_t cw = 0;
 	uint8_t d;
@@ -428,7 +428,7 @@ bool dmrFecSlotTypeDecode(const uint8_t *burst, uint8_t *colourCode, uint8_t *da
 
 	int errors = dmrFecGolay2087Decode(cw, &d);
 
-	*colourCode = d >> 4;
+	*colorCode = d >> 4;
 	*dataType = d & 0x0F;
 	return errors >= 0;
 }

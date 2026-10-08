@@ -98,7 +98,7 @@ void sfrConfigBuild(const sfrChannelSettings_t *s, uint8_t channelCC, uint8_t ch
 	cfg->framing = sfrResolveFraming(s->role, s->framing);
 	cfg->inboundSlot = s->inboundSlot ? 1 : 0;
 	cfg->inboundCC = channelCC & 0x0F;
-	// Only the Motorola roles have an outbound colour code of their own
+	// Only the Motorola roles have an outbound color code of their own
 	cfg->outboundCC = (s->outboundCCSet && ((s->role == SFR_ROLE_RPT_MOTOROLA) || (s->role == SFR_ROLE_USER_ERDM))) ? (s->outboundCC & 0x0F) : cfg->inboundCC;
 	cfg->hangMs = sfrHangMs(s->hangIndex);
 	cfg->totMs = (channelTot15s != 0) ? (channelTot15s * 15000U) : SFR_TOT_DEFAULT_MS;
@@ -210,7 +210,7 @@ bool sfrLateEntryVoice(sfrLateEntry_t *l, uint8_t seq, uint32_t nowMs)
 	return start;
 }
 
-int sfrUserRxColourCode(const sfrConfig_t *cfg, uint8_t rxCC)
+int sfrUserRxColorCode(const sfrConfig_t *cfg, uint8_t rxCC)
 {
 	return ((rxCC == cfg->inboundCC) || (rxCC == cfg->outboundCC)) ? rxCC : -1;
 }
@@ -294,7 +294,7 @@ void sfrEngineInit(sfrEngine_t *e, const sfrConfig_t *cfg)
 	sfrDedupReset(&e->rfDedup);
 }
 
-// A burst heard on the inbound slot (repeater roles). cc: its colour code, sync: its sync type (sfrSync_t)
+// A burst heard on the inbound slot (repeater roles). cc: its color code, sync: its sync type (sfrSync_t)
 sfrRxResult_t sfrEngineRfBurst(sfrEngine_t *e, const sfrBurst_t *b, uint8_t cc, uint8_t sync, uint32_t nowMs)
 {
 	if ((cc != e->cfg.inboundCC) || ((b->kind == SFR_BURST_VOICE) ? (b->type > 5) : (b->type == DT_IDLE)) ||
@@ -384,7 +384,7 @@ sfrRxResult_t sfrEngineRfBurst(sfrEngine_t *e, const sfrBurst_t *b, uint8_t cc, 
 	return SFR_RX_REPEATED;
 }
 
-// The inbound call's LC from its embedded signalling (late entry: no header heard)
+// The inbound call's LC from its embedded signaling (late entry: no header heard)
 void sfrEngineRfLc(sfrEngine_t *e, const uint8_t *lc)
 {
 	memcpy(e->rfLc, lc, SFR_LC_LENGTH);
@@ -772,7 +772,7 @@ static void bptcExtract(const uint8_t *frame, uint8_t *info)
 static const uint64_t RAW_VOICE_SYNC[4] = { 0x7F7D5DD57DFDULL, 0x755FD7DF75F7ULL, 0x5D577F7757FFULL, 0x7DFFD5F55D5FULL };
 static const uint64_t RAW_DATA_SYNC[4]  = { 0xD5D7F77FD757ULL, 0xDFF57D75DF5DULL, 0xF7FDD5DDFD55ULL, 0xD7557F5FF7F5ULL };
 
-uint8_t sfrRawClassify(const uint8_t *frame, uint8_t colourCode, uint8_t *dataType, uint8_t *info, uint8_t *sync)
+uint8_t sfrRawClassify(const uint8_t *frame, uint8_t colorCode, uint8_t *dataType, uint8_t *info, uint8_t *sync)
 {
 	uint64_t middle = rawMiddle(frame);
 
@@ -780,13 +780,13 @@ uint8_t sfrRawClassify(const uint8_t *frame, uint8_t colourCode, uint8_t *dataTy
 	{
 		if (bitErrors(middle, RAW_DATA_SYNC[s]) <= SFR_RAW_MAX_SYNC_ERRORS)
 		{
-			// The slot type's Golay(20,8) is systematic: colour code bits 98-101, data type 102-105
+			// The slot type's Golay(20,8) is systematic: color code bits 98-101, data type 102-105
 			uint8_t cc = (frame[12] >> 2) & 0x0F;
 			uint8_t dt = (uint8_t)(((frame[12] & 0x03) << 2) | (frame[13] >> 6));
 
 			*sync = (uint8_t)s;
 
-			if ((cc != colourCode) || (dt > DT_RATE_1_DATA) || (dt == DT_RATE_34_DATA) || (dt == DT_RATE_1_DATA))
+			if ((cc != colorCode) || (dt > DT_RATE_1_DATA) || (dt == DT_RATE_34_DATA) || (dt == DT_RATE_1_DATA))
 			{
 				return SFR_RAW_NONE;// (rate 3/4 and 1 aren't BPTC: the HR-C6000's info bits are used for them)
 			}
@@ -809,8 +809,8 @@ uint8_t sfrRawClassify(const uint8_t *frame, uint8_t colourCode, uint8_t *dataTy
 		}
 	}
 
-	// EMB: colour code in bits 108-111
-	if (((frame[13] & 0x0F)) == colourCode)
+	// EMB: color code in bits 108-111
+	if (((frame[13] & 0x0F)) == colorCode)
 	{
 		return SFR_RAW_VOICE_EMB;
 	}

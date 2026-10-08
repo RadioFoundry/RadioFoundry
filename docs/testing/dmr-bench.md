@@ -82,7 +82,7 @@ fails a TX check on a capture over 1 %.
   clipping at each. Pick the highest gain with clipping under 0.1 % and bursts at or below about -6 dBFS; pass it as
   `--gain` (the dmr_bench default is 5).
 - Radio on **low power** for all TX captures; the bench modem at `--modem-power 40` (of 255), as in the earlier clean runs.
-- Still clipping at gain 0: move the SDR antenna away (a metre helps a lot), put a 20-30 dB SMA attenuator on the
+- Still clipping at gain 0: move the SDR antenna away (a meter helps a lot), put a 20-30 dB SMA attenuator on the
   SDR, or run the radio into a dummy load (it leaks enough for the bench modem and the SDR at bench distance). The bias tee
   powers an LNA; `sdrmon.py capture --no-biastee` turns it off, but check that the unpowered LNA still passes signal.
 

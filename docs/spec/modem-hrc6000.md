@@ -207,7 +207,7 @@ Read 0x82 (flags) and 0x52 (CC / CACH) first, handle each set flag, then write t
 | 7 | send request rejected (channel busy and the access policy is polite) | none | the transmission didn't go out |
 | 6 | TX start | 0x84: 7 voice, 6 OACSU, 5 encryption key update, 4 vocoder config done, 3 data, 2 partial retransmission, 1 retransmission, 0 vocoder init | read and ignored |
 | 5 | TX end | 0x86: 7 service complete, 6 fragment-length ack sent, 5 OACSU timeout, 4 layer 2 "last moment to set up the next slot", 3 confirmed fragment sent, 2 short LC received, 1 BS activation timeout | read and ignored |
-| 4 | post access (late entry) | none | a voice call already in progress has been acquired from its embedded signalling: start receiving as if a header had been heard |
+| 4 | post access (late entry) | none | a voice call already in progress has been acquired from its embedded signaling: start receiving as if a header had been heard |
 | 3 | received data ("control frame parsed") | 0x51 | a burst was decoded: section 6 |
 | 2 | received information (layer 3 service data) | 0x90 | read and ignored |
 | 1 | voice abnormal exit | 0x98 | voice sync lost on slot 0 (bit 1) or slot 1 (bit 2): replace the next voice frame of that slot with silence |
@@ -330,7 +330,7 @@ the CC is held. Release the hold after 5 s of no received audio while idle.
 ### 5.6 Late entry
 
 The post-access interrupt (0x82 bit 4) comes when the chip acquires a voice call in progress from its embedded
-signalling. If idle, with the CC held and matching: write 0x41=0x50 and start receiving as for a header. Skip voice
+signaling. If idle, with the CC held and matching: write 0x41=0x50 and start receiving as for a header. Skip voice
 until two bursts A have passed, unless the source ID is already known and isn't our own. The LC comes from page 2 once
 the embedded LC is complete (subject to the sticky-LC rule above). The driver reads page 2 at the interrupt and keeps an
 LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`); whether the interrupt

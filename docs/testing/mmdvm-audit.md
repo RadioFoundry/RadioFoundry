@@ -27,7 +27,7 @@ The findings below are as written at 2d45a21. Where they stand now, checked agai
 |---|---|---|
 | A-1 no board wires the hotspot | fixed: the radio core registers `radio_hs_ops` (`core/radio/radio_hotspot.c`) | `radioCoreTest` test_hotspot_session |
 | A-2 hotspot left while DTR is clear | fixed: only a DTR drop (an edge) ends hotspot mode (`hostlink_policy.c`) | `mmdvmTest` test_hostlink_dtr |
-| A-3 uplink EMB / embedded signalling | fixed | `mmdvmTest` test_uplink_emb |
+| A-3 uplink EMB / embedded signaling | fixed | `mmdvmTest` test_uplink_emb |
 | A-4 silence fill across a superframe | fixed (modulo 6) | test_uplink_wrapped_gap |
 | A-5 DMR_SHORTLC NAK, I-2 DMR_START NAK | fixed: taken silently (ACKed in SFR mode) | test_config, `hotspotSfrTest` |
 | A-6 SEND_CWID NAK | fixed: ACKed in idle; keyed in Morse on FM on the DM-1701 (radio core CW keyer, `tx_tone_key`; host-tested, not yet on air) | test_cwid, radioCoreTest test_hotspot_cwid, tests/hil/test_hotspot_cwid.py |
@@ -65,7 +65,7 @@ but repeats only what it heard before keying until the driver work lands.
 ## Summary
 
 The protocol responder is sound:
-- framing, long-frame skipping and resynchronisation;
+- framing, long-frame skipping and resynchronization;
 - protocol 1 version and status layouts;
 - SET_CONFIG and SET_FREQ ACKs, and SET_MODE accepted before SET_CONFIG;
 - downlink classification from the burst itself when the control byte is 0;
@@ -79,7 +79,7 @@ The protocol responder is sound:
 What needs fixing:
 - On the radio the hotspot can't start: no board registers the radio operations (A-1).
 - A host that clears DTR (MMDVMHost on Windows) knocks the radio out of hotspot mode on every poll (A-2).
-- Uplink voice bursts B-F have a malformed EMB and zeroed embedded signalling (A-3).
+- Uplink voice bursts B-F have a malformed EMB and zeroed embedded signaling (A-3).
 - The uplink silence fill doesn't handle a superframe boundary (A-4).
 - DMR_SHORTLC, which MMDVMHost sends on every call even in simplex, gets a NAK (A-5).
 - SEND_CWID gets a NAK, which breaks rfgw whenever a CW ID is configured (A-6).
@@ -116,12 +116,12 @@ Structural copying scan: no copying from the GPL trees found (section 3).
   has not been set. TinyUSB 0.21.0 keeps sending while DTR is clear (its TX FIFO only becomes overwritable,
   `cdc_device.c:427-432`), so nothing else needs DTR.
 
-### A-3 High: uplink voice B-F carry a wrong EMB and empty embedded signalling
+### A-3 High: uplink voice B-F carry a wrong EMB and empty embedded signaling
 
 - **Where**: `core/hotspot/hotspot.c:148-169` (voice_to_frame).
 - **Spec**: 2.8, modem to host. The 33 bytes must be a well-formed burst: correct EMB (color code, LCSS, QR(16,7)
-  parity) and the embedded signalling for B-E made from the call's LC, as the old firmware did. Test U-10.
-- **Code**: the EMB's 7 information bits are set, but its 9 parity bits and all 32 embedded-signalling bits are 0.
+  parity) and the embedded signaling for B-E made from the call's LC, as the old firmware did. Test U-10.
+- **Code**: the EMB's 7 information bits are set, but its 9 parity bits and all 32 embedded-signaling bits are 0.
   MMDVMHost decodes the EMB with error correction, so with zero parity it "corrects" most bursts to a wrong color
   code or LCSS. Then:
   - Its own late entry fails, because it requires the EMB color code to match.
@@ -134,7 +134,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
   - Build B-F the way a transmitter does. The EMB is color code, PI 0 and the LCSS of the position, with QR(16,7,6)
     parity per ETSI TS 102 361-1 B.3.2 (not in `core/dmr/fec` yet: add it there, clean, from the standard).
   - The embedded bits of B-E are the four fragments of the call's LC (`dmr_emb_lc_encode` in `core/dmr/call/dmr_lc.h`
-    already makes them). F carries null embedded signalling.
+    already makes them). F carries null embedded signaling.
   - When the modem reports a decoded embedded LC that differs (talker alias, GPS: FLCO 4-7), send that superframe's
     fragments for it, so the alias reaches the host.
   - Add a host test that decodes the uplink EMB and embedded LC with the clean decoders.
@@ -252,7 +252,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 
 ### A-13 Low: values the spec says to NAK are accepted, and vice versa
 
-- **Colour code**: above 15 is masked to 4 bits instead of NAK 4 (`mmdvm.c:201`; test C-4). Fix: NAK 4.
+- **Color code**: above 15 is masked to 4 bits instead of NAK 4 (`mmdvm.c:201`; test C-4). Fix: NAK 4.
 - **DMR_DATA length**: payloads longer than 34 bytes are accepted (`mmdvm.c:255`; test D-6). Fix: NAK 4 unless the
   frame is exactly 37 bytes.
 - **SERIAL and TRANSPARENT**: get NAK 1 (`mmdvm.c:332-336`). The spec says drop silently (2.12): MMDVMHost sends them

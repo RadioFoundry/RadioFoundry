@@ -321,7 +321,7 @@ static void ext_config_changed(bool simplex, uint32_t rx_hz, uint32_t tx_hz)
 		return;
 	}
 	if (on && (sfrRunnerConfig(&run)->inboundCC != hotspot_color_code())) {
-		sfrRunnerStop(&run);		// a new colour code: start over
+		sfrRunnerStop(&run);		// a new color code: start over
 		start_runner();
 	}
 	turn_on();

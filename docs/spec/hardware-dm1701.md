@@ -1087,7 +1087,7 @@ records are in `legacy-cps-interop.md`.
 
 | Address (SPI flash) | GD-77-relative address | Size | Content |
 |---|---|---|---|
-| 0x000000 | EEPROM 0x0000 | 64 KB | emulated EEPROM: general settings at 0x00E0 (callsign 0x00E0, DMR ID 0x00E8), DTMF contacts 0x2F88, signalling/DTMF 0x1400, APRS configs 0x1588, first 128 channels (header 0x3780, data 0x3790), last used channel per zone 0x6000, radio settings block at 0x604B, boot screen/password at 0x7518-0x755F, quick keys 0x7524, VFO A/B at 0x7590, zones 0x8000+ |
+| 0x000000 | EEPROM 0x0000 | 64 KB | emulated EEPROM: general settings at 0x00E0 (callsign 0x00E0, DMR ID 0x00E8), DTMF contacts 0x2F88, signaling/DTMF 0x1400, APRS configs 0x1588, first 128 channels (header 0x3780, data 0x3790), last used channel per zone 0x6000, radio settings block at 0x604B, boot screen/password at 0x7518-0x755F, quick keys 0x7524, VFO A/B at 0x7590, zones 0x8000+ |
 | 0x010000 | (local) | 512 B | calibration working copy (12.1). CPS reads/writes it through a 0x10000 window |
 | 0x011000 | (ours) | 32 KB | OpenDigitalRadio settings ring (`settings-store.md` 2); no legacy tool uses it, the CPS shim refuses writes |
 | 0x019000 | (ours) | 8 KB | OpenDigitalRadio sector journal (`settings-store.md` 4) |

@@ -64,7 +64,7 @@ def split_frame(sub, data=b""):
 
 
 def config_payload(cc, simplex=False):
-    """SET_CONFIG: DMR on, duplex flag clear (split-duplex.md 4.1), the colour code"""
+    """SET_CONFIG: DMR on, duplex flag clear (split-duplex.md 4.1), the color code"""
     cfg = bytearray(23)
     cfg[0], cfg[1], cfg[2], cfg[3] = (0x80 if simplex else 0x00), 0x02, 10, 2
     cfg[4], cfg[5], cfg[6], cfg[7], cfg[8], cfg[10], cfg[13], cfg[14] = 128, 128, cc, 0, 128, 128, 128, 128

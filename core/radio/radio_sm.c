@@ -3504,7 +3504,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			sm->power_off_req = false;
 			sm->power_off_busy = false;
 #if CONFIG_DMR_DATA_CORE
-			dmrDataServicePowerOffCancelled();
+			dmrDataServicePowerOffCanceled();
 #endif
 			break;
 		}

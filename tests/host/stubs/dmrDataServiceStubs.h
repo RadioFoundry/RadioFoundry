@@ -27,7 +27,7 @@ int trxGetMode(void);
 bool trxCheckFrequencyInAmateurBand(uint32_t freq);
 bool trxCarrierDetected(void);
 int trxGetDMRTimeSlot(void);
-int trxGetDMRColourCode(void);
+int trxGetDMRColorCode(void);
 
 // HR-C6000
 #define DMR_DATA_TX_RUNNING				1

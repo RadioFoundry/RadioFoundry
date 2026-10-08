@@ -37,17 +37,17 @@ bool hrcSfrTxInterrupt(void);// true if the burst starting is ours
 // Radios with the HR-C6000's RF RX interrupt (GD-77): true while the repeater is keyed (the driver leaves the RF
 // alone); the burst on for at least BURST_MIN_MS ends here (else at the next timeslot interrupt, as without it)
 bool hrcSfrRxInterrupt(void);
-void hrcSfrRxBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colourCode);
+void hrcSfrRxBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colorCode);
 void hrcSfrRxLc(const uint8_t *lc);
 // The user roles
 bool hrcSfrUserVoiceAccept(int seq);// seq: 0-5 (A-F)
-void hrcSfrUserRxColourCode(uint8_t rxCC, bool idle);
-void hrcSfrUserTxColourCode(void);
+void hrcSfrUserRxColorCode(uint8_t rxCC, bool idle);
+void hrcSfrUserTxColorCode(void);
 
 // MMDVM hotspot (task context)
-void    hrcSfrHotspotSet(bool on, uint8_t colourCode);
+void    hrcSfrHotspotSet(bool on, uint8_t colorCode);
 bool    hrcSfrHotspotActive(void);
-void    hrcSfrHotspotConfig(uint8_t colourCode, sfrConfig_t *cfg);// what the hotspot SFR runs (or would run) with
+void    hrcSfrHotspotConfig(uint8_t colorCode, sfrConfig_t *cfg);// what the hotspot SFR runs (or would run) with
 uint8_t hrcSfrHotspotNetBurst(const sfrBurst_t *burst, const uint8_t *lc);// 0 or the NAK reason
 void    hrcSfrHotspotNetAbort(void);
 bool    hrcSfrRfBusy(void);
@@ -87,15 +87,15 @@ typedef struct
 	uint8_t uplinkOverflow;		// 26: (mod 256)
 	uint8_t reg42Tx;			// 27: reg 0x42 in our burst's slot (expect 101xxxxx when the HR-C6000 sends it)
 	uint8_t rxEcho;				// 28: bursts heard in or right after a slot we sent in, dropped (mod 256)
-	uint8_t rxIgnored;			// 29: bursts not for the repeater (colour code, sync, idle) (mod 256)
+	uint8_t rxIgnored;			// 29: bursts not for the repeater (color code, sync, idle) (mod 256)
 	uint8_t rxDuplicate;		// 30: voice bursts heard twice (mod 256)
 	uint8_t lastRx;				// 31: last burst heard: sync type (bits 7-6, 0 MS 1 BS 2 TS1 3 TS2), sync class (5-4), data type (3-0)
-	uint8_t lastRxCC;			// 32: its colour code (low nibble), 0x80 CRC good
+	uint8_t lastRxCC;			// 32: its color code (low nibble), 0x80 CRC good
 	uint8_t txSwitch10us;		// 33: last RX to TX switch of the AT1846S, 10 us units
 	uint8_t rxSwitch10us;		// 34: last TX to RX switch, 10 us units
 	uint8_t reg10;				// 35: reg 0x10 used while sending (0: the driver's, kept)
 	uint8_t reg12;				// 36: reg 0x12 (RF TX advance, 100 us units) as set, 0xFF: the driver's
-	uint8_t rxIgnoredCC;		// 37: of 29, other colour code (mod 256)
+	uint8_t rxIgnoredCC;		// 37: of 29, other color code (mod 256)
 	uint8_t rxIgnoredSync;		// 38: of 29, BS sync or the outbound slot's (mod 256)
 	uint8_t rxIgnoredNoCrc;		// 39: of 29, CRC bad (mod 256)
 	uint8_t rejectedType;		// 40: the last burst dropped as CRC bad: data type (0x80: while keyed)
@@ -131,10 +131,10 @@ typedef struct
 	uint8_t headerFilled;		// 112: headers repeated with the call's LC for an unusable report in its header phase (mod 256)
 	uint8_t staleVoice;			// 113: voice A right after F with F's AMBE (stale voice data), dropped (mod 256)
 	uint8_t resyncs;			// 114: bursts heard out of step while we sent (a call with its own slot timing): transmission ended,
-								//      receiver resynchronised (mod 256)
+								//      receiver resynchronized (mod 256)
 	uint8_t outOfStepMs;		// 115: the last burst heard out of step: ms from the timeslot interrupt before its Sys interrupt
 	uint8_t relocks;			// 116: bursts heard out of step while not sending (the HR-C6000's timing off the call's, from
-								//      noise): not repeated, receiver resynchronised (mod 256)
+								//      noise): not repeated, receiver resynchronized (mod 256)
 	uint8_t lateEntryHeld;		// 117: voice A heard outside a call when idle, waiting for its B to start a call (mod 256)
 	uint8_t dataHeld;			// 118: data calls (CSBK, data) held until they were over, then repeated (mod 256)
 	uint8_t hangCut;			// 119: hang times ended for a data burst heard in them (the rest of the call heard unkeyed) (mod 256)
@@ -144,8 +144,8 @@ typedef struct
 const hrcSfrDebug_t *hrcSfrDebug(void);
 // framing 0: the settings'; reg10 0, reg12 0xFF: the driver's; rssiMin 0: HRC_SFR_RSSI_MIN_DEFAULT
 void hrcSfrDebugSet(uint8_t flags, uint8_t framing, uint8_t reg10, uint8_t reg12, uint8_t rssiMin, uint8_t reg11, uint8_t flags2);
-#define HRC_SFR_DEBUG2_CC_ANY			0x01	// 0x41 bit 3 (CC_Match_Ctrl: deframe whatever the colour code) while keyed
-#define HRC_SFR_DEBUG2_NO_CC_WRITES		0x02	// leave reg 0x1F (the colour code, RX and TX) alone while keyed
+#define HRC_SFR_DEBUG2_CC_ANY			0x01	// 0x41 bit 3 (CC_Match_Ctrl: deframe whatever the color code) while keyed
+#define HRC_SFR_DEBUG2_NO_CC_WRITES		0x02	// leave reg 0x1F (the color code, RX and TX) alone while keyed
 #define HRC_SFR_DEBUG2_IDLE_IN_CALL		0x04	// idle bursts in the gaps of an inbound call too (the default leaves them empty)
 #define HRC_SFR_DEBUG2_IDLE_MCU_CRC		0x08	// idle bursts with reg 0x40 bit 3 set, as before (the default now clears it)
 #define HRC_SFR_DEBUG2_DEFER_READ		0x10	// a burst heard while keyed read at the next timeslot interrupt (as 198349d-1da3197)

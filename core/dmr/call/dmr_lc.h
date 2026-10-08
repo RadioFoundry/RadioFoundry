@@ -5,7 +5,7 @@
  *
  *  - the full LC (9 octets: PF + FLCO, FID, service options, destination, source)
  *  - the voice LC header / terminator form: LC + RS(12,9) parity masked 0x969696 / 0x999999 (B.3.6, B.3.12)
- *  - the embedded LC: LC + 5-bit checksum (B.3.11), in the 128-bit embedded signalling matrix (Hamming(16,11,4)
+ *  - the embedded LC: LC + 5-bit checksum (B.3.11), in the 128-bit embedded signaling matrix (Hamming(16,11,4)
  *    rows, column parity, B.2.1), interleaved and spread over voice bursts B-E as 4 x 32 bits with LCSS
  *    first / continuation / continuation / last
  *  - CRC-CCITT (B.3.7) for the BS activation CSBK
@@ -13,7 +13,7 @@
  *  - GPS Info (FLCO 8): position error, longitude, latitude, encoding and decoding, and the range / bearing between
  *    two positions for the screens
  *
- * No board or modem knowledge: modems that build the embedded signalling themselves only need the 9 LC octets;
+ * No board or modem knowledge: modems that build the embedded signaling themselves only need the 9 LC octets;
  * a software modem or a host test uses the fragment functions.
  */
 #ifndef ODR_DMR_LC_H
@@ -93,7 +93,7 @@ void dmr_csbk_bs_activation(uint32_t own_id, uint8_t out[12]);
 
 // 5-bit checksum: the sum of the 9 LC octets modulo 31
 uint8_t dmr_emb_lc_checksum(const uint8_t lc[DMR_LC_BYTES]);
-// The 128 interleaved bits (16 octets, MSB first) of the embedded signalling for an LC
+// The 128 interleaved bits (16 octets, MSB first) of the embedded signaling for an LC
 void dmr_emb_lc_encode_bits(const uint8_t lc[DMR_LC_BYTES], uint8_t bits[16]);
 // The same as the four 32-bit fragments of bursts B, C, D, E
 void dmr_emb_lc_encode(const uint8_t lc[DMR_LC_BYTES], uint8_t frag[4][4]);

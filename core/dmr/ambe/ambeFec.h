@@ -16,7 +16,7 @@
  * air bit 4k = S(k), 4k+1 = S(18+k), 4k+2 = S(36+k), 4k+3 = S(54+k), k = 0..17. Air bits are numbered from the most
  * significant bit of byte 0 of the 9-byte frame, the order the modems send them (each dibit is air bits 2i, 2i+1).
  *
- * A DMR voice burst carries three frames: 108 bits before the 48-bit sync / embedded signalling and 108 after
+ * A DMR voice burst carries three frames: 108 bits before the 48-bit sync / embedded signaling and 108 after
  * (docs/spec/dmr-modem.md 1.2). With the middle 48 bits taken out, as the HR_C6000 voice port and the dmr_modem HAL
  * deliver them, the 27 bytes are simply the three 9-byte frames in a row.
  */

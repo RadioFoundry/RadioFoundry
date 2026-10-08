@@ -16,7 +16,7 @@ typedef enum
 {
 	SFR_ROLE_OFF = 0,
 	SFR_ROLE_USER_STANDARD,		// a radio using a standard SFR: direct mode, both copies heard, replies on the inbound slot
-	SFR_ROLE_USER_ERDM,			// a radio using a Motorola ERDM repeater: as above, and the outbound colour code heard too
+	SFR_ROLE_USER_ERDM,			// a radio using a Motorola ERDM repeater: as above, and the outbound color code heard too
 	SFR_ROLE_RPT_STANDARD,		// this radio is a standard SFR
 	SFR_ROLE_RPT_MOTOROLA,		// this radio is an ERDM style SFR
 	SFR_ROLE_NUM_STORED,
@@ -56,7 +56,7 @@ typedef enum
 //   LibreDMR_flag1 bit 0x02: SFR set for this channel (the other two bytes are only read with it)
 //   sfr byte A (was _UNUSED_1): bits 2-0 role (sfrRole_t), bits 4-3 framing (sfrFraming_t), bit 5 inbound slot TS2,
 //                               bits 7-6 hang (index of sfrHangMs())
-//   sfr byte B (was _UNUSED_2): bit 7 outbound colour code set, bits 3-0 that colour code (else the channel's)
+//   sfr byte B (was _UNUSED_2): bit 7 outbound color code set, bits 3-0 that color code (else the channel's)
 #define SFR_CHANNEL_FLAG1_ENABLED	0x02
 
 typedef struct
@@ -65,7 +65,7 @@ typedef struct
 	uint8_t framing;			// sfrFraming_t
 	uint8_t inboundSlot;		// 0: TS1 (default), 1: TS2
 	uint8_t hangIndex;			// 0..SFR_HANG_NUM-1
-	bool    outboundCCSet;		// Motorola: the outbound colour code differs from the channel's
+	bool    outboundCCSet;		// Motorola: the outbound color code differs from the channel's
 	uint8_t outboundCC;
 } sfrChannelSettings_t;
 
@@ -75,7 +75,7 @@ typedef struct
 	uint8_t  role;				// sfrRole_t
 	uint8_t  framing;			// resolved: MS, TS or BS
 	uint8_t  inboundSlot;		// 0: TS1, 1: TS2; the outbound slot is the other one
-	uint8_t  inboundCC;			// what the radios send with (the channel's colour code)
+	uint8_t  inboundCC;			// what the radios send with (the channel's color code)
 	uint8_t  outboundCC;		// what the repeat goes out with
 	uint16_t hangMs;			// idle bursts after the last traffic, so the radios stay aligned to the slots
 	uint32_t totMs;				// longest inbound call repeated
@@ -133,8 +133,8 @@ typedef struct
 void sfrLateEntryReset(sfrLateEntry_t *l);
 bool sfrLateEntryVoice(sfrLateEntry_t *l, uint8_t seq, uint32_t nowMs);// seq 0-5 (A-F): true when the call starts with it
 
-// ERDM user: the colour code the receiver follows for a received one, -1 if it isn't one of the channel's two
-int sfrUserRxColourCode(const sfrConfig_t *cfg, uint8_t rxCC);
+// ERDM user: the color code the receiver follows for a received one, -1 if it isn't one of the channel's two
+int sfrUserRxColorCode(const sfrConfig_t *cfg, uint8_t rxCC);
 
 // The repeat queue
 
@@ -159,7 +159,7 @@ typedef struct
 typedef enum
 {
 	SFR_RX_REPEATED = 0,		// queued for the outbound slot
-	SFR_RX_IGNORED,				// not for the repeater: other colour code, the outbound / a repeater's sync, idle
+	SFR_RX_IGNORED,				// not for the repeater: other color code, the outbound / a repeater's sync, idle
 	SFR_RX_DUPLICATE,			// a voice burst already queued
 	SFR_RX_TOT,					// the inbound call is longer than the TOT: not repeated until it's over
 	SFR_RX_FULL
@@ -245,7 +245,7 @@ static inline bool sfrEngineRfVoiceCall(const sfrEngine_t *e)
 // An LC with a destination and a source (all 0: not known yet)
 bool sfrLcKnown(const uint8_t *lc);
 
-// The LC (9 bytes) of the voice burst sfrEngineOutboundSlot() returned, for its embedded signalling
+// The LC (9 bytes) of the voice burst sfrEngineOutboundSlot() returned, for its embedded signaling
 static inline const uint8_t *sfrEngineTxLc(const sfrEngine_t *e)
 {
 	return e->txLc;
@@ -284,13 +284,13 @@ bool sfrDataBurstCrcOk(uint8_t dataType, const uint8_t *info);
 typedef enum
 {
 	SFR_RAW_NONE = 0,			// none of these: noise, or not for us
-	SFR_RAW_DATA,				// data sync, the slot type's colour code ours, and its checksum good (blocks: none to check)
+	SFR_RAW_DATA,				// data sync, the slot type's color code ours, and its checksum good (blocks: none to check)
 	SFR_RAW_VOICE_A,			// voice sync
-	SFR_RAW_VOICE_EMB			// no sync, the EMB's colour code ours: voice B-F
+	SFR_RAW_VOICE_EMB			// no sync, the EMB's color code ours: voice B-F
 } sfrRawKind_t;
 
 // dataType, info (12 bytes): for SFR_RAW_DATA. sync: the sync type found (sfrSync_t), for DATA and VOICE_A
-uint8_t sfrRawClassify(const uint8_t *frame, uint8_t colourCode, uint8_t *dataType, uint8_t *info, uint8_t *sync);
+uint8_t sfrRawClassify(const uint8_t *frame, uint8_t colorCode, uint8_t *dataType, uint8_t *info, uint8_t *sync);
 // The 27 bytes of AMBE of a voice burst (around its sync / EMB), as the HR-C6000's TX RAM takes them
 void    sfrRawAmbe(const uint8_t *frame, uint8_t *ambe);
 

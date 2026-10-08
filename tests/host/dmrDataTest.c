@@ -310,7 +310,7 @@ static void testARS(void)
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	dmrDataUDP_t udp;
 
-	// RadioDesk's test vector (device ID "11"), and the 12 byte PDU hbnet recognises a MOTOTRBO radio's by (000cf0)
+	// RadioDesk's test vector (device ID "11"), and the 12 byte PDU hbnet recognizes a MOTOTRBO radio's by (000cf0)
 	CHECK((dmrDataBuildARSRegistration(11, pdu) == 9) && (memcmp(pdu, "\x00\x07\xF0\x20\x02\x31\x31\x00\x00", 9) == 0));
 	int length = dmrDataBuildARSRegistration(3101276, pdu);
 	CHECK((length == 14) && (memcmp(pdu, "\x00\x0C\xF0\x20\x07" "3101276" "\x00\x00", 14) == 0));

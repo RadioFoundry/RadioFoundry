@@ -29,7 +29,7 @@ one slot (360 ms); **inbound** = MS to BS (repeater input); **outbound** = BS to
 | Burst | First half | Middle 48 bits | Second half |
 |---|---|---|---|
 | Voice with sync (burst A) | 108 bits AMBE | voice sync | 108 bits AMBE |
-| Voice with embedded signalling (B-F) | 108 bits AMBE | 8 EMB + 32 embedded signalling + 8 EMB | 108 bits AMBE |
+| Voice with embedded signaling (B-F) | 108 bits AMBE | 8 EMB + 32 embedded signaling + 8 EMB | 108 bits AMBE |
 | Data / control | 98 bits info | 10 slot type + 48 data sync + 10 slot type | 98 bits info |
 
 - Voice payload: 216 bits = three 72-bit AMBE+2 frames (20 ms each, with their FEC). The modem drivers exchange it as

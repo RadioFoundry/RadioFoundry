@@ -40,7 +40,7 @@ typedef struct {
 typedef struct {
 	uint32_t rx_bursts;		// bursts reported by the modem
 	uint32_t rx_repeated;		// queued for the outbound slot
-	uint32_t rx_ignored;		// not for the repeater (engine: colour code, sync, idle; or the outbound slot)
+	uint32_t rx_ignored;		// not for the repeater (engine: color code, sync, idle; or the outbound slot)
 	uint32_t rx_ignored_slot;	// of those, reported on the outbound slot
 	uint32_t rx_bad_crc;		// data bursts whose checksum failed
 	uint32_t rx_duplicate, rx_tot, rx_full;
@@ -53,7 +53,7 @@ typedef struct {
 	uint32_t tx_beacons;		// idle beacons keyed (sfrRunnerSetBeacon)
 	uint32_t up_bursts, up_lost;
 	uint8_t last_rx;		// sync (bits 7-6, sfrSync_t), data type or 0x0F voice (3-0)
-	uint8_t last_rx_cc;		// colour code, 0x80 checksum good
+	uint8_t last_rx_cc;		// color code, 0x80 checksum good
 } sfrRunnerStats_t;
 
 typedef enum { SFR_RUN_OFF, SFR_RUN_IDLE, SFR_RUN_KEYED, SFR_RUN_ENDING } sfrRunState_t;
@@ -90,7 +90,7 @@ typedef struct {
 	sfrRunnerStats_t stats;
 } sfrRunner_t;
 
-// The modem is the caller's, started in DMR mode (DMO framing, every slot received, the inbound colour code). up: NULL
+// The modem is the caller's, started in DMR mode (DMO framing, every slot received, the inbound color code). up: NULL
 // for no host
 void sfrRunnerStart(sfrRunner_t *r, const hal_dmr_modem_t *modem, const sfrConfig_t *cfg, const sfrRunnerUplink_t *up);
 // Unkeys at once (tx_abort) and drops everything; the modem stays the caller's

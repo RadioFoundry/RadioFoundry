@@ -199,7 +199,7 @@ static void testAnytoneBP(void)
 	}
 }
 
-static void testSignalling(void)
+static void testSignaling(void)
 {
 	uint8_t lc[12] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x2F, 0x52, 0x5C, 0, 0, 0 };
 
@@ -227,7 +227,7 @@ int main(void)
 	testFec();
 	testMotorolaBP();
 	testAnytoneBP();
-	testSignalling();
+	testSignaling();
 
 	printf("# %s\n", failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

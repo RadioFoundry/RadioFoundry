@@ -256,7 +256,7 @@ static void testNetFrameControl(void)
 	setSync(frame, 0xDFF57D75DF5DULL ^ 0x000100000000ULL);
 	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DT_CSBK));
 
-	// A terminator and an idle burst, colour code 2 (the old END_FRAME_PATTERN only matched colour code 1)
+	// A terminator and an idle burst, color code 2 (the old END_FRAME_PATTERN only matched color code 1)
 	csbk.dataType = DT_TERMINATOR_WITH_LC;
 	dmrDataBurstToFrame(&csbk, 2, frame);
 	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DT_TERMINATOR_WITH_LC));

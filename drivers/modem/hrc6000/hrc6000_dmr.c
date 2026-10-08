@@ -702,7 +702,7 @@ static void held_drop(hrc6000_dmr_t *e, hrc6000_dmr_held_t *hd)
 //   - at the next burst A while this reception has no LC yet: HIL 2026-10-10 (c8c9b23, test_late_entry) took a new LC
 //     only at the second F of a late entry, as if page 2 still held the old LC at the first F's report (it is read at the
 //     F's first report, the EMB one; the chip may write the LC it assembled after that). By the next A it is there;
-//   - at F's repeated report and at the post-access interrupt (the chip acquired the call from its embedded signalling):
+//   - at F's repeated report and at the post-access interrupt (the chip acquired the call from its embedded signaling):
 //     an LC that differs then is kept and handed over with the next voice burst.
 // Every look until the LC is handed over goes into the LC trace (st.lc_tr) for the debug link.
 

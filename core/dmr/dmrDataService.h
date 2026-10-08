@@ -200,7 +200,7 @@ void dmrDataServiceTxDone(uint8_t err);
 bool dmrDataServiceIsBusy(void);
 // Power off: true while the ARS deregistration is still going out, call again until it's false (gotcha 7.4)
 bool dmrDataServicePowerOff(void);
-void dmrDataServicePowerOffCancelled(void);
+void dmrDataServicePowerOffCanceled(void);
 
 // Requests (the radio task, or through the dmr_data_api.h mailbox). False when one of the kind is still running or
 // it can't be sent now

@@ -10,7 +10,7 @@ test skips on a build without it.
   --dmr-freq at its lowest power for 10 s, idle bursts with a short LC, SET_AT toggled every 2 s, the framing variant
   from $ODR_SPLIT_VARIANT (default 0, ours; 1 the chip's, whose CACH is empty). The SDR bench captures and decodes it
   (sdrmon.py analyze --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
-  one key-up edge for the whole outbound, the channel's colour code, no driver underruns in STATUS; with our framing
+  one key-up edge for the whole outbound, the channel's color code, no driver underruns in STATUS; with our framing
   also the CACH: TC alternating, AT following SET_AT, the short LC decoding.
 - test_split_tx_half_voice (radio_tx, bench_service): the same outbound (our framing) with a group call from the host
   on TS2: three LC headers, three superframes A-F with the embedded LC in each, the terminator, decoded off air on
@@ -162,12 +162,12 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     assert len(bs) >= 0.9 * TX_SECONDS / 0.03, f"BS bursts {len(bs)}"
     assert all(b["family"] == "bs" for b in bursts), {b["family"] for b in bursts}
     assert all(b["cc"] in (None, cc) for b in bs)
-    # Both slots are filled, so neighbours are 30 ms apart and the same slot is two bursts on (sdrmon's
-    # same_slot_spacing only pairs neighbours, which suits a one-slot capture)
+    # Both slots are filled, so neighbors are 30 ms apart and the same slot is two bursts on (sdrmon's
+    # same_slot_spacing only pairs neighbors, which suits a one-slot capture)
     t = [b["t_ms"] for b in bs]
     nb = [b - a for a, b in zip(t, t[1:])]
     same = [b - a for a, b in zip(t, t[2:])]
-    print(f"BS burst spacing: neighbours {min(nb):.2f}-{max(nb):.2f} ms, same slot mean "
+    print(f"BS burst spacing: neighbors {min(nb):.2f}-{max(nb):.2f} ms, same slot mean "
           f"{sum(same) / len(same):.3f} ms; kinds {sdr['summary']['counts']}")
     assert all(abs(x - 30.0) < 0.5 for x in nb), f"a gap or overlap in the outbound: {sorted(set(round(x) for x in nb))}"
     assert abs(sum(same) / len(same) - 60.0) < 0.05
