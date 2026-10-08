@@ -12,11 +12,20 @@
 
 BOARD ?= dm1701
 include boards/$(BOARD)/board.mk
+# A release variant (config/variants/<name>.mk): a preset that turns features off. Read before the board's defaults,
+# so it wins over them and the command line wins over it. Empty: the full default build (docs/build-config.md)
+VARIANT ?=
+ifneq ($(VARIANT),)
+ifeq ($(wildcard config/variants/$(VARIANT).mk),)
+$(error unknown VARIANT=$(VARIANT): the variants are $(basename $(notdir $(wildcard config/variants/*.mk))))
+endif
+include config/variants/$(VARIANT).mk
+endif
 -include boards/$(BOARD)/config.mk
 include config/features.mk
 include platform/$(PLATFORM)/platform.mk
 
-BUILD := build/$(BOARD)
+BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))
 TARGET := $(BUILD)/odr_$(BOARD)
 
 CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/settings core/storage

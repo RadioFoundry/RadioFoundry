@@ -40,7 +40,8 @@ own stock firmware file ([tools/odrflash/README.md](../../tools/odrflash/README.
 | `SHA256SUMS` | SHA-256 of every file above |
 | `OpenDigitalRadio-manual-<version>.pdf` | The user manual (the manual workflow) |
 
-`tools/release.py --board dm1701 --version v0.1.0` writes the first two and the sums for a built image into `dist/`
+`tools/release.py --board dm1701 --version v0.1.0` writes the first two (with `--variant amateur`, the image of `make
+VARIANT=amateur` as `odr-dm1701-amateur-<version>.bin`, its manifest naming the variant: [build-config.md](../build-config.md#variants)) and the sums for a built image into `dist/`
 (or `--out DIR`). It refuses an image that reaches into a codec sector or carries the codec's signature word, so a
 release can never contain the codec, even by accident.
 

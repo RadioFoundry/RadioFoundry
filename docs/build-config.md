@@ -26,6 +26,27 @@ Every feature is on by default wherever the radio has what it needs. A board tur
 it lacks (the DM-1701 has no receive path for APRS receive) or when the image doesn't fit, and then the most obscure
 large features go first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
 
+## Variants
+
+A variant is a named preset of switches for the prebuilt release images and the web flasher's build picker
+([website.md](dev/website.md)): `config/variants/<name>.mk`, read after the board's `board.mk` and before its
+`config.mk`, so it wins over the board's defaults and the command line wins over it. A variant only turns switches
+off (`CONFIG_X ?= n`); the board's own limits still apply. Without `VARIANT` the build is the full default.
+
+```
+make BOARD=dm1701 VARIANT=amateur        # build/dm1701-amateur/
+make BOARD=dm1701 VARIANT=commercial     # build/dm1701-commercial/
+```
+
+| Variant | Leaves out |
+|---|---|
+| (none: full) | nothing |
+| `amateur` | basic privacy, Motorola TMS, ARS, LRRP, control station mode, SNMP |
+| `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS) |
+
+Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
+left out; the site shows both. The lists are a draft for the project lead to settle.
+
 The firmware version (`ODR_GIT`) is the commit plus `-dirty` when the tree differs from it (tracked changes, or
 untracked sources in the built directories); only the few files that use it are rebuilt when it changes.
 
@@ -162,7 +183,8 @@ the RAM code (`.ramfunc`) and the core's `ODR_CPU_RAM` state to grow.
 1. Add the switch with a comment and its default to `config/features.mk`, to `FEATURES`, and to the dependency checks.
 2. Add the default and the checks to `core/config.h`.
 3. Guard the code, and leave a directory out in the Makefile when the whole directory belongs to the feature.
-4. Add a row here and in [feature-matrix.md](feature-matrix.md), and check the build links with the switch off (`make BOARD=<b> CONFIG_X=n BUILD=build/test-x`).
+4. Add a row here and in [feature-matrix.md](feature-matrix.md) (the web site takes the feature's group, title and
+   size from it; `site/build.py --strict` fails without the row), and check the build links with the switch off (`make BOARD=<b> CONFIG_X=n BUILD=build/test-x`).
    `tools/ci.sh` builds every board with each default-on switch off alone, an FM-minimal and a maximal
    configuration, all with zero warnings, and reports the image sizes (`docs/testing/README.md`). The maximal
    configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its `config.mk`): features its

@@ -4,10 +4,11 @@
 """Package built firmware images as release artifacts (docs/dev/release.md "Release artifacts").
 
     tools/release.py --board dm1701 --version v0.1.0 [--bin build/dm1701/odr_dm1701.bin] [--out dist]
+    tools/release.py --board dm1701 --variant amateur --version v0.1.0     a release variant (make VARIANT=amateur)
 
 Writes, into --out:
-  odr-<board>-<version>.bin    the codec-less image, exactly as built
-  odr-<board>-<version>.json   its manifest (board, version, git hash, image ranges, codec profile, codec sectors)
+  odr-<board>-<version>.bin    the codec-less image, exactly as built (a variant: odr-<board>-<variant>-<version>.bin)
+  odr-<board>-<version>.json   its manifest (board, variant, version, git hash, image ranges, codec profile, sectors)
   SHA256SUMS                   one line per file (appended; one file for the whole release)
 
 Refuses an image that reaches into a codec sector or that carries the codec signature, so a release can never ship
@@ -29,8 +30,9 @@ def git(*a):
     return subprocess.run(["git", "-C", ROOT] + list(a), capture_output=True, text=True, check=True).stdout.strip()
 
 
-def features(board_id):
-    r = subprocess.run(["make", "-s", "-C", ROOT, "BOARD=" + board_id, "print-config"], capture_output=True, text=True)
+def features(board_id, variant=None):
+    cmd = ["make", "-s", "-C", ROOT, "BOARD=" + board_id, "print-config"] + (["VARIANT=" + variant] if variant else [])
+    r = subprocess.run(cmd, capture_output=True, text=True)
     return ",".join(kv.split("=")[0] for kv in r.stdout.split() if kv.endswith("=y"))
 
 
@@ -57,7 +59,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--board", required=True)
     ap.add_argument("--version", required=True, help="the release tag, e.g. v0.1.0")
-    ap.add_argument("--bin", help="the built image (default build/<board>/odr_<board>.bin)")
+    ap.add_argument("--variant", help="a release variant (config/variants/<name>.mk); default: the full build")
+    ap.add_argument("--bin", help="the built image (default build/<board>[-<variant>]/odr_<board>.bin)")
     ap.add_argument("--out", default=os.path.join(ROOT, "dist"))
     ap.add_argument("--git", help="full commit hash (default: git rev-parse HEAD)")
     ap.add_argument("--features", help="feature list (default: make print-config)")
@@ -65,22 +68,29 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     board = boards.get(args.board)
-    path = args.bin or os.path.join(ROOT, "build", board.id, "odr_%s.bin" % board.id)
+    variant = None if args.variant in (None, "", "full") else args.variant
+    if variant and not os.path.isfile(os.path.join(ROOT, "config", "variants", variant + ".mk")):
+        raise SystemExit("release: unknown variant %s (config/variants/)" % variant)
+    build_dir = board.id + ("-" + variant if variant else "")
+    path = args.bin or os.path.join(ROOT, "build", build_dir, "odr_%s.bin" % board.id)
     with open(path, "rb") as f:
         image = f.read()
     check_no_codec(board, image)
     commit = args.git or git("rev-parse", "HEAD")
-    feats = args.features if args.features is not None else features(board.id)
+    feats = args.features if args.features is not None else features(board.id, variant)
     tc = args.toolchain if args.toolchain is not None else toolchain(board.id)
+    # variant images carry the variant in their names; the full build keeps the plain names odrflash fetches
+    name_id = board.id + ("-" + variant if variant else "")
+    bin_name = mf.image_name(name_id, args.version)
+    json_name = mf.image_name(name_id, args.version, "json")
     try:
-        man = mf.generate(board, image, args.version, commit, feats, tc)
+        man = mf.generate(board, image, args.version, commit, feats, tc, file_name=bin_name)
     except mf.ManifestError as e:
         raise SystemExit("release: %s" % e)
+    man["variant"] = variant or "full"
     mf.verify(man, image, board.id)
 
     os.makedirs(args.out, exist_ok=True)
-    bin_name = mf.image_name(board.id, args.version)
-    json_name = mf.image_name(board.id, args.version, "json")
     text = mf.dumps(man)
     with open(os.path.join(args.out, bin_name), "wb") as f:
         f.write(image)
