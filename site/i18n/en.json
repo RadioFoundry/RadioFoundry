@@ -204,6 +204,7 @@
  "flash.task.restore.text": "From a backup file made here: back to the backed-up state, or back to stock firmware.",
  "flash.start.privacy_title": "Where do my files go?",
  "flash.start.privacy": "Firmware images come from this site. Your stock firmware file, backups and radio data stay on your computer.",
+ "flash.support.none": "This browser can't reach a radio (no WebUSB or Web Serial). Use Chrome, Edge or another Chromium browser on a computer.",
  "flash.support.usb": "This browser can't reach the radio's bootloader (no WebUSB). Use Chrome, Edge or another Chromium browser on a computer.",
  "flash.support.serial": "This browser can't talk to a radio running OpenDigitalRadio (no Web Serial). Use Chrome, Edge or another Chromium browser on a computer.",
  "flash.sim.banner": "Simulated radio: nothing here touches real hardware. Use it to try the steps.",

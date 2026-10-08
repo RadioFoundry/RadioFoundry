@@ -267,9 +267,10 @@ function panel(title, ...children) {
 // start
 
 function startView() {
-	const support = [];
-	if (!S.sim && !usbSupported()) support.push(notice(t("flash.support.usb"), "bad"));
-	if (!S.sim && !serialSupported()) support.push(notice(t("flash.support.serial"), "bad"));
+	// one banner: both APIs missing (Safari, Firefox), or the one that is
+	const usb = S.sim || usbSupported(), serial = S.sim || serialSupported();
+	const support = !usb && !serial ? [notice(t("flash.support.none"), "bad")]
+		: [!usb && notice(t("flash.support.usb"), "bad"), !serial && notice(t("flash.support.serial"), "bad")].filter(Boolean);
 	const choice = (task, icon) => h("button", { class: "choice", type: "button", onclick: () => { S.task = task; S.step = 0; render(); } },
 		h("strong", {}, `${icon} ${t(`flash.task.${task}`)}`), h("span", { class: "small muted" }, t(`flash.task.${task}.text`)));
 	return h("div", { class: "flasher" },
