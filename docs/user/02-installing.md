@@ -7,6 +7,14 @@ build anything. Installing takes four steps: get odrflash, get the stock firmwar
 here changes the radio's calibration. For an MD-380, see [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md)
 instead.
 
+## In your browser: the web flasher
+
+The project's web site has a flasher that does everything on this page in the browser: it backs up the radio, picks
+the build (Full, Amateur or Commercial, or your own feature selection), keeps or writes the codec and writes the
+firmware. Later it can put the radio back from that backup. It needs Chrome, Edge or another Chromium browser on a
+computer; on Windows the bootloader needs the WinUSB driver once (step 1 below). Nothing you load into it leaves your
+computer. **New: not yet tested on a radio.** Until it is, odrflash (below) is the tested way.
+
 ## What you need
 
 | Item | Where it comes from |

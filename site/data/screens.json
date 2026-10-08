@@ -1,0 +1,285 @@
+{
+ "_about": "The UI gallery (docs/ux/screens) as the site shows it: each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here.",
+ "groups": [
+  "home",
+  "calls",
+  "messages",
+  "channels",
+  "tools",
+  "settings"
+ ],
+ "screens": {
+  "boot": {
+   "group": "home",
+   "needs": []
+  },
+  "home_fm": {
+   "group": "home",
+   "needs": [
+    "FM"
+   ]
+  },
+  "home_dmr": {
+   "group": "home",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "home_dmr_lastheard": {
+   "group": "home",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "home_vfo": {
+   "group": "home",
+   "needs": [
+    "VFO"
+   ]
+  },
+  "home_vfo_entry": {
+   "group": "home",
+   "needs": [
+    "VFO"
+   ]
+  },
+  "home_large_text": {
+   "group": "home",
+   "needs": []
+  },
+  "home_locked": {
+   "group": "home",
+   "needs": []
+  },
+  "home_temporary": {
+   "group": "home",
+   "needs": []
+  },
+  "home_reply": {
+   "group": "home",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "quick_fm": {
+   "group": "home",
+   "needs": [
+    "FM"
+   ]
+  },
+  "quick_fm_squelch": {
+   "group": "home",
+   "needs": [
+    "FM"
+   ]
+  },
+  "quick_dmr": {
+   "group": "home",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "quick_cc_editor": {
+   "group": "home",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "tx": {
+   "group": "calls",
+   "needs": []
+  },
+  "rx_group": {
+   "group": "calls",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "rx_private": {
+   "group": "calls",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "caller_actions": {
+   "group": "calls",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "talk_target_picker": {
+   "group": "calls",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "recent": {
+   "group": "calls",
+   "needs": []
+  },
+  "emergency": {
+   "group": "calls",
+   "needs": [
+    "DMR_EMERGENCY"
+   ]
+  },
+  "banner_call_alert": {
+   "group": "calls",
+   "needs": [
+    "DMR_SIGNALING"
+   ]
+  },
+  "banner_radio_check": {
+   "group": "calls",
+   "needs": [
+    "DMR_SIGNALING"
+   ]
+  },
+  "messages": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
+  "messages_empty": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
+  "message_view": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
+  "compose": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
+  "banner_message": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
+  "channels": {
+   "group": "channels",
+   "needs": []
+  },
+  "zone_channels": {
+   "group": "channels",
+   "needs": []
+  },
+  "find_channel": {
+   "group": "channels",
+   "needs": []
+  },
+  "find_name": {
+   "group": "channels",
+   "needs": []
+  },
+  "find_number": {
+   "group": "channels",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "contacts": {
+   "group": "channels",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "contacts_find": {
+   "group": "channels",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "contact_actions": {
+   "group": "channels",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "scan_actions": {
+   "group": "channels",
+   "needs": [
+    "SCAN"
+   ]
+  },
+  "hub": {
+   "group": "tools",
+   "needs": []
+  },
+  "tools": {
+   "group": "tools",
+   "needs": []
+  },
+  "hotspot": {
+   "group": "tools",
+   "needs": [
+    "HOTSPOT"
+   ]
+  },
+  "hotspot_info": {
+   "group": "tools",
+   "needs": [
+    "HOTSPOT"
+   ]
+  },
+  "roaming": {
+   "group": "tools",
+   "needs": [
+    "DMR_ROAMING"
+   ]
+  },
+  "position": {
+   "group": "tools",
+   "needs": [
+    "APRS"
+   ]
+  },
+  "diagnostics": {
+   "group": "tools",
+   "needs": [
+    "DIAG"
+   ]
+  },
+  "settings": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "settings_display": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "settings_advanced": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "settings_editor": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "factory_reset": {
+   "group": "settings",
+   "needs": []
+  },
+  "about": {
+   "group": "settings",
+   "needs": []
+  }
+ }
+}

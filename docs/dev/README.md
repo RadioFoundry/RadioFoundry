@@ -16,6 +16,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [Debug link](debug-link.md) | The host-port debug protocol and `tools/odr_debug.py` |
 | [CPS, codeplug and settings](cps-and-codeplug.md) | The legacy CPS shim qdmr uses, the codeplug layout, the settings store |
 | [The codec](codec.md) | How each radio's stock AMBE+2 codec is extracted, merged and hosted |
+| [Web site and web flasher](website.md) | The generated site, where each page's data comes from, templates and design tokens, translating, radio images, the browser flasher, backups and restore |
 | [Releases](release.md) | The checklist, artifacts and manifests, the DM-1701 sector map, odrflash's codec handling and key, the release and manual workflows |
 
 ## Common tasks
@@ -32,6 +33,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | Move an MD-380 from stock firmware | `tools/md380_migrate.py` ([md380-migration.md](../spec/md380-migration.md); users: [the manual](../user/18-moving-from-stock-md380.md)) |
 | Flash a DM-32UV, or move it from stock firmware | `tools/dm32_flash.py`, `tools/dm32_migrate.py` ([dm32-migration.md](../spec/dm32-migration.md); users: [the manual](../user/19-moving-from-stock-dm32.md)) |
 | Cut a release | [Releases, "Checklist"](release.md#checklist) |
+| Build or preview the web site | `python3 site/build.py --serve` ([Web site](website.md)) |
 
 ## Where the detailed documents are
 

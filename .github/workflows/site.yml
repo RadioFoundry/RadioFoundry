@@ -1,0 +1,128 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# The web site (docs/dev/website.md), built from the repository with site/build.py and deployed to GitHub Pages with
+# the newest release's firmware images for the flasher.
+#
+#   nightly              rebuilt and deployed only when something changed since the last deployment: a file the site
+#                        is built from (the paths below), or a release published after it
+#   by hand              (workflow_dispatch) always rebuilt and deployed
+#   pull requests        built and tested, never deployed
+#
+# Needs Pages enabled with "GitHub Actions" as the source (repository Settings > Pages).
+name: Web site
+
+on:
+  schedule:
+    - cron: "17 7 * * *"   # 07:17 UTC, once a night
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "README.md"
+      - "boards/*/radio.json"
+      - "boards/*/config.mk"
+      - "config/**"
+      - "tools/odrflash/odrflash/**"
+      - ".github/workflows/site.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  # one deployment at a time; pull requests in their own group, so they never cancel a pending deployment
+  group: ${{ github.event_name == 'pull_request' && format('site-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: false
+
+env:
+  # what the site is built from: a change here since the last deployment means a rebuild (keep in step with the
+  # pull_request paths above)
+  SITE_INPUTS: >-
+    site docs README.md boards config tools/odrflash/odrflash Makefile .github/workflows/site.yml
+
+jobs:
+  changes:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the last deployment's commit must be here to diff against
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          decide() { echo "build=$1" >> "$GITHUB_OUTPUT"; echo "build=$1: $2"; exit 0; }
+          [ "${{ github.event_name }}" = workflow_dispatch ] && decide true "run by hand"
+          # the newest github-pages deployment whose latest status is success
+          last="" at=""
+          for id in $(gh api "repos/$REPO/deployments?environment=github-pages&per_page=20" --jq '.[].id' 2> /dev/null); do
+            state=$(gh api "repos/$REPO/deployments/$id/statuses?per_page=1" --jq '.[0].state' 2> /dev/null || true)
+            if [ "$state" = success ]; then
+              last=$(gh api "repos/$REPO/deployments/$id" --jq .sha || true)
+              at=$(gh api "repos/$REPO/deployments/$id" --jq .created_at || true)
+              break
+            fi
+          done
+          [ -n "$last" ] || decide true "no successful deployment yet"
+          git cat-file -e "$last^{commit}" 2> /dev/null || decide true "last deployed commit $last not in the history"
+          git diff --quiet "$last" HEAD -- $SITE_INPUTS || decide true "site inputs changed since $last"
+          rel=$(gh release view --repo "$REPO" --json publishedAt --jq .publishedAt 2> /dev/null || true)
+          if [ -n "$rel" ] && [ "$rel" \> "$at" ]; then decide true "release published $rel, after the deployment at $at"; fi
+          decide false "nothing changed since the deployment of $last at $at"
+
+  build:
+    needs: changes
+    # pull requests skip `changes` and always build; the nightly run builds only when `changes` says so
+    if: always() && (github.event_name == 'pull_request' || needs.changes.outputs.build == 'true')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Generator dependency
+        run: pip install -r site/requirements.txt
+      - name: Web flasher tests (against odrflash)
+        run: site/tests/run.sh
+      - name: Newest release's firmware for the flasher
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          # no release yet is fine: the flasher then offers local images only
+          gh release download --repo "${{ github.repository }}" --pattern 'odr-*' --dir dist || echo "no release assets"
+      - name: Build
+        run: |
+          python3 site/build.py --strict --out build/site --firmware dist \
+            --repo-url "${{ github.server_url }}/${{ github.repository }}" --ref "${{ github.sha }}"
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: build/site
+
+  deploy:
+    needs: build
+    if: always() && needs.build.result == 'success' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

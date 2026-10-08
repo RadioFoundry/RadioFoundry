@@ -1,0 +1,16 @@
+<div class="wrap doc-layout">
+	<aside class="doc-side" aria-label="{{ section }}">
+		<p class="eyebrow"><a href="{{ home }}docs/index.html">{{t docs.title}}</a> / {{ section }}</p>
+		<ul>{{{ side }}}</ul>
+	</aside>
+	<article class="prose doc-body">
+		{{{ fallback }}}
+		{{{ body }}}
+		<nav class="prev-next">{{{ prev_next }}}</nav>
+		<p class="muted small"><a href="{{ source }}">{{t docs.edit}}</a></p>
+	</article>
+	<aside class="doc-toc" aria-label="{{t docs.on_this_page}}">
+		<p class="eyebrow">{{t docs.on_this_page}}</p>
+		<ul>{{{ toc }}}</ul>
+	</aside>
+</div>

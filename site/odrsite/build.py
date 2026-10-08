@@ -1,0 +1,464 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+"""Builds the static site into one directory (docs/dev/website.md).
+
+Layout of the output:
+
+  index.html, radios/, features/, flash/, tools/, docs/   pages of the default language
+  <lang>/...                                              the same pages in another language
+  data/*.json                                             what the pages and the flasher read (also a public API)
+  static/                                                 CSS, scripts, images (shared by every language)
+  firmware/<board>/                                       release images and manifests, with --firmware
+"""
+import datetime
+import hashlib
+import html
+import json
+import os
+import posixpath
+import re
+import shutil
+
+from . import device, docs as docsmod, i18n, repo, tmpl
+
+BOARD_ORDER = {"supported": 0, "testing": 1, "planned": 2, "wishlist": 3}
+
+
+class Site:
+	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print):
+		self.out = out
+		self.repo_url = repo_url.rstrip("/")
+		self.ref = ref
+		self.firmware = firmware
+		self.strict = strict
+		self.log = log
+		self.warnings = []
+		self.i18n = i18n.load()
+		self.tpl = tmpl.Templates(repo.path("site", "templates"), self.i18n.t)
+		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
+		self.git_dirty = bool(repo.git("status", "--porcelain", "--untracked-files=no"))
+		self.version = repo.git("describe", "--tags", "--always", "--dirty", default=self.git)
+		self.built = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+		self.asset_version = self.static_hash()
+
+	@staticmethod
+	def static_hash():
+		"""A short hash of site/static: the version stamped on scripts and styles, so it changes with their content
+		(an uncommitted change included) and a browser never mixes cached files of two builds."""
+		h = hashlib.sha256()
+		for dirpath, dirs, files in sorted(os.walk(repo.path("site", "static"))):
+			dirs.sort()
+			for f in sorted(files):
+				p = os.path.join(dirpath, f)
+				h.update(os.path.relpath(p, repo.ROOT).encode())
+				with open(p, "rb") as fh:
+					h.update(fh.read())
+		return h.hexdigest()[:10]
+
+	def warn(self, msg):
+		self.warnings.append(msg)
+		self.log("warning: " + msg)
+
+	# -----------------------------------------------------------------------------------------------------------
+	# data
+
+	def load(self):
+		self.features = repo.features()
+		self.fmap = {f["name"]: f for f in self.features}
+		self.variants = repo.variants()
+		vids = [v["id"] for v in self.variants]
+		self.boards, self.planned = repo.boards(list(self.fmap), vids)
+		self.boards.sort(key=lambda b: (BOARD_ORDER[b["status"]], b["name"]))
+		self.flash = repo.flash_boards()
+		with open(repo.path("site", "data", "screens.json"), encoding="utf-8") as f:
+			self.screens = json.load(f)
+		for f in self.features:
+			if "group" not in f:
+				self.warn("feature %s has no row in docs/feature-matrix.md" % f["name"])
+				f["group"], f["title"], f["bytes"], f["notes"] = "Other", f["name"], {}, ""
+		for v in self.variants:
+			for off in v["off"]:
+				if off["name"] not in self.fmap:
+					raise repo.SourceError("variant %s turns off unknown switch %s" % (v["id"], off["name"]))
+		for b in self.boards:
+			names = repo.screens(b["gallery"])
+			unknown = [n for n in names if n not in self.screens["screens"]]
+			if unknown:
+				self.warn("screens not in site/data/screens.json: %s" % ", ".join(unknown))
+			b["screens"] = [n for n in names if n in self.screens["screens"]]
+			if b["flash"].get("board") and b["flash"]["board"] not in self.flash["boards"]:
+				raise repo.SourceError("boards/%s/radio.json: flash board %s isn't in odrflash" % (b["id"],
+															 b["flash"]["board"]))
+		self.groups = []
+		for f in self.features:
+			if f["group"] not in self.groups:
+				self.groups.append(f["group"])
+		self.releases = repo.releases(self.firmware)
+
+	def feature_state(self, board, name, variant="full"):
+		"""on: in this build; off: the board supports it but this build leaves it out; na: the board can't."""
+		if name in board["config"][variant]:
+			return "on"
+		if name in board["unsupported"]:
+			return "na"
+		return "off"
+
+	def json_data(self):
+		radios = []
+		for b in self.boards:
+			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "status", "bands", "power",
+					       "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported", "required", "config",
+					       "screens")}
+			r["support"] = docsmod.plain(b["status_detail"]["support"])
+			r["image"] = "static/img/radios/%s.svg" % b["id"]
+			r["frame_image"] = "static/img/radios/%s-frame.svg" % b["id"]
+			r["frame_geometry"] = b["frame_geometry"]
+			radios.append(r)
+		planned = [{"radio": p["radio"], "support": docsmod.plain(p["support"]),
+			    "status": repo.radio_status(p, None)} for p in self.planned]
+		features = [{k: f.get(k) for k in ("name", "title", "group", "help", "needs", "bytes", "notes")}
+			    for f in self.features]
+		return {
+			"site.json": {"format": "odr-site/1", "git": self.git, "version": self.version, "built": self.built,
+				      "repo": self.repo_url, "languages": self.i18n.languages, "default_language": self.i18n.default},
+			"radios.json": {"radios": radios, "planned": planned},
+			"features.json": {"groups": self.groups, "features": features},
+			"variants.json": {"variants": self.variants},
+			"flash-boards.json": self.flash,
+			"screens.json": self.screens,
+			"releases.json": {"releases": self.release_list()},
+		}
+
+	def release_list(self):
+		out = []
+		for m, img in self.releases:
+			out.append({"board": m["board"], "variant": m.get("variant", "full"), "version": m["version"],
+				    "git": m.get("git"), "features": m.get("features", ""),
+				    "image": "firmware/%s/%s" % (m["board"], m["image"]["file"]),
+				    "manifest": "firmware/%s/%s" % (m["board"], os.path.basename(img)[:-4] + ".json"),
+				    "size": m["image"]["size"], "sha256": m["image"]["sha256"]})
+		return out
+
+	# -----------------------------------------------------------------------------------------------------------
+	# output helpers
+
+	def write(self, rel, text):
+		p = os.path.join(self.out, rel)
+		os.makedirs(os.path.dirname(p), exist_ok=True)
+		with open(p, "w", encoding="utf-8") as f:
+			f.write(text)
+
+	def page(self, lang, rel, title, content, page_class, description="", scripts="", nav=""):
+		"""A page of the site: rel is its path inside the language's tree."""
+		prefix = self.i18n.prefix(lang)
+		full = prefix + rel
+		depth = full.count("/")
+		root = "../" * depth
+		meta = next(l for l in self.i18n.languages if l["code"] == lang)
+		langs = "".join(
+			'<a href="%s%s%s"%s lang="%s">%s</a>' % (root, self.i18n.prefix(l["code"]), rel,
+								  ' aria-current="true"' if l["code"] == lang else "",
+								  l["code"], html.escape(l["name"]))
+			for l in self.i18n.languages) if len(self.i18n.languages) > 1 else ""
+		ctx = {"lang": lang, "dir": meta.get("dir", "ltr"), "title": title, "root": root,
+		       "home": root + prefix, "content": content, "page_class": page_class,
+		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts,
+		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
+		       "repo": self.repo_url, "nav_current": nav}
+		ctx["nav"] = self.nav(lang, ctx["home"], nav)
+		self.write(full, self.tpl.render("base", ctx, lang).replace("{{root}}", root).replace("{{home}}", root + prefix))
+
+	def nav(self, lang, home, current):
+		items = [("radios", "radios/index.html"), ("features", "features/index.html"),
+			 ("flash", "flash/index.html"), ("docs", "docs/index.html"), ("tools", "tools/index.html")]
+		return "".join('<a href="%s%s"%s>%s</a>' % (home, href, ' aria-current="page"' if key == current else "",
+							    html.escape(self.i18n.t(lang, "nav." + key)))
+			       for key, href in items)
+
+	def t(self, lang, key, **fmt):
+		return self.i18n.t(lang, key, **fmt)
+
+	def ftitle(self, lang, f):
+		return self.i18n.opt(lang, "feature.%s.title" % f["name"], f["title"])
+
+	def fhelp(self, lang, f):
+		return self.i18n.opt(lang, "feature.%s.help" % f["name"], f["help"])
+
+	def vtitle(self, lang, v):
+		return self.i18n.opt(lang, "variant.%s.title" % v["id"], v["title"])
+
+	def vsummary(self, lang, v):
+		return self.i18n.opt(lang, "variant.%s.summary" % v["id"], v["summary"])
+
+	def badge(self, lang, status):
+		return '<span class="badge badge-%s">%s</span>' % (status, html.escape(self.t(lang, "status." + status)))
+
+	def md_inline(self, text, src="README.md"):
+		"""A Markdown table cell from the repository as HTML (links rewritten like the docs)."""
+		h = self.docs.md.renderInline(text)
+		return self.docs.html_links(h, "docs/" + src) if src else h
+
+	# -----------------------------------------------------------------------------------------------------------
+	# pages
+
+	def build(self):
+		self.load()
+		if os.path.isdir(self.out):
+			shutil.rmtree(self.out)
+		os.makedirs(self.out)
+		self.docs = docsmod.Docs(self.repo_url, self.ref, self.i18n.codes, self.i18n.default)
+		shutil.copytree(repo.path("site", "static"), os.path.join(self.out, "static"))
+		self.version_imports(os.path.join(self.out, "static", "js"))
+		shutil.rmtree(os.path.join(self.out, "static", "img", "radios", "src"), ignore_errors=True)
+		for b in self.boards:
+			img = device.render(b, b["name"])
+			self.write("static/img/radios/%s.svg" % b["id"], img["boot"])
+			self.write("static/img/radios/%s-frame.svg" % b["id"], img["frame"])
+			b["frame_geometry"] = img["geometry"]
+		data = self.json_data()
+		for name, obj in data.items():
+			self.write("data/" + name, json.dumps(obj, indent=1, ensure_ascii=False) + "\n")
+		self.copy_firmware()
+		for lang in self.i18n.codes:
+			self.docs_assets(lang)
+			self.home(lang)
+			self.radios_index(lang)
+			for b in self.boards:
+				self.radio_page(lang, b)
+			self.features_page(lang)
+			self.flash_page(lang)
+			self.tools_page(lang)
+			self.docs_pages(lang)
+			self.not_found(lang)
+		self.write(".nojekyll", "")
+		missing = self.i18n.unused_check()
+		if missing:
+			self.warn("keys missing from the %s catalog: %s" % (self.i18n.default, ", ".join(missing)))
+		return self.warnings
+
+	def version_imports(self, js_dir):
+		"""Stamp the build into the scripts' relative imports (./x.js -> ./x.js?v=<git>), so a browser that cached
+		one module of an earlier build doesn't mix it with the new ones (the pages stamp the entry scripts)."""
+		for dirpath, _, files in os.walk(js_dir):
+			for f in files:
+				if f.endswith(".js"):
+					p = os.path.join(dirpath, f)
+					with open(p, encoding="utf-8") as fh:
+						text = fh.read()
+					text = re.sub(r'(from\s+"\.{1,2}/[^"?]+\.js)"', r'\1?v=%s"' % self.asset_version, text)
+					with open(p, "w", encoding="utf-8") as fh:
+						fh.write(text)
+
+	def copy_firmware(self):
+		for m, img in self.releases:
+			d = os.path.join(self.out, "firmware", m["board"])
+			os.makedirs(d, exist_ok=True)
+			shutil.copy2(img, d)
+			shutil.copy2(img[:-4] + ".json", d)
+			with open(img, "rb") as f:
+				if hashlib.sha256(f.read()).hexdigest() != m["image"]["sha256"]:
+					raise repo.SourceError("%s doesn't match its manifest" % img)
+		if self.releases:
+			self.log("firmware: %d image(s) from %s" % (len(self.releases), self.firmware))
+
+	def docs_assets(self, lang):
+		n = self.docs.copy_assets(os.path.join(self.out, self.i18n.prefix(lang)))
+		if lang == self.i18n.default:
+			self.log("docs: %d pages, %d other files" % (len(self.docs.pages), n))
+
+	def radio_card(self, lang, b):
+		dmr = "DMR" in b["config"]["full"]
+		return self.tpl.partial("radio_card", {
+			"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]),
+			"badge": self.badge(lang, b["status"]), "bands": b["bands"],
+			"modes": self.t(lang, "radio.modes_dmr_fm" if dmr else "radio.modes_fm"),
+			"href": "radios/%s.html" % b["id"]}, lang)	# under {{home}}
+
+	def home(self, lang):
+		flagship = self.boards[0]
+		ctx = {"flagship_id": flagship["id"], "flagship_name": flagship["name"],
+		       "cards": "".join(self.radio_card(lang, b) for b in self.boards),
+		       "variants": self.variant_cards(lang),
+		       "radio_count": str(len(self.boards)), "feature_count": str(len(self.features))}
+		self.page(lang, "index.html", self.t(lang, "home.title"), self.tpl.render("home", ctx, lang), "home")
+
+	def variant_cards(self, lang):
+		out = []
+		for v in self.variants:
+			out.append(self.tpl.partial("variant_card", {
+				"id": v["id"], "title": self.vtitle(lang, v), "summary": self.vsummary(lang, v),
+				"off": ", ".join(self.ftitle(lang, self.fmap[o["name"]]) for o in v["off"])
+				or self.t(lang, "variant.nothing_off")}, lang))
+		return "".join(out)
+
+	def radios_index(self, lang):
+		# one list: the radios in the tree and the planned ones, in order of how far each is
+		entries = [(BOARD_ORDER[b["status"]], 0, b["name"], self.tpl.partial("radio_row", {
+			"name": '<a href="%s.html">%s</a>' % (b["id"], html.escape(b["name"])), "also": ", ".join(b["also"]),
+			"badge": self.badge(lang, b["status"]), "cpu": b["cpu"], "display": b["display"],
+			"support": self.md_inline(b["status_detail"]["support"])}, lang)) for b in self.boards]
+		for n, p in enumerate(self.planned):
+			st = repo.radio_status(p, None)
+			entries.append((BOARD_ORDER[st], 1 + n, p["radio"], self.tpl.partial("radio_row", {
+				"name": html.escape(p["radio"]), "also": "", "badge": self.badge(lang, st), "cpu": "—", "display": "—",
+				"support": self.md_inline(p["support"])}, lang)))
+		ctx = {"cards": "".join(self.radio_card(lang, b) for b in self.boards),
+		       "rows": "".join(e[3] for e in sorted(entries, key=lambda e: e[:2]))}
+		self.page(lang, "radios/index.html", self.t(lang, "radios.title"),
+			  self.tpl.render("radios", ctx, lang), "radios", nav="radios")
+
+	def radio_page(self, lang, b):
+		# features: one row per switch the board can run, a column per variant
+		vhead = "".join('<th scope="col">%s</th>' % html.escape(self.vtitle(lang, v)) for v in self.variants)
+		groups = []
+		for g in self.groups:
+			rows = []
+			for f in self.features:
+				if f["group"] != g or self.feature_state(b, f["name"]) == "na" or f["name"] == "AUDIO_PROBE":
+					continue
+				cells = "".join(self.state_cell(lang, self.feature_state(b, f["name"], v["id"]))
+						for v in self.variants)
+				rows.append('<tr><th scope="row"><span class="ftitle">%s</span><code>%s</code></th>%s</tr>'
+					    % (html.escape(self.ftitle(lang, f)), f["name"], cells))
+			if rows:
+				groups.append('<tbody><tr class="group"><th colspan="%d" scope="rowgroup">%s</th></tr>%s</tbody>'
+					      % (len(self.variants) + 1, html.escape(self.group_title(lang, g)), "".join(rows)))
+		na = [f for f in self.features if self.feature_state(b, f["name"]) == "na" and f["name"] != "AUDIO_PROBE"]
+		# screenshots: those whose features this radio has, at twice their pixel size (crisp: pixelated)
+		with open(repo.path("docs", "ux", "screens", b["gallery"], "boot.png"), "rb") as fh:
+			sw, sh = device.png_size(fh.read(32))
+		shots = []
+		for g in self.screens["groups"]:
+			items = []
+			for n in b["screens"]:
+				s = self.screens["screens"][n]
+				if s["group"] != g or any(x not in b["config"]["full"] for x in s["needs"]):
+					continue
+				cap = self.t(lang, "screen." + n)
+				items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}docs/'
+					     'ux/screens/%s/%s.png"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
+					     'height="%d" loading="lazy"></button><figcaption>%s</figcaption></figure>'
+					     % (html.escape(self.t(lang, "radio.show_on_radio")), b["gallery"], n, b["gallery"], n,
+						html.escape(cap), 2 * sw, 2 * sh, html.escape(cap)))
+			if items:
+				shots.append('<section class="shot-group"><h3>%s</h3><div class="shots">%s</div></section>'
+					     % (html.escape(self.t(lang, "screens.group." + g)), "".join(items)))
+		docs_links = "".join('<li><a href="{{home}}%s">%s</a></li>'
+				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
+				     for k, p in b["docs"].items())
+		fl = b["flash"]
+		can_flash = fl["backend"] == "anyroad-dfu" and self.flash["boards"].get(fl["board"], {}).get("releasable")
+		g = b["frame_geometry"]
+		pct = g["screen_pct"]
+		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",
+		       "frame_aspect": "%g" % g["aspect"],
+		       "screen_style": "left:%g%%;top:%g%%;width:%g%%;height:%g%%" % (pct["left"], pct["top"], pct["width"], pct["height"]),
+		       "badge": self.badge(lang, b["status"]), "support": self.md_inline(b["status_detail"]["support"]),
+		       "bands": b["bands"], "power": b["power"], "kind": self.t(lang, "radio.kind." + b["kind"]),
+		       "cpu": b["cpu"], "display": b["display"], "variant_head": vhead, "feature_groups": "".join(groups),
+		       "na_list": ", ".join(html.escape(self.ftitle(lang, f)) for f in na) or "—",
+		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],
+		       "flash_cta": self.tpl.partial("flash_cta" if can_flash else "flash_soon",
+						     {"id": b["id"], "name": b["name"]}, lang),
+		       "bootloader": "".join("<li>%s</li>" % html.escape(s) for s in fl.get("bootloader", []))}
+		self.page(lang, "radios/%s.html" % b["id"], b["name"], self.tpl.render("radio", ctx, lang), "radio",
+			  description=self.t(lang, "radio.description", name=b["name"]), nav="radios")
+
+	def state_cell(self, lang, state):
+		return '<td class="st st-%s"><span aria-hidden="true">%s</span><span class="sr">%s</span></td>' % (
+			state, {"on": "●", "off": "○", "na": "✕"}[state], html.escape(self.t(lang, "state." + state)))
+
+	def group_title(self, lang, g):
+		key = "group." + docsmod.slug(g)
+		return self.i18n.opt(lang, key, g)
+
+	def features_page(self, lang):
+		bhead = "".join('<th scope="col"><a href="{{home}}radios/%s.html">%s</a></th>'
+				% (b["id"], html.escape(b["model"])) for b in self.boards)
+		groups = []
+		for g in self.groups:
+			rows = []
+			for f in self.features:
+				if f["group"] != g:
+					continue
+				cells = "".join(self.state_cell(lang, self.feature_state(b, f["name"])) for b in self.boards)
+				chips = []
+				for v in self.variants[1:]:
+					if not any(f["name"] in b["config"][v["id"]] for b in self.boards
+						   if f["name"] in b["config"]["full"]) and any(
+							f["name"] in b["config"]["full"] for b in self.boards):
+						chips.append('<span class="chip chip-out">%s</span>'
+							     % html.escape(self.t(lang, "features.not_in", variant=self.vtitle(lang, v))))
+				needs = f["needs"]["all"] + (["(%s)" % " | ".join(f["needs"]["any"])] if f["needs"]["any"] else [])
+				size = " · ".join("%s %s B" % (k, v) for k, v in f["bytes"].items())
+				rows.append(self.tpl.partial("feature_row", {
+					"name": f["name"], "title": self.ftitle(lang, f), "help": self.fhelp(lang, f),
+					"notes": f["notes"], "needs": ", ".join(needs) or "—", "size": size or "—",
+					"cells": cells, "chips": "".join(chips), "anchor": f["name"].lower()}, lang))
+			groups.append('<tbody><tr class="group"><th colspan="%d" scope="rowgroup" id="%s">%s</th></tr>%s</tbody>'
+				      % (len(self.boards) + 1, docsmod.slug(g), html.escape(self.group_title(lang, g)),
+					 "".join(rows)))
+		ctx = {"board_head": bhead, "groups": "".join(groups), "variants": self.variant_cards(lang),
+		       "toc": "".join('<a href="#%s">%s</a>' % (docsmod.slug(g), html.escape(self.group_title(lang, g)))
+				      for g in self.groups)}
+		self.page(lang, "features/index.html", self.t(lang, "features.title"),
+			  self.tpl.render("features", ctx, lang), "features", nav="features")
+
+	def flash_page(self, lang):
+		strings = json.dumps(self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.")),
+				     ensure_ascii=False).replace("</", "<\\/")
+		scripts = ('<script type="application/json" id="i18n">%s</script>'
+			   '<script type="module" src="{{root}}static/js/flasher/app.js?v=%s"></script>' % (strings, self.asset_version))
+		self.page(lang, "flash/index.html", self.t(lang, "flash.title"), self.tpl.render("flash", {}, lang),
+			  "flash", scripts=scripts, nav="flash")
+
+	def tools_page(self, lang):
+		strings = json.dumps(self.i18n.subset(lang, ("tools.", "flash.convert.")),
+				     ensure_ascii=False).replace("</", "<\\/")
+		scripts = ('<script type="application/json" id="i18n">%s</script>'
+			   '<script type="module" src="{{root}}static/js/tools.js?v=%s"></script>' % (strings, self.asset_version))
+		self.page(lang, "tools/index.html", self.t(lang, "tools.title"), self.tpl.render("tools", {}, lang),
+			  "tools", scripts=scripts, nav="tools")
+
+	def docs_pages(self, lang):
+		prefix = self.i18n.prefix(lang)
+		sections = []
+		for sec in docsmod.SECTIONS:
+			pages = self.docs.section_pages(sec)
+			if not pages:
+				continue
+			links = "".join('<li><a href="{{home}}%s">%s</a></li>' % (p["out"], html.escape(p["title"]))
+					for p in pages)
+			sections.append(self.tpl.partial("docs_section", {
+				"title": self.t(lang, "docs.section." + sec), "blurb": self.t(lang, "docs.blurb." + sec),
+				"links": links}, lang))
+		self.page(lang, "docs/index.html", self.t(lang, "docs.title"),
+			  self.tpl.render("docs_index", {"sections": "".join(sections)}, lang), "docs", nav="docs")
+		for sec in docsmod.SECTIONS:
+			pages = self.docs.section_pages(sec)
+			for i, p in enumerate(pages):
+				if p["out"] == "docs/index.html":
+					continue	# docs/README.md, if one appears, would shadow the docs home
+				body, toc, fallback = self.docs.render(p, lang)
+				here = posixpath.dirname(p["out"])
+				side = "".join('<li><a href="%s"%s>%s</a></li>' % (
+					posixpath.relpath(q["out"], here), ' aria-current="page"' if q is p else "",
+					html.escape(q["title"])) for q in pages)
+				toc_html = "".join('<li class="l%d"><a href="#%s">%s</a></li>' % (lvl, hid, html.escape(text))
+						   for lvl, hid, text in toc)
+				prev_next = ""
+				if sec == "user":
+					prev = pages[i - 1] if i > 0 else None
+					nxt = pages[i + 1] if i + 1 < len(pages) else None
+					prev_next = "".join('<a class="%s" href="%s">%s</a>' % (cls, posixpath.relpath(q["out"], here),
+												 html.escape(q["title"]))
+							    for cls, q in (("prev", prev), ("next", nxt)) if q)
+				ctx = {"body": body, "side": side, "toc": toc_html, "section": self.t(lang, "docs.section." + sec),
+				       "source": "%s/blob/%s/%s" % (self.repo_url, self.ref, p["src"]), "prev_next": prev_next,
+				       "fallback": ('<p class="notice">%s</p>' % html.escape(self.t(lang, "docs.fallback")))
+				       if fallback else ""}
+				self.page(lang, p["out"], p["title"], self.tpl.render("doc", ctx, lang), "doc", nav="docs")
+
+	def not_found(self, lang):
+		if lang == self.i18n.default:
+			self.page(lang, "404.html", self.t(lang, "notfound.title"), self.tpl.render("notfound", {}, lang), "404")

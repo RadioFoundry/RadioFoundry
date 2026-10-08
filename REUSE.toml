@@ -9,3 +9,8 @@ SPDX-License-Identifier = "MIT"
 path = ["platform/stm32f4/stm32f4xx_hal_conf.h"]
 SPDX-FileCopyrightText = "2017 STMicroelectronics"
 SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = ["boards/*/radio.json", "site/templates/**", "site/**/*.json", "site/**/*.png", "site/**/*.svg"]
+SPDX-FileCopyrightText = "2026 The OpenDigitalRadio Authors"
+SPDX-License-Identifier = "MIT"

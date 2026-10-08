@@ -1,0 +1,11 @@
+<tr id="f-{{ anchor }}" data-search="{{ name }} {{ title }} {{ help }}">
+	<th scope="row">
+		<details>
+			<summary><span class="ftitle">{{ title }}</span> <code>{{ name }}</code> {{{ chips }}}</summary>
+			<p>{{ help }}</p>
+			<p class="small muted">{{ notes }}</p>
+			<p class="small"><b>{{t features.needs}}</b> {{ needs }} · <b>{{t features.size}}</b> {{ size }}</p>
+		</details>
+	</th>
+	{{{ cells }}}
+</tr>

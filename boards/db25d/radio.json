@@ -1,0 +1,44 @@
+{
+  "_about": "What the web site and the web flasher show for this radio (docs/dev/website.md). Hardware facts stay in docs/spec.",
+  "id": "db25d",
+  "name": "Radioddity DB25-D PRO",
+  "maker": "Radioddity",
+  "model": "DB25-D PRO",
+  "also": [
+    "Kydera CDR-300UV"
+  ],
+  "kind": "mobile",
+  "readme": "Radioddity DB25-D PRO",
+  "bands": "136-174 / 400-480 MHz",
+  "power": "up to 25 W",
+  "cpu": "HR_C7000",
+  "display": "1.77\" color, 160 × 128",
+  "gallery": "160x128",
+  "docs": {
+    "hardware": "docs/spec/hardware-db25d.md"
+  },
+  "flash": {
+    "backend": "none",
+    "board": null,
+    "link": "serial-cable",
+    "bootloader": [
+      "Turn the radio off and connect the programming cable.",
+      "Hold P1 and press power. The red LED lights and the display stays blank."
+    ],
+    "stock_versions": []
+  },
+  "backup": {
+    "stock": "none",
+    "odr": "none",
+    "spi_size": 16777216
+  },
+  "frame": {
+    "shape": "mobile",
+    "body": "#202226",
+    "accent": "#c8372d",
+    "lens": [
+      20,
+      20
+    ]
+  }
+}

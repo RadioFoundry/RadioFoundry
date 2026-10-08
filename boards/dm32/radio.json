@@ -1,0 +1,49 @@
+{
+  "_about": "What the web site and the web flasher show for this radio (docs/dev/website.md). Hardware facts stay in docs/spec.",
+  "id": "dm32",
+  "name": "Baofeng DM-32UV",
+  "maker": "Baofeng",
+  "model": "DM-32UV",
+  "also": [],
+  "kind": "handheld",
+  "readme": "Baofeng DM-32UV",
+  "bands": "136-174 / 400-480 MHz",
+  "power": "1 / 5 W",
+  "cpu": "HR_C7000",
+  "display": "color, 240 × 320",
+  "gallery": "120x160",
+  "docs": {
+    "hardware": "docs/spec/hardware-dm32.md",
+    "install": "docs/user/19-moving-from-stock-dm32.md",
+    "codec": "docs/spec/codec-dm32.md"
+  },
+  "flash": {
+    "backend": "bfuv32-serial",
+    "board": "dm32",
+    "link": "serial-cable",
+    "bootloader": [
+      "Turn the radio off and connect the programming cable.",
+      "Hold PTT and SK1.",
+      "Turn the radio on while you hold both keys. The green LED lights.",
+      "Release the keys."
+    ],
+    "stock_versions": [
+      "DM32.01.01.049",
+      "DM32.00.01.046"
+    ]
+  },
+  "backup": {
+    "stock": "planned",
+    "odr": "full",
+    "spi_size": 16777216
+  },
+  "frame": {
+    "shape": "handheld-tall",
+    "body": "#22252a",
+    "accent": "#e0a526",
+    "lens": [
+      24,
+      34
+    ]
+  }
+}

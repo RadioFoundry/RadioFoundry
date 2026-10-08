@@ -1,0 +1,55 @@
+{
+  "_about": "What the web site and the web flasher show for this radio (docs/dev/website.md). Hardware facts stay in docs/spec.",
+  "id": "dm1701",
+  "name": "Baofeng DM-1701",
+  "maker": "Baofeng",
+  "model": "DM-1701",
+  "also": [
+    "Retevis RT84"
+  ],
+  "kind": "handheld",
+  "readme": "Baofeng DM-1701",
+  "bands": "136-174 / 400-480 MHz",
+  "power": "1 / 2 / 5 W",
+  "cpu": "STM32F405",
+  "display": "1.77\" color, 160 × 128",
+  "gallery": "160x120i5",
+  "docs": {
+    "hardware": "docs/spec/hardware-dm1701.md",
+    "install": "docs/user/02-installing.md",
+    "codec": "docs/spec/codec-dm1701.md"
+  },
+  "flash": {
+    "backend": "anyroad-dfu",
+    "board": "dm1701",
+    "link": "usb",
+    "bootloader": [
+      "Turn the radio off and connect the programming cable.",
+      "Hold PTT and SK1 (the side key just above PTT).",
+      "Turn the radio on with the volume knob while you hold both keys. The screen stays dark.",
+      "Release the keys."
+    ],
+    "stock_versions": [
+      "V02.06 CSV",
+      "V02.06 noCSV",
+      "V02.03 CSV",
+      "V02.03 noCSV",
+      "V02.02 CSV",
+      "V02.01 CSV"
+    ]
+  },
+  "backup": {
+    "stock": "none",
+    "odr": "full",
+    "spi_size": 16777216
+  },
+  "frame": {
+    "shape": "handheld",
+    "body": "#25272b",
+    "accent": "#d24b2a",
+    "lens": [
+      36,
+      30
+    ]
+  }
+}

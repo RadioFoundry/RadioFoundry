@@ -1,0 +1,7 @@
+{
+  "_about": "Site languages. The default lives at the site root, every other under /<code>/. Add a language: copy en.json to <code>.json, translate what you can (missing keys fall back to the default), add it here.",
+  "default": "en",
+  "languages": [
+    {"code": "en", "name": "English", "dir": "ltr"}
+  ]
+}

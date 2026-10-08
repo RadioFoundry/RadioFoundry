@@ -1,0 +1,52 @@
+<section class="wrap section radio-head">
+	<figure class="radio-device">
+		<div class="device-frame" style="aspect-ratio: {{ frame_aspect }}">
+			<img class="device-body" src="{{root}}static/img/radios/{{ id }}-frame.svg" alt="{{ name }}">
+			<img class="device-screen" id="device-screen" src="{{root}}docs/ux/screens/{{ gallery }}/boot.png" alt="" style="{{ screen_style }}">
+		</div>
+		<figcaption class="muted small">{{t radio.image_note}}</figcaption>
+	</figure>
+	<div class="radio-summary">
+		<p class="eyebrow"><a href="index.html">{{t radios.title}}</a></p>
+		<h1>{{ name }}</h1>
+		<p>{{{ badge }}}</p>
+		<div class="prose">{{{ support }}}</div>
+		<dl class="specs">
+			<dt>{{t radio.also}}</dt><dd>{{ also }}</dd>
+			<dt>{{t radio.kind}}</dt><dd>{{ kind }}</dd>
+			<dt>{{t radio.bands}}</dt><dd>{{ bands }}</dd>
+			<dt>{{t radio.power}}</dt><dd>{{ power }}</dd>
+			<dt>{{t radio.cpu}}</dt><dd>{{ cpu }}</dd>
+			<dt>{{t radio.display}}</dt><dd>{{ display }}</dd>
+		</dl>
+		{{{ flash_cta }}}
+	</div>
+</section>
+
+<section class="wrap section">
+	<h2>{{t radio.screens_title}}</h2>
+	<p class="muted">{{t radio.screens_lead}}</p>
+	{{{ shots }}}
+</section>
+
+<section class="wrap section">
+	<h2>{{t radio.features_title}}</h2>
+	<p class="muted">{{t radio.features_lead}}</p>
+	<div class="table-wrap">
+		<table class="data matrix">
+			<thead><tr><th scope="col">{{t radio.col_feature}}</th>{{{ variant_head }}}</tr></thead>
+			{{{ feature_groups }}}
+		</table>
+	</div>
+	<p class="legend small"><span class="st-on">●</span> {{t state.on}} · <span class="st-off">○</span> {{t state.off}}</p>
+	<p class="small"><b>{{t radio.not_supported}}</b> {{{ na_list }}}</p>
+</section>
+
+<section class="wrap section two-col">
+	<div>
+		<h2>{{t radio.bootloader_title}}</h2>
+		<ol class="steps">{{{ bootloader }}}</ol>
+		<h2>{{t radio.docs_title}}</h2>
+		<ul class="links">{{{ docs_links }}}</ul>
+	</div>
+</section>

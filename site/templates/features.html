@@ -1,0 +1,23 @@
+<section class="wrap section page-head">
+	<h1>{{t features.title}}</h1>
+	<p class="lead">{{t features.lead}}</p>
+</section>
+<section class="wrap section">
+	<h2>{{t features.variants_title}}</h2>
+	<p class="muted">{{t features.variants_lead}}</p>
+	<div class="cards variants">{{{ variants }}}</div>
+</section>
+<section class="wrap section">
+	<h2>{{t features.all_title}}</h2>
+	<nav class="toc-inline" aria-label="{{t features.groups}}">{{{ toc }}}</nav>
+	<div class="filter-bar">
+		<label><span class="sr">{{t features.filter}}</span><input type="search" id="feature-filter" placeholder="{{t features.filter}}"></label>
+	</div>
+	<div class="table-wrap">
+		<table class="data matrix features-table" id="features-table">
+			<thead><tr><th scope="col">{{t features.col_feature}}</th>{{{ board_head }}}</tr></thead>
+			{{{ groups }}}
+		</table>
+	</div>
+	<p class="legend small"><span class="st-on">●</span> {{t state.on}} · <span class="st-off">○</span> {{t state.off}} · <span class="st-na">✕</span> {{t state.na}}</p>
+</section>

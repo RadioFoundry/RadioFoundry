@@ -1,0 +1,5 @@
+{
+  "_about": "Lets Node run the site scripts and tests as ES modules (node --test site/tests/). No packages: the site has no npm dependencies.",
+  "private": true,
+  "type": "module"
+}

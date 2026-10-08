@@ -29,3 +29,6 @@ personal_notes.md
 
 
 local-notes.md
+
+# Browser automation output (Playwright screenshots and snapshots)
+.playwright-mcp/

@@ -1,0 +1,47 @@
+<section class="hero">
+	<div class="wrap hero-grid">
+		<div class="hero-text">
+			<h1>{{t home.headline}}</h1>
+			<p class="lead">{{t home.lead}}</p>
+			<div class="actions">
+				<a class="btn btn-primary" href="{{home}}flash/index.html">{{t home.cta_flash}}</a>
+				<a class="btn" href="{{home}}radios/index.html">{{t home.cta_radios}}</a>
+			</div>
+			<ul class="facts">
+				<li><b>{{ radio_count }}</b> {{t home.fact_radios}}</li>
+				<li><b>{{ feature_count }}</b> {{t home.fact_features}}</li>
+				<li><b>MIT</b> {{t home.fact_license}}</li>
+			</ul>
+		</div>
+		<figure class="hero-device">
+			<img src="{{root}}static/img/radios/{{ flagship_id }}.svg" alt="{{ flagship_name }}">
+		</figure>
+	</div>
+</section>
+
+<section class="wrap section">
+	<h2>{{t home.pillars_title}}</h2>
+	<div class="pillars">
+		<article class="card"><h3>{{t home.p1_title}}</h3><p>{{t home.p1_text}}</p></article>
+		<article class="card"><h3>{{t home.p2_title}}</h3><p>{{t home.p2_text}}</p></article>
+		<article class="card"><h3>{{t home.p3_title}}</h3><p>{{t home.p3_text}}</p></article>
+		<article class="card"><h3>{{t home.p4_title}}</h3><p>{{t home.p4_text}}</p></article>
+	</div>
+</section>
+
+<section class="wrap section">
+	<div class="section-head">
+		<h2>{{t home.radios_title}}</h2>
+		<a href="{{home}}radios/index.html">{{t home.radios_all}} →</a>
+	</div>
+	<div class="cards">{{{ cards }}}</div>
+</section>
+
+<section class="wrap section">
+	<div class="section-head">
+		<h2>{{t home.variants_title}}</h2>
+		<a href="{{home}}features/index.html">{{t home.variants_all}} →</a>
+	</div>
+	<p class="muted">{{t home.variants_lead}}</p>
+	<div class="cards variants">{{{ variants }}}</div>
+</section>

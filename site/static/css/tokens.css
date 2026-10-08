@@ -1,0 +1,103 @@
+/* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/*
+ * Design tokens: every color, font, size and radius the site uses. A redesign starts here; site.css only refers to
+ * these variables. Light is the default; dark applies with the system setting unless the visitor picked light, and
+ * always with data-theme="dark" (the header's toggle).
+ */
+:root {
+	color-scheme: light;
+	--font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+	--font-size: 18px;
+	--line: 1.6;
+	--text-sm: 0.875rem;
+	--text-lg: 1.2rem;
+	--h1: clamp(2rem, 4.5vw, 3.2rem);
+	--h2: clamp(1.45rem, 2.6vw, 1.9rem);
+	--h3: 1.2rem;
+
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2.5rem;
+	--space-7: 4rem;
+	--wrap: 1200px;
+	--gutter: 16px;
+	--radius: 12px;
+	--radius-sm: 7px;
+
+	--bg: #f7f7f5;
+	--surface: #ffffff;
+	--surface-2: #efefeb;
+	--text: #15171a;
+	--muted: #555a62;
+	--border: #d9dad5;
+	--accent: #b8431f;
+	--accent-text: #ffffff;
+	--accent-soft: #fbe9e2;
+	--link: #0f5d8c;
+	--focus: #1d7bd1;
+	--code-bg: #eeeeea;
+	--ok: #1f7a3a;
+	--ok-soft: #e1f3e6;
+	--warn: #8a5a00;
+	--warn-soft: #fbf0d6;
+	--bad: #a8261b;
+	--bad-soft: #fbe3e0;
+	--info-soft: #e3eef8;
+	--shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 14px rgb(0 0 0 / 6%);
+	--screen-scale: 2;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--bg: #121417;
+		--surface: #1b1e22;
+		--surface-2: #23272c;
+		--text: #eceef0;
+		--muted: #a6adb6;
+		--border: #343a41;
+		--accent: #ef7a50;
+		--accent-text: #15171a;
+		--accent-soft: #3a2219;
+		--link: #7cc0f0;
+		--focus: #7cc0f0;
+		--code-bg: #23272c;
+		--ok: #6fd08d;
+		--ok-soft: #173322;
+		--warn: #f0c060;
+		--warn-soft: #3a2f14;
+		--bad: #ff8a7a;
+		--bad-soft: #3d1a17;
+		--info-soft: #182a3a;
+		--shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 14px rgb(0 0 0 / 30%);
+	}
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--bg: #121417;
+	--surface: #1b1e22;
+	--surface-2: #23272c;
+	--text: #eceef0;
+	--muted: #a6adb6;
+	--border: #343a41;
+	--accent: #ef7a50;
+	--accent-text: #15171a;
+	--accent-soft: #3a2219;
+	--link: #7cc0f0;
+	--focus: #7cc0f0;
+	--code-bg: #23272c;
+	--ok: #6fd08d;
+	--ok-soft: #173322;
+	--warn: #f0c060;
+	--warn-soft: #3a2f14;
+	--bad: #ff8a7a;
+	--bad-soft: #3d1a17;
+	--info-soft: #182a3a;
+	--shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 14px rgb(0 0 0 / 30%);
+}

@@ -21,7 +21,9 @@
 #   1. host tests (make -C tests/host), and with ODR_CI_SANITIZE=1 again under ASan and UBSan
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing
 #      tools' tests (tools/odrflash/tests, codec_extract, stm32_dfu, md380_migrate, dm32_flash and dm32_migrate
-#      self-tests); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py)
+#      self-tests); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py); the
+#      web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests pass
+#      against odrflash (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
 #      notice: the DM-32's csky toolchain comes from tools/build-csky-toolchain.sh):
 #        default            the board's defaults
@@ -160,6 +162,30 @@ for f in sys.argv[1:]:
 	else
 		head -20 "$OUT/doc-links.log"
 		bad "doc links (see $OUT/doc-links.log)"
+	fi
+	# the web site (docs/dev/website.md): its generator with markdown-it-py, from the environment or through uv
+	if python3 -c "import markdown_it" 2> /dev/null; then SITE_PY="python3"
+	elif command -v uv > /dev/null; then SITE_PY="uv run --no-project -q --with-requirements site/requirements.txt python3"
+	else SITE_PY=""; fi
+	if [ -n "$SITE_PY" ]; then
+		if $SITE_PY site/build.py --strict --out "$OUT/site" > "$OUT/site.log" 2>&1; then
+			ok "web site: $(tail -1 "$OUT/site.log" | sed 's/^site: //')"
+		else
+			tail -20 "$OUT/site.log"
+			bad "web site build (see $OUT/site.log)"
+		fi
+	else
+		skip "web site build: markdown-it-py not installed (pip install -r site/requirements.txt, or install uv)"
+	fi
+	if command -v node > /dev/null; then
+		if ODR_SITE_FIXTURES="$OUT/site-tests" site/tests/run.sh > "$OUT/site-tests.log" 2>&1; then
+			ok "web flasher tests: $(grep -E '^. pass' "$OUT/site-tests.log" | sed 's/^. //') against odrflash"
+		else
+			tail -30 "$OUT/site-tests.log"
+			bad "web flasher tests (see $OUT/site-tests.log)"
+		fi
+	else
+		skip "web flasher tests: node not installed"
 	fi
 else
 	skip "python checks: no python3"
