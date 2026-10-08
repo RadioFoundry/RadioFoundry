@@ -1714,8 +1714,42 @@ def test_probe_fm_tx_wideband(probe, sdr_bench, pytestconfig):
             return f"{r['writes'] * 1000 // max(r['elapsed_ms'], 1)} writes/s"
         return lambda: None, during
 
-    for hz in (1000, 3000, 3800):        # the probe takes tones up to 3800 Hz
+    for hz in (1000, 3000, 3800, 4800, 6000):
         rows += keyed_runs(probe, sdr_bench, pytestconfig, [(f"0x04, {hz} Hz, 16 steps", *mod(hz))], "wb",
                            ptt_s=2.5, tone_snr=hz)
     print_tx_rows("FM TX noise floor and the 0x04 path's response", rows)
-    assert len(rows) == 5
+    assert len(rows) == 7
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_probe_fm_tx_sinad_reference(probe, sdr_bench, pytestconfig):
+    """The measurement's own ceiling: the chip's selcall tone generator (a digital sine inside the FM chain, as in
+    test_probe_fm_tx_tone_gen) playing 1 kHz, measured like the PWM and 0x04 paths."""
+    if "VFO_FM" not in probe.features():
+        pytest.skip("built without the FM VFO")
+    L = probe.link
+    saved = regs_saved(L, {0xA0, 0xA1, 0xA3, 0xA4, 0xA5, 0xA6, 0xAE, 0xAF, 0x60})
+
+    def restore():
+        for r, v in saved.items():
+            L.probe_reg(PAGE, r, v)
+
+    def during():
+        aux_write16(L, 0x11A, round(1000 / 32000 * 65536))
+        for r, v in ((0xA1, 0x10), (0xA0, 0x39), (0xA6, 0x0A), (0xA3, 0x05), (0xA4, 0x05), (0xA5, 0x05),
+                     (0xAF, 0x0A), (0xAE, 0xA0)):
+            L.probe_reg(PAGE, r, v)
+        L.probe_reg(PAGE, 0x60, 0x00)
+        time.sleep(0.05)
+        L.probe_reg(PAGE, 0x60, 0x80)
+        time.sleep(2.5)
+        return "tone generator, 1 kHz"
+
+    try:
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, [("tone generator 1 kHz", restore, during)], "ref",
+                          ptt_s=3.0, tone_snr=1000)
+    finally:
+        restore()
+    print_tx_rows("The SINAD measurement's reference", rows)
+    assert len(rows) == 1
