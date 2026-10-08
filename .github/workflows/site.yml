@@ -9,7 +9,8 @@
 #   by hand              (workflow_dispatch) always rebuilt and deployed
 #   pull requests        built and tested, never deployed
 #
-# Needs Pages enabled with "GitHub Actions" as the source (repository Settings > Pages).
+# Needs Pages enabled with "GitHub Actions" as the source (repository Settings > Pages); until then the nightly and
+# manual runs stop after the check.
 name: Web site
 
 on:
@@ -48,6 +49,7 @@ jobs:
     permissions:
       contents: read
       deployments: read
+      pages: read
     outputs:
       build: ${{ steps.check.outputs.build }}
     steps:
@@ -61,6 +63,7 @@ jobs:
         run: |
           set -u
           decide() { echo "build=$1" >> "$GITHUB_OUTPUT"; echo "build=$1: $2"; exit 0; }
+          gh api "repos/$REPO/pages" > /dev/null 2>&1 || decide false "GitHub Pages isn't enabled (Settings > Pages, source GitHub Actions)"
           [ "${{ github.event_name }}" = workflow_dispatch ] && decide true "run by hand"
           # the newest github-pages deployment whose latest status is success
           last="" at=""

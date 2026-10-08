@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+name: New radio
+description: Ask for a radio to be supported, or offer facts or hardware for one.
+labels: ["new radio"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The README lists the radios planned or in progress, and [docs/spec/radios.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/spec/radios.md)
+        what is known about each. A port needs the radio on a developer's bench, so offers of hardware matter most.
+
+        Facts only: chip markings, photos of the board you took yourself, FCC IDs, public documents. No code,
+        disassembly or firmware images from the vendor or other projects (docs/CLEANROOM.md).
+  - type: input
+    id: radio
+    attributes:
+      label: Radio
+      description: Maker and model, and the names it's also sold under.
+      placeholder: TYT MD-UV380, Retevis RT3S
+    validations:
+      required: true
+  - type: input
+    id: fcc
+    attributes:
+      label: FCC ID
+      description: On the label under the battery. The FCC's internal photos show the chips.
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware
+      description: What you know, and where it comes from (label, photo, FCC filing, manual). Leave blank what you don't know.
+      value: |
+        - Processor:
+        - DMR chip:
+        - RF chip:
+        - Display (size, color or mono, resolution):
+        - Flash:
+        - GPS, Bluetooth:
+        - Firmware update method (USB, cable, bootloader keys):
+  - type: textarea
+    id: photos
+    attributes:
+      label: Board photos
+      description: Your own photos of the boards, chip markings readable. Drag them in.
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: Can you help?
+      options:
+        - label: I own this radio and can test builds on it.
+        - label: I can lend or donate a unit to a developer.

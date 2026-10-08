@@ -2,7 +2,9 @@
 
 # Contributing
 
-Issues and pull requests are welcome. Read this page and [docs/CLEANROOM.md](../CLEANROOM.md) first.
+Issues and pull requests are welcome. Read this page and [docs/CLEANROOM.md](../CLEANROOM.md) first. New issues use
+the forms in `.github/ISSUE_TEMPLATE/` (bug, feature, new radio), and pull requests open with the checklist in
+`.github/PULL_REQUEST_TEMPLATE.md`.
 
 ## Clean room
 

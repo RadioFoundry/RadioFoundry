@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+name: Feature request
+description: Something ODR should do that it doesn't.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the README's feature table and [docs/feature-matrix.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/feature-matrix.md)
+        first: it may be planned or behind a build switch.
+  - type: textarea
+    id: need
+    attributes:
+      label: What you want to do
+      description: The task, not the solution. "Hear a repeater's other time slot while I wait", not "add a menu item".
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How you do it today
+      description: On ODR, on the stock firmware or on another radio, and what's wrong with that.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How it could work
+      description: Keys, screens, settings. Optional.
+  - type: textarea
+    id: standard
+    attributes:
+      label: Standard or protocol
+      description: |
+        If it's an air interface or network feature: the ETSI clause or a public spec. Don't paste code or
+        disassembly from other firmware (docs/CLEANROOM.md).
+  - type: dropdown
+    id: users
+    attributes:
+      label: Who needs it
+      multiple: true
+      options:
+        - Amateur
+        - Commercial and business
+        - Public safety, events, search and rescue
+        - Everyone
+  - type: textarea
+    id: radios
+    attributes:
+      label: Radios
+      description: All radios, or only ones with certain hardware (GPS, second receiver, Bluetooth)?

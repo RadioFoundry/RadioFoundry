@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+blank_issues_enabled: false
+contact_links:
+  - name: User manual
+    url: https://github.com/sfowlr/OpenDigitalRadio/tree/main/docs/user
+    about: Installing, first boot, channels, DMR, FM and every setting.
+  - name: Developer docs
+    url: https://github.com/sfowlr/OpenDigitalRadio/tree/main/docs/dev
+    about: Building, architecture, testing and contributing.
