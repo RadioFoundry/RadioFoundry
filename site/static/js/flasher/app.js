@@ -391,12 +391,14 @@ function buildView() {
 				return h("div", { class: `toggle${base.includes(f.name) !== isOn ? " changed" : ""}`, style: `--depth: ${depth}` },
 					h("input", { type: "checkbox", id: `f-${f.name}`, checked: isOn, disabled: sel.required(f.name),
 						onchange: (e) => change(f.name, e.target.checked) }),
-					h("label", { for: `f-${f.name}` }, f.title, note.length ? h("span", { class: "why" }, note.join(" ")) : null),
-					h("button", { class: "info", type: "button", "aria-expanded": String(tipOpen), "aria-controls": tipId,
-						"aria-label": t("flash.build.info", { name: f.title }),
-						onclick: (e) => { e.stopPropagation(); S.openTip = tipOpen ? null : f.name; draw(); focusInfo(f.name); } }, "i"),
-					h("code", { class: "small" }, f.name),
-					tipOpen ? featureTip(f, tipId) : null);
+					h("div", { class: "feature" },
+						h("label", { for: `f-${f.name}` }, f.title),
+						h("button", { class: "info", type: "button", "aria-expanded": String(tipOpen), "aria-controls": tipId,
+							"aria-label": t("flash.build.info", { name: f.title }),
+							onclick: (e) => { e.stopPropagation(); S.openTip = tipOpen ? null : f.name; draw(); focusInfo(f.name); } }, "i"),
+						note.length ? h("span", { class: "why" }, note.join(" ")) : null,
+						tipOpen ? featureTip(f, tipId) : null),
+					h("code", { class: "small" }, f.name));
 			}));
 			return details;
 		});
