@@ -167,7 +167,7 @@ def feature_matrix():
 
 def variants():
 	"""The full build first, then each config/variants/<id>.mk: title, summary, the switches it turns off and why."""
-	out = [{"id": "full", "title": "Full", "summary": "Every feature the radio can run: the default build.",
+	out = [{"id": "full", "title": "Full", "summary": "Every feature the radio supports.",
 		"off": []}]
 	for p in sorted(glob.glob(path("config", "variants", "*.mk"))):
 		v = {"id": os.path.basename(p)[:-3], "title": "", "summary": "", "off": []}

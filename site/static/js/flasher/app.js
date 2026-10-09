@@ -276,7 +276,6 @@ function startView() {
 	return h("div", { class: "flasher" },
 		...support,
 		panel(t("flash.start.title"),
-			h("p", {}, t("flash.start.lead")),
 			h("div", { class: "choice-grid" }, choice("install", "⤓"), choice("backup", "⎘"), choice("restore", "↺"))),
 		h("details", { class: "small" }, h("summary", {}, t("flash.start.privacy_title")), h("p", {}, t("flash.start.privacy"))),
 		h("p", { class: "small muted" }, S.sim ? h("a", { href: "#", onclick: (e) => { e.preventDefault(); location.hash = ""; location.reload(); } }, t("flash.sim.leave"))
@@ -454,7 +453,7 @@ function nowView() {
 					versions.map((v) => h("option", { value: v, selected: S.now.version === v }, v)))),
 			notice(t(S.radio.backup.stock === "none" ? "flash.now.stock_backup_later" : "flash.now.stock_backup_planned"), "info"));
 		}
-		out.replaceChildren(panel(t("flash.now.title"), h("p", {}, t("flash.now.lead")), opts, detail, status),
+		out.replaceChildren(panel(t("flash.now.title"), opts, detail, status),
 			h("div", { class: "actions" }, button(t("flash.next"), next, { primary: true, disabled: !S.now })));
 	};
 	const status = h("div");

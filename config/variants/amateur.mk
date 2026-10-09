@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 ## title: Amateur
-## summary: Everything for amateur radio: hotspot, APRS, repeater roaming, the USB network services. Business
-## summary: features that have no use on the amateur bands are left out.
+## summary: For amateur radio. Leaves out business features.
 ##
 ## A release variant (make VARIANT=amateur). Variants only turn features off; the board's own limits still apply.
 ## Each switch below carries the reason the site shows next to it. Draft: the owner decides the final list.

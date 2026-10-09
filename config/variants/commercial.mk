@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 ## title: Commercial
-## summary: For business and public service fleets: text messages, location, presence, dispatch and network
-## summary: management. Amateur-only features (hotspot, APRS) are left out.
+## summary: For business and public service radios. Leaves out amateur-only features.
 ##
 ## A release variant (make VARIANT=commercial). Variants only turn features off; the board's own limits still apply.
 ## Each switch below carries the reason the site shows next to it. Draft: the owner decides the final list.
