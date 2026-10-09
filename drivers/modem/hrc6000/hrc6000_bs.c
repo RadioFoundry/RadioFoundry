@@ -302,7 +302,7 @@ static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_bu
 		}
 	}
 	// The CACH before this burst: the manual has the chip frame it from AT / TC in 0x52 and the short LC in page 2;
-	// on air it stays all zero (split-duplex.md 10.1), which is why our framing is the default
+	// on air it stays all zero (modem-hrc6000.md 9.2), which is why our framing is the default
 
 	if (cach != NULL) {
 		w(e, R_CACH_TX, (uint8_t)(((cach->at & 1u) << 3) | ((cach->tc & 1u) << 2)));

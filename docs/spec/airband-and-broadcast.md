@@ -5,8 +5,8 @@
 > **Parked (2026-10-10).** Work stopped here when the owner moved the focus to the DM-1701. Done and committed:
 > the AM receive logic in the radio core (section 3, `radioAmTest`), the RDA5807M driver and a bit-banged I2C
 > master (4.2, `rda5807mTest`), and the broadcast receiver's behavior (4.3, `bcastTest`). Both switches are off
-> on every board except the DM-32UV. On the DM-1701 the code is identical; the image is 8 bytes larger, the two
-> optional HAL pointers (`hal_radio_t.rx_am`, `board_t.bcast`, NULL there). The DM-32 build wasn't compiled (no csky
+> on every board except the DM-32UV. On the other boards the code is identical; the image is 8 bytes larger, for
+> the two optional HAL pointers (`hal_radio_t.rx_am`, `board_t.bcast`, NULL there). The DM-32 build wasn't compiled (no csky
 > compiler on the CI machine).
 >
 > **Parked: revisit** (in order):
@@ -20,14 +20,13 @@
 >    (8.33k, 25k) wired to `radio_req_vfo_step_size`, TXDENY_AM's text ("Air band: receive only" / "Pick another
 >    channel"); uiFlowTest flows and gallery shots; the simulator's `radio_req_vfo_step_size` and `view.am`.
 > 4. Debug link view keys (`am=`, `bcast.*`), docs/user (DM-32UV, not yet tested), README status line.
-> 5. On the radio: the bring-up steps in 6, which answer the open questions in `hardware-dm32.md` 8.7.
+> 5. On the radio: [dm32-bringup.md](../testing/dm32-bringup.md) 11, which answers the open questions in `hardware-dm32.md` 8.7.
 > 6. Owner decisions: whether the FD6818 "Confidential Programming guide" seen on mikrocontroller.net may be used
 >    (not read; probably not, under the clean-room rules), six presets and the 2 s resume delay, the AM step UI
 >    (8.33k / 25k on the Step tile), and refusing TX in 108-137 MHz only on AM-capable boards.
 
 Status: research and design, 2026-10-10. What the radios ODR supports can do on the aeronautical VHF band (AM,
-108-137 MHz) and FM broadcast (65-108 MHz), how ODR does it generically, and what the DM-32UV bring-up must check (its hardware facts:
-`hardware-dm32.md` 8.7).
+108-137 MHz) and FM broadcast (65-108 MHz), and how ODR does it on any radio that has the hardware.
 
 Source tags follow [radios.md](radios.md): **C** confirmed (manufacturer, datasheet, bench, or the owner's own
 use of the radio), **D** documented by a reverse-engineering project or permissively licensed code, **F** forum or
@@ -52,10 +51,11 @@ The AT1846S has no AM demodulator: its datasheet and our driver know only FM and
 built on it gets neither feature from ODR. The design below serves any radio whose RF chip has an AM mode
 (CAP_AM_RX) and any radio with a second broadcast receiver chip (CAP_BCAST_FM).
 
-## 2. DM-32UV
+## 2. Radio facts
 
-What is known about the DM-32UV's air band and broadcast hardware (public claims, which chip demodulates AM, the
-open questions A1-A4 and B1-B5 that bring-up answers) is in [hardware-dm32.md](hardware-dm32.md) 8.7.
+Each radio's air band and broadcast hardware is on its hardware page. The DM-32UV's (which chip demodulates AM, the
+open questions A1-A4 and B1-B5) is [hardware-dm32.md](hardware-dm32.md) 8.7; its bring-up checks are
+[dm32-bringup.md](../testing/dm32-bringup.md) 11.
 
 ## 3. Air band AM (done in the radio core)
 
@@ -144,28 +144,8 @@ Home to listening in 4 presses (Hub, Tools, 9, 1). "Paused: channel busy" in the
 
 | Switch | Default | Covers |
 |---|---|---|
-| `CONFIG_AM_RX` | n (DM-32UV: = FM) | `radio_am.c` use in the radio core, RREQ_VFO_STEP_SIZE; needs FM |
-| `CONFIG_BCAST_FM` | n (DM-32UV: y) | `core/bcast` |
+| `CONFIG_AM_RX` | n; on for boards with an AM receiver | `radio_am.c` use in the radio core, RREQ_VFO_STEP_SIZE; needs FM |
+| `CONFIG_BCAST_FM` | n; on for boards with a broadcast receiver | `core/bcast` |
 
-The board must also set the capability bits; without them the code does nothing at run time.
-
-## 6. Bring-up checks (DM-32UV)
-
-See [dm32-bringup.md](../testing/dm32-bringup.md) step 11. The questions A1-A4 and B1-B5 are in `hardware-dm32.md`
-8.7.
-
-### 6.1 AM
-
-1. Reference: the stock radio (or a scanner) on the local ATIS or tower frequency; note the time and frequency.
-2. ODR on the same frequency (VFO or an FM channel): Home shows AM (once the UI part lands); the debug link's
-   `view` shows `am=1`, and the FD6818's 0x47 and 0x30 read back over the chip-register command.
-3. No audio: change the speaker source level (0x2F), then try the C7000 path (A2). Distorted on strong signals: AGC
-   (A3). Squelch too tight or loose: measure the RSSI with a generator and adjust the offset (A4).
-4. PTT on the air channel: the deny screen, the red LED stays off, nothing on an SDR monitoring the frequency.
-
-### 6.2 Broadcast
-
-1. Probe the RDA5807M chip ID on PTA25 / PTA26 (B1, B3).
-2. Power on, tune a strong local station, try both reference clock settings (B2).
-3. Find the audio path (B4) and the antenna (B5); then the traffic policy: a call on the channel mutes the broadcast,
-   which comes back 2 s after.
+The board must also set the capability bits; without them the code does nothing at run time. Per-board defaults:
+[feature-matrix.md](../feature-matrix.md).

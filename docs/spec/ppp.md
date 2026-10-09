@@ -3,12 +3,11 @@
 # PPP on the serial host link
 
 IPv4 over PPP on the radio's serial host port, into the same IP gateway and services as the USB network adapter
-(`usb-network.md`). For radios whose only computer link is a USB-serial cable on a UART at 115200 baud: the DM-32UV
-(`hardware-dm32.md` 3.11) and the GD-88 (`hardware-gd88.md`). On the DM-1701 and MD-380 it can also run on the USB
-serial port, as a fallback when a host doesn't bring up the network adapter.
+(`usb-network.md`). It is the IP link of radios whose only computer link is a USB-serial cable on a UART at 115200 baud. On radios
+with USB it can also run on the USB serial port, as a fallback when a host doesn't bring up the network adapter.
 
-Switch `CONFIG_NET_PPP` (`docs/build-config.md`), on for the DM-32UV (its only IP link, with the gateway and every
-service: 7.1) and off on the USB radios: new, host tested and interop tested with pppd, not yet tried on a radio. It needs `CONFIG_HOSTLINK` and `CONFIG_DMR_IP_GATEWAY`; the gateway needs a link to
+Switch `CONFIG_NET_PPP` (`docs/build-config.md`), on for boards without USB (their only IP link, with the gateway and
+every service) and off on the USB radios ([feature-matrix.md](../feature-matrix.md)): new, host tested and interop tested with pppd, not yet tried on a radio. It needs `CONFIG_HOSTLINK` and `CONFIG_DMR_IP_GATEWAY`; the gateway needs a link to
 the host, `CONFIG_USB_NETWORK` or `CONFIG_NET_PPP`, and follows PPP by default.
 
 Written from RFC 1661 (PPP, LCP), RFC 1662 (HDLC-like framing) and RFC 1332 (IPCP) only.
@@ -158,14 +157,13 @@ escape for each `0x7E` / `0x7D` (0.8% of random data; with the default ACCM ever
 | HTTP screenshot (BMP) | about 40 KB | about 4 s |
 
 On a board whose UART sends by polling, the host link task is busy for the length of each frame it sends (51 ms for
-a full one). The board's receive ring must hold one full frame while that happens. The DM-32UV sends by polling and
-has a 1,024-byte ring, so one full frame in each direction fits (`hardware-dm32.md` 17).
+a full one). The board's receive ring must hold one full frame while that happens.
 
 ## 7. Cost
 
 Flash and RAM of `CONFIG_NET_PPP=y` against the default image (agent/ppp at f52d6b9, `SOURCE_DATE_EPOCH` fixed so the
 default images compare byte for byte with main). The USB radios already have the gateway and its services, so the
-figure is PPP alone; on the DM-32UV the gateway comes with it.
+figure is PPP alone; on a radio without USB the gateway comes with it.
 
 | Board, build | Flash | RAM | Fits |
 |---|---:|---:|---|
@@ -174,55 +172,10 @@ figure is PPP alone; on the DM-32UV the gateway comes with it.
 | MD-380 (its default, `LTO=1 LTO_3P=1`) | +3,816 | +88 | no: 2,228 B free, 1,588 B short |
 | DM-32UV, PPP and the IP gateway, no services | +10,736 | +4,080 | yes: RAM 95.3%, 7,792 B left |
 
-Of the DM-32's figure PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B RAM; the
-rest is the gateway, its air side and the network personality (`hostlink_net*.c`, 1.6 KB RAM each, the gateway's
-600 B frame).
-
-### 7.1 A DM-32 network build
-
-DM-32UV default before the network went in: flash 313,804 B of 880 KB, RAM 153,740 B of 165,612 B (92.83%, 11,872 B free), RAM_LO 8,800 B of
-27,868 B. Each service on top of PPP and the gateway (324,540 B flash, 157,820 B RAM):
-
-| Added | Flash | RAM |
-|---|---:|---:|
-| TCP (4 connections) | +4,748 | +4,680 |
-| TCP + HTTP | +9,416 | +8,152 (does not link: 360 B short) |
-| TCP + rigctld | +9,156 | +6,112 |
-| TCP + KISS over TCP | +5,920 | +5,496 |
-| TCP + APRS-IS | +7,312 | +5,408 |
-| mDNS | +7,660 | +360 |
-| TFTP | +7,096 | +136 |
-| SNMP | +9,404 | +3,160 |
-| control station | +284 | 0 |
-| everything (default switches with PPP on) | +40,700 (+51,436 over the default) | +13,728 (+17,808): RAM 103.6%, 5,936 B short |
-
-Each TCP connection costs about 1.5 KB RAM across TCP, HTTP and rigctld (`TCP_CONNS`, `tcp.h`).
-
-Sets that fit with the old RAM layout (everything `ODR_CPU_RAM` in main RAM):
-
-| Set | Flash | RAM used | Free |
-|---|---:|---:|---:|
-| S1: PPP, gateway, mDNS, TFTP, control station | 339,072 | 158,292 (95.6%) | 7,320 |
-| S2: S1 + SNMP | 348,200 | 161,452 (97.5%) | 4,160 |
-| S3: S1 + TCP (2 connections), rigctld, KISS | 348,940 | 162,796 (98.3%) | 2,816 |
-
-**Done: the DM-32 default.** The state the core already marks `ODR_CPU_RAM` (APRS 5.9 KB, radio task 3.1 KB, hotspot
-2.8 KB, DMR data 3.8 KB) now goes to RAM_LO (`-DODR_CPU_RAM_SECTION='".ram_lo"'` in `boards/dm32/board.mk`), and the
-network buffers that carry the same mark (TCP connections, the adapter frame and packets, the air bursts, the gateway
-frame) stay in main RAM (`EXCLUDE_FILE` in `dm32.ld`; `hardware-dm32.md` 17.1). The DM-32 default is everything: PPP,
-gateway, TCP with `TCP_CONNS=3`, HTTP, rigctld, KISS, APRS-IS, mDNS, TFTP, SNMP, control station.
-
-| DM-32UV, csky-elf GCC 14 | Flash | RAM used | Free | RAM_LO used |
-|---|---:|---:|---:|---:|
-| default (everything, 3 TCP connections) | 365,236 | 154,428 (93.2%) | 11,184 | 24,392 (87.5%) |
-| default, `TCP_CONNS=4` | 365,236 | 155,956 (94.2%) | 9,656 | 24,392 |
-| default, `TCP_CONNS=2` | 365,276 | 152,892 (92.3%) | 12,720 | 24,392 |
-| maximal (default + `FONT_XL`, `AUDIO_PROBE`) | 372,856 | 155,740 (94.0%) | 9,872 | 24,392 |
-
-Three connections keep about as much RAM free as the image had before the network (11.9 KB): browsers open two,
-rigctld one, and TIME_WAIT slots are reused. PPP's receive buffer is already the adapter's (602 B saved). Not worth
-trimming: the HTTP body buffer (1,536 B: JSON views would be cut) or the gateway's 600 B frames (TCP's MSS depends on
-them).
+PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B RAM; the rest of the DM-32UV's
+figure is the gateway, its air side and the network personality (`hostlink_net*.c`, 1.6 KB RAM each, the gateway's
+600 B frame). The DM-32UV's per-service costs and its default network build are in
+[hardware-dm32.md](hardware-dm32.md) 17.2.
 
 ## 8. Tests
 

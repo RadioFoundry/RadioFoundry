@@ -585,13 +585,33 @@ at the first timeslot interrupt after the unkey, or by the watchdog when no time
 
 The CACH: the manual has the MCU give the BS downstream CACH's AT and TC in 0x52 (written) and the short LC in TX RAM
 0x24-0x28, and the chip encode it. On air (DM-1701, 2026-10-12) the layer 2 CACH stays all zero whatever is written
-there, in every 0x10 / 0x11 / 0x50 combination tried (`split-duplex.md` 10.1). What works is the **physical layer
+there, in every 0x10 / 0x11 / 0x50 combination tried (9.2). What works is the **physical layer
 mode** (0x10 = 0x66, LayerMode 00), which the manual documents only for receive: the chip then modulates TX RAM page
 2 as given, 288 bits per slot (24 CACH, 264 burst, MSB of the first byte first), from 0x00-0x23 and 0x24-0x47 in
 alternate slots, and takes its half at the slot start. The slot interrupt, 0x41 = 0x80 and the PA keying work as in
 layer 2. The driver writes each slot's frame (`bsOutboundRawSlot`) to both halves, since which half is which slot
 isn't known, and nothing to 0x50, 0x52 or the vocoder. Variant 1 keeps the layer 2 framing (0x52 and the short LC
 written for every burst) for comparison; 255 adds up to four raw page 4 pairs at key-up. Host test: `tests/host/hrc6000BsTest.c`.
+
+
+### 9.2 BS framing bench results (2026-10-11 and 12)
+
+DM-1701, 467.375 MHz, lowest power, 10 s and about 335 bursts per run, with the framing variants of
+[split-duplex.md](split-duplex.md) 10.1 and `sdrmon.py analyze --cach` on the SDR bench:
+
+| Build / variant | On air |
+|---|---|
+| Layer 2 framing, 0x10 / 0x11 variants (0x6E, 0x4E, 0x6A; 0x11 0x80, 0x00, 0x40), nothing written to the CACH inputs | the continuous outbound right (30.00 ms, one key-up, BS sync, our color code); the CACH all zero (a valid TACT codeword), TC never alternating |
+| The same with AT / TC in 0x52 and the short LC in TX RAM 0x24-0x28 every burst, LCSS also in 0x50 bits 1-0, raw 0x56 / 0x57 | unchanged: CACH all zero, no short LC |
+| Layer 2 with Decode_Mode 00 (0x40 = 0xE0), our 288 bits at TX RAM 0x00 | the chip's own framing, CACH all zero |
+| Physical layer mode (0x10 = 0x66), our 288 bits at TX RAM 0x00 | exactly our frames (sync, slot type, payload, CACH with TC, LCSS and the short LC fragments; AT following SET_AT), but every other slot only: 168 bursts, 60 ms apart, the parity changing between key-ups |
+| ... and also at 0x24 | both slots: 335 bursts, TC alternating 334 of 334, AT following SET_AT, 83 short LCs decoded, none bad |
+| ... also at 0x30, 0x48, 0x60, page 6 0x00 (not 0x24) | the other slot repeats a stale frame (whatever 0x24 last held) |
+| 0x00 and 0x24, voice LC headers queued on TS2 with idle on TS1 | 168 idle (B), 154 idle and 15 headers (A), no sync or slot type errors: the half on air isn't disturbed by the next frame written over it at the slot start |
+
+So in the physical layer mode the chip sends TX RAM 0x00-0x23 and 0x24-0x47 in alternate slots and latches its half
+at the slot start. Earlier runs also found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas
+8.14).
 
 ---
 

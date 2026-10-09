@@ -88,7 +88,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 
 ### DM-32UV network build (PPP)
 
-The DM-32UV has no USB: its network is PPP on the programming cable (`NET_PPP`, `docs/spec/ppp.md` 7.1), on by
+The DM-32UV has no USB: its network is PPP on the programming cable (`NET_PPP`, `docs/spec/hardware-dm32.md` 17.2), on by
 default with the IP gateway and every service above, `TCP_CONNS=3` (`boards/dm32/config.mk`). It fits because the
 state the core marks `ODR_CPU_RAM` lives in the DM-32's low RAM below the codec window (`hardware-dm32.md` 17.1).
 Measured with csky-elf GCC 14 (bytes of the image, RAM of the linker's regions):

@@ -346,7 +346,7 @@ nothing and the ISR read past the array, so every fourth TS2 burst went out as a
 0x52, the short LC in TX RAM 0x24) changes nothing on air: TC never alternates, so a radio can't tell TS1 from TS2 on
 the split duplex outbound. The physical layer mode (0x10 LayerMode 00) sends TX RAM as given, from two 36-byte halves
 (0x00, 0x24) in alternate slots; a frame written only to 0x00 goes out in every other slot. Build the whole slot and
-write it to both halves (`modem-hrc6000.md` 9.1, `split-duplex.md` 10.1). Commits e94a375 and the one after.
+write it to both halves (`modem-hrc6000.md` 9.1, 9.2). Commits e94a375 and the one after.
 
 ## 9. USB and CDC-NCM
 

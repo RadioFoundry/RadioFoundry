@@ -243,18 +243,15 @@ MMDVMHost sends is to be confirmed on the bench (section 11, open question 1): b
 The core hands the modem driver, for each slot, the burst and the CACH (fields and the 24 interleaved bits:
 `dmr_cach_t`). What the driver can do with the CACH depends on the chip:
 
-- **HR_C6000** (DM-1701, MD-9600, GD-77): the chip's layer 2 BS framing sends a CACH, but it stays all zero whatever is
-  written to the inputs the manual names (AT / TC in 0x52, the short LC in TX RAM 0x24-0x28; section 10.1). So the
-  driver runs the chip in the physical layer mode (0x10 = 0x66), where it only modulates: the core builds each slot's
-  288 bits (`bsOutboundRawSlot`: the CACH, then the burst with BS sync, slot type and coded payload, or for voice the
-  AMBE around the sync or EMB and embedded LC) and the driver writes them to TX RAM page 2. The chip sends 0x00-0x23
-  and 0x24-0x47 in alternate slots and takes its half at the slot start; which half is which slot isn't known, so
-  each frame goes to both. INFO byte 4 says 1 (ours). Active timing (0x40 = 0xE3) gives the free-running slot clock
-  and 0x41 = 0x80 in every slot sends in both slots (`modem-hrc6000.md` 9.1).
-- **HR_C7000** (DM-32, GD-88): LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS and BS_CACH (0x428-0x438) exist and are never
+- **HR_C6000**: the chip's layer 2 BS framing sends an all-zero CACH whatever is written to its inputs, so the driver
+  runs the chip in the physical layer mode, where it only modulates ([modem-hrc6000.md](modem-hrc6000.md) 9.1, 9.2).
+  The core builds each slot's 288 bits (`bsOutboundRawSlot`: the CACH, then the burst with BS sync, slot type and
+  coded payload, or for voice the AMBE around the sync or EMB and embedded LC) and the driver writes them to TX RAM.
+  INFO byte 4 says 1 (ours).
+- **HR_C7000**: LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS and BS_CACH (0x428-0x438) exist and are never
   written by working firmware (`modem-hrc7000.md` 2.5); the user guide's descriptions of them are not in our spec yet.
   Until the register layout is specified the HR_C7000 has no `bs_*` operations, so INFO offers no TX half on it. The
-  DM-32 glue (`boards/dm32/dmr_dm32.c`) does not wire `now_us` / `slot_clock` yet either, so a DM-32 offers no role at
+  DM-32UV glue (`boards/dm32/dmr_dm32.c`) does not wire `now_us` / `slot_clock` yet either, so that radio offers no role at
   all (INFO byte 1 = 0, SET_ROLE answers 2); adding them (the engine's `tick` / `t_tick`, as `hrc6000_bs_slot_clock`
   does) makes it an RX half. Not done here: the csky toolchain was not available to build it.
 - **Fallback when the chip can't make a CACH**: BS-synced continuous bursts without valid TACT bits. MMDVMHost-style
@@ -398,14 +395,12 @@ from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by
 ## 9. Frequency accuracy, calibration and antennas
 
 - **TX half frequency**: the continuous outbound keys once with the board's per-burst RX-to-TX sequence and then
-  stays in TX, so it inherits that sequence's carrier error; no offset constant is added. On the DM-1701 the
-  sequence retunes with the receiver off and lands within about +65 Hz (`hardware-dm1701.md` 5.6 and 20, gotcha
-  3.5). A continuous carrier
-  warms the TCXO: measure on the SDR bench after 5 minutes keyed (`sdrmon.py analyze` prints the frequency offset per
-  burst) and, if it is outside about ±300 Hz, correct the radio's reference oscillator offset in its calibration
-  (DM-1701: HR_C6000 0x47 / the calibration's `ref_offset`, `hardware-dm1701.md` 12.4). An ADF7021-based receiver (MMDVM_HS) decodes nothing at -3 kHz, so
-  check every TX half once with the bench.
-- **RX half**: uses the radio's receive calibration as is; the modem (HR_C6000) tolerates the ±1.5 kHz of a typical
+  stays in TX, so it inherits that sequence's carrier error; no offset constant is added (the sequence and its
+  measured error are on each radio's hardware page; gotcha 3.5). A continuous carrier warms the TCXO: measure on the
+  SDR bench after 5 minutes keyed (`sdrmon.py analyze` prints the frequency offset per burst) and, if it is outside
+  about ±300 Hz, correct the reference oscillator offset in the radio's calibration. An ADF7021-based receiver
+  (MMDVM_HS) decodes nothing at -3 kHz, so check every TX half once with the bench.
+- **RX half**: uses the radio's receive calibration as is; the modem tolerates the ±1.5 kHz of a typical
   subscriber.
 - **Antennas**: the two halves are a duplex repeater without a duplexer. With 5 MHz UHF spacing, a 1 W TX half next to
   the RX half desensitizes it unless the antennas are isolated by about 60-70 dB: a duplexer on one antenna, or
@@ -414,7 +409,7 @@ from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by
 
 ## 10. Bench tests (the lead's HIL)
 
-### 10.1 BS framing on the HR_C6000 (bench, 2026-10-11 and 12)
+### 10.1 BS framing variants
 
 Debug link command `SPLIT` (0x15) op 1 sets the framing variant the next TX half key-up uses; op 2 reads the split
 view. Variants: 0 ours (the default: physical layer mode, the core's 288 bits per slot), 1 the chip's layer 2
@@ -424,21 +419,7 @@ given). `tools/split_duplex_host.py --exp <variant>` or the HIL test (`ODR_SPLIT
 ..."`) keys the outbound with idle bursts and a short LC for 10 s; `sdrmon.py analyze --cach` on the SDR bench
 decodes per burst the family, the CACH (`tact ok AT TC LCSS`) and the short LC.
 
-How it was found (DM-1701, 467.375 MHz, lowest power, 10 s and about 335 bursts per run):
-
-| Build / variant | On air |
-|---|---|
-| Layer 2 framing, 0x10 / 0x11 variants (0x6E, 0x4E, 0x6A; 0x11 0x80, 0x00, 0x40), nothing written to the CACH inputs | the continuous outbound right (30.00 ms, one key-up, BS sync, our color code); the CACH all zero (a valid TACT codeword), TC never alternating |
-| The same with AT / TC in 0x52 and the short LC in TX RAM 0x24-0x28 every burst, LCSS also in 0x50 bits 1-0, raw 0x56 / 0x57 | unchanged: CACH all zero, no short LC |
-| Layer 2 with Decode_Mode 00 (0x40 = 0xE0), our 288 bits at TX RAM 0x00 | the chip's own framing, CACH all zero |
-| Physical layer mode (0x10 = 0x66), our 288 bits at TX RAM 0x00 | exactly our frames (sync, slot type, payload, CACH with TC, LCSS and the short LC fragments; AT following SET_AT), but every other slot only: 168 bursts, 60 ms apart, the parity changing between key-ups |
-| ... and also at 0x24 | both slots: 335 bursts, TC alternating 334 of 334, AT following SET_AT, 83 short LCs decoded, none bad |
-| ... also at 0x30, 0x48, 0x60, page 6 0x00 (not 0x24) | the other slot repeats a stale frame (whatever 0x24 last held) |
-| 0x00 and 0x24, voice LC headers queued on TS2 with idle on TS1 | 168 idle (B), 154 idle and 15 headers (A), no sync or slot type errors: the half on air isn't disturbed by the next frame written over it at the slot start |
-
-So in the physical layer mode the chip sends TX RAM 0x00-0x23 and 0x24-0x47 in alternate slots and latches its half
-at the slot start. Earlier runs also found every fourth TS2 burst sent as a zeroed PI header, a driver bug (gotchas
-8.14).
+The results that led to the physical layer mode are in [modem-hrc6000.md](modem-hrc6000.md) 9.2.
 
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout
 
@@ -483,6 +464,6 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
    bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit).
 5. Whether AT should default to busy during the host's hang time (mode 0 does: the outbound slot is not idle) or only
    from the RX half (mode 1).
-6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`) are on the board's diagnostics line `bs` (the DM-1701's) (slots,
+6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`) are on the board's diagnostics line `bs` (slots,
    bursts, underruns, key-ups, CACH written, PA failures, stalls; `odr_debug.py` parses them as `bs.*`). Not reachable
    from the core itself (no `hal_dmr_modem_t` stats operation).

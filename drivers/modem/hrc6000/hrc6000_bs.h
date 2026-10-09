@@ -7,7 +7,7 @@
 // the first RF TX interrupt and stays up until unkeyed. Each outbound slot plays its own queue in order; an empty one
 // gets an idle burst (counted). Key-up starts with an outbound TS1 slot.
 //
-// Framing (split-duplex.md 10.1, bench 2026-10-12): in layer 2 the chip frames the bursts but its CACH stays all zero
+// Framing (modem-hrc6000.md 9.2, bench 2026-10-12): in layer 2 the chip frames the bursts but its CACH stays all zero
 // whatever is written to the inputs the manual names (0x52 AT / TC, TX RAM 0x24 short LC). So by default the chip
 // runs in the physical layer mode (0x10 bits 4-3 = 00) and only modulates: the core builds each slot's 288 bits (CACH
 // and burst, bsOutboundRawSlot) and they go to TX RAM page 2, where the chip sends 0x00-0x23 and 0x24-0x47 in
