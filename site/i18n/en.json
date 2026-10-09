@@ -356,5 +356,11 @@
  "flash.build.group_count": "{on}/{total}",
  "flash.build.group_changed": "{n} changed",
  "flash.build.needs": "Needs {names}, which this turns on.",
- "flash.build.custom_start": "Change any feature below."
+ "flash.build.custom_start": "Change any feature below.",
+ "flash.build.info": "About {name}",
+ "flash.build.tip_needs": "Needs",
+ "flash.build.tip_any": "one of {names}",
+ "flash.build.tip_size": "Flash",
+ "flash.build.tip_bytes": "{n} bytes",
+ "flash.build.tip_switch": "Switch"
 }

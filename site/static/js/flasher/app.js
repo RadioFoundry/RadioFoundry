@@ -114,6 +114,7 @@ const S = {
 	link: null,
 	customPicked: false,	// the Custom card picked before any feature changed
 	openGroups: new Set(),	// feature groups expanded on the build step
+	openTip: null,		// the feature whose ⓘ bubble is open
 };
 
 const STEPS = {
@@ -385,12 +386,17 @@ function buildView() {
 				// a feature out and a needed feature that's off show inline
 				const note = [off && !isOn ? off.why : null,
 					away.length ? t("flash.build.needs", { names: away.map((n) => sel.byName[n]?.title || n).join(", ") }) : null].filter(Boolean);
-				return h("label", { class: `toggle${base.includes(f.name) !== isOn ? " changed" : ""}`, style: `--depth: ${depth}`,
-					title: plainHelp(f.help) },
-					h("input", { type: "checkbox", checked: isOn, disabled: sel.required(f.name),
+				const tipId = `tip-${f.name}`;
+				const tipOpen = S.openTip === f.name;
+				return h("div", { class: `toggle${base.includes(f.name) !== isOn ? " changed" : ""}`, style: `--depth: ${depth}` },
+					h("input", { type: "checkbox", id: `f-${f.name}`, checked: isOn, disabled: sel.required(f.name),
 						onchange: (e) => change(f.name, e.target.checked) }),
-					h("span", {}, f.title, note.length ? h("span", { class: "why" }, note.join(" ")) : null),
-					h("code", { class: "small" }, f.name));
+					h("label", { for: `f-${f.name}` }, f.title, note.length ? h("span", { class: "why" }, note.join(" ")) : null),
+					h("button", { class: "info", type: "button", "aria-expanded": String(tipOpen), "aria-controls": tipId,
+						"aria-label": t("flash.build.info", { name: f.title }),
+						onclick: (e) => { e.stopPropagation(); S.openTip = tipOpen ? null : f.name; draw(); focusInfo(f.name); } }, "i"),
+					h("code", { class: "small" }, f.name),
+					tipOpen ? featureTip(f, tipId) : null);
 			}));
 			return details;
 		});
@@ -415,12 +421,42 @@ function buildView() {
 			custom || firmwareChooser(match, draw), summary);
 	};
 	draw();
+	// a redraw replaces the buttons: put the focus back on the one that was used
+	const focusInfo = (name) => wrap.querySelector(`[aria-controls="tip-${name}"]`)?.focus();
+	wrap.addEventListener("click", () => { if (S.openTip) { S.openTip = null; draw(); } });
+	tipEscape = () => {
+		if (!S.openTip || !wrap.isConnected) return;
+		const name = S.openTip;
+		S.openTip = null;
+		draw();
+		focusInfo(name);
+	};
 	return wrap;
+}
+
+// Escape closes the open ⓘ bubble (on the document: a redraw can leave the focus on the body)
+let tipEscape = () => {};
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") tipEscape(); });
+
+// The ⓘ bubble: what a feature does, what it needs, its flash cost on this radio
+function featureTip(f, id) {
+	const titles = (names) => names.map((n) => S.selection.byName[n]?.title || n).join(", ");
+	const { all = [], any = [] } = f.needs || {};
+	const needs = [all.length ? titles(all) : null, any.length ? t("flash.build.tip_any", { names: titles(any) }) : null].filter(Boolean);
+	const bytes = f.bytes?.[S.radio.model];
+	return h("div", { class: "tip", id, role: "note", onclick: (e) => e.stopPropagation() },
+		h("p", {}, plainHelp(f.help)),
+		f.notes ? h("p", { class: "muted" }, f.notes) : null,
+		h("dl", { class: "kv-list small" },
+			needs.length ? [h("dt", {}, t("flash.build.tip_needs")), h("dd", {}, needs.join("; "))] : null,
+			bytes ? [h("dt", {}, t("flash.build.tip_size")), h("dd", {}, t("flash.build.tip_bytes", { n: bytes }))] : null,
+			h("dt", {}, t("flash.build.tip_switch")), h("dd", {}, h("code", {}, `CONFIG_${f.name}`))));
 }
 
 // features.mk help without its source and spec references ("(needs DMR; core/net/http.c)")
 function plainHelp(text) {
-	return text.replace(/\s*\([^()]*(?:\/|\.md|needs )[^()]*\)/g, "").trim();
+	const t = text.replace(/\s*\([^()]*(?:\/|\.md|needs )[^()]*\)/g, "").trim();
+	return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 // A group's features as a tree: each sits under the feature it needs in the same group (the deepest one, when it
