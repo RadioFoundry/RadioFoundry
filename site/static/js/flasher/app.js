@@ -112,6 +112,8 @@ const S = {
 	backupParts: [], backupDone: false,
 	bundle: null, restoreTarget: null,
 	link: null,
+	customPicked: false,	// the Custom card picked before any feature changed
+	openGroups: new Set(),	// feature groups expanded on the build step
 };
 
 const STEPS = {
@@ -332,49 +334,119 @@ function releaseFor(variant) {
 function buildView() {
 	const sel = S.selection;
 	const wrap = h("div", { class: "flasher" });
+	const vtitle = (v) => (t(`variant.${v.id}.title`) !== `variant.${v.id}.title` ? t(`variant.${v.id}.title`) : v.title);
+	const gtitle = (g) => (t(`group.${slug(g)}`) !== `group.${slug(g)}` ? t(`group.${slug(g)}`) : g);
+	const supportedCount = S.data.features.filter((f) => sel.supported(f.name)).length;
+	// The build type follows the checkboxes: a selection equal to a prebuilt variant is that variant, anything else is
+	// custom. The Custom card can also be picked by hand before any change (it opens the groups).
+	const change = (name, value) => {
+		sel.set(name, value);
+		S.customPicked = false;
+		draw();
+	};
 	const draw = () => {
-		const match = sel.matches();
-		const variants = h("div", { class: "choice-grid", role: "radiogroup" }, S.data.variants.map((v) => {
+		const match = S.customPicked ? null : sel.matches();
+		const card = (checked, onclick, ...body) => h("button", { class: "choice", type: "button", role: "radio",
+			"aria-checked": String(checked), onclick }, ...body);
+		const cards = S.data.variants.map((v) => {
 			const rel = releaseFor(v.id);
-			return h("button", { class: "choice", type: "button", role: "radio", "aria-checked": String(match === v.id),
-				onclick: () => { sel.useVariant(v.id); draw(); } },
-			h("strong", {}, t(`variant.${v.id}.title`) !== `variant.${v.id}.title` ? t(`variant.${v.id}.title`) : v.title),
-			h("span", { class: "small" }, v.summary),
-			h("span", { class: "small muted" }, t("flash.build.count", { n: S.radio.config[v.id].length })),
-			h("span", { class: "small muted" }, rel ? t("flash.build.release", { version: rel.version }) : t("flash.build.no_release")));
-		}));
-		// a la carte: every switch this radio supports, grouped as on the features page
+			return card(match === v.id, () => { sel.useVariant(v.id); S.customPicked = false; draw(); },
+				h("strong", {}, vtitle(v)),
+				h("span", { class: "small" }, v.summary),
+				h("span", { class: "small muted" }, t("flash.build.count", { n: S.radio.config[v.id].length, total: supportedCount })),
+				h("span", { class: "small muted" }, rel ? t("flash.build.release", { version: rel.version }) : t("flash.build.no_release")));
+		});
+		cards.push(card(!match, () => {
+			S.customPicked = true;
+			for (const g of S.data.groups) S.openGroups.add(g);
+			draw();
+		},
+		h("strong", {}, t("flash.build.custom")),
+		h("span", { class: "small" }, t("flash.build.custom_card_text")),
+		h("span", { class: "small muted" }, t("flash.build.count", { n: sel.on.size, total: supportedCount }))));
+		// every feature this radio supports, one collapsible group per feature-matrix group, each with its count
 		const groups = S.data.groups.map((g) => {
 			const items = S.data.features.filter((f) => f.group === g && sel.supported(f.name));
 			if (!items.length) return null;
-			return h("fieldset", {}, h("legend", {}, t(`group.${slug(g)}`) !== `group.${slug(g)}` ? t(`group.${slug(g)}`) : g), items.map((f) => {
-				const base = S.radio.config[sel.base].includes(f.name);
-				const on = sel.on.has(f.name);
+			const on = items.filter((f) => sel.on.has(f.name)).length;
+			const base = S.radio.config[sel.base];
+			const changed = items.filter((f) => base.includes(f.name) !== sel.on.has(f.name)).length;
+			const details = h("details", { class: "feature-group", open: S.openGroups.has(g),
+				ontoggle: (e) => { if (e.target.open) S.openGroups.add(g); else S.openGroups.delete(g); } },
+			h("summary", {}, h("span", { class: "group-name" }, gtitle(g)),
+				h("span", { class: "group-count" }, t("flash.build.group_count", { on, total: items.length }),
+					changed ? h("span", { class: "muted" }, " · ", t("flash.build.group_changed", { n: changed })) : null)),
+			nest(items).map(({ f, depth }) => {
+				const isOn = sel.on.has(f.name);
 				const off = S.data.variants.find((v) => v.id === sel.base)?.off.find((o) => o.name === f.name);
-				return h("label", { class: `toggle${base !== on ? " changed" : ""}` },
-					h("input", { type: "checkbox", checked: on, disabled: sel.required(f.name),
-						onchange: (e) => { sel.set(f.name, e.target.checked); draw(); } }),
-					h("span", {}, h("b", {}, f.title), h("span", { class: "why" }, off ? off.why : f.help)),
+				// a needed feature outside this group that is off: turning this on turns it on too
+				const away = (f.needs?.all || []).filter((n) => !items.some((i) => i.name === n) && sel.supported(n) && !sel.on.has(n));
+				// one line per feature; the help (written for developers) is the tooltip, the build's reason for leaving
+				// a feature out and a needed feature that's off show inline
+				const note = [off && !isOn ? off.why : null,
+					away.length ? t("flash.build.needs", { names: away.map((n) => sel.byName[n]?.title || n).join(", ") }) : null].filter(Boolean);
+				return h("label", { class: `toggle${base.includes(f.name) !== isOn ? " changed" : ""}`, style: `--depth: ${depth}`,
+					title: plainHelp(f.help) },
+					h("input", { type: "checkbox", checked: isOn, disabled: sel.required(f.name),
+						onchange: (e) => change(f.name, e.target.checked) }),
+					h("span", {}, f.title, note.length ? h("span", { class: "why" }, note.join(" ")) : null),
 					h("code", { class: "small" }, f.name));
 			}));
+			return details;
 		});
 		const d = sel.diff(match || sel.base);
+		const baseTitle = vtitle(S.data.variants.find((v) => v.id === sel.base));
 		const summary = h("div", { class: "summary-bar" },
-			h("div", {}, match ? h("b", {}, t("flash.build.prebuilt", { variant: S.data.variants.find((v) => v.id === match).title }))
-				: h("span", {}, h("b", {}, t("flash.build.custom")), " ", t("flash.build.custom_diff", { added: d.added.length, removed: d.removed.length }))),
+			h("div", {}, match ? h("b", {}, t("flash.build.prebuilt", { variant: vtitle(S.data.variants.find((v) => v.id === match)) }))
+				: h("span", {}, h("b", {}, t("flash.build.custom")), " ",
+					d.added.length || d.removed.length
+						? t("flash.build.custom_diff", { added: d.added.length, removed: d.removed.length, variant: baseTitle })
+						: t("flash.build.custom_start"))),
 			button(t("flash.next"), () => { next(); }, { primary: true, disabled: !match && !S.firmware }));
-		const custom = match ? null : h("div", {},
+		const custom = match ? null : panel(t("flash.build.image_title"),
 			notice(t("flash.build.custom_text"), "info"), h("pre", {}, h("code", {}, sel.makeCommand())),
+			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok") : null,
 			filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, draw)));
-		const image = firmwareChooser(match, draw);
 		wrap.replaceChildren(
-			panel(t("flash.build.title"), h("p", {}, t("flash.build.lead")), variants,
-				h("details", { class: "alacarte-wrap", open: !match }, h("summary", {}, t("flash.build.customize")),
-					h("div", { class: "alacarte" }, groups))),
-			custom || image, summary);
+			panel(t("flash.build.title"), h("p", {}, t("flash.build.lead")),
+				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
+				h("h3", {}, t("flash.build.features_title")),
+				h("div", { class: "feature-groups" }, groups)),
+			custom || firmwareChooser(match, draw), summary);
 	};
 	draw();
 	return wrap;
+}
+
+// features.mk help without its source and spec references ("(needs DMR; core/net/http.c)")
+function plainHelp(text) {
+	return text.replace(/\s*\([^()]*(?:\/|\.md|needs )[^()]*\)/g, "").trim();
+}
+
+// A group's features as a tree: each sits under the feature it needs in the same group (the deepest one, when it
+// needs several), in feature-matrix order. [{f, depth}]
+function nest(items) {
+	const byName = Object.fromEntries(items.map((f) => [f.name, f]));
+	const depthMemo = {};
+	const depth = (name, seen = new Set()) => {
+		if (name in depthMemo) return depthMemo[name];
+		if (seen.has(name) || !byName[name]) return 0;
+		seen.add(name);
+		const d = Math.max(-1, ...(byName[name].needs?.all || []).filter((n) => byName[n]).map((n) => depth(n, seen))) + 1;
+		return (depthMemo[name] = d);
+	};
+	const parent = {};
+	for (const f of items) {
+		let best = null;
+		for (const n of f.needs?.all || []) if (byName[n] && (best === null || depth(n) > depth(best))) best = n;
+		parent[f.name] = best;
+	}
+	const out = [];
+	const walk = (p, d) => {
+		for (const f of items) if (parent[f.name] === p) { out.push({ f, depth: d }); walk(f.name, d + 1); }
+	};
+	walk(null, 0);
+	return out;
 }
 
 function firmwareChooser(match, redraw) {
