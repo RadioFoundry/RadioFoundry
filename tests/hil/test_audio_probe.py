@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """USB audio feasibility on the DM-1701: which HR_C6000 settings put FM audio on the I2S link between the chip and the
-MCU (docs/spec/usb-audio.md 2.3). Needs firmware built with CONFIG_AUDIO_PROBE=y (skipped otherwise): the debug
+MCU (docs/spec/hardware-dm1701.md 21.3). Needs firmware built with CONFIG_AUDIO_PROBE=y (skipped otherwise): the debug
 link's audio probe (docs/spec/debuglink.md 3.14) reads and writes HR_C6000 registers and reports the PCM levels of
 both I2S channels. These are measurements, not regression tests: they print a table, and assert only that the
 measurement ran. Every register they touch is read first and written back in a finally block; the radio's own
@@ -15,7 +15,7 @@ mode changes (RX / TX set-up) rewrite them anyway.
   muted while the probe sends a 1 kHz tone into the I2S link; the SDR bench measures the voice band deviation per
   candidate setting. A setting with deviation well above the muted baseline puts MCU audio into the modulator.
 
-The HR_C6000's own FM sample path (usb-audio.md 2.3, candidate C): the manual's RAM tables give two 512-byte "FM data"
+The HR_C6000's own FM sample path (hardware-dm1701.md 21.3, candidate C): the manual's RAM tables give two 512-byte "FM data"
 buffers in each of the TX and RX RAMs (page 2, 0x030-0x22F and 0x230-0x42F; the TX ones "can be written externally
 for FM send"), and 0x82 has FM-mode flags bit 7 "sending data request" and bit 1 "receiving data". Neither the sample
 format nor the control bit that picks the RAM over the codec is documented, so these tests try the likely ones:
@@ -37,7 +37,7 @@ The prompt tone path (manual appendix A1) and a register sweep, the last candida
 - test_probe_fm_tx_sweep (--allow-rf --allow-service-stop): each bit of the codec area registers flipped for 0.5 s
   while keyed, with tones on I2S and in the TX RAM; the SDR's tone timeline says which flip put which on air.
 
-Results on the DM-1701 (2026-10-12): docs/spec/usb-audio.md 2.3.1.
+Results on the DM-1701 (2026-10-12): docs/spec/hardware-dm1701.md 21.3.1.
 """
 import math
 import re
@@ -583,7 +583,7 @@ def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
     assert not missing_marker, f"key-ups without the marker tone: {missing_marker}"
 
 
-# --- FM transmit: the mode register and the modulation offsets (usb-audio.md 2.3.1, after the split duplex work) ---
+# --- FM transmit: the mode register and the modulation offsets (hardware-dm1701.md 21.3.1, after the split duplex work) ---
 #
 # In DMR the chip ignored the TX RAM until 0x10's layer bits picked the physical layer mode (0x66), which the manual
 # documents only for receive. FM sets 0x10 = 0x80 and its low bits were never varied in FM, and the FM TX RAM failure

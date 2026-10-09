@@ -91,7 +91,7 @@ Names are the manual's. Only the bits we rely on are listed.
 |---|---|---|
 | 0x00 | reset (active low per module: DMR, PHY, codec, FM, vocoder IF, MSK, I2S, built-in codec) | 0xFF at init (all running) then 0x2A (partial reset, trace) |
 | 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (trace). The same value is used on UHF and VHF on these radios |
-| 0x02-0x05 | TX / RX I and Q offsets | 0 at init; 0x04 is rewritten in FM with the calibration "Mod2 offset". In two-point mode 0x04 is the MOD1 (reference crystal) offset and 0x02 the MOD2 (VCO) one (manual 4.7.2; the register table says MOD2 for both): 0x04 moves the FM carrier about 75 Hz a step, signed (bench 2026-10-12, [usb-audio.md](usb-audio.md) 2.3.1) |
+| 0x02-0x05 | TX / RX I and Q offsets | 0 at init; 0x04 is rewritten in FM with the calibration "Mod2 offset". In two-point mode 0x04 is the MOD1 (reference crystal) offset and 0x02 the MOD2 (VCO) one (manual 4.7.2; the register table says MOD2 for both): 0x04 moves the FM carrier about 75 Hz a step, signed (bench 2026-10-12, [hardware-dm1701.md](hardware-dm1701.md) 21.3.1) |
 | 0x06 | vocoder select | 0x21 = vocoder over SPI under MCU control; 0x22 = "open music" (used only while flushing page 3); 0x20 = normal |
 | 0x07-0x09 | IF frequency H/M/L | 0x0B, 0xB8, 0x00 (450 kHz) |
 | 0x0A-0x0C, 0xB9-0xBB | clock source, PLL M/N, system clock dividers | section 3 |
@@ -531,7 +531,7 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 ### 8.1 FM audio paths in the manual (unverified)
 
 What the manual documents about where FM audio can come from and go to, beyond the codec. None of it is used yet;
-`tests/hil/test_audio_probe.py` tries it, and [usb-audio.md](usb-audio.md) 2.3.1 has the bench results. Measured
+`tests/hil/test_audio_probe.py` tries it, and [hardware-dm1701.md](hardware-dm1701.md) 21.3.1 has the bench results. Measured
 on the DM-1701: the RX FM buffers hold 8 kHz big endian 16-bit receive audio, ungated, after 0x34's de-emphasis
 and filters, one half per 32 ms with 0x82 bit 1 (once 0x81 unmasks it); keyed, 0x82 bit 7 comes every 32 ms and the
 codec writes its samples into the TX buffers (read back through page 6, U_SPI OPMode 110): they are a tap, and no
@@ -549,7 +549,7 @@ bit 5) puts a 2.5-2.6 kHz tone of its own on air when enabled during FM TX: keep
 | 0x06 bit 1 OpenMusic | "prompt tone" path (appendix A1) | the MCU writes 16-bit DAC samples over U_SPI (command 0x03, address 0x00, 32 samples per write) into a 64-sample FIFO, polling 0x88 bit 0 every 1 ms. Speaker only |
 | 0xE3 bit 0 | "codec internal DAC and ADC pass-through" (G4EML: "CODEC Internal Passthrough") | loops the DAC into the ADC. With the I2S or prompt-tone path feeding the DAC, this may put MCU audio into the FM transmit chain |
 | 0x36 bit 7 | external codec BCLK / LRCK off | |
-| 0xD7 bit 1 | msk_voice_send_en: "send FM voice" (vs. MSK signaling), in the MSK controls (earlier notes said 0xDB, which the manual doesn't list) | bench 2026-10-12: no effect on the TX RAM ([usb-audio.md](usb-audio.md) 2.3.1) |
+| 0xD7 bit 1 | msk_voice_send_en: "send FM voice" (vs. MSK signaling), in the MSK controls (earlier notes said 0xDB, which the manual doesn't list) | bench 2026-10-12: no effect on the TX RAM ([hardware-dm1701.md](hardware-dm1701.md) 21.3.1) |
 
 ---
 

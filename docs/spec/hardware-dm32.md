@@ -795,6 +795,22 @@ Values written at init by the port (KP); field meanings from DS:
 | 0x30 | DR_ADC_AGC | 0x34 | AGC data byte |
 | modem 0x088 | LINEOUT_CTRL | 0x01 | line out 2 enabled |
 
+### 9.2 PCM paths for USB and serial audio
+
+For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
+
+- **Host port**: the SoC's USB controller has no connector (3.11), so the host port is the programming cable's UART0
+  at 115200 baud (3.1). USB audio and the network personality are out; serial audio (USRP in SLIP frames) is the
+  transport.
+- **DMR**: the SoC's mic and speaker PCM buffers feed the CPU's AMBE codec, as on the STM32 radios
+  ([modem-hrc7000.md](modem-hrc7000.md) 1, 6.2).
+- **FM**: the C7000's FM block demodulates receive audio and plays it through the codec DAC (AUDIO_CONTROL bit 6), and
+  the microphone goes into the codec ADC, with GPIO 0x2E choosing the FM or DMR path (9). The C7000 documents more
+  than the HR_C6000 here: "FM RX data" and "FM TX data" interrupt sources, and AUDIO_CONTROL bits for mic PCM to the
+  CPU (bit 4), CPU-fed speaker PCM (bit 5) and the voice source (bit 0: codec or TX RAM)
+  ([modem-hrc7000.md](modem-hrc7000.md) 2.4, 8.1). A PCM path in FM is plausible; a probe run like the DM-1701's
+  would settle it.
+
 ---
 
 ## 10. Data flash (16 MB)

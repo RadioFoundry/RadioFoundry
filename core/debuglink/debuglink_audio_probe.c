@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The audio probe (CONFIG_AUDIO_PROBE; docs/spec/debuglink.md 3.14, docs/spec/usb-audio.md 2.3): a bench tool to find
+// The audio probe (CONFIG_AUDIO_PROBE; docs/spec/debuglink.md 3.14, docs/spec/hardware-dm1701.md 21.3): a bench tool to find
 // out which audio-chip settings put FM receive audio on the PCM stream and PCM into the FM modulator. It reads and
 // writes the audio chip's registers (board.audio_tap->modem_reg), runs the board's PCM stream with its own callback
 // (optionally sending a test tone), and reports the levels of both I2S channels. It also reads and writes the chip's
 // RAM (board.audio_tap->modem_ram: the HR_C6000's FM data buffers) and watches its interrupt flags and one RAM word
-// for a while, to find the chip's own FM sample path (usb-audio.md 2.3, candidate C). Diagnostics only: it borrows the
+// for a while, to find the chip's own FM sample path (hardware-dm1701.md 21.3, candidate C). Diagnostics only: it borrows the
 // stream, so it refuses while DMR voice owns it, and a beep in the meantime may stop it (status says so).
 #include <string.h>
 #include <math.h>
@@ -289,7 +289,7 @@ static size_t probe_music(const uint8_t *req, uint8_t *out)
 
 // Plays a tone into a register for ms: the register is read as a signed base, then written base + amplitude x sine
 // back to back, as fast as the config port goes (about 37,000 writes a second), and restored. The phase follows the
-// microsecond clock. Found on the bench (usb-audio.md 2.3.1): the HR_C6000's 0x04 (two-point
+// microsecond clock. Found on the bench (hardware-dm1701.md 21.3.1): the HR_C6000's 0x04 (two-point
 // modulation's Mod2 offset) moves the FM carrier about 75 Hz a step, so this is MCU audio on air. Blocks the debug
 // link task meanwhile and takes the CPU from lower priority tasks
 static size_t probe_mod(const uint8_t *req, uint16_t len, uint8_t *out)
@@ -342,7 +342,7 @@ static size_t probe_mod(const uint8_t *req, uint16_t len, uint8_t *out)
 }
 
 // The HR_C6000 TX RAM (manual 5.2: page 2 writes it, page 6 reads it) FM halves, 0x030 and 0x230, 512 bytes each:
-// in FM transmit the chip writes the codec's samples there, one half per 32 ms (usb-audio.md 2.3.1)
+// in FM transmit the chip writes the codec's samples there, one half per 32 ms (hardware-dm1701.md 21.3.1)
 #define FEED_HALF0		0x030u
 #define FEED_HALF_LEN		512u
 #define FEED_PAGE_WRITE		2u

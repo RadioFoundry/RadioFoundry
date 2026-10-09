@@ -15,7 +15,7 @@
  * one consumer.
  *
  * Status: a SKETCH. Only the probe part (bottom) is implemented, on the DM-1701 and behind CONFIG_AUDIO_PROBE, to find
- * out on the bench which of the HR_C6000 settings put FM audio on the I2S link at all (usb-audio.md 2.3). The
+ * out on the bench which of the HR_C6000 settings put FM audio on the I2S link at all (hardware-dm1701.md 21.3). The
  * routing part is the interface the USB audio and APRS work packages are meant to share; no board implements it yet,
  * and it may change once the probe results are in.
  */

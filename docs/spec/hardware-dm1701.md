@@ -1433,3 +1433,181 @@ Verified on one radio with the new firmware; they override the unverified notes 
   decoded nothing; a wide-AFC SDR decoder still did). Retuning with the receiver off before every burst (as FM TX
   does) brings it to about +65 Hz, and the MMDVM_HS receiver decodes headers, all superframes with the embedded LC
   and the terminator. Burst spacing 60.000 ms (sd 0.002 ms), 31 ms PA per burst.
+
+## 21. Audio paths for USB audio (bench study)
+
+Which audio paths reach the MCU, for the USB audio design ([usb-audio.md](usb-audio.md)). Measured with probe firmware:
+`CONFIG_AUDIO_PROBE=y` adds debug link command 0x10 ([debuglink.md](debuglink.md) 3.14), which reads and writes
+HR_C6000 registers, runs the PCM stream with a test tone and reports both I2S channels' levels.
+`tests/hil/test_audio_probe.py` runs the experiments.
+
+| Question | Answer |
+|---|---|
+| DMR voice as PCM, both ways | **Yes, today.** The I2S link to the HR_C6000 already carries 8 kHz 16-bit PCM both ways, and the MCU runs the AMBE codec. Decoded calls can go to the host and host audio can be encoded and sent, at no new CPU cost (21.2) |
+| FM receive audio to the MCU | **Yes, two ways** (bench, 2026-10-12, 21.3.1). The I2S stream carries it with the stock settings, squelch gated. The HR_C6000's RX RAM carries it ungated, 8 kHz big endian 16-bit, one 256-sample half per 32 ms, with de-emphasis switchable (0x34 bit 5): the voice and flat modes of [usb-audio.md](usb-audio.md) 5.5, flat from about 300 Hz up |
+| MCU audio into the FM modulator | **Yes: PWM on PC8 into the mic input (candidate E, to be built), or the modulator's offset register** (bench, 2026-10-12, 21.3.1): the firmware writes 0x04 (two-point MOD1 offset) about 37,000 times a second, about 57-75 Hz deviation a step, so about 6 bits of resolution at normal deviation, and none of the chip's FM processing (pre-emphasis, limiter, CTCSS: the MCU does them). No path makes the chip's own FM chain take MCU samples: the TX RAM is a tap the codec writes, external-codec mode reads pins 16-20, which don't reach the MCU. The chip's selcall tone generator takes phase steps from the MCU: clean AFSK |
+| An MCU ADC on the RX audio line, or a free DAC on the mic line | **No.** ADC1 sees only the volume pot, the battery and a mic level tap; DAC1 drives the PA power, the DAC2 pin is a GPIO (21.1) |
+
+
+### 21.1 What the board has
+
+From sections 2, 4.4, 8 and 11 and the HR_C6000 user manual (the vendor
+datasheet; register table and appendix A in its Chinese section):
+
+| Path | Route | MCU access |
+|---|---|---|
+| FM RX | antenna, AT1846S, its audio output, into the HR_C6000, FM receive processing there (de-emphasis, sub-audio detection, the audio filters, page 4 0x34), the HR_C6000 codec DAC, line out, the RX audio mux (PD9 high), the speaker amp | none documented: the audio never leaves the HR_C6000 digitally |
+| FM TX | microphone (bias PA13), HR_C6000 LINEIN1, its codec ADC, FM transmit processing (compressor, pre-emphasis, limiter, channel filter), two-point modulation outputs | none documented |
+| DMR RX | AT1846S baseband, HR_C6000 4FSK demodulator, AMBE frames over V_SPI, MCU codec, PCM over I2S, HR_C6000 DAC, amp | **PCM, 8 kHz, MCU to codec** |
+| DMR TX | microphone, HR_C6000 codec ADC, PCM over I2S, MCU codec, AMBE frames over V_SPI | **PCM, 8 kHz, codec to MCU** |
+| Beeps, prompts | MCU PCM over I2S to the codec DAC | PCM out |
+| Mic level (VOX) | an analog tap on PA3 (ADC1 IN3) | a level, not audio (sampled at about 70 Hz) |
+
+The I2S link (SPI3 as I2S slave on PA15/PC10/PC11/PC12, the HR_C6000 driving the clocks): Philips, 16-bit data in
+32-bit frames, both channels, 8 kHz, circular DMA on DMA1 streams 0 and 5 in 20 ms halves
+(`boards/dm1701/audio_dm1701.c`, `hal/hal_audio.h`). This is the only audio data path between the MCU and the radio.
+
+No other path exists on this board: ADC1's four inputs are the volume pot (PA0), battery (PA1), mic level (PA3) and
+the temperature sensor; DAC channel 1 (PA4) sets the PA power (APC); the DAC channel 2 pin (PA5) is the VHF receiver
+5 V switch. The RX audio mux (PD9) chooses between the HR_C6000 line out and the AT1846S audio output toward the
+speaker amp only. A hardware modification (a wire from the AT1846S audio output to a free ADC pin) would work for
+receive but is not something users should need, and there is no equivalent for transmit.
+
+### 21.2 DMR
+
+The DMR voice path already moves PCM between the MCU and the codec in both directions (`core/dmr/ambe/ambeVoice.c`):
+decoded frames are played as 20 ms blocks, and microphone blocks are encoded while transmitting. For a USB voice
+endpoint the audio router ([usb-audio.md](usb-audio.md) 5.1) takes the decoded block for the host as well as (or instead of) the speaker, and
+feeds host PCM to the encoder instead of the microphone. CPU, codec stack and RAM are what a normal DMR call uses
+(the AMBE codec runs for one direction at a time; a DMR radio is half duplex). DMR on this board was verified on air
+in both directions (section 20).
+
+### 21.3 FM
+
+What the HR_C6000 manual says:
+
+- The built-in codec's input mux takes MIC_P / MIC_N (differential) or LINEIN1 / LINEIN2 (single ended), then a gain
+  stage, the ADC and a digital filter; its output path is a gain stage (page 4 0x37), the DAC and LINEOUT1 / LINEOUT2
+  (manual 4.5.1, figure 4.12).
+- Register 0xE0 (manual register table, Chinese section): bit 7 MCU controls the codec, **bit 6 LINEIN1 enable, bit 5
+  LINEIN2 enable**, bit 4 LINEOUT1, bit 3 LINEOUT2, bit 2 MIC_N, bit 1 MIC_P, bit 0 I2S slave. Our 0xC9 (DMR, FM TX) is
+  MCU control + LINEIN1 + LINEOUT2 + I2S; 0x89 (FM RX) the same without LINEIN1. So the microphone is wired to
+  LINEIN1, and [modem-hrc6000.md](modem-hrc6000.md) 2 calls bit 6 "mic input enable", which is right in effect.
+  On a DM-1701 board photo, pin 8 (LINEIN2) has no trace and pins 6 (MIC_N) and 7 (LINEIN1) share a via; the bench
+  agrees (21.3.1, LINEIN2 loop). FM receive audio plays with 0xE0 = 0x89, both
+  line inputs off, and the HR_C6000 detects the sub-audio tones, so the receive audio reaches its FM chain through
+  the baseband ADC (the path DMR uses), not the codec inputs: section 8's "line in"
+  for FM RX is probably that. Pin 8 is the free analog input for a mod (candidate D).
+- 0xE3 bit 0: "codec internal DAC and ADC pass-through enable, normally 0". The direction is not stated.
+- The FM transmit chain takes the codec ADC's samples; the FM receive chain ends at the codec DAC (manual 6, figure
+  6.1). The I2S "vocoder interface" carries the codec ADC's samples to an external vocoder and the vocoder's PCM to
+  the DAC (manual pin table, C_SDI / C_SDO; 0x22 bits 2-1 choose I2S and its master mode). Nothing says the FM chains
+  can read from or write to the I2S interface.
+- The chip has "FM data" RAM: two 512-byte buffers in the TX RAM ("can be written externally for FM send; voice data
+  can also come internally from the codec") and two in the RX RAM (manual 5.3 tables), and FM-mode interrupts in 0x82:
+  bit 7 "FM: sending data request", bit 1 "FM: receiving data". Register 0xD7 bit 1 (written 0xDB here before) selects "send FM voice" over MSK
+  signaling. This looks like the MCU can exchange FM audio samples with the chip through its RAM pages, but the
+  format, rate and control are not documented. Our FM RX set-up writes 0x81 = 0x19, which masks both FM data flags.
+- The FM chain can use an external codec instead of the built-in one (0x06 bit 2, appendix A2), over a second I2S
+  port on pins 17-20 with the chip as master. The MCU sits on the other one, the vocoder port (pins 34-37), so this
+  only helps if pins 17-20 reach the MCU, which nothing we have shows. The block diagram's "I2S" next to the FM
+  transmit chain is this port.
+- A "prompt tone" path (0x06 bit 1, appendix A1) lets the MCU write DAC samples over U_SPI without I2S: speaker only,
+  but with 0xE3 bit 0 it is another way into the ADC and so the FM transmit chain if the I2S clock stops in FM.
+  [modem-hrc6000.md](modem-hrc6000.md) 8.1 has the details of all of these.
+
+### 21.3.1 Bench results (2026-10-12)
+
+Probe firmware, `tests/hil/test_audio_probe.py`, NOAA WX3 (162.475 MHz) for receive, 467.375 MHz into the SDR bench
+for transmit.
+
+| Question | Result |
+|---|---|
+| I2S clock in FM | runs: 50 blocks a second |
+| FM RX on I2S | **yes, with the stock settings** (0xE0 = 0x89): RMS about 2000 on NOAA, both channels the same, exactly 0 with the squelch closed (the feed-through, 0x36, gates the digital stream too). LINEIN1, LINEIN2 and 0xE3 bit 0 only lower it |
+| FM RX in the RX RAM | **yes, ungated.** 0x82 bit 1 comes 31.0 times a second once 0x81 unmasks it (0x19 masks it, apart from about 1 a second): one 512-byte half per 32 ms, so 256 samples at 8 kHz. Samples are 16-bit **big endian**. The chip fills a half progressively: read both halves twice and take the one that didn't change (98-100 % of the audio captured at about 47 reads a second over the debug link). NOAA speech: 50 ms envelope CV 0.82; a quiet channel: steady noise, CV 0.06, louder than the signal (noise quieting) |
+| What the RX RAM tap sits after | 0x34's processing: with de-emphasis (bit 5) the noise falls 12 dB from 500 Hz to 2.5 kHz, without it it is flat (-1 dB). Bit 7 adds the 300-3400 Hz band pass, bit 2 the wider RX filter. Below 300 Hz stays about 20 dB down in every setting: a fixed sub-audio high pass |
+| FM TX from I2S (A, B) | **no.** 0xE3 bit 0 changes nothing. LINEIN2 on (0xE0 bit 5) puts a steady 2.49 kHz tone on air at about 1.7 kHz RMS deviation whether the probe sends nothing, 1 kHz or 600 Hz: something on that input, not MCU audio. Don't enable LINEIN2 |
+| FM TX from the TX RAM (C) | **no: the TX RAM is a tap.** Keyed, 0x82 bit 7 ("sending data request") comes 31.0 times a second once unmasked. Read back through page 6 (U_SPI OPMode 110, manual 5.2), the FM halves hold the codec's samples, big endian 16-bit, one half per 32 ms, rewritten whether or not the microphone is on: only 0x60 bit 7 (the analog TX chain off) stops the writes (304 bit flips tried). The static-RAM tests (the settings below, the sweeps) were moot for that reason; the firmware's RAM feed (probe op 11) rewrites each half within 4 ms of the codec moving on, and with it a 1 kHz tone never reaches the air: the default settings, every FM value of 0x10, each bit of 0x01, 0x06, 0x0D, 0x0E, 0x11, 0x21, 0x22, 0x25, 0x26, 0x30-0x37, 0x40, 0x41, 0x50-0x52, 0x60, 0xA1, 0xD0-0xE5 and page 1 0x50 / 0x51 (525 settings), 0xD7 bit 1 (the manual's "send FM voice", alone and with MSK mode), and each FM data request answered with 0x41, 0x22, 0x60 or 0x50 writes. 0x01 bit 4, 0x25 bits 0 and 1 drop the carrier. Earlier: 0xDB bit 1 (0xDB isn't in the manual; the bit is 0xD7 bit 1), 0x60 = 0x40 or 0xC0, 0x06 bits 0, 2, 3, 4, 0xE0 bit 7 off, 0xE2 bit 4 |
+| FM TX through the MOD1 offset (0x04) | **yes.** Stepped while keyed, 0x04 moves the carrier linearly, about 75 Hz a step as a signed byte (0xCF as set; +8 steps +595 Hz, +32 +2395 Hz, -32 -2395 Hz, bit 7 flipped +9.5 kHz). Manual 4.7.2: 0x04 is the MOD1 (reference crystal) offset, 0x02 the MOD2 (VCO) one; 0x02, 0x03, 0x05, 0x45-0x48 moved nothing. Probe op 10 writes 0x04 = as set + a sine back to back (37,500 writes a second): 300, 1000, 2000 and 3000 Hz tones on air, about 57 Hz deviation a step at 1 kHz (16 steps: 650 Hz rms), flat 1-2 kHz. 0x46 (MOD1 amplitude) doesn't scale it. The first SINAD figures (about 4 dB) came from phase jitter in the probe's millisecond-clock timing, not the path; the microsecond-clock build is not measured yet |
+| FM TX from the chip's tone generator | **yes, AFSK-class.** 2-tone mode (0xA1 = 0x10, 0xA0 = 0x39), "long A", retriggered by 0x60 0x00 -> 0x80 while keyed: tone A comes from its 16-bit phase step at aux 0x11A (f / 32000 x 2^16, written through page 1 with an extended address). Rewritten every 100 ms from the host it switches cleanly between 1200 and 2200 Hz at about 2.2 kHz rms deviation: a phase-continuous AFSK generator inside the FM chain |
+| FM TX source switch | 0x06 bit 2 (external codec) moves the FM chain's input off the built-in codec: LINEIN2's tone stops the moment it is set. The external port (pins 16-20) isn't wired to the MCU, and the MCU's I2S tone doesn't reach the air in that mode (with 0x36 bit 7 and 0x22 bits 1-2 too). A wire from the MCU's PCM output (PC11) to ADCDAT (pin 19) would make it a full-quality path (candidate D) |
+| PC8 into MIC_P / MIC_N | **yes, no mod.** A 1 kHz square wave on PC8 (the stock beep PWM, TIM8 CH3, probe op 12) goes on air as a 1 kHz tone at 3.0 kHz rms deviation (SINAD 8.1 dB: a square wave's harmonics) once 0xE0 bits 1-2 (MIC_P, MIC_N) are on; nothing with only LINEIN1 or LINEIN2 on. The beep net reaches the differential mic input, so PWM at a high carrier with the duty set by each sample feeds the chip's own FM chain (pre-emphasis, limiter, CTCSS) through the codec ADC |
+| PWM audio on PC8 | **the best path so far.** A sine by PWM (probe op 14: TIM8 CH3, the duty rewritten each carrier period by DMA) into MIC_P / MIC_N: 1 kHz at 1 kHz rms deviation (4 % of the PWM range) 14.1 dB SINAD; at 2.6 kHz rms (10 %, mic first stage -12 dB) 15.6 dB; more drives the limiter. The carrier (17.6-140 kHz) makes no difference: the board and the codec filter it. The floor with MIC_P / MIC_N on and no audio is 115 Hz rms in the voice band (50 Hz with them off). Flat (0x34 bits 7-5 off) the response is 300 Hz 0 dB, 1 kHz 0 dB, 2 kHz -3.5 dB, 2.5 kHz -5.3 dB, 3 kHz -7 dB, 3.5 kHz -14 dB, nothing at 3.8 kHz: the codec's 8 kHz sampling. Fine for voice and 1200 / 4800 baud (equalized); not 9600 |
+| 0x04 response | **flat to 6 kHz**: 16 steps give 689, 661, 650, 633 and 599 Hz rms deviation at 1, 3, 3.8, 4.8 and 6 kHz. It skips the codec, so it is the only no-mod transmit path wide enough for 9600 baud FSK (flat to 4.8 kHz; a 25 kHz channel, 0x34 bit 4). Its resolution (about 6 bits) and the CPU it takes (32,700 bus writes a second) remain; receiving 9600 needs the AT1846S audio output on an MCU ADC (a mod), the RX RAM tap being 8 kHz |
+| SINAD reference | not settled: the tone generator's "long A" plays in bursts of about 0.5 s, so its 10.6 dB SINAD (2.2 kHz rms) mixes tone and gaps. The bench's own ceiling still needs a steady clean source (a signal generator, or the bench's own modem board in FM) |
+| Pins 16-20 wiring | **not wired to the MCU.** External-codec mode (0x06 bit 2) stops the I2S lines the MCU sees (PA15 WS, PC10 CK, PC12 SD) and starts none; pins 16-20 as the chip's timed GPIO outputs (0xC7-0xD0), keyed, move no MCU pin (probe op 13 scans) |
+| 0x04 quality (microsecond timing) | 1 kHz, 16 steps: SINAD 12.7 dB at 720 Hz rms deviation; 32 steps 10.9 dB; noise shaping makes it 1.5 dB worse. About 32,500 writes a second |
+| LINEIN2 loop | **no loop: an open input.** LINEIN2's tone stays with LINEOUT2 off (and with LINEOUT1 on instead) and stops when the input gain drops (0xE4 = 0x20); the 1 kHz I2S tone never reaches the air. A floating high-gain input oscillates; nothing on the board drives pin 8 |
+| MSK mode | 0xA1 bit 6 with 0xD5 = 0x48 keys the chip's MSK modem: a steady 1800 Hz at 2.7 kHz rms deviation, not the RAM |
+
+| FM TX from the prompt tone FIFO | **no.** The FIFO (page 3 address 0, 32 samples when 0x88 bit 0 reads 0) drains at exactly 8000 samples a second whether 0x06 bit 1 is set or not, and a 1400 Hz tone through it never reaches the air: path open, with 0xE3 bit 0, either byte order |
+| Bit sweep while keyed | **no.** Each bit of 0x25, 0x26, 0xE1, 0xE2, 0xE3, 0xE5, 0x0D, 0x0E, 0x0F and 0x38 flipped for 0.5 s (80 flips, 10 key-ups) with a 600 Hz tone on I2S and a 1 kHz tone in the TX RAM: neither tone on air during any flip. LINEIN2's tone, used as the time marker, came at 2.59-2.61 kHz this time (2.49 kHz before): an oscillation on that input |
+
+So the chip's FM chain takes audio only from its codec ADC (microphone, LINEIN1, LINEIN2) or the external codec
+port; nothing the MCU writes over U_SPI or I2S reaches it. MCU audio goes on air through the modulator's MOD1 offset
+(0x04) instead, with the MCU doing pre-emphasis, limiting and CTCSS, at about 6 bits; AFSK can use the chip's tone
+generator. Full quality needs candidate D (the PC11 to pin 19 wire). The register reference with the manual's
+details is [hrc6000-registers.md](hrc6000-registers.md).
+
+Candidates, in order of preference:
+
+| | Receive (FM audio to the MCU) | Transmit (MCU audio to the modulator) | Cost if it works |
+|---|---|---|---|
+| A | 0xE0 bit 5: LINEIN2 into the codec ADC, if the AT1846S audio (or the speaker line) is wired to it; I2S then carries it as it carries the microphone in DMR | (none) | nothing: same I2S stream |
+| B | 0xE3 bit 0 with FM feed-through on: the DAC's signal (FM receive audio) looped into the ADC and out on I2S | 0xE3 bit 0 with feed-through off: I2S PCM to the DAC, looped into the ADC, which feeds the FM transmit chain | nothing: same I2S stream |
+| C | FM data RAM (page 2, 0x030-0x42F) read on the "receiving data" flag | FM data RAM written on the "sending data request" flag | 16 KB/s each way over the bit-banged config port (about 1-2 Mbit/s, so roughly 8-16 % of the bus per direction, in 64-byte transactions); FM only, when the modem ISRs don't run. Format, rate and the TX source bit to be found on the bench |
+| E | PWM on PC8 (TIM8 CH3) with 0xE0 bits 1-2 on: the beep net reaches MIC_P / MIC_N | (none) | TIM8 and one DMA stream; no bus traffic |
+| D | a hardware modification | a wire from PC11 (I2S3ext_SD) to ADCDAT (pin 19) with 0x06 bit 2; or MCU PWM through an RC filter and a 10 µF capacitor into LINEIN2 (pin 8) with 0xE0 bit 5 (PC8, the old beep PWM, is a candidate) | not for users |
+
+A, B and C don't work (21.3.1). Receive uses the I2S stream or the RX RAM tap. Transmit uses E, or the MOD1 offset
+for content above the codec's band; AFSK can also use the chip's tone generator.
+
+The probe experiments, in the order they were run:
+
+1. Does the I2S clock run on an FM channel? (If not, no FM PCM at all without C. Beeps on FM depend on it too:
+   `beep.no_stream` in [radio-features.md](radio-features.md) 4 asks the same question.)
+2. Receive: NOAA weather radio in the VFO with the squelch open, then a quiet frequency; for the register settings
+   as set, A, LINEIN1 and B, the RMS of both I2S channels. A setting whose RMS rises clearly with the signal carries
+   receive audio. It also tells which I2S channel the chip fills (`audio_dm1701.c` assumes the left one, unverified).
+3. Transmit (opt-in RF, SDR bench): key FM with the microphone muted (0xE0 bit 6 off) while the probe sends a 1 kHz
+   tone into I2S; for "no tone", "tone", B and A, the voice band deviation the bench measures.
+4. Candidate C, receive: on NOAA and on a quiet frequency, the rate of the 0x82 FM flags with 0x81 as set and with
+   bits 7 and 1 unmasked, whether the RX RAM buffers change, and their level read as 16-bit (both byte orders) and
+   8-bit samples.
+5. Candidate C, transmit (opt-in RF): both TX RAM buffers hold a 1 kHz tone, a whole number of cycles in 256 samples,
+   so a chip that replays them sends a steady tone without refills. Keyed with the microphone muted, for the likely
+   source settings (FM flags unmasked, 0xDB bit 1 (meant: 0xD7 bit 1), 0x60 = 0x40 or 0xC0, 0x06 bit 0, big endian samples): the FM flag
+   rate and the voice band deviation against a silent-RAM baseline.
+
+### 21.4 Running the probe
+
+With the AMBE codec merged as usual:
+
+```
+make BOARD=dm1701 CONFIG_AUDIO_PROBE=y BUILD=build/dm1701-probe   # flash build/dm1701-probe/odr_dm1701.bin
+python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs          # stream in FM, the receive variants (NOAA), RX RAM
+python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs --allow-rf --allow-service-stop -k tx   # I2S and RAM TX variants
+```
+
+By hand (an FM channel or the VFO):
+
+```
+tools/odr_debug.py aprobe start            # stream with silence out; then:
+tools/odr_debug.py aprobe status           # blocks counting up = the I2S clock runs in FM
+tools/odr_debug.py aprobe reg 4 0xE0       # 0x89 expected in FM receive
+tools/odr_debug.py aprobe wreg 4 0xE0 0xA9 # LINEIN2 on (candidate A); status / samples with and without a signal
+tools/odr_debug.py aprobe wreg 4 0xE0 0x89
+tools/odr_debug.py aprobe wreg 4 0xE3 0x53 # candidate B (0xE3 is 0x52 at init: bit 0 set); watch status
+tools/odr_debug.py aprobe wreg 4 0xE3 0x52
+tools/odr_debug.py aprobe samples -o /tmp/blk.raw   # one block of both channels, tone estimate printed
+tools/odr_debug.py aprobe stop
+tools/odr_debug.py aprobe wreg 4 0x81 0x9B # unmask the FM data flags (0x19 | 0x82)
+tools/odr_debug.py aprobe watch 1000 0x82 0x030   # FM flag rates, RX RAM word changes
+tools/odr_debug.py aprobe ram 2 0x030 64   # the start of the RX FM buffer
+```
+
+Expected readings: in FM receive with the defaults, both channels near silence (the microphone is off). A candidate
+works for receive if, with NOAA audible and the squelch open, one channel's RMS rises well above (4x or more) its value
+on a quiet frequency. For transmit, the SDR bench's voice band RMS deviation with the tone and the candidate setting
+is well above the "mic muted, no tone" row.

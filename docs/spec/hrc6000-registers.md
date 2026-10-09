@@ -11,7 +11,7 @@ errors; section 9 lists the ones that matter.
 This file is a fact reference: what the manual says each register, bit and RAM location does. How ODR drives the
 chip, and what the bench has confirmed, is in [modem-hrc6000.md](modem-hrc6000.md); section 10 here repeats only
 the bench facts that bear on a register's meaning. FM audio paths and their bench results are in
-[usb-audio.md](usb-audio.md) 2.3 and 2.3.1.
+[hardware-dm1701.md](hardware-dm1701.md) 21.3 and 21.3.1.
 
 Conventions:
 
@@ -1193,7 +1193,7 @@ the manual pairs with "send FM voice" is **0xD7 bit 1**, not 0xDB (section 9.3).
 
 | Item | ODR | Manual |
 |---|---|---|
-| "send FM voice" bit | modem-hrc6000.md 8.1, usb-audio.md 2.3 and `tests/hil/test_audio_probe.py` use **0xDB** bit 1 | 0xD7 bit 1 (msk_voice_send_en). 0xDB is not in the manual. The bench result "0xDB bit 1: no FM TX from RAM" says nothing about 0xD7 |
+| "send FM voice" bit | modem-hrc6000.md 8.1, hardware-dm1701.md 21.3 and `tests/hil/test_audio_probe.py` use **0xDB** bit 1 | 0xD7 bit 1 (msk_voice_send_en). 0xDB is not in the manual. The bench result "0xDB bit 1: no FM TX from RAM" says nothing about 0xD7 |
 | CDCSS TX polarity | modem-hrc6000.md 8: 0xA2 = 0x00 inverted, 0x08 normal | 0xA2 bit 3 = 1 means TX inverted. The RX mapping (0x04 inverted) agrees with the manual |
 | Page 1 table at 0x60 | modem-hrc6000.md 3: a 32-entry table of `nn EF 00` in the trace notes | aux 0x60-0xBF is the 32-entry multi-group address table; `nn EF 00` matches the group default 0x00EF33 pattern (L, M, H) |
 | Page 3 flush | modem-hrc6000.md 3.2: "vocoder frame buffer" | U_SPI OPMode 011 with 0x06 bit 1 is the prompt tone FIFO (7.7) |
@@ -1202,7 +1202,7 @@ the manual pairs with "send FM voice" is **0xD7 bit 1**, not 0xDB (section 9.3).
 
 ## 10. Bench notes
 
-Only facts already recorded in [modem-hrc6000.md](modem-hrc6000.md) and [usb-audio.md](usb-audio.md) 2.3.1, plus
+Only facts already recorded in [modem-hrc6000.md](modem-hrc6000.md) and [hardware-dm1701.md](hardware-dm1701.md) 21.3.1, plus
 the 2026-10-12 two-point measurement. DM-1701 throughout.
 
 | Register | Bench fact |

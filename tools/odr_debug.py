@@ -23,7 +23,7 @@
     odr_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
     odr_debug.py storage dump [--out DIR]       the region and the calibration copy (SPI flash) to files outside git
     odr_debug.py storage claim [--out DIR]      dump first, then let the firmware erase a foreign region and use it
-    odr_debug.py aprobe OP [ARG...]             audio probe (CONFIG_AUDIO_PROBE builds; docs/spec/usb-audio.md 2.3):
+    odr_debug.py aprobe OP [ARG...]             audio probe (CONFIG_AUDIO_PROBE builds; docs/spec/hardware-dm1701.md 21.3):
                                                 status | reg PAGE REG | wreg PAGE REG VAL | start [HZ [AMP [spk]]] |
                                                 stop | samples [-o FILE.raw] | ram PAGE ADDR LEN [-o FILE] |
                                                 wram PAGE ADDR HEXBYTES | watch MS MASK [RAMADDR] |
