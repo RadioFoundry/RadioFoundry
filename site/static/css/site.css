@@ -218,3 +218,14 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .plan .keep { color: var(--ok); }
 .file-pick { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; margin: var(--space-3) 0; }
 .panel h3 { margin: var(--space-5) 0 var(--space-2); }
+/* the group headings are accordions: a chevron that turns when open, the whole heading clickable */
+.feature-group > summary { list-style: none; cursor: pointer; }
+.feature-group > summary::-webkit-details-marker { display: none; }
+.feature-group > summary .group-name { display: inline-flex; align-items: center; gap: var(--space-2); }
+.feature-group > summary .group-name::before {
+	content: ""; width: 0.5em; height: 0.5em; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+	transform: rotate(-45deg); transition: transform 0.15s ease; flex: none; margin-right: 0.15em;
+}
+.feature-group[open] > summary .group-name::before { transform: rotate(45deg); }
+.feature-group > summary:hover .group-name { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .feature-group > summary .group-name::before { transition: none; } }
