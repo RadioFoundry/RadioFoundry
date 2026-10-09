@@ -20,13 +20,14 @@
 >    (8.33k, 25k) wired to `radio_req_vfo_step_size`, TXDENY_AM's text ("Air band: receive only" / "Pick another
 >    channel"); uiFlowTest flows and gallery shots; the simulator's `radio_req_vfo_step_size` and `view.am`.
 > 4. Debug link view keys (`am=`, `bcast.*`), docs/user (DM-32UV, not yet tested), README status line.
-> 5. On the radio: the bring-up steps in 6, which answer the open questions in 2.3.
+> 5. On the radio: the bring-up steps in 6, which answer the open questions in `hardware-dm32.md` 8.7.
 > 6. Owner decisions: whether the FD6818 "Confidential Programming guide" seen on mikrocontroller.net may be used
 >    (not read; probably not, under the clean-room rules), six presets and the 2 s resume delay, the AM step UI
 >    (8.33k / 25k on the Step tile), and refusing TX in 108-137 MHz only on AM-capable boards.
 
 Status: research and design, 2026-10-10. What the radios ODR supports can do on the aeronautical VHF band (AM,
-108-137 MHz) and FM broadcast (65-108 MHz), how ODR does it generically, and what the DM-32UV bring-up must check.
+108-137 MHz) and FM broadcast (65-108 MHz), how ODR does it generically, and what the DM-32UV bring-up must check (its hardware facts:
+`hardware-dm32.md` 8.7).
 
 Source tags follow [radios.md](radios.md): **C** confirmed (manufacturer, datasheet, bench, or the owner's own
 use of the radio), **D** documented by a reverse-engineering project or permissively licensed code, **F** forum or
@@ -37,7 +38,7 @@ retailer claim, **?** unknown. **BIN** / **KP** / **COM** / **INF** are the tags
 
 | Radio | Air band AM RX | Broadcast FM RX | Notes |
 |---|---|---|---|
-| Baofeng DM-32UV | **yes** (C: owner, stock firmware; Baofeng spec "AM 108-136 MHz") | **yes** (C: Baofeng spec "FM 65-108 MHz") | AM on the FD6818 (INF, 2.2); broadcast on an RDA5807M (COM pin map, INF) |
+| Baofeng DM-32UV | **yes** (C: owner, stock firmware; Baofeng spec "AM 108-136 MHz") | **yes** (C: Baofeng spec "FM 65-108 MHz") | AM on the FD6818 (INF, `hardware-dm32.md` 8.7); broadcast on an RDA5807M (COM pin map, INF) |
 | Baofeng DM-1701 / RT84 | no (C: AT1846S is FM only, bench driver) | no chip found (?) | stays FM / DMR |
 | TYT MD-UV380 / RT3S | no (AT1846S, D) | none known (?) | |
 | TYT MD-9600 / RT90 | no (SKY72310 + FM receive chain, D) | none known (?) | |
@@ -51,46 +52,10 @@ The AT1846S has no AM demodulator: its datasheet and our driver know only FM and
 built on it gets neither feature from ODR. The design below serves any radio whose RF chip has an AM mode
 (CAP_AM_RX) and any radio with a second broadcast receiver chip (CAP_BCAST_FM).
 
-## 2. DM-32UV: what is known
+## 2. DM-32UV
 
-### 2.1 Public claims
-
-- Baofeng's product page and the RadioGuru review's table list "Additional RX bands: AM 108-136 MHz, FM 65-108 MHz"
-  and the aviation band as a feature (C) ([baofengradio.com](https://www.baofengradio.com/products/dm-32uv),
-  [review](https://www.baofengradio.com/blogs/news/baofeng-dm-32uv-review-radioguru)).
-- The owner confirms the stock firmware receives aviation AM (C). Treat AM air band RX as a capability of the radio.
-
-### 2.2 Which chip demodulates AM
-
-Not decided by any source. The evidence:
-
-| Fact | Source | Points to |
-|---|---|---|
-| The FD6818's registers behave like the BK4819's: frequency in 10 Hz units in 0x38 / 0x39, state 0x30 = 0xBFF1 RX / 0xC1FE TX (the BK4819's enable bits: VCO calibration, RX link, AF DAC, discriminator, PLL, RX DSP), CTCSS word = Hz x 20.64888 in 0x07, RSSI in 0x67 bits 8:0, AF output 0x47, AF gain 0x48 | hardware-dm32.md 8 (KP, BIN); BK4819 register names in the Apache-2.0 UV-K5 firmware ([bk4819-regs.h](https://github.com/DualTachyon/uv-k5-firmware)) | the FD6818 is a BK4819-class part (INF) |
-| The BK4819 selects its AF output type in 0x47 bits 11:8 (0x6040 \| type << 8); type 7 is AM | UV-K5 firmware (D) | AM is a register setting on that class of chip |
-| ODR's FM set-up writes 0x47 = 0x6042 (AF type 0, muted); DMR writes 0x0140 (type 1) | hardware-dm32.md 8.2 (KP) | in FM the FD6818's own AF output is silent: the HR_C7000 demodulates FM from I/Q (its RX I/Q bias registers, modem-hrc7000.md) |
-| The FD6818 band table covers 16 MHz to over 740 MHz, with rows at 93 and 124 MHz | hardware-dm32.md 8.3 (KP) | the synthesizer tunes the air band |
-| GPIO 0x2F is described as "speaker source switch (PWM/codec vs FD6818 audio)" | hardware-dm32.md 5 (COM) | the FD6818's AF output can reach the speaker directly |
-| No AM demodulator noted in the HR_C7000 user guide summary | modem-hrc7000.md (DS) | AM is not the C7000's job (INF, low confidence: re-read the guide) |
-
-**Working hypothesis (INF):** AM is demodulated by the FD6818 (0x47 AF type 7), its AF output goes to the speaker
-amplifier through the source switch (0x2F) instead of the C7000 codec, and the 108-136 MHz signal comes in through the
-VHF front end (VHF LNA, GPIO 0x22; the 136-174 MHz filter costs sensitivity at the low end). The alternative is AM
-audio fed into the C7000's audio path. Bring-up step 6.1 decides between them.
-
-### 2.3 Open questions
-
-| # | Question | How bring-up answers it |
-|---|---|---|
-| A1 | Is 0x47 AF type 7 the FD6818's AM output? | 6.1: stock radio on ATIS for reference; ODR with `rx_am`, compare audio |
-| A2 | Which speaker source (0x2F level) carries FD6818 AF? | 6.1: try both levels while receiving AM |
-| A3 | AM filter bandwidth (0x43) and AGC (0x13, 0x09 table) for AM | 6.1: listen to a strong and a weak station; the UV-K5 needed AGC changes for AM (D) |
-| A4 | RSSI offset in AM (the squelch's dBm) | 6.1: signal generator at -100 dBm, read `rssi` on the debug link |
-| B1 | Is the RDA5807M really at PTA25 / PTA26, and does it answer at 0x11? | 6.2: chip ID 0x58xx over the debug link probe |
-| B2 | Its reference clock (32.768 kHz crystal or a clock signal; 0x02 CLK_MODE, RCLK_DIRECT) | 6.2: tune a known station with each setting |
-| B3 | Pull-up on SDA (or the pin's own pull) | 6.2: the chip ID read fails without one |
-| B4 | Where its audio goes (into the amplifier directly, through 0x2F, or into the codec) and whether its supply is switched by a GPIO | 6.2: listen with each speaker path set |
-| B5 | Antenna for broadcast (the main antenna through the VHF path, or the headset cable) | 6.2: compare stations with and without a headset |
+What is known about the DM-32UV's air band and broadcast hardware (public claims, which chip demodulates AM, the
+open questions A1-A4 and B1-B5 that bring-up answers) is in [hardware-dm32.md](hardware-dm32.md) 8.7.
 
 ## 3. Air band AM (done in the radio core)
 
@@ -120,8 +85,7 @@ channel outside the air band has no use on these radios.
 
 `rx_am(hz, bw)` tunes and receives AM; the board leaves AM at the next `rx()` or `set_mode()`. `status()` gives an
 RSSI in dBm (noise isn't used in AM) and `tone_ok = true`. `tx()` is never called while AM is on. NULL = no AM.
-DM-32 plan (not written): FD6818 FM register set, 0x47 = 0x6742 (AF type 7, A1), the AF gain in 0x48, VHF LNA on,
-C7000 FM playback off, speaker source to the FD6818 (A2).
+The DM-32UV's planned `rx_am` (not written): `hardware-dm32.md` 8.7.
 
 ## 4. Broadcast FM (driver and behavior done; glue and UI not)
 
@@ -165,8 +129,9 @@ To append to `settings_t` (settings-store.md 3; 16 bytes, the record has 68 left
 
 ### 4.5 Audio path (board-specific)
 
-The board decides how the broadcast reaches the speaker and arbitrates with the channel's audio. DM-32: unknown (B4);
-the glue must keep the amplifier on while either source plays and give the channel priority.
+The board decides how the broadcast reaches the speaker and arbitrates with the channel's audio. The glue keeps the
+amplifier on while either source plays and gives the channel priority. On the DM-32UV the path is unknown
+(`hardware-dm32.md` 8.7, B4).
 
 ### 4.6 Screen (planned, docs/ux principles)
 
@@ -186,7 +151,8 @@ The board must also set the capability bits; without them the code does nothing 
 
 ## 6. Bring-up checks (DM-32UV)
 
-See [dm32-bringup.md](../testing/dm32-bringup.md) step 11.
+See [dm32-bringup.md](../testing/dm32-bringup.md) step 11. The questions A1-A4 and B1-B5 are in `hardware-dm32.md`
+8.7.
 
 ### 6.1 AM
 

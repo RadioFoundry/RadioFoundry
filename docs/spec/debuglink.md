@@ -2,7 +2,8 @@
 
 # USB debug link
 
-A small framed protocol on the radio's host port (USB CDC-ACM on the STM32 radios) for bench automation: read the
+A small framed protocol on the radio's host port (USB CDC-ACM on radios with USB, a UART otherwise) for bench
+automation: read the
 firmware version, the diagnostics counters and the radio's state, reset counters, take screenshots, press keys, key
 PTT with a firmware time-out, send radio requests, read a log ring, read the chip's identity and option bytes, read
 internal flash and the other read-only memories, and reboot. It lives beside the MMDVM hotspot and the
@@ -11,7 +12,7 @@ legacy CPS protocol on the same port (`core/hostlink`), and it never changes the
 - Firmware: `core/debuglink/` (switch `CONFIG_DEBUGLINK`, default on with `CONFIG_HOSTLINK`), key injection in
   `core/input/input_task.c`, the hook in `core/hostlink/hostlink.c`.
 - Chip commands: the portable checks in `core/debuglink/dl_chip.c` (host tested), the platform side in `hal/hal_system.h`
-  (`board.system`) and `platform/stm32f4/sysboot.c`.
+  (`board.system`) and the platform's implementation (`platform/stm32f4/sysboot.c`, `platform/hrc7000/system.c`).
 - Host: `tools/odr_debug.py` (command line and Python module), `tests/hil/` (pytest hardware-in-the-loop tests).
 
 ## 1. Coexistence on the host port
@@ -107,6 +108,8 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 
 ### 3.1 VERSION
 
+Example from a DM-1701:
+
 ```
 proto=1                 protocol version (this document)
 view=1                  GET_VIEW record version (3.7)
@@ -144,7 +147,7 @@ host can compute rates between two reads:
 | then | the board's diagnostics lines (`board.diag_line(0..)`, the radio's diagnostics page) |
 
 The reply holds as many whole lines as fit from `first`; `next` is the line to ask for next, `0xFF` when the last
-line was sent. The DM-1701's board lines start with the HR_C6000 slot engine counters (`V<voice> H<headers>
+line was sent. The board lines are each board's own. The DM-1701's start with the HR_C6000 slot engine counters (`V<voice> H<headers>
 T<terminators> I<idle>`, `C<csbk> D<data> crc<errors> rc<rc>`, ...) and end with the readings and the audio counters
 (`aud blk ov dr`).
 
@@ -286,6 +289,11 @@ Ops 15-18 last until the channel changes (`dmr.target_manual`). Unavailable ops 
 
 ### 3.9 INFO_CHIP
 
+INFO_CHIP, READ_MEM (3.10) and REBOOT (3.11) go through `board.system` (`hal/hal_system.h`). The fields, ranges and
+modes below are the STM32F4 platform's (`platform/stm32f4/sysboot.c`), the only one whose `chip()` reports anything
+today. On the HR_C7000 platform (DM-32UV, DB25-D) `chip()` reports nothing, so INFO_CHIP and READ_MEM answer
+UNAVAILABLE and REBOOT is refused with reason 4.
+
 Read-only. Reply after the status (29 bytes in all):
 
 | Offset | Size | Field |
@@ -398,7 +406,9 @@ A bench tool for the USB audio feasibility work ([usb-audio.md](usb-audio.md) 2.
 `CONFIG_AUDIO_PROBE=y` (off by default, never for a release). It reads and writes registers of the chip that owns
 the audio path (`board.audio_tap->modem_reg`; on the DM-1701 the HR_C6000, pages and registers as in
 `modem-hrc6000.md`), runs the board's PCM stream with its own block callback, which sends a test tone, and measures
-both I2S channels (`core/debuglink/debuglink_audio_probe.c`, `hal/hal_audio_tap.h`).
+both I2S channels (`core/debuglink/debuglink_audio_probe.c`, `hal/hal_audio_tap.h`). Only the DM-1701 provides
+`board.audio_tap` today; on other boards the ops that need it answer UNAVAILABLE. The page, register and RAM
+semantics in the table are the HR_C6000's.
 
 | Op | Request | Reply after the status |
 |---|---|---|
@@ -412,7 +422,7 @@ both I2S channels (`core/debuglink/debuglink_audio_probe.c`, `hal/hal_audio_tap.
 | 7 RAM_WRITE | page u8, address u16, 1 to 60 bytes | none (page 2 writes the TX RAM) |
 | 9 MUSIC | time ms u16 (1-2000), tone Hz u16 (0-3800), amplitude u16, flags u8 (bit 0 little endian samples) | FIFO writes u16, polls u16, elapsed ms u32. Feeds the HR_C6000's prompt tone FIFO (`modem-hrc6000.md` 8.1): 32 samples to page 3 address 0 whenever 0x88 bit 0 reads 0 (`board.audio_tap->modem_burst`); the caller opens the path (0x06 bit 1). Blocks the debug link for the time |
 | 8 WATCH | time ms u16 (1-2000), flag page u8, flag register u8, clear register u8, mask u8, RAM page u8, RAM address u16 (0xFFFF = none) | elapsed ms u32, polls u16, for flag bits 0-7: count u16 and first ms u16, RAM word changes u16 |
-| 10 MOD | time ms u16 (1-2000), page u8, register u8, tone Hz u16 (0-8000), amplitude u8 (register steps), optional flags u8 (bit 0: second order noise shaping) | writes u32, elapsed ms u32, the register's value u8. Writes the register = its signed value + amplitude x sine back to back (about 37,000 writes a second on the DM-1701), the phase from the microsecond clock, then restores it. On the HR_C6000's 0x04 (two-point MOD1 offset) this is MCU audio on air ([usb-audio.md](usb-audio.md) 2.3.1). Blocks the debug link and lower priority tasks for the time |
+| 10 MOD | time ms u16 (1-2000), page u8, register u8, tone Hz u16 (0-8000), amplitude u8 (register steps), optional flags u8 (bit 0: second order noise shaping) | writes u32, elapsed ms u32, the register's value u8. Writes the register = its signed value + amplitude x sine back to back (about 37,000 writes a second, measured on the DM-1701), the phase from the microsecond clock, then restores it. On the HR_C6000's 0x04 (two-point MOD1 offset) this is MCU audio on air ([usb-audio.md](usb-audio.md) 2.3.1). Blocks the debug link and lower priority tasks for the time |
 | 11 RAMFEED | hold ms u16, gap ms u16, tone Hz u16, amplitude u16, n u8 (0-16), n x (page u8, register u8, xor mask u8); n x (hold + gap) + gap at most 9000 ms | half switches u16, writes u16, longest write lag ms u16, flips done u8. Keeps a big endian tone in the HR_C6000 TX RAM FM halves (written through page 2, watched through page 6) by rewriting each half as soon as the codec moves to the other, while applying each flip for hold ms with gap ms between. Blocks the debug link for the time |
 | 12 PIN_TONE | hz u16 (0 = off) | none. A 50 % square wave on the board's spare output (DM-1701: PC8, the stock beep PWM, TIM8 CH3), to find out whether that net reaches the transmit audio; off returns the pin to its low output. Status 4 when the board has none |
 | 13 PIN_SCAN | ms u16 (at most 2000) | n u8, n x changed-pin mask u16 (GPIOA, GPIOB, ...). Samples every GPIO input register back to back for ms; output pins read their own level, so two scans (a clock off, then on) are diffed. Blocks the debug link for the time |
@@ -496,8 +506,8 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 
 ## 5. Counters and resets
 
-RESET_COUNTERS zeroes: the board's diagnostics counters (`board.diag_reset`: on the DM-1701 the HR_C6000 slot engine
-counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`),
+RESET_COUNTERS zeroes: the board's diagnostics counters (`board.diag_reset`, whatever the board counts; on the DM-1701
+the HR_C6000 slot engine counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`),
 the AMBE voice counters (`ambeVoiceResetStats`), the beep counters (`beep_reset_stats`) and the DMR data service
 counters (`dmrDataServiceResetStats`). States and "last" values (last CC, last sync, engine TX state) are kept. The
 resets are not atomic with respect to the tasks and interrupts that count: an increment racing the reset may survive

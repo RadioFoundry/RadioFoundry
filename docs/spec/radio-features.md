@@ -98,17 +98,17 @@ unkeys; PTT again during the beep cancels it and the transmission goes on. Tone 
 keys up if needed and sends 1750 Hz until `false` (repeater access); `tone_burst=1` in the view. A board without
 `tx_tone` gets neither.
 
-DM-1701 (`boards/dm1701/radio_dm1701.c`): the AT1846S tone generator 1 (reg 0x35 = Hz x 10, 0x79 = 0xC000, tone
-deviation 0x1C in 0x59 bits 15:6, about 3.1 kHz peak; source in 0x3A) with the HR_C6000's microphone path muted
-(page 4 reg 0xE0 bit 6). Restored on `tx_tone(0)` and on every return to receive. On air (HIL 2026-10-10): the
-burst, the roger beep and APRS AFSK (`docs/testing/on-air-coverage.md`, `hardware-dm1701.md`).
+The board restores the microphone path on `tx_tone(0)` and on every return to receive. How the DM-1701 makes the
+tone: `hardware-dm1701.md` 5.8. Verified on air on the DM-1701 (HIL 2026-10-10): the burst, the roger beep and APRS
+AFSK (`docs/testing/on-air-coverage.md`).
 
 ### 3.4 VOX (CONFIG_VOX; the `vox` setting is off by default)
 
 On FM channels (all, or those with the codeplug VOX flag) the microphone level (`mic_level()`, 0-100 logarithmic) at
 or above `100 - 8 x vox_level` for 2 polls (50 ms) keys up; below it for `vox_tail_ms` unkeys (with the roger beep
 if on). Received audio, MONITOR, and 500 ms after a reception never key VOX (the speaker into the microphone). PTT
-works as usual and wins. DM-1701: `mic_level` from the microphone ADC (PA3); not verified on the bench.
+works as usual and wins. The level comes from the board's `board.power->mic_level` hook; a board without it has no
+VOX (DM-1701: `hardware-dm1701.md` 11.3, not verified on the bench).
 The Quick VOX tile (FM) turns the `vox` setting to all or off; `vox_on` in the view says whether VOX is armed on
 the current channel.
 
@@ -146,7 +146,8 @@ mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep
 
 The radio core reads `battery_mv` every second (not while transmitting nor for 3 s after: the sag under TX is not the
 battery's state) and shows `battery_mv`, `battery_pct` (the board's) and `battery` (ok / low / critical). Thresholds
-are per board (`board.battery_low_mv`, `battery_critical_mv`; DM-1701: 6200 and 6000 mV). Three readings in a row
+are per board (`board.battery_low_mv`, `battery_critical_mv`; 0 means no warnings; values in each radio's hardware
+page, e.g. `hardware-dm1701.md` 11.1). Three readings in a row
 below a threshold lower the level; it goes back up 200 mV above it.
 
 ### 5.2 Low and critical
@@ -167,13 +168,14 @@ The UI owns the backlight and calls it; the radio core doesn't drive the backlig
 On an idle FM channel after `rx_save_idle_s` without activity (keys, requests, receptions, PTT), the receiver sleeps
 200 / 400 / 800 ms and listens 100 ms (`rx_sleeping` in the view). Any signal in the listen window keeps it awake;
 anything else (a key, a request, MONITOR, scan, VOX, DMR channel, hotspot, a channel with the codeplug "no eco" flag)
-stops it. DM-1701: `rx_sleep` puts the AT1846S in idle and switches the receive supply off; waking retunes. On air
-since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
+stops it. The board's `rx_sleep` hook turns the receiver off and back on (DM-1701: `hardware-dm1701.md` 5.11). On air
+on the DM-1701 since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
 
 ## 6. TX power, calibration, band limits
 
-Checked, unchanged: the board clamps the power level, uses the calibration table's DAC value for the band and level
-(DM-1701: a fixed low DAC when uncalibrated), and refuses a TX frequency outside the board's bands (`tx_deny=band`).
+Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
+and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
+a low fixed value (the DM-1701, `hardware-dm1701.md` 7) or refuses to transmit (the MD-380, the DB25-D).
 
 ## 7. Verification status
 

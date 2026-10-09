@@ -37,7 +37,7 @@ Numbered, so a digit picks directly:
 
 ## 1. Change channel
 
-- K: turn the channel knob (an encoder on the DM-1701 and the DM-32: one detent per channel). Or `NAV_UP`/`NAV_DOWN`.
+- K: turn the channel knob (on radios with an encoder, `CAP_ENCODER`, one detent per channel). Or `NAV_UP`/`NAV_DOWN`.
 - M, V: `NAV_UP`/`NAV_DOWN` (V: or front encoder).
 - By number or name (all keypad classes): type digits or T9 letters on Home, Find shows matches, `SELECT`.
 - Feedback: Home redraws the channel name within 50 ms; voice prompt says "Channel 4, County fire".

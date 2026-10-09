@@ -35,9 +35,10 @@ read on the clean side.
 | RF_RX_INTER | RF RX interrupt | "RX window now" / end of TX burst | **not routed** on the DM-1701 / MD-UV380 (the MK22 GD-77 has it) |
 | RF_TX_EN / RF_RX_EN | chip-timed RF enables | could switch the RF directly | not routed on the DM-1701 |
 
-All three interrupt lines share one NVIC priority (5 on the STM32 radios, numerically lower = more urgent than the
-USB / other EXTI at 6). The handlers must not be re-entered by thread-level SPI traffic: a thread that touches the
-modem masks the three EXTI lines and waits until any running handler has finished before its own transfers.
+All three interrupt lines share one NVIC priority. On the STM32 radios it is 5, which is more urgent than the USB and
+other EXTI lines at 6 (numerically lower is more urgent). Thread-level SPI traffic must not re-enter the handlers. A
+thread that touches the modem masks the three EXTI lines and waits until any running handler has finished before it
+starts its own transfers.
 
 ### 1.1 U_SPI framing
 
@@ -51,8 +52,8 @@ after the falling edge, before the rising edge.
 | Address | 8-bit address; with bit 6 set, two bytes: low 8 bits first, then bits 10-8 in the low 3 bits of the second byte |
 | Data | one or more bytes; the address auto-increments while CS stays low |
 
-A read sends the command and address and then clocks dummy bytes (0xFF) while reading. Burst writes of up to 128
-data bytes are used; burst reads of up to 96.
+A read sends the command and address, then clocks dummy bytes (0xFF) while reading. The driver uses burst writes of up
+to 128 data bytes and burst reads of up to 96.
 
 | Page | Contents | Used for |
 |---|---|---|
@@ -61,11 +62,17 @@ data bytes are used; burst reads of up to 96.
 | 3 | vocoder frame buffer | 128 bytes of 0x7F to flush it; on V_SPI, the 27-byte AMBE frame |
 | 4 | system parameter table (the main registers) | everything else |
 
-The manual's command table lists page 2 as the RX ("receive end") RAM and page 6 as the TX ("write end") RAM; in
-practice writes to page 2 land in the TX RAM and are sent (on air, bit exact). Page 6 has not been tried.
+The manual's command table lists page 2 as the RX ("receive end") RAM and page 6 as the TX ("write end") RAM. On air,
+writes to page 2 land in the TX RAM and are sent bit exact. Page 6 has not been tried.
 
-TX RAM layout (the manual): 0x00-0x17 LC / CSBK / data header / data blocks, 0x18-0x23 the idle message, 0x24-0x28
-the CACH short LC (28 bits in 0x24-0x26 and 0x27 bits 7-4, its CRC-8 in 0x28), 0x29-0x2C voice F's EMB fill.
+TX RAM layout (the manual):
+
+| Address | Contents |
+|---|---|
+| 0x00-0x17 | LC, CSBK, data header, data blocks |
+| 0x18-0x23 | the idle message |
+| 0x24-0x28 | the CACH short LC: 28 bits in 0x24-0x26 and 0x27 bits 7-4, its CRC-8 in 0x28 |
+| 0x29-0x2C | voice F's EMB fill |
 
 V_SPI uses the same command / address framing (page 3, address 0x00, then 27 bytes; read command 0x83).
 
@@ -136,10 +143,16 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0xE2 | codec config; bit 1 = DAC to line-out | 0x06 at init; bit 1 cleared mutes the line out |
 | 0xE4 | line-out gain (7-6) / mic gain | 0x20 + mic gain (0..31) |
 
-Page 1 0x04-0x09: the 6-byte **data** sync pattern the chip transmits; it sends the voice sync as the bitwise inverse.
-Write the MS-sourced data sync D5 D7 F7 7F D7 57 for normal operation. The others: BS data DF F5 7D 75 DF 5D, direct
-mode TS1 data F7 FD D5 DD FD 55, direct mode TS2 data D7 55 7F 5F F7 F5 (the ETSI values; the voice syncs are their
-inverses).
+Page 1 0x04-0x09 holds the 6-byte **data** sync pattern the chip transmits. The chip sends the voice sync as its
+bitwise inverse. Write the MS-sourced data sync for normal operation. The values are the ETSI ones, and the voice syncs
+are their inverses.
+
+| Data sync | Bytes |
+|---|---|
+| MS sourced (normal operation) | D5 D7 F7 7F D7 57 |
+| BS sourced | DF F5 7D 75 DF 5D |
+| direct mode TS1 | F7 FD D5 DD FD 55 |
+| direct mode TS2 | D7 55 7F 5F F7 F5 |
 
 ---
 
@@ -165,13 +178,13 @@ the TYT MD-9600 firmware and not explained by the manual; keep them.
 | 13 | 0x11=0x80, 0x81=0x19, 0x85=0x00 | direct simplex channel mode, interrupt mask, TX-start sub-status mask |
 | 14 | 0xE4 = 0x20 + DMR mic gain; DTMF tone table (section 8) | |
 
-A page 1 burst from 0x60 (a table of 32 three-byte entries `nn EF 00`) exists in the trace notes but the TYT firmware
-doesn't send it; don't.
+The trace notes also list a page 1 burst from 0x60 (a table of 32 three-byte entries `nn EF 00`). The TYT firmware
+does not send it. Don't send it.
 
 ### 3.1 Entering DMR (after FM, or at every DMR channel change)
 
 0x01=0xF0, 0x45 / 0x46 = the DMR modulation pair from calibration, **0x10=0x6E**, 0xE0=0xC9, 0xE4=0x20+DMR mic gain,
-0x26=0xFD. Then restart the receiver (section 5.1). Note 0x10 runs 0x6E in operation, not the 0x6B of the init.
+0x26=0xFD. Then restart the receiver (section 5.1). In operation 0x10 is 0x6E, not the 0x6B written at init.
 
 ### 3.2 Flushing stale vocoder audio
 
@@ -184,19 +197,20 @@ restore the RX gain.
 
 ### 4.1 Timeslot interrupt (every 30 ms)
 
-Comes at each slot boundary once the chip has timing: passive timing (0x40=0xC3) derives it from received bursts and
-keeps counting from the last sync when the signal goes away (corrections within 1.25 ms are applied in real time);
-active timing (0x40=0xE3) generates it locally. It stops only when TxEn and RxEn are both cleared.
+The interrupt comes at each slot boundary once the chip has timing. Passive timing (0x40=0xC3) derives the timing
+from received bursts. When the signal goes away, it keeps counting from the last sync. Corrections within 1.25 ms are
+applied in real time. Active timing (0x40=0xE3) generates the timing locally. The interrupt stops only when TxEn and
+RxEn are both cleared.
 
-What the MCU must do in it, every time: decide the **next** slot and write 0x41 (and for TX, the payload and 0x50)
-**before the slot after the next starts**. The manual's timing: the chip starts framing the next slot's burst at t1,
-and the MCU's data must be written in the window t2 before it. In practice everything is written at the start of the
-timeslot handler and the burst goes out in the following slot. A setup that arrives late slips the burst by one
-slot (30 ms) or by a frame (60 ms).
-While transmitting, the slot between our bursts gets 0x00, or 0x50 for an SFR, which hears its inbound slot there
-(`hrc6000_dmr_tx_listen`, `sfr.md` 3).
+At every timeslot interrupt the MCU decides the **next** slot and writes 0x41. For TX it also writes the payload and
+0x50. These writes must land **before the slot after the next starts**. In the manual's timing, the chip starts
+framing the next slot's burst at t1, and the MCU must write its data in the window t2 before t1. The driver writes
+everything at the start of the timeslot handler, and the burst goes out in the following slot. A late setup slips the
+burst by one slot (30 ms) or by a frame (60 ms).
+While transmitting, the slot between our bursts gets 0x00. An SFR writes 0x50 there instead, because it hears its
+inbound slot in that slot (`hrc6000_dmr_tx_listen`, `sfr.md` 3).
 
-The CACH TC bit (0x52 bit 2) can be read here; it's only refreshed in slots being received.
+The CACH TC bit (0x52 bit 2) can be read here. The chip refreshes it only in slots being received.
 
 ### 4.2 System interrupt
 
@@ -213,28 +227,28 @@ Read 0x82 (flags) and 0x52 (CC / CACH) first, handle each set flag, then write t
 | 1 | voice abnormal exit | 0x98 | voice sync lost on slot 0 (bit 1) or slot 1 (bit 2): replace the next voice frame of that slot with silence |
 | 0 | physical layer receive | none | not used |
 
-The mask 0x81=0x19 enables bits 4, 3 and 0. Bit 7 (send rejected) is still seen set in 0x82 when it's read on
-another interrupt (counted by the DM-1701 SFR debug build), so 0x82 shows more than the mask lets interrupt
-(unverified whether bit 7 raises the line by itself).
+The mask 0x81=0x19 enables bits 4, 3 and 0. Bit 7 (send rejected) still shows set in 0x82 when 0x82 is read on
+another interrupt. The DM-1701 SFR debug build counts these. So 0x82 shows more flags than the mask lets interrupt.
+Whether bit 7 raises the line by itself is unverified.
 
-**Two interrupts per voice burst.** A voice burst produces a received-data interrupt for its EMB (SyncClass 0) and
-one for the burst; a voice handler must take a burst number 1..6 at most once per 45 ms (drop a second report within
-45 ms of the last voice burst taken).
+**Two interrupts per voice burst.** A voice burst produces one received-data interrupt for its EMB (SyncClass 0) and
+one for the burst. A voice handler takes a burst number 1..6 at most once per 45 ms. It drops a second report that
+comes within 45 ms of the last voice burst taken.
 
 **Timing of a burst report.** For a burst received in step with the chip's slot timing, the received-data interrupt
-comes 3-5 ms after the timeslot interrupt (2-10 ms observed); 25-30 ms means the chip's timing is out of step with the
-sender (it locked to noise or to another station) and the receiver should be resynchronized.
+comes 3-5 ms after the timeslot interrupt (2-10 ms observed). A delay of 25-30 ms means the chip's timing is out of
+step with the sender, because it locked to noise or to another station. The receiver should then be resynchronized.
 
 ### 4.3 RF TX interrupt
 
-Comes before each burst the chip is about to send: key the PA and switch the RF chip to TX. On the DM-1701 there is no
-RF RX interrupt, so the end of each TX burst is done by the MCU: at the next timeslot interrupt, if the PA has been on
-for more than 20 ms, turn it off and put the RF chip back in RX. After the last burst of a transmission, a one-shot
-29 ms timer does the same. Keying from the RF TX interrupt takes the PA enables high and writes the AT1846S register
-0x30 = 0x60C6 (digital TX); un-keying takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz).
+The interrupt comes before each burst the chip is about to send. The handler keys the PA and switches the RF chip to
+TX. The DM-1701 has no RF RX interrupt, so the MCU ends each TX burst itself. At the next timeslot interrupt, if the PA
+has been on for more than 20 ms, the MCU turns it off and puts the RF chip back in RX. After the last burst of a
+transmission, a one-shot 29 ms timer does the same. Keying takes the PA enables high and writes AT1846S register
+0x30 = 0x60C6 (digital TX). Un-keying takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz).
 
-Consequence: on these radios the RF chip's "transmitting" state goes on and off **burst by burst**. Anything that
-needs "is a transmission in progress" must use the modem slot state (section 7.5), not the PA.
+On these radios the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
+know whether a transmission is in progress must use the modem slot state (section 7.5), not the PA.
 
 ---
 

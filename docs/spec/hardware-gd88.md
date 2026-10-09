@@ -1,15 +1,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Radioddity GD-88 (Kydera DR-880UV) hardware
 
-Status: research, 2026-10-11, facts only. ODR has no GD-88 board and no GD-88 radio. This page answers one question
-first: does the GD-88 program and update over native USB, or over a USB-serial cable? It also records what we know
-about the two SoCs and the update path. The survey entry is in [radios.md](radios.md); the HR_C7000 facts it builds
+Status: research, 2026-10-11, facts only. ODR has no GD-88 board and no GD-88 radio. This page records whether the
+GD-88 programs and updates over native USB or over a USB-serial cable. It also records what is known about the two
+SoCs and the update path. The survey entry is in [radios.md](radios.md); the HR_C7000 facts it builds
 on (UART registers, USB core, clock gates) are in [hardware-dm32.md](hardware-dm32.md).
 
 **Answer: a USB-serial cable.** The radio body has no USB connector. The PC link is a K1 (2.5 mm + 3.5 mm) jack,
 and the cable carries a USB-to-UART converter chip. In the stock firmware, SoC A runs the PC protocol on its
-**UART1** at 115200 baud. Neither stock image touches the SoC's USB controller. Confidence: high. Three independent
-sources agree: the vendor manual, the vendor's PC tools and the disassembly.
+**UART1** at 115200 baud. Neither stock image accesses the SoC's USB controller. Confidence is high: the vendor
+manual, the vendor's PC tools and the disassembly agree.
 
 ## Confidence tags
 
@@ -47,9 +47,9 @@ USB 21 / 53 (DS).
 
 | Item | Finding | Tag |
 |---|---|---|
-| Radio connector | K1 jack on the right side of the GD-88. Radio RXD (data to radio) shares the 3.5 mm sleeve with PTT; Radio TXD (data from radio) is on the 2.5 mm ring; GND is on the 2.5 mm sleeve; the 3.5 mm tip carries +5 V through 100 Ω (not a supply) | COM (extended manual v3.4, 11.1 and 17.5) |
+| Radio connector | K1 jack on the right side of the GD-88. Radio RXD (data to radio) shares the 3.5 mm sleeve with PTT. Radio TXD (data from radio) is on the 2.5 mm ring. GND is on the 2.5 mm sleeve. The 3.5 mm tip carries +5 V through 100 Ω (not a supply) | COM (extended manual v3.4, 11.1 and 17.5) |
 | Other connectors | SMA antenna socket and a 2-pin spring battery contact. The radio charges in a desktop charging base. Neither the product page nor the manual mentions a USB or Type-C port on the radio or the battery | COM |
-| Cable | Radioddity: "a small chip that converts signals to and from the USB-side into serial signals to and from the K1 / RJ45 style connector". It appears on the PC as a virtual COM port, and a driver download is offered if Windows does not load one. The DB40-D box lists the cable as "FTDI-based"; the GD-88 box list just says "Programming Cable". Firmware and CPS release notes since 2022-10 add "support for programming cable based on FTDI-chip" | COM |
+| Cable | Radioddity: "a small chip that converts signals to and from the USB-side into serial signals to and from the K1 / RJ45 style connector". It appears on the PC as a virtual COM port, and a driver download is offered if Windows does not load one. The DB40-D box lists the cable as "FTDI-based"; the GD-88 box list says only "Programming Cable". Firmware and CPS release notes since 2022-10 add "support for programming cable based on FTDI-chip" | COM |
 | Which SoC | A, UART1 (0x14040000), interrupt vector 42, set to 115200 by the start-up task. The A routines that read and write UART1 serve the PC protocol: model handshake strings "+DRS-880plus" and "+136-480MHZ+", 2 MB read/write blocks, record read, factory data, the B reset, and the command that hands over to the bootloader ("BLL_IAP_Flash"). The same UART also sends GPS NMEA out to the PC | BIN |
 | Baud | 115200 8N1 in the application (BIN). The vendor's IAP updater offers "115200,n,8,1" and "38400,n,8,1" | BIN, COM |
 | Electrical level | Not stated for the K1 jack. The DB40-D's RJ-45 programming port, on the same platform, is documented as 3.3 V, 115.2 kbaud | COM; INF for the GD-88 level |
@@ -73,7 +73,7 @@ installer has either, and the manual says the cable holds the converter chip (IN
 
 | Check (same method as the DM-32 in [hardware-dm32.md](hardware-dm32.md) 3.11) | A (2025, 2023) | B (2025, 2023) | Tag |
 |---|---|---|---|
-| `lrw` literal or `movih` building an address in 0x13000000–0x1303FFFF | None that is code: the few `lrw` hits (three in A 2025, two in A 2023, one in B 2025) land in byte tables or mid-instruction decodes, and no `movih` 0x1300–0x1303 exists | Same | BIN |
+| `lrw` literal or `movih` building an address in 0x13000000–0x1303FFFF | None that is code. The `lrw` hits (three in A 2025, two in A 2023, one in B 2025) land in byte tables or mid-instruction decodes. No `movih` 0x1300–0x1303 exists | Same | BIN |
 | USB interrupt (PIC source 21, vector 53) registered | No | No | BIN |
 | Device descriptor (`12 01 ..`), configuration descriptor (`09 02 ..`), USB UTF-16 strings | None (all six images, 2022–2025) | None | BIN |
 | "USB", "usb", "VCOM", "CDC-ACM" strings | None ("CDC" appears only in "CDCSS") | None | BIN |
@@ -85,14 +85,14 @@ installer has either, and the manual says the cable holds the converter chip (IN
 The USB data pins are the dedicated balls F1 (USB_DP) and F2 (USB_DM), with USB_AVDD33 on G3 (DS, as on the
 DM-32UV). The 2016 user manual's pin-mux table also lists USB_DM / USB_DP as function 4 of PTA13 / PTA14 (balls
 L16 / M14, which are UART3 RXD / TXD). But the IO-mux register for those pins (uart3_rxd_sel / uart3_txd_sel) marks
-the matching value 2 as reserved (DS, conflicting). On the GD-88 those balls carry the A↔B link (BIN), so they
-couldn't be used for USB anyway.
+the matching value 2 as reserved (DS, conflicting). On the GD-88 those balls carry the A↔B link (BIN), so they are
+not available for USB.
 
 ## 4. IAP bootloader entry
 
 | Item | Finding | Tag |
 |---|---|---|
-| Entry | Radio off, cable connected, CPS closed; hold the upper side key P2 and turn the radio on with the volume knob. The status LED lights red and a special screen shows "IAP_A" or "IAP_B" on the top line; then release P2. It can take more than one try | COM (update guide v2.2, release notes 2024-06) |
+| Entry | Radio off, cable connected, CPS closed. Hold the upper side key P2 and turn the radio on with the volume knob. The status LED lights red and a special screen shows "IAP_A" or "IAP_B" on the top line. Then release P2. It can take more than one try | COM (update guide v2.2, release notes 2024-06) |
 | A or B target | In IAP mode, long-press P2 to switch between IAP_A and IAP_B. The A file goes to IAP_A and the B file to IAP_B. Write the codeplug after updating both | COM |
 | Bootloader code | Not in the update files: they start at the 0x0300C000 application base, so the bootloader sits below it, as on the DM-32UV. No dump is available, so how IAP_B reaches SoC B (A relaying over the UART3 link, or a switch moving the cable to B's UART) is not known | BIN, INF |
 | Software entry | The A application has a PC command that closes UART1 and hands over to the bootloader ("BLL_IAP_Flash") | BIN |

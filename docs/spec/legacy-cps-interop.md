@@ -2,8 +2,9 @@
 
 # Legacy CPS interoperability
 
-This spec describes the serial protocol and the codeplug memory layout that the legacy CPS and qdmr's GD-77/UV380 open-firmware drivers use. With it, a fresh implementation can offer an interop shim, so that existing PC tools can read and write
-our radios. It covers wire formats and stored data formats only. How the new firmware stores its own data internally
+This spec describes the serial protocol and the codeplug memory layout that the legacy CPS and qdmr's GD-77/UV380
+open-firmware drivers use. A new implementation can use it to build an interop shim, so that existing PC tools can
+read and write our radios. It covers wire formats and stored data formats only. How the new firmware stores its own data internally
 is a separate decision. The shim can translate between the image described here and our own storage, or it can keep
 this image as the storage.
 
@@ -132,7 +133,7 @@ Special cases the radio applies to sub commands 1-3 (and 4 on the MK22). An inte
 | LUCZ rewritten (a write inside 0x6000..0x6049) | Remembered. The radio then doesn't overwrite the LUCZ with its own copy at "save and reboot" |
 | Voice prompt header written | If a sub command 2 write starts at the voice prompt header address (new or old location, section 7.6) and its first 8 bytes carry a valid magic and version, the radio switches announcements to voice level 1 |
 | DMR ID database upload | Preparing the sector at image 0x30000 marks a DMR ID upload. On Close (`C` 5) the radio re-reads the database header. The check uses the address without the 128 KB offset, so on STM32 radios it doesn't match the real database location (0x50000). A new implementation should re-read the database after any write that touches it |
-| VFO overlay on read (STM32 radios, DM-32) | When a flash read starts at or before 0x7590 and runs past the VFO pair (the check uses the radio's in-memory record size, so the read must extend somewhat beyond 0x75FF; a 32-byte-block tool never triggers it, a large-block CPS read does), the radio replaces those 112 bytes in the reply with its live VFO settings in codeplug format. The MK22 doesn't do this; the CPS sends `C` 6 2 first, so the VFOs are already saved |
+| VFO overlay on read (STM32 radios, DM-32) | When a flash read starts at or before 0x7590 and runs past the VFO pair, the radio replaces those 112 bytes in the reply with its live VFO settings in codeplug format. The check uses the radio's in-memory record size, so the read must extend somewhat beyond 0x75FF. A tool that reads 32-byte blocks never triggers it. A large-block CPS read does. The MK22 doesn't do this. The CPS sends `C` 6 2 first, so the VFOs are already saved |
 
 ### 2.3 `C`: control
 
@@ -296,10 +297,9 @@ Flash regions that qdmr transfers:
 | Flash codeplug | flash 0x7B000 | flash 0x9B000 | 0x13E60 (to 0x8EE60 / 0xAEE60) |
 | DMR ID DB | flash 0x30000 (+ 0xB8000) | flash 0x50000 (+ 0xD8000) | section 7.5 |
 
-Note that EEPROM image part 1 ends at 0x6060. It therefore includes the first 0x15 bytes of the radio's own settings
-block at 0x604B (7.2). A tool that writes back what it read restores those bytes unchanged. A shim must tolerate
-that range being written, and should not let it corrupt live settings: it can ignore it, or validate it against the
-magic.
+EEPROM image part 1 ends at 0x6060. It therefore includes the first 0x15 bytes of the radio's own settings block at
+0x604B (7.2). A tool that writes back what it read restores those bytes unchanged. A shim must accept writes to that
+range without letting them corrupt the live settings. It can ignore the range, or validate it against the magic.
 
 ### 7.2 EEPROM image map
 
@@ -576,19 +576,19 @@ Header (12 bytes):
 
 | Offset | Size | Field |
 | --- | --- | --- |
-| 0 | 2 | ASCII `Id`. Anything else means no database (the old `ID` tag is deliberately rejected) |
-| 2 | 1 | Format: `N` (78) = compressed text with 3-byte binary IDs; `n` = the same, with area 2 in the voice prompt area; any other value = 4-byte BCD IDs with plain text (qdmr's "uncompressed" is 45, `-`) |
+| 0 | 2 | ASCII `Id`. Anything else means no database. The old `ID` tag is rejected |
+| 2 | 1 | Format. `N` (78): compressed text with 3-byte binary IDs. `n`: the same, with area 2 in the voice prompt area. Any other value: 4-byte BCD IDs with plain text. qdmr's "uncompressed" format is 45 (`-`) |
 | 3 | 1 | Record size + 0x4A |
 | 4 | 4 | Version, ASCII (qdmr writes `001`) |
 | 8 | 4 | Record count, LE |
 
 Records follow the header in area 1, sorted by ascending ID, with no gaps. Area 1 holds as many whole records as fit
-in 256 KB minus the header; the rest continue at the start of area 2. Each record is:
-- an ID, 3 bytes LE binary (formats `N` and `n`) or 4 bytes BCD;
-- then the text. With `N` and `n`, the text is packed at 6 bits per character, 4 characters in 3 bytes, most
+in 256 KB minus the header. The rest continue at the start of area 2. Each record is:
+- An ID: 3 bytes LE binary (formats `N` and `n`) or 4 bytes BCD.
+- The text. With `N` and `n`, the text is packed at 6 bits per character, 4 characters in 3 bytes, most
   significant first. The 64-character alphabet is, in order: space, `0`-`9`, `A`-`Z`, `a`-`z`, `.` (codes 0-63).
   Trailing spaces are trimmed after unpacking. The text is "callsign name [city state country]" (qdmr's
-  convention). The record size is 3 + 3/4 of the text length: qdmr's default text length is 16 characters (15 byte
+  convention). The record size is 3 + 3/4 of the text length. qdmr's default text length is 16 characters (15 byte
   records) on the GD-77 and 32 (27 byte records) on the UV380 family.
 
 The radio looks IDs up by binary search, using a cache of 14 evenly spaced IDs once there are more than 40 records.

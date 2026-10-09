@@ -9,8 +9,9 @@ only what *our* radio does with it.
 
 ## 1. On the host port
 
-The radio has one USB CDC serial port (1FC9:0094). The host link (`core/hostlink`) dispatches on the first byte of a
-burst:
+The radio has one host port: a USB CDC serial port on radios with USB (the board's `board_usb_ids`, 1FC9:0094 on
+the STM32 radios, `hardware-dm1701.md` 16), a UART on radios without (`hardware-dm32.md` 17). The host link
+(`core/hostlink`) dispatches on the first byte of a burst:
 
 | First byte | Goes to |
 |---|---|
@@ -55,12 +56,19 @@ A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next q
 |---|---|
 | 1 | SPI flash at the physical address (the STM32 tools add the +128 KB offset themselves). Up to 2045 bytes per request. The VFO A record (EEPROM 0x7590) is replaced by the live VFO (2.3) |
 | 2 | the 64 KB EEPROM image (`legacy_eeprom` + addr), same rules |
-| 5 | MCU ROM from `board.cps->rom_base`, inside `rom_size` (DM-1701: 0x08000000, 1 MB) |
-| 9 | radio info, 46 bytes, structure version 3 (`legacy-cps-interop.md` 4): radio type from `board.cps->radio_type()` (DM-1701: 8, or 10 when security register 3 byte 0x1D & 3 = 2), git hash, build date `YYYYMMDDhhmmss`, flash id `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
+| 5 | MCU ROM from `board.cps->rom_base`, inside `rom_size` (per radio, table below) |
+| 9 | radio info, 46 bytes, structure version 3 (`legacy-cps-interop.md` 4): radio type from `board.cps->radio_type()` (table below), git hash, build date `YYYYMMDDhhmmss`, flash id `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
 | 10 | SPI flash security registers (`board.cps->security_read`) |
 | 6, 7, 8, other | `-` (screen capture, WAV and AMBE are not offered) |
 
 A range that runs off the end of the flash or the EEPROM image is refused with `-` before any data goes out.
+
+The board's `hal_cps_t` (`board.cps`) supplies the radio-specific answers:
+
+| Radio | `radio_type()` | `rom_base`, `rom_size` | Details |
+|---|---|---|---|
+| DM-1701 | 8, or 10 when the factory panel type is 2 (RGB) | 0x08000000, 1 MB | `hardware-dm1701.md` 9.2 |
+| MD-380 | 7 | 0x08000000, 1 MB | `hardware-md380.md` 15 |
 
 ### 2.3 Writes (`X`, `W`)
 
@@ -75,14 +83,15 @@ written and verified (about 100 ms). Rules:
   first.
 - **Quick keys** (EEPROM 0x7524-0x7537) belong to the radio. `X 2` bytes there are ignored, so a CPS that writes
   its stale copy doesn't undo what the user set on the radio.
-- **Calibration** (`calibration_addr`, 512 bytes, inside the protected sector 0x010000): only the window's bytes
-  take the CPS's values, and the rest of the sector is kept. *Open decision: refuse calibration writes entirely.*
+- **Calibration** (`calibration_addr`, `calibration_size` in the board's flash map; on the DM-1701 512 bytes inside
+  the sector at 0x010000, `hardware-dm1701.md` 13.2): only the window's bytes take the CPS's values, and the rest of
+  the sector is kept. A board with no calibration window (size 0: the MD-380, the DM-32) refuses the sector. *Open decision: refuse calibration writes entirely.*
 - **VFO A** (EEPROM 0x7590): a commit whose VFO A record differs from what the radio would show (the CPS edited the
   VFO) is decoded into the settings store's VFO fields. A record written back unchanged is ignored. The VFO
   follows after the next boot or reload.
 - `X 2` bytes outside the pending sector are ignored. `X 2` or `X 3` without an `X 1` is refused. `X 1` while a
   sector is pending drops it and is refused.
-- `X 4` (EEPROM write) is acknowledged: the STM32 radios emulate the EEPROM in flash, and the tools write it with
+- `X 4` (EEPROM write) is acknowledged: the radio emulates the EEPROM in flash, and the tools write it with
   `X 1-3`. `X 7` (WAV buffer) is refused.
 - `W 1-4` is the STM32 family's "fake write": acknowledged, nothing done.
 - After the session (`C 5`, or the 10 s time-out), if anything was committed, the codeplug is re-read
@@ -127,7 +136,7 @@ last session pending`.
 
 ### 2.7 Open decisions
 
-1. Radio type 8 vs 10: the DM-1701 reports 10 only for panel type 2 (BGR / RGB tools' choice). qdmr treats both as
+1. Radio type 8 vs 10 on the DM-1701: 10 only for panel type 2 (BGR / RGB tools' choice). qdmr treats both as
    a DM-1701.
 2. Area 1 reads of the settings area expose the privacy keys (`settings-store.md` 3.1). Should area 1 be limited
    to the legacy image?

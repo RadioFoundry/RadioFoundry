@@ -172,7 +172,7 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 
 - A receiver that missed the header acquires the call from the embedded LC: needs bursts B-E of one superframe, so
   360-720 ms after the first burst heard.
-- Some modems announce it (HR_C6000: post-access interrupt), others just report voice bursts with embedded LC.
+- Some modems announce it (HR_C6000: post-access interrupt), others only report voice bursts with embedded LC.
   The stack must handle both: voice bursts with no preceding header start a call once the embedded LC is complete.
 - **Stale LC**: the HR_C6000 (and likely the C7000) keeps the previous call's LC in its RX LC buffer until a new one is
   decoded. The stack must not attribute the new call to that LC: either wait two superframes (two bursts A) after the
@@ -209,7 +209,7 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   current practice; a timeout of 10 s + 60 ms per burst covers a wake-up.
 - The data service needs a "send this payload verbatim, I supplied the CRC" option (raw passthrough of CSBK / data
   headers from a host). On modems that always compute the CSBK / data header CRC (HR_C7000, HR_C5000), raw
-  passthrough of a burst with a deliberately wrong CRC is not possible; the stack must then give the payload without
+  passthrough of a burst with an intentionally wrong CRC is not possible; the stack must then give the payload without
   its CRC and let the modem add it.
 
 ### 2.7 BS activation (repeater wake-up)
@@ -254,7 +254,7 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 
 ---
 
-## 5. What the modems actually provide
+## 5. What the modems provide
 
 | | HR_C6000 (DM-1701, MD-UV380, MD-9600, GD-77) | HR_C7000 (DM-32) | HR_C5000 (MD-380) |
 |---|---|---|---|

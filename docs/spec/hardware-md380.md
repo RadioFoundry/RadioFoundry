@@ -560,6 +560,9 @@ the stock file is in `codecs/`. Without the codec merged the radio is FM only.
 OTG_FS device on PA11 / PA12 (D). ODR enumerates with the DM-1701's IDs and the product name "MD-380"
 (`usb_md380.c`); the bootloader's DFU device is separate (14.3).
 
+The legacy CPS shim reports radio type 7 and serves the MCU ROM from 0x08000000, 1 MB (`boards/md380/board.c`,
+`cps-protocol.md` 2.2).
+
 ---
 
 ## 16. Variants

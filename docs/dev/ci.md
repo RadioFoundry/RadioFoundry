@@ -233,7 +233,7 @@ the screenshots are the `hil-results` artifact. A scheduled nightly run happens 
 
 Gotchas:
 
-- **The radio's firmware isn't flashed by the workflow.** Putting the DM-1701 in its bootloader takes a person
+- **The radio's firmware isn't flashed by the workflow.** Putting the radio in its bootloader takes a person
   (`tools/odrflash`); the job tests whatever is on the radio and prints its version first. Flash the commit to test
   before starting the run.
 - **USB personality tests can strand the radio.** `usb_switch` tests switch the radio to a CDC-NCM network adapter

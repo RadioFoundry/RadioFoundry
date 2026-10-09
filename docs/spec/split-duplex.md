@@ -397,15 +397,15 @@ from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by
 
 ## 9. Frequency accuracy, calibration and antennas
 
-- **TX half frequency**: on the DM-1701 the AT1846S puts the DMR carrier about 3.07 kHz low when it goes from RX on
-  straight to TX on an already-tuned frequency (`hardware-dm1701.md` 5.6 and 20, gotcha 3.5); the per-burst switch of
-  `radio_dm1701.c` retunes with the receiver off and lands within about +65 Hz. The continuous outbound keys once with
-  that same sequence and then stays in TX, so it inherits the +65 Hz; no offset constant is added. A continuous carrier
+- **TX half frequency**: the continuous outbound keys once with the board's per-burst RX-to-TX sequence and then
+  stays in TX, so it inherits that sequence's carrier error; no offset constant is added. On the DM-1701 the
+  sequence retunes with the receiver off and lands within about +65 Hz (`hardware-dm1701.md` 5.6 and 20, gotcha
+  3.5). A continuous carrier
   warms the TCXO: measure on the SDR bench after 5 minutes keyed (`sdrmon.py analyze` prints the frequency offset per
   burst) and, if it is outside about ±300 Hz, correct the radio's reference oscillator offset in its calibration
-  (HR_C6000 0x47 / the calibration's `ref_offset`). An ADF7021-based receiver (MMDVM_HS) decodes nothing at -3 kHz, so
+  (DM-1701: HR_C6000 0x47 / the calibration's `ref_offset`, `hardware-dm1701.md` 12.4). An ADF7021-based receiver (MMDVM_HS) decodes nothing at -3 kHz, so
   check every TX half once with the bench.
-- **RX half**: uses the radio's receive calibration as is; the HR_C6000 tolerates the ±1.5 kHz of a typical
+- **RX half**: uses the radio's receive calibration as is; the modem (HR_C6000) tolerates the ±1.5 kHz of a typical
   subscriber.
 - **Antennas**: the two halves are a duplex repeater without a duplexer. With 5 MHz UHF spacing, a 1 W TX half next to
   the RX half desensitizes it unless the antennas are isolated by about 60-70 dB: a duplexer on one antenna, or
@@ -483,6 +483,6 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
    bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit).
 5. Whether AT should default to busy during the host's hang time (mode 0 does: the outbound slot is not idle) or only
    from the RX half (mode 1).
-6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`) are on the DM-1701's diagnostics line `bs` (slots,
+6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`) are on the board's diagnostics line `bs` (the DM-1701's) (slots,
    bursts, underruns, key-ups, CACH written, PA failures, stalls; `odr_debug.py` parses them as `bs.*`). Not reachable
    from the core itself (no `hal_dmr_modem_t` stats operation).

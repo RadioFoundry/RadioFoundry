@@ -431,8 +431,8 @@ success, our old firmware did. After CW, restore the DMR setup fully (gotchas 8.
 configuration must be restored or DMR fails until a power cycle). The old firmware sent 60 ms dots (about 20 wpm).
 
 Ours: the hotspot's `cw_id` op (`core/radio/radio_hotspot.c`) hands the callsign (up to 40 characters) to the radio
-task, which keys it on boards with an FM TX tone (`hal_radio_t` `tx_tone`, the DM-1701; `tx_tone_key` switches the
-tone without retuning): the DMR keying released, `set_mode(FM)`, a carrier on the hotspot's TX frequency, 150 ms
+task, which keys it on boards whose `hal_radio_t` has `tx_tone` (only the DM-1701 so far; `tx_tone_key` switches
+the tone without retuning): the DMR keying released, `set_mode(FM)`, a carrier on the hotspot's TX frequency, 150 ms
 lead, the Morse (`core/radio/morse.c`: PARIS timing, dot = 1200 / wpm ms, `settings_t` `cw_wpm`, default 20 wpm,
 tone `cw_tone_hz`, default 800 Hz), 150 ms tail, then `set_mode(DMR)` (the modem set up again, 8.13), the receiver
 back on the hotspot's RX frequency and the DMR keying armed. The TX flag stays set meanwhile (`cw_busy`). Leaving
@@ -537,7 +537,7 @@ burst per 60 ms per slot after a prebuffer (6 by default), also gated on space a
 - The radio can't receive while it transmits; RF heard right after a transmission goes up normally.
 - No DMR_START, no DMR_ABORT, short LC ignored, no CACH.
 - After the host's terminator, the TX flag stays set until the radio's own terminator is on air (about 0.7 s after
-  the host's terminator on the DM-1701, gotchas 8.6), then clears.
+  the host's terminator, measured on the DM-1701, gotchas 8.6), then clears.
 - SET_CONFIG with the simplex flag clear and RX ≠ TX: MMDVMHost then expects a duplex repeater (both slots, DMR_START,
   BS framing). The old firmware ran as a plain simplex hotspot in that case; with RX = TX it turns SFR on (section 6).
 

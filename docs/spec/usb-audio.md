@@ -12,6 +12,8 @@ the PTT watchdog and the jitter buffer as tested host code (`core/usbaudio`), a 
 
 ## Summary
 
+The study was done on the DM-1701 (section 2). The other radios are in section 8.
+
 | Question | Answer on the DM-1701 |
 |---|---|
 | DMR voice as PCM, both ways | **Yes, today.** The I2S link to the HR_C6000 already carries 8 kHz 16-bit PCM both ways, and the MCU runs the AMBE codec. Decoded calls can go to the host and host audio can be encoded and sent, at no new CPU cost (2.2) |
@@ -76,7 +78,7 @@ in both directions ([hardware-dm1701.md](hardware-dm1701.md) 20).
 
 ### 2.3 FM: the open question and how to settle it
 
-What the HR_C6000 manual says, in short:
+What the HR_C6000 manual says:
 
 - The built-in codec's input mux takes MIC_P / MIC_N (differential) or LINEIN1 / LINEIN2 (single ended), then a gain
   stage, the ADC and a digital filter; its output path is a gain stage (page 4 0x37), the DAC and LINEOUT1 / LINEOUT2
@@ -195,7 +197,7 @@ or USB touches them, the rest in CCM.
 
 ## 3. USB: what fits
 
-The STM32F405's OTG_FS core has endpoint 0 plus 3 IN and 3 OUT endpoints and 1.25 KB of FIFO RAM
+The USB core of the radios with USB (the STM32F405's OTG_FS) has endpoint 0 plus 3 IN and 3 OUT endpoints and 1.25 KB of FIFO RAM
 ([hardware-dm1701.md](hardware-dm1701.md) 16; `USB_OTG_FS_MAX_IN_ENDPOINTS` = 4 including EP0 and
 `USB_OTG_FS_TOTAL_FIFO_SIZE` = 1280 in ST's device header; TinyUSB's `dwc2_stm32.h`: 4 endpoints, 320 words).
 
@@ -235,7 +237,8 @@ reach, everything a mono 8-48 kHz interface needs, and no clock-source entities 
 interfaces offer), plus 16 kHz and 8 kHz (no resampling at 8 kHz; Direwolf and AllStar's 8 kHz paths). The firmware
 resamples 8 kHz to the chosen rate and back.
 
-**Clocks**: the radio's audio clock is the HR_C6000's 8 kHz word clock (its own crystal), not the USB frame clock.
+**Clocks**: the radio's audio clock is the modem's 8 kHz word clock (on the DM-1701 the HR_C6000's, on its own
+crystal), not the USB frame clock.
 The IN stream (radio to host) is asynchronous: the device sends 47 / 48 / 49 samples per frame (or 7 / 8 / 9 at
 8 kHz) as its clock dictates, which every host handles. The OUT stream is adaptive: the host sends at its rate, and
 the firmware's jitter buffer (`core/usbaudio/pcm_slip.c`) absorbs the difference by dropping or repeating one sample
@@ -243,10 +246,10 @@ when the fill drifts a block away from its target. At 100 ppm that's one sample 
 harmless to AFSK and the FSK modes (host test: 200 ppm either way for 10 minutes with 15 ms of jitter, no underrun,
 no overflow). The same buffer serves USRP and serial audio, whose senders run on the host's clock too.
 
-**IDs**: the radio uses NXP's VID with the legacy PIDs today (`boards/dm1701/usb_dm1701.c` says a release should move
-to an ID of its own). A composite personality changes the interface set, so it needs its own PID (Windows caches the
+**IDs**: the radios use NXP's VID with the legacy PIDs today (`board_usb_ids`; `boards/dm1701/usb_dm1701.c` says a
+release should move to an ID of its own). A composite personality changes the interface set, so it needs its own PID (Windows caches the
 driver binding per VID/PID). pid.codes (VID 0x1209) gives open-source projects PIDs for free; the AIOC adapter, an
-MIT-licensed STM32 sound card + serial + CM108-style HID cable, does exactly that (1209:7388).
+MIT-licensed STM32 sound card + serial + CM108-style HID cable, does that (1209:7388).
 
 ## 4. Protocols
 
@@ -363,7 +366,7 @@ own PID, chosen by a setting and switched by re-enumeration:
 UAC1 topology: input terminal "radio receiver" (type 0x0710, radio receiver) to an output terminal USB streaming (the
 host's microphone); USB streaming input terminal to an output terminal "radio transmitter" (0x0711) (the host's
 speaker); a feature unit with mute and volume on the transmit side lets the host set the TX audio level. Product string
-names the radio ("DM-1701 audio"), so it is recognizable in sound settings. If a host mishandles the radio
+names the radio (the board's product name, e.g. "DM-1701 audio"), so it is recognizable in sound settings. If a host mishandles the radio
 terminal types, fall back to the generic microphone (0x0201) and speaker (0x0301) types.
 
 ### 5.3 Rates and the radio side
@@ -399,7 +402,7 @@ bring their own waveform (9600 baud G3RUH, VARA FM, M17 or other 4FSK, anything 
 |---|---|---|
 | RX | de-emphasized, voice band (300-3000 Hz), gated by the squelch and tone (5.4) | the discriminator before de-emphasis and the voice filters, DC coupled where the hardware allows; gated by carrier squelch only, or ungated |
 | TX | pre-emphasis, compressor if the channel has it, voice filter, limiter, the channel's sub-audio tone | no pre-emphasis, no compressor, no voice band filter; the limiter stays as deviation protection (it clips, so the host keeps its level below it); sub-audio tone per a separate setting (off by default in flat) |
-| Rate | 8 kHz | the source's rate: 24 or 48 kHz from an MCU ADC on the discriminator; 8 kHz where the audio comes from the HR_C6000 |
+| Rate | 8 kHz | the source's rate: 24 or 48 kHz from an MCU ADC on the discriminator; 8 kHz where the audio comes from the modem (the HR_C6000) |
 
 Where each radio can do it:
 
@@ -434,7 +437,7 @@ CPU.
 - RX: the FM tap is at the codec's level before the volume knob; the host sets its own capture level. DMR decoded
   audio is the codec's output level.
 - TX: the host's audio goes through the same FM transmit chain as the microphone (if candidate B works): pre-emphasis,
-  the limiter (page 4 0x3F) and the channel filter keep the deviation inside the channel whatever the host sends. The
+  the modem's limiter (HR_C6000 page 4 0x3F) and the channel filter keep the deviation inside the channel whatever the host sends. The
   feature unit volume and a firmware gain scale it; `hal_audio_tap_t.fm_tx_nominal_peak` (the sample level that gives
   60 % of peak deviation) is measured once on the bench per band and bandwidth with the probe's tone and the SDR
   bench, like the existing deviation calibration ([hardware-dm1701.md](hardware-dm1701.md) 12.5).

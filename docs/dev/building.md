@@ -6,8 +6,8 @@
 
 | Radio | Compiler | Where it comes from |
 |---|---|---|
-| DM-1701 (`BOARD=dm1701`), MD-380 (`BOARD=md380`) | `arm-none-eabi-gcc` | Arm GNU Toolchain (CI pins 13.3.rel1; `tools/install-arm-toolchain.sh` installs it on Linux x86_64). The Makefile looks in `~/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/` first, then `/usr/bin/`; `CROSS=` overrides |
-| DM-32UV (`BOARD=dm32`) | `csky-elf-gcc` (GCC 14) | Build it once with `tools/build-csky-toolchain.sh` (into `~/toolchains/csky-elf`, about 45 minutes), or use the Docker image: `tools/docker/csky-toolchain/run.sh make BOARD=dm32` ([CI](ci.md#the-csky-elf-image)). The Makefile looks in `~/toolchains/csky-elf/bin/`, then `PATH` |
+| STM32F405 radios: DM-1701 (`BOARD=dm1701`), MD-380 (`BOARD=md380`) | `arm-none-eabi-gcc` | Arm GNU Toolchain (CI pins 13.3.rel1; `tools/install-arm-toolchain.sh` installs it on Linux x86_64). The Makefile looks in `~/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/` first, then `/usr/bin/`; `CROSS=` overrides |
+| HR_C7000 radios: DM-32UV (`BOARD=dm32`), DB25-D (`BOARD=db25d`) | `csky-elf-gcc` (GCC 14) | Build it once with `tools/build-csky-toolchain.sh` (into `~/toolchains/csky-elf`, about 45 minutes), or use the Docker image: `tools/docker/csky-toolchain/run.sh make BOARD=dm32` ([CI](ci.md#the-csky-elf-image)). The Makefile looks in `~/toolchains/csky-elf/bin/`, then `PATH` |
 | Host tests | the host's `cc` and zlib | Xcode command line tools or the distribution's compiler |
 
 You also need make, git and Python 3. Clone with submodules: `git submodule update --init` fetches FreeRTOS, TinyUSB
@@ -15,17 +15,19 @@ and ST's HAL and CMSIS into `third_party/`.
 
 ## Make targets
 
+`<b>` is the board directory under `boards/` (`dm1701`, `md380`, `dm32`, `db25d`).
+
 | Command | Does |
 |---|---|
-| `make BOARD=dm1701` | Builds `build/dm1701/odr_dm1701.{elf,bin,map}`, plus `odr_dm1701_codec.bin` when `codecs/` holds the stock file (below). `BOARD` defaults to `dm1701` |
+| `make BOARD=<b>` | Builds `build/<b>/odr_<b>.{elf,bin,map}`, plus `odr_<b>_codec.bin` when `codecs/` holds the radio's stock file and the board has a codec tool (below). `BOARD` defaults to `dm1701` |
 | `make BOARD=md380 MD380_BAND=vhf` | The MD-380 VHF image (default `uhf`; one image per band) |
-| `make BOARD=dm1701 size` | Section sizes and the space left before the codec |
+| `make BOARD=<b> size` | Section sizes and the space left before the codec |
 | `make test` | The host tests (the same as `make -C tests/host`) |
-| `make BOARD=dm1701 print-config` | The feature switches this board builds with, as `NAME=y/n` |
-| `make BOARD=dm1701 print-cc` | The compiler the board uses (ci.sh checks it is installed) |
-| `make BOARD=md380 print-unsupported`, `print-maximal-vars` | `BOARD_UNSUPPORTED` and `MAXIMAL_VARS` from the board's `config.mk`, for ci.sh's maximal build |
-| `make BOARD=dm1701 clean` | Removes `build/dm1701` |
-| `make BOARD=dm1701 BUILD=dir` | Builds into another directory (ci.sh does this for each configuration) |
+| `make BOARD=<b> print-config` | The feature switches this board builds with, as `NAME=y/n` |
+| `make BOARD=<b> print-cc` | The compiler the board uses (ci.sh checks it is installed) |
+| `make BOARD=<b> print-unsupported`, `print-maximal-vars` | `BOARD_UNSUPPORTED` and `MAXIMAL_VARS` from the board's `config.mk`, for ci.sh's maximal build |
+| `make BOARD=<b> clean` | Removes `build/<b>` |
+| `make BOARD=<b> BUILD=dir` | Builds into another directory (ci.sh does this for each configuration) |
 | `make ... OPT=-O0` | Changes the optimization level (default `-Os`) |
 | `make ... LTO=1 [LTO_3P=1]` | Link time optimization, third-party code too with `LTO_3P` (on by default only on the MD-380; [build-config.md](../build-config.md#board-build-variables)) |
 

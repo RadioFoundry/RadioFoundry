@@ -70,8 +70,9 @@ narrows it when a zone mixes sites with other channels. When the native codeplug
 - **Site heard**: `dmr_call_view()->repeater_up`: a burst with BS sync and the channel's color code within the last
   300 ms (`DMR_CALL_REPEATER_HOLD_MS`). Bursts with another color code are dropped by the call stack before they
   count, so a co-channel repeater with another color code is never taken for ours.
-- **Signal**: `hal_radio_t.status().rssi_dbm`, read every poll (25 ms) while the site is heard. On the DM-1701 this is
-  the AT1846S RSSI (`hardware-dm1701.md` 5.9); the HR_C6000's own RSSI registers are not used.
+- **Signal**: `hal_radio_t.status().rssi_dbm`, read every poll (25 ms) while the site is heard. The board picks the
+  source: the receiver's RSSI, not the DMR modem's (DM-1701: the AT1846S, `hardware-dm1701.md` 5.9; MD-380: the
+  IF chain's RSSI on an ADC, `hardware-md380.md` 5.5).
 - **Current site average**: an exponential average of those readings (weight 1/8 per reading), restarted on every
   site change. Readings taken while the radio isn't hearing the site don't count, so a silent repeater keeps its last
   average until it is too old (`ROAM_FRESH_MS`, 60 s): then the site's signal is **unknown**.
@@ -80,7 +81,7 @@ narrows it when a zone mixes sites with other channels. When the native codeplug
 
 - **Survey measurement**: during a survey visit (section 4.9), the mean of up to `ROAM_SURVEY_READINGS` (4)
   readings taken while the site is heard, after `ROAM_SURVEY_SETTLE_MS` (420 ms: the call stack's 300 ms hold of
-  the last site's outbound, then about 120 ms for the PLL, the modem's sync and the AT1846S RSSI filter). The
+  the last site's outbound, then about 120 ms for the PLL, the modem's sync and the receiver's RSSI filter). The
   site's survey average is the mean of its last two survey measurements; a site missed in two visits made while the
   beacons were on the air ("live": its own site or another one was heard in that window) counts as not heard.
 - **Traffic**: a call or data on our slot (`RS_RX`, or the call stack not idle) while a site is heard. A keyup that
@@ -89,8 +90,8 @@ narrows it when a zone mixes sites with other channels. When the native codeplug
 Why 420 ms per visit and not less: all sites share the color code, and the call stack keeps a repeater "up" for 300
 ms after its last burst, so the first 300 ms after a retune can't tell the new site from the old one. A visit could
 be about 250 ms if the stack forgot the last site on a retune, but then a PTT that ends a visit would always go
-through a repeater wake-up on the way back (section 4.9). The AT1846S RSSI and the HR_C6000's sync acquisition
-need well under 100 ms on a continuous BS outbound (a burst every 30 ms); four 25 ms readings follow.
+through a repeater wake-up on the way back (section 4.9). On the DM-1701, the AT1846S RSSI and the HR_C6000's sync
+acquisition need well under 100 ms on a continuous BS outbound (a burst every 30 ms); four 25 ms readings follow.
 
 A conventional repeater only transmits while it carries traffic (plus its hang time), when it beacons, or when
 something wakes it. Passive measurement therefore only sees sites that are busy or beaconing; section 4.5 covers
@@ -267,7 +268,7 @@ Bounds:
   silent site longer than the hold, the call stack wakes the repeater first, as after any channel change.
 - **Screens**: during a survey visit the screens and the debug link's core view keep showing the site the radio
   returns to (`radio_sm_shown_view`, applied when the view is published), so Home doesn't flicker once a minute.
-  `roam.state=survey` and `roam.visit` say where the radio really is.
+  `roam.state=survey` and `roam.visit` say where the radio is.
 
 Results: each visit updates the site's survey average and its time (`surv.<i>` on the debug link). Survey data is
 **fresh** for `roam_fresh_ms()`: synced, (windows needed to cover the zone x windows between rounds + 2) intervals;

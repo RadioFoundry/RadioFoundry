@@ -9,11 +9,17 @@ its column lines with the LCD data bus, a rotary channel encoder, a volume poten
 and USB full speed device on the MCU's OTG_FS core. This file records what the hardware needs. The DM-1701 is the
 primary target; differences for the siblings are collected in section 17.
 
-Conventions: register values are hex; AT1846S registers are 16 bit and written as `reg = value`; HR_C6000 registers
-are written as `page:reg = value`. "Unverified" means the fact is inferred and not confirmed by a datasheet or a
-measurement. Each section ends with a one-line "Sources" note giving the kind of evidence (datasheet, CubeMX project,
-firmware constant, on-air test, loader tool). Register-level HR_C6000 behavior is in `modem-hrc6000.md` and is not
-repeated here.
+Conventions:
+
+| Item | Convention |
+|---|---|
+| Register values | Hex |
+| AT1846S registers | 16 bit, written as `reg = value` |
+| HR_C6000 registers | Written as `page:reg = value` |
+| "Unverified" | The fact is inferred. No datasheet or measurement confirms it |
+| "Sources" line | Ends each section. It gives the kind of evidence: datasheet, CubeMX project, firmware constant, on-air test, loader tool |
+
+Register-level HR_C6000 behavior is in `modem-hrc6000.md` and is not repeated here.
 
 ---
 
@@ -56,7 +62,7 @@ back to the PLL.
 | APB1 | /1 (24 MHz) |
 | Flash wait states | 0 |
 | Backlight timer period | changed with the clock (TIM1, section 9.3) |
-| Rule | not entered while USB is in the configured state (USB needs the 48 MHz domain, which stays at 48 MHz, but the bus clocks drop too far for the stack); on a USB reset the full speed clock is restored first |
+| Rule | Not entered while USB is in the configured state. The 48 MHz domain stays at 48 MHz, but the bus clocks drop too far for the USB stack. On a USB reset the full speed clock is restored first |
 
 ### 1.4 Internal flash layout
 
@@ -578,6 +584,10 @@ Morse keying for the hotspot's CW ID (`tx_tone_key`, `boards/dm1701/radio_dm1701
 saved value), so the carrier stays up and the tone switches without a retune. On air: `test_hotspot_cwid` checks the
 Morse tone (`docs/testing/on-air-coverage.md`).
 
+ODR's `tx_tone(hz)` (`boards/dm1701/radio_dm1701.c`, the roger beep and the 1750 Hz burst of `radio-features.md`
+3.3) uses tone1 with 0x79 = 0xC000 and tone deviation 0x1C, and mutes the HR_C6000 microphone path (page 4 0xE0
+bit 6). `tx_tone(0)` and every return to receive restore the saved registers.
+
 ### 5.9 RSSI, noise, squelch
 
 | Register | Field |
@@ -593,6 +603,24 @@ threshold (old firmware: 70 minus 3 per squelch step, 3 dB hysteresis), sampled 
 
 Sources: AT1846S datasheet 0.3 and programming guide 1.4 (bit meanings, address, frequency formula, DCS example),
 firmware register tables (values), on-air measurements (TX offset), field calibration constants (RSSI).
+
+### 5.10 APRS AFSK transmit
+
+ODR's `hal_afsk_t` (`boards/dm1701/afsk_dm1701.c`, `aprs.md` 5) uses the AT1846S tone generator as the voice source,
+as for the roger beep. TIM6 (APB1 timer clock 72 MHz, prescaler 2, `ARR = clk / 2 / 1200 - 1`, interrupt priority
+5, no RTOS calls) interrupts at every symbol boundary. It writes the next tone to register 0x35 when the tone
+changes: one I2C write of about 0.1 ms in an 833 us symbol. The radio core keeps the I2C bus free meanwhile. At the
+end it force-writes 0x35, because the interrupt bypassed the driver's cache. The level (0-100, 50 default) scales the
+tone deviation register 0x59 around the driver's value.
+
+The tone generator is the voice source only with reg 0x3A bits 14:12 (voice_sel) = 001 and 0x7A bit 14 (single tone)
+set. An earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.10, fixed in 694249b).
+`tests/hil/test_aprs.py` measured the result on air (`aprs.md` 13).
+
+### 5.11 Receiver sleep
+
+ODR's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
+receive supply off. `rx_sleep(false)` retunes.
 
 ---
 
@@ -661,6 +689,9 @@ Interpolation fractions (firmware constants, empirical):
 On the 10 W radio levels 5-8 are 2 W, 3 W, 5 W, 10 W: level 5 = low + (mid - low) x f2, level 6 = low + (mid - low) x
 f3, level 7 = mid, level 8 = high. Clamp to 4095.
 
+Without a loaded calibration ODR drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in
+`boards/dm1701/radio_dm1701.c`), a very low drive.
+
 Sources: firmware constants (empirical fractions), CubeMX (DAC).
 
 ---
@@ -679,6 +710,11 @@ Sources: firmware constants (empirical fractions), CubeMX (DAC).
 
 The RX audio mux on PD9 is driven low when the AT1846S output (e.g. its tone generator during audible AFSK) should go
 straight to the amp (unverified).
+
+No APRS receive path: FM audio goes AT1846S -> HR_C6000 line in -> speaker DAC. The I2S stream from the HR_C6000
+carries the microphone only, and no ADC pin sees the discriminator. So `hal_afsk_t.rx_start` is NULL and
+`CONFIG_APRS_RX` defaults to n (`aprs.md` 5.3). An experiment for the bench: route the line in to the HR_C6000's
+record path (register 0xE0 family) and read it over I2S.
 
 Sources: firmware constants, HR_C6000 documentation, CubeMX.
 
@@ -705,6 +741,9 @@ Sources: firmware constants, HR_C6000 documentation, CubeMX.
 
 After each burst the old firmware writes 0x00 to the data address so the shared data lines rest low before the keypad
 is scanned.
+
+The case's lens hides about 5 px at the left and right edges. ODR's safe-area insets default to 5 px left and right,
+none top and bottom (`CONFIG_DISPLAY_INSET*` in `boards/dm1701/config.mk`, `ui.md` 1).
 
 ### 9.2 Controller type and orientation
 
@@ -907,6 +946,9 @@ Voltage in 0.1 V units = raw / 37.5 on the DM-1701 / RT84 (raw / 40.3 on the MD-
 Ignore readings for 1.5 s after power-up or wake (they settle); average with a long window (1000 samples) for display,
 use the latest sample for decisions.
 
+ODR's thresholds: `board.battery_low_mv` 6200, `battery_critical_mv` 6000 (`boards/dm1701/board.c`,
+`radio-features.md` 5.1).
+
 ### 11.2 Volume pot
 
 Log-taper pot read on PA0. Raw ranges (firmware constants from measurement): DM-1701 min about 29, max about 2075,
@@ -917,6 +959,9 @@ breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approxima
 ### 11.3 Mic level
 
 PA3 gives the microphone level; convert the raw value to dB (20 log10) for VOX.
+
+ODR's `mic_level` (`boards/dm1701/power_dm1701.c`, VOX in `radio-features.md` 3.4) gives 0-100: 20 log10 of the raw
+reading over the ADC's 72 dB. Not verified on the bench.
 
 ### 11.4 Temperature
 

@@ -24,8 +24,8 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 
 Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip and, from 100 px high, each list row take
 one pixel more than the text cell, so lines never touch (easy to read comes before one more row; principles.md 5).
-The board's safe-area insets are outside the drawing area (`gfx_width` / `gfx_height`): on the DM-1701 5 px left and
-right under the lens, none top and bottom. At 160x120i5 a list shows 7 rows, at 160x128 7, at 120x160 (the DM-32) 15,
+The board's safe-area insets (`hal_display_t.inset_*`) are outside the drawing area (`gfx_width` / `gfx_height`),
+for panel edges hidden by the case (DM-1701: 5 px left and right under the lens, `hardware-dm1701.md` 9.1). At 160x120i5 a list shows 7 rows, at 160x128 7, at 120x160 (the DM-32) 15,
 at 128x64 5. The 240x320 class keeps 3 px per row and a separate title row; `uiSim --layout` fails a class whose row
 pitch drops below these. The 120x160 portrait panel keeps the 128 px class's small font (24 characters a line) and
 takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
@@ -101,10 +101,11 @@ channel's contact and its listen list), USER_1 / USER_4 the zone, USER_3 the pow
 toast until voice prompts exist).
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
-whatever the long press time (`input_long_threshold`, core/input). On the DM-1701 it is the top side key's long
-action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above); the short press stays USER_3. A hold toggles:
+whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
+(`board.keymap`): on the DM-1701 the top side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long
+USER_3 as above); the short press stays USER_3. A hold toggles:
 "EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
-so a cancel from elsewhere counts). The DM-32 has no emergency key (its top key isn't located yet).
+so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (the DM-32UV: its top key isn't located yet).
 
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the

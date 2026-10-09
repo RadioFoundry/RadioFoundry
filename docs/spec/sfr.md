@@ -81,11 +81,16 @@ The runner assumes these of `hal_dmr_modem_t`; they are the open work for each r
 5. `DMR_EV_TX_SLOT_STARTED` once per burst taken from its queue, `DMR_EV_TX_DONE` after `tx_end` has drained it.
 6. An SFR channel never switches to repeater (RMO) mode on BS sync (gotchas 14.7).
 
-Today's DM-1701 driver (`drivers/modem/hrc6000/hrc6000_dmr.c`, owned by the DMR modem work) already honors
-`sync_override`, idle bursts, `host_crc`, `DMR_TIMING_ALIGNED` (to the slot numbering it learned from the bursts
-heard) and the TX slot events, and it keeps passing reports up while it transmits. The RF is switched per burst: the
-RF TX interrupt keys the PA (AT1846S to TX), the timeslot interrupt that starts the next slot drops it (AT1846S back to
-RX, about 1.3 ms into the slot, gotchas 3.4). Item 1 was missing in the chip: the slot between our bursts was written
+Status per modem driver:
+
+| Driver | Radios | Items |
+|---|---|---|
+| HR_C6000 (`drivers/modem/hrc6000/hrc6000_dmr.c`, owned by the DMR modem work) | DM-1701 (the MD-380 builds without SFR) | all: `sync_override`, idle bursts, `host_crc`, `DMR_TIMING_ALIGNED` (to the slot numbering it learned from the bursts heard), `tx_listen`, `DMR_BURST_EMPTY`, the TX slot events; reports keep coming while it transmits |
+| HR_C7000 (`drivers/modem/hrc7000/hrc7000_dmr.c`) | DM-32UV | `sync_override` and the TX slot events; the rest not yet |
+
+The board switches the RF per burst: the RF TX interrupt keys the PA, the timeslot interrupt that starts the next slot
+drops it (on the DM-1701 the AT1846S goes back to RX about 1.3 ms into the slot, gotchas 3.4). The rest of this
+section is the HR_C6000 bring-up, measured on the DM-1701. Item 1 was missing in the chip: the slot between our bursts was written
 "no receive" (0x41 = 0x00), so nothing was heard there and MMDVM SFR repeated only what it heard before
 keying (HIL 2026-10-10: mode switching and the first repeat on TS2 passed, the rest of the call failed). With
 `tx_listen` (`hrc6000_dmr_tx_listen`) the engine writes "receive" (0x50) for that slot instead, for that transmission

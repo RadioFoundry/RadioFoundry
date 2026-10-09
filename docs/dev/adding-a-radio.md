@@ -25,7 +25,8 @@ bootloader and image format, calibration, codec location. Start from the radio's
 | `boards/<b>/*_<b>.c` | One file per interface: radio, DMR, audio, vocoder, display, input, flash, power, calibration, diagnostics, USB |
 
 Look at `boards/dm1701/` (STM32F405, HR_C6000, AT1846S, USB), `boards/md380/` (the same platform with an HR_C5000,
-GPS, link time optimization to fit) and `boards/dm32/` (HR_C7000 SoC, FD6818, UART host link).
+GPS, link time optimization to fit), `boards/dm32/` (HR_C7000 SoC, FD6818, UART host link) and `boards/db25d/` (the
+same SoC with two BK4819).
 
 ## board_t
 

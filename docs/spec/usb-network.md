@@ -11,9 +11,10 @@ without USB (`ppp.md`).
 
 ## 1. One personality at a time
 
-The STM32F405's OTG_FS core has three IN endpoints besides EP0. CDC-ACM needs two (notification, bulk IN) and CDC-NCM
-needs two, so a composite ACM + NCM device does not fit; the radio is either a serial port (PID 0x0094) or a network
-adapter (PID 0x0096), with the descriptors of `docs/spec/hardware-dm1701.md` 16. Switching drops the D+ pull-up for
+CDC-ACM needs two IN endpoints (notification, bulk IN) and CDC-NCM needs two. The USB cores in the radios with USB
+have three IN endpoints besides EP0 (the STM32F405's OTG_FS, `hardware-dm1701.md` 16, `hardware-md380.md` 15), so a
+composite ACM + NCM device does not fit: the radio is either a serial port (`board_usb_ids.pid_serial`) or a network
+adapter (`pid_network`), with the descriptors of `hardware-dm1701.md` 16. Switching drops the D+ pull-up for
 100 ms, so the host sees an unplug and enumerates the other personality.
 
 - Boot is serial unless the stored setting `usb_mode` is 1 (Settings > Connections > USB network at start, debug link

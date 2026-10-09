@@ -50,7 +50,7 @@ timer 3 s, Max-Configure 10, Max-Terminate 2, Max-Failure 5 (then Nak'd options 
 | 1 MRU | 584 (the gateway's 600 byte frames) | any; our packets longer than it are dropped |
 | 2 ACCM | 0 (a Nak'd map is asked for instead) | any |
 | 5 Magic-Number | a number from the start time and DMR ID | any but 0 and ours (Nak'd: a looped-back line) |
-| 3 Authentication, 4 Quality, 7 PFC, 8 ACFC, others | — | Configure-Reject |
+| 3 Authentication, 4 Quality, 7 PFC, 8 ACFC, others | (none) | Configure-Reject |
 
 - Echo-Request answered with our magic number while open. Echo-Reply and Discard-Request are taken quietly.
 - Terminate-Request: Terminate-Ack, IP down at once, the link ends one restart time later (the Stopping state, so
@@ -157,14 +157,15 @@ escape for each `0x7E` / `0x7D` (0.8% of random data; with the default ACCM ever
 | TFTP, 512 B blocks in lock step | 548 B a block + 38 B ACK | about 9 KB/s: a 100 KB codeplug in about 11 s |
 | HTTP screenshot (BMP) | about 40 KB | about 4 s |
 
-The DM-32's UART sends by polling: the host link task is busy for the length of each frame it sends (51 ms for a
-full one). Its receive ring is 1,024 bytes, so one full frame in each direction fits while the task is busy.
+On a board whose UART sends by polling, the host link task is busy for the length of each frame it sends (51 ms for
+a full one). The board's receive ring must hold one full frame while that happens. The DM-32UV sends by polling and
+has a 1,024-byte ring, so one full frame in each direction fits (`hardware-dm32.md` 17).
 
 ## 7. Cost
 
 Flash and RAM of `CONFIG_NET_PPP=y` against the default image (agent/ppp at f52d6b9, `SOURCE_DATE_EPOCH` fixed so the
-default images compare byte for byte with main). The STM32 radios already have the gateway and its services, so the
-figure is PPP alone; on the DM-32 the gateway comes with it.
+default images compare byte for byte with main). The USB radios already have the gateway and its services, so the
+figure is PPP alone; on the DM-32UV the gateway comes with it.
 
 | Board, build | Flash | RAM | Fits |
 |---|---:|---:|---|

@@ -180,12 +180,12 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
-| Upper side key (row 2 D5) and middle side key (row 2 D7): see hardware-dm1701.md 20 | `MONITOR` (while held) on the middle key |
+| Upper side key (row 2 D5) and middle side key (row 2 D7): see [hardware-dm1701.md](../spec/hardware-dm1701.md) 10 and 20 | `MONITOR` (while held) on the middle key |
 | SK2 (lower side) | `TALK_TARGET` / Scan on/off |
 | Top (orange) key | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
 | PTT | `PTT` |
 
-Notes: the channel knob is a quadrature encoder with detents, not a 16-position switch (hardware-dm1701.md 10.3), so
+Notes: the channel knob is a quadrature encoder with detents, not a 16-position switch ([hardware-dm1701.md](../spec/hardware-dm1701.md) 10.3), so
 zones of any size step through it. No `NAV_LEFT`/`NAV_RIGHT`.
 
 ### 7.2 Baofeng DM-32UV: keypad, channel encoder, volume knob, side keys, color display

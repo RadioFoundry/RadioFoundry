@@ -12,19 +12,31 @@ the board gives the addresses in its `hal_flash_map_t` (`board.flash->map`) and 
 The board's flash map (`hal/hal_flash.h`) names these areas. A board without a map runs everything from RAM: the
 settings start from the defaults at every boot and nothing can be written.
 
-| Field | DM-1701 | Use |
-|---|---|---|
-| `settings_addr` / `settings_size` | 0x011000, 32 KB (8 sectors) | the settings ring (2), at least 2 sectors |
-| `journal_addr` | 0x019000, 8 KB (2 sectors) | the sector journal (4) |
-| `legacy_eeprom` | 0x000000 | the legacy 64 KB "EEPROM" image (`legacy-cps-interop.md` 7) |
-| `legacy_flash` | 0x020000 | the legacy 1 MB "flash" image |
-| `legacy_end` | 0xE00000 | the end of the area a legacy CPS may write |
-| `calibration_addr` / `_size` | 0x010000, 512 B | the calibration working copy (the CPS window, `cps-protocol.md` 2.4) |
-| `native_addr` / `native_size` | 0xE00000, 1 MB | reserved for the native codeplug (`codeplug-native.md` 4) |
-| `staging_addr` / `staging_size` | 0xF00000, 256 KB | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the legacy CPS (above `legacy_end`) |
+| Field | Use |
+|---|---|
+| `settings_addr` / `settings_size` | the settings ring (2), at least 2 sectors |
+| `journal_addr` | the sector journal (4), 2 sectors |
+| `legacy_eeprom` | the legacy 64 KB "EEPROM" image (`legacy-cps-interop.md` 7) |
+| `legacy_flash` | the legacy 1 MB "flash" image |
+| `legacy_end` | the end of the area a legacy CPS may write |
+| `calibration_addr` / `_size` | the calibration working copy (the CPS window, `cps-protocol.md` 2.4); 0 when the board has none |
+| `native_addr` / `native_size` | reserved for the native codeplug (`codeplug-native.md` 4) |
+| `staging_addr` / `staging_size` | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the legacy CPS (above `legacy_end`); 0 when the board has none |
 
-The DM-1701's settings ring and journal sit in the gap between the calibration sector and the legacy flash image
-(`hardware-dm1701.md` 13.2). No legacy tool reads or writes there, and the CPS shim refuses to write there.
+The settings ring and journal go where no legacy tool reads or writes, and the CPS shim refuses to write there. The
+boards' maps:
+
+| Field | DM-1701, MD-380 (16 MB part) | DM-32UV |
+|---|---|---|
+| `settings_addr` / `settings_size` | 0x011000, 32 KB (8 sectors) | 0x711000, 32 KB (8 sectors) |
+| `journal_addr` | 0x019000 | 0x719000 |
+| `legacy_eeprom` | 0x000000 | 0x700000 |
+| `legacy_flash` | 0x020000 | 0x720000 |
+| `legacy_end` | 0xE00000 | 0xF00000 |
+| `calibration_addr` / `_size` | DM-1701 0x010000, 512 B; MD-380 none | none |
+| `native_addr` / `native_size` | 0xE00000, 1 MB | 0xF00000, 1 MB |
+| `staging_addr` / `staging_size` | 0xF00000, 256 KB | none |
+| Details | `hardware-dm1701.md` 13.2, `hardware-md380.md` 12.2 | `hardware-dm32.md` 10.1, 17 |
 
 The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes.
 
@@ -56,8 +68,8 @@ is programmed, then the commit word, then the slot is read back. A cut before th
 slot that the next load skips, so the previous record stays in force. A slot that doesn't read back is skipped and
 the next one is tried, up to 4 slots. The walk past such slots never erases the sector holding the newest valid
 record (with a worn sector it could come round to it): that save fails instead, and the record stays in force.
-Erases go round the ring: the DM-1701's 8 sectors take 128 saves per pass, so a sector is erased once every 128
-saves.
+Erases go round the ring: 8 sectors (every board's ring today) take 128 saves per pass, so a sector is erased once
+every 128 saves.
 
 **When**: `settings_begin()` returns the live copy under a short RAM-only lock (`storage_quick_lock`) and
 `settings_end(now)` releases it. If anything changed, it notes the time. No flash operation happens inside, so the
@@ -215,7 +227,8 @@ change) does take `storage_lock` and may wait out a sector rewrite (about 100 ms
 ## 5. Foreign region guard
 
 The flash of a radio that ran other firmware may hold that firmware's data where our settings ring and journal go
-(on the DM-1701, 0x011000-0x01AFFF has never been checked on a used radio). Before anything is erased or programmed
+(on the DM-1701, 0x011000-0x01AFFF has never been checked on a used radio; on the DM-32UV the region is OpenDM32's
+data area, `hardware-dm32.md` 10.1). Before anything is erased or programmed
 there, `storage_init()` classifies the region:
 
 | Part | Ours | Anything else |

@@ -34,17 +34,25 @@ aprx can stand in.
 
 ## 1. What each radio does
 
-| | DM-1701 | Other radios |
-|---|---|---|
-| FM AFSK transmit | yes: AT1846S tone generator retuned per symbol (5.2) | when the board provides `board.afsk->tx_*` |
-| FM AFSK receive, station list, digipeater, messages to us | designed only: no received audio reaches the MCU (5.3) | when the board provides `board.afsk->rx_*` and builds `CONFIG_APRS_RX` |
-| Positions over DMR (LRRP / UDT) | yes, on a DMR channel | every DMR radio |
-| KISS TNC on USB (UDP 3334 and TCP 8001 in network mode) | yes (TX path; RX frames only with RX) | yes |
-| iGate | IS -> RF messages only after RX exists; RF -> IS needs RX (designed only) | with RX |
-| GPS | none: host NMEA or the fixed position | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)` |
+| Feature | Needs |
+|---|---|
+| FM AFSK transmit | `board.afsk->tx_*` (5.1) |
+| FM AFSK receive, station list, digipeater, messages to us | `board.afsk->rx_*` and `CONFIG_APRS_RX` (5.3) |
+| Positions over DMR (LRRP / UDT) | a DMR radio, on a DMR channel |
+| KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | nothing more (TX path; RX frames only with RX) |
+| iGate | RX for RF -> IS; IS -> RF messages only once RX exists |
+| GPS | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)`; otherwise host NMEA or the fixed position |
 
-Everything is host tested. On the SDR bench (section 13): positions over DMR (LRRP and UDT) decode, and FM AFSK
-decodes with a valid FCS since the AT1846S voice source fix (5.2).
+What the boards provide today:
+
+| Radio | AFSK transmit | AFSK receive | GPS |
+|---|---|---|---|
+| DM-1701 | yes: the AT1846S tone generator retuned per symbol (`hardware-dm1701.md` 5.10) | no: no received audio reaches the MCU (`hardware-dm1701.md` 8) | none |
+| MD-380 | not yet: needs a TX tone path (`boards/md380/config.mk`) | no | G models (`hardware-md380.md` 13) |
+| DM-32UV | no (`board.afsk` NULL) | no | `CAP_GPS` (`hardware-dm32.md` 12) |
+
+Everything is host tested. On the SDR bench (section 13, measured on the DM-1701): positions over DMR (LRRP and UDT)
+decode, and FM AFSK decodes with a valid FCS since the voice source fix (`hardware-dm1701.md` 5.10).
 
 ## 2. Model
 
@@ -107,27 +115,20 @@ queries, weather and telemetry recognized by type (not decoded further).
 1 = mark), `tx_busy`, `tx_stop`; `rx_rate_hz`, `rx_start`, `rx_read`, `rx_stop` deliver received audio samples.
 `board.afsk` is NULL on boards without a tone path; then the reason is "no AFSK" and only DMR positions go out.
 
-### 5.2 DM-1701 transmit
+### 5.2 Transmit
 
-The AT1846S FM transmitter's tone generator is the voice source (as for the roger beep). TIM6 (APB1 timer clock
-72 MHz, prescaler 2, `ARR = clk / 2 / 1200 - 1`, interrupt priority 5, no RTOS calls) interrupts at every symbol
-boundary and writes the next tone to register 0x35 when it changes (one I2C write, about 0.1 ms, out of an 833 us
-symbol). The radio core keeps the I2C bus free meanwhile (`status()` returns its cached reading while AFSK runs) and
-force-writes 0x35 at the end because the interrupt bypassed the driver's cache. The level (0-100, 50 default) scales
-the tone deviation register 0x59 around the driver's value.
+The radio core keys the transmitter in FM, then the board switches the tone at each symbol boundary (a timer at the
+baud rate), with phase continuity where the hardware allows, and keeps the RTOS out of its symbol interrupt. While
+AFSK runs, the radio core leaves the transmitter alone (`status()` returns its cached reading). The level (0-100, 50
+default) sets the deviation around the board's nominal (about 3 kHz peak at 25 kHz bandwidth). `tests/hil/test_aprs.py` measures on air the phase continuity across a tone change, the deviation the level
+gives, the mark / space flatness and the TX delay (section 13). The DM-1701's tone generator path:
+`hardware-dm1701.md` 5.10.
 
-The tone generator is the AT1846S's voice source only with reg 0x3A bits 14:12 (voice_sel) = 001 and 0x7A bit 14
-(single tone) set: an earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.10). Measured by
-`tests/hil/test_aprs.py` on air: the phase continuity across a retune, the deviation the level gives, the mark /
-space flatness, the TX delay (section 13).
+### 5.3 Receive: designed only
 
-### 5.3 DM-1701 receive: designed only
-
-FM audio goes AT1846S -> HR_C6000 line in -> speaker DAC; the I2S stream from the HR_C6000 carries the microphone
-only, and no ADC pin sees the discriminator. So `rx_start` is NULL and `CONFIG_APRS_RX` defaults to n on this board.
-A bench experiment worth trying: route the line in to the HR_C6000's record path (register 0xE0 family) and read it
-over I2S. The demodulator (`afsk.c`) is ready for any board that can: 8-48 kHz samples, a correlator per tone with
-hysteresis and a PLL that tightens once a flag is seen. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio):
+A board with a receive path sets `rx_start` and samples the received FM audio; no board does yet, so
+`CONFIG_APRS_RX` defaults to n (for the DM-1701, `hardware-dm1701.md` 8). The demodulator (`afsk.c`) is ready for any
+board that can: 8-48 kHz samples, a correlator per tone with hysteresis and a PLL that tightens once a flag is seen. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio):
 90 / 10 % of frames at 10 dB SNR, 97 / 61 % at 12 dB, 100 / 94 % at 14 dB.
 
 ## 6. RF transmission
@@ -233,7 +234,7 @@ Defaults: TX off, region N America, SSID 7, symbol `/[`, path WIDE1-1,WIDE2-1, c
 SmartBeaconing on, level 50, TX delay 300 ms, via Radio, destination 5057; messaging and RX only on boards with a
 receive path.
 
-## 12. Size (DM-1701, arm-none-eabi-gcc 13.3 -Os)
+## 12. Size (measured on the DM-1701 build, arm-none-eabi-gcc 13.3 -Os)
 
 | Build | Flash | RAM |
 |---|---|---|
@@ -281,7 +282,7 @@ saved and put back once the queued frames and message retries have gone out on t
 
 Results so far: DMR LRRP and UDT pass. AFSK from 23469a2 / 0229a72 keyed a 0.59 s carrier on 145.090 MHz with no
 tones (about 25 Hz RMS deviation; the 1750 Hz burst likewise silent while CTCSS on the same carrier deviated 2 kHz):
-the voice source bug in 5.2, fixed in 694249b. On ff6268b (HIL 2026-10-10) AFSK decoded off air with a valid FCS,
+the voice source bug in `hardware-dm1701.md` 5.10, fixed in 694249b. On ff6268b (HIL 2026-10-10) AFSK decoded off air with a valid FCS,
 twist 0.4-1.4 dB, continuous phase (6.5 degrees residual), but 7.2 kHz peak deviation at tone level 0x40; 237211a set
 0x1C (about 3.1 kHz, `hardware-dm1701.md`).
 
@@ -293,11 +294,11 @@ twist 0.4-1.4 dB, continuous phase (6.5 degrees residual), but 7.2 kHz peak devi
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
 - APRS messages merged into the Messages inbox (now: Stations heard and the debug link only).
 - The codeplug APRS record's fixed position and frequency encodings.
-- DM-1701 receive through the HR_C6000 record path (5.3).
+- DM-1701 receive through the HR_C6000 record path (`hardware-dm1701.md` 8).
 - Settings and debug link section / command numbers may need renumbering when merged with other branches.
 
 Future, not done:
 
 - 9600 baud APRS (G3RUH FSK, scrambled NRZI direct FM): needs a flat (discriminator / modulator direct) audio path
-  and an FSK modem; not on the DM-1701's tone generator. Not planned for now.
+  and an FSK modem; a tone generator path (the DM-1701's) can't do it. Not planned for now.
 - Messages in the Messages inbox; Settings > Location tied to APRS; GPS Info in the hotspot's own transmissions.

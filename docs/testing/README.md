@@ -21,7 +21,7 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 ```
 tools/ci.sh                    # everything below
 tools/ci.sh --quick            # each board's default build only (no feature matrix)
-tools/ci.sh --board dm1701     # one board
+tools/ci.sh --board <b>        # one board, for example dm1701
 tools/ci.sh --matrix           # only the feature matrix (no default builds)
 tools/ci.sh --steps host,python   # only some steps: host, python, firmware, licenses, similarity
 JOBS=8 tools/ci.sh             # parallel make jobs (default: the CPU count)
@@ -48,8 +48,8 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
      `docs/build-config.md`);
    - `fm-minimal`: FM only, without DMR, USB, VFO, diagnostics and sub-audio tones;
-   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, with its `MAXIMAL_VARS` (the DM-1701:
-     `LTO=1`);
+   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, with its `MAXIMAL_VARS` (for example
+     `LTO=1` on the DM-1701);
    - `vhf`: the MD-380's VHF image (MD-380 only).
 
    Every configuration must build with zero compiler and linker warnings. A board without its compiler (the DM-32's

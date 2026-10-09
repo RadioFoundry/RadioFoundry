@@ -2,7 +2,7 @@
 
 # On-air test coverage
 
-Which user-visible feature has an automated test on the DM-1701 and the SDR bench (`tests/hil`), and what the last
+Which user-visible feature has an automated test on the radio and the SDR bench (`tests/hil`), and what the last
 run showed. Features come from the README's "What it does" and area table, the manual's feature groups
 (`docs/user/01-introduction.md`) and the build switches (`docs/build-config.md`). APRS has its own coverage notes
 (`docs/spec/aprs.md` 13).
@@ -12,7 +12,7 @@ RF (or only the radio's side of an RF exchange); **partial** = only part of the 
 bench (why in the notes); **xfail** = the test runs and fails for a known, documented gap; **fails** = the test
 runs and finds a real firmware problem (left failing on purpose); **not run** = a test exists but wasn't in the last
 run; **none** = no automated test. Last run:
-2026-10-10, firmware `5a13814` (main, every feature built), radio at its lowest power on 467.375 MHz.
+2026-10-10 on the DM-1701, firmware `5a13814` (main, every feature built), radio at its lowest power on 467.375 MHz.
 
 | Feature | Test | Status | Notes |
 |---|---|---|---|

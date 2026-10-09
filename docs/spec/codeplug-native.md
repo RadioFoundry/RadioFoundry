@@ -74,8 +74,9 @@ until the native format exists every channel uses the radio-wide slot.
 
 ## 4. Storage plan (not built)
 
-- **Area.** `hal_flash_map_t.native_addr` / `native_size`: on the DM-1701, 1 MB at 0xE00000, above anything a legacy
-  tool writes (`legacy_end`). The CPS shim refuses writes there.
+- **Area.** `hal_flash_map_t.native_addr` / `native_size`, set by the board: 1 MB above anything a legacy tool
+  writes (`legacy_end`). The CPS shim refuses writes there. Per radio: `hardware-dm1701.md` 13.2,
+  `hardware-md380.md` 12.2, `hardware-dm32.md` 17.
 - **Layout.** A header sector (magic, format version, table offsets, CRC) then fixed-size tables (channels, zones,
   contacts, lists) with a used bitmap each, sector-aligned so an edit rewrites one sector through the journal.
   The magic is the header's first word, `STORAGE_NATIVE_MAGIC` 0x4E52444F ("ODRN" in memory order), already fixed
@@ -95,7 +96,7 @@ until the native format exists every channel uses the radio-wide slot.
 
 ## 5. Open decisions
 
-1. Where the native area goes on other radios (DM-32 map, MD-9600), and whether 1 MB is the right size.
+1. Where the native area goes on radios whose board has no flash map yet, and whether 1 MB is the right size.
 2. Re-import (4a) or generated legacy view (4b).
 3. Whether the radio-side editor should be allowed while a CPS session is open. Today edits fail cleanly while the
    CPS holds a pending sector, and otherwise interleave with CPS commits at sector granularity.

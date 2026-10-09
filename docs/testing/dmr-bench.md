@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# DMR bench testing (DM-1701 on the SDR bench)
+# DMR bench testing on the SDR bench
 
-How to test the DMR work (the HR_C6000 driver behind `hal/hal_dmr_modem.h`, the call stack in `core/dmr/call/`, the
-AMBE FEC and vocoder hosting, the I2S audio) on the bench, what the tools are, each test case with its pass
+How to test the DMR work (the board's modem driver behind `hal/hal_dmr_modem.h`, the call stack in `core/dmr/call/`,
+the AMBE FEC and vocoder hosting, the audio path) on the bench, what the tools are, each test case with its pass
 criteria, and the order to run them. The tools are in `tools/bench/`; `tools/bench/dmr_bench.py` runs any case end
 to end.
 
@@ -13,7 +13,7 @@ Status words as in `docs/spec/gotchas.md`: "on air" = checked with the SDR or an
 
 | Part | What | Normally run by |
 |---|---|---|
-| Radio under test | Baofeng DM-1701 with OpenDigitalRadio, on the bench, on USB: driven by the debug link (`tools/odr_debug.py`, the HIL tests) or its keys; diagnostics page on a long press of the top side key | the user |
+| Radio under test | A radio with OpenDigitalRadio, on the bench, on USB (so far the DM-1701: HR_C6000 modem, I2S audio): driven by the debug link (`tools/odr_debug.py`, the HIL tests) or its keys; the board's diagnostics page (on the DM-1701 a long press of the top side key) | the user |
 | SDR bench (`ssh $ODR_SDR_BENCH_HOST`, default `sdr-bench`: an ssh alias for the bench board) | a small ARM Linux board, 824 MB RAM, Debian, RadioDesk rfgw in `/opt/radiodesk-rfgw/.venv` | `radiodesk-rfgw@<bench host>` |
 | MMDVM_HS dual modem board | `/dev/ttyS0`, two ADF7021 (simplex or duplex), firmware MMDVM_HS. The other DMR station | rfgw receiver `ROAM1` (in the current config) |
 | RTL-SDR | RTL2832U + R820T on USB, bias tee powering an LNA. The instrument | rfgw receivers SDR02..SDR15 (461-462 MHz group, tuner center 461.52875 MHz). SDR15 = 461.6875 MHz |

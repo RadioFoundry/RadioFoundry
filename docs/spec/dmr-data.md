@@ -2,8 +2,8 @@
 
 Text messages, packet data answers, CSBK call alert and radio check, ARS registration and LRRP location answers on
 the DMR call stack; IP packets with compressed headers and confirmed delivery (11, 12). Status: built and host-tested
-on the DM-1701 (`dmrDataServiceTest`, `dmrDataChainTest`). On air against the SDR bench: text messages, call alert
-and radio check, both ways (`tests/hil/test_dmr_data.py`); ARS and LRRP not yet (`docs/testing/on-air-coverage.md`);
+(`dmrDataServiceTest`, `dmrDataChainTest`). On air against the SDR bench (measured on the DM-1701): text messages,
+call alert and radio check, both ways (`tests/hil/test_dmr_data.py`); ARS and LRRP not yet (`docs/testing/on-air-coverage.md`);
 IP over DMR: 11.4.
 
 Sources: ETSI TS 102 361-1 (bursts, data headers, blocks, CRCs, CSBK), TS 102 361-2 (call alert, radio check),
@@ -32,7 +32,7 @@ and `core/dmr/dmr_data_api.h` turns into inline no-ops so UI code needs no `#if`
 ## 2. Architecture
 
 ```
-HR_C6000 engine (drivers/modem/hrc6000)      one burst per our slot from its lookahead queue; data bursts
+modem engine (hal_dmr_modem.h)               one burst per our slot from its lookahead queue; data bursts
    |  DMR_EV_BURST_RX (12 / 18 / 24 byte          reported with their CRC bytes and crc_ok
    v  payloads)                ^ tx_begin / tx_queue / tx_end
 dmr_call (core/dmr/call)       |                 data / CSBK dispatch to the registered data RX hook;
@@ -216,7 +216,7 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 
 - Immediate location requests to us are answered; triggered requests (periodic, distance) start a trigger (2 at
   most, reports at most every 5 s) with a start response, then reports.
-- Without a position source (the DM-1701 has no GPS, `hasGps` false) every immediate request is answered with
+- Without a position source (`hasGps` false) every immediate request is answered with
   result 0x10 (no fix) and a triggered request is refused with 0x10: no trigger is started, so nothing is sent
   later on its behalf.
 - `lrrpReply` off: requests are counted, not answered.
@@ -235,7 +235,7 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 | `radioCheckReply` | off | the same: a radio check answer keys the radio |
 | `callAlertAck` | on | the ack is what makes a call alert work for the caller |
 | `lrrpReply` | on | answers only a dispatcher's request; without GPS it says "no fix" |
-| `hasGps` | false | the DM-1701 has none |
+| `hasGps` | false | the radio core sets it false on every radio today, GPS models included (`data_init` in `core/radio/radio_sm.c`) |
 | `smsFormat` | ETSI IP text | the standard text application (5.4); ETSI short data and Motorola TMS (`CONFIG_DMR_TMS`) for radios that need them. A settings record from before this default (no format bit in `ds_flags`, `settings-store.md` 3) keeps TMS: only the default changed |
 | `radioCheckEtsi` | off | the Motorola form is what most radios answer |
 | `udpCompress` | auto | SAP 3 saves 19-23 octets per UDP packet; auto leaves the DMR application ports (MOTOTRBO servers) on the full header (11.2) |

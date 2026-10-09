@@ -20,8 +20,9 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
-The MD-380 builds all of them too, which fits only with link time optimization (its default; `docs/build-config.md`,
-"The MD-380's image"). APRS has no AFSK transmit path there yet (`boards/md380/config.mk`).
+The DM-32UV has no USB: it runs them over PPP on its host port (`ppp.md`), with 3 TCP connections instead of 4
+(`boards/dm32/config.mk`). On the MD-380 they fit only with link time optimization (its default; `docs/build-config.md`, "The MD-380's image"). Which radios send and receive AFSK:
+`aprs.md` 1.
 
 ## 2. TCP
 
@@ -76,7 +77,8 @@ The client receives the engine's output (section 3) exactly as the serial port w
   doesn't hold the port.
 - Needs the APRS KISS setting (Tools > APRS > KISS on USB), as on the serial port: without it the engine neither
   takes frames nor produces output.
-- The DM-1701 has no APRS receive path: only transmit works there; a client sees no received packets.
+- On a radio without an APRS receive path (every board today, `aprs.md` 1) only transmit works; a client sees no
+  received packets.
 - View keys (`net` section): `kiss.client kiss.conns kiss.frames_in kiss.frames_out kiss.dropped`.
 
 ## 5. HTTP status server (port 80)

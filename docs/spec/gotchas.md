@@ -135,9 +135,9 @@ setup once per mode change; per-burst switching only touches the RF registers. C
 
 **3.4 PA off timing.** Ending a burst at "the first timeslot interrupt more than 20 ms later" has an unknown phase on
 the HR_C5000; a 30 ms one-shot timer from the RF TX interrupt is what the stock firmware does, with the timeslot
-interrupt as a 35 ms fallback. The DM-1701 has no RF RX interrupt (only RF_TX_INTER on PC2), so its PA can only be
-dropped at the next timeslot interrupt (about 1.3 ms into the following slot); the GD-77 routes the RF RX interrupt and
-can end the burst on time. Commits 3f08897, 10d57bd.
+interrupt as a 35 ms fallback. A board that doesn't route the RF RX interrupt to the MCU can only drop the PA at
+the next timeslot interrupt (about 1.3 ms into the following slot). The DM-1701 is one (only RF_TX_INTER reaches the
+MCU, [hardware-dm1701.md](hardware-dm1701.md)); the GD-77 routes the RF RX interrupt and can end the burst on time. Commits 3f08897, 10d57bd.
 
 **3.5 DM-1701 +3 kHz TX offset is a sequencing hack.** The driver adds 3 kHz to the TX frequency to compensate an
 offset caused by turning the receiver on between the frequency write and TX. A switch that writes the frequency with
@@ -514,7 +514,7 @@ none. On the GD-77 the repeater ends its own burst at the RF RX interrupt once t
 `CF` and `41`; table D.2 gives `FF 83 DF 17 32 09 4E D1 E7 CD 8A 91`. The BPTC round trip passed anyway, so only a
 check against the table catches it (sfrTest).
 
-**14.9 Hearing the inbound slot while keyed (DM-1701).** Three things, each lost most of the call on air: the slot
+**14.9 Hearing the inbound slot while keyed (HR_C6000 + AT1846S; on air on the DM-1701).** Three things, each lost most of the call on air: the slot
 between our bursts must be written "receive" (0x41 = 0x50), not 0x00; the AT1846S must go back to RX as it goes to TX,
 through receiver off (reg 0x30 idle), the RX frequency, the band's RX supply, then RX on (one write straight from DMR TX
 to RX on heard 6-36 of a call's bursts, varying run to run; the RX supply goes off while the PA is up); and a gap in
