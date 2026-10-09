@@ -10,11 +10,11 @@ whole move over the programming cable:
 3. It writes the codeplug back, plus the DMR ID (callsign) database.
 
 > The DM-32UV port has never run on a radio, and these tools have never talked to one. Try it only if you can go
-> back to stock: keep Baofeng's firmware file (`DM32.01.01.049.bin`) and read
+> back to stock. Keep Baofeng's firmware file (`DM32.01.01.049.bin`), and read
 > [the bring-up checklist](../testing/dm32-bringup.md) first.
 
-What ODR never touches: the bootloader (update mode always works) and the data flash below 7 MB, where the stock
-codeplug, the factory calibration and the stock contact database live. Going back to stock gives you your old
+ODR never touches the bootloader, so update mode always works. It never touches the data flash below 7 MB either.
+The stock codeplug, the factory calibration and the stock contact database live there. Going back to stock gives you your old
 codeplug as it was.
 
 ## What you need
@@ -38,7 +38,7 @@ Look at every step first. This reads only files and touches nothing:
 python3 dm32_migrate.py all --image odr_dm32_codec.bin --dry-run
 ```
 
-Then run it for real. With one USB-serial cable plugged in the program finds it; otherwise add
+Then run it for real. With one USB-serial cable plugged in, the program finds it. Otherwise add
 `--port /dev/ttyUSB0` (Linux), `--port /dev/cu.usbserial-XXXX` (macOS) or `--port COM5` (Windows):
 
 ```
@@ -66,20 +66,21 @@ python3 dm32_migrate.py restore --workdir ~/ODR-DM32-migration/20261011-101500
 
 ## Your codeplug from a file
 
-`--from` takes a codeplug saved with qdmr from the stock radio: a `.dfu` (`dmrconf read --radio dm32uv`) or a
-`.yaml`. `dm32_migrate.py import --from FILE` only converts and checks, with no radio needed. Files from Baofeng's
-own CPS aren't supported here; read the radio with qdmr and save the codeplug from there.
+`--from` takes a codeplug saved with qdmr from the stock radio. It can be a `.dfu` (`dmrconf read --radio dm32uv`)
+or a `.yaml`. `dm32_migrate.py import --from FILE` only converts and checks, with no radio needed. Files from Baofeng's
+own CPS aren't supported here. Read the radio with qdmr and save the codeplug from there.
 
 ## What fits
 
 ODR holds 1024 channels, 68 zones of 80 channels, 1024 contacts and 76 RX group lists, with names of up to 16
-characters. The stock radio holds more. If yours has more, the program lists what would be left out (the last ones)
-and asks before it flashes. To choose yourself, open `backup-stock.yaml` in qdmr, delete what you don't need, save,
-and run again with `--from` on the saved file.
+characters. The stock radio holds more. If yours has more, the program lists what would be left out (the last ones).
+It asks before it flashes. To choose yourself, open `backup-stock.yaml` in qdmr and delete what you don't need. Save
+it, and run again with `--from` on the saved file.
 
 `conversion-report.txt` lists everything that changes: counts before and after, names that get shortened, channels
-outside 136-174 and 400-480 MHz, and the parts of the codeplug ODR doesn't use. Not carried over: the stock menu, key
-and display settings, scan lists, roaming, GPS and APRS settings, encryption keys and the stock contact database. ODR
+outside 136-174 and 400-480 MHz, and the parts of the codeplug ODR doesn't use. These parts aren't carried over: the
+stock menu, key and display settings, scan lists, roaming, GPS and APRS settings, encryption keys and the stock
+contact database. ODR
 uses the parts of the codeplug listed in [Programming with qdmr](15-programming-qdmr.md).
 
 ## The DMR ID database
@@ -104,8 +105,8 @@ Baofeng's firmware file goes through the same bootloader:
 python3 dm32_flash.py --stock DM32.01.01.049.bin
 ```
 
-The stock codeplug was never overwritten, so the radio comes back with it. If not, write `backup-stock.dfu` with
-qdmr (`dmrconf write --radio dm32uv`). ODR's own data stays at 7 MB and up; the stock firmware may later reuse that
+The stock codeplug was never overwritten, so the radio comes back with it. If it doesn't, write `backup-stock.dfu` with
+qdmr (`dmrconf write --radio dm32uv`). ODR's own data stays at 7 MB and up. The stock firmware may later reuse that
 space.
 
 ## Limits and notes

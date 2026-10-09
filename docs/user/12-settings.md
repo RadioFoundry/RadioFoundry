@@ -20,14 +20,14 @@ Each row shows its current value.
 
 <img src="../ux/screens/160x120i5/settings_editor.png" width="200" alt="Editing a number setting">
 
-Some settings are on the menu before the feature behind them exists, or don't apply to this radio. They are dimmed;
-**OK** on a dimmed row says why. The table says so in the Status column:
+Some settings are on the menu before the feature behind them exists, or don't apply to this radio. They are dimmed.
+**OK** on a dimmed row says why. The Status column of each table shows this:
 
 | Status | Meaning |
 |---|---|
 | Works | Acts now and is kept across power off |
 | Works, not kept | Acts now, back to the default after power off |
-| Dimmed | Not built yet, or not on this radio; **OK** says why |
+| Dimmed | Not built yet, or not on this radio. **OK** says why |
 
 ## Reference
 
@@ -36,7 +36,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
 | Key tones | On, Off | On | A short beep on each key press | Works |
-| Tone volume | 0 to 10 | 5 | Volume of the radio's beeps, relative to the volume knob | Works |
+| Tone volume | 0 to 10 | 5 | Volume of the radio's beeps, relative to the radio's volume | Works |
 | Talk permit tone | On, Off | On | The beep when a DMR transmission starts ([DMR](08-dmr.md)) | Works |
 | Voice prompts | On, Off | Off | Spoken prompts. There is no recorded speech yet | Dimmed |
 | Message tone | On, Off | On | A three-note tone when a text message arrives | Works |
@@ -58,7 +58,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Reply window | 0 to 30 s | The codeplug's hang time, else 10 s | How long **PTT** answers the last call ([DMR](08-dmr.md#replying)). 0 turns it off | Works |
 | TX timeout | Off, 30 s, 1, 2, 3, 5, 10 min | 3 min | Longest transmission, for channels without their own timeout in the codeplug | Works |
 | Default squelch | 0 to 9 | 5 | The FM squelch level when a channel doesn't set one | Works |
-| Mic gain | 0 to 10 | 5 | Microphone level on DMR, 2 dB a step; 5 is the radio's normal level. FM isn't changed yet | Works (DMR) |
+| Mic gain | 0 to 10 | 5 | Microphone level on DMR, 2 dB a step. 5 is the radio's normal level. FM isn't changed yet | Works (DMR) |
 | Hear all by default | On, Off | Off | Hear all goes on each time you select a DMR channel. **Back** on Home turns it off until the next channel | Works |
 | Show talker alias | On, Off | On | Show received talker aliases (names) under the caller's ID | Works |
 
@@ -75,7 +75,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
-| GPS | On, Off | Off | GPS receiver, on radios that have one. Dimmed with "No GPS on this radio" on the DM-1701. The DM-32 keeps the value; it has no GPS driver yet | Dimmed without GPS |
+| GPS | On, Off | Off | The GPS receiver, on radios that have one ([Radio reference](23-radios.md)). Without GPS the row is dimmed and says "No GPS on this radio" | Dimmed without GPS |
 | Position format | Degrees, Deg min sec, Grid | Degrees | How positions are shown | Dimmed without GPS |
 | Send position | Off, 1 min, 5 min, 15 min | Off | Send your position at this interval | Dimmed without GPS |
 | Answer GPS requests | On, Off | On | Answer LRRP location requests (Find also finds it as "position"). Without GPS the answer is "no fix" | Works |
@@ -107,7 +107,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 |---|---|---|---|---|
 | Long press time | 400 to 1200 ms, steps of 100 | 600 ms | How long you hold a key for a long press | Works |
 | Key repeat | 60 to 300 ms, steps of 20 | 120 ms | The repeat rate of **Up** and **Down** while held | Works |
-| Up/Down on Home | Channel, Zone, Talk target | Channel | What **Up** and **Down** change on Home. Talk target steps through the channel's contact and its listen list (DMR channels; on FM they change the channel) | Works |
+| Up/Down on Home | Channel, Zone, Talk target | Channel | What **Up** and **Down** change on Home. Talk target steps through the channel's contact and its listen list on DMR channels. On FM channels they change the channel | Works |
 
 ### My radio (key 9)
 
@@ -119,7 +119,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 | Item | What it does |
 |---|---|
-| About | "OpenDigitalRadio" and the firmware version (commit), the radio model, then the authors and the license of each part: ODR (MIT), the third-party libraries, and the AMBE+2 codec ("stock": from your radio's own firmware, not part of ODR). A page of text in small print with nothing cut short and no status bar (it comes back during a call); **Up**, **Down** or the knob scroll when it is longer than the screen |
+| About | "OpenDigitalRadio", the firmware version (commit) and the radio model. Then the authors and the license of each part: ODR (MIT), the third-party libraries, and the AMBE+2 codec. The codec shows as "stock": it comes from your radio's own firmware and isn't part of ODR. The page is text in small print, with nothing cut short and no status bar. The status bar comes back during a call. **Up**, **Down** or the knob scroll a page longer than the screen |
 | Codeplug | Where the channels come from (built-in or from the CPS), the number of zones and channels |
 | Diagnostics | The diagnostics page (also **OK**, **5**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |
@@ -140,11 +140,18 @@ position), erases ODR's own data area, and restarts the radio. The codeplug and 
 
 ## Settings without a menu
 
-A few settings exist in the radio but not yet on the menu: busy channel lockout, roger beep, the scan's resume mode
-and timing, VOX sensitivity, the ARS server, the emergency settings, the IP data settings (header compression,
-confirmed data), the SNMP communities, the roaming threshold, hysteresis and periodic search, and the SFR idle
-beacon. Developers change them over the debug link (`tools/odr_debug.py radio set ...`, `data settings ...`,
-`data ip-settings ...`, `snmp ...`); the radio keeps them. The roaming survey and beacon settings are in **Tools >
+A few settings exist in the radio but not yet on the menu:
+
+- busy channel lockout and the roger beep;
+- the scan's resume mode and timing;
+- VOX sensitivity;
+- the ARS server and the emergency settings;
+- the IP data settings (header compression, confirmed data) and the SNMP communities;
+- the roaming threshold, hysteresis and periodic search;
+- the SFR idle beacon.
+
+Developers change them over the debug link (`tools/odr_debug.py radio set ...`, `data settings ...`,
+`data ip-settings ...`, `snmp ...`). The radio keeps them. The roaming survey and beacon settings are in **Tools >
 Roaming** ([DMR](08-dmr.md#roaming)).
 
 A build without the Settings menu (`CONFIG_UI_SETTINGS=n`) shows "Set them with qdmr" instead, and keeps the stored

@@ -2,8 +2,8 @@
 
 # Messages, call alert and radio check
 
-Text messages, call alert and radio check work on DMR channels. Sending and receiving all three is verified on
-the DM-1701. None of them needs the codec. Sending needs a DMR channel you may transmit on
+Text messages, call alert and radio check work on DMR channels. The [Radio reference](23-radios.md) says which radios
+have them verified. None of them needs the codec. Sending needs a DMR channel you may transmit on
 and your DMR ID.
 
 ## Receiving a message
@@ -19,9 +19,9 @@ Messages.
 
 ## Reading messages
 
-1. **OK**, **2** (Messages). The newest message is first; unread ones are highlighted.
-2. Focus a message and press **OK**. The radio shows the sender, how long ago it arrived and the text, and marks it
-   read.
+1. Press **OK**, **2** (Messages). The newest message is first. Unread messages are highlighted.
+2. Focus a message and press **OK**. The radio shows the sender, how long ago it arrived and the text. It marks the
+   message read.
 3. Below the text:
 
    | Row | Does |
@@ -40,24 +40,30 @@ The radio keeps the last 4 messages received, in memory. They are lost when the 
 
 ## Sending a message
 
-1. Open the actions for the person or talkgroup: **#** on Home for the last caller, or **#** on a contact.
+1. Open the actions for the person or talkgroup. Press **#** on Home for the last caller, or **#** on a contact.
 2. Press **3** (Message).
-3. Pick a text: "OK", "On my way", "Call me" or "Can't talk now". Press **OK** to send.
+3. Pick a text ("OK", "On my way", "Call me" or "Can't talk now"). Press **OK** to send.
 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">
 
-The radio shows "Sending to ..." and returns to Home. A message to a person asks for a confirmation and is tried
-again when none comes, in every format. The result comes as a banner: "Delivered to ..." or "No answer from ...",
-with "Not delivered: send it again" under it. The message isn't kept for a retry: send it again from the actions. A
-message to a talkgroup has no confirmation: the banner says "Sent to ..." once it has gone out. With confirmed IP data
-turned off (`tools/odr_debug.py data ip-settings auto off`), ETSI messages to a person also go once, with "Sent to".
+The radio shows "Sending to ..." and returns to Home. A message to a person asks for a confirmation. When none comes, the radio tries again, in every format. The result
+comes as a banner:
 
-Typing your own text isn't built yet: "Write..." is dimmed. Messages you send aren't stored in the radio.
+| Banner | Meaning |
+|---|---|
+| "Delivered to ..." | The person's radio confirmed the message |
+| "No answer from ...", with "Not delivered: send it again" | No confirmation came. The message isn't kept for a retry. Send it again from the actions |
+| "Sent to ..." | A message to a talkgroup has gone out. Talkgroup messages have no confirmation |
+
+With confirmed IP data turned off (`tools/odr_debug.py data ip-settings auto off`), ETSI messages to a person also go
+once, with "Sent to".
+
+Typing your own text isn't built yet. "Write..." is dimmed. Messages you send aren't stored in the radio.
 
 ## Message formats
 
-**Settings > Connections > Message format** picks the format of the messages you send. The radio reads all three,
-whatever the setting, and a reply goes in the format of the message it answers.
+**Settings > Connections > Message format** picks the format of the messages you send. The radio reads all three
+formats, whatever the setting. A reply goes in the format of the message it answers.
 
 | Format | Use it for |
 |---|---|
@@ -70,7 +76,7 @@ messages until you change the setting.
 
 ## Call alert
 
-A call alert pages another radio: it rings there, even when that radio's user isn't listening to your talkgroup.
+A call alert pages another radio. It rings there, even when that radio's user isn't listening to your talkgroup.
 
 1. Open the actions for the person (**#** on Home, or **#** on a contact).
 2. Press **5** (Call alert). The radio shows "Call alert to ..." and returns to Home.
@@ -89,8 +95,8 @@ range.
 
 1. Open the actions for the person.
 2. Press **4** (Radio check). The radio shows "Checking ...".
-3. The result is a banner: "... answered (0.8 s)" with the round-trip time, or "...: no answer" with "Off, out of range
-   or elsewhere". The radio tries up to 3 times.
+3. The radio tries up to 3 times. The result is a banner. "... answered (0.8 s)" gives the round-trip time. "...: no
+   answer" comes with "Off, out of range or elsewhere".
 
 <img src="../ux/screens/160x120i5/banner_radio_check.png" width="200" alt="A radio check result">
 
@@ -100,7 +106,7 @@ by default, because an answer makes the radio transmit without you asking.
 ## Registration (ARS) and location (LRRP)
 
 ARS registers the radio with a presence server at power-up and after a channel change. It is off until a server ID is
-set, and there is no menu item for it yet; developers set it over the debug link.
+set. There is no menu item for it yet. Developers set it over the debug link.
 
-LRRP answers location requests from a dispatcher. The DM-1701 has no GPS, so it answers "no fix". **Settings >
-Location > Answer GPS requests** turns the answers off.
+LRRP answers location requests from a dispatcher. A radio without GPS ([Radio reference](23-radios.md)) answers "no
+fix". **Settings > Location > Answer GPS requests** turns the answers off.

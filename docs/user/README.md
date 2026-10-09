@@ -2,9 +2,10 @@
 
 # OpenDigitalRadio user manual
 
-How to install OpenDigitalRadio (ODR) and use it on the radio. The manual describes the Baofeng DM-1701; the
-introduction lists what differs on the MD-380. Each release also carries this manual as a PDF, built from these files
-(`tools/build_manual.sh`).
+How to install OpenDigitalRadio (ODR) and use it on the radio. The chapters describe what ODR does on every radio.
+The [Radio reference](23-radios.md) lists what differs from radio to radio: the keys, power levels, battery, power
+switch and display, and what has been checked on each. Each release also carries this manual as a PDF, built from
+these files (`tools/build_manual.sh`).
 
 <img src="../ux/screens/160x120i5/home_dmr.png" width="200" alt="Home screen on a DMR channel">
 <img src="../ux/screens/160x120i5/quick_dmr.png" width="200" alt="Quick settings">
@@ -12,7 +13,7 @@ introduction lists what differs on the MD-380. Each release also carries this ma
 
 ## Contents
 
-1. [Introduction](01-introduction.md): what ODR is, supported radios, project status, conventions, MD-380 differences
+1. [Introduction](01-introduction.md): what ODR is, supported radios, project status, conventions
 2. [Installing](02-installing.md): odrflash, the codec, flashing the DM-1701, updating, going back to stock
 3. [First boot](03-first-boot.md): built-in channels, programming the radio, checks
 4. [Keys and navigation](04-keys-and-navigation.md): the five key rules, Find, temporary changes, key lock
@@ -35,20 +36,24 @@ introduction lists what differs on the MD-380. Each release also carries this ma
 20. [Troubleshooting](20-troubleshooting.md)
 21. [FAQ](21-faq.md)
 22. [Glossary](22-glossary.md)
+23. [Radio reference](23-radios.md): keys, power levels, battery, power switch, display and status of each radio
 
 ## Quick reference
+
+Keys are named by their job. [Key roles](23-radios.md#key-roles) shows which key does each job on your radio. On the
+DM-1701, **Monitor** is SK1, **Talk target** is SK2, and **Previous zone** / **Next zone** are P1 / P2.
 
 | To | Press |
 |---|---|
 | Change channel | Channel knob, or **Up** / **Down** |
-| Change zone | **P1** / **P2**, or **OK**, **4**, pick a zone |
+| Change zone | **Previous zone** / **Next zone**, or **OK**, **4**, pick a zone |
 | Quick settings | **\*** |
 | Open the menu (hub) | **OK** |
 | Act on the last caller | **#** |
 | Recent calls | Hold **#** |
-| Choose who to talk to | **SK2** (DMR) |
-| Monitor | Hold **SK1** |
-| Scan on / off | Hold **SK2** |
+| Choose who to talk to | **Talk target** (DMR), or **\***, **8** |
+| Monitor | Hold **Monitor** |
+| Scan on / off | Hold **Talk target**, or **\***, **7** |
 | Undo temporary changes | **Back** on Home |
 | Save changes to the channel | Hold **OK** |
 | Back to Home | Hold **Back** |

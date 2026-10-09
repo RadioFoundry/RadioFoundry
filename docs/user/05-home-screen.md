@@ -12,10 +12,10 @@ is OK.
 
 | Region | Shows |
 |---|---|
-| Status line | The state (IDLE, RX, TX, or NO TX when a transmission is refused), the mode (DMR or FM), SCAN or MON when scan or monitor is on; on the right, "L" when the keys are locked, "M" and a number for unread messages, the signal bars, the battery icon and the battery percentage |
+| Status line | Left: the state (IDLE, RX, TX, or NO TX when a transmission is refused), the mode (DMR or FM), and SCAN or MON when scan or monitor is on. Right: "L" when the keys are locked, "M" and a number for unread messages, the signal bars, the battery icon and the battery percentage |
 | Place | The zone name and the channel's position in the zone ("3/16"). In the VFO: "VFO" |
 | Channel | The channel number and name, as large as they fit. In the VFO: the frequency |
-| Talk target | "PTT→" and where **PTT** goes: a talkgroup or person on DMR, the transmit frequency on FM. During the reply window: "Reply→" and a countdown |
+| Talk target | "PTT→" and where **PTT** goes. DMR: a talkgroup or person. FM: the transmit frequency. During the reply window: "Reply→" and a countdown |
 | Chips | DMR: timeslot, color code, power. FM: tone, bandwidth, power, squelch level |
 | Activity | Idle: the last station heard and how long ago, or "No calls heard yet". Receiving or transmitting: see below |
 | Hint row | What the nearest keys do now |
@@ -25,18 +25,18 @@ A field changed for now (a temporary change) is drawn in a highlight color on Ho
 
 <img src="../ux/screens/160x120i5/home_temporary.png" width="200" alt="Home with a temporary power change">
 
-The battery percentage turns to the warning color at 15 % and below.
+The battery percentage turns to the warning color at the low battery warning level (15 % by default) and below.
 
 ## Hint row messages
 
 The hint row changes with the situation. What the **Back** key does is always at the right end of the row, above the
-key. The most common ones:
+key. The most common hints:
 
 | Hint | Meaning |
 |---|---|
-| OK Menu  \* Quick  # Joe | The normal hint. The name after # is the last caller: **#** opens actions for them |
+| OK Menu  \* Quick  # Joe | The normal hint. The name after # is the last caller. **#** opens actions for them |
 | Back undo  Hold OK save | The channel has temporary changes |
-| # caller  Back end reply | The reply window is running: **PTT** answers the last call |
+| # caller  Back end reply | The reply window is running. **PTT** answers the last call |
 | Back: channel's talkgroup | A talk target chosen for now is in use |
 | Hear all on  Back off | Hear all is latched on |
 | # skip  Back stop scan | Scan is running |
@@ -46,27 +46,32 @@ key. The most common ones:
 
 ## Receiving
 
-During a DMR call, Home shows the caller: name (from your contacts, else from the DMR ID database in the codeplug),
-DMR ID, timeslot, talker alias as it arrives (unless **Settings > Talk & listen > Show talker alias** is off), the talkgroup or "Private to you", and the signal strength.
+During a DMR call, Home shows the caller:
+
+- the name, from your contacts or else from the DMR ID database in the codeplug;
+- the DMR ID and the timeslot;
+- the talker alias as it arrives, unless **Settings > Talk & listen > Show talker alias** is off;
+- the talkgroup, or "Private to you";
+- the signal strength.
 
 <img src="../ux/screens/160x120i5/rx_group.png" width="200" alt="Receiving a group call">
 <img src="../ux/screens/160x120i5/rx_private.png" width="200" alt="Receiving a private call">
 
-A call that the radio hears but doesn't play shows why: "Other TG: not played" (a talkgroup you don't listen to),
-"Encrypted: not played", or "No codec: voice off". Hold **SK1** to hear a call on another talkgroup.
+A call that the radio hears but doesn't play shows why. The reasons are "Other TG: not played" (a talkgroup you don't
+listen to), "Encrypted: not played" and "No codec: voice off". Hold **Monitor** to hear a call on another talkgroup.
 
 On FM, the activity region shows "Receiving" while the squelch is open, or "Squelch open" (monitor).
 
 ## Transmitting
 
 While you hold **PTT**, the screen shows TALKING, the target, the timeslot and color code (DMR), the time on air and
-the transmit timeout (DMR: "0:07 of 3:00"; FM: "2:53 left of 3:00").
+the transmit timeout. DMR shows the time as "0:07 of 3:00", FM as "2:53 left of 3:00".
 
 <img src="../ux/screens/160x120i5/tx.png" width="200" alt="Transmitting">
 
 On DMR the screen may first show WAITING (the radio waits for a free slot) or WAKING RPT (it wakes up the repeater).
 
-When the radio refuses to transmit, the status line shows NO TX, the screen says why and the hint row says what to
+When the radio refuses to transmit, the status line shows NO TX. The screen says why, and the hint row says what to
 do:
 
 | Message | Cause | What to do |
@@ -80,13 +85,13 @@ do:
 | No repeater answered | The repeater didn't wake up | "Check CC and range" |
 | Hotspot mode: PTT off | The radio is a hotspot | Press **OK** to leave hotspot mode |
 | No DMR ID in codeplug | The codeplug has no DMR ID | Set your ID in qdmr |
-| DMR modem not running | The DMR chip didn't start | Restart the radio; see [Troubleshooting](20-troubleshooting.md) |
+| DMR modem not running | The DMR chip didn't start | Restart the radio. See [Troubleshooting](20-troubleshooting.md) |
 
-The low and critical battery levels also limit transmitting: see [Battery and power](16-battery-and-power.md).
+The low and critical battery levels also limit transmitting. See [Battery and power](16-battery-and-power.md).
 
 ## Large text
 
 **Settings > Display > Large text** shows only the status line, the channel name and the talk target, each as large as
-it fits. The radio keeps the setting across power off, as it does **Settings > Display > Hint row**.
+it fits. The radio keeps this setting across power off. It keeps **Settings > Display > Hint row** too.
 
 <img src="../ux/screens/160x120i5/home_large_text.png" width="200" alt="Home in large text">

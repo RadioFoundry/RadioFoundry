@@ -3,16 +3,15 @@
 # USB network mode
 
 In USB network mode the radio is a USB network adapter for the computer. It routes IPv4 packets to other radios over
-DMR packet data, and serves a status page, rig control, KISS, TFTP and SNMP to the computer. It is in the images for
-the DM-1701 and the MD-380 (the DM-32UV has no USB). The switch, the address from the computer and ping are tested on the DM-1701
-with macOS; IP over DMR to another radio and the services are host-tested only. A build made without
-it (`CONFIG_DMR_IP_GATEWAY=n`) says "USB network: not in this build" in **Tools > USB network**.
+DMR packet data. It serves a status page, rig control, KISS, TFTP and SNMP to the computer. It is in the images for
+radios with USB ([Radio reference](23-radios.md)). IP over DMR to another radio and the services are host-tested
+only. What is tested on a radio is in the [Radio reference](23-radios.md). A build made without it (`CONFIG_DMR_IP_GATEWAY=n`) says "USB network: not in this build" in **Tools > USB network**.
 
 ## Switching the radio to network mode
 
 The radio starts as a USB serial port unless **USB network at start** is on (below). To switch it, open **Tools > USB
-network** (**OK**, **5**, **4**). The page says which mode USB is in and what changes. Focus "Switch USB to network" and press **OK**. The radio says "USB
-is a network adapter now" and returns to Home. While USB is a network adapter, qdmr, hotspot hosts and the debug link
+network** (**OK**, **5**, **4**). The page says which mode USB is in and what changes. Focus "Switch USB to network" and press
+**OK**. The radio says "USB is a network adapter now" and returns to Home. While USB is a network adapter, qdmr, hotspot hosts and the debug link
 over serial don't reach the radio.
 
 To get back to serial, open **Tools > USB network** again and choose "Switch USB to serial" ("USB is a serial port
@@ -31,9 +30,9 @@ serial.
 ## Starting in network mode
 
 **Settings > Connections > USB network at start** makes the radio start as a network adapter. If the computer doesn't
-set the adapter up within 10 s of plugging in, the radio becomes a serial port again until it is restarted, so you can
-always reach it to turn the setting off. The radio waits for a computer: switched on away from one, it is still a
-network adapter when you plug it in later.
+set the adapter up within 10 s of plugging in, the radio becomes a serial port again until it is restarted. This way
+you can always reach it to turn the setting off. The radio waits for a computer. A radio switched on away from a
+computer is still a network adapter when you plug it in later.
 
 ## Addresses
 
@@ -47,7 +46,7 @@ The computer gets its address from the radio by DHCP:
 | A talkgroup | 225.x.y.z from the talkgroup number |
 
 Packets to another radio's or a talkgroup's address go out over the air on the current DMR channel. Packets from other
-radios arrive on the network adapter. DMR packet data is much slower than any wired network: a packet that can't
+radios arrive on the network adapter. DMR packet data is much slower than any wired network. A packet that can't
 go out within 2 s is dropped. The fixed addresses of [control station mode](#control-station-for-dispatch-software)
 replace the first two rows.
 
@@ -65,9 +64,9 @@ only by their serial USB ID, so program the radio in serial mode.
 
 ## Finding the radio by name
 
-The radio answers Multicast DNS (Bonjour, Avahi) on the network adapter: it is `odr-<DMR ID>.local`, for example
-`odr-3101234.local`, and it advertises its services, so a browser for Bonjour services lists it as
-"N0CALL DM-1701 (3101234)" (your call sign, the radio, your DMR ID):
+The radio answers Multicast DNS (Bonjour, Avahi) on the network adapter. Its name is `odr-<DMR ID>.local`, for
+example `odr-3101234.local`. It advertises its services. A browser for Bonjour services lists it by your call sign,
+the radio model and your DMR ID, for example "N0CALL DM-1701 (3101234)":
 
 ```
 ping odr-3101234.local
@@ -93,9 +92,9 @@ The radio answers at its own address on these TCP ports, over the USB cable only
 
 | Port | Service |
 |---|---|
-| 80 | A status page: open `http://<radio address>/` in a browser. It shows the channel, frequency, signal and battery, and the radio's screen. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core` |
-| 8001 | KISS over TCP for APRS programs (APRSdroid, Xastir, YAAC): set the program's TNC to "KISS over TCP", the radio's address, port 8001. Turn on **KISS on USB** in Tools > APRS first. The radio sends only packets from your own callsign. The DM-1701 can't receive APRS, so programs see only what they send |
-| 4532 | Hamlib rig control for loggers, SDR and satellite programs: choose "Hamlib NET rigctl" with the radio's address and port 4532, or `rigctl -m 2 -r <radio address>:4532 f`. Programs can read and set the frequency (a channel switches to the VFO), read the mode and the S meter, and key the transmitter. Transmit works only from your computer, at most 3 minutes per keying |
+| 80 | A status page. Open `http://<radio address>/` in a browser. It shows the channel, frequency, signal and battery, and the radio's screen. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core` |
+| 8001 | KISS over TCP for APRS programs (APRSdroid, Xastir, YAAC). Set the program's TNC to "KISS over TCP", the radio's address, port 8001. Turn on **KISS on USB** in Tools > APRS first. The radio sends only packets from your own callsign. On a radio that can't receive APRS ([Radio reference](23-radios.md)), programs see only what they send |
+| 4532 | Hamlib rig control for loggers, SDR and satellite programs. Choose "Hamlib NET rigctl" with the radio's address and port 4532, or run `rigctl -m 2 -r <radio address>:4532 f`. Programs can read and set the frequency, read the mode and the S meter, and key the transmitter. Setting the frequency of a channel switches to the VFO. Transmit works only from your computer, at most 3 minutes per keying |
 
 ### APRS-IS from the radio
 
@@ -113,8 +112,9 @@ sudo iptables -A FORWARD -i usb0 -o eth0 -j ACCEPT
 sudo iptables -A FORWARD -i eth0 -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
 
-Use your radio's address instead of 12.47.82.51. Then give the radio a server's IP address (it can't look up names;
-`dig +short rotate.aprs2.net` gives some) and, if you like, a range in km for the messages and packets it receives:
+Use your radio's address instead of 12.47.82.51. Then give the radio a server's IP address. The radio can't look up
+names. `dig +short rotate.aprs2.net` gives some addresses. You can also give a range in km for the messages and packets it
+receives:
 
 ```
 curl "http://12.47.82.51/api/aprsis?server=44.31.12.34:14580&range=50"
@@ -135,9 +135,10 @@ curl -T edited.bin tftp://odr-3101234.local/codeplug.bin        # write it
 curl tftp://odr-3101234.local/info.txt                          # board, firmware, IDs, addresses
 ```
 
-`codeplug.bin` is the same 716,384-byte image `tools/cps_client.py read` makes, so a file from either one can be
-written with either one. A write is checked before anything is stored: the size, then that the file is a codeplug.
-A wrong file, a transfer that stops half way, or a cable pulled during the transfer leaves the codeplug as it was; a
+`codeplug.bin` is the same 716,384-byte image `tools/cps_client.py read` makes. A file from either one can be
+written with either one. A write is checked before anything is stored. The radio checks the size first, then that
+the file is a codeplug.
+A wrong file, a transfer that stops half way, or a cable pulled during the transfer leaves the codeplug as it was. A
 power cut while the new codeplug is being stored is finished at the next power on. The radio keeps its own quick
 keys, as with the CPS, and re-reads the codeplug right after the write.
 
@@ -145,7 +146,8 @@ To stop writes over the network, turn off **Settings > Connections > TFTP codepl
 
 ## Monitoring the radio with SNMP
 
-The radio answers SNMP version 2c requests at its address, port 161. Any SNMP manager works; the repository has a small one:
+The radio answers SNMP version 2c requests at its address, port 161. Any SNMP manager works. The repository has a
+small one:
 
 ```
 tools/odr_snmp.py walk 12.47.82.51                 # everything the radio reports
@@ -155,7 +157,7 @@ tools/odr_snmp.py traps                            # events as they happen (need
 
 The radio reports its identity (DMR ID, radio name, model, firmware), battery, channel, frequencies, power, the DMR
 call in progress and the last one heard, message and data counters, ARS state and the USB network counters. The
-objects are described in `docs/spec/ODR-MIB.txt`; load it into your manager to see names instead of numbers.
+objects are described in `docs/spec/ODR-MIB.txt`. Load it into your manager to see names instead of numbers.
 
 While USB is a network adapter, the radio also sends events to your computer (port 162): power-up, calls starting
 and ending, text messages received, emergencies, ARS changes and low battery.
@@ -169,28 +171,29 @@ tools/odr_debug.py snmp status                     # the agent's settings and co
 ```
 
 Other radios can query this radio over the air at its own 12.x.y.z address (read only unless you allow writes).
-Events over the air go only to a manager radio you name (`tools/odr_debug.py snmp set rf_manager <DMR ID>`), at most
-one a minute apart from emergencies. Nothing is encrypted; SNMP community names travel as plain text.
+Events over the air go only to a manager radio you name (`tools/odr_debug.py snmp set rf_manager <DMR ID>`). Apart
+from emergencies, they go at most once a minute. Nothing is encrypted. SNMP community names travel as plain text.
 
 ## Network over the programming cable (PPP)
 
-Radios without USB, such as the DM-32UV, can get the same network over their programming cable with PPP. It is not in
-the release images yet: a build needs `CONFIG_NET_PPP=y`, and it hasn't been tried on a radio. With such a build, run
-on the computer (as root, pppd comes with macOS and most Linux systems):
+Radios without USB ([Radio reference](23-radios.md)) can get the same network over their programming cable with PPP.
+PPP is on by default in the DM-32UV image, which isn't in the releases yet. On other radios a build needs
+`CONFIG_NET_PPP=y`. PPP hasn't been tried on a radio. With such a build, run this on the computer as root. pppd comes
+with macOS and most Linux systems.
 
 ```
 sudo tools/odr_ppp.sh /dev/ttyUSB0                 # Linux
 sudo tools/odr_ppp.sh /dev/cu.usbserial-XXXX       # macOS
 ```
 
-The radio switches to PPP by itself when pppd starts, gives the computer the same address as in USB network mode, and
-the services above work the same, only slower (about 10 KB/s at 115200 baud). `sudo tools/odr_ppp.sh --stop` hangs up
-and the cable goes back to programming and the debug link. The details are in `docs/spec/ppp.md`.
+The radio switches to PPP by itself when pppd starts. It gives the computer the same address as in USB network mode.
+The services above work the same, only slower (about 10 KB/s at 115200 baud). `sudo tools/odr_ppp.sh --stop` hangs
+up, and the cable goes back to programming and the debug link. The details are in `docs/spec/ppp.md`.
 
 ## Control station for dispatch software
 
-Dispatch software (RadioDesk, TRBOnet, SmartPTT and similar) can use the radio as its control station: the computer
-sends and receives the fleet's messages, locations and registrations through the radio.
+Dispatch software (RadioDesk, TRBOnet, SmartPTT and similar) can use the radio as its control station. The computer
+then sends and receives the fleet's messages, locations and registrations through the radio.
 
 1. Turn on **USB network at start** and restart the radio, or switch it in **Tools > USB network**.
 2. Turn on **PC answers data**. While the computer is connected, text messages, location requests and registration
@@ -198,19 +201,26 @@ sends and receives the fleet's messages, locations and registrations through the
    messages in its inbox and doesn't register with a presence server. It still confirms data packets that ask for a
    confirmation, and still answers call alerts and radio checks. Unplug the computer and the radio answers for itself
    again.
-3. If the software expects fixed addresses, set **USB address** to 192.168.10.x: the radio is 192.168.10.1 and
+3. If the software expects fixed addresses, set **USB address** to 192.168.10.x. The radio is then 192.168.10.1 and
    the computer gets 192.168.10.2. Unplug and plug in the cable so the computer picks up the new address.
 
-In the dispatch software, set the control station's address to the radio's address (192.168.10.1, or 12.x.y.z from
-your DMR ID with the last bit flipped), the radio network to 12.0.0.0/8 and the talkgroup network to 225.0.0.0/8, and
-your radio's DMR ID. What the computer sends goes over the air from your radio's DMR ID. Only one radio per computer
+In the dispatch software, set:
+
+| Item | Value |
+|---|---|
+| Control station address | The radio's address: 192.168.10.1, or 12.x.y.z from your DMR ID with the last bit flipped |
+| Radio network | 12.0.0.0/8 |
+| Talkgroup network | 225.0.0.0/8 |
+| DMR ID | Your radio's DMR ID |
+ What the computer sends goes over the air from your radio's DMR ID. Only one radio per computer
 can use the fixed addresses.
 
 ## Shorter packets and confirmed delivery
 
-UDP packets to other radios go with a compressed header (5 to 9 bytes instead of 28, ETSI's "UDP/IP header
-compression"), unless one of their ports is in 4000-4099, where MOTOTRBO text, location and presence servers listen.
-That saves one or two data blocks (60-120 ms on air) per packet. Radios that can't read it are rare; for them, or to
+UDP packets to other radios go with a compressed header (ETSI's "UDP/IP header compression"). The header is 5 to 9
+bytes instead of 28. Packets with a port in 4000-4099 keep the full header, because MOTOTRBO text, location and
+presence servers listen there.
+That saves one or two data blocks (60-120 ms on air) per packet. Radios that can't read it are rare. For them, or to
 compress those ports too:
 
 ```
@@ -218,8 +228,8 @@ tools/odr_debug.py data ip-settings off        # always the full header
 tools/odr_debug.py data ip-settings all        # compress every UDP packet
 ```
 
-Packets to a radio can also go as confirmed data: the other radio acknowledges each one, and the radio sends again
-what didn't arrive, 4 tries in all by default. Name up to two destinations (DMR IDs) or UDP ports:
+Packets to a radio can also go as confirmed data. The other radio acknowledges each packet, and the radio sends again
+what didn't arrive. By default it makes 4 tries in all. Name up to two destinations (DMR IDs) or UDP ports:
 
 ```
 tools/odr_debug.py data ip-settings auto rules id=3101234 port=161 tries=4

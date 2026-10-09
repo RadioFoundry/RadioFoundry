@@ -25,14 +25,17 @@ raise a second alert.
 ## Declaring an emergency
 
 The radio core can send an emergency alarm and start an emergency call with a hot microphone. By default it sends the
-alarm 3 times, then keys the transmitter for 10 s so the people listening hear you without you pressing **PTT**. Every
+alarm 3 times. Then it keys the transmitter for 10 s, so the people listening hear you without you pressing **PTT**. Every
 call you make until you cancel carries the emergency flag and goes to the channel's talk target. Pressing **PTT**
 during the hot mic takes over the transmission.
 
-On the DM-1701, hold the **top side key** (above **PTT**) for 1.5 s. The screen says "EMERGENCY sent: hold again to
-cancel". Hold it again for 1.5 s to cancel ("Emergency canceled"). A short press of the same key still changes the
-power level, and letting go before 1.5 s never starts an emergency. Where it can't start (see below) the radio says
-"Emergency needs a DMR channel and ID". The MD-380 and the DM-32 have no emergency key yet.
+Hold the **Power level** key for 1.5 s (on the DM-1701, the top side key). The screen says "EMERGENCY sent: hold
+again to cancel". Hold it again for 1.5 s to cancel ("Emergency canceled"). A short press of the same key still
+changes the power level. Letting go before 1.5 s never starts an emergency. Where it can't start (see below) the
+radio says "Emergency needs a DMR channel and ID".
+
+Only radios with a **Power level** key can declare an emergency from the keys. The [Radio
+reference](23-radios.md#key-roles) says which radios have one.
 
 Developers can also start and cancel it over the debug link:
 

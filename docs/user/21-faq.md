@@ -4,22 +4,20 @@
 
 **Why allow commercial use?**
 
-Why not? Commercial use is the reason we can buy $40 DMR radios. If everything DMR were ham-only, we would still be
-paying $500 for a decent radio. Nobody "loses" here, because the project authors aren't trying to make any money off
-of this. If someone can figure out a way to use it in their product and make money, great! We're not in the business
-of selling DMR firmware, we just want everyone to have access to a decent one.
+Commercial use is the reason $40 DMR radios exist. If everything DMR were ham-only, a decent radio would still cost
+$500. The project authors don't make money from ODR, so nobody loses when someone else uses it in a product. The
+project doesn't sell DMR firmware. The goal is a decent firmware that everyone can use.
 
 **Why reinvent the wheel?**
 
-There is no current truly open source effort to make a firmware for most of these radios, and definitely not one
-that tries to share this much code across all makes and models. Any prior major "open" firmware efforts have ended up
-with source code being taken down by authors, licensing issues, arguments and fights, or key authors closed-sourcing
-their additions to the project.
+No other open source firmware project covers most of these radios, and none shares this much code across makes and
+models. Earlier "open" firmware projects ended with source code taken down by its authors, licensing issues,
+disputes, or key authors closing the source of their additions.
 
 **Why another radio firmware?**
 
-DMR is filled with cool features that cheaper radios almost never implement. These are incredibly useful for
-commercial applications, and are just as useful for amateur use.
+DMR has many features that inexpensive radios rarely implement. They are useful for commercial applications and for
+amateur use.
 
 **How can I help?**
 
@@ -33,19 +31,20 @@ your own computer ([Installing](02-installing.md)).
 
 **Can I use ODR without the codec?**
 
-Yes. FM works fully, DMR calls show on the screen, and DMR data (messages, call alert, radio check) and hotspot mode
-work. DMR voice is off.
+Yes. FM works and DMR calls show on the screen. DMR data (messages, call alert, radio check) and hotspot mode work.
+DMR voice is off.
 
 **Will ODR damage my radio?**
 
 Flashing writes only the processor's application and codec sectors. The bootloader and the factory calibration are
-never written, so you can go back to stock ([Installing](02-installing.md#going-back-to-the-stock-firmware)). ODR is early software:
-test it before you depend on it, and check that you transmit only where you are licensed to.
+never written, so you can go back to stock ([Installing](02-installing.md#going-back-to-the-stock-firmware)). ODR is early software.
+Test it before you depend on it, and transmit only where you are licensed to.
 
 **Does qdmr work with ODR?**
 
-Yes, through a compatibility layer: qdmr's open-firmware driver reads and writes the codeplug
-([Programming with qdmr](15-programming-qdmr.md)).
+Yes, through a compatibility layer. qdmr's open-firmware driver reads and writes the codeplug
+([Programming with qdmr](15-programming-qdmr.md)). On the DM-32UV qdmr can't write the codeplug directly
+([DM-32UV with qdmr](23-radios.md#dm-32uv-with-qdmr)).
 
 **Is basic privacy secure?**
 

@@ -9,7 +9,7 @@ firmware (the KD4Z toolkit). One program, `md380_migrate.py`, does the whole mov
 2. It flashes ODR.
 3. It writes the codeplug back, plus the DMR ID (callsign) database.
 
-> The MD-380 port has not run on a radio yet ([Introduction](01-introduction.md#radios)). Try it only if you can go
+> The MD-380 port has not run on a radio yet ([Radio reference](23-radios.md#tyt-md-380)). Try it only if you can go
 > back to stock with TYT's updater, and keep your stock firmware file.
 
 ## What you need
@@ -89,9 +89,9 @@ python3 md380_migrate.py all --from my-codeplug.rdt --image odr_md380_codec.bin 
 ## What fits
 
 ODR holds 1024 channels, 68 zones of 80 channels, 1024 contacts and 76 RX group lists. A stock MD-380 holds up to
-250 zones and 250 RX group lists. If yours has more, the program lists what would be left out (the last ones), and
-asks before it flashes. To choose yourself, open `backup-stock.yaml` in qdmr, delete what you don't need, save, and
-run again with `--from` on the saved file.
+250 zones and 250 RX group lists. If yours has more, the program lists what would be left out (the last ones). It
+asks before it flashes. To choose yourself, open `backup-stock.yaml` in qdmr and delete what you don't need. Save it,
+and run again with `--from` on the saved file.
 
 ODR uses the parts of the codeplug listed in [Programming with qdmr](15-programming-qdmr.md). Scan lists, GPS
 systems and TYT's menu and button settings are not carried over.
@@ -107,7 +107,13 @@ in one of two ways:
   look wrong, give their order with `--users-columns id,callsign,fname,surname,city,state,country`.
 
 The database stored in the md380tools radio can't be read out. It is the same public data, so a fresh download is
-just as good. Options: `--db-limit N` (at most N records), `--id-prefix` (by your country's ID prefix), `--no-db`.
+equivalent.
+
+| Option | Does |
+|---|---|
+| `--db-limit N` | At most N records |
+| `--id-prefix` | Picks records by your country's ID prefix |
+| `--no-db` | Writes no database |
 
 ## Going back to stock
 
@@ -121,10 +127,10 @@ Then write your `backup-stock.rdt` or `backup-stock.dfu` with the TYT CPS or qdm
 
 ## Limits and notes
 
-- Radios with the small 1 MB flash chip (some early VHF radios): ODR runs, but keeps no codeplug or settings. The
+- Some early VHF radios have a small 1 MB flash chip. ODR runs on them, but keeps no codeplug or settings. The
   program stops after the flash and tells you. Go back to stock if you need your channels.
 - The program never changes the radio's calibration.
-- Windows (untested): bind the bootloader (0483:DF11) to WinUSB with Zadig to flash. That replaces the driver the
+- Windows (untested): to flash, bind the bootloader (0483:DF11) to WinUSB with Zadig. That replaces the driver the
   TYT CPS uses for the same USB ID, so run the backup step first.
 - Linux: the program prints the udev rule for 0483:DF11 if access is denied. Add yourself to the `dialout` group for
   the radio's serial port once it runs ODR.

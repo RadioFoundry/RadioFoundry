@@ -6,10 +6,10 @@
 
 | Problem | Cause and fix |
 |---|---|
-| "no radio bootloader found" | The radio isn't in its bootloader, or the cable is charge-only. Turn the radio off, hold **PTT** and **SK1**, turn it on; the screen stays dark. Try another USB port or cable |
+| "no radio bootloader found" | The radio isn't in its bootloader, or the cable is charge-only. Turn the radio off. Hold the radio's bootloader keys and turn it on. On the DM-1701 these are **PTT** and SK1, and the screen stays dark. The [Radio reference](23-radios.md) has the keys for each radio. Try another USB port or cable |
 | "access denied" | Linux: add the udev rule odrflash prints, then unplug and replug. Windows: install WinUSB for "STM32 BOOTLOADER" (0483:DF11) with Zadig |
 | "the bootloader is busy" | Another program has it open (a CPS, a virtual machine with USB passthrough). Close it and replug |
-| "unknown stock file ... not a supported codec source" | odrflash knows the stock files by SHA-256 (DM-1701: V02.06 CSV). Download that exact file |
+| "unknown stock file ... not a supported codec source" | odrflash knows the stock files by SHA-256. Download the exact file [Installing](02-installing.md) names for your radio |
 | "... is an official Baofeng/TYT firmware file, not an OpenDigitalRadio image" | You gave the stock file as the image. Give the ODR image (or `--release`) and the stock file with `--stock` |
 | "odrflash can't tell whether the radio holds the codec" | Start the radio with ODR and run `odrflash probe`, or give `--stock` so odrflash writes the codec |
 | "no libusb found" (running from source) | Install libusb (`brew install libusb`, or `apt install libusb-1.0-0`), or use the odrflash executable, which carries it |
@@ -21,12 +21,12 @@
 | Problem | Cause and fix |
 |---|---|
 | DMR calls show but there is no audio, "No codec: voice off" | The radio has no usable codec. See [Installing, no codec](02-installing.md#no-codec-no-codec-voice-off) |
-| A DMR call shows "Other TG: not played" | Its talkgroup isn't the talk target, in the listen list or the reply target. Hold **SK1**, use hear all, or add the talkgroup to the channel's RX group list in qdmr |
+| A DMR call shows "Other TG: not played" | Its talkgroup isn't the talk target, in the listen list or the reply target. Hold **Monitor**, use hear all, or add the talkgroup to the channel's RX group list in qdmr |
 | "Encrypted: not played" | The call uses basic privacy and the radio has no matching key, or stronger encryption the radio can't play |
 | "No DMR ID in codeplug" when transmitting | Write a codeplug with your DMR ID ([Programming with qdmr](15-programming-qdmr.md)) |
 | "Channel busy" | Someone is talking on the timeslot. Wait for the call to end |
 | "No repeater answered" | The repeater didn't respond. Check the frequency, the color code, the timeslot and your distance to the repeater |
-| No audio on FM | The squelch is closed or the channel needs a tone. Hold **SK1** to open the squelch; check the tone with **\***, **3** |
+| No audio on FM | The squelch is closed or the channel needs a tone. Hold **Monitor** to open the squelch. Check the tone with **\***, **3** |
 | A key does nothing and the screen says "Keys locked" | Hold **\*** to unlock. Check **Settings > Privacy > Auto lock** |
 | "Not used here" | That key has no function on this screen |
 | "...: not in this build" | The feature is switched off in this build, or isn't built yet |

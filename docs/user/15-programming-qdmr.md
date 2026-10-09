@@ -4,13 +4,14 @@
 
 ODR is programmed with qdmr, the free codeplug editor (github.com/hmatuschek/qdmr). The radio speaks the protocol of
 qdmr's open-firmware drivers through a compatibility layer, and stores the codeplug in the layout qdmr writes. Reads
-and writes are tested on the DM-1701 with `tools/cps_client.py`, which talks to the radio the way qdmr does.
+and writes are tested with `tools/cps_client.py`, which talks to the radio the way qdmr does. The radios this is
+tested on are in the [Radio reference](23-radios.md).
 
 ## Reading and writing the codeplug
 
 1. Turn the radio on normally and connect the USB cable. The radio appears as a USB serial port (USB ID 1FC9:0094).
-2. In qdmr, read the codeplug from the radio. qdmr identifies the DM-1701 by the radio type ODR reports and uses its
-   open-firmware driver for the DM-1701 (the one for the UV380 family).
+2. In qdmr, read the codeplug from the radio. qdmr identifies the radio by the radio type ODR reports. The
+   [Radio reference](23-radios.md) lists the type and the qdmr driver for each radio.
 3. Edit the codeplug and write it to the radio.
 4. After a write, the radio restarts and uses the new codeplug.
 
@@ -20,7 +21,7 @@ The radio keeps its own screen during the transfer.
 
 | Item | Fields ODR uses |
 |---|---|
-| General settings | Your DMR ID; the callsign (radio name, 8 characters, sent as talker alias); the group and private call hang times (the reply window) |
+| General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window) |
 | Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout, talker alias, zone scan skip, VOX allowed, no beep, no battery saving |
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
@@ -42,17 +43,20 @@ so qdmr reads them.
   key assignments are ignored.
 - Emergency, ARS, text message format and SFR settings.
 
-## Coming from an MD-380 with stock firmware
+## Coming from stock firmware
 
-On a TYT MD-380, MD-390 or RT3, `tools/md380_migrate.py` reads the stock codeplug, flashes ODR and writes the
-codeplug back, all in one run. See [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
+On a radio with stock firmware, a migration tool reads the stock codeplug, flashes ODR and writes the codeplug back
+in one run:
 
-## DM-32UV
+| Radio | Tool | Chapter |
+|---|---|---|
+| TYT MD-380, MD-390, RT3 | `tools/md380_migrate.py` | [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md) |
+| Baofeng DM-32UV | `tools/dm32_migrate.py` | [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md) |
 
-qdmr can't program a DM-32UV running ODR directly. ODR keeps the codeplug at +7 MB in the radio's data flash, so the
-addresses qdmr's driver uses land in the stock area, where ODR refuses writes. Edit the codeplug in qdmr, save it as
-YAML, and write it with `dm32_migrate.py restore --yaml FILE` ([Moving from stock DM-32UV
-firmware](19-moving-from-stock-dm32.md)), which adds the offset.
+## Radios qdmr can't program directly
+
+qdmr can't write the codeplug of a DM-32UV running ODR. [DM-32UV with qdmr](23-radios.md#dm-32uv-with-qdmr) says why
+and how to write it instead.
 
 ## Backups
 
@@ -65,4 +69,3 @@ backup.bin` and `tools/cps_client.py write backup.bin` over the serial port, or 
 - Writes are refused while the radio's settings area holds another firmware's data. See "Settings are not kept" in
   [Troubleshooting](20-troubleshooting.md).
 - The calibration area accepts writes only to its own bytes. Don't edit calibration with a CPS.
-- The DM-32UV reports radio type 6 (MD-UV380) for now; see [DM-32UV](#dm-32uv) above.
