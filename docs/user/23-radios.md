@@ -313,4 +313,5 @@ models it covers.
 | TYT MD-9600, Retevis RT90 | Mobile. Planned |
 | Radioddity GD-77 family | Planned. Needs a new processor platform |
 | Radioddity GD-88 | Planned |
-| Baofeng DM-1801 Pro | Wish list: hardware needed |
+| Baofeng DM-1801 Pro | Planned. Hardware needed |
+| Radioddity DB40-D | Mobile. Planned. Hardware needed |

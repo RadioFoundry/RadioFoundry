@@ -23,7 +23,7 @@ from . import device, docs as docsmod, i18n, repo, tmpl
 
 # feature-matrix.md groups of developer tools that never ship in a release: not on the visitor pages
 BENCH_ONLY = {"Bench"}
-BOARD_ORDER = {"supported": 0, "testing": 1, "planned": 2, "wishlist": 3}
+BOARD_ORDER = {"supported": 0, "testing": 1, "planned": 2}
 
 
 class Site:

@@ -219,14 +219,14 @@ def readme_status():
 
 
 def radio_status(readme_row, radio):
-	"""One word for a radio: supported (on the radio), testing (builds, not on a radio yet), planned, wishlist."""
+	"""One word for a radio: supported (on the radio), testing (builds, not on a radio yet), or planned."""
 	if readme_row is None:
 		return "planned"
 	if readme_row["on_radio"] in ("yes", "partly"):
 		return "supported"
 	if readme_row["builds"] == "yes":
 		return "testing"
-	return "wishlist" if "wish list" in readme_row["support"].lower() else "planned"
+	return "planned"
 
 
 def boards(feature_names, variant_ids):
