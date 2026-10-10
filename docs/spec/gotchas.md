@@ -276,8 +276,8 @@ assertion) to add fields without wiping user settings; where the layout couldn't
 bumped and settings reset once (MD-9600 0x4781, struct 0x70 to 0x80). New firmware: version its settings and migrate
 instead of resetting. Commits 1d785c1, d226b9a, 708b8e4.
 
-**7.6 UDT location and LRRP.** UDT NMEA: DPF 0, format 5, opcode 0x1A, one Rate 1/2 block, CRC-CCITT unmasked (what
-RadioDesk expects; Motorola / Hytera receivers may differ). Positions older than 30 s go out without the fix flag. LRRP
+**7.6 UDT location and LRRP.** UDT NMEA: DPF 0, format 5, opcode 0x1A, one Rate 1/2 block, CRC-CCITT unmasked (an assumption;
+Motorola / Hytera receivers may differ). Positions older than 30 s go out without the fix flag. LRRP
 periodic interval minimum 5 s, distance checked every interval (30 s default), at most 2 triggers, emergency and one
 shot refused (0x0A). Commits 4967647, 31b52ef.
 
@@ -530,7 +530,7 @@ in an open inbound call, voice headers and terminators are never echo-checked (t
 ## 15. Testing practice
 
 - An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests
-  against independent decoders (RadioDesk) caught the protocol ones. Keep both.
+  against independent decoders caught the protocol ones. Keep both.
 - On-air debug counters readable over the host protocol, plus runtime switches, let the SFR work go through 17 test
   rounds without reflashing for each experiment.
 

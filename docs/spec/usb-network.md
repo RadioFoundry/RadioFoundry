@@ -119,7 +119,7 @@ not built yet.
 
 ## 5. Control station mode
 
-Dispatch software on a PC (RadioDesk, TRBOnet, SmartPTT and the like) uses a radio on USB as its control station: the
+Dispatch software on a PC (TRBOnet, SmartPTT and the like) uses a radio on USB as its control station: the
 PC sends and receives the fleet's data through it, and it answers for the radio's own DMR ID itself (text messages,
 registration, location). Switch: `CONFIG_DMR_CONTROL_STATION` (= `CONFIG_DMR_IP_GATEWAY`). The pieces:
 
@@ -217,8 +217,7 @@ Radio op 27 (`debuglink.md` 3.8): flags u8, link IP u32 little endian; stored, a
   the link, the fixed link end to end: an ETSI IP text from the air reaches 192.168.10.2, the PC's answer goes over
   the air from the radio's ID); `dmrDataServiceTest` `testPassthrough` (the table in 5.2); `radioCoreTest` (the
   settings records).
-- HIL: `tests/hil/test_control_station.py` (opt-in, below). The lead runs it; the RadioDesk sandbox is the dispatch
-  application.
+- HIL: `tests/hil/test_control_station.py` (opt-in, below). The lead runs it against a dispatch application.
 
 HIL plan (`tests/hil/README.md`):
 
@@ -235,7 +234,7 @@ HIL plan (`tests/hil/README.md`):
    gets the radio's ETSI response (the bench hears it).
 5. `test_passthrough_reply` (same): the PC sends UDP 4007 to the bench's ID; the bench hears the packet with the
    radio's DMR ID as the source.
-6. RadioDesk (manual): RadioDesk's control station set to the radio's link address, its own ARS / TMS / LRRP on. With
-   passthrough on, a text from a fleet radio appears in RadioDesk and only there, RadioDesk's reply reaches the fleet
-   radio from the control station's ID, a location request from RadioDesk is answered by the fleet radio (the control
-   station doesn't answer for itself), and the radio's own ARS registration does not appear in RadioDesk's log.
+6. A dispatch application (manual): its control station set to the radio's link address, its own ARS / TMS / LRRP on.
+   With passthrough on, a text from a fleet radio appears in the application and only there, its reply reaches the
+   fleet radio from the control station's ID, a location request from it is answered by the fleet radio (the control
+   station doesn't answer for itself), and the radio's own ARS registration does not appear in its log.

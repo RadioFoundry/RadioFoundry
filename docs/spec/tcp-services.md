@@ -21,7 +21,7 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
 The DM-32UV has no USB: it runs them over PPP on its host port (`ppp.md`), with 3 TCP connections instead of 4
-(`boards/dm32/config.mk`). On the MD-380 they fit only with link time optimization (its default; `docs/build-config.md`, "The MD-380's image"). Which radios send and receive AFSK:
+(`boards/dm32/config.mk`). On the MD-380 they fit only with link time optimization (its default; `docs/feature-matrix.md`, "Whole images"). Which radios send and receive AFSK:
 `aprs.md` 1.
 
 ## 2. TCP

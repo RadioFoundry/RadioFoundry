@@ -711,10 +711,9 @@ Sources: firmware constants (empirical fractions), CubeMX (DAC).
 The RX audio mux on PD9 is driven low when the AT1846S output (e.g. its tone generator during audible AFSK) should go
 straight to the amp (unverified).
 
-No APRS receive path: FM audio goes AT1846S -> HR_C6000 line in -> speaker DAC. The I2S stream from the HR_C6000
-carries the microphone only, and no ADC pin sees the discriminator. So `hal_afsk_t.rx_start` is NULL and
-`CONFIG_APRS_RX` defaults to n (`aprs.md` 5.3). An experiment for the bench: route the line in to the HR_C6000's
-record path (register 0xE0 family) and read it over I2S.
+APRS receive isn't wired. No ADC pin sees the discriminator, but FM receive audio reaches the MCU on the I2S stream
+(squelch gated) and in the HR_C6000's RX RAM (ungated, 8 kHz), as the bench found (21). `hal_afsk_t.rx_start` is
+still NULL and `CONFIG_APRS_RX` defaults to n (`aprs.md` 5.3).
 
 Sources: firmware constants, HR_C6000 documentation, CubeMX.
 

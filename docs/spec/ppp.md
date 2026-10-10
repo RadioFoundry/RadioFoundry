@@ -175,7 +175,7 @@ figure is PPP alone; on a radio without USB the gateway comes with it.
 PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B RAM; the rest of the DM-32UV's
 figure is the gateway, its air side and the network personality (`hostlink_net*.c`, 1.6 KB RAM each, the gateway's
 600 B frame). The DM-32UV's per-service costs and its default network build are in
-[hardware-dm32.md](hardware-dm32.md) 17.2.
+[feature-matrix.md](../feature-matrix.md), "Whole images".
 
 ## 8. Tests
 

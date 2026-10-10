@@ -192,7 +192,7 @@ up, and the cable goes back to programming and the debug link. The details are i
 
 ## Control station for dispatch software
 
-Dispatch software (RadioDesk, TRBOnet, SmartPTT and similar) can use the radio as its control station. The computer
+Dispatch software (TRBOnet, SmartPTT and similar) can use the radio as its control station. The computer
 then sends and receives the fleet's messages, locations and registrations through the radio.
 
 1. Turn on **USB network at start** and restart the radio, or switch it in **Tools > USB network**.

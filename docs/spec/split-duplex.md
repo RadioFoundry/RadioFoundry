@@ -5,7 +5,7 @@
 Two OpenDigitalRadio radios, each connected to the same host as an MMDVM modem, act together as one full-duplex DMR
 repeater: the **TX half** transmits the repeater output (BS sourced, continuous, both slots, with the CACH), the
 **RX half** receives the repeater input (MS sourced bursts on both slots) and labels each burst TS1 or TS2 from the TX
-half's slot timing. The host (RadioDesk, or `tools/split_duplex_host.py`) coordinates the pair and can present it to
+half's slot timing. The host (`tools/split_duplex_host.py`, or any duplex host that implements section 8) coordinates the pair and can present it to
 MMDVMHost as one ordinary duplex modem (section 8).
 
 Switch: `CONFIG_HOTSPOT_SPLIT`, on wherever `CONFIG_HOTSPOT` is (not on the MD-380), a child of `CONFIG_HOTSPOT` (`docs/build-config.md`). Built in, the
@@ -330,7 +330,7 @@ or DMR_LOST), and 360 ms after any data burst.
 
 ## 8. The virtual duplex modem: host-side guide
 
-This section is the contract for RadioDesk: with it the pair can be presented to MMDVMHost (or to rfgw's repeater) as
+This section is the contract for a host: with it the pair can be presented to MMDVMHost (or another duplex host) as
 one standard duplex MMDVM modem without further radio changes. "Upstream" is the duplex host (MMDVMHost), "TX" and "RX"
 the two radios.
 

@@ -15,7 +15,7 @@ CONFIG_APRS_RX ?= n
 # The SFR and split duplex glue is HR_C6000 only (docs/spec/sfr.md: the HR_C5000 lacks CRC_MCU_Control)
 CONFIG_SFR ?= n
 CONFIG_HOTSPOT_SPLIT ?= n
-# Size (docs/build-config.md "The MD-380's image"): every other feature fits only with link time optimization, so
+# Size (docs/feature-matrix.md "Whole images", docs/build-config.md "Board defaults"): every other feature fits only with link time optimization, so
 # it is on by default here, third-party code included (FreeRTOS marks what its port's assembly reaches
 # portDONT_DISCARD; the vectors are referenced from the assembly start-up). Untested hardware either way: LTO=0 builds
 # the plain way (and then needs more features off)

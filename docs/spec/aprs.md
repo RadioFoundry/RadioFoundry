@@ -47,7 +47,7 @@ What the boards provide today:
 
 | Radio | AFSK transmit | AFSK receive | GPS |
 |---|---|---|---|
-| DM-1701 | yes: the AT1846S tone generator retuned per symbol (`hardware-dm1701.md` 5.10) | no: no received audio reaches the MCU (`hardware-dm1701.md` 8) | none |
+| DM-1701 | yes: the AT1846S tone generator retuned per symbol (`hardware-dm1701.md` 5.10) | not yet: FM audio reaches the MCU (`hardware-dm1701.md` 21), no `rx_start` | none |
 | MD-380 | not yet: needs a TX tone path (`boards/md380/config.mk`) | no | G models (`hardware-md380.md` 13) |
 | DM-32UV | no (`board.afsk` NULL) | no | `CAP_GPS` (`hardware-dm32.md` 12) |
 
@@ -121,13 +121,13 @@ The radio core keys the transmitter in FM, then the board switches the tone at e
 baud rate), with phase continuity where the hardware allows, and keeps the RTOS out of its symbol interrupt. While
 AFSK runs, the radio core leaves the transmitter alone (`status()` returns its cached reading). The level (0-100, 50
 default) sets the deviation around the board's nominal (about 3 kHz peak at 25 kHz bandwidth). `tests/hil/test_aprs.py` measures on air the phase continuity across a tone change, the deviation the level
-gives, the mark / space flatness and the TX delay (section 13). The DM-1701's tone generator path:
-`hardware-dm1701.md` 5.10.
+gives, the mark / space flatness and the TX delay (section 13). Each board's tone path is on its hardware page (the table in
+section 1).
 
 ### 5.3 Receive: designed only
 
 A board with a receive path sets `rx_start` and samples the received FM audio; no board does yet, so
-`CONFIG_APRS_RX` defaults to n (for the DM-1701, `hardware-dm1701.md` 8). The demodulator (`afsk.c`) is ready for any
+`CONFIG_APRS_RX` defaults to n. The demodulator (`afsk.c`) is ready for any
 board that can: 8-48 kHz samples, a correlator per tone with hysteresis and a PLL that tightens once a flag is seen. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio):
 90 / 10 % of frames at 10 dB SNR, 97 / 61 % at 12 dB, 100 / 94 % at 14 dB.
 
@@ -294,11 +294,11 @@ twist 0.4-1.4 dB, continuous phase (6.5 degrees residual), but 7.2 kHz peak devi
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
 - APRS messages merged into the Messages inbox (now: Stations heard and the debug link only).
 - The codeplug APRS record's fixed position and frequency encodings.
-- DM-1701 receive through the HR_C6000 record path (`hardware-dm1701.md` 8).
+- DM-1701 receive from the FM audio paths the bench found (`hardware-dm1701.md` 21).
 - Settings and debug link section / command numbers may need renumbering when merged with other branches.
 
 Future, not done:
 
 - 9600 baud APRS (G3RUH FSK, scrambled NRZI direct FM): needs a flat (discriminator / modulator direct) audio path
-  and an FSK modem; a tone generator path (the DM-1701's) can't do it. Not planned for now.
+  and an FSK modem; a tone generator path can't do it. Not planned for now.
 - Messages in the Messages inbox; Settings > Location tied to APRS; GPS Info in the hotspot's own transmissions.

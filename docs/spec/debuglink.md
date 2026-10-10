@@ -147,7 +147,7 @@ host can compute rates between two reads:
 | then | the board's diagnostics lines (`board.diag_line(0..)`, the radio's diagnostics page) |
 
 The reply holds as many whole lines as fit from `first`; `next` is the line to ask for next, `0xFF` when the last
-line was sent. The board lines are each board's own. The DM-1701's start with the HR_C6000 slot engine counters (`V<voice> H<headers>
+line was sent. The board lines are each board's own. On the HR_C6000 boards they start with the slot engine counters (`V<voice> H<headers>
 T<terminators> I<idle>`, `C<csbk> D<data> crc<errors> rc<rc>`, ...) and end with the readings and the audio counters
 (`aud blk ov dr`).
 

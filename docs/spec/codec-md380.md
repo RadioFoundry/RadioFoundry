@@ -203,6 +203,6 @@ Scripts and notes: kept outside the repository.
 
 * Other stock versions (D13.20 and similar) need their own profile; only D002.032 is supported.
 * 275 KB for the application is tight: the default build fits only with link time optimization and the hotspot off
-  (`docs/build-config.md`, "The MD-380's image"). If the application outgrows it, the choices are
+  (`docs/feature-matrix.md`, "Whole images"). If the application outgrows it, the choices are
   relocating the codec (moving both windows and patching 70 literal sites and one code pointer) or a smaller
   application.
