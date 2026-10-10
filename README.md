@@ -37,13 +37,10 @@ It's early. Read the status section before you flash anything.
 
 The chips in each radio, their sources and the planned port order: [docs/spec/radios.md](docs/spec/radios.md).
 
-On the DM-1701, automated tests against the SDR bench pass on air for: FM receive and transmit, CTCSS / DCS encode,
-the 1750 Hz burst and roger beep, DMR group and private calls both ways (late entry, talker alias, ETSI GPS Info, the
-basic privacy signaling), text messages, call alert, radio check and emergency both ways, hotspot voice and data,
-MMDVM SFR (a bench call repeated whole), each half of the split duplex repeater (TX with our own framing
-and CACH, RX), battery saver, zone scan, VFO scan and dual watch. qdmr reads and writes, the USB network adapter, the network
-services and the roaming settings are checked on the radio. Still open: Standalone SFR (the repeater and user roles on
-a channel), the MMDVM SFR repeat delay (210 ms measured, 90 ms intended) and a split duplex test with two radios. Per-feature results: [on-air coverage](docs/testing/on-air-coverage.md).
+On the DM-1701, the automated tests against the SDR bench pass on air for FM, DMR calls, data, emergency, the hotspot,
+MMDVM SFR, scan and each half of the split duplex repeater. qdmr, the USB network adapter and its services are checked
+on the radio. Still open: Standalone SFR, the MMDVM SFR repeat delay and a split duplex test with two radios. Results
+per feature: [on-air coverage](docs/testing/on-air-coverage.md).
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
 Releases carry the DM-1701 firmware (everything except the codec), `odrflash` to flash it on Windows, macOS and
@@ -88,7 +85,7 @@ Interoperability is a priority, in two directions.
 chip, display, keypad or encoder, flash) and describes its bands, power levels and screen. The core never checks
 which radio it's on. The same UI lays itself out on a 128x64 monochrome LCD or a 240x320 color panel, and works
 with a full keypad or just a knob and a couple of buttons. Today that's two MCUs (STM32F405 and C-SKY CK803S),
-three DMR modems (HR_C5000, HR_C6000 and HR_C7000) and three RF designs (AT1846S, FD6818, and the MD-380's SKY72310
+three DMR modems (HR_C5000, HR_C6000 and HR_C7000) and four RF chips (AT1846S, BK4819, FD6818 and the SKY72310
 synthesizer) sharing all the code above them.
 
 **With everything else on the air and on your desk.** A radio is only useful if it talks to the radios and software
@@ -113,44 +110,25 @@ the same thing.
 
 DMR voice needs DVSI's proprietary AMBE+2 vocoder. ODR never ships it, not in this repo and not in any binary.
 
-Each radio runs exactly the codec its own stock firmware came with. Release images leave it out, and
-[odrflash](tools/odrflash/README.md) handles it when you flash: if the radio already holds the right codec (it runs
-ODR with DMR voice working, or the matching stock firmware), odrflash writes only ODR's own flash sectors and the
-codec stays where it is. Otherwise it pulls the codec out of the stock firmware file you downloaded, on your own
-machine, and writes it to the radio. It checks the stock file by SHA-256 and refuses anything it doesn't recognize.
-
-```
-odrflash flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
-```
-
-The DM-32UV uses `tools/dm32_codec.py`. The MD-380 isn't in the releases yet: put its stock file in
-[codecs/](codecs/README.md) and the build merges the codec, or let `tools/md380_migrate.py` do it. Details, including
-which stock files work: [codec-dm1701](docs/spec/codec-dm1701.md), [codec-dm32](docs/spec/codec-dm32.md),
-[codec-md380](docs/spec/codec-md380.md). Without a codec the firmware runs FM only.
+Each radio runs the codec its own stock firmware came with. Release images leave it out, and
+[odrflash](tools/odrflash/README.md) handles it when you flash. If the radio already holds the right codec, odrflash
+writes only ODR's own flash sectors. Otherwise it extracts the codec from the stock firmware file you downloaded, on
+your own machine, and writes it to the radio. It checks the stock file by SHA-256 and refuses anything it doesn't
+recognize. Without a codec the firmware runs FM only. Which stock files work, and the tools for radios not in the
+releases: [The codec](docs/dev/codec.md).
 
 ## Building and flashing
 
-You need make, Python 3, and `arm-none-eabi-gcc` (DM-1701, MD-380) or a `csky-elf` GCC (DM-32UV, built by
-`tools/build-csky-toolchain.sh`).
+You need make, Python 3, and `arm-none-eabi-gcc` (STM32F405 radios) or a `csky-elf` GCC (HR_C7000 radios).
 
 ```
-make BOARD=dm1701           # or BOARD=md380 (MD380_BAND=vhf for VHF), BOARD=dm32
+make BOARD=dm1701           # or md380, dm32, db25d
 make -C tests/host          # host tests
-tools/ci.sh                 # full release gate: tests, build matrix, license checks
+tools/ci.sh                 # everything a pull request must pass
 ```
 
-To flash your own DM-1701 build, run `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701` (add `--stock FILE`
-to write the codec too) and hold PTT and the side key above it while powering the radio on when it asks. The
-bootloader key isn't in this repo; odrflash derives it from the stock firmware file. If you put the stock firmware
-file in [codecs/](codecs/README.md), every `make` also writes an image with the codec merged in. Releases are built by
-`.github/workflows/release.yml` ([releases](docs/dev/release.md)). The DM-32UV image gets wrapped with
-`tools/dm32_pack.py` for Baofeng's updater, or flashed with `tools/dm32_flash.py`; `tools/dm32_migrate.py` moves a
-DM-32UV from stock with its codeplug ([moving from stock DM-32UV](docs/user/19-moving-from-stock-dm32.md)). MD-380
-owners moving from stock or md380tools firmware use `tools/md380_migrate.py`, which keeps the codeplug
-([moving from stock](docs/user/18-moving-from-stock-md380.md)).
-
-More: [build-config](docs/build-config.md), [testing](docs/testing/README.md),
-[DM-1701 hardware and bootloader](docs/spec/hardware-dm1701.md).
+Toolchains, make targets and the flashing route for each radio: [building](docs/dev/building.md). Moving a radio from
+stock firmware with its codeplug: [the user manual](docs/user/README.md).
 
 ## Documentation
 
