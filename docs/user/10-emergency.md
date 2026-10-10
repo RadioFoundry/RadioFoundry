@@ -29,7 +29,7 @@ alarm 3 times. Then it keys the transmitter for 10 s, so the people listening he
 call you make until you cancel carries the emergency flag and goes to the channel's talk target. Pressing **PTT**
 during the hot mic takes over the transmission.
 
-Hold the **Power level** key for 1.5 s (on the DM-1701, the top side key). The screen says "EMERGENCY sent: hold
+Hold the **Power level** key for 1.5 s. The screen says "EMERGENCY sent: hold
 again to cancel". Hold it again for 1.5 s to cancel ("Emergency canceled"). A short press of the same key still
 changes the power level. Letting go before 1.5 s never starts an emergency. Where it can't start (see below) the
 radio says "Emergency needs a DMR channel and ID".

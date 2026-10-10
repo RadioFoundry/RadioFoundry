@@ -2,10 +2,13 @@
 
 # Installing
 
-Each ODR release carries the DM-1701 firmware and **odrflash**, the program that puts it on the radio. You don't
-build anything. Installing takes four steps: get odrflash, get the stock firmware file, flash, first boot. Nothing
-here changes the radio's calibration. For an MD-380, see [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md)
-instead.
+Each ODR release carries the firmware for the radios in the releases and **odrflash**, the program that puts it on
+the radio. You don't build anything. Installing takes four steps: get odrflash, get the stock firmware file, flash,
+first boot. Nothing here changes the radio's calibration.
+
+The steps are the same on every radio. What differs (the stock firmware file, the keys that start the bootloader) is
+in your radio's "Installing" section of the [Radio reference](23-radios.md). Radios that aren't in the releases have
+their own route: see [Radios not in the releases](#radios-not-in-the-releases).
 
 ## In your browser: the web flasher
 
@@ -21,16 +24,17 @@ computer. **New: not yet tested on a radio.** Until it is, odrflash (below) is t
 |---|---|
 | A computer with Windows, macOS or Linux | |
 | odrflash | The release page: one file for your system, `odrflash-<version>-<system>`. Or `pipx install` it (tools/odrflash/README.md) |
-| The DM-1701 stock firmware, V02.06 CSV | Baofeng's file `DM-1701(CSV)-V02.06.bin`. An archive is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware |
+| Your radio's stock firmware file | The manufacturer's file, in the version odrflash recognizes. Your radio's "Installing" section names it and where to find it |
 | The radio's USB programming cable | The cable that came with the radio |
 
 The release firmware has everything except the AMBE codec. odrflash either keeps the codec already in your radio,
 or takes it out of the stock firmware file on your computer and writes it to the radio. The stock file also gives
 odrflash the key the radio's bootloader expects. odrflash checks the file by SHA-256 and refuses files it doesn't
-recognize; V02.06 CSV is the one it knows today.
+recognize.
 
-Back up the radio's current codeplug with the program you use now (the Baofeng CPS, or qdmr) before you flash. ODR
-uses a different codeplug layout from the stock firmware. If you go back to stock later, you need that backup.
+Back up the radio's current codeplug with the program you use now (the manufacturer's CPS, or qdmr) before you
+flash. ODR uses a different codeplug layout from the stock firmware. If you go back to stock later, you need that
+backup.
 
 ## Step 1: get odrflash
 
@@ -38,25 +42,25 @@ Download the odrflash file for your system from the release page and put it some
 
 | System | Once |
 |---|---|
-| Windows | Run Zadig (zadig.akeo.ie) with the radio in its bootloader (step 3), pick "STM32 BOOTLOADER" (0483:DF11) and install WinUSB. Windows may warn about the unsigned odrflash file once |
+| Windows | Run Zadig (zadig.akeo.ie) with the radio in its bootloader (step 3), pick the bootloader's USB device (your radio's "Installing" section names it) and install WinUSB. Windows may warn about the unsigned odrflash file once |
 | macOS | In Terminal: `xattr -d com.apple.quarantine odrflash-*` and `chmod +x odrflash-*` (the file isn't signed) |
 | Linux | `chmod +x odrflash-*`. If odrflash says access is denied, it prints the udev rule to add. To reach the radio's serial port once it runs ODR (`odrflash probe`, updates), join the `dialout` group: `sudo usermod -aG dialout $USER`, then log in again |
 
-The examples below call it `odrflash`.
+The examples below call it `odrflash`, and the stock file `STOCK.bin`.
 
 ## Step 2: get the stock firmware file
 
-Download `DM-1701(CSV)-V02.06.bin` (see the table above). Keep it; odrflash reads it whenever it needs the codec or
-the key. If you'd rather not pass it every time, let odrflash keep the key:
+Download your radio's stock file and keep it; odrflash reads it whenever it needs the codec or the key. If you'd
+rather not pass it every time, let odrflash keep the key:
 
 ```
-odrflash key --stock "DM-1701(CSV)-V02.06.bin" --save
+odrflash key --stock STOCK.bin --save
 ```
 
 ## Step 3: flash
 
 ```
-odrflash flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
+odrflash flash --release latest --stock STOCK.bin
 ```
 
 odrflash downloads the newest release, checks it, decides about the codec (below) and prints a plan: which flash
@@ -65,9 +69,8 @@ Then it asks you to put the radio in its bootloader:
 
 1. Turn the radio off.
 2. Connect the programming cable to the radio and the computer.
-3. Hold **PTT** and **SK1** together.
-4. Turn the radio on with the volume knob while you hold both keys. The screen stays dark.
-5. Release the keys.
+3. Hold the radio's bootloader keys and turn it on. The screen stays dark.
+4. Release the keys.
 
 odrflash finds the bootloader, asks once more, and writes. When it finishes, the radio restarts into ODR, and odrflash
 checks what the radio reports: the version it just wrote, and "DMR voice is ready" when the codec is in place.
@@ -77,7 +80,7 @@ checks what the radio reports: the version it just wrote, and "DMR voice is read
 | The radio runs | odrflash |
 |---|---|
 | ODR, and DMR voice works | Keeps the codec: it writes only ODR's own sectors. It asks the running radio over USB before you switch it to the bootloader (or run `odrflash probe` first) |
-| Baofeng stock firmware V02.06 CSV | Can keep the codec too: say so with `--stock-installed "V02.06 CSV"`, or answer yes when it asks |
+| The stock firmware version odrflash recognizes | Can keep the codec too: say so with `--stock-installed "<version>"`, or answer yes when it asks |
 | anything else, or you're not sure | Writes the codec from the stock file (`--stock`) |
 
 If odrflash keeps a codec that isn't actually in the radio, nothing breaks: ODR checks the codec before it uses it.
@@ -104,7 +107,7 @@ which flashing never touches.
 DMR calls show on the screen but there's no audio: the radio has no usable codec. Write it from the stock file:
 
 ```
-odrflash flash --release latest --codec merge --stock "DM-1701(CSV)-V02.06.bin"
+odrflash flash --release latest --codec merge --stock STOCK.bin
 ```
 
 ## If something goes wrong
@@ -117,20 +120,18 @@ bootloader (step 3) and run the same command again. If the radio stays dark afte
 Not tried on the test bench yet.
 
 1. Put the radio in its bootloader (step 3).
-2. Run Baofeng's firmware upgrade tool (the installer is in the stock firmware archive) and load the stock file, for
-   example `DM-1701(CSV)-V02.06.bin`. The upgrade tool writes the application and the resource area the stock
-   firmware keeps in the SPI flash.
-3. Write your codeplug backup with the Baofeng CPS. The stock firmware can't read the codeplug ODR used.
+2. Run the manufacturer's firmware upgrade tool and load the stock file.
+3. Write your codeplug backup with the manufacturer's CPS. The stock firmware can't read the codeplug ODR used.
 
 ## Building it yourself
 
-Developers build with `make BOARD=dm1701` and flash the result with `odrflash flash build/dm1701/odr_dm1701.bin --board
-dm1701` (same codec choices). See [building](../dev/building.md).
+Developers build with `make BOARD=<board>` and flash the result with `odrflash flash build/<board>/odr_<board>.bin
+--board <board>` (same codec choices). See [building](../dev/building.md).
 
-## DM-32UV
+## Radios not in the releases
 
-The DM-32UV port builds and passes its host tests, but it hasn't run on a radio yet and isn't in the releases. There
-is no supported install procedure. Developers who want to try it follow the bring-up checklist in
-[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md). It uses `tools/dm32_codec.py` for the codec. Testers
-flash with `tools/dm32_flash.py` over the programming cable, or move from stock with their codeplug using
-`tools/dm32_migrate.py` ([Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md)).
+| Radio | Route |
+|---|---|
+| MD-380 | [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md) |
+| DM-32UV | [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md) |
+| Others | No install procedure yet ([Radio reference](23-radios.md)) |

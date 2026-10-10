@@ -6,7 +6,7 @@
 
 | Problem | Cause and fix |
 |---|---|
-| "no radio bootloader found" | The radio isn't in its bootloader, or the cable is charge-only. Turn the radio off. Hold the radio's bootloader keys and turn it on. On the DM-1701 these are **PTT** and SK1, and the screen stays dark. The [Radio reference](23-radios.md) has the keys for each radio. Try another USB port or cable |
+| "no radio bootloader found" | The radio isn't in its bootloader, or the cable is charge-only. Turn the radio off. Hold the radio's bootloader keys ([Radio reference](23-radios.md), your radio's "Installing" section) and turn it on; the screen stays dark. Try another USB port or cable |
 | "access denied" | Linux: add the udev rule odrflash prints, then unplug and replug. Windows: install WinUSB for "STM32 BOOTLOADER" (0483:DF11) with Zadig |
 | "the bootloader is busy" | Another program has it open (a CPS, a virtual machine with USB passthrough). Close it and replug |
 | "unknown stock file ... not a supported codec source" | odrflash knows the stock files by SHA-256. Download the exact file [Installing](02-installing.md) names for your radio |

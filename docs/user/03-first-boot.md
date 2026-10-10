@@ -50,7 +50,7 @@ DMR needs your DMR ID. Without one, the radio refuses to transmit on DMR channel
 
 1. **Settings > Advanced > About** shows "OpenDigitalRadio" with the version you flashed and the radio model. Below
    them it lists the authors and the licenses of everything in the firmware.
-2. On an FM channel, hold **Monitor** (SK1 on the DM-1701) to open the squelch. You hear noise. This shows that the
+2. On an FM channel, hold **Monitor** to open the squelch. You hear noise. This shows that the
    receiver and the audio path work.
 3. On a DMR channel, the Home screen shows "No codec: voice off" in its bottom line if the codec isn't merged. See
    [Installing, no codec](02-installing.md#no-codec-no-codec-voice-off).

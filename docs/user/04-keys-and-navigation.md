@@ -40,9 +40,6 @@ a key the radio doesn't have.
 | **PTT** | Transmit | |
 | Channel knob | Each click is one step. Clockwise: the next channel on Home (as **Up**), the next row down in a list or menu, a higher value in an editor. Counterclockwise: the opposite | |
 
-On the DM-1701, **Monitor** is SK1, **Talk target** is SK2, **Power level** is the top side key, and **Previous
-zone** / **Next zone** are P1 / P2.
-
 Each key press gives a short key beep unless **Settings > Sound > Key tones** is off.
 
 While the keys are locked (hold **\***), **PTT** still works. When **Settings > Privacy > PTT when locked** is off,

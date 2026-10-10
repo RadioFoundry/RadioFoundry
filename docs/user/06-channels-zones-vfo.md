@@ -20,8 +20,8 @@ Changing the channel ends temporary changes, the reply window, hear all and a sc
 
 ## Changing the zone
 
-- Press **Next zone** or **Previous zone**. On the DM-1701 these are P2 and P1. [Key roles](23-radios.md#key-roles)
-  lists them for other radios. The radio shows "Zone:" and the name.
+- Press **Next zone** or **Previous zone** ([Key roles](23-radios.md#key-roles) shows which keys these are on your
+  radio). The radio shows "Zone:" and the name.
 - Or press **OK**, **4** (Channels). The list opens with the current zone focused ("here"). Focus another zone and press
   **OK**. The radio switches to it and returns to Home.
 - Or type the zone's name on Home. Find lists zones too.

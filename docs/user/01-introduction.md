@@ -7,22 +7,15 @@ firmware. One radio-independent core provides the DMR stack, the user interface,
 Each radio adds a thin board layer underneath.
 
 This manual describes what ODR does on every radio. What differs between radios (the keys, power levels, battery,
-power switch, display, missing hardware and test status) is in the [Radio reference](23-radios.md). The UI simulator
-renders the screenshots at the DM-1701's screen size. Other radios show the same screens, laid out for their display.
+power switch, display, missing hardware and test status) is in the [Radio reference](23-radios.md). The screenshots
+are 160 x 120. Other radios show the same screens, laid out for their display.
 
 <img src="../ux/screens/160x120i5/home_dmr.png" width="200" alt="Home screen on a DMR channel">
 
 ## Radios
 
-| Radio | Status |
-|---|---|
-| Baofeng DM-1701 | Supported and in the releases. On the test bench now |
-| TYT MD-380 / MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases. You build the image yourself and move to it with `md380_migrate.py` ([Moving from stock MD-380 firmware](18-moving-from-stock-md380.md)) |
-| Baofeng DM-32UV | Builds and passes its host tests. Not run on a radio yet, not in the releases. Testers move to it with `dm32_migrate.py` ([Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md)) |
-| Radioddity DB25-D PRO | Early bring-up. Builds and receives FM only. Not run on a radio yet. Not for use |
-| TYT MD-UV380, MD-9600, Radioddity GD-77, GD-88, Baofeng DM-1801 Pro | Planned. [The radio survey](../spec/radios.md) lists the rebadged models each covers |
-
-The [Radio reference](23-radios.md) has a section for each radio.
+The [Radio reference](23-radios.md) lists the radios ODR supports, how far each one is, and the planned ones. Only
+the radios marked as in the releases are ready for use.
 
 ## Project status
 
@@ -30,13 +23,12 @@ ODR is early software. Each feature is in one of three groups.
 
 | Group | Meaning | Features |
 |---|---|---|
-| Verified on the radio | Tested on a radio, on air against the SDR bench where RF is involved | Only the DM-1701 has run ODR so far. Its list is in [Verified on the DM-1701](23-radios.md#verified-on-the-dm-1701) |
-| Built, host-tested | Works against simulated chips in the host tests, or only partly checked on a radio | Everything on the radios that haven't run ODR yet. On the DM-1701: the split duplex repeater, IP over DMR and the services in USB network mode, control station mode, roaming between repeaters, ARS and LRRP, VOX |
+| Verified on the radio | Tested on a radio, on air against the SDR bench where RF is involved | Each radio's list is in the [Radio reference](23-radios.md). Only the DM-1701 has run ODR so far ([its list](23-radios.md#verified-on-the-dm-1701)) |
+| Built, host-tested | Works against simulated chips in the host tests, or only partly checked on a radio | Everything on the radios that haven't run ODR yet, and the features the radio's "Verified" list leaves out |
 | Not built yet | Shown in the menus, dimmed, with a message when selected | Voice prompts, typed text messages, speed dial, saving contacts on the radio |
 
 Some features aren't on every radio. Either the hardware lacks something, or the radio's board code isn't written
-yet. Examples are APRS receive on the DM-1701 and tones on the MD-380. The [Radio reference](23-radios.md) lists them for each
-radio.
+yet. The [Radio reference](23-radios.md) lists them for each radio.
 
 ## What ODR does
 
@@ -66,21 +58,9 @@ and handles DMR data. It plays and sends no DMR voice.
 Keys are named by the job they do. Each radio puts these jobs on its own keys. [Key roles](23-radios.md#key-roles)
 has the table for every radio.
 
-| Name in this manual | Job | On the DM-1701 |
-|---|---|---|
-| **OK** | Open or choose. Hold: save | The green Menu key |
-| **Back** | Back one level. Hold: Home | The red Back key |
-| **Up**, **Down** | Move the focus | The arrow keys |
-| **\*** | Quick settings | The star key |
-| **#** | Actions | The hash key |
-| **0** to **9** | The number keys | The number keys |
-| **Monitor** | Monitor while held | SK1, the middle side key |
-| **Talk target** | Talk target picker. Hold: scan | SK2, the lowest side key |
-| **Power level** | Next power level. Hold: emergency | The top side key |
-| **Previous zone**, **Next zone** | Step the zone | P1, P2, the two front function keys |
-| **PTT** | Transmit | The push-to-talk key |
-
-On a radio without one of these keys, the menus reach the job ([Key roles](23-radios.md#key-roles)).
+The names are **OK**, **Back**, **Up**, **Down**, **\***, **#**, **0** to **9**, **Monitor**, **Talk target**,
+**Power level**, **Previous zone**, **Next zone** and **PTT**. On a radio without one of these keys, the menus reach
+the job.
 
 "Hold" means press and keep the key down for at least 0.6 s. This is the long-press time, adjustable in
 [Settings](12-settings.md). "Press" means a short press. Menu paths are written with `>`. **Settings > Display >

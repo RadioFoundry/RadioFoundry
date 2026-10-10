@@ -47,7 +47,20 @@ On a radio without a key for a job, the menus reach it:
 ## Baofeng DM-1701
 
 Also sold as the Retevis RT84. A handheld for 136-174 and 400-480 MHz with a keypad, a channel knob, a volume knob
-with the power switch, three side keys and a color screen. Installing: [Installing](02-installing.md).
+with the power switch, three side keys and a color screen.
+
+### Installing on the DM-1701
+
+Follow [Installing](02-installing.md) with these values:
+
+| Item | DM-1701 |
+|---|---|
+| Stock firmware file | Baofeng's `DM-1701(CSV)-V02.06.bin` (V02.06 CSV). An archive is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware |
+| `--stock-installed` | `"V02.06 CSV"` |
+| Bootloader keys | Hold **PTT** and **SK1** together while you turn the radio on with the volume knob |
+| Bootloader USB device (Zadig) | "STM32 BOOTLOADER" (0483:DF11) |
+| Board name | `dm1701` |
+| Going back to stock | Baofeng's firmware upgrade tool, in the stock firmware archive. It writes the application and the resource area the stock firmware keeps in the SPI flash |
 
 ### DM-1701 keys
 
