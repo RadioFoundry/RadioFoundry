@@ -5,7 +5,7 @@
  * code window 0x08074714..0x08084930 and table window 0x080D19F0..0x080E4240.
  *
  * Whole flash sectors, not just the windows, are kept free of our code, so the flashing tool can update the firmware
- * without erasing the codec (docs/dev/release.md "Sector map"): the code window spans sectors 7 and 8
+ * without erasing the codec (docs/spec/hardware-dm1701.md 1.4): the code window spans sectors 7 and 8
  * (0x08060000..0x0809FFFF), the table window sectors 10 and 11 (0x080C0000..0x080FFFFF). The application gets
  * sectors 3-6 (0x0800C000..0x0805FFFF, 336 KB); sector 9 (0x080A0000..0x080BFFFF, 128 KB) is free and reserved as
  * FLASH2 for large constant data. Never link into sectors 7, 8, 10 or 11. */

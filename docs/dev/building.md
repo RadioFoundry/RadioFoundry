@@ -55,14 +55,9 @@ In short:
 
 ## Image size
 
-| Radio | Code space | Ends at |
-|---|---|---|
-| DM-1701 | 336 KB (344,064 B), flash sectors 3-6 | the codec's sectors, kept whole so an update can leave the codec alone ([release.md](release.md#sector-map-dm-1701)) |
-| MD-380 | 281,668 B, 0x0800C000..0x08050C43 | the codec, which runs in place from 0x08050C44 |
-| DM-32UV | 912 KB | the codec slot at 0x030E8000 |
+Each board's code space and the codec sectors that end it are in [release.md, "Sector maps"](release.md#sector-maps).
 
-The linker's application region ends before the codec, so an image that grows into it fails to link. The DM-1701
-and MD-380 default images have only a few KB left; the current figures and each feature's cost are in
+The linker's application region ends before the codec, so an image that grows into it fails to link. The current figures and each feature's cost are in
 [feature-matrix.md](../feature-matrix.md). `tools/ci.sh` writes every configuration's size and free space to
 `build/ci/size-report.md`.
 

@@ -57,7 +57,7 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (D) [PoC], [md380tools].
 
 The 275 KB hold every feature written for this radio only with link time optimization, on by default here, and the
-MMDVM hotspot left out: [build-config.md](../feature-matrix.md#dm-1701-and-md-380).
+MMDVM hotspot left out: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380).
 
 ### 1.4 RAM
 
@@ -627,7 +627,7 @@ hashed and its container header read (14.1).
 
 ## 19. Sizes
 
-Flash: the table in [build-config.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
+Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
 [feature-matrix.md](../feature-matrix.md) (the default UHF image, with LTO, leaves about 2 KB of 281,668 bytes).
 
 Obsolete (2026-10-10, before the 275 KB limit of `md380.ld`, LTO and the CCM move): default UHF 252,136 B flash,

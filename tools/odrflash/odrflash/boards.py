@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """Board descriptions for flashing: flash sectors, where the application and the codec live, how the bootloader is
-reached. One source of truth for odrflash and tools/release.py (docs/dev/release.md "Sector map").
+reached. One source of truth for odrflash and tools/release.py (docs/dev/release.md "Sector maps").
 """
 from . import stockfw
 

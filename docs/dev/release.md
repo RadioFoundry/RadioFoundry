@@ -67,31 +67,16 @@ The manifest (`format` `odr-release/1`, written and checked by `tools/odrflash/o
 would list two). `sectors` are the flash sectors the image covers. `codec.profile` is the id the firmware reports for
 a matching codec (`codec=` in the debug link's VERSION, [debuglink.md](../spec/debuglink.md) 3.1).
 
-## Sector map (DM-1701)
+## Sector maps
 
-STM32F405, 1 MB: sectors 0-3 are 16 KB, sector 4 is 64 KB, sectors 5-11 are 128 KB. The stock V02.06 CSV codec runs
-in place at its stock addresses ([codec-dm1701.md](../spec/codec-dm1701.md)): code 0x08074714..0x08084930, tables
-0x080D19F0..0x080E4240.
+A flash sector can only be erased whole, so each board's linker script keeps the application out of the sectors that
+hold the codec. Whether an update can leave the codec alone (keep) depends on that map:
 
-| Sector | Address | Size | Holds |
-|---|---|---|---|
-| 0-2 | 0x08000000..0x0800BFFF | 48 KB | stock bootloader: never erased or written |
-| 3 | 0x0800C000..0x0800FFFF | 16 KB | ODR (vector table first) |
-| 4 | 0x08010000..0x0801FFFF | 64 KB | ODR |
-| 5 | 0x08020000..0x0803FFFF | 128 KB | ODR |
-| 6 | 0x08040000..0x0805FFFF | 128 KB | ODR |
-| 7 | 0x08060000..0x0807FFFF | 128 KB | codec code (from 0x08074714) |
-| 8 | 0x08080000..0x0809FFFF | 128 KB | codec code (to 0x0808492F) |
-| 9 | 0x080A0000..0x080BFFFF | 128 KB | free: the linker's FLASH2, for large constant data later |
-| 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
-| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E423F) |
-
-A flash sector can only be erased whole. Before this layout the linker reserved only the codec bytes, so ODR could
-grow into sectors 7, 8 and 10, and updating it would have meant erasing the codec too. Now
-`boards/dm1701/dm1701.ld` gives the application sectors 3-6 (336 KB; the default image fills all but a few KB, [feature-matrix.md](../feature-matrix.md)) and asserts that the
-image ends before 0x08060000; FLASH2 is sector 9. The bytes around the codec windows in sectors 7, 8, 10 and 11 are
-whatever was there (stock code, or 0xFF after a merge); they are never executed. The DM-1701's settings and codeplug
-live in the external SPI flash, so nothing else writes internal flash.
+| Board | Application | Codec | Keep | Map |
+|---|---|---|---|---|
+| dm1701 | sectors 3-6 (336 KB) | sectors 7-8 (code) and 10-11 (tables), stock addresses | yes | [hardware-dm1701.md](../spec/hardware-dm1701.md) 1.4 |
+| md380 | 0x0800C000..0x08050C43 (281,668 B), into sector 6 | from 0x08050C44: shares sector 6 with the application | no | [hardware-md380.md](../spec/hardware-md380.md) 1.3 |
+| dm32 | 0x0300C000..0x030E8000 (880 KB) | slot 0x030E8000..0x03100000 | no: the updater erases the whole area | [hardware-dm32.md](../spec/hardware-dm32.md) 17 |
 
 ## Codec handling
 
@@ -103,8 +88,8 @@ radio is at RDP level 1), so odrflash needs another way to know the codec is the
 
 1. **ODR is running.** Before the user switches the radio into its bootloader, odrflash asks over the debug link
    (`odrflash probe`, or automatically at the start of `odrflash flash`). VERSION's `codec=` is the firmware's own check,
-   the same one that gates DMR voice: the signature word and the CRC-32 of both windows against stock V02.06 CSV. If
-   it reports `dm1701-v0206-csv`, keep is safe. The answer is remembered for 30 minutes (odrflash's settings directory),
+   the same one that gates DMR voice (on the DM-1701: the signature word and the CRC-32 of both windows against stock
+   V02.06 CSV). If it reports the board's codec profile (`dm1701-v0206-csv`), keep is safe. The answer is remembered for 30 minutes (odrflash's settings directory),
    because the debug link is gone once the radio is in its bootloader.
 2. **Stock firmware is running.** Stock has no debug link, so the user says which version it is (`--stock-installed
    "V02.06 CSV"` or the interactive question). Only V02.06 CSV holds this codec at these addresses; V02.01-V02.03 and

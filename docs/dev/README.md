@@ -17,7 +17,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [CPS, codeplug and settings](cps-and-codeplug.md) | The legacy CPS shim qdmr uses, the codeplug layout, the settings store |
 | [The codec](codec.md) | How each radio's stock AMBE+2 codec is extracted, merged and hosted |
 | [Web site and web flasher](website.md) | The generated site, where each page's data comes from, templates and design tokens, translating, radio images, the browser flasher, backups and restore |
-| [Releases](release.md) | The checklist, artifacts and manifests, the DM-1701 sector map, odrflash's codec handling and key, the release and manual workflows |
+| [Releases](release.md) | The checklist, artifacts and manifests, the sector maps, odrflash's codec handling and key, the release and manual workflows |
 
 ## Common tasks
 

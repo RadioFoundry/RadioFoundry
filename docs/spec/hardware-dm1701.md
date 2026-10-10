@@ -66,27 +66,35 @@ back to the PLL.
 
 ### 1.4 Internal flash layout
 
-STM32F405 sectors: 0-3 are 16 KB (0x08000000-0x0800FFFF), 4 is 64 KB (0x08010000), 5-11 are 128 KB
-(0x08020000-0x080FFFFF).
+STM32F405, 1 MB: sectors 0-3 are 16 KB, sector 4 is 64 KB, sectors 5-11 are 128 KB. The stock V02.06 CSV codec runs
+in place at its stock addresses ([codec-dm1701.md](codec-dm1701.md)): code 0x08074714..0x08084930, tables
+0x080D19F0..0x080E4240.
 
-| Region | Address range | Size | Notes |
+| Sector | Address | Size | Holds |
 |---|---|---|---|
-| TYT/AnyRoad bootloader | 0x08000000-0x0800BFFF | 48 KB (sectors 0-2) | must never be erased; mostly empty but reserved |
-| Application vector table | 0x0800C000 | | VTOR must be set to 0x0800C000 |
-| Application code + read-only data | 0x0800C000 - 0x0807537B | 0x6937C = 430,972 B | the real code budget |
-| AMBE+2 codec blob (third party, never committed) | 0x0807537C - 0x080BDF2B | 0x48BB0 = 297,904 B | position dependent, must sit at exactly this address |
-| After the codec | 0x080BDF2C - 0x080FFFFF | 0x420D4 = 270,548 B | free for load images of initialized data, or other read-only data with a suitable linker script |
+| 0-2 | 0x08000000..0x0800BFFF | 48 KB | stock bootloader: never erased or written |
+| 3 | 0x0800C000..0x0800FFFF | 16 KB | ODR (vector table first) |
+| 4 | 0x08010000..0x0801FFFF | 64 KB | ODR |
+| 5 | 0x08020000..0x0803FFFF | 128 KB | ODR |
+| 6 | 0x08040000..0x0805FFFF | 128 KB | ODR |
+| 7 | 0x08060000..0x0807FFFF | 128 KB | codec code (from 0x08074714) |
+| 8 | 0x08080000..0x0809FFFF | 128 KB | codec code (to 0x0808492F) |
+| 9 | 0x080A0000..0x080BFFFF | 128 KB | free: the linker's FLASH2, for large constant data later |
+| 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
+| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E423F) |
 
-Codec facts:
+A flash sector can only be erased whole. Before this layout the linker reserved only the codec bytes, so ODR could
+grow into sectors 7, 8 and 10, and updating it would have meant erasing the codec too. Now
+`boards/dm1701/dm1701.ld` gives the application sectors 3-6 (336 KB; the default image fills all but a few KB, [feature-matrix.md](../feature-matrix.md)) and asserts that the
+image ends before 0x08060000; FLASH2 is sector 9. The bytes around the codec windows in sectors 7, 8, 10 and 11 are
+whatever was there (stock code, or 0xFF after a merge); they are never executed. The DM-1701's settings and codeplug
+live in the external SPI flash, so nothing else writes internal flash.
 
-| Item | Value |
-|---|---|
-| Base address | 0x0807537C (file offset 0x6937C in an application image that starts at 0x0800C000) |
-| Length | 0x48BB0 |
-| First 32-bit word (presence check) | 0x4FF0E92D (a Thumb-2 `PUSH.W` prologue); an erased (0xFF) or zero region means "no codec, FM only" |
-| SHA-256 of the 0x48BB0-byte blob | bc9d90030905545cde3af066b3550e7e0446ceb36419d9750208cc61909c27dd |
-| Donor | official TYT MD-9600 firmware V26.45 (`MD9600-CSV(2571V5)-V26.45.bin`, SHA-256 d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f): the blob is at file offset 0xC2C7C, XOR-encrypted with the MD-9600 key, key index = (j + 0x37C) mod 1024 for blob byte j (0x37C = 0x6937C mod 1024), see 15.3 |
-| Entry points (absolute) | decode 0x08075954, encode 0x080754AC, encode FEC 0x08075864 (offsets +0x5D8, +0x130, +0x4E8 into the blob). Call with the Thumb bit set when calling through a pointer |
+odrflash's keep and merge modes follow from this map ([release.md](../dev/release.md), "Codec handling"). Old builds
+of the legacy firmware ran the MD-9600 V26.45 codec at 0x0807537C instead (`codec-dm1701.md`, comparison).
+
+The codec's entry points, as offsets from the code start: encode +0x130, encode FEC +0x4E8, decode +0x5D8. Call with
+the Thumb bit set when calling through a pointer.
 
 Codec calling convention (the interface to the third-party blob; unverified beyond "it works"):
 
@@ -99,8 +107,7 @@ Codec calling convention (the interface to the third-party blob; unverified beyo
 The 72 encoded bits come back one bit per 16-bit word (LSB) and are packed MSB first into 9 bytes. On decode, the
 9-byte (72-bit) AMBE+2 frame must first be de-interleaved and FEC-decoded to 49 bits by the caller (Golay(24,12) on C0,
 Golay(23,12) on C1 after removing the pseudo-random whitening seeded from C0's 12 data bits with x' = 173x + 13849 mod
-65536, the standard AMBE+2 3600x2450 FEC; see the codec spec). The blob's state buffers must be initialized from the
-blob's own expected initial images (to be documented in the codec spec). Gotcha: a call site that builds the stack
+65536, the standard AMBE+2 3600x2450 FEC; see the codec spec). The state buffers must be initialized by the codec's own init calls (`codec-dm1701.md` C). Gotcha: a call site that builds the stack
 arguments must not be optimized in a way that moves the stack pointer (with `-Os` around the call, DMR TX crashed);
 calling through a small assembly shim with an explicit frame avoids this.
 

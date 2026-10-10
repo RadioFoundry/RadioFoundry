@@ -128,7 +128,7 @@ no copy and no patching.
   | free | 9 | 0x080A0000..0x080BFFFF (128 KB) |
 
   A firmware update then erases and writes only sectors 3-6 and leaves the
-  codec in place (docs/dev/release.md, "Sector map" and "Codec handling"). Reserving only the windows would leave
+  codec in place (hardware-dm1701.md 1.4, docs/dev/release.md "Codec handling"). Reserving only the windows would leave
   about 426 KB below the code window, but every update would have to erase and rewrite the codec.
 * Call the entries with `BL`/`BLX` to the stock addresses above.
 * Support one version per build, keyed by sha256. The noCSV variants and older versions sit at other addresses and
