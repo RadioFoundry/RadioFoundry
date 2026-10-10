@@ -39,7 +39,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 
 | Directory | Contents |
 |---|---|
-| [docs/spec](../spec/) | Prose specs: hardware, protocols, features, the UI's implementation; [gotchas.md](../spec/gotchas.md) lists past bugs by subsystem |
+| [docs/spec](../spec/README.md) | Behavior, protocols, the DMR modems, each radio's hardware; [gotchas.md](../spec/gotchas.md) lists past bugs by subsystem |
 | [docs/ux](../ux/) | The UI design: principles, information architecture, task flows, usability tests, wireframes, screens |
 | [docs/testing](../testing/README.md) | How to run every test tier; on-air coverage; bench procedures; the MMDVM audit; DM-32 and MD-380 bring-up |
 | [docs/build-config.md](../build-config.md) | Every build switch and value |

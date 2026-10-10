@@ -158,7 +158,8 @@ More: [build-config](docs/build-config.md), [testing](docs/testing/README.md),
   troubleshooting. Each release also carries it as a PDF.
 - [Developer documentation](docs/dev/README.md): architecture, building, adding a radio, testing, the debug link,
   CPS, the codec, contributing, releases.
-- Specs and design: [docs/spec](docs/spec/), [docs/ux](docs/ux/), [docs/testing](docs/testing/README.md).
+- Specs and design: [docs/spec](docs/spec/README.md), [docs/ux](docs/ux/), [docs/testing](docs/testing/README.md).
+  All of it: [docs/README.md](docs/README.md).
 
 ## How it's tested
 
