@@ -112,7 +112,7 @@ Every `C` request is answered `-`, which the legacy tools treat as "done".
 | other | nothing |
 
 `D` (the data-service host commands, `legacy-cps-interop.md` 5) is answered `D sub 0`, meaning failed: there is no
-data service on this radio yet.
+data service in ODR yet.
 
 ### 2.5 qdmr
 

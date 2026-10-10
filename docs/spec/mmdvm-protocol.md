@@ -95,7 +95,7 @@ uses 6 and 2), and logs others.
 Request: `E0 03 00`. The reply must be a short frame (at most 255 bytes): MMDVMHost reads the reply at fixed frame
 offsets and would misread a long frame.
 
-**Protocol 1** (what our old firmware and MMDVM_HS send; what this radio should send, see 2.3.1):
+**Protocol 1** (what our old firmware and MMDVM_HS send; what ODR sends, see 2.3.1):
 
 | Frame offset | Content |
 | --- | --- |
@@ -104,7 +104,7 @@ offsets and would misread a long frame.
 | 4.. | description, ASCII, to the end of the frame. No terminating NUL needed. MMDVM_HS optionally appends a NUL and a hex UDID after the description; rfgw cuts the description at the first NUL. |
 
 MMDVMHost with protocol 1 assumes the modem can do D-Star, DMR, YSF, P25, NXDN and POCSAG (there are no capability
-bytes in protocol 1). It will therefore send SET_CONFIG enable bits and SET_MODE values for modes this radio doesn't
+bytes in protocol 1). It will therefore send SET_CONFIG enable bits and SET_MODE values for modes ODR doesn't
 have if the user's configuration enables them; the radio must tolerate that (2.5, 2.6).
 
 **Protocol 2** (the MMDVM repeater board firmware):
@@ -186,7 +186,7 @@ reply shorter than 9 bytes. The bench tools read offsets 5, 7, 8 and, from 13 on
 | Bit | Meaning and what the hosts do with it |
 | --- | --- |
 | 01 TX | The modem is transmitting. Set from the moment it accepts traffic it will key for (buffering included) until its last burst, the terminator, has gone out, and while data is queued or on air; also while sending CW ID (gotchas 3.1, 8.6). MMDVMHost: sends SEND_CWID and DMR beacons only while it's clear; in duplex decides DMR_START. rfgw: waits for it to clear before retuning, sending CW ID or ending a call (and then waits 0.5 s more, a margin for the old firmware's early clear). Must not drop for a poll mid-call (gotchas 3.1). |
-| 02, 20 overflow | MMDVMHost logs an error on every status that has them set. Report an event once, not as a sticky flag (every 250 ms would flood the log). This radio has no ADC/DAC path: always clear. |
+| 02, 20 overflow | MMDVMHost logs an error on every status that has them set. Report an event once, not as a sticky flag (every 250 ms would flood the log). ODR's modem passes bursts, not samples, so there is nothing to overflow: always clear. |
 | 04 RX overflow | Uplink frames were lost because the queue to the host was full since the last status. Event, cleared once reported. |
 | 08 TX overflow | The TX buffer was full and a frame was refused since the last status. Event. |
 | 10 lockout | **Never set.** MMDVMHost switches to its lockout mode and sends SET_MODE idle while it is set (MMDVM's "COS as lockout" input). |
