@@ -39,6 +39,17 @@ static const regval_t init_lo_after_afc[] = {
 	{ 0x47, 0x6943 }, { 0x7E, 0x3006 }, { 0x43, 0x4048 }, { 0x47, 0x6042 },
 };
 
+uint16_t bk4819_squelch_rssi(int16_t open_dbm, uint8_t hyst_db)
+{
+	int32_t open = 2 * ((int32_t)open_dbm + 160);
+	open = open < 0 ? 0 : open > 0xFF ? 0xFF : open;
+	int32_t close = open - 2 * (int32_t)hyst_db;
+	if (close < 0) {
+		close = 0;
+	}
+	return (uint16_t)(open << 8 | close);
+}
+
 uint16_t bk4819_ctcss_word(uint16_t hz_x10)
 {
 	// Hz x 20.64888 = (Hz x 10) x 258111 / 125000, in 64 bits for any input

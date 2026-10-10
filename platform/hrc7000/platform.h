@@ -28,6 +28,9 @@
 #define IO_DIPLEX0		REG32(SYS_BASE + 0x034)
 #define IO_DIPLEX1		REG32(SYS_BASE + 0x038)
 #define IO_DIPLEX2		REG32(SYS_BASE + 0x03C)
+#define IO_DIPLEX2_DAC_A	(1u << 27)	// 0 = the DAC channel on its pin (PTC23 / 24 / 25)
+#define IO_DIPLEX2_DAC_B	(1u << 28)
+#define IO_DIPLEX2_DAC_C	(1u << 29)
 #define IOMGR_REN0		REG32(SYS_BASE + 0x040)
 #define IOMGR_REN1		REG32(SYS_BASE + 0x044)
 #define IOMGR_REN2		REG32(SYS_BASE + 0x048)
@@ -48,6 +51,17 @@
 #define LCDC_BASE		0x12000000u	// i8080 LCD controller
 #define PIC_BASE		0x17000000u
 #define CACHE_BASE		0xE000F000u
+
+// DAC (3 channels, 12 bit; hardware-dm32.md 3.8). Its pins: IO_DIPLEX2_DAC_*
+#define DAC_PD_CTRL		REG32(DAC_BASE + 0x00)	// bit n = 1 powers channel n down
+#define DAC_PD_MODE_EN		REG32(DAC_BASE + 0x04)
+#define DAC_DATA_A		REG32(DAC_BASE + 0x08)
+#define DAC_DATA_B		REG32(DAC_BASE + 0x0C)
+#define DAC_DATA_C		REG32(DAC_BASE + 0x10)
+#define DAC_A_OFF		(1u << 0)
+#define DAC_B_OFF		(1u << 1)
+#define DAC_C_OFF		(1u << 2)
+#define DAC_MAX			4095u
 
 // Timers (DesignWare style, count down from LOADCOUNT at APB)
 #define TMR_LOAD(n)		REG32(TIMER_BASE + 0x14u * ((n) - 1u) + 0x00)

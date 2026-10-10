@@ -3,9 +3,10 @@
 // DB25-D PRO radio: two BK4819 on one bit-banged 3-wire bus, the superhet's RX paths and analog FM receive
 // (docs/spec/hardware-db25d.md 3.2, 4).
 //
-// Receive on f: the LO chip synthesizes f + 51.55 MHz, the main chip receives and demodulates at the 51.55 MHz IF.
-// Transmit is refused for now: the PA power control (DAC B) has no known safe value until the calibration page can be
-// read (9). Boards whose chips don't identify as BK4819 (the older FD6818 batches) aren't driven at all.
+// Receive on f: the LO chip synthesizes f + 51.55 MHz, the main chip receives and demodulates at the 51.55 MHz IF, and
+// DAC A tunes the front end from the calibration page (6.4). Transmit is refused for now: the PA power control (DAC B)
+// takes its value from the same page, and no page has been seen on a radio yet (9). Boards whose chips don't identify
+// as BK4819 (the older FD6818 batches) aren't driven at all.
 #include "db25d.h"
 #include "config.h"
 #include "pins.h"
@@ -13,9 +14,8 @@
 #include "hal_time.h"
 #include "rf/bk4819/bk4819.h"
 
-#define DAC_PD_CTRL		REG32(DAC_BASE + 0x00)	// bit n = 1 powers channel n down (A 0, B 1, C 2)
-#define DAC_DATA_B		REG32(DAC_BASE + 0x0C)	// PA power control, 0 = off
-#define DAC_B_OFF		(1u << 1)
+#define DAC_C_INIT		1762u			// 3.2: at init, and 1780 once receive is set up
+#define DAC_C_RX		1780u
 
 #define IF_HZ			51550000u
 #define UHF_FROM_HZ		280000000u
@@ -99,7 +99,11 @@ static void init(void)
 	hrc_pin_out(PIN_RF_CLK, false);
 	hrc_pin_in(PIN_RF_DATA);
 	tx_paths_off();
-	DAC_PD_CTRL |= DAC_B_OFF;	// the PA control stays powered down while TX is refused
+	// As the stock init, except that the PA control stays powered down while TX is refused
+	DAC_PD_MODE_EN = 0;
+	DAC_PD_CTRL = DAC_B_OFF;
+	DAC_DATA_A = 0;
+	DAC_DATA_C = DAC_C_INIT;
 	rx_paths(0, false);
 
 	bk4819_attach(&rf_main, &bus_main);
@@ -136,6 +140,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	bk4819_set_freq(&rf_main, IF_HZ);
 	bk4819_set_bandwidth(&rf_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
 	bk4819_set_rx_ctcss(&rf_main, rx_tone.type == TONE_CTCSS ? rx_tone.value : 0);
+	DAC_DATA_A = db25d_cal_rx_tune(hz);	// 0 without a page, as before
+	DAC_DATA_C = DAC_C_RX;
 	rx_paths(hz, true);
 	bk4819_set_state(&rf_main, BK4819_STATE_RX);
 	return true;

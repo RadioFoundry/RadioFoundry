@@ -110,6 +110,13 @@ static void tick(bool tx_vector)
 
 static void test_pure(void)
 {
+	CHECK(hrc7000_mod_dc(0) == 381);
+	CHECK(hrc7000_mod_dc(128) == 512);
+	CHECK(hrc7000_mod_dc(255) == 641);
+	CHECK(hrc7000_sig_center_dc(128) == 0x80800000u);
+	CHECK(hrc7000_sig_center_dc(0) == (381u & 0xFF) * 0x0101u);
+	CHECK(hrc7000_mod_bias_dc(128, 45) == (512u << 16 | 45u));
+	CHECK(hrc7000_mod_bias_dc(255, 0x4D4D) == (641u << 16 | 0x4D4Du));
 	hrc7000_rx_status_t s;
 	hrc7000_dmr_decode(rti(2, 0, 5, 0, 1, 0), &s);
 	CHECK(s.kind == DMR_BURST_VOICE && s.voice_index == 1 && s.cc == 5 && s.sync == DMR_SYNC_MS && s.chip_slot == 1 && s.crc_ok);

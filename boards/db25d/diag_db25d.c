@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DB25-D diagnostics page lines: what the bring-up needs to see (docs/spec/hardware-db25d.md 10): the RF chips' IDs,
-// the raw key scan (to place the keys), the ADC channels (the supply voltage), the host UART's overruns
+// the raw key scan (to place the keys), the ADC channels (the supply voltage), the host UART's overruns, the
+// calibration page found and the PA values it gives
 #include <stddef.h>
 #include "db25d.h"
 #include "config.h"
@@ -82,6 +83,26 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, d.rf_writes);
 		put(&o, " ovr ");
 		put_u(&o, hrc_host_uart_overruns());
+		break;
+	case 6:
+		put(&o, "cal ");
+		put(&o, db25d_cal_source() == DB25D_CAL_FLASH ? "flash #" : db25d_cal_source() == DB25D_CAL_NAND ? "nand #" : "none");
+		if (db25d_cal_valid()) {
+			put_u(&o, db25d_cal_counter());
+			put(&o, " c ");
+			put_u(&o, db25d_cal_tx_center());
+		}
+		break;
+	case 7:
+		// The PA values the radio would use at 446 and 146 MHz, high / low: what to check against the stock radio
+		put(&o, "pa ");
+		put_u(&o, db25d_cal_pa(446000000, true));
+		put(&o, "/");
+		put_u(&o, db25d_cal_pa(446000000, false));
+		put(&o, " ");
+		put_u(&o, db25d_cal_pa(146000000, true));
+		put(&o, "/");
+		put_u(&o, db25d_cal_pa(146000000, false));
 		break;
 	default:
 		return false;

@@ -32,6 +32,27 @@ typedef struct {
 } db25d_radio_diag_t;
 void db25d_radio_diag(db25d_radio_diag_t *d);
 
+// --- Factory calibration (calibration_db25d.c, hardware-db25d.md 6) ---
+#define DB25D_CAL_LEN		0x800u
+#define DB25D_CAL_POINTS	8u
+#define DB25D_CAL_FLASH_ADDR	0x031FE000u	// the program-flash copy, memory-mapped
+typedef enum { DB25D_CAL_NONE, DB25D_CAL_FLASH, DB25D_CAL_NAND } db25d_cal_source_t;
+// Which copy the stock rule picks: "TUNE" and the higher save counter. Either pointer may be NULL
+db25d_cal_source_t db25d_cal_choose(const uint8_t *flash_copy, const uint8_t *nand_copy);
+// Copy the chosen page (DB25D_CAL_LEN bytes) into RAM. False if neither copy is tagged
+bool db25d_cal_load(const uint8_t *flash_copy, const uint8_t *nand_copy);
+bool db25d_cal_valid(void);
+db25d_cal_source_t db25d_cal_source(void);
+uint32_t db25d_cal_counter(void);
+// Per-frequency values, interpolated between the 8 points of the band. 0 when there's no page or the value isn't one
+uint16_t db25d_cal_pa(uint32_t hz, bool high);		// DAC B at the top of the ramp
+uint16_t db25d_cal_rx_tune(uint32_t hz);		// DAC A while receiving
+uint8_t db25d_cal_mod(uint32_t hz);			// modcal for hrc7000_mod_bias_dc
+void db25d_cal_tx_delays(uint32_t hz, uint16_t *on_us, uint16_t *off_us);
+uint8_t db25d_cal_tx_center(void);			// 128 without a page
+// Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
+uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
+
 // --- Power (power_db25d.c) ---
 uint16_t db25d_adc_raw(uint8_t ch);	// the last reading of ADC channel 0..7
 

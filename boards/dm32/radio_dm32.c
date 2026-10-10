@@ -13,14 +13,7 @@
 #include "rf/fd6818/fd6818.h"
 #include "modem/hrc7000/hrc7000.h"
 
-#define DAC_PD_CTRL		REG32(DAC_BASE + 0x00)	// bit n = 1 powers channel n down (A 0, B 1, C 2)
-#define DAC_PD_MODE_EN		REG32(DAC_BASE + 0x04)
-#define DAC_DATA_A		REG32(DAC_BASE + 0x08)
-#define DAC_DATA_B		REG32(DAC_BASE + 0x0C)	// PA drive, 0 = off
-#define DAC_DATA_C		REG32(DAC_BASE + 0x10)
-#define DAC_B_OFF		(1u << 1)
 #define DAC_C_INIT		0x06E2u
-#define IO_DIPLEX2_DAC_B	(1u << 28)		// 0 = DAC B on its pin
 
 #define ADC_CTRL		REG32(ADC_BASE + 0x00)
 #define ADC_CTRL_RESET		(1u << 3)

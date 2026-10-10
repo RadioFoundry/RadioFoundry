@@ -5,6 +5,7 @@
 // SPI flash security registers 1-2 is converted in RAM the way a working copy would be. Nothing is ever written.
 #include <string.h>
 #include "dm1701.h"
+#include "radio/cal_curve.h"
 
 #define CAL_SIZE		512u
 #define CAL_WORKING_ADDR	0x010000u
@@ -206,20 +207,17 @@ bool dm1701_cal_load(void)
 	return source != CAL_NONE;
 }
 
-// Linear interpolation over a row of points (12.3): clamp below the first point, extrapolate past the last
+// Linear over an even grid of points (12.3, radio/cal_curve.h): clamped below the first point, extended past the
+// last, truncated
 static int32_t interpolate(const uint8_t *p, uint8_t n, uint32_t first, uint32_t step, uint32_t f10, int32_t mul)
 {
-	if (f10 <= first) {
-		return p[0] * mul;
+	uint32_t grid[CAL_CURVE_MAX_POINTS];
+	int32_t v[CAL_CURVE_MAX_POINTS];
+	for (uint8_t i = 0; i < n; i++) {
+		grid[i] = first + step * i;
+		v[i] = p[i] * mul;
 	}
-	uint32_t i = (f10 - first) / step;
-	if (i > (uint32_t)n - 2u) {
-		i = (uint32_t)n - 2u;
-	}
-	int64_t a = (int64_t)p[i] * mul;
-	int64_t b = (int64_t)p[i + 1] * mul;
-	int64_t d = (int64_t)f10 - (int64_t)(first + i * step);
-	return (int32_t)(a + (b - a) * d / (int64_t)step);
+	return cal_curve_at(grid, v, n, f10, CAL_CURVE_EXTEND);
 }
 
 static int32_t clamp(int32_t v, int32_t hi)

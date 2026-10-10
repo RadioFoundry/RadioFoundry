@@ -51,6 +51,7 @@ typedef struct {
 #define BK4819_REG_NOISE	0x65
 #define BK4819_REG_RSSI		0x67
 #define BK4819_REG_AFC		0x73	// bit 4 = AFC off
+#define BK4819_REG_SQ_RSSI	0x78	// RSSI squelch: open threshold << 8 | close threshold, half dB + 160 dB
 
 #define BK4819_ID		0x4819u
 
@@ -75,6 +76,8 @@ typedef struct {
 
 // RSSI in dBm from reg 0x67 (bits 8:0 in half dB, 160 dB offset), at the chip's input
 static inline int16_t bk4819_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)((r67 & 0x1FFu) >> 1) - 160); }
+// 0x78 for squelch opening at open_dbm and closing hyst_db lower, in reg 0x67's scale. Clamped to what the bytes hold
+uint16_t bk4819_squelch_rssi(int16_t open_dbm, uint8_t hyst_db);
 // CTCSS frequency word for a tone in Hz x 10 (Hz x 20.64888, as the FD6818)
 uint16_t bk4819_ctcss_word(uint16_t hz_x10);
 

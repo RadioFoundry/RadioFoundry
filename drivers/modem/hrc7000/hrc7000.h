@@ -154,6 +154,20 @@ static inline uint32_t hrc7000_sig_center(uint8_t tx_center) { return ((uint32_t
 // RF_MOD_BIAS_CTRL: two-point bias from the TX center, modulation balance (b x 0x0101) from the frequency
 static inline uint32_t hrc7000_mod_bias(uint8_t tx_center, uint16_t modcal) { return (((uint32_t)tx_center + 384u) << 16) | modcal; }
 #define HRC7000_MODCAL_DEFAULT	0x4D4Du	// before a TX frequency is known
+// The two-point modulation's DC level from the TX center byte in its exact form, as the DB25-D stock firmware computes
+// it: round((1.228 + c x 0.422 / 128) x 1023 / 3.3), 381 at 0, 512 at 128 (hardware-db25d.md 6.4). The DM-32's
+// c + 384 above is its straight-line fit
+uint16_t hrc7000_mod_dc(uint8_t tx_center);
+// SIG_CENTER and RF_MOD_BIAS_CTRL with that level: its low byte in both low bytes of SIG_CENTER, all 10 bits in the
+// bias
+static inline uint32_t hrc7000_sig_center_dc(uint8_t tx_center)
+{
+	return hrc7000_sig_center(tx_center) | (uint32_t)(hrc7000_mod_dc(tx_center) & 0xFFu) * 0x0101u;
+}
+static inline uint32_t hrc7000_mod_bias_dc(uint8_t tx_center, uint16_t modcal)
+{
+	return (uint32_t)(hrc7000_mod_dc(tx_center) & 0x3FFu) << 16 | modcal;
+}
 
 // --- Sequences ---
 

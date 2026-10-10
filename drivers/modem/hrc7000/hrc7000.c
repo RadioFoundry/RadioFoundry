@@ -14,6 +14,13 @@
 #define FM_MOD_CDCSS_TX_INV	(1u << 11)
 #define FM_MOD_CDCSS_RX_INV	(1u << 10)
 
+uint16_t hrc7000_mod_dc(uint8_t tx_center)
+{
+	// (1228 x 128 + 422 c) x 1023 / (3300 x 128), rounded half up
+	uint32_t num = (1228u * 128u + 422u * tx_center) * 1023u, den = 3300u * 128u;
+	return (uint16_t)((num + den / 2u) / den);
+}
+
 void hrc7000_attach(hrc7000_t *d, volatile uint32_t *regs, volatile uint8_t *buf)
 {
 	d->regs = regs;

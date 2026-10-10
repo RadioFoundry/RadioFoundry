@@ -6,6 +6,7 @@
 // read only, checks every row before use, and the radio refuses to transmit when the table is not accepted.
 #include <string.h>
 #include "md380.h"
+#include "radio/cal_curve.h"
 
 #define CAL_SIZE	512u
 #define POINTS		9u
@@ -139,24 +140,14 @@ bool md380_cal_load(void)
 	return source != CAL_NONE;
 }
 
-// Linear interpolation over the points: clamped below the first and above the last
+// Linear over the points (radio/cal_curve.h): clamped below the first and above the last, truncated
 static int32_t interpolate(uint16_t row, uint32_t f10, int32_t mul)
 {
-	const uint8_t *p = &table[row];
-	if (f10 <= freq10[0]) {
-		return p[0] * mul;
+	int32_t v[POINTS];
+	for (uint32_t i = 0; i < POINTS; i++) {
+		v[i] = table[row + i] * mul;
 	}
-	if (f10 >= freq10[POINTS - 1]) {
-		return p[POINTS - 1] * mul;
-	}
-	uint32_t i = 0;
-	while (i < POINTS - 2 && f10 >= freq10[i + 1]) {
-		i++;
-	}
-	int32_t a = p[i] * mul, b = p[i + 1] * mul;
-	int32_t span = (int32_t)(freq10[i + 1] - freq10[i]);
-	int32_t d = (int32_t)(f10 - freq10[i]);
-	return a + (int32_t)((int64_t)(b - a) * d / span);
+	return cal_curve_at(freq10, v, POINTS, f10, 0);
 }
 
 static uint16_t dac_at(uint16_t row, uint32_t f10)

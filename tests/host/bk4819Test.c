@@ -172,6 +172,13 @@ static void test_helpers(void)
 	CHECK(bk4819_rssi_dbm(0x0000) == -160);
 	CHECK(bk4819_rssi_dbm(0x0082) == -95);		// 130 half-dB
 	CHECK(bk4819_rssi_dbm(0xFFFF) == 95);		// bits above 8 ignored
+	// The DB25-D stock squelch: open at -v dBm, close 2 dB lower (hardware-db25d.md 6.4)
+	CHECK(bk4819_squelch_rssi(-136, 2) == (48u << 8 | 44u));
+	CHECK(bk4819_squelch_rssi(-120, 2) == (80u << 8 | 76u));
+	CHECK(bk4819_squelch_rssi(-160, 2) == 0x0000);
+	CHECK(bk4819_squelch_rssi(-1, 2) == (0xFFu << 8 | 0xFBu));
+	CHECK(bk4819_squelch_rssi(-159, 2) == (2u << 8 | 0u));
+	CHECK(bk4819_squelch_rssi(-200, 0) == 0x0000);
 }
 
 static void test_frames(void)

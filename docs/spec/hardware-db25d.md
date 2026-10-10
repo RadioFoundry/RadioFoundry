@@ -71,8 +71,10 @@ The DM-32's programming cable is on UART0. The DB25-D application never uses UAR
 | PTB3 (35) / PTA26 (26) | TX path (PA select) UHF / VHF | BIN; band INF |
 | PTA23 (23) | High in RX, low in TX | BIN |
 | PTB2 (34), PTA27 (27) | Low in RX, raised 200 us into TX (TX supply) | BIN |
+| DAC A | RX front-end tuning: the calibration value for the RX frequency, written at each receive set-up (6.4) | BIN |
 | DAC B | PA power control. Ramped over 180 steps of 4 us at the start and end of each burst | BIN |
-| DAC C | 0x06E2 at init, as on the DM-32 | BIN, DM32 |
+| DAC C | 1762 (0x06E2) at init, as on the DM-32; 1780 at each receive set-up | BIN, DM32 |
+| DAC init | IO_DIPLEX2 bits 27–29 cleared (all three outputs on their pins), PD_MODE_EN = 0, PD_CTRL = 0 (all channels on), every data register 0, then DAC C | BIN |
 
 To TX: RX paths off, 50 us, PA power ramp up, PA select of the band, PTA23 low, 200 us, TX supply on. To RX: TX supply
 off, PTA23 high, RX path of the band (BIN).
@@ -245,8 +247,12 @@ not listed is unused as far as the image shows.
 | BK4819 squelch (reg 0x78) | For level n (1–9), v = low byte of entry n of the segment's 0x0CF table: v is the open threshold in dB below 0 dBm at the main chip. Register = (o << 8) or (o − 4), o = 2 × (160 − v), i.e. open at −v dBm and close 2 dB lower. Level 0 uses v = 136 | BIN |
 | Untuned radio | No page: the stock firmware keeps running, values unknown | BIN |
 
-ODR's use: TX stays refused until a reader exists. Then TX power comes from 0x045 / 0x056, and refuses when the page
-is missing or a PA value is 0 or 0xFFFF. The RSSI that ODR shows stays the chip's own reading: the page has no RSSI
+ODR's use: the reader (`boards/db25d/calibration_db25d.c`) copies the chosen page into RAM at boot and never writes
+either copy. The program-flash copy is memory-mapped, so it's read directly: the stock firmware reads it with a plain
+byte copy from 0x031FE000 (BIN). The NAND copy joins the choice once the NAND driver exists. Interpolation is the shared
+calibration curve (`core/radio/cal_curve.c`). Receive sets DAC A and DAC C from it now. TX stays refused until a page has
+been seen on a radio; then TX power comes from 0x045 / 0x056, and TX refuses when the page is missing or a PA value is 0
+or 0xFFFF. The RSSI that ODR shows stays the chip's own reading: the page has no RSSI
 offset, only squelch thresholds (INF).
 
 ## 7. PC link, update and recovery
@@ -277,7 +283,8 @@ Bring-up state, nothing run on a radio yet:
 |---|---|
 | Platform | `platform/hrc7000`, image at 0x0300C000 behind the IAP loader; the host port on UART1 |
 | RF | `drivers/rf/bk4819`: main and LO on one 3-wire bus. FM receive by the main chip at the IF with the LO at f + 51.55 MHz |
-| TX | **Refused** until the calibration reader exists: the PA power control has no known safe value without it. The page layout is known (6.1 – 6.4); the reader needs the NAND driver |
+| Calibration | The program-flash copy is read at boot (6.4); DAC A and DAC C are set from it for receive. The diagnostics page shows the copy found, its save counter and the PA values at 446 and 146 MHz. The NAND copy waits for the NAND driver |
+| TX | **Refused** until a calibration page has been seen on a radio and the PA values on the diagnostics page look sane |
 | Display | `st7735` on a bit-banged 4-wire serial bus |
 | Keys | Matrix and encoder decoded; the key positions are provisional until checked on the radio |
 | Storage | None yet: the core runs without stored settings. Needs an SPI NAND driver and a 4 KB sector layer over it |

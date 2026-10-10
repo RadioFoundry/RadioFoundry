@@ -57,7 +57,6 @@ const board_t board = {
 // application never touches the JTAG bits either, 7). Bit = 1 makes a pin a GPIO, 0 gives it to its peripheral
 #define DIPLEX0_UART1		((1u << 9) | (1u << 10))	// UART1 RXD / TXD
 #define DIPLEX2_LCD_GPIO	(0x3Fu << 3)			// the LCD pins (PTC2-PTC7) as GPIOs, as the stock firmware
-#define DIPLEX2_DAC_B		(1u << 28)			// 0 = DAC B on its pin
 
 // The power latch is driven high before anything else so the radio stays on once the power key is let go
 static void io_init(void)
@@ -65,7 +64,8 @@ static void io_init(void)
 	hrc_pin_out(PIN_POWER_LATCH, true);
 
 	IO_DIPLEX0 &= ~DIPLEX0_UART1;
-	IO_DIPLEX2 = (IO_DIPLEX2 | DIPLEX2_LCD_GPIO) & ~DIPLEX2_DAC_B;
+	// The three DAC outputs on their pins, as the stock firmware
+	IO_DIPLEX2 = (IO_DIPLEX2 | DIPLEX2_LCD_GPIO) & ~(IO_DIPLEX2_DAC_A | IO_DIPLEX2_DAC_B | IO_DIPLEX2_DAC_C);
 
 	// Outputs at their safe levels: transmitter off, receiver paths off, speaker muted, chip selects high
 	hrc_pin_out(PIN_NAND_CS, true);
@@ -102,4 +102,6 @@ void board_early_init(void)
 void board_init(void)
 {
 	db25d_power.init();
+	// The program-flash copy only, until the NAND driver can read the other (hardware-db25d.md 6.1)
+	db25d_cal_load((const uint8_t *)DB25D_CAL_FLASH_ADDR, NULL);
 }
