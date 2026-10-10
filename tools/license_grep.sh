@@ -15,4 +15,11 @@ if [ -n "$hits" ]; then
     echo "license_grep: markers found" >&2
     exit 1
 fi
+# A private project's names: no tracked file mentions them, docs included
+priv=$(git ls-files | grep -v '^tools/license_grep.sh$' | xargs grep -niIE 'radiodesk|\brfgw\b' 2>/dev/null)
+if [ -n "$priv" ]; then
+    echo "$priv"
+    echo "license_grep: private project names found" >&2
+    exit 1
+fi
 echo "license_grep: clean"

@@ -83,7 +83,6 @@ Opt-in flags allow what changes the radio or the air around it:
 | `--allow-usb-switch` | Switching the radio to USB network mode and back |
 | `--allow-codeplug-write` | Writing the codeplug over CPS (backed up and restored) |
 | `--allow-reboot` | Restarting the radio |
-| `--allow-radiodesk` | Publishing to the RadioDesk sandbox broker |
 
 The full list, the options and the rig assumptions are in [tests/hil/README.md](../../tests/hil/README.md);
 "Writing a test" there has the fixtures.

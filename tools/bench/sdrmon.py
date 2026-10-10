@@ -1,15 +1,15 @@
-#!/opt/radiodesk-rfgw/.venv/bin/python
+#!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """
 Adapted from our earlier bench tool sdrmon.py.
 
 sdrmon: on-air DMR burst monitor (one channel, offline analysis of a raw IQ capture from the SDR bench's RTL-SDR).
-Runs on the SDR bench with RadioDesk rfgw's venv (it uses rfgw's Channelizer / FmDemod / slicer and RadioDesk's FEC).
+Runs on the SDR bench with the odr_sdrbench package (its Channelizer, FmDemod, slicer and FEC).
 
     sdrmon.py capture --seconds N --out FILE [--freq 461.6875] [--offset-khz -200] [--gain 15] [--ppm 0.7]
-                      [--service radiodesk-rfgw@<bench host> | --service '']
-        Stops the rfgw service (it holds the dongle) unless --service '', records raw IQ (cs8, 1.536 MS/s, bias tee
+                      [--service odr-sdrbench@<bench host> | --service '']
+        Stops the bench's gateway service (it holds the dongle) unless --service '', records raw IQ (cs8, 1.536 MS/s, bias tee
         on) tuned --offset-khz away from --freq (keeps the channel off the RTL DC spike at the tuner center), then
         restarts the service, always (finally + SIGTERM/SIGHUP/SIGINT handlers). Prints "READY <wall clock of sample
         0>" once samples flow: wait 2 s more after READY before keying, or the first 0.5-1 s is missing.
@@ -43,7 +43,7 @@ import time
 
 import numpy as np
 
-SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE") or f"radiodesk-rfgw@{socket.gethostname()}"
+SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE") or f"odr-sdrbench@{socket.gethostname()}"
 FS_CH = 48000.0
 SPS = 10
 BURST = 132 * SPS                  # 27.5 ms
@@ -157,14 +157,14 @@ def cmd_capture(args) -> int:
 
 def _load(path: str, meta: dict, freq_override=None):
     """Channel baseband at 48 kS/s, delay-compensated: (f Hz through the matched filter, |x|^2)."""
-    from radiodesk_rfgw.channelizer import Channelizer
-    from radiodesk_rfgw.dsp import FmDemod
-    from radiodesk_rfgw.source import from_bytes
+    from odr_sdrbench.channelizer import Channelizer
+    from odr_sdrbench.dsp import FmDemod
+    from odr_sdrbench.source import from_bytes
     fs = meta["fs"]
     freq = freq_override or meta["freq"]
     D = int(round(fs / FS_CH))
     chz = Channelizer(fs, [freq - meta["center"]], decimation=D, native=False, threads=1)
-    # A tuner that's ppm fast shifts every channel up by f·ppm·1e-6 (as rfgw's receiver).
+    # A tuner that's ppm fast shifts every channel up by f·ppm·1e-6 (as the bench gateway's receiver).
     chz.correction_hz[:] = [freq * meta["ppm"] * 1e-6]
     fm = FmDemod(FS_CH, SPS)
     bps = {"cu8": 2, "cs8": 2, "cs16": 4, "cf32": 8}[meta["fmt"]]
@@ -220,7 +220,7 @@ def _sync_scores(f: np.ndarray, unit: np.ndarray) -> np.ndarray:
 
 
 def _slice(vals, center, outer):
-    from radiodesk_rfgw.demod import _slice as s
+    from odr_sdrbench.demod import _slice as s
     return s(vals, center, outer)
 
 
@@ -232,8 +232,8 @@ class Burst:
 # ── analysis ─────────────────────────────────────────────────────────────────
 
 def cmd_analyze(args) -> int:
-    from radiodesk.dmr import fec, pdu
-    from radiodesk_rfgw import layer2 as L2
+    from odr_sdrbench.dmr import fec, pdu
+    from odr_sdrbench import layer2 as L2
     meta = json.load(open(args.file + ".json")) if os.path.exists(args.file + ".json") else \
         {"freq": args.freq * 1e6, "center": args.freq * 1e6 - args.offset_khz * 1e3, "fs": args.rate,
          "fmt": "cu8" if args.file.endswith("cu8") else "cs8", "ppm": args.ppm, "t0": None}
@@ -635,7 +635,7 @@ def main() -> int:
         if name == "capture":
             s.add_argument("--seconds", type=float, required=True)
             s.add_argument("--out", required=True)
-            s.add_argument("--gain", type=float, default=15.0, help="30 (rfgw's) clips the ADC ~25%% with the bias-tee LNA")
+            s.add_argument("--gain", type=float, default=15.0, help="30 (the gateway's) clips the ADC ~25%% with the bias-tee LNA")
             s.add_argument("--no-biastee", action="store_true")
             s.add_argument("--service", default=SERVICE, help="'' to not stop/start any service")
         else:

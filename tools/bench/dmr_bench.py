@@ -14,18 +14,20 @@ pass criteria are described in docs/testing/dmr-bench.md.
     dmr_bench.py check CASE SDRMON.json [--modem LISTEN.jsonl] [--radio-id ID] [--tg TG] [--cc N]
                                                re-run the automatic checks on saved results
 
---dry-run prints every command, in order, exactly as it would run (local and over ssh), including the rfgw service
+--dry-run prints every command, in order, exactly as it would run (local and over ssh), including the gateway service
 stop and start, and runs nothing: give that to the owner for approval before the first real run of a case.
 
 Configuration (environment): ODR_SDR_BENCH_HOST (ssh host or alias, default sdr-bench), ODR_SDR_BENCH_SERVICE
-(default radiodesk-rfgw@$(hostname), expanded on the bench), ODR_SDR_BENCH_DIR (default odr-bench, under the bench
-user's home), ODR_SDR_BENCH_PY (rfgw's venv python).
+(default odr-sdrbench@$(hostname), expanded on the bench), ODR_SDR_BENCH_DIR (default odr-bench, under the bench
+user's home), ODR_SDR_BENCH_PY (the bench's Python with the odr_sdrbench package, default
+/opt/odr-sdrbench/.venv/bin/python), ODR_SDR_BENCH_ENV_FILE (the gateway's environment file with the MQTT login,
+default /etc/odr-sdrbench/env).
 
-Service handling. The bench modem and the RTL-SDR are normally held by the rfgw service. A case that needs either
+Service handling. The bench modem and the RTL-SDR are normally held by the bench's gateway service. A case that needs either
 takes a *lease*: one detached process on the SDR bench stops the service, waits while ~/odr-bench/hold exists (at most
 --lease-max seconds, default 300), then starts the service again, whatever happens to this script or the ssh link
 (a signal to the lease process also ends the wait and restarts the service). This script removes the hold file in a
-finally block and then checks that the service is active again. Cases that only need rfgw's own decode (T0) don't
+finally block and then checks that the service is active again. Cases that only need the gateway's own decode (T0) don't
 stop anything.
 
 The script never deletes captures; they collect in ~/odr-bench/runs/ on the SDR bench (about 50 MB per 16 s capture)
@@ -47,10 +49,11 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BENCH_HOST = os.environ.get("ODR_SDR_BENCH_HOST", "sdr-bench")    # an ssh host or alias for the SDR bench
-# The rfgw instance is named after the bench's host name: the default is expanded by the shell on the bench
-SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE", "radiodesk-rfgw@$(hostname)")
+# The gateway instance is named after the bench's host name: the default is expanded by the shell on the bench
+SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE", "odr-sdrbench@$(hostname)")
 DIR = os.environ.get("ODR_SDR_BENCH_DIR", "odr-bench")          # relative to the SDR bench user's home
-PY = os.environ.get("ODR_SDR_BENCH_PY", "/opt/radiodesk-rfgw/.venv/bin/python")
+PY = os.environ.get("ODR_SDR_BENCH_PY", "/opt/odr-sdrbench/.venv/bin/python")
+ENV_FILE = os.environ.get("ODR_SDR_BENCH_ENV_FILE", "/etc/odr-sdrbench/env")
 BENCH_TOOLS = ["bench_tx.py", "bench_repeater.py", "sdrmon.py", "sdr_watch.py"]
 
 # ── test cases ───────────────────────────────────────────────────────────────
@@ -75,8 +78,8 @@ CASES = [
                ("gains", [0, 5, 10, 15], 4),
                ("prompt", "Release PTT. Enter.")],
      "pass": "Choose the highest gain with clip_pct < 0.1 % and burst level <= -6 dBFS; use it as --gain."},
-    {"id": "T0", "phase": "radio transmits", "title": "Radio TX smoke test through rfgw's own SDR decode (no stop)",
-     "why": "Zero-intrusion first look: does the radio put decodable DMR on air at all? rfgw keeps running.",
+    {"id": "T0", "phase": "radio transmits", "title": "Radio TX smoke test through the gateway's own SDR decode (no stop)",
+     "why": "Zero-intrusion first look: does the radio put decodable DMR on air at all? The gateway keeps running.",
      "user": "Key PTT on a DMR channel at {freq} MHz, cc {cc}, for about 3 s, after the prompt.",
      "steps": [("watch", 15), ("prompt", "Within 10 s: press PTT for ~3 s on the DMR test channel, release.")],
      "pass": "sdr_watch shows ms-data headers, voice, a terminator, cc {cc}, src = the radio's ID, dst = the TG."},
@@ -221,7 +224,7 @@ CASES = [
     {"id": "H1", "phase": "hotspot (planned)", "title": "MMDVM hotspot cases (rf_* and net_*)",
      "steps": [("local", ["python3", "-I", os.path.join(HERE, "hotspot_cases.py"), "--port", "{port}", "--freq",
                           "{freq}", "--cc", "{cc}", "--cases", "all"])],
-     "user": "Radio connected to the Mac over USB, hotspot mode. RadioDesk server venv python (RADIODESK).",
+     "user": "Radio connected to the Mac over USB, hotspot mode. The odr_sdrbench package on the Mac (installed, or $ODR_SDRBENCH).",
      "why": "Automated coverage of the modem driver and call stack: every burst heard / sent is visible.",
      "pass": "All cases PASS (see hotspot_cases.py --list)."},
     {"id": "S1", "phase": "SFR (planned)", "title": "SFR repeat of one bench modem call (raw SDR capture)",
@@ -490,7 +493,7 @@ def cmd_show(a):
           f"\nPass: {b.fmt(c['pass'])}\n\nSteps:")
     for s in c["steps"]:
         print("  ", s[0], b.fmt(s[1]) if len(s) > 1 and not isinstance(s[1], list) else (s[1] if len(s) > 1 else ""))
-    print(f"\nService lease (rfgw stopped and restored): {'yes' if needs_lease(c) else 'no'}")
+    print(f"\nService lease (gateway stopped and restored): {'yes' if needs_lease(c) else 'no'}")
 
 
 def cmd_sync(a):
@@ -563,7 +566,7 @@ def cmd_run(a):
                 modem_recs += jsonl(text)
                 results["steps"].append({"modem": b.fmt(step[1]), "ok": text is not None})
             elif kind == "watch":
-                listen_p = b.ssh(f"cd ~/{DIR} && export $(sudo cat /etc/radiodesk-rfgw/env | xargs) && "
+                listen_p = b.ssh(f"cd ~/{DIR} && export $(sudo cat {ENV_FILE} | xargs) && "
                                  f"{PY} -W ignore sdr_watch.py --receiver {a.receiver} --seconds {step[1]} --json",
                                  bg=True)
             elif kind == "prompt":
@@ -607,7 +610,7 @@ def cmd_run(a):
             if p.poll() is None:
                 p.terminate()
         b.release()
-    # analysis runs with rfgw back up (about 150 MB for a 15 s capture on the 824 MB SDR bench)
+    # analysis runs with the gateway back up (about 150 MB for a 15 s capture on the 824 MB SDR bench)
     for i, (name, freq, off, secs) in enumerate(captures):
         freqs = [freq] + ([a.rpt_tx] if case.get("checks") == "repeater" else [])
         for f_ in freqs:
@@ -684,7 +687,7 @@ def main():
         p.add_argument("--rpt-tx", type=float, default=None, help="repeater output MHz (P cases)")
         p.add_argument("--ambe", default=None, help="Q2: a 9-byte-frame .ambe speech recording on the Mac")
         p.add_argument("--port", default=None, help="H/S cases: the radio's MMDVM serial port")
-        p.add_argument("--receiver", default="SDR15", help="rfgw SDR receiver on --freq (T0)")
+        p.add_argument("--receiver", default="SDR15", help="the gateway's SDR receiver on --freq (T0)")
 
     s = sub.add_parser("show")
     s.add_argument("case", choices=list(BY_ID))
@@ -696,7 +699,7 @@ def main():
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--yes", action="store_true", help="don't wait for Enter at prompts (3 s pauses)")
     s.add_argument("--out", default="bench-results")
-    s.add_argument("--lease-max", type=int, default=300, help="s: the rfgw service comes back after this at most")
+    s.add_argument("--lease-max", type=int, default=300, help="s: the gateway service comes back after this at most")
     common(s)
     s = sub.add_parser("check")
     s.add_argument("case", choices=list(BY_ID))

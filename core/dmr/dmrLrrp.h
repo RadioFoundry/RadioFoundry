@@ -3,7 +3,7 @@
 /*
  * Motorola LRRP (Location Request / Response Protocol, UDP 4001), the radio's side: requests from a location server
  * decoded, answers and reports built. MBXML binary documents: a document ID, the length of the rest, then tokens.
- * Token values from RadioDesk's codec (radiodesk/dmr/location.py, after ok-dmrlib, node-dmr-lib, Moto.Net and
+ * Token values from odr_sdrbench's codec (odr_sdrbench/dmr/location.py, after ok-dmrlib, node-dmr-lib, Moto.Net and
  * TRBO-NET captures), which is also the test oracle.
  */
 

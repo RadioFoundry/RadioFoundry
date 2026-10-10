@@ -21,9 +21,9 @@ optional UDP transport); the SDR bench's MMDVM_HS modem board (bench_tx.py, over
     hotspot_cases.py (--port /dev/tty.usbmodemXXXX | --udp host:3334) [--cases rf_voice8,net_voice,...|all]
                      [--freq 461.6875] [--cc 2] [--power 12] [--sync-tools] [--json results.json] [--list]
 
-Needs RadioDesk (RADIODESK env, default ~/RadioDesk; run with its server venv's python) for
-burst building and decoding. rfgw must not hold the bench modem: run it through `dmr_bench.py run H1` (which stops and
-restores radiodesk-rfgw@<bench host> around it) or stop the service yourself. --sync-tools copies bench_tx.py to the
+Needs the odr_sdrbench package (installed, or a checkout in $ODR_SDRBENCH) for
+burst building and decoding. The bench's gateway service must not hold the bench modem: run it through `dmr_bench.py run H1` (which stops and
+restores $ODR_SDR_BENCH_SERVICE around it) or stop the service yourself. --sync-tools copies bench_tx.py to the
 SDR bench (~/odr-bench/) first.
 """
 import argparse
@@ -38,13 +38,14 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mmdvm_hotspot as M      # noqa: E402
 
-M.radiodesk_path()
-from radiodesk.dmr import packet, pdu          # noqa: E402
-from radiodesk_rfgw import layer2 as L2, sim   # noqa: E402
+M.sdrbench_path()
+from odr_sdrbench.dmr import packet, pdu        # noqa: E402
+from odr_sdrbench import layer2 as L2, sim     # noqa: E402
 
 BENCH_HOST = os.environ.get("ODR_SDR_BENCH_HOST", "sdr-bench")
 BENCH_DIR = os.environ.get("ODR_SDR_BENCH_DIR", "~/odr-bench")
-MODEM_CMD = f"cd {BENCH_DIR} && /opt/radiodesk-rfgw/.venv/bin/python bench_tx.py"
+BENCH_PY = os.environ.get("ODR_SDR_BENCH_PY", "/opt/odr-sdrbench/.venv/bin/python")
+MODEM_CMD = f"cd {BENCH_DIR} && {BENCH_PY} bench_tx.py"
 
 DMR_DATA2, DMR_LOST2 = M.DMR_DATA2, M.DMR_LOST2
 SYNC_DATA, SYNC_AUDIO = M.SYNC_DATA, M.SYNC_AUDIO
@@ -123,7 +124,7 @@ def ms_data(dt, info, cc):
 
 
 def net_voice_frames(src, dst, cc, superframes, control_bytes):
-    """6 idle (jitter), 8 headers, the voice, 3 terminators, 2 idle; control 0 as MMDVMHost (or set, as rfgw)."""
+    """6 idle (jitter), 8 headers, the voice, 3 terminators, 2 idle; control 0 as MMDVMHost (or set, as the bench gateway)."""
     idle = ms_data(DT_IDLE, bytes.fromhex("ff83df1732094ed1e7cd8a91"), cc)
     call = sim.voice_call(src, dst, cc, superframes, family="ms", slot=1, voice=[sim.AMBE_SILENCE] * (18 * superframes))
     out = [(SYNC_DATA | DT_IDLE, idle)] * 6

@@ -391,7 +391,7 @@ static int countLrrp(uint8_t docId)
 	return n;
 }
 
-// Requests made by RadioDesk's encoder (radiodesk.dmr.location.encode_lrrp_*)
+// Requests made by odr_sdrbench's encoder (odr_sdrbench.dmr.location.encode_lrrp_*)
 static void testLrrp(void)
 {
 	reset();

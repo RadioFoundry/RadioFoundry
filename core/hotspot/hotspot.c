@@ -192,7 +192,7 @@ static void superframe_start(const uint8_t *call_lc)
 	alias_pending = false;
 }
 
-// The RSSI bytes after an uplink burst: 00, then the AT1846S raw scale rfgw converts back to dBm (raw - 151 at
+// The RSSI bytes after an uplink burst: 00, then the AT1846S raw scale the host converts back to dBm (raw - 151 at
 // 300 MHz and up, -164 + raw x 32 / 27 below; docs/spec/mmdvm-protocol.md 5.4). False when the RSSI is unknown.
 // Radios with another RF chip use the same scale, so the host's conversion stays right for every radio.
 static bool rssi_raw(int16_t dbm, uint8_t *raw)

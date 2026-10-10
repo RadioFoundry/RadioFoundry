@@ -11,7 +11,7 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 | Release gate (host tests, build matrix, license checks) | a Mac or Linux host with the ARM toolchain | `tools/ci.sh` | this page, section 1 |
 | Coverage, sanitizers, fuzzing | the host (gcovr for coverage) | `tools/coverage.sh`, `make -C tests/host SANITIZE=1` | [docs/dev/ci.md](../dev/ci.md#coverage) |
 | Hardware in the loop, radio only | the radio on USB | `python3 -m pytest tests/hil -v -rs` | `tests/hil/README.md` |
-| Hardware in the loop, on air | the radio and the SDR bench (and the RadioDesk sandbox for one test) | the same with opt-in flags | `tests/hil/README.md`, section 3 here |
+| Hardware in the loop, on air | the radio and the SDR bench | the same with opt-in flags | `tests/hil/README.md`, section 3 here |
 | Manual bench cases | the SDR bench, a person at the radio | `tools/bench/dmr_bench.py run CASE` | `docs/testing/dmr-bench.md` |
 | DM-32UV first hardware test | a DM-32UV on its programming cable, a dummy load | step by step | `docs/testing/dm32-bringup.md` |
 | MD-380 first hardware test | an MD-380 / MD-390 / RT3 on USB, a dummy load, an SDR or signal generator | step by step | `docs/testing/md380-bringup.md` |
@@ -135,9 +135,8 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 
 | Flag | Allows |
 |---|---|
-| `--allow-rf` | anything that transmits: the SDR bench's modem, the radio itself, RadioDesk's gateway |
+| `--allow-rf` | anything that transmits: the SDR bench's modem, the radio itself |
 | `--allow-service-stop` | stopping the SDR bench's gateway service (always restarted by a bench-side guard) to use its modem and RTL-SDR |
-| `--allow-radiodesk` | publishing to the RadioDesk sandbox broker |
 | `--allow-usb-switch`, `--allow-codeplug-write`, `--allow-reboot` | as in section 2 (no RF) |
 
 ```
@@ -145,7 +144,6 @@ python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop           
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx" --sdr-ppm 0.7
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k aprs --aprs-call CALL   # APRS, 145.090 MHz
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk         # needs $ODR_RADIODESK_MQTT_*
 ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s --allow-rf --allow-service-stop
 ```
 
@@ -159,16 +157,14 @@ ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s -
 | `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `ODR_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
 | `test_hotspot_voice` | the hotspot on air both ways: bench calls and data up the USB link, host calls and data heard on air |
 | `test_radio_features` (rf) | the zone scan, VFO scan and dual watch holding on a bench call; battery save waking for it |
-| `test_radiodesk_alert` | a sandbox alert (MQTT `ESS/RadioDesk/Alert/<radio id>/voice`) becomes a private call; the radio shows and plays it; RadioDesk's `AlertStatus` reports |
 
 Which feature is covered on air, and what the last run found: [on-air-coverage.md](on-air-coverage.md). On this
 bench the radio overloads both receivers even at 50 mW; `tests/hil/README.md` ("On this bench") says what the tests
 do about it.
 
 The SDR bench's names come from the environment: `ODR_SDR_BENCH_HOST` (ssh host or alias, default `sdr-bench`),
-`ODR_SDR_BENCH_SERVICE`, `ODR_SDR_BENCH_DIR`, `ODR_SDR_BENCH_PY` (`docs/testing/dmr-bench.md` section 1). The
-RadioDesk sandbox credentials come only from `ODR_RADIODESK_MQTT_HOST`, `_PORT`, `_USER`, `_PASSWORD` and `_TLS`;
-they are never written into the repository.
+`ODR_SDR_BENCH_SERVICE`, `ODR_SDR_BENCH_DIR`, `ODR_SDR_BENCH_PY`, `ODR_SDR_BENCH_ENV_FILE`
+(`docs/testing/dmr-bench.md` section 1).
 
 ## 4. Manual bench cases
 

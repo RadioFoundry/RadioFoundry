@@ -270,7 +270,7 @@ class SdrBench:
     """The SDR bench: a small Linux board next to the radio with an MMDVM modem board (the bench transmitter and
     DMR listener, driven by tools/bench/bench_tx.py) and an RTL-SDR receiver (raw captures by tools/bench/sdrmon.py,
     analyzed by sdrmon.py for DMR and tools/sdr_fm_check.py for FM). Both are normally held by the bench's gateway
-    service (radiodesk-rfgw). Stopping that service goes through dmr_bench.py's lease: a detached process on the bench
+    service. Stopping that service goes through dmr_bench.py's lease: a detached process on the bench
     restarts it whatever happens here. Nothing transmits and nothing is stopped unless the run allowed it
     (--allow-rf, --allow-service-stop). Host, service, directory and python come from $ODR_SDR_BENCH_* (dmr_bench.py
     reads them)."""

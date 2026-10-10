@@ -38,7 +38,7 @@ bool hotspotDataIsBusy(void);
 int hotspotDataSpace(void);
 
 // MMDVMHost writes every frame to the modem with control byte 0 (DMRSlot sets data[1] = 0: the MMDVM firmware sends
-// the 33 bytes as they are), only some hosts (BlueDV, RadioDesk rfgw) set DMR_SYNC_DATA | data type / DMR_SYNC_AUDIO.
+// the 33 bytes as they are), only some hosts (BlueDV, the SDR bench tools) set DMR_SYNC_DATA | data type / DMR_SYNC_AUDIO.
 // The control byte the frame should have had: as given if it has a sync flag, else from the burst's own sync (data or
 // voice, BS, MS or direct mode TS1 / TS2) and slot type. Voice B-F keep the control byte given
 #define HOTSPOT_NET_SYNC_DATA		0x40U

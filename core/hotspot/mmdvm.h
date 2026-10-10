@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The MMDVM modem protocol (public; written from its description): frames E0 <length> <command> <payload>, the
 // length counting the whole frame. The radio answers as a protocol 1 modem with DMR only, simplex on slot 2
-// (MMDVMHost Duplex=0, RadioDesk rfgw's roamer, our bench tools). Other modes' commands are refused (NAK), except
+// (MMDVMHost Duplex=0, the SDR bench tools). Other modes' commands are refused (NAK), except
 // what docs/spec/mmdvm-protocol.md says to take quietly: DMR_SHORTLC and DMR_START (dropped), SERIAL, TRANSPARENT
 // and QSO_INFO (dropped), FM_PARAMS1-4 (ACKed, ignored), the POCSAG mode (ACKed, never transmits pages).
 // SEND_CWID is ACKed in idle; it keys only on radios whose radio core has the cw_id op (hotspot.h), elsewhere no ID

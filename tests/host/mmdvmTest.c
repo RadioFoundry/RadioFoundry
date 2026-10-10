@@ -373,7 +373,7 @@ static void reset_world(void)
 
 static void configure(uint8_t cc)
 {
-	// RadioDesk rfgw's config_v1: 23 payload bytes, simplex, DMR enabled, state DMR
+	// The SDR bench's config_v1: 23 payload bytes, simplex, DMR enabled, state DMR
 	uint8_t p[23] = { 0x80, 0x02, 10, MMDVM_MODE_DMR, 128, 128, cc, 0, 128, 0, 128, 0, 0, 128, 128 };
 	host(MMDVM_SET_CONFIG, p, sizeof(p));
 }
@@ -1106,7 +1106,7 @@ static void test_uplink_rssi(void)
 		CHECK(out[3].b[1] == 39 && out[3].b[37] == 0 && out[3].b[38] == 71);	// -80 + 151
 	}
 
-	// VHF: rfgw's -164 + raw x 32 / 27 gives the dBm back; the radio's own reading when the burst has none
+	// VHF: the host's -164 + raw x 32 / 27 gives the dBm back; the radio's own reading when the burst has none
 	reset_world();
 	hotspot_set_radio(&radio_ops_full);
 	configure(2);

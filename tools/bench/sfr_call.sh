@@ -6,25 +6,27 @@
 #
 # sfr_call.sh <name> <modem: voice|none> <seconds> [0xD5 payload, e.g. 00,00]
 # One SFR test call: the radio under test as an SFR over its USB MMDVM link (mmdvm_hotspot.py --sfr), the bench modem
-# sending one voice call on the inbound slot, and rfgw's SDR receiver (sdr_watch.py) showing what went out on air.
+# sending one voice call on the inbound slot, and the bench gateway's SDR receiver (sdr_watch.py) showing what went out on air.
 #
-# Precondition: the bench modem is NOT in rfgw's config (ROAM1 removed) while rfgw itself keeps running for the SDR decode.
+# Precondition: the bench modem is NOT in the gateway's config while the gateway itself keeps running for the SDR decode.
 # That is a config change on the SDR bench: the lead arranges it with the owner. With the stock config use
-# `dmr_bench.py run S1` instead (raw SDR capture, rfgw stopped and restored around it).
+# `dmr_bench.py run S1` instead (raw SDR capture, the gateway stopped and restored around it).
 #
 # Env: PORT (the radio's MMDVM serial port) or UDP (host:port), POWER (radio RF level), MODEM_POWER, LOGDIR
 # (default /tmp/odr-bench), ODR_SDR_BENCH_HOST (default sdr-bench), ODR_SDR_BENCH_DIR (default ~/odr-bench, where bench_tx.py and
-# sdr_watch.py are copied: `dmr_bench.py sync`), RECEIVER (default SDR15, the 461.6875 MHz SDR receiver).
+# sdr_watch.py are copied: `dmr_bench.py sync`), RECEIVER (default SDR15, the 461.6875 MHz SDR receiver), ODR_SDR_BENCH_PY (default
+# /opt/odr-sdrbench/.venv/bin/python), ODR_SDR_BENCH_ENV_FILE (default /etc/odr-sdrbench/env).
 set -u
 S=$(cd "$(dirname "$0")" && pwd); L=${LOGDIR:-/tmp/odr-bench}; mkdir -p "$L"
-C=${ODR_SDR_BENCH_HOST:-sdr-bench}; D=${ODR_SDR_BENCH_DIR:-~/odr-bench}; R=${RECEIVER:-SDR15}
+C=${ODR_SDR_BENCH_HOST:-sdr-bench}; BP=${ODR_SDR_BENCH_PY:-/opt/odr-sdrbench/.venv/bin/python}
+E=${ODR_SDR_BENCH_ENV_FILE:-/etc/odr-sdrbench/env}; D=${ODR_SDR_BENCH_DIR:-~/odr-bench}; R=${RECEIVER:-SDR15}
 name=$1; modem=$2; secs=$3; dbg=${4:-}
 if [ -n "${UDP:-}" ]; then link="--udp $UDP"; else link="--port ${PORT:?set PORT to the radio serial port or UDP}"; fi
 PY=${PY:-python3}
 ($PY -I "$S/mmdvm_hotspot.py" $link --sfr --seconds "$secs" ${POWER:+--power $POWER} ${dbg:+--debug $dbg} \
     > "$L/r_$name.log" 2>&1 &)
 sleep 2
-timeout 60 ssh "$C" "cd $D && PY=/opt/radiodesk-rfgw/.venv/bin/python; export \$(sudo cat /etc/radiodesk-rfgw/env | xargs); \
+timeout 60 ssh "$C" "cd $D && PY=$BP; export \$(sudo cat $E | xargs); \
   (\$PY -W ignore sdr_watch.py --receiver $R --seconds $((secs-4)) > w_$name.log 2>&1 &); sleep 1; \
   if [ $modem = voice ]; then \$PY bench_tx.py ${MODEM_POWER:+--power $MODEM_POWER} voice --superframes 1 >/dev/null 2>&1; fi; \
   sleep $((secs-4)); cat w_$name.log" > "$L/w_$name.log"

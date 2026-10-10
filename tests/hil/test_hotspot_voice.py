@@ -14,8 +14,8 @@ tools/bench/hotspot_cases.py's (docs/testing/dmr-bench.md); this module runs the
   modem: one call, the network call's LC, >= 17 of 18 voice bursts, a terminator, no voice after it, no NAKs.
 - net_data: network data on air: the data header and blocks heard by the bench modem.
 
-Needs RadioDesk's Python packages on this machine (burst building, $RADIODESK, default
-~/RadioDesk) and numpy; skipped without them. The hotspot ends when the MMDVM port closes (DTR
+Needs the odr_sdrbench package on this machine (burst building; installed, or a checkout in $ODR_SDRBENCH) and
+numpy; skipped without them. The hotspot ends when the MMDVM port closes (DTR
 drop); restore_radio puts the channel back."""
 import os
 import sys
@@ -34,7 +34,7 @@ def hotspot_cases():
     try:
         import hotspot_cases as H
     except ImportError as e:
-        pytest.skip(f"needs RadioDesk's packages and numpy for burst building: {e}")
+        pytest.skip(f"needs odr_sdrbench and numpy for burst building: {e}")
     return H
 
 

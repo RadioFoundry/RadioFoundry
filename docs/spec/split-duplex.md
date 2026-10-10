@@ -33,7 +33,7 @@ slot clock to the RX half (time sync, section 6).
 
 ## 2. Compatibility rules (the owner's hard requirements)
 
-1. **Standard hosts see no change.** MMDVMHost, Pi-Star, WPSD, DMRGateway, BlueDV, rfgw's roamer and the bench tools
+1. **Standard hosts see no change.** MMDVMHost, Pi-Star, WPSD, DMRGateway, BlueDV and the SDR bench tools
    never send command 0xD6; to them a split build is the simplex hotspot (or SFR) it was. All of `mmdvm-protocol.md`
    section 7 holds unchanged; the host tests run the whole MMDVM suite (`tests/host/mmdvmTest.c`) and the SFR suite a
    second time with this extension built in and registered (`mmdvmTestSplit`, `hotspotSfrTestSplit`).
@@ -163,7 +163,7 @@ STATUS block (all counters wrap):
 
 ` SPLIT1` is appended to the GET_VERSION description whenever the extension is built in, role or not (the number is
 the extension version). Find it with `\bSPLIT(\d+)\b`; send 0xD6 only to a modem that announces it. It never contains
-`MMDVM`, `SFR` or a slot pattern, so neither rfgw's type detection nor its SFR regular expressions change.
+`MMDVM`, `SFR` or a slot pattern, so no host's modem type detection or SFR regular expression changes.
 
 ## 4. Standard commands in a role
 

@@ -9,7 +9,7 @@
 #include "usb/usb_port.h"
 
 // The IDs the old firmware enumerated with, so existing hosts find the radio: qdmr and the legacy-protocol CPS look
-// for this pair, MMDVMHost and RadioDesk rfgw only need the serial port. 0x1FC9 is NXP's vendor ID, not ours: a
+// for this pair, MMDVMHost and the SDR bench tools only need the serial port. 0x1FC9 is NXP's vendor ID, not ours: a
 // release should move to an ID of its own (for example a pid.codes PID under 0x1209) once the host tools know it.
 #define USB_VID			0x1FC9
 #define USB_PID_SERIAL		0x0094

@@ -4,7 +4,7 @@
 """Quick check that a radio answers as an MMDVM modem on its USB serial port (core/hotspot/mmdvm.c).
 
     mmdvm_probe.py [--port /dev/cu.usbmodemXXXX] [--config CC] [--freq MHZ] [--status N] [--no-dtr]
-                   [--order mmdvmhost|rfgw] [--quiet-commands]
+                   [--order mmdvmhost|sdrbench] [--quiet-commands]
 
 Sends GET_VERSION and GET_STATUS and prints the answers. The first MMDVM frame puts the radio in hotspot mode (it
 takes the DMR modem from the call stack); it goes back to normal 20 s after the last frame. With --config it also
@@ -17,7 +17,7 @@ T-USB-2): the radio must answer and keep its configuration all the same.
 
 --order picks the start-up sequence (docs/spec/mmdvm-protocol.md 3.1, 3.2, tests T-1 and T-2):
   mmdvmhost  (default) GET_VERSION, then SET_FREQ, SET_CONFIG (state 00), SET_MODE DMR, as given
-  rfgw       GET_VERSION, SET_MODE DMR at once (before any configuration), then the tune: SET_FREQ, SET_CONFIG with
+  sdrbench   GET_VERSION, SET_MODE DMR at once (before any configuration), then the tune: SET_FREQ, SET_CONFIG with
              state 02, SET_MODE DMR, each waited on for 1 s. Needs --freq; --config defaults to 1
 
 --quiet-commands sends what the radio must take without a NAK (docs/testing/mmdvm-audit.md A-5, A-13, I-2):
@@ -120,12 +120,12 @@ def main():
     ap.add_argument("--freq", type=float, metavar="MHZ", help="send SET_FREQ (RX = TX)")
     ap.add_argument("--status", type=int, default=1, metavar="N")
     ap.add_argument("--no-dtr", action="store_true", help="open the port with DTR cleared (Windows MMDVMHost)")
-    ap.add_argument("--order", choices=("mmdvmhost", "rfgw"), default="mmdvmhost")
+    ap.add_argument("--order", choices=("mmdvmhost", "sdrbench"), default="mmdvmhost")
     ap.add_argument("--quiet-commands", action="store_true", help="check the commands that must not get a NAK")
     a = ap.parse_args()
-    if a.order == "rfgw":
+    if a.order == "sdrbench":
         if a.freq is None:
-            ap.error("--order rfgw needs --freq")
+            ap.error("--order sdrbench needs --freq")
         if a.config is None:
             a.config = 1
 
@@ -147,8 +147,8 @@ def main():
         print(f"{what}: {kind}" + (f" (reason {f[4]})" if kind == "nak" else ""))
         return kind == "ack"
 
-    if a.order == "rfgw":
-        # rfgw: SET_MODE DMR right after the version, before any SET_FREQ / SET_CONFIG; then per tune
+    if a.order == "sdrbench":
+        # SDR bench: SET_MODE DMR right after the version, before any SET_FREQ / SET_CONFIG; then per tune
         ok &= check(*link.request(SET_MODE, bytes([MODE_DMR])), "SET_MODE DMR (before configuration)")
         hz = int(round(a.freq * 1e6)).to_bytes(4, "little")
         ok &= check(*link.request(SET_FREQ, b"\x00" + hz + hz + b"\xff" + hz), f"SET_FREQ {a.freq} MHz")

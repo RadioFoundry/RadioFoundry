@@ -16,11 +16,11 @@ What it does: SET_FREQ, SET_CONFIG (simplex flag set with --simplex, the default
 which is how our firmware's SFR is turned on: core/dmr/sfr.c sfrMmdvmTrigger), SET_MODE DMR; then GET_STATUS every
 250 ms, logging every frame the radio sends up (DMR_DATA1/2, DMR_LOST1/2, NAK) and status changes, for --seconds.
 --send sends a short network voice call after --send-at seconds (simplex: MS sync on DMR_DATA2; SFR: BS sync on the
-outbound slot 2), paced at 60 ms; it needs RadioDesk (RADIODESK env, default ~/RadioDesk) for
+outbound slot 2), paced at 60 ms; it needs the odr_sdrbench package (installed, or a checkout in $ODR_SDRBENCH) for
 burst building.
 
 Transports: --port is a serial port (USB CDC ACM, 115200 8N1, the standard MMDVM link). --udp is MMDVMHost's UDP
-modem transport (MMDVMHost [Modem] Protocol=udp, ModemAddress / ModemPort; also what rfgw's UdpPort speaks), for a
+modem transport (MMDVMHost [Modem] Protocol=udp, ModemAddress / ModemPort; also what the bench gateway's UDP port speaks), for a
 radio that offers MMDVM over a USB network interface; optional.
 
 Our MMDVM extensions (OpenDigitalRadio, not part of MMDVM; only sent / parsed when asked):
@@ -227,17 +227,17 @@ class MmdvmLink:
             return bool(self.flags & 0x01)
 
 
-def radiodesk_path():
-    rd = os.environ.get("RADIODESK", os.path.expanduser("~/RadioDesk"))
-    for sub in ("rfgw", "server"):
-        if os.path.join(rd, sub) not in sys.path:
-            sys.path.insert(0, os.path.join(rd, sub))
+def sdrbench_path():
+    # A checkout of odr_sdrbench named by $ODR_SDRBENCH, when the package isn't installed in this Python
+    d = os.environ.get("ODR_SDRBENCH")
+    if d and os.path.expanduser(d) not in sys.path:
+        sys.path.insert(0, os.path.expanduser(d))
 
 
 def network_call(cc: int, sfr: bool):
-    radiodesk_path()
-    from radiodesk_rfgw import sim
-    from radiodesk.dmr import pdu
+    sdrbench_path()
+    from odr_sdrbench import sim
+    from odr_sdrbench.dmr import pdu
     call = sim.voice_call(3101999, 215, cc, 2, family="bs" if sfr else "ms", slot=2, voice=[sim.AMBE_SILENCE] * 36)
     out = []
     for tb in call:

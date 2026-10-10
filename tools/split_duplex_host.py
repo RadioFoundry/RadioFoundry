@@ -4,7 +4,7 @@
 """split_duplex_host: the host side of the split duplex repeater (docs/spec/split-duplex.md): two OpenDigitalRadio
 radios, each an MMDVM modem on its own USB port, run as one duplex repeater; the TX half sends the continuous BS
 outbound, the RX half receives both inbound slots and labels them from the TX half's slot clock, which this host
-relays (time sync, epoch). Reference implementation of the RadioDesk contract (split-duplex.md 8) and bench tool.
+relays (time sync, epoch). Reference implementation of the host contract (split-duplex.md 8) and bench tool.
 
     split_duplex_host.py --tx PORT --rx PORT --freq-in MHZ --freq-out MHZ [--cc N] [--power LEVEL] [--seconds S]
         Start both halves (8.1), keep the time sync, the epoch and the AT relay running, print a status line every

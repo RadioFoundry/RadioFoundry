@@ -238,7 +238,7 @@ bool lrrpDecodeRequest(const uint8_t *payload, int length, lrrpRequest_t *reques
 			case 0x76:
 				break;
 			default:
-				r.i = r.end;// a token we don't know: what came before is still used, as RadioDesk does
+				r.i = r.end;// a token we don't know: what came before is still used, as odr_sdrbench does
 				break;
 		}
 	}

@@ -318,10 +318,10 @@ static void set_mode(const uint8_t *p, uint8_t len)
 	ack(MMDVM_SET_MODE);
 }
 
-// SEND_CWID (spec 2.11): only in idle with nothing on air, else NAK 5. Accepted requests are ACKed at once (rfgw
-// waits 1 s for it and treats a NAK as an error) and handed to the radio core's cw_id op. On a radio without CW keying
+// SEND_CWID (spec 2.11): only in idle with nothing on air, else NAK 5. Accepted requests are ACKed at once (the SDR
+// bench waits 1 s for it and treats a NAK as an error) and handed to the radio core's cw_id op. On a radio without CW keying
 // the ACK still goes out but no ID is sent; hotspot_stats_t counts it (cwid_unsent). An operator who relies on the
-// modem's CW ID for licensing must identify another way there (rfgw: leave cwid unset)
+// modem's CW ID for licensing must identify another way there (SDR bench: leave cwid unset)
 static void send_cwid(const uint8_t *p, uint8_t len)
 {
 	if ((state != MMDVM_MODE_IDLE) || hotspot_transmitting()) {
@@ -416,7 +416,7 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 	case MMDVM_DMR_ABORT:
 		hotspot_net_abort();
 		if (hotspot_alt_active()) {
-			ack(command);	// SFR: rfgw waits for it (spec 6.2)
+			ack(command);	// SFR: the SDR bench waits for it (spec 6.2)
 		}
 		break;
 	case MMDVM_DMR_START:

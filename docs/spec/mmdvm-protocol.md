@@ -3,11 +3,13 @@
 # The MMDVM modem protocol, as a DMR-only radio must speak it
 
 What a radio acting as an MMDVM modem (a "hotspot") must send and accept so that every host that will talk to it
-works: MMDVMHost (current master), RadioDesk `rfgw`, our bench tools (`tools/bench/`), and the hosts the old firmware
-was tested with. Written from the public protocol, from observing what those hosts send and expect, and from our own
-earlier hotspot work. Section 6 lists our own additions (the SFR debug command 0xD5 and the extra status bytes, and
-the split duplex command 0xD6).
-Section 7 is the test list for the host tests and `tools/mmdvm_probe.py`.
+works: MMDVMHost (current master), the SDR bench's modem driver (`odr_sdrbench`), our bench tools (`tools/bench/`),
+and the hosts the old firmware was tested with. "The old firmware" below is the OpenGD77 hotspot mode with the owner's
+changes, which these radios ran before ODR; the hosts were tested against it, so where its behavior is given it is the
+compatibility reference, not a requirement. Written from the public protocol, from observing what those hosts send and
+expect, and from that earlier hotspot work. Section 6 lists our own additions (the SFR debug command 0xD5 and the
+extra status bytes, and the split duplex command 0xD6). Section 7 is the test list for the host tests and
+`tools/mmdvm_probe.py`.
 
 Conventions: byte values are hex. "Frame offset" counts from the 0xE0 start byte (offset 0). "Payload offset" counts
 from the first byte after the command byte (payload offset 0 = frame offset 3). Frequencies are in Hz, little endian.
@@ -28,7 +30,7 @@ programming port switches to hotspot mode), `dmr-modem.md` (the burst layer unde
 | Long frames | Length byte 0 means a long frame: the real length is (frame offset 2) + 255, and the command moves to frame offset 3, the payload to offset 4. Total lengths 256 to 510. Only FM audio uses them; a DMR-only modem never sends one, but its parser must skip a whole long frame (consume LL + 255 bytes) and stay in sync. A frame of exactly 255 bytes uses the short form (length FF). |
 | Checksum | None. No escaping, no byte stuffing. 0xE0 can appear inside a payload; resynchronizing on 0xE0 is only for after a bad length. |
 | Byte order | Multi-byte numbers are little endian (frequencies), except the RSSI and DEBUG values, which are big endian. |
-| Transport | A byte stream: USB CDC ACM (baud rate ignored; MMDVMHost and rfgw open it at 115200 8N1), a UART at 115200 8N1, or UDP (section 5.3). Frames can be split across USB packets or arrive several to a packet; never assume one frame per packet. |
+| Transport | A byte stream: USB CDC ACM (baud rate ignored; MMDVMHost and odr_sdrbench open it at 115200 8N1), a UART at 115200 8N1, or UDP (section 5.3). Frames can be split across USB packets or arrive several to a packet; never assume one frame per packet. |
 
 Frames the modem sends must be complete and in order; two frames must never interleave (a status reply written in
 the middle of a DMR frame corrupts both). The host parses one frame at a time and drops nothing it can't parse except
@@ -43,11 +45,11 @@ up to the next 0xE0.
 | 00 | GET_VERSION | host to modem; modem's reply has the same command | the version frame | yes (startup fails without it) |
 | 01 | GET_STATUS | host to modem; reply same command | the status frame | yes (2 s without a reply resets the modem) |
 | 02 | SET_CONFIG | host to modem | ACK or NAK | yes (a NAK at startup is fatal) |
-| 03 | SET_MODE | host to modem | ACK or NAK (MMDVMHost doesn't wait; rfgw does) | yes |
+| 03 | SET_MODE | host to modem | ACK or NAK (MMDVMHost doesn't wait; odr_sdrbench does) | yes |
 | 04 | SET_FREQ | host to modem | ACK or NAK | yes (a NAK at startup is fatal) |
 | 08 | CAL_DATA | host to modem (calibration tools) | NAK (not supported) | no |
 | 09 | RSSI_DATA | (calibration) | NAK | no |
-| 0A | SEND_CWID | host to modem | ACK when accepted (rfgw waits for it), NAK 5 when not idle | only with CW ID enabled |
+| 0A | SEND_CWID | host to modem | ACK when accepted (odr_sdrbench waits for it), NAK 5 when not idle | only with CW ID enabled |
 | 17 | DMR_ALOHA | host to modem, trunking only | NAK 2 or silence | no |
 | 18 | DMR_DATA1 | both | none on success, NAK on refusal | duplex / SFR only |
 | 19 | DMR_LOST1 | modem to host | (none) | duplex / SFR only |
@@ -55,7 +57,7 @@ up to the next 0xE0.
 | 1B | DMR_LOST2 | modem to host | (none) | yes |
 | 1C | DMR_SHORTLC | host to modem | none, or ACK; never NAK in simplex | sent on every call, simplex too |
 | 1D | DMR_START | host to modem, duplex only | none or ACK | no (simplex) |
-| 1E | DMR_ABORT | host to modem, duplex / rfgw SFR | none or ACK | no (simplex) |
+| 1E | DMR_ABORT | host to modem, duplex / odr_sdrbench SFR | none or ACK | no (simplex) |
 | 10-13, 20-21, 30-32, 40-41, 45-49, 50 | other modes' data | host to modem | NAK 2 (not enabled) | no |
 | 60-63 | FM_PARAMS1-4 | host to modem, only if FM is configured | ACK (ignored) | only if FM is configured |
 | 70 | ACK | modem to host | | |
@@ -68,16 +70,16 @@ up to the next 0xE0.
 | F1-F5, FA | DEBUG1-5, DEBUG_DUMP | modem to host | | no (host logs them) |
 | anything else | | | NAK 1 | |
 
-"None on success" for DMR_DATA: the MMDVM and MMDVM_HS firmwares stay silent and only NAK a refused frame; our old
-firmware ACKed every DMR_DATA2. Every host here accepts both (MMDVMHost and rfgw ignore an ACK of DMR data; the bench
-tools drop ACKs). Pick one and keep it; ACKing costs 4 bytes per 60 ms.
+"None on success" for DMR_DATA: the MMDVM and MMDVM_HS firmwares stay silent and only NAK a refused frame; the old
+firmware ACKed every DMR_DATA2. Every host here accepts both (MMDVMHost and odr_sdrbench ignore an ACK of DMR data;
+the bench tools drop ACKs). Pick one and keep it; ACKing costs 4 bytes per 60 ms.
 
 ### 2.2 ACK and NAK
 
 - ACK: `E0 04 70 <cmd>`.
 - NAK: `E0 05 7F <cmd> <reason>`.
 
-| Reason | Meaning (as used by the MMDVM firmwares and our old firmware) |
+| Reason | Meaning (as used by the MMDVM firmwares and the old firmware) |
 | --- | --- |
 | 1 | unknown command |
 | 2 | wrong mode: the mode isn't enabled, or the command doesn't apply now (other digital modes, DMR_DATA1 in plain simplex, SFR not on) |
@@ -87,21 +89,21 @@ tools drop ACKs). Pick one and keep it; ACKing costs 4 bytes per 60 ms.
 | 6 | MMDVM_HS: duplex not supported by this build. **Ours (SFR only): RF busy**, the inbound call is being repeated (section 6) |
 
 MMDVMHost logs every NAK it receives outside startup as a warning and otherwise ignores it; the refused frame is lost
-(no retry). rfgw raises an error for a NAK of a command it waited for, reports a NAK of DMR data to its owner (SFR
-uses 6 and 2), and logs others.
+(no retry). odr_sdrbench raises an error for a NAK of a command it waited for, reports a NAK of DMR data to its owner
+(SFR uses 6 and 2), and logs others.
 
 ### 2.3 GET_VERSION (00)
 
 Request: `E0 03 00`. The reply must be a short frame (at most 255 bytes): MMDVMHost reads the reply at fixed frame
 offsets and would misread a long frame.
 
-**Protocol 1** (what our old firmware and MMDVM_HS send; what ODR sends, see 2.3.1):
+**Protocol 1** (what the old firmware and MMDVM_HS send; what ODR sends, see 2.3.1):
 
 | Frame offset | Content |
 | --- | --- |
 | 0-2 | E0, length, 00 |
 | 3 | 01 (protocol version) |
-| 4.. | description, ASCII, to the end of the frame. No terminating NUL needed. MMDVM_HS optionally appends a NUL and a hex UDID after the description; rfgw cuts the description at the first NUL. |
+| 4.. | description, ASCII, to the end of the frame. No terminating NUL needed. MMDVM_HS optionally appends a NUL and a hex UDID after the description; odr_sdrbench cuts the description at the first NUL. |
 
 MMDVMHost with protocol 1 assumes the modem can do D-Star, DMR, YSF, P25, NXDN and POCSAG (there are no capability
 bytes in protocol 1). It will therefore send SET_CONFIG enable bits and SET_MODE values for modes ODR doesn't
@@ -118,51 +120,54 @@ have if the user's configuration enables them; the radio must tolerate that (2.5
 | 7-22 | UDID, 16 bytes (zero-padded) |
 | 23.. | description, ASCII |
 
-rfgw reads the description from frame offset 4 (protocol 1) or 23 (protocol 2). MMDVMHost refuses any version other
-than 1 or 2 ("unsupported by this version of the MMDVM Host") and stops.
+odr_sdrbench reads the description from frame offset 4 (protocol 1) or 23 (protocol 2). MMDVMHost refuses any version
+other than 1 or 2 ("unsupported by this version of the MMDVM Host") and stops.
 
 #### 2.3.1 Which version to answer
 
 Answer **protocol 1**. Reasons: our bench tools (`hotspot_test.py`, `hs_normal.py` and their copies) send only the
 23-byte protocol 1 SET_CONFIG and read the protocol 1 status layout (flags at frame offset 5, slot 2 space at offset
-8); our status extension starts at the protocol 1 offset 13; the old firmware, which rfgw and the bench tools were
-tested against, answered protocol 1. Current MMDVMHost and rfgw handle both versions. The cost of protocol 1: the
-host can't learn that the radio is DMR only, so a misconfigured host may try other modes (they get NAK 2 / NAK 4).
+8); our status extension starts at the protocol 1 offset 13; the old firmware, which odr_sdrbench and the bench tools
+were tested against, answered protocol 1. Current MMDVMHost and odr_sdrbench handle both versions. The cost of
+protocol 1: the host can't learn that the radio is DMR only, so a misconfigured host may try other modes (they get NAK
+2 / NAK 4).
 
 #### 2.3.2 Description string rules
 
 - ASCII, printable, no NUL, at most 120 bytes (keeps the frame short and under two 64-byte USB packets; the old
   firmware's buffer overflowed with a long build ID plus a suffix, gotchas 8.11).
-- rfgw classifies the modem from the description, case-insensitively: it contains `OpenGD77` → type `opengd77`; one of
-  `MMDVM_HS`, `ZUMspot`, `Nano_hotSPOT`, `NanoDV`, `SkyBridge`, `D2RG`, `LoneStar`, `ADF7021` → `mmdvm_hs`; `MMDVM` →
-  `mmdvm`; otherwise rfgw refuses to start unless its config names the type. The `opengd77` type selects: 1 voice
-  header and 1 terminator per call from rfgw (not 8 and 3), the radio's RSSI conversion (5.4), and simplex only.
-  **A description without `OpenGD77` is detected wrongly by today's rfgw** (as `mmdvm` if it contains "MMDVM", which
-  then needs a tuner and is refused), and the SFR mode is refused outright (next bullet). See section 4, row 1.
+- odr_sdrbench classifies the modem from the description, case-insensitively: it contains `OpenGD77` → type
+  `opengd77`; one of `MMDVM_HS`, `ZUMspot`, `Nano_hotSPOT`, `NanoDV`, `SkyBridge`, `D2RG`, `LoneStar`, `ADF7021` →
+  `mmdvm_hs`; `MMDVM` → `mmdvm`; otherwise odr_sdrbench refuses to start unless its config names the type. The
+  `opengd77` type selects: 1 voice header and 1 terminator per call from odr_sdrbench (not 8 and 3), the radio's RSSI
+  conversion (5.4), and simplex only. **A description without `OpenGD77` is detected wrongly by the current
+  detection** (as `mmdvm` if it contains "MMDVM", which then needs a tuner and is refused), and the SFR mode is
+  refused outright (next bullet). See section 4, row 1.
 - SFR capability is announced by the suffix ` SFR TS<in>>TS<out> <framing>` (framing `MS`, `TS` or `BS`), present
   whenever the firmware has SFR, on or not, giving the slots and framing it would use: e.g. `... SFR TS1>TS2 TS`.
-  rfgw finds it with the regular expressions `\bSFR\b`, `\bTS([12])\s*>\s*TS([12])\b` and
+  odr_sdrbench finds it with the regular expressions `\bSFR\b`, `\bTS([12])\s*>\s*TS([12])\b` and
   `\bSFR\s+TS[12]\s*>\s*TS[12]\s+([A-Z]+)\b`, and today also requires `OpenGD77` in the string. It refuses to run
   an SFR config whose slots differ from the radio's, and warns unless the framing is `TS`.
 - Split duplex capability is announced by the suffix ` SPLIT<version>` (` SPLIT1`), present whenever the firmware
   has the extension, role or not (section 6.5). It contains no `MMDVM`, `SFR` or slot pattern, so none of the
   detections above change.
-- Avoid the substrings `MMDVM_HS`, `ADF7021`, `ZUMSPOT` and the like (they'd make rfgw take the radio for an MMDVM_HS
-  board). The old firmware's description also carried `(Radio:<model>, Mode:MMDVM)`; nothing parses that part.
+- Avoid the substrings `MMDVM_HS`, `ADF7021`, `ZUMSPOT` and the like (they'd make odr_sdrbench take the radio for an
+  MMDVM_HS board). The old firmware's description also carried `(Radio:<model>, Mode:MMDVM)`; nothing parses that
+  part.
 
 ### 2.4 GET_STATUS (01)
 
-Request: `E0 03 01`. MMDVMHost sends it every 250 ms, whether or not the last one was answered. rfgw sends it every
-60 ms while it has bursts to hand over or is listening before talk, every 2 s otherwise. The reply must come within a
-few tens of milliseconds even while transmitting (rfgw allows 1 s per request and gives up after 2 s of misses;
-MMDVMHost resets the modem after 2 s without a status reply, 3.4).
+Request: `E0 03 01`. MMDVMHost sends it every 250 ms, whether or not the last one was answered. odr_sdrbench sends it
+every 60 ms while it has bursts to hand over or is listening before talk, every 2 s otherwise. The reply must come
+within a few tens of milliseconds even while transmitting (odr_sdrbench allows 1 s per request and gives up after 2 s
+of misses; MMDVMHost resets the modem after 2 s without a status reply, 3.4).
 
 **Protocol 1 layout** (send this one):
 
 | Frame offset | Content |
 | --- | --- |
 | 0-2 | E0, length, 01 |
-| 3 | modes enabled: 01 D-Star, 02 DMR, 04 YSF, 08 P25, 10 NXDN, 20 POCSAG (MMDVM_HS: 80 M17). MMDVMHost doesn't read it. Our old firmware sent 22 (DMR, POCSAG). |
+| 3 | modes enabled: 01 D-Star, 02 DMR, 04 YSF, 08 P25, 10 NXDN, 20 POCSAG (MMDVM_HS: 80 M17). MMDVMHost doesn't read it. The old firmware sent 22 (DMR, POCSAG). |
 | 4 | modem state: 00 idle, 02 DMR, 06 POCSAG, (MMDVM_HS: 61 CW ID). MMDVMHost stores it, doesn't act on it. |
 | 5 | flags: 01 TX, 02 ADC overflow, 04 RX overflow, 08 TX overflow, 10 lockout, 20 DAC overflow, 40 carrier detect. 80: ours, SFR inbound busy (section 6). |
 | 6 | D-Star space: 00 |
@@ -175,7 +180,7 @@ MMDVMHost resets the modem after 2 s without a status reply, 3.4).
 | 13.. | MMDVM_HS: M17 space at 13 (length 14). Ours: the SFR debug bytes, only in SFR mode (section 6) |
 
 MMDVMHost (protocol 1) reads frame offsets 4 to 9 unconditionally, so the reply must be at least 10 bytes; send 13
-(length 0D) like the old firmware, or 14 like MMDVM_HS. rfgw (protocol 1) reads offsets 5, 7 and 8 and refuses a
+(length 0D) like the old firmware, or 14 like MMDVM_HS. odr_sdrbench (protocol 1) reads offsets 5, 7 and 8 and refuses a
 reply shorter than 9 bytes. The bench tools read offsets 5, 7, 8 and, from 13 on, the SFR debug bytes.
 
 **Protocol 2 layout** (for reference): offset 3 state, 4 flags, 5 reserved 00, 6 D-Star space, 7 DMR slot 1 space,
@@ -185,21 +190,21 @@ reply shorter than 9 bytes. The bench tools read offsets 5, 7, 8 and, from 13 on
 
 | Bit | Meaning and what the hosts do with it |
 | --- | --- |
-| 01 TX | The modem is transmitting. Set from the moment it accepts traffic it will key for (buffering included) until its last burst, the terminator, has gone out, and while data is queued or on air; also while sending CW ID (gotchas 3.1, 8.6). MMDVMHost: sends SEND_CWID and DMR beacons only while it's clear; in duplex decides DMR_START. rfgw: waits for it to clear before retuning, sending CW ID or ending a call (and then waits 0.5 s more, a margin for the old firmware's early clear). Must not drop for a poll mid-call (gotchas 3.1). |
+| 01 TX | The modem is transmitting. Set from the moment it accepts traffic it will key for (buffering included) until its last burst, the terminator, has gone out, and while data is queued or on air; also while sending CW ID (gotchas 3.1, 8.6). MMDVMHost: sends SEND_CWID and DMR beacons only while it's clear; in duplex decides DMR_START. odr_sdrbench: waits for it to clear before retuning, sending CW ID or ending a call (and then waits 0.5 s more, a margin for the old firmware's early clear). Must not drop for a poll mid-call (gotchas 3.1). |
 | 02, 20 overflow | MMDVMHost logs an error on every status that has them set. Report an event once, not as a sticky flag (every 250 ms would flood the log). ODR's modem passes bursts, not samples, so there is nothing to overflow: always clear. |
 | 04 RX overflow | Uplink frames were lost because the queue to the host was full since the last status. Event, cleared once reported. |
 | 08 TX overflow | The TX buffer was full and a frame was refused since the last status. Event. |
 | 10 lockout | **Never set.** MMDVMHost switches to its lockout mode and sends SET_MODE idle while it is set (MMDVM's "COS as lockout" input). |
-| 40 carrier detect | Something is on the channel (from the receiver's noise / RSSI, so analog and other color codes count too), evaluated only while not transmitting. rfgw uses it for listen before talk; MMDVMHost stores it. |
+| 40 carrier detect | Something is on the channel (from the receiver's noise / RSSI, so analog and other color codes count too), evaluated only while not transmitting. odr_sdrbench uses it for listen before talk; MMDVMHost stores it. |
 | 80 | Not defined by MMDVM. Ours, SFR mode only (section 6). |
 
 **Space** (offsets 7 and 8): the number of further 33-byte DMR bursts the modem will accept for that slot right now
 without a NAK. Unit: one burst, i.e. one DMR_DATA frame, i.e. 60 ms of air time in simplex. One byte, 0-255; never
 negative, never wrapped (the old firmware once let it go below zero and reported 255, gotchas 8.4).
 
-How the hosts use it (both MMDVMHost and rfgw do the same): take the value from each status reply, write a DMR_DATA
-frame only while their copy is above 1 (so the last free place is never used), subtract 1 per frame written, and
-overwrite the copy with the next status reply. Consequences for the modem:
+How the hosts use it (both MMDVMHost and odr_sdrbench do the same): take the value from each status reply, write a
+DMR_DATA frame only while their copy is above 1 (so the last free place is never used), subtract 1 per frame written,
+and overwrite the copy with the next status reply. Consequences for the modem:
 
 - The value must be conservative. Frames written after the GET_STATUS was sent but before the reply was processed
   are still on the way when the host overwrites its copy, so with 250 ms polling the host can overcommit by several
@@ -212,26 +217,26 @@ overwrite the copy with the next status reply. Consequences for the modem:
   (NAK 2) or drops them, and never transmits them.
 - The initial value sets how much the host sends in one clump at the start of a network call: MMDVMHost queues 6 idle
   bursts (360 ms jitter, default) and 8 voice headers up front, so a space of at least 16 lets a call start without
-  waiting for a status round trip. Our old firmware had 48 places, MMDVM_HS reports 25.
+  waiting for a status round trip. The old firmware had 48 places, MMDVM_HS reports 25.
 - In SFR mode both bytes carry the outbound slot's space (section 6).
 - With no DMR mode (before SET_CONFIG, or in POCSAG / idle) the value may still be reported; MMDVM_HS reports 0 when
-  DMR isn't enabled, our old firmware always reported its free places. Hosts only write after SET_MODE DMR.
+  DMR isn't enabled, the old firmware always reported its free places. Hosts only write after SET_MODE DMR.
 
 ### 2.5 SET_CONFIG (02)
 
-MMDVMHost sends it once at startup (after SET_FREQ) and again after a modem reset; rfgw sends it on every tune
+MMDVMHost sends it once at startup (after SET_FREQ) and again after a modem reset; odr_sdrbench sends it on every tune
 (after SET_FREQ, before SET_MODE). The modem answers ACK or NAK. **A NAK at MMDVMHost startup stops MMDVMHost** ("NAK
 to the SET_CONFIG command"), so NAK only for values that make DMR impossible.
 
-**Protocol 1 payload** (MMDVMHost sends 23 bytes, frame length 1A; MMDVM_HS refuses fewer than 23; our old firmware
-accepted 13 or more; rfgw and the bench tools send 23):
+**Protocol 1 payload** (MMDVMHost sends 23 bytes, frame length 1A; MMDVM_HS refuses fewer than 23; the old firmware
+accepted 13 or more; odr_sdrbench and the bench tools send 23):
 
 | Payload offset | Content | DMR-only radio |
 | --- | --- | --- |
 | 0 | flags: 01 RX invert, 02 TX invert, 04 PTT invert, 08 YSF low deviation, 10 debug (the host wants DEBUG frames), 20 COS as lockout, 80 simplex (MMDVMHost `Duplex=0`) | must honor 80 (simplex / duplex, section 3.6 and SFR); 10 gates DEBUG frames; ignore 01, 02, 04, 08, 20 (no baseband path to invert; never report lockout) |
 | 1 | modes enabled: 01 D-Star, 02 DMR, 04 YSF, 08 P25, 10 NXDN, 20 POCSAG | honor 02; ignore the others, never NAK for them |
-| 2 | TX delay, 10 ms units (MMDVMHost default 100 ms = 0A) | MMDVM firmwares NAK above 50 (32 hex); our old firmware accepted up to 100 (1 s). Accept 0-255 and clamp; may use it as the key-up lead time |
-| 3 | modem state to enter: 00 idle (MMDVMHost always sends 00), 02 DMR (rfgw and the bench tools send 02), 06 POCSAG | accept 00, 02, 06; NAK 4 for others |
+| 2 | TX delay, 10 ms units (MMDVMHost default 100 ms = 0A) | MMDVM firmwares NAK above 50 (32 hex); the old firmware accepted up to 100 (1 s). Accept 0-255 and clamp; may use it as the key-up lead time |
+| 3 | modem state to enter: 00 idle (MMDVMHost always sends 00), 02 DMR (odr_sdrbench and the bench tools send 02), 06 POCSAG | accept 00, 02, 06; NAK 4 for others |
 | 4 | RX level, percent × 2.55 | ignore |
 | 5 | CW ID TX level | ignore (or use for the CW tone level) |
 | 6 | DMR color code 0-15 | honor; NAK 4 above 15 |
@@ -264,13 +269,13 @@ builds, re-evaluate the SFR trigger after it (section 6).
 
 ### 2.6 SET_MODE (03)
 
-Payload: 1 byte, the state. `E0 04 03 <state>`. MMDVMHost doesn't wait for the reply; rfgw waits up to 1 s for an
-ACK. The MMDVM firmwares and our old firmware ACK it.
+Payload: 1 byte, the state. `E0 04 03 <state>`. MMDVMHost doesn't wait for the reply; odr_sdrbench waits up to 1 s for
+an ACK. The MMDVM firmwares and the old firmware ACK it.
 
 | State | Action |
 | --- | --- |
 | 00 idle | Stop accepting new traffic for TX; a transmission in progress ends cleanly (terminator) within a superframe; the TX queue is cleared; TX flag clears once off air. The receiver keeps running (MMDVM firmwares pass up what they hear in idle; MMDVMHost switches itself to DMR mode on the first frame). CW ID is accepted only in idle. |
-| 02 DMR | Normal hotspot operation. **Must be ACKed even before any SET_CONFIG** (rfgw sends SET_MODE DMR right after GET_VERSION, before its first SET_FREQ / SET_CONFIG; the old firmware treated DMR as always enabled). |
+| 02 DMR | Normal hotspot operation. **Must be ACKed even before any SET_CONFIG** (odr_sdrbench sends SET_MODE DMR right after GET_VERSION, before its first SET_FREQ / SET_CONFIG; the old firmware treated DMR as always enabled). |
 | 06 POCSAG | ACK and keep receiving DMR but don't pass it up (MMDVMHost drops DMR in POCSAG mode anyway); never transmit pages. Pi-Star enables POCSAG by default; MMDVMHost switches to POCSAG mode whenever a page arrives from DAPNET. Report POCSAG space 00 or 01 so the host never writes page data (it writes only while above 1). |
 | same as now | ACK, no change. |
 | 01, 03, 04, 05, 07, 0A and others | NAK 4. |
@@ -287,15 +292,15 @@ when it enters its lockout or error modes, and at startup. It sends SET_MODE DMR
 | 1-4 | RX frequency, Hz, little endian |
 | 5-8 | TX frequency, Hz, little endian |
 | 9 | RF level 0-255 (MMDVMHost `RFLevel` percent × 2.55; 100 % = FF) |
-| 10-13 | POCSAG TX frequency, Hz, little endian (MMDVMHost sends 433000000 = 19CF0E40 when POCSAG is off; rfgw sends the TX frequency) |
+| 10-13 | POCSAG TX frequency, Hz, little endian (MMDVMHost sends 433000000 = 19CF0E40 when POCSAG is off; odr_sdrbench sends the TX frequency) |
 
-Lengths: MMDVMHost and rfgw always send 14 payload bytes (frame length 11 hex). Accept 9 (very old hosts: no RF level,
-take full power), 10 (with RF level) and 14. Protocol 1 and 2 use the same layout.
+Lengths: MMDVMHost and odr_sdrbench always send 14 payload bytes (frame length 11 hex). Accept 9 (very old hosts: no
+RF level, take full power), 10 (with RF level) and 14. Protocol 1 and 2 use the same layout.
 
 Rules:
 
 - RX = TX is the normal simplex hotspot. RX ≠ TX in simplex is allowed (split simplex); tune both.
-- Validate against the radio's hardware range only. Do not restrict to amateur bands: rfgw runs business-band
+- Validate against the radio's hardware range only. Do not restrict to amateur bands: the SDR bench runs business-band
   channels (461-467 MHz), and the old firmware's band check broke that until removed (gotchas 8.7). A NAK at MMDVMHost
   startup stops it, which is the right outcome for a frequency the radio can't tune. Ignore the POCSAG frequency
   unless POCSAG TX is implemented (never NAK because of it).
@@ -303,10 +308,11 @@ Rules:
   was FF (the user never touched it), and otherwise mapped below 50 as level / 12 and 50 and above as level / 50 + 3
   onto its power-level index. MMDVM_HS applies the new frequency only at the next SET_CONFIG; the old firmware
   retuned at once.
-- SET_FREQ resets the hotspot's call state (gotchas 8.6): anything buffered for TX is dropped and the RF uplink call is
-  closed. If an uplink call was open, send DMR_LOST2 before the ACK (recommendation: MMDVMHost has no RF watchdog,
-  3.7). After the ACK, every frame sent up must have been heard on the new frequency: rfgw relies on this ("once the
-  tune's last ACK is in, what follows was heard on the new channel") while it scans several channels a second.
+- SET_FREQ resets the hotspot's call state (gotchas 8.6): anything buffered for TX is dropped and the RF uplink call
+  is closed. If an uplink call was open, send DMR_LOST2 before the ACK (recommendation: MMDVMHost has no RF watchdog,
+  3.7). After the ACK, every frame sent up must have been heard on the new frequency: odr_sdrbench relies on this
+  ("once the tune's last ACK is in, what follows was heard on the new channel") while it scans several channels a
+  second.
 - In SFR builds, re-evaluate the SFR trigger after it (section 6).
 
 ### 2.8 DMR_DATA1 / DMR_DATA2 (18 / 1A)
@@ -335,25 +341,25 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
 | 20 | voice burst A (voice sync) |
 | 01-05 | voice bursts B-F (embedded signaling), the number is the position in the superframe |
 | 00 | (host to modem) nothing said: classify from the burst |
-| 80 + ... | (duplex MMDVM firmware, modem to host) what the idle receiver heard while the transmitter was off; rfgw's repeater reads it; a simplex radio never sends it |
+| 80 + ... | (duplex MMDVM firmware, modem to host) what the idle receiver heard while the transmitter was off; odr_sdrbench's repeater reads it; a simplex radio never sends it |
 
 **Host to modem**:
 
 - MMDVMHost writes control byte **00 on every frame**: header, voice, terminator, idle, data alike. The modem must
-  classify each burst from its own content: the sync word (any of the eight above; MMDVMHost puts MS sync on
-  simplex traffic, BS on duplex traffic, and BS data sync on its idle bursts even in simplex), then for data sync the
-  slot type's data type. Voice B-F carry an EMB instead of a sync: their position follows from the count since the
-  last voice A (MMDVMHost always sends whole superframes, filling gaps with silence bursts itself) and is
-  confirmed by the EMB's LCSS (B first fragment, C and D continuation, E last, F single / reverse channel).
-  Classifying from the control byte sent data as voice, ignored terminators and NAKed the idle bursts before each
-  call (gotchas 8.2). rfgw and the bench tools' `_ctl` cases set the control byte properly; when it is non-zero it
-  may be trusted, but classification from the burst must give the same answer.
+  classify each burst from its own content: the sync word (any of the eight above; MMDVMHost puts MS sync on simplex
+  traffic, BS on duplex traffic, and BS data sync on its idle bursts even in simplex), then for data sync the slot
+  type's data type. Voice B-F carry an EMB instead of a sync: their position follows from the count since the last
+  voice A (MMDVMHost always sends whole superframes, filling gaps with silence bursts itself) and is confirmed by the
+  EMB's LCSS (B first fragment, C and D continuation, E last, F single / reverse channel). Classifying from the
+  control byte sent data as voice, ignored terminators and NAKed the idle bursts before each call (gotchas 8.2).
+  odr_sdrbench and the bench tools' `_ctl` cases set the control byte properly; when it is non-zero it may be trusted,
+  but classification from the burst must give the same answer.
 - What MMDVMHost sends for a network voice call in simplex: 6 idle bursts (its jitter buffer, 360 ms at the default
   `Jitter=360`; more for larger jitter), 8 voice LC headers, the voice superframes (A-F, silence bursts where the
   network lost frames), 3 terminators. A late-entry network call (no header) starts with the idle bursts and 8
   headers it builds itself. A PI header, if the network carries one, follows the headers. Data: 2 idle bursts, the
   data header, the blocks; CSBKs with up to 15 preamble CSBKs before them. A simplex host sends 8 headers and 3
-  terminators; rfgw sends 1 header and 1 terminator to a radio it detects as `opengd77`, 8 and 3 to others.
+  terminators; odr_sdrbench sends 1 header and 1 terminator to a radio it detects as `opengd77`, 8 and 3 to others.
 - Idle bursts: accept (no NAK; the bench test `net_voice` fails on any NAK) and drop; the radio makes its own fill.
   MMDVM_HS transmits them as given.
 - PI headers: the old firmware accepted and dropped them; a radio that transmits privacy calls should pass them on.
@@ -366,18 +372,18 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
 - Start of transmission: start as soon as a few bursts are buffered (the old firmware: more than 4, or the terminator
   of a short call), never pad the start with silence superframes (gotchas 1.1). If nothing arrives for about 360 ms
   while buffering, give up and return to receive.
-- Lone CSBKs and data: key, send, unkey (rfgw sends a radio check as a CSBK with preamble CSBKs, no header or
+- Lone CSBKs and data: key, send, unkey (odr_sdrbench sends a radio check as a CSBK with preamble CSBKs, no header or
   terminator).
 - Length must be exactly 37 (34 payload bytes): MMDVM firmwares NAK 4 otherwise.
 - Full buffer: NAK 5 and drop the frame; never overwrite unsent frames (gotchas 8.4).
 - Wrong mode: NAK 2 (state not idle / DMR, or DMR_DATA1 in plain simplex). A frame in idle state switches the modem to
-  DMR (the MMDVM firmwares do this; our old firmware forced it for BlueDV).
+  DMR (the MMDVM firmwares do this; the old firmware forced it for BlueDV).
 
 **Modem to host** (what was heard on air), plain simplex:
 
 - Every burst goes up as **DMR_DATA2**, whatever slot or sync the sender used (MMDVM_HS and MMDVM do the same;
   MMDVMHost simplex configs usually enable only network slot 2, and MMDVMHost drops slot 1 traffic for the network
-  then). rfgw's simplex roamer listens only to DMR_DATA2. SFR mode uses the inbound slot's command (section 6).
+  then). odr_sdrbench's simplex driver listens only to DMR_DATA2. SFR mode uses the inbound slot's command (section 6).
 - Control byte as in the table: 41 for each voice header heard, 20 for voice A, 01-05 for B-F, 42 for the
   terminator, 40 + type for PI headers, CSBK, data headers and blocks. MMDVMHost takes a frame whose control byte is
   exactly 42 as the end of the call.
@@ -395,9 +401,9 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
   voice LC header made from it, then the superframe so far as silence from A so the sequence restarts cleanly.
   Either works with MMDVMHost; keep the old behavior for the bench tests (`rf_late`).
 - One terminator per call (repeated terminators heard on air are the same call). Then nothing until the next call.
-- RSSI: 2 bytes after the burst, big endian, raw. MMDVMHost maps raw to dBm with the user's RSSI table; rfgw
+- RSSI: 2 bytes after the burst, big endian, raw. MMDVMHost maps raw to dBm with the user's RSSI table; odr_sdrbench
   converts with the radio formula of 5.4. The old firmware sent 00 and the AT1846S RSSI register (0x1B) high byte.
-  Send the same scale on the AT1846S radios so rfgw's dBm stays right; on other RF chips, document the scale.
+  Send the same scale on the AT1846S radios so odr_sdrbench's dBm stays right; on other RF chips, document the scale.
 
 ### 2.9 DMR_LOST1 / DMR_LOST2 (19 / 1B)
 
@@ -414,21 +420,22 @@ gotchas 8.5).
 - DMR_SHORTLC: `E0 0C 1C <9 bytes>`, the CACH short LC (activity per slot), encoded and interleaved. **MMDVMHost sends
   it in simplex too**, at the start and end of every call (it isn't gated on duplex). A direct-mode radio has no CACH:
   accept and ignore it, with no NAK (a NAK puts a warning in MMDVMHost's log per call). MMDVM_HS simplex builds ignore
-  it silently; our old firmware ACKed it.
+  it silently; the old firmware ACKed it.
 - DMR_START: `E0 04 1D 01` (key) / `E0 04 1D 00` (unkey). Duplex only; MMDVMHost never sends it in simplex. Ignore it
-  (ACK or silence). rfgw doesn't send it in SFR mode.
+  (ACK or silence). odr_sdrbench doesn't send it in SFR mode.
 - DMR_ABORT: `E0 04 1E <slot>` (01 or 02). Duplex only for MMDVMHost (sent when an RF call takes a slot from the
-  network). rfgw sends it in SFR mode for the outbound slot whenever it starts a new network voice call or an RF call
-  takes the slot: drop what is queued for TX (SFR). ACK (the old firmware) or silence. Never NAK.
+  network). odr_sdrbench sends it in SFR mode for the outbound slot whenever it starts a new network voice call or an
+  RF call takes the slot: drop what is queued for TX (SFR). ACK (the old firmware) or silence. Never NAK.
 - DMR_ALOHA: trunking only (MMDVMHost `[DMR] Trunking`); NAK 2 or ignore.
 
 ### 2.11 SEND_CWID (0A)
 
-`E0 <len> 0A <ASCII callsign>`; MMDVMHost sends up to 200 characters, rfgw up to 40 upper case. Accepted only in idle
-state (both MMDVMHost and rfgw put the modem in idle first and wait for TX to clear): ACK, then key FM and send the
-Morse; TX flag set until done. In any other state NAK 5. rfgw waits for the ACK (1 s); MMDVM_HS sends no ACK on
-success, our old firmware did. After CW, restore the DMR setup fully (gotchas 8.13: on the MD-9600 the HR_C6000 tone
-configuration must be restored or DMR fails until a power cycle). The old firmware sent 60 ms dots (about 20 wpm).
+`E0 <len> 0A <ASCII callsign>`; MMDVMHost sends up to 200 characters, odr_sdrbench up to 40 upper case. Accepted only
+in idle state (both MMDVMHost and odr_sdrbench put the modem in idle first and wait for TX to clear): ACK, then key FM
+and send the Morse; TX flag set until done. In any other state NAK 5. odr_sdrbench waits for the ACK (1 s); MMDVM_HS
+sends no ACK on success, the old firmware did. After CW, restore the DMR setup fully (gotchas 8.13: on the MD-9600 the
+HR_C6000 tone configuration must be restored or DMR fails until a power cycle). The old firmware sent 60 ms dots
+(about 20 wpm).
 
 Ours: the hotspot's `cw_id` op (`core/radio/radio_hotspot.c`) hands the callsign (up to 40 characters) to the radio
 task, which keys it on boards whose `hal_radio_t` has `tx_tone` (only the DM-1701 so far; `tx_tone_key` switches
@@ -479,7 +486,7 @@ D-Star, YSF, P25, NXDN, M17 and POCSAG data: NAK 2.
    reply is among them it continues, else it waits **1.5 s** and repeats, **6 attempts** in all (about 11 s), then
    gives up ("Unable to read the firmware version after six attempts") and stops. Any frame the modem sends before the
    version reply uses up one of the 30 reads: **the modem must not send unsolicited frames (DMR uplink, DEBUG) until
-   it has been addressed** (our old firmware sent nothing up until the host had sent any command).
+   it has been addressed** (the old firmware sent nothing up until the host had sent any command).
 4. Sends **SET_FREQ** and waits for ACK / NAK.
 5. Sends **SET_CONFIG** and waits for ACK / NAK.
 6. (FM only) FM_PARAMS1-4, each waited on.
@@ -489,11 +496,11 @@ D-Star, YSF, P25, NXDN, M17 and POCSAG data: NAK 2.
 arrive that aren't ACK or NAK (up to 30). If nothing has arrived at the first read, it carries on as if ACKed; a late
 NAK is then only logged. So ACK quickly (within 10 ms is ideal), and in any case before any other frame.
 
-The order is SET_FREQ before SET_CONFIG in current MMDVMHost. rfgw and the bench tools also send SET_FREQ, SET_CONFIG,
-SET_MODE in that order, but rfgw sends a SET_MODE DMR right after GET_VERSION too, and the bench tools skip
-GET_VERSION entirely. The modem must accept these commands in any order, repeated, at any time.
+The order is SET_FREQ before SET_CONFIG in current MMDVMHost. odr_sdrbench and the bench tools also send SET_FREQ,
+SET_CONFIG, SET_MODE in that order, but odr_sdrbench sends a SET_MODE DMR right after GET_VERSION too, and the bench
+tools skip GET_VERSION entirely. The modem must accept these commands in any order, repeated, at any time.
 
-### 3.2 rfgw startup and tuning
+### 3.2 odr_sdrbench startup and tuning
 
 GET_VERSION up to 6 times, each waited on for 1 s (no initial delay); then SET_MODE DMR; then per tune: SET_FREQ,
 SET_CONFIG (with state 02 DMR), SET_MODE DMR, each waited on for 1 s (an error restarts the whole connection with
@@ -525,15 +532,15 @@ A modem that reboots (watchdog) while the host is running must answer the host's
 
 MMDVMHost writes at most one DMR frame per slot per pass of its main loop, nothing within 10 ms of its last write
 (playout timer), and only while its space copy is above 1 (2.4). A call therefore arrives as a clump (idle bursts +
-headers, as far as space allows) and then at the network rate, about one frame per 60 ms, with jitter. rfgw: one
+headers, as far as space allows) and then at the network rate, about one frame per 60 ms, with jitter. odr_sdrbench: one
 burst per 60 ms per slot after a prebuffer (6 by default), also gated on space above 1.
 
 ### 3.6 Simplex (Duplex=0) DMR behavior
 
 - One timeslot on air. The host uses DMR_DATA2 / DMR_LOST2 only (slot 1 space is the constant 10).
 - TX: MS-sourced framing on air regardless of the sync in the host's frames (MMDVMHost puts MS sync on simplex
-  traffic; HBlink traffic forwarded by rfgw is regenerated to MS sync). The radio builds its own slot type, EMB and
-  sync with the configured color code.
+  traffic; network traffic forwarded by odr_sdrbench is regenerated to MS sync). The radio builds its own slot type,
+  EMB and sync with the configured color code.
 - The radio can't receive while it transmits; RF heard right after a transmission goes up normally.
 - No DMR_START, no DMR_ABORT, short LC ignored, no CACH.
 - After the host's terminator, the TX flag stays set until the radio's own terminator is on air (about 0.7 s after
@@ -557,11 +564,11 @@ burst per 60 ms per slot after a prebuffer (6 by default), also gated on space a
 
 ## 4. Client compatibility matrix
 
-Columns: **MMDVMHost** (current master, Linux / Pi-Star / WPSD class hosts), **rfgw** (RadioDesk, roamer `txvr` and
-SFR `repeater`), **bench** (our `hotspot_test.py`, `hs_normal.py`, `run_sfr_call.sh` and copies), **old firmware**
-(what our earlier radio did, which the other three were tested against).
+Columns: **MMDVMHost** (current master, Linux / Pi-Star / WPSD class hosts), **odr_sdrbench** (the SDR bench's modem
+driver, simplex and SFR `repeater`), **bench** (our `hotspot_test.py`, `hs_normal.py`, `run_sfr_call.sh` and copies),
+**old firmware** (see the introduction; the other three were tested against it).
 
-| # | Point | MMDVMHost | rfgw | bench | old firmware |
+| # | Point | MMDVMHost | odr_sdrbench | bench | old firmware |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Version description | logged only | **must contain `OpenGD77`** to be typed `opengd77` (1 header / 1 terminator, radio RSSI formula); SFR needs `OpenGD77` + `SFR TSx>TSy <framing>` | not read | `OpenGD77_HS v0.1.18 GitID #<hash> (Radio:<model>, Mode:MMDVM\|BlueDV)` + ` SFR TS1>TS2 TS` in SFR builds |
 | 2 | Protocol version | 1 or 2 | 1 or 2 | **1 only** (config and status offsets hard-coded) | 1 |
@@ -573,7 +580,7 @@ SFR `repeater`), **bench** (our `hotspot_test.py`, `hs_normal.py`, `run_sfr_call
 | 8 | Waits for ACK of | SET_FREQ, SET_CONFIG, FM params (10 ms read, see 3.1) | SET_FREQ, SET_CONFIG, SET_MODE, SEND_CWID (1 s) | nothing | ACKed all of them |
 | 9 | SET_CONFIG length | 23 payload (v1) | 23 (v1) / 37 (v2) | 23 | accepted ≥ 13 |
 | 10 | SET_CONFIG state byte | 00 | 02 | 02 | accepted 00, 02, 06, 61 |
-| 11 | Simplex flag | set (Duplex=0) | set (roamer); **clear + RX = TX for SFR** | set (`--simplex`) or clear + RX = TX (SFR) | SFR when clear and RX = TX (evaluated after either command) |
+| 11 | Simplex flag | set (Duplex=0) | set (simplex); **clear + RX = TX for SFR** | set (`--simplex`) or clear + RX = TX (SFR) | SFR when clear and RX = TX (evaluated after either command) |
 | 12 | SET_FREQ | 14 bytes, POCSAG 433 MHz filler | 14 bytes, POCSAG = TX freq; business band | 14 bytes, 461.6875 MHz | ≥ 9; refused 145.8-146.0 and 435-438 MHz only; reset hotspot state |
 | 13 | DMR_DATA control byte to modem | **always 00** | set (41, 20, 01-05, 42, 43, 46 ...) | 00 (`net_*`) or set (`net_*_ctl`) | classified from the burst when 00 |
 | 14 | Headers / terminators to modem | 8 / 3 (simplex), 6 idle bursts first | 1 / 1 to `opengd77`; SFR: 6 idle + 3 headers, terminator + (call hang / 60 ms − 1) more, about 50 | 6 idle, 8 headers, 3 terminators, 2 idle | dropped idle and PI headers; terminator ended the call |
@@ -582,14 +589,14 @@ SFR `repeater`), **bench** (our `hotspot_test.py`, `hs_normal.py`, `run_sfr_call
 | 17 | NAK of DMR data | logged, frame lost | SFR: 6 = RF busy (drops the stream), 2 = SFR off (error); others logged | `net_*` cases fail on any NAK | 5 full, 4 unusable burst, 2 wrong mode (DATA1 in simplex), 6 RF busy (SFR) |
 | 18 | DMR_SHORTLC | sent every call, simplex too | duplex only, not SFR | never | ACKed |
 | 19 | DMR_START / DMR_ABORT | duplex only | START duplex only; ABORT in SFR for the outbound slot | never | ACKed; ABORT dropped the SFR outbound queue |
-| 20 | Uplink slot | DMR_DATA2 in simplex | roamer: only DMR_DATA2 is used; SFR: inbound slot's command (DATA1 for TS1) | `rf_*`: DATA2; SFR log: DATA1/2 | DATA2 simplex, inbound slot in SFR |
+| 20 | Uplink slot | DMR_DATA2 in simplex | simplex: only DMR_DATA2 is used; SFR: inbound slot's command (DATA1 for TS1) | `rf_*`: DATA2; SFR log: DATA1/2 | DATA2 simplex, inbound slot in SFR |
 | 21 | Uplink control byte | 41 / 20 / 01-05 / 42 / 4x; 42 = end of call | same (rx.py reads data type and N) | modeled on MMDVMHost (sequence check) | all headers heard, late-entry header from embedded LC + silence fill, one terminator |
 | 22 | RSSI after burst | optional; user RSSI table | optional; `opengd77`: dBm = raw − 151 (≥ 300 MHz), −164 + raw × 32 / 27 (VHF) | printed | 00, AT1846S reg 0x1B high byte |
 | 23 | DMR_LOST | required (no RF watchdog) | used; own fallback 1 s (SFR) / 1.5 s | `rf_lost`: 0.4-0.8 s after last burst | 500 ms (300 ms SFR) |
 | 24 | TX flag | gates CW ID and beacons | waits for clear + 0.5 s before retune / CW / end | `transmitting()` | set from buffering to own terminator on air, data busy, CW |
 | 25 | Carrier detect 40 | stored | listen before talk | ignored | from noise level when not transmitting |
 | 26 | SEND_CWID | only from idle, not waited on | idle first, waits for ACK, then waits for TX clear | never | ACK; NAK 5 unless idle |
-| 27 | SET_MODE before SET_CONFIG | no | **yes (DMR, roamer)** | no | ACKed |
+| 27 | SET_MODE before SET_CONFIG | no | **yes (DMR, simplex)** | no | ACKed |
 | 28 | POCSAG | SET_MODE 06 when pages arrive (if enabled) | never | never | ACKed mode 06; space 01; pages ACKed and not sent |
 | 29 | Transport | serial or UDP (`Protocol=udp`, ModemAddress / ModemPort 3334, LocalPort 3335; accepts only datagrams from ModemAddress:ModemPort) | serial or UDP (same rule; local port 3335) | **UDP 12.47.82.93:3334 from 12.47.82.92:3335**, one frame per datagram (copies: serial or UDP) | USB CDC, or UDP 3334 over its USB network adapter (CDC-NCM), reply from radio:3334 to the host's last source port |
 | 30 | DTR | Windows: **clears DTR**; Linux / macOS: raised by the OS on open | pyserial default (raised) | n/a (UDP) | ignored |
@@ -597,9 +604,9 @@ SFR `repeater`), **bench** (our `hotspot_test.py`, `hs_normal.py`, `run_sfr_call
 | 31a | 0xD6 / ` SPLIT1` | never sent / suffix ignored | not used | not used (a split duplex host: `tools/split_duplex_host.py`) | D6 reply; NAK 1 without CONFIG_HOTSPOT_SPLIT |
 | 32 | BlueDV (Windows client) | | | | "Mode:BlueDV" variant: no 20 s timeout, DMR_DATA2 in idle forced DMR mode, voice accepted without an embedded-LC call start (old firmware only; not verified against BlueDV itself) |
 
-Row 1 is the one compatibility break a new name causes. Options for the lead: (a) change rfgw's detection to also
-accept the new firmware's name (preferred: rfgw is ours; `detect()` and `sfr_slots()` in
-`radiodesk_rfgw/mmdvm/radio.py`, plus its tests), or (b) put a compatibility token in the description. The old name
+Row 1 is the one compatibility break a new name causes. Options for the lead: (a) make odr_sdrbench's detection
+accept ODR's description (preferred: odr_sdrbench is ours; its `detect()` and `sfr_slots()` in
+`odr_sdrbench/mmdvm/radio.py`, plus its tests), or (b) put a compatibility token in the description. The old name
 is the legacy project's, and `tools/license_grep.sh` fails on it in any source file outside `docs/`, so (b) is out
 unless the rules change.
 
@@ -622,12 +629,12 @@ unless the rules change.
 intervals fit easily. Write from task context, not from an interrupt handler (gotchas 8.10). Stream parsing with
 0xE0 resync as in section 1.
 
-### 5.3 UDP (MMDVMHost `Protocol=udp`, rfgw `protocol: udp`)
+### 5.3 UDP (MMDVMHost `Protocol=udp`, odr_sdrbench `protocol: udp`)
 
-- The modem listens on UDP port 3334 at its own address. The host sends from its LocalPort (3335 by default in rfgw;
-  configured in MMDVMHost).
+- The modem listens on UDP port 3334 at its own address. The host sends from its LocalPort (3335 by default in
+  odr_sdrbench; configured in MMDVMHost).
 - Replies go from the modem's address, **source port 3334**, to the address and port the host's last datagram came
-  from. MMDVMHost and rfgw both drop datagrams that don't come from exactly ModemAddress:ModemPort.
+  from. MMDVMHost and odr_sdrbench both drop datagrams that don't come from exactly ModemAddress:ModemPort.
 - One MMDVM frame per datagram in both directions (MMDVMHost writes each frame in one datagram; the bench tools need
   each reply in its own datagram). Still parse incoming datagrams as a stream.
 - One host at a time (the last sender wins).
@@ -636,9 +643,9 @@ intervals fit easily. Write from task context, not from an interrupt handler (go
 
 ### 5.4 RSSI scale
 
-rfgw's `opengd77` type converts the raw RSSI to dBm as: dBm = raw − 151 at 300 MHz and above; dBm = −164 + raw × 32 /
-27 below. The raw value is the 16-bit big-endian number after the burst; the old firmware put 00 in the high byte and
-the AT1846S register 0x1B high byte in the low byte. MMDVMHost uses whatever RSSI table the user configured.
+odr_sdrbench's `opengd77` type converts the raw RSSI to dBm as: dBm = raw − 151 at 300 MHz and above; dBm = −164 + raw
+× 32 / 27 below. The raw value is the 16-bit big-endian number after the burst; the old firmware put 00 in the high
+byte and the AT1846S register 0x1B high byte in the low byte. MMDVMHost uses whatever RSSI table the user configured.
 
 ## 6. Our extensions (not part of MMDVM)
 
@@ -668,7 +675,7 @@ no sense for a real duplex board.)
 | DMR_ABORT | Any slot: drops what the host had queued. ACK. |
 | DMR_START, DMR_SHORTLC | ACK and ignore (the radio owns its keying and has no CACH). |
 | GET_STATUS flag 01 | transmitting for any reason (the repeat, the host's traffic, the hang). |
-| GET_STATUS flag 80 | **inbound slot busy**: an RF call is being repeated, until its terminator has been repeated. rfgw refuses new network streams while it is set. |
+| GET_STATUS flag 80 | **inbound slot busy**: an RF call is being repeated, until its terminator has been repeated. odr_sdrbench refuses new network streams while it is set. |
 | GET_STATUS offsets 7 and 8 | both carry the outbound slot's free space (up to 16 bursts), so the host can write either slot's command. Outside SFR mode offset 7 is 10 as usual. |
 | SEND_CWID | works while idle, as in simplex. |
 | SFR settings | color code from SET_CONFIG, frequency and RF level from SET_FREQ; inbound / outbound slot, framing, hang and TOT from the radio's own channel settings (defaults TS1 in, TS2 out, TS framing, 1 s hang, 180 s TOT). No SET_CONFIG byte is used for them. |
@@ -679,7 +686,7 @@ The protocol 1 status (frame offsets 0-12) unchanged, followed by 108 bytes of S
 13 to 120; frame length 121 (79 hex). Counters are modulo 256. Layout: `drivers/modem/hrc6000/sfr_glue/hrcSfr.h`
 (the `hrcSfrDebug_t` structure, carried over as our own code), first member at frame offset 13; the field list and
 meanings are also in `tools/bench/mmdvm_hotspot.py`. A host that doesn't know them reads only up to offset 12 and is
-not disturbed: MMDVMHost (protocol 1) reads at most offset 12; rfgw reads offsets 5, 7, 8.
+not disturbed: MMDVMHost (protocol 1) reads at most offset 12; odr_sdrbench reads offsets 5, 7, 8.
 
 Keep the length and member order stable; add new members only at the end, and never change a member's meaning, so
 old bench tool versions stay correct.
@@ -737,7 +744,7 @@ full where they matter; `<33>` is a 33-byte burst.
 | Id | Check |
 | --- | --- |
 | V-1 | Protocol byte 01; description printable ASCII, no NUL, ≤ 120 bytes; frame ≤ 255 bytes. |
-| V-2 | Description matches what the agreed rfgw detection expects (section 4 row 1) and, in SFR builds, contains ` SFR TS1>TS2 TS` (or the configured slots / framing) matching the three regular expressions in 2.3.2. |
+| V-2 | Description matches what the agreed odr_sdrbench detection expects (section 4 row 1) and, in SFR builds, contains ` SFR TS1>TS2 TS` (or the configured slots / framing) matching the three regular expressions in 2.3.2. |
 | V-3 | Description contains none of `MMDVM_HS`, `ZUMspot`, `ADF7021`, `NanoDV`, `Nano_hotSPOT`, `SkyBridge`, `D2RG`, `LoneStar`. |
 | S-1 | `E0 03 01` → length ≥ 0D, byte 2 = 01, byte 3 has bit 02, byte 7 = 0A in simplex, byte 12 ≤ 01. Fresh radio after SET_CONFIG simplex + SET_MODE DMR: e.g. `E0 0D 01 22 02 00 00 0A <space> 00 00 00 01` with space ≥ 10 (16+ recommended). |
 | S-2 | 50 GET_STATUS 20 ms apart while a network call is being transmitted: 50 replies, each within 50 ms. |
@@ -771,15 +778,15 @@ Example frames (typical MMDVMHost defaults: levels 50 %, CC 1, TX delay 100 ms, 
 | C-14 | SEND_CWID in DMR state | `E0 05 7F 0A 05` |
 | C-15 | FM_PARAMS1 `E0 0A 60 <7 bytes>` | ACK |
 | C-16 | SET_FREQ during an uplink call | DMR_LOST2 (`E0 03 1B`) before the ACK; no uplink frame from the old frequency after the ACK |
-| C-17 | the same three frames repeated 5 times a second for 10 s (rfgw scanning) | all ACKed, no crash, status still answered |
+| C-17 | the same three frames repeated 5 times a second for 10 s (odr_sdrbench scanning) | all ACKed, no crash, status still answered |
 
 ### 7.4 DMR downlink (network to air)
 
 | Id | Send | Expect |
 | --- | --- | --- |
 | D-1 | MMDVMHost-style call, control 00: 6 idle (BS data sync, DT 9), 8 headers (MS data sync), 3 superframes, 3 terminators, 2 idle, paced by space | no NAK; on air (SDR / bench modem): one call, header LC as sent, ≥ 17 of 18 voice bursts, terminator, no voice after it |
-| D-2 | the same with control bytes set (rfgw style) | same |
-| D-3 | 1 header, voice, 1 terminator (rfgw `opengd77` profile) | one complete call on air |
+| D-2 | the same with control bytes set (odr_sdrbench style) | same |
+| D-3 | 1 header, voice, 1 terminator (odr_sdrbench `opengd77` profile) | one complete call on air |
 | D-4 | call 2's idle + headers arriving while call 1 is still being sent | call 1 ends with its terminator, call 2 keys under its own LC; no NAK while the host respects space |
 | D-5 | frames beyond the reported space (ignore space) | NAK 5 per refused frame (`E0 05 7F 1A 05`), the sent call not corrupted, space never reported above the true free count, never 255 |
 | D-6 | DMR_DATA2 of length 36 or 38 | `E0 05 7F 1A 04` |
@@ -813,7 +820,7 @@ Tests with the bench modem (`bench_tx.py`) or the host-test model of MMDVMHost's
 | Id | Check |
 | --- | --- |
 | T-1 | MMDVMHost-style startup (open, 2 s, GET_VERSION ...) succeeds on the first attempt. |
-| T-2 | rfgw-style startup (GET_VERSION at once, SET_MODE DMR, tune) succeeds. |
+| T-2 | odr_sdrbench-style startup (GET_VERSION at once, SET_MODE DMR, tune) succeeds. |
 | T-3 | 30 minutes of MMDVMHost-style polling with periodic calls: no "No reply from the modem" (no status reply gap ≥ 2 s). |
 | T-4 | Host closes and reopens the port (or stops polling 25 s then restarts): the modem answers the new handshake; a call in progress is ended cleanly. |
 | T-5 | Modem reboot while the host polls: the host's re-handshake works. |

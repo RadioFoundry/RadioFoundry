@@ -60,7 +60,6 @@ run; **none** = no automated test. Last run:
 | Dual watch | `test_radio_features::test_dual_watch*` | on air | holds on the channel with the call |
 | qdmr reads | `test_cps` | radio | |
 | qdmr writes | `test_cps::test_cps_write_dry_run`, `test_cps_write_restore` | radio | the dry run first; the write only with `--allow-codeplug-write` |
-| RadioDesk alert call | `test_radiodesk_alert` | on air | the radio keys 1 s first so RadioDesk has a route; 198 of 198 frames played, none concealed |
 
 ## Before this round
 
@@ -77,4 +76,3 @@ run; **none** = no automated test. Last run:
 | Power levels, battery saver | no test |
 | VFO scan, dual watch | radio only (no signal to stop for) |
 | qdmr writes | test never run; no dry run |
-| RadioDesk alert | timed out waiting for the call to end: it waited for `call.src` to clear, which the view never does |

@@ -6,7 +6,7 @@
  *   make -C tests/host
  *
  * Prints the generated bursts as "<dataType> <hex payload>" lines so that an external decoder
- * (e.g. check_with_radiodesk.py) can verify them independently.
+ * (e.g. odr_sdrbench's) can verify them independently.
  */
 
 #include <stdio.h>
@@ -71,8 +71,8 @@ static dmrDataRxResult_t feed(const dmrBurst_t *bursts, int count)
 
 static void testCRC32(void)
 {
-	// Packet from the RadioDesk test vectors (fec.crc32_dmr): CRC of "123456789" style data is checked against
-	// the python implementation in check_with_radiodesk.py, here only the self consistency is checked.
+	// Packet from odr_sdrbench's test vectors (fec.crc32_dmr): the CRC itself is checked against its Python
+	// implementation there; here only the self consistency is checked.
 	uint8_t data[8] = { 0x45, 0x00, 0x00, 0x2A, 0x00, 0x01, 0x00, 0x00 };
 	uint32_t a = dmrDataCRC32(data, 8);
 	data[0] ^= 1;
@@ -274,9 +274,9 @@ static void testTMSAck(void)
 	dumpBursts("tms-ack", bursts, n);
 }
 
-static void testRadioDeskVectors(void)
+static void testReferenceVectors(void)
 {
-	// TMS samples from RadioDesk's tests (ok-dmrlib over the air capture)
+	// TMS samples from odr_sdrbench's tests (ok-dmrlib over the air capture)
 	const uint8_t ahoj[] = { 0x00, 0x0D, 0xE0, 0x01, 0x01, 0x95, 0x44, 0x61, 0x00, 0x68, 0x00, 0x6F, 0x00, 0x6A, 0x00 };
 	const uint8_t ack[] = { 0x00, 0x04, 0x9F, 0x00, 0x95, 0x20 };
 	dmrDataTMS_t tms;
@@ -310,7 +310,7 @@ static void testARS(void)
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	dmrDataUDP_t udp;
 
-	// RadioDesk's test vector (device ID "11"), and the 12 byte PDU hbnet recognizes a MOTOTRBO radio's by (000cf0)
+	// odr_sdrbench's test vector (device ID "11"), and the 12 byte PDU hbnet recognizes a MOTOTRBO radio's by (000cf0)
 	CHECK((dmrDataBuildARSRegistration(11, pdu) == 9) && (memcmp(pdu, "\x00\x07\xF0\x20\x02\x31\x31\x00\x00", 9) == 0));
 	int length = dmrDataBuildARSRegistration(3101276, pdu);
 	CHECK((length == 14) && (memcmp(pdu, "\x00\x0C\xF0\x20\x07" "3101276" "\x00\x00", 14) == 0));
@@ -335,7 +335,7 @@ static void testARS(void)
 	dumpBursts("ars-registration", bursts, n);
 }
 
-// UDT NMEA location report: the bytes RadioDesk's decoder (radiodesk.dmr.location._decode_udt) reads as 33.76872 N,
+// UDT NMEA location report: the bytes odr_sdrbench's decoder (odr_sdrbench.dmr.location._decode_udt) reads as 33.76872 N,
 // 84.38539 W, 22.2 km/h, 14:07:30 UTC, header and appended block CRCs good
 static void testUDTLocation(void)
 {
@@ -749,7 +749,7 @@ static void testCodedFrames(void)
 
 		if (burst.dataType == DT_RATE_34_DATA)
 		{
-			// Any one bit error in the info bits is corrected. Of two, hard decision decoding corrects most (RadioDesk's
+			// Any one bit error in the info bits is corrected. Of two, hard decision decoding corrects most (odr_sdrbench's
 			// decoder corrects exactly the same pairs: 421 of these 560)
 			for (int e = 0; e < 196; e += 7)
 			{
@@ -983,7 +983,7 @@ int main(void)
 	testIPPackets();
 	testRawPacket();
 	testTMSAck();
-	testRadioDeskVectors();
+	testReferenceVectors();
 	testARS();
 	testCSBK();
 	testUDTLocation();

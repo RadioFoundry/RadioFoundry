@@ -5,10 +5,9 @@
 Adapted from an earlier bench tool of ours.
 
 Drive the SDR bench's MMDVM_HS modem board by hand as a plain DMR subscriber (simplex) to send known traffic to the radio under
-test, or to listen to what the radio sends. Runs on the SDR bench with the RadioDesk rfgw venv
-(/opt/radiodesk-rfgw/.venv/bin/python): it uses rfgw's MMDVM modem driver and RadioDesk's burst / FEC code, so bursts
-are framed exactly as rfgw's roamer frames them. rfgw must not hold the bench modem while this runs (stop
-radiodesk-rfgw@<bench host>, or take ROAM1 out of its config); tools/bench/dmr_bench.py does that for you.
+test, or to listen to what the radio sends. Runs on the SDR bench in a Python environment with the odr_sdrbench
+package (default /opt/odr-sdrbench/.venv/bin/python): it uses its MMDVM modem driver and its burst and FEC code. The
+bench's gateway service must not hold the bench modem while this runs; tools/bench/dmr_bench.py stops it for you.
 
     bench_tx.py [--freq 461.6875] [--cc 2] [--power 255] voice [--src ID] [--dst ID] [--private] [--superframes N]
               [--headers N] [--terminators N] [--late K] [--calls N] [--gap-ms MS] [--src2 ID]
@@ -33,7 +32,7 @@ voice:
   --family           sync family of every burst (default ms). bs gives BS-synced bursts in DMO timing (one burst per
                      60 ms, no CACH): enough to see that the radio recognizes BS sync, not a real repeater outbound
                      (use bench_repeater.py for that)
-  --ambe FILE        voice content: a file of 9-byte AMBE+2 channel frames (FEC applied, as RadioDesk's recorder
+  --ambe FILE        voice content: a file of 9-byte AMBE+2 channel frames (FEC applied, as odr_sdrbench's recorder
                      writes them, *.ambe), or a DSD .amb file is NOT accepted (it has no FEC). Default: AMBE silence
   --talker-alias T   send talker alias (ISO-8, up to 27 characters) in the embedded LC of odd superframes
   --gps LAT,LON[,E]  send an ETSI GPS Info LC (FLCO 8, TS 102 361-2 7.1.1) in the odd superframes, after the talker
@@ -56,13 +55,13 @@ import logging
 import time
 import zlib
 
-from radiodesk.dmr import ambe as AMBE
-from radiodesk.dmr import fec, pdu
-from radiodesk_rfgw import layer2 as L2
-from radiodesk_rfgw import sim
-from radiodesk_rfgw.mmdvm import bursts as B
-from radiodesk_rfgw.mmdvm.modem import Modem, ModemConfig, SYNC_AUDIO, SYNC_DATA
-from radiodesk_rfgw.mmdvm.radio import Radio, ModemTuner
+from odr_sdrbench.dmr import ambe as AMBE
+from odr_sdrbench.dmr import fec, pdu
+from odr_sdrbench import layer2 as L2
+from odr_sdrbench import sim
+from odr_sdrbench.mmdvm import bursts as B
+from odr_sdrbench.mmdvm.modem import Modem, ModemConfig, SYNC_AUDIO, SYNC_DATA
+from odr_sdrbench.mmdvm.radio import Radio, ModemTuner
 
 SLOT_S = 0.060          # one DMO burst every 60 ms
 FLCO_GROUP, FLCO_PRIVATE, FLCO_TA_HEADER = 0, 3, 4
@@ -247,7 +246,7 @@ def etsi_text_infos(src: int, dst: int, text: str, group: bool, response: bool, 
 
 
 def data_items(args):
-    from radiodesk.dmr import packet
+    from odr_sdrbench.dmr import packet
     if args.etsi is not None:
         infos = etsi_text_infos(args.src, args.dst, args.etsi, args.group, not args.etsi_no_response, args.preambles)
         sync = L2.data_sync(family_sync(args.family))
@@ -462,8 +461,8 @@ def main() -> None:
     ap.add_argument("--freq", type=float, default=461.6875)
     ap.add_argument("--cc", type=int, default=2)
     ap.add_argument("--power", type=int, default=255, help="MMDVM_HS RF level 0-255")
-    ap.add_argument("--rx-offset", type=int, default=-150, help="Hz, the bench modem's calibration (rfgw rx_offset_hz)")
-    ap.add_argument("--tx-offset", type=int, default=-175, help="Hz, the bench modem's calibration (rfgw tx_offset_hz)")
+    ap.add_argument("--rx-offset", type=int, default=-150, help="Hz, the bench modem's calibration (odr_sdrbench rx_offset_hz)")
+    ap.add_argument("--tx-offset", type=int, default=-175, help="Hz, the bench modem's calibration (odr_sdrbench tx_offset_hz)")
     ap.add_argument("-v", "--verbose", action="store_true", help="log every bench modem status change")
     ap.add_argument("--listen-after", type=float, default=0,
                     help="voice / data / csbk: then listen this many seconds (JSON lines), for the radio's answer "

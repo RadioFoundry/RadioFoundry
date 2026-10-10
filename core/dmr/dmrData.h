@@ -235,7 +235,7 @@ typedef struct
 // format (80 bits: C, N/S, E/W, Q, speed in knots, latitude and longitude in degrees and minutes, UTC to ten
 // seconds), its CRC-CCITT unmasked, after the preamble CSBKs (none straight after a call of ours: receivers are in sync)
 #define DMR_UDT_FORMAT_NMEA				0x05
-#define DMR_UDT_OPCODE					0x1A	// as RadioDesk's builder (C_UDTHU)
+#define DMR_UDT_OPCODE					0x1A	// as odr_sdrbench's builder (C_UDTHU)
 int dmrDataBuildUDTLocation(bool group, uint32_t dst, uint32_t src, const dmrDataLocation_t *location, int preambles,
 							dmrBurst_t *out, int maxBursts);
 

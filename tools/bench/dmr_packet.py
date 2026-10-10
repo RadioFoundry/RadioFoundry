@@ -11,7 +11,7 @@ firmware's code, so the HIL tests (tests/hil/test_dmr_ip.py) check the radio aga
     python3 -m ... / import dmr_packet: packets(lines) -> list of dicts
 
 Only rate 1/2 blocks: the listener reports the info octets of those (bench_tx.py); a packet at rate 3/4 or 1 shows as
-incomplete. Pure Python, no RadioDesk packages: runs on the test host.
+incomplete. Pure Python, no odr_sdrbench package: runs on the test host.
 """
 import json
 import sys

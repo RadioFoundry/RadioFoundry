@@ -14,7 +14,7 @@
 #define MORSE_WPM_MIN		5
 #define MORSE_WPM_MAX		40
 #define MORSE_TONE_HZ_DEFAULT	800
-#define MORSE_TEXT_MAX		40	// characters keyed; a longer ID is cut (rfgw sends up to 40, MMDVMHost a callsign)
+#define MORSE_TEXT_MAX		40	// characters keyed; a longer ID is cut (the SDR bench sends up to 40, MMDVMHost a callsign)
 
 typedef struct {
 	char text[MORSE_TEXT_MAX];

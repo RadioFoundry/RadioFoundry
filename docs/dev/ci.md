@@ -223,7 +223,6 @@ The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-run
 | `ODR_PORT` | the radio's serial port when several are present |
 | `ODR_HIL_AMBE` | the speech recording for `test_dmr_voice` (outside the repository) |
 | `ODR_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.odr-radio.lock`); the job holds it with `lockf` for the whole run |
-| `ODR_RADIODESK_MQTT_*` | only for the RadioDesk test |
 
 Run it from Actions, HIL, Run workflow, with the inputs that map to the pytest flags: `rf` (`--allow-rf
 --allow-service-stop`), `usb_switch`, `codeplug_write`, `reboot`, a `-k` selection and extra options. Without any

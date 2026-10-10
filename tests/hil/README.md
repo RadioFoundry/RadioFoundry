@@ -18,7 +18,6 @@ python3 -m pytest tests/hil -v -rs --allow-rf --allow-service-stop          # ad
 python3 -m pytest tests/hil -v -rs --allow-rf --allow-service-stop --ambe ~/recordings/speech.ambe
 python3 -m pytest tests/hil -k ui --shots /tmp/odr-shots                    # keep the screenshots
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"   # radio TX off air
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-radiodesk -k radiodesk         # RadioDesk alert call
 python3 -m pytest tests/hil -v -rs -s -k cps --allow-codeplug-write --allow-reboot      # CPS write + restart
 python3 -m pytest tests/hil -v -rs -s -k aprs --allow-rf --allow-service-stop --aprs-call N0CALL --dmr-freq 467.375  # APRS on air (your call)
 python3 -m pytest tests/hil -v -rs -s -k encoder --manual                              # turn the knob when asked
@@ -38,7 +37,6 @@ Without a radio every test is skipped with the reason (no failure). The radio is
 | `--allow-codeplug-write` | tests that write the codeplug over CPS (marker `codeplug_write`): the qdmr regions are read and saved to the test's tmp directory first, one channel name is changed, and the backup is written back and verified in a `finally` block |
 | `--allow-reboot` | tests that restart the radio (marker `reboot`) through the debug link's REBOOT (mode 0) |
 | `--manual` | tests that ask a person at the radio to do something (marker `manual`; run with `-s` to see the prompts), e.g. turn the channel knob |
-| `--allow-radiodesk` | tests that publish to the RadioDesk sandbox broker (marker `radiodesk`), whose gateway then calls the radio; also needs `--allow-rf` and `$ODR_RADIODESK_MQTT_*` |
 
 The RF tests need both flags. The gateway service is stopped through `tools/bench/dmr_bench.py`'s lease: a detached
 process on the SDR bench stops it, waits while a hold file exists (at most 300 s) and starts it again whatever
@@ -51,26 +49,23 @@ Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their ba
 raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (the SDR's own frequency error: carrier
 offsets are corrected by it), `--max-foff` (largest carrier offset the TX tests accept, default 500 Hz), `--fm-mhz`
 (FM TX test frequency, default 461.6875), `--aprs-call` / `$ODR_APRS_CALL` (test_aprs: the licensed operator's callsign, RAM only), `--aprs-ssid` (default 15), `--aprs-test-mhz` (APRS AFSK test frequency, default 145.090; why in test_aprs.py), `--aprs-dmr-dst` (the DMR position's destination ID, default 9990301), `--roam-beacon` / `--roam-beacon-len` (test_roaming's beacon interval and duration, default 20 s / 3 s), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
-sees it: its receive and transmit MHz; no default), `--radiodesk-freq` / `--radiodesk-src` / `--radiodesk-text` (the alert
-test's channel, RadioDesk's caller ID to check, the text it speaks).
+sees it: its receive and transmit MHz; no default).
 
-SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$ODR_SDR_BENCH_HOST` (ssh host or
-alias, default `sdr-bench`), `$ODR_SDR_BENCH_SERVICE`, `$ODR_SDR_BENCH_DIR`, `$ODR_SDR_BENCH_PY`. The RadioDesk
-sandbox credentials only ever come from `$ODR_RADIODESK_MQTT_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_TLS`; never
-put them in a file in the repository.
+SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$ODR_SDR_BENCH_HOST` (ssh host or alias,
+default `sdr-bench`), `$ODR_SDR_BENCH_SERVICE`, `$ODR_SDR_BENCH_DIR`, `$ODR_SDR_BENCH_PY`, `$ODR_SDR_BENCH_ENV_FILE`;
+`$ODR_SDRBENCH` names an odr_sdrbench checkout when the package isn't installed on the test host.
 
 ## Rig assumptions
 
 - The radio on USB, with a codeplug whose current zone holds a DMR channel on the DMR test frequency (the tests
   look for it by frequency and mode, and put the radio back on its channel afterwards).
-- The SDR bench reachable by SSH without a password (passwordless sudo for `systemctl` there), with the bench tools
-  installed (`tools/bench/dmr_bench.py sync`; the FM tests copy `tools/sdr_fm_check.py` there themselves). Its
+- The SDR bench reachable by SSH without a password (passwordless sudo for `systemctl` there), with the odr_sdrbench
+  package in `$ODR_SDR_BENCH_PY`'s environment and the bench tools installed (`tools/bench/dmr_bench.py sync`; the
+  FM tests copy `tools/sdr_fm_check.py` there themselves). Its
   gateway configuration has Ch 1 at 467.375 MHz and Ch 15 at 461.6875 MHz, color code 2; the tests use Ch 15.
 - For the TX tests: the radio has a DMR ID, a DMR channel on the test frequency with a talk target, and may
   transmit on `--fm-mhz` in its FM VFO; it runs on its lowest power, into an antenna or a dummy load at bench
   distance.
-- For the RadioDesk test: a RadioDesk sandbox whose gateway (on the SDR bench) calls on `--radiodesk-freq`, and
-  `pip install paho-mqtt`.
 - An antenna or attenuator so the bench transmitter at power 40 doesn't overload the radio.
 - For `test_fm`: NOAA weather radio audible at the bench (162.550 MHz by default; change it with `--noaa-mhz`).
 - Speech recordings for `test_dmr_voice` stay outside the repository; give the path with `--ambe` or
@@ -91,13 +86,12 @@ put them in a file in the repository.
 | `test_usb_network.py` | USB network personality: re-enumerates as CDC-NCM, DHCP gives the host 12.<ID>, ping and the debug link over UDP 3334 at the radio's address, back to serial. Passes on the bench Mac (macOS 26). Firmware before 5a13814 stayed a network adapter when the host never configured it (power it off and on); since then it falls back to serial after 10 s | `--allow-usb-switch`, firmware with `CONFIG_DMR_IP_GATEWAY` |
 | `test_tcp_services.py` | The TCP services at the radio's address in network mode (`docs/spec/tcp-services.md`): the HTTP page, `/status` and view JSON, the screen BMP, a 404; KISS over TCP (a foreign-source frame taken by the TNC and refused by the APRS engine; with `--allow-rf` one frame from our callsign goes out); rigctld (`f`, `m`, `t`, `get_info`, `+f`, a VFO set 12.5 kHz up and back, `dump_state`, and Hamlib's `rigctl -m 2` where installed); the APRS-IS client with `ODR_HIL_APRSIS_SERVER=a.b.c.d[:port]` and NAT on the host. Not run on the bench yet | `--allow-usb-switch` (`--allow-rf` for the KISS RF frame), firmware with `CONFIG_NET_TCP` |
 | `test_net_services.py` | the services in USB network mode: mDNS (`odr-<ID>.local` resolves to the radio, `dns-sd -B` / `-L` or python zeroconf find `_odr-debug._udp` on port 3334 with its TXT record), TFTP (`info.txt`, two reads of `codeplug.bin` identical, the current channel's record matches the view); opt-in: a channel renamed over TFTP, read back, the backup written again and verified, a wrong file refused (`docs/spec/mdns.md`, `docs/spec/tftp.md`) | `--allow-usb-switch`, firmware with `CONFIG_MDNS` / `CONFIG_TFTP`; `--allow-codeplug-write` for the write |
-| `test_control_station.py` | Control station mode (`docs/spec/usb-network.md` 5): the USB network settings stored (radio op 27) and their view keys; the fixed link (DHCP gives 192.168.10.2, ping and the debug link at 192.168.10.1); booting as the adapter (`usb_mode`); passthrough: an ETSI IP text and a TMS from the bench reach the PC's sockets and not the inbox, no TMS ACK, the PC's datagram goes out from the radio's ID, confirmed data still gets the radio's response. The bench needs the current `bench_tx.py` (`data --ip-text`). Manual follow-up with RadioDesk: usb-network.md 5.6 | radio only for the settings test; `--allow-usb-switch` (and `--allow-reboot` for the boot test, `--allow-rf --allow-service-stop` for the passthrough tests); firmware with `CONFIG_DMR_CONTROL_STATION` |
+| `test_control_station.py` | Control station mode (`docs/spec/usb-network.md` 5): the USB network settings stored (radio op 27) and their view keys; the fixed link (DHCP gives 192.168.10.2, ping and the debug link at 192.168.10.1); booting as the adapter (`usb_mode`); passthrough: an ETSI IP text and a TMS from the bench reach the PC's sockets and not the inbox, no TMS ACK, the PC's datagram goes out from the radio's ID, confirmed data still gets the radio's response. The bench needs the current `bench_tx.py` (`data --ip-text`). Manual follow-up with a dispatch application: usb-network.md 5.6 | radio only for the settings test; `--allow-usb-switch` (and `--allow-reboot` for the boot test, `--allow-rf --allow-service-stop` for the passthrough tests); firmware with `CONFIG_DMR_CONTROL_STATION` |
 | `test_snmp.py` | the SNMP agent over the USB network: walks the whole MIB at the radio's link address with `tools/odr_snmp.py`, compares values with the debug link, the SET rules with a temporary write community (restored), a wrong community dropped, the test notification received on UDP 16162; back to serial. Nothing transmitted. Not run yet | `--allow-usb-switch`, firmware with `CONFIG_SNMP` |
 | `test_dmr_rx.py` | bench sends 2 group calls (10 superframes, 8 headers, 3 terminators each); counter deltas | `--allow-rf --allow-service-stop` |
 | `test_dmr_voice.py` | bench sends a speech recording; every frame reaches the speaker path | the same, and `--ambe` |
 | `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset (waveform checks reported as not judged when the capture clips); our ETSI GPS Info from a fixed APRS position decoded by the bench modem's listener (`CONFIG_DMR_GPS` and `CONFIG_APRS`); privacy TX (Motorola BP key 1: service option 0x40 in every LC from us, FID 0x10 in the embedded LCs; a clear over has neither); talker alias TX (the channel's alias flag set over CPS, backed up and restored: the alias on air equals `dmr.tx_alias`) | `--allow-rf --allow-service-stop` (`--sdr-gain 0` on this bench); the alias test also `--allow-codeplug-write` |
 | `test_fm_tx.py` | radio FM VFO keys 3 s with CTCSS 100.0, DCS D023N, and at 12.5 / 25 kHz; the 1750 Hz burst, the roger beep (on and off) and the three lowest power levels; `tools/sdr_fm_check.py` (with `--tones`) on an SDR capture | `--allow-rf --allow-service-stop` |
-| `test_radiodesk_alert.py` | a RadioDesk sandbox alert (MQTT `ESS/RadioDesk/Alert/<id>/voice`) becomes a private call; the radio shows it while it runs (`dmr.state rx`) and plays it; the end is `dmr.state idle` (the `call.*` keys keep the last caller); `AlertStatus` reports | `--allow-rf --allow-radiodesk`, `$ODR_RADIODESK_MQTT_*` |
 | `test_cps.py` | legacy CPS over USB with `tools/cps_client.py`: radio info (type 8 / 10, struct 3), two reads of the qdmr regions identical, the current channel's record matches the view, a channel change saved by the settings store within 2 s (the `storage` view section); the write dry run (no write: backup file round trip, the rename touches only the name, the write and restore plans match and restore every byte); opt-in: one channel renamed, read back and the backup restored over what the radio then holds and verified; the channel position survives a restart | radio; `--allow-codeplug-write` (`--codeplug-backup-dir DIR` keeps the backups), `--allow-reboot` |
 | `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, an ETSI GPS Info (after an alias), a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
 | `test_radio_features.py` | the `features` view section, settings round trip, beep counters (does PCM play in this mode), zone scan + cancel, nuisance delete, VFO band scan, dual watch, battery save cycling and MONITOR waking it (radio only); TX inhibit, TOT warning and time-out, roger beep, 1750 Hz burst, VOX quiet (no key-up with nobody talking) on the FM VFO at lowest power (`radio_tx`); the zone scan, the VFO scan and dual watch hold on a bench DMR call, battery save wakes for it (`rf`) | radio; `--allow-rf` (radio_tx); `--allow-rf --allow-service-stop` (the bench ones) |
@@ -106,7 +100,7 @@ put them in a file in the repository.
 | `test_hotspot_cwid.py` | MMDVM SEND_CWID in hotspot mode: the radio keys the callsign in Morse on FM on the hotspot TX frequency (the SDR bench records), then the hotspot's DMR set-up is back | `--allow-rf --allow-service-stop` |
 | `test_dmr_data.py` | DMR data: bench sends unconfirmed and confirmed data, a TMS and an ETSI text message, a call alert and radio checks to us (the radio's answers listened for); the radio sends a call alert, a radio check (Motorola and ETSI forms) and a text message (TMS and ETSI) to the bench (the bench modem listens); the data settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio) |
 | `test_dmr_ip.py` | IP over DMR ([dmr-data.md](../../docs/spec/dmr-data.md) 11, 12): the `dmr_ip` section and the IP settings request (radio only); a UDP datagram (50000 to 161) put into the IP gateway's air path by the debug link's IP_SEND, heard by the bench modem and decoded by `tools/bench/dmr_packet.py`: SAP 3 with the 9 octet header in auto, SAP 4 with compression off, confirmed to the bench (which doesn't answer) with 2 tries: two transmissions (F set, then clear, the same N(S)), the CRC-9s checked, then failed; with `--allow-usb-switch` a datagram from this host over the USB network | `--allow-rf --allow-service-stop` (the first test: radio), firmware with `CONFIG_DMR_IP_GATEWAY`; the last test also `--allow-usb-switch` |
-| `test_hotspot_voice.py` | the hotspot on air both ways (`tools/bench/hotspot_cases.py` under the lease): bench call and data up the USB link as MMDVMHost would see them (`rf_voice8`, `rf_data_unconf`), a network call and data sent by the host heard on air by the bench modem (`net_voice`, `net_data`) | `--allow-rf --allow-service-stop`, RadioDesk's Python packages and numpy on this machine |
+| `test_hotspot_voice.py` | the hotspot on air both ways (`tools/bench/hotspot_cases.py` under the lease): bench call and data up the USB link as MMDVMHost would see them (`rf_voice8`, `rf_data_unconf`), a network call and data sent by the host heard on air by the bench modem (`net_voice`, `net_data`) | `--allow-rf --allow-service-stop`, odr_sdrbench and numpy on this machine |
 | `test_roaming.py` | DMR repeater roaming: the `roam` view section, the roaming settings round trip (RAM), the zone flag toggled and back, roam now on the current zone (passive: listens only; the radio ends on one of the sites, no probe sent), lock and roam now ending it (radio only); the wake probe brings up the bench repeater (`tools/bench/bench_repeater.py`) as a second site and the radio moves there (`rf`, `radio_tx`, `bench_service`); the survey settings round trip; the bench repeater keys an idle beacon (`bench_repeater.py --beacon`) and the radio, listening only, learns the beacon window from it as its own site and surveys the other sites in the window, or (slow) finds it from a silent site with a discovery visit and measures it (`rf`, `bench_service`). The zone flag and the roaming settings are put back | radio (the current zone with 2+ repeater channels on one talkgroup for roam now); `--allow-rf --allow-service-stop --roam-rx MHz --roam-tx MHz [--roam-beacon S --roam-beacon-len S]`, firmware with `CONFIG_DMR_ROAMING` |
 | `test_aprs.py` | APRS (`docs/spec/aprs.md` 13): the `aprs` / `aprs_set` view sections and a setting round trip, the RAM test callsign and host NMEA as the position (radio only); on air at the lowest power on `--aprs-test-mhz` (default 145.090 MHz, never an APRS frequency, no path, the RAM test call `--aprs-call` with `--aprs-ssid`): a position (from the channel and from the FM VFO), a status and a message decoded off air by `tools/aprs_afsk_check.py` on the SDR bench, with deviation, twist, phase continuity and TX delay measured; positions over DMR as LRRP and UDT decoded from the bench modem's listener. Every APRS setting touched is put back | radio; `--allow-rf --allow-service-stop --aprs-call CALL`, firmware with `CONFIG_APRS` and the `aprs.tx_power` view key (the AFSK tests skip without it) |
 
@@ -122,11 +116,11 @@ dropped blocks. When it fails, the printed deltas show which layer lost frames: 
 call stack (`call.rx_voice_bursts`, `call.rx_lost_frames`), voice layer (`voice.rx_in`, `voice.rx_frames`,
 `voice.rx_concealed`, `voice.rx_underruns`, `voice.rx_overflows`) or audio (`audio.ov`, `audio.dr`).
 
-`test_dmr_tx`, `test_fm_tx`, `test_radiodesk_alert`, `test_radio_features`, `test_hotspot_voice`, `test_hotspot_sfr`:
-the criteria are in each module's docstring (dmr_bench.py case T1's checks for DMR TX; CTCSS within 0.5 Hz and 200-900 Hz deviation at 12.5 kHz, DCS
-with the right polarity, the 25 / 12.5 kHz deviation ratio 1.5-2.6 for FM; a private call to us on Home, played with
-at most 5 % concealed frames, for the alert; for the radio features: warning 2.5-4.5 s and time-out 5.5-7.5 s with
-tot_s 6 / tot_warn_s 3, roger=1 seen after release while still on air, beep.blocks grows when beep.played does).
+`test_dmr_tx`, `test_fm_tx`, `test_radio_features`, `test_hotspot_voice`, `test_hotspot_sfr`: the criteria are in each
+module's docstring (dmr_bench.py case T1's checks for DMR TX; CTCSS within 0.5 Hz and 200-900 Hz deviation at 12.5
+kHz, DCS with the right polarity, the 25 / 12.5 kHz deviation ratio 1.5-2.6 for FM; for the radio features: warning
+2.5-4.5 s and time-out 5.5-7.5 s with tot_s 6 / tot_warn_s 3, roger=1 seen after release while still on air,
+beep.blocks grows when beep.played does).
 
 Screenshots: every SCREENSHOT request freezes the UI's redraws for a moment (`docs/spec/debuglink.md` 3.3), so a
 capture taken right after a key can still show the old screen. `Radio.screenshot()` waits out the previous
