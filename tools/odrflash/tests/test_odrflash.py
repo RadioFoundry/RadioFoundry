@@ -527,5 +527,42 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             self.assertIn("no manifest", err)
 
 
+class FlashLog(unittest.TestCase):
+    """The start and finish messages of a real flash (simulations send nothing), with urlopen replaced."""
+
+    def setUp(self):
+        self.sent = []
+        real = cli.urllib.request.urlopen
+
+        def fake(req, timeout=None, context=None):
+            self.sent.append((req.get_method(), req.full_url, json.loads(req.data)))
+            return io.BytesIO(b"")
+        cli.urllib.request.urlopen = fake
+        self.addCleanup(setattr, cli.urllib.request, "urlopen", real)
+        os.environ.pop("REPORTING", None)
+
+    def args(self, off=False):
+        return cli.build_parser().parse_args(["flash", "x.bin"] + (["--no-reporting"] if off else []))
+
+    def test_start_and_finish(self):
+        man = {"version": "v0.1.0", "variant": "full", "features": "FM,DMR"}
+        started = cli.flash_started(self.args(), DM1701, man)
+        cli.flash_finished(started, dfumod.DfuError("no answer from /Users/someone/odr/x.bin"))
+        (m1, u1, b1), (m2, u2, b2) = self.sent
+        self.assertEqual((m1, b1["radio"], b1["firmware"], b1["variant"], b1["features"]),
+                         ("POST", "dm1701", "v0.1.0", "full", "FM,DMR"))
+        self.assertEqual((m2, u2), ("PATCH", u1 + "/" + b1["id"]))
+        self.assertEqual(b2["result"], "fail")
+        self.assertNotIn("someone", b2["reason"])
+
+    def test_opt_out(self):
+        self.assertIsNone(cli.flash_started(self.args(off=True), DM1701, {}))
+        os.environ["REPORTING"] = "0"
+        self.addCleanup(os.environ.pop, "REPORTING", None)
+        self.assertIsNone(cli.flash_started(self.args(), DM1701, {}))
+        cli.flash_finished(None)
+        self.assertEqual(self.sent, [])
+
+
 if __name__ == "__main__":
     unittest.main()

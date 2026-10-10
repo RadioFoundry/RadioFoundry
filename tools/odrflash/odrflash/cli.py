@@ -2,10 +2,15 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """odrflash command line (tools/odrflash/README.md)."""
 import argparse
+import json
 import os
 import random
+import re
 import sys
+import threading
 import time
+import urllib.request
+import uuid
 
 from . import __version__, boards, debuglink, manifest as mf, plan as planmod, state, stockfw
 from . import dfu as dfumod
@@ -31,6 +36,49 @@ STOCK_HINT = ("the DM-1701 stock firmware V02.06 CSV file, DM-1701(CSV)-V02.06.b
 
 class UsageError(Exception):
     pass
+
+
+# minimal non-invasive anonymous reporting for helping the ODR project track programming failures; opt out with
+# --no-reporting or env REPORTING=0
+FLASH_LOG_URL = "https://odr.spencerfowler.com/v1/flashes"
+
+
+def _send_in_background(method, url, body):
+    """Send in the background; never delays or fails a flash."""
+    def go():
+        try:
+            req = urllib.request.Request(url, json.dumps(body).encode(), {"Content-Type": "application/json"},
+                                         method=method)
+            urllib.request.urlopen(req, timeout=5, context=relmod._ssl_context()).close()
+        except Exception:
+            pass
+    t = threading.Thread(target=go, daemon=True)
+    t.start()
+    return t
+
+
+def flash_started(args, board, man):
+    if args.no_reporting or os.environ.get("REPORTING") == "0":
+        return None
+    fid = str(uuid.uuid4())
+    sent = _send_in_background("POST", FLASH_LOG_URL, {
+        "id": fid, "tool": "odrflash", "tool_version": __version__, "radio": board.id,
+        "firmware": str(man.get("version", "")), "variant": str(man.get("variant", "")),
+        "features": str(man.get("features", ""))})
+    return fid, sent
+
+
+def flash_finished(started, error=None):
+    if not started:
+        return
+    fid, sent = started
+    sent.join(5)	# the start must arrive first
+    body = {"result": "success"}
+    if error is not None:
+        # file paths can hold user names
+        msg = re.sub(r"(?:[A-Za-z]:)?[\\/][^\s'\"]+", "<path>", str(error))
+        body = {"result": "fail", "reason": ("%s: %s" % (type(error).__name__, msg))[:300]}
+    _send_in_background("PATCH", "%s/%s" % (FLASH_LOG_URL, fid), body).join(5)
 
 
 def say(msg=""):
@@ -325,6 +373,7 @@ def cmd_flash(args):
         say("nothing done")
         return 1
     intf = dfumod.open_device(usb, dev)
+    started = None if sim else flash_started(args, board, man)
 
     tty = sys.stdout.isatty()
 
@@ -341,13 +390,15 @@ def cmd_flash(args):
     try:
         dfumod.Dfu(dev, intf, log=lambda m: say("         " + m), sleep=(lambda s: None) if sim else time.sleep) \
             .run(p, key, progress)
-    except Exception as e:
-        if isinstance(e, dfumod.DfuError):
+    except BaseException as e:
+        flash_finished(started, e)
+        if isinstance(e, dfumod.DfuError) or not isinstance(e, Exception):
             raise
         raise dfumod.DfuError("USB error while flashing: %s. The bootloader is never erased: put the radio in its "
                               "bootloader again (PTT + SK1 at power-on) and run the same command" % e)
     finally:
         dfumod.release(usb, dev)
+    flash_finished(started)
     if not sim:
         state.forget_probe()
     say("done     the radio restarts into ODR %s" % man.get("version"))
@@ -538,6 +589,8 @@ def build_parser():
     f.add_argument("--yes", "-y", action="store_true", help="don't ask")
     f.add_argument("--wait", type=int, default=120, help="seconds to wait for the bootloader (default 120)")
     f.add_argument("--no-verify", action="store_true", help="don't check the radio after it restarts")
+    f.add_argument("--no-reporting", action="store_true",
+                   help="don't send the ODR project the radio model, build and result of this flash")
     f.add_argument("--simulate", choices=("stock", "odr-codec", "odr-nocodec", "blank"),
                    help="run against a fake radio (testing: no USB); --stock synthetic gives a synthetic stock file")
     common(f)

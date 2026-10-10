@@ -2,8 +2,8 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Picking features "a la carte": a set of switches for one radio that respects the dependencies in
 // config/features.mk (data/features.json "needs") and the radio's limits (BOARD_UNSUPPORTED). A selection that equals
-// a prebuilt variant can be flashed right away; any other is a custom build (built with make for now; a build service
-// may come later).
+// a prebuilt variant can be flashed right away; any other is a custom build, which the build API makes on request (or
+// the user builds with make).
 
 export class Selection {
 	constructor(radio, features, variants) {

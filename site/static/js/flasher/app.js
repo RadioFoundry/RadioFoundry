@@ -7,8 +7,9 @@
 //   backup    read everything a radio running ODR can give into a bundle the user keeps
 //   restore   put a radio back from a bundle: exactly as it was on ODR, or back on stock firmware
 //
-// Everything runs in the page: firmware images come from this site, stock files and backups from the user's disk,
-// and nothing is sent anywhere. Add #sim to the address for a simulated radio (no hardware; for trying the flow).
+// Everything runs in the page: release images come from this site, custom images from the build API, stock files
+// and backups from the user's disk, which never leave it. Add #sim to the address for a simulated radio (no hardware;
+// for trying the flow).
 
 import { hex, sha256, toHex, fromHex, startsWith } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
@@ -113,9 +114,40 @@ const S = {
 	bundle: null, restoreTarget: null,
 	link: null,
 	customPicked: false,	// the Custom card picked before any feature changed
+	build: null,		// a custom build in progress: {selection, text, error}
 	openGroups: new Set(),	// feature groups expanded on the build step
 	openTip: null,		// the feature whose ⓘ bubble is open
 };
+
+// Custom builds and the flash log
+const API = "https://odr.spencerfowler.com/v1/";
+// minimal non-invasive anonymous reporting for helping the ODR project track programming failures; opt out with
+// ?reporting=0
+const FLASH_LOG = new URLSearchParams(location.search).get("reporting") !== "0";
+
+async function api(method, path, body) {
+	const r = await fetch(new URL(path, API), body ? { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : { method });
+	const j = await r.json().catch(() => ({}));
+	if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+	return j;
+}
+
+// Fire and forget: a flash never waits for these or fails because of them
+function flashStarted(what) {
+	if (!FLASH_LOG || S.sim) return null;
+	const id = crypto.randomUUID();
+	const sent = fetch(new URL("flashes", API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...what }) }).catch(() => {});
+	return { id, sent };
+}
+
+async function flashFinished(started, error = null) {
+	if (!started) return;
+	await started.sent;
+	const body = error ? { result: "fail", reason: errorText(error).slice(0, 300) } : { result: "success" };
+	fetch(new URL(`flashes/${started.id}`, API), { method: "PATCH", keepalive: true, headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body) }).catch(() => {});
+}
 
 const STEPS = {
 	install: ["radio", "build", "now", "codec", "write", "done"],
@@ -347,6 +379,8 @@ function buildView() {
 	};
 	const draw = () => {
 		const match = S.customPicked ? null : sel.matches();
+		// an image built for another selection no longer applies
+		if (S.firmware?.selection && S.firmware.selection !== selectionKey(sel)) S.firmware = null;
 		const card = (checked, onclick, ...body) => h("button", { class: "choice", type: "button", role: "radio",
 			"aria-checked": String(checked), onclick }, ...body);
 		const cards = S.data.variants.map((v) => {
@@ -411,10 +445,17 @@ function buildView() {
 						? t("flash.build.custom_diff", { added: d.added.length, removed: d.removed.length, variant: baseTitle })
 						: t("flash.build.custom_start"))),
 			button(t("flash.next"), () => { next(); }, { primary: true, disabled: !match && !S.firmware }));
+		const building = S.build && S.build.selection === selectionKey(sel);
 		const custom = match ? null : panel(t("flash.build.image_title"),
-			notice(t("flash.build.custom_text"), "info"), h("pre", {}, h("code", {}, sel.makeCommand())),
-			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok") : null,
-			filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, draw)));
+			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
+				: building && S.build.error ? notice(S.build.error, "bad")
+				: building ? h("p", { class: "muted" }, S.build.text)
+				: h("p", {}, t("flash.build.custom_text")),
+			S.firmware ? null : h("div", { class: "actions" },
+				button(t("flash.build.request"), () => requestBuild(draw), { primary: true, disabled: building && !S.build.error })),
+			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
+				h("p", {}, t("flash.build.self_text")), h("pre", {}, h("code", {}, sel.makeCommand())),
+				filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, draw))));
 		wrap.replaceChildren(
 			panel(t("flash.build.title"), h("p", {}, t("flash.build.lead")),
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
@@ -485,6 +526,37 @@ function nest(items) {
 	};
 	walk(null, 0);
 	return out;
+}
+
+const selectionKey = (sel) => `${sel.radio.id}:${[...sel.on].sort().join(",")}`;
+
+// Ask the build API for the current selection, wait for it, and take the image like a release's
+async function requestBuild(redraw) {
+	const sel = S.selection, key = selectionKey(sel);
+	const current = () => S.build?.selection === key && selectionKey(S.selection) === key;
+	S.build = { selection: key, text: t("flash.build.sending") };
+	redraw();
+	try {
+		const rels = S.data.releases.filter((x) => x.board === S.radio.id);
+		let b = await api("POST", "builds", { board: S.radio.id, ref: rels.length ? rels[rels.length - 1].version : "main", features: [...sel.on].sort() });
+		while (b.status === "queued" || b.status === "running") {
+			if (!current()) return;
+			S.build.text = b.status === "queued" && b.position ? t("flash.build.queued", { n: b.position }) : t("flash.build.building");
+			redraw();
+			await new Promise((ok) => setTimeout(ok, 3000));
+			b = await api("GET", `builds/${b.id}`);
+		}
+		if (b.status !== "done") throw new Error(t("flash.build.failed", { error: b.error || b.status }));
+		const [m, img] = await Promise.all([fetch(new URL(b.manifest, API)).then((r) => r.json()),
+			fetch(new URL(b.image, API)).then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x))]);
+		await verify(m, img, fb(), S.board.id);
+		if (!current()) return;
+		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), build: b.id, selection: key };
+		S.build = null;
+	} catch (e) {
+		if (S.build?.selection === key) S.build.error = t("flash.build.unavailable", { error: errorText(e) });
+	}
+	redraw();
 }
 
 function firmwareChooser(match, redraw) {
@@ -696,7 +768,8 @@ function planTable(plan) {
 }
 
 // The bootloader panel: instructions, connect, write. makePlanFn returns the plan once the key is known.
-function bootloaderPanel(title, makePlanFn, onDone) {
+// what: the flash log's description of this write (radio, firmware, variant, features, build)
+function bootloaderPanel(title, makePlanFn, onDone, what) {
 	const box = h("section", { class: "panel" });
 	const log = logBox();
 	const prog = progressBar();
@@ -729,13 +802,17 @@ function bootloaderPanel(title, makePlanFn, onDone) {
 		const write = button(t("flash.write.go"), async () => {
 			write.disabled = true;
 			box.append(prog.el, log.el);
+			let started = null;
 			try {
 				await dropSerial();
+				started = flashStarted(what);
 				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => prog.set(d, total, t("flash.write.writing")));
+				flashFinished(started);
 				log.add(t("flash.write.finished"));
 				await transport.close?.();
 				onDone();
 			} catch (e) {
+				flashFinished(started, e);
 				status.replaceChildren(notice(t("flash.write.failed", { error: errorText(e) }), "bad"));
 				write.disabled = false;
 			}
@@ -760,7 +837,8 @@ function writeView() {
 		let codec = [];
 		if (S.decision.mode === MERGE) codec = (await stockfw.extract(S.stock.data, S.key, fb())).segments;
 		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec);
-	}, next);
+	}, next, { radio: S.board.id, firmware: String(fw.manifest.version || ""),
+		variant: fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -868,7 +946,7 @@ function restoreView() {
 			(S.restoreTarget === "odr" ? planInternal(b, S.board) : planStock(S.stock.data, key, S.board, fb())), () => {
 			if (S.fakeRadio && S.restoreTarget === "stock") S.fakeRadio.running = "stock";
 			box.append(afterRestore());
-		}));
+		}, { radio: S.board.id, firmware: S.restoreTarget === "stock" ? "stock" : describeFirmware(meta.firmware_now), variant: `restore-${S.restoreTarget}` }));
 	}
 	box.append(...parts);
 	return box;

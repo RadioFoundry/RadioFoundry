@@ -158,9 +158,10 @@ documented, and ODR doesn't overwrite it unless an ID database is uploaded.
 ### Firmware images and custom builds
 
 Release images come from the site itself (`firmware/<radio>/`), because GitHub release downloads can't be fetched
-from a page. A selection that matches a prebuilt variant flashes that image; any other selection shows the `make`
-command that builds it, and the image can be loaded from disk. A build service for custom selections would plug in
-there (a REST API, Django on the server side).
+from a page. A selection that matches a prebuilt variant flashes that image. Any other selection is built on request
+(`requestBuild` in `app.js`): the page sends the radio, the newest release tag (`main` before the first release) and
+the feature list, waits for the build, and checks the image against its manifest like a release image. The `make`
+command that builds the same selection, and a picker for the image it produces, stay under "Build it yourself".
 
 ### USB network mode
 
