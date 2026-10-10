@@ -64,7 +64,7 @@ Shortcut: type the zone name on Home (Find lists zones too). Assignable side-key
 
 One-shot (this transmission and its replies):
 
-1. `TALK_TARGET` (SK2): picker opens. Order: Channel default, Reply to last heard, the channel's listen list, recent talkgroups, speed dials, "Type a number".
+1. `TALK_TARGET`: picker opens. Order: Channel default, Reply to last heard, the channel's listen list, recent talkgroups, speed dials, "Type a number".
 2. `NAV_DOWN` to TG 91 (or type `9`,`1`).
 3. `PTT`: transmits to TG 91. Home shows "PTT → TG 91 (reply 10 s)" and reverts to the channel default after the reply window.
 
@@ -172,13 +172,13 @@ Per-contact key: privacy follows the talk target automatically when the contact 
 
 ## 11. Scan
 
-Start: `QUICK`, `7` (or long SK2). Home shows "Scanning: Zone Local" in the status strip and the channel name updating; when a channel stops the scan, Activity shows it.
+Start: `QUICK`, `7` (or long `TALK_TARGET`). Home shows "Scanning: Zone Local" in the status strip and the channel name updating; when a channel stops the scan, Activity shows it.
 
 While scanning (Home keys): `PTT` talks on the channel that last stopped (or the start channel if none, setting); `NAV_UP`/`NAV_DOWN` skip ahead; `CONTEXT` on a stopped channel gives "Skip channel for now" (nuisance delete), "Stay here" (stop scan on this channel), "Always skip" (edit scan list, permanent). `BACK` stops scanning and returns to the start channel.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
-| Start | 2 (long SK2: 1) | 2 | 2 | 2 | 2 |
+| Start | 2 (long `TALK_TARGET`: 1) | 2 | 2 | 2 | 2 |
 | Nuisance skip | 2 (`#`,`1`) | 2 | 2 | 3 | 2 |
 | Stop | 1 | 1 | 1 | 1 | 1 |
 
@@ -251,7 +251,7 @@ On a channel: `QUICK`, `4`. Temporary: the channel becomes its other mode with t
 
 ## 19. Monitor and hear all
 
-- Monitor (momentary): hold `MONITOR` (SK1). FM: squelch opens. DMR: hear all on this frequency and timeslot (all TGs, any CC with a "CC 3" note).
+- Monitor (momentary): hold `MONITOR`. FM: squelch opens. DMR: hear all on this frequency and timeslot (all TGs, any CC with a "CC 3" note).
 - Latched: `QUICK`, `5`. Home shows "Hear all" (DMR) or "Monitor" (FM) in the status strip until turned off or the channel changes.
 - While hear all is on, every call shows its TG; the reply window lets you answer on it with `PTT`.
 
