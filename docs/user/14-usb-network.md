@@ -4,15 +4,16 @@
 
 In USB network mode the radio is a USB network adapter for the computer. It routes IPv4 packets to other radios over
 DMR packet data. It serves a status page, rig control, KISS, TFTP and SNMP to the computer. It is in the images for
-radios with USB ([Radio reference](23-radios.md)). IP over DMR to another radio and the services are host-tested
-only. What is tested on a radio is in the [Radio reference](23-radios.md). A build made without it (`CONFIG_DMR_IP_GATEWAY=n`) says "USB network: not in this build" in **Tools > USB network**.
+radios with USB. IP over DMR to another radio is host-tested only. Which services have been checked on each radio is
+in the [Radio reference](23-radios.md). A build made without it (`CONFIG_DMR_IP_GATEWAY=n`) says "USB network: not in
+this build" in **Tools > USB network**.
 
 ## Switching the radio to network mode
 
 The radio starts as a USB serial port unless **USB network at start** is on (below). To switch it, open **Tools > USB
-network** (**OK**, **5**, **4**). The page says which mode USB is in and what changes. Focus "Switch USB to network" and press
-**OK**. The radio says "USB is a network adapter now" and returns to Home. While USB is a network adapter, qdmr, hotspot hosts and the debug link
-over serial don't reach the radio.
+network** (**OK**, **5**, **4**). The page says which mode USB is in and what changes. Focus "Switch USB to network"
+and press **OK**. The radio says "USB is a network adapter now" and returns to Home. While USB is a network adapter,
+qdmr, hotspot hosts and the debug link over serial don't reach the radio.
 
 To get back to serial, open **Tools > USB network** again and choose "Switch USB to serial" ("USB is a serial port
 again"), or restart the radio. The Tools row shows the current mode (serial or network).
@@ -176,10 +177,9 @@ from emergencies, they go at most once a minute. Nothing is encrypted. SNMP comm
 
 ## Network over the programming cable (PPP)
 
-Radios without USB ([Radio reference](23-radios.md)) can get the same network over their programming cable with PPP.
-PPP is on by default in the DM-32UV image, which isn't in the releases yet. On other radios a build needs
-`CONFIG_NET_PPP=y`. PPP hasn't been tried on a radio. With such a build, run this on the computer as root. pppd comes
-with macOS and most Linux systems.
+Radios without USB ([Radio reference](23-radios.md)) can get the same network over their programming cable with PPP. A
+radio's image includes PPP when the radio has no USB and runs DMR. Other builds need `CONFIG_NET_PPP=y`. PPP hasn't
+been tried on a radio yet. Run this on the computer as root. pppd comes with macOS and most Linux systems.
 
 ```
 sudo tools/odr_ppp.sh /dev/ttyUSB0                 # Linux
@@ -192,8 +192,8 @@ up, and the cable goes back to programming and the debug link. The details are i
 
 ## Control station for dispatch software
 
-Dispatch software (TRBOnet, SmartPTT and similar) can use the radio as its control station. The computer
-then sends and receives the fleet's messages, locations and registrations through the radio.
+Dispatch software (TRBOnet, SmartPTT and similar) can use the radio as its control station. The computer then sends
+and receives the fleet's messages, locations and registrations through the radio.
 
 1. Turn on **USB network at start** and restart the radio, or switch it in **Tools > USB network**.
 2. Turn on **PC answers data**. While the computer is connected, text messages, location requests and registration
@@ -212,8 +212,9 @@ In the dispatch software, set:
 | Radio network | 12.0.0.0/8 |
 | Talkgroup network | 225.0.0.0/8 |
 | DMR ID | Your radio's DMR ID |
- What the computer sends goes over the air from your radio's DMR ID. Only one radio per computer
-can use the fixed addresses.
+
+What the computer sends goes over the air from your radio's DMR ID. Only one radio per computer can use the fixed
+addresses.
 
 ## Shorter packets and confirmed delivery
 
