@@ -208,16 +208,15 @@ bool dm1701_cal_load(void)
 }
 
 // Linear over an even grid of points (12.3, radio/cal_curve.h): clamped below the first point, extended past the
-// last, truncated
+// last, truncated. Kept out of line: power_at and gain_at would each carry a copy
+__attribute__((noinline))
 static int32_t interpolate(const uint8_t *p, uint8_t n, uint32_t first, uint32_t step, uint32_t f10, int32_t mul)
 {
-	uint32_t grid[CAL_CURVE_MAX_POINTS];
 	int32_t v[CAL_CURVE_MAX_POINTS];
 	for (uint8_t i = 0; i < n; i++) {
-		grid[i] = first + step * i;
 		v[i] = p[i] * mul;
 	}
-	return cal_curve_at(grid, v, n, f10, CAL_CURVE_EXTEND);
+	return cal_curve_grid_at(first, step, v, n, f10, CAL_CURVE_EXTEND);
 }
 
 static int32_t clamp(int32_t v, int32_t hi)

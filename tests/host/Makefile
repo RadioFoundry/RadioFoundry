@@ -221,15 +221,14 @@ TESTS   += codeplugTest calibrationTest
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
 	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
 
-calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h $(CORE)/radio/cal_curve.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c \
-		$(CORE)/radio/cal_curve.c
+calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h $(CORE)/radio/cal_curve.h
+	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c
 
 # The calibration curve every board's reader shares
 TESTS   += calCurveTest
 
-calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.c $(CORE)/radio/cal_curve.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c $(CORE)/radio/cal_curve.c
+calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c
 
 run: run-flash
 run-flash: codeplugTest calibrationTest calCurveTest
@@ -524,9 +523,8 @@ bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/b
 TESTS   += db25dCalTest
 DB25D   := $(ROOT)/boards/db25d
 
-db25dCalTest: db25dCalTest.c $(DB25D)/calibration_db25d.c $(DB25D)/db25d.h $(CORE)/radio/cal_curve.c
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DB25D) -Wshadow -o $@ db25dCalTest.c $(DB25D)/calibration_db25d.c \
-		$(CORE)/radio/cal_curve.c
+db25dCalTest: db25dCalTest.c $(DB25D)/calibration_db25d.c $(DB25D)/db25d.h $(CORE)/radio/cal_curve.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DB25D) -Wshadow -o $@ db25dCalTest.c $(DB25D)/calibration_db25d.c
 
 run: run-db25d
 run-db25d: bk4819Test db25dCalTest

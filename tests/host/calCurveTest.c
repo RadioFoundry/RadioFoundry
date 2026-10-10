@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The shared calibration curve (core/radio/cal_curve.c): edges, both roundings, extension past the last point, and
-// equality with the per-board interpolators it replaced (the MD-380's and the DM-1701's, kept here as references)
+// The shared calibration curve (core/radio/cal_curve.c): edges, both roundings, extension past the last point, the
+// even-grid form, and equality with the per-board interpolators it replaced (the MD-380's and the DM-1701's, kept
+// here as references)
 #include <stdio.h>
 #include "radio/cal_curve.h"
 
@@ -100,14 +101,38 @@ static void test_matches_boards(void)
 		for (uint32_t f = first[b] - 500000; f <= first[b] + step[b] * (npts[b] + 1u); f += 997) {
 			bad += cal_curve_at(grid, v16, npts[b], f, CAL_CURVE_EXTEND) != ref_dm1701(p, npts[b], first[b], step[b], f, 16);
 			bad += cal_curve_at(grid, v1, npts[b], f, CAL_CURVE_EXTEND) != ref_dm1701(p, npts[b], first[b], step[b], f, 1);
+			bad += cal_curve_grid_at(first[b], step[b], v16, npts[b], f, CAL_CURVE_EXTEND) !=
+				ref_dm1701(p, npts[b], first[b], step[b], f, 16);
+			bad += cal_curve_grid_at(first[b], step[b], v1, npts[b], f, CAL_CURVE_EXTEND) !=
+				ref_dm1701(p, npts[b], first[b], step[b], f, 1);
 		}
 	}
 	CHECK(bad == 0);
 }
 
+// The grid form agrees with the point-list form everywhere, for every flag
+static void test_grid(void)
+{
+	static const int32_t v[5] = { 300, -40, 1000, 1000, 7 };
+	static const uint32_t pt[5] = { 1000, 1300, 1600, 1900, 2200 };
+	int bad = 0;
+	for (uint8_t flags = 0; flags < 4; flags++) {
+		for (uint32_t x = 0; x < 3000; x += 7) {
+			bad += cal_curve_grid_at(1000, 300, v, 5, x, flags) != cal_curve_at(pt, v, 5, x, flags);
+		}
+	}
+	CHECK(bad == 0);
+	CHECK(cal_curve_grid_at(1000, 300, v, 5, 2200, 0) == 7);
+	CHECK(cal_curve_grid_at(1000, 300, v, 5, 2500, CAL_CURVE_EXTEND) == -986);
+	CHECK(cal_curve_grid_at(1000, 0, v, 5, 2500, 0) == 300);
+	CHECK(cal_curve_grid_at(1000, 300, v, 1, 2500, 0) == 300);
+	CHECK(cal_curve_grid_at(1000, 300, v, 0, 2500, 0) == 0);
+}
+
 int main(void)
 {
 	test_edges();
+	test_grid();
 	test_matches_boards();
 	if (failures) {
 		printf("calCurveTest: %d failures\n", failures);
