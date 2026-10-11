@@ -48,10 +48,11 @@ restart and check what it reports.
 If odrflash keeps a codec that turns out not to be there, nothing breaks: the firmware checks the codec before it
 uses it, so the radio runs FM only and shows "No codec: voice off". Flash again with `--stock`.
 
-An image with the codec already merged in (`odrflash merge`, or the `_codec.bin` a build writes when the stock file
-is in `codecs/`) needs no manifest, `--board` or `--stock`: odrflash checks every codec window against the supported
-stock files by SHA-256, which also names the radio, requires 0xFF everywhere else past the application, and flashes it
-in merge mode with the codec from the image. `--codec keep` writes only its application part.
+An image with the codec already merged in (`odrflash merge`, or the `_codec.bin` a build writes when the stock file is
+in `codecs/`) needs no manifest or `--board`, and `--stock` only for the bootloader key: odrflash checks every codec
+window against the supported stock files by SHA-256, which also names the radio, requires 0xFF everywhere else past the
+application, and flashes it in merge mode with the codec from the image. `--codec keep` writes only its application
+part.
 
 The stock file is Baofeng's `DM-1701(CSV)-V02.06.bin` (sha256 `0314efd4...`); an archive is at
 github.com/daniel5600/BAOFENG-DM1701-Original-Firmware. odrflash checks it by SHA-256 and refuses other files as a

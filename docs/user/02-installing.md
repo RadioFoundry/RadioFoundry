@@ -128,7 +128,7 @@ Not tried on the test bench yet.
 Developers build with `make BOARD=<board>` and flash the result with `odrflash flash build/<board>/odr_<board>.bin
 --board <board>` (same codec choices). With the stock file in `codecs/`, the build also writes
 `odr_<board>_codec.bin`, which carries the codec: `odrflash flash build/<board>/odr_<board>_codec.bin` flashes it with
-no `--board` or `--stock`. See [building](../dev/building.md).
+no `--board`, and `--stock` is needed only for the bootloader key. See [building](../dev/building.md).
 
 ## Radios not in the releases
 

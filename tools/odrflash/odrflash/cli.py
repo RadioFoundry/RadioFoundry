@@ -331,7 +331,7 @@ def cmd_flash(args):
     board, man, image, merged = load_image(args, args.board)
     stock = load_stock(args)
     if merged and stock is not None:
-        raise UsageError("the image already carries the codec: leave out --stock (or flash the plain image with it)")
+        say("stock    the image carries the codec, so the stock file only gives the bootloader key")
 
     # the codec: what the radio says, what the user says
     if sim:

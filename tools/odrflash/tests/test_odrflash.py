@@ -554,7 +554,9 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             rc, out, err = run_cli(["flash", bp, "--board", "md380", "--simulate", "blank", "--yes"])
             self.assertEqual(rc, 2)						# the codec says DM-1701
             rc, out, err = run_cli(["flash", bp, "--simulate", "blank", "--stock", "synthetic", "--yes"])
-            self.assertEqual(rc, 2)						# two codec sources
+            self.assertEqual(rc, 0, out + err)
+            self.assertIn("only gives the bootloader key", out)		# the codec still comes from the image
+            self.assertIn("MERGE: the image carries the codec", out)
 
     def test_dev_build_without_manifest(self):
         with tempfile.TemporaryDirectory() as d:
