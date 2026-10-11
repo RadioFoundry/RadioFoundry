@@ -43,6 +43,7 @@
 #define UART0_BASE		0x14030000u
 #define UART1_BASE		0x14040000u
 #define SPI0_BASE		0x140A0000u
+#define SPI2_BASE		0x140E0000u
 #define PWM_BASE		0x140C0000u
 #define ADC_BASE		0x140D0000u
 #define DAC_BASE		0x140F0000u
@@ -179,6 +180,15 @@ static inline bool hrc_pin_read(uint8_t pin)
 void hrc_pin_irq(uint8_t pin, bool on, bool both, bool rising);
 uint32_t hrc_gpio_pending(uint32_t bank);
 void hrc_gpio_ack(uint32_t bank, uint32_t bits);
+
+// --- SPI master (ssi.c): SPI0_BASE or SPI2_BASE ---
+
+// 8-bit frames, mode 0, SCLK = APB / baudr (even, 2 or more). The pins' IO mux and the GPIO chip select are the board's
+void hrc_ssi_init(uint32_t base, uint16_t baudr);
+// Around each transfer, with the board's GPIO chip select
+void hrc_ssi_select(uint32_t base, bool active);
+// Polled, one byte at a time. tx NULL sends 0xFF, rx NULL discards. False if the controller stops answering
+bool hrc_ssi_xfer(uint32_t base, const uint8_t *tx, uint8_t *rx, uint32_t len);
 
 // --- Start-up and services (clock.c, time.c) ---
 

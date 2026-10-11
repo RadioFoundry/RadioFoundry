@@ -60,6 +60,50 @@ static void build(uint8_t *pg, uint32_t count)
 	pg[0x43F] = 0x90;
 }
 
+// The NAND as the board reads it: nand_page at DB25D_CAL_NAND_ADDR; reads longer than fail_above fail
+static uint32_t fail_above = 0xFFFFFFFFu, nand_reads;
+static bool nand_reader(uint32_t addr, void *buf, uint32_t len)
+{
+	nand_reads++;
+	if (len > fail_above || addr < DB25D_CAL_NAND_ADDR || addr + len > DB25D_CAL_NAND_ADDR + DB25D_CAL_LEN) {
+		return false;
+	}
+	memcpy(buf, nand_page + (addr - DB25D_CAL_NAND_ADDR), len);
+	return true;
+}
+
+static void test_nand_load(void)
+{
+	// NAND newer: read whole, straight from the reader
+	build(flash_page, 3);
+	build(nand_page, 4);
+	put16(nand_page + 0x045 + 1, 1234);
+	nand_reads = 0;
+	CHECK(db25d_cal_load(flash_page, nand_reader));
+	CHECK(db25d_cal_source() == DB25D_CAL_NAND && db25d_cal_counter() == 4 && nand_reads == 2);
+	CHECK(db25d_cal_pa(403175000, true) == 1234);
+	// Flash newer: only the NAND header is read
+	put32(flash_page + 4, 9);
+	nand_reads = 0;
+	CHECK(db25d_cal_load(flash_page, nand_reader));
+	CHECK(db25d_cal_source() == DB25D_CAL_FLASH && db25d_cal_counter() == 9 && nand_reads == 1);
+	CHECK(db25d_cal_pa(403175000, true) == 1500);
+	// NAND wins on its header but the page read fails: the flash copy, or nothing without one
+	put32(flash_page + 4, 2);
+	fail_above = 8;
+	CHECK(db25d_cal_load(flash_page, nand_reader));
+	CHECK(db25d_cal_source() == DB25D_CAL_FLASH && db25d_cal_counter() == 2);
+	CHECK(!db25d_cal_load(NULL, nand_reader));
+	CHECK(db25d_cal_source() == DB25D_CAL_NONE && !db25d_cal_valid());
+	// The header read fails too: as if there were no NAND
+	fail_above = 0;
+	CHECK(db25d_cal_load(flash_page, nand_reader) && db25d_cal_source() == DB25D_CAL_FLASH);
+	CHECK(!db25d_cal_load(NULL, nand_reader));
+	fail_above = 0xFFFFFFFFu;
+	// No NAND at all
+	CHECK(!db25d_cal_load(NULL, NULL));
+}
+
 static void test_choice(void)
 {
 	build(flash_page, 5);
@@ -75,7 +119,7 @@ static void test_choice(void)
 	nand_page[3] = 0xFF;
 	CHECK(db25d_cal_choose(flash_page, nand_page) == DB25D_CAL_NONE);
 
-	CHECK(!db25d_cal_load(flash_page, nand_page));
+	CHECK(!db25d_cal_load(flash_page, nand_reader));
 	CHECK(!db25d_cal_valid() && db25d_cal_source() == DB25D_CAL_NONE && db25d_cal_counter() == 0);
 	CHECK(db25d_cal_pa(446000000, true) == 0 && db25d_cal_rx_tune(446000000) == 0);
 	CHECK(db25d_cal_tx_center() == 0x80 && db25d_cal_squelch_db(446000000, 5) == 136);
@@ -160,6 +204,7 @@ static void test_squelch(void)
 int main(void)
 {
 	test_choice();
+	test_nand_load();
 	test_interpolation();
 	test_limits();
 	test_squelch();

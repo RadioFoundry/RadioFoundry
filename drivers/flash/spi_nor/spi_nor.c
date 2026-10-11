@@ -37,7 +37,7 @@ static void addr_bytes(uint8_t *p, uint8_t cmd, uint32_t addr)
 static bool command(const spi_nor_t *nor, const uint8_t *hdr, uint32_t hdr_len,
 		    const uint8_t *tx, uint8_t *rx, uint32_t len)
 {
-	const spi_nor_bus_t *bus = nor->bus;
+	const spi_bus_t *bus = nor->bus;
 	bus->select(true);
 	bool ok = bus->xfer(hdr, NULL, hdr_len);
 	if (ok && len > 0) {

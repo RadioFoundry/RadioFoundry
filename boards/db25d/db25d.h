@@ -36,11 +36,16 @@ void db25d_radio_diag(db25d_radio_diag_t *d);
 #define DB25D_CAL_LEN		0x800u
 #define DB25D_CAL_POINTS	8u
 #define DB25D_CAL_FLASH_ADDR	0x031FE000u	// the program-flash copy, memory-mapped
+#define DB25D_CAL_NAND_ADDR	0x280000u	// the NAND copy (block 20)
 typedef enum { DB25D_CAL_NONE, DB25D_CAL_FLASH, DB25D_CAL_NAND } db25d_cal_source_t;
-// Which copy the stock rule picks: "TUNE" and the higher save counter. Either pointer may be NULL
+// Which copy the stock rule picks: "TUNE" and the higher save counter. Either pointer may be NULL; only the first 8
+// bytes are read
 db25d_cal_source_t db25d_cal_choose(const uint8_t *flash_copy, const uint8_t *nand_copy);
-// Copy the chosen page (DB25D_CAL_LEN bytes) into RAM. False if neither copy is tagged
-bool db25d_cal_load(const uint8_t *flash_copy, const uint8_t *nand_copy);
+// Reads NAND main-area bytes (db25d_nand_read)
+typedef bool (*db25d_cal_read_fn)(uint32_t addr, void *buf, uint32_t len);
+// Copy the chosen page (DB25D_CAL_LEN bytes) into RAM. Either argument may be NULL. A NAND copy that wins on its header
+// but can't be read whole gives way to the flash copy. False if neither copy is usable
+bool db25d_cal_load(const uint8_t *flash_copy, db25d_cal_read_fn nand_read);
 bool db25d_cal_valid(void);
 db25d_cal_source_t db25d_cal_source(void);
 uint32_t db25d_cal_counter(void);
@@ -52,6 +57,13 @@ void db25d_cal_tx_delays(uint32_t hz, uint16_t *on_us, uint16_t *off_us);
 uint8_t db25d_cal_tx_center(void);			// 128 without a page
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
+
+// --- SPI NAND (nand_db25d.c, hardware-db25d.md 6.5): read only so far ---
+bool db25d_nand_init(void);
+bool db25d_nand_ready(void);
+uint16_t db25d_nand_id(void);		// manufacturer << 8 | device, 0 if nothing answered
+uint32_t db25d_nand_corrected(void);	// pages read with corrected bit errors
+bool db25d_nand_read(uint32_t addr, void *buf, uint32_t len);
 
 // --- Power (power_db25d.c) ---
 uint16_t db25d_adc_raw(uint8_t ch);	// the last reading of ADC channel 0..7

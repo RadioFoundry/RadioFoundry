@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-32UV data flash: 16 MB SPI NOR (GD25Q128 or Puya PY25Q128HA) on the DesignWare SSI master SPI0, chip select on
-// GPIO 0x12 driven by hand (docs/spec/hardware-dm32.md 3.2, 10). One mutex serializes every transaction once the
-// scheduler runs. Everything below 0x700000 belongs to the stock firmware (10.1): reads only, writes and erases there
-// are refused here, whatever the caller asks.
+// DM-32UV data flash: 16 MB SPI NOR (GD25Q128 or Puya PY25Q128HA) on the DesignWare SSI master SPI0
+// (platform/hrc7000/ssi.c), chip select on GPIO 0x12 driven by hand (docs/spec/hardware-dm32.md 3.2, 10). One mutex
+// serializes every transaction once the scheduler runs. Everything below 0x700000 belongs to the stock firmware (10.1):
+// reads only, writes and erases there are refused here, whatever the caller asks.
 #include "dm32.h"
 #include "pins.h"
 #include "platform.h"
@@ -13,23 +13,7 @@
 #include "semphr.h"
 #include "task.h"
 
-#define SSI_CTRLR0		REG32(SPI0_BASE + 0x00)
-#define SSI_CTRLR1		REG32(SPI0_BASE + 0x04)
-#define SSI_SSIENR		REG32(SPI0_BASE + 0x08)
-#define SSI_SER			REG32(SPI0_BASE + 0x10)
-#define SSI_BAUDR		REG32(SPI0_BASE + 0x14)
-#define SSI_TXFTLR		REG32(SPI0_BASE + 0x18)
-#define SSI_RXFTLR		REG32(SPI0_BASE + 0x1C)
-#define SSI_SR			REG32(SPI0_BASE + 0x28)
-#define SSI_IMR			REG32(SPI0_BASE + 0x2C)
-#define SSI_DMACR		REG32(SPI0_BASE + 0x4C)
-#define SSI_DR			REG32(SPI0_BASE + 0x60)
-#define SSI_SR_BUSY		0x01u
-#define SSI_SR_TFNF		0x02u	// TX FIFO not full
-#define SSI_SR_TFE		0x04u	// TX FIFO empty
-
 #define WRITE_FLOOR		0x700000u	// first byte this firmware may write (hardware-dm32.md 10.1)
-#define SPINS			100000u
 #define SECURITY_REG_SIZE	256u
 
 static SemaphoreHandle_t lock;
@@ -38,40 +22,16 @@ static uint32_t jedec;
 
 static void chip_select(bool active)
 {
-	SSI_SER = active ? 1u : 0u;
+	hrc_ssi_select(SPI0_BASE, active);
 	hrc_pin_write(PIN_FLASH_CS, !active);
 }
 
-static bool wait_sr(uint32_t mask, uint32_t want)
-{
-	for (uint32_t n = SPINS; n != 0; n--) {
-		if ((SSI_SR & mask) == want) {
-			return true;
-		}
-	}
-	return false;
-}
-
-// One byte at a time, the way 3.2 describes: no FIFO depth assumed
 static bool xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 {
-	for (uint32_t i = 0; i < len; i++) {
-		if (!wait_sr(SSI_SR_TFNF, SSI_SR_TFNF)) {
-			return false;
-		}
-		SSI_DR = tx != NULL ? tx[i] : 0xFFu;
-		if (!wait_sr(SSI_SR_TFE, SSI_SR_TFE) || !wait_sr(SSI_SR_BUSY, 0)) {
-			return false;
-		}
-		uint8_t b = (uint8_t)SSI_DR;
-		if (rx != NULL) {
-			rx[i] = b;
-		}
-	}
-	return true;
+	return hrc_ssi_xfer(SPI0_BASE, tx, rx, len);
 }
 
-static const spi_nor_bus_t bus = { .select = chip_select, .xfer = xfer };
+static const spi_bus_t bus = { .select = chip_select, .xfer = xfer };
 static spi_nor_t nor = { .bus = &bus };
 
 static void take(void)
@@ -91,17 +51,8 @@ static void give(void)
 static void spi_init(void)
 {
 	hrc_pin_out(PIN_FLASH_CS, true);
-	SSI_SSIENR = 0;
-	SSI_CTRLR0 = 0x07u;	// 8-bit frames, mode 0, transmit and receive
-	SSI_CTRLR1 = 0;
-	SSI_BAUDR = 4u;		// APB / 4 = 21 MHz (the stock-style 42 MHz is within the chip's rating; slower is safer)
-	SSI_TXFTLR = 0;
-	SSI_RXFTLR = 0;
-	SSI_IMR = 0;
-	SSI_DMACR = 0;
-	SSI_SER = 0;
-	SSI_SSIENR = 1;
-	hal_delay_us(200);	// 160 us from power-up to the first command (10)
+	hrc_ssi_init(SPI0_BASE, 4u);	// APB / 4 = 21 MHz (the stock-style 42 MHz is within the chip's rating; slower is safer)
+	hal_delay_us(200);		// 160 us from power-up to the first command (10)
 }
 
 static bool init(void)

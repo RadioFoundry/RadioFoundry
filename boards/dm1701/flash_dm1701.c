@@ -54,7 +54,7 @@ static bool xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 	return true;
 }
 
-static const spi_nor_bus_t bus = { .select = chip_select, .xfer = xfer };
+static const spi_bus_t bus = { .select = chip_select, .xfer = xfer };
 static spi_nor_t nor = { .bus = &bus };
 
 static void take(void)

@@ -4,7 +4,8 @@
 // tuning, TX center and modulation, TX switching delays, squelch thresholds.
 //
 // Two copies exist, one in NAND and one in program flash. The higher save counter wins, as in the stock firmware, and
-// nothing is ever written back. The chosen page is copied into RAM, so the lookups below cost no flash access.
+// nothing is ever written back. The chosen page is copied into RAM, so the lookups below cost no flash access. Only the
+// NAND copy's header is read before the choice.
 #include <string.h>
 #include "db25d.h"
 #include "radio/cal_curve.h"
@@ -17,6 +18,7 @@
 #define OFF_TX_DELAY		0x0AEu		// (u16 on, u16 off) pairs in us
 #define OFF_SQUELCH		0x0CFu		// 8 segments x 9 levels x u16
 #define HALF			0x400u		// the VHF half
+#define HEADER_LEN		8u		// "TUNE" and the save counter
 
 #define VHF_BELOW_HZ		280000000u
 #define TX_DELAY_MAX_US		2000u		// a larger value counts as 0
@@ -67,16 +69,20 @@ db25d_cal_source_t db25d_cal_choose(const uint8_t *flash_copy, const uint8_t *na
 	return f ? DB25D_CAL_FLASH : n ? DB25D_CAL_NAND : DB25D_CAL_NONE;
 }
 
-bool db25d_cal_load(const uint8_t *flash_copy, const uint8_t *nand_copy)
+bool db25d_cal_load(const uint8_t *flash_copy, db25d_cal_read_fn nand_read)
 {
-	source = db25d_cal_choose(flash_copy, nand_copy);
-	valid = source != DB25D_CAL_NONE;
-	if (valid) {
-		memcpy(page, source == DB25D_CAL_FLASH ? flash_copy : nand_copy, DB25D_CAL_LEN);
-		counter = rd32(page + 4);
-	} else {
-		counter = 0;
+	uint8_t header[HEADER_LEN];
+	bool nand = nand_read != NULL && nand_read(DB25D_CAL_NAND_ADDR, header, sizeof(header));
+	source = db25d_cal_choose(flash_copy, nand ? header : NULL);
+	// The NAND page goes straight into RAM; if it can't be read whole, the flash copy if there is one
+	if (source == DB25D_CAL_NAND && !(nand_read(DB25D_CAL_NAND_ADDR, page, DB25D_CAL_LEN) && tagged(page))) {
+		source = tagged(flash_copy) ? DB25D_CAL_FLASH : DB25D_CAL_NONE;
 	}
+	if (source == DB25D_CAL_FLASH) {
+		memcpy(page, flash_copy, DB25D_CAL_LEN);
+	}
+	valid = source != DB25D_CAL_NONE;
+	counter = valid ? rd32(page + 4) : 0;
 	return valid;
 }
 

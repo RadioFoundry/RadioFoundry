@@ -7,15 +7,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "bus/spi_bus.h"
 
 typedef struct {
-	void (*select)(bool active);	// true = chip select asserted (low on the wire)
-	// Clock len bytes. tx NULL sends 0xFF, rx NULL discards what comes back
-	bool (*xfer)(const uint8_t *tx, uint8_t *rx, uint32_t len);
-} spi_nor_bus_t;
-
-typedef struct {
-	const spi_nor_bus_t *bus;
+	const spi_bus_t *bus;
 	uint8_t manufacturer;	// JEDEC manufacturer ID (0xEF Winbond, 0xC8 GigaDevice, ...)
 	uint16_t device;	// memory type << 8 | capacity code
 	uint32_t size;		// bytes, from the capacity code (0 if unknown)

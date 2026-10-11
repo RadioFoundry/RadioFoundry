@@ -603,19 +603,28 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest spiNorTest
+run-settings: settingsTest spiNorTest spiNandTest
 	./settingsTest
 	./spiNorTest
+	./spiNandTest
 .PHONY: run-settings
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
 # 1 MB parts, power cuts tearing page programs and erases)
 TESTS   += spiNorTest
 
-spiNorTest: spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c $(ROOT)/drivers/flash/spi_nor/spi_nor.h $(STORE) \
-            $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h)
+spiNorTest: spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c $(ROOT)/drivers/flash/spi_nor/spi_nor.h \
+            $(ROOT)/drivers/bus/spi_bus.h $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c \
 		$(CORE)/storage/storage.c $(CORE)/settings/settings.c
+
+# The SPI NAND driver (read side) against a model of the chip at the bus: ID, page reads through the cache, ECC
+# status, bad-block marks, a chip that stays busy or doesn't answer
+TESTS   += spiNandTest
+
+spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/drivers/flash/spi_nand/spi_nand.h \
+             $(ROOT)/drivers/bus/spi_bus.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c
 
 # Codeplug editing: the legacy record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit

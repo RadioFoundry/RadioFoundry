@@ -5,4 +5,5 @@
 PLATFORM   := hrc7000
 MCU_DEFS   := -DHRC_HOST_UART=1
 LDSCRIPT   := boards/db25d/db25d.ld
-BOARD_DIRS := boards/db25d drivers/rf/bk4819 drivers/display/st7735 drivers/input/keymatrix drivers/input/quadrature
+BOARD_DIRS := boards/db25d drivers/rf/bk4819 drivers/display/st7735 drivers/input/keymatrix drivers/input/quadrature \
+	drivers/flash/spi_nand

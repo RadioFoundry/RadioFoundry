@@ -237,7 +237,7 @@ static bool bus_xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 	return true;
 }
 
-static const spi_nor_bus_t bus = { .select = bus_select, .xfer = bus_xfer };
+static const spi_bus_t bus = { .select = bus_select, .xfer = bus_xfer };
 
 // ---- The driver ----
 

@@ -17,6 +17,7 @@ been read yet.
 | **BIN** | Observed in the stock application images by disassembly (facts only: addresses, register values, pin numbers, strings; no code carried over). Six images, 2022-10 to 2025-01 |
 | **FCC** | FCC internal photos of the DB25-D PRO (2AN62-DB25DPRO) |
 | **COM** | Radioddity manuals, release notes and update guide |
+| **DS** | A chip data sheet (the NAND: Kioxia TC58CVG1S3HRAIJ, 2019-10-01) |
 | **DM32** | The same fact as on the DM-32UV ([hardware-dm32.md](hardware-dm32.md)) |
 | **INF** | Inferred by us; not seen directly |
 
@@ -174,7 +175,7 @@ bit 7 set (BIN).
 
 | Item | Finding | Tag |
 |---|---|---|
-| NAND | Kioxia TC58CVG1S3HRAIJ, 2 Gbit SPI NAND: 2 KB pages, 128 KB blocks. Standard SPI NAND opcodes (0x9F ID, 0x13 page read, 0x06, 0x84, 0x0F / 0xC0 status, 0xD8 erase). The stock firmware builds a bad-block table at boot | FCC, BIN |
+| NAND | Kioxia TC58CVG1S3HRAIJ, 2 Gbit SPI NAND: 2 KB pages, 128 KB blocks. Standard SPI NAND opcodes (0x9F ID, 0x13 page read, 0x06, 0x84, 0x0F / 0xC0 status, 0xD8 erase). The stock firmware builds a bad-block table at boot (6.5) | FCC, BIN, DS |
 | Calibration | A 2 KB page at **NAND 0x280000** (block 20) starting with "TUNE", and a copy in program flash at 0x031FE000 (4 KB sector). The stock firmware repairs one copy from the other at boot | BIN |
 | Calibration layout | 6.1 – 6.4 | BIN |
 | Stock NAND areas | 0x40000, 0x110000, 0x3C0000, 0x1100000, 0x2980000 (codeplug and databases, INF) | BIN |
@@ -249,11 +250,36 @@ not listed is unused as far as the image shows.
 
 ODR's use: the reader (`boards/db25d/calibration_db25d.c`) copies the chosen page into RAM at boot and never writes
 either copy. The program-flash copy is memory-mapped, so it's read directly: the stock firmware reads it with a plain
-byte copy from 0x031FE000 (BIN). The NAND copy joins the choice once the NAND driver exists. Interpolation is the shared
-calibration curve (`core/radio/cal_curve.c`). Receive sets DAC A and DAC C from it now. TX stays refused until a page has
+byte copy from 0x031FE000 (BIN). The NAND copy is read through the SPI NAND driver (6.5): its 8-byte header first, the
+whole page only when it wins, and a NAND page that can't be read gives way to the flash copy. Interpolation is the
+shared calibration curve (`core/radio/cal_curve.h`). Receive sets DAC A and DAC C from it now. TX stays refused until a page has
 been seen on a radio; then TX power comes from 0x045 / 0x056, and TX refuses when the page is missing or a PA value is 0
 or 0xFFFF. The RSSI that ODR shows stays the chip's own reading: the page has no RSSI
 offset, only squelch thresholds (INF).
+
+### 6.5 NAND access
+
+How the stock firmware drives the NAND (driver 0x0300F494 … 0x03010600), which ODR's read side follows, and what the
+data sheet adds:
+
+| Step | Sequence | Tag |
+|---|---|---|
+| Bus | SPI0, IO_DIPLEX1 bits 3–8 cleared (SCLK / MOSI / MISO to the SPI master), CS PTA18 by GPIO, CTRLR0 7, BAUDR 4 | BIN |
+| ID | 0x9F, one dummy byte, then 0x98 (Kioxia), 0xEB (device), 0x40 (organization: 2 KB pages, 128 KB blocks) | BIN, DS |
+| Organization | (2048 + 64) bytes × 64 pages × 2048 blocks. At least 2008 good blocks over the chip's life; blocks 0–7 are good when shipped | DS |
+| Page read | 0x13 and a 3-byte page number (17 bits), then 0x0F 0xC0 (status) until bit 0 (busy) clears: 180 µs at most. The stock firmware remembers the last page read and doesn't read it again | BIN, DS |
+| Read from cache | 0x03, a 2-byte column (12 bits; the stock firmware masks 13), one dummy byte, then data. Byte address = page × 2048 + column | BIN, DS |
+| Status (0xC0) | Bit 0 busy, 1 write enabled, 2 erase failed, 3 program failed. Bits 4–5 ECC: 0 clean, 1 corrected, 2 uncorrectable, 3 corrected at or above the bit-flip threshold (feature 0x10) | BIN, DS |
+| ECC | On by default (feature 0xB0 bit 4): 8 bits corrected per 512 + 16 bytes. Spare bytes 2048–2111 are readable, the parity at 2112–2175 isn't | DS |
+| Block lock | Every block locked at power-up (feature 0xA0); reads don't need it cleared, program and erase do | DS |
+| Parameter page | Feature 0xB0 bit 6 set, then a page read of page 0. The stock firmware reads 256 bytes of it at boot | BIN, DS |
+| Spare bytes | The stock firmware keeps its own block marks at spare offset 4 (column 2052) | BIN |
+| Bad blocks | Factory-bad blocks read 0x00 in every page; the mark is judged from the data whatever the ECC status says | DS |
+| Stock bad-block skip | The stock firmware builds a bad-block list at boot and, for some address ranges, skips bad blocks when it maps an address to a page. Which ranges, and whether that ever moves block 20, isn't decoded | BIN |
+
+ODR's driver is `drivers/flash/spi_nand` (generic, read side). It takes the geometry from the board and treats a block
+whose first page's first spare byte isn't 0xFF as bad. The DB25-D reads the calibration copy at its physical address:
+if a skip ever moved it, its header won't say "TUNE" and the program-flash copy is used.
 
 ## 7. PC link, update and recovery
 
@@ -283,11 +309,12 @@ Bring-up state, nothing run on a radio yet:
 |---|---|
 | Platform | `platform/hrc7000`, image at 0x0300C000 behind the IAP loader; the host port on UART1 |
 | RF | `drivers/rf/bk4819`: main and LO on one 3-wire bus. FM receive by the main chip at the IF with the LO at f + 51.55 MHz |
-| Calibration | The program-flash copy is read at boot (6.4); DAC A and DAC C are set from it for receive. The diagnostics page shows the copy found, its save counter and the PA values at 446 and 146 MHz. The NAND copy waits for the NAND driver |
+| Calibration | Both copies are read at boot, the higher save counter wins (6.1, 6.4); DAC A and DAC C are set from it for receive. The diagnostics page shows the copy used, its save counter and the PA values at 446 and 146 MHz |
+| NAND | `drivers/flash/spi_nand` on SPI0, read only (6.5). The diagnostics page shows its ID and the page reads ECC had to correct |
 | TX | **Refused** until a calibration page has been seen on a radio and the PA values on the diagnostics page look sane |
 | Display | `st7735` on a bit-banged 4-wire serial bus |
 | Keys | Matrix and encoder decoded; the key positions are provisional until checked on the radio |
-| Storage | None yet: the core runs without stored settings. Needs an SPI NAND driver and a 4 KB sector layer over it |
+| Storage | None yet: the core runs without stored settings. Needs the NAND driver's write side and a 4 KB sector layer over it |
 | DMR | Not yet: needs the codec recipe and the DM-32's modem glue shared between the two boards |
 | Older batches (FD6818 main) | Not supported yet |
 
@@ -305,3 +332,4 @@ Bring-up state, nothing run on a radio yet:
 | 8 | Key matrix positions; the backlight pin | Yes |
 | 9 | Band assignment of the RF switch pins (UHF = PTB3 / PTB4 is by analogy) | No, then a meter |
 | 10 | Supply voltage ADC channel and scale | No, then a meter |
+| 11 | Which NAND address ranges the stock bad-block skip covers (6.5) | No, the stock image |

@@ -102,6 +102,6 @@ void board_early_init(void)
 void board_init(void)
 {
 	db25d_power.init();
-	// The program-flash copy only, until the NAND driver can read the other (hardware-db25d.md 6.1)
-	db25d_cal_load((const uint8_t *)DB25D_CAL_FLASH_ADDR, NULL);
+	// Both calibration copies, the higher save counter wins (hardware-db25d.md 6.1). Without the NAND, the flash copy
+	db25d_cal_load((const uint8_t *)DB25D_CAL_FLASH_ADDR, db25d_nand_init() ? db25d_nand_read : NULL);
 }

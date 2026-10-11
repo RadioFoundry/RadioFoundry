@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DB25-D diagnostics page lines: what the bring-up needs to see (docs/spec/hardware-db25d.md 10): the RF chips' IDs,
 // the raw key scan (to place the keys), the ADC channels (the supply voltage), the host UART's overruns, the
-// calibration page found and the PA values it gives
+// calibration page found and the PA values it gives, the NAND's ID
 #include <stddef.h>
 #include "db25d.h"
 #include "config.h"
@@ -103,6 +103,17 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, db25d_cal_pa(146000000, true));
 		put(&o, "/");
 		put_u(&o, db25d_cal_pa(146000000, false));
+		break;
+	case 8:
+		// The NAND's ID (98 then the device) and how many page reads needed ECC corrections
+		put(&o, "nand ");
+		if (db25d_nand_ready()) {
+			put_x(&o, db25d_nand_id(), 4);
+			put(&o, " ecc ");
+			put_u(&o, db25d_nand_corrected());
+		} else {
+			put(&o, "none");
+		}
 		break;
 	default:
 		return false;
