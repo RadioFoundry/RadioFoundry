@@ -35,7 +35,7 @@ and F tags into C, and it should happen before a port starts.
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (F, BIN) | HR_C7000 (F, BIN) | FD6818 (community pin map) | 240x320 color, ST7789 class (community, BIN) | 16 MB data flash (F); program flash size ? | yes (C), ATGM336H (community) | Baofeng bootloader over UART cable (BIN, F) | Builds, not on a radio yet |
 | Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (C for the HR_C7000, FCC photo; the MCU part ?) | HR_C7000 (C, FCC photo) | ? | 1.77" (C), type and controller ? | ? | none (C) | ? | Planned, hardware needed. Not the GD-77 family |
 | Baofeng DR-1801 / DR-1801UV | ? (inside the AM6102 module ?) | Auctus AM6102 module (C, FCC photo) | ? | ? | ? | ? | ? | Not planned. Looks like a DM-1801 |
-| Radioddity DB25-D / DB25-D PRO, Retevis RT73, Kydera CDR-300UV (mobile) | HR_C7000 SoC (C, FCC photo) | HR_C7000 (C) | 2x BK4819 on the PRO (C, FCC photo); 2021 boards ? | 1.77" color TFT (C), controller ? | 2 Gbit SPI NAND, Kioxia TC58CVG1S3 (C, FCC photo) | yes (C), module ? | Vendor IAP loader over a UART cable, plain images (C, IMG) | Wish list, hardware needed |
+| Radioddity DB25-D / DB25-D PRO, Retevis RT73, Kydera CDR-300UV (mobile) | HR_C7000 SoC (C, FCC photo) | HR_C7000 (C) | 2x BK4819 on the PRO (C, IMG); FD6818 on earlier batches (IMG) | 1.77" color TFT (C), ST7735S class, serial bus (IMG) | 2 Gbit SPI NAND, Kioxia TC58CVG1S3 (C, FCC photo) | yes (C), module ? | Vendor IAP loader over a UART cable, plain images (C, IMG) | Bring-up started on the PRO ([hardware-db25d.md](hardware-db25d.md)) |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | two processors "A" and "B", likely two HR_C7000 (C for two, ? for the part) | HR_C7000 (IMG) | ? (separate VHF and UHF chains and PA modules, C) | 2.4" color TFT (C), controller ? | SPI NAND, TC58 family (IMG) | yes (C), module ? | Vendor IAP loader over RJ-45 only, two plain images (C, IMG) | Planned, hardware needed |
 
 BIN and "community" mean the facts come from our own disassembly and the community pin map recorded in
@@ -285,19 +285,23 @@ The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://k
 - **MCU and DMR:** one HR_C7000, marked "HR_C7000 D56323MP1" (C, FCC photo). The HR_C7000 integrates a C-SKY CK803S
   core, as on the DM-32UV ([hardware-dm32.md](hardware-dm32.md)). The stock update file is named
   `C7000_DR300UV_Ham_DB25D_20210902.bin` (C) ([Radioddity update guide](https://radioddity.s3.amazonaws.com/2023-03-30%20How%20to%20update%20firmware%20on%20DB25-D%20and%20GD-88%20v2.2.pdf)).
-  Program flash part and size: ?. The 846 KB image fits a 1 MB program flash like the DM-32's (IMG).
+  Program flash part: ?. It's larger than 1 MB: the firmware keeps data above 0x0310C000 (IMG).
 - **RF:** the PRO's RF board has **two Beken BK4819** transceivers with a TCXO (C, FCC photo). The receiver IF is
   51.550 MHz (C) ([extended manual v3.4](https://radioddity.s3.amazonaws.com/2025-05-01_Extended_manual_for_Radioddity_DB25-D_PRO_-_DB40-D_-_GD-88_-_v3.4.pdf),
-  section 18.2), so the BK4819s probably work at the IF and as the LO or modulator, not as direct-conversion receivers
-  (?). The firmware has no "BK4819" string but names an "rda1846" driver and an "AT1141/AT1411" LO PLL table (IMG).
-  **Whether the 2021 boards use the same RF chips is open (?)**.
+  section 18.2). The firmware reads register 0 of both RF chips at boot and writes the result into the version
+  string's batch code (IMG): the main transceiver is an FD6818 ('6', the DM-32's chip) or a BK4819 ('B'); the LO
+  chip is an FD6818, an AT1141 PLL ('T'), a part with ID 0x7813 ('4') or a BK4819. The release notes' batches D64,
+  D66 and D6T are the FD6818 boards; **the PRO is DBB**. On the PRO, one BK4819 is the LO synthesizer at f_RX +
+  51.55 MHz and the other works at the IF in receive (IMG). "rda1846" is only the RF task's name. BK4819 support first
+  appears in the 2024-05-09 build, so older stock images must not be loaded on a PRO (IMG). Both chips share one
+  3-wire bus with separate enables (IMG).
 - **Bands and power:** 136–174 / 400–480 MHz, 20 W or 5 W, 13.8 V (C) ([radioddity.com](https://radioddity.com/products/radioddity-db25d)).
   The FCC grant lists 19.7 W conducted (C). The PA is a discrete RF MOSFET on the TX board (C, photo). PA power is set
-  by an APC value ("u16ApcVal") (IMG).
+  by DAC B with a ramp at each burst, as on the DM-32 (IMG).
 - **Display:** 1.77" color TFT (C) ([radioddity.com](https://radioddity.com/products/radioddity-db25d)). Miklor's
-  RT73 review says 2" diagonal (F). Controller and resolution: ?. The firmware reads a panel ID ("LCDid"), and
-  Radioddity's "white screen after update" fix covers different panels on different production batches (C, manual
-  14.4). So expect more than one controller.
+  RT73 review says 2" diagonal (F). The init sequence is an ST7735S-class controller in landscape on a 4-wire serial
+  bus, not the DM-32's 8080 bus. An ADC strap picks bit-banged GPIO or the SoC's SPI2 on the same pins (IMG).
+  Radioddity's "white screen after update" fix fits that (C, manual 14.4).
 - **Controls:** front keys power, P1, P2, P3, VOL/SQL, TONE/T.SEL, B/E and Menu/OK, plus one push encoder. The
   16-key hand mic adds PTT and P4–P7 (DTMF A–D) (C) (extended manual v3.4, section 5.5). The mic board ("CKS-10A-2")
   carries a small QFN, likely an MCU, so the keys probably reach the radio as serial codes on RJ-45 pin 2 (?).
@@ -309,7 +313,9 @@ The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://k
   NR_ON/OFF, ES_SW (C, FCC photo). Mic and speaker otherwise go through the C7000's codec as on the DM-32 (?).
 - **Storage:** Kioxia TC58CVG1S3HRAIJ, a 2 Gbit (256 MB) 3.3 V SPI NAND (C, FCC photo; part decode
   [Elnec](https://www.elnec.com/en/device/KIOXIA/TC58CVG1S3HRAIJ+%5BWSON8%5D)). The firmware's storage code is
-  NAND with a bad-block table ("TC58_INTF_BlocksErase", "g_TC58BufBlock") (IMG).
+  NAND with a bad-block table on SPI0 (IMG). **Calibration** is a 2 KB page at NAND byte address 0x280000 with a
+  second copy in program flash; the firmware repairs one from the other at boot (IMG). The layout is decoded
+  ([hardware-db25d.md](hardware-db25d.md) 6).
 - **Other:** RDA5802N FM broadcast receiver (C, FCC photo). GPS: built in, SMA antenna port, module ? (C). Bluetooth:
   none on the DB25-D per the product page (C). The PRO's board name says "BT", but no module was fitted in the FCC
   unit (?). Coin-cell RTC backup (C, photo).
@@ -318,26 +324,28 @@ The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://k
   ([2021 addendum](https://radioddity.s3.amazonaws.com/2021-09-13%20Radioddity%20Addendum%20to%20DB25-D%20manual%20V1.1.pdf)).
   FTDI cables work since firmware 909E.D4.EARSAB.018 (C, release notes). A ".flash" file mode updates the IAP loader
   itself (C, manual 14.6).
-- **Image format:** raw code with no header, not encrypted. Entropy is about 7.0 bits per byte and there are
-  thousands of readable strings (IMG). Address constants start at 0x0300C000, which points to the DM-32's layout: a
-  48 KB loader at 0x03000000 and the app at 0x0300C000 (IMG, unverified).
+- **Image format:** raw code with no header, checksum or encryption, linked at 0x0300C000 behind a 48 KB loader, as on
+  the DM-32 (IMG, confirmed from the start-up copy addresses). The PC link and the debug output are both UART1 at
+  115200 (IMG).
 - **Codec:** the image links **`libc7000_hrvocoder_V1.9.6.a`** beside `libHRC7000Lib_V1.0.16.a` (IMG). The AMBE+2
   vocoder is software on the CK803S core, and no vocoder chip shows in the photos (C). The DM-32's
-  [own-stock codec](codec-dm32.md) model carries over: extract the codec from the user's own DB25-D file. Whether it
-  is byte-identical to the DM-32's codec is unknown (?).
+  [own-stock codec](codec-dm32.md) model carries over: extract the codec from the user's own DB25-D file. It's the
+  same code as the DM-32's 046 "HRVocoder" build, at a different address in every DB25-D image, so each stock file
+  needs its own recipe (IMG). AMBE frames pass through the CPU, as on the DM-32.
 - **Open firmware:** none. OpenGD77 and OpenRTX don't list it, and a 2021 forum thread calls it unlikely without
   C-SKY tools (F) ([kydera-ham forum](https://kydera-ham.boards.net/thread/315/thoughts-radioddity-db25-mini-mobile)).
   qdmr's support request has been open since 2021 (C) ([qdmr #165](https://github.com/hmatuschek/qdmr/issues/165)).
   MM7DBT's CPEditor edits stock codeplugs (F) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
 - **Not DMR:** the DB25-G, DB20-G, DB40-G and DB35-G GMRS mobiles and the "DB25 Pro" (no D) are analog FM radios
   (C, [radioddity.com DB25-G](https://radioddity.com/products/radioddity-db25g)). They aren't ODR targets.
-- **ODR:** bring-up started, `make BOARD=db25d` ([hardware-db25d.md](hardware-db25d.md) 9). Reuses `platform/hrc7000`, `drivers/modem/hrc7000`, the DM-32 codec-carving tool (with a new recipe), a
-  small color UI class (160x128 if that's the panel, ?) and the GPS NMEA reader the DM-32 needs. New: a BK4819 driver for two instances (or the 2021 RF
-  chip), an SPI NAND driver with bad-block handling plus a storage adapter (ODR's stores assume NOR sectors), a panel
-  driver once the controller is known, the mic keypad protocol, an image packer without a header, and the APC power
-  table. Effort: weeks, after the DM-32UV is on air. Blockers: no hardware, the RF chip on older boards, the panel
-  controller, where calibration lives, and an unbrick path. The DM-32's ROM serial boot should exist on the same SoC,
-  but it needs checking on this board.
+- **ODR:** bring-up started, `make BOARD=db25d` ([hardware-db25d.md](hardware-db25d.md) 9): FM receive, nothing run
+  on a radio yet. It reuses `platform/hrc7000` (shared with the DM-32), the `st7735` driver on a bit-banged serial
+  bus, `drivers/rf/bk4819` for both chips (receiver and LO synthesizer), the shared calibration curve, and
+  `drivers/flash/spi_nand` (read side) for the NAND. The calibration reader takes the newer of the NAND and
+  program-flash copies and never writes either. Still to do: TX (refused until a real calibration page has been seen),
+  DMR (the DM-32's modem glue shared, plus a codec recipe for a stock image from 2024-05 or later), the NAND's write
+  side and a storage adapter (ODR's stores assume NOR sectors), the mic keypad protocol, the FD6818 boards, and an
+  unbrick path (the JTAG pins look untouched by the app; the ROM serial boot needs checking on this board).
 
 ### Radioddity DB40-D / Kydera CDR-700UV
 
