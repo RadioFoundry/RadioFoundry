@@ -538,7 +538,8 @@ async function requestBuild(redraw) {
 	redraw();
 	try {
 		const rels = S.data.releases.filter((x) => x.board === S.radio.id);
-		let b = await api("POST", "builds", { board: S.radio.id, ref: rels.length ? rels[rels.length - 1].version : "main", features: [...sel.on].sort() });
+		let b = await api("POST", "builds", { board: S.radio.id, ref: rels.length ? rels[rels.length - 1].version : "main", features: [...sel.on].sort(),
+			tool: "web", tool_version: S.data.site.version || "" });
 		while (b.status === "queued" || b.status === "running") {
 			if (!current()) return;
 			S.build.text = b.status === "queued" && b.position ? t("flash.build.queued", { n: b.position }) : t("flash.build.building");
