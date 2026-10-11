@@ -121,6 +121,7 @@ generic drawing from `radio.json` `frame`.
 | `manifest.js` | Release manifest checks | `odrflash/manifest.py` |
 | `decide.js` | Keep or merge the codec | `odrflash/cli.py` `decide_codec` |
 | `dfu.js` | The AnyRoad DFU bootloader over WebUSB | `odrflash/dfu.py` |
+| `bootkey.js` | The bootloader key from a radio that runs ODR: the bootloader read over READ_MEM, the block with the key's SHA-256 | `odrflash/bootkey.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `odrflash/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
 | `backup.js`, `zip.js` | Backup bundles | |
 | `restore.js` | What a bundle can put back, and the plans for it | |

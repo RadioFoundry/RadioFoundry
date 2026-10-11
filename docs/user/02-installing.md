@@ -29,8 +29,8 @@ computer. **New: not yet tested on a radio.** Until it is, odrflash (below) is t
 
 The release firmware has everything except the AMBE codec. odrflash either keeps the codec already in your radio,
 or takes it out of the stock firmware file on your computer and writes it to the radio. The stock file also gives
-odrflash the key the radio's bootloader expects. odrflash checks the file by SHA-256 and refuses files it doesn't
-recognize.
+odrflash the key the radio's bootloader expects; once the radio runs ODR, odrflash reads the key from the radio
+instead. odrflash checks the file by SHA-256 and refuses files it doesn't recognize.
 
 Back up the radio's current codeplug with the program you use now (the manufacturer's CPS, or qdmr) before you
 flash. ODR uses a different codeplug layout from the stock firmware. If you go back to stock later, you need that

@@ -5,7 +5,7 @@
 // SPI flash, 5 the MCU flash, 9 the radio info, 10 the flash security registers). Read only, apart from the CPS
 // codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas.
 
-import { be32, concat, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
+import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 
 export const ODR_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
@@ -165,6 +165,19 @@ export class Link {
 		if (r.length < 28) return null;
 		return { idcode: u32le(r, 0), flashKb: u16le(r, 4), uid: toHex(r.subarray(6, 18)), optcr: u32le(r, 18),
 			rdp: r[22], wrp: u16le(r, 24), bor: r[26], user: r[27] };
+	}
+
+	// READ_MEM (debuglink.md 3.10) in 1000-byte pieces: internal flash, the stock bootloader included
+	async readMem(addr, size) {
+		const out = new Uint8Array(size);
+		for (let done = 0; done < size;) {
+			const n = Math.min(1000, size - done);
+			const r = await this.request(CMD.READ_MEM, concat(le32(addr + done), new Uint8Array([n & 0xFF, n >> 8])));
+			if (r.length !== 4 + n || u32le(r, 0) !== addr + done) throw new LinkError(`READ_MEM answer doesn't match 0x${(addr + done).toString(16)}`);
+			out.set(r.subarray(4), done);
+			done += n;
+		}
+		return out;
 	}
 
 	// ---- open-firmware CPS

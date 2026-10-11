@@ -20,6 +20,7 @@ import { readRadio, makeBundle, openBundle } from "../static/js/flasher/backup.j
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
 import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
+import { findKey, readBootKey } from "../static/js/flasher/bootkey.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
@@ -166,6 +167,27 @@ test("a read whose reply lost its tail is asked again", async () => {
 	assert.ok(r.complete);
 	assert.equal(reads, 6);
 	assert.deepEqual(r.data, radio.flash.subarray(0xC000, 0xC000 + 5 * 2045));
+});
+
+test("an ODR radio gives its bootloader key: found in the bootloader by its hash, nowhere else", async () => {
+	const { sim, radio } = await simulated("odr");
+	const link = new Link(radio.serialStream());
+	const key = await readBootKey(link, sim.board, sim.fb.key_len);
+	assert.deepEqual(key, sim.key);
+	// a key at an odd offset is found too; a hash that matches nothing gives nothing
+	const region = new Uint8Array(0xC000);
+	region.set(sim.key, 0x1235);
+	assert.deepEqual(await findKey(region, sim.fb.key_len, sim.board.key_sha256), sim.key);
+	assert.equal(await readBootKey(link, { ...sim.board, key_sha256: "00".repeat(32) }, sim.fb.key_len), null);
+	// firmware without READ_MEM (or a radio that refuses it): no key, no error
+	const answer = radio.serialAnswer.bind(radio);
+	radio.serialAnswer = (req) => (req[0] === 0xA5 && req[2] === 0x0C ? frame(0x8C, req[3], new Uint8Array([1])) : answer(req));
+	assert.equal(await readBootKey(new Link(radio.serialStream(), { timeout: 50 }), sim.board, sim.fb.key_len), null);
+	// the key then flashes the radio with no stock file anywhere
+	radio.enterBootloader();
+	await new Dfu(radio.dfuTransport(), noWait).run(makePlan(sim.board, segments(fx.manifest, image), KEEP), key);
+	assert.deepEqual(radio.violations, []);
+	assert.deepEqual(radio.flash.subarray(0xC000, 0xC000 + image.length), image);
 });
 
 test("merge on a radio without a codec, then restore stock from the bundle's stock file", async () => {

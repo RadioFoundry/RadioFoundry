@@ -21,6 +21,7 @@ import { readRadio, makeBundle, openBundle, bundleName, describeFirmware } from 
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "./restore.js";
 import { Selection } from "./select.js";
 import { decideCodec } from "./decide.js";
+import { readBootKey } from "./bootkey.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -254,6 +255,17 @@ function savedKey(board) {
 	}
 }
 
+// A radio that runs ODR hands over its bootloader key (bootkey.js), so updating it needs no stock file. Quiet when it
+// can't: the stock file still works.
+async function keyFromRadio(link) {
+	if (S.key || !S.board?.key_sha256) return;
+	const key = await readBootKey(link, S.board, fb().key_len);
+	if (!key) return;
+	S.key = key;
+	S.keyFromRadio = true;
+	if (!S.sim) try { localStorage.setItem(KEY_STORE(S.board.id), toHex(key)); } catch (e) { /* not remembered */ }
+}
+
 async function getKey(board) {
 	if (S.key) return S.key;
 	if (S.sim) return (S.key = S.sim.key);
@@ -343,6 +355,7 @@ function radioView() {
 			if (!r) throw new Error(t("flash.err.unknown_board", { board: p.board }));
 			selectRadio(r);
 			S.now = { kind: "odr", probe: p };
+			await keyFromRadio(link);
 			next();
 		} catch (e) {
 			status.replaceChildren(connectError(e));
@@ -625,10 +638,12 @@ function nowView() {
 	async function checkOdr() {
 		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
 		try {
-			const p = await probe(await connectSerial());
+			const link = await connectSerial();
+			const p = await probe(link);
 			if (!p) throw new Error(t("flash.err.no_answer"));
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
 			S.now = { kind: "odr", probe: p };
+			await keyFromRadio(link);
 			status.replaceChildren();
 		} catch (e) {
 			await dropSerial();
@@ -716,7 +731,8 @@ function codecView() {
 			S.decision = null;
 			parts.push(notice(e.message, "bad"));
 		}
-		const needKey = !S.sim && !savedKey(S.board);
+		const needKey = !S.sim && !S.key && !savedKey(S.board);
+		if (S.keyFromRadio) parts.push(h("p", { class: "small muted" }, t("flash.codec.key_from_radio")));
 		const stockBox = h("div", {},
 			h("h3", {}, t("flash.codec.stock_title")),
 			h("p", {}, t(needKey || S.decision?.mode !== KEEP ? "flash.codec.stock_needed" : "flash.codec.stock_optional", { files: S.board.codec.sources.join(", ") })),
@@ -734,7 +750,7 @@ function codecView() {
 	};
 	async function useStock(f) {
 		S.stock = { ...f, info: await stockfw.identify(f.data, fb()) };
-		S.key = null;
+		if (!S.keyFromRadio) S.key = null;
 		draw();
 	}
 	out.append(h("p", { class: "muted" }, t("flash.loading")));
@@ -926,7 +942,7 @@ function restoreView() {
 		h("strong", {}, t(`flash.restore.to_${tg}`)), h("span", { class: "small muted" }, t(`flash.restore.to_${tg}_text`)))));
 	const parts = [panel(t("flash.restore.what"), summary, choices)];
 	// the stock file: the application to write back, or (any target) where the bootloader key comes from
-	if (S.restoreTarget && !S.stock && (S.restoreTarget === "stock" || (!S.sim && !savedKey(S.board))))
+	if (S.restoreTarget && !S.stock && (S.restoreTarget === "stock" || (!S.sim && !S.key && !savedKey(S.board))))
 		parts.push(panel(t("flash.codec.stock_title"), h("p", {}, t("flash.restore.stock_needed")),
 			filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; render(); })));
 	else if (S.restoreTarget) {

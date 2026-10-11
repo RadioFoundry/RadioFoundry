@@ -12,7 +12,7 @@ import time
 import urllib.request
 import uuid
 
-from . import __version__, boards, debuglink, manifest as mf, plan as planmod, state, stockfw
+from . import __version__, boards, bootkey, debuglink, manifest as mf, plan as planmod, state, stockfw
 from . import dfu as dfumod
 from . import release as relmod
 
@@ -25,6 +25,7 @@ examples:
                                                         also write the codec from your stock firmware file
   odrflash probe                                        ask the radio (running ODR) whether its codec can be kept
   odrflash key --stock "DM-1701(CSV)-V02.06.bin" --save derive the bootloader key from the stock file, keep it
+  odrflash key --save                                   read it from the radio instead (running ODR)
 
 entering the bootloader (DM-1701): turn the radio off, hold PTT and SK1 (the side key just above PTT), turn it on.
 The screen stays dark.
@@ -148,7 +149,8 @@ def load_stock(args):
 
 
 def get_key(args, board, stock, sim_key=None):
-    """The bootloader key: --key FILE, else derived from the stock file, else the saved key."""
+    """The bootloader key: --key FILE, else derived from the stock file, else the saved key, else read from the radio
+    if it runs ODR."""
     if sim_key is not None:
         return sim_key
     if args.key:
@@ -163,8 +165,14 @@ def get_key(args, board, stock, sim_key=None):
     if os.path.exists(saved):
         say("key      %s" % saved)
         return dfumod.load_key(saved, board)
-    raise UsageError("the %s bootloader needs its 1024-byte key. Either give --stock with %s (odrflash derives the "
-                     "key from it), or --key FILE, or save it once with: odrflash key --stock FILE --save"
+    if not args.simulate:
+        key = bootkey.from_radio(board, args.port)
+        if key:
+            say("key      read from the radio's bootloader (ODR, debug link)")
+            return dfumod.check_key(key, board)
+    raise UsageError("the %s bootloader needs its 1024-byte key. Start the radio with ODR and connect it (odrflash reads "
+                     "the key from it), or give --stock with %s (odrflash derives the key from it), or --key FILE, or "
+                     "save it once with: odrflash key --stock FILE --save"
                      % (board.name, STOCK_HINT))
 
 
@@ -514,18 +522,26 @@ def cmd_detect(args):
 
 def cmd_key(args):
     board = boards.get(args.board or "dm1701")
-    with open(os.path.expanduser(args.stock), "rb") as f:
-        stock = f.read()
-    what = stockfw.identify(stock)
-    say("stock    %s" % (what or "unknown file (trying anyway)"))
-    try:
-        key = dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)
-    except stockfw.StockError as e:
-        raise UsageError(str(e))
-    say("key      derived and verified (SHA-256 %s...)" % board.key_sha256[:16])
+    if not args.stock:
+        key = bootkey.from_radio(board, args.port, log=say)
+        if not key:
+            raise UsageError("no radio running ODR gave the %s bootloader key: connect it, or use --stock FILE"
+                             % board.name)
+        key = dfumod.check_key(key, board)
+        say("key      read from the radio's bootloader and verified (SHA-256 %s...)" % board.key_sha256[:16])
+    else:
+        with open(os.path.expanduser(args.stock), "rb") as f:
+            stock = f.read()
+        what = stockfw.identify(stock)
+        say("stock    %s" % (what or "unknown file (trying anyway)"))
+        try:
+            key = dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)
+        except stockfw.StockError as e:
+            raise UsageError(str(e))
+        say("key      derived and verified (SHA-256 %s...)" % board.key_sha256[:16])
     out = state.key_path(board.id) if args.save else args.output
     if not out:
-        say("(use -o FILE or --save to keep it; flash commands also derive it from --stock each time)")
+        say("(use -o FILE or --save to keep it; flash commands also get it from --stock or from the radio each time)")
         return 0
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "wb") as f:
@@ -605,8 +621,9 @@ def build_parser():
     common(d)
     d.set_defaults(fn=cmd_detect)
 
-    k = sub.add_parser("key", help="derive the bootloader key from a stock firmware file")
-    k.add_argument("--stock", required=True)
+    k = sub.add_parser("key", help="get the bootloader key from a radio running ODR, or from a stock firmware file")
+    k.add_argument("--stock", help="derive it from this stock file instead of reading it from the radio")
+    k.add_argument("--port")
     k.add_argument("-o", "--output")
     k.add_argument("--save", action="store_true", help="keep it in odrflash's settings directory")
     k.add_argument("--board")

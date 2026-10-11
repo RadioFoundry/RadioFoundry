@@ -1224,6 +1224,14 @@ with hash `d983ce95...` in under 0.1 s, needing at most a few hundred hash check
 (`derive_key`) does this on the user's machine; only the hash is in the repository. The same method should work for the
 other models' files (unverified: no MD-UV380, MD-380 or MD-9600 file was tried).
 
+**In the bootloader (2026-10-13), DM-1701.** The stock bootloader (sectors 0-2) holds the key as one plain 1024-byte
+block: in the bench unit's bootloader exactly one 1024-byte window has the hash above. ODR can read those sectors (read
+protection level 1 doesn't stop code running from user flash, `debuglink.md` 3.10), so the web flasher
+(`bootkey.js`) and odrflash (`bootkey.py`) read them over READ_MEM and take the block whose SHA-256 matches. Updating a
+radio that runs ODR therefore needs no stock file. The search tries every offset (4-byte aligned first) and assumes
+no layout, so a bootloader version that keeps the key elsewhere works too. Unverified for the other models'
+bootloaders; when no block matches, both clients fall back to the stock file.
+
 Other loader facts:
 
 - An official TYT firmware file is recognized by its first 16 bytes "OutSecurityBin" followed by two zero bytes; it must

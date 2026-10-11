@@ -20,7 +20,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from odrflash import boards, cli, fakedfu, manifest as mf, plan, state, stockfw  # noqa: E402
+from odrflash import boards, bootkey, cli, debuglink, fakedfu, manifest as mf, plan, state, stockfw  # noqa: E402
 from odrflash import dfu as dfumod  # noqa: E402
 
 DM1701 = boards.DM1701
@@ -525,6 +525,46 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             rc, out, err = run_cli(["flash", bp, "--board", "dm1701", "--simulate", "odr-codec", "--yes"])
             self.assertEqual(rc, 0, out + err)
             self.assertIn("no manifest", err)
+
+
+class BootKeyFromRadio(unittest.TestCase):
+    """The key read from the bootloader over READ_MEM, found only by its hash."""
+
+    class Radio:
+        def __init__(self, flash, base=0x08000000, refuse=False):
+            self.flash, self.base, self.refuse, self.reads = flash, base, refuse, 0
+
+        def request(self, cmd, payload=b""):
+            if self.refuse:
+                raise debuglink.LinkError("command 0x%02X: status 1" % cmd)
+            assert cmd == debuglink.CMD_READ_MEM
+            addr, n = struct.unpack("<IH", payload)
+            assert 1 <= n <= 1000
+            self.reads += 1
+            return struct.pack("<I", addr) + self.flash[addr - self.base:addr - self.base + n]
+
+        read_mem = debuglink.Link.read_mem
+
+    def setUp(self):
+        r = random.Random(5)
+        self.key = bytes(r.getrandbits(8) for _ in range(stockfw.KEY_LEN))
+        self.board = boards.get("dm1701")
+        self.board_key = collections.namedtuple("B", "key_sha256 protected")(
+            hashlib.sha256(self.key).hexdigest(), self.board.protected)
+        self.boot = bytearray(r.getrandbits(8) for _ in range(0xC000))
+
+    def test_found_anywhere_by_hash(self):
+        for off in (0x2340, 0x44B9):
+            boot = bytearray(self.boot)
+            boot[off:off + len(self.key)] = self.key
+            radio = self.Radio(bytes(boot))
+            self.assertEqual(bootkey.read_key(radio, self.board_key), self.key)
+            self.assertEqual(radio.reads, 50)	# 48 KB in 1000-byte pieces
+
+    def test_nothing_without_a_match_or_read_mem(self):
+        self.assertIsNone(bootkey.read_key(self.Radio(bytes(self.boot)), self.board_key))
+        self.assertIsNone(bootkey.read_key(self.Radio(b"", refuse=True), self.board_key))
+        self.assertIsNone(bootkey.read_key(self.Radio(bytes(self.boot)), boards.get("dm32")))
 
 
 class FlashLog(unittest.TestCase):

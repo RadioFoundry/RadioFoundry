@@ -55,7 +55,10 @@ codec source.
 
 The radio's bootloader needs a 1024-byte key. odrflash derives it from the stock firmware file (any DM-1701 version)
 and checks it against the key's published SHA-256, so `--stock` is enough; `odrflash key --stock FILE --save` keeps it
-for later runs without `--stock`; `--key FILE` takes a key file you already have. The key is never part of ODR.
+for later runs without `--stock`; `--key FILE` takes a key file you already have. A radio that runs ODR gives the key
+itself: odrflash reads the stock bootloader over the debug link and takes the block with that hash
+(`odrflash/bootkey.py`), so an update needs none of these (`odrflash key --save` keeps it from the radio). The key is
+never part of ODR.
 
 ### USB access
 
@@ -74,7 +77,8 @@ for later runs without `--stock`; `--key FILE` takes a key file you already have
 | `odrflash/manifest.py` | release manifests: generate (used by `tools/release.py`) and verify |
 | `odrflash/stockfw.py` | the DM-1701 and MD-380 stock files: container, decryption, codec extraction and merge, key derivation (also used by `tools/codec_extract.py`) |
 | `odrflash/dfu.py` | the AnyRoad DFU bootloader: find, open, run a plan |
-| `odrflash/debuglink.py` | VERSION / INFO_CHIP over the debug link (read only) |
+| `odrflash/debuglink.py` | VERSION / INFO_CHIP / READ_MEM over the debug link (read only) |
+| `odrflash/bootkey.py` | the bootloader key from a radio that runs ODR, found in its bootloader by the key's hash |
 | `odrflash/fakedfu.py` | a fake bootloader with a flash model, for the tests and `--simulate` |
 | `odrflash/release.py`, `state.py`, `cli.py` | GitHub downloads, the remembered probe, the commands |
 

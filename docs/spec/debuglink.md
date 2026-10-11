@@ -334,6 +334,10 @@ access only from a debugger (SWD/JTAG), from code running in RAM and when the ch
 BOOT0 pin); code running from user flash, as this firmware does, reads every flash address. So READ_MEM works at
 RDP level 1, and that is how the stock bootloader was saved on the bench unit.
 
+The web flasher and odrflash read the bootloader sectors this way to find the bootloader key by its SHA-256
+(`hardware-dm1701.md` 15.3), so updating a radio that runs ODR needs no stock file. The bytes stay in memory; only the
+key is kept.
+
 `odr_debug.py dump --addr A --len N [-o FILE]` reads in 1000-byte pieces. It refuses to write inside any git work
 tree; the default file is `the external reference folder<addr>_<len>.bin`. The stock bootloader is proprietary:
 a dump of it is never committed or published.

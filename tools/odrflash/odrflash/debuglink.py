@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """Just enough of the debug link (docs/spec/debuglink.md) to ask a running ODR radio what it is: VERSION (board,
-git, codec=) and INFO_CHIP (the chip UID, to tell radios apart). Read only: no command here changes the radio.
+git, codec=) and INFO_CHIP (the chip UID, to tell radios apart), and READ_MEM for the bootloader key (bootkey.py).
+Read only: no command here changes the radio.
 Needs pyserial; without it, probing is skipped.
 """
 import struct
@@ -9,7 +10,7 @@ import time
 
 VID, PID = 0x1FC9, 0x0094
 SOF1, SOF2 = 0xA5, 0x5A
-CMD_VERSION, CMD_INFO_CHIP = 0x02, 0x0B
+CMD_VERSION, CMD_INFO_CHIP, CMD_READ_MEM = 0x02, 0x0B, 0x0C
 
 
 class LinkError(Exception):
@@ -96,6 +97,17 @@ class Link:
 
     def version(self):
         return parse_kv(self.request(CMD_VERSION).decode("ascii", "replace"))
+
+    def read_mem(self, addr, size):
+        """READ_MEM in 1000-byte pieces (internal flash, the stock bootloader included)."""
+        out = bytearray()
+        while len(out) < size:
+            n = min(1000, size - len(out))
+            r = self.request(CMD_READ_MEM, struct.pack("<IH", addr + len(out), n))
+            if len(r) != 4 + n or struct.unpack_from("<I", r)[0] != addr + len(out):
+                raise LinkError("READ_MEM answer doesn't match 0x%08X" % (addr + len(out)))
+            out += r[4:]
+        return bytes(out)
 
     def chip_uid(self):
         """The 96-bit chip UID as hex, or None (INFO_CHIP: idcode u32, flash_kb u16, uid 12 bytes, ...)."""

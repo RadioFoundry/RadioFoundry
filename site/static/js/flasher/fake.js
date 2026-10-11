@@ -76,6 +76,7 @@ export class FakeRadio {
 		this.spi = new Uint8Array(spiSize).fill(0xFF);
 		this.spi.set(randomBytes(r, 0x40000), 0);		// a stock codeplug where ODR's settings go
 		this.spi.set(randomBytes(r, 0x5D400), 0x60000);		// stock resources
+		this.flash.set(this.key, 0x2340);		// the bootloader holds its key (anywhere: found by its hash)
 		this.security = randomBytes(r, 0x300);
 		this.uid = randomBytes(r, 12);
 		this.running = state === "bootloader" ? "stock" : state;
@@ -203,6 +204,11 @@ export class FakeRadio {
 				const p = new Uint8Array(28);
 				p.set(le32(0x0009A413), 0); p[4] = 0x00; p[5] = 0x04; p.set(this.uid, 6); p.set(le32(0x0FFF55ED), 18); p[22] = 1; p[23] = 0x55;
 				return ok(p);
+			}
+			if (f.cmd === 0x0C) {
+				const addr = u32le(f.payload, 0), n = f.payload[4] | (f.payload[5] << 8);
+				if (n < 1 || n > 1000 || addr < FLASH_BASE || addr + n > FLASH_BASE + FLASH_SIZE) return frame(f.cmd | 0x80, f.seq, new Uint8Array([7]));
+				return ok(concat(le32(addr), this.flash.subarray(addr - FLASH_BASE, addr - FLASH_BASE + n)));
 			}
 			return frame(f.cmd | 0x80, f.seq, new Uint8Array([1]));
 		}
