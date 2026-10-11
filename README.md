@@ -141,32 +141,21 @@ stock firmware with its codeplug: [the user manual](docs/user/README.md).
 
 ## How it's tested
 
-Radio firmware is usually tested by hand: flash it, push buttons, key up, listen. That's slow, and it means nobody
-wants to touch old code. We test at four levels instead, and most of it runs on any laptop with no radio at all.
+Most of the testing runs on any computer, with no radio:
 
-- **Unit tests.** Small pieces checked on their own: the error-correction math, a message encoder, the settings
-  format. Feed in known inputs, compare against known answers (worked out from the standards, or recorded from
-  real radios).
-- **Software-in-the-loop (SIL).** The real firmware code for whole features, compiled for your computer and run
-  against simulated chips. A fake DMR modem plays recorded or generated bursts into the real call handling, a fake
-  flash chip takes the codeplug writes, a fake CPS talks to the real CPS code. If a call, a text message or a
-  codeplug write breaks, this catches it without a radio.
-- **UI simulator.** Part of SIL: the real screen and menu code drawn into an image instead of an LCD, at every
-  display size we support. Scripted key presses walk through the menus and check where they end up, and the same
-  tool renders every screenshot in these docs.
-- **Hardware-in-the-loop (HIL).** The same kind of scripted tests, run against a real radio over USB. A debug
-  protocol lets the tests press keys, read what the radio thinks is going on and take screenshots
-  ([debuglink](docs/spec/debuglink.md), `tools/odr_debug.py`), and an SDR bench plays the other radio: it sends
-  calls and texts to the radio and checks what the radio transmits. See [tests/hil/README.md](tests/hil/README.md).
+- **Unit tests** check single pieces (error correction, encoders, the settings format) against known answers from
+  the standards or from real radios.
+- **Software-in-the-loop (SIL) tests** compile the real firmware code for the host and run whole features (calls,
+  text messages, codeplug writes) against simulated chips.
+- **The UI simulator** draws the real screens into images at every supported display size, walks the menus with
+  scripted key presses and renders every screenshot in these docs.
+- **Hardware-in-the-loop (HIL) tests** run the same kind of scripts against a radio on USB, through the
+  [debug link](docs/spec/debuglink.md), with an SDR bench as the other station ([tests/hil](tests/hil/README.md)).
 
-On top of that, every change builds every radio with each feature switched on and off, checks the image still fits,
-and runs the license and clean-room checks (`tools/ci.sh`). CI runs the host tests (also under ASan and UBSan), coverage and every radio's
-default build on each push, the full matrix nightly ([CI](docs/dev/ci.md)). How to run each level and where a new
-test goes: [developer docs, testing](docs/dev/testing.md) and [docs/testing](docs/testing/README.md).
-
-What that buys: you can change the DMR stack, the UI or the storage code and know within a couple of minutes, on
-your own machine, whether you broke something. You don't need our exact radio or our bench to contribute, and a bug
-found on the bench usually turns into a SIL test so it stays fixed.
+`tools/ci.sh` builds every radio with each feature switch on and off, checks that each image fits, and runs the
+license and clean-room checks. CI runs the host tests (also under ASan and UBSan) and every radio's default build on
+each push, and the full matrix nightly ([CI](docs/dev/ci.md)). How to run each level and where a new test goes:
+[testing](docs/dev/testing.md) and [docs/testing](docs/testing/README.md).
 
 ## FAQ
 
@@ -226,14 +215,16 @@ of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make su
 
 | Path | What |
 |---|---|
-| `core/` | Radio-independent code: DMR stack, hotspot, host link, codeplug, settings, UI, CPS, debug link |
+| `core/` | Radio-independent code: DMR stack (`core/dmr`), radio state machine (`core/radio`), UI (`core/ui`), hotspot, host link, codeplug, settings, CPS, debug link |
 | `hal/` | Interfaces the core uses (modem, RF, audio, codec, flash, display, input), and the `board_t` descriptor |
 | `drivers/` | Chip drivers shared across radios |
 | `platform/` | Per-SoC startup, clocks, interrupts and RTOS glue (`stm32f4`, `hrc7000`) |
 | `boards/` | One directory per radio: board descriptor, pins, feature defaults, linker script, codec hosting |
 | `config/` | Build-time feature switches |
-| `third_party/` | Permissively licensed upstream code, as submodules |
-| `tools/` | Flashing (`odrflash`), release packaging, codec merge, CPS client, debug link, CI, SDR bench tools |
-| `tests/host/`, `tests/hil/` | Host tests and hardware-in-the-loop tests |
-| `docs/user/`, `docs/dev/` | User manual, developer documentation |
-| `docs/spec/`, `docs/ux/`, `docs/testing/` | Specs, UI design, test procedures |
+| `third_party/` | Permissively licensed upstream code, as submodules (FreeRTOS, ST HAL and CMSIS, TinyUSB) |
+| `tools/` | Flashing (`odrflash`), release packaging, codec merge, CPS client, debug link client (`odr_debug.py`), CI, SDR bench tools |
+| `tests/host/` | Unit and SIL tests, the UI simulator (`tests/host/sim`) |
+| `tests/hil/` | HIL tests: pytest against a radio and the SDR bench |
+| `docs/spec/` | Behavior, hardware facts and protocols; `gotchas.md` lists past bugs by subsystem |
+| `docs/ux/` | UI principles, flows, the screenshot gallery |
+| `docs/user/`, `docs/dev/`, `docs/testing/` | User manual (built to PDF on release tags), developer documentation, test procedures |

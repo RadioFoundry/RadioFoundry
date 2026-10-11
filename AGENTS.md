@@ -45,18 +45,8 @@ The DM-32 needs `csky-elf-gcc` (`tools/build-csky-toolchain.sh`). ci.sh reports 
 
 ## Where things are
 
-| Path | What |
-|---|---|
-| `core/` | Radio-independent code: DMR stack (`core/dmr`), radio state machine (`core/radio`), UI (`core/ui`), codeplug, settings, CPS, hotspot, debug link |
-| `hal/` | The interfaces the core calls (`hal_dmr_modem.h`, `hal_vocoder.h`, `hal_display.h`, ...) |
-| `drivers/`, `platform/`, `boards/` | Chip drivers, SoC support, one directory per radio |
-| `docs/spec/` | Behavior, hardware facts and protocols; `gotchas.md` lists past bugs by subsystem |
-| `docs/ux/` | UI principles, flows, the screenshot gallery |
-| `docs/user/`, `docs/dev/` | User manual (built to PDF on release tags), developer docs |
-| `tests/host/` | Host tests, the UI simulator (`tests/host/sim`) |
-| `tests/hil/` | pytest against a real radio and the SDR bench |
-| `tools/` | odr_debug.py (debug link client), odrflash, codec tools, CI, bench tools |
-| `third_party/` | Git submodules (FreeRTOS, ST HAL/CMSIS, TinyUSB, ...) |
+The source tree is in [README.md, Layout](README.md#layout). The layers and the core's directories are in
+[docs/dev/architecture.md](docs/dev/architecture.md).
 
 ## How to work here
 
