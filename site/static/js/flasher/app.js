@@ -982,6 +982,7 @@ function afterRestore() {
 // ---------------------------------------------------------------------------------------------------------------
 
 async function main() {
+	if (!FLASH_LOG) document.getElementById("flash-log-off")?.replaceWith(t("flash.log.is_off"));
 	try {
 		S.data = await loadData();
 	} catch (e) {

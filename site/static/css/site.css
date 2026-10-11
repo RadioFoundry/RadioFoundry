@@ -173,6 +173,9 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 
 /* flasher */
 .flasher { display: grid; gap: var(--space-5); }
+/* what the flasher sends: always on screen under every step */
+.flash-log { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border); max-width: 70ch; }
+.flash-log summary { cursor: pointer; }
 .stepper { display: flex; gap: var(--space-2); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; counter-reset: step; }
 .stepper li { counter-increment: step; display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: 600; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
 .stepper li::before { content: counter(step); width: 1.6rem; height: 1.6rem; border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--muted); }
