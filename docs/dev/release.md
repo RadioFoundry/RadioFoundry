@@ -30,6 +30,15 @@ own stock firmware file ([tools/odrflash/README.md](../../tools/odrflash/README.
 9. The release workflow builds the firmware and odrflash and attaches them; the manual workflow attaches the PDF
    (below). Edit the release notes on GitHub.
 
+## Future improvements
+
+Not needed for a release; noted so they aren't lost.
+
+- **Flash size per selection in the web flasher.** The feature picker should estimate the image size of the chosen
+  feature combination on the chosen radio and warn when it may not fit. CI's full variant and feature-combination
+  builds can write the sizes to a JSON file (per radio: a base size and each switch's cost, or the measured
+  combinations) that the site publishes next to `features.json`.
+
 ## Release artifacts
 
 | File | What |
@@ -124,9 +133,13 @@ The AnyRoad bootloader XORs what it receives with a 1024-byte per-model key ([ha
    settled by trying the runner-up bytes until the result's SHA-256 matches the published key hash. Nothing but the
    hash is needed, and a wrong key can't pass. It works on every DM-1701 stock file listed in codec-dm1701.md
    (V02.01-V02.06, CSV and noCSV) in well under a second (`stockfw.derive_key`);
-3. a key saved earlier with `--save` (odrflash's settings directory).
+3. a key saved earlier with `--save` (odrflash's settings directory);
+4. read from a radio that runs ODR: the stock bootloader holds the key as one plain block, and odrflash reads the
+   bootloader over the debug link and takes the block with the key's hash (`odrflash/bootkey.py`; the web flasher's
+   `bootkey.js` does the same).
 
-So a user needs one file from Baofeng's firmware, which they need anyway for the codec, and never handles the key.
+So a user needs one file from Baofeng's firmware for the first install, which they need anyway for the codec, and
+never handles the key. Updates of a radio that runs ODR need no stock file.
 
 ## The release workflow
 
