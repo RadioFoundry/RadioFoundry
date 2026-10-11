@@ -399,8 +399,8 @@ Hand-mic PTT on PE10, pull-up, active low (D). No separate accessory PTT input i
 
 The reference port supports a community-built remote front panel: if PD2 (column K4) reads low at boot, PB10 / PB11
 become USART3 at 250000 baud and keys, encoder, mic keys, PTT and GPS characters arrive as 3-byte messages, while
-display rows go out over the link (D) [ref]. Not stock hardware; ODR should simply not mistake a held P1 / P4 / Enter
-at boot for it (?).
+display rows go out over the link (D) [ref]. Not stock hardware, and ODR doesn't support it. ODR must not take a P1, P4
+or Enter key held at boot for the panel (whether those keys pull PD2 low is unverified).
 
 ---
 

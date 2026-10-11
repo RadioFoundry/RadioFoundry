@@ -443,9 +443,8 @@ Bit meanings (datasheet): 14 xtal_mode (1 = 26/13 MHz), 13 filter_band_sel (1 = 
 | FM TX | 0x6046 | 0x7046 |
 | DMR TX | 0x60C6 | 0x60C6 (same value for both) |
 
-Note that "12.5 kHz" keeps filter_band_sel = 1 (the 25 kHz analog filter) with the 12.5 kHz DSP mode; this is what
-works on these radios. Bit 1 stays set in normal operation in these values (the datasheet calls it chip_cal_en; as
-found).
+The 12.5 kHz setting keeps filter_band_sel = 1 (the 25 kHz analog filter) with the 12.5 kHz DSP mode, which is what
+works on these radios. Bit 1 (chip_cal_en in the datasheet) stays set in normal operation, as found.
 
 ### 5.4 Bandwidth tables (data)
 
@@ -718,7 +717,7 @@ Sources: firmware constants (empirical fractions), CubeMX (DAC).
 The RX audio mux on PD9 is driven low when the AT1846S output (e.g. its tone generator during audible AFSK) should go
 straight to the amp (unverified).
 
-APRS receive isn't wired. No ADC pin sees the discriminator, but FM receive audio reaches the MCU on the I2S stream
+APRS receive isn't implemented. No ADC pin sees the discriminator, but FM receive audio reaches the MCU on the I2S stream
 (squelch gated) and in the HR_C6000's RX RAM (ungated, 8 kHz), as the bench found (21). `hal_afsk_t.rx_start` is
 still NULL and `CONFIG_APRS_RX` defaults to n (`aprs.md` 5.3).
 

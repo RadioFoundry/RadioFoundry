@@ -245,7 +245,7 @@ CTRL_STOP 0x20, CH_VLD 0x24, PD_SEOC_TIME 0x28, P2S_EN 0x2C, DATA_AB 0x30 (A in 
 | Volume knob | **Not read at all** (the variable for it is never written) | — | KP |
 
 IO_DIPLEX2 = 0x0FC80100 at boot leaves ADC1_IN and ADC2_IN analog (bits 20, 21 clear) and ADC0, ADC3..7 as GPIO (KP,
-DS bit map). So the analog inputs actually available are channels B and C. Which one is the volume pot is unknown.
+DS bit map). So the analog inputs available are channels B and C. Which one is the volume pot is unknown.
 
 ### 3.8 DAC (0x140F0000, 3 channels, 12-bit)
 
@@ -291,7 +291,7 @@ each byte was needed in the port (KP).
 **Summary.** The HR_C7000 has a USB 1.1 full-speed device controller, but the DM-32UV gives it nothing to talk to.
 The USB-C socket people see is on the BC-32UV battery pack: it charges the pack through the pack's own charger,
 with red (charging) and green (full) LEDs on the pack (COM: Baofeng and Radioddity battery listings; reviewers
-note that the included USB-C cable cannot program the radio). The radio body has no USB connector; programming and
+report that the USB-C cable in the box can't program the radio). The radio body has no USB connector; programming and
 firmware updates use the two-pin K1 jack, which carries UART0 through a USB-serial cable (COM, BIN). So ODR keeps
 `CONFIG_USB=n` on this board. The controller facts below are kept for a future HR_C7000 radio that does wire the
 USB pins, and to settle the question for good.

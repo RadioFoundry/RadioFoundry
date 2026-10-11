@@ -289,8 +289,8 @@ Skyworks SKY72310-11 (D) [OpenRTX], [DL4YHF]. From the data sheet [SKY] (C):
 
 `drivers/rf/sky72310` implements this and `tests/host/sky72310Test.c` checks it against a model of the chip. The
 board picks the smallest reference divider that keeps N in the fractional range (2 or 3 at 16.8 MHz), the phase
-detector gain at its maximum (?: the loop filter was designed for some value we don't know), Mux_out = the oscillator
-(the lock detect output's configuration is not in our copy of the data sheet (?)).
+detector gain at its maximum (?: the loop filter was designed for a value we don't know) and Mux_out = the
+oscillator. The lock detect output's configuration isn't in our copy of the data sheet (?).
 
 ### 5.3 Frequency plan
 

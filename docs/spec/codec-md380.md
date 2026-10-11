@@ -57,7 +57,7 @@ for the MD-380. The key file is never stored in the repository.
    and the bulk of the library from DM-1701 +0x15B6 on is instruction-identical.
 3. The stock voice wrapper at 0x08047C7C makes exactly the DM-1701 init sequence (same calls, same constants), which
    confirms every entry point and its arguments (below).
-4. The windows were then cut from what the codec code actually references (every PC-relative literal that holds a
+4. The windows were then cut from what the codec code references (every PC-relative literal that holds a
    flash address) and from execution coverage in the emulator.
 
 ## Codec in the stock image (D002.032)
