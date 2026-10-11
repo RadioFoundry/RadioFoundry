@@ -105,7 +105,8 @@ def ask_yes(question, default=False):
 # inputs: image + manifest, key, stock file
 
 def load_image(args, board_hint):
-    """Returns (board, manifest, image bytes, description)."""
+    """Returns (board, manifest, application image bytes, merged): merged is (stock profile, codec segments) for an
+    image with the codec merged in (odrflash merge, or a build with the stock file in codecs/), else None."""
     if args.release:
         if args.image:
             raise UsageError("give an image file or --release, not both")
@@ -128,7 +129,22 @@ def load_image(args, board_hint):
         say("image    %s: %s %s (git %s), %d bytes, SHA-256 verified against %s"
             % (os.path.basename(img_path), board.name, m.get("version"), m.get("git"), len(image),
                os.path.basename(man_path)))
-        return board, m, image
+        return board, m, image, None
+    try:
+        merged = stockfw.split_merged(image)
+    except stockfw.StockError as e:
+        raise UsageError("%s: %s" % (img_path, e))
+    if merged:
+        app, prof, codec = merged
+        board = boards.get(prof["board"])
+        if board_hint and boards.get(board_hint).id != board.id:
+            raise UsageError("%s holds the %s codec, but --board says %s: refusing"
+                             % (img_path, board.name, boards.get(board_hint).name))
+        m = mf.for_dev_build(board, app)
+        mf.verify(m, app, board.id)
+        say("image    %s: a %s image with the codec merged in (%s, every window verified by SHA-256), "
+            "application %d bytes" % (os.path.basename(img_path), board.name, prof["codec_profile"], len(app)))
+        return board, m, app, (prof, codec)
     if not board_hint:
         raise UsageError("no manifest %s next to the image. Release images come with one; for a local build say "
                          "which radio it is for with --board dm1701" % man_path)
@@ -136,7 +152,7 @@ def load_image(args, board_hint):
     m = mf.for_dev_build(board, image)
     mf.verify(m, image, board.id)
     warn("no manifest: treating %s as a local %s build (nothing to verify it against)" % (img_path, board.name))
-    return board, m, image
+    return board, m, image, None
 
 
 def load_stock(args):
@@ -312,8 +328,10 @@ def cmd_flash(args):
         say("SIMULATION: a fake radio in state %r, nothing is sent to any device" % sim)
         from . import fakedfu
         sim_key = fakedfu.synthetic_key()
-    board, man, image = load_image(args, args.board)
+    board, man, image, merged = load_image(args, args.board)
     stock = load_stock(args)
+    if merged and stock is not None:
+        raise UsageError("the image already carries the codec: leave out --stock (or flash the plain image with it)")
 
     # the codec: what the radio says, what the user says
     if sim:
@@ -328,14 +346,20 @@ def cmd_flash(args):
         if pb and pb.id != board.id:
             raise UsageError("the radio is a %s, the image is for the %s: refusing" % (pb.name, board.name))
     interactive = None if (args.yes or args.dry_run) else ask_yes
-    d = decide_codec(board, man, args.codec, stock is not None, probe, args.stock_installed, interactive)
+    if merged and args.codec != planmod.KEEP:
+        d = Decision(planmod.MERGE, "the image carries the codec (%s), so it is written from the image"
+                     % merged[0]["codec_profile"])
+    else:
+        d = decide_codec(board, man, args.codec, stock is not None, probe, args.stock_installed, interactive)
     say("codec    %s: %s" % (d.mode.upper(), d.why))
     if d.risk:
         warn(d.risk)
 
     codec_segs = []
     key = None
-    if d.mode == planmod.MERGE:
+    if d.mode == planmod.MERGE and merged:
+        codec_segs = merged[1]
+    elif d.mode == planmod.MERGE:
         if stock == "synthetic":
             stock_bytes, profiles, _, _ = stockfw.build_synthetic_stock(sim_key, random.Random(7),
                                                                         stockfw.profile_for_board(board.id))
@@ -590,7 +614,7 @@ def build_parser():
         p.add_argument("--no-probe", action="store_true", help="don't ask a running ODR radio over its debug link")
 
     f = sub.add_parser("flash", help="flash a release image", formatter_class=argparse.RawDescriptionHelpFormatter)
-    f.add_argument("image", nargs="?", help="image file (.bin, with its .json manifest next to it)")
+    f.add_argument("image", nargs="?", help="image file (.bin, with its .json manifest next to it, or with the codec merged in)")
     f.add_argument("--release", metavar="VERSION", help="download this release (v0.1.0, or latest) from GitHub")
     f.add_argument("--manifest", help="the manifest, when it isn't next to the image")
     f.add_argument("--repo", default=relmod.DEFAULT_REPO, help="GitHub repository (default %(default)s)")

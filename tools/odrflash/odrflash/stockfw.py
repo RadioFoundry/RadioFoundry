@@ -196,6 +196,40 @@ def merge(image, prof, segments):
     return bytes(out)
 
 
+def split_merged(image, profiles=None):
+    """The reverse of merge(): (application image, profile, codec segments) when the image carries a codec at a
+    profile's stock addresses, None when it holds none (a plain image, which the planner checks as usual). A merged
+    image has no manifest, so the codec windows are checked by their SHA-256 (which also names the radio) and every
+    byte outside the application and the windows must be 0xFF, as merge() leaves it. Raises StockError for an image with
+    the codec signature at a profile's code window whose windows don't match that profile."""
+    profiles = PROFILES if profiles is None else profiles
+    candidates = []
+    for prof in profiles.values():
+        wins = windows(prof)
+        first = min(a for a, _, _ in wins)
+        if APP_BASE + len(image) <= first:
+            continue
+        code = prof["code"][0] - APP_BASE
+        if len(image) >= code + 4 and struct.unpack_from("<I", image, code)[0] == CODEC_SIG:
+            candidates.append(prof)	# looks merged: a mismatch below is an error, not a plain image
+        if APP_BASE + len(image) < max(a + n for a, n, _ in wins):
+            continue
+        segs = [(a, image[a - APP_BASE:a - APP_BASE + n]) for a, n, _ in wins]
+        if any(sha256(d) != want for (_, d), (_, _, want) in zip(segs, wins)):
+            continue
+        rest = bytearray(image[first - APP_BASE:])
+        for a, d in segs:
+            rest[a - first:a - first + len(d)] = b"\xFF" * len(d)
+        if rest.count(0xFF) != len(rest):
+            raise StockError("the image holds the %s codec, but also other data between or after its windows: not "
+                             "an image odrflash merge (or the build's codec step) wrote" % prof["codec_profile"])
+        return image[:first - APP_BASE].rstrip(b"\xFF"), prof, segs
+    if candidates:
+        raise StockError("the image has a codec at 0x%08X, but not the one from %s: a merged image must be made from "
+                         "a supported stock file" % (candidates[0]["code"][0], candidates[0]["name"]))
+    return None
+
+
 def _alternatives(base, cands, order, want_sha256, max_alternatives):
     """Try the next candidates in the least certain columns (order) until the key matches its hash, or None."""
     for r in range(1, max_alternatives + 1):

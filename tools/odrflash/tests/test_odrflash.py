@@ -16,6 +16,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
@@ -233,6 +234,23 @@ class StockLibrary(unittest.TestCase):
             stockfw.parse_container(b"x" * 300)
         with self.assertRaises(stockfw.StockError):
             stockfw.merge(stock, list(profiles.values())[0], [(0x08074714, b"")])
+
+    def test_split_merged(self):
+        stock, profiles, code, tables = synthetic_stock()
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        img = app_image(5000)
+        app, got, csegs = stockfw.split_merged(stockfw.merge(img, prof, segs), profiles)
+        self.assertEqual((app, got["codec_profile"], csegs), (img, prof["codec_profile"], segs))
+        self.assertIsNone(stockfw.split_merged(img, profiles))
+        self.assertIsNone(stockfw.split_merged(app_image(0x80000), profiles))	# past the codec start, no codec there
+        bad = bytearray(stockfw.merge(img, prof, segs))
+        bad[0x08074714 - 0x0800C000 + 100] ^= 1
+        with self.assertRaises(stockfw.StockError):
+            stockfw.split_merged(bytes(bad), profiles)				# a codec, but not this profile's
+        extra = bytearray(stockfw.merge(img, prof, segs))
+        extra[0x080A0000 - 0x0800C000] = 0
+        with self.assertRaises(stockfw.StockError):
+            stockfw.split_merged(bytes(extra), profiles)			# data between the windows
 
     def test_derive_key(self):
         stock, _, _, _ = synthetic_stock()
@@ -515,6 +533,28 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             self.assertIn("MERGE", out)
             self.assertIn("ERASE + WRITE app+codec", out)
             self.assertIn("sim      PASS", out)
+
+    def test_merged_image_simulation(self):
+        """An image with the codec merged in: no manifest, no --board, no --stock; the codec comes from the image."""
+        stock, profiles, _, _ = synthetic_stock()
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(stockfw.PROFILES, profiles):
+            bp = os.path.join(d, "odr_dm1701_codec.bin")
+            open(bp, "wb").write(stockfw.merge(app_image(40000), prof, segs))
+            rc, out, err = run_cli(["flash", bp, "--simulate", "blank", "--yes"])
+            self.assertEqual(rc, 0, out + err)
+            self.assertIn("codec merged in", out)
+            self.assertIn("MERGE: the image carries the codec", out)
+            self.assertIn("ERASE + WRITE codec", out)
+            self.assertIn("sim      PASS", out)
+            rc, out, err = run_cli(["flash", bp, "--simulate", "odr-codec", "--codec", "keep", "--yes"])
+            self.assertEqual(rc, 0, out + err)
+            self.assertIn("codec mode: keep", out)
+            self.assertIn("sim      PASS", out)
+            rc, out, err = run_cli(["flash", bp, "--board", "md380", "--simulate", "blank", "--yes"])
+            self.assertEqual(rc, 2)						# the codec says DM-1701
+            rc, out, err = run_cli(["flash", bp, "--simulate", "blank", "--stock", "synthetic", "--yes"])
+            self.assertEqual(rc, 2)						# two codec sources
 
     def test_dev_build_without_manifest(self):
         with tempfile.TemporaryDirectory() as d:

@@ -126,7 +126,9 @@ Not tried on the test bench yet.
 ## Building it yourself
 
 Developers build with `make BOARD=<board>` and flash the result with `odrflash flash build/<board>/odr_<board>.bin
---board <board>` (same codec choices). See [building](../dev/building.md).
+--board <board>` (same codec choices). With the stock file in `codecs/`, the build also writes
+`odr_<board>_codec.bin`, which carries the codec: `odrflash flash build/<board>/odr_<board>_codec.bin` flashes it with
+no `--board` or `--stock`. See [building](../dev/building.md).
 
 ## Radios not in the releases
 

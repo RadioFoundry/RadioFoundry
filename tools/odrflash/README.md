@@ -23,6 +23,7 @@ radio's stock firmware file. Radios: Baofeng DM-1701 today; the DM-32UV is desig
 odrflash flash --release latest                         newest release, downloaded and checked
 odrflash flash --release v0.1.0 --dry-run               show exactly which sectors would be erased and written
 odrflash flash odr-dm1701-v0.1.0.bin                    a downloaded image (its .json manifest next to it)
+odrflash flash odr_dm1701_codec.bin                     an image with the codec already merged in (see below)
 odrflash flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
                                                         also write the codec from the stock firmware file
 odrflash probe                                          radio running ODR: can its codec be kept?
@@ -46,6 +47,11 @@ restart and check what it reports.
 
 If odrflash keeps a codec that turns out not to be there, nothing breaks: the firmware checks the codec before it
 uses it, so the radio runs FM only and shows "No codec: voice off". Flash again with `--stock`.
+
+An image with the codec already merged in (`odrflash merge`, or the `_codec.bin` a build writes when the stock file
+is in `codecs/`) needs no manifest, `--board` or `--stock`: odrflash checks every codec window against the supported
+stock files by SHA-256, which also names the radio, requires 0xFF everywhere else past the application, and flashes it
+in merge mode with the codec from the image. `--codec keep` writes only its application part.
 
 The stock file is Baofeng's `DM-1701(CSV)-V02.06.bin` (sha256 `0314efd4...`); an archive is at
 github.com/daniel5600/BAOFENG-DM1701-Original-Firmware. odrflash checks it by SHA-256 and refuses other files as a
