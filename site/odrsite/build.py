@@ -151,8 +151,8 @@ class Site:
 		with open(p, "w", encoding="utf-8") as f:
 			f.write(text)
 
-	def page(self, lang, rel, title, content, page_class, description="", scripts="", nav=""):
-		"""A page of the site: rel is its path inside the language's tree."""
+	def page(self, lang, rel, title, content, page_class, description="", scripts="", nav="", footer=""):
+		"""A page of the site: rel is its path inside the language's tree; footer goes above the site footer's line."""
 		prefix = self.i18n.prefix(lang)
 		full = prefix + rel
 		depth = full.count("/")
@@ -165,7 +165,7 @@ class Site:
 			for l in self.i18n.languages) if len(self.i18n.languages) > 1 else ""
 		ctx = {"lang": lang, "dir": meta.get("dir", "ltr"), "title": title, "root": root,
 		       "home": root + prefix, "content": content, "page_class": page_class,
-		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts,
+		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
 		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
 		       "repo": self.repo_url, "nav_current": nav}
 		ctx["nav"] = self.nav(lang, ctx["home"], nav)
@@ -425,7 +425,7 @@ class Site:
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/flasher/app.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "flash/index.html", self.t(lang, "flash.title"), self.tpl.render("flash", {}, lang),
-			  "flash", scripts=scripts, nav="flash")
+			  "flash", scripts=scripts, nav="flash", footer=self.tpl.partial("flash_log", {}, lang))
 
 	def tools_page(self, lang):
 		strings = json.dumps(self.i18n.subset(lang, ("tools.", "flash.convert.")),

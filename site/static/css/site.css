@@ -7,7 +7,10 @@ html { font-size: var(--font-size); -webkit-text-size-adjust: 100%; }
 body {
 	margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); line-height: var(--line);
 	overflow-x: hidden;
+	/* the footer stays at the bottom of a short page */
+	min-height: 100vh; display: flex; flex-direction: column;
 }
+main { flex: 1; }
 img, svg { max-width: 100%; height: auto; }
 a { color: var(--link); text-underline-offset: 0.15em; }
 a:hover { text-decoration-thickness: 2px; }
@@ -22,7 +25,10 @@ code { background: var(--code-bg); padding: 0.05em 0.35em; border-radius: 5px; }
 pre { background: var(--code-bg); padding: var(--space-4); border-radius: var(--radius-sm); overflow-x: auto; line-height: 1.45; }
 pre code { background: none; padding: 0; }
 .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--gutter); }
-.section { padding: var(--space-6) var(--gutter); }
+.section { padding: var(--space-5) var(--gutter); }
+/* one gap between stacked sections, not two; a section's last paragraph adds none */
+.section + .section { padding-top: 0; }
+.section > :last-child { margin-bottom: 0; }
 .wrap.section { padding-left: var(--gutter); padding-right: var(--gutter); }
 .muted { color: var(--muted); }
 .small { font-size: var(--text-sm); }
@@ -53,12 +59,14 @@ pre code { background: none; padding: 0; }
 }
 .nav-toggle { display: none; padding: 0 var(--space-3); }
 @media (max-width: 760px) {
+	/* brand, menu and theme on one row; the open menu below them */
+	.header-row { gap: var(--space-3); }
 	.nav-toggle { display: inline-block; margin-left: auto; }
-	.site-nav { display: none; flex-basis: 100%; flex-direction: column; padding-bottom: var(--space-3); }
+	.site-nav { display: none; flex-basis: 100%; flex-direction: column; padding-bottom: var(--space-3); order: 2; }
 	.site-nav.open { display: flex; }
-	.header-tools { order: 2; }
+	.header-tools { order: 1; }
 }
-.site-footer { border-top: 1px solid var(--border); margin-top: var(--space-7); padding: var(--space-5) 0; background: var(--surface); }
+.site-footer { border-top: 1px solid var(--border); margin-top: var(--space-5); padding: var(--space-4) 0; background: var(--surface); }
 .footer-row { display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 .footer-row p { margin: 0; }
 
@@ -73,11 +81,11 @@ pre code { background: none; padding: 0; }
 .btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-danger { border-color: var(--bad); color: var(--bad); }
-.actions { display: flex; gap: var(--space-3); flex-wrap: wrap; margin: var(--space-5) 0; }
+.actions { display: flex; gap: var(--space-3); flex-wrap: wrap; margin: var(--space-4) 0; }
 
 /* hero */
 .hero { background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%); border-bottom: 1px solid var(--border); }
-.hero-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: var(--space-6); align-items: center; padding-top: var(--space-6); padding-bottom: var(--space-6); }
+.hero-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: var(--space-6); align-items: center; padding-top: var(--space-5); padding-bottom: var(--space-5); }
 .hero-device img { max-height: 520px; display: block; margin: 0 auto; filter: drop-shadow(0 18px 30px rgb(0 0 0 / 25%)); }
 .facts { display: flex; gap: var(--space-5); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; color: var(--muted); }
 .facts b { color: var(--text); font-size: 1.3rem; }
@@ -85,8 +93,9 @@ pre code { background: none; padding: 0; }
 
 /* cards */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-4); }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-5); box-shadow: var(--shadow); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-4); box-shadow: var(--shadow); }
 .card h3 { margin-bottom: var(--space-2); }
+.card > :last-child { margin-bottom: 0; }
 .pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--space-4); }
 .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
 .radio-card { display: grid; grid-template-rows: 200px auto; gap: var(--space-4); color: var(--text); text-decoration: none; justify-items: center; text-align: center; }
@@ -172,9 +181,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .drop input { display: block; margin: 0 auto var(--space-2); }
 
 /* flasher */
-.flasher { display: grid; gap: var(--space-5); }
+.flasher { display: grid; gap: var(--space-4); }
+.flasher > :last-child, .flasher > :last-child > :last-child { margin-bottom: 0; }
 /* what the flasher sends: always on screen under every step */
-.flash-log { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border); max-width: 70ch; }
+.flash-log { margin-bottom: var(--space-3); color: var(--muted); }
+.flash-log p { margin: 0; max-width: 90ch; }
 .flash-log summary { cursor: pointer; }
 .stepper { display: flex; gap: var(--space-2); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; counter-reset: step; }
 .stepper li { counter-increment: step; display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: 600; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
@@ -182,8 +193,9 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .stepper li[aria-current] { color: var(--text); border-color: var(--accent); }
 .stepper li[aria-current]::before { background: var(--accent); color: var(--accent-text); }
 .stepper li.done::before { content: "✓"; background: var(--ok-soft); color: var(--ok); }
-.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-5); box-shadow: var(--shadow); }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-4); box-shadow: var(--shadow); }
 .panel h2 { margin-bottom: var(--space-3); }
+.panel > :last-child { margin-bottom: 0; }
 .choice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--space-3); }
 .choice {
 	display: block; text-align: left; font: inherit; color: var(--text); background: var(--surface); border: 2px solid var(--border);
