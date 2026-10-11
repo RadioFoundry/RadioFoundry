@@ -549,8 +549,8 @@ class FlashLog(unittest.TestCase):
         started = cli.flash_started(self.args(), DM1701, man)
         cli.flash_finished(started, dfumod.DfuError("no answer from /Users/someone/odr/x.bin"))
         (m1, u1, b1), (m2, u2, b2) = self.sent
-        self.assertEqual((m1, b1["radio"], b1["firmware"], b1["variant"], b1["features"]),
-                         ("POST", "dm1701", "v0.1.0", "full", "FM,DMR"))
+        self.assertEqual((m1, b1["task"], b1["source"], b1["radio"], b1["firmware"], b1["variant"], b1["features"]),
+                         ("POST", "install", "own", "dm1701", "v0.1.0", "full", "FM,DMR"))
         self.assertEqual((m2, u2), ("PATCH", u1 + "/" + b1["id"]))
         self.assertEqual(b2["result"], "fail")
         self.assertNotIn("someone", b2["reason"])

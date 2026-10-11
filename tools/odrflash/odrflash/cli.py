@@ -62,7 +62,8 @@ def flash_started(args, board, man):
         return None
     fid = str(uuid.uuid4())
     sent = _send_in_background("POST", FLASH_LOG_URL, {
-        "id": fid, "tool": "odrflash", "tool_version": __version__, "radio": board.id,
+        "id": fid, "tool": "odrflash", "tool_version": __version__, "task": "install",
+        "source": "release" if args.release else "own", "radio": board.id,
         "firmware": str(man.get("version", "")), "variant": str(man.get("variant", "")),
         "features": str(man.get("features", ""))})
     return fid, sent

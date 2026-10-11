@@ -115,6 +115,7 @@ const S = {
 	link: null,
 	customPicked: false,	// the Custom card picked before any feature changed
 	build: null,		// a custom build in progress: {selection, text, error}
+	useId: null,		// the flash log's id for this use (see useId)
 	openGroups: new Set(),	// feature groups expanded on the build step
 	openTip: null,		// the feature whose ⓘ bubble is open
 };
@@ -132,10 +133,14 @@ async function api(method, path, body) {
 	return j;
 }
 
+// One id per use: the custom build requests and the write that follows share it; each write ends the use
+const useId = () => (FLASH_LOG && !S.sim ? (S.useId ||= crypto.randomUUID()) : undefined);
+
 // Fire and forget: a flash never waits for these or fails because of them
 function flashStarted(what) {
-	if (!FLASH_LOG || S.sim) return null;
-	const id = crypto.randomUUID();
+	const id = useId();
+	if (!id) return null;
+	S.useId = null;
 	const sent = fetch(new URL("flashes", API), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ id, tool: "web", tool_version: S.data.site.version || "", ...what }) }).catch(() => {});
 	return { id, sent };
@@ -539,7 +544,7 @@ async function requestBuild(redraw) {
 	try {
 		const rels = S.data.releases.filter((x) => x.board === S.radio.id);
 		let b = await api("POST", "builds", { board: S.radio.id, ref: rels.length ? rels[rels.length - 1].version : "main", features: [...sel.on].sort(),
-			tool: "web", tool_version: S.data.site.version || "" });
+			tool: "web", tool_version: S.data.site.version || "", task: "install", id: useId() });
 		while (b.status === "queued" || b.status === "running") {
 			if (!current()) return;
 			S.build.text = b.status === "queued" && b.position ? t("flash.build.queued", { n: b.position }) : t("flash.build.building");
@@ -552,7 +557,7 @@ async function requestBuild(redraw) {
 			fetch(new URL(b.image, API)).then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x))]);
 		await verify(m, img, fb(), S.board.id);
 		if (!current()) return;
-		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), build: b.id, selection: key };
+		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), origin: "custom", build: b.id, selection: key };
 		S.build = null;
 	} catch (e) {
 		if (S.build?.selection === key) S.build.error = t("flash.build.unavailable", { error: errorText(e) });
@@ -579,7 +584,7 @@ async function loadOwnImage(f, redraw) {
 		if (startsWith(f.data, fb().magic)) throw new Error(t("flash.err.stock_as_image"));
 		const m = S.ownManifest || await forDevBuild(S.board, f.data);
 		const board = await verify(m, f.data, fb(), S.board.id);
-		S.firmware = { manifest: m, image: f.data, source: f.name, board };
+		S.firmware = { manifest: m, image: f.data, source: f.name, origin: "own", board };
 	} catch (e) {
 		alert(errorText(e));
 	}
@@ -593,7 +598,7 @@ async function ensureFirmware() {
 		const [m, img] = await Promise.all([fetch(ROOT + rel.manifest).then((r) => r.json()),
 			fetch(ROOT + rel.image).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b))]);
 		await verify(m, img, fb(), S.board.id);
-		return (S.firmware = { manifest: m, image: img, source: `${rel.version} (${rel.variant})` });
+		return (S.firmware = { manifest: m, image: img, source: `${rel.version} (${rel.variant})`, origin: "release" });
 	}
 	if (S.sim) {
 		const img = randomBytes(rng(99), 200 * 1024);
@@ -667,9 +672,12 @@ function backupNow({ after = false, onDone = null } = {}) {
 	const run = async () => {
 		box.querySelectorAll("button").forEach((b) => { b.disabled = true; });
 		box.append(prog.el);
+		let started = null;
 		try {
 			const link = await connectSerial();
 			const p = S.now?.probe || await probe(link);
+			// the backup task is a use of its own; the backups around an install belong to the install
+			if (S.task === "backup") started = flashStarted({ task: "backup", source: what, radio: S.board.id, firmware: p.git || "", features: p.features || "" });
 			S.backupParts = await readRadio(link, S.board, S.radio, {
 				what: { spi: what }, progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
 			if (S.stock) S.backupParts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
@@ -682,11 +690,13 @@ function backupNow({ after = false, onDone = null } = {}) {
 			const bytes = await makeBundle(meta, S.backupParts, { git: S.data.site.git, url: location.origin });
 			download(bundleName(meta), bytes, "application/zip");
 			S.backupDone = true;
+			flashFinished(started);
 			const incomplete = S.backupParts.filter((x) => !x.complete).map((x) => x.file);
 			box.append(notice(t("flash.backup.saved", { size: Math.round(bytes.length / 1024) }), "ok"),
 				incomplete.length ? notice(t("flash.backup.incomplete", { files: incomplete.join(", ") })) : null);
 			onDone?.();
 		} catch (e) {
+			flashFinished(started, e);
 			box.append(notice(errorText(e), "bad"));
 			box.querySelectorAll("button").forEach((b) => { b.disabled = false; });
 		}
@@ -769,7 +779,7 @@ function planTable(plan) {
 }
 
 // The bootloader panel: instructions, connect, write. makePlanFn returns the plan once the key is known.
-// what: the flash log's description of this write (radio, firmware, variant, features, build)
+// what: the flash log's description of this write (task, source, radio, firmware, variant, features, build)
 function bootloaderPanel(title, makePlanFn, onDone, what) {
 	const box = h("section", { class: "panel" });
 	const log = logBox();
@@ -838,7 +848,7 @@ function writeView() {
 		let codec = [];
 		if (S.decision.mode === MERGE) codec = (await stockfw.extract(S.stock.data, S.key, fb())).segments;
 		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec);
-	}, next, { radio: S.board.id, firmware: String(fw.manifest.version || ""),
+	}, next, { task: "install", source: fw.origin || "", radio: S.board.id, firmware: String(fw.manifest.version || ""),
 		variant: fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
 }
 
@@ -947,7 +957,8 @@ function restoreView() {
 			(S.restoreTarget === "odr" ? planInternal(b, S.board) : planStock(S.stock.data, key, S.board, fb())), () => {
 			if (S.fakeRadio && S.restoreTarget === "stock") S.fakeRadio.running = "stock";
 			box.append(afterRestore());
-		}, { radio: S.board.id, firmware: S.restoreTarget === "stock" ? "stock" : describeFirmware(meta.firmware_now), variant: `restore-${S.restoreTarget}` }));
+		}, { task: "restore", source: S.restoreTarget, radio: S.board.id,
+			firmware: S.restoreTarget === "stock" ? "stock" : describeFirmware(meta.firmware_now) }));
 	}
 	box.append(...parts);
 	return box;
