@@ -1,9 +1,10 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Capabilities of the current firmwares
+# Capabilities of the firmware ODR replaces
 
-What the firmwares that OpenDigitalRadio replaces can do today, per radio, as user-level capabilities. This is the
-feature target for the new firmware and the baseline users will compare it with. It says nothing about how the old
+What the firmware that OpenDigitalRadio replaces can do, per radio, as user-level capabilities. This is the feature
+target for ODR and the baseline users will compare it with. The status letters below are that firmware's, not ODR's:
+ODR's own state per radio is in the [feature matrix](../feature-matrix.md). It says nothing about how the old
 firmware presents these features (no menus, screens or keys): the new UI is designed separately in `docs/ux/`.
 
 Sources: the old trees' status files and docs (as of 2026-10-09, build `bf08887`), commit history, bench notes.

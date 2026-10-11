@@ -50,7 +50,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 ## Radios
 
 [radios.md](radios.md) surveys the radios, their chips and the port order; [capabilities.md](capabilities.md) shows
-what works on each. Per radio:
+what the firmware ODR replaces does on each (ODR's own state: [feature matrix](../feature-matrix.md)). Per radio:
 
 | Radio | Hardware | Codec | Moving from stock |
 |---|---|---|---|

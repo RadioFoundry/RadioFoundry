@@ -174,7 +174,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
     ID for licensing.
 - **Fix**: implement CW ID per 2.11: accept only in idle, ACK, key FM, send the Morse (about 20 wpm), keep the TX bit
   set until done, then restore the DMR setup fully (gotchas 8.13). Until then, list it as a limitation in
-  `capabilities.md` and the odr_sdrbench docs ("set no cwid").
+  the feature matrix and the odr_sdrbench docs ("set no cwid").
 
 ### A-7 Medium: odr_sdrbench doesn't recognize the description (change on odr_sdrbench's side)
 
