@@ -972,6 +972,10 @@ function afterRestore() {
 
 async function main() {
 	if (!FLASH_LOG) document.getElementById("flash-log-off")?.replaceWith(t("flash.log.is_off"));
+	// the privacy contact is put together here, so address scrapers don't find it in the page or the repository
+	const mail = ["tseuqer-ycavirp-rdo", "moc.relwofrecneps"].map((x) => [...x].reverse().join("")).join("@");
+	const a = document.getElementById("privacy-mail");
+	if (a) { a.href = `mailto:${mail}`; a.textContent = mail; }
 	try {
 		S.data = await loadData();
 	} catch (e) {
