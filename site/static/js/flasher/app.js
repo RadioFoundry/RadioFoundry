@@ -364,11 +364,6 @@ function selectRadio(r) {
 // ---------------------------------------------------------------------------------------------------------------
 // install: the build (variant, a la carte)
 
-function releaseFor(variant) {
-	const list = S.data.releases.filter((x) => x.board === S.radio.id && x.variant === variant);
-	return list[list.length - 1] || null;
-}
-
 function buildView() {
 	const sel = S.selection;
 	const wrap = h("div", { class: "flasher" });
@@ -382,20 +377,21 @@ function buildView() {
 		S.customPicked = false;
 		draw();
 	};
+	// Continue gets the image first: built on request, then on to the next step
+	const go = async () => {
+		if (!S.firmware && !S.sim) await requestBuild(draw);
+		if (S.firmware || S.sim) next();
+	};
 	const draw = () => {
 		const match = S.customPicked ? null : sel.matches();
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(sel)) S.firmware = null;
 		const card = (checked, onclick, ...body) => h("button", { class: "choice", type: "button", role: "radio",
 			"aria-checked": String(checked), onclick }, ...body);
-		const cards = S.data.variants.map((v) => {
-			const rel = releaseFor(v.id);
-			return card(match === v.id, () => { sel.useVariant(v.id); S.customPicked = false; draw(); },
-				h("strong", {}, vtitle(v)),
-				h("span", { class: "small" }, v.summary),
-				h("span", { class: "small muted" }, t("flash.build.count", { n: S.radio.config[v.id].length, total: supportedCount })),
-				h("span", { class: "small muted" }, rel ? t("flash.build.release", { version: rel.version }) : t("flash.build.no_release")));
-		});
+		const cards = S.data.variants.map((v) => card(match === v.id, () => { sel.useVariant(v.id); S.customPicked = false; draw(); },
+			h("strong", {}, vtitle(v)),
+			h("span", { class: "small" }, v.summary),
+			h("span", { class: "small muted" }, t("flash.build.count", { n: S.radio.config[v.id].length, total: supportedCount }))));
 		cards.push(card(!match, () => {
 			S.customPicked = true;
 			for (const g of S.data.groups) S.openGroups.add(g);
@@ -441,6 +437,7 @@ function buildView() {
 			}));
 			return details;
 		});
+		const building = S.build && S.build.selection === selectionKey(sel);
 		const d = sel.diff(match || sel.base);
 		const baseTitle = vtitle(S.data.variants.find((v) => v.id === sel.base));
 		const summary = h("div", { class: "summary-bar" },
@@ -449,24 +446,23 @@ function buildView() {
 					d.added.length || d.removed.length
 						? t("flash.build.custom_diff", { added: d.added.length, removed: d.removed.length, variant: baseTitle })
 						: t("flash.build.custom_start"))),
-			button(t("flash.next"), () => { next(); }, { primary: true, disabled: !match && !S.firmware }));
-		const building = S.build && S.build.selection === selectionKey(sel);
-		const custom = match ? null : panel(t("flash.build.image_title"),
+			button(t("flash.next"), go, { primary: true, disabled: building && !S.build.error }));
+		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
+		const image = panel(t("flash.build.image_title"),
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
 				: building && S.build.error ? notice(S.build.error, "bad")
 				: building ? h("p", { class: "muted" }, S.build.text)
-				: h("p", {}, t("flash.build.custom_text")),
-			S.firmware ? null : h("div", { class: "actions" },
-				button(t("flash.build.request"), () => requestBuild(draw), { primary: true, disabled: building && !S.build.error })),
+				: h("p", {}, t(S.sim ? "flash.sim.image" : "flash.build.on_request")),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
 				h("p", {}, t("flash.build.self_text")), h("pre", {}, h("code", {}, sel.makeCommand())),
-				filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, draw))));
+				filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, draw)),
+				filePicker(t("flash.build.own_manifest"), ".json", async (f) => { S.ownManifest = JSON.parse(new TextDecoder().decode(f.data)); })));
 		wrap.replaceChildren(
 			panel(t("flash.build.title"), h("p", {}, t("flash.build.lead")),
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
 				h("h3", {}, t("flash.build.features_title")),
 				h("div", { class: "feature-groups" }, groups)),
-			custom || firmwareChooser(match, draw), summary);
+			image, summary);
 	};
 	draw();
 	// a redraw replaces the buttons: put the focus back on the one that was used
@@ -557,26 +553,14 @@ async function requestBuild(redraw) {
 			fetch(new URL(b.image, API)).then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x))]);
 		await verify(m, img, fb(), S.board.id);
 		if (!current()) return;
-		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), origin: "custom", build: b.id, selection: key };
+		// variant: the prebuilt choice this is, for the flash log (the service names every image it builds "custom")
+		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), origin: "custom",
+			variant: sel.matches() || "custom", build: b.id, selection: key };
 		S.build = null;
 	} catch (e) {
 		if (S.build?.selection === key) S.build.error = t("flash.build.unavailable", { error: errorText(e) });
 	}
 	redraw();
-}
-
-function firmwareChooser(match, redraw) {
-	const rel = releaseFor(match);
-	const status = h("div");
-	if (S.firmware) status.append(notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok"));
-	else if (rel) status.append(h("p", { class: "small" }, t("flash.build.will_download", { version: rel.version, size: Math.round(rel.size / 1024) })));
-	else if (S.sim) status.append(h("p", { class: "small" }, t("flash.sim.image")));
-	else status.append(notice(t("flash.build.no_release_text"), "info"));
-	return panel(t("flash.build.image_title"), status,
-		h("details", { class: "small" }, h("summary", {}, t("flash.build.own_title")),
-			h("p", {}, t("flash.build.own_text")),
-			filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, redraw)),
-			filePicker(t("flash.build.own_manifest"), ".json", async (f) => { S.ownManifest = JSON.parse(new TextDecoder().decode(f.data)); })));
 }
 
 async function loadOwnImage(f, redraw) {
@@ -593,18 +577,11 @@ async function loadOwnImage(f, redraw) {
 
 async function ensureFirmware() {
 	if (S.firmware) return S.firmware;
-	const rel = releaseFor(S.selection.matches());
-	if (rel) {
-		const [m, img] = await Promise.all([fetch(ROOT + rel.manifest).then((r) => r.json()),
-			fetch(ROOT + rel.image).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b))]);
-		await verify(m, img, fb(), S.board.id);
-		return (S.firmware = { manifest: m, image: img, source: `${rel.version} (${rel.variant})`, origin: "release" });
-	}
 	if (S.sim) {
 		const img = randomBytes(rng(99), 200 * 1024);
 		return (S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name") });
 	}
-	throw new Error(t("flash.build.no_release_text"));
+	throw new Error(t("flash.build.no_image"));
 }
 
 function slug(text) {
@@ -849,7 +826,7 @@ function writeView() {
 		if (S.decision.mode === MERGE) codec = (await stockfw.extract(S.stock.data, S.key, fb())).segments;
 		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec);
 	}, next, { task: "install", source: fw.origin || "", radio: S.board.id, firmware: String(fw.manifest.version || ""),
-		variant: fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
+		variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
 }
 
 // ---------------------------------------------------------------------------------------------------------------

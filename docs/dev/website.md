@@ -157,11 +157,11 @@ documented, and ODR doesn't overwrite it unless an ID database is uploaded.
 
 ### Firmware images and custom builds
 
-Release images come from the site itself (`firmware/<radio>/`), because GitHub release downloads can't be fetched
-from a page. A selection that matches a prebuilt variant flashes that image. Any other selection is built on request
-(`requestBuild` in `app.js`): the page sends the radio, the newest release tag (`main` before the first release) and
-the feature list, waits for the build, and checks the image against its manifest like a release image. The `make`
-command that builds the same selection, and a picker for the image it produces, stay under "Build it yourself".
+The flasher gets every image, a prebuilt variant's included, by building it on request (`requestBuild` in `app.js`)
+when the build step continues. The page sends the radio, the newest release tag (`main` before the first
+release) and the feature list, waits for the build, and checks the image against its manifest. Release images on the
+site (`firmware/<radio>/`) are not used by the flasher. The `make` command that builds the same selection, and a picker
+for the image it produces, stay under "Build it yourself".
 
 ### USB network mode
 
