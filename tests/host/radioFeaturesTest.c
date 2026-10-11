@@ -177,7 +177,7 @@ static channel_t chans[NCH + 1];
 static bool used[NCH + 1];
 static zone_t zone;
 
-codeplug_source_t codeplug_source(void) { return CODEPLUG_LEGACY; }
+codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 uint32_t codeplug_serial(void) { return 1; }
 // The settings store runs from RAM here (no flash map); its locks are no-ops
 void storage_lock(void) {}

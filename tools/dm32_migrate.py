@@ -15,9 +15,9 @@ Every command takes --dry-run: offline steps (file conversion, image checks) run
 
 How the codeplug gets there (docs/spec/dm32-migration.md): qdmr's command line tool dmrconf (an external program,
 installed separately) reads the stock radio with its DM-32UV driver and turns the codeplug into qdmr's YAML, then
-encodes it offline for qdmr's open firmware family (OpenUV380), the legacy layout ODR's CPS shim serves. dmrconf
-can't write that to the DM-32 itself: ODR keeps the legacy image at +0x700000 in the radio's data flash and its shim
-takes physical addresses, so this tool writes dmrconf's encoded image over the programming cable with
+encodes it offline for qdmr's open firmware family (OpenUV380), the open-firmware layout ODR's CPS shim serves. dmrconf
+can't write that to the DM-32 itself: ODR keeps the open-firmware image at +0x700000 in the radio's data flash and its
+shim takes physical addresses, so this tool writes dmrconf's encoded image over the programming cable with
 cps_client.py, adding 0x700000 to every address.
 
 Needs Python 3.8+, dmrconf (qdmr 0.15 or newer, with the dm32uv driver) on PATH and pyserial. The helpers
@@ -40,12 +40,12 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 STOCK_DRIVER = "dm32uv"       # dmrconf --radio for the stock radio
-ODR_DRIVER = "openuv380"      # dmrconf --radio for the legacy layout ODR serves (legacy-cps-interop.md 7)
-CPS_OFFSET = 0x700000         # ODR's legacy image in the DM-32 data flash (boards/dm32/flash_dm32.c)
+ODR_DRIVER = "openuv380"      # dmrconf --radio for the open-firmware layout ODR serves (open-firmware-cps.md 7)
+CPS_OFFSET = 0x700000         # ODR's open-firmware image in the DM-32 data flash (boards/dm32/flash_dm32.c)
 WRITE_FLOOR = 0x700000        # ODR never writes below this (hardware-dm32.md 10.1)
 FLASH_SIZE = 0x1000000
 STOCK_PAGES = (0x000000, 0x0C9000)     # stock codeplug pages and the factory calibration page (hardware-dm32.md 10.1)
-NAME_MAX = 16                 # names in the legacy layout (legacy-cps-interop.md 7.3)
+NAME_MAX = 16                 # names in the open-firmware layout (open-firmware-cps.md 7.3)
 BANDS = ((136000000, 174000000), (400000000, 480000000))     # boards/dm32/board.c
 CPS_BLOCK = 32                # bytes per CPS request, as qdmr
 BULK_BLOCK = 512              # bytes per CPS read for the data flash backup
@@ -206,7 +206,7 @@ def conversion_report(stock_text, odr_text=None):
 
 
 def format_report(rep):
-    out = ["Conversion report: stock DM-32UV codeplug -> ODR (legacy OpenUV380 layout)", ""]
+    out = ["Conversion report: stock DM-32UV codeplug -> ODR (open-firmware UV380 layout)", ""]
     out.append("%-16s %8s %8s" % ("section", "stock", "ODR"))
     for k in sorted(set(rep["stock"]) | set(rep["odr"] or {})):
         out.append("%-16s %8d %8s" % (k, rep["stock"].get(k, 0), "-" if rep["odr"] is None else rep["odr"].get(k, 0)))
@@ -602,7 +602,7 @@ def cps_write_dfu(sess, dfu_path, label, before_name, reboot=True):
     sess.say("   %s: %d bytes in %d regions, at +0x%06X in the data flash" % (label, total, len(regions), CPS_OFFSET))
     for s, e in regions:
         if s + CPS_OFFSET < WRITE_FLOOR or e + CPS_OFFSET > 0xF00000:
-            raise MigrateError("region 0x%X..0x%X is outside ODR's legacy image" % (s, e))
+            raise MigrateError("region 0x%X..0x%X is outside ODR's open-firmware image" % (s, e))
     if sess.dry:
         sess.say("   [dry run] would save the regions to %s, then write them" % before_name)
         return targets, img
@@ -636,7 +636,7 @@ def step_restore(sess, args):
     if not src or (not sess.dry and not os.path.isfile(src)):
         raise MigrateError("no converted codeplug: run 'backup' first or give --yaml FILE")
     expected = sess.state.get("expected") or {}
-    targets, img = cps_write_dfu(sess, src, "codeplug", "legacy-window-before.bin")
+    targets, img = cps_write_dfu(sess, src, "codeplug", "openfw-window-before.bin")
     if sess.dry:
         return True
     sess.say("   written; the radio restarts")
@@ -794,7 +794,7 @@ def cmd_package(sess, args):
 
 class FakeCpsRadio:
     """ODR's CPS shim on a DM-32 (cps-protocol.md 2, boards/dm32/flash_dm32.c map) as a cps_client transport:
-    physical addresses, writes only inside the legacy EEPROM image (0x700000..0x710000) and flash image
+    physical addresses, writes only inside the open-firmware EEPROM image (0x700000..0x710000) and flash image
     (0x720000..0xF00000), nothing below 0x700000."""
 
     def __init__(self):

@@ -8,7 +8,7 @@
 #if defined(HAS_SFR)
 
 #include <string.h>
-// TODO(hal): legacy firmware headers. Used from them: SPI0/SPI1 page register access (SPI0ReadPageRegByte,
+// TODO(hal): aftermarket firmware headers. Used from them: SPI0/SPI1 page register access (SPI0ReadPageRegByte,
 // SPI0WritePageRegByte, SPI0ClearPageRegByteWithMask, SPI0Read/WritePageRegByteArray, SPI1Read/WritePageRegByteArray),
 // HRC6000InitDigitalDmrRx, trxGetDMRColorCode, trxSetDMRColorCode, trxGetPowerLevel, trxSetFrequency,
 // settingsIsOptionBitSet, settingsUsbMode, codeplugChannelGetFlag, currentChannelData, uiDataGlobal, LedWrite,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Talking to a radio that runs ODR, over its USB serial port (WebSerial): the debug link (docs/spec/debuglink.md:
-// VERSION, INFO_CHIP, READ_MEM) and the legacy CPS reads (docs/spec/legacy-cps-interop.md 2.1 and 3: area 1 the
+// VERSION, INFO_CHIP, READ_MEM) and the open-firmware CPS reads (docs/spec/open-firmware-cps.md 2.1 and 3: area 1 the
 // SPI flash, 5 the MCU flash, 9 the radio info, 10 the flash security registers). Read only, apart from the CPS
 // codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas.
 
@@ -165,7 +165,7 @@ export class Link {
 			rdp: r[22], wrp: u16le(r, 24), bor: r[26], user: r[27] };
 	}
 
-	// ---- legacy CPS
+	// ---- open-firmware CPS
 
 	// R area addr len: the reply is "R" + length (BE) + data, or "-" when refused
 	async cpsRead(area, addr, len) {

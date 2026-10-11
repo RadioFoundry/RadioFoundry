@@ -1849,7 +1849,7 @@ static void roam_rebuild(radio_sm_t *sm, uint32_t now_ms, bool user)
 		n++;
 	}
 	if (any_flag) {
-		// The legacy Roaming flag narrows the zone to the flagged channels
+		// The open-firmware Roaming flag narrows the zone to the flagged channels
 		uint8_t k = 0;
 		for (uint8_t i = 0; i < n; i++) {
 			if (flagged[i]) {

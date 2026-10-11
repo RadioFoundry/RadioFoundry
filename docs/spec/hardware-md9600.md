@@ -11,7 +11,7 @@ as two analog levels, a GPS option, and USB full speed on the MCU's own OTG_FS c
 no AT1846S and no RF transceiver chip at all; the HR_C6000 sees a 450 kHz IF from the IF receiver chip.
 
 TYT changed the synthesizer and IF parts during production. The board revision decides how the synthesizers (and on
-V5 the IF) are programmed, and **nothing in the firmware can read the revision**: the old tree builds one image per
+V5 the IF) are programmed, and **nothing in the firmware can read the revision**: the aftermarket firmware tree builds one image per
 revision (section 16).
 
 Status (2026-10-12): **nothing in this file has been checked on a radio.** No MD-9600 is in hand. The facts come from
@@ -19,7 +19,7 @@ the reference port's source and notes (the aftermarket firmware tree, facts only
 posts, and data sheets. Section 17 lists every open question.
 
 Conventions: register values are hex; HR_C6000 registers are written `page:reg = value` as in
-[modem-hrc6000.md](modem-hrc6000.md). Frequencies in the old tree are in 10 Hz units; this file gives Hz or MHz.
+[modem-hrc6000.md](modem-hrc6000.md). Frequencies in the aftermarket firmware tree are in 10 Hz units; this file gives Hz or MHz.
 Every fact carries a confidence tag as in [radios.md](radios.md):
 
 | Tag | Meaning |
@@ -58,7 +58,7 @@ key (D) [ref].
 
 Same TYT loader and layout as the DM-1701 and MD-380: loader in sectors 0-2 (0x08000000-0x0800BFFF, never written),
 application from 0x0800C000, VTOR 0xC000 (D) [ref]. The stock codec sits at a different address in every stock version and variant
-(0x08074B18 to 0x08079630 for the code; 0x0807537C in V26.45; [codec-md9600.md](codec-md9600.md)); the old tree linked
+(0x08074B18 to 0x08079630 for the code; 0x0807537C in V26.45; [codec-md9600.md](codec-md9600.md)); the aftermarket firmware tree linked
 its application below 0x0807537C and the V26.45 codec there.
 
 ### 1.4 RAM

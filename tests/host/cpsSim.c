@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The legacy CPS shim on a simulated 16 MB flash with the DM-1701 map, served on stdin / stdout, so host tools
+// The open-firmware CPS shim on a simulated 16 MB flash with the DM-1701 map, served on stdin / stdout, so host tools
 // (tools/cps_client.py --exec) can be tested without a radio:
 //
 //   cpsSim [--populate] [--image FILE] [--dump FILE]
@@ -15,7 +15,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include "cps/cps_legacy.h"
+#include "cps/cps_openfw.h"
 #include "codeplug/codeplug.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
@@ -30,7 +30,7 @@ void storage_quick_unlock(void) {}
 
 static const hal_flash_map_t map = {
 	.settings_addr = 0x011000u, .settings_size = 0x008000u, .journal_addr = 0x019000u,
-	.legacy_eeprom = 0, .legacy_flash = 0x020000u, .legacy_end = 0xE00000u,
+	.openfw_eeprom = 0, .openfw_flash = 0x020000u, .openfw_end = 0xE00000u,
 	.calibration_addr = 0x010000u, .calibration_size = 0x200u,
 	.native_addr = 0xE00000u, .native_size = 0x100000u,
 };

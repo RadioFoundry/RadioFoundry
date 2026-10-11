@@ -14,7 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define DL_SOF1			0xA5u	// never an MMDVM frame (0xE0) nor a legacy CPS request (ASCII letters)
+#define DL_SOF1			0xA5u	// never an MMDVM frame (0xE0) nor an open-firmware CPS request (ASCII letters)
 #define DL_SOF2			0x5Au
 #define DL_PROTO_VERSION	1u
 #define DL_HDR			6u	// SOF1 SOF2 cmd seq len(2)

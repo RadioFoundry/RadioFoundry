@@ -1,20 +1,20 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Legacy CPS interoperability
+# Open-firmware CPS interoperability
 
-This spec describes the serial protocol and the codeplug memory layout that the legacy CPS and qdmr's GD-77/UV380
+This spec describes the serial protocol and the codeplug memory layout that the open-firmware CPS and qdmr's GD-77/UV380
 open-firmware drivers use. A new implementation can use it to build an interop shim, so that existing PC tools can
 read and write our radios. It covers wire formats and stored data formats only. How the new firmware stores its own data internally
 is a separate decision. The shim can translate between the image described here and our own storage, or it can keep
 this image as the storage.
 
 Sources:
-- The old trees as of 2026-10-09 (build `bf08887`): the STM32 radios (DM-1701/MD-UV380, MD-9600, MD-380), the MK22
+- The aftermarket firmware trees as of 2026-10-09 (build `bf08887`): the STM32 radios (DM-1701/MD-UV380, MD-9600, MD-380), the MK22
   GD-77 tree, and the DM-32 port.
 - The upstream releases R20260131 that those trees are based on.
 - qdmr (GPL-3, github.com/hmatuschek/qdmr, its GD-77 and UV380 open-firmware driver sources). Only protocol facts were taken from it.
 
-The legacy CPS is closed source. What it reads and writes is inferred from what the firmware accepts and from what
+The open-firmware CPS is closed source. What it reads and writes is inferred from what the firmware accepts and from what
 qdmr does.
 
 Conventions: "BE" is big endian and "LE" is little endian. Offsets are hexadecimal unless they are plainly decimal
@@ -25,7 +25,7 @@ not NUL terminated, unless stated otherwise.
 
 | Radio family | Transport | Framing of a request |
 | --- | --- | --- |
-| STM32F405 (DM-1701 / RT-84, MD-UV380 / RT-3S, MD-9600, MD-380, MD-2017) | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094, manufacturer string "www." + the legacy project domain + ".com", product string per model (for example "OpenDM1701 Transceiver", "OpenMDUV380 Transceiver", "OpenMD9600 Transceiver") | USB bulk packets (64 bytes max), reassembled as below |
+| STM32F405 (DM-1701 / RT-84, MD-UV380 / RT-3S, MD-9600, MD-380, MD-2017) | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094, manufacturer string "www." + the aftermarket firmware's project domain + ".com", product string per model (for example "OpenDM1701 Transceiver", "OpenMDUV380 Transceiver", "OpenMD9600 Transceiver") | USB bulk packets (64 bytes max), reassembled as below |
 | NXP MK22 (GD-77, GD-77S, DM-1801, DM-1801A, RD-5R) | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094 | as STM32 |
 | DM-32UV (HR_C7000) | Programming cable on UART0 at 115200 8N1, through a USB-serial adapter. No USB on the radio | A request ends after 3 ms without a received byte |
 | STM32 radios in our USB network mode | USB CDC-NCM (VID 0x1FC9 PID 0x0096, no serial port). The serial protocol is carried in UDP datagrams to port 3334 at the radio's address | one datagram is one USB packet. Replies go back to the address and port that sent last. One client at a time |
@@ -200,24 +200,24 @@ The structure is little endian, packed, 46 bytes in struct version 3.
 
 | radioType | Radio | qdmr's driver |
 | --- | --- | --- |
-| 0 | Radioddity GD-77 | legacy open firmware |
-| 1 | Radioddity GD-77S | legacy open firmware |
-| 2 | Baofeng DM-1801 / DM-860 | legacy open firmware |
-| 3 | Baofeng RD-5R / DM-5R Tier2 | legacy open firmware |
-| 4 | Baofeng DM-1801A | legacy open firmware |
+| 0 | Radioddity GD-77 | the aftermarket firmware |
+| 1 | Radioddity GD-77S | the aftermarket firmware |
+| 2 | Baofeng DM-1801 / DM-860 | the aftermarket firmware |
+| 3 | Baofeng RD-5R / DM-5R Tier2 | the aftermarket firmware |
+| 4 | Baofeng DM-1801A | the aftermarket firmware |
 | 5 | TYT MD-9600 / Retevis RT-90 | OpenUV380 |
 | 6 | TYT MD-UV380 / MD-UV390 / Retevis RT-3S | OpenUV380 |
 | 7 | TYT MD-380 / MD-390 | OpenUV380 |
 | 8 | Baofeng DM-1701 / Retevis RT-84 with a BGR panel | OpenUV380 |
 | 9 | TYT MD-2017 / Retevis RT-82 | OpenUV380 |
 | 10 | DM-1701 with an RGB panel (the type follows the detected panel color order) | OpenUV380 |
-| 11 | Baofeng DM-32UV (OpenDM32 builds, legacy CPS E2026.07.13 and later) | **not known to qdmr**: it fails with an "Unknown ... variant" error |
+| 11 | Baofeng DM-32UV (OpenDM32 builds, open-firmware CPS E2026.07.13 and later) | **not known to qdmr**: it fails with an "Unknown ... variant" error |
 
 qdmr chooses its "extended callsign DB" layout when features bit 1 is set and bit 2 is clear.
 
 ## 5. `D`: DMR data service host commands (ours)
 
-This is our protocol: it has no legacy counterpart and no other users yet. It is available in programming mode on
+This is our protocol: it has no open-firmware counterpart and no other users yet. It is available in programming mode on
 the serial port, and on the STM32 radios also over UDP 3334 in network mode. It doesn't run in hotspot mode.
 
 Each request is one USB packet (64 bytes at most) or one UART frame: `D`, the sub command, then the arguments. Every
@@ -325,7 +325,7 @@ range without letting them corrupt the live settings. It can ignore the range, o
 | 0x75C8 | 0x38 | VFO B |
 | 0x8000 | 0x10 | Reserved ("extended zone basic"), not read by the firmware |
 | 0x8010 | 0x20 | Zone in-use bitmap: bit j of byte i means zone slot (i x 8 + j) is in use. 68 slots are used |
-| 0x8030 | 68 x 0xB0 | Zone records (7.3.4), 80 channels each, to 0xAEF0. Legacy 16-channel layout: 68 x 0x30 |
+| 0x8030 | 68 x 0xB0 | Zone records (7.3.4), 80 channels each, to 0xAEF0. Open-firmware 16-channel layout: 68 x 0x30 |
 
 Zone layout detection: the firmware reads the 16 bytes at 0x8060 and looks at the last one (0x806F). In the 16-channel
 layout, 0x806F is the last byte of the second zone's name, so it is 0xFF. In the 80-channel layout, it is the high byte
@@ -389,7 +389,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x22 | 2 | TX tone, same encoding |
 | 0x24 | 1 | Longitude, high byte |
 | 0x25 | 1 | SFR byte A (ours; was unused, see below) |
-| 0x26 | 1 | legacy flag byte "LibreDMR flag 1" (bits below) |
+| 0x26 | 1 | flag byte 1 (bits below) |
 | 0x27 | 3 | Per-channel DMR ID override, 24-bit BE, valid when flag 1 bit 7 is set. When unset, the CPS writes 00 16 00 (the vendor defaults of the fields these bytes replaced) |
 | 0x2A | 1 | SFR byte B (ours; was unused, see below) |
 | 0x2B | 1 | RX group list (TG list) index, 1-based, 0 = none |
@@ -408,7 +408,7 @@ Location: each coordinate is 24 bits, assembled from its high, middle and low by
 west). Bits 22-15 are whole degrees. Bits 14-0 are the fraction in 1/10000 degree (0..9999). The location is used for
 distance sorting and the like when flag 1 bit 3 is set.
 
-LibreDMR flag 1 (offset 0x26):
+Flag 1 (offset 0x26):
 
 | Bit | Meaning |
 | --- | --- |
@@ -616,7 +616,7 @@ Prompt numbering, fixed part:
   phrases, power, channel mode, scan mode, timeslot mode, filter mode, zone mode, power mode, color code mode,
   hertz, settings update, star, hash, VOX, sweep scan mode, eco mode, duration, reverse repeater, distance, km/h,
   kilometers, then three unused slots.
-- That gives 88 fixed prompts. Entries from 88 onward follow the order of the old firmware's language strings; the
+- That gives 88 fixed prompts. Entries from 88 onward follow the order of the aftermarket firmware's language strings; the
   mono builds skip the theme strings.
 
 The voice prompt files are made with the AMBE codec, and the new firmware carries no codec. Whether the new firmware
@@ -657,7 +657,7 @@ The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x6
 
 - **structVersion.** Version 3 (46 bytes, with features) in all current builds. Version 1 (44 bytes) in the MD-380
   2023 tree. qdmr reads both.
-- **radioType 11 (DM-32).** Known to the legacy CPS since E2026.07.13, unknown to qdmr (checked against its
+- **radioType 11 (DM-32).** Known to the open-firmware CPS since E2026.07.13, unknown to qdmr (checked against its
   current source). To use qdmr with a DM-32 today, the shim would have to report an STM32 type such as 6. That only
   works if the image mapping matches (7.4), and qdmr would then show the wrong model.
 - **DM-1701 panel types 8 and 10.** The type follows the panel's color order. The CPS needs it only for screenshots.
@@ -675,8 +675,8 @@ The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x6
 1. Which flash image offset does the CPS use for radio type 11, and which does OpenDM32 use (7.4)? This could be
    checked by sniffing the CPS against an OpenDM32 radio, or by disassembling OpenDM32.
 2. Which radio type should our radios report? The DM-1701 should keep 8/10 (both tools know it). For the DM-32: 11
-   for the legacy CPS, or an STM32 type so that qdmr works, or a qdmr patch upstream to add type 11.
-3. Exactly which EEPROM and flash ranges the closed legacy CPS reads and writes, beyond the qdmr ranges above
+   for the open-firmware CPS, or an STM32 type so that qdmr works, or a qdmr patch upstream to add type 11.
+3. Exactly which EEPROM and flash ranges the closed open-firmware CPS reads and writes, beyond the qdmr ranges above
    (themes, boot image, calibration, security registers). This needs a USB capture of a full CPS read and write.
 4. Whether to support voice prompt files (they need the language-string index list as carried-over data, and AMBE
    playback).

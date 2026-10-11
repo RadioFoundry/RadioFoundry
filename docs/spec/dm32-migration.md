@@ -37,8 +37,8 @@ size checks.
 
 ## 2. Where the codeplug goes on ODR
 
-- ODR's DM-32 board keeps the legacy-layout codeplug (the EEPROM image and the flash image of
-  [legacy-cps-interop.md](legacy-cps-interop.md) 7) at **+0x700000** in the 16 MB data flash: EEPROM image
+- ODR's DM-32 board keeps the open-firmware codeplug (the EEPROM image and the flash image of
+  [open-firmware-cps.md](open-firmware-cps.md) 7) at **+0x700000** in the 16 MB data flash: EEPROM image
   0x700000, flash image 0x720000 (`boards/dm32/flash_dm32.c`, `boards/dm32/board.mk`). The settings ring and the
   journal are at 0x711000..0x71AFFF, the native area at 0xF00000.
 - Below 0x700000 is stock data: the stock codeplug pages and the factory calibration (0x001000..0x0C8FFF), the stock
@@ -58,7 +58,7 @@ So the tool uses dmrconf only offline (encode, decode) and writes with `tools/cp
 
 | Item | Fact |
 |---|---|
-| Radio keys (0.15.1) | `dm32uv` (stock Baofeng DM-32UV), `openuv380` (qdmr's open firmware driver for the STM32 radios: the legacy layout ODR serves) |
+| Radio keys (0.15.1) | `dm32uv` (stock Baofeng DM-32UV), `openuv380` (qdmr's open firmware driver for the STM32 radios: the open-firmware layout ODR serves) |
 | Stock read | `dmrconf read --radio dm32uv [--device PORT] backup-stock.dfu` over the programming cable. Untested: whether `--device` wants the full path, and whether detection works on its own |
 | dm32uv binary (T) | One DfuSe target "Baofeng DM32UV Codeplug", 4 KB elements at data flash addresses (0x4000, 0xB000, 0xF000..0x12000, 0x42000, ...) |
 | openuv380 binary (T) | DfuSe with an empty "EEPROM" target and a "FLASH" target of four elements at the wire addresses 0x80 (0x5FE0 bytes), 0x7500 (0x3B00), 0x20000 (0x11A0), 0x9B000 (0x13E60). These are exactly qdmr's write regions ([cps-protocol.md](cps-protocol.md) 2.5) |
@@ -81,7 +81,7 @@ So the tool uses dmrconf only offline (encode, decode) and writes with `tools/cp
 3b. Data flash backup through ODR's CPS reads (area 1, physical, 512 bytes a request): 0x000000..0x0C9000 by default
    (`dataflash-000000-0C9000.bin`, with a check that the calibration page, ID byte 2, is in it), all 16 MB with
    `--flash-backup full`, nothing with `none`. Skipped when the file is already in the work directory.
-4. Codeplug: read the regions of `odr-codeplug.dfu` at +0x700000 into `legacy-window-before.bin` (whatever the stock
+4. Codeplug: read the regions of `odr-codeplug.dfu` at +0x700000 into `openfw-window-before.bin` (whatever the stock
    firmware left there), write the sectors that differ (`X 1/2/3`, 32 bytes a request as qdmr), `C 6 0` (save and
    restart). Wait for ODR, read back, build `readback-odr.dfu` from the read and `decode` it; the counts must match
    what was written (after ODR's limits). Byte differences are counted and logged.
@@ -129,5 +129,5 @@ finds the calibration page. Then the flasher's self-test.
 - Whether the shim's 32-byte requests over UART0 are reliable at 115200; a larger `CPS_BLOCK` would be faster.
 - Whether the stock firmware leaves data at 0x700000 and up (voice recordings, 10.1). The tool saves those
   regions before writing; ODR's codeplug decoder ignores bytes outside qdmr's regions.
-- Radio type: reporting 11 (as the legacy CPS expects) or 6. A shim-side offset for area 1 on the DM-32 would let
+- Radio type: reporting 11 (as the open-firmware CPS expects) or 6. A shim-side offset for area 1 on the DM-32 would let
   qdmr program the radio directly; this tool would then need `CPS_OFFSET = 0`.

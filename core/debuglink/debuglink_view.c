@@ -12,8 +12,8 @@
 #include "codeplug/codeplug.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
-#if CONFIG_CPS_LEGACY
-#include "cps/cps_legacy.h"
+#if CONFIG_CPS_OPENFW
+#include "cps/cps_openfw.h"
 #endif
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
@@ -53,7 +53,7 @@ static void tone(dl_text_t *t, const char *key, const subtone_t *s)
 static void core_section(const radio_view_t *v, dl_text_t *t)
 {
 	const char *pw = (v->power < board.power_count && board.power_names != NULL) ? board.power_names[v->power] : "?";
-	static const char *const sources[] = { "none", "builtin", "legacy" };
+	static const char *const sources[] = { "none", "builtin", "open-firmware" };
 
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
@@ -218,7 +218,7 @@ static void storage_section(dl_text_t *t)
 {
 	static const char *const loads[] = { "ram", "defaults", "loaded", "upgraded", "foreign" };
 	static const char *const regions[] = { "none", "ours", "foreign" };
-	static const char *const sources[] = { "none", "builtin", "legacy" };
+	static const char *const sources[] = { "none", "builtin", "open-firmware" };
 	settings_stats_t ss;
 	storage_stats_t st;
 	codeplug_source_t src = codeplug_source();
@@ -249,7 +249,7 @@ static void storage_section(dl_text_t *t)
 		st.foreign_slots, (unsigned)st.foreign_refusals, st.claim_pending);
 	dl_text(t, "codeplug.source=%s\ncodeplug.serial=%u\n", (unsigned)src < 3 ? sources[src] : "?",
 		(unsigned)codeplug_serial());
-#if CONFIG_CPS_LEGACY
+#if CONFIG_CPS_OPENFW
 	cps_stats_t c;
 
 	cps_get_stats(&c);

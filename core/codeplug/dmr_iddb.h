@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The DMR ID database a CPS uploads (callsign and name per DMR ID, docs/spec/legacy-cps-interop.md 7.5), read only,
+// The DMR ID database a CPS uploads (callsign and name per DMR ID, docs/spec/open-firmware-cps.md 7.5), read only,
 // looked up by binary search straight from the board's data flash. No RAM beyond a few header fields.
 #ifndef DMR_IDDB_H
 #define DMR_IDDB_H

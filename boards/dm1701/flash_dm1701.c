@@ -144,16 +144,16 @@ static bool er(uint32_t addr)
 	return ok;
 }
 
-// docs/spec/hardware-dm1701.md 13.2. The legacy codeplug stays where the CPS tools expect it; our own areas sit in
-// the gap between the calibration copy and the legacy flash image (0x011000..0x01FFFF, which no CPS address maps to)
-// and above the 14 MB mark that qdmr's DMR ID database may reach
+// docs/spec/hardware-dm1701.md 13.2. The open-firmware codeplug stays where the CPS tools expect it; our own areas sit
+// in the gap between the calibration copy and the open-firmware flash image (0x011000..0x01FFFF, which no CPS address
+// maps to) and above the 14 MB mark that qdmr's DMR ID database may reach
 static const hal_flash_map_t map = {
 	.settings_addr = 0x011000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x019000u,	// 2 sectors
-	.legacy_eeprom = 0x000000u,
-	.legacy_flash = 0x020000u,
-	.legacy_end = 0xE00000u,
+	.openfw_eeprom = 0x000000u,
+	.openfw_flash = 0x020000u,
+	.openfw_end = 0xE00000u,
 	.calibration_addr = 0x010000u,
 	.calibration_size = 0x200u,
 	.native_addr = 0xE00000u,
@@ -183,7 +183,7 @@ bool dm1701_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_
 	return ok;
 }
 
-// The legacy CPS's area 10 (flash security registers), by the chip's register address (reg << 12 | offset)
+// The open-firmware CPS's area 10 (flash security registers), by the chip's register address (reg << 12 | offset)
 bool dm1701_cps_security_read(uint32_t addr, void *buf, uint32_t len)
 {
 	return dm1701_flash_read_security((uint8_t)(addr >> 12), addr & 0xFFFu, buf, len);

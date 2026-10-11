@@ -8,7 +8,7 @@
 //   internal-flash.bin       the MCU flash from the application base (the bootloader is never read or written)
 //   spi-flash.bin            the external SPI flash: codeplug, calibration, the stock firmware's resources
 //   security-registers.bin   the SPI flash's security registers (the factory calibration on the DM-1701)
-//   radio-info.bin           the CPS radio info block (legacy-cps-interop.md 4)
+//   radio-info.bin           the CPS radio info block (open-firmware-cps.md 4)
 //   stock-firmware.bin       the user's stock firmware file, when they gave one (puts stock firmware back)
 //   README.txt               the same in words
 //
@@ -19,7 +19,7 @@ import { zip, unzip } from "./zip.js";
 
 export const FORMAT = "odr-backup/1";
 const CPS_SPI = 1, CPS_MCU = 5, CPS_INFO = 9, CPS_SECURITY = 10;
-export const CODEPLUG_SPAN = 0x120000;	// the legacy layout: emulated EEPROM, calibration, codeplug, ID database
+export const CODEPLUG_SPAN = 0x120000;	// the open-firmware layout: emulated EEPROM, calibration, codeplug, ID database
 
 export class BackupError extends Error {}
 
@@ -31,7 +31,7 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 	const info = await link.cpsRead(CPS_INFO, 0, 128);
 	if (info) parts.push({ file: "radio-info.bin", what: "radio-info", addr: 0, data: info, complete: true });
 	if (want.internal) {
-		// CPS area 5 addresses the MCU flash from 0x08000000 (legacy-cps-interop.md 3)
+		// CPS area 5 addresses the MCU flash from 0x08000000 (open-firmware-cps.md 3)
 		const base = board.app_base, size = board.flash_end - board.app_base;
 		const r = await link.cpsDump(CPS_MCU, base - 0x08000000, size, { progress: step("internal"), signal });
 		parts.push({ file: "internal-flash.bin", what: "internal-flash", addr: base, data: r.data, complete: r.complete });

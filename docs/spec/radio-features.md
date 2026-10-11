@@ -41,7 +41,7 @@ link's SETTING op goes through `radio_set_settings()` too, so its changes are sa
 | `backlight_dim_s`, `backlight_off_s` | 30, 120 | for the UI's backlight policy (`radio_backlight_pct`, 5.3) |
 
 TX time-out: one implementation for FM and DMR. A channel's codeplug `tot_s` wins; 0 there means the radio's
-`tot_s`. The value in effect is `tot_s` in the core view, and the DMR call stack gets the same value. Legacy
+`tot_s`. The value in effect is `tot_s` in the core view, and the DMR call stack gets the same value. Open-firmware
 codeplugs that wrote 0 for "no time-out" now get the radio's.
 
 ## 2. Scan (CONFIG_SCAN)

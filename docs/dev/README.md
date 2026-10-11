@@ -14,7 +14,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [CI](ci.md) | The workflows per push, nightly and on the radio; running each piece locally; coverage figures; the runners; the csky-elf image |
 | [Adding a radio](adding-a-radio.md) | The files a new board needs, `board_t`, the key map, the order to bring it up in |
 | [Debug link](debug-link.md) | The host-port debug protocol and `tools/odr_debug.py` |
-| [CPS, codeplug and settings](cps-and-codeplug.md) | The legacy CPS shim qdmr uses, the codeplug layout, the settings store |
+| [CPS, codeplug and settings](cps-and-codeplug.md) | The open-firmware CPS shim qdmr uses, the codeplug layout, the settings store |
 | [The codec](codec.md) | How each radio's stock AMBE+2 codec is extracted, merged and hosted |
 | [Web site and web flasher](website.md) | The generated site, where each page's data comes from, templates and design tokens, translating, radio images, the browser flasher, backups and restore |
 | [Releases](release.md) | The checklist, artifacts and manifests, the sector maps, odrflash's codec handling and key, the release and manual workflows |

@@ -16,19 +16,20 @@ typedef struct {
 	// The sector journal (core/storage): 2 erase units, a copy of the sector being rewritten and its header, so a
 	// power cut during a codeplug sector rewrite can be finished at the next boot
 	uint32_t journal_addr;
-	// The legacy-layout codeplug (docs/spec/legacy-cps-interop.md 7): the 64 KB "EEPROM" image and the 1 MB "flash"
-	// image as physical addresses (the STM32 radios: 0 and 0x20000), and the end of the area a legacy CPS may write
-	uint32_t legacy_eeprom;
-	uint32_t legacy_flash;
-	uint32_t legacy_end;
-	// The calibration window the legacy CPS reads and writes (legacy-cps-interop.md 2.2), 0 size if none
+	// The open-firmware codeplug (docs/spec/open-firmware-cps.md 7): the 64 KB "EEPROM" image and the 1 MB "flash"
+	// image as physical addresses (the STM32 radios: 0 and 0x20000), and the end of the area an open-firmware CPS may
+	// write
+	uint32_t openfw_eeprom;
+	uint32_t openfw_flash;
+	uint32_t openfw_end;
+	// The calibration window the open-firmware CPS reads and writes (open-firmware-cps.md 2.2), 0 size if none
 	uint32_t calibration_addr;
 	uint32_t calibration_size;
-	// Reserved for the native codeplug (docs/spec/codeplug-native.md); never written by the legacy CPS
+	// Reserved for the native codeplug (docs/spec/codeplug-native.md); never written by the open-firmware CPS
 	uint32_t native_addr;
 	uint32_t native_size;
 	// Scratch for a whole new codeplug image before it replaces the stored one (the TFTP codeplug write,
-	// docs/spec/tftp.md 4): outside every area above, never written by the legacy CPS. 0 size: no staged writes
+	// docs/spec/tftp.md 4): outside every area above, never written by the open-firmware CPS. 0 size: no staged writes
 	uint32_t staging_addr;
 	uint32_t staging_size;
 } hal_flash_map_t;

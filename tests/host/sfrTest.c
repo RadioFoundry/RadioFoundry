@@ -64,7 +64,7 @@ static sfrConfig_t repeaterConfig(uint8_t role, uint8_t framing, uint8_t inbound
 static void testChannelEncoding(void)
 {
 	sfrChannelSettings_t s, d;
-	uint8_t flag1 = 0x85, a = 0xAA, b = 0x55;// other LibreDMR_flag1 bits set; garbage in the spare bytes
+	uint8_t flag1 = 0x85, a = 0xAA, b = 0x55;// other flag 1 bits set; garbage in the spare bytes
 
 	// Without the flag, whatever the spare bytes hold (0x00 or 0xFF from a CPS), the channel isn't an SFR one
 	CHECK(!sfrChannelDecode(0x00, 0xFF, 0xFF, &d) && (d.role == SFR_ROLE_OFF), "spare bytes alone mean nothing");

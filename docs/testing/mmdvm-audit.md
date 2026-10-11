@@ -4,7 +4,7 @@
 
 An audit of the MMDVM modem implementation at commit 2d45a21 against `docs/spec/mmdvm-protocol.md`: its section 7 test
 list and the per-client needs of MMDVMHost, odr_sdrbench (the SDR bench's modem driver), the bench tools and the
-behavior of the old firmware. Done by reading the code; nothing was run on a radio.
+behavior of the aftermarket firmware. Done by reading the code; nothing was run on a radio.
 
 Files: `core/hotspot/{mmdvm.c,mmdvm.h,hotspot.c,hotspot.h}`, the carried-over `hotspotUplink.c`, `hotspotData.c`,
 `dmrDataFrame.c`, `core/hostlink/hostlink.c`, `drivers/usb/{usb_device.c,tusb_config.h}`, `platform/stm32f4/usb.c`,
@@ -59,9 +59,9 @@ Found since:
   rule does not apply there, the 20 s idle timeout does.
 
 Updated per-client view: MMDVMHost on Linux and Windows and odr_sdrbench in simplex should work for voice and data in
-simplex (odr_sdrbench still needs `radio.type: opengd77` until A-7); CW ID keyed on boards with `tx_tone` (the DM-1701
-so far; host-tested only); odr_sdrbench SFR answers correctly but repeats only what it heard before keying until the
-driver work lands.
+simplex (odr_sdrbench still needs the radio profile set by hand until A-7); CW ID keyed on boards with `tx_tone` (the
+DM-1701 so far; host-tested only); odr_sdrbench SFR answers correctly but repeats only what it heard before keying
+until the driver work lands.
 
 ## Summary
 
@@ -121,7 +121,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 
 - **Where**: `core/hotspot/hotspot.c:148-169` (voice_to_frame).
 - **Spec**: 2.8, modem to host. The 33 bytes must be a well-formed burst: correct EMB (color code, LCSS, QR(16,7)
-  parity) and the embedded signaling for B-E made from the call's LC, as the old firmware did. Test U-10.
+  parity) and the embedded signaling for B-E made from the call's LC, as the aftermarket firmware did. Test U-10.
 - **Code**: the EMB's 7 information bits are set, but its 9 parity bits and all 32 embedded-signaling bits are 0.
   MMDVMHost decodes the EMB with error correction, so with zero parity it "corrects" most bursts to a wrong color
   code or LCSS. Then:
@@ -184,26 +184,28 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Code**: the string itself meets the spec: printable ASCII, under 64 bytes, and none of the MMDVM_HS-type names.
   With no SFR in this build, the missing SFR suffix is right.
 - **odr_sdrbench today**: its `detect()` (`odr_sdrbench/mmdvm/radio.py`) returns nothing, and with `radio.type: auto`
-  odr_sdrbench stops with "can't tell what 'OpenDigitalRadio ...' is: set radio.type". The workaround is `radio.type:
-  opengd77` in the odr_sdrbench config, which gives the 1-header / 1-terminator profile and simplex operation. SFR stays
-  impossible: `sfr_slots()` requires the old name in the description, and the config can't override that.
+  odr_sdrbench stops with "can't tell what 'OpenDigitalRadio ...' is: set radio.type". The workaround is setting the
+  radio profile by hand in the odr_sdrbench config, which gives the 1-header / 1-terminator profile and simplex
+  operation. SFR stays impossible: `sfr_slots()` requires the aftermarket firmware's name in the description, and the
+  config can't override that.
 - **Fix, in odr_sdrbench**:
   - (a) `detect()`: a description containing `OpenDigitalRadio` (case-insensitive) gives the same radio kind as the
-    old firmware, checked before the MMDVM names.
-  - (b) `sfr_slots()`: accept `OpenDigitalRadio` wherever it accepts the old name. `sfr_framing()` needs no change.
-  - (c) The `config.py` error texts that name the old firmware.
+    aftermarket firmware, checked before the MMDVM names.
+  - (b) `sfr_slots()`: accept `OpenDigitalRadio` wherever it accepts the aftermarket firmware's name. `sfr_framing()`
+    needs no change.
+  - (c) The `config.py` error texts that name the aftermarket firmware.
   - (d) odr_sdrbench's tests: a fake modem entry with the new description, plus `detect` and `sfr_slots` cases (in
     `tests/mmdvm_fakes.py`, `test_mmdvm_hardware.py`, `test_mmdvm_sfr.py`).
   - (e) odr_sdrbench's RSSI conversion for that kind assumes the AT1846S raw scale (see A-9).
 - **Firmware side**: keep `OpenDigitalRadio` as the first word, unchanged. When SFR is ported, append ` SFR
-  TS<in>>TS<out> <framing>` through the extension hook. Putting the old name in the description isn't allowed:
-  `tools/license_grep.sh` rejects it in sources.
+  TS<in>>TS<out> <framing>` through the extension hook. Putting the aftermarket firmware's name in the description
+  isn't allowed: `tools/license_grep.sh` rejects it in sources.
 
 ### A-8 Low: slot 1 space reported as 0 in simplex (spec says 10); no SFR hook for it
 
 - **Where**: `core/hotspot/mmdvm.c:180`.
-- **Spec**: 2.4 says the constant 10, as MMDVM, MMDVM_HS and the old firmware send. 6.2 says both space bytes carry
-  the outbound slot's space in SFR mode.
+- **Spec**: 2.4 says the constant 10, as MMDVM, MMDVM_HS and the aftermarket firmware send. 6.2 says both space bytes
+  carry the outbound slot's space in SFR mode.
 - **Code**: 0.
   - MMDVMHost then never writes DMR_DATA1. That is harmless, even better, since it would only get NAK 2.
   - odr_sdrbench's simplex driver reads only slot 2's byte.
@@ -218,8 +220,9 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 ### A-9 Low: no RSSI after uplink bursts
 
 - **Where**: `core/hotspot/hotspot.c:171-179`. Frames go up with length 37.
-- **Spec**: 2.8 and 5.4. Optional. The old firmware sent 2 bytes (00, then the AT1846S register 0x1B high byte), and
-  odr_sdrbench converts that scale to dBm (raw − 151 at 300 MHz and up, −164 + raw × 32 / 27 below). Test U-8.
+- **Spec**: 2.8 and 5.4. Optional. The aftermarket firmware sent 2 bytes (00, then the AT1846S register 0x1B high
+  byte), and odr_sdrbench converts that scale to dBm (raw − 151 at 300 MHz and up, −164 + raw × 32 / 27 below). Test
+  U-8.
 - **Code**: none. odr_sdrbench gets no signal strength for anything the radio hears; MMDVMHost shows none.
 - **Fix**: when the modem reports an RSSI for the burst (`rssi_dbm` in `dmr_burst_t` is non-zero), send two bytes
   after the burst (frame length 39), big endian: 00, then the raw value on the AT1846S scale. Use the raw reading
@@ -350,7 +353,7 @@ Missing:
 | --- | --- | --- |
 | MMDVMHost, Linux / Pi-Star | handshake and polling OK; no calls until A-1; then voice works, with a malformed uplink EMB, NAK warnings per call and lost bursts at wrapped gaps | A-1, A-3, A-5, A-4 |
 | MMDVMHost, Windows | broken: config never sticks | A-2 (and the above) |
-| odr_sdrbench simplex | needs `radio.type: opengd77` until odr_sdrbench accepts the new name; no CW ID; no RSSI | A-1, A-7, A-6, A-9 |
+| odr_sdrbench simplex | needs the radio profile set by hand until odr_sdrbench accepts ODR's name; no CW ID; no RSSI | A-1, A-7, A-6, A-9 |
 | odr_sdrbench SFR | not available (SFR not ported; odr_sdrbench refuses the description; offset 7 hook missing) | A-7, A-8 |
 | Bench tools (`hs_normal.py`, copies) | UDP transport not in this build; over serial, `rf_*` cases are at risk from A-4 and `net_*` from A-1 | A-1, A-4 |
 

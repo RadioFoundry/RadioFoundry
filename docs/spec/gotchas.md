@@ -1,17 +1,17 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Gotchas: lessons from the old firmware
+# Gotchas: lessons from the aftermarket firmware
 
-What went wrong on the legacy firmware that OpenDigitalRadio replaces, and what new code has to do so it
-doesn't happen again. Each entry gives the symptom, the cause, the rule for new code, the radios it applies to, and the
-old repository commit where it was found or fixed (for the dirty-side reference notes kept outside this
+What went wrong on the aftermarket firmware ([CLEANROOM.md](../CLEANROOM.md)), and what new code has to do so it
+doesn't happen again in ODR. Each entry gives the symptom, the cause, the rule for new code, the radios it applies to,
+and the aftermarket firmware commit where it was found or fixed (for the dirty-side reference notes kept outside this
 repository; implementers don't need the commit to apply the rule).
 
 This file is prose only: register names, state names, timing numbers and standard fields are named, but nothing here
-is legacy firmware code or follows its structure. Radios: DM-1701 / RT-84 / MD-UV380 (STM32F405 + HR_C6000 + AT1846S),
-MD-9600 (STM32F405 + HR_C6000, synthesizer per band), MD-380 (STM32F405 + HR_C5000, single band UHF), GD-77 family
-(MK22 + HR_C6000 + AT1846S), DM-32UV (HR_C7000 SoC, C-SKY CK803S). Status words: "on air" means verified with an SDR
-or a second radio; "built" means compiled and host tested only.
+is aftermarket firmware code or follows its structure. Radios: DM-1701 / RT-84 / MD-UV380 (STM32F405 + HR_C6000 +
+AT1846S), MD-9600 (STM32F405 + HR_C6000, synthesizer per band), MD-380 (STM32F405 + HR_C5000, single band UHF), GD-77
+family (MK22 + HR_C6000 + AT1846S), DM-32UV (HR_C7000 SoC, C-SKY CK803S). Status words: "on air" means verified with
+an SDR or a second radio; "built" means compiled and host tested only.
 
 ## 1. DMR modem timing: HR_C6000 (DM-1701, MD-9600, GD-77)
 
@@ -401,16 +401,16 @@ and with one receive NTB the link then went dead both ways for good, re-enumerat
 codeplug, settings and calibration never loaded or saved. Real driver: SPI0, CS on GPIO 18, poll the busy bit. Commit
 2bea536.
 
-**10.2 DM-32 legacy area at +0x700000.** Keeps Baofeng data and factory calibration untouched; it overlaps a region
-stock firmware probably uses for voice recording: verify before switching back and forth. Never write the factory
-calibration sector. Commits 2bea536, 73a798d.
-The imported status read had no chip select and write enable was commented out. Commit 2bea536.
+**10.2 DM-32 open-firmware area at +0x700000.** Keeps Baofeng data and factory calibration untouched; it overlaps a
+region stock firmware probably uses for voice recording: verify before switching back and forth. Never write the
+factory calibration sector. Commits 2bea536, 73a798d. The imported status read had no chip select and write enable was
+commented out. Commit 2bea536.
 
 **10.3 Calibration init must not write.** The imported DM-32 calibration init filled the MD-UV380 table from stubbed
 security registers and wrote it to flash; with real flash writes it would have overwritten 0x710000. Commit 73a798d.
 
 **10.4 Spare codeplug bytes get zeroed by a CPS.** SFR settings live in channel spare bytes guarded by a flag bit
-(LibreDMR_flag1 0x02); a CPS that rewrites them with 0 turns SFR off. Commit 9369391.
+(flag 1 bit 0x02); a CPS that rewrites them with 0 turns SFR off. Commit 9369391.
 
 ## 11. Calibration
 

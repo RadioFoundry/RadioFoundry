@@ -720,7 +720,7 @@ static channel_t chans[NCH + 1];
 static bool used[NCH + 1];
 static zone_t zone;
 
-codeplug_source_t codeplug_source(void) { return CODEPLUG_LEGACY; }
+codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 uint32_t codeplug_serial(void) { return 1; }
 void storage_lock(void) {}
 void storage_unlock(void) {}
@@ -982,7 +982,7 @@ static void test_sites_and_zone_flag(void)
 	run(100);
 	CHECK(RV->state == ROAM_WATCH);
 
-	// The legacy CPS Roaming flag narrows the zone to the flagged channels
+	// The open-firmware CPS Roaming flag narrows the zone to the flagged channels
 	chans[1].roam = chans[3].roam = true;
 	req(RREQ_ROAM, RROAM_ZONE_OFF);
 	run(50);

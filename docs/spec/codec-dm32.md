@@ -75,14 +75,14 @@ The register and stack roles match `DM32_firmware/.../codec_interface.c`, so the
 * encode(r0 = bit buffer, r1, r2 = wave in, r3 = 80, sp+0, sp+4 = 0/1 (first/second half), sp+8, sp+12 = encoder state)
 * ECC(r0 = r1 = bit buffer, r2, r3 = ECC state)
 
-The stock wrapper passes values it keeps in the state blocks where the legacy firmware passes constants:
+The stock wrapper passes values it keeps in the state blocks where the aftermarket firmware passes constants:
 
 * decode: r3 = D[0x1166], sp+0 = a flags word.
 * encode: r1 = E[0x1736], sp+0 = 0x800 on both calls, sp+8 = E[0x173A] (0x2000 after init).
 * ECC: r2 = E[0x1738].
 
-The legacy firmware instead uses r3 = 0, encode sp+0 = 0x1840 and then 0x800, and sp+8 = 0x2000. Stock sets
-E[0x172C] = 0x1840 at init. Whether the legacy constants are right for stock is unverified (open item).
+The aftermarket firmware instead uses r3 = 0, encode sp+0 = 0x1840 and then 0x800, and sp+8 = 0x2000. Stock sets
+E[0x172C] = 0x1840 at init. Whether the aftermarket firmware's constants are right for stock is unverified (open item).
 
 ## Comparison with the dh4570 pair and OpenDM32
 
@@ -160,7 +160,7 @@ accesses are about D >= 0x1400 and E >= 0x1900; the exact sizes are open.
 
 ## Open items
 
-* Hardware test: init sequence, stock call parameters vs the legacy constants, and audio quality.
+* Hardware test: init sequence, stock call parameters vs the aftermarket firmware's constants, and audio quality.
 * Exact sizes of the D/E state blocks; whether the codec writes to its modem RAM tables (the boot copy covers
   both cases).
 * Whether stock 048 or later versions exist with other layouts. Per-version recipes are keyed by sha256.

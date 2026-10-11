@@ -108,9 +108,9 @@ CONFIG_VFO_FM ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_FM))),
 CONFIG_VFO_DMR ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_DMR))),y,n)
 # the debug link: framed commands on the host port for bench automation (docs/spec/debuglink.md; needs HOSTLINK)
 CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
-# the legacy CPS protocol shim on the host port, so qdmr and the legacy CPS can read and write the codeplug
-# (docs/spec/legacy-cps-interop.md; needs HOSTLINK)
-CONFIG_CPS_LEGACY ?= $(CONFIG_HOSTLINK)
+# the open-firmware CPS protocol shim on the host port, so qdmr and the open-firmware CPS can read and write the
+# codeplug (docs/spec/open-firmware-cps.md; needs HOSTLINK)
+CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
 # the diagnostics page
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
@@ -149,7 +149,7 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
-	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_LEGACY VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
 # Dependencies
@@ -175,9 +175,9 @@ ifneq ($(call feature_on,DEBUGLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)
   endif
 endif
-ifneq ($(call feature_on,CPS_LEGACY),)
+ifneq ($(call feature_on,CPS_OPENFW),)
   ifeq ($(call feature_on,HOSTLINK),)
-    $(error CONFIG_CPS_LEGACY=y needs CONFIG_HOSTLINK=y)
+    $(error CONFIG_CPS_OPENFW=y needs CONFIG_HOSTLINK=y)
   endif
 endif
 ifneq ($(call feature_on,USB_NETWORK),)

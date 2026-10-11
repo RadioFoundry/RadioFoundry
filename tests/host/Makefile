@@ -214,7 +214,7 @@ run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTe
 	./quadratureTest
 .PHONY: run-core
 
-# The read-only codeplug (legacy layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
+# The read-only codeplug (open-firmware layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
 FLASH_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += codeplugTest calibrationTest
 
@@ -626,7 +626,7 @@ spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/dri
              $(ROOT)/drivers/bus/spi_bus.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c
 
-# Codeplug editing: the legacy record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
+# Codeplug editing: the open-firmware record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit
 CPEDIT  := $(CORE)/codeplug/codeplug.c $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += codeplugEditTest
@@ -639,8 +639,8 @@ run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
 
-# The legacy CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
-CPS     := $(CORE)/cps/cps_legacy.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
+# The open-firmware CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
+CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            sim/sim_flash.c
 TESTS   += cpsTest
 

@@ -1,10 +1,9 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// codeplug.bin for the TFTP server (docs/spec/tftp.md 3, 4): the legacy codeplug image in the legacy CPS's address
-// space, the same flat file tools/cps_client.py reads and writes (file offset = STM32 wire address). Reads give the
-// regions qdmr transfers and 0xFF elsewhere; a write goes to the flash map's staging area first, is checked there,
-// and only then replaces the stored codeplug, sector by sector through the journal, under a commit record that a
-// power cut can't break (tftp_codeplug_resume finishes it at the next boot). CONFIG_TFTP.
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors codeplug.bin for the TFTP server
+// (docs/spec/tftp.md 3, 4): the open-firmware codeplug image in the open-firmware CPS's address space, the same flat
+// file tools/cps_client.py reads and writes (file offset = STM32 wire address). Reads give the regions qdmr transfers
+// and 0xFF elsewhere; a write goes to the flash map's staging area first, is checked there, and only then replaces the
+// stored codeplug, sector by sector through the journal, under a commit record that a power cut can't break
+// (tftp_codeplug_resume finishes it at the next boot). CONFIG_TFTP.
 #ifndef ODR_TFTP_CODEPLUG_H
 #define ODR_TFTP_CODEPLUG_H
 

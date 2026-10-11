@@ -1,11 +1,10 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The legacy CPS protocol engine (cps_legacy.h). Requests are assembled from the byte stream: the host link sees no
-// USB packet boundaries, so a request ends when its header says it is complete (R, W/X, most C commands), or after
-// CPS_GAP_MS of quiet for the rest (C 2 text without a NUL, D, unknown bytes). The PC waits for each reply before
-// it sends again, so the gap never cuts a request short in practice.
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors The open-firmware CPS protocol engine
+// (cps_openfw.h). Requests are assembled from the byte stream: the host link sees no USB packet boundaries, so a
+// request ends when its header says it is complete (R, W/X, most C commands), or after CPS_GAP_MS of quiet for the rest
+// (C 2 text without a NUL, D, unknown bytes). The PC waits for each reply before it sends again, so the gap never cuts
+// a request short in practice.
 #include <string.h>
-#include "cps/cps_legacy.h"
+#include "cps/cps_openfw.h"
 #include "board.h"
 #include "codeplug/codeplug.h"
 #include "settings/settings.h"
@@ -19,7 +18,7 @@
 #define CHUNK		64u
 #define INFO_LEN	46u
 
-// EEPROM image ranges with special handling (legacy-cps-interop.md 2.2, 7.2)
+// EEPROM image ranges with special handling (open-firmware-cps.md 2.2, 7.2)
 #define EE_QUICK_KEYS	0x7524u		// 10 x 2 bytes: radio-side, never overwritten
 #define EE_QUICK_END	0x7538u
 #define EE_VFO_A	0x7590u
@@ -105,7 +104,7 @@ static void end_session(void)
 	stats.session = false;
 }
 
-// --- The live VFO in the image (legacy-cps-interop.md 2.2 "VFO overlay") ---
+// --- The live VFO in the image (open-firmware-cps.md 2.2 "VFO overlay") ---
 
 static bool vfo_from_settings(channel_t *ch)
 {
@@ -132,19 +131,19 @@ static bool vfo_from_settings(channel_t *ch)
 static bool vfo_record(uint8_t *rec)
 {
 	channel_t ch;
-	uint32_t a = map()->legacy_eeprom + EE_VFO_A;
-	if (!vfo_from_settings(&ch) || !board.flash->read(a, rec, CODEPLUG_LEGACY_CHANNEL_SIZE)) {
+	uint32_t a = map()->openfw_eeprom + EE_VFO_A;
+	if (!vfo_from_settings(&ch) || !board.flash->read(a, rec, CODEPLUG_OPENFW_CHANNEL_SIZE)) {
 		return false;
 	}
-	codeplug_legacy_encode(&ch, rec);
+	codeplug_openfw_encode(&ch, rec);
 	return true;
 }
 
 // Replace the bytes of [addr, addr + len) that fall in the VFO A record with the live VFO
 static void overlay_vfo(uint32_t addr, uint8_t *buf, uint32_t len, const uint8_t *rec)
 {
-	uint32_t v = map()->legacy_eeprom + EE_VFO_A;
-	for (uint32_t i = 0; i < CODEPLUG_LEGACY_CHANNEL_SIZE; i++) {
+	uint32_t v = map()->openfw_eeprom + EE_VFO_A;
+	for (uint32_t i = 0; i < CODEPLUG_OPENFW_CHANNEL_SIZE; i++) {
 		if (v + i >= addr && v + i < addr + len) {
 			buf[v + i - addr] = rec[i];
 		}
@@ -154,14 +153,14 @@ static void overlay_vfo(uint32_t addr, uint8_t *buf, uint32_t len, const uint8_t
 // A commit that changed the VFO A record (the CPS edited it): the VFO takes the new settings at the next boot
 static void vfo_commit(void)
 {
-	uint32_t v = map()->legacy_eeprom + EE_VFO_A;
-	uint8_t live[CODEPLUG_LEGACY_CHANNEL_SIZE];
+	uint32_t v = map()->openfw_eeprom + EE_VFO_A;
+	uint8_t live[CODEPLUG_OPENFW_CHANNEL_SIZE];
 	channel_t ch;
-	if (v < sector_addr || v + CODEPLUG_LEGACY_CHANNEL_SIZE > sector_addr + STORAGE_SECTOR) {
+	if (v < sector_addr || v + CODEPLUG_OPENFW_CHANNEL_SIZE > sector_addr + STORAGE_SECTOR) {
 		return;
 	}
 	const uint8_t *rec = &sector[v - sector_addr];
-	if ((vfo_record(live) && memcmp(live, rec, sizeof(live)) == 0) || !codeplug_legacy_decode(rec, &ch)) {
+	if ((vfo_record(live) && memcmp(live, rec, sizeof(live)) == 0) || !codeplug_openfw_decode(rec, &ch)) {
 		return;		// unchanged (written back as read), or not a valid record
 	}
 	settings_t *st = settings_begin();
@@ -228,10 +227,10 @@ static void read_flash(uint32_t addr, uint16_t len)
 {
 	uint8_t hdr[3] = { 'R', (uint8_t)(len >> 8), (uint8_t)len };
 	uint8_t c[CHUNK];
-	uint8_t vfo[CODEPLUG_LEGACY_CHANNEL_SIZE];
+	uint8_t vfo[CODEPLUG_OPENFW_CHANNEL_SIZE];
 	const hal_flash_map_t *m = map();
-	uint32_t v = m != NULL ? m->legacy_eeprom + EE_VFO_A : 0;
-	bool overlay = m != NULL && addr < v + CODEPLUG_LEGACY_CHANNEL_SIZE && addr + len > v && vfo_record(vfo);
+	uint32_t v = m != NULL ? m->openfw_eeprom + EE_VFO_A : 0;
+	bool overlay = m != NULL && addr < v + CODEPLUG_OPENFW_CHANNEL_SIZE && addr + len > v && vfo_record(vfo);
 
 	// Check the whole range can be read before the header goes out (a failure later can't be a '-' any more)
 	if (!board.flash->read(addr, c, 1)) {
@@ -294,7 +293,7 @@ static void cmd_read(void)
 	}
 	switch (area) {
 	case 1:		// flash: physical addresses (the STM32 family's tools add the 128 KB offset themselves)
-	case 2:		// EEPROM image: the first 64 KB of the legacy layout
+	case 2:		// EEPROM image: the first 64 KB of the open-firmware layout
 		if (m == NULL || board.flash == NULL || len == 0) {
 			refuse();
 			return;
@@ -304,7 +303,7 @@ static void cmd_read(void)
 				refuse();
 				return;
 			}
-			addr += m->legacy_eeprom;
+			addr += m->openfw_eeprom;
 		}
 		if (addr >= flash_size() || len > flash_size() - addr) {
 			refuse();
@@ -321,7 +320,7 @@ static void cmd_read(void)
 	case 10:
 		read_other(false, addr, len);
 		return;
-	default:	// 6 display, 7 WAV, 8 AMBE compress: not offered (legacy-cps-interop.md 3)
+	default:	// 6 display, 7 WAV, 8 AMBE compress: not offered (open-firmware-cps.md 3)
 		refuse();
 		return;
 	}
@@ -334,8 +333,8 @@ static bool overlaps(uint32_t a, uint32_t alen, uint32_t b, uint32_t blen)
 	return blen != 0 && a < b + blen && b < a + alen;
 }
 
-// A sector the legacy CPS may write: inside the EEPROM image or the legacy flash image, never one of the radio's
-// own areas; the calibration sector with only its window (sector_cal)
+// A sector the open-firmware CPS may write: inside the EEPROM image or the open-firmware flash image, never one of the
+// radio's own areas; the calibration sector with only its window (sector_cal)
 static bool writable(uint32_t addr, bool *cal)
 {
 	const hal_flash_map_t *m = map();
@@ -352,8 +351,8 @@ static bool writable(uint32_t addr, bool *cal)
 		*cal = true;
 		return true;
 	}
-	return (addr >= m->legacy_eeprom && addr < m->legacy_eeprom + EE_IMAGE_SIZE) ||
-	       (addr >= m->legacy_flash && addr < m->legacy_end);
+	return (addr >= m->openfw_eeprom && addr < m->openfw_eeprom + EE_IMAGE_SIZE) ||
+	       (addr >= m->openfw_flash && addr < m->openfw_end);
 }
 
 // Whether a byte of the pending sector may take the CPS's value
@@ -363,7 +362,7 @@ static bool byte_ok(uint32_t a)
 	if (sector_cal) {
 		return a >= m->calibration_addr && a < m->calibration_addr + m->calibration_size;
 	}
-	return !(a >= m->legacy_eeprom + EE_QUICK_KEYS && a < m->legacy_eeprom + EE_QUICK_END);
+	return !(a >= m->openfw_eeprom + EE_QUICK_KEYS && a < m->openfw_eeprom + EE_QUICK_END);
 }
 
 static void ack(void)
@@ -377,7 +376,7 @@ static void cmd_write(void)
 	uint8_t sub = req[1];
 
 	if (req[0] == 'W') {
-		// The STM32 family's "fake write": acknowledged, nothing done (legacy-cps-interop.md 2)
+		// The STM32 family's "fake write": acknowledged, nothing done (open-firmware-cps.md 2)
 		if (sub >= 1 && sub <= 4) {
 			ack();
 		} else {
@@ -582,7 +581,7 @@ static void process(bool gap)
 			handle((size_t)n);
 			memmove(req, req + n, req_len - (size_t)n);
 			req_len -= (size_t)n;
-			memset(req + req_len, 0, (size_t)n);	// clear behind, as the legacy radio does
+			memset(req + req_len, 0, (size_t)n);	// clear behind, as a radio on the aftermarket firmware does
 		} else if (gap) {
 			handle(req_len);	// incomplete or gap-terminated: whatever came is the request
 			memset(req, 0, req_len);

@@ -41,7 +41,7 @@ endif
 ifeq ($(CONFIG_HOTSPOT),y)
 CORE_DIRS += core/hotspot
 endif
-ifeq ($(CONFIG_CPS_LEGACY),y)
+ifeq ($(CONFIG_CPS_OPENFW),y)
 CORE_DIRS += core/cps
 endif
 ifeq ($(CONFIG_DEBUGLINK),y)

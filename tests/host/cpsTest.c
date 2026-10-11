@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The legacy CPS shim (core/cps) against a simulated flash holding a legacy codeplug, driven like qdmr's
+// The open-firmware CPS shim (core/cps) against a simulated flash holding an open-firmware codeplug, driven like qdmr's
 // open-firmware UV380 driver does it: radio info, the session opening, 32-byte block reads of the regions it
 // transfers, prepare / data / commit per sector, close, save and reboot. Plus request assembly from arbitrary chunks,
 // the protected areas, quick keys, the calibration window, the VFO overlay, overflows and the session time-out.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "cps/cps_legacy.h"
+#include "cps/cps_openfw.h"
 #include "codeplug/codeplug.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
@@ -22,13 +22,13 @@ void storage_unlock(void) {}
 void storage_quick_lock(void) {}
 void storage_quick_unlock(void) {}
 
-#define FLASH_SIZE	0x200000u	// 2 MB: the legacy layout fits (to 0x120000)
+#define FLASH_SIZE	0x200000u	// 2 MB: the open-firmware layout fits (to 0x120000)
 #define EE		0x000000u
 #define FL		0x020000u
 
 static const hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
-	.legacy_eeprom = EE, .legacy_flash = FL, .legacy_end = 0x1C0000u,
+	.openfw_eeprom = EE, .openfw_flash = FL, .openfw_end = 0x1C0000u,
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 	.native_addr = 0x1C0000u, .native_size = 0x40000u,
 };
@@ -131,7 +131,7 @@ static bool x_commit(void)
 	return out_len == 2 && out[0] == 'X' && out[1] == 3;
 }
 
-// qdmr's regions for the UV380 family (legacy-cps-interop.md 7.1), wire addresses
+// qdmr's regions for the UV380 family (open-firmware-cps.md 7.1), wire addresses
 typedef struct { uint32_t addr, len; } region_t;
 static const region_t regions[] = {
 	{ 0x00080, 0x5FE0 }, { 0x07500, 0x3B00 }, { 0x20000, 0x11A0 }, { 0x9B000, 0x13E60 },
@@ -176,7 +176,7 @@ static bool qdmr_write(const uint8_t *img, bool reboot)
 	return ok;
 }
 
-// --- a legacy codeplug to start from ---
+// --- an open-firmware codeplug to start from ---
 
 static void boot(void)
 {
@@ -208,7 +208,7 @@ static void populate(void)
 	CHECK(codeplug_set_zone(0, &z));
 	contact_t ct = { "TG 9", 9, CONTACT_GROUP, 0 };
 	CHECK(codeplug_set_contact(1, &ct));
-	// Quick keys and a calibration table in place, as on a radio that ran the legacy firmware
+	// Quick keys and a calibration table in place, as on a radio that ran the aftermarket firmware
 	for (unsigned i = 0; i < 20; i++) {
 		sim_flash_data[EE + 0x7524 + i] = (uint8_t)(0x40 + i);
 	}
@@ -249,7 +249,7 @@ static void test_read_session(void)
 	for (unsigned r = 0; r < sizeof(regions) / sizeof(regions[0]); r++) {
 		CHECK(memcmp(img + regions[r].addr, sim_flash_data + regions[r].addr, regions[r].len) == 0);
 	}
-	// Big reads (the legacy CPS uses up to the buffer size) and area 2 = the same bytes
+	// Big reads (the open-firmware CPS uses up to the buffer size) and area 2 = the same bytes
 	uint8_t b[2048], c[2048];
 	CHECK(read_block(1, 0x3780, 2045, b) && memcmp(b, sim_flash_data + 0x3780, 2045) == 0);
 	CHECK(read_block(2, 0x3780, 2045, c) && memcmp(b, c, 2045) == 0);
@@ -316,7 +316,7 @@ static void test_protected(void)
 {
 	uint8_t d[32];
 	memset(d, 0x11, sizeof(d));
-	// The radio's own areas and anything outside the legacy images
+	// The radio's own areas and anything outside the open-firmware images
 	CHECK(!x_prepare(0x11));	// settings
 	CHECK(!x_prepare(0x19));	// journal
 	CHECK(!x_prepare(0x1C));	// gap after the journal: no CPS address maps there
@@ -410,7 +410,7 @@ static void test_vfo(void)
 	settings_end(now);
 	CHECK(read_block(1, EE + 0x7580, 96, b));
 	memcpy(rec, b + 0x10, 56);
-	CHECK(codeplug_legacy_decode(rec, &ch) && ch.rx_hz == 146520000 && ch.bw == RADIO_BW_25K);
+	CHECK(codeplug_openfw_decode(rec, &ch) && ch.rx_hz == 146520000 && ch.bw == RADIO_BW_25K);
 	CHECK(read_block(1, EE + 0x75A0, 8, b) && b[0] == 0x00 && b[3] == 0x14);	// bytes 0x10-0x13 of the record
 	// Written back as read: the settings stay; changed by the CPS: the VFO takes it
 	uint8_t sec[4096];
@@ -425,7 +425,7 @@ static void test_vfo(void)
 	CHECK(st.vfo_rx_hz == 146520000 && st.vfo_bw == RADIO_BW_25K);
 	ch.rx_hz = ch.tx_hz = 433500000;
 	ch.bw = RADIO_BW_12K5;
-	codeplug_legacy_encode(&ch, &sec[0x590]);
+	codeplug_openfw_encode(&ch, &sec[0x590]);
 	CHECK(x_prepare(0x7) && x_data(EE + 0x7590, &sec[0x590], 56, 0) && x_commit());
 	settings_read(&st);
 	CHECK(st.vfo_rx_hz == 433500000 && st.vfo_bw == RADIO_BW_12K5);

@@ -13,7 +13,7 @@
 #include "task.h"
 
 #define WINBOND_TYPE		0x40u		// JEDEC memory type of the W25Q serial flash family
-#define FULL_SIZE		0x1000000u	// 16 MB: room for the legacy layout
+#define FULL_SIZE		0x1000000u	// 16 MB: room for the open-firmware layout
 #define SECURITY_REG_SIZE	256u
 #define XFER_SPINS		100000u		// per byte; a byte takes 1.8 us at 4.5 MHz
 
@@ -96,16 +96,17 @@ static void spi_init(void)
 	__HAL_SPI_ENABLE(&spi);
 }
 
-// The DM-1701's layout (hardware-md380.md 12.2). The legacy codeplug stays where the CPS tools expect it; our own
-// areas sit below the legacy flash image (0x011000..0x01FFFF, which no CPS address maps to) and above the 14 MB mark
-// that qdmr's DMR ID database may reach. The stock TYT codeplug at 0 is overwritten by the first legacy write
+// The DM-1701's layout (hardware-md380.md 12.2). The open-firmware codeplug stays where the CPS tools expect it; our
+// own areas sit below the open-firmware flash image (0x011000..0x01FFFF, which no CPS address maps to) and above the 14
+// MB mark that qdmr's DMR ID database may reach. The stock TYT codeplug at 0 is overwritten by the first open-firmware
+// write
 static const hal_flash_map_t map = {
 	.settings_addr = 0x011000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x019000u,	// 2 sectors
-	.legacy_eeprom = 0x000000u,
-	.legacy_flash = 0x020000u,
-	.legacy_end = 0xE00000u,
+	.openfw_eeprom = 0x000000u,
+	.openfw_flash = 0x020000u,
+	.openfw_end = 0xE00000u,
 	.calibration_addr = 0,		// the calibration is in the security registers (calibration_md380.c)
 	.calibration_size = 0,
 	.native_addr = 0xE00000u,
@@ -189,7 +190,7 @@ bool md380_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t
 	return ok;
 }
 
-// The legacy CPS's area 10 (flash security registers), by the chip's register address (reg << 12 | offset)
+// The open-firmware CPS's area 10 (flash security registers), by the chip's register address (reg << 12 | offset)
 bool md380_cps_security_read(uint32_t addr, void *buf, uint32_t len)
 {
 	return md380_flash_read_security((uint8_t)(addr >> 12), addr & 0xFFFu, buf, len);

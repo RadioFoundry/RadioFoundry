@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// core/codeplug against synthetic flash images: a legacy-layout codeplug, an erased flash, no flash at all
+// core/codeplug against synthetic flash images: an open-firmware codeplug, an erased flash, no flash at all
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,7 +96,7 @@ static void erase_bitmaps(void)
 	}
 }
 
-static void build_legacy(void)
+static void build_openfw(void)
 {
 	memset(image, 0xFF, IMAGE_SIZE);
 	erase_bitmaps();
@@ -154,11 +154,11 @@ static void build_legacy(void)
 	put16(z + 24, 2);		// after the end marker: ignored
 }
 
-static void test_legacy(void)
+static void test_openfw(void)
 {
-	build_legacy();
-	CHECK(codeplug_init() == CODEPLUG_LEGACY);
-	CHECK(codeplug_source() == CODEPLUG_LEGACY);
+	build_openfw();
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	CHECK(codeplug_source() == CODEPLUG_OPENFW);
 	CHECK(codeplug_channel_count() == 200);
 
 	channel_t ch;
@@ -200,7 +200,7 @@ static void test_legacy(void)
 
 	// No zones stored: one virtual zone with every used channel
 	memset(&image[EE + 0x8010], 0, 0x20);
-	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	CHECK(codeplug_zone_count() == 1);
 	CHECK(codeplug_zone(0, &z));
 	CHECK(strcmp(z.name, "All channels") == 0);
@@ -258,7 +258,7 @@ static void put_contact(uint16_t n, const char *name, uint32_t id, uint8_t type,
 
 static void test_dmr_records(void)
 {
-	build_legacy();
+	build_openfw();
 	put_bcd_be(&image[EE + 0xE8], 3101276);
 	put_contact(1, "Main Ops", 201, 0, 0xFF);
 	put_contact(2, "Joe", 3101234, 1, 0x02);	// TS2 override
@@ -279,7 +279,7 @@ static void test_dmr_records(void)
 	c[0x27] = 0x2F;
 	c[0x28] = 0x52;
 	c[0x29] = 0x5C;
-	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 
 	CHECK(codeplug_dmr_id() == 3101276);
 	contact_t ct;
@@ -333,7 +333,7 @@ static void test_dmr_records(void)
 	CHECK(codeplug_dmr_id() == 0);
 }
 
-// DMR ID database records (legacy-cps-interop.md 7.5)
+// DMR ID database records (open-firmware-cps.md 7.5)
 static int pack6(char c)
 {
 	if (c == ' ') return 0;
@@ -389,7 +389,7 @@ static void test_iddb(void)
 	char text[DMR_IDDB_TEXT_MAX + 1];
 	uint32_t area2 = FL + 0xB8000;
 
-	build_legacy();
+	build_openfw();
 	CHECK(!dmr_iddb_init() && dmr_iddb_count() == 0 && !dmr_iddb_lookup(3101234, text, sizeof(text)));
 
 	// 17500 records with IDs 1000000 + 7 i: 17475 fit in area 1, the rest are in area 2
@@ -428,7 +428,7 @@ static void test_iddb(void)
 }
 
 #if CONFIG_APRS
-// The APRS configuration records a CPS writes (legacy-cps-interop.md 7.3.8, 0x40 bytes each at EEPROM 0x1588):
+// The APRS configuration records a CPS writes (open-firmware-cps.md 7.3.8, 0x40 bytes each at EEPROM 0x1588):
 // the two magic numbers (the older one keeps the ambiguity one bit lower), and whatever is out of range in a
 // record from another tool comes back as a safe value; an empty or foreign record is no configuration
 static uint8_t *aprs_rec(unsigned n) { return &image[EE + 0x1588u + 0x40u * (n - 1u)]; }
@@ -455,7 +455,7 @@ static void test_aprs_records(void)
 {
 	codeplug_aprs_t a;
 
-	build_legacy();
+	build_openfw();
 	put_aprs(1, 0x4153);
 	put_aprs(2, 0x4152);			// the older layout
 	put_aprs(3, 0x4153);
@@ -466,7 +466,7 @@ static void test_aprs_records(void)
 	put_aprs(4, 0x1234);			// unknown magic
 	put_aprs(5, 0x4153);
 	aprs_rec(5)[0] = 0x00;			// unnamed: empty
-	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	CHECK(codeplug_aprs(1, &a) && a.ssid == 9 && strcmp(a.path[0], "WIDE1-1") == 0 &&
 	      strcmp(a.path[1], "WIDE2-12") == 0 && a.sym_table == '/' && a.sym_code == '>' &&
 	      strcmp(a.comment, "Mobile") == 0 && a.ambiguity == 3);
@@ -482,7 +482,7 @@ static void test_aprs_records(void)
 	char l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
 	codeplug_boot_text(l1, l2);
 	CHECK(strcmp(l1, "Welcome") == 0 && strcmp(l2, "N0CALL") == 0);
-	// Without a legacy codeplug: nothing
+	// Without an open-firmware codeplug: nothing
 	memset(image, 0xFF, IMAGE_SIZE);
 	codeplug_init();
 	codeplug_boot_text(l1, l2);
@@ -496,7 +496,7 @@ int main(void)
 	if (image == NULL) {
 		return 1;
 	}
-	test_legacy();
+	test_openfw();
 #if CONFIG_APRS
 	test_aprs_records();
 #endif

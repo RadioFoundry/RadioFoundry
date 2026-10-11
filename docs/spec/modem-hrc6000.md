@@ -14,7 +14,7 @@ firmware (the init values below come from it), and on-air measurements on a DM-1
 decode of every burst). Values marked "(trace)" were captured from the TYT firmware and are not explained by the
 manual. Values marked "(unverified)" have not been confirmed on our hardware.
 
-Datasheets available (in the old tree's `docs/data_sheets/C6000/`, kept outside this repository):
+Datasheets available (in the aftermarket firmware tree's `docs/data_sheets/C6000/`, kept outside this repository):
 `HR_C6000_updated_chinese_translated_english.pdf` (the most complete), `HR_C6000_translated.pdf`, `HR_C6000_simple.pdf`,
 `HR_C6000_chinese.docx`, `HR-C6000 Registers_G4EML.docx`, `HRC6000_VK3KYY.docx`. These are vendor documents, fine to
 read on the clean side.

@@ -3,7 +3,7 @@
 
 Status: research, 2026-10-11. What the stock Baofeng firmware (DM32.01.01.049, same on 046) accepts from a PC, so a
 tool can read or set up a radio that still runs stock firmware. ODR does not implement this protocol in the firmware
-([legacy-cps-interop.md](legacy-cps-interop.md) covers what ODR speaks; the reasons are in
+([open-firmware-cps.md](open-firmware-cps.md) covers what ODR speaks; the reasons are in
 [dm32-migration.md](dm32-migration.md)). Tags as in [hardware-dm32.md](hardware-dm32.md): **BIN** = seen in the stock image by
 disassembly (facts only), **COM** = community documentation (infamy's DM32-Protocol-Spec, MIT, with OEM CPS captures;
 NeonPlug; qdmr's DM-32UV driver), **INF** = our inference.

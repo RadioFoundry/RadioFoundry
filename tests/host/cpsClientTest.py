@@ -58,7 +58,7 @@ def main():
         diffs = cps_client.compare(img, back, regions)
         check(not diffs, f"read back differs at {len(diffs)} bytes: {diffs[:4]}")
         check(bytes(back[0x7524:0x7538]) == quick, "quick keys kept")
-        # The same through larger blocks (the legacy CPS reads up to 2 KB at a time)
+        # The same through larger blocks (the open-firmware CPS reads up to 2 KB at a time)
         big = cps.read_image(regions, block=1024)
         check(not cps_client.compare(back, big, regions, skip=()), "1 KB block read = 32-byte block read")
         cps.close()

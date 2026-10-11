@@ -9,7 +9,7 @@ Rule: the radio runs exactly the codec its own TYT stock firmware shipped. The u
 file the user supplies. No codec bytes go in this repository or in released binaries.
 
 Every fact here comes from our own reading of the vendor images and the DM-1701 work ([codec-dm1701.md](codec-dm1701.md)).
-No OpenGD77, OpenRTX or other third-party source was used for the codec facts.
+No aftermarket firmware, OpenRTX or other third-party source was used for the codec facts.
 
 ## Stock files
 

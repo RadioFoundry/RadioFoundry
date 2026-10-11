@@ -485,7 +485,7 @@ bool ui_svc_save_talk_target(uint32_t id, bool private_call)
 
 // Factory reset: the settings back to the defaults (saved at once), the native area emptied when it holds our data
 // or nothing (storage_native_erase leaves another firmware's data alone), then a restart so every task starts from
-// the defaults. Never the legacy codeplug, the calibration, or the settings ring and journal as raw flash (the
+// the defaults. Never the open-firmware codeplug, the calibration, or the settings ring and journal as raw flash (the
 // defaults go in as a new record, through the foreign region guard)
 static void factory_reset_job(void *ctx)
 {

@@ -47,7 +47,7 @@ A **site** is a channel in the current zone that:
 - has its RX frequency inside one of the board's bands,
 - talks to the same talk target as the channel the user picked (the resolved contact ID and call type; two channels
   with no contact both talk to the default talkgroup 9),
-- and, when any channel of the zone has the legacy **Roaming** flag set (section 5.2), has that flag set too.
+- and, when any channel of the zone has the open-firmware **Roaming** flag set (section 5.2), has that flag set too.
 
 The sites are the first `ROAM_SITES_MAX` (16) such channels in zone order. Roaming is **active** when the zone is a
 roaming zone (section 5.1), the radio is on one of its sites (not the VFO, not an FM channel, not a channel that fails
@@ -58,10 +58,10 @@ channel, zone or VFO change by the user (keys, Find, the debug link, a CPS write
 channel home and restarts the minimum dwell. The roaming moves themselves are remembered like any channel change, so
 the radio powers up on the site it was on.
 
-Why a zone and not a new list: the legacy codeplug layout that qdmr and the legacy CPS write
-(`legacy-cps-interop.md` 7) has no roaming list or roaming zone record, and the native codeplug
+Why a zone and not a new list: the open-firmware codeplug layout that qdmr and the open-firmware CPS write
+(`open-firmware-cps.md` 7) has no roaming list or roaming zone record, and the native codeplug
 (`codeplug-native.md`) is not built yet. A zone whose channels share their talkgroups is what a user of a multi-site
-system already programs, so it is the natural roam list; the per-channel Roaming flag the legacy layout does have
+system already programs, so it is the natural roam list; the per-channel Roaming flag the open-firmware layout does have
 narrows it when a zone mixes sites with other channels. When the native codeplug exists, the zone record gets a
 "roaming zone" flag and the threshold values (section 10, decision 1), and the settings store bits become its default.
 
@@ -333,11 +333,11 @@ The values reach the radio core as `radio_settings_t.roam_*`. The zone bits are 
 user turns roaming on or off for the current zone. They follow the zone index, so a CPS write that reorders or
 deletes zones moves the flags with the indices (section 10, decision 2).
 
-### 5.2 Legacy codeplug
+### 5.2 Open-firmware codeplug
 
-The legacy channel record's LibreDMR flag 1 bit 0 "Roaming" (`legacy-cps-interop.md` 7, offset 0x26) is read into
+The open-firmware channel record's flag 1 bit 0 "Roaming" (`open-firmware-cps.md` 7, offset 0x26) is read into
 `channel_t.roam`. It is never written by the radio (the encoder keeps the bit as read). When any channel of a roaming
-zone has it, only those channels are sites. Whether qdmr exposes this bit for the legacy layout is not checked yet
+zone has it, only those channels are sites. Whether qdmr exposes this bit for the open-firmware layout is not checked yet
 (section 10, decision 3).
 
 ## 6. Interfaces
@@ -465,7 +465,7 @@ later. MMDVM duplex hosts send their own beacons (the host's setting), not throu
 1. The roaming zone flag and the thresholds as per-zone fields of the native zone record (when it exists), instead
    of radio-wide settings plus zone index bits.
 2. Zone bits keyed by index break when a CPS reorders zones. A name hash would survive reordering but not renaming.
-3. Whether qdmr exposes the legacy Roaming bit; if not, a qdmr extension or a radio-side channel editor field.
+3. Whether qdmr exposes the open-firmware Roaming bit; if not, a qdmr extension or a radio-side channel editor field.
 4. Wake probing in the UI (Settings > Talk & listen) and whether a probe should use the lowest power level.
 5. Whether a move should be announced by a beep, a voice prompt or nothing (today a short beep with key beeps on).
 6. Talk target matching: by resolved contact ID (today) or also by listen list, for systems where sites carry the

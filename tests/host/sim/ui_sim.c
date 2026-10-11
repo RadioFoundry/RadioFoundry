@@ -452,7 +452,7 @@ static const sim_contact_t worst_contacts[] = {
 #define N_WORST	(sizeof worst_contacts / sizeof worst_contacts[0])
 #define WORST_FIRST	985u
 
-codeplug_source_t codeplug_source(void) { return CODEPLUG_LEGACY; }
+codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 uint16_t codeplug_channel_count(void) { return worst ? CODEPLUG_CHANNELS_MAX : 40; }
 
 bool codeplug_channel(uint16_t number, channel_t *out)
@@ -1069,7 +1069,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.vfo_step_hz = 12500;
 	view.tot_s = 180;
 	view.rssi_dbm = -95;
-	view.source = CODEPLUG_LEGACY;
+	view.source = CODEPLUG_OPENFW;
 	view.dmr.own_id = 3101276;
 	view.zone_index = 0;
 	view.zone_pos = 2;	// 3 COUNTY DMR

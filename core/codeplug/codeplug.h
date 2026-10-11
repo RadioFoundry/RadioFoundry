@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The codeplug as the core sees it: channels, zones, contacts and RX group lists, whatever format is stored
 // underneath. This is the editing model the UI and the CPS share (docs/spec/codeplug-native.md 2).
-// Today it is stored in the legacy layout (docs/spec/legacy-cps-interop.md 7), read on demand and written through
+// Today it is stored in the open-firmware layout (docs/spec/open-firmware-cps.md 7), read on demand and written through
 // the sector journal (core/storage); with nothing stored, a small built-in set of channels, which the first edit
 // turns into a stored codeplug. The native format comes later behind the same calls.
 // All calls may come from any task (they take the storage lock); writes can take some 100 ms (sector rewrites).
@@ -33,14 +33,14 @@ typedef struct {
 	uint16_t contact;	// talk target contact index, 0 = none
 	uint16_t listen_list;	// RX group list index, 0 = none
 	uint32_t dmr_id;	// own DMR ID for this channel, 0 = the radio's
-	bool dmo;		// direct mode even when RX and TX differ (legacy "force DMO")
+	bool dmo;		// direct mode even when RX and TX differ (open-firmware "force DMO")
 	uint16_t tot_s;		// TX time-out, 0 = the radio's
 	uint8_t alias_tx;	// talker alias TX: CODEPLUG_ALIAS_TS1_* / _TS2_* bits
 	bool scan_skip;		// left out of zone scans
 	bool vox;		// VOX allowed on this channel (FM)
 	bool no_beep;		// no DMR talk permit / call end beeps on this channel
 	bool no_eco;		// no receiver battery saving on this channel
-	bool roam;		// a roaming site (the legacy Roaming flag; docs/spec/dmr-roaming.md 5.2), read only
+	bool roam;		// a roaming site (the open-firmware Roaming flag; docs/spec/dmr-roaming.md 5.2), read only
 } channel_t;
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
@@ -55,7 +55,7 @@ typedef struct {
 	uint16_t channels[CODEPLUG_ZONE_MAX];	// codeplug channel numbers, 1-based
 } zone_t;
 
-typedef enum { CODEPLUG_NONE, CODEPLUG_BUILTIN, CODEPLUG_LEGACY } codeplug_source_t;
+typedef enum { CODEPLUG_NONE, CODEPLUG_BUILTIN, CODEPLUG_OPENFW } codeplug_source_t;
 
 // Find and check the stored codeplug. Call once the board's flash works
 codeplug_source_t codeplug_init(void);
@@ -88,15 +88,15 @@ uint16_t codeplug_free_channel(void);
 // exists, index 0 replaces it with a stored zone). Channels that aren't stored are refused
 bool codeplug_set_zone(uint16_t index, const zone_t *z);
 bool codeplug_delete_zone(uint16_t index);
-// The radio name (the legacy callsign field, 8 characters), "" if none
+// The radio name (the open-firmware callsign field, 8 characters), "" if none
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]);
 bool codeplug_set_radio_name(const char *name);
 // The two boot screen text lines the CPS writes (empty when unset or not in this codeplug)
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]);
 
 #if CONFIG_APRS
-// A legacy codeplug APRS configuration (legacy-cps-interop.md 7.3.8; qdmr writes them): what the APRS engine takes
-// from it. Not read: the fixed position and the frequency (their encodings aren't in the interop spec yet)
+// An open-firmware codeplug APRS configuration (open-firmware-cps.md 7.3.8; qdmr writes them): what the APRS engine
+// takes from it. Not read: the fixed position and the frequency (their encodings aren't in the interop spec yet)
 #define CODEPLUG_APRS_CONFIGS	8
 #define CODEPLUG_APRS_COMMENT	23
 typedef struct {
@@ -107,18 +107,18 @@ typedef struct {
 	char comment[CODEPLUG_APRS_COMMENT + 1];
 	uint8_t ambiguity;	// 0-4
 } codeplug_aprs_t;
-// Configuration n (1..CODEPLUG_APRS_CONFIGS); false when empty, unknown or no legacy codeplug
+// Configuration n (1..CODEPLUG_APRS_CONFIGS); false when empty, unknown or no open-firmware codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out);
 #endif
 
 // Re-read everything after the image was written underneath (the CPS); bumps the serial
 codeplug_source_t codeplug_reload(void);
 
-// The legacy 56-byte channel record (legacy-cps-interop.md 7.3.3), for the CPS shim's VFO handling. decode: false
+// The open-firmware 56-byte channel record (open-firmware-cps.md 7.3.3), for the CPS shim's VFO handling. decode: false
 // if the frequencies are malformed. encode: updates rec in place, keeping the bytes the model doesn't own
-#define CODEPLUG_LEGACY_CHANNEL_SIZE	56
-bool codeplug_legacy_decode(const uint8_t *rec, channel_t *out);
-void codeplug_legacy_encode(const channel_t *ch, uint8_t *rec);
+#define CODEPLUG_OPENFW_CHANNEL_SIZE	56
+bool codeplug_openfw_decode(const uint8_t *rec, channel_t *out);
+void codeplug_openfw_encode(const channel_t *ch, uint8_t *rec);
 
 #if CONFIG_DMR
 #define CODEPLUG_CONTACTS_MAX	1024
@@ -158,14 +158,14 @@ bool codeplug_contact_find(uint32_t id, bool group, contact_t *out);
 
 #define CODEPLUG_RADIO_NAME_LEN	8
 
-// General DMR settings (legacy general settings, docs/spec/legacy-cps-interop.md 7.3.2)
+// General DMR settings (open-firmware general settings, docs/spec/open-firmware-cps.md 7.3.2)
 typedef struct {
 	char radio_name[CODEPLUG_RADIO_NAME_LEN + 1];	// callsign / radio name, "" if none
 	uint16_t group_hang_ms;		// group call hang time, 0 = none stored
 	uint16_t private_hang_ms;	// private call hang time, 0 = none stored
 } codeplug_dmr_settings_t;
 
-// false (and out zeroed) without a legacy codeplug
+// false (and out zeroed) without an open-firmware codeplug
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out);
 #endif
 

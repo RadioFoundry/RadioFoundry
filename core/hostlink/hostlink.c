@@ -48,7 +48,7 @@
 #endif
 #define POLL_MS			5	// hotspot housekeeping while nothing arrives
 #define READ_CHUNK		64
-#define CPS_GAP_MS		3	// a new CPS request starts after this much quiet (legacy-cps-interop.md 1.2)
+#define CPS_GAP_MS		3	// a new CPS request starts after this much quiet (open-firmware-cps.md 1.2)
 #define PPP_FLAG		0x7E	// starts every PPP frame (RFC 1662); no other protocol here starts a request with it
 
 #ifndef ODR_GIT

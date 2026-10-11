@@ -119,7 +119,7 @@ bool ui_svc_emergency_active(void);
 void ui_svc_emergency_poll(void);
 // The emergency screen was acknowledged: the received alert is dismissed (weak no-op without dmr-ext)
 void ui_svc_emergency_dismiss(void);
-// The settings back to their defaults and the native codeplug area emptied (never the legacy codeplug or the
+// The settings back to their defaults and the native codeplug area emptied (never the open-firmware codeplug or the
 // calibration: those would need a second, explicit confirmation), then the radio restarts. Done by the housekeeping
 // task, not the UI's; false if it can't be started (no flash, or a save still going on)
 bool ui_svc_factory_reset(void);

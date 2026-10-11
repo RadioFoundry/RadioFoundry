@@ -61,7 +61,7 @@ open questions A1-A4 and B1-B5) is [hardware-dm32.md](hardware-dm32.md) 8.7; its
 
 ### 3.1 Representation: derived from the frequency, codeplug unchanged
 
-The legacy CPS codeplug has no AM modulation, and ODR keeps the standard format as long as possible. So AM is not
+The open-firmware CPS codeplug has no AM modulation, and ODR keeps the standard format as long as possible. So AM is not
 stored: **an FM channel or the VFO tuned inside 108-137 MHz is received in AM** on a radio that can. This is how
 most radios with an air band behave, it needs no CPS change, and qdmr can program air channels today (as FM
 channels in that range). The band is an ITU allocation, the same everywhere, so the range is a core constant

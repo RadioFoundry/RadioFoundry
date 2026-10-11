@@ -21,12 +21,12 @@
 #define GEN_DMR_ID	0x00E8u		// general settings: the DMR ID, 8 BCD digits
 #define BANK0_BITMAP	0x3780u		// channels 1-128: 16-byte bitmap, then 128 records of 56 bytes
 #define BANK1_BITMAP	0x9B1B0u	// channels 129-1024 in banks of the same shape (flash image 0x7B1B0)
-#define BANK_STRIDE	(16u + 128u * CODEPLUG_LEGACY_CHANNEL_SIZE)
+#define BANK_STRIDE	(16u + 128u * CODEPLUG_OPENFW_CHANNEL_SIZE)
 #define BANKS		8u
 #define VERSION		1u
 #define HEADER_LEN	20u
 
-// What qdmr's open-firmware driver and tools/cps_client.py transfer (legacy-cps-interop.md 7.1), file offsets
+// What qdmr's open-firmware driver and tools/cps_client.py transfer (open-firmware-cps.md 7.1), file offsets
 static const struct {
 	uint32_t start, end;
 } regions[] = {
@@ -66,7 +66,7 @@ static uint32_t staged_total(void)
 // Where a file offset is in the data flash
 static uint32_t phys(uint32_t off)
 {
-	return off < EE_IMAGE ? map()->legacy_eeprom + off : map()->legacy_flash + (off - FL_IMAGE);
+	return off < EE_IMAGE ? map()->openfw_eeprom + off : map()->openfw_flash + (off - FL_IMAGE);
 }
 
 // Where a file offset (inside a region) is among the staged bytes, -1 if in no region
@@ -102,7 +102,7 @@ static bool staging_ok(void)
 	}
 	uint32_t a = m->staging_addr, n = m->staging_size;
 	return !overlaps(a, n, m->settings_addr, m->settings_size) && !overlaps(a, n, m->journal_addr, 2u * SECTOR) &&
-	       !overlaps(a, n, m->legacy_eeprom, EE_IMAGE) && !overlaps(a, n, m->legacy_flash, m->legacy_end - m->legacy_flash) &&
+	       !overlaps(a, n, m->openfw_eeprom, EE_IMAGE) && !overlaps(a, n, m->openfw_flash, m->openfw_end - m->openfw_flash) &&
 	       !overlaps(a, n, m->native_addr, m->native_size) && !overlaps(a, n, m->calibration_addr, m->calibration_size);
 }
 
@@ -276,11 +276,11 @@ static bool bcd_ok(const uint8_t *b, int n)
 	return true;
 }
 
-// Is the staged image a legacy codeplug? The format has no header or version: the general settings' DMR ID must be
-// BCD, and at least one channel marked used must decode
+// Is the staged image an open-firmware codeplug? The format has no header or version: the general settings' DMR ID must
+// be BCD, and at least one channel marked used must decode
 static const char *check_image(void)
 {
-	uint8_t b[CODEPLUG_LEGACY_CHANNEL_SIZE];
+	uint8_t b[CODEPLUG_OPENFW_CHANNEL_SIZE];
 	if (!staged_read(GEN_DMR_ID, b, 4) || !bcd_ok(b, 4)) {
 		return "not a codeplug image (the DMR ID field isn't BCD)";
 	}
@@ -293,7 +293,7 @@ static const char *check_image(void)
 		for (unsigned k = 0; k < 128u; k++) {
 			channel_t ch;
 			if ((bits[k / 8u] & (1u << (k % 8u))) != 0 &&
-			    staged_read(bitmap + 16u + k * CODEPLUG_LEGACY_CHANNEL_SIZE, b, sizeof(b)) && codeplug_legacy_decode(b, &ch)) {
+			    staged_read(bitmap + 16u + k * CODEPLUG_OPENFW_CHANNEL_SIZE, b, sizeof(b)) && codeplug_openfw_decode(b, &ch)) {
 				return NULL;
 			}
 		}

@@ -44,7 +44,7 @@ The two segments are:
 1. (0x00060000, 0x5D400): resources for the external SPI flash, such as fonts.
 2. (0x0800C000, 0xD9400 for CSV or 0xDC000 for noCSV): the application in internal flash.
 
-The payload is XORed with the 1024-byte `DM1701_ENCODE_CIPHER` from the MIT-licensed legacy STM32 firmware loader
+The payload is XORed with the 1024-byte `DM1701_ENCODE_CIPHER` from the MIT-licensed STM32 firmware loader of the aftermarket firmware
 script:
 
 ```
@@ -93,7 +93,7 @@ table literals (+0x40) and calls from stock wrapper code inside the window.
   stock table address. Moving the code block and the table block as two contiguous blocks requires patching those
   63 words.
 * Some aligned words fall in the RAM range, but they look like Thumb-2 instruction pairs. The old builds ran this
-  object code with the legacy firmware's own RAM layout, so no fixed RAM addresses are expected. This is unverified.
+  object code with the aftermarket firmware's own RAM layout, so no fixed RAM addresses are expected. This is unverified.
 
 ## C. Codec state init tables
 

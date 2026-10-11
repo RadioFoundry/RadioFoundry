@@ -23,14 +23,14 @@ reads its manual and `--help`, and contains none of its code. Facts below marked
 | Over ODR's limits | `encode --radio openuv380` silently keeps the first 68 zones and 76 RX group lists (T). The tool reports what would be dropped before it flashes |
 | Callsign DB, md390 | `encode-db --radio md390` fails: "Not implemented for 'md390'" (T). Not needed: the database goes to the radio once it runs ODR |
 | Callsign DB, openuv380 | `write-db --radio openuv380 --id ID [--database FILE] [--limit N]`. Without `--database`, dmrconf downloads the public database itself |
-| `--database` JSON | `{"users": [{"id": 3100001, "callsign": "N0CALL", "fname": "Alice", "surname": "Smith", "city": "Denver", "state": "CO", "country": "US"}]}`. `id` must be a number. Records come out as `CALL Fname City State Country`, format `N`, 27-byte records (T, decoded per [legacy-cps-interop.md](legacy-cps-interop.md) 7.5). Files keyed `radio_id`, or `{"results": [...]}`, load 0 entries (T) |
+| `--database` JSON | `{"users": [{"id": 3100001, "callsign": "N0CALL", "fname": "Alice", "surname": "Smith", "city": "Denver", "state": "CO", "country": "US"}]}`. `id` must be a number. Records come out as `CALL Fname City State Country`, format `N`, 27-byte records (T, decoded per [open-firmware-cps.md](open-firmware-cps.md) 7.5). Files keyed `radio_id`, or `{"results": [...]}`, load 0 entries (T) |
 
 ## 2. What ODR presents
 
-- Radio info (area 9) radio type 7 ([legacy-cps-interop.md](legacy-cps-interop.md) 4, `boards/md380/board.c`):
+- Radio info (area 9) radio type 7 ([open-firmware-cps.md](open-firmware-cps.md) 4, `boards/md380/board.c`):
   qdmr's OpenUV380 driver. USB 1FC9:0094 serial, like the DM-1701 ([cps-protocol.md](cps-protocol.md) 2).
 - Limits: 1024 channels, 68 zones of 80 channels, 1024 contacts, 76 RX group lists of 32 contacts
-  ([legacy-cps-interop.md](legacy-cps-interop.md) 7.2-7.3). A stock MD-380 holds 1000 channels, 1000 contacts,
+  ([open-firmware-cps.md](open-firmware-cps.md) 7.2-7.3). A stock MD-380 holds 1000 channels, 1000 contacts,
   250 zones of 16 channels and 250 RX group lists. In practice only zones and RX group lists can overflow.
 - SPI flash: on a 16 MB part the DM-1701 map applies ([hardware-md380.md](hardware-md380.md) 12.2). On a 1 MB part
   ODR gets no storage areas, so `storage info` says `region none`. ODR then runs from RAM and nothing can be
@@ -39,10 +39,10 @@ reads its manual and `--help`, and contains none of its code. Facts below marked
   (0x011000-0x01AFFF). After the flash, that region is foreign ([settings-store.md](settings-store.md) 5), and every
   CPS commit is refused until `odr_debug.py storage claim` runs. The claim dumps the region and the calibration copy
   first. The tool runs the claim after asking, with the dump going into its work directory.
-- The rest of the legacy image still holds stock bytes after the claim. The restore therefore writes with
+- The rest of the open-firmware image still holds stock bytes after the claim. The restore therefore writes with
   `--init-codeplug`: qdmr builds the image from its defaults and doesn't decode the junk first. The DMR ID database
   header at flash 0x50000 is past the 256 KB stock codeplug. md380tools keeps its user database at 0x100000 and up,
-  inside ODR's legacy flash image. The ID database upload overwrites what it needs, and nothing else reads that
+  inside ODR's open-firmware flash image. The ID database upload overwrites what it needs, and nothing else reads that
   area.
 
 ## 3. Firmware images

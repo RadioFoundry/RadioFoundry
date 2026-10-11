@@ -115,7 +115,7 @@ when the fill drifts a block away from its target. At 100 ppm that's one sample 
 harmless to AFSK and the FSK modes (host test: 200 ppm either way for 10 minutes with 15 ms of jitter, no underrun,
 no overflow). The same buffer serves USRP and serial audio, whose senders run on the host's clock too.
 
-**IDs**: the radios use NXP's VID with the legacy PIDs today (`board_usb_ids`; `boards/dm1701/usb_dm1701.c` says a
+**IDs**: the radios use NXP's VID with the aftermarket firmware's PIDs today (`board_usb_ids`; `boards/dm1701/usb_dm1701.c` says a
 release should move to an ID of its own). A composite personality changes the interface set, so it needs its own PID (Windows caches the
 driver binding per VID/PID). pid.codes (VID 0x1209) gives open-source projects PIDs for free; the AIOC adapter, an
 MIT-licensed STM32 sound card + serial + CM108-style HID cable, does that (1209:7388).
@@ -129,7 +129,7 @@ The rule: implement what existing software already speaks; add our own only wher
 | Protocol | Who speaks it | Transport | Pros | Cons |
 |---|---|---|---|---|
 | **RTS / DTR PTT** on a serial port | fldigi, WSJT-X, JS8Call, VARA, Direwolf, Hamlib, almost everything | CDC-ACM SET_CONTROL_LINE_STATE | trivial, universal | the MMDVM hotspot and the CPS share the port and toggle DTR: PTT must be enabled only in audio sessions (6.3) |
-| **Kenwood-style CAT** (TS-480 / TS-2000 subset: `FA`, `FB`, `IF`, `MD`, `TX`, `RX`, `ID`, `PS`, `BY` for busy) | Hamlib, fldigi, WSJT-X, JS8Call, VARA's own CAT, Direwolf through Hamlib | the serial port | the most widely supported CAT set; ASCII, `;`-terminated, small parser | ASCII letters collide with the legacy CPS's request bytes (`R`, `W`, `X`, `C`, `D`): needs a recognizer (two uppercase letters, then digits or `;`) or a session mode (6.4) |
+| **Kenwood-style CAT** (TS-480 / TS-2000 subset: `FA`, `FB`, `IF`, `MD`, `TX`, `RX`, `ID`, `PS`, `BY` for busy) | Hamlib, fldigi, WSJT-X, JS8Call, VARA's own CAT, Direwolf through Hamlib | the serial port | the most widely supported CAT set; ASCII, `;`-terminated, small parser | ASCII letters collide with the open-firmware CPS's request bytes (`R`, `W`, `X`, `C`, `D`): needs a recognizer (two uppercase letters, then digits or `;`) or a session mode (6.4) |
 | **Hamlib rigctld protocol** ("NET rigctl", model 2) | Hamlib clients (WSJT-X, fldigi, JS8Call, GridTracker, Direwolf `PTT RIG`), default TCP port 4532 | TCP | one implementation serves every Hamlib client over the network personality; simple line protocol (`F`, `f`, `T`, `t`, `M`, `m`, `\dump_state`, `\chk_vfo`, `\get_dcd`) | needs TCP, built since (`core/net`, [tcp-services.md](tcp-services.md)). `\dump_state` is long and version sensitive |
 | flrig XML-RPC (TCP 12345) | fldigi, WSJT-X, JS8Call (as "FLRig") | HTTP over TCP | well supported | XML and HTTP on the radio: too heavy |
 | CM108-style HID GPIO | Direwolf (`PTT CM108`), Hamlib (CM108 PTT type), AllStarLink usbradio / simpleusb (COS on an input, PTT on GPIO 3) | USB HID | Linux stacks key PTT with no serial port; COS can be an input report | its own personality (doesn't fit beside CDC + UAC, 3); software matching C-Media IDs needs our ID added (AIOC got it into AllStarLink 3) |
@@ -336,7 +336,7 @@ critical, out of band.
 ### 6.4 Sharing the serial port
 
 The host link dispatches by the first byte of a request ([cps-protocol.md](cps-protocol.md) 1). CAT commands are two
-uppercase letters followed by digits, a sign or `;`; legacy CPS requests are a letter followed by binary bytes (an
+uppercase letters followed by digits, a sign or `;`; open-firmware CPS requests are a letter followed by binary bytes (an
 area or sector number 1-10, or a sub-command 2-7). A CAT recognizer accepts `[A-Z][A-Z]` followed by `[0-9;+-]`
 within 3 ms, and a CAT session ends after 2 s without a CAT command, as the CPS session ends today. SLIP-framed USRP
 starts with 0xC0. Both need the host link to accept more than one side protocol (today it takes one, the debug link:

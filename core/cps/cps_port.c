@@ -1,14 +1,13 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The legacy CPS engine on the host link (cps_legacy.h): replies through hostlink_write, ticks from the host link
-// task while a CPS session lasts, reboot through board.system
-#include "cps/cps_legacy.h"
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors The open-firmware CPS engine on the host
+// link (cps_openfw.h): replies through hostlink_write, ticks from the host link task while a CPS session lasts, reboot
+// through board.system
+#include "cps/cps_openfw.h"
 #include "hostlink/hostlink.h"
 #include "board.h"
 #include "hal_time.h"
 #include "debuglink/dlog.h"
 
-#define REBOOT_DELAY_MS		500	// the reply drains, the PC closes the port (legacy-cps-interop.md 2.3)
+#define REBOOT_DELAY_MS		500	// the reply drains, the PC closes the port (open-firmware-cps.md 2.3)
 
 static void port_write(const uint8_t *buf, size_t len)
 {
@@ -31,7 +30,7 @@ static void handler(const uint8_t *buf, size_t len, uint32_t now_ms)
 	cps_feed(buf, len, now_ms);
 }
 
-void cps_legacy_start(void)
+void cps_openfw_start(void)
 {
 	cps_init(&io);
 	hostlink_set_cps_handler(handler);

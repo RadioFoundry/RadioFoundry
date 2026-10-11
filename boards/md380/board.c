@@ -70,8 +70,8 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
 };
 
-#if CONFIG_CPS_LEGACY
-// legacy-cps-interop.md 4: type 7 is the MD-380
+#if CONFIG_CPS_OPENFW
+// open-firmware-cps.md 4: type 7 is the MD-380
 static uint32_t cps_radio_type(void)
 {
 	return 7;
@@ -124,7 +124,7 @@ const board_t board = {
 	// 2S Li-ion as the DM-1701 (hardware-md380.md 10.1): low 6.2 V, critical 6.0 V (our choice)
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
-#if CONFIG_CPS_LEGACY
+#if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
 	.gps_present = md380_gps_present,

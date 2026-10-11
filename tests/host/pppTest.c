@@ -745,7 +745,7 @@ static void test_leaving(void)
 	CHECK(ppp_input(mixed, sizeof(mixed), now_ms) == 2);
 	CHECK(!ppp_running());
 	open_link();
-	CHECK(ppp_input((const uint8_t *)"PSEARCH", 7, now_ms) == 0);	// the legacy CPS after pppd went away
+	CHECK(ppp_input((const uint8_t *)"PSEARCH", 7, now_ms) == 0);	// the open-firmware CPS after pppd went away
 	CHECK(!ppp_running());
 	// ... but not inside a frame, and not an LCP frame's first byte
 	open_link();

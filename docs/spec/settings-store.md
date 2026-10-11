@@ -16,23 +16,23 @@ settings start from the defaults at every boot and nothing can be written.
 |---|---|
 | `settings_addr` / `settings_size` | the settings ring (2), at least 2 sectors |
 | `journal_addr` | the sector journal (4), 2 sectors |
-| `legacy_eeprom` | the legacy 64 KB "EEPROM" image (`legacy-cps-interop.md` 7) |
-| `legacy_flash` | the legacy 1 MB "flash" image |
-| `legacy_end` | the end of the area a legacy CPS may write |
+| `openfw_eeprom` | the open-firmware 64 KB "EEPROM" image (`open-firmware-cps.md` 7) |
+| `openfw_flash` | the open-firmware 1 MB "flash" image |
+| `openfw_end` | the end of the area an open-firmware CPS may write |
 | `calibration_addr` / `_size` | the calibration working copy (the CPS window, `cps-protocol.md` 2.4); 0 when the board has none |
 | `native_addr` / `native_size` | reserved for the native codeplug (`codeplug-native.md` 4) |
-| `staging_addr` / `staging_size` | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the legacy CPS (above `legacy_end`); 0 when the board has none |
+| `staging_addr` / `staging_size` | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the open-firmware CPS (above `openfw_end`); 0 when the board has none |
 
-The settings ring and journal go where no legacy tool reads or writes, and the CPS shim refuses to write there. The
+The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there. The
 boards' maps:
 
 | Field | DM-1701, MD-380 (16 MB part) | DM-32UV |
 |---|---|---|
 | `settings_addr` / `settings_size` | 0x011000, 32 KB (8 sectors) | 0x711000, 32 KB (8 sectors) |
 | `journal_addr` | 0x019000 | 0x719000 |
-| `legacy_eeprom` | 0x000000 | 0x700000 |
-| `legacy_flash` | 0x020000 | 0x720000 |
-| `legacy_end` | 0xE00000 | 0xF00000 |
+| `openfw_eeprom` | 0x000000 | 0x700000 |
+| `openfw_flash` | 0x020000 | 0x720000 |
+| `openfw_end` | 0xE00000 | 0xF00000 |
 | `calibration_addr` / `_size` | DM-1701 0x010000, 512 B; MD-380 none | none |
 | `native_addr` / `native_size` | 0xE00000, 1 MB | 0xF00000, 1 MB |
 | `staging_addr` / `staging_size` | 0xF00000, 256 KB | none |
@@ -146,7 +146,7 @@ the UI keeps drawing during the flash write; the job reports back through `ui_no
 
 Factory reset (a job): `settings_defaults` into the live copy and save it at once, then `storage_native_erase`.
 That erases the native area only when its first word is the native magic `STORAGE_NATIVE_MAGIC` (0x4E52444F, "ODRN")
-or when it is blank already; anything else is reported as foreign and left alone. The legacy codeplug, the
+or when it is blank already; anything else is reported as foreign and left alone. The open-firmware codeplug, the
 calibration and the foreign-guarded regions (section 5) are never touched; a reset of those would need its own
 second confirmation and is not offered.
 
@@ -163,7 +163,7 @@ the native channel record (`codeplug-native.md` 3: 0 = the radio-wide choice, 1 
 themselves stay in the settings and never go into a codeplug file, so a codeplug can be shared without its keys.
 
 **Open: the keys are stored in plain text in the SPI NOR.** Anyone with the radio and a flash reader, or with the
-CPS shim's area 1 reads, can see them. The settings area is outside what the legacy CPS reads by region, but area 1
+CPS shim's area 1 reads, can see them. The settings area is outside what the open-firmware CPS reads by region, but area 1
 reads any address. Options: refuse area 1 reads of the settings area, or obfuscate with a key from the MCU's UID.
 Neither stops a determined reader, and basic privacy is weak anyway.
 
@@ -191,7 +191,7 @@ done byte means a cut after step 3. If J1's CRC matches, steps 4 and 5 run again
 the header is complete leaves the target untouched, because the header is the commit point. A cut during the replay
 is replayed again at the next boot.
 
-`storage_write(addr, buf, len)` writes any range (the codeplug editor's records, names and bitmaps). Legacy
+`storage_write(addr, buf, len)` writes any range (the codeplug editor's records, names and bitmaps). Open-firmware
 channel, zone and contact records don't divide 4 KB, so some cross a sector end; two separate sector rewrites would
 leave such a record half old, half new after a cut between them (a channel with the new frequency and the old
 timeslot). So a write of up to 4072 bytes, which touches one or two sectors, is one transaction:

@@ -182,7 +182,7 @@ static void info_text(char *b)
 #endif
 	add(b, INFO_MAX, "\ncodeplug: ");
 	codeplug_source_t src = codeplug_source();
-	add(b, INFO_MAX, src == CODEPLUG_LEGACY ? "legacy" : src == CODEPLUG_BUILTIN ? "builtin" : "none");
+	add(b, INFO_MAX, src == CODEPLUG_OPENFW ? "open-firmware" : src == CODEPLUG_BUILTIN ? "builtin" : "none");
 	add(b, INFO_MAX, "\ncodeplug_write: ");
 	add(b, INFO_MAX, tftp_codeplug_write_allowed() ? "allowed" : "off");
 	add(b, INFO_MAX, "\n");

@@ -9,7 +9,7 @@ import { startsWith } from "./bytes.js";
 
 export const FORMATS = [
 	{ id: "odr-backup", name: "OpenDigitalRadio backup bundle (.zip)", detect: (b) => startsWith(b, "PK\u0003\u0004") },
-	{ id: "legacy-image", name: "Codeplug image in the legacy layout (SPI flash dump)", detect: (b) => b.length === CODEPLUG_SPAN || b.length === 0x1000000 },
+	{ id: "openfw-image", name: "Codeplug image in the open-firmware layout (SPI flash dump)", detect: (b) => b.length === CODEPLUG_SPAN || b.length === 0x1000000 },
 	{ id: "tyt-rdt", name: "TYT CPS codeplug (.rdt)", detect: (b) => b.length === 262709 },
 	{ id: "tyt-raw", name: "TYT codeplug memory image (256 KB)", detect: (b) => b.length === 262144 },
 	{ id: "dfuse", name: "DfuSe file (qdmr binary codeplug)", detect: (b) => startsWith(b, "DfuSe") },
@@ -19,8 +19,8 @@ export const FORMATS = [
 
 export const CONVERTERS = [
 	{
-		id: "backup-to-image", from: "odr-backup", to: "legacy-image", status: "ready",
-		name: "Codeplug image from a backup bundle (the legacy layout, 1.1 MB)",
+		id: "backup-to-image", from: "odr-backup", to: "openfw-image", status: "ready",
+		name: "Codeplug image from a backup bundle (the open-firmware layout, 1.1 MB)",
 		async convert(bytes) {
 			const { meta, parts } = await openBundle(bytes);
 			const spi = parts.get("spi-flash");
@@ -28,10 +28,10 @@ export const CONVERTERS = [
 			return { name: `codeplug-${meta.radio.board}.bin`, data: spi.data.slice(0, CODEPLUG_SPAN) };
 		},
 	},
-	{ id: "rdt-to-odr", from: "tyt-rdt", to: "legacy-image", status: "planned", name: "TYT CPS file to an OpenDigitalRadio codeplug" },
-	{ id: "raw-to-odr", from: "tyt-raw", to: "legacy-image", status: "planned", name: "TYT memory image to an OpenDigitalRadio codeplug" },
-	{ id: "dfuse-to-odr", from: "dfuse", to: "legacy-image", status: "planned", name: "qdmr binary codeplug to an OpenDigitalRadio codeplug" },
-	{ id: "yaml-to-odr", from: "yaml", to: "legacy-image", status: "planned", name: "qdmr YAML to an OpenDigitalRadio codeplug" },
+	{ id: "rdt-to-odr", from: "tyt-rdt", to: "openfw-image", status: "planned", name: "TYT CPS file to an OpenDigitalRadio codeplug" },
+	{ id: "raw-to-odr", from: "tyt-raw", to: "openfw-image", status: "planned", name: "TYT memory image to an OpenDigitalRadio codeplug" },
+	{ id: "dfuse-to-odr", from: "dfuse", to: "openfw-image", status: "planned", name: "qdmr binary codeplug to an OpenDigitalRadio codeplug" },
+	{ id: "yaml-to-odr", from: "yaml", to: "openfw-image", status: "planned", name: "qdmr YAML to an OpenDigitalRadio codeplug" },
 ];
 
 export function detect(bytes, name) {

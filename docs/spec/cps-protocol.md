@@ -3,8 +3,8 @@
 
 # CPS protocol
 
-How a PC programs the radio over USB. Section 2 describes the legacy shim, which is built. Section 3 drafts a native
-protocol for later. The wire protocol the legacy tools speak is described in `legacy-cps-interop.md`. This page says
+How a PC programs the radio over USB. Section 2 describes the open-firmware shim, which is built. Section 3 drafts a native
+protocol for later. The wire protocol the open-firmware tools speak is described in `open-firmware-cps.md`. This page says
 only what *our* radio does with it.
 
 ## 1. On the host port
@@ -17,7 +17,7 @@ the STM32 radios, `hardware-dm1701.md` 16), a UART on radios without (`hardware-
 |---|---|
 | `0xE0` | the MMDVM hotspot (`mmdvm-protocol.md`) |
 | `0xA5 0x5A` | the debug link (`debuglink.md`) |
-| anything else | the CPS shim (`CONFIG_CPS_LEGACY`), or ignored without it |
+| anything else | the CPS shim (`CONFIG_CPS_OPENFW`), or ignored without it |
 
 Once a CPS request is seen, the host link stays in CPS mode, and the shim gets every byte and a tick every pass
 (`cps_feed(NULL, 0, now)`). The session ends at `C 5` (close) or after 10 s without a byte (`CPS_SESSION_MS`). A
@@ -26,9 +26,9 @@ watch a CPS transfer. Limitation: if a CPS request pauses for more than 3 ms aft
 bytes may be taken for a debug frame. qdmr and `tools/cps_client.py` send each request in one write, so this
 doesn't happen with them.
 
-## 2. The legacy shim (`core/cps`, `CONFIG_CPS_LEGACY`)
+## 2. The open-firmware shim (`core/cps`, `CONFIG_CPS_OPENFW`)
 
-`core/cps/cps_legacy.c` is the protocol engine with no RTOS or USB in it. `cps_port.c` hooks it to the host link
+`core/cps/cps_openfw.c` is the protocol engine with no RTOS or USB in it. `cps_port.c` hooks it to the host link
 and the board's reboot. Host tests drive the engine directly (`tests/host/cpsTest.c`), and `tests/host/cpsSim`
 serves it on stdin / stdout for `tools/cps_client.py`.
 
@@ -55,9 +55,9 @@ A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next q
 | Area | Answer |
 |---|---|
 | 1 | SPI flash at the physical address (the STM32 tools add the +128 KB offset themselves). Up to 2045 bytes per request. The VFO A record (EEPROM 0x7590) is replaced by the live VFO (2.3) |
-| 2 | the 64 KB EEPROM image (`legacy_eeprom` + addr), same rules |
+| 2 | the 64 KB EEPROM image (`openfw_eeprom` + addr), same rules |
 | 5 | MCU ROM from `board.cps->rom_base`, inside `rom_size` (per radio, table below) |
-| 9 | radio info, 46 bytes, structure version 3 (`legacy-cps-interop.md` 4): radio type from `board.cps->radio_type()` (table below), git hash, build date `YYYYMMDDhhmmss`, flash id `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
+| 9 | radio info, 46 bytes, structure version 3 (`open-firmware-cps.md` 4): radio type from `board.cps->radio_type()` (table below), git hash, build date `YYYYMMDDhhmmss`, flash id `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
 | 10 | SPI flash security registers (`board.cps->security_read`) |
 | 6, 7, 8, other | `-` (screen capture, WAV and AMBE are not offered) |
 
@@ -76,7 +76,7 @@ The board's `hal_cps_t` (`board.cps`) supplies the radio-specific answers:
 `X 3` writes it through the sector journal (`settings-store.md` 4). The commit reply comes after the sector is
 written and verified (about 100 ms). Rules:
 
-- **Writable**: the EEPROM image (0 to 64 KB) and the legacy flash image (`legacy_flash` to `legacy_end`). Anything
+- **Writable**: the EEPROM image (0 to 64 KB) and the open-firmware flash image (`openfw_flash` to `openfw_end`). Anything
   else is refused at `X 1`. That includes the settings ring, the journal and the native area.
 - **Foreign journal**: while the settings / journal region holds another firmware's data (`settings-store.md` 5),
   every `X 1` is refused, because a commit would erase the journal. Reads still work, so a backup can be taken
@@ -99,7 +99,7 @@ written and verified (about 100 ms). Rules:
 
 ### 2.4 Control (`C`)
 
-Every `C` request is answered `-`, which the legacy tools treat as "done".
+Every `C` request is answered `-`, which the open-firmware tools treat as "done".
 
 | Request | Effect |
 |---|---|
@@ -111,7 +111,7 @@ Every `C` request is answered `-`, which the legacy tools treat as "done".
 | `C 6` other | nothing |
 | other | nothing |
 
-`D` (the data-service host commands, `legacy-cps-interop.md` 5) is answered `D sub 0`, meaning failed: there is no
+`D` (the data-service host commands, `open-firmware-cps.md` 5) is answered `D sub 0`, meaning failed: there is no
 data service in ODR yet.
 
 ### 2.5 qdmr
@@ -139,7 +139,7 @@ last session pending`.
 1. Radio type 8 vs 10 on the DM-1701: 10 only for panel type 2 (BGR / RGB tools' choice). qdmr treats both as
    a DM-1701.
 2. Area 1 reads of the settings area expose the privacy keys (`settings-store.md` 3.1). Should area 1 be limited
-   to the legacy image?
+   to the open-firmware image?
 3. Area 10 (security registers) is readable, factory calibration included. Should it be read-only, as now, or
    refused?
 4. Calibration window writes (2.3).
@@ -149,7 +149,7 @@ last session pending`.
 ## 3. Native protocol (draft, not built)
 
 For a future native CPS and a qdmr driver. Same port and same first-byte dispatch, under its own first byte
-(proposed `0xC0`, unused by MMDVM, the debug link and the legacy protocol).
+(proposed `0xC0`, unused by MMDVM, the debug link and the open-firmware protocol).
 
 - **Framing**: the debug link's framing (`debuglink.md` 2): length, command, payload, CRC-16, with a sequence number
   so a lost reply can be retried without doing the operation twice.
@@ -161,5 +161,5 @@ For a future native CPS and a qdmr driver. Same port and same first-byte dispatc
 - **Settings**: `SETTINGS_GET` / `SETTINGS_PUT` by field name, never the privacy keys over a read.
 - **Info**: the radio info of area 9 plus a capability list: the record types and versions the firmware knows.
 
-Open: whether the legacy shim and the native protocol both stay forever, or the shim goes once qdmr speaks the
+Open: whether the open-firmware shim and the native protocol both stay forever, or the shim goes once qdmr speaks the
 native one.

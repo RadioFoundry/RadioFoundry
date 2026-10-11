@@ -62,12 +62,12 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    `reuse lint`. Without `reuse` installed the lint is skipped with a notice; install it with `pipx install reuse`
    (or `pip install --user reuse`).
 5. **Similarity scan**, only when `ODR_SIMILARITY_REFS` names the reference trees (space separated). The reference
-   trees are never part of this repository or of public CI; the project lead runs it against the legacy trees
+   trees are never part of this repository or of public CI; the project lead runs it against the aftermarket firmware trees
    before a release:
 
    ```
-   ODR_SIMILARITY_REFS="/path/to/legacy-tree /path/to/other-tree" tools/ci.sh
-   tools/similarity_scan.py /path/to/legacy-tree                    # the scan alone, every region with lines
+   ODR_SIMILARITY_REFS="/path/to/aftermarket-tree /path/to/other-tree" tools/ci.sh
+   tools/similarity_scan.py /path/to/aftermarket-tree                    # the scan alone, every region with lines
    tools/similarity_scan.py --ids --report scan.txt /path/to/tree   # also finds copies with renamed identifiers
    ```
 
@@ -104,7 +104,7 @@ The USB network tests (`test_usb_network*.py`, `test_tcp_services.py`, `test_net
 the radio to the network personality and back, so they need `--allow-usb-switch`. On macOS a missed NCM carrier can
 leave the radio a network adapter until it is power cycled ([docs/dev/ci.md](../dev/ci.md#hil-runner), "Gotchas").
 
-CPS and settings (`test_cps.py`): the radio-only tests read the codeplug twice over the legacy CPS protocol and
+CPS and settings (`test_cps.py`): the radio-only tests read the codeplug twice over the open-firmware CPS protocol and
 compare, and check a channel change is saved. Two opt-in flags change the radio but don't transmit:
 
 ```

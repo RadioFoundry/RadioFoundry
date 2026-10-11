@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Read and write the radio's codeplug over the legacy CPS protocol (docs/spec/legacy-cps-interop.md, our shim in
+"""Read and write the radio's codeplug over the open-firmware CPS protocol (docs/spec/open-firmware-cps.md, our shim in
 docs/spec/cps-protocol.md 2), the way qdmr's open-firmware UV380 driver does it.
 
   cps_client.py info                                 radio info (type, git, build date, flash)
@@ -13,15 +13,15 @@ Transport: the radio's USB serial port (--port, $ODR_PORT, or the only 1FC9:0094
 the protocol on stdin / stdout (--exec "tests/host/cpsSim --populate", for tests). The DM-32UV has no USB: give the
 programming cable's port with --port.
 
---offset ADDR adds ADDR to every flash address on the wire. The DM-32UV keeps the legacy image at +0x700000 in its
-data flash (boards/dm32/flash_dm32.c, legacy-cps-interop.md 7.4) and its shim takes physical addresses, so it needs
---offset 0x700000; image files keep the STM32 addresses either way.
+--offset ADDR adds ADDR to every flash address on the wire. The DM-32UV keeps the open-firmware image at +0x700000 in
+its data flash (boards/dm32/flash_dm32.c, open-firmware-cps.md 7.4) and its shim takes physical addresses, so it
+needs --offset 0x700000; image files keep the STM32 addresses either way.
 
 Regions (wire addresses = flash addresses on the STM32 radios):
   qdmr      what qdmr transfers: EEPROM image 0x80-0x6060 and 0x7500-0xB000, custom data 0x20000-0x211A0,
             codeplug 0x9B000-0xAEE60 (default)
   codeplug  the EEPROM image 0x0-0x10000 and the flash image's codeplug 0x9B000-0xAEE60
-  all       the EEPROM image and the whole legacy flash image 0x20000-0x120000 (DMR ID database and voice prompts
+  all       the EEPROM image and the whole open-firmware flash image 0x20000-0x120000 (DMR ID database and voice prompts
             included; slow)
 Writes never touch bytes outside the regions; the radio refuses its own areas and keeps its quick keys.
 """
@@ -240,7 +240,7 @@ def apply_plan(target, img, jobs):
     return target
 
 
-# ── the legacy channel records (docs/spec/legacy-cps-interop.md), enough for tests to find and edit a channel ──
+# ── the open-firmware channel records (docs/spec/open-firmware-cps.md), enough for tests to find and edit a channel ──
 CHANNEL_SIZE = 56
 CHANNELS_PER_BANK = 128
 

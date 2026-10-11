@@ -36,9 +36,9 @@ export function planStock(stockFile, key, board, fb) {
 	return makePlan(board, [[addr, app]], RESTORE);
 }
 
-// The 4 KB sectors of the codeplug areas whose bytes differ between the radio and the backup: [addr, bytes]
-// (emulated EEPROM 0x00000-0x0FFFF and the legacy flash image 0x20000-0x11FFFF; never the calibration and ODR's own
-// areas at 0x10000-0x1FFFF, which the CPS refuses anyway)
+// The 4 KB sectors of the codeplug areas whose bytes differ between the radio and the backup: [addr, bytes] (emulated
+// EEPROM 0x00000-0x0FFFF and the open-firmware flash image 0x20000-0x11FFFF; never the calibration and ODR's own areas
+// at 0x10000-0x1FFFF, which the CPS refuses anyway)
 export function codeplugSectors(backupSpi, radioSpi) {
 	const out = [];
 	for (let a = 0; a < CODEPLUG_SPAN; a += 4096) {

@@ -50,9 +50,9 @@ RDT_TRAILER = 16
 RDT_SIZE = RDT_HEADER + CODEPLUG_SIZE + RDT_TRAILER
 
 STOCK_DRIVER = "md390"        # dmrconf --radio for the stock codeplug (MD-380, MD-390, RT3)
-ODR_DRIVER = "openuv380"      # dmrconf --radio for ODR (legacy-cps-interop.md 4: radio type 7, OpenUV380 family)
+ODR_DRIVER = "openuv380"      # dmrconf --radio for ODR (open-firmware-cps.md 4: radio type 7, OpenUV380 family)
 
-# What ODR's codeplug layout holds (docs/spec/legacy-cps-interop.md 7.2-7.3, docs/user/15-programming-qdmr.md).
+# What ODR's codeplug layout holds (docs/spec/open-firmware-cps.md 7.2-7.3, docs/user/15-programming-qdmr.md).
 # dmrconf's OpenUV380 encoder drops what doesn't fit without an error, so these are checked before writing
 ODR_LIMITS = {"channels": 1024, "zones": 68, "contacts": 1024, "groupLists": 76}
 SECTION_NAMES = {"channels": "channels", "zones": "zones", "contacts": "contacts", "groupLists": "RX group lists"}

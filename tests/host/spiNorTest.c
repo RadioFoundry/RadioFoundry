@@ -424,7 +424,7 @@ static bool f_erase(uint32_t addr)
 // The DM-1701's map (docs/spec/settings-store.md 1)
 static const hal_flash_map_t map16 = {
 	.settings_addr = 0x011000u, .settings_size = 0x8000u, .journal_addr = 0x019000u,
-	.legacy_eeprom = 0, .legacy_flash = 0x020000u, .legacy_end = 0xE00000u,
+	.openfw_eeprom = 0, .openfw_flash = 0x020000u, .openfw_end = 0xE00000u,
 	.calibration_addr = 0x010000u, .calibration_size = 0x200u,
 	.native_addr = 0xE00000u, .native_size = 0x100000u,
 	.staging_addr = 0xF00000u, .staging_size = 0x40000u,
@@ -508,7 +508,7 @@ static void test_store_small_part(void)
 	put_calibration();
 	uint8_t low[64];
 	memset(low, 0x5A, sizeof(low));
-	memcpy(&chip.mem[0x0], low, sizeof(low));		// the legacy "EEPROM" image's first bytes
+	memcpy(&chip.mem[0x0], low, sizeof(low));		// the open-firmware "EEPROM" image's first bytes
 	CHECK(boot() && flash.size == (1u << 20));
 	fill(a, 4);
 	CHECK(!storage_sector_write(0xF00000u, a));		// the staging area isn't there

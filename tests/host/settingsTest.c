@@ -24,7 +24,7 @@ void storage_quick_unlock(void) {}
 
 static const hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
-	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = FLASH_SIZE,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = FLASH_SIZE,
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 };
 
@@ -470,7 +470,7 @@ static void test_foreign(void)
 // And the deferred job the UI hands to the housekeeping task
 static const hal_flash_map_t map_native = {
 	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
-	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = 0x30000u,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x30000u,
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 	.native_addr = 0x30000u, .native_size = 0x8000u,
 };
@@ -724,7 +724,7 @@ static void test_settings_bad_records(void)
 // worked (a power cut there: the settings gone)
 static const hal_flash_map_t map_two = {
 	.settings_addr = 0x11000u, .settings_size = 0x2000u, .journal_addr = 0x19000u,
-	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = FLASH_SIZE,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = FLASH_SIZE,
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 };
 
@@ -777,8 +777,8 @@ static void test_settings_worn_sector(void)
 }
 
 
-// A record that crosses a sector end (a legacy channel, zone or contact record can): a power cut at every unit of
-// storage_write, and again inside the replay at the next boot, leaves the whole record old or new, never half of
+// A record that crosses a sector end (an open-firmware channel, zone or contact record can): a power cut at every unit
+// of storage_write, and again inside the replay at the next boot, leaves the whole record old or new, never half of
 // each; nothing else in the flash changes (the calibration copy included)
 static void test_write_across_sectors(void)
 {

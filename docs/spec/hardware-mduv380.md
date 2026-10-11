@@ -23,7 +23,7 @@ Confidence tags as in [radios.md](radios.md) and [hardware-md380.md](hardware-md
 | **F** | Forum post, review, retailer claim, or a value carried over from a sibling radio's notes |
 | **?** | Not found, contradictory, or our own assumption. Needs a radio |
 
-Sources (section 15): [ref] the reference port's facts (the old tree's MD-UV380 build variant: pin set-up, per-variant
+Sources (section 15): [ref] the reference port's facts (the aftermarket firmware tree's MD-UV380 build variant: pin set-up, per-variant
 constants, facts only), [OpenRTX] the OpenRTX MD-UV380 hardware page (prose and pin table only), [mods] the OpenRTX
 MD-UV380 M17 mod notes, [miklor], [dealer] the Passion Radio MD-UV380 download page, [stock] our own reading of the
 TYT 19.26 stock files ([codec-mduv380.md](codec-mduv380.md)), [dm1701] [hardware-dm1701.md](hardware-dm1701.md).
@@ -51,8 +51,8 @@ TYT 19.26 stock files ([codec-mduv380.md](codec-mduv380.md)), [dm1701] [hardware
 | DFU key | DM-1701 key | MD-UV380 key (C) [stock] | same | 11 |
 | Stock codec | V02.06 at 0x08074714 | V19.26 at 0x0807B830, same sectors (C) [stock] | ? | 12 |
 | Wake from the alarm / sleep | orange key | SK2 + PTT held together (D) [ref] | as 5 W | 5 |
-| USB product name (old firmware) | "OpenDM1701 Transceiver" | "OpenMDUV380 Transceiver" | "OpenMDUV380Plus 10W Transceiver" | 10 |
-| Legacy CPS radio type | 8 (BGR) / 10 (RGB) | 6 (D) [ref] | 6 | 10 |
+| USB product name (aftermarket firmware) | "OpenDM1701 Transceiver" | "OpenMDUV380 Transceiver" | "OpenMDUV380Plus 10W Transceiver" | 10 |
+| Open-firmware CPS radio type | 8 (BGR) / 10 (RGB) | 6 (D) [ref] | 6 | 10 |
 
 The same between the two (D) [ref], [OpenRTX]: the MCU, clock tree and HSE, internal flash map up to the codec, every
 HR_C6000 pin and bus, the AT1846S bus and address, I2S3, the SPI flash bus, PTT pins, LEDs, the encoder pins, the
@@ -67,7 +67,7 @@ As the DM-1701 (D) [ref], [OpenRTX]. OpenRTX documents an 8 MHz crystal as the P
 the DM-1701's start-up code that falls back between the two covers both.
 
 AT1846S: the same I2C pins (SCL PA8, SDA PC9), 7-bit address 0x2E (D) [ref], [OpenRTX]. OpenRTX drives it with
-bit-banged I2C; the old tree uses the I2C3 peripheral on the same pins, as on the DM-1701 (D). OpenRTX also lists the
+bit-banged I2C; the aftermarket firmware tree uses the I2C3 peripheral on the same pins, as on the DM-1701 (D). OpenRTX also lists the
 AT1846S GPIO0 on PB1 and GPIO6 (squelch out in the DM-1701's 0x1F setting) on PB2 (D) [OpenRTX]; neither pin is used
 by the DM-1701 port, and the DM-1701 spec has no entry for them (?: may hold on the DM-1701 too).
 
@@ -117,7 +117,7 @@ Same bus, controller family, init tables and backlight as [dm1701] 9, with these
   Types 2 and 3 use the inter-command-unlock init table with 0xFD = 0x4F (type 2) or 0x40 (type 3) [dm1701] 9.3. The
   DM-1701 bench found type 2 with MADCTL 0xE0 mirrored top to bottom ([dm1701] 20); whether MD-UV380 type 2 panels
   need 0xE0 is unverified (?).
-- **10 W identification.** Security register 3 byte 0x1C = 0xF4 marks a Plus 10 W radio (D) [ref]; the old firmware
+- **10 W identification.** Security register 3 byte 0x1C = 0xF4 marks a Plus 10 W radio (D) [ref]; the aftermarket firmware
   reads but doesn't use it (it is a build variant there). ODR can use it to choose the 10 W pin swap and power table at
   run time (?: confirm on both kinds of radio before trusting it; a wrong guess swaps the backlight and the PA band
   select).
@@ -137,10 +137,10 @@ Matrix (rows PA6, PD2, PD3; columns D0-D7 as on the DM-1701) (D) [ref]:
 | Row 1 (PD2) | green (menu) | up | down | 7 | 8 | 9 | # | red (back) |
 | Row 2 (PD3) | - | - | - | - | - | - | side key 2 | side key 1 |
 
-- No P1/P2 keys and no orange key. Up / down are front keys (KEY_INCREASE / DECREASE on the old firmware), not
+- No P1/P2 keys and no orange key. Up / down are front keys (KEY_INCREASE / DECREASE on the aftermarket firmware), not
   left / right.
 - Side key 1 (D7) is the top side key, the one held with PTT to enter the bootloader (D) [ref], [miklor].
-- The old firmware lets SK1 + green stand in for the missing orange key (D) [ref]: a UI choice, not hardware.
+- The aftermarket firmware lets SK1 + green stand in for the missing orange key (D) [ref]: a UI choice, not hardware.
 - Wake from the alarm: SK2 + PTT held together (D) [ref].
 - PTT PE11, external PTT PE12, encoder A PE14 / B PB11: as the DM-1701 (D) [ref], [OpenRTX]. Encoder direction and
   detent shape: assumed as the DM-1701's (?).
@@ -154,7 +154,7 @@ Matrix (rows PA6, PD2, PD3; columns D0-D7 as on the DM-1701) (D) [ref]:
 | Battery, 0.1 V | raw / 40.3 | raw / 40.3 | raw / 40.3 | (D) [ref] |
 | Volume pot min / max / break | 22 / 2070 / 309 | 23 / 2020 / 317 | 19 / 2054 / 308 | (D) [ref] |
 
-The old firmware builds the RT3S pot values for every non-10 W MD-UV380 build, with 7 counts of margin at the bottom
+The aftermarket firmware builds the RT3S pot values for every non-10 W MD-UV380 build, with 7 counts of margin at the bottom
 because the RT3S reading is unstable there (D) [ref]. OpenRTX reports PA0 at 0-1600 mV and PA1 through a 1:3 divider
 (D) [OpenRTX]. Power-off threshold (5.5 V, switch sensed through the battery line), low-battery thresholds and the
 temperature sensor: as the DM-1701 (D) [ref].
@@ -174,7 +174,7 @@ firmware's untested estimates):
 | Plus 10 W | VHF / 220 MHz | 0.58 | 0.83 | 0.21 | 0.45 |
 | Plus 10 W | UHF | 0.55 | 0.75 | 0.17 | 0.43 |
 
-On the 10 W radio the top four levels are 2, 3, 5 and 10 W ([dm1701] 7). The old firmware's calibration screen labels
+On the 10 W radio the top four levels are 2, 3, 5 and 10 W ([dm1701] 7). The aftermarket firmware's calibration screen labels
 the four calibrated points 250 mW, 1, 2, 5 W (5 W) or 250 mW, 1, 5, 10 W (10 W), and offers a "force 10 W" setting on
 5 W builds for 10 W radios flashed with a 5 W image (D) [ref]. Measured stock output (one radio) UHF 1.4 / 2.6 / 5.1 W,
 VHF 1.1 / 2.1 / 4.3 W (F) [miklor].
@@ -191,7 +191,7 @@ as [dm1701] 12 (D) [ref]. Only the power conversion when deriving the working co
 | 5 W | VHF / UHF | 0.63 / 0.72 | 1.00 | 1.00 / 1.05 | 1.10 / 1.25 |
 | Plus 10 W | VHF / UHF | 0.35 / 0.40 | 0.65 / 0.70 | 1.25 / 1.20 | 1.40 / 1.35 |
 
-The legacy CPS calibration window (0x10000, 512 bytes) is served as on the DM-1701.
+The open-firmware CPS calibration window (0x10000, 512 bytes) is served as on the DM-1701.
 
 ---
 
@@ -213,7 +213,7 @@ unknown (?).
 
 ## 10. USB and model reporting
 
-Same OTG_FS core and descriptors as the DM-1701. The old firmware reports radio type 6 to the legacy CPS (the
+Same OTG_FS core and descriptors as the DM-1701. The aftermarket firmware reports radio type 6 to the open-firmware CPS (the
 DM-1701 reports 8 or 10 by panel color order) and names the product "OpenMDUV380 Transceiver" or
 "OpenMDUV380Plus 10W Transceiver" (D) [ref]. ODR's `tools/cps_client.py` already maps type 6 to "MD-UV380". A single ODR
 image can tell a Plus 10 W radio by section 4's security register byte; it cannot tell an MD-UV380 from an RT3S or

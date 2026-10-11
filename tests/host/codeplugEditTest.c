@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Codeplug editing on a simulated NOR flash with the DM-1701 map: the legacy record encoder against the decoder,
+// Codeplug editing on a simulated NOR flash with the DM-1701 map: the open-firmware record encoder against the decoder,
 // bytes the model doesn't own kept, the built-in set turned into a stored codeplug by the first edit, zones,
 // contacts and RX group lists, and the round trip read -> write -> read (model and image), with power cuts.
 #include <stdio.h>
@@ -23,7 +23,7 @@ void storage_unlock(void) {}
 
 static const hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
-	.legacy_eeprom = EE, .legacy_flash = FL, .legacy_end = FLASH_SIZE,
+	.openfw_eeprom = EE, .openfw_flash = FL, .openfw_end = FLASH_SIZE,
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 };
 
@@ -88,40 +88,40 @@ static void test_encode(void)
 	v[4] = make("", 136000000, 174000000);
 	v[5] = make("Lo", 400012500, 479987500);
 	for (unsigned i = 0; i < 6; i++) {
-		uint8_t r[CODEPLUG_LEGACY_CHANNEL_SIZE];
+		uint8_t r[CODEPLUG_OPENFW_CHANNEL_SIZE];
 		channel_t back;
 		memset(r, 0xFF, sizeof(r));
-		codeplug_legacy_encode(&v[i], r);
-		CHECK(codeplug_legacy_decode(r, &back));
+		codeplug_openfw_encode(&v[i], r);
+		CHECK(codeplug_openfw_decode(r, &back));
 		CHECK(same_channel(&v[i], &back));
 	}
-	// Known encodings (legacy-cps-interop.md 7.3.3)
-	uint8_t r[CODEPLUG_LEGACY_CHANNEL_SIZE];
+	// Known encodings (open-firmware-cps.md 7.3.3)
+	uint8_t r[CODEPLUG_OPENFW_CHANNEL_SIZE];
 	memset(r, 0xFF, sizeof(r));
 	channel_t c = make("x", 438500000, 438500000);
 	c.rx_tone = (subtone_t){ TONE_DCS_INV, 023 };
 	c.tx_tone = (subtone_t){ TONE_CTCSS, 885 };
-	codeplug_legacy_encode(&c, r);
+	codeplug_openfw_encode(&c, r);
 	CHECK(r[0x10] == 0x00 && r[0x11] == 0x00 && r[0x12] == 0x85 && r[0x13] == 0x43);
 	CHECK(r[0x20] == 0x23 && r[0x21] == 0xC0 && r[0x22] == 0x85 && r[0x23] == 0x08);
 	CHECK(r[0x19] == 0 && r[0x27] == 0x00 && r[0x28] == 0x16 && r[0x29] == 0x00);
 	CHECK(r[1] == 0xFF && r[0] == 'x');
 
 	// Bytes the model doesn't own are kept: TOT, location, SFR bytes, vendor flags, VFO step, squelch
-	uint8_t old[CODEPLUG_LEGACY_CHANNEL_SIZE];
+	uint8_t old[CODEPLUG_OPENFW_CHANNEL_SIZE];
 	memset(r, 0x00, sizeof(r));
-	codeplug_legacy_encode(&v[2], r);
+	codeplug_openfw_encode(&v[2], r);
 	r[0x1A] = 0x11; r[0x1B] = 0x08; r[0x1C] = 0x22; r[0x24] = 0x33; r[0x25] = 0x0B; r[0x2A] = 0x85;
 	r[0x2D] = 2; r[0x30] = 0x05; r[0x31] |= 0x01; r[0x32] = 0xC0; r[0x33] |= 0x40 | 0x20; r[0x26] |= 0x42;
 	r[0x34] = 0x12; r[0x35] = 0x34; r[0x36] = 0x50; r[0x37] = 12;
 	memcpy(old, r, sizeof(r));
 	channel_t d;
-	CHECK(codeplug_legacy_decode(r, &d));
-	codeplug_legacy_encode(&d, r);
+	CHECK(codeplug_openfw_decode(r, &d));
+	codeplug_openfw_encode(&d, r);
 	CHECK(memcmp(old, r, sizeof(r)) == 0);	// decode then encode: byte for byte the same
 	d.timeslot = 1;
 	d.bw = RADIO_BW_25K;
-	codeplug_legacy_encode(&d, r);
+	codeplug_openfw_encode(&d, r);
 	CHECK(r[0x31] == ((old[0x31] & ~0x40) | 0x00) && (r[0x33] & 0x02) && (r[0x33] & 0x60) == 0x60 && r[0x26] == old[0x26]);
 	CHECK(r[0x1B] == 0x08 && r[0x25] == 0x0B && r[0x2A] == 0x85 && r[0x37] == 12 && r[0x36] == 0x50);
 }
@@ -135,23 +135,23 @@ static void test_materialize(void)
 	CHECK(codeplug_free_channel() == 7);
 	CHECK(codeplug_set_channel(10, &c));
 	CHECK(codeplug_serial() != s0);
-	CHECK(codeplug_source() == CODEPLUG_LEGACY && codeplug_channel_count() == 10);
+	CHECK(codeplug_source() == CODEPLUG_OPENFW && codeplug_channel_count() == 10);
 	CHECK(codeplug_channel(2, &back) && strcmp(back.name, "Simplex 146.520") == 0);
 	CHECK(codeplug_channel(10, &back) && same_channel(&c, &back));
 	CHECK(!codeplug_channel(7, &back));
 	CHECK(codeplug_free_channel() == 7);
 	// The same after a reboot
-	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	CHECK(codeplug_channel_count() == 10 && codeplug_channel(10, &back) && same_channel(&c, &back));
 	CHECK(codeplug_zone_count() == 1 && !codeplug_zones_stored());
 	// Delete the top one: the count follows
 	CHECK(codeplug_delete_channel(10));
 	CHECK(codeplug_channel_count() == 6 && !codeplug_channel(10, &back));
-	CHECK(codeplug_init() == CODEPLUG_LEGACY && codeplug_channel_count() == 6);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel_count() == 6);
 	// Channel 129 and 1024 (flash image banks)
 	c = make("Bank 1", 433000000, 433000000);
 	CHECK(codeplug_set_channel(129, &c) && codeplug_set_channel(1024, &c));
-	CHECK(codeplug_init() == CODEPLUG_LEGACY && codeplug_channel_count() == 1024);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel_count() == 1024);
 	CHECK(codeplug_channel(129, &back) && same_channel(&c, &back));
 	CHECK(sim_flash_data[FL + 0x7B1B0] == 0x01);	// bank 1 bitmap: its channel 0
 	// Refused
@@ -191,7 +191,7 @@ static void test_zones(void)
 	strcpy(z.name, "Renamed");
 	z.count = 2;
 	CHECK(codeplug_set_zone(0, &z));
-	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	CHECK(codeplug_zone_count() == 2 && codeplug_zone(0, &back) && strcmp(back.name, "Renamed") == 0 && back.count == 2);
 	CHECK(codeplug_delete_zone(0));
 	CHECK(codeplug_zone_count() == 1 && codeplug_zone(0, &back) && strcmp(back.name, "Second") == 0);
@@ -397,7 +397,7 @@ static void test_round_trip(void)
 
 	fresh();
 	populate();
-	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	read_model(&a);
 
 	// Write every object back into the same image: nothing changes
@@ -415,7 +415,7 @@ static void test_round_trip(void)
 	storage_init();
 	codeplug_init();
 	write_model(&a);
-	CHECK(codeplug_init() == CODEPLUG_LEGACY);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
 	read_model(&b);
 	// The fresh codeplug also holds the built-in channels the first edit stored, where a has none
 	for (uint16_t n = 1; n <= 6; n++) {

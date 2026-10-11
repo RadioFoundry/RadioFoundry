@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Codeplug: a legacy-layout codeplug in the board's data flash (docs/spec/legacy-cps-interop.md 7,
+// Codeplug: an open-firmware codeplug in the board's data flash (docs/spec/open-firmware-cps.md 7,
 // docs/spec/hardware-dm1701.md 13.2), or a small built-in set of simplex FM channels when there is none.
 // Records are read from flash on demand; RAM holds only an in-use bitmap of the channels and the used zone slots.
 // Edits rewrite records through the sector journal (core/storage) and keep every byte the model doesn't own.
@@ -9,7 +9,7 @@
 #include "board.h"
 #include "storage/storage.h"
 
-// Where the two legacy images sit in the data flash when the board gives no map: the STM32 family puts the 64 KB
+// Where the two open-firmware images sit in the data flash when the board gives no map: the STM32 family puts the 64 KB
 // EEPROM image at 0 and the flash image at +128 KB
 #define DEFAULT_EEPROM_BASE	0x000000u
 #define DEFAULT_FLASH_BASE	0x020000u
@@ -25,7 +25,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define CH_MAX		CODEPLUG_CHANNELS_MAX
 #define CH_PER_BANK	128u
 #define CH_BANKS	(CH_MAX / CH_PER_BANK)
-#define CH_SIZE		CODEPLUG_LEGACY_CHANNEL_SIZE
+#define CH_SIZE		CODEPLUG_OPENFW_CHANNEL_SIZE
 #define BANK0_BITMAP	EE(0x3780u)
 #define BANK1_BITMAP	FL(0x7B1B0u)
 #define BANK_STRIDE	(16u + CH_PER_BANK * CH_SIZE)
@@ -61,7 +61,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 // General settings (7.3.2): the callsign (radio name) and the radio's DMR ID, 8 BCD digits big endian
 #define GEN_CALLSIGN	EE(0x00E0u)
 #define GEN_NAME_LEN	8u
-#define BOOT_TEXT	EE(0x7540u)	// two 16 byte lines (legacy-cps-interop.md 7, CPS section 2)
+#define BOOT_TEXT	EE(0x7540u)	// two 16 byte lines (open-firmware-cps.md 7, CPS section 2)
 #define GEN_BASE	GEN_CALLSIGN	// the general settings block
 #define GEN_DMR_ID	EE(0x00E8u)
 #define GEN_GROUP_HANG	0x18u	// offsets in the block
@@ -87,7 +87,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 static codeplug_source_t source = CODEPLUG_NONE;
 static uint32_t serial;
 
-// Legacy codeplug index
+// Open-firmware codeplug index
 static uint8_t used[CH_MAX / 8];	// bit set = channel record passed the checks
 static uint16_t channel_max;		// highest used channel number
 static uint8_t zone_slot[ZONE_SLOTS];
@@ -366,8 +366,8 @@ static codeplug_source_t index_all(void)
 {
 	const hal_flash_map_t *m = have_flash() ? board.flash->map : NULL;
 
-	ee_base = m != NULL ? m->legacy_eeprom : DEFAULT_EEPROM_BASE;
-	fl_base = m != NULL ? m->legacy_flash : DEFAULT_FLASH_BASE;
+	ee_base = m != NULL ? m->openfw_eeprom : DEFAULT_EEPROM_BASE;
+	fl_base = m != NULL ? m->openfw_flash : DEFAULT_FLASH_BASE;
 	memset(used, 0, sizeof(used));
 	channel_max = 0;
 	zone_count = 0;
@@ -377,7 +377,7 @@ static codeplug_source_t index_all(void)
 	}
 	if (channel_max > 0) {
 		index_zones();
-		source = CODEPLUG_LEGACY;
+		source = CODEPLUG_OPENFW;
 	} else {
 		source = CODEPLUG_BUILTIN;
 	}
@@ -414,7 +414,7 @@ uint32_t codeplug_serial(void)
 uint16_t codeplug_channel_count(void)
 {
 	switch (source) {
-	case CODEPLUG_LEGACY:
+	case CODEPLUG_OPENFW:
 		return channel_max;
 	case CODEPLUG_BUILTIN:
 		return builtin_count;
@@ -441,7 +441,7 @@ static bool builtin_channel(uint16_t number, channel_t *out)
 	return true;
 }
 
-bool codeplug_legacy_decode(const uint8_t *r, channel_t *out)
+bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 {
 	memset(out, 0, sizeof(*out));
 	if (!freq(&r[CH_RX], &out->rx_hz) || !freq(&r[CH_TX], &out->tx_hz)) {
@@ -489,7 +489,7 @@ static void blank_channel(uint8_t *r)
 	r[CH_DMR_ID + 1] = 0x16;	// the vendor defaults these bytes replaced
 }
 
-void codeplug_legacy_encode(const channel_t *ch, uint8_t *r)
+void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 {
 	uint32_t rx;
 	if (!freq(&r[CH_RX], &rx)) {
@@ -526,13 +526,13 @@ void codeplug_legacy_encode(const channel_t *ch, uint8_t *r)
 	}
 }
 
-static bool legacy_channel(uint16_t number, channel_t *out)
+static bool openfw_channel(uint16_t number, channel_t *out)
 {
 	uint8_t r[CH_SIZE];
 	if (!is_used(number) || !flash_read(channel_addr(number), r, sizeof(r))) {
 		return false;
 	}
-	return codeplug_legacy_decode(r, out);
+	return codeplug_openfw_decode(r, out);
 }
 
 bool codeplug_channel(uint16_t number, channel_t *out)
@@ -540,8 +540,8 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	bool ok;
 	storage_lock();
 	switch (source) {
-	case CODEPLUG_LEGACY:
-		ok = legacy_channel(number, out);
+	case CODEPLUG_OPENFW:
+		ok = openfw_channel(number, out);
 		break;
 	case CODEPLUG_BUILTIN:
 		ok = builtin_channel(number, out);
@@ -564,7 +564,7 @@ uint16_t codeplug_zone_count(void)
 
 bool codeplug_zones_stored(void)
 {
-	return source == CODEPLUG_LEGACY && zone_count > 0;
+	return source == CODEPLUG_OPENFW && zone_count > 0;
 }
 
 // The virtual zone: every used channel, as many as a zone_t holds
@@ -616,7 +616,7 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 // lists that may hold junk from other firmware cleared)
 static bool materialize(void)
 {
-	if (source == CODEPLUG_LEGACY) {
+	if (source == CODEPLUG_OPENFW) {
 		return true;
 	}
 	if (source != CODEPLUG_BUILTIN || !storage_ready()) {
@@ -639,7 +639,7 @@ static bool materialize(void)
 	zone_count = 0;
 	zone_channels = 80;
 	zone_record = ZONE_RECORD_80;
-	source = CODEPLUG_LEGACY;
+	source = CODEPLUG_OPENFW;
 	for (uint16_t n = 1; n <= builtin_count && ok; n++) {
 		channel_t ch;
 		builtin_channel(n, &ch);
@@ -677,7 +677,7 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	storage_lock();
 	bool ok = materialize() && flash_read(channel_addr(number), r, sizeof(r));
 	if (ok) {
-		codeplug_legacy_encode(ch, r);
+		codeplug_openfw_encode(ch, r);
 		ok = flash_write(channel_addr(number), r, sizeof(r));
 	}
 	if (ok && !is_used(number)) {
@@ -783,7 +783,7 @@ bool codeplug_set_zone(uint16_t index, const zone_t *z)
 bool codeplug_delete_zone(uint16_t index)
 {
 	storage_lock();
-	bool ok = source == CODEPLUG_LEGACY && index < zone_count && write_zone_bitmap(zone_slot[index], false);
+	bool ok = source == CODEPLUG_OPENFW && index < zone_count && write_zone_bitmap(zone_slot[index], false);
 	if (ok) {
 		index_zones();
 		serial++;
@@ -797,7 +797,7 @@ void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1])
 	uint8_t b[GEN_NAME_LEN];
 	out[0] = '\0';
 	storage_lock();
-	if (source == CODEPLUG_LEGACY && flash_read(GEN_CALLSIGN, b, sizeof(b))) {
+	if (source == CODEPLUG_OPENFW && flash_read(GEN_CALLSIGN, b, sizeof(b))) {
 		copy_name(out, b, GEN_NAME_LEN);
 	}
 	storage_unlock();
@@ -808,7 +808,7 @@ void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_N
 	uint8_t b[2u * CODEPLUG_NAME_LEN];
 	line1[0] = line2[0] = '\0';
 	storage_lock();
-	if (source == CODEPLUG_LEGACY && flash_read(BOOT_TEXT, b, sizeof(b))) {
+	if (source == CODEPLUG_OPENFW && flash_read(BOOT_TEXT, b, sizeof(b))) {
 		copy_name(line1, b, CODEPLUG_NAME_LEN);
 		copy_name(line2, b + CODEPLUG_NAME_LEN, CODEPLUG_NAME_LEN);
 	}
@@ -816,7 +816,7 @@ void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_N
 }
 
 #if CONFIG_APRS
-// APRS configuration records (legacy-cps-interop.md 7.3.8)
+// APRS configuration records (open-firmware-cps.md 7.3.8)
 #define APRS_BASE	EE(0x1588u)
 #define APRS_SIZE	0x40u
 #define APRS_MAGIC	0x4153u	// 0x4152: the older layout, ambiguity one bit lower
@@ -853,7 +853,7 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 		return false;
 	}
 	storage_lock();
-	bool ok = source == CODEPLUG_LEGACY && flash_read(APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE, b, sizeof(b));
+	bool ok = source == CODEPLUG_OPENFW && flash_read(APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE, b, sizeof(b));
 	storage_unlock();
 	uint16_t magic = le16(&b[0x3E]);
 	if (!ok || b[0] == 0xFF || b[0] == 0x00 || (magic != APRS_MAGIC && magic != APRS_MAGIC - 1u)) {
@@ -913,7 +913,7 @@ uint32_t codeplug_dmr_id(void)
 	uint8_t b[4];
 	uint32_t id = 0;
 	storage_lock();
-	if (source == CODEPLUG_LEGACY && flash_read(GEN_DMR_ID, b, sizeof(b))) {
+	if (source == CODEPLUG_OPENFW && flash_read(GEN_DMR_ID, b, sizeof(b))) {
 		id = bcd_id(b);
 	}
 	storage_unlock();
@@ -944,7 +944,7 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	uint8_t r[CONTACT_SIZE];
 	storage_lock();
-	bool ok = source == CODEPLUG_LEGACY && index >= 1 && index <= CODEPLUG_CONTACTS_MAX &&
+	bool ok = source == CODEPLUG_OPENFW && index >= 1 && index <= CODEPLUG_CONTACTS_MAX &&
 		  flash_read(CONTACT_BASE + (index - 1u) * CONTACT_SIZE, r, sizeof(r));
 	storage_unlock();
 	if (!ok || r[0] == 0xFF || r[0x14] > CONTACT_ALL_CALL) {
@@ -1006,7 +1006,7 @@ bool codeplug_listen_list(uint16_t index, listen_list_t *out)
 	uint8_t n;
 	uint8_t r[LIST_SIZE];
 	storage_lock();
-	bool ok = source == CODEPLUG_LEGACY && index >= 1 && index <= CODEPLUG_LISTS_MAX &&
+	bool ok = source == CODEPLUG_OPENFW && index >= 1 && index <= CODEPLUG_LISTS_MAX &&
 		  flash_read(LIST_COUNTS + (index - 1u), &n, 1) && n != 0 && n != 0xFF &&
 		  flash_read(LIST_BASE + (index - 1u) * LIST_SIZE, r, sizeof(r));
 	storage_unlock();
@@ -1075,7 +1075,7 @@ bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 	enum { PER_READ = 32 };	// records per flash read (768 bytes on the stack)
 	uint8_t r[PER_READ * CONTACT_SIZE];
 
-	if (source != CODEPLUG_LEGACY || id == 0 || id > 0xFFFFFFu) {
+	if (source != CODEPLUG_OPENFW || id == 0 || id > 0xFFFFFFu) {
 		return false;
 	}
 	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX; first += PER_READ) {
@@ -1102,7 +1102,7 @@ bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 	uint8_t g[0x1A];
 
 	memset(out, 0, sizeof(*out));
-	if (source != CODEPLUG_LEGACY || !flash_read(GEN_BASE, g, sizeof(g))) {
+	if (source != CODEPLUG_OPENFW || !flash_read(GEN_BASE, g, sizeof(g))) {
 		return false;
 	}
 	unsigned n = 0;

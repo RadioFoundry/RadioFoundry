@@ -239,7 +239,7 @@ def test_tftp_read(radio):
         v = udp.view(["net"])
         assert as_int(v.get("tftp.reads"), 0) >= 3 and as_int(v.get("tftp.timeouts"), 0) == 0, v
         print(f"codeplug.bin: {IMAGE} bytes in {took:.1f} s; info.txt:\n{info}")
-    if core.get("codeplug") == "legacy" and core.get("vfo") != "1" and as_int(core.get("channel_number"), 0):
+    if core.get("codeplug") == "open-firmware" and core.get("vfo") != "1" and as_int(core.get("channel_number"), 0):
         ch = cps_client.decode_channel(a, as_int(core["channel_number"]))
         assert ch is not None and ch["name"] == core["channel_name"], (ch, core.get("channel_name"))
 

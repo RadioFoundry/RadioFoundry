@@ -1,11 +1,10 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The TFTP server (core/net/tftp.c) behind the real IP gateway, driven by a small client in this file: reads with and
-// without options, blksize negotiation and clamping, tsize, the empty last block, block number roll-over, timeouts
-// and retransmits, duplicate ACKs, foreign TIDs, busy, refusals, writes with a slow commit, the dally, a client's
-// error. Then codeplug.bin (core/net/tftp_codeplug.c) on a simulated flash with a legacy codeplug: the image read,
-// written back edited (quick keys kept, the codeplug re-read), refused writes leaving the flash untouched, and power
-// cuts all through a commit, finished by tftp_codeplug_resume. The short transfers go to tftpTest.pcap for tshark.
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors The TFTP server (core/net/tftp.c) behind
+// the real IP gateway, driven by a small client in this file: reads with and without options, blksize negotiation and
+// clamping, tsize, the empty last block, block number roll-over, timeouts and retransmits, duplicate ACKs, foreign
+// TIDs, busy, refusals, writes with a slow commit, the dally, a client's error. Then codeplug.bin
+// (core/net/tftp_codeplug.c) on a simulated flash with an open-firmware codeplug: the image read, written back edited
+// (quick keys kept, the codeplug re-read), refused writes leaving the flash untouched, and power cuts all through a
+// commit, finished by tftp_codeplug_resume. The short transfers go to tftpTest.pcap for tshark.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -524,7 +523,7 @@ static void test_writes(void)
 
 static const hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
-	.legacy_eeprom = EE, .legacy_flash = FL, .legacy_end = 0x1C0000u,
+	.openfw_eeprom = EE, .openfw_flash = FL, .openfw_end = 0x1C0000u,
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 	.native_addr = 0x1C0000u, .native_size = 0x40000u,
 	.staging_addr = STAGING, .staging_size = 0x40000u,

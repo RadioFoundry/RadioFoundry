@@ -72,8 +72,8 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
 };
 
-#if CONFIG_CPS_LEGACY
-// legacy-cps-interop.md 4: type 8 is the DM-1701 with a BGR panel, 10 with an RGB one (the factory panel type 2 is
+#if CONFIG_CPS_OPENFW
+// open-firmware-cps.md 4: type 8 is the DM-1701 with a BGR panel, 10 with an RGB one (the factory panel type 2 is
 // driven in RGB order, hardware-dm1701.md 9.2)
 static uint32_t cps_radio_type(void)
 {
@@ -133,7 +133,7 @@ const board_t board = {
 	// spec gives none (below 5.5 V the board reads as switched off)
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
-#if CONFIG_CPS_LEGACY
+#if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
 #if CONFIG_APRS

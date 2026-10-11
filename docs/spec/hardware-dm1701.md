@@ -91,7 +91,7 @@ whatever was there (stock code, or 0xFF after a merge); they are never executed.
 live in the external SPI flash, so nothing else writes internal flash.
 
 odrflash's keep and merge modes follow from this map ([release.md](../dev/release.md), "Codec handling"). Old builds
-of the legacy firmware ran the MD-9600 V26.45 codec at 0x0807537C instead (`codec-dm1701.md`, comparison).
+of the aftermarket firmware ran the MD-9600 V26.45 codec at 0x0807537C instead (`codec-dm1701.md`, comparison).
 
 The codec's entry points, as offsets from the code start: encode +0x130, encode FEC +0x4E8, decode +0x5D8. Call with
 the Thumb bit set when calling through a pointer.
@@ -119,7 +119,7 @@ calling through a small assembly shim with an explicit frame avoids this.
 | CCM | 0x10000000 | 64 KB | CPU (D-bus) only: **not reachable by any DMA controller**. Not zeroed and not initialized by the startup code: anything placed there starts with garbage and initializers are ignored unless the startup code copies them |
 | Backup SRAM | 0x40024000 | 4 KB | battery backed only if VBAT is supplied (unverified on this board); unused |
 
-Budget of the current old firmware (DM-1701 build, for scale): code+rodata 333,536 B (97,436 B free before the codec),
+Budget of the aftermarket firmware (DM-1701 build, for scale): code+rodata 333,536 B (97,436 B free before the codec),
 .data 17,548 B, .bss 109,876 B (includes a 20 KB RTOS heap), heap/stack reserve 1,540 B: about 2.1 KB of main RAM
 free; CCM 65,340 of 65,536 B used (frame buffers, flash sector buffer, calibration copy, USB buffers, voice prompt
 buffers, data-service buffers). Main RAM and CCM are both nearly full; a new design should plan its buffers explicitly.
@@ -353,7 +353,7 @@ in practice the chip drives CK and WS on this board (unverified which register b
 
 1. PWD low (PE6), wait at least 10 ms.
 2. Program the PLL while running from XTALI, switch to the PLL. The datasheet asks for more than 500 us between
-   writing 0x0B/0x0C and switching 0x0A back to the PLL; the old firmware does not wait and works, but a new driver
+   writing 0x0B/0x0C and switching 0x0A back to the PLL; the aftermarket firmware does not wait and works, but a new driver
    should wait.
 3. Continue with the init sequence in `modem-hrc6000.md` section 3.
 
@@ -530,7 +530,7 @@ Write sequence (RX or TX frequency):
 | 7 | set the PA DAC: the TX drive value when this was the TX frequency, 0 when RX |
 
 TX frequency offset (empirical): with the normal TX sequence (RX frequency written, then TX frequency written with RX
-on, then TX on) the carrier is about 3 kHz low; the old firmware adds +3.00 kHz (12.5 kHz) or +6.15 kHz (25 kHz FM) to
+on, then TX on) the carrier is about 3 kHz low; the aftermarket firmware adds +3.00 kHz (12.5 kHz) or +6.15 kHz (25 kHz FM) to
 the TX word. With a different sequence (frequency written with the receiver off, then straight to TX) there is no
 offset and adding it puts the carrier +2.93 kHz high (measured on air). The cause is unknown; a new driver should
 measure the actual offset of its own sequence rather than copy a constant.
@@ -605,7 +605,7 @@ bit 6). `tx_tone(0)` and every return to receive restore the saved registers.
 
 Conversion to dBm (firmware constants from field measurements): UHF dBm = rssi - 151; VHF dBm = -164 + rssi x 32 / 27.
 The same formulas apply to noise_db. A software squelch on noise_db works well: carrier present when noise_db is below a
-threshold (old firmware: 70 minus 3 per squelch step, 3 dB hysteresis), sampled every 25 ms.
+threshold (aftermarket firmware: 70 minus 3 per squelch step, 3 dB hysteresis), sampled every 25 ms.
 
 Sources: AT1846S datasheet 0.3 and programming guide 1.4 (bit meanings, address, frequency formula, DCS example),
 firmware register tables (values), on-air measurements (TX offset), field calibration constants (RSSI).
@@ -656,7 +656,7 @@ Ordering:
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
 
-The TYT firmware powers both receivers together; the old firmware powers only the band in use. Both work.
+The TYT firmware powers both receivers together; the aftermarket firmware powers only the band in use. Both work.
 
 Sources: CubeMX pins, firmware constants, on-air tests (terminator timing).
 
@@ -732,7 +732,7 @@ Sources: firmware constants, HR_C6000 documentation, CubeMX.
 | Item | Value |
 |---|---|
 | Panel | 160 x 128 color TFT, RGB565, 8-bit 8080 interface |
-| DM-1701 visible area | 160 x 120: the panel's first 8 rows are hidden; the old firmware offsets all row addresses by 8 and clears rows 0-7 once |
+| DM-1701 visible area | 160 x 120: the panel's first 8 rows are hidden; the aftermarket firmware offsets all row addresses by 8 and clears rows 0-7 once |
 | Controllers seen | an ST7735-class / Himax HX8353-E-class controller (types 0 and 1) and a different controller that needs the 0xFE/0xEF "inter command" unlock (types 2 and 3; GalaxyCore GC9106-like, unverified) |
 | Interface | FSMC bank 1, sub-bank 1 (address 0x60000000), SRAM type, 16-bit width configured, byte accesses used on D0-D7 |
 | Command address | 0x60000000 (A17 = 0 -> RS low) |
@@ -740,11 +740,11 @@ Sources: firmware constants, HR_C6000 documentation, CubeMX.
 | Chip select | PD6, GPIO, active low, asserted around each burst |
 | Reset | PD13, active low: hold low 20 ms, then high |
 | FSMC BCR1 | MBKEN, MTYP = NOR (bit 3), MWID = 16 bit, FACCEN, WREN (value 0x10D9 found earlier in the TYT firmware; bit 7 undocumented, unverified) |
-| FSMC BTR1 | MBKEN-like value 0x00100517 found earlier; the old firmware writes MBKEN, MUXEN, MTYP_0, MWID_0, BURSTEN, WRAPMOD, CBURSTRW into the timing register (as found, meaning unclear) |
+| FSMC BTR1 | MBKEN-like value 0x00100517 found earlier; the aftermarket firmware writes MBKEN, MUXEN, MTYP_0, MWID_0, BURSTEN, WRAPMOD, CBURSTRW into the timing register (as found, meaning unclear) |
 | Timing | a very short delay after each command/data byte was needed with byte-by-byte writes |
 | Full refresh | 160 x 128 x 2 bytes = 40,960 bytes by DMA2 memory-to-memory to the data address |
 
-After each burst the old firmware writes 0x00 to the data address so the shared data lines rest low before the keypad
+After each burst the aftermarket firmware writes 0x00 to the data address so the shared data lines rest low before the keypad
 is scanned.
 
 The case's lens hides about 5 px at the left and right edges. ODR's safe-area insets default to 5 px left and right,
@@ -895,7 +895,7 @@ PTT.
 
 ### 10.3 Rotary channel encoder
 
-Quadrature, A on PE14, B on PB11 (both pull-up), with detents. The legacy firmware interrupts on both edges of B only
+Quadrature, A on PE14, B on PB11 (both pull-up), with detents. The aftermarket firmware interrupts on both edges of B only
 and counts one step per B edge (-1 if A equals B after the edge, else +1). One B edge per detent means two quadrature
 steps per detent, resting where A equals B (00 and 11). Measured on the bench (2026-10-10, a76da0d): 10 slow and 10
 fast detents each gave exactly 10 detents and 20 transitions, 11 counterclockwise gave -11 / 22, a wobble without a
@@ -918,7 +918,7 @@ Why counting B edges went wrong (seen as missed steps and steps backward, 2026-1
   (a fast turn) gives the wrong direction.
 
 The decoder makes all three harmless: bounce is a step and the same step back (net zero), merged edges are a repeated
-level (no change), and only whole detents count. Positive (forward) is the direction the legacy firmware counted +1. Clockwise is
+level (no change), and only whole detents count. Positive (forward) is the direction the aftermarket firmware counted +1. Clockwise is
 positive (forward): the next channel on Home, focus down in lists (confirmed on the radio by the owner, 2026-10-10).
 
 ### 10.4 Power switch
@@ -1133,13 +1133,13 @@ HR_C6000 register notes in `modem-hrc6000.md`.
 
 The flash keeps the GD-77 codeplug layout so that CPS tools interoperate: the first 64 KB emulate the GD-77's 64 KB
 EEPROM one-to-one, and the GD-77's 1 MB "flash" image starts at 0x020000 (offset +128 KB). Details of the codeplug
-records are in `legacy-cps-interop.md`.
+records are in `open-firmware-cps.md`.
 
 | Address (SPI flash) | GD-77-relative address | Size | Content |
 |---|---|---|---|
 | 0x000000 | EEPROM 0x0000 | 64 KB | emulated EEPROM: general settings at 0x00E0 (callsign 0x00E0, DMR ID 0x00E8), DTMF contacts 0x2F88, signaling/DTMF 0x1400, APRS configs 0x1588, first 128 channels (header 0x3780, data 0x3790), last used channel per zone 0x6000, radio settings block at 0x604B, boot screen/password at 0x7518-0x755F, quick keys 0x7524, VFO A/B at 0x7590, zones 0x8000+ |
 | 0x010000 | (local) | 512 B | calibration working copy (12.1). CPS reads/writes it through a 0x10000 window |
-| 0x011000 | (ours) | 32 KB | OpenDigitalRadio settings ring (`settings-store.md` 2); no legacy tool uses it, the CPS shim refuses writes |
+| 0x011000 | (ours) | 32 KB | OpenDigitalRadio settings ring (`settings-store.md` 2); no open-firmware tool uses it, the CPS shim refuses writes |
 | 0x019000 | (ours) | 8 KB | OpenDigitalRadio sector journal (`settings-store.md` 4) |
 | 0x020000 | flash 0x00000 | 4 KB | custom data: boot image and boot melody, themes (one 4 KB sector; erased when the user clears custom data) |
 | 0x050000 | flash 0x30000 | 256 KB | DMR ID database part 1 (header "Id" + type byte + record length + entry count; see the CPS spec) |
@@ -1169,7 +1169,7 @@ behavior.
 | RTC | LSE 32.768 kHz, 24 h format; keeps time while the MCU has power (no separate backup battery confirmed, unverified) |
 | LEDs | PE0 green, PE1 red, active high |
 | Backup SRAM | unused |
-| Watchdog | not used by the old firmware on this platform (its watchdog hook is empty); a new design may enable the IWDG |
+| Watchdog | not used by the aftermarket firmware on this platform (its watchdog hook is empty); a new design may enable the IWDG |
 
 ---
 
@@ -1211,8 +1211,8 @@ SHA-256):
 
 The keys can be recovered from an official encrypted firmware file and any known plaintext of the same model (the
 stock images also start with a known vector table pattern), or taken from public tools such as md380tools (MIT) for the
-MD-380. The loader script these facts come from (the legacy STM32 firmware loader script) carries MIT notices for the
-pydfu and md380tools parts it was built from, but its directory's license file is the legacy non-commercial license:
+MD-380. The loader script these facts come from (the aftermarket firmware's STM32 loader script) carries MIT notices for the
+pydfu and md380tools parts it was built from, but its directory's license file is the aftermarket firmware's non-commercial license:
 treat the key tables' provenance as unverified and re-derive or source them from MIT material.
 
 **Re-derived (2026-10-10), DM-1701.** The key needs no outside source: it falls out of any DM-1701 stock firmware
@@ -1322,7 +1322,7 @@ system-memory bootloader (supported interfaces, read-unprotect behavior).
 | Serial mode | CDC-ACM: interrupt IN 0x82 (8 bytes), bulk IN 0x81 / OUT 0x01 (64 bytes) |
 | Network mode | CDC-NCM 1.0, NTB16 only: notification IN 0x82 (16 bytes, 16 ms interval), bulk IN 0x81 / OUT 0x01 (64 bytes); interfaces 0 (communication) and 1 (data, alternate setting 1 active), grouped by an IAD |
 | Why a switch | ACM + NCM together need 4 IN endpoints (2 + 2) and there are only 3, so the radio is either a serial port or a network adapter; the choice is a stored setting applied at USB start (switching re-enumerates) |
-| IDs used by the old firmware | VID 0x1FC9; PID 0x0094 serial, 0x0096 network (a separate PID so Windows binds a different driver) |
+| IDs used by the aftermarket firmware | VID 0x1FC9; PID 0x0094 serial, 0x0096 network (a separate PID so Windows binds a different driver) |
 | Windows 10 NCM binding | Microsoft OS 1.0 descriptors: string index 0xEE, vendor code 0x47, extended compat ID "WINNCM"; Windows 11, Linux and macOS bind NCM by class |
 | NTB sizes | IN NTBs small (one datagram each); accept OUT NTBs up to 2048 bytes (Linux needs at least one full Ethernet frame plus headers); NTB parameters: NdpIn/Out divisor 4, alignment 4, no datagram limit |
 | Reported speed | 12 Mbit/s |
@@ -1344,7 +1344,7 @@ Sources: USB device configuration and descriptors, CDC-NCM 1.0 spec, on-hardware
 
 ## 17. Variants
 
-Build variants of the old tree: DM1701, RT84, MDUV380, MDUV380_10W_PLUS (and JA language builds). The MD-2017 code
+Build variants of the aftermarket firmware tree: DM1701, RT84, MDUV380, MDUV380_10W_PLUS (and JA language builds). The MD-2017 code
 paths exist but its pins are not defined in this tree, so it does not build there.
 
 | Aspect | DM-1701 | RT84 | MD-UV380 / UV390 5 W | MD-UV390 Plus 10 W | MD-2017 (partial code only) |
@@ -1396,7 +1396,7 @@ Sources: build variant switches and per-variant firmware constants, CubeMX pin s
 
 ---
 
-## 19. Datasheets in the old tree
+## 19. Datasheets in the aftermarket firmware tree
 
 Present in `docs/data_sheets/`: AT1846S datasheet 0.3 and programming guide 1.4, RDA1846 / RDA1846S programming
 manuals, register table (.xls), reference schematic and squelch notes; HR_C6000 datasheets (Chinese, translated,

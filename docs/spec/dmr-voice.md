@@ -115,7 +115,7 @@ loaded our calls carry FID 0x10 and the privacy service option (0x40), and recei
 option (or PI) are descrambled. Without a key such bursts are never played; they count as `rx_enc_dropped`.
 
 The key is set over the debug link (RADIO op 19, `radio_req_dmr_privacy`). The radio core saves it in settings slot 1
-and loads the active slot at boot (`settings-store.md` 3.1); the legacy codeplug has no key storage, so qdmr can't
+and loads the active slot at boot (`settings-store.md` 3.1); the open-firmware codeplug has no key storage, so qdmr can't
 set it.
 
 PI header (data type 0, CRC-CCITT masked 0x6969): heard between the voice LC header and burst A, it marks the call
@@ -139,12 +139,12 @@ bench modem's listener).
 ## 7. Open points
 
 - The codeplug's hang time unit is not confirmed. Checked: the interop spec lists the group and private hang bytes
-  (general settings 0x18, 0x19) only as vendor layout the legacy firmware ignores ("only the callsign and the DMR ID
-  matter", `legacy-cps-interop.md` 7.3.2), and neither the reference notes nor the DM-1701 vendor guide give a unit.
+  (general settings 0x18, 0x19) only as vendor layout the aftermarket firmware ignores ("only the callsign and the DMR ID
+  matter", `open-firmware-cps.md` 7.3.2), and neither the reference notes nor the DM-1701 vendor guide give a unit.
   Assumed: 500 ms steps (`codeplug.c`, `GEN_HANG_UNIT_MS`), so a stored 6 is 3 s. Confirm with the vendor CPS
   (set a known hang time, read the byte) on the bench; the reply time setting (`rs_reply_s`) overrides it meanwhile.
 - DMR ID database plain format: the 4-byte BCD ID is read as a little-endian word (the spec doesn't say).
-- A codeplug TOT of 0 means "off" to the legacy firmware; here it falls back to the radio's TOT.
+- A codeplug TOT of 0 means "off" to the aftermarket firmware; here it falls back to the radio's TOT.
 - Emergency alarm and emergency call TX are in `dmr-emergency.md`. No enhanced privacy. GPS Info is host-tested
   (`dmrCallTest`) and on air both ways against the SDR bench (`docs/testing/on-air-coverage.md`). Not done: GPS Info in the hotspot's own
   transmissions (it relays the host's), a separate Settings > Location toggle for it (it lives on the APRS page).

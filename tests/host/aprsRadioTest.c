@@ -161,7 +161,7 @@ const board_t board = {
 static channel_t chan;
 static zone_t zone;
 static char cp_name[CODEPLUG_NAME_LEN + 1];
-codeplug_source_t codeplug_source(void) { return CODEPLUG_LEGACY; }
+codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 uint32_t codeplug_serial(void) { return 1; }
 void storage_lock(void) {}
 void storage_unlock(void) {}

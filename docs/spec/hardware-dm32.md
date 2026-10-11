@@ -155,7 +155,7 @@ Registers at base +: RBR/THR/DLL 0x00, DLH/IER 0x04, IIR/FCR 0x08, LCR 0x0C, LSR
 | TX ready | USR bit 1 (TX FIFO not full) | KP |
 | RX ready | LSR bit 0 | KP |
 | Interrupts | GPS uses IER = 0x05 (RX data + line status); on stop, IER = 0 and FCR bits 1, 2 to flush | KP |
-| UART0 | 115200 8N1: programming cable (Baofeng CPS, legacy-protocol CPS, hotspot) | KP, BIN |
+| UART0 | 115200 8N1: programming cable (Baofeng CPS, open-firmware CPS, hotspot) | KP, BIN |
 | UART1 | 9600 8N1: GPS RX only | KP |
 
 ### 3.2 SPI master (DesignWare SSI)
@@ -309,7 +309,7 @@ USB pins, and to settle the question for good.
 | Charging | The stock UI has no charging text or state (only battery-low warnings); the radio only sees the battery voltage | BIN, INF |
 | Bootloader (0x03000000–0x0300BFFF) | Not in the update file and no dump is available, so not inspected. Its update mode speaks the serial protocol of 13.2 on the same cable (COM), so it has no reason to use USB | COM, INF |
 | ROM boot | Serial port boot or SPI flash boot only; no USB boot mode (DS) | DS |
-| another firmware's port and the old OpenGD77-based tree | Define the USB base and two register addresses (DAINT 0x818, DTXFSTS1 0x938) but never use them; their "USB" debug print and CPS functions write to UART0 | KP |
+| another firmware's port and the aftermarket firmware tree | Define the USB base and two register addresses (DAINT 0x818, DTXFSTS1 0x938) but never use them; their "USB" debug print and CPS functions write to UART0 | KP |
 | OpenDM32 releases (July–September 2026) | No USB register addresses in the binaries | BIN |
 
 #### Controller (DS: HR_C7000 user guide, USB chapter)
@@ -1020,7 +1020,7 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
 | Display | 240x320 at 2x: the core draws 120x160 (its frame buffer is 40 KB); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
-| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): legacy EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), legacy flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
+| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
 | Calibration | 11, read only; OpenDM32's copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `calibration_dm32.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM with its own sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `dmr_dm32.c` |

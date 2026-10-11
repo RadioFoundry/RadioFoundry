@@ -66,7 +66,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | MMDVM hotspot | `HOTSPOT` | 34,196 | ~12,400 | ● | ○ | ● | Includes split duplex and MMDVM SFR where built. MD-380: left out for flash (DMR_ROAMING off is the alternative); size estimated |
 | Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 12,584 | — | ● | ✕ | ● | MD-380: HR_C6000-only glue |
 | Debug link | `DEBUGLINK` | 32,376 | 29,084 | ● | ● | ● |  |
-| Legacy CPS protocol (qdmr) | `CPS_LEGACY` | 3,064 | 3,008 | ● | ● | ● |  |
+| Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 | ● | ● | ● |  |
 
 ## Network (USB network adapter and IP over DMR)
 

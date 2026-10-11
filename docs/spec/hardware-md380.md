@@ -482,9 +482,9 @@ size.
 
 ### 12.2 Map
 
-On a 16 MB part ODR uses the DM-1701's map (settings 0x011000, journal 0x019000, legacy codeplug 0x000000 and
-0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the legacy CPS works the same. The stock TYT codeplug at 0 is overwritten
-by the first legacy write: read it out with the stock CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
+On a 16 MB part ODR uses the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug 0x000000 and
+0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the open-firmware CPS works the same. The stock TYT codeplug at 0 is overwritten
+by the first open-firmware write: read it out with the stock CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
 main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written.
 
 ---
@@ -560,7 +560,7 @@ the stock file is in `codecs/`. Without the codec merged the radio is FM only.
 OTG_FS device on PA11 / PA12 (D). ODR enumerates with the DM-1701's IDs and the product name "MD-380"
 (`usb_md380.c`); the bootloader's DFU device is separate (14.3).
 
-The legacy CPS shim reports radio type 7 and serves the MCU ROM from 0x08000000, 1 MB (`boards/md380/board.c`,
+The open-firmware CPS shim reports radio type 7 and serves the MCU ROM from 0x08000000, 1 MB (`boards/md380/board.c`,
 `cps-protocol.md` 2.2).
 
 ---
@@ -592,7 +592,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 6 | Battery divider | Stage 3: compare "bat raw" against a meter; set `MD380_BATT_COUNTS_X10` |
 | 7 | Power switch wiring (direct or sensed) | Stage 3: switch off with the knob: does the radio die at once? |
 | 8 | Flash size and JEDEC ID | Stage 3: "flash" line |
-| 9 | Calibration layout and scaling | Stage 4: "cal" must say factory; read both security registers over the legacy CPS protocol (area 10, which `md380_cps_security_read` serves) and compare the rows with what the stock CPS shows |
+| 9 | Calibration layout and scaling | Stage 4: "cal" must say factory; read both security registers over the open-firmware CPS protocol (area 10, which `md380_cps_security_read` serves) and compare the rows with what the stock CPS shows |
 | 10 | Frequency plan (TCXO, IF, LO side, VCO multiplier per band) | Stage 4: "pll lock" on every channel; an SDR on a 25 kHz-spaced pair of channels shows the receive LO leak and TX carrier |
 | 11 | SKY72310 bus timing and lock detect polarity | Stage 4: "pll lock" with a correct carrier; a scope on PD10 while retuning |
 | 12 | VCOVCC_SW, FM_SW, W/N_SW, DMR_SW, FM_MUTE, SPK_C, AFCO polarities | Stage 4/5: receive a known FM signal; invert one pin's level at a time in `radio_md380.c` (one rebuild each, batched) until IF, audio and bandwidth are right |

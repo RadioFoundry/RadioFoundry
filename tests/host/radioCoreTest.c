@@ -154,7 +154,7 @@ static channel_t chans[NCH + 1];
 static bool used[NCH + 1];
 static zone_t zones[3];
 static uint16_t nzones;
-static codeplug_source_t source = CODEPLUG_LEGACY;
+static codeplug_source_t source = CODEPLUG_OPENFW;
 
 static uint32_t cp_serial;
 codeplug_source_t codeplug_source(void) { return source; }
@@ -359,7 +359,7 @@ static void test_startup(void)
 	CHECK(sm.view.squelch == RADIO_SQUELCH_DEFAULT);
 	CHECK(sm.view.tot_s == 180);
 	CHECK(sm.view.vfo_step_hz == 12500);
-	CHECK(sm.view.source == CODEPLUG_LEGACY);
+	CHECK(sm.view.source == CODEPLUG_OPENFW);
 	CHECK(sm.view.state == RS_IDLE);
 	CHECK(!hw.audio && !hw.led[LED_GREEN] && !hw.led[LED_RED]);
 }
@@ -595,7 +595,7 @@ static void test_no_codeplug(void)
 	CHECK(sm.view.vfo);
 	req(RREQ_CH_STEP, 1);
 	CHECK(sm.view.ch.rx_hz == 146532500);
-	source = CODEPLUG_LEGACY;
+	source = CODEPLUG_OPENFW;
 
 	// Zones that exist but have no readable channel
 	setup_codeplug();
@@ -2525,10 +2525,10 @@ static void test_error_paths(void)
 }
 
 // Factory reset on a flash: the defaults saved at once, the native area emptied when ours, a toast when either
-// fails (the settings can't be written; the native area won't erase), never the legacy codeplug or calibration
+// fails (the settings can't be written; the native area won't erase), never the open-firmware codeplug or calibration
 static const hal_flash_map_t reset_map = {
 	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
-	.legacy_eeprom = 0, .legacy_flash = 0x20000u, .legacy_end = 0x30000u,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x30000u,
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 	.native_addr = 0x30000u, .native_size = 0x4000u,
 };
@@ -2540,7 +2540,7 @@ static void test_factory_reset(void)
 	CHECK(storage_init());
 	settings_init();
 	dmr_start(true);
-	memset(&sim_flash_data[0x20000u], 0x42, 64);		// a legacy codeplug byte or two
+	memset(&sim_flash_data[0x20000u], 0x42, 64);		// an open-firmware codeplug byte or two
 	memset(&sim_flash_data[0x10000u], 0x24, 64);		// the calibration copy
 	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
 	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));

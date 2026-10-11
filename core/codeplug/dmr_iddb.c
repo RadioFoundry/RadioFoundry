@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DMR ID database lookup (see dmr_iddb.h). Layout from docs/spec/legacy-cps-interop.md 7.5: a 12-byte header
+// DMR ID database lookup (see dmr_iddb.h). Layout from docs/spec/open-firmware-cps.md 7.5: a 12-byte header
 // ("Id", format, record size + 0x4A, version, LE record count) at the start of area 1, records sorted by ID, area 1
 // holding as many whole records as fit in 256 KB with the header, the rest from the start of area 2.
 #include <string.h>
@@ -11,12 +11,12 @@
 
 // Flash image addresses (7.5) and where the flash image sits in the data flash (the STM32 family's +128 KB, as in
 // codeplug.c). TODO: per board, with the codeplug's offsets
-#ifndef CODEPLUG_LEGACY_FLASH_BASE
-#define CODEPLUG_LEGACY_FLASH_BASE	0x020000u
+#ifndef CODEPLUG_OPENFW_FLASH_BASE
+#define CODEPLUG_OPENFW_FLASH_BASE	0x020000u
 #endif
-#define IDDB_AREA1		(CODEPLUG_LEGACY_FLASH_BASE + 0x30000u)
-#define IDDB_AREA2		(CODEPLUG_LEGACY_FLASH_BASE + 0xB8000u)
-#define IDDB_AREA2_VP		(CODEPLUG_LEGACY_FLASH_BASE + 0x8F400u)	// format 'n': in the voice prompt area
+#define IDDB_AREA1		(CODEPLUG_OPENFW_FLASH_BASE + 0x30000u)
+#define IDDB_AREA2		(CODEPLUG_OPENFW_FLASH_BASE + 0xB8000u)
+#define IDDB_AREA2_VP		(CODEPLUG_OPENFW_FLASH_BASE + 0x8F400u)	// format 'n': in the voice prompt area
 #define IDDB_AREA1_SIZE		0x40000u
 #define IDDB_HEADER		12u
 #define IDDB_RECORD_MAX		(4u + 3u * DMR_IDDB_TEXT_MAX / 4u + 8u)

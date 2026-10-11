@@ -35,8 +35,8 @@
 #if CONFIG_TFTP
 #include "net/tftp_codeplug.h"
 #endif
-#if CONFIG_CPS_LEGACY
-#include "cps/cps_legacy.h"
+#if CONFIG_CPS_OPENFW
+#include "cps/cps_openfw.h"
 #endif
 #include "FreeRTOS.h"
 #include "task.h"
@@ -95,8 +95,8 @@ static void startup_task(void *arg)
 #if CONFIG_TFTP
 	tftp_codeplug_allow_write((st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0);
 #endif
-#if CONFIG_CPS_LEGACY
-	cps_legacy_start();		// registers the CPS handler with the host link
+#if CONFIG_CPS_OPENFW
+	cps_openfw_start();		// registers the CPS handler with the host link
 #endif
 	hostlink_start();
 #endif	// after the settings: the host link personality depends on them

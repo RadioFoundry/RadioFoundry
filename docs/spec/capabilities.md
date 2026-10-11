@@ -1,14 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Capabilities of the firmware ODR replaces
+# Capabilities of the aftermarket firmware
 
-What the firmware that OpenDigitalRadio replaces can do, per radio, as user-level capabilities. This is the feature
-target for ODR and the baseline users will compare it with. The status letters below are that firmware's, not ODR's:
+What the aftermarket firmware ([CLEANROOM.md](../CLEANROOM.md)) can do, per radio, as user-level capabilities. Users
+will compare ODR with it, so it is a feature target. The status letters below are that firmware's, not ODR's:
 ODR's own state per radio is in the [feature matrix](../feature-matrix.md). It says nothing about how the old
 firmware presents these features (no menus, screens or keys): the new UI is designed separately in `docs/ux/`.
 
-Sources: the old trees' status files and docs (as of 2026-10-09, build `bf08887`), commit history, bench notes.
-The chip column is summarized; public sources and confidence for each chip are in [radios.md](radios.md).
+Sources: the aftermarket firmware trees' status files and docs (as of 2026-10-09, build `bf08887`), commit history,
+bench notes. The chip column is summarized; public sources and confidence for each chip are in [radios.md](radios.md).
 
 ## Radios
 
@@ -33,8 +33,8 @@ The chip column is summarized; public sources and confidence for each chip are i
 | **—** | Not available on that radio |
 
 For 9600, 380, GD77 and DM32, **B** covers both our additions and upstream features: nothing has been run on those
-radios by us. Upstream (the legacy firmware) reports most of its own features working on the GD-77, MD-UV380 and DM-1701; the
-MD-9600 is upstream beta.
+radios by us. The aftermarket firmware's upstream reports most of its own features working on the GD-77, MD-UV380 and
+DM-1701; the MD-9600 is upstream beta.
 
 ## FM (analog)
 
@@ -80,7 +80,7 @@ MD-9600 is upstream beta.
 ## DMR data (our work)
 
 All of this is our own code (`shared/`), the same on every radio, with the chip-specific burst engine per radio. See
-`docs/dmr_data.md` in the old tree for protocol detail; `docs/spec/` for the new specs.
+`docs/dmr_data.md` in the aftermarket firmware tree for protocol detail; `docs/spec/` for the new specs.
 
 | Capability | 1701 | 9600 | 380 | GD77 | DM32 | Limitations |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -150,15 +150,15 @@ All of this is our own code (`shared/`), the same on every radio, with the chip-
 | Keypad and other beeps, beep volume, timeout beep | U | B | B | B | B | |
 | Color themes (day / night), auto night mode, backlight modes and levels, contrast, double-height text, inverse video | U | B | — | B (mono) | B | 380 and GD77 monochrome or no themes |
 | Boot image, boot melody or Morse, boot password | U | B | B | B | B | |
-| 20 UI languages (two at a time: primary and secondary) | U | B | B | B | B | Strings are the legacy firmware's; must be rewritten |
+| 20 UI languages (two at a time: primary and secondary) | U | B | B | B | B | Strings are the aftermarket firmware's; must be rewritten |
 | Clock display in the status line | U | B | B | B | B | |
 
 ## CPS / programming
 
 | Capability | 1701 | 9600 | 380 | GD77 | DM32 | Limitations |
 | --- | --- | --- | --- | --- | --- | --- |
-| legacy CPS: read/write codeplug, DMR ID database, voice prompts, boot image, settings; backup of flash | T | B | B | B | B (programming cable UART, 3 ms idle framing) | DM32 not tried with the CPS; a USB serial adapter that pauses more than 3 ms mid-request breaks framing |
-| qdmr support (GD-77/UV380 open-firmware drivers) | U | B | B | B | — | See `legacy-cps-interop.md` |
+| open-firmware CPS: read/write codeplug, DMR ID database, voice prompts, boot image, settings; backup of flash | T | B | B | B | B (programming cable UART, 3 ms idle framing) | DM32 not tried with the CPS; a USB serial adapter that pauses more than 3 ms mid-request breaks framing |
+| qdmr support (GD-77/UV380 open-firmware drivers) | U | B | B | B | — | See `open-firmware-cps.md` |
 | Firmware update through the stock bootloader (DFU on STM32, .sgl on GD-77, Baofeng packed image on DM-32) | T | B | B | B | B | The AMBE codec must come from each radio's own stock firmware |
 | Channel edits on the radio saved to the codeplug | U | B | B | B | B | |
 | Screen capture and audio/AMBE access over USB (CPS tools) | U | B | B | B | B | |
@@ -206,6 +206,6 @@ Capabilities users of these radios generally expect that no current build has:
 - Over-the-air programming and remote monitor.
 - IP site connect style roaming by signal strength (RSSI-based repeater roaming rather than GPS distance). Ours now:
   `CONFIG_DMR_ROAMING`, `docs/spec/dmr-roaming.md` (standard DMR only, no vendor site signaling).
-- A native qdmr driver (beyond the legacy protocol shim) with every setting the radio has, including SFR and data
+- A native qdmr driver (beyond the open-firmware protocol shim) with every setting the radio has, including SFR and data
   options.
 - Persistent ARS state and LRRP triggers across power cycles; LRRP altitude and accuracy.

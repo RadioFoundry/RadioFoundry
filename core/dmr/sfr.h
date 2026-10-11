@@ -53,7 +53,7 @@ typedef enum
 #define SFR_DATA_HOLD_GAP_MS		130U		// a held data call (sfrEngine_t.rfHold) is over after this long without a burst
 
 // Channel codeplug encoding (the CPS doesn't know these; set on the radio, Channel details):
-//   LibreDMR_flag1 bit 0x02: SFR set for this channel (the other two bytes are only read with it)
+//   flag 1 (offset 0x26) bit 0x02: SFR set for this channel (the other two bytes are only read with it)
 //   sfr byte A (was _UNUSED_1): bits 2-0 role (sfrRole_t), bits 4-3 framing (sfrFraming_t), bit 5 inbound slot TS2,
 //                               bits 7-6 hang (index of sfrHangMs())
 //   sfr byte B (was _UNUSED_2): bit 7 outbound color code set, bits 3-0 that color code (else the channel's)

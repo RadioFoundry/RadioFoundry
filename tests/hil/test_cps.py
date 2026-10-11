@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The legacy CPS shim (docs/spec/cps-protocol.md 2) and the settings store (docs/spec/settings-store.md) on the
+"""The open-firmware CPS shim (docs/spec/cps-protocol.md 2) and the settings store (docs/spec/settings-store.md) on the
 radio, through tools/cps_client.py the way qdmr talks to it.
 
 Radio only, nothing written to the codeplug by default: radio info, two reads of the qdmr regions match, the current
@@ -52,7 +52,7 @@ def test_cps_readback_matches(radio, tmp_path):
     assert not d, f"{len(d)} bytes differ between two reads, first {[(hex(x), y, z) for x, y, z in d[:4]]}"
 
     v = radio.core()
-    if v.get("codeplug") != "legacy":
+    if v.get("codeplug") != "open-firmware":
         pytest.skip(f"the radio runs the {v.get('codeplug')} codeplug: nothing stored to compare with")
     if v.get("vfo") == "1" or as_int(v.get("channel_number"), 0) == 0:
         pytest.skip("the radio is in the VFO: no channel to compare")

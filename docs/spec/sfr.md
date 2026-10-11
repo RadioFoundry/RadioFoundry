@@ -23,7 +23,7 @@ There are two kinds:
 | Runner | `core/dmr/sfrRunner.c` | the repeater roles on any modem behind `hal_dmr_modem_t`: received bursts filtered and fed to the engine, the outbound slot kept fed, an optional uplink to a host |
 | MMDVM SFR | `core/hotspot/hotspotSfr.c` | the MMDVM extension (version suffix, status flag 0x80, the space bytes, 108 extra status bytes, command 0xD5) and `hotspot.c`'s other mode (`hotspot_alt_t`) |
 
-The legacy-flavored HR_C6000 glue in `drivers/modem/hrc6000/sfr_glue/` is not built; it documents what a driver
+The HR_C6000 glue in `drivers/modem/hrc6000/sfr_glue/` is not built; it documents what a driver
 level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra status bytes' layout.
 
 ## 2. What is built

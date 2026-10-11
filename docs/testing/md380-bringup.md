@@ -13,7 +13,7 @@ to be on it at the start.
 
 ## 0. Before anything
 
-1. **Back up the radio** with the stock CPS (or `tools/md380_migrate.py backup`, [md380-migration.md](../spec/md380-migration.md)): the codeplug (ODR's legacy layout overwrites it, hardware-md380.md 12.2)
+1. **Back up the radio** with the stock CPS (or `tools/md380_migrate.py backup`, [md380-migration.md](../spec/md380-migration.md)): the codeplug (ODR's open-firmware layout overwrites it, hardware-md380.md 12.2)
    and, if the CPS offers it, the calibration view (ODR only reads the calibration, never writes it).
 2. Check that the bootloader works with the stock firmware: hold **PTT and the upper side key** while switching on;
    the LED blinks and the radio appears as USB 0483:DF11 (`tools/stm32_dfu.py --list`). This is the recovery path for

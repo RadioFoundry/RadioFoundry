@@ -2,17 +2,17 @@
 
 # CPS, codeplug and settings
 
-ODR doesn't have its own programming software. qdmr programs it through a shim that speaks the legacy open-firmware
+ODR doesn't have its own programming software. qdmr programs it through a shim that speaks the open-firmware
 CPS protocol qdmr already supports, over the codeplug layout qdmr already writes.
 
 ## The CPS shim
 
 | Part | Where |
 |---|---|
-| Protocol engine (no RTOS, no USB) | `core/cps/cps_legacy.c` |
+| Protocol engine (no RTOS, no USB) | `core/cps/cps_openfw.c` |
 | Hook to the host link and reboot | `core/cps/cps_port.c` |
 | Dispatch on the host port | `core/hostlink` (first byte: `0xE0` MMDVM, `A5 5A` debug link, other bytes CPS) |
-| Switch | `CONFIG_CPS_LEGACY` |
+| Switch | `CONFIG_CPS_OPENFW` |
 | Host tests | `tests/host/cpsTest.c`, and `tests/host/cpsSim` serving the engine on stdin and stdout |
 | Test client | `tools/cps_client.py` (`info`, `read`, `write`, `verify`) |
 
@@ -22,7 +22,7 @@ journal) and keeps the radio's quick keys.
 | Document | Covers |
 |---|---|
 | [cps-protocol.md](../spec/cps-protocol.md) | The shim: requests, reads, writes, control commands, what qdmr sends, counters, open decisions |
-| [legacy-cps-interop.md](../spec/legacy-cps-interop.md) | The wire protocol and the codeplug layout in prose |
+| [open-firmware-cps.md](../spec/open-firmware-cps.md) | The wire protocol and the codeplug layout in prose |
 
 `tools/cps_client.py` transfers the same regions qdmr does, so it is the stand-in for qdmr in tests:
 
@@ -36,7 +36,7 @@ qdmr itself hasn't been run against ODR on a radio yet. When it is, record the q
 
 ## The codeplug
 
-The radio reads the legacy layout in place (`core/codeplug`): zones, channels, contacts, talkgroup lists, the DMR ID
+The radio reads the open-firmware layout in place (`core/codeplug`): zones, channels, contacts, talkgroup lists, the DMR ID
 database. Edits made on the radio (save a temporary change, rename, add a contact) go through the editing model in
 [codeplug-native.md](../spec/codeplug-native.md) section 2 and are written by the housekeeping task as storage jobs.
 A native codeplug format is planned in the same document, not built.

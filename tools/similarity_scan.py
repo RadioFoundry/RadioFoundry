@@ -5,7 +5,7 @@
 
     tools/similarity_scan.py [options] REF [REF...]
 
-REF is a directory or a single file anywhere on disk (for example a legacy firmware tree; it is only read). Every
+REF is a directory or a single file anywhere on disk (for example an aftermarket firmware tree; it is only read). Every
 source file of this repository (or of --root) is compared with every source file under the REFs:
 
 - comments are stripped, string literals become STR (and, with --ids, identifiers become ID and numbers NUM, which

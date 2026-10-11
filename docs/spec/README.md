@@ -27,7 +27,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | Spec | Covers |
 |---|---|
 | [cps-protocol.md](cps-protocol.md) | The host port's protocols and how they share it; the CPS protocol |
-| [legacy-cps-interop.md](legacy-cps-interop.md) | The legacy codeplug format qdmr writes |
+| [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
 | [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
 | [mmdvm-protocol.md](mmdvm-protocol.md) | The MMDVM modem protocol (hotspot mode) |
 | [usb-network.md](usb-network.md) | USB network personality, the IP gateway, control station mode |
@@ -50,7 +50,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 ## Radios
 
 [radios.md](radios.md) surveys the radios, their chips and the port order; [capabilities.md](capabilities.md) shows
-what the firmware ODR replaces does on each (ODR's own state: [feature matrix](../feature-matrix.md)). Per radio:
+what the aftermarket firmware does on each (ODR's own state: [feature matrix](../feature-matrix.md)). Per radio:
 
 | Radio | Hardware | Codec | Moving from stock |
 |---|---|---|---|

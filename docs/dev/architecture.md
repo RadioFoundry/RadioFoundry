@@ -66,8 +66,8 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 | `core/bcast` | [airband-and-broadcast](../spec/airband-and-broadcast.md) | The broadcast FM receiver (DM-32UV, parked) |
 | `core/usbaudio` | [usb-audio](../spec/usb-audio.md) | USRP and the jitter buffer (host tested, not in an image yet) |
 | `core/hostlink` | [cps-protocol](../spec/cps-protocol.md) 1 | Dispatch of the host port by first byte; the USB network side |
-| `core/cps` | [cps-protocol](../spec/cps-protocol.md) | The legacy CPS shim |
-| `core/codeplug` | [legacy-cps-interop](../spec/legacy-cps-interop.md), [codeplug-native](../spec/codeplug-native.md) | Codeplug reading and editing, the DMR ID database |
+| `core/cps` | [cps-protocol](../spec/cps-protocol.md) | The open-firmware CPS shim |
+| `core/codeplug` | [open-firmware-cps](../spec/open-firmware-cps.md), [codeplug-native](../spec/codeplug-native.md) | Codeplug reading and editing, the DMR ID database |
 | `core/settings`, `core/storage` | [settings-store](../spec/settings-store.md) | The settings ring, the sector journal, the foreign region guard |
 | `core/ui` | [ui](../spec/ui.md), [docs/ux](../ux/) | Drawing, screens, navigation, Find, the services the UI calls |
 | `core/input` | [ui](../spec/ui.md) 3 | Gesture engine (press, long, repeat), injected keys |

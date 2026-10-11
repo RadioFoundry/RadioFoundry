@@ -13,7 +13,7 @@
 //   tnc       a request starting with a byte the TNC protocol claims (KISS 0xC0, NMEA '$'; core/aprs/aprs_host.c):
 //             its bytes go to it; back to idle after HOSTLINK_TNC_IDLE_MS without one. Its output (received
 //             packets, iGate lines) also goes out in idle mode when it has some (the user turned KISS on)
-//   cps       anything else goes to the CPS handler, when one is registered (docs/spec/legacy-cps-interop.md); back
+//   cps       anything else goes to the CPS handler, when one is registered (docs/spec/open-firmware-cps.md); back
 //             to idle after HOSTLINK_CPS_IDLE_MS without a CPS byte (side protocol frames don't count)
 //
 // A side protocol (the debug link, docs/spec/debuglink.md) may be registered beside these: its frames start with a
