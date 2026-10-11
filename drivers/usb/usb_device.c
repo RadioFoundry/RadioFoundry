@@ -15,7 +15,7 @@
 
 #define USB_TASK_PRIORITY	3	// with input; above the UI (core/app/app.c task table)
 #define USB_TASK_STACK		256	// words
-#define WRITE_TIMEOUT_MS	100	// give up on a host that stopped reading
+#define WRITE_TIMEOUT_MS	500	// give up on a host that stopped reading (a browser page can pause that long)
 #define POWER_MA		100	// self powered (battery); what it may draw from the bus
 
 enum { STR_LANGUAGE, STR_MANUFACTURER, STR_PRODUCT, STR_SERIAL, STR_CDC, STR_NCM, STR_MAC, STR_COUNT };
@@ -318,7 +318,9 @@ static size_t cdc_write(const uint8_t *buf, size_t len)
 
 		done += n;
 		tud_cdc_write_flush();
-		if (n == 0) {
+		if (n > 0) {
+			waited = 0;	// the time-out is for a host that stopped, not a slow one
+		} else {
 			if (!tud_cdc_connected() || (waited >= WRITE_TIMEOUT_MS)) {
 				break;
 			}

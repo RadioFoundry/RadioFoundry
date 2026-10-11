@@ -78,8 +78,10 @@ export class SerialStream {
 		return SerialStream.open(await navigator.serial.requestPort());
 	}
 
+	// Chrome's default 255 byte buffer stops the USB reads whenever the page is busy for a moment; the radio gives up
+	// on a reply the host doesn't take for a while (drivers/usb/usb_device.c), so a 2 KB read could lose its tail
 	static async open(port, baudRate = 115200) {
-		await port.open({ baudRate });
+		await port.open({ baudRate, bufferSize: 65536 });
 		const s = new SerialStream(port);
 		s.pump();
 		return s;
@@ -167,18 +169,22 @@ export class Link {
 
 	// ---- open-firmware CPS
 
-	// R area addr len: the reply is "R" + length (BE) + data, or "-" when refused
-	async cpsRead(area, addr, len) {
-		this.s.clear();
-		await this.s.write(concat(new Uint8Array([0x52, area]), be32(addr), new Uint8Array([len >> 8, len & 0xFF])));
-		const got = await this.waitFor((buf) => {
-			if (buf.length && buf[0] === 0x2D) return null;
-			if (buf.length >= 3 && buf[0] === 0x52 && buf.length >= 3 + u16be(buf, 1)) return buf.slice(3, 3 + u16be(buf, 1));
-			return undefined;
-		});
-		if (got === undefined) throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
-		this.s.clear();
-		return got;	// null: refused (out of range, not offered)
+	// R area addr len: the reply is "R" + length (BE) + data, or "-" when refused. A read changes nothing, so one
+	// that went unanswered or came back short is asked again, after the rest of a broken reply has drained.
+	async cpsRead(area, addr, len, tries = 3) {
+		for (let i = 0; i < tries; i++) {
+			if (i) await sleep(300);
+			this.s.clear();
+			await this.s.write(concat(new Uint8Array([0x52, area]), be32(addr), new Uint8Array([len >> 8, len & 0xFF])));
+			const got = await this.waitFor((buf) => {
+				if (buf.length && buf[0] === 0x2D) return null;
+				if (buf.length >= 3 && buf[0] === 0x52 && buf.length >= 3 + u16be(buf, 1)) return buf.slice(3, 3 + u16be(buf, 1));
+				return undefined;
+			});
+			this.s.clear();
+			if (got !== undefined) return got;	// null: refused (out of range, not offered)
+		}
+		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
 	}
 
 	// Read [addr, addr + size) of an area in pieces; stops early (and says so) when the radio refuses

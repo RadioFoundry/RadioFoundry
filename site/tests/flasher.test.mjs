@@ -153,6 +153,21 @@ test("first install on stock: keep the codec, then back up through ODR", async (
 	assert.deepEqual(bundle.parts.get("internal-flash").data, radio.flash.subarray(0xC000));
 });
 
+test("a read whose reply lost its tail is asked again", async () => {
+	const { radio } = await simulated("odr");
+	const answer = radio.serialAnswer.bind(radio);
+	let reads = 0;
+	radio.serialAnswer = (req) => {
+		const r = answer(req);
+		return req[0] === 0x52 && ++reads === 3 ? r.subarray(0, 1000) : r;	// the radio gave up on a stalled host
+	};
+	const link = new Link(radio.serialStream(), { timeout: 50 });
+	const r = await link.cpsDump(5, 0xC000, 5 * 2045);
+	assert.ok(r.complete);
+	assert.equal(reads, 6);
+	assert.deepEqual(r.data, radio.flash.subarray(0xC000, 0xC000 + 5 * 2045));
+});
+
 test("merge on a radio without a codec, then restore stock from the bundle's stock file", async () => {
 	const { sim, radio } = await simulated("odr-nocodec");
 	radio.flash.fill(0xFF, 0x60000, 0x100000);		// no codec anywhere
