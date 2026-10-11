@@ -253,9 +253,9 @@ static void test_read_session(void)
 	uint8_t b[2048], c[2048];
 	CHECK(read_block(1, 0x3780, 2045, b) && memcmp(b, sim_flash_data + 0x3780, 2045) == 0);
 	CHECK(read_block(2, 0x3780, 2045, c) && memcmp(b, c, 2045) == 0);
-	uint8_t over[8] = { 'R', 1, 0, 0, 0, 0, 0x10, 0x00 };	// 4096: clipped to 2045
+	uint8_t over[8] = { 'R', 1, 0, 0, 0, 0, 0x10, 0x00 };	// 4096: more than the original firmware's 2045, all of it
 	request(over, 8, 0);
-	CHECK(out_len == 3 + 2045 && out[1] == 0x07 && out[2] == 0xFD);
+	CHECK(out_len == 3 + 4096 && out[1] == 0x10 && out[2] == 0x00 && memcmp(out + 3, sim_flash_data, 4096) == 0);
 	uint8_t past[8] = { 'R', 2, 0, 0, 0xFF, 0xF0, 0, 0x20 };	// past the 64 KB EEPROM image
 	request(past, 8, 0);
 	CHECK(is_nak());

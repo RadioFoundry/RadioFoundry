@@ -105,9 +105,11 @@ Reply on success:
 | 1 | 2 | Length actually returned, BE |
 | 3 | n | Data |
 
-On failure the reply is a single `-`. The radio clips the length to its reply buffer size minus 3. qdmr checks that
-the returned length equals the requested one. The radio info area always returns its own structure length, whatever
-length was asked for.
+On failure the reply is a single `-`. The original firmware clips the length to its reply buffer size minus 3 (2045).
+ODR streams the reply in small pieces instead of building it in a buffer, so it clips at 32768: a client that reads
+large areas (the web flasher's backup) asks for 32 KB at a time and takes what comes back, which is 2045 bytes from
+the original firmware and older ODR builds. qdmr checks that the returned length equals the requested one, and asks
+for 2045 or less. The radio info area always returns its own structure length, whatever length was asked for.
 
 ### 2.2 `W` / `X`: write
 

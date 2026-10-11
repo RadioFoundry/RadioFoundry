@@ -54,7 +54,7 @@ A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next q
 
 | Area | Answer |
 |---|---|
-| 1 | SPI flash at the physical address (the STM32 tools add the +128 KB offset themselves). Up to 2045 bytes per request. The VFO A record (EEPROM 0x7590) is replaced by the live VFO (2.3) |
+| 1 | SPI flash at the physical address (the STM32 tools add the +128 KB offset themselves). Up to 32768 bytes per request (2045 in the original firmware, open-firmware-cps.md 2.1). The VFO A record (EEPROM 0x7590) is replaced by the live VFO (2.3) |
 | 2 | the 64 KB EEPROM image (`openfw_eeprom` + addr), same rules |
 | 5 | MCU ROM from `board.cps->rom_base`, inside `rom_size` (per radio, table below) |
 | 9 | radio info, 46 bytes, structure version 3 (`open-firmware-cps.md` 4): radio type from `board.cps->radio_type()` (table below), git hash, build date `YYYYMMDDhhmmss`, flash id `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
