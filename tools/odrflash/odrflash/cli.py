@@ -38,7 +38,7 @@ class UsageError(Exception):
     pass
 
 
-# minimal non-invasive anonymous reporting for helping the ODR project track programming failures; opt out with
+# minimal non-invasive reporting for helping the ODR project track programming failures; opt out with
 # --no-reporting or env REPORTING=0
 FLASH_LOG_URL = "https://odr.spencerfowler.com/v1/flashes"
 

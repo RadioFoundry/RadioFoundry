@@ -184,7 +184,7 @@
  "flash.log.is_off": "Turned off for this page.",
  "flash.log.more": "What is sent and kept",
  "flash.log.sent": "Sent: a random ID for the write, the radio model, the firmware version, build and feature list, this page's version, and at the end success or failure with the error message. Never sent: your stock firmware file, backups, codeplug, serial number, DMR ID or callsign.",
- "flash.log.kept": "The project's server keeps this with the time and your IP address. The request passes through Cloudflare. The data is used only to find programming failures and is never sold or shared.",
+ "flash.log.kept": "The project's server keeps this with the time and your IP address. The request passes through Cloudflare. The data is used only to find programming failures and to stop abuse of the service, and is never sold or shared.",
  "flash.log.choices": "To turn it off, open this page with ?reporting=0 (odrflash: --no-reporting, or REPORTING=0 in the environment). To see or delete what was kept about you, email 19397858+sfowlr@users.noreply.github.com with the time of the write or your IP address.",
  "flash.start.privacy": "Firmware images come from this site or are built on request. Your stock firmware file, backups and radio data stay on your computer.",
  "flash.support.none": "This browser can't reach a radio (no WebUSB or Web Serial). Use Chrome, Edge or another Chromium browser on a computer.",

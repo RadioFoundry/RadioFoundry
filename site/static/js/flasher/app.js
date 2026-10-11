@@ -121,7 +121,7 @@ const S = {
 
 // Custom builds and the flash log
 const API = "https://odr.spencerfowler.com/v1/";
-// minimal non-invasive anonymous reporting for helping the ODR project track programming failures; opt out with
+// minimal non-invasive reporting for helping the ODR project track programming failures; opt out with
 // ?reporting=0
 const FLASH_LOG = new URLSearchParams(location.search).get("reporting") !== "0";
 
