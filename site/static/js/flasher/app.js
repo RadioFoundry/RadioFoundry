@@ -104,7 +104,8 @@ function errorText(e) {
 // ---------------------------------------------------------------------------------------------------------------
 // state
 
-const S = {
+// A fresh start; reset() puts these back (a Set, an array) rather than nulling them
+const initialState = () => ({
 	task: null, step: 0, data: null, radio: null, board: null, selection: null, sim: null, fakeRadio: null,
 	firmware: null,		// {manifest, image, source}
 	now: null,		// what runs on the radio: {kind: "odr", probe} | {kind: "stock", version} | {kind: "unknown"}
@@ -119,7 +120,8 @@ const S = {
 	useId: null,		// the flash log's id for this use (see useId)
 	openGroups: new Set(),	// feature groups expanded on the build step
 	openTip: null,		// the feature whose ⓘ bubble is open
-};
+});
+const S = initialState();
 
 // Custom builds and the flash log
 const API = "https://odr.spencerfowler.com/v1/";
@@ -358,8 +360,9 @@ function next() {
 async function reset() {
 	await dropSerial();
 	const keep = { data: S.data, sim: S.sim, fakeRadio: S.fakeRadio };
-	for (const k of Object.keys(S)) S[k] = null;
-	Object.assign(S, keep, { step: 0, backupParts: [], backupDone: false });
+	// exactly a fresh load: fields set along the way (buildOptions, keyFromRadio, ...) go, the rest start over
+	for (const k of Object.keys(S)) delete S[k];
+	Object.assign(S, initialState(), keep);
 	render();
 }
 
