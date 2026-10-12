@@ -121,7 +121,7 @@ image (UHF; VHF within 30 bytes) fits only with link time optimization, 2026-10-
 | `LTO=0` | | overflows by 16,504 |
 | `LTO=1 LTO_3P=0` | | overflows by 972 |
 | `LTO=1 LTO_3P=1` (default) | 279,668 | 2,000 |
-| maximal (default + `AM_RX BCAST_FM`), 2026-10-12 | 280,760 | 908 |
+| default + `AM_RX BCAST_FM`, 2026-10-12 (the maximal configuration then; both are unsupported here now) | 280,760 | 908 |
 
 ### DM-32UV
 

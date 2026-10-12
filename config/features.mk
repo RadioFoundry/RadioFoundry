@@ -127,11 +127,11 @@ CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 CONFIG_VOX ?= $(CONFIG_FM)
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
-# air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on boards with
-# CAP_AM_RX (needs FM; docs/spec/airband-and-broadcast.md). Off where the board can't: on for the DM-32UV
+# air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on radios whose
+# receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). On for the DM-32UV
 CONFIG_AM_RX ?= n
-# broadcast FM receiver: Tools > FM radio on a second receiver (board.bcast), paused for channel traffic
-# (core/bcast, docs/spec/airband-and-broadcast.md). Off where the board has none: on for the DM-32UV
+# broadcast FM receiver: Tools > FM radio on a second receiver chip, paused for channel traffic
+# (board.bcast; core/bcast, docs/spec/airband-and-broadcast.md). On for the DM-32UV
 CONFIG_BCAST_FM ?= n
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose

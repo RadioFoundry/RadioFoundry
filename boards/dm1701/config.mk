@@ -18,5 +18,6 @@ MAXIMAL_VARS := LTO=1
 # Supported but not needed here, so tools/ci.sh's maximal configuration leaves it off: PPP stands in for the USB
 # network adapter on UART-only radios (docs/spec/ppp.md), and this one has the adapter
 MAXIMAL_SKIP := NET_PPP
-# No use on a 160x120 panel (the 16x32 font is for 240 px and wider), so the maximal configuration leaves it off
-BOARD_UNSUPPORTED := FONT_XL
+# No use on a 160x120 panel (the 16x32 font is for 240 px and wider), and no hardware for the air band (the AT1846S is
+# FM only) or a broadcast receiver (docs/spec/airband-and-broadcast.md), so the maximal configuration leaves them off
+BOARD_UNSUPPORTED := FONT_XL AM_RX BCAST_FM

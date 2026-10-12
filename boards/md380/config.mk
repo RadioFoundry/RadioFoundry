@@ -26,8 +26,9 @@ LTO_3P ?= 1
 # With it off the default image has about 2 KB free; DMR_ROAMING (also 12 KB) is the alternative
 CONFIG_HOTSPOT ?= n
 # Not written for this radio (above), left out for flash, or no use on it (FONT_XL is for 240 px and wider panels,
-# this one is 160 px): tools/ci.sh's maximal configuration leaves these off
-BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL HOTSPOT
+# this one is 160 px; no air band receiver or broadcast receiver, docs/spec/airband-and-broadcast.md): tools/ci.sh's
+# maximal configuration leaves these off
+BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL HOTSPOT AM_RX BCAST_FM
 # Supported but not needed here, so the maximal configuration leaves it off too: PPP stands in for the USB network
 # adapter on UART-only radios (docs/spec/ppp.md), and this one has the adapter
 MAXIMAL_SKIP := NET_PPP

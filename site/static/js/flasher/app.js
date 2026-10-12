@@ -478,8 +478,10 @@ function buildView() {
 		h("span", { class: "small muted" }, t("flash.build.count", { n: sel.on.size, total: supportedCount }))));
 		// every feature this radio supports, one collapsible group per feature-matrix group, each with its count
 		const groups = S.data.groups.map((g) => {
-			const items = S.data.features.filter((f) => f.group === g && sel.supported(f.name));
-			if (!items.length) return null;
+			// what this radio can't run is listed too, grayed out, so nobody wonders where it went
+			const all = S.data.features.filter((f) => f.group === g && f.name !== "AUDIO_PROBE");
+			const items = all.filter((f) => sel.supported(f.name));
+			if (!all.length) return null;
 			const on = items.filter((f) => sel.on.has(f.name)).length;
 			const base = S.radio.config[sel.base];
 			const changed = items.filter((f) => base.includes(f.name) !== sel.on.has(f.name)).length;
@@ -488,19 +490,20 @@ function buildView() {
 			h("summary", {}, h("span", { class: "group-name" }, gtitle(g)),
 				h("span", { class: "group-count" }, t("flash.build.group_count", { on, total: items.length }),
 					changed ? h("span", { class: "muted" }, " · ", t("flash.build.group_changed", { n: changed })) : null)),
-			nest(items).map(({ f, depth }) => {
+			nest(all).map(({ f, depth }) => {
+				const na = !sel.supported(f.name);
 				const isOn = sel.on.has(f.name);
 				const off = S.data.variants.find((v) => v.id === sel.base)?.off.find((o) => o.name === f.name);
 				// a needed feature outside this group that is off: turning this on turns it on too
 				const away = (f.needs?.all || []).filter((n) => !items.some((i) => i.name === n) && sel.supported(n) && !sel.on.has(n));
 				// one line per feature; the help (written for developers) is the tooltip, the build's reason for leaving
 				// a feature out and a needed feature that's off show inline
-				const note = [off && !isOn ? off.why : null,
+				const note = na ? [t("flash.build.unsupported", { radio: S.radio.name })] : [off && !isOn ? off.why : null,
 					away.length ? t("flash.build.needs", { names: away.map((n) => sel.byName[n]?.title || n).join(", ") }) : null].filter(Boolean);
 				const tipId = `tip-${f.name}`;
 				const tipOpen = S.openTip === f.name;
-				return h("div", { class: `toggle${base.includes(f.name) !== isOn ? " changed" : ""}`, style: `--depth: ${depth}` },
-					h("input", { type: "checkbox", id: `f-${f.name}`, checked: isOn, disabled: sel.required(f.name),
+				return h("div", { class: `toggle${na ? " unsupported" : base.includes(f.name) !== isOn ? " changed" : ""}`, style: `--depth: ${depth}` },
+					h("input", { type: "checkbox", id: `f-${f.name}`, checked: isOn && !na, disabled: na || sel.required(f.name),
 						onchange: (e) => change(f.name, e.target.checked) }),
 					h("div", { class: "feature" },
 						h("label", { for: `f-${f.name}` }, f.title),
@@ -570,6 +573,7 @@ function featureTip(f, id) {
 	const needs = [all.length ? titles(all) : null, any.length ? t("flash.build.tip_any", { names: titles(any) }) : null].filter(Boolean);
 	const bytes = f.bytes?.[S.radio.model];
 	return h("div", { class: "tip", id, role: "note", onclick: (e) => e.stopPropagation() },
+		S.selection.supported(f.name) ? null : h("p", { class: "tip-na" }, t("flash.build.unsupported", { radio: S.radio.name })),
 		h("p", {}, plainHelp(f.help)),
 		f.notes ? h("p", { class: "muted" }, f.notes) : null,
 		h("dl", { class: "kv-list small" },
@@ -854,9 +858,9 @@ function codecView() {
 			: filePicker(t("flash.codec.stock_pick"), ".bin", useStock);
 		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_unknown") });
 		const loaded = !S.stock ? null : S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad");
-		const where = h("p", {}, t("flash.codec.stock_files", { files: S.board.codec.sources.join(", ") }), " ",
-			S.radio.flash.stock_download ? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))
-				: t("flash.codec.stock_maker"));
+		// a download link only where there is a known one; no vague pointers
+		const where = h("p", {}, t("flash.codec.stock_files", { files: S.board.codec.sources.join(", ") }),
+			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null);
 		const parts = [h("p", {}, t("flash.codec.lead"))];
 		if (needs.length) {
 			parts.push(h("div", { class: "notice action" }, h("strong", {}, t("flash.codec.action_title")),
