@@ -21,6 +21,7 @@ import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from
 import { Selection } from "../static/js/flasher/select.js";
 import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
 import { findKey, readBootKey } from "../static/js/flasher/bootkey.js";
+import { readCodec } from "../static/js/flasher/codecsave.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
@@ -249,4 +250,29 @@ test("restore an ODR backup exactly, codeplug included", async () => {
 	assert.deepEqual(sectors.map(([a]) => a), [0x3000, 0x4000, 0x9B000]);
 	assert.deepEqual(await writeCodeplug(new Link(radio.serialStream()), sectors), []);
 	assert.deepEqual(radio.spi, spiBefore);
+});
+
+test("where an update erases the codec, it is read back from the radio and checked window by window", async () => {
+	const board = fb.boards.md380;
+	const flash = new Uint8Array(0x100000);
+	for (let i = 0; i < flash.length; i++) flash[i] = (i * 131 + 7) & 0xFF;
+	const windows = [];
+	for (const [addr, length] of [[0x08050C44, 0x400], [0x0808FC64, 0x200], [0x080D0FC8, 0x24]]) {
+		const o = addr - 0x08000000;
+		if (!windows.length) flash.set([fb.codec_sig & 0xFF, (fb.codec_sig >>> 8) & 0xFF, (fb.codec_sig >>> 16) & 0xFF, fb.codec_sig >>> 24], o);
+		windows.push([addr, length, await sha256(flash.subarray(o, o + length))]);
+	}
+	const fbx = { ...fb, profiles: { ["f".repeat(64)]: { board: "md380", codec_profile: board.codec.id, windows } } };
+	const link = (mem, refuse = false) => ({ async readMem(addr, n) { if (refuse) throw new Error("refused"); return mem.slice(addr - 0x08000000, addr - 0x08000000 + n); } });
+	const got = await readCodec(link(flash), board, fbx);
+	assert.deepEqual(got.segments.map(([a]) => a), windows.map(([a]) => a));
+	const bad = flash.slice();
+	bad[0x0808FC64 - 0x08000000 + 3] ^= 1;
+	assert.equal(await readCodec(link(bad), board, fbx), null);
+	assert.equal(await readCodec(link(flash, true), board, fbx), null);
+	// the decision then needs no stock file, and says where the codec comes from
+	const m = { codec: { profile: board.codec.id } };
+	assert.equal(decideCodec(board, m, { haveSaved: true }).source, "saved");
+	assert.equal(decideCodec(board, m, { haveStock: true }).source, "stock");
+	assert.throws(() => decideCodec(board, m, {}), DecisionError);
 });

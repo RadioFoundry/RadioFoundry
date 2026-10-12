@@ -22,6 +22,7 @@ import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from
 import { Selection } from "./select.js";
 import { decideCodec } from "./decide.js";
 import { readBootKey } from "./bootkey.js";
+import { loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -311,6 +312,16 @@ async function keyFromRadio(link) {
 	if (!S.sim) try { localStorage.setItem(KEY_STORE(S.board.id), toHex(key)); } catch (e) { /* not remembered */ }
 }
 
+// Where an update erases the codec (keep_codec_supported false), a radio running ODR with that codec hands it over
+// first (codecsave.js), and this browser keeps a copy before anything is erased. Quiet when it can't: the stock file
+// still works.
+async function codecFromRadio(link, probe, status) {
+	if (S.board.keep_codec_supported || probe?.codec !== S.board.codec.id || S.savedCodec?.from === "radio") return;
+	status?.replaceChildren(h("p", { class: "muted" }, t("flash.now.reading_codec")));
+	const got = await readCodec(link, S.board, fb());
+	if (got) S.savedCodec = { ...got, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments) };
+}
+
 async function getKey(board) {
 	if (S.key) return S.key;
 	if (S.sim) return (S.key = S.sim.key);
@@ -412,6 +423,7 @@ function radioView() {
 			optionsFromProbe(p);
 			S.now = { kind: "odr", probe: p };
 			await keyFromRadio(link);
+			await codecFromRadio(link, p, status);
 			next();
 		} catch (e) {
 			status.replaceChildren(connectError(e));
@@ -723,6 +735,7 @@ function nowView() {
 			if (odd) throw new Error(t("flash.err.wrong_option", { board: p.board, option: odd[0].title.toLowerCase(), value: odd[1].title }));
 			S.now = { kind: "odr", probe: p };
 			await keyFromRadio(link);
+			await codecFromRadio(link, p, status);
 			status.replaceChildren();
 		} catch (e) {
 			await dropSerial();
@@ -835,10 +848,15 @@ function codecView() {
 		}
 		const haveStock = !!(S.stock && fb().profiles[S.stock.info.sha]);
 		const keyKnown = S.sim || !!S.key || !!savedKey(S.board);
+		// the copy an earlier visit read from this radio: an update that stopped halfway leaves none in the radio
+		if (!S.board.keep_codec_supported && !S.savedCodec && !S.sim) {
+			const got = await loadCodec(S.board, fb());
+			if (got) S.savedCodec = { ...got, from: "browser", stored: true };
+		}
 		let err = null;
 		try {
 			S.decision = decideCodec(S.board, fw.manifest, {
-				haveStock, requested: S.requested || null,
+				haveStock, haveSaved: !!S.savedCodec, requested: S.requested || null,
 				probe: S.now?.kind === "odr" ? S.now.probe : null,
 				stockInstalled: S.now?.kind === "stock" ? S.now.version : null,
 			});
@@ -854,6 +872,9 @@ function codecView() {
 		const ready = S.decision && (keyKnown || haveStock);
 		const plan = S.decision ? `${t(`flash.codec.mode.${S.decision.mode}`)}: ${S.decision.why}.` : null;
 		const keyLine = S.keyFromRadio ? t("flash.codec.key_from_radio") : keyKnown && !S.sim ? t("flash.codec.key_saved") : null;
+		const fromSaved = S.decision?.source === "saved";
+		const codecLine = !fromSaved ? null : S.savedCodec.from === "browser" ? t("flash.codec.codec_saved")
+			: t(S.savedCodec.stored ? "flash.codec.codec_from_radio" : "flash.codec.codec_from_radio_unsaved");
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { await useStock({ name: "simulated-stock.bin", data: S.sim.stock }); })
 			: filePicker(t("flash.codec.stock_pick"), ".bin", useStock);
 		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_unknown") });
@@ -870,7 +891,7 @@ function codecView() {
 			parts.push(notice(err, "bad"));
 		} else {
 			parts.push(h("div", { class: "notice ok" }, h("strong", {}, t(haveStock && S.stock ? "flash.codec.ready_title" : "flash.codec.none_title")),
-				h("p", {}, plan), keyLine ? h("p", {}, keyLine) : null, loaded));
+				h("p", {}, plan), codecLine ? h("p", {}, codecLine) : null, keyLine ? h("p", {}, keyLine) : null, loaded));
 			if (S.decision.risk) parts.push(h("p", { class: "small muted" }, S.decision.risk[0].toUpperCase() + S.decision.risk.slice(1) + "."));
 		}
 		// writing the codec from the stock file anyway, or forcing a mode: always there, never in the way
@@ -981,7 +1002,7 @@ function writeView() {
 	const fw = S.firmware;
 	return bootloaderPanel(t("flash.write.title"), async () => {
 		let codec = [];
-		if (S.decision.mode === MERGE) codec = (await stockfw.extract(S.stock.data, S.key, fb())).segments;
+		if (S.decision.mode === MERGE) codec = S.decision.source === "saved" ? S.savedCodec.segments : (await stockfw.extract(S.stock.data, S.key, fb())).segments;
 		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec);
 	}, next, { task: "install", source: fw.origin || "", radio: S.board.id, firmware: String(fw.manifest.version || ""),
 		variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });

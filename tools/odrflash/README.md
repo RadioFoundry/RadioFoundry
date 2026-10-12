@@ -67,6 +67,14 @@ itself: odrflash reads the stock bootloader over the debug link and takes the bl
 (`odrflash/bootkey.py`), so an update needs none of these (`odrflash key --save` keeps it from the radio). The key is
 never part of ODR.
 
+### The codec on the MD-380
+
+On the MD-380 every update erases part of the codec (ODR's image shares a flash sector with it), so it is written
+again each time. A radio that runs ODR with the codec hands it over: odrflash reads it back over the debug link,
+checks it against the stock codec's hashes, saves a copy in its config directory and writes that back, so an update
+needs no `--stock`. The saved copy also finishes an update that stopped halfway, when the radio can no longer start
+ODR.
+
 ### USB access
 
 | System | Once |
@@ -85,6 +93,7 @@ never part of ODR.
 | `odrflash/stockfw.py` | the DM-1701 and MD-380 stock files: container, decryption, codec extraction and merge, key derivation (also used by `tools/codec_extract.py`) |
 | `odrflash/dfu.py` | the AnyRoad DFU bootloader: find, open, run a plan |
 | `odrflash/debuglink.py` | VERSION / INFO_CHIP / READ_MEM over the debug link (read only) |
+| `odrflash/codecsave.py` | where an update erases the codec (the MD-380): the codec read back from a radio that runs ODR, checked by hash, saved in the config directory and written back |
 | `odrflash/bootkey.py` | the bootloader key from a radio that runs ODR, found in its bootloader by the key's hash |
 | `odrflash/fakedfu.py` | a fake bootloader with a flash model, for the tests and `--simulate` |
 | `odrflash/release.py`, `state.py`, `cli.py` | GitHub downloads, the remembered probe, the commands |

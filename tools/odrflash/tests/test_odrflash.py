@@ -21,7 +21,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from odrflash import boards, bootkey, cli, debuglink, fakedfu, manifest as mf, plan, state, stockfw  # noqa: E402
+from odrflash import boards, bootkey, cli, codecsave, debuglink, fakedfu, manifest as mf, plan, state, stockfw  # noqa: E402
 from odrflash import dfu as dfumod  # noqa: E402
 
 DM1701 = boards.DM1701
@@ -607,6 +607,58 @@ class BootKeyFromRadio(unittest.TestCase):
         self.assertIsNone(bootkey.read_key(self.Radio(bytes(self.boot)), self.board_key))
         self.assertIsNone(bootkey.read_key(self.Radio(b"", refuse=True), self.board_key))
         self.assertIsNone(bootkey.read_key(self.Radio(bytes(self.boot)), boards.get("dm32")))
+
+
+class CodecFromRadio(unittest.TestCase):
+    """The codec read back over READ_MEM where an update erases it (the MD-380), checked window by window, saved and
+    loaded again; and the decision that uses it."""
+
+    def setUp(self):
+        r = random.Random(11)
+        self.board = boards.get("md380")
+        self.flash = bytearray(r.getrandbits(8) for _ in range(0x100000))
+        wins = []
+        for a, n in [(0x08050C44, 0x400), (0x0808FC64, 0x200), (0x080D0FC8, 0x24)]:
+            o = a - 0x08000000
+            if not wins:
+                self.flash[o:o + 4] = struct.pack("<I", stockfw.CODEC_SIG)
+            wins.append((a, n, hashlib.sha256(self.flash[o:o + n]).hexdigest()))
+        prof = {"board": "md380", "codec_profile": self.board.codec.id, "code": wins[0], "tables": wins[1],
+                "extra": wins[2:]}
+        self.profiles = mock.patch.dict(stockfw.PROFILES, {"f" * 64: prof}, clear=True)
+        self.profiles.start()
+        self.addCleanup(self.profiles.stop)
+        self.tmp = tempfile.mkdtemp()
+
+    def radio(self, flash=None, refuse=False):
+        return BootKeyFromRadio.Radio(bytes(flash if flash is not None else self.flash), refuse=refuse)
+
+    def test_read_save_load(self):
+        prof, segs = codecsave.read_codec(self.radio(), self.board)
+        self.assertEqual([a for a, _ in segs], [0x08050C44, 0x0808FC64, 0x080D0FC8])
+        codecsave.save(self.board, segs, self.tmp)
+        self.assertEqual(codecsave.load(self.board, self.tmp), (prof, segs))
+
+    def test_a_changed_byte_is_refused(self):
+        bad = bytearray(self.flash)
+        bad[0x0808FC64 - 0x08000000 + 7] ^= 1
+        self.assertIsNone(codecsave.read_codec(self.radio(bad), self.board))
+        self.assertIsNone(codecsave.read_codec(self.radio(refuse=True), self.board))
+        _, segs = codecsave.read_codec(self.radio(), self.board)
+        p = codecsave.save(self.board, segs, self.tmp)
+        with open(p, "r+b") as f:
+            f.seek(5)
+            f.write(b"\x00")
+        self.assertIsNone(codecsave.load(self.board, self.tmp))
+        self.assertIsNone(codecsave.load(self.board, tempfile.mkdtemp()))
+
+    def test_decision_uses_the_copy(self):
+        man = {"codec": {"profile": self.board.codec.id}}
+        d = cli.decide_codec(self.board, man, "auto", False, None, None, None, have_saved=True)
+        self.assertEqual((d.mode, d.source), (plan.MERGE, "saved"))
+        self.assertEqual(cli.decide_codec(self.board, man, "auto", True, None, None, None).source, "stock")
+        with self.assertRaises(cli.UsageError):
+            cli.decide_codec(self.board, man, "auto", False, None, None, None)
 
 
 class FlashLog(unittest.TestCase):

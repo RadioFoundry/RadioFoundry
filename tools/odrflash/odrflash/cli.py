@@ -12,7 +12,7 @@ import time
 import urllib.request
 import uuid
 
-from . import __version__, boards, bootkey, debuglink, manifest as mf, plan as planmod, state, stockfw
+from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf, plan as planmod, state, stockfw
 from . import dfu as dfumod
 from . import release as relmod
 
@@ -192,21 +192,37 @@ def get_key(args, board, stock, sim_key=None):
                      % (board.name, STOCK_HINT))
 
 
+def get_saved_codec(args, board, probe):
+    """For a radio whose update erases the codec: read it back from the radio when it runs ODR with this codec and
+    save a copy, else the copy saved by an earlier run (an update that stopped halfway leaves no codec to read)."""
+    if probe and probe.get("codec") == board.codec.id and not args.no_probe:
+        got = codecsave.from_radio(board, args.port)
+        if got:
+            say("codec    read back from the radio (debug link) and checked; saved in %s" % codecsave.save(board, got[1]))
+            return got
+    got = codecsave.load(board)
+    if got:
+        say("codec    the copy saved from this radio earlier, checked: %s" % codecsave.path(board))
+    return got
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # the codec decision
 
 class Decision:
-    def __init__(self, mode, why, risk=None, expect_codec=True):
+    def __init__(self, mode, why, risk=None, expect_codec=True, source="stock"):
         self.mode = mode
         self.why = why
         self.risk = risk
         self.expect_codec = expect_codec
+        self.source = source		# a merge's codec: "stock" (the stock file) or "saved" (read back from the radio)
 
 
-def decide_codec(board, manifest, requested, have_stock, probe, stock_installed, ask=None):
+def decide_codec(board, manifest, requested, have_stock, probe, stock_installed, ask=None, have_saved=False):
     """Pick keep or merge (docs/dev/release.md "Codec handling"). probe: a debug-link probe of the radio (this run or
     remembered), or None. stock_installed: what the user says the radio runs ("V02.06 CSV"), or None. ask: a yes/no
-    callable for the interactive question, or None (non-interactive). Raises UsageError when neither is safe."""
+    callable for the interactive question, or None (non-interactive). have_saved: the codec read back from this radio
+    (codecsave.py), used where an update can't keep it. Raises UsageError when neither is safe."""
     profile = (manifest.get("codec") or {}).get("profile") or board.codec.id
     merge_hint = "flash with --stock FILE to write the codec from your stock firmware (%s)" % STOCK_HINT
     if requested == planmod.MERGE:
@@ -214,11 +230,16 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
             raise UsageError("--codec merge needs --stock: " + STOCK_HINT)
         return Decision(planmod.MERGE, "asked for: the codec is written from your stock file")
     if not board.keep_codec_supported:
+        if have_saved:
+            return Decision(planmod.MERGE, "on the %s, ODR's firmware shares a flash sector with the codec, so every "
+                            "update erases part of it; the copy read back from the radio is written again"
+                            % board.name, source="saved")
         if have_stock:
             return Decision(planmod.MERGE, "on the %s, ODR's firmware shares a flash sector with the codec, so every "
                             "update erases part of it; it is written again from your stock file" % board.name)
         raise UsageError("on the %s, ODR's firmware shares a flash sector with the codec, so every update erases part "
-                         "of it; %s" % (board.name, merge_hint))
+                         "of it; start the radio with ODR and connect it (odrflash reads the codec back and saves a "
+                         "copy), or %s" % (board.name, merge_hint))
     if probe:
         pb = boards.from_debuglink_name(probe.get("board") or "")
         if pb is None or pb.id != board.id:
@@ -348,11 +369,15 @@ def cmd_flash(args):
         if pb and pb.id != board.id:
             raise UsageError("the radio is a %s, the image is for the %s: refusing" % (pb.name, board.name))
     interactive = None if (args.yes or args.dry_run) else ask_yes
+    saved = None
+    if not board.keep_codec_supported and not merged and not sim:
+        saved = get_saved_codec(args, board, probe)
     if merged and args.codec != planmod.KEEP:
         d = Decision(planmod.MERGE, "the image carries the codec (%s), so it is written from the image"
                      % merged[0]["codec_profile"])
     else:
-        d = decide_codec(board, man, args.codec, stock is not None, probe, args.stock_installed, interactive)
+        d = decide_codec(board, man, args.codec, stock is not None, probe, args.stock_installed, interactive,
+                         have_saved=saved is not None)
     say("codec    %s: %s" % (d.mode.upper(), d.why))
     if d.risk:
         warn(d.risk)
@@ -361,6 +386,8 @@ def cmd_flash(args):
     key = None
     if d.mode == planmod.MERGE and merged:
         codec_segs = merged[1]
+    elif d.mode == planmod.MERGE and d.source == "saved":
+        codec_segs = stockfw.codec_segments(*saved)
     elif d.mode == planmod.MERGE:
         if stock == "synthetic":
             stock_bytes, profiles, _, _ = stockfw.build_synthetic_stock(sim_key, random.Random(7),

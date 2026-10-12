@@ -15,8 +15,10 @@ export class DecisionError extends Error {
 }
 
 // probe: what a running ODR radio said (link.probe), or null. stockInstalled: the stock version the user says the
-// radio runs, or null. haveStock: the user gave a stock file that can be a codec source.
-export function decideCodec(board, manifest, { requested = null, haveStock = false, probe = null, stockInstalled = null }) {
+// radio runs, or null. haveStock: the user gave a stock file that can be a codec source. haveSaved: the codec read
+// back from this radio (codecsave.js), used where an update can't keep it. A merge says where its codec comes from:
+// source "stock" or "saved".
+export function decideCodec(board, manifest, { requested = null, haveStock = false, probe = null, stockInstalled = null, haveSaved = false }) {
 	const profile = (manifest.codec || {}).profile || board.codec.id;
 	const mergeHint = "choose your stock firmware file so the codec can be written from it";
 	if (requested === MERGE) {
@@ -26,7 +28,9 @@ export function decideCodec(board, manifest, { requested = null, haveStock = fal
 	if (!board.keep_codec_supported) {
 		// ODR's own layout on this radio, not the radio or what it runs now: the image shares a flash sector with the codec
 		const why = `On the ${board.name}, ODR's firmware shares a flash sector with the codec, so every install or update erases part of the codec`;
-		if (haveStock) return { mode: MERGE, why: `${why.charAt(0).toLowerCase()}${why.slice(1)}, and it is written again from your stock file`, expectCodec: true };
+		const lower = `${why.charAt(0).toLowerCase()}${why.slice(1)}`;
+		if (haveSaved) return { mode: MERGE, source: "saved", why: `${lower}, and the copy read back from the radio is written again`, expectCodec: true };
+		if (haveStock) return { mode: MERGE, source: "stock", why: `${lower}, and it is written again from your stock file`, expectCodec: true };
 		throw new DecisionError(`${why}: ${mergeHint}.`, `${why}.`);
 	}
 	if (probe) {

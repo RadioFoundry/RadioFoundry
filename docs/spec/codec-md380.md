@@ -156,9 +156,13 @@ Run in place from flash at the stock addresses, as stock does: no copy, no patch
   touch sectors 6, 7, 8, 10 and 11; sector 9 (0x080A0000..0x080BFFFF) is free. The earlier reservation of sectors 7-11
   was wrong: the codec starts 61 KB below sector 7.
 * **Updates.** Sector 6 holds both the end of the application and the start of the codec, and the bootloader erases
-  whole sectors. So the codec can't be kept across an update: every flash merges it from the stock file again
-  (`boards.py` MD380: `keep_codec_supported=False`; odrflash writes sector 6 as "app+codec"). An application of at most
-  208 KB (sectors 3-5) would make "keep" possible again.
+  whole sectors. So the codec can't be kept across an update: every flash writes it again (`boards.py` MD380:
+  `keep_codec_supported=False`; odrflash writes sector 6 as "app+codec"). It comes from the stock file, or, on a radio
+  that runs ODR with this codec, from the radio itself: odrflash and the web flasher read every window back over the
+  debug link (READ_MEM), check each against the hashes above, and save a copy on the computer (odrflash's config
+  directory, the browser's IndexedDB) before anything is erased, so an update that stops halfway can still be
+  finished (`odrflash/codecsave.py`, `site/static/js/flasher/codecsave.js`). An application of at most 208 KB
+  (sectors 3-5) would make "keep" possible again.
 * **Boot check (`boards/md380/vocoder_md380.c`).** The first word at 0x08050C44 must be 0x4FF0E92D, then the CRC-32
   of every window must match the table above (computed once, about 112 KB). Otherwise the vocoder reports no codec and
   the radio is FM only. Codec profile id: `md380-d2032`.

@@ -166,8 +166,9 @@ odrflash-*` (or right-click, Open). Windows SmartScreen asks once.
 
 Not released yet: `releasable=False` in `tools/odrflash/odrflash/boards.py` and no job in `release.yml` until
 [docs/testing/md380-bringup.md](../testing/md380-bringup.md) passes. Its codec shares flash sector 6 with the
-application, so keep is impossible (`keep_codec_supported=False`): every flash merges the codec from TYT's D002.032
-file. `tools/md380_migrate.py` flashes it today and keeps the codeplug
+application, so keep is impossible (`keep_codec_supported=False`): every flash writes the codec again, from TYT's
+D002.032 file or, on a radio that runs ODR, from a copy read back from the radio and saved locally
+([codec-md380.md](../spec/codec-md380.md), "Updates"). `tools/md380_migrate.py` flashes it today and keeps the codeplug
 ([md380-migration.md](../spec/md380-migration.md)).
 
 ## Adding the DM-32UV
