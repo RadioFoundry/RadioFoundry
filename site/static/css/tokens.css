@@ -13,6 +13,7 @@
 	--line: 1.6;
 	--text-sm: 0.875rem;
 	--text-lg: 1.2rem;
+	--text-xs: 0.72rem;
 	--h1: clamp(2rem, 4.5vw, 3.2rem);
 	--h2: clamp(1.45rem, 2.6vw, 1.9rem);
 	--h3: 1.2rem;
@@ -34,6 +35,7 @@
 	--surface-2: #efefeb;
 	--text: #15171a;
 	--muted: #555a62;
+	--faint: #a3a7ad;		/* the build stamp: there if you look for it */
 	--border: #d9dad5;
 	--accent: #b8431f;
 	--accent-text: #ffffff;
@@ -60,6 +62,7 @@
 		--surface-2: #23272c;
 		--text: #eceef0;
 		--muted: #a6adb6;
+		--faint: #545b63;
 		--border: #343a41;
 		--accent: #ef7a50;
 		--accent-text: #15171a;
@@ -85,6 +88,7 @@
 	--surface-2: #23272c;
 	--text: #eceef0;
 	--muted: #a6adb6;
+	--faint: #545b63;
 	--border: #343a41;
 	--accent: #ef7a50;
 	--accent-text: #15171a;

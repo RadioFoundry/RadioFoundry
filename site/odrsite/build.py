@@ -41,7 +41,10 @@ class Site:
 		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
 		self.git_dirty = bool(repo.git("status", "--porcelain", "--untracked-files=no"))
 		self.version = repo.git("describe", "--tags", "--always", "--dirty", default=self.git)
-		self.built = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+		now = datetime.datetime.now(datetime.timezone.utc)
+		self.built = now.strftime("%Y-%m-%d")
+		self.built_at, self.built_iso = now.strftime("%Y-%m-%d %H:%M UTC"), now.strftime("%Y-%m-%dT%H:%MZ")
+		self.git_full = repo.git("rev-parse", "HEAD", default="")
 		self.asset_version = self.static_hash()
 
 	@staticmethod
@@ -167,7 +170,8 @@ class Site:
 		       "home": root + prefix, "content": content, "page_class": page_class,
 		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
 		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
-		       "repo": self.repo_url, "nav_current": nav}
+		       "built_at": self.built_at, "built_iso": self.built_iso, "git_full": self.git_full,
+		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "repo": self.repo_url, "nav_current": nav}
 		ctx["nav"] = self.nav(lang, ctx["home"], nav)
 		self.write(full, self.tpl.render("base", ctx, lang).replace("{{root}}", root).replace("{{home}}", root + prefix))
 

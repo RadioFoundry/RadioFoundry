@@ -69,6 +69,8 @@ pre code { background: none; padding: 0; }
 .site-footer { border-top: 1px solid var(--border); margin-top: var(--space-5); padding: var(--space-4) 0; background: var(--surface); }
 .footer-row { display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 .footer-row p { margin: 0; }
+.build-stamp { flex: 1 1 auto; text-align: end; align-self: flex-end; font-size: var(--text-xs); color: var(--faint); font-family: var(--font-mono); }
+.build-stamp a { color: inherit; text-decoration: none; }
 
 /* buttons */
 .btn {
