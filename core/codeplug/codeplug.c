@@ -1078,9 +1078,12 @@ bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 	if (source != CODEPLUG_OPENFW || id == 0 || id > 0xFFFFFFu) {
 		return false;
 	}
-	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX; first += PER_READ) {
+	// Locked like every other reader: the radio task and the UI task both search, and an edit may be writing
+	bool found = false, done = false;
+	storage_lock();
+	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX && !done; first += PER_READ) {
 		if (!flash_read(CONTACT_BASE + first * CONTACT_SIZE, r, sizeof(r))) {
-			return false;
+			break;
 		}
 		for (unsigned i = 0; i < PER_READ; i++) {
 			const uint8_t *c = &r[i * CONTACT_SIZE];
@@ -1090,11 +1093,14 @@ bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 			}
 			uint32_t cid = type == CONTACT_ALL_CALL ? 0xFFFFFFu : bcd_id(&c[0x10]);
 			if (cid == id) {
-				return codeplug_contact((uint16_t)(first + i + 1u), out);
+				found = codeplug_contact((uint16_t)(first + i + 1u), out);	// the lock is recursive
+				done = true;
+				break;
 			}
 		}
 	}
-	return false;
+	storage_unlock();
+	return found;
 }
 
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)

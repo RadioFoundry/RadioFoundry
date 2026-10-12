@@ -150,6 +150,9 @@ Contacts can't be added or edited on the radio yet. Use qdmr.
 - By ID: type the ID on Home, focus "Private call ..." and press **PTT**.
 - To answer a private call, press **PTT** during the reply window.
 
+While you talk, the top line says "Private" and the screen shows the contact's name
+([Transmitting](05-home-screen.md#transmitting)).
+
 ## Timeslot and color code
 
 On a DMR channel, **\*** opens these tiles:

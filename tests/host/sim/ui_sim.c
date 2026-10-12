@@ -16,7 +16,8 @@
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   shot:<name>         save the screen (sim_set_shot_dir)
-//   expect:<key>=<value>   check (see check()); value "*" = anything
+//   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
+//                          text contains it / none does
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1227,6 +1228,25 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
 	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
 	else if (strcmp(key, "beep") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_beep);	// ui_beep_t
+	else if (strcmp(key, "shows") == 0) {	// a text on the screen (as drawn, after fitting) contains the value
+		got[0] = 0;
+		for (int i = 0; i < live_n; i++) {
+			if (strstr(live[i].s, want) != NULL) {
+				snprintf(got, sizeof got, "%s", want);
+				break;
+			}
+			if (strlen(got) + strlen(live[i].s) + 3 < sizeof got) {	// else what is there, for the message
+				strcat(got, "|");
+				strcat(got, live[i].s);
+			}
+		}
+	}
+	else if (strcmp(key, "hides") == 0) {	// no text on the screen contains the value
+		snprintf(got, sizeof got, "%s", want);
+		for (int i = 0; i < live_n; i++)
+			if (strstr(live[i].s, want) != NULL)
+				snprintf(got, sizeof got, "shown in \"%s\"", live[i].s);
+	}
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value

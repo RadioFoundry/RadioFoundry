@@ -37,7 +37,7 @@ key. The most common hints:
 | OK Menu  \* Quick  # Joe | The normal hint. The name after # is the last caller. **#** opens actions for them |
 | Back undo  Hold OK save | The channel has temporary changes |
 | # caller  Back end reply | The reply window is running. **PTT** answers the last call |
-| Back: channel's talkgroup | A talk target chosen for now is in use |
+| Back: channel's talkgroup | A talk target chosen for now is in use ("Back default target" where the row is narrow) |
 | Hear all on  Back off | Hear all is latched on |
 | # skip  Back stop scan | Scan is running |
 | No codec: voice off | DMR channel without the codec merged |
@@ -67,7 +67,12 @@ On FM, the activity region shows "Receiving" while the squelch is open, or "Sque
 While you hold **PTT**, the screen shows TALKING, the target, the timeslot and color code (DMR), the time on air and
 the transmit timeout. DMR shows the time as "0:07 of 3:00", FM as "2:53 left of 3:00".
 
-<img src="../ux/screens/160x120i5/tx.png" width="200" alt="Transmitting">
+On DMR the top line says what kind of call it is: "TG 3100" for a group call, "Private 3101234" for a private call.
+A private call shows the contact's name, and its ID when there is room. A name too long for the line keeps the name
+and drops the ID.
+
+<img src="../ux/screens/160x120i5/tx.png" width="200" alt="Transmitting a group call">
+<img src="../ux/screens/160x120i5/tx_private.png" width="200" alt="Transmitting a private call">
 
 On DMR the screen may first show WAITING (the radio waits for a free slot) or WAKING RPT (it wakes up the repeater).
 

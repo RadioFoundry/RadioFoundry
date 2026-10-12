@@ -38,7 +38,8 @@ Rules:
   writes it back. Vendor bytes and flags that no field covers survive a radio-side edit.
 - **`codeplug_serial()`** goes up on every change. That covers edits and `codeplug_reload()` after the CPS shim
   wrote the image underneath. The radio core polls it and re-reads its zone and channel (`RREQ_RELOAD`). It falls
-  back to the saved zone position when the saved channel number is gone.
+  back to the saved zone position when the saved channel number is gone. It also forgets the contact names it looked
+  up for IDs (a "no name" answer is cached too), so a contact added after its ID was heard or called shows by name.
 - **The built-in set.** With no codeplug stored (blank flash, `codeplug=builtin`), the radio has a small built-in
   list of channels. The first edit *materializes* it: the built-in channels are written as stored records, the
   bitmaps and list counts are cleared, and the edit applies on top. After that the source is `open-firmware`.
