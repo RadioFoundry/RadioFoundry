@@ -6,8 +6,8 @@
 
 | Problem | Cause and fix |
 |---|---|
-| "no radio bootloader found" | The radio isn't in its bootloader, or the cable is charge-only. Turn the radio off. Hold the radio's bootloader keys ([Radio reference](23-radios.md), your radio's "Installing" section) and turn it on; the screen stays dark. Try another USB port or cable |
-| "access denied" | Linux: add the udev rule odrflash prints, then unplug and replug. Windows: install WinUSB for "STM32 BOOTLOADER" (0483:DF11) with Zadig |
+| "no radio bootloader found" | The radio isn't in its bootloader, or the cable is charge-only. Turn the radio off. Hold the radio's bootloader keys ([Radio reference](23-radios.md), your radio's "Installing" section) and turn it on; the screen stays dark. Try another USB port or cable. Windows: the bootloader's driver may be missing ([steps](02-installing.md#windows-the-bootloader-driver)) |
+| "access denied" | Linux: add the udev rule odrflash prints, then unplug and replug. Windows: install the bootloader's driver with Zadig ([steps](02-installing.md#windows-the-bootloader-driver)) |
 | "the bootloader is busy" | Another program has it open (a CPS, a virtual machine with USB passthrough). Close it and replug |
 | "unknown stock file ... not a supported codec source" | odrflash knows the stock files by SHA-256. Download the exact file [Installing](02-installing.md) names for your radio |
 | "... is an official Baofeng/TYT firmware file, not an OpenDigitalRadio image" | You gave the stock file as the image. Give the ODR image (or `--release`) and the stock file with `--stock` |

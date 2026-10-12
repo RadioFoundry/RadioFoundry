@@ -300,7 +300,8 @@ def wait_for_dfu(usb, board, wait_s, log=say):
             devs = dfumod.find(usb, board)
     if not devs:
         raise UsageError("no radio bootloader found (USB %04X:%04X). Check that the cable carries data and that the "
-                         "radio is in its bootloader (screen dark after power-on with PTT + SK1)" % board.dfu_ids)
+                         "radio is in its bootloader (screen dark after power-on with PTT + SK1)%s" % (
+                             board.dfu_ids, "\n" + dfumod.WINDOWS_DRIVER_STEPS if sys.platform == "win32" else ""))
     if len(devs) > 1:
         raise UsageError("%d bootloaders found; connect only one radio" % len(devs))
     return devs[0]

@@ -165,7 +165,17 @@ def permission_hint():
                 "  echo 'SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"0483\", ATTRS{idProduct}==\"df11\", MODE=\"0666\"' "
                 "| sudo tee /etc/udev/rules.d/50-odr-dfu.rules\n"
                 "  sudo udevadm control --reload-rules && sudo udevadm trigger")
-    return "Windows: install the WinUSB driver for the bootloader (0483:DF11) once with Zadig (zadig.akeo.ie)"
+    return WINDOWS_DRIVER_STEPS
+
+
+# Shown on Windows when the bootloader can't be opened. Same steps as docs/user/02-installing.md and the web flasher.
+WINDOWS_DRIVER_STEPS = (
+    "Windows: the bootloader needs the WinUSB driver, installed once with Zadig:\n"
+    "  1. Download Zadig from https://zadig.akeo.ie and run it (it needs no install).\n"
+    "  2. Put the radio in its bootloader and plug it in.\n"
+    "  3. In Zadig's list pick \"Digital Radio in USB mode\" (USB ID 0483 DF11). Not listed: Options > List All Devices.\n"
+    "  4. Choose WinUSB as the driver and click Install Driver (or Replace Driver). Wait until it says it succeeded.\n"
+    "  5. Unplug the radio, put it back in its bootloader and run odrflash again.")
 
 
 def find(usb, board):

@@ -139,7 +139,7 @@ export class WebUsbTransport {
 		try {
 			await device.claimInterface(intf);
 		} catch (e) {
-			throw new DfuError(`cannot open the bootloader (${e.message}). Close other programs that use the radio. On Windows the bootloader needs the WinUSB driver (Zadig, once).`);
+			throw new DfuError(`cannot open the bootloader (${e.message}). Close other programs that use the radio.`);
 		}
 		return new WebUsbTransport(device, intf);
 	}

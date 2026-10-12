@@ -289,6 +289,7 @@ def flash_boards():
 			"debuglink_names": list(b.debuglink_names), "releasable": b.releasable,
 			"keep_codec_supported": b.keep_codec_supported, "key_sha256": b.key_sha256,
 			"dfu_ids": list(b.dfu_ids) if b.dfu_ids else None, "dfu_string1": b.dfu_string1,
+			"dfu_product": b.dfu_product,
 			"protected": [list(p) for p in b.protected]}
 	for sha, p in stockfw.PROFILES.items():
 		q = dict(p)

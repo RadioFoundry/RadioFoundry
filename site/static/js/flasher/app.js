@@ -268,6 +268,26 @@ const KEY_STORE = (id) => `odr-key-${id}`;
 
 // Windows needs a driver for the bootloader; nobody else should read about it
 const onWindows = () => /win/i.test(navigator.userAgentData?.platform || navigator.platform || "");
+const WINUSB_STORE = "odr-winusb-ok";
+
+// Zadig steps (docs/user/02-installing.md). Open until this computer has reached a bootloader once, and always after a
+// failed connect: without the driver Chrome either doesn't list the bootloader or can't open it.
+function windowsDriverHelp({ failed = false } = {}) {
+	let seen = false;
+	try { seen = !!localStorage.getItem(WINUSB_STORE); } catch (e) { /* not remembered */ }
+	const hex = (n) => n.toString(16).toUpperCase().padStart(4, "0");
+	const usbId = S.board.dfu_ids ? S.board.dfu_ids.map(hex).join(" ") : "";
+	return h("details", { class: `notice${failed ? " action" : ""}`, open: failed || !seen },
+		h("summary", {}, t("flash.win.title")),
+		failed ? h("p", {}, t("flash.win.failed")) : null,
+		h("ol", { class: "steps" },
+			h("li", {}, t("flash.win.step1"), " ", h("a", { href: "https://zadig.akeo.ie", target: "_blank", rel: "noopener" }, "zadig.akeo.ie")),
+			h("li", {}, t("flash.win.step2")),
+			h("li", {}, t("flash.win.step3", { product: S.board.dfu_product || "?", usb_id: usbId })),
+			h("li", {}, t("flash.win.step4")),
+			h("li", {}, t("flash.win.step5"))),
+		h("p", { class: "small muted" }, t("flash.win.note")));
+}
 
 function savedKey(board) {
 	try {
@@ -906,12 +926,17 @@ function bootloaderPanel(title, makePlanFn, onDone, what) {
 					if (S.board.dfu_string1 && f.string1 && f.string1 !== S.board.dfu_string1) fp.append(notice(t("flash.write.unexpected", { what: f.string1 })));
 				}
 				status.replaceChildren(notice(t("flash.write.found"), "ok"));
+				if (onWindows() && !S.fakeRadio) try { localStorage.setItem(WINUSB_STORE, "1"); } catch (e) { /* not remembered */ }
+				winHelp?.replaceChildren();
 				write.disabled = false;
 				connect.disabled = true;
 			} catch (e) {
-				status.replaceChildren(notice(errorText(e), "bad"));
+				status.replaceChildren(...h("div", {}, notice(errorText(e), "bad"),
+					onWindows() && usbSupported() ? windowsDriverHelp({ failed: true }) : null).childNodes);
+				winHelp?.replaceChildren();
 			}
 		});
+		const winHelp = onWindows() ? h("div", {}, windowsDriverHelp()) : null;
 		const write = button(t("flash.write.go"), async () => {
 			write.disabled = true;
 			box.append(prog.el, log.el);
@@ -937,7 +962,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what) {
 			h("h3", {}, t("flash.write.bootloader_title")),
 			h("ol", { class: "steps" }, S.radio.flash.bootloader.map((s) => h("li", {}, s))),
 			S.fakeRadio ? button(t("flash.sim.enter_bootloader"), () => { S.fakeRadio.enterBootloader(); log.add("(simulated) radio in its bootloader"); }) : null,
-			onWindows() ? h("p", { class: "small muted" }, t("flash.write.windows_hint")) : null,
+			winHelp,
 			h("div", { class: "actions" }, connect, write), fp, status).childNodes);
 	};
 	box.append(h("p", { class: "muted" }, t("flash.loading")));

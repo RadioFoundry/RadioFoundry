@@ -73,7 +73,7 @@ never part of ODR.
 |---|---|
 | macOS | nothing |
 | Linux | a udev rule for the bootloader (0483:DF11), which odrflash prints when access is denied; for the radio's serial port, membership of the `dialout` group (`sudo usermod -aG dialout $USER`, then log in again) |
-| Windows | bind the bootloader (0483:DF11, "STM32 BOOTLOADER") to WinUSB with Zadig (zadig.akeo.ie). The radio's serial port needs no driver |
+| Windows | bind the bootloader ("Digital Radio in USB mode", 0483:DF11) to WinUSB with Zadig, once ([steps](../../docs/user/02-installing.md#windows-the-bootloader-driver)); odrflash prints them when it can't open the bootloader. The radio's serial port needs no driver |
 
 ## For developers
 

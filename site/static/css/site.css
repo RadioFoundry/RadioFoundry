@@ -92,6 +92,7 @@ pre code { background: none; padding: 0; }
 .notice > :last-child { margin-bottom: 0; }
 .notice.action { display: grid; gap: var(--space-3); }
 .notice.action ul, .notice.action p { margin: 0; }
+details.notice > summary { font-weight: 600; }
 
 /* hero */
 .hero { background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%); border-bottom: 1px solid var(--border); }

@@ -15,7 +15,7 @@ their own route: see [Radios not in the releases](#radios-not-in-the-releases).
 The project's web site has a flasher that does everything on this page in the browser: it backs up the radio, picks
 the build (Full, Amateur or Commercial, or your own feature selection), keeps or writes the codec and writes the
 firmware. Later it can put the radio back from that backup. It needs Chrome, Edge or another Chromium browser on a
-computer; on Windows the bootloader needs the WinUSB driver once (step 1 below). Nothing you load into it leaves your
+computer; on Windows the bootloader needs a driver once ([Windows: the bootloader driver](#windows-the-bootloader-driver)). Nothing you load into it leaves your
 computer. **New: not yet tested on a radio.** Until it is, odrflash (below) is the tested way.
 
 ## What you need
@@ -42,11 +42,30 @@ Download the odrflash file for your system from the release page and put it some
 
 | System | Once |
 |---|---|
-| Windows | Run Zadig (zadig.akeo.ie) with the radio in its bootloader (step 3), pick the bootloader's USB device (your radio's "Installing" section names it) and install WinUSB. Windows may warn about the unsigned odrflash file once |
+| Windows | Install the bootloader's driver ([below](#windows-the-bootloader-driver)). Windows may warn about the unsigned odrflash file once |
 | macOS | In Terminal: `xattr -d com.apple.quarantine odrflash-*` and `chmod +x odrflash-*` (the file isn't signed) |
 | Linux | `chmod +x odrflash-*`. If odrflash says access is denied, it prints the udev rule to add. To reach the radio's serial port once it runs ODR (`odrflash probe`, updates), join the `dialout` group: `sudo usermod -aG dialout $USER`, then log in again |
 
 The examples below call it `odrflash`, and the stock file `STOCK.bin`.
+
+### Windows: the bootloader driver
+
+Windows has no driver for the radio's bootloader, so neither odrflash nor the web flasher can open it until you install
+one. Do this once per computer, with Zadig:
+
+1. Download Zadig from [zadig.akeo.ie](https://zadig.akeo.ie) and run it. It needs no install.
+2. Put the radio in its bootloader ([step 3](#step-3-flash), your radio's keys are in its
+   [Radio reference](23-radios.md) section) and plug it in.
+3. In Zadig's list, pick **Digital Radio in USB mode**. The USB ID boxes show `0483` `DF11`. If it isn't listed,
+   choose **Options › List All Devices**.
+4. Choose **WinUSB** as the driver (to the right of the green arrow) and click **Install Driver** (or **Replace
+   Driver**). Wait until Zadig says it succeeded.
+5. Unplug the radio, put it back in its bootloader and connect again.
+
+Only the bootloader needs this. The radio's serial port, once it runs ODR, works without a driver.
+
+Vendor tools that use the same USB ID (Baofeng's or TYT's upgrade tool, the MD-380's CPS) need their own driver back.
+In Device Manager, uninstall the device with **Delete the driver software for this device** checked, then replug.
 
 ## Step 2: get the stock firmware file
 

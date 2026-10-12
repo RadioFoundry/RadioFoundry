@@ -36,7 +36,7 @@ class CodecProfile:
 
 class Board:
     def __init__(self, id, name, family, app_base, flash_end, sectors, codec, debuglink_names, releasable,
-                 keep_codec_supported, key_sha256=None, dfu_ids=None, dfu_string1=None, protected=()):
+                 keep_codec_supported, key_sha256=None, dfu_ids=None, dfu_string1=None, dfu_product=None, protected=()):
         self.id = id
         self.name = name
         self.family = family
@@ -50,6 +50,7 @@ class Board:
         self.key_sha256 = key_sha256
         self.dfu_ids = dfu_ids
         self.dfu_string1 = dfu_string1
+        self.dfu_product = dfu_product		# the bootloader's USB product name (what Zadig lists)
         self.protected = protected		# address ranges never written (bootloader)
 
     def sector_at(self, addr):
@@ -102,6 +103,7 @@ DM1701 = Board(
     key_sha256=stockfw.DM1701_KEY_SHA256,
     dfu_ids=(0x0483, 0xDF11),
     dfu_string1="AnyRoad Technology",
+    dfu_product="Digital Radio in USB mode",
     protected=[(0x08000000, 0x0800C000)],
 )
 
@@ -147,6 +149,7 @@ MD380 = Board(
     key_sha256=stockfw.MD380_KEY_SHA256,
     dfu_ids=(0x0483, 0xDF11),
     dfu_string1="AnyRoad Technology",
+    dfu_product="Digital Radio in USB mode",
     protected=[(0x08000000, 0x0800C000)],
 )
 

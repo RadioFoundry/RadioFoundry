@@ -130,7 +130,8 @@ Then write your `backup-stock.rdt` or `backup-stock.dfu` with the TYT CPS or qdm
 - Some early VHF radios have a small 1 MB flash chip. ODR runs on them, but keeps no codeplug or settings. The
   program stops after the flash and tells you. Go back to stock if you need your channels.
 - The program never changes the radio's calibration.
-- Windows (untested): to flash, bind the bootloader (0483:DF11) to WinUSB with Zadig. That replaces the driver the
-  TYT CPS uses for the same USB ID, so run the backup step first.
+- Windows (untested): to flash, bind the bootloader (0483:DF11) to WinUSB with Zadig
+  ([steps](02-installing.md#windows-the-bootloader-driver)). That replaces the driver the TYT CPS uses for the same USB
+  ID, so run the backup step first.
 - Linux: the program prints the udev rule for 0483:DF11 if access is denied. Add yourself to the `dialout` group for
   the radio's serial port once it runs ODR.

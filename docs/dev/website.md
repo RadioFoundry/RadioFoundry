@@ -193,4 +193,7 @@ to switch USB back to serial on the radio. The bootloader is unaffected: it is a
 ### Browser support
 
 WebUSB and Web Serial: Chrome, Edge and other Chromium browsers on a computer, over https or localhost. Windows needs
-the WinUSB driver for the bootloader (Zadig, once), as odrflash does.
+the WinUSB driver for the bootloader (Zadig, once), as odrflash does. On Windows the bootloader step shows the Zadig
+steps ([installing](../user/02-installing.md#windows-the-bootloader-driver)), open until this computer has reached a
+bootloader once, and again with any failed connect: without the driver Chrome either doesn't list the bootloader or
+can't open it. The device name comes from `dfu_product` in `boards.py`.
