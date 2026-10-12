@@ -13,22 +13,26 @@ own stock firmware file ([tools/odrflash/README.md](../../tools/odrflash/README.
 1. Main is green: `JOBS=8 tools/ci.sh` ends with "all checks passed", on a machine with both compilers and `reuse`.
 2. The project lead runs the similarity scan against the reference trees and reviews every hit:
    `ODR_SIMILARITY_REFS="..." tools/ci.sh` ([docs/testing/README.md](../testing/README.md) 1).
-3. The HIL tests pass on each radio the release claims, with the flags its features need.
-4. odrflash has flashed the release candidate on each radio the release claims, in both codec modes (below, "Testing
+3. A comprehensive legal scan of what the release ships, reviewed by the project lead: the license and notices of
+   every file and dependency (`reuse lint`, `third_party/`, the odrflash executables' bundled packages), the names
+   and marks used in the docs, the site and the images, and nothing in the tree, the release or the site that the
+   clean-room rules ([CLEANROOM.md](../CLEANROOM.md)) or "Never commit" ([AGENTS.md](../../AGENTS.md)) forbid.
+4. The HIL tests pass on each radio the release claims, with the flags its features need.
+5. odrflash has flashed the release candidate on each radio the release claims, in both codec modes (below, "Testing
    odrflash on a radio").
-5. The user manual matches the release: the status of each setting in [Settings](../user/12-settings.md), the
+6. The user manual matches the release: the status of each setting in [Settings](../user/12-settings.md), the
    supported radios in the [Introduction](../user/01-introduction.md), the screenshots (`make -C tests/host ui-gallery`).
-6. The README's radio status table is current.
-7. Build the manual locally and read it through: `tools/build_manual.sh`.
-8. Tag and push the tag:
+7. The README's radio status table is current.
+8. Build the manual locally and read it through: `tools/build_manual.sh`.
+9. Tag and push the tag:
 
    ```
    git tag -a v0.1.0 -m "OpenDigitalRadio 0.1.0"
    git push origin v0.1.0
    ```
 
-9. The release workflow builds the firmware and odrflash and attaches them; the manual workflow attaches the PDF
-   (below). Edit the release notes on GitHub.
+10. The release workflow builds the firmware and odrflash and attaches them; the manual workflow attaches the PDF
+    (below). Edit the release notes on GitHub.
 
 ## Future improvements
 
