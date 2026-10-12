@@ -28,7 +28,7 @@
 #if CONFIG_APRS
 #include "aprs/aprs_host.h"
 #endif
-#if CONFIG_NET_TCP
+#if CONFIG_NET_LOCAL
 #include "net/net.h"
 #endif
 #if CONFIG_NET_PPP
@@ -71,6 +71,9 @@ static const hostlink_tnc_t *tnc;
 static uint32_t last_byte_ms;
 static uint32_t last_main_ms;		// the last byte for the mode's own protocol (side frames don't count)
 static bool side_ended;			// a side frame just ended: the next byte is at a request boundary
+#if CONFIG_NET_LOCAL && CONFIG_DMR_IP_GATEWAY
+static bool net_was_on;			// the last pass ran the network personality
+#endif
 #if CONFIG_HOTSPOT
 static mmdvm_framer_t framer;
 static char description[64];
@@ -494,6 +497,12 @@ static void hostlink_task(void *arg)
 		if (hostlink_network_mode()) {
 			hostlink_net_poll(now);		// frames from the host (UDP serial among them), packets from the air
 			now = hal_millis();
+#if CONFIG_NET_LOCAL
+			net_was_on = true;
+		} else if (net_was_on) {
+			net_was_on = false;
+			net_poll(now, false);		// back to serial: the services see the link go down (USRP's audio stops)
+#endif
 		}
 #endif
 #if CONFIG_SNMP
