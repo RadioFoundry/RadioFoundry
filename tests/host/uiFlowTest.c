@@ -6,7 +6,8 @@
 // - operate only: flows that only operate the radio never write the codeplug (P7);
 // - crawler: every screen reachable from Home is left by BACK, long BACK reaches Home, field-use screens are at most
 //   3 levels deep, the status strip (or the title row that carries the state pill) is drawn, PTT shows TX (P2, P4);
-// - long presses keep their one meaning on every screen: long BACK Home, long QUICK lock, long CONTEXT Recent (P3).
+// - long presses keep their one meaning on every screen: long BACK Home, long QUICK lock, long CONTEXT Recent (P3);
+// - the Transmitting screen names a private call's contact and tells it apart from a group call (P2).
 #include <stdio.h>
 #include <string.h>
 #include "sim/ui_sim.h"
@@ -389,6 +390,44 @@ static void about_checks(void)
 	}
 }
 
+// Transmitting, at every display class: a private call shows the contact's name, even a 16-character one (the ID
+// gives way first), and its title says "Private" where a group call's has "TG"; a group call never says "Private"
+static void call_screen_checks(void)
+{
+	static const struct { const char *name, *script, *expect; } cases[] = {
+		{ "private to a contact", "3 1 0 1 2 3 4 ok wait:5000 pttdown", "txpriv=1 shows=Joe_Smith shows=Private_310" },
+		{ "private, long name", "worst 3 1 0 9 9 9 9 ok wait:5000 pttdown",
+		  "txpriv=1 shows=Christo shows=Wood shows=Private_310" },
+		{ "private, no contact", "3 1 0 5 5 5 5 down ok wait:5000 pttdown", "txpriv=1 shows=3105555 shows=Private_310" },
+		{ "group", "3 1 0 0 ok wait:5000 pttdown", "txpriv=0 shows=TG_3100 hides=Private" },
+	};
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "%s", cases[i].script);
+			bool ok = sim_run(buf, err, sizeof err);
+			char *o = buf;	// "a=b c=d" -> "expect:a=b expect:c=d"
+			for (const char *p = cases[i].expect; ok && *p && o < buf + sizeof buf - 16;) {
+				while (*p == ' ')
+					p++;
+				memcpy(o, "expect:", 7);
+				o += 7;
+				while (*p && *p != ' ' && o < buf + sizeof buf - 2)
+					*o++ = *p++;
+				*o++ = ' ';
+			}
+			*o = 0;
+			if (ok)
+				ok = sim_run(buf, err, sizeof err);
+			if (!ok) {
+				printf("FAIL call screen %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
+	}
+}
+
 int main(void)
 {
 	static const struct { sim_map_t map; const char *name, *geom; } runs[] = {
@@ -409,6 +448,7 @@ int main(void)
 		run_flow(&flows_f[i], gf, SIM_MAP_F, "F few keys");
 	printf("# %d flows run\n", flows_run);
 	about_checks();
+	call_screen_checks();
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");

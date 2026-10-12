@@ -155,6 +155,7 @@
  "screen.talk_target_picker": "Talk target",
  "screen.tools": "Tools",
  "screen.tx": "Transmitting",
+ "screen.tx_private": "Transmitting a private call",
  "screen.zone_channels": "Channels in a zone",
  "radios.list_title": "All radios",
  "radios.col_cpu": "Processor",

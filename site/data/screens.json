@@ -89,6 +89,12 @@
    "group": "calls",
    "needs": []
   },
+  "tx_private": {
+   "group": "calls",
+   "needs": [
+    "DMR"
+   ]
+  },
   "rx_group": {
    "group": "calls",
    "needs": [

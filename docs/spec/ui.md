@@ -46,11 +46,17 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
 - Hints and toasts take the longest alternate that fits; a toast that still doesn't fit takes a second line above the
   hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
   banner shows two lines of the message from the inbox.
-- Home's talk target line (DMR target or FM frequency) drops to the small font as a whole, then leaves out the
-  target's name; a frequency is never shortened. Large-text Home picks the largest font each line fits in, and drops
-  the talkgroup's name before it would go below the medium font.
+- Home's talk target line (DMR target or FM frequency) drops to the small font as a whole, then takes the target's
+  short form; a frequency is never shortened. Large-text Home picks the largest font each line fits in, and takes the
+  short form before it would go below the medium font. The short form of a talkgroup is its number ("TG 91 World"
+  becomes "TG 91"); of a private contact, its name ("Joe Smith 3101234" becomes "Joe Smith"). A contact's ID alone
+  says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
 - The RX and TX screens put the number in the title ("TG 91") and the talkgroup's or contact's name on a line of its
-  own; a talker alias takes two lines when it needs them.
+  own; a talker alias takes two lines when it needs them. A private call's title says "Private" where a group call's
+  says "TG": "Private 3101234" while transmitting (just "Private" where that doesn't fit), "Private to you" or
+  "Private to Joe Smith" while receiving. The TX screen's target line follows the short form rule above, and its
+  detail line ends in "Private" or "Group". The word is the cue, not a color: the privacy (encryption) marker is
+  "Priv" in blue, and a private call is not encrypted.
 
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.

@@ -791,6 +791,38 @@ static void sb_target(sbuf_t *b, uint32_t id, bool private_call, const char *nam
 	}
 }
 
+// The target's short form, for when the whole doesn't fit: a talkgroup keeps its number ("TG 201"), a private contact
+// its name ("Joe"), since the name is what the user picked and the ID alone says nothing at a glance
+static void sb_target_short(sbuf_t *b, uint32_t id, bool private_call, const char *name)
+{
+	if (private_call && id != 0xFFFFFFu && name[0] != '\0')
+		sb_str(b, name);
+	else
+		sb_target(b, id, private_call, "");
+}
+
+// The target and its short form as text alternates (font.h), each followed by tail ("TG 91 World (9s)",
+// "TG 91 (9s)"), and when tail isn't empty last the short form without it. Without a name, the one form
+static void sb_target_alts(sbuf_t *b, uint32_t id, bool private_call, const char *name, const char *tail)
+{
+	bool named = name[0] != '\0' && id != 0xFFFFFFu;
+	if (named || tail[0])
+		sb_str(b, TEXT_ALT_OPEN);
+	sb_target(b, id, private_call, name);
+	sb_str(b, tail);
+	if (named) {
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_target_short(b, id, private_call, name);
+		sb_str(b, tail);
+	}
+	if (tail[0]) {
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_target_short(b, id, private_call, name);
+	}
+	if (named || tail[0])
+		sb_str(b, TEXT_ALT_CLOSE);
+}
+
 // The caller as the big line: the contact name, else the ID
 static void sb_caller(sbuf_t *b, const radio_dmr_call_t *c)
 {
@@ -809,7 +841,10 @@ static void sb_call_dst(sbuf_t *b, const radio_dmr_call_t *c)
 		sb_str(b, "Private to you");
 	} else {
 		sb_str(b, "Private to ");
-		sb_u32(b, c->dst, 1);
+		if (c->dst_name[0] != '\0')
+			sb_str(b, c->dst_name);
+		else
+			sb_u32(b, c->dst, 1);
 	}
 }
 
@@ -843,7 +878,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 		sb_str(&b, "DMR modem off");
 		c = ui_col.warn;
 	} else {
-		// The target with its name, and as a shorter alternate without it (font.h): "TG 91 World (9s)", "TG 91 (9s)"
+		// The target, and its short form as an alternate: "TG 91 World (9s)", "TG 91 (9s)"; "Joe 3101234", "Joe"
 		char secs[8] = "";
 		if (d->reply_active) {
 			sbuf_t sb;
@@ -854,24 +889,9 @@ static void draw_talk_dmr(const radio_view_t *v)
 			c = ui_col.warn;
 		}
 		// and last without the reply seconds (the hint still says the reply is on)
-		bool named = d->target_name[0] != '\0' && d->target_id != 0xFFFFFFu;
-		if (named || secs[0])
-			sb_str(&b, TEXT_ALT_OPEN);
-		sb_target(&b, d->target_id, d->target_private, d->target_name);
-		sb_str(&b, secs);
-		if (named) {
-			sb_str(&b, TEXT_ALT_NEXT);
-			sb_target(&b, d->target_id, d->target_private, "");
-			sb_str(&b, secs);
-		}
-		if (secs[0]) {
-			sb_str(&b, TEXT_ALT_NEXT);
-			sb_target(&b, d->target_id, d->target_private, "");
-		}
-		if (named || secs[0])
-			sb_str(&b, TEXT_ALT_CLOSE);
+		sb_target_alts(&b, d->target_id, d->target_private, d->target_name, secs);
 	}
-	// Too wide: the name goes (the shorter alternate), never a smaller font
+	// Too wide: the shorter alternate (a talkgroup drops its name, a contact its ID), never a smaller font
 	int w = gfx_width();
 	int x = gfx_text(f, 0, L->talk_y, prefix, d->reply_active ? ui_col.warn : ui_col.dim);
 	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
@@ -977,7 +997,12 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	sbuf_t b;
 
 	sb_init(&b, title, sizeof title);
-	if (v->state == RS_TX) {
+	if (v->state == RS_TX && d->target_private && d->target_id != 0xFFFFFFu) {
+		// A private call says so where a group call has its "TG": "Private 3101234", else "Private"
+		sb_str(&b, TEXT_ALT_OPEN "Private ");
+		sb_u32(&b, d->target_id, 1);
+		sb_str(&b, TEXT_ALT_NEXT "Private" TEXT_ALT_CLOSE);
+	} else if (v->state == RS_TX) {
 		sb_target(&b, d->target_id, d->target_private, "");
 	} else {
 		sb_call_dst(&b, &d->call);
@@ -995,17 +1020,9 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		const font_t *big = gfx_text_width(L->large, word) <= w ? L->large : L->medium;
 		gfx_text(big, 0, y, word, ui_col.tx);
 		y += big->h + 2;
-		// The target with its name, or without the name when that doesn't fit (font.h alternates)
-		bool named = d->target_name[0] != '\0' && d->target_id != 0xFFFFFFu;
+		// The target with its name, else its short form: a talkgroup's number, a private contact's name
 		sb_init(&b, buf, sizeof buf);
-		if (named)
-			sb_str(&b, TEXT_ALT_OPEN);
-		sb_target(&b, d->target_id, d->target_private, d->target_name);
-		if (named) {
-			sb_str(&b, TEXT_ALT_NEXT);
-			sb_target(&b, d->target_id, d->target_private, "");
-			sb_str(&b, TEXT_ALT_CLOSE);
-		}
+		sb_target_alts(&b, d->target_id, d->target_private, d->target_name, "");
 		y = call_line(L->medium, y, buf, ui_col.fg);
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "TS");
@@ -1198,7 +1215,7 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 		return "Back undo  Hold OK save";
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR && v->dmr.target_manual)
-		return "Back: channel's talkgroup";
+		return TEXT_ALT_OPEN "Back: channel's talkgroup" TEXT_ALT_NEXT "Back default target" TEXT_ALT_CLOSE;
 #endif
 	if (v->vfo)
 		return "0-9 freq  * Quick  Up/Dn";
@@ -1243,15 +1260,15 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	sb_init(&b, buf, sizeof buf);
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR && v->dmr.active) {
-		// The target with its name, or without it when the whole doesn't fit even the medium font
-		bool named = v->dmr.target_name[0] != '\0' && !v->dmr.target_private;
+		// The target with its name, or its short form when the whole doesn't fit even the medium font
+		bool named = v->dmr.target_name[0] != '\0' && v->dmr.target_id != 0xFFFFFFu;
 		if (named)
 			sb_str(&b, TEXT_ALT_OPEN);
 		sb_str(&b, GLYPH_ARROW);
 		sb_target(&b, v->dmr.target_id, v->dmr.target_private, v->dmr.target_name);
 		if (named) {
 			sb_str(&b, TEXT_ALT_NEXT GLYPH_ARROW);
-			sb_target(&b, v->dmr.target_id, false, "");
+			sb_target_short(&b, v->dmr.target_id, v->dmr.target_private, v->dmr.target_name);
 			sb_str(&b, TEXT_ALT_CLOSE);
 		}
 	} else
