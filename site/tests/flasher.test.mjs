@@ -150,7 +150,7 @@ test("first install on stock: keep the codec, then back up through ODR", async (
 	const meta = { radio: { board: "dm1701", name: sim.board.name, chip: p.chip }, firmware_now: { kind: "odr", git: p.git, codec: p.codec },
 		firmware_before: { kind: "stock", version: "V02.06 CSV" } };
 	const bundle = await openBundle(await makeBundle(meta, parts));
-	assert.deepEqual(targets(bundle), ["odr", "stock"]);
+	assert.deepEqual(targets(bundle), ["odr", "codeplug", "stock"]);
 	assert.deepEqual(bundle.parts.get("internal-flash").data, radio.flash.subarray(0xC000));
 });
 
@@ -163,7 +163,7 @@ test("a read whose reply lost its tail is asked again", async () => {
 		return req[0] === 0x52 && ++reads === 3 ? r.subarray(0, 1000) : r;	// the radio gave up on a stalled host
 	};
 	const link = new Link(radio.serialStream(), { timeout: 50 });
-	const r = await link.cpsDump(5, 0xC000, 5 * 2045);
+	const r = await link.cpsDump(5, 0xC000, 5 * 2045, { chunk: 2045 });
 	assert.ok(r.complete);
 	assert.equal(reads, 6);
 	assert.deepEqual(r.data, radio.flash.subarray(0xC000, 0xC000 + 5 * 2045));
@@ -188,6 +188,23 @@ test("an ODR radio gives its bootloader key: found in the bootloader by its hash
 	await new Dfu(radio.dfuTransport(), noWait).run(makePlan(sim.board, segments(fx.manifest, image), KEEP), key);
 	assert.deepEqual(radio.violations, []);
 	assert.deepEqual(radio.flash.subarray(0xC000, 0xC000 + image.length), image);
+});
+
+test("big reads: 32 KB from ODR, and whatever an older build gives (2045 bytes)", async () => {
+	const { radio } = await simulated("odr");
+	let reads = 0;
+	const answer = radio.serialAnswer.bind(radio);
+	radio.serialAnswer = (req) => { if (req[0] === 0x52) reads++; return answer(req); };
+	const link = new Link(radio.serialStream());
+	let r = await link.cpsDump(1, 0, 0x40000);
+	assert.ok(r.complete);
+	assert.equal(reads, 8);
+	radio.readMax = 2045;
+	reads = 0;
+	r = await link.cpsDump(1, 0x1000, 0x10000);
+	assert.ok(r.complete);
+	assert.equal(reads, Math.ceil(0x10000 / 2045));
+	assert.deepEqual(r.data, radio.spi.subarray(0x1000, 0x11000));
 });
 
 test("merge on a radio without a codec, then restore stock from the bundle's stock file", async () => {

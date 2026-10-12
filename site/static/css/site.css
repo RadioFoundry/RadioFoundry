@@ -82,6 +82,16 @@ pre code { background: none; padding: 0; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-danger { border-color: var(--bad); color: var(--bad); }
 .actions { display: flex; gap: var(--space-3); flex-wrap: wrap; margin: var(--space-4) 0; }
+.btn-quiet { border-color: transparent; background: transparent; color: var(--muted); }
+/* the flasher's one row of buttons under a step: back and start over on the left, the way forward on the right */
+.nav-bar { position: sticky; bottom: 0; z-index: 2; display: flex; gap: var(--space-3) var(--space-4); align-items: center; flex-wrap: wrap; margin-top: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3) var(--space-4); box-shadow: var(--shadow); }
+.nav-back { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.nav-info { flex: 1; min-width: 12rem; }
+.nav-info:empty { min-width: 0; }
+.nav-forward { margin-left: auto; }
+.notice > :last-child { margin-bottom: 0; }
+.notice.action { display: grid; gap: var(--space-3); }
+.notice.action ul, .notice.action p { margin: 0; }
 
 /* hero */
 .hero { background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%); border-bottom: 1px solid var(--border); }

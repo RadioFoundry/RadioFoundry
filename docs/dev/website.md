@@ -139,6 +139,17 @@ each part's address, size, SHA-256 and whether the read completed), `internal-fl
 base; the bootloader is never read or written), `spi-flash.bin`, `security-registers.bin` (the factory calibration),
 `radio-info.bin`, and `stock-firmware.bin` when the user gave one.
 
+The user picks what to read, each with a time estimate from a short timed read of this radio:
+
+| Choice | Reads |
+|---|---|
+| Everything | The internal flash, the whole SPI flash, the security registers |
+| Firmware and calibration | The internal flash and the security registers |
+| Codeplug and calibration | The codeplug span of the SPI flash (emulated EEPROM to the end of the open-firmware image) and the security registers |
+
+Reads ask for 32 KB at a time. ODR answers that much (open-firmware-cps.md 2.1); older builds answer 2045 bytes, and
+the reader takes what comes back.
+
 What can be read depends on the firmware running:
 
 | Radio runs | Read |
@@ -151,6 +162,7 @@ What can be read depends on the firmware running:
 | Target | Writes | Limits |
 |---|---|---|
 | Exactly as backed up (backup taken on ODR) | The internal flash image through the bootloader (every sector erased and rewritten), then the codeplug areas that differ through CPS writes | The CPS refuses ODR's own areas and the calibration window |
+| Codeplug only (any backup that holds the codeplug span) | The codeplug areas that differ, through CPS writes; the firmware is not touched | As above |
 | Back to stock | The stock application from the user's stock file, codec included, through the bootloader | The SPI flash stays as it is: writing it back whole needs a firmware command that doesn't exist yet (a gated STORAGE write, like CLAIM). Until then the flasher says so, and the stock codeplug goes back with the vendor CPS |
 
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not

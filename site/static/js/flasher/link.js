@@ -200,8 +200,9 @@ export class Link {
 		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
 	}
 
-	// Read [addr, addr + size) of an area in pieces; stops early (and says so) when the radio refuses
-	async cpsDump(area, addr, size, { chunk = 2045, progress = () => {}, signal } = {}) {
+	// Read [addr, addr + size) of an area in pieces; stops early (and says so) when the radio refuses. ODR answers up
+	// to 32 KB per read, older builds 2045 bytes (open-firmware-cps.md 2.1): each read takes what comes back.
+	async cpsDump(area, addr, size, { chunk = 32768, progress = () => {}, signal } = {}) {
 		const out = new Uint8Array(size);
 		let done = 0;
 		while (done < size) {

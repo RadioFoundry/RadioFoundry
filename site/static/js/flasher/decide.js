@@ -6,7 +6,13 @@
 
 import { KEEP, MERGE } from "./plan.js";
 
-export class DecisionError extends Error {}
+// message: the whole sentence (odrflash's wording); reason: why, without the advice, for a page that gives its own
+export class DecisionError extends Error {
+	constructor(message, reason = message) {
+		super(message);
+		this.reason = reason;
+	}
+}
 
 // probe: what a running ODR radio said (link.probe), or null. stockInstalled: the stock version the user says the
 // radio runs, or null. haveStock: the user gave a stock file that can be a codec source.
@@ -19,7 +25,7 @@ export function decideCodec(board, manifest, { requested = null, haveStock = fal
 	}
 	if (!board.keep_codec_supported) {
 		if (haveStock) return { mode: MERGE, why: `the ${board.name} loses its codec on every update, so it is written again from your stock file`, expectCodec: true };
-		throw new DecisionError(`The ${board.name} can't keep its codec across an update: ${mergeHint}.`);
+		throw new DecisionError(`The ${board.name} can't keep its codec across an update: ${mergeHint}.`, `The ${board.name} can't keep its codec across an update.`);
 	}
 	if (probe) {
 		if (!board.debuglink_names.includes(probe.board)) throw new DecisionError(`The radio says it is a ${probe.board}, but this firmware is for the ${board.name}.`);
@@ -27,16 +33,16 @@ export function decideCodec(board, manifest, { requested = null, haveStock = fal
 		const what = probe.codec ? `codec=${probe.codec}` : "firmware too old to report its codec";
 		if (haveStock && requested !== KEEP) return { mode: MERGE, why: `the radio has no codec to keep (${what}), so it is written from your stock file`, expectCodec: true };
 		if (requested === KEEP) return { mode: KEEP, why: `kept as asked, although the radio reported ${what}`, risk: "DMR voice stays off (FM works) until you flash with your stock file", expectCodec: false };
-		throw new DecisionError(`The radio has no codec to keep (${what}): ${mergeHint}.`);
+		throw new DecisionError(`The radio has no codec to keep (${what}): ${mergeHint}.`, `The radio has no codec to keep (${what}).`);
 	}
 	if (stockInstalled) {
 		if (board.codec.installed.some((v) => v.toUpperCase() === stockInstalled.toUpperCase()))
 			return { mode: KEEP, why: `the radio runs stock ${stockInstalled}, which holds this codec at the right addresses`,
 				risk: "if the radio runs anything else, DMR voice stays off (FM works) until you flash again with your stock file", expectCodec: true };
 		if (haveStock) return { mode: MERGE, why: `stock ${stockInstalled} keeps its codec elsewhere, so it is written from your stock file`, expectCodec: true };
-		throw new DecisionError(`Stock ${stockInstalled} keeps its codec at other addresses: ${mergeHint}.`);
+		throw new DecisionError(`Stock ${stockInstalled} keeps its codec at other addresses: ${mergeHint}.`, `Stock ${stockInstalled} keeps its codec at other addresses.`);
 	}
 	if (haveStock && requested !== KEEP) return { mode: MERGE, why: "the radio's codec is unknown, so it is written from your stock file", expectCodec: true };
 	if (requested === KEEP) return { mode: KEEP, why: "kept as asked; the radio's codec could not be checked", risk: "if the radio doesn't hold the codec, DMR voice stays off until you flash again with your stock file", expectCodec: true };
-	throw new DecisionError(`The flasher can't tell whether the radio holds the codec: ${mergeHint}, or start the radio with ODR and connect it first.`);
+	throw new DecisionError(`The flasher can't tell whether the radio holds the codec: ${mergeHint}, or start the radio with ODR and connect it first.`, `The flasher can't tell whether the radio holds the codec.`);
 }

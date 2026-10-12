@@ -213,7 +213,8 @@ export class FakeRadio {
 			return frame(f.cmd | 0x80, f.seq, new Uint8Array([1]));
 		}
 		if (req[0] === 0x52) {
-			const area = req[1], addr = (req[2] << 24 | req[3] << 16 | req[4] << 8 | req[5]) >>> 0, len = u16be(req, 6);
+			// ODR answers up to 32 KB per read, older builds 2045 bytes (open-firmware-cps.md 2.1)
+			const area = req[1], addr = (req[2] << 24 | req[3] << 16 | req[4] << 8 | req[5]) >>> 0, len = Math.min(u16be(req, 6), this.readMax || 32768);
 			let src = null, a = addr;
 			if (area === 1) src = this.spi;
 			else if (area === 5) src = this.flash;

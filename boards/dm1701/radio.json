@@ -22,6 +22,7 @@
   "flash": {
     "backend": "anyroad-dfu",
     "board": "dm1701",
+    "stock_download": "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware",
     "link": "usb",
     "bootloader": [
       "Turn the radio off and connect the programming cable.",

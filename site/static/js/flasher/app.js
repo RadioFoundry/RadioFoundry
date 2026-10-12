@@ -9,7 +9,7 @@
 //
 // Everything runs in the page: release images come from this site, custom images from the build API, stock files
 // and backups from the user's disk, which never leave it. Add #sim to the address for a simulated radio (no hardware;
-// for trying the flow).
+// for trying the flow), #sim=odr for one that already runs ODR.
 
 import { hex, sha256, toHex, fromHex, startsWith } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
@@ -17,7 +17,7 @@ import { makePlan, KEEP, MERGE } from "./plan.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, SerialStream, ODR_USB, ODR_NET, probe, serialSupported } from "./link.js";
-import { readRadio, makeBundle, openBundle, bundleName, describeFirmware } from "./backup.js";
+import { readRadio, makeBundle, openBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "./restore.js";
 import { Selection } from "./select.js";
 import { decideCodec } from "./decide.js";
@@ -246,6 +246,9 @@ async function connectBootloader() {
 
 const KEY_STORE = (id) => `odr-key-${id}`;
 
+// Windows needs a driver for the bootloader; nobody else should read about it
+const onWindows = () => /win/i.test(navigator.userAgentData?.platform || navigator.platform || "");
+
 function savedKey(board) {
 	try {
 		const k = localStorage.getItem(KEY_STORE(board.id));
@@ -289,12 +292,21 @@ function render() {
 	app.append(h("ol", { class: "stepper" }, steps.map((s, i) =>
 		h("li", { class: i < S.step ? "done" : "", "aria-current": i === S.step ? "step" : false }, t(`flash.step.${s}`)))));
 	if (S.sim) app.append(notice(t("flash.sim.banner"), "info"));
+	// One bar of buttons under every step: back, start over, and the step's own way forward, which the view sets (and
+	// changes when it redraws) through S.forward
+	const info = h("div", { class: "nav-info" }), fwd = h("div", { class: "nav-forward" });
+	S.forward = (btn, text = null) => {
+		fwd.replaceChildren(...[btn].filter(Boolean));
+		info.replaceChildren(...[text].filter(Boolean));
+	};
 	const view = { radio: radioView, build: buildView, now: nowView, codec: codecView, write: writeView, done: doneView,
 		backup: backupView, bundle: bundleView, restore: restoreView }[steps[S.step]];
 	app.append(view());
-	app.append(h("div", { class: "actions" },
-		S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
-		button(t("flash.start_over"), () => reset())));
+	app.append(h("div", { class: "nav-bar" },
+		h("div", { class: "nav-back" },
+			S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
+			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over"))),
+		info, fwd));
 }
 
 function next() {
@@ -395,6 +407,7 @@ function buildView() {
 		if (!S.firmware && !S.sim) await requestBuild(draw);
 		if (S.firmware || S.sim) next();
 	};
+	const forward = S.forward;
 	const draw = () => {
 		const match = S.customPicked ? null : sel.matches();
 		// an image built for another selection no longer applies
@@ -453,13 +466,14 @@ function buildView() {
 		const building = S.build && S.build.selection === selectionKey(sel);
 		const d = sel.diff(match || sel.base);
 		const baseTitle = vtitle(S.data.variants.find((v) => v.id === sel.base));
-		const summary = h("div", { class: "summary-bar" },
-			h("div", {}, match ? h("b", {}, t("flash.build.prebuilt", { variant: vtitle(S.data.variants.find((v) => v.id === match)) }))
-				: h("span", {}, h("b", {}, t("flash.build.custom")), " ",
-					d.added.length || d.removed.length
-						? t("flash.build.custom_diff", { added: d.added.length, removed: d.removed.length, variant: baseTitle })
-						: t("flash.build.custom_start"))),
-			button(t("flash.next"), go, { primary: true, disabled: building && !S.build.error }));
+		const summary = h("div", {}, match ? h("b", {}, t("flash.build.prebuilt", { variant: vtitle(S.data.variants.find((v) => v.id === match)) }))
+			: h("span", {}, h("b", {}, t("flash.build.custom")), " ",
+				d.added.length || d.removed.length
+					? t("flash.build.custom_diff", { added: d.added.length, removed: d.removed.length, variant: baseTitle })
+					: t("flash.build.custom_start")));
+		const busy = building && !S.build.error;
+		forward(button(t(busy ? "flash.nav.building" : S.firmware || S.sim ? "flash.nav.to_now" : "flash.nav.build"), go,
+			{ primary: true, disabled: busy }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		const image = panel(t("flash.build.image_title"),
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
@@ -475,7 +489,7 @@ function buildView() {
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
 				h("h3", {}, t("flash.build.features_title")),
 				h("div", { class: "feature-groups" }, groups)),
-			image, summary);
+			image);
 	};
 	draw();
 	// a redraw replaces the buttons: put the focus back on the one that was used
@@ -606,6 +620,7 @@ function slug(text) {
 
 function nowView() {
 	const out = h("div", { class: "flasher" });
+	const forward = S.forward;
 	const draw = () => {
 		const opts = h("div", { class: "choice-grid" },
 			h("button", { class: "choice", type: "button", "aria-pressed": String(S.now?.kind === "odr"), onclick: checkOdr },
@@ -622,7 +637,7 @@ function nowView() {
 				h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, p.codec || "?"),
 				p.chip ? [h("dt", {}, t("flash.now.uid")), h("dd", {}, p.chip.uid)] : null),
-			backupNow());
+			S.backupDone ? notice(t("flash.backup.done_before"), "ok") : backupNow({ when: "before", onDone: draw }));
 		} else if (S.now?.kind === "stock") {
 			const versions = S.radio.flash.stock_versions;
 			detail.append(h("label", {}, t("flash.now.which_version"), " ",
@@ -631,8 +646,10 @@ function nowView() {
 					versions.map((v) => h("option", { value: v, selected: S.now.version === v }, v)))),
 			notice(t(S.radio.backup.stock === "none" ? "flash.now.stock_backup_later" : "flash.now.stock_backup_planned"), "info"));
 		}
-		out.replaceChildren(panel(t("flash.now.title"), opts, detail, status),
-			h("div", { class: "actions" }, button(t("flash.next"), next, { primary: true, disabled: !S.now })));
+		out.replaceChildren(panel(t("flash.now.title"), opts, detail, status));
+		// on ODR the backup comes first; skipping it is a choice the button says out loud
+		const skip = S.now?.kind === "odr" && !S.backupDone;
+		forward(button(t(skip ? "flash.nav.skip_backup" : "flash.nav.to_codec"), next, { primary: !skip, disabled: !S.now }));
 	};
 	const status = h("div");
 	async function checkOdr() {
@@ -657,50 +674,86 @@ function nowView() {
 }
 
 // The backup panel used on an ODR radio (before an update, the backup task, after a first install)
-function backupNow({ after = false, onDone = null } = {}) {
+function backupNow({ when = "task", onDone = null } = {}) {
 	const box = h("div", { class: "panel" });
-	let what = "full";
 	const prog = progressBar();
+	const internalSize = S.board.flash_end - S.board.app_base;
+	// what each choice reads, in bytes, and what readRadio is told
+	const choices = {
+		all: { bytes: internalSize + S.radio.backup.spi_size, what: { internal: true, spi: "full" } },
+		firmware: { bytes: internalSize, what: { internal: true, spi: "none" } },
+		codeplug: { bytes: CODEPLUG_SPAN, what: { internal: false, spi: "codeplug" } },
+	};
+	let pick = "all";
+	const times = {};
 	const run = async () => {
-		box.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+		box.querySelectorAll("button, input").forEach((b) => { b.disabled = true; });
 		box.append(prog.el);
 		let started = null;
 		try {
 			const link = await connectSerial();
 			const p = S.now?.probe || await probe(link);
 			// the backup task is a use of its own; the backups around an install belong to the install
-			if (S.task === "backup") started = flashStarted({ task: "backup", source: what, radio: S.board.id, firmware: p.git || "", features: p.features || "" });
+			if (S.task === "backup") started = flashStarted({ task: "backup", source: pick, radio: S.board.id, firmware: p.git || "", features: p.features || "" });
+			const t0 = performance.now();
 			S.backupParts = await readRadio(link, S.board, S.radio, {
-				what: { spi: what }, progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
+				what: choices[pick].what, progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
+			S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
 			if (S.stock) S.backupParts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
+			const after = when === "after";
 			const meta = {
 				radio: { board: S.radio.id, name: S.radio.name, chip: p.chip, version: p.version },
 				firmware_now: { kind: "odr", git: p.git, codec: p.codec, features: p.features },
 				firmware_before: after && S.now?.kind === "stock" ? { kind: "stock", version: S.now.version, stock_file_sha256: S.stock?.info.sha || null } : undefined,
-				notes: after ? [t("flash.backup.note_after")] : [],
+				contents: pick,
+				notes: after && S.now?.kind !== "odr" ? [t("flash.backup.note_after")] : [],
 			};
 			const bytes = await makeBundle(meta, S.backupParts, { git: S.data.site.git, url: location.origin });
 			download(bundleName(meta), bytes, "application/zip");
 			S.backupDone = true;
 			flashFinished(started);
-			const incomplete = S.backupParts.filter((x) => !x.complete).map((x) => x.file);
-			box.append(notice(t("flash.backup.saved", { size: Math.round(bytes.length / 1024) }), "ok"),
-				incomplete.length ? notice(t("flash.backup.incomplete", { files: incomplete.join(", ") })) : null);
+			const incomplete = S.backupParts.filter((x) => !x.complete && x.what !== "spi-flash").map((x) => x.file);
+			box.append(notice(t("flash.backup.saved", { size: Math.round(bytes.length / 1024) }), "ok"));
+			if (incomplete.length) box.append(notice(t("flash.backup.incomplete", { files: incomplete.join(", ") })));
 			onDone?.();
 		} catch (e) {
 			flashFinished(started, e);
 			box.append(notice(errorText(e), "bad"));
-			box.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+			box.querySelectorAll("button, input").forEach((b) => { b.disabled = false; });
 		}
 	};
-	box.append(h("h3", {}, t(after ? "flash.backup.after_title" : "flash.backup.title")),
-		h("p", {}, t(after ? "flash.backup.after_lead" : "flash.backup.lead")),
-		h("label", { class: "toggle" }, h("input", { type: "radio", name: "spi", checked: true, onchange: () => { what = "full"; } }),
-			h("span", {}, h("b", {}, t("flash.backup.full")), h("span", { class: "why" }, t("flash.backup.full_text"))), h("span")),
-		h("label", { class: "toggle" }, h("input", { type: "radio", name: "spi", onchange: () => { what = "codeplug"; } }),
-			h("span", {}, h("b", {}, t("flash.backup.quick")), h("span", { class: "why" }, t("flash.backup.quick_text"))), h("span")),
+	const option = (id) => h("label", { class: "toggle" },
+		h("input", { type: "radio", name: "backup-what", checked: id === pick, onchange: () => { pick = id; } }),
+		h("span", {}, h("b", {}, t(`flash.backup.opt.${id}`)),
+			h("span", { class: "why" }, t(`flash.backup.opt.${id}_text`), " ", times[id] = h("span", {}, estimate(choices[id].bytes)))),
+		h("span"));
+	box.append(h("h3", {}, t(`flash.backup.title_${when}`)),
+		h("p", {}, t(when === "after" && S.now?.kind !== "odr" ? "flash.backup.after_lead" : "flash.backup.lead")),
+		option("all"), option("firmware"), option("codeplug"),
 		h("div", { class: "actions" }, button(t("flash.backup.run"), run, { primary: true })));
+	// the estimates come from this radio: a short timed read, unless a backup already measured it
+	if (!S.readRate) {
+		measureRate().then(() => { for (const id of Object.keys(choices)) times[id]?.replaceChildren(estimate(choices[id].bytes)); });
+	}
 	return box;
+}
+
+// How fast this radio's memory reads over its serial port: 64 KB from the memory chip, timed
+async function measureRate() {
+	try {
+		const link = await connectSerial();
+		const t0 = performance.now();
+		const r = await link.cpsDump(1, 0, 0x10000);
+		if (r.complete) S.readRate = 0x10000 / Math.max(0.01, (performance.now() - t0) / 1000);
+	} catch (e) { /* no estimate */ }
+}
+
+function estimate(bytes) {
+	const mb = bytes / 1048576;
+	const size = mb >= 1 ? `${mb.toFixed(mb >= 10 ? 0 : 1)} MB` : `${Math.round(bytes / 1024)} KB`;
+	if (!S.readRate) return t("flash.backup.time_unknown", { size });
+	const s = bytes / S.readRate;
+	return s < 60 ? t("flash.backup.time_lt1", { size }) : t("flash.backup.time_min", { size, n: Math.round(s / 60) });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -708,45 +761,66 @@ function backupNow({ after = false, onDone = null } = {}) {
 
 function codecView() {
 	const out = h("div", { class: "flasher" });
+	const forward = S.forward;
 	const draw = async () => {
-		const parts = [];
 		let fw;
 		try {
 			fw = await ensureFirmware();
 		} catch (e) {
 			out.replaceChildren(panel(t("flash.codec.title"), notice(errorText(e), "bad")));
+			forward(null);
 			return;
 		}
-		parts.push(h("p", { class: "small muted" }, t("flash.codec.image", { what: fw.source, size: fw.image.length })));
 		const haveStock = !!(S.stock && fb().profiles[S.stock.info.sha]);
+		const keyKnown = S.sim || !!S.key || !!savedKey(S.board);
+		let err = null;
 		try {
 			S.decision = decideCodec(S.board, fw.manifest, {
 				haveStock, requested: S.requested || null,
 				probe: S.now?.kind === "odr" ? S.now.probe : null,
 				stockInstalled: S.now?.kind === "stock" ? S.now.version : null,
 			});
-			parts.push(notice(`${t(`flash.codec.mode.${S.decision.mode}`)}: ${S.decision.why}.`, "ok"));
-			if (S.decision.risk) parts.push(h("p", { class: "small muted" }, S.decision.risk + "."));
 		} catch (e) {
 			S.decision = null;
-			parts.push(notice(e.message, "bad"));
+			err = e.reason || e.message;
 		}
-		const needKey = !S.sim && !S.key && !savedKey(S.board);
-		if (S.keyFromRadio) parts.push(h("p", { class: "small muted" }, t("flash.codec.key_from_radio")));
-		const stockBox = h("div", {},
-			h("h3", {}, t("flash.codec.stock_title")),
-			h("p", {}, t(needKey || S.decision?.mode !== KEEP ? "flash.codec.stock_needed" : "flash.codec.stock_optional", { files: S.board.codec.sources.join(", ") })),
-			S.stock ? notice(t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_unknown") }), S.stock.info.known ? "ok" : "bad") : null,
-			S.sim ? button(t("flash.sim.use_stock"), async () => { await useStock({ name: "simulated-stock.bin", data: S.sim.stock }); })
-				: filePicker(t("flash.codec.stock_pick"), ".bin", useStock));
-		const canGo = S.decision && (S.sim || !needKey || S.stock);
-		out.replaceChildren(panel(t("flash.codec.title"), h("p", {}, t("flash.codec.lead")), ...parts, stockBox,
-			h("details", { class: "small" }, h("summary", {}, t("flash.codec.advanced")),
-				h("label", {}, t("flash.codec.force"), " ", h("select", { onchange: (e) => { S.requested = e.target.value || null; draw(); } },
-					h("option", { value: "" }, t("flash.codec.force_auto")),
-					h("option", { value: KEEP, selected: S.requested === KEEP }, t("flash.codec.mode.keep")),
-					h("option", { value: MERGE, selected: S.requested === MERGE }, t("flash.codec.mode.merge")))))),
-		h("div", { class: "actions" }, button(t("flash.next"), next, { primary: true, disabled: !canGo })));
+		// The stock file is needed when the codec has to come from it, or the bootloader key can't come from anywhere
+		// else. Whatever the case, the page says what happens and what the user has to do.
+		const needs = [];
+		if (!S.decision && !haveStock) needs.push(`${err} ${t("flash.codec.need_codec")}`);
+		if (S.decision && !keyKnown && !haveStock) needs.push(t("flash.codec.need_key"));
+		const ready = S.decision && (keyKnown || haveStock);
+		const plan = S.decision ? `${t(`flash.codec.mode.${S.decision.mode}`)}: ${S.decision.why}.` : null;
+		const keyLine = S.keyFromRadio ? t("flash.codec.key_from_radio") : keyKnown && !S.sim ? t("flash.codec.key_saved") : null;
+		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { await useStock({ name: "simulated-stock.bin", data: S.sim.stock }); })
+			: filePicker(t("flash.codec.stock_pick"), ".bin", useStock);
+		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_unknown") });
+		const loaded = !S.stock ? null : S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad");
+		const where = h("p", {}, t("flash.codec.stock_files", { files: S.board.codec.sources.join(", ") }), " ",
+			S.radio.flash.stock_download ? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))
+				: t("flash.codec.stock_maker"));
+		const parts = [h("p", {}, t("flash.codec.lead"))];
+		if (needs.length) {
+			parts.push(h("div", { class: "notice action" }, h("strong", {}, t("flash.codec.action_title")),
+				h("ul", {}, needs.map((n) => h("li", {}, n))), where, picker, loaded));
+			if (!S.decision && S.now?.kind !== "odr") parts.push(h("p", { class: "small muted" }, t("flash.codec.or_connect")));
+		} else if (!S.decision) {
+			parts.push(notice(err, "bad"));
+		} else {
+			parts.push(h("div", { class: "notice ok" }, h("strong", {}, t(haveStock && S.stock ? "flash.codec.ready_title" : "flash.codec.none_title")),
+				h("p", {}, plan), keyLine ? h("p", {}, keyLine) : null, loaded));
+			if (S.decision.risk) parts.push(h("p", { class: "small muted" }, S.decision.risk[0].toUpperCase() + S.decision.risk.slice(1) + "."));
+		}
+		// writing the codec from the stock file anyway, or forcing a mode: always there, never in the way
+		parts.push(h("details", { class: "small" }, h("summary", {}, t("flash.codec.advanced")),
+			needs.length ? null : h("div", {}, h("p", {}, t("flash.codec.anyway_text")), where, picker),
+			h("label", {}, t("flash.codec.force"), " ", h("select", { onchange: (e) => { S.requested = e.target.value || null; draw(); } },
+				h("option", { value: "" }, t("flash.codec.force_auto")),
+				h("option", { value: KEEP, selected: S.requested === KEEP }, t("flash.codec.mode.keep")),
+				h("option", { value: MERGE, selected: S.requested === MERGE }, t("flash.codec.mode.merge"))))));
+		parts.push(h("p", { class: "small muted" }, t("flash.codec.image", { what: fw.source, size: fw.image.length })));
+		out.replaceChildren(panel(t("flash.codec.title"), ...parts));
+		forward(button(t("flash.nav.to_write"), next, { primary: true, disabled: !ready }));
 	};
 	async function useStock(f) {
 		S.stock = { ...f, info: await stockfw.identify(f.data, fb()) };
@@ -821,14 +895,15 @@ function bootloaderPanel(title, makePlanFn, onDone, what) {
 				write.disabled = false;
 			}
 		}, { primary: true, disabled: true });
-		box.replaceChildren(h("h2", {}, title),
+		// through h(): the DOM's own replaceChildren writes a null as the text "null"
+		box.replaceChildren(...h("div", {}, h("h2", {}, title),
 			h("details", { class: "small" }, h("summary", {}, t("flash.write.plan", { erase: plan.erase.length, blocks: plan.totalBlocks })), planTable(plan),
 				h("pre", { class: "log" }, plan.describe().join("\n"))),
 			h("h3", {}, t("flash.write.bootloader_title")),
 			h("ol", { class: "steps" }, S.radio.flash.bootloader.map((s) => h("li", {}, s))),
 			S.fakeRadio ? button(t("flash.sim.enter_bootloader"), () => { S.fakeRadio.enterBootloader(); log.add("(simulated) radio in its bootloader"); }) : null,
-			h("p", { class: "small muted" }, t("flash.write.windows_hint")),
-			h("div", { class: "actions" }, connect, write), fp, status);
+			onWindows() ? h("p", { class: "small muted" }, t("flash.write.windows_hint")) : null,
+			h("div", { class: "actions" }, connect, write), fp, status).childNodes);
 	};
 	box.append(h("p", { class: "muted" }, t("flash.loading")));
 	draw();
@@ -864,7 +939,7 @@ function doneView() {
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"));
 			if (!S.backupDone) {
 				S.now = { ...S.now, probe: S.now?.kind === "odr" ? p : S.now?.probe, after: p };
-				status.append(backupNow({ after: S.now?.kind !== "odr" }));
+				status.append(backupNow({ when: "after" }));
 			}
 		} catch (e) {
 			await dropSerial();
@@ -891,7 +966,7 @@ function backupView() {
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, p.codec || "?")),
 			h("details", { class: "small" }, h("summary", {}, t("flash.backup.add_stock")),
 				filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; })),
-			backupNow());
+			backupNow({ when: "task" }));
 		} catch (e) {
 			await dropSerial();
 			status.replaceChildren(connectError(e));
@@ -936,13 +1011,14 @@ function restoreView() {
 		h("dt", {}, t("flash.restore.fw_now")), h("dd", {}, describeFirmware(meta.firmware_now)),
 		meta.firmware_before ? [h("dt", {}, t("flash.restore.fw_before")), h("dd", {}, describeFirmware(meta.firmware_before))] : null,
 		h("dt", {}, t("flash.restore.parts")), h("dd", {}, [...b.parts.values()].map((p) => `${p.file}${p.complete ? "" : " (incomplete)"}`).join(", ")));
-	const choices = h("div", { class: "choice-grid" }, ["odr", "stock"].map((tg) =>
+	const choices = h("div", { class: "choice-grid" }, ["odr", "codeplug", "stock"].map((tg) =>
 		h("button", { class: "choice", type: "button", disabled: !avail.includes(tg), "aria-pressed": String(S.restoreTarget === tg),
 			onclick: () => { S.restoreTarget = tg; render(); } },
 		h("strong", {}, t(`flash.restore.to_${tg}`)), h("span", { class: "small muted" }, t(`flash.restore.to_${tg}_text`)))));
 	const parts = [panel(t("flash.restore.what"), summary, choices)];
 	// the stock file: the application to write back, or (any target) where the bootloader key comes from
-	if (S.restoreTarget && !S.stock && (S.restoreTarget === "stock" || (!S.sim && !S.key && !savedKey(S.board))))
+	if (S.restoreTarget === "codeplug") parts.push(afterRestore());
+	else if (S.restoreTarget && !S.stock && (S.restoreTarget === "stock" || (!S.sim && !S.key && !savedKey(S.board))))
 		parts.push(panel(t("flash.codec.stock_title"), h("p", {}, t("flash.restore.stock_needed")),
 			filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; render(); })));
 	else if (S.restoreTarget) {
@@ -1000,7 +1076,7 @@ async function main() {
 	}
 	if (location.hash.includes("sim")) {
 		S.sim = await simulation(S.data.fb, "dm1701");
-		S.fakeRadio = new FakeRadio(S.sim, { state: "stock", spiSize: 0x400000 });
+		S.fakeRadio = new FakeRadio(S.sim, { state: location.hash.includes("sim=odr") ? "odr" : "stock", spiSize: 0x400000 });
 		// a smaller SPI flash keeps the simulated backup quick
 		for (const r of S.data.radios) if (r.id === "dm1701") r.backup = { ...r.backup, spi_size: 0x400000 };
 	}
