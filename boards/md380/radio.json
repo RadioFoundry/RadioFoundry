@@ -32,6 +32,27 @@
     ],
     "stock_versions": [
       "D002.032"
+    ],
+    "build_options": [
+      {
+        "name": "MD380_BAND",
+        "title": "Band",
+        "help": "The MD-380 comes in a UHF and a VHF version; the label under the battery and the frequencies the radio covers tell which.",
+        "values": [
+          {
+            "id": "uhf",
+            "title": "UHF",
+            "text": "400-480 MHz",
+            "board_name": "MD-380"
+          },
+          {
+            "id": "vhf",
+            "title": "VHF",
+            "text": "136-174 MHz",
+            "board_name": "MD-380 VHF"
+          }
+        ]
+      }
     ]
   },
   "backup": {

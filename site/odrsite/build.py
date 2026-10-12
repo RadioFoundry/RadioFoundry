@@ -360,7 +360,7 @@ class Site:
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
 				     for k, p in b["docs"].items())
 		fl = b["flash"]
-		can_flash = fl["backend"] == "anyroad-dfu" and self.flash["boards"].get(fl["board"], {}).get("releasable")
+		can_flash = fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256"))
 		g = b["frame_geometry"]
 		pct = g["screen_pct"]
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",

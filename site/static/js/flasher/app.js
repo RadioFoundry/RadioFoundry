@@ -169,7 +169,27 @@ async function loadData() {
 }
 
 const fb = () => (S.sim ? S.sim.fb : S.data.fb);
-const flashable = (r) => r.flash.backend === "anyroad-dfu" && S.data.fb.boards[r.flash.board]?.releasable;
+// Every image comes from the build service, so a radio needs only a bootloader the page speaks
+const flashable = (r) => r.flash.backend === "anyroad-dfu" && !!S.data.fb.boards[r.flash.board]?.key_sha256;
+
+// Build options (radio.json flash.build_options, such as the MD-380's band): all chosen, and the value a radio running ODR
+// reports by its debug link name
+const buildOptions = () => S.radio?.flash.build_options || [];
+const optionsChosen = () => buildOptions().every((o) => S.buildOptions?.[o.name]);
+function optionsFromProbe(p) {
+	for (const o of buildOptions()) {
+		const v = o.values.find((x) => x.board_name === p.board);
+		if (v) S.buildOptions = { ...S.buildOptions, [o.name]: v.id };
+	}
+}
+// the option a radio's debug link name says, if it contradicts the one chosen: [option, value] or null
+function optionMismatch(p) {
+	for (const o of buildOptions()) {
+		const v = o.values.find((x) => x.board_name === p.board);
+		if (v && S.buildOptions?.[o.name] && S.buildOptions[o.name] !== v.id) return [o, v];
+	}
+	return null;
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // connections (real or simulated)
@@ -366,6 +386,7 @@ function radioView() {
 			const r = S.data.radios.find((x) => S.data.fb.boards[x.flash.board]?.debuglink_names.includes(p.board));
 			if (!r) throw new Error(t("flash.err.unknown_board", { board: p.board }));
 			selectRadio(r);
+			optionsFromProbe(p);
 			S.now = { kind: "odr", probe: p };
 			await keyFromRadio(link);
 			next();
@@ -384,6 +405,7 @@ function selectRadio(r) {
 	S.selection = new Selection(r, S.data.features, S.data.variants);
 	S.selection.useVariant("full");
 	S.firmware = null;
+	S.buildOptions = {};
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -414,6 +436,11 @@ function buildView() {
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(sel)) S.firmware = null;
 		const card = (checked, onclick, ...body) => h("button", { class: "choice", type: "button", role: "radio",
 			"aria-checked": String(checked), onclick }, ...body);
+		const options = buildOptions().map((o) => h("div", {},
+			h("h3", {}, o.title), o.help ? h("p", { class: "small muted" }, o.help) : null,
+			h("div", { class: "choice-grid", role: "radiogroup" }, o.values.map((v) =>
+				card(S.buildOptions?.[o.name] === v.id, () => { S.buildOptions = { ...S.buildOptions, [o.name]: v.id }; draw(); },
+					h("strong", {}, v.title), v.text ? h("span", { class: "small muted" }, v.text) : null)))));
 		const cards = S.data.variants.map((v) => card(match === v.id, () => { sel.useVariant(v.id); S.customPicked = false; draw(); },
 			h("strong", {}, vtitle(v)),
 			h("span", { class: "small" }, v.summary),
@@ -472,8 +499,9 @@ function buildView() {
 					? t("flash.build.custom_diff", { added: d.added.length, removed: d.removed.length, variant: baseTitle })
 					: t("flash.build.custom_start")));
 		const busy = building && !S.build.error;
-		forward(button(t(busy ? "flash.nav.building" : S.firmware || S.sim ? "flash.nav.to_now" : "flash.nav.build"), go,
-			{ primary: true, disabled: busy }), summary);
+		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]);
+		forward(button(t(busy ? "flash.nav.building" : missing ? "flash.nav.choose" : S.firmware || S.sim ? "flash.nav.to_now" : "flash.nav.build",
+			{ what: missing?.title.toLowerCase() }), go, { primary: true, disabled: busy || !!missing }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		const image = panel(t("flash.build.image_title"),
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
@@ -481,11 +509,14 @@ function buildView() {
 				: building ? h("p", { class: "muted" }, S.build.text)
 				: h("p", {}, t(S.sim ? "flash.sim.image" : "flash.build.on_request")),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
-				h("p", {}, t("flash.build.self_text")), h("pre", {}, h("code", {}, sel.makeCommand())),
+				h("p", {}, t("flash.build.self_text")), h("pre", {}, h("code", {}, sel.makeCommand(S.buildOptions))),
 				filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, draw)),
 				filePicker(t("flash.build.own_manifest"), ".json", async (f) => { S.ownManifest = JSON.parse(new TextDecoder().decode(f.data)); })));
 		wrap.replaceChildren(
-			panel(t("flash.build.title"), h("p", {}, t("flash.build.lead")),
+			panel(t("flash.build.title"),
+				S.radio.status !== "supported" ? notice(t("flash.build.untested", { name: S.radio.name }), "bad") : null,
+				...options,
+				h("p", {}, t("flash.build.lead")),
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),
 				h("h3", {}, t("flash.build.features_title")),
 				h("div", { class: "feature-groups" }, groups)),
@@ -556,7 +587,7 @@ function nest(items) {
 	return out;
 }
 
-const selectionKey = (sel) => `${sel.radio.id}:${[...sel.on].sort().join(",")}`;
+const selectionKey = (sel) => `${sel.radio.id}:${JSON.stringify(S.buildOptions || {})}:${[...sel.on].sort().join(",")}`;
 
 // Ask the build API for the current selection, wait for it, and take the image like a release's
 async function requestBuild(redraw) {
@@ -567,7 +598,7 @@ async function requestBuild(redraw) {
 	try {
 		const rels = S.data.releases.filter((x) => x.board === S.radio.id);
 		let b = await api("POST", "builds", { board: S.radio.id, ref: rels.length ? rels[rels.length - 1].version : "main", features: [...sel.on].sort(),
-			tool: "web", tool_version: S.data.site.version || "", task: "install", id: useId() });
+			options: S.buildOptions || {}, tool: "web", tool_version: S.data.site.version || "", task: "install", id: useId() });
 		while (b.status === "queued" || b.status === "running") {
 			if (!current()) return;
 			S.build.text = b.status === "queued" && b.position ? t("flash.build.queued", { n: b.position }) : t("flash.build.building");
@@ -579,6 +610,8 @@ async function requestBuild(redraw) {
 		const [m, img] = await Promise.all([fetch(new URL(b.manifest, API)).then((r) => r.json()),
 			fetch(new URL(b.image, API)).then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x))]);
 		await verify(m, img, fb(), S.board.id);
+		for (const [name, value] of Object.entries(S.buildOptions || {}))
+			if (m.build_options?.[name] !== value) throw new Error(t("flash.build.wrong_options", { name, value }));
 		if (!current()) return;
 		// variant: the prebuilt choice this is, for the flash log (the service names every image it builds "custom")
 		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), origin: "custom",
@@ -659,6 +692,8 @@ function nowView() {
 			const p = await probe(link);
 			if (!p) throw new Error(t("flash.err.no_answer"));
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
+			const odd = optionMismatch(p);
+			if (odd) throw new Error(t("flash.err.wrong_option", { board: p.board, option: odd[0].title.toLowerCase(), value: odd[1].title }));
 			S.now = { kind: "odr", probe: p };
 			await keyFromRadio(link);
 			status.replaceChildren();

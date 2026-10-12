@@ -396,5 +396,9 @@
  "flash.codec.or_connect": "If the radio runs OpenDigitalRadio, go back, choose OpenDigitalRadio and connect it instead: the flasher then checks the codec in the radio.",
  "flash.codec.anyway_text": "Write the codec from your stock file anyway: choose the file, then set codec handling to “Write the codec from your stock file”.",
  "flash.restore.to_codeplug": "Codeplug only",
- "flash.restore.to_codeplug_text": "Channels, contacts and settings as backed up. The firmware stays as it is."
+ "flash.restore.to_codeplug_text": "Channels, contacts and settings as backed up. The firmware stays as it is.",
+ "flash.nav.choose": "Choose the {what} first",
+ "flash.build.untested": "OpenDigitalRadio hasn't run on a {name} yet: this is for testers. Back up first and keep your stock firmware file.",
+ "flash.build.wrong_options": "The build service sent an image without {name}={value}. Try again.",
+ "flash.err.wrong_option": "The radio says it is an {board}, so its {option} is {value}. Go back to the build step and choose it."
 }

@@ -176,6 +176,11 @@ release) and the feature list, waits for the build, and checks the image against
 site (`firmware/<radio>/`) are not used by the flasher. The `make` command that builds the same selection, and a picker
 for the image it produces, stay under "Build it yourself".
 
+A radio whose image depends on more than the feature switches lists the choices in `radio.json` `flash.build_options`
+(the MD-380's band: `MD380_BAND=uhf|vhf`). The build step asks for each one before it builds, or takes it from a
+connected radio's debug link name (`board_name`), sends it with the request, and refuses an image whose manifest
+doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name says another value.
+
 ### USB network mode
 
 A radio in USB network mode (1FC9:0096, [usb-network.md](../spec/usb-network.md)) has no serial port, and the

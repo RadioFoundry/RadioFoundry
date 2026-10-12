@@ -72,10 +72,12 @@ export class Selection {
 	}
 
 	// For a custom selection: the make command that builds it
-	makeCommand() {
+	// options: build options such as the MD-380's band ({MD380_BAND: "vhf"}), radio.json build_options
+	makeCommand(options = {}) {
 		const full = new Set(this.radio.config.full);
-		const args = this.features.filter((f) => this.supported(f.name) && full.has(f.name) !== this.on.has(f.name))
-			.map((f) => `CONFIG_${f.name}=${this.on.has(f.name) ? "y" : "n"}`);
+		const args = Object.entries(options).map(([k, v]) => `${k}=${v}`).concat(
+			this.features.filter((f) => this.supported(f.name) && full.has(f.name) !== this.on.has(f.name))
+				.map((f) => `CONFIG_${f.name}=${this.on.has(f.name) ? "y" : "n"}`));
 		return `make BOARD=${this.radio.id}${args.length ? " " + args.join(" ") : ""}`;
 	}
 }
