@@ -3014,6 +3014,12 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->reload_pending = false;
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
+#if CONFIG_DMR
+	// The cached names may be gone or new now ("" is cached too): a contact added after its ID was heard or called
+	// would otherwise stay a bare ID on the screens until it fell out of the cache
+	memset(sm->lookups, 0, sizeof(sm->lookups));
+	sm->lookup_next = 0;
+#endif
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;
 	select_position(sm, sm->view.zone_index, number, sm->view.zone_pos);

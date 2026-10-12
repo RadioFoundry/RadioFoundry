@@ -196,9 +196,14 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 	return true;
 }
 static uint32_t contact_finds, iddb_lookups;
+static contact_t added_contact;	// a contact written after the radio started (id 0 = none)
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 {
 	contact_finds++;
+	if (added_contact.id != 0 && added_contact.id == id && (added_contact.type != CONTACT_PRIVATE) == group) {
+		*out = added_contact;
+		return true;
+	}
 	for (unsigned i = 0; i < sizeof(contacts) / sizeof(contacts[0]); i++) {
 		if (contacts[i].id == id && (contacts[i].type != CONTACT_PRIVATE) == group) {
 			*out = contacts[i];
@@ -1610,6 +1615,23 @@ static void hear_emergency_call(uint32_t dst, uint32_t src)
 static ui_event_t last_ev;	// the UI glue fakes below (ui_notify)
 static int n_ev;
 
+// A private contact added (an edit, a CPS write) after its ID was already called: the name shows from the next
+// codeplug read on, not the cached "no name"
+static void test_dmr_contact_added(void)
+{
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	dmr_start(true);
+	req(RREQ_DMR_TARGET, (int32_t)(3106001u | (1u << 24)));
+	run(20);
+	CHECK(d->target_manual && d->target_id == 3106001 && d->target_private && d->target_name[0] == '\0');
+	added_contact = (contact_t){ "Spencer Fowler", 3106001, CONTACT_PRIVATE, 0 };
+	cp_serial++;
+	poll_for(RADIO_POLL_MS);
+	run(20);
+	CHECK(d->target_id == 3106001 && d->target_private && strcmp(d->target_name, "Spencer Fowler") == 0);
+	memset(&added_contact, 0, sizeof(added_contact));
+}
+
 static void test_dmr_emergency(void)
 {
 	dmr_lc_t l;
@@ -2602,6 +2624,7 @@ int main(void)
 	test_dmr_tx();
 	test_dmr_denied();
 	test_dmr_voice_features();
+	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
 	test_ui_settings();
