@@ -215,9 +215,10 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
         return Decision(planmod.MERGE, "asked for: the codec is written from your stock file")
     if not board.keep_codec_supported:
         if have_stock:
-            return Decision(planmod.MERGE, "the %s updater erases the codec on every update, so it is written again "
-                            "from your stock file" % board.name)
-        raise UsageError("the %s can't keep its codec across an update; %s" % (board.name, merge_hint))
+            return Decision(planmod.MERGE, "on the %s, ODR's firmware shares a flash sector with the codec, so every "
+                            "update erases part of it; it is written again from your stock file" % board.name)
+        raise UsageError("on the %s, ODR's firmware shares a flash sector with the codec, so every update erases part "
+                         "of it; %s" % (board.name, merge_hint))
     if probe:
         pb = boards.from_debuglink_name(probe.get("board") or "")
         if pb is None or pb.id != board.id:

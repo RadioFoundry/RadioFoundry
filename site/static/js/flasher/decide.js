@@ -24,8 +24,10 @@ export function decideCodec(board, manifest, { requested = null, haveStock = fal
 		return { mode: MERGE, why: "the codec is written from your stock file, as asked", expectCodec: true };
 	}
 	if (!board.keep_codec_supported) {
-		if (haveStock) return { mode: MERGE, why: `the ${board.name} loses its codec on every update, so it is written again from your stock file`, expectCodec: true };
-		throw new DecisionError(`The ${board.name} can't keep its codec across an update: ${mergeHint}.`, `The ${board.name} can't keep its codec across an update.`);
+		// ODR's own layout on this radio, not the radio or what it runs now: the image shares a flash sector with the codec
+		const why = `On the ${board.name}, ODR's firmware shares a flash sector with the codec, so every install or update erases part of the codec`;
+		if (haveStock) return { mode: MERGE, why: `${why.charAt(0).toLowerCase()}${why.slice(1)}, and it is written again from your stock file`, expectCodec: true };
+		throw new DecisionError(`${why}: ${mergeHint}.`, `${why}.`);
 	}
 	if (probe) {
 		if (!board.debuglink_names.includes(probe.board)) throw new DecisionError(`The radio says it is a ${probe.board}, but this firmware is for the ${board.name}.`);
