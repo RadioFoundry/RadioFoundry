@@ -78,7 +78,7 @@ root (static files, data) and `{{home}}` the path to the root of the page's lang
 stay in Python, which renders a partial per item.
 
 Every page's footer ends with a faint build stamp: the commit the site was built from (`-dirty` with uncommitted
-changes, linked to the commit) and the build time in UTC, the same values as `data/site.json`.
+changes, linked to the commit) and the build time in UTC (`data/site.json` has the same commit and the date).
 
 All visual decisions are variables in `tokens.css`: colors for light and dark, type sizes, spacing, radii.
 `site.css` only uses them. A redesign replaces `tokens.css`, then `site.css` and the templates; the generator doesn't
