@@ -8,8 +8,9 @@
  * repeating one sample per pull when it drifts more than one block away: at 100 ppm that's one sample about every
  * 1.25 s, inaudible on voice and harmless for AFSK. Overflow drops the oldest samples (latency stays bounded), an
  * underrun plays silence and primes again. Single producer, single consumer, no locks needed for the counters each
- * side owns; the caller serializes push and pull if they run in different tasks. Host tested (tests/host/usrpTest.c);
- * not built into the firmware yet.
+ * side owns. Push never touches the read side while the buffer has room, so a producer that checks pcm_slip_fill
+ * first can run against a consumer in an interrupt without a lock (core/usbaudio/audio_mux.c). Host tested
+ * (tests/host/usrpTest.c).
  */
 #ifndef ODR_PCM_SLIP_H
 #define ODR_PCM_SLIP_H

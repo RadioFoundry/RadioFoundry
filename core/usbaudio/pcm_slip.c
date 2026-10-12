@@ -40,6 +40,8 @@ void pcm_slip_push(pcm_slip_t *p, const int16_t *pcm, size_t n)
 			p->stats.overflow++;
 		}
 		p->buf[p->wr & MASK] = pcm[i];
+		// The sample is in place before the consumer can see it (an interrupt pulling while this pushes)
+		__atomic_signal_fence(__ATOMIC_RELEASE);
 		p->wr++;
 	}
 	p->stats.pushed += (uint32_t)n;
