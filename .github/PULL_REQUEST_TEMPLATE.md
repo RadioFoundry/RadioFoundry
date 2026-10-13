@@ -14,7 +14,7 @@
 | Check | Result |
 |---|---|
 | `JOBS=8 tools/ci.sh` ends with "all checks passed" | <!-- yes; list any skips --> |
-| Host test added or changed | <!-- test name, or why none --> |
+| Host unit tests added or changed (required for code changes) | <!-- test names; docs-only PRs: "docs only" --> |
 | HIL (`tests/hil`) | <!-- tests run and radio, or "not run" --> |
 | On the radio, on air | <!-- radio, firmware commit, what you tried; or "not tried" --> |
 
@@ -22,6 +22,9 @@
 
 ## Checklist
 
+- [ ] Branch named `<type>/<area>-<short-description>`, title `<Area>: <what changed>`
+      ([contributing.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/dev/contributing.md#branches-and-pull-requests)).
+- [ ] Host unit tests cover the change (code changes), named in Testing above.
 - [ ] Clean room: written from `docs/spec/`, datasheets, public standards or permissively licensed code. Nothing
       copied, translated or paraphrased from other firmware, GPL code, vendor SDKs or disassembly
       ([CLEANROOM.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/CLEANROOM.md)).

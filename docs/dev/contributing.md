@@ -6,6 +6,65 @@ Issues and pull requests are welcome. Read this page and [docs/CLEANROOM.md](../
 the forms in `.github/ISSUE_TEMPLATE/` (bug, feature, new radio), and pull requests open with the checklist in
 `.github/PULL_REQUEST_TEMPLATE.md`.
 
+## Branches and pull requests
+
+All changes reach `main` through a pull request. Nobody pushes to `main` directly. For now every pull request goes
+from a feature branch into `main`; there are no release or develop branches.
+
+### Repository members
+
+1. Update `main`: `git switch main && git pull`.
+2. Make a branch named as below: `git switch -c feat/aprs-path-menu`.
+3. Commit, then push the branch to this repository: `git push -u origin feat/aprs-path-menu`.
+4. Open the pull request into `main` (`gh pr create --base main`).
+5. When it is merged, delete the branch.
+
+### Everyone else
+
+1. Fork the repository on GitHub.
+2. In your fork, branch from an up to date `main` with the same naming rules.
+3. Push the branch to your fork and open the pull request against `main` of this repository.
+4. Keep the branch current by merging or rebasing on this repository's `main` (add it as the `upstream` remote).
+
+### Branch names
+
+`<type>/<area>-<short-description>`: lower case, words joined by hyphens, under about 40 characters, no personal
+names or dates.
+
+| Type | For | Example |
+|---|---|---|
+| `feat` | new behavior | `feat/aprs-path-menu` |
+| `fix` | a bug fix; add the issue number when there is one | `fix/123-dmr-late-entry` |
+| `radio` | a new radio, or bring-up of a radio that builds | `radio/md9600-bringup` |
+| `test` | tests only (host or HIL) | `test/sfr-dedup-cases` |
+| `docs` | documentation only | `docs/contributing-branches` |
+| `refactor` | no change in behavior | `refactor/ui-svc-storage` |
+| `tools` | host tools, CPS, scripts | `tools/odrflash-retry` |
+| `ci` | the CI workflows and `tools/ci.sh` | `ci/nightly-dm32` |
+
+The area is the subsystem, matching the commit subjects: `aprs`, `dmr`, `fm`, `sfr`, `ui`, `hotspot`, `net`, `cps`,
+`dm1701`, and so on.
+
+### Pull request titles
+
+Pull requests are squash merged, so the title becomes the commit subject on `main`. Write it like a commit
+subject: `<Area>: <what changed>`, in the present tense, no trailing period.
+
+- `APRS: a Path row on the APRS page`
+- `DM-1701: FM receive audio for the AFSK demodulator`
+- `Fix: SFR repeats a late-entry call's first voice burst`
+
+### What a pull request must have
+
+- **Unit test coverage.** Every pull request that changes code includes host tests in `tests/host/` that exercise
+  the change: new behavior gets new tests, a bug fix gets the test that fails without it. The pull request names
+  the tests. A change the host tests can't reach (a register write, a board's wiring) says so, covers the logic
+  around it with a host test, and adds a HIL test when one can be scripted. Pull requests that change only
+  documentation are the only exception.
+- `JOBS=8 tools/ci.sh` ending with "all checks passed".
+- One topic. Split unrelated changes into separate pull requests.
+- The filled-in template (`.github/PULL_REQUEST_TEMPLATE.md`).
+
 ## Clean room
 
 ODR is MIT licensed and must stay free of code it may not use. The rules are in [docs/CLEANROOM.md](../CLEANROOM.md).
@@ -36,6 +95,7 @@ the project lead, never in public CI).
 
 ## Tests
 
+- Every pull request that changes code includes host unit tests for it ([What a pull request must have](#what-a-pull-request-must-have)).
 - New behavior gets a host test. A bug fix gets the test that would have caught it.
 - A UI change updates the gallery (`make -C tests/host ui-gallery`) and commits the PNGs it meant to change.
 - A parser of outside input gets a fuzz loop (`tests/host/fuzz.h`); run it under `SANITIZE=1` ([Testing](testing.md)).
@@ -57,4 +117,5 @@ JOBS=8 tools/ci.sh
 
 It must end with "all checks passed". Skips (a missing compiler, `reuse` not installed) are reported; install what you
 can. CI runs the quick part on every push and the feature matrix nightly ([CI](ci.md)); run the whole gate before you
-open the pull request. Commit in small steps with messages that say what changed and why.
+open the pull request. Commit in small steps with messages that say what changed and why. Then open the pull request
+into `main` as [Branches and pull requests](#branches-and-pull-requests) describes.
