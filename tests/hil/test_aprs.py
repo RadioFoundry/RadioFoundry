@@ -55,6 +55,8 @@ import time
 
 import pytest
 
+from odr_hil import DebugLinkError
+
 POS = (33.7490, -84.3880)
 APRS_HZ = {144390000, 144800000, 145175000, 144575000, 144660000, 144640000}
 PATHS = ["", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2"]
@@ -395,6 +397,60 @@ def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
                        _n(x, "aprs.rf_sent") >= _n(v0, "aprs.rf_sent") + 2, timeout=120, interval=1.0,
                        sections=("aprs",), what="the message's retries")
     print(f"message {m.group(3)}: tries {v['aprs.msg_tries']}, acked {v['aprs.msg_acked']}")
+
+
+@pytest.mark.radio_tx
+@pytest.mark.parametrize("over", ["serial", pytest.param("network", marks=pytest.mark.usb_switch),
+                                  pytest.param("kiss_tcp", marks=pytest.mark.usb_switch)])
+def test_aprs_tx_link_answers(radio, aprs_air, over, pytestconfig):
+    """The debug link keeps answering while the radio sends a frame, over the serial port and over the USB network:
+    the host link task never waits on the transmission (a stall here took the USB network down with it)."""
+    with contextlib.ExitStack() as stack:
+        if over != "serial":
+            if not pytestconfig.getoption("--allow-usb-switch"):
+                pytest.skip("needs --allow-usb-switch")
+            from test_net_services import network_mode
+            serial = radio.link
+            udp, ip, _ = stack.enter_context(network_mode(radio))
+            radio.link = udp
+            stack.callback(lambda: setattr(radio, "link", serial) if radio.link is udp else None)
+        send = radio.link.aprs_send_now
+        if over == "kiss_tcp":
+            # The same frame from a KISS client on TCP 8001 (CONFIG_NET_KISS), sourced from our own callsign
+            if "NET_KISS" not in radio.features():
+                pytest.skip("built without CONFIG_NET_KISS")
+            import socket
+            from test_tcp_services import _kiss, _ui_frame
+            if radio.view(["aprs_set"]).get("set.aprs_kiss", "0") != "1":
+                radio.link.aprs_set("kiss", 1)
+                stack.callback(lambda: radio.link.aprs_set("kiss", 0))
+            s = stack.enter_context(socket.create_connection((ip, 8001), timeout=5))
+            time.sleep(0.3)
+            frame = _kiss(_ui_frame(aprs_air.call, aprs_air.ssid, b">ODR HIL KISS-TCP"))
+            send = lambda: s.sendall(frame)  # noqa: E731
+        _link_answers(radio, aprs_air, send)
+
+
+def _link_answers(radio, aprs_air, send):
+    v0 = _aprs(radio)
+    send()
+    aprs_air.expected_rf += 1
+    worst, t_last, keyed = 0.0, time.monotonic(), False
+    end = time.monotonic() + 10
+    while time.monotonic() < end:
+        try:
+            radio.link.ping()
+        except DebugLinkError:
+            pass
+        now = time.monotonic()
+        worst, t_last = max(worst, now - t_last), now
+        v = radio.view(["aprs"])
+        keyed = keyed or v.get("aprs.rf_active") != "0"
+        if _n(v, "aprs.rf_sent") > _n(v0, "aprs.rf_sent") and v.get("aprs.rf_active") == "0":
+            break
+    print(f"longest gap between debug link answers: {worst * 1000:.0f} ms")
+    assert _n(radio.view(["aprs"]), "aprs.rf_sent") > _n(v0, "aprs.rf_sent"), "the frame never went out"
+    assert worst < 0.5, f"the debug link stopped answering for {worst * 1000:.0f} ms during the transmission"
 
 
 # ── digital APRS: positions over DMR ────────────────────────────────────────

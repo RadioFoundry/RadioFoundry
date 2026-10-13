@@ -5,10 +5,9 @@ docs/spec/tcp-services.md): the HTTP status page and JSON, KISS over TCP, rigctl
 ODR_HIL_APRSIS_SERVER=a.b.c.d[:port] and NAT on the host, spec 7.1) the APRS-IS client.
 
 The radio switches to the network adapter for the module and back to serial at the end, as test_usb_network does.
-Nothing is transmitted without --allow-rf: the KISS frame sent has a foreign source callsign, which the APRS engine
-refuses (counted, not sent); rigctld only reads and sets the VFO (the radio's channel / VFO state is restored); PTT is
-not touched. With --allow-rf the KISS test also sends one frame from the radio's own callsign (an APRS RF burst on
-the APRS frequency at the radio's current power)."""
+Nothing is transmitted: the KISS frame sent has a foreign source callsign, which the APRS engine refuses (counted, not
+sent); rigctld only reads and sets the VFO (the radio's channel / VFO state is restored); PTT is not touched. An
+own-callsign KISS frame on air is test_aprs.py's test_aprs_tx_link_answers[kiss_tcp]."""
 import gzip
 import ipaddress
 import json
@@ -147,7 +146,7 @@ def _ui_frame(src, ssid, info):
 
 
 @pytest.mark.usb_switch
-def test_kiss_tcp(net, request):
+def test_kiss_tcp(net):
     if "NET_KISS" not in net["features"]:
         pytest.skip("built without CONFIG_NET_KISS")
     ip, link = net["ip"], net["link"]
@@ -167,17 +166,8 @@ def test_kiss_tcp(net, request):
             assert int(after["aprs.host_in"]) == int(before["aprs.host_in"]) + 1, (before, after)
             assert int(after["aprs.host_dropped"]) == int(before["aprs.host_dropped"]) + 1
             assert int(_net_view(link)["kiss.frames_in"]) >= 1
-            if request.config.getoption("--allow-rf"):
-                call = after.get("aprs.call", "")
-                if not call:
-                    pytest.skip("no APRS callsign set: the own-callsign frame can't go out")
-                base, _, ssid = call.partition("-")
-                sent = int(after["aprs.rf_sent"])
-                s.sendall(_kiss(_ui_frame(base, int(ssid or 0), b">ODR HIL KISS-TCP")))
-                end = time.monotonic() + 20
-                while time.monotonic() < end and int(link.view(["aprs"])["aprs.rf_sent"]) == sent:
-                    time.sleep(0.5)
-                assert int(link.view(["aprs"])["aprs.rf_sent"]) == sent + 1
+            # An own-callsign frame going out on air: test_aprs.py test_aprs_tx_link_answers[kiss_tcp] (the 2 m test
+            # frequency at the lowest power; at 1 W on the bench the transmission can knock the USB link off)
         time.sleep(0.5)
         assert _net_view(link)["kiss.client"] == "0"
     finally:
