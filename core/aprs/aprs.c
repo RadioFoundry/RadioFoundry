@@ -110,6 +110,7 @@ static struct {
 	aprs_dedup_t dedup_gate, dedup_digi, dedup_is;
 	afsk_demod_t demod;
 	bool rx_running;
+	uint16_t rx_peak;
 	int16_t rxbuf[160];
 	char gate[AX25_TNC2_MAX + 20];
 #endif
@@ -969,6 +970,12 @@ static void demod_frame(const uint8_t *frame, size_t n, void *ctx)
 void aprs_rx_audio(const int16_t *s, size_t n, uint32_t now_ms)
 {
 	a.now = now_ms;
+	for (size_t i = 0; i < n; i++) {
+		uint16_t m = (uint16_t)(s[i] < 0 ? -(int32_t)s[i] : s[i]);
+		if (m > a.rx_peak) {
+			a.rx_peak = m;
+		}
+	}
 	afsk_demod(&a.demod, s, n);
 }
 
@@ -993,6 +1000,7 @@ static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 	bool want = a.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&a.cfg) &&
 		    (own || rx_by_stream());
 	if (want && !a.rx_running) {
+		a.rx_peak = 0;
 		a.rx_running = afsk_demod_init(&a.demod, own ? h->rx_rate_hz : 8000u, demod_frame, NULL);
 		if (a.rx_running && own) {
 			a.rx_running = h->rx_start();
@@ -1027,6 +1035,17 @@ bool aprs_can_receive(void)
 	return false;
 #endif
 }
+
+#if CONFIG_APRS_RX
+void aprs_rx_stats(aprs_rx_stats_t *out)
+{
+	out->peak = a.rx_peak;
+	out->bits = a.demod.bits;
+	out->frames = a.demod.hdlc.frames;
+	out->fcs_errors = a.demod.hdlc.fcs_errors;
+	out->aborts = a.demod.hdlc.aborts;
+}
+#endif
 
 bool aprs_rx_listening(void)
 {

@@ -945,12 +945,18 @@ static void test_rx_stream(void)
 	size_t k = afsk_mod(&m, tones, e.nbits, 8000, audio + 800, sizeof(audio) / sizeof(audio[0]) - 1600);
 	CHECK(k > 0);
 	CHECK(aprs_station_count() == 0);
+	aprs_rx_stats_t r0;
+	aprs_rx_stats(&r0);
+	CHECK(r0.peak == 0 && r0.frames == 0);	// silence so far
 	for (size_t i = 0; i + AUDIO_BLOCK_SAMPLES <= k + 1600; i += AUDIO_BLOCK_SAMPLES) {
 		feed(audio + i);
 	}
 	run(100);
 	aprs_station_t st;
 	CHECK(aprs_station_count() == 1 && aprs_station(0, &st) && strcmp(st.call, "K1ABC-9") == 0);
+	aprs_rx_stats_t rs;
+	aprs_rx_stats(&rs);
+	CHECK(rs.peak > 7000 && rs.peak <= 8000 && rs.frames == 1 && rs.bits > 900);
 	// Receive off: the stream stops
 	aprs_get_cfg(&c);
 	c.rx_on = false;

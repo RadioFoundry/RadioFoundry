@@ -87,6 +87,12 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 		(unsigned)v.igated, (unsigned)v.is_to_rf, (unsigned)v.digi_sent, v.stations, v.messages);
 	dl_text(t, "aprs.msg_pending=%u\naprs.msg_tries=%u\naprs.msg_acked=%u\naprs.rx_listening=%u\n", v.msg_pending,
 		v.msg_tries, v.msg_acked, aprs_rx_listening() ? 1u : 0u);
+#if CONFIG_APRS_RX
+	aprs_rx_stats_t rs;
+	aprs_rx_stats(&rs);
+	dl_text(t, "aprs.rx_peak=%u\naprs.rx_bits=%u\naprs.rx_hdlc_frames=%u\naprs.rx_fcs_errors=%u\naprs.rx_aborts=%u\n",
+		rs.peak, (unsigned)rs.bits, (unsigned)rs.frames, (unsigned)rs.fcs_errors, (unsigned)rs.aborts);
+#endif
 }
 
 static uint32_t get32(const uint8_t *p)

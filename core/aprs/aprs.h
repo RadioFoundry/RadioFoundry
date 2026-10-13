@@ -190,6 +190,15 @@ bool aprs_can_receive(void);
 bool aprs_rx_listening(void);
 
 #if CONFIG_APRS_RX
+#if CONFIG_APRS_RX
+// The receive path's diagnostics (debug link): the largest sample since it started (0: only silence, the squelch never
+// opened or no audio arrives), tone decisions, and the HDLC decoder's good frames, FCS errors and aborts
+typedef struct {
+	uint16_t peak;
+	uint32_t bits, frames, fcs_errors, aborts;
+} aprs_rx_stats_t;
+void aprs_rx_stats(aprs_rx_stats_t *out);
+#endif
 // Received audio (the radio task reads it from the board's receive path or the PCM stream while receiving FM)
 void aprs_rx_audio(const int16_t *s, size_t n, uint32_t now_ms);
 // A decoded AX.25 frame (without the FCS): from the demodulator, or the tests
