@@ -2422,6 +2422,53 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 }
 
+// Switching off with ARS on (gotcha 7.4): the radio core holds the power off until the deregistration is on air, as
+// app.c's power_off() waits on radio_power_off_busy() before it drops the latch (the DM-1701 and MD-380 knob)
+static void test_power_off_ars(void)
+{
+	dmrDataSettings_t ds;
+
+	dmr_start(true);
+	dmrDataServiceGetSettings(&ds);
+	ds.arsServer = 9990100;
+	dmr_data_set_settings(&ds);
+	unsigned n0 = sim.air_count;
+	run(20000);			// the power-on registration, 5-15 s on (no server here to acknowledge it)
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 1);
+	CHECK(dmrDataServiceArsState() == DMR_ARS_STATE_REGISTERING);
+
+	// Power off: busy until the preambles, the header and the blocks have all gone out, and nothing after
+	n0 = sim.air_count;
+	req(RREQ_POWER_OFF, 0);
+	run(50);
+	CHECK(sm.power_off_req && sm.power_off_busy);
+	unsigned ms = 50;
+	while (sm.power_off_busy && ms < 3000) {
+		run(50);
+		ms += 50;
+	}
+	CHECK(!sm.power_off_busy && ms < 1000);
+	unsigned aired = sim.air_count - n0;
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_PREAMBLE) >= 1 && air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 1);
+	CHECK(air_count(n0, DMR_BURST_RATE_12_DATA, 0xFF) >= 1 && !sm.dmr_keyed);
+	run(5000);
+	CHECK(sim.air_count - n0 == aired);	// no registration while switching off
+
+	// Still on after all (auto power off with the knob on): canceled, and registered again
+	req(RREQ_POWER_OFF, 1);
+	run(50);
+	CHECK(!sm.power_off_req && !sm.power_off_busy);
+	n0 = sim.air_count;
+	run(2000);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 1);
+
+	// ARS off for what follows: the data service keeps its state from test to test
+	ds.arsServer = 0;
+	dmr_data_set_settings(&ds);
+	run(10000);
+	CHECK(!dmrDataServiceIsBusy() && dmrDataServiceArsState() == DMR_ARS_STATE_OFF);
+}
+
 static void test_dmr_data_glue(void)
 {
 	uint8_t kind;
@@ -2703,6 +2750,7 @@ int main(void)
 	test_hotspot_session();
 	test_hotspot_cwid();
 	test_dmr_emergency();
+	test_power_off_ars();
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

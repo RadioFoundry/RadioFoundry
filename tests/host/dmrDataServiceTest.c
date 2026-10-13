@@ -362,6 +362,115 @@ static void testARS(void)
 }
 
 
+// Registered and acknowledged, the counters cleared
+static void registerArs(void)
+{
+	static const uint8_t ACK_PLAIN[] = { 0x00, 0x01, 0x3F };
+
+	settings.arsServer = ARS_SERVER;
+	runMainTask(20000);
+	receiveARS(ACK_PLAIN, sizeof(ACK_PLAIN));
+	runMainTask(1000);
+	CHECK(dmrDataServiceArsState() == DMR_ARS_STATE_REGISTERED);
+	sentCount = 0;
+}
+
+// Calls dmrDataServicePowerOff() every 10 ms tick, as the radio core does, until it says done; how long that took
+static int powerOffMs(int limitMs)
+{
+	int t = 0;
+
+	while (dmrDataServicePowerOff() && (t < limitMs))
+	{
+		runMainTask(10);
+		t += 10;
+	}
+	return t;
+}
+
+// Switching off (gotcha 7.4): the deregistration goes out before the supply drops, and the radio core is told when
+// it's on air. The DM-1701 and MD-380 switch off this way from the volume knob
+static void testArsPowerOff(void)
+{
+	// ARS off: nothing to send, done at once
+	reset();
+	settings.arsServer = 0;
+	runMainTask(1000);
+	CHECK(!dmrDataServicePowerOff());
+	CHECK(sentCount == 0);
+	dmrDataServicePowerOffCanceled();
+
+	// Registered: one deregistration, and busy until the stack has sent it
+	registerArs();
+	txAutoDone = false;
+	CHECK(dmrDataServicePowerOff());
+	runMainTask(500);
+	CHECK(countSent('A', DMR_ARS_DEVICE_DEREGISTRATION) == 1);
+	CHECK(dmrDataServicePowerOff());	// still on air
+	txOpen = false;
+	dmrDataServiceTxDone(0);
+	runMainTask(10);
+	CHECK(!dmrDataServicePowerOff());
+	CHECK(!dmrDataServicePowerOff());	// asked again: not sent twice
+	txAutoDone = true;
+	runMainTask(60000);			// and no registration while switching off
+	CHECK(sentCount == 1);
+
+	// Still on after all (auto power off with the knob on): the server heard us leave, so register again
+	dmrDataServicePowerOffCanceled();
+	runMainTask(20000);
+	CHECK(countSent('A', DMR_ARS_DEVICE_REGISTRATION) == 1);
+
+	// Sent but never acknowledged: deregistered all the same, the server may have heard the registration
+	reset();
+	settings.arsServer = 0;
+	runMainTask(8000);
+	dmrDataServicePowerOffCanceled();
+	settings.arsServer = ARS_SERVER;
+	runMainTask(20000);
+	CHECK(dmrDataServiceArsState() == DMR_ARS_STATE_REGISTERING);
+	sentCount = 0;
+	CHECK(powerOffMs(3000) < 3000);
+	CHECK(countSent('A', DMR_ARS_DEVICE_DEREGISTRATION) == 1);
+	dmrDataServicePowerOffCanceled();
+
+	// Something else on its way first (a call alert): it finishes, then the deregistration, within the 3 s the app allows
+	reset();
+	settings.arsServer = 0;
+	runMainTask(8000);
+	dmrDataServicePowerOffCanceled();
+	registerArs();
+	txAutoDone = false;
+	CHECK(dmrDataServiceCallAlert(RADIO_A));
+	runMainTask(100);
+	CHECK((sentCount == 1) && (sent[0].kind == 'C'));
+	CHECK(dmrDataServicePowerOff());	// waits for the call alert
+	runMainTask(200);
+	CHECK(sentCount == 1);
+	txOpen = false;
+	dmrDataServiceTxDone(0);
+	txAutoDone = true;
+	CHECK(powerOffMs(3000) < 3000);
+	CHECK(countSent('A', DMR_ARS_DEVICE_DEREGISTRATION) == 1);
+
+	// The channel can't transmit (receive only, no ID): nothing to try, done at once
+	dmrDataServicePowerOffCanceled();
+	reset();
+	registerArs();
+	ch.canTransmit = false;
+	runMainTask(10);
+	CHECK(!dmrDataServicePowerOff());
+	CHECK(sentCount == 0);
+	ch.canTransmit = true;
+	dmrDataServicePowerOffCanceled();
+
+	// Leave ARS off for what follows
+	reset();
+	settings.arsServer = 0;
+	runMainTask(8000);
+	reset();
+}
+
 #define LRRP_SERVER	9990300
 
 static void receiveLrrp(const char *hex)
@@ -1345,6 +1454,7 @@ int main(void)
 	testTmsReplies();
 #endif
 	testARS();
+	testArsPowerOff();
 	testLrrp();
 	testSignaling();
 #if CONFIG_DMR_TMS

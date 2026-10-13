@@ -269,7 +269,8 @@ refresh time in 30-minute units; 0 means no refresh expected; no octet means the
 22dee22.
 
 **7.4 Power-off deregistration needs time on air.** Hold the power-off screen up to 3 s until the deregistration is on
-air (listen before talk can hold it); a supply cut can't do it. Commit 1d785c1.
+air (listen before talk can hold it); a supply cut can't do it. Commit 1d785c1. Tests: `testArsPowerOff`
+(dmrDataServiceTest), `test_power_off_ars` (radioCoreTest).
 
 **7.5 Settings without a reset.** Old builds reused spare settings bits and struct tail padding (with a static size
 assertion) to add fields without wiping user settings; where the layout couldn't absorb them the settings magic was
