@@ -2,11 +2,11 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Tools > APRS (docs/spec/aprs.md 10): what APRS is doing (callsign, frequency, position, next beacon, or why nothing
 // can be sent) and the everyday choices, one row each: send now, automatic beacons, the frequency (region), the RF
-// power (as the channel, or a level of its own), the interval, SmartBeaconing, the way out (radio / DMR / both), the
-// position source, our position in DMR voice calls (ETSI GPS Info, CONFIG_DMR_GPS), KISS on the host port, and the
-// stations heard (receive builds). Position opens its own page: the source and the fixed latitude and longitude, typed
-// with the digits. The rest (symbol, path, comment, digital destination, iGate, digipeater) is set with qdmr, the debug
-// link or tools/odr_debug.py (aprs.md 11).
+// power (as the channel, or a level of its own), the digipeater path (the hops), the interval, SmartBeaconing, the
+// way out (radio / DMR / both), the position source, our position in DMR voice calls (ETSI GPS Info, CONFIG_DMR_GPS),
+// KISS on the host port, and the stations heard (receive builds). Position opens its own page: the source and the fixed
+// latitude and longitude, typed with the digits. The rest (symbol, comment, digital destination, iGate, digipeater) is
+// set with qdmr, the debug link or tools/odr_debug.py (aprs.md 11).
 #include <string.h>
 #include "ui_nav.h"
 #include "ui_svc_aprs.h"
@@ -23,11 +23,13 @@ WEAK bool ui_svc_aprs_send_now(void) { return false; }
 WEAK uint8_t ui_svc_aprs_station_count(void) { return 0; }
 WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)out; return false; }
 
-enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_INTERVAL, AP_SMART, AP_VIA, AP_POS, AP_DMR_GPS, AP_KISS, AP_HEARD, AP_COUNT };
+enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_INTERVAL, AP_SMART, AP_VIA, AP_POS, AP_DMR_GPS, AP_KISS, AP_HEARD, AP_COUNT };
 
 static const uint16_t intervals[] = { 0, 60, 120, 300, 600, 1800 };
 static const char *const interval_names[] = { "Off", "1 min", "2 min", "5 min", "10 min", "30 min" };
 #define N_INTERVALS	(sizeof(intervals) / sizeof(intervals[0]))
+// aprs_path_t order; the text is aprs_path_text()'s, kept here so the page builds without APRS (the simulator)
+static const char *const path_names[APRS_PATH_COUNT] = { "None", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2" };
 static const char *const via_names[] = { "Radio", "DMR", "Both" };
 static const char *const pos_names[] = { "Auto", "GPS", "Computer", "Fixed" };
 static const char *const region_names[APRS_REGION_COUNT] = { "N America", "Europe", "Australia", "New Zealand",
@@ -100,15 +102,15 @@ static uint8_t interval_index(uint16_t s)
 
 static void aprs_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { "Send position now", "Automatic beacons", "Frequency", "Power", "Interval",
-					     "SmartBeaconing", "Send via", "Position", "Position in DMR calls",
+	static const char *const names[] = { "Send position now", "Automatic beacons", "Frequency", "Power", "Path",
+					     "Interval", "SmartBeaconing", "Send via", "Position", "Position in DMR calls",
 					     "KISS on USB", "Stations heard" };
 	aprs_view_t v;
 	aprs_cfg_t c;
 	bool built = ui_svc_aprs_view(&v);
 	ui_svc_aprs_cfg(&c);
 	strcpy(it->label, names[i]);
-	it->num = i < 10u ? (char)('0' + (i + 1u) % 10u) : 0;	// the 11th row has no digit
+	it->num = i < 10u ? (char)('0' + (i + 1u) % 10u) : 0;	// rows after the 10th have no digit
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	if (!built) {
@@ -136,6 +138,13 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 			it->flags |= UI_ITEM_DIM;	// no APRS on RF here (no transmit tone path)
 		} else {
 			sb_str(&b, c.power == 0 ? "As channel" : ui_power_name((uint8_t)(c.power - 1u)));
+		}
+		break;
+	case AP_PATH:
+		if (board.afsk == NULL) {
+			it->flags |= UI_ITEM_DIM;	// the path is for RF packets only
+		} else {
+			sb_str(&b, path_names[c.path < APRS_PATH_COUNT ? c.path : 0]);
 		}
 		break;
 	case AP_INTERVAL: sb_str(&b, interval_names[interval_index(c.interval_s)]); break;
@@ -197,6 +206,12 @@ static void aprs_select(uint16_t i, bool hold)
 			return;
 		}
 		c.power = (uint8_t)((c.power + 1u) % (board.power_count + 1u));	// as the channel, then each level
+		break;
+	case AP_PATH:
+		if (board.afsk == NULL) {
+			return;
+		}
+		c.path = (uint8_t)((c.path + 1u) % APRS_PATH_COUNT);	// none, then more hops; WIDE2-2 wraps to none
 		break;
 	case AP_INTERVAL: c.interval_s = intervals[(interval_index(c.interval_s) + 1u) % N_INTERVALS]; break;
 	case AP_SMART: c.smart = !c.smart; break;

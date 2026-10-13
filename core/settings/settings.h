@@ -132,7 +132,9 @@ typedef struct {
 	uint8_t rpt_beacon;		// our repeater roles key an idle beacon (roam_beacon_s / _len_s): 0 off, 1 on
 	uint8_t aprs_power;		// APRS RF power: 0 = the radio's current level, n = level n - 1 (was reserved6[0]; taken
 					// with the aprs_ fields below)
-	uint8_t reserved6[2];
+	uint8_t aprs_cp_path;		// the codeplug APRS record's path last taken into aprs_path, aprs_path_t + 1 (0 = none
+					// yet; was reserved6[1]). A different path in the codeplug replaces aprs_path (aprs.md 11)
+	uint8_t reserved6;
 	// APRS (core/aprs/aprs.h aprs_cfg_t, docs/spec/aprs.md 11); taken only when aprs_stored is 1, else the defaults
 	// (automatic transmit off)
 	uint8_t aprs_flags;		// SETTINGS_APRS_* bits

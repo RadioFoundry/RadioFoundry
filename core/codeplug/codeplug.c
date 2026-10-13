@@ -872,6 +872,48 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 	out->ambiguity = amb <= 4 ? amb : 4;
 	return true;
 }
+
+// One path entry from "CALL-N" (or "" for none): the callsign space padded, then the SSID
+static void put_aprs_path(uint8_t *p, const char *text)
+{
+	unsigned n = 0;
+	memset(p, ' ', 6);
+	p[6] = 0;
+	while (n < 6 && text[n] != '\0' && text[n] != '-') {
+		p[n] = (uint8_t)text[n];
+		n++;
+	}
+	if (text[n] == '-') {
+		unsigned ssid = 0;
+		for (const char *d = &text[n + 1u]; *d >= '0' && *d <= '9'; d++) {
+			ssid = ssid * 10u + (unsigned)(*d - '0');
+		}
+		p[6] = ssid <= 15 ? (uint8_t)ssid : 0;
+	}
+}
+
+bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
+{
+	uint8_t b[APRS_SIZE];
+	if (n < 1 || n > CODEPLUG_APRS_CONFIGS) {
+		return false;
+	}
+	uint32_t addr = APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE;
+	storage_lock();
+	bool ok = source == CODEPLUG_OPENFW && flash_read(addr, b, sizeof(b));
+	uint16_t magic = le16(&b[0x3E]);
+	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u);
+	if (ok) {
+		put_aprs_path(&b[0x0F], path1);
+		put_aprs_path(&b[0x16], path2);
+		ok = flash_write(addr + 0x0Fu, &b[0x0F], 14);
+	}
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
+}
 #endif
 
 bool codeplug_set_radio_name(const char *name)

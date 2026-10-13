@@ -162,7 +162,9 @@ static channel_t chan;
 static zone_t zone;
 static char cp_name[CODEPLUG_NAME_LEN + 1];
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
-uint32_t codeplug_serial(void) { return 1; }
+static uint32_t cp_serial = 1;
+static char cp_path[2][10];		// the APRS record's path entries
+uint32_t codeplug_serial(void) { return cp_serial; }
 void storage_lock(void) {}
 void storage_unlock(void) {}
 void storage_quick_lock(void) {}
@@ -193,6 +195,18 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 		return false;
 	}
 	strcpy(out->comment, "ODR test");
+	strcpy(out->path[0], cp_path[0]);
+	strcpy(out->path[1], cp_path[1]);
+	return true;
+}
+bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
+{
+	if (n != 1) {
+		return false;
+	}
+	strcpy(cp_path[0], path1);
+	strcpy(cp_path[1], path2);
+	cp_serial++;
 	return true;
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1])
@@ -256,6 +270,8 @@ static void reset(void)
 	zone.count = 1;
 	zone.channels[0] = 1;
 	strcpy(cp_name, "");
+	strcpy(cp_path[0], "WIDE1-1");
+	strcpy(cp_path[1], "WIDE2-1");
 	settings_init();
 	radio_sm_init(&sm, now);
 	aprs_set_test_call("");
@@ -758,6 +774,62 @@ static void test_cfg_store(void)
 	CHECK(!b.tx_on && b.region == d.region && b.interval_s == d.interval_s);
 }
 
+// The path lives in the settings and in the codeplug's APRS record; the one changed last wins (aprs.md 11)
+static void test_codeplug_path(void)
+{
+	aprs_cfg_t c;
+	reset();
+	strcpy(cp_path[0], "WIDE2-1");		// a CPS wrote WIDE2-1
+	cp_path[1][0] = '\0';
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.path == APRS_PATH_WIDE2);
+	settings_t st;
+	settings_read(&st);
+	CHECK(st.aprs_stored == 1 && st.aprs_path == APRS_PATH_WIDE2 && st.aprs_cp_path == APRS_PATH_WIDE2 + 1u);
+	// The menu changes it: the codeplug's unchanged path doesn't take it back
+	c.path = APRS_PATH_WIDE2_2;
+	aprs_set_cfg(&c, now);
+	aprs_reload();
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.path == APRS_PATH_WIDE2_2);
+	// ... and the storage job writes it into the codeplug
+	CHECK(aprs_path_to_codeplug());
+	CHECK(strcmp(cp_path[0], "WIDE2-2") == 0 && cp_path[1][0] == '\0');
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.path == APRS_PATH_WIDE2_2 && st.aprs_cp_path == APRS_PATH_WIDE2_2 + 1u);
+	// Two entries go into both slots
+	c.path = APRS_PATH_WIDE1_WIDE2;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_path_to_codeplug() && strcmp(cp_path[0], "WIDE1-1") == 0 && strcmp(cp_path[1], "WIDE2-1") == 0);
+	// None: both empty
+	c.path = APRS_PATH_NONE;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_path_to_codeplug() && cp_path[0][0] == '\0' && cp_path[1][0] == '\0');
+	// The CPS writes a new path: taken
+	strcpy(cp_path[0], "WIDE1-1");
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.path == APRS_PATH_WIDE1);
+	// A path we don't offer is left alone
+	strcpy(cp_path[0], "RELAY");
+	strcpy(cp_path[1], "WIDE2-1");
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.path == APRS_PATH_WIDE1);
+	strcpy(cp_path[0], "");			// a second entry without a first
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.path == APRS_PATH_WIDE1);
+}
+
 // The transmission's failures: the transmitter won't key, the AFSK won't start, the AFSK never finishes. Each time
 // the radio goes back to its channel unkeyed, and the frame is tried again later, then given up
 static void test_rf_failures(void)
@@ -815,6 +887,7 @@ int main(void)
 	test_messages();
 	test_dmr_position();
 	test_cfg_store();
+	test_codeplug_path();
 	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();

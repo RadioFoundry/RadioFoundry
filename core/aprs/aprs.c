@@ -294,6 +294,89 @@ static void apply_cfg(void)
 	b->min_s = AUTO_MIN_S;
 }
 
+// The codeplug record's two path entries as an aprs_path_t, APRS_PATH_COUNT for a path we don't offer
+static uint8_t path_from_codeplug(const codeplug_aprs_t *cp)
+{
+	char t[sizeof(cp->path[0]) * 2u + 1u];
+	strcpy(t, cp->path[0]);
+	if (cp->path[1][0] != '\0') {
+		if (t[0] == '\0') {
+			return APRS_PATH_COUNT;
+		}
+		strcat(t, ",");
+		strcat(t, cp->path[1]);
+	}
+	for (uint8_t i = 0; i < APRS_PATH_COUNT; i++) {
+		if (strcmp(t, path_texts[i]) == 0) {
+			return i;
+		}
+	}
+	return APRS_PATH_COUNT;
+}
+
+// A path in the codeplug we haven't taken yet (a CPS wrote it) replaces ours: the path lives in both places and the
+// last one changed wins (aprs.md 11). Outside the lock
+static void take_codeplug_path(const settings_t *st, const codeplug_aprs_t *cp)
+{
+	uint8_t path = path_from_codeplug(cp);
+	if (path >= APRS_PATH_COUNT || st->aprs_cp_path == path + 1u) {
+		return;
+	}
+	settings_t *s = settings_begin();
+	if (s->aprs_stored != 1) {
+		aprs_cfg_t c;
+		cfg_from_settings(s, &c);	// the defaults, stored so the path can be
+		cfg_to_settings(&c, s);
+	}
+	s->aprs_path = path;
+	s->aprs_cp_path = (uint8_t)(path + 1u);
+	settings_end(a.now);
+	LOCK();
+	a.cfg.path = path;
+	changed();
+	UNLOCK();
+}
+
+// One write of the path into record 1, taken as seen when it lands
+static bool write_codeplug_path(uint8_t path)
+{
+	char p1[16], p2[16];
+	const char *t = path_texts[path];
+	const char *comma = strchr(t, ',');
+	size_t n = comma != NULL ? (size_t)(comma - t) : strlen(t);
+	memcpy(p1, t, n);
+	p1[n] = '\0';
+	strcpy(p2, comma != NULL ? comma + 1 : "");
+	if (!codeplug_set_aprs_path(1, p1, p2)) {
+		return false;
+	}
+	settings_t *s = settings_begin();
+	s->aprs_cp_path = (uint8_t)(path + 1u);
+	settings_end(a.now);
+	return true;
+}
+
+bool aprs_path_to_codeplug(void)
+{
+	// A change that came while the job waited or ran couldn't post a job of its own: write again until the
+	// codeplug holds the path in use (a few times at most)
+	for (uint8_t tries = 0; tries < 3u; tries++) {
+		LOCK();
+		uint8_t path = a.cfg.path < APRS_PATH_COUNT ? a.cfg.path : APRS_PATH_WIDE1_WIDE2;
+		UNLOCK();
+		if (!write_codeplug_path(path)) {
+			return false;
+		}
+		LOCK();
+		bool same = a.cfg.path == path;
+		UNLOCK();
+		if (same) {
+			return true;
+		}
+	}
+	return true;
+}
+
 // Who we are: the debug link's test call, the settings' radio name, the codeplug's callsign; its first word, upper
 // case, without an SSID (ours comes from the configuration). Reads storage: outside the lock
 static void load_identity(void)
@@ -340,6 +423,9 @@ static void load_identity(void)
 	changed();
 	UNLOCK();
 	a.cp_serial = codeplug_serial();
+	if (have_cp) {
+		take_codeplug_path(&st, &cp);
+	}
 }
 
 static void reload_cfg(void)

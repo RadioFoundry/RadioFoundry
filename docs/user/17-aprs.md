@@ -31,6 +31,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Automatic beacons | On: positions go out by themselves (see Triggers) |
 | Frequency | Your region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand 144.575, Japan 144.660, China 144.640 MHz, or Custom (`tools/odr_debug.py aprs set region custom`, then `aprs set freq_hz 144390000`) |
 | Power | As channel: APRS transmits at the radio's current power level. Or pick a level of its own, for example a low one for a nearby digipeater. Dimmed on radios that can't send APRS over the air |
+| Path | How far digipeaters pass your packets on: None, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1 or WIDE2-2. See Path below. Dimmed on radios that can't send APRS over the air |
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |
 | SmartBeaconing | More often when you move fast, at once after a turn, rarely when you stand still |
 | Send via | Radio (FM), DMR, or both |
@@ -39,8 +40,27 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
 | Stations heard | Stations the radio heard (radios that can receive APRS) |
 
-The symbol, path, comment and the DMR destination are set with the debug tool for now
+The symbol, comment and the DMR destination are set with the debug tool for now
 (`tools/odr_debug.py aprs set ...`), later with qdmr.
+
+## Path
+
+The path says how many digipeater hops a packet may take on FM. Each **WIDEn-N** entry allows N more hops. Press
+**OK** on Path to step to the next choice.
+
+| Path | Hops | Use it |
+|---|---|---|
+| None | 0 | Only stations that hear you directly (an iGate nearby) |
+| WIDE1-1 | 1 | A fill-in digipeater or one wide digipeater |
+| WIDE1-1,WIDE2-1 | 2 | Mobile and handheld use in most of North America and Europe (the default) |
+| WIDE2-1 | 1 | Fixed stations that reach a wide digipeater directly |
+| WIDE2-2 | 2 | Sparse areas; skips fill-in digipeaters |
+
+More hops mean more copies on a busy frequency. Use the fewest that reach an iGate. The path doesn't apply to
+positions sent over DMR.
+
+The path is also in the codeplug's first APRS configuration, which qdmr edits. A change on the radio is written
+there too, and a codeplug written with a different path changes the radio's. Whichever changed last is used.
 
 ## Triggers
 

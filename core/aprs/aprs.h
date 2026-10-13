@@ -155,6 +155,9 @@ void aprs_init(uint32_t now_ms);
 void aprs_tick(const aprs_radio_t *r, uint32_t now_ms);
 // Our own transmission (PTT, not APRS) ended: the "after PTT" trigger
 void aprs_ptt_end(uint32_t now_ms);
+// A storage job (it writes flash; not the radio or UI task): our path into the codeplug's APRS record 1, so the CPS
+// reads what the radio uses. False when there is no such record or the write failed
+bool aprs_path_to_codeplug(void);
 // The settings changed underneath (RREQ_RELOAD): read them again
 void aprs_reload(void);
 

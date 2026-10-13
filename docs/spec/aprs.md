@@ -94,7 +94,8 @@ fake board whose AFSK output is demodulated back to frames.
 - Status: `>text` (40 characters).
 - Messages: `:ADDRESSEE:text{NN` (67 characters), acks `:ADDRESSEE:ackNN`; ours retried at 30, 60 and 120 s
   (3 tries) until the ack.
-- Path: none, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1, WIDE2-2.
+- Path: none, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1, WIDE2-2. Set on the APRS page (section 10), over the
+  debug link, or in the codeplug's APRS record (section 11).
 
 ### 4.2 Tocall
 
@@ -214,10 +215,12 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
 Tools > APRS (`ui_aprs.c`): the body shows the callsign and frequency, why nothing can be sent (no callsign, no
 frequency, not amateur, no AFSK), the position and its source, the next beacon and the count sent. Rows: Send
 position now, Automatic beacons, Frequency (region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand
-144.575, Japan 144.660, China 144.640, Custom), Power (As channel, then each of the board's levels), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (Radio,
-DMR, Both), Position (opens its page, below), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
+144.575, Japan 144.660, China 144.640, Custom), Power (As channel, then each of the board's levels), Path (the
+digipeater path of RF packets: None, WIDE1-1, WIDE1-1,WIDE2-1, WIDE2-1, WIDE2-2; OK steps to the next and WIDE2-2
+wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (Radio, DMR, Both), Position (opens its page, below), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
 heard (RX builds: the list, most recent first, dimmed when heard through a digipeater). On a radio without
-`board.afsk`, Power is dimmed, and so is Frequency unless the build receives APRS. Row 11 has no digit key.
+`board.afsk`, Power and Path are dimmed, and so is Frequency unless the build receives APRS. Rows 11 and 12 have no
+digit key.
 
 APRS > Position (`aprs-pos`; the APRS page's body shows the position in use). Rows: Source (Auto, GPS, Computer, Fixed),
 Latitude and Longitude (the fixed position, "Not set" while both are 0). OK on Latitude or Longitude opens an editor in
@@ -227,7 +230,7 @@ Down or the knob switch N / S or E / W, BACK takes the last digit back (with non
 OK saves with the places not typed as zeros. The editor starts with the stored value shown; the first digit starts over.
 Find knows the page as "APRS position".
 
-The rest (symbol, path, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
+The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
 debug link (`odr_debug.py aprs set`) and later by qdmr through the native codeplug.
 
 ## 11. Settings
@@ -239,7 +242,17 @@ to APRS-IS, DMR GPS Info), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_lat
 `aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1), `aprs_txdelay`, `aprs_misc`
 (via, digipeater, ambiguity). The codeplug's APRS record 1 (EEPROM 0x1588,
 64 bytes each) gives the SSID, path, symbol, comment and ambiguity when present; its fixed position and frequency
-encodings are unknown and not used.
+encodings are unknown and not used. Of these the radio takes the comment and the path.
+
+The path lives in both places, and the one changed last wins:
+
+- Codeplug to radio: when the record's path differs from `aprs_cp_path` (the codeplug path last taken, `aprs_path_t` +
+  1), it replaces `aprs_path` and becomes the new `aprs_cp_path`. Checked at start-up and whenever the codeplug
+  serial changes (a CPS write). A path that isn't one of the five (another callsign, a second entry without a first) is
+  left alone.
+- Radio to codeplug: a change on the APRS page posts a storage job (`aprs_path_to_codeplug`) that rewrites the record's
+  two path entries (callsign space padded, SSID byte) and sets `aprs_cp_path` to match. No record is made when there is
+  none: the radio then keeps the path in the settings only. A change over the debug link stays in the settings.
 
 Defaults: TX off, region N America, SSID 7, symbol `/[`, path WIDE1-1,WIDE2-1, compressed, interval 10 min,
 SmartBeaconing on, level 50, TX delay 300 ms, via Radio, destination 5057; messaging and RX only on boards with a

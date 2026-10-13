@@ -475,7 +475,6 @@ static void test_aprs_records(void)
 	      a.path[0][0] == '\0');
 	CHECK(!codeplug_aprs(4, &a) && !codeplug_aprs(5, &a) && !codeplug_aprs(6, &a));	// 6: erased
 	CHECK(!codeplug_aprs(0, &a) && !codeplug_aprs(CODEPLUG_APRS_CONFIGS + 1, &a));
-
 	// The boot text (two 16-byte lines at EEPROM 0x7540), padding dropped
 	put_name(&image[EE + 0x7540], "Welcome");
 	put_name(&image[EE + 0x7550], "N0CALL");

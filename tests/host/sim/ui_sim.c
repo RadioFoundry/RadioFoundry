@@ -1267,6 +1267,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "aprs_via") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.via);
 	else if (strcmp(key, "aprs_pos") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.pos_src);
 	else if (strcmp(key, "aprs_power") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.power);
+	else if (strcmp(key, "aprs_path") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.path);
 	else if (strcmp(key, "aprs_lat") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lat);
 	else if (strcmp(key, "aprs_lon") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lon);
 	else if (strcmp(key, "aprs_dmrgps") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.dmr_gps);

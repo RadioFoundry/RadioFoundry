@@ -476,6 +476,38 @@ static void test_edit_cuts(void)
 	edit_cuts(39);		// its record crosses a sector end (0x3FE0..0x4017)
 }
 
+#if CONFIG_APRS
+// The APRS path written back into a record a CPS made (aprs.md 11): the callsigns space padded, the SSID after each,
+// the rest of the record kept; no record is made where there is none
+static void test_aprs_path(void)
+{
+	codeplug_aprs_t a;
+	fresh();
+	CHECK(codeplug_set_radio_name("N0CALL"));	// a stored codeplug
+	uint8_t r[0x40];
+	memset(r, 0, sizeof(r));
+	memcpy(r, "APRS1", 5);
+	r[0x08] = 9;
+	memcpy(&r[0x0F], "WIDE1 \x01WIDE2 \x01", 14);
+	memset(&r[0x1F], 0xFF, 24);
+	memcpy(&r[0x1F], "Mobile", 6);
+	r[0x3E] = 0x53;
+	r[0x3F] = 0x41;
+	CHECK(storage_write(EE + 0x1588u, r, sizeof(r)));
+	codeplug_reload();
+	uint32_t ser = codeplug_serial();
+	CHECK(codeplug_set_aprs_path(1, "WIDE2-2", ""));
+	CHECK(codeplug_serial() == ser + 1u);
+	CHECK(memcmp(&sim_flash_data[EE + 0x1588u + 0x0F], "WIDE2 \x02      \x00", 14) == 0);
+	CHECK(codeplug_aprs(1, &a) && strcmp(a.path[0], "WIDE2-2") == 0 && a.path[1][0] == '\0' && a.ssid == 9 &&
+	      strcmp(a.comment, "Mobile") == 0);
+	CHECK(codeplug_set_aprs_path(1, "WIDE1-1", "WIDE2-1") && codeplug_aprs(1, &a) &&
+	      strcmp(a.path[0], "WIDE1-1") == 0 && strcmp(a.path[1], "WIDE2-1") == 0);
+	CHECK(!codeplug_set_aprs_path(2, "WIDE1-1", "") && !codeplug_set_aprs_path(0, "", ""));	// no record: none made
+	CHECK(sim_flash_data[EE + 0x1588u + 0x40u] == 0xFF);
+}
+#endif
+
 int main(void)
 {
 	test_encode();
@@ -483,6 +515,9 @@ int main(void)
 	test_zones();
 #if CONFIG_DMR
 	test_dmr();
+#endif
+#if CONFIG_APRS
+	test_aprs_path();
 #endif
 	test_round_trip();
 	test_edit_cuts();
