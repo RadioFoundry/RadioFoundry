@@ -957,12 +957,32 @@ static void test_rx_stream(void)
 	aprs_rx_stats_t rs;
 	aprs_rx_stats(&rs);
 	CHECK(rs.peak > 7000 && rs.peak <= 8000 && rs.frames == 1 && rs.bits > 900);
+	// A signal: the squelch holds through 100 ms of noise readings over the line (a packet's tones do that), closes
+	// after 300 ms of them
+	hw.noise_on_aprs = 30;
+	run(100);
+	CHECK(sm.view.state == RS_RX);
+	hw.noise_on_aprs = 120;
+	run(100);
+	hw.noise_on_aprs = 30;
+	run(50);
+	CHECK(sm.view.state == RS_RX);
+	hw.noise_on_aprs = 120;
+	run(325);
+	CHECK(sm.view.state == RS_IDLE);
 	// Receive off: the stream stops
 	aprs_get_cfg(&c);
 	c.rx_on = false;
 	aprs_set_cfg(&c, now);
 	run(200);
 	CHECK(!aprs_rx_listening() && pcm.stops == 1 && pcm.cb == NULL);
+	// ... and the squelch closes after 50 ms again
+	hw.noise_on_aprs = 30;
+	run(100);
+	CHECK(sm.view.state == RS_RX);
+	hw.noise_on_aprs = 120;
+	run(75);
+	CHECK(sm.view.state == RS_IDLE);
 	fake_tap.caps = 0;
 }
 #endif

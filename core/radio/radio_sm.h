@@ -33,6 +33,10 @@
 #define RADIO_SQL_DB_PER_STEP	3
 #define RADIO_SQL_HYST_DB	3
 #define RADIO_SQL_CLOSE_POLLS	2
+// While APRS receive listens (aprs.md 5.3): a packet's tones at full deviation push the noise reading over the line
+// for a poll or two, and on the DM-1701 a closed squelch zeroes the receive audio, so a packet came apart (on air,
+// 2026-10-13). On the APRS frequency the squelch holds this many polls (300 ms) instead
+#define RADIO_SQL_CLOSE_POLLS_APRS	12
 
 // RX tone debounce: the AT1846S tone flag can drop out for a poll or two on a weak or fluttering signal. The tone
 // counts as heard after RADIO_TONE_ON_POLLS matching polls in a row and as gone after RADIO_TONE_OFF_POLLS missing

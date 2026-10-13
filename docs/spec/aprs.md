@@ -140,7 +140,11 @@ Received FM audio comes from one of two places (`aprs.c`, `rx_service`):
 The path runs while the receive setting is on, the radio receives FM on the APRS frequency (`aprs_cfg_freq`: the
 region's, or the custom one) and no APRS transmission is under way. Anywhere else the stream is left alone: a
 repeater channel's audio isn't APRS, and battery saving would be blocked for nothing. While it runs, battery saving
-(`radio-features.md`) stays off: a sleeping receiver misses packets. `aprs_rx_listening()` says whether it runs.
+(`radio-features.md`) stays off: a sleeping receiver misses packets, and the squelch closes only after 300 ms of
+noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. On air (2026-10-13) a packet's tones
+at full deviation pushed the AT1846S noise reading over the line for a poll or two, the squelch closed, and the
+squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
+says whether the path runs.
 
 The receive setting and messaging default to on when the radio can receive (`aprs_can_receive()`: the build has
 `CONFIG_APRS_RX` and one of the two paths exists).
@@ -148,7 +152,8 @@ The receive setting and messaging default to on when the radio can receive (`apr
 The demodulator (`afsk.c`): 8-48 kHz samples, a correlator per tone with hysteresis and a PLL that tightens once a
 flag is seen. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio): 90 / 10 % of frames at 10 dB SNR, 97 / 61
 % at 12 dB, 100 / 94 % at 14 dB. Squelch gated audio loses the start of a transmission until the squelch opens; the
-sender's TX delay (flags before the frame) covers that.
+sender's TX delay (flags before the frame) covers that. The debug link's `aprs.rx_peak`, `rx_bits` and HDLC counters
+tell missing audio from a demodulator that finds no frame.
 
 Later on the DM-1701: the HR_C6000's RX RAM carries the same audio ungated (`hardware-dm1701.md` 21.3.1), so packets
 below the squelch could be decoded. That needs a board receive path (1 above) reading the RAM 31 times a second.
