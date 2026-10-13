@@ -248,10 +248,36 @@ class Site:
 			self.docs_pages(lang)
 			self.not_found(lang)
 		self.write(".nojekyll", "")
+		self.check_links()
 		missing = self.i18n.unused_check()
 		if missing:
 			self.warn("keys missing from the %s catalog: %s" % (self.i18n.default, ", ".join(missing)))
 		return self.warnings
+
+	LINK = re.compile(r'(?:href|src)="([^"]*)"')
+
+	def check_links(self):
+		"""Every relative href and src in the pages names a file the build wrote (a directory: its index.html).
+		The templates' own links are checked nowhere else (docs links: tools/check_doc_links.py)."""
+		broken = {}
+		for dirpath, _, files in os.walk(self.out):
+			for f in files:
+				if not f.endswith(".html"):
+					continue
+				page = os.path.join(dirpath, f)
+				with open(page, encoding="utf-8") as fh:
+					text = fh.read()
+				for url in self.LINK.findall(text):
+					url = html.unescape(url).split("#")[0].split("?")[0]
+					if not url or re.match(r"[a-z][a-z0-9+.-]*:|//|\{\{", url):
+						continue
+					target = os.path.normpath(os.path.join(dirpath, url))
+					if os.path.isdir(target):
+						target = os.path.join(target, "index.html")
+					if not os.path.exists(target):
+						broken.setdefault(url, os.path.relpath(page, self.out))
+		for url, page in sorted(broken.items()):
+			self.warn("broken link %s (first in %s)" % (url, page))
 
 	def version_imports(self, js_dir):
 		"""Stamp the build into the scripts' relative imports (./x.js -> ./x.js?v=<git>), so a browser that cached

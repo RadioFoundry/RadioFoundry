@@ -47,7 +47,8 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
 The build fails when a source doesn't parse, and warns (an error with `--strict`) when a feature has no row in the
-feature matrix, a screen isn't in `screens.json` or a string is missing from the English catalog.
+feature matrix, a screen isn't in `screens.json`, a string is missing from the English catalog, or a page links to a
+file the build didn't write.
 
 `data/*.json` is what the pages read and doubles as a public API for other tools: `radios.json`, `features.json`,
 `variants.json`, `flash-boards.json`, `screens.json`, `releases.json`, `site.json`.
