@@ -419,8 +419,9 @@ The DM-1701's FM transmit path is PWM on PC8 into the HR_C6000's differential mi
 nine carrier periods a sample, linearly interpolated with the rounding error carried from period to period. Full
 scale is ±50 timer steps, about 2.6 kHz rms deviation for a full-scale sine before the chip's limiter;
 `fm_tx_nominal_peak` (13800) is about 60 % of the peak deviation. The chip's own FM chain does the rest
-(pre-emphasis, limiter, sub-audio tone). The bench measured 14-16 dB SINAD for this path with the probe's plain
-PWM; this firmware's error feedback is to be measured.
+(pre-emphasis, limiter, sub-audio tone). On the SDR bench a 1 kHz tone at 13800 from the host went out at 1.1-1.2 kHz
+rms deviation (1.68 kHz peak) with 13-14 dB SINAD in the voice band (2026-10-13). The probe's plain PWM measured
+14-16 dB, so the error feedback doesn't improve it, and the PWM's resolution is probably not the limit.
 
 Known limits:
 

@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from odr_hil import DebugLink, find_ports
+from odr_hil import DebugLink
 from test_split_duplex import check_rx_labels, rx_half_labels
 from test_usb_network import INDIVIDUAL_NET, _serial_back, _udp_link
 
@@ -55,35 +55,34 @@ class NetRadio:
 
 
 @pytest.fixture(scope="module")
-def net(pytestconfig):
+def net(radio):
     # Its own debug link, not the session's `radio`: the per-test restore (conftest) needs the serial port, which is
-    # gone while the radio is a network adapter
-    port = pytestconfig.getoption("--radio-port") or (find_ports() or [None])[0]
-    if not port:
-        pytest.skip("no radio on USB (1FC9:0094)")
-    serial_link = DebugLink(port, timeout=1.5)
-    feats = set(serial_link.version().get("features", "").split(","))
-    if "DMR_IP_GATEWAY" not in feats:
+    # gone while the radio is a network adapter. The session's link is closed meanwhile and reopened afterwards (the
+    # port re-enumerates: a link kept open would be dead for the tests after this module)
+    with radio.released() as port:
+        serial_link = DebugLink(port, timeout=1.5)
+        feats = set(serial_link.version().get("features", "").split(","))
+        if "DMR_IP_GATEWAY" not in feats:
+            serial_link.close()
+            pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+        own_id = int(serial_link.view(["dmr"]).get("dmr.own_id", "0"))
+        host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
+        radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+        serial_link.usb_network(True)
         serial_link.close()
-        pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
-    own_id = int(serial_link.view(["dmr"]).get("dmr.own_id", "0"))
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
-    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
-    serial_link.usb_network(True)
-    serial_link.close()
-    n = NetRadio(radio_ip)
-    n.features = feats
-    try:
-        n.open()
-        yield n
-    finally:
+        n = NetRadio(radio_ip)
+        n.features = feats
         try:
-            n.open().usb_network(False)
-        except Exception:
-            pass
-        n.close()
-        assert _serial_back(30), "the radio didn't come back as a serial port"
-        time.sleep(2.0)
+            n.open()
+            yield n
+        finally:
+            try:
+                n.open().usb_network(False)
+            except Exception:
+                pass
+            n.close()
+            assert _serial_back(30), "the radio didn't come back as a serial port"
+            time.sleep(2.0)
 
 
 @pytest.mark.usb_switch

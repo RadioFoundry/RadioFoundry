@@ -56,9 +56,12 @@ def _value(vbs, name):
 
 
 @pytest.mark.usb_switch
-def test_snmp_usb(radio):
+def test_snmp_usb(radio, pytestconfig):
     if "SNMP" not in radio.features():
         pytest.skip("built without CONFIG_SNMP")
+    # On a DMR channel: the DMR objects (talk group, target type) are only in the walk then
+    radio.go_home()
+    radio.find_channel(round(pytestconfig.getoption("--dmr-freq") * 1e6), "dmr")
     own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
     before = radio.view(["snmp"])
