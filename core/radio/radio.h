@@ -274,6 +274,10 @@ void radio_req_vfo_set(uint32_t hz);		// rx and tx frequency (simplex)
 // 8.33 kHz air band grid (radio/radio_am.h)
 void radio_req_vfo_step_size(uint32_t hz);
 void radio_req_ptt(bool down);
+// PTT for a host audio session (USRP, docs/spec/usb-audio.md): the host's samples go on air instead of the microphone
+// (FM: through the board's audio tap, refused without one; DMR: into the encoder, core/usbaudio/audio_mux.c). Up is
+// radio_req_ptt(false)
+void radio_req_ptt_host(bool down);
 void radio_req_monitor(bool down);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps
 void radio_req_squelch(int8_t dir);

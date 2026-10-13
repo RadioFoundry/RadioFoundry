@@ -157,11 +157,14 @@ RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/radio/morse.c \
-           $(CORE)/settings/settings.c $(CORE)/storage/storage.c
+           $(CORE)/settings/settings.c $(CORE)/storage/storage.c $(CORE)/usbaudio/audio_mux.c \
+           $(CORE)/usbaudio/pcm_slip.c
 
-radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 -o $@ \
-		$(RFTEST) -lm
+# CONFIG_NET_USRP without the gateway: only the radio core's half (host audio PTT, the shared stream) is tested here;
+# the network half is usrpNetTest
+radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
+		-DCONFIG_NET_USRP=1 -o $@ $(RFTEST) -lm
 
 # DMR repeater roaming: the engine, and through the radio core against fake repeaters on the simulated modem
 TESTS   += roamTest
@@ -536,7 +539,8 @@ run-db25d: bk4819Test db25dCalTest
 # radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
            $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
-HLNET_OFF := -DCONFIG_NET_KISS=0 -DCONFIG_NET_HTTP=0 -DCONFIG_NET_RIGCTL=0 -DCONFIG_NET_APRSIS=0 -DCONFIG_MDNS=0 -DCONFIG_TFTP=0
+HLNET_OFF := -DCONFIG_NET_KISS=0 -DCONFIG_NET_HTTP=0 -DCONFIG_NET_RIGCTL=0 -DCONFIG_NET_APRSIS=0 -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 \
+             -DCONFIG_NET_USRP=0
 TESTS   += hostlinkNetTest
 
 hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
@@ -687,9 +691,19 @@ TESTS   += usrpTest
 usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ $(UAUDIO) -lm
 
+# The shared PCM stream and USRP on the network address (core/usbaudio/audio_mux.c, usrp_net.c) against fake
+# gateway, radio core and board
+UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
+           $(CORE)/usbaudio/audio_mux.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += usrpNetTest
+
+usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -o $@ $(UNET) -lm
+
 run: run-usbaudio
-run-usbaudio: usrpTest
+run-usbaudio: usrpTest usrpNetTest
 	./usrpTest
+	./usrpNetTest
 .PHONY: run-usbaudio
 
 # The minimal TCP (core/net/tcp.c) against a scripted peer; tshark checks the segments it wrote to tcpTest.pcap
@@ -716,7 +730,7 @@ NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE
 TESTS   += netSvcTest
 
 netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h gen/gz/http_assets_gen.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -o $@ $(NETSVC)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -DCONFIG_NET_USRP=0 -o $@ $(NETSVC)
 
 run: run-netsvc
 run-netsvc: netSvcTest

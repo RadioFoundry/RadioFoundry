@@ -116,7 +116,7 @@ const board_t board = {
 	.dmr = &dm1701_dmr,
 	.audio = &dm1701_audio,
 	.vocoder = &dm1701_vocoder,
-#if CONFIG_AUDIO_PROBE
+#if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP
 	.audio_tap = &dm1701_audio_tap,
 #endif
 #endif

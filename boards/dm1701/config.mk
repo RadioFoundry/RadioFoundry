@@ -12,8 +12,10 @@ CONFIG_DISPLAY_INSET_BOTTOM ?= 0
 # No receive path for APRS: FM audio goes AT1846S -> HR_C6000 -> speaker, no MCU ADC sees it (docs/spec/aprs.md 5.3);
 # the demodulator's buffers would only cost RAM
 CONFIG_APRS_RX ?= n
-# Link time optimization stays off in the image until it has been tested on the radio (LTO=1 to try it: about 17 KB
-# smaller); tools/ci.sh's maximal configuration (every switch on) only fits with it
+# Link time optimization on our sources (about 17 KB smaller): the default image no longer fits without it since USRP
+# (CONFIG_NET_USRP, 2026-10-13). LTO=0 builds the plain way (and then needs features off). The free sector 9 (FLASH2,
+# dm1701.ld) is the other way to make room, once the packaging and flashing tools write it
+LTO ?= 1
 MAXIMAL_VARS := LTO=1
 # Supported but not needed here, so tools/ci.sh's maximal configuration leaves it off: PPP stands in for the USB
 # network adapter on UART-only radios (docs/spec/ppp.md), and this one has the adapter

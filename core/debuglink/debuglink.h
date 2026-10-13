@@ -35,6 +35,7 @@ enum {
 	DL_VIEW_DMR_IP,		// IP packets over DMR: compression, confirmed delivery, their counters (debuglink_dmr_data.c)
 	DL_VIEW_NET,		// the radio's own TCP and its services (debuglink_view_net.c)
 	DL_VIEW_SNMP,		// the SNMP agent: settings and counters (debuglink_snmp.c)
+	DL_VIEW_USRP,		// USRP voice over UDP and the shared PCM stream (core/usbaudio/usrp_net.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		1	// bumped when a key changes meaning or goes away (new keys don't bump it)

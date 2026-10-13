@@ -8,16 +8,12 @@
  *   - APRS / AFSK on FM (core/aprs): the 1200 baud demodulator samples receive audio, the modulator sends tones
  *   - later: DTMF / 5-tone decoding in software, voice recording
  *
- * Both directions ride on the board's one PCM stream (hal_audio_t: 8 kHz, 16-bit, 20 ms blocks). A tap only changes
- * what the stream's "mic" samples are (receive audio instead of the microphone) and where its "spk" samples go (the
- * modulator instead of, or as well as, the speaker). The core multiplexes the one stream between its users (DMR voice,
- * beeps, APRS, USB audio): see usb-audio.md 5.1 for the router that owns hal_audio_t.start() once there is more than
- * one consumer.
- *
- * Status: a SKETCH. Only the probe part (bottom) is implemented, on the DM-1701 and behind CONFIG_AUDIO_PROBE, to find
- * out on the bench which of the HR_C6000 settings put FM audio on the I2S link at all (hardware-dm1701.md 21.3). The
- * routing part is the interface the USB audio and APRS work packages are meant to share; no board implements it yet,
- * and it may change once the probe results are in.
+ * Receive audio rides on the board's one PCM stream (hal_audio_t: 8 kHz, 16-bit, 20 ms blocks): with AUDIO_TAP_FM_RX
+ * the stream's input carries FM receive audio whenever the radio receives FM (on the DM-1701 the HR_C6000 puts it on
+ * I2S, squelch gated). DMR receive audio is the stream's output (the decoded voice). Transmit audio in DMR is the
+ * stream's input fed to the encoder; in FM it goes through fm_tx_inject, a path of the board's own (the DM-1701: PWM
+ * on the stock beep pin into the HR_C6000's microphone input). core/usbaudio/audio_mux.c shares the stream between
+ * its users (usb-audio.md 5.1).
  */
 #ifndef HAL_AUDIO_TAP_H
 #define HAL_AUDIO_TAP_H
@@ -29,7 +25,7 @@
 // What a board can tap (hal_audio_tap_t.caps)
 enum {
 	AUDIO_TAP_FM_RX		= 1u << 0,	// FM receive audio (demodulated, de-emphasized) as the stream's input
-	AUDIO_TAP_FM_TX		= 1u << 1,	// the stream's output as the FM modulation source
+	AUDIO_TAP_FM_TX		= 1u << 1,	// MCU audio as the FM modulation source (fm_tx_inject)
 	AUDIO_TAP_DMR		= 1u << 2,	// DMR voice as PCM both ways: always there with a vocoder (the stream itself)
 	AUDIO_TAP_FM_RX_RAW	= 1u << 3,	// FM receive audio before de-emphasis and the voice filter (better for AFSK)
 	AUDIO_TAP_FM_TX_FLAT	= 1u << 4,	// the modulator without pre-emphasis, compressor and voice filter
@@ -41,18 +37,18 @@ typedef enum {
 	AUDIO_TAP_FLAT	= 1,	// RX the discriminator; TX straight to the modulator (limiter kept)
 } audio_tap_mode_t;
 
+// Transmit audio for fm_tx_inject: n samples at 8 kHz into pcm. Called from the board's interrupt or audio task
+// every few ms; must not block
+typedef void (*audio_tap_pull_t)(int16_t *pcm, uint16_t n);
+
 typedef struct {
 	uint32_t caps;
 
-	// --- routing (sketch, not implemented by any board yet) ---
-
-	// The stream's input becomes FM receive audio in the given mode (true) or the microphone again (false). FM
-	// receive mode only; the speaker keeps working as before. False if the board can't (or not in that mode)
-	bool (*fm_rx_capture)(bool on, audio_tap_mode_t mode);
-	// While transmitting FM: the stream's output becomes the modulation source instead of the microphone (true), or
-	// the microphone again (false). The deviation stays the radio's; in AUDIO_TAP_VOICE the sub-audio tone too, in
-	// AUDIO_TAP_FLAT the caller says (tone). False if the board can't (or not in that mode)
-	bool (*fm_tx_inject)(bool on, audio_tap_mode_t mode, bool tone);
+	// While transmitting FM: the modulation source becomes the samples pull returns instead of the microphone (pull
+	// non-NULL), or the microphone again (NULL). The deviation, the limiter and the sub-audio tone stay the radio's;
+	// AUDIO_TAP_VOICE keeps its pre-emphasis and voice filter. Only between hal_radio_t.tx() and tx_off(), in the
+	// radio task. False if the board can't (or not in that mode). NULL without AUDIO_TAP_FM_TX
+	bool (*fm_tx_inject)(audio_tap_pull_t pull, audio_tap_mode_t mode);
 	// Sample rate of AUDIO_TAP_FLAT receive audio when it doesn't come through the 8 kHz stream (an MCU ADC on the
 	// discriminator); 0 = it rides the stream
 	uint32_t fm_rx_flat_rate_hz;

@@ -12,6 +12,9 @@
 #include "codeplug/codeplug.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
+#if CONFIG_NET_USRP
+#include "usbaudio/usrp_net.h"
+#endif
 #if CONFIG_CPS_OPENFW
 #include "cps/cps_openfw.h"
 #endif
@@ -265,7 +268,7 @@ static void storage_section(dl_text_t *t)
 
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
-						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp" };
+						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -336,6 +339,13 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_SNMP:
 		debuglink_view_snmp(t);
+		break;
+	case DL_VIEW_USRP:
+#if CONFIG_NET_USRP
+		usrp_net_view(t);
+#else
+		dl_text(t, "usrp.built=0\n");
+#endif
 		break;
 	default:
 		break;

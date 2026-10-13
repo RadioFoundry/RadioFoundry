@@ -83,7 +83,7 @@ typedef enum {
 	RREQ_VFO,		// arg: 1 on, 0 off
 	RREQ_VFO_STEP,		// arg: direction
 	RREQ_VFO_SET,		// arg: Hz
-	RREQ_PTT,		// arg: 1 down, 0 up
+	RREQ_PTT,		// arg: 1 down, 2 down with a host audio session's audio (radio_req_ptt_host), 0 up
 	RREQ_MONITOR,		// arg: 1 down, 0 up
 	RREQ_POWER,		// arg: direction
 	RREQ_SQUELCH,		// arg: direction
@@ -164,6 +164,9 @@ typedef struct {
 	int16_t volume_sent;		// last level given to board.radio->volume, -1 = none yet
 
 	bool ptt;			// PTT held
+	bool host_audio;		// this PTT is a host audio session's (USRP): its audio, not the microphone
+	uint32_t host_pushes;		// the host's audio pushes last seen, and when they last moved (the watchdog)
+	uint32_t host_push_ms;
 	bool retune_pending;		// receive settings changed during TX: retune on PTT release
 	uint32_t tx_start_ms;
 	uint8_t close_count;		// polls in a row above the close threshold

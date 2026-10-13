@@ -40,9 +40,16 @@ typedef struct {
 } dm1701_audio_stats_t;
 void dm1701_audio_stats(dm1701_audio_stats_t *out);
 void dm1701_audio_reset_stats(void);
-#if CONFIG_AUDIO_PROBE
-// The audio probe (CONFIG_AUDIO_PROBE, docs/spec/hardware-dm1701.md 21.3): audio_dm1701.c, register access in radio_dm1701.c
+#if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP
+// The audio tap: FM transmit audio for USRP (CONFIG_NET_USRP), the probe (CONFIG_AUDIO_PROBE, docs/spec/hardware-dm1701.md
+// 21.3). audio_dm1701.c; register access and the transmit source switch in radio_dm1701.c
 extern const hal_audio_tap_t dm1701_audio_tap;
+#endif
+#if CONFIG_NET_USRP
+bool dm1701_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode);
+void dm1701_pwm_audio(audio_tap_pull_t pull);	// PWM audio on PC8: start (pull) or stop (NULL)
+#endif
+#if CONFIG_AUDIO_PROBE
 bool dm1701_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write);
 bool dm1701_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write);
 bool dm1701_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len);

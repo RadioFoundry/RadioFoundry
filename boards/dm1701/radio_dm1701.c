@@ -67,6 +67,7 @@ static struct {
 	uint16_t saved_3a, saved_7a;	// AT1846S voice source (0x3A bits 14:12) and single tone enable before the tone
 	bool asleep;			// rx_sleep(true): receiver off
 	volatile bool afsk;		// APRS AFSK running (afsk_dm1701.c): the TIM6 interrupt owns I2C3
+	bool inject;			// FM TX audio from the MCU (fm_tx_inject) instead of the microphone
 
 	// DMR per-burst keying (shared with the modem ISRs)
 	volatile bool dmr_armed;	// tx() in DMR mode: TX frequency and drive known
@@ -633,6 +634,49 @@ static void tone_restore(void)
 	r.tone_hz = 0;
 }
 
+#if CONFIG_NET_USRP
+// FM TX audio from the MCU (hardware-dm1701.md 21.3.1, "PWM audio on PC8"): PWM on PC8 reaches the HR_C6000's
+// differential microphone input, so MIC_P / MIC_N (4:0xE0 bits 1-2) go on and the microphone (LINEIN1, bit 6) off.
+// The chip's FM chain does the rest as for the microphone: pre-emphasis, limiter, sub-audio tone. The mode tables
+// rewrite 0xE0 at the next rx(), which ends the injection (inject_stop)
+static void inject_stop(void)
+{
+	if (!r.inject) {
+		return;
+	}
+	r.inject = false;
+	dm1701_pwm_audio(NULL);
+	uint8_t e0;
+	if (hrc6000_read(&r.modem, 4, 0xE0, &e0)) {
+		count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)((e0 | 0x40u) & ~0x06u)));	// the microphone again
+	}
+}
+
+bool dm1701_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
+{
+	if (pull == NULL) {
+		inject_stop();
+		return true;
+	}
+	if (!r.tx_on || r.mode != RADIO_MODE_FM || mode != AUDIO_TAP_VOICE) {
+		return false;	// flat (0x34's processing off) isn't offered: the PWM path stops at the codec's 3.5 kHz
+	}
+	uint8_t e0;
+	if (!hrc6000_read(&r.modem, 4, 0xE0, &e0)) {
+		count(false);
+		return false;
+	}
+	dm1701_pwm_audio(pull);
+	count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)((e0 & ~0x40u) | 0x06u)));
+	r.inject = true;
+	return true;
+}
+#else
+static void inject_stop(void)
+{
+}
+#endif
+
 // Enter RX (hardware-dm1701.md 6): PA off first, RX supply for the band, AT1846S to RX, then the HR_C6000
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 {
@@ -646,6 +690,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	}
 	r.asleep = false;
 	tone_restore();
+	inject_stop();
 	r.rx_hz = hz;
 	r.rx_bw = bw;
 	r.rx_tone = rx_tone != NULL ? *rx_tone : (subtone_t){ TONE_NONE, 0 };
@@ -749,6 +794,7 @@ static void tx_off(void)
 		rf_resync();
 	}
 	pa_off();
+	inject_stop();
 	if (r.rx_valid) {
 		subtone_t tone = r.rx_tone;
 		rx(r.rx_hz, r.rx_bw, &tone);

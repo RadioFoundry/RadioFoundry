@@ -65,6 +65,9 @@
 #ifndef CONFIG_NET_RIGCTL
 #define CONFIG_NET_RIGCTL		CONFIG_NET_TCP
 #endif
+#ifndef CONFIG_NET_USRP
+#define CONFIG_NET_USRP			CONFIG_DMR_IP_GATEWAY
+#endif
 #ifndef CONFIG_MDNS
 #define CONFIG_MDNS			CONFIG_DMR_IP_GATEWAY
 #endif
@@ -180,7 +183,7 @@
 
 // Derived: the shared packet data / CSBK code
 // Any of the radio's own services on the USB network link (core/net/net.c starts and polls them)
-#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP)
+#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP)
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
 					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY)

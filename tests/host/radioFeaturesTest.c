@@ -9,6 +9,7 @@
 #include "radio/radio_sm.h"
 #include "radio/scan.h"
 #include "radio/beep.h"
+#include "usbaudio/audio_mux.h"
 #include "radio/battery.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
@@ -143,6 +144,24 @@ static void a_stop(void) { aud.streaming = false; aud.cb = NULL; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
 static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
 
+// FM transmit audio from the MCU (hal_audio_tap_t.fm_tx_inject): what the radio core asked for
+static struct {
+	bool ok;		// the board accepts
+	int calls;
+	audio_tap_pull_t pull;	// the source it was given (NULL: the microphone)
+} tap_hw;
+static bool t_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
+{
+	(void)mode;
+	tap_hw.calls++;
+	if (!tap_hw.ok) {
+		return false;
+	}
+	tap_hw.pull = pull;
+	return true;
+}
+static const hal_audio_tap_t fake_tap = { .caps = AUDIO_TAP_FM_RX | AUDIO_TAP_FM_TX, .fm_tx_inject = t_inject };
+
 static bool v_present(void) { return true; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
@@ -166,6 +185,7 @@ const board_t board = {
 	.power = &fake_power,
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
+	.audio_tap = &fake_tap,
 	.vocoder = &fake_vocoder,
 	.battery_low_mv = 6400,
 	.battery_critical_mv = 6000,
@@ -1468,6 +1488,51 @@ static void test_tot_tones_and_clamps(void)
 	CHECK(sm.set.roam_check_s == 3600 && sm.set.roam_beacon_s == 600 && sm.set.roam_beacon_len_s == 10);
 }
 
+// A host audio session's PTT (USRP, docs/spec/usb-audio.md): the board's MCU audio path instead of the microphone, no
+// roger beep, and an unkey of its own when the host's audio stops coming
+static void test_host_audio(void)
+{
+	start();
+	tap_hw = (typeof(tap_hw)){ .ok = true };
+	settings(set_roger);
+	int16_t pcm[AUDIO_BLOCK_SAMPLES] = { 0 };
+	req(RREQ_PTT, 2);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && tap_hw.calls == 1 && tap_hw.pull == audio_mux_fm_pull);
+	for (int i = 0; i < 50; i++) {
+		audio_mux_host_push(pcm, AUDIO_BLOCK_SAMPLES);
+		run(20);
+	}
+	CHECK(sm.view.state == RS_TX);
+	// Local PTT pressed and released meanwhile: the transmission keeps the host's source
+	req(RREQ_PTT, 1);
+	CHECK(sm.host_audio);
+	// Released by the host: no roger beep (the host sends its own audio)
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 1 && hw.tone_calls == 0);
+
+	// The host's audio stops coming (its link switched away mid-transmission): unkeyed after a second
+	req(RREQ_PTT, 2);
+	CHECK(sm.view.state == RS_TX);
+	run(AUDIO_MUX_HOST_STALE_MS - 100);
+	CHECK(sm.view.state == RS_TX);
+	run(200);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 2 && hw.tone_calls == 0);
+
+	// A board that refuses the MCU audio: not keyed with the microphone instead
+	tap_hw.ok = false;
+	req(RREQ_PTT, 2);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_off_calls == 3);
+	req(RREQ_PTT, 0);
+	tap_hw.ok = true;
+
+	// The local PTT afterwards is the microphone's again
+	int calls = tap_hw.calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && !sm.host_audio && tap_hw.calls == calls);
+	req(RREQ_PTT, 0);
+	run(500);
+}
+
 int main(void)
 {
 	test_scan_engine();
@@ -1486,6 +1551,7 @@ int main(void)
 	test_battery();
 	test_battery_save();
 	test_dmr_beeps();
+	test_host_audio();
 	printf("# radioFeaturesTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

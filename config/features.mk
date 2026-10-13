@@ -68,6 +68,11 @@ CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
 # the radio's own APRS-IS client through the host: our beacons and the iGate's lines, off until a server is set
 # (needs NET_TCP and APRS; core/net/aprsis.c)
 CONFIG_NET_APRSIS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS))),y,n)
+# audio linking for AllStarLink, DVSwitch and bridges (USRP voice over UDP, port 34001): the radio sends what it
+# receives, with the squelch as keyup, and transmits what the computer sends. DMR works both ways on every radio; FM
+# needs the radio's audio paths to the processor: both ways on the DM-1701, on other radios DMR only or FM one way
+# (docs/feature-matrix.md) (needs DMR_IP_GATEWAY; core/usbaudio, docs/spec/usb-audio.md)
+CONFIG_NET_USRP ?= $(CONFIG_DMR_IP_GATEWAY)
 # mDNS / DNS-SD responder on the USB network link: <host>.local and the radio's services (needs DMR_IP_GATEWAY, the
 # IP stack it runs on; core/net/mdns.c, docs/spec/mdns.md)
 CONFIG_MDNS ?= $(CONFIG_DMR_IP_GATEWAY)
@@ -148,7 +153,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE
 
@@ -159,7 +164,7 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
 ifneq ($(call feature_on,HOTSPOT),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)
@@ -205,7 +210,7 @@ endif
 $(foreach f,NET_HTTP_GZIP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
 $(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
 $(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS=y))))
-$(foreach f,MDNS TFTP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
+$(foreach f,MDNS TFTP NET_USRP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
 ifneq ($(call feature_on,DMR_TMS),)
   ifeq ($(call feature_on,DMR_SMS),)
     $(error CONFIG_DMR_TMS=y needs CONFIG_DMR_SMS=y)

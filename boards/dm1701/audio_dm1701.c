@@ -24,6 +24,9 @@
 #if CONFIG_AUDIO_PROBE
 #include <math.h>
 #endif
+#if CONFIG_NET_USRP
+#include "usbaudio/audio_mux.h"
+#endif
 
 #define AUDIO_TASK_PRIORITY	5	// above the radio task: a late block is an audible gap
 #define AUDIO_TASK_STACK	1280	// words: the vocoder in the callback needs about 4 KB (vocoder_dm1701.c)
@@ -320,6 +323,117 @@ void dm1701_audio_reset_stats(void)
 
 const hal_audio_t dm1701_audio = { .start = start, .stop = stop, .speaker_pcm = speaker_pcm };
 
+#if CONFIG_NET_USRP
+// --- FM transmit audio: PWM on PC8 into the HR_C6000's microphone input (hardware-dm1701.md 21.3.1, "PWM audio") ---
+//
+// PC8 (the stock beep PWM, TIM8 CH3 on AF3) reaches MIC_P / MIC_N; radio_dm1701.c switches those inputs on and the
+// microphone (LINEIN1) off. The chip's codec samples at 8 kHz behind its own filter, so a carrier of 72 kHz (nine
+// periods a sample) needs no filter of ours. The duty follows the samples, linearly interpolated over the nine periods,
+// with the rounding error carried from period to period: the codec averages the periods, so this gains about three
+// bits over the timer's 1000 steps. DMA2 stream 2 (TIM8 CH3's request) rewrites CCR3 every period from a circular
+// buffer of two 5 ms halves, refilled from the interrupt with samples the core's pull returns.
+
+#define PWM_TOP			999u				// 72 MHz / 1000 = 72 kHz
+#define PWM_OVERSAMPLE		9u				// carrier periods a sample
+#define PWM_HALF_SAMPLES	40u				// 5 ms
+#define PWM_HALF		(PWM_HALF_SAMPLES * PWM_OVERSAMPLE)
+// Full scale (32767) to this many timer steps either side of the middle: 10 % of the range, about 2.6 kHz rms
+// deviation for a full-scale sine with the mic input gain the radio sets (bench 2026-10-12, 4 % gave 1 kHz rms, 10 %
+// 2.6 kHz rms, the limiter above). 0x34's limiter keeps the deviation inside the channel whatever the host sends
+#define PWM_AMP_STEPS		50
+#define PWM_IRQ_PRIORITY	6
+
+static uint16_t pwm_buf[2 * PWM_HALF] __attribute__((aligned(4)));	// main SRAM: DMA
+static audio_tap_pull_t volatile pwm_pull;
+static int32_t pwm_prev_q8, pwm_err_q8;		// the last sample as a duty (x256), the carried rounding error
+
+static void pwm_fill(uint16_t *out)
+{
+	int16_t pcm[PWM_HALF_SAMPLES];
+	audio_tap_pull_t pull = pwm_pull;
+	if (pull != NULL) {
+		pull(pcm, PWM_HALF_SAMPLES);
+	} else {
+		memset(pcm, 0, sizeof pcm);
+	}
+	const int32_t mid_q8 = (int32_t)((PWM_TOP + 1u) / 2u) << 8;
+	for (uint32_t i = 0; i < PWM_HALF_SAMPLES; i++) {
+		int32_t next_q8 = mid_q8 + (((int32_t)pcm[i] * PWM_AMP_STEPS) >> 7);	// x256 / 32768
+		int32_t step_q8 = (next_q8 - pwm_prev_q8) / (int32_t)PWM_OVERSAMPLE;
+		int32_t v_q8 = pwm_prev_q8;
+		for (uint32_t k = 0; k < PWM_OVERSAMPLE; k++) {
+			v_q8 += step_q8;
+			int32_t want = v_q8 + pwm_err_q8;
+			int32_t duty = (want + 128) >> 8;
+			pwm_err_q8 = want - (duty << 8);
+			*out++ = (uint16_t)(duty < 0 ? 0 : duty > (int32_t)PWM_TOP ? (int32_t)PWM_TOP : duty);
+		}
+		pwm_prev_q8 = next_q8;
+	}
+}
+
+void DMA2_Stream2_IRQHandler(void)
+{
+	uint32_t isr = DMA2->LISR;
+	DMA2->LIFCR = isr & (DMA_LISR_HTIF2 | DMA_LISR_TCIF2 | DMA_LISR_TEIF2 | DMA_LISR_DMEIF2 | DMA_LISR_FEIF2);
+	if (isr & DMA_LISR_HTIF2) {
+		pwm_fill(&pwm_buf[0]);		// the first half has gone out; the DMA reads the second
+	}
+	if (isr & DMA_LISR_TCIF2) {
+		pwm_fill(&pwm_buf[PWM_HALF]);
+	}
+}
+
+static void pwm_stop(void)
+{
+	TIM8->CR1 = 0;
+	TIM8->DIER = 0;
+	DMA2_Stream2->CR &= ~DMA_SxCR_EN;
+	while (DMA2_Stream2->CR & DMA_SxCR_EN) {
+	}
+	DMA2->LIFCR = 0x3Fu << 16;			// stream 2's flags
+	pwm_pull = NULL;
+	stm32_pin_out(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), false, false);	// back to the low output
+}
+
+// pull non-NULL: start the PWM audio; NULL: stop it. Radio task (radio_dm1701.c's fm_tx_inject)
+void dm1701_pwm_audio(audio_tap_pull_t pull)
+{
+	pwm_stop();
+	if (pull == NULL) {
+		return;
+	}
+	pwm_prev_q8 = (int32_t)((PWM_TOP + 1u) / 2u) << 8;
+	pwm_err_q8 = 0;
+	for (uint32_t i = 0; i < 2u * PWM_HALF; i++) {
+		pwm_buf[i] = (uint16_t)((PWM_TOP + 1u) / 2u);	// silence until the first refill
+	}
+	pwm_pull = pull;
+	__HAL_RCC_TIM8_CLK_ENABLE();
+	__HAL_RCC_DMA2_CLK_ENABLE();
+	TIM8->PSC = 0;					// 72 MHz counts
+	TIM8->ARR = PWM_TOP;
+	TIM8->CCR3 = pwm_buf[0];
+	TIM8->CCMR2 = (6u << TIM_CCMR2_OC3M_Pos) | TIM_CCMR2_OC3PE;	// PWM mode 1, preload: a new duty each period
+	TIM8->CCER = TIM_CCER_CC3E;
+	TIM8->BDTR = TIM_BDTR_MOE;			// TIM8 is an advanced timer: main output enable
+	TIM8->EGR = TIM_EGR_UG;
+	DMA2_Stream2->PAR = (uint32_t)&TIM8->CCR3;
+	DMA_RAM_OK(pwm_buf);
+	DMA2_Stream2->M0AR = (uint32_t)pwm_buf;
+	DMA2_Stream2->NDTR = 2u * PWM_HALF;
+	DMA2_Stream2->FCR = 0;
+	DMA2_Stream2->CR = (0u << DMA_SxCR_CHSEL_Pos) | DMA_SxCR_PL_1 | DMA_SxCR_MSIZE_0 | DMA_SxCR_PSIZE_0 |
+			   DMA_SxCR_MINC | DMA_SxCR_CIRC | DMA_SxCR_DIR_0 | DMA_SxCR_HTIE | DMA_SxCR_TCIE;
+	HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, PWM_IRQ_PRIORITY, 0);
+	HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+	DMA2_Stream2->CR |= DMA_SxCR_EN;
+	TIM8->DIER = TIM_DIER_CC3DE;
+	TIM8->CR1 = TIM_CR1_CEN;
+	stm32_pin_af(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), GPIO_AF3_TIM8, false, GPIO_NOPULL);
+}
+#endif
+
 #if CONFIG_AUDIO_PROBE
 // The probe's view of the stream (hal_audio_tap.h). Called from the probe's block callback, i.e. the audio task right
 // after process() copied the block, or from the debug link task (a torn block is fine for a diagnostic)
@@ -435,8 +549,19 @@ static uint8_t probe_pin_scan(uint16_t ms, uint16_t *changed, uint8_t max)
 	return n;
 }
 
+#endif
+
+#if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP
 const hal_audio_tap_t dm1701_audio_tap = {
-	.caps = AUDIO_TAP_DMR,
+	.caps = AUDIO_TAP_DMR | AUDIO_TAP_FM_RX
+#if CONFIG_NET_USRP
+		| AUDIO_TAP_FM_TX,
+	.fm_tx_inject = dm1701_fm_tx_inject,
+	.fm_tx_nominal_peak = 13800,	// 21 of PWM_AMP_STEPS: about 1.5 kHz peak deviation (bench 2026-10-12, 4 % = 1 kHz rms)
+#else
+		,
+#endif
+#if CONFIG_AUDIO_PROBE
 	.modem_reg = dm1701_modem_reg,
 	.modem_ram = dm1701_modem_ram,
 	.modem_burst = dm1701_modem_burst,
@@ -444,6 +569,7 @@ const hal_audio_tap_t dm1701_audio_tap = {
 	.pin_tone = probe_pin_tone,
 	.pin_scan = probe_pin_scan,
 	.pin_pwm = probe_pin_pwm,
+#endif
 };
 #endif
 

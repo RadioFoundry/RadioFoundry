@@ -19,6 +19,9 @@
 #include "dmr/dmrPrivacy.h"
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
+#if CONFIG_NET_USRP
+#include "usbaudio/audio_mux.h"	// the PCM stream shared with a host audio session
+#endif
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
@@ -2410,6 +2413,14 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
+#if CONFIG_NET_USRP
+	// The host's audio replaces the microphone: never key without a way to send it
+	const hal_audio_tap_t *tap = board.audio_tap;
+	if (sm->host_audio && (tap == NULL || tap->fm_tx_inject == NULL)) {
+		deny(sm, TXDENY_MODE);
+		return;
+	}
+#endif
 	sm->view.state = RS_TX;		// speaker off, red LED on, before keying
 	sm->view.tx_deny = TXDENY_NONE;
 	sm->view.tx_elapsed_ms = 0;
@@ -2420,6 +2431,14 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		deny(sm, TXDENY_BAND);
 		return;
 	}
+#if CONFIG_NET_USRP
+	// The board ends the injection itself at tx_off() / rx()
+	if (sm->host_audio && !tap->fm_tx_inject(audio_mux_fm_pull, AUDIO_TAP_VOICE)) {
+		board.radio->tx_off();
+		deny(sm, TXDENY_MODE);
+		return;
+	}
+#endif
 	changed(sm);
 }
 
@@ -2431,6 +2450,9 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 	}
 	sm->ptt = false;
 	activity(sm, now_ms);
+	if (sm->host_audio) {
+		roger = false;		// the host sends its own audio, tones included
+	}
 #if CONFIG_DMR
 	if (sm->dmr_running) {
 		dmr_call_ptt(false);
@@ -3039,6 +3061,34 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	}
 }
 
+#if CONFIG_NET_USRP
+// A host transmission whose audio stopped coming ends here too: the network service's own watchdog doesn't run while
+// the USB link isn't in network mode (a personality switch mid-transmission)
+static void host_audio_watch(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->ptt || !sm->host_audio) {
+		return;
+	}
+	uint32_t p = audio_mux_host_pushes();
+	if (p != sm->host_pushes) {
+		sm->host_pushes = p;
+		sm->host_push_ms = now_ms;
+	} else if ((now_ms - sm->host_push_ms) >= AUDIO_MUX_HOST_STALE_MS) {
+		ptt_release(sm, false, now_ms);
+	}
+}
+
+#endif
+// The PCM stream the radio's own users (beeps, DMR voice) take: the board's, shared with a host audio session
+static const hal_audio_t *pcm_audio(void)
+{
+#if CONFIG_NET_USRP
+	return audio_mux_wrap(board.audio);
+#else
+	return board.audio;
+#endif
+}
+
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
 	settings_t st;
@@ -3063,7 +3113,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->activity_ms = now_ms;
 	batt_init(&sm->batt);
 #if CONFIG_BEEP
-	beep_init(board.audio);
+	beep_init(pcm_audio());
 #endif
 	sm->view.vfo_step_hz = RADIO_VFO_STEP_HZ;
 	sm->view.source = codeplug_source();
@@ -3085,7 +3135,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.dmr.codec = sm->codec;
 	sm->hs_power = default_power();
 	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT
-	ambeVoiceInit(board.audio, board.vocoder);
+	ambeVoiceInit(pcm_audio(), board.vocoder);
 	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
 #if CONFIG_BEEP
 	ambeVoiceSetMixer(beep_mix);	// beeps while the voice stream owns the PCM audio
@@ -3287,6 +3337,13 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 #endif
 		if (req->arg != 0) {
+			if (!sm->ptt) {
+				sm->host_audio = req->arg == 2;	// a transmission keeps the source it started with
+#if CONFIG_NET_USRP
+				sm->host_pushes = audio_mux_host_pushes();
+				sm->host_push_ms = now_ms;
+#endif
+			}
 			ptt_down(sm, now_ms);
 		} else {
 			ptt_up(sm, now_ms);
@@ -3748,6 +3805,10 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	shared = ambeVoiceStreaming();
 #endif
 	beep_service(shared);
+#endif
+#if CONFIG_NET_USRP
+	audio_mux_service(now_ms);	// the stream for a host audio session (after the beep: it may have stopped it)
+	host_audio_watch(sm, now_ms);
 #endif
 #if CONFIG_APRS
 	aprs_poll(sm, now_ms);	// before battery saving: beacons are due while the receiver sleeps too

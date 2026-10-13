@@ -95,6 +95,8 @@ NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/
 	core/net/aprsis.c
 NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
 NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
+NET_SRC-$(CONFIG_NET_USRP) += core/net/net.c core/usbaudio/usrp_net.c core/usbaudio/usrp.c core/usbaudio/pcm_slip.c \
+	core/usbaudio/audio_mux.c
 APP_SRC += $(sort $(NET_SRC-y))
 # Their text formatting (key=value views, JSON, protocol lines) is the debug link's dl_fmt.c, built here without it
 ifneq ($(NET_SRC-y),)
@@ -128,9 +130,8 @@ LDSPECS ?= --specs=nano.specs --specs=nosys.specs -Wl,--no-warn-rwx-segments
 LDFLAGS := $(CPUFLAGS) -T$(LDSCRIPT) -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--print-memory-usage $(LDSPECS)
 # Link time optimization: LTO=1 compiles our sources to GCC's IR and optimizes them together at the link (inlining and
 # dead code across files: about 17 KB smaller on the STM32 radios, 20 KB with LTO_3P). A board's config.mk may default
-# it (the MD-380 does: without it the image doesn't hold its features); the DM-1701 keeps LTO=0 until it has been
-# tested on the radio, but its maximal CI build uses it (MAXIMAL_VARS). LTO_3P=1 takes the third-party code (HAL,
-# CMSIS, FreeRTOS, TinyUSB) along: FreeRTOS marks what its port's inline assembly reaches portDONT_DISCARD, and the
+# it (the MD-380 and the DM-1701 do: without it their images don't hold their features). LTO_3P=1 takes the
+# third-party code (HAL, CMSIS, FreeRTOS, TinyUSB) along: FreeRTOS marks what its port's inline assembly reaches portDONT_DISCARD, and the
 # vectors and SystemInit are referenced from the assembly start-up, which the linker sees. Files with file-scope
 # assembly are never in it (LTO_EXCLUDE). The optimization flags go to the link too, where the code is generated
 LTO ?= 0

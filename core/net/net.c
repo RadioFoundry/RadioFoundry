@@ -11,6 +11,9 @@
 #if CONFIG_MDNS || CONFIG_TFTP
 #include "net/net_services.h"
 #endif
+#if CONFIG_NET_USRP
+#include "usbaudio/usrp_net.h"
+#endif
 
 static bool was_up;
 
@@ -143,6 +146,9 @@ void net_start(uint32_t salt)
 #if CONFIG_MDNS || CONFIG_TFTP
 	net_services_init();	// the UDP services bind their ports
 #endif
+#if CONFIG_NET_USRP
+	usrp_net_start();
+#endif
 #if CONFIG_NET_TCP
 	tcp_init(&io, salt);
 	ipGatewaySetTCP(tcp_in);
@@ -170,6 +176,9 @@ void net_poll(uint32_t now_ms, bool link_up)
 {
 #if CONFIG_MDNS || CONFIG_TFTP
 	net_services_poll(now_ms, link_up);
+#endif
+#if CONFIG_NET_USRP
+	usrp_net_poll(now_ms, link_up);	// unkeys and stops the audio when the link goes down
 #endif
 	if (!link_up) {
 #if CONFIG_NET_TCP
