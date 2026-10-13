@@ -3,6 +3,7 @@
 // The input task: scans board.input every INPUT_SCAN_MS, runs the gesture engine, queues events for the UI.
 // PTT and MONITOR edges also go straight to the radio core so they work whatever the UI is doing.
 // Keys injected by the host (input_inject_*, for the debug link) are ORed into the scan here.
+#include <string.h>
 #include "board.h"
 #include "hal_time.h"
 #include "input/input.h"
@@ -19,6 +20,10 @@
 #define INPUT_QUEUE_LEN		16
 
 static input_engine_t engine;
+// The key map in use: the board's, with the side keys as assigned (input_set_keymap). A new one waits in keymap_next
+// until no key is held, so a key never changes meaning between its press and its release
+static keymap_entry_t keymap_live[INPUT_KEYS_MAX], keymap_next[INPUT_KEYS_MAX];
+static volatile bool keymap_pending;
 static QueueHandle_t events;
 static volatile uint32_t raw_keys;
 static volatile int32_t enc_total;
@@ -109,6 +114,12 @@ static void input_task(void *arg)
 			enc_carry = (int16_t)(steps > 0 ? steps - 127 : steps + 127);
 			steps = steps > 0 ? 127 : -127;
 		}
+		if (keymap_pending && engine.held == 0) {
+			taskENTER_CRITICAL();
+			memcpy(keymap_live, keymap_next, sizeof(keymap_live));
+			keymap_pending = false;
+			taskEXIT_CRITICAL();
+		}
 		input_engine_step(&engine, keys | inj, (int8_t)steps, now, emit, NULL);
 		vTaskDelayUntil(&wake, pdMS_TO_TICKS(INPUT_SCAN_MS));
 	}
@@ -118,7 +129,9 @@ void input_start(void)
 {
 	events = xQueueCreate(INPUT_QUEUE_LEN, sizeof(input_event_t));
 	configASSERT(events != NULL);
-	input_engine_init(&engine, board.keymap, board.keymap_len, hal_millis());
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
+	memcpy(keymap_live, board.keymap, n * sizeof(keymap_live[0]));
+	input_engine_init(&engine, keymap_live, n, hal_millis());
 	xTaskCreate(input_task, "input", INPUT_TASK_STACK, NULL, INPUT_TASK_PRIORITY, NULL);
 }
 
@@ -159,6 +172,15 @@ void input_set_timing(uint16_t long_ms, uint16_t repeat_ms)
 	long_now = long_ms != 0 ? long_ms : INPUT_LONG_MS;
 }
 
+void input_set_keymap(const keymap_entry_t *map)
+{
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;	// also before input_start
+	taskENTER_CRITICAL();
+	memcpy(keymap_next, map, n * sizeof(keymap_next[0]));
+	keymap_pending = true;
+	taskEXIT_CRITICAL();
+}
+
 void input_set_ptt_block(bool blocked)
 {
 	ptt_blocked = blocked;
@@ -192,8 +214,8 @@ bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred)
 
 static const keymap_entry_t *key_for(uint8_t action, bool long_action)
 {
-	for (uint8_t i = 0; i < board.keymap_len; i++) {
-		const keymap_entry_t *m = &board.keymap[i];
+	for (uint8_t i = 0; i < engine.keymap_len; i++) {
+		const keymap_entry_t *m = &keymap_live[i];
 		if ((long_action ? m->long_action : m->short_action) == action && m->bit < 32) {
 			return m;
 		}

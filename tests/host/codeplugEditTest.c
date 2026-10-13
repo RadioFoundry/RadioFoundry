@@ -508,6 +508,24 @@ static void test_aprs_path(void)
 }
 #endif
 
+// The quick-key slots (EEPROM 0x7524, 10 x 2 bytes LE), where the side key assignment lives
+// (core/input/keyassign.h): none without a stored codeplug; the first write stores the built-in set
+static void test_quick_keys(void)
+{
+	uint16_t k[CODEPLUG_QUICK_KEYS], back[CODEPLUG_QUICK_KEYS];
+	fresh();
+	CHECK(!codeplug_quick_keys(back) && back[0] == 0 && back[9] == 0);
+	for (unsigned i = 0; i < CODEPLUG_QUICK_KEYS; i++) {
+		k[i] = (uint16_t)(0x4B01u + i * 0x0101u);
+	}
+	uint32_t ser = codeplug_serial();
+	CHECK(codeplug_set_quick_keys(k));
+	CHECK(codeplug_source() == CODEPLUG_OPENFW && codeplug_serial() != ser);
+	CHECK(codeplug_quick_keys(back) && memcmp(back, k, sizeof(k)) == 0);
+	CHECK(sim_flash_data[EE + 0x7524] == 0x01 && sim_flash_data[EE + 0x7525] == 0x4B);	// little endian
+	CHECK(sim_flash_data[EE + 0x7523] == 0xFF && sim_flash_data[EE + 0x7538] == 0xFF);	// nothing around them
+}
+
 int main(void)
 {
 	test_encode();
@@ -519,6 +537,7 @@ int main(void)
 #if CONFIG_APRS
 	test_aprs_path();
 #endif
+	test_quick_keys();
 	test_round_trip();
 	test_edit_cuts();
 	sim_flash_free();

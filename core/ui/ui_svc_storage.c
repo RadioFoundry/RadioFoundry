@@ -32,6 +32,11 @@
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
+#if CONFIG_KEY_ASSIGN
+#include "input/input.h"
+#include "input/input_engine.h"
+#include "input/keyassign.h"
+#endif
 
 uint32_t ui_svc_feat_storage(void)
 {
@@ -85,11 +90,25 @@ static void privacy_store(uint8_t type, uint32_t key)
 }
 #endif
 
+#if CONFIG_KEY_ASSIGN
+static int32_t key_get(uint8_t id);
+static bool key_set(uint8_t id, int32_t value);
+#endif
+
 int32_t ui_svc_setting_get(uint8_t id)
 {
 	radio_settings_t rs;
 	settings_t st;
 	switch (id) {
+#if CONFIG_KEY_ASSIGN
+	case UI_SET_KEY_SIDE1:
+	case UI_SET_KEY_SIDE1_HOLD:
+	case UI_SET_KEY_SIDE2:
+	case UI_SET_KEY_SIDE2_HOLD:
+	case UI_SET_KEY_TOP:
+	case UI_SET_KEY_TOP_HOLD:
+		return key_get(id);
+#endif
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:
@@ -214,6 +233,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	settings_t *st;
 	switch (id) {
+#if CONFIG_KEY_ASSIGN
+	case UI_SET_KEY_SIDE1:
+	case UI_SET_KEY_SIDE1_HOLD:
+	case UI_SET_KEY_SIDE2:
+	case UI_SET_KEY_SIDE2_HOLD:
+	case UI_SET_KEY_TOP:
+	case UI_SET_KEY_TOP_HOLD:
+		return key_set(id, value);
+#endif
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:
@@ -518,3 +546,82 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 {
 	codeplug_boot_text(line1, line2);
 }
+
+#if CONFIG_KEY_ASSIGN
+// --- Side keys (core/input/keyassign.h): the codeplug's quick-key slots, a copy here (UI task only), the key map
+// built from them handed to the input task. A codeplug a CPS wrote is read again; a change made in Settings is
+// written by a storage job, and until it lands the copy here is the one that counts ---
+
+static uint16_t key_slots[KEYASSIGN_SLOTS];
+static uint16_t key_job_slots[KEYASSIGN_SLOTS];	// what the job writes (filled only while no job is pending)
+static uint32_t key_serial;
+static bool key_loaded, key_dirty;
+
+static void key_apply(void)
+{
+	keymap_entry_t map[INPUT_KEYS_MAX];
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
+	keyassign_build(board.keymap, n, board.side_keys, board.side_key_count, key_slots, map);
+	input_set_keymap(map);
+}
+
+static void key_load(void)
+{
+	key_serial = codeplug_serial();
+	(void)codeplug_quick_keys(key_slots);	// none stored: all 0, no marker, the board's key map
+	key_loaded = true;
+	key_apply();
+}
+
+static void key_write_job(void *ctx)
+{
+	(void)ctx;
+	if (!codeplug_set_quick_keys(key_job_slots)) {
+		save_failed("Couldn't save the keys: for now only");
+	}
+}
+
+void ui_svc_keys_poll(void)
+{
+	if (!key_loaded) {
+		key_load();
+	}
+	if (key_dirty) {
+		if (storage_job_busy()) {
+			return;
+		}
+		memcpy(key_job_slots, key_slots, sizeof(key_job_slots));
+		if (storage_job_post(key_write_job, NULL)) {
+			key_dirty = false;
+		}
+		return;
+	}
+	if (!storage_job_busy() && codeplug_serial() != key_serial) {
+		key_load();	// a CPS or TFTP write, or our own job, landed
+	}
+}
+
+static int32_t key_get(uint8_t id)
+{
+	if (!key_loaded) {
+		key_load();
+	}
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_SIDE1);
+	return keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+}
+
+static bool key_set(uint8_t id, int32_t value)
+{
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_SIDE1);
+	if (k / 2u >= board.side_key_count || value < 0 || value >= KEYFN_COUNT) {
+		return false;
+	}
+	if (!key_loaded) {
+		key_load();
+	}
+	keyassign_set(key_slots, k / 2u, (k & 1u) != 0, (uint8_t)value);
+	key_apply();
+	key_dirty = true;
+	return true;
+}
+#endif

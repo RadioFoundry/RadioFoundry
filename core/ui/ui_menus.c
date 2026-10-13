@@ -10,6 +10,7 @@
 #include "fmt.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
+#include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
 #endif
@@ -1423,6 +1424,26 @@ static const int16_t v_posfmt[] = { 0, 1, 2 };
 static const char *const n_posfmt[] = { "Degrees", "Deg min sec", "Grid" };
 static const int16_t v_possend[] = { 0, 60, 300, 900 };
 static const char *const n_possend[] = { "Off", "1 min", "5 min", "15 min" };
+#if CONFIG_KEY_ASSIGN
+// Side keys (core/input/keyassign.h, KEYFN_* values): monitor needs the key held, so it is a press only;
+// emergency is hold to activate, so a long press only
+static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
+					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN };
+static const char *const n_keyfn_press[] = { "Default", "Nothing", "Monitor", "Talk target", "Power level",
+					     "Next zone", "Previous zone", "Scan" };
+static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
+					KEYFN_ZONE_DOWN, KEYFN_SCAN,
+#if CONFIG_DMR_EMERGENCY
+					KEYFN_EMERGENCY,
+#endif
+};
+static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target", "Power level", "Next zone",
+					    "Previous zone", "Scan",
+#if CONFIG_DMR_EMERGENCY
+					    "Emergency",
+#endif
+};
+#endif
 static const int16_t v_updown[] = { 0, 1, 2 };
 static const char *const n_updown[] = { "Channel", "Zone", "Talk target" };
 static const int16_t v_autooff[] = { 0, 30, 60, 120 };
@@ -1508,6 +1529,14 @@ static const set_item_t s_keys[] = {
 	NUMBER("Long press time", NULL, UI_SET_LONG_PRESS_MS, 400, 1200, 100, " ms"),
 	NUMBER("Key repeat", NULL, UI_SET_REPEAT_MS, 60, 300, 20, " ms"),
 	LIST("Up/Down on Home", NULL, UI_SET_UPDOWN_HOME, v_updown, n_updown),
+#if CONFIG_KEY_ASSIGN
+	LIST("Side key 1", "button programmable", UI_SET_KEY_SIDE1, v_keyfn_press, n_keyfn_press),
+	LIST("Side key 1 hold", "button programmable long press", UI_SET_KEY_SIDE1_HOLD, v_keyfn_hold, n_keyfn_hold),
+	LIST("Side key 2", "button programmable", UI_SET_KEY_SIDE2, v_keyfn_press, n_keyfn_press),
+	LIST("Side key 2 hold", "button programmable long press", UI_SET_KEY_SIDE2_HOLD, v_keyfn_hold, n_keyfn_hold),
+	LIST("Top key", "button programmable", UI_SET_KEY_TOP, v_keyfn_press, n_keyfn_press),
+	LIST("Top key hold", "button programmable long press", UI_SET_KEY_TOP_HOLD, v_keyfn_hold, n_keyfn_hold),
+#endif
 };
 static const set_item_t s_my_radio[] = {
 	ACTION("DMR ID and name", "callsign", SA_MY_RADIO),
@@ -1608,6 +1637,20 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 
 static uint16_t group_count(void) { return ui_set_item_count((uint8_t)ui_frame()->arg); }
 
+#if CONFIG_KEY_ASSIGN
+// The side key's press is monitor (set, or the board's default): the key is held, so it has no long press
+static bool side_key_monitor(uint8_t role)
+{
+	int32_t press = ui_svc_setting_get((uint8_t)(UI_SET_KEY_SIDE1 + 2u * role));
+	if (press != KEYFN_DEFAULT)
+		return press == KEYFN_MONITOR;
+	for (uint8_t i = 0; i < board.keymap_len; i++)
+		if (board.keymap[i].bit == board.side_keys[role])
+			return board.keymap[i].raw_edges;
+	return false;
+}
+#endif
+
 // Why a setting can't be used on this radio or in this build (the row is dimmed and OK says it), NULL if it can
 static const char *set_why_not(const set_item_t *s)
 {
@@ -1616,6 +1659,19 @@ static const char *set_why_not(const set_item_t *s)
 	switch (s->id) {
 	case UI_SET_VOICE_PROMPTS:
 		return "Voice prompts: not in this build";
+#if CONFIG_KEY_ASSIGN
+	case UI_SET_KEY_SIDE1:
+	case UI_SET_KEY_SIDE1_HOLD:
+	case UI_SET_KEY_SIDE2:
+	case UI_SET_KEY_SIDE2_HOLD:
+	case UI_SET_KEY_TOP:
+	case UI_SET_KEY_TOP_HOLD:
+		if ((s->id - UI_SET_KEY_SIDE1) / 2 >= board.side_key_count)
+			return "This radio has no such key";
+		if ((s->id - UI_SET_KEY_SIDE1) % 2 == 1 && side_key_monitor((uint8_t)((s->id - UI_SET_KEY_SIDE1) / 2)))
+			return "Monitor holds the key: no long press";
+		return NULL;
+#endif
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : "Talk permit tone: not in this build";
 	case UI_SET_MESSAGE_TONE:

@@ -3,7 +3,7 @@
 // The open-firmware CPS shim (core/cps) against a simulated flash holding an open-firmware codeplug, driven like qdmr's
 // open-firmware UV380 driver does it: radio info, the session opening, 32-byte block reads of the regions it
 // transfers, prepare / data / commit per sector, close, save and reboot. Plus request assembly from arbitrary chunks,
-// the protected areas, quick keys, the calibration window, the VFO overlay, overflows and the session time-out.
+// the protected areas, the quick-key slots (written like the rest), the calibration window, the VFO overlay, overflows and the session time-out.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -270,13 +270,16 @@ static void test_write_session(void)
 	uint32_t serial = codeplug_serial();
 
 	CHECK(qdmr_read(img));
-	// Edit like a CPS: rename channel 8, add channel 2, change the zone's name, try to clobber the quick keys
+	// Edit like a CPS: rename channel 8, add channel 2, change the zone's name, set the quick-key slots (the side
+	// key assignment lives there: the CPS may write them)
 	memcpy(img + EE + 0x3790 + 56u * 7u, "Renamed\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", 16);
 	memcpy(img + EE + 0x3790 + 56u * 1u, img + EE + 0x3790, 56);
 	memcpy(img + EE + 0x3790 + 56u * 1u, "Copy\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", 16);
 	img[EE + 0x3780] |= 0x02;
 	memcpy(img + EE + 0x8030, "Mine\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", 16);
-	memset(img + EE + 0x7524, 0x00, 20);
+	for (unsigned i = 0; i < 20; i++) {
+		img[EE + 0x7524 + i] = (uint8_t)(0x10 + i);
+	}
 	CHECK(qdmr_write(img, true));
 	CHECK(reboots == 1 && reboot_saved == 1);
 	cps_get_stats(&st);
@@ -288,10 +291,9 @@ static void test_write_session(void)
 	zone_t z;
 	CHECK(codeplug_zone(0, &z) && strcmp(z.name, "Mine") == 0);
 	for (unsigned i = 0; i < 20; i++) {
-		CHECK(sim_flash_data[EE + 0x7524 + i] == 0x40 + i);	// quick keys kept
+		CHECK(sim_flash_data[EE + 0x7524 + i] == 0x10 + i);	// the quick-key slots written
 	}
-	// Everything else is what the CPS sent
-	memcpy(img + EE + 0x7524, sim_flash_data + EE + 0x7524, 20);
+	// Everything is what the CPS sent
 	for (unsigned r = 0; r < sizeof(regions) / sizeof(regions[0]); r++) {
 		CHECK(memcmp(img + regions[r].addr, sim_flash_data + regions[r].addr, regions[r].len) == 0);
 	}

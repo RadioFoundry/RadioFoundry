@@ -49,15 +49,16 @@ def main():
         img = cps.read_image(regions)
         check(not cps_client.compare(before, img, regions), "base write undone")
 
-        # Edit: rename channel 1, try to clobber the quick keys; write with save-and-reboot; read back
+        # Edit: rename channel 1, set the quick-key slots (the side key assignment); write with save-and-reboot;
+        # read back
         img[0x3790:0x37A0] = b"Edited".ljust(16, b"\xff")
-        quick = bytes(img[0x7524:0x7538])
-        img[0x7524:0x7538] = b"\0" * 20
+        quick = bytes(range(0x10, 0x24))
+        img[0x7524:0x7538] = quick
         cps.write_image(img, regions, reboot=True)
         back = cps.read_image(regions)
         diffs = cps_client.compare(img, back, regions)
         check(not diffs, f"read back differs at {len(diffs)} bytes: {diffs[:4]}")
-        check(bytes(back[0x7524:0x7538]) == quick, "quick keys kept")
+        check(bytes(back[0x7524:0x7538]) == quick, "quick-key slots written")
         # The same through larger blocks (the open-firmware CPS reads up to 2 KB at a time)
         big = cps.read_image(regions, block=1024)
         check(not cps_client.compare(back, big, regions, skip=()), "1 KB block read = 32-byte block read")

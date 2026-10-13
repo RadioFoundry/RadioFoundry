@@ -145,6 +145,10 @@ typedef enum {
 	// USB network (usb-network.md 1, 5): the network personality at power-on, control station passthrough (the PC
 	// answers the radio's data), the fixed link pair (192.168.10.x) instead of the address by DMR ID
 	UI_SET_USB_BOOT_NET, UI_SET_PC_ENDPOINT, UI_SET_USB_FIXED_LINK,
+	// Side keys (Settings > Keys, CONFIG_KEY_ASSIGN; core/input/keyassign.h): a KEYFN_* each, kept in the codeplug's
+	// quick-key slots. Press and long press of side key 1, side key 2 and the top key, in this order
+	UI_SET_KEY_SIDE1, UI_SET_KEY_SIDE1_HOLD, UI_SET_KEY_SIDE2, UI_SET_KEY_SIDE2_HOLD, UI_SET_KEY_TOP,
+	UI_SET_KEY_TOP_HOLD,
 	UI_SET_COUNT
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);
@@ -190,5 +194,8 @@ void ui_svc_boot_text(char line1[17], char line2[17]);
 bool ui_notify(const ui_event_t *ev);
 // Every UI pass: a package whose state the UI polls (rather than one that calls ui_notify) turns changes into events
 void ui_svc_poll(void);
+// Every UI pass: the side key assignment follows a codeplug a CPS wrote, and a change made in Settings goes to the
+// codeplug (CONFIG_KEY_ASSIGN)
+void ui_svc_keys_poll(void);
 
 #endif

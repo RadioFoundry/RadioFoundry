@@ -9,7 +9,7 @@ switches it back to serial, as test_usb_network.py does.
                      its TXT record: with dns-sd (macOS) or python zeroconf, whichever is there; skips without both
   test_tftp_read     info.txt, two reads of codeplug.bin identical, the current channel's record matching the view
   test_tftp_write    with --allow-codeplug-write too: back up over TFTP, rename one channel, read it back, write the
-                     backup again and verify it byte for byte (the radio's quick keys excepted), as test_cps.py does
+                     backup again and verify it byte for byte, as test_cps.py does
                      over the CPS. The backup also goes to --codeplug-backup-dir
 
 Nothing is transmitted. Firmware with CONFIG_MDNS / CONFIG_TFTP (the features list says)."""

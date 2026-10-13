@@ -72,6 +72,9 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
 };
 
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2, top key
+static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2, KEY_TOP };
+
 #if CONFIG_CPS_OPENFW
 // open-firmware-cps.md 4: type 8 is the DM-1701 with a BGR panel, 10 with an RGB one (the factory panel type 2 is
 // driven in RGB order, hardware-dm1701.md 9.2)
@@ -105,6 +108,8 @@ const board_t board = {
 	.input = &dm1701_input,
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
+	.side_keys = side_keys,
+	.side_key_count = sizeof(side_keys),
 	.radio = &dm1701_radio,
 	.power = &dm1701_power,
 	.flash = &dm1701_flash,

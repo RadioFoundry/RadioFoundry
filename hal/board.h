@@ -54,6 +54,10 @@ typedef struct {
 	const hal_input_t *input;
 	const keymap_entry_t *keymap;
 	uint8_t keymap_len;
+	// The keys the user may reassign (Settings > Keys, the codeplug's quick-key slots; core/input/keyassign.h), as key
+	// map bits in role order: side key 1, side key 2, top key. Fewer roles than 3: the last ones are missing
+	const uint8_t *side_keys;
+	uint8_t side_key_count;
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;

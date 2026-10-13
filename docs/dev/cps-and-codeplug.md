@@ -17,7 +17,8 @@ CPS protocol qdmr already supports, over the codeplug layout qdmr already writes
 | Test client | `tools/cps_client.py` (`info`, `read`, `write`, `verify`) |
 
 The session ends at `C 5` or after 10 s without a byte. The shim refuses writes to the radio's own areas (settings,
-journal) and keeps the radio's quick keys.
+journal). It writes the quick-key slots like the rest: the side key assignment lives there
+([ui.md](../spec/ui.md) 3.1).
 
 | Document | Covers |
 |---|---|

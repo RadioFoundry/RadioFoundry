@@ -40,6 +40,9 @@ a key the radio doesn't have.
 | **PTT** | Transmit | |
 | Channel knob | Each click is one step. Clockwise: the next channel on Home (as **Up**), the next row down in a list or menu, a higher value in an editor. Counterclockwise: the opposite | |
 
+The side keys (**Monitor**, **Talk target** and **Power level** on most radios) can do other jobs. Set them in
+**Settings > Keys** ([Settings](12-settings.md#keys-key-8)) or in the codeplug.
+
 Each key press gives a short key beep unless **Settings > Sound > Key tones** is off.
 
 While the keys are locked (hold **\***), **PTT** still works. When **Settings > Privacy > PTT when locked** is off,

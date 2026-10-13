@@ -34,6 +34,9 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **PTT** | Transmit | PTT | PTT | PTT | PTT on the microphone |
 | Channel knob | One step per click | Channel knob | Channel switch (16 positions) | Channel knob | Front knob |
 
+These are the defaults. **Settings > Keys** can give SK1, SK2 and the DM-1701's top side key other jobs
+([Settings](12-settings.md#keys-key-8)).
+
 On a radio without a key for a job, the menus reach it:
 
 | Job | Without the key |

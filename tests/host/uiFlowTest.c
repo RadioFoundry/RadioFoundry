@@ -159,6 +159,22 @@ static const flow_t flows_k[] = {
 	{ "E emergency: hold the top key", "", "long:emerg", "toast=EMERGENCY_sent", 1, false },
 	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
+	// Side keys (Settings > Keys rows 4-9, core/input/keyassign.h; set42 = side key 1 ... set47 = top key hold)
+	{ "K side key 1: the next choice", "ok 6 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
+	{ "K side key 1: monitor", "ok 6 8 down down down ok", "ok", "set42=2", 1, false },
+	{ "K side key 1 hold: none while it monitors", "ok 6 8", "down down down down ok", "set43=0 toast=Monitor_holds",
+	  5, false },
+	{ "K side key 1 hold once it doesn't", "ok 6 8 down down down ok down", "ok", "set43=1", 1, false },
+	{ "K side key 2 hold", "ok 6 8", "down down down down down down ok", "set45=1", 7, false },
+	{ "K top key hold: emergency after scan", "ok 6 8 up ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
+	  false },
+	{ "K top key hold wraps to default", "ok 6 8 up ok ok ok ok ok ok ok", "ok", "set47=0", 1, false },
+	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
+	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
+	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },
+	{ "K a key set to the previous zone", "", "zone-", "zone=2", 1, false },
+	{ "K a key set to scan, from a menu", "ok 6", "scankey", "scanning=1", 1, false },
+	{ "K talk target on a long press", "", "long:tt", "screen=picker", 1, false },
 	// The encoder: forward = the next channel on Home, the next row down a list, the next quick tile; back = up
 	{ "N encoder: next channel", "", "enc+", "pos=4 screen=home", 1, false },
 	{ "N encoder: previous channel", "", "enc-", "pos=2 screen=home", 1, false },
@@ -180,6 +196,8 @@ static const flow_t flows_f[] = {
 	{ "F quick settings (long OK)", "", "long:ok", "screen=quick", 1, false },
 	{ "F last caller (Hub item 0)", CALLER, "ok ok ptt", "txid=91", 3, false },
 	{ "F zone", "", "ok down down down down ok down ok", "zone=1", 8, false },
+	{ "F no side keys to set", "ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
+	  false },
 };
 
 static void run_flow(const flow_t *f, const sim_geom_t *g, sim_map_t map, const char *mapname)

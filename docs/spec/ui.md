@@ -121,6 +121,42 @@ Small displays (under 200 px tall) merge a screen's title into the status strip:
 idle, the bars and battery icon give way, the battery percent stays, and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
+### 3.1 Side key assignment
+
+Switch: `CONFIG_KEY_ASSIGN`. The board lists the keys a user may reassign (`board.side_keys`, role order: side key 1,
+side key 2, top key; the DM-1701 has all three, the MD-380 and DM-32UV the first two). Each role has a press and a
+long press, and each takes one function:
+
+| Function (`keyfn_t`) | Action sent | Press | Long press |
+|---|---|:-:|:-:|
+| Default (0) | what the board's key map gives | yes | yes |
+| Nothing (1) | none | yes | yes |
+| Monitor (2) | MONITOR as raw edges: open while held | yes | no: the key is held, so it has no long press |
+| Talk target (3) | TALK_TARGET | yes | yes |
+| Power level (4) | POWER: the next level | yes | yes |
+| Next zone (5), Previous zone (6) | ZONE_UP, ZONE_DOWN | yes | yes |
+| Scan (7) | SCAN: on / off | yes | yes |
+| Emergency (8) | EMERGENCY, hold to activate (1.5 s) | no: P2 | yes |
+
+POWER, ZONE_UP, ZONE_DOWN and SCAN do the same on a press and a long press and work on any screen. TALK_TARGET opens
+the picker on a long press too. A monitor key given a press of its own loses its hold: its long press is nothing
+until set.
+
+Storage: the open-firmware codeplug's ten quick-key slots (EEPROM 0x7524, 2 bytes LE each,
+`open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B01 ("K", layout 1); slot 1 + 2k is role k's press and slot
+2 + 2k its long press; slots 7-9 are spare. Without the marker the slots are another firmware's and every key is the
+board's; the first change clears them and writes the marker. A value that isn't a `keyfn_t`, or isn't allowed in its
+slot (monitor on a long press, emergency on a press), reads as Default. The values are append-only (gotchas 9.11).
+
+Both places edit the same slots, so there is one copy:
+
+- Settings > Keys (rows Side key 1, Side key 1 hold, ..., Top key hold): the change applies at once
+  (`keyassign_build`, then `input_set_keymap`, which the input task takes when no key is held) and a storage job
+  writes the slots. A failed write shows "Couldn't save the keys: for now only". A row for a key the radio doesn't
+  have is dimmed ("This radio has no such key"), and so is a hold row whose press is monitor.
+- The codeplug (a CPS or TFTP write): `ui_svc_keys_poll` reads the slots again when `codeplug_serial()` changes and
+  rebuilds the key map. qdmr has no editor for them; a CPS that writes back an old image brings back its keys.
+
 ## 4. Data other packages own
 
 The UI asks through `ui_svc.h`. Each call has a weak definition in `ui_svc_stub.c` that behaves as "not in this

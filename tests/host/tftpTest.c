@@ -3,7 +3,7 @@
 // clamping, tsize, the empty last block, block number roll-over, timeouts and retransmits, duplicate ACKs, foreign
 // TIDs, busy, refusals, writes with a slow commit, the dally, a client's error. Then codeplug.bin
 // (core/net/tftp_codeplug.c) on a simulated flash with an open-firmware codeplug: the image read, written back edited
-// (quick keys kept, the codeplug re-read), refused writes leaving the flash untouched, and power cuts all through a
+// (the quick-key slots written too, the codeplug re-read), refused writes leaving the flash untouched, and power cuts all through a
 // commit, finished by tftp_codeplug_resume. The short transfers go to tftpTest.pcap for tshark.
 #include <stdio.h>
 #include <stdlib.h>
@@ -551,7 +551,7 @@ static void populate(void)
 	}
 	CHECK(codeplug_set_dmr_id(3100001));
 	for (unsigned i = 0; i < 20; i++) {
-		sim_flash_data[EE + 0x7524 + i] = (uint8_t)(0x40 + i);	// the radio's quick keys
+		sim_flash_data[EE + 0x7524 + i] = (uint8_t)(0x40 + i);	// the quick-key slots as the radio had them
 	}
 	memset(sim_flash_data + 0x40000, 0x77, 0x1000);		// not in any region (the DMR ID database)
 	codeplug_init();
@@ -568,13 +568,10 @@ static void expected_image(uint8_t *img)
 	}
 }
 
-static bool regions_equal(const uint8_t *img, bool skip_quick)
+static bool regions_equal(const uint8_t *img)
 {
 	for (unsigned i = 0; i < 4; i++) {
 		for (uint32_t a = regions[i].start; a < regions[i].end; a++) {
-			if (skip_quick && a >= 0x7524 && a < 0x7538) {
-				continue;
-			}
 			if (img[a] != sim_flash_data[a < 0x10000u ? EE + a : FL + (a - 0x20000u)]) {
 				return false;
 			}
@@ -606,7 +603,8 @@ static void test_codeplug(void)
 	CHECK(memcmp(img, want, TFTP_CODEPLUG_SIZE) == 0);
 	CHECK(img[0x40000] == 0xFF && img[0x10] == 0xFF);
 
-	// Write it back with channel 8 renamed and other quick keys: the rename lands, the quick keys stay
+	// Write it back with channel 8 renamed and other quick-key slots: both land (the side key assignment lives
+	// there)
 	uint32_t serial = codeplug_serial();
 	rename_channel(img, 8, "Renamed");
 	rename_channel(img, 260, "Far one");
@@ -615,8 +613,8 @@ static void test_codeplug(void)
 	snprintf(tsize, sizeof(tsize), "%u", TFTP_CODEPLUG_SIZE);
 	const char *wopts[] = { "blksize", "1428", "tsize", tsize, NULL };
 	CHECK(put("codeplug.bin", wopts, img, TFTP_CODEPLUG_SIZE, 512) == 0);
-	CHECK(regions_equal(img, true));
-	CHECK(sim_flash_data[EE + 0x7524] == 0x40 && sim_flash_data[EE + 0x7537] == 0x53);
+	CHECK(regions_equal(img));
+	CHECK(sim_flash_data[EE + 0x7524] == 0x11 && sim_flash_data[EE + 0x7537] == 0x11);
 	CHECK(codeplug_serial() > serial);
 	CHECK(codeplug_channel(8, &ch) && strcmp(ch.name, "Renamed") == 0);
 	CHECK(codeplug_channel(260, &ch) && strcmp(ch.name, "Far one") == 0);
@@ -699,7 +697,7 @@ static void test_power_cuts(void)
 		CHECK(storage_init());
 		bool resumed = tftp_codeplug_resume();
 		codeplug_init();
-		bool is_new = regions_equal(img, true), is_old = regions_equal(old, false);
+		bool is_new = regions_equal(img), is_old = regions_equal(old);
 		CHECK(is_new || is_old);
 		CHECK(!was_cut || resumed || is_old);
 		CHECK(sim_flash_data[STAGING] == 0xFF || !was_cut);
@@ -760,7 +758,7 @@ static void test_codeplug_edges(void)
 	}
 	tick(3000);
 	drain();
-	CHECK(acks > (int)blocks - 2 && regions_equal(img, true) && codeplug_channel(3, &ch) && strcmp(ch.name, "Dup test") == 0);
+	CHECK(acks > (int)blocks - 2 && regions_equal(img) && codeplug_channel(3, &ch) && strcmp(ch.name, "Dup test") == 0);
 	CHECK(sim_flash_data[STAGING] == 0xFF && sim_flash_violations() == 0);
 
 	// blksize 8: 89548 blocks, the block number rolls over (65535 -> 0) in the middle of the image
@@ -768,7 +766,7 @@ static void test_codeplug_edges(void)
 	rename_channel(img, 260, "Rollover far");	// in the flash part, after the roll-over
 	const char *tiny[] = { "blksize", "8", NULL };
 	CHECK(put("codeplug.bin", tiny, img, TFTP_CODEPLUG_SIZE, 8) == 0);
-	CHECK(regions_equal(img, true) && codeplug_channel(5, &ch) && strcmp(ch.name, "Rollover") == 0);
+	CHECK(regions_equal(img) && codeplug_channel(5, &ch) && strcmp(ch.name, "Rollover") == 0);
 	CHECK(codeplug_channel(260, &ch) && strcmp(ch.name, "Rollover far") == 0);
 	tftp_stats_t st;
 	tftpStats(&st);

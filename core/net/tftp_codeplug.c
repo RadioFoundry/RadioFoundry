@@ -16,8 +16,6 @@
 #define SECTOR		STORAGE_SECTOR
 #define EE_IMAGE	0x10000u	// file offsets below this are the EEPROM image, from 0x20000 the flash image
 #define FL_IMAGE	0x20000u
-#define QUICK_KEYS	0x7524u		// 10 x 2 bytes the radio owns (cps-protocol.md 2.3): never overwritten
-#define QUICK_END	0x7538u
 #define GEN_DMR_ID	0x00E8u		// general settings: the DMR ID, 8 BCD digits
 #define BANK0_BITMAP	0x3780u		// channels 1-128: 16-byte bitmap, then 128 records of 56 bytes
 #define BANK1_BITMAP	0x9B1B0u	// channels 129-1024 in banks of the same shape (flash image 0x7B1B0)
@@ -326,7 +324,7 @@ static uint32_t next_sector(uint32_t from)
 }
 
 // Copy one sector of the staged image into the stored codeplug: the stored sector, the staged regions' bytes over
-// it (not the quick keys), written through the journal (skipped when nothing changed)
+// it, written through the journal (skipped when nothing changed)
 static bool copy_sector(uint32_t s, uint8_t *buf)
 {
 	if (!flash_read(phys(s), buf, SECTOR)) {
@@ -335,19 +333,8 @@ static bool copy_sector(uint32_t s, uint8_t *buf)
 	for (unsigned i = 0; i < REGIONS; i++) {
 		uint32_t lo = s > regions[i].start ? s : regions[i].start;
 		uint32_t hi = s + SECTOR < regions[i].end ? s + SECTOR : regions[i].end;
-		for (uint32_t a = lo; a < hi;) {
-			uint32_t b = hi;
-			if (a < QUICK_END && b > QUICK_KEYS) {
-				if (a >= QUICK_KEYS) {
-					a = QUICK_END;	// the radio's quick keys stay
-					continue;
-				}
-				b = QUICK_KEYS;
-			}
-			if (!staged_read(a, buf + (a - s), b - a)) {
-				return false;
-			}
-			a = b;
+		if (lo < hi && !staged_read(lo, buf + (lo - s), hi - lo)) {
+			return false;
 		}
 	}
 	return storage_sector_write(phys(s), buf);

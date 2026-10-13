@@ -29,6 +29,9 @@ uint16_t input_long_ms(void);		// in effect now
 // PTT while the keys are locked and Settings > Privacy > PTT when locked is off: a PTT press is not handed to the
 // radio core (the UI still gets it, to say why). A release always is, so a transmission never sticks
 void input_set_ptt_block(bool blocked);
+// The key map in use (core/input/keyassign.c builds it): board.keymap_len entries, the board's keys in the board's
+// order with other actions. Copied; in effect once no key is held
+void input_set_keymap(const keymap_entry_t *map);
 
 // --- Injection (the debug link, core/debuglink): host-driven keys processed by the input task exactly like real ones.
 // Injected physical key bits are ORed into the scan mask, so they go through the same debounce and gesture engine

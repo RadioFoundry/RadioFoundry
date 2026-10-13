@@ -40,6 +40,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | VFO (hand-tuned frequency) | `VFO` | 520 | 464 | ● | ● | ● |  |
 | FM VFO | `VFO_FM` | 504 | 452 | ● | ● | ● |  |
 | DMR VFO (ID, color code, slot, talk target typed in) | `VFO_DMR` | 8 | 8 | ● | ● | ● | Switch exists; the feature isn't built yet |
+| Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — | ● | ● | ● |  |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 | ● | ● | ● |  |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 | ● | ● | ● |  |
 
@@ -82,7 +83,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -64 | -96 | ● | ● | ● | Negative: saves flash |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 | ● | ● | ● |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | ● | ○ | ● | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet); off by default, needs another feature off to fit. DM-32UV: DMR only until its board code has the FM audio paths |
-| APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ● | ● | Needs NAT on the host |
+| APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ○ | ● | Needs NAT on the host. MD-380: off for flash (no APRS over the air there) |
 | mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ● |  |
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ● |  |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ● | ● |  |

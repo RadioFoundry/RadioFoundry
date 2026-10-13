@@ -378,7 +378,7 @@ accepted (the 2022 code stalled it) and GET_INTERFACE must report the current al
 personalities must check that the class handle of the active personality exists (the serial transmit path dereferenced
 a NULL CDC handle in network mode). Commits 74e90a4, 6804e11.
 
-**9.11 Persisted identifiers are append-only.** Stored IDs (settings bits, menu numbers saved in quick keys, struct
+**9.11 Persisted identifiers are append-only.** Stored IDs (settings bits, menu numbers saved in quick keys, the side key `keyfn_t` values, struct
 fields) may only be appended, never renumbered. Commits d226b9a, 1d785c1, 708b8e4.
 
 **9.6 Start USB after settings load.** The USB mode depends on settings; init USB only after they are read. Use the

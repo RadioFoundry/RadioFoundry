@@ -139,7 +139,7 @@ def read_backup(radio, backup_dir, tag):
 def codeplug_edited(radio, backup_dir, edit, tag):
     """Back the codeplug up (read_backup), write edit(copy of the backup) over CPS (only the sectors that differ),
     check the radio reads back exactly the edit, yield (backup, edited); afterwards write the backup again over
-    whatever the radio holds then and verify it byte for byte (the radio's own quick keys excepted)."""
+    whatever the radio holds then and verify it byte for byte."""
     backup, path = read_backup(radio, backup_dir, tag)
     edited = bytearray(backup)
     edit(edited)

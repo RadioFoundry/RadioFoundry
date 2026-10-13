@@ -81,8 +81,10 @@ written and verified (about 100 ms). Rules:
 - **Foreign journal**: while the settings / journal region holds another firmware's data (`settings-store.md` 5),
   every `X 1` is refused, because a commit would erase the journal. Reads still work, so a backup can be taken
   first.
-- **Quick keys** (EEPROM 0x7524-0x7537) belong to the radio. `X 2` bytes there are ignored, so a CPS that writes
-  its stale copy doesn't undo what the user set on the radio.
+- **Quick-key slots** (EEPROM 0x7524-0x7537) hold the side key assignment (`ui.md` 3.1) and are written like any
+  other codeplug byte. A CPS that writes back a stale copy (an old codeplug file) brings back that file's keys, the
+  same as for channels. Another firmware's values there are ignored: without ODR's marker in slot 0 the keys are the
+  board's.
 - **Calibration** (`calibration_addr`, `calibration_size` in the board's flash map; on the DM-1701 512 bytes inside
   the sector at 0x010000, `hardware-dm1701.md` 13.2): only the window's bytes take the CPS's values, and the rest of
   the sector is kept. A board with no calibration window (size 0: the MD-380, the DM-32) refuses the sector. *Open decision: refuse calibration writes entirely.*

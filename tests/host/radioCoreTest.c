@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The radio core's state machine (core/radio/radio_sm.c) against a fake board and a fake codeplug
+#include "input/keyassign.h"
 #include <stdio.h>
 #include <string.h>
 #include "board.h"
@@ -132,6 +133,13 @@ static const band_t bands[] = {
 	{ 400000000, 480000000, true },
 };
 static const char *const power_names[] = { "L", "M", "H" };
+// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys
+static const keymap_entry_t keymap[] = {
+	{ 0, ACT_SELECT, ACT_SELECT, false, false },
+	{ 1, ACT_MONITOR, ACT_MONITOR, true, false },
+	{ 2, ACT_TALK_TARGET, ACT_USER_2, false, false },
+};
+static const uint8_t side_keys[] = { 1, 2 };
 
 const board_t board = {
 	.name = "fake",
@@ -140,6 +148,10 @@ const board_t board = {
 	.power_count = 3,
 	.power_names = power_names,
 	.power_default = 1,
+	.keymap = keymap,
+	.keymap_len = 3,
+	.side_keys = side_keys,
+	.side_key_count = 2,
 	.radio = &fake_radio,
 	.power = &fake_power,
 	.dmr = &sim_modem,
@@ -158,6 +170,18 @@ static codeplug_source_t source = CODEPLUG_OPENFW;
 
 static uint32_t cp_serial;
 codeplug_source_t codeplug_source(void) { return source; }
+static uint16_t cp_quick[CODEPLUG_QUICK_KEYS];	// the quick-key slots: the side key assignment
+static bool cp_quick_fail;
+bool codeplug_quick_keys(uint16_t out[CODEPLUG_QUICK_KEYS]) { memcpy(out, cp_quick, sizeof(cp_quick)); return true; }
+bool codeplug_set_quick_keys(const uint16_t in[CODEPLUG_QUICK_KEYS])
+{
+	if (cp_quick_fail) {
+		return false;
+	}
+	memcpy(cp_quick, in, sizeof(cp_quick));
+	cp_serial++;
+	return true;
+}
 uint32_t codeplug_serial(void) { return cp_serial; }
 uint16_t codeplug_channel_count(void) { return NCH; }
 bool codeplug_channel(uint16_t n, channel_t *out)
@@ -1963,6 +1987,9 @@ static uint16_t input_long, input_repeat;
 void input_set_timing(uint16_t l, uint16_t r) { input_long = l; input_repeat = r; }
 static bool ptt_blocked;
 void input_set_ptt_block(bool b) { ptt_blocked = b; }
+static keymap_entry_t got_keymap[3];
+static int keymap_sets;
+void input_set_keymap(const keymap_entry_t *map) { memcpy(got_keymap, map, sizeof(got_keymap)); keymap_sets++; }
 void hostlink_set_hotspot_allowed(bool on) { (void)on; }
 void hostlink_settings_changed(void) { }
 static int32_t ram[UI_SET_COUNT];
@@ -2353,6 +2380,48 @@ static int air_count(unsigned n0, uint8_t kind, uint8_t opcode)
 	return n;
 }
 
+// The side keys (ui_svc_storage.c over core/input/keyassign.c): the codeplug's slots give the key map; a change in
+// Settings takes effect at once and goes to the codeplug through a storage job; a CPS write is taken
+static void test_side_keys(void)
+{
+	memset(cp_quick, 0, sizeof(cp_quick));
+	keymap_sets = 0;
+	ui_svc_keys_poll();
+	CHECK(keymap_sets == 1 && got_keymap[1].raw_edges && got_keymap[1].short_action == ACT_MONITOR);
+	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_DEFAULT);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_SIDE1, KEYFN_POWER));
+	CHECK(keymap_sets == 2 && got_keymap[1].short_action == ACT_POWER && !got_keymap[1].raw_edges);
+	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_POWER);
+	CHECK(cp_quick[0] == 0);		// not yet: the job does it
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_TOP, KEYFN_SCAN));	// this radio has two side keys
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_SIDE2, KEYFN_COUNT));
+	uint32_t ser = cp_serial;
+	ui_svc_keys_poll();
+	storage_job_poll();
+	CHECK(cp_quick[0] == KEYASSIGN_MARKER && cp_quick[1] == KEYFN_POWER && cp_serial == ser + 1u);
+	ui_svc_keys_poll();			// our own write read back: the same
+	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_POWER && got_keymap[1].short_action == ACT_POWER);
+	// A CPS wrote the slots
+	cp_quick[1] = KEYFN_SCAN;
+	cp_quick[4] = KEYFN_ZONE_UP;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_SCAN && got_keymap[1].short_action == ACT_SCAN);
+	CHECK(got_keymap[2].short_action == ACT_TALK_TARGET && got_keymap[2].long_action == ACT_ZONE_UP);
+	// A write that fails is reported; the key works for now
+	cp_quick_fail = true;
+	n_ev = 0;
+	CHECK(ui_svc_setting_set(UI_SET_KEY_SIDE2_HOLD, KEYFN_ZONE_DOWN));
+	ui_svc_keys_poll();
+	storage_job_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "save the keys") != NULL);
+	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[4] == KEYFN_ZONE_UP);
+	cp_quick_fail = false;
+	memset(cp_quick, 0, sizeof(cp_quick));	// leave the board's key map for what follows
+	cp_serial++;
+	ui_svc_keys_poll();
+}
+
 static void test_dmr_data_glue(void)
 {
 	uint8_t kind;
@@ -2628,6 +2697,7 @@ int main(void)
 	test_ui_requests();
 	test_ui_glue();
 	test_ui_settings();
+	test_side_keys();
 	test_error_paths();
 	test_hotspot();
 	test_hotspot_session();

@@ -61,6 +61,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 // General settings (7.3.2): the callsign (radio name) and the radio's DMR ID, 8 BCD digits big endian
 #define GEN_CALLSIGN	EE(0x00E0u)
 #define GEN_NAME_LEN	8u
+#define QUICK_KEYS	EE(0x7524u)	// CODEPLUG_QUICK_KEYS x 2 bytes, LE (open-firmware-cps.md 7.2)
 #define BOOT_TEXT	EE(0x7540u)	// two 16 byte lines (open-firmware-cps.md 7, CPS section 2)
 #define GEN_BASE	GEN_CALLSIGN	// the general settings block
 #define GEN_DMR_ID	EE(0x00E8u)
@@ -801,6 +802,33 @@ void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1])
 		copy_name(out, b, GEN_NAME_LEN);
 	}
 	storage_unlock();
+}
+
+bool codeplug_quick_keys(uint16_t out[CODEPLUG_QUICK_KEYS])
+{
+	uint8_t b[CODEPLUG_QUICK_KEYS * 2u];
+	storage_lock();
+	bool ok = source == CODEPLUG_OPENFW && flash_read(QUICK_KEYS, b, sizeof(b));
+	storage_unlock();
+	for (unsigned i = 0; i < CODEPLUG_QUICK_KEYS; i++) {
+		out[i] = ok ? le16(&b[2u * i]) : 0;
+	}
+	return ok;
+}
+
+bool codeplug_set_quick_keys(const uint16_t in[CODEPLUG_QUICK_KEYS])
+{
+	uint8_t b[CODEPLUG_QUICK_KEYS * 2u];
+	for (unsigned i = 0; i < CODEPLUG_QUICK_KEYS; i++) {
+		put16(&b[2u * i], in[i]);
+	}
+	storage_lock();
+	bool ok = materialize() && flash_write(QUICK_KEYS, b, sizeof(b));
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
 }
 
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1])

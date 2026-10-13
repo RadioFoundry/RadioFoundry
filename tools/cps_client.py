@@ -23,7 +23,7 @@ Regions (wire addresses = flash addresses on the STM32 radios):
   codeplug  the EEPROM image 0x0-0x10000 and the flash image's codeplug 0x9B000-0xAEE60
   all       the EEPROM image and the whole open-firmware flash image 0x20000-0x120000 (DMR ID database and voice prompts
             included; slow)
-Writes never touch bytes outside the regions; the radio refuses its own areas and keeps its quick keys.
+Writes never touch bytes outside the regions; the radio refuses its own areas.
 """
 import argparse
 import os
@@ -307,8 +307,8 @@ def load_image(path):
     return d
 
 
-def compare(a, b, regions, skip=((0x7524, 0x7538),)):
-    """Differences of b against a inside the regions, as (address, a byte, b byte); quick keys skipped"""
+def compare(a, b, regions, skip=()):
+    """Differences of b against a inside the regions, as (address, a byte, b byte); the ranges in skip left out"""
     diffs = []
     for start, end in regions:
         for addr in range(start, end):

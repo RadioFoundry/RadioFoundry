@@ -19,8 +19,6 @@
 #define INFO_LEN	46u
 
 // EEPROM image ranges with special handling (open-firmware-cps.md 2.2, 7.2)
-#define EE_QUICK_KEYS	0x7524u		// 10 x 2 bytes: radio-side, never overwritten
-#define EE_QUICK_END	0x7538u
 #define EE_VFO_A	0x7590u
 #define EE_IMAGE_SIZE	0x10000u
 
@@ -355,14 +353,15 @@ static bool writable(uint32_t addr, bool *cal)
 	       (addr >= m->openfw_flash && addr < m->openfw_end);
 }
 
-// Whether a byte of the pending sector may take the CPS's value
+// Whether a byte of the pending sector may take the CPS's value: all of a codeplug sector (the quick-key slots
+// included: the side key assignment, core/input/keyassign.h), only the table in the calibration window
 static bool byte_ok(uint32_t a)
 {
 	const hal_flash_map_t *m = map();
 	if (sector_cal) {
 		return a >= m->calibration_addr && a < m->calibration_addr + m->calibration_size;
 	}
-	return !(a >= m->openfw_eeprom + EE_QUICK_KEYS && a < m->openfw_eeprom + EE_QUICK_END);
+	return true;
 }
 
 static void ack(void)

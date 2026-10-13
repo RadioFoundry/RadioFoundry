@@ -17,6 +17,8 @@ typedef enum {
 	ACT_PTT, ACT_MONITOR, ACT_TALK_TARGET, ACT_EMERGENCY,
 	ACT_ENC_STEP,		// value = +1 / -1 per detent
 	ACT_USER_1, ACT_USER_2, ACT_USER_3, ACT_USER_4,
+	// What a reassigned side key does (core/input/keyassign.h): the same on a press and a long press, on any screen
+	ACT_POWER, ACT_ZONE_UP, ACT_ZONE_DOWN, ACT_SCAN,
 	ACT_COUNT
 } input_action_t;
 

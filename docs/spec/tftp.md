@@ -41,7 +41,7 @@ open-firmware CPS's STM32 wire address. Bytes 0x00000-0x0FFFF are the EEPROM ima
 | File range | Content |
 |---|---|
 | 0x00080-0x0605F | EEPROM image part 1: device info, general settings (call sign, DMR ID), APRS, DTMF, channels 1-128 |
-| 0x07500-0x0AFFF | EEPROM image part 2: boot screen, quick keys, VFOs, zones |
+| 0x07500-0x0AFFF | EEPROM image part 2: boot screen, quick-key slots (the side keys), VFOs, zones |
 | 0x20000-0x2119F | custom data |
 | 0x9B000-0xAEE5F | flash codeplug: channels 129-1024, contacts, RX group lists |
 
@@ -70,7 +70,7 @@ while the flash region is foreign (`settings-store.md` 5), or without a staging 
 | WRQ | `tsize`, when given, must be 716,384 or 1,179,648 (else error 3). A commit record left by an earlier failed commit is finished first |
 | DATA | The bytes inside the regions go to the staging area (`hal_flash_map_t.staging_addr`, `staging_size`, set by the board: `hardware-dm1701.md` 13.2, `hardware-md380.md` 12.2; the DM-32 has none), back to back from its second sector, erased as the data reaches it; a CRC-32 runs over them. Bytes outside the regions are ignored. Nothing of the stored codeplug changes |
 | Last DATA | The size must be 716,384 or 1,179,648. The staged bytes are read back and checked against the CRC. Then the image check: the general settings' DMR ID is 8 BCD digits, and at least one channel marked used (any bank) decodes (`codeplug_openfw_decode`). The open-firmware layout has no header or version to check, so this is what tells a codeplug from a wrong file |
-| Commit | The commit record (magic `ODRT`, version 1, length, the staged CRC, its own CRC) goes in the staging area's first sector. Then each 4 KB sector of the codeplug that a region touches is rebuilt (the stored sector, the staged bytes over it) and written through the sector journal (`settings-store.md` 4), one sector per tick so the host link keeps running; unchanged sectors are skipped. The radio's quick keys (EEPROM 0x7524-0x7537) keep the radio's values, as with the CPS. Then the record is erased, the codeplug re-read (`codeplug_reload`), and the last ACK sent |
+| Commit | The commit record (magic `ODRT`, version 1, length, the staged CRC, its own CRC) goes in the staging area's first sector. Then each 4 KB sector of the codeplug that a region touches is rebuilt (the stored sector, the staged bytes over it) and written through the sector journal (`settings-store.md` 4), one sector per tick so the host link keeps running; unchanged sectors are skipped. The quick-key slots (EEPROM 0x7524-0x7537, the side key assignment, `ui.md` 3.1) are written like the rest, as with the CPS. Then the record is erased, the codeplug re-read (`codeplug_reload`), and the last ACK sent |
 | Failure | Any check failing: error 0 with the reason, the stored codeplug untouched. A transfer that stops, an error from the client, a timeout: the staged bytes are left and never used (no record) |
 
 Power cuts: before the commit record exists the old codeplug is intact. After it, `tftp_codeplug_resume()`, called
@@ -89,12 +89,12 @@ Not carried over from the CPS: the VFO A record is written as it is in the image
   give-up, duplicate ACKs, a foreign TID, busy, a repeated request, refusals (unknown file, netascii, wrong
   direction, junk), writes with a slow commit, duplicate DATA, the dally, a refused commit, a refused open, a block
   longer than blksize, a client's error, a write that never starts. Then codeplug.bin on a simulated flash: the read
-  matches the flash, an edited image written back (quick keys kept, the codeplug re-read, outside bytes untouched, no
+  matches the flash, an edited image written back (the quick-key slots written too, the codeplug re-read, outside bytes untouched, no
   missing erases), a whole cps_client image, refusals (tsize, short, no channel, not BCD, writes off, a transfer
   that stops) leaving every byte as it was, and power cuts at 29 points through a commit, each followed by a restart
   and the resume: old or new codeplug, never a mix. The short transfers go to `tftpTest.pcap`, checked by tshark.
 - HIL: `tests/hil/test_net_services.py` (`--allow-usb-switch`): `info.txt`, two reads of `codeplug.bin` identical and
   equal to the stored image; with `--allow-codeplug-write` also: back up, write a channel rename, read it back, write
-  the backup again and verify it byte for byte (the radio's quick keys excepted), as `test_cps.py` does over the CPS.
+  the backup again and verify it byte for byte, as `test_cps.py` does over the CPS.
   Debug link view keys (section `net`): `tftp.state` (0 idle, 1 reading, 2 writing, 3 committing, 4 dallying)
   `tftp.reads tftp.writes tftp.errors tftp.timeouts tftp.retransmits tftp.last_size tftp.blksize tftp.write_allowed`.

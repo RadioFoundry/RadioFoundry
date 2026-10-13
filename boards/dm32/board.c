@@ -46,6 +46,9 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
 };
 
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2
+static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
+
 const board_t board = {
 	.name = "DM-32UV",
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
@@ -58,6 +61,8 @@ const board_t board = {
 	.input = &dm32_input,
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
+	.side_keys = side_keys,
+	.side_key_count = sizeof(side_keys),
 	.radio = &dm32_radio,
 	.power = &dm32_power,
 	.flash = &dm32_flash,

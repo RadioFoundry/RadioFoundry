@@ -93,6 +93,12 @@ void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]);
 bool codeplug_set_radio_name(const char *name);
 // The two boot screen text lines the CPS writes (empty when unset or not in this codeplug)
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]);
+// The quick-key slots (EEPROM 0x7524, 10 x 2 bytes LE): ODR keeps the side key assignment there
+// (core/input/keyassign.h). Read: all 0 and false without an open-firmware codeplug. Write: the first edit stores the
+// built-in set, as other edits do
+#define CODEPLUG_QUICK_KEYS	10
+bool codeplug_quick_keys(uint16_t out[CODEPLUG_QUICK_KEYS]);
+bool codeplug_set_quick_keys(const uint16_t in[CODEPLUG_QUICK_KEYS]);
 
 #if CONFIG_APRS
 // An open-firmware codeplug APRS configuration (open-firmware-cps.md 7.3.8; qdmr writes them): what the APRS engine

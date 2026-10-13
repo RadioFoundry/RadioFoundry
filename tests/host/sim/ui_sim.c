@@ -5,7 +5,8 @@
 // services other packages own (ui_svc.h; the settings store is the weak one from ui_svc_stub.c).
 //
 // Script tokens (separated by spaces):
-//   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted)
+//   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
+//   powerkey zone+ zone- scankey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   wait:<ms>           time passes
@@ -282,11 +283,18 @@ static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / 
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
 	{ K_PTT, ACT_PTT, ACT_PTT, true, false },
 };
-static const struct { const keymap_entry_t *m; uint8_t n; uint32_t caps; } maps[SIM_MAP_COUNT] = {
-	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR },	// the DM-1701 has the channel knob
-	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR },
-	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR },
-	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR },
+static const uint8_t side_k[] = { K_SK1, K_SK2, K_TOP }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
+static const struct {
+	const keymap_entry_t *m;
+	uint8_t n;
+	uint32_t caps;
+	const uint8_t *side;
+	uint8_t side_n;
+} maps[SIM_MAP_COUNT] = {
+	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_k, 3 },	// the DM-1701 has the channel knob
+	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR, side_m, 2 },
+	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_m, 2 },
+	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR, NULL, 0 },
 };
 
 static void d_init(void) {}
@@ -1062,6 +1070,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	layout_reset();
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
+	board.side_keys = maps[map].side;
+	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
 	cur_map = map;
 	gfx_init(&disp);
@@ -1095,6 +1105,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
 	ui_svc_setting_set(UI_SET_UPDOWN_HOME, 0);
+	for (uint8_t k = UI_SET_KEY_SIDE1; k <= UI_SET_KEY_TOP_HOLD; k++)
+		ui_svc_setting_set(k, 0);	// the side keys as the board has them
 	ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 0);
 	ui_svc_setting_set(UI_SET_LOW_BATTERY, 15);
 	ui_svc_setting_set(UI_SET_THEME, 0);
@@ -1117,12 +1129,17 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "ok", ACT_SELECT }, { "back", ACT_BACK }, { "quick", ACT_QUICK }, { "ctx", ACT_CONTEXT },
 	{ "tt", ACT_TALK_TARGET }, { "mon", ACT_MONITOR }, { "emerg", ACT_EMERGENCY }, { "user1", ACT_USER_1 },
 	{ "user2", ACT_USER_2 }, { "user3", ACT_USER_3 }, { "user4", ACT_USER_4 },
+	// what a reassigned side key sends (core/input/keyassign.h)
+	{ "powerkey", ACT_POWER }, { "zone+", ACT_ZONE_UP }, { "zone-", ACT_ZONE_DOWN }, { "scankey", ACT_SCAN },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
 };
 
 static bool on_map(uint8_t action, bool lng)
 {
+	if ((action >= ACT_POWER && action <= ACT_SCAN) || (lng && action == ACT_TALK_TARGET))
+		return board.side_key_count != 0;	// any side key can be set to send these
+
 	for (int i = 0; i < board.keymap_len; i++) {
 		const keymap_entry_t *k = &board.keymap[i];
 		if ((!lng && k->short_action == action) || (lng && k->long_action == action))

@@ -659,7 +659,7 @@ def step_restore(sess, args):
     with open(back_yaml, encoding="utf-8") as f:
         got = mod("md380_migrate").codeplug_summary(f.read())
     mod("md380_migrate").print_summary(sess, "read back", got)
-    sess.say("   %d bytes differ from what was written%s" % (len(diffs), " (the radio's quick keys excluded)"))
+    sess.say("   %d bytes differ from what was written" % len(diffs))
     diff = mod("md380_migrate").compare_counts(expected, got["counts"])
     if diff:
         for k, want, have in diff:

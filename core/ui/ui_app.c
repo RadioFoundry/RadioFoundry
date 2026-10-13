@@ -1520,12 +1520,29 @@ void ui_app_key(const input_event_t *ev)
 			ui_push(SCR_RECENT, 0);
 		return;
 	}
-	if (ev->action == ACT_TALK_TARGET && ev->gesture == GESTURE_PRESS) {
+	if (ev->action == ACT_TALK_TARGET && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
 		if (CONFIG_DMR && view->ch.mode == RADIO_MODE_DMR)
 			ui_push(SCR_PICKER, 0);
 		else
 			ui_toast("Talk target: DMR channels only");
 		return;
+	}
+	// A reassigned side key (core/input/keyassign.h): the same on a press and a long press, on any screen
+	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG) {
+		switch (ev->action) {
+		case ACT_POWER:
+			radio_req_power(1);
+			return;
+		case ACT_ZONE_UP:
+		case ACT_ZONE_DOWN:
+			zone_step(ev->action == ACT_ZONE_UP ? 1 : -1);
+			return;
+		case ACT_SCAN:
+			ui_scan_toggle();
+			return;
+		default:
+			break;
+		}
 	}
 	if (ev->action == ACT_USER_2 && ev->gesture == GESTURE_LONG) {
 		ui_scan_toggle();	// long SK2 (DM-1701 key map): scan on / off
@@ -1641,6 +1658,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	now = now_ms;
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
+	ui_svc_keys_poll();
 
 	while (ev_tail != ev_head) {
 		ui_event_t ev = events[ev_tail];
