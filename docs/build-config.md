@@ -77,7 +77,7 @@ below are for the DM-1701.
 | `CONFIG_DMR_EMERGENCY` | = DMR | DMR emergency: the alarm CSBK, the emergency call with hot mic, the alert heard (`spec/dmr-emergency.md`) |
 | `CONFIG_DMR_ROAMING` | = DMR | DMR repeater roaming: per-zone roaming between repeater sites with the same talkgroup, chosen by base station sync with our color code and signal, passive (an optional wake probe sends a standard BS_Dwn_Act); Tools > Roaming, the Home chip (`docs/spec/dmr-roaming.md`). About 1 KB RAM on the DM-1701 |
 | `CONFIG_DMR_IP_GATEWAY` | = DMR and (USB_NETWORK or NET_PPP) | IP over DMR packet data through a network link to the host, the USB network adapter or PPP on the serial host port, carried by the data service (`docs/spec/usb-network.md`, `docs/spec/ppp.md`). Needs one of the two links |
-| `CONFIG_DMR_UDP_COMPRESS` | = DMR | compressed UDP/IPv4 headers (SAP 3, TS 102 361-3 5.6) on transmit: UDP packets go with a 5-9 octet header instead of 28 where the setting allows (default: ports outside 4000-4099; `docs/spec/dmr-data.md` 11) |
+| `CONFIG_DMR_UDP_COMPRESS` | = DMR (MD-380: n) | compressed UDP/IPv4 headers (SAP 3, TS 102 361-3 5.6) on transmit: UDP packets go with a 5-9 octet header instead of 28 where the setting allows (default: ports outside 4000-4099; `docs/spec/dmr-data.md` 11) |
 | `CONFIG_DMR_CONFIRMED` | = DMR | confirmed packet data for the IP gateway's packets per destination or UDP port (N(S), ACK / NACK / selective retry, tries), and for confirmed data to us the CRC-9 check, selective ACK, NACK and duplicate drop (`docs/spec/dmr-data.md` 12). Both together about 0.3 KB RAM on the DM-1701 |
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | a minimal TCP for the radio's own services on the USB network link, never over RF (`core/net`, `docs/spec/tcp-services.md`). About 4.6 KB RAM (4 connections) on the DM-1701 |
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP on port 8001 for APRS programs, bridged to the APRS KISS TNC (`docs/spec/tcp-services.md` 4). About 0.8 KB RAM |
@@ -134,7 +134,7 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
 | `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; MD-380, DM-32: see "Board defaults" | set in a board's `config.mk`: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
 | `BOARD_REQUIRED` | DB25-D: `FM` | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
-| `MAXIMAL_SKIP` | DM-1701: `NET_PPP`; MD-380: `NET_PPP NET_USRP` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
+| `MAXIMAL_SKIP` | DM-1701: `NET_PPP`; MD-380: `NET_PPP NET_USRP DMR_UDP_COMPRESS` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
 
 ### Board defaults
 
@@ -148,6 +148,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 | md380 | `HOTSPOT` (12 KB) | flash: the default fits only with `LTO=1 LTO_3P=1`, and one feature has to go. The hotspot needs a host running MMDVMHost, and the same USB link carries IP over DMR and the services instead. `DMR_ROAMING` (also 12 KB) is the alternative |
 | md380 | `FONT_XL`, `NET_PPP` (maximal build too) | a 160 px panel has no use for the font; PPP stands in for USB |
 | md380 | `NET_USRP` (maximal build too; users can pick it) | flash, and it carries DMR only on this radio (no FM audio path to the processor yet) |
+| md380 | `DMR_UDP_COMPRESS` (maximal build too; users can pick it) | flash (about 460 B, for the APRS position page): IP over DMR still works, with full headers |
 | dm32 | `USB`, `USB_NETWORK` (maximal build too: `BOARD_UNSUPPORTED`) | no USB data port on the radio; PPP on the programming cable is its IP link |
 | dm32 | `FONT_XL` (on in the maximal build) | the core draws at 120x160 |
 | every board | `AUDIO_PROBE` | a bench diagnostic |

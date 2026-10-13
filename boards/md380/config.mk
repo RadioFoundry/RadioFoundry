@@ -28,10 +28,14 @@ CONFIG_HOTSPOT ?= n
 # USRP voice over UDP (4.9 KB) is off by default too: it carries DMR only here (no FM audio path to the processor), and
 # a build with it on needs another feature off. Users can still pick it
 CONFIG_NET_USRP ?= n
+# Compressed UDP/IP headers on transmit (about 460 B) are off by default for room (the APRS position page, 2026-10-13):
+# IP over DMR still works, with full headers. Users can still pick it
+CONFIG_DMR_UDP_COMPRESS ?= n
 # Not written for this radio (above), left out for flash, or no use on it (FONT_XL is for 240 px and wider panels,
 # this one is 160 px; no air band receiver or broadcast receiver, docs/spec/airband-and-broadcast.md): tools/ci.sh's
 # maximal configuration leaves these off
 BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL HOTSPOT AM_RX BCAST_FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter; USRP doesn't fit beside everything else (above)
-MAXIMAL_SKIP := NET_PPP NET_USRP
+# radios (docs/spec/ppp.md), and this one has the adapter; USRP and UDP header compression don't fit beside everything
+# else (above)
+MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS
