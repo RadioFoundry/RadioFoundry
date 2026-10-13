@@ -12,6 +12,9 @@
  *     transmits, its samples replace the microphone's on the way to the encoder; in FM the board pulls them through
  *     hal_audio_tap_t.fm_tx_inject (audio_mux_fm_pull).
  *
+ * APRS (CONFIG_APRS_RX) has a receive ring of its own: the stream's input while it asks for it, on boards with
+ * AUDIO_TAP_FM_RX, for the AFSK demodulator in the radio task (docs/spec/aprs.md 5.3).
+ *
  * Threads: audio_mux_service and the wrapped start / stop in the radio task (the only places that start or stop the
  * board's stream); the block callback in the board's audio task; audio_mux_host_* in the host link task;
  * audio_mux_fm_pull in the board's PWM interrupt. Each ring has one producer and one consumer.
@@ -63,6 +66,12 @@ uint32_t audio_mux_host_tx_fill(void);
 // Host transmit pushes so far: the radio task unkeys a host transmission whose audio stopped coming
 uint32_t audio_mux_host_pushes(void);
 #define AUDIO_MUX_HOST_STALE_MS	1000u
+
+// APRS receive audio (radio task): on keeps the stream running and fills a ring of its own with the stream's input
+// (FM receive audio on boards with AUDIO_TAP_FM_RX); read takes up to n samples, returns how many
+#define AUDIO_MUX_APRS_CAP	1024u	// samples (128 ms), power of two
+void audio_mux_aprs_rx(bool on);
+uint32_t audio_mux_aprs_read(int16_t *pcm, uint32_t n);
 
 // Radio task: start or stop the board's stream as the host side needs (every poll)
 void audio_mux_service(uint32_t now_ms);

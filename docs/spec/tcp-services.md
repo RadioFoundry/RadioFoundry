@@ -77,8 +77,7 @@ The client receives the engine's output (section 3) exactly as the serial port w
   doesn't hold the port.
 - Needs the APRS KISS setting (Tools > APRS > KISS on USB), as on the serial port: without it the engine neither
   takes frames nor produces output.
-- On a radio without an APRS receive path (every board today, `aprs.md` 1) only transmit works; a client sees no
-  received packets.
+- On a radio without an APRS receive path (`aprs.md` 1) only transmit works; a client sees no received packets.
 - View keys (`net` section): `kiss.client kiss.conns kiss.frames_in kiss.frames_out kiss.dropped`.
 
 ## 5. HTTP status server (port 80)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The PCM stream shared between the radio's users and a host audio session (audio_mux.h)
+#include "config.h"
 #include "usbaudio/audio_mux.h"
 
 #include <string.h>
@@ -23,6 +24,14 @@ static int16_t rx_ring[AUDIO_MUX_RX_CAP];
 static volatile uint32_t rx_wr, rx_rd;		// free-running: the audio task writes, the host task reads
 static pcm_slip_t slip;
 static int16_t host_mic[AUDIO_BLOCK_SAMPLES];
+#if CONFIG_APRS_RX
+static volatile bool aprs_on;
+static int16_t aprs_ring[AUDIO_MUX_APRS_CAP];
+static volatile uint32_t aprs_wr, aprs_rd;	// the audio task writes, the radio task reads
+#define stream_wanted	(host_rx_on || aprs_on)
+#else
+#define stream_wanted	host_rx_on
+#endif
 static audio_mux_stats_t st;
 
 static void rx_put(const int16_t *pcm, uint32_t n)
@@ -57,6 +66,19 @@ static void block(const int16_t *mic, int16_t *spk, void *ctx)
 	} else {
 		memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof *spk);
 	}
+#if CONFIG_APRS_RX
+	if (aprs_on) {
+		// Too late a reader loses the newest block whole: the demodulator sees one gap, not a torn block
+		uint32_t w = aprs_wr;
+		if (AUDIO_MUX_APRS_CAP - (w - aprs_rd) >= AUDIO_BLOCK_SAMPLES) {
+			for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+				aprs_ring[(w + i) & (AUDIO_MUX_APRS_CAP - 1u)] = mic[i];
+			}
+			__atomic_signal_fence(__ATOMIC_RELEASE);
+			aprs_wr = w + AUDIO_BLOCK_SAMPLES;
+		}
+	}
+#endif
 	audio_mux_rx_t src = host_rx;
 	if (src == AUDIO_MUX_RX_SILENT) {
 		static const int16_t silence[AUDIO_BLOCK_SAMPLES];
@@ -92,7 +114,7 @@ static bool w_start(audio_block_cb_t cb, void *ctx)
 static void w_stop(void)
 {
 	prim_cb = NULL;
-	if (!host_rx_on) {
+	if (!stream_wanted) {
 		running = false;
 		hw->stop();
 	}
@@ -178,6 +200,33 @@ uint32_t audio_mux_host_tx_fill(void)
 	return pcm_slip_fill(&slip);
 }
 
+#if CONFIG_APRS_RX
+// --- APRS (radio task) ---
+
+void audio_mux_aprs_rx(bool on)
+{
+	if (on && !aprs_on) {
+		aprs_rd = aprs_wr;	// nothing stale from the last time
+	}
+	aprs_on = on;
+}
+
+uint32_t audio_mux_aprs_read(int16_t *pcm, uint32_t n)
+{
+	uint32_t avail = aprs_wr - aprs_rd;
+	__atomic_signal_fence(__ATOMIC_ACQUIRE);
+	if (n > avail) {
+		n = avail;
+	}
+	uint32_t r = aprs_rd;
+	for (uint32_t i = 0; i < n; i++) {
+		pcm[i] = aprs_ring[(r + i) & (AUDIO_MUX_APRS_CAP - 1u)];
+	}
+	aprs_rd = r + n;
+	return n;
+}
+#endif
+
 // --- radio task ---
 
 void audio_mux_service(uint32_t now_ms)
@@ -185,7 +234,7 @@ void audio_mux_service(uint32_t now_ms)
 	if (hw == NULL) {
 		return;
 	}
-	if (host_rx_on && !running) {
+	if (stream_wanted && !running) {
 		if (retry_armed && (now_ms - retry_ms) < AUDIO_MUX_RETRY_MS) {
 			return;
 		}
@@ -197,7 +246,7 @@ void audio_mux_service(uint32_t now_ms)
 		} else {
 			retry_armed = false;
 		}
-	} else if (!host_rx_on && running && prim_cb == NULL) {
+	} else if (!stream_wanted && running && prim_cb == NULL) {
 		running = false;
 		hw->stop();
 	}
@@ -232,5 +281,9 @@ void audio_mux_reset(void)
 	host_tx_dmr = false;
 	retry_armed = false;
 	rx_wr = rx_rd = 0;
+#if CONFIG_APRS_RX
+	aprs_on = false;
+	aprs_wr = aprs_rd = 0;
+#endif
 	memset(&st, 0, sizeof st);
 }

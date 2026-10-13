@@ -551,7 +551,7 @@ static uint8_t probe_pin_scan(uint16_t ms, uint16_t *changed, uint8_t max)
 
 #endif
 
-#if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP
+#if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 const hal_audio_tap_t dm1701_audio_tap = {
 	.caps = AUDIO_TAP_DMR | AUDIO_TAP_FM_RX
 #if CONFIG_NET_USRP

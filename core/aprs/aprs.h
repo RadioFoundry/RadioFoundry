@@ -145,6 +145,7 @@ typedef struct {
 typedef struct {
 	bool can_rf;		// an FM APRS transmission could start now (nothing else on the air, no PTT, no scan ...)
 	bool fm_rx;		// receiving FM (the receive path's audio is worth demodulating)
+	uint32_t rx_hz;		// on this frequency: APRS receive runs only on the APRS frequency
 	bool on_dmr;		// the channel is DMR with the call stack running (digital positions can go out)
 	uint32_t own_dmr_id;
 } aprs_radio_t;
@@ -182,8 +183,14 @@ void aprs_rf_done(bool sent, bool busy, uint32_t now_ms);
 // Seconds a pending job may wait for a clear channel before it is dropped
 #define APRS_CSMA_GIVE_UP_MS	10000u
 
+// The radio can receive APRS: a build with CONFIG_APRS_RX on a board with an AFSK receive path (board.afsk->rx_*) or
+// FM receive audio on its PCM stream (AUDIO_TAP_FM_RX)
+bool aprs_can_receive(void);
+// The receive path is running (the receiver must stay awake: no battery saving)
+bool aprs_rx_listening(void);
+
 #if CONFIG_APRS_RX
-// Received audio (the radio core reads board.afsk->rx_read while on the APRS frequency)
+// Received audio (the radio task reads it from the board's receive path or the PCM stream while receiving FM)
 void aprs_rx_audio(const int16_t *s, size_t n, uint32_t now_ms);
 // A decoded AX.25 frame (without the FCS): from the demodulator, or the tests
 void aprs_rx_frame(const uint8_t *frame, size_t n, uint32_t now_ms);

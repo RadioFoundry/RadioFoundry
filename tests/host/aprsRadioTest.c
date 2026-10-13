@@ -16,6 +16,7 @@
 #include "aprs/ax25.h"
 #include "aprs/hdlc.h"
 #include "aprs/kiss.h"
+#include "aprs/afsk.h"
 
 static int failures;
 static int checks;
@@ -140,6 +141,28 @@ static void a_tx_stop(void)
 }
 static const hal_afsk_t fake_afsk = { .tx_start = a_tx_start, .tx_busy = a_tx_busy, .tx_stop = a_tx_stop };
 
+// The PCM stream (no receive path of the AFSK's own): FM receive audio on its input when the tap says so
+static struct {
+	audio_block_cb_t cb;
+	void *ctx;
+	int starts, stops;
+} pcm;
+static bool s_start(audio_block_cb_t cb, void *ctx)
+{
+	pcm.cb = cb;
+	pcm.ctx = ctx;
+	pcm.starts++;
+	return true;
+}
+static void s_stop(void)
+{
+	pcm.cb = NULL;
+	pcm.stops++;
+}
+static void s_speaker(bool on) { (void)on; }
+static const hal_audio_t fake_audio = { .start = s_start, .stop = s_stop, .speaker_pcm = s_speaker };
+static hal_audio_tap_t fake_tap;	// caps 0: the stream's input is the microphone
+
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
 static const char *const power_names[] = { "L", "H" };
 
@@ -155,6 +178,8 @@ const board_t board = {
 	.battery_low_mv = 6400,
 	.battery_critical_mv = 6000,
 	.afsk = &fake_afsk,
+	.audio = &fake_audio,
+	.audio_tap = &fake_tap,
 };
 
 // ---- fake codeplug: one channel ----
@@ -872,6 +897,70 @@ static void test_rf_failures(void)
 	CHECK(!aprs_send_status("x"));
 }
 
+#if CONFIG_APRS_RX
+// One 20 ms block of receive audio through the stream, then a radio poll
+static void feed(const int16_t *s)
+{
+	int16_t spk[AUDIO_BLOCK_SAMPLES];
+	if (pcm.cb != NULL) {
+		pcm.cb(s, spk, pcm.ctx);
+	}
+	run(RADIO_POLL_MS);
+}
+
+// FM receive audio on the PCM stream (AUDIO_TAP_FM_RX) into the demodulator: only on the APRS frequency, battery saving
+// held off while it listens (docs/spec/aprs.md 5.3)
+static void test_rx_stream(void)
+{
+	fake_tap.caps = AUDIO_TAP_FM_RX;
+	memset(&pcm, 0, sizeof(pcm));
+	reset();
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	CHECK(aprs_can_receive() && c.rx_on && c.messaging);	// a receive path: on by default
+	// Not on the APRS frequency: the stream stays off
+	run(500);
+	CHECK(!aprs_rx_listening() && pcm.starts == 0);
+	// A channel on 144.390
+	chan.rx_hz = chan.tx_hz = APRS_HZ;
+	settings_init();
+	radio_sm_init(&sm, now);
+	run(200);
+	CHECK(aprs_rx_listening() && pcm.starts == 1 && pcm.cb != NULL);
+	// A packet: silence, the tones (flags first, as a transmitter's TX delay), silence
+	static uint8_t tones[256];
+	static int16_t audio[24000];
+	const char *line = "K1ABC-9>APRS,WIDE2-1:!4903.50N/07201.75W-Heard on air";
+	ax25_frame_t f;
+	uint8_t frame[AX25_FRAME_MAX];
+	CHECK(ax25_from_tnc2(line, strlen(line), &f));
+	f.dst.h = true;
+	size_t n = ax25_encode(&f, frame, sizeof(frame));
+	hdlc_enc_t e;
+	hdlc_enc_init(&e, tones, sizeof(tones));
+	CHECK(hdlc_enc_flags(&e, 30) && hdlc_enc_frame(&e, frame, n) && hdlc_enc_flags(&e, 3));
+	afsk_mod_t m;
+	afsk_mod_init(&m, 8000);
+	memset(audio, 0, sizeof(audio));
+	size_t k = afsk_mod(&m, tones, e.nbits, 8000, audio + 800, sizeof(audio) / sizeof(audio[0]) - 1600);
+	CHECK(k > 0);
+	CHECK(aprs_station_count() == 0);
+	for (size_t i = 0; i + AUDIO_BLOCK_SAMPLES <= k + 1600; i += AUDIO_BLOCK_SAMPLES) {
+		feed(audio + i);
+	}
+	run(100);
+	aprs_station_t st;
+	CHECK(aprs_station_count() == 1 && aprs_station(0, &st) && strcmp(st.call, "K1ABC-9") == 0);
+	// Receive off: the stream stops
+	aprs_get_cfg(&c);
+	c.rx_on = false;
+	aprs_set_cfg(&c, now);
+	run(200);
+	CHECK(!aprs_rx_listening() && pcm.stops == 1 && pcm.cb == NULL);
+	fake_tap.caps = 0;
+}
+#endif
+
 int main(void)
 {
 	test_defaults();
@@ -891,6 +980,7 @@ int main(void)
 	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();
+	test_rx_stream();
 #endif
 	printf("# aprsRadioTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

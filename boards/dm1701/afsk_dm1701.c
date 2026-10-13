@@ -6,8 +6,8 @@
 // 400 kHz) out of an 833 us symbol; the radio core keeps the I2C3 bus free meanwhile (status() returns its cached
 // reading while r.afsk is set).
 //
-// No receive path: FM audio goes AT1846S -> HR_C6000 line in -> speaker DAC, and the I2S stream from the HR_C6000
-// carries the microphone only (aprs.md 5.3), so rx_start is NULL.
+// No receive path of its own (rx_start NULL): the HR_C6000 puts FM receive audio on the I2S stream (hardware-dm1701.md
+// 21.3.1), so APRS takes it from there through the audio tap's AUDIO_TAP_FM_RX (aprs.md 5.3).
 //
 // Unverified on the bench: whether the tone generator's phase stays continuous across a retune, the deviation the
 // level gives, and the flatness of mark vs space (aprs.md 13 HIL steps).

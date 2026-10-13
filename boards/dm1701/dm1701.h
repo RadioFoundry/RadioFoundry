@@ -40,8 +40,9 @@ typedef struct {
 } dm1701_audio_stats_t;
 void dm1701_audio_stats(dm1701_audio_stats_t *out);
 void dm1701_audio_reset_stats(void);
-#if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP
-// The audio tap: FM transmit audio for USRP (CONFIG_NET_USRP), the probe (CONFIG_AUDIO_PROBE, docs/spec/hardware-dm1701.md
+#if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
+// The audio tap: FM receive audio on the PCM stream for APRS (CONFIG_APRS_RX) and USRP, FM transmit audio for USRP
+// (CONFIG_NET_USRP), the probe (CONFIG_AUDIO_PROBE, docs/spec/hardware-dm1701.md
 // 21.3). audio_dm1701.c; register access and the transmit source switch in radio_dm1701.c
 extern const hal_audio_tap_t dm1701_audio_tap;
 #endif

@@ -120,8 +120,8 @@ manual are this size.
 ### What the DM-1701 lacks
 
 - No GPS. LRRP location requests get "no fix". APRS positions come from a computer or a fixed position.
-- No APRS receive: received audio never reaches the processor, so the radio sends APRS only. APRS programs on a
-  computer see only what they send.
+- APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
+- No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
 
 ### Verified on the DM-1701
 

@@ -37,7 +37,7 @@ aprx can stand in.
 | Feature | Needs |
 |---|---|
 | FM AFSK transmit | `board.afsk->tx_*` (5.1) |
-| FM AFSK receive, station list, digipeater, messages to us | `board.afsk->rx_*` and `CONFIG_APRS_RX` (5.3) |
+| FM AFSK receive, station list, digipeater, messages to us | `CONFIG_APRS_RX` and receive audio: `board.afsk->rx_*`, or FM receive audio on the PCM stream (`AUDIO_TAP_FM_RX`, the DM-1701) (5.3) |
 | Positions over DMR (LRRP / UDT) | a DMR radio, on a DMR channel |
 | KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | nothing more (TX path; RX frames only with RX) |
 | iGate | RX for RF -> IS; IS -> RF messages only once RX exists |
@@ -125,12 +125,33 @@ default) sets the deviation around the board's nominal (about 3 kHz peak at 25 k
 gives, the mark / space flatness and the TX delay (section 13). Each board's tone path is on its hardware page (the table in
 section 1).
 
-### 5.3 Receive: designed only
+### 5.3 Receive
 
-A board with a receive path sets `rx_start` and samples the received FM audio; no board does yet, so
-`CONFIG_APRS_RX` defaults to n. The demodulator (`afsk.c`) is ready for any
-board that can: 8-48 kHz samples, a correlator per tone with hysteresis and a PLL that tightens once a flag is seen. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio):
-90 / 10 % of frames at 10 dB SNR, 97 / 61 % at 12 dB, 100 / 94 % at 14 dB.
+Received FM audio comes from one of two places (`aprs.c`, `rx_service`):
+
+1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. No board has one
+   yet.
+2. Otherwise FM receive audio on the board's PCM stream, when its audio tap has `AUDIO_TAP_FM_RX` (`hal_audio_tap.h`):
+   8 kHz, de-emphasized, squelch gated. The DM-1701's HR_C6000 puts it on I2S (`hardware-dm1701.md` 21.3.1). The
+   shared stream (`core/usbaudio/audio_mux.c`) gives APRS a ring of its own (1024 samples, 128 ms) next to a USRP
+   session's, keeps the stream running while APRS asks for it, and drops whole 20 ms blocks when the radio task reads
+   too late.
+
+The path runs while the receive setting is on, the radio receives FM on the APRS frequency (`aprs_cfg_freq`: the
+region's, or the custom one) and no APRS transmission is under way. Anywhere else the stream is left alone: a
+repeater channel's audio isn't APRS, and battery saving would be blocked for nothing. While it runs, battery saving
+(`radio-features.md`) stays off: a sleeping receiver misses packets. `aprs_rx_listening()` says whether it runs.
+
+The receive setting and messaging default to on when the radio can receive (`aprs_can_receive()`: the build has
+`CONFIG_APRS_RX` and one of the two paths exists).
+
+The demodulator (`afsk.c`): 8-48 kHz samples, a correlator per tone with hysteresis and a PLL that tightens once a
+flag is seen. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio): 90 / 10 % of frames at 10 dB SNR, 97 / 61
+% at 12 dB, 100 / 94 % at 14 dB. Squelch gated audio loses the start of a transmission until the squelch opens; the
+sender's TX delay (flags before the frame) covers that.
+
+Later on the DM-1701: the HR_C6000's RX RAM carries the same audio ungated (`hardware-dm1701.md` 21.3.1), so packets
+below the squelch could be decoded. That needs a board receive path (1 above) reading the RAM 31 times a second.
 
 ## 6. RF transmission
 
@@ -266,7 +287,8 @@ receive path.
 | default (APRS, no RX) | 247.5 KB | 116.8 KB |
 | `CONFIG_APRS_RX=y` | 257.9 KB | 120.9 KB |
 
-APRS costs about 21 KB flash and 2.8 KB RAM with its UI and debug link; RX about 10 KB flash and 4 KB RAM more.
+APRS costs about 21 KB flash and 2.8 KB RAM with its UI and debug link; RX about 10 KB flash and 4 KB RAM more. With
+the receive audio wired (2026-10-13, LTO): RX costs 8.9 KB flash, 2.0 KB RAM and 3.6 KB CCM RAM on the DM-1701.
 `CONFIG_DMR_GPS` about 2.2 KB flash.
 
 ## 13. Tests
@@ -276,7 +298,8 @@ triggers, the iGate rules, a modulate / demodulate loop; `--sweep` prints the de
 writes `aprs_test_44k1.wav` with three frames) and `aprsRadioTest` (the engine with the radio core: beacons on the
 air decoded back, the minimum interval, CSMA on a busy channel, PTT cutting a transmission, the not-amateur block,
 manual and after-PTT triggers, KISS and NMEA from the host, messages with acks, the station list, digipeating and
-the iGate both ways, the DMR position source). `tests/host/aprs_wav_check.sh` feeds the WAV to Direwolf's `atest`
+the iGate both ways, the DMR position source, a packet as AFSK audio through the PCM stream into the station list
+only on the APRS frequency). `usrpNetTest` checks the stream's APRS ring. `tests/host/aprs_wav_check.sh` feeds the WAV to Direwolf's `atest`
 when it is installed (a black-box check).
 
 HIL (opt-in, `tests/hil/test_aprs.py`, README there): `--allow-rf --allow-service-stop --aprs-call CALL` (a licensed

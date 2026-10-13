@@ -19,8 +19,8 @@
 #include "dmr/dmrPrivacy.h"
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
-#if CONFIG_NET_USRP
-#include "usbaudio/audio_mux.h"	// the PCM stream shared with a host audio session
+#if CONFIG_NET_USRP || CONFIG_APRS_RX
+#include "usbaudio/audio_mux.h"	// the PCM stream shared with a host audio session and APRS
 #endif
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
@@ -2301,6 +2301,7 @@ static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 	r.can_rf = aprs_can_start(sm);
 	r.fm_rx = sm->aprs_phase == APRS_RF_OFF && sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot &&
 		  sm->view.state != RS_TX;
+	r.rx_hz = sm->view.ch.rx_hz;
 #if CONFIG_DMR
 	r.on_dmr = sm->dmr_running && !sm->hotspot;
 	r.own_dmr_id = sm->own_id;
@@ -3082,7 +3083,7 @@ static void host_audio_watch(radio_sm_t *sm, uint32_t now_ms)
 // The PCM stream the radio's own users (beeps, DMR voice) take: the board's, shared with a host audio session
 static const hal_audio_t *pcm_audio(void)
 {
-#if CONFIG_NET_USRP
+#if CONFIG_NET_USRP || CONFIG_APRS_RX
 	return audio_mux_wrap(board.audio);
 #else
 	return board.audio;
@@ -3673,8 +3674,8 @@ static bool save_allowed(const radio_sm_t *sm, uint32_t now_ms)
 		return false;
 	}
 #if CONFIG_APRS
-	if (sm->aprs_phase != APRS_RF_OFF || aprs_rf_pending()) {
-		return false;
+	if (sm->aprs_phase != APRS_RF_OFF || aprs_rf_pending() || aprs_rx_listening()) {
+		return false;	// a sleeping receiver misses packets
 	}
 #endif
 #if CONFIG_SCAN
@@ -3806,8 +3807,10 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	beep_service(shared);
 #endif
+#if CONFIG_NET_USRP || CONFIG_APRS_RX
+	audio_mux_service(now_ms);	// the stream for a host audio session or APRS (after the beep: it may have stopped it)
+#endif
 #if CONFIG_NET_USRP
-	audio_mux_service(now_ms);	// the stream for a host audio session (after the beep: it may have stopped it)
 	host_audio_watch(sm, now_ms);
 #endif
 #if CONFIG_APRS

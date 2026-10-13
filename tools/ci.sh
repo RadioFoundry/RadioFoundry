@@ -287,7 +287,7 @@ for bm in boards/*/board.mk boards/*/; do
 		case "$required" in *" $f "*) continue ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
-	[ "$b" = dm1701 ] && build "$b" audio-probe CONFIG_AUDIO_PROBE=y LTO=1
+	[ "$b" = dm1701 ] && build "$b" audio-probe CONFIG_AUDIO_PROBE=y CONFIG_APRS_RX=n LTO=1
 	build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)

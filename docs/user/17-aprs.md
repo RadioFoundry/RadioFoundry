@@ -62,6 +62,18 @@ positions sent over DMR.
 The path is also in the codeplug's first APRS configuration, which qdmr edits. A change on the radio is written
 there too, and a codeplug written with a different path changes the radio's. Whichever changed last is used.
 
+## Receiving
+
+On radios that can receive APRS, the radio decodes packets while you listen on the APRS frequency. Make a channel on
+your region's frequency (144.390 MHz in North America) in FM, or tune the VFO there, and leave the radio on it. Heard
+stations go into **Stations heard**, messages to your callsign are kept and acknowledged, and the digipeater (if you
+turned it on) passes packets on.
+
+- It listens only on the APRS frequency. On other channels nothing is decoded.
+- On the DM-1701 a packet must be strong enough to open the squelch. Keep the squelch at its usual level, not tight.
+- Battery saving pauses while the radio listens for APRS: a sleeping receiver misses packets.
+- Receiving is on by default. Turn it off with `tools/odr_debug.py aprs set rx 0`.
+
 ## Triggers
 
 Automatic beacons go out at the interval, or with SmartBeaconing by speed and turns. Never more often than every

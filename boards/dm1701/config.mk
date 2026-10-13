@@ -9,17 +9,17 @@ CONFIG_FONT_XL ?= n
 CONFIG_DISPLAY_INSET ?= 5
 CONFIG_DISPLAY_INSET_TOP ?= 0
 CONFIG_DISPLAY_INSET_BOTTOM ?= 0
-# No receive path for APRS: FM audio goes AT1846S -> HR_C6000 -> speaker, no MCU ADC sees it (docs/spec/aprs.md 5.3);
-# the demodulator's buffers would only cost RAM
-CONFIG_APRS_RX ?= n
+# APRS receive takes the HR_C6000's FM receive audio from the I2S stream (docs/spec/aprs.md 5.3). The iGate (RF to
+# APRS-IS through tools/aprs_gate.py, 1.9 KB) doesn't fit next to it until sector 9 holds something (dm1701.ld)
+CONFIG_APRS_IGATE ?= n
 # Link time optimization on our sources (about 17 KB smaller): the default image no longer fits without it since USRP
 # (CONFIG_NET_USRP, 2026-10-13). LTO=0 builds the plain way (and then needs features off). The free sector 9 (FLASH2,
 # dm1701.ld) is the other way to make room, once the packaging and flashing tools write it
 LTO ?= 1
 MAXIMAL_VARS := LTO=1
-# Supported but not needed here, so tools/ci.sh's maximal configuration leaves it off: PPP stands in for the USB
-# network adapter on UART-only radios (docs/spec/ppp.md), and this one has the adapter
-MAXIMAL_SKIP := NET_PPP
+# Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
+# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate doesn't fit (above)
+MAXIMAL_SKIP := NET_PPP APRS_IGATE
 # No use on a 160x120 panel (the 16x32 font is for 240 px and wider), and no hardware for the air band (the AT1846S is
 # FM only) or a broadcast receiver (docs/spec/airband-and-broadcast.md), so the maximal configuration leaves them off
 BOARD_UNSUPPORTED := FONT_XL AM_RX BCAST_FM

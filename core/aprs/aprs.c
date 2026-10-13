@@ -14,6 +14,9 @@
 #include "aprs/kiss.h"
 #include "aprs/afsk.h"
 #include "board.h"
+#if CONFIG_APRS_RX
+#include "usbaudio/audio_mux.h"
+#endif
 #include "settings/settings.h"
 #include "codeplug/codeplug.h"
 
@@ -179,7 +182,7 @@ void aprs_cfg_default(aprs_cfg_t *c)
 	c->sym_code = '[';
 	c->path = APRS_PATH_WIDE1_WIDE2;
 	c->compressed = true;
-	c->messaging = CONFIG_APRS_RX && board.afsk != NULL && board.afsk->rx_start != NULL;
+	c->messaging = aprs_can_receive();
 	c->pos_src = APRS_POS_AUTO;
 	c->fix_alt_m = INT16_MIN;
 	c->interval_s = APRS_INTERVAL_DEFAULT;
@@ -969,27 +972,70 @@ void aprs_rx_audio(const int16_t *s, size_t n, uint32_t now_ms)
 	afsk_demod(&a.demod, s, n);
 }
 
+// The receive audio: the board's own AFSK receive path, else FM receive audio on the shared PCM stream (boards whose
+// audio tap has AUDIO_TAP_FM_RX: 8 kHz, audio_mux.h)
+static bool rx_by_board(void)
+{
+	const hal_afsk_t *h = board.afsk;
+	return h != NULL && h->rx_start != NULL && h->rx_read != NULL;
+}
+
+static bool rx_by_stream(void)
+{
+	return board.audio != NULL && board.audio_tap != NULL && (board.audio_tap->caps & AUDIO_TAP_FM_RX) != 0;
+}
+
 // The receive path: on while receiving FM with the setting on (radio task, outside the lock)
 static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
 	const hal_afsk_t *h = board.afsk;
-	bool want = a.cfg.rx_on && r->fm_rx && h != NULL && h->rx_start != NULL && h->rx_read != NULL;
+	bool own = rx_by_board();
+	bool want = a.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&a.cfg) &&
+		    (own || rx_by_stream());
 	if (want && !a.rx_running) {
-		a.rx_running = afsk_demod_init(&a.demod, h->rx_rate_hz, demod_frame, NULL) && h->rx_start();
+		a.rx_running = afsk_demod_init(&a.demod, own ? h->rx_rate_hz : 8000u, demod_frame, NULL);
+		if (a.rx_running && own) {
+			a.rx_running = h->rx_start();
+		} else if (a.rx_running) {
+			audio_mux_aprs_rx(true);
+		}
 	} else if (!want && a.rx_running) {
-		if (h != NULL && h->rx_stop != NULL) {
-			h->rx_stop();
+		if (own) {
+			if (h->rx_stop != NULL) {
+				h->rx_stop();
+			}
+		} else {
+			audio_mux_aprs_rx(false);
 		}
 		a.rx_running = false;
 	}
 	if (a.rx_running) {
+		uint16_t n = (uint16_t)(sizeof(a.rxbuf) / sizeof(a.rxbuf[0]));
 		uint16_t k;
-		while ((k = h->rx_read(a.rxbuf, (uint16_t)(sizeof(a.rxbuf) / sizeof(a.rxbuf[0])))) != 0) {
+		while ((k = own ? h->rx_read(a.rxbuf, n) : (uint16_t)audio_mux_aprs_read(a.rxbuf, n)) != 0) {
 			aprs_rx_audio(a.rxbuf, k, now_ms);
 		}
 	}
 }
 #endif
+
+bool aprs_can_receive(void)
+{
+#if CONFIG_APRS_RX
+	return rx_by_board() || rx_by_stream();
+#else
+	return false;
+#endif
+}
+
+bool aprs_rx_listening(void)
+{
+#if CONFIG_APRS_RX
+	return a.rx_running;
+#else
+	return false;
+#endif
+}
 
 // --- The radio task ---
 

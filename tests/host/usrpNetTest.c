@@ -402,12 +402,60 @@ static void test_usrp_tx(void)
 	}
 }
 
+#if CONFIG_APRS_RX
+// APRS's own receive ring: the stream's input while it asks, independent of a host session, the stream kept running
+// for it alone; a late reader loses whole blocks
+static void test_mux_aprs(void)
+{
+	reset();
+	audio_mux_aprs_rx(true);
+	audio_mux_service(now);
+	CHECK(hw.starts == 1 && hw.streaming);
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		mic[i] = (int16_t)(300 + i);
+	}
+	block();
+	int16_t got[AUDIO_MUX_APRS_CAP];
+	CHECK(audio_mux_aprs_read(got, 50) == 50 && got[0] == 300 && got[49] == 349);
+	CHECK(audio_mux_aprs_read(got, AUDIO_MUX_APRS_CAP) == AUDIO_BLOCK_SAMPLES - 50 && got[0] == 350);
+	CHECK(audio_mux_host_avail() == 0);	// the host's ring isn't filled for APRS
+	// A host session too: both get the block
+	audio_mux_host_rx(AUDIO_MUX_RX_INPUT);
+	block();
+	CHECK(audio_mux_host_avail() == AUDIO_BLOCK_SAMPLES && audio_mux_aprs_read(got, 1) == 1);
+	audio_mux_host_rx(AUDIO_MUX_RX_OFF);
+	audio_mux_service(now);
+	CHECK(hw.streaming);			// APRS still wants it
+	// A radio user's stop leaves it running too
+	CHECK(radio_audio->start(prim, NULL));
+	radio_audio->stop();
+	CHECK(hw.streaming);
+	// Full: whole blocks dropped (1024 samples hold 6 blocks)
+	audio_mux_aprs_read(got, AUDIO_MUX_APRS_CAP);
+	for (int i = 0; i < 10; i++) {
+		block();
+	}
+	CHECK(audio_mux_aprs_read(got, AUDIO_MUX_APRS_CAP) == 6u * AUDIO_BLOCK_SAMPLES);
+	// Off: the stream stops, and on again nothing stale is read
+	block();
+	audio_mux_aprs_rx(false);
+	audio_mux_service(now);
+	CHECK(!hw.streaming);
+	audio_mux_aprs_rx(true);
+	CHECK(audio_mux_aprs_read(got, AUDIO_MUX_APRS_CAP) == 0);
+	audio_mux_aprs_rx(false);
+}
+#endif
+
 int main(void)
 {
 	test_mux_passthrough();
 	test_mux_dmr_tx();
 	test_usrp_rx();
 	test_usrp_tx();
+#if CONFIG_APRS_RX
+	test_mux_aprs();
+#endif
 	printf("# usrpNetTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }
