@@ -126,6 +126,23 @@ curl "http://12.47.82.51/api/aprsis?server=off"   # stop
 The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
 USB** and "to APRS-IS" are on (`tools/odr_debug.py aprs set to_is 1`).
 
+## Linking audio: AllStarLink and DVSwitch
+
+The radio speaks the USRP voice protocol on UDP port 34001, the protocol AllStarLink's USRP channel driver and DVSwitch
+Analog_Bridge use. A node on your computer hears what the radio receives and talks through it, as an RF link:
+
+- AllStarLink: `rxchannel = usrp/<radio address>:34001:32001` in the node's `rpt.conf` section.
+- Analog_Bridge: `txPort = 34001`, `rxPort = 32001`, the radio's address as the destination.
+
+While the radio receives a signal (the squelch open, or a DMR call playing), it sends the audio to your computer's
+UDP port 32001, with the squelch as the keyup flag. When the program keys up, the radio transmits its audio on the
+current channel: on FM through the radio's own transmit audio (its tone and deviation limit apply), on DMR as a call
+to the channel's contact. The radio stops transmitting when the program unkeys, stops sending, or after 3 minutes.
+Received audio follows the volume knob. `tools/usrp_client.py` is a small test program
+(`tools/usrp_client.py <radio address> tone 1000 3` transmits a tone for 3 seconds).
+
+Which radios can transmit FM this way is in the [Radio reference](23-radios.md); on the others USRP carries DMR only.
+
 ## Programming over the network
 
 The radio runs a TFTP server at its address. Any TFTP client works:

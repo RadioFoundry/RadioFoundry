@@ -84,6 +84,7 @@ below are for the DM-1701.
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server on port 80: a page, the status and the debug link's view sections as JSON, the screen as a BMP (`docs/spec/tcp-services.md` 5). About 3.2 KB RAM |
 | `CONFIG_NET_HTTP_GZIP` | = NET_HTTP | the status server's static files (`core/net/http_assets/`) stored gzip compressed at build time and served with `Content-Encoding: gzip` (`tools/gen_http_assets.py`, `docs/spec/tcp-services.md` 5); off: stored and served as they are |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib rigctld on port 4532: frequency, mode, PTT (from the host only, rate limited), S meter for loggers and SDR programs (`docs/spec/tcp-services.md` 6). About 0.8 KB RAM |
+| `CONFIG_NET_USRP` | = DMR_IP_GATEWAY | USRP voice over UDP on port 34001: the receiver's audio to AllStarLink / DVSwitch / a bridge with the squelch as keyup, the peer's keyup frames transmitted (FM through the board's audio tap, DMR through the encoder; `docs/spec/usb-audio.md` 9.1). About 5.6 KB RAM |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client out through the host (NAT on the host): our beacons and the iGate's lines, off until a server address is set (`docs/spec/tcp-services.md` 7). About 0.2 KB RAM |
 | `CONFIG_MDNS` | = DMR_IP_GATEWAY | mDNS / DNS-SD responder on the USB network link: the radio answers for `odr-<DMR ID>.local` and advertises its debug link, MMDVM modem and TFTP server (`docs/spec/mdns.md`). About 0.4 KB RAM on the DM-1701 |
 | `CONFIG_TFTP` | = DMR_IP_GATEWAY | TFTP server on the USB network link: `codeplug.bin` read and written (staged in `hal_flash_map_t.staging_*`, checked, then committed through the journal), `info.txt` (`docs/spec/tftp.md`). About 0.1 KB RAM on the DM-1701 |
@@ -127,13 +128,13 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 |---|---|---|
 | `MD380_BAND` | md380 | `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz): the band table, the frequency plan and the board name ("MD-380 VHF") |
 | `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_GRAY=1` / `-DMD380_CH_ACTIVE_HIGH=1` (channel switch code), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
-| `LTO` | 0 (MD-380: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller on the DM-1701 (20 KB with `LTO_3P=1`). The DM-1701 image stays without it until it has been tested on the radio (`LTO=1` to try it); its CI maximal build uses it (`MAXIMAL_VARS`). The DM-32 (csky) doesn't use it |
+| `LTO` | 0 (MD-380, DM-1701: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller on the DM-1701 (20 KB with `LTO_3P=1`). The DM-1701 default needs it since `NET_USRP` (2026-10-13); `LTO=0` builds it the plain way, with a feature off (`CONFIG_SNMP=n` makes room). Its free flash sector 9 (FLASH2) is the other way to make room, once the packaging and flashing tools write it. The DM-32 (csky) doesn't use it |
 | `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
 | `TCP_CONNS` | dm32 | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the DM-32UV, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
 | `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; MD-380, DM-32: see "Board defaults" | set in a board's `config.mk`: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
 | `BOARD_REQUIRED` | DB25-D: `FM` | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
-| `MAXIMAL_SKIP` | DM-1701, MD-380: `NET_PPP` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
+| `MAXIMAL_SKIP` | DM-1701: `NET_PPP`; MD-380: `NET_PPP NET_USRP` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
 
 ### Board defaults
 
@@ -146,6 +147,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 | md380 | `SFR`, `HOTSPOT_SPLIT` | HR_C6000 only |
 | md380 | `HOTSPOT` (12 KB) | flash: the default fits only with `LTO=1 LTO_3P=1`, and one feature has to go. The hotspot needs a host running MMDVMHost, and the same USB link carries IP over DMR and the services instead. `DMR_ROAMING` (also 12 KB) is the alternative |
 | md380 | `FONT_XL`, `NET_PPP` (maximal build too) | a 160 px panel has no use for the font; PPP stands in for USB |
+| md380 | `NET_USRP` (maximal build too; users can pick it) | flash, and it carries DMR only on this radio (no FM audio path to the processor yet) |
 | dm32 | `USB`, `USB_NETWORK` (maximal build too: `BOARD_UNSUPPORTED`) | no USB data port on the radio; PPP on the programming cable is its IP link |
 | dm32 | `FONT_XL` (on in the maximal build) | the core draws at 120x160 |
 | every board | `AUDIO_PROBE` | a bench diagnostic |

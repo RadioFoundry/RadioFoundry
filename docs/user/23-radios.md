@@ -197,6 +197,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 - No hotspot mode in the default image (left out for flash space). MMDVM SFR and the split duplex repeater need the
   DMR chip of the DM-1701 (HR_C6000) and aren't built for the MD-380 (HR_C5000).
 - USB network mode and its services are in.
+- Audio linking (USRP, [USB network](14-usb-network.md#linking-audio-allstarlink-and-dvswitch)) carries DMR only: the
+  FM transmit path from the processor isn't written.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
   it hears nothing.
 
@@ -254,6 +256,7 @@ A 240 x 320 color screen. ODR draws at half resolution for now.
 - The radio has a GPS module, but ODR has no GPS driver for it yet. **Settings > Location > GPS** keeps its value.
 - The air band AM receiver and the broadcast FM receiver are built in, but the board code behind them isn't written,
   so nothing runs yet.
+- Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
 
 ### DM-32UV with qdmr
 

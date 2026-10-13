@@ -8,7 +8,8 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 - **Bytes** = default image minus the image with that switch off (`tools/ci.sh` builds each switch off), flash bytes.
   A parent switch's figure includes its children (turning `FM` off also drops VOX, APRS, ...).
 - Figures from tools/ci.sh at 3ec14e3 (2026-10-11).
-  - DM-1701: plain build (LTO off), default image 340,680 B of 344,064 B (3,384 free).
+  - DM-1701: plain build (LTO off), default image 340,680 B of 344,064 B (3,384 free). Since USRP (2026-10-13) the
+    default build uses link time optimization: 330,824 B (13,240 free). The per-feature figures stay the plain ones.
   - MD-380: link time optimization on (`LTO=1 LTO_3P=1`, its default and the only way everything fits), default
     image 279,444 B of 281,668 B (2,224 free). With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are approximate.
   - `*` = off by default; measured by turning it on in the DM-1701 build (main c0022b4).
@@ -80,6 +81,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 | ● | ● | ● |  |
 | HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -64 | -96 | ● | ● | ● | Negative: saves flash |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 | ● | ● | ● |  |
+| Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | ● | ○ | ● | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet); off by default, needs another feature off to fit. DM-32UV: DMR only until its board code has the FM audio paths |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ● | ● | Needs NAT on the host |
 | mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ● |  |
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ● |  |
@@ -106,7 +108,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 
 | Build | DM-1701 | MD-380 |
 |---|---:|---:|
-| Default | 340,680 | 279,668 |
+| Default | 330,824 (LTO on) | 280,956 |
 | Maximal (every compatible switch on) | 340,396 (LTO on) | 280,048 |
 | FM only, minimal | 123,300 | 109,488 |
 
