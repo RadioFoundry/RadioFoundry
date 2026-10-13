@@ -51,7 +51,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Motorola TMS text format | `DMR_TMS` | 784 | 740 | ● | ● | ● | Optional format next to ETSI IP text |
 | ARS registration | `DMR_ARS` | 1,112 | 1,324 | ● | ● | ● |  |
 | LRRP location | `DMR_LRRP` | 8,548 | 2,048 | ● | ● | ● |  |
-| Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 408 | 356 | ● | ● | ● | Auto: not for ports 4000-4099 or ETSI IP text |
+| Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 408 | 356 | ● | ○ | ● | Auto: not for ports 4000-4099 or ETSI IP text. MD-380: off by default for flash, users can pick it |
 | Confirmed packet data | `DMR_CONFIRMED` | 2,880 | 2,920 | ● | ● | ● |  |
 | Single frequency repeater (MMDVM SFR) | `SFR` | 6,884 | — | ● | ✕ | ● | MD-380: HR_C5000 lacks what the SFR glue uses |
 | APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 26,568 | 26,628 | ● | ● | ● | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
@@ -108,12 +108,12 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 
 | Build | DM-1701 | MD-380 |
 |---|---:|---:|
-| Default | 330,824 (LTO on) | 280,956 |
+| Default | 332,532 (LTO on) | 281,576 |
 | Maximal (every compatible switch on) | 340,396 (LTO on) | 280,048 |
 | FM only, minimal | 123,300 | 109,488 |
 
-Turning on link time optimization (`LTO=1 LTO_3P=1`) on the DM-1701 default build gives 320,200 B (about 20 KB
-less); it waits for hardware testing before it becomes that radio's default.
+Link time optimization is on by default on both radios. The DM-1701 has run with it since 2026-10-13 (the HIL suite
+passed); `LTO_3P=1` would take another 3 KB or so off by optimizing the third-party code too.
 
 The MD-380's app region is 281,668 bytes (0x0800C000..0x08050C43; the codec runs in place after it). Its default
 image (UHF; VHF within 30 bytes) fits only with link time optimization, 2026-10-11 at 3ec14e3:

@@ -78,7 +78,7 @@ SNMP_FLAGS = {"off": 0x01, "rf_off": 0x02, "rf_write": 0x04, "usb_traps_off": 0x
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
      "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay",
-     "dmr_gps", "to_is"])}
+     "dmr_gps", "to_is", "power"])}
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}

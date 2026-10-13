@@ -228,6 +228,7 @@ static void cfg_from_settings(const settings_t *s, aprs_cfg_t *c)
 	c->path = s->aprs_path < APRS_PATH_COUNT ? s->aprs_path : APRS_PATH_WIDE1_WIDE2;
 	c->pos_src = s->aprs_pos_src < APRS_POS_COUNT ? s->aprs_pos_src : APRS_POS_AUTO;
 	c->level = s->aprs_level <= 100 ? s->aprs_level : APRS_LEVEL_DEFAULT;
+	c->power = s->aprs_power;
 	c->txdelay = s->aprs_txdelay != 0 ? s->aprs_txdelay : APRS_TXDELAY_DEFAULT;
 	uint8_t via = (uint8_t)(s->aprs_misc & 3u);
 	c->via = via < APRS_VIA_COUNT ? via : APRS_VIA_RF;
@@ -264,6 +265,7 @@ static void cfg_to_settings(const aprs_cfg_t *c, settings_t *s)
 	s->aprs_path = c->path;
 	s->aprs_pos_src = c->pos_src;
 	s->aprs_level = c->level;
+	s->aprs_power = c->power;
 	s->aprs_txdelay = c->txdelay;
 	s->aprs_misc = (uint8_t)((c->via & 3u) | ((c->digi & 3u) << 2) | ((c->ambiguity & 7u) << 4));
 	s->aprs_stored = 1;
@@ -1199,6 +1201,15 @@ void aprs_get_cfg(aprs_cfg_t *c)
 	LOCK();
 	*c = a.cfg;
 	UNLOCK();
+}
+
+uint8_t aprs_tx_power(uint8_t current)
+{
+	uint8_t p = a.cfg.power;	// one byte: no lock
+	if (p == 0 || board.power_count == 0) {
+		return current;
+	}
+	return p <= board.power_count ? (uint8_t)(p - 1u) : (uint8_t)(board.power_count - 1u);
 }
 
 void aprs_set_cfg(const aprs_cfg_t *c, uint32_t now_ms)

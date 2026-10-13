@@ -11,6 +11,7 @@
 #if CONFIG_APRS
 #include "hal_time.h"
 #include "aprs/aprs.h"
+#include "board.h"
 #include "aprs/aprs_beacon.h"
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
@@ -44,8 +45,8 @@ static void view_settings(dl_text_t *t)
 		c.tx_on, c.region, c.ssid, c.sym_table, c.sym_code, aprs_path_text(c.path));
 	dl_text(t, "set.aprs_interval_s=%u\nset.aprs_smart=%u\nset.aprs_distance_m=%u\nset.aprs_after_ptt=%u\n",
 		c.interval_s, c.smart, c.distance_m, c.after_ptt);
-	dl_text(t, "set.aprs_boot=%u\nset.aprs_level=%u\nset.aprs_txdelay=%u\nset.aprs_via=%s\nset.aprs_dmr_dst=%u\n",
-		c.boot, c.level, c.txdelay, word(c.via, vias, 3), (unsigned)c.dmr_dst);
+	dl_text(t, "set.aprs_boot=%u\nset.aprs_level=%u\nset.aprs_txdelay=%u\nset.aprs_via=%s\nset.aprs_dmr_dst=%u\n"
+		"set.aprs_power=%u\n", c.boot, c.level, c.txdelay, word(c.via, vias, 3), (unsigned)c.dmr_dst, c.power);
 	dl_text(t, "set.aprs_dmr_udt=%u\nset.aprs_pos_src=%u\nset.aprs_kiss=%u\nset.aprs_rx=%u\nset.aprs_igate=%u\n",
 		c.dmr_udt, c.pos_src, c.kiss, c.rx_on, c.igate);
 	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_dmr_gps=%u\nset.aprs_to_is=%u\n", c.igate_tx, c.digi,
@@ -160,6 +161,12 @@ static uint8_t set_field(uint8_t field, uint32_t val)
 	case DL_APRS_F_DIGI: c.digi = (uint8_t)val; break;
 	case DL_APRS_F_DMR_GPS: c.dmr_gps = val != 0; break;
 	case DL_APRS_F_TO_IS: c.to_is = val != 0; break;
+	case DL_APRS_F_POWER:
+		if (val > board.power_count) {
+			return DL_ST_BAD_ARG;
+		}
+		c.power = (uint8_t)val;
+		break;
 	case DL_APRS_F_TXDELAY:
 		if (val < 5 || val > 100) {
 			return DL_ST_BAD_ARG;

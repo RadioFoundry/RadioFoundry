@@ -59,6 +59,7 @@ typedef struct {
 	bool after_ptt;
 	bool boot;
 	uint8_t level;		// AFSK level 0-100
+	uint8_t power;		// RF power: 0 = the radio's current level (as for PTT), n = the board's level n - 1
 	uint8_t txdelay;	// 10 ms units
 	uint8_t via;		// aprs_via_t
 	bool dmr_udt;		// ETSI UDT location, else Motorola LRRP
@@ -156,6 +157,10 @@ void aprs_tick(const aprs_radio_t *r, uint32_t now_ms);
 void aprs_ptt_end(uint32_t now_ms);
 // The settings changed underneath (RREQ_RELOAD): read them again
 void aprs_reload(void);
+
+// The level an RF transmission keys at: APRS's own setting (aprs_cfg_t.power: n = the board's level n - 1, capped at
+// its highest) or, with none (0), the radio's current level
+uint8_t aprs_tx_power(uint8_t current);
 
 // RF job for the radio core
 typedef struct {

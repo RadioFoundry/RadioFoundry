@@ -2257,10 +2257,10 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		sm->view.tx_deny = TXDENY_NONE;
 		outputs(sm);
 		changed(sm);
-		// The radio's current power level (a temporary change included), as for PTT: the user's choice, and the
-		// HIL tests key at the lowest. The settings' default (1 W on the DM-1701) ignored a lowered level
-		if (!board.radio->tx(sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K, sm->view.power,
-				     &none)) {
+		// APRS's own power level when it has one, else the radio's current one (a temporary change included), as for
+		// PTT. The settings' default (1 W on the DM-1701) ignored a lowered level
+		if (!board.radio->tx(sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K,
+				     aprs_tx_power(sm->view.power), &none)) {
 			aprs_rf_end(sm, false, false, now_ms);
 		}
 		break;

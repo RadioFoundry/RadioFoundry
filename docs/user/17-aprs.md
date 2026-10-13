@@ -30,15 +30,16 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Send position now | One position at once |
 | Automatic beacons | On: positions go out by themselves (see Triggers) |
 | Frequency | Your region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand 144.575, Japan 144.660, China 144.640 MHz, or Custom (`tools/odr_debug.py aprs set region custom`, then `aprs set freq_hz 144390000`) |
+| Power | As channel: APRS transmits at the radio's current power level. Or pick a level of its own, for example a low one for a nearby digipeater. Dimmed on radios that can't send APRS over the air |
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |
 | SmartBeaconing | More often when you move fast, at once after a turn, rarely when you stand still |
 | Send via | Radio (FM), DMR, or both |
-| Position | Auto, GPS, Computer (NMEA from the USB host), Fixed |
+| Position | Where the position comes from, and the fixed position (see Position below) |
 | Position in DMR calls | Your position in your DMR voice calls (see [DMR](08-dmr.md#position-in-calls)) |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
 | Stations heard | Stations the radio heard (radios that can receive APRS) |
 
-The fixed position, symbol, path, comment and the DMR destination are set with the debug tool for now
+The symbol, path, comment and the DMR destination are set with the debug tool for now
 (`tools/odr_debug.py aprs set ...`), later with qdmr.
 
 ## Triggers
@@ -57,6 +58,19 @@ The position comes from:
 - **Fixed**: a position you enter.
 
 Auto takes a fresh GPS position, else the computer's, else the fixed one.
+
+APRS > Position has three rows: **Source** (press OK to step through Auto, GPS, Computer, Fixed), **Latitude** and
+**Longitude**. To set the fixed position:
+
+1. Select Latitude and press OK. The value opens for editing.
+2. Type the degrees with the digits, decimal places included: `3`,`3`,`7`,`4`,`9`,`0` is 33.7490. The decimal point is
+   already there. Longitude has three places before the point: 84.3880 is `8`,`4`,`3`,`8`,`8`,`0` (the radio puts the
+   leading 0 in for you), and 122.4194 is `1`,`2`,`2`,`4`,`1`,`9`,`4`. For 10 to 19 degrees, type the 0 yourself.
+3. Press Up or Down (or turn the knob) to switch between N and S, or E and W. West longitudes are W.
+4. Press OK to save. Places you didn't type count as zeros. BACK removes the last digit; with nothing typed it closes
+   the value unchanged.
+
+Four decimal places put you within about 11 m. You can also type "latitude" or "position" on Home to find the page.
 
 ## With a computer (KISS and iGate)
 

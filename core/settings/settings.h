@@ -130,7 +130,9 @@ typedef struct {
 	uint8_t roam_beacon_len_s;	// their beacon duration, 1..10
 	uint8_t roam_survey;		// 0 off, 1 the sites beacon together, 2 each site on its own schedule
 	uint8_t rpt_beacon;		// our repeater roles key an idle beacon (roam_beacon_s / _len_s): 0 off, 1 on
-	uint8_t reserved6[3];
+	uint8_t aprs_power;		// APRS RF power: 0 = the radio's current level, n = level n - 1 (was reserved6[0]; taken
+					// with the aprs_ fields below)
+	uint8_t reserved6[2];
 	// APRS (core/aprs/aprs.h aprs_cfg_t, docs/spec/aprs.md 11); taken only when aprs_stored is 1, else the defaults
 	// (automatic transmit off)
 	uint8_t aprs_flags;		// SETTINGS_APRS_* bits

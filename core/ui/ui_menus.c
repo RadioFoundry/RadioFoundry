@@ -20,7 +20,7 @@
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
-extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
 
 static void item_num(ui_item_t *it, uint16_t n)
 {
@@ -2055,5 +2055,5 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
-	[SCR_ABOUT] = &about_screen,
+	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 };

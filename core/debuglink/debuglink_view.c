@@ -12,6 +12,9 @@
 #include "codeplug/codeplug.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
+#if CONFIG_APRS
+#include "aprs/aprs.h"
+#endif
 #if CONFIG_NET_USRP
 #include "usbaudio/usrp_net.h"
 #endif
@@ -324,8 +327,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 	case DL_VIEW_APRS:
 		debuglink_view_aprs(0, t);
 #if CONFIG_APRS
-		// The level an APRS RF transmission keys at (the radio's current one; HIL tests check it before keying)
-		dl_text(t, "aprs.tx_power=%u\n", v->power);
+		// The level an APRS RF transmission keys at (its own setting, else the radio's current one; HIL tests check
+		// it before keying)
+		dl_text(t, "aprs.tx_power=%u\n", aprs_tx_power(v->power));
 #endif
 		break;
 	case DL_VIEW_APRS_SET:

@@ -30,7 +30,8 @@ static const struct {
 	{ "Roaming", "roam site survey beacon interval length wake probe lock", SCR_ROAM },
 #endif
 #if CONFIG_APRS
-	{ "APRS", "position beacon smartbeaconing symbol path kiss tnc gps", SCR_APRS },
+	{ "APRS", "beacon smartbeaconing symbol path kiss tnc gps", SCR_APRS },
+	{ "APRS position", "fixed latitude longitude coordinates", SCR_APRS_POS },
 #endif
 };
 #define PLACES_N	((uint8_t)(sizeof places / sizeof places[0]))

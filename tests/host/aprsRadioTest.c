@@ -473,6 +473,31 @@ static void test_tx_power(void)
 	CHECK(sm.view.power == 1 && hw.rx_hz == CH_HZ);
 }
 
+// APRS's own power setting (aprs_power, 0 = the radio's level) overrides the radio's current level
+static void test_tx_power_own(void)
+{
+	reset();
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.power = 2;			// level 2 of 2: H
+	aprs_set_cfg(&c, now);
+	CHECK(sm.view.power == 0);
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	CHECK(hw.tx_power == 1);
+	wait_idle();
+	CHECK(sm.view.power == 0);	// the radio's own level is untouched
+	CHECK(aprs_tx_power(0) == 1);
+	c.power = 1;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_tx_power(1) == 0);
+	c.power = 0;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_tx_power(1) == 1);
+}
+
 static void test_host_kiss_nmea(void)
 {
 	reset();
@@ -785,6 +810,7 @@ int main(void)
 	test_not_amateur();
 	test_manual_and_ptt_trigger();
 	test_tx_power();
+	test_tx_power_own();
 	test_host_kiss_nmea();
 	test_messages();
 	test_dmr_position();

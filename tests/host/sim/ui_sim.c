@@ -301,9 +301,11 @@ static hal_power_t power = { .battery_pct = p_battery };
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
+static const hal_afsk_t afsk;	// present (the APRS RF rows are live), never called: the UI doesn't key
+
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,
-	.power_default = 4, .display = &disp, .power = &power,
+	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk,
 };
 
 static uint32_t now_ms = 1000;
@@ -1264,6 +1266,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "aprs_smart") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.smart);
 	else if (strcmp(key, "aprs_via") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.via);
 	else if (strcmp(key, "aprs_pos") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.pos_src);
+	else if (strcmp(key, "aprs_power") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.power);
+	else if (strcmp(key, "aprs_lat") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lat);
+	else if (strcmp(key, "aprs_lon") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lon);
 	else if (strcmp(key, "aprs_dmrgps") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.dmr_gps);
 	else if (strcmp(key, "aprs_kiss") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.kiss);
 #if CONFIG_DMR_ROAMING

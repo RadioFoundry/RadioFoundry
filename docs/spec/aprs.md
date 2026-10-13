@@ -139,8 +139,9 @@ job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags
 
 1. LISTEN: tunes the APRS frequency (25 kHz, or 12.5 kHz when narrow is set), 50 ms to settle, then 100 ms slots with
    p-persistence 64/256 while the squelch is closed; gives up after 10 s (`rf_busy`, retried later).
-2. KEYUP: keys the FM transmitter on the APRS frequency at the radio's current power level (a temporary change
-   included, as for PTT; `aprs.tx_power` on the debug link), 25 ms.
+2. KEYUP: keys the FM transmitter on the APRS frequency at APRS's own power level when one is set (`aprs_power`:
+   n = the board's level n - 1), else at the radio's current level (a temporary change included, as for PTT).
+   `aprs.tx_power` on the debug link is the level it will use. 25 ms.
 3. SEND: `board.afsk->tx_start`; at most 6 s.
 4. Back: transmitter off, the user's channel retuned exactly as it was.
 
@@ -213,11 +214,20 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
 Tools > APRS (`ui_aprs.c`): the body shows the callsign and frequency, why nothing can be sent (no callsign, no
 frequency, not amateur, no AFSK), the position and its source, the next beacon and the count sent. Rows: Send
 position now, Automatic beacons, Frequency (region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand
-144.575, Japan 144.660, China 144.640, Custom), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (Radio,
-DMR, Both), Position (Auto, GPS, Computer, Fixed), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
-heard (RX builds: the list, most recent first, dimmed when heard through a digipeater).
+144.575, Japan 144.660, China 144.640, Custom), Power (As channel, then each of the board's levels), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (Radio,
+DMR, Both), Position (opens its page, below), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
+heard (RX builds: the list, most recent first, dimmed when heard through a digipeater). On a radio without
+`board.afsk`, Power is dimmed, and so is Frequency unless the build receives APRS. Row 11 has no digit key.
 
-The rest (symbol, path, comment, digital destination, ambiguity, iGate, digipeater, fixed position) is set over the
+APRS > Position (`aprs-pos`; the APRS page's body shows the position in use). Rows: Source (Auto, GPS, Computer, Fixed),
+Latitude and Longitude (the fixed position, "Not set" while both are 0). OK on Latitude or Longitude opens an editor in
+decimal degrees to 4 places (about 11 m): the digits fill `DD.DDDD` or `DDD.DDDD` from the left (a longitude's first
+digit of 2-9 gets its leading zero by itself), a digit that would pass 90 or 180 degrees is refused with a toast, Up /
+Down or the knob switch N / S or E / W, BACK takes the last digit back (with none typed it closes the editor unchanged),
+OK saves with the places not typed as zeros. The editor starts with the stored value shown; the first digit starts over.
+Find knows the page as "APRS position".
+
+The rest (symbol, path, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
 debug link (`odr_debug.py aprs set`) and later by qdmr through the native codeplug.
 
 ## 11. Settings
@@ -226,7 +236,8 @@ debug link (`odr_debug.py aprs set`) and later by qdmr through the native codepl
 (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX), `aprs_flags2` (iGate, iGate TX, messaging, UDT,
 to APRS-IS, DMR GPS Info), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_lat` / `aprs_lon` (1e-7 degree),
 `aprs_dmr_dst`, `aprs_alt_m`, `aprs_interval_s`, `aprs_distance_m`, `aprs_symbol`, `aprs_path`, `aprs_pos_src`,
-`aprs_level`, `aprs_txdelay`, `aprs_misc` (via, digipeater, ambiguity). The codeplug's APRS record 1 (EEPROM 0x1588,
+`aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1), `aprs_txdelay`, `aprs_misc`
+(via, digipeater, ambiguity). The codeplug's APRS record 1 (EEPROM 0x1588,
 64 bytes each) gives the SSID, path, symbol, comment and ambiguity when present; its fixed position and frequency
 encodings are unknown and not used.
 
