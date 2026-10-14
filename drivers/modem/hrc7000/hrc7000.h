@@ -104,6 +104,7 @@
 #define C7_CODEC_CR_VIC		0x12u
 #define C7_CODEC_CR_CK		0x13u
 #define C7_CODEC_GCR_DACL	0x1Fu
+#define C7_GCR_DACL_0DB		0x80u	// left shared, 0 dB
 #define C7_CODEC_GCR_MIC1	0x23u
 #define C7_CODEC_GCR_ADCL	0x25u
 #define C7_CODEC_CR_DAC_AGC	0x2Bu
@@ -176,7 +177,8 @@ static inline uint32_t hrc7000_mod_bias_dc(uint8_t tx_center, uint16_t modcal)
 // mic_gain (0..42 dB) in GCR_ADCL
 void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db);
 void hrc7000_set_mic_gain(hrc7000_t *d, uint8_t db);
-// Speaker line out gain: 0 = -31 dB .. 31 = 0 dB .. 63 = +32 dB (GCR_DACL bits 5:0)
+// Speaker line out gain, GCR_DACL bits 5:0: 0..31 = 0..-31 dB, 32..63 = +32..+1 dB (hardware-dm32.md 9.1; the
+// direction checked on the DM-32 at bring-up: code 0 and code 48 both louder than code 7)
 void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);
 
 // FM receive / transmit (8.2). wide = 25 kHz. FM receive turns the FM audio path to the speaker on
