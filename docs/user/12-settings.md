@@ -108,8 +108,8 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Long press time | 400 to 1200 ms, steps of 100 | 600 ms | How long you hold a key for a long press | Works |
 | Key repeat | 60 to 300 ms, steps of 20 | 120 ms | The repeat rate of **Up** and **Down** while held | Works |
 | Up/Down on Home | Channel, Zone, Talk target | Channel | What the **Up** and **Down** keys change on Home. The channel knob always changes the channel. Talk target steps through the channel's contact and its listen list on DMR channels. On FM channels they change the channel | Works |
-| Side key 1, Side key 2, Top key | Default, Nothing, Monitor, Talk target, Power level, Next zone, Previous zone, Scan | Default | What a press of the key does. Default is what the [key roles](23-radios.md#key-roles) say. Monitor opens the squelch while you hold the key | Works |
-| Side key 1 hold, Side key 2 hold, Top key hold | Default, Nothing, Talk target, Power level, Next zone, Previous zone, Scan, Emergency | Default | What holding the key does. Emergency needs a 1.5 s hold. Dimmed while the key's press is Monitor | Works |
+| Side key 1, Side key 2, Top key | Default, Nothing, Monitor, Talk target, Power level, Next zone, Previous zone, Scan, Monitor on/off, Key lock, Hear all, Call back | Default | What a press of the key does. Default is what the [key roles](23-radios.md#key-roles) say. Monitor opens the squelch while you hold the key. Monitor on/off keeps it open until the next press (FM channels). Key lock locks and unlocks the keys. Hear all plays every talkgroup until pressed again. Call back talks to the last call heard | Works |
+| Side key 1 hold, Side key 2 hold, Top key hold | Default, Nothing, Talk target, Power level, Next zone, Previous zone, Scan, Emergency, Monitor on/off, Key lock, Hear all, Call back | Default | What holding the key does. Emergency needs a 1.5 s hold. Dimmed while the key's press is Monitor | Works |
 
 The side key settings are also in the codeplug, so a codeplug written to the radio can set them, and a change here is
 written to the codeplug. Rows for keys your radio doesn't have are dimmed.

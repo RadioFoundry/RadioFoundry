@@ -112,6 +112,46 @@ static void test_build(void)
 	CHECK(memcmp(entry(K_OK), &base[0], sizeof(base[0])) == 0 && memcmp(entry(K_PTT), &base[4], sizeof(base[4])) == 0);
 }
 
+// The functions of side key actions 11 (hear all, monitor latch, key lock, call back)
+static void test_toggles(void)
+{
+	static const struct { uint8_t fn; uint8_t value; uint8_t action; } t[] = {
+		{ KEYFN_HEAR_ALL, 9, ACT_HEAR_ALL }, { KEYFN_MONITOR_LATCH, 10, ACT_MONITOR_LATCH },
+		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK },
+	};
+	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
+	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
+	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
+	CHECK(KEYFN_COUNT == 13);
+	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
+		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
+		CHECK(t[i].fn == t[i].value);
+		// Allowed in a press and in a long press (only monitor is press only, only emergency long only)
+		CHECK(keyassign_allowed(t[i].fn, false) && keyassign_allowed(t[i].fn, true));
+		for (uint8_t role = 0; role < KEYASSIGN_ROLES; role++) {
+			keyassign_set(s, role, false, t[i].fn);
+			keyassign_set(s, role, true, t[i].fn);
+			CHECK(keyassign_get(s, role, false) == t[i].fn && keyassign_get(s, role, true) == t[i].fn);
+		}
+		keyassign_build(base, N, side, 3, s, map);
+		// Each role's key sends the function's own action on both gestures, and is not held, so a long press exists
+		for (uint8_t role = 0; role < 3; role++) {
+			const keymap_entry_t *m = entry(side[role]);
+			CHECK(m->short_action == t[i].action && m->long_action == t[i].action && !m->raw_edges &&
+			      !m->repeat);
+		}
+	}
+	// A value one past the last is not a function: it reads as the default
+	uint16_t s[KEYASSIGN_SLOTS] = { KEYASSIGN_MARKER, KEYFN_COUNT, KEYFN_COUNT };
+	CHECK(keyassign_get(s, 0, false) == KEYFN_DEFAULT && keyassign_get(s, 0, true) == KEYFN_DEFAULT);
+	// The monitor latch on the monitor key's press frees the key from being held
+	uint16_t m[KEYASSIGN_SLOTS] = { 0 };
+	keyassign_set(m, 0, false, KEYFN_MONITOR_LATCH);
+	keyassign_build(base, N, side, 3, m, map);
+	CHECK(!entry(K_SK1)->raw_edges && entry(K_SK1)->short_action == ACT_MONITOR_LATCH &&
+	      entry(K_SK1)->long_action == ACT_NONE);
+}
+
 // The built map in the gesture engine
 static input_event_t evs[32];
 static int nev;
@@ -161,6 +201,20 @@ static void test_engine(void)
 	hold(&e, &now, 1u << K_TOP, 2000);
 	CHECK(nev == 2 && evs[0].action == ACT_MONITOR && evs[0].gesture == GESTURE_DOWN &&
 	      evs[1].gesture == GESTURE_UP);
+	// The toggles (hear all, monitor latch, key lock, call back) go in either slot and send their own action
+	keyassign_set(s, 1, false, KEYFN_HEAR_ALL);
+	keyassign_set(s, 1, true, KEYFN_CALL_BACK);
+	CHECK(keyassign_get(s, 1, false) == KEYFN_HEAR_ALL && keyassign_get(s, 1, true) == KEYFN_CALL_BACK);
+	keyassign_build(base, N, side, 3, s, map);
+	input_engine_init(&e, map, N, now);
+	input_engine_step(&e, 0, 0, now, emit, NULL);
+	nev = 0;
+	hold(&e, &now, 1u << K_SK2, 100);
+	CHECK(nev == 1 && evs[0].action == ACT_HEAR_ALL && evs[0].gesture == GESTURE_PRESS);
+	nev = 0;
+	hold(&e, &now, 1u << K_SK2, 2000);
+	CHECK(nev == 1 && evs[0].action == ACT_CALL_BACK && evs[0].gesture == GESTURE_LONG);
+	CHECK(keyassign_allowed(KEYFN_MONITOR_LATCH, true) && keyassign_allowed(KEYFN_KEY_LOCK, false));
 }
 
 int main(void)
@@ -168,6 +222,7 @@ int main(void)
 	test_marker();
 	test_allowed();
 	test_build();
+	test_toggles();
 	test_engine();
 	printf("# keyassignTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

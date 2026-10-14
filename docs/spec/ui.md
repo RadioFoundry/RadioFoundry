@@ -138,10 +138,14 @@ long press, and each takes one function:
 | Next zone (5), Previous zone (6) | ZONE_UP, ZONE_DOWN | yes | yes |
 | Scan (7) | SCAN: on / off | yes | yes |
 | Emergency (8) | EMERGENCY, hold to activate (1.5 s) | no: P2 | yes |
+| Hear all (9) | HEAR_ALL: every talkgroup on / off, as the quick settings tile (DMR) | yes | yes |
+| Monitor on/off (10) | MONITOR_LATCH: FM, the squelch open until pressed again; DMR, a toast (hear all is its own function and state) | yes | yes |
+| Key lock (11) | LOCK: lock, and unlock while locked (as long QUICK) | yes | yes |
+| Call back (12) | CALL_BACK: talk for now to the last call heard, its talkgroup or, for a private call, its caller (`dmr-voice.md` 2) | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN and SCAN do the same on a press and a long press and work on any screen. TALK_TARGET opens
-the picker on a long press too. A monitor key given a press of its own loses its hold: its long press is nothing
-until set.
+POWER, ZONE_UP, ZONE_DOWN, SCAN, HEAR_ALL, MONITOR_LATCH and CALL_BACK do the same on a press and a long press and
+work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
+a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set.
 
 Storage: the open-firmware codeplug's ten quick-key slots (EEPROM 0x7524, 2 bytes LE each,
 `open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B01 ("K", layout 1); slot 1 + 2k is role k's press and slot

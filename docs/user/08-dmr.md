@@ -189,7 +189,7 @@ to save them to the channel.
 ## Hear all
 
 - Hold **Monitor**. The radio plays every talkgroup on this frequency and timeslot while you hold it.
-- **\***, **5** latches hear all on. The radio shows "Hear all: every talkgroup", and the chips show "All". Hear all
+- **\***, **5** latches hear all on. The radio shows "Hear all on", and the chips show "All". Hear all
   stays on until you turn it off, change the channel or the mode, or press **Back** on Home.
 
 While hear all is on, the reply window lets you answer any call you heard with **PTT**.
