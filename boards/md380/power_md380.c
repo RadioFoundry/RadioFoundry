@@ -8,6 +8,7 @@
 #include "FreeRTOS.h"
 #include "pins.h"
 #include "hal_time.h"
+#include "radio/power_switch.h"
 
 enum { CH_VOLUME = MD380_ADC_VOLUME, CH_BATTERY = MD380_ADC_BATTERY, CH_MIC = MD380_ADC_MIC, CH_RSSI = MD380_ADC_RSSI,
 	CH_BUSY = MD380_ADC_BUSY, CH_TEMP = MD380_ADC_TEMP, CH_COUNT = MD380_ADC_COUNT };
@@ -25,6 +26,7 @@ static volatile uint16_t samples[SCANS * CH_COUNT];
 static bool started;
 static uint32_t start_ms;
 static uint32_t filtered_mv, filter_ms;
+static pwrsw_t pwrsw;
 
 static void adc_start(void)
 {
@@ -156,10 +158,14 @@ static int8_t volume(void)
 	return -1;
 }
 
-// The knob's switch is believed to cut the supply directly (hardware-md380.md 10.1, ?): nothing for the MCU to sense
+// The volume knob switch breaks the battery sense line while the latch holds the supply (hardware-md380.md 10.1):
+// a few low readings in a row mean the user switched off
 static bool switch_on(void)
 {
-	return true;
+	if (!settled()) {
+		return true;
+	}
+	return pwrsw_on(&pwrsw, battery_now_mv(), hal_millis());
 }
 
 static void led(uint8_t which, bool on)

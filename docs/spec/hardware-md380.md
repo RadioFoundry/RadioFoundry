@@ -424,9 +424,12 @@ PTT on PE11 and the accessory jack's PTT on PE12, both active low with pull-ups 
 
 ### 10.1 Power switch and latch
 
-The volume knob carries the power switch. On the MD-380 it is believed to switch the supply directly, with POW_C
-(PA7) as a latch the firmware holds (D for the pin; the switch wiring (?)). `switch_on()` therefore always says on, and
-power-off from the menu drops the latch.
+The volume knob carries the power switch. It doesn't switch the supply: POW_C (PA7) is a latch the firmware holds (D),
+and the switch breaks the battery sense line (and the volume pot's supply) (C, our bench). Measured on a UHF MD-380 with
+the radio on USB: the raw battery reading (ADC1 IN1) is 3341-3351 (8.3 V) with the knob on and 3-4 with it off, at once;
+the volume reading falls from about 130-155 to 2-4. The radio stays on with the knob off, and with `switch_on()` always
+on it only showed the battery running down. `switch_on()` now reads the knob from the battery line (`radio-features.md`
+5.5, `core/radio/power_switch.c`, as on the DM-1701), and power-off drops the latch.
 
 ### 10.2 Battery
 

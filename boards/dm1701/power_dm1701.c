@@ -7,14 +7,12 @@
 #include "FreeRTOS.h"
 #include "pins.h"
 #include "hal_time.h"
+#include "radio/power_switch.h"
 
 enum { CH_VOLUME, CH_BATTERY, CH_MIC, CH_TEMP, CH_COUNT };
 #define SCANS			16		// about 220 us per scan at 9 MHz ADC clock and 480-cycle sampling: 3.5 ms window
 
 #define SETTLE_MS		1500		// readings settle after power-up (spec 11.1)
-#define SWITCH_OFF_MV		5500		// below this the volume knob switch is off (spec 10.4)
-#define SWITCH_OFF_SAMPLES	3		// consecutive low readings, at least SWITCH_SAMPLE_MS apart
-#define SWITCH_SAMPLE_MS	10
 #define FILTER_MS		10000		// time constant of the displayed battery voltage
 
 // Volume pot (spec 11.2, DM-1701): log taper, the breakpoint sits near the middle of the rotation
@@ -28,8 +26,7 @@ static volatile uint16_t samples[SCANS * CH_COUNT];
 static bool started;
 static uint32_t start_ms;
 static uint32_t filtered_mv, filter_ms;
-static uint8_t low_count;
-static uint32_t low_ms;
+static pwrsw_t pwrsw;
 static bool vol_muted = true;
 
 static void adc_start(void)
@@ -182,18 +179,7 @@ static bool switch_on(void)
 	if (!settled()) {
 		return true;
 	}
-	uint32_t now = hal_millis();
-	if (battery_now_mv() >= SWITCH_OFF_MV) {
-		low_count = 0;
-		return true;
-	}
-	if (low_count == 0 || (uint32_t)(now - low_ms) >= SWITCH_SAMPLE_MS) {
-		if (low_count < SWITCH_OFF_SAMPLES) {
-			low_count++;
-		}
-		low_ms = now;
-	}
-	return low_count < SWITCH_OFF_SAMPLES;
+	return pwrsw_on(&pwrsw, battery_now_mv(), hal_millis());	// spec 10.4
 }
 
 static void led(uint8_t which, bool on)

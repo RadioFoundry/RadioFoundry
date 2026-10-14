@@ -171,6 +171,16 @@ anything else (a key, a request, MONITOR, scan, VOX, DMR channel, hotspot, a cha
 APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on (DM-1701: `hardware-dm1701.md` 5.11). On air
 on the DM-1701 since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
 
+### 5.5 Power switch
+
+The volume knob's switch on the DM-1701 and the MD-380 doesn't cut the supply: the MCU holds its own with the power
+latch, and the switch only breaks the battery sense line, so the unfiltered battery reading drops to about 0 V the
+moment the knob turns off (MD-380: raw 3345 at 8.3 V, 3 with the knob off). `core/radio/power_switch.c` turns that
+into the board's `switch_on()`: three readings in a row below 5.5 V, at least 10 ms apart, mean off; one low reading
+doesn't. The boards ignore it for the first 1.5 s after power-up while the readings settle. `core/app/app.c` polls
+`switch_on()` and powers off (settings saved, latch released). 5.5 V sits well under a flat 2S pack (critical
+6.0 V), so a weak battery never reads as the switch.
+
 ## 6. TX power, calibration, band limits
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,

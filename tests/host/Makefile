@@ -166,6 +166,12 @@ radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -o $@ $(RFTEST) -lm
 
+# The volume knob power switch read from the battery sense line (DM-1701, MD-380)
+TESTS   += powerSwitchTest
+
+powerSwitchTest: powerSwitchTest.c $(CORE)/radio/power_switch.c $(CORE)/radio/power_switch.h
+	$(CC) $(CFLAGS) -o $@ powerSwitchTest.c $(CORE)/radio/power_switch.c
+
 # DMR repeater roaming: the engine, and through the radio core against fake repeaters on the simulated modem
 TESTS   += roamTest
 ROAMT   := roamTest.c $(filter-out radioFeaturesTest.c,$(RFTEST))
