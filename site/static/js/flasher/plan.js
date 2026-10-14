@@ -54,8 +54,10 @@ export function makePlan(board, segments, mode, codecSegments = []) {
 			const win = board.codec.windows.find(([lo, n]) => addr < lo + n && addr + data.length > lo);
 			if (win) throw new PlanError(`the firmware image (${hex(addr)}..${hex(addr + data.length)}) overlaps the codec window ${hex(win[0])}+0x${win[1].toString(16).toUpperCase()}; the linker keeps the codec windows free`);
 			const hit = codecSecs.filter((s) => overlaps(s, addr, addr + data.length)).map((s) => s.index);
-			if (hit.length && mode === KEEP)
+			if (hit.length && (mode === KEEP || board.keep_codec_supported))
 				throw new PlanError(`the firmware image reaches into codec sector(s) ${hit.join(", ")}; a release image never does`);
+			if (addr !== board.app_base && !(board.data_regions || []).some(([lo, n]) => lo <= addr && addr + data.length <= lo + n))
+				throw new PlanError(`firmware data at ${hex(addr)} is neither the application nor inside a data region of the ${board.name}`);
 		}
 	}
 	if (mode !== MERGE && codecSegments.length) throw new PlanError(`codec data given in ${mode} mode`);

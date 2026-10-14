@@ -117,12 +117,23 @@ def self_test():
     check(merged[0x080D19F0 - APP_BASE:] == tables, "tables at 0x080D19F0")
     check(not stm32_dfu.check_image(merged, "dm1701"), "stm32_dfu accepts the merged image without warnings")
 
+    # the firmware's sector 9 data (the build's _rodata2.bin) goes in at 0x080A0000, between the windows
+    rodata = bytes(rng.randrange(256) for _ in range(3000))
+    merged2 = merge(image, p, wins, [(0x080A0000, rodata)])
+    check(len(merged2) == len(merged) and merged2[0x080A0000 - APP_BASE:0x080A0000 - APP_BASE + 3000] == rodata,
+          "sector 9 data at 0x080A0000")
+    check(merged2[0x08074714 - APP_BASE:0x08084930 - APP_BASE] == code and merged2[0x080D19F0 - APP_BASE:] == tables,
+          "windows unchanged by sector 9 data")
+    check(not stm32_dfu.check_image(merged2, "dm1701"), "stm32_dfu accepts the image with sector 9 data")
+
     bad_key = bytes([key[0] ^ 1]) + key[1:]
     expect_error(lambda: extract(stock, bad_key, profiles), "wrong key: window hash mismatch")
     expect_error(lambda: extract(stock[:-1] + b"\0", key, profiles), "other file: unsupported sha256")
     expect_error(lambda: extract(stock, key), "synthetic file is not the real stock file")
     expect_error(lambda: merge(b"\0" * (0x08074714 - APP_BASE + 1), p, wins), "image overlapping the codec refused")
     expect_error(lambda: merge(stock, p, wins), "official file as --image refused")
+    expect_error(lambda: merge(image, p, wins, [(0x08090000, b"x")]), "data inside codec sector 8 refused")
+    expect_error(lambda: merge(image, p, wins, [(0x080BFFFF, b"xx")]), "data running past sector 9 refused")
     expect_error(lambda: parse_container(b"x" * 300), "non-container refused")
 
     # MD-380 D002.032: single-segment container, code window in sector 6, four small extra table windows
@@ -148,6 +159,38 @@ def self_test():
     expect_error(lambda: extract(mstock, bad_key, mprofiles), "MD-380 wrong key refused")
     check(find_profile(mstock, mprofiles)["board"] == "md380", "MD-380 profile found by SHA-256")
 
+    # main(): a missing explicit --image2 is an error, the default sibling file stays optional
+    import contextlib
+    import io
+    import tempfile
+    from unittest import mock
+    with tempfile.TemporaryDirectory() as d:
+        sp, ip, op = (os.path.join(d, n) for n in ("stock.bin", "odr_dm1701.bin", "out.bin"))
+        for path, blob in ((sp, stock), (ip, image)):
+            with open(path, "wb") as f:
+                f.write(blob)
+
+        def run(*extra):
+            argv = ["codec_extract.py", "--stock", sp, "--image", ip, "--output", op, "--key", "unused"] + list(extra)
+            err = io.StringIO()
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(sys.modules[__name__], "find_profile",
+                                                                          lambda s: p), \
+                    mock.patch.object(stm32_dfu, "load_key", lambda path, board: key), \
+                    mock.patch.object(sys.modules[__name__], "extract", lambda s, k: (p, wins)), \
+                    mock.patch.object(sys.modules[__name__], "check_output_path", lambda path: None), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                return main(), err.getvalue()
+
+        rc, err = run()
+        check(rc == 0, "no sector 9 file next to the image: merged without it")
+        rc, err = run("--image2", os.path.join(d, "missing_rodata2.bin"))
+        check(rc == 1 and "missing_rodata2.bin" in err, "an explicit --image2 that doesn't exist is an error")
+        with open(os.path.join(d, "x2.bin"), "wb") as f:
+            f.write(rodata)
+        rc, err = run("--image2", os.path.join(d, "x2.bin"))
+        with open(op, "rb") as f:
+            check(rc == 0 and f.read()[0x080A0000 - APP_BASE:][:3000] == rodata, "an explicit --image2 lands in sector 9")
+
     expect_error(lambda: check_output_path(os.path.join(repo_root(), "tools", "x_codec.img")),
                  "output inside the tree and not ignored refused")
     try:
@@ -169,6 +212,8 @@ def main():
     ap.add_argument("--board", choices=("dm1701", "md380"),
                     help="refuse a stock file for another radio (the stock file picks the board otherwise)")
     ap.add_argument("--image", help="built OpenDigitalRadio image (default: build/<board>/odr_<board>.bin)")
+    ap.add_argument("--image2", help="the build's sector 9 image (DM-1701: odr_dm1701_rodata2.bin), written at its address "
+                    "in the merged image (default: <image>_rodata2.bin next to the image, when it exists)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on a synthetic file and key")
     args = ap.parse_args()
@@ -191,7 +236,13 @@ def main():
             image = f.read()
         check_output_path(out)
         prof, wins = extract(stock, key)
-        merged = merge(image, prof, wins)
+        data = []
+        image2 = args.image2 or os.path.splitext(os.path.expanduser(image_path))[0] + "_rodata2.bin"
+        # an explicit --image2 must exist (open() fails into the OSError handler); only the default is optional
+        if prof.get("app_data") and (args.image2 or os.path.exists(os.path.expanduser(image2))):
+            with open(os.path.expanduser(image2), "rb") as f:
+                data = [(prof["app_data"][0][0], f.read())]
+        merged = merge(image, prof, wins, data)
         for w in stm32_dfu.check_image(merged, board):
             print("warning: %s" % w)
         with open(out, "wb") as f:

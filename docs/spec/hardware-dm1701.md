@@ -79,16 +79,36 @@ in place at its stock addresses ([codec-dm1701.md](codec-dm1701.md)): code 0x080
 | 6 | 0x08040000..0x0805FFFF | 128 KB | ODR |
 | 7 | 0x08060000..0x0807FFFF | 128 KB | codec code (from 0x08074714) |
 | 8 | 0x08080000..0x0809FFFF | 128 KB | codec code (to 0x0808492F) |
-| 9 | 0x080A0000..0x080BFFFF | 128 KB | free: the linker's FLASH2, for large constant data later |
+| 9 | 0x080A0000..0x080BFFFF | 128 KB | ODR read-only data (the linker's FLASH2, `.rodata2`): fonts, tables, string literals. Written with the application, as a second range of the image |
 | 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
 | 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E423F) |
 
 A flash sector can only be erased whole. Before this layout the linker reserved only the codec bytes, so ODR could
 grow into sectors 7, 8 and 10, and updating it would have meant erasing the codec too. Now
-`boards/dm1701/dm1701.ld` gives the application sectors 3-6 (336 KB; the default image fills all but a few KB, [feature-matrix.md](../feature-matrix.md)) and asserts that the
-image ends before 0x08060000; FLASH2 is sector 9. The bytes around the codec windows in sectors 7, 8, 10 and 11 are
-whatever was there (stock code, or 0xFF after a merge); they are never executed. The DM-1701's settings and codeplug
-live in the external SPI flash, so nothing else writes internal flash.
+`boards/dm1701/dm1701.ld` gives the application code sectors 3-6 (336 KB) and asserts that what it loads there ends
+before 0x08060000. All read-only data (`.rodata`, about 49 KB: string literals, the fonts, tables) is linked into
+sector 9 as the output section `.rodata2` (FLASH2), which leaves the 336 KB for code. The bytes around the codec
+windows in sectors 7, 8, 10 and 11 are whatever was there (stock code, or 0xFF after a merge); they are never executed.
+The DM-1701's settings and codeplug live in the external SPI flash, so nothing else writes internal flash.
+
+Sector 9 held only leftover stock code. The factory calibration is not there (it is in the external flash's security
+registers), and the stock codec reads nothing outside its two windows (`codec-dm1701.md`, the emulator run mapped only
+the windows). Reading it costs the same as reading sectors 3-6: internal flash is memory mapped, and the firmware
+never erases or programs internal flash, so nothing can write sector 9 while the CPU or a DMA stream reads it.
+
+**The image has two parts.** `make` writes `odr_dm1701.bin` (sectors 3-6, from 0x0800C000) and
+`odr_dm1701_rodata2.bin` (sector 9, from 0x080A0000). A single `.bin` from 0x0800C000 through sector 9 would carry
+256 KB of padding over the codec sectors, and the padding would overwrite the codec on every update, so the parts stay
+separate. A release packs them as one file with two ranges (`docs/dev/release.md`, "Sector 9"); the merged
+`odr_dm1701_codec.bin` has the codec windows and the data at their own addresses. An application written without its
+sector 9 part boots (the vector table and the code are intact) and then reads whatever sector 9 holds. The tools
+differ in how they guard against that:
+
+| tool | without the sector 9 part |
+| --- | --- |
+| `tools/release.py` | refuses to pack a DM-1701 release without it (`--no-rodata2` says it is intended) |
+| `tools/odrflash` | a release image carries both ranges and is verified against its manifest; a local build with no `_rodata2.bin` next to it flashes with a warning |
+| `tools/stm32_dfu.py` | refuses a release image whose manifest lists two ranges; warns when a `_rodata2.bin` sits next to the image, and flashes the application alone |
 
 odrflash's keep and merge modes follow from this map ([release.md](../dev/release.md), "Codec handling"). Old builds
 of the aftermarket firmware ran the MD-9600 V26.45 codec at 0x0807537C instead (`codec-dm1701.md`, comparison).
@@ -1195,6 +1215,14 @@ usual DfuSe "@name/0xADDR/NN*SSKg,..." form.
 | 6 | exit: set address 0x08000000, then DNLOAD with zero length; the device resets (it may not answer the final GETSTATUS) |
 
 The image is written as one contiguous stream starting at 0x0800C000: byte n of the file goes to 0x0800C000 + n.
+
+The list names 0x080A0000 (sector 9) in both the erase and the write step, like every other sector, because a stock
+image fills it. The region form has no other rule for it: 128 KB, blocks 2..0x81, the key applied from the image
+start, which is block aligned there (0x080A0000 - 0x0800C000 = 0x94000, a multiple of 1024). odrflash writes a region
+only when it has data, so sectors 7, 8, 10 and 11 are left out of an update (as keep mode already does) and sector 9
+is written on its own, between sector 6 and the codec. Status: erasing and writing sector 9 as one of the listed
+regions is from the loader's behavior, and a radio has run it: an ODR image that writes only sectors 3-6 and 9 flashed
+through odrflash, booted and passed the radio-only HIL group (`docs/dev/release.md`, "Sector 9").
 
 ### 15.3 Image encryption
 

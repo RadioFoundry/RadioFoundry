@@ -57,7 +57,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Single frequency repeater (MMDVM SFR) | `SFR` | 6,884 | — | ● | ✕ | ● | MD-380: HR_C5000 lacks what the SFR glue uses |
 | APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 26,568 | 26,628 | ● | ● | ● | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
 | APRS receive: demodulator, station list, digipeater | `APRS_RX` | 8,892 | — | ● | ✕ | ● | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |
-| APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,820* | — | ○ | ✕ | ● | Needs APRS receive. DM-1701: off for flash until sector 9 is used |
+| APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,820* | — | ○ | ✕ | ● | Needs APRS receive. DM-1701: off by default; it fits since the read-only data moved to sector 9 |
 
 ## Host link and USB
 

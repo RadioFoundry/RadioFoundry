@@ -30,7 +30,8 @@ SINGLE_SEGMENT = 0xFFFFFFFF
 
 # One profile per supported stock file, keyed by its SHA-256 (codec-dm1701.md and codec-md380.md, "Stock files" and
 # "Codec in the stock image"). Window = (flash address, length, SHA-256 of the decrypted bytes): "code" (its first word
-# is CODEC_SIG), "tables", and "extra" for profiles whose codec has further small table windows. "codec_profile" is
+# is CODEC_SIG), "tables", and "extra" for profiles whose codec has further small table windows, and "app_data" for the flash regions the firmware's
+# own data may take between the windows. "codec_profile" is
 # the id the firmware reports (debug link VERSION codec=) and the release manifests carry; "board" the radio it is
 # for; "key_sha256" the identity of that radio's bootloader key.
 PROFILES = {
@@ -44,6 +45,9 @@ PROFILES = {
         "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xD9400)],
         "code": (0x08074714, 0x1021C, "1d8d04603b288e102f70252c1dd489600dfde656eccea6264e7bf4fac413f0cd"),
         "tables": (0x080D19F0, 0x12850, "b99f14e72bf72555946c1f04e8a1636652e6f62843baaf7a135787879e028894"),
+        # Flash between the codec windows that the firmware may use for read-only data (sector 9, hardware-dm1701.md 1.4):
+        # a merged image carries it at its address
+        "app_data": [(0x080A0000, 0x20000)],
     },
     # TYT MD-380 "Firmware 2.32" (D002.032), single-segment container; the code window starts inside flash sector 6
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": {
@@ -174,9 +178,10 @@ def codec_segments(prof, segments):
     return [(a, d) for a, d in segments]
 
 
-def merge(image, prof, segments):
+def merge(image, prof, segments, data=()):
     """The built application image (plain, from 0x0800C000) with every codec window written at its stock address, as
-    one contiguous image (0xFF between the parts)."""
+    one contiguous image (0xFF between the parts). data: the firmware's read-only data for the profile's "app_data"
+    regions as [(addr, bytes)] (the DM-1701's sector 9), written at its address too."""
     if image.startswith(MAGIC):
         raise StockError("the image is an official firmware file; pass the OpenDigitalRadio build (odr_%s.bin)"
                          % prof.get("board", "dm1701"))
@@ -186,22 +191,29 @@ def merge(image, prof, segments):
                          "the window reserved (boards/%s/%s.ld)" % (APP_BASE + len(image), first,
                                                                     prof.get("board", "dm1701"),
                                                                     prof.get("board", "dm1701")))
-    end = max(a + len(d) for a, d in segments)
+    regions = prof.get("app_data", ())
+    for a, d in data:
+        if not any(lo <= a and a + len(d) <= lo + n for lo, n in regions):
+            raise StockError("firmware data at 0x%08X+0x%X is outside the flash this radio's layout gives it %s"
+                             % (a, len(d), ", ".join("0x%08X+0x%X" % r for r in regions) or "(none)"))
+    end = max([a + len(d) for a, d in segments] + [a + len(d) for a, d in data])
     if end > FLASH_END:
         raise StockError("merged image would pass the end of flash")
     out = bytearray(b"\xFF" * (end - APP_BASE))
     out[0:len(image)] = image
-    for a, d in segments:
+    for a, d in list(segments) + list(data):
         out[a - APP_BASE:a - APP_BASE + len(d)] = d
     return bytes(out)
 
 
 def split_merged(image, profiles=None):
-    """The reverse of merge(): (application image, profile, codec segments) when the image carries a codec at a
-    profile's stock addresses, None when it holds none (a plain image, which the planner checks as usual). A merged
-    image has no manifest, so the codec windows are checked by their SHA-256 (which also names the radio) and every
-    byte outside the application and the windows must be 0xFF, as merge() leaves it. Raises StockError for an image with
-    the codec signature at a profile's code window whose windows don't match that profile."""
+    """The reverse of merge(): (application image, profile, codec segments, data segments) when the image carries a
+    codec at a profile's stock addresses, None when it holds none (a plain image, which the planner checks as usual).
+    The data segments are what lies in the profile's "app_data" regions (the DM-1701's sector 9; trailing 0xFF
+    dropped, an empty region gives none). A merged image has no manifest, so the codec windows are checked by their
+    SHA-256 (which also names the radio) and every byte outside the application, the windows and the data regions must
+    be 0xFF, as merge() leaves it. Raises StockError for an image with the codec signature at a profile's code window
+    whose windows don't match that profile."""
     profiles = PROFILES if profiles is None else profiles
     candidates = []
     for prof in profiles.values():
@@ -220,10 +232,18 @@ def split_merged(image, profiles=None):
         rest = bytearray(image[first - APP_BASE:])
         for a, d in segs:
             rest[a - first:a - first + len(d)] = b"\xFF" * len(d)
+        data = []
+        for lo, n in prof.get("app_data", ()):
+            if lo < first:
+                continue
+            chunk = bytes(rest[lo - first:lo - first + n]).rstrip(b"\xFF")
+            if chunk:
+                data.append((lo, chunk))
+            rest[lo - first:lo - first + n] = b"\xFF" * len(rest[lo - first:lo - first + n])
         if rest.count(0xFF) != len(rest):
             raise StockError("the image holds the %s codec, but also other data between or after its windows: not "
                              "an image odrflash merge (or the build's codec step) wrote" % prof["codec_profile"])
-        return image[:first - APP_BASE].rstrip(b"\xFF"), prof, segs
+        return image[:first - APP_BASE].rstrip(b"\xFF"), prof, segs, data
     if candidates:
         raise StockError("the image has a codec at 0x%08X, but not the one from %s: a merged image must be made from "
                          "a supported stock file" % (candidates[0]["code"][0], candidates[0]["name"]))

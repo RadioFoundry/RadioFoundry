@@ -18,6 +18,15 @@
 
 A release image never includes the codec ("included": false); verify() refuses one whose ranges reach into a codec
 sector, so "keep the radio's codec" can never be undone by the image itself.
+
+A board with read-only data in a second flash region (the DM-1701's sector 9) lists a second range; the image file is
+the application followed by that data, and "sectors" names every sector the image covers:
+
+      "ranges": [{"addr": "0x0800C000", "size": 294540}, {"addr": "0x080A0000", "size": 49452}],
+      "sectors": [3, 4, 5, 6, 9],
+
+The first range is always the application at the board's base; every other range must lie inside one of the board's
+data regions (boards.py), which never include a codec sector or the bootloader.
 """
 import hashlib
 import json
@@ -54,8 +63,13 @@ def codec_conflicts(board, lo, hi):
     return [s.index for s in secs if s.overlaps(lo, hi)]
 
 
-def generate(board, image, version, git_full, features="", toolchain="", file_name=None):
-    """The manifest dict for a codec-less raw image linked at board.app_base."""
+def _data_ok(board, addr, size):
+    return any(lo <= addr and addr + size <= lo + n for lo, n in board.data_regions)
+
+
+def generate(board, image, version, git_full, features="", toolchain="", file_name=None, data=b""):
+    """The manifest dict for a codec-less raw image linked at board.app_base. data: the firmware's read-only data for
+    the board's data region (sector 9), appended to the image file as a second range."""
     lo, hi = board.app_base, board.app_base + len(image)
     if not image:
         raise ManifestError("empty image")
@@ -65,6 +79,16 @@ def generate(board, image, version, git_full, features="", toolchain="", file_na
     if hit:
         raise ManifestError("the image (0x%08X..0x%08X) reaches into codec sector(s) %s: the linker script must keep "
                             "the application out of them" % (lo, hi, hit))
+    rs = [(lo, len(image))]
+    if data:
+        if not board.data_regions:
+            raise ManifestError("the %s has no flash region for extra image data" % board.name)
+        dlo, dsize = board.data_regions[0]
+        if not _data_ok(board, dlo, len(data)):
+            raise ManifestError("the data (%d bytes) doesn't fit the data region 0x%08X+0x%X" % (len(data), dlo, dsize))
+        rs.append((dlo, len(data)))
+    whole = image + data
+    secs = sorted({s.index for a, n in rs for s in board.sectors_for(a, a + n)})
     return {
         "format": FORMAT,
         "board": board.id,
@@ -74,11 +98,11 @@ def generate(board, image, version, git_full, features="", toolchain="", file_na
         "git_full": git_full,
         "image": {
             "file": file_name or image_name(board.id, version),
-            "size": len(image),
-            "sha256": hashlib.sha256(image).hexdigest(),
+            "size": len(whole),
+            "sha256": hashlib.sha256(whole).hexdigest(),
         },
-        "ranges": [{"addr": _hex(lo), "size": len(image)}],
-        "sectors": [s.index for s in board.sectors_for(lo, hi)],
+        "ranges": [{"addr": _hex(a), "size": n} for a, n in rs],
+        "sectors": secs,
         "codec": {
             "included": False,
             "profile": board.codec.id,
@@ -141,6 +165,13 @@ def verify(manifest, image, board_id=None):
     rs = ranges(manifest)
     if not rs or sum(n for _, n in rs) != len(image):
         raise ManifestError("the manifest's ranges don't add up to the image size")
+    if rs[0][0] != board.app_base:
+        raise ManifestError("the first range starts at 0x%08X, not at the application base 0x%08X"
+                            % (rs[0][0], board.app_base))
+    for addr, n in rs[1:]:
+        if not _data_ok(board, addr, n):
+            raise ManifestError("range 0x%08X+0x%X is not inside a flash region the %s image may use for data"
+                                % (addr, n, board.name))
     for addr, n in rs:
         if addr < board.app_base or addr + n > board.flash_end:
             raise ManifestError("range 0x%08X+0x%X is outside the application flash" % (addr, n))
@@ -157,9 +188,10 @@ def verify(manifest, image, board_id=None):
     return board
 
 
-def for_dev_build(board, image, version="dev"):
-    """A manifest for a local build without one (odrflash flash build/dm1701/odr_dm1701.bin --board dm1701)."""
-    m = generate(board, image, version, "0" * 40)
+def for_dev_build(board, image, version="dev", data=b""):
+    """A manifest for a local build without one (odrflash flash build/dm1701/odr_dm1701.bin --board dm1701); data: the
+    build's sector 9 image (odr_dm1701_rodata2.bin) when it has one."""
+    m = generate(board, image, version, "0" * 40, data=data)
     m["git"] = "unknown"
     m["dev_build"] = True
     return m

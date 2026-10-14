@@ -16,6 +16,7 @@ against the table below before using it.
 """
 import argparse
 import hashlib
+import json
 import os
 import struct
 import sys
@@ -616,6 +617,24 @@ def main(argv=None):
         with open(args.image, "rb") as f:
             data = f.read()
         warnings = check_image(data, model)
+        man = os.path.splitext(args.image)[0] + ".json"
+        if os.path.exists(man):
+            # a release image packs more than one flash range (application + sector 9 data) into the one file; this tool
+            # writes it as one contiguous application, so it would put the data over sectors 3-6
+            try:
+                with open(man) as f:
+                    nranges = len(json.load(f).get("ranges", []))
+            except (OSError, ValueError):
+                nranges = 0
+            if nranges > 1:
+                raise DfuError("%s lists %d flash ranges (application and sector 9 data in one file); this tool writes "
+                               "one contiguous image. Use tools/odrflash" % (os.path.basename(man), nranges))
+        side = os.path.splitext(args.image)[0] + "_rodata2.bin"
+        if os.path.exists(side):
+            # a build with constant data in sector 9 (boards/dm1701/dm1701.ld): this tool writes one contiguous image,
+            # so give it the merged image (odr_dm1701_codec.bin) or use tools/odrflash, which writes both parts
+            warnings.append("%s exists: this build keeps its constant data in flash sector 9, which this image does "
+                            "not contain. Flash the merged *_codec.bin or use tools/odrflash" % os.path.basename(side))
         for w in warnings:
             print("warning: " + w, file=sys.stderr)
         print("image %s: %d bytes, 0x%08X..0x%08X, model %s, SHA-256 %s"

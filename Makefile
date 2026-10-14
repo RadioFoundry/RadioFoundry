@@ -149,6 +149,10 @@ endif
 endif
 # Sections copied into the .bin (one contiguous image from the start of the application)
 BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data
+# A board with a second flash region (the DM-1701's sector 9, boards/dm1701/dm1701.ld) lists its sections here: they go
+# to $(TARGET)_rodata2.bin, which starts at the region's first byte (docs/dev/release.md "Sector 9"). Empty: no second
+# image, and a stale one is removed
+BIN2_SECTIONS ?=
 
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
@@ -157,11 +161,11 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
 .PHONY: all codec clean size test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
-all: $(TARGET).bin codec
+all: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin) codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
-codec: $(TARGET).bin
-	@python3 tools/codec_auto.py --board $(BOARD) --image $<
+codec: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin)
+	@python3 tools/codec_auto.py --board $(BOARD) --image $(TARGET).bin $(if $(BIN2_SECTIONS),--image2 $(TARGET)_rodata2.bin)
 
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
@@ -198,6 +202,11 @@ $(TARGET).elf: $(OBJ) $(LDSCRIPT)
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN_SECTIONS)) $< $@
 	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(ODR_VERSION)"
+ifneq ($(BIN2_SECTIONS),)
+$(TARGET)_rodata2.bin: $(TARGET).elf
+	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN2_SECTIONS)) $< $@
+	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes (sector 9, written with the application)"
+endif
 
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)

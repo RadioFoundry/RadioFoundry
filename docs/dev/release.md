@@ -47,7 +47,7 @@ Not needed for a release; noted so they aren't lost.
 
 | File | What |
 |---|---|
-| `odr-<board>-<version>.bin` | The raw application image, exactly as `make BOARD=<board>` built it, linked for the board's application base. No codec |
+| `odr-<board>-<version>.bin` | The raw image `make BOARD=<board>` built, linked for the board's application base. No codec. The DM-1701 image is the application followed by its sector 9 data (below, "Sector 9") |
 | `odr-<board>-<version>.json` | Its manifest (below) |
 | `odrflash-<version>-<os>-<arch>[.exe]` | odrflash, one file per system: `linux-x86_64`, `macos-arm64`, `macos-x86_64`, `windows-x86_64` |
 | `SHA256SUMS` | SHA-256 of every file above |
@@ -76,8 +76,8 @@ The manifest (`format` `odr-release/1`, written and checked by `tools/odrflash/o
 }
 ```
 
-`ranges` says where each part of the `.bin` goes (one contiguous range today; a later image that also uses sector 9
-would list two). `sectors` are the flash sectors the image covers. `codec.profile` is the id the firmware reports for
+`ranges` says where each part of the `.bin` goes: the application at the board's base, and for the DM-1701 a second
+range, the sector 9 data (`{"addr": "0x080A0000", ...}`); `sectors` then reads `[3, 4, 5, 6, 9]`. `sectors` are the flash sectors the image covers. `codec.profile` is the id the firmware reports for
 a matching codec (`codec=` in the debug link's VERSION, [debuglink.md](../spec/debuglink.md) 3.1).
 
 ## Sector maps
@@ -87,9 +87,53 @@ hold the codec. Whether an update can leave the codec alone (keep) depends on th
 
 | Board | Application | Codec | Keep | Map |
 |---|---|---|---|---|
-| dm1701 | sectors 3-6 (336 KB) | sectors 7-8 (code) and 10-11 (tables), stock addresses | yes | [hardware-dm1701.md](../spec/hardware-dm1701.md) 1.4 |
+| dm1701 | sectors 3-6 (336 KB), and sector 9 (128 KB) for read-only data | sectors 7-8 (code) and 10-11 (tables), stock addresses | yes | [hardware-dm1701.md](../spec/hardware-dm1701.md) 1.4 |
 | md380 | 0x0800C000..0x08050C43 (281,668 B), into sector 6 | from 0x08050C44: shares sector 6 with the application | no | [hardware-md380.md](../spec/hardware-md380.md) 1.3 |
 | dm32 | 0x0300C000..0x030E8000 (880 KB) | slot 0x030E8000..0x03100000 | no: the updater erases the whole area | [hardware-dm32.md](../spec/hardware-dm32.md) 17 |
+
+## Sector 9
+
+The DM-1701 links all read-only data (string literals, fonts, tables: about 49 KB) into sector 9, `.rodata2` in
+`boards/dm1701/dm1701.ld`. The 336 KB of sectors 3-6 are then free for code. The linker's `FLASH` and `FLASH2` lines
+show both regions (`make BOARD=dm1701`, and the "Sector 9" column of `tools/ci.sh`'s size report).
+
+| Part | File | Written to | Made by |
+|---|---|---|---|
+| Application | `odr_dm1701.bin` | sectors 3-6, from 0x0800C000 | `make` (`BIN_SECTIONS`) |
+| Data | `odr_dm1701_rodata2.bin` | sector 9, from 0x080A0000 | `make` (`BIN2_SECTIONS`, `board.mk`) |
+| Both, in a release | `odr-dm1701-<version>.bin` + manifest | two ranges, `sectors` 3-6 and 9 | `tools/release.py` |
+| Both, with the codec | `odr_dm1701_codec.bin` | one contiguous image from 0x0800C000 | `tools/codec_auto.py`, `odrflash merge` |
+
+A release is one file because the manifest's `ranges` already cut one file into parts: the application's bytes, then
+the data's. The alternative, one `.bin` padded from 0x0800C000 through sector 9, would carry 256 KB of 0xFF over the
+codec sectors 7 and 8, and so could not leave the codec in place (keep mode).
+
+What each tool does:
+
+| Tool | Behavior |
+|---|---|
+| `make BOARD=dm1701` | writes both files. `BIN2_SECTIONS` is empty on every other board, which then build exactly as before |
+| `tools/release.py` | packs `odr_<board>_rodata2.bin` after the application. A board with a data region and no such file is refused (`--no-rodata2` releases the application alone, for a build that links nothing there) |
+| `odrflash flash` | a release image with its manifest: the plan erases and writes sectors 3-6 and 9 (keep) and never 7, 8, 10, 11 or the bootloader. A local build: `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701` also reads `odr_dm1701_rodata2.bin` next to it, and warns when it isn't there |
+| `odrflash merge`, the build's `_codec.bin` | the data goes in at 0x080A0000 with the codec windows at theirs |
+| `tools/stm32_dfu.py` | writes one contiguous image: it warns about an application with a `_rodata2.bin` next to it, and takes the merged `_codec.bin` |
+| web flasher | the same manifest ranges (`site/static/js/flasher`), checked the same way |
+
+The checks are the same in `odrflash/manifest.py` (`verify`), `odrflash/plan.py` (`make_plan`) and the web flasher's
+ports: the first range starts at the application base, every other range lies wholly inside a data region of the board
+(DM-1701: 0x080A0000, 128 KB), nothing touches a codec sector or the bootloader, and a board without a data region takes
+no second range.
+
+**What an interrupted update leaves.** All erases come first, then the writes in address order, so sector 3 (the vector
+table) is the first one written back: an update cut off before that leaves the bootloader in DFU. Cut off later, the
+radio may boot half an application, or one whose data in sector 9 is missing: garbled text or a crash, never a brick.
+Enter the bootloader by hand (PTT and SK1 at power on) and flash again.
+
+**Checked on a radio (2026-10-14).** A DM-1701 flashed from a local build with `odrflash flash --stock FILE --codec keep`:
+the plan listed sectors 3-6 and 9 and kept 7, 8, 10 and 11, the bootloader accepted the sector 9 erase and write, the
+radio booted with readable text, reported `codec=` as before and "DMR voice is ready", and the radio-only HIL group
+passed (61 passed; the one failure is the git version check, which can't match a build from a source archive). The
+other flashers (`stm32_dfu.py`, the web flasher) have not flashed a radio with sector 9 data.
 
 ## Codec handling
 
@@ -117,7 +161,7 @@ works, DMR calls show "No codec: voice off", and the debug link reports `codec=a
 **Merge.** The user supplies the stock firmware file (`--stock`). odrflash checks it by SHA-256 against the codec
 profile, decrypts the two windows, checks their SHA-256 and the signature (`odrflash/stockfw.py`, the same library
 `tools/codec_extract.py` uses), and writes them at their stock addresses: sectors 3-6, 7, 8, 10 and 11 are erased and
-written, sector 9 isn't touched. The merged codec exists only in memory on the user's machine and in the radio.
+written, and so is sector 9 with the firmware's data. The merged codec exists only in memory on the user's machine and in the radio.
 
 **Downloading the stock file for the user (not implemented).** The supported V02.06 CSV file is not on a Baofeng or
 dealer URL; the known copy is a third-party archive (BG7QVB's GitHub repository). Radioddity's public bucket has

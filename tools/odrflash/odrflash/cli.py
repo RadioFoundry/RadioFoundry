@@ -135,24 +135,40 @@ def load_image(args, board_hint):
     except stockfw.StockError as e:
         raise UsageError("%s: %s" % (img_path, e))
     if merged:
-        app, prof, codec = merged
+        app, prof, codec, data = merged
         board = boards.get(prof["board"])
         if board_hint and boards.get(board_hint).id != board.id:
             raise UsageError("%s holds the %s codec, but --board says %s: refusing"
                              % (img_path, board.name, boards.get(board_hint).name))
-        m = mf.for_dev_build(board, app)
-        mf.verify(m, app, board.id)
+        blob = b"".join(d for _, d in data)	# the board's data region is one range (boards.py)
+        m = mf.for_dev_build(board, app, data=blob)
+        whole = app + blob
+        mf.verify(m, whole, board.id)
         say("image    %s: a %s image with the codec merged in (%s, every window verified by SHA-256), "
-            "application %d bytes" % (os.path.basename(img_path), board.name, prof["codec_profile"], len(app)))
-        return board, m, app, (prof, codec)
+            "application %d bytes%s" % (os.path.basename(img_path), board.name, prof["codec_profile"], len(app),
+                                        ", sector 9 data %d bytes" % len(blob) if blob else ""))
+        return board, m, whole, (prof, codec)
     if not board_hint:
         raise UsageError("no manifest %s next to the image. Release images come with one; for a local build say "
                          "which radio it is for with --board dm1701" % man_path)
     board = boards.get(board_hint)
-    m = mf.for_dev_build(board, image)
-    mf.verify(m, image, board.id)
+    # A build with data in a second flash region (the DM-1701's sector 9) writes it next to the image as
+    # <image>_rodata2.bin; the radio needs both
+    data = b""
+    side = os.path.splitext(os.path.expanduser(img_path))[0] + "_rodata2.bin"
+    if board.data_regions and os.path.exists(side):
+        with open(side, "rb") as f:
+            data = f.read()
+        say("image    %s: %d bytes for sector 9 (0x%08X), written with the application"
+            % (os.path.basename(side), len(data), board.data_regions[0][0]))
+    m = mf.for_dev_build(board, image, data=data)
+    whole = image + data
+    mf.verify(m, whole, board.id)
     warn("no manifest: treating %s as a local %s build (nothing to verify it against)" % (img_path, board.name))
-    return board, m, image, None
+    if board.data_regions and not data:
+        warn("no %s next to the image: the %s build links its constant data into sector 9 and writes it there; without "
+             "it the radio would run with whatever sector 9 holds" % (os.path.basename(side), board.name))
+    return board, m, whole, None
 
 
 def load_stock(args):
@@ -610,9 +626,25 @@ def cmd_merge(args):
     with open(os.path.expanduser(args.stock), "rb") as f:
         stock = f.read()
     key = dfumod.load_key(args.key, board) if args.key else dfumod.check_key(stockfw.derive_key(stock), board)
+    # A release image packs the application and its sector 9 data, described by the manifest next to it; a local build
+    # writes the data as <image>_rodata2.bin (--rodata2 names another). docs/dev/release.md "Sector 9"
+    data = []
+    man_path = os.path.splitext(os.path.expanduser(args.image))[0] + ".json"
+    if not args.rodata2 and os.path.exists(man_path):
+        m = mf.load(man_path)
+        mf.verify(m, image, board.id)
+        segs = mf.segments(m, image)
+        image, data = segs[0][1], segs[1:]
+    else:
+        side = args.rodata2 or os.path.splitext(os.path.expanduser(args.image))[0] + "_rodata2.bin"
+        if args.rodata2 and not os.path.exists(os.path.expanduser(side)):
+            raise UsageError("%s doesn't exist" % args.rodata2)
+        if board.data_regions and os.path.exists(os.path.expanduser(side)):
+            with open(os.path.expanduser(side), "rb") as f:
+                data = [(board.data_regions[0][0], f.read())]
     try:
-        prof, code, tables = stockfw.extract(stock, key)
-        merged = stockfw.merge(image, prof, code, tables)
+        prof, segs = stockfw.extract(stock, key)
+        merged = stockfw.merge(image, prof, segs, data)
     except stockfw.StockError as e:
         raise UsageError(str(e))
     with open(args.output, "wb") as f:
@@ -688,6 +720,7 @@ def build_parser():
     m.add_argument("--key")
     m.add_argument("-o", "--output", required=True)
     m.add_argument("--board")
+    m.add_argument("--rodata2", help="the build's sector 9 image (default: <image>_rodata2.bin next to the image)")
     m.set_defaults(fn=cmd_merge)
 
     g = sub.add_parser("download", help="download a release image and manifest, verified")

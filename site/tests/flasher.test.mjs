@@ -69,6 +69,22 @@ test("keep and merge plans match plan.py", async () => {
 	assert.throws(() => makePlan(board, [[0x08074000, image]], KEEP), PlanError);
 });
 
+test("sector 9 data: the two-range manifest verifies and the keep plan matches plan.py", async () => {
+	const whole = new Uint8Array(readFileSync(join(DIR, "image9.bin")));
+	assert.deepEqual(fx.manifest9.sectors, [3, 4, 5, 9]);
+	assert.equal((await verify(fx.manifest9, whole, fb)).id, "dm1701");
+	const segs = segments(fx.manifest9, whole);
+	assert.deepEqual(makePlan(board, segs, KEEP).describe(), fx.keep9);
+	for (const addr of ["0x08060000", "0x08090000", "0x080C0000", "0x0800F000"]) {
+		const bad = JSON.parse(JSON.stringify(fx.manifest9));
+		bad.ranges[1].addr = addr;
+		await assert.rejects(verify(bad, whole, fb), ManifestError, addr);
+	}
+	for (const addr of [0x08060000, 0x08090000, 0x080C0000, 0x0800F000]) {
+		assert.throws(() => makePlan(board, [segs[0], [addr, segs[1][1]]], KEEP), PlanError, String(addr));
+	}
+});
+
 test("manifest from odrflash verifies; tampering is refused", async () => {
 	assert.equal((await verify(fx.manifest, image, fb)).id, "dm1701");
 	await assert.rejects(verify(fx.manifest, image, fb, "md380"), ManifestError);

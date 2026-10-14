@@ -56,6 +56,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--board", required=True)
     ap.add_argument("--image", required=True, help="the built image")
+    ap.add_argument("--image2", help="the build's second image (sector 9 data), merged in at its address")
     ap.add_argument("--dir", default=os.path.join(ROOT, "codecs"), help="where to look (default: codecs/)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     args = ap.parse_args()
@@ -76,6 +77,8 @@ def main():
     cmd = [sys.executable, os.path.join(TOOLS, tool + ".py"), "--stock", stock, "--image", args.image, "-o", out]
     if tool == "codec_extract":
         cmd += ["--board", args.board]
+        if args.image2:
+            cmd += ["--image2", args.image2]
     key = find_key(args.dir, args.board)
     if key:
         cmd += ["--key", key]

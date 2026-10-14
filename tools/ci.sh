@@ -213,7 +213,7 @@ build() {
 	if ! make BOARD="$b" BUILD="$dir" -j"$JOBS" "$@" > "$log" 2>&1; then
 		grep -E 'error|undefined' "$log" | head -10
 		bad "$b $name: build failed ($*; see $log)"
-		echo "| $b | $name | build failed | | | |" >> "$REPORT"
+		echo "| $b | $name | build failed | | | | |" >> "$REPORT"
 		return
 	fi
 	if grep -qi 'warning:' "$log"; then
@@ -233,14 +233,17 @@ build() {
 		# the app region's fit: the linker fails on an overflow; this catches a log it couldn't be read from
 		[ -n "$size" ] && [ -n "$used" ] && bad "$b $name: $used bytes used in a $size byte app region"
 	fi
+	# a board with a second flash region (the DM-1701's sector 9, FLASH2 in its linker script): the bytes in it
+	set -- $(grep -E '^ *FLASH2:' "$log" | head -1)
+	if [ -n "${2:-}" ]; then s9=$(tobytes "${2:-}" "${3:-}"); else s9="-"; fi
 	delta=""
 	if [ "$name" = default ]; then
 		default_bytes=$bytes
 	elif [ -n "${default_bytes:-}" ]; then
 		delta=$((bytes - default_bytes))
 	fi
-	echo "| $b | $name | $bytes | $delta | $free | $pct % |" >> "$REPORT"
-	ok "$b $name: $bytes bytes, $free bytes free in the app region"
+	echo "| $b | $name | $bytes | $delta | $free | $pct % | $s9 |" >> "$REPORT"
+	ok "$b $name: $bytes bytes, $free bytes free in the app region$( [ "$s9" != - ] && echo ", $s9 bytes in sector 9")"
 	if [ "${ODR_CI_PRUNE:-0}" = 1 ]; then
 		cp "$bin" "$dir.bin" && rm -rf "$dir"
 	fi
@@ -251,10 +254,11 @@ if step firmware; then
 	echo "# Image sizes ($(git rev-parse --short=8 HEAD 2>/dev/null), $(date '+%Y-%m-%d %H:%M'))"
 	echo
 	echo "Bytes of the .bin; delta against the board's default; free = the linker's app FLASH region minus used (the"
-	echo "codec windows are outside that region)."
+	echo "codec windows are outside that region); sector 9 = bytes in the linker's FLASH2 region (the DM-1701's constant"
+	echo "data, a second image written with the application)."
 	echo
-	echo "| Board | Config | Image bytes | Delta | Free | Used |"
-	echo "|---|---|---|---|---|---|"
+	echo "| Board | Config | Image bytes | Delta | Free | Used | Sector 9 |"
+	echo "|---|---|---|---|---|---|---|"
 } > "$REPORT"
 
 for bm in boards/*/board.mk boards/*/; do

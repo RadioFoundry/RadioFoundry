@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-# DM-1701 feature defaults (config/features.mk lists them all). 336 KB of code space: flash sectors 3-6, the
-# codec sectors 7, 8, 10 and 11 are never linked into (dm1701.ld).
+# DM-1701 feature defaults (config/features.mk lists them all). 336 KB of code space: flash sectors 3-6, and the
+# read-only data (about 49 KB) in sector 9; the codec sectors 7, 8, 10 and 11 are never linked into (dm1701.ld).
 # 160x120 display
 CONFIG_FONT_XL ?= n
 # Safe area: the lens hides about 5 px left and right (bench, 2026-10-09). Top and bottom are 0: the 5 px there were
@@ -10,15 +10,15 @@ CONFIG_DISPLAY_INSET ?= 5
 CONFIG_DISPLAY_INSET_TOP ?= 0
 CONFIG_DISPLAY_INSET_BOTTOM ?= 0
 # APRS receive takes the HR_C6000's FM receive audio from the I2S stream (docs/spec/aprs.md 5.3). The iGate (RF to
-# APRS-IS through tools/aprs_gate.py, 1.9 KB) doesn't fit next to it until sector 9 holds something (dm1701.ld)
+# APRS-IS through tools/aprs_gate.py, 1.9 KB) is off by default; it fits since sector 9 holds the read-only data
 CONFIG_APRS_IGATE ?= n
 # Link time optimization on our sources (about 17 KB smaller): the default image no longer fits without it since USRP
-# (CONFIG_NET_USRP, 2026-10-13). LTO=0 builds the plain way (and then needs features off). The free sector 9 (FLASH2,
-# dm1701.ld) is the other way to make room, once the packaging and flashing tools write it
+# (CONFIG_NET_USRP, 2026-10-13). LTO=0 builds the plain way (and then needs features off). Sector 9 (FLASH2,
+# dm1701.ld) takes the read-only data, so the code area has room again
 LTO ?= 1
 MAXIMAL_VARS := LTO=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
-# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate doesn't fit (above)
+# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above)
 MAXIMAL_SKIP := NET_PPP APRS_IGATE
 # No use on a 160x120 panel (the 16x32 font is for 240 px and wider), and no hardware for the air band (the AT1846S is
 # FM only) or a broadcast receiver (docs/spec/airband-and-broadcast.md), so the maximal configuration leaves them off

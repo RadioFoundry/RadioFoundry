@@ -24,6 +24,8 @@ odrflash flash --release latest                         newest release, download
 odrflash flash --release v0.1.0 --dry-run               show exactly which sectors would be erased and written
 odrflash flash odr-dm1701-v0.1.0.bin                    a downloaded image (its .json manifest next to it)
 odrflash flash odr_dm1701_codec.bin                     an image with the codec already merged in (see below)
+odrflash flash build/dm1701/odr_dm1701.bin --board dm1701   a local build; its odr_dm1701_rodata2.bin (sector 9) is
+                                                        written with it
 odrflash flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
                                                         also write the codec from the stock firmware file
 odrflash probe                                          radio running ODR: can its codec be kept?
@@ -52,7 +54,12 @@ An image with the codec already merged in (`odrflash merge`, or the `_codec.bin`
 in `codecs/`) needs no manifest or `--board`, and `--stock` only for the bootloader key: odrflash checks every codec
 window against the supported stock files by SHA-256, which also names the radio, requires 0xFF everywhere else past the
 application, and flashes it in merge mode with the codec from the image. `--codec keep` writes only its application
-part.
+and sector 9 parts.
+
+**Sector 9 (DM-1701).** The firmware's read-only data lives in flash sector 9, so a DM-1701 image has two ranges: the
+application (sectors 3-6) and the data (sector 9). A release's manifest lists both, and `flash` erases and writes
+sectors 3-6 and 9 and never 7, 8, 10, 11 or the bootloader. For a local build it reads `odr_dm1701_rodata2.bin` next to
+the image. [release.md](../../docs/dev/release.md#sector-9) has the details.
 
 The stock file is Baofeng's `DM-1701(CSV)-V02.06.bin` (sha256 `0314efd4...`); an archive is at
 github.com/daniel5600/BAOFENG-DM1701-Original-Firmware. odrflash checks it by SHA-256 and refuses other files as a

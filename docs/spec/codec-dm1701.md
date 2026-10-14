@@ -125,7 +125,7 @@ no copy and no patching.
   | code window | 7, 8 | 0x08060000..0x0809FFFF |
   | table window | 10, 11 | 0x080C0000..0x080FFFFF |
   | application | 3-6 | 0x0800C000..0x0805FFFF (336 KB) |
-  | free | 9 | 0x080A0000..0x080BFFFF (128 KB) |
+  | ODR read-only data | 9 | 0x080A0000..0x080BFFFF (128 KB) |
 
   A firmware update then erases and writes only sectors 3-6 and leaves the
   codec in place (hardware-dm1701.md 1.4, docs/dev/release.md "Codec handling"). Reserving only the windows would leave

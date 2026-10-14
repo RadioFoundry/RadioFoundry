@@ -38,10 +38,15 @@ def main(out):
 	keep = plan.make_plan(board, [(board.app_base, image)], plan.KEEP)
 	merge = plan.make_plan(board, [(board.app_base, image)], plan.MERGE, stockfw.codec_segments(prof, codec))
 	m = manifest.generate(board, image, "v0.0.0-test", "ab" * 20, features="FM,DMR")
+	data = bytes(rng.getrandbits(8) for _ in range(20 * 1024 + 7))	# the build's sector 9 image
+	keep9 = plan.make_plan(board, [(board.app_base, image), (0x080A0000, data)], plan.KEEP)
+	m9 = manifest.generate(board, image, "v0.0.0-test", "ab" * 20, features="FM,DMR", data=data)
 	with open(os.path.join(out, "stock.bin"), "wb") as f:
 		f.write(stock)
 	with open(os.path.join(out, "image.bin"), "wb") as f:
 		f.write(image)
+	with open(os.path.join(out, "image9.bin"), "wb") as f:
+		f.write(image + data)
 	doc = {
 		"key": key.hex(),
 		"stock_sha256": sha,
@@ -51,6 +56,8 @@ def main(out):
 		"keep": keep.describe(),
 		"merge": merge.describe(),
 		"manifest": m,
+		"keep9": keep9.describe(),
+		"manifest9": m9,
 	}
 	for k in ("code", "tables", "extra"):
 		doc["profile"].pop(k, None)

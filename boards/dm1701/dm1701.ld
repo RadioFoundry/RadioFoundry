@@ -7,8 +7,10 @@
  * Whole flash sectors, not just the windows, are kept free of our code, so the flashing tool can update the firmware
  * without erasing the codec (docs/spec/hardware-dm1701.md 1.4): the code window spans sectors 7 and 8
  * (0x08060000..0x0809FFFF), the table window sectors 10 and 11 (0x080C0000..0x080FFFFF). The application gets
- * sectors 3-6 (0x0800C000..0x0805FFFF, 336 KB); sector 9 (0x080A0000..0x080BFFFF, 128 KB) is free and reserved as
- * FLASH2 for large constant data. Never link into sectors 7, 8, 10 or 11. */
+ * sectors 3-6 (0x0800C000..0x0805FFFF, 336 KB). Sector 9 (0x080A0000..0x080BFFFF, 128 KB) is FLASH2 and holds all
+ * read-only data (.rodata2, below), which frees that much of the 336 KB for code. The build writes it as a second
+ * image, odr_dm1701_rodata2.bin, and the release tools and odrflash write it together with the application
+ * (docs/dev/release.md "Sector 9"). Never link into sectors 7, 8, 10 or 11. */
 
 ENTRY(Reset_Handler)
 
@@ -37,10 +39,10 @@ SECTIONS
 		_etext = .;
 	} >FLASH
 
-	.rodata : { . = ALIGN(4); *(.rodata) *(.rodata*) . = ALIGN(4); } >FLASH
-
-	/* Large constant data (fonts, tables) may be placed in sector 9, between the codec sectors */
-	.rodata2 : { . = ALIGN(4); *(.rodata2) *(.rodata2*) . = ALIGN(4); } >FLASH2
+	/* All constant data (fonts, tables, string literals) lives in sector 9, between the codec sectors. Flash is memory
+	 * mapped, so a read from it costs the same as one from sectors 3-6 and nothing needs a copy. The firmware never
+	 * erases or programs internal flash, so nothing can write sector 9 while it is read */
+	.rodata2 : { . = ALIGN(4); *(.rodata2) *(.rodata2.*) *(.rodata) *(.rodata.*) . = ALIGN(4); } >FLASH2
 
 	.ARM.extab : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH
 	.ARM : { __exidx_start = .; *(.ARM.exidx*) __exidx_end = .; } >FLASH
@@ -89,9 +91,8 @@ SECTIONS
 	/DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }
 	.ARM.attributes 0 : { *(.ARM.attributes) }
 
-	/* The .bin is one contiguous stream from 0x0800C000; data in sector 9 would need the release tooling and the
-	 * flasher to write a second range (they can: image ranges in the manifest), so keep it empty until it's needed */
-	ASSERT(SIZEOF(.rodata2) == 0, ".rodata2 is not packed into the image yet")
+	/* The application .bin holds what is loaded into FLASH, the _rodata2.bin what is loaded into FLASH2 (Makefile) */
+	ASSERT(SIZEOF(.rodata2) <= LENGTH(FLASH2), "constant data does not fit sector 9")
 	/* Belt and braces for the sector rule above: everything loaded into flash ends before sector 7 */
 	ASSERT(_sidata + SIZEOF(.data) <= 0x08060000, "the image reaches into codec sector 7 (0x08060000)")
 }

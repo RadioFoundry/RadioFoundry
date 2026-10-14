@@ -121,10 +121,17 @@ def make_plan(board, segments, mode, codec_segments=()):
                             "keeps the codec windows free" % (addr, addr + len(data), win[0][0], win[0][1]))
         hit = sorted(s.index for s in codec_secs if s.overlaps(addr, addr + len(data)))
         # A board whose codec shares a sector with the application (the MD-380: the code window starts inside sector
-        # 6) can only be flashed in merge mode: that sector is erased and gets both
-        if hit and mode == KEEP:
+        # 6) can only be flashed in merge mode: that sector is erased and gets both. On a board that keeps the codec
+        # across updates the firmware never takes part of a codec sector, in either mode
+        if hit and (mode == KEEP or board.keep_codec_supported):
             raise PlanError("the firmware image reaches into codec sector(s) %s (0x%08X..0x%08X); a release image "
                             "never does (the linker keeps the codec sectors free)" % (hit, addr, addr + len(data)))
+        # The application starts at the base; anything else of the firmware goes only where the board has a data
+        # region (the DM-1701's sector 9), never into the flash between
+        if addr != board.app_base and not any(lo <= addr and addr + len(data) <= lo + n
+                                              for lo, n in board.data_regions):
+            raise PlanError("firmware data at 0x%08X..0x%08X is neither the application (from 0x%08X) nor inside a "
+                            "data region of the %s" % (addr, addr + len(data), board.app_base, board.name))
     if mode == KEEP and codec_segments:
         raise PlanError("codec data given in keep mode")
     if mode == MERGE:
