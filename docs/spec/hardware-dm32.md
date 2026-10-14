@@ -787,7 +787,7 @@ Values written at init by the port (KP); field meanings from DS:
 | 0x0F | CR_ADC | 0x20 | soft mute off, left only, ADC on; bit 7 = 1 mutes the mic |
 | 0x12 | CR_VIC | 0x0C | codec active (not sleep, not powered down) |
 | 0x13 | CR_CK | 0x40 | MCLK / 2, 24 MHz |
-| 0x1F | GCR_DACL | 0x87 | left shared, −7 dB (bits 5:0: 0..31 = 0..−31 dB, 63..32 = +1..+32 dB) |
+| 0x1F | GCR_DACL | 0x80 | left shared, 0 dB (bits 5:0: 0..31 = 0..−31 dB, 63..32 = +1..+32 dB). 0x87 (−7 dB) was quiet on FM receive; the scale direction checked on ODR at bring-up (2026-10-14) |
 | 0x23 | GCR_MIC1 | 0x00 | 0 dB |
 | 0x25 | GCR_ADCL | 0x8B | shared, +11 dB (bits 5:0 = 0..42 dB). Mic gain settings for FM and DMR are written here with bit 7 set |
 | 0x2B | CR_DAC_AGC | 0x00 | DAC AGC off |

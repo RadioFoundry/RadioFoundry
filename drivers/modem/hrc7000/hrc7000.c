@@ -60,7 +60,7 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_codec_wr(d, C7_CODEC_CR_ADC, 0x20);
 	hrc7000_codec_wr(d, C7_CODEC_CR_VIC, 0x0C);
 	hrc7000_codec_wr(d, C7_CODEC_CR_CK, 0x40);
-	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, 0x87);
+	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, C7_GCR_DACL_0DB);
 	hrc7000_codec_wr(d, C7_CODEC_GCR_MIC1, 0x00);
 	hrc7000_codec_wr(d, C7_CODEC_GCR_ADCL, 0x8B);
 	hrc7000_codec_wr(d, C7_CODEC_CR_DAC_AGC, 0x00);
@@ -146,7 +146,7 @@ void hrc7000_fm_rx(hrc7000_t *d, bool wide)
 	hrc7000_wr(d, C7_FM_DEV_COEF, wide ? 0x40A20 : 0x40A25);
 	hrc7000_wr(d, C7_FM_PTT, 0);
 	hrc7000_audio_bits(d, C7_AUDIO_FM_PLAY, C7_AUDIO_PCM_MIC);
-	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, 0x87);
+	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, C7_GCR_DACL_0DB);
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 }
 
