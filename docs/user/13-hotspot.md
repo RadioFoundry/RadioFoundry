@@ -72,7 +72,7 @@ The hotspot screen shows:
 - the frequency, the color code and the power;
 - the current or last call, with its source ("RF" or "Net"), the caller and the talkgroup.
 
-**OK**, **5** (Tools), **3** (Hotspot) shows how to start hotspot mode. While it runs, the page has a "Stop hotspot"
+**OK**, **6** (Tools), **3** (Hotspot) shows how to start hotspot mode. While it runs, the page has a "Stop hotspot"
 row.
 
 ## While in hotspot mode

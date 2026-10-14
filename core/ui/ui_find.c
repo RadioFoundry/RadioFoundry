@@ -24,8 +24,8 @@ static const struct {
 	uint8_t scr;
 } places[] = {
 	{ "Contacts", NULL, SCR_CONTACTS }, { "Messages", NULL, SCR_MESSAGES }, { "Recent", NULL, SCR_RECENT },
-	{ "Channels", NULL, SCR_CHANNELS }, { "Tools", NULL, SCR_TOOLS }, { "Settings", NULL, SCR_SETTINGS },
-	{ "VFO", NULL, SCR_CHANNELS },
+	{ "Channels", NULL, SCR_ZONES }, { "Tools", NULL, SCR_TOOLS }, { "Settings", NULL, SCR_SETTINGS },
+	{ "VFO", NULL, SCR_ZONES },
 #if CONFIG_DMR_ROAMING
 	{ "Roaming", "roam site survey beacon interval length wake probe lock", SCR_ROAM },
 #endif

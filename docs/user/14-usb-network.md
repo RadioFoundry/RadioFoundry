@@ -11,7 +11,7 @@ this build" in **Tools > USB network**.
 ## Switching the radio to network mode
 
 The radio starts as a USB serial port unless **USB network at start** is on (below). To switch it, open **Tools > USB
-network** (**OK**, **5**, **4**). The page says which mode USB is in and what changes. Focus "Switch USB to network"
+network** (**OK**, **6**, **4**). The page says which mode USB is in and what changes. Focus "Switch USB to network"
 and press **OK**. The radio says "USB is a network adapter now" and returns to Home. While USB is a network adapter,
 qdmr, hotspot hosts and the debug link over serial don't reach the radio.
 

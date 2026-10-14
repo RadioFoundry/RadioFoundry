@@ -209,7 +209,7 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
-To set the key on the radio, open **Settings > Privacy** (**OK**, **6**, **4**).
+To set the key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 
 1. On **Key type**, press **OK** until it shows Motorola or Anytone.
 2. On **Key**, press **OK**. Type the key in decimal with the number keys (Motorola 1 to 255, Anytone 0 to 65535).

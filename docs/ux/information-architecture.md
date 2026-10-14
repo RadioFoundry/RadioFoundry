@@ -110,11 +110,12 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 | 1 | **Contacts** | Search field on top. Tabs (or filter chips): Talkgroups, People, Listen lists. Item actions: Talk to, Private call, Message, Radio check, Call alert, Request position, Add to speed dial, Edit |
 | 2 | **Messages** | Inbox (unread first), New message, Canned messages, Sent, Drafts |
 | 3 | **Recent** | Everyone heard and every call made, newest first, filters: All / Calls to me / Missed / Talkgroups. Item actions are the same as Contacts, plus "Save as contact" and "Show position" |
-| 4 | **Channels** | Zone picker, current zone's channels, VFO, Scan lists, Edit channel, New channel from current settings |
-| 5 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
-| 6 | **Settings** | Grouped by intent (below), with search |
+| 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists |
+| 5 | **Channels** | Every channel by number; a channel's settings (read only today; Edit channel, New channel from current settings later) |
+| 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
+| 7 | **Settings** | Grouped by intent (below), with search |
 
-Contacts, Recent and Messages are the "people" side, Channels and Tools the "radio" side, Settings the preferences. Nothing operational lives only in Settings (P1).
+Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools the "radio" side, Settings the preferences. Nothing operational lives only in Settings (P1).
 
 ---
 
@@ -265,7 +266,7 @@ Mobile-specific: while driving, the "driving" profile (Settings > Display, or au
 | Find | digits on Home | 1 |
 | Caller actions | `CONTEXT` | 1 |
 | Hub | `SELECT` | 1 |
-| Contacts / Messages / Recent / Channels / Tools / Settings | Hub | 2 |
+| Contacts / Messages / Recent / Zones / Channels / Tools / Settings | Hub | 2 |
 | Item actions (contact, message, channel) | from a list | 3 |
 | Message composer | Contacts/Recent/Messages actions | 3 |
 | Settings group / setting | Settings | 3 (setting editors are inline, not a fourth level) |

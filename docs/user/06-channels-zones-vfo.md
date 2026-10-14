@@ -12,7 +12,7 @@ qdmr](15-programming-qdmr.md)).
 - Type the channel's position on Home and press **OK**. For example, **1**, **2**, **OK** goes to channel 12 of the
   zone.
 - Type letters of the channel's name on Home (see [Find](04-keys-and-navigation.md#find)) and press **OK** on it.
-- Press **OK**, **4** (Channels), focus the zone and press **#**. The zone's channels open. Focus one and press **OK**.
+- Press **OK**, **4** (Zones), focus the zone and press **#**. The zone's channels open. Focus one and press **OK**.
 
 <img src="../ux/screens/160x120i5/zone_channels.png" width="200" alt="A zone's channels">
 
@@ -22,13 +22,32 @@ Changing the channel ends temporary changes, the reply window, digital monitor a
 
 - Press **Next zone** or **Previous zone** ([Key roles](23-radios.md#key-roles) shows which keys these are on your
   radio). The radio shows "Zone:" and the name.
-- Or press **OK**, **4** (Channels). The list opens with the current zone focused ("here"). Focus another zone and press
+- Or press **OK**, **4** (Zones). The list opens with the current zone focused ("here"). Focus another zone and press
   **OK**. The radio switches to it and returns to Home.
 - Or type the zone's name on Home. Find lists zones too.
 
-<img src="../ux/screens/160x120i5/channels.png" width="200" alt="Channels: the VFO and the zones">
+<img src="../ux/screens/160x120i5/zones.png" width="200" alt="Zones: the VFO and the zones">
 
-The Channels list shows the VFO first, then every zone with its number of channels. Type letters to filter it.
+The Zones list shows the VFO first, then every zone with its number of channels. Type letters to filter it.
+
+## Every channel
+
+**OK**, **5** (Channels) lists every channel in the codeplug by number and name, whichever zones hold it. Each
+row ends with the RX frequency and the talkgroup (DMR) or FM. A long name stays whole and the row shortens the rest:
+"TG" goes first, then the frequency. Builds
+without it (the DM-1701 and MD-380 by default, for flash room) say "Channels: not in this build". The channel
+you are on is marked. Type letters to filter the list.
+
+<img src="../ux/screens/160x120i5/channels.png" width="200" alt="Channels: every channel by number">
+
+- **OK** on a channel shows its settings: mode, RX and TX frequency with the offset, power, bandwidth and tones (FM),
+  color code, timeslot, TX contact and RX group list (DMR), TX time-out, scan, and the zones that hold it. The page is
+  read only. Change a channel in the codeplug ([Programming with qdmr](15-programming-qdmr.md)) or save quick settings
+  changes (below).
+- **OK** on that page, or **#** in the list, goes to the channel: in the current zone if it holds it, otherwise in the
+  first zone that does. A channel in no zone says "Not in any zone".
+
+<img src="../ux/screens/160x120i5/channel.png" width="200" alt="A channel's settings">
 
 ## Saving changes to a channel
 
@@ -42,7 +61,7 @@ A save that fails shows "Couldn't save: ..." and the change stays for now only.
 
 The VFO is FM only. A DMR VFO isn't built yet.
 
-1. **OK**, **4** (Channels). The VFO is the first row.
+1. **OK**, **4** (Zones). The VFO is the first row.
 2. Press **OK**. Home shows the frequency large, and the radio says "VFO: type a frequency".
 
 <img src="../ux/screens/160x120i5/home_vfo.png" width="200" alt="Home in the VFO">

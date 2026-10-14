@@ -40,6 +40,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | VFO (hand-tuned frequency) | `VFO` | 520 | 464 | ● | ● | ● |  |
 | FM VFO | `VFO_FM` | 504 | 452 | ● | ● | ● |  |
 | DMR VFO (ID, color code, slot, talk target typed in) | `VFO_DMR` | 8 | 8 | ● | ● | ● | Switch exists; the feature isn't built yet |
+| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | — | — | ● | ○ | ● | About 1.9 KB on the MD-380. MD-380: off for flash (hub 5 says "not in this build") |
 | Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — | ● | ● | ● |  |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 | ● | ● | ● |  |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 | ● | ● | ● |  |

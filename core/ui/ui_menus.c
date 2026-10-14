@@ -30,14 +30,14 @@ static void item_num(ui_item_t *it, uint16_t n)
 
 // ======================= Hub =======================
 
-enum { HUB_LAST_CALLER, HUB_CONTACTS, HUB_MESSAGES, HUB_RECENT, HUB_CHANNELS, HUB_TOOLS, HUB_SETTINGS };
+enum { HUB_LAST_CALLER, HUB_CONTACTS, HUB_MESSAGES, HUB_RECENT, HUB_ZONES, HUB_CHANNELS, HUB_TOOLS, HUB_SETTINGS };
 
 static bool hub_has_last(void)
 {
 	return !ui_has_action(ACT_CONTEXT);	// few-key boards: "Last caller" stands in for CONTEXT (7.5)
 }
 
-static uint16_t hub_count(void) { return hub_has_last() ? 7 : 6; }
+static uint16_t hub_count(void) { return hub_has_last() ? 8 : 7; }
 
 static uint8_t hub_entry(uint16_t i)
 {
@@ -46,8 +46,8 @@ static uint8_t hub_entry(uint16_t i)
 
 static void hub_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { "Last caller", "Contacts", "Messages", "Recent", "Channels", "Tools",
-					     "Settings" };
+	static const char *const names[] = { "Last caller", "Contacts", "Messages", "Recent", "Zones", "Channels",
+					     "Tools", "Settings" };
 	uint8_t e = hub_entry(i);
 	strcpy(it->label, names[e]);
 	item_num(it, e);
@@ -57,7 +57,7 @@ static void hub_item(uint16_t i, ui_item_t *it)
 		sb_u32(&b, ui_st.unread, 1);
 		sb_str(&b, " new");
 		it->flags |= UI_ITEM_WARN;
-	} else if (e == HUB_CHANNELS) {
+	} else if (e == HUB_ZONES) {
 		// The zone (or VFO), left out where it doesn't fit beside the label (an empty last alternate)
 		sb_str(&b, TEXT_ALT_OPEN);
 		sb_str(&b, ui_view()->vfo ? "VFO" : ui_view()->zone_name);
@@ -69,8 +69,8 @@ static void hub_item(uint16_t i, ui_item_t *it)
 
 static void hub_select(uint16_t i, bool hold)
 {
-	static const uint8_t scr[] = { SCR_RECENT, SCR_CONTACTS, SCR_MESSAGES, SCR_RECENT, SCR_CHANNELS, SCR_TOOLS,
-				       SCR_SETTINGS };
+	static const uint8_t scr[] = { SCR_RECENT, SCR_CONTACTS, SCR_MESSAGES, SCR_RECENT, SCR_ZONES, SCR_CHANNELS,
+				       SCR_TOOLS, SCR_SETTINGS };
 	(void)hold;
 	uint8_t e = hub_entry(i);
 	if (e == HUB_LAST_CALLER) {
@@ -83,11 +83,15 @@ static void hub_select(uint16_t i, bool hold)
 		ui_open_actions(&t);
 		return;
 	}
+	if (!CONFIG_CHANNEL_LIST && e == HUB_CHANNELS) {
+		ui_toast("Channels: not in this build");	// the numbers stay the same in every build
+		return;
+	}
 	ui_push(scr[e], 0);
 }
 
 static const ui_scr_def_t hub_screen = {
-	.name = "hub", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .hint = "1-6 open  Back",
+	.name = "hub", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .hint = "1-7 open  Back",
 	.count = hub_count, .item = hub_item, .select = hub_select,
 };
 
@@ -769,12 +773,49 @@ static void chans_context(uint16_t i)
 }
 
 static const ui_scr_def_t channels_screen = {
-	.name = "channels", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = "Channels",
+	.name = "zones", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = "Zones",
 	.hint = TEXT_ALT_OPEN "OK go  # channels  0-9 find" TEXT_ALT_NEXT "OK go  # channels" TEXT_ALT_CLOSE,
 	.empty = "No zones",
 	.count = ui_filter_count, .item = chans_item, .select = chans_select, .context = chans_context,
 	.enter = chans_enter, .raw_count = chans_raw_count, .raw_label = chans_raw_label,
 };
+
+// A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID3101234" for a
+// private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
+// number, then the talkgroup alone (text alternates)
+static void sb_channel_row(sbuf_t *b, const channel_t *ch)
+{
+	char what[16];
+	uint8_t prefix = 0;	// "TG" / "ID": left out in the middle form
+	sbuf_t wb;
+	sb_init(&wb, what, sizeof what);
+#if CONFIG_DMR
+	if (ch->mode == RADIO_MODE_DMR) {
+		static contact_t c;
+		uint16_t talk = codeplug_channel_talk_contact(ch);
+		bool known = talk != 0 && codeplug_contact(talk, &c);
+		sb_str(&wb, known && c.type == CONTACT_PRIVATE ? "ID" : "TG");
+		prefix = 2;
+		sb_u32(&wb, known ? c.id : 9u, 1);
+	} else
+#endif
+	{
+		sb_str(&wb, ch->mode == RADIO_MODE_DMR ? "DMR" : "FM");
+	}
+	sb_str(b, TEXT_ALT_OPEN);
+	sb_freq(b, ch->rx_hz);
+	sb_chr(b, ' ');
+	sb_str(b, what);
+	if (prefix) {
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_freq(b, ch->rx_hz);
+		sb_chr(b, ' ');
+		sb_str(b, what + prefix);
+	}
+	sb_str(b, TEXT_ALT_NEXT);
+	sb_str(b, what);
+	sb_str(b, TEXT_ALT_CLOSE);
+}
 
 static zone_t zone_cache;
 static uint16_t zone_cached = 0xFFFF;
@@ -832,7 +873,7 @@ static void zone_item(uint16_t i, ui_item_t *it)
 	sb_chr(&b, ' ');
 	sb_str(&b, ch.name);
 	sb_init(&b, it->value, sizeof it->value);
-	sb_str(&b, ch.mode == RADIO_MODE_DMR ? "DMR" : "FM");
+	sb_channel_row(&b, &ch);
 	const radio_view_t *v = ui_view();
 	if (!v->vfo && v->zone_index == ui_frame()->arg && v->zone_pos == raw)
 		it->flags |= UI_ITEM_TEMP;	// the channel we are on
@@ -862,6 +903,295 @@ static const ui_scr_def_t zone_screen = {
 	.count = ui_filter_count, .item = zone_item, .select = zone_select, .title = zone_title,
 	.enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
 };
+
+#if CONFIG_CHANNEL_LIST
+// ======================= Channels: every codeplug channel by number (hub 5) =======================
+// The raw row is the channel number - 1; empty slots have no label, so the filter leaves them out
+
+// The channel the radio is on, 0 in the VFO or when its zone can't be read
+static uint16_t chlist_current(void)
+{
+	static zone_t z;
+	const radio_view_t *v = ui_view();
+	if (v->vfo || !codeplug_zone(v->zone_index, &z) || v->zone_pos >= z.count)
+		return 0;
+	return z.channels[v->zone_pos];
+}
+
+static uint16_t chlist_raw_count(void)
+{
+	return codeplug_channel_count();
+}
+
+static bool chlist_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	static channel_t ch;
+	if (!codeplug_channel((uint16_t)(raw + 1u), &ch))
+		return false;
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_u32(&b, raw + 1u, 1);
+	sb_chr(&b, ' ');
+	sb_str(&b, ch.name);
+	return true;
+}
+
+static void chlist_enter(void)
+{
+	uint16_t cur = chlist_current();
+	for (uint16_t i = 0; cur != 0 && i < ui_filter_count(); i++)
+		if (ui_filter_raw(i) + 1u == cur)
+			ui_frame()->focus = i;
+}
+
+static void chlist_item(uint16_t i, ui_item_t *it)
+{
+	static channel_t ch;
+	uint16_t num = (uint16_t)(ui_filter_raw(i) + 1u);
+	if (!codeplug_channel(num, &ch))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_u32(&b, num, 1);
+	sb_chr(&b, ' ');
+	sb_str(&b, ch.name);
+	sb_init(&b, it->value, sizeof it->value);
+	sb_channel_row(&b, &ch);
+	if (num == chlist_current())
+		it->flags |= UI_ITEM_TEMP;	// the channel we are on
+}
+
+// Go to channel num: in the zone in use if it holds it, else the first zone that does. false: no zone holds it
+static bool chlist_tune(uint16_t num)
+{
+	static zone_t z;
+	const radio_view_t *v = ui_view();
+	uint16_t zones = codeplug_zone_count();
+	for (uint16_t k = 0; k <= zones; k++) {
+		// k == 0 tries the zone in use first, then every zone in order
+		uint16_t zi = k == 0 ? v->zone_index : (uint16_t)(k - 1u);
+		if ((k == 0 && v->vfo) || (k > 0 && zi == v->zone_index && !v->vfo) || !codeplug_zone(zi, &z))
+			continue;
+		for (uint16_t pos = 0; pos < z.count; pos++) {
+			if (z.channels[pos] != num)
+				continue;
+			if (v->vfo)
+				radio_req_vfo(false);
+			if (v->zone_index != zi)
+				radio_req_zone(zi);
+			radio_req_zone_pos(pos);
+			ui_go_home();
+			return true;
+		}
+	}
+	ui_toast("Not in any zone: add it to one to use it");
+	return false;
+}
+
+static void chlist_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_push(SCR_CHANNEL, (uint16_t)(ui_filter_raw(i) + 1u));
+}
+
+static void chlist_context(uint16_t i)
+{
+	chlist_tune((uint16_t)(ui_filter_raw(i) + 1u));
+}
+
+static const ui_scr_def_t chlist_screen = {
+	.name = "channels", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = "Channels",
+	.hint = TEXT_ALT_OPEN "OK details  # go  0-9 find" TEXT_ALT_NEXT "OK details  # go" TEXT_ALT_CLOSE,
+	.empty = "No channels",
+	.count = ui_filter_count, .item = chlist_item, .select = chlist_select, .context = chlist_context,
+	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label,
+};
+
+// ======================= One channel's settings (read only; OK goes to it) =======================
+
+enum { CI_NUMBER, CI_MODE, CI_RX, CI_TX, CI_POWER, CI_RX_ONLY, CI_BW, CI_RX_TONE, CI_TX_TONE, CI_CC, CI_TS,
+       CI_CONTACT, CI_LIST, CI_ID, CI_TOT, CI_SCAN, CI_ZONES, CI_COUNT };
+
+static channel_t chinfo_ch;
+static uint8_t chinfo_rows[CI_COUNT];
+static uint8_t chinfo_n;
+
+static void chinfo_enter(void)
+{
+	chinfo_n = 0;
+	if (!codeplug_channel(ui_frame()->arg, &chinfo_ch))
+		return;
+	bool dmr = chinfo_ch.mode == RADIO_MODE_DMR;
+	for (uint8_t r = 0; r < CI_COUNT; r++) {
+		bool fm_only = r == CI_BW || r == CI_RX_TONE || r == CI_TX_TONE;
+		bool dmr_only = r == CI_CC || r == CI_TS || r == CI_CONTACT || r == CI_LIST || r == CI_ID;
+		if ((fm_only && dmr) || (dmr_only && (!dmr || !CONFIG_DMR)))
+			continue;
+		chinfo_rows[chinfo_n++] = r;
+	}
+}
+
+static uint16_t chinfo_count(void)
+{
+	return chinfo_n;
+}
+
+static const char *chinfo_title(void)
+{
+	return chinfo_ch.name;
+}
+
+// The zones holding the channel, as much as fits: "Fav, Local, Ga" / "Fav +2" / "3 zones" (text alternates)
+static void sb_chinfo_zones(sbuf_t *b, uint16_t num)
+{
+	static zone_t z;
+	char all[24], first[CODEPLUG_NAME_LEN + 1] = "";
+	sbuf_t ab;
+	sb_init(&ab, all, sizeof all);
+	uint16_t found = 0;
+	for (uint16_t zi = 0; zi < codeplug_zone_count(); zi++) {
+		if (!codeplug_zone(zi, &z))
+			continue;
+		for (uint16_t pos = 0; pos < z.count; pos++) {
+			if (z.channels[pos] != num)
+				continue;
+			if (found++)
+				sb_str(&ab, ", ");
+			else
+				strcpy(first, z.name);
+			sb_str(&ab, z.name);
+			break;
+		}
+	}
+	if (found == 0) {
+		sb_str(b, "None");
+		return;
+	}
+	sb_str(b, TEXT_ALT_OPEN);
+	sb_str(b, all);
+	if (found > 1) {
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_str(b, first);
+		sb_str(b, " +");
+		sb_u32(b, found - 1u, 1);
+	}
+	sb_str(b, TEXT_ALT_NEXT);
+	sb_u32(b, found, 1);
+	sb_str(b, found == 1 ? " zone" : " zones");
+	sb_str(b, TEXT_ALT_CLOSE);
+}
+
+static void chinfo_item(uint16_t i, ui_item_t *it)
+{
+	static const char *const labels[CI_COUNT] = { "Number", "Mode", "RX", "TX", "Power", "RX only", "Bandwidth",
+		"RX tone", "TX tone", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID", "TX time-out",
+		"Scan", "Zones" };
+	const channel_t *ch = &chinfo_ch;
+	uint16_t num = ui_frame()->arg;
+	if (i >= chinfo_n)
+		return;
+	uint8_t r = chinfo_rows[i];
+	strcpy(it->label, labels[r]);
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	switch (r) {
+	case CI_NUMBER:
+		sb_u32(&b, num, 1);
+		break;
+	case CI_MODE:
+		sb_str(&b, ch->mode == RADIO_MODE_DMR ? "DMR" : "FM");
+		break;
+	case CI_RX:
+		sb_freq(&b, ch->rx_hz);
+		break;
+	case CI_TX:
+		sb_freq(&b, ch->tx_hz);
+		if (ch->tx_hz != ch->rx_hz) {
+			// The repeater offset: "+5 MHz", "-600 kHz"
+			int32_t off_khz = (int32_t)(ch->tx_hz / 1000u) - (int32_t)(ch->rx_hz / 1000u);
+			bool mhz = off_khz % 1000 == 0;
+			sb_str(&b, off_khz > 0 ? " +" : " ");
+			sb_i32(&b, mhz ? off_khz / 1000 : off_khz);
+			sb_str(&b, mhz ? " MHz" : " kHz");
+		}
+		break;
+	case CI_POWER:
+		sb_str(&b, ch->power == CODEPLUG_POWER_DEFAULT ? "Radio's" : ui_power_name(ch->power));
+		break;
+	case CI_RX_ONLY:
+		sb_str(&b, ch->rx_only ? "Yes" : "No");
+		break;
+	case CI_BW:
+		sb_str(&b, ch->bw == RADIO_BW_25K ? "25 kHz" : "12.5 kHz");
+		break;
+	case CI_RX_TONE:
+		sb_tone(&b, &ch->rx_tone);
+		break;
+	case CI_TX_TONE:
+		sb_tone(&b, &ch->tx_tone);
+		break;
+#if CONFIG_DMR
+	case CI_CC:
+		sb_u32(&b, ch->color_code, 1);
+		break;
+	case CI_TS:
+		sb_u32(&b, ch->timeslot, 1);
+		break;
+	case CI_CONTACT: {
+		static contact_t c;
+		if (ch->contact != 0 && codeplug_contact(ch->contact, &c))
+			sb_str(&b, c.name);
+		else
+			sb_str(&b, "None");
+		break;
+	}
+	case CI_LIST: {
+		static listen_list_t l;
+		if (ch->listen_list != 0 && codeplug_listen_list(ch->listen_list, &l))
+			sb_str(&b, l.name);
+		else
+			sb_str(&b, "None");
+		break;
+	}
+	case CI_ID:
+		if (ch->dmr_id != 0)
+			sb_u32(&b, ch->dmr_id, 1);
+		else
+			sb_str(&b, "Radio's");
+		break;
+#endif
+	case CI_TOT:
+		if (ch->tot_s != 0) {
+			sb_u32(&b, ch->tot_s, 1);
+			sb_str(&b, " s");
+		} else {
+			sb_str(&b, "Radio's");
+		}
+		break;
+	case CI_SCAN:
+		sb_str(&b, ch->scan_skip ? "Skipped" : "Scanned");
+		break;
+	case CI_ZONES:
+		sb_chinfo_zones(&b, num);
+		break;
+	default:
+		break;
+	}
+}
+
+static void chinfo_select(uint16_t i, bool hold)
+{
+	(void)i;
+	(void)hold;
+	chlist_tune(ui_frame()->arg);
+}
+
+static const ui_scr_def_t chinfo_screen = {
+	.name = "channel", .flags = SF_LIST | SF_FIELD, .hint = "OK go to it  Back", .empty = "Empty channel",
+	.count = chinfo_count, .item = chinfo_item, .select = chinfo_select, .title = chinfo_title,
+	.enter = chinfo_enter,
+};
+#endif
 
 // ======================= Info pages =======================
 
@@ -2109,10 +2439,13 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_HOME] = &home_screen, [SCR_QUICK] = &quick_screen, [SCR_HUB] = &hub_screen,
 	[SCR_FIND] = &ui_find_screen, [SCR_ACTIONS] = &actions_screen, [SCR_CONTACTS] = &contacts_screen,
 	[SCR_MESSAGES] = &messages_screen, [SCR_MESSAGE] = &message_screen, [SCR_COMPOSE] = &compose_screen,
-	[SCR_RECENT] = &recent_screen, [SCR_CHANNELS] = &channels_screen, [SCR_ZONE] = &zone_screen,
+	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
+#if CONFIG_CHANNEL_LIST
+	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
+#endif
 };

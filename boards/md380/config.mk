@@ -35,6 +35,9 @@ CONFIG_DMR_UDP_COMPRESS ?= n
 # assignment, 2026-10-13): this radio sends no APRS over the air and has no iGate, so it would only forward DMR-side
 # beacons. Users can still pick it
 CONFIG_NET_APRSIS ?= n
+# The hub's Channels list (about 1.9 KB) doesn't fit beside everything else: off by default here; a build with
+# CONFIG_CHANNEL_LIST=y needs room made, as CONFIG_DMR_IP_GATEWAY=n does
+CONFIG_CHANNEL_LIST ?= n
 # Control station mode (PC dispatch software on the USB network link, 288 bytes) is off by default for room (the side
 # key functions and the Channels list, 2026-10-14). Users can still pick it
 CONFIG_DMR_CONTROL_STATION ?= n
@@ -44,5 +47,5 @@ CONFIG_DMR_CONTROL_STATION ?= n
 BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL HOTSPOT AM_RX BCAST_FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter; USRP, UDP header compression and the APRS-IS client don't
-# fit beside everything else (above), nor does control station mode
-MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS DMR_CONTROL_STATION
+# fit beside everything else (above), nor does control station mode or the Channels list
+MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS CHANNEL_LIST DMR_CONTROL_STATION

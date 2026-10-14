@@ -133,6 +133,9 @@
 #ifndef CONFIG_KEY_ASSIGN
 #define CONFIG_KEY_ASSIGN		1
 #endif
+#ifndef CONFIG_CHANNEL_LIST
+#define CONFIG_CHANNEL_LIST		1
+#endif
 #ifndef CONFIG_BEEP
 #define CONFIG_BEEP			1
 #endif

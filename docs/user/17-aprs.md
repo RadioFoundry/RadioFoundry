@@ -22,7 +22,7 @@ APRS is in every build that has FM. Some radios send only, and some can't send A
 
 ## The APRS page
 
-Press **OK**, **5** (Tools), then **APRS** (the last row). The top of the page shows your callsign, the APRS
+Press **OK**, **6** (Tools), then **APRS** (the last row). The top of the page shows your callsign, the APRS
 frequency, your position and its source, and when the next beacon goes out. If the radio can't send, it says why.
 
 | Row | What it does |

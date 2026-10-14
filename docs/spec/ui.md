@@ -13,7 +13,7 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 | `gfx.c`, `fonts.c`, `fmt.c` | drawing in a viewport inside the display's safe-area insets, fonts, number / text formatting |
 | `ui_screens.c` | drawing only: status strip, title, hint row, lists, Home, call screens, Quick tiles, banners, emergency |
 | `ui_app.c` | behavior without the RTOS: the navigation stack, global keys, Home and Quick keys, filters, Recent, events, banners |
-| `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Channels, Zone, Tools, Settings, Picker, Info, Confirm, Scan, Roaming |
+| `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Zones, Zone, Channels, Channel, Tools, Settings, Picker, Info, Confirm, Scan, Roaming |
 | `ui_find.c` | type-to-find (T9 word starts, numbers, channel positions) |
 | `ui_svc.h`, `ui_svc_stub.c` | the thin interface to data other packages own, with weak "not in this build" stubs (section 4) |
 | `ui_svc_radio.c`, `ui_svc_data.c`, `ui_svc_storage.c` | the strong implementations on the radio core, the DMR data service and the settings store / codeplug editing |
@@ -41,7 +41,7 @@ between lines of the screen under it (a row all one color), never through a line
 Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
 
 - A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
-  a short form or nothing (Hub's zone name, Find's kind, Channels' "Here, 16 channels" / "Here, 16 ch" / "Here", ages: "11s ago" / "11s").
+  a short form or nothing (Hub's zone name, Find's kind, Zones' "Here, 16 channels" / "Here, 16 ch" / "Here", ages: "11s ago" / "11s").
   A row marked `UI_ITEM_PREVIEW` (a message) is cut at its end, at a word.
 - Hints and toasts take the longest alternate that fits; a toast that still doesn't fit takes a second line above the
   hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
@@ -76,10 +76,13 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 |---|---|---|
 | Home | `home` | start, long BACK from anywhere |
 | Quick settings | `quick` | QUICK (`*`), or long SELECT on a radio without a QUICK key |
-| Hub | `hub` | SELECT on Home: 1 Contacts, 2 Messages, 3 Recent, 4 Channels, 5 Tools, 6 Settings (0 Last caller on a radio without CONTEXT) |
+| Hub | `hub` | SELECT on Home: 1 Contacts, 2 Messages, 3 Recent, 4 Zones, 5 Channels, 6 Tools, 7 Settings (0 Last caller on a radio without CONTEXT) |
 | Find | `find` | a digit on Home |
 | Actions | `actions` | CONTEXT (`#`) on a person, a talkgroup, the last caller, a message |
 | Recent | `recent` | Hub 3 |
+| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`) |
+| Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). OK opens the channel (`channel`), CONTEXT goes to it |
+| Channel | `channel` | OK in Channels: the channel's settings, read only (number, mode, RX, TX and offset, power, RX only, FM bandwidth and tones, DMR color code, timeslot, TX contact, RX group list, own ID, TX time-out, scan, the zones holding it). OK goes to it: in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone" |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (SK2), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
@@ -274,7 +277,7 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
 
 ## 8. Decisions and open points
 
-- Task flow 12 budgets 3 presses into the VFO, but flow 2 opens Channels on the current zone (so a zone two away is
+- Task flow 12 budgets 3 presses into the VFO, but flow 2 opens Zones on the current zone (so a zone two away is
   2 presses); the VFO row is first, so entering it takes 4 (OK 4 Up OK). The test uses 4; the owner decides.
 - Power on radios with many levels: the Quick tile cycles three presets (low, the board's default, highest); the full
   list is in Settings.

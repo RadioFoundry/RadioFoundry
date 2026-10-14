@@ -65,19 +65,19 @@ def test_keys_move_the_channel(home):
 
 
 def test_hub_and_back(home):
-    """OK opens the Hub (six destinations, numbered); a digit opens one; BACK goes up one level; long BACK goes Home
+    """OK opens the Hub (seven destinations, numbered); a digit opens one; BACK goes up one level; long BACK goes Home
     from any depth (information-architecture.md, key meanings)."""
     r = home
     r.press("ok")
     s = wait_screen(r, "hub", "the Hub on OK")
-    assert s["ui.depth"] == "1" and s["ui.count"] == "6", s
+    assert s["ui.depth"] == "1" and s["ui.count"] == "7", s
     r.press("1")
     s = wait_screen(r, "contacts", "Contacts on 1")
     assert s["ui.depth"] == "2"
     r.press("back")
     wait_screen(r, "hub", "BACK goes up to the Hub")
-    r.press("6")
-    wait_screen(r, "settings", "Settings on 6")
+    r.press("7")
+    wait_screen(r, "settings", "Settings on 7")
     r.press("2")
     wait_screen(r, "group", "a settings group on 2")
     r.press("back", LONG)
@@ -151,13 +151,33 @@ def test_recent_from_the_hub(home):
     wait_screen(r, "home")
 
 
-def test_diagnostics_page(home):
-    """Diagnostics live in Tools (Hub 5, then 7); long BACK on Home no longer opens them."""
+def test_zones_and_channels_lists(home):
+    """Hub 4 lists the VFO and the zones, hub 5 every channel by number; OK on a channel opens its settings page."""
     r = home
     r.press("ok")
     wait_screen(r, "hub")
+    r.press("4")
+    s = wait_screen(r, "zones", "Zones on 4")
+    assert as_int(s.get("ui.count")) >= 2, s			# the VFO and at least one zone
+    r.press("back")
+    wait_screen(r, "hub")
     r.press("5")
-    wait_screen(r, "tools", "Tools on 5")
+    s = wait_screen(r, "channels", "Channels on 5")
+    if as_int(s.get("ui.count")) == 0:
+        pytest.skip("no channels in the codeplug")
+    r.press("ok")
+    wait_screen(r, "channel", "a channel's settings on OK")
+    r.press("back", LONG)
+    wait_screen(r, "home")
+
+
+def test_diagnostics_page(home):
+    """Diagnostics live in Tools (Hub 6, then 7); long BACK on Home no longer opens them."""
+    r = home
+    r.press("ok")
+    wait_screen(r, "hub")
+    r.press("6")
+    wait_screen(r, "tools", "Tools on 6")
     r.press("7")
     s = r.wait_for(lambda v: v.get("ui.screen") in ("diag", "tools"), sections=("link",), what="diagnostics")
     if s["ui.screen"] != "diag":
@@ -333,7 +353,7 @@ def test_picker_focus_target(home):
 
 
 def settings_keys(r, keys):
-    """Run a key sequence from Home (Settings is Hub 6; groups 1-9 then 0), then go Home."""
+    """Run a key sequence from Home (Settings is Hub 7; groups 1-9 then 0), then go Home."""
     for k in keys.split():
         r.press(*((k[5:], LONG) if k.startswith("long:") else (k,)))
     r.press("back", LONG)
@@ -348,14 +368,14 @@ def test_long_press_time_reaches_input(home):
         pytest.skip("firmware without input.long_ms")
     if before >= 1200:
         pytest.skip("the long press time is already at its maximum")
-    settings_keys(r, "ok 6 8 ok up ok")
+    settings_keys(r, "ok 7 8 ok up ok")
     try:
         r.wait_for(lambda x: as_int(x.get("input.long_ms")) == before + 100, sections=("link",),
                    what="long press time +100 ms")
         s = r.view(["storage"])
         assert as_int(s.get("settings.long_press_ms")) == before + 100, s
     finally:
-        settings_keys(r, "ok 6 8 ok down ok")
+        settings_keys(r, "ok 7 8 ok down ok")
     r.wait_for(lambda x: as_int(x.get("input.long_ms")) == before, sections=("link",), what="long press time back")
 
 
@@ -364,7 +384,7 @@ def test_auto_lock(home):
     r = home
     if as_int(r.view(["storage"]).get("settings.auto_lock_s"), 0) != 0:
         pytest.skip("auto lock is already on")
-    settings_keys(r, "ok 6 4 down down ok")
+    settings_keys(r, "ok 7 4 down down ok")
     try:
         r.wait_for(lambda x: x.get("settings.auto_lock_s") == "30", sections=("storage",), what="auto lock 30 s")
         assert ui(r)["ui.locked"] == "0"
@@ -375,7 +395,7 @@ def test_auto_lock(home):
             r.press("quick", LONG)
             r.wait_for(lambda x: x.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
         r.press("ok")
-        r.press("6")
+        r.press("7")
         r.press("4")
         r.press("down")
         r.press("down")
@@ -404,12 +424,12 @@ def test_theme_is_kept(home):
     if s["settings.theme"] != "0":
         pytest.skip("the theme isn't Dark")
     _, before = r.shot_until(lambda d: True, what="Home")
-    settings_keys(r, "ok 6 2 down down ok")
+    settings_keys(r, "ok 7 2 down down ok")
     try:
         r.wait_for(lambda x: x.get("settings.theme") == "1", sections=("storage",), what="theme Light stored")
         r.shot_until(lambda d: diff_fraction(before, d) > 0.2, what="Home in the light theme")
     finally:
-        settings_keys(r, "ok 6 2 down down ok ok")
+        settings_keys(r, "ok 7 2 down down ok ok")
     r.wait_for(lambda x: x.get("settings.theme") == "0", sections=("storage",), what="theme Dark again")
 
 
@@ -420,7 +440,7 @@ def test_updown_changes_the_zone(home):
     if s.get("settings.updown_home") != "0":
         pytest.skip("firmware without settings.updown_home, or it isn't Channel")
     zone = as_int(r.core().get("zone_index"))
-    settings_keys(r, "ok 6 8 down down ok")
+    settings_keys(r, "ok 7 8 down down ok")
     try:
         r.wait_for(lambda x: x.get("settings.updown_home") == "1", sections=("storage",), what="Up/Down = Zone")
         r.press("up")
@@ -430,7 +450,7 @@ def test_updown_changes_the_zone(home):
         r.press("down")
         r.wait_for(lambda x: as_int(x.get("zone_index")) == zone, what="the zone back on DOWN")
     finally:
-        settings_keys(r, "ok 6 8 down down ok ok")
+        settings_keys(r, "ok 7 8 down down ok ok")
     r.wait_for(lambda x: x.get("settings.updown_home") == "0", sections=("storage",), what="Up/Down = Channel again")
 
 
@@ -442,7 +462,7 @@ def test_privacy_key_entry(home):
         pytest.skip("firmware without settings.privacy_type")
     if s["settings.privacy_type"] != "0":
         pytest.skip("a privacy key is set already: not overwriting it")
-    settings_keys(r, "ok 6 4 ok down ok 1 2 3 ok")
+    settings_keys(r, "ok 7 4 ok down ok 1 2 3 ok")
     try:
         r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type Motorola")
         if r.core().get("mode") == "dmr":
@@ -453,7 +473,7 @@ def test_privacy_key_entry(home):
             leave_quick(r)
             r.press("back")
     finally:
-        settings_keys(r, "ok 6 4 ok ok")	# Motorola -> Anytone -> Off
+        settings_keys(r, "ok 7 4 ok ok")	# Motorola -> Anytone -> Off
     r.wait_for(lambda x: x.get("settings.privacy_type") == "0", sections=("storage",), what="the key removed")
 
 
@@ -468,7 +488,7 @@ def test_ptt_when_locked_off(home):
     if not flags & 0x10:
         pytest.skip("PTT when locked is already off")
     r.lowest_power()
-    settings_keys(r, "ok 6 4 down down down ok")
+    settings_keys(r, "ok 7 4 down down down ok")
     try:
         r.wait_for(lambda x: not as_int(x.get("settings.ui_flags"), 0x10) & 0x10, sections=("storage",),
                    what="PTT when locked off")
@@ -487,7 +507,7 @@ def test_ptt_when_locked_off(home):
     finally:
         if ui(r).get("ui.locked") == "1":
             r.press("quick", LONG)
-        settings_keys(r, "ok 6 4 down down down ok")
+        settings_keys(r, "ok 7 4 down down down ok")
     r.wait_for(lambda x: as_int(x.get("settings.ui_flags"), 0) & 0x10, sections=("storage",),
                what="PTT when locked on again")
 
@@ -498,7 +518,7 @@ def test_usb_network_switch_row(home):
     r = home
     r.press("ok")
     wait_screen(r, "hub")
-    r.press("5")
+    r.press("6")
     wait_screen(r, "tools")
     r.press("4")
     v = r.wait_for(lambda x: x.get("ui.screen") == "info", sections=("link",), what="the USB network page")

@@ -50,7 +50,7 @@ Numbered, so a digit picks directly:
 ## 2. Change zone
 
 1. `SELECT` (Hub).
-2. `4` (Channels). The zone list opens with the current zone focused.
+2. `4` (Zones). The zone list opens with the current zone focused.
 3. `NAV_UP`/`NAV_DOWN` to the zone (or type its first letters).
 4. `SELECT`: the radio switches to that zone (on the knob's channel, or channel 1 on encoder radios) and returns to Home. `CONTEXT` on a zone instead opens its channel list to pick a different channel.
 
@@ -184,7 +184,7 @@ While scanning (Home keys): `PTT` talks on the channel that last stopped (or the
 
 ## 12. Enter a VFO frequency
 
-Enter VFO: `SELECT`, `4`, VFO is the first row in Channels: `SELECT`. (Or type "VFO" in Find.) Home shows the frequency large.
+Enter VFO: `SELECT`, `4`, VFO is the first row in Zones: `SELECT`. (Or type "VFO" in Find.) Home shows the frequency large.
 
 On Home in VFO, digits enter a frequency directly: `4`,`4`,`6`,`0`,`0`,`0` is 446.000 MHz (the decimal point is implied after the band's MHz digits; `*` inserts it explicitly). Preview shows "446.000 MHz" as you type, out-of-band digits are refused as you type with a hint ("UHF 400-480"). `SELECT` tunes. `NAV_UP`/`NAV_DOWN` step by the step size (quick tile, VFO only, replaces tile 8). Mode and tone are quick tiles 4 and 3. "Save as channel" is in `CONTEXT`.
 
@@ -203,7 +203,7 @@ Lock: long `QUICK` (`*`). Banner "Keys locked. Hold * to unlock." PTT, monitor, 
 
 ## 14. Check GPS
 
-Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. Details: `SELECT`, `5`, `2` (Tools > Position): fix state, satellites, lat/long, grid locator, altitude, last sent report and next one. `CONTEXT` there: Send position now, Turn GPS off. Position of another station: caller actions `6`.
+Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. Details: `SELECT`, `6`, `2` (Tools > Position): fix state, satellites, lat/long, grid locator, altitude, last sent report and next one. `CONTEXT` there: Send position now, Turn GPS off. Position of another station: caller actions `6`.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -212,7 +212,7 @@ Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. D
 ## 15. Enter hotspot or USB network mode
 
 1. Connect USB.
-2. `SELECT`, `5` (Tools), `3` (Hotspot) or `4` (USB network).
+2. `SELECT`, `6` (Tools), `3` (Hotspot) or `4` (USB network).
 3. `SELECT` = Start. Screen shows link state (host connected, mode, frequency, TS/CC, traffic and the current talker).
 
 Option (Connections): "Start hotspot when a hotspot host connects", default off. When on, a banner says "Hotspot started by host. OK stops it."

@@ -171,9 +171,21 @@
     "DMR_SMS"
    ]
   },
-  "channels": {
+  "zones": {
    "group": "channels",
    "needs": []
+  },
+  "channels": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST"
+   ]
+  },
+  "channel": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST"
+   ]
   },
   "zone_channels": {
    "group": "channels",

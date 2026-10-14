@@ -2,7 +2,7 @@
 
 # Settings
 
-Open Settings with **OK**, **6**, or with **\***, **0**. Settings are grouped by what they are for. A number key opens
+Open Settings with **OK**, **7**, or with **\***, **0**. Settings are grouped by what they are for. A number key opens
 a group directly. Find also reaches each setting by name: type its first letters on Home.
 
 <img src="../ux/screens/160x120i5/settings.png" width="200" alt="Settings">
@@ -126,7 +126,7 @@ written to the codeplug. Rows for keys your radio doesn't have are dimmed.
 |---|---|
 | About | "OpenDigitalRadio", the firmware version (commit) and the radio model. Then the authors and the license of each part: ODR (MIT), the third-party libraries, and the AMBE+2 codec. The codec shows as "stock": it comes from your radio's own firmware and isn't part of ODR. The page is text in small print, with nothing cut short and no status bar. The status bar comes back during a call. **Up**, **Down** or the knob scroll a page longer than the screen |
 | Codeplug | Where the channels come from (built-in or from the CPS), the number of zones and channels |
-| Diagnostics | The diagnostics page (also **OK**, **5**, **7**) |
+| Diagnostics | The diagnostics page (also **OK**, **6**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |
 
 <img src="../ux/screens/160x120i5/about.png" width="200" alt="Settings > Advanced > About">

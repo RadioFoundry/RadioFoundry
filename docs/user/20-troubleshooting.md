@@ -55,7 +55,7 @@ Some settings are "not kept" by design today: see the Status column in [Settings
 
 ## Diagnostics
 
-**OK**, **5**, **7** (Tools > Diagnostics) shows raw readings for bench checks: keys, receiver levels, the DMR
+**OK**, **6**, **7** (Tools > Diagnostics) shows raw readings for bench checks: keys, receiver levels, the DMR
 modem's state and counters, battery, the board's own lines. **\*** pages through them. **Back** leaves.
 
 <img src="../ux/screens/160x120i5/diagnostics.png" width="200" alt="The diagnostics page">

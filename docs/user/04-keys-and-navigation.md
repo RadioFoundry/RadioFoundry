@@ -55,7 +55,7 @@ The Home screen is the base. Every other screen is at most three levels away fro
 ```
 Home
  |-- *            Quick settings
- |-- OK           Hub: 1 Contacts, 2 Messages, 3 Recent, 4 Channels, 5 Tools, 6 Settings
+ |-- OK           Hub: 1 Contacts, 2 Messages, 3 Recent, 4 Zones, 5 Channels, 6 Tools, 7 Settings
  |                    (a radio without # gets 0 Last caller at the top)
  |-- #            Actions for the last caller
  |-- hold #       Talk target picker (DMR)
@@ -64,7 +64,7 @@ Home
 ```
 
 In numbered lists (the hub, Tools, Settings, actions, quick settings) a number key picks the row with that number
-directly. For example, **OK**, **5** opens Tools.
+directly. For example, **OK**, **6** opens Tools.
 
 In long lists (Contacts, Channels, a zone's channels) the number keys filter the list by name, the way a phone
 keypad spells words. **2** is ABC, **3** is DEF, and so on to **9** (WXYZ). Each key narrows the list to names with a

@@ -362,7 +362,7 @@ zone has it, only those channels are sites. Whether qdmr exposes this bit for th
 - **Home**: in DMR chips, `Roam` after the repeater chip when roaming is active (`Lock` when locked, amber `Roam?`
   when the current site is below the threshold). The status strip shows `ROAM` (amber) during a search, as it shows
   `SCAN`.
-- **Tools > Roaming** (Hub 5, last row: 8, or 7 in a build without diagnostics, which keeps 7): 1 "Roam in this
+- **Tools > Roaming** (Hub 6, last row: 8, or 7 in a build without diagnostics, which keeps 7): 1 "Roam in this
   zone" On/Off (the zone flag), 2 "Roam now" (goes Home, where `ROAM` shows the search), 3 "Lock to this site"
   On/Off, and a body with the state: the site (its position in the list and the channel name), its signal, or why
   roaming is not available here ("Turn it on for this zone", "This channel is not a repeater site", "Needs two sites

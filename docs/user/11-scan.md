@@ -10,7 +10,7 @@ Which radios have scan and dual watch verified is in the [Radio reference](23-ra
 |---|---|
 | Hold **Talk target** | Hold **Talk target** again |
 | **\***, **7** | **\***, **7** again |
-| **OK**, **5** (Tools), **1** (Scan) | **Back** on Home |
+| **OK**, **6** (Tools), **1** (Scan) | **Back** on Home |
 
 On a channel the radio scans the current zone ("Scanning this zone"). In the VFO it sweeps the band the VFO frequency
 is in ("Scanning the band"). The status line shows SCAN, and the channel name changes as the scan moves.

@@ -105,6 +105,7 @@ below are for the DM-1701.
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO (not built yet) |
 | `CONFIG_DIAG` | y | the diagnostics page |
+| `CONFIG_CHANNEL_LIST` | y (MD-380: n) | the hub's Channels list: every codeplug channel by number, and a channel's settings, read only (`docs/spec/ui.md` 2) |
 | `CONFIG_KEY_ASSIGN` | y | side key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's side keys do (`docs/spec/ui.md` 3.1) |
 | `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |

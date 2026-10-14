@@ -42,7 +42,7 @@ On a radio without a key for a job, the menus reach it:
 | Job | Without the key |
 |---|---|
 | Power level | **\***, **1** (quick settings, Power) |
-| Change the zone | **OK**, **4** (Channels), pick a zone |
+| Change the zone | **OK**, **4** (Zones), pick a zone |
 | Talk target | **\***, **8** |
 | Monitor | **\***, **5** latches it |
 | Emergency | No other way on the radio yet |

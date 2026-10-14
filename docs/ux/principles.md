@@ -17,7 +17,7 @@ Words used below:
 The top 20 tasks (`task-flows.md`) each show their first useful result within two presses from Home, and finish within their budget (most within four, none above six).
 
 - Home has direct keys for: change channel, quick settings, actions on the last caller, find anything (type), monitor.
-- Top-level destinations are few (six) and each is a noun the user already knows: Contacts, Messages, Recent, Channels, Tools, Settings.
+- Top-level destinations are few (seven) and each is a noun the user already knows: Contacts, Messages, Recent, Zones, Channels, Tools, Settings.
 - No task requires going through Settings. Settings is for preferences, not for operating the radio.
 
 **Test:** scripted flows in the simulator count presses per task and fail the build if a flow exceeds its budget.
