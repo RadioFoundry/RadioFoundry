@@ -1,0 +1,247 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# Posts or updates the UI gallery comment on a pull request (docs/dev/ci.md "UI gallery"), from the `ui-gallery`
+# artifact that ui-gallery.yml made. One comment per pull request, found by its marker line and edited on every new
+# commit, with the commit, the time and the changed screens side by side. The images go to the `ui-previews` branch
+# (pr-<number>/<commit>/), so the comment can show them.
+#
+# This is the only workflow with write permissions, and it runs main's copy against every pull request. It never runs
+# code from the pull request or the artifact: the artifact is checked as data (names, sizes, PNG signatures, no links,
+# the pull request and commit it names), then copied and read by the scripts below, which only use the standard
+# library and gh. Never add a checkout of the pull request, a step that runs a script from the artifact, or the pull
+# request's title, body or branch name in a run step.
+#
+# Needs the `ui-previews` branch to exist (a one-time setup: docs/dev/ci.md "UI gallery").
+name: UI gallery comment
+
+on:
+  workflow_run:
+    workflows: ["UI gallery"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+# one comment at a time: two runs for one pull request never race for the comment or the branch
+concurrency:
+  group: ui-gallery-comment
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    if: >-
+      (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') &&
+      github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write        # the ui-previews branch
+      pull-requests: write   # the comment
+      actions: read          # the artifact of the run that rendered the gallery
+    steps:
+      - name: Pull request and head commit
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          # a pull request's own head commit; a run for an older commit has nothing to post once a newer one exists
+          n=$(gh api "repos/$REPO/commits/$HEAD/pulls" --jq '[.[] | select(.state == "open")][0].number // empty')
+          if [ -z "$n" ]; then
+            echo "::notice::no open pull request for $HEAD; nothing to post"
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          current=$(gh api "repos/$REPO/pulls/$n" --jq .head.sha)
+          if [ "$current" != "$HEAD" ]; then
+            echo "::notice::pull request #$n has moved on to $current; not posting the gallery for $HEAD"
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "pull request #$n at $HEAD"
+
+      - name: Checkout the previews branch
+        if: steps.pr.outputs.skip == 'false'
+        uses: actions/checkout@v4
+        with:
+          ref: ui-previews
+          path: previews
+          fetch-depth: 1
+          submodules: false
+
+      - name: Download the gallery
+        if: steps.pr.outputs.skip == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-gallery
+          path: ui
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Check the artifact, which is data and never runs
+        if: steps.pr.outputs.skip == 'false'
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+          HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          python3 -I - <<'PY'
+          import json, os, re, sys
+
+          PR, HEAD = int(os.environ["PR"]), os.environ["HEAD"]
+          root = "ui"
+          bad = []
+          if not os.path.isdir(root):
+              sys.exit("the artifact is missing")
+          for dp, dn, fn in os.walk(root):
+              for x in dn + fn:
+                  if os.path.islink(os.path.join(dp, x)):
+                      bad.append(f"symbolic link {os.path.join(dp, x)}")
+
+          with open(os.path.join(root, "manifest.json")) as f:
+              m = json.load(f)
+          if m.get("pr") != PR:
+              bad.append("manifest names another pull request")
+          if m.get("head_sha") != HEAD:
+              bad.append("manifest names another commit")
+          if not re.fullmatch(r"[0-9a-f]{40}", str(m.get("base_sha", ""))):
+              bad.append("base_sha is not a commit")
+          counts = m.get("counts", {})
+          if not all(isinstance(counts.get(k), int) and counts[k] >= 0
+                     for k in ("changed", "added", "removed", "unchanged")):
+              bad.append("counts are not numbers")
+
+          screens = m.get("screens")
+          expected = set()
+          if not isinstance(screens, list) or len(screens) > 400:
+              bad.append("screens is not a list of at most 400")
+              screens = []
+          for s in screens:
+              g, n, st, img = s.get("geometry"), s.get("screen"), s.get("status"), s.get("image")
+              if not (isinstance(g, str) and re.fullmatch(r"[0-9]+x[0-9]+[a-z0-9]*", g)):
+                  bad.append(f"geometry {g!r}")
+                  continue
+              if not (isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9_]+", n)):
+                  bad.append(f"screen {n!r}")
+                  continue
+              if st not in ("changed", "added", "removed"):
+                  bad.append(f"status {st!r}")
+              rel = f"compare/{g}/{n}.png"
+              if img != rel:
+                  bad.append(f"image {img!r}")
+              p = os.path.join(root, rel)
+              if not os.path.isfile(p):
+                  bad.append(f"missing {rel}")
+              else:
+                  with open(p, "rb") as f:
+                      head = f.read(8)
+                  if head != b"\x89PNG\r\n\x1a\n" or os.path.getsize(p) > 2_000_000:
+                      bad.append(f"{rel} is not a PNG under 2 MB")
+              expected.add(rel)
+
+          actual = set()
+          if os.path.isdir(os.path.join(root, "compare")):
+              for dp, dn, fn in os.walk(os.path.join(root, "compare")):
+                  for x in fn:
+                      actual.add(os.path.relpath(os.path.join(dp, x), root).replace(os.sep, "/"))
+          if actual != expected:
+              bad.append("compare/ holds files the manifest doesn't list, or misses some")
+
+          if bad:
+              print("\n".join(bad), file=sys.stderr)
+              sys.exit(1)
+          print(f"artifact OK: {len(screens)} screens for #{PR} at {HEAD[:7]}")
+          PY
+
+      - name: Publish the images to ui-previews
+        if: steps.pr.outputs.skip == 'false'
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+          HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          dir="previews/pr-$PR/$HEAD"
+          mkdir -p "$dir"
+          [ -d ui/compare ] && cp -r ui/compare "$dir/"
+          cp ui/manifest.json "$dir/"
+          cd previews
+          git add -A "pr-$PR"
+          if git diff --cached --quiet; then
+            echo "images for ${HEAD:0:7} are already published"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "UI gallery: pull request #$PR at ${HEAD:0:7}"
+          git push -q origin HEAD:ui-previews
+
+      - name: Post or update the comment
+        if: steps.pr.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.number }}
+          HEAD: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -eu
+          if [ "$SERVER" = https://github.com ]; then
+            base="https://raw.githubusercontent.com/$REPO/ui-previews/pr-$PR/$HEAD"
+          else
+            base="$SERVER/$REPO/raw/branch/ui-previews/pr-$PR/$HEAD"
+          fi
+          export BASE="$base"
+          python3 -I - <<'PY'
+          import datetime, json, os
+
+          MAX_IMAGES = 40
+          m = json.load(open("ui/manifest.json"))
+          base, head = os.environ["BASE"], os.environ["HEAD"]
+          commit = os.environ["COMMIT_URL"]
+          run = os.environ["RUN_URL"]
+          now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+          c = m["counts"]
+          total = c["changed"] + c["added"] + c["removed"] + c["unchanged"]
+
+          out = ["<!-- odr-ui-gallery -->", "### UI screen gallery", ""]
+          out.append(f"Commit [`{head[:7]}`]({commit}) · updated {now} · base `{m['base_sha'][:7]}` · "
+                     f"[workflow run]({run})")
+          out.append("")
+          out.append(f"**{c['changed']} changed**, {c['added']} added, {c['removed']} removed, "
+                     f"{c['unchanged']} unchanged ({total} screens).")
+          out.append("")
+          if not m["screens"]:
+              out.append("No screen changed: every screen renders as it does on the base commit.")
+          else:
+              out.append("Before on the left, after on the right.")
+              shown = m["screens"][:MAX_IMAGES]
+              geom = None
+              for s in shown:
+                  if s["geometry"] != geom:
+                      geom = s["geometry"]
+                      out += ["", f"#### {geom}", ""]
+                  out.append(f"**{s['screen']}** ({s['status']})")
+                  out.append("")
+                  out.append(f"![{s['screen']} {geom}, before and after]({base}/{s['image']})")
+                  out.append("")
+              if len(m["screens"]) > len(shown):
+                  out.append(f"Showing {len(shown)} of {len(m['screens'])} changed screens; the rest are in the "
+                             f"`ui-gallery` artifact of the [workflow run]({run}).")
+          with open("body.md", "w") as f:
+              f.write("\n".join(out) + "\n")
+          PY
+
+          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+               --jq '.[] | select(.body | startswith("<!-- odr-ui-gallery -->")) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@body.md > /dev/null
+            echo "updated comment $id on #$PR"
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@body.md > /dev/null
+            echo "posted the comment on #$PR"
+          fi
