@@ -142,8 +142,9 @@ long press, and each takes one function:
 | Monitor on/off (10) | MONITOR_LATCH: FM, the squelch open until pressed again; DMR, a toast (hear all is its own function and state) | yes | yes |
 | Key lock (11) | LOCK: lock, and unlock while locked (as long QUICK) | yes | yes |
 | Call back (12) | CALL_BACK: talk for now to the last call heard, its talkgroup or, for a private call, its caller (`dmr-voice.md` 2) | yes | yes |
+| Home zone (13) | HOME_ZONE: the codeplug's first zone (the CPS's zone order picks it; no setting, the settings record has no byte to spare). Leaves the VFO; "Home zone: <name>" | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, HEAR_ALL, MONITOR_LATCH and CALL_BACK do the same on a press and a long press and
+POWER, ZONE_UP, ZONE_DOWN, SCAN, HEAR_ALL, MONITOR_LATCH, CALL_BACK and HOME_ZONE do the same on a press and a long press and
 work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set.
 

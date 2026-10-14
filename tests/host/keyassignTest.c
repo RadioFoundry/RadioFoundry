@@ -112,17 +112,17 @@ static void test_build(void)
 	CHECK(memcmp(entry(K_OK), &base[0], sizeof(base[0])) == 0 && memcmp(entry(K_PTT), &base[4], sizeof(base[4])) == 0);
 }
 
-// The functions of side key actions 11 (hear all, monitor latch, key lock, call back)
+// The functions of side key actions 11 (hear all, monitor latch, key lock, call back, home zone)
 static void test_toggles(void)
 {
 	static const struct { uint8_t fn; uint8_t value; uint8_t action; } t[] = {
 		{ KEYFN_HEAR_ALL, 9, ACT_HEAR_ALL }, { KEYFN_MONITOR_LATCH, 10, ACT_MONITOR_LATCH },
-		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK },
+		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_COUNT == 13);
+	CHECK(KEYFN_COUNT == 14);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);

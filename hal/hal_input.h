@@ -19,7 +19,7 @@ typedef enum {
 	ACT_USER_1, ACT_USER_2, ACT_USER_3, ACT_USER_4,
 	// What a reassigned side key does (core/input/keyassign.h): the same on a press and a long press, on any screen
 	ACT_POWER, ACT_ZONE_UP, ACT_ZONE_DOWN, ACT_SCAN,
-	ACT_HEAR_ALL, ACT_MONITOR_LATCH, ACT_LOCK, ACT_CALL_BACK,
+	ACT_HEAR_ALL, ACT_MONITOR_LATCH, ACT_LOCK, ACT_CALL_BACK, ACT_HOME_ZONE,
 	ACT_COUNT
 } input_action_t;
 

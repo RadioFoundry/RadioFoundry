@@ -31,6 +31,7 @@ typedef enum {
 	KEYFN_MONITOR_LATCH,	// monitor on / off, latched
 	KEYFN_KEY_LOCK,		// lock / unlock the keys
 	KEYFN_CALL_BACK,	// talk to the last call heard: its talkgroup, or its caller for a private call
+	KEYFN_HOME_ZONE,	// back to the home zone (Settings > Keys > Home zone)
 	KEYFN_COUNT
 } keyfn_t;
 

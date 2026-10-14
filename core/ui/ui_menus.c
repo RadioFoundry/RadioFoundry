@@ -1429,12 +1429,13 @@ static const char *const n_possend[] = { "Off", "1 min", "5 min", "15 min" };
 // emergency is hold to activate, so a long press only
 static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
 					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_MONITOR_LATCH, KEYFN_KEY_LOCK,
+					 KEYFN_HOME_ZONE,
 #if CONFIG_DMR
 					 KEYFN_HEAR_ALL, KEYFN_CALL_BACK,
 #endif
 };
 static const char *const n_keyfn_press[] = { "Default", "Nothing", "Monitor", "Talk target", "Power level",
-					     "Next zone", "Previous zone", "Scan", "Monitor on/off", "Key lock",
+					     "Next zone", "Previous zone", "Scan", "Monitor on/off", "Key lock", "Home zone",
 #if CONFIG_DMR
 					     "Hear all", "Call back",
 #endif
@@ -1444,7 +1445,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #if CONFIG_DMR_EMERGENCY
 					KEYFN_EMERGENCY,
 #endif
-					KEYFN_MONITOR_LATCH, KEYFN_KEY_LOCK,
+					KEYFN_MONITOR_LATCH, KEYFN_KEY_LOCK, KEYFN_HOME_ZONE,
 #if CONFIG_DMR
 					KEYFN_HEAR_ALL, KEYFN_CALL_BACK,
 #endif
@@ -1454,7 +1455,7 @@ static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target",
 #if CONFIG_DMR_EMERGENCY
 					    "Emergency",
 #endif
-					    "Monitor on/off", "Key lock",
+					    "Monitor on/off", "Key lock", "Home zone",
 #if CONFIG_DMR
 					    "Hear all", "Call back",
 #endif

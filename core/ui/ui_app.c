@@ -724,22 +724,28 @@ static bool target_manual(void)
 #endif
 }
 
-static void zone_step(int dir)
+// Go to zone zi (leaving the VFO) and say so: "Zone: <name>", or "Home zone: <name>" for the Home zone side key
+static void zone_go(uint16_t zi, bool home)
 {
 	static zone_t z;	// large (80 channels): not on the task's stack
-	static char msg[CODEPLUG_NAME_LEN + 8];
+	static char msg[CODEPLUG_NAME_LEN + 12];
+	if (view->vfo)
+		radio_req_vfo(false);
+	radio_req_zone(zi);
+	strcpy(msg, home ? "Home zone: " : "Zone: ");
+	if (codeplug_zone(zi, &z))
+		strncat(msg, z.name, CODEPLUG_NAME_LEN);
+	ui_toast(msg);
+}
+
+static void zone_step(int dir)
+{
 	uint16_t n = codeplug_zone_count();
 	if (n < 2) {
 		ui_toast("Only one zone");
 		return;
 	}
-	uint16_t next = (uint16_t)((view->zone_index + n + dir) % n);
-	radio_req_zone(next);
-	if (codeplug_zone(next, &z)) {
-		strcpy(msg, "Zone: ");
-		strncat(msg, z.name, CODEPLUG_NAME_LEN);
-		ui_toast(msg);
-	}
+	zone_go((uint16_t)((view->zone_index + n + dir) % n), false);
 }
 
 void ui_scan_toggle(void)
@@ -1600,6 +1606,10 @@ void ui_app_key(const input_event_t *ev)
 		}
 		case ACT_CALL_BACK:
 			call_back_key();
+			return;
+		case ACT_HOME_ZONE:
+			// The codeplug's first zone: the CPS's zone order picks it (no setting; the settings record is full)
+			zone_go(0, true);
 			return;
 		default:
 			break;
