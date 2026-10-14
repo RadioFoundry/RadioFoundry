@@ -171,6 +171,15 @@ tones go out with 0x3A bits 14:12 = 001 and 0x7A bit 14 (single tone enable), bo
 bandwidth table also doubled reg 0x59 bits 5:0 (0x0B90 to 0x0BA0), so CTCSS went out 4.0× the 12.5 kHz level (366 to
 1464 Hz, SDR bench). With 0x0B90 for both it's 368 and 733 Hz (2.0×). `test_fm_tx_bandwidth` checks the ratio.
 
+**3.12 Every TX state needs its own way out.** Symptom: on the MD-380, PTT on a simplex DMR channel left the radio
+keyed for good: no RF, PTT release, keys and the time-out did nothing, only removing the battery helped. Cause: the
+HR_C5000 gave no timeslot interrupts, so the modem queued the headers and the first voice burst and never sent one.
+PTT release and the time-out only ask for the terminator at the next superframe boundary, and with no burst going
+out that boundary never came; the only tx_done guard was in the ending state, which the call never reached. Rule:
+every TX state ends on its own when the modem stops. Voice now aborts after `DMR_CALL_TX_STALL_MS` (1.5 s) without a
+burst taken (`dmr-voice.md` 2). Radios: all; seen on the MD-380. Tests: `test_tx_modem_stalled` (dmrCallTest),
+`test_dmr_stalled` (radioCoreTest).
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the

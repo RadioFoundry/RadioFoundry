@@ -113,8 +113,11 @@ static struct {
 	bool started;
 	int starts, stops;
 	bool pcm;
+	bool feed;		// run() hands the callback a 20 ms microphone block, as a driver does (off: no blocks)
+	audio_block_cb_t cb;
+	void *ctx;
 } aud;
-static bool a_start(audio_block_cb_t cb, void *ctx) { (void)cb; (void)ctx; aud.started = true; aud.starts++; return true; }
+static bool a_start(audio_block_cb_t cb, void *ctx) { aud.cb = cb; aud.ctx = ctx; aud.started = true; aud.starts++; return true; }
 static void a_stop(void) { aud.started = false; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
 static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
@@ -860,6 +863,11 @@ static void run(uint32_t ms)
 		if (now % 30 == 0) {
 			sim_slot();
 		}
+		if (aud.feed && aud.started && aud.cb != NULL && now % 20 == 0) {
+			static const int16_t mic[AUDIO_BLOCK_SAMPLES];
+			int16_t spk[AUDIO_BLOCK_SAMPLES];
+			aud.cb(mic, spk, aud.ctx);
+		}
 		if (now % RADIO_TICK_MS == 0) {
 			radio_sm_tick(&sm, now);
 		}
@@ -1050,6 +1058,31 @@ static void test_dmr_tx(void)
 	req(RREQ_PTT, 0);
 	run(1000);
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 2);
+}
+
+// A modem with no slot timing takes the transmission and never sends (MD-380, HR_C5000 not answering): the radio must
+// not stay keyed. Released: back to receive with the arming dropped; held: refused until release
+static void test_dmr_stalled(void)
+{
+	dmr_start(true);
+	aud.feed = true;	// the encoder fills voice bursts, so the stack gets past the headers as on the radio
+	sim.stalled = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && sim.tx_begins == 1);
+	run(400);
+	req(RREQ_PTT, 0);
+	run(DMR_CALL_TX_STALL_MS);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 1 && !sim.tx_active && !hw.led[LED_RED]);
+	CHECK(sim.tx_aborts == 1 && sim.air_count == 0);
+
+	req(RREQ_PTT, 1);
+	run(DMR_CALL_TX_STALL_MS + 100);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REJECTED && hw.tx_off_calls == 2);
+	req(RREQ_PTT, 0);
+	run(20);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 2);
+	sim.stalled = false;
+	aud.feed = false;
 }
 
 static void test_dmr_denied(void)
@@ -2738,6 +2771,7 @@ int main(void)
 	test_tone_lists();
 	test_dmr_rx();
 	test_dmr_tx();
+	test_dmr_stalled();
 	test_dmr_denied();
 	test_dmr_voice_features();
 	test_dmr_contact_added();

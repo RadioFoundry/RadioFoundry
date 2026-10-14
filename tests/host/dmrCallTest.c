@@ -645,6 +645,70 @@ static void test_tx_refused(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
 }
 
+// A modem that takes the transmission but never sends a burst (no slot timing: the MD-380's HR_C5000 not answering).
+// The call must end on its own, PTT held or released, not wait for a superframe boundary that never comes
+static void test_tx_modem_stalled(void)
+{
+	dmr_call_config_t c = base_cfg();
+
+	// Stalled from the start, PTT held: refused once the modem has taken nothing for DMR_CALL_TX_STALL_MS
+	setup(&c);
+	sim.stalled = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_begins == 1);
+	run_ms(DMR_CALL_TX_STALL_MS - 100);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	run_ms(200);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_STALLED);
+	CHECK(sim.tx_aborts == 1 && sim.air_count == 0);
+	CHECK(src.begins == 1 && src.ends == 1);
+	dmr_call_ptt(false);
+	run_ms(20);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->state == DMR_CALL_STATE_IDLE);
+
+	// PTT released early (the terminator waits for a boundary that never comes): back to idle all the same
+	setup(&c);
+	sim.stalled = true;
+	dmr_call_ptt(true);
+	run_ms(300);
+	dmr_call_ptt(false);
+	run_ms(DMR_CALL_TX_STALL_MS);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_ERR_STALLED);
+	CHECK(sim.tx_aborts == 1 && src.ends == 1);
+
+	// The time-out has the same wait: it too ends the call on a stalled modem
+	c.tot_s = 1;
+	setup(&c);
+	sim.stalled = true;
+	dmr_call_ptt(true);
+	run_ms(DMR_CALL_TX_STALL_MS + 100);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED);
+	dmr_call_ptt(false);
+	run_ms(20);
+	c.tot_s = 0;
+
+	// A modem that stops mid-call; a working one is never cut, however long the call
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(3 * DMR_CALL_TX_STALL_MS);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_aborts == 0 && sim.air_count > 0);
+	sim.stalled = true;
+	run_ms(DMR_CALL_TX_STALL_MS + 100);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_STALLED && sim.tx_aborts == 1);
+	dmr_call_ptt(false);
+	run_ms(20);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// The next PTT on a modem that recovered is a normal call
+	sim.stalled = false;
+	dmr_call_ptt(true);
+	run_ms(500);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_OK && sim.tx_ends == 1);
+}
+
 static void test_rmo_wakeup(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -1677,6 +1741,7 @@ int main(void)
 	test_tx_call();
 	test_tx_timeout_and_starve();
 	test_tx_refused();
+	test_tx_modem_stalled();
 	test_rmo_wakeup();
 	test_rx_call();
 	test_rx_filters();

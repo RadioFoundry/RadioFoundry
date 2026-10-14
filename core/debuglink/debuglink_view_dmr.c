@@ -28,7 +28,8 @@ static const char *phase_key(uint8_t p)
 
 static const char *tx_error_key(uint8_t e)
 {
-	static const char *const names[] = { "ok", "no_modem", "busy", "no_repeater", "rejected", "timeout" };
+	static const char *const names[] = { "ok", "no_modem", "busy", "no_repeater", "rejected", "timeout",
+					     "stalled" };
 	return e < sizeof(names) / sizeof(names[0]) ? names[e] : "?";
 }
 

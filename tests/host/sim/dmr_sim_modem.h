@@ -50,6 +50,7 @@ typedef struct {
 	bool reject_next;	// send DMR_EV_TX_REJECTED at the next slot
 	bool repeater;		// emit slot ticks with the slot number alternating (a repeater's CACH)
 	bool wake_repeater_on_csbk;	// a BS_Dwn_Act on air starts the repeater (repeater = true)
+	bool stalled;		// no slot timing: no ticks, nothing sent, no tx_done (a modem chip that doesn't answer)
 
 	// State
 	dmr_event_cb_t cb;

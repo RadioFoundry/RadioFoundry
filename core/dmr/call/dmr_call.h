@@ -43,6 +43,7 @@
 #define DMR_CALL_ALIGN_MS		300	// DMO: reply aligned to a station heard this recently (within the modem's slot memory, 390 ms on the HR_C6000)
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
+#define DMR_CALL_TX_STALL_MS		1500	// a voice transmission the modem takes no burst of for this long is cut
 #define DMR_CALL_REPLY_WINDOW_S		10
 #define DMR_CALL_DATA_TIMEOUT_MS	10000	// a burst list on air takes at most this plus 60 ms per burst (gotcha 3.9)
 #define DMR_CALL_DATA_ALIGN_MS		300	// DMO data: aligned to a station heard this recently (the modem's slot memory)
@@ -154,6 +155,7 @@ typedef enum {
 	DMR_TX_ERR_NO_REPEATER,		// BS activation failed
 	DMR_TX_ERR_REJECTED,		// the modem refused (tx_begin false or tx_rejected)
 	DMR_TX_ERR_TIMEOUT,		// TX time-out ended the transmission
+	DMR_TX_ERR_STALLED,		// the modem took no burst for DMR_CALL_TX_STALL_MS (no slot timing)
 } dmr_tx_error_t;
 
 typedef struct {

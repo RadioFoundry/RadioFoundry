@@ -162,6 +162,8 @@ static void send_one(void)
 
 void sim_slot(void)
 {
+	if (sim.stalled)
+		return;
 	sim.slot++;
 	int8_t ts = sim.repeater ? (int8_t)(1 + (sim.slot & 1)) : 0;
 

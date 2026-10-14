@@ -116,6 +116,7 @@ static struct {
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
 	uint32_t tx_start_ms;
+	uint32_t tx_progress_ms;	// the modem last took a burst (queued or started): none for long and it has stalled
 	// talker alias (and GPS Info) in alternate superframes
 	uint8_t tx_ta[DMR_TA_LC_MAX + 1][DMR_LC_BYTES];	// the alias LCs, then our GPS Info
 	uint8_t tx_ta_n;	// LCs in the rotation (alias and GPS)
@@ -857,6 +858,7 @@ static bool tx_put(uint8_t kind, uint8_t index, bool host_crc, const uint8_t *pa
 	if (!s.modem->tx_queue(&tb))
 		return false;
 	s.queued++;
+	s.tx_progress_ms = s.now;
 	return true;
 }
 
@@ -988,6 +990,7 @@ static void tx_start_voice(uint32_t now)
 	s.tx = TX_ON;
 	stats.tx_calls++;
 	s.tx_start_ms = now;
+	s.tx_progress_ms = now;
 	s.tx_target_used = t;
 	s.view.tx_error = DMR_TX_OK;
 
@@ -1189,6 +1192,12 @@ static void tx_poll(uint32_t now)
 		}
 		break;
 	case TX_ON:
+		// PTT release and the time-out end the call at a superframe boundary, which only a modem that sends bursts
+		// reaches: one without slot timing would hold us here, keyed, for good
+		if (elapsed(now, s.tx_progress_ms, true, DMR_CALL_TX_STALL_MS)) {
+			tx_deny(DMR_TX_ERR_STALLED);
+			break;
+		}
 		if (s.cfg.tot_s && !s.stop_req && (uint32_t)(now - s.tx_start_ms) >= (uint32_t)s.cfg.tot_s * 1000u) {
 			s.stop_req = true;
 			s.tot_hit = true;
@@ -1247,8 +1256,10 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 #endif
 		break;
 	case DMR_EV_TX_SLOT_STARTED:
-		if (transmitting())
+		if (transmitting()) {
 			s.started++;
+			s.tx_progress_ms = now;
+		}
 		break;
 	case DMR_EV_TX_REJECTED:
 		if (transmitting())

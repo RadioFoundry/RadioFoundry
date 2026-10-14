@@ -58,6 +58,13 @@ channel change undoes them. Save to channel writes them into the channel.
 TX time-out: the channel's codeplug TOT (15 s units) when it has one, else the radio's (180 s by default). The
 transmission ends at the next superframe boundary with its terminator, and PTT shows "timed out" until released.
 
+Stalled modem: PTT release and the time-out both wait for a superframe boundary, which only comes while the modem
+sends bursts. When the modem takes no burst for `DMR_CALL_TX_STALL_MS` (1.5 s; a burst counts when it is queued or its
+slot starts), the stack aborts the transmission and returns to receive with `DMR_TX_ERR_STALLED` (`dmr.tx_error=stalled`
+on the debug link). With PTT still held the radio shows "Modem refused to send" until release. A modem without slot
+timing (the MD-380 with its HR_C5000 not answering) otherwise kept the radio keyed until the battery came out
+([gotchas](gotchas.md) 3.12).
+
 ## 3. Talker alias
 
 Receive: header (FLCO 4) and blocks 1-3 (FLCO 5-7) in the embedded LC, in any order, all four formats. 7-bit text

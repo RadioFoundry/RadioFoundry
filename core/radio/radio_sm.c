@@ -873,7 +873,8 @@ static uint8_t dmr_deny_reason(uint8_t err)
 	switch (err) {
 	case DMR_TX_ERR_BUSY: return TXDENY_BUSY;
 	case DMR_TX_ERR_NO_REPEATER: return TXDENY_NO_REPEATER;
-	case DMR_TX_ERR_REJECTED: return TXDENY_REJECTED;
+	case DMR_TX_ERR_REJECTED:
+	case DMR_TX_ERR_STALLED: return TXDENY_REJECTED;	// stalled: the modem never sent a burst
 	case DMR_TX_ERR_TIMEOUT: return TXDENY_TIMEOUT;
 	default: return TXDENY_NO_DMR;
 	}
