@@ -2,21 +2,14 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # The user manual (docs/dev/release.md): check the doc links, build the PDF from docs/user with pandoc and typst,
-# and on a v* tag attach it to the GitHub release (created when missing). Independent of the firmware build.
+# and on a v* tag attach it to the GitHub release (created when missing). Independent of the firmware build. Pull
+# requests get the same check from pr-tests.yml, which runs main's copy of the workflow.
 name: User manual
 
 on:
   push:
     tags: ["v*"]
     branches: [main]
-    paths:
-      - "docs/**"
-      - "README.md"
-      - "tools/build_manual.sh"
-      - "tools/manual/**"
-      - "tools/check_doc_links.py"
-      - ".github/workflows/manual.yml"
-  pull_request:
     paths:
       - "docs/**"
       - "README.md"

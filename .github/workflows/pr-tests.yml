@@ -1,0 +1,272 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# CI on every pull request (docs/dev/ci.md "Pull request checks"), from this file as it is on main: a pull request's
+# own copy of the workflows never runs here, so a change to them takes the owner's review first (.github/CODEOWNERS).
+# The jobs are ci.yml's and the manual check, run on the pull request's merge commit; `changes` skips the ones its
+# files don't touch. The last job always runs and sets the `PR checks` commit status on the pull request's head commit:
+# failure when any job failed or was canceled, success otherwise. That status is the one check the main ruleset
+# requires, so a skipped job never holds a pull request up. It is posted by hand because a pull_request_target run's
+# own checks belong to main's commit, not the pull request's.
+#
+# The pull request's code gets a read-only token that isn't stored in the checkout, no secrets and no cache: nothing
+# a fork couldn't have. The DM-32 job logs in to the image registry with the job's own token, pulls the image and logs
+# out before the build runs. The status job is the only one with a write permission (statuses), and it checks out
+# nothing. Never add secrets, another write permission, actions/cache or the pull request's text (title, body, branch
+# name) in a run step to this file.
+name: PR tests
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  ARM_GCC_VERSION: "13.3.rel1"   # ci.yml's and release.yml's pinned toolchain
+  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
+  PANDOC_VERSION: "3.6.4"        # manual.yml's
+  TYPST_VERSION: "0.13.1"
+  MERGE_REF: refs/pull/${{ github.event.pull_request.number }}/merge   # the pull request merged into main
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      src: ${{ steps.files.outputs.src }}
+      docs: ${{ steps.files.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MERGE_REF }}
+          fetch-depth: 2   # the merge commit and main, its first parent
+          persist-credentials: false
+          submodules: false
+      - name: What the pull request changes
+        id: files
+        run: |
+          set -eu
+          git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/files"
+          src=false; docs=false
+          # ci.yml's paths
+          grep -qE '^(Makefile|AUTHORS|\.gitmodules|REUSE\.toml|(boards|config|core|drivers|hal|platform|tests|third_party|tools|LICENSES)/)' \
+            "$RUNNER_TEMP/files" && src=true
+          # manual.yml's paths
+          grep -qE '^(docs/|README\.md$|tools/build_manual\.sh$|tools/manual/|tools/check_doc_links\.py$)' \
+            "$RUNNER_TEMP/files" && docs=true
+          echo "src=$src" >> "$GITHUB_OUTPUT"
+          echo "docs=$docs" >> "$GITHUB_OUTPUT"
+          echo "source: $src, docs: $docs"
+
+  host:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MERGE_REF }}
+          persist-credentials: false
+          submodules: false   # the host tests use none of third_party
+      - name: Install tshark, numpy, pytest, pyserial
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            tshark python3-numpy python3-pytest python3-serial
+      - name: Host tests, Python checks, license checks
+        run: tools/ci.sh --steps host,python,licenses
+      - name: UI screen gallery
+        run: |
+          set -eu
+          make -s -C tests/host uiSim
+          tests/host/uiSim --gallery build/ci/gallery > /dev/null
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-logs
+          path: |
+            build/ci/*.log
+            build/ci/gallery/
+          if-no-files-found: ignore
+
+  coverage:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MERGE_REF }}
+          persist-credentials: false
+          submodules: false
+      - name: Install gcovr, tshark, numpy
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark python3-numpy
+      - name: Coverage of the host tests
+        run: tools/coverage.sh
+      - name: Host tests under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1   # LeakSanitizer needs ptrace
+        run: make -C tests/host -j"$(nproc)" SANITIZE=1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: build/coverage/
+          if-no-files-found: ignore
+
+  firmware:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [dm1701, md380]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MERGE_REF }}
+          persist-credentials: false
+          submodules: recursive
+      - name: Arm GNU Toolchain (pinned and checksummed; no cache here)
+        run: tools/install-arm-toolchain.sh
+      - name: Default build, warnings, size and app region fit
+        run: |
+          set -eu
+          tools/ci.sh --quick --steps firmware --board ${{ matrix.board }}
+          cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: firmware-${{ matrix.board }}
+          path: |
+            build/ci/size-report.md
+            build/ci/*.log
+            build/ci/*/odr_*.bin
+          if-no-files-found: ignore
+
+  dm32:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read   # pulling the private csky-elf image with the job token
+    env:
+      ODR_CSKY_IMAGE: ${{ vars.ODR_CSKY_IMAGE || 'odr/csky-gcc14:latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MERGE_REF }}
+          persist-credentials: false
+          submodules: recursive
+      - name: Pull the image, then log out before the pull request's code runs
+        if: vars.ODR_CSKY_REGISTRY != ''
+        env:
+          REGISTRY: ${{ vars.ODR_CSKY_REGISTRY }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -u
+          echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
+          docker pull "$ODR_CSKY_IMAGE" || true   # missing: the build step reports it as skipped
+          docker logout "$REGISTRY"
+      - name: DM-32UV default build in the csky-elf image
+        run: |
+          set -u
+          rc=0
+          tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+          if [ "$rc" = 3 ]; then
+            echo "::notice::DM-32UV build skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            exit 0
+          fi
+          [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: firmware-dm32
+          path: |
+            build/ci/size-report.md
+            build/ci/*.log
+            build/ci/*/odr_*.bin
+          if-no-files-found: ignore
+
+  manual:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MERGE_REF }}
+          persist-credentials: false
+          submodules: false
+      - name: Check doc links
+        run: python3 tools/check_doc_links.py
+      - name: Install pandoc and typst
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          curl -fsSL -o pandoc.tar.gz \
+            "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz"
+          tar -xzf pandoc.tar.gz
+          curl -fsSL -o typst.tar.xz \
+            "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz"
+          tar -xJf typst.tar.xz
+          echo "PANDOC=$RUNNER_TEMP/tools/pandoc-${PANDOC_VERSION}/bin/pandoc" >> "$GITHUB_ENV"
+          echo "TYPST=$RUNNER_TEMP/tools/typst-x86_64-unknown-linux-musl/typst" >> "$GITHUB_ENV"
+      - name: Build the PDF
+        run: |
+          set -eu
+          VERSION="$(git rev-parse --short=8 HEAD)"
+          tools/build_manual.sh --version "$VERSION" --out "build/manual/OpenDigitalRadio-manual-${VERSION}.pdf"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manual
+          path: build/manual/*.pdf
+          if-no-files-found: error
+
+  pr-checks:
+    name: PR checks status
+    needs: [changes, host, coverage, firmware, dm32, manual]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      statuses: write   # the PR checks status on the head commit; this job runs none of the pull request's code
+    steps:
+      - name: Set PR checks on the head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+          RESULTS: ${{ toJSON(needs.*.result) }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          echo "results: $RESULTS"
+          if [ "$FAILED" = false ]; then
+            state=success; text="every job passed or was skipped"
+          else
+            state=failure; text="a job failed or was canceled"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state="$state" -f context="PR checks" \
+            -f description="$text" -f target_url="$RUN_URL" > /dev/null
+          [ "$state" = success ]

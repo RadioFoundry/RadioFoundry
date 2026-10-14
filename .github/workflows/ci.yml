@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
-# Per-push CI (docs/dev/ci.md): everything that takes a few minutes, on every push and pull request that changes
-# firmware sources, tests, build tools or this workflow (docs-only changes run only the manual workflow). The pieces
+# Per-push CI (docs/dev/ci.md): everything that takes a few minutes, on every push that changes firmware sources,
+# tests, build tools or this workflow (docs-only changes run only the manual workflow). Pull requests get the same jobs
+# from pr-tests.yml, which runs main's copy of the workflow, never the pull request's. The pieces
 # are tools/ci.sh's steps, so a local `tools/ci.sh --quick` runs the same checks:
 #   host       host tests (64 suites, tshark pcap checks), Python checks, license checks, the UI screen gallery
 #   coverage   the host tests built with --coverage, gcovr's report (HTML artifact, totals in the job summary); then
@@ -19,23 +20,6 @@ name: CI
 on:
   push:
     branches: ["**"]
-    paths:
-      - "Makefile"
-      - "AUTHORS"
-      - ".gitmodules"
-      - "boards/**"
-      - "config/**"
-      - "core/**"
-      - "drivers/**"
-      - "hal/**"
-      - "platform/**"
-      - "tests/**"
-      - "third_party/**"
-      - "tools/**"
-      - "LICENSES/**"
-      - "REUSE.toml"
-      - ".github/workflows/ci.yml"
-  pull_request:
     paths:
       - "Makefile"
       - "AUTHORS"

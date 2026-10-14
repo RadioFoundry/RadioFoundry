@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# Code owners: a pull request that touches these paths needs the owner's review before it merges. The workflows run
+# with the repository's trust (pr-tests.yml runs main's copy against every pull request, docs/dev/ci.md), so they and
+# this file are the owner's.
+/.github/ @sfowlr

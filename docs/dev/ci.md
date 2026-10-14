@@ -9,10 +9,11 @@ so one set serves the self-hosted Gitea runner and GitHub.
 
 | Workflow | Runs on | When | What |
 |---|---|---|---|
-| `ci.yml` | `ubuntu-24.04` | every push to any branch and every pull request that changes source (below); by hand | host tests, Python and license checks, coverage, every board's default build |
+| `ci.yml` | `ubuntu-24.04` | every push to any branch that changes source (below); by hand | host tests, Python and license checks, coverage, every board's default build |
+| `pr-tests.yml` | `ubuntu-24.04` | every pull request, from `main`'s copy of the workflow | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge |
 | `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when the default branch has an untested commit; by hand | the feature matrix of every board, `reuse lint` |
 | `hil.yml` | `odr-hil` (the bench Mac) | by hand; nightly only when `ODR_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
-| `manual.yml` | `ubuntu-24.04` | docs changes, `v*` tags | the user manual PDF ([release.md](release.md)) |
+| `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([release.md](release.md)) |
 | `release.yml` | `ubuntu-24.04` and the hosted macOS / Windows runners | `v*` tags, release tooling changes | release images and odrflash ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `ODR_CI_GITHUB` is `true`: the
@@ -43,6 +44,34 @@ images and logs are workflow artifacts (`firmware-<board>`), as are the host log
 
 `reuse lint` is part of the host job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
 the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
+
+## Pull request checks: `pr-tests.yml`
+
+Every pull request runs `ci.yml`'s jobs (`host`, `coverage`, `firmware` for the DM-1701 and MD-380, `dm32`) and the
+manual check (doc links and the PDF build, as `manual.yml` does) on its merge commit. The first job, `changes`,
+looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s paths) run
+the build and test jobs, docs changes (`manual.yml`'s paths) the manual. The last job always runs and sets the
+`PR checks` commit status on the pull request's head commit: failure when any job failed or was canceled, success
+otherwise. It is the one status check the `main` ruleset requires, so a skipped job never holds a pull request up,
+and a new job only has to be added to its `needs` list. The job posts the status itself because a
+`pull_request_target` run's own checks belong to `main`'s commit, where the ruleset doesn't look.
+
+The workflow runs on `pull_request_target`, so GitHub takes it from `main`, never from the pull request: a
+contributor's edited workflow doesn't run here, and the checks run on every pull request without anyone approving
+them. `ci.yml` and `manual.yml` have no `pull_request` trigger for the same reason. A member's branch also gets
+`ci.yml` from its pushes; the website (`site.yml`) isn't part of the pull request checks.
+
+The pull request's code runs with a read-only token that isn't stored in the checkout, no secrets and no cache, so
+it gets nothing a fork couldn't have. The firmware jobs download the toolchain each time (checksummed by
+`tools/install-arm-toolchain.sh`, about 50 s). The `dm32` job logs in to the image registry with the job's own token
+(`packages: read`), pulls the image and logs out before the build runs. The status job is the only one with a write
+permission (`statuses: write`), and it checks out nothing. Keep it that way: never add secrets, another write
+permission, `actions/cache` or the pull request's text (title, body, branch name) in a run step to `pr-tests.yml`.
+Changes to `.github/` need the owner's review (`.github/CODEOWNERS`, with code owner review required in the `main`
+ruleset), since `main`'s workflows are the ones that run.
+
+A branch pushed to this repository still runs its own copy of the workflows on `push`. Only the owner's review keeps
+a changed workflow off `main`; it doesn't stop it from running on that branch.
 
 ## Nightly: `nightly.yml`
 
