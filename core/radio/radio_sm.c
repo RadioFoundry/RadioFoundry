@@ -3739,6 +3739,17 @@ static bool save_poll(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+// Polls of noise above the line before the squelch closes
+static uint8_t close_polls(void)
+{
+#if CONFIG_APRS_RX
+	if (aprs_rx_listening()) {
+		return RADIO_SQL_CLOSE_POLLS_APRS;
+	}
+#endif
+	return RADIO_SQL_CLOSE_POLLS;
+}
+
 #if CONFIG_VOX
 static bool vox_enabled(const radio_sm_t *sm)
 {
@@ -3751,16 +3762,6 @@ static bool vox_enabled(const radio_sm_t *sm)
 
 // Key on voice, unkey vox_tail_ms after it stops. Never keyed by received audio (squelch open, monitor, just after)
 
-// Polls of noise above the line before the squelch closes
-static uint8_t close_polls(void)
-{
-#if CONFIG_APRS_RX
-	if (aprs_rx_listening()) {
-		return RADIO_SQL_CLOSE_POLLS_APRS;
-	}
-#endif
-	return RADIO_SQL_CLOSE_POLLS;
-}
 static void vox_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (!sm->vox_keyed) {
