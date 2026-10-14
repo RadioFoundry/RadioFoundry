@@ -182,6 +182,9 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_LED_GREEN), PIN_MASK(PIN_LED_GREEN), false, false);
 	stm32_pin_out(PIN_PORT(PIN_LED_RED), PIN_MASK(PIN_LED_RED), false, false);
 
+	// SAVE enables the 5C regulator (U404), which powers the synthesizer's 3.3 V (U602) and part of the receive chain;
+	// the stock firmware drives it high too (hardware-md380.md 5.7)
+	stm32_pin_out(PIN_PORT(PIN_SAVE), PIN_MASK(PIN_SAVE), true, false);
 	stm32_pin_out(PIN_PORT(PIN_TX_5V), PIN_MASK(PIN_TX_5V), false, false);
 	stm32_pin_out(PIN_PORT(PIN_APC_EN), PIN_MASK(PIN_APC_EN), false, false);
 	stm32_pin_out(PIN_PORT(PIN_RX_5V), PIN_MASK(PIN_RX_5V), false, false);

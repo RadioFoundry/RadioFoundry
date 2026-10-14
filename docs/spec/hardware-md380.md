@@ -87,7 +87,7 @@ disagree the pin is marked (?). `boards/md380/pins.h` holds the same map.
 | PA5 | DAC2: MOD2_BIAS (reference oscillator bias) | (D); value from [gotchas] 11.1 (F) |
 | PA6 | Keypad row K1 | (D) |
 | PA7 | POW_C, power latch | (D) |
-| PA8 | SAVE (battery saving) | (D); function (?), left as an input |
+| PA8 | SAVE: enable of the 5C rail (U404), high = on (5.7) | (C) schematic and stock firmware; output, driven high |
 | PA9 | VCOVCC_SW: RX or TX VCO supply | (D); polarity (?) |
 | PA10 | DMR_SW: receiver IF to the HR_C5000 | (D); low in TX, high in RX (F) [gotchas] 2.6 |
 | PA11 / PA12 | USB OTG_FS D- / D+ | (D) |
@@ -139,7 +139,7 @@ disagree the pin is marked (?). `boards/md380/pins.h` holds the same map.
 | PD7 | SPI flash chip select | (D) |
 | PD8 | GPS module power on the G models; listed as a second flash chip select on others | (D), (F) [gotchas] 13.7 |
 | PD9 | USART3 RX (AF7): GPS NMEA in on the G models; listed as a flash chip select on others | (?) |
-| PD10 | SKY72310 lock detect, high = locked | (D) |
+| PD10 | SKY72310 PS, out-of-lock, open collector: pulled up, high = locked | (D); pull-up (C) |
 | PD11 | SKY72310 chip select | (D) |
 | PD12 | FSMC A17, LCD RS (data / command) | (D) |
 | PD13 | LCD reset | (D) |
@@ -285,7 +285,8 @@ Skyworks SKY72310-11 (D) [OpenRTX], [DL4YHF]. From the data sheet [SKY] (C):
   Mux_out source, 9 tristate); 8 modulation control; 9 modulation data; 14 delta-sigma (0x080, bit 5 signed mode).
 - N = f_vco / f_pd with f_pd = f_osc / R <= 50 MHz; the 18-bit dividend is round(2^18 x frac(N)) in unsigned mode.
 - A new ratio takes effect on the dividend MSB write: order divider, LSB, MSB.
-- Lock detect high = locked (on the Mux_out / LD pin, wired to PD10 (D)).
+- Lock detect high = locked (on the Mux_out / LD pin, wired to PD10 (D)). The pin is the PS output, open collector
+  [holger]: the MCU's pull-up gives the high (5.7).
 
 `drivers/rf/sky72310` implements this and `tests/host/sky72310Test.c` checks it against a model of the chip. The
 board picks the smallest reference divider that keeps N in the fractional range (2 or 3 at 16.8 MHz), the phase
@@ -337,8 +338,19 @@ burst by some milliseconds (?)). A TIM7 one-shot drops it 30 ms later, as the st
 (F) [gotchas] 3.4; the slot engine's PA-off at the next timeslot interrupt stays as the fallback. The synthesizer
 returns to RX at `tx_off()`.
 
+### 5.7 The 5C rail (SAVE)
+
+PA8 ("SAVE") is the enable of U404 (XC6204B502, CE active high), the regulator for the 5C rail; 5C feeds the
+SKY72310's 3.3 V regulator U602 (XC6204B332, CE tied to its input) and part of the receive chain (C) [schematic,
+page 4]. The stock firmware drives PA8 high as an output (C: its GPIOA registers read with md380-tool under md380tools
+firmware). `board.c` drives it high at start-up.
+
+Measured on a UHF MD-380 with no signal: the raw RSSI reading (ADC1 IN8) went from 246 with PA8 left as an input to
+640-720 with it high, and the RSSI follows a received carrier. PD10 (PS, pulled up) reads 1 with SAVE low (the
+synthesizer unpowered, PS floating) and 0 with SAVE high (powered, not yet programmed: out of lock) (C).
+
 Sources: [SKY] (C); [DL4YHF], [OpenRTX] (D); [miklor] (F); [radios.md](radios.md) MD-9600 notes and [ref] for the
-frequency plan (F); [gotchas] 3.3, 3.4.
+frequency plan (F); [gotchas] 3.3, 3.4; MD-380 UHF RF schematic (pchickey/md380-re datasheets) for 5.7.
 
 ---
 

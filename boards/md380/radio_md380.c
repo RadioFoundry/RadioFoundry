@@ -503,7 +503,7 @@ static void init(void)
 		speaker_lock = xSemaphoreCreateMutex();
 	}
 	stm32_pin_in(PIN_PORT(PIN_C5000_MISO), PIN_MASK(PIN_C5000_MISO), GPIO_PULLUP);
-	stm32_pin_in(PIN_PORT(PIN_PLL_LD), PIN_MASK(PIN_PLL_LD), GPIO_NOPULL);
+	stm32_pin_in(PIN_PORT(PIN_PLL_LD), PIN_MASK(PIN_PLL_LD), GPIO_PULLUP);	// open collector (hardware-md380.md 5.2)
 	PIN_WRITE(PIN_C5000_CS, true);
 	PIN_WRITE(PIN_PLL_CS, true);
 	PIN_WRITE(PIN_C5000_CLK, true);

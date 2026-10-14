@@ -32,11 +32,11 @@
 #define PIN_APC_EN		GPIOC, GPIO_PIN_4	// RF_APC_SW: PA power control loop on
 #define PIN_TX_5V		GPIOC, GPIO_PIN_5	// 5TC: transmitter supply
 #define PIN_RX_5V		GPIOC, GPIO_PIN_9	// 5RC: receiver supply
-#define PIN_SAVE		GPIOA, GPIO_PIN_8	// "SAVE" (battery saving, function ?): left as an input
+#define PIN_SAVE		GPIOA, GPIO_PIN_8	// "SAVE": high enables the 5C rail (U404 CE) that feeds the PLL
 
 // SKY72310 synthesizer: three-wire bus, clock and data shared with the HR_C5000's configuration port
 #define PIN_PLL_CS		GPIOD, GPIO_PIN_11
-#define PIN_PLL_LD		GPIOD, GPIO_PIN_10	// lock detect, high = locked
+#define PIN_PLL_LD		GPIOD, GPIO_PIN_10	// SKY72310 PS, out-of-lock, open collector: pulled up, high = locked
 
 // Power, audio, LEDs
 #define PIN_POWER_LATCH		GPIOA, GPIO_PIN_7	// POW_C
