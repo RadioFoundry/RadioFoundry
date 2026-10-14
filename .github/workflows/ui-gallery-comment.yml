@@ -2,10 +2,11 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # Posts the UI gallery comment on a pull request (docs/dev/ci.md "UI gallery"), from the `ui-gallery` artifact that
-# ui-gallery.yml made. The changed screens are pushed to the `ui-previews` branch (made on first use) and the comment links them
-# (blob URLs with ?raw=true, which render for signed-in viewers of a private repository; --attach needs a user session,
-# not the job's token). Each new commit replaces the previous comment; the comment is found by its
-# marker line.
+# ui-gallery.yml made. The changed screens are pushed to the `ui-previews` branch (made on first use) and the comment
+# links them (blob URLs with ?raw=true, which render for signed-in viewers of a private repository; --attach needs a user
+# session, not the job's token). The branch is rebuilt as one parentless commit on every run, keeping the open pull
+# requests, the newest 5 closed without a merge and the newest 20 merged, so it never grows. Each new commit replaces the
+# previous comment; the comment is found by its marker line.
 #
 # This is the only workflow with write permissions, and it runs main's copy against every pull request. It never runs
 # code from the pull request or the artifact: the artifact is checked as data (names, sizes, PNG signatures, no links,
@@ -162,33 +163,67 @@ jobs:
           SERVER: ${{ github.server_url }}
           PR: ${{ steps.pr.outputs.number }}
           HEAD: ${{ github.event.workflow_run.head_sha }}
+          KEEP_UNMERGED: "5"    # closed without merging
+          KEEP_MERGED: "20"
         run: |
           set -eu
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           git init -q previews
           cd previews
           git remote add origin "$SERVER/$REPO.git"
+          old=
           if git -c http.extraheader="$auth" fetch -q --depth 1 origin ui-previews; then
-            git checkout -q -b ui-previews FETCH_HEAD
-          else
-            git checkout -q --orphan ui-previews   # first use: the branch holds only previews
-            echo "Pictures for the UI gallery comments (ui-gallery-comment.yml). Nothing to merge." > README.md
-            git add README.md
+            git checkout -q FETCH_HEAD
+            old=$(git rev-parse 'FETCH_HEAD^{tree}')
           fi
-          # one directory per pull request, holding the newest commit only
+          # The branch never grows: it is rebuilt as one parentless commit on every run (force-pushed; it holds only
+          # pictures that can be regenerated). It keeps the pull requests that are open, the newest KEEP_UNMERGED closed
+          # without a merge and the newest KEEP_MERGED merged, among those that have pictures; this one is replaced.
+          git checkout -q --orphan fresh
+          echo "Pictures for the UI gallery comments (ui-gallery-comment.yml). Rebuilt on every run; nothing to merge." > README.md
           rm -rf "pr-$PR"
+          python3 -I - <<'PY'
+          import json, os, shutil, subprocess
+
+          repo, cur = os.environ["REPO"], os.environ["PR"]
+          keep_unmerged, keep_merged = int(os.environ["KEEP_UNMERGED"]), int(os.environ["KEEP_MERGED"])
+          open_, unmerged, merged = [], [], []
+          for d in sorted(os.listdir(".")):
+              if not (d.startswith("pr-") and d[3:].isdigit()):
+                  continue
+              n = d[3:]
+              r = subprocess.run(["gh", "api", f"repos/{repo}/pulls/{n}"], capture_output=True, text=True)
+              if r.returncode != 0:
+                  continue   # no such pull request: drop it
+              pr = json.loads(r.stdout)
+              if pr["state"] == "open":
+                  open_.append(d)
+              elif pr.get("merged_at"):
+                  merged.append((pr["merged_at"], d))
+              else:
+                  unmerged.append((pr["closed_at"] or "", d))
+          keep = set(open_)
+          keep |= {d for _, d in sorted(unmerged, reverse=True)[:keep_unmerged]}
+          keep |= {d for _, d in sorted(merged, reverse=True)[:keep_merged]}
+          for d in sorted(os.listdir(".")):
+              if d.startswith("pr-") and d not in keep:
+                  shutil.rmtree(d)
+                  print(f"dropped {d}")
+          print(f"kept {sorted(keep)}")
+          PY
           mkdir -p "pr-$PR/$HEAD"
           [ -d ../ui/compare ] && cp -r ../ui/compare "pr-$PR/$HEAD/"
           cp ../ui/manifest.json "pr-$PR/$HEAD/"
           git add -A .
-          if git diff --cached --quiet; then
+          new=$(git write-tree)
+          if [ "$new" = "$old" ]; then
             echo "images for ${HEAD:0:7} are already published"
             exit 0
           fi
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "UI gallery: pull request #$PR at ${HEAD:0:7}"
-          git -c http.extraheader="$auth" push -q origin HEAD:ui-previews
+          git -c http.extraheader="$auth" push -q --force origin HEAD:ui-previews
 
       - name: Post the comment
         if: steps.pr.outputs.skip == 'false'

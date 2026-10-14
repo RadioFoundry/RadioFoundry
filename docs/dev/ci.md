@@ -89,9 +89,13 @@ before and after, side by side. It's advisory: no required check waits on it.
    under those headings. The render is deterministic, so an unchanged screen never shows up.
 2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact and checks it as data (no links,
    file names and sizes, PNG signatures, the pull request and commit it names). It pushes each
-   composite to the `ui-previews` branch (made on first use, one `pr-N/` folder holding the newest commit) and
+   composite to the `ui-previews` branch (made on first use, one `pr-N/` folder per pull request holding its newest commit) and
    linked with `blob/...?raw=true` URLs, which render for signed-in viewers of a private repository (`gh --attach` needs a
-   user session, not the job's token). It then posts a new comment and deletes the previous one. The
+   user session, not the job's token). The branch never grows: every run rebuilds it as one parentless commit and force-pushes it (it holds only
+   pictures that can be regenerated), keeping the open pull requests, the newest 5 closed without a merge and the newest
+   20 merged, among those that have pictures; older folders are dropped, and GitHub collects their objects. It then
+   posts a new comment and deletes the previous one. Pictures of a pull request that fell out of the window no longer
+   load. The
    comment is found by its marker line (`<!-- odr-ui-gallery -->`) and carries the commit, the UTC time of the update
    and the base commit. A run for a commit the pull request has already moved past posts nothing.
 
