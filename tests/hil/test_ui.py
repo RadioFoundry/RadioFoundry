@@ -132,11 +132,22 @@ def test_key_lock(home):
     r.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
 
 
-def test_recent_on_long_context(home):
+def test_talk_target_picker_on_long_context(home):
+    """Long # opens the talk target picker on a DMR channel (Recent is Hub 3)."""
     r = home
     r.press("context", LONG)
-    wait_screen(r, "recent", "Recent on long #")
+    wait_screen(r, "picker", "talk target picker on long #")
     r.press("back")
+    wait_screen(r, "home")
+
+
+def test_recent_from_the_hub(home):
+    r = home
+    r.press("ok")
+    wait_screen(r, "hub")
+    r.press("3")
+    wait_screen(r, "recent", "Recent on 3")
+    r.press("back", LONG)
     wait_screen(r, "home")
 
 
