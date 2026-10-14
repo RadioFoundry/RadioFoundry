@@ -665,7 +665,8 @@ static void dmr_load_channel(radio_sm_t *sm)
 	if (sm->view.vfo) {
 		return;
 	}
-	if (ch->contact != 0 && codeplug_contact(ch->contact, &c)) {
+	uint16_t talk = codeplug_channel_talk_contact(ch);
+	if (talk != 0 && codeplug_contact(talk, &c)) {
 		sm->talk_id = c.id;
 		sm->talk_private = c.type == CONTACT_PRIVATE;
 		sm->talk_ts = c.timeslot;
@@ -1733,13 +1734,14 @@ static void roam_cfg_of(const radio_settings_t *s, roam_cfg_t *c)
 	c->survey = s->roam_survey;
 }
 
-// Where a channel talks: its contact's ID and call type, else the default talkgroup 9 (as dmr_load_channel)
+// Where a channel talks: its default contact's ID and call type, else talkgroup 9 (as dmr_load_channel)
 static void roam_talk_of(const channel_t *ch, uint32_t *id, bool *priv)
 {
 	contact_t c;
+	uint16_t talk = codeplug_channel_talk_contact(ch);
 	*id = 9;
 	*priv = false;
-	if (ch->contact != 0 && codeplug_contact(ch->contact, &c)) {
+	if (talk != 0 && codeplug_contact(talk, &c)) {
 		*id = c.id;
 		*priv = c.type == CONTACT_PRIVATE;
 	}

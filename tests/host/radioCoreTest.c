@@ -260,10 +260,17 @@ bool dmr_iddb_lookup(uint32_t id, char *out, size_t len)
 }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out)
 {
-	if (index != 1) {
+	if (index != 1 && index != 2) {
 		return false;
 	}
 	memset(out, 0, sizeof(*out));
+	if (index == 2) {		// a private contact first: no talk target, the default skips it
+		strcpy(out->name, "Joe first");
+		out->count = 2;
+		out->contacts[0] = 2;
+		out->contacts[1] = 1;
+		return true;
+	}
 	strcpy(out->name, "Local TGs");
 	out->count = 3;
 	out->contacts[0] = 1;
@@ -1083,6 +1090,53 @@ static void test_dmr_stalled(void)
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 2);
 	sim.stalled = false;
 	aud.feed = false;
+}
+
+// A channel with no TX contact talks to the first talkgroup of its RX group list (issue #4: qdmr's open-firmware
+// encoder writes a channel's contact or its list, never both); talkgroup 9 only with neither; a contact always wins
+static void test_dmr_list_talk_target(void)
+{
+	const radio_dmr_view_t *d = &sm.view.dmr;
+
+	dmr_start(true);
+	CHECK(d->target_id == 201);	// channel 4's contact, Main Ops
+	chans[4].contact = 0;		// no contact, list 1: Main Ops first
+	chans[4].listen_list = 1;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(d->target_id == 201 && !d->target_private && strcmp(d->target_name, "Main Ops") == 0);
+
+	chans[4].listen_list = 2;	// Joe (private) first: skipped
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(d->target_id == 201 && !d->target_private);
+
+	chans[4].listen_list = 0;	// neither: talkgroup 9
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(d->target_id == 9 && !d->target_private);
+
+	chans[4].contact = 3;		// a contact wins over the list
+	chans[4].listen_list = 1;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(d->target_id == 9 && strcmp(d->target_name, "Local") == 0);
+
+	// What PTT sends: the list's talkgroup, as a group call
+	chans[4].contact = 0;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX && sm.view.dmr.call.dst == 201 && sm.view.dmr.call.group);
+	req(RREQ_PTT, 0);
+	run(1000);
+	setup_codeplug();
 }
 
 static void test_dmr_denied(void)
@@ -2772,6 +2826,7 @@ int main(void)
 	test_dmr_rx();
 	test_dmr_tx();
 	test_dmr_stalled();
+	test_dmr_list_talk_target();
 	test_dmr_denied();
 	test_dmr_voice_features();
 	test_dmr_contact_added();

@@ -763,11 +763,12 @@ static bool talk_step(int dir)
 	static char msg[48];
 	contact_t c;
 	uint8_t n = 0;
-	if (view->ch.contact)
-		idx[n++] = view->ch.contact;
+	uint16_t def = codeplug_channel_talk_contact(&view->ch);
+	if (def)
+		idx[n++] = def;
 	if (view->ch.listen_list && codeplug_listen_list(view->ch.listen_list, &l)) {
 		for (uint8_t i = 0; i < l.count && n < CODEPLUG_LIST_LEN + 1; i++)
-			if (l.contacts[i] != view->ch.contact)
+			if (l.contacts[i] != def)
 				idx[n++] = l.contacts[i];
 	}
 	if (n < 2)

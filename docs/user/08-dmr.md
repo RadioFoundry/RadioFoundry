@@ -37,7 +37,8 @@ played" and treats the channel as busy while it lasts.
 1. The talkgroup or person with the focus in a list, once (one-shot).
 2. The reply target, while the reply window runs.
 3. A talk target chosen for now.
-4. The channel's talk target from the codeplug. A channel without one uses talkgroup 9.
+4. The channel's talk target from the codeplug. A channel without one talks to the first talkgroup of its RX group
+   list, and uses talkgroup 9 only when it has no list either.
 
 Home shows the result after "PTT→".
 

@@ -1951,7 +1951,8 @@ static void picker_enter(void)
 	ui_target_t t;
 	contact_t c;
 	// The channel's default
-	if (v->ch.contact && codeplug_contact(v->ch.contact, &c)) {
+	uint16_t def = codeplug_channel_talk_contact(&v->ch);
+	if (def && codeplug_contact(def, &c)) {
 		memset(&t, 0, sizeof t);
 		t.id = c.id;
 		t.group = c.type != CONTACT_PRIVATE;

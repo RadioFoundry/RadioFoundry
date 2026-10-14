@@ -155,6 +155,9 @@ uint32_t codeplug_dmr_id(void);
 bool codeplug_contact(uint16_t index, contact_t *out);
 // RX group lists 1..CODEPLUG_LISTS_MAX; false if unused or unreadable
 bool codeplug_listen_list(uint16_t index, listen_list_t *out);
+// The contact a channel talks to by default: its TX contact, else the first talkgroup of its RX group list; 0 when
+// it has neither (then talkgroup 9). codeplug_talk.c, docs/spec/dmr-voice.md 2
+uint16_t codeplug_channel_talk_contact(const channel_t *ch);
 
 bool codeplug_set_dmr_id(uint32_t id);		// 1..16776415, 0 = none
 bool codeplug_set_contact(uint16_t index, const contact_t *c);

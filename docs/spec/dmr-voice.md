@@ -45,7 +45,8 @@ PTT sends to, in order:
 2. a talk target chosen for now: a typed ID or talkgroup, a codeplug contact (with its timeslot override), or "call
    back", which takes the last call heard (its caller for a private call, its talkgroup for a group call). It lasts
    until the channel changes or it is cleared.
-3. the channel's TX contact; with none, talkgroup 9.
+3. the channel's TX contact; with none, the first talkgroup of its RX group list (private calls skipped); with neither,
+   talkgroup 9. `codeplug_channel_talk_contact()` is the one place this is decided.
 
 The call is unit to unit (FLCO 3) for a private target, else group (FLCO 0).
 
