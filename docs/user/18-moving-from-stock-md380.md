@@ -93,6 +93,11 @@ ODR holds 1024 channels, 68 zones of 80 channels, 1024 contacts and 76 RX group 
 asks before it flashes. To choose yourself, open `backup-stock.yaml` in qdmr and delete what you don't need. Save it,
 and run again with `--from` on the saved file.
 
+The program also tidies the RX group lists. The TYT CPS heard only the talkgroups in a channel's list, so many
+codeplugs have one list per channel holding just that channel's talkgroup. ODR always hears the talkgroup a channel
+talks to, so those lists go, as do empty, duplicate and unused ones. Every channel keeps its talkgroup. `--no-cleanup`
+keeps the lists as they are.
+
 ODR uses the parts of the codeplug listed in [Programming with qdmr](15-programming-qdmr.md). Scan lists, GPS
 systems and TYT's menu and button settings are not carried over.
 

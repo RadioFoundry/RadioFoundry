@@ -16,7 +16,7 @@ reads its manual and `--help`, and contains none of its code. Facts below marked
 |---|---|
 | Radio keys (`dmrconf --list-radios`, 0.15.1) | `md390` (TyT MD-390), `rt8` (Retevis RT8), `openuv380` (qdmr's open firmware driver for the STM32 family), and others. There is no `md380` key |
 | MD-380, MD-390, RT3 | One codeplug format (the TYT MD-380 CPS programs all three; GPS settings are unused on the radios without GPS). The tool reads the stock radio with `--radio md390`. Whether `dmrconf detect` names an MD-380 by itself is untested, so the tool always passes the key |
-| Commands used | `detect`, `read`, `decode`, `decode --manufacturer`, `encode`, `write --init-codeplug`, `encode-db`, `write-db` |
+| Commands used | `detect`, `read` (stock radio only), `decode`, `decode --manufacturer`, `encode`, `encode-db`, `write-db`. Not `write`: against ODR it fails reading the radio first ([codeplug-port.md](codeplug-port.md) 4) |
 | TYT CPS files (.rdt) | `decode --manufacturer --radio md390 FILE.rdt OUT.yaml`. dmrconf requires exactly 262709 bytes (T). That is a 549-byte header, the 256 KB codeplug image and a 16-byte trailer. A synthetic .rdt with a zero header and trailer around an image decodes the same as dmrconf's own binary (T) |
 | md390 binary (dmrconf `.dfu`) | One DfuSe element, codeplug addresses 0x2000-0x40000 of the 256 KB image (T) |
 | Raw 256 KB image (md380tools codeplug dump) | Not read by dmrconf directly. The tool wraps it in a zero .rdt frame (`raw_to_rdt`) and decodes that |
@@ -39,8 +39,9 @@ reads its manual and `--help`, and contains none of its code. Facts below marked
   (0x011000-0x01AFFF). After the flash, that region is foreign ([settings-store.md](settings-store.md) 5), and every
   CPS commit is refused until `odr_debug.py storage claim` runs. The claim dumps the region and the calibration copy
   first. The tool runs the claim after asking, with the dump going into its work directory.
-- The rest of the open-firmware image still holds stock bytes after the claim. The restore therefore writes with
-  `--init-codeplug`: qdmr builds the image from its defaults and doesn't decode the junk first. The DMR ID database
+- The rest of the open-firmware image still holds stock bytes after the claim. The restore writes the encoded image
+  through `cps_client.py`, which doesn't read the old contents to decode them ([codeplug-port.md](codeplug-port.md)
+  4). The DMR ID database
   header at flash 0x50000 is past the 256 KB stock codeplug. md380tools keeps its user database at 0x100000 and up,
   inside ODR's open-firmware flash image. The ID database upload overwrites what it needs, and nothing else reads that
   area.
@@ -62,14 +63,16 @@ known yet.
 
 0. Preflight: dmrconf 0.12 or newer, pyusb + libusb, pyserial, the image checks, and the key. Nothing touches the
    radio.
-1. Backup: `dmrconf read --radio md390 backup-stock.dfu` (or `--from FILE`), then `decode` to YAML. Encode for
-   `openuv380` and decode again (`odr-codeplug.yaml`), compare the counts and report what ODR's limits drop. A users
-   CSV becomes `users.json` and is checked with `encode-db`.
+1. Backup: `dmrconf read --radio md390 backup-stock.dfu` (or `--from FILE`), then `decode` to YAML. Then the shared
+   conversion ([codeplug-port.md](codeplug-port.md)): RX group list clean-up (`--no-cleanup` skips it), encode for
+   `openuv380`, TX contacts put back, decode again (`odr-codeplug.yaml`). Compare the counts and report what ODR's
+   limits drop. A users CSV becomes `users.json` and is checked with `encode-db`.
 2. Flash: bootloader prompt, wait for 0483:DF11, confirm, write.
 3. Wait for ODR (`odr_debug.py ping`). `version` must say MD-380. Then `storage info`: `none` stops, `foreign` is
    claimed after a prompt, and `ours` continues.
-4. `dmrconf write --radio openuv380 --init-codeplug odr-codeplug.yaml`. Wait for the restart. Read back and compare
-   the counts.
+4. `odr-codeplug.dfu` through the CPS shim (`cps_client.py`), what was there saved first as `codeplug-before.bin`.
+   Wait for the restart. Read back, compare the bytes and the counts. `restore --yaml FILE` converts FILE the same way
+   first.
 5. `dmrconf write-db --radio openuv380 --id <codeplug's radio ID>`, with `--database users.json` when a users file
    was given.
 

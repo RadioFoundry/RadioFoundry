@@ -18,10 +18,12 @@ installed separately) reads the stock radio with its DM-32UV driver and turns th
 encodes it offline for qdmr's open firmware family (OpenUV380), the open-firmware layout ODR's CPS shim serves. dmrconf
 can't write that to the DM-32 itself: ODR keeps the open-firmware image at +0x700000 in the radio's data flash and its
 shim takes physical addresses, so this tool writes dmrconf's encoded image over the programming cable with
-cps_client.py, adding 0x700000 to every address.
+cps_client.py, adding 0x700000 to every address. The codeplug steps (RX group list clean-up, encode, TX contacts put
+back, CPS write and read back) are shared with the other radios' tools (codeplug_port.py,
+docs/spec/codeplug-port.md).
 
 Needs Python 3.8+, dmrconf (qdmr 0.15 or newer, with the dm32uv driver) on PATH and pyserial. The helpers
-(dm32_flash.py, cps_client.py, odr_debug.py, md380_migrate.py, dm32_codec.py) are loaded from this script's
+(dm32_flash.py, cps_client.py, codeplug_port.py, odr_debug.py, md380_migrate.py, dm32_codec.py) are loaded from this script's
 directory.
 """
 import argparse
@@ -38,6 +40,9 @@ import time
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import codeplug_port as cp  # noqa: E402  (next to this script)
 
 STOCK_DRIVER = "dm32uv"       # dmrconf --radio for the stock radio
 ODR_DRIVER = "openuv380"      # dmrconf --radio for the open-firmware layout ODR serves (open-firmware-cps.md 7)
@@ -53,8 +58,7 @@ LIST_SECTIONS = ("radioIDs", "contacts", "groupLists", "channels", "zones", "sca
                  "roamingChannels", "roamingZones", "smsTemplates", "encryptionKeys")
 
 
-class MigrateError(Exception):
-    pass
+MigrateError = cp.PortError     # one error type for this tool, the MD-380 tool's session code and the codeplug steps
 
 
 def load_module(name, candidates=None):
@@ -80,67 +84,11 @@ def mod(name):
 # ---------------------------------------------------------------------------------------------------------------
 # pure logic: DfuSe files (dmrconf's binary codeplug format)
 
-def parse_dfuse(data):
-    """[(target name, [(address, bytes)])] from a DfuSe file; checks the prefix, the sizes and the suffix CRC."""
-    if len(data) < 11 + 16 or not data.startswith(b"DfuSe"):
-        raise MigrateError("not a DfuSe file")
-    if data[-8:-5] != b"UFD":
-        raise MigrateError("DfuSe file without the DFU suffix")
-    if struct.unpack_from("<I", data, len(data) - 4)[0] != (~zlib.crc32(data[:-4])) & 0xFFFFFFFF:
-        raise MigrateError("DfuSe file: suffix CRC wrong (damaged file)")
-    size = struct.unpack_from("<I", data, 6)[0]
-    if size != len(data) - 16:
-        raise MigrateError("DfuSe file: image size %d, file has %d" % (size, len(data) - 16))
-    off, targets = 11, []
-    for _ in range(data[10]):
-        if data[off:off + 6] != b"Target":
-            raise MigrateError("DfuSe file: bad target prefix at %d" % off)
-        name = data[off + 11:off + 266].split(b"\0")[0].decode("ascii", "replace")
-        tsize, count = struct.unpack_from("<II", data, off + 266)
-        off += 274
-        end, elems = off + tsize, []
-        for _ in range(count):
-            addr, n = struct.unpack_from("<II", data, off)
-            elems.append((addr, data[off + 8:off + 8 + n]))
-            off += 8 + n
-        if off != end:
-            raise MigrateError("DfuSe file: target %r size mismatch" % name)
-        targets.append((name, elems))
-    if off != len(data) - 16:
-        raise MigrateError("DfuSe file: %d stray bytes" % (len(data) - 16 - off))
-    return targets
-
-
-def build_dfuse(targets):
-    body = b""
-    for i, (name, elems) in enumerate(targets):
-        payload = b"".join(struct.pack("<II", a, len(d)) + bytes(d) for a, d in elems)
-        nm = name.encode("ascii")[:254]
-        body += (b"Target" + b"\x01" + struct.pack("<I", 1) +      # alternate setting 1, named, as dmrconf
-                 nm + bytes(255 - len(nm)) + struct.pack("<II", len(payload), len(elems)) + payload)
-    head = b"DfuSe\x01" + struct.pack("<I", 11 + len(body)) + bytes([len(targets)])
-    data = head + body + b"\xff\xff\xff\xff\xff\xff\x1a\x01UFD\x10"
-    return data + struct.pack("<I", (~zlib.crc32(data)) & 0xFFFFFFFF)
-
-
-def dfu_regions(targets):
-    return [(a, a + len(d)) for _, elems in targets for a, d in elems if d]
-
-
-def dfu_image(targets):
-    """A flat image (file offset = CPS wire address before the offset, 0xFF elsewhere) and its regions."""
-    regions = dfu_regions(targets)
-    size = max([0x120000] + [e for _, e in regions])
-    img = bytearray(b"\xff" * size)
-    for _, elems in targets:
-        for a, d in elems:
-            img[a:a + len(d)] = d
-    return img, regions
-
-
-def image_to_dfu(template, img):
-    """The template's targets and elements with their bytes taken from img (a read back)."""
-    return [(name, [(a, bytes(img[a:a + len(d)])) for a, d in elems]) for name, elems in template]
+parse_dfuse = cp.parse_dfuse
+build_dfuse = cp.build_dfuse
+dfu_regions = cp.dfu_regions
+dfu_image = cp.dfu_image
+image_to_dfu = cp.image_to_dfu
 
 
 def find_cal_page(img, base=0):
@@ -170,7 +118,7 @@ def in_band(hz):
 
 def conversion_report(stock_text, odr_text=None):
     """What the stock codeplug has, what ODR gets and what is lost or changed on the way."""
-    m = mod("md380_migrate")
+    m = cp
     ss = m.yaml_sections(stock_text)
     summary = m.codeplug_summary(stock_text)
     rep = {"stock": {k: len(ss.get(k) or []) for k in LIST_SECTIONS if ss.get(k)},
@@ -376,15 +324,13 @@ def step_backup(sess, args):
 
 
 def convert(sess, args, yaml_path):
-    """Encode for ODR offline, decode again, report. The encoded file is exactly what restore writes."""
-    odr_dfu = sess.path("odr-codeplug.dfu")
-    odr_yaml = sess.path("odr-codeplug.yaml")
-    offline = os.path.exists(yaml_path)
-    sess.dmr("encode", "--radio", ODR_DRIVER, yaml_path, odr_dfu, radio=not offline)
-    sess.dmr("decode", "--radio", ODR_DRIVER, odr_dfu, odr_yaml, radio=not offline)
-    if not offline:
-        sess.say("   [dry run] the conversion check runs once the codeplug has been read")
+    """Clean up, encode for ODR offline, put back the TX contacts, decode again, report (codeplug_port.py). The
+    encoded file is exactly what restore writes."""
+    if not os.path.exists(yaml_path):
+        sess.say("   [dry run] the conversion (group list clean-up, encode, TX contacts put back) runs once the "
+                 "codeplug has been read")
         return True
+    odr_dfu, odr_yaml, _ = cp.convert_for_odr(sess, yaml_path, ODR_DRIVER, cleanup=not args.no_cleanup)
     need_file(sess, odr_yaml, "the codeplug converted for ODR")
     with open(odr_dfu, "rb") as f:
         targets = parse_dfuse(f.read())
@@ -408,8 +354,7 @@ def convert(sess, args, yaml_path):
         sess.say("   this step again with --from on the saved file.")
         if not args.accept_trim and not sess.ask("Continue with the items that fit?"):
             raise MigrateError("stopped before flashing; the backup is in %s" % sess.workdir)
-    m = mod("md380_migrate")
-    after = m.codeplug_summary(odr_text)
+    after = cp.codeplug_summary(odr_text)
     if not rep["radio_ids"]:
         sess.say("   ! the codeplug has no DMR ID: set yours in ODR's settings after the migration (or pass --id for "
                  "the ID database)")
@@ -595,33 +540,8 @@ def step_flash_backup(sess, args):
 
 def cps_write_dfu(sess, dfu_path, label, before_name, reboot=True):
     """Back up what the regions hold, write the DfuSe file's elements at +CPS_OFFSET, return (targets, image)."""
-    with open(dfu_path, "rb") as f:
-        targets = parse_dfuse(f.read())
-    img, regions = dfu_image(targets)
-    total = sum(e - s for s, e in regions)
-    sess.say("   %s: %d bytes in %d regions, at +0x%06X in the data flash" % (label, total, len(regions), CPS_OFFSET))
-    for s, e in regions:
-        if s + CPS_OFFSET < WRITE_FLOOR or e + CPS_OFFSET > 0xF00000:
-            raise MigrateError("region 0x%X..0x%X is outside ODR's open-firmware image" % (s, e))
-    if sess.dry:
-        sess.say("   [dry run] would save the regions to %s, then write them" % before_name)
-        return targets, img
-    cps = open_cps(sess, CPS_OFFSET)
-    try:
-        info = cps.info()
-        sess.say("   CPS shim: radio type %d, git %s, build %s" % (info["radio_type"], info["git"], info["build"]))
-        before = cps.read_image(regions, image=bytearray(b"\xff" * len(img)), block=CPS_BLOCK, progress=bar)
-        with open(sess.path(before_name), "wb") as f:
-            f.write(before)
-        sess.say("   saved what was there as %s (file offset = address - 0x%06X)" % (before_name, CPS_OFFSET))
-        jobs = mod("cps_client").plan_write(img, regions, before)
-        sess.say("   writing %d sectors ..." % len(jobs))
-        cps.write_image(img, regions, reboot=reboot, block=CPS_BLOCK, progress=bar, base=before)
-    except Exception as e:
-        raise MigrateError("CPS write failed: %s. Run 'restore --workdir %s' again" % (e, sess.workdir))
-    finally:
-        cps.close()
-    return targets, img
+    return cp.cps_write_dfu(sess, lambda: open_cps(sess, CPS_OFFSET), dfu_path, label, before_name, offset=CPS_OFFSET,
+                            floor=WRITE_FLOOR, ceiling=0xF00000, block=CPS_BLOCK, progress=bar, reboot=reboot)
 
 
 def step_restore(sess, args):
@@ -642,30 +562,8 @@ def step_restore(sess, args):
     sess.say("   written; the radio restarts")
     time.sleep(3)
     wait_odr(sess, args.wait)
-    cps = open_cps(sess, CPS_OFFSET)
-    try:
-        regions = dfu_regions(targets)
-        back = cps.read_image(regions, image=bytearray(b"\xff" * len(img)), block=CPS_BLOCK, progress=bar)
-    except Exception as e:
-        raise MigrateError("read back failed: %s" % e)
-    finally:
-        cps.close()
-    diffs = mod("cps_client").compare(img, back, regions)
-    back_dfu = sess.path("readback-odr.dfu")
-    with open(back_dfu, "wb") as f:
-        f.write(build_dfuse(image_to_dfu(targets, back)))
-    back_yaml = sess.path("readback-odr.yaml")
-    sess.dmr("decode", "--radio", ODR_DRIVER, back_dfu, back_yaml, radio=False)
-    with open(back_yaml, encoding="utf-8") as f:
-        got = mod("md380_migrate").codeplug_summary(f.read())
-    mod("md380_migrate").print_summary(sess, "read back", got)
-    sess.say("   %d bytes differ from what was written" % len(diffs))
-    diff = mod("md380_migrate").compare_counts(expected, got["counts"])
-    if diff:
-        for k, want, have in diff:
-            sess.say("   ! %s: wrote %d, read back %d" % (k, want, have))
-        raise MigrateError("the codeplug read back differs from what was written; the files are in %s" % sess.workdir)
-    sess.say("   read back matches")
+    cp.check_read_back(sess, lambda: open_cps(sess, CPS_OFFSET), targets, img, expected, ODR_DRIVER,
+                       block=CPS_BLOCK, progress=bar)
     sess.save_state(restored=True)
     return True
 
@@ -747,7 +645,8 @@ in the source.
 def cmd_package(sess, args):
     out = os.path.abspath(args.outdir)
     files = {os.path.abspath(__file__): "dm32_migrate.py"}
-    for helper in ("dm32_flash.py", "cps_client.py", "odr_debug.py", "md380_migrate.py", "dm32_codec.py"):
+    for helper in ("dm32_flash.py", "cps_client.py", "codeplug_port.py", "odr_debug.py", "md380_migrate.py",
+                   "dm32_codec.py"):
         files[os.path.join(HERE, helper)] = helper
     bringup = os.path.join(os.path.dirname(HERE), "docs", "testing", "dm32-bringup.md")
     if os.path.isfile(bringup):
@@ -1055,6 +954,8 @@ def main(argv=None):
                         "dm32uv) or qdmr YAML")
     t = argparse.ArgumentParser(add_help=False)
     t.add_argument("--accept-trim", action="store_true", help="continue without asking when something doesn't fit")
+    t.add_argument("--no-cleanup", action="store_true", help="convert the codeplug as it is: keep every RX group list "
+                   "(by default lists that are empty or only repeat the channel's TX contact are dropped)")
 
     f = argparse.ArgumentParser(add_help=False)
     f.add_argument("--image", required=True, help="the ODR image (odr_dm32_codec.bin, raw or _BFUV32.bin), or a "
@@ -1136,7 +1037,7 @@ def main(argv=None):
         sess.say("finished%s. Files: %s" % (" (dry run: nothing was written to the radio)" if sess.dry else "",
                                             sess.workdir or "-"))
         return 0
-    except (MigrateError, mod("md380_migrate").MigrateError) as e:      # the shared session code raises its own
+    except MigrateError as e:      # the shared codeplug steps and session code raise the same type
         sess.say("")
         sess.say("stopped: %s" % e)
         if sess.state.get("flashed") and sess.state.get("odr_dfu") and args.cmd in ("all", "restore"):

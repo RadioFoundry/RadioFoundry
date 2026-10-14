@@ -77,6 +77,10 @@ characters. The stock radio holds more. If yours has more, the program lists wha
 It asks before it flashes. To choose yourself, open `backup-stock.yaml` in qdmr and delete what you don't need. Save
 it, and run again with `--from` on the saved file.
 
+The program also tidies the RX group lists: lists that hold only the channel's own talkgroup go (ODR always hears the
+talkgroup a channel talks to), as do empty, duplicate and unused ones. Every channel keeps its talkgroup.
+`--no-cleanup` keeps the lists as they are.
+
 `conversion-report.txt` lists everything that changes: counts before and after, names that get shortened, channels
 outside 136-174 and 400-480 MHz, and the parts of the codeplug ODR doesn't use. These parts aren't carried over: the
 stock menu, key and display settings, scan lists, roaming, GPS and APRS settings, encryption keys and the stock

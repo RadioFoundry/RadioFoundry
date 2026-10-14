@@ -16,13 +16,15 @@ Every command takes --dry-run: offline steps (file conversion, image checks) run
 
 The codeplug conversion is done by qdmr's command line tool dmrconf (an external program, installed separately):
 the stock codeplug is read with dmrconf's TyT MD-390 driver (the MD-380, MD-390 and RT3 share one codeplug format),
-turned into qdmr's radio-independent YAML, and written to ODR with the driver for qdmr's open firmware family
-(OpenUV380), which is what ODR's CPS compatibility layer speaks. docs/spec/md380-migration.md has the details,
+turned into qdmr's radio-independent YAML, cleaned of RX group lists ODR doesn't need, encoded with the driver for
+qdmr's open firmware family (OpenUV380), which is the layout ODR's CPS compatibility layer serves, and written through
+that layer with cps_client.py. The codeplug steps are shared with the other radios' migration tools
+(codeplug_port.py, docs/spec/codeplug-port.md). docs/spec/md380-migration.md has the details,
 docs/user/18-moving-from-stock-md380.md the user guide.
 
 Needs Python 3.8+, dmrconf (qdmr 0.12 or newer) on PATH, pyusb with libusb (flashing) and pyserial (talking to the
 radio once it runs ODR). The flash and debug link helpers (stm32_dfu.py, odr_debug.py, odrflash's stockfw.py) are
-loaded from this script's directory or the repository layout.
+loaded from this script's directory or the repository layout, as are codeplug_port.py and cps_client.py.
 """
 import argparse
 import csv
@@ -40,6 +42,9 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import codeplug_port as cp  # noqa: E402  (next to this script)
 
 # TYT MD-380 / MD-390 CPS codeplug file (.rdt): a 549-byte header, the 256 KB codeplug image, a 16-byte trailer. The
 # sizes are the published ones (the TYT CPS and the md380tools documentation); dmrconf's manufacturer reader for
@@ -52,10 +57,9 @@ RDT_SIZE = RDT_HEADER + CODEPLUG_SIZE + RDT_TRAILER
 STOCK_DRIVER = "md390"        # dmrconf --radio for the stock codeplug (MD-380, MD-390, RT3)
 ODR_DRIVER = "openuv380"      # dmrconf --radio for ODR (open-firmware-cps.md 4: radio type 7, OpenUV380 family)
 
-# What ODR's codeplug layout holds (docs/spec/open-firmware-cps.md 7.2-7.3, docs/user/15-programming-qdmr.md).
-# dmrconf's OpenUV380 encoder drops what doesn't fit without an error, so these are checked before writing
-ODR_LIMITS = {"channels": 1024, "zones": 68, "contacts": 1024, "groupLists": 76}
-SECTION_NAMES = {"channels": "channels", "zones": "zones", "contacts": "contacts", "groupLists": "RX group lists"}
+# What ODR's codeplug layout holds, and the qdmr YAML helpers: shared (codeplug_port.py)
+ODR_LIMITS = cp.ODR_LIMITS
+SECTION_NAMES = cp.SECTION_NAMES
 
 APP_BASE = 0x0800C000
 FLASH_END = 0x08100000
@@ -66,8 +70,7 @@ CONTAINER_HEADER = 0x100
 MD380_KEY_SHA256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
 
 
-class MigrateError(Exception):
-    pass
+MigrateError = cp.PortError     # one error type for this tool and the shared codeplug steps
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -100,70 +103,12 @@ def raw_to_rdt(raw):
     return bytes(RDT_HEADER) + raw + bytes(RDT_TRAILER)
 
 
-def yaml_sections(text):
-    """Split qdmr's block-style YAML into {top-level key: [item text, ...]} for list sections ('  - ' items at indent
-    2) and {key: ''} for the others. Enough for counting and naming: qdmr writes its files in this regular form."""
-    out, key, items = {}, None, None
-    for line in text.splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        m = re.match(r"^([A-Za-z_][\w]*):(.*)$", line)
-        if m:
-            key = m.group(1)
-            rest = m.group(2).strip()
-            items = out.setdefault(key, [])
-            if rest.startswith("[") and rest.endswith("]") and rest[1:-1].strip():
-                items.extend(x.strip() for x in rest[1:-1].split(","))
-            continue
-        if key is None:
-            continue
-        if re.match(r"^  - ", line) or re.match(r"^- ", line):
-            items.append(line.split("- ", 1)[1] + "\n")
-        elif items:
-            items[-1] += line.strip() + "\n"
-    return out
-
-
-def item_field(item, field):
-    """The value of `field:` in one YAML item (inline {...} or block form), or None."""
-    m = re.search(r"(?:^|[{,\s])" + re.escape(field) + r":\s*(\"[^\"]*\"|'[^']*'|[^,}\n]*)", item)
-    if not m:
-        return None
-    v = m.group(1).strip()
-    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
-        v = v[1:-1]
-    return v
-
-
-def codeplug_summary(text):
-    """Counts and names of what ODR uses, plus the radio's own DMR ID(s), from qdmr YAML."""
-    sec = yaml_sections(text)
-    s = {"counts": {}, "names": {}, "radio_ids": []}
-    for key in ODR_LIMITS:
-        items = sec.get(key) or []
-        s["counts"][key] = len(items)
-        s["names"][key] = [item_field(i, "name") or "?" for i in items]
-    for item in sec.get("radioIDs") or []:
-        n = item_field(item, "number")
-        if n and n.isdigit():
-            s["radio_ids"].append(int(n))
-    return s
-
-
-def limit_report(summary, limits=ODR_LIMITS):
-    """[(key, count, limit, [dropped names])] for every section that doesn't fit ODR."""
-    out = []
-    for key, lim in limits.items():
-        n = summary["counts"].get(key, 0)
-        if n > lim:
-            out.append((key, n, lim, summary["names"][key][lim:]))
-    return out
-
-
-def compare_counts(expected, got):
-    """[(key, expected, got)] where a read back differs from what was written (after ODR's limits)."""
-    return [(k, min(expected.get(k, 0), lim), got.get(k, 0)) for k, lim in ODR_LIMITS.items()
-            if min(expected.get(k, 0), lim) != got.get(k, 0)]
+yaml_sections = cp.yaml_sections
+item_field = cp.item_field
+codeplug_summary = cp.codeplug_summary
+limit_report = cp.limit_report
+compare_counts = cp.compare_counts
+print_summary = cp.print_summary
 
 
 USER_FIELDS = {
@@ -449,13 +394,6 @@ def check_dmrconf(sess):
 # ---------------------------------------------------------------------------------------------------------------
 # step 1: backup and convert
 
-def print_summary(sess, title, summary):
-    c = summary["counts"]
-    sess.say("   %s: %d channels, %d zones, %d contacts, %d RX group lists; radio ID %s"
-             % (title, c["channels"], c["zones"], c["contacts"], c["groupLists"],
-                ", ".join(map(str, summary["radio_ids"])) or "none"))
-
-
 def step_backup(sess, args):
     sess.step("1. Back up the codeplug and convert it for ODR")
     check_dmrconf(sess)
@@ -497,15 +435,12 @@ def step_backup(sess, args):
     need_file(sess, yaml_path, "the codeplug in qdmr YAML")
     sess.save_state(stock_backup=keep, stock_yaml=yaml_path)
 
-    # the conversion check: encode for ODR offline, decode again, so what restore writes is known before flashing
-    check_bin = sess.path("odr-codeplug.dfu")
-    odr_yaml = sess.path("odr-codeplug.yaml")
-    offline = os.path.exists(yaml_path)
-    sess.dmr("encode", "--radio", ODR_DRIVER, yaml_path, check_bin, radio=not offline)
-    sess.dmr("decode", "--radio", ODR_DRIVER, check_bin, odr_yaml, radio=not offline)
-    if not offline:
-        sess.say("   [dry run] the conversion check runs once the codeplug has been read")
+    # the conversion, offline: what restore writes is known before flashing (codeplug_port.py)
+    if not os.path.exists(yaml_path):
+        sess.say("   [dry run] the conversion (group list clean-up, encode, TX contacts put back) runs once the "
+                 "codeplug has been read")
         return True
+    odr_dfu, odr_yaml, _ = cp.convert_for_odr(sess, yaml_path, ODR_DRIVER, cleanup=not args.no_cleanup)
     need_file(sess, odr_yaml, "the codeplug converted for ODR")
     with open(yaml_path, encoding="utf-8") as f:
         before = codeplug_summary(f.read())
@@ -513,7 +448,8 @@ def step_backup(sess, args):
         after = codeplug_summary(f.read())
     print_summary(sess, "stock codeplug", before)
     print_summary(sess, "for ODR       ", after)
-    over = limit_report(before)
+    with open(sess.path("odr-source.yaml"), encoding="utf-8") as f:
+        over = limit_report(codeplug_summary(f.read()))      # after the clean-up: what the encoder gets
     for key, n, lim, dropped in over:
         shown = ", ".join(dropped[:8]) + (" and %d more" % (len(dropped) - 8) if len(dropped) > 8 else "")
         sess.say("   ! ODR holds %d %s, the codeplug has %d: these are left out: %s"
@@ -526,7 +462,7 @@ def step_backup(sess, args):
     if not before["radio_ids"]:
         sess.say("   ! the codeplug has no DMR ID: set yours in qdmr after the migration (or pass --id for the ID "
                  "database)")
-    sess.save_state(odr_yaml=odr_yaml, expected=after["counts"], radio_ids=before["radio_ids"])
+    sess.save_state(odr_yaml=odr_yaml, odr_dfu=odr_dfu, expected=after["counts"], radio_ids=before["radio_ids"])
     prepare_users(sess, args)
     sess.say("   backup done: %s" % sess.workdir)
     return True
@@ -774,39 +710,36 @@ def step_prepare_odr(sess, args):
     return True
 
 
+def open_cps(sess):
+    return load_module("cps_client", ["cps_client.py"]).open_cps(sess.port)
+
+
 def step_restore(sess, args):
     sess.step("4. Write the codeplug to the radio")
     check_dmrconf(sess)
-    src = args.yaml or sess.state.get("odr_yaml")
-    if not src:
+    if args.yaml:
+        src = os.path.abspath(args.yaml)
+        if not os.path.isfile(src):
+            raise MigrateError("%s not found" % src)
+        odr_dfu, odr_yaml, _ = cp.convert_for_odr(sess, src, ODR_DRIVER, cleanup=not args.no_cleanup)
+        with open(odr_yaml, encoding="utf-8") as f:
+            sess.save_state(odr_yaml=odr_yaml, odr_dfu=odr_dfu, expected=codeplug_summary(f.read())["counts"])
+    src = sess.state.get("odr_dfu")
+    if sess.dry and not src:
+        sess.say("   [dry run] would write odr-codeplug.dfu through ODR's CPS shim, then read it back and compare")
+        return True
+    if not src or (not sess.dry and not os.path.isfile(src)):
         raise MigrateError("no converted codeplug: run 'backup' first or give --yaml FILE")
-    if not sess.dry and not os.path.isfile(src):
-        raise MigrateError("%s not found" % src)
-    expected = sess.state.get("expected")
-    if args.yaml or expected is None:
-        if os.path.isfile(src):
-            with open(src, encoding="utf-8") as f:
-                expected = codeplug_summary(f.read())["counts"]
-    # --init-codeplug: start from qdmr's defaults instead of decoding what is in the radio's flash first, which after
-    # a stock firmware is the stock codeplug's bytes, not an OpenUV380 image
-    sess.dmr("write", "--radio", ODR_DRIVER, "--init-codeplug", src, radio=True)
+    # dmrconf's own write reads the radio first, and that read fails against ODR (#9): cps_client writes the same
+    # regions qdmr would, with what was there saved first
+    targets, img = cp.cps_write_dfu(sess, lambda: open_cps(sess), src, "codeplug", "codeplug-before.bin")
+    if sess.dry:
+        return True
     sess.say("   written; the radio restarts")
-    time.sleep(0 if sess.dry else 3)
+    time.sleep(3)
     wait_odr(sess, args.wait)
-    back = sess.path("readback-odr.yaml")
-    sess.dmr("read", "--radio", ODR_DRIVER, back, radio=True)
-    if not sess.dry:
-        need_file(sess, back, "the read-back codeplug")
-        with open(back, encoding="utf-8") as f:
-            got = codeplug_summary(f.read())
-        print_summary(sess, "read back", got)
-        diff = compare_counts(expected or {}, got["counts"])
-        if diff:
-            for k, want, have in diff:
-                sess.say("   ! %s: wrote %d, read back %d" % (SECTION_NAMES[k], want, have))
-            raise MigrateError("the codeplug read back differs from what was written; the files are in %s"
-                               % sess.workdir)
-        sess.say("   read back matches")
+    cp.check_read_back(sess, lambda: open_cps(sess), targets, img, sess.state.get("expected"), ODR_DRIVER)
+    sess.save_state(restored=True)
     return True
 
 
@@ -872,7 +805,9 @@ def cmd_package(sess, args):
     out = os.path.abspath(args.outdir)
     files = {os.path.abspath(__file__): "md380_migrate.py",
              os.path.join(HERE, "stm32_dfu.py"): "stm32_dfu.py",
-             os.path.join(HERE, "odr_debug.py"): "odr_debug.py"}
+             os.path.join(HERE, "odr_debug.py"): "odr_debug.py",
+             os.path.join(HERE, "codeplug_port.py"): "codeplug_port.py",
+             os.path.join(HERE, "cps_client.py"): "cps_client.py"}
     sfw = next((p for p in (os.path.join(HERE, "stockfw.py"), os.path.join(HERE, "odrflash", "odrflash", "stockfw.py"))
                 if os.path.isfile(p)), None)
     if sfw:
@@ -1047,6 +982,9 @@ def main(argv=None):
     u.add_argument("--users-columns", help="column order of a users file without a header, e.g. "
                                            "id,callsign,fname,surname,city,state,country")
 
+    c = argparse.ArgumentParser(add_help=False)
+    c.add_argument("--no-cleanup", action="store_true", help="convert the codeplug as it is: keep every RX group list "
+                   "(by default lists that are empty or only repeat the channel's TX contact are dropped)")
     b = argparse.ArgumentParser(add_help=False)
     b.add_argument("--from", dest="source", metavar="FILE",
                    help="convert this codeplug file instead of reading the radio: TYT CPS / KD4Z toolkit .rdt, a raw "
@@ -1065,7 +1003,7 @@ def main(argv=None):
     f.add_argument("--force", action="store_true", help="flash although the image has warnings")
 
     r = argparse.ArgumentParser(add_help=False)
-    r.add_argument("--yaml", help="write this qdmr YAML instead of the converted backup")
+    r.add_argument("--yaml", help="write this qdmr YAML instead of the converted backup (converted the same way)")
     r.add_argument("--id", type=int, help="your DMR ID, for choosing the ID database (default: from the codeplug)")
     r.add_argument("--id-prefix", action="store_true", help="choose the database by the ID's 3-digit prefix "
                                                             "(your country) instead of nearest IDs")
@@ -1078,10 +1016,10 @@ def main(argv=None):
                                  epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true", help="test the conversion logic (no radio, no dmrconf)")
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("backup", parents=[common, b, u], help="read (or import) the codeplug and convert it for ODR")
+    sub.add_parser("backup", parents=[common, b, c, u], help="read (or import) the codeplug and convert it for ODR")
     sub.add_parser("flash", parents=[common, f], help="flash ODR through the TYT bootloader")
-    sub.add_parser("restore", parents=[common, r, u], help="settings area, codeplug and ID database to the radio on ODR")
-    sub.add_parser("all", parents=[common, b, f, r, u], help="backup, flash, restore")
+    sub.add_parser("restore", parents=[common, r, c, u], help="settings area, codeplug and ID database to the radio on ODR")
+    sub.add_parser("all", parents=[common, b, f, r, c, u], help="backup, flash, restore")
     p = sub.add_parser("package", parents=[common], help="a directory for a tester")
     p.add_argument("outdir")
     p.add_argument("--image", action="append", required=True, help="image(s) to include")
