@@ -50,6 +50,14 @@ def scaled(path):
     return img.resize((img.width * SCALE, img.height * SCALE), Image.NEAREST)
 
 
+def is_mono(paths):
+    """True when every picture of a display class has at most two colors (a 1-bit panel)."""
+    for p in paths:
+        if Image.open(p).convert("RGB").getcolors(maxcolors=3) is None:
+            return False
+    return True
+
+
 def composite(rows, before_label, after_label, out):
     """rows: [(name, status, before_path or None, after_path or None)], stacked top to bottom into one PNG."""
     pairs = []
@@ -111,14 +119,19 @@ def main():
 
     images = []   # manifest entries: one per composite
     screens_out = []
-    for geom in sorted(changed):
+    # monochrome classes first, then color; within each, by resolution
+    def size(g):
+        w, h = g.split("x")[0], g.split("x")[1]
+        return int("".join(c for c in w if c.isdigit())), int("".join(c for c in h if c.isdigit()))
+    kind = {g: "mono" if is_mono([p for _, _, b, a in changed[g] for p in (b, a) if p]) else "color" for g in changed}
+    for geom in sorted(changed, key=lambda g: (kind[g] != "mono", size(g), g)):
         rows = changed[geom]
         for n, start in enumerate(range(0, len(rows), ROWS_PER_IMAGE), 1):
             part = rows[start:start + ROWS_PER_IMAGE]
             image = os.path.join("compare", f"{geom}-{n}.png")
             composite(part, f"before · {base7}", f"after · {head7}", os.path.join(args.out, image))
             image = image.replace(os.sep, "/")
-            images.append({"geometry": geom, "image": image, "screens": [name for name, *_ in part]})
+            images.append({"geometry": geom, "color": kind[geom], "image": image, "screens": [name for name, *_ in part]})
             for name, status, _, _ in part:
                 screens_out.append({"geometry": geom, "screen": name, "status": status, "image": image})
 

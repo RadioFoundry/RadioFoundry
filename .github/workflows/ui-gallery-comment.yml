@@ -112,6 +112,9 @@ jobs:
               if not (isinstance(g, str) and re.fullmatch(r"[0-9]+x[0-9]+[a-z0-9]*", g)):
                   bad.append(f"geometry {g!r}")
                   continue
+              if im.get("color") not in ("mono", "color"):
+                  bad.append(f"color class of {g}")
+                  continue
               if img is None or not re.fullmatch(re.escape(f"compare/{g}-") + r"[0-9]+\.png", str(img)):
                   bad.append(f"image {img!r}")
                   continue
@@ -171,7 +174,7 @@ jobs:
           c = m["counts"]
           total = c["changed"] + c["added"] + c["removed"] + c["unchanged"]
 
-          out = ["<!-- odr-ui-gallery -->", "### UI screen gallery", ""]
+          out = ["<!-- odr-ui-gallery -->", "## UI screen gallery", ""]
           out.append(f"Commit [`{head[:7]}`]({commit}) · updated {now} · base `{m['base_sha'][:7]}` · "
                      f"[workflow run]({run})")
           out.append("")
@@ -184,11 +187,14 @@ jobs:
           else:
               out.append("Each picture stacks the changed screens of one display class, before on the left and after "
                          "on the right.")
-              geom = None
+              geom = kind = None
               for im in m["images"]:
+                  if im["color"] != kind:
+                      kind = im["color"]
+                      out += ["", "### Monochrome displays" if kind == "mono" else "### Color displays"]
                   if im["geometry"] != geom:
                       geom = im["geometry"]
-                      out += ["", f"#### {geom}", ""]
+                      out += ["", f"#### {geom} ({kind})", ""]
                   out.append(f"Changed: {', '.join(im['screens'])}")
                   out.append("")
                   out.append(f"![{geom} changed screens, before and after]({im['image']})")
@@ -209,8 +215,9 @@ jobs:
           while IFS= read -r a; do
             [ -n "$a" ] && set -- "$@" --attach "$a"
           done < "$ATTACH"
-          # gh rewrites the body's references to the attached files, so run from the artifact's folder
-          (cd ui && gh pr comment "$PR" --body-file "$BODY" "$@")
+          # gh rewrites the body's references to the attached files, so run from the artifact's folder (-R, as that isn't a
+          # git checkout)
+          (cd ui && gh pr comment "$PR" -R "$REPO" --body-file "$BODY" "$@")
 
           if [ -n "$old" ]; then
             gh api -X DELETE "repos/$REPO/issues/comments/$old" > /dev/null

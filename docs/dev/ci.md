@@ -85,10 +85,11 @@ before and after, side by side. It's advisory: no required check waits on it.
    renders `--gallery` for both, and writes `tools/ui_gallery_compare.py`'s output: for each display class with a changed
    screen, one composite per eight changed screens, stacked as before | after pairs (2x, labels with both commit ids;
    a screen that's new or gone gets a gray panel), plus `manifest.json`. A class with no change
-   gets no picture. The render is deterministic, so an unchanged screen never shows up.
+   gets no picture. Classes are ordered monochrome first, then color, each by resolution, and the comment groups them
+   under those headings. The render is deterministic, so an unchanged screen never shows up.
 2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact and checks it as data (no links,
    file names and sizes, PNG signatures, the pull request and commit it names). It posts a new comment with each
-   composite attached (`gh pr comment --attach`, so GitHub hosts the images), then deletes the previous one. The
+   composite attached (`gh pr comment -R REPO --attach`, so GitHub hosts the images; `-R` because the job runs from the artifact's folder, which isn't a checkout), then deletes the previous one. The
    comment is found by its marker line (`<!-- odr-ui-gallery -->`) and carries the commit, the UTC time of the update
    and the base commit. A run for a commit the pull request has already moved past posts nothing.
 
