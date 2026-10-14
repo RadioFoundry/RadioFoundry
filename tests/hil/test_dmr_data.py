@@ -157,8 +157,11 @@ def test_data_view_and_settings(radio, pytestconfig, data_settings):
     """Radio only: the dmr_data section is there, and the settings request changes what it shows."""
     _setup(radio, pytestconfig)
     radio.link.data_settings(0, radio_check_reply=True, call_alert_ack=False, lrrp_reply=False)
-    radio.wait_for(lambda v: v.get("data.radio_check_reply") == "1" and v.get("data.call_alert_ack") == "0",
-                   sections=("dmr_data",), what="settings applied")
+    # Wait for every value the asserts read: an earlier test can leave the reply flags as they are asked for here, and
+    # then they alone say nothing about whether the request has been applied (ARS reads "off" only once it has)
+    radio.wait_for(lambda v: v.get("data.radio_check_reply") == "1" and v.get("data.call_alert_ack") == "0" and
+                   v.get("data.lrrp_reply") == "0" and v.get("data.ars_server") == "0" and
+                   v.get("data.ars_state") == "off", sections=("dmr_data",), what="settings applied")
     v = radio.data_view()
     assert v["data.lrrp_reply"] == 0 and v["data.ars_server"] == 0 and v["data.ars_state"] == "off", v
 
