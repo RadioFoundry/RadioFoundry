@@ -76,7 +76,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | USB network adapter (CDC-NCM) | `USB_NETWORK` | 48,344 | 47,468 | ● | ● | ✕ | Includes everything below |
 | IP over DMR gateway | `DMR_IP_GATEWAY` | 44,128 | 43,220 | ● | ● | ● | Includes the radio's own services below |
-| Control station mode (boot as network, PC answers data, fixed link) | `DMR_CONTROL_STATION` | 288 | 484 | ● | ● | ● |  |
+| Control station mode (boot as network, PC answers data, fixed link) | `DMR_CONTROL_STATION` | 288 | 484 | ● | ○ | ● | MD-380: off for flash |
 | Minimal TCP | `NET_TCP` | 16,240 | 15,656 | ● | ● | ● | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
 | KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 | ● | ● | ● |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 | ● | ● | ● |  |

@@ -35,11 +35,14 @@ CONFIG_DMR_UDP_COMPRESS ?= n
 # assignment, 2026-10-13): this radio sends no APRS over the air and has no iGate, so it would only forward DMR-side
 # beacons. Users can still pick it
 CONFIG_NET_APRSIS ?= n
+# Control station mode (PC dispatch software on the USB network link, 288 bytes) is off by default for room (the side
+# key functions and the Channels list, 2026-10-14). Users can still pick it
+CONFIG_DMR_CONTROL_STATION ?= n
 # Not written for this radio (above), left out for flash, or no use on it (FONT_XL is for 240 px and wider panels,
 # this one is 160 px; no air band receiver or broadcast receiver, docs/spec/airband-and-broadcast.md): tools/ci.sh's
 # maximal configuration leaves these off
 BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL HOTSPOT AM_RX BCAST_FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter; USRP, UDP header compression and the APRS-IS client don't
-# fit beside everything else (above)
-MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS
+# fit beside everything else (above), nor does control station mode
+MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS DMR_CONTROL_STATION
