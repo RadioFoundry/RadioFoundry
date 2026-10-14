@@ -79,8 +79,8 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Hub | `hub` | SELECT on Home: 1 Contacts, 2 Messages, 3 Recent, 4 Channels, 5 Tools, 6 Settings (0 Last caller on a radio without CONTEXT) |
 | Find | `find` | a digit on Home |
 | Actions | `actions` | CONTEXT (`#`) on a person, a talkgroup, the last caller, a message |
-| Recent | `recent` | long CONTEXT, Hub 3 |
-| Talk target picker | `picker` | TALK_TARGET (SK2), Quick 8 |
+| Recent | `recent` | Hub 3 |
+| Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (SK2), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
@@ -248,7 +248,7 @@ Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
 and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
-BACK reaches Home, long QUICK locks, long CONTEXT opens Recent, the status strip is drawn (except About while idle),
+BACK reaches Home, long QUICK locks, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
 PTT shows TX, and every field-use screen is at most 3 presses deep. The About check scrolls the page to its end at
 every display class and fails if any text was shortened.
 

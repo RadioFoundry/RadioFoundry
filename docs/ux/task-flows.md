@@ -91,13 +91,13 @@ After the window:
 1. `CONTEXT` (`#`): caller actions for the last heard.
 2. `1` (Talk to): sets their TG (or them privately) as the temporary talk target; or `PTT` directly with item 1 focused.
 
-Older station: long `CONTEXT` opens Recent, `NAV_DOWN` to the station, `PTT`.
+Older station: `SELECT`, `3` opens Recent, `NAV_DOWN` to the station, `PTT`. (Long `CONTEXT` was Recent until #18 gave it the talk target picker.)
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
 | Within reply window | 1 | 1 | 1 | 1 | 1 |
 | After window | 2 (`#`,`PTT`) | 2 | 2 | 3 (Hub item 0, `PTT`) | 2 |
-| 3rd station in Recent | 4 (long `#`,`↓`,`↓`,`PTT`) | 4 | 4 | 5 | 4 |
+| 3rd station in Recent | 5 (`OK`,`3`,`↓`,`↓`,`PTT`) | 5 | 5 | 5 | 5 |
 
 ## 5. Private call a contact by name or ID
 

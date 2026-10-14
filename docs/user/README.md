@@ -49,7 +49,8 @@ Keys are named by their job. [Key roles](23-radios.md#key-roles) shows which key
 | Quick settings | **\*** |
 | Open the menu (hub) | **OK** |
 | Act on the last caller | **#** |
-| Recent calls | Hold **#** |
+| Recent calls | **OK**, **3** |
+| Talk to another talkgroup or ID | Hold **#** |
 | Choose who to talk to | **Talk target** (DMR), or **\***, **8** |
 | Monitor | Hold **Monitor** |
 | Scan on / off | Hold **Talk target**, or **\***, **7** |

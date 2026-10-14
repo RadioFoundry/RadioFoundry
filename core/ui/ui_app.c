@@ -5,7 +5,7 @@
 // runs it in the UI task and the host simulator runs it on a PC.
 //
 // Global keys, before any screen sees them:
-// - long BACK: Home, from anywhere (P4). Long QUICK: lock / unlock the keys. Long CONTEXT: Recent.
+// - long BACK: Home, from anywhere (P4). Long QUICK: lock / unlock the keys. Long CONTEXT: the talk target picker.
 // - PTT and MONITOR go to the radio core from the input layer; the UI only keeps the focused row's talk target
 //   current (ui_svc_focus_target) so a PTT press on a focused talkgroup or contact talks to it once.
 // - TALK_TARGET: the talk target picker. EMERGENCY (held): start / cancel emergency.
@@ -1512,14 +1512,16 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 #endif
-	// Long BACK = Home from anywhere; long CONTEXT = Recent (P3)
+	// Long BACK = Home from anywhere; long CONTEXT = the talk target picker (P3; as the keycap and the AnyTone radios)
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_LONG) {
 		ui_go_home();
 		return;
 	}
 	if (ev->action == ACT_CONTEXT && ev->gesture == GESTURE_LONG) {
-		if (stack[sp].scr != SCR_RECENT)
-			ui_push(SCR_RECENT, 0);
+		if (!CONFIG_DMR || view->ch.mode != RADIO_MODE_DMR)
+			ui_toast("Talk target: DMR channels only");
+		else if (stack[sp].scr != SCR_PICKER)
+			ui_push(SCR_PICKER, 0);
 		return;
 	}
 	if (ev->action == ACT_TALK_TARGET && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {

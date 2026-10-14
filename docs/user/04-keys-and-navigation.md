@@ -31,7 +31,7 @@ a key the radio doesn't have.
 | **Back** | Back one level. Home: undo one temporary change | Home |
 | **Up**, **Down** | Move the focus. Home: next or previous channel (VFO: frequency step), or zone or talk target with **Settings > Keys > Up/Down on Home** (the channel knob stays on the channel). Editors: change the value | Repeats |
 | **\*** | Quick settings | Lock or unlock the keys |
-| **#** | Actions for the focused item. Home: actions for the last caller | Recent |
+| **#** | Actions for the focused item. Home: actions for the last caller | DMR channels: the talk target picker (pick a talkgroup, or type an ID). Recent is **OK**, **3** |
 | **0** to **9** | Home: start Find. Lists: pick a numbered row, or type to filter. VFO: type a frequency | Home: speed dial (not built yet) |
 | **Previous zone**, **Next zone** | Home: previous or next zone | |
 | **Monitor** | Monitor while held. FM: opens the squelch. DMR: plays every talkgroup | |
@@ -58,7 +58,7 @@ Home
  |-- OK           Hub: 1 Contacts, 2 Messages, 3 Recent, 4 Channels, 5 Tools, 6 Settings
  |                    (a radio without # gets 0 Last caller at the top)
  |-- #            Actions for the last caller
- |-- hold #       Recent
+ |-- hold #       Talk target picker (DMR)
  |-- 0-9          Find
  '-- Talk target  Talk target picker
 ```

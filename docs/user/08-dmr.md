@@ -43,6 +43,10 @@ Home shows the result after "PTT→".
 
 ## Choosing a talk target
 
+Hold **#** on a DMR channel to open the talk target picker: the channel's default, the reply target, the RX group
+list's talkgroups, recent talkgroups, and "Type a number..." to dial an ID or talkgroup by hand. The **Talk target**
+side key opens the same picker.
+
 A talk target has three lifetimes.
 
 | Lifetime | How | Lasts |
@@ -123,7 +127,7 @@ Without anyone heard yet, **#** shows "No calls heard yet".
 
 ## Recent
 
-Hold **#** (or **OK**, **3**). Recent lists the last 12 stations heard and calls made, newest first. Calls you made
+**OK**, **3**. Recent lists the last 12 stations heard and calls made, newest first. Calls you made
 start with an arrow. Calls to you are highlighted, and private calls show "you" or "priv". Recent is kept in memory
 and starts empty after a restart.
 

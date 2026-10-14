@@ -6,7 +6,7 @@
 // - operate only: flows that only operate the radio never write the codeplug (P7);
 // - crawler: every screen reachable from Home is left by BACK, long BACK reaches Home, field-use screens are at most
 //   3 levels deep, the status strip (or the title row that carries the state pill) is drawn, PTT shows TX (P2, P4);
-// - long presses keep their one meaning on every screen: long BACK Home, long QUICK lock, long CONTEXT Recent (P3);
+// - long presses keep their one meaning on every screen: long BACK Home, long QUICK lock, long CONTEXT the talk target picker on DMR (P3);
 // - the Transmitting screen names a private call's contact and tells it apart from a group call (P2).
 #include <stdio.h>
 #include <string.h>
@@ -36,7 +36,7 @@ static const flow_t flows[] = {
 	{ "4 reply in the window", "call:3101234,91,g", "ptt", "txid=91", 1, false },
 	{ "4 call back after the window", CALLER, "ctx ptt", "txid=91", 2, false },
 	{ "4 3rd station in Recent", "call:3101234,91,g call:3105678,3100,g call:3102222,93,g wait:11000",
-	  "long:ctx down down ptt", "txid=91", 4, false },
+	  "ok 3 down down ptt", "txid=91", 5, false },
 	{ "5 private call by name", "", "5 6 3 ptt", "txid=3101234 txpriv=1", 4, false },
 	{ "5 private call by ID", "", "3 1 0 9 9 9 9 down ptt", "txid=3109999 txpriv=1", 9, false },
 	{ "6 canned reply to last caller", CALLER, "ctx 3 ok", "sent=1 text=OK", 4, false },
@@ -175,6 +175,9 @@ static const flow_t flows_k[] = {
 	{ "K a key set to the previous zone", "", "zone-", "zone=2", 1, false },
 	{ "K a key set to scan, from a menu", "ok 6", "scankey", "scanning=1", 1, false },
 	{ "K talk target on a long press", "", "long:tt", "screen=picker", 1, false },
+	{ "H hold # opens the talk target picker", "", "long:ctx", "screen=picker", 1, false },
+	{ "H hold # then a typed TG", "", "long:ctx up ok 3 1 0 0 ptt", "txid=3100 txpriv=0", 8, false },
+	{ "H hold # on FM: DMR only", "down", "long:ctx", "screen=home toast=Talk_target:_DMR", 1, false },
 	// The encoder: forward = the next channel on Home, the next row down a list, the next quick tile; back = up
 	{ "N encoder: next channel", "", "enc+", "pos=4 screen=home", 1, false },
 	{ "N encoder: previous channel", "", "enc-", "pos=2 screen=home", 1, false },
@@ -375,8 +378,10 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 				fails++;
 			}
 			snprintf(path, sizeof path, "%s long:ctx", nodes[i].path);
-			if (replay(g, map, path, &s1) && strcmp(s1.screen, "recent") != 0) {
-				printf("FAIL crawl [%s] %s: long CONTEXT isn't Recent (P3)\n", mapname, s0.screen);
+			if (replay(g, map, path, &s1) && sim_view()->ch.mode == RADIO_MODE_DMR &&
+					strcmp(s1.screen, "picker") != 0 && strcmp(s0.screen, "hotspot") != 0) {
+				printf("FAIL crawl [%s] %s: long CONTEXT isn't the talk target picker (P3)\n", mapname,
+				       s0.screen);
 				fails++;
 			}
 		}
