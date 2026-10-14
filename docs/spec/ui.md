@@ -103,7 +103,8 @@ The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
 
 Radios without some keys fall back as the key maps say (few-key map F in the tests). Up / Down on Home change the
 channel (Settings > Keys > Up/Down on Home: or the zone, or on a DMR channel the talk target, stepping through the
-channel's contact and its listen list), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
+channel's contact and its listen list; the arrow keys only: the channel knob, ENC_STEP, always steps the channel or the
+VFO frequency, #25), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
 toast until voice prompts exist).
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)

@@ -29,7 +29,7 @@ a key the radio doesn't have.
 |---|---|---|
 | **OK** | Home: open the hub. Lists: open or choose | Save or make permanent |
 | **Back** | Back one level. Home: undo one temporary change | Home |
-| **Up**, **Down** | Move the focus. Home: next or previous channel (VFO: frequency step), or zone or talk target with **Settings > Keys > Up/Down on Home**. Editors: change the value | Repeats |
+| **Up**, **Down** | Move the focus. Home: next or previous channel (VFO: frequency step), or zone or talk target with **Settings > Keys > Up/Down on Home** (the channel knob stays on the channel). Editors: change the value | Repeats |
 | **\*** | Quick settings | Lock or unlock the keys |
 | **#** | Actions for the focused item. Home: actions for the last caller | Recent |
 | **0** to **9** | Home: start Find. Lists: pick a numbered row, or type to filter. VFO: type a frequency | Home: speed dial (not built yet) |

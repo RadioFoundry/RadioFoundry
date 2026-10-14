@@ -178,6 +178,11 @@ static const flow_t flows_k[] = {
 	// The encoder: forward = the next channel on Home, the next row down a list, the next quick tile; back = up
 	{ "N encoder: next channel", "", "enc+", "pos=4 screen=home", 1, false },
 	{ "N encoder: previous channel", "", "enc-", "pos=2 screen=home", 1, false },
+	{ "N Up/Down on zone: the knob still steps the channel", "ok 6 8 down down ok long:back", "enc+",
+	  "zone=0 pos=4 screen=home", 1, false },
+	{ "N Up/Down on zone: Up steps the zone", "ok 6 8 down down ok long:back", "up", "zone=1 screen=home", 1, false },
+	{ "N Up/Down on talk target: the knob still steps the channel", "ok 6 8 down down ok ok long:back", "enc+",
+	  "talk=3100 pos=4 screen=home", 1, false },
 	{ "N encoder: down a list", "ok", "enc+ enc+", "focus=Recent", 2, false },
 	{ "N encoder: back up a list", "ok enc+ enc+", "enc-", "focus=Messages", 1, false },
 	{ "N encoder: wraps up to the last row", "ok", "enc-", "focus=Settings", 1, false },

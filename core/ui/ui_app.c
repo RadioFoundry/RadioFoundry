@@ -806,13 +806,15 @@ bool ui_home_key(const input_event_t *ev)
 	if (is_nav(ev)) {
 		if (ui_st.entry)
 			entry_cancel();
-		// Settings > Keys > Up/Down on Home: the channel (default), the zone, or the talk target (DMR channels)
-		if (!view->vfo && ui_st.updown == 1) {
+		// Settings > Keys > Up/Down on Home: the channel (default), the zone, or the talk target (DMR channels). The
+		// arrow keys only: the channel knob always steps the channel, so the two can do different jobs (#25)
+		bool arrows = ev->action != ACT_ENC_STEP;
+		if (arrows && !view->vfo && ui_st.updown == 1) {
 			zone_step(nav_dir(ev));
 			return true;
 		}
 #if CONFIG_DMR
-		if (!view->vfo && ui_st.updown == 2 && view->ch.mode == RADIO_MODE_DMR && talk_step(nav_dir(ev)))
+		if (arrows && !view->vfo && ui_st.updown == 2 && view->ch.mode == RADIO_MODE_DMR && talk_step(nav_dir(ev)))
 			return true;
 #endif
 		for (int i = steps(ev); i > 0; i--) {
