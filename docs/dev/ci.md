@@ -14,7 +14,7 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when the default branch has an untested commit; by hand | the feature matrix of every board, `reuse lint` |
 | `hil.yml` | `odr-hil` (the bench Mac) | by hand; nightly only when `ODR_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
-| `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts or updates the pull request's gallery comment and publishes its images |
+| `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([release.md](release.md)) |
 | `release.yml` | `ubuntu-24.04` and the hosted macOS / Windows runners | `v*` tags, release tooling changes | release images and odrflash ([release.md](release.md)) |
 
@@ -78,34 +78,28 @@ a changed workflow off `main`; it doesn't stop it from running on that branch.
 ## UI gallery: `ui-gallery.yml` and `ui-gallery-comment.yml`
 
 A pull request that touches the UI (`core/ui/`, `core/radio/tones.c`, `core/codeplug/codeplug_talk.c`,
-`tests/host/uiSim.c`, `tests/host/sim/`, `AUTHORS`, the gallery's own tools) gets a comment with every changed screen,
+`tests/host/uiSim.c`, `tests/host/sim/`, `AUTHORS`, the gallery's own tools) gets a comment with its changed screens,
 before and after, side by side. It's advisory: no required check waits on it.
 
 1. `ui-gallery.yml` (`pull_request`) builds `uiSim` from the base commit and from the pull request's merge commit,
-   renders `--gallery` for both, and writes `tools/ui_gallery_compare.py`'s output: a side-by-side PNG per screen that
-   isn't byte-identical (2x, labels with both commit ids; a screen that's new or gone gets a gray panel), plus
-   `manifest.json`. The render is deterministic, so an unchanged screen never shows up.
-2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact, checks it as data (no links,
-   file names and sizes, PNG signatures, the pull request and commit it names), copies the images to the
-   `ui-previews` branch under `pr-<number>/<commit>/`, and creates or updates the comment. The comment is found by
-   its marker line (`<!-- odr-ui-gallery -->`), and it carries the commit, the UTC time of the update and the base
-   commit. A run for a commit the pull request has already moved past posts nothing.
+   renders `--gallery` for both, and writes `tools/ui_gallery_compare.py`'s output: for each display class with a changed
+   screen, one composite per eight changed screens, stacked as before | after pairs (2x, labels with both commit ids;
+   a screen that's new or gone gets a gray panel), plus `manifest.json`. A class with no change
+   gets no picture. The render is deterministic, so an unchanged screen never shows up.
+2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact and checks it as data (no links,
+   file names and sizes, PNG signatures, the pull request and commit it names). It posts a new comment with each
+   composite attached (`gh pr comment --attach`, so GitHub hosts the images), then deletes the previous one. The
+   comment is found by its marker line (`<!-- odr-ui-gallery -->`) and carries the commit, the UTC time of the update
+   and the base commit. A run for a commit the pull request has already moved past posts nothing.
 
-Only the comment job has write permissions. It runs no code from the pull request or the artifact, the same split
-`pr-tests.yml` keeps for its status job. Images show at most 40 changed screens; the rest are in the `ui-gallery`
-artifact of the workflow run.
+Only the comment job has write permissions (`pull-requests: write`). It runs no code from the pull request or the
+artifact, the same split `pr-tests.yml` keeps for its status job. Pictures are capped at 40 per comment (gh takes up to
+50 attachments); the rest are in the `ui-gallery` artifact of the workflow run.
 
-**One-time setup:** create the `ui-previews` branch as an orphan with a README (the comment job checks it out, so
-it must exist). `git switch --orphan ui-previews`, add a README that says it holds generated images, commit, and push
-it to `origin`. Nothing else goes on that branch; its history grows by one commit per commit to a UI pull request, so
-prune old `pr-<number>/` directories when their pull requests close, if the size matters.
-
-The images are served from `raw.githubusercontent.com` on GitHub and from `<server>/<repo>/raw/branch/ui-previews/`
-on Gitea. On a private GitHub repository, GitHub's image proxy can't fetch raw URLs, so the images don't show there;
-the comment's links still work, and the artifact has the same PNGs.
-
-`workflow_run` runs only from the default branch's copy of the workflow, and Gitea Actions may not support it; check
-the first run on the Gitea runner before relying on the comment there.
+Nothing else is needed: no branch, no host. Attachments on a private repository are visible to the people who can
+see the pull request; the first run on a UI pull request confirms that and that `gh` accepts the attachments with the
+job's token. `workflow_run` runs only from the default branch's copy of the workflow, and Gitea Actions may not
+support it, so check the first run on the Gitea runner before relying on the comment there.
 
 ## Nightly: `nightly.yml`
 

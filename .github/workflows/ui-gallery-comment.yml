@@ -1,18 +1,16 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
-# Posts or updates the UI gallery comment on a pull request (docs/dev/ci.md "UI gallery"), from the `ui-gallery`
-# artifact that ui-gallery.yml made. One comment per pull request, found by its marker line and edited on every new
-# commit, with the commit, the time and the changed screens side by side. The images go to the `ui-previews` branch
-# (pr-<number>/<commit>/), so the comment can show them.
+# Posts the UI gallery comment on a pull request (docs/dev/ci.md "UI gallery"), from the `ui-gallery` artifact that
+# ui-gallery.yml made. The changed screens are attached to the comment itself (gh pr comment --attach), so GitHub
+# hosts the images and no branch is needed. Each new commit replaces the previous comment; the comment is found by its
+# marker line.
 #
 # This is the only workflow with write permissions, and it runs main's copy against every pull request. It never runs
 # code from the pull request or the artifact: the artifact is checked as data (names, sizes, PNG signatures, no links,
-# the pull request and commit it names), then copied and read by the scripts below, which only use the standard
-# library and gh. Never add a checkout of the pull request, a step that runs a script from the artifact, or the pull
-# request's title, body or branch name in a run step.
-#
-# Needs the `ui-previews` branch to exist (a one-time setup: docs/dev/ci.md "UI gallery").
+# the pull request and commit it names), then read by the scripts below, which use only the standard library and gh.
+# Never add a checkout of the pull request, a step that runs a script from the artifact, or the pull request's title,
+# body or branch name in a run step.
 name: UI gallery comment
 
 on:
@@ -23,7 +21,7 @@ on:
 permissions:
   contents: read
 
-# one comment at a time: two runs for one pull request never race for the comment or the branch
+# one comment at a time: two runs for one pull request never race for the comment
 concurrency:
   group: ui-gallery-comment
   cancel-in-progress: false
@@ -36,8 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write        # the ui-previews branch
-      pull-requests: write   # the comment
+      pull-requests: write   # the comment and its attachments
       actions: read          # the artifact of the run that rendered the gallery
     steps:
       - name: Pull request and head commit
@@ -62,15 +59,6 @@ jobs:
           echo "number=$n" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "pull request #$n at $HEAD"
-
-      - name: Checkout the previews branch
-        if: steps.pr.outputs.skip == 'false'
-        uses: actions/checkout@v4
-        with:
-          ref: ui-previews
-          path: previews
-          fetch-depth: 1
-          submodules: false
 
       - name: Download the gallery
         if: steps.pr.outputs.skip == 'false'
@@ -114,33 +102,38 @@ jobs:
                      for k in ("changed", "added", "removed", "unchanged")):
               bad.append("counts are not numbers")
 
-          screens = m.get("screens")
+          images = m.get("images")
           expected = set()
-          if not isinstance(screens, list) or len(screens) > 400:
-              bad.append("screens is not a list of at most 400")
-              screens = []
-          for s in screens:
-              g, n, st, img = s.get("geometry"), s.get("screen"), s.get("status"), s.get("image")
+          if not isinstance(images, list) or len(images) > 40:
+              bad.append("images is not a list of at most 40")
+              images = []
+          for im in images:
+              g, img, names = im.get("geometry"), im.get("image"), im.get("screens")
               if not (isinstance(g, str) and re.fullmatch(r"[0-9]+x[0-9]+[a-z0-9]*", g)):
                   bad.append(f"geometry {g!r}")
                   continue
-              if not (isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9_]+", n)):
-                  bad.append(f"screen {n!r}")
-                  continue
-              if st not in ("changed", "added", "removed"):
-                  bad.append(f"status {st!r}")
-              rel = f"compare/{g}/{n}.png"
-              if img != rel:
+              if img is None or not re.fullmatch(re.escape(f"compare/{g}-") + r"[0-9]+\.png", str(img)):
                   bad.append(f"image {img!r}")
-              p = os.path.join(root, rel)
-              if not os.path.isfile(p):
-                  bad.append(f"missing {rel}")
+                  continue
+              if not (isinstance(names, list) and 0 < len(names) <= 8
+                      and all(isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9_]+", n) for n in names)):
+                  bad.append(f"screens of {img} are not names")
+              p = os.path.join(root, img)
+              if not os.path.isfile(p) or os.path.islink(p):
+                  bad.append(f"missing {img}")
               else:
                   with open(p, "rb") as f:
                       head = f.read(8)
-                  if head != b"\x89PNG\r\n\x1a\n" or os.path.getsize(p) > 2_000_000:
-                      bad.append(f"{rel} is not a PNG under 2 MB")
-              expected.add(rel)
+                  if head != b"\x89PNG\r\n\x1a\n" or os.path.getsize(p) > 8_000_000:
+                      bad.append(f"{img} is not a PNG under 8 MB")
+              expected.add(img)
+
+          screens = m.get("screens", [])
+          if not isinstance(screens, list) or len(screens) > 400:
+              bad.append("screens is not a list of at most 400")
+          for s in screens if isinstance(screens, list) else []:
+              if s.get("status") not in ("changed", "added", "removed") or s.get("image") not in expected:
+                  bad.append(f"screen entry {s.get('screen')!r} points at no image")
 
           actual = set()
           if os.path.isdir(os.path.join(root, "compare")):
@@ -156,29 +149,7 @@ jobs:
           print(f"artifact OK: {len(screens)} screens for #{PR} at {HEAD[:7]}")
           PY
 
-      - name: Publish the images to ui-previews
-        if: steps.pr.outputs.skip == 'false'
-        env:
-          PR: ${{ steps.pr.outputs.number }}
-          HEAD: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          set -eu
-          dir="previews/pr-$PR/$HEAD"
-          mkdir -p "$dir"
-          [ -d ui/compare ] && cp -r ui/compare "$dir/"
-          cp ui/manifest.json "$dir/"
-          cd previews
-          git add -A "pr-$PR"
-          if git diff --cached --quiet; then
-            echo "images for ${HEAD:0:7} are already published"
-            exit 0
-          fi
-          git -c user.name="github-actions[bot]" \
-              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -q -m "UI gallery: pull request #$PR at ${HEAD:0:7}"
-          git push -q origin HEAD:ui-previews
-
-      - name: Post or update the comment
+      - name: Post the comment with the images attached
         if: steps.pr.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -187,23 +158,15 @@ jobs:
           HEAD: ${{ github.event.workflow_run.head_sha }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha }}
-          SERVER: ${{ github.server_url }}
         run: |
           set -eu
-          if [ "$SERVER" = https://github.com ]; then
-            base="https://raw.githubusercontent.com/$REPO/ui-previews/pr-$PR/$HEAD"
-          else
-            base="$SERVER/$REPO/raw/branch/ui-previews/pr-$PR/$HEAD"
-          fi
-          export BASE="$base"
+          # the body and the attachment list are written outside ui/, so the artifact can't shadow them
+          export BODY="$RUNNER_TEMP/body.md" ATTACH="$RUNNER_TEMP/attach.txt"
           python3 -I - <<'PY'
           import datetime, json, os
 
-          MAX_IMAGES = 40
           m = json.load(open("ui/manifest.json"))
-          base, head = os.environ["BASE"], os.environ["HEAD"]
-          commit = os.environ["COMMIT_URL"]
-          run = os.environ["RUN_URL"]
+          head, commit, run = os.environ["HEAD"], os.environ["COMMIT_URL"], os.environ["RUN_URL"]
           now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
           c = m["counts"]
           total = c["changed"] + c["added"] + c["removed"] + c["unchanged"]
@@ -215,33 +178,41 @@ jobs:
           out.append(f"**{c['changed']} changed**, {c['added']} added, {c['removed']} removed, "
                      f"{c['unchanged']} unchanged ({total} screens).")
           out.append("")
-          if not m["screens"]:
+          attach = []
+          if not m["images"]:
               out.append("No screen changed: every screen renders as it does on the base commit.")
           else:
-              out.append("Before on the left, after on the right.")
-              shown = m["screens"][:MAX_IMAGES]
+              out.append("Each picture stacks the changed screens of one display class, before on the left and after "
+                         "on the right.")
               geom = None
-              for s in shown:
-                  if s["geometry"] != geom:
-                      geom = s["geometry"]
+              for im in m["images"]:
+                  if im["geometry"] != geom:
+                      geom = im["geometry"]
                       out += ["", f"#### {geom}", ""]
-                  out.append(f"**{s['screen']}** ({s['status']})")
+                  out.append(f"Changed: {', '.join(im['screens'])}")
                   out.append("")
-                  out.append(f"![{s['screen']} {geom}, before and after]({base}/{s['image']})")
+                  out.append(f"![{geom} changed screens, before and after]({im['image']})")
                   out.append("")
-              if len(m["screens"]) > len(shown):
-                  out.append(f"Showing {len(shown)} of {len(m['screens'])} changed screens; the rest are in the "
-                             f"`ui-gallery` artifact of the [workflow run]({run}).")
-          with open("body.md", "w") as f:
-              f.write("\n".join(out) + "\n")
+                  attach.append(f"{im['image']}#{geom} changed screens, before and after")
+          if len(attach) > 40:
+              out.append(f"Showing 40 of {len(attach)} pictures; the rest are in the `ui-gallery` artifact of the "
+                         f"[workflow run]({run}).")
+          open(os.environ["BODY"], "w").write("\n".join(out) + "\n")
+          open(os.environ["ATTACH"], "w").write("\n".join(attach[:40]) + ("\n" if attach else ""))
           PY
 
-          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-               --jq '.[] | select(.body | startswith("<!-- odr-ui-gallery -->")) | .id' | head -n 1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@body.md > /dev/null
-            echo "updated comment $id on #$PR"
-          else
-            gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@body.md > /dev/null
-            echo "posted the comment on #$PR"
+          # the previous comment, found by its marker, goes after the new one is up, so the pull request never has none
+          old=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+                --jq '.[] | select(.body | startswith("<!-- odr-ui-gallery -->")) | .id' | head -n 1)
+
+          set --
+          while IFS= read -r a; do
+            [ -n "$a" ] && set -- "$@" --attach "$a"
+          done < "$ATTACH"
+          # gh rewrites the body's references to the attached files, so run from the artifact's folder
+          (cd ui && gh pr comment "$PR" --body-file "$BODY" "$@")
+
+          if [ -n "$old" ]; then
+            gh api -X DELETE "repos/$REPO/issues/comments/$old" > /dev/null
+            echo "replaced comment $old on #$PR"
           fi
