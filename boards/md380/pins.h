@@ -34,8 +34,11 @@
 #define PIN_RX_5V		GPIOC, GPIO_PIN_9	// 5RC: receiver supply
 #define PIN_SAVE		GPIOA, GPIO_PIN_8	// "SAVE": high enables the 5C rail (U404 CE) that feeds the PLL
 
-// SKY72310 synthesizer: three-wire bus, clock and data shared with the HR_C5000's configuration port
+// SKY72310 synthesizer: three-wire bus with its own clock (PE4) and chip select (PD11); the data line is the
+// HR_C5000's MOSI (PE5)
 #define PIN_PLL_CS		GPIOD, GPIO_PIN_11
+#define PIN_PLL_CLK		GPIOE, GPIO_PIN_4	// idles high, the chip latches on the rising edge
+#define PIN_PLL_DATA		GPIOE, GPIO_PIN_5	// shared with PIN_C5000_MOSI
 #define PIN_PLL_LD		GPIOD, GPIO_PIN_10	// SKY72310 PS, out-of-lock, open collector: pulled up, high = locked
 
 // Power, audio, LEDs
@@ -51,10 +54,10 @@
 #define PIN_LCD_BACKLIGHT	GPIOC, GPIO_PIN_6	// LAMP, TIM8_CH1 PWM
 
 // HR_C5000: bit-banged configuration port, voice port on SPI2, three interrupt lines (as the DM-1701, but MOSI and
-// MISO are the other way round and the clock and MOSI also go to the synthesizer)
+// MISO are the other way round and MOSI also goes to the synthesizer)
 #define PIN_C5000_CS		GPIOE, GPIO_PIN_2
-#define PIN_C5000_CLK		GPIOE, GPIO_PIN_3	// also the SKY72310 clock
-#define PIN_C5000_MISO		GPIOE, GPIO_PIN_4	// chip SDO -> MCU
+#define PIN_C5000_CLK		GPIOC, GPIO_PIN_13	// idles low; the chip samples MOSI on the falling edge
+#define PIN_C5000_MISO		GPIOE, GPIO_PIN_3	// chip SDO -> MCU
 #define PIN_C5000_MOSI		GPIOE, GPIO_PIN_5	// MCU -> chip SDI, also the SKY72310 data
 #define PIN_C5000_PWD		GPIOE, GPIO_PIN_6	// DMR_SLEEP, high = powered down
 #define PIN_C5000_VCS		GPIOB, GPIO_PIN_12	// voice SPI2 chip select (SPI2 on PB13-PB15)

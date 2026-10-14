@@ -174,7 +174,8 @@ static void reset_levels(void)
 
 	stm32_pin_out(PIN_PORT(PIN_C5000_CS), PIN_MASK(PIN_C5000_CS), true, false);
 	stm32_pin_out(PIN_PORT(PIN_C5000_PWD), PIN_MASK(PIN_C5000_PWD), true, false);
-	stm32_pin_out(PIN_PORT(PIN_C5000_CLK), PIN_MASK(PIN_C5000_CLK), true, false);
+	stm32_pin_out(PIN_PORT(PIN_C5000_CLK), PIN_MASK(PIN_C5000_CLK), false, false);
+	stm32_pin_out(PIN_PORT(PIN_PLL_CLK), PIN_MASK(PIN_PLL_CLK), true, false);
 	stm32_pin_out(PIN_PORT(PIN_C5000_MOSI), PIN_MASK(PIN_C5000_MOSI), false, false);
 	stm32_pin_out(PIN_PORT(PIN_C5000_VCS), PIN_MASK(PIN_C5000_VCS), true, false);
 	stm32_pin_out(PIN_PORT(PIN_PLL_CS), PIN_MASK(PIN_PLL_CS), true, false);
@@ -188,7 +189,7 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_TX_5V), PIN_MASK(PIN_TX_5V), false, false);
 	stm32_pin_out(PIN_PORT(PIN_APC_EN), PIN_MASK(PIN_APC_EN), false, false);
 	stm32_pin_out(PIN_PORT(PIN_RX_5V), PIN_MASK(PIN_RX_5V), false, false);
-	stm32_pin_out(PIN_PORT(PIN_VCO_SEL), PIN_MASK(PIN_VCO_SEL), false, false);
+	stm32_pin_out(PIN_PORT(PIN_VCO_SEL), PIN_MASK(PIN_VCO_SEL), true, false);	// receive VCO
 	stm32_pin_out(PIN_PORT(PIN_DMR_SW), PIN_MASK(PIN_DMR_SW), true, false);
 	stm32_pin_out(PIN_PORT(PIN_FM_SW), PIN_MASK(PIN_FM_SW), false, false);
 	stm32_pin_out(PIN_PORT(PIN_KEY_ROW0), PIN_MASK(PIN_KEY_ROW0), false, false);

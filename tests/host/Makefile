@@ -267,7 +267,7 @@ run-rf: at1846sTest
 
 # The MD-380's chips (docs/spec/hardware-md380.md): the SKY72310 synthesizer's divider words against the data sheet
 # and a register model, the HR_C5000 variant of the HR_C6000 driver, and the GPS NMEA line framing
-TESTS   += sky72310Test hrc5000Test nmeaLineTest
+TESTS   += sky72310Test hrc5000Test nmeaLineTest md380RfbusTest
 
 sky72310Test: sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c $(ROOT)/drivers/rf/sky72310/sky72310.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c
@@ -280,11 +280,20 @@ hrc5000Test: hrc5000Test.c $(ROOT)/drivers/modem/hrc6000/hrc6000_dmr.c $(ROOT)/d
 nmeaLineTest: nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c $(ROOT)/drivers/gps/nmea_line/nmea_line.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
 
+# The MD-380's bit-banged RF bus (boards/md380/rfbus_md380.c, with the real pins.h) against fake chips on the documented
+# wiring; md380_stub/ holds the stand-in platform.h and FreeRTOS.h the board code includes
+md380RfbusTest: md380RfbusTest.c $(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/boards/md380/rfbus_md380.h \
+                $(ROOT)/boards/md380/pins.h $(wildcard md380_stub/*.h) $(ROOT)/drivers/modem/hrc6000/hrc6000.c \
+                $(wildcard $(ROOT)/drivers/modem/hrc6000/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -Imd380_stub -I$(ROOT)/boards/md380 -I$(ROOT)/hal -Wshadow -o $@ md380RfbusTest.c \
+		$(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/drivers/modem/hrc6000/hrc6000.c
+
 run: run-md380
-run-md380: sky72310Test hrc5000Test nmeaLineTest
+run-md380: sky72310Test hrc5000Test nmeaLineTest md380RfbusTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
+	./md380RfbusTest
 .PHONY: run-md380
 
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)

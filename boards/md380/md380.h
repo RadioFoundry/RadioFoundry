@@ -14,10 +14,8 @@ void md380_lcdbus_unlock(void);
 // Reconnect LCD D0-D7 (the keypad columns) to the FSMC; the display calls it at the start of every burst, lock held
 void md380_lcd_pins_fsmc(void);
 
-// The HR_C5000 configuration port and the SKY72310 share clock and data: every transaction on either is one masked
-// section (interrupts up to the RTOS syscall level off), so a modem ISR never lands inside one (radio_md380.c)
-uint32_t md380_rfbus_lock(void);
-void md380_rfbus_unlock(uint32_t mask);
+// The HR_C5000 configuration port and the SKY72310 bus (md380_rfbus_lock and the rest) are in rfbus_md380.h
+#include "rfbus_md380.h"
 
 // DMR voice PCM to the speaker (radio_md380.c; audio_md380.c's hal_audio_t.speaker_pcm calls it)
 void md380_speaker_pcm(bool on);

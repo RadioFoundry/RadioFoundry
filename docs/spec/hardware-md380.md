@@ -88,7 +88,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PA6 | Keypad row K1 | (unverified) |
 | PA7 | POW_C, power latch | (unverified) |
 | PA8 | SAVE: enable of the 5C rail (U404), high = on (5.7) | (C) schematic and stock firmware; output, driven high |
-| PA9 | VCOVCC_SW: RX or TX VCO supply | (unverified); polarity (?) |
+| PA9 | VCOVCC_SW: RX or TX VCO supply, high = receive VCO, low = transmit VCO | (F) [ref] |
 | PA10 | DMR_SW: receiver IF to the HR_C5000 | (unverified); low in TX, high in RX (F) [gotchas] 2.6 |
 | PA11 / PA12 | USB OTG_FS D- / D+ | (unverified) |
 | PA13 | W/N_SW, IF bandwidth; also SWDIO | (unverified); polarity (?) |
@@ -124,6 +124,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); unused |
 | PC8 | BEEP (TIM8 CH3) | (unverified); unused |
 | PC9 | 5RC, receiver supply | (unverified) |
+| PC13 | HR_C5000 configuration clock, idles low (section 4.2) | stock bus pin; was wrongly PE3 |
 | PC10 / PC11 / PC12 | I2S3 CK / ext SD / SD | (unverified); direction of the two data lines (?) |
 | PC14 / PC15 | LSE crystal | (?) |
 
@@ -152,9 +153,9 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PE0 | Green LED (RX) | (unverified) |
 | PE1 | Red LED (TX) | (unverified) |
 | PE2 | HR_C5000 configuration port chip select | (unverified) |
-| PE3 | HR_C5000 configuration clock, also the SKY72310 clock | (unverified) |
-| PE4 | HR_C5000 SDO -> MCU | (unverified) |
-| PE5 | MCU -> HR_C5000 SDI, also the SKY72310 data | (unverified) |
+| PE3 | HR_C5000 SDO -> MCU (input, pull-up) | (F) [ref] |
+| PE4 | SKY72310 clock (idles high) | (F) [ref] |
+| PE5 | MCU -> HR_C5000 SDI, also the SKY72310 data | (F) [ref] |
 | PE6 | DMR_SLEEP, HR_C5000 power down (high = down) | (unverified); polarity as the HR_C6000 (?) |
 | PE7-PE10 | FSMC D4-D7 | (unverified) |
 | PE11 | PTT, active low | (unverified) |
@@ -164,8 +165,8 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 
 ### 2.6 Reset-time levels and the SWD pins
 
-`board_early_init` sets, before anything slow: the power latch (PA7) high; the HR_C5000 chip select, clock and power
-down high; the SKY72310 chip select high; the transmitter supply, APC loop, receiver supply and VCO select low;
+`board_early_init` sets, before anything slow: the power latch (PA7) high; the HR_C5000 chip select and power
+down high and its clock low; the SKY72310 clock high; the SKY72310 chip select high; the transmitter supply, APC loop and receiver supply low and VCO select high (the receive VCO);
 DMR_SW high; speaker muted, amplifier off, FM muted; LEDs off; keypad rows low; the flash chip select high. PD8 and
 PD9 are left as inputs (section 13). These are our safe choices, not stock values (?).
 
@@ -209,15 +210,19 @@ HRC6000_CHIP_C5000)`: the register map is close enough that the slot engine is s
 the differences in 4.3. There is no public HR_C5000 data sheet; the differences come from [gotchas] 2.6, 5.2, 11.1 and
 the reference port's notes [ref] (F).
 
-### 4.2 Configuration port and the shared bus
+### 4.2 Configuration port and the synthesizer bus
 
-Bit-banged SPI on PE2 (CS), PE3 (clock), PE5 (MCU -> chip) and PE4 (chip -> MCU) (unverified). The framing and timing are taken
-to be the HR_C6000's (clock idles high, data latched on the rising edge, a few hundred ns per half bit; DM-1701
-hardware-dm1701.md 4.2) (?).
+Bit-banged SPI on PE2 (CS), **PC13 (clock)**, PE5 (MCU -> chip) and **PE3 (chip -> MCU)** (F) [ref]. Unlike the
+HR_C6000 on the DM-1701, the clock idles LOW. Per bit: clock high, set MOSI, clock low (the chip samples MOSI on this
+falling edge), then the MCU samples MISO. Both PC13 and PE3 are not where the pin tables first put them (PE3 clock,
+PE4 data in); on those pins every read returned 0xFF. A transaction is 3 bytes for a register write (page, register,
+value) and 2 bytes plus the data for a read (0x80 | page, register), with CS low around the whole frame. A few
+cycles per half bit is enough; speed is not a constraint.
 
-The clock (PE3) and data (PE5) also go to the SKY72310, which has its own chip select (PD11) (unverified). A
-transaction on either chip is therefore one masked section (`md380_rfbus_lock`), so a modem ISR's register access never
-lands inside a synthesizer word or the reverse.
+The SKY72310 has its own clock (PE4) and chip select (PD11); only the data line (PE5) is shared with the HR_C5000
+(F) [ref]. Its clock idles high: the MCU sets the data bit while the clock is high, drops the clock, raises it again,
+and the chip latches the bit on the rising edge. Because PE5 is shared, a transaction on either chip is one masked
+section (`md380_rfbus_lock`), so a modem ISR's register access never lands inside a synthesizer word or the reverse.
 
 ### 4.3 Register differences from the HR_C6000
 
@@ -609,7 +614,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 9 | Calibration layout and scaling | Stage 4: "cal" must say factory; read both security registers over the open-firmware CPS protocol (area 10, which `md380_cps_security_read` serves) and compare the rows with what the stock CPS shows |
 | 10 | Frequency plan (TCXO, IF, LO side, VCO multiplier per band) | Stage 4: "pll lock" on every channel; an SDR on a 25 kHz-spaced pair of channels shows the receive LO leak and TX carrier |
 | 11 | SKY72310 bus timing and lock detect polarity | Stage 4: "pll lock" with a correct carrier; a scope on PD10 while retuning |
-| 12 | VCOVCC_SW, FM_SW, W/N_SW, DMR_SW, FM_MUTE, SPK_C, AFCO polarities | Stage 4/5: receive a known FM signal; invert one pin's level at a time in `radio_md380.c` (one rebuild each, batched) until IF, audio and bandwidth are right |
+| 12 | FM_SW, W/N_SW, DMR_SW, FM_MUTE, SPK_C, AFCO polarities | Stage 4/5: receive a known FM signal; invert one pin's level at a time in `radio_md380.c` (one rebuild each, batched) until IF, audio and bandwidth are right |
 | 13 | RSSI and noise curves | Stage 5: signal generator steps, record "rssi" and "busy", fit `status()` |
 | 14 | HR_C5000 configuration port timing, page mapping, reg 0x10 read-back | Stage 4: "C5000 10=" shows a sane value after init |
 | 15 | FM TX deviation and modulation balance on the C5000 | Stage 6: TX into a dummy load and an SDR: deviation and frequency against the stock firmware |

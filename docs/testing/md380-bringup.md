@@ -72,10 +72,10 @@ Open Diagnostics (Menu > Settings > Diagnostics, or `odr_debug.py diag`). The bo
 
 | Check | If not |
 |---|---|
-| "C5000 10=xx" shows a value (not "--") | configuration port timing or the shared bus (`radio_md380.c` `bus_byte`); PE6 power-down polarity. Unknown 14 |
+| "C5000 10=80" after boot in FM (`--` means the read returned FF, a dead bus) | configuration port timing or pins (`radio_md380.c` `bus_byte`; clock PC13, MISO PE3); PE6 power-down polarity. Unknown 14 |
 | "cal factory" and sane bytes on "ref / lo / hi / rx" | the security register read (`flash_md380.c`), the row layout in `calibration_md380.c` ("power order" etc. says which check failed). Unknown 9 |
-| "pll lock NNNNNNk" on every channel across the band | the frequency plan (`MD380_TCXO_HZ`, `MD380_IF_HZ`, `MD380_RX_LO_ABOVE`, `MD380_VCO_MULT`), the SKY72310 word timing, lock detect polarity (PD10). Unknowns 10, 11 |
-| An SDR near the radio sees the receive LO where the plan puts it (UHF: f - 49.95 MHz; VHF: 2 x (f + 49.95 MHz) at the VCO) | same; VCOVCC_SW polarity |
+| "pll lock NNNNNNk" on every channel across the band | the frequency plan (`MD380_TCXO_HZ`, `MD380_IF_HZ`, `MD380_RX_LO_ABOVE`, `MD380_VCO_MULT`), the SKY72310 word timing (clock PE4), lock detect polarity (PD10). Unknowns 10, 11 |
+| An SDR near the radio sees the receive LO where the plan puts it (UHF: f - 49.95 MHz; VHF: 2 x (f + 49.95 MHz) at the VCO) | same |
 
 ## 5. FM receive
 

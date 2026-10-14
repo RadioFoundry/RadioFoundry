@@ -22,6 +22,7 @@
 #include "config.h"
 #include "md380.h"
 #include "pins.h"
+#include "rfbus_md380.h"
 #include "hal_time.h"
 #include "rf/sky72310/sky72310.h"
 #include "modem/hrc6000/hrc6000.h"
@@ -98,82 +99,9 @@ static void count(bool ok)
 	}
 }
 
-// --- The shared three-wire bus: HR_C5000 configuration port and SKY72310 (hardware-md380.md 4.2, 5.2) ---
-
-uint32_t md380_rfbus_lock(void)
-{
-	return portSET_INTERRUPT_MASK_FROM_ISR();
-}
-
-void md380_rfbus_unlock(uint32_t mask)
-{
-	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
-}
-
-// About 110 ns at 72 MHz on top of the GPIO writes
-static inline void bus_delay(void)
-{
-	__NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-}
-
-// Clock idles high; data set, clock low, sample MISO, clock high (both chips latch on the rising edge, ?)
-static uint8_t bus_byte(uint8_t out)
-{
-	uint8_t in = 0;
-	for (int i = 0; i < 8; i++) {
-		PIN_WRITE(PIN_C5000_MOSI, (out & 0x80u) != 0);
-		out = (uint8_t)(out << 1);
-		PIN_WRITE(PIN_C5000_CLK, false);
-		bus_delay();
-		in = (uint8_t)((in << 1) | (PIN_READ(PIN_C5000_MISO) ? 1u : 0u));
-		PIN_WRITE(PIN_C5000_CLK, true);
-		bus_delay();
-	}
-	return in;
-}
-
-static bool modem_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
-{
-	uint32_t mask = md380_rfbus_lock();
-	PIN_WRITE(PIN_C5000_CLK, true);
-	PIN_WRITE(PIN_C5000_CS, false);
-	bus_delay();
-	for (uint8_t i = 0; i < hdr_len; i++) {
-		bus_byte(hdr[i]);
-	}
-	for (uint16_t i = 0; i < len; i++) {
-		uint8_t in = bus_byte(tx != NULL ? tx[i] : 0xFF);
-		if (rx != NULL) {
-			rx[i] = in;
-		}
-	}
-	bus_delay();
-	PIN_WRITE(PIN_C5000_CS, true);
-	md380_rfbus_unlock(mask);
-	return true;
-}
-
-// One 16-bit synthesizer word, latched when its chip select goes high
-static bool pll_write(void *ctx, uint16_t word)
-{
-	uint32_t mask = md380_rfbus_lock();
-	PIN_WRITE(PIN_C5000_CLK, true);
-	PIN_WRITE(PIN_PLL_CS, false);
-	bus_delay();
-	bus_byte((uint8_t)(word >> 8));
-	bus_byte((uint8_t)word);
-	bus_delay();
-	PIN_WRITE(PIN_PLL_CS, true);
-	md380_rfbus_unlock(mask);
-	return true;
-}
-
-static bool pll_locked(void *ctx)
-{
-	return PIN_READ(PIN_PLL_LD);
-}
-
-static const sky72310_bus_t pll_bus = { .write = pll_write, .locked = pll_locked, .delay_us = hal_delay_us };
+static const sky72310_bus_t pll_bus = {
+	.write = md380_rfbus_pll_write, .locked = md380_rfbus_pll_locked, .delay_us = hal_delay_us,
+};
 
 // Voice port: STM32 SPI2 master, mode 2, prescaler 8 (4.5 MHz), as the DM-1701's HR_C6000 (?)
 static void voice_spi_setup(void)
@@ -213,7 +141,7 @@ static bool voice_xfer(void *ctx, bool write, uint8_t *buf, uint8_t len)
 }
 
 static const hrc6000_bus_t modem_bus = {
-	.transfer = modem_transfer, .delay_ms = hal_delay_ms, .delay_us = hal_delay_us, .ctx = NULL,
+	.transfer = md380_rfbus_modem_transfer, .delay_ms = hal_delay_ms, .delay_us = hal_delay_us, .ctx = NULL,
 	.voice = voice_xfer,
 };
 
@@ -341,7 +269,7 @@ static uint8_t pick_ref_div(uint32_t vco_hz)
 static bool pll_tune(uint32_t vco_hz, bool tx, bool wait)
 {
 	uint8_t d = pick_ref_div(vco_hz);
-	PIN_WRITE(PIN_VCO_SEL, tx);	// polarity ?
+	md380_rfbus_vco_select(tx);
 	if (d == 0 || !sky72310_set_vco(&r.pll, d, vco_hz)) {
 		r.diag.pll_fails++;
 		r.diag.pll_locked = false;
@@ -506,7 +434,8 @@ static void init(void)
 	stm32_pin_in(PIN_PORT(PIN_PLL_LD), PIN_MASK(PIN_PLL_LD), GPIO_PULLUP);	// open collector (hardware-md380.md 5.2)
 	PIN_WRITE(PIN_C5000_CS, true);
 	PIN_WRITE(PIN_PLL_CS, true);
-	PIN_WRITE(PIN_C5000_CLK, true);
+	PIN_WRITE(PIN_PLL_CLK, true);
+	PIN_WRITE(PIN_C5000_CLK, false);
 #ifndef MD380_KEEP_SWD
 	// The SWD pins become the IF bandwidth switch and the microphone supply (hardware-md380.md 2.6)
 	stm32_pin_out(PIN_PORT(PIN_WIDE), PIN_MASK(PIN_WIDE), false, false);
@@ -534,7 +463,8 @@ static void init(void)
 	r.mode = RADIO_MODE_FM;
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	audio(false);
-	r.diag.c5000_ok = hrc6000_read(&r.modem, 4, 0x10, &r.diag.c5000_r10);
+	// 0xFF is a floating data line, never a register value here (FM receive leaves 0x10 = 0x80)
+	r.diag.c5000_ok = hrc6000_read(&r.modem, 4, 0x10, &r.diag.c5000_r10) && r.diag.c5000_r10 != 0xFF;
 	md380_dmr_board_init(&r.modem);
 }
 
