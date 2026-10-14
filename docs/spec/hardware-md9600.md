@@ -25,8 +25,9 @@ Every fact carries a confidence tag as in [radios.md](radios.md):
 | Tag | Meaning |
 |---|---|
 | **C** | Confirmed: manufacturer data, a datasheet, or our own bench work on the radio |
-| **D** | Documented in public hardware notes (schematic notes, pin tables, the reference port's pin map and register writes) |
-| **F** | Forum post, review or retailer claim, or a value carried over from a sibling radio's notes |
+| **D** | Documented by the reference port ([ref]: its pin map and register writes) or by our own tool or reading. Facts that rest only on public notes we cannot name are marked (unverified) instead |
+| **unverified** | Reported in public notes, a review or a forum we cannot name or cannot check, with no independent basis. Needs a radio |
+| **F** | A named forum or retailer page ([ogd77-t83], [ogd77-p15], [passion-radio]), a value inferred from stock files, or carried over from a sibling radio |
 | **?** | Not found, contradictory, or our own assumption. Needs a radio |
 
 Short source names are listed in section 18 ([ref], [ogd77-t83], [ogd77-p15],
@@ -217,9 +218,9 @@ synthesizer word and a different VCO (5.2), so the per-burst relock time is the 
 
 ### 5.1 Bands, power
 
-Dual band, 136-174 MHz and 400-480 MHz (D) per the public hardware notes; the reference port allows 127-178 and 380-564 MHz outside its
+Dual band, 136-174 MHz and 400-480 MHz (unverified); the reference port allows 127-178 and 380-564 MHz outside its
 data-sheet mode (not a recommendation). Rated 50 W VHF / 45 W UHF (40 W on some retailer pages); one review measured 44 W
-at 146 MHz and 40 W at 446 MHz (F). Band selection is by frequency: below 300 MHz is VHF (D) [ref].
+at 146 MHz and 40 W at 446 MHz (unverified). Band selection is by frequency: below 300 MHz is VHF (D) [ref].
 
 ### 5.2 Frequency plan (all revisions)
 
@@ -389,7 +390,7 @@ column < 4 means a key is down (D) [ref]:
 | 3 | * | 0 | # | D |
 | 4 | (unused) | A/B | Up | Down |
 
-The mic has 16 keys plus its own up / down / A/B (F). Thresholds and the mic's resistor ladder are unverified (?).
+The mic has 16 keys plus its own up / down / A/B (unverified). Thresholds and the mic's resistor ladder are unverified (?).
 
 ### 9.4 PTT
 
@@ -490,7 +491,7 @@ clean side (reuse the DM-1701 map, keeping 0x010000-0x010FFF free if the calibra
 
 ### 13.1 Module
 
-Optional, JS-M710 (D) per the public hardware notes; the "MD-9600-5P GPS" FCC class II change (C) [FCC]. NMEA on USART1 RX (PA10),
+Optional, JS-M710 (unverified); the "MD-9600-5P GPS" FCC class II change (C) [FCC]. NMEA on USART1 RX (PA10),
 9600 baud, 8N1, DMA (D) [ref]. The reference port reports bursts of invalid ('V') frames from time to time (F) [ref].
 
 ### 13.2 Power and detection
@@ -518,8 +519,8 @@ works: on every V06.09 and V16.45 stock file the plain column vote alone gives t
 
 ### 14.3 Stock firmware files
 
-TYT names the files by feature: P = CSV + GPS, V = CSV, S = recorder + GPS, D = recorder (F). TYT's V4
-firmware and CPS (for the "new updated PLL", V4 and later boards) are not compatible with V1-V3 radios (F).
+TYT names the files by feature: P = CSV + GPS, V = CSV, S = recorder + GPS, D = recorder (unverified). TYT's V4
+firmware and CPS (for the "new updated PLL", V4 and later boards) are not compatible with V1-V3 radios (unverified).
 TYT's download page (checked 2026-10-12) offers only CPS installers for the MD-9600, no firmware (C) [TYT].
 
 Files examined (C, [TYT-fw]; container header only here, the codec in [codec-md9600.md](codec-md9600.md)):

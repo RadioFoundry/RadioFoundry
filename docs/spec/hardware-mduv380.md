@@ -19,8 +19,9 @@ Confidence tags as in [radios.md](radios.md) and [hardware-md380.md](hardware-md
 | Tag | Meaning |
 |---|---|
 | **C** | Confirmed: manufacturer data, a datasheet, our own reading of a stock file, or bench work on the radio |
-| **D** | Documented in public hardware notes |
-| **F** | Forum post, review, retailer claim, or a value carried over from a sibling radio's notes |
+| **D** | Documented by the reference port ([ref]) or the vendor page ([dealer]), or by our own tool or reading. Facts that rest only on public notes we cannot name are marked (unverified) instead |
+| **unverified** | Reported in public notes, a review or a forum we cannot name or cannot check, with no independent basis. Needs a radio |
+| **F** | A value carried over from a sibling radio's notes ([dm1701]), or a forum or retailer claim |
 | **?** | Not found, contradictory, or our own assumption. Needs a radio |
 
 Sources (section 15): [ref] the reference port's facts (the aftermarket firmware tree's MD-UV380 build variant: pin set-up, per-variant
@@ -61,12 +62,12 @@ power latch, the RX supply switches, the PA enables, the APC DAC, the RX audio m
 
 ## 2. MCU, clocks, RF chips
 
-As the DM-1701 (D) [ref]. The public hardware notes give an 8 MHz crystal as the PLL reference and 72 / 36 / 72 MHz
-(D); the DM-1701 needed HSE bypass. Whether the MD-UV380's HSE is a crystal or an external clock is open (?):
+As the DM-1701 (D) [ref]. Public notes we cannot name report an 8 MHz crystal as the PLL reference and 72 / 36 / 72 MHz
+(unverified); the DM-1701 needed HSE bypass. Whether the MD-UV380's HSE is a crystal or an external clock is open (?):
 the DM-1701's start-up code that falls back between the two covers both.
 
-AT1846S: the same I2C pins (SCL PA8, SDA PC9), 7-bit address 0x2E (D) [ref]. The aftermarket firmware tree uses the I2C3 peripheral on those pins, as on the DM-1701 (D). The public hardware notes also list the
-AT1846S GPIO0 on PB1 and GPIO6 (squelch out in the DM-1701's 0x1F setting) on PB2 (D); neither pin is used
+AT1846S: the same I2C pins (SCL PA8, SDA PC9), 7-bit address 0x2E (D) [ref]. The aftermarket firmware tree uses the I2C3 peripheral on those pins, as on the DM-1701 (D) [ref]. The same notes also list the
+AT1846S GPIO0 on PB1 and GPIO6 (squelch out in the DM-1701's 0x1F setting) on PB2 (unverified); neither pin is used
 by the DM-1701 port, and the DM-1701 spec has no entry for them (?: may hold on the DM-1701 too).
 
 All the AT1846S register tables of [dm1701] 5 apply. The DM-1701 needs more DMR AF gain than the MD-UV380 (F) [dm1701]
@@ -85,11 +86,11 @@ Only two pins differ, and only on the Plus 10 W (D) [ref]:
 | PC6 | PA band select (low VHF, high UHF) | LCD backlight |
 | PD8 | LCD backlight (PWM by DMA from TIM1) | PA band select |
 
-The public hardware notes agree with the 5 W column (PC6 VHF/UHF PA switch, PD8 backlight) (D). The backlight
+Public notes we cannot name are reported to agree with the 5 W column (PC6 VHF/UHF PA switch, PD8 backlight) (unverified). The backlight
 dimming of [dm1701] 9.4 writes BSRR of the backlight pin's port, so on the 10 W radio the DMA target is GPIOC instead
 of GPIOD.
 
-Pins the public hardware notes list that the DM-1701 spec doesn't (D), not used by ODR today: PB1 AT1846S GPIO0, PB2
+Pins those notes list that the DM-1701 spec doesn't (unverified), not used by ODR today: PB1 AT1846S GPIO0, PB2
 AT1846S GPIO6, PC3 not connected on a stock radio.
 
 PB11 / PE14 are the channel selector: the same quadrature encoder (unverified, ?).
@@ -121,7 +122,7 @@ Same bus, controller family, init tables and backlight as [dm1701] 9, with these
   select).
 - Backlight: PD8 (5 W) or PC6 (10 W), active high.
 
-[radios.md](radios.md) lists HX8302A (D).
+[radios.md](radios.md) lists HX8302A (unverified).
 
 ---
 
@@ -153,7 +154,7 @@ Matrix (rows PA6, PD2, PD3; columns D0-D7 as on the DM-1701) (D) [ref]:
 | Volume pot min / max / break | 22 / 2070 / 309 | 23 / 2020 / 317 | 19 / 2054 / 308 | (D) [ref] |
 
 The aftermarket firmware builds the RT3S pot values for every non-10 W MD-UV380 build, with 7 counts of margin at the bottom
-because the RT3S reading is unstable there (D) [ref]. The public hardware notes give PA0 at 0-1600 mV and PA1 through a 1:3 divider
+because the RT3S reading is unstable there (D) [ref]. Public notes we cannot name give PA0 at 0-1600 mV and PA1 through a 1:3 divider
 (unverified, ?). Power-off threshold (5.5 V, switch sensed through the battery line), low-battery thresholds and the
 temperature sensor: as the DM-1701 (D) [ref].
 
@@ -175,7 +176,7 @@ firmware's untested estimates):
 On the 10 W radio the top four levels are 2, 3, 5 and 10 W ([dm1701] 7). The aftermarket firmware's calibration screen labels
 the four calibrated points 250 mW, 1, 2, 5 W (5 W) or 250 mW, 1, 5, 10 W (10 W), and offers a "force 10 W" setting on
 5 W builds for 10 W radios flashed with a 5 W image (D) [ref]. Measured stock output (one radio) UHF 1.4 / 2.6 / 5.1 W,
-VHF 1.1 / 2.1 / 4.3 W (F).
+VHF 1.1 / 2.1 / 4.3 W (unverified).
 
 ---
 
@@ -196,12 +197,12 @@ The open-firmware CPS calibration window (0x10000, 512 bytes) is served as on th
 ## 9. GPS
 
 G models (MD-UV380G / MD-UV390 GPS / RT3S GPS) carry a JumpStar JS-H210 module on the display / keypad board; the
-non-GPS boards have no footprint (D) per the public hardware notes. Its NMEA output is on **USART1 RX, PA10**, and its power switch is
+non-GPS boards have no footprint (unverified). Its NMEA output is on **USART1 RX, PA10**, and its power switch is
 **PA9**, high = on (D) [ref]: the same pins the DM-1701 spec lists for its unfitted GPS, not the MD-380's
 USART3. 9600 8N1 (D) [ref]. Nothing is sent to the module.
 
 Detection: the same board ships with and without the module, and stock GPS firmware doesn't add GPS to a non-GPS radio
-(F). A listen-first probe as on the MD-380 ([hardware-md380.md](hardware-md380.md) 13.2), with PA9 driven
+(unverified). A listen-first probe as on the MD-380 ([hardware-md380.md](hardware-md380.md) 13.2), with PA9 driven
 high for the listen window and back low if nothing is heard, avoids needing a model flag (?: on a non-GPS radio PA9
 drives nothing that is known). The stock files differ between GPS and non-GPS radios (section 11), and a forum report
 says a GPS stock image hangs at the boot screen on a non-GPS radio (F); whether that is a GPS probe or something else is
@@ -221,13 +222,13 @@ UV390 (no known model byte) (?).
 
 ## 11. Bootloader and stock images
 
-Entering the bootloader: hold PTT and the top side key (SK1) at power on (D) per the public hardware notes. The TYT/AnyRoad DFU
+Entering the bootloader: hold PTT and the top side key (SK1) at power on (unverified). The TYT/AnyRoad DFU
 loader, protocol and sector list of [dm1701] 15.2 (D) [ref]. The image is XOR-encrypted with the MD-UV380 key, SHA-256
 `739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991`, first bytes 00 AA 89 89, the same key for the
 MD-UV390 and the MD-2017 (D) [dm1701] 15.3. **Confirmed (C, 2026-10-12):** `stockfw.derive_key` recovers exactly this
 key from each of the four 19.26 stock files.
 
-The initial stack pointer rule ([dm1701] 1.5: below the top of RAM) is documented for this radio too (D) per the public hardware notes.
+The initial stack pointer rule ([dm1701] 1.5: below the top of RAM) is documented for this radio too (unverified).
 Whether the MD-UV380 bootloader checks the same GPIO combination (PE8 low and PE11 low) and the stack pointer word as
 the DM-1701's dumped loader ([dm1701] 15.4) is unknown (?: needs a dump from an MD-UV380).
 
@@ -260,10 +261,10 @@ the other three files and the extraction recipe: [codec-mduv380.md](codec-mduv38
 
 | Radio | Difference | Tag |
 |---|---|---|
-| MD-UV380 | the base 5 W board | (D) |
-| MD-UV390 | the same radio in an IP67 case | (F) |
+| MD-UV380 | the base 5 W board | (unverified) |
+| MD-UV390 | the same radio in an IP67 case | (unverified) |
 | Retevis RT3S | rebadged MD-UV380; its own volume pot curve (section 6) | (D) [ref] |
-| G models | JS-H210 GPS on USART1 / PA9 | (D) |
+| G models | JS-H210 GPS on USART1 / PA9 | (unverified) |
 | MD-UV390 Plus 10 W | PC6 / PD8 swapped, 10 W power tables, security register 3 byte 0x1C = 0xF4, board layout differs somewhat (unverified) | (D) [ref] |
 | MD-2017 | trackball, two AT1846S; not covered here | (D) [dm1701] 17 |
 
