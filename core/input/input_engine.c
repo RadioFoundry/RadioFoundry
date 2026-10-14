@@ -64,18 +64,21 @@ void input_engine_step(input_engine_t *e, uint32_t raw, int8_t enc, uint32_t now
 		} else if (!down && k->down) {
 			k->down = false;
 			if (m->raw_edges) {
-				send(emit, ctx, m->short_action, GESTURE_UP, 0);
+				// value 1: the key's long press ran before this release (a monitor key with a hold function)
+				send(emit, ctx, m->short_action, GESTURE_UP, k->long_done ? 1 : 0);
 			} else if (!k->long_done) {
 				send(emit, ctx, m->short_action, GESTURE_PRESS, 0);
 			}
-		} else if (down && !m->raw_edges) {
+		} else if (down && (!m->raw_edges || m->long_action != m->short_action)) {
+			// A raw-edge key whose long action differs (a monitor key with a hold function, keyassign.c) gets its
+			// long press too, marked with value 1, never repeated
 			if (!k->long_done) {
 				if (now_ms - k->t_down >= input_long_threshold(m->long_action, long_ms)) {
 					k->long_done = true;
 					k->t_next = now_ms + repeat_ms;
-					send(emit, ctx, m->long_action, GESTURE_LONG, 0);
+					send(emit, ctx, m->long_action, GESTURE_LONG, m->raw_edges ? 1 : 0);
 				}
-			} else if (m->repeat && (int32_t)(now_ms - k->t_next) >= 0) {
+			} else if (m->repeat && !m->raw_edges && (int32_t)(now_ms - k->t_next) >= 0) {
 				k->t_next += repeat_ms;
 				if ((int32_t)(now_ms - k->t_next) >= 0) {	// fell behind: no burst of repeats
 					k->t_next = now_ms + repeat_ms;

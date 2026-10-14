@@ -59,7 +59,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | TX timeout | Off, 30 s, 1, 2, 3, 5, 10 min | 3 min | Longest transmission, for channels without their own timeout in the codeplug | Works |
 | Default squelch | 0 to 9 | 5 | The FM squelch level when a channel doesn't set one | Works |
 | Mic gain | 0 to 10 | 5 | Microphone level on DMR, 2 dB a step. 5 is the radio's normal level. FM isn't changed yet | Works (DMR) |
-| Hear all by default | On, Off | Off | Hear all goes on each time you select a DMR channel. **Back** on Home turns it off until the next channel | Works |
+| Monitor by default | On, Off | Off | Digital monitor (DMR: every talkgroup, promiscuous) goes on each time you select a DMR channel. **Back** on Home turns it off until the next channel | Works |
 | Show talker alias | On, Off | On | Show received talker aliases (names) under the caller's ID | Works |
 
 ### Privacy (key 4)
@@ -107,9 +107,9 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 |---|---|---|---|---|
 | Long press time | 400 to 1200 ms, steps of 100 | 600 ms | How long you hold a key for a long press | Works |
 | Key repeat | 60 to 300 ms, steps of 20 | 120 ms | The repeat rate of **Up** and **Down** while held | Works |
-| Up/Down on Home | Channel, Zone, Talk target | Channel | What the **Up** and **Down** keys change on Home. The channel knob always changes the channel. Talk target steps through the channel's contact and its listen list on DMR channels. On FM channels they change the channel | Works |
-| Side key 1, Side key 2, Top key | Default, Nothing, Monitor, Talk target, Power level, Next zone, Previous zone, Scan, Monitor on/off, Key lock, Home zone, Hear all, Call back | Default | What a press of the key does. Default is what the [key roles](23-radios.md#key-roles) say. Monitor opens the squelch while you hold the key. Monitor on/off keeps it open until the next press (FM channels). Key lock locks and unlocks the keys. Hear all plays every talkgroup until pressed again. Call back talks to the last call heard. Home zone goes to the codeplug's first zone: put your home zone first in the CPS | Works |
-| Side key 1 hold, Side key 2 hold, Top key hold | Default, Nothing, Talk target, Power level, Next zone, Previous zone, Scan, Emergency, Monitor on/off, Key lock, Home zone, Hear all, Call back | Default | What holding the key does. Emergency needs a 1.5 s hold. Dimmed while the key's press is Monitor | Works |
+| Up/Down on Home | Channel, Zone, Talk target | Channel | What **Up** and **Down** change on Home. Talk target steps through the channel's contact and its listen list on DMR channels. On FM channels they change the channel | Works |
+| Side key 1, Side key 2, Top key | Default, Nothing, Monitor, Talk target, Power level, Next zone, Previous zone, Scan, Key lock, Home zone, Call back | Default | What a press of the key does. Default is what the [key roles](23-radios.md#key-roles) say. Monitor opens the squelch while you hold the key on FM, and turns digital monitor on or off on DMR. Key lock locks and unlocks the keys. Call back talks to the last call heard. Home zone goes to the codeplug's first zone: put your home zone first in the CPS | Works |
+| Side key 1 hold, Side key 2 hold, Top key hold | Default, Nothing, Talk target, Power level, Next zone, Previous zone, Scan, Emergency, Key lock, Home zone, Call back | Default | What holding the key does. Emergency needs a 1.5 s hold. With Monitor as the press, the hold works on DMR channels; on FM holding the key keeps the squelch open (for an open squelch that stays, use **\***, **5**) | Works |
 
 The side key settings are also in the codeplug, so a codeplug written to the radio can set them, and a change here is
 written to the codeplug. Rows for keys your radio doesn't have are dimmed.

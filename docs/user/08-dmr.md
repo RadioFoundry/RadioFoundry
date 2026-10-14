@@ -14,7 +14,7 @@ The [Radio reference](23-radios.md) says which radios have DMR verified. DMR voi
 | Talk target | Where **PTT** goes now: a talkgroup, a person, or all call |
 | Listen list | The talkgroups a channel listens to (the codeplug's RX group list) |
 | Recent | Stations heard and calls made, newest first |
-| Hear all | Play every talkgroup on this timeslot (promiscuous mode) |
+| Digital monitor | Play every talkgroup on this timeslot (promiscuous mode) |
 | Timeslot (TS) | One of the two time slots of a DMR channel |
 | Color code (CC) | A number from 0 to 15 that a DMR channel uses, like a tone on FM |
 
@@ -25,7 +25,7 @@ The radio plays a group call when one of these is true:
 - its talkgroup is the talk target's talkgroup, or the call is an all call;
 - its talkgroup is in the channel's listen list;
 - it is the reply target during the reply window ([below](#replying));
-- hear all is on.
+- digital monitor is on.
 
 The radio plays a private call addressed to your DMR ID. It shows every other call on the slot as "Other TG: not
 played" and treats the channel as busy while it lasts.
@@ -170,7 +170,7 @@ On a DMR channel, **\*** opens these tiles:
 | **2** | Slot | Switches between timeslot 1 and 2, for now |
 | **3** | Color | Opens the color code editor |
 | **4** | Mode | Listen and talk in FM on the same frequencies, for now |
-| **5** | All | Hear all on or off |
+| **5** | DMon | Digital monitor on or off |
 | **6** | Privacy | Privacy on or off |
 | **7** | Scan | Scan on or off |
 | **8** | Talk to | Opens the talk target picker |
@@ -186,13 +186,16 @@ color code takes effect when the editor closes.
 Timeslot, color code and mode are temporary. They can't be changed while transmitting or in the VFO. Hold **OK**
 to save them to the channel.
 
-## Hear all
+## Digital monitor
 
-- Hold **Monitor**. The radio plays every talkgroup on this frequency and timeslot while you hold it.
-- **\***, **5** latches hear all on. The radio shows "Hear all on", and the chips show "All". Hear all
-  stays on until you turn it off, change the channel or the mode, or press **Back** on Home.
+Digital monitor plays every talkgroup on this frequency, timeslot and color code.
 
-While hear all is on, the reply window lets you answer any call you heard with **PTT**.
+- Press **Monitor** on a DMR channel (a short press; it acts when you let go). The radio shows "Digital monitor on" and
+  the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.
+- Or **\***, **5**.
+
+Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. While it
+is on, the reply window lets you answer any call you heard with **PTT**.
 
 ## Privacy
 

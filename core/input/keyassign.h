@@ -27,8 +27,8 @@ typedef enum {
 	KEYFN_ZONE_DOWN,	// the previous zone
 	KEYFN_SCAN,		// scan on / off
 	KEYFN_EMERGENCY,	// emergency on / off (long press only: hold to activate, ux/principles.md P2)
-	KEYFN_HEAR_ALL,		// hear all (every talkgroup) on / off
-	KEYFN_MONITOR_LATCH,	// monitor on / off, latched
+	KEYFN_HEAR_ALL,		// retired (#19: the monitor key toggles digital monitor on DMR): reads as Default
+	KEYFN_MONITOR_LATCH,	// retired (#19: the monitor key latches digital monitor on DMR): reads as Default
 	KEYFN_KEY_LOCK,		// lock / unlock the keys
 	KEYFN_CALL_BACK,	// talk to the last call heard: its talkgroup, or its caller for a private call
 	KEYFN_HOME_ZONE,	// back to the home zone (Settings > Keys > Home zone)

@@ -6,7 +6,7 @@
 //
 // Script tokens (separated by spaces):
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
-//   powerkey zone+ zone- scankey hearkey monkey lockkey cbkey homekey: what a reassigned side key sends
+//   powerkey zone+ zone- scankey lockkey cbkey homekey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   wait:<ms>           time passes
@@ -670,7 +670,19 @@ void radio_req_vfo(bool on)
 }
 void radio_req_vfo_step(int8_t dir) { view.ch.rx_hz = view.ch.tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz; changed(); }
 void radio_req_vfo_set(uint32_t hz) { view.ch.rx_hz = view.ch.tx_hz = hz; changed(); }
-void radio_req_monitor(bool down) { view.monitor = down; changed(); }
+void radio_req_monitor(bool down)
+{
+	// As the radio core (#19): on DMR a short press toggles digital monitor on its release; FM holds it open
+	if (view.ch.mode == RADIO_MODE_DMR && !view.monitor) {
+		if (!down) {
+			view.dmr.hear_all_latch = !view.dmr.hear_all_latch;
+			view.dmr.hear_all = view.dmr.hear_all_latch;
+		}
+	} else {
+		view.monitor = down;
+	}
+	changed();
+}
 void radio_req_power(int8_t dir)
 {
 	view.power = (uint8_t)((view.power + board.power_count + dir) % board.power_count);
@@ -1131,7 +1143,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "user2", ACT_USER_2 }, { "user3", ACT_USER_3 }, { "user4", ACT_USER_4 },
 	// what a reassigned side key sends (core/input/keyassign.h)
 	{ "powerkey", ACT_POWER }, { "zone+", ACT_ZONE_UP }, { "zone-", ACT_ZONE_DOWN }, { "scankey", ACT_SCAN },
-	{ "hearkey", ACT_HEAR_ALL }, { "monkey", ACT_MONITOR_LATCH }, { "lockkey", ACT_LOCK }, { "cbkey", ACT_CALL_BACK },
+	{ "lockkey", ACT_LOCK }, { "cbkey", ACT_CALL_BACK },
 	{ "homekey", ACT_HOME_ZONE },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },

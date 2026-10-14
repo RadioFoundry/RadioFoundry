@@ -16,7 +16,7 @@ qdmr](15-programming-qdmr.md)).
 
 <img src="../ux/screens/160x120i5/zone_channels.png" width="200" alt="A zone's channels">
 
-Changing the channel ends temporary changes, the reply window, hear all and a scan.
+Changing the channel ends temporary changes, the reply window, digital monitor and a scan.
 
 ## Changing the zone
 

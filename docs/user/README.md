@@ -20,7 +20,7 @@ these files (`tools/build_manual.sh`).
 5. [The Home screen](05-home-screen.md): what each region shows, receiving, transmitting
 6. [Channels, zones and the VFO](06-channels-zones-vfo.md)
 7. [FM](07-fm.md): squelch, monitor, tones, bandwidth, VOX
-8. [DMR](08-dmr.md): talk targets, replying, Recent, contacts, timeslot and color code, hear all, privacy, roaming
+8. [DMR](08-dmr.md): talk targets, replying, Recent, contacts, timeslot and color code, digital monitor, privacy, roaming
 9. [Messages, call alert and radio check](09-messages-and-signaling.md)
 10. [Emergency](10-emergency.md)
 11. [Scan and dual watch](11-scan.md)

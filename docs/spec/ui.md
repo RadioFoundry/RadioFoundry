@@ -93,7 +93,7 @@ The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
 
 | Action | Press | Long press |
 |---|---|---|
-| BACK | up one level, or clear one thing on Home (entry, banner, scan, reply, hear all, temporary change) | Home |
+| BACK | up one level, or clear one thing on Home (entry, banner, scan, reply, digital monitor, temporary change) | Home |
 | SELECT | open / choose | the alternative (save, permanent, Quick on radios without a QUICK key) |
 | QUICK | Quick settings (closes them again) | lock / unlock the keys |
 | CONTEXT | the focused item's actions; a banner's target while one is up | Recent |
@@ -132,21 +132,23 @@ long press, and each takes one function:
 |---|---|:-:|:-:|
 | Default (0) | what the board's key map gives | yes | yes |
 | Nothing (1) | none | yes | yes |
-| Monitor (2) | MONITOR as raw edges: open while held | yes | no: the key is held, so it has no long press |
+| Monitor (2) | MONITOR as raw edges; the radio core picks by mode (#19): FM, the squelch open while held; DMR, a short press toggles digital monitor (the hear all latch) on its release | yes | no (but the key's hold slot works with it: on DMR channels a hold runs the hold function and doesn't toggle; on FM holding is the squelch break and the UI drops it) |
 | Talk target (3) | TALK_TARGET | yes | yes |
 | Power level (4) | POWER: the next level | yes | yes |
 | Next zone (5), Previous zone (6) | ZONE_UP, ZONE_DOWN | yes | yes |
 | Scan (7) | SCAN: on / off | yes | yes |
 | Emergency (8) | EMERGENCY, hold to activate (1.5 s) | no: P2 | yes |
-| Hear all (9) | HEAR_ALL: every talkgroup on / off, as the quick settings tile (DMR) | yes | yes |
-| Monitor on/off (10) | MONITOR_LATCH: FM, the squelch open until pressed again; DMR, a toast (hear all is its own function and state) | yes | yes |
+| (9) | retired (was Hear all / Digital monitor): reads as Default. The Monitor function toggles digital monitor on DMR (#19) | no | no |
+| (10) | retired (was Monitor on/off): reads as Default. The Monitor function does both jobs (#19) | no | no |
 | Key lock (11) | LOCK: lock, and unlock while locked (as long QUICK) | yes | yes |
 | Call back (12) | CALL_BACK: talk for now to the last call heard, its talkgroup or, for a private call, its caller (`dmr-voice.md` 2) | yes | yes |
 | Home zone (13) | HOME_ZONE: the codeplug's first zone (the CPS's zone order picks it; no setting, the settings record has no byte to spare). Leaves the VFO; "Home zone: <name>" | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, HEAR_ALL, MONITOR_LATCH, CALL_BACK and HOME_ZONE do the same on a press and a long press and
+POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK and HOME_ZONE do the same on a press and a long press and
 work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
-a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set.
+a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
+function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
+radio core then doesn't toggle digital monitor (RREQ_MONITOR 2), and the UI drops the LONG on FM.
 
 Storage: the open-firmware codeplug's ten quick-key slots (EEPROM 0x7524, 2 bytes LE each,
 `open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B01 ("K", layout 1); slot 1 + 2k is role k's press and slot

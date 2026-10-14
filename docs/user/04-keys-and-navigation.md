@@ -34,7 +34,7 @@ a key the radio doesn't have.
 | **#** | Actions for the focused item. Home: actions for the last caller | DMR channels: the talk target picker (pick a talkgroup, or type an ID). Recent is **OK**, **3** |
 | **0** to **9** | Home: start Find. Lists: pick a numbered row, or type to filter. VFO: type a frequency | Home: speed dial (not built yet) |
 | **Previous zone**, **Next zone** | Home: previous or next zone | |
-| **Monitor** | Monitor while held. FM: opens the squelch. DMR: plays every talkgroup | |
+| **Monitor** | FM: opens the squelch while held. DMR: digital monitor (every talkgroup) on or off | |
 | **Talk target** | Talk target picker (DMR channels) | Scan on or off |
 | **Power level** | Home: next power level | Hold 1.5 s: emergency ([Emergency](10-emergency.md)) |
 | **PTT** | Transmit | |
@@ -92,7 +92,7 @@ Then:
 | **#** | Actions for the focused talkgroup or person |
 | **Back** | Delete the last digit. With one digit left, leave Find |
 
-Settings also answer to other names. For example, "promiscuous" finds Hear all and "TOT" finds TX timeout.
+Settings also answer to other names. For example, "promiscuous" finds Digital monitor and "TOT" finds TX timeout.
 
 <img src="../ux/screens/160x120i5/find_name.png" width="200" alt="Find, matching a name">
 <img src="../ux/screens/160x120i5/find_number.png" width="200" alt="Find, matching a number">
@@ -109,7 +109,7 @@ channel, hold **OK** on Home or in quick settings. The radio shows "Saved to cha
 2. a banner
 3. the scan
 4. the reply window
-5. hear all
+5. digital monitor
 6. all temporary changes together ("Changes undone")
 
 ## Key lock

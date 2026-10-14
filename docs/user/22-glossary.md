@@ -24,7 +24,7 @@
 | DMR ID | The number that identifies your radio on DMR |
 | Dual watch | Alternating between two channels to hear both |
 | Hang time | How long after a call a repeater or radio keeps the call's talkgroup ready for a reply |
-| Hear all | Playing every talkgroup on the timeslot (promiscuous mode) |
+| Digital monitor | Playing every talkgroup on the timeslot (promiscuous mode; "hear all" in older ODR builds) |
 | Hotspot | A small DMR modem that connects radios nearby to a DMR network over the internet |
 | iGate | A station that passes APRS packets between the air and the APRS-IS internet network |
 | KISS | A simple protocol between a computer's APRS program and a radio modem (TNC) |

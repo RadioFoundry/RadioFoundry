@@ -930,8 +930,8 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	if (pw_temp)
 		x = gfx_text(f, x, L->chips_y, GLYPH_DOT, ui_col.warn);
 	x = gfx_text(f, x, L->chips_y, ui_power_name(v->power), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
-	if ((v->dmr.hear_all || s->hear_all) && x + 3 * f->w <= gfx_width())
-		x = gfx_text(f, x, L->chips_y, "All", ui_col.warn) + f->w;
+	if ((v->dmr.hear_all || s->hear_all) && x + 4 * f->w <= gfx_width())
+		x = gfx_text(f, x, L->chips_y, "DMon", ui_col.warn) + f->w;	// digital monitor (FM's is "Mon")
 	if ((s->privacy || v->dmr.privacy) && x + 4 * f->w <= gfx_width())
 		gfx_text(f, x, L->chips_y, "Priv", ui_col.priv);
 }
@@ -1110,7 +1110,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		gfx_text(L->small, w - tw, y, buf, ui_col.fg);
 		draw_meter(0, y + L->small->h / 4, w - tw - L->small->w, L->small->h / 2, dbm);
 	}
-	ui_draw_hint(d->state == RDMR_RX_OTHER ? "Hold MON to hear all" : "PTT replies", false);
+	ui_draw_hint(d->state == RDMR_RX_OTHER ? "MON: digital monitor" : "PTT replies", false);
 }
 #endif
 
@@ -1208,7 +1208,7 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 		if (!v->dmr.codec)
 			return "No codec: voice off";
 		if (v->dmr.hear_all)
-			return "Hear all on  Back off";
+			return "Digital monitor  Back off";
 	}
 #endif
 	if (v->temporary)
@@ -1792,7 +1792,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_POWER] = "Power", [QT_SQUELCH] = QT_NAME("Squelch", "SQL"), [QT_TONE] = "Tone", [QT_MODE] = "Mode",
 		[QT_MONITOR] = QT_NAME("Monitor", "MON"), [QT_VOX] = "VOX", [QT_SCAN] = "Scan", [QT_BANDWIDTH] = "Width",
 		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
-		[QT_HEAR_ALL] = QT_NAME("Hear all", "All TG"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
+		[QT_HEAR_ALL] = QT_NAME("Digital monitor", "DMon"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
 		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_STEP] = "Step",
 	};
 #undef QT_NAME
@@ -1910,7 +1910,7 @@ static const ui_state_t *quick_s;
 
 static void quick_list_item(uint16_t i, ui_item_t *it)
 {
-	char label[20];
+	char label[24];
 	bool ok = ui_quick_tile(i, quick_v, quick_s, label, sizeof label, it->value, sizeof it->value);
 	it->num = label[0];
 	strcpy(it->label, label + 1);	// the whole word: a list row has room for it
@@ -1954,7 +1954,7 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 		int cx = i % 3, cy = i / 3;
 		int x0 = w * cx / 3, x1 = w * (cx + 1) / 3 - (cx == 2 ? 1 : 0);
 		int y0 = top + gh * cy / 3, y1 = top + gh * (cy + 1) / 3 - (cy == 2 ? 1 : 0);
-		char label[20], value[12], fit[12];
+		char label[24], value[12], fit[12];	// label: "5" and the name's alternates
 		bool ok = ui_quick_tile(i, v, s, label, sizeof label, value, sizeof value);
 		bool focus = i == s->quick_focus;
 		color_t fg = ok ? ui_col.fg : ui_col.line, bg = ui_col.bg;

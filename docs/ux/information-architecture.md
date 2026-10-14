@@ -21,7 +21,7 @@ Keep the number of concepts small and name them the same everywhere.
 | **Contact** | A person (DMR ID, name, callsign) | private contact, digital contact |
 | **Listen list** | The talkgroups a channel listens to (the codeplug's RX group list) | RX group list (that phrase appears only in "Advanced" and in qdmr) |
 | **Recent** | Stations heard and calls made, newest first | last heard, call log (both are filters inside Recent) |
-| **Hear all** | Promiscuous monitoring: play every talkgroup on this timeslot | promiscuous (shown as a subtitle for experienced users) |
+| **Digital monitor** | Promiscuous monitoring: play every talkgroup on this timeslot ("hear all" in the code) | promiscuous, hear all |
 
 On-the-fly changes are **temporary** (P7). A temporary change shows a dot next to the changed field on Home and lasts until the channel changes or `BACK` is pressed on Home. Making it **permanent** writes it to the channel.
 
@@ -49,7 +49,7 @@ Screens consume only these. Each board maps physical inputs to them (`boards/<ra
 | `CONTEXT` | Actions for the focused thing; on Home, the last or current caller. Long: Recent | strongly recommended; fallback: first item in Hub |
 | `DIGIT_0` to `DIGIT_9` | Type (numbers, T9 letters). On Home: start Find. In quick settings and Hub: pick item by number. Long on Home: speed-dial slot | optional (keypad radios) |
 | `PTT` | Transmit to the talk target (or the focused target, one-shot) | yes |
-| `MONITOR` | While held: FM opens squelch; DMR plays all traffic (hear all) | recommended |
+| `MONITOR` | FM: squelch open while held. DMR: digital monitor (hear all) on / off on each press (#19) | recommended |
 | `TALK_TARGET` | Open the talk target picker | assignable |
 | `EMERGENCY` | Hold 1.5 s to start or cancel emergency (if enabled in codeplug) | optional |
 | `CHANNEL_POS(n)` | Absolute channel selector position (1 to 16) | from knob |

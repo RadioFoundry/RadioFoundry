@@ -660,6 +660,10 @@ static void entry_commit(void)
 
 // --- input helpers ---
 
+// Digital monitor (the DMR hear all latch: every talkgroup on the slot and color code)
+#define UI_DMON_ON	"Digital monitor on"
+#define UI_DMON_OFF	"Digital monitor off"
+
 // The key lock toasts, with a shorter form for the narrow displays (text alternates, font.h)
 #define UI_LOCKED_STAR	TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE
 #define UI_LOCKED_BACK	TEXT_ALT_OPEN "Keys locked: hold Back to unlock" TEXT_ALT_NEXT "Locked: hold Back to unlock" \
@@ -893,7 +897,7 @@ bool ui_home_key(const input_event_t *ev)
 		} else if (ui_st.hear_all) {
 			ui_svc_hear_all(false);
 			ui_st.hear_all = false;
-			ui_toast("Hear all off");
+			ui_toast(UI_DMON_OFF);
 #endif
 		} else if (view->temporary || ui_st.privacy || (CONFIG_DMR && target_manual())) {
 			radio_req_clear_temporary();
@@ -1054,7 +1058,7 @@ static void quick_activate(int tile)
 	case QT_HEAR_ALL:
 		if (ui_svc_hear_all(!ui_st.hear_all)) {
 			ui_st.hear_all = !ui_st.hear_all;
-			ui_toast(ui_st.hear_all ? "Hear all on" : "Hear all off");
+			ui_toast(ui_st.hear_all ? UI_DMON_ON : UI_DMON_OFF);
 		} else {
 			quick_unavailable(kind);
 		}
@@ -1477,17 +1481,6 @@ static bool emergency_key(const input_event_t *ev)
 	return true;
 }
 
-// A side key set to hear all (keyassign.h): as the quick settings tile
-static void hear_all_key_toggle(void)
-{
-	if (CONFIG_DMR && view->ch.mode == RADIO_MODE_DMR && ui_svc_hear_all(!ui_st.hear_all)) {
-		ui_st.hear_all = !ui_st.hear_all;
-		ui_toast(ui_st.hear_all ? "Hear all on" : "Hear all off");
-	} else {
-		ui_toast("Hear all: DMR only");
-	}
-}
-
 // A side key set to call back (keyassign.h): talk for now to the last call heard, its talkgroup for a group call and
 // its caller for a private one (dmr-voice.md 2, "call back")
 static void call_back_key(void)
@@ -1526,6 +1519,14 @@ void ui_app_key(const input_event_t *ev)
 			"PTT is off while locked: hold Back to unlock");
 		return;
 	}
+	// The monitor key on DMR: a short press toggles digital monitor (the radio core does it on the release; the
+	// view follows). Its hold function (value 1 on the long press) runs on DMR only: on FM holding the key is the
+	// squelch break (#19)
+	if (CONFIG_DMR && ev->action == ACT_MONITOR && ev->gesture == GESTURE_UP && ev->value == 0 &&
+	    view->ch.mode == RADIO_MODE_DMR && !view->monitor)
+		ui_toast(view->dmr.hear_all_latch ? UI_DMON_OFF : UI_DMON_ON);
+	if (ev->gesture == GESTURE_LONG && ev->value != 0 && view->ch.mode != RADIO_MODE_DMR)
+		return;
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
 	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)
@@ -1590,20 +1591,6 @@ void ui_app_key(const input_event_t *ev)
 		case ACT_SCAN:
 			ui_scan_toggle();
 			return;
-		case ACT_HEAR_ALL:
-			hear_all_key_toggle();
-			return;
-		case ACT_MONITOR_LATCH: {
-			// FM's open squelch, latched. Hear all is a state of its own (its own key function), so DMR says so
-			bool on = !view->monitor;	// before the request: the view may already show its result
-			if (view->ch.mode == RADIO_MODE_DMR)
-				ui_toast("Monitor on/off: FM only");
-			else if (ui_svc_monitor(on))
-				ui_toast(on ? "Monitor on" : "Monitor off");
-			else
-				ui_toast("Monitor: not in this build");
-			return;
-		}
 		case ACT_CALL_BACK:
 			call_back_key();
 			return;

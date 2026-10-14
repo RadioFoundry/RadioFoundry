@@ -49,7 +49,11 @@ static void emit(const input_event_t *ev, void *ctx)
 	if (ev->action == ACT_PTT && (ev->gesture == GESTURE_UP || (ev->gesture == GESTURE_DOWN && !ptt_blocked))) {
 		radio_req_ptt(ev->gesture == GESTURE_DOWN);
 	} else if (ev->action == ACT_MONITOR && (ev->gesture == GESTURE_DOWN || ev->gesture == GESTURE_UP)) {
-		radio_req_monitor(ev->gesture == GESTURE_DOWN);
+		if (ev->gesture == GESTURE_UP && ev->value != 0) {
+			radio_req_monitor_held_up();	// its hold function ran: not a press (DMR doesn't toggle)
+		} else {
+			radio_req_monitor(ev->gesture == GESTURE_DOWN);
+		}
 	}
 	if (xQueueSend(events, ev, 0) != pdTRUE && ev->action == ACT_ENC_STEP) {
 		// The UI is behind: keep the detents for the next scan instead of losing them (a full queue drops key

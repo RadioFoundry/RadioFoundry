@@ -1428,16 +1428,16 @@ static const char *const n_possend[] = { "Off", "1 min", "5 min", "15 min" };
 // Side keys (core/input/keyassign.h, KEYFN_* values): monitor needs the key held, so it is a press only;
 // emergency is hold to activate, so a long press only
 static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
-					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_MONITOR_LATCH, KEYFN_KEY_LOCK,
+					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_KEY_LOCK,
 					 KEYFN_HOME_ZONE,
 #if CONFIG_DMR
-					 KEYFN_HEAR_ALL, KEYFN_CALL_BACK,
+					 KEYFN_CALL_BACK,
 #endif
 };
 static const char *const n_keyfn_press[] = { "Default", "Nothing", "Monitor", "Talk target", "Power level",
-					     "Next zone", "Previous zone", "Scan", "Monitor on/off", "Key lock", "Home zone",
+					     "Next zone", "Previous zone", "Scan", "Key lock", "Home zone",
 #if CONFIG_DMR
-					     "Hear all", "Call back",
+					     "Call back",
 #endif
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
@@ -1445,9 +1445,9 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #if CONFIG_DMR_EMERGENCY
 					KEYFN_EMERGENCY,
 #endif
-					KEYFN_MONITOR_LATCH, KEYFN_KEY_LOCK, KEYFN_HOME_ZONE,
+					KEYFN_KEY_LOCK, KEYFN_HOME_ZONE,
 #if CONFIG_DMR
-					KEYFN_HEAR_ALL, KEYFN_CALL_BACK,
+					KEYFN_CALL_BACK,
 #endif
 };
 static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target", "Power level", "Next zone",
@@ -1455,9 +1455,9 @@ static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target",
 #if CONFIG_DMR_EMERGENCY
 					    "Emergency",
 #endif
-					    "Monitor on/off", "Key lock", "Home zone",
+					    "Key lock", "Home zone",
 #if CONFIG_DMR
-					    "Hear all", "Call back",
+					    "Call back",
 #endif
 };
 #endif
@@ -1504,7 +1504,7 @@ static const set_item_t s_talk[] = {
 	LIST("TX timeout", "TOT", UI_SET_TOT_S, v_tot, n_tot),
 	NUMBER("Default squelch", NULL, UI_SET_SQUELCH, 0, 9, 1, NULL),
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
-	TOGGLE("Hear all by default", "promiscuous", UI_SET_HEAR_ALL_DEFAULT),
+	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
 };
 static const set_item_t s_privacy[] = {
@@ -1654,19 +1654,6 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 
 static uint16_t group_count(void) { return ui_set_item_count((uint8_t)ui_frame()->arg); }
 
-#if CONFIG_KEY_ASSIGN
-// The side key's press is monitor (set, or the board's default): the key is held, so it has no long press
-static bool side_key_monitor(uint8_t role)
-{
-	int32_t press = ui_svc_setting_get((uint8_t)(UI_SET_KEY_SIDE1 + 2u * role));
-	if (press != KEYFN_DEFAULT)
-		return press == KEYFN_MONITOR;
-	for (uint8_t i = 0; i < board.keymap_len; i++)
-		if (board.keymap[i].bit == board.side_keys[role])
-			return board.keymap[i].raw_edges;
-	return false;
-}
-#endif
 
 // Why a setting can't be used on this radio or in this build (the row is dimmed and OK says it), NULL if it can
 static const char *set_why_not(const set_item_t *s)
@@ -1685,8 +1672,6 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_KEY_TOP_HOLD:
 		if ((s->id - UI_SET_KEY_SIDE1) / 2 >= board.side_key_count)
 			return "This radio has no such key";
-		if ((s->id - UI_SET_KEY_SIDE1) % 2 == 1 && side_key_monitor((uint8_t)((s->id - UI_SET_KEY_SIDE1) / 2)))
-			return "Monitor holds the key: no long press";
 		return NULL;
 #endif
 	case UI_SET_TALK_PERMIT:
@@ -1698,7 +1683,7 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_MIC_GAIN:
 		return CONFIG_DMR ? NULL : "Mic gain: not in this build";
 	case UI_SET_HEAR_ALL_DEFAULT:
-		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Hear all: not in this build";
+		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Digital monitor: not in this build";
 	case UI_SET_ALIAS_SHOW:
 		return CONFIG_DMR_TALKER_ALIAS ? NULL : "Talker alias: not in this build";
 	case UI_SET_PRIVACY_TYPE:

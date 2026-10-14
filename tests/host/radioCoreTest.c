@@ -999,13 +999,20 @@ static void test_dmr_rx(void)
 	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX_OTHER && d->call.dst == 3100 && !hw.led[LED_GREEN]);
 	run(500);			// fades out
 	CHECK(sm.view.state == RS_IDLE);
-	// MONITOR held: hear all
+	// MONITOR on DMR: a short press toggles digital monitor (the hear all latch) on its release (#19)
 	req(RREQ_MONITOR, 1);
-	CHECK(d->hear_all && !hw.audio);
+	CHECK(!d->hear_all_latch && !sm.view.monitor);
+	req(RREQ_MONITOR, 0);
+	CHECK(d->hear_all && d->hear_all_latch && !sm.view.monitor && !hw.audio);
 	hear_call(true, 3100, 3107777, 2, 1, true);
 	CHECK(d->last.dst == 3100);
+	// Released after its hold function ran: no toggle
+	req(RREQ_MONITOR, 1);
+	req(RREQ_MONITOR, 2);
+	CHECK(d->hear_all_latch);
+	req(RREQ_MONITOR, 1);
 	req(RREQ_MONITOR, 0);
-	CHECK(!d->hear_all);
+	CHECK(!d->hear_all && !d->hear_all_latch);
 	// Another color code: ignored
 	hear_call(true, 201, 3101234, 5, 1, false);
 	CHECK(sm.view.state == RS_IDLE);
@@ -1636,9 +1643,9 @@ static void test_dmr_voice_features(void)
 	// A group call heard last: call back goes to its talkgroup, named from all the contacts
 	hear_call(true, 3100, 3107777, 2, 1, true);
 	req(RREQ_DMR_TARGET_CLEAR, 0);
-	req(RREQ_MONITOR, 1);
+	req(RREQ_DMR_HEAR_ALL, 1);
 	hear_call(true, 3100, 3107777, 2, 1, true);
-	req(RREQ_MONITOR, 0);
+	req(RREQ_DMR_HEAR_ALL, 0);
 	req(RREQ_DMR_CALL_BACK, 0);
 	run(20);
 	CHECK(d->target_manual && !d->target_private && d->target_id == 3100 && strcmp(d->target_name, "TG USA") == 0);
@@ -1976,7 +1983,10 @@ static void test_ui_requests(void)
 	req(RREQ_DMR_HEAR_ALL, 1);
 	req(RREQ_MONITOR, 1);
 	req(RREQ_MONITOR, 0);
-	CHECK(d->hear_all);			// MONITOR released: the latch still holds
+	CHECK(!d->hear_all_latch);		// the monitor key's press turned it off again
+	req(RREQ_MONITOR, 1);
+	req(RREQ_MONITOR, 0);
+	CHECK(d->hear_all && d->hear_all_latch);	// and on
 	req(RREQ_CH_STEP, 1);
 	req(RREQ_CH_STEP, -1);
 	run(50);
@@ -2126,8 +2136,9 @@ static void test_ui_glue(void)
 	CHECK(d->ts == 2 && d->cc == 9);
 	CHECK(ui_svc_hear_all(true) && d->hear_all_latch);
 	CHECK(ui_svc_hear_all(false) && !d->hear_all_latch);
-	CHECK(ui_svc_monitor(true) && sm.view.monitor);
-	CHECK(ui_svc_monitor(false) && !sm.view.monitor);
+	CHECK(ui_svc_monitor(true) && !sm.view.monitor && !d->hear_all_latch);	// DMR: a press, toggled on release
+	CHECK(ui_svc_monitor(false) && d->hear_all_latch);
+	CHECK(ui_svc_monitor(true) && ui_svc_monitor(false) && !d->hear_all_latch);
 	// Save to channel: nothing written by the call itself, the housekeeping job writes timeslot and color code
 	int w = cp_writes;
 	CHECK(ui_svc_save_channel());

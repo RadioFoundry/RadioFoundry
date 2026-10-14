@@ -1119,11 +1119,14 @@ static void test_block_list(void)
 	run(500);
 	CHECK(RV->blocked == RROAM_BLOCK_OVERRIDE && RV->searches == 0);
 	req(RREQ_DMR_HEAR_ALL, 0);
-	// Monitor held
+	// The monitor key (DMR: its press latches digital monitor, a second press ends it, #19)
 	req(RREQ_MONITOR, 1);
-	run(500);
-	CHECK(RV->searches == 0);
 	req(RREQ_MONITOR, 0);
+	run(500);
+	CHECK(RV->searches == 0 && sm.view.dmr.hear_all_latch);
+	req(RREQ_MONITOR, 1);
+	req(RREQ_MONITOR, 0);
+	CHECK(!sm.view.dmr.hear_all_latch);
 	// Transmitting (B up, A up: the PTT goes through)
 	req(RREQ_PTT, 1);
 	run(2000);

@@ -279,6 +279,8 @@ void radio_req_ptt(bool down);
 // radio_req_ptt(false)
 void radio_req_ptt_host(bool down);
 void radio_req_monitor(bool down);
+// The monitor key released after its hold function ran (keyassign.h): FM closes the squelch, DMR doesn't toggle
+void radio_req_monitor_held_up(void);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps
 void radio_req_squelch(int8_t dir);
 void radio_req_clear_temporary(void);		// BACK on Home: revert temporary changes

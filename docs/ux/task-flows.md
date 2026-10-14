@@ -251,8 +251,8 @@ On a channel: `QUICK`, `4`. Temporary: the channel becomes its other mode with t
 
 ## 19. Monitor and hear all
 
-- Monitor (momentary): hold `MONITOR`. FM: squelch opens. DMR: hear all on this frequency and timeslot (all TGs, any CC with a "CC 3" note).
-- Latched: `QUICK`, `5`. Home shows "Hear all" (DMR) or "Monitor" (FM) in the status strip until turned off or the channel changes.
+- `MONITOR`. FM: hold it, the squelch opens. DMR: press it, digital monitor (hear all: all TGs on this frequency and timeslot) goes on; press again for off (#19).
+- Latched from quick settings: `QUICK`, `5`. Home shows "DMon" (DMR) or "Mon" (FM) until turned off or the channel changes.
 - While hear all is on, every call shows its TG; the reply window lets you answer on it with `PTT`.
 
 | | K | M | V | F | Budget |

@@ -27,7 +27,7 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **\*** | Quick settings / lock or unlock the keys | **\*** | **\*** | **\*** | P1 |
 | **#** | Actions / Recent | **#** | **#** | **#** | P2 |
 | **0** to **9** | Number keys | Number keys | Number keys | Number keys | None |
-| **Monitor** | Monitor while held | SK1 | SK1 | SK1 | P3 |
+| **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 |
 | **Talk target** | Talk target picker / scan on or off | SK2 | SK2 | SK2 | TONE/T.SEL |
 | **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None |
 | **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | VOL/SQL: previous zone only |

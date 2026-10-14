@@ -813,6 +813,20 @@ static void dmr_reconfigure(radio_sm_t *sm)
 	changed(sm);
 }
 
+// Digital monitor (the hear all latch: every talkgroup on the slot and color code) on or off, for this channel
+// (RREQ_DMR_HEAR_ALL, and the monitor key's press on DMR)
+static void set_hear_all_latch(radio_sm_t *sm, bool on)
+{
+	if (on == sm->hear_all_latch) {
+		return;
+	}
+	sm->hear_all_latch = on;
+	sm->latch_ch = sm->view.channel_number;
+	sm->latch_vfo = sm->view.vfo;
+	sm->view.dmr.hear_all_latch = on;
+	dmr_reconfigure(sm);
+}
+
 // A timeslot for now (RREQ_DMR_TS). The slot the radio would use without it (a contact's override, else the
 // channel's) clears it again
 static void dmr_set_timeslot(radio_sm_t *sm, int32_t ts, bool busy)
@@ -3354,8 +3368,19 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		break;
 	case RREQ_MONITOR:
-		if (sm->view.monitor != (req->arg != 0)) {
-			sm->view.monitor = req->arg != 0;
+#if CONFIG_DMR
+		// arg 1 down, 0 up, 2 up after the key's hold function ran. DMR: a short press toggles digital monitor (the
+		// hear all latch) on its release, so a hold can do something else (#19); FM: the squelch is open while
+		// the key is held. A key held across a change to DMR is still released here
+		if (sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.monitor) {
+			if (req->arg == 0) {
+				set_hear_all_latch(sm, !sm->hear_all_latch);
+			}
+			break;
+		}
+#endif
+		if (sm->view.monitor != (req->arg == 1)) {
+			sm->view.monitor = req->arg == 1;
 #if CONFIG_DMR
 			if (sm->dmr_running) {
 				dmr_configure(sm);	// DMR: hear all while held
@@ -3504,14 +3529,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		tune(sm, now_ms);	// the call stack starts or stops with the mode
 		break;
 	case RREQ_DMR_HEAR_ALL:
-		if ((req->arg != 0) == sm->hear_all_latch) {
-			break;
-		}
-		sm->hear_all_latch = req->arg != 0;
-		sm->latch_ch = sm->view.channel_number;
-		sm->latch_vfo = sm->view.vfo;
-		sm->view.dmr.hear_all_latch = sm->hear_all_latch;
-		dmr_reconfigure(sm);
+		set_hear_all_latch(sm, req->arg != 0);
 		break;
 	case RREQ_DMR_FOCUS: {
 		uint32_t id = (uint32_t)req->arg & DMR_ID_MAX;

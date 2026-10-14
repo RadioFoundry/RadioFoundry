@@ -11,7 +11,7 @@ static const uint8_t fn_action[KEYFN_COUNT] = {
 	[KEYFN_DEFAULT] = ACT_NONE, [KEYFN_NONE] = ACT_NONE, [KEYFN_MONITOR] = ACT_MONITOR,
 	[KEYFN_TALK_TARGET] = ACT_TALK_TARGET, [KEYFN_POWER] = ACT_POWER, [KEYFN_ZONE_UP] = ACT_ZONE_UP,
 	[KEYFN_ZONE_DOWN] = ACT_ZONE_DOWN, [KEYFN_SCAN] = ACT_SCAN, [KEYFN_EMERGENCY] = ACT_EMERGENCY,
-	[KEYFN_HEAR_ALL] = ACT_HEAR_ALL, [KEYFN_MONITOR_LATCH] = ACT_MONITOR_LATCH, [KEYFN_KEY_LOCK] = ACT_LOCK,
+	[KEYFN_KEY_LOCK] = ACT_LOCK,
 	[KEYFN_CALL_BACK] = ACT_CALL_BACK, [KEYFN_HOME_ZONE] = ACT_HOME_ZONE,
 };
 
@@ -19,6 +19,9 @@ bool keyassign_allowed(uint8_t fn, bool hold)
 {
 	if (fn >= KEYFN_COUNT) {
 		return false;
+	}
+	if (fn == KEYFN_MONITOR_LATCH || fn == KEYFN_HEAR_ALL) {
+		return false;	// retired
 	}
 	return hold ? fn != KEYFN_MONITOR : fn != KEYFN_EMERGENCY;
 }
@@ -60,8 +63,10 @@ void keyassign_build(const keymap_entry_t *base, uint8_t base_len, const uint8_t
 			}
 			if (press == KEYFN_MONITOR || (press == KEYFN_DEFAULT && m->raw_edges)) {
 				m->short_action = press == KEYFN_MONITOR ? ACT_MONITOR : m->short_action;
-				m->long_action = m->short_action;
-				m->raw_edges = true;	// held for as long as the key is: no long press
+				// Held for as long as the key is. A hold function of its own also runs (DMR channels: on FM the
+				// key is the squelch break and the UI drops it, #19); none: no long press
+				m->long_action = hold != KEYFN_DEFAULT ? fn_action[hold] : m->short_action;
+				m->raw_edges = true;
 				break;
 			}
 			if (m->raw_edges) {

@@ -38,7 +38,7 @@ key. The most common hints:
 | Back undo  Hold OK save | The channel has temporary changes |
 | # caller  Back end reply | The reply window is running. **PTT** answers the last call |
 | Back: channel's talkgroup | A talk target chosen for now is in use ("Back default target" where the row is narrow) |
-| Hear all on  Back off | Hear all is latched on |
+| Digital monitor  Back off | Digital monitor is on |
 | # skip  Back stop scan | Scan is running |
 | No codec: voice off | DMR channel without the codec merged |
 | 0-9 freq  \* Quick  Up/Dn | In the VFO |

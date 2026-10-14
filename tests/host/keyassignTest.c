@@ -201,20 +201,36 @@ static void test_engine(void)
 	hold(&e, &now, 1u << K_TOP, 2000);
 	CHECK(nev == 2 && evs[0].action == ACT_MONITOR && evs[0].gesture == GESTURE_DOWN &&
 	      evs[1].gesture == GESTURE_UP);
-	// The toggles (hear all, monitor latch, key lock, call back) go in either slot and send their own action
-	keyassign_set(s, 1, false, KEYFN_HEAR_ALL);
+	// The toggles (key lock, call back) go in either slot and send their own action
+	keyassign_set(s, 1, false, KEYFN_KEY_LOCK);
 	keyassign_set(s, 1, true, KEYFN_CALL_BACK);
-	CHECK(keyassign_get(s, 1, false) == KEYFN_HEAR_ALL && keyassign_get(s, 1, true) == KEYFN_CALL_BACK);
+	CHECK(keyassign_get(s, 1, false) == KEYFN_KEY_LOCK && keyassign_get(s, 1, true) == KEYFN_CALL_BACK);
 	keyassign_build(base, N, side, 3, s, map);
 	input_engine_init(&e, map, N, now);
 	input_engine_step(&e, 0, 0, now, emit, NULL);
 	nev = 0;
 	hold(&e, &now, 1u << K_SK2, 100);
-	CHECK(nev == 1 && evs[0].action == ACT_HEAR_ALL && evs[0].gesture == GESTURE_PRESS);
+	CHECK(nev == 1 && evs[0].action == ACT_LOCK && evs[0].gesture == GESTURE_PRESS);
 	nev = 0;
 	hold(&e, &now, 1u << K_SK2, 2000);
 	CHECK(nev == 1 && evs[0].action == ACT_CALL_BACK && evs[0].gesture == GESTURE_LONG);
-	CHECK(keyassign_allowed(KEYFN_MONITOR_LATCH, true) && keyassign_allowed(KEYFN_KEY_LOCK, false));
+	CHECK(!keyassign_allowed(KEYFN_MONITOR_LATCH, true) && !keyassign_allowed(KEYFN_HEAR_ALL, false) &&
+	      keyassign_allowed(KEYFN_KEY_LOCK, false));
+	// Monitor with a hold function (#19): DOWN and UP as before, plus the long press (value 1), and the UP says so
+	keyassign_set(s, 2, false, KEYFN_MONITOR);
+	keyassign_set(s, 2, true, KEYFN_POWER);
+	keyassign_build(base, N, side, 3, s, map);
+	input_engine_init(&e, map, N, now);
+	input_engine_step(&e, 0, 0, now, emit, NULL);
+	nev = 0;
+	hold(&e, &now, 1u << K_TOP, 100);
+	CHECK(nev == 2 && evs[0].action == ACT_MONITOR && evs[0].gesture == GESTURE_DOWN &&
+	      evs[1].gesture == GESTURE_UP && evs[1].value == 0);
+	nev = 0;
+	hold(&e, &now, 1u << K_TOP, 2000);
+	CHECK(nev == 3 && evs[0].gesture == GESTURE_DOWN && evs[1].action == ACT_POWER &&
+	      evs[1].gesture == GESTURE_LONG && evs[1].value == 1 && evs[2].action == ACT_MONITOR &&
+	      evs[2].gesture == GESTURE_UP && evs[2].value == 1);
 }
 
 int main(void)
