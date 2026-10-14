@@ -88,14 +88,15 @@ before and after, side by side. It's advisory: no required check waits on it.
    gets no picture. Classes are ordered monochrome first, then color, each by resolution, and the comment groups them
    under those headings. The render is deterministic, so an unchanged screen never shows up.
 2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact and checks it as data (no links,
-   file names and sizes, PNG signatures, the pull request and commit it names). It posts a new comment with each
-   composite attached (`gh pr comment -R REPO --attach`, so GitHub hosts the images; `-R` because the job runs from the artifact's folder, which isn't a checkout), then deletes the previous one. The
+   file names and sizes, PNG signatures, the pull request and commit it names). It pushes each
+   composite to the `ui-previews` branch (made on first use, one `pr-N/` folder holding the newest commit) and
+   linked with `blob/...?raw=true` URLs, which render for signed-in viewers of a private repository (`gh --attach` needs a
+   user session, not the job's token). It then posts a new comment and deletes the previous one. The
    comment is found by its marker line (`<!-- odr-ui-gallery -->`) and carries the commit, the UTC time of the update
    and the base commit. A run for a commit the pull request has already moved past posts nothing.
 
-Only the comment job has write permissions (`pull-requests: write`). It runs no code from the pull request or the
-artifact, the same split `pr-tests.yml` keeps for its status job. Pictures are capped at 40 per comment (gh takes up to
-50 attachments); the rest are in the `ui-gallery` artifact of the workflow run.
+Only the comment job has write permissions (`pull-requests: write`, and `contents: write` for `ui-previews` alone). It runs no code from the pull request or the
+artifact, the same split `pr-tests.yml` keeps for its status job. An artifact with more than 40 pictures fails the check.
 
 Nothing else is needed: no branch, no host. Attachments on a private repository are visible to the people who can
 see the pull request; the first run on a UI pull request confirms that and that `gh` accepts the attachments with the

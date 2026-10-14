@@ -2,8 +2,9 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # Posts the UI gallery comment on a pull request (docs/dev/ci.md "UI gallery"), from the `ui-gallery` artifact that
-# ui-gallery.yml made. The changed screens are attached to the comment itself (gh pr comment --attach), so GitHub
-# hosts the images and no branch is needed. Each new commit replaces the previous comment; the comment is found by its
+# ui-gallery.yml made. The changed screens are pushed to the `ui-previews` branch (made on first use) and the comment links them
+# (blob URLs with ?raw=true, which render for signed-in viewers of a private repository; --attach needs a user session,
+# not the job's token). Each new commit replaces the previous comment; the comment is found by its
 # marker line.
 #
 # This is the only workflow with write permissions, and it runs main's copy against every pull request. It never runs
@@ -34,7 +35,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      pull-requests: write   # the comment and its attachments
+      contents: write        # the ui-previews branch
+      pull-requests: write   # the comment
       actions: read          # the artifact of the run that rendered the gallery
     steps:
       - name: Pull request and head commit
@@ -152,24 +154,67 @@ jobs:
           print(f"artifact OK: {len(screens)} screens for #{PR} at {HEAD[:7]}")
           PY
 
-      - name: Post the comment with the images attached
+      - name: Publish the images to ui-previews
+        if: steps.pr.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          PR: ${{ steps.pr.outputs.number }}
+          HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git init -q previews
+          cd previews
+          git remote add origin "$SERVER/$REPO.git"
+          if git -c http.extraheader="$auth" fetch -q --depth 1 origin ui-previews; then
+            git checkout -q -b ui-previews FETCH_HEAD
+          else
+            git checkout -q --orphan ui-previews   # first use: the branch holds only previews
+            echo "Pictures for the UI gallery comments (ui-gallery-comment.yml). Nothing to merge." > README.md
+            git add README.md
+          fi
+          # one directory per pull request, holding the newest commit only
+          rm -rf "pr-$PR"
+          mkdir -p "pr-$PR/$HEAD"
+          [ -d ../ui/compare ] && cp -r ../ui/compare "pr-$PR/$HEAD/"
+          cp ../ui/manifest.json "pr-$PR/$HEAD/"
+          git add -A .
+          if git diff --cached --quiet; then
+            echo "images for ${HEAD:0:7} are already published"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "UI gallery: pull request #$PR at ${HEAD:0:7}"
+          git -c http.extraheader="$auth" push -q origin HEAD:ui-previews
+
+      - name: Post the comment
         if: steps.pr.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ steps.pr.outputs.number }}
           HEAD: ${{ github.event.workflow_run.head_sha }}
+          SERVER: ${{ github.server_url }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha }}
         run: |
           set -eu
-          # the body and the attachment list are written outside ui/, so the artifact can't shadow them
-          export BODY="$RUNNER_TEMP/body.md" ATTACH="$RUNNER_TEMP/attach.txt"
+          # the body is written outside ui/, so the artifact can't shadow it
+          export BODY="$RUNNER_TEMP/body.md"
+          if [ "$SERVER" = https://github.com ]; then
+            export BASE="$SERVER/$REPO/blob/ui-previews/pr-$PR/$HEAD" SUFFIX="?raw=true"
+          else
+            export BASE="$SERVER/$REPO/raw/branch/ui-previews/pr-$PR/$HEAD" SUFFIX=""
+          fi
           python3 -I - <<'PY'
           import datetime, json, os
 
           m = json.load(open("ui/manifest.json"))
           head, commit, run = os.environ["HEAD"], os.environ["COMMIT_URL"], os.environ["RUN_URL"]
+          base, suffix = os.environ["BASE"], os.environ["SUFFIX"]
           now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
           c = m["counts"]
           total = c["changed"] + c["added"] + c["removed"] + c["unchanged"]
@@ -181,7 +226,6 @@ jobs:
           out.append(f"**{c['changed']} changed**, {c['added']} added, {c['removed']} removed, "
                      f"{c['unchanged']} unchanged ({total} screens).")
           out.append("")
-          attach = []
           if not m["images"]:
               out.append("No screen changed: every screen renders as it does on the base commit.")
           else:
@@ -197,27 +241,16 @@ jobs:
                       out += ["", f"#### {geom} ({kind})", ""]
                   out.append(f"Changed: {', '.join(im['screens'])}")
                   out.append("")
-                  out.append(f"![{geom} changed screens, before and after]({im['image']})")
+                  out.append(f"![{geom} changed screens, before and after]({base}/{im['image']}{suffix})")
                   out.append("")
-                  attach.append(f"{im['image']}#{geom} changed screens, before and after")
-          if len(attach) > 40:
-              out.append(f"Showing 40 of {len(attach)} pictures; the rest are in the `ui-gallery` artifact of the "
-                         f"[workflow run]({run}).")
           open(os.environ["BODY"], "w").write("\n".join(out) + "\n")
-          open(os.environ["ATTACH"], "w").write("\n".join(attach[:40]) + ("\n" if attach else ""))
           PY
 
           # the previous comment, found by its marker, goes after the new one is up, so the pull request never has none
           old=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
                 --jq '.[] | select(.body | startswith("<!-- odr-ui-gallery -->")) | .id' | head -n 1)
 
-          set --
-          while IFS= read -r a; do
-            [ -n "$a" ] && set -- "$@" --attach "$a"
-          done < "$ATTACH"
-          # gh rewrites the body's references to the attached files, so run from the artifact's folder (-R, as that isn't a
-          # git checkout)
-          (cd ui && gh pr comment "$PR" -R "$REPO" --body-file "$BODY" "$@")
+          gh pr comment "$PR" -R "$REPO" --body-file "$BODY"
 
           if [ -n "$old" ]; then
             gh api -X DELETE "repos/$REPO/issues/comments/$old" > /dev/null
