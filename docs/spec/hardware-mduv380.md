@@ -19,13 +19,12 @@ Confidence tags as in [radios.md](radios.md) and [hardware-md380.md](hardware-md
 | Tag | Meaning |
 |---|---|
 | **C** | Confirmed: manufacturer data, a datasheet, our own reading of a stock file, or bench work on the radio |
-| **D** | Documented by a reverse-engineering project (hardware pages, schematic notes) |
+| **D** | Documented in public hardware notes |
 | **F** | Forum post, review, retailer claim, or a value carried over from a sibling radio's notes |
 | **?** | Not found, contradictory, or our own assumption. Needs a radio |
 
 Sources (section 15): [ref] the reference port's facts (the aftermarket firmware tree's MD-UV380 build variant: pin set-up, per-variant
-constants, facts only), [OpenRTX] the OpenRTX MD-UV380 hardware page (prose and pin table only), [mods] the OpenRTX
-MD-UV380 M17 mod notes, [miklor], [dealer] the Passion Radio MD-UV380 download page, [stock] our own reading of the
+constants, facts only), [dealer] the Passion Radio MD-UV380 download page, [stock] our own reading of the
 TYT 19.26 stock files ([codec-mduv380.md](codec-mduv380.md)), [dm1701] [hardware-dm1701.md](hardware-dm1701.md).
 
 ---
@@ -39,22 +38,22 @@ TYT 19.26 stock files ([codec-mduv380.md](codec-mduv380.md)), [dm1701] [hardware
 | Key matrix | DM-1701 table, P1/P2 keys | MD-UV380 table, no P1/P2 (D) [ref] | as 5 W | 5 |
 | Top (orange) key | row 2 D5 | none: row 2 D5 unused (D) [ref] | as 5 W | 5 |
 | Side keys | D7 SK1, D6 SK2 | D7 SK1, D6 SK2 (D) [ref] | as 5 W | 5 |
-| PA band select | PC6 | PC6 (D) [ref], [OpenRTX] | **PD8** (D) [ref] | 3 |
-| LCD backlight | PD8 | PD8 (D) [ref], [OpenRTX] | **PC6** (D) [ref] | 3, 4 |
+| PA band select | PC6 | PC6 (D) [ref] | **PD8** (D) [ref] | 3 |
+| LCD backlight | PD8 | PD8 (D) [ref] | **PC6** (D) [ref] | 3, 4 |
 | Battery ADC | raw / 37.5 per 0.1 V | raw / 40.3 (D) [ref] | raw / 40.3 | 6 |
 | Volume pot range | 29..2075, break 318 | UV380 22..2070 / 309; RT3S 23..2020 / 317 (D) [ref] | 19..2054 / 308 | 6 |
 | Power levels | 5 W | 5 W | 10 W (2, 3, 5, 10 W at the top four levels) | 7 |
 | Power fractions | DM-1701 rows | 5 W rows (D) [ref] | 10 W rows (D) [ref] | 7 |
 | Working-copy power conversion | DM-1701 row | 5 W row (D) [ref] | 10 W row (D) [ref] | 8 |
 | AT1846S DMR AF gain | needs 0x44 = 0x07FF | less AF gain is enough (F) [dm1701] 5.5 | | 2 |
-| GPS | not fitted | G models: USART1 RX PA10, power PA9 (D) [ref], [OpenRTX] | G models | 9 |
+| GPS | not fitted | G models: USART1 RX PA10, power PA9 (D) [ref] | G models | 9 |
 | DFU key | DM-1701 key | MD-UV380 key (C) [stock] | same | 11 |
 | Stock codec | V02.06 at 0x08074714 | V19.26 at 0x0807B830, same sectors (C) [stock] | ? | 12 |
 | Wake from the alarm / sleep | orange key | SK2 + PTT held together (D) [ref] | as 5 W | 5 |
 | USB product name (aftermarket firmware) | "OpenDM1701 Transceiver" | "OpenMDUV380 Transceiver" | "OpenMDUV380Plus 10W Transceiver" | 10 |
 | Open-firmware CPS radio type | 8 (BGR) / 10 (RGB) | 6 (D) [ref] | 6 | 10 |
 
-The same between the two (D) [ref], [OpenRTX]: the MCU, clock tree and HSE, internal flash map up to the codec, every
+The same between the two (D) [ref]: the MCU, clock tree and HSE, internal flash map up to the codec, every
 HR_C6000 pin and bus, the AT1846S bus and address, I2S3, the SPI flash bus, PTT pins, LEDs, the encoder pins, the
 power latch, the RX supply switches, the PA enables, the APC DAC, the RX audio mux, USB pins.
 
@@ -62,13 +61,12 @@ power latch, the RX supply switches, the PA enables, the APC DAC, the RX audio m
 
 ## 2. MCU, clocks, RF chips
 
-As the DM-1701 (D) [ref], [OpenRTX]. OpenRTX documents an 8 MHz crystal as the PLL reference and 72 / 36 / 72 MHz
-(D) [OpenRTX]; the DM-1701 needed HSE bypass. Whether the MD-UV380's HSE is a crystal or an external clock is open (?):
+As the DM-1701 (D) [ref]. The public hardware notes give an 8 MHz crystal as the PLL reference and 72 / 36 / 72 MHz
+(D); the DM-1701 needed HSE bypass. Whether the MD-UV380's HSE is a crystal or an external clock is open (?):
 the DM-1701's start-up code that falls back between the two covers both.
 
-AT1846S: the same I2C pins (SCL PA8, SDA PC9), 7-bit address 0x2E (D) [ref], [OpenRTX]. OpenRTX drives it with
-bit-banged I2C; the aftermarket firmware tree uses the I2C3 peripheral on the same pins, as on the DM-1701 (D). OpenRTX also lists the
-AT1846S GPIO0 on PB1 and GPIO6 (squelch out in the DM-1701's 0x1F setting) on PB2 (D) [OpenRTX]; neither pin is used
+AT1846S: the same I2C pins (SCL PA8, SDA PC9), 7-bit address 0x2E (D) [ref]. The aftermarket firmware tree uses the I2C3 peripheral on those pins, as on the DM-1701 (D). The public hardware notes also list the
+AT1846S GPIO0 on PB1 and GPIO6 (squelch out in the DM-1701's 0x1F setting) on PB2 (D); neither pin is used
 by the DM-1701 port, and the DM-1701 spec has no entry for them (?: may hold on the DM-1701 too).
 
 All the AT1846S register tables of [dm1701] 5 apply. The DM-1701 needs more DMR AF gain than the MD-UV380 (F) [dm1701]
@@ -87,14 +85,14 @@ Only two pins differ, and only on the Plus 10 W (D) [ref]:
 | PC6 | PA band select (low VHF, high UHF) | LCD backlight |
 | PD8 | LCD backlight (PWM by DMA from TIM1) | PA band select |
 
-OpenRTX's MD-UV380 page agrees with the 5 W column (PC6 VHF/UHF PA switch, PD8 backlight) (D) [OpenRTX]. The backlight
+The public hardware notes agree with the 5 W column (PC6 VHF/UHF PA switch, PD8 backlight) (D). The backlight
 dimming of [dm1701] 9.4 writes BSRR of the backlight pin's port, so on the 10 W radio the DMA target is GPIOC instead
 of GPIOD.
 
-Pins OpenRTX names that the DM-1701 spec doesn't (D) [OpenRTX], not used by ODR today: PB1 AT1846S GPIO0, PB2 AT1846S
-GPIO6, PC3 not connected on a stock radio (it is the RF-to-MCU input of the M17 mod [mods]).
+Pins the public hardware notes list that the DM-1701 spec doesn't (D), not used by ODR today: PB1 AT1846S GPIO0, PB2
+AT1846S GPIO6, PC3 not connected on a stock radio.
 
-OpenRTX labels PB11 / PE14 "channel selector": the same quadrature encoder (D).
+PB11 / PE14 are the channel selector: the same quadrature encoder (unverified, ?).
 
 ---
 
@@ -123,7 +121,7 @@ Same bus, controller family, init tables and backlight as [dm1701] 9, with these
   select).
 - Backlight: PD8 (5 W) or PC6 (10 W), active high.
 
-OpenRTX does not name the controller; [radios.md](radios.md) lists HX8302A (D).
+[radios.md](radios.md) lists HX8302A (D).
 
 ---
 
@@ -139,10 +137,10 @@ Matrix (rows PA6, PD2, PD3; columns D0-D7 as on the DM-1701) (D) [ref]:
 
 - No P1/P2 keys and no orange key. Up / down are front keys (KEY_INCREASE / DECREASE on the aftermarket firmware), not
   left / right.
-- Side key 1 (D7) is the top side key, the one held with PTT to enter the bootloader (D) [ref], [miklor].
+- Side key 1 (D7) is the top side key, the one held with PTT to enter the bootloader (D) [ref].
 - The aftermarket firmware lets SK1 + green stand in for the missing orange key (D) [ref]: a UI choice, not hardware.
 - Wake from the alarm: SK2 + PTT held together (D) [ref].
-- PTT PE11, external PTT PE12, encoder A PE14 / B PB11: as the DM-1701 (D) [ref], [OpenRTX]. Encoder direction and
+- PTT PE11, external PTT PE12, encoder A PE14 / B PB11: as the DM-1701 (D) [ref]. Encoder direction and
   detent shape: assumed as the DM-1701's (?).
 
 ---
@@ -155,8 +153,8 @@ Matrix (rows PA6, PD2, PD3; columns D0-D7 as on the DM-1701) (D) [ref]:
 | Volume pot min / max / break | 22 / 2070 / 309 | 23 / 2020 / 317 | 19 / 2054 / 308 | (D) [ref] |
 
 The aftermarket firmware builds the RT3S pot values for every non-10 W MD-UV380 build, with 7 counts of margin at the bottom
-because the RT3S reading is unstable there (D) [ref]. OpenRTX reports PA0 at 0-1600 mV and PA1 through a 1:3 divider
-(D) [OpenRTX]. Power-off threshold (5.5 V, switch sensed through the battery line), low-battery thresholds and the
+because the RT3S reading is unstable there (D) [ref]. The public hardware notes give PA0 at 0-1600 mV and PA1 through a 1:3 divider
+(unverified, ?). Power-off threshold (5.5 V, switch sensed through the battery line), low-battery thresholds and the
 temperature sensor: as the DM-1701 (D) [ref].
 
 ---
@@ -177,7 +175,7 @@ firmware's untested estimates):
 On the 10 W radio the top four levels are 2, 3, 5 and 10 W ([dm1701] 7). The aftermarket firmware's calibration screen labels
 the four calibrated points 250 mW, 1, 2, 5 W (5 W) or 250 mW, 1, 5, 10 W (10 W), and offers a "force 10 W" setting on
 5 W builds for 10 W radios flashed with a 5 W image (D) [ref]. Measured stock output (one radio) UHF 1.4 / 2.6 / 5.1 W,
-VHF 1.1 / 2.1 / 4.3 W (F) [miklor].
+VHF 1.1 / 2.1 / 4.3 W (F).
 
 ---
 
@@ -198,12 +196,12 @@ The open-firmware CPS calibration window (0x10000, 512 bytes) is served as on th
 ## 9. GPS
 
 G models (MD-UV380G / MD-UV390 GPS / RT3S GPS) carry a JumpStar JS-H210 module on the display / keypad board; the
-non-GPS boards have no footprint (D) [OpenRTX]. Its NMEA output is on **USART1 RX, PA10**, and its power switch is
-**PA9**, high = on (D) [ref], [OpenRTX]: the same pins the DM-1701 spec lists for its unfitted GPS, not the MD-380's
-USART3. 9600 8N1 (D) [ref]; OpenRTX doesn't state the rate. Nothing is sent to the module.
+non-GPS boards have no footprint (D) per the public hardware notes. Its NMEA output is on **USART1 RX, PA10**, and its power switch is
+**PA9**, high = on (D) [ref]: the same pins the DM-1701 spec lists for its unfitted GPS, not the MD-380's
+USART3. 9600 8N1 (D) [ref]. Nothing is sent to the module.
 
 Detection: the same board ships with and without the module, and stock GPS firmware doesn't add GPS to a non-GPS radio
-(F) [miklor]. A listen-first probe as on the MD-380 ([hardware-md380.md](hardware-md380.md) 13.2), with PA9 driven
+(F). A listen-first probe as on the MD-380 ([hardware-md380.md](hardware-md380.md) 13.2), with PA9 driven
 high for the listen window and back low if nothing is heard, avoids needing a model flag (?: on a non-GPS radio PA9
 drives nothing that is known). The stock files differ between GPS and non-GPS radios (section 11), and a forum report
 says a GPS stock image hangs at the boot screen on a non-GPS radio (F); whether that is a GPS probe or something else is
@@ -223,18 +221,18 @@ UV390 (no known model byte) (?).
 
 ## 11. Bootloader and stock images
 
-Entering the bootloader: hold PTT and the top side key (SK1) at power on (D) [miklor], [OpenRTX]. The TYT/AnyRoad DFU
+Entering the bootloader: hold PTT and the top side key (SK1) at power on (D) per the public hardware notes. The TYT/AnyRoad DFU
 loader, protocol and sector list of [dm1701] 15.2 (D) [ref]. The image is XOR-encrypted with the MD-UV380 key, SHA-256
 `739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991`, first bytes 00 AA 89 89, the same key for the
 MD-UV390 and the MD-2017 (D) [dm1701] 15.3. **Confirmed (C, 2026-10-12):** `stockfw.derive_key` recovers exactly this
 key from each of the four 19.26 stock files.
 
-The initial stack pointer rule ([dm1701] 1.5: below the top of RAM) is documented for this radio too (D) [OpenRTX].
+The initial stack pointer rule ([dm1701] 1.5: below the top of RAM) is documented for this radio too (D) per the public hardware notes.
 Whether the MD-UV380 bootloader checks the same GPIO combination (PE8 low and PE11 low) and the stack pointer word as
 the DM-1701's dumped loader ([dm1701] 15.4) is unknown (?: needs a dump from an MD-UV380).
 
 Stock files (C) [stock], [dealer]: OutSecurityBin, two segments (SPI flash resources at 0x00060000 + 0x5D400, the
-application at 0x0800C000), blank model field. TYT names four builds per release (D) [dealer], [miklor]:
+application at 0x0800C000), blank model field. TYT names four builds per release (D) [dealer]:
 
 | Prefix | Build | Radios |
 |---|---|---|
@@ -243,8 +241,7 @@ application at 0x0800C000), blank model field. TYT names four builds per release
 | P | CSV-GPS | GPS |
 | S | GPS-REC | GPS |
 
-(Miklor gives the letters differently, D record / V user database / P GPS + record / S GPS + database (F); the file
-names in the 19.26 packages follow the dealer's table.) The 19.26 file names and hashes are in
+(The file names in the 19.26 packages follow the dealer's table.) The 19.26 file names and hashes are in
 [codec-mduv380.md](codec-mduv380.md). Plus 10 W stock files exist but none was found at a reputable source (?).
 
 ---
@@ -264,10 +261,10 @@ the other three files and the extraction recipe: [codec-mduv380.md](codec-mduv38
 | Radio | Difference | Tag |
 |---|---|---|
 | MD-UV380 | the base 5 W board | (D) |
-| MD-UV390 | the same radio in an IP67 case | (F) [miklor] |
+| MD-UV390 | the same radio in an IP67 case | (F) |
 | Retevis RT3S | rebadged MD-UV380; its own volume pot curve (section 6) | (D) [ref] |
 | G models | JS-H210 GPS on USART1 / PA9 | (D) |
-| MD-UV390 Plus 10 W | PC6 / PD8 swapped, 10 W power tables, security register 3 byte 0x1C = 0xF4, board layout "differs somewhat" | (D) [ref], [mods] |
+| MD-UV390 Plus 10 W | PC6 / PD8 swapped, 10 W power tables, security register 3 byte 0x1C = 0xF4, board layout differs somewhat (unverified) | (D) [ref] |
 | MD-2017 | trackball, two AT1846S; not covered here | (D) [dm1701] 17 |
 
 ---
@@ -297,9 +294,6 @@ the other three files and the extraction recipe: [codec-mduv380.md](codec-mduv38
 | Short name | Source | Kind |
 |---|---|---|
 | [ref] | The reference port's MD-UV380 build variant (old tree, `MDUV380_firmware`, which builds the DM-1701, RT84, MD-UV380 and MD-UV390 Plus 10 W from one source): pin set-up and per-variant constants, facts only | (D) |
-| [OpenRTX] | OpenRTX MD-UV380 hardware page, https://openrtx.org/#/hardware/mduv380 (prose and pin table) | (D) |
-| [mods] | OpenRTX MD-UV380 M17 mods, https://raw.githubusercontent.com/OpenRTX/openrtx.github.io/master/M17/mduv380_mods.md | (D) |
-| [miklor] | https://miklor.com/COM/Review_UV380.php and https://miklor.com/MD380/380-FWupdate.php | (F) |
 | [dealer] | Passion Radio MD-UV380 page and its firmware downloads, https://passion-radio.com/dmr-equipment/tyt-md380-321.html | (F) |
 | [stock] | Our own reading of the TYT 19.26 stock files (headers, key derivation, codec windows) | (C) |
 | [dm1701] | [hardware-dm1701.md](hardware-dm1701.md), sections cited | This repo |

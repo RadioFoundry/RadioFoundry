@@ -21,12 +21,12 @@ addresses. Every fact carries a confidence tag as in [radios.md](radios.md):
 | Tag | Meaning |
 |---|---|
 | **C** | Confirmed: manufacturer data, a datasheet, or our own bench work on the radio |
-| **D** | Documented by a reverse-engineering project (schematic notes, pin tables, hardware pages) |
+| **D** | Documented in public hardware notes (schematic notes, pin tables) |
 | **F** | Forum post, review or retailer claim, or a value carried over from a sibling radio's notes |
 | **?** | Not found, contradictory, or our own assumption. Needs a radio |
 
-The sources are listed in section 18 and cited by the short names used there ([DL4YHF], [holger], [OpenRTX],
-[PoC], [SKY], [ST], [miklor], [md380tools], [gotchas], [ref]). [gotchas] is [gotchas.md](gotchas.md) in this repo;
+The sources are listed in section 18 and cited by the short names used there ([SKY], [ST],
+[gotchas], [ref]). [gotchas] is [gotchas.md](gotchas.md) in this repo;
 [ref] is the prose notes of the reference port (kept outside the repository), facts only.
 
 ---
@@ -35,26 +35,26 @@ The sources are listed in section 18 and cited by the short names used there ([D
 
 ### 1.1 Part
 
-STM32F405VGT6, LQFP100: Cortex-M4F, 1 MB flash, 192 KB RAM (128 KB SRAM, 64 KB CCM) (D) [PoC], [holger], [OpenRTX].
-Read-out protection level 1 on stock radios (D) [PoC].
+STM32F405VGT6, LQFP100: Cortex-M4F, 1 MB flash, 192 KB RAM (128 KB SRAM, 64 KB CCM) (C) [ST].
+Read-out protection level 1 on stock radios (D) per the public hardware notes.
 
 ### 1.2 Clocks
 
-8 MHz crystal on HSE (D) [OpenRTX]. ODR runs the DM-1701's clock plan: PLL M 4, N 72, P 2 (72 MHz SYSCLK), Q 3 (48 MHz
+8 MHz crystal on HSE (D) per the public hardware notes. ODR runs the DM-1701's clock plan: PLL M 4, N 72, P 2 (72 MHz SYSCLK), Q 3 (48 MHz
 USB), AHB 72 MHz, APB1 36 MHz, APB2 72 MHz; the same frequencies the stock firmware is reported to use (72 / 36 /
-72 MHz) (D) [OpenRTX]. If HSE does not start as a crystal, `board_early_init` retries it in bypass mode (?: the DM-1701
+72 MHz) (D). If HSE does not start as a crystal, `board_early_init` retries it in bypass mode (?: the DM-1701
 needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
 
 ### 1.3 Internal flash layout
 
 | Sectors | Addresses | Use |
 |---|---|---|
-| 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (D) [PoC] |
+| 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (D) per the public hardware notes |
 | 3-5, 6 up to 0x08050C43 | 0x0800C000-0x08050C43 | ODR application, 275 KB (`boards/md380/md380.ld`) |
 | 6 from 0x08050C44, 7, 8, 10, 11 | see [codec-md380.md](codec-md380.md) | The stock D002.032 codec's code and table windows, run in place (C) |
 | 9 | 0x080A0000-0x080BFFFF | Free |
 
-The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (D) [PoC], [md380tools].
+The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (D) per the public hardware notes.
 
 The 275 KB hold every feature written for this radio only with link time optimization, on by default here, and the
 MMDVM hotspot left out: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380).
@@ -65,25 +65,24 @@ MMDVM hotspot left out: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-
 word); 64 KB CCM for CPU-only state (`ODR_CPU_RAM`: the task stacks and the slot engine, as on the DM-1701, a76da0d;
 main RAM use went from 89 % to 68 % of the default build with that move).
 
-Sources: STM32F405 data sheet [ST]; PoC||GTFO 10:8 [PoC]; OpenRTX MD-380 page [OpenRTX].
+Sources: STM32F405 data sheet [ST]; the public hardware notes.
 
 ---
 
 ## 2. Pin assignments
 
-The pin tables come from two public sets of schematic notes, [DL4YHF] (from the RT3 / MD-380 service schematic) and
-[holger], plus [OpenRTX]. [holger] warns its schematic "is known to be not correct" in places (F). Where the two
-disagree the pin is marked (?). `boards/md380/pins.h` holds the same map.
+The pin tables come from public schematic notes (from the RT3 / MD-380 service schematic). The notes warn that the
+schematic "is known to be not correct" in places (F). Where the notes are unclear the pin is marked (?). `boards/md380/pins.h` holds the same map.
 
 ### 2.1 Port A
 
 | Pin | Function | Notes |
 |---|---|---|
-| PA0 | ADC1 IN0: volume knob position | (D) [DL4YHF]; [holger] lists the TX LED here (?) |
+| PA0 | ADC1 IN0: volume knob position | (D); a TX LED function here is also reported (unverified, ?) |
 | PA1 | ADC1 IN1: battery voltage | (D) |
 | PA2 | ADC1 IN2: QT_DQT_IN, sub-audio tone input | (D); stock decodes CTCSS / DCS in software (?) |
 | PA3 | ADC1 IN3: VOX, mic level | (D) |
-| PA4 | DAC1: APC / TV (PA power reference in TX, front-end tuning in RX) | (D) [DL4YHF]; the double use (?) |
+| PA4 | DAC1: APC / TV (PA power reference in TX, front-end tuning in RX) | (D); the double use (?) |
 | PA5 | DAC2: MOD2_BIAS (reference oscillator bias) | (D); value from [gotchas] 11.1 (F) |
 | PA6 | Keypad row K1 | (D) |
 | PA7 | POW_C, power latch | (D) |
@@ -174,7 +173,7 @@ PA13 and PA14 are the SWD pins. The radio needs them as the IF bandwidth switch 
 `MD380_DEFS=-DMD380_KEEP_SWD` to leave them alone: the microphone is then
 unpowered and the bandwidth switch stays as the hardware pulls it.
 
-Sources: [DL4YHF] pin table and schematic notes; [holger]; [OpenRTX]; [gotchas] 2.6 and 13.7.
+Sources: the public pin table and schematic notes; [gotchas] 2.6 and 13.7.
 
 ---
 
@@ -203,7 +202,7 @@ atomic.
 ### 4.1 Overview
 
 The HR_C5000 is the HR_C6000's predecessor in the same family: DMR layer 1/2 baseband, two-point modulation outputs,
-an IF input from the receiver, the AMBE-less voice frame interface, and an audio codec with I2S (D) [PoC], [OpenRTX].
+an IF input from the receiver, the AMBE-less voice frame interface, and an audio codec with I2S (D) per the public hardware notes.
 ODR drives it with the HR_C6000 driver (`drivers/modem/hrc6000`) in its C5000 variant, `hrc6000_attach_chip(...,
 HRC6000_CHIP_C5000)`: the register map is close enough that the slot engine is shared, and the variant flag selects
 the differences in 4.3. There is no public HR_C5000 data sheet; the differences come from [gotchas] 2.6, 5.2, 11.1 and
@@ -215,7 +214,7 @@ Bit-banged SPI on PE2 (CS), PE3 (clock), PE5 (MCU -> chip) and PE4 (chip -> MCU)
 to be the HR_C6000's (clock idles high, data latched on the rising edge, a few hundred ns per half bit; DM-1701
 hardware-dm1701.md 4.2) (?).
 
-The clock (PE3) and data (PE5) also go to the SKY72310, which has its own chip select (PD11) (D) [DL4YHF]. A
+The clock (PE3) and data (PE5) also go to the SKY72310, which has its own chip select (PD11) (D). A
 transaction on either chip is therefore one masked section (`md380_rfbus_lock`), so a modem ISR's register access never
 lands inside a synthesizer word or the reverse.
 
@@ -261,7 +260,7 @@ PE6 low wakes the chip; ODR waits 12 ms before the first access, as for the HR_C
 runs the HR_C6000 sequence through the page mapping, with the C5000's 0x21 / 0x22 values. After init the driver reads
 0x10 back for the diagnostics page (bring-up stage 4).
 
-Sources: [gotchas] 2.6, 3.3, 5.2, 11.1; [ref] notes (facts only); [PoC]; [OpenRTX].
+Sources: [gotchas] 2.6, 3.3, 5.2, 11.1; [ref] notes (facts only); the public hardware notes.
 
 ---
 
@@ -269,14 +268,14 @@ Sources: [gotchas] 2.6, 3.3, 5.2, 11.1; [ref] notes (facts only); [PoC]; [OpenRT
 
 ### 5.1 Bands and power
 
-One band per radio: UHF 400-480 MHz or VHF 136-174 MHz, 1 W and 5 W (F) [miklor]. ODR builds one image per band
+One band per radio: UHF 400-480 MHz or VHF 136-174 MHz, 1 W and 5 W (F). ODR builds one image per band
 (`make BOARD=md380 MD380_BAND=uhf|vhf`, default UHF); the image's band table refuses the other band. Which band a
 radio is can't be read from the hardware by any method we know (?: the calibration's frequency list, 11.2, is a
 candidate for a run-time check).
 
 ### 5.2 SKY72310 synthesizer
 
-Skyworks SKY72310-11 (D) [OpenRTX], [DL4YHF]. From the data sheet [SKY] (C):
+Skyworks SKY72310-11 (D). From the data sheet [SKY] (C):
 
 - Serial interface: 16-bit words, MSB first: 4 address bits then 12 data bits, latched when CS goes high. Write only.
 - Registers: 0 main divider (N_reg = floor(N) - 32, 9 bits, 6..505 in fractional mode); 1 dividend MSB (10 bits);
@@ -286,7 +285,7 @@ Skyworks SKY72310-11 (D) [OpenRTX], [DL4YHF]. From the data sheet [SKY] (C):
 - N = f_vco / f_pd with f_pd = f_osc / R <= 50 MHz; the 18-bit dividend is round(2^18 x frac(N)) in unsigned mode.
 - A new ratio takes effect on the dividend MSB write: order divider, LSB, MSB.
 - Lock detect high = locked (on the Mux_out / LD pin, wired to PD10 (D)). The pin is the PS output, open collector
-  [holger]: the MCU's pull-up gives the high (5.7).
+  (D): the MCU's pull-up gives the high (5.7).
 
 `drivers/rf/sky72310` implements this and `tests/host/sky72310Test.c` checks it against a model of the chip. The
 board picks the smallest reference divider that keeps N in the fractional range (2 or 3 at 16.8 MHz), the phase
@@ -342,15 +341,14 @@ returns to RX at `tx_off()`.
 
 PA8 ("SAVE") is the enable of U404 (XC6204B502, CE active high), the regulator for the 5C rail; 5C feeds the
 SKY72310's 3.3 V regulator U602 (XC6204B332, CE tied to its input) and part of the receive chain (C) [schematic,
-page 4]. The stock firmware drives PA8 high as an output (C: its GPIOA registers read with md380-tool under md380tools
-firmware). `board.c` drives it high at start-up.
+page 4]. The stock firmware drives PA8 high as an output (C: its GPIOA registers read on a running radio). `board.c` drives it high at start-up.
 
 Measured on a UHF MD-380 with no signal: the raw RSSI reading (ADC1 IN8) went from 246 with PA8 left as an input to
 640-720 with it high, and the RSSI follows a received carrier. PD10 (PS, pulled up) reads 1 with SAVE low (the
 synthesizer unpowered, PS floating) and 0 with SAVE high (powered, not yet programmed: out of lock) (C).
 
-Sources: [SKY] (C); [DL4YHF], [OpenRTX] (D); [miklor] (F); [radios.md](radios.md) MD-9600 notes and [ref] for the
-frequency plan (F); [gotchas] 3.3, 3.4; MD-380 UHF RF schematic (pchickey/md380-re datasheets) for 5.7.
+Sources: [SKY] (C); the public hardware notes (D); [radios.md](radios.md) MD-9600 notes and [ref] for the
+frequency plan (F); [gotchas] 3.3, 3.4; MD-380 UHF RF schematic for 5.7.
 
 ---
 
@@ -388,8 +386,8 @@ open on carrier and send no tone. The FM TX tones (1750 Hz, roger beep) and APRS
 ## 7. Display
 
 160 x 128 color TFT on the FSMC 8-bit bus (NE1), command at 0x60000000 and data at 0x60040000 (A17 = RS on PD12),
-chip select PD6, reset PD13: the DM-1701's wiring (D) [OpenRTX], [DL4YHF]. The controller is reported as an HX8302A
-(D) [OpenRTX], [DL4YHF] or "maybe an ILI9481" (F) [holger]; RT3 and MD-380 panels are said to be "slightly
+chip select PD6, reset PD13: the DM-1701's wiring (D). The controller is reported as an HX8302A
+(D) or possibly an ILI9481 (unverified, ?); RT3 and MD-380 panels are said to be "slightly
 incompatible" (F). ODR drives it with `drivers/display/st7735` (the HX8302A takes the ST7735 command set (?)) with
 every row visible (no inset) and two build-time knobs for the bench: `MD380_PANEL_TYPE` (the st7735 driver's panel
 type, default 0) and `MD380_PANEL_MADCTL_XOR` (orientation bits flipped, default 0). Backlight: LAMP (PC6), TIM8 CH1
@@ -445,7 +443,7 @@ on it only showed the battery running down. `switch_on()` now reads the knob fro
 
 ### 10.2 Battery
 
-7.4 V 2S Li-ion pack (F) [miklor]. ADC1 IN1 through a divider: ODR assumes 40.3 counts per 0.1 V
+7.4 V 2S Li-ion pack (F). ADC1 IN1 through a divider: ODR assumes 40.3 counts per 0.1 V
 (`MD380_BATT_COUNTS_X10`) (?). Low 6.2 V and critical 6.0 V are ODR's choices, as on the DM-1701.
 
 ### 10.3 ADC scan
@@ -491,8 +489,8 @@ Linear between the two neighboring points, clamped at the ends.
 
 ### 12.1 Device and bus
 
-Winbond W25Q128FV, 16 MB, on SPI1 (PB3-PB5, AF5) with chip select PD7, mode 0, 4.5 MHz (D) [OpenRTX], [DL4YHF]. Some
-early VHF radios have a 1 MB part (D) [md380tools]. `flash_md380.c` accepts any W25Q (JEDEC type 0x40) and probes the
+Winbond W25Q128FV, 16 MB, on SPI1 (PB3-PB5, AF5) with chip select PD7, mode 0, 4.5 MHz (D). Some
+early VHF radios have a 1 MB part (D) per the public hardware notes. `flash_md380.c` accepts any W25Q (JEDEC type 0x40) and probes the
 size.
 
 ### 12.2 Map
@@ -508,8 +506,8 @@ main array (11.1). On a smaller part the core gets no areas: settings live in RA
 
 ### 13.1 Module
 
-The G models carry a GPS module whose NMEA output goes to the MCU's USART3 (D for the module; pins (?)). The module is
-named JS-H210 on [OpenRTX]'s MD-380 page and JS-M710 in its hardware table (?). 9600 baud is assumed (?).
+The G models carry a GPS module whose NMEA output goes to the MCU's USART3 (D for the module; pins (?)). The module's
+part number is not settled: JS-H210 and JS-M710 are both reported (?). 9600 baud is assumed (?).
 
 ### 13.2 Detection
 
@@ -527,7 +525,7 @@ counted and cleared in the interrupt, so one framing error never stops reception
 
 ### 14.1 Stock firmware file
 
-TYT ships the application as an encrypted "OutSecurityBin" container, the same family as the DM-1701's (D) [PoC].
+TYT ships the application as an encrypted "OutSecurityBin" container, the same family as the DM-1701's (D) per the public hardware notes.
 The file examined here (C, our own reading of the container header only):
 
 | Item | Value |
@@ -545,7 +543,7 @@ table entry).
 
 ### 14.2 Encryption and key
 
-The payload is XOR-encrypted with a 1024-byte key held in the bootloader (D) [PoC]. The key's SHA-256 is
+The payload is XOR-encrypted with a 1024-byte key held in the bootloader (D) per the public hardware notes. The key's SHA-256 is
 5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd and its first bytes 2E DF 40 B5 (D,
 `tools/stm32_dfu.py` md380 model). It can be derived from the D2.32 stock file and checked by that hash (C,
 2026-10-10): the plain column vote is wrong in a third of the columns, and a byte-pair refinement learned from the file
@@ -554,14 +552,14 @@ fixes them ([codec-md380.md](codec-md380.md), "Key recovery"; `odrflash/stockfw.
 
 ### 14.3 Bootloader and DFU
 
-Entered by holding PTT and the upper side key while switching on (D) [md380tools]. USB DFU 0483:DF11 with TYT's
-non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (D) [PoC]. Flash an ODR
+Entered by holding PTT and the upper side key while switching on (D) per the public hardware notes. USB DFU 0483:DF11 with TYT's
+non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (D). Flash an ODR
 image with `tools/stm32_dfu.py --model md380 --key KEY odr_md380.bin`. The image is plain, starts at 0x0800C000, and the
 tool encrypts it for the loader. odrflash knows the board (`boards.py` MD380: not releasable, codec sectors 7-11 kept).
 
 ### 14.4 The codec
 
-The AMBE+2 codec is inside the stock application (D) [PoC]. Located in D002.032 (C, 2026-10-10): the same library as the
+The AMBE+2 codec is inside the stock application (D). Located in D002.032 (C, 2026-10-10): the same library as the
 DM-1701's, at other addresses; code window 0x08050C44+0x10884, table window 0x0808FC64+0xAFF8 and four small table
 windows in sectors 10 and 11, run in place. Entry points, calling convention, state sizes and the extraction recipe
 are in [codec-md380.md](codec-md380.md). `stockfw.PROFILES` has the profile (`md380-d2032`), `boards.py` the windows,
@@ -585,11 +583,11 @@ The open-firmware CPS shim reports radio type 7 and serves the MCU ROM from 0x08
 | Radio | Difference | Tag |
 |---|---|---|
 | MD-380 | the base board | (D) |
-| MD-390 | the same electronics in an IP67 case | (F) [miklor] |
-| Retevis RT3 | a rebadged MD-380; its panel is said to be slightly incompatible | (F) [holger] |
+| MD-390 | the same electronics in an IP67 case | (F) |
+| Retevis RT3 | a rebadged MD-380; its panel is said to be slightly incompatible | (F) |
 | MD-380G / MD-390G / RT3 GPS | GPS module on USART3, power on PD8 (section 13) | (D, pins ?) |
 | UHF / VHF | separate boards: different RF parts and VCOs, one ODR image each | (D) |
-| 1 MB flash | some early VHF radios; ODR stores nothing on them | (D) [md380tools] |
+| 1 MB flash | some early VHF radios; ODR stores nothing on them | (D) per the public hardware notes |
 
 ---
 
@@ -626,14 +624,8 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 
 | Short name | Source | Kind |
 |---|---|---|
-| [DL4YHF] | Wolfgang Buescher, "MD380 / RT3 hardware" notes, https://qsl.net/d/dl4yhf/RT3/md380_hw.html | Schematic notes, pin table (D) |
-| [holger] | Holger Schurig, MD-380 schematic notes, https://github.com/holgerschurig/md380 (prose and tables only) | Schematic notes (D, with its own warning) |
-| [OpenRTX] | OpenRTX hardware pages, https://openrtx.org/#/hardware/md380 and https://openrtx.org/#/hardware/hardware (prose only, no source) | Hardware description (D) |
-| [PoC] | Travis Goodspeed, PoC\|\|GTFO 10:8, https://mcfp.felk.cvut.cz/publicDatasets/pocorgtfo/contents/articles/10-08.pdf | Article (D) |
 | [SKY] | Skyworks SKY72310-11 data sheet 203639L, https://www.skyworksinc.com/Products/PLLs-Synthesizers-VCOs/SKY72310-11 | Data sheet (C) |
 | [ST] | STMicroelectronics STM32F405xx data sheet and RM0090 | Data sheet (C) |
-| [miklor] | https://miklor.com/MD380/380-Specs.php | Specifications (F) |
-| [md380tools] | md380tools README prose, https://github.com/travisgoodspeed/md380tools | Project notes (D) |
 | [gotchas] | [gotchas.md](gotchas.md) 2.6, 3.3, 3.4, 5.2, 11.1, 13.7 | This repo |
 | [ref] | the reference port's prose notes, outside the repository (not the hunk code) | Facts from the reference port's notes (F) |
 

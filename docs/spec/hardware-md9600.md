@@ -25,11 +25,11 @@ Every fact carries a confidence tag as in [radios.md](radios.md):
 | Tag | Meaning |
 |---|---|
 | **C** | Confirmed: manufacturer data, a datasheet, or our own bench work on the radio |
-| **D** | Documented by a reverse-engineering project (schematic notes, pin tables, hardware pages, the reference port's pin map and register writes) |
+| **D** | Documented in public hardware notes (schematic notes, pin tables, the reference port's pin map and register writes) |
 | **F** | Forum post, review or retailer claim, or a value carried over from a sibling radio's notes |
 | **?** | Not found, contradictory, or our own assumption. Needs a radio |
 
-Short source names are listed in section 18 ([ref], [OpenRTX], [ogd77-t83], [ogd77-p15], [miklor], [miklor-fw],
+Short source names are listed in section 18 ([ref], [ogd77-t83], [ogd77-p15],
 [TYT], [FCC], [SKY], [ST], [gotchas]). The reference port's pin map comes from a CubeMX project, so (D) for pins means
 "the reference port drives the pin this way and the radio works on air for its users", not a schematic.
 
@@ -39,7 +39,7 @@ Short source names are listed in section 18 ([ref], [OpenRTX], [ogd77-t83], [ogd
 
 ### 1.1 Part
 
-STM32F405VGT6, LQFP100, 1 MB flash, 128 KB SRAM + 64 KB CCM, 4 KB backup SRAM (D) [OpenRTX], [ref]. The backup SRAM
+STM32F405VGT6, LQFP100, 1 MB flash, 128 KB SRAM + 64 KB CCM, 4 KB backup SRAM (C) [ST], (D) [ref]. The backup SRAM
 is used (section 10.2). Read-out protection level 1 assumed, as on every TYT STM32 radio (?).
 
 ### 1.2 Clocks
@@ -217,15 +217,15 @@ synthesizer word and a different VCO (5.2), so the per-burst relock time is the 
 
 ### 5.1 Bands, power
 
-Dual band, 136-174 MHz and 400-480 MHz (D) [OpenRTX]; the reference port allows 127-178 and 380-564 MHz outside its
-data-sheet mode (not a recommendation). Rated 50 W VHF / 45 W UHF (40 W on some retailer pages); miklor measured 44 W
-at 146 MHz and 40 W at 446 MHz (F) [miklor]. Band selection is by frequency: below 300 MHz is VHF (D) [ref].
+Dual band, 136-174 MHz and 400-480 MHz (D) per the public hardware notes; the reference port allows 127-178 and 380-564 MHz outside its
+data-sheet mode (not a recommendation). Rated 50 W VHF / 45 W UHF (40 W on some retailer pages); one review measured 44 W
+at 146 MHz and 40 W at 446 MHz (F). Band selection is by frequency: below 300 MHz is VHF (D) [ref].
 
 ### 5.2 Frequency plan (all revisions)
 
 | Item | Value | Tag |
 |---|---|---|
-| Reference | 16.8 MHz TCXO, shared | (D) [ref], [OpenRTX] |
+| Reference | 16.8 MHz TCXO, shared | (D) [ref] |
 | First IF | 49.95 MHz | (D) [ref] |
 | VHF RX | LO = f + 49.95 MHz (high side) | (D) |
 | UHF RX | LO = f - 49.95 MHz (low side) | (D) |
@@ -240,7 +240,7 @@ All write-only, chip select low during the word, data MSB first, data set while 
 rising edge (D) [ref]. Fractional rule in V1/V2/V4: if the fraction is above one half, N is rounded up and the fraction
 used as a negative offset (signed modulator) (D).
 
-**V1, V2 (and V3): Skyworks SKY72310, one per band** (D) [ref], [OpenRTX]. 16-bit words, 4-bit address in the top
+**V1, V2 (and V3): Skyworks SKY72310, one per band** (D) [ref]. 16-bit words, 4-bit address in the top
 bits (as [hardware-md380.md](hardware-md380.md) 5.2, data sheet [SKY]):
 
 | Band | R (reg 5 = R - 1) | Comparison frequency | VCO |
@@ -330,7 +330,7 @@ level on PA3 only.
 
 ### 7.1 Panel and bus
 
-128 x 64 monochrome, ST7567 (D) [OpenRTX], [ref], on SPI2 shared with the SPI flash: SCK PB13, MOSI PB15, CS PD14, RS
+128 x 64 monochrome, ST7567 (D) [ref], on SPI2 shared with the SPI flash: SCK PB13, MOSI PB15, CS PD14, RS
 PD13 (low = command, high = data), reset PD12 (D). The flash and the LCD must not be accessed at the same time.
 
 ### 7.2 Init, orientation, contrast
@@ -389,7 +389,7 @@ column < 4 means a key is down (D) [ref]:
 | 3 | * | 0 | # | D |
 | 4 | (unused) | A/B | Up | Down |
 
-The mic has 16 keys plus its own up / down / A/B (F) [miklor]. Thresholds and the mic's resistor ladder are unverified (?).
+The mic has 16 keys plus its own up / down / A/B (F). Thresholds and the mic's resistor ladder are unverified (?).
 
 ### 9.4 PTT
 
@@ -474,7 +474,7 @@ extrapolated with the last slope above the top point, clamped to 0-4095 (D) [ref
 
 ### 12.1 Device and bus
 
-W25Q128 class, 16 MB, JEDEC 0x4018 (D) [ref], [OpenRTX], on SPI2 (mode 0, PCLK1 / 4 = 4.5 MHz in the reference
+W25Q128 class, 16 MB, JEDEC 0x4018 (D) [ref], on SPI2 (mode 0, PCLK1 / 4 = 4.5 MHz in the reference
 port) with CS PB12, shared with the LCD (7.1). Security registers hold the calibration (11.1).
 
 ### 12.2 Map
@@ -490,7 +490,7 @@ clean side (reuse the DM-1701 map, keeping 0x010000-0x010FFF free if the calibra
 
 ### 13.1 Module
 
-Optional, JS-M710 (D) [OpenRTX]; the "MD-9600-5P GPS" FCC class II change (C) [FCC]. NMEA on USART1 RX (PA10),
+Optional, JS-M710 (D) per the public hardware notes; the "MD-9600-5P GPS" FCC class II change (C) [FCC]. NMEA on USART1 RX (PA10),
 9600 baud, 8N1, DMA (D) [ref]. The reference port reports bursts of invalid ('V') frames from time to time (F) [ref].
 
 ### 13.2 Power and detection
@@ -504,9 +504,8 @@ for valid NMEA, as on the MD-380 (ours).
 
 ### 14.1 Entering the loader
 
-Disconnect DC (the power key is not enough), hold **P1 and the orange (alarm) key** ([ref] notes) or **the red key and
-P1** ([miklor-fw]) while reconnecting; the backlight / display flashes, the screen stays blank (F: the two sources
-disagree on the second key (?)).
+Disconnect DC (the power key is not enough), hold **P1 and the orange (alarm) key** ([ref] notes) while reconnecting; the backlight / display flashes, the
+screen stays blank. Another report gives **the red key and P1** instead (unverified); the second key is open (?).
 
 ### 14.2 Protocol and encryption
 
@@ -519,9 +518,9 @@ works: on every V06.09 and V16.45 stock file the plain column vote alone gives t
 
 ### 14.3 Stock firmware files
 
-TYT names the files by feature: P = CSV + GPS, V = CSV, S = recorder + GPS, D = recorder (F) [miklor-fw]. TYT's V4
-firmware and CPS (for the "new updated PLL", V4 and later boards) are not compatible with V1-V3 radios (F)
-[miklor-fw]. TYT's download page (checked 2026-10-12) offers only CPS installers for the MD-9600, no firmware (C) [TYT].
+TYT names the files by feature: P = CSV + GPS, V = CSV, S = recorder + GPS, D = recorder (F). TYT's V4
+firmware and CPS (for the "new updated PLL", V4 and later boards) are not compatible with V1-V3 radios (F).
+TYT's download page (checked 2026-10-12) offers only CPS installers for the MD-9600, no firmware (C) [TYT].
 
 Files examined (C, [TYT-fw]; container header only here, the codec in [codec-md9600.md](codec-md9600.md)):
 
@@ -594,11 +593,8 @@ last (unidentified synthesizer, needs its power-on quirk).
 | Short name | Source | Kind |
 |---|---|---|
 | [ref] | The reference port's MD-9600 tree (CubeMX pin map, register writes, README / STATUS notes), outside this repository; facts only | (D) |
-| [OpenRTX] | OpenRTX MD-9600 hardware page, https://openrtx.org/#/hardware/md9600 (prose) | (D) |
 | [ogd77-t83] | https://www.opengd77.org/viewtopic.php?t=83, hardware versions | Forum (F) |
 | [ogd77-p15] | https://www.opengd77.org/viewtopic.php?p=15, installation | Forum (F) |
-| [miklor] | https://www.miklor.com/COM/Review_MD9600.php | Review (F) |
-| [miklor-fw] | https://www.miklor.com/MD9600/9600-FWupdate.php | Guide (F) |
 | [passion-radio] | https://www.passion-radio.com/mobile/md9600-505.html | Retailer (F) |
 | [TYT] | https://www.tyt888.com/download.html (2026-10-12: CPS 1.27, 1.33, 1.43 and a product photo; no firmware) | Vendor (C) |
 | [TYT-fw] | TYT stock firmware V06.09 and V16.45 ("firmware for PLL1590"), kept outside the repository; container headers and literal constants only | Vendor files (C) |
