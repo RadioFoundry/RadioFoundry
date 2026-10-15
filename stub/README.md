@@ -2,8 +2,8 @@
 
 A small RAM monitor and the host tool that drives it. The tool loads the monitor into the radio's RAM, either through the
 chip's serial boot ROM (radio switched on with the cable in) or, with `CONFIG_STUB_ENTRY=y`, from a running ODR over the
-debug link (`docs/spec/debuglink.md` 3.18, `docs/spec/hardware-dm32.md` 17.2). It then reads (and, in test regions,
-writes) the program flash and the data flash with every block checked.
+debug link (`docs/spec/debuglink.md` 3.18, `docs/spec/hardware-dm32.md` 17.2). It then reads the program flash and the data flash, and installs ODR builds into the application area of the program
+flash (`--write-app`), with every block checked.
 
 | File | What |
 |---|---|
@@ -17,5 +17,5 @@ toolchain (`-Os`). The source and its protocol document are kept with the revers
 repository for now. Check the embedded images with `sha256sum stub_*.bin` against `stubtool.py --self-test`
 (which decodes and checks them).
 
-Status (2026-10-15): reads of both flash chips, entry from ODR, write tests in two reserved sectors, and the provisional
-baud switch were run on a DM-1801 Pro. The DM-32UV is untested.
+Status (2026-10-15): reads of both flash chips, entry from ODR, `--write-app` (a 93-sector build in 71 s, changed sectors only,
+both directions, ODR up after the restart) and the provisional baud switch were run on a DM-1801 Pro. The DM-32UV is untested.
