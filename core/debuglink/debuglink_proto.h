@@ -45,7 +45,20 @@ enum {
 	DL_CMD_SPLIT		= 0x15,	// split duplex (CONFIG_HOTSPOT_SPLIT only; docs/spec/debuglink.md 3.15)
 	DL_CMD_APRS		= 0x11,	// APRS: send now, status, message, test call, settings, NMEA (debuglink_aprs.c, 3.16)
 	DL_CMD_SNMP		= 0x19,	// the SNMP agent: settings, communities, notification port, test (debuglink_snmp.c, 3.17)
+	DL_CMD_STUB		= 0x1A,	// load and enter the RAM-monitor stub (CONFIG_STUB_ENTRY; debuglink_stub.c, 3.18)
 };
+
+// DL_CMD_STUB operations (first payload byte; docs/spec/debuglink.md 3.18). A guarded way to hand the SoC to the host's
+// RAM monitor at run time, no power cycle: INFO, then BEGIN, DATA chunks, ENTER. All u32 are little endian
+enum {
+	DL_STUB_OP_INFO = 0,	// -> magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32
+	DL_STUB_OP_BEGIN,	// magic u32, total_len u32, total_crc32 u32, entry u32 -> received u32 (0): arm a transfer
+	DL_STUB_OP_DATA,	// offset u32, bytes -> received u32: write a chunk (frame CRC-16 guards it)
+	DL_STUB_OP_ENTER,	// magic u32 -> status: verify total_len and CRC-32, then quiesce and jump (no reply after)
+};
+// The guard key, little endian in the payload: bytes 'C' '7' 'S' 'B'. Required on BEGIN and ENTER so a stray frame
+// can never arm or launch the monitor; entry also needs the exact length and a matching CRC-32 of the whole image
+#define DL_STUB_MAGIC		0x42533743u
 
 // DL_CMD_DMR_DATA operations (first payload byte; docs/spec/debuglink.md 3.12). IDs are u32 little endian
 enum {
