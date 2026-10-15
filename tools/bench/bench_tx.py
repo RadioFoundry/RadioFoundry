@@ -461,8 +461,8 @@ def main() -> None:
     ap.add_argument("--freq", type=float, default=461.6875)
     ap.add_argument("--cc", type=int, default=2)
     ap.add_argument("--power", type=int, default=255, help="MMDVM_HS RF level 0-255")
-    ap.add_argument("--rx-offset", type=int, default=-150, help="Hz, the bench modem's calibration (odr_sdrbench rx_offset_hz)")
-    ap.add_argument("--tx-offset", type=int, default=-175, help="Hz, the bench modem's calibration (odr_sdrbench tx_offset_hz)")
+    ap.add_argument("--rx-offset", type=int, default=None, help="Hz, the bench modem's RX offset (default: the bench's calibration)")
+    ap.add_argument("--tx-offset", type=int, default=None, help="Hz, the bench modem's TX offset (default: the bench's calibration)")
     ap.add_argument("-v", "--verbose", action="store_true", help="log every bench modem status change")
     ap.add_argument("--listen-after", type=float, default=0,
                     help="voice / data / csbk: then listen this many seconds (JSON lines), for the radio's answer "

@@ -7,7 +7,7 @@ Adapted from our earlier bench tool sdrmon.py.
 sdrmon: on-air DMR burst monitor (one channel, offline analysis of a raw IQ capture from the SDR bench's RTL-SDR).
 Runs on the SDR bench with the odr_sdrbench package (its Channelizer, FmDemod, slicer and FEC).
 
-    sdrmon.py capture --seconds N --out FILE [--freq 461.6875] [--offset-khz -200] [--gain 15] [--ppm 0.7]
+    sdrmon.py capture --seconds N --out FILE [--freq 461.6875] [--offset-khz -200] [--gain 15] [--ppm P]
                       [--service odr-sdrbench@<bench host> | --service '']
         Stops the bench's gateway service (it holds the dongle) unless --service '', records raw IQ (cs8, 1.536 MS/s, bias tee
         on) tuned --offset-khz away from --freq (keeps the channel off the RTL DC spike at the tuner center), then
@@ -17,7 +17,8 @@ Runs on the SDR bench with the odr_sdrbench package (its Channelizer, FmDemod, s
         Writes FILE plus FILE.json (center, rate, gain, ppm, wall clock of sample 0, overflows, ADC clipping: the
         share of I/Q samples at the int8 rails). Clipping above 1 % is reported as a warning: lower --gain, move the
         antenna, or turn the radio's power down (see docs/testing/dmr-bench.md).
-        The ppm is applied in software at analysis time (librtlsdr only takes whole ppm).
+        The ppm is applied in software at analysis time (librtlsdr only takes whole ppm). Without --ppm it is the
+        SDR bench's own calibration (odr_sdrbench.benchcal, a file on the bench host), recorded in FILE.json.
 
     sdrmon.py analyze FILE [--cc 2] [--from MS] [--to MS] [--edges-only] [--dbm-offset DB] [--json OUT]
         Channelizes and FM-demodulates (48 kS/s, 10 samples per symbol), searches every sample for all four sync
@@ -631,7 +632,7 @@ def main() -> int:
         s.add_argument("--freq", type=float, default=461.6875, help="channel MHz")
         s.add_argument("--offset-khz", type=float, default=-200.0, help="channel minus tuner center (kHz)")
         s.add_argument("--rate", type=float, default=1.536e6)
-        s.add_argument("--ppm", type=float, default=0.7)
+        s.add_argument("--ppm", type=float, default=None, help="SDR error (default: the bench's calibration)")
         if name == "capture":
             s.add_argument("--seconds", type=float, required=True)
             s.add_argument("--out", required=True)
@@ -653,6 +654,9 @@ def main() -> int:
             s.add_argument("--json", default=None, help="also write bursts, edges and summary as JSON to this file")
             s.add_argument("--cach", action="store_true", help="decode the CACH of BS-sourced bursts (split duplex)")
     args = ap.parse_args()
+    if args.ppm is None:
+        from odr_sdrbench import benchcal
+        args.ppm = benchcal.sdr_ppm()
     if args.cmd == "capture":
         return cmd_capture(args)
     args.freq_given = "--freq" in sys.argv

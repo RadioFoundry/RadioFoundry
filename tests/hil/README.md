@@ -46,8 +46,9 @@ is back.
 Other options: `--codeplug-backup-dir` (where codeplug_write tests keep their backups, outside the repository), `--tx-power` (bench transmitter level 0-255, default 40), `--dmr-freq` / `--dmr-cc` / `--dmr-tg`
 (DMR test channel, default 461.6875 MHz, color code 2, talkgroup 9), `--noaa-mhz` / `--rssi-floor` (FM test),
 `--ambe` / `$ODR_HIL_AMBE` (speech recording for the voice test), `--shots DIR`, `--sdr-gain` (RTL-SDR gain for
-raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (the SDR's own frequency error: carrier
-offsets are corrected by it), `--max-foff` (largest carrier offset the TX tests accept, default 500 Hz), `--fm-mhz`
+raw captures, default 5 dB; `dmr_bench.py run C0` picks it), `--sdr-ppm` (overrides the SDR's frequency error for
+FM carrier offsets; by default the SDR bench corrects them itself), `--max-foff` (largest carrier offset the TX tests
+accept, default 500 Hz), `--fm-mhz`
 (FM TX test frequency, default 461.6875), `--aprs-call` / `$ODR_APRS_CALL` (test_aprs: the licensed operator's callsign, RAM only), `--aprs-ssid` (default 15), `--aprs-test-mhz` (APRS AFSK test frequency, default 145.090; why in test_aprs.py), `--aprs-dmr-dst` (the DMR position's destination ID, default 9990301), `--roam-beacon` / `--roam-beacon-len` (test_roaming's beacon interval and duration, default 20 s / 3 s), `--roam-rx` / `--roam-tx` (test_roaming's bench repeater site as the radio
 sees it: its receive and transmit MHz; no default).
 

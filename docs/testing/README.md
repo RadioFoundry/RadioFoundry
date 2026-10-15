@@ -141,7 +141,7 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 
 ```
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx" --sdr-ppm 0.7
+python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k aprs --aprs-call CALL   # APRS, 145.090 MHz
 ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s --allow-rf --allow-service-stop
