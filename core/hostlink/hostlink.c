@@ -66,6 +66,7 @@ static bool ppp_on;				// the port carries PPP: its bytes go to core/net/ppp.c, 
 						// protocols run over UDP (the network personality, as on the adapter)
 #endif
 static hostlink_cps_fn cps_handler;
+static bool (*cps_mid_request)(void);
 static const hostlink_side_t *side;
 static const hostlink_tnc_t *tnc;
 static uint32_t last_byte_ms;
@@ -125,9 +126,10 @@ void hostlink_request_ppp(bool on)
 }
 #endif
 
-void hostlink_set_cps_handler(hostlink_cps_fn fn)
+void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void))
 {
 	cps_handler = fn;
+	cps_mid_request = mid_request;
 }
 
 void hostlink_set_side_protocol(const hostlink_side_t *p)
@@ -282,7 +284,10 @@ static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
 {
 	// A side frame's end is a request boundary too, also when the next request comes in a later chunk without the
 	// gap (a debug link client sends its next request as soon as the reply is in)
-	bool new_request = side_ended || ((now - last_byte_ms) >= CPS_GAP_MS);
+	// A CPS request the engine holds part of continues after a gap: a UART delivers it in pieces, and a debug link or
+	// MMDVM start byte in its rest is data (DM-1801 Pro)
+	bool cps_mid = (mode == HOSTLINK_CPS) && (cps_mid_request != NULL) && cps_mid_request();
+	bool new_request = side_ended || (((now - last_byte_ms) >= CPS_GAP_MS) && !cps_mid);
 
 	last_byte_ms = now;
 	while (len > 0) {

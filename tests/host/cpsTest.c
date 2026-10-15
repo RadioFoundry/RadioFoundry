@@ -76,7 +76,7 @@ static size_t request(const uint8_t *buf, size_t len, size_t chunk)
 		cps_feed(buf + off, n, now);
 		off += n;
 	}
-	for (int i = 0; i < 3 && out_len == 0; i++) {
+	for (int i = 0; i < CPS_STALL_MS / 5 + 3 && out_len == 0; i++) {
 		now += 5;
 		cps_feed(NULL, 0, now);
 	}
@@ -361,6 +361,23 @@ static void test_assembly(void)
 	uint8_t r[8] = { 'R', 1, 0, 0, 0x50, 0x00, 0, 16 };
 	request(r, 8, 1);
 	CHECK(out_len == 19 && memcmp(out + 3, data, 16) == 0);
+	// A read header in two pieces with more than the gap between them (a UART's two interrupts, the task held up):
+	// still one read, not a '-' for each piece
+	out_len = 0;
+	cps_feed(r, 4, now);
+	now += CPS_GAP_MS + 2;
+	cps_feed(NULL, 0, now);
+	CHECK(out_len == 0 && cps_mid_request());	// the host link keeps the rest for the engine
+	cps_feed(r + 4, 4, now);
+	CHECK(out_len == 19 && out[0] == 'R' && memcmp(out + 3, data, 16) == 0 && !cps_mid_request());
+	now += 10;
+	// ... but a piece that never gets its rest is answered '-' after the stall
+	out_len = 0;
+	cps_feed(r, 4, now);
+	now += CPS_STALL_MS;
+	cps_feed(NULL, 0, now);
+	CHECK(is_nak());
+	now += 10;
 	// Two requests in one chunk: two replies
 	uint8_t two[16] = { 'R', 1, 0, 0, 0x50, 0x00, 0, 4, 'R', 1, 0, 0, 0x50, 0x04, 0, 4 };
 	request(two, 16, 0);

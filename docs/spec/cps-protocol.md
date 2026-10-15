@@ -22,9 +22,10 @@ the STM32 radios, `hardware-dm1701.md` 16), a UART on radios without (`hardware-
 Once a CPS request is seen, the host link stays in CPS mode, and the shim gets every byte and a tick every pass
 (`cps_feed(NULL, 0, now)`). The session ends at `C 5` (close) or after 10 s without a byte (`CPS_SESSION_MS`). A
 debug link frame (`A5 5A`) arriving between CPS requests is still answered by the debug link, so bench tools can
-watch a CPS transfer. Limitation: if a CPS request pauses for more than 3 ms after a data byte of `0xA5`, the next
-bytes may be taken for a debug frame. qdmr and `tools/cps_client.py` send each request in one write, so this
-doesn't happen with them.
+watch a CPS transfer. While the shim holds part of a request (`cps_mid_request()`), a pause is no request boundary,
+so the rest of the request is never taken for a debug or MMDVM frame. Limitation: a request whose length the header
+doesn't give (`D`, unknown bytes) that pauses for more than 3 ms after a data byte of `0xA5` may still lose its
+next bytes to a debug frame.
 
 ## 2. The open-firmware shim (`core/cps`, `CONFIG_CPS_OPENFW`)
 
@@ -46,6 +47,10 @@ USB gives no request boundaries. A request is complete when its header says so:
 | `C` 6 sub | 3 (`C 6 7` clock: 7) |
 | other `C` | 2 |
 | `D`, unknown | ended by 3 ms of quiet (`CPS_GAP_MS`) |
+
+A request still short of the length its header gives waits for the rest for up to 50 ms of quiet (`CPS_STALL_MS`),
+then whatever came is handled (usually `-`). A UART host port delivers an 8-byte read in two interrupts, and a task
+held up between them for 3 ms used to cut the read short (DM-1801 Pro).
 
 A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next quiet gap and answered `-`
 (`cps.overflows`). Several requests in one USB packet are handled in order.
