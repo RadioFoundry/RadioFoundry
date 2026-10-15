@@ -57,7 +57,9 @@ answered. The DM-1801 Pro's programming cable sits on the microphone / speaker j
 of noise bytes (`0xFC`, `0xFE`) between requests. Answered `-`, such a burst was read as the reply to the next request.
 
 A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next quiet gap and answered `-`
-(`cps.overflows`). Several requests in one USB packet are handled in order.
+(`cps.overflows`). Several requests in one USB packet are handled in order. The debug link's `cps.openfw_eeprom` is
+where the image starts in the flash: what a client adds to its addresses (0 on the STM32 radios, 0x700000 on the
+HR_C7000 ones; `tools/cps_client.py --offset`).
 
 ### 2.2 Reads (`R`)
 

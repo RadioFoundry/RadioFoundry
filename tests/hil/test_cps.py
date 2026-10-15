@@ -23,8 +23,10 @@ QDMR = cps_client.REGIONS["qdmr"]
 
 def cps_session(radio, fn):
     """Run fn(cps) with the debug link closed and the port opened as a CPS client"""
+    # The image's place in the flash (the HR_C7000 radios: 0x700000), what the client adds to its addresses
+    offset = as_int(storage(radio).get("cps.openfw_eeprom"), 0)
     with radio.released() as port:
-        cps = cps_client.open_cps(port, timeout=3.0)
+        cps = cps_client.open_cps(port, timeout=3.0, offset=offset)
         try:
             return fn(cps)
         finally:

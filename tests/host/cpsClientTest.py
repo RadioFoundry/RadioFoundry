@@ -52,7 +52,21 @@ def main():
         cps.t.write = noisy
         check(cps.read(1, 0x3790, 16)[:5] == b"Sim 1", "a read with noise in front")
         check(cps.read(1, 0x3790, 16)[:5] == b"Sim 1", "a read garbled by noise, repeated")
+        # ... and inside the first data block of a write: the sector is read back, differs, and is written again
+        hit = [True]
+        def noisy_data(b):
+            if hit and b[:2] == b"X\x02":
+                hit.pop()
+                b = b[:12] + b"\xfc" + b[12:]
+            real_write(b)
+        cps.t.write = noisy_data
+        noisy_img = bytearray(img)
+        cps_client.set_channel_name(noisy_img, 3, "Noise")
+        cps.write_image(noisy_img, regions, reboot=False, base=bytes(img))
         cps.t.write = real_write
+        check(not hit, "the noise went in")
+        check(cps_client.decode_channel(cps.read_image(regions), 3)["name"] == "Noise", "a write through noise lands")
+        cps.write_image(img, regions, reboot=False, base=bytes(noisy_img))
 
         # Only the sectors that differ from what the radio holds (the HIL write test's way)
         before = bytes(img)
