@@ -218,7 +218,7 @@ all on) and reverses the common outputs; orientation, contrast and bias are to b
 | FM broadcast tuner | I2C 7-bit 0x10 (sequential access; ODR uses 0x11, random access, the same chip's other address), SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable (low = on, from the order of start and stop, not measured); PTA16 audio path | I |
 | Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | LIS3DH class (CTRL1 = 0x47, CTRL4 = 0x88); ODR reads it for the diagnostics page only | I |
 | Unknown | I2C 7-bit 0x3D, SCL PTA5, SDA PTA6 | registers 0x30, 0x40, 0x80, 0x20, 0x22 | ? |
-| Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call | I |
+| Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call; ODR pulses it once at power-on (`hal_power_t.vibrate`), nothing else calls it yet | I |
 
 ## 9. Keys, battery, power
 

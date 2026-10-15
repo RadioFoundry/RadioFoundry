@@ -139,6 +139,9 @@ static const hrc_flash_cfg_t flash_cfg = {
 	.map = &flash_map,
 };
 
+// A short pulse tells the user the radio is on (hardware-dm1801pro.md 8)
+#define POWER_ON_PULSE_MS	300
+
 void board_early_init(void)
 {
 	io_init();
@@ -148,6 +151,7 @@ void board_init(void)
 {
 	hrc_flash_spi0_configure(&flash_cfg);
 	dm1801pro_power.init();
+	dm1801pro_power.vibrate(POWER_ON_PULSE_MS);
 	hrc_flash_spi0.init();
 	bf_cal_load(&hrc_flash_spi0, 0);	// no decoded copy on this radio
 #if CONFIG_BCAST_FM

@@ -7,6 +7,8 @@
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
+#include "FreeRTOS.h"
+#include "timers.h"
 
 #define BAT_FULL_MV		8200u
 #define BAT_EMPTY_MV		6400u
@@ -19,8 +21,29 @@ static bool bat_valid;
 static bool on_level;
 static uint8_t off_count;
 
+static TimerHandle_t vibe_timer;
+
+static void vibe_off(TimerHandle_t t)
+{
+	(void)t;
+	hrc_pin_write(PIN_VIBRATION, false);
+}
+
+// The motor runs for ms and a software timer stops it, so the caller never waits. A call while it runs restarts the time
+static void vibrate(uint16_t ms)
+{
+	if (vibe_timer == NULL || ms == 0) {
+		return;
+	}
+	hrc_pin_write(PIN_VIBRATION, true);
+	xTimerChangePeriod(vibe_timer, pdMS_TO_TICKS(ms), portMAX_DELAY);
+}
+
 static void init(void)
 {
+	if (vibe_timer == NULL) {
+		vibe_timer = xTimerCreate("vibe", 1, pdFALSE, NULL, vibe_off);
+	}
 	hrc_adc_init();
 	hrc_pin_out(PIN_POWER_LATCH, true);
 	hrc_pin_in(PIN_POWER_KEY);
@@ -98,4 +121,5 @@ const hal_power_t dm1801pro_power = {
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,
+	.vibrate = vibrate,
 };

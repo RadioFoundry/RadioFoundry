@@ -79,7 +79,12 @@ The diagnostics page has an `acc` line: x, y and z in milli-g. Lay the radio fla
 and y near 0; tilt it and the values follow. `accel none` means the chip didn't answer: check `PIN_ACCEL_SCL` /
 `PIN_ACCEL_SDA` and the address (`ACCEL_ADDR` in `accel_dm1801pro.c`; 0x18 if the chip's address pin is low).
 
-## 8. After this
+## 8. Vibration motor
+
+The radio vibrates for about 0.3 s when it powers on. No pulse: put a meter on PTB24 (`PIN_VIBRATION`); if the pin moves
+and the motor doesn't, the pin isn't the motor driver (hardware-dm1801pro.md 8 is inferred, no label names it).
+
+## 9. After this
 
 DMR needs the codec recipe and the modem glue and the air band its own receive path. The
 open items are in [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 10.
