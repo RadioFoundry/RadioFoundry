@@ -14,3 +14,8 @@ SPDX-License-Identifier = "BSD-3-Clause"
 path = ["boards/*/radio.json", "site/templates/**", "site/**/*.json", "site/**/*.png", "site/**/*.svg"]
 SPDX-FileCopyrightText = "2026 The OpenDigitalRadio Authors"
 SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["stub/*.bin"]
+SPDX-FileCopyrightText = "2026 The OpenDigitalRadio Authors"
+SPDX-License-Identifier = "MIT"
