@@ -3,12 +3,12 @@
 /* Baofeng DM-1801 Pro, HR_C7000 (CK803S), application behind the Baofeng boot loader (docs/spec/hardware-dm1801pro.md 2).
  *
  * Program flash (XIP, 1 MB at 0x03000000): the boot loader 0x03000000..0x0300C000 (never written), the application
- * from 0x0300C000 to the top. No codec slot yet: DMR isn't built for this board, so the space for the codec's code
- * and tables is decided with the DMR bring-up.
+ * from 0x0300C000 to the top. No codec slot: where this radio's codec lives isn't known (docs/spec/hardware-dm1801pro.md
+ * 12), so DMR runs without voice until the space for it is decided.
  *
  * SRAM (288 KB at 0x10000): the vector table first (VBR, 1 KB aligned), code that must not run from flash
- * (.ramfunc), data, bss (the RTOS heap is inside it), the interrupt stack and the start-up stack at the top. No codec
- * window yet either, so nothing in SRAM is reserved. */
+ * (.ramfunc: interrupt entry, the DMR slot engine and its glue), data, bss (the RTOS heap is inside it), the interrupt
+ * stack and the start-up stack at the top. No codec window, so nothing in SRAM is reserved. */
 
 ENTRY(Reset_Handler)
 
@@ -27,7 +27,7 @@ SECTIONS
 	.text :
 	{
 		KEEP(*(.entry))	/* crt0: the boot loader jumps to the first byte */
-		*(.text .text.*)
+		*(EXCLUDE_FILE(*hrc7000_dmr.o *dmr_glue.o) .text EXCLUDE_FILE(*hrc7000_dmr.o *dmr_glue.o) .text.*)
 		. = ALIGN(4);
 	} >FLASH
 
@@ -48,6 +48,8 @@ SECTIONS
 		. = ALIGN(4);
 		__ramfunc_start = .;
 		*(.ramfunc .ramfunc.*)
+		*hrc7000_dmr.o(.text .text.*)	/* the slot engine: every modem interrupt runs it (modem-hrc7000.md 9 #15) */
+		*dmr_glue.o(.text .text.*)
 		. = ALIGN(4);
 		__ramfunc_end = .;
 	} >RAM AT>FLASH

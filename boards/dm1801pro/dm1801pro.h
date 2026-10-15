@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
+#include "dmr_glue.h"
+#include "audio_pcm.h"
 
 // Ops each board file provides
 extern const hal_display_t dm1801pro_display;
@@ -35,6 +37,8 @@ typedef struct {
 	uint32_t rf_writes;
 } dm1801pro_radio_diag_t;
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
+// DMR PCM to the speaker instead of the FM path (the speaker_pcm hook of hrc_audio_pcm)
+void dm1801pro_speaker_pcm(bool on);
 
 // --- Broadcast FM receiver (bcast_dm1801pro.c, CONFIG_BCAST_FM; the HAL is rda5807m_hal) ---
 void dm1801pro_bcast_init(void);

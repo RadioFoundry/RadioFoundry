@@ -52,7 +52,7 @@ static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 
 const board_t board = {
 	.name = "DM-1801 Pro",
-	.caps = CAP_KEYPAD | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
+	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -70,6 +70,11 @@ const board_t board = {
 #if CONFIG_DIAG
 	.diag_line = dm1801pro_diag_line,
 	.diag_reset = dm1801pro_diag_reset,
+#endif
+#if CONFIG_DMR
+	.dmr = &hrc_dmr,
+	.audio = &hrc_audio_pcm,
+	// No .vocoder: the codec isn't located, so DMR is signaling and data until it is (hardware-dm1801pro.md 12)
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,

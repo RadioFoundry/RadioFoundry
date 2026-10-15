@@ -46,6 +46,13 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 	if (len == 0) {
 		return false;
 	}
+#if CONFIG_DMR
+	// The DMR modem counters first (bring-up), then the board readings
+	if (i < HRC_DMR_DIAG_LINES) {
+		return hrc_dmr_stats_line(i, buf, len);
+	}
+	i -= HRC_DMR_DIAG_LINES;
+#endif
 	out_t o = { buf, buf + len - 1 };
 	dm1801pro_radio_diag_t d;
 	switch (i) {
@@ -120,6 +127,10 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 
 void dm1801pro_diag_reset(void)
 {
+#if CONFIG_DMR
+	hrc_dmr_stats_reset();
+	hrc_audio_pcm_reset_stats();
+#endif
 }
 
 #endif

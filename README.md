@@ -30,7 +30,7 @@ It's early. Read the status section before you flash anything.
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
 | Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Hardware needed. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated ([radios](docs/spec/radios.md)) |
 | Radioddity GD-88 | ○ | ○ | ○ | Planned. Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
-| Baofeng DM-1801 Pro, DM-1801 (current) | ● | ● | ○ | Bring-up started: FM receive and transmit from the factory calibration, display, keys (positions provisional), storage, host link. No DMR yet; not run on a radio ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md)) |
+| Baofeng DM-1801 Pro, DM-1801 (current) | ● | ● | ○ | Bring-up started: FM receive and transmit from the factory calibration, display, keys (positions provisional), storage, host link. DMR without voice (the codec isn't located), vibration at power-on, broadcast tuner hardware; not run on a radio ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md)) |
 | Radioddity DB40-D (mobile) | ○ | ○ | ○ | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port |
 
 ● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet

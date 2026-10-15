@@ -144,6 +144,20 @@ above 200 MHz the PTB pin high and the PTA pin low, below the reverse; both low 
 PTB high = UHF side (I). Separate TX and RX band outputs, unlike the DM-32UV's PA selects and LNA supplies. PA drive is DAC
 channel B (12 bit, the calibration byte times 16), ramped in 40 steps. K.
 
+### 5.6 DMR
+
+The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM audio are the DM-32UV's, shared
+(`platform/hrc7000/dmr_glue.c`, `audio_pcm.c`). The board supplies three hooks (`radio_dm1801pro.c`):
+
+- **Per-burst RF switch** (the RF TX interrupt): FD6818 idle, the TX sequence, register 0x50 = 3B18; after the burst the
+  drive goes to 0 and the RX sequence runs with the DMR bandwidth word 0x3048. The radio's own per-burst handlers are not
+  decoded (?), so this is the RX and TX sequences of 5.4. Each frame takes about five times the DM-32UV's, so a switch is
+  about a millisecond with interrupts off; whether the slot timing tolerates that is a bench question.
+- **PA key:** the TX path comes on when the transmission starts and the DAC B drive is set 28 ms after each burst is armed
+  (the DM-32UV's delay; this radio's isn't known, ?), in one write: a ramp doesn't fit in a burst.
+- **Voice:** no vocoder. The codec's location in this radio isn't known, so DMR runs without voice until it is: the
+  core's signaling and data work, a call has no audio.
+
 ## 6. Flash
 
 ### 6.1 Data flash (16 MB, SPI0)
@@ -251,7 +265,7 @@ receiving and orange flashing while scanning.
 
 - The key map: matrix positions and the four direct pins.
 - Which menu power level uses which calibration array; the lists at 0x300 / 0x314 / 0x328 / 0x33C.
-- The 12.5 kHz bandwidth word; the VHF / UHF side of the path pins; the DMR per-burst handlers.
+- The 12.5 kHz bandwidth word; the VHF / UHF side of the path pins; the DMR per-burst handlers and PA delay.
 - The display controller, orientation and contrast.
 - The audio amplifier enable, the FM tuner audio path, the DAC C value.
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
@@ -264,7 +278,7 @@ receiving and orange flashing while scanning.
 | Part | Where |
 |---|---|
 | SoC, interrupt, timer, GPIO, SSI, UART, ADC, data flash | `platform/hrc7000` |
-| Modem (FM, later DMR) | `drivers/modem/hrc7000` |
+| Modem (FM and DMR) | `drivers/modem/hrc7000`; `platform/hrc7000` for the DMR glue and PCM audio |
 | RF chip | `drivers/rf/fd6818`, variant `fd6818_variant_dm1801pro` |
 | Display | `drivers/display/st7567` |
 | Keys | `drivers/input/keymatrix` |
@@ -275,8 +289,14 @@ receiving and orange flashing while scanning.
 
 ## 12. Bring-up state
 
-Builds and passes its host tests; hasn't run on a radio. In: the UI on the 128x64 display, keys (provisional table), the
-data flash and the open-firmware codeplug, battery, FM receive, FM transmit from the factory calibration (refused
-without it), the host link. the broadcast FM tuner (the radio side only: the core's tuner task and screens are parked, [airband-and-broadcast.md](airband-and-broadcast.md)). the accelerometer on the diagnostics page. Not in: DMR (the codec recipe and the modem glue), the air
-band, USB (the radio has none), the vibration motor. The first power-on follows
+Builds and passes its host tests; hasn't run on a radio. In:
+
+- the UI on the 128x64 display, the keys (provisional table), the data flash and the open-firmware codeplug, the battery
+- FM receive, and FM transmit from the factory calibration (refused without it)
+- DMR signaling and data through the shared HR_C7000 glue, without voice (no codec)
+- the broadcast FM tuner, radio side only: the core's tuner task and screens are parked
+  ([airband-and-broadcast.md](airband-and-broadcast.md))
+- the vibration motor (one pulse at power-on), the accelerometer on the diagnostics page, the host link
+
+Not in: DMR voice (the codec), the air band, USB (the radio has none). The first power-on follows
 [the bring-up checklist](../testing/dm1801pro-bringup.md).

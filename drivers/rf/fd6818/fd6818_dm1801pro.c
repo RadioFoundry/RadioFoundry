@@ -23,9 +23,17 @@ static const fd6818_regval_t init_table[] = {
 	{ 0x21, 0x06D8 }, { 0x24, 0x8C7E },
 };
 
-// Analog FM: AF muted until the receive path asks for audio, then the 0x2B mode word
+// Analog FM: AF muted until the receive path asks for audio, then the 0x2B mode word. 0x48 is its power-on value
+// again, since the DMR set changes it
 static const fd6818_regval_t fm_table[] = {
-	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x6042 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
+	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x6042 }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
+};
+
+// 5.4 "Mode select": DMR is these five registers (0x28 is its power-on value, written again). The per-burst handlers
+// that follow in the radio's own sequence (5.4's open item) are not known, so the burst switch is the RX and TX
+// sequences
+static const fd6818_regval_t dmr_table[] = {
+	{ 0x47, 0x0140 }, { 0x48, 0xB2F5 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 },
 };
 
 // 5.4: 0x37 first, the DM-32UV's 0x30 steps with a 0x0200 between idle and the final word
@@ -44,6 +52,7 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 const fd6818_variant_t fd6818_variant_dm1801pro = {
 	.init = init_table, .init_n = TBL_N(init_table),
 	.fm = fm_table, .fm_n = TBL_N(fm_table),
+	.dmr = dmr_table, .dmr_n = TBL_N(dmr_table),
 	.rx = rx_seq, .rx_n = TBL_N(rx_seq),
 	.tx = tx_seq, .tx_n = TBL_N(tx_seq),
 	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x2028u, .bw_dmr = 0x3048u,
