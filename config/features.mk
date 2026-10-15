@@ -148,6 +148,10 @@ CONFIG_BCAST_FM ?= n
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
 # PCM stream it borrows). A diagnostic, never for a release
 CONFIG_AUDIO_PROBE ?= n
+# runtime RAM-monitor entry: debug link command 0x1A loads the host's flash-access stub into free RAM and jumps to it
+# without a power cycle, for bench recovery and flash work (docs/spec/debuglink.md 3.18, hardware-dm32.md 17.2; needs
+# DEBUGLINK and a platform with hal_system_t.enter_stub, the HR_C7000 so far). A bench tool, off in a release
+CONFIG_STUB_ENTRY ?= n
 
 # APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions
 # over DMR (LRRP / UDT), a KISS TNC on the host port. Transmit stays off until the user turns it on (needs FM)
@@ -161,7 +165,7 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE AUDIO_PROBE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST
+	VOX BATTERY_SAVE AUDIO_PROBE STUB_ENTRY AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -253,6 +257,11 @@ ifneq ($(call feature_on,AUDIO_PROBE),)
   ifeq ($(call feature_on,DEBUGLINK)$(call feature_on,DMR),yy)
   else
     $(error CONFIG_AUDIO_PROBE=y needs CONFIG_DEBUGLINK=y and CONFIG_DMR=y)
+  endif
+endif
+ifneq ($(call feature_on,STUB_ENTRY),)
+  ifeq ($(call feature_on,DEBUGLINK),)
+    $(error CONFIG_STUB_ENTRY=y needs CONFIG_DEBUGLINK=y)
   endif
 endif
 ifneq ($(call feature_on,APRS_RX),)
