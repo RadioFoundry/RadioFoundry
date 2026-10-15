@@ -445,6 +445,53 @@ static void test_fm_rx_keeps_pcm(void)
 	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_FM_PLAY);
 }
 
+// FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
+static void test_tx_tone(void)
+{
+	setup();
+	REG(C7_SUBVOICE_COEF) = 0x07D00930u;
+	hrc7000_tx_tone(&dev, 1750, hrc7000_dtmf_dev(467375000u, false));
+	CHECK(REG(C7_FM_TONE1) >> 16 == 3584u && REG(C7_FM_TONE3) >> 16 == 3584u);	// round(1750 x 2.048)
+	CHECK((REG(C7_FM_TONE1) & 0xFFFFu) == 0x0629u && (REG(C7_FM_TONE3) & 0xFFFFu) == 0x0AB0u);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D0C030u);
+	CHECK(REG(C7_FM_MOD) & 0x2u);
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0x81u);	// digit 1 on, voice muted
+	hrc7000_tx_tone(&dev, 1200, 0xC0);	// a new tone keeps the saved deviation
+	hrc7000_tx_tone_key(&dev, false);
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0x01u);
+	hrc7000_tx_tone_key(&dev, true);
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0x81u);
+	hrc7000_fm_idle(&dev);
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0 && (REG(C7_FM_MOD) & 0x2u) == 0);
+	CHECK(REG(C7_FM_TONE1) == 0x05930629u && REG(C7_FM_TONE3) == 0x09AC0AB0u);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D00930u && !dev.tone_on);
+	hrc7000_tx_tone_key(&dev, true);	// no tone: nothing
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0);
+	CHECK(hrc7000_dtmf_dev(446000000u, false) == 0xC0u && hrc7000_dtmf_dev(446000000u, true) == 0xFFu);
+}
+
+// Sub-audio: DCS TX code in CDCSS_ADDR b24:16 and RX in b8:0 (swapped from the guide, SDR bench); the sub-audio
+// deviation doubles at 25 kHz
+static void test_subtone(void)
+{
+	setup();
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS, 0023);
+	CHECK(REG(C7_CDCSS_ADDR) == (0023u << 16) && (REG(C7_FM_MOD) & 0x4u));
+	hrc7000_set_subtone(&dev, false, HRC7000_TONE_DCS, 0754);
+	CHECK(REG(C7_CDCSS_ADDR) == ((0023u << 16) | 0754u));
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
+	CHECK(REG(C7_FM_MOD) & (1u << 11));
+	dev.subaudio_dev = 0x28;
+	REG(C7_SUBVOICE_COEF) = 0x07D02810u;
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D05010u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D02810u);
+	dev.subaudio_dev = 0x90;
+	hrc7000_fm_tx(&dev, true);	// capped at the field's top
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D0FF10u);
+}
+
 int main(void)
 {
 	test_pure();
@@ -455,6 +502,8 @@ int main(void)
 	test_polite_and_repeater();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
+	test_tx_tone();
+	test_subtone();
 	if (failures) {
 		printf("hrc7000DmrTest: %d failures\n", failures);
 		return 1;

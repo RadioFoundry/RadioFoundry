@@ -33,6 +33,8 @@ static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
 static bool transmitting;
+static uint32_t tx_hz;		// FM TX frequency and bandwidth, for the TX tone deviation
+static bool tx_wide;
 static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key the PA
 static volatile bool tx_uhf;
 static volatile uint16_t tx_drive;	// DAC B value for the transmission
@@ -245,7 +247,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		dmr_keyed = true;
 	} else {
 		fd6818_fm_tx_prepare(&fd);
-		hrc7000_fm_tx(&modem, bw == RADIO_BW_25K);
+		tx_hz = hz;
+		tx_wide = bw == RADIO_BW_25K;
+		hrc7000_fm_tx(&modem, tx_wide);
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
 			tone != NULL ? tone->value : 0);
 		hrc_pin_write(PIN_MIC_PATH, true);
@@ -269,6 +273,26 @@ static void tx_off(void)
 		subtone_t t = rx_tone;
 		rx(rx_hz, rx_bw, &t);
 	}
+}
+
+// FM TX tone (1750 Hz burst, roger beep, Morse): the modem's DTMF sender as a single tone (modem-hrc7000.md 8.3).
+// hrc7000_fm_idle() at the end of the transmission gives the microphone back
+static bool tx_tone(uint16_t hz)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	hrc7000_tx_tone(&modem, hz, hrc7000_dtmf_dev(tx_hz, tx_wide));
+	return true;
+}
+
+static bool tx_tone_key(bool down)
+{
+	if (!transmitting || mode != RADIO_MODE_FM || !modem.tone_on) {
+		return false;
+	}
+	hrc7000_tx_tone_key(&modem, down);
+	return true;
 }
 
 static void status(radio_status_t *st)
@@ -315,6 +339,8 @@ const hal_radio_t dm32_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+	.tx_tone = tx_tone,
+	.tx_tone_key = tx_tone_key,
 	.status = status,
 	.audio = audio,
 	.volume = NULL,

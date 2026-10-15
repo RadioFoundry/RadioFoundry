@@ -422,7 +422,7 @@ information bits in the RX RAM (DS, BIN).
 | 0x510 | FM_MOD | b23:16 repeat-symbol threshold; b15:14 XTCSS length; b13:12 CTCSS reverse-burst mode (01 = 240°, 10 = 180°); b11 CDCSS TX invert; b10 CDCSS RX invert; b9 CDCSS turn-off code; b8 XTCSS EOM; b4 selcall; **b3 CTCSS; b2 CDCSS; b1 DTMF**; b0 XTCSS | |
 | 0x518 | CTCSS_ADDR | b15:8 RX tone address, b7:0 TX tone address (table 8.2) | |
 | 0x51C | USER_DEFINE_CTC | b31 enable, b20:0 step = round(f × 65.536) | non-standard tones |
-| 0x520 | CDCSS_ADDR | b24:16 RX code, b8:0 TX code (the 9-bit DCS code as binary, e.g. 114 octal = 001 001 100) | |
+| 0x520 | CDCSS_ADDR | b24:16 TX code, b8:0 RX code (the 9-bit DCS code as binary, e.g. 114 octal = 001 001 100). The guide has them the other way round (BENCH: with 754 / 023 in b24:16 / b8:0 the radio sent D754, and the other way D023). The TX code takes effect only when the field changes while FM_MOD b2 is on: written before b2, or rewritten with its own value, the radio sent D000 (BENCH). RX not yet checked | |
 | 0x524 | SELCALL_TONE | 2/5-tone frequency | |
 | 0x528 | TONE_SEND_CTRL | b9 selcall send; b8 selcall finish; **b7 dtmf_send; b6 dtmf_finish (0 mutes voice during signaling); b3:0 DTMF digit** | |
 | 0x550–0x55C | FM_TONE1..4 | two 16-bit DTMF tone steps each | 8.3 |
@@ -459,7 +459,9 @@ Standard CTCSS addresses (DS table 59; RX uses the same addresses in CTCSS_ADDR 
 | 0x0D | 103.5 | 0x1A | 162.2 | 0x27 | 69.3 | | |
 
 The address order is not ascending; map from frequency, not from a list index. Other tones: USER_DEFINE_CTC. TX
-sub-audio deviation via SUBVOICE_COEF b15:8 (typical 350 Hz narrow, 600 Hz wide). When FM_PTT drops, the chip sends
+sub-audio deviation via SUBVOICE_COEF b15:8 (typical 350 Hz narrow, 600 Hz wide). The FM_BANDWIDTH bits don't scale
+it: the reset value 0x28 gives 300 Hz CTCSS at both bandwidths, and ODR writes 0x50 at 25 kHz (600 Hz) (BENCH,
+DM-1801 Pro UHF). DCS at 0x28 measured about 100 Hz. When FM_PTT drops, the chip sends
 the reverse burst / turn-off code before stopping (DS). On a detected tone the FM signaling system interrupt fires
 (SYS_INTERP_LIST b13) and FM_DECODE_FLAG2 b0 (CTCSS) or b1 (CDCSS) goes 1, back to 0 at the end (DS). CDCSS tail
 detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz) (DS).
@@ -470,9 +472,9 @@ detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz) (DS).
 |---|---|---|
 | Tone step | round(f × 2.048) (= f × 65536 / 32000) | DS |
 | Default tone registers | FM_TONE1 = 697 / 770 Hz (0x0593 / 0x0629), FM_TONE2 = 852 / 941 (0x06D1 / 0x0787), FM_TONE3 = 1209 / 1336 (0x09AC / 0x0AB0), FM_TONE4 = 1477 / 1633 (0x0BD1 / 0x0D10); high half = first tone | DS |
-| DTMF deviation (SUBVOICE_COEF b15:8) | UHF: 0x24 (25 kHz), 0x12 (12.5 kHz); VHF: 0x75 (25 kHz), 0x3A (12.5 kHz) (UHF above 300 MHz) | KP |
+| DTMF deviation (SUBVOICE_COEF b15:8) | KP: UHF 0x24 (25 kHz), 0x12 (12.5 kHz); VHF 0x75 / 0x3A. Measured (BENCH, DM-1801 Pro UHF, 1750 Hz single tone): about 5.8 Hz per step, 0x60 = 559 Hz, 0xC0 = 1117 Hz; KP's 0x12 is about 100 Hz. ODR uses 0xC0 at 12.5 kHz and 0xFF (the most, about 1.5 kHz) at 25 kHz; VHF unmeasured | KP, BENCH |
 | Send sequence | FM_MOD b1 = 1; FM_PTT = 1; TONE_SEND_CTRL b6 = 0 (mute voice); AUDIO_CONTROL b3 = 1 for sidetone; TONE_SEND_CTRL b3:0 = digit; b7 = 1 to start the digit, b7 = 0 to end it; repeat per digit; finally b6 = 1 to restore voice | DS |
-| Arbitrary single tone | write the tone step into the high halves of FM_TONE1 and FM_TONE3 and send DTMF digit "1" (697 + 1209 pair), restore the defaults after | KP |
+| Arbitrary single tone | write the tone step into the high halves of FM_TONE1 and FM_TONE3 and send DTMF digit "1" (697 + 1209 pair), restore the defaults after. On air at 1750 Hz on the DM-1801 Pro (BENCH): TONE_SEND_CTRL = 0x81 (digit 1 on, voice muted) with FM_MOD b1 set, 0 afterwards (the reset value) | KP, BENCH |
 | Receive | FM_MOD b1 = 1; SUBVOICE_COEF b27:16 = 1056 (33 ms at 32 kHz), b7:0 threshold; FM_FUNCTION_COEF1..8 = 0x7ECD9D, 0x7E8A34, 0x7E368C, 0x7DD245, 0x7C690D, 0x7B9F03, 0x7AA7A8, 0x7979F5; read FM_DECODE_FLAG2 b11:8 on each signaling interrupt; FM_MOD b23:16 sets the repeat-symbol window | DS |
 
 ### 8.4 Prompt / beep FIFO
