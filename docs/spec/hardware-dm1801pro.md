@@ -155,8 +155,8 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   about a millisecond with interrupts off; whether the slot timing tolerates that is a bench question.
 - **PA key:** the TX path comes on when the transmission starts and the DAC B drive is set 28 ms after each burst is armed
   (the DM-32UV's delay; this radio's isn't known, ?), in one write: a ramp doesn't fit in a burst.
-- **Voice:** no vocoder. The codec's location in this radio isn't known, so DMR runs without voice until it is: the
-  core's signaling and data work, a call has no audio.
+- **Voice:** no vocoder yet. The codec is located (6.5) but not hosted: ODR has no slot tool, driver or call wrapper
+  for it on this board, so DMR runs without voice: the core's signaling and data work, a call has no audio.
 
 ## 6. Flash
 
@@ -227,6 +227,24 @@ value. Which menu power level uses which of the three arrays, how the 0x300 and 
 ones) differ in use, and the unlabeled fields are open. The ADC and the register 0x40 / CTCSS calibration bytes
 have no located source.
 
+### 6.5 The codec in the program flash
+
+The radio's own firmware carries the DM-32UV's 049 codec ([codec-dm32.md](codec-dm32.md)), rebuilt with the data tables
+0x48 bytes higher. It is located in the full program flash image (sha256 `072ece15...9f29e42a`); nothing has run.
+
+| Item | Value | Tag |
+|---|---|---|
+| Code | flash 0xA22F0..0xB68F0 (0x14600 bytes), which the start-up code copies to RAM 0x00016CDC..0x0002B2DC (the RAM block is flash 0x9B614 to RAM 0x10000) | K |
+| Signature | first words 0x152514D8, 0x74C776CD, as in the DM-32UV | K |
+| Code sha256 | `8f7641b6...3f1a42` | K |
+| Tables | flash 0x68770 (length 0x2F78), RAM 0x18000EF0..0x18003E68 (the data image is flash 0x68080 to RAM 0x18000800) | K |
+| Tables sha256 | `10684c33...4eb0b0e1`, the same as the DM-32UV's 049 tables | K |
+| Against the 049 code | 82 literal words that point into the tables are 0x48 higher; 29 words differ inside the three non-codec ranges the DM-32UV notes exclude (RAM 0x17270..0x1732C, 0x1CDBC..0x1D4C8, 0x1E8BC..0x1FE64); every other byte is equal | K |
+
+So the codec entry points are the 049 offsets from the code start (decode +0x0000, encode +0x0260, and the rest of the
+table in codec-dm32.md). Hosting it needs the tables at 0x18000EF0, or the 82 pointers moved back by 0x48 as on the
+DM-32UV. How it is called (state blocks, flags words) and the codec's frame path to the C7000 are not traced.
+
 ## 7. Display
 
 128 x 64 pixels, page addressed: page command 0xB0 + n, column address 4 (so the controller has 132 columns and the
@@ -279,7 +297,7 @@ receiving and orange flashing while scanning.
 - The audio amplifier enable, the FM tuner audio path, the DAC C value.
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
-- Which key PTB26 is (update mode needs it with PTT), the update file header, and the codec's location (DMR voice).
+- Which key PTB26 is (update mode needs it with PTT), the update file header, and the codec's call path (DMR voice; its location is 6.5).
 - Whether PTB24 is the motor and PTA16 the FM audio path (a meter settles both).
 
 ## 11. What ODR reuses
@@ -302,10 +320,10 @@ Builds and passes its host tests; hasn't run on a radio. In:
 
 - the UI on the 128x64 display, the keys (provisional table), the data flash and the open-firmware codeplug, the battery
 - FM receive, and FM transmit from the factory calibration (refused without it)
-- DMR signaling and data through the shared HR_C7000 glue, without voice (no codec)
+- DMR signaling and data through the shared HR_C7000 glue, without voice (the codec is located, not hosted)
 - the broadcast FM tuner, radio side only: the core's tuner task and screens are parked
   ([airband-and-broadcast.md](airband-and-broadcast.md))
 - the vibration motor (one pulse at power-on), the accelerometer on the diagnostics page, the host link
 
-Not in: DMR voice (the codec), the air band, USB (the radio has none). The first power-on follows
+Not in: DMR voice (hosting the codec), the air band, USB (the radio has none). The first power-on follows
 [the bring-up checklist](../testing/dm1801pro-bringup.md).

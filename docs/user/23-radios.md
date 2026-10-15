@@ -342,7 +342,7 @@ backlight is on or off.
 
 ### What the DM-1801 Pro lacks today
 
-DMR runs without voice: ODR doesn't know where this radio's codec is, so calls have no audio. No air band receive. The
+DMR runs without voice: ODR doesn't host this radio's codec yet, so calls have no audio. No air band receive. The
 broadcast FM tuner is wired, but the screens for it aren't built yet, and the motor only vibrates once at power-on.
 
 ## Planned radios

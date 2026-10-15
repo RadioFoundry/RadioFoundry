@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # DM-1801 Pro feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-dm1801pro.md 12):
-# the UI, keys, data flash, battery, analog FM, DMR without voice (the codec isn't located) and the broadcast tuner,
+# the UI, keys, data flash, battery, analog FM, DMR without voice (the codec isn't hosted yet) and the broadcast tuner,
 # none of it run on a radio yet. Transmit needs the calibration to be found, so it is refused without it
 # No USB data port: the host link (CPS, hotspot, debug link) runs on the programming cable's UART0
 CONFIG_USB ?= n
