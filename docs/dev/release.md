@@ -90,6 +90,7 @@ hold the codec. Whether an update can leave the codec alone (keep) depends on th
 | dm1701 | sectors 3-6 (336 KB), and sector 9 (128 KB) for read-only data | sectors 7-8 (code) and 10-11 (tables), stock addresses | yes | [hardware-dm1701.md](../spec/hardware-dm1701.md) 1.4 |
 | md380 | 0x0800C000..0x08050C43 (281,668 B), into sector 6 | from 0x08050C44: shares sector 6 with the application | no | [hardware-md380.md](../spec/hardware-md380.md) 1.3 |
 | dm32 | 0x0300C000..0x030E8000 (880 KB) | slot 0x030E8000..0x03100000 | no: the updater erases the whole area | [hardware-dm32.md](../spec/hardware-dm32.md) 17 |
+| dm1801pro | 0x0300C000..0x03100000 (976 KB) | none yet | no: the updater erases the whole area | [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2 |
 
 ## Sector 9
 

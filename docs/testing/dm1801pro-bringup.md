@@ -10,9 +10,13 @@ is the order to try it in, what each step proves, and what to change when it doe
 
 1. **Back up both flashes** (1 MB program flash, 16 MB data flash). The port never writes the data flash below
    0x700000 and never touches the boot loader, but a backup is the only way back from a mistake.
-2. Find how the radio enters update mode and confirm it works before the first flash: it is the recovery path for every
-   step below ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2 lists what isn't known).
-3. There is no flashing route for this board yet (`odrflash` has no entry for it). Loading the first image needs one.
+2. Confirm update mode before the first flash: it is the recovery path for every step below. The loader stays in it while
+   PTT and the key on PTB26 are held at power-on ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2); which key
+   that is isn't known, so try SK1 and then each side key. `python3 tools/dm32_flash.py --model dm1801pro --dry-run IMAGE`
+   checks the image and the cable first.
+3. Flash: `python3 tools/dm32_flash.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
+   It has only run against a simulated loader. The first real run settles the unchecked parts: the update file header,
+   the NAK behavior and the erase time. `odrflash` knows the board's flash map but has no serial route yet.
 4. Build: `make BOARD=dm1801pro` (csky-elf GCC: `tools/build-csky-toolchain.sh`).
 
 ## 1. Power and display

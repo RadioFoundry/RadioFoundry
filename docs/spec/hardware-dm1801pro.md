@@ -183,8 +183,17 @@ OpenDM32's calibration copy.
 ### 6.2 Program flash (1 MB, execute in place)
 
 Boot loader at 0x1000, application at 0x0C000 and up. The application doesn't erase or program the program flash. The
-loader serves the same four frame types as the DM-32UV's (`R` then `M`, `G`, `V`, `E`; [hardware-dm32.md](hardware-dm32.md)
-13.2); its erase and program steps and any image check aren't traced. Update mode entry and the file format are open.
+loader speaks the DM-32UV's update protocol ([hardware-dm32.md](hardware-dm32.md) 13.2), which was traced against it:
+
+| Step | The loader |
+|---|---|
+| 1-4 | `R` answers `06`; `M` answers `4D 01 <n>` where n is the length of the ID string (9), then after `06` sends the ID `BF1801-V1`; `V` answers `02 0C`; `E` answers `06`. `G` is served too (reads up to 0x20 bytes) |
+| 5-9 | `31` starts a receiver that sends `C` and takes XMODEM-CRC / YMODEM frames: `01` (128 B) and `02` (1024 B), block number and complement, CRC-16/XMODEM (polynomial 0x1021, initial 0) big endian, `04` to end, `18` (CAN) twice to abort. Block 0 holds the file name, NUL and the size in ASCII; a size above 0xF4002 is refused, then the application area is erased and `06 43` answered. Each good block is answered `06` |
+| Entry | The loader stays in update mode when GPIO 43 (PTB11) and 58 (PTB26) both read low; otherwise it starts the application. Which key PTB26 is isn't known; PTB11 is PTT on the DM-32UV |
+
+The file format (a 256-byte header with the ID as magic, as on the DM-32UV) is assumed, not seen. `tools/dm32_flash.py
+--model dm1801pro` writes through this protocol; it has only run against the simulated loader. The loader at 0x1000 is
+never written.
 
 ### 6.3 Identity read
 
@@ -270,7 +279,7 @@ receiving and orange flashing while scanning.
 - The audio amplifier enable, the FM tuner audio path, the DAC C value.
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
-- The update path and image format; the codec's location (DMR voice).
+- Which key PTB26 is (update mode needs it with PTT), the update file header, and the codec's location (DMR voice).
 - Whether PTB24 is the motor and PTA16 the FM audio path (a meter settles both).
 
 ## 11. What ODR reuses

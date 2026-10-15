@@ -88,6 +88,16 @@ class SectorMap(unittest.TestCase):
         self.assertEqual(boards.MD380.data_regions, [])
 
 
+    def test_dm1801pro_matches_its_linker_script(self):
+        b = boards.get("dm1801pro")
+        self.assertEqual((b.app_base, b.flash_end, b.family), (0x0300C000, 0x03100000, boards.DM32.family))
+        self.assertEqual(b.codec_sectors(), [])
+        self.assertEqual(b.protected, boards.DM32.protected)
+        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1801pro", "dm1801pro.ld")).read()
+        self.assertIn("ORIGIN = 0x0300C000, LENGTH = 0x03100000 - 0x0300C000", ld)
+        self.assertIs(boards.from_debuglink_name("DM-1801 Pro"), b)
+
+
 class Planning(unittest.TestCase):
     def test_keep_small_image(self):
         img = app_image(5000)
