@@ -524,10 +524,13 @@ def main():
     if os.path.exists(args.capture + '.json'):
         with open(args.capture + '.json') as f:
             meta = json.load(f)
-    if args.center is None:
-        args.center = float(meta.get('center', 0.0))
-    if args.ppm is None:
-        args.ppm = float(meta.get('ppm', 0.0))
+    for key, flag in (('center', '--center'), ('ppm', '--ppm')):
+        rec = float(meta.get(key, 0.0))
+        given = getattr(args, key)
+        if given is None:
+            setattr(args, key, rec)
+        elif key in meta and given != rec:
+            sys.stderr.write("your %s %g overrides the capture's recorded %g\n" % (flag, given, rec))
     if args.chunk % (D1 * D2 * D3):
         args.chunk -= args.chunk % (D1 * D2 * D3)
     return analyze(args)

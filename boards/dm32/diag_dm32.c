@@ -117,9 +117,9 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 	case 7:
 		put(&o, "codec ");
-		if (dm32_vocoder_tag() != 0) {
+		if (hrc_vocoder_tag() != 0) {
 			put(&o, "0");
-			put_u(&o, dm32_vocoder_tag());
+			put_u(&o, hrc_vocoder_tag());
 		} else {
 			put(&o, "none");
 		}

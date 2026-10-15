@@ -11,6 +11,7 @@
 #include "hal_flash.h"
 #include "dmr_glue.h"
 #include "audio_pcm.h"
+#include "vocoder.h"
 
 // The data flash is the shared SPI0 one (platform/hrc7000/flash_spi0.c, configured in board.c)
 extern hal_flash_t hrc_flash_spi0;
@@ -21,7 +22,6 @@ extern const hal_display_t dm32_display;
 extern const hal_input_t dm32_input;
 extern const hal_radio_t dm32_radio;
 extern const hal_power_t dm32_power;
-extern const hal_vocoder_t dm32_vocoder;
 
 // Physical key bits returned by dm32_input.scan() (matrix in docs/spec/hardware-dm32.md 6.1, 6.2)
 enum {
@@ -52,6 +52,5 @@ typedef struct {
 void dm32_radio_diag(dm32_radio_diag_t *d);
 bool dm32_diag_line(uint8_t i, char *buf, uint8_t len);
 void dm32_diag_reset(void);
-uint8_t dm32_vocoder_tag(void);	// 49 or 46: the stock codec in the slot, 0 none
 
 #endif

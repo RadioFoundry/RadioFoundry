@@ -238,6 +238,9 @@ def cmd_analyze(args) -> int:
     meta = json.load(open(args.file + ".json")) if os.path.exists(args.file + ".json") else \
         {"freq": args.freq * 1e6, "center": args.freq * 1e6 - args.offset_khz * 1e3, "fs": args.rate,
          "fmt": "cu8" if args.file.endswith("cu8") else "cs8", "ppm": args.ppm, "t0": None}
+    if args.ppm is not None and meta.get("ppm") is not None and args.ppm != meta["ppm"]:
+        print(f"your --ppm {args.ppm:g} overrides the capture's recorded {meta['ppm']:g}", file=sys.stderr)
+        meta["ppm"] = args.ppm
     f, p = _load(args.file, meta, args.freq * 1e6 if args.freq_given else None)
     n = len(f)
     ms = lambda i: i / FS_CH * 1000.0  # noqa: E731
@@ -654,9 +657,9 @@ def main() -> int:
             s.add_argument("--json", default=None, help="also write bursts, edges and summary as JSON to this file")
             s.add_argument("--cach", action="store_true", help="decode the CACH of BS-sourced bursts (split duplex)")
     args = ap.parse_args()
-    if args.ppm is None:
+    if args.cmd == "capture" or not os.path.exists(args.file + ".json"):     # analyze: the capture's own record wins
         from odr_sdrbench import benchcal
-        args.ppm = benchcal.sdr_ppm()
+        args.ppm = benchcal.resolve("--ppm", args.ppm, "sdr_ppm")
     if args.cmd == "capture":
         return cmd_capture(args)
     args.freq_given = "--freq" in sys.argv
