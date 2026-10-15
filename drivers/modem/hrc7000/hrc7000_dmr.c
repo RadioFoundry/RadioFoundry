@@ -41,6 +41,8 @@
 #define CC_SCAN_TICKS		4u	// color code scan: next code after 120 ms of nothing
 #define CC_HOLD_TICKS		167u	// ... held 5 s after the last burst
 #define BUSY_TICKS		12u	// polite access: activity in the last 360 ms
+#define RX_LOST_TICKS		13u	// a reception is over (390 ms without a burst taken)
+#define RX_IDLE_TICKS		20u	// slot timing but nothing taken for 600 ms: the timing is stale
 #define PA_OFF_US		20000u	// the PA goes off at the first tick at least this long after the RF TX interrupt
 #define STALL_US		200000u
 #define SYS_LOOPS		4u
@@ -182,9 +184,12 @@ static uint32_t tick_arg(const hrc7000_dmr_t *e)
 	return e->tick != 0 ? e->tick : 1u;
 }
 
-// 5.2 steps 2-7: burst F EMB from the chip, passive timing, drop slot sync, receive the next slot, slots on
+// 5.2: the DMR state machine reset through FM (step 1, the WORK_MODE pair of 5.1), burst F EMB from the chip, passive
+// timing, drop slot sync, receive the next slot, slots on
 static void chip_rx_restart(hrc7000_dmr_t *e)
 {
+	w(e, C7_WORK_MODE, C7_WORK_MODE_FM);
+	w(e, C7_WORK_MODE, C7_WORK_MODE_DMR);
 	w(e, C7_VOICE_EMB_CTRL, 0x02);
 	w(e, C7_LAYER2_CONTROL, L2_PASSIVE);
 	w(e, C7_LAYER2_SLOTON, SLOTON_OFF);
@@ -194,7 +199,29 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	e->voice_chip_slot = -1;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->emb_pending = false;
+	e->resync_tick = e->tick;
 	e->st.rx_restarts++;
+}
+
+// The receiver's slot timing is dropped (5.2) when it stops giving bursts: at the end of a reception, and while the
+// chip keeps the timing of a sender that left (it then only reports unusable and abnormal slots and takes no new
+// call). Timeslot interrupts stop once the timing is released, so an empty channel sees no more restarts. Only with
+// a color code set: the color code scan restarts the receiver itself
+static void rx_resync(hrc7000_dmr_t *e)
+{
+	if (e->cc_filter < 0) {
+		return;
+	}
+	uint32_t quiet = e->tick - (e->rx_any ? e->rx_tick : e->resync_tick);
+	if (quiet > (e->rx_any ? RX_LOST_TICKS : RX_IDLE_TICKS)) {
+		if (e->rx_any) {
+			e->st.rx_lost++;
+		} else {
+			e->st.rx_stale++;
+		}
+		chip_rx_restart(e);
+		e->rx_any = false;
+	}
 }
 
 static void set_cc(hrc7000_dmr_t *e, uint8_t cc)
@@ -388,6 +415,7 @@ static void rx_tick(hrc7000_dmr_t *e)
 		ev_simple(e, DMR_EV_VOICE_LOST, e->tc_slot[e->voice_chip_slot], tick_arg(e));
 		e->voice_chip_slot = -1;
 	}
+	rx_resync(e);
 	uint32_t status = r(e, C7_LAYER2_STATUS);
 	e->st.last_l2_status = status;
 	int8_t next = (int8_t)((((status >> 30) & 1u) ^ HRC7000_RX_NEXT_SLOT_XOR) & 1u);

@@ -236,6 +236,62 @@ static void test_rx(void)
 	CHECK(eng.tick == t);
 }
 
+// The receiver drops its slot timing when it stops giving bursts: at the end of a reception and when the chip keeps
+// the timing of a sender that left, reporting only unusable slots (bench: no later call was taken)
+static void test_rx_resync(void)
+{
+	setup();
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_run(&eng);
+	uint32_t rs = eng.st.rx_restarts;
+
+	// A call: no restart while bursts come in, one about 390 ms after the last
+	for (int i = 0; i < 40; i++) {
+		tick(false);
+		deframe(rti((uint8_t)(i % 6 + 1), 0, 2, 0, 0, 0));
+	}
+	CHECK(eng.st.rx_restarts == rs);
+	for (int i = 0; i < 13; i++) {
+		tick(false);
+	}
+	CHECK(eng.st.rx_restarts == rs && eng.st.rx_lost == 0);
+	tick(false);
+	CHECK(eng.st.rx_restarts == rs + 1 && eng.st.rx_lost == 1 && !eng.rx_any);
+	CHECK(REG(C7_LAYER2_SLOTON) == 0x05 && REG(C7_LAYER2_CONTROL) == 0xC0);
+
+	// Stale timing: ticks and unusable bursts only, a restart every 600 ms
+	for (int i = 0; i < 20; i++) {
+		tick(false);
+		deframe((rti(0, 0, 2, 0, 0, 0) & ~3u) | 1u);
+	}
+	CHECK(eng.st.rx_stale == 0);
+	tick(false);
+	CHECK(eng.st.rx_stale == 1 && eng.st.rx_restarts == rs + 2);
+	for (int i = 0; i < 21; i++) {
+		tick(false);
+	}
+	CHECK(eng.st.rx_stale == 2);
+
+	// A new call is taken and holds the receiver
+	for (int i = 0; i < 30; i++) {
+		tick(false);
+		deframe(rti((uint8_t)(i % 6 + 1), 0, 2, 0, 0, 0));
+	}
+	CHECK(eng.st.rx_stale == 2 && eng.st.rx_lost == 1);
+
+	// A restart after a transmission starts the count again (no restart at the first tick after it)
+	count_kind(0xFF, NULL);
+	for (int i = 0; i < 14; i++) {
+		tick(false);
+	}
+	CHECK(eng.st.rx_lost == 2);
+	hrc7000_dmr_rx_restart(&eng);
+	tick(false);
+	CHECK(eng.st.rx_stale == 2);
+	count_kind(0xFF, NULL);
+}
+
 static void test_cc_scan(void)
 {
 	setup();
@@ -495,6 +551,7 @@ int main(void)
 {
 	test_pure();
 	test_rx();
+	test_rx_resync();
 	test_cc_scan();
 	test_tx();
 	test_tx_edges();

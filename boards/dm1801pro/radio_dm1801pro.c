@@ -17,7 +17,9 @@
 #include "dmr_glue.h"
 #include "audio_pcm.h"
 
-#define DAC_C_INIT		0x06E2u		// the DM-32UV's value (modem-hrc7000.md 4); the DM-1801 Pro's is 0x067E: unverified
+// DAC C biases the modem's AF input. The radio's own value: with the DM-32UV's 0x06E2 the modem missed the sync of
+// about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
+#define DAC_C_INIT		0x067Eu
 
 #define ADC_CTRL		REG32(ADC_BASE + 0x00)
 #define ADC_CTRL_RESET		(1u << 3)

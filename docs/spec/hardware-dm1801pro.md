@@ -102,7 +102,7 @@ PTC6, reset PTC2. Bits go out MSB first. K.
 | UART0 | 0x14030000 | 115200 8N1, the programming cable | K |
 | SPI0 | 0x140A0000 | 16 MB data flash | K |
 | ADC | 0x140D0000 | channel 2 battery (I); channel 1 unknown | K |
-| DAC | 0x140F0000 | channel B PA drive, channel C set once (0x067E) | K |
+| DAC | 0x140F0000 | channel B PA drive, channel C set once (0x067E): the modem's AF input bias. With the DM-32UV's 0x06E2 the modem missed the sync of about half of the DMR senders; with 0x067E it took every burst, strong and at -87 dBm | K, R |
 | GPIO A / B / C | 0x14020000 / 0x14100000 / 0x14110000 | all pins above | K |
 | Not used | LCD controller 0x12000000, PWM 0x140C0000 | the display is bit-banged, the backlight is a plain GPIO | K |
 
@@ -318,7 +318,7 @@ receiving and orange flashing while scanning.
 - Which menu power level uses which calibration array; the lists at 0x300 / 0x314 / 0x328 / 0x33C.
 - The 12.5 kHz bandwidth word; the VHF / UHF side of the path pins; the DMR per-burst handlers and PA delay.
 - The display controller part and its contrast.
-- PTB14's role, PTB16's role, the DAC C value.
+- PTB14's role, PTB16's role.
 - The accelerometer's scale (readings about 4 times low).
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
