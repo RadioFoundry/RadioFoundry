@@ -8,10 +8,7 @@
 #define BIT_US		1u	// clock low and high time
 #define READ_TURN_US	2u	// after releasing the data line, before clocking the reply in
 
-typedef struct {
-	uint8_t reg;
-	uint16_t val;
-} regval_t;
+typedef fd6818_regval_t regval_t;
 
 // 8.2 power-on init, in order (register 0x09 is a 16-entry table indexed by its top nibble)
 static const regval_t init_table[] = {
@@ -71,6 +68,25 @@ bool fd6818_band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	return false;
 }
 
+#define TBL_N(t)	(uint16_t)(sizeof(t) / sizeof((t)[0]))
+
+static const regval_t rx_dm32[] = { { 0x30, FD6818_STATE_RX } };
+static const regval_t tx_dm32[] = { { 0x30, FD6818_STATE_TX } };
+static const regval_t fm_tx_prepare_dm32[] = { { 0x3F, 0x0000 }, { 0x40, 0x34EA }, { 0x37, 0x1D0F } };
+
+const fd6818_variant_t fd6818_variant_dm32 = {
+	.init = init_table, .init_n = TBL_N(init_table),
+	.post_init = post_init_table, .post_init_n = TBL_N(post_init_table),
+	.fm = fm_table, .fm_n = TBL_N(fm_table),
+	.dmr = dmr_table, .dmr_n = TBL_N(dmr_table),
+	.rx = rx_dm32, .rx_n = TBL_N(rx_dm32),
+	.tx = tx_dm32, .tx_n = TBL_N(tx_dm32),
+	.fm_tx_prepare = fm_tx_prepare_dm32, .fm_tx_prepare_n = TBL_N(fm_tx_prepare_dm32),
+	.bw_fm_25k = FD6818_BW_FM_25K, .bw_fm_12k5 = FD6818_BW_FM_12K5, .bw_dmr = FD6818_BW_DMR,
+	.band_words = fd6818_band_words,
+	.park_10hz = 14400000u,
+};
+
 uint16_t fd6818_ctcss_word(uint16_t hz_x10)
 {
 	// Hz x 20.64888 = (Hz x 10) x 2.064888 = (Hz x 10) x 258111 / 125000 (exact; fits 32 bits up to 1664 Hz x 10,
@@ -80,7 +96,13 @@ uint16_t fd6818_ctcss_word(uint16_t hz_x10)
 
 void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus)
 {
+	fd6818_attach_variant(dev, bus, &fd6818_variant_dm32);
+}
+
+void fd6818_attach_variant(fd6818_t *dev, const fd6818_bus_t *bus, const fd6818_variant_t *variant)
+{
 	dev->bus = bus;
+	dev->variant = variant;
 	dev->freq_10hz = 0;
 	dev->bw_reg = 0;
 	dev->state = 0;
@@ -164,21 +186,25 @@ void fd6818_init(fd6818_t *dev)
 	const fd6818_bus_t *b = dev->bus;
 	b->cs(true);
 	b->clk(false);
-	fd6818_write(dev, init_table[0].reg, init_table[0].val);	// soft reset
+	const fd6818_variant_t *v = dev->variant;
+	fd6818_write(dev, v->init[0].reg, v->init[0].val);	// soft reset
 	if (b->delay_ms != NULL) {
 		b->delay_ms(10);
 	}
-	write_table(dev, init_table + 1, sizeof(init_table) / sizeof(init_table[0]) - 1);
-	write_table(dev, post_init_table, sizeof(post_init_table) / sizeof(post_init_table[0]));
-	dev->freq_10hz = 14400000u;
+	write_table(dev, v->init + 1, (size_t)v->init_n - 1);
+	write_table(dev, v->post_init, v->post_init_n);
+	dev->freq_10hz = v->park_10hz;
 }
 
 void fd6818_set_mode(fd6818_t *dev, fd6818_mode_t mode)
 {
+	const fd6818_variant_t *v = dev->variant;
 	if (mode == FD6818_MODE_DMR) {
-		write_table(dev, dmr_table, sizeof(dmr_table) / sizeof(dmr_table[0]));
+		if (v->dmr != NULL) {
+			write_table(dev, v->dmr, v->dmr_n);
+		}
 	} else {
-		write_table(dev, fm_table, sizeof(fm_table) / sizeof(fm_table[0]));
+		write_table(dev, v->fm, v->fm_n);
 	}
 }
 
@@ -187,8 +213,10 @@ void fd6818_set_freq(fd6818_t *dev, uint32_t hz)
 	uint32_t f = (hz + 5u) / 10u;
 	uint16_t r1a, r40;
 	fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);
-	if (fd6818_band_words(f, &r1a, &r40)) {
-		fd6818_write(dev, FD6818_REG_BAND_A, r1a);
+	if (dev->variant->band_words(f, &r1a, &r40)) {
+		if (r1a != 0) {
+			fd6818_write(dev, FD6818_REG_BAND_A, r1a);
+		}
 		fd6818_write(dev, FD6818_REG_BAND_B, r40);
 	}
 	fd6818_write(dev, FD6818_REG_FREQ_LO, (uint16_t)(f & 0xFFFFu));
@@ -203,17 +231,22 @@ void fd6818_set_bandwidth(fd6818_t *dev, uint16_t bw_reg)
 
 void fd6818_set_state(fd6818_t *dev, uint16_t state)
 {
+	const fd6818_variant_t *v = dev->variant;
 	if (state != FD6818_STATE_IDLE && dev->state != FD6818_STATE_IDLE) {
 		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);	// never RX <-> TX directly
 	}
-	fd6818_write(dev, FD6818_REG_STATE, state);
+	if (state == FD6818_STATE_RX) {
+		write_table(dev, v->rx, v->rx_n);
+	} else if (state == FD6818_STATE_TX) {
+		write_table(dev, v->tx, v->tx_n);
+	} else {
+		fd6818_write(dev, FD6818_REG_STATE, state);
+	}
 }
 
 void fd6818_fm_tx_prepare(fd6818_t *dev)
 {
-	fd6818_write(dev, 0x3F, 0x0000);
-	fd6818_write(dev, 0x40, 0x34EA);
-	fd6818_write(dev, 0x37, 0x1D0F);
+	write_table(dev, dev->variant->fm_tx_prepare, dev->variant->fm_tx_prepare_n);
 }
 
 void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10)
@@ -241,10 +274,10 @@ void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw)
 {
 	if (tx) {
 		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);
-		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_TX);
+		write_table(dev, dev->variant->tx, dev->variant->tx_n);
 	} else {
 		fd6818_write(dev, FD6818_REG_BANDWIDTH, rx_bw);
 		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);
-		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_RX);
+		write_table(dev, dev->variant->rx, dev->variant->rx_n);
 	}
 }

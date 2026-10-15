@@ -235,8 +235,50 @@ static void test_sequences(void)
 	CHECK(chip.n == 1 && chip.log[0].reg == 0x51 && chip.log[0].val == 0);
 }
 
+// The DM-1801 Pro set (docs/spec/hardware-dm1801pro.md 5): its own tables, the 0x0200 step, no 0x1A word
+static void test_dm1801pro(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach_variant(&dev, &bus, &fd6818_variant_dm1801pro);
+	fd6818_init(&dev);
+	CHECK(chip.log[0].reg == 0x00 && chip.log[0].val == 0x8000);
+	CHECK(chip.log[chip.n - 1].reg == 0x24 && chip.log[chip.n - 1].val == 0x8C7E);
+	CHECK(dev.freq_10hz == 0);
+	CHECK(chip.protocol_errors == 0);
+
+	chip.n = 0;
+	fd6818_set_freq(&dev, 446000000u);
+	CHECK(chip.n == 4);
+	CHECK(chip.log[0].reg == 0x30 && chip.log[0].val == 0);
+	CHECK(chip.log[1].reg == 0x40 && chip.log[1].val == 0x34F0);	// no 0x1A write
+	CHECK(chip.log[2].reg == 0x38 && chip.log[2].val == 0x8AC0);
+	CHECK(chip.log[3].reg == 0x39 && chip.log[3].val == 0x02A8);	// 446.000 MHz = 0x02A88AC0
+
+	chip.n = 0;
+	fd6818_set_state(&dev, FD6818_STATE_RX);
+	CHECK(chip.n == 3 && chip.log[0].reg == 0x37 && chip.log[1].val == 0x0200 && chip.log[2].val == 0xBFF1);
+	chip.n = 0;
+	fd6818_set_state(&dev, FD6818_STATE_TX);
+	CHECK(chip.n == 5 && chip.log[0].val == FD6818_STATE_IDLE && chip.log[1].reg == 0x37 && chip.log[2].reg == 0x52 &&
+		chip.log[3].val == 0x0200 && chip.log[4].val == 0xC1FE);
+	CHECK(dev.state == 0xC1FE);
+	chip.n = 0;
+	fd6818_set_state(&dev, FD6818_STATE_IDLE);
+	CHECK(chip.n == 1 && dev.state == 0);
+
+	// No DMR set-up yet: the mode switch writes nothing, and FM is the muted-AF set
+	chip.n = 0;
+	fd6818_set_mode(&dev, FD6818_MODE_DMR);
+	CHECK(chip.n == 0);
+	fd6818_set_mode(&dev, FD6818_MODE_FM);
+	CHECK(chip.n == 4 && chip.log[3].reg == 0x2B && chip.log[3].val == 0xC000);
+	CHECK(chip.protocol_errors == 0);
+}
+
 int main(void)
 {
+	test_dm1801pro();
 	test_helpers();
 	test_frames();
 	test_sequences();

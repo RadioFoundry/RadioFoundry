@@ -27,7 +27,39 @@ typedef struct {
 } fd6818_bus_t;
 
 typedef struct {
+	uint8_t reg;
+	uint16_t val;
+} fd6818_regval_t;
+
+// What differs between the boards' chip set-ups: the register tables, the 0x30 sequences and the band words. The
+// DM-32UV's set is fd6818_variant_dm32 (the default), the DM-1801 Pro's fd6818_variant_dm1801pro
+typedef struct {
+	const fd6818_regval_t *init;		// power-on table, the soft reset first
+	uint16_t init_n;
+	const fd6818_regval_t *post_init;	// after init: receiver parked, AF muted
+	uint16_t post_init_n;
+	const fd6818_regval_t *fm;		// Enter FM
+	uint16_t fm_n;
+	const fd6818_regval_t *dmr;		// Enter DMR; NULL where the board has no DMR set-up yet
+	uint16_t dmr_n;
+	const fd6818_regval_t *rx;		// from idle into RX, the last write sets 0x30
+	uint16_t rx_n;
+	const fd6818_regval_t *tx;		// from idle into TX
+	uint16_t tx_n;
+	const fd6818_regval_t *fm_tx_prepare;	// before the switch to TX, FM only
+	uint16_t fm_tx_prepare_n;
+	uint16_t bw_fm_25k, bw_fm_12k5, bw_dmr;	// 0x43 values
+	uint32_t park_10hz;			// where post_init leaves the synthesizer, 0 if it doesn't tune
+	// Band words for a frequency in 10 Hz units: *r1a == 0 leaves 0x1A alone; false writes neither
+	bool (*band_words)(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
+} fd6818_variant_t;
+
+extern const fd6818_variant_t fd6818_variant_dm32;
+extern const fd6818_variant_t fd6818_variant_dm1801pro;
+
+typedef struct {
 	const fd6818_bus_t *bus;
+	const fd6818_variant_t *variant;
 	uint32_t freq_10hz;	// last frequency written, 10 Hz units (0 = none)
 	uint16_t bw_reg;	// last 0x43 value
 	uint16_t state;		// last 0x30 value
@@ -50,11 +82,12 @@ typedef struct {
 #define FD6818_REG_RSSI		0x67
 #define FD6818_REG_TONE1	0x71
 
-// 0x30 states: always through idle between RX and TX (8.3)
+// 0x30 states: always through idle between RX and TX (8.3). RX and TX are requests to fd6818_set_state: the variant's
+// sequence ends in these words but may write more before them. dev->state holds the last word written
 #define FD6818_STATE_IDLE	0x0000u
 #define FD6818_STATE_RX		0xBFF1u
 #define FD6818_STATE_TX		0xC1FEu
-// 0x43 bandwidths
+// DM-32UV 0x43 bandwidths; fd6818_variant_t holds each board's
 #define FD6818_BW_FM_25K	0x3028u
 #define FD6818_BW_FM_12K5	0x4008u
 #define FD6818_BW_DMR		0x4048u
@@ -73,7 +106,8 @@ static inline uint16_t fd6818_rssi_raw(uint16_t r67) { return (uint16_t)((r67 & 
 
 // --- Register access (one frame each, inside the critical section) ---
 
-void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus);
+void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus);	// the DM-32UV variant
+void fd6818_attach_variant(fd6818_t *dev, const fd6818_bus_t *bus, const fd6818_variant_t *variant);
 void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val);
 uint16_t fd6818_read(fd6818_t *dev, uint8_t reg);
 
