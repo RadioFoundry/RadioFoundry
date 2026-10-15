@@ -5,6 +5,7 @@
 // latches, privacy with the stored key, scan, key beeps and the radio's settings (docs/spec/radio-features.md).
 // These are the strong definitions; ui_svc_stub.c keeps the weak ones for what other packages still have to provide.
 #include "ui_svc.h"
+#include "board.h"
 #include "radio/radio.h"
 #include "radio/beep.h"
 #include "input/input.h"
@@ -67,9 +68,13 @@ bool ui_svc_monitor(bool on)
 #endif
 
 #if CONFIG_VOX
-// VOX on every FM channel, or off (radio_settings_t.vox; saved by the radio core). view.vox_on says whether it listens
+// VOX on every FM channel, or off (radio_settings_t.vox; saved by the radio core). view.vox_on says whether it listens.
+// False on a radio that can't measure the mic (no mic_level): the radio core would never key, so "VOX on" would be wrong
 bool ui_svc_vox(bool on)
 {
+	if (on && (board.power == NULL || board.power->mic_level == NULL)) {
+		return false;
+	}
 	radio_settings_t was = *rs_copy();
 	rs.vox = on ? RADIO_VOX_ALL : RADIO_VOX_OFF;
 	if (on && rs.vox_level == 0) {
