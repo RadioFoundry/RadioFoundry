@@ -3,9 +3,11 @@
 // hal_system_t for the HR_C7000: memory reads and reboot. No chip identity registers are known (the eFuse behind SPI
 // master 3 is not mapped out), so chip() reports nothing.
 #include <string.h>
+#include "config.h"
 #include "platform.h"
 
 #define SOFT_RESET_SPINS	1000000u
+#define WDT_KEY			0x5ADA7200u
 
 static bool chip(hal_chip_t *c)
 {
@@ -39,4 +41,42 @@ static bool reboot(uint8_t mode)
 	hrc_soft_reset();
 }
 
-const hal_system_t hrc_system = { .chip = chip, .read = rd, .reboot = reboot };
+#if CONFIG_STUB_ENTRY
+// Runtime RAM-monitor entry (docs/spec/hardware-dm32.md 17.2): the stock-codec RAM window, which ODR leaves free
+static uint8_t *stub_region(uint32_t *size)
+{
+	*size = HRC_STUB_SIZE;
+	return (uint8_t *)(uintptr_t)HRC_STUB_BASE;
+}
+
+// Quiesce the SoC and jump to the loaded image. Runs from RAM: after QUAD_ENABLE = 0 no code may fetch from XIP flash,
+// and the image lives in SRAM. It never returns on success (recover by a power cycle), only if entry is out of range
+HRC_RAMFUNC static bool enter_stub(uint32_t entry)
+{
+	if (entry < HRC_STUB_BASE || entry >= HRC_STUB_BASE + HRC_STUB_SIZE) {
+		return false;
+	}
+	__asm__ volatile ("psrclr ie");			// CPU interrupts off
+	PIC_MASK = 0xFFFFFFFFu;				// mask every PIC source, both banks (no peripheral can interrupt)
+	PIC_MASK_1 = 0xFFFFFFFFu;
+	REG32(WDT_BASE + 0x00) = WDT_KEY;		// watchdog off (defensive; clock_init already did)
+	REG32(WDT_BASE + 0x10) = 0;
+	REG32(WDT_BASE + 0x00) = 0;
+	QUAD_ENABLE = 0;				// XIP controller back to reset mode: the program flash is the SSI's
+							// again, as hrc_soft_reset does. No DMA reaches SRAM on this board
+	hrc_barrier();
+	((void (*)(void))(uintptr_t)entry)();		// run the stub; it serves the host until power-off
+	for (;;) {					// unreachable: the stub does not return
+	}
+}
+#endif
+
+const hal_system_t hrc_system = {
+	.chip = chip,
+	.read = rd,
+	.reboot = reboot,
+#if CONFIG_STUB_ENTRY
+	.stub_region = stub_region,
+	.enter_stub = enter_stub,
+#endif
+};

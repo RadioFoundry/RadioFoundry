@@ -239,6 +239,13 @@ uint32_t hrc_micros(void);
 // Chip soft reset (QUAD_ENABLE = 0, SYS_SOFT_RSTN = 0; hardware-dm32.md 1.1). Does not return
 void hrc_soft_reset(void) __attribute__((noreturn));
 
+// Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads a position-
+// dependent image here and ODR jumps to it without a power cycle. The span is the stock-codec RAM window, which ODR
+// never links anything into (dm32.ld leaves 0x16CDC..0x2F914 out); the codec is not running once the radio is quiesced,
+// so the whole window is free. Base is 4 KB aligned inside it and the length stays clear of 0x2F914
+#define HRC_STUB_BASE		0x00017000u
+#define HRC_STUB_SIZE		0x00018000u	// 96 KB: image (~25 KB code+bss) and its stack, ends at 0x2F000
+
 // Code that must not run from XIP flash (flash controller set-up, the modem slot interrupts): the linker script
 // places .ramfunc in SRAM
 #define HRC_RAMFUNC		__attribute__((section(".ramfunc"), noinline))
