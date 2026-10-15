@@ -58,11 +58,6 @@ static const fd6818_bus_t fd_bus = {
 	.delay_ms = hal_delay_ms,
 };
 
-hrc7000_t *dm32_modem(void)
-{
-	return &modem;
-}
-
 // ---- PA, LNA, DAC ----
 
 static void pa_off(void)
@@ -130,7 +125,7 @@ static void write_mod_bias(uint32_t hz)
 // ---- From the DMR interrupts ----
 
 // RF TX interrupt (tx): FD6818 idle then TX for our burst. After the burst: PA off, FD6818 back to RX
-void dm32_rf_dmr_switch(bool tx)
+static void dmr_rf_switch(bool tx)
 {
 	if (!tx) {
 		pa_off();
@@ -139,17 +134,16 @@ void dm32_rf_dmr_switch(bool tx)
 }
 
 // The PA one-shot expired: key the PA if the transmission is still on
-void dm32_rf_dmr_pa_on(void)
+static void dmr_pa_on(void)
 {
 	if (dmr_keyed) {
 		pa_key();
 	}
 }
 
-uint32_t dm32_dmr_pa_delay_us(void)
-{
-	return DMR_PA_DELAY_US;
-}
+static const hrc_dmr_board_t dmr_board = {
+	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US,
+};
 
 // ---- hal_radio_t ----
 
@@ -179,7 +173,8 @@ static void init(void)
 	fd6818_set_mode(&fd, FD6818_MODE_FM);
 	mode = RADIO_MODE_FM;
 
-	dm32_dmr_board_init(&modem);
+	hrc_dmr_board_init(&modem, &dmr_board);
+	hrc_audio_pcm_attach(&modem, dm32_speaker_pcm);
 }
 
 static void set_mode(radio_mode_t m)
@@ -192,9 +187,9 @@ static void set_mode(radio_mode_t m)
 		dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
 		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(dm32_cal_tx_center(), dm32_cal_modcal(rx_hz)), MIC_GAIN_DB);
 		mode = RADIO_MODE_DMR;
-		dm32_dmr_enter();
+		hrc_dmr_enter();
 	} else {
-		dm32_dmr_leave();
+		hrc_dmr_leave();
 		dmr_keyed = false;
 		pa_off();
 		fd6818_set_mode(&fd, FD6818_MODE_FM);

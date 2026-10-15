@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-32UV DMR modem: the HR_C7000 slot engine (drivers/modem/hrc7000/hrc7000_dmr.c) on the SoC's modem interrupts,
-// the DMR PA one-shot on Timer 3, and the deferred event task that calls the DMR stack (docs/spec/dmr-modem.md 6,
-// modem-hrc7000.md 3, hardware-dm32.md 8.5, 8.6).
+// HR_C7000 DMR modem glue (dmr_glue.h): the slot engine (drivers/modem/hrc7000/hrc7000_dmr.c) on the SoC's modem
+// interrupts, the DMR PA one-shot on Timer 3, and the deferred event task that calls the DMR stack (docs/spec/dmr-modem.md
+// 6, modem-hrc7000.md 3, hardware-dm32.md 8.5, 8.6).
 //
-// What runs where (all interrupts at one level, never nested; this file and the engine run from RAM, dm32.ld):
+// What runs where (all interrupts at one level, never nested; this file and the engine run from RAM,
+// the board's linker script):
 //   PIC 29 (system)      received bursts, late entry, slot abnormal; clears the chip's flags
 //   PIC 30 / 31 (TS)     decide the coming slot (TX burst, receive, nothing), PA off after a burst, slot tick event
 //   PIC 32 (RF TX)       FD6818 idle -> TX for our burst
@@ -13,8 +14,8 @@
 // Task-level calls into the engine mask the modem sources at the PIC (hrc_modem_irqs_mask) for their register work.
 #include <stddef.h>
 #include <string.h>
-#include "dm32.h"
 #include "config.h"
+#include "dmr_glue.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
@@ -27,6 +28,7 @@
 #define DMR_POLL_MS		10
 
 static hrc7000_dmr_t eng;
+static const hrc_dmr_board_t *brd;
 static TaskHandle_t task;
 static volatile bool active;
 static dmr_event_cb_t volatile stack_cb;
@@ -81,13 +83,13 @@ static void notify(void *ctx)
 static void rf(void *ctx, bool tx)
 {
 	(void)ctx;
-	dm32_rf_dmr_switch(tx);
+	brd->rf_switch(tx);
 }
 
 static void pa_arm(void *ctx)
 {
 	(void)ctx;
-	hrc_timer_oneshot(TIMER_PA, dm32_dmr_pa_delay_us());
+	hrc_timer_oneshot(TIMER_PA, brd->pa_delay_us);
 }
 
 static const hrc7000_dmr_ops_t ops = {
@@ -106,7 +108,7 @@ static void isr_pa_timer(void)
 	hrc_timer_ack(TIMER_PA);
 	hrc_timer_stop(TIMER_PA);
 	if (active) {
-		dm32_rf_dmr_pa_on();
+		brd->pa_on();
 	}
 }
 
@@ -142,10 +144,11 @@ static void dmr_task(void *arg)
 	}
 }
 
-// --- radio_dm32.c interface ---
+// --- The radio's interface ---
 
-void dm32_dmr_board_init(hrc7000_t *modem)
+void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *hooks)
 {
+	brd = hooks;
 	hrc7000_dmr_init(&eng, modem, &ops);
 	hrc_irq_register(IRQ_MODEM_SYS, isr_sys);
 	hrc_irq_register(IRQ_MODEM_TS_TX, isr_ts_tx);
@@ -159,31 +162,31 @@ void dm32_dmr_board_init(hrc7000_t *modem)
 	}
 }
 
-void dm32_dmr_enter(void)
+void hrc_dmr_enter(void)
 {
 	hrc7000_dmr_run(&eng);
 	active = true;
 	irqs_enable(true);
 }
 
-void dm32_dmr_leave(void)
+void hrc_dmr_leave(void)
 {
 	irqs_enable(false);
 	active = false;
 	hrc7000_dmr_halt(&eng);
 }
 
-void dm32_dmr_rx_restart(void)
+void hrc_dmr_rx_restart(void)
 {
 	hrc7000_dmr_rx_restart(&eng);
 }
 
-bool dm32_dmr_tx_active(void)
+bool hrc_dmr_tx_active(void)
 {
 	return active && hrc7000_dmr_is_transmitting(&eng);
 }
 
-void dm32_dmr_tx_drop(void)
+void hrc_dmr_tx_drop(void)
 {
 	if (!active) {
 		return;
@@ -210,7 +213,7 @@ static void stop(void)
 {
 	stack_cb = NULL;
 	if (active && hrc7000_dmr_is_transmitting(&eng)) {
-		dm32_dmr_tx_drop();
+		hrc_dmr_tx_drop();
 	}
 }
 
@@ -231,16 +234,16 @@ static void set_embedded_lc(const uint8_t lc[9]) { hrc7000_dmr_set_embedded_lc(&
 static void set_cc_filter(int8_t cc) { hrc7000_dmr_set_cc_filter(&eng, cc); }
 static bool is_transmitting(void) { return hrc7000_dmr_is_transmitting(&eng); }
 
-const hal_dmr_modem_t dm32_dmr = {
+const hal_dmr_modem_t hrc_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
 	.is_transmitting = is_transmitting,
 };
 
-// --- Bring-up counters (diag_dm32.c shows these lines first) ---
+// --- Bring-up counters (the board's diagnostics page shows these lines first) ---
 
-void dm32_dmr_stats_reset(void)
+void hrc_dmr_stats_reset(void)
 {
 	// Every field before last_rx_type_info is a uint32_t counter (hrc7000_dmr.h); the ISRs update them
 	lock(NULL);
@@ -286,7 +289,7 @@ static void put_kv(out_t *o, const char *k, uint32_t v)
 }
 
 // Lines of at most about 20 characters (the 120-pixel-wide diagnostics page)
-bool dm32_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
+bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 {
 	if (len == 0) {
 		return false;

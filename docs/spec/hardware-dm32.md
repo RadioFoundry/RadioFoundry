@@ -1012,10 +1012,10 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; packed with `tools/dm32_pack.py` for the Baofeng updater | `boards/dm32/dm32.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/dm32_codec.py` | `dm32.ld` |
 | SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `dm32.ld` |
-| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E20 the codec's tables (copied at first use) | `audio_dm32.c`, `vocoder_dm32.c` |
+| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E20 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `vocoder_dm32.c` |
 | Clocks | PLL sequence of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
-| Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock) | `platform/hrc7000/time.c`, `boards/dm32/dmr_dm32.c` |
+| Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock) | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c` |
 | RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
 | Display | 240x320 at 2x: the core draws 120x160 (its frame buffer is 40 KB); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
@@ -1023,7 +1023,7 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
 | Calibration | 11, read only; OpenDM32's copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `calibration_dm32.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM with its own sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
-| DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `dmr_dm32.c` |
+| DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |
 
 ### 17.1 SRAM layout
 
