@@ -241,7 +241,7 @@ The radio's own firmware carries the DM-32UV's 049 codec ([codec-dm32.md](codec-
 | Tables sha256 | `10684c33...4eb0b0e1`, the same as the DM-32UV's 049 tables | K |
 | Against the 049 code | 82 literal words that point into the tables are 0x48 higher; 29 words differ inside the three non-codec ranges the DM-32UV notes exclude (RAM 0x17270..0x1732C, 0x1CDBC..0x1D4C8, 0x1E8BC..0x1FE64); every other byte is equal | K |
 
-So the codec entry points are the 049 offsets from the code start (decode +0x0000, encode +0x0260, and the rest of the
+[codec-dm1801pro.md](codec-dm1801pro.md) has the call analysis. The codec entry points are the 049 offsets from the code start (decode +0x0000, encode +0x0260, and the rest of the
 table in codec-dm32.md). Hosting it needs the tables at 0x18000EF0, or the 82 pointers moved back by 0x48 as on the
 DM-32UV. How it is called (state blocks, flags words) and the codec's frame path to the C7000 are not traced.
 
