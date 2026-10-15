@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-32UV factory calibration: TX I/Q center, modulation balance and PA drive (docs/spec/hardware-dm32.md 11).
+// Baofeng HR_C7000 factory calibration: TX I/Q center, modulation balance and PA drive (docs/spec/hardware-dm32.md 11).
+// The DM-32UV and the DM-1801 Pro keep it in the same page with the same field offsets (hardware-dm1801pro.md 6.4).
 //
 // The factory data is the 4 KB page of the stock codeplug area (0x1000..0xC8000) whose last byte is 2. Three pieces
 // of it make a 0x175-byte working image: 0x108 bytes from its start, 0x15 from +0x200 and 0x50 (four tables of five BCD
 // frequencies) from +0x300. It's only read: this firmware never writes below 0x700000. Without a factory page, the
-// decoded copy OpenDM32 keeps at 0x710000 is used when its header is right.
+// decoded copy OpenDM32 keeps at the board's copy address (0x710000 on the DM-32UV) is used when its header is right.
 #include <string.h>
-#include "dm32.h"
+#include "baofeng_cal.h"
 
 #define CAL_PAGE_FIRST		0x1000u
 #define CAL_PAGE_END		0xC9000u
 #define CAL_PAGE_SIZE		0x1000u
 #define CAL_PAGE_MARKER		2u		// logical block ID in the last byte of the page
-#define CAL_COPY_ADDR		0x710000u
 
 // Offsets in the working image (11.2)
 #define OFF_HEADER		0x000u
@@ -31,7 +31,7 @@
 
 static const uint8_t header[8] = { 0x00, 0x40, 0x00, 0x47, 0xFF, 0xFF, 0xFF, 0xFF };
 
-static uint8_t image[DM32_CAL_LEN];
+static uint8_t image[BF_CAL_LEN];
 static bool valid;
 static const char *source = "none";
 
@@ -59,7 +59,7 @@ static uint32_t bcd8(uint32_t v)
 	return r;
 }
 
-bool dm32_cal_parse(const uint8_t *sector, uint32_t sector_len, uint8_t out[DM32_CAL_LEN])
+bool bf_cal_parse(const uint8_t *sector, uint32_t sector_len, uint8_t out[BF_CAL_LEN])
 {
 	if (sector == NULL || sector_len < 0x300u + 0x50u) {
 		return false;
@@ -82,42 +82,41 @@ bool dm32_cal_parse(const uint8_t *sector, uint32_t sector_len, uint8_t out[DM32
 	return true;
 }
 
-void dm32_cal_set_image(const uint8_t in[DM32_CAL_LEN], bool ok)
+void bf_cal_set_image(const uint8_t in[BF_CAL_LEN], bool ok)
 {
-	memcpy(image, in, DM32_CAL_LEN);
+	memcpy(image, in, BF_CAL_LEN);
 	valid = ok;
 }
 
 // The three pieces of the page into a buffer laid out as the page (only the first 0x350 bytes), then decoded
-static bool read_factory(uint32_t page)
+static bool read_factory(const hal_flash_t *f, uint32_t page)
 {
 	static uint8_t sector[0x350];
-	const hal_flash_t *f = &dm32_flash;
 	if (!f->read(page + 0x000, sector + 0x000, 0x108) || !f->read(page + 0x200, sector + 0x200, 0x015) ||
 		!f->read(page + 0x300, sector + 0x300, 0x050)) {
 		return false;
 	}
-	return dm32_cal_parse(sector, sizeof sector, image);
+	return bf_cal_parse(sector, sizeof sector, image);
 }
 
-bool dm32_cal_load(void)
+bool bf_cal_load(const hal_flash_t *flash, uint32_t copy_addr)
 {
 	valid = false;
 	source = "none";
-	if (dm32_flash.size == 0) {
+	if (flash == NULL || flash->size == 0) {
 		return false;
 	}
 	for (uint32_t a = CAL_PAGE_FIRST; a < CAL_PAGE_END; a += CAL_PAGE_SIZE) {
 		uint8_t id = 0;
-		if (dm32_flash.read(a + CAL_PAGE_SIZE - 1u, &id, 1) && id == CAL_PAGE_MARKER) {
-			if (read_factory(a)) {
+		if (flash->read(a + CAL_PAGE_SIZE - 1u, &id, 1) && id == CAL_PAGE_MARKER) {
+			if (read_factory(flash, a)) {
 				valid = true;
 				source = "factory";
 			}
 			break;
 		}
 	}
-	if (!valid && dm32_flash.read(CAL_COPY_ADDR, image, DM32_CAL_LEN) &&
+	if (!valid && copy_addr != 0 && flash->read(copy_addr, image, BF_CAL_LEN) &&
 		memcmp(image + OFF_HEADER, header, sizeof header) == 0) {
 		valid = true;
 		source = "copy";
@@ -125,27 +124,27 @@ bool dm32_cal_load(void)
 	return valid;
 }
 
-bool dm32_cal_valid(void)
+bool bf_cal_valid(void)
 {
 	return valid;
 }
 
-const char *dm32_cal_source(void)
+const char *bf_cal_source(void)
 {
 	return source;
 }
 
-uint8_t dm32_cal_tx_center(void)
+uint8_t bf_cal_tx_center(void)
 {
 	return valid ? image[OFF_TX_CENTER] : 0x80u;
 }
 
-uint8_t dm32_cal_byte(uint16_t offset)
+uint8_t bf_cal_byte(uint16_t offset)
 {
-	return offset < DM32_CAL_LEN ? image[offset] : 0;
+	return offset < BF_CAL_LEN ? image[offset] : 0;
 }
 
-uint16_t dm32_cal_modcal(uint32_t hz)
+uint16_t bf_cal_modcal(uint32_t hz)
 {
 	uint32_t f = hz / 1000000u;
 	if (!valid || f == 0) {
@@ -171,7 +170,7 @@ static uint16_t interp(const uint8_t *t, uint32_t idx, uint32_t rem, uint32_t st
 	return (uint16_t)(v < 0 ? 0 : v > 4096 ? 4096 : v);
 }
 
-bool dm32_cal_power(uint32_t hz, dm32_power_points_t *p)
+bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p)
 {
 	if (!valid) {
 		return false;
@@ -212,10 +211,10 @@ static const uint16_t frac[3][5] = {
 	{ 430, 740, 270, 510, 750 },	// UHF
 };
 
-uint16_t dm32_cal_power_level(uint32_t hz, uint8_t level)
+uint16_t bf_cal_power_level(uint32_t hz, uint8_t level)
 {
-	dm32_power_points_t p;
-	if (!dm32_cal_power(hz, &p)) {
+	bf_cal_power_points_t p;
+	if (!bf_cal_power(hz, &p)) {
 		return FALLBACK_DAC;
 	}
 	const uint16_t *fr = frac[hz < 200000000u ? 0 : hz < 300000000u ? 1 : 2];

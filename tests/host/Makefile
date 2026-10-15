@@ -529,8 +529,8 @@ I2CG    := $(ROOT)/drivers/bus/i2c_gpio
 rda5807mTest: rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m.h $(I2CG)/i2c_gpio.c $(I2CG)/i2c_gpio.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ rda5807mTest.c $(RDA)/rda5807m.c $(I2CG)/i2c_gpio.c
 
-dm32CalTest: dm32CalTest.c $(DM32)/calibration_dm32.c $(DM32)/dm32.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DM32) -Wshadow -o $@ dm32CalTest.c $(DM32)/calibration_dm32.c
+dm32CalTest: dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-dm32
 run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest

@@ -183,5 +183,5 @@ void board_init(void)
 	lcdbus = xSemaphoreCreateRecursiveMutex();
 	dm32_power.init();
 	dm32_flash.init();
-	dm32_cal_load();
+	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// OpenDM32 keeps a decoded copy there
 }

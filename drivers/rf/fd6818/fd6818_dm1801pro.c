@@ -25,7 +25,7 @@ static const fd6818_regval_t init_table[] = {
 
 // Analog FM: AF muted until the receive path asks for audio, then the 0x2B mode word
 static const fd6818_regval_t fm_table[] = {
-	{ 0x30, 0x0000 }, { 0x47, 0x6042 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
+	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x6042 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
 };
 
 // 5.4: 0x37 first, the DM-32UV's 0x30 steps with a 0x0200 between idle and the final word

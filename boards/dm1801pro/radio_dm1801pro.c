@@ -1,0 +1,269 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The OpenDigitalRadio Authors
+// DM-1801 Pro radio: FD6818 RF transceiver (bit-banged, its own register set), the HR_C7000 baseband for analog FM,
+// separate RX and TX band paths and the PA drive on DAC channel B (docs/spec/hardware-dm1801pro.md 5; modem-hrc7000.md
+// 4, 5.1, 8). Analog FM only: DMR waits for the codec recipe and the modem glue (hardware-dm1801pro.md 12).
+//
+// Transmit needs the factory calibration (the PA drive comes from it): without it tx() refuses.
+#include "dm1801pro.h"
+#include "config.h"
+#include "pins.h"
+#include "platform.h"
+#include "hal_time.h"
+#include "cal/baofeng/baofeng_cal.h"
+#include "rf/fd6818/fd6818.h"
+#include "modem/hrc7000/hrc7000.h"
+
+#define DAC_C_INIT		0x06E2u		// the DM-32UV's value (modem-hrc7000.md 4); the DM-1801 Pro's is 0x067E: unverified
+
+#define ADC_CTRL		REG32(ADC_BASE + 0x00)
+#define ADC_CTRL_RESET		(1u << 3)
+
+#define UHF_FROM_HZ		200000000u	// VHF / UHF split of the path selects (5.2)
+#define MIC_GAIN_DB		11u		// GCR_ADCL at init (the DM-32UV's, unverified)
+#define RF_BIT_SCALE_US		5u		// the radio clocks the FD6818 at about 5 us per half period (5.1)
+#define PA_RAMP_STEPS		40u		// 5.4
+#define PA_RAMP_STEP_US		50u
+#define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on (5.4)
+#define FD_REG_NOISE		0x65u
+#define FD_REG_RSSI		0x67u
+
+static fd6818_t fd;
+static hrc7000_t modem;
+
+static uint32_t rx_hz;
+static radio_bw_t rx_bw = RADIO_BW_12K5;
+static subtone_t rx_tone;
+static bool have_rx;
+static bool transmitting;
+static uint16_t tx_drive;		// DAC B value at the top of the ramp
+static uint16_t last_rssi_raw, last_noise_raw;
+
+// ---- FD6818 bus ----
+
+static void rf_cs(bool level) { hrc_pin_write(PIN_RF_CS, level); }
+static void rf_clk(bool level) { hrc_pin_write(PIN_RF_CLK, level); }
+static void rf_data_out(bool level) { hrc_pin_out(PIN_RF_DATA, level); }
+static void rf_data_release(void) { hrc_pin_in(PIN_RF_DATA); }
+static bool rf_data_in(void) { return hrc_pin_read(PIN_RF_DATA); }
+static void rf_delay_us(uint32_t us) { hal_delay_us(us * RF_BIT_SCALE_US); }
+
+static const fd6818_bus_t rf_bus = {
+	.cs = rf_cs,
+	.clk = rf_clk,
+	.data_out = rf_data_out,
+	.data_release = rf_data_release,
+	.data_in = rf_data_in,
+	.delay_us = rf_delay_us,
+	.crit_enter = hrc_irq_save,
+	.crit_exit = hrc_irq_restore,
+	.delay_ms = hal_delay_ms,
+};
+
+// ---- Band paths and PA ----
+
+// A path select drives its VHF-side and UHF-side pins as a complementary pair; both low = off (5.5). Which side is
+// VHF is inferred and unverified
+static void path_pins(uint8_t vhf_pin, uint8_t uhf_pin, uint32_t hz, bool on)
+{
+	bool uhf = hz > UHF_FROM_HZ;
+	hrc_pin_write(vhf_pin, on && !uhf);
+	hrc_pin_write(uhf_pin, on && uhf);
+}
+
+static void rx_path(uint32_t hz, bool on) { path_pins(PIN_RX_VHF, PIN_RX_UHF, hz, on); }
+static void tx_path(uint32_t hz, bool on) { path_pins(PIN_TX_VHF, PIN_TX_UHF, hz, on); }
+
+static void dac_b_power(bool on)
+{
+	uint32_t s = hrc_irq_save();
+	if (on) {
+		DAC_PD_CTRL &= ~DAC_B_OFF;
+	} else {
+		DAC_PD_CTRL |= DAC_B_OFF;
+	}
+	hrc_irq_restore(s);
+}
+
+// The PA drive as a ramp, so the carrier doesn't splatter (5.4: 40 steps)
+static void pa_ramp(uint16_t from, uint16_t to)
+{
+	for (uint32_t i = 1; i <= PA_RAMP_STEPS; i++) {
+		int32_t v = (int32_t)from + ((int32_t)to - (int32_t)from) * (int32_t)i / (int32_t)PA_RAMP_STEPS;
+		DAC_DATA_B = (uint32_t)v;
+		hal_delay_us(PA_RAMP_STEP_US);
+	}
+}
+
+static bool in_band(uint32_t hz, bool tx)
+{
+	for (uint8_t i = 0; i < board.band_count; i++) {
+		const band_t *b = &board.bands[i];
+		if (hz >= b->lo_hz && hz <= b->hi_hz) {
+			return !tx || b->tx;
+		}
+	}
+	return false;
+}
+
+static uint16_t fm_bw_reg(radio_bw_t bw)
+{
+	return bw == RADIO_BW_25K ? fd.variant->bw_fm_25k : fd.variant->bw_fm_12k5;
+}
+
+static hrc7000_tone_t c7_tone(uint8_t type)
+{
+	switch (type) {
+	case TONE_CTCSS: return HRC7000_TONE_CTCSS;
+	case TONE_DCS: return HRC7000_TONE_DCS;
+	case TONE_DCS_INV: return HRC7000_TONE_DCS_INV;
+	default: return HRC7000_TONE_NONE;
+	}
+}
+
+static void write_mod_bias(uint32_t hz)
+{
+	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(hz)));
+}
+
+// ---- hal_radio_t ----
+
+static void init(void)
+{
+	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	// modem-hrc7000.md 4 steps 1-3: ADC reset and idle, DAC B to its pin, DACs B and C on with the PA drive at 0
+	ADC_CTRL = ADC_CTRL_RESET;
+	hal_delay_us(2);
+	ADC_CTRL = 0;
+	uint32_t s = hrc_irq_save();
+	IO_DIPLEX2 &= ~IO_DIPLEX2_DAC_B;
+	hrc_irq_restore(s);
+	DAC_PD_CTRL = 0x01u;
+	DAC_PD_MODE_EN = 0x01u;
+	DAC_DATA_A = 0;
+	DAC_DATA_B = 0;
+	DAC_DATA_C = DAC_C_INIT;
+	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DB);
+
+	hrc_pin_out(PIN_RF_CS, true);
+	hrc_pin_out(PIN_RF_CLK, false);
+	fd6818_attach_variant(&fd, &rf_bus, &fd6818_variant_dm1801pro);
+	fd6818_init(&fd);
+	fd6818_set_mode(&fd, FD6818_MODE_FM);
+}
+
+// FM is the only mode; asking for DMR leaves the radio in FM
+static void set_mode(radio_mode_t m)
+{
+	(void)m;
+}
+
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
+{
+	if (!in_band(hz, false)) {
+		return false;
+	}
+	DAC_DATA_B = 0;
+	tx_path(hz, false);
+	fd6818_set_freq(&fd, hz);
+	fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
+	fd6818_set_state(&fd, FD6818_STATE_RX);
+	rx_path(hz, true);
+	dac_b_power(false);
+	hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
+	hrc7000_set_subtone(&modem, false, c7_tone(tone != NULL ? tone->type : TONE_NONE),
+		tone != NULL ? tone->value : 0);
+	rx_hz = hz;
+	rx_bw = bw;
+	rx_tone = tone != NULL ? *tone : (subtone_t){ TONE_NONE, 0 };
+	have_rx = true;
+	transmitting = false;
+	return true;
+}
+
+// 5.4 "Enter TX": RX path off, frequency, the RF state sequence, 0x50, the TX path, then the PA ramp. The radio's
+// waits are an uncalibrated busy-wait count; 1 ms each is at least as long
+static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
+{
+	if (!in_band(hz, true) || !bf_cal_valid()) {
+		return false;
+	}
+	// Levels 0..2 are the factory's low, mid and high points (hardware-dm1801pro.md 6.4); which menu level picks which
+	// is unverified
+	static const uint8_t level_of[3] = { 1, 4, 8 };
+	tx_drive = bf_cal_power_level(hz, level_of[power > 2 ? 2 : power]);
+	rx_path(hz, false);
+	hal_delay_ms(1);
+	write_mod_bias(hz);
+	fd6818_set_freq(&fd, hz);
+	dac_b_power(true);
+	fd6818_fm_tx_prepare(&fd);
+	hrc7000_fm_tx(&modem, bw == RADIO_BW_25K);
+	hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
+		tone != NULL ? tone->value : 0);
+	hrc_pin_write(PIN_MIC_PATH, true);
+	fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
+	fd6818_set_state(&fd, FD6818_STATE_TX);
+	fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
+	hal_delay_ms(1);
+	tx_path(hz, true);
+	pa_ramp(0, tx_drive);
+	transmitting = true;
+	return true;
+}
+
+// 5.4 "Leave TX": PA ramp down, TX path off, then the receive set-up again
+static void tx_off(void)
+{
+	if (!transmitting) {
+		return;
+	}
+	pa_ramp(tx_drive, 0);
+	DAC_DATA_B = 0;
+	hal_delay_ms(1);
+	if (have_rx) {
+		hrc_pin_write(PIN_TX_VHF, false);
+		hrc_pin_write(PIN_TX_UHF, false);
+		hrc7000_fm_idle(&modem);
+		subtone_t t = rx_tone;
+		rx(rx_hz, rx_bw, &t);
+	}
+	transmitting = false;
+}
+
+static void status(radio_status_t *st)
+{
+	uint16_t r67 = fd6818_read(&fd, FD_REG_RSSI);
+	uint16_t r65 = fd6818_read(&fd, FD_REG_NOISE);
+	last_rssi_raw = fd6818_rssi_raw(r67);
+	last_noise_raw = r65 & 0xFFu;
+	// Not calibrated: an RDA-style 0.5 dB raw scale is assumed, offset to be measured (as on the DM-32UV)
+	st->rssi_dbm = (int16_t)((int16_t)last_rssi_raw - 135);
+	st->noise = (uint8_t)last_noise_raw;
+	st->carrier = false;
+	st->tone_ok = hrc7000_subtone_ok(&modem);
+}
+
+static void audio(bool on)
+{
+	hrc_pin_write(PIN_SPK_SOURCE, !on);
+}
+
+void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d)
+{
+	d->rssi_raw = last_rssi_raw;
+	d->noise_raw = last_noise_raw;
+	d->fm_noise = hrc7000_fm_noise(&modem);
+	d->rf_writes = fd.writes;
+}
+
+const hal_radio_t dm1801pro_radio = {
+	.init = init,
+	.set_mode = set_mode,
+	.rx = rx,
+	.tx = tx,
+	.tx_off = tx_off,
+	.status = status,
+	.audio = audio,
+	.volume = NULL,
+};

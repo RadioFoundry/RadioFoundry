@@ -272,7 +272,7 @@ static void test_dm1801pro(void)
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
 	CHECK(chip.n == 0);
 	fd6818_set_mode(&dev, FD6818_MODE_FM);
-	CHECK(chip.n == 4 && chip.log[3].reg == 0x2B && chip.log[3].val == 0xC000);
+	CHECK(chip.n == 5 && chip.log[4].reg == 0x2B && chip.log[4].val == 0xC000);
 	CHECK(chip.protocol_errors == 0);
 }
 
