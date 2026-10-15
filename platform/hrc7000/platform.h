@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "hal_system.h"
+#include "hal_flash.h"
 
 #define REG32(a)		(*(volatile uint32_t *)(uintptr_t)(a))
 
@@ -189,6 +190,24 @@ void hrc_ssi_init(uint32_t base, uint16_t baudr);
 void hrc_ssi_select(uint32_t base, bool active);
 // Polled, one byte at a time. tx NULL sends 0xFF, rx NULL discards. False if the controller stops answering
 bool hrc_ssi_xfer(uint32_t base, const uint8_t *tx, uint8_t *rx, uint32_t len);
+
+// --- Data flash on SPI0 (flash_spi0.c) ---
+
+typedef struct {
+	uint8_t cs_pin;			// GPIO pin index of the chip select, low = selected
+	uint32_t write_floor;		// first byte the firmware may write or erase
+	const hal_flash_map_t *map;	// the core's areas
+} hrc_flash_cfg_t;
+
+extern hal_flash_t hrc_flash_spi0;
+void hrc_flash_spi0_configure(const hrc_flash_cfg_t *cfg);	// before hrc_flash_spi0.init
+uint32_t hrc_flash_spi0_jedec(void);
+
+// --- ADC (adc.c): channels 1 (B) and 2 (C) ---
+
+void hrc_adc_init(void);
+uint16_t hrc_adc_read(uint8_t ch);	// 10 bits, 0 if the conversion doesn't finish
+uint16_t hrc_adc_last(uint8_t ch);	// the last reading, for diagnostics
 
 // --- Start-up and services (clock.c, time.c) ---
 

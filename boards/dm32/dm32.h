@@ -7,13 +7,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
+#include "hal_flash.h"
+
+// The data flash is the shared SPI0 one (platform/hrc7000/flash_spi0.c, configured in board.c)
+extern hal_flash_t hrc_flash_spi0;
+#define dm32_flash hrc_flash_spi0
 
 // Ops each board file provides
 extern const hal_display_t dm32_display;
 extern const hal_input_t dm32_input;
 extern const hal_radio_t dm32_radio;
 extern const hal_power_t dm32_power;
-extern hal_flash_t dm32_flash;
 extern const hal_dmr_modem_t dm32_dmr;
 extern const hal_audio_t dm32_audio;
 extern const hal_vocoder_t dm32_vocoder;
@@ -93,7 +97,6 @@ typedef struct {
 	uint32_t fd_writes;
 } dm32_radio_diag_t;
 void dm32_radio_diag(dm32_radio_diag_t *d);
-uint16_t dm32_adc_raw(uint8_t ch);	// 1 = ADC channel B, 2 = channel C (battery)
 bool dm32_diag_line(uint8_t i, char *buf, uint8_t len);
 void dm32_diag_reset(void);
 #define DM32_DMR_DIAG_LINES	9
@@ -102,6 +105,5 @@ void dm32_dmr_stats_reset(void);
 void dm32_audio_stats(uint32_t *blocks, uint32_t *overruns, uint32_t *underruns);
 void dm32_audio_reset_stats(void);
 uint8_t dm32_vocoder_tag(void);	// 49 or 46: the stock codec in the slot, 0 none
-uint32_t dm32_flash_jedec(void);
 
 #endif
