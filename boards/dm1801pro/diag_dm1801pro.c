@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-1801 Pro diagnostics page lines: raw readings for bench checks (cached values only, no bus traffic)
+// DM-1801 Pro diagnostics page lines: raw readings for bench checks (cached values, except the accelerometer, which is
+// read over its own bus when the line is drawn)
 #include <stddef.h>
 #include "dm1801pro.h"
 #include "config.h"
@@ -94,6 +95,22 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " ");
 		put_u(&o, bf_cal_power_level(435000000u, 8));
 		break;
+	case 9: {
+		int16_t mg[3];
+		if (!dm1801pro_accel_read(mg)) {
+			put(&o, "accel none");
+			break;
+		}
+		put(&o, "acc ");
+		for (int k = 0; k < 3; k++) {
+			if (mg[k] < 0) {
+				put(&o, "-");
+			}
+			put_u(&o, (uint32_t)(mg[k] < 0 ? -mg[k] : mg[k]));
+			put(&o, k < 2 ? " " : " mg");
+		}
+		break;
+	}
 	default:
 		return false;
 	}

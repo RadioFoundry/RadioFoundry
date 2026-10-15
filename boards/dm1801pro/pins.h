@@ -18,6 +18,8 @@
 #define PIN_RF_CS		0x1E	// FD6818 chip select, low = selected
 #define PIN_TX_VHF		0x1F	// TX path select, VHF side (provisional band)
 
+#define PIN_ACCEL_SCL		0x22	// accelerometer I2C clock (PTB2)
+#define PIN_ACCEL_SDA		0x37	// accelerometer I2C data (PTB23)
 #define PIN_LED_RED		0x20	// provisional colors
 #define PIN_LED_GREEN		0x21
 #define PIN_KEY_ROW0		0x23	// keypad inputs PTB3-PTB6, low = key closed

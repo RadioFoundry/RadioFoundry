@@ -73,7 +73,13 @@ calls `board.bcast`.
 | `seek` | Stops on stations | Seek threshold (`cfg.seek_th`) |
 | Receive a channel signal | The broadcast mutes while the channel has traffic | Core policy, not the board |
 
-## 7. After this
+## 7. Accelerometer
+
+The diagnostics page has an `acc` line: x, y and z in milli-g. Lay the radio flat: z reads about +1000 or -1000 and x
+and y near 0; tilt it and the values follow. `accel none` means the chip didn't answer: check `PIN_ACCEL_SCL` /
+`PIN_ACCEL_SDA` and the address (`ACCEL_ADDR` in `accel_dm1801pro.c`; 0x18 if the chip's address pin is low).
+
+## 8. After this
 
 DMR needs the codec recipe and the modem glue and the air band its own receive path. The
 open items are in [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 10.
