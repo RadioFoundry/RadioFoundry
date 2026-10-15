@@ -323,6 +323,8 @@ code probe) does not work; replace it everywhere by this one (BIN).
 | Color-code scan | set LOCAL_CC to the received CC, then LAYER2_CONTROL = 0xC0 and, in repeater mode, the 5.2 restart steps 4–7 (no busy wait) | BIN |
 | Late entry (bit 2) | embedded LC is in the RX RAM; voice reception should start at the next burst A | DS |
 | End | terminator (data type 2) or loss of bursts; TXRX_CTRL = 0 | BIN |
+| Reception over (nothing taken for 390 ms) | the 5.2 restart: the chip drops the sender's slot timing and its timeslot interrupts stop | BENCH |
+| Slot timing with nothing usable for 600 ms | the 5.2 restart, again every 600 ms while it lasts. Without it the chip kept a departed sender's timing, reported only unusable and abnormal slots and took no later call (DM-1801 Pro bench) | BENCH |
 
 ---
 
