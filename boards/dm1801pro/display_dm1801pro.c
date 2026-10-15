@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DM-1801 Pro display: 128x64 monochrome ST7567-class LCD on a write-only serial bus bit-banged on bank C (chip select
 // PTC3, clock PTC4, data/command PTC6, data PTC8, reset PTC2; docs/spec/hardware-dm1801pro.md 3.2, 7). The backlight is
-// a plain GPIO, so set_backlight() is on or off.
+// on PTA15, which is also the SoC's PWM0 output: set_backlight() dims it.
 #include "dm1801pro.h"
 #include "config.h"
 #include "pins.h"
@@ -106,7 +106,7 @@ static void flush(const void *fb, uint16_t y0, uint16_t y1)
 
 static void set_backlight(uint8_t percent)
 {
-	hrc_pin_write(PIN_LCD_BACKLIGHT, percent > 0);
+	hrc_backlight(percent);	// PTA15 is PWM0, as on the DM-32UV (stock only switches it on and off)
 }
 
 const hal_display_t dm1801pro_display = {

@@ -48,7 +48,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 |---|---|---|---|---|
 | 5 / 6 | PTA5 / PTA6 | software I2C SCL / SDA, 8-bit address 0x7A, device unknown | high | K bus, ? device |
 | 7 / 8 | PTA7 / PTA8 | RF chip clock / data | high | K |
-| 15 | PTA15 | LCD backlight | low | I |
+| 15 | PTA15 | LCD backlight, high = on; also the PWM0 output, which ODR uses to dim it | low | I |
 | 16 | PTA16 | audio power amplifier, high = on (the stock broadcast tuner code drives it because the tuner needs the amplifier) | low | R |
 | 17 | PTA17 | power latch | high | I |
 | 18 | PTA18 | data flash chip select, low = selected | high | K |
@@ -57,7 +57,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 29 | PTA29 | FM tuner enable, low = on | high | I |
 | 30 | PTA30 | RF chip chip select, low = selected | high | K |
 | 31 | PTA31 | TX path select, VHF side (pair with PTB7) | low | K pin, I band |
-| 32 / 33 | PTB0 / PTB1 | LEDs (two colors, assignment unknown) | low | I |
+| 32 / 33 | PTB0 / PTB1 | LED green / red | low | R |
 | 34 / 55 | PTB2 / PTB23 | accelerometer I2C SCL / SDA | | K bus, I chip |
 | 35-38 | PTB3-PTB6 | keypad inputs, low = key closed | in | K |
 | 39 | PTB7 | TX path select, UHF side | low | K pin, I band |
@@ -309,7 +309,8 @@ slots, RF TX and RX) have vectors as on the DM-32UV. The I2C, SPI, ADC and DAC b
 ### 9.4 Power, backlight, LEDs
 
 PTA17 is the power latch, PTB9 the power key (polarity unverified; ODR takes the level at start-up as "on"). The backlight
-is a plain GPIO on PTA15 (no PWM). LEDs on PTB0 and PTB1. The panel's top LED is red while transmitting, green while
+is on PTA15. Stock only switches it as a GPIO; PTA15 is also the SoC's PWM0 output (as on the DM-32UV), so ODR dims it
+with PWM0 for the brightness setting (I until seen on the radio). LEDs: PTB0 green, PTB1 red (R). The panel's top LED is red while transmitting, green while
 receiving and orange flashing while scanning.
 
 ## 10. Open items

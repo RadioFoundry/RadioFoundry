@@ -217,6 +217,9 @@ void hrc_clock_init(void);
 // Vector table in RAM, PIC to a known state (everything masked and cleared)
 void hrc_irq_init(void);
 void hrc_time_init(void);
+// LCD backlight on PTA15 / PWM0 (backlight.c): 0 off, 100 fully on, otherwise PWM duty in percent
+void hrc_backlight(uint8_t percent);
+
 // Timer 1 at configTICK_RATE_HZ for the RTOS (called by the port when the scheduler starts)
 void hrc_tick_start(uint32_t hz);
 

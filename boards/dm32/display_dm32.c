@@ -20,12 +20,6 @@
 #define LCDC_CFG_VALUE		0x303u
 #define LCDC_PINS_MASK		0xFFF80107u		// IO_DIPLEX2 &= this: CS, RS, WR, DB0-DB7 to the controller
 
-#define PWM_CFG			REG32(PWM_BASE + 0x00)
-#define PWM_PER			REG32(PWM_BASE + 0x08)
-#define PWM_FP			REG32(PWM_BASE + 0x0C)
-#define PWM_PERIOD		200u
-#define IO_DIPLEX0_PWM0_GPIO	(1u << 17)		// 1: PTA15 is a GPIO, 0: PWM0
-
 #define SCALE			2u
 #define PANEL_W			240u
 #define PANEL_H			320u
@@ -117,24 +111,9 @@ static void lcdc_init(void)
 	}
 }
 
-// 0 = off, 100 or more = fully on (GPIO), otherwise PWM0 duty in percent. FP is counted against PER (200), so the
-// duty is percent x 2 (the old port wrote the percentage and topped out at about half: 3.6, check on hardware)
 static void set_backlight(uint8_t percent)
 {
-	uint32_t s = hrc_irq_save();
-	if (percent == 0 || percent >= 100) {
-		IO_DIPLEX0 |= IO_DIPLEX0_PWM0_GPIO;
-		hrc_irq_restore(s);
-		hrc_pin_out(PIN_LCD_BACKLIGHT, percent > 0);
-		return;
-	}
-	IO_DIPLEX0 &= ~IO_DIPLEX0_PWM0_GPIO;
-	hrc_irq_restore(s);
-	PWM_CFG = 0x328u;
-	PWM_PER = PWM_PERIOD;
-	PWM_FP = (uint32_t)percent * PWM_PERIOD / 100u;
-	PWM_CFG = 0x32Cu;
-	PWM_CFG = 0x32Du;
+	hrc_backlight(percent);
 }
 
 static void init(void)

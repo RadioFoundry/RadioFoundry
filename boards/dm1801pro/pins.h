@@ -20,8 +20,8 @@
 
 #define PIN_ACCEL_SCL		0x22	// accelerometer I2C clock (PTB2)
 #define PIN_ACCEL_SDA		0x37	// accelerometer I2C data (PTB23)
-#define PIN_LED_RED		0x20	// provisional colors
-#define PIN_LED_GREEN		0x21
+#define PIN_LED_GREEN		0x20	// PTB0; colors checked on the radio
+#define PIN_LED_RED		0x21	// PTB1
 #define PIN_KEY_ROW0		0x23	// keypad inputs PTB3-PTB6, low = key closed
 #define PIN_KEY_ROW3		0x26
 #define PIN_TX_UHF		0x27	// TX path select, UHF side (provisional band)
