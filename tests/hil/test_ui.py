@@ -135,6 +135,8 @@ def test_key_lock(home):
 def test_talk_target_picker_on_long_context(home):
     """Long # opens the talk target picker on a DMR channel (Recent is Hub 3)."""
     r = home
+    if r.core().get("mode") != "dmr":
+        pytest.skip("the channel isn't DMR")
     r.press("context", LONG)
     wait_screen(r, "picker", "talk target picker on long #")
     r.press("back")
@@ -423,6 +425,8 @@ def test_theme_is_kept(home):
         pytest.skip("firmware without settings.theme")
     if s["settings.theme"] != "0":
         pytest.skip("the theme isn't Dark")
+    if r.version().get("display", "").endswith("x1"):
+        pytest.skip("a monochrome screen has no themes (the radio says so)")
     _, before = r.shot_until(lambda d: True, what="Home")
     settings_keys(r, "ok 7 2 down down ok")
     try:
@@ -439,14 +443,14 @@ def test_updown_changes_the_zone(home):
     s = storage(r)
     if s.get("settings.updown_home") != "0":
         pytest.skip("firmware without settings.updown_home, or it isn't Channel")
+    if as_int(r.core().get("zone_count"), 2) < 2:
+        pytest.skip("only one zone")
     zone = as_int(r.core().get("zone_index"))
     settings_keys(r, "ok 7 8 down down ok")
     try:
         r.wait_for(lambda x: x.get("settings.updown_home") == "1", sections=("storage",), what="Up/Down = Zone")
         r.press("up")
-        v = r.wait_for(lambda x: as_int(x.get("zone_index")) != zone, what="zone change on UP")
-        if v["zone_index"] == str(zone):
-            pytest.skip("only one zone")
+        r.wait_for(lambda x: as_int(x.get("zone_index")) != zone, what="zone change on UP")
         r.press("down")
         r.wait_for(lambda x: as_int(x.get("zone_index")) == zone, what="the zone back on DOWN")
     finally:

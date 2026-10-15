@@ -128,7 +128,8 @@ static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL };
-static const hal_power_t fake_power = { .led = p_led };
+static uint8_t p_mic(void) { return 0; }
+static hal_power_t fake_power = { .led = p_led };	// mic_level set by the VOX check
 
 static const band_t bands[] = {
 	{ 108000000, 135999999, false },	// receive only
@@ -2234,11 +2235,19 @@ static void test_ui_glue(void)
 	CHECK(sm.set.reply_s == 4 && ui_svc_setting_get(UI_SET_REPLY_S) == 4);
 	ui_svc_apply(UI_SET_REPLY_S, 10);
 	CHECK(sm.set.reply_s == 10);
-	// VOX: on every FM channel, off again (the radio's settings)
-	ui_svc_vox(true);
+	// VOX: refused on a radio that can't measure the mic (the UI says so instead of "VOX on"); with a mic level, on
+	// every FM channel, off again (the radio's settings)
+	CHECK(!ui_svc_vox(true));
+	run(5);
+	CHECK(sm.set.vox == RADIO_VOX_OFF);
+	fake_power.mic_level = p_mic;
+	CHECK(ui_svc_vox(true));
+	run(5);
 	CHECK(sm.set.vox == RADIO_VOX_ALL);
 	ui_svc_vox(false);
+	run(5);
 	CHECK(sm.set.vox == RADIO_VOX_OFF);
+	fake_power.mic_level = NULL;
 
 	// Messages: delete through the data service
 	CHECK(!ui_svc_msg_delete(0));

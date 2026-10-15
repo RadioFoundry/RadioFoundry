@@ -87,7 +87,7 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "dm32 
 | If | Then |
 |---|---|
 | `flash 000000` or `FFFFFF` | SPI0 set-up in `flash_dm32.c` (BAUDR 4 = 21 MHz; try 8), CS pin 0x12 |
-| `cal none` | The factory page (block ID 2 in the last byte of a 4 KB page in 0x1000..0xC8000) wasn't found: dump the codeplug area through the stock CPS and compare (`calibration_dm32.c`) |
+| `cal none` | The factory page (block ID 2 in the last byte of a 4 KB page in 0x1000..0xC8000) wasn't found: dump the codeplug area through the stock CPS and compare (`drivers/cal/baofeng/baofeng_cal.c`) |
 
 ## 5. FM receive
 
@@ -110,7 +110,7 @@ MMDVMHost or a CPS on the same serial port: the host link switches by what it re
 | Check | If not |
 |---|---|
 | Carrier on frequency within a few hundred Hz | TX center / SIG_CENTER (factory TX center byte) |
-| Power levels 0-8 rise monotonically; level 8 near 5 W VHF / 4 W UHF | `dm32_cal_power_level` and the 11.3 fractions; DAC B must be powered (PD_CTRL bit 1 clear) |
+| Power levels 0-8 rise monotonically; level 8 near 5 W VHF / 4 W UHF | `bf_cal_power_level` and the 11.3 fractions; DAC B must be powered (PD_CTRL bit 1 clear) |
 | Deviation about 2.5 kHz (12.5 kHz channel) with normal speech; no distortion | `hrc7000_fm_tx` deviation, mic gain (GCR_ADCL 11 dB) |
 | CTCSS on the air at the right frequency | C7000 TX sub-audio; or switch to the FD6818's (`fd6818_set_tx_ctcss`) |
 | PA off and receiver back on PTT release | `tx_off()` |

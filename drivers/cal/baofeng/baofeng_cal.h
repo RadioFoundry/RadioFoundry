@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Factory calibration of the Baofeng HR_C7000 radios (DM-32UV, DM-1801 Pro): where it is, what it holds and the
+// values derived from it (docs/spec/hardware-dm32.md 11, hardware-dm1801pro.md 6.4). Never writes.
+#ifndef BAOFENG_CAL_H
+#define BAOFENG_CAL_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "hal_flash.h"
+
+typedef struct {
+	uint16_t very_low, low, mid, high;	// PA drive DAC values (0..4095) at a frequency
+} bf_cal_power_points_t;
+
+// Find and read the factory calibration from the data flash (page whose last byte is 2). copy_addr: where a decoded
+// copy of the image may be (0x710000 on the DM-32UV), 0 for none. Needs the flash initialized
+bool bf_cal_load(const hal_flash_t *flash, uint32_t copy_addr);
+bool bf_cal_valid(void);
+const char *bf_cal_source(void);	// "factory", "copy" or "none"
+uint8_t bf_cal_tx_center(void);		// 128 without calibration
+// Modulation balance (RF_MOD_BIAS_CTRL low half) for a TX frequency in Hz; 0x4D4D without calibration
+uint16_t bf_cal_modcal(uint32_t hz);
+// PA drive points for a TX frequency in Hz; false without calibration
+bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p);
+// DAC value for a power level 0..8 (hardware-dm32.md 11.3), clamped to 4095; the uncalibrated fallback when false
+uint16_t bf_cal_power_level(uint32_t hz, uint8_t level);
+// Raw byte of the 0x175-byte working image (diagnostics)
+uint8_t bf_cal_byte(uint16_t offset);
+
+// Pure part for host tests: decode the three pieces of a factory page into the working image and derive K values
+#define BF_CAL_LEN		0x175u
+bool bf_cal_parse(const uint8_t *sector, uint32_t sector_len, uint8_t image[BF_CAL_LEN]);
+void bf_cal_set_image(const uint8_t image[BF_CAL_LEN], bool valid);
+
+#endif

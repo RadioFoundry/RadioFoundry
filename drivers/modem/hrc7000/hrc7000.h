@@ -80,6 +80,7 @@
 #define C7_CTCSS_ADDR		0x518u
 #define C7_USER_DEFINE_CTC	0x51Cu
 #define C7_CDCSS_ADDR		0x520u
+#define C7_TONE_SEND_CTRL	0x528u
 #define C7_FM_TONE1		0x550u
 #define C7_FM_TONE2		0x554u
 #define C7_FM_TONE3		0x558u
@@ -143,6 +144,9 @@ typedef struct {
 	volatile uint32_t *regs;	// HRC7000_REG_BASE
 	volatile uint8_t *buf;		// HRC7000_BUF_BASE
 	uint32_t audio_ctl;		// shadow of AUDIO_CONTROL (the CPU's bits)
+	uint32_t subvoice;		// SUBVOICE_COEF before a TX tone (hrc7000_tx_tone)
+	bool tone_on;
+	uint8_t subaudio_dev;		// SUBVOICE_COEF b15:8 at 12.5 kHz (the chip's reset value)
 } hrc7000_t;
 
 static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
@@ -206,10 +210,18 @@ uint8_t hrc7000_ctcss_addr(uint16_t hz_x10);
 uint32_t hrc7000_user_ctcss(uint16_t hz_x10);
 
 typedef enum { HRC7000_TONE_NONE, HRC7000_TONE_CTCSS, HRC7000_TONE_DCS, HRC7000_TONE_DCS_INV } hrc7000_tone_t;
-// TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19)
+// TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19). Set the
+// TX tone before hrc7000_fm_tx(): the modem takes the DCS code when FM_PTT goes on
 void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t value);
 // The received tone or code matches (FM_DECODE_FLAG2 b0 CTCSS / b1 CDCSS); true when no RX tone is set
 bool hrc7000_subtone_ok(hrc7000_t *d);
+// A single FM TX tone instead of the microphone (8.3): DTMF digit "1" with both of its tones at hz, at the DTMF
+// deviation dev (SUBVOICE_COEF b15:8, which the sub-audio shares while the tone plays). hz = 0: the microphone, the
+// sub-audio deviation and the default DTMF steps back. tx_tone_key: the tone off (a silent carrier) and on again
+void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
+void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
+// TX tone deviation (SUBVOICE_COEF b15:8) for a TX frequency and bandwidth (8.3)
+uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide);
 // FM noise measure (FM_SQL bits 15:0, higher = less signal)
 static inline uint16_t hrc7000_fm_noise(hrc7000_t *d) { return (uint16_t)hrc7000_rd(d, C7_FM_SQL); }
 

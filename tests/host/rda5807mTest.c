@@ -3,11 +3,13 @@
 // The RDA5807M driver (drivers/bcast/rda5807m) against a simulated register file that behaves as the datasheet
 // describes (chip ID, soft reset, TUNE / SEEK cleared by the chip with STC set some polls later, seek wrapping the band
 // once, stations by frequency), first on a register-level bus, then through the bit-banged I2C master
-// (drivers/bus/i2c_gpio) and a pin-level I2C slave model of the chip's random-access mode at address 0x11
+// (drivers/bus/i2c_gpio) and a pin-level I2C slave model of the chip's random-access mode at address 0x11, last as the
+// board's hal_bcast_t (rda5807m_hal)
 #include <stdio.h>
 #include <string.h>
 #include "bcast/rda5807m/rda5807m.h"
 #include "bus/i2c_gpio/i2c_gpio.h"
+#include "bcast/rda5807m/rda5807m_hal.h"
 
 static int failures;
 static int checks;
@@ -489,12 +491,83 @@ static void test_i2c_gpio(void)
 	CHECK(pin.nacks == 2);	// only the two deliberate ones
 }
 
+// ---- the board interface (rda5807m_hal) ----
+static struct {
+	bool enabled, path;
+	int enables, delays_ms;
+} brd;
+static void h_enable(bool on) { brd.enabled = on; brd.enables++; }
+static void h_path(bool on) { brd.path = on; }
+static void h_delay(uint32_t ms) { brd.delays_ms += (int)ms; }
+static const rda5807m_hal_cfg_t hal_cfg = {
+	.bus = &gpio, .delay_ms = h_delay, .enable = h_enable, .audio_path = h_path, .cfg = { .seek_th = 8 },
+	.start_khz = 100000,
+};
+
+static void test_hal(void)
+{
+	chip_reset();
+	memset(&pin, 0, sizeof(pin));
+	memset(&brd, 0, sizeof(brd));
+	pin.scl = pin.sda_m = pin.sda_s = true;
+	pin.addr = RDA5807M_I2C_ADDR;
+	chip.st_khz[0] = 104700;
+	chip.st_stereo[0] = true;
+	rda5807m_hal_init(&hal_cfg);
+	const hal_bcast_t *h = &rda5807m_hal;
+	CHECK(h->lo_khz == 65000 && h->hi_khz == 108000 && h->grid_khz == 50);
+
+	bcast_status_t st;
+	CHECK(!h->status(&st));		// not powered
+	// The chip is probed after the enable line goes active, then powered up on the first frequency
+	CHECK(h->power(true));
+	CHECK(brd.enabled && (chip.reg[2] & RDA5807M_ENABLE) && (chip.reg[3] >> 6) == 480);
+	CHECK(brd.delays_ms > 0);	// the reset time was waited out through the board's delay
+	h->volume(11);
+	CHECK((chip.reg[5] & RDA5807M_VOLUME_MASK) == 11);
+	// Audio goes to the speaker path and unmutes the chip; off does both the other way
+	h->audio(true);
+	CHECK(brd.path && (chip.reg[2] & RDA5807M_DMUTE));
+	h->audio(false);
+	CHECK(!brd.path && !(chip.reg[2] & RDA5807M_DMUTE));
+
+	// A tune runs until the chip says it is done
+	CHECK(h->tune(104700));
+	CHECK(h->status(&st) && st.tuning);
+	for (int i = 0; i < 8 && st.tuning; i++) {
+		CHECK(h->status(&st));
+	}
+	CHECK(!st.tuning && st.khz == 104700 && st.station && st.stereo);
+	// A seek ends on a station and the next power-up comes back to it
+	CHECK(h->tune(90000));
+	CHECK(h->seek(true));
+	st.tuning = true;
+	for (int i = 0; i < 12 && (st.tuning || st.khz != 104700); i++) {
+		CHECK(h->status(&st));
+	}
+	CHECK(st.khz == 104700 && !st.tuning);
+	CHECK(h->power(false) && !brd.enabled && !brd.path);
+	CHECK(!h->status(&st));
+	CHECK(h->power(true) && (chip.reg[3] >> 6) == (uint16_t)((104700 - 76000) / 50));
+
+	// Audio asked for while the chip is off stays off
+	CHECK(h->power(false));
+	h->audio(true);
+	CHECK(!brd.path);
+
+	// No chip: power-up fails and the enable line is released again
+	chip.chip_id = 0;
+	CHECK(!h->power(true));
+	CHECK(!brd.enabled);
+}
+
 int main(void)
 {
 	test_helpers();
 	test_power_and_tune();
 	test_seek();
 	test_i2c_gpio();
+	test_hal();
 	printf("# rda5807mTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

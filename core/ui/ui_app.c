@@ -994,6 +994,7 @@ static void quick_unavailable(uint8_t kind)
 	case QT_SCAN: ui_toast("Scan: not in this build"); break;
 	case QT_MODE: ui_toast(view->vfo ? "VFO: FM only" : "Mode change: not in this build"); break;
 	case QT_STEP: ui_toast("Step: set it in qdmr"); break;
+	case QT_VOX: ui_toast("VOX: not on this radio yet"); break;
 	default: ui_toast("Not in this build"); break;
 	}
 }

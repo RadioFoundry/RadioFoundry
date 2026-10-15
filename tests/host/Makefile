@@ -536,16 +536,24 @@ TESTS   += rda5807mTest
 RDA     := $(ROOT)/drivers/bcast/rda5807m
 I2CG    := $(ROOT)/drivers/bus/i2c_gpio
 
-rda5807mTest: rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m.h $(I2CG)/i2c_gpio.c $(I2CG)/i2c_gpio.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ rda5807mTest.c $(RDA)/rda5807m.c $(I2CG)/i2c_gpio.c
+rda5807mTest: rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m.h $(RDA)/rda5807m_hal.c $(RDA)/rda5807m_hal.h \
+		$(I2CG)/i2c_gpio.c $(I2CG)/i2c_gpio.h $(ROOT)/hal/hal_bcast.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m_hal.c $(I2CG)/i2c_gpio.c
 
-dm32CalTest: dm32CalTest.c $(DM32)/calibration_dm32.c $(DM32)/dm32.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DM32) -I$(ROOT)/platform/hrc7000 -Wshadow -o $@ dm32CalTest.c $(DM32)/calibration_dm32.c
+# The LIS3DH accelerometer driver on a register model
+TESTS   += lis3dhTest
+lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c
+
+dm32CalTest: dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-dm32
-run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest
+run-dm32: fd6818Test st7567Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest
+	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
+	./st7567Test
 	./st7789Test
 	./keymatrixTest
 	./hrc7000DmrTest

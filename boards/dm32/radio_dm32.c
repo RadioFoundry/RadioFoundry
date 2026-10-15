@@ -33,6 +33,8 @@ static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
 static bool transmitting;
+static uint32_t tx_hz;		// FM TX frequency and bandwidth, for the TX tone deviation
+static bool tx_wide;
 static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key the PA
 static volatile bool tx_uhf;
 static volatile uint16_t tx_drive;	// DAC B value for the transmission
@@ -119,7 +121,7 @@ static hrc7000_tone_t c7_tone(uint8_t type)
 
 static void write_mod_bias(uint32_t hz)
 {
-	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias(dm32_cal_tx_center(), dm32_cal_modcal(hz)));
+	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(hz)));
 }
 
 // ---- From the DMR interrupts ----
@@ -164,7 +166,7 @@ static void init(void)
 	DAC_DATA_C = DAC_C_INIT;
 	pa_off();
 	lna(0, false);
-	hrc7000_power_on_init(&modem, dm32_cal_tx_center(), MIC_GAIN_DB);
+	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DB);
 
 	hrc_pin_out(PIN_FD_CS, true);
 	hrc_pin_out(PIN_FD_CLK, false);
@@ -185,7 +187,7 @@ static void set_mode(radio_mode_t m)
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);
 		dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
-		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(dm32_cal_tx_center(), dm32_cal_modcal(rx_hz)), MIC_GAIN_DB);
+		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)), MIC_GAIN_DB);
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
 	} else {
@@ -232,7 +234,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		return false;
 	}
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_drive = dm32_cal_power_level(hz, power);
+	tx_drive = bf_cal_power_level(hz, power);
 	lna(hz, false);
 	write_mod_bias(hz);
 	fd6818_set_freq(&fd, hz);
@@ -245,9 +247,11 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		dmr_keyed = true;
 	} else {
 		fd6818_fm_tx_prepare(&fd);
-		hrc7000_fm_tx(&modem, bw == RADIO_BW_25K);
+		tx_hz = hz;
+		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
-			tone != NULL ? tone->value : 0);
+			tone != NULL ? tone->value : 0);	// before FM_PTT: the modem takes the DCS code then
+		hrc7000_fm_tx(&modem, tx_wide);
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_TX);
@@ -269,6 +273,26 @@ static void tx_off(void)
 		subtone_t t = rx_tone;
 		rx(rx_hz, rx_bw, &t);
 	}
+}
+
+// FM TX tone (1750 Hz burst, roger beep, Morse): the modem's DTMF sender as a single tone (modem-hrc7000.md 8.3).
+// hrc7000_fm_idle() at the end of the transmission gives the microphone back
+static bool tx_tone(uint16_t hz)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	hrc7000_tx_tone(&modem, hz, hrc7000_dtmf_dev(tx_hz, tx_wide));
+	return true;
+}
+
+static bool tx_tone_key(bool down)
+{
+	if (!transmitting || mode != RADIO_MODE_FM || !modem.tone_on) {
+		return false;
+	}
+	hrc7000_tx_tone_key(&modem, down);
+	return true;
 }
 
 static void status(radio_status_t *st)
@@ -314,6 +338,8 @@ const hal_radio_t dm32_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+	.tx_tone = tx_tone,
+	.tx_tone_key = tx_tone_key,
 	.status = status,
 	.audio = audio,
 	.volume = NULL,

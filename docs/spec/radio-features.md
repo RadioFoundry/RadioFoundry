@@ -110,7 +110,8 @@ if on). Received audio, MONITOR, and 500 ms after a reception never key VOX (the
 works as usual and wins. The level comes from the board's `board.power->mic_level` hook; a board without it has no
 VOX (DM-1701: `hardware-dm1701.md` 11.3, not verified on the bench).
 The Quick VOX tile (FM) turns the `vox` setting to all or off; `vox_on` in the view says whether VOX is armed on
-the current channel.
+the current channel. On a board without the hook the tile refuses to turn it on ("VOX: not on this radio yet")
+rather than show "VOX on" for a VOX that never keys.
 
 ### 3.5 Squelch tail elimination
 
