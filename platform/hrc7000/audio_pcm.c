@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-32UV PCM audio: the HR_C7000's own codec through its two 10 ms PCM buffers in the shared SRAM
+// HR_C7000 PCM audio (audio_pcm.h): the modem's own codec path through its two 10 ms PCM buffers in the shared SRAM
 // (docs/spec/hardware-dm32.md 9; modem-hrc7000.md 3, 8.1).
 //
 // With AUDIO_CONTROL b4 set the modem fills 80 mic samples at 0x18000000 every 10 ms and raises PCM_wr (PIC 28); with
@@ -10,8 +10,8 @@
 //
 // Sample format in the buffers: 16-bit native (little-endian) words assumed; check on the first DMR call.
 #include <string.h>
-#include "dm32.h"
 #include "config.h"
+#include "audio_pcm.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
@@ -30,6 +30,8 @@ static volatile uint8_t spk_half;
 static volatile uint8_t mic_fill, mic_half;
 static volatile int8_t mic_ready = -1;		// block index ready for the task
 
+static hrc7000_t *modem;
+static void (*speaker_pcm_cb)(bool on);
 static TaskHandle_t task;
 static audio_block_cb_t block_cb;
 static void *block_ctx;
@@ -41,7 +43,7 @@ static volatile int16_t *const pcm_spk = (volatile int16_t *)C7_PCM_SPK_ADDR;
 
 static void isr_pcm_wr(void)
 {
-	hrc7000_wr(dm32_modem(), C7_INTERP_CLEAR, C7_INT_PCM_WR);
+	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR);
 	if (!running) {
 		return;
 	}
@@ -67,7 +69,7 @@ static void isr_pcm_wr(void)
 
 static void isr_pcm_rd(void)
 {
-	hrc7000_wr(dm32_modem(), C7_INTERP_CLEAR, C7_INT_PCM_RD);
+	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_RD);
 	if (spk_tail == spk_head) {
 		for (uint32_t i = 0; i < HALF; i++) {
 			pcm_spk[i] = 0;
@@ -117,8 +119,14 @@ static void audio_task(void *arg)
 static void audio_bits(uint32_t set, uint32_t clear)
 {
 	uint32_t s = hrc_irq_save();
-	hrc7000_audio_bits(dm32_modem(), set, clear);
+	hrc7000_audio_bits(modem, set, clear);
 	hrc_irq_restore(s);
+}
+
+void hrc_audio_pcm_attach(hrc7000_t *m, void (*speaker_pcm)(bool on))
+{
+	modem = m;
+	speaker_pcm_cb = speaker_pcm;
 }
 
 static bool start(audio_block_cb_t cb, void *ctx)
@@ -140,7 +148,7 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	spk_half = 0;
 	hrc_barrier();
 	running = true;
-	hrc7000_wr(dm32_modem(), C7_INTERP_CLEAR, C7_INT_PCM_WR | C7_INT_PCM_RD);
+	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR | C7_INT_PCM_RD);
 	hrc_irq_enable(IRQ_PCM_WR, true);
 	hrc_irq_enable(IRQ_PCM_RD, true);
 	audio_bits(C7_AUDIO_PCM_MIC, 0);
@@ -155,30 +163,32 @@ static void stop(void)
 	block_cb = NULL;
 }
 
-// Speaker PCM: the modem plays the CPU's buffer instead of its FM demodulator (radio_dm32.c owns the bits)
+// Speaker PCM: the modem plays the CPU's buffer instead of its FM demodulator (the radio owns the bits)
 static void speaker_pcm(bool on)
 {
 	if (on) {
 		spk_head = spk_tail = 0;
 		spk_half = 0;
 	}
-	dm32_speaker_pcm(on);
+	if (speaker_pcm_cb != NULL) {
+		speaker_pcm_cb(on);
+	}
 }
 
-const hal_audio_t dm32_audio = {
+const hal_audio_t hrc_audio_pcm = {
 	.start = start,
 	.stop = stop,
 	.speaker_pcm = speaker_pcm,
 };
 
-void dm32_audio_stats(uint32_t *b, uint32_t *ov, uint32_t *un)
+void hrc_audio_pcm_stats(uint32_t *b, uint32_t *ov, uint32_t *un)
 {
 	*b = blocks;
 	*ov = overruns;
 	*un = underruns;
 }
 
-void dm32_audio_reset_stats(void)
+void hrc_audio_pcm_reset_stats(void)
 {
 	blocks = overruns = underruns = 0;
 }

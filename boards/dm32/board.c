@@ -71,8 +71,8 @@ const board_t board = {
 	.diag_reset = dm32_diag_reset,
 #endif
 #if CONFIG_DMR
-	.dmr = &dm32_dmr,
-	.audio = &dm32_audio,
+	.dmr = &hrc_dmr,
+	.audio = &hrc_audio_pcm,
 	.vocoder = &dm32_vocoder,
 #endif
 #if CONFIG_HOSTLINK

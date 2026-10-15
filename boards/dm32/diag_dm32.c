@@ -46,10 +46,10 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 #if CONFIG_DMR
 	// The DMR modem counters first (bring-up), then the board readings
-	if (i < DM32_DMR_DIAG_LINES) {
-		return dm32_dmr_stats_line(i, buf, len);
+	if (i < HRC_DMR_DIAG_LINES) {
+		return hrc_dmr_stats_line(i, buf, len);
 	}
-	i -= DM32_DMR_DIAG_LINES;
+	i -= HRC_DMR_DIAG_LINES;
 #endif
 	out_t o = { buf, buf + len - 1 };
 	dm32_radio_diag_t d;
@@ -104,7 +104,7 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 #if CONFIG_DMR
 	case 6: {
 		uint32_t b, ov, un;
-		dm32_audio_stats(&b, &ov, &un);
+		hrc_audio_pcm_stats(&b, &ov, &un);
 		put(&o, "aud ");
 		put_u(&o, b);
 		put(&o, " ov ");
@@ -133,8 +133,8 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 void dm32_diag_reset(void)
 {
 #if CONFIG_DMR
-	dm32_dmr_stats_reset();
-	dm32_audio_reset_stats();
+	hrc_dmr_stats_reset();
+	hrc_audio_pcm_reset_stats();
 #endif
 }
 

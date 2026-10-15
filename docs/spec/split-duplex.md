@@ -251,7 +251,7 @@ The core hands the modem driver, for each slot, the burst and the CACH (fields a
 - **HR_C7000**: LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS and BS_CACH (0x428-0x438) exist and are never
   written by working firmware (`modem-hrc7000.md` 2.5); the user guide's descriptions of them are not in our spec yet.
   Until the register layout is specified the HR_C7000 has no `bs_*` operations, so INFO offers no TX half on it. The
-  DM-32UV glue (`boards/dm32/dmr_dm32.c`) does not wire `now_us` / `slot_clock` yet either, so that radio offers no role at
+  DM-32UV glue (`platform/hrc7000/dmr_glue.c`) does not wire `now_us` / `slot_clock` yet either, so that radio offers no role at
   all (INFO byte 1 = 0, SET_ROLE answers 2); adding them (the engine's `tick` / `t_tick`, as `hrc6000_bs_slot_clock`
   does) makes it an RX half. Not done here: the csky toolchain was not available to build it.
 - **Fallback when the chip can't make a CACH**: BS-synced continuous bursts without valid TACT bits. MMDVMHost-style

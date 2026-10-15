@@ -126,7 +126,7 @@ Select a DMR channel with traffic (or let the SDR bench send a call), then `diag
 | `V H T I` | voice, headers, terminators counted in a call | Bursts deframed but dropped: color code (`cc` line) or CRC flags |
 | `cc 1 ts 1 <RX_TYPE_INFO>` | the call's color code and slot | |
 | Voice heard from both slots of a repeater, and a simplex call | `HRC7000_RX_NEXT_SLOT_XOR` in `hrc7000_dmr.c` (1 now): if every other voice burst is lost or only one slot plays, build with `-DHRC7000_RX_NEXT_SLOT_XOR=0` |
-| `codec 049` (or 046) and clean audio | without a merged codec DMR is silent; garbled audio: PCM byte order (`audio_dm32.c`), the codec call parameters (`vocoder_dm32.c`: flags 0x1840 / 0x800, E[0x1736] / D[0x1166]) |
+| `codec 049` (or 046) and clean audio | without a merged codec DMR is silent; garbled audio: PCM byte order (`platform/hrc7000/audio_pcm.c`), the codec call parameters (`vocoder_dm32.c`: flags 0x1840 / 0x800, E[0x1736] / D[0x1166]) |
 
 ## 9. DMR transmit (dummy load and an SDR or a second DMR radio)
 

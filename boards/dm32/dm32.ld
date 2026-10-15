@@ -38,7 +38,7 @@ SECTIONS
 	.text :
 	{
 		KEEP(*(.entry))	/* crt0: the bootloader jumps to the first byte */
-		*(EXCLUDE_FILE(*hrc7000_dmr.o *dmr_dm32.o) .text EXCLUDE_FILE(*hrc7000_dmr.o *dmr_dm32.o) .text.*)
+		*(EXCLUDE_FILE(*hrc7000_dmr.o *dmr_glue.o) .text EXCLUDE_FILE(*hrc7000_dmr.o *dmr_glue.o) .text.*)
 		. = ALIGN(4);
 	} >FLASH
 
@@ -60,7 +60,7 @@ SECTIONS
 		__ramfunc_start = .;
 		*(.ramfunc .ramfunc.*)
 		*hrc7000_dmr.o(.text .text.*)	/* the slot engine: every modem interrupt runs it (modem-hrc7000.md 9 #15) */
-		*dmr_dm32.o(.text .text.*)
+		*dmr_glue.o(.text .text.*)
 		. = ALIGN(4);
 		__ramfunc_end = .;
 	} >RAM_LO AT>FLASH
