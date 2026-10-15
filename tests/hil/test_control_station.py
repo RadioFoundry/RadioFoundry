@@ -90,6 +90,8 @@ def test_usb_settings_stored(radio):
     """Radio only: op 27 stores each setting, the view keys follow; nothing re-enumerates (the power-on setting acts
     at the next boot only)."""
     _need(radio)
+    if "USB" not in radio.features():
+        pytest.skip("no USB on this radio: no USB network settings")
     try:
         radio.link.usb_net_settings(boot_network=True)
         v = radio.view(["hotspot"])

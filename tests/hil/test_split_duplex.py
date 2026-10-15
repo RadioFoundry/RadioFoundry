@@ -51,6 +51,8 @@ def test_split_protocol(radio):
         try:
             ver, info = sdh.require_split(r)
             assert ver == 1
+            if info["offered"] == 0:
+                pytest.skip("the radio doesn't offer split duplex (its modem glue has no slot clock)")
             assert info["offered"] & 3 == 3, info
             assert info["role"] == sdh.ROLE_NORMAL
             print(f"INFO {info} (cach method {sdh.CACH_METHODS.get(info['cach'])})")

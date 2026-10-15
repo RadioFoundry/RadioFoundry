@@ -38,7 +38,11 @@ def storage(radio):
 def test_cps_info(radio):
     info = cps_session(radio, lambda c: c.info())
     assert info["struct"] == 3, info
-    assert info["radio_type"] in (8, 10), f"not a DM-1701 type: {info}"
+    # The type qdmr knows the radio by (cps-protocol.md 2.2): the DM-1701's own; other radios one qdmr knows (a board
+    # without a hal_cps_t reports the shim's default, 6)
+    board_name = radio.version().get("board")
+    want = (8, 10) if board_name == "DM-1701" else tuple(cps_client.RADIO_TYPES)
+    assert info["radio_type"] in want, f"radio type {info['radio_type']} on the {board_name}: {info}"
     assert info["flash_id"] not in (0, 0xFFFFFFFF), info
     assert info["git"], info
 
