@@ -14,6 +14,7 @@
 #include <stddef.h>
 
 #define LIS3DH_WHO_AM_I_VALUE	0x33u
+#define LIS3DH_WHO_AM_I_SC7A20	0x11u	// a register-compatible clone (the DM-1801 Pro's)
 
 #define LIS3DH_REG_WHO_AM_I	0x0Fu
 #define LIS3DH_REG_CTRL1	0x20u
@@ -41,7 +42,7 @@ typedef struct {
 	int16_t x, y, z;	// milli-g
 } lis3dh_sample_t;
 
-// True when a LIS3DH answers its WHO_AM_I
+// True when a LIS3DH (or an SC7A20) answers its WHO_AM_I
 bool lis3dh_probe(const lis3dh_bus_t *bus);
 // 50 Hz, all axes, block data update, high resolution, +-2 g. False when the bus or the chip doesn't answer
 bool lis3dh_init(const lis3dh_bus_t *bus);

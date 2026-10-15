@@ -13,7 +13,7 @@ int16_t lis3dh_to_mg(uint8_t lo, uint8_t hi)
 bool lis3dh_probe(const lis3dh_bus_t *bus)
 {
 	uint8_t id = 0;
-	return bus->read(bus->ctx, LIS3DH_REG_WHO_AM_I, &id, 1) && id == LIS3DH_WHO_AM_I_VALUE;
+	return bus->read(bus->ctx, LIS3DH_REG_WHO_AM_I, &id, 1) && (id == LIS3DH_WHO_AM_I_VALUE || id == LIS3DH_WHO_AM_I_SC7A20);
 }
 
 bool lis3dh_init(const lis3dh_bus_t *bus)

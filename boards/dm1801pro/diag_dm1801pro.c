@@ -105,7 +105,13 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 9: {
 		int16_t mg[3];
 		if (!dm1801pro_accel_read(mg)) {
-			put(&o, "accel none");
+			int16_t id = dm1801pro_accel_id();
+			if (id < 0) {
+				put(&o, "accel no ack");
+			} else {
+				put(&o, "accel id ");
+				put_x(&o, (uint32_t)id, 2);
+			}
 			break;
 		}
 		put(&o, "acc ");

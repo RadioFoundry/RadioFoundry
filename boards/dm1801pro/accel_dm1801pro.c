@@ -54,6 +54,13 @@ static bool reg_read(void *ctx, uint8_t reg, uint8_t *buf, size_t n)
 
 static const lis3dh_bus_t chip = { reg_write, reg_read, NULL };
 
+// The WHO_AM_I byte, or -1 when nothing acknowledges the address: the diagnostics line shows it when the probe fails
+int16_t dm1801pro_accel_id(void)
+{
+	uint8_t id = 0;
+	return reg_read(NULL, LIS3DH_REG_WHO_AM_I, &id, 1) ? id : -1;
+}
+
 // 0 = not tried, 1 = running, -1 = no answer (tried again on the next call: the diagnostics page is the only caller)
 static int8_t state;
 

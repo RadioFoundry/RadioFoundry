@@ -71,6 +71,9 @@ int main(void)
 	CHECK(lis3dh_init(&bus));
 	CHECK(chip.reg[LIS3DH_REG_CTRL1] == 0x47 && chip.reg[LIS3DH_REG_CTRL4] == 0x88);
 	reset();
+	chip.reg[LIS3DH_REG_WHO_AM_I] = 0x11;	// SC7A20, the clone on the DM-1801 Pro
+	CHECK(lis3dh_probe(&bus) && lis3dh_init(&bus));
+	reset();
 	chip.reg[LIS3DH_REG_WHO_AM_I] = 0x32;
 	CHECK(!lis3dh_probe(&bus) && !lis3dh_init(&bus) && chip.writes == 0);	// not a LIS3DH: nothing is written
 	reset();
