@@ -1,32 +1,41 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-32UV vocoder: the radio's own stock AMBE+2 codec (049 or 046), run from RAM at its stock address
-// (docs/spec/codec-dm32.md, "Recommended hosting" and "C. Codec state init tables").
+// HR_C7000 vocoder: the radio's own stock AMBE+2 codec, run from RAM at its stock address (docs/spec/codec-dm32.md,
+// "Recommended hosting" and "C. Codec state init tables"). Shared by the HR_C7000 radios that carry this codec build;
+// what differs between them (the slot, the RAM and table addresses) comes from the board.
 //
 // tools/dm32_codec.py carves the codec code and its table window out of the user's stock file and writes them into
-// the codec slot (0x030E8000..0x03100000) behind a small header; they are never part of this repository or a release.
-// On first use the code is copied to its stock RAM address (inside the window dm32.ld reserves) and the tables to their
-// stock modem SRAM address. Nothing is relocated or patched. Without a valid slot, present() is false: FM only.
+// the board's codec slot behind a small header; they are never part of this repository or a release. On first use the
+// code is copied to its stock RAM address (inside the window the board's linker script reserves) and the tables to
+// their stock modem SRAM address. Nothing is relocated or patched. Without a valid slot, present() is false: FM only.
+//
+// The board's linker script gives the slot (__codec_slot..__codec_slot_end) and the windows a slot may name
+// (__codec_run_lo/hi, __codec_tab_lo/hi); its board.mk names the profile prefix (HRC_CODEC_BOARD, e.g. "dm32").
 //
 // Not reentrant: one task (the audio task, through the audio block callback) makes all calls. The codec runs on the
 // caller's stack.
 #include <string.h>
-#include "dm32.h"
 #include "config.h"
+#include "vocoder.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
 
-#define SLOT_MAGIC		0x43524444u	// "DDRC" little-endian: ODR DM-32 codec slot
+#ifndef HRC_CODEC_BOARD
+#error "the board's board.mk must define HRC_CODEC_BOARD (the codec profile prefix)"
+#endif
+
+#define SLOT_MAGIC		0x43524444u	// "DDRC" little-endian: ODR HR_C7000 codec slot
 #define SLOT_VERSION		1u
 #define CODEC_SIG0		0x152514D8u	// first two words of the codec code (both versions)
 #define CODEC_SIG1		0x74C776CDu
 
-// Where a codec may run: the RAM window dm32.ld leaves out (049 and 046 code windows) and the modem SRAM table window
-#define RUN_LO			0x00016CDCu
-#define RUN_HI			0x0002F914u
-#define TAB_LO			0x18000E48u
-#define TAB_HI			0x18003E20u
+// Where a codec may run: the RAM window the linker script leaves out and the modem SRAM table window
+extern const uint8_t __codec_run_lo[], __codec_run_hi[], __codec_tab_lo[], __codec_tab_hi[];
+#define RUN_LO			((uint32_t)(uintptr_t)__codec_run_lo)
+#define RUN_HI			((uint32_t)(uintptr_t)__codec_run_hi)
+#define TAB_LO			((uint32_t)(uintptr_t)__codec_tab_lo)
+#define TAB_HI			((uint32_t)(uintptr_t)__codec_tab_hi)
 
 // The slot header, written by tools/dm32_codec.py (keep the two in step). Code follows at +code_off, tables at +tab_off
 typedef struct {
@@ -224,14 +233,15 @@ static const char *profile(void)
 	if (!present()) {
 		return NULL;
 	}
-	return slot->stock_tag == 49u ? "dm32-049" : (slot->stock_tag == 46u ? "dm32-046" : "dm32-unknown");
+	return slot->stock_tag == 49u ? HRC_CODEC_BOARD "-049" :
+		(slot->stock_tag == 46u ? HRC_CODEC_BOARD "-046" : HRC_CODEC_BOARD "-unknown");
 }
 
-const hal_vocoder_t dm32_vocoder = {
+const hal_vocoder_t hrc_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
 };
 
-uint8_t dm32_vocoder_tag(void)
+uint8_t hrc_vocoder_tag(void)
 {
 	return present() ? (uint8_t)slot->stock_tag : 0;
 }

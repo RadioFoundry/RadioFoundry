@@ -75,8 +75,8 @@ def main():
             os.remove(out)	# a merged image from an older build would be flashed by mistake
         return 0
     cmd = [sys.executable, os.path.join(TOOLS, tool + ".py"), "--stock", stock, "--image", args.image, "-o", out]
+    cmd += ["--board", args.board]
     if tool == "codec_extract":
-        cmd += ["--board", args.board]
         if args.image2:
             cmd += ["--image2", args.image2]
     key = find_key(args.dir, args.board)

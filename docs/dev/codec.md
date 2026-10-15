@@ -29,7 +29,7 @@ For source builds, drop the stock file into `codecs/` and `make` runs the board'
 | The interface the core calls | `hal/hal_vocoder.h` (`board.vocoder`) |
 | DM-1701 hosting: state init, per-frame calls | `boards/dm1701/vocoder_dm1701.c` |
 | MD-380 hosting: the same, other addresses and window checks | `boards/md380/vocoder_md380.c` |
-| DM-32UV hosting: the slot header, the copy to RAM | `boards/dm32/vocoder_dm32.c`, `platform/hrc7000/codec_call.c` |
+| HR_C7000 radios (DM-32UV) hosting: the slot header, the copy to RAM | `platform/hrc7000/vocoder.c`; the slot and windows in the board's linker script, the profile prefix in its `board.mk` |
 | The window kept free in flash | the board's linker script |
 | AMBE frame FEC and the voice path around the codec | `core/dmr/ambe` |
 

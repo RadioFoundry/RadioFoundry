@@ -25,6 +25,12 @@ _Irq_Stack_Size = 0x800;
 
 __codec_slot = 0x030E8000;
 __codec_slot_end = 0x03100000;
+/* Where a slot's codec may run (platform/hrc7000/vocoder.c checks the slot against them): the RAM window below and the
+ * modem SRAM table window */
+__codec_run_lo = 0x00016CDC;
+__codec_run_hi = 0x0002F914;
+__codec_tab_lo = 0x18000E48;
+__codec_tab_hi = 0x18003E20;
 
 MEMORY
 {

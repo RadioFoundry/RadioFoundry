@@ -73,7 +73,7 @@ const board_t board = {
 #if CONFIG_DMR
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
-	.vocoder = &dm32_vocoder,
+	.vocoder = &hrc_vocoder,
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
