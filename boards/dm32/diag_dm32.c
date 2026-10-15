@@ -56,7 +56,7 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 	switch (i) {
 	case 0:
 		put(&o, "bat ");
-		put_u(&o, dm32_adc_raw(2));
+		put_u(&o, hrc_adc_last(2));
 		put(&o, " ");
 		put_u(&o, board.power->battery_mv());
 		put(&o, "mV");
@@ -79,7 +79,7 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	case 3:
 		put(&o, "flash ");
-		put_x(&o, dm32_flash_jedec(), 6);
+		put_x(&o, hrc_flash_spi0_jedec(), 6);
 		put(&o, " cal ");
 		put(&o, dm32_cal_source());
 		break;

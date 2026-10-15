@@ -65,7 +65,7 @@ const board_t board = {
 	.side_key_count = sizeof(side_keys),
 	.radio = &dm32_radio,
 	.power = &dm32_power,
-	.flash = &dm32_flash,
+	.flash = &hrc_flash_spi0,
 #if CONFIG_DIAG
 	.diag_line = dm32_diag_line,
 	.diag_reset = dm32_diag_reset,
@@ -154,8 +154,32 @@ void board_early_init(void)
 	io_init();
 }
 
+// Everything the core stores lives above the write floor (hardware-dm32.md 10.1): the open-firmware codeplug's 64 KB
+// "EEPROM" image at 0x700000 (CODEPLUG_OPENFW_EEPROM_BASE in board.mk), OpenDM32's calibration copy left alone at
+// 0x710000, the settings ring and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000
+// (CODEPLUG_OPENFW_FLASH_BASE) with room above it for the DMR ID database, the native codeplug in the last 1 MB. The
+// factory calibration is read only, so the open-firmware CPS gets no calibration window
+static const hal_flash_map_t flash_map = {
+	.settings_addr = 0x711000u,
+	.settings_size = 0x008000u,	// 8 sectors
+	.journal_addr = 0x719000u,	// 2 sectors
+	.openfw_eeprom = 0x700000u,
+	.openfw_flash = 0x720000u,
+	.openfw_end = 0xF00000u,
+	.calibration_addr = 0,
+	.calibration_size = 0,
+	.native_addr = 0xF00000u,
+	.native_size = 0x100000u,
+};
+static const hrc_flash_cfg_t flash_cfg = {
+	.cs_pin = PIN_FLASH_CS,
+	.write_floor = 0x700000u,	// hardware-dm32.md 10.1
+	.map = &flash_map,
+};
+
 void board_init(void)
 {
+	hrc_flash_spi0_configure(&flash_cfg);
 	lcdbus = xSemaphoreCreateRecursiveMutex();
 	dm32_power.init();
 	dm32_flash.init();

@@ -6,19 +6,6 @@
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
-#include "FreeRTOS.h"
-#include "semphr.h"
-#include "task.h"
-
-#define ADC_CTRL		REG32(ADC_BASE + 0x00)
-#define ADC_INTR		REG32(ADC_BASE + 0x08)
-#define ADC_INTR_STA		REG32(ADC_BASE + 0x0C)
-#define ADC_START		REG32(ADC_BASE + 0x14)
-#define ADC_CH_VLD		REG32(ADC_BASE + 0x24)
-#define ADC_PD_SEOC_TIME	REG32(ADC_BASE + 0x28)
-#define ADC_DATA_AB		REG32(ADC_BASE + 0x30)
-#define ADC_DATA_CD		REG32(ADC_BASE + 0x34)
-#define ADC_SPINS		200000u
 
 // 2S Li-ion: raw / 8.2 = volts x 10 (raw 672 = 8.2 V full); 6.4 V is where the old port warned
 #define BAT_FULL_MV		8200u
@@ -27,65 +14,15 @@
 #define FILTER_SHIFT		3		// battery_mv() is an average over about 8 readings
 #define SWITCH_SAMPLES		3
 
-static SemaphoreHandle_t adc_lock;
-static uint16_t raw_last[3];
 static uint32_t bat_mv_f, bat_ms;
 static bool bat_valid;
 static uint8_t off_count;
 
-static void take(void)
-{
-	if (adc_lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
-		xSemaphoreTake(adc_lock, portMAX_DELAY);
-	}
-}
-
-static void give(void)
-{
-	if (adc_lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
-		xSemaphoreGive(adc_lock);
-	}
-}
-
-// One single-scan conversion of channel 1 (B) or 2 (C); single scan converts the lowest enabled channel only (3.7)
-static uint16_t adc_read(uint8_t ch)
-{
-	if (ch < 1 || ch > 2) {
-		return 0;
-	}
-	take();
-	uint32_t bit = 1u << ch;
-	ADC_CH_VLD = bit;
-	ADC_INTR = 0x10000u | bit;
-	ADC_PD_SEOC_TIME = 0xA20u;
-	ADC_INTR_STA = bit;	// clear a stale flag (write one to clear assumed; harmless otherwise)
-	ADC_START = 1;
-	uint16_t v = 0;
-	for (uint32_t n = ADC_SPINS; n != 0; n--) {
-		if (ADC_INTR_STA & bit) {
-			v = (uint16_t)((ch == 1 ? ADC_DATA_AB >> 16 : ADC_DATA_CD) & 0x3FFu);
-			break;
-		}
-	}
-	ADC_INTR_STA = bit;
-	give();
-	raw_last[ch] = v;
-	return v;
-}
-
-uint16_t dm32_adc_raw(uint8_t ch)
-{
-	return ch < 3 ? raw_last[ch] : 0;
-}
-
 static void init(void)
 {
-	if (adc_lock == NULL) {
-		adc_lock = xSemaphoreCreateMutex();
-	}
+	hrc_adc_init();
 	hrc_pin_out(PIN_POWER_LATCH, true);
 	hrc_pin_in(PIN_POWER_SWITCH);
-	ADC_CTRL = 0;		// single scan, no glitch filter, not low power
 	bat_valid = false;
 	off_count = 0;
 }
@@ -99,7 +36,7 @@ static uint16_t battery_mv(void)
 {
 	uint32_t now = hal_millis();
 	if (!bat_valid || now - bat_ms >= BAT_CACHE_MS) {
-		uint32_t mv = (uint32_t)adc_read(2) * 1000u / 82u;
+		uint32_t mv = (uint32_t)hrc_adc_read(2) * 1000u / 82u;
 		if (!bat_valid) {
 			bat_mv_f = mv << FILTER_SHIFT;
 			bat_valid = true;
