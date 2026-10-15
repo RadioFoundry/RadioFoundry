@@ -46,11 +46,15 @@ USB gives no request boundaries. A request is complete when its header says so:
 | `C` 2 (text) | up to the NUL after the text, at most 23 |
 | `C` 6 sub | 3 (`C 6 7` clock: 7) |
 | other `C` | 2 |
-| `D`, unknown | ended by 3 ms of quiet (`CPS_GAP_MS`) |
+| `D` | ended by 3 ms of quiet (`CPS_GAP_MS`) |
 
 A request still short of the length its header gives waits for the rest for up to 50 ms of quiet (`CPS_STALL_MS`),
-then whatever came is handled (usually `-`). A UART host port delivers an 8-byte read in two interrupts, and a task
-held up between them for 3 ms used to cut the read short (DM-1801 Pro).
+then whatever came is handled (usually `-`), so a UART host port that delivers a request in pieces doesn't cut it
+short.
+
+A byte that no request starts with (anything but `R`, `W`, `X`, `C`, `D`) is dropped and counted (`cps.junk`), never
+answered. The DM-1801 Pro's programming cable sits on the microphone / speaker jack and now and then delivers a burst
+of noise bytes (`0xFC`, `0xFE`) between requests. Answered `-`, such a burst was read as the reply to the next request.
 
 A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next quiet gap and answered `-`
 (`cps.overflows`). Several requests in one USB packet are handled in order.

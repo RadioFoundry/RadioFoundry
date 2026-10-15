@@ -264,7 +264,7 @@ static void storage_section(dl_text_t *t)
 		(unsigned)c.reads, (unsigned)c.commits);
 	dl_text(t, "cps.refused=%u\ncps.overflows=%u\ncps.last=0x%02x\n", (unsigned)c.refused, (unsigned)c.overflows,
 		c.last);
-	dl_text(t, "cps.session=%u\ncps.pending=%u\n", c.session, c.pending);
+	dl_text(t, "cps.session=%u\ncps.pending=%u\ncps.junk=%u\n", c.session, c.pending, (unsigned)c.junk);
 #else
 	dl_text(t, "cps.built=0\n");
 #endif

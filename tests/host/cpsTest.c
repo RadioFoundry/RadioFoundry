@@ -398,10 +398,19 @@ static void test_assembly(void)
 	uint8_t d[3] = { 'D', 5, 0 };
 	request(d, 2, 0);
 	CHECK(out_len == 3 && out[0] == 'D' && out[1] == 5 && out[2] == 0);
-	// Garbage: one '-'
-	uint8_t junk[5] = { 0x01, 0x02, 0x03, 0x04, 0x05 };
+	// Noise (the DM-1801 Pro's cable: bursts of 0xFC / 0xFE): dropped and counted, never answered, so a stray '-'
+	// can't be taken for the next request's reply; noise right in front of a read doesn't spoil it
+	uint8_t junk[5] = { 0x01, 0xFC, 0xFE, 0xFF, 0x05 };
+	cps_stats_t js;
+	cps_get_stats(&js);
+	uint32_t junk0 = js.junk;
 	request(junk, 5, 0);
-	CHECK(is_nak());
+	CHECK(out_len == 0);
+	uint8_t jr[3 + 8] = { 0xFC, 0xFC, 0xFE, 'R', 1, 0, 0, 0x50, 0x00, 0, 4 };
+	request(jr, sizeof(jr), 0);
+	CHECK(out_len == 7 && out[0] == 'R' && memcmp(out + 3, data, 4) == 0);
+	cps_get_stats(&js);
+	CHECK(js.junk == junk0 + 8 && !cps_mid_request());
 	// Overflow: a write header asking for more than the buffer holds; the bytes are dropped until the gap
 	uint8_t *huge = malloc(3000);
 	memset(huge, 0x33, 3000);

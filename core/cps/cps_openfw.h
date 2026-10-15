@@ -31,6 +31,7 @@ typedef struct {
 	uint32_t commits;	// sectors written (X 3)
 	uint32_t refused;	// requests answered '-' as an error (bad area, protected sector, ...)
 	uint32_t overflows;	// requests longer than CPS_REQUEST_MAX
+	uint32_t junk;		// bytes dropped because no request starts with them (line noise)
 	uint8_t last;		// first byte of the last request
 	bool session;		// a CPS session is going on
 	bool pending;		// a sector is prepared (X 1) and not committed yet

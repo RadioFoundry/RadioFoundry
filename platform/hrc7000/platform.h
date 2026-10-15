@@ -259,6 +259,7 @@ extern const hal_system_t hrc_system;
 #include "hal_stream.h"
 extern const hal_stream_t hrc_host_uart_stream;
 void hrc_host_uart_init(void);
-uint32_t hrc_host_uart_overruns(void);
+uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
+uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
 
 #endif

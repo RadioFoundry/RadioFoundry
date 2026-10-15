@@ -567,12 +567,30 @@ static void handle(size_t n)
 	}
 }
 
-// Take complete requests off the front of the buffer. After the gap, a request whose length the header doesn't give
-// is whatever came; one whose header gives its length (or isn't whole yet) waits for the stall: on a UART an 8-byte
-// read arrives in two interrupts, and a task held up between them for 3 ms cut it short ('-' on the DM-1801 Pro)
+// A byte no request starts with. The DM-1801 Pro's cable (on the microphone / speaker jack) now and then delivers a
+// burst of noise bytes (0xFC, 0xFE) between requests; answered '-', it was read as the reply to the next request
+static bool junk(uint8_t b)
+{
+	return b != 'R' && b != 'W' && b != 'X' && b != 'C' && b != 'D';
+}
+
+// Take complete requests off the front of the buffer, dropping noise in front of one (counted, never answered). After
+// the gap, a request whose length the header doesn't give is whatever came; one whose header gives its length (or
+// isn't whole yet) waits for the stall, so a UART that delivers it in pieces doesn't cut it short
 static void process(bool gap, bool stall)
 {
 	while (req_len > 0) {
+		size_t skip = 0;
+		while (skip < req_len && junk(req[skip])) {
+			skip++;
+		}
+		if (skip > 0) {
+			stats.junk += skip;
+			memmove(req, req + skip, req_len - skip);
+			req_len -= skip;
+			memset(req + req_len, 0, skip);
+			continue;
+		}
 		int n = needed();
 		if (n > CPS_REQUEST_MAX) {
 			overflow = true;	// the header asks for more than fits: wait for the gap, then '-'

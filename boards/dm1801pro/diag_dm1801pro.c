@@ -124,6 +124,12 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
+	case 10:
+		put(&o, "uart ring ");
+		put_u(&o, hrc_host_uart_overruns());
+		put(&o, " err ");
+		put_u(&o, hrc_host_uart_line_errors());
+		break;
 	default:
 		return false;
 	}
