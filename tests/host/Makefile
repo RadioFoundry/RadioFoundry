@@ -530,7 +530,7 @@ rda5807mTest: rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m.h $(I2CG)/i2c_gpi
 	$(CC) $(CFLAGS) -Wshadow -o $@ rda5807mTest.c $(RDA)/rda5807m.c $(I2CG)/i2c_gpio.c
 
 dm32CalTest: dm32CalTest.c $(DM32)/calibration_dm32.c $(DM32)/dm32.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DM32) -Wshadow -o $@ dm32CalTest.c $(DM32)/calibration_dm32.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DM32) -I$(ROOT)/platform/hrc7000 -Wshadow -o $@ dm32CalTest.c $(DM32)/calibration_dm32.c
 
 run: run-dm32
 run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest
