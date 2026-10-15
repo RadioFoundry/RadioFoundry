@@ -39,9 +39,10 @@ typedef struct {
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
 // DMR PCM to the speaker instead of the FM path (the speaker_pcm hook of hrc_audio_pcm)
 void dm1801pro_speaker_pcm(bool on);
-// The speaker amplifier (PTA16) is on while any user wants it: the channel audio or the broadcast tuner
+// The speaker amplifier (PTA16) is on while any user wants it: the channel audio, the broadcast tuner, speaker PCM
 #define DM1801PRO_AMP_RADIO	0x01u
 #define DM1801PRO_AMP_BCAST	0x02u
+#define DM1801PRO_AMP_PCM	0x04u
 void dm1801pro_amp(uint8_t who, bool on);
 
 // --- Broadcast FM receiver (bcast_dm1801pro.c, CONFIG_BCAST_FM; the HAL is rda5807m_hal) ---

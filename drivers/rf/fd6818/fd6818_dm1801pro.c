@@ -23,10 +23,11 @@ static const fd6818_regval_t init_table[] = {
 	{ 0x21, 0x06D8 }, { 0x24, 0x8C7E },
 };
 
-// Analog FM: AF muted until the receive path asks for audio, then the 0x2B mode word. 0x48 is its power-on value
-// again, since the DMR set changes it
+// Analog FM, then the 0x2B mode word. 0x48 is its power-on value again, since the DMR set changes it. 0x47 = 0x0140
+// puts the demodulated audio on the chip's output (checked on the radio: the 0x6042 the radio's FM sequence writes left
+// the speaker silent on a strong station)
 static const fd6818_regval_t fm_table[] = {
-	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x6042 }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
+	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x0140 }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
 };
 
 // 5.4 "Mode select": DMR is these five registers (0x28 is its power-on value, written again). The per-burst handlers
