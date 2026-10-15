@@ -43,10 +43,10 @@ static void enable(bool on)
 	hrc_pin_write(PIN_BCAST_EN, !on);
 }
 
-// The audio-path enable the tuner's start and stop code drives (provisional: which analog switch it is)
+// The tuner's audio needs the speaker amplifier, which the channel audio shares
 static void audio_path(bool on)
 {
-	hrc_pin_write(PIN_FM_AUDIO, on);
+	dm1801pro_amp(DM1801PRO_AMP_BCAST, on);
 }
 
 static const rda5807m_hal_cfg_t cfg = {

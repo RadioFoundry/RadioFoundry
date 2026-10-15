@@ -320,9 +320,19 @@ static void status(radio_status_t *st)
 	st->tone_ok = mode != RADIO_MODE_FM || hrc7000_subtone_ok(&modem);
 }
 
+void dm1801pro_amp(uint8_t who, bool on)
+{
+	static uint8_t users;
+	uint32_t s = hrc_irq_save();
+	users = on ? (uint8_t)(users | who) : (uint8_t)(users & ~who);
+	hrc_pin_write(PIN_AMP_EN, users != 0);
+	hrc_irq_restore(s);
+}
+
 static void audio(bool on)
 {
 	hrc_pin_write(PIN_SPK_SOURCE, !on);
+	dm1801pro_amp(DM1801PRO_AMP_RADIO, on);
 }
 
 // Speaker PCM: the modem plays the CPU's buffer instead of its FM demodulator

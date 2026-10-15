@@ -8,7 +8,7 @@
 #define PIN_RF_CLK		0x07	// FD6818 serial clock (bit-banged)
 #define PIN_RF_DATA		0x08	// FD6818 serial data, bidirectional
 #define PIN_LCD_BACKLIGHT	0x0F	// high = on
-#define PIN_FM_AUDIO		0x10	// broadcast FM audio path; nothing drives it yet (provisional)
+#define PIN_AMP_EN		0x10	// PTA16: audio power amplifier, high = on (checked on the radio)
 #define PIN_BCAST_SDA		0x19	// broadcast FM tuner I2C data (RDA5807-class, address 0x11)
 #define PIN_BCAST_SCL		0x1A	// broadcast FM tuner I2C clock
 #define PIN_POWER_LATCH		0x11	// 1 = stay on
@@ -26,19 +26,18 @@
 #define PIN_KEY_ROW3		0x26
 #define PIN_TX_UHF		0x27	// TX path select, UHF side (provisional band)
 #define PIN_RX_UHF		0x28	// RX path select, UHF side (provisional band)
-#define PIN_POWER_KEY		0x29	// power key (provisional polarity: the level at start-up is "on")
+#define PIN_POWER_KEY		0x29	// power knob switch: the level at start-up is "on" (switches off on the radio)
 #define PIN_MIC_PATH		0x2E	// 1 = mic to the analog FM path (as on the DM-32UV, provisional)
-#define PIN_SPK_SOURCE		0x2F	// 0 = audio on, 1 = muted (as on the DM-32UV, provisional)
+#define PIN_SPK_SOURCE		0x2F	// 0 = audio on, 1 = muted (checked on the radio)
 #define PIN_KEY_STROBE0		0x32	// keypad strobes PTB18-PTB22, driven low one at a time
 #define PIN_KEY_STROBE4		0x36
-#define PIN_VIBRATION		0x38	// provisional
+#define PIN_VIBRATION		0x38	// PTB24 vibration motor, high = on (checked on the radio)
 
-// The four direct key inputs, low = pressed. Which is which is not known (hardware-dm1801pro.md 9.1): PTB11 is PTT
-// on the DM-32UV
-#define PIN_KEY_D0		0x2B	// PTT (provisional)
-#define PIN_KEY_D1		0x2C	// SK1 (provisional)
-#define PIN_KEY_D2		0x3A	// SK2 (provisional)
-#define PIN_KEY_D3		0x3B	// SOS (provisional)
+// The four direct key inputs, low = pressed (checked on the radio, hardware-dm1801pro.md 9.1)
+#define PIN_KEY_D0		0x2B	// PTB11 PTT
+#define PIN_KEY_D1		0x2C	// PTB12 SOS (top key)
+#define PIN_KEY_D2		0x3A	// PTB26 SK1 (upper side key; with PTT at power-on: update mode)
+#define PIN_KEY_D3		0x3B	// PTB27 SK2 (lower side key)
 
 #define PIN_LCD_RESET		0x42	// low = reset
 #define PIN_LCD_CS		0x43	// low = selected

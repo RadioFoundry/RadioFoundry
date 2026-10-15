@@ -16,8 +16,8 @@ extern const hal_input_t dm1801pro_input;
 extern const hal_radio_t dm1801pro_radio;
 extern const hal_power_t dm1801pro_power;
 
-// Physical key bits returned by dm1801pro_input.scan(). The matrix positions and the four direct pins are provisional
-// (input_dm1801pro.c, hardware-dm1801pro.md 9.1); the diagnostics page shows the raw scan to fix them
+// Physical key bits returned by dm1801pro_input.scan(); the matrix positions and the four direct pins are in
+// input_dm1801pro.c (hardware-dm1801pro.md 9.1)
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_MENU, KEY_BACK, KEY_VFO_MR, KEY_AB,
@@ -39,6 +39,10 @@ typedef struct {
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
 // DMR PCM to the speaker instead of the FM path (the speaker_pcm hook of hrc_audio_pcm)
 void dm1801pro_speaker_pcm(bool on);
+// The speaker amplifier (PTA16) is on while any user wants it: the channel audio or the broadcast tuner
+#define DM1801PRO_AMP_RADIO	0x01u
+#define DM1801PRO_AMP_BCAST	0x02u
+void dm1801pro_amp(uint8_t who, bool on);
 
 // --- Broadcast FM receiver (bcast_dm1801pro.c, CONFIG_BCAST_FM; the HAL is rda5807m_hal) ---
 void dm1801pro_bcast_init(void);

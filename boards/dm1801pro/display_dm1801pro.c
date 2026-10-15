@@ -70,13 +70,13 @@ static const st7567_bus_t bus = {
 	.delay_ms = hal_delay_ms,
 };
 
-// Column offset 4 and the page order are the ones the radio uses; orientation, bias, regulator and
-// contrast are the controller's common values and are tuned on the first power-on (hardware-dm1801pro.md 7)
+// Column offset 4 and the page order are the ones the radio uses; the orientation (columns reversed, rows not) was
+// checked on the radio. Bias, regulator and contrast are the controller's common values (hardware-dm1801pro.md 7)
 static const st7567_t panel = {
 	.bus = &bus,
 	.col_offset = 4,
-	.seg_reverse = false,
-	.com_reverse = true,
+	.seg_reverse = true,
+	.com_reverse = false,
 	.regulator = 4,
 	.contrast = 0x20,
 	.bias = 0,

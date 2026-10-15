@@ -19,7 +19,7 @@ static const band_t bands[] = {
 // The factory calibration holds PA drive points for three power levels (hardware-dm1801pro.md 6.4): low, middle, high
 static const char *const power_names[] = { "L", "M", "H" };
 
-// docs/ux/information-architecture.md 7.6. The key bits are provisional (input_dm1801pro.c)
+// docs/ux/information-architecture.md 7.6. The key bits are read off the radio (input_dm1801pro.c)
 static const keymap_entry_t keymap[] = {
 	{ KEY_MENU, ACT_SELECT, ACT_SELECT, false, false },
 	{ KEY_BACK, ACT_BACK, ACT_BACK, false, false },
@@ -108,7 +108,7 @@ static void io_init(void)
 	hrc_pin_out(PIN_RX_UHF, false);
 	hrc_pin_out(PIN_MIC_PATH, true);
 	hrc_pin_out(PIN_SPK_SOURCE, true);
-	hrc_pin_out(PIN_FM_AUDIO, false);
+	hrc_pin_out(PIN_AMP_EN, false);
 	hrc_pin_out(PIN_BCAST_EN, true);
 	hrc_pin_out(PIN_LED_RED, false);
 	hrc_pin_out(PIN_LED_GREEN, false);

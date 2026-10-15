@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DM-1801 Pro keys: a 5 x 4 matrix (strobes PTB18-PTB22 driven low one at a time, inputs PTB3-PTB6 low = closed) and
-// four direct inputs (docs/spec/hardware-dm1801pro.md 9.1). The matrix positions and the direct pins' meaning are
-// provisional: the panel's key names for each position haven't been confirmed, and dm1801pro_key_raw() feeds the
-// diagnostics page so a bring-up pass can write the real table here.
+// four direct inputs (docs/spec/hardware-dm1801pro.md 9.1). The table was read off the radio, one key at a time; each
+// strobe is one keypad column (9 3 6 #, 8 2 5 0, 7 1 4 *) or half of the navigation keys.
 #include "dm1801pro.h"
 #include "pins.h"
 #include "platform.h"
@@ -14,11 +13,11 @@
 
 // [strobe][input]
 static const uint8_t map[KEY_STROBES * KEY_INPUTS] = {
-	KEY_MENU, KEY_UP, KEY_DOWN, KEY_BACK,
-	KEY_1, KEY_2, KEY_3, KEY_LEFT,
-	KEY_4, KEY_5, KEY_6, KEY_RIGHT,
-	KEY_7, KEY_8, KEY_9, KEY_VFO_MR,
-	KEY_STAR, KEY_0, KEY_HASH, KEY_AB,
+	KEY_9, KEY_3, KEY_6, KEY_HASH,
+	KEY_DOWN, KEY_MENU, KEY_UP, KEY_BACK,
+	KEY_RIGHT, KEY_AB, KEY_VFO_MR, KEY_LEFT,
+	KEY_8, KEY_2, KEY_5, KEY_0,
+	KEY_7, KEY_1, KEY_4, KEY_STAR,
 };
 static const uint8_t direct[KEY_INPUTS] = { N, N, N, N };
 static const keymatrix_t matrix = { .rows = KEY_STROBES, .cols = KEY_INPUTS, .map = map, .direct = direct };
@@ -26,7 +25,7 @@ static const keymatrix_t matrix = { .rows = KEY_STROBES, .cols = KEY_INPUTS, .ma
 static const struct {
 	uint8_t pin, key;
 } direct_keys[] = {
-	{ PIN_KEY_D0, KEY_PTT }, { PIN_KEY_D1, KEY_SK1 }, { PIN_KEY_D2, KEY_SK2 }, { PIN_KEY_D3, KEY_SOS },
+	{ PIN_KEY_D0, KEY_PTT }, { PIN_KEY_D1, KEY_SOS }, { PIN_KEY_D2, KEY_SK1 }, { PIN_KEY_D3, KEY_SK2 },
 };
 
 static uint32_t last_raw, stable, raw_matrix;
