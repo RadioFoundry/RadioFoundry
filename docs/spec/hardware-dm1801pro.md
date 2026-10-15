@@ -215,7 +215,7 @@ all on) and reverses the common outputs; orientation, contrast and bias are to b
 
 | Device | Bus | Detail | Tag |
 |---|---|---|---|
-| FM broadcast tuner | I2C 7-bit 0x10, SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable | I |
+| FM broadcast tuner | I2C 7-bit 0x10 (sequential access; ODR uses 0x11, random access, the same chip's other address), SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable (low = on, from the order of start and stop, not measured); PTA16 audio path | I |
 | Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | LIS3DH class (CTRL1 = 0x47, CTRL4 = 0x88) | I |
 | Unknown | I2C 7-bit 0x3D, SCL PTA5, SDA PTA6 | registers 0x30, 0x40, 0x80, 0x20, 0x22 | ? |
 | Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call | I |
@@ -269,12 +269,13 @@ receiving and orange flashing while scanning.
 | Display | `drivers/display/st7567` |
 | Keys | `drivers/input/keymatrix` |
 | Calibration | `drivers/cal/baofeng` |
+| Broadcast FM tuner | `drivers/bcast/rda5807m` (chip and `hal_bcast_t`), `drivers/bus/i2c_gpio` |
 | Board wiring | `boards/dm1801pro` |
 
 ## 12. Bring-up state
 
 Builds and passes its host tests; hasn't run on a radio. In: the UI on the 128x64 display, keys (provisional table), the
 data flash and the open-firmware codeplug, battery, FM receive, FM transmit from the factory calibration (refused
-without it), the host link. Not in: DMR (the codec recipe and the modem glue), the broadcast FM tuner, the air band, USB
+without it), the host link. the broadcast FM tuner (the radio side only: the core's tuner task and screens are parked, [airband-and-broadcast.md](airband-and-broadcast.md)). Not in: DMR (the codec recipe and the modem glue), the air band, USB
 (the radio has none), the vibration motor, the accelerometer. The first power-on follows
 [the bring-up checklist](../testing/dm1801pro-bringup.md).

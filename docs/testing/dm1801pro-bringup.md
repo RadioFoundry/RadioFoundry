@@ -60,7 +60,20 @@ read.
    [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.4's open item (which level uses which array).
 3. Deviation and modulation balance with a test set; the modulation calibration byte path is the DM-32UV's.
 
-## 6. After this
+## 6. Broadcast FM tuner
 
-DMR needs the codec recipe and the modem glue, the broadcast FM tuner and the air band the matching drivers. The
+The tuner's hardware side is built (`CONFIG_BCAST_FM`, on); the screens that drive it are parked
+([airband-and-broadcast.md](../spec/airband-and-broadcast.md)), so check it through the debug link or a test build that
+calls `board.bcast`.
+
+| Step | Expect | If not |
+|---|---|---|
+| `power(true)` | Returns true: the chip answers at 0x11 with ID 0x58 | `PIN_BCAST_EN` polarity, `PIN_BCAST_SDA` / `PIN_BCAST_SCL`, the I2C speed (`bus.half_us`), the reference clock mode (`cfg.clk_mode` in `bcast_dm1801pro.c`) |
+| `tune(100000)`, `audio(true)` | A station, audible | `PIN_FM_AUDIO` is the wrong switch or needs `PIN_SPK_SOURCE` as well |
+| `seek` | Stops on stations | Seek threshold (`cfg.seek_th`) |
+| Receive a channel signal | The broadcast mutes while the channel has traffic | Core policy, not the board |
+
+## 7. After this
+
+DMR needs the codec recipe and the modem glue and the air band its own receive path. The
 open items are in [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 10.

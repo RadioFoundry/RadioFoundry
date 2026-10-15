@@ -36,6 +36,9 @@ typedef struct {
 } dm1801pro_radio_diag_t;
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
 
+// --- Broadcast FM receiver (bcast_dm1801pro.c, CONFIG_BCAST_FM; the HAL is rda5807m_hal) ---
+void dm1801pro_bcast_init(void);
+
 // --- Diagnostics (diag_dm1801pro.c) ---
 bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len);
 void dm1801pro_diag_reset(void);

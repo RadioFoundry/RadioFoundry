@@ -9,6 +9,8 @@
 #define PIN_RF_DATA		0x08	// FD6818 serial data, bidirectional
 #define PIN_LCD_BACKLIGHT	0x0F	// high = on
 #define PIN_FM_AUDIO		0x10	// broadcast FM audio path; nothing drives it yet (provisional)
+#define PIN_BCAST_SDA		0x19	// broadcast FM tuner I2C data (RDA5807-class, address 0x11)
+#define PIN_BCAST_SCL		0x1A	// broadcast FM tuner I2C clock
 #define PIN_POWER_LATCH		0x11	// 1 = stay on
 #define PIN_FLASH_CS		0x12	// data flash chip select, low = selected
 #define PIN_RX_VHF		0x1C	// RX path select, VHF side (provisional band)

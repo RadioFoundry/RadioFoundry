@@ -7,6 +7,9 @@
 #include "pins.h"
 #include "platform.h"
 #include "cal/baofeng/baofeng_cal.h"
+#if CONFIG_BCAST_FM
+#include "bcast/rda5807m/rda5807m_hal.h"
+#endif
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -49,7 +52,7 @@ static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 
 const board_t board = {
 	.name = "DM-1801 Pro",
-	.caps = CAP_KEYPAD,
+	.caps = CAP_KEYPAD | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -72,6 +75,9 @@ const board_t board = {
 	.host_port = &hrc_host_uart_stream,
 #endif
 	.system = &hrc_system,
+#if CONFIG_BCAST_FM
+	.bcast = &rda5807m_hal,
+#endif
 };
 
 // IO mux: only the fields this firmware needs are changed; the rest stay as the boot loader left them. Bit = 1 makes a
@@ -144,4 +150,7 @@ void board_init(void)
 	dm1801pro_power.init();
 	hrc_flash_spi0.init();
 	bf_cal_load(&hrc_flash_spi0, 0);	// no decoded copy on this radio
+#if CONFIG_BCAST_FM
+	dm1801pro_bcast_init();
+#endif
 }

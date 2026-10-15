@@ -342,7 +342,7 @@ backlight is on or off.
 
 ### What the DM-1801 Pro lacks today
 
-No DMR, no hotspot, no broadcast FM or air band receive, no vibration alert.
+No DMR, no hotspot, no air band receive, no vibration alert. The broadcast FM tuner is wired, but the screens for it aren't built yet.
 
 ## Planned radios
 
