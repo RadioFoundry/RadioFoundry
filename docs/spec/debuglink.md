@@ -511,8 +511,10 @@ of the whole image checked before the jump.
 
 The CRC-32 is the standard (zlib) CRC-32. Per-chunk integrity is the debug link frame's own CRC-16, so DATA carries no
 second checksum; the span is zeroed at BEGIN, so a dropped chunk leaves zeros that fail the ENTER CRC-32. After an ok
-ENTER the firmware stops answering (it has jumped to the monitor); the host then speaks the monitor's own protocol
-(`02 op len chk 03`, the stub's `PROTOCOL.md`) on the same UART at the same baud. Recover the radio with a power cycle.
+ENTER the firmware sends the reply, draws a static banner on the display ("PC Loader Connected" / "Power-cycle to exit",
+flushed synchronously so the panel does not sit on a stale or hung frame while the monitor runs), then quiesces and jumps
+and stops answering; the host then speaks the monitor's own protocol (`02 op len chk 03`, the stub's `PROTOCOL.md`) on
+the same UART at the same baud. Recover the radio with a power cycle.
 
 ## 4. Safety
 

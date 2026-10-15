@@ -13,6 +13,12 @@
 #include "hal_time.h"
 #include "debuglink/dl_stub.h"
 #include "debuglink/dlog.h"
+#include "ui/gfx.h"
+#include "ui/ui_screens.h"
+
+#ifndef ODR_GIT
+#define ODR_GIT "unknown"
+#endif
 
 #define STUB_ENTER_DELAY_MS	100u	// let the ENTER reply leave the UART before interrupts are masked
 
@@ -20,6 +26,20 @@ static dl_stub_t stub;
 static bool ready;		// the RAM span has been fetched from the platform
 static bool enter_pending;
 static uint32_t enter_addr;
+
+// Replace the screen so it does not sit on a stale frame while the monitor runs: the boot splash with a "connected"
+// message. Uses the UI's own ui_draw_splash, then flushes with the board's display (as the boot path does) — the host
+// link task outranks the UI task and the flush is synchronous (dm1801pro bit-bangs its ST7567, dm32 writes the LCDC
+// polled), so the frame is on the panel before the caller masks interrupts. ui_draw_splash writes only the visible rows,
+// which sit clear of the loaded image on both boards (dm32 codec window; dm1801pro the oversized frame buffer's head)
+static void show_banner(void)
+{
+	if (board.display == NULL || gfx_framebuffer() == NULL || gfx_width() <= 0) {
+		return;
+	}
+	ui_draw_splash(board.name, ODR_GIT, "PC Loader Connected", "Power-cycle to exit");
+	gfx_flush();
+}
 
 static const hal_system_t *sys(void)
 {
@@ -68,6 +88,7 @@ void debuglink_stub_service(void)
 		return;
 	}
 	hal_delay_ms(STUB_ENTER_DELAY_MS);	// the reply reaches the host before the radio goes quiet
+	show_banner();				// tell the user, flushed to the panel before the jump
 	s->enter_stub(enter_addr);		// does not return on success
 	dlog("debuglink: stub entry failed");	// only reached if the jump was refused
 }
