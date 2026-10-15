@@ -155,6 +155,7 @@ static void test_helpers(void)
 	CHECK(fd6818_ctcss_word(1000) == 2065);
 	CHECK(fd6818_ctcss_word(2541) == 5247);
 	CHECK(fd6818_rssi_raw(0x01FF) == 0xFF && fd6818_rssi_raw(0xFE00) == 0);
+	CHECK(fd6818_rssi_dbm(100) == -110 && fd6818_rssi_dbm(0xFE00) == -160);	// guide: reg / 2 - 160
 }
 
 static void test_frames(void)

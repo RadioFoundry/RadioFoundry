@@ -343,8 +343,7 @@ static void status(radio_status_t *st)
 	uint16_t r65 = fd6818_read(&fd, FD_REG_NOISE);
 	last_rssi_raw = fd6818_rssi_raw(r67);
 	last_noise_raw = r65 & 0xFFu;
-	// Not calibrated: an RDA-style 0.5 dB raw scale is assumed, offset to be measured (as on the DM-32UV)
-	st->rssi_dbm = (int16_t)((int16_t)last_rssi_raw - 135);
+	st->rssi_dbm = fd6818_rssi_dbm(r67);
 	st->noise = (uint8_t)last_noise_raw;
 	st->carrier = false;
 	st->tone_ok = mode != RADIO_MODE_FM || hrc7000_subtone_ok(&modem);

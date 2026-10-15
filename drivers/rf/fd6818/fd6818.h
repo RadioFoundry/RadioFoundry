@@ -101,8 +101,11 @@ bool fd6818_band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
 // CTCSS frequency register for a tone in Hz x 10: Hz x 20.64888, rounded (the old port truncated the tone to whole
 // tens of Hz first, hardware-dm32.md 16 #3)
 uint16_t fd6818_ctcss_word(uint16_t hz_x10);
-// RSSI raw value from reg 0x67 (bits 8:0, halved, uncalibrated)
+// RSSI raw value from reg 0x67 (bits 8:0, halved: 1 dB steps)
 static inline uint16_t fd6818_rssi_raw(uint16_t r67) { return (uint16_t)((r67 & 0x1FFu) >> 1); }
+// RSSI in dBm: reg 0x67 bits 8:0 / 2 - 160 (programming guide, squelch section; reg 0x2C's external LNA gain is
+// already taken off by the chip)
+static inline int16_t fd6818_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)fd6818_rssi_raw(r67) - 160); }
 
 // --- Register access (one frame each, inside the critical section) ---
 

@@ -149,7 +149,7 @@ which gives receive audio on the speaker path (R).
 - **Enter TX:** RX path off, wait, TX frequency, the TX sequence, register 0x50 = 3B18, wait, TX path on, PA ramp (40
   steps into DAC B). **Leave TX:** wait, PA ramp down, wait, TX path off, wait, RX frequency (0x32=0244, 0x47=6042),
   RX sequence, RX path on. The radio's waits are an uncalibrated count; ODR uses 1 ms. K for the order.
-- RSSI register 0x67, low 9 bits. Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte; the
+- RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external LNA gain). Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte; the
   tone frequency scale (register 0x07) isn't decoded. ODR uses the modem's tone generator and detector as on the DM-32UV.
 
 ### 5.5 Paths and PA
@@ -316,7 +316,6 @@ receiving and orange flashing while scanning.
 
 - Which menu power level uses which calibration array; the lists at 0x300 / 0x314 / 0x328 / 0x33C.
 - The 12.5 kHz bandwidth word; the VHF / UHF side of the path pins; the DMR per-burst handlers and PA delay.
-- RSSI: a weather station reads about -25 dBm; the raw - 135 conversion is not calibrated for this radio.
 - The display controller part and its contrast.
 - PTB14's role, PTB16's role, the DAC C value.
 - The accelerometer's scale (readings about 4 times low).
