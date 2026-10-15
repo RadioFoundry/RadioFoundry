@@ -43,6 +43,8 @@ REGIONS = {
     "all": [(0x00000, 0x10000), (0x20000, 0x120000)],
 }
 
+REPLY_MAX = 32768      # the longest read reply (cps-protocol.md 2.2)
+
 RADIO_TYPES = {0: "GD-77", 1: "GD-77S", 2: "DM-1801", 3: "RD-5R", 4: "DM-1801A", 5: "MD-9600", 6: "MD-UV380",
                7: "MD-380", 8: "DM-1701 (BGR panel)", 9: "MD-2017", 10: "DM-1701 (RGB panel)", 11: "DM-32UV"}
 
@@ -147,16 +149,36 @@ class Cps:
         self.control(6, bytes([2]))     # the radio saves its settings / VFOs first
 
     # ── reads ──
-    def read(self, area, addr, n):
+    def read(self, area, addr, n, retries=2):
+        """A read is repeated (after the rest of a bad reply has drained) when its reply is missing or malformed, or
+        '-': on a programming cable (the DM-1801 Pro's) a burst of line noise now and then spoils a request, and the
+        radio refuses the garbled address. A real refusal is refused again and raised."""
+        for attempt in range(retries + 1):
+            try:
+                return self._read_once(area, addr, n)
+            except CpsError:
+                if attempt == retries:
+                    raise
+                self._drain()
+
+    def _read_once(self, area, addr, n):
         self.t.write(bytes([0x52, area]) + addr.to_bytes(4, "big") + n.to_bytes(2, "big"))
         h = self.t.read(1, self.timeout)
         if h != b"R":
             raise CpsError(f"R {area} {addr:#x} {n}: reply {h!r}")
         ln = int.from_bytes(self.t.read(2, self.timeout), "big")
+        if area in (1, 2) and ln != n and n <= REPLY_MAX:   # flash, EEPROM: as asked (longer: clipped)
+            raise CpsError(f"R {area} {addr:#x} {n}: reply length {ln}")
         d = self.t.read(ln, self.timeout)
         if len(d) != ln:
             raise CpsError(f"R {area} {addr:#x}: short reply {len(d)} of {ln}")
         return d
+
+    def _drain(self):
+        """Let the radio give up on a spoiled request (CPS_STALL_MS) and throw away what is still coming"""
+        time.sleep(0.1)
+        while self.t.read(4096, 0.1):
+            pass
 
     def info(self):
         d = self.read(9, 0, 0x20)

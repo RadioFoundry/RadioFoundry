@@ -37,6 +37,23 @@ def main():
         check(ch == {"name": "Sim 2", "rx_hz": 446025000, "tx_hz": 446025000}, f"decode_channel {ch}")
         check(cps_client.decode_channel(img, 41) is None, "channel 41 unused")
 
+        # Line noise (the DM-1801 Pro's cable): a burst in front of a read is dropped by the radio, one inside a read
+        # garbles it; the client drains and repeats the read
+        real_write = cps.t.write
+        noise = [b"\xfc\xfe\xfc", None]
+        def noisy(b):
+            if noise and b[:1] == b"R":
+                n = noise.pop(0)
+                if n is None:
+                    b = b[:4] + b"\xfc" + b[4:]      # inside: the address and length shift
+                else:
+                    b = n + b
+            real_write(b)
+        cps.t.write = noisy
+        check(cps.read(1, 0x3790, 16)[:5] == b"Sim 1", "a read with noise in front")
+        check(cps.read(1, 0x3790, 16)[:5] == b"Sim 1", "a read garbled by noise, repeated")
+        cps.t.write = real_write
+
         # Only the sectors that differ from what the radio holds (the HIL write test's way)
         before = bytes(img)
         edit = bytearray(img)
