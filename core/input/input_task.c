@@ -102,7 +102,7 @@ static void input_task(void *arg)
 		int8_t ienc;
 		uint32_t inj = take_injected(now, &ienc);
 		uint32_t keys = board.input->scan();
-		int8_t enc = board.input->encoder();
+		int8_t enc = board.input->encoder != NULL ? board.input->encoder() : 0;	// keypad-only radios have none
 		raw_keys = keys;
 		enc_total += enc;
 		if ((keys != 0) || (enc != 0)) {
