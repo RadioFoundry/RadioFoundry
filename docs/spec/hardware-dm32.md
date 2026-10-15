@@ -770,7 +770,7 @@ A1), the AF gain in 0x48, VHF LNA on, C7000 FM playback off, speaker source to t
 | Speaker on | 0x2F = 0, 0x35 = 1; off: 0x2F = 1, 0x35 = 0 | KP |
 | FM RX audio | demodulated by the C7000 FM block and played through the codec DAC when AUDIO_CONTROL bit 6 (`fm_play_ctrl`) is set | DS, KP |
 | DMR RX audio | CPU writes 160 bytes of decoded 8 kHz PCM to 0x180000A0 per 10 ms and sets AUDIO_CONTROL bit 5; PCM_rd interrupt (vector 59) asks for the next block; clear with INTERP_CLEAR bit 5 | DS, KP |
-| Beeps / prompts | 32 bytes (16 samples, high byte first, 8 kHz) at a time to the prompt FIFO 0x16000980 while AUDIO_CONTROL bit 31 (`ring_full_two`) is 0; enable with AUDIO_CONTROL bit 7 (`ring_play_ctrl`) | DS, KP |
+| Beeps / prompts | 64 bytes (32 samples, low byte first, 8 kHz) at a time to the prompt FIFO 0x16000980 while AUDIO_CONTROL bit 31 (`ring_full_two`) is 0; enable with AUDIO_CONTROL bit 7 (`ring_play_ctrl`). KP says 32 bytes, high byte first; the DM-1801 Pro's stock firmware and bench say otherwise (`modem-hrc7000.md` 8.4); not yet heard on a DM-32 | DS, KP, INF |
 
 ### 9.1 Internal audio codec registers (byte registers at 0x160009C0 + offset)
 

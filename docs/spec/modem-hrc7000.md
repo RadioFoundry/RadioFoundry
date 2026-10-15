@@ -12,8 +12,9 @@ contract is in `dmr-modem.md`; the HR_C6000 equivalent is in `modem-hrc6000.md`.
 | Tag | Meaning |
 |---|---|
 | **DS** | HR_C7000 chip user guide v2.7 (2016, Chinese with English translation), register chapters and application appendices |
-| **BIN** | Observed on the OpenDM32 Jul/Aug/Sep 2026 builds (Aug and Sep have identical modem access sequences) |
+| **BIN** | Observed on the OpenDM32 Jul/Aug/Sep 2026 builds (Aug and Sep have identical modem access sequences), or the DM-1801 Pro stock image where the text says so |
 | **KP** | another firmware's source (DMR did not work in it); unverified |
+| **BENCH** | Measured on a radio on our bench (the text names it) |
 | **INF** | Our inference |
 
 ---
@@ -476,8 +477,13 @@ detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz) (DS).
 
 ### 8.4 Prompt / beep FIFO
 
-Set AUDIO_CONTROL b7, then while AUDIO_CONTROL b31 is 0 write 32 bytes (16 × 16-bit samples, high byte first, 8 kHz)
-to 0x16000980; clear b7 when done. Flushing stale audio: fill with 0x7F bytes (KP).
+Set AUDIO_CONTROL b7, then while AUDIO_CONTROL b31 is 0 write 64 bytes (32 × 16-bit samples, low byte first, 8 kHz)
+to 0x16000980..0x160009BF; clear b7 when done (BIN from the DM-1801 Pro stock image; BENCH on the DM-1801 Pro). High byte first, as KP has it (16
+samples per push), sounds distorted on the DM-1801 Pro. Flushing stale audio: fill with 0x7F bytes (KP).
+
+ODR plays all speaker PCM through this FIFO (`platform/hrc7000/audio_pcm.c`). The CPU-fed speaker buffer at
+0x180000A0 (AUDIO_CONTROL b5, section 3) gave rough, choppy beeps on the DM-1801 Pro with every sample layout tried,
+with no queue underruns (BENCH).
 
 ---
 

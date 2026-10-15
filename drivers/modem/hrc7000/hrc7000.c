@@ -145,7 +145,9 @@ void hrc7000_fm_rx(hrc7000_t *d, bool wide)
 	hrc7000_wr(d, C7_FM_BANDWIDTH, wide ? 0x4F : 0x40);
 	hrc7000_wr(d, C7_FM_DEV_COEF, wide ? 0x40A20 : 0x40A25);
 	hrc7000_wr(d, C7_FM_PTT, 0);
-	hrc7000_audio_bits(d, C7_AUDIO_FM_PLAY, C7_AUDIO_PCM_MIC);
+	// Not the PCM bits: the PCM stream owns them (platform audio_pcm.c). Clearing the mic PCM bit here stopped a beep's
+	// stream when its own key retuned the receiver, and no beep played again
+	hrc7000_audio_bits(d, C7_AUDIO_FM_PLAY, 0);
 	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, C7_GCR_DACL_0DB);
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 }

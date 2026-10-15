@@ -135,6 +135,9 @@
 #define C7_PCM_MIC_ADDR		0x18000000u
 #define C7_PCM_SPK_ADDR		0x180000A0u
 #define C7_PCM_SAMPLES		80u
+// Prompt FIFO (speaker samples, 8 kHz, low byte first): 64 bytes per push while AUDIO_CONTROL b31 is clear
+#define C7_PROMPT_FIFO_ADDR	0x16000980u
+#define C7_PROMPT_CHUNK		32u
 
 typedef struct {
 	volatile uint32_t *regs;	// HRC7000_REG_BASE
