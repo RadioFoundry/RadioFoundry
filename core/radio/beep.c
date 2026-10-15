@@ -12,7 +12,12 @@
 
 #define RAMP_SAMPLES	16		// 2 ms fade in and out of each tone: no clicks
 #define AMP_PER_LEVEL	160		// level 100 = about half of full scale (room to mix over voice)
-#define IDLE_BLOCKS	2		// silent blocks after a pattern before the own stream stops
+// The own stream routes the speaker one silent block before the tone and holds it for a few after: switching the
+// amplifier and the speaker source while the tone plays pops, and turning the route off drops the audio still queued
+// (the tail and its fade out)
+#define LEAD_BLOCKS		1
+#define ROUTE_HOLD_BLOCKS	4	// 80 ms
+#define IDLE_BLOCKS		ROUTE_HOLD_BLOCKS	// silent blocks after a pattern before the own stream stops
 
 // Distinct sounds (radio users tell them apart without looking, docs/ux/survey.md)
 static const beep_seg_t p_key[] = { { 1000, 25 } };
@@ -81,6 +86,7 @@ static uint32_t cb_phase, cb_step;
 static int32_t cb_amp;
 static volatile bool cb_active;
 static volatile uint8_t cb_idle;
+static uint8_t cb_lead;		// lead-in blocks played since the route turned on
 
 void beep_init(const hal_audio_t *audio)
 {
@@ -140,6 +146,7 @@ void beep_service(bool shared)
 	}
 	if (!beep_busy() && cb_idle >= IDLE_BLOCKS) {
 		own_stream = false;
+		cb_lead = 0;
 		aud->stop();
 		if (aud->speaker_pcm != NULL) {
 			aud->speaker_pcm(false);
@@ -212,7 +219,16 @@ void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)
 	(void)mic;
 	(void)ctx;
 	memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
-	bool on = beep_mix(spk);
+	bool on;
+	if (cb_lead < LEAD_BLOCKS && beep_busy()) {
+		cb_lead++;
+		on = true;	// silence: the route settles before the tone
+	} else {
+		on = beep_mix(spk) || cb_idle < ROUTE_HOLD_BLOCKS;
+	}
+	if (!on) {
+		cb_lead = 0;
+	}
 	if (aud != NULL && aud->speaker_pcm != NULL) {
 		aud->speaker_pcm(on);	// every block: the voice stream may have switched the route since (cheap when equal)
 	}
