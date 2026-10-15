@@ -30,9 +30,9 @@
 <rect x="124" y="114" width="26" height="9" rx="4" fill="#8a8f93"/>
 <rect x="284" y="104" width="46" height="12" rx="6" fill="#d9692a"/>
 <path d="M436 214 Q452 214 456 236 L474 540 Q474 556 458 560 L438 560Z" fill="#101112" stroke="#000" stroke-width="2"/>
-<path d="M38 134 Q40 126 66 126 L432 126 Q456 128 458 150 L478 930 Q478 985 436 988 L88 988 Q50 985 54 930Z" fill="url(#body)" stroke="#000" stroke-width="3"/>
+<path d="M38 134 Q40 126 66 126 L432 126 Q438 128 440 150 L478 930 Q478 985 436 988 L100 988 Q70 985 70 930 L62 640Z" fill="url(#body)" stroke="#000" stroke-width="3"/>
 <path d="M86 134 L432 134 L452 940 Q452 962 430 962 L96 962 Q74 962 76 940Z" fill="url(#face)" opacity=".55"/>
-<path d="M70 240 Q34 240 30 270 L34 590 Q40 626 86 626 L100 626 L100 240Z" fill="#141516" stroke="#000" stroke-width="2"/>
+<path d="M100 240 L66 240 Q32 240 30 272 L34 560 Q38 604 66 626 L100 626Z" fill="#141516"/><path d="M100 240 L66 240 Q32 240 30 272 L34 560 Q38 604 66 626" fill="none" stroke="#000" stroke-width="2"/>
 <rect x="30" y="246" width="46" height="166" rx="12" fill="url(#key)" stroke="#000" stroke-width="2"/>
 <rect x="44" y="446" width="42" height="62" rx="10" fill="url(#key)" stroke="#000" stroke-width="2"/>
 <rect x="44" y="532" width="42" height="60" rx="10" fill="url(#key)" stroke="#000" stroke-width="2"/>
