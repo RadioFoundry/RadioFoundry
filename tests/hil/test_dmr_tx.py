@@ -12,7 +12,7 @@ transmission (from its first voice LC header, by source ID):
   LC with source = the radio's own ID (dmr.own_id), destination = the channel's talk target (dmr.target_id), FLCO 0
   (group) or 3 (private); embedded LC decoded and equal to the header's; a terminator after the last voice burst;
   voice A-F in whole superframes; same-slot spacing 60.00 +- 0.05 ms; |carrier offset| < --max-foff Hz (median over
-  the bursts, default 500, corrected by --sdr-ppm when given); burst on-time 27-31.5 ms; ramps < 1.5 ms; no
+  the bursts, default 500, corrected for the SDR's own error by the SDR bench's calibration); burst on-time 27-31.5 ms; ramps < 1.5 ms; no
   overlaps, power steps or unexplained carrier; capture clipping < 1 %.
 - bench modem: exactly one call, started by a header (not late entry), ended by a terminator, source = the radio's
   ID, voice bursts in whole superframes, AMBE FEC corrections at most 0.5 % of the AMBE bits heard (the bench modem
@@ -116,12 +116,10 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
         if fixed:
             warnings.warn(f"the bench modem corrected {fixed} AMBE bits in {frames} frames (overloaded?)")
     max_foff = pytestconfig.getoption("--max-foff")
-    ppm = pytestconfig.getoption("--sdr-ppm")
-    fo = sorted(b["foff_hz"] for b in sdr.get("bursts", []))
+    fo = sorted(b["foff_hz"] for b in sdr.get("bursts", []))     # corrected by the ppm the capture recorded
     if fo:
-        med = fo[len(fo) // 2] - (freq * ppm if ppm else 0.0)     # MHz x ppm = Hz
-        c.add(f"|carrier offset| < {max_foff} Hz{' (SDR ppm corrected)' if ppm else ''}", abs(med) < max_foff,
-              f"median {med:.0f} Hz")
+        med = fo[len(fo) // 2]
+        c.add(f"|carrier offset| < {max_foff} Hz", abs(med) < max_foff, f"median {med:.0f} Hz")
     tx_calls = after.get("call.tx_calls", 0) - before.get("call.tx_calls", 0)
     c.add("radio: one TX call", tx_calls == 1, f"{tx_calls}")
     under = after.get("call.tx_underruns", 0) - before.get("call.tx_underruns", 0)

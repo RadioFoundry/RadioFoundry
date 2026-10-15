@@ -36,7 +36,8 @@ def pytest_addoption(parser):
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
     g.addoption("--sdr-gain", type=float, default=5.0, help="RTL-SDR gain for raw captures (dmr_bench.py C0 picks it)")
     g.addoption("--sdr-ppm", type=float, default=None,
-                help="the SDR's own frequency error in ppm: carrier offsets are corrected by it when given")
+                help="the SDR's own frequency error in ppm for FM carrier offsets (default: the SDR bench's calibration, "
+                     "recorded with each capture)")
     g.addoption("--max-foff", type=float, default=500.0, help="Hz: largest carrier offset the TX tests accept")
     g.addoption("--fm-mhz", type=float, default=461.6875,
                 help="MHz: the FM TX test frequency (the radio's VFO; a channel you may transmit on)")

@@ -9,7 +9,7 @@ records raw I/Q (sdrmon.py capture), and tools/sdr_fm_check.py analyzes the over
 
 Pass criteria:
 - test_fm_tx_ctcss: one keyed segment; CTCSS 100.0 Hz decoded within 0.5 Hz (sdr_fm_check --expect-ctcss PASS);
-  tone deviation 200-900 Hz at 12.5 kHz; |carrier offset| < --max-foff Hz (default 500; corrected by --sdr-ppm).
+  tone deviation 200-900 Hz at 12.5 kHz; |carrier offset| < --max-foff Hz (default 500; corrected for the SDR's own error by the SDR bench's calibration, or --sdr-ppm).
 - test_fm_tx_dcs: DCS D023N decoded with the right polarity (--expect-dcs 023N PASS; an inverted code fails).
 - test_fm_tx_bandwidth: the same CTCSS 100.0 Hz tone at 12.5 and at 25 kHz: the tone deviation at 25 kHz is 1.5 to
   2.6 times the one at 12.5 kHz (the radio scales every deviation with the channel bandwidth; nominally 2).
