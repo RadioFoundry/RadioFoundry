@@ -499,6 +499,16 @@ run-debuglink: debuglinkTest
 	./debuglinkTest
 .PHONY: run-debuglink
 
+# The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, CONFIG_STUB_ENTRY)
+TESTS   += stubEntryTest
+stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
+
+run: run-stubEntry
+run-stubEntry: stubEntryTest
+	./stubEntryTest
+.PHONY: run-stubEntry
+
 # DM-32UV drivers and board logic: FD6818 frames on a fake three-wire chip, ST7789 init stream and 2x scaling, key
 # matrix decode with the column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the factory
 # calibration decoder (docs/spec/hardware-dm32.md, modem-hrc7000.md)

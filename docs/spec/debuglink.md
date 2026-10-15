@@ -105,6 +105,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x11` | APRS | operation u8 + arguments (3.16) | none (3.16) |
 | `0x15` | SPLIT | operation u8 + arguments (3.15); only in `CONFIG_HOTSPOT_SPLIT` builds, unknown otherwise | none, or the split view text (3.15) |
 | `0x19` | SNMP | operation u8 + arguments (3.17) | none (3.17) |
+| `0x1A` | STUB | operation u8 + arguments (3.18); `CONFIG_STUB_ENTRY` builds on a supported SoC, else status 4 | region info, progress, or a reason (3.18) |
 
 ### 3.1 VERSION
 
@@ -493,6 +494,28 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 `odr_debug.py snmp status | set FIELD VALUE | read [TEXT] | write [TEXT] | trap` (flags as a number or names:
 `off,rf_off,rf_write,usb_traps_off,auth_traps,rf_call_traps`).
 
+### 3.18 STUB
+
+Load the host's flash-access RAM monitor (the "C7 stub") into a free RAM span and hand the SoC to it at run time, no
+power cycle (`CONFIG_STUB_ENTRY`; `docs/spec/hardware-dm32.md` 17.2 for the SoC side). Built without the switch, or on a
+board whose platform has no `hal_system_t.enter_stub`, every operation answers `DL_ST_UNAVAILABLE`. All u32 are little
+endian. The guard is a 32-bit magic key `'C7SB'` (`0x42533743`) on BEGIN and ENTER, plus the exact length and a CRC-32
+of the whole image checked before the jump.
+
+| Op | Request | Reply / effect |
+|---|---|---|
+| 0 INFO | none | magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32: the span and transfer state |
+| 1 BEGIN | magic u32, total_len u32, crc32 u32, entry u32 | received u32 (0): zero the span and arm a transfer. Bad magic: refused; total 0 / over the span or entry outside it: bad argument |
+| 2 DATA | offset u32, bytes (<= max_chunk) | received u32: write a chunk (the frame's CRC-16 guards it). Not armed, or past total_len: bad argument |
+| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument |
+
+The CRC-32 is the standard (zlib) CRC-32. Per-chunk integrity is the debug link frame's own CRC-16, so DATA carries no
+second checksum; the span is zeroed at BEGIN, so a dropped chunk leaves zeros that fail the ENTER CRC-32. After an ok
+ENTER the firmware sends the reply, draws a static banner on the display ("PC Loader Connected" / "Power-cycle to exit",
+flushed synchronously so the panel does not sit on a stale or hung frame while the monitor runs), then quiesces and jumps
+and stops answering; the host then speaks the monitor's own protocol (`02 op len chk 03`, the stub's `PROTOCOL.md`) on
+the same UART at the same baud. Recover the radio with a power cycle.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -506,6 +529,9 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).
 - AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; nothing else in the debug link writes
   chip registers.
+- STUB (bench builds only) writes arbitrary RAM and then runs it, giving the host full control: it is gated by a magic
+  key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, and never returns (recover
+  by a power cycle). Off in a release.
 - The debug link never enters hotspot or CPS mode, and never takes bytes that belong to an MMDVM frame or a CPS
   request (section 1).
 

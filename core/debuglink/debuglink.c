@@ -903,6 +903,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_aprs(req, len, out, cap);
 	case DL_CMD_SNMP:
 		return debuglink_cmd_snmp(req, len, out, cap);
+	case DL_CMD_STUB:
+		return debuglink_cmd_stub(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}
@@ -919,6 +921,7 @@ static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 	if (reboot_pending) {
 		reboot_now();
 	}
+	debuglink_stub_service();	// enters the RAM monitor after a verified STUB ENTER (noreturn); else a no-op
 	return took;
 }
 

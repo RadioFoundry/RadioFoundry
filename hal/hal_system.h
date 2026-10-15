@@ -27,6 +27,13 @@ typedef struct {
 	void (*read)(uint32_t addr, void *dst, size_t n);
 	// Does not return (or returns false when the request could not be armed, e.g. the backup register didn't stick)
 	bool (*reboot)(uint8_t mode);
+	// Runtime RAM-monitor entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2), both optional (NULL where the
+	// platform has none, e.g. the STM32 radios). stub_region returns a writable RAM span the host image is loaded
+	// into (its base address is where it will run) and its length in *size, or NULL if unsupported. enter_stub
+	// quiesces the SoC (interrupts masked, watchdog off, flash controller handed back) and jumps to entry in that
+	// span; it does not return on success, and returns false only if it could not jump
+	uint8_t *(*stub_region)(uint32_t *size);
+	bool (*enter_stub)(uint32_t entry);
 } hal_system_t;
 
 #endif

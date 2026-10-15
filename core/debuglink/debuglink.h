@@ -88,6 +88,12 @@ size_t debuglink_cmd_split(const uint8_t *req, uint16_t len, uint8_t *out, size_
 void debuglink_view_split(dl_text_t *t);
 #endif
 
+// The RAM-monitor loader (debuglink_stub.c, docs/spec/debuglink.md 3.18): the DL_CMD_STUB handler, and the service
+// hook the host link task calls each pass so the jump happens after the ENTER reply has gone out. Built without
+// CONFIG_STUB_ENTRY (or on a board with no hal_system_t.enter_stub) the command answers unavailable and the hook is empty
+size_t debuglink_cmd_stub(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_stub_service(void);
+
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
 #define DL_LINK_COUNTERS	4
 void debuglink_link_counters(uint32_t out[DL_LINK_COUNTERS]);

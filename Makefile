@@ -59,6 +59,12 @@ endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
+# The RAM-monitor loader's portable core (core/debuglink is globbed above): compiled only with its switch, so it costs
+# nothing when off (debuglink_stub.c stays in the glob and answers unavailable, as the other optional commands do)
+APP_SRC := $(filter-out core/debuglink/dl_stub.c,$(APP_SRC))
+ifeq ($(CONFIG_STUB_ENTRY),y)
+APP_SRC += core/debuglink/dl_stub.c
+endif
 # Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
