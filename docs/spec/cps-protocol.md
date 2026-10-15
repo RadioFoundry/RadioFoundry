@@ -22,9 +22,10 @@ the STM32 radios, `hardware-dm1701.md` 16), a UART on radios without (`hardware-
 Once a CPS request is seen, the host link stays in CPS mode, and the shim gets every byte and a tick every pass
 (`cps_feed(NULL, 0, now)`). The session ends at `C 5` (close) or after 10 s without a byte (`CPS_SESSION_MS`). A
 debug link frame (`A5 5A`) arriving between CPS requests is still answered by the debug link, so bench tools can
-watch a CPS transfer. Limitation: if a CPS request pauses for more than 3 ms after a data byte of `0xA5`, the next
-bytes may be taken for a debug frame. qdmr and `tools/cps_client.py` send each request in one write, so this
-doesn't happen with them.
+watch a CPS transfer. While the shim holds part of a request (`cps_mid_request()`), a pause is no request boundary,
+so the rest of the request is never taken for a debug or MMDVM frame. Limitation: a request whose length the header
+doesn't give (`D`, unknown bytes) that pauses for more than 3 ms after a data byte of `0xA5` may still lose its
+next bytes to a debug frame.
 
 ## 2. The open-firmware shim (`core/cps`, `CONFIG_CPS_OPENFW`)
 
@@ -45,10 +46,20 @@ USB gives no request boundaries. A request is complete when its header says so:
 | `C` 2 (text) | up to the NUL after the text, at most 23 |
 | `C` 6 sub | 3 (`C 6 7` clock: 7) |
 | other `C` | 2 |
-| `D`, unknown | ended by 3 ms of quiet (`CPS_GAP_MS`) |
+| `D` | ended by 3 ms of quiet (`CPS_GAP_MS`) |
+
+A request still short of the length its header gives waits for the rest for up to 50 ms of quiet (`CPS_STALL_MS`),
+then whatever came is handled (usually `-`), so a UART host port that delivers a request in pieces doesn't cut it
+short.
+
+A byte that no request starts with (anything but `R`, `W`, `X`, `C`, `D`) is dropped and counted (`cps.junk`), never
+answered. The DM-1801 Pro's programming cable sits on the microphone / speaker jack and now and then delivers a burst
+of noise bytes (`0xFC`, `0xFE`) between requests. Answered `-`, such a burst was read as the reply to the next request.
 
 A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next quiet gap and answered `-`
-(`cps.overflows`). Several requests in one USB packet are handled in order.
+(`cps.overflows`). Several requests in one USB packet are handled in order. The debug link's `cps.openfw_eeprom` is
+where the image starts in the flash: what a client adds to its addresses (0 on the STM32 radios, 0x700000 on the
+HR_C7000 ones; `tools/cps_client.py --offset`).
 
 ### 2.2 Reads (`R`)
 

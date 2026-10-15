@@ -70,9 +70,10 @@ void hostlink_request_ppp(bool on);
 
 // The CPS protocol, when it exists: called from the host link task with each chunk of bytes in a CPS session
 // (requests are not framed here; the handler splits them, e.g. by the 3 ms gap), and with len 0 (buf NULL) as a tick
-// on every pass of the task while the session lasts. Replies go out with hostlink_write
+// on every pass of the task while the session lasts. Replies go out with hostlink_write. mid_request (may be NULL) says
+// the handler holds part of a request: then a quiet gap is no request boundary, and the rest stays the handler's
 typedef void (*hostlink_cps_fn)(const uint8_t *buf, size_t len, uint32_t now_ms);
-void hostlink_set_cps_handler(hostlink_cps_fn fn);
+void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void));
 // The side protocol: start is the first byte of its frames; feed takes bytes that start (buf[0] == start) or continue
 // a frame and returns how many it took (0: not its own after all, the bytes go to the other protocols); in_frame
 // says whether a frame is in progress (its next bytes belong to it). Called from the host link task; replies go out

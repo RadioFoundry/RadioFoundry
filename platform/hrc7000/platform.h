@@ -217,6 +217,9 @@ void hrc_clock_init(void);
 // Vector table in RAM, PIC to a known state (everything masked and cleared)
 void hrc_irq_init(void);
 void hrc_time_init(void);
+// LCD backlight on PTA15 / PWM0 (backlight.c): 0 off, 100 fully on, otherwise PWM duty in percent
+void hrc_backlight(uint8_t percent);
+
 // Timer 1 at configTICK_RATE_HZ for the RTOS (called by the port when the scheduler starts)
 void hrc_tick_start(uint32_t hz);
 
@@ -256,6 +259,7 @@ extern const hal_system_t hrc_system;
 #include "hal_stream.h"
 extern const hal_stream_t hrc_host_uart_stream;
 void hrc_host_uart_init(void);
-uint32_t hrc_host_uart_overruns(void);
+uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
+uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
 
 #endif

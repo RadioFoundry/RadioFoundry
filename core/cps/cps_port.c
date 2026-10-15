@@ -33,5 +33,5 @@ static void handler(const uint8_t *buf, size_t len, uint32_t now_ms)
 void cps_openfw_start(void)
 {
 	cps_init(&io);
-	hostlink_set_cps_handler(handler);
+	hostlink_set_cps_handler(handler, cps_mid_request);
 }
