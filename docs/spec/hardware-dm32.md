@@ -1042,3 +1042,45 @@ connections) are excluded from RAM_LO by file name: RAM_LO can't hold them as we
 `LTO=1` build would lose the file names and overflow RAM_LO (the DM-32 doesn't use LTO). The RTOS heap holds every
 task stack (20 KB of stacks with DMR, audio 6 KB the largest) and the queues; the network adds no task (it runs in the host
 link task, as on the DM-1701).
+
+### 17.2 Runtime stub entry (`CONFIG_STUB_ENTRY`)
+
+A bench and recovery path: the host loads its own flash-access RAM monitor (the "C7 stub", a small program that reads
+and writes the radio's flash chips with no firmware running) into SRAM and ODR jumps to it at run time, with the radio
+powered on, no power cycle and no DFU. It is the same monitor the serial boot ROM loads with the radio off; this just
+gets it running from a radio that is already up. Off by default (`CONFIG_STUB_ENTRY=n`, a switch like the audio probe);
+the command answers unavailable on a board whose platform has no `hal_system_t.enter_stub` (every board but the
+HR_C7000 so far). The wire format is debug link command `0x1A` (`docs/spec/debuglink.md` 3.18).
+
+**RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `dm32.ld` leaves
+out of the image entirely (section 17.1): ODR links nothing there, and the stock codec it is reserved for is not running
+once the radio is quiesced, so the whole window is free. The load span is `0x17000..0x2F000` (`HRC_STUB_BASE` /
+`HRC_STUB_SIZE`, 96 KB, 4 KB aligned inside the window). The monitor's runtime build is position dependent, linked to
+run at `0x17000`, and uses about 25 KB (5 KB code + ~20 KB bss and buffers) plus a stack growing down from `0x2F000`.
+Nothing in ODR's own RAM (RAM_LO below it, `.data`/`.bss`/heap/stack above it) is touched while the image loads, so the
+host link task keeps running to receive it; ODR abandons all of its RAM only at the jump.
+
+**Clock and UART.** The monitor's ROM-load build assumes the ROM's 24 MHz oscillator (115200 from a /13 divisor). The
+runtime build is compiled with the ODR clock tree instead (`-DPORT_UART_HZ=84000000 -DPORT_TICK_HZ=84000000`,
+APB = 84 MHz, section 1.1), so its UART divisor and reported baud come out of the real clock; ODR has already programmed
+UART0 for 115200 at 84 MHz (/46), and the monitor leaves that divisor alone, so the link never drops a byte at the
+hand-over. Timer 2, the monitor's tick source, also runs at 84 MHz here (the host measures the rate regardless).
+
+**Quiesce and jump** (`platform/hrc7000/system.c` `enter_stub`, a `.ramfunc` so it runs after flash is handed back):
+CPU interrupts off (`psrclr ie`), every PIC source masked (both banks), the watchdog off (defensive), then
+`QUAD_ENABLE = 0` to put the XIP flash controller back to its reset mode so the program flash answers the monitor's SSI
+again (the same step `hrc_soft_reset` relies on), and a jump to the entry address. No DMA reaches SRAM on this board, so
+no DMA engine has to be stopped. RTOS tasks are not stopped gracefully; masking interrupts freezes the scheduler and the
+jump never returns (recover by a power cycle).
+
+**Load protocol.** The host sends the image over the debug link in `DL_STUB_CHUNK_MAX` (59 B) chunks after a BEGIN that
+carries the length, a CRC-32 of the whole image, the entry address and a 32-bit magic key (`'C7SB'`); each chunk's
+integrity is the debug link frame's own CRC-16, and the region is zeroed at BEGIN so a dropped chunk fails the final
+check. ENTER repeats the magic, and ODR verifies the exact length and the CRC-32 of the loaded bytes before it quiesces
+and jumps: the three guards (magic, length, CRC-32) are what keep a stray or truncated frame from ever launching it.
+
+**Unverified without hardware** (build and simulation only so far): that a runtime `QUAD_ENABLE = 0` hands the program
+flash to the SSI at `0x04000000` without a full chip reset (the data flash on SPI0 is independent and should be
+unaffected); that the SSI's APB/2 = 42 MHz SCLK reads the program flash reliably at the PLL clock (the ROM-load path ran
+at ~12 MHz); and that nothing the stock codec left in the modem SRAM or a half-finished peripheral transaction trips the
+monitor. See the open questions in `docs/spec/hardware-dm32.md` history and the stub's own `README.md`.
