@@ -674,7 +674,7 @@ Below 16 MHz nothing is written (KP).
 
 | Item | Register | Use | Tag |
 |---|---|---|---|
-| RSSI | 0x67 bits 8:0 | signal = value >> 1 (scale to dBm not calibrated) | KP, COM |
+| RSSI | 0x67 bits 8:0 | dBm = value / 2 - 160 (FD6818 programming guide; reg 0x2C bits 4:0 hold the external LNA gain the chip takes off) | DS |
 | Noise | 0x65 low byte | | KP |
 | CTCSS mode | 0x51 | 0x9045 TX CTCSS on with gain 0x45; 0x1000 CTCSS RX / TX off; 0x0000 sub-audio off | KP |
 | CTCSS frequency | 0x07 | intended value = Hz × 20.64888 (e.g. 88.5 Hz → 1827). The port computes it with an integer division that truncates the tone to whole tens of Hz: **wrong** | KP |
