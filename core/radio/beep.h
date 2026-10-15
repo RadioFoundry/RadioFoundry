@@ -42,6 +42,7 @@ typedef struct {
 	uint32_t played;	// patterns started
 	uint32_t no_stream;	// patterns dropped: no PCM audio, or the stream would not start (no codec clock)
 	uint32_t blocks;	// 20 ms blocks with a beep in them
+	uint32_t stalls;	// own streams given up: no block for STALL_POLLS polls (the codec clock stopped)
 } beep_stats_t;
 
 #define BEEP_SEGS_MAX	6

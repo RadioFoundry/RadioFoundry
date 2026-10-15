@@ -18,6 +18,7 @@
 #define LEAD_BLOCKS		1
 #define ROUTE_HOLD_BLOCKS	4	// 80 ms
 #define IDLE_BLOCKS		ROUTE_HOLD_BLOCKS	// silent blocks after a pattern before the own stream stops
+#define STALL_POLLS	8		// beep_service polls (25 ms) without a block: the stream's clock stopped, give up
 
 // Distinct sounds (radio users tell them apart without looking, docs/ux/survey.md)
 static const beep_seg_t p_key[] = { { 1000, 25 } };
@@ -86,6 +87,9 @@ static uint32_t cb_phase, cb_step;
 static int32_t cb_amp;
 static volatile bool cb_active;
 static volatile uint8_t cb_idle;
+static volatile uint32_t cb_blocks;	// own callback calls, for the stall check
+static uint32_t seen_blocks;
+static uint8_t stall_polls;
 static uint8_t cb_lead;		// lead-in blocks played since the route turned on
 
 void beep_init(const hal_audio_t *audio)
@@ -125,8 +129,18 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 		// started and stopped since the last beep, so own_stream alone can't say whether ours still runs
 		if (aud->start(beep_audio_block, NULL)) {
 			own_stream = true;
+			seen_blocks = cb_blocks;
+			stall_polls = 0;
 		} else {
+			// A start that fails part way (the codec clock dropped while it synchronized) may already have run the
+			// callback: stop it for sure and give the speaker route back, or the analog audio stays muted
 			own_stream = false;
+			cb_lead = 0;
+			aud->stop();
+			if (aud->speaker_pcm != NULL) {
+				aud->speaker_pcm(false);
+			}
+			cb_active = false;
 			cb_seq = req_seq;	// nothing will play it
 			stats.no_stream++;
 			return;
@@ -142,6 +156,25 @@ void beep_service(bool shared)
 	}
 	if (shared) {
 		own_stream = false;	// the voice stream's callback replaced ours and mixes the beep in
+		return;
+	}
+	// A stream whose clock stopped (the codec went quiet after a few blocks) never calls back again: without this
+	// the PCM speaker route would stay on and mute the analog receive audio until a reboot
+	uint32_t n = cb_blocks;
+	if (n != seen_blocks) {
+		seen_blocks = n;
+		stall_polls = 0;
+	} else if (++stall_polls >= STALL_POLLS) {
+		own_stream = false;
+		stall_polls = 0;
+		cb_lead = 0;
+		aud->stop();
+		if (aud->speaker_pcm != NULL) {
+			aud->speaker_pcm(false);
+		}
+		cb_active = false;	// no callback runs now, so the pattern state is ours
+		cb_seq = LOAD(req_seq);
+		stats.stalls++;
 		return;
 	}
 	if (!beep_busy() && cb_idle >= IDLE_BLOCKS) {
@@ -218,6 +251,7 @@ void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)
 {
 	(void)mic;
 	(void)ctx;
+	cb_blocks++;
 	memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 	bool on;
 	if (cb_lead < LEAD_BLOCKS && beep_busy()) {
