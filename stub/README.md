@@ -7,14 +7,14 @@ writes) the program flash and the data flash with every block checked.
 
 | File | What |
 |---|---|
-| `c7000_dump.py` | the host tool; needs Python 3 and pyserial; has both stub images embedded; `--self-test` runs without a radio |
+| `stubtool.py` | the host tool; needs Python 3 and pyserial; has both stub images embedded; `--self-test` runs without a radio |
 | `stub_rom.bin` | the monitor linked for the boot-ROM load (RAM 0x10000, 24 MHz clock), 5,288 bytes |
 | `stub_odr.bin` | the monitor linked for entry from ODR (RAM 0x17000, 84 MHz clock, SSI divider 4), 5,272 bytes |
 | `USER-GUIDE.md` | how to use the tool, in plain language |
 
 The binaries are built from the monitor's source (C, about 1,100 lines, written for this project) with the csky-elf GCC 14
 toolchain (`-Os`). The source and its protocol document are kept with the reverse-engineering notes outside this
-repository for now. Check the embedded images with `sha256sum stub_*.bin` against `c7000_dump.py --self-test`
+repository for now. Check the embedded images with `sha256sum stub_*.bin` against `stubtool.py --self-test`
 (which decodes and checks them).
 
 Status (2026-10-15): reads of both flash chips, entry from ODR, write tests in two reserved sectors, and the provisional

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""c7000_dump: read the program flash and the data flash of an HR_C7000 radio (DM-32UV, DM-1801 Pro) through the chip's
+"""stubtool: flash access for ODR-supported radios through a RAM monitor (the stub). Today: read the program flash and the data flash of an HR_C7000 radio (DM-32UV, DM-1801 Pro) through the chip's
 serial boot ROM, every reply checked, both memories in one power-on. Protocol, history and the stub's source:
 stub/USER-GUIDE.md in the ODR repository.
 
-    c7000_dump.py PORT --progmem progmem.bin --q128 q128.bin     both memories, one boot (1 MB + 16 MB)
-    c7000_dump.py PORT --q128 q.bin --q128-range 0x7C000:0x7C200   part of one (any byte range)
-    c7000_dump.py PORT --verify-q128 q128.bin                      compare flash with a file by CRC, no data transferred
-    c7000_dump.py PORT --attach --boot reset                      restart the radio into its firmware, no power cycle
-    c7000_dump.py PORT --probe                                    chip IDs and a few registers, no files
-    c7000_dump.py PORT --peek 0x14020000:16                       read radio memory (registers, SRAM, flash window)
-    c7000_dump.py PORT out.bin --mem q128                         the old form: one memory into out.bin
-    c7000_dump.py --self-test                                     against a simulated radio, no hardware
+    stubtool.py PORT --progmem progmem.bin --q128 q128.bin     both memories, one boot (1 MB + 16 MB)
+    stubtool.py PORT --q128 q.bin --q128-range 0x7C000:0x7C200   part of one (any byte range)
+    stubtool.py PORT --verify-q128 q128.bin                      compare flash with a file by CRC, no data transferred
+    stubtool.py PORT --attach --boot reset                      restart the radio into its firmware, no power cycle
+    stubtool.py PORT --probe                                    chip IDs and a few registers, no files
+    stubtool.py PORT --peek 0x14020000:16                       read radio memory (registers, SRAM, flash window)
+    stubtool.py PORT out.bin --mem q128                         the old form: one memory into out.bin
+    stubtool.py --self-test                                     against a simulated radio, no hardware
 
 Radio OFF, cable in, run the script, then switch the radio ON within --wait seconds. Nothing is written to the radio's
 flash. The monitor the script loads into the radio's RAM is embedded below (source: the stub's own repository folder), so this file
@@ -1264,7 +1264,7 @@ def self_test():
         check(len(stub_image()) > 0, "embedded stub decodes")
     except DumpError as e:
         check(False, "embedded stub: %s" % e)
-    print("c7000_dump self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
+    print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1
 
@@ -1414,10 +1414,10 @@ def main(argv=None):
                 raise DumpError("--boot wants reset or jump:ADDR")
         return 0
     except (DumpError, OSError) as e:
-        print("\nc7000_dump: %s" % e, file=sys.stderr)
+        print("\nstubtool: %s" % e, file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("\nc7000_dump: stopped", file=sys.stderr)
+        print("\nstubtool: stopped", file=sys.stderr)
         return 1
 
 
