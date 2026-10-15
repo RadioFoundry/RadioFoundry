@@ -422,7 +422,7 @@ information bits in the RX RAM (DS, BIN).
 | 0x510 | FM_MOD | b23:16 repeat-symbol threshold; b15:14 XTCSS length; b13:12 CTCSS reverse-burst mode (01 = 240°, 10 = 180°); b11 CDCSS TX invert; b10 CDCSS RX invert; b9 CDCSS turn-off code; b8 XTCSS EOM; b4 selcall; **b3 CTCSS; b2 CDCSS; b1 DTMF**; b0 XTCSS | |
 | 0x518 | CTCSS_ADDR | b15:8 RX tone address, b7:0 TX tone address (table 8.2) | |
 | 0x51C | USER_DEFINE_CTC | b31 enable, b20:0 step = round(f × 65.536) | non-standard tones |
-| 0x520 | CDCSS_ADDR | b24:16 TX code, b8:0 RX code (the 9-bit DCS code as binary, e.g. 114 octal = 001 001 100). The guide has them the other way round (BENCH: with 754 / 023 in b24:16 / b8:0 the radio sent D754, and the other way D023). The TX code takes effect only when the field changes while FM_MOD b2 is on: written before b2, or rewritten with its own value, the radio sent D000 (BENCH). RX not yet checked | |
+| 0x520 | CDCSS_ADDR | b24:16 RX code, b8:0 TX code (the 9-bit DCS code as binary, e.g. 114 octal = 001 001 100). The TX code is taken when FM_PTT goes on; later writes don't change the code on air (BENCH, DM-1801 Pro: written after FM_PTT, the radio sent the previous code) | |
 | 0x524 | SELCALL_TONE | 2/5-tone frequency | |
 | 0x528 | TONE_SEND_CTRL | b9 selcall send; b8 selcall finish; **b7 dtmf_send; b6 dtmf_finish (0 mutes voice during signaling); b3:0 DTMF digit** | |
 | 0x550–0x55C | FM_TONE1..4 | two 16-bit DTMF tone steps each | 8.3 |

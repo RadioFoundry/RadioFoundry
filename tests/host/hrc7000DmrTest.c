@@ -470,15 +470,14 @@ static void test_tx_tone(void)
 	CHECK(hrc7000_dtmf_dev(446000000u, false) == 0xC0u && hrc7000_dtmf_dev(446000000u, true) == 0xFFu);
 }
 
-// Sub-audio: DCS TX code in CDCSS_ADDR b24:16 and RX in b8:0 (swapped from the guide, SDR bench); the sub-audio
-// deviation doubles at 25 kHz
+// Sub-audio: DCS TX code in CDCSS_ADDR b8:0 and RX in b24:16 (the guide); the sub-audio deviation doubles at 25 kHz
 static void test_subtone(void)
 {
 	setup();
 	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS, 0023);
-	CHECK(REG(C7_CDCSS_ADDR) == (0023u << 16) && (REG(C7_FM_MOD) & 0x4u));
+	CHECK(REG(C7_CDCSS_ADDR) == 0023u && (REG(C7_FM_MOD) & 0x4u));
 	hrc7000_set_subtone(&dev, false, HRC7000_TONE_DCS, 0754);
-	CHECK(REG(C7_CDCSS_ADDR) == ((0023u << 16) | 0754u));
+	CHECK(REG(C7_CDCSS_ADDR) == ((0754u << 16) | 0023u));
 	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
 	CHECK(REG(C7_FM_MOD) & (1u << 11));
 	dev.subaudio_dev = 0x28;

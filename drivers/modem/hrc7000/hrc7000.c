@@ -222,24 +222,14 @@ void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t va
 		hrc7000_wr(d, C7_USER_DEFINE_CTC, addr == 0 ? hrc7000_user_ctcss(value) : 0);
 		mod |= FM_MOD_CTCSS;
 	} else if (type == HRC7000_TONE_DCS || type == HRC7000_TONE_DCS_INV) {
+		// The TX code is taken when FM_PTT goes on: written after it, the radio sent the previous code (SDR bench)
+		uint32_t c = hrc7000_rd(d, C7_CDCSS_ADDR);
+		c = tx ? ((c & ~0x1FFu) | (value & 0x1FFu)) : ((c & ~0x1FF0000u) | ((uint32_t)(value & 0x1FFu) << 16));
+		hrc7000_wr(d, C7_CDCSS_ADDR, c);
 		mod |= FM_MOD_CDCSS;
 		if (type == HRC7000_TONE_DCS_INV) {
 			mod |= tx ? FM_MOD_CDCSS_TX_INV : FM_MOD_CDCSS_RX_INV;
 		}
-		hrc7000_wr(d, C7_FM_MOD, mod);
-		// TX code in b24:16, RX code in b8:0: the other way round from the guide. The chip takes a new TX code only
-		// when the field changes with CDCSS on (SDR bench): written before FM_MOD, or rewritten with the same value,
-		// the radio sent D000. So CDCSS goes on first and the field steps through 0
-		uint32_t c = hrc7000_rd(d, C7_CDCSS_ADDR);
-		if (tx) {
-			c &= ~0x1FF0000u;
-			hrc7000_wr(d, C7_CDCSS_ADDR, c);
-			c |= (uint32_t)(value & 0x1FFu) << 16;
-		} else {
-			c = (c & ~0x1FFu) | (value & 0x1FFu);
-		}
-		hrc7000_wr(d, C7_CDCSS_ADDR, c);
-		return;
 	}
 	hrc7000_wr(d, C7_FM_MOD, mod);
 }

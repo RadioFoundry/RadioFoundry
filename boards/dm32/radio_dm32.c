@@ -249,9 +249,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		fd6818_fm_tx_prepare(&fd);
 		tx_hz = hz;
 		tx_wide = bw == RADIO_BW_25K;
-		hrc7000_fm_tx(&modem, tx_wide);
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
-			tone != NULL ? tone->value : 0);
+			tone != NULL ? tone->value : 0);	// before FM_PTT: the modem takes the DCS code then
+		hrc7000_fm_tx(&modem, tx_wide);
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_TX);

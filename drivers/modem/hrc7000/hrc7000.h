@@ -210,8 +210,8 @@ uint8_t hrc7000_ctcss_addr(uint16_t hz_x10);
 uint32_t hrc7000_user_ctcss(uint16_t hz_x10);
 
 typedef enum { HRC7000_TONE_NONE, HRC7000_TONE_CTCSS, HRC7000_TONE_DCS, HRC7000_TONE_DCS_INV } hrc7000_tone_t;
-// TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19). DCS TX
-// is checked on air; RX DCS assumes the same swapped field layout
+// TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19). Set the
+// TX tone before hrc7000_fm_tx(): the modem takes the DCS code when FM_PTT goes on
 void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t value);
 // The received tone or code matches (FM_DECODE_FLAG2 b0 CTCSS / b1 CDCSS); true when no RX tone is set
 bool hrc7000_subtone_ok(hrc7000_t *d);
