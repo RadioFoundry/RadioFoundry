@@ -358,7 +358,7 @@
  "radio.note.dm1701": "FM, DMR voice and data, text messages, the hotspot and the USB network services work on air.",
  "radio.note.dm32": "Not yet tested on a radio.",
  "radio.note.md380": "Not yet tested on a radio. No CTCSS/DCS yet.",
- "radio.note.dm1801pro": "Early work: FM, and DMR without voice. Not yet tested on a radio.",
+ "radio.note.dm1801pro": "Early bring-up. It boots on a radio; display, keys and storage work. FM and DMR are not yet checked on air, and DMR has no voice yet.",
  "radio.note.db25d": "Early work: FM receive only, no transmit or DMR yet. Not yet tested on a radio.",
  "planned.note.tyt-md-uv380--md-uv390-retevis-rt3s": "Same hardware family as the DM-1701. Next in line.",
  "planned.note.tyt-md-9600-retevis-rt90": "Mobile radio, same hardware family as the DM-1701.",
