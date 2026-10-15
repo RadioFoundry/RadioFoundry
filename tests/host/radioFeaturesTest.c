@@ -580,11 +580,13 @@ static void test_beep_module(void)
 	beep_play(BEEP_NONE, 50, false);
 	CHECK(aud.starts == 0 && !beep_busy());
 
-	// Own stream: started, the pattern plays for its length (25 ms = 200 samples: two blocks), the speaker route
-	// follows, the stream stops after the idle blocks
+	// Own stream: started, one silent block with the speaker routed (the route settles), the pattern for its length
+	// (25 ms = 200 samples: two blocks), the route held through four silent blocks, then the stream stops
 	beep_play(BEEP_KEY, 100, false);
 	CHECK(aud.starts == 1 && aud.streaming && beep_busy());
 	int16_t blk[AUDIO_BLOCK_SAMPLES];
+	beep_audio_block(mic, blk, NULL);
+	CHECK(aud.pcm && blk[0] == 0 && blk[80] == 0 && blk[159] == 0 && beep_busy());
 	beep_audio_block(mic, blk, NULL);
 	int peak = 0;
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
@@ -602,13 +604,16 @@ static void test_beep_module(void)
 	CHECK(crossings >= 18 && crossings <= 22);
 	beep_audio_block(mic, blk, NULL);	// samples 160..199, then silence
 	CHECK(blk[100] == 0 && blk[159] == 0 && aud.pcm);
-	beep_service(false);
-	CHECK(aud.streaming);			// not idle long enough yet
+	for (int i = 0; i < 3; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false);
+		CHECK(aud.pcm && aud.streaming && !beep_busy() && blk[0] == 0);	// held: the queued tail plays out
+	}
 	beep_audio_block(mic, blk, NULL);
-	CHECK(!aud.pcm && !beep_busy());
-	beep_audio_block(mic, blk, NULL);
+	CHECK(!aud.pcm);
 	beep_service(false);
 	CHECK(!aud.streaming && aud.stops == 1);
+
 
 	// Shared (the voice stream runs): no stream started; beep_mix adds into the block
 	beep_play(BEEP_TX_PERMIT, 50, true);
@@ -642,6 +647,22 @@ static void test_beep_module(void)
 	beep_get_stats(&st);
 	CHECK(st.no_stream == 1 && st.played == 3);
 	beep_init(&fake_audio);
+
+	// A beep inside the hold: no second lead-in, the tone starts in the first block
+	beep_play(BEEP_KEY, 100, false);
+	beep_audio_block(mic, blk, NULL);	// lead-in
+	beep_audio_block(mic, blk, NULL);
+	beep_audio_block(mic, blk, NULL);	// the tone ends
+	beep_audio_block(mic, blk, NULL);	// held
+	beep_play(BEEP_KEY, 100, false);	// held, not idle long enough to stop
+	CHECK(aud.pcm);
+	beep_audio_block(mic, blk, NULL);
+	CHECK(blk[0] == 0 && blk[42] != 0);
+	for (int i = 0; i < 8; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false);
+	}
+	CHECK(!aud.pcm && !aud.streaming);
 }
 
 // ---- through the radio core ----
