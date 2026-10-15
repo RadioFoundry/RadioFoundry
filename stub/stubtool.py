@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""c7000_dump: read the program flash and the data flash of an HR_C7000 radio (DM-32UV, DM-1801 Pro) through the chip's
+"""stubtool: flash access for ODR-supported radios through a RAM monitor (the stub). Today: read the program flash and the data flash of an HR_C7000 radio (DM-32UV, DM-1801 Pro) through the chip's
 serial boot ROM, every reply checked, both memories in one power-on. Protocol, history and the stub's source:
 stub/USER-GUIDE.md in the ODR repository.
 
-    c7000_dump.py PORT --progmem progmem.bin --q128 q128.bin     both memories, one boot (1 MB + 16 MB)
-    c7000_dump.py PORT --q128 q.bin --q128-range 0x7C000:0x7C200   part of one (any byte range)
-    c7000_dump.py PORT --verify-q128 q128.bin                      compare flash with a file by CRC, no data transferred
-    c7000_dump.py PORT --attach --boot reset                      restart the radio into its firmware, no power cycle
-    c7000_dump.py PORT --probe                                    chip IDs and a few registers, no files
-    c7000_dump.py PORT --peek 0x14020000:16                       read radio memory (registers, SRAM, flash window)
-    c7000_dump.py PORT out.bin --mem q128                         the old form: one memory into out.bin
-    c7000_dump.py --self-test                                     against a simulated radio, no hardware
+    stubtool.py PORT --progmem progmem.bin --q128 q128.bin     both memories, one boot (1 MB + 16 MB)
+    stubtool.py PORT --q128 q.bin --q128-range 0x7C000:0x7C200   part of one (any byte range)
+    stubtool.py PORT --verify-q128 q128.bin                      compare flash with a file by CRC, no data transferred
+    stubtool.py PORT --odr-enter --progmem p.bin --q128 q.bin     the same from a radio running ODR (built with CONFIG_STUB_ENTRY=y)
+    stubtool.py PORT --odr-enter --write-app odr_dm1801pro.bin   program an ODR build into the program flash (changed sectors only)
+    stubtool.py PORT --attach --boot reset                      restart the radio into its firmware, no power cycle
+    stubtool.py PORT --probe                                    chip IDs and a few registers, no files
+    stubtool.py PORT --peek 0x14020000:16                       read radio memory (registers, SRAM, flash window)
+    stubtool.py PORT out.bin --mem q128                         the old form: one memory into out.bin
+    stubtool.py --self-test                                     against a simulated radio, no hardware
 
-Radio OFF, cable in, run the script, then switch the radio ON within --wait seconds. Nothing is written to the radio's
-flash. The monitor the script loads into the radio's RAM is embedded below (source: the stub's own repository folder), so this file
+Radio OFF, cable in, run the script, then switch the radio ON within --wait seconds (or --odr-enter with the radio running ODR).
+Reads never write. Only --write-app (the application area from 0xC000, never the bootloader) and --write-test (two reserved
+test sectors per chip) write flash. The monitor the script loads into the radio's RAM is embedded below (source: the stub's own repository folder), so this file
 needs only Python 3 and pyserial.
 """
 import argparse
@@ -177,6 +180,9 @@ MEM = {"progmem": (SSI_PROG, True, None, 0x100000, "program flash"),
 # Writes are only allowed here (chosen 2026-10-15 from the dumps: blank in every dump, away from ODR)
 WRITE_OK = {"progmem": [(0xF0000, 0xF4000)], "q128": [(0xC00000, 0xC04000)]}
 PAGE = 256
+# The application area of the program flash: an ODR image is linked for 0x0300C000, which is flash offset 0xC000. The
+# bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
+APP_START, APP_END = 0xC000, 0x100000
 
 
 class DumpError(Exception):
@@ -542,10 +548,11 @@ class Radio:
         self.spi(base, tx, 0, ser, cs)
         self._wait_ready(mem, what, timeout)
 
-    def check_write_range(self, mem, start, end):
+    def check_write_range(self, mem, start, end, app=False):
         if start % SECTOR or end % SECTOR or start >= end:
             raise DumpError("writes are whole 4 KB sectors")
-        if not any(a <= start and end <= b for a, b in WRITE_OK.get(mem, [])):
+        ok = WRITE_OK.get(mem, []) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
+        if not any(a <= start and end <= b for a, b in ok):
             raise DumpError("%s 0x%X-0x%X is outside the allowed write regions %s" %
                             (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in WRITE_OK.get(mem, []))))
 
@@ -554,6 +561,35 @@ class Radio:
         self.check_id(mem)
         for a in range(start, end, SECTOR):
             self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
+
+    def write_image(self, image, progress=None):
+        """Program an ODR application image into the program flash at 0xC000 (where it is linked to run): only the 4 KB
+        sectors whose CRC differs from the flash are erased and written, then everything is verified by CRC. The
+        bootloader below 0xC000 is never touched. Returns (sectors written, sectors left alone)."""
+        mem = "progmem"
+        image = bytes(image)
+        end = APP_START + (len(image) + SECTOR - 1) // SECTOR * SECTOR
+        if not image or end > APP_END:
+            raise DumpError("image is %d bytes: it must fit 0x%X-0x%X of the program flash" % (len(image), APP_START, APP_END))
+        if image[:4] == b"\x00" * 4 or len(set(image[:64])) < 2:
+            raise DumpError("this does not look like an application image (starts with %s)" % image[:8].hex())
+        padded = image + b"\xff" * (end - APP_START - len(image))
+        self.check_write_range(mem, APP_START, end, app=True)
+        self.check_id(mem)
+        todo = self.verify(mem, padded, APP_START)
+        for n, a in enumerate(todo):
+            if progress:
+                progress(n, len(todo))
+            off = a - APP_START
+            self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
+            for p in range(a, a + SECTOR, PAGE):
+                page = padded[p - APP_START:p - APP_START + PAGE]
+                if page != b"\xff" * PAGE:
+                    self._write_cmd(mem, bytes([0x02, p >> 16 & 0xFF, p >> 8 & 0xFF, p & 0xFF]) + page, "program 0x%X" % p, 1.0)
+        bad = self.verify(mem, padded, APP_START) if todo else []
+        if bad:
+            raise DumpError("verify after write: sectors differ at %s" % ", ".join("0x%X" % x for x in bad))
+        return len(todo), (end - APP_START) // SECTOR - len(todo)
 
     def write_flash(self, mem, start, data):
         """Erase and program whole sectors at `start`, then check by CRC against the radio's own read of them."""
@@ -1168,6 +1204,19 @@ def self_test():
             check(False, "write outside the test regions refused %s" % (bad_args[:2],))
         except DumpError:
             pass
+    appimg = bytes((i * 7 + 3) & 0xFF for i in range(5 * SECTOR + 100))
+    nw, nk = r.write_image(appimg)
+    check(radio.images["progmem"][APP_START:APP_START + len(appimg)] == appimg and nw == 6, "write_image programs an app image (%d sectors)" % nw)
+    check(radio.images["progmem"][:APP_START] == (prog + b"\xff" * (0x100000 - len(prog)))[:APP_START], "bootloader area untouched")
+    radio.writes.clear()
+    appimg2 = appimg[:2 * SECTOR] + b"\x55" + appimg[2 * SECTOR + 1:]
+    nw, nk = r.write_image(appimg2)
+    check(nw == 1 and nk == 5 and len(radio.writes) >= 2, "second image writes only the changed sector (%d written, %d kept)" % (nw, nk))
+    try:
+        r.write_image(b"\x01" * (APP_END - APP_START + 1))
+        check(False, "oversized image refused")
+    except DumpError:
+        pass
     r.setup_led(32, 33, "red")
     r.reset_chip()
     check(radio.pokes[-2:] == [(QUAD_ENABLE, 0), (SYS_SOFT_RSTN, 0)], "reset_chip pokes XIP quad off, then the soft reset (%s)" % (radio.pokes[-2:],))
@@ -1264,7 +1313,7 @@ def self_test():
         check(len(stub_image()) > 0, "embedded stub decodes")
     except DumpError as e:
         check(False, "embedded stub: %s" % e)
-    print("c7000_dump self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
+    print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1
 
@@ -1310,6 +1359,9 @@ def main(argv=None):
     ap.add_argument("--odr-enter", action="store_true", help="the radio is ON and runs ODR (built with CONFIG_STUB_ENTRY=y): load "
                     "the stub into its RAM over the debug link and jump to it, instead of the boot-ROM load")
     ap.add_argument("--odr-stub", metavar="FILE", help="with --odr-enter: this stub image instead of the embedded one")
+    ap.add_argument("--write-app", metavar="IMAGE", help="program an ODR application image (raw .bin linked for 0x0300C000) into the "
+                    "program flash at 0xC000: only changed 4 KB sectors are written, then verified; the bootloader is never touched. "
+                    "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset")
     ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")
     ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded one")
     ap.add_argument("--self-test", action="store_true")
@@ -1325,7 +1377,7 @@ def main(argv=None):
     for mem, f, rng in (("progmem", a.progmem, a.progmem_range), ("q128", a.q128, a.q128_range)):
         if f:
             jobs.append((mem,) + (f,) + parse_range(rng, MEM[mem][3]))
-    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.led_test or a.led_seq or a.boot or a.write_test):
+    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app):
         ap.error("nothing to do: give --progmem, --q128, --verify-*, --probe, --peek or OUT")
     try:
         import serial
@@ -1359,6 +1411,14 @@ def main(argv=None):
         if a.led_seq:
             steps, rep, hold = parse_led_spec(a.led_seq)
             radio.led_sequence(steps, rep, hold)
+        if a.write_app:
+            image = open(a.write_app, "rb").read()
+            t0 = time.monotonic()
+            nw, nk = radio.write_image(image, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
+            print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))
+            print("sha256", fingerprint(a.write_app))
+            if not a.boot:
+                print("run again with --attach --boot reset (or power-cycle) to start the new firmware")
         if a.write_test:
             for mem in (("progmem", "q128") if a.write_test == "both" else (a.write_test,)):
                 lo, hi = WRITE_OK[mem][0]
@@ -1414,10 +1474,10 @@ def main(argv=None):
                 raise DumpError("--boot wants reset or jump:ADDR")
         return 0
     except (DumpError, OSError) as e:
-        print("\nc7000_dump: %s" % e, file=sys.stderr)
+        print("\nstubtool: %s" % e, file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("\nc7000_dump: stopped", file=sys.stderr)
+        print("\nstubtool: stopped", file=sys.stderr)
         return 1
 
 

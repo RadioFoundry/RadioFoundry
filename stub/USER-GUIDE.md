@@ -1,8 +1,8 @@
-# Flash tool user guide (`c7000_dump.py`)
+# Flash tool user guide (`stubtool.py`)
 
 For the DM-32UV and the DM-1801 Pro. The tool backs up and checks the radio's two memory chips over the programming
-cable. It needs only Python 3 and `pyserial` (`pip install pyserial`). Writing firmware is not part of this tool yet:
-use `tools/dm32_flash.py` for that. Items marked **[confirm]** are not checked on every radio yet.
+cable and installs ODR builds. It needs only Python 3 and `pyserial` (`pip install pyserial`). Installing the stock or a
+first ODR build still uses `tools/dm32_flash.py`. Items marked **[confirm]** are not checked on every radio yet.
 
 ## Before you start
 
@@ -19,7 +19,7 @@ use `tools/dm32_flash.py` for that. Items marked **[confirm]** are not checked o
 2. Run:
 
    ```
-   python3 c7000_dump.py PORT --progmem progmem.bin --q128 q128.bin
+   python3 stubtool.py PORT --progmem progmem.bin --q128 q128.bin
    ```
 
 3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly yellow. This is
@@ -40,17 +40,44 @@ If the radio runs an ODR build with the loader option, you do not need to switch
 2. Run the same command and add `--odr-enter`:
 
    ```
-   python3 c7000_dump.py PORT --odr-enter --progmem progmem.bin --q128 q128.bin
+   python3 stubtool.py PORT --odr-enter --progmem progmem.bin --q128 q128.bin
    ```
 
 3. The screen shows "PC Loader Connected" and then stops responding to the keys. This is expected. The LED blinks
    yellow as above.
 4. When it is done, restart the radio with the next section.
 
+## Install an ODR build without entering the bootloader
+
+For a radio that already runs an ODR build with the loader option (`CONFIG_STUB_ENTRY=y`). No key presses, no
+switching off.
+
+1. Leave the radio **on** at its normal screen, connected by the cable.
+2. Run (`odr_dm1801pro.bin` is the build you want to install):
+
+   ```
+   python3 stubtool.py PORT --odr-enter --write-app odr_dm1801pro.bin
+   ```
+
+3. The screen shows "PC Loader Connected". The tool compares the new build with what is in the radio, writes only the
+   blocks that changed (a rebuilt image is often a few seconds, a very different one about 70 seconds), and checks every
+   block after writing. It prints how many blocks it wrote.
+4. Start the new build:
+
+   ```
+   python3 stubtool.py PORT --attach --boot reset
+   ```
+
+The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
+works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again
+once the radio is back in loader mode, or use update mode and `tools/dm32_flash.py`. A build for the **DM-1801 Pro** was
+tested this way **[confirm on the DM-32UV, which also keeps codec data in the program flash]**. Use a raw ODR `.bin`
+(linked for 0x0300C000), not a stock firmware file.
+
 ## Check a backup (quick)
 
 ```
-python3 c7000_dump.py PORT --verify-progmem progmem.bin --verify-q128 q128.bin
+python3 stubtool.py PORT --verify-progmem progmem.bin --verify-q128 q128.bin
 ```
 
 The tool compares the radio's memory with your files and names any 4 KB blocks that differ. If you used the radio since
@@ -61,7 +88,7 @@ the backup, small differences in settings are normal.
 Switch the radio off and on again. If it will not switch off (the power key does nothing while the loader runs), run:
 
 ```
-python3 c7000_dump.py PORT --attach --boot reset
+python3 stubtool.py PORT --attach --boot reset
 ```
 
 The radio restarts into its normal firmware. If neither works, remove and refit the battery.
