@@ -2,8 +2,8 @@
 
 # DM-1801 Pro bring-up checklist
 
-The DM-1801 Pro port (`make BOARD=dm1801pro`) builds and passes its host tests, but it has never run on a radio. This
-is the order to try it in, what each step proves, and what to change when it doesn't work. Hardware facts:
+The order to bring the DM-1801 Pro port (`make BOARD=dm1801pro`) up on a radio, what each step proves, and what to
+change when it doesn't work. Steps 0 to 3, 7 and 8 passed on 2026-10-15 (hardware-dm1801pro.md 12). Hardware facts:
 [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md).
 
 ## 0. Before anything
@@ -11,12 +11,13 @@ is the order to try it in, what each step proves, and what to change when it doe
 1. **Back up both flashes** (1 MB program flash, 16 MB data flash). The port never writes the data flash below
    0x700000 and never touches the boot loader, but a backup is the only way back from a mistake.
 2. Confirm update mode before the first flash: it is the recovery path for every step below. The loader stays in it while
-   PTT and the key on PTB26 are held at power-on ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2); which key
-   that is isn't known, so try SK1 and then each side key. `python3 tools/dm32_flash.py --model dm1801pro --dry-run IMAGE`
+   PTT and SK1 are held at power-on ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2). Push the cable fully
+   into the jack, or the loader doesn't answer. `python3 tools/dm32_flash.py --model dm1801pro --dry-run IMAGE`
    checks the image and the cable first.
 3. Flash: `python3 tools/dm32_flash.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
-   It has only run against a simulated loader. The first real run settles the unchecked parts: the update file header,
-   the NAK behavior and the erase time. `odrflash` knows the board's flash map but has no serial route yet.
+   The erase takes about 13 s. `odrflash` knows the board's flash map but has no serial route yet.
+5. The debug link runs on the same cable at 115200 (`ODR_PORT=/dev/cu.usbserial-... tools/odr_debug.py diag`). The
+   cable's plug switches the internal speaker off: unplug it to listen.
 4. Build: `make BOARD=dm1801pro` (csky-elf GCC: `tools/build-csky-toolchain.sh`).
 
 ## 1. Power and display
@@ -49,7 +50,7 @@ Tune a known local signal on VHF and UHF. Audio, RSSI (`rssi` line) and squelch 
 
 | Symptom | Likely cause |
 |---|---|
-| No audio on either band | `PIN_SPK_SOURCE` / `PIN_MIC_PATH` polarity, or the speaker path isn't the DM-32UV's |
+| No audio on either band | The cable is plugged in (it mutes the speaker); `PIN_AMP_EN` (PTA16) or `PIN_SPK_SOURCE` (PTB15) |
 | Audio on one band only | The path pins' band side is inverted (`radio_dm1801pro.c` `path_pins`; hardware-dm1801pro.md 5.5) |
 | Wrong frequency or very weak | `fd6818_variant_dm1801pro` tables, the RF bus speed (`RF_BIT_SCALE_US`), `PIN_RF_CS` |
 | Narrow / wide swapped | The 12.5 kHz word (`bw_fm_12k5`, hardware-dm1801pro.md 5.2) |
@@ -73,7 +74,7 @@ calls `board.bcast`.
 | Step | Expect | If not |
 |---|---|---|
 | `power(true)` | Returns true: the chip answers at 0x11 with ID 0x58 | `PIN_BCAST_EN` polarity, `PIN_BCAST_SDA` / `PIN_BCAST_SCL`, the I2C speed (`bus.half_us`), the reference clock mode (`cfg.clk_mode` in `bcast_dm1801pro.c`) |
-| `tune(100000)`, `audio(true)` | A station, audible | `PIN_FM_AUDIO` is the wrong switch or needs `PIN_SPK_SOURCE` as well |
+| `tune(100000)`, `audio(true)` | A station, audible | The tuner's audio route; the amplifier (`PIN_AMP_EN`) is shared with the channel audio |
 | `seek` | Stops on stations | Seek threshold (`cfg.seek_th`) |
 | Receive a channel signal | The broadcast mutes while the channel has traffic | Core policy, not the board |
 
@@ -81,7 +82,8 @@ calls `board.bcast`.
 
 The diagnostics page has an `acc` line: x, y and z in milli-g. Lay the radio flat: z reads about +1000 or -1000 and x
 and y near 0; tilt it and the values follow. `accel none` means the chip didn't answer: check `PIN_ACCEL_SCL` /
-`PIN_ACCEL_SDA` and the address (`ACCEL_ADDR` in `accel_dm1801pro.c`; 0x18 if the chip's address pin is low).
+`PIN_ACCEL_SDA` and the address (`ACCEL_ADDR` in `accel_dm1801pro.c`; 0x18 if the chip's address pin is low). `accel id
+NN` means the chip answered with an ID the driver doesn't accept (this radio's SC7A20 reads 0x11).
 
 ## 8. Vibration motor
 

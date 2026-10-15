@@ -3,13 +3,14 @@
 
 An HR_C7000 radio: the DM-32UV's SoC and RF chip family with a monochrome display and a different pin map. This page
 records what the DM-1801 Pro does and where it differs from [hardware-dm32.md](hardware-dm32.md), which is the
-reference for register names and the pin-index scheme. Nothing here is confirmed on a bench yet: no board was probed
-and the port hasn't run on a radio.
+reference for register names and the pin-index scheme. No board was probed. ODR first ran on a radio on 2026-10-15;
+facts checked there carry the tag **R**.
 
 | Tag | Meaning |
 |---|---|
 | **K** | Known: a value or behavior of the radio taken from its observed operation, no part marking or measurement |
 | **I** | Inferred from patterns, constants or the DM-32UV; the reasoning is stated |
+| **R** | Checked on a radio running ODR |
 | **?** | Not determined |
 
 ## 1. What is the same as the DM-32UV, and what is not
@@ -48,7 +49,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 5 / 6 | PTA5 / PTA6 | software I2C SCL / SDA, 8-bit address 0x7A, device unknown | high | K bus, ? device |
 | 7 / 8 | PTA7 / PTA8 | RF chip clock / data | high | K |
 | 15 | PTA15 | LCD backlight | low | I |
-| 16 | PTA16 | FM broadcast audio path enable | low | I |
+| 16 | PTA16 | audio power amplifier, high = on (the stock broadcast tuner code drives it because the tuner needs the amplifier) | low | R |
 | 17 | PTA17 | power latch | high | I |
 | 18 | PTA18 | data flash chip select, low = selected | high | K |
 | 25 / 26 | PTA25 / PTA26 | FM broadcast tuner I2C SDA / SCL | low | K bus, I chip |
@@ -61,21 +62,22 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 35-38 | PTB3-PTB6 | keypad inputs, low = key closed | in | K |
 | 39 | PTB7 | TX path select, UHF side | low | K pin, I band |
 | 40 | PTB8 | RX path select, UHF side | low | K pin, I band |
-| 41 | PTB9 | power key | in | I |
+| 41 | PTB9 | power knob switch; its level at start-up means "on" | in | R |
 | 42 | PTB10 | input with interrupt, role unknown | in | ? |
-| 43 / 44 | PTB11 / PTB12 | debounced key inputs, low = pressed | in | I, which key unknown |
-| 46 / 47 | PTB14 / PTB15 | audio path switches, a complementary pair (the DM-32UV's mic path and speaker source) | low | I |
+| 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed | in | R |
+| 46 / 47 | PTB14 / PTB15 | audio path switches (the DM-32UV's mic path and speaker source). PTB15 low = speaker on; PTB14 doesn't change the speaker | low | R for PTB15, I for PTB14 |
 | 50-54 | PTB18-PTB22 | keypad strobes, low one at a time | | K |
-| 56 | PTB24 | vibration motor, high = on | low | I |
-| 58 / 59 | PTB26 / PTB27 | debounced key inputs, low = pressed | in | I, which keys unknown |
+| 48 | PTB16 | output, role unknown; not the amplifier | low | R |
+| 56 | PTB24 | vibration motor, high = on | low | R |
+| 58 / 59 | PTB26 / PTB27 | SK1 (upper side key) / SK2 (lower side key), low = pressed | in | R |
 | 66 | PTC2 | display reset | high | I |
 | 67 | PTC3 | display chip select, low = selected | high | K |
 | 68 | PTC4 | display clock | idle high | K |
 | 70 | PTC6 | display data / command, low = command | low | K |
 | 72 | PTC8 | display data, MSB first | low | K |
 
-Not found: which of PTB11, PTB12, PTB26 and PTB27 is PTT, SK1, SK2 or the SOS key, the flashlight pin, an audio
-amplifier enable, USB.
+Not found: the flashlight pin, USB. The programming cable's plug switches the internal speaker off in hardware: with
+it in, the amplifier on and the speaker source selected, the speaker is silent (R).
 
 ### 3.2 Display bus
 
@@ -189,11 +191,11 @@ loader speaks the DM-32UV's update protocol ([hardware-dm32.md](hardware-dm32.md
 |---|---|
 | 1-4 | `R` answers `06`; `M` answers `4D 01 <n>` where n is the length of the ID string (9), then after `06` sends the ID `BF1801-V1`; `V` answers `02 0C`; `E` answers `06`. `G` is served too (reads up to 0x20 bytes) |
 | 5-9 | `31` starts a receiver that sends `C` and takes XMODEM-CRC / YMODEM frames: `01` (128 B) and `02` (1024 B), block number and complement, CRC-16/XMODEM (polynomial 0x1021, initial 0) big endian, `04` to end, `18` (CAN) twice to abort. Block 0 holds the file name, NUL and the size in ASCII; a size above 0xF4002 is refused, then the application area is erased and `06 43` answered. Each good block is answered `06` |
-| Entry | The loader stays in update mode when GPIO 43 (PTB11) and 58 (PTB26) both read low; otherwise it starts the application. Which key PTB26 is isn't known; PTB11 is PTT on the DM-32UV |
+| Entry | The loader stays in update mode when GPIO 43 (PTB11) and 58 (PTB26) both read low, that is PTT and SK1 held at power-on; otherwise it starts the application (R) |
 
 The file format (a 256-byte header with the ID as magic, as on the DM-32UV) is assumed, not seen. `tools/dm32_flash.py
---model dm1801pro` writes through this protocol; it has only run against the simulated loader. The loader at 0x1000 is
-never written.
+--model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no refused block, erase
+about 12.6 s (R). The loader at 0x1000 is never written.
 
 ### 6.3 Identity read
 
@@ -250,16 +252,17 @@ DM-32UV. How it is called (state blocks, flags words) and the codec's frame path
 128 x 64 pixels, page addressed: page command 0xB0 + n, column address 4 (so the controller has 132 columns and the
 visible ones start at 4), 128 data bytes per page, 8 pages. The controller part isn't identified; ST7567 and UC1701 share
 this command set. ODR sends the common ST7567 initialization (bias 1/9, regulator ratio 4, volume 0x20, power control
-all on) and reverses the common outputs; orientation, contrast and bias are to be tuned at the first power-on. I.
+all on). Upright needs the segment outputs reversed (0xA1) and the common outputs normal (0xC0), with the column offset 4
+(R). The picture is readable with these values; contrast and bias are not tuned further. Controller part I.
 
 ## 8. Other devices
 
 | Device | Bus | Detail | Tag |
 |---|---|---|---|
-| FM broadcast tuner | I2C 7-bit 0x10 (sequential access; ODR uses 0x11, random access, the same chip's other address), SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable (low = on, from the order of start and stop, not measured); PTA16 audio path | I |
-| Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | LIS3DH class (CTRL1 = 0x47, CTRL4 = 0x88); ODR reads it for the diagnostics page only | I |
+| FM broadcast tuner | I2C 7-bit 0x10 (sequential access; ODR uses 0x11, random access, the same chip's other address), SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable (low = on, from the order of start and stop, not measured); its audio needs the amplifier (PTA16) | I |
+| Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | SC7A20, a LIS3DH-compatible part: WHO_AM_I reads 0x11, not the LIS3DH's 0x33 (R). The radio writes CTRL1 = 0x47, CTRL4 = 0x88. ODR reads it for the diagnostics page only; at rest the reading is about 250 mg, so the scale is about 4 times low (?) | R |
 | Unknown | I2C 7-bit 0x3D, SCL PTA5, SDA PTA6 | registers 0x30, 0x40, 0x80, 0x20, 0x22 | ? |
-| Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call; ODR pulses it once at power-on (`hal_power_t.vibrate`), nothing else calls it yet | I |
+| Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call; ODR pulses it once at power-on (`hal_power_t.vibrate`), nothing else calls it yet | R |
 
 ## 9. Keys, battery, power
 
@@ -267,9 +270,17 @@ all on) and reverses the common outputs; orientation, contrast and bias are to b
 
 The matrix strobes PTB18-PTB22 low one at a time and the inputs PTB3-PTB6 are read (low = closed): 20 positions. The
 radio's panel has MENU, BACK, a four-way direction pad, VFO/MR, A/B, 0-9, `*` and `#` (20 keys), plus PTT, SK1, SK2 and a
-top SOS button. The four direct inputs are PTB11, PTB12, PTB26 and PTB27. **Which position is which key, and which
-direct pin is PTT, SK1, SK2 or SOS, isn't known.** ODR's table is provisional; the diagnostics page shows the raw scan
-so the table can be written at the bring-up. ?
+top SOS button. Read off the radio one key at a time (R):
+
+| Strobe | PTB3 | PTB4 | PTB5 | PTB6 |
+|---|---|---|---|---|
+| PTB18 | 9 | 3 | 6 | # |
+| PTB19 | Down | Menu | Up | Back |
+| PTB20 | Right | A/B | VFO/MR | Left |
+| PTB21 | 8 | 2 | 5 | 0 |
+| PTB22 | 7 | 1 | 4 | * |
+
+Direct inputs: PTB11 PTT, PTB12 SOS, PTB26 SK1 (upper side key), PTB27 SK2 (lower side key).
 
 ### 9.2 Battery
 
@@ -290,15 +301,16 @@ receiving and orange flashing while scanning.
 
 ## 10. Open items
 
-- The key map: matrix positions and the four direct pins.
 - Which menu power level uses which calibration array; the lists at 0x300 / 0x314 / 0x328 / 0x33C.
 - The 12.5 kHz bandwidth word; the VHF / UHF side of the path pins; the DMR per-burst handlers and PA delay.
-- The display controller, orientation and contrast.
-- The audio amplifier enable, the FM tuner audio path, the DAC C value.
+- FM receive audio: on 2026-10-15 the monitor gave a quiet, broken noise rather than FM hiss, and the beep sounded
+  rough. The receive audio chain (FD6818 demodulator output into the HR_C7000) needs a known signal to check.
+- The display controller part and its contrast.
+- PTB14's role, PTB16's role, the DAC C value.
+- The accelerometer's scale (readings about 4 times low).
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
-- Which key PTB26 is (update mode needs it with PTT), the update file header, and the codec's call path (DMR voice; its location is 6.5).
-- Whether PTB24 is the motor and PTA16 the FM audio path (a meter settles both).
+- The update file header, and the codec's call path (DMR voice; its location is 6.5).
 
 ## 11. What ODR reuses
 
@@ -316,14 +328,14 @@ receiving and orange flashing while scanning.
 
 ## 12. Bring-up state
 
-Builds and passes its host tests; hasn't run on a radio. In:
+First run on a radio on 2026-10-15 ([the bring-up checklist](../testing/dm1801pro-bringup.md) has the steps). Checked
+there:
 
-- the UI on the 128x64 display, the keys (provisional table), the data flash and the open-firmware codeplug, the battery
-- FM receive, and FM transmit from the factory calibration (refused without it)
-- DMR signaling and data through the shared HR_C7000 glue, without voice (the codec is located, not hosted)
-- the broadcast FM tuner, radio side only: the core's tuner task and screens are parked
-  ([airband-and-broadcast.md](airband-and-broadcast.md))
-- the vibration motor (one pulse at power-on), the accelerometer on the diagnostics page, the host link
+- start-up, the power knob, the vibration motor, the update-mode flash route
+- the display (upright, readable), every key, the data flash (Puya, JEDEC 852018) and the factory calibration
+- the speaker path (amplifier and source pins), the beep, the debug link on the programming cable
+- the accelerometer answers (scale open)
 
-Not in: DMR voice (hosting the codec), the air band, USB (the radio has none). The first power-on follows
-[the bring-up checklist](../testing/dm1801pro-bringup.md).
+Built, not yet checked on air: FM receive audio (see 10), FM transmit, DMR signaling and data through the shared
+HR_C7000 glue. Not in: DMR voice (the codec is located, not hosted), the air band, the broadcast tuner's screens, USB
+(the radio has none).
