@@ -199,8 +199,11 @@ no FPU instructions.
 | decode | PCM out, this half | 80 | 49-bit in buffer (one bit per halfword) | 0 (stock: D+0x98E, zero) | flags, half (0 / 1), D |
 | encode ECC | bit buffer (49 in, 72 out) | same buffer | 0 (stock: E+0x173C, zero) | FEC state | |
 
-* Encode flags are 0x1840 on the first call of a transmission (stock copies E+0x1730) and 0x800 on every later
-  call. The encoder reads the PCM and never writes it. Its output is the 49 parameter bits only. Stock applies its
+* Encode flags: the reading "0x1840 on the first call of a transmission (copied from E+0x1730), 0x800 on every later
+  call" is not supported. On the DM-1801 Pro build of the same wrapper there are two calling patterns: one passes a
+  literal 0x800 on every call, the other passes the copy of the init value 0x1840 on every call, and neither switches
+  from one to the other ([codec-dm1801pro.md](codec-dm1801pro.md) section 3). This radio's wrapper was not re-checked.
+  ODR's host passes 0x1840 once and then 0x800, which behaves as the 0x800 pattern. The encoder reads the PCM and never writes it. Its output is the 49 parameter bits only. Stock applies its
   privacy XOR to them (E+0x189C ^= E+0x19BC, 49 halfwords) and then calls encode ECC. Encode ECC turns them into the
   72 air bits in air order (one per halfword, the MSB of byte 0 first).
 * Decode flags: stock unpacks the 72 received bits and runs its own FEC decode. It then XORs the privacy keystream

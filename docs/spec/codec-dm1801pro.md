@@ -13,7 +13,8 @@ a release.
 **Result.** The DM-1801 Pro's codec, its init routine and the wrappers that call it are the DM-32UV 049 build, with
 the data tables and the state blocks at different RAM addresses. ODR's DM-32UV hosting
 ([codec-dm32.md](codec-dm32.md), `boards/dm32/vocoder_dm32.c`) therefore interfaces with it the same way. The changes
-for this board are addresses.
+for this board are addresses. One thing in that interface was wrong: the encode flags word
+([section 3](#3-how-the-codec-is-called) and [section 5](#5-cross-check-against-an-independent-build)).
 
 Tags: K = known from the image, I = inferred, ? = not determined.
 
@@ -87,14 +88,35 @@ are those of [codec-dm32.md](codec-dm32.md) C: E[0x172C] = 0x1840, E[0x173A] = 0
 | r1 | E[0x1736] |
 | r2 | input samples: E + 2 * (E[0x1896] + 2986) * 2 |
 | r3 | 80 |
-| sp+0 | 0x800 |
+| sp+0 | the flags word, see below (0x800 in this pattern) |
 | sp+4 | 1 (0 on the first half) |
 | sp+8 | E[0x173A] |
 | sp+12 | E |
 
 This is the DM-32UV call ([codec-dm32.md](codec-dm32.md), calling convention) and what `encode()` in `vocoder_dm32.c` passes (K).
 
-The first call of a transmission passes 0x1840 (E[0x172C]) at sp+0, as the host does; later calls pass 0x800.
+**The flags word (sp+0).** The wrapper has six encode calls in two patterns. Each pattern passes one value on every
+call; none passes 0x1840 first and 0x800 afterwards. Every call is followed by the XOR step and ECC.
+
+| Pattern | sp+0 | Calls |
+|---|---|---|
+| A | a literal 0x800 | three (both halves of a frame, and one more path) |
+| B | E[0x172E], a copy of E[0x172C] made on the first call of the sequence | three |
+
+E[0x172C] is 0x1840 after init, and the one routine that writes it again has no caller, so pattern B always passes
+0x1840. The wrapper picks the pattern from the bytes E[0x1728] and E[0x172A] and the halfword E[0x1732], which code
+outside the codec sets; which pattern DMR voice takes is **not traced**.
+
+The two values give different parameter bits ([section 5](#5-cross-check-against-an-independent-build)): over 234 frames
+of speech, 0x800 and 0x1840 differ in 174 frames (74%). Bit 0x1000 has no effect (0x840 equals 0x1840). Bits 0x40, 0x80,
+0x100, 0x200 and 0x800 are tested in the parameter stage; 0x800 only counts while E[0x138A] is not 0. Both patterns
+produce frames the decoder accepts.
+
+**What ODR's hosts do.** `boards/dm32/vocoder_dm32.c`, `boards/dm1701/vocoder_dm1701.c` and
+`boards/md380/vocoder_md380.c` pass 0x1840 on the first call after a reset and 0x800 on every later call. That
+sequence matches neither pattern. The first call has no measurable effect (the output over 234 frames equals passing
+0x800 on every call), so the hosts in practice run pattern A. Whether that is the pattern DMR voice uses is open.
+
 Afterwards the wrapper XORs the bit buffer with a second buffer 0x90 bytes above it, then calls ECC (0x1893C) with
 r0 = r1 = the bit buffer, r2 = E[0x1738], r3 = the buffer minus 440 bytes. The XOR and the ECC step belong to the
 wrapper's own frame building (72 bits); ODR takes the 49 parameter bits from the encode call and builds the frame in
@@ -120,7 +142,14 @@ at 0x1156 + 6 * k (+ 2 for the second and third sub-frame), and the decode call 
 D + 0x1154 + 2 * (3 * k + D[0x1164]) + 2) and ORs in D[0x1154], a copy of D[0x1152] (0 after init). So the wrapper tells
 the codec how damaged the frame was, and the codec can conceal damage itself.
 
-`vocoder_dm32.c` passes 0 and does its own error correction and concealment in `core/dmr/ambe`. That is the right value for a frame with no errors if the status is 0 there (not checked: the return value of 0x182BC was not traced). It gives the codec no damage information on a bad frame, so its internal concealment never runs; ODR conceals before the codec instead. Whether the two sound the same at the edge of coverage is a hardware question, not an interface error: every other argument matches.
+**Measured effect of the flags word** (values 0..0xF, each single bit and random words, clean and noisy input, same on
+the DM-1801 Pro codec and an independent ARM build): bits 0 and 1 change nothing, so 0..3 decode like a good frame; any
+value with bit 2 or 3 set (4..0xF) makes the decoder repeat the previous frame, which is silence when there is none;
+0x4000 replaces the output with a steady noise at a fixed level (RMS about 1190); every other bit does nothing.
+`vocoder_dm32.c` passes 0 and does its own error correction and concealment in `core/dmr/ambe`. That is right for a
+good frame, and 0 is also the status an error-free decode returns (see [codec-md380.md](codec-md380.md)). It gives the
+codec no damage information, so the repeat-previous-frame concealment (4 or 8) never runs and ODR conceals before the
+codec instead. Whether the two sound the same at the edge of coverage is a hardware question, not an interface error.
 
 ### Level setter
 
@@ -145,12 +174,39 @@ stops with an error code 1, 2 or 3 if one fails; that is task start-up, not the 
 | Linker | Reserve RAM 0x16CDC..0x2B2DC and the table window, as `boards/dm32/dm32.ld` does, and leave out the 0x18000800.. words this firmware's own `.data` uses |
 | Version check | Two signature words, then the sha256 of the carved windows from the table in section 1 |
 
-## 5. Open
+## 5. Cross-check against an independent build
 
-- The return value of the error-correcting decode (0x182BC): is it 0 for a clean frame, and which values mean erasure or
-  repeat? That settles whether passing 0 is exact for good frames and whether feeding the codec a status on bad ones would
-  sound better than ODR's own concealment.
+The DM-1801 Pro codec was run on a host and compared with the MD-380-generation build of the same codec, run in an
+emulator from a running radio's RAM image. The host used the reset sequence of `vocoder_dm32.c` on state blocks at the
+addresses in section 1. Neither is part of this repository.
+
+| Check | Result |
+|---|---|
+| Decode, 234 frames of a real call, fresh state | 37,440 of 37,440 samples identical |
+| Decode, flags 0..0xF, each single bit and 12 random words, clean and 10% bit errors, 120 frames each | identical for all 40 values |
+| Encode, speech plus tone, noise, full-scale noise, silence, square wave and sweep (1,184 frames), flags 0x1840 | 0 frames differ |
+| Encode, 43 flags values (every single bit, 0x800 and 0x1840, 24 random words), 120 frames each | identical for 33; the 10 that differ all have bit 0x2000 set |
+| Code covered by those runs | 83% of the codec's instructions executed; every multiply-accumulate and saturating variant ran thousands of times |
+
+What this settles:
+
+* The DM-1801 Pro codec is functionally the same codec as the MD-380 one, for decode with any flags and for encode
+  without bit 0x2000.
+* The reset sequence in section 3 and the argument values `vocoder_dm32.c` passes (r1 = E[0x1736], sp+8 = E[0x173A],
+  decode r3 = D[0x1166], two 80-sample calls per frame) are right. They produced identical output to a radio that
+  had been running.
+* The encoder delays its output by one frame: a tone that starts in input frame 10 first changes output frame 11.
+* The encode flags word is the one interface value that differs from what the hosts pass (section 3).
+
+## 6. Open
+
+- Which encode flags pattern DMR voice uses (0x800 or 0x1840): what sets E[0x1728], E[0x172A] and E[0x1732] before the
+  encode calls. A bench transmission with each value, decoded by a second radio, would also settle it.
+- The return value of the error-correcting decode (0x182BC) on this build. The flags measurement above shows 0..3 are
+  harmless and 4..0xF repeat the frame; the MD-380 build returns 0 good and 4 for an uncorrectable C0.
 - What the XOR step before ECC does with the second buffer.
+- Encode flags with bit 0x2000 set: the ARM build and the DM-1801 Pro build give different bits. The wrapper never sets
+  it, so it doesn't affect the interface, but the two builds are not identical on that path.
 - Whether this radio has the 046 HRVocoder variant of the codec in some firmware versions. The image is one version of
   the radio's firmware.
 - Audio quality and timing on hardware.
