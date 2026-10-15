@@ -65,7 +65,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 41 | PTB9 | power knob switch; its level at start-up means "on" | in | R |
 | 42 | PTB10 | input with interrupt, role unknown | in | ? |
 | 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed | in | R |
-| 46 / 47 | PTB14 / PTB15 | audio path switches (the DM-32UV's mic path and speaker source). PTB15 low = speaker on; PTB14 doesn't change the speaker | low | R for PTB15, I for PTB14 |
+| 46 / 47 | PTB14 / PTB15 | audio path switches (the DM-32UV's mic path and speaker source). PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. ODR drives PTB14 as PTB15's complement; it doesn't change the speaker | low | R for PTB15, I for PTB14 |
 | 50-54 | PTB18-PTB22 | keypad strobes, low one at a time | | K |
 | 48 | PTB16 | output, role unknown; not the amplifier | low | R |
 | 56 | PTB24 | vibration motor, high = on | low | R |
@@ -78,6 +78,16 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 
 Not found: the flashlight pin, USB. The programming cable's plug switches the internal speaker off in hardware: with
 it in, the amplifier on and the speaker source selected, the speaker is silent (R).
+
+Speaker paths (R):
+
+| Sound | Path | PTB15 |
+|---|---|---|
+| FM receive | FD6818 audio output straight to the amplifier; the HR_C7000's FM playback stays off | high, only while the squelch is open |
+| Beeps, DMR voice | CPU samples to the HR_C7000 prompt FIFO, its codec, the amplifier (`modem-hrc7000.md` 8.4) | low |
+
+With the squelch closed the FD6818 outputs noise, so PTB15 stays low then: switching it high at the end of a beep let
+a burst of static through. The amplifier (PTA16) turns off before PTB15 changes.
 
 ### 3.2 Display bus
 
@@ -128,6 +138,9 @@ DM-32UV (006F, 106B, 2067, 3062 ... F09F); then 0x21=06D8, 0x24=8C7E. K.
 Analog FM mode: 0x47=6042, 0x7E=302E, 0x2B=C000 (and 0x32=0244 on the way back to receive). DMR mode: 0x47=0140,
 0x48=B2F5, 0x7E=B03F, 0x2B=0700, 0x28=0A40. Tone signalling: 0x70=00E0, 0x72=3065, 0x58=00C1, 0x5A=85CF, 0x5B=AB45,
 0x5C=5665. K.
+
+On this radio the analog word 0x47=6042 leaves the FD6818's audio output off. ODR writes 0x47=0140 in FM as well,
+which gives receive audio on the speaker path (R).
 
 ### 5.4 State sequences
 
@@ -303,8 +316,7 @@ receiving and orange flashing while scanning.
 
 - Which menu power level uses which calibration array; the lists at 0x300 / 0x314 / 0x328 / 0x33C.
 - The 12.5 kHz bandwidth word; the VHF / UHF side of the path pins; the DMR per-burst handlers and PA delay.
-- FM receive audio: on 2026-10-15 the monitor gave a quiet, broken noise rather than FM hiss, and the beep sounded
-  rough. The receive audio chain (FD6818 demodulator output into the HR_C7000) needs a known signal to check.
+- RSSI: a weather station reads about -25 dBm; the raw - 135 conversion is not calibrated for this radio.
 - The display controller part and its contrast.
 - PTB14's role, PTB16's role, the DAC C value.
 - The accelerometer's scale (readings about 4 times low).
@@ -333,9 +345,11 @@ there:
 
 - start-up, the power knob, the vibration motor, the update-mode flash route
 - the display (upright, readable), every key, the data flash (Puya, JEDEC 852018) and the factory calibration
-- the speaker path (amplifier and source pins), the beep, the debug link on the programming cable
+- the speaker path (amplifier and source pins), the debug link on the programming cable
+- FM receive audio on a weather station, the squelch and the monitor key
+- beeps through the prompt FIFO, clean and without pops
 - the accelerometer answers (scale open)
 
-Built, not yet checked on air: FM receive audio (see 10), FM transmit, DMR signaling and data through the shared
+Built, not yet checked on air: FM transmit, DMR signaling and data through the shared
 HR_C7000 glue. Not in: DMR voice (the codec is located, not hosted), the air band, the broadcast tuner's screens, USB
 (the radio has none).
