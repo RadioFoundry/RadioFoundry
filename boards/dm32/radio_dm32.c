@@ -294,9 +294,9 @@ void dm32_speaker_pcm(bool on)
 {
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
 	if (on) {
-		hrc7000_audio_bits(&modem, C7_AUDIO_PCM_SPK, C7_AUDIO_FM_PLAY);
+		hrc7000_audio_bits(&modem, C7_AUDIO_RING_PLAY, C7_AUDIO_FM_PLAY);
 	} else {
-		hrc7000_audio_bits(&modem, mode == RADIO_MODE_FM && !transmitting ? C7_AUDIO_FM_PLAY : 0, C7_AUDIO_PCM_SPK);
+		hrc7000_audio_bits(&modem, mode == RADIO_MODE_FM && !transmitting ? C7_AUDIO_FM_PLAY : 0, C7_AUDIO_RING_PLAY);
 	}
 	hrc_irq_restore(s);
 }

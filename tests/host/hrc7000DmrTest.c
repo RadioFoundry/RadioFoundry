@@ -435,6 +435,16 @@ static void test_event_overflow(void)
 	CHECK(evs[0].kind == DMR_EV_SLOT_TICK && evs[0].arg == 1 && evs[1].arg == 2);
 }
 
+// Retuning FM receive keeps a running PCM stream's bits: a beep's stream stalled when fm_rx cleared the mic PCM bit
+static void test_fm_rx_keeps_pcm(void)
+{
+	setup();
+	hrc7000_audio_bits(&dev, C7_AUDIO_PCM_MIC | C7_AUDIO_PCM_SPK, 0);
+	hrc7000_fm_rx(&dev, false);
+	CHECK((REG(C7_AUDIO_CONTROL) & (C7_AUDIO_PCM_MIC | C7_AUDIO_PCM_SPK)) == (C7_AUDIO_PCM_MIC | C7_AUDIO_PCM_SPK));
+	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_FM_PLAY);
+}
+
 int main(void)
 {
 	test_pure();
@@ -444,6 +454,7 @@ int main(void)
 	test_tx_edges();
 	test_polite_and_repeater();
 	test_event_overflow();
+	test_fm_rx_keeps_pcm();
 	if (failures) {
 		printf("hrc7000DmrTest: %d failures\n", failures);
 		return 1;
