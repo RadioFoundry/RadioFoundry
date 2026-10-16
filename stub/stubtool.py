@@ -1467,6 +1467,8 @@ def main(argv=None):
             a.board = f4stub.board_from_version(radio)
         if a.board in f4stub.BOARDS:
             return f4stub.run(a, port, reopen)
+        if a.write_q128:
+            raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
         if a.odr_enter:
             radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else None)
         elif a.attach:

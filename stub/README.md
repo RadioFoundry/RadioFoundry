@@ -26,7 +26,7 @@ kept), backs up and verifies the internal flash, and reads and writes the extern
 | File | What |
 |---|---|
 | `stm32f4/` | the stub's C source, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (about 5.3 KB) |
-| `f4stub.py` | its host side; `stubtool.py` hands the DM-1701 and MD-380 to it (`--odr-enter`, or `--attach --board dm1701`); `--self-test` runs without a radio |
+| `f4stub.py` | its host side, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands the DM-1701 and MD-380 to it (`--odr-enter`, or `--attach --board dm1701`); `--self-test` runs without a radio |
 
 Status (2026-10-16): built and host tested (`tests/host`: the protocol engine, and the host tool against the real
 engine through a pipe). Not run on a radio yet.

@@ -309,8 +309,10 @@ if [ -z "$ONLY" ] || [ "$ONLY" = dm1701 ] || [ "$ONLY" = md380 ]; then
 		if grep -qi 'warning:' "$OUT/stub-stm32f4.log"; then
 			grep -i 'warning:' "$OUT/stub-stm32f4.log" | sort -u | head -10
 			bad "STM32F4 flash stub: warnings (see $OUT/stub-stm32f4.log)"
+		elif ! python3 stub/f4stub.py --check-embedded "$OUT/stub-stm32f4/f4stub.bin" > /dev/null; then
+			bad "STM32F4 flash stub: the copy embedded in stub/f4stub.py differs from this build (python3 stub/f4stub.py --embed $OUT/stub-stm32f4/f4stub.bin)"
 		else
-			ok "STM32F4 flash stub: $(wc -c < "$OUT/stub-stm32f4/f4stub.bin" | tr -d ' ') bytes (at most 8192)"
+			ok "STM32F4 flash stub: $(wc -c < "$OUT/stub-stm32f4/f4stub.bin" | tr -d ' ') bytes (at most 8192), the embedded copy matches"
 		fi
 	else
 		grep -E 'error|ASSERT' "$OUT/stub-stm32f4.log" | head -10
