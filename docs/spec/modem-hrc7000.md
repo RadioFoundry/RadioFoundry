@@ -471,7 +471,9 @@ Standard CTCSS addresses (DS table 59; RX uses the same addresses in CTCSS_ADDR 
 The address order is not ascending; map from frequency, not from a list index. Other tones: USER_DEFINE_CTC. TX
 sub-audio deviation via SUBVOICE_COEF b15:8 (typical 350 Hz narrow, 600 Hz wide). The FM_BANDWIDTH bits don't scale
 it: the reset value 0x28 gives 300 Hz CTCSS at both bandwidths, and ODR writes 0x50 at 25 kHz (600 Hz) (BENCH,
-DM-1801 Pro UHF). DCS at 0x28 measured about 100 Hz. When FM_PTT drops, the chip sends
+DM-1801 Pro UHF). DCS at 0x28 measured about 100 Hz. The boot stub's restart doesn't reset the modem, so the field
+keeps the last transmission's value; ODR's init writes 0x28 rather than reading it back (a DM-32UV read 0xFF there
+after a 25 kHz transmission and sent CTCSS at 1.9 kHz deviation, BENCH). When FM_PTT drops, the chip sends
 the reverse burst / turn-off code before stopping (DS). On a detected tone the FM signaling system interrupt fires
 (SYS_INTERP_LIST b13) and FM_DECODE_FLAG2 b0 (CTCSS) or b1 (CDCSS) goes 1, back to 0 at the end (DS). CDCSS tail
 detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz) (DS).
