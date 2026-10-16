@@ -4,6 +4,7 @@
 // extras, battery, beeps, settings) and the RADIO operations that drive them (scan, beep, tone burst, one setting,
 // roaming)
 #include "config.h"
+#include "board.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "radio/beep.h"
@@ -30,6 +31,8 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
 	dl_text(t, "vox_on=%u\n", v->vox_on);
+	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
+	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
 	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", word(v->battery, batt, 3),
 		v->battery_pct, v->battery_mv, v->power_off);
 #if CONFIG_BEEP
