@@ -355,6 +355,7 @@ odrflash has flashed a radio yet; `tools/dm32_flash.py` and `stub/stubtool.py` h
 Three power levels, L, M and H, the stock firmware's Low, Middle and High. The radio refuses to transmit until ODR can
 read its factory calibration. The battery
 reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
+The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
 
 ### What the DM-1801 Pro lacks today
 
@@ -364,7 +365,6 @@ reading is scaled from a measurement on one radio. The screen is monochrome; the
 - VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been
   tried on the radio yet.
 - No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
-- The motor only vibrates once at power-on.
 
 ## Planned radios
 
