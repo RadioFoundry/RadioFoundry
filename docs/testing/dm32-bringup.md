@@ -215,3 +215,9 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
   works. Until the reset path is fixed, power-cycle instead.
 - Boot stub LED: after a write finished and was verified by CRC, with no tool on the port, the LED kept blinking fast
   (the "data moving, don't power off" pattern) for minutes (2026-10-16). The pattern should follow the stub's state.
+- DMR receive degraded after hours of uptime (2026-10-16): one, later two, of the three AMBE frames in every voice
+  burst failed C0 at -68 dBm, and the zone scan, VFO scan and battery-save wake never saw the bench carrier. The
+  errors were the same with the receiver retuned -1.5 to +0.6 kHz, so not RF; the bench's bursts decode clean
+  offline. A power cycle cleared it, and the full radio-only HIL file set plus an SFR run didn't bring it back.
+  If it returns, read `voice.rx_bad_at` (which frame of the burst fails) and the FD6818 and HR_C7000 registers
+  before power-cycling.
