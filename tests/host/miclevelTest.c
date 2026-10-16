@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The VOX mic level from PCM blocks (drivers/audio/miclevel, used by the HR_C7000 radios' mic meter): the log scale,
-// the peak from the block's mean, the envelope, and where tones of known level land against the core's VOX threshold
+// The VOX mic level (drivers/audio/miclevel): the log scale the DM-1701 and MD-380 analog taps use, the peak of a PCM
+// block from its mean, the envelope, and where tones of known level land against the core's VOX threshold
 // (100 - 8 x sensitivity, radio-features.md 3.4)
 #include <math.h>
 #include <stdio.h>
@@ -15,8 +15,9 @@ static int failures;
 #define HALF	80	// the HR_C7000's 10 ms mic half at 8 kHz
 #define DECAY	((int)MICLEVEL_DECAY)
 
-// The DM-1701's analog-tap math (boards/dm1701/power_dm1701.c), the scale the hal documents
-static uint8_t dm1701_scale(uint32_t x)
+// The analog-tap math the DM-1701 and MD-380 boards each kept a copy of before they called miclevel_log(x, 12)
+// (power_dm1701.c, power_md380.c), kept here so the shared scale can't drift from what they computed
+static uint8_t board_scale(uint32_t x)
 {
 	if (x == 0) {
 		return 0;
@@ -42,13 +43,18 @@ static uint8_t threshold(uint8_t sensitivity)
 
 static void test_log_scale(void)
 {
-	// The same scale as the DM-1701's analog tap, over its whole 12-bit range
+	// The same scale as the boards' analog taps, over the whole 12-bit range their ADC average can read
 	for (uint32_t x = 0; x < 4096; x++) {
-		CHECK(miclevel_log(x, 12) == dm1701_scale(x));
+		CHECK(miclevel_log(x, 12) == board_scale(x));
 	}
-	CHECK(miclevel_log(0, 12) == 0);
-	CHECK(miclevel_log(1, 12) == 0);
-	CHECK(miclevel_log(4095, 12) == 99);
+	// Values the boards computed, edge cases included (0: silence, 4095: full scale)
+	static const struct { uint16_t x; uint8_t level; } known[] = {
+		{ 0, 0 }, { 1, 0 }, { 2, 8 }, { 3, 12 }, { 16, 33 }, { 100, 54 }, { 256, 66 }, { 1000, 82 },
+		{ 2048, 91 }, { 3000, 95 }, { 4094, 99 }, { 4095, 99 },
+	};
+	for (unsigned i = 0; i < sizeof known / sizeof known[0]; i++) {
+		CHECK(miclevel_log(known[i].x, 12) == known[i].level);
+	}
 	CHECK(miclevel_log(0xFFFFFFFFu, 12) == 100);	// clamped
 	CHECK(miclevel_log(5, 0) == 0);
 	// Monotonic, and one bit (6 dB) is 100 / 12 steps

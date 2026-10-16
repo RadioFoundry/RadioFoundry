@@ -219,8 +219,13 @@ keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c
 
+# The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
+TESTS   += miclevelTest
+miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
+
 run: run-core
-run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest
+run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest miclevelTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioFeaturesTest
@@ -229,6 +234,7 @@ run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTe
 	./bcastTest
 	./inputTest
 	./quadratureTest
+	./miclevelTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
@@ -554,16 +560,11 @@ TESTS   += lis3dhTest
 lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c
 
-# The VOX mic level from PCM blocks (drivers/audio/miclevel), the HR_C7000 radios' mic meter
-TESTS   += miclevelTest
-miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
-
 dm32CalTest: dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-dm32
-run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest miclevelTest
+run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
@@ -573,7 +574,6 @@ run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000Dm
 	./sharedPttTest
 	./hrc7000DmrTest
 	./dm32CalTest
-	./miclevelTest
 	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
 .PHONY: run-dm32
 

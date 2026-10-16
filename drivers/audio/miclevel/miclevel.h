@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Microphone level for VOX from PCM blocks (hal_power_t.mic_level, docs/spec/radio-features.md 3.4), for radios whose
-// microphone reaches the CPU only as PCM (HR_C7000: the codec ADC's 10 ms blocks, modem-hrc7000.md 3).
+// Microphone level for VOX (hal_power_t.mic_level, docs/spec/radio-features.md 3.4). miclevel_log() is the hal's
+// scale for every board: a mic level tap on a 12-bit ADC passes its reading straight in. Radios whose microphone
+// reaches the CPU only as PCM (HR_C7000: the codec ADC's 10 ms blocks, modem-hrc7000.md 3) use the block functions.
 //
 // The level is the hal's scale: 0..100, 100 / 12 steps per bit (about 0.72 dB per step), 100 = a full-scale 16-bit
-// peak, 0 = 72 dB below it or silence. The peak of a block is measured from the block's mean, so a DC offset in the
+// peak or 12-bit reading, 0 = 72 dB below it or silence. The peak of a block is measured from the block's mean, so a DC offset in the
 // ADC doesn't read as sound. The level follows a louder block at once and falls by MICLEVEL_DECAY steps per block, so a
 // reader polling slower than the blocks arrive still sees a syllable's peak.
 //
-// Header only and allocation free: the HR_C7000 runs miclevel_block() in its PCM interrupt.
+// Header only and allocation free, so miclevel_block() can run in a PCM interrupt.
 #ifndef MICLEVEL_H
 #define MICLEVEL_H
 
