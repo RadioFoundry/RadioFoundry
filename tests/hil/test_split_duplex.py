@@ -37,6 +37,14 @@ def need_split(radio):
         pytest.skip("built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
 
 
+def need_role(r, sdh, role):
+    """Skip unless the radio offers the split duplex role (INFO "offered": bit 0 TX half, bit 1 RX half)"""
+    _, info = sdh.require_split(r)
+    if not info["offered"] & (1 << (role - 1)):
+        pytest.skip(f"the radio doesn't offer split duplex role {role} (offered {info['offered']}: its modem glue has "
+                    f"no slot clock or base-station hooks)")
+
+
 def leave_hotspot(radio):
     radio.link.hotspot_exit()
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
@@ -99,7 +107,7 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
         with radio.released() as port:
             r = sdh.Radio(port, "tx", dtr=False)
             try:
-                sdh.require_split(r)
+                need_role(r, sdh, sdh.ROLE_TX)
                 sdh.setup_half(r, hz, hz, 0, cc)        # RF level 0: the lowest step (the role's cap is 64)
                 sdh.set_role(r, sdh.ROLE_TX, power_cap=1)
                 slc = dmr_cach.slc_activity(8, 0, dmr_cach.slc_hash(9), 0)
@@ -235,7 +243,7 @@ def rx_half_labels(port, sdr_bench, freq, cc, tg, dtr=False):
             except Exception:
                 pass
     try:
-        sdh.require_split(r)
+        need_role(r, sdh, sdh.ROLE_RX)
         sdh.setup_half(r, hz, hz, 0, cc)
         sdh.set_role(r, sdh.ROLE_RX)
         sync = sdh.ClockSync()
