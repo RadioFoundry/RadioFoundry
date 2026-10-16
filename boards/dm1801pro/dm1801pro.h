@@ -28,6 +28,8 @@ enum {
 
 // Raw key state for the diagnostics page: matrix keys as a bit per strobe * 4 + input, the direct pins in bits 20-23
 uint32_t dm1801pro_key_raw(void);
+// Key scans with the PTT pin low that were ignored as host serial data (hardware-dm1801pro.md 9.1)
+uint32_t dm1801pro_input_ptt_ignored(void);
 
 uint16_t dm1801pro_battery_raw(void);	// the last ADC channel C reading
 

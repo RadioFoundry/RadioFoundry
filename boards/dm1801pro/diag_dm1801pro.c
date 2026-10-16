@@ -59,6 +59,8 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 0:
 		put(&o, "keys ");
 		put_x(&o, dm1801pro_key_raw(), 6);	// matrix bit = strobe * 4 + input; direct pins in bits 20-23
+		put(&o, " ptt ign ");
+		put_u(&o, dm1801pro_input_ptt_ignored());	// PTT lows taken for host serial data (hardware-dm1801pro.md 9.1)
 		break;
 	case 1:
 		put(&o, "bat ");

@@ -64,7 +64,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 40 | PTB8 | RX path select, UHF side | low | K pin, R band |
 | 41 | PTB9 | power knob switch; its level at start-up means "on" | in | R |
 | 42 | PTB10 | input with interrupt, role unknown | in | ? |
-| 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed | in | R |
+| 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed. PTB11 is also the cable's host-to-radio serial line (9.1) | in | R |
 | 46 / 47 | PTB14 / PTB15 | audio path switches, as on the DM-32UV. PTB14 high = the microphone to the HR_C7000's FM input (set for each FM transmission; low there cut speech from 140 to 43 Hz rms, section 12). PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. In receive ODR drives PTB14 as PTB15's complement; it doesn't change the speaker | low | R |
 | 50-54 | PTB18-PTB22 | keypad strobes, low one at a time | | K |
 | 48 | PTB16 | output, role unknown; not the amplifier | low | R |
@@ -310,6 +310,13 @@ top SOS button. Read off the radio one key at a time (R):
 | PTB22 | 7 | 1 | 4 | * |
 
 Direct inputs: PTB11 PTT, PTB12 SOS, PTB26 SK1 (upper side key), PTB27 SK2 (lower side key).
+
+PTB11 (PTT) is also the programming cable's host-to-radio serial line, as on the DM-32UV (hardware-dm32.md 6.2):
+every 0 bit the host sends pulls it low. Before the fix, two low key scans passed the debounce and made 13 short DMR
+keyups during a debug link soak and one during an MMDVM network call (2026-10-16). The key scan now counts a low PTT
+pin as pressed only after 50 ms without a good byte from the host (`drivers/input/sharedptt`); diagnostics line 0
+counts the ignored lows (`ptt ign`). On the radio (R): 30 s of debug link polling gave `ptt ign 20`, and the two
+hotspot network cases another 14, with no PTT press.
 
 ### 9.2 Battery
 
