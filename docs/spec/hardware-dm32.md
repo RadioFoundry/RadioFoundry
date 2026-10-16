@@ -637,6 +637,10 @@ The stock firmware never reads registers 0x65 / 0x67 (forum observation: S-meter
 | 18 | B3 = FF00 | 37 | 49 = 2A38 | 56 | 09 = E0B5 |
 | 19 | 33 = FE00 | 38 | 4E = 4708 | 57 | 09 = F09F |
 
+Rows 18, 20, 22 and 24 (B3 / B4) and the C7 = 0140 of Enter DMR below have address bit 7 set, which the FD6818
+reads as a read cycle: the chip drives the data line while the MCU drives it too. The radio's own firmware never
+sends them (BIN). ODR leaves them out; FM and DMR receive and transmit work without them (HW).
+
 Register 0x09 is written 16 times with the top nibble as an index: a 16-entry internal table (purpose unknown; looks
 like an AGC/gain table).
 
@@ -772,6 +776,20 @@ Planned `rx_am` (`boards/dm32/radio_dm32.c`, not written): the FD6818 FM registe
 A1), the AF gain in 0x48, VHF LNA on, C7000 FM playback off, speaker source to the FD6818 (A2) (INF).
 
 ---
+
+### 8.8 Receiver power saving
+
+The radio's own battery save, in order (BIN). ODR uses it in FM receive (the core only sleeps there).
+
+| Step | Sleep | Wake |
+|---|---|---|
+| FD6818 0x30 | 0x0000 (idle) first | 0xBFF1 (RX) last, after the retune |
+| FD6818 0x37 | 0x1D11 (FM) or 0x1D00 (DMR) | 0x1F1F, then 0x1F0F |
+| LNA supply (0x22 VHF / 0x24 UHF) | both off | the band's on |
+| HR_C7000 | a low-power clock profile (CLK_MGR); WORK_MODE, ADC and DAC unchanged. ODR leaves the clocks alone | the receive profile, CLK_MGR 0x02C = 0xFFF0FF3C |
+
+The radio's sleep lengths are 12, 18 or 30 ticks of its receive service by the battery save level, with a busy
+detect waking it at once (BIN; the tick's length in ms is not known). ODR's lengths come from the core settings.
 
 ## 9. Audio path
 
