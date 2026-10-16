@@ -28,7 +28,7 @@ env:
 
 jobs:
   manual:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write   # gh release create / upload on tags
     steps:

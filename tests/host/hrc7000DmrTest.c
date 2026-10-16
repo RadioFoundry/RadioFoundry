@@ -573,6 +573,19 @@ static void test_mic_gain(void)
 	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == 0x85u);
 }
 
+// Codec mixer route for CPU-made FM TX audio: the last mixer write on is MIX_2 mix_rec (MIX_3 went first), the mic
+// mute bit is left alone (the mix zeroes the ADC's input instead), and off leaves the mixer disabled
+static void test_codec_dac_to_tx(void)
+{
+	setup();
+	buf[C7_CODEC + C7_CODEC_CR_ADC] = 0x00;
+	hrc7000_codec_dac_to_tx(&dev, true);
+	CHECK(buf[C7_CODEC + C7_CODEC_CR_MIX] == 0xC2u && buf[C7_CODEC + C7_CODEC_DR_MIX] == 0x01u);
+	CHECK(buf[C7_CODEC + C7_CODEC_CR_ADC] == 0x00);
+	hrc7000_codec_dac_to_tx(&dev, false);
+	CHECK(buf[C7_CODEC + C7_CODEC_CR_MIX] == 0x00 && buf[C7_CODEC + C7_CODEC_DR_MIX] == 0x00);
+}
+
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
 static void test_tx_tone(void)
 {
@@ -841,6 +854,7 @@ int main(void)
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();
+	test_codec_dac_to_tx();
 	test_audio_lock();
 	test_tx_tone();
 	test_subtone();

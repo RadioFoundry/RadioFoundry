@@ -33,7 +33,7 @@ jobs:
     if: >-
       (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') &&
       github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: write        # the ui-previews branch

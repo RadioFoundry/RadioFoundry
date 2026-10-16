@@ -104,6 +104,8 @@
 #define C7_CODEC_CR_MIC2	0x0Cu
 #define C7_CODEC_CR_DAC		0x0Du	// b7 = mute line out
 #define C7_CODEC_CR_ADC		0x0Fu	// b7 = mute the mic
+#define C7_CODEC_CR_MIX		0x10u	// mixer: b7 enable, b6 load (1 = write), b5:0 the MIX_n address (DS 6.5.2.10)
+#define C7_CODEC_DR_MIX		0x11u	// mixer data (DS 6.5.2.11)
 #define C7_CODEC_CR_VIC		0x12u
 #define C7_CODEC_CR_CK		0x13u
 #define C7_CODEC_GCR_DACL	0x1Fu
@@ -219,6 +221,10 @@ void hrc7000_dmr_enter(hrc7000_t *d, uint32_t mod_bias, uint8_t mic_gain_db);
 // Audio paths (AUDIO_CONTROL bits, the shadow keeps the CPU's view)
 void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear);
 void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted);
+// Codec mixer: the ADC's output to the modem becomes the DAC's audio (the prompt FIFO) alone, the ADC's own input
+// zeroed in the mix (MIX_2 mix_rec, MIX_3 mixadc_sel = 3). Off clears both and disables the mixer. The FM transmit
+// source for audio the CPU makes (APRS AFSK) where ring play doesn't reach the modulator by itself (8.4)
+void hrc7000_codec_dac_to_tx(hrc7000_t *d, bool on);
 
 // --- Sub-audio by the modem's own engine (8.1, 8.2) ---
 

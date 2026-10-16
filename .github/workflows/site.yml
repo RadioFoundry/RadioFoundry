@@ -45,7 +45,7 @@ env:
 jobs:
   changes:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read
       deployments: read
@@ -86,17 +86,21 @@ jobs:
     needs: changes
     # pull requests skip `changes` and always build; the nightly run builds only when `changes` says so
     if: always() && (github.event_name == 'pull_request' || needs.changes.outputs.build == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v4
+      # the self-hosted runner's image has Python with markdown-it and Node.js 22, and its proxy doesn't reach PyPI
       - uses: actions/setup-python@v5
+        if: runner.environment != 'self-hosted'
         with:
           python-version: "3.12"
       - uses: actions/setup-node@v4
+        if: runner.environment != 'self-hosted'
         with:
           node-version: "22"
       - name: Generator dependency
-        run: pip install -r site/requirements.txt
+        run: |
+          [ "${ODR_CI_IMAGE:-}" = 1 ] || pip install -r site/requirements.txt
       - name: Web flasher tests (against odrflash)
         run: site/tests/run.sh
       - name: Newest release's firmware for the flasher
@@ -119,7 +123,7 @@ jobs:
   deploy:
     needs: build
     if: always() && needs.build.result == 'success' && github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       pages: write
       id-token: write

@@ -528,14 +528,19 @@ generator (8.3) needs no PCM, but its deviation field tops out near 1.5 kHz, sho
 The DS doesn't document this route. It names two FM transmit audio sources, selected by AUDIO_CONTROL b0 (DS 7.2.2.1):
 the codec ADC (0) or the TX RAM (1). As a source, the TX RAM is 0x16000030-0x1600042F, two 512-byte halves of 256
 samples (32 ms at 8 kHz), and FM_ADDR_SW (0x56C) names the half in use (1 low, 2 high); SYS_INTERP b15 is the FM TX
-interrupt. The prompt FIFO is documented only as playback to the codec DAC (DS 7.3). The codec's digital mixer
-(DS 6.5.2.10-11) is the documented way to get DAC audio into the ADC's record path: CR_MIX (codec 0x10: b7 mix_en, b6
-load (1 = write), b5:0 address) and DR_MIX (0x11) reach MIX_0..3, and MIX_2 b0 (mix_rec) makes the ADC output ADC + DAC.
-MIX_3 b7:4 = 3 zeroes the ADC's own input in that sum. LINEOUT_CTRL (0x088) b1 is line out 1 and b0 line out 2, the
-same PWM waveform on both (ODR sets 0x01). Two-point modulation (DS): SIG_CENTER b31:24 biases MOD1 (the VC-TCXO) and
-b23:16 MOD2 (the VCO), 3.3 mV a step; RF_MOD_BIAS b7:0 and b15:8 are the MOD1 and MOD2 amplitudes; RF_MODE b10 sends a
-40 Hz test square. The prompt FIFO path decodes on the DM-32UV but not on the DM-1801 Pro (`hardware-dm1801pro.md`
-10).
+interrupt. The prompt FIFO is documented only as playback to the codec DAC (DS 7.3). LINEOUT_CTRL (0x088) b1 is line
+out 1 and b0 line out 2, the same PWM waveform on both (ODR sets 0x01). Two-point modulation (DS): SIG_CENTER b31:24
+biases MOD1 (the VC-TCXO) and b23:16 MOD2 (the VCO), 3.3 mV a step; RF_MOD_BIAS b7:0 and b15:8 are the MOD1 and MOD2
+amplitudes; RF_MODE b10 sends a 40 Hz test square. The prompt FIFO path decodes on the DM-32UV but not on the DM-1801
+Pro, which takes the mixer route below (`hardware-dm1801pro.md` 12).
+
+Where ring play doesn't reach the modulator on its own, the codec's digital mixer (DS 6.5.2.10-11) carries the DAC's
+audio into the ADC's record path, which is the FM transmit input. CR_MIX (codec 0x10: b7 mix_en, b6 load, b5:0 the
+MIX_n address) and DR_MIX (0x11) reach MIX_0..3. MIX_2 b0 (mix_rec) makes the ADC's output ADC + DAC, and MIX_3 b7:4
+= 0xF zeroes the ADC's own input in that sum. `hrc7000_codec_dac_to_tx` sets MIX_3 and then MIX_2, clears them in the
+reverse order and ends with CR_MIX = 0. The codec mic mute (CR_ADC b7) must stay off on this route: it mutes the mix
+too. Through this route Bell 202 decoded off air with a valid FCS (BENCH, a board where ring play alone sent a bare
+carrier).
 
 ### 8.5 FM receive audio to the CPU
 

@@ -14,6 +14,10 @@
 # out before the build runs. The status job is the only one with a write permission (statuses), and it checks out
 # nothing. Never add secrets, another write permission, actions/cache or the pull request's text (title, body, branch
 # name) in a run step to this file.
+#
+# Runners: with the repository variable ODR_CI_RUNNER set, a pull request from a branch of this repository runs on
+# that self-hosted runner (tools/ci-runner/); one from a fork always runs on GitHub's hosted runners, since this
+# workflow runs every pull request's code without approval. Keep that condition in every job's runs-on.
 name: PR tests
 
 on:
@@ -36,7 +40,7 @@ env:
 
 jobs:
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       src: ${{ steps.files.outputs.src }}
@@ -67,7 +71,7 @@ jobs:
   host:
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -78,9 +82,11 @@ jobs:
       - name: Install tshark, numpy, pytest, pyserial
         run: |
           set -eu
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            tshark python3-numpy python3-pytest python3-serial
+          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              tshark python3-numpy python3-pytest python3-serial
+          fi
       - name: Host tests, Python checks, license checks
         run: tools/ci.sh --steps host,python,licenses
       - name: UI screen gallery
@@ -100,7 +106,7 @@ jobs:
   coverage:
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -111,8 +117,10 @@ jobs:
       - name: Install gcovr, tshark, numpy
         run: |
           set -eu
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark python3-numpy
+          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark python3-numpy
+          fi
       - name: Coverage of the host tests
         run: tools/coverage.sh
       - name: Host tests under ASan and UBSan
@@ -129,7 +137,7 @@ jobs:
   firmware:
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -161,7 +169,7 @@ jobs:
   dm32:
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -182,6 +190,7 @@ jobs:
           REGISTRY_USER: ${{ github.actor }}
         run: |
           set -u
+          command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
           echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
           docker pull "$ODR_CSKY_IMAGE" || true   # missing: the build step reports it as skipped
           docker logout "$REGISTRY"
@@ -189,7 +198,11 @@ jobs:
         run: |
           set -u
           rc=0
-          tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+          if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
+            tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+          else
+            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+          fi
           if [ "$rc" = 3 ]; then
             echo "::notice::DM-32UV build skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
             exit 0
@@ -209,7 +222,7 @@ jobs:
   manual:
     needs: changes
     if: needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -247,7 +260,7 @@ jobs:
     name: PR checks status
     needs: [changes, host, coverage, firmware, dm32, manual]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       statuses: write   # the PR checks status on the head commit; this job runs none of the pull request's code
