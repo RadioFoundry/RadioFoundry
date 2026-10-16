@@ -563,40 +563,29 @@ receiving and orange flashing while scanning.
   set `MIC_GAIN_FM_12K5_DB` and `MIC_GAIN_FM_25K_DB`.
 - Whether the mic PCM carries the microphone in FM receive (PTB14 high), which VOX needs (section 12).
 - MMDVM SFR loses inbound bursts while keyed (section 12). The DM-32UV runs the same engine, glue and SFR code and
-  passes, so the cause is in what this board does differently. The damage is in the middle of the burst (no sync, a
-  wrong EMB) and hits the same bursts in every run, so the receiver looks marginal after our own bursts rather than
-  late. The differences from the DM-32UV, most likely first:
-  1. The FD6818 reacquiring at each return to RX. Its AFC is on: the power-on table writes 0x73 = 6681, about
-     +-550 Hz, where the DM-32UV keeps the reset value (about +-1.1 kHz) and the FD6818 programming guide says to turn
-     AFC off with a TCXO. Its DMR RF filter is narrower: 0x43 = 3048 is 3 kHz, the DM-32UV's 4048 is 3.75 kHz. Both
-     fall back to 1.7 kHz on a weak signal (b11:9). A filter or AFC that settles at the start of each receive window
-     would cost the same bursts every run.
-  2. The skipped "Leave TX" retune. The per-burst return to RX doesn't write 0x32 = 0244 or the RX frequency. The
-     radio's own burst end writes both, then 0x47 = 0140 and 0x3F = 0000 after the RX sequence, with the TX path off
-     0.7 ms before and the RX path on after (5.4).
-  3. A DC step on the demodulated audio after our burst. This radio's DMR receive is sensitive to the DAC C bias (4).
-     A step from the FD6818's audio output, or from the two-point modulation's reference path settling after the
-     burst, would cost the bursts whose symbols are least balanced.
-  4. The front end while keyed. The DM-32UV keeps both LNAs off for the whole transmission
-     ([hardware-dm32.md](hardware-dm32.md) 8.5). This radio turns its RX path back on between bursts, and so does
-     its own firmware (5.4).
-  5. The modem's dynamic sync threshold (RF_MODE b12, `modem-hrc7000.md` 2.1), which adapts to whatever the FD6818
-     outputs during our own slot.
-  6. The RF TX interrupt, 3.1 ms ahead of our burst, cuts the last 1.9 ms of each inbound burst on both radios. The
-     damage seen is mid-burst, so this is unlikely.
-  7. 0x50 = 3B18 and 0x52 = 028F, left set while receiving. The guide puts TX audio mute and limiter in 0x50 and
-     CTCSS thresholds in 0x52, so neither should touch DMR receive. The radio's own burst end doesn't write them either (5.4).
-  8. Where the burst ends. The radio's own firmware runs its burst end from the RF RX interrupt (an RF RX lead of 1.8
-     ms ORed into RF_CONTROL); the shared engine runs it from the first slot tick 20 ms after the RF TX interrupt
-     (5.4, 5.6).
-  9. RF_MODE b11 (dual receive channels). The radio's own firmware clears it on every channel except a simplex one
-     with byte 0x0D bit 5 set; the shared modem set-up keeps it set, as on the DM-32UV (5.4).
+  passes. An experiment build (PR 38) recorded each modem interrupt, RF switch and deframe (RX_TYPE_INFO,
+  RECV_INFO_COUNT, PHASE_OUT) and switched the variants below at run time (BENCH 2026-10-16, 461.4625 MHz, a 29-burst
+  bench call):
 
-  Ruled out on the radio: an FD6818 bit clock of 1 us instead of 5 us (switch 0.86 ms instead of 2.06 ms), the
-  DM-32UV's per-burst writes (bandwidth, idle, RX state only), and the RX path left on during TX bursts. Interrupt
-  latency is unlikely for the same reason as item 6. An experiment build (PR 38) selects these variants at run time
-  and records each modem interrupt, RF switch and deframe (RX_TYPE_INFO, RECV_INFO_COUNT, PHASE_OUT), so a run tells
-  receiver timing from demodulation.
+  | Variant | Bursts heard | Repeated | Bad header CRC |
+  |---|---|---|---|
+  | ODR today | 20 | 8 | 3 |
+  | No RF switching, no PA ("dry") | 30 | 26 | 0 |
+  | RX / TX paths switch per burst, FD6818 held in receive | 28 | 26 | 0 |
+  | FD6818 switches per burst, paths held | 20 | 8 | 3 |
+  | PA drive 0 | 21 | 8 | 3 |
+  | FD6818 AFC off (0x73 b4); DMR filter 0x43 = 4048; 0x50 / 0x52 restored at RX; dynamic sync off; RF TX interrupt 2.0 ms ahead | 20-21 | 8 | 3 |
+  | The DM-32UV's two-write burst switch; the radio's tables without 0x30 = 0200 | 20 | 8 | 3 |
+  | The radio's tables without 0x37; no 0x50 write; a full RX retune at each return; the radio's own burst sequence (5.4) | 11-13 | 3-7 | 1 |
+
+  So the FD6818's own TX / RX change causes it, whatever the writes around it. In each listen window after one of
+  our bursts the first inbound burst demodulates with an offset: PHASE_OUT's center reads +185 to +315 (its minimum
+  -600 to -850 against -1213 normally), about 400 Hz, and fails sync or EMB. Later bursts in a long window settle to
+  about 0 within 60-90 ms. That looks like the synthesizer or the reference settling after the change; the FD6818
+  register that shortens it is not found yet. The radio's own firmware never repeats on one frequency, so it has no
+  answer to copy.
+
+  Ruled out earlier: an FD6818 bit clock of 1 us instead of 5 us, and the RX path left on during TX bursts.
 
 ## 11. What ODR reuses
 
