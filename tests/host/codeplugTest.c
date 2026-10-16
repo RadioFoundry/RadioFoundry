@@ -188,6 +188,15 @@ static void test_openfw(void)
 
 	CHECK(codeplug_channel(200, &ch));
 	CHECK(strcmp(ch.name, "Bank1") == 0 && ch.rx_hz == 145500000);
+	// A used channel whose record doesn't decode is counted; an unused one isn't
+	uint32_t errors = codeplug_channel_errors();
+	uint8_t keep[4];
+	memcpy(keep, channel(200) + 0x10, sizeof(keep));	// the RX frequency
+	memset(channel(200) + 0x10, 0xFF, sizeof(keep));
+	CHECK(!codeplug_channel(200, &ch) && codeplug_channel_errors() == errors + 1);
+	CHECK(!codeplug_channel(3, &ch) && codeplug_channel_errors() == errors + 1);
+	memcpy(channel(200) + 0x10, keep, sizeof(keep));
+	CHECK(codeplug_channel(200, &ch) && codeplug_channel_errors() == errors + 1);
 	CHECK(ch.power == 8);
 	CHECK(ch.timeslot == 1);
 

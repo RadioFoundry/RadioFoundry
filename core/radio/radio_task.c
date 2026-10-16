@@ -46,13 +46,22 @@ static volatile bool power_off_wanted;	// published view.power_off
 static SemaphoreHandle_t view_lock;
 static QueueHandle_t requests;
 
+static volatile uint32_t req_handled, req_dropped;
+
+static void send(const radio_req_t *req, TickType_t wait)
+{
+	if (xQueueSend(requests, req, wait) != pdTRUE) {
+		req_dropped++;	// the queue was full: the request is lost
+	}
+}
+
 #if CONFIG_HOTSPOT
 // radio_hotspot.c's way into the queue: from the host link task, never waiting except for a request that must not be
 // lost (the leave: the channel comes back with it)
 static void hs_post(const radio_req_t *req, bool must)
 {
 	if (requests != NULL) {
-		xQueueSend(requests, req, must ? pdMS_TO_TICKS(50) : 0);
+		send(req, must ? pdMS_TO_TICKS(50) : 0);
 	}
 }
 #endif
@@ -89,6 +98,7 @@ static void radio_task(void *arg)
 		radio_req_t req;
 		if (xQueueReceive(requests, &req, left > 0 ? (TickType_t)left : 0) == pdTRUE) {
 			do {
+				req_handled++;
 				if (req.type == RREQ_SETTINGS) {
 					radio_settings_t set;
 					xSemaphoreTake(view_lock, portMAX_DELAY);
@@ -184,7 +194,13 @@ static void post(uint8_t type, int32_t arg, TickType_t wait)
 		return;
 	}
 	radio_req_t req = { .type = type, .arg = arg };
-	xQueueSend(requests, &req, wait);
+	send(&req, wait);
+}
+
+void radio_req_stats(uint32_t *handled, uint32_t *dropped)
+{
+	*handled = req_handled;
+	*dropped = req_dropped;
 }
 
 
@@ -235,7 +251,7 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2)
 		return;
 	}
 	radio_req_t req = { .type = type, .arg = arg, .arg2 = arg2 };
-	xQueueSend(requests, &req, 0);
+	send(&req, 0);
 }
 
 void radio_req_scan(uint8_t cmd) { post(RREQ_SCAN, cmd, 0); }

@@ -24,7 +24,8 @@ python3 -m pytest tests/hil -v -rs -s -k encoder --manual                       
 ```
 
 Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094;
-`--radio-port` or `$ODR_PORT` picks one when there are several.
+`--radio-port` or `$ODR_PORT` picks one when there are several. The port can also be a pyserial URL, such as
+`rfc2217://host:7001` for a radio on another machine's RFC 2217 server.
 
 ### Opt-in flags
 
@@ -113,7 +114,8 @@ receiver's acquisition); terminators 5 to 6; CRC errors 0; the call stack saw ex
 `test_dmr_voice`: frames into the AMBE voice layer = the frames sent (the recording padded to whole superframes of 18
 frames); frames played at least sent - 3 (`AMBE_VOICE_PRIME`) and at most sent; no late entry; zero concealed,
 muted, lost or overflowed frames in the voice layer, zero lost frames in the call stack, zero audio overruns and
-dropped blocks. When it fails, the printed deltas show which layer lost frames: modem (`modem.voice`, `modem.crc`),
+dropped blocks. One concealed block is allowed only for a single underrun after the last frame
+(`voice.rx_underrun_at` = frames played): the queue ran dry before the terminator arrived. When it fails, the printed deltas show which layer lost frames: modem (`modem.voice`, `modem.crc`),
 call stack (`call.rx_voice_bursts`, `call.rx_lost_frames`), voice layer (`voice.rx_in`, `voice.rx_frames`,
 `voice.rx_concealed`, `voice.rx_underruns`, `voice.rx_overflows`) or audio (`audio.ov`, `audio.dr`).
 
