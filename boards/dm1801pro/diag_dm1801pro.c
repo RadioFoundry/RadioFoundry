@@ -41,6 +41,22 @@ static void put_x(out_t *o, uint32_t v, int digits)
 	}
 }
 
+// "L/M/H 1616/2544/3408": the drive tx() would use at hz (hardware-dm1801pro.md 6.4), or "L/M/H none"
+static void put_drive(out_t *o, uint32_t hz)
+{
+	put(o, "L/M/H ");
+	if (!bf_cal_valid()) {
+		put(o, "none");
+		return;
+	}
+	for (uint8_t k = 0; k < 3; k++) {
+		if (k > 0) {
+			put(o, "/");
+		}
+		put_u(o, dm1801pro_pa_drive(hz, k));
+	}
+}
+
 bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 {
 	if (len == 0) {
@@ -97,7 +113,7 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		// The factory's L / M / H drive at a VHF and a UHF frequency (hardware-dm1801pro.md 6.4)
 		uint32_t hz = i == 7 ? 145000000u : 435000000u;
 		put(&o, i == 7 ? "pa 145 " : "pa 435 ");
-		o.p += bf_cal_drive_text(hz, o.p, (uint8_t)(o.end - o.p + 1));
+		put_drive(&o, hz);
 		break;
 	}
 	case 9:
@@ -112,7 +128,7 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 10:
 		dm1801pro_radio_diag(&d);
 		put(&o, "pa tx ");
-		o.p += bf_cal_drive_text(d.pa_hz, o.p, (uint8_t)(o.end - o.p + 1));
+		put_drive(&o, d.pa_hz);
 		break;
 	case 11: {
 		int16_t mg[3];

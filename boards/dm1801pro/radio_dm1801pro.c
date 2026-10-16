@@ -36,6 +36,7 @@
 #define PA_RAMP_STEPS		40u		// 5.4
 #define PA_RAMP_STEP_US		50u
 #define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on (5.4)
+#define FD_REG40_BASE		0x3480u		// FM transmit: 0x40 = this + the calibration byte (5.2, 6.4)
 // The DM-32UV's "DMR PA" default. The radio has no PA timer: its ramp starts about 2 ms after the RF TX interrupt
 // (5.4), and this delay puts the drive 2.1-3.2 ms after it (5.6)
 #define DMR_PA_DELAY_US		28000u
@@ -91,8 +92,9 @@ static const fd6818_bus_t rf_bus = {
 
 // ---- Band paths and PA ----
 
-// A path select drives its VHF-side and UHF-side pins as a complementary pair; both low = off (5.5). Receive works on
-// both bands and transmit on UHF; VHF transmit is unchecked
+// A path select drives its VHF-side and UHF-side pins as a complementary pair; both low = off (5.5). The band follows
+// the frequency of that direction, UHF above 200 MHz, as the radio's own band bits do. Receive is checked on both bands
+// and transmit on UHF; VHF transmit follows the radio's code but is unchecked on air
 static void path_pins(uint8_t vhf_pin, uint8_t uhf_pin, uint32_t hz, bool on)
 {
 	bool uhf = hz > UHF_FROM_HZ;
@@ -160,9 +162,26 @@ static fd6818_tone_t fd_tone(uint8_t type)
 	}
 }
 
+// The calibration as the radio's own firmware reads it (hardware-dm1801pro.md 6.4): the band's rows at its TX points,
+// the VHF rows up to 200 MHz and the UHF rows above, as for the TX path select
+uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power)
+{
+	static const bf_cal_row_t row[3] = { BF_ROW_PA_LOW, BF_ROW_PA_MID, BF_ROW_PA_HIGH };
+	return (uint16_t)(bf_cal_tx_byte(hz, row[power > 2 ? 2 : power]) << 4);
+}
+
+// RF_MOD_BIAS_CTRL: TX center + 384 in the high half, the band's modulation byte x 0x0101 in the low half. The radio
+// multiplies the byte by 1.8 (Wide) or 0.9 (Narrow) on an FM channel; ODR doesn't, since its FM deviations were set on
+// the bench without the factor (hardware-dm1801pro.md 10)
+static uint32_t mod_bias(uint32_t hz)
+{
+	uint8_t b = bf_cal_tx_byte(hz, BF_ROW_MOD);
+	return hrc7000_mod_bias(bf_cal_tx_center(), b != 0 ? (uint16_t)(b * 0x0101u) : HRC7000_MODCAL_DEFAULT);
+}
+
 static void write_mod_bias(uint32_t hz)
 {
-	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(hz)));
+	hrc7000_wr(&modem, C7_RF_MOD_BIAS, mod_bias(hz));
 }
 
 // ---- From the DMR interrupts ----
@@ -252,8 +271,7 @@ static void set_mode(radio_mode_t m)
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);
 		dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
-		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)),
-			hrc7000_mic_db(MIC_GAIN_DMR_DB, mic_offset_db));
+		hrc7000_dmr_enter(&modem, mod_bias(rx_hz), hrc7000_mic_db(MIC_GAIN_DMR_DB, mic_offset_db));
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
 	} else {
@@ -309,10 +327,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	if (!in_band(hz, true) || !bf_cal_valid()) {
 		return false;
 	}
-	// Levels 0..2 are the factory's low, mid and high points, as the radio's own power setting picks them
+	// Levels 0..2 are the factory's low, mid and high rows, as the radio's own power setting picks them
 	// (hardware-dm1801pro.md 6.4)
-	static const uint8_t level_of[3] = { 1, 4, 8 };
-	tx_drive = bf_cal_power_level(hz, level_of[power > 2 ? 2 : power]);
+	tx_drive = dm1801pro_pa_drive(hz, power);
 	rx_path(hz, false);
 	hal_delay_ms(1);
 	write_mod_bias(hz);
@@ -333,6 +350,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		dmr_keyed = true;
 	} else {
 		fd6818_fm_tx_prepare(&fd);
+		// The radio's FM key-up writes 0x40 from the band's three calibration bytes; the next rx() puts the power-on
+		// word back (fd6818_set_freq)
+		fd6818_write(&fd, FD6818_REG_BAND_B, (uint16_t)(FD_REG40_BASE + bf_cal_tx_byte(hz, BF_ROW_REG40)));
 		tx_hz = hz;
 		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),

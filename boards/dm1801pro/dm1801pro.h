@@ -44,6 +44,9 @@ typedef struct {
 	uint16_t pa_drive;		// the DAC B drive of the last transmission, 0 before the first
 } dm1801pro_radio_diag_t;
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
+// DAC B drive for a TX frequency and power level 0..2 (L, M, H; above 2 is H) from the factory calibration, as tx()
+// uses it; 0 without calibration (hardware-dm1801pro.md 6.4)
+uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power);
 uint8_t dm1801pro_codec_byte(uint8_t reg);	// the HR_C7000's internal codec, byte registers 0x00-0x3F
 // DMR PCM to the speaker instead of the FM path (the speaker_pcm hook of hrc_audio_pcm)
 void dm1801pro_speaker_pcm(bool on);
