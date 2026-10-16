@@ -170,7 +170,7 @@ SYS_SOFT_RSTN = 0x11000000
 QUAD_ENABLE = 0x1100005C
 LCSFC_BAUDR = 0x11000030            # XIP flash SCLK divider; a soft reset keeps it
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
-LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green, seen on a DM-1801 Pro 2026-10-15 (ODR pins.h has them the other way; DM-32UV unchecked)
+LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG = 0x05, 0x0A, 0x0B, 0x0C, 0x0E
 # memory: (SSI base, SER, GPIO chip-select pin or None, size, name). The data flash's chip select is the GPIO PTA18
 # (hardware-dm32.md 10; dm1801pro-hardware.md 6.1); the SSI's own select is not wired to the flash on its own.
