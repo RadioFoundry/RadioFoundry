@@ -248,7 +248,7 @@ CTRL_STOP 0x20, CH_VLD 0x24, PD_SEOC_TIME 0x28, P2S_EN 0x2C, DATA_AB 0x30 (A in 
 
 | Signal | How the port reads it | Scale | Tag |
 |---|---|---|---|
-| Battery | Single scan, CH_VLD = 0x04 (channel C = ADC2_IN), INTR = 0x10004, PD_SEOC_TIME = 0xA20, wait INTR_STA bit 2, DATA_CD bits 9:0 | volts × 10 = raw / 8.2 (so raw 672 = 8.2 V). Thresholds used: 8.2 V full, 6.4 / 6.2 V low-battery hysteresis, 5.5 V power-off | KP |
+| Battery | Single scan, CH_VLD = 0x04 (channel C = ADC2_IN), INTR = 0x10004, PD_SEOC_TIME = 0xA20, wait INTR_STA bit 2, DATA_CD bits 9:0 | volts × 10 = raw / 8.2 (so raw 672 = 8.2 V). ODR uses raw / 8.32: at 8.21 V by raw / 8.2 a meter on the pack read 8.09 V (2026-10-16). Thresholds used: 8.2 V full, 6.4 / 6.2 V low-battery hysteresis, 5.5 V power-off | KP |
 | Mic level (VOX) | CH_VLD = 0x05, INTR = 0x10005, reads DATA_CD bits 25:16 (channel D) | **Suspect**: single scan converts only channel A, and IO_DIPLEX2 leaves ADC0/ADC3 pins as GPIO, so this probably reads nothing useful | KP, INF |
 | Volume knob | **Not read at all** (the variable for it is never written) | — | KP |
 
