@@ -173,8 +173,9 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   The radio's own per-burst handlers are not decoded (?), so this is the RX and TX sequences of 5.4. Each frame takes
   about five times the DM-32UV's, so a switch is about a millisecond with interrupts off; the slot timing tolerates it
   on the bench.
-- **PA key:** the TX path comes on when the transmission starts and stays on to its end (switching it per burst put
-  power steps into the bursts on the bench). The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's
+- **PA key:** the TX path switches on and off with each burst. With it on for the whole transmission, a hotspot (keyed
+  while it listens) received nothing (2026-10-16). Per burst, `test_dmr_tx_off_air` passes: ramps up 1.44 ms, down
+  0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's
   delay; this radio's isn't known, ?), in one write: a ramp doesn't fit in a burst.
 - **Keyed but idle:** a DMR `tx()` leaves the FD6818 and the RX path in receive until the first burst. The hotspot keeps
   the radio keyed while it listens, and with the FD6818 in TX from `tx()` it heard nothing (checked on the bench).

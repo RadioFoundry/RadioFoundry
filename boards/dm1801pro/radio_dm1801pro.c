@@ -45,7 +45,7 @@ static subtone_t rx_tone;
 static bool have_rx;
 static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
 static bool transmitting;
-static uint32_t tx_hz;		// FM TX frequency and bandwidth, for the TX tone deviation
+static uint32_t tx_hz;		// TX frequency (FM: also the TX tone deviation, with tx_wide; DMR: the burst TX path)
 static bool tx_wide;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static void ring_play_update(void);
@@ -157,15 +157,16 @@ static void write_mod_bias(uint32_t hz)
 
 // ---- From the DMR interrupts ----
 
-// RF TX interrupt (tx): RX path off, FD6818 idle then TX for our burst, then the TX aux word. After the burst: PA drive
-// off, FD6818 back to receive, RX path on. The TX path stays on for the whole transmission: switching it per burst put
-// power steps into the bursts
+// RF TX interrupt (tx): RX path off, TX path on, FD6818 idle then TX for our burst, then the TX aux word. After the
+// burst: PA drive off, TX path off, FD6818 back to receive, RX path on. The TX path switches per burst: a hotspot stays
+// keyed while it listens, and with the TX path on it heard nothing
 static void dmr_rf_switch(bool tx)
 {
 	if (!tx) {
 		DAC_DATA_B = 0;
 	}
 	rx_path(rx_hz, !tx);
+	tx_path(tx_hz, tx);
 	fd6818_dmr_burst(&fd, tx, fd.variant->bw_dmr);
 	if (tx) {
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
@@ -304,14 +305,14 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the HR_C7000's
 	dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
-		// The TX path comes on for the whole transmission; the FD6818 receives until our first burst and between bursts
-		// (dmr_rf_switch keys each one; the drive waits for the PA one-shot). A hotspot stays keyed like this while it
-		// listens, so the FD6818 and the RX path must stay in receive (set_freq left it idle)
+		// The FD6818 and the RX path receive until our first burst and between bursts; dmr_rf_switch keys each burst
+		// with the TX path, and the drive waits for the PA one-shot. A hotspot stays keyed like this while it listens,
+		// so receive must work while keyed (set_freq left the FD6818 idle)
 		hrc_pin_write(PIN_MIC_PATH, false);
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		hal_delay_ms(1);
-		tx_path(hz, true);
+		tx_hz = hz;	// for dmr_rf_switch's TX path
 		rx_path(rx_hz, true);
 		dmr_keyed = true;
 	} else {
