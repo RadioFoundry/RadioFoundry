@@ -65,7 +65,11 @@ def main() -> None:
                   f"cc {cc} src {rec['src']} dst {rec['dst']}", flush=True)
 
     c = mqtt.Client()
-    c.username_pw_set(os.environ["ODR_SDR_BENCH_MQTT_USER"], os.environ["ODR_SDR_BENCH_MQTT_PASSWORD"])
+    # Auth is optional: a localhost bench broker typically runs with none. Only set it when both are present.
+    mqtt_user = os.environ.get("ODR_SDR_BENCH_MQTT_USER")
+    mqtt_password = os.environ.get("ODR_SDR_BENCH_MQTT_PASSWORD")
+    if mqtt_user and mqtt_password:
+        c.username_pw_set(mqtt_user, mqtt_password)
     c.on_message = on_message
     c.connect(args.host, 1883)
     c.subscribe(f"DMR/{args.receiver}/sdr/raw")
