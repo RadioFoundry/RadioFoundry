@@ -545,6 +545,11 @@ static void test_subtone(void)
 	dev.subaudio_dev = 0x90;
 	hrc7000_fm_tx(&dev, true);	// capped at the field's top
 	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D0FF10u);
+	// A warm restart finds the last 25 kHz value in the register: the init sets the reset value, not that
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(dev.subaudio_dev == 0x28 && REG(C7_SUBVOICE_COEF) == 0x07D02810u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D02810u);
 }
 
 // FM receive audio (8.5): the half FM_ADDR_SW names, high byte first; the interrupt bit in the mask; the engine's
