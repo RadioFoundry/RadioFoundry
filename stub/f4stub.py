@@ -14,12 +14,20 @@ had to enumerate again, on a port with the same serial number). stubtool.py hand
     stubtool.py PORT --odr-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
     stubtool.py PORT --attach --boot reset                                restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
+    f4stub.py --embed build/stub-stm32f4/f4stub.bin                       put a new stub build into this file
+    f4stub.py --check-embedded build/stub-stm32f4/f4stub.bin              exit 1 when the build differs from it
+
+The tool sends the stub embedded below (checked by its SHA-256), so the host tools and the web flasher send the same
+bytes; `--odr-stub FILE` sends another build instead. After a change to stub/stm32f4, rebuild and run --embed; CI
+fails while the embedded copy and a fresh build differ.
 
 Framing and the debug link loader are stubtool.Radio's; what differs is here: the ops (ERASE / PROGRAM / RESET are
 new, SUMS and READ take a flash address), 4 KB blocks inside coarse erase sectors (16 to 128 KB), the sector 3
 interlock and the update order that goes with it, and the bytes a sector shares with the codec (the MD-380's sector 6),
 which are read back and kept.
 """
+import base64
+import hashlib
 import os
 import subprocess
 import sys
@@ -28,6 +36,84 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link loader)
+
+# --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
+F4STUB_SHA256 = "5330a97316614b4d25d3eb6591aa54ed43f45f364a586c4242ea3e7969c80c0f"
+F4STUB_B64 = (
+    "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"
+)
+# --- F4STUB end
 
 MAGIC = 0x46345342                     # 'F4SB': ERASE and RESET (stub/stm32f4/f4stub.h)
 OP_HELLO, OP_PEEK, OP_SUMS, OP_READ, OP_RESET, OP_ERASE, OP_PROGRAM = 0x01, 0x02, 0x07, 0x09, 0x0D, 0x10, 0x11
@@ -389,9 +475,28 @@ def board_from_version(radio):
     return None
 
 
-def default_stub_path():
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(os.path.dirname(here), "build", "stub-stm32f4", "f4stub.bin")
+def stub_image():
+    """The embedded stub build, checked against its SHA-256"""
+    blob = zlib.decompress(base64.b64decode("".join(F4STUB_B64)))
+    if hashlib.sha256(blob).hexdigest() != F4STUB_SHA256:
+        raise F4Error("the embedded STM32F4 stub fails its own checksum")
+    return blob
+
+
+def embed(path):
+    """Rewrite the embedded stub in this file from a build"""
+    blob = open(path, "rb").read()
+    b64 = base64.b64encode(zlib.compress(blob, 9)).decode()
+    lines = ["# --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)",
+             'F4STUB_SHA256 = "%s"' % hashlib.sha256(blob).hexdigest(), "F4STUB_B64 = ("]
+    lines += ['    "%s"' % b64[i:i + 104] for i in range(0, len(b64), 104)]
+    lines += [")", "# --- F4STUB end"]
+    me = os.path.abspath(__file__)
+    text = open(me).read()
+    a = text.index("# --- F4STUB begin")
+    b = text.index("# --- F4STUB end") + len("# --- F4STUB end")
+    open(me, "w").write(text[:a] + "\n".join(lines) + text[b:])
+    print("embedded %s: %d bytes, sha256 %s" % (path, len(blob), hashlib.sha256(blob).hexdigest()))
 
 
 def run(a, port, reopen, log=print):
@@ -404,10 +509,7 @@ def run(a, port, reopen, log=print):
             board = found
         elif found is not None and found != board:
             raise F4Error("the radio says it is a %s, not a %s" % (found, board))
-        path = a.odr_stub or default_stub_path()
-        if not os.path.exists(path):
-            raise F4Error("no stub image at %s: build it with `make -C stub/stm32f4`" % path)
-        image = open(path, "rb").read()
+        image = open(a.odr_stub, "rb").read() if a.odr_stub else stub_image()
         radio.odr_enter(image, 0x20000000)
     else:
         radio.attach()
@@ -716,6 +818,8 @@ def self_test():
     except F4Error:
         pass
 
+    check(len(stub_image()) > 4096 and stub_image()[:4] != b"\xff" * 4, "the embedded stub decodes and checks")
+
     tmpdir.cleanup()
     print("f4stub self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                   "" if len(fails) == 1 else "s"))
@@ -725,5 +829,12 @@ def self_test():
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         sys.exit(self_test())
+    if len(sys.argv) == 3 and sys.argv[1] == "--embed":
+        embed(sys.argv[2])
+        sys.exit(0)
+    if len(sys.argv) == 3 and sys.argv[1] == "--check-embedded":
+        same = open(sys.argv[2], "rb").read() == stub_image()
+        print("the embedded STM32F4 stub %s %s" % ("matches" if same else "differs from", sys.argv[2]))
+        sys.exit(0 if same else 1)
     print(__doc__)
     sys.exit(2)
