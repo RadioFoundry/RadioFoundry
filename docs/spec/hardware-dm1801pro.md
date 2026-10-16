@@ -114,8 +114,10 @@ UART1-3 are never used: no GPS and no UART Bluetooth.
 ### 5.1 Bus
 
 Three-wire serial, bit-banged: clock PTA7, data PTA8, chip select PTA30. A frame is CS low, an 8-bit address (bit 7 set
-for a read), 16 data bits MSB first, CS high. The radio waits about 5 microseconds per half clock; ODR scales the
-driver's delays by 5. K.
+for a read), 16 data bits MSB first, CS high. K. The radio's wait per half clock is five passes of a short busy loop,
+well under a microsecond at the 168 MHz core clock, so with the GPIO calls a frame takes some tens of microseconds (I;
+an earlier reading took the loop for 5 microseconds). ODR scales the driver's delays by 5, which is slower than the
+radio.
 
 ### 5.2 Frequency and band
 
@@ -147,9 +149,43 @@ which gives receive audio on the speaker path (R).
 
 - RX: `0x37=9D1F, 0x30=0200, 0x30=BFF1`. TX: `0x37=9D1F, 0x52=028F, 0x30=0200, 0x30=C1FE`. Always through idle
   (0x30=0000) between the two. The DM-32UV goes straight to the final word. K.
-- **Enter TX:** RX path off, wait, TX frequency, the TX sequence, register 0x50 = 3B18, wait, TX path on, PA ramp (40
-  steps into DAC B). **Leave TX:** wait, PA ramp down, wait, TX path off, wait, RX frequency (0x32=0244, 0x47=6042),
-  RX sequence, RX path on. The radio's waits are an uncalibrated count; ODR uses 1 ms. K for the order.
+- Receiver battery save: sleep is `0x30=0000`, then 0x37 = 9D17 (DMR) or 9D00 (FM), RX path off; wake is
+  `0x37=9D1F, 0x30=BFF1` straight from idle, RX path on. K.
+- **DMR per-burst handlers.** The RF TX and RF RX interrupts only clear their flag and wake a task. In a digital
+  channel that task runs the burst start on an RF TX interrupt and the burst end on an RF RX interrupt while a burst is
+  on; a second path runs the burst end when the transmission stops. These two are the only callers of the sequences
+  below, and there is no PA timer: the PA ramps inside the burst start. K.
+
+  | Burst start (RF TX interrupt) | Burst end (RF RX interrupt) |
+  |---|---|
+  | 1. RX path off | 1. wait 1.6 ms |
+  | 2. wait 1.2 / 1.0 / 0.8 ms at High / Middle / Low power | 2. PA ramp down (below) |
+  | 3. 0x38 / 0x39 = TX frequency, 0x30 = 0000, 0x47 bits 11:8 cleared (0x0140 becomes 0x0040), 0x37 = 9D1F, 0x52 = 028F, 0x30 = 0200, 0x30 = C1FE, 0x50 = 3B18 | 3. wait 0.3 ms |
+  | 4. wait 1.0 ms | 4. TX path off |
+  | 5. TX path on | 5. wait 0.7 ms |
+  | 6. PA ramp up (below) | 6. 0x30 = 0000, 0x38 / 0x39 = RX frequency, 0x32 = 0244, 0x37 = 9D1F, 0x30 = 0200, 0x30 = BFF1, 0x47 = 0140, 0x3F = 0000 |
+  | | 7. RX path on, wait 0.05 ms |
+
+  - The waits are counts of a busy loop of about 167 cycles, so microseconds at 168 MHz (K for the counts, I for the
+    time). The FD6818 frames in step 3 and step 6 add a few hundred microseconds at the radio's bus speed (5.1, I).
+  - PA ramp: DAC B = round(drive x t / 248) x 16 for each t of a fixed 40-entry table (1, 2, 2, 4, 8, 10 ... 228, 238,
+    248), then the drive itself. Down, the entries 21 to 2 in reverse, then 0, so the drive first steps to 70/248 of
+    its value. No wait between steps; each costs a software floating-point calculation. K.
+  - 0x43 isn't written per burst, and the RX path is on between bursts. The RX frequency and 0x32 are written at every
+    burst end, also on a simplex channel. Every DMR receive set-up writes 0x3F = 0000 and 0x47 = 0140, so in DMR the
+    radio keeps 0x3F at 0, not the power-on 07FE. K.
+  - RF_CONTROL (`modem-hrc7000.md`) is only ever ORed, never written whole. A simplex channel with flag bit 5 of channel
+    byte 0x0D ORs in an RF TX lead of 0x1A (2.6 ms) and sets RF_MODE b11 (dual receive channels); any other channel,
+    simplex or repeater, ORs in 0x15 (2.1 ms) and clears RF_MODE b11. Both OR in an RF RX lead of 0x12 (1.8 ms). K. The
+    register's reset value isn't known, so neither is the lead the radio ends up with; after both kinds of channel it
+    is 0x1F (3.1 ms), the DM-32UV's value (I). What the 0x0D bit selects is not known (?).
+  - Timing that follows (I): the drive starts to ramp about 2 ms after the RF TX interrupt and is at the top near the
+    burst start. The receiver is back about 3 ms after the RF RX interrupt: with a 1.8 ms RX lead, about 1 ms into the
+    slot after ours.
+- **FM key-up** (not per burst): RX path off, TX path on, the sub-audio set-up, register 0x40 (6.4), the TX frequency
+  and state writes of step 3 above, then the 40-step ramp, without the waits. FM key-down isn't traced. K. Earlier
+  versions of this page gave the DMR per-burst order as the radio's general "Enter TX / Leave TX"; ODR's FM `tx()`
+  still follows that order with 1 ms waits, and FM transmit works with it.
 - RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external LNA gain). Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte (6.4: 0x201 for CTCSS, 0x202 for DCS); the
   tone frequency scale (register 0x07) isn't decoded. ODR sends the tone with the modem's generator and detects it with
 the FD6818 (`fd6818_set_rx_tone`, result in 0x0C), as on the DM-32UV: the modem's detector has no input while the FD6818
@@ -395,7 +431,7 @@ receiving and orange flashing while scanning.
 
 ## 10. Open items
 
-- VHF transmit (the TX pair's VHF side); the DMR per-burst handlers and PA delay.
+- VHF transmit (the TX pair's VHF side).
 - The power levels on air: on the SDR bench L and M are only 0.4 dB apart and H is 4.4 dB above M (2026-10-16, 461.4625
   MHz, the drive from the 0x40 / 0x45 / 0x4A arrays). The drive itself steps evenly (6.4, "L / M / H on air"), so the
   cause is the PA or the measurement. The SDR's levels are relative and the radio is in its near field, so this wants
@@ -422,18 +458,26 @@ receiving and orange flashing while scanning.
      AFC off with a TCXO. Its DMR RF filter is narrower: 0x43 = 3048 is 3 kHz, the DM-32UV's 4048 is 3.75 kHz. Both
      fall back to 1.7 kHz on a weak signal (b11:9). A filter or AFC that settles at the start of each receive window
      would cost the same bursts every run.
-  2. The skipped "Leave TX" retune. The per-burst return to RX doesn't write 0x32 = 0244 or the RX frequency (5.4).
+  2. The skipped "Leave TX" retune. The per-burst return to RX doesn't write 0x32 = 0244 or the RX frequency. The
+     radio's own burst end writes both, then 0x47 = 0140 and 0x3F = 0000 after the RX sequence, with the TX path off
+     0.7 ms before and the RX path on after (5.4).
   3. A DC step on the demodulated audio after our burst. This radio's DMR receive is sensitive to the DAC C bias (4).
      A step from the FD6818's audio output, or from the two-point modulation's reference path settling after the
      burst, would cost the bursts whose symbols are least balanced.
   4. The front end while keyed. The DM-32UV keeps both LNAs off for the whole transmission
-     ([hardware-dm32.md](hardware-dm32.md) 8.5). This radio turns its RX path back on between bursts.
+     ([hardware-dm32.md](hardware-dm32.md) 8.5). This radio turns its RX path back on between bursts, and so does
+     its own firmware (5.4).
   5. The modem's dynamic sync threshold (RF_MODE b12, `modem-hrc7000.md` 2.1), which adapts to whatever the FD6818
      outputs during our own slot.
   6. The RF TX interrupt, 3.1 ms ahead of our burst, cuts the last 1.9 ms of each inbound burst on both radios. The
      damage seen is mid-burst, so this is unlikely.
   7. 0x50 = 3B18 and 0x52 = 028F, left set while receiving. The guide puts TX audio mute and limiter in 0x50 and
-     CTCSS thresholds in 0x52, so neither should touch DMR receive.
+     CTCSS thresholds in 0x52, so neither should touch DMR receive. The radio's own burst end doesn't write them either (5.4).
+  8. Where the burst ends. The radio's own firmware runs its burst end from the RF RX interrupt (an RF RX lead of 1.8
+     ms ORed into RF_CONTROL); the shared engine runs it from the first slot tick 20 ms after the RF TX interrupt
+     (5.4, 5.6).
+  9. RF_MODE b11 (dual receive channels). The radio's own firmware clears it on every channel except a simplex one
+     with byte 0x0D bit 5 set; the shared modem set-up keeps it set, as on the DM-32UV (5.4).
 
   Ruled out on the radio: an FD6818 bit clock of 1 us instead of 5 us (switch 0.86 ms instead of 2.06 ms), the
   DM-32UV's per-burst writes (bandwidth, idle, RX state only), and the RX path left on during TX bursts. Interrupt
