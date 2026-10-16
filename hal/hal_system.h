@@ -35,7 +35,9 @@ typedef struct {
 	// enter_stub copies the span there first (the STM32: SRAM base, which ODR's own data holds until the jump)
 	uint8_t *(*stub_region)(uint32_t *size);
 	bool (*enter_stub)(uint32_t entry);
-	uint32_t stub_run_addr;
+#if defined(CONFIG_STUB_ENTRY) && CONFIG_STUB_ENTRY
+	uint32_t stub_run_addr;		// last, so a file built without config.h sees the same layout before it
+#endif
 } hal_system_t;
 
 #endif
