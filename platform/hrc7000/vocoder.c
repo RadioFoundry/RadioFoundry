@@ -20,6 +20,8 @@
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #ifndef HRC_CODEC_BOARD
 #error "the board's board.mk must define HRC_CODEC_BOARD (the codec profile prefix)"
@@ -136,6 +138,8 @@ static bool load(void)
 	return true;
 }
 
+static volatile bool busy;	// a call is running the codec (hrc_vocoder_park waits it out)
+
 static bool present(void)
 {
 	if (presence < 0) {
@@ -150,7 +154,7 @@ static void *entry(uint32_t off)
 }
 
 // The stock init sequence (codec-dm32.md C), on our state blocks
-static void reset(void)
+static void reset_run(void)
 {
 	if (!present()) {
 		return;
@@ -185,14 +189,14 @@ static void reset(void)
 // Two calls per 20 ms frame, 80 samples each, half 0 then 1. Flags 0x1840 on the first call of a transmission
 // (E[0x172C] at init) and 0x800 after; r1 and the sp+8 argument are the state's own E[0x1736] / E[0x173A], as stock's
 // wrapper passes them. The 49 parameter bits come back one per halfword.
-static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
+static void encode_run(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
 {
 	if (!present()) {
 		memset(bits, 0, VOCODER_BITS);
 		return;
 	}
 	if (!ready) {
-		reset();
+		reset_run();
 	}
 	memcpy(pcmbuf, pcm, sizeof pcmbuf);
 	encode_t enc = (encode_t)entry(slot->encode);
@@ -208,14 +212,14 @@ static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODE
 
 // Two calls per frame on the same bit buffer; flags 0 (a good frame: the caller conceals bad ones, core/dmr/ambe);
 // r3 = D[0x1166] as stock's wrapper passes it
-static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES])
+static void decode_run(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES])
 {
 	if (!present()) {
 		memset(pcm, 0, VOCODER_FRAME_SAMPLES * sizeof(int16_t));
 		return;
 	}
 	if (!ready) {
-		reset();
+		reset_run();
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bitbuf[i] = bits[i] & 1;
@@ -225,6 +229,40 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 		dec(&pcmbuf[h * HALF], HALF, bitbuf, *h16(dec_state, 0x1166), 0, h, dec_state);
 	}
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
+}
+
+// The calls mark themselves busy, so a park can wait for the one running
+static void reset(void)
+{
+	busy = true;
+	hrc_barrier();		// set before present() reads presence: a park sees one or the other
+	reset_run();
+	busy = false;
+}
+
+static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
+{
+	busy = true;
+	hrc_barrier();
+	encode_run(pcm, bits);
+	busy = false;
+}
+
+static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES])
+{
+	busy = true;
+	hrc_barrier();
+	decode_run(bits, pcm);
+	busy = false;
+}
+
+void hrc_vocoder_park(void)
+{
+	presence = 0;		// every later call returns at once (silence, zero bits)
+	hrc_barrier();
+	while (busy) {
+		vTaskDelay(1);
+	}
 }
 
 // The id tools/odrflash and the release manifests use: which stock file the slot was carved from

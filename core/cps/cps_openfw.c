@@ -35,6 +35,7 @@ static uint32_t sector_addr;
 static bool sector_cal;			// the calibration sector: only the window may change
 static bool image_written;		// a commit since the session began: re-read the codeplug at its end
 static int8_t reboot_req = -1;		// C 6 0 / 1 seen: reboot (1 = save first) once the bytes are handled
+static bool programming;		// C 0 seen, and no quiet longer than CPS_SESSION_MS since: C 6 0 / 1 may reboot
 
 static uint32_t be32(const uint8_t *p)
 {
@@ -465,6 +466,13 @@ static void cmd_control(void)
 		case 0:		// save settings and reboot
 		case 1:		// reboot
 			nak();
+			// Only after C 0: otherwise any three bytes "C 6 1" on a link shared with the debug link reboot
+			// the radio (bench 2026-10-15)
+			if (!programming) {
+				stats.reboots_ignored++;
+				return;
+			}
+			programming = false;
 			end_session();
 			if (req[2] == 0) {
 				settings_flush();
@@ -478,7 +486,10 @@ static void cmd_control(void)
 			break;
 		}
 		break;
-	default:	// 0 programming screen, 1-4 screen text and backlight, 7 GPS, 254 ping
+	case 0:		// programming screen
+		programming = true;
+		break;
+	default:	// 1-4 screen text and backlight, 7 GPS, 254 ping
 		break;
 	}
 	nak();
@@ -619,6 +630,7 @@ void cps_init(const cps_io_t *p)
 	drop_sector();
 	image_written = false;
 	reboot_req = -1;
+	programming = false;
 	memset(&stats, 0, sizeof(stats));
 	memset(req, 0, sizeof(req));
 }
@@ -658,6 +670,9 @@ void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 		}
 		reboot_now();
 		return;
+	}
+	if ((now_ms - last_rx_ms) > CPS_SESSION_MS) {
+		programming = false;
 	}
 	last_rx_ms = now_ms;
 	if (overflow) {

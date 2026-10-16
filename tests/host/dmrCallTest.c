@@ -1025,6 +1025,30 @@ static void test_late_entry(void)
 	CHECK(sink_log.begins == 0 && V()->state == DMR_CALL_STATE_IDLE);
 	run_ms(500);
 
+	// The LC with the first burst heard (the HR_C7000 reports voice only once it has the LC): held, and the call starts
+	// at the next burst with both played (HIL 2026-10-15: dropping it cost a superframe, 13 bursts instead of 18)
+	setup(&c);
+	unsigned first = frame;
+	rx_voice(0, 1, 0, DMR_SYNC_MS, &frame, lc, false);
+	run_ms(60);
+	CHECK(sink_log.begins == 0);
+	rx_voice(1, 1, 0, DMR_SYNC_MS, &frame, NULL, false);
+	run_ms(60);
+	CHECK(sink_log.begins == 1 && sink_log.caller.late_entry && sink_log.caller.src == 2345678);
+	CHECK(sink_log.frames == 6 && sink_log.seq[0] == (uint8_t)first && sink_log.losts == 0);
+	run_ms(500);
+
+	// ... but not when the next burst isn't the one after it (a stray, then another): nothing starts
+	setup(&c);
+	rx_voice(0, 1, 0, DMR_SYNC_MS, &frame, lc, false);
+	run_ms(60);
+	rx_voice(3, 1, 0, DMR_SYNC_MS, &frame, NULL, false);
+	run_ms(60);
+	rx_voice(4, 1, 0, DMR_SYNC_MS, &frame, NULL, false);
+	run_ms(60);
+	CHECK(sink_log.begins == 0 && V()->state == DMR_CALL_STATE_IDLE);
+	run_ms(500);
+
 	// The next call without a header and with the same LC as the last one (the same talker again): taken at its first
 	// complete embedded LC. A sticky LC buffer is the driver's to filter (lc_valid is this reception's LC); the stack
 	// used to wait for a second superframe on top (HIL 2026-10-10: a late entry lost a superframe more)
