@@ -75,6 +75,11 @@ def pytest_addoption(parser):
                      "frequency (test_aprs.py docstring); never 144.390")
     g.addoption("--aprs-dmr-dst", type=int, default=9990301,
                 help="test_aprs DMR position: the destination ID (the bench modem listens to any)")
+    g.addoption("--mic-gain-steps", default="3,5,7",
+                help="test_mic_gain: the Mic gain steps (0-10, 2 dB a step, 5 = the board's level) keyed at each "
+                     "bandwidth, one over per step")
+    g.addoption("--mic-gain-window", type=float, default=30.0,
+                help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
 
 
 def pytest_configure(config):
