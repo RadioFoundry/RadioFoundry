@@ -44,7 +44,7 @@ class PipePort:
         pass
 
 
-def run(sim, flash, job):
+def run(sim, flash, job, want_spi=False):
     with tempfile.TemporaryDirectory(prefix="odr-f4wire-") as d:
         fin, fout = os.path.join(d, "in.bin"), os.path.join(d, "out.bin")
         open(fin, "wb").write(flash)
@@ -56,7 +56,10 @@ def run(sim, flash, job):
         proc.stdin.close()
         log = proc.stderr.read().decode()
         proc.wait(10)
-        return open(fout, "rb").read(), result, log
+        out = open(fout, "rb").read()
+        if want_spi:
+            out = (out, open(fout + ".spi", "rb").read())
+        return out, result, log
 
 
 def main():
@@ -111,6 +114,24 @@ def main():
     check(got == bytes(flash[:0x10000]) and peek == bytes(flash[0x10:0x20]), "read-back and peek of the bootloader")
     check(bad == [], "refusals: bootloader erase, interlocked erase, bootloader program, peripheral peek (%s)" % bad)
     check(out == bytes(flash) and "erase" not in log, "nothing changed by the refused requests")
+
+    # The SPI flash through the real engine: read it, write a changed copy (only the changed sectors), read it again
+    spi = bytes((i * 13 + (i >> 12)) & 0xFF for i in range(0x100000))
+    new = bytearray(spi)
+    new[0x21000:0x21020] = b"\x00" * 32
+    new[0xF0000:0xF1000] = b"\xff" * 4096
+
+    def spi_job(r, d):
+        first = r.read_flash(0, 0x40000, f4stub.MEM_SPI)
+        res = r.spi_write(bytes(new), 0)
+        return first, res, r.verify_file(bytes(new), 0, f4stub.MEM_SPI)
+
+    out, (first, res, bad), log = run(sim, bytes(flash), spi_job, want_spi=True)
+    out, spi_out = out
+    check(first == spi[:0x40000], "SPI flash read through the real engine")
+    check(res == (2, 254) and log.count("xerase") == 2, "SPI write: 2 sectors written %s" % (res,))
+    check(spi_out == bytes(new) and bad == [], "SPI flash holds the new copy")
+    check(out == bytes(flash), "internal flash untouched by SPI work")
 
     print("f4stub_wire_check %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                    "" if len(fails) == 1 else "s"))

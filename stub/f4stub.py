@@ -10,6 +10,8 @@ had to enumerate again, on a port with the same serial number). stubtool.py hand
     stubtool.py PORT --odr-enter --write-app build/dm1701/odr_dm1701.bin   install a build (sector 9 part found next to it)
     stubtool.py PORT --odr-enter --progmem flash.bin                      back up the whole internal flash (1 MB)
     stubtool.py PORT --odr-enter --verify-progmem flash.bin               compare by CRC
+    stubtool.py PORT --odr-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
+    stubtool.py PORT --odr-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
     stubtool.py PORT --attach --boot reset                                restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
 
@@ -29,6 +31,8 @@ import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link l
 
 MAGIC = 0x46345342                     # 'F4SB': ERASE and RESET (stub/stm32f4/f4stub.h)
 OP_HELLO, OP_PEEK, OP_SUMS, OP_READ, OP_RESET, OP_ERASE, OP_PROGRAM = 0x01, 0x02, 0x07, 0x09, 0x0D, 0x10, 0x11
+OP_XERASE, OP_XPROGRAM = 0x12, 0x13
+MEM_INTERNAL, MEM_SPI = 0, 1           # the memory byte SUMS and READ end with (stub version 2)
 OK, BADSUM, BADOP, BADARG, TOOLONG, REFUSED, FLASHERR = 0x05, 0x0A, 0x0B, 0x0D, 0x0E, 0x0F, 0x10
 BLOCK = 4096
 FLASH_BASE = 0x08000000
@@ -123,6 +127,8 @@ class F4Radio(stubtool.Radio):
         self.rdp = r[11]
         self.adopted = bool(r[12] & 1)
         self.app_base = int.from_bytes(r[13:17], "big")
+        self.spi_size = int.from_bytes(r[17:21], "big") if len(r) >= 24 else 0
+        self.spi_id = r[21:24].hex() if len(r) >= 24 else ""
         if self.app_base != APP_BASE:
             raise F4Error("the stub reports the application at 0x%08X, this tool knows 0x%08X" % (self.app_base, APP_BASE))
         return self.version, self.max_payload
@@ -157,18 +163,30 @@ class F4Radio(stubtool.Radio):
                         raise F4Error("the stub's USB port did not come back within 15 s: power-cycle the radio "
                                       "(ODR starts again) and check the cable")
                     time.sleep(0.3)
-        self.log("STM32F4 stub v%d: %d KB flash, RDP byte 0x%02X, USB %s" % (
-            self.version, self.flash_kb, self.rdp, "adopted from ODR" if self.adopted else "enumerated again"))
+        self.log("STM32F4 stub v%d: %d KB flash, RDP byte 0x%02X, %s, USB %s" % (
+            self.version, self.flash_kb, self.rdp,
+            "SPI flash %d KB (JEDEC %s)" % (self.spi_size // 1024, self.spi_id) if self.spi_size else "no SPI flash",
+            "adopted from ODR" if self.adopted else "enumerated again"))
 
     def peek(self, addr, n):
         return self.request(OP_PEEK, addr.to_bytes(4, "big") + n.to_bytes(2, "big"))
 
-    def sums(self, addr, count):
-        """[(crc32, blank)] per 4 KB block from addr."""
+    @staticmethod
+    def mem_byte(mem):
+        return b"" if mem == MEM_INTERNAL else bytes([mem])
+
+    def need_spi(self):
+        if not self.spi_size:
+            raise F4Error("the stub found no SPI flash (stub version %d)" % self.version)
+
+    def sums(self, addr, count, mem=MEM_INTERNAL):
+        """[(crc32, blank)] per 4 KB block from addr (internal flash, or the SPI flash from 0)."""
         out = []
         while count > 0:
             k = min(count, SUM_MAX)
-            r = self.request(OP_SUMS, addr.to_bytes(4, "big") + k.to_bytes(2, "big"), timeout=1.0 + k * 0.01)
+            # internal flash reads at memory speed; the SPI flash at about 0.5 MB/s
+            r = self.request(OP_SUMS, addr.to_bytes(4, "big") + k.to_bytes(2, "big") + self.mem_byte(mem),
+                             timeout=1.0 + k * (0.01 if mem == MEM_INTERNAL else 0.02))
             if len(r) != 5 * k:
                 raise F4Error("SUMS reply is %d bytes, wanted %d" % (len(r), 5 * k))
             out += [(int.from_bytes(r[i * 5:i * 5 + 4], "big"), r[i * 5 + 4] == 1) for i in range(k)]
@@ -176,7 +194,7 @@ class F4Radio(stubtool.Radio):
             count -= k
         return out
 
-    def read_flash(self, addr, n):
+    def read_flash(self, addr, n, mem=MEM_INTERNAL):
         """n bytes (a multiple of 4 KB) from addr, every block checked against the stub's CRC-32."""
         if addr % BLOCK or n % BLOCK:
             raise F4Error("reads are whole 4 KB blocks")
@@ -187,7 +205,7 @@ class F4Radio(stubtool.Radio):
             count = min(READ_PACK, (addr + n - a) // BLOCK)
             try:
                 self.port.reset_input_buffer()
-                payload = a.to_bytes(4, "big") + bytes([count, 0])
+                payload = a.to_bytes(4, "big") + bytes([count, 0]) + self.mem_byte(mem)
                 self.port.write(bytes([0x02, OP_READ, 0, len(payload), stubtool.sum8(payload), 0x03]) + payload)
                 for i in range(count):
                     status, r = self.read_frame(2.0)
@@ -312,13 +330,41 @@ class F4Radio(stubtool.Radio):
         sums = self.sums(addr, len(data) // BLOCK)
         return any(zlib.crc32(data[i * BLOCK:(i + 1) * BLOCK]) != crc for i, (crc, _) in enumerate(sums))
 
-    def verify_file(self, data, start=FLASH_BASE):
+    def verify_file(self, data, start=FLASH_BASE, mem=MEM_INTERNAL):
         """Block addresses where the flash differs from data (a whole number of 4 KB blocks from start)."""
-        sums = self.sums(start, len(data) // BLOCK)
+        sums = []
+        for off in range(0, len(data) // BLOCK, 256):         # 1 MB per request: a slow SPI flash stays in its time-out
+            sums += self.sums(start + off * BLOCK, min(256, len(data) // BLOCK - off), mem)
         return [start + i * BLOCK for i, (crc, _) in enumerate(sums) if zlib.crc32(data[i * BLOCK:(i + 1) * BLOCK]) != crc]
 
-    def dump(self, path, start=FLASH_BASE, end=None, progress=None):
-        end = FLASH_BASE + self.flash_kb * 1024 if end is None else end
+    def spi_erase(self, addr):
+        self.request(OP_XERASE, addr.to_bytes(4, "big") + MAGIC.to_bytes(4, "big"), retries=0, timeout=2.0)
+
+    def spi_write(self, data, start=0, progress=None):
+        """Write data (whole 4 KB sectors) into the SPI flash from start: only the sectors whose CRC differs are erased
+        and programmed (blank pieces skipped), each read back by the stub, then all checked again. Returns (written,
+        unchanged)."""
+        self.need_spi()
+        if start % BLOCK or len(data) % BLOCK or start + len(data) > self.spi_size:
+            raise F4Error("SPI flash writes are whole 4 KB sectors inside the chip's %d KB" % (self.spi_size // 1024))
+        todo = self.verify_file(data, start, MEM_SPI)
+        for n, a in enumerate(todo, 1):
+            sec = data[a - start:a - start + BLOCK]
+            self.spi_erase(a)
+            for off in range(0, BLOCK, 1024):
+                piece = sec[off:off + 1024]
+                if piece != b"\xff" * len(piece):
+                    self.request(OP_XPROGRAM, (a + off).to_bytes(4, "big") + piece, retries=0, timeout=2.0)
+            if progress:
+                progress(n, len(todo))
+        bad = self.verify_file(data, start, MEM_SPI) if todo else []
+        if bad:
+            raise F4Error("SPI flash verify: %d sector(s) differ, first at 0x%06X" % (len(bad), bad[0]))
+        return len(todo), len(data) // BLOCK - len(todo)
+
+    def dump(self, path, start=FLASH_BASE, end=None, progress=None, mem=MEM_INTERNAL):
+        if end is None:
+            end = start + (self.spi_size if mem == MEM_SPI else self.flash_kb * 1024)
         if inside_git_tree(path):
             raise F4Error("%s is inside a git work tree: a flash dump holds the stock bootloader and the codec, which "
                           "are never committed" % path)
@@ -326,7 +372,7 @@ class F4Radio(stubtool.Radio):
             a = start
             while a < end:
                 n = min(64 * BLOCK, end - a)
-                f.write(self.read_flash(a, n))
+                f.write(self.read_flash(a, n, mem))
                 a += n
                 if progress:
                     progress(a, end)
@@ -391,6 +437,27 @@ def run(a, port, reopen, log=print):
         radio.dump(a.progmem, FLASH_BASE + lo // BLOCK * BLOCK, FLASH_BASE + (hi + BLOCK - 1) // BLOCK * BLOCK)
         log("%s: internal flash 0x%X..0x%X in %.0f s; sha256 %s" % (a.progmem, lo, hi, time.monotonic() - t0,
                                                                     stubtool.fingerprint(a.progmem)))
+    if a.q128 or a.verify_q128 or a.write_q128:
+        radio.need_spi()
+    if a.verify_q128:
+        data = open(a.verify_q128, "rb").read()
+        bad = radio.verify_file(data[:len(data) // BLOCK * BLOCK], 0, MEM_SPI)
+        log("SPI flash vs %s: %s" % (a.verify_q128, "identical" if not bad else
+            "%d blocks differ, first at 0x%06X" % (len(bad), bad[0])))
+    if a.q128:
+        lo, hi = stubtool.parse_range(a.q128_range, radio.spi_size)
+        lo, hi = lo // BLOCK * BLOCK, min(radio.spi_size, (hi + BLOCK - 1) // BLOCK * BLOCK)
+        t0 = time.monotonic()
+        radio.dump(a.q128, lo, hi, mem=MEM_SPI)
+        log("%s: SPI flash 0x%X..0x%X in %.0f s; sha256 %s" % (a.q128, lo, hi, time.monotonic() - t0,
+                                                              stubtool.fingerprint(a.q128)))
+    if a.write_q128:
+        data = open(a.write_q128, "rb").read()
+        start = stubtool.parse_range(a.q128_range, radio.spi_size)[0] if a.q128_range else 0
+        t0 = time.monotonic()
+        nw, nk = radio.spi_write(data, start, progress=lambda i, n: log("SPI sector %d of %d" % (i, n)) if i % 64 == 0 or i == n else None)
+        log("%s: SPI flash from 0x%06X, %d sector(s) written, %d unchanged, verified by CRC, %.0f s" % (
+            a.write_q128, start, nw, nk, time.monotonic() - t0))
     if a.boot:
         if a.boot != "reset":
             raise F4Error("on the STM32 radios --boot takes only reset")
@@ -404,8 +471,9 @@ def run(a, port, reopen, log=print):
 class FakeF4:
     """The stub's protocol and safety rules (stub/stm32f4/f4stub_proto.c) on a simulated 1 MB flash."""
 
-    def __init__(self, flash, flash_kb=1024, fail_after=None):
+    def __init__(self, flash, flash_kb=1024, fail_after=None, spi=None):
         self.flash = bytearray(flash)
+        self.spi = bytearray(spi) if spi is not None else None
         self.flash_kb = flash_kb
         self.inb = bytearray()
         self.out = bytearray()
@@ -442,27 +510,35 @@ class FakeF4:
             del self.inb[:6 + n]
             self.handle(op, body)
 
+    def mem(self, p, base_len, addr):
+        """(buffer, offset) for a SUMS / READ request's memory byte"""
+        if len(p) > base_len and p[base_len] == MEM_SPI:
+            return self.spi, addr
+        return self.flash, addr - FLASH_BASE
+
     def w(self, addr):
         o = addr - FLASH_BASE
         return int.from_bytes(self.flash[o:o + 4], "little")
 
     def handle(self, op, p):
         if op == OP_HELLO:
-            self.frame(OK, b"F4STUB" + bytes([1]) + (4104).to_bytes(2, "big") + self.flash_kb.to_bytes(2, "big")
-                       + bytes([0x55, 1]) + APP_BASE.to_bytes(4, "big"))
+            self.frame(OK, b"F4STUB" + bytes([2]) + (4104).to_bytes(2, "big") + self.flash_kb.to_bytes(2, "big")
+                       + bytes([0x55, 1]) + APP_BASE.to_bytes(4, "big")
+                       + (len(self.spi) if self.spi else 0).to_bytes(4, "big") + bytes([0xEF, 0x40, 0x18]))
         elif op == OP_SUMS:
             a, k = int.from_bytes(p[:4], "big"), int.from_bytes(p[4:6], "big")
-            o = a - FLASH_BASE
+            mem, o = self.mem(p, 6, a)
             body = b""
             for i in range(k):
-                blk = bytes(self.flash[o + i * BLOCK:o + (i + 1) * BLOCK])
+                blk = bytes(mem[o + i * BLOCK:o + (i + 1) * BLOCK])
                 body += (zlib.crc32(blk) & 0xFFFFFFFF).to_bytes(4, "big") + bytes([blk == b"\xff" * BLOCK])
             self.frame(OK, body)
         elif op == OP_READ:
             a, k = int.from_bytes(p[:4], "big"), p[4]
+            mem, o0 = self.mem(p, 6, a)
             for i in range(k):
-                o = a - FLASH_BASE + i * BLOCK
-                blk = bytes(self.flash[o:o + BLOCK])
+                o = o0 + i * BLOCK
+                blk = bytes(mem[o:o + BLOCK])
                 blank = blk == b"\xff" * BLOCK
                 data = b"" if blank else blk
                 self.frame(OK, (zlib.crc32(blk) & 0xFFFFFFFF).to_bytes(4, "big") + bytes([2 if blank else 0])
@@ -487,6 +563,19 @@ class FakeF4:
                 return self.frame(REFUSED)
             self.flash[o:o + len(data)] = data
             self.programs += 1
+            self.frame(OK)
+        elif op == OP_XERASE:
+            a = int.from_bytes(p[:4], "big")
+            if int.from_bytes(p[4:8], "big") != MAGIC:
+                return self.frame(REFUSED)
+            self.spi[a:a + BLOCK] = b"\xff" * BLOCK
+            self.spi_erases = getattr(self, "spi_erases", 0) + 1
+            self.frame(OK)
+        elif op == OP_XPROGRAM:
+            a, data = int.from_bytes(p[:4], "big"), p[4:]
+            if self.spi[a:a + len(data)] != b"\xff" * len(data):
+                return self.frame(REFUSED)
+            self.spi[a:a + len(data)] = data
             self.frame(OK)
         elif op == OP_RESET:
             self.resets += 1
@@ -600,6 +689,32 @@ def self_test():
     check(board_for("DM-1701") == "dm1701" and board_for("MD-380 VHF") == "md380" and board_for("DM-32UV") is None,
           "board names")
     check(inside_git_tree(os.path.abspath(__file__)), "dumps are refused inside this git tree")
+
+    # The SPI flash: a backup read back, a changed copy written (only its changed sectors), and a stub without one
+    spi = bytearray((i * 13 + (i >> 12)) & 0xFF for i in range(0x100000))
+    fake = FakeF4(stock(5), spi=spi)
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    check(r.spi_size == 0x100000 and r.spi_id == "ef4018", "hello: SPI flash size and ID")
+    path = os.path.join(tmp, "spi.bin")
+    r.dump(path, 0, mem=MEM_SPI)
+    check(open(path, "rb").read() == bytes(spi), "SPI flash dump")
+    new = bytearray(spi)
+    new[0x3000:0x3010] = b"\x00" * 16
+    new[0x80000:0x81000] = b"\xff" * BLOCK
+    fake.spi_erases = 0
+    nw, nk = r.spi_write(bytes(new), 0)
+    check(bytes(fake.spi) == bytes(new) and (nw, nk) == (2, 254) and fake.spi_erases == 2,
+          "SPI write: only the 2 changed sectors (%d, %d)" % (nw, nk))
+    check(r.verify_file(bytes(new), 0, MEM_SPI) == [], "SPI verify")
+    fake = FakeF4(stock(5))
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    try:
+        r.spi_write(b"\xff" * BLOCK)
+        check(False, "no SPI flash: refused")
+    except F4Error:
+        pass
 
     tmpdir.cleanup()
     print("f4stub self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),

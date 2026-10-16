@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md) against a
-// simulated 1 MB flash: framing and resync, every op's checks, the bootloader guard, the sector 3 interlock, blank
-// checks and read-back, and a whole update in the order the host tool uses.
+// simulated 1 MB flash and a 1 MB SPI flash: framing and resync, every op's checks, the bootloader guard, the sector
+// 3 interlock, blank checks and read-back, a whole update in the order the host tool uses, and the SPI flash's reads,
+// erases and programs.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,12 @@ static int erases[12];
 static bool fail_program;	// the controller "programs" one bit wrong
 static bool fail_erase;
 static int resets;
+
+#define SPI_SIZE	0x100000u
+static uint8_t spi[SPI_SIZE];
+static bool spi_dead;		// the chip stops answering
+static bool spi_flip;		// a programmed byte reads back wrong
+static int spi_erases;
 
 // What the engine sent: the frames, concatenated
 static uint8_t sent[64 * 1024];
@@ -87,6 +94,36 @@ static void sim_reset(void *ctx)
 	resets++;
 }
 
+static bool sim_xread(void *ctx, uint32_t addr, void *dst, uint32_t n)
+{
+	(void)ctx;
+	if (spi_dead || addr + n > SPI_SIZE) {
+		return false;
+	}
+	memcpy(dst, spi + addr, n);
+	return true;
+}
+
+static bool sim_xerase(void *ctx, uint32_t addr)
+{
+	(void)ctx;
+	spi_erases++;
+	memset(spi + addr, 0xFF, F4STUB_BLOCK);
+	return !spi_dead;
+}
+
+static bool sim_xprogram(void *ctx, uint32_t addr, const uint8_t *data, uint32_t n)
+{
+	(void)ctx;
+	for (uint32_t i = 0; i < n; i++) {
+		spi[addr + i] &= data[i];
+	}
+	if (spi_flip) {
+		spi[addr] ^= 0x01;
+	}
+	return !spi_dead;
+}
+
 static f4stub_port_t port = {
 	.write = sim_write,
 	.read = sim_read,
@@ -96,6 +133,11 @@ static f4stub_port_t port = {
 	.flash_kb = 1024,
 	.rdp = 0x55,
 	.flags = F4_HELLO_USB_ADOPTED,
+	.xread = sim_xread,
+	.xerase = sim_xerase,
+	.xprogram = sim_xprogram,
+	.xsize = SPI_SIZE,
+	.xid = { 0xEF, 0x40, 0x14 },
 };
 static f4stub_t eng;
 
@@ -210,10 +252,11 @@ static void test_hello_and_framing(void)
 	const uint8_t *b;
 	uint32_t n;
 	CHECK(request(F4OP_HELLO, NULL, 0, &b, &n) == F4ST_OK, "hello");
-	CHECK(n == 17 && memcmp(b, "F4STUB", 6) == 0, "hello magic (%u bytes)", (unsigned)n);
+	CHECK(n == 24 && memcmp(b, "F4STUB", 6) == 0, "hello magic (%u bytes)", (unsigned)n);
 	CHECK(b[6] == F4STUB_VERSION && ((b[7] << 8) | b[8]) == F4STUB_MAX_PAYLOAD, "version, max payload");
 	CHECK(((b[9] << 8) | b[10]) == 1024 && b[11] == 0x55 && b[12] == F4_HELLO_USB_ADOPTED, "flash KB, RDP, flags");
 	CHECK(get32(b + 13) == F4_APP_BASE, "app base");
+	CHECK(get32(b + 17) == SPI_SIZE && b[21] == 0xEF && b[22] == 0x40 && b[23] == 0x14, "SPI flash size and ID");
 	uint8_t s = 0;
 	for (uint32_t i = 0; i < n; i++) {
 		s = (uint8_t)(s + b[i]);
@@ -230,7 +273,7 @@ static void test_hello_and_framing(void)
 	for (uint32_t i = 0; i < len; i++) {
 		f4stub_feed(&eng, buf + i, 1);
 	}
-	CHECK(sent_len == 6 + 17 && sent[1] == F4ST_OK, "resync after junk (%u bytes sent)", (unsigned)sent_len);
+	CHECK(sent_len == 6 + 24 && sent[1] == F4ST_OK, "resync after junk (%u bytes sent)", (unsigned)sent_len);
 
 	// A bad header byte 5 inside what looked like a frame start: resynchronizes on the next 0x02
 	uint8_t two[64];
@@ -239,7 +282,7 @@ static void test_hello_and_framing(void)
 	uint32_t l2 = frame(two + 2, F4OP_HELLO, NULL, 0);
 	sent_len = 0;
 	f4stub_feed(&eng, two, 2 + l2);
-	CHECK(sent_len == 6 + 17 && sent[1] == F4ST_OK, "resync on a false start (%u)", (unsigned)sent_len);
+	CHECK(sent_len == 6 + 24 && sent[1] == F4ST_OK, "resync on a false start (%u)", (unsigned)sent_len);
 
 	// Bad checksum
 	uint8_t p[6] = { 0x08, 0x00, 0xC0, 0x00, 0x00, 0x10 };
@@ -261,7 +304,7 @@ static void test_hello_and_framing(void)
 	f4stub_idle(&eng);
 	len = frame(buf, F4OP_HELLO, NULL, 0);
 	f4stub_feed(&eng, buf, len);
-	CHECK(sent_len == 6 + 17 && sent[1] == F4ST_OK, "idle drops a partial frame");
+	CHECK(sent_len == 6 + 24 && sent[1] == F4ST_OK, "idle drops a partial frame");
 
 	CHECK(simple(0x77, NULL, 0) == F4ST_BADOP, "unknown op");
 }
@@ -431,6 +474,92 @@ static void test_update_order(void)
 	}
 }
 
+static uint8_t xsums(uint32_t addr, uint16_t count, const uint8_t **b, uint32_t *n)
+{
+	uint8_t p[7];
+	put32(p, addr);
+	p[4] = (uint8_t)(count >> 8);
+	p[5] = (uint8_t)count;
+	p[6] = F4_MEM_SPI;
+	return request(F4OP_SUMS, p, 7, b, n);
+}
+
+static uint8_t xerase(uint32_t addr, uint32_t magic)
+{
+	uint8_t p[8];
+	put32(p, addr);
+	put32(p + 4, magic);
+	return simple(F4OP_XERASE, p, 8);
+}
+
+static uint8_t xprogram(uint32_t addr, const uint8_t *data, uint32_t n)
+{
+	static uint8_t p[4 + F4STUB_BLOCK];
+	put32(p, addr);
+	memcpy(p + 4, data, n);
+	return simple(F4OP_XPROGRAM, p, (uint16_t)(4u + n));
+}
+
+static void test_spi(void)
+{
+	const uint8_t *b;
+	uint32_t n;
+	for (uint32_t i = 0; i < SPI_SIZE; i++) {
+		spi[i] = (uint8_t)(i * 13u + (i >> 12));	// a codeplug
+	}
+	memset(spi + 0x80000, 0xFF, F4STUB_BLOCK);
+
+	// SUMS and READ on memory 1, addresses from 0
+	CHECK(xsums(0x1000, 2, &b, &n) == F4ST_OK && n == 10, "spi sums");
+	CHECK(get32(b) == f4stub_crc32(0, spi + 0x1000, F4STUB_BLOCK) && b[4] == 0, "spi sum of a block");
+	CHECK(xsums(0x80000, 1, &b, &n) == F4ST_OK && b[4] == 1, "spi blank flag");
+	CHECK(xsums(0x0FF000, 2, NULL, NULL) == F4ST_BADARG, "spi sums past the chip");
+	CHECK(xsums(0x1001, 1, NULL, NULL) == F4ST_BADARG, "spi sums misaligned");
+	uint8_t p7[7] = { 0x08, 0x00, 0xC0, 0x00, 0, 1, 7 };
+	CHECK(simple(F4OP_SUMS, p7, 7) == F4ST_BADARG, "an unknown memory");
+	uint8_t r[7];
+	put32(r, 0x2000);
+	r[4] = 1;
+	r[5] = 0;
+	r[6] = F4_MEM_SPI;
+	sent_len = 0;
+	{
+		uint8_t buf[16];
+		uint32_t len = frame(buf, F4OP_READ, r, 7);
+		f4stub_feed(&eng, buf, len);
+	}
+	CHECK(sent[1] == F4ST_OK && get32(sent + 6) == f4stub_crc32(0, spi + 0x2000, F4STUB_BLOCK) &&
+	      memcmp(sent + 13, spi + 0x2000, F4STUB_BLOCK) == 0, "spi read");
+
+	// Erase needs the magic and a sector boundary; program needs erased bytes inside one sector, read back
+	CHECK(xerase(0x3000, 0x12345678u) == F4ST_REFUSED && spi_erases == 0, "spi erase without the magic");
+	CHECK(xerase(0x3100, F4STUB_MAGIC) == F4ST_BADARG, "spi erase off a sector boundary");
+	CHECK(xerase(SPI_SIZE, F4STUB_MAGIC) == F4ST_BADARG, "spi erase past the chip");
+	CHECK(xerase(0x3000, F4STUB_MAGIC) == F4ST_OK && spi[0x3000] == 0xFF && spi[0x3FFF] == 0xFF, "spi erase");
+	uint8_t data[F4STUB_BLOCK];
+	for (uint32_t i = 0; i < sizeof(data); i++) {
+		data[i] = (uint8_t)(i * 3u + 1u);
+	}
+	CHECK(xprogram(0x3000, data, F4STUB_BLOCK) == F4ST_OK && memcmp(spi + 0x3000, data, F4STUB_BLOCK) == 0,
+	      "spi program a whole sector");
+	CHECK(xprogram(0x3000, data, 16) == F4ST_REFUSED, "spi program over written bytes");
+	CHECK(xprogram(0x4FF8, data, 16) == F4ST_BADARG, "spi program across a sector");
+	CHECK(xerase(0x5000, F4STUB_MAGIC) == F4ST_OK, "spi erase again");
+	spi_flip = true;
+	CHECK(xprogram(0x5000, data, 64) == F4ST_FLASHERR, "spi program that reads back wrong");
+	spi_flip = false;
+	spi_dead = true;
+	CHECK(xsums(0x1000, 1, NULL, NULL) == F4ST_FLASHERR, "spi chip gone: sums");
+	spi_dead = false;
+
+	// No chip: memory 1 is refused, internal flash still works
+	port.xsize = 0;
+	CHECK(xsums(0x1000, 1, NULL, NULL) == F4ST_BADARG, "no SPI flash: sums refused");
+	CHECK(xerase(0x3000, F4STUB_MAGIC) == F4ST_BADARG, "no SPI flash: erase refused");
+	CHECK(request(F4OP_HELLO, NULL, 0, &b, &n) == F4ST_OK && get32(b + 17) == 0, "no SPI flash: hello says 0");
+	port.xsize = SPI_SIZE;
+}
+
 static void test_reset(void)
 {
 	uint8_t p[4];
@@ -452,6 +581,7 @@ int main(void)
 	test_erase_rules();
 	test_program_rules();
 	test_update_order();
+	test_spi();
 	test_reset();
 	printf("f4stubTest: %d checks, %d failures\n", checks, failures);
 	return failures == 0 ? 0 : 1;
