@@ -25,7 +25,7 @@ import { decideCodec } from "./decide.js";
 import { readBootKey } from "./bootkey.js";
 import { loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel } from "./dom.js";
+import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
 import { FakeC7000, c7000Simulation } from "./fakec7000.js";
 import { slotBytes, locateCodec } from "./c7000.js";
@@ -856,11 +856,12 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 				notes: after && S.now?.kind !== "odr" ? [t("flash.backup.note_after")] : [],
 			};
 			const bytes = await makeBundle(meta, S.backupParts, { git: S.data.site.git, url: location.origin });
-			download(bundleName(meta), bytes, "application/zip");
+			const name = bundleName(meta);
+			download(name, bytes, "application/zip");
 			S.backupDone = true;
 			flashFinished(started);
 			const incomplete = S.backupParts.filter((x) => !x.complete && x.what !== "spi-flash").map((x) => x.file);
-			box.append(notice(t("flash.backup.saved", { size: Math.round(bytes.length / 1024) }), "ok"));
+			box.append(notice(t("flash.backup.saved", { name, size: Math.round(bytes.length / 1024) }), "ok"));
 			if (incomplete.length) box.append(notice(t("flash.backup.incomplete", { files: incomplete.join(", ") })));
 			onDone?.();
 		} catch (e) {
@@ -1243,7 +1244,8 @@ function backupView() {
 	const status = h("div");
 	const connect = button(t("flash.backup.connect"), async () => {
 		try {
-			const p = await probe(await connectSerial());
+			const link = await connectSerial();
+			const p = await probe(link);
 			if (!p) throw new Error(t("flash.err.no_answer"));
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
 			S.now = await odrNow(link, p);
@@ -1251,15 +1253,17 @@ function backupView() {
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, p.codec || "?")),
 			h("details", { class: "small" }, h("summary", {}, t("flash.backup.add_stock")),
 				filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; })),
-			backupNow({ when: "task" }));
+			backupNow({ when: "task", actions: (b) => S.forward(b),
+				onDone: () => S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true })) }));
 		} catch (e) {
 			await dropSerial();
-			status.replaceChildren(connectError(e));
+			status.replaceChildren(connectError(e), serialHelp());
 		}
 	}, { primary: true });
+	// Connect is the step's action until the radio answers; then the backup's own run button takes its place
+	S.forward(connect);
 	box.append(panel(t("flash.backup.task_title", { name: S.radio.name }), h("p", {}, t("flash.backup.task_lead")),
-		S.radio.backup.stock === "none" ? notice(t("flash.backup.stock_none"), "info") : null,
-		h("div", { class: "actions" }, connect), serialHelp(), status));
+		S.radio.backup.stock === "none" ? notice(t("flash.backup.stock_none"), "info") : null, status));
 	return box;
 }
 
@@ -1291,11 +1295,11 @@ function restoreView() {
 	if (!S.restoreTarget) S.restoreTarget = avail.includes(S.restoreHint) ? S.restoreHint : avail[0] || null;
 	const summary = h("dl", { class: "kv-list" },
 		h("dt", {}, t("flash.now.board")), h("dd", {}, meta.radio.name),
-		h("dt", {}, t("flash.restore.taken")), h("dd", {}, meta.created),
+		h("dt", {}, t("flash.restore.taken")), h("dd", {}, localTime(meta.created)),
 		meta.radio.chip ? [h("dt", {}, t("flash.now.uid")), h("dd", {}, meta.radio.chip.uid)] : null,
 		h("dt", {}, t("flash.restore.fw_now")), h("dd", {}, describeFirmware(meta.firmware_now)),
 		meta.firmware_before ? [h("dt", {}, t("flash.restore.fw_before")), h("dd", {}, describeFirmware(meta.firmware_before))] : null,
-		h("dt", {}, t("flash.restore.parts")), h("dd", {}, [...b.parts.values()].map((p) => `${p.file}${p.complete ? "" : " (incomplete)"}`).join(", ")));
+		h("dt", {}, t("flash.restore.parts")), h("dd", {}, partNames(b.parts)));
 	const choices = h("div", { class: "choice-grid" }, ["odr", "codeplug", "stock"].map((tg) =>
 		h("button", { class: "choice", type: "button", disabled: !avail.includes(tg), "aria-pressed": String(S.restoreTarget === tg),
 			onclick: () => { S.restoreTarget = tg; render(); } },
@@ -1320,8 +1324,14 @@ function restoreView() {
 
 function afterRestore() {
 	if (S.restoreTarget === "stock") {
+		S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
 		return panel(t("flash.restore.done_stock_title"), h("p", {}, t("flash.restore.done_stock")),
 			notice(t("flash.restore.spi_note"), "info"));
+	}
+	// a backup without the memory chip has no channels to put back: the firmware was the whole restore
+	if (!S.bundle.parts.get("spi-flash")) {
+		S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
+		return panel(t("flash.restore.done_fw_title"), h("p", {}, t("flash.restore.done_fw")));
 	}
 	const status = h("div");
 	const prog = progressBar();
@@ -1337,12 +1347,14 @@ function afterRestore() {
 			const refused = await writeCodeplug(link, sectors, (d, n) => prog.set(d, n, t("flash.restore.writing_codeplug")));
 			status.append(notice(refused.length ? t("flash.restore.codeplug_refused", { n: refused.length, total: sectors.length })
 				: t("flash.restore.codeplug_done", { n: sectors.length }), refused.length ? "" : "ok"));
+			S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
 		} catch (e) {
-			status.append(connectError(e));
+			status.append(connectError(e), serialHelp());
 			go.disabled = false;
 		}
-	}, { primary: true, disabled: !S.bundle.parts.get("spi-flash") });
-	return panel(t("flash.restore.codeplug_title"), h("p", {}, t("flash.restore.codeplug_lead")), go, serialHelp(), status);
+	}, { primary: true });
+	S.forward(go);
+	return panel(t("flash.restore.codeplug_title"), h("p", {}, t("flash.restore.codeplug_lead")), status);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

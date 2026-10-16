@@ -60,7 +60,7 @@ export async function extract(data, key, fb, profiles = fb.profiles) {
 	for (const [i, [addr, length, want]] of prof.windows.entries()) {
 		const plain = decrypt(data, appFileOffset(segs, addr, fb), length, key, fb);
 		const got = await sha256(plain);
-		if (got !== want) throw new StockError(`decrypted ${i === 0 ? "code" : i === 1 ? "tables" : "table"} window doesn't match (wrong key?)`);
+		if (got !== want) throw new StockError(`decrypted ${i === 0 ? "code" : i === 1 ? "tables" : "table"} window does not match (wrong key?)`);
 		out.push([addr, plain]);
 	}
 	if (u32le(out[0][1], 0) !== fb.codec_sig) throw new StockError("the codec's first word is wrong");

@@ -68,18 +68,18 @@ export async function codecFromFile(data, c, boardId) {
 	if (data.length === c.progmem_size) {
 		const got = await locateCodec(data, c, boardId);
 		if (got) return got;
-		throw new CodecError("this program memory backup holds no codec this flasher knows for the radio");
+		throw new CodecError("this program memory backup contains no codec recognized for this radio");
 	}
 	const sha = await sha256(data);
 	const p = profilesFor(c, boardId).find((x) => x.stock_file?.sha256 === sha);
 	if (!p) {
 		const names = profilesFor(c, boardId).filter((x) => x.stock_file).map((x) => x.name);
-		throw new CodecError(`not a stock firmware file this flasher can take the codec from${names.length ? ` (it knows ${names.join(", ")})` : ""}`);
+		throw new CodecError(`not a stock firmware file the codec can be taken from${names.length ? ` (supported: ${names.join(", ")})` : ""}`);
 	}
 	const off = (a) => a - c.app_base + c.stock_header;
 	const code = data.slice(off(p.stock_file.code), off(p.stock_file.code) + p.code_len);
 	const tables = data.slice(off(p.stock_file.tables), off(p.stock_file.tables) + p.tables_len);
-	if ((await sha256(code)) !== p.code_sha256 || (await sha256(tables)) !== p.tables_sha256) throw new CodecError("the codec windows in this file don't match");
+	if ((await sha256(code)) !== p.code_sha256 || (await sha256(tables)) !== p.tables_sha256) throw new CodecError("the codec areas in this file do not match");
 	return { profile: p, codeAddr: p.stock_file.code - c.progmem_base, tablesAddr: p.stock_file.tables - c.progmem_base, code, tables };
 }
 
@@ -97,7 +97,7 @@ export function slotBytes(c, boardId, { profile: p, code, tables }) {
 	words.forEach((w, i) => out.set(le32(w), 4 * i));
 	out.set(code, codeOff);
 	out.set(tables, tabOff);
-	if (out.length > lay.slot[1] - lay.slot[0]) throw new CodecError("the codec doesn't fit the slot");
+	if (out.length > lay.slot[1] - lay.slot[0]) throw new CodecError("the codec does not fit the codec slot");
 	return out;
 }
 
@@ -150,7 +150,7 @@ export function target(c, boardId, image, slot = null) {
 	const lay = c.boards[boardId];
 	const room = lay.slot[0] - c.app_start;
 	if (image.length > room) throw new CodecError(`the image (${image.length} bytes) runs into the codec slot (${room} bytes free)`);
-	if (u32le(image, 0) === 0 || new Set(image.subarray(0, 64)).size < 2) throw new CodecError("this doesn't look like an application image");
+	if (u32le(image, 0) === 0 || new Set(image.subarray(0, 64)).size < 2) throw new CodecError("this file is not a firmware image");
 	const end = slot ? c.app_end : c.app_start + Math.ceil(image.length / c.sector) * c.sector;
 	const out = new Uint8Array(end - c.app_start).fill(0xFF);
 	out.set(image, 0);

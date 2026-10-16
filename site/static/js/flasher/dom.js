@@ -35,6 +35,20 @@ export function download(name, bytes, type = "application/octet-stream") {
 	setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// A bundle's ISO time as people read it, in their own time zone
+export function localTime(iso) {
+	const d = new Date(iso);
+	return isNaN(d) ? String(iso || "") : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+// What a backup holds, in words: one name per part, its file name when there's no word for it
+export function partNames(parts) {
+	return [...parts.values()].map((p) => {
+		const k = `flash.part.${p.what}`;
+		return (t(k) !== k ? t(k) : p.file) + (p.complete ? "" : ` (${t("flash.part.incomplete")})`);
+	}).join(", ");
+}
+
 export async function readFile(input) {
 	const f = input.files?.[0];
 	return f ? { name: f.name, data: new Uint8Array(await f.arrayBuffer()) } : null;

@@ -146,8 +146,8 @@ export class Stub {
 			throw new StubError(`ODR refused ${what} (${last?.message})`);
 		};
 		const offer = await Stub.odrOffer(link);
-		if (!offer) throw new StubError("this ODR build can't hand over to the loader (built without CONFIG_STUB_ENTRY)");
-		if (image.length > offer.size) throw new StubError(`the stub (${image.length} bytes) doesn't fit ODR's free RAM (${offer.size} bytes)`);
+		if (!offer) throw new StubError("this ODR build cannot hand over to the loader (built without CONFIG_STUB_ENTRY)");
+		if (image.length > offer.size) throw new StubError(`the stub (${image.length} bytes) does not fit ODR's free RAM (${offer.size} bytes)`);
 		this.log(`ODR offers ${offer.size} bytes of RAM at 0x${offer.load.toString(16)}; sending the ${image.length}-byte stub`);
 		await dl(concat(new Uint8Array([1]), le32(STUB_MAGIC), le32(image.length), le32(crc32(image)), le32(entry ?? offer.load)), "the stub transfer");
 		for (let off = 0; off < image.length; off += offer.chunk) {
@@ -306,7 +306,7 @@ export class Stub {
 		for (let pass = 0; ; pass++) {
 			const bad = await this.verify(mem, full, lo);
 			if (!bad.length) break;
-			if (pass >= this.retries) throw new StubError(`0x${bad[0].toString(16)}: the read doesn't match the radio's checksum after ${pass + 1} tries`);
+			if (pass >= this.retries) throw new StubError(`0x${bad[0].toString(16)}: the read does not match the radio's checksum after ${pass + 1} tries`);
 			this.log(`${bad.length} sector(s) read wrong (first 0x${bad[0].toString(16)}), reading them again`);
 			this.retried += bad.length;
 			for (const sa of bad) await this.readSectors(m, full, lo, sa, sa + SECTOR, { compress: false, signal, stats });

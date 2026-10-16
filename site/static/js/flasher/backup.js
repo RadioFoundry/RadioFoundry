@@ -73,8 +73,8 @@ export async function makeBundle(meta, parts, site = {}) {
 		`Firmware when the backup was taken: ${describeFirmware(meta.firmware_now)}`,
 		meta.firmware_before ? `Firmware before ODR was installed: ${describeFirmware(meta.firmware_before)}` : "",
 		"",
-		"Keep this file. The OpenDigitalRadio web flasher (Restore) can put the radio back the way it was from it.",
-		"It holds your radio's calibration and codeplug: don't share it.",
+		"Keep this file. The OpenDigitalRadio radio programming utility (Restore) can restore the radio from it.",
+		"It contains your radio's calibration and codeplug. Do not share it.",
 		"",
 		...listed.map((p) => `${p.file}: ${p.what} at ${p.addr}, ${p.size} bytes${p.complete ? "" : " (incomplete read)"}, sha256 ${p.sha256}`),
 	].filter((l, i, a) => l !== "" || a[i - 1] !== "").join("\n") + "\n";
@@ -102,17 +102,17 @@ export async function openBundle(bytes) {
 	try {
 		files = await unzip(bytes);
 	} catch (e) {
-		throw new BackupError(`not a backup bundle: ${e.message}`);
+		throw new BackupError(`this file is not a backup created by the radio programming utility (${e.message})`);
 	}
 	const doc = files.get("backup.json");
-	if (!doc) throw new BackupError("not a backup bundle: no backup.json inside");
+	if (!doc) throw new BackupError("this file is not a backup created by the radio programming utility (no backup.json)");
 	const meta = JSON.parse(new TextDecoder().decode(doc));
 	if (meta.format !== FORMAT) throw new BackupError(`unknown backup format ${meta.format}`);
 	const parts = new Map();
 	for (const p of meta.parts) {
 		const data = files.get(p.file);
-		if (!data) throw new BackupError(`${p.file} is missing from the bundle`);
-		if (await sha256(data) !== p.sha256) throw new BackupError(`${p.file} doesn't match its checksum: the bundle is damaged`);
+		if (!data) throw new BackupError(`${p.file} is missing from the backup file`);
+		if (await sha256(data) !== p.sha256) throw new BackupError(`${p.file} does not match its checksum; the backup file is damaged`);
 		parts.set(p.what, { ...p, addr: Number(p.addr), data });
 	}
 	return { meta, parts };
