@@ -86,7 +86,7 @@ Status per modem driver:
 | Driver | Radios | Items |
 |---|---|---|
 | HR_C6000 (`drivers/modem/hrc6000/hrc6000_dmr.c`, owned by the DMR modem work) | DM-1701 (the MD-380 builds without SFR) | all: `sync_override`, idle bursts, `host_crc`, `DMR_TIMING_ALIGNED` (to the slot numbering it learned from the bursts heard), `tx_listen`, `DMR_BURST_EMPTY`, the TX slot events; reports keep coming while it transmits |
-| HR_C7000 (`drivers/modem/hrc7000/hrc7000_dmr.c`) | DM-32UV | `sync_override` and the TX slot events; the rest not yet |
+| HR_C7000 (`drivers/modem/hrc7000/hrc7000_dmr.c`) | DM-32UV, DM-1801 Pro | all: `sync_override`, `DMR_TIMING_ALIGNED` (the TX slot built from the receive slot, ours picked by slot number), `tx_listen` (with the voice-access flag during a call), `DMR_BURST_EMPTY`, `tx_fill`, the TX slot events; headers and terminators heard while sending are passed on with the chip's CRC verdict. On air on the DM-32UV (gotchas 14.11) |
 
 The board switches the RF per burst: the RF TX interrupt keys the PA, the timeslot interrupt that starts the next slot
 drops it (on the DM-1701 the AT1846S goes back to RX about 1.3 ms into the slot, gotchas 3.4). The rest of this
