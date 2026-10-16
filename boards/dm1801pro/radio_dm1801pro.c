@@ -36,7 +36,9 @@
 #define PA_RAMP_STEPS		40u		// 5.4
 #define PA_RAMP_STEP_US		50u
 #define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on (5.4)
-#define DMR_PA_DELAY_US		28000u		// the DM-32UV's "DMR PA" default; the radio's own isn't known (5.4)
+// The DM-32UV's "DMR PA" default. The radio has no PA timer: its ramp starts about 2 ms after the RF TX interrupt
+// (5.4), and this delay puts the drive 2.1-3.2 ms after it (5.6)
+#define DMR_PA_DELAY_US		28000u
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
 

@@ -30,11 +30,10 @@ static const fd6818_regval_t fm_table[] = {
 	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x0140 }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
 };
 
-// 5.4 "Mode select": DMR is these five registers (0x28 is its power-on value, written again). The per-burst handlers
-// that follow in the radio's own sequence (5.4's open item) are not known, so the burst switch is the RX and TX
-// sequences
+// 5.3: DMR is these five registers (0x28 is its power-on value, written again), then 0x3F = 0: the radio writes it
+// in every DMR receive set-up and at every burst end (5.4), so in DMR it never has the power-on 07FE
 static const fd6818_regval_t dmr_table[] = {
-	{ 0x47, 0x0140 }, { 0x48, 0xB2F5 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 },
+	{ 0x47, 0x0140 }, { 0x48, 0xB2F5 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
 };
 
 // 5.4: 0x37 first, the DM-32UV's 0x30 steps with a 0x0200 between idle and the final word

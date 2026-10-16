@@ -204,15 +204,18 @@ channel B (12 bit, the calibration byte times 16), ramped in 40 steps. K.
 The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM audio are the DM-32UV's, shared
 (`platform/hrc7000/dmr_glue.c`, `audio_pcm.c`). The board supplies three hooks (`radio_dm1801pro.c`):
 
-- **Per-burst RF switch** (the RF TX interrupt): RX path off, FD6818 idle, the TX sequence, register 0x50 = 3B18; after
-  the burst the drive goes to 0, the RX sequence runs with the DMR bandwidth word 0x3048 and the RX path comes back on.
-  The radio's own per-burst handlers are not decoded (?), so this is the RX and TX sequences of 5.4. Each frame takes
-  about five times the DM-32UV's, so a switch is about a millisecond with interrupts off; the slot timing tolerates it
-  on the bench.
+- **Per-burst RF switch** (the RF TX interrupt): RX path off, TX path on, FD6818 idle, the TX sequence, register
+  0x50 = 3B18; after the burst (the engine's first slot tick 20 ms or more after the RF TX interrupt) the drive goes to
+  0, the RX path comes back on, the TX path goes off, then 0x43 = 3048, idle and the RX sequence. Against the radio's
+  own handlers (5.4) this skips the frequency, 0x47, 0x32 and 0x3F writes (0x3F stays 0 from the DMR mode set), switches the paths in another order, has
+  none of the waits, steps the drive instead of ramping it, and ends the burst on a slot tick instead of the RF RX
+  interrupt. Each frame takes 240 us with ODR's bus delays, so a switch is a millisecond or more with interrupts off;
+  the slot timing tolerates it on the bench. The DMR mode set ends with 0x3F = 0000, the radio's DMR receive value.
 - **PA key:** the TX path switches on and off with each burst. With it on for the whole transmission, a hotspot (keyed
   while it listens) received nothing (2026-10-16). Per burst, `test_dmr_tx_off_air` passes: ramps up 1.44 ms, down
-  0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's
-  delay; this radio's isn't known, ?), in one write: a ramp doesn't fit in a burst.
+  0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's "DMR PA"
+  delay), in one write. That puts it 2.1-3.2 ms after the RF TX interrupt (section 12), about where the radio's own
+  ramp starts (5.4, I), so the delay stays.
 - **Keyed but idle:** a DMR `tx()` leaves the FD6818 and the RX path in receive until the first burst. The hotspot keeps
   the radio keyed while it listens, and with the FD6818 in TX from `tx()` it heard nothing (checked on the bench).
 - **Voice:** the radio's own codec, carved from a program flash read into the slot at 0x030E8000 and run by the shared
