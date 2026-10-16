@@ -5,6 +5,7 @@
 #include <string.h>
 #include "config.h"
 #include "platform.h"
+#include "vocoder.h"
 
 #define SOFT_RESET_SPINS	1000000u
 #define WDT_KEY			0x5ADA7200u
@@ -43,9 +44,14 @@ static bool reboot(uint8_t mode)
 }
 
 #if CONFIG_STUB_ENTRY
-// Runtime RAM-monitor entry (docs/spec/hardware-dm32.md 17.2): the stock-codec RAM window, which ODR leaves free
+// Runtime RAM-monitor entry (docs/spec/hardware-dm32.md 17.2): the stock-codec RAM window. A radio that hosts its
+// codec runs it there, so the codec stops first (bench 2026-10-15: the upload overwrote the running codec and hung the
+// radio on a DMR channel)
 static uint8_t *stub_region(uint32_t *size)
 {
+#if CONFIG_DMR
+	hrc_vocoder_park();
+#endif
 	*size = HRC_STUB_SIZE;
 	return (uint8_t *)(uintptr_t)HRC_STUB_BASE;
 }
