@@ -65,7 +65,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 41 | PTB9 | power knob switch; its level at start-up means "on" | in | R |
 | 42 | PTB10 | input with interrupt, role unknown | in | ? |
 | 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed | in | R |
-| 46 / 47 | PTB14 / PTB15 | audio path switches (the DM-32UV's mic path and speaker source). PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. ODR drives PTB14 as PTB15's complement; it doesn't change the speaker | low | R for PTB15, I for PTB14 |
+| 46 / 47 | PTB14 / PTB15 | audio path switches, as on the DM-32UV. PTB14 high = the microphone to the HR_C7000's FM input (set for each FM transmission; low there cut speech from 140 to 43 Hz rms, section 12). PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. In receive ODR drives PTB14 as PTB15's complement; it doesn't change the speaker | low | R |
 | 50-54 | PTB18-PTB22 | keypad strobes, low one at a time | | K |
 | 48 | PTB16 | output, role unknown; not the amplifier | low | R |
 | 56 | PTB24 | vibration motor, high = on | low | R |
