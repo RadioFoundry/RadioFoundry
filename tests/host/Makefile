@@ -521,7 +521,7 @@ run-stubEntry: stubEntryTest
 # calibration decoder (docs/spec/hardware-dm32.md, modem-hrc7000.md)
 DM32    := $(ROOT)/boards/dm32
 HRC7    := $(ROOT)/drivers/modem/hrc7000
-TESTS   += fd6818Test st7567Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
+TESTS   += fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest
 
 fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(SUBAUDIO)
@@ -532,6 +532,8 @@ st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers
 st7789Test: st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c $(ROOT)/drivers/display/st7789/st7789.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c
 
+sharedPttTest: sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/sharedptt/shared_ptt.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c
 keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
 
@@ -556,13 +558,14 @@ dm32CalTest: dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/dri
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-dm32
-run-dm32: fd6818Test st7567Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest
+run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
 	./st7567Test
 	./st7789Test
 	./keymatrixTest
+	./sharedPttTest
 	./hrc7000DmrTest
 	./dm32CalTest
 	python3 -I $(ROOT)/tools/dm32_codec.py --self-test

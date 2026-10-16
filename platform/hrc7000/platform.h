@@ -264,5 +264,8 @@ extern const hal_stream_t hrc_host_uart_stream;
 void hrc_host_uart_init(void);
 uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
 uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
+// When the last byte without a line error arrived (hal_millis()); false if none has yet. A board whose PTT shares the
+// serial line (drivers/input/sharedptt) reads it to tell host data from a press
+bool hrc_host_uart_last_rx(uint32_t *ms);
 
 #endif
