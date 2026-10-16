@@ -150,7 +150,9 @@ which gives receive audio on the speaker path (R).
   steps into DAC B). **Leave TX:** wait, PA ramp down, wait, TX path off, wait, RX frequency (0x32=0244, 0x47=6042),
   RX sequence, RX path on. The radio's waits are an uncalibrated count; ODR uses 1 ms. K for the order.
 - RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external LNA gain). Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte; the
-  tone frequency scale (register 0x07) isn't decoded. ODR uses the modem's tone generator and detector as on the DM-32UV.
+  tone frequency scale (register 0x07) isn't decoded. ODR sends the tone with the modem's generator and detects it with
+the FD6818 (`fd6818_set_rx_tone`, result in 0x0C), as on the DM-32UV: the modem's detector has no input while the FD6818
+plays FM to the speaker.
 
 ### 5.5 Paths and PA
 
@@ -164,12 +166,16 @@ channel B (12 bit, the calibration byte times 16), ramped in 40 steps. K.
 The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM audio are the DM-32UV's, shared
 (`platform/hrc7000/dmr_glue.c`, `audio_pcm.c`). The board supplies three hooks (`radio_dm1801pro.c`):
 
-- **Per-burst RF switch** (the RF TX interrupt): FD6818 idle, the TX sequence, register 0x50 = 3B18; after the burst the
-  drive goes to 0 and the RX sequence runs with the DMR bandwidth word 0x3048. The radio's own per-burst handlers are not
-  decoded (?), so this is the RX and TX sequences of 5.4. Each frame takes about five times the DM-32UV's, so a switch is
-  about a millisecond with interrupts off; whether the slot timing tolerates that is a bench question.
-- **PA key:** the TX path comes on when the transmission starts and the DAC B drive is set 28 ms after each burst is armed
-  (the DM-32UV's delay; this radio's isn't known, ?), in one write: a ramp doesn't fit in a burst.
+- **Per-burst RF switch** (the RF TX interrupt): RX path off, FD6818 idle, the TX sequence, register 0x50 = 3B18; after
+  the burst the drive goes to 0, the RX sequence runs with the DMR bandwidth word 0x3048 and the RX path comes back on.
+  The radio's own per-burst handlers are not decoded (?), so this is the RX and TX sequences of 5.4. Each frame takes
+  about five times the DM-32UV's, so a switch is about a millisecond with interrupts off; the slot timing tolerates it
+  on the bench.
+- **PA key:** the TX path comes on when the transmission starts and stays on to its end (switching it per burst put
+  power steps into the bursts on the bench). The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's
+  delay; this radio's isn't known, ?), in one write: a ramp doesn't fit in a burst.
+- **Keyed but idle:** a DMR `tx()` leaves the FD6818 and the RX path in receive until the first burst. The hotspot keeps
+  the radio keyed while it listens, and with the FD6818 in TX from `tx()` it heard nothing (checked on the bench).
 - **Voice:** the radio's own codec, carved from a program flash read into the slot at 0x030E8000 and run by the shared
   host `platform/hrc7000/vocoder.c` (codec-dm1801pro.md 4). Without the slot, DMR runs without voice. On the bench, a
   voice call decoded by the SDR bench's modem had 1 corrected bit in 162 AMBE frames. Encode takes about 12 ms of each
@@ -357,5 +363,7 @@ there:
 Checked with the SDR bench's modem: DMR voice receive and transmit with the radio's own codec, late entry (2026-10-15:
 18 of 36 bursts played, as the HIL test expects), the GPS, privacy and emergency call transmit tests, and DMR data:
 confirmed data with its response, SMS and ETSI SMS received and acknowledged. FM transmit with CTCSS 100.0 and DCS 023
-(normal and inverted) was decoded by a DM-32UV; the SDR bench's FM transmit tests are not run yet. Not in: the air band, the broadcast tuner's screens, USB
-(the radio has none).
+(normal and inverted) was decoded by a DM-32UV, and the SDR bench's FM transmit tests (CTCSS, DCS, tone burst) pass.
+The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
+Not in: the air band, the broadcast tuner's screens, USB (the radio has none). VOX: the radio doesn't read its
+microphone level yet, so VOX never arms (`vox.mic=0`).

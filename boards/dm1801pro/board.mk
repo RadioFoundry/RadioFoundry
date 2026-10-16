@@ -7,7 +7,7 @@ PLATFORM   := hrc7000
 # (docs/spec/hardware-dm1801pro.md 6.1)
 MCU_DEFS   := -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BASE=0x720000u
 LDSCRIPT   := boards/dm1801pro/dm1801pro.ld
-BOARD_DIRS := boards/dm1801pro drivers/rf/fd6818 drivers/modem/hrc7000 drivers/display/st7567 drivers/flash/spi_nor \
+BOARD_DIRS := boards/dm1801pro drivers/rf/fd6818 drivers/rf/subaudio drivers/modem/hrc7000 drivers/display/st7567 drivers/flash/spi_nor \
 	drivers/input/keymatrix drivers/cal/baofeng \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio drivers/sensor/lis3dh
 # State the core marks ODR_CPU_RAM goes to the low SRAM below the codec window (dm1801pro.ld RAM_LO; zeroed by crt0)

@@ -47,6 +47,7 @@ static bool transmitting;
 static uint32_t tx_hz;		// FM TX frequency and bandwidth, for the TX tone deviation
 static bool tx_wide;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
+static void ring_play_update(void);
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
 
 static void speaker_source(void);
@@ -136,6 +137,16 @@ static hrc7000_tone_t c7_tone(uint8_t type)
 	}
 }
 
+static fd6818_tone_t fd_tone(uint8_t type)
+{
+	switch (type) {
+	case TONE_CTCSS: return FD6818_TONE_CTCSS;
+	case TONE_DCS: return FD6818_TONE_DCS;
+	case TONE_DCS_INV: return FD6818_TONE_DCS_INV;
+	default: return FD6818_TONE_NONE;
+	}
+}
+
 static void write_mod_bias(uint32_t hz)
 {
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(hz)));
@@ -143,13 +154,15 @@ static void write_mod_bias(uint32_t hz)
 
 // ---- From the DMR interrupts ----
 
-// RF TX interrupt (tx): FD6818 idle then TX for our burst, then the TX aux word. After the burst: PA drive off, FD6818
-// back to receive. The band path pins stay as tx() / rx() set them for the whole transmission
+// RF TX interrupt (tx): RX path off, FD6818 idle then TX for our burst, then the TX aux word. After the burst: PA drive
+// off, FD6818 back to receive, RX path on. The TX path stays on for the whole transmission: switching it per burst put
+// power steps into the bursts
 static void dmr_rf_switch(bool tx)
 {
 	if (!tx) {
 		DAC_DATA_B = 0;
 	}
+	rx_path(rx_hz, !tx);
 	fd6818_dmr_burst(&fd, tx, fd.variant->bw_dmr);
 	if (tx) {
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
@@ -230,6 +243,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	tx_path(hz, false);
 	fd6818_set_freq(&fd, hz);
 	if (mode == RADIO_MODE_DMR) {
+		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		rx_path(hz, true);
@@ -240,8 +254,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 		dac_b_power(false);
 		hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
 		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);	// FM plays on the analog path (speaker_source)
-		hrc7000_set_subtone(&modem, false, c7_tone(tone != NULL ? tone->type : TONE_NONE),
-			tone != NULL ? tone->value : 0);
+		// The FD6818 detects the tone on its own demodulated audio: while it plays FM to the speaker (PTB15 high) the
+		// HR_C7000's detector has no input (hardware-dm32.md 8.4)
+		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
+		hrc7000_set_subtone(&modem, false, HRC7000_TONE_NONE, 0);	// the modem's tone bits off (left on by a TX)
 	}
 	rx_hz = hz;
 	rx_bw = bw;
@@ -268,15 +284,18 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	hal_delay_ms(1);
 	write_mod_bias(hz);
 	fd6818_set_freq(&fd, hz);
+	fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the HR_C7000's
 	dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
-		// The TX path comes on for the whole transmission; the drive waits for the PA one-shot of each burst
+		// The TX path comes on for the whole transmission; the FD6818 receives until our first burst and between bursts
+		// (dmr_rf_switch keys each one; the drive waits for the PA one-shot). A hotspot stays keyed like this while it
+		// listens, so the FD6818 and the RX path must stay in receive (set_freq left it idle)
 		hrc_pin_write(PIN_MIC_PATH, false);
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
-		fd6818_set_state(&fd, FD6818_STATE_TX);
-		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
+		fd6818_set_state(&fd, FD6818_STATE_RX);
 		hal_delay_ms(1);
 		tx_path(hz, true);
+		rx_path(rx_hz, true);
 		dmr_keyed = true;
 	} else {
 		fd6818_fm_tx_prepare(&fd);
@@ -294,6 +313,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		pa_ramp(0, tx_drive);
 	}
 	transmitting = true;
+	uint32_t irq = hrc_irq_save();
+	ring_play_update();
+	hrc_irq_restore(irq);
 	return true;
 }
 
@@ -319,6 +341,9 @@ static void tx_off(void)
 		rx(rx_hz, rx_bw, &t);
 	}
 	transmitting = false;
+	uint32_t irq = hrc_irq_save();
+	ring_play_update();
+	hrc_irq_restore(irq);
 }
 
 // FM TX tone (1750 Hz burst, roger beep, Morse): the modem's DTMF sender as a single tone (modem-hrc7000.md 8.3).
@@ -350,7 +375,7 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = fd6818_rssi_dbm(r67);
 	st->noise = fd6818_noise(r65);	// the chip's floor lifted above the core's squelch levels (fd6818.h)
 	st->carrier = false;
-	st->tone_ok = mode != RADIO_MODE_FM || hrc7000_subtone_ok(&modem);
+	st->tone_ok = mode != RADIO_MODE_FM || fd6818_rx_tone_ok(&fd, fd_tone(rx_tone.type));
 }
 
 // Receiver battery saving (FM receive only): the FD6818 idle and the RX path off; waking tunes again with rx()
@@ -404,6 +429,15 @@ static void audio(bool on)
 	}
 }
 
+// The prompt FIFO's playback (ring play) also feeds the TX modulator: a talk permit tone played at key-up rode on the
+// voice LC headers, and the bench modem then joined by late entry (DM-32UV bench 2026-10-15, modem-hrc7000.md 8.4).
+// It plays only while receiving; the caller holds the AUDIO_CONTROL lock (interrupts off)
+static void ring_play_update(void)
+{
+	bool play = pcm_on && !transmitting;
+	hrc7000_audio_bits(&modem, play ? C7_AUDIO_RING_PLAY : 0, play ? 0 : C7_AUDIO_RING_PLAY);
+}
+
 // Speaker PCM (a beep, DMR voice): the codec plays the CPU's samples from the prompt FIFO, the speaker listens to the
 // codec, and the
 // amplifier stays on for it whatever the squelch does. The modem's own FM playback is never used on this radio
@@ -412,7 +446,10 @@ void dm1801pro_speaker_pcm(bool on)
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
 	if (on != pcm_on) {
 		pcm_on = on;
-		hrc7000_audio_bits(&modem, on ? C7_AUDIO_RING_PLAY : 0, on ? C7_AUDIO_FM_PLAY : C7_AUDIO_RING_PLAY);
+		if (on) {
+			hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);
+		}
+		ring_play_update();
 		// Off: the amplifier first. Switching the source back while it still plays let a burst of the FD6818's
 		// squelched noise through at the end of every beep
 		if (!on) {
