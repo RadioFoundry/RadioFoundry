@@ -20,6 +20,7 @@ Every fact carries one tag.
 | **KP** | Taken from another firmware's source port (FM reportedly worked; DMR did not). Unverified on hardware |
 | **COM** | Community pin map (infotex58.ru forum topic 1168, `pinmap_14.06.26`), bench probing by others, unverified |
 | **INF** | Inferred by us from the above; not seen directly |
+| **HW** | Measured by us on a radio with this SoC (DM-32UV or DM-1801 Pro) |
 
 Where a KP value was later confirmed in an OpenDM32 binary it is tagged BIN.
 
@@ -58,7 +59,14 @@ All registers are in the modem/system block at 0x11000000. The sequence below is
 | 12 | IO_DIPLEX2 (0x03C) | clear bits 1:0 | CLK_OUT pin = PLLA clock out (DS: 0 = PLLA, the port's comment says PLLB) |
 
 Resulting clocks used everywhere below: CPU/AHB 168 MHz, APB 84 MHz (timers, UARTs, SPI, I2C), SoC reference
-24 MHz. Soft reset of the whole chip: QUAD_ENABLE = 0, then SYS_SOFT_RSTN = 0 (KP).
+24 MHz. Soft reset of the whole chip: QUAD_ENABLE = 0, then SYS_SOFT_RSTN = 0 (KP). The soft reset keeps
+LCSFC_BAUDR: after a session at divider 2 the ROM and bootloader can't read flash in single-bit mode and the radio stays
+dark until a power cycle. Set LCSFC_BAUDR = 4 before the reset (HW).
+
+The Baofeng bootloader starts the PLL itself but leaves the XIP controller in single-bit mode at the reset divider
+(QUAD_ENABLE = 0, LCSFC_BAUDR = 4, read on a DM-1801 Pro). Steps 2 and 3 must run anyway. Measured on the DM-1801 Pro,
+11.5 KB of straight-line code from flash: 2.9 ms as left, 0.9 ms with quad mode, 0.48 ms with quad mode and divider 2.
+Before the fix the idle radio used about 80% of the CPU and DMR voice encoding could not keep up (HW).
 
 ### 1.2 Boot header and start-up
 
@@ -1013,7 +1021,7 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/dm32_codec.py` | `dm32.ld` |
 | SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `dm32.ld` |
 | Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E20 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
-| Clocks | PLL sequence of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
+| Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock) | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c` |
 | RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
@@ -1068,8 +1076,8 @@ hand-over. Timer 2, the monitor's tick source, also runs at 84 MHz here (the hos
 
 **Quiesce and jump** (`platform/hrc7000/system.c` `enter_stub`, a `.ramfunc` so it runs after flash is handed back):
 CPU interrupts off (`psrclr ie`), every PIC source masked (both banks), the watchdog off (defensive), then
-`QUAD_ENABLE = 0` to put the XIP flash controller back to its reset mode so the program flash answers the monitor's SSI
-again (the same step `hrc_soft_reset` relies on), and a jump to the entry address. No DMA reaches SRAM on this board, so
+`QUAD_ENABLE = 0` and `LCSFC_BAUDR = 4` to put the XIP flash controller back to its reset mode so the program flash
+answers the monitor's SSI again and a later soft reset boots (the same steps `hrc_soft_reset` relies on), and a jump to the entry address. No DMA reaches SRAM on this board, so
 no DMA engine has to be stopped. RTOS tasks are not stopped gracefully; masking interrupts freezes the scheduler and the
 jump never returns (recover by a power cycle).
 

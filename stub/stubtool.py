@@ -168,6 +168,7 @@ GPIOA = 0x14020000
 IO_DIPLEX1 = 0x11000038
 SYS_SOFT_RSTN = 0x11000000
 QUAD_ENABLE = 0x1100005C
+LCSFC_BAUDR = 0x11000030            # XIP flash SCLK divider; a soft reset keeps it
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
 LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green, seen on a DM-1801 Pro 2026-10-15 (ODR pins.h has them the other way; DM-32UV unchecked)
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG = 0x05, 0x0A, 0x0B, 0x0C, 0x0E
@@ -493,9 +494,11 @@ class Radio:
         self.port.write(bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, sum8(payload), 0x03]) + payload)
 
     def reset_chip(self):
-        """Soft-reset the SoC (hardware-dm32.md 1.1: XIP quad off, then SYS_SOFT_RSTN = 0). The boot ROM runs again, offers
-        its serial window briefly, then starts the firmware from flash: the same as a power cycle without the cycle."""
+        """Soft-reset the SoC (hardware-dm32.md 1.1: XIP quad off and the reset divider, then SYS_SOFT_RSTN = 0). The boot
+        ROM runs again, offers its serial window briefly, then starts the firmware from flash: the same as a power cycle
+        without the cycle. The soft reset keeps the divider, and the ROM can't read flash at ODR's divider 2."""
         self.poke(QUAD_ENABLE, (0).to_bytes(4, "little"))
+        self.poke(LCSFC_BAUDR, (4).to_bytes(4, "little"))
         self.send_noreply(0x03, SYS_SOFT_RSTN.to_bytes(4, "big") + (0).to_bytes(4, "little"))
 
     def jump(self, addr):
@@ -1219,7 +1222,8 @@ def self_test():
         pass
     r.setup_led(32, 33, "red")
     r.reset_chip()
-    check(radio.pokes[-2:] == [(QUAD_ENABLE, 0), (SYS_SOFT_RSTN, 0)], "reset_chip pokes XIP quad off, then the soft reset (%s)" % (radio.pokes[-2:],))
+    check(radio.pokes[-3:] == [(QUAD_ENABLE, 0), (LCSFC_BAUDR, 4), (SYS_SOFT_RSTN, 0)],
+          "reset_chip pokes XIP quad off and the reset divider, then the soft reset (%s)" % (radio.pokes[-3:],))
     try:
         parse_led_spec("255:0")
         check(False, "bad LED spec refused")
