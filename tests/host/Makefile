@@ -219,8 +219,13 @@ keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c
 
+# The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
+TESTS   += miclevelTest
+miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
+
 run: run-core
-run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest
+run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest miclevelTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioFeaturesTest
@@ -229,6 +234,7 @@ run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTe
 	./bcastTest
 	./inputTest
 	./quadratureTest
+	./miclevelTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
