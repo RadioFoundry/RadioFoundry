@@ -255,14 +255,19 @@ Then, with ODR running (PORT is its USB serial port, `/dev/cu.usbmodem…` on ma
 | 7 | rebuild with a visible change (another `ODR_VERSION=`), then step 6 again | sectors 3 and the changed ones written, verified |
 | 8 | `python3 stub/stubtool.py PORT --attach --board dm1701 --boot reset` | ODR starts; `odr_debug.py version` shows the new `git=` |
 | 9 | `python3 stub/stubtool.py PORT --odr-enter --write-app ...` with yet another build, USB unplugged during the write, then a power cycle | the radio comes up in the bootloader with no keys held; odrflash restores it |
-| 10 | step 2 with the radio in USB network mode | the port comes back as a serial port; the stub answers |
+| 10 | `odr_debug.py radio usb network`, then `python3 stub/stubtool.py udp:RADIO_IP --odr-enter --peek 0x08000000:64` | the hand-over goes over UDP; the stub comes up as a serial port (`--stub-port`, default the one 1FC9:0094 port) and answers |
 
 Steps 4 and 5 write the dump outside the repository. Step 9 needs odrflash and the stock file at hand. The HIL suite
 can gain a test for steps 2 and 3 (opt-in, reads only).
 
+Results on the bench DM-1701 (2026-10-16, RDP level 1): steps 1 to 8 and 10 pass. The stub reads the bootloader's
+vector table from SRAM (so code running from RAM reads flash at RDP 1), a 1 MB read takes 2 s and matches the image
+flashed through the bootloader, an unchanged image writes 0 sectors, a changed one writes 5 sectors in 8 s, and the
+codec sectors stay (the radio still finds its codec). Step 9 is still to do.
+
 ## 12. Open points
 
-- No hardware run yet (section 11).
+- Step 9 of section 11 (an interrupted write and the recovery) on hardware.
 - MD-380: the bootloader's stack pointer check, and the stub on a real MD-380.
 - The web flasher: a `stub.js` path for the STM32 radios (reconnect after a re-enumeration, the update order of
   section 7).
