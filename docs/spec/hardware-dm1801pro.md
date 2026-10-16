@@ -335,8 +335,8 @@ receiving and orange flashing while scanning.
 - VHF transmit (the TX pair's VHF side); 12.5 kHz FM on air with the 0x3048 word; the DMR per-burst handlers and PA
   delay.
 - The display controller part and its contrast.
-- PTB14's role, PTB16's role; whether the HR_C7000's audio (microphone, prompt FIFO) reaches the FM modulator (APRS
-  AFSK sends a bare carrier, section 12).
+- PTB16's role; why the prompt FIFO's samples don't reach the FM modulator (APRS AFSK sends a bare carrier,
+  section 12).
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
 - The update file header.
@@ -388,7 +388,11 @@ nothing (10 Hz rms, no tones). So on this radio the HR_C7000 modulates its micro
 During the tones AUDIO_CONTROL reads 0x80000082 (b7 prompt path on, b31 FIFO full), WORK_MODE 0x80 and FM_PTT 1;
 a plain FM transmission reads 0x00000002 (diagnostics line `c7`). Unlike the DM-32UV, this radio never sets b6 (FM
 audio to the speaker), since its FM receive audio takes the FD6818's analog path, but setting b6 for the tones changed
-nothing either (6 Hz rms). Open; APRS receive is unchecked.
+nothing either (6 Hz rms). The microphone goes through the HR_C7000 as on the DM-32UV: speech with the codec ADC
+muted (CR_ADC b7) gave 3 Hz rms, with PTB14 low 43 Hz, normally 140 Hz. So the HR_C7000 is the FM modulator here
+too, and PTB14 high routes the microphone to its FM input (R). The prompt FIFO drains at the right rate during the
+tones (the frame keys for its full length, `aprs.rf_fail` none) but its samples don't reach the modulation. Open;
+APRS receive is unchecked.
 
 MMDVM SFR: the radio hears the call's header, uplinks it and starts the repeat in the other slot with the right
 link control, but while it sends, the HR_C7000 delivers almost nothing from the listening slot, so the call doesn't
