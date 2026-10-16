@@ -335,7 +335,8 @@ receiving and orange flashing while scanning.
 - VHF transmit (the TX pair's VHF side); 12.5 kHz FM on air with the 0x3048 word; the DMR per-burst handlers and PA
   delay.
 - The display controller part and its contrast.
-- PTB14's role, PTB16's role.
+- PTB14's role, PTB16's role; whether the HR_C7000's audio (microphone, prompt FIFO) reaches the FM modulator (APRS
+  AFSK sends a bare carrier, section 12).
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
 - The update file header.
@@ -376,8 +377,13 @@ Not in: the air band, the broadcast tuner's screens, USB (the radio has none). V
 microphone level yet, so VOX never arms (`vox.mic=0`).
 
 APRS: positions over DMR (LRRP and UDT) decode on the SDR bench. FM APRS uses the shared HR_C7000 AFSK
-(`platform/hrc7000/hrc_afsk.c`); in its first on-air run (2026-10-16) no frame went out (`aprs.rf_failed`, the step
-not yet known; `aprs.rf_fail` names it from 733e07e on). APRS receive is unchecked.
+(`platform/hrc7000/hrc_afsk.c`). In its first on-air run (2026-10-16) no frame went out (`aprs.rf_failed`). In a
+second run the same day the frame went out (`aprs.rf_sent`) but carried no tones: the SDR bench saw a 0.63 s
+carrier at 7 Hz rms in the 300-3000 Hz band, so nothing decoded. The same prompt FIFO path decodes on the DM-32UV.
+The board code is the same, so the difference is in this radio's audio wiring or in the FD6818's FM transmit set-up.
+A plain FM transmission with the microphone open showed 9 Hz rms in that band in a quiet room (CTCSS 100.0 at 298 Hz
+deviation), so whether the HR_C7000's voice audio reaches the modulator at all is not yet known. Open; APRS receive is
+unchecked.
 
 MMDVM SFR: the radio hears the call's header, uplinks it and starts the repeat in the other slot with the right
 link control, but while it sends, the HR_C7000 delivers almost nothing from the listening slot, so the call doesn't
