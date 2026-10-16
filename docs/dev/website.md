@@ -210,8 +210,16 @@ until the next restart.
 
 The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
 `tools/dm32_codec.py` and `tools/dm32_flash.py`) and the two stub images to `data/c7000-stub.json`. Bundle parts:
-`program-memory.bin` (`c7000-progmem`, the whole 1 MB) and `data-memory.bin` (`c7000-data`, 16 MB). Restore writes
-the program memory back from 0x0300C000 up; the data memory is not written.
+
+| File | Part | Content |
+|---|---|---|
+| `program-memory.bin` | `c7000-progmem` | The whole 1 MB program memory |
+| `data-memory.bin` | `c7000-data` | The whole 16 MB data memory |
+| `original-channels.bin` | `c7000-data-start` | Data memory 0 to 0xC9000, the stock codeplug area, when the whole data memory isn't read |
+| `calibration.bin` | `c7000-calibration` | The 4 KB calibration page (logical ID 2, [hardware-dm32.md](../spec/hardware-dm32.md) 11.1), at its own address |
+
+The calibration choice reads the stock codeplug area, which is about 10 seconds, and is on by default. Choosing the whole
+data memory includes it. Restore writes the program memory back from 0x0300C000 up; the data memory is not written.
 
 ### STM32F4 radios (the loader route)
 

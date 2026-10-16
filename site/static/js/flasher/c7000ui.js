@@ -22,7 +22,7 @@ import { Stub, stubImages, StubError, DONE_LED, MEM } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
-import { makeBundle, describeFirmware } from "./backup.js";
+import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 
 // USB-serial chips found in programming cables (tools/dm32_flash.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -297,6 +297,31 @@ export function connectView() {
 // ---------------------------------------------------------------------------------------------------------------
 // check: back up, find out what is installed, decide the codec
 
+// The calibration area: from the full data memory read when there is one, else read by itself
+async function readCalibration(c, prog) {
+	c.calArea = c.q128 ? c.q128.subarray(0, c7.CAL_AREA_END)
+		: await c.stub.dump("q128", 0, c7.CAL_AREA_END, { progress: (d, n) => prog.set(d, n, t("flash.c7.check.cal")) });
+	c.calAddr = c7.findCalibration(c.calArea);
+}
+
+// The backup choices, shared by the install's first step and the backup task. The calibration is part of the data
+// memory, so choosing that one includes it.
+function backupOptions(want, { firstInstall = false, text = (k) => t(`flash.c7.backup.${k}_text`) } = {}) {
+	const box = {};
+	const opt = (k, title, why, disabled = false) => h("label", { class: "toggle" },
+		box[k] = h("input", { type: "checkbox", checked: want[k], disabled, onchange: (e) => {
+			want[k] = e.target.checked;
+			if (k === "q128") { box.cal.checked = want.cal || want.q128; box.cal.disabled = want.q128; }
+		} }),
+		h("span", {}, h("b", {}, title), h("span", { class: "why" }, why)), h("span"));
+	const el = h("div", {},
+		opt("progmem", t("flash.c7.check.opt_progmem"), [text("progmem"), " ", estimate(0xA0000)], firstInstall),
+		opt("cal", t("flash.c7.check.opt_cal"), [t("flash.c7.check.opt_cal_text"), " ", estimate(0x18000)], want.q128),
+		opt("q128", t("flash.c7.check.opt_q128"), [text("q128"), " ", estimate(0x200000)]));
+	box.cal.checked = want.cal || want.q128;
+	return el;
+}
+
 function estimate(bytes) {
 	const rate = session().rate || 9000;	// bytes on the wire per second at 115200 baud, after LZ4 and blank sectors
 	const s = bytes / rate;
@@ -310,34 +335,33 @@ export function checkView() {
 	const top = radioTop(S().radio, { led: "wait", screen: c.how === "odr" ? "loader" : "off" });
 	const firstInstall = !c.odr;
 	// a first install reads everything; an ODR update only what it needs (the codec slot), unless asked
-	const want = (S().c7want ||= { progmem: firstInstall, q128: firstInstall });
+	const want = (S().c7want ||= { progmem: firstInstall, cal: true, q128: firstInstall });
 	const items = {};
 	const item = (key, title) => (items[key] = h("li", { "data-state": "" }, h("span", {}, h("b", {}, title), h("span", { class: "small muted" }))));
 	const say = (key, state, text = "") => {
 		items[key].dataset.state = state;
 		items[key].querySelector(".small").textContent = text;
 	};
-	const checks = h("ul", { class: "c7-checks" }, item("progmem", t("flash.c7.check.progmem")), item("q128", t("flash.c7.check.q128")),
-		item("what", t("flash.c7.check.what")), item("codec", t("flash.c7.check.codec")), item("saved", t("flash.c7.check.saved")));
+	const checks = h("ul", { class: "c7-checks" }, item("progmem", t("flash.c7.check.progmem")), item("cal", t("flash.c7.check.cal")),
+		item("q128", t("flash.c7.check.q128")), item("what", t("flash.c7.check.what")), item("codec", t("flash.c7.check.codec")), item("saved", t("flash.c7.check.saved")));
 	const prog = progressBar();
 	const status = h("div");
-	const options = h("div", {},
-		h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: want.progmem, disabled: firstInstall,
-			onchange: (e) => { want.progmem = e.target.checked; } }),
-		h("span", {}, h("b", {}, t("flash.c7.check.opt_progmem")), h("span", { class: "why" }, t(firstInstall ? "flash.c7.check.opt_progmem_first" : "flash.c7.check.opt_progmem_text"), " ", estimate(0xA0000))), h("span")),
-		h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: want.q128, onchange: (e) => { want.q128 = e.target.checked; } }),
-			h("span", {}, h("b", {}, t("flash.c7.check.opt_q128")), h("span", { class: "why" }, t("flash.c7.check.opt_q128_text"), " ", estimate(0x200000))), h("span")));
+	const options = backupOptions(want, { firstInstall,
+		text: (k) => t(k === "q128" ? "flash.c7.check.opt_q128_text" : firstInstall ? "flash.c7.check.opt_progmem_first" : "flash.c7.check.opt_progmem_text") });
 	const run = button(t("flash.c7.check.run"), () => go(), { primary: true });
 	out.append(panel(t("flash.c7.check.title"), h("div", { class: "c7-grid" },
 		h("div", {}, h("p", {}, t(firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
 			firstInstall && !S().radio.flash.stock_download ? h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.c7.check.only_copy"))), h("p", {}, t("flash.c7.check.only_copy_text"))) : null,
 			options,
 			checks, prog.el, status), top.el)));
+	// before the reading the choices say what happens; once it starts the progress list takes their place
+	checks.hidden = prog.el.hidden = true;
+	const started = () => { checks.hidden = prog.el.hidden = false; options.hidden = true; };
 	forward(run);
 
 	async function go() {
 		run.disabled = true;
-		options.querySelectorAll("input").forEach((i) => { i.disabled = true; });
+		started();
 		await busy(true);
 		top.set({ led: "busy", screen: c.how === "odr" ? "loader" : "off" });
 		const st = c.stub;
@@ -363,6 +387,11 @@ export function checkView() {
 				c.q128 = await st.dump("q128", 0, MEM.q128.size, { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
 				say("q128", "ok", t("flash.c7.check.q128_done", { sha: (await sha256(c.q128)).slice(0, 12) }));
 			} else say("q128", "skip", t("flash.c7.check.q128_skipped"));
+			if (want.cal || want.q128) {
+				say("cal", "run", t("flash.c7.check.reading"));
+				await readCalibration(c, prog);
+				say("cal", c.calAddr >= 0 ? "ok" : "bad", t(c.calAddr >= 0 ? "flash.c7.check.cal_done" : "flash.c7.check.cal_missing"));
+			} else say("cal", "skip", t("flash.c7.check.q128_skipped"));
 			prog.set(1, 1, t("flash.c7.check.done"));
 			top.set({ led: "wait", screen: c.how === "odr" ? "loader" : "off" });
 
@@ -379,8 +408,8 @@ export function checkView() {
 			if (c.progmem) {
 				const kept = await putBlob(store(firstInstall ? "progmem-before-odr" : "progmem"), c.progmem);
 				if (c.analysis.codec) await putBlob(store("slot"), c7.slotBytes(C(), boardId(), c.analysis.codec));
-				await saveBundle(firstInstall ? "before" : "update");
-				say("saved", "ok", t(kept ? "flash.c7.check.saved_both" : "flash.c7.check.saved_download"));
+				await saveBundle();
+				say("saved", "ok", t(kept ? "flash.c7.check.saved_both" : "flash.c7.check.saved_download", { name: c.backupName }));
 			} else say("saved", c.slotBytes ? "ok" : "skip", c.slotBytes ? t("flash.c7.check.saved_slot") : "");
 			await decideView();
 		} catch (e) {
@@ -414,34 +443,42 @@ export function checkView() {
 			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, t("flash.c7.codec.action_text")), pick,
 				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
 			d && d.mode === "none" ? notice(t("flash.c7.codec.none_risk"), "bad") : null,
-			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(firstInstall ? "before" : "update"); } }, t("flash.c7.check.download_again"))) : null,
+			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(); } }, t("flash.c7.check.download_again"))) : null,
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
-		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }), d ? h("span", {}, text) : null);
+		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
 	}
 
 	// Coming back to this step: what was read is still here
 	if (c.analysis) {
 		say("progmem", c.progmem ? "ok" : "skip");
 		say("q128", c.q128 ? "ok" : "skip");
+		say("cal", c.calArea ? (c.calAddr >= 0 ? "ok" : "bad") : "skip");
 		say("what", "ok", c.odr ? t("flash.c7.check.is_odr", { git: c.odr.git }) : t(`flash.c7.check.is_${c.analysis.firmware}`));
+		if (c.backupName) say("saved", "ok", t("flash.c7.check.saved_as", { name: c.backupName }));
 		run.disabled = true;
+		started();
+		prog.el.hidden = true;
 		decideView();
 	}
 	return out;
 }
 
-async function saveBundle(when) {
+async function saveBundle() {
 	const c = session();
 	const parts = [];
 	if (c.progmem) parts.push({ file: "program-memory.bin", what: "c7000-progmem", addr: C().progmem_base, data: c.progmem, complete: true });
 	if (c.q128) parts.push({ file: "data-memory.bin", what: "c7000-data", addr: 0, data: c.q128, complete: true });
+	else if (c.calArea) parts.push({ file: "original-channels.bin", what: "c7000-data-start", addr: 0, data: c.calArea, complete: true });
+	if (c.calArea && c.calAddr >= 0)
+		parts.push({ file: "calibration.bin", what: "c7000-calibration", addr: c.calAddr, data: c.calArea.slice(c.calAddr, c.calAddr + 0x1000), complete: true });
 	if (!parts.length) return;
 	const fwNow = c.odr ? { kind: "odr", git: c.odr.git, codec: c.odr.codec, features: c.odr.features } : { kind: c.analysis?.firmware === "stock" ? "stock" : "unknown",
 		version: c.analysis?.codec ? `with the ${String(c.analysis.codec.profile.tag).padStart(3, "0")} codec` : null };
-	const meta = { radio: { board: S().radio.id, name: S().radio.name, chip: null, jedec: c.jedec }, firmware_now: fwNow, contents: parts.map((p) => p.what).join("+"),
+	const meta = { radio: { board: S().radio.id, name: S().radio.name, model: S().radio.model, chip: null, jedec: c.jedec }, firmware_now: fwNow, contents: parts.map((p) => p.what).join("+"),
 		notes: [t("flash.c7.bundle_note")] };
 	const bytes = await makeBundle(meta, parts, { git: S().data.site.git, url: location.origin });
-	download(`odr-backup-${S().radio.id}-${when ? when + "-" : ""}${new Date().toISOString().slice(0, 10)}.zip`, bytes, "application/zip");
+	c.backupName = bundleName(meta);
+	download(c.backupName, bytes, "application/zip");
 	c.backupSaved = true;
 }
 
@@ -603,9 +640,8 @@ export function backupView() {
 	const top = radioTop(S().radio, { led: "wait", screen: c.how === "odr" ? "loader" : "off" });
 	const prog = progressBar();
 	const status = h("div");
-	const want = { progmem: true, q128: true };
-	const opt = (k) => h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: want[k], onchange: (e) => { want[k] = e.target.checked; } }),
-		h("span", {}, h("b", {}, t(`flash.c7.check.opt_${k}`)), h("span", { class: "why" }, t(`flash.c7.backup.${k}_text`))), h("span"));
+	const want = { progmem: true, cal: true, q128: true };
+	const options = backupOptions(want);
 	const go = button(t("flash.backup.run"), async () => {
 		go.disabled = true;
 		await busy(true);
@@ -614,12 +650,14 @@ export function backupView() {
 		try {
 			if (want.progmem) c.progmem = await c.stub.dump("progmem", 0, C().progmem_size, { progress: (d, n) => prog.set(d, n, t("flash.c7.check.progmem")) });
 			if (want.q128) c.q128 = await c.stub.dump("q128", 0, MEM.q128.size, { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
+			if (want.cal || want.q128) await readCalibration(c, prog);
 			if (c.progmem) c.analysis = await c7.analyze(c.progmem, C(), boardId());
-			await saveBundle(null);
+			await saveBundle();
 			ctx.flashFinished(started);
 			await c.stub.ledSequence(DONE_LED);
 			top.set({ led: "done", screen: c.how === "odr" ? "loader" : "off" });
-			fill(status, notice(t("flash.c7.backup.done"), "ok"));
+			fill(status, notice(t("flash.c7.backup.done", { name: c.backupName }), "ok"),
+				c.calArea && c.calAddr < 0 ? notice(t("flash.c7.backup.cal_missing"), "bad") : null);
 			S().forward(leaveLoaderButton(t("flash.c7.backup.leave")));
 		} catch (e) {
 			ctx.flashFinished(started, e);
@@ -630,7 +668,7 @@ export function backupView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.backup.task_title", { name: S().radio.name }), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t("flash.c7.backup.lead")), opt("progmem"), opt("q128"), prog.el, status), top.el)));
+		h("div", {}, h("p", {}, t("flash.c7.backup.lead")), options, prog.el, status), top.el)));
 	S().forward(go);
 	return out;
 }

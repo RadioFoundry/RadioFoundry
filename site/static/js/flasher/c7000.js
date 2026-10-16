@@ -171,3 +171,12 @@ export function bootloaderModel(c, head) {
 	for (const [id, b] of Object.entries(c.boards)) if (b.bootloader_id && text.includes(b.bootloader_id)) return id;
 	return null;
 }
+
+// The stock codeplug area at the start of the data memory, which holds the factory calibration: 4 KB pages up to
+// 0xC8FFF, the calibration the first whose last byte (its logical ID) is 2 (hardware-dm32.md 11.1,
+// hardware-dm1801pro.md 6.4). Returns its address in area, or -1.
+export const CAL_AREA_END = 0xC9000;
+export function findCalibration(area) {
+	for (let a = 0x1000; a + 0x1000 <= Math.min(area.length, CAL_AREA_END); a += 0x1000) if (area[a + 0xFFF] === 2) return a;
+	return -1;
+}

@@ -38,6 +38,7 @@ pre code { background: none; padding: 0; }
 .page-head.compact .lead { display: none; }
 .page-head + .section { padding-top: var(--space-2); }
 .wrap.section { padding-left: var(--gutter); padding-right: var(--gutter); }
+[hidden] { display: none !important; }
 .muted { color: var(--muted); }
 .small { font-size: var(--text-sm); }
 .lead { font-size: var(--text-lg); color: var(--muted); max-width: 46rem; }
@@ -288,17 +289,18 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 
 /* flasher, HR_C7000 radios: the radio's top with its LED, the program memory map, the checklist (c7000ui.js) */
 .c7-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
-@media (max-width: 760px) { .c7-grid { grid-template-columns: 1fr; } .c7-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .c7-grid .rt-svg { max-width: 140px; } }
+@media (max-width: 760px) { .c7-grid { grid-template-columns: 1fr; } .c7-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .c7-grid .rt-svg { max-width: 170px; } }
 .radio-top { margin: 0; text-align: center; }
-.rt-svg { width: 100%; max-width: 200px; height: auto; display: block; margin: 0 auto; }
-.rt-label { font: 600 11px var(--font-sans); fill: var(--muted); }
+.rt-svg { width: 100%; max-width: 210px; height: auto; display: block; margin: 0 auto; }
+.rt-label { font: 700 14px var(--font-sans); fill: var(--text); }
+.radio-top[data-led="off"] .rt-led-callout { display: none; }
 .rt-callout { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; }
 .rt-screen { fill: #0b0d10; stroke: #000; }
 .radio-top[data-screen="loader"] .rt-screen { fill: #c9d6c2; }
 .radio-top[data-screen="on"] .rt-screen { fill: #1d3550; }
-.rt-screen-text { font: 700 13px var(--font-sans); fill: #1b1e22; }
-.rt-screen-text.small { font-weight: 500; font-size: 11px; }
-.radio-top[data-screen="on"] .rt-screen-text { fill: #e8f0f8; font-size: 11px; }
+.rt-screen-text { font: 700 12px var(--font-sans); fill: #1b1e22; }
+.rt-screen-text.small { font-weight: 500; font-size: 10px; }
+.radio-top[data-screen="on"] .rt-screen-text { fill: #e8f0f8; font-size: 13px; }
 .rt-led { fill: #3a3d42; stroke: #000; stroke-width: 1; }
 .rt-glow { fill: transparent; }
 .rt-arrow { stroke: var(--accent); }
@@ -328,11 +330,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 }
 .c7-checks { list-style: none; padding: 0; margin: 0 0 var(--space-4); display: grid; gap: var(--space-3); }
 .c7-checks li { display: grid; grid-template-columns: 1.8rem 1fr; gap: var(--space-2); align-items: start; }
-.c7-checks li::before { content: "○"; color: var(--faint); font-weight: 700; text-align: center; }
-.c7-checks li[data-state="run"]::before { content: "◐"; color: var(--accent); animation: rt-pulse 1s infinite; }
-.c7-checks li[data-state="ok"]::before { content: "✓"; color: var(--ok); }
-.c7-checks li[data-state="bad"]::before { content: "!"; color: var(--bad); }
-.c7-checks li[data-state="skip"]::before { content: "–"; color: var(--muted); }
+.c7-checks li::before { content: "·"; color: var(--muted); font-size: 1.4em; line-height: 1; font-weight: 700; text-align: center; }
+.c7-checks li[data-state="run"]::before { content: "▸"; font-size: 1.1em; color: var(--accent); animation: rt-pulse 1s infinite; }
+.c7-checks li[data-state="ok"]::before { content: "✓"; font-size: 1em; color: var(--ok); }
+.c7-checks li[data-state="bad"]::before { content: "!"; font-size: 1em; color: var(--bad); }
+.c7-checks li[data-state="skip"]::before { content: "–"; font-size: 1em; color: var(--muted); }
 .c7-checks .small { display: block; }
 .c7-map { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; margin: var(--space-3) 0; max-width: 640px; }
 .c7-map span { aspect-ratio: 1; border-radius: 2px; background: var(--surface-2); }

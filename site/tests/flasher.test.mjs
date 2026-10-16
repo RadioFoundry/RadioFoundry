@@ -16,7 +16,7 @@ import { Dfu } from "../static/js/flasher/dfu.js";
 import { Link, crc16, frame, parseFrames, probe } from "../static/js/flasher/link.js";
 import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
-import { readRadio, makeBundle, openBundle } from "../static/js/flasher/backup.js";
+import { readRadio, makeBundle, openBundle, bundleName } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
 import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
@@ -291,4 +291,11 @@ test("where an update erases the codec, it is read back from the radio and check
 	assert.equal(decideCodec(board, m, { haveSaved: true }).source, "saved");
 	assert.equal(decideCodec(board, m, { haveStock: true }).source, "stock");
 	assert.throws(() => decideCodec(board, m, {}), DecisionError);
+});
+
+test("backup file names: the model and the local date, letters and digits only, always .zip", () => {
+	const when = new Date(2026, 9, 6, 23, 5);
+	assert.equal(bundleName({ radio: { board: "dm1801pro", name: "Baofeng DM-1801 Pro", model: "DM-1801 Pro" } }, when), "DM1801Pro_Backup_2026-10-06.zip");
+	assert.equal(bundleName({ radio: { board: "dm1701" } }, when), "dm1701_Backup_2026-10-06.zip");
+	assert.equal(bundleName({ radio: { board: "x", model: 'A/B: "C"' } }, when), "ABC_Backup_2026-10-06.zip");
 });

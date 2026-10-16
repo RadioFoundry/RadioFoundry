@@ -173,3 +173,16 @@ test("a codec from a stock file or a program memory backup", async () => {
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { allowNone: true })).mode, "none");
 	assert.equal(crc32(slot.subarray(128, 136)), crc32(c7.sigBytes(sim.c)));
 });
+
+test("factory calibration: the first page of the stock codeplug area whose ID byte is 2, and only in that area", () => {
+	const area = new Uint8Array(c7.CAL_AREA_END + 0x2000).fill(0xFF);
+	assert.equal(c7.findCalibration(area), -1);
+	area[0x0FFF] = 2;				// page 0 isn't a codeplug page
+	area[c7.CAL_AREA_END + 0xFFF] = 2;		// past the area
+	assert.equal(c7.findCalibration(area), -1);
+	area[0x7CFFF] = 2;
+	area[0x9CFFF] = 2;
+	assert.equal(c7.findCalibration(area), 0x7C000);
+	// the simulated radio carries one where the DM-1801 Pro examined had it
+	assert.equal(c7.findCalibration(new FakeC7000({ progmem: new Uint8Array(0x100000) }).q128), 0x7C000);
+});

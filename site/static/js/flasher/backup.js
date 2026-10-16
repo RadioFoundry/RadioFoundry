@@ -88,9 +88,12 @@ export function describeFirmware(f) {
 	return "unknown";
 }
 
-export function bundleName(meta) {
-	const uid = meta.radio.chip?.uid?.slice(0, 8) || "radio";
-	return `odr-backup-${meta.radio.board}-${uid}-${new Date().toISOString().slice(0, 10)}.zip`;
+// The name people see in their downloads or on the desktop: the model and the local date, letters and digits only,
+// always .zip (DM1801Pro_Backup_2026-10-16.zip)
+export function bundleName(meta, when = new Date()) {
+	const p = (n) => String(n).padStart(2, "0");
+	const model = String(meta.radio.model || meta.radio.board).replace(/[^A-Za-z0-9]/g, "") || "Radio";
+	return `${model}_Backup_${when.getFullYear()}-${p(when.getMonth() + 1)}-${p(when.getDate())}.zip`;
 }
 
 // Read a bundle back; every part checked against its SHA-256. Returns {meta, parts: Map(what -> {..., data})}

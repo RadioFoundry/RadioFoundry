@@ -849,7 +849,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			if (S.stock) S.backupParts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
 			const after = when === "after";
 			const meta = {
-				radio: { board: S.radio.id, name: S.radio.name, chip: p.chip, version: p.version },
+				radio: { board: S.radio.id, name: S.radio.name, model: S.radio.model, chip: p.chip, version: p.version },
 				firmware_now: { kind: "odr", git: p.git, codec: p.codec, features: p.features },
 				firmware_before: after && S.now?.kind === "stock" ? { kind: "stock", version: S.now.version, stock_file_sha256: S.stock?.info.sha || null } : undefined,
 				contents: pick,

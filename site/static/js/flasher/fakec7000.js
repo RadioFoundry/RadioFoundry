@@ -51,6 +51,11 @@ export class FakeC7000 {
 		this.progmem = progmem;
 		this.q128 = new Uint8Array(dataSize).fill(0xFF);
 		this.q128.set(randomBytes(rng(5), 0x40000), 0x1000);
+		// the stock codeplug's pages carry their logical ID in the last byte; the calibration is ID 2, at 0x7C000 as on
+		// the DM-1801 Pro examined (hardware-dm1801pro.md 6.4)
+		for (let p = 0x1000; p < 0x41000; p += 0x1000) this.q128[p + 0xFFF] = 0x10 + (p >> 12);
+		this.q128.set(randomBytes(rng(6), 0xFFF), 0x7C000);
+		this.q128[0x7CFFF] = 2;
 		this.boardName = board;
 		this.codecId = codecId;
 		this.stubEntry = stubEntry;
