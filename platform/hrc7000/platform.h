@@ -239,7 +239,7 @@ static inline uint32_t hrc_cycles(void)
 }
 uint32_t hrc_micros(void);
 
-// Chip soft reset (QUAD_ENABLE = 0, SYS_SOFT_RSTN = 0; hardware-dm32.md 1.1). Does not return
+// Chip soft reset (QUAD_ENABLE = 0, LCSFC_BAUDR = 4, SYS_SOFT_RSTN = 0; hardware-dm32.md 1.1). Does not return
 void hrc_soft_reset(void) __attribute__((noreturn));
 
 // Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads a position-

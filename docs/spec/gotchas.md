@@ -107,6 +107,12 @@ the tick in the imported port.
 CSBKs, MBC headers and data headers itself (write 80 bits), data blocks go as given; received data bursts come from
 receive RAM at 0x160004B0. Commit 1ea4f7d.
 
+**2.7 Set the XIP flash mode even when the PLL is already running.** The Baofeng bootloader leaves the PLL on but the
+flash controller in single-bit mode at divider 4. Skipping quad mode and divider 2 with the PLL steps made all code run
+from flash about 6 times slower: the idle radio used about 80% of the CPU and voice encoding starved the other tasks.
+Undo both before a soft reset or the stub entry: the soft reset keeps the divider, and the ROM can't read flash in
+single-bit mode at divider 2 (hardware-dm32.md 1.1).
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 (MD-380) register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
