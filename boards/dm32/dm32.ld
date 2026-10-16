@@ -14,8 +14,8 @@
  * network personality's packets and frame, the gateway's air bursts and frame) go to main RAM instead: RAM_LO can't
  * hold them as well, and main RAM has the room. Above the codec window (RAM): data, bss, the RTOS heap (inside bss) and
  * the start-up stack at the top. Both regions are checked at the end. No DMA on this board, so either region can
- * hold any buffer. The modem SRAM window the codec's tables are copied to, 0x18000E48..0x18003E20, is reserved by
- * not being in this script at all. */
+ * hold any buffer. The modem SRAM window the codec's tables are copied to, 0x18000E48..0x18003E28, is reserved by
+ * not being in this script at all (the 049 NRF and fanti builds put their tables 8 bytes higher, codec-dm32.md). */
 
 ENTRY(Reset_Handler)
 
@@ -30,7 +30,7 @@ __codec_slot_end = 0x03100000;
 __codec_run_lo = 0x00016CDC;
 __codec_run_hi = 0x0002F914;
 __codec_tab_lo = 0x18000E48;
-__codec_tab_hi = 0x18003E20;
+__codec_tab_hi = 0x18003E28;
 
 MEMORY
 {
