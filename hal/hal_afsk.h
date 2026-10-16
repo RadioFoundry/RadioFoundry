@@ -19,6 +19,7 @@
 #include <stdbool.h>
 
 typedef struct {
+	// Transmit (NULL tx_start, tx_busy and tx_stop when the board can only receive)
 	// Start sending nbits symbols of tones at baud, mark_hz for a 1 and space_hz for a 0. level 0-100 sets the
 	// deviation (50 = the board's nominal, about 3 kHz peak at 25 kHz bandwidth). tones stays valid until tx_busy()
 	// is false. False when it can't (the transmitter not keyed in FM, already sending)
