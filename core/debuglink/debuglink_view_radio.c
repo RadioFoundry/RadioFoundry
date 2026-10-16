@@ -30,7 +30,12 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "scan_probes=%u\nscan_synced=%u\n", v->scan_probes, v->scan_synced);
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
-	dl_text(t, "vox_on=%u\nvox.mic=%u\n", v->vox_on, board.power != NULL && board.power->mic_level != NULL);
+	bool mic = board.power != NULL && board.power->mic_level != NULL;
+	// The hook itself, not the VOX poll's last reading, so the level reads with VOX off (nothing keys). Only where VOX
+	// could listen (FM, not a hotspot): a meter that starts on demand (the HR_C7000's mic PCM) then runs in the state
+	// VOX would run it in, and reads 0 on its first call
+	bool listen = mic && v->ch.mode == RADIO_MODE_FM && !v->hotspot;
+	dl_text(t, "vox_on=%u\nvox.mic=%u\nvox.level=%u\n", v->vox_on, mic, listen ? board.power->mic_level() : 0u);
 	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", word(v->battery, batt, 3),
 		v->battery_pct, v->battery_mv, v->power_off);
 #if CONFIG_BEEP
