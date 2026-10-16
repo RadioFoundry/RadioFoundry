@@ -302,7 +302,7 @@ Gotchas:
   and back. When macOS misses the NCM carrier the radio can stay a network adapter, and only a power cycle brings the
   serial port back; later tests then skip with "no radio". Leave `usb_switch` off for unattended runs.
 - **Transmitting stays on the approved test frequencies.** The RF tests use the defaults in `tests/hil/conftest.py`
-  (DMR and FM at 461.6875 MHz at the lowest power, APRS AFSK at 145.090 MHz with the operator's call). Never pass
+  (DMR and FM at 461.6875 MHz at the lowest power, APRS AFSK at 446.050 MHz with the operator's call). Never pass
   other frequencies in the `extra` input, and run `rf` only with the dummy load or antenna of the bench set-up.
 - **One radio, one run.** The workflow's concurrency group keeps HIL runs one at a time and never cancels a running
   one (it might be transmitting or restoring a codeplug); the lock keeps people and agents off the radio meanwhile.

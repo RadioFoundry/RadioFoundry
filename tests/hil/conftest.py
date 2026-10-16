@@ -18,7 +18,8 @@ def pytest_addoption(parser):
                 help="tests may transmit (the SDR bench's transmitter; the radio only in tests marked radio_tx)")
     g.addoption("--allow-service-stop", action="store_true",
                 help="tests may stop the SDR bench's gateway service to use its transmitter and "
-                     "receiver (dmr_bench.py's lease: always restarted)")
+                     "receiver (dmr_bench.py's lease: always restarted). Not needed on a bench that runs the "
+                     "shared bench daemon: nothing is stopped there")
     g.addoption("--allow-usb-switch", action="store_true",
                 help="tests may switch the radio's USB personality to the network adapter (it re-enumerates; the "
                      "test switches it back over UDP)")
@@ -69,17 +70,18 @@ def pytest_addoption(parser):
                 help="test_aprs on air: the licensed operator's callsign ($ODR_APRS_CALL), set as the RAM-only test "
                      "call (never saved)")
     g.addoption("--aprs-ssid", type=int, default=15, help="test_aprs on air: the SSID sent (restored afterwards)")
-    g.addoption("--aprs-test-mhz", type=float, default=145.090,
-                help="MHz: test_aprs AFSK frequency, a 2 m packet simplex channel that is not an APRS frequency "
-                     "(test_aprs.py docstring); never 144.390")
+    g.addoption("--aprs-test-mhz", type=float, default=446.050,
+                help="MHz: test_aprs AFSK frequency, a 2 m or 70 cm amateur simplex frequency that is not an APRS "
+                     "frequency (test_aprs.py docstring); never 144.390")
     g.addoption("--aprs-dmr-dst", type=int, default=9990301,
                 help="test_aprs DMR position: the destination ID (the bench modem listens to any)")
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
-    config.addinivalue_line("markers", "bench_service: stops the SDR bench's gateway service (needs "
-                            "--allow-service-stop)")
+    config.addinivalue_line("markers", "bench_service: uses the SDR bench's transmitter / receiver through the "
+                            "lease (a bench without a shared bench daemon stops its gateway service for it: "
+                            "needs --allow-service-stop, else the test skips when it takes the lease)")
     config.addinivalue_line("markers", "radio_tx: the radio under test transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "codeplug_write: writes the radio's codeplug over CPS, backed up and restored "
                             "(needs --allow-codeplug-write)")
@@ -95,9 +97,6 @@ def pytest_collection_modifyitems(config, items):
         elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
             item.add_marker(pytest.mark.skip(reason="re-enumerates the radio as a network adapter: run with "
                                                     "--allow-usb-switch"))
-        elif "bench_service" in item.keywords and not config.getoption("--allow-service-stop"):
-            item.add_marker(pytest.mark.skip(reason="stops the SDR bench's gateway service: run with "
-                                                    "--allow-service-stop"))
         elif "codeplug_write" in item.keywords and not config.getoption("--allow-codeplug-write"):
             item.add_marker(pytest.mark.skip(reason="writes the codeplug: run with --allow-codeplug-write"))
         elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):

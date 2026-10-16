@@ -333,8 +333,8 @@ HIL (opt-in, `tests/hil/test_aprs.py`, README there): `--allow-rf --allow-servic
 operator's callsign, set as the RAM-only test call; SSID `--aprs-ssid`, default 15).
 
 Where the AFSK tests transmit, so nothing reaches the APRS network: the custom region on `--aprs-test-mhz`, default
-145.090 MHz (US band plans put 2 m packet at 145.01-145.09; 144.390 would be digipeated and gated to APRS-IS, and every
-regional APRS frequency is refused), no path, the radio's lowest power (checked through `aprs.tx_power` before keying;
+446.050 MHz (a 70 cm simplex frequency, away from the 2 m APRS network; 144.390 would be digipeated and gated to
+APRS-IS, and every regional APRS frequency is refused), no path, the radio's lowest power (checked through `aprs.tx_power` before keying;
 6 RF says APRS keys at the radio's current level). Each transmission is about 0.6 s. Every APRS setting touched is
 saved and put back once the queued frames and message retries have gone out on the test frequency.
 

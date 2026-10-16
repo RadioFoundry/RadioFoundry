@@ -83,6 +83,7 @@ typedef struct {
 	uint32_t cc_scan_steps;
 	uint32_t ev_overflow;
 	uint32_t tx_bursts, tx_underrun, tx_rejected, tx_done;
+	uint32_t tx_empty;	// our slots left empty on request (DMR_BURST_EMPTY): received like the other slot
 	uint32_t rx_in_tx[2];	// bursts deframed while we send, by ticks since our last arming (even, odd)
 	uint32_t stalls;
 	uint32_t last_rx_type_info;
@@ -118,6 +119,7 @@ typedef struct {
 	uint32_t rx_tick;	// tick of the last burst taken
 	bool rx_any;
 	uint32_t resync_tick;	// tick of the last receiver restart for lost or stale timing
+	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
 	uint32_t voice_tick;
 	int8_t tc_slot[2];	// TS (1/2) of each chip slot, learned from BS-sync bursts (TC), 0 unknown
@@ -131,12 +133,14 @@ typedef struct {
 	uint8_t tx_timing;
 	int8_t tx_ts;
 	uint8_t tx_access;
+	uint8_t tx_chip_slot;	// aligned timing: the chip slot we send in (LAYER2_STATUS b31)
 	bool tx_our_next;	// the coming slot (the one being decided) is ours
 	bool tx_end_req, tx_abort_req;
 	uint8_t tx_wait;
 	uint32_t tx_last_arm;	// tick of the last burst armed
 	bool tx_any;
 	bool tx_listen;		// the other slot is received while we send (an SFR's inbound slot)
+	bool listen_voice;	// a voice call was heard on that slot: receive it with the voice-access flag
 	uint8_t send_sync;	// dmr_sync_family_t in SEND_DATA_SYNC now, DMR_SYNC_NONE = not known
 	dmr_tx_burst_t txq[HRC7000_DMR_TXQ_DEPTH];
 	volatile uint8_t txq_head, txq_tail;
@@ -181,6 +185,8 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 void hrc7000_dmr_tx_listen(hrc7000_dmr_t *e);
 bool hrc7000_dmr_tx_queue(hrc7000_dmr_t *e, const dmr_tx_burst_t *b);
 uint8_t hrc7000_dmr_tx_queue_space(const hrc7000_dmr_t *e);
+// b in place of the oldest queued DMR_BURST_EMPTY; the number of entries queued after it, -1 when there is none
+int8_t hrc7000_dmr_tx_fill(hrc7000_dmr_t *e, const dmr_tx_burst_t *b);
 void hrc7000_dmr_tx_end(hrc7000_dmr_t *e);
 void hrc7000_dmr_tx_abort(hrc7000_dmr_t *e);
 void hrc7000_dmr_set_embedded_lc(hrc7000_dmr_t *e, const uint8_t lc[9]);
