@@ -34,7 +34,7 @@ concurrency:
 jobs:
   render:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -52,8 +52,10 @@ jobs:
       - name: Install Pillow
         run: |
           set -eu
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends python3-pil
+          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends python3-pil
+          fi
 
       - name: Render the gallery at the base and at the pull request
         run: |
