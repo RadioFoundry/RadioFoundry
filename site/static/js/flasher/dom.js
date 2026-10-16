@@ -70,8 +70,8 @@ export function logBox() {
 }
 
 export const notice = (text, kind = "") => h("p", { class: `notice ${kind}` }, text);
-export const button = (label, onclick, { primary = false, disabled = false, danger = false } = {}) =>
-	h("button", { class: `btn${primary ? " btn-primary" : ""}${danger ? " btn-danger" : ""}`, type: "button", onclick, disabled }, label);
+export const button = (label, onclick, { primary = false, disabled = false, danger = false, quiet = false } = {}) =>
+	h("button", { class: `btn${primary ? " btn-primary" : ""}${danger ? " btn-danger" : ""}${quiet ? " btn-quiet" : ""}`, type: "button", onclick, disabled }, label);
 
 export function panel(title, ...children) {
 	return h("section", { class: "panel" }, h("h2", {}, title), ...children);
