@@ -30,6 +30,7 @@
 #define UI_FEAT_MONITOR_LATCH	(1u << 13)	// ui_svc_monitor latch (FM)
 #define UI_FEAT_FACTORY_RESET	(1u << 14)	// ui_svc_factory_reset (storage-cps)
 #define UI_FEAT_ROAMING		(1u << 15)	// ui_svc_roam (DMR repeater roaming, the radio core)
+#define UI_FEAT_VIBRATE		(1u << 16)	// ui_svc_vibrate: CONFIG_VIBRATE and hal_power_t.vibrate
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -75,6 +76,10 @@ bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, l
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
 typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW } ui_beep_t;
 void ui_svc_beep(uint8_t beep);
+// --- Vibration (radio-features 4.1): a pattern on the board's motor; the UI asks only when Settings > Sound >
+// Vibrate is on. Weak no-op without CONFIG_VIBRATE ---
+typedef enum { UI_VIBE_MESSAGE, UI_VIBE_CALL, UI_VIBE_EMERGENCY } ui_vibe_t;
+void ui_svc_vibrate(uint8_t vibe);
 // PTT while the keys are locked (Settings > Privacy > PTT when locked): blocked = the input layer doesn't hand PTT
 // presses to the radio core (a PTT already held is still released). Weak no-op without the input layer
 void ui_svc_ptt_block(bool blocked);
@@ -149,6 +154,7 @@ typedef enum {
 	// quick-key slots. Press and long press of side key 1, side key 2 and the top key, in this order
 	UI_SET_KEY_SIDE1, UI_SET_KEY_SIDE1_HOLD, UI_SET_KEY_SIDE2, UI_SET_KEY_SIDE2_HOLD, UI_SET_KEY_TOP,
 	UI_SET_KEY_TOP_HOLD,
+	UI_SET_VIBRATE,		// vibrate for alerts (Settings > Sound, CONFIG_VIBRATE; settings_t.ui_flags)
 	UI_SET_COUNT
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);

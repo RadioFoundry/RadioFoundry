@@ -258,6 +258,7 @@ void radio_req_scan(uint8_t cmd) { post(RREQ_SCAN, cmd, 0); }
 void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz) { post_pair(RREQ_SCAN_VFO, (int32_t)lo_hz, hi_hz); }
 void radio_req_scan_dual(uint16_t pos) { post_pair(RREQ_SCAN, RSCAN_DUAL, pos); }
 void radio_req_beep(uint8_t b) { post(RREQ_BEEP, b, 0); }
+void radio_req_vibrate(uint8_t pattern) { post(RREQ_VIBRATE, pattern, 0); }
 void radio_req_roam(uint8_t cmd) { post(RREQ_ROAM, cmd, 0); }
 // A lost release would leave the burst keyed until the time-out
 void radio_req_tone_burst(bool on) { post(RREQ_TONE_BURST, on, pdMS_TO_TICKS(50)); }

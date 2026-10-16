@@ -68,6 +68,7 @@ typedef struct {
 	bool ptt_locked;	// PTT works while the keys are locked (Settings > Privacy)
 	bool hear_all_default;	// hear all on whenever a DMR channel is selected (Settings > Talk & listen)
 	bool message_tone;	// a tone when a message arrives (Settings > Sound)
+	bool vibrate;		// vibrate for messages, calls to us, emergencies (Settings > Sound, CONFIG_VIBRATE)
 	uint8_t updown;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target (Settings > Keys)
 	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power)
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power)

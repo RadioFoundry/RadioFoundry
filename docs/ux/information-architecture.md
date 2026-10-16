@@ -151,7 +151,7 @@ Settings has a search field on top (T9). Groups, in this order:
 
 | Group | Contents |
 |---|---|
-| **Sound** | Key tones, tone volume, talk permit tone, voice prompts (on/off, speed, verbosity), message tone, call alert tone |
+| **Sound** | Key tones, tone volume, talk permit tone, voice prompts (on/off, speed, verbosity), message tone, call alert tone, vibrate (radios with a motor) |
 | **Display** | Brightness, backlight timeout, theme (light/dark/high contrast), large text, orientation (240x320 boards), hint row, Home secondary fields |
 | **Talk & listen** | Reply window, TX timeout, default squelch, VOX sensitivity and delay, mic gain, hear all default, talker alias show/send, name source (contacts, ID database, alias) |
 | **Privacy** | Basic Privacy keys (per channel and per contact), lock behavior (auto-lock, what stays active when locked: PTT, side keys), PIN for settings |

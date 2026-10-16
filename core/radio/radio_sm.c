@@ -19,6 +19,7 @@
 #include "dmr/dmrPrivacy.h"
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
+#include "radio/vibe.h"	// vibe_t (vibe_play only with CONFIG_VIBRATE)
 #if CONFIG_NET_USRP || CONFIG_APRS_RX
 #include "usbaudio/audio_mux.h"	// the PCM stream shared with a host audio session and APRS
 #endif
@@ -3235,17 +3236,19 @@ static bool retunes(uint8_t type)
 
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
-	if (req->type != RREQ_BEEP && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS) {
+	// A beep or a vibration is an alert, not the user doing something
+	bool alert = req->type == RREQ_BEEP || req->type == RREQ_VIBRATE;
+	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS) {
 		aprs_rf_abort(sm, now_ms);	// the user does something: an APRS transmission gives way
 	}
 	bool busy = sm->view.state == RS_TX || sm->hotspot;	// no retuning while transmitting or a hotspot
 	int dir = req->arg > 0 ? 1 : -1;
 	int steps = req->arg > 0 ? req->arg : -req->arg;
 
-	if (req->type != RREQ_BEEP) {
+	if (!alert) {
 		activity(sm, now_ms);
 	}
-	if (req->type != RREQ_BEEP && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS && req->type != RREQ_ROAM) {
+	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS && req->type != RREQ_ROAM) {
 		roam_cancel(sm, now_ms);	// the user does something: back to the site a roaming search started from
 	}
 	if (retunes(req->type)) {
@@ -3622,6 +3625,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			beep(sm, (uint8_t)req->arg);
 		}
 		break;
+#if CONFIG_VIBRATE
+	case RREQ_VIBRATE:
+		vibe_play((vibe_t)req->arg);	// dropped at the next poll on a radio without a motor
+		break;
+#endif
 #if CONFIG_FM_TX_TONES
 	case RREQ_TONE_BURST:
 		tone_burst(sm, req->arg != 0, now_ms);
@@ -3840,6 +3848,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	shared = ambeVoiceStreaming();
 #endif
 	beep_service(shared);
+#endif
+#if CONFIG_VIBRATE
+	vibe_service(now_ms, board.power != NULL ? board.power->vibrate : NULL);
 #endif
 #if CONFIG_NET_USRP || CONFIG_APRS_RX
 	audio_mux_service(now_ms);	// the stream for a host audio session or APRS (after the beep: it may have stopped it)

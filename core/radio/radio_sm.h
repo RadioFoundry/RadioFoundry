@@ -119,6 +119,7 @@ typedef enum {
 	RREQ_HS_CWID,		// hotspot: key the CW ID left by radio_hs_ops.cw_id (radio_hotspot.h)
 	RREQ_ROAM,		// DMR roaming: arg = radio_roam_cmd_t
 	RREQ_VFO_STEP_SIZE,	// arg: the VFO step in Hz
+	RREQ_VIBRATE,		// arg: vibe_t (radio/vibe.h)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
