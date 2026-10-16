@@ -873,6 +873,8 @@ static void test_rf_failures(void)
 		run(30000);
 		aprs_get_view(&v);
 		CHECK(v.rf_failed > failed && v.rf_sent == 0);
+		static const uint8_t why[3] = { APRS_RF_NO_KEY, APRS_RF_NO_AFSK, APRS_RF_TIMEOUT };
+		CHECK(v.rf_fail == why[fault]);
 		CHECK(!hw.keyed && hw.rx_hz == CH_HZ && sm.view.state == RS_IDLE && sm.aprs_phase == 0);
 		run(60000);		// the retries, then given up
 		aprs_get_view(&v);

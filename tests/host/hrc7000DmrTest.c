@@ -643,7 +643,9 @@ static void test_tx_sync_and_listen(void)
 	tick(true);
 	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD5D7F7 && REG(C7_SEND_DATA_SYNC_L) == 0x7FD757);
 
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xC3);
 	hrc7000_dmr_tx_listen(&eng);
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xCB);	// the receiver follows the other station's slot edges
 	tick(true);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
 	deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 1, 2, 0, 0));
@@ -656,6 +658,7 @@ static void test_tx_sync_and_listen(void)
 	CHECK(!hrc7000_dmr_is_transmitting(&eng));
 	REG(C7_SEND_DATA_SYNC_H) = 0;
 	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xC3);
 	CHECK(hrc7000_dmr_tx_queue(&eng, &a));
 	tick(true);
 	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD5D7F7);

@@ -22,6 +22,9 @@
 // LAYER2 values (2.5)
 #define L2_PASSIVE		0xC0u
 #define L2_ACTIVE		0xC3u
+// Active timing with the receive slot edges following the received sync (b3 rx_master_auto_update): without it the
+// receiver keeps our own slot edges while we send, and a station in the other slot isn't deframed (2.5)
+#define L2_ACTIVE_RX_FOLLOW	0xCBu
 #define TXRX_NONE		0x00u
 #define TXRX_RX			0x40u
 #define TXRX_TX			0x80u
@@ -763,6 +766,7 @@ void hrc7000_dmr_tx_listen(hrc7000_dmr_t *e)
 	lock(e);
 	if (e->tx_state != TXS_IDLE) {
 		e->tx_listen = true;
+		w(e, C7_LAYER2_CONTROL, L2_ACTIVE_RX_FOLLOW);
 	}
 	unlock(e);
 }
