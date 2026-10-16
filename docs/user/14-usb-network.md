@@ -164,7 +164,8 @@ To stop writes over the network, turn off **Settings > Connections > TFTP codepl
 
 ## Monitoring the radio with SNMP
 
-The radio answers SNMP version 2c requests at its address, port 161. Any SNMP manager works. The repository has a
+The radio answers SNMP version 2c requests at its address, port 161 (not on the MD-380's standard image, which leaves
+SNMP out for flash room). Any SNMP manager works. The repository has a
 small one:
 
 ```

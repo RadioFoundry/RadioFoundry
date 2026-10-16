@@ -137,9 +137,13 @@ early on CTCSS loss conflicts with the tone debounce (8 polls) that keeps fades 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
 scale so a beep mixed over voice doesn't clip. Volume is relative to the knob: the beep goes through the same
 speaker path. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
-starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. Counters in the view:
+starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. If that stream delivers no
+block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and
+drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
+clock) is stopped the same way, in case a block already ran. Counters in the view:
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
-mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.busy`.
+mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
+`beep.busy`.
 
 ## 5. Power
 

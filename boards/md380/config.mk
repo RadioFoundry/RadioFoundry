@@ -28,6 +28,9 @@ CONFIG_HOTSPOT ?= n
 # USRP voice over UDP (4.9 KB) is off by default too: it carries DMR only here (no FM audio path to the processor), and
 # a build with it on needs another feature off. Users can still pick it
 CONFIG_NET_USRP ?= n
+# SNMP (8 KB) is off for flash too: it is mostly for fixed hotspots and repeaters, and the default image had only
+# 56 bytes left. Users can pick it, with another feature off
+CONFIG_SNMP ?= n
 # Compressed UDP/IP headers on transmit (about 460 B) are off by default for room (the APRS position page, 2026-10-13):
 # IP over DMR still works, with full headers. Users can still pick it
 CONFIG_DMR_UDP_COMPRESS ?= n

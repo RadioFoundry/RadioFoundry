@@ -46,11 +46,18 @@ HRC_RAMFUNC void hrc_clock_init(void)
 	WDT_EN = 0;
 	WDT_LOCK = 0;
 
-	if ((CLK_MGR_CTRL & 0x0Cu) == 0x0Cu) {
-		// Still on the oscillator: CPU and system out of reset, XIP quad mode, then the PLL (1.1 steps 1-10)
-		SYS_SOFT_RSTN = 0x180;
-		QUAD_ENABLE = 0x01000001u;
-		LCSFC_BAUDR = 0x02;
+	bool on_osc = (CLK_MGR_CTRL & 0x0Cu) == 0x0Cu;
+	if (on_osc) {
+		SYS_SOFT_RSTN = 0x180;	// CPU and system out of reset (1.1 step 1)
+	}
+	// XIP flash in quad mode at SCLK divider 2 (1.1 steps 2-3), whoever set the PLL. The Baofeng bootloader starts
+	// the PLL but leaves the controller in single-bit mode at divider 4, which runs code from flash about 6 times slower
+	QUAD_ENABLE = 0x01000001u;
+	LCSFC_BAUDR = 0x02;
+	hrc_barrier();
+
+	if (on_osc) {
+		// Still on the oscillator: the PLL (1.1 steps 4-10)
 		CLK_MGR_PLL = (CLK_MGR_PLL & ~0x00FFFFFFu) | (PLL_REFDIV << 18) | (PLL_FBDIV << 6) | (PLL_POSTDIV1 << 3) |
 			      PLL_POSTDIV2;
 		CLK_MGR_USB_SDIO = (7u << 16) | 6u;		// USB 48 MHz, SDIO divider 6

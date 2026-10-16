@@ -139,7 +139,19 @@ static struct {
 	bool pcm;
 	audio_block_cb_t cb;
 } aud;
-static bool a_start(audio_block_cb_t cb, void *ctx) { (void)ctx; aud.cb = cb; aud.streaming = true; aud.starts++; return true; }
+static bool a_start_fails;	// the codec clock check fails after the callback already ran once
+static bool a_start(audio_block_cb_t cb, void *ctx)
+{
+	aud.starts++;
+	if (a_start_fails) {
+		int16_t m[AUDIO_BLOCK_SAMPLES] = { 0 }, s[AUDIO_BLOCK_SAMPLES];
+		cb(m, s, ctx);
+		return false;
+	}
+	aud.cb = cb;
+	aud.streaming = true;
+	return true;
+}
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
 static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
@@ -614,10 +626,53 @@ static void test_beep_module(void)
 	beep_service(false);
 	CHECK(!aud.streaming && aud.stops == 1);
 
+	// The stream's clock stops after one block (a codec that goes quiet): the beep gives the stream and the speaker
+	// route up after STALL_POLLS polls instead of holding the PCM route on until a reboot
+	beep_play(BEEP_KEY, 100, false);
+	CHECK(aud.starts == 2 && aud.streaming);
+	beep_audio_block(mic, blk, NULL);
+	CHECK(aud.pcm && beep_busy());
+	beep_service(false);			// sees the block
+	for (int i = 0; i < 7; i++) {
+		beep_service(false);
+	}
+	CHECK(aud.streaming && aud.pcm);	// 7 polls (175 ms) without a block: still waiting
+	beep_service(false);
+	CHECK(!aud.streaming && !aud.pcm && !beep_busy() && aud.stops == 2);
+	beep_stats_t bs;
+	beep_get_stats(&bs);
+	CHECK(bs.stalls == 1);
+	// A healthy stream is never given up: a block between polls resets the count. The beep after a give-up still
+	// gets its silent lead-in block (the stall left the lead counter at its end)
+	beep_play(BEEP_ERROR, 100, false);
+	beep_audio_block(mic, blk, NULL);
+	bool lead_silent = true;
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		lead_silent &= blk[i] == 0;
+	}
+	CHECK(lead_silent && aud.pcm && beep_busy());
+	beep_service(false);
+	for (int i = 0; i < 12; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false);
+	}
+	beep_get_stats(&bs);
+	CHECK(bs.stalls == 1);
+	while (aud.streaming) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false);
+	}
+	CHECK(!aud.pcm && aud.stops == 3);
+
+	// A start that fails after one block already played part of the beep: stopped, route back, not busy
+	a_start_fails = true;
+	beep_play(BEEP_KEY, 100, false);
+	a_start_fails = false;
+	CHECK(aud.starts == 4 && aud.stops == 4 && !aud.pcm && !beep_busy());
 
 	// Shared (the voice stream runs): no stream started; beep_mix adds into the block
 	beep_play(BEEP_TX_PERMIT, 50, true);
-	CHECK(aud.starts == 1);
+	CHECK(aud.starts == 4);	// no stream of its own
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 		blk[i] = 1000;
 	}
@@ -645,7 +700,7 @@ static void test_beep_module(void)
 	beep_play(BEEP_KEY, 50, false);
 	beep_stats_t st;
 	beep_get_stats(&st);
-	CHECK(st.no_stream == 1 && st.played == 3);
+	CHECK(st.no_stream == 2 && st.played == 5);
 	beep_init(&fake_audio);
 
 	// A beep inside the hold: no second lead-in, the tone starts in the first block

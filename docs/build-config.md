@@ -151,6 +151,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 | md380 | `FONT_XL`, `NET_PPP` (maximal build too) | a 160 px panel has no use for the font; PPP stands in for USB |
 | md380 | `NET_USRP` (maximal build too; users can pick it) | flash, and it carries DMR only on this radio (no FM audio path to the processor yet) |
 | md380 | `DMR_UDP_COMPRESS` (maximal build too; users can pick it) | flash (about 460 B, for the APRS position page): IP over DMR still works, with full headers |
+| md380 | `SNMP` (8 KB; users can pick it with another feature off) | flash: the default had 56 bytes left. SNMP monitoring is mostly for fixed hotspots and repeaters |
 | dm32 | `USB`, `USB_NETWORK` (maximal build too: `BOARD_UNSUPPORTED`) | no USB data port on the radio; PPP on the programming cable is its IP link |
 | dm32 | `FONT_XL` (on in the maximal build) | the core draws at 120x160 |
 | every board | `AUDIO_PROBE` | a bench diagnostic |

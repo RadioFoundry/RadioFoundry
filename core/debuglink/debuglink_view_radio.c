@@ -35,8 +35,8 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
-	dl_text(t, "beep.built=1\nbeep.played=%u\nbeep.no_stream=%u\nbeep.blocks=%u\nbeep.busy=%u\n", (unsigned)b.played,
-		(unsigned)b.no_stream, (unsigned)b.blocks, beep_busy());
+	dl_text(t, "beep.built=1\nbeep.played=%u\nbeep.no_stream=%u\nbeep.blocks=%u\nbeep.stalls=%u\nbeep.busy=%u\n",
+		(unsigned)b.played, (unsigned)b.no_stream, (unsigned)b.blocks, (unsigned)b.stalls, beep_busy());
 #else
 	dl_text(t, "beep.built=0\n");
 #endif
