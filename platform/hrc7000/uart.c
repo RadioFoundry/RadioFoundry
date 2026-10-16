@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The programming cable's UART as the host port (hal_stream.h): 115200 8N1 (docs/spec/hardware-dm32.md 3.1). UART0 on
 // the DM-32UV, UART1 on the DB25-D (the board sets HRC_HOST_UART). Receive by interrupt into a ring buffer; transmit by
-// polling the TX FIFO (the host link task is the only writer).
+// polling the TX FIFO (the host link task is the only writer). The set-up and the receive interrupt's loop are shared
+// with the boards' other UARTs (hrc_uart_*, the DM-32UV's GPS).
 #include "platform.h"
 #include "hal_stream.h"
 #include "FreeRTOS.h"
@@ -40,6 +41,7 @@
 #endif
 
 #define U(off)		REG32(HOST_BASE + (off))
+#define UB(base, off)	REG32((base) + (off))
 
 static uint8_t rx_buf[RX_SIZE];
 static volatile uint32_t rx_head, rx_tail;
@@ -51,32 +53,57 @@ static uint32_t waits;			// wait_rx() calls: the host link task's heartbeat (one
 static SemaphoreHandle_t rx_sem;
 static bool started;
 
-static void uart_isr(void)
+void hrc_uart_setup(uint32_t base, uint32_t baud)
 {
-	BaseType_t woken = pdFALSE;
-	bool any = false;
-	for (uint32_t n = 0; n < 64; n++) {
-		uint32_t lsr = U(UART_LSR);	// reading it clears the error bits: one read per character
+	uint32_t div = (HRC_APB_HZ + 8u * baud) / (16u * baud);	// 115200: 46 (45.6), 0.9 % slow; 9600: 547, 0.02 %
+	UB(base, UART_IER) = 0;
+	UB(base, UART_LCR) = LCR_DLAB;
+	UB(base, UART_RBR) = div & 0xFFu;
+	UB(base, UART_IER) = (div >> 8) & 0xFFu;
+	UB(base, UART_LCR) = LCR_8N1;
+	UB(base, UART_FCR) = 0x67;	// FIFOs on and reset, RX trigger 1 character
+}
+
+void hrc_uart_rx_irq(uint32_t base, bool on)
+{
+	UB(base, UART_IER) = on ? IER_RX : 0;
+}
+
+uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged))
+{
+	uint32_t n = 0;
+	while (n < 64u) {
+		uint32_t lsr = UB(base, UART_LSR);	// reading it clears the error bits: one read per character
 		if ((lsr & LSR_DR) == 0) {
 			break;
 		}
-		if (lsr & LSR_ERRORS) {
-			rx_line_errors++;
-		}
-		uint8_t b = (uint8_t)U(UART_RBR);
-		uint32_t next = (rx_head + 1u) & (RX_SIZE - 1u);
-		if (next != rx_tail) {
-			rx_buf[rx_head] = b;
-			rx_head = next;
-		} else {
-			rx_overruns++;
-		}
-		rx_bytes++;
-		any = true;
+		rx((uint8_t)UB(base, UART_RBR), (lsr & LSR_ERRORS) != 0);
+		n++;
 	}
-	(void)U(UART_LSR);	// clears a line status interrupt
-	(void)U(UART_USR);	// clears a busy-detect interrupt
-	if (any && rx_sem != NULL) {
+	(void)UB(base, UART_LSR);	// clears a line status interrupt
+	(void)UB(base, UART_USR);	// clears a busy-detect interrupt
+	return n;
+}
+
+static void host_rx(uint8_t b, bool flagged)
+{
+	if (flagged) {
+		rx_line_errors++;
+	}
+	uint32_t next = (rx_head + 1u) & (RX_SIZE - 1u);
+	if (next != rx_tail) {
+		rx_buf[rx_head] = b;
+		rx_head = next;
+	} else {
+		rx_overruns++;
+	}
+	rx_bytes++;
+}
+
+static void uart_isr(void)
+{
+	BaseType_t woken = pdFALSE;
+	if (hrc_uart_rx_isr(HOST_BASE, host_rx) != 0 && rx_sem != NULL) {
 		xSemaphoreGiveFromISR(rx_sem, &woken);
 	}
 	portYIELD_FROM_ISR(woken);
@@ -84,13 +111,7 @@ static void uart_isr(void)
 
 void hrc_host_uart_init(void)
 {
-	uint32_t div = (HRC_APB_HZ + 8u * BAUD) / (16u * BAUD);	// 46 (45.6): 0.9 % slow
-	U(UART_IER) = 0;
-	U(UART_LCR) = LCR_DLAB;
-	U(UART_RBR) = div & 0xFFu;
-	U(UART_IER) = (div >> 8) & 0xFFu;
-	U(UART_LCR) = LCR_8N1;
-	U(UART_FCR) = 0x67;	// FIFOs on and reset, RX trigger 1 character
+	hrc_uart_setup(HOST_BASE, BAUD);
 }
 
 static bool start(void)
@@ -104,7 +125,7 @@ static bool start(void)
 	hrc_host_uart_init();
 	rx_head = rx_tail = 0;
 	hrc_irq_register(HOST_IRQ, uart_isr);
-	U(UART_IER) = IER_RX;
+	hrc_uart_rx_irq(HOST_BASE, true);
 	hrc_irq_enable(HOST_IRQ, true);
 	started = true;
 	return true;

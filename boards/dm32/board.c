@@ -84,6 +84,7 @@ const board_t board = {
 #if CONFIG_NET_PPP
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
+	.gps_present = dm32_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 	.system = &hrc_system,
 };
 
@@ -187,4 +188,5 @@ void board_init(void)
 	dm32_power.init();
 	dm32_flash.init();
 	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// OpenDM32 keeps a decoded copy there
+	dm32_gps_init();
 }

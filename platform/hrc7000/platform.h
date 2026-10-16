@@ -271,4 +271,13 @@ typedef struct {
 } hrc_uart_traffic_t;
 void hrc_host_uart_traffic(hrc_uart_traffic_t *t);
 
+// Any of the SoC's UARTs (UART0_BASE, UART1_BASE, ...; uart.c). setup: baud 8N1 from the APB clock, FIFOs on, receive
+// trigger at one character, interrupts off. rx_irq: the received-data and line-status interrupts (IER = 0x05) on or
+// off. rx_isr, for the UART's interrupt handler: every waiting character (64 at most) to rx, flagged when the UART
+// marked it (FIFO overrun, parity, framing, break), then the line-status and busy-detect interrupts cleared; returns
+// how many came
+void hrc_uart_setup(uint32_t base, uint32_t baud);
+void hrc_uart_rx_irq(uint32_t base, bool on);
+uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
+
 #endif

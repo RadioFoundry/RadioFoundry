@@ -94,3 +94,21 @@ def test_codec_present(dm32):
     if line.endswith("none"):
         pytest.skip("no stock codec merged (tools/dm32_codec.py): DMR voice is silent")
     assert line in ("codec 049", "codec 046"), line
+
+
+def test_gps_nmea(dm32):
+    """The GPS module talks on UART1 (hardware-dm32.md 12): heard at start-up, valid sentences keep coming (about one a
+    second, fix or not), few bad ones. Right after start-up it waits out the driver's 5 s listen."""
+    line = find(diag_lines(dm32), "gps ")
+    if line is None:
+        pytest.skip("a build without the GPS driver")
+    if line.startswith("gps no"):
+        time.sleep(6)  # just started: the driver may still be listening
+        line = find(diag_lines(dm32), "gps ")
+    good0, bad0, b0 = (int(x) for x in re.findall(r"\d+", line)[:3])
+    assert line.startswith("gps yes"), f"no valid NMEA heard: {line} (b0 = no bytes: PTA9 mux or GPIO 0x2C power)"
+    time.sleep(3)
+    good1, bad1, b1 = (int(x) for x in re.findall(r"\d+", find(diag_lines(dm32), "gps "))[:3])
+    assert good1 > good0, f"no new sentences in 3 s ({good0} -> {good1})"
+    assert b1 > b0
+    assert bad1 - bad0 <= (good1 - good0) // 4, f"many bad sentences ({bad0} -> {bad1}): baud rate or line noise"

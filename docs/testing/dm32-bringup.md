@@ -161,6 +161,16 @@ The glue isn't written yet ([airband-and-broadcast.md](../spec/airband-and-broad
 | A strong local station with each reference clock setting; with and without the headset | reference clock (B2), audio path (B4), antenna (B5) |
 | A call on the channel while listening | the broadcast mutes and comes back 2 s after |
 
+## 12. GPS
+
+No fix needed: the module talks from about 1 s after power-up, indoors too.
+
+| Check | Expected | If not |
+|---|---|---|
+| The diagnostics line `gps ...` (Settings > Diagnostics, or the debug link's diag lines) 10 s after start-up | `gps yes`, the good count rising by a few a second, bad near 0, `b` rising by about 300-600 a second | `gps no` with `b0`: no bytes on UART1: PTA9's mux (IO_DIPLEX0 bit 9 = 0), the power pin (0x2C low), the module. `gps no` with bytes but no good sentences: the baud rate (try 115200; stock may have reconfigured the module) |
+| Outdoors, a few minutes | Info > Position shows a fix and the satellite count | the NMEA talker or sentence set (`aprs_nmea`) |
+| Bad count rising steadily | near 0 | UART errors: the divisor (547 at 84 MHz APB) or noise on the line |
+
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).
@@ -170,3 +180,4 @@ The glue isn't written yet ([airband-and-broadcast.md](../spec/airband-and-broad
 - Codec 049: DMR voice encodes and decodes (the SDR bench modem decodes our AMBE with few FEC corrections); 046 untried.
 - UART divisor 46 (0.9 % slow) or 45 (1.3 % fast).
 - RSSI dBm offset and the noise scale for the squelch.
+- GPS: NMEA arrives on UART1 at 9600 (section 12); not yet seen on the radio.

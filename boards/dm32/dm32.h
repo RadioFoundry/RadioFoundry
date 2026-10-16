@@ -46,6 +46,11 @@ void dm32_speaker_pcm(bool on);
 void dm32_aprs_listen(bool on);
 extern const hal_afsk_t dm32_afsk;
 
+// --- GPS (gps_dm32.c): powered and listened for at start-up, off again when no module answers ---
+void dm32_gps_init(void);
+bool dm32_gps_present(void);
+void dm32_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);
+
 // --- Diagnostics (diag_dm32.c) ---
 typedef struct {
 	uint16_t rssi_raw, noise_raw;	// FD6818 0x67 / 0x65 from the last status poll
