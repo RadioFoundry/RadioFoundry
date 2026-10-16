@@ -58,6 +58,7 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 	static const char *const blocks[] = { "ok", "no_call", "no_freq", "not_amateur", "no_position", "no_afsk",
 					      "busy" };
 	static const char *const srcs[] = { "none", "gps", "host", "fixed" };
+	static const char *const fails[] = { "none", "busy", "aborted", "no_key", "no_afsk", "timeout" };
 	static const char *const whys[] = { "none", "interval", "smart", "turn", "distance", "ptt", "manual", "boot" };
 	aprs_view_t v;
 
@@ -77,9 +78,9 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 	dl_text(t, "aprs.next_s=%d\naprs.last_why=%s\naprs.last_ms=%u\naprs.rf_active=%u\n",
 		v.next_s == 0xFFFFu ? -1 : (int)v.next_s, word(v.last_why, whys, 8), (unsigned)v.last_ms, v.rf_active);
 	dl_text_kv_str(t, "aprs.last_info", v.last_info);
-	dl_text(t, "aprs.rf_sent=%u\naprs.rf_failed=%u\naprs.rf_busy=%u\naprs.dmr_sent=%u\naprs.dmr_failed=%u\n",
-		(unsigned)v.rf_sent, (unsigned)v.rf_failed, (unsigned)v.rf_busy, (unsigned)v.dmr_sent,
-		(unsigned)v.dmr_failed);
+	dl_text(t, "aprs.rf_sent=%u\naprs.rf_failed=%u\naprs.rf_fail=%s\naprs.rf_busy=%u\naprs.dmr_sent=%u\n"
+		"aprs.dmr_failed=%u\n", (unsigned)v.rf_sent, (unsigned)v.rf_failed, word(v.rf_fail, fails, 6),
+		(unsigned)v.rf_busy, (unsigned)v.dmr_sent, (unsigned)v.dmr_failed);
 	dl_text(t, "aprs.rx_frames=%u\naprs.rx_bad=%u\naprs.host_in=%u\naprs.host_out=%u\naprs.host_dropped=%u\n",
 		(unsigned)v.rx_frames, (unsigned)v.rx_bad, (unsigned)v.host_in, (unsigned)v.host_out,
 		(unsigned)v.host_dropped);

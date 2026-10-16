@@ -1288,18 +1288,19 @@ bool aprs_rf_take(aprs_rf_job_t *job, uint32_t now_ms)
 	return true;
 }
 
-void aprs_rf_done(bool sent, bool busy, uint32_t now_ms)
+void aprs_rf_done(aprs_rf_result_t r, uint32_t now_ms)
 {
 	LOCK();
 	a.now = now_ms;
-	if (sent) {
+	if (r == APRS_RF_SENT) {
 		queue_drop(a.taken);
 		a.v.rf_sent++;
 	} else {
-		if (busy) {
+		if (r == APRS_RF_BUSY) {
 			a.v.rf_busy++;
 		} else {
 			a.v.rf_failed++;
+			a.v.rf_fail = (uint8_t)r;
 		}
 		uint8_t keep = 0;
 		for (uint8_t i = 0; i < a.taken && i < a.qn; i++) {
