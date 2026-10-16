@@ -80,6 +80,7 @@
 #define TIMER_TICK		1
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
+#define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (hrc_afsk.c)
 
 // --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---
 #define PIC_MODE		REG32(PIC_BASE + 0x00)
@@ -226,6 +227,8 @@ void hrc_tick_start(uint32_t hz);
 // One-shot on a timer: fires once after us microseconds, then the timer stops (the handler reads EOI)
 void hrc_timer_oneshot(uint8_t n, uint32_t us);
 void hrc_timer_stop(uint8_t n);
+// Periodic: an interrupt every us microseconds until hrc_timer_stop (the handler reads EOI)
+void hrc_timer_periodic(uint8_t n, uint32_t us);
 // Clear a timer's interrupt (read EOI)
 static inline void hrc_timer_ack(uint8_t n)
 {

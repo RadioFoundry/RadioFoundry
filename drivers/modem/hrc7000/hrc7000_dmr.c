@@ -248,6 +248,7 @@ static void tx_finish(hrc7000_dmr_t *e)
 	rf_off(e);
 	e->txq_tail = e->txq_head;
 	e->tx_state = TXS_IDLE;
+	e->tx_listen = false;
 	e->st.tx_done++;
 	if (e->cfg.repeater) {
 		// Repeater: passive timing now, receive from the next tick on (keeps the repeater's slot timing)
@@ -268,12 +269,25 @@ static void write_tx_ram(hrc7000_dmr_t *e, const uint8_t *p, uint8_t n)
 	}
 }
 
+// The data sync pattern the next burst is sent with (2.2); the chip sends a voice burst with its complement
+static void set_send_sync(hrc7000_dmr_t *e, uint8_t family)
+{
+	static const uint32_t pattern[][2] = {
+		[DMR_SYNC_MS] = { 0xD5D7F7, 0x7FD757 }, [DMR_SYNC_BS] = { 0xDFF57D, 0x75DF5D },
+		[DMR_SYNC_TS1] = { 0xF7FDD5, 0xDDFD55 }, [DMR_SYNC_TS2] = { 0xD7557F, 0x5FF7F5 },
+	};
+	if (family == e->send_sync || family < DMR_SYNC_MS || family > DMR_SYNC_TS2) {
+		return;
+	}
+	w(e, C7_SEND_DATA_SYNC_H, pattern[family][0]);
+	w(e, C7_SEND_DATA_SYNC_L, pattern[family][1]);
+	e->send_sync = family;
+}
+
 static void arm(hrc7000_dmr_t *e, const dmr_tx_burst_t *b)
 {
 	uint8_t kind = b->kind;
-	if (b->sync_override != DMR_SYNC_NONE) {
-		e->st.tx_unsupported++;	// the send sync is fixed at init (MS data); sent with it
-	}
+	set_send_sync(e, b->sync_override != DMR_SYNC_NONE ? b->sync_override : DMR_SYNC_MS);
 	if (kind == DMR_BURST_VOICE) {
 		uint8_t idx = (uint8_t)(b->voice_index % 6u);
 		for (uint8_t i = 0; i < DMR_VOICE_BYTES; i++) {
@@ -343,7 +357,7 @@ static void tx_tick(hrc7000_dmr_t *e)
 		// fall through
 	case TXS_RUN:
 		if (!e->tx_our_next) {
-			w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+			w(e, C7_LAYER2_TXRX_CTRL, e->tx_listen ? TXRX_RX : TXRX_NONE);	// the other slot
 			e->tx_our_next = true;
 			break;
 		}
@@ -441,7 +455,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 	hrc7000_rx_status_t s;
 	e->st.last_rx_type_info = rti;
 	if (e->tx_state != TXS_IDLE) {
-		return;	// not receiving while we send
+		e->st.rx_in_tx[(e->tick - e->tx_last_arm) & 1u]++;	// which slot the chip hears in (tx_listen)
+	}
+	if (e->tx_state != TXS_IDLE && !e->tx_listen) {
+		return;	// not receiving while we send, unless asked to (tx_listen)
 	}
 	hrc7000_dmr_decode(rti, &s);
 	if (s.kind == HRC7000_KIND_NONE) {
@@ -541,6 +558,9 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		}
 		w(e, C7_SYS_INTERP_CLEAR, list);
 		e->st.last_sys_list = list;
+		if ((list & C7_SYS_FM_RX) != 0 && e->fm_rx != NULL) {
+			e->fm_rx();
+		}
 		if (!e->running) {
 			continue;
 		}
@@ -621,6 +641,7 @@ void hrc7000_dmr_run(hrc7000_dmr_t *e)
 {
 	lock(e);
 	e->tx_state = TXS_IDLE;
+	e->tx_listen = false;
 	e->txq_tail = e->txq_head;
 	e->rx_any = false;
 	e->cc_tick = e->tick;
@@ -638,6 +659,7 @@ void hrc7000_dmr_halt(hrc7000_dmr_t *e)
 	w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
 	rf_off(e);
 	e->tx_state = TXS_IDLE;
+	e->tx_listen = false;
 	e->txq_tail = e->txq_head;
 	e->running = false;
 	if (was_tx) {
@@ -719,6 +741,8 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->tx_end_req = false;
 		e->tx_abort_req = false;
 		e->tx_any = false;
+		e->tx_listen = false;
+		e->send_sync = DMR_SYNC_NONE;	// written with the first burst (a re-init may have put MS back)
 		e->tx_wait = 0;
 		e->last_kind = KIND_UNSET;
 		e->next_voice = 0;
@@ -732,6 +756,15 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 	}
 	unlock(e);
 	return ok;
+}
+
+void hrc7000_dmr_tx_listen(hrc7000_dmr_t *e)
+{
+	lock(e);
+	if (e->tx_state != TXS_IDLE) {
+		e->tx_listen = true;
+	}
+	unlock(e);
 }
 
 bool hrc7000_dmr_tx_queue(hrc7000_dmr_t *e, const dmr_tx_burst_t *b)

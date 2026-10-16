@@ -30,6 +30,9 @@ void hrc_dmr_leave(void);
 void hrc_dmr_rx_restart(void);
 bool hrc_dmr_tx_active(void);
 void hrc_dmr_tx_drop(void);
+// FM receive audio (fm_rx_audio.c): fn runs from the modem's system interrupt for each half the modem fills; NULL
+// stops it. The system interrupt stays on for it outside DMR
+bool hrc_dmr_fm_rx_hook(void (*fn)(void));
 
 extern const hal_dmr_modem_t hrc_dmr;
 
@@ -44,6 +47,7 @@ static inline void hrc_dmr_leave(void) {}
 static inline void hrc_dmr_rx_restart(void) {}
 static inline bool hrc_dmr_tx_active(void) { return false; }
 static inline void hrc_dmr_tx_drop(void) {}
+static inline bool hrc_dmr_fm_rx_hook(void (*fn)(void)) { (void)fn; return false; }
 #endif
 
 #endif

@@ -124,6 +124,9 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_wr(d, C7_TX_IF_FREQ, 0x0BB800);
 	hrc7000_wr(d, C7_RECV_MS_SYNC_H, hrc7000_rd(d, C7_RECV_MS_SYNC_H) | (1u << 31));	// undocumented enables
 	hrc7000_wr(d, C7_RECV_BS_SYNC_H, hrc7000_rd(d, C7_RECV_BS_SYNC_H) | (1u << 31));
+	// The same enable for the TDMA direct mode syncs: without it they are never detected (bench, 2026-10-16)
+	hrc7000_wr(d, C7_RECV_TDMA1_SYNC_H, hrc7000_rd(d, C7_RECV_TDMA1_SYNC_H) | (1u << 31));
+	hrc7000_wr(d, C7_RECV_TDMA2_SYNC_H, hrc7000_rd(d, C7_RECV_TDMA2_SYNC_H) | (1u << 31));
 	hrc7000_wr(d, C7_RF_CONTROL, RF_CONTROL_VALUE);
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 	hrc7000_wr(d, C7_FM_TONE1, FM_TONE1_DEFAULT);	// DTMF tone steps (8.3)
@@ -138,6 +141,12 @@ void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear)
 {
 	d->audio_ctl = (d->audio_ctl & ~clear) | set;
 	hrc7000_wr(d, C7_AUDIO_CONTROL, d->audio_ctl);
+}
+
+void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on)
+{
+	uint32_t m = hrc7000_rd(d, C7_SYS_INTERP_MASK);
+	hrc7000_wr(d, C7_SYS_INTERP_MASK, on ? (m | C7_SYS_FM_RX) : (m & ~C7_SYS_FM_RX));
 }
 
 void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted)
