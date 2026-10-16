@@ -16,6 +16,9 @@
 // Never set: 0x0100 turns the input DC filter off, 0x2000 the input AGC (not measured on air), 0x4000 a test mode
 // that sends one fixed frame
 
+// ambe2_enc_flags(VOCODER_OPT_DEFAULT), for a static initializer
+#define AMBE2_ENC_DEFAULT	(AMBE2_ENC_NOISE_GATE | AMBE2_ENC_NOISE_SUPPR | AMBE2_ENC_TONE_FRAMES)
+
 // What these hosts offer through hal_vocoder_t (the AGC is not offered until it has been tested on air)
 #define AMBE2_OPTIONS		(VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES)
 

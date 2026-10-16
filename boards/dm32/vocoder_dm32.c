@@ -16,6 +16,7 @@
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
+#include "vocoder/ambe2_flags.h"
 
 #define SLOT_MAGIC		0x43524444u	// "DDRC" little-endian: ODR DM-32 codec slot
 #define SLOT_VERSION		1u
@@ -64,7 +65,7 @@ static const codec_slot_t *slot;
 static uint32_t code_ram;
 static int8_t presence = -1;	// -1 not checked yet
 static bool ready;
-static bool enc_first;
+static uint32_t enc_flags = AMBE2_ENC_DEFAULT;	// set_options (VOCODER_OPT_DEFAULT until then)
 
 static uint32_t crc32(const uint8_t *p, uint32_t len, uint32_t c)
 {
@@ -169,12 +170,11 @@ static void reset(void)
 	((fn2_t)entry(slot->fec_init))(h16(D, 0xFD0), 1);
 	((decode_t)entry(slot->decode))(h16(D, 0x12AE), HALF, h16(D, 0x1354), 0, 8, 0, D);
 	((fn3_t)entry(slot->dec_set))(D, *h16(D, 0x116A), *h16(D, 0x116C));
-	enc_first = true;
 	ready = true;
 }
 
-// Two calls per 20 ms frame, 80 samples each, half 0 then 1. Flags 0x1840 on the first call of a transmission
-// (E[0x172C] at init) and 0x800 after; r1 and the sp+8 argument are the state's own E[0x1736] / E[0x173A], as stock's
+// Two calls per 20 ms frame, 80 samples each, half 0 then 1. Both calls pass the same flags word, read once per frame
+// (set_options; 0x1840 by default); r1 and the sp+8 argument are the state's own E[0x1736] / E[0x173A], as stock's
 // wrapper passes them. The 49 parameter bits come back one per halfword.
 static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
 {
@@ -187,10 +187,10 @@ static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODE
 	}
 	memcpy(pcmbuf, pcm, sizeof pcmbuf);
 	encode_t enc = (encode_t)entry(slot->encode);
+	const uint32_t flags = enc_flags;
 	for (int h = 0; h < 2; h++) {
-		enc(bitbuf, *h16(enc_state, 0x1736), &pcmbuf[h * HALF], HALF, enc_first ? 0x1840 : 0x800, h,
+		enc(bitbuf, *h16(enc_state, 0x1736), &pcmbuf[h * HALF], HALF, (int)flags, h,
 		    *h16(enc_state, 0x173A), enc_state);
-		enc_first = false;
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bits[i] = (uint8_t)(bitbuf[i] & 1);
@@ -227,8 +227,25 @@ static const char *profile(void)
 	return slot->stock_tag == 49u ? "dm32-049" : (slot->stock_tag == 46u ? "dm32-046" : "dm32-unknown");
 }
 
+// Encode options (hal_vocoder_t): one flags word for every encode call, kept across reset()
+static uint32_t options(void)
+{
+	return AMBE2_OPTIONS;
+}
+
+static void set_options(uint32_t opts)
+{
+	enc_flags = ambe2_enc_flags(opts);
+}
+
+static uint32_t encode_flags(void)
+{
+	return enc_flags;
+}
+
 const hal_vocoder_t dm32_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
+	.options = options, .set_options = set_options, .encode_flags = encode_flags,
 };
 
 uint8_t dm32_vocoder_tag(void)

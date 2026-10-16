@@ -238,6 +238,7 @@ static void testFlagsMap(void)
 	CHECK(ambe2_enc_flags(VOCODER_OPT_NOISE_REDUCTION) == 0x0840u, "noise reduction");
 	CHECK(ambe2_enc_flags(VOCODER_OPT_TONE_FRAMES) == 0x1800u, "tone frames");
 	CHECK(ambe2_enc_flags(VOCODER_OPT_DEFAULT) == 0x1840u, "the defaults are the full pattern");
+	CHECK(AMBE2_ENC_DEFAULT == ambe2_enc_flags(VOCODER_OPT_DEFAULT), "the hosts' initial word");
 	// AGC is not offered; nothing ever sets the DC filter off, AGC or test mode bits
 	CHECK(ambe2_enc_flags(VOCODER_OPT_AGC) == 0x0800u, "AGC not mapped");
 	CHECK((ambe2_enc_flags(0xFFFFFFFFu) & 0x6100u) == 0, "never 0x100, 0x2000, 0x4000");
