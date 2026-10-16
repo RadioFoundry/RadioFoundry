@@ -501,6 +501,64 @@ static void test_fm_rx_keeps_pcm(void)
 	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_FM_PLAY);
 }
 
+// The AUDIO_CONTROL shadow changes only under the lock (hrc7000_set_crit): the FM and DMR entries too, so an
+// interrupt (the PCM mic meter clearing b4) that comes at the unlock is never undone. The "interrupt" here runs in
+// the exit hook, as a pending one does when the CPU's interrupts come back on
+static int crit_depth, crit_enters, crit_unlocked_changes, crit_unwritten;
+static uint32_t crit_seen;
+static bool irq_pending;
+
+static uint32_t crit_enter(void)
+{
+	if (crit_depth == 0 && dev.audio_ctl != crit_seen) {
+		crit_unlocked_changes++;
+	}
+	crit_enters++;
+	return (uint32_t)crit_depth++;
+}
+
+static void crit_exit(uint32_t s)
+{
+	if (REG(C7_AUDIO_CONTROL) != dev.audio_ctl) {
+		crit_unwritten++;	// the register must hold the shadow before the lock goes
+	}
+	crit_depth = (int)s;
+	crit_seen = dev.audio_ctl;
+	if (crit_depth == 0 && irq_pending) {
+		irq_pending = false;
+		hrc7000_audio_bits(&dev, 0, C7_AUDIO_PCM_MIC);	// the meter's interrupt, nested in its own lock
+	}
+}
+
+static void test_audio_lock(void)
+{
+	setup();
+	CHECK(dev.crit_enter == NULL && dev.crit_exit == NULL);
+	hrc7000_audio_bits(&dev, C7_AUDIO_PCM_MIC, 0);	// no lock set: plain update
+	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_PCM_MIC);
+	hrc7000_set_crit(&dev, crit_enter, crit_exit);
+	crit_depth = crit_enters = crit_unlocked_changes = crit_unwritten = 0;
+	crit_seen = dev.audio_ctl;
+
+	irq_pending = true;
+	hrc7000_fm_rx(&dev, false);
+	CHECK(!irq_pending && (REG(C7_AUDIO_CONTROL) & C7_AUDIO_PCM_MIC) == 0);	// the meter's clear stays
+	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_FM_PLAY);
+	hrc7000_audio_bits(&dev, C7_AUDIO_PCM_MIC, 0);
+	irq_pending = true;
+	hrc7000_fm_tx(&dev, true);
+	CHECK((REG(C7_AUDIO_CONTROL) & (C7_AUDIO_PCM_MIC | C7_AUDIO_FM_PLAY)) == 0);
+	hrc7000_fm_idle(&dev);
+	hrc7000_dmr_enter(&dev, 0, 11);
+	uint32_t outer = crit_enter();	// a caller that holds the lock already: the nested update leaves it held
+	hrc7000_audio_bits(&dev, C7_AUDIO_RING_PLAY, 0);
+	CHECK(crit_depth == 1);
+	crit_exit(outer);
+	CHECK(crit_depth == 0 && crit_enters >= 7);
+	CHECK(crit_unlocked_changes == 0 && crit_unwritten == 0);
+	CHECK(REG(C7_AUDIO_CONTROL) == dev.audio_ctl && (dev.audio_ctl & C7_AUDIO_RING_PLAY));
+}
+
 // Mic gain: the board's value plus the user's offset, clamped to GCR_ADCL's 0..42 dB, written with bit 7 (shared)
 static void test_mic_gain(void)
 {
@@ -783,6 +841,7 @@ int main(void)
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();
+	test_audio_lock();
 	test_tx_tone();
 	test_subtone();
 	test_fm_rx_audio();

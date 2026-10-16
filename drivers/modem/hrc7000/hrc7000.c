@@ -33,6 +33,14 @@ void hrc7000_attach(hrc7000_t *d, volatile uint32_t *regs, volatile uint8_t *buf
 	d->buf = buf;
 	d->audio_ctl = C7_AUDIO_I2S_SLAVE;
 	d->tone_on = false;
+	d->crit_enter = NULL;
+	d->crit_exit = NULL;
+}
+
+void hrc7000_set_crit(hrc7000_t *d, uint32_t (*enter)(void), void (*exit_fn)(uint32_t state))
+{
+	d->crit_enter = enter;
+	d->crit_exit = exit_fn;
 }
 
 static void spin(uint32_t n)
@@ -141,10 +149,18 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_set_mic_gain(d, mic_gain_db);
 }
 
+// The shadow and the register in one step: an interrupt that changed a bit between the read and the write (the PCM
+// mic meter turning b4 off) would have it undone
 void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear)
 {
+	uint32_t (*enter)(void) = d->crit_enter;
+	void (*exit_fn)(uint32_t) = d->crit_exit;
+	uint32_t s = enter != NULL ? enter() : 0;
 	d->audio_ctl = (d->audio_ctl & ~clear) | set;
 	hrc7000_wr(d, C7_AUDIO_CONTROL, d->audio_ctl);
+	if (exit_fn != NULL) {
+		exit_fn(s);
+	}
 }
 
 void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on)

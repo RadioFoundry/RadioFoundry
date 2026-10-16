@@ -149,6 +149,9 @@ typedef struct {
 	uint32_t subvoice;		// SUBVOICE_COEF before a TX tone (hrc7000_tx_tone)
 	bool tone_on;
 	uint8_t subaudio_dev;		// SUBVOICE_COEF b15:8 at 12.5 kHz (the chip's reset value, set by power_on_init)
+	// Interrupts off around the AUDIO_CONTROL shadow's read-modify-write (hrc7000_set_crit); NULL = none
+	uint32_t (*crit_enter)(void);
+	void (*crit_exit)(uint32_t state);
 } hrc7000_t;
 
 static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
@@ -157,6 +160,10 @@ static inline void hrc7000_codec_wr(hrc7000_t *d, uint8_t reg, uint8_t v) { d->b
 static inline uint8_t hrc7000_codec_rd(hrc7000_t *d, uint8_t reg) { return d->buf[C7_CODEC + reg]; }
 
 void hrc7000_attach(hrc7000_t *d, volatile uint32_t *regs, volatile uint8_t *buf);
+// The lock for the AUDIO_CONTROL shadow, once an interrupt changes it too (the platform's PCM mic meter): every
+// hrc7000_audio_bits call, and so fm_rx, fm_tx, fm_idle and dmr_enter, then runs its update inside enter / exit.
+// enter returns the state exit restores, so the lock nests (a caller that already holds it may call in)
+void hrc7000_set_crit(hrc7000_t *d, uint32_t (*enter)(void), void (*exit_fn)(uint32_t state));
 
 // --- Calibration values (hardware-dm32.md 11.3) ---
 // SIG_CENTER: TX I and Q center = the factory TX center byte (128 without calibration)

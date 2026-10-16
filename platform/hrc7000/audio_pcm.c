@@ -59,8 +59,6 @@ static volatile uint8_t meter_idle;	// halves since the last mic_level() call
 
 static volatile int16_t *const pcm_mic = (volatile int16_t *)C7_PCM_MIC_ADDR;
 
-static void audio_bits(uint32_t set, uint32_t clear);
-
 static void isr_pcm_wr(void)
 {
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR);
@@ -70,7 +68,7 @@ static void isr_pcm_wr(void)
 		if (++meter_idle >= METER_IDLE_BLOCKS) {
 			meter_on = false;	// nobody reads it (VOX off): the stream's use alone decides now
 			if (!running) {
-				audio_bits(0, C7_AUDIO_PCM_MIC);
+				hrc7000_audio_bits(modem, 0, C7_AUDIO_PCM_MIC);
 				hrc_irq_enable(IRQ_PCM_WR, false);
 			}
 		}
@@ -146,17 +144,13 @@ static void audio_task(void *arg)
 	}
 }
 
-static void audio_bits(uint32_t set, uint32_t clear)
-{
-	uint32_t s = hrc_irq_save();
-	hrc7000_audio_bits(modem, set, clear);
-	hrc_irq_restore(s);
-}
-
 void hrc_audio_pcm_attach(hrc7000_t *m, void (*speaker_pcm)(bool on))
 {
 	modem = m;
 	speaker_pcm_cb = speaker_pcm;
+	// The meter's interrupt changes AUDIO_CONTROL b4 (isr_pcm_wr): from now on every shadow update, the board's FM
+	// receive, transmit, idle and DMR entry included, runs with interrupts off
+	hrc7000_set_crit(m, hrc_irq_save, hrc_irq_restore);
 }
 
 void hrc_audio_pcm_hold(bool on)
@@ -195,7 +189,7 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	running = true;
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR);
 	hrc_irq_enable(IRQ_PCM_WR, true);
-	audio_bits(C7_AUDIO_PCM_MIC, 0);
+	hrc7000_audio_bits(modem, C7_AUDIO_PCM_MIC, 0);	// under the lock set at attach
 	return true;
 }
 
