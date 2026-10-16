@@ -40,6 +40,8 @@ typedef struct {
 	uint32_t rf_writes;
 	uint32_t c7_audio, c7_rf_mode;	// HR_C7000 AUDIO_CONTROL and RF_MODE, read now
 	uint8_t c7_work_mode, c7_fm_ptt;	// WORK_MODE, FM_PTT b0
+	uint32_t pa_hz;			// the last TX frequency, or the RX frequency before the first transmission
+	uint16_t pa_drive;		// the DAC B drive of the last transmission, 0 before the first
 } dm1801pro_radio_diag_t;
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
 uint8_t dm1801pro_codec_byte(uint8_t reg);	// the HR_C7000's internal codec, byte registers 0x00-0x3F

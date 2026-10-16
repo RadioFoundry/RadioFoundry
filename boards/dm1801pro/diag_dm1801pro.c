@@ -93,18 +93,28 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, bf_cal_tx_center());
 		break;
 	case 7:
-		put(&o, "pa 145 L/H ");
-		put_u(&o, bf_cal_power_level(145000000u, 1));
-		put(&o, " ");
-		put_u(&o, bf_cal_power_level(145000000u, 8));
+	case 8: {
+		// The factory's L / M / H drive at a VHF and a UHF frequency (hardware-dm1801pro.md 6.4)
+		uint32_t hz = i == 7 ? 145000000u : 435000000u;
+		put(&o, i == 7 ? "pa 145 " : "pa 435 ");
+		o.p += bf_cal_drive_text(hz, o.p, (uint8_t)(o.end - o.p + 1));
 		break;
-	case 8:
-		put(&o, "pa 435 L/H ");
-		put_u(&o, bf_cal_power_level(435000000u, 1));
-		put(&o, " ");
-		put_u(&o, bf_cal_power_level(435000000u, 8));
+	}
+	case 9:
+		// The frequency of the last transmission (the RX frequency before one) and the drive it used, then the
+		// L / M / H drive there: the L and M spacing on air can be compared with these (hardware-dm1801pro.md 6.4)
+		dm1801pro_radio_diag(&d);
+		put(&o, "pa ");
+		put_u(&o, d.pa_hz / 1000u);
+		put(&o, "k dac ");
+		put_u(&o, d.pa_drive);
 		break;
-	case 9: {
+	case 10:
+		dm1801pro_radio_diag(&d);
+		put(&o, "pa tx ");
+		o.p += bf_cal_drive_text(d.pa_hz, o.p, (uint8_t)(o.end - o.p + 1));
+		break;
+	case 11: {
 		int16_t mg[3];
 		if (!dm1801pro_accel_read(mg)) {
 			int16_t id = dm1801pro_accel_id();
@@ -126,13 +136,13 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
-	case 10:
+	case 12:
 		put(&o, "uart ring ");
 		put_u(&o, hrc_host_uart_overruns());
 		put(&o, " err ");
 		put_u(&o, hrc_host_uart_line_errors());
 		break;
-	case 11:
+	case 13:
 		// The modem's audio routing as it is now: compares what an FM transmission sets up (APRS AFSK)
 		dm1801pro_radio_diag(&d);
 		put(&o, "c7 ac ");
@@ -144,9 +154,9 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " rf ");
 		put_x(&o, d.c7_rf_mode, 8);
 		break;
-	case 12: case 13: case 14: case 15: {
+	case 14: case 15: case 16: case 17: {
 		// The codec's 64 byte registers, 16 per line (read one byte at a time: a word read returns one lane)
-		uint8_t base = (uint8_t)((i - 12u) * 16u);
+		uint8_t base = (uint8_t)((i - 14u) * 16u);
 		put(&o, "cd ");
 		put_x(&o, base, 2);
 		put(&o, " ");
@@ -156,7 +166,7 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	}
 #if CONFIG_DMR && CONFIG_VOX
-	case 16: {
+	case 18: {
 		// The VOX mic meter on the mic PCM (audio_pcm.c): level 0-100, the last 10 ms half's peak, halves measured,
 		// running. Reading this line doesn't start the meter; mic_level() (VOX, the view's vox.level) does
 		uint8_t lvl;

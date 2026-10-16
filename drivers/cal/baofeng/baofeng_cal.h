@@ -27,6 +27,9 @@ bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p);
 uint16_t bf_cal_power_level(uint32_t hz, uint8_t level);
 // Raw byte of the 0x175-byte working image (diagnostics)
 uint8_t bf_cal_byte(uint16_t offset);
+// Diagnostics text of the L / M / H drive (levels 1, 4, 8) for a TX frequency: "L/M/H 192/832/1632", or
+// "L/M/H none" without calibration. Always NUL terminated when len > 0; returns the length written
+uint8_t bf_cal_drive_text(uint32_t hz, char *buf, uint8_t len);
 
 // Pure part for host tests: decode the three pieces of a factory page into the working image and derive K values
 #define BF_CAL_LEN		0x175u

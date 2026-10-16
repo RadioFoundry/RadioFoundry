@@ -144,6 +144,43 @@ uint8_t bf_cal_byte(uint16_t offset)
 	return offset < BF_CAL_LEN ? image[offset] : 0;
 }
 
+static void text_put(char *buf, uint8_t len, uint8_t *n, const char *s)
+{
+	while (*s && *n + 1u < len) {
+		buf[(*n)++] = *s++;
+	}
+}
+
+uint8_t bf_cal_drive_text(uint32_t hz, char *buf, uint8_t len)
+{
+	static const uint8_t levels[3] = { 1, 4, 8 };	// L, M, H: the factory's low, mid and high points
+	uint8_t n = 0;
+	if (len == 0) {
+		return 0;
+	}
+	text_put(buf, len, &n, "L/M/H ");
+	if (!valid) {
+		text_put(buf, len, &n, "none");
+	} else {
+		for (int i = 0; i < 3; i++) {
+			char d[6];
+			int k = (int)sizeof d - 1;
+			uint16_t v = bf_cal_power_level(hz, levels[i]);
+			d[k] = '\0';
+			do {
+				d[--k] = (char)('0' + v % 10u);
+				v /= 10u;
+			} while (v && k > 0);
+			if (i > 0) {
+				text_put(buf, len, &n, "/");
+			}
+			text_put(buf, len, &n, d + k);
+		}
+	}
+	buf[n] = '\0';
+	return n;
+}
+
 uint16_t bf_cal_modcal(uint32_t hz)
 {
 	uint32_t f = hz / 1000000u;

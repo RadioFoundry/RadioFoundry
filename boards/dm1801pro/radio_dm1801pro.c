@@ -556,6 +556,8 @@ void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d)
 	d->c7_rf_mode = hrc7000_rd(&modem, C7_RF_MODE);
 	d->c7_work_mode = (uint8_t)hrc7000_rd(&modem, C7_WORK_MODE);
 	d->c7_fm_ptt = (uint8_t)(hrc7000_rd(&modem, C7_FM_PTT) & 1u);
+	d->pa_hz = tx_hz != 0 ? tx_hz : rx_hz;
+	d->pa_drive = tx_drive;
 }
 
 uint8_t dm1801pro_codec_byte(uint8_t reg)
