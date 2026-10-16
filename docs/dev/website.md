@@ -134,6 +134,7 @@ generic drawing from `radio.json` `frame`.
 | `codeplug.js` | Codeplug formats and the converter registry | |
 | `fake.js` | A simulated radio: bootloader with a flash model, ODR's serial port, a synthetic stock file | `odrflash/fakedfu.py` |
 | `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by ODR, then reads, sector writes and the LED | `stub/stubtool.py` |
+| `f4stub.js` | The STM32F4 loader (DM-1701, MD-380): handed over by ODR, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/dm32_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
 | `c7000ui.js`, `radiotop.js` | The HR_C7000 steps (connect, back up and check, write, check) and the radio picture with its LED | |
@@ -141,7 +142,8 @@ generic drawing from `radio.json` `frame`.
 | `app.js` | The page | |
 
 Add `#sim` to the flasher's address to run every step against the simulated radio. `#sim=c7000` simulates a
-DM-1801 Pro on stock firmware, `#sim=c7000-odr` one that runs ODR with the loader hand-over.
+DM-1801 Pro on stock firmware, `#sim=c7000-odr` one that runs ODR with the loader hand-over. `#sim=odr` is a DM-1701
+running ODR, which updates through the STM32F4 loader.
 
 ### Backup bundles (`odr-backup/1`)
 
@@ -210,6 +212,30 @@ The build writes the layout and the codec profiles to `data/flash-boards.json` (
 `tools/dm32_codec.py` and `tools/dm32_flash.py`) and the two stub images to `data/c7000-stub.json`. Bundle parts:
 `program-memory.bin` (`c7000-progmem`, the whole 1 MB) and `data-memory.bin` (`c7000-data`, 16 MB). Restore writes
 the program memory back from 0x0300C000 up; the data memory is not written.
+
+### STM32F4 radios (the loader route)
+
+A DM-1701 or MD-380 on stock firmware always installs through its bootloader (`dfu.js`): that is the only way into a
+stock radio. Once it runs ODR, an update can skip the bootloader. When the "current firmware" step finds ODR, the page
+asks for the STUB offer (command 0x1A op 0; on the STM32 it only reports the staging buffer and parks nothing). The
+loader route is used when all of these hold:
+
+| Condition | Why |
+|---|---|
+| ODR offers stub entry (`CONFIG_STUB_ENTRY`) | the hand-over needs it |
+| ODR reports the radio's codec | the loader writes only the firmware's own flash, so the codec must already be in place |
+| the image has no codec in it, and no mode was forced under Advanced | a merge or a forced mode goes through the bootloader |
+
+The codec step then needs no stock file or key. The write step sends the embedded stub (`data/f4-stub.json`, from
+`stub/f4stub.py`), finds it on the same port or, if it enumerated again, on the granted port with the same serial
+number (one click picks it when the browser didn't keep the grant), and installs in the order of
+[stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 3 erased first and its first word written last. On the MD-380,
+sector 6 is shared with the codec: its current content is downloaded as a file before anything is erased, and the
+codec bytes are written back unchanged. The bootloader route stays on the same step, folded, and opens by itself when
+the loader can't finish. An install cut short leaves the radio in its bootloader at the next power-on, which that route
+finishes.
+
+`data/flash-boards.json` carries the owned flash per board (`f4stub`, from `stub/f4stub.py` `BOARDS`).
 
 ### Firmware images and custom builds
 

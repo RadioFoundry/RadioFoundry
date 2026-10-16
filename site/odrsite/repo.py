@@ -300,6 +300,7 @@ def flash_boards():
 			q.pop(k, None)
 		out["profiles"][sha] = q
 	out["c7000"] = c7000_flash()
+	out["f4stub"] = f4_flash()
 	return out
 
 
@@ -351,6 +352,22 @@ def c7000_stub():
 	return {"format": "odr-c7000-stub/1",
 		"rom": {"load": st.LOAD_ADDR, "sha256": st.STUB_SHA256, "data": base64.b64encode(rom).decode()},
 		"odr": {"sha256": st.STUB_ODR_SHA256, "data": base64.b64encode(odr).decode()}}
+
+
+def f4_flash():
+	"""The flash each STM32F4 radio's firmware owns (stub/f4stub.py BOARDS), for the web flasher's loader route on a
+	radio that already runs ODR. The stub image goes to f4-stub.json (f4_stub()), loaded only when it is used."""
+	f4 = _tool("stub", "f4stub.py")
+	return {"app_base": f4.APP_BASE, "boards": {bid: {"owned": [list(r) for r in b["owned"]], "rodata2": b["rodata2"]}
+						      for bid, b in f4.BOARDS.items()}}
+
+
+def f4_stub():
+	"""The STM32F4 stub f4stub.py embeds, checked against its SHA-256 by f4stub itself, as base64 for the page."""
+	import base64
+	f4 = _tool("stub", "f4stub.py")
+	return {"format": "odr-f4-stub/1", "sha256": f4.F4STUB_SHA256, "run": 0x20000000,
+		"data": base64.b64encode(f4.stub_image()).decode()}
 
 
 # ---------------------------------------------------------------------------------------------------------------

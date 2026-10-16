@@ -70,7 +70,7 @@ def main(out):
 	variants = repo.variants()
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
 	c7000(out, rng)
-	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("flash-boards.json", repo.flash_boards()), ("features.json", {"features": feats}),
+	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("f4-stub.json", repo.f4_stub()), ("flash-boards.json", repo.flash_boards()), ("features.json", {"features": feats}),
 			  ("variants.json", {"variants": variants}), ("radios.json", {"radios": radios})):
 		with open(os.path.join(out, name), "w") as f:
 			json.dump(obj, f)

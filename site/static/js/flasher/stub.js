@@ -130,7 +130,8 @@ export class Stub {
 		return { load: u32le(r, 4), size: u32le(r, 8), chunk: Math.min(r[12] | (r[13] << 8), 59) };
 	}
 
-	async enterFromOdr(image, progress = () => {}) {
+	// entry: where ODR jumps (the offered load address unless the stub runs elsewhere, as the STM32F4 one does)
+	async enterFromOdr(image, progress = () => {}, { entry = null } = {}) {
 		const link = new Link(this.s);
 		const dl = async (payload, what) => {
 			let last;
@@ -148,13 +149,18 @@ export class Stub {
 		if (!offer) throw new StubError("this ODR build can't hand over to the loader (built without CONFIG_STUB_ENTRY)");
 		if (image.length > offer.size) throw new StubError(`the stub (${image.length} bytes) doesn't fit ODR's free RAM (${offer.size} bytes)`);
 		this.log(`ODR offers ${offer.size} bytes of RAM at 0x${offer.load.toString(16)}; sending the ${image.length}-byte stub`);
-		await dl(concat(new Uint8Array([1]), le32(STUB_MAGIC), le32(image.length), le32(crc32(image)), le32(offer.load)), "the stub transfer");
+		await dl(concat(new Uint8Array([1]), le32(STUB_MAGIC), le32(image.length), le32(crc32(image)), le32(entry ?? offer.load)), "the stub transfer");
 		for (let off = 0; off < image.length; off += offer.chunk) {
 			await dl(concat(new Uint8Array([2]), le32(off), image.subarray(off, off + offer.chunk)), `the chunk at ${off}`);
 			progress(Math.min(off + offer.chunk, image.length), image.length);
 		}
 		await dl(concat(new Uint8Array([3]), le32(STUB_MAGIC)), "to start the loader (image incomplete or CRC mismatch)");
 		this.log("ODR is jumping to the stub");
+		this.jumped = true;
+		await this.afterJump();
+	}
+
+	async afterJump() {
 		await sleep(300);
 		await this.drain(300);
 		await this.helloWithin(3000, "ODR jumped to the stub but it does not answer: switch the radio off and on, then connect again");
