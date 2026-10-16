@@ -32,6 +32,7 @@
 #define PIN_KEY_STROBE0		0x32	// keypad strobes PTB18-PTB22, driven low one at a time
 #define PIN_KEY_STROBE4		0x36
 #define PIN_VIBRATION		0x38	// PTB24 vibration motor, high = on (checked on the radio)
+#define PIN_PTB16		0x30	// output, role unknown: the stock firmware drives it low at start-up and never again
 
 // The four direct key inputs, low = pressed (checked on the radio, hardware-dm1801pro.md 9.1)
 #define PIN_KEY_D0		0x2B	// PTB11 PTT

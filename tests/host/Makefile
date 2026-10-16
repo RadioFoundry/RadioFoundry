@@ -569,8 +569,15 @@ lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/
 dm32CalTest: dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
+# The DM-1801 Pro's start-up pin levels (hardware-dm1801pro.md 3.1)
+TESTS   += dm1801proPinsTest
+dm1801proPinsTest: dm1801proPinsTest.c $(ROOT)/boards/dm1801pro/boot_pins.h $(ROOT)/boards/dm1801pro/pins.h
+	$(CC) $(CFLAGS) -I$(ROOT)/boards/dm1801pro -Wshadow -o $@ dm1801proPinsTest.c
+
 run: run-dm32
-run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest
+run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest \
+          dm1801proPinsTest
+	./dm1801proPinsTest
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
