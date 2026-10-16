@@ -42,6 +42,7 @@ static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
+static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
 static bool transmitting;
 static uint32_t tx_hz;		// FM TX frequency and bandwidth, for the TX tone deviation
 static bool tx_wide;
@@ -246,6 +247,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	rx_bw = bw;
 	rx_tone = tone != NULL ? *tone : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
+	asleep = false;
 	transmitting = false;
 	speaker_source();
 	return true;
@@ -346,9 +348,25 @@ static void status(radio_status_t *st)
 	last_rssi_raw = fd6818_rssi_raw(r67);
 	last_noise_raw = r65 & 0xFFu;
 	st->rssi_dbm = fd6818_rssi_dbm(r67);
-	st->noise = (uint8_t)last_noise_raw;
+	st->noise = fd6818_noise(r65);	// the chip's floor lifted above the core's squelch levels (fd6818.h)
 	st->carrier = false;
 	st->tone_ok = mode != RADIO_MODE_FM || hrc7000_subtone_ok(&modem);
+}
+
+// Receiver battery saving (FM receive only): the FD6818 idle and the RX path off; waking tunes again with rx()
+static void rx_sleep(bool sleep)
+{
+	if (mode != RADIO_MODE_FM || transmitting || !have_rx || sleep == asleep) {
+		return;
+	}
+	if (sleep) {
+		fd6818_set_state(&fd, FD6818_STATE_IDLE);
+		rx_path(rx_hz, false);
+		asleep = true;
+	} else {
+		subtone_t tone = rx_tone;
+		(void)rx(rx_hz, rx_bw, &tone);
+	}
 }
 
 // The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM
@@ -427,4 +445,5 @@ const hal_radio_t dm1801pro_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = NULL,
+	.rx_sleep = rx_sleep,
 };
