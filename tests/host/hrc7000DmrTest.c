@@ -612,6 +612,58 @@ static void test_prompt_push(void)
 	CHECK(!hrc7000_prompt_push(&dev, s) && buf[C7_PROMPT_FIFO] == 0);
 }
 
+// An SFR's repeat: the send sync follows each burst's family (MS when none is asked), and with tx_listen the other
+// slot is received between our bursts; without it, nothing is taken while sending
+static void test_tx_sync_and_listen(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	tick(false);
+	count_kind(0xFF, NULL);
+
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t h = { .kind = DMR_BURST_VOICE_LC_HEADER, .len = 9, .sync_override = DMR_SYNC_TS2 };
+	dmr_tx_burst_t a = voice(0, 0x11);
+	CHECK(hrc7000_dmr_tx_queue(&eng, &h) && hrc7000_dmr_tx_queue(&eng, &a));
+	tick(true);
+	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD7557F && REG(C7_SEND_DATA_SYNC_L) == 0x5FF7F5);
+	// The other slot: closed, and a burst heard there is not taken
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0);
+	deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 1, 2, 0, 0));
+	CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 0);
+	// Voice A without an override: MS sync again
+	tick(true);
+	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD5D7F7 && REG(C7_SEND_DATA_SYNC_L) == 0x7FD757);
+
+	hrc7000_dmr_tx_listen(&eng);
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
+	deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 1, 2, 0, 0));
+	dmr_burst_t b;
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1 && b.sync == DMR_SYNC_TS1);
+
+	// A new transmission listens only when asked again, and writes its first sync even if unchanged
+	hrc7000_dmr_tx_abort(&eng);
+	tick(true);
+	CHECK(!hrc7000_dmr_is_transmitting(&eng));
+	REG(C7_SEND_DATA_SYNC_H) = 0;
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(hrc7000_dmr_tx_queue(&eng, &a));
+	tick(true);
+	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD5D7F7);
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0);
+	hrc7000_dmr_tx_listen(&eng);
+	hrc7000_dmr_tx_abort(&eng);
+	tick(true);
+	hrc7000_dmr_tx_listen(&eng);	// not sending: ignored
+	CHECK(!eng.tx_listen);
+	count_kind(0xFF, NULL);
+}
+
 int main(void)
 {
 	test_pure();
@@ -620,6 +672,7 @@ int main(void)
 	test_cc_scan();
 	test_tx();
 	test_tx_edges();
+	test_tx_sync_and_listen();
 	test_polite_and_repeater();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();

@@ -82,7 +82,8 @@ typedef struct {
 	uint32_t rx_lost, rx_stale;	// receiver restarts: reception over, stale slot timing
 	uint32_t cc_scan_steps;
 	uint32_t ev_overflow;
-	uint32_t tx_bursts, tx_underrun, tx_rejected, tx_done, tx_unsupported;
+	uint32_t tx_bursts, tx_underrun, tx_rejected, tx_done;
+	uint32_t rx_in_tx[2];	// bursts deframed while we send, by ticks since our last arming (even, odd)
 	uint32_t stalls;
 	uint32_t last_rx_type_info;
 	uint32_t last_sys_list;
@@ -135,6 +136,8 @@ typedef struct {
 	uint8_t tx_wait;
 	uint32_t tx_last_arm;	// tick of the last burst armed
 	bool tx_any;
+	bool tx_listen;		// the other slot is received while we send (an SFR's inbound slot)
+	uint8_t send_sync;	// dmr_sync_family_t in SEND_DATA_SYNC now, DMR_SYNC_NONE = not known
 	dmr_tx_burst_t txq[HRC7000_DMR_TXQ_DEPTH];
 	volatile uint8_t txq_head, txq_tail;
 	dmr_tx_burst_t last_hdr;
@@ -174,6 +177,8 @@ void hrc7000_dmr_configure(hrc7000_dmr_t *e, const dmr_config_t *cfg);
 void hrc7000_dmr_rx_restart(hrc7000_dmr_t *e);
 void hrc7000_dmr_rx_lock_slot(hrc7000_dmr_t *e, int8_t ts);
 bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_access_t access);
+// After tx_begin: receive the other slot between our bursts until the transmission ends
+void hrc7000_dmr_tx_listen(hrc7000_dmr_t *e);
 bool hrc7000_dmr_tx_queue(hrc7000_dmr_t *e, const dmr_tx_burst_t *b);
 uint8_t hrc7000_dmr_tx_queue_space(const hrc7000_dmr_t *e);
 void hrc7000_dmr_tx_end(hrc7000_dmr_t *e);
