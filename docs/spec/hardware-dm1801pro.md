@@ -341,8 +341,10 @@ receiving and orange flashing while scanning.
 ## 10. Open items
 
 - What the 0x300 / 0x328 frequency lists are for (the PA drive uses 0x314 / 0x33C).
-- VHF transmit (the TX pair's VHF side); 12.5 kHz FM on air with the 0x3048 word; the DMR per-burst handlers and PA
-  delay.
+- VHF transmit (the TX pair's VHF side); the DMR per-burst handlers and PA delay.
+- The power levels on air: on the SDR bench L and M are only 0.4 dB apart and H is 4.4 dB above M (2026-10-16, 461.4625
+  MHz, the drive from the 0x40 / 0x45 / 0x4A arrays). The SDR's levels are relative and the radio is in its near field,
+  so this wants a wattmeter.
 - The display controller part and its contrast.
 - PTB16's role; why the prompt FIFO's samples don't reach the FM modulator (APRS AFSK sends a bare carrier,
   section 12).
@@ -387,7 +389,9 @@ there:
 Checked with the SDR bench's modem: DMR voice receive and transmit with the radio's own codec, late entry (2026-10-15:
 18 of 36 bursts played, as the HIL test expects), the GPS, privacy and emergency call transmit tests, and DMR data:
 confirmed data with its response, SMS and ETSI SMS received and acknowledged. FM transmit with CTCSS 100.0 and DCS 023
-(normal and inverted) was decoded by a DM-32UV, and the SDR bench's FM transmit tests (CTCSS, DCS, tone burst) pass.
+(normal and inverted) was decoded by a DM-32UV, and the SDR bench's FM transmit tests (CTCSS, DCS, tone burst, roger
+beep) pass. The bandwidth test passes too: the CTCSS 100.0 tone deviates 298 Hz at 12.5 kHz (word 0x3048) and 597 Hz at
+25 kHz (0x3028), a ratio of 2.00 (2026-10-16).
 The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
 Not in: the air band, the broadcast tuner's screens, USB (the radio has none).
 
