@@ -247,7 +247,8 @@ have no located source.
 ### 6.5 The codec in the program flash
 
 The radio's own firmware carries the DM-32UV's 049 codec ([codec-dm32.md](codec-dm32.md)), rebuilt with the data tables
-0x48 bytes higher. It is located in the full program flash image (sha256 `072ece15...9f29e42a`); nothing has run.
+0x48 bytes higher. It is located in the full program flash image (sha256 `072ece15...9f29e42a`). ODR runs it from the codec slot
+([codec-dm1801pro.md](codec-dm1801pro.md) section 4).
 
 | Item | Value | Tag |
 |---|---|---|
@@ -324,7 +325,7 @@ receiving and orange flashing while scanning.
 - The accelerometer's scale (readings about 4 times low).
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
-- The update file header, and the codec's call path (DMR voice; its location is 6.5).
+- The update file header.
 
 ## 11. What ODR reuses
 
@@ -353,6 +354,8 @@ there:
 - beeps through the prompt FIFO, clean and without pops
 - the accelerometer answers (scale open)
 
-Checked with the SDR bench's modem: DMR voice receive and transmit with the radio's own codec, and the GPS, privacy
-and emergency call transmit tests. Built, not yet checked on air: FM transmit, DMR data. Not in: the air band, the broadcast tuner's screens, USB
+Checked with the SDR bench's modem: DMR voice receive and transmit with the radio's own codec, late entry (2026-10-15:
+18 of 36 bursts played, as the HIL test expects), the GPS, privacy and emergency call transmit tests, and DMR data:
+confirmed data with its response, SMS and ETSI SMS received and acknowledged. FM transmit with CTCSS 100.0 and DCS 023
+(normal and inverted) was decoded by a DM-32UV; the SDR bench's FM transmit tests are not run yet. Not in: the air band, the broadcast tuner's screens, USB
 (the radio has none).
