@@ -56,7 +56,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 28 | PTA28 | RX path select, VHF side (pair with PTB8) | low | K pin, R band |
 | 29 | PTA29 | FM tuner enable, low = on | high | I |
 | 30 | PTA30 | RF chip chip select, low = selected | high | K |
-| 31 | PTA31 | TX path select, VHF side (pair with PTB7) | low | K pin, I band |
+| 31 | PTA31 | TX path select, VHF side (pair with PTB7) | low | K |
 | 32 / 33 | PTB0 / PTB1 | LED green / red | low | R |
 | 34 / 55 | PTB2 / PTB23 | accelerometer I2C SCL / SDA | | K bus, I chip |
 | 35-38 | PTB3-PTB6 | keypad inputs, low = key closed | in | K |
@@ -123,7 +123,9 @@ radio.
 
 - Unit 10 Hz, 32 bits: register 0x39 = high 16 bits, 0x38 = low 16 bits. 446.000 MHz = 0x02A88AC0. No offset. K.
 - Ranges: 136-174 MHz and 400-470 MHz, plus an air band window of 108-136 MHz on the same chip (not used by ODR yet). K.
-- VHF / UHF split at 200 MHz (selects the path pins). K.
+- VHF / UHF split at 200 MHz. The channel set-up keeps two band bits, one for the RX and one for the TX frequency,
+  each set above 200 MHz. The RX bit picks the RX path pin and the squelch rows; the TX bit picks the TX path pin and
+  the PA, modulation and register 0x40 rows (6.4). K.
 - No band-word table: register 0x1A is never written; register 0x40 is 0x3480 plus a calibration byte: 0x70 at
   power-on, and on FM transmit a byte interpolated from the calibration page (6.4). K.
 - Bandwidth register 0x43: 0x3048 for DMR and for 12.5 kHz FM, 0x3028 for 25 kHz FM. The radio's channel set-up picks
@@ -182,8 +184,10 @@ which gives receive audio on the speaker path (R).
   - Timing that follows (I): the drive starts to ramp about 2 ms after the RF TX interrupt and is at the top near the
     burst start. The receiver is back about 3 ms after the RF RX interrupt: with a 1.8 ms RX lead, about 1 ms into the
     slot after ours.
-- **FM key-up** (not per burst): RX path off, TX path on, the sub-audio set-up, register 0x40 (6.4), the TX frequency
-  and state writes of step 3 above, then the 40-step ramp, without the waits. FM key-down isn't traced. K. Earlier
+- **FM key-up** (not per burst): RX path off; FD6818 0x3F = 0000, 0x59 = 0028, 0x70 = 0000, 0x58 = 0000, 0x24 = 0000;
+  TX path on; the sub-audio set-up; register 0x40 (6.4); the TX frequency and state writes of step 3 above; then the
+  40-step ramp, without the waits. FM key-down isn't traced. K. None of these writes depends on the band. ODR doesn't
+  write the five words before the TX path, and FM transmit works without them on UHF. Earlier
   versions of this page gave the DMR per-burst order as the radio's general "Enter TX / Leave TX"; ODR's FM `tx()`
   still follows that order with 1 ms waits, and FM transmit works with it.
 - RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external LNA gain). Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte (6.4: 0x201 for CTCSS, 0x202 for DCS); the
@@ -193,11 +197,30 @@ plays FM to the speaker.
 
 ### 5.5 Paths and PA
 
-TX path select: PTA31 + PTB7. RX path select: PTA28 + PTB8. Each is a complementary pair chosen by the band bit:
-above 200 MHz the PTB pin high and the PTA pin low, below the reverse; both low = off. So PTA high = VHF side,
-PTB high = UHF side: ODR receives on both bands (a VHF weather station, UHF DMR) and transmits on UHF with this (R);
-VHF transmit is unchecked. Separate TX and RX band outputs, unlike the DM-32UV's PA selects and LNA supplies. PA drive is DAC
-channel B (12 bit, the calibration byte times 16), ramped in 40 steps. K.
+TX path select: PTA31 + PTB7. RX path select: PTA28 + PTB8. Each is a complementary pair chosen by its band bit
+(5.2): above 200 MHz the PTB pin high and the PTA pin low, below the reverse; both low = off. So PTA high = VHF side,
+PTB high = UHF side (K for both pairs, from the radio's path select code). ODR receives on both bands (a VHF weather
+station, UHF DMR) and transmits on UHF with this (R). Separate TX and RX band outputs, unlike the DM-32UV's PA selects
+and LNA supplies. PA drive is DAC channel B (12 bit, the calibration byte times 16), ramped in 40 steps. K.
+
+**VHF transmit.** Everything the radio's code does differently for a TX frequency at or below 200 MHz (K):
+
+| Item | VHF | UHF |
+|---|---|---|
+| TX path pin high | PTA31 | PTB7 |
+| Band limits the TX frequency is clamped to for the lookups | 0xCC (136.0-174.0 MHz) | 0x00 (400.0-470.0 MHz) |
+| TX points | 0x33C | 0x314 |
+| PA drive rows L / M / H | 0xD0 / 0xD5 / 0xDA | 0x40 / 0x45 / 0x4A |
+| Modulation row | 0xA6 | 0x17 |
+| Register 0x40 bytes (FM transmit) | 0xAB | 0x1C |
+
+The TX band bit has no other reader except the factory test mode's frequency stepping. The FD6818 sequences, the
+per-burst handlers (5.4), the bandwidth word and the sub-audio bytes (0x201 / 0x202) are the same on both bands. On
+the HR_C7000 side the code examined writes FM_BANDWIDTH once (0x5F) and FM_DEV_COEF once at start-up (0x33500), and no
+SUBVOICE_COEF write with a band test was found (?). So the per-band modulation byte is the only VHF deviation value:
+on the radio examined the VHF bytes are about three times the UHF ones, which keeps f x byte about the same on both
+bands, as the DM-32UV's K / f model assumes ([hardware-dm32.md](hardware-dm32.md) 11.3). ODR uses the UHF tone
+deviations on VHF too (`modem-hrc7000.md` 8.3, I).
 
 ### 5.6 DMR
 
@@ -331,22 +354,28 @@ The 0x300 and 0x328 lists are therefore the receive points: the squelch uses the
 tunes its items below 50 at the TX points and those from 50 up at the RX points (K). The two lists hold the same
 frequencies on the radio examined.
 
-ODR uses the TX center, the PA drive and the modulation points. Its shared driver interpolates the PA drive between
-even steps from 400 and 136 MHz at x16 resolution, which differ from the TX points by at most 0.5 MHz at an edge, while
-the radio interpolates the byte. The results stay within 16 DAC counts (one byte) of the radio's (K). For the
-modulation ODR uses the DM-32UV's K / f formula ([hardware-dm32.md](hardware-dm32.md) 11.3), not the interpolated points
-and FM factors above, and TX center + 384 (0x01F0 on the radio examined) for the high half instead of 0x27. Register
-0x40 stays at its power-on 0x34F0, and register 0x51 uses the DM-32UV's gain byte 0x45. None of these differences has
-shown on the bench.
+ODR reads the PA drive, the modulation and the register 0x40 bytes the radio's way: the band by the TX frequency, the
+clamp to the band limits, the segment at the TX points and the truncated interpolation (`bf_cal_tx_byte`). DAC B is the
+byte x 16, RF_MOD_BIAS_CTRL low half the byte x 0x0101, and FM transmit writes 0x40 = 0x3480 + byte; receive puts the
+power-on 0x34F0 back. Until 2026-10-16 ODR used the DM-32UV's lookups: the PA drive between even steps from 400 and 136
+MHz (VHF point 2 at 155.0 MHz instead of 155.5), within 16 DAC counts of the radio on UHF and 32 on VHF, and the
+modulation by K / f ([hardware-dm32.md](hardware-dm32.md) 11.3), within 1 of the radio's byte on UHF and 3 on VHF
+(K, computed from the radio examined).
+
+What still differs: ODR doesn't apply the FM factor (x1.8 Wide, x0.9 Narrow) to the modulation byte, since its FM
+deviations were set on the bench without it (section 10); it uses TX center + 384 (0x01F0 on the radio examined) for
+the high half instead of 0x27; and register 0x51 uses the DM-32UV's gain byte 0x45. None of these has shown on the
+bench.
 
 The power level is one value for the three arrays: 0 = low (0x40 / 0xD0), 1 = middle (0x45 / 0xD5), 2 = high
 (0x4A / 0xDA, also used for 3). The radio's menu shows the setting as High / Low / Middle and stores 2 / 0 / 1, and the
-drive bytes rise with the level in every segment (K). ODR's L / M / H use the same arrays.
+drive bytes rise with the level in every segment (K). ODR's L / M / H use the same arrays and the same lookup.
 
 **L / M / H on air.** At 461.4625 MHz (between the 452.5 and 470 MHz points) the radio examined gets a middle drive 1.40
-times the low drive and a high drive 1.46 times the middle, in DAC counts; ODR's values are within 9 counts of the
-radio's own. The drive steps are about even, so the 0.4 dB between L and M against 4.4 dB between M and H on the SDR bench
-(section 10) doesn't come from the calibration or from ODR's lookup. It points at the PA's response to the drive
+times the low drive and a high drive 1.46 times the middle, in DAC counts. The bench run used ODR's older lookup,
+within 9 counts of the radio's own; the lookup is now the radio's. The drive steps are about even, so the 0.4 dB
+between L and M against 4.4 dB between M and H on the SDR bench (section 10) doesn't come from the calibration or from
+ODR's lookup. It points at the PA's response to the drive
 voltage, or at the measurement. Diagnostics lines `pa 145`, `pa 435` and `pa tx` show L / M / H as DAC counts (`pa
 tx` at the last TX frequency) and `pa <kHz>k dac` the drive the last transmission used, so a wattmeter reading can be
 set against them.
@@ -434,7 +463,9 @@ receiving and orange flashing while scanning.
 
 ## 10. Open items
 
-- VHF transmit (the TX pair's VHF side).
+- VHF transmit on air. The code follows the radio's (5.5, "VHF transmit"), but no VHF transmission has been checked.
+  To check: the carrier on frequency at L / M / H (the `pa 145` line gives the drive), CTCSS, DCS and the 1750 Hz tone
+  deviation against the UHF values (the tone deviations are the UHF ones, I), and a DMR burst decoded on VHF.
 - The power levels on air: on the SDR bench L and M are only 0.4 dB apart and H is 4.4 dB above M (2026-10-16, 461.4625
   MHz, the drive from the 0x40 / 0x45 / 0x4A arrays). The drive itself steps evenly (6.4, "L / M / H on air"), so the
   cause is the PA or the measurement. The SDR's levels are relative and the radio is in its near field, so this wants
@@ -442,8 +473,12 @@ receiving and orange flashing while scanning.
 - The display controller part and its contrast.
 - The FM transmit deviation tops out near 1.7 kHz at 25 kHz (section 12, APRS). The AFSK tones go through the codec
   ADC path, as the microphone does, and 3.3 times the PCM amplitude raises the peak from 1.48 to 1.65 kHz. The
-  2200 Hz tone hits the ceiling first, which looks like pre-emphasis ahead of a limiter. The candidate is the TX
-  limiter field, FM_DEV_COEF b23:16 (`modem-hrc7000.md` 8.1), which ODR sets to 4 as the DM-32UV does.
+  2200 Hz tone hits the ceiling first, which looks like pre-emphasis ahead of a limiter. The candidates are the TX
+  limiter field, FM_DEV_COEF b23:16 (`modem-hrc7000.md` 8.1), which ODR sets to 4 as the DM-32UV does, and the radio's
+  FM factor on the modulation byte (6.4): x1.8 on a Wide channel, x0.9 on a Narrow one, kept to 255. The radio writes
+  FM_BANDWIDTH = 0x5F for both bandwidths, so the factor and register 0x43 are all it changes between them (I). ODR
+  leaves the factor out. Adding it would also scale the tone deviations set on the bench (`modem-hrc7000.md` 8.3), so
+  it needs a bench pass at both bandwidths. On VHF the Wide product passes the 255 limit on the radio examined.
 - In the calibration page (6.4): what register 0x40 controls, what the squelch thresholds are compared with, the
   fields read at start-up without a found reader (0x203-0x209), and the unread rows.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.

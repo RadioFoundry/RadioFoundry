@@ -331,7 +331,8 @@ void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev)
 
 // About 5.8 Hz of deviation per step (UHF, DM-1801 Pro on the SDR bench: 0x60 = 559 Hz, 0xC0 = 1117 Hz). The guide's
 // DTMF values (0x12 at UHF 12.5 kHz) gave about 100 Hz, too little to hear. 0xFF (about 1.5 kHz) is the most the
-// field holds, so 25 kHz gets less than twice the narrow value. VHF is unmeasured
+// field holds, so 25 kHz gets less than twice the narrow value. VHF takes the same values: the board's modulation
+// calibration byte is per band, about three times the UHF one on VHF (modem-hrc7000.md 8.3). Unmeasured on VHF
 uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide)
 {
 	(void)hz;

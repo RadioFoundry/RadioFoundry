@@ -65,7 +65,10 @@ read.
 1. Key at low power: the carrier is on frequency with no splatter. Check the PA ramp and the TX path pins.
 2. Compare the three power levels with a meter: L < M < H, the nominal values are
    [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.4's open item (which level uses which array).
-3. Deviation and modulation balance with a test set; the modulation calibration byte path is the DM-32UV's.
+3. Deviation and modulation balance with a test set; the modulation byte is read at the calibration page's TX points
+   (hardware-dm1801pro.md 6.4).
+4. Repeat 1 to 3 on VHF. The `pa 145` line shows the VHF drive. No power on VHF while UHF works points at the TX path's
+   VHF side (PTA31, hardware-dm1801pro.md 5.5).
 
 ### 5.1 FM mic gain
 
