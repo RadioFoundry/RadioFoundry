@@ -46,7 +46,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 
 | Index | Pin | Function | Boot | Tag |
 |---|---|---|---|---|
-| 5 / 6 | PTA5 / PTA6 | software I2C SCL / SDA, 8-bit address 0x7A, device unknown | high | K bus, ? device |
+| 5 / 6 | PTA5 / PTA6 | software I2C SCL / SDA to the authentication chip at 8-bit address 0x7A (section 8.1) | high | K bus, I device |
 | 7 / 8 | PTA7 / PTA8 | RF chip clock / data | high | K |
 | 15 | PTA15 | LCD backlight, high = on; also the PWM0 output, which ODR uses to dim it | low | I |
 | 16 | PTA16 | audio power amplifier, high = on (the stock broadcast tuner code drives it because the tuner needs the amplifier) | low | R |
@@ -67,7 +67,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed. PTB11 is also the cable's host-to-radio serial line (9.1) | in | R |
 | 46 / 47 | PTB14 / PTB15 | audio path switches, as on the DM-32UV. PTB14 high = the microphone to the HR_C7000's FM input (set for each FM transmission; low there cut speech from 140 to 43 Hz rms, section 12). PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. In receive ODR drives PTB14 as PTB15's complement; it doesn't change the speaker | low | R |
 | 50-54 | PTB18-PTB22 | keypad strobes, low one at a time | | K |
-| 48 | PTB16 | output, role unknown; not the amplifier | low | R |
+| 48 | PTB16 | output, role unknown; not the amplifier. The radio's start-up drives it low, between the LEDs and the audio switches, and no other code reads or writes it (K). The boot loader leaves it an input; ODR drives it low at start-up too (`boards/dm1801pro/boot_pins.h`) | low | K, R not the amplifier |
 | 56 | PTB24 | vibration motor, high = on | low | R |
 | 58 / 59 | PTB26 / PTB27 | SK1 (upper side key) / SK2 (lower side key), low = pressed | in | R |
 | 66 | PTC2 | display reset | high | I |
@@ -106,8 +106,9 @@ PTC6, reset PTC2. Bits go out MSB first. K.
 | GPIO A / B / C | 0x14020000 / 0x14100000 / 0x14110000 | all pins above | K |
 | Not used | LCD controller 0x12000000, PWM 0x140C0000 | the display is bit-banged, the backlight is a plain GPIO | K |
 
-I2C2, SPI1 (a slave that returns 0xFF until ready) and SPI3 (an 8-byte identity read) are used for devices not identified.
-UART1-3 are never used: no GPS and no UART Bluetooth.
+I2C2 0x14080000 carries the SoC's real-time clock (8.2). SPI1 0x140B0000 has an SD card driver that the firmware never
+starts (8.3). SPI3 0x14150000 makes an 8-byte identity read (6.3). UART1-3 are never used: no GPS and no UART
+Bluetooth.
 
 ## 5. RF chip
 
@@ -279,9 +280,33 @@ loader speaks the DM-32UV's update protocol ([hardware-dm32.md](hardware-dm32.md
 | 5-9 | `31` starts a receiver that sends `C` and takes XMODEM-CRC / YMODEM frames: `01` (128 B) and `02` (1024 B), block number and complement, CRC-16/XMODEM (polynomial 0x1021, initial 0) big endian, `04` to end, `18` (CAN) twice to abort. Block 0 holds the file name, NUL and the size in ASCII; a size above 0xF4002 is refused, then the application area is erased and `06 43` answered. Each good block is answered `06` |
 | Entry | The loader stays in update mode when GPIO 43 (PTB11) and 58 (PTB26) both read low, that is PTT and SK1 held at power-on; otherwise it starts the application (R) |
 
-The file format (a 256-byte header with the ID as magic, as on the DM-32UV) is assumed, not seen. `tools/dm32_flash.py
---model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no refused block, erase
-about 12.6 s (R). The loader at 0x1000 is never written.
+What the loader does with the data (K, from its code):
+
+| Item | The loader |
+|---|---|
+| Block 0 | Copies the name (up to 256 bytes, to its NUL), then the size (up to 16 characters, to a space or NUL) and converts it. Above 0xF4002 it sends `18 18` and stops. The name is not checked |
+| Erase | 0x0300C000 up to 0x03100000 in 4 KB sectors, before `06 43`. The whole application area, so the codec slot goes too |
+| Data | Each block's bytes go to flash in order from 0x0300C000, with nothing skipped or parsed. A write error sends `18 18` |
+| Checks | Block number, its complement and the CRC-16 of each block. No image checksum, no signature, no length check against the size |
+| End | `04` ends the session; the loader waits for the next command. At power-on it jumps to 0x0300C000 unless PTT and SK1 are held, without looking at the image |
+
+So the loader never sees a file header: the host sends the bare application. The update file the stock updater opens
+is not available for this radio (no file, no updater). Every DM-32UV file examined (nine Baofeng builds and two
+others) has the same header and nothing else: the ID at 0, 0xFF to 0xFC, `END` at 0xFD, then the application from
+flash 0x0300C000, whose first words match this radio's (K for the DM-32UV files).
+
+| Offset | DM-1801 Pro update file (I: the DM-32UV layout with this radio's ID) |
+|---|---|
+| 0x000 | ASCII `BF1801-V1` (9 bytes), the ID the loader answers to `M` |
+| 0x009-0x0FC | 0xFF |
+| 0x0FD | ASCII `END` |
+| 0x100 | the raw application, linked for 0x0300C000, at most 0xF4000 bytes. No checksum, no length field |
+
+Such a file can be made from an ODR image the way `tools/dm32_pack.py` makes a DM-32UV one, and `tools/dm32_flash.py
+--model dm1801pro` takes it and strips the header. Whether the stock updater checks anything more is not known (?).
+`tools/dm32_flash.py --model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no
+refused block, erase about 12.6 s (R). The loader at 0x1000 is never written. The stock application is 0xB3780 bytes
+(flash 0x0C000-0xBF77F).
 
 ### 6.3 Identity read
 
@@ -413,8 +438,60 @@ all on). Upright needs the segment outputs reversed (0xA1) and the common output
 |---|---|---|---|
 | FM broadcast tuner | I2C 7-bit 0x10 (sequential access; ODR uses 0x11, random access, the same chip's other address), SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable (low = on, from the order of start and stop, not measured); its audio needs the amplifier (PTA16) | I |
 | Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | SC7A20, a LIS3DH-compatible part: WHO_AM_I reads 0x11, not the LIS3DH's 0x33 (R). The radio writes CTRL1 = 0x47, CTRL4 = 0x88. ODR reads it for the diagnostics page only. Lying flat it reads (17, -1008, 78) mg: 1 g, so the scale is right (1 mg per count in the 12-bit mode) | R |
-| Unknown | I2C 7-bit 0x3D, SCL PTA5, SDA PTA6 | registers 0x30, 0x40, 0x80, 0x20, 0x22 | ? |
+| Authentication chip | I2C 7-bit 0x3D (8-bit 0x7A), SCL PTA5, SDA PTA6 | challenge and response before the codec runs (8.1); an ALPU-MP class part. ODR doesn't use it | K bus, I part |
+| Real-time clock | SoC I2C2, 7-bit 0x70 | the HR_C7000's own clock, as on the DM-32UV (8.2) | K |
+| SD card | SPI1, chip select 1 | a driver in SPI mode with no caller of its start-up; no card is used (8.3) | K code, I card |
 | Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call; ODR pulses it once at power-on and plays the vibration alerts on it (`hal_power_t.vibrate`, `radio-features.md` 4.1) | R |
+
+### 8.1 Authentication chip (I2C 0x7A)
+
+Bit-banged I2C. A start-up flag picks the pins: PTA5 / PTA6 (the value used; the IO mux puts them on GPIO) or PTA7 /
+PTA8 (never chosen). Frames are the 8-bit address 0x7A (write) or 0x7B (read), a register, then the data. K.
+
+| Step | Registers |
+|---|---|
+| First use | write 8 zero bytes to 0x80; 0x20 = 00; 0x22 = 0x83; read 16 bytes from 0x30, write 16 bytes back to 0x30; read 8 bytes from each of 0x73, 0x74, 0x75, 0x76; write 16 bytes to 0x40 |
+| Each check | 8 random bytes go through a local cipher; 16 bytes are written to a register and read back from it 5 ms later; the reply is compared with the local result |
+| Tries | three; the result is a status byte |
+
+The check runs after the codec block's set-up and from routines around the codec, among them two task loops (K for the
+callers, I for their role). The code sits inside the codec's RAM block, in the range the DM-32UV notes list as stock
+code that the codec never calls ([codec-dm32.md](codec-dm32.md)). K.
+
+The part is inferred (I): the same pins carry the ALPU-MP copy-protection chip on the DM-32UV
+([hardware-dm32.md](hardware-dm32.md) 14), and the traffic is a challenge and response. No marking was read. ODR never
+talks to it, and DMR voice works with the radio's own codec (5.6), so ODR's codec host doesn't need it (R).
+
+### 8.2 Real-time clock (I2C2)
+
+The SoC's I2C2 at 0x14080000, set up as on the DM-32UV ([hardware-dm32.md](hardware-dm32.md) 3.3): CON 0x65, INTR_MASK
+0x40, SCL counts for 400 kHz, FIFO thresholds 6. Address 0x70. K.
+
+| Register | Use |
+|---|---|
+| 0x00 / 0x01 / 0x02 | seconds / minutes / hours |
+| 0x03 / 0x04 | days since 1970-01-01, low / high byte |
+| 0x0C-0x10 | time to load: seconds, minutes, hours, then the day count low and high; 0x12 = 0 before, 1 after |
+| 0x11 | control: bit 1 set at start-up, bit 2 set after a load |
+| 0x12 bit 0 | read at start-up; with it clear or a day count of 0 the clock is reset (0x17 = 0, wait, 0x17 = 1) and set to 2016-09-02 16:45:20 |
+
+ODR doesn't use the clock yet.
+
+### 8.3 SD card (SPI1)
+
+SPI1 at 0x140B0000, chip select 1 of the controller, clock divider 16 (a routine for divider 2 has no caller). The
+driver speaks SD in SPI mode (K):
+
+| Item | Commands |
+|---|---|
+| Start-up | 80 clocks, CMD0 (CRC 0x95), CMD8 0x1AA (CRC 0x87, echo checked), CMD55 + ACMD41 with HCS until ready, CMD58 (CCS: block or byte addressing) |
+| Identity | CMD9 (CSD, capacity for version 1 and 2 cards), CMD10 (CID) |
+| Data | 512-byte blocks: CMD17 / CMD18 + CMD12 read, CMD24 / CMD25 write (tokens 0xFE, 0xFC, 0xFD; data response 0x05) |
+
+Nothing calls the start-up, the identity reads or the write path (K). The only reachable use is a block read from one
+programming-cable command (`D`), which without the start-up reads with byte addressing. The firmware also holds "NO SD
+CARD" screen strings. So the code is shared with a model that has a card, and this radio has none (I; no slot was
+looked for). ODR doesn't use SPI1.
 
 ## 9. Keys, battery, power
 
@@ -481,8 +558,9 @@ receiving and orange flashing while scanning.
   it needs a bench pass at both bandwidths. On VHF the Wide product passes the 255 limit on the radio examined.
 - In the calibration page (6.4): what register 0x40 controls, what the squelch thresholds are compared with, the
   fields read at start-up without a found reader (0x203-0x209), and the unread rows.
-- The 0x7A I2C device, the I2C2 device, the SPI1 slave.
-- The update file header.
+- The authentication chip's marking (8.1), and what PTB16 drives (3.1).
+- Whether the stock updater accepts a `BF1801-V1` file made as in 6.2. Neither the updater nor a stock update file for
+  this radio is at hand.
 - The FM mic gain levels. The FM values are still the DM-32UV's 11 dB (section 12); measure them with
   `tests/hil/test_mic_gain.py` at 12.5 and 25 kHz ([the bring-up checklist](../testing/dm1801pro-bringup.md) 5.1) and
   set `MIC_GAIN_FM_12K5_DB` and `MIC_GAIN_FM_25K_DB`.
