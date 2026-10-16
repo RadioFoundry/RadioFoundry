@@ -196,10 +196,16 @@ void hrc7000_fm_rx(hrc7000_t *d, bool wide)
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 }
 
+uint32_t hrc7000_fm_tx_dev_coef(const hrc7000_t *d, bool wide)
+{
+	uint8_t lim = d->fm_tx_limit[wide ? 1 : 0];
+	return ((uint32_t)(lim != 0 ? lim : HRC7000_FM_TX_LIMIT_DEF) << 16) | (wide ? 0x0A20u : 0x0A25u);
+}
+
 void hrc7000_fm_tx(hrc7000_t *d, bool wide)
 {
 	hrc7000_wr(d, C7_FM_BANDWIDTH, wide ? 0x5F : 0x50);
-	hrc7000_wr(d, C7_FM_DEV_COEF, wide ? 0x40A20 : 0x40A25);
+	hrc7000_wr(d, C7_FM_DEV_COEF, hrc7000_fm_tx_dev_coef(d, wide));
 	// Sub-audio deviation (8.2): the bandwidth bits don't scale it; twice the narrow value at 25 kHz
 	uint32_t sv_dev = wide ? (uint32_t)d->subaudio_dev * 2u : d->subaudio_dev;
 	hrc7000_wr(d, C7_SUBVOICE_COEF, (hrc7000_rd(d, C7_SUBVOICE_COEF) & ~0xFF00u) | ((sv_dev > 0xFFu ? 0xFFu : sv_dev) << 8));

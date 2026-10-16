@@ -151,6 +151,9 @@ typedef struct {
 	uint32_t subvoice;		// SUBVOICE_COEF before a TX tone (hrc7000_tx_tone)
 	bool tone_on;
 	uint8_t subaudio_dev;		// SUBVOICE_COEF b15:8 at 12.5 kHz (the chip's reset value, set by power_on_init)
+	// FM transmit limiter, FM_DEV_COEF b23:16, at 12.5 and 25 kHz: the peak deviation of audio through the codec ADC
+	// (the microphone, the codec mixer). The board sets it; 0 = HRC7000_FM_TX_LIMIT_DEF (8.1)
+	uint8_t fm_tx_limit[2];
 } hrc7000_t;
 
 static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
@@ -194,7 +197,10 @@ void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);
 
 // FM receive / transmit (8.2). wide = 25 kHz. FM receive turns the FM audio path to the speaker on
 void hrc7000_fm_rx(hrc7000_t *d, bool wide);
+#define HRC7000_FM_TX_LIMIT_DEF	4u	// the KP value; about 1.65 kHz peak at 25 kHz (DM-1801 Pro BENCH)
 void hrc7000_fm_tx(hrc7000_t *d, bool wide);
+// FM_DEV_COEF for a transmission: the limiter for the bandwidth, the RX and TX deviation coefficients
+uint32_t hrc7000_fm_tx_dev_coef(const hrc7000_t *d, bool wide);
 // Back to the FM idle state: FM_PTT off, FM audio off
 void hrc7000_fm_idle(hrc7000_t *d);
 
