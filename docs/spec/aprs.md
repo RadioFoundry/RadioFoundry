@@ -49,7 +49,7 @@ What the boards provide today:
 |---|---|---|---|
 | DM-1701 | yes: the AT1846S tone generator retuned per symbol (`hardware-dm1701.md` 5.10) | not yet: FM audio reaches the MCU (`hardware-dm1701.md` 21), no `rx_start` | none |
 | MD-380 | not yet: needs a TX tone path (`boards/md380/config.mk`) | no | G models (`hardware-md380.md` 13) |
-| DM-32UV | no (`board.afsk` NULL) | no | `CAP_GPS` (`hardware-dm32.md` 12) |
+| DM-32UV | no (`tx_start` NULL) | yes: the HR_C7000's FM receive audio, ungated (`modem-hrc7000.md` 8.5) | `CAP_GPS` (`hardware-dm32.md` 12) |
 
 Everything is host tested. On the SDR bench (section 13, measured on the DM-1701): positions over DMR (LRRP and UDT)
 decode, and FM AFSK decodes with a valid FCS since the voice source fix (`hardware-dm1701.md` 5.10).
@@ -114,7 +114,8 @@ queries, weather and telemetry recognized by type (not decoded further).
 
 `hal/hal_afsk.h`: `tx_start(tones, nbits, baud, mark, space, level)` plays a symbol string (one bit per symbol,
 1 = mark), `tx_busy`, `tx_stop`; `rx_rate_hz`, `rx_start`, `rx_read`, `rx_stop` deliver received audio samples.
-`board.afsk` is NULL on boards without a tone path; then the reason is "no AFSK" and only DMR positions go out.
+`board.afsk` is NULL on boards without a tone path. A board that can only receive sets the `rx_*` members and leaves
+`tx_start` NULL. Without a transmit path the reason is "no AFSK" and only DMR positions go out.
 
 ### 5.2 Transmit
 
@@ -129,8 +130,9 @@ section 1).
 
 Received FM audio comes from one of two places (`aprs.c`, `rx_service`):
 
-1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. No board has one
-   yet.
+1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. The DM-32UV has
+   one: the HR_C7000's FM receive audio at 8 kHz, not squelch gated (`modem-hrc7000.md` 8.5). While it runs the
+   speaker plays FM through the HR_C7000 instead of straight from the FD6818 (`hardware-dm32.md` 9).
 2. Otherwise FM receive audio on the board's PCM stream, when its audio tap has `AUDIO_TAP_FM_RX` (`hal_audio_tap.h`):
    8 kHz, de-emphasized, squelch gated. The DM-1701's HR_C6000 puts it on I2S (`hardware-dm1701.md` 21.3.1). The
    shared stream (`core/usbaudio/audio_mux.c`) gives APRS a ring of its own (1024 samples, 128 ms) next to a USRP

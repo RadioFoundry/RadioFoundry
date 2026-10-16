@@ -258,7 +258,9 @@ A 240 x 320 color screen. ODR draws at half resolution for now.
   [USB network](14-usb-network.md#network-over-the-programming-cable-ppp)) all run there. USB network mode isn't
   available.
 - The GPS module is powered while the radio is on (if it answers within 5 s of start-up). **Settings > Location >
-  GPS** doesn't switch it off yet. The GPS driver hasn't been tested on a radio yet.
+  GPS** doesn't switch it off yet. A fix outdoors hasn't been checked yet.
+- APRS receive only: the radio sends no APRS packets on FM yet (the transmit tone path isn't written).
+  While APRS listens, FM on the APRS frequency plays through a different audio path, which may sound different.
 - The air band AM receiver and the broadcast FM receiver are built in, but the board code behind them isn't written,
   so nothing runs yet.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.

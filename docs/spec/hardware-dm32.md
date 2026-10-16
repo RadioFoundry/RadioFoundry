@@ -799,6 +799,7 @@ detect waking it at once (BIN; the tick's length in ms is not known). ODR's leng
 | Mic routing switch | GPIO 0x2E: 1 = analog FM path, 0 = DMR path | BIN |
 | Speaker | codec DAC line out 2 (LINEOUT_CTRL bit 0, `line2out_en`) → speaker source switch GPIO 0x2F → audio PA (enable GPIO 0x35) | KP, DS |
 | Speaker source | 0x2F = 1: the FD6818's AF output (and the C7000's AF input disconnected: PHASE_OUT goes flat); 0x2F = 0: the codec line out, AF into the C7000. 0x2E is driven as its complement outside TX. The amplifier (0x35) goes off before 0x2F changes | HW |
+| FM RX audio while APRS listens | 0x2F stays 0, so the C7000 hears the FD6818 with the squelch open or shut and copies its FM audio to the CPU (`modem-hrc7000.md` 8.5). An open squelch plays FM through the C7000's FM playback (AUDIO_CONTROL bit 6) and the codec line out (`boards/dm32/radio_dm32.c`, `speaker_source`) | HW, INF |
 | FM RX audio | the FD6818's AF output (0x47 = 0x0140) through 0x2F = 1 while the squelch is open. The C7000's FM playback (AUDIO_CONTROL bit 6, `fm_play_ctrl`) stays off: with 0x2F = 1 its AF input is disconnected. The C7000's sub-audio decode loses its input while the squelch is open (open question) | HW, INF |
 | DMR RX audio | CPU writes 160 bytes of decoded 8 kHz PCM to 0x180000A0 per 10 ms and sets AUDIO_CONTROL bit 5; PCM_rd interrupt (vector 59) asks for the next block; clear with INTERP_CLEAR bit 5 | DS, KP |
 | Beeps / prompts | 64 bytes (32 samples, low byte first, 8 kHz) at a time to the prompt FIFO 0x16000980 while AUDIO_CONTROL bit 31 (`ring_full_two`) is 0; enable with AUDIO_CONTROL bit 7 (`ring_play_ctrl`). KP says 32 bytes, high byte first; the DM-1801 Pro's stock firmware and bench say otherwise (`modem-hrc7000.md` 8.4); not yet heard on a DM-32 | DS, KP, INF |
@@ -839,8 +840,8 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
   the microphone goes into the codec ADC, with GPIO 0x2E choosing the FM or DMR path (9). The C7000 documents more
   than the HR_C6000 here: "FM RX data" and "FM TX data" interrupt sources, and AUDIO_CONTROL bits for mic PCM to the
   CPU (bit 4), CPU-fed speaker PCM (bit 5) and the voice source (bit 0: codec or TX RAM)
-  ([modem-hrc7000.md](modem-hrc7000.md) 2.4, 8.1). A PCM path in FM is plausible; a probe run like the DM-1701's
-  would settle it.
+  ([modem-hrc7000.md](modem-hrc7000.md) 2.4, 8.1). FM receive audio reaches the CPU through the RX RAM
+  ([modem-hrc7000.md](modem-hrc7000.md) 8.5); APRS receive uses it.
 
 ---
 

@@ -171,6 +171,17 @@ No fix needed: the module talks from about 1 s after power-up, indoors too.
 | Outdoors, a few minutes | Info > Position shows a fix and the satellite count | the NMEA talker or sentence set (`aprs_nmea`) |
 | Bad count rising steadily | near 0 | UART errors: the divisor (547 at 84 MHz APB) or noise on the line |
 
+## 13. APRS receive
+
+The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). APRS listens on the APRS frequency
+(144.390 in North America) with the receive setting on.
+
+| Check | Expected | If not |
+|---|---|---|
+| The debug link's `aprs` view on 144.390 | `aprs.rx_listening=1`, `rx_bits` rising by about 1200 a second on noise, `rx_peak` above 0 | `rx_listening=0`: the receive setting (`odr_debug.py aprs set rx 1`) or the frequency. Bits not rising: SYS_INTERP_MASK bit 14 (0x1100039C) clear, or GPIO 0x2F high |
+| A packet on the air | `rx_hdlc_frames` and `stations` go up | `rx_fcs_errors` rising with packets present: the half read (FM_ADDR_SW), the level (noise reaches full scale) |
+| An FM signal on 144.390 with the squelch open | heard on the speaker, through the C7000's FM playback | AUDIO_CONTROL bit 6, the codec line out |
+
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).
@@ -180,4 +191,7 @@ No fix needed: the module talks from about 1 s after power-up, indoors too.
 - Codec 049: DMR voice encodes and decodes (the SDR bench modem decodes our AMBE with few FEC corrections); 046 untried.
 - UART divisor 46 (0.9 % slow) or 45 (1.3 % fast).
 - RSSI dBm offset and the noise scale for the squelch.
-- GPS: NMEA arrives on UART1 at 9600 (section 12); not yet seen on the radio.
+- GPS: NMEA arrives on UART1 at 9600 (section 12): `gps yes`, 291 good sentences and 0 bad 26 s after start-up (on the
+  radio, indoors, no fix). A fix outdoors is still to check.
+- APRS receive (section 13): the demodulator gets 8 kHz audio from the C7000; a packet decoded off air is still to
+  see.

@@ -496,6 +496,26 @@ carried no decodable sync on the SDR bench and the bench modem took the call by 
 transmitting, all three headers decoded in five runs (BENCH). Keep b7 clear during any transmission; a beep that
 starts then plays silently, and b7 comes back on at TX end if the beep is still running.
 
+### 8.5 FM receive audio to the CPU
+
+In FM (WORK_MODE 0x80) the modem copies its demodulated receive audio into the RX RAM as well as to the codec (the
+guide's "analog receive recording", on by default in FM; DS):
+
+| Item | Value | Tag |
+|---|---|---|
+| Buffer | RX RAM 0x160004E0..0x160008DF: two halves of 512 bytes (256 samples), used in turn | DS |
+| Sample format | 16-bit, high byte at the lower address | DS, BENCH |
+| Rate | 8 kHz: the halves alternate every 32.0 ms (DM-32UV, measured over 95 changes) | BENCH |
+| Half to read | FM_ADDR_SW (0x56C) b1:0: 1 = the first half, 2 = the second | DS |
+| Interrupt | SYS_INTERP bit 14 (`fm_rx_interp`) as each half fills; its mask bit (SYS_INTERP_MASK b14) is off in the power-on mask | DS |
+| Input | the modem's AF input. On the DM-32UV that is the FD6818's audio through PTB15 = 0 (`hardware-dm32.md` 9) | HW |
+
+The audio is not squelched: it carries noise while no signal is present, so a demodulator can work below the squelch.
+On the DM-32UV receiver noise reaches full scale (peak 32767) with the reset AF gain (BENCH).
+
+ODR reads it in the system interrupt (`platform/hrc7000/fm_rx_audio.c`): the DMR glue owns that interrupt and calls
+an FM hook for bit 14, in FM too, and the hook copies each half into a 128 ms ring for the APRS demodulator.
+
 ---
 
 ## 9. The 2026 fixes (what made DMR work)
