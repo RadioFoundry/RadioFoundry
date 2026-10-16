@@ -5,7 +5,7 @@
 Scan, the FM transmit extras, beeps and power management in the radio core. Code: `core/radio/scan.c` (the scan
 engine, pure), `core/radio/beep.c` (beep patterns and synthesis), `core/radio/vibe.c` (vibration patterns),
 `core/radio/battery.c` (battery levels, the backlight helper), all glued into `core/radio/radio_sm.c`; board hooks in
-`hal/hal_radio.h` (`tx_tone`, `rx_sleep`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
+`hal/hal_radio.h` (`tx_tone`, `rx_sleep`, `mic_gain`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
 and RADIO ops 20-24 (`docs/spec/debuglink.md` 3.7, 3.8). Host tests: `tests/host/radioFeaturesTest.c`; HIL tests:
 `tests/hil/test_radio_features.py`.
 
@@ -115,7 +115,7 @@ the top of the scale: about 6 dB at sensitivity 1, 29 dB at 5, 58 dB at 10.
 | Radio | Where the level comes from | Checked |
 |---|---|---|
 | DM-1701, MD-380 | an analog level tap on PA3 (ADC1 IN3), 12 bits, passed straight in (`hardware-dm1701.md` 11.3, `hardware-md380.md`) | DM-1701: in silence only (`test_vox_quiet`) |
-| HR_C7000 radios (DM-1801 Pro, DM-32UV) | the codec ADC's mic PCM, 80 samples every 10 ms (`platform/hrc7000/audio_pcm.c`, `drivers/audio/miclevel`): the peak of each half from its mean, 100 = a full-scale 16-bit peak; the level follows a louder half at once and falls 4 steps per half. These radios have no analog level tap. The first `mic_level()` call starts the meter (AUDIO_CONTROL b4 and the PCM interrupt, shared with the PCM stream) and returns 0; 1 s without a call stops it. Needs `CONFIG_DMR` (the PCM stream); without it there is no hook | not on the bench |
+| HR_C7000 radios (DM-1801 Pro, DM-32UV) | the codec ADC's mic PCM, 80 samples every 10 ms (`platform/hrc7000/audio_pcm.c`, `drivers/audio/miclevel`): the peak of each half from its mean, 100 = a full-scale 16-bit peak; the level follows a louder half at once and falls 4 steps per half. These radios have no analog level tap. The first `mic_level()` call starts the meter (AUDIO_CONTROL b4 and the PCM interrupt, shared with the PCM stream) and returns 0; 1 s without a call stops it. The meter's interrupt clears b4 itself, so every AUDIO_CONTROL update in the driver (FM receive, transmit and idle, DMR entry) runs with interrupts off (`hrc7000_set_crit`, set by `hrc_audio_pcm_attach`). Needs `CONFIG_DMR` (the PCM stream); without it there is no hook | not on the bench |
 
 The debug link's `vox.level` (features section) calls the hook on FM channels outside hotspot mode, so the level can
 be read with VOX off.
@@ -128,6 +128,21 @@ rather than show "VOX on" for a VOX that never keys.
 
 Not done. Without a reverse burst or a tone-loss signal from the other station there is nothing to act on; closing
 early on CTCSS loss conflicts with the tone debounce (8 polls) that keeps fades from chopping audio. Left for later.
+
+### 3.6 Mic gain
+
+Settings > Talk & listen > Mic gain: a step 0-10, 2 dB a step, 5 = the board's own levels (`core/radio/mic_gain.c`).
+The UI stores it (`settings_t.mic_gain`) and applies it at start-up and on each change with `radio_set_mic_gain()`;
+the debug link's SETTING op 29 sets it in RAM only.
+
+| Board | FM | DMR |
+|---|---|---|
+| with `hal_radio_t.mic_gain` (HR_C7000 radios: DM-1801 Pro) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the samples to the vocoder are not scaled |
+| without it | not changed | the mic samples are scaled before the vocoder (`ambeVoiceSetMicGain`, with saturation) |
+
+The board only stores the offset in the hook; a change takes effect at the next transmission. On an HR_C7000 radio
+the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same codec ADC, so on these radios
+the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook the row is dimmed.
 
 ## 4. Beeps (CONFIG_BEEP)
 

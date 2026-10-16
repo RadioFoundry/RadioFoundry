@@ -67,6 +67,37 @@ read.
    [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.4's open item (which level uses which array).
 3. Deviation and modulation balance with a test set; the modulation calibration byte path is the DM-32UV's.
 
+### 5.1 FM mic gain
+
+The FM mic gain is the board's level for the channel bandwidth (`MIC_GAIN_FM_12K5_DB`, `MIC_GAIN_FM_25K_DB` in
+`boards/dm1801pro/radio_dm1801pro.c`) plus the Mic gain setting's offset, (step - 5) x 2 dB
+([radio-features.md](../spec/radio-features.md) 3.6). The programming cable cuts the microphone, and no injected
+tone passes the mic gain, so every measurement is an over with the cable out. `tests/hil/test_mic_gain.py` runs the
+session: it sets the step and the bandwidth over the debug link, the SDR bench records while you key, and it reads
+the step back once the cable is in again.
+
+```
+python3 -m pytest tests/hil/test_mic_gain.py -v -rs -s --manual --allow-rf --fm-mhz MHZ --mic-gain-steps 3,5,7
+```
+
+For each over (3 steps at 12.5 kHz, then at 25 kHz):
+
+1. Wait for `=== over N/6: ... ===` and `GO`. The bench records for `--mic-gain-window` s (30).
+2. Unplug the cable, key PTT, give the same source each time for about 5 s (a steady whistle or a phone playing a
+   1 kHz tone at a fixed distance, or the same sentence), release PTT, plug the cable back in.
+3. The test prints sdr_fm_check.py's report and `link back: step S, GCR_ADCL 0xNN`.
+
+At the end it prints one row per over: bandwidth, step, offset, GCR_ADCL (bits 5:0 = dB), segment length, voice peak
+(99.5 %) and rms deviation, and the strongest tone with its deviation. Expect the deviation to rise about 2 dB a step
+until the deviation limiter. Target with speech: peak about 2.5 kHz at 12.5 kHz and 5 kHz at 25 kHz. Set the two
+board levels from the step that reaches the target (level = 11 + offset), then rerun at step 5 to confirm.
+
+| If | Check |
+|---|---|
+| GCR_ADCL doesn't follow the step | `set.mic_gain_board=1` in the features view; the FM transmit start writes the register (`tx()`) |
+| No keyed segment | PTT pressed inside the window; the capture under `~/<bench dir>/hil_mic_gain_N/` |
+| The same deviation at every step | the limiter (DEV_LIMITER) clips: try lower steps; or the gain isn't in the path the microphone takes |
+
 ## 6. Broadcast FM tuner
 
 The tuner's hardware side is built (`CONFIG_BCAST_FM`, on); the screens that drive it are parked

@@ -321,7 +321,10 @@ the other DMR data, and hotspot mode. There is no release to install yet.
 
 Bring-up builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
 the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/dm32_flash.py --model dm1801pro IMAGE` over
-the programming cable. The cable's plug switches the internal speaker off; unplug it to hear the radio.
+the programming cable. The cable's plug switches the internal speaker and the microphone off; unplug it to hear the
+radio or to talk.
+
+Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on this radio.
 
 `odrflash flash IMAGE --board dm1801pro` does the same over the cable, and picks the way in by itself:
 
