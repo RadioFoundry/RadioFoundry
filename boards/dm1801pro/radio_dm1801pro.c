@@ -196,10 +196,10 @@ static const hrc_dmr_board_t dmr_board = {
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
-// PCM amplitude per AFSK level step: the DM-32UV's value (55: about 3 kHz peak at level 50 there); this radio's
-// modulator gain is not checked yet (?)
+// PCM amplitude per AFSK level step: 55 gave about 1.6 kHz peak at level 50 through the mixer route (BENCH
+// 2026-10-16), so 103 aims at the 3 kHz APRS wants
 static const hrc_afsk_board_t afsk_board = {
-	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 55,
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 103,
 };
 #endif
 
@@ -529,8 +529,9 @@ void dm1801pro_speaker_pcm(bool on)
 }
 
 #if CONFIG_APRS
-// APRS AFSK (hrc_afsk.c): during an FM transmission the prompt FIFO's audio goes to the modulator (ring play, the path
-// that put beeps on DMR bursts), so the tones go there with the microphone muted. False when the radio isn't
+// APRS AFSK (hrc_afsk.c): during an FM transmission the tones play through the prompt FIFO (ring play), and the codec
+// mixer puts the DAC's audio on the ADC's output to the modulator with the microphone's input zeroed. Ring play alone
+// (with the mic muted) sent no tones here, unlike the DM-32UV (hardware-dm1801pro.md 10). False when the radio isn't
 // transmitting FM
 static bool afsk_tx_route(bool on)
 {
@@ -539,7 +540,7 @@ static bool afsk_tx_route(bool on)
 	}
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
 	afsk_tx = on;
-	hrc7000_codec_mute(&modem, on, false);
+	hrc7000_codec_dac_to_tx(&modem, on);
 	ring_play_update();
 	hrc_irq_restore(s);
 	return true;

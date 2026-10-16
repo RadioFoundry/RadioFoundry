@@ -401,21 +401,10 @@ receiving and orange flashing while scanning.
   cause is the PA or the measurement. The SDR's levels are relative and the radio is in its near field, so this wants
   a wattmeter, read against the `pa tx` diagnostics line.
 - The display controller part and its contrast.
-- Why the prompt FIFO's samples don't reach the FM modulator (APRS AFSK sends a bare carrier, section 12). The
-  HR_C7000 DS documents two FM transmit audio sources, the codec ADC and the TX RAM (AUDIO_CONTROL b0,
-  `modem-hrc7000.md` 8.1), and the prompt FIFO only toward the codec DAC. The DM-32UV's working AFSK so likely takes
-  a path the DS doesn't describe. Candidates, most likely first:
-  1. The codec's digital mixer: MIX_2 b0 (mix_rec) records ADC + DAC, which would put the FIFO's samples into the
-     FM transmit input. The indirect MIX_0..3 registers were never read, so the `cd` comparison doesn't cover them.
-  2. The TX RAM as the source (AUDIO_CONTROL b0 = 1), fed by the MCU, ping-pong halves paced by FM_ADDR_SW.
-  3. FD6818 register 0x47: this port writes 0x0140 in FM, the stock firmware and the DM-32UV 0x6042. It is the one
-     known difference in the FM transmit set-up, and the register comparison covered only the HR_C7000.
-  4. Line out 1 (LINEOUT_CTRL b1; ODR sets only line out 2) wired toward the modulator on this board.
-  5. PTB16: ODR leaves it an input, the stock firmware drives it low at start-up. Its role is unknown.
-  6. Less likely: FM_PTT order, TONE_SEND_CTRL b6, AUDIO_CONTROL b3.
-  If none carries the tones, the fallbacks are the FD6818's tone 1 generator retuned per symbol (as the DM-1701 does
-  with its AT1846S) or FSK on the two-point modulation bias (SIG_CENTER). A temporary experiment build selects each
-  candidate at run time (debug link APRS op 7, `tests/hil/test_afsk_route_exp.py`).
+- The FM transmit deviation tops out near 1.7 kHz at 25 kHz (section 12, APRS). The AFSK tones go through the codec
+  ADC path, as the microphone does, and 3.3 times the PCM amplitude raises the peak from 1.48 to 1.65 kHz. The
+  2200 Hz tone hits the ceiling first, which looks like pre-emphasis ahead of a limiter. The candidate is the TX
+  limiter field, FM_DEV_COEF b23:16 (`modem-hrc7000.md` 8.1), which ODR sets to 4 as the DM-32UV does.
 - In the calibration page (6.4): what register 0x40 controls, what the squelch thresholds are compared with, the
   fields read at start-up without a found reader (0x203-0x209), and the unread rows.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
@@ -510,26 +499,33 @@ bandwidth of that measurement isn't recorded, so the target isn't settled. If th
 limiter, each dB of gain adds 1 dB of deviation. See section 10.
 
 APRS: positions over DMR (LRRP and UDT) decode on the SDR bench. FM APRS uses the shared HR_C7000 AFSK
-(`platform/hrc7000/hrc_afsk.c`). In its first on-air run (2026-10-16) no frame went out (`aprs.rf_failed`). In a
-second run the same day the frame went out (`aprs.rf_sent`) but carried no tones: the SDR bench saw a 0.63 s
-carrier at 7 Hz rms in the 300-3000 Hz band, so nothing decoded. The same prompt FIFO path decodes on the DM-32UV.
-The board code is the same, so the difference is in this radio's audio wiring or in the FD6818's FM transmit set-up.
-The prompt FIFO reaches the modulator inside the HR_C7000, so the programming cable in the speaker/mic jack doesn't
-explain it. The microphone path works: with the cable out, speech on an FM transmission gave 147 Hz rms in the voice
-band (1.4 kHz peak), against 6 Hz keyed in silence. Leaving the codec ADC unmuted while the tones play changed
-nothing (10 Hz rms, no tones). So on this radio the HR_C7000 modulates its microphone audio but not the prompt FIFO's.
-During the tones AUDIO_CONTROL reads 0x80000082 (b7 prompt path on, b31 FIFO full), WORK_MODE 0x80 and FM_PTT 1;
-a plain FM transmission reads 0x00000002 (diagnostics line `c7`). Unlike the DM-32UV, this radio never sets b6 (FM
-audio to the speaker), since its FM receive audio takes the FD6818's analog path, but setting b6 for the tones changed
-nothing either (6 Hz rms). The microphone goes through the HR_C7000 as on the DM-32UV: speech with the codec ADC
-muted (CR_ADC b7) gave 3 Hz rms, with PTB14 low 43 Hz, normally 140 Hz. So the HR_C7000 is the FM modulator here
-too, and PTB14 high routes the microphone to its FM input (R). The prompt FIFO drains at the right rate during the
-tones (the frame keys for its full length, `aprs.rf_fail` none) but its samples don't reach the modulation. All 64
-codec byte registers during the tones (diagnostics lines `cd`) equal the DM-32UV's byte for byte, as do the
-AUDIO_CONTROL, WORK_MODE, FM_PTT and RF_MODE values and the PCM amplitude. That covers the direct registers only: the
-codec's indirect mixer registers (MIX_0..3) and the FD6818 weren't compared, and FD6818 0x47 does differ (section 10).
-The speaker-source pin doesn't explain it either: four frames with PTB15 low or high and PTB14 high or low
-carried no tones (10-15 Hz rms; PTB14 low only added a step at the start of the frame). Open;
+(`platform/hrc7000/hrc_afsk.c`), which plays the tones through the prompt FIFO. On the DM-32UV the FIFO's playback
+reaches the modulator by itself (ring play). On this radio it doesn't: the frame went out as a bare carrier (7 Hz rms
+in the 300-3000 Hz band on the SDR bench, 2026-10-16), and every direct codec register, AUDIO_CONTROL, WORK_MODE,
+FM_PTT and RF_MODE matched the DM-32UV's during the tones. An experiment build tried each candidate route on air
+(BENCH 2026-10-16):
+
+| Route | Result |
+|---|---|
+| Ring play alone, mic muted (the DM-32UV's) | carrier only |
+| Codec mixer MIX_2 mix_rec, mic muted | carrier only |
+| Codec mixer MIX_2 mix_rec, MIX_3 zeroes the ADC's own input, mic not muted | decodes, peak 1.60 kHz |
+| TX RAM as the FM source (AUDIO_CONTROL b0) | decodes, peak 1.59 kHz |
+| FD6818 tone 1 retuned per symbol | decodes, peak 5.15 kHz |
+| FD6818 0x47 = 0x6042, line out 1, PTB16, FM_PTT order, TONE_SEND_CTRL b6, AUDIO_CONTROL b3 | carrier only |
+
+ODR takes the mixer route (`hrc7000_codec_dac_to_tx`, `modem-hrc7000.md` 8.4): it keeps the FIFO feed both radios
+share. The codec's mic mute sits after the mix, so it would mute the tones too; MIX_3 keeps the microphone out
+instead. With it, positions decode off air with a valid FCS at every level tried. The deviation saturates (section
+10). With `amp_per_level` 103 at 25 kHz (BENCH 2026-10-16):
+
+| APRS level | Peak | Mark | Space | Twist |
+|---|---|---|---|---|
+| 15 | 1.48 kHz | 1.07 kHz | 1.42 kHz | -2.4 dB |
+| 25 | 1.59 kHz | 1.35 kHz | 1.49 kHz | -0.8 dB |
+| 35 | 1.63 kHz | 1.42 kHz | 1.51 kHz | -0.6 dB |
+| 50 | 1.65 kHz | 1.43 kHz | 1.52 kHz | -0.5 dB |
+
 APRS receive is unchecked.
 
 MMDVM SFR: the radio hears the call's header, uplinks it and repeats it in the other slot with the right link
