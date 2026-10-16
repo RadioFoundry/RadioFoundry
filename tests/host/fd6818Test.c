@@ -360,9 +360,38 @@ static void test_dm1801pro(void)
 	CHECK(chip.protocol_errors == 0);
 }
 
+// A variant with burst tables switches straight between the two states: only the table, no idle, no bandwidth
+static void test_burst_tables(void)
+{
+	static const fd6818_regval_t brx[] = { { 0x30, 0xBFF1 } };
+	static const fd6818_regval_t btx[] = { { 0x52, 0x028F }, { 0x30, 0xC1FE } };
+	fd6818_variant_t v = fd6818_variant_dm1801pro;
+	v.burst_rx = brx;
+	v.burst_rx_n = 1;
+	v.burst_tx = btx;
+	v.burst_tx_n = 2;
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach_variant(&dev, &bus, &v);
+	chip.n = 0;
+	fd6818_dmr_burst(&dev, true, v.bw_dmr);
+	CHECK(chip.n == 2 && chip.log[0].reg == 0x52 && chip.log[0].val == 0x028F && chip.log[1].reg == 0x30 &&
+		chip.log[1].val == 0xC1FE);
+	chip.n = 0;
+	fd6818_dmr_burst(&dev, false, v.bw_dmr);
+	CHECK(chip.n == 1 && chip.log[0].reg == 0x30 && chip.log[0].val == 0xBFF1);
+	CHECK(chip.protocol_errors == 0);
+	// The DM-32UV's set has none: idle first
+	fd6818_attach_variant(&dev, &bus, &fd6818_variant_dm32);
+	chip.n = 0;
+	fd6818_dmr_burst(&dev, true, FD6818_BW_DMR);
+	CHECK(chip.n >= 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0);
+}
+
 int main(void)
 {
 	test_dm1801pro();
+	test_burst_tables();
 	test_helpers();
 	test_frames();
 	test_sequences();
