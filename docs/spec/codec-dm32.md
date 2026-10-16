@@ -78,11 +78,18 @@ The register and stack roles match `DM32_firmware/.../codec_interface.c`, so the
 The stock wrapper passes values it keeps in the state blocks where the aftermarket firmware passes constants:
 
 * decode: r3 = D[0x1166], sp+0 = a flags word.
-* encode: r1 = E[0x1736], sp+0 = 0x800 on both calls, sp+8 = E[0x173A] (0x2000 after init).
+* encode: r1 = E[0x1736], sp+0 = the flags word, sp+8 = E[0x173A] (0x2000 after init).
 * ECC: r2 = E[0x1738].
 
 The aftermarket firmware instead uses r3 = 0, encode sp+0 = 0x1840 and then 0x800, and sp+8 = 0x2000. Stock sets
-E[0x172C] = 0x1840 at init. Whether the aftermarket firmware's constants are right for stock is unverified (open item).
+E[0x172C] = 0x1840 at init. Whether the aftermarket firmware's other constants are right for stock is unverified
+(open item).
+
+The encode flags word is a set of feature bits, one value on every call of a transmission (0x800, or 0x1840 =
+0x1000 | 0x800 | 0x40); this build was measured as the DM-1801 Pro's ([codec-md380.md](codec-md380.md), "Encode
+flags"). "0x1840 on the first call, then 0x800" behaves as 0x800: no noise suppression and no tone frames.
+`boards/dm32/vocoder_dm32.c` passes one word on every call from `drivers/vocoder/ambe2_flags.h`: 0x800, plus 0x40
+for noise reduction and 0x1000 for tone frames (0x1840 by default).
 
 ## Comparison with the dh4570 pair and OpenDM32
 
