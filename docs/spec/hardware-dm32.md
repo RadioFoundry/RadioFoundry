@@ -1066,8 +1066,10 @@ the command answers unavailable on a board whose platform has no `hal_system_t.e
 HR_C7000 so far). The wire format is debug link command `0x1A` (`docs/spec/debuglink.md` 3.18).
 
 **RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `dm32.ld` leaves
-out of the image entirely (section 17.1): ODR links nothing there, and the stock codec it is reserved for is not running
-once the radio is quiesced, so the whole window is free. The load span is `0x17000..0x2F000` (`HRC_STUB_BASE` /
+out of the image entirely (section 17.1): ODR links nothing there. A radio that hosts its stock codec runs it in that
+window, so the first STUB command parks the codec (`hrc_vocoder_park`: it waits for a call in progress, then every
+later call returns silence) before the window is handed out. Without that, an upload on a DMR channel overwrote the
+running codec and hung the radio (bench 2026-10-15). The load span is `0x17000..0x2F000` (`HRC_STUB_BASE` /
 `HRC_STUB_SIZE`, 96 KB, 4 KB aligned inside the window). The monitor's runtime build is position dependent, linked to
 run at `0x17000`, and uses about 25 KB (5 KB code + ~20 KB bss and buffers) plus a stack growing down from `0x2F000`.
 Nothing in ODR's own RAM (RAM_LO below it, `.data`/`.bss`/heap/stack above it) is touched while the image loads, so the
