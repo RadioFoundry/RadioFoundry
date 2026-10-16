@@ -486,7 +486,8 @@ def _battery_save(radio, pytestconfig):
     with radio.vfo_session():
         radio.link.vfo_set(hz)
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
-        with settings(radio, rx_save=1, rx_save_idle_s=3):
+        # VOX listens to the microphone and keeps the receiver awake, so it goes off for the test
+        with settings(radio, rx_save=1, rx_save_idle_s=3, vox=0):
             v = radio.wait_for(lambda x: x.get("rx_sleeping") == "1", 8.0, interval=0.05, sections=("features",),
                                what="the receiver asleep (rx_sleeping=1)")
             yield v

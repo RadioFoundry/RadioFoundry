@@ -683,16 +683,21 @@ Below 16 MHz nothing is written (KP).
 | Item | Register | Use | Tag |
 |---|---|---|---|
 | RSSI | 0x67 bits 8:0 | dBm = value / 2 - 160 (FD6818 programming guide; reg 0x2C bits 4:0 hold the external LNA gain the chip takes off) | DS |
-| Noise | 0x65 low byte | | KP |
-| CTCSS mode | 0x51 | 0x9045 TX CTCSS on with gain 0x45; 0x1000 CTCSS RX / TX off; 0x0000 sub-audio off | KP |
-| CTCSS frequency | 0x07 | intended value = Hz × 20.64888 (e.g. 88.5 Hz → 1827). The port computes it with an integer division that truncates the tone to whole tens of Hz: **wrong** | KP |
-| CTCSS detect thresholds | 0x52 = 028F | | KP |
+| Noise | 0x65 low byte | Larger = more noise. No signal: 43-63 (UHF 43-51 on most channels, VHF 57-63); strong carrier: 8. The core's squelch levels open below 64 down to 40, so ODR adds 25 (`fd6818_noise`), or every level opens on noise. Measured on a DM-1801 Pro | KP, HW |
+| Sub-audio mode | 0x51 | b15 on (receive and transmit), b13 DCS inverted, b12 1 = CTCSS / 0 = DCS, b11 24-bit DCS, b6:0 gain. ODR: 0x9045 CTCSS, 0x8045 DCS, 0xA045 DCS inverted, 0 off | DS, BIN |
+| Tone word | 0x07 | b12:0 = Hz × 20.64888 (88.5 Hz → 0x0723, 100.0 Hz → 0x0811); b13 set selects the second (tail) tone word. DCS uses 0x0AD7 (134.4 Hz, the bit rate) | DS, BIN |
+| DCS code | 0x08 | written twice: the 23-bit word's low 12 bits (b15 = 0), then its high bits with b15 = 1 (023 → 0x0813, 0x8763). The word is the Golay(23,12) code word (`drivers/rf/subaudio`) | DS, BIN |
+| CTCSS detect thresholds | 0x52 = 0x028F | b11:6 found, b5:0 lost, in 0.1 Hz. The radio sets b15:13 per band (0x828F-0xE28F); ODR keeps 0x028F | DS, BIN |
 | Tone generator 1 | 0x71 | tone in Hz × 10 (1750 Hz burst) | KP |
-| CSS status | 0x0C high byte | bit 2 CTCSS detected; bit 7 DCS (normal) detected; bit 6 DCS (inverted) detected | KP |
-| DCS | — | no FD6818 DCS registers known; every DCS write in the port is commented out | KP |
+| CSS status | 0x0C | b10 CTCSS detected; b14 DCS normal, b15 DCS inverted. Polled; nothing to clear. The datasheet puts the same results in 0x60 | BIN, DS |
 
-Note: in this radio the C7000 does the FM modulation (two-point, `modem-hrc7000.md`), and the C7000 has its own CTCSS
-and CDCSS generators and detectors. Whether sub-audio set in the FD6818 reaches the air in TX is untested.
+Receive sequences, in the radio's own order. CTCSS: 0x07 = the tone word, 0x07 = 0x21CE, 0x52, then 0x51. DCS: 0x07 =
+0x0AD7 first, the two 0x08 halves, then 0x51. Off: 0x07 = 0x0470, 0x07 = 0x21CE, 0x51 = 0.
+
+The C7000 does the FM modulation (two-point, `modem-hrc7000.md`) and makes the TX sub-audio. Receive tones come from
+the FD6818: the speaker switch (PTB15) takes the FD6818's audio away from the C7000's ADC in FM receive, so the C7000's
+detector hears nothing. The FD6818 detects on its own demodulated audio. ODR turns the FD6818's sub-audio off before
+FM TX because 0x51 b15 also enables its transmitter.
 
 ### 8.5 TX/RX switching, PA and LNA
 
@@ -1030,7 +1035,7 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
 | Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
 | Calibration | 11, read only; OpenDM32's copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
-| Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM with its own sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
+| Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM and TX sub-audio, FD6818 RX sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |
 
 ### 17.1 SRAM layout

@@ -127,6 +127,16 @@ static hrc7000_tone_t c7_tone(uint8_t type)
 	}
 }
 
+static fd6818_tone_t fd_tone(uint8_t type)
+{
+	switch (type) {
+	case TONE_CTCSS: return FD6818_TONE_CTCSS;
+	case TONE_DCS: return FD6818_TONE_DCS;
+	case TONE_DCS_INV: return FD6818_TONE_DCS_INV;
+	default: return FD6818_TONE_NONE;
+	}
+}
+
 static void write_mod_bias(uint32_t hz)
 {
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(hz)));
@@ -226,8 +236,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 		dac_b_power(false);
 		hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
 		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);	// FM plays on the analog path (speaker_source)
-		hrc7000_set_subtone(&modem, false, c7_tone(tone != NULL ? tone->type : TONE_NONE),
-			tone != NULL ? tone->value : 0);
+		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
+		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
+		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
 	}
 	rx_hz = hz;
 	rx_bw = bw;
@@ -256,6 +267,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		fd6818_set_state(&fd, FD6818_STATE_TX);
 		dmr_keyed = true;
 	} else {
+		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the C7000's
 		fd6818_fm_tx_prepare(&fd);
 		tx_hz = hz;
 		tx_wide = bw == RADIO_BW_25K;
@@ -312,9 +324,9 @@ static void status(radio_status_t *st)
 	last_rssi_raw = fd6818_rssi_raw(r67);
 	last_noise_raw = r65 & 0xFFu;
 	st->rssi_dbm = fd6818_rssi_dbm(r67);
-	st->noise = (uint8_t)last_noise_raw;
+	st->noise = fd6818_noise(r65);	// the chip's floor lifted above the core's squelch levels (fd6818.h)
 	st->carrier = false;
-	st->tone_ok = mode != RADIO_MODE_FM || hrc7000_subtone_ok(&modem);
+	st->tone_ok = mode != RADIO_MODE_FM || fd6818_rx_tone_ok(&fd, fd_tone(rx_tone.type));
 }
 
 // The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM

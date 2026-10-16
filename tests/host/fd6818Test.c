@@ -156,6 +156,10 @@ static void test_helpers(void)
 	CHECK(fd6818_ctcss_word(2541) == 5247);
 	CHECK(fd6818_rssi_raw(0x01FF) == 0xFF && fd6818_rssi_raw(0xFE00) == 0);
 	CHECK(fd6818_rssi_dbm(100) == -110 && fd6818_rssi_dbm(0xFE00) == -160);	// guide: reg / 2 - 160
+	CHECK(fd6818_noise(0xAB08) == 33 && fd6818_noise(0x00FF) == 255);	// low byte only, capped
+	// the measured floor (43) stays shut at the loosest squelch level (opens below 64), a strong carrier (8) opens the
+	// tightest (below 40): core/radio/radio_sm.h RADIO_SQL_*
+	CHECK(fd6818_noise(43) >= 64 && fd6818_noise(8) < 40);
 }
 
 static void test_frames(void)
@@ -231,9 +235,49 @@ static void test_sequences(void)
 	chip.n = 0;
 	fd6818_set_tx_ctcss(&dev, 885);
 	CHECK(chip.n == 2 && chip.log[0].reg == 0x07 && chip.log[0].val == 1827 && chip.log[1].val == 0x9045);
+}
+
+// RX sub-audio set-up in the radio's own order, and the 0x0C detect bits
+static void test_rx_tones(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach(&dev, &bus);
+
+	fd6818_set_rx_tone(&dev, FD6818_TONE_CTCSS, 1000);	// 100.0 Hz
+	CHECK(chip.n == 4);
+	CHECK(chip.log[0].reg == 0x07 && chip.log[0].val == 0x0811);
+	CHECK(chip.log[1].reg == 0x07 && chip.log[1].val == 0x21CE);
+	CHECK(chip.log[2].reg == 0x52 && chip.log[2].val == 0x028F);
+	CHECK(chip.log[3].reg == 0x51 && chip.log[3].val == 0x9045);
+
 	chip.n = 0;
-	fd6818_set_rx_ctcss(&dev, 0);
-	CHECK(chip.n == 1 && chip.log[0].reg == 0x51 && chip.log[0].val == 0);
+	fd6818_set_rx_tone(&dev, FD6818_TONE_DCS, 023);	// the datasheet's example: word 0x763813
+	CHECK(chip.n == 4);
+	CHECK(chip.log[0].reg == 0x07 && chip.log[0].val == 0x0AD7);
+	CHECK(chip.log[1].reg == 0x08 && chip.log[1].val == 0x0813);
+	CHECK(chip.log[2].reg == 0x08 && chip.log[2].val == 0x8763);
+	CHECK(chip.log[3].reg == 0x51 && chip.log[3].val == 0x8045);
+
+	chip.n = 0;
+	fd6818_set_rx_tone(&dev, FD6818_TONE_DCS_INV, 023);
+	CHECK(chip.n == 4 && chip.log[3].reg == 0x51 && chip.log[3].val == 0xA045);
+
+	chip.n = 0;
+	fd6818_set_rx_tone(&dev, FD6818_TONE_NONE, 0);
+	CHECK(chip.n == 3);
+	CHECK(chip.log[0].reg == 0x07 && chip.log[0].val == 0x0470);
+	CHECK(chip.log[1].reg == 0x07 && chip.log[1].val == 0x21CE);
+	CHECK(chip.log[2].reg == 0x51 && chip.log[2].val == 0);
+
+	CHECK(fd6818_tone_found(0x0000, FD6818_TONE_NONE));
+	CHECK(fd6818_tone_found(0x0400, FD6818_TONE_CTCSS) && !fd6818_tone_found(0xC000, FD6818_TONE_CTCSS));
+	CHECK(fd6818_tone_found(0x4000, FD6818_TONE_DCS) && !fd6818_tone_found(0x8400, FD6818_TONE_DCS));
+	CHECK(fd6818_tone_found(0x8000, FD6818_TONE_DCS_INV) && !fd6818_tone_found(0x4400, FD6818_TONE_DCS_INV));
+
+	chip.regs[0x0C] = 0x4000;
+	CHECK(fd6818_rx_tone_ok(&dev, FD6818_TONE_DCS) && !fd6818_rx_tone_ok(&dev, FD6818_TONE_CTCSS));
+	CHECK(fd6818_rx_tone_ok(&dev, FD6818_TONE_NONE));
 }
 
 // The DM-1801 Pro set (docs/spec/hardware-dm1801pro.md 5): its own tables, the 0x0200 step, no 0x1A word
@@ -296,6 +340,7 @@ int main(void)
 	test_helpers();
 	test_frames();
 	test_sequences();
+	test_rx_tones();
 	if (failures) {
 		printf("fd6818Test: %d failures\n", failures);
 		return 1;
