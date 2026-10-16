@@ -101,7 +101,7 @@ PTC6, reset PTC2. Bits go out MSB first. K.
 | System control / IO mux | 0x11000000 | SPI0 pins to the peripheral (IO_DIPLEX1 bits 8:3 cleared), ADC B and C analog (IO_DIPLEX2 bits 20, 21 cleared) | K |
 | UART0 | 0x14030000 | 115200 8N1, the programming cable | K |
 | SPI0 | 0x140A0000 | 16 MB data flash | K |
-| ADC | 0x140D0000 | channel 2 battery (I); channel 1 unknown | K |
+| ADC | 0x140D0000 | channel 2 battery (I); channel 1 compared with the VOX thresholds of the calibration page (6.4, I) | K |
 | DAC | 0x140F0000 | channel B PA drive, channel C set once (0x067E): the modem's AF input bias. With the DM-32UV's 0x06E2 the modem missed the sync of about half of the DMR senders; with 0x067E it took every burst, strong and at -87 dBm | K, R |
 | GPIO A / B / C | 0x14020000 / 0x14100000 / 0x14110000 | all pins above | K |
 | Not used | LCD controller 0x12000000, PWM 0x140C0000 | the display is bit-banged, the backlight is a plain GPIO | K |
@@ -122,8 +122,8 @@ driver's delays by 5. K.
 - Unit 10 Hz, 32 bits: register 0x39 = high 16 bits, 0x38 = low 16 bits. 446.000 MHz = 0x02A88AC0. No offset. K.
 - Ranges: 136-174 MHz and 400-470 MHz, plus an air band window of 108-136 MHz on the same chip (not used by ODR yet). K.
 - VHF / UHF split at 200 MHz (selects the path pins). K.
-- No band-word table: register 0x1A is never written; register 0x40 is 0x3480 plus a calibration byte (0x70 at power-on,
-  the byte's source isn't located). K.
+- No band-word table: register 0x1A is never written; register 0x40 is 0x3480 plus a calibration byte: 0x70 at
+  power-on, and on FM transmit a byte interpolated from the calibration page (6.4). K.
 - Bandwidth register 0x43: 0x3048 for DMR and for 12.5 kHz FM, 0x3028 for 25 kHz FM. The radio's channel set-up picks
   0x3048 for a digital channel, and for an analog one by the channel's Narrow / Wide bit (Narrow 0x3048, Wide 0x3028).
   Its bandwidth table also holds 0x2028 and 0x205C, but nothing selects them. K.
@@ -150,7 +150,7 @@ which gives receive audio on the speaker path (R).
 - **Enter TX:** RX path off, wait, TX frequency, the TX sequence, register 0x50 = 3B18, wait, TX path on, PA ramp (40
   steps into DAC B). **Leave TX:** wait, PA ramp down, wait, TX path off, wait, RX frequency (0x32=0244, 0x47=6042),
   RX sequence, RX path on. The radio's waits are an uncalibrated count; ODR uses 1 ms. K for the order.
-- RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external LNA gain). Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte; the
+- RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external LNA gain). Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte (6.4: 0x201 for CTCSS, 0x202 for DCS); the
   tone frequency scale (register 0x07) isn't decoded. ODR sends the tone with the modem's generator and detects it with
 the FD6818 (`fd6818_set_rx_tone`, result in 0x0C), as on the DM-32UV: the modem's detector has no input while the FD6818
 plays FM to the speaker.
@@ -234,29 +234,83 @@ is the DM-32UV's rule ([hardware-dm32.md](hardware-dm32.md) 11.1). On the radio 
 Other pages tagged 0 (0x2000, 0x3000, 0xB000, 0xF000) hold the same structure with the untuned values; they aren't
 the ones the radio reads. K.
 
-**Layout** (offsets in the 4 KB page; the field offsets match the DM-32UV's, [hardware-dm32.md](hardware-dm32.md) 11.2):
+**Layout** (offsets in the 4 KB page; the field offsets match the DM-32UV's, [hardware-dm32.md](hardware-dm32.md) 11.2).
+Every multi-byte value is little endian. "RX points" and "TX points" are the five frequencies of the 0x300 / 0x328 and
+0x314 / 0x33C lists.
 
 | Offset | Size | Content | Tag |
 |---|---|---|---|
-| 0x00 | 4 | `00 40 00 47` | ? |
+| 0x00 | 4 | UHF band limits: two 2-byte BCD values in 100 kHz units, 400.0 and 470.0 MHz. A value of 0, or of 1000 MHz and up, is replaced by 400 / 470 | K |
+| 0x0C | 2 | low-battery voltage in 10 mV units (630 = 6.30 V, 9.2) | K |
+| 0x0E | 2 | battery scale: low 12 bits, counts per volt = value x 10 / 75 (integer). Outside 1-1000 the radio uses 644 (9.2) | K |
 | 0x16 | 1 | TX center | K |
-| 0x17 | 5 | UHF modulation points | K |
-| 0x40 / 0x45 / 0x4A | 5 each | UHF PA drive, power level 0 / 1 / 2, one byte per frequency segment | K |
+| 0x17 | 5 | UHF modulation points, at the TX points | K |
+| 0x1C | 3 | UHF bytes for FD6818 register 0x40, at TX points 0, 2 and 4 | K |
+| 0x27 | 2 | modem RF_MOD_BIAS_CTRL high half | K |
+| 0x40 / 0x45 / 0x4A | 5 each | UHF PA drive, power level 0 / 1 / 2, at the TX points | K |
+| 0x64 / 0x69 | 5 each | UHF squelch, wide channels: the level 9 row / the level 1 row, at the RX points | K |
+| 0x6E / 0x73 | 5 each | UHF squelch, narrow channels: level 9 / level 1 | K |
+| 0x80 / 0x85 | 5 each | air band squelch, level 9 / level 1, at five even steps over 108-136 MHz | K |
+| 0x8E | 9 x 2 | ADC channel 1 thresholds, one per level of a setting: VOX sensitivity (I, below) | K |
 | 0xA6 | 5 | VHF modulation points | K |
+| 0xAB | 3 | VHF bytes for FD6818 register 0x40 | K |
+| 0xCC | 4 | VHF band limits, as 0x00: 136.0 and 174.0 MHz (136 / 174 when invalid) | K |
 | 0xD0 / 0xD5 / 0xDA | 5 each | VHF PA drive, power level 0 / 1 / 2 | K |
-| 0x300 / 0x314 | 20 each | UHF segment frequencies, five 4-byte BCD values in 10 Hz units, little endian: 400.00, 417.50, 435.50, 452.50, 470.00 MHz | K |
-| 0x328 / 0x33C | 20 each | VHF segment frequencies: 136.00, 145.50, 155.50, 164.50, 174.00 MHz | K |
+| 0xE0 / 0xE5 | 5 each | VHF squelch, wide: level 9 / level 1 | K |
+| 0xEA / 0xEF | 5 each | VHF squelch, narrow: level 9 / level 1 | K |
+| 0x201 / 0x202 | 1 each | FD6818 register 0x51 low byte for CTCSS / for DCS | K |
+| 0x203, 0x204 | 1 each | read at start-up (a value above 31 becomes 9); no reader of the result found | ? |
+| 0x205 | 1 | low nibble read at start-up (8 to 11 kept, anything else becomes 11); its use isn't traced | ? |
+| 0x206-0x209 | 4 | read at start-up and masked to 5, 7, 4 and 4 bits; no reader of the results found | ? |
+| 0x300 / 0x314 | 20 each | UHF RX / TX points, five 4-byte BCD values in 10 Hz units: 400.00, 417.50, 435.50, 452.50, 470.00 MHz | K |
+| 0x328 / 0x33C | 20 each | VHF RX / TX points: 136.00, 145.50, 155.50, 164.50, 174.00 MHz | K |
 | 0xFFF | 1 | logical sector tag, 0x02 | K |
 
-The PA drive for a frequency is linearly interpolated between the two segments around it and used times 16 as the DAC B
-value (K). The radio's own firmware takes the segment edges from the 0x314 (UHF) and 0x33C (VHF) lists; ODR's shared
-driver uses even steps from 400 and 136 MHz, which differ from those lists by at most 0.5 MHz at an edge (K).
+The radio's firmware reads nothing else from the page in the code examined: 0x10-0x15, 0x1F-0x26, 0x30-0x3E,
+0x4F-0x63, 0x78-0x7D, 0xA0-0xA5, 0xAE-0xCB, 0xF4-0x107 and 0x200 have no reader (?). Some of them hold five-byte rows
+like the tables above, so they may be read by code not reached here, or be left from another model.
+
+Against the untuned copies at 0x2000 and 0x3000, the radio examined differs only in the TX center, the two sets of
+modulation points, the UHF PA drive and one VHF high-power byte. The squelch rows, register 0x40 bytes, sub-audio
+bytes, thresholds and point lists are the untuned values (K).
+
+**How the radio uses them** (its own firmware, K unless marked):
+
+| Value | Use |
+|---|---|
+| Segment | For a frequency f (10 Hz units), clamped to the band limits: the first point at or above f, minus one, kept to 0..3. The pair of points around f is that segment and the next |
+| Interpolation | Linear between the two points' bytes, truncated toward the first point's byte |
+| PA drive | The TX points and the level's row give a byte; DAC B = byte x 16. The ramp's step i of 40 is byte x t(i) / 248 rounded, from a fixed table t that rises to 248, so the last step is the byte itself |
+| Modulation | The TX points and the band's modulation points give a byte b; RF_MOD_BIAS_CTRL low half = b x 0x0101. On an FM channel b is first multiplied by 1.8 (wide) or 0.9 (narrow) and kept to 255 |
+| RF_MOD_BIAS_CTRL high half | The halfword at 0x27, written once at start-up (0x01EF on the radio examined, in the untuned copies too) |
+| Register 0x40 | On FM transmit: 0x3480 + a byte interpolated between TX points 0 and 2, or 2 and 4, from the three bytes at 0x1C (UHF) or 0xAB (VHF). 0x85 in every point on the radio examined, so 0x3505. What the register controls isn't known (?) |
+| Squelch | The channel's squelch level n (1 to 9) and Wide / Narrow bit pick two rows. Per point: level 1 = the level 1 row, 9 = the level 9 row, 2 to 8 = level 1 row + (level 9 row - level 1 row) x n / 8. The RX points give the segment for the RX frequency; a result of 0 becomes 1. The threshold is stored; what it is compared with isn't traced (?) |
+| Register 0x51 | The channel's tone picks the byte: a CTCSS tone 0x201, a DCS code 0x202, none 0. The register is 0x9000 + byte for CTCSS and 0x8000 or 0xA000 + byte for DCS (normal or inverted, I from ODR's bit names in 5.4) |
+| 0x8E thresholds | A setting (0 to 8) picks one halfword; ADC channel 1 above it triggers, while a setting bit is on. Nine levels in equal steps (15 to 135 on the radio examined) and a menu with "VOX SW", "Gain Level" and "Delay Time" make this the VOX sensitivity (I) |
+
+The 0x300 and 0x328 lists are therefore the receive points: the squelch uses them, and the radio's factory test mode
+tunes its items below 50 at the TX points and those from 50 up at the RX points (K). The two lists hold the same
+frequencies on the radio examined.
+
+ODR uses the TX center, the PA drive and the modulation points. Its shared driver interpolates the PA drive between
+even steps from 400 and 136 MHz at x16 resolution, which differ from the TX points by at most 0.5 MHz at an edge, while
+the radio interpolates the byte. The results stay within 16 DAC counts (one byte) of the radio's (K). For the
+modulation ODR uses the DM-32UV's K / f formula ([hardware-dm32.md](hardware-dm32.md) 11.3), not the interpolated points
+and FM factors above, and TX center + 384 (0x01F0 on the radio examined) for the high half instead of 0x27. Register
+0x40 stays at its power-on 0x34F0, and register 0x51 uses the DM-32UV's gain byte 0x45. None of these differences has
+shown on the bench.
 
 The power level is one value for the three arrays: 0 = low (0x40 / 0xD0), 1 = middle (0x45 / 0xD5), 2 = high
 (0x4A / 0xDA, also used for 3). The radio's menu shows the setting as High / Low / Middle and stores 2 / 0 / 1, and the
-drive bytes rise with the level in every segment (K). ODR's L / M / H use the same arrays. How the 0x300 and 0x328
-lists are used, and the unlabeled fields, are open. The ADC and the register 0x40 / CTCSS calibration bytes
-have no located source.
+drive bytes rise with the level in every segment (K). ODR's L / M / H use the same arrays.
+
+**L / M / H on air.** At 461.4625 MHz (between the 452.5 and 470 MHz points) the radio examined gets a middle drive 1.40
+times the low drive and a high drive 1.46 times the middle, in DAC counts; ODR's values are within 9 counts of the
+radio's own. The drive steps are about even, so the 0.4 dB between L and M against 4.4 dB between M and H on the SDR bench
+(section 10) doesn't come from the calibration or from ODR's lookup. It points at the PA's response to the drive
+voltage, or at the measurement. Diagnostics lines `pa 145`, `pa 435` and `pa tx` show L / M / H as DAC counts (`pa
+tx` at the last TX frequency) and `pa <kHz>k dac` the drive the last transmission used, so a wattmeter reading can be
+set against them.
 
 ### 6.5 The codec in the program flash
 
@@ -321,10 +375,11 @@ hotspot network cases another 14, with no PTT press.
 
 ### 9.2 Battery
 
-ADC channel 2, averaged. The radio scales it with a calibration halfword whose source isn't located, and shows bars at
-8.99, 7.99, 7.50, 6.99, 6.49, 6.31 and 5.81 V. On one radio, switched on, the channel read 856 counts while a DMM read
-8.306 V across the pack (2026-10-16), so ODR uses 103 counts per volt (the DM-32UV's divider gives 82). The scale is
-that single point. R.
+ADC channel 2, averaged. The radio scales it with the calibration halfword at 0x0E (6.4): volts x 100 = counts x 100 /
+(value x 10 / 75), and shows bars at 8.99, 7.99, 7.50, 6.99, 6.49, 6.31 and 5.81 V; the halfword at 0x0C (6.30 V) sets a
+second low-battery flag (K). On one radio, switched on, the channel read 856 counts while a DMM read 8.306 V across the
+pack (2026-10-16), so ODR uses 103 counts per volt (the DM-32UV's divider gives 82; R). That radio's calibration page
+gives 104 counts per volt (value 780), which agrees.
 
 ### 9.3 Interrupts and timers
 
@@ -340,15 +395,16 @@ receiving and orange flashing while scanning.
 
 ## 10. Open items
 
-- What the 0x300 / 0x328 frequency lists are for (the PA drive uses 0x314 / 0x33C).
 - VHF transmit (the TX pair's VHF side); the DMR per-burst handlers and PA delay.
 - The power levels on air: on the SDR bench L and M are only 0.4 dB apart and H is 4.4 dB above M (2026-10-16, 461.4625
-  MHz, the drive from the 0x40 / 0x45 / 0x4A arrays). The SDR's levels are relative and the radio is in its near field,
-  so this wants a wattmeter.
+  MHz, the drive from the 0x40 / 0x45 / 0x4A arrays). The drive itself steps evenly (6.4, "L / M / H on air"), so the
+  cause is the PA or the measurement. The SDR's levels are relative and the radio is in its near field, so this wants
+  a wattmeter, read against the `pa tx` diagnostics line.
 - The display controller part and its contrast.
 - PTB16's role; why the prompt FIFO's samples don't reach the FM modulator (APRS AFSK sends a bare carrier,
   section 12).
-- Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
+- In the calibration page (6.4): what register 0x40 controls, what the squelch thresholds are compared with, the
+  fields read at start-up without a found reader (0x203-0x209), and the unread rows.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
 - The update file header.
 - The FM mic gain levels. The FM values are still the DM-32UV's 11 dB (section 12); measure them with
