@@ -1,33 +1,35 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-32UV APRS AFSK (hal_afsk.h, docs/spec/aprs.md 5).
+// HR_C7000 APRS AFSK (hrc_afsk.h, hal_afsk.h, docs/spec/aprs.md 5).
 //
-// Transmit: the tones as 8 kHz PCM (afsk_mod, phase continuous) through the HR_C7000's prompt FIFO, which feeds the
-// FM modulator while transmitting (radio_dm32.c dm32_afsk_tx mutes the microphone). The DTMF tone generator that
+// Transmit: the tones as 8 kHz PCM (afsk_mod, phase continuous) through the prompt FIFO, which feeds the FM modulator
+// while transmitting (modem-hrc7000.md 8.4); the board's tx_route mutes the microphone. The DTMF tone generator that
 // makes the 1750 Hz burst would need no PCM, but its deviation field tops out near 1.5 kHz, short of APRS's 3 kHz.
 // Timer 4 tops the FIFO up every 2 ms, in 32-sample chunks while it has room; after the last chunk it waits a few
-// ticks for the FIFO to play out before tx_busy goes false.
+// ticks for the FIFO to play out before tx_busy goes false. Speaker PCM stays off the FIFO meanwhile
+// (hrc_audio_pcm_hold): its chunks would land between the tones.
 //
-// Receive: the HR_C7000 copies its demodulated FM audio to the CPU (platform fm_rx_audio.c); while APRS listens the
-// FD6818's audio stays on the HR_C7000's input and the speaker plays the HR_C7000's FM output instead (radio_dm32.c,
-// hardware-dm32.md 9). Needs the DMR glue's system interrupt (CONFIG_DMR).
+// Receive: the HR_C7000 copies its demodulated FM audio to the CPU (fm_rx_audio.c); the board's listen hook keeps the
+// receiver's audio on the HR_C7000's input. Needs the DMR glue's system interrupt (CONFIG_DMR).
 #include "config.h"
 #if CONFIG_APRS
-#include "dm32.h"
+#include "hrc_afsk.h"
 #include "platform.h"
+#include "audio_pcm.h"
 #include "fm_rx_audio.h"
 #include "aprs/afsk.h"
 
 #define TICK_US		2000u	// FIFO top-up period: 16 samples' time, half a chunk
 #define DRAIN_TICKS	8u	// after the last chunk: 16 ms for what the FIFO still holds
-#define AMP_PER_LEVEL	55	// PCM amplitude per level step: 50 (nominal) = 2750, about 3 kHz peak. Bench, 25 kHz:
-				// 2925 gave 3.3 kHz peak; 5850 and up are limited at 5.1 kHz peak, 4.5 kHz on the tones
 
+static hrc7000_t *modem;
+static const hrc_afsk_board_t *hooks;
 static afsk_mod_t mod;
 static const uint8_t *tones;
 static uint16_t nbits;
 static int16_t amp;
 static volatile bool busy;
+static bool routed;
 static bool done;
 static uint8_t drain;
 static bool irq_set;
@@ -54,7 +56,7 @@ static void fill(void)
 			}
 			pending = true;
 		}
-		if (!dm32_prompt_push(chunk)) {
+		if (!hrc7000_prompt_push(modem, chunk)) {
 			return;
 		}
 		pending = false;
@@ -74,17 +76,40 @@ static void tick(void)
 	}
 }
 
+void hrc_afsk_attach(hrc7000_t *m, const hrc_afsk_board_t *b)
+{
+	modem = m;
+	hooks = b;
+}
+
+// The FIFO to the modulator: speaker PCM held off it first, so no beep chunk lands between the tones
+static bool route(bool on)
+{
+	if (on) {
+		hrc_audio_pcm_hold(true);
+		routed = hooks->tx_route(true);
+		if (!routed) {
+			hrc_audio_pcm_hold(false);
+		}
+		return routed;
+	}
+	hooks->tx_route(false);
+	hrc_audio_pcm_hold(false);
+	routed = false;
+	return true;
+}
+
 static bool tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
 {
-	if (busy || n == 0 || baud != AFSK_BAUD || mark != AFSK_MARK_HZ || space != AFSK_SPACE_HZ) {
+	if (modem == NULL || busy || n == 0 || baud != AFSK_BAUD || mark != AFSK_MARK_HZ || space != AFSK_SPACE_HZ) {
 		return false;	// afsk_mod makes Bell 202 only
 	}
-	if (!dm32_afsk_tx(true)) {
+	if (!route(true)) {
 		return false;
 	}
 	tones = t;
 	nbits = n;
-	int32_t a = (int32_t)level * AMP_PER_LEVEL;
+	int32_t a = (int32_t)level * hooks->amp_per_level;
 	amp = (int16_t)(a > 32000 ? 32000 : a);
 	afsk_mod_init(&mod, 8000u);
 	done = false;
@@ -112,15 +137,21 @@ static void tx_stop(void)
 	hrc_timer_stop(TIMER_AFSK);
 	busy = false;
 	hrc_irq_restore(s);
-	dm32_afsk_tx(false);
+	if (routed) {
+		route(false);
+	}
 }
 
 #if CONFIG_APRS_RX && CONFIG_DMR
 static bool rx_start(void)
 {
-	dm32_aprs_listen(true);
+	if (hooks->listen != NULL) {
+		hooks->listen(true);
+	}
 	if (!hrc_fm_rx_start()) {
-		dm32_aprs_listen(false);
+		if (hooks->listen != NULL) {
+			hooks->listen(false);
+		}
 		return false;
 	}
 	return true;
@@ -129,11 +160,13 @@ static bool rx_start(void)
 static void rx_stop(void)
 {
 	hrc_fm_rx_stop();
-	dm32_aprs_listen(false);
+	if (hooks->listen != NULL) {
+		hooks->listen(false);
+	}
 }
 #endif
 
-const hal_afsk_t dm32_afsk = {
+const hal_afsk_t hrc_afsk = {
 	.tx_start = tx_start,
 	.tx_busy = tx_busy,
 	.tx_stop = tx_stop,

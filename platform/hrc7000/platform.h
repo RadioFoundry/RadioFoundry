@@ -80,7 +80,7 @@
 #define TIMER_TICK		1
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
-#define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (boards/dm32/afsk_dm32.c)
+#define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (hrc_afsk.c)
 
 // --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---
 #define PIC_MODE		REG32(PIC_BASE + 0x00)

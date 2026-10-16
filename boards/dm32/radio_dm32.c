@@ -13,6 +13,7 @@
 #include "rf/fd6818/fd6818.h"
 #include "modem/hrc7000/hrc7000.h"
 #include "fm_rx_audio.h"
+#include "hrc_afsk.h"
 
 #define DAC_C_INIT		0x06E2u
 
@@ -43,8 +44,8 @@ static uint16_t last_rssi_raw, last_noise_raw;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
 static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
-static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (dm32_aprs_listen)
-static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (dm32_afsk_tx)
+static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_route)
+static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
 
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
@@ -177,6 +178,17 @@ static const hrc_dmr_board_t dmr_board = {
 	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US,
 };
 
+#if CONFIG_APRS
+static bool afsk_tx_route(bool on);
+static void aprs_listen_route(bool on);
+
+// PCM amplitude per AFSK level step: 50 (nominal) = 2750, about 3 kHz peak. Bench, 25 kHz: 2925 gave 3.3 kHz peak;
+// 5850 and up are limited at 5.1 kHz peak, 4.5 kHz on the tones
+static const hrc_afsk_board_t afsk_board = {
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 55,
+};
+#endif
+
 // ---- hal_radio_t ----
 
 static void init(void)
@@ -208,6 +220,9 @@ static void init(void)
 	hrc_dmr_board_init(&modem, &dmr_board);
 	hrc_audio_pcm_attach(&modem, dm32_speaker_pcm);
 	hrc_fm_rx_attach(&modem);
+#if CONFIG_APRS
+	hrc_afsk_attach(&modem, &afsk_board);
+#endif
 }
 
 // Out of the receiver's sleep before anything else touches the FD6818: its 0x37 low-power word would stay otherwise
@@ -316,9 +331,11 @@ static void tx_off(void)
 {
 	dmr_keyed = false;
 	pa_off();
+#if CONFIG_APRS
 	if (afsk_tx) {
-		dm32_afsk_tx(false);	// the core stops the tones first; this is the safety net
+		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
 	}
+#endif
 	if (mode == RADIO_MODE_FM) {
 		hrc7000_fm_idle(&modem);
 	}
@@ -387,7 +404,9 @@ static void speaker_source(void)
 	}
 }
 
-void dm32_aprs_listen(bool on)
+#if CONFIG_APRS
+// APRS listens (hrc_afsk.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
+static void aprs_listen_route(bool on)
 {
 	uint32_t s = hrc_irq_save();	// dm32_speaker_pcm runs speaker_source from the audio task
 	aprs_listen = on;
@@ -400,6 +419,7 @@ void dm32_aprs_listen(bool on)
 	}
 	hrc_irq_restore(s);
 }
+#endif
 
 static void amp(uint8_t who, bool on)
 {
@@ -455,25 +475,21 @@ void dm32_speaker_pcm(bool on)
 	hrc_irq_restore(s);
 }
 
-// APRS AFSK (afsk_dm32.c): during an FM transmission the prompt FIFO's audio goes to the modulator (the path that put
-// beeps on DMR bursts, modem-hrc7000.md 8.4), so the tones go there with the microphone muted. A beep waits until
-// the tones end: its chunks would land between theirs. False when the radio isn't transmitting FM
-bool dm32_afsk_tx(bool on)
+#if CONFIG_APRS
+// APRS AFSK (hrc_afsk.c): during an FM transmission the prompt FIFO's audio goes to the modulator (the path that put
+// beeps on DMR bursts, modem-hrc7000.md 8.4), so the tones go there with the microphone muted. False when the radio
+// isn't transmitting FM
+static bool afsk_tx_route(bool on)
 {
 	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
 		return false;
 	}
 	afsk_tx = on;
-	hrc_audio_pcm_hold(on);
 	hrc7000_codec_mute(&modem, on, false);
 	ring_play();
 	return true;
 }
-
-bool dm32_prompt_push(const int16_t *s)
-{
-	return hrc7000_prompt_push(&modem, s);
-}
+#endif
 
 void dm32_radio_diag(dm32_radio_diag_t *d)
 {

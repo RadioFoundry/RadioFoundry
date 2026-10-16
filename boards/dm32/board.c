@@ -6,6 +6,7 @@
 #include "dm32.h"
 #include "pins.h"
 #include "platform.h"
+#include "hrc_afsk.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 #if CONFIG_NET_PPP
@@ -76,7 +77,7 @@ const board_t board = {
 	.vocoder = &hrc_vocoder,
 #endif
 #if CONFIG_APRS
-	.afsk = &dm32_afsk,
+	.afsk = &hrc_afsk,
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
