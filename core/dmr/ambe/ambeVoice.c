@@ -52,6 +52,9 @@ static ambe_voice_stats_t stats;
 static ambe_voice_mixer_t mixer;
 static bool cb_mixing;
 static uint16_t mic_gain_q8 = 256;	// ambeVoiceSetMicGain: the mic samples times this / 256 before encoding
+static uint32_t enc_opts = VOCODER_OPT_DEFAULT;	// ambeVoiceSetEncodeOptions: any task
+static uint32_t cb_enc_opts;		// what the vocoder was last given (audio callback)
+static bool cb_enc_opts_set;		// cb_enc_opts is valid
 
 static void ensure_streaming(void)
 {
@@ -273,6 +276,13 @@ static void tx_block(const int16_t *mic)
 			voc->reset();	// fresh encoder: the first frame of a transmission
 		}
 	}
+	// Options change only between frames, in this task, so both halves of a frame see the same ones
+	uint32_t opts = LOAD(enc_opts);
+	if (voc_ok() && voc->set_options != NULL && (!cb_enc_opts_set || opts != cb_enc_opts)) {
+		voc->set_options(opts);
+		cb_enc_opts = opts;
+		cb_enc_opts_set = true;
+	}
 	uint8_t bits[VOCODER_BITS];
 	static int16_t scaled[AUDIO_BLOCK_SAMPLES];	// the audio callback only (off its stack)
 	uint16_t g = LOAD(mic_gain_q8);
@@ -327,6 +337,21 @@ void ambeVoiceSetMicGain(uint8_t step)
 	STORE(mic_gain_q8, q8[step > 10 ? 10 : step]);
 }
 
+void ambeVoiceSetEncodeOptions(uint32_t opts)
+{
+	STORE(enc_opts, opts);
+}
+
+uint32_t ambeVoiceEncodeOptions(void)
+{
+	return LOAD(enc_opts) & ambeVoiceEncodeOptionsSupported();
+}
+
+uint32_t ambeVoiceEncodeOptionsSupported(void)
+{
+	return voc != NULL && voc->options != NULL && voc->set_options != NULL ? voc->options() : 0;
+}
+
 static const dmr_voice_sink_t sink = {
 	.begin = sink_begin, .frame = sink_frame, .lost = sink_lost, .end = sink_end, .ctx = NULL,
 };
@@ -338,6 +363,7 @@ void ambeVoiceInit(const hal_audio_t *audio, const hal_vocoder_t *vocoder)
 {
 	aud = audio;
 	voc = vocoder;
+	cb_enc_opts_set = false;	// a new vocoder is told the options before its first frame
 }
 
 const dmr_voice_sink_t *ambeVoiceSink(void)

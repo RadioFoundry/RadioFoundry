@@ -64,6 +64,12 @@ void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
 // Microphone gain for DMR transmissions (Settings > Talk & listen > Mic gain): step 0..10, 2 dB a step, 5 = as the
 // board delivers it (the samples are scaled, with saturation, before the vocoder). Any task
 void ambeVoiceSetMicGain(uint8_t step);
+// Encode options for DMR transmissions (VOCODER_OPT_*, default VOCODER_OPT_DEFAULT; Settings > Talk & listen > Mic
+// noise reduction). Handed to the vocoder in the audio callback before the next frame it encodes. Any task
+void ambeVoiceSetEncodeOptions(uint32_t opts);
+// The options in force (those set that the vocoder takes), and the ones the vocoder takes (0: none, or no vocoder)
+uint32_t ambeVoiceEncodeOptions(void);
+uint32_t ambeVoiceEncodeOptionsSupported(void);
 void ambeVoiceGetStats(ambe_voice_stats_t *out);
 // Zero the counters (the debug link's RESET_COUNTERS). Counters only: no state changes. From any task; an increment
 // racing the reset may survive it

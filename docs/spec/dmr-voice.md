@@ -134,7 +134,29 @@ keystream can't undo, so such a call is never played, key or not. We never send 
 The HR_C6000 reports the EMB PI bit unreliably for voice, so its driver clears it (`modem-hrc6000.md`); on that modem
 privacy is recognized from the service options and PI headers only.
 
-## 6. Observing it
+## 6. Encoding the microphone
+
+The vocoder encodes each 20 ms of microphone audio (`core/dmr/ambe/ambeVoice.c`, in the audio task). Before that the
+samples are scaled by the mic gain (Settings > Talk & listen, 2 dB a step). The codec itself can also clean up the
+input. These are generic encode options in `hal_vocoder_t`; the board maps them to its codec, and `core/` never sees
+codec bits.
+
+| Option | Effect | Default | Setting |
+|---|---|---|---|
+| `VOCODER_OPT_NOISE_REDUCTION` | Suppresses steady background noise, also between words. It also lowers a steady tone held into the mic | on | Settings > Talk & listen > Mic noise reduction |
+| `VOCODER_OPT_TONE_FRAMES` | A steady tone or tone pair (DTMF) is sent as a tone frame and comes out at its frequency on the other side. Speech is not affected | on | none |
+| `VOCODER_OPT_AGC` | Input level control | reserved | not offered by any board yet |
+
+* `options()` says which options the board's codec takes. A board without them leaves `options`, `set_options` and
+  `encode_flags` NULL. Then the setting is shown dimmed ("Not on this radio") and nothing changes.
+* `ambeVoiceSetEncodeOptions` may be called from any task. The audio callback hands the options to the vocoder before
+  the next frame it encodes, so every codec call of a frame uses the same options. The board keeps them across
+  `reset()`, so a new transmission starts with the options in force.
+* The options are read at start-up from the setting and on every change (`ui_svc_apply`).
+* Per codec mapping: [codec-md380.md](codec-md380.md) "Encode flags" (the AMBE+2 hosts on the MD-380, DM-1701 and
+  DM-32UV share `drivers/vocoder/ambe2_flags.h`).
+
+## 7. Observing it
 
 Debug link (`debuglink.md`): the `dmr` view's `target_manual`, `privacy`, `alias_tx`; the `dmr_call` view's
 `emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
@@ -144,7 +166,7 @@ Debug link (`debuglink.md`): the `dmr` view's `target_manual`, `privacy`, `alias
 bench_tx.py voice --gps LAT,LON[,ERR]`), `tests/hil/test_dmr_tx.py` (`test_dmr_gps_tx`: our GPS Info decoded by the
 bench modem's listener).
 
-## 7. Open points
+## 8. Open points
 
 - The codeplug's hang time unit is not confirmed. Checked: the interop spec lists the group and private hang bytes
   (general settings 0x18, 0x19) only as vendor layout the aftermarket firmware ignores ("only the callsign and the DMR ID

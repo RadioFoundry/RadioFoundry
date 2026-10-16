@@ -166,7 +166,7 @@ static bool v_present(void) { return true; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
-static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL };
+static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL };
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
