@@ -213,6 +213,14 @@ void board_sysboot_prepare(void)
 	reset_levels();
 }
 
+// Before the flash stub takes over (platform/stm32f4/stub_entry.c): only the transmitter off (hardware-md380.md 5.6);
+// the backlight and the rest stay, so the "PC Loader Connected" banner stays readable while the stub runs
+void board_stub_prepare(void)
+{
+	stm32_pin_write(PIN_PORT(PIN_APC_EN), PIN_MASK(PIN_APC_EN), false);
+	stm32_pin_write(PIN_PORT(PIN_TX_5V), PIN_MASK(PIN_TX_5V), false);
+}
+
 void board_early_init(void)
 {
 	reset_levels();		// latch the power before anything slow

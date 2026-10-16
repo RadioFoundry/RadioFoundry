@@ -10,6 +10,7 @@
 // high), returns clocks and peripherals to their reset state, maps system memory at 0 and jumps to the ROM's reset
 // vector.
 #include <string.h>
+#include "config.h"
 #include "platform.h"
 #include "hal_system.h"
 
@@ -68,6 +69,11 @@ const hal_system_t stm32_system = {
 	.chip = chip,
 	.read = read,
 	.reboot = reboot,
+#if CONFIG_STUB_ENTRY
+	.stub_region = stm32_stub_region,	// stub_entry.c
+	.enter_stub = stm32_enter_stub,
+	.stub_run_addr = 0x20000000u,		// the staging buffer is copied to the SRAM base at entry
+#endif
 };
 
 static void spin_until(volatile uint32_t *reg, uint32_t mask, uint32_t want)

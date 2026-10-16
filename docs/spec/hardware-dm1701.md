@@ -1343,6 +1343,11 @@ boots into DFU every time until a full image is written again, which `tools/stm3
 touched, so the bootloader always stays reachable. This is not implemented; it is a candidate `REBOOT` mode 2 with the
 same gate plus an explicit confirmation in the tool.
 
+**Route 3: no bootloader at all, for updates.** A build with `CONFIG_STUB_ENTRY=y` loads a RAM flash stub over the
+debug link and the stub writes the application sectors itself ([stub-stm32f4.md](stub-stm32f4.md)). It uses the DFU
+check above as its safety net: it erases sector 3 first and programs the word at 0x0800C000 last, so an interrupted
+update leaves the radio in DFU at the next power-on with no keys held.
+
 Sources: `FLASH_OPTCR` and the flash size register read on the bench unit through the debug link (2026-10-10);
 STM32F405 reference manual (RDP levels, option bytes, `SYSCFG_MEMRMP`, backup domain); ST's application note on the
 system-memory bootloader (supported interfaces, read-unprotect behavior).

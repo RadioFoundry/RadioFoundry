@@ -17,5 +17,21 @@ toolchain (`-Os`). The source and its protocol document are kept with the revers
 repository for now. Check the embedded images with `sha256sum stub_*.bin` against `stubtool.py --self-test`
 (which decodes and checks them).
 
+## STM32F4 radios (DM-1701, MD-380)
+
+A second stub, with its source here, for the STM32F405 radios behind the AnyRoad / TYT bootloader. A running ODR built
+with `CONFIG_STUB_ENTRY=y` loads it over the USB debug link; it then installs builds (changed sectors only, the codec
+kept), backs up and verifies the internal flash. Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
+
+| File | What |
+|---|---|
+| `stm32f4/` | the stub's C source, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (about 5.3 KB) |
+| `f4stub.py` | its host side; `stubtool.py` hands the DM-1701 and MD-380 to it (`--odr-enter`, or `--attach --board dm1701`); `--self-test` runs without a radio |
+
+Status (2026-10-16): built and host tested (`tests/host`: the protocol engine, and the host tool against the real
+engine through a pipe). Not run on a radio yet.
+
+## HR_C7000 status
+
 Status (2026-10-15): reads of both flash chips, entry from ODR, `--write-app` (a 93-sector build in 71 s, changed sectors only,
 both directions, ODR up after the restart) and the provisional baud switch were run on a DM-1801 Pro. The DM-32UV is untested.

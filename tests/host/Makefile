@@ -516,6 +516,21 @@ run-stubEntry: stubEntryTest
 	./stubEntryTest
 .PHONY: run-stubEntry
 
+# The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
+TESTS   += f4stubTest
+f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+
+TESTS   += f4stubSim
+f4stubSim: f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+
+run: run-f4stub
+run-f4stub: f4stubTest f4stubSim
+	./f4stubTest
+	python3 f4stub_wire_check.py ./f4stubSim
+.PHONY: run-f4stub
+
 # DM-32UV drivers and board logic: FD6818 frames on a fake three-wire chip, ST7789 init stream and 2x scaling, key
 # matrix decode with the column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the factory
 # calibration decoder (docs/spec/hardware-dm32.md, modem-hrc7000.md)

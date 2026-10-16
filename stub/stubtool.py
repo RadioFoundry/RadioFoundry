@@ -1368,9 +1368,63 @@ def parse_range(s, size):
     return int(a, 0) if a else 0, int(b, 0) if b else size
 
 
+class UdpPort:
+    """The debug link over UDP (port 3334 of the radio's address in USB network mode, docs/spec/usb-network.md), shaped
+    like the pyserial calls this tool makes. Used only to send the hand-over to an STM32 radio."""
+
+    def __init__(self, addr):
+        import socket
+        host, _, port = addr.partition(":")
+        self.addr = (socket.gethostbyname(host), int(port or 3334))
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.timeout = 0.1
+        self.pending = bytearray()
+
+    def read(self, n=1):
+        if not self.pending:
+            self.sock.settimeout(self.timeout or 0.001)
+            try:
+                self.pending += self.sock.recvfrom(2048)[0]
+            except OSError:
+                return b""
+        out = bytes(self.pending[:n])
+        del self.pending[:n]
+        return out
+
+    def write(self, data):
+        self.sock.sendto(bytes(data), self.addr)
+        return len(data)
+
+    def reset_input_buffer(self):
+        self.pending.clear()
+        self.sock.setblocking(False)
+        try:
+            while self.sock.recv(2048):
+                pass
+        except OSError:
+            pass
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.sock.close()
+
+
+def find_odr_port():
+    """The one serial port with ODR's USB identity (1FC9:0094), which the STM32 stub also uses"""
+    from serial.tools import list_ports
+    ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == (0x1FC9, 0x0094)]
+    if len(ports) != 1:
+        raise OSError("%d serial ports with USB ID 1FC9:0094: give --stub-port" % len(ports))
+    return ports[0]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    ap.add_argument("port", nargs="?")
+    ap.add_argument("port", nargs="?", help="serial port, or udp:ADDR[:PORT] for an STM32 radio in USB network mode")
+    ap.add_argument("--stub-port", metavar="PORT", help="with a udp: port: the serial port the stub comes up on "
+                    "(default: the one USB device 1FC9:0094)")
     ap.add_argument("out", nargs="?", help="old form: output file for the memory chosen with --mem")
     ap.add_argument("--mem", choices=sorted(MEM), default="progmem", help="memory for the old form")
     ap.add_argument("--progmem", metavar="FILE", help="read the 1 MB program flash into FILE")
@@ -1407,10 +1461,17 @@ def main(argv=None):
                     "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset")
     ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")
     ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded one")
+    ap.add_argument("--board", choices=("dm1701", "md380"), help="an STM32 radio (stub/f4stub.py); found from the "
+                    "radio's VERSION reply with --odr-enter, needed with --attach")
+    ap.add_argument("--no-rodata2", action="store_true", help="STM32 --write-app: the DM-1701 application without its "
+                    "sector 9 part, on purpose")
+    ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
+                    "is saved before it is erased (the MD-380's sector 6; default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
-        return self_test()
+        import f4stub
+        return self_test() | f4stub.self_test()
     if not a.port:
         ap.error("give PORT")
     jobs = []                                   # (mem, file, start, end, twice)
@@ -1429,8 +1490,20 @@ def main(argv=None):
         return 1
     try:
         stub = open(a.stub, "rb").read() if a.stub else None
-        port = serial.Serial(a.port, 115200, timeout=0.1)
+        if a.port.startswith("udp:"):
+            # a radio in USB network mode: the hand-over goes over UDP; the stub then enumerates as a serial port
+            port = UdpPort(a.port[4:])
+            reopen = lambda: serial.Serial(a.stub_port or find_odr_port(), 115200, timeout=0.1)
+        else:
+            port = serial.Serial(a.port, 115200, timeout=0.1)
+            reopen = lambda: serial.Serial(a.port, 115200, timeout=0.1)
         radio = Radio(port, retries=a.retries)
+        # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
+        import f4stub
+        if a.board is None and a.odr_enter:
+            a.board = f4stub.board_from_version(radio)
+        if a.board in f4stub.BOARDS:
+            return f4stub.run(a, port, reopen)
         if a.odr_enter:
             radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else None)
         elif a.attach:

@@ -904,6 +904,11 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	case DL_CMD_SNMP:
 		return debuglink_cmd_snmp(req, len, out, cap);
 	case DL_CMD_STUB:
+#if CONFIG_STUB_ENTRY
+		if (len >= 1 && req[0] == DL_STUB_OP_ENTER && transmitting()) {
+			return status_only(out, DL_ST_BUSY);	// never hand the SoC over with the transmitter keyed
+		}
+#endif
 		return debuglink_cmd_stub(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
