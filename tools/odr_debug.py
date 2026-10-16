@@ -257,7 +257,7 @@ class DebugLink:
             self.s = UdpPort(host, int(udp_port or 3334))
         else:
             try:
-                self.s = serial.Serial(self.port, 115200, timeout=0.02)
+                self.s = serial.serial_for_url(self.port, 115200, timeout=0.02)	# a device, or a URL such as rfc2217://host:port
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
         self.buf = bytearray()

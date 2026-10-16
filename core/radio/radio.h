@@ -263,6 +263,9 @@ void radio_get_view(radio_view_t *v);
 // Bumped on every visible change, so the UI can redraw only when needed
 uint32_t radio_view_serial(void);
 
+// Requests taken by the radio task, and lost to a full queue, since start-up
+void radio_req_stats(uint32_t *handled, uint32_t *dropped);
+
 // Requests (queued, handled by the radio task)
 void radio_req_channel_step(int8_t dir);	// next / previous channel in the zone, wraps
 void radio_req_zone_pos(uint16_t pos);		// jump to a position in the zone

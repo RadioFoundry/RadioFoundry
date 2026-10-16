@@ -65,6 +65,8 @@ codeplug_source_t codeplug_source(void);
 uint16_t codeplug_channel_count(void);
 // false if the slot is empty or unreadable
 bool codeplug_channel(uint16_t number, channel_t *out);
+// Reads of a used channel that failed (flash read or record decode), since start-up
+uint32_t codeplug_channel_errors(void);
 
 // Zones 0..count-1. With no zones stored there is one zone "All channels" holding every used channel
 uint16_t codeplug_zone_count(void);
