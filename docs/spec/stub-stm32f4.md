@@ -224,7 +224,7 @@ never committed.
 | Stub image | 5,324 bytes (limit 8 KB, asserted by `f4stub.ld`) |
 | Stub RAM after the jump | about 26 KB of SRAM (image, buffers, 8 KB receive ring) plus the stack |
 | ODR with `CONFIG_STUB_ENTRY=y`, DM-1701 | +768 bytes in sectors 3-6 (the STUB state machine, the entry) and +112 in sector 9 (the banner text); +8 KB of SRAM (the staging buffer): RAM 92.7 % used |
-| ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code; the default MD-380 image has no room left, so a build with the switch on needs another switch off (`CONFIG_DMR_ROAMING=n` builds: 270,276 of 281,668 bytes, RAM 79.6 %) |
+| ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code: 275,640 of 281,668 bytes (2026-10-16), RAM 78.8 %. The default image has about 6 KB left, so the switch fits with no other switch off |
 | ODR with the switch off | no change: the same image, byte for byte in size |
 
 The switch stays off by default: the command hands the whole SoC to whatever image the host sends, guarded by the
