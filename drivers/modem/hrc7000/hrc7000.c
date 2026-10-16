@@ -160,6 +160,30 @@ void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted)
 	hrc7000_codec_wr(d, C7_CODEC_CR_DAC, (uint8_t)(lineout_muted ? (dac | 0x80u) : (dac & 0x7Fu)));
 }
 
+#define MIX_EN		0x80u
+#define MIX_LOAD	0x40u
+#define MIX_2_REC	0x01u	// MIX_2 b0 mix_rec: the ADC's output = ADC + DAC
+#define MIX_3_ADC_ZERO	0xF0u	// MIX_3 mixadcl_sel = mixadcr_sel = 3: the ADC's input to the mix = 0
+
+static void mix_wr(hrc7000_t *d, uint8_t addr, uint8_t v, bool en)
+{
+	hrc7000_codec_wr(d, C7_CODEC_DR_MIX, v);
+	hrc7000_codec_wr(d, C7_CODEC_CR_MIX, (uint8_t)((en ? MIX_EN : 0u) | MIX_LOAD | addr));
+}
+
+void hrc7000_codec_dac_to_tx(hrc7000_t *d, bool on)
+{
+	// The ADC's input is zeroed while mix_rec is set, so the microphone never rides on the tones
+	if (on) {
+		mix_wr(d, 3, MIX_3_ADC_ZERO, true);
+		mix_wr(d, 2, MIX_2_REC, true);
+	} else {
+		mix_wr(d, 2, 0, false);
+		mix_wr(d, 3, 0, false);
+		hrc7000_codec_wr(d, C7_CODEC_CR_MIX, 0);
+	}
+}
+
 void hrc7000_fm_rx(hrc7000_t *d, bool wide)
 {
 	hrc7000_wr(d, C7_FM_BANDWIDTH, wide ? 0x4F : 0x40);

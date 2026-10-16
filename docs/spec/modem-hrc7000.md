@@ -524,6 +524,14 @@ speaker PCM is held off the FIFO meanwhile (`hrc_audio_pcm_hold`), since its chu
 Bell 202 decoded off air from this path with a valid FCS on the DM-32UV (BENCH, `aprs.md` 13). The DTMF tone
 generator (8.3) needs no PCM, but its deviation field tops out near 1.5 kHz, short of the 3 kHz APRS wants.
 
+Where ring play doesn't reach the modulator on its own, the codec's digital mixer (DS 6.5.2.10-11) carries the DAC's
+audio into the ADC's record path, which is the FM transmit input. CR_MIX (codec 0x10: b7 mix_en, b6 load, b5:0 the
+MIX_n address) and DR_MIX (0x11) reach MIX_0..3. MIX_2 b0 (mix_rec) makes the ADC's output ADC + DAC, and MIX_3 b7:4
+= 0xF zeroes the ADC's own input in that sum. `hrc7000_codec_dac_to_tx` sets MIX_3 and then MIX_2, clears them in the
+reverse order and ends with CR_MIX = 0. The codec mic mute (CR_ADC b7) must stay off on this route: it mutes the mix
+too. Through this route Bell 202 decoded off air with a valid FCS (BENCH, a board where ring play alone sent a bare
+carrier).
+
 ### 8.5 FM receive audio to the CPU
 
 In FM (WORK_MODE 0x80) the modem copies its demodulated receive audio into the RX RAM as well as to the codec (the
