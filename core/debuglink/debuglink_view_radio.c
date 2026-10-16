@@ -30,7 +30,7 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "scan_probes=%u\nscan_synced=%u\n", v->scan_probes, v->scan_synced);
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
-	dl_text(t, "vox_on=%u\n", v->vox_on);
+	dl_text(t, "vox_on=%u\nvox.mic=%u\n", v->vox_on, board.power != NULL && board.power->mic_level != NULL);
 	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
 	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
 	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", word(v->battery, batt, 3),

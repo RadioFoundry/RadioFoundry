@@ -145,9 +145,9 @@ def send_until_heard(radio, sdr_bench, freq, cc, send, done, check, match, what,
 def data_settings(radio):
     """Puts the data service's RAM settings back after the test."""
     v = radio.data_view()
+    x = radio.view(["dmr_ext"])  # before the test: read after it, these would be the test's own values
     yield
     if v.get("data.built") == 1:
-        x = radio.view(["dmr_ext"])
         radio.link.data_settings(v["data.ars_server"], v["data.radio_check_reply"] == 1, v["data.call_alert_ack"] == 1,
                                  v["data.lrrp_reply"] == 1, radio_check_etsi=x.get("data.radio_check_etsi") == "1",
                                  sms_format=x.get("data.sms_format", "etsi_ip"))
