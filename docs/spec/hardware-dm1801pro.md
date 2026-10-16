@@ -124,8 +124,9 @@ driver's delays by 5. K.
 - VHF / UHF split at 200 MHz (selects the path pins). K.
 - No band-word table: register 0x1A is never written; register 0x40 is 0x3480 plus a calibration byte (0x70 at power-on,
   the byte's source isn't located). K.
-- Bandwidth register 0x43: 0x3048 DMR, 0x2028, 0x3028 analog, 0x205C. Which analog word is 12.5 kHz and which 25 kHz is
-  unverified: ODR uses 0x2028 for 12.5 and 0x3028 for 25 (the DM-32UV's 25 kHz word). I.
+- Bandwidth register 0x43: 0x3048 for DMR and for 12.5 kHz FM, 0x3028 for 25 kHz FM. The radio's channel set-up picks
+  0x3048 for a digital channel, and for an analog one by the channel's Narrow / Wide bit (Narrow 0x3048, Wide 0x3028).
+  Its bandwidth table also holds 0x2028 and 0x205C, but nothing selects them. K.
 
 ### 5.3 Register tables
 

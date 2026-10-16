@@ -56,6 +56,7 @@ const fd6818_variant_t fd6818_variant_dm1801pro = {
 	.dmr = dmr_table, .dmr_n = TBL_N(dmr_table),
 	.rx = rx_seq, .rx_n = TBL_N(rx_seq),
 	.tx = tx_seq, .tx_n = TBL_N(tx_seq),
-	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x2028u, .bw_dmr = 0x3048u,
+	// The radio's own firmware writes only these two words: 12.5 kHz FM shares the DMR word (hardware-dm1801pro.md 5.2)
+	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x3048u, .bw_dmr = 0x3048u,
 	.band_words = band_words,
 };
