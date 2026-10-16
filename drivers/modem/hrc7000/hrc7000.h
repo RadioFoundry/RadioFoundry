@@ -185,7 +185,16 @@ static inline uint32_t hrc7000_mod_bias_dc(uint8_t tx_center, uint16_t modcal)
 // FM (WORK_MODE 0x80) with every DMR register written once, the modem system interrupts enabled at the chip and
 // mic_gain (0..42 dB) in GCR_ADCL
 void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db);
+// GCR_ADCL bits 5:0 (0..42 dB, clamped). The stock firmware writes one value for FM at each FM transmit start and
+// another for DMR at each DMR entry and DMR transmit start (modem-hrc7000.md 4 step 32, 5.1 step 2)
+#define HRC7000_MIC_GAIN_MAX_DB	42u
 void hrc7000_set_mic_gain(hrc7000_t *d, uint8_t db);
+// A board's mic gain with the user's offset (hal_radio_t.mic_gain), clamped to the register's range
+static inline uint8_t hrc7000_mic_db(uint8_t base_db, int8_t offset_db)
+{
+	int v = (int)base_db + offset_db;
+	return (uint8_t)(v < 0 ? 0 : v > (int)HRC7000_MIC_GAIN_MAX_DB ? (int)HRC7000_MIC_GAIN_MAX_DB : v);
+}
 // Speaker line out gain, GCR_DACL bits 5:0: 0..31 = 0..-31 dB, 32..63 = +32..+1 dB (hardware-dm32.md 9.1; the
 // direction checked on the DM-32 at bring-up: code 0 and code 48 both louder than code 7)
 void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);

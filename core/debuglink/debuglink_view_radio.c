@@ -9,6 +9,9 @@
 #include "debuglink/debuglink_proto.h"
 #include "radio/beep.h"
 #include "radio/vibe.h"
+#include "radio/mic_gain.h"
+
+#define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -64,6 +67,8 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		s.vox_tail_ms);
 	dl_text(t, "set.rx_save=%u\nset.rx_save_idle_s=%u\nset.battery_off_s=%u\n", s.rx_save, s.rx_save_idle_s,
 		s.battery_off_s);
+	// The step in effect (the UI's setting or the SETTING op's) and whether the board's audio path takes it
+	dl_text(t, "set.mic_gain=%u\nset.mic_gain_board=%u\n", radio_mic_gain(), mic_gain_on_board());
 	if (s.reply_s <= 30) {
 		dl_text(t, "set.reply_s=%u\n", s.reply_s);
 	} else {
@@ -177,9 +182,20 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (len < 3) {
 			return DL_ST_BAD_ARG;
 		}
+		uint16_t v = (uint16_t)(a[1] | (a[2] << 8));
+		if (a[0] == DL_SETTING_MIC_GAIN) {	// not a radio_settings_t field: the UI stores it (radio/mic_gain.h)
+			if (v > MIC_GAIN_STEPS) {
+				return DL_ST_BAD_ARG;
+			}
+			if (!mic_gain_available()) {
+				return DL_ST_UNAVAILABLE;
+			}
+			radio_set_mic_gain((uint8_t)v);
+			return DL_ST_OK;
+		}
 		radio_settings_t s;
 		radio_get_settings(&s);
-		if (!set_one(&s, a[0], (uint16_t)(a[1] | (a[2] << 8)))) {
+		if (!set_one(&s, a[0], v)) {
 			return DL_ST_BAD_ARG;
 		}
 		radio_set_settings(&s);

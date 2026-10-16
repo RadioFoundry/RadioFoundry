@@ -501,6 +501,20 @@ static void test_fm_rx_keeps_pcm(void)
 	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_FM_PLAY);
 }
 
+// Mic gain: the board's value plus the user's offset, clamped to GCR_ADCL's 0..42 dB, written with bit 7 (shared)
+static void test_mic_gain(void)
+{
+	setup();
+	CHECK(hrc7000_mic_db(11, 0) == 11 && hrc7000_mic_db(11, 10) == 21 && hrc7000_mic_db(11, -10) == 1);
+	CHECK(hrc7000_mic_db(5, -10) == 0 && hrc7000_mic_db(40, 10) == HRC7000_MIC_GAIN_MAX_DB);
+	hrc7000_set_mic_gain(&dev, hrc7000_mic_db(11, 4));
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == 0x8Fu);
+	hrc7000_set_mic_gain(&dev, 60);
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == (0x80u | HRC7000_MIC_GAIN_MAX_DB));
+	hrc7000_dmr_enter(&dev, 0, hrc7000_mic_db(11, -6));
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == 0x85u);
+}
+
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
 static void test_tx_tone(void)
 {
@@ -768,6 +782,7 @@ int main(void)
 	test_polite_and_repeater();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
+	test_mic_gain();
 	test_tx_tone();
 	test_subtone();
 	test_fm_rx_audio();

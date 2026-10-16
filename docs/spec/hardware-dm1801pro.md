@@ -349,11 +349,9 @@ receiving and orange flashing while scanning.
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
 - The update file header.
-- The FM mic gain. Proposal: an FM value written into GCR_ADCL at each FM transmit start
-  (`hrc7000_set_mic_gain`), apart from the DMR one, and settable at run time for the bench. The existing "Mic gain"
-  setting (0-10, 2 dB a step around 5, DMR only today: it scales the samples before the vocoder) could drive it as an
-  offset from `MIC_GAIN_DB`. Tune it with the SDR bench's FM deviation reading on speech or a tone at the microphone,
-  at 12.5 and 25 kHz, then fix `MIC_GAIN_DB`.
+- The FM mic gain levels. The FM values are still the DM-32UV's 11 dB (section 12); measure them with
+  `tests/hil/test_mic_gain.py` at 12.5 and 25 kHz ([the bring-up checklist](../testing/dm1801pro-bringup.md) 5.1) and
+  set `MIC_GAIN_FM_12K5_DB` and `MIC_GAIN_FM_25K_DB`.
 - Whether the mic PCM carries the microphone in FM receive (PTB14 high), which VOX needs (section 12).
 
 ## 11. What ODR reuses
@@ -402,12 +400,14 @@ first thing to check. On the radio: `vox.mic=1`, then `vox.level` (features sect
 about 100 a second while `vox.level` is read, and L and P should rise when someone talks at the radio
 (`test_radio_features::test_mic_level`, radio only; `test_vox_quiet` with `--allow-rf`).
 
-Mic gain: `MIC_GAIN_DB` (11) goes into GCR_ADCL as 0x8B at power-on and at every DMR entry, the DM-32UV's value
-(`hardware-dm32.md` 9.1: bits 5:0 = 0 to 42 dB), and FM transmit uses the same value. Speech on FM gave 1.4 kHz peak
-deviation (above), which is low. The register's scale gives a basis for a change: if the path is linear up to the
-deviation limiter, each step adds 1 dB of deviation. The stock firmware writes separate FM and DMR mic gains into
-this register (`modem-hrc7000.md` 4 step 32, 5.1 step 2), so the two can be tuned apart. The channel bandwidth of the
-1.4 kHz measurement isn't recorded, so the target isn't settled. See section 10.
+Mic gain: GCR_ADCL (bits 5:0 = 0 to 42 dB, `hardware-dm32.md` 9.1) gets three board levels, as the stock firmware
+writes separate FM and DMR values (`modem-hrc7000.md` 4 step 32, 5.1 step 2): `MIC_GAIN_DMR_DB` at power-on, at
+every DMR entry and at every DMR transmit start, and `MIC_GAIN_FM_12K5_DB` or `MIC_GAIN_FM_25K_DB` at every FM
+transmit start, before FM_PTT. All three are the DM-32UV's 11 dB (0x8B) for now. The Mic gain setting adds (step -
+5) x 2 dB to each through `hal_radio_t.mic_gain` (`radio-features.md` 3.6), so the bench can step it without a
+reflash (debug link SETTING 29). Speech on FM gave 1.4 kHz peak deviation (above), which is low; the channel
+bandwidth of that measurement isn't recorded, so the target isn't settled. If the path is linear up to the deviation
+limiter, each dB of gain adds 1 dB of deviation. See section 10.
 
 APRS: positions over DMR (LRRP and UDT) decode on the SDR bench. FM APRS uses the shared HR_C7000 AFSK
 (`platform/hrc7000/hrc_afsk.c`). In its first on-air run (2026-10-16) no frame went out (`aprs.rf_failed`). In a

@@ -43,7 +43,7 @@ static void spin(uint32_t n)
 
 void hrc7000_set_mic_gain(hrc7000_t *d, uint8_t db)
 {
-	hrc7000_codec_wr(d, C7_CODEC_GCR_ADCL, (uint8_t)(0x80u | (db > 42 ? 42 : db)));
+	hrc7000_codec_wr(d, C7_CODEC_GCR_ADCL, (uint8_t)(0x80u | (db > HRC7000_MIC_GAIN_MAX_DB ? HRC7000_MIC_GAIN_MAX_DB : db)));
 }
 
 void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code)

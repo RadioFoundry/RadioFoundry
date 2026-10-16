@@ -26,7 +26,12 @@
 #define ADC_CTRL_RESET		(1u << 3)
 
 #define UHF_FROM_HZ		200000000u	// VHF / UHF split of the path selects (5.2)
-#define MIC_GAIN_DB		11u		// GCR_ADCL at init (the DM-32UV's, unverified)
+// Mic gains in GCR_ADCL (dB), before the user's offset: DMR at power-on, DMR entry and DMR TX start, FM at each FM TX
+// start. The DM-32UV's 11 dB for all three until the SDR bench sets the FM ones (hardware-dm1801pro.md 12: speech on FM
+// gave 1.4 kHz peak, low)
+#define MIC_GAIN_DMR_DB		11u
+#define MIC_GAIN_FM_12K5_DB	11u
+#define MIC_GAIN_FM_25K_DB	11u
 #define RF_BIT_SCALE_US		5u		// the radio clocks the FD6818 at about 5 us per half period (5.1)
 #define PA_RAMP_STEPS		40u		// 5.4
 #define PA_RAMP_STEP_US		50u
@@ -57,6 +62,7 @@ static void speaker_source(void);
 static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key the PA
 static volatile uint16_t tx_drive;	// DAC B value at the top of the ramp (FM) or while keyed (DMR)
 static uint16_t last_rssi_raw, last_noise_raw;
+static volatile int8_t mic_offset_db;	// hal_radio_t.mic_gain: taken at the next transmission start
 
 // ---- FD6818 bus ----
 
@@ -214,7 +220,7 @@ static void init(void)
 	DAC_DATA_A = 0;
 	DAC_DATA_B = 0;
 	DAC_DATA_C = DAC_C_INIT;
-	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DB);
+	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DMR_DB);
 
 	hrc_pin_out(PIN_RF_CS, true);
 	hrc_pin_out(PIN_RF_CLK, false);
@@ -238,7 +244,8 @@ static void set_mode(radio_mode_t m)
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);
 		dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
-		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)), MIC_GAIN_DB);
+		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)),
+			hrc7000_mic_db(MIC_GAIN_DMR_DB, mic_offset_db));
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
 	} else {
@@ -309,6 +316,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		// with the TX path, and the drive waits for the PA one-shot. A hotspot stays keyed like this while it listens,
 		// so receive must work while keyed (set_freq left the FD6818 idle)
 		hrc_pin_write(PIN_MIC_PATH, false);
+		hrc7000_set_mic_gain(&modem, hrc7000_mic_db(MIC_GAIN_DMR_DB, mic_offset_db));
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		hal_delay_ms(1);
@@ -321,6 +329,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
 			tone != NULL ? tone->value : 0);	// before FM_PTT: the modem takes the DCS code then
+		hrc7000_set_mic_gain(&modem, hrc7000_mic_db(tx_wide ? MIC_GAIN_FM_25K_DB : MIC_GAIN_FM_12K5_DB,
+			mic_offset_db));
 		hrc7000_fm_tx(&modem, tx_wide);
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
@@ -467,6 +477,11 @@ void dm1801pro_amp(uint8_t who, bool on)
 	hrc_irq_restore(s);
 }
 
+static void mic_gain(int8_t db)
+{
+	mic_offset_db = db;
+}
+
 static void audio(bool on)
 {
 	rx_audio = on;
@@ -560,4 +575,5 @@ const hal_radio_t dm1801pro_radio = {
 	.audio = audio,
 	.volume = NULL,
 	.rx_sleep = rx_sleep,
+	.mic_gain = mic_gain,
 };

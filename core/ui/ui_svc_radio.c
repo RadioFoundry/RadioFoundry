@@ -9,15 +9,13 @@
 #include "radio/radio.h"
 #include "radio/beep.h"
 #include "radio/vibe.h"
+#include "radio/mic_gain.h"
 #include "input/input.h"
 #include "settings/settings.h"
 #include <string.h>
 #include "config.h"
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
-#endif
-#if CONFIG_DMR
-#include "dmr/ambe/ambeVoice.h"
 #endif
 
 uint32_t ui_svc_feat_voice(void)
@@ -276,11 +274,9 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_TALK_PERMIT:
 		rs.talk_permit = value != 0;
 		break;
-#if CONFIG_DMR
-	case UI_SET_MIC_GAIN:		// DMR: the samples are scaled before the vocoder (no board has an FM mic gain hook)
-		ambeVoiceSetMicGain((uint8_t)(v16 > 10 ? 10 : v16));
+	case UI_SET_MIC_GAIN:		// the board's gain (FM and DMR) or DMR's sample scaling (radio/mic_gain.h)
+		radio_set_mic_gain((uint8_t)(v16 > MIC_GAIN_STEPS ? MIC_GAIN_STEPS : v16));
 		return;
-#endif
 	case UI_SET_TONE_VOLUME:		// 0..10
 		rs.beep_level = (uint8_t)(v16 > 10 ? 100 : v16 * 10u);
 		break;
