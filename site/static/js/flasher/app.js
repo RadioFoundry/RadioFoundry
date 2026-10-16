@@ -24,74 +24,15 @@ import { decideCodec } from "./decide.js";
 import { readBootKey } from "./bootkey.js";
 import { loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
+import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel } from "./dom.js";
+import * as c7ui from "./c7000ui.js";
+import { FakeC7000, c7000Simulation } from "./fakec7000.js";
+import { slotBytes, locateCodec } from "./c7000.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
 
-const STRINGS = JSON.parse(document.getElementById("i18n")?.textContent || "{}");
-const t = (key, fmt = {}) => (STRINGS[key] || key).replace(/\{(\w+)\}/g, (_, k) => (k in fmt ? fmt[k] : `{${k}}`));
-const ROOT = document.body.dataset.root || "";
-
-function h(tag, attrs = {}, ...children) {
-	const el = document.createElement(tag);
-	for (const [k, v] of Object.entries(attrs || {})) {
-		if (v === false || v === null || v === undefined) continue;
-		if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-		else if (k === "class") el.className = v;
-		else el.setAttribute(k, v === true ? "" : v);
-	}
-	for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) el.append(c instanceof Node ? c : String(c));
-	return el;
-}
-
 const app = document.getElementById("flasher");
-
-function download(name, bytes, type = "application/octet-stream") {
-	const url = URL.createObjectURL(new Blob([bytes], { type }));
-	const a = h("a", { href: url, download: name });
-	document.body.append(a);
-	a.click();
-	a.remove();
-	setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
-
-async function readFile(input) {
-	const f = input.files?.[0];
-	return f ? { name: f.name, data: new Uint8Array(await f.arrayBuffer()) } : null;
-}
-
-function filePicker(label, accept, onFile) {
-	const input = h("input", { type: "file", accept });
-	input.addEventListener("change", async () => {
-		const f = await readFile(input);
-		if (f) onFile(f);
-	});
-	return h("label", { class: "file-pick" }, h("span", {}, label), input);
-}
-
-function progressBar() {
-	const bar = h("span");
-	const text = h("span", { class: "small muted" });
-	const el = h("div", {}, h("div", { class: "progress", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100 }, bar), text);
-	return {
-		el,
-		set(done, total, label = "") {
-			const pct = total ? Math.round((100 * done) / total) : 0;
-			bar.style.width = pct + "%";
-			el.firstChild.setAttribute("aria-valuenow", pct);
-			text.textContent = `${label} ${pct}%`.trim();
-		},
-	};
-}
-
-function logBox() {
-	const el = h("pre", { class: "log", "aria-live": "off" });
-	return { el, add(line) { el.textContent += line + "\n"; el.scrollTop = el.scrollHeight; } };
-}
-
-const notice = (text, kind = "") => h("p", { class: `notice ${kind}` }, text);
-const button = (label, onclick, { primary = false, disabled = false, danger = false } = {}) =>
-	h("button", { class: `btn${primary ? " btn-primary" : ""}${danger ? " btn-danger" : ""}`, type: "button", onclick, disabled }, label);
 
 class NetworkModeError extends Error {}
 
@@ -163,6 +104,9 @@ const STEPS = {
 	backup: ["radio", "backup"],
 	restore: ["bundle", "restore"],
 };
+// The C7000 radios install through the stub: connect and check take the place of "now" and "codec"
+const C7_INSTALL = ["radio", "build", "connect", "check", "write", "done"];
+const stepsFor = () => (S.task === "install" && S.radio && isC7() ? C7_INSTALL : STEPS[S.task]);
 
 async function loadData() {
 	const get = async (name) => (await fetch(`${ROOT}data/${name}`)).json();
@@ -172,8 +116,10 @@ async function loadData() {
 }
 
 const fb = () => (S.sim ? S.sim.fb : S.data.fb);
-// Every image comes from the build service, so a radio needs only a bootloader the page speaks
-const flashable = (r) => r.flash.backend === "anyroad-dfu" && !!S.data.fb.boards[r.flash.board]?.key_sha256;
+// Every image comes from the build service, so a radio needs only a bootloader the page speaks (or, on the HR_C7000
+// radios, the C7 stub: c7000ui.js)
+const flashable = (r) => (r.flash.backend === "anyroad-dfu" && !!S.data.fb.boards[r.flash.board]?.key_sha256) || isC7(r);
+const isC7 = (r = S.radio) => c7ui.isC7000(r, fb());
 
 // Build options (radio.json flash.build_options, such as the MD-380's band): all chosen, and the value a radio running ODR
 // reports by its debug link name
@@ -341,9 +287,9 @@ async function getKey(board) {
 function render() {
 	app.replaceChildren();
 	if (!S.task) return app.append(startView());
-	const steps = STEPS[S.task];
+	const steps = stepsFor();
 	app.append(h("ol", { class: "stepper" }, steps.map((s, i) =>
-		h("li", { class: i < S.step ? "done" : "", "aria-current": i === S.step ? "step" : false }, t(`flash.step.${s}`)))));
+		h("li", { class: i < S.step ? "done" : "", "aria-current": i === S.step ? "step" : false }, t(`flash.step.${steps === C7_INSTALL && s === "done" ? "c7_done" : s}`)))));
 	if (S.sim) app.append(notice(t("flash.sim.banner"), "info"));
 	// One bar of buttons under every step: back, start over, and the step's own way forward, which the view sets (and
 	// changes when it redraws) through S.forward
@@ -352,8 +298,10 @@ function render() {
 		fwd.replaceChildren(...[btn].filter(Boolean));
 		info.replaceChildren(...[text].filter(Boolean));
 	};
-	const view = { radio: radioView, build: buildView, now: nowView, codec: codecView, write: writeView, done: doneView,
-		backup: backupView, bundle: bundleView, restore: restoreView }[steps[S.step]];
+	const c7 = isC7(), c7bundle = c7ui.hasC7Backup(S.bundle);
+	const view = { radio: radioView, build: buildView, now: nowView, codec: codecView, write: c7 ? c7ui.writeView : writeView,
+		done: c7 ? c7ui.doneView : doneView, connect: c7ui.connectView, check: c7ui.checkView,
+		backup: c7 ? c7ui.backupView : backupView, bundle: bundleView, restore: c7bundle ? c7ui.restoreView : restoreView }[steps[S.step]];
 	app.append(view());
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },
@@ -370,15 +318,12 @@ function next() {
 
 async function reset() {
 	await dropSerial();
-	const keep = { data: S.data, sim: S.sim, fakeRadio: S.fakeRadio };
+	await c7ui.dropC7();
+	const keep = { data: S.data, sim: S.sim, fakeRadio: S.fakeRadio, fakeC7: S.fakeC7 };
 	// exactly a fresh load: fields set along the way (buildOptions, keyFromRadio, ...) go, the rest start over
 	for (const k of Object.keys(S)) delete S[k];
 	Object.assign(S, initialState(), keep);
 	render();
-}
-
-function panel(title, ...children) {
-	return h("section", { class: "panel" }, h("h2", {}, title), ...children);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -397,7 +342,9 @@ function startView() {
 			h("div", { class: "choice-grid" }, choice("install", "⤓"), choice("backup", "⎘"), choice("restore", "↺"))),
 		h("details", { class: "small" }, h("summary", {}, t("flash.start.privacy_title")), h("p", {}, t("flash.start.privacy"))),
 		h("p", { class: "small muted" }, S.sim ? h("a", { href: "#", onclick: (e) => { e.preventDefault(); location.hash = ""; location.reload(); } }, t("flash.sim.leave"))
-			: h("a", { href: "#sim", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try"))));
+			: [h("a", { href: "#sim", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try")), " · ",
+				h("a", { href: "#sim=c7000", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000")), " · ",
+				h("a", { href: "#sim=c7000-odr", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000_odr"))]));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -405,7 +352,7 @@ function startView() {
 
 function radioView() {
 	const list = h("div", { class: "choice-grid" }, S.data.radios.map((r) => {
-		const ok = S.task === "backup" ? r.backup.odr === "full" : flashable(r);
+		const ok = S.task === "backup" ? r.backup.odr === "full" || isC7(r) : flashable(r);
 		return h("button", { class: "choice", type: "button", "aria-pressed": String(S.radio?.id === r.id), disabled: !ok,
 			onclick: () => { selectRadio(r); next(); } },
 		h("img", { src: ROOT + r.image, alt: "" }), h("strong", {}, r.name),
@@ -435,6 +382,7 @@ function radioView() {
 }
 
 function selectRadio(r) {
+	if (S.radio && S.radio.id !== r.id) c7ui.dropC7().then(() => { S.c7 = null; });
 	S.radio = r;
 	S.board = fb().boards[r.flash.board];
 	S.selection = new Selection(r, S.data.features, S.data.variants);
@@ -461,6 +409,7 @@ function buildView() {
 	};
 	// Continue gets the image first: built on request, then on to the next step
 	const go = async () => {
+		if (!S.firmware && S.sim) await ensureFirmware();
 		if (!S.firmware && !S.sim) await requestBuild(draw);
 		if (S.firmware || S.sim) next();
 	};
@@ -538,7 +487,7 @@ function buildView() {
 					: t("flash.build.custom_start")));
 		const busy = building && !S.build.error;
 		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]);
-		forward(button(t(busy ? "flash.nav.building" : missing ? "flash.nav.choose" : S.firmware || S.sim ? "flash.nav.to_now" : "flash.nav.build",
+		forward(button(t(busy ? "flash.nav.building" : missing ? "flash.nav.choose" : S.firmware || S.sim ? (isC7() ? "flash.nav.to_connect" : "flash.nav.to_now") : "flash.nav.build",
 			{ what: missing?.title.toLowerCase() }), go, { primary: true, disabled: busy || !!missing }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		const image = panel(t("flash.build.image_title"),
@@ -665,6 +614,12 @@ async function requestBuild(redraw) {
 async function loadOwnImage(f, redraw) {
 	try {
 		if (startsWith(f.data, fb().magic)) throw new Error(t("flash.err.stock_as_image"));
+		if (isC7()) {
+			// an image merged with its codec (tools/dm32_codec.py): the slot becomes the codec source, the rest the image
+			const { image, slot } = await c7ui.splitOwnImage(fb().c7000, S.radio.flash.board, f.data);
+			if (slot) (S.c7 ||= {}).fileCodec = slot;
+			f = { ...f, data: image };
+		}
 		const m = S.ownManifest || await forDevBuild(S.board, f.data);
 		const board = await verify(m, f.data, fb(), S.board.id);
 		S.firmware = { manifest: m, image: f.data, source: f.name, origin: "own", board };
@@ -678,6 +633,7 @@ async function ensureFirmware() {
 	if (S.firmware) return S.firmware;
 	if (S.sim) {
 		const img = randomBytes(rng(99), 200 * 1024);
+		img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);	// what a C7000 read recognizes ODR by
 		return (S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name") });
 	}
 	throw new Error(t("flash.build.no_image"));
@@ -1162,7 +1118,21 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"));
 		return;
 	}
-	if (location.hash.includes("sim")) {
+	c7ui.init({ S, next, render, fb, flashStarted, flashFinished, errorText,
+		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
+	if (location.hash.includes("sim=c7000")) {
+		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over
+		const sim = await c7000Simulation(S.data.fb.c7000, "dm1801pro");
+		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
+		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600 });
+		if (location.hash.includes("c7000-odr")) {
+			const img = randomBytes(rng(98), 180 * 1024);
+			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);
+			S.fakeC7.progmem.set(img, sim.c.app_start);
+			S.fakeC7.progmem.set(slotBytes(sim.c, "dm1801pro", await locateCodec(sim.progmem, sim.c, "dm1801pro")), sim.c.boards.dm1801pro.slot[0]);
+		}
+		S.fakeC7.powerOn();
+	} else if (location.hash.includes("sim")) {
 		S.sim = await simulation(S.data.fb, "dm1701");
 		S.fakeRadio = new FakeRadio(S.sim, { state: location.hash.includes("sim=odr") ? "odr" : "stock", spiSize: 0x400000 });
 		// a smaller SPI flash keeps the simulated backup quick

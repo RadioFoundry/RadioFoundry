@@ -7,7 +7,9 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - a synthetic DM-1701 stock file and its key (odrflash's stockfw.build_synthetic_stock), with its profile
   - plans for a synthetic image in keep and merge mode, as plan.describe() prints them
   - a release manifest for that image (manifest.generate)
-  - the site's data files (radios, features, variants, flash boards), as site/build.py writes them
+  - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
+  - for the HR_C7000 radios: an LZ4 block from stubtool's encoder, and a synthetic program flash with a codec at
+    made-up addresses, its profile, what dm32_codec.locate() finds and the slot dm32_codec.merge() builds from it
 
     python3 site/tests/fixtures.py OUT_DIR
 """
@@ -67,10 +69,41 @@ def main(out):
 	feats = repo.features()
 	variants = repo.variants()
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
-	for name, obj in (("flash-boards.json", repo.flash_boards()), ("features.json", {"features": feats}),
+	c7000(out, rng)
+	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("flash-boards.json", repo.flash_boards()), ("features.json", {"features": feats}),
 			  ("variants.json", {"variants": variants}), ("radios.json", {"radios": radios})):
 		with open(os.path.join(out, name), "w") as f:
 			json.dump(obj, f)
+
+
+def c7000(out, rng):
+	import struct
+	import zlib
+	st, dc = repo._tool("stub", "stubtool.py"), repo._tool("tools", "dm32_codec.py")
+	sector = bytes(rng.choice(b"ODR flash  \x00\xff") for _ in range(st.SECTOR))
+	real = next(p for p in dc.PROFILES.values() if p["board"] == "dm1801pro")
+	dump = bytearray(rng.getrandbits(8) for _ in range(dc.PROGMEM_SIZE))
+	code = bytearray(rng.getrandbits(8) for _ in range(real["code"][1]))
+	struct.pack_into("<2I", code, 0, *dc.CODEC_SIG)
+	tables = bytes(rng.getrandbits(8) for _ in range(real["tables"][1]))
+	dump[0xB1234:0xB1234 + len(code)] = code
+	dump[0x60010:0x60010 + len(tables)] = tables
+	prof = dict(real, code_sha256=dc.sha256(bytes(code)), tables_sha256=dc.sha256(tables),
+		    tables_head_crc=zlib.crc32(tables[:64]))
+	found = dc.locate(bytes(dump), {prof["code_sha256"]: prof}, "dm1801pro")
+	image = bytes(rng.getrandbits(8) for _ in range(300 * 1024 + 5))
+	merged = dc.merge(image, found, *dc.carve(bytes(dump), found))
+	for name, data in (("lz4_plain.bin", sector), ("lz4_block.bin", st.lz4_encode(sector)), ("c7000_progmem.bin", dump),
+			   ("c7000_image.bin", image), ("c7000_merged.bin", merged)):
+		with open(os.path.join(out, name), "wb") as f:
+			f.write(data)
+	doc = {"profile": {"name": "synthetic", "board": "dm1801pro", "tag": prof["tag"], "code_len": len(code), "run": prof["code"][2],
+			   "code_sha256": prof["code_sha256"], "tables_len": len(tables), "tables_ram": prof["tables"][2],
+			   "tables_sha256": prof["tables_sha256"], "tables_head_crc": prof["tables_head_crc"],
+			   "entries": [prof["entries"][k] for k in dc.ENTRIES], "stock_file": None},
+	       "found": {"code": found["code"][0] - dc.PROGMEM_BASE, "tables": found["tables"][0] - dc.PROGMEM_BASE}}
+	with open(os.path.join(out, "c7000.json"), "w") as f:
+		json.dump(doc, f, indent=1)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@
     "codec": "docs/spec/codec-dm32.md"
   },
   "flash": {
-    "backend": "bfuv32-serial",
+    "backend": "c7000-stub",
     "board": "dm32",
     "link": "serial-cable",
     "bootloader": [
@@ -30,10 +30,11 @@
     "stock_versions": [
       "DM32.01.01.049",
       "DM32.00.01.046"
-    ]
+    ],
+    "stub_tested": false
   },
   "backup": {
-    "stock": "planned",
+    "stock": "full",
     "odr": "full",
     "spi_size": 16777216
   },

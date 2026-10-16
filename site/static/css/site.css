@@ -257,6 +257,7 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .kv-list { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: 0 0 var(--space-4); }
 .kv-list dt { color: var(--muted); }
 .kv-list dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .kv-list { grid-template-columns: 1fr; gap: 0; } .kv-list dd { margin-bottom: var(--space-2); } }
 .progress { width: 100%; height: 14px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.2s; }
 .log { background: var(--code-bg); border-radius: var(--radius-sm); padding: var(--space-3); font-family: var(--font-mono); font-size: 0.8rem; max-height: 260px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
@@ -276,3 +277,64 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .feature-group[open] > summary .group-name::before { transform: rotate(45deg); }
 .feature-group > summary:hover .group-name { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .feature-group > summary .group-name::before { transition: none; } }
+
+/* flasher, HR_C7000 radios: the radio's top with its LED, the program memory map, the checklist (c7000ui.js) */
+.c7-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
+@media (max-width: 760px) { .c7-grid { grid-template-columns: 1fr; } .c7-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .c7-grid .rt-svg { max-width: 140px; } }
+.radio-top { margin: 0; text-align: center; }
+.rt-svg { width: 100%; max-width: 200px; height: auto; display: block; margin: 0 auto; }
+.rt-label { font: 600 11px var(--font-sans); fill: var(--muted); }
+.rt-callout { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; }
+.rt-screen { fill: #0b0d10; stroke: #000; }
+.radio-top[data-screen="loader"] .rt-screen { fill: #c9d6c2; }
+.radio-top[data-screen="on"] .rt-screen { fill: #1d3550; }
+.rt-screen-text { font: 700 13px var(--font-sans); fill: #1b1e22; }
+.rt-screen-text.small { font-weight: 500; font-size: 11px; }
+.radio-top[data-screen="on"] .rt-screen-text { fill: #e8f0f8; font-size: 11px; }
+.rt-led { fill: #3a3d42; stroke: #000; stroke-width: 1; }
+.rt-glow { fill: transparent; }
+.rt-arrow { stroke: var(--accent); }
+.rt-arrow-head { fill: var(--accent); }
+.rt-knob-turn { opacity: 0; }
+.radio-top[data-knob="cycle"] .rt-knob-turn, .radio-top[data-knob="on"] .rt-knob-turn { opacity: 1; animation: rt-pulse 1.6s ease-in-out infinite; }
+.rt-caption { display: grid; gap: var(--space-1); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
+.rt-caption span:first-child { font-weight: 600; }
+.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="wait"] .rt-glow { animation: rt-yellow 1s steps(1) infinite; }
+.radio-top[data-led="busy"] .rt-led, .radio-top[data-led="busy"] .rt-glow { animation: rt-yellow 0.25s steps(1) infinite; }
+.radio-top[data-led="done"] .rt-led, .radio-top[data-led="done"] .rt-glow { animation: rt-green 0.3s steps(1) 3; }
+.radio-top[data-led="green"] .rt-led { fill: #3fe060; }
+.radio-top[data-led="green"] .rt-glow { fill: rgb(63 224 96 / 35%); }
+@keyframes rt-yellow { 0% { fill: #ffd21f; } 50% { fill: #3a3d42; } }
+@keyframes rt-green { 0% { fill: #3fe060; } 50% { fill: #3a3d42; } }
+.rt-glow { animation-name: none; }
+.radio-top[data-led="wait"] .rt-glow, .radio-top[data-led="busy"] .rt-glow { animation-name: rt-yellow-glow; }
+.radio-top[data-led="done"] .rt-glow { animation-name: rt-green-glow; }
+@keyframes rt-yellow-glow { 0% { fill: rgb(255 210 31 / 40%); } 50% { fill: transparent; } }
+@keyframes rt-green-glow { 0% { fill: rgb(63 224 96 / 40%); } 50% { fill: transparent; } }
+@keyframes rt-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+	/* no blinking on the page: the LED shows its color and the caption says how the real one blinks */
+	.radio-top .rt-led, .radio-top .rt-glow, .rt-knob-turn { animation: none !important; }
+	.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="busy"] .rt-led { fill: #ffd21f; }
+	.radio-top[data-led="done"] .rt-led { fill: #3fe060; }
+}
+.c7-checks { list-style: none; padding: 0; margin: 0 0 var(--space-4); display: grid; gap: var(--space-3); }
+.c7-checks li { display: grid; grid-template-columns: 1.8rem 1fr; gap: var(--space-2); align-items: start; }
+.c7-checks li::before { content: "○"; color: var(--faint); font-weight: 700; text-align: center; }
+.c7-checks li[data-state="run"]::before { content: "◐"; color: var(--accent); animation: rt-pulse 1s infinite; }
+.c7-checks li[data-state="ok"]::before { content: "✓"; color: var(--ok); }
+.c7-checks li[data-state="bad"]::before { content: "!"; color: var(--bad); }
+.c7-checks li[data-state="skip"]::before { content: "–"; color: var(--muted); }
+.c7-checks .small { display: block; }
+.c7-map { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; margin: var(--space-3) 0; max-width: 640px; }
+.c7-map span { aspect-ratio: 1; border-radius: 2px; background: var(--surface-2); }
+.c7-map span[data-s="boot"] { background: repeating-linear-gradient(45deg, var(--border), var(--border) 2px, var(--surface-2) 2px, var(--surface-2) 4px); }
+.c7-map span[data-s="same"] { background: var(--ok-soft); }
+.c7-map span[data-s="todo"] { background: var(--warn-soft); outline: 1px solid var(--warn); }
+.c7-map span[data-s="writing"], .c7-map span[data-s="retry"] { background: var(--accent); animation: rt-pulse 0.5s infinite; }
+.c7-map span[data-s="written"] { background: var(--ok); }
+.c7-map span.slot { box-shadow: inset 0 -3px 0 var(--link); }
+.c7-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); font-size: var(--text-sm); color: var(--muted); padding: 0; margin: 0; list-style: none; }
+.c7-legend li { display: flex; align-items: center; gap: var(--space-2); }
+.c7-legend .c7-map { display: inline-grid; grid-template-columns: 1fr; width: 14px; margin: 0; }
+.c7-big { font-size: var(--text-lg); }

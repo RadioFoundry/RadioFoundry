@@ -299,7 +299,58 @@ def flash_boards():
 		for k in ("code", "tables", "extra"):
 			q.pop(k, None)
 		out["profiles"][sha] = q
+	out["c7000"] = c7000_flash()
 	return out
+
+
+def _tool(*parts):
+	"""Import a repository script (tools/dm32_codec.py, stub/stubtool.py) as a module."""
+	import importlib.util
+	spec = importlib.util.spec_from_file_location(parts[-1][:-3], path(*parts))
+	mod = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(mod)
+	return mod
+
+
+def c7000_flash():
+	"""What the web flasher needs for the HR_C7000 radios it flashes through the stub (stub/stubtool.py): the program
+	flash layout and LED pins from stubtool, the codec slot and the codec profiles from tools/dm32_codec.py. The stub
+	images themselves go to c7000-stub.json (c7000_stub()), loaded only when a C7000 radio is flashed."""
+	st, dc, fl = _tool("stub", "stubtool.py"), _tool("tools", "dm32_codec.py"), _tool("tools", "dm32_flash.py")
+	boards = {}
+	for bid, lay in dc.BOARDS.items():
+		# the bootloader's ID string (dm32_flash.MODELS): in the first 48 KB of the program flash, it tells the radios apart
+		boards[bid] = {"slot": [lay["slot"][0] - dc.PROGMEM_BASE, lay["slot"][1] - dc.PROGMEM_BASE],
+			       "run": list(lay["run"]), "tables": list(lay["tables"]),
+			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None}
+	profiles = []
+	for p in dc.PROFILES.values():
+		if "code_sha256" not in p:
+			continue
+		profiles.append({"name": p["name"], "board": p["board"], "tag": p["tag"],
+				 "code_len": p["code"][1], "run": p["code"][2], "code_sha256": p["code_sha256"],
+				 "tables_len": p["tables"][1], "tables_ram": p["tables"][2], "tables_sha256": p["tables_sha256"],
+				 "tables_head_crc": p.get("tables_head_crc", dc.TABLES_HEAD_CRC),
+				 "entries": [p["entries"][k] for k in dc.ENTRIES],
+				 "stock_file": None if p.get("kind") == "progmem" else {"sha256": next(h for h, q in dc.PROFILES.items() if q is p),
+										"size": p["size"], "code": p["code"][0], "tables": p["tables"][0]}})
+	return {"progmem_base": dc.PROGMEM_BASE, "progmem_size": dc.PROGMEM_SIZE, "data_size": st.MEM["q128"][3],
+		"app_start": st.APP_START, "app_end": st.APP_END, "sector": st.SECTOR,
+		"app_base": dc.APP_BASE, "stock_header": dc.STOCK_HEADER, "stock_magic": dc.MAGIC.decode(),
+		"led": {"red": st.LED_RED, "green": st.LED_GREEN},
+		"slot_magic": dc.SLOT_MAGIC, "slot_version": dc.SLOT_VERSION, "slot_header": dc.HEADER_LEN,
+		"codec_sig": list(dc.CODEC_SIG), "boards": boards, "profiles": profiles}
+
+
+def c7000_stub():
+	"""The two stub images stubtool embeds (the boot-ROM build and the build ODR jumps to), checked against their
+	SHA-256 by stubtool itself, as base64 for the page."""
+	import base64
+	st = _tool("stub", "stubtool.py")
+	rom, odr = st.stub_image(), st.stub_odr_image()
+	return {"format": "odr-c7000-stub/1",
+		"rom": {"load": st.LOAD_ADDR, "sha256": st.STUB_SHA256, "data": base64.b64encode(rom).decode()},
+		"odr": {"sha256": st.STUB_ODR_SHA256, "data": base64.b64encode(odr).decode()}}
 
 
 # ---------------------------------------------------------------------------------------------------------------

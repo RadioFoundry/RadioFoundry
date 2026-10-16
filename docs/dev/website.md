@@ -69,7 +69,7 @@ file the build didn't write.
 | `site/static/js/flasher/` | The web flasher (below) |
 | `site/static/js/tools.js` | The Tools page (codeplug conversion) |
 | `site/static/img/radios/src/<radio>.svg` | Radio illustrations (below) |
-| `site/tests/` | Flasher tests: `fixtures.py` makes inputs with odrflash, `flasher.test.mjs` checks the JavaScript |
+| `site/tests/` | Flasher tests: `fixtures.py` makes inputs with odrflash and the HR_C7000 tools, `flasher.test.mjs` and `c7000.test.mjs` check the JavaScript |
 
 ## Templates and design
 
@@ -133,9 +133,15 @@ generic drawing from `radio.json` `frame`.
 | `select.js` | À la carte feature selection with the dependencies, matching prebuilt variants | |
 | `codeplug.js` | Codeplug formats and the converter registry | |
 | `fake.js` | A simulated radio: bootloader with a flash model, ODR's serial port, a synthetic stock file | `odrflash/fakedfu.py` |
+| `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by ODR, then reads, sector writes and the LED | `stub/stubtool.py` |
+| `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/dm32_codec.py` |
+| `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
+| `c7000ui.js`, `radiotop.js` | The HR_C7000 steps (connect, back up and check, write, check) and the radio picture with its LED | |
+| `dom.js` | DOM helpers and strings shared by `app.js` and `c7000ui.js` | |
 | `app.js` | The page | |
 
-Add `#sim` to the flasher's address to run every step against the simulated radio.
+Add `#sim` to the flasher's address to run every step against the simulated radio. `#sim=c7000` simulates a
+DM-1801 Pro on stock firmware, `#sim=c7000-odr` one that runs ODR with the loader hand-over.
 
 ### Backup bundles (`odr-backup/1`)
 
@@ -172,6 +178,38 @@ What can be read depends on the firmware running:
 
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not
 documented, and ODR doesn't overwrite it unless an ID database is uploaded.
+
+### HR_C7000 radios (the boot stub)
+
+Radios whose `radio.json` says `"backend": "c7000-stub"` (the DM-1801 Pro and the DM-32UV) are flashed over their
+programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
+[debuglink.md](../spec/debuglink.md) 3.18). The Baofeng bootloader is never used and never written. The install has
+its own steps:
+
+| Step | What happens |
+|---|---|
+| Connect | The page looks for a stub that still runs, then for ODR. ODR with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); ODR without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The radio model is then checked by the bootloader's ID string |
+| Back up and check | A first install reads the whole program memory (required) and, if asked, the data memory, keeps the program memory in IndexedDB and downloads a backup bundle. An update reads only the codec slot. The page then decides the codec |
+| Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
+| Check | The stub resets the chip; the page asks ODR's VERSION for the build and the codec |
+
+The codec decision (`decide()` in `c7000.js`), first match wins:
+
+| Source | When |
+|---|---|
+| Keep | The codec slot in flash checks out (magic, CRC, signature, the board's RAM windows). Only the image is written |
+| The radio | The stock firmware in the read holds a known codec (found by its signature and SHA-256, wherever that stock version put it). It is copied into the slot |
+| This browser | A slot an earlier run kept in IndexedDB |
+| A file | A program memory backup, a known stock firmware file, or an image merged by `tools/dm32_codec.py` |
+| None | Only when the user asks for it: FM works, DMR voice stays off |
+
+The page never sends a STUB command to ODR except right before it enters the stub: any STUB command parks ODR's codec
+until the next restart.
+
+The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
+`tools/dm32_codec.py` and `tools/dm32_flash.py`) and the two stub images to `data/c7000-stub.json`. Bundle parts:
+`program-memory.bin` (`c7000-progmem`, the whole 1 MB) and `data-memory.bin` (`c7000-data`, 16 MB). Restore writes
+the program memory back from 0x0300C000 up; the data memory is not written.
 
 ### Firmware images and custom builds
 
