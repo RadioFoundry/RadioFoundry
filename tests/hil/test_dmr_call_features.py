@@ -147,7 +147,8 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
     d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)    # the same LC again
     _print_lc_trace(radio)
     assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
-    assert 12 <= d["call.rx_voice_bursts"] <= 14, d
+    # 13 with a sticky LC buffer (HR_C6000); a modem that hands over only LCs it assembled has no stale LC to wait out
+    assert 12 <= d["call.rx_voice_bursts"] <= 14 or 18 <= d["call.rx_voice_bursts"] <= 20, d
     assert v["last.src"] == str(BENCH_SRC), v
 
 
