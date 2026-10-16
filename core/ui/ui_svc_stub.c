@@ -37,6 +37,7 @@ WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
 WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
 WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
+WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_poll(void) { }
 WEAK void ui_svc_keys_poll(void) { }
@@ -65,6 +66,7 @@ static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_PTT_LOCKED] = 1, [UI_SET_LOW_BATTERY] = 15, [UI_SET_LONG_PRESS_MS] = 600, [UI_SET_REPEAT_MS] = 120,
 	[UI_SET_ROAM_SURVEY] = 1, [UI_SET_ROAM_BEACON_S] = 60, [UI_SET_ROAM_BEACON_LEN] = 4, [UI_SET_TFTP_WRITE] = 1,
 	[UI_SET_MSG_FORMAT] = 2,	// ETSI IP text
+	[UI_SET_VIBRATE] = 1,
 };
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)

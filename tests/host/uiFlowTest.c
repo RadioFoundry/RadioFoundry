@@ -107,6 +107,13 @@ static const flow_t flows[] = {
 	{ "S hear all by default", "ok 7 3 down down down down ok long:back", "up up", "hearall=1 pos=5", 2, false },
 	{ "S hear all by default: BACK", "ok 7 3 down down down down ok long:back up up", "back", "hearall=0", 1, false },
 	{ "S message tone", "", "msg:3101234,Hi", "beep=2", 0, false },
+	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
+	{ "S vibrate on a message", "", "msg:3101234,Hi", "vibes=1 vibe=0", 0, false },
+	{ "S vibrate on a call alert", "", "alert:91", "vibes=1 vibe=1", 0, false },
+	{ "S vibrate on a private call", "", "privcall:91", "vibes=1 vibe=1", 0, false },
+	{ "S vibrate on an emergency", "", "emergency:91", "vibes=1 vibe=2", 0, false },
+	{ "S vibrate off", "ok 7 1 down down down down down ok long:back", "msg:3101234,Hi", "vibes=0 beep=2", 0,
+	  false },
 	{ "S low battery warning", "", "battery:14", "banner=Battery_14%", 0, false },
 	{ "S privacy key typed", "", "ok 7 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },

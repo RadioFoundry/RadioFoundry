@@ -475,6 +475,14 @@ static void station(sbuf_t *b, const ui_event_t *ev)
 		sb_u32(b, ev->id, 1);
 }
 
+// The alerts that reach the user anyway (a banner, a screen, maybe a tone) also vibrate when Settings > Sound > Vibrate
+// is on; on a radio without a motor the request does nothing
+static void vibrate(uint8_t vibe)
+{
+	if (ui_st.vibrate)
+		ui_svc_vibrate(vibe);
+}
+
 static void handle_event(const ui_event_t *ev)
 {
 	char title[UI_BANNER_TEXT];
@@ -493,6 +501,7 @@ static void handle_event(const ui_event_t *ev)
 		ui_st.banner.msg = ev->index;
 		if (ui_st.message_tone)
 			ui_svc_beep(UI_BEEP_MESSAGE);
+		vibrate(UI_VIBE_MESSAGE);
 		break;
 	case UI_EV_MESSAGE_SENT:
 		if (ev->ok) {
@@ -509,11 +518,13 @@ static void handle_event(const ui_event_t *ev)
 		sb_str(&b, "Call alert from ");
 		station(&b, ev);
 		banner(UI_BANNER_CALL_ALERT, false, ev->id, title, "PTT replies");
+		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_PRIVATE_CALL:
 		sb_str(&b, "Private call from ");
 		station(&b, ev);
 		banner(UI_BANNER_PRIVATE, false, ev->id, title, "PTT replies");
+		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_RADIO_CHECK:
 		station(&b, ev);
@@ -539,6 +550,7 @@ static void handle_event(const ui_event_t *ev)
 		strcpy(emerg_name, ev->name);
 		if (stack[sp].scr != SCR_EMERGENCY)
 			ui_push(SCR_EMERGENCY, 0);
+		vibrate(UI_VIBE_EMERGENCY);
 		break;
 	case UI_EV_HOTSPOT_STARTED:
 		banner(UI_BANNER_INFO, false, 0, "Hotspot started by host", "OK stops it");
@@ -1422,7 +1434,8 @@ void ui_app_init(void)
 		ui_svc_apply(id, ui_svc_setting_get(id));
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
-					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME };
+					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME,
+					  UI_SET_VIBRATE };
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
@@ -1451,6 +1464,7 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_ALIAS_SHOW: ui_st.alias_show = v != 0; break;
 	case UI_SET_HEAR_ALL_DEFAULT: ui_st.hear_all_default = v != 0; hear_all_key = 0; break;
 	case UI_SET_MESSAGE_TONE: ui_st.message_tone = v != 0; break;
+	case UI_SET_VIBRATE: ui_st.vibrate = v != 0; break;
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
 	case UI_SET_AUTO_OFF_MIN: ui_st.auto_off_min = clamp_u16(v); off_warned = false; break;
