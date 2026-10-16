@@ -536,6 +536,10 @@ void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d)
 	d->noise_raw = last_noise_raw;
 	d->fm_noise = hrc7000_fm_noise(&modem);
 	d->rf_writes = fd.writes;
+	d->c7_audio = hrc7000_rd(&modem, C7_AUDIO_CONTROL);
+	d->c7_rf_mode = hrc7000_rd(&modem, C7_RF_MODE);
+	d->c7_work_mode = (uint8_t)hrc7000_rd(&modem, C7_WORK_MODE);
+	d->c7_fm_ptt = (uint8_t)(hrc7000_rd(&modem, C7_FM_PTT) & 1u);
 }
 
 const hal_radio_t dm1801pro_radio = {

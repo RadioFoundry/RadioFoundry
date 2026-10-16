@@ -130,6 +130,18 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " err ");
 		put_u(&o, hrc_host_uart_line_errors());
 		break;
+	case 11:
+		// The modem's audio routing as it is now: compares what an FM transmission sets up (APRS AFSK)
+		dm1801pro_radio_diag(&d);
+		put(&o, "c7 ac ");
+		put_x(&o, d.c7_audio, 8);
+		put(&o, " wm ");
+		put_x(&o, d.c7_work_mode, 2);
+		put(&o, " ptt ");
+		put_u(&o, d.c7_fm_ptt);
+		put(&o, " rf ");
+		put_x(&o, d.c7_rf_mode, 8);
+		break;
 	default:
 		return false;
 	}

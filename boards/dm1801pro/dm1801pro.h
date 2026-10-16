@@ -36,6 +36,8 @@ typedef struct {
 	uint16_t rssi_raw, noise_raw;	// FD6818 0x67 / 0x65 from the last status poll
 	uint16_t fm_noise;		// HR_C7000 FM_SQL
 	uint32_t rf_writes;
+	uint32_t c7_audio, c7_rf_mode;	// HR_C7000 AUDIO_CONTROL and RF_MODE, read now
+	uint8_t c7_work_mode, c7_fm_ptt;	// WORK_MODE, FM_PTT b0
 } dm1801pro_radio_diag_t;
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
 // DMR PCM to the speaker instead of the FM path (the speaker_pcm hook of hrc_audio_pcm)

@@ -385,8 +385,10 @@ The prompt FIFO reaches the modulator inside the HR_C7000, so the programming ca
 explain it. The microphone path works: with the cable out, speech on an FM transmission gave 147 Hz rms in the voice
 band (1.4 kHz peak), against 6 Hz keyed in silence. Leaving the codec ADC unmuted while the tones play changed
 nothing (10 Hz rms, no tones). So on this radio the HR_C7000 modulates its microphone audio but not the prompt FIFO's;
-the AUDIO_CONTROL and FM register states during an AFSK transmission are the next thing to compare with the DM-32UV.
-Open; APRS receive is unchecked.
+During the tones AUDIO_CONTROL reads 0x80000082 (b7 prompt path on, b31 FIFO full), WORK_MODE 0x80 and FM_PTT 1;
+a plain FM transmission reads 0x00000002 (diagnostics line `c7`). Unlike the DM-32UV, this radio never sets b6 (FM
+audio to the speaker), since its FM receive audio takes the FD6818's analog path, but setting b6 for the tones changed
+nothing either (6 Hz rms). Open; APRS receive is unchecked.
 
 MMDVM SFR: the radio hears the call's header, uplinks it and starts the repeat in the other slot with the right
 link control, but while it sends, the HR_C7000 delivers almost nothing from the listening slot, so the call doesn't
