@@ -38,6 +38,7 @@ static uint8_t tx_head, tx_tail;
 
 // Call boundaries, written by the call task only: begin bumps the sequence, end copies it
 static uint8_t rx_seq, rx_end_seq;
+static uint8_t rx_place;	// the next frame's place in its burst (0-2); a call starts at a burst's first
 static uint8_t tx_seq, tx_end_seq;	// equal: no call (also at start-up)
 
 // Audio callback state
@@ -86,6 +87,7 @@ static void sink_begin(const dmr_caller_t *caller, void *ctx)
 {
 	(void)caller;
 	(void)ctx;
+	rx_place = 0;
 	STORE(rx_seq, (uint8_t)(rx_seq + 1));
 	ensure_streaming();
 }
@@ -102,10 +104,12 @@ static void sink_frame(const uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
 	ambeFecDecode(ambe72, bits, &r);
 	if (r.c0_failed) {
 		stats.rx_bad++;
+		stats.rx_bad_at[rx_place]++;
 	} else {
 		stats.rx_bit_errors += r.errors;
 	}
 	rx_push(bits, r.c0_failed ? 1 : 0);
+	rx_place = (uint8_t)((rx_place + 1u) % 3u);
 }
 
 static void sink_lost(void *ctx)
@@ -113,6 +117,7 @@ static void sink_lost(void *ctx)
 	(void)ctx;
 	stats.rx_lost++;
 	rx_push(NULL, 2);
+	rx_place = (uint8_t)((rx_place + 1u) % 3u);
 }
 
 static void sink_end(void *ctx)
