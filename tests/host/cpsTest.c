@@ -474,6 +474,37 @@ static void test_session_timeout(void)
 	CHECK(!x_commit());
 }
 
+// C 6 0 / 1 reboot only in programming mode (after C 0): "C 6 1" alone on a link shared with the debug link
+// rebooted the radio (bench 2026-10-15)
+static void test_stray_reboot(void)
+{
+	cps_stats_t st;
+	int before = reboots;
+
+	now += CPS_SESSION_MS + 10;
+	CHECK(control(6, 1) && control(6, 0));
+	cps_feed(NULL, 0, now);
+	cps_get_stats(&st);
+	CHECK(reboots == before && st.reboots_ignored == 2);
+	// C 0, then a pause shorter than the session time: taken
+	CHECK(control(0, 0));
+	now += CPS_SESSION_MS - 10;
+	CHECK(control(6, 1));
+	cps_feed(NULL, 0, now);
+	CHECK(reboots == before + 1 && reboot_saved == 0);
+	// Once is enough: the next one needs C 0 again
+	CHECK(control(6, 1));
+	cps_feed(NULL, 0, now);
+	CHECK(reboots == before + 1);
+	// C 0, then a longer quiet: programming mode is over
+	CHECK(control(0, 0));
+	now += CPS_SESSION_MS + 10;
+	CHECK(control(6, 0));
+	cps_feed(NULL, 0, now);
+	cps_get_stats(&st);
+	CHECK(reboots == before + 1 && st.reboots_ignored == 4);
+}
+
 // The settings / journal region holds another firmware's data: reads work, every write is refused until a claim
 static void test_foreign(void)
 {
@@ -584,6 +615,7 @@ int main(void)
 	test_bad_requests();
 	test_vfo();
 	test_session_timeout();
+	test_stray_reboot();
 	test_foreign();
 	sim_flash_free();
 	printf("# cpsTest %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
