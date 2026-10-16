@@ -163,11 +163,10 @@ The glue isn't written yet ([airband-and-broadcast.md](../spec/airband-and-broad
 
 ## Open items to settle on the bench
 
-- PIC: vectored (32 + source, assumed) or one autovector.
+- PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).
 - L2_STATUS slot polarity (`HRC7000_RX_NEXT_SLOT_XOR`).
 - LED colors, panel orientation, backlight PWM scale.
-- FD6818 init writes to 0xB3 / 0xB4 / 0xC7 (sent with bit 7 set, exactly as the working firmware does).
-- C7000 or FD6818 sub-audio for CTCSS TX and RX.
-- Codec: 049 vs 046 window, D / E state sizes, the stock call constants, PCM byte order.
+- Sub-audio: the C7000 makes the TX tones, the FD6818 detects the RX tones (settled on the radio and the SDR bench).
+- Codec 049: DMR voice encodes and decodes (the SDR bench modem decodes our AMBE with few FEC corrections); 046 untried.
 - UART divisor 46 (0.9 % slow) or 45 (1.3 % fast).
 - RSSI dBm offset and the noise scale for the squelch.

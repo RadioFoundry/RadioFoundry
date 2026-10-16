@@ -41,6 +41,7 @@ static volatile uint16_t tx_drive;	// DAC B value for the transmission
 static uint16_t last_rssi_raw, last_noise_raw;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
+static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
 
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
@@ -198,8 +199,18 @@ static void init(void)
 	hrc_audio_pcm_attach(&modem, dm32_speaker_pcm);
 }
 
+// Out of the receiver's sleep before anything else touches the FD6818: its 0x37 low-power word would stay otherwise
+static void wake(void)
+{
+	if (asleep) {
+		fd6818_rx_sleep(&fd, false, FD6818_MODE_FM);
+		asleep = false;
+	}
+}
+
 static void set_mode(radio_mode_t m)
 {
+	wake();
 	if (m == mode) {
 		return;
 	}
@@ -225,6 +236,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	if (!in_band(hz, false)) {
 		return false;
 	}
+	wake();
 	pa_off();
 	lna(hz, true);
 	fd6818_set_freq(&fd, hz);
@@ -255,6 +267,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	if (!in_band(hz, true)) {
 		return false;
 	}
+	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_drive = bf_cal_power_level(hz, power);
 	lna(hz, false);
@@ -408,6 +421,23 @@ void dm32_radio_diag(dm32_radio_diag_t *d)
 	d->fd_writes = fd.writes;
 }
 
+// Receiver battery saving (FM receive only, the radio's own sequence: hardware-dm32.md 8.8): FD6818 idle with its
+// low-power 0x37 word and the LNA supply off; waking retunes with rx(). The HR_C7000 keeps its clocks
+static void rx_sleep(bool sleep)
+{
+	if (mode != RADIO_MODE_FM || transmitting || !have_rx || sleep == asleep) {
+		return;
+	}
+	if (sleep) {
+		fd6818_rx_sleep(&fd, true, FD6818_MODE_FM);
+		lna(rx_hz, false);
+		asleep = true;
+	} else {
+		subtone_t tone = rx_tone;
+		rx(rx_hz, rx_bw, &tone);
+	}
+}
+
 const hal_radio_t dm32_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -416,6 +446,7 @@ const hal_radio_t dm32_radio = {
 	.tx_off = tx_off,
 	.tx_tone = tx_tone,
 	.tx_tone_key = tx_tone_key,
+	.rx_sleep = rx_sleep,
 	.status = status,
 	.audio = audio,
 	.volume = NULL,
