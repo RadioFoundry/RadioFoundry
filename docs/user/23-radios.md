@@ -319,6 +319,16 @@ Bring-up builds go in through the radio's own update mode, so the stock loader s
 the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/dm32_flash.py --model dm1801pro IMAGE` over
 the programming cable. The cable's plug switches the internal speaker off; unplug it to hear the radio.
 
+`odrflash flash IMAGE --board dm1801pro` does the same over the cable, and picks the way in by itself:
+
+| The radio runs | odrflash |
+|---|---|
+| ODR built with `CONFIG_STUB_ENTRY=y` | Enters the loader from ODR (the screen shows "PC Loader Connected"), writes only what changed and restarts the radio. No keys to hold. The codec in the radio stays |
+| Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `odr_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
+
+`--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
+odrflash has flashed a radio yet; `tools/dm32_flash.py` and `stub/stubtool.py` have.
+
 ### DM-1801 Pro keys
 
 | Key | Role |
