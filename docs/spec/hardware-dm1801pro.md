@@ -394,7 +394,8 @@ too, and PTB14 high routes the microphone to its FM input (R). The prompt FIFO d
 tones (the frame keys for its full length, `aprs.rf_fail` none) but its samples don't reach the modulation. All 64
 codec byte registers during the tones (diagnostics lines `cd`) equal the DM-32UV's byte for byte, as do the
 AUDIO_CONTROL, WORK_MODE, FM_PTT and RF_MODE values and the PCM amplitude, so the HR_C7000 set-up is the same on both
-radios. Open;
+radios. The speaker-source pin doesn't explain it either: four frames with PTB15 low or high and PTB14 high or low
+carried no tones (10-15 Hz rms; PTB14 low only added a step at the start of the frame). Open;
 APRS receive is unchecked.
 
 MMDVM SFR: the radio hears the call's header, uplinks it and starts the repeat in the other slot with the right
