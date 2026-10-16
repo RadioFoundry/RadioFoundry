@@ -39,6 +39,8 @@
 // The DM-32UV's "DMR PA" default. The radio has no PA timer: its ramp starts about 2 ms after the RF TX interrupt
 // (5.4), and this delay puts the drive 2.1-3.2 ms after it (5.6)
 #define DMR_PA_DELAY_US		28000u
+#define FM_TX_LIMIT_12K5	5u	// FM_DEV_COEF b23:16 (hrc7000_t.fm_tx_limit)
+#define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
 
@@ -198,10 +200,10 @@ static const hrc_dmr_board_t dmr_board = {
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
-// PCM amplitude per AFSK level step: 55 gave about 1.6 kHz peak at level 50 through the mixer route (BENCH
-// 2026-10-16), so 103 aims at the 3 kHz APRS wants
+// PCM amplitude per AFSK level step through the mixer route: 103 gave 4.57 kHz peak at level 50 and 25 kHz with the
+// limiter at 0x0F (BENCH 2026-10-16), so 68 aims at the 3 kHz APRS wants
 static const hrc_afsk_board_t afsk_board = {
-	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 103,
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 68,
 };
 #endif
 
@@ -210,6 +212,10 @@ static const hrc_afsk_board_t afsk_board = {
 static void init(void)
 {
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	// FM TX limiter (modem-hrc7000.md 8.4): the KP 4 held speech and APRS to 1.65 kHz at 25 kHz here. 0x0F, the chip's
+	// reset value, peaked at 4.8 kHz; 5 at 12.5 kHz scales to about 2.4 kHz (limiter x coefficient, not measured)
+	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
+	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 	// modem-hrc7000.md 4 steps 1-3: ADC reset and idle, DAC B to its pin, DACs B and C on with the PA drive at 0
 	ADC_CTRL = ADC_CTRL_RESET;
 	hal_delay_us(2);
