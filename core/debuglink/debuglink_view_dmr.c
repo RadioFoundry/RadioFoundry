@@ -4,6 +4,7 @@
 // lines and their counter reset. Kept apart from debuglink_view.c so DMR work can extend it on its own: add keys
 // freely (new keys don't bump DL_VIEW_VERSION), keep the existing ones.
 #include "config.h"
+#include "board.h"
 #include "debuglink/debuglink.h"
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
@@ -122,6 +123,12 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "voice.rx_underruns=%u\nvoice.rx_overflows=%u\nvoice.rx_bit_errors=%u\n",
 			(unsigned)a.rx_underruns, (unsigned)a.rx_overflows, (unsigned)a.rx_bit_errors);
 		dl_text(t, "voice.tx_frames=%u\nvoice.tx_overflows=%u\n", (unsigned)a.tx_frames, (unsigned)a.tx_overflows);
+		// Encode options (VOCODER_OPT_*): in force and supported; the codec's own word when the board reports it
+		dl_text(t, "voice.enc_options=0x%X\nvoice.enc_supported=0x%X\n", (unsigned)ambeVoiceEncodeOptions(),
+			(unsigned)ambeVoiceEncodeOptionsSupported());
+		if (board.vocoder != NULL && board.vocoder->encode_flags != NULL) {
+			dl_text(t, "voice.enc_flags=0x%X\n", (unsigned)board.vocoder->encode_flags());
+		}
 		break;
 	}
 	default:

@@ -244,6 +244,7 @@ static void storage_section(dl_text_t *t)
 		sv.ui_flags, sv.updown_home, sv.low_batt_pct);
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", sv.auto_off_min,
 		sv.privacy_type[0], sv.privacy_active);
+	dl_text(t, "settings.audio_flags=%u\n", sv.audio_flags);
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);

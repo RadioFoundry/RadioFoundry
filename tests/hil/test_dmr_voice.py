@@ -54,3 +54,29 @@ def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
     for k in ("voice.rx_concealed", "voice.rx_silence", "voice.rx_lost", "voice.rx_overflows", "call.rx_lost_frames",
               "audio.ov", "audio.dr"):
         assert d[k] == 0, f"{k} = {d[k]}: {d}"
+
+
+def test_vocoder_encode_options(radio):
+    """The vocoder's encode options (docs/spec/dmr-voice.md 6), radio only: the options in force follow the Mic noise
+    reduction setting (settings.audio_flags bit 0 = off; tone frames always on), and on a board that reports its
+    codec word, the word is 0x800 plus 0x40 for noise reduction and 0x1000 for tone frames, never 0x100 (DC filter
+    off), 0x2000 (AGC) or 0x4000 (test mode)."""
+    if "DMR" not in radio.features():
+        pytest.skip("built without DMR")
+    v = radio.view(["dmr_stats", "storage"])
+    if "voice.enc_supported" not in v:
+        pytest.skip("firmware without the voice.enc_* view keys")
+    supported = int(v["voice.enc_supported"], 0)
+    if supported == 0:
+        pytest.skip("this board's vocoder has no encode options")
+    nr_on = (int(v["settings.audio_flags"], 0) & 1) == 0
+    want = (0x1 if nr_on else 0) | 0x2
+    opts = int(v["voice.enc_options"], 0)
+    print(f"enc_supported={supported:#x} enc_options={opts:#x} noise reduction {'on' if nr_on else 'off'} "
+          f"enc_flags={v.get('voice.enc_flags')}")
+    assert opts == want & supported, f"options in force {opts:#x}, expected {want & supported:#x}: {v}"
+    if "voice.enc_flags" in v:
+        flags = int(v["voice.enc_flags"], 0)
+        expect = 0x800 | (0x40 if opts & 1 else 0) | (0x1000 if opts & 2 else 0)
+        assert flags == expect, f"codec flags word {flags:#x}, expected {expect:#x}"
+        assert flags & 0x6100 == 0, f"flags word {flags:#x} has a bit that must never be set"
