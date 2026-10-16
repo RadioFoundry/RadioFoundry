@@ -1368,10 +1368,17 @@ def main(argv=None):
                     "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset")
     ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")
     ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded one")
+    ap.add_argument("--board", choices=("dm1701", "md380"), help="an STM32 radio (stub/f4stub.py); found from the "
+                    "radio's VERSION reply with --odr-enter, needed with --attach")
+    ap.add_argument("--no-rodata2", action="store_true", help="STM32 --write-app: the DM-1701 application without its "
+                    "sector 9 part, on purpose")
+    ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
+                    "is saved before it is erased (the MD-380's sector 6; default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
-        return self_test()
+        import f4stub
+        return self_test() | f4stub.self_test()
     if not a.port:
         ap.error("give PORT")
     jobs = []                                   # (mem, file, start, end, twice)
@@ -1392,6 +1399,12 @@ def main(argv=None):
         stub = open(a.stub, "rb").read() if a.stub else None
         port = serial.Serial(a.port, 115200, timeout=0.1)
         radio = Radio(port, retries=a.retries)
+        # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
+        import f4stub
+        if a.board is None and a.odr_enter:
+            a.board = f4stub.board_from_version(radio)
+        if a.board in f4stub.BOARDS:
+            return f4stub.run(a, port, lambda: serial.Serial(a.port, 115200, timeout=0.1))
         if a.odr_enter:
             radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else None)
         elif a.attach:

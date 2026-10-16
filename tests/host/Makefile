@@ -521,9 +521,14 @@ TESTS   += f4stubTest
 f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
 	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c
 
+TESTS   += f4stubSim
+f4stubSim: f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+
 run: run-f4stub
-run-f4stub: f4stubTest
+run-f4stub: f4stubTest f4stubSim
 	./f4stubTest
+	python3 f4stub_wire_check.py ./f4stubSim
 .PHONY: run-f4stub
 
 # DM-32UV drivers and board logic: FD6818 frames on a fake three-wire chip, ST7789 init stream and 2x scaling, key
