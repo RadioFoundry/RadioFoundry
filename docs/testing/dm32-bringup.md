@@ -202,5 +202,16 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
   REG 0x9B, sub-audio residue, the sender), and whether a hardware setting removes it. REG 0x9B (the receive
   de-emphasis and filter bypasses) is on the FD6818's page 1: writing 0x7F = 1 over the 3-wire bus didn't select it
   (page 1 reads matched page 0), so the page switch is still to find. Weak packets below the squelch are untested.
-- APRS transmit (section 13): decodes off air at 3.1 kHz peak (settled on the SDR bench). `test_aprs.py` on 2 m is
-  still to run.
+- APRS transmit (section 13): decodes off air at 3.1 kHz peak (settled on the SDR bench). `test_aprs.py` on
+  446.050 MHz is still to run.
+- Host link lost with the UI running (2026-10-16, after a day of transmit tests): the debug link stopped answering,
+  and the diagnostics page showed `ur 0 ut 0` (not one byte received) with the host link task alive (`hb` climbing)
+  and the receive interrupt enabled (`ie 05`). The boot stub still worked on the same cable, and an image that had
+  answered that morning failed the same way, so the build wasn't the cause. Power-key cycles didn't help. A battery
+  pull left the radio dead (flat battery); after charging and a cold start the link answered. Cause unknown: the
+  battery or the full power cut. If it happens again, read `bat` on the diagnostics page first.
+- Boot stub, `stubtool.py --attach --boot reset` (warm reset into the new image): ODR came up but its host link never
+  answered, every time on the DM-32 (2026-10-16; 3 of 4 times on the DM-1801 Pro). A power cycle after the write
+  works. Until the reset path is fixed, power-cycle instead.
+- Boot stub LED: after a write finished and was verified by CRC, with no tool on the port, the LED kept blinking fast
+  (the "data moving, don't power off" pattern) for minutes (2026-10-16). The pattern should follow the stub's state.
