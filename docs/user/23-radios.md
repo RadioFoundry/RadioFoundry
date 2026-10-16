@@ -8,9 +8,9 @@ and what has been checked on it.
 
 | Radio | Also sold as | ODR status |
 |---|---|---|
-| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases. The only radio ODR has run on |
+| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases |
-| [Baofeng DM-32UV](#baofeng-dm-32uv) | | Builds and passes its host tests. Not run on a radio yet, not in the releases |
+| [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Early bring-up: FM receive only, not run on a radio yet. Not for use |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -213,7 +213,8 @@ The radio reports radio type 7. Moving from the stock firmware with the codeplug
 ## Baofeng DM-32UV
 
 A handheld for 136-174 and 400-480 MHz with a keypad, left and right arrow keys, a channel knob and a color screen.
-**Not run on a radio yet.** Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
+**In bring-up, not in the releases.** FM and DMR receive and transmit, CTCSS and DCS, and the battery saver work on a
+test radio. Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
 
 ### DM-32UV keys
 
@@ -260,6 +261,9 @@ A 240 x 320 color screen. ODR draws at half resolution for now.
 - The air band AM receiver and the broadcast FM receiver are built in, but the board code behind them isn't written,
   so nothing runs yet.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
+- No beeps while transmitting, the talk permit tone included: the radio's beep path would put them on the air. A beep
+  still playing when the transmission ends is heard from then on.
+- The signal strength in dBm is uncalibrated: strong signals read high.
 
 ### DM-32UV with qdmr
 
