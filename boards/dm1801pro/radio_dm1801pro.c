@@ -81,8 +81,8 @@ static const fd6818_bus_t rf_bus = {
 
 // ---- Band paths and PA ----
 
-// A path select drives its VHF-side and UHF-side pins as a complementary pair; both low = off (5.5). Which side is
-// VHF is inferred and unverified
+// A path select drives its VHF-side and UHF-side pins as a complementary pair; both low = off (5.5). Receive works on
+// both bands and transmit on UHF; VHF transmit is unchecked
 static void path_pins(uint8_t vhf_pin, uint8_t uhf_pin, uint32_t hz, bool on)
 {
 	bool uhf = hz > UHF_FROM_HZ;

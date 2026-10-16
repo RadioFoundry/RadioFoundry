@@ -53,15 +53,15 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 17 | PTA17 | power latch | high | I |
 | 18 | PTA18 | data flash chip select, low = selected | high | K |
 | 25 / 26 | PTA25 / PTA26 | FM broadcast tuner I2C SDA / SCL | low | K bus, I chip |
-| 28 | PTA28 | RX path select, VHF side (pair with PTB8) | low | K pin, I band |
+| 28 | PTA28 | RX path select, VHF side (pair with PTB8) | low | K pin, R band |
 | 29 | PTA29 | FM tuner enable, low = on | high | I |
 | 30 | PTA30 | RF chip chip select, low = selected | high | K |
 | 31 | PTA31 | TX path select, VHF side (pair with PTB7) | low | K pin, I band |
 | 32 / 33 | PTB0 / PTB1 | LED green / red | low | R |
 | 34 / 55 | PTB2 / PTB23 | accelerometer I2C SCL / SDA | | K bus, I chip |
 | 35-38 | PTB3-PTB6 | keypad inputs, low = key closed | in | K |
-| 39 | PTB7 | TX path select, UHF side | low | K pin, I band |
-| 40 | PTB8 | RX path select, UHF side | low | K pin, I band |
+| 39 | PTB7 | TX path select, UHF side | low | K pin, R band |
+| 40 | PTB8 | RX path select, UHF side | low | K pin, R band |
 | 41 | PTB9 | power knob switch; its level at start-up means "on" | in | R |
 | 42 | PTB10 | input with interrupt, role unknown | in | ? |
 | 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed | in | R |
@@ -159,7 +159,8 @@ plays FM to the speaker.
 
 TX path select: PTA31 + PTB7. RX path select: PTA28 + PTB8. Each is a complementary pair chosen by the band bit:
 above 200 MHz the PTB pin high and the PTA pin low, below the reverse; both low = off. So PTA high = VHF side,
-PTB high = UHF side (I). Separate TX and RX band outputs, unlike the DM-32UV's PA selects and LNA supplies. PA drive is DAC
+PTB high = UHF side: ODR receives on both bands (a VHF weather station, UHF DMR) and transmits on UHF with this (R);
+VHF transmit is unchecked. Separate TX and RX band outputs, unlike the DM-32UV's PA selects and LNA supplies. PA drive is DAC
 channel B (12 bit, the calibration byte times 16), ramped in 40 steps. K.
 
 ### 5.6 DMR
@@ -331,7 +332,8 @@ receiving and orange flashing while scanning.
 ## 10. Open items
 
 - What the 0x300 / 0x328 frequency lists are for (the PA drive uses 0x314 / 0x33C).
-- The 12.5 kHz bandwidth word; the VHF / UHF side of the path pins; the DMR per-burst handlers and PA delay.
+- VHF transmit (the TX pair's VHF side); 12.5 kHz FM on air with the 0x3048 word; the DMR per-burst handlers and PA
+  delay.
 - The display controller part and its contrast.
 - PTB14's role, PTB16's role.
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.

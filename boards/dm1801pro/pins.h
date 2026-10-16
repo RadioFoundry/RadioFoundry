@@ -13,10 +13,10 @@
 #define PIN_BCAST_SCL		0x1A	// broadcast FM tuner I2C clock
 #define PIN_POWER_LATCH		0x11	// 1 = stay on
 #define PIN_FLASH_CS		0x12	// data flash chip select, low = selected
-#define PIN_RX_VHF		0x1C	// RX path select, VHF side (provisional band)
+#define PIN_RX_VHF		0x1C	// RX path select, VHF side (VHF receive works)
 #define PIN_BCAST_EN		0x1D	// broadcast FM tuner enable, low = on (provisional)
 #define PIN_RF_CS		0x1E	// FD6818 chip select, low = selected
-#define PIN_TX_VHF		0x1F	// TX path select, VHF side (provisional band)
+#define PIN_TX_VHF		0x1F	// TX path select, VHF side (the pair's other pin; VHF TX unchecked)
 
 #define PIN_ACCEL_SCL		0x22	// accelerometer I2C clock (PTB2)
 #define PIN_ACCEL_SDA		0x37	// accelerometer I2C data (PTB23)
@@ -24,8 +24,8 @@
 #define PIN_LED_RED		0x21	// PTB1
 #define PIN_KEY_ROW0		0x23	// keypad inputs PTB3-PTB6, low = key closed
 #define PIN_KEY_ROW3		0x26
-#define PIN_TX_UHF		0x27	// TX path select, UHF side (provisional band)
-#define PIN_RX_UHF		0x28	// RX path select, UHF side (provisional band)
+#define PIN_TX_UHF		0x27	// TX path select, UHF side (UHF TX works)
+#define PIN_RX_UHF		0x28	// RX path select, UHF side (UHF receive works)
 #define PIN_POWER_KEY		0x29	// power knob switch: the level at start-up is "on" (switches off on the radio)
 #define PIN_MIC_PATH		0x2E	// 1 = mic to the analog FM path (as on the DM-32UV, provisional)
 #define PIN_SPK_SOURCE		0x2F	// 0 = audio on, 1 = muted (checked on the radio)
