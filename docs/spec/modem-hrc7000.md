@@ -439,7 +439,7 @@ information bits in the RX RAM (DS, BIN).
 | Offset | Register | Fields (DS) | Values used |
 |---|---|---|---|
 | 0x500 | FM_BANDWIDTH | b6 band-pass on; b4 pre-emphasis; b3 TX 25 kHz; b2 adjacent-channel filter 25 kHz; b1 RX 25 kHz; b0 CTCSS RX 25 kHz | TX: 0x5F (25 kHz), 0x50 (12.5 kHz). RX: 0x4F (25 kHz), 0x40 (12.5 kHz) (KP) |
-| 0x504 | FM_DEV_COEF | b23:16 TX limiter, b15:8 RX deviation coefficient, b7:0 TX deviation coefficient | 0x40A20 (25 kHz), 0x40A25 (12.5 kHz) (KP) |
+| 0x504 | FM_DEV_COEF | b23:16 TX limiter (`tr_sig_lim`, reset 0x0F), b15:8 RX deviation coefficient, b7:0 TX deviation coefficient | 0x40A20 (25 kHz), 0x40A25 (12.5 kHz) (KP); the limiter is the board's (`hrc7000_t.fm_tx_limit`, 0 = 4) |
 | 0x508 | FM_SQL | b15:0 noise measure: higher = less signal | squelch threshold in software |
 | 0x50C | SUBVOICE_COEF | b27:16 detector sample depth (default 0x7D0), b15:8 sub-audio / DTMF deviation, b7:0 detection threshold | DTMF deviation (8.3) |
 | 0x510 | FM_MOD | b23:16 repeat-symbol threshold; b15:14 XTCSS length; b13:12 CTCSS reverse-burst mode (01 = 240°, 10 = 180°); b11 CDCSS TX invert; b10 CDCSS RX invert; b9 CDCSS turn-off code; b8 XTCSS EOM; b4 selcall; **b3 CTCSS; b2 CDCSS; b1 DTMF**; b0 XTCSS | |
@@ -533,6 +533,21 @@ out 1 and b0 line out 2, the same PWM waveform on both (ODR sets 0x01). Two-poin
 biases MOD1 (the VC-TCXO) and b23:16 MOD2 (the VCO), 3.3 mV a step; RF_MOD_BIAS b7:0 and b15:8 are the MOD1 and MOD2
 amplitudes; RF_MODE b10 sends a 40 Hz test square. The prompt FIFO path decodes on the DM-32UV but not on the DM-1801
 Pro, which takes the mixer route below (`hardware-dm1801pro.md` 12).
+
+The FM transmit limiter (FM_DEV_COEF b23:16) caps the deviation of audio that enters through the codec ADC, the
+microphone and the mixer route below. The prompt FIFO's ring play is not capped by it: on the DM-32UV AFSK through
+ring play reached 5.1 kHz peak with the limiter at 4. Through the ADC path the ceiling scales with limiter x TX
+coefficient (BENCH, DM-1801 Pro, 25 kHz, Bell 202 tones):
+
+| Limiter | TX coefficient | Peak deviation |
+|---|---|---|
+| 4 | 0x20 | 1.65 kHz (clipped at every level tried) |
+| 4 | 0x30 | 2.48 kHz (clipped) |
+| 8 | 0x20 | 3.18 kHz (clipped) |
+| 0x0F | 0x40 | 4.18 kHz |
+| 0x0F | 0x20 | 4.57 kHz, max 4.84 kHz (not clipped) |
+
+So the KP value 4 holds speech to about 1.65 kHz at 25 kHz. A board sets `fm_tx_limit` for each bandwidth.
 
 Where ring play doesn't reach the modulator on its own, the codec's digital mixer (DS 6.5.2.10-11) carries the DAC's
 audio into the ADC's record path, which is the FM transmit input. CR_MIX (codec 0x10: b7 mix_en, b6 load, b5:0 the

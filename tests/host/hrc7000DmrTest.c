@@ -586,6 +586,23 @@ static void test_codec_dac_to_tx(void)
 	CHECK(buf[C7_CODEC + C7_CODEC_CR_MIX] == 0x00 && buf[C7_CODEC + C7_CODEC_DR_MIX] == 0x00);
 }
 
+// FM TX limiter: the KP value unless the board set one, per bandwidth
+static void test_fm_tx_limit(void)
+{
+	setup();
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_FM_DEV_COEF) == 0x40A20u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_FM_DEV_COEF) == 0x40A25u);
+	dev.fm_tx_limit[0] = 5;
+	dev.fm_tx_limit[1] = 0x0F;
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_FM_DEV_COEF) == 0xF0A20u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_FM_DEV_COEF) == 0x50A25u);
+	dev.fm_tx_limit[0] = dev.fm_tx_limit[1] = 0;
+}
+
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
 static void test_tx_tone(void)
 {
@@ -856,6 +873,7 @@ int main(void)
 	test_mic_gain();
 	test_codec_dac_to_tx();
 	test_audio_lock();
+	test_fm_tx_limit();
 	test_tx_tone();
 	test_subtone();
 	test_fm_rx_audio();
