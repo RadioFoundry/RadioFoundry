@@ -328,7 +328,8 @@ class SdrBench:
         ended before the service comes back."""
         shared = self.bench.uses_daemon()
         if not shared and not self.allow_service_stop:
-            raise RuntimeError("stopping the SDR bench's gateway service needs --allow-service-stop")
+            import pytest
+            pytest.skip("stops the SDR bench's gateway service: run with --allow-service-stop")
         test = os.environ.get("PYTEST_CURRENT_TEST", "").split(" ")[0] or "hil"
         self.bench.label = f"{os.environ['ODR_HIL_NAME']} {test}" if os.environ.get("ODR_HIL_NAME") else test
         self.bench.lease()

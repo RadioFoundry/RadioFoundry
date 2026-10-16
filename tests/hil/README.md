@@ -34,7 +34,7 @@ Without a radio every test is skipped with the reason (no failure). The radio is
 | (none) | radio-only tests: version, screenshots, keys, FM receive, MMDVM requests that don't transmit |
 | `--allow-rf` | tests that transmit (marker `rf`: the SDR bench's transmitter; marker `radio_tx`: the radio itself) |
 | `--allow-usb-switch` | tests that switch the radio's USB personality to the network adapter and back (marker `usb_switch`) |
-| `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver |
+| `--allow-service-stop` | tests that stop the SDR bench's gateway service (marker `bench_service`) to use its transmitter and receiver. Not needed on a bench that runs the shared bench daemon (nothing is stopped); without the daemon and without the flag those tests skip when they take the lease |
 | `--allow-codeplug-write` | tests that write the codeplug over CPS (marker `codeplug_write`): the qdmr regions are read and saved to the test's tmp directory first, one channel name is changed, and the backup is written back and verified in a `finally` block |
 | `--allow-reboot` | tests that restart the radio (marker `reboot`) through the debug link's REBOOT (mode 0) |
 | `--manual` | tests that ask a person at the radio to do something (marker `manual`; run with `-s` to see the prompts), e.g. turn the channel knob |
