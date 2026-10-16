@@ -5,6 +5,7 @@
 #ifndef HRC_AUDIO_PCM_H
 #define HRC_AUDIO_PCM_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "config.h"
@@ -23,7 +24,20 @@ extern const hal_audio_t hrc_audio_pcm;
 // Block, overrun and underrun counters for diagnostics
 void hrc_audio_pcm_stats(uint32_t *blocks, uint32_t *overruns, uint32_t *underruns);
 void hrc_audio_pcm_reset_stats(void);
+#endif
+
+// The microphone level for VOX (hal_power_t.mic_level), from the mic PCM (audio_pcm.c, drivers/audio/miclevel).
+// HRC_MIC_LEVEL is the hook for a board's hal_power_t, NULL in a build without the PCM stream or VOX
+#if CONFIG_DMR && CONFIG_VOX
+uint8_t hrc_audio_pcm_mic_level(void);
+// The meter now: its level, the last half's peak from its mean (0..32767), halves measured, running. Doesn't start it
+void hrc_audio_pcm_mic_stats(uint8_t *level, uint16_t *peak, uint32_t *halves, bool *on);
+#define HRC_MIC_LEVEL		hrc_audio_pcm_mic_level
 #else
+#define HRC_MIC_LEVEL		NULL
+#endif
+
+#if !CONFIG_DMR
 static inline void hrc_audio_pcm_attach(hrc7000_t *modem, void (*speaker_pcm)(bool on)) { (void)modem; (void)speaker_pcm; }
 static inline void hrc_audio_pcm_hold(bool on) { (void)on; }
 #endif
