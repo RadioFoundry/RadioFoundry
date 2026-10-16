@@ -228,13 +228,16 @@ deviations on VHF too (`modem-hrc7000.md` 8.3, I).
 The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM audio are the DM-32UV's, shared
 (`platform/hrc7000/dmr_glue.c`, `audio_pcm.c`). The board supplies three hooks (`radio_dm1801pro.c`):
 
-- **Per-burst RF switch** (the RF TX interrupt): RX path off, TX path on, FD6818 idle, the TX sequence, register
-  0x50 = 3B18; after the burst (the engine's first slot tick 20 ms or more after the RF TX interrupt) the drive goes to
-  0, the RX path comes back on, the TX path goes off, then 0x43 = 3048, idle and the RX sequence. Against the radio's
-  own handlers (5.4) this skips the frequency, 0x47, 0x32 and 0x3F writes (0x3F stays 0 from the DMR mode set), switches the paths in another order, has
-  none of the waits, steps the drive instead of ramping it, and ends the burst on a slot tick instead of the RF RX
-  interrupt. Each frame takes 240 us with ODR's bus delays, so a switch is a millisecond or more with interrupts off;
-  the slot timing tolerates it on the bench. The DMR mode set ends with 0x3F = 0000, the radio's DMR receive value.
+- **Per-burst RF switch** (the RF TX interrupt): RX path off, FD6818 0x52 = 028F and 0x30 = C1FE straight from RX,
+  register 0x50 = 3B18, TX path on; after the burst (the engine's first slot tick 20 ms or more after the RF TX
+  interrupt) the drive goes to 0, the TX path goes off, 0x30 = BFF1 straight from TX, and the RX path comes back on.
+  The FD6818 never passes through idle (0x30 = 0000, 0200) per burst: through idle the receiver came back about 400 Hz
+  off for the first inbound burst after each of ours, which lost most of a call in SFR mode (section 10). 0x37 and
+  0x43 keep their values from the RX / TX sequences and the DMR mode set. Against the radio's own handlers (5.4) this
+  skips idle and the frequency, 0x47, 0x32 and 0x3F writes (0x3F stays 0 from the DMR mode set), has none of the
+  waits, steps the drive instead of ramping it, and ends the burst on a slot tick instead of the RF RX interrupt.
+  Each frame takes 240 us with ODR's bus delays, so a switch is up to about 0.7 ms with interrupts off. The DMR mode
+  set ends with 0x3F = 0000, the radio's DMR receive value.
 - **PA key:** the TX path switches on and off with each burst. With it on for the whole transmission, a hotspot (keyed
   while it listens) received nothing (2026-10-16). Per burst, `test_dmr_tx_off_air` passes: ramps up 1.44 ms, down
   0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's "DMR PA"
@@ -605,28 +608,35 @@ receiving and orange flashing while scanning.
   `tests/hil/test_mic_gain.py` at 12.5 and 25 kHz ([the bring-up checklist](../testing/dm1801pro-bringup.md) 5.1) and
   set `MIC_GAIN_FM_12K5_DB` and `MIC_GAIN_FM_25K_DB`.
 - Whether the mic PCM carries the microphone in FM receive (PTB14 high), which VOX needs (section 12).
-- MMDVM SFR loses inbound bursts while keyed (section 12). The DM-32UV runs the same engine, glue and SFR code and
-  passes. An experiment build (PR 38) recorded each modem interrupt, RF switch and deframe (RX_TYPE_INFO,
-  RECV_INFO_COUNT, PHASE_OUT) and switched the variants below at run time (BENCH 2026-10-16, 461.4625 MHz, a 29-burst
-  bench call):
+- MMDVM SFR: the inbound losses are fixed by switching the FD6818 straight between its RX and TX words (5.6). What
+  remains: 28 of 29 bursts heard with 2-4 bad header CRCs, and the SDR bench can't confirm the repeats during a call,
+  since its station keeps its carrier up through our slot. How the trip through idle detunes the receiver isn't
+  known (?). The experiment build (PR 38) recorded each modem interrupt, RF switch and deframe (RX_TYPE_INFO,
+  RECV_INFO_COUNT, PHASE_OUT) and switched these variants at run time (BENCH 2026-10-16, 461.4625 MHz, a 29-burst bench
+  call):
 
-  | Variant | Bursts heard | Repeated | Bad header CRC |
+  | Variant | Bursts heard | Sent up | Bad header CRC |
   |---|---|---|---|
-  | ODR today | 20 | 8 | 3 |
+  | Through idle, ODR before the fix | 20-21 | 8-9 | 3 |
   | No RF switching, no PA ("dry") | 30 | 26 | 0 |
   | RX / TX paths switch per burst, FD6818 held in receive | 28 | 26 | 0 |
+  | **Straight between BFF1 and C1FE, no idle (the fix)** | **28** | **24** | **2-4** |
+  | Straight, plus 0x7E = B07F, TX word C3FE or FDFE, or a b15 edge at each switch | 28 | 24 | 2-4 |
+  | Straight, b15 clear in both words (3FF1 / 41FE) | 2 | 2 | 0 |
   | FD6818 switches per burst, paths held | 20 | 8 | 3 |
-  | PA drive 0 | 21 | 8 | 3 |
-  | FD6818 AFC off (0x73 b4); DMR filter 0x43 = 4048; 0x50 / 0x52 restored at RX; dynamic sync off; RF TX interrupt 2.0 ms ahead | 20-21 | 8 | 3 |
-  | The DM-32UV's two-write burst switch; the radio's tables without 0x30 = 0200 | 20 | 8 | 3 |
+  | PA drive 0; FD6818 PA bias and driver off (TX 81F6) | 21 | 8 | 3 |
+  | Through idle with TX word C3FE, FDFE or FFFF; 0x7E = B07F or B01F; AFC off; DAC_CONTROL 0x80000009 | 20-21 | 8 | 3 |
+  | Through idle with: DMR filter 0x43 = 4048; 0x50 / 0x52 restored at RX; dynamic sync off; RF TX interrupt 2.0 ms ahead; the DM-32UV's two-write switch; no 0x30 = 0200 | 20-21 | 8 | 3 |
   | The radio's tables without 0x37; no 0x50 write; a full RX retune at each return; the radio's own burst sequence (5.4) | 11-13 | 3-7 | 1 |
+  | 0x37 = 1F1F at RX (the DM-32UV's word); HR_C7000 AF gain 0x1C | 0-2 | 0-1 | 0-1 |
 
-  So the FD6818's own TX / RX change causes it, whatever the writes around it. In each listen window after one of
-  our bursts the first inbound burst demodulates with an offset: PHASE_OUT's center reads +185 to +315 (its minimum
-  -600 to -850 against -1213 normally), about 400 Hz, and fails sync or EMB. Later bursts in a long window settle to
-  about 0 within 60-90 ms. That looks like the synthesizer or the reference settling after the change; the FD6818
-  register that shortens it is not found yet. The radio's own firmware never repeats on one frequency, so it has no
-  answer to copy.
+  Through idle, the first inbound burst in each listen window after one of ours demodulated with an offset:
+  PHASE_OUT's center read +185 to +315 (minimum -600 to -850 against -1213 normally), about 400 Hz, and failed sync or
+  EMB. Later bursts settled to about 0 within 60-90 ms. With the straight switch the centers read 1 to 35 from the
+  first burst on. Keeping the RX chain, the AF DAC or the RX DSP on through TX (FD6818 programming guide bits, 5.7)
+  doesn't help while the switch passes through idle, so what settles is in the PLL / VCO section that idle powers down
+  (I). DMR transmit with the straight switch passes `test_dmr_tx_off_air` (ramps up 0.88 ms, down 0.38 ms, AMBE 1 bit
+  corrected in 162 frames).
 
   Ruled out earlier: an FD6818 bit clock of 1 us instead of 5 us, and the RX path left on during TX bursts.
 
@@ -731,4 +741,5 @@ apart, 18 voice bursts, 3 terminators, no errors), but only about 20 of its 29 b
 and 1210 ms come with a wrong EMB (color code 1, 0 or 9 for 2, a wrong voice index). The pattern is the same in every
 run, also right after a fresh start. The DM-32UV on the same test: 25 received, 22 repeated, 3 bad CRCs (the
 terminators). Our bursts: RF on to off 32-33 ms, the RF switch 2.06 ms with interrupts off, the PA keyed 2.1-3.2 ms
-after RF on. Open; the candidates are in section 10.
+after RF on. Fixed by switching the FD6818 straight between RX and TX per burst (5.6): 28 heard, 24 sent up (section
+10).

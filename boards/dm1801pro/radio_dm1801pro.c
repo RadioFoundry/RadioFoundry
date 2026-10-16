@@ -186,19 +186,22 @@ static void write_mod_bias(uint32_t hz)
 
 // ---- From the DMR interrupts ----
 
-// RF TX interrupt (tx): RX path off, TX path on, FD6818 idle then TX for our burst, then the TX aux word. After the
-// burst: PA drive off, TX path off, FD6818 back to receive, RX path on. The TX path switches per burst: a hotspot stays
-// keyed while it listens, and with the TX path on it heard nothing
+// RF TX interrupt (tx): RX path off, FD6818 straight to TX (no idle) and the TX aux word, TX path on. After the burst:
+// PA drive off, TX path off, FD6818 straight back to receive, RX path on. Each path is on only while the FD6818 is in
+// its state, as in the radio's own handlers (5.4). The TX path switches per burst: a hotspot stays keyed while it
+// listens, and with the TX path on it heard nothing
 static void dmr_rf_switch(bool tx)
 {
-	if (!tx) {
-		DAC_DATA_B = 0;
-	}
-	rx_path(rx_hz, !tx);
-	tx_path(tx_hz, tx);
-	fd6818_dmr_burst(&fd, tx, fd.variant->bw_dmr);
 	if (tx) {
+		rx_path(rx_hz, false);
+		fd6818_dmr_burst(&fd, true, fd.variant->bw_dmr);
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
+		tx_path(tx_hz, true);
+	} else {
+		DAC_DATA_B = 0;
+		tx_path(tx_hz, false);
+		fd6818_dmr_burst(&fd, false, fd.variant->bw_dmr);
+		rx_path(rx_hz, true);
 	}
 }
 
