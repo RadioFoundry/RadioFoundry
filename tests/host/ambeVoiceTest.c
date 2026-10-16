@@ -239,11 +239,12 @@ static void testFlagsMap(void)
 	CHECK(ambe2_enc_flags(VOCODER_OPT_TONE_FRAMES) == 0x1800u, "tone frames");
 	CHECK(ambe2_enc_flags(VOCODER_OPT_DEFAULT) == 0x1840u, "the defaults are the full pattern");
 	CHECK(AMBE2_ENC_DEFAULT == ambe2_enc_flags(VOCODER_OPT_DEFAULT), "the hosts' initial word");
-	// AGC is not offered; nothing ever sets the DC filter off, AGC or test mode bits
-	CHECK(ambe2_enc_flags(VOCODER_OPT_AGC) == 0x0800u, "AGC not mapped");
-	CHECK((ambe2_enc_flags(0xFFFFFFFFu) & 0x6100u) == 0, "never 0x100, 0x2000, 0x4000");
-	CHECK(ambe2_enc_flags(0xFFFFFFFFu) == 0x1840u, "all options");
-	CHECK((AMBE2_OPTIONS & VOCODER_OPT_AGC) == 0, "AGC not offered");
+	CHECK(ambe2_enc_flags(VOCODER_OPT_AGC) == 0x2800u, "AGC");
+	CHECK(ambe2_enc_flags(VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC) == 0x3840u, "all three");
+	// Nothing ever sets the DC filter off or test mode bits, whatever is asked for
+	CHECK((ambe2_enc_flags(0xFFFFFFFFu) & 0x4100u) == 0, "never 0x100, 0x4000");
+	CHECK(ambe2_enc_flags(0xFFFFFFFFu) == 0x3840u, "all options");
+	CHECK(AMBE2_OPTIONS == (VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC), "offered");
 }
 
 // core -> hal: the options reach the vocoder before the first frame and between frames, and every codec call of a
@@ -297,14 +298,24 @@ static void testEncodeOptions(void)
 	while (src->next(frame, src->ctx))
 		;
 
-	// AGC asked for: not in force (the vocoder ignores it), never in the flags
+	// AGC on: in force, both halves
 	ambeVoiceSetEncodeOptions(VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC);
-	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT, "AGC not in force");
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC), "AGC in force");
 	ncalls = 0;
 	src->begin(src->ctx);
 	block();
-	CHECK(ncalls == 2 && calls_flags[0] == 0x1840u && calls_flags[1] == 0x1840u, "AGC bit dropped (%#x)",
+	CHECK(ncalls == 2 && calls_flags[0] == 0x3840u && calls_flags[1] == 0x3840u, "AGC flags (%#x)",
 	      (unsigned)calls_flags[0]);
+	src->end(src->ctx);
+	while (src->next(frame, src->ctx))
+		;
+	// An option the vocoder doesn't take is not in force
+	ambeVoiceSetEncodeOptions(VOCODER_OPT_DEFAULT | 0x80u);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT, "unknown option not in force");
+	ncalls = 0;
+	src->begin(src->ctx);
+	block();
+	CHECK(ncalls == 2 && calls_flags[0] == 0x1840u, "unknown option dropped (%#x)", (unsigned)calls_flags[0]);
 	src->end(src->ctx);
 	while (src->next(frame, src->ctx))
 		;

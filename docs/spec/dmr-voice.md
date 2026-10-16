@@ -145,14 +145,15 @@ codec bits.
 |---|---|---|---|
 | `VOCODER_OPT_NOISE_REDUCTION` | Suppresses steady background noise, also between words. It also lowers a steady tone held into the mic | on | Settings > Talk & listen > Mic noise reduction |
 | `VOCODER_OPT_TONE_FRAMES` | A steady tone or tone pair (DTMF) is sent as a tone frame and comes out at its frequency on the other side. Speech is not affected | on | none |
-| `VOCODER_OPT_AGC` | Input level control | reserved | not offered by any board yet |
+| `VOCODER_OPT_AGC` | Input level control: quiet speech raised (about 4x), loud speech lowered. The codec's own parameters; not yet checked on air | off | Settings > Talk & listen > Mic AGC |
 
 * `options()` says which options the board's codec takes. A board without them leaves `options`, `set_options` and
-  `encode_flags` NULL. Then the setting is shown dimmed ("Not on this radio") and nothing changes.
+  `encode_flags` NULL. Then the settings are shown dimmed ("Not on this radio") and nothing changes.
 * `ambeVoiceSetEncodeOptions` may be called from any task. The audio callback hands the options to the vocoder before
   the next frame it encodes, so every codec call of a frame uses the same options. The board keeps them across
   `reset()`, so a new transmission starts with the options in force.
-* The options are read at start-up from the setting and on every change (`ui_svc_apply`).
+* The options are read at start-up from the settings and on every change (`ui_svc_apply`). With AGC on, the mic gain
+  is not applied (the samples go to the codec at unity) and Mic gain is dimmed, showing "AGC".
 * Per codec mapping: [codec-md380.md](codec-md380.md) "Encode flags" (the AMBE+2 hosts on the MD-380, DM-1701 and
   DM-32UV share `drivers/vocoder/ambe2_flags.h`).
 

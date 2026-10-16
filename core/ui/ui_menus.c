@@ -1834,6 +1834,7 @@ static const set_item_t s_talk[] = {
 	LIST("TX timeout", "TOT", UI_SET_TOT_S, v_tot, n_tot),
 	NUMBER("Default squelch", NULL, UI_SET_SQUELCH, 0, 9, 1, NULL),
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
+	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
 	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
@@ -1986,6 +1987,18 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 static uint16_t group_count(void) { return ui_set_item_count((uint8_t)ui_frame()->arg); }
 
 
+// The board's vocoder takes this encode option (hal_vocoder_t.options)
+static bool vocoder_has(uint32_t opt)
+{
+	return board.vocoder != NULL && board.vocoder->options != NULL && (board.vocoder->options() & opt) != 0;
+}
+
+// Mic AGC is on and in force: Mic gain doesn't apply (shown as "AGC", dimmed)
+static bool mic_agc_on(void)
+{
+	return vocoder_has(VOCODER_OPT_AGC) && ui_svc_setting_get(UI_SET_MIC_AGC) != 0;
+}
+
 // Why a setting can't be used on this radio or in this build (the row is dimmed and OK says it), NULL if it can
 static const char *set_why_not(const set_item_t *s)
 {
@@ -2012,12 +2025,17 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_THEME:
 		return board.display != NULL && board.display->bpp == 1 ? "Themes are for color screens" : NULL;
 	case UI_SET_MIC_GAIN:
-		return CONFIG_DMR ? NULL : "Mic gain: not in this build";
+		if (!CONFIG_DMR)
+			return "Mic gain: not in this build";
+		return mic_agc_on() ? "Mic AGC sets the level" : NULL;
 	case UI_SET_NOISE_REDUCTION:
 		if (!CONFIG_DMR)
 			return "Noise reduction: not in this build";
-		return board.vocoder != NULL && board.vocoder->options != NULL &&
-		       (board.vocoder->options() & VOCODER_OPT_NOISE_REDUCTION) ? NULL : "Not on this radio";
+		return vocoder_has(VOCODER_OPT_NOISE_REDUCTION) ? NULL : "Not on this radio";
+	case UI_SET_MIC_AGC:
+		if (!CONFIG_DMR)
+			return "Mic AGC: not in this build";
+		return vocoder_has(VOCODER_OPT_AGC) ? NULL : "Not on this radio";
 	case UI_SET_HEAR_ALL_DEFAULT:
 		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Digital monitor: not in this build";
 	case UI_SET_ALIAS_SHOW:
@@ -2059,6 +2077,8 @@ static void group_item(uint16_t i, ui_item_t *it)
 		set_value_text(s, edit ? set_value : ui_svc_setting_get(s->id), it->value, sizeof it->value);
 	if (s->id == UI_SET_PRIVACY_KEY && s->type == ST_NUMBER && !edit && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0)
 		strcpy(it->value, "-");
+	if (s->id == UI_SET_MIC_GAIN && !edit && mic_agc_on())
+		strcpy(it->value, "AGC");
 	if (edit)
 		it->flags |= UI_ITEM_EDIT;
 	if (set_why_not(s) != NULL)

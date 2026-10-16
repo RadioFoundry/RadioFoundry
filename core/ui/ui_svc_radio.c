@@ -257,12 +257,23 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		rs.talk_permit = value != 0;
 		break;
 #if CONFIG_DMR
+	case UI_SET_MIC_AGC:		// with AGC on the codec sets the level: the samples go in at unity (Mic gain dimmed)
+		v16 = (uint16_t)(value != 0 ? 5 : ui_svc_setting_get(UI_SET_MIC_GAIN));
+		// fall through
 	case UI_SET_MIC_GAIN:		// DMR: the samples are scaled before the vocoder (no board has an FM mic gain hook)
+		if (id == UI_SET_MIC_GAIN && ui_svc_setting_get(UI_SET_MIC_AGC) != 0)
+			v16 = 5;
 		ambeVoiceSetMicGain((uint8_t)(v16 > 10 ? 10 : v16));
+		if (id == UI_SET_MIC_GAIN)
+			return;
+		// fall through
+	case UI_SET_NOISE_REDUCTION: {	// tone frames stay on (no setting)
+		bool nr = (id == UI_SET_NOISE_REDUCTION ? value : ui_svc_setting_get(UI_SET_NOISE_REDUCTION)) != 0;
+		bool agc = (id == UI_SET_MIC_AGC ? value : ui_svc_setting_get(UI_SET_MIC_AGC)) != 0;
+		ambeVoiceSetEncodeOptions(VOCODER_OPT_TONE_FRAMES | (nr ? VOCODER_OPT_NOISE_REDUCTION : 0u) |
+					  (agc ? VOCODER_OPT_AGC : 0u));
 		return;
-	case UI_SET_NOISE_REDUCTION:	// tone frames stay on (no setting)
-		ambeVoiceSetEncodeOptions(value != 0 ? VOCODER_OPT_DEFAULT : VOCODER_OPT_TONE_FRAMES);
-		return;
+	}
 #endif
 	case UI_SET_TONE_VOLUME:		// 0..10
 		rs.beep_level = (uint8_t)(v16 > 10 ? 100 : v16 * 10u);

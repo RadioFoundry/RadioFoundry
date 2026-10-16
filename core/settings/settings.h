@@ -179,8 +179,9 @@ typedef struct {
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
 
-// settings_t.audio_flags (0: noise reduction on)
+// settings_t.audio_flags (0: noise reduction on, AGC off)
 #define SETTINGS_AUDIO_NO_NOISE_REDUCTION	0x01u	// the vocoder's mic noise reduction off (DMR TX)
+#define SETTINGS_AUDIO_AGC			0x02u	// the vocoder's mic AGC on (DMR TX; mic gain then unity)
 
 // settings_t.net_flags (the USB network personality; 0 = as before)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)

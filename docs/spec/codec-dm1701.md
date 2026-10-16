@@ -201,7 +201,8 @@ no FPU instructions.
 
 * Encode flags: a set of feature bits, one value on every call of a transmission (stock's init value at E+0x1730
   is 0x1840). The bit meanings were measured on the DM-1801 Pro and MD-380 builds of this codec family
-  ([codec-md380.md](codec-md380.md), "Encode flags"): 0x40 noise suppression, 0x800 noise gate, 0x1000 tone frames.
+  ([codec-md380.md](codec-md380.md), "Encode flags"): 0x40 noise suppression, 0x800 noise gate, 0x1000 tone frames,
+  0x2000 input AGC.
   **On this build they are unverified**: the code is the same family, but the bits were not measured on it. ODR's
   host passes the same word as the MD-380's (`drivers/vocoder/ambe2_flags.h`, 0x1840 by default). The encoder reads
   the PCM and never writes it. Its output is the 49 parameter bits only. Stock applies its
@@ -250,7 +251,7 @@ no FPU instructions.
 
 * On the radio: audio quality, levels (decoded output is lower than the input; the encoder input level the codec
   expects is unknown) and timing (encode + decode per 20 ms on the STM32 at 144 MHz).
-* The encode flags bits on this build (see "Per-frame calls"): measure 0x40, 0x800 and 0x1000 as on the MD-380
-  build, or confirm on air.
+* The encode flags bits on this build (see "Per-frame calls"): measure 0x40, 0x800, 0x1000 and 0x2000 as on the
+  MD-380 build, or confirm on air.
 * The parameters the stock wrapper passes from its fields are all constants after init. Whether any stock code path
   changes them (E+0x173A, E+0x173C, D+0x98E, D+0x97A) during a call was not traced.

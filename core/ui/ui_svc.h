@@ -150,6 +150,7 @@ typedef enum {
 	UI_SET_KEY_SIDE1, UI_SET_KEY_SIDE1_HOLD, UI_SET_KEY_SIDE2, UI_SET_KEY_SIDE2_HOLD, UI_SET_KEY_TOP,
 	UI_SET_KEY_TOP_HOLD,
 	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; audio_flags)
+	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (audio_flags); while on, mic gain is unity and dimmed
 	UI_SET_COUNT
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);

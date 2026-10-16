@@ -127,7 +127,7 @@ static bool v_present(void) { return codec_present; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
-static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES; }
+static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
 static void v_set_options(uint32_t opts) { (void)opts; }
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, v_options, v_set_options,
 					    NULL };
@@ -2213,6 +2213,24 @@ static void test_ui_glue(void)
 	CHECK(sv.audio_flags == SETTINGS_AUDIO_NO_NOISE_REDUCTION);
 	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 7) && ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1);
 	ui_svc_apply(UI_SET_NOISE_REDUCTION, 1);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
+	settings_read(&sv);
+	CHECK(sv.audio_flags == 0);
+	// Mic AGC: off by default, its own bit, added to the options in force
+	CHECK(ui_svc_setting_get(UI_SET_MIC_AGC) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_MIC_AGC, 1) && ui_svc_setting_get(UI_SET_MIC_AGC) == 1);
+	ui_svc_apply(UI_SET_MIC_AGC, 1);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
+	settings_read(&sv);
+	CHECK(sv.audio_flags == SETTINGS_AUDIO_AGC);
+	// ... and kept when noise reduction changes
+	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 0));
+	ui_svc_apply(UI_SET_NOISE_REDUCTION, 0);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC));
+	settings_read(&sv);
+	CHECK(sv.audio_flags == (SETTINGS_AUDIO_AGC | SETTINGS_AUDIO_NO_NOISE_REDUCTION));
+	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1) && ui_svc_setting_set(UI_SET_MIC_AGC, 0));
+	ui_svc_apply(UI_SET_MIC_AGC, 0);
 	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
 	settings_read(&sv);
 	CHECK(sv.audio_flags == 0);

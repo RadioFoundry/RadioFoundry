@@ -15,7 +15,7 @@
 // Encode options (set_options). Each is a codec feature a board may or may not have; options() says which
 #define VOCODER_OPT_NOISE_REDUCTION	0x01u	// suppress steady background noise in the mic signal
 #define VOCODER_OPT_TONE_FRAMES		0x02u	// send a steady tone or tone pair (DTMF) as a tone frame, not as speech
-#define VOCODER_OPT_AGC			0x04u	// input level control (reserved: no board offers it yet)
+#define VOCODER_OPT_AGC			0x04u	// input level control: quiet speech raised, loud speech lowered
 #define VOCODER_OPT_DEFAULT		(VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES)
 
 typedef struct {

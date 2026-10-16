@@ -125,7 +125,7 @@ DM-1801 Pro.
 | 0x0100 | Turns the input DC-removal filter off. Never set |
 | 0x0800 | Noise gate. Acts only while E[0x138A] is not 0 |
 | 0x1000 | Tone detection: a steady tone or tone pair is sent as an AMBE tone frame and is decoded at the right frequency. No effect on speech |
-| 0x2000 | Input AGC: quiet speech about 4x louder, loud speech reduced. Its parameters are E+0x16A2..0x16B6. The defaults have not been tested on air |
+| 0x2000 | Input AGC: quiet speech about 4x louder, loud speech reduced. Its parameters are E+0x16A2..0x16B6, left at their values after init. The defaults have not been tested on air |
 | 0x4000 | Test mode: one fixed frame whatever the input |
 | others | No measurable effect |
 
@@ -134,9 +134,9 @@ Radios use one of two patterns, each a constant value on every call of a transmi
 the first call and 0x800 afterwards gets the 0x800 behavior: over 234 frames the output equals 0x800 on every call.
 
 What ODR passes (`drivers/vocoder/ambe2_flags.h`, used by the MD-380, DM-1701 and DM-32UV hosts): one word on every
-call, 0x800 plus 0x40 for `VOCODER_OPT_NOISE_REDUCTION` and 0x1000 for `VOCODER_OPT_TONE_FRAMES`. Both are on by
-default, which gives 0x1840. 0x100, 0x2000 and 0x4000 are never set; the AGC is not offered until it has been
-tested on air ([dmr-voice.md](dmr-voice.md) 6).
+call, 0x800 plus 0x40 for `VOCODER_OPT_NOISE_REDUCTION`, 0x1000 for `VOCODER_OPT_TONE_FRAMES` and 0x2000 for
+`VOCODER_OPT_AGC`. Noise reduction and tone frames are on by default and AGC is off, which gives 0x1840 (0x3840 with
+Mic AGC on). 0x100 and 0x4000 are never set ([dmr-voice.md](dmr-voice.md) 6).
 
 Cross-check with the 0x2000 bit: with the same values in the AGC parameter block, all 43 tested flag words give the
 same output on the two builds. The difference seen earlier with 0x2000 set came from different values in that
@@ -235,7 +235,8 @@ Scripts and notes: kept outside the repository.
 ## Open items
 
 * On-air check of the encode flags (0x800 against 0x1840): speech in a quiet room and with background noise, a
-  1 kHz tone and a DTMF key into the mic, received on a second radio or the SDR bench.
+  1 kHz tone and a DTMF key into the mic, received on a second radio or the SDR bench. AGC (0x3840): a quiet and a
+  loud talker, levels and pumping between words; whether the parameter block's values after init are usable.
 
 * Other stock versions (D13.20 and similar) need their own profile; only D002.032 is supported.
 * 275 KB for the application is tight: the default build fits only with link time optimization and the hotspot off
