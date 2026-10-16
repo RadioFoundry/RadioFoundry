@@ -59,6 +59,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | TX timeout | Off, 30 s, 1, 2, 3, 5, 10 min | 3 min | Longest transmission, for channels without their own timeout in the codeplug | Works |
 | Default squelch | 0 to 9 | 5 | The FM squelch level when a channel doesn't set one | Works |
 | Mic gain | 0 to 10 | 5 | Microphone level on DMR, 2 dB a step. 5 is the radio's normal level. FM isn't changed yet | Works (DMR) |
+| Mic noise reduction | On, Off | On | Reduces steady background noise (fans, engines, wind) in what you send on DMR, also between words. Turn it off if a steady sound you want heard is cut. Dimmed on radios whose voice codec can't do it | Needs an on-air check (DMR) |
 | Monitor by default | On, Off | Off | Digital monitor (DMR: every talkgroup, promiscuous) goes on each time you select a DMR channel. **Back** on Home turns it off until the next channel | Works |
 | Show talker alias | On, Off | On | Show received talker aliases (names) under the caller's ID | Works |
 

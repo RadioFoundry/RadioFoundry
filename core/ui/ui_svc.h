@@ -149,6 +149,7 @@ typedef enum {
 	// quick-key slots. Press and long press of side key 1, side key 2 and the top key, in this order
 	UI_SET_KEY_SIDE1, UI_SET_KEY_SIDE1_HOLD, UI_SET_KEY_SIDE2, UI_SET_KEY_SIDE2_HOLD, UI_SET_KEY_TOP,
 	UI_SET_KEY_TOP_HOLD,
+	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; audio_flags)
 	UI_SET_COUNT
 } ui_setting_t;
 int32_t ui_svc_setting_get(uint8_t id);

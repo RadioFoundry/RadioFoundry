@@ -127,7 +127,10 @@ static bool v_present(void) { return codec_present; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
-static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL };
+static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES; }
+static void v_set_options(uint32_t opts) { (void)opts; }
+static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, v_options, v_set_options,
+					    NULL };
 static const hal_power_t fake_power = { .led = p_led };
 
 static const band_t bands[] = {
@@ -2199,6 +2202,20 @@ static void test_ui_glue(void)
 	settings_t sv;
 	settings_read(&sv);
 	CHECK(sv.auto_lock_s == 60 && sv.mic_gain == 8 && sv.long_press_ms == 900 && sv.gps == 1 && sv.pos_send_s == 300);
+	// Mic noise reduction: on by default, kept in audio_flags, handed to the vocoder's encode options (tone frames
+	// stay on)
+	CHECK(ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1 && (sv.audio_flags & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
+	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 0) && ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 0);
+	ui_svc_apply(UI_SET_NOISE_REDUCTION, 0);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_TONE_FRAMES);
+	settings_read(&sv);
+	CHECK(sv.audio_flags == SETTINGS_AUDIO_NO_NOISE_REDUCTION);
+	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 7) && ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1);
+	ui_svc_apply(UI_SET_NOISE_REDUCTION, 1);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
+	settings_read(&sv);
+	CHECK(sv.audio_flags == 0);
 	ui_svc_apply(UI_SET_LONG_PRESS_MS, 900);
 	ui_svc_apply(UI_SET_REPEAT_MS, 200);
 	CHECK(input_long == 900 && input_repeat == 200);

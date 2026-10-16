@@ -153,7 +153,7 @@ Settings has a search field on top (T9). Groups, in this order:
 |---|---|
 | **Sound** | Key tones, tone volume, talk permit tone, voice prompts (on/off, speed, verbosity), message tone, call alert tone |
 | **Display** | Brightness, backlight timeout, theme (light/dark/high contrast), large text, orientation (240x320 boards), hint row, Home secondary fields |
-| **Talk & listen** | Reply window, TX timeout, default squelch, VOX sensitivity and delay, mic gain, hear all default, talker alias show/send, name source (contacts, ID database, alias) |
+| **Talk & listen** | Reply window, TX timeout, default squelch, VOX sensitivity and delay, mic gain, mic noise reduction, hear all default, talker alias show/send, name source (contacts, ID database, alias) |
 | **Privacy** | Basic Privacy keys (per channel and per contact), lock behavior (auto-lock, what stays active when locked: PTT, side keys), PIN for settings |
 | **Location** | GPS on/off, position format, send position (UDT, LRRP, APRS) and interval, reply to position requests |
 | **Connections** | Hotspot defaults, USB network (at power-on, control station: PC answers data, link address; TFTP codeplug write), single frequency repeater role, ARS registration, radio check auto-reply, call alert answer, message format |

@@ -1834,6 +1834,7 @@ static const set_item_t s_talk[] = {
 	LIST("TX timeout", "TOT", UI_SET_TOT_S, v_tot, n_tot),
 	NUMBER("Default squelch", NULL, UI_SET_SQUELCH, 0, 9, 1, NULL),
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
+	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
 };
@@ -2012,6 +2013,11 @@ static const char *set_why_not(const set_item_t *s)
 		return board.display != NULL && board.display->bpp == 1 ? "Themes are for color screens" : NULL;
 	case UI_SET_MIC_GAIN:
 		return CONFIG_DMR ? NULL : "Mic gain: not in this build";
+	case UI_SET_NOISE_REDUCTION:
+		if (!CONFIG_DMR)
+			return "Noise reduction: not in this build";
+		return board.vocoder != NULL && board.vocoder->options != NULL &&
+		       (board.vocoder->options() & VOCODER_OPT_NOISE_REDUCTION) ? NULL : "Not on this radio";
 	case UI_SET_HEAR_ALL_DEFAULT:
 		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Digital monitor: not in this build";
 	case UI_SET_ALIAS_SHOW:

@@ -135,11 +135,13 @@ static void test_settings_basic(void)
 	CHECK(st.load == SETTINGS_DEFAULTS && st.seq == 0);
 	settings_read(&s);
 	CHECK(s.brightness == 100 && s.squelch == SETTINGS_UNSET8 && s.beeps == 1);
+	CHECK(s.audio_flags == 0);		// mic noise reduction on (a record from before the field: also 0)
 
 	settings_t *w = settings_begin();
 	w->vfo_rx_hz = 146520000;
 	w->squelch = 3;
 	strcpy(w->radio_name, "N0CALL");
+	w->audio_flags = SETTINGS_AUDIO_NO_NOISE_REDUCTION;
 	settings_end(1000);
 	settings_poll(1500);			// not rested yet
 	settings_get_stats(&st);
@@ -165,6 +167,7 @@ static void test_settings_basic(void)
 	settings_read(&s);
 	CHECK(st.load == SETTINGS_LOADED && st.seq == 1);
 	CHECK(s.vfo_rx_hz == 146520000 && s.squelch == 4 && strcmp(s.radio_name, "N0CALL") == 0);
+	CHECK(s.audio_flags == SETTINGS_AUDIO_NO_NOISE_REDUCTION);
 
 	// A change undone before the save: nothing written
 	w = settings_begin();
@@ -601,7 +604,7 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, rpt_beacon), 172 },
 		{ offsetof(settings_t, aprs_power), 173 },
 		{ offsetof(settings_t, aprs_cp_path), 174 },
-		{ offsetof(settings_t, reserved6), 175 },
+		{ offsetof(settings_t, audio_flags), 175 },
 		{ offsetof(settings_t, aprs_flags), 176 },
 		{ offsetof(settings_t, aprs_freq_hz), 180 },
 		{ offsetof(settings_t, aprs_lat), 184 },

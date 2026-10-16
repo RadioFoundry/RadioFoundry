@@ -134,7 +134,7 @@ typedef struct {
 					// with the aprs_ fields below)
 	uint8_t aprs_cp_path;		// the codeplug APRS record's path last taken into aprs_path, aprs_path_t + 1 (0 = none
 					// yet; was reserved6[1]). A different path in the codeplug replaces aprs_path (aprs.md 11)
-	uint8_t reserved6;
+	uint8_t audio_flags;		// SETTINGS_AUDIO_* bits (was reserved6; 0 = the defaults)
 	// APRS (core/aprs/aprs.h aprs_cfg_t, docs/spec/aprs.md 11); taken only when aprs_stored is 1, else the defaults
 	// (automatic transmit off)
 	uint8_t aprs_flags;		// SETTINGS_APRS_* bits
@@ -178,6 +178,9 @@ typedef struct {
 #define SETTINGS_UI_ALIAS		0x08u	// show received talker aliases
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
+
+// settings_t.audio_flags (0: noise reduction on)
+#define SETTINGS_AUDIO_NO_NOISE_REDUCTION	0x01u	// the vocoder's mic noise reduction off (DMR TX)
 
 // settings_t.net_flags (the USB network personality; 0 = as before)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)

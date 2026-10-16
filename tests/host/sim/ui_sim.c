@@ -310,10 +310,13 @@ static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static const hal_afsk_t afsk;	// present (the APRS RF rows are live), never called: the UI doesn't key
+// A vocoder with encode options (Settings > Talk & listen > Mic noise reduction is live); only options() is called
+static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES; }
+static const hal_vocoder_t vocoder = { .options = v_options };
 
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,
-	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk,
+	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
 };
 
 static uint32_t now_ms = 1000;
@@ -1116,6 +1119,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
+	ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1);
 	ui_svc_setting_set(UI_SET_UPDOWN_HOME, 0);
 	for (uint8_t k = UI_SET_KEY_SIDE1; k <= UI_SET_KEY_TOP_HOLD; k++)
 		ui_svc_setting_set(k, 0);	// the side keys as the board has them

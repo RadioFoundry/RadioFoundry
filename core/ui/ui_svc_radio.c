@@ -260,6 +260,9 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_MIC_GAIN:		// DMR: the samples are scaled before the vocoder (no board has an FM mic gain hook)
 		ambeVoiceSetMicGain((uint8_t)(v16 > 10 ? 10 : v16));
 		return;
+	case UI_SET_NOISE_REDUCTION:	// tone frames stay on (no setting)
+		ambeVoiceSetEncodeOptions(value != 0 ? VOCODER_OPT_DEFAULT : VOCODER_OPT_TONE_FRAMES);
+		return;
 #endif
 	case UI_SET_TONE_VOLUME:		// 0..10
 		rs.beep_level = (uint8_t)(v16 > 10 ? 100 : v16 * 10u);

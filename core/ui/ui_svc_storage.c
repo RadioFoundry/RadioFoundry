@@ -183,6 +183,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
+	case UI_SET_NOISE_REDUCTION:
+		settings_read(&st);
+		return (st.audio_flags & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:
@@ -343,6 +346,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 #if CONFIG_TFTP
 		tftp_codeplug_allow_write(value != 0);
 #endif
+		return true;
+	case UI_SET_NOISE_REDUCTION:	// ui_svc_apply hands it to the vocoder
+		st = settings_begin();
+		st->audio_flags = (uint8_t)(value != 0 ? (st->audio_flags & ~SETTINGS_AUDIO_NO_NOISE_REDUCTION) :
+					    (st->audio_flags | SETTINGS_AUDIO_NO_NOISE_REDUCTION));
+		settings_end(hal_millis());
 		return true;
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
