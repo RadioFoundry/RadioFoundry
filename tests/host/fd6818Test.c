@@ -156,6 +156,10 @@ static void test_helpers(void)
 	CHECK(fd6818_ctcss_word(2541) == 5247);
 	CHECK(fd6818_rssi_raw(0x01FF) == 0xFF && fd6818_rssi_raw(0xFE00) == 0);
 	CHECK(fd6818_rssi_dbm(100) == -110 && fd6818_rssi_dbm(0xFE00) == -160);	// guide: reg / 2 - 160
+	CHECK(fd6818_noise(0xAB08) == 33 && fd6818_noise(0x00FF) == 255);	// low byte only, capped
+	// the measured floor (43) stays shut at the loosest squelch level (opens below 64), a strong carrier (8) opens the
+	// tightest (below 40): core/radio/radio_sm.h RADIO_SQL_*
+	CHECK(fd6818_noise(43) >= 64 && fd6818_noise(8) < 40);
 }
 
 static void test_frames(void)

@@ -106,6 +106,17 @@ static inline uint16_t fd6818_rssi_raw(uint16_t r67) { return (uint16_t)((r67 & 
 // RSSI in dBm: reg 0x67 bits 8:0 / 2 - 160 (programming guide, squelch section; reg 0x2C's external LNA gain is
 // already taken off by the chip)
 static inline int16_t fd6818_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)fd6818_rssi_raw(r67) - 160); }
+// Noise for the core's squelch (hal_radio_t status, larger = more noise): reg 0x65 bits 7:0 plus an offset. Without a
+// signal the raw value reads 43-63 (UHF 43-51 on most channels, VHF and 420 MHz 57-63), and a strong carrier reads 8 (a
+// DM-1801 Pro on the SDR bench). The core's levels open below 64 (loosest) down to 40 (tightest), so the raw floor
+// sits inside that range and every level opens on noise. The offset lifts the floor above 64 and keeps a strong
+// carrier at 33
+#define FD6818_NOISE_OFFSET	25u
+static inline uint8_t fd6818_noise(uint16_t r65)
+{
+	uint16_t n = (uint16_t)((r65 & 0xFFu) + FD6818_NOISE_OFFSET);
+	return n > 255u ? 255u : (uint8_t)n;
+}
 
 // --- Register access (one frame each, inside the critical section) ---
 

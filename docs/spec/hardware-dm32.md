@@ -683,7 +683,7 @@ Below 16 MHz nothing is written (KP).
 | Item | Register | Use | Tag |
 |---|---|---|---|
 | RSSI | 0x67 bits 8:0 | dBm = value / 2 - 160 (FD6818 programming guide; reg 0x2C bits 4:0 hold the external LNA gain the chip takes off) | DS |
-| Noise | 0x65 low byte | | KP |
+| Noise | 0x65 low byte | Larger = more noise. No signal: 43-63 (UHF 43-51 on most channels, VHF 57-63); strong carrier: 8. The core's squelch levels open below 64 down to 40, so ODR adds 25 (`fd6818_noise`), or every level opens on noise. Measured on a DM-1801 Pro | KP, HW |
 | CTCSS mode | 0x51 | 0x9045 TX CTCSS on with gain 0x45; 0x1000 CTCSS RX / TX off; 0x0000 sub-audio off | KP |
 | CTCSS frequency | 0x07 | intended value = Hz × 20.64888 (e.g. 88.5 Hz → 1827). The port computes it with an integer division that truncates the tone to whole tens of Hz: **wrong** | KP |
 | CTCSS detect thresholds | 0x52 = 028F | | KP |

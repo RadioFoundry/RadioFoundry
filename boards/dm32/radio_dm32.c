@@ -302,7 +302,7 @@ static void status(radio_status_t *st)
 	last_rssi_raw = fd6818_rssi_raw(r67);
 	last_noise_raw = r65 & 0xFFu;
 	st->rssi_dbm = fd6818_rssi_dbm(r67);
-	st->noise = (uint8_t)last_noise_raw;
+	st->noise = fd6818_noise(r65);	// the chip's floor lifted above the core's squelch levels (fd6818.h)
 	st->carrier = false;
 	st->tone_ok = mode != RADIO_MODE_FM || hrc7000_subtone_ok(&modem);
 }
