@@ -122,6 +122,7 @@ manual are this size.
 - No GPS. LRRP location requests get "no fix". APRS positions come from a computer or a fixed position.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
+- No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### Verified on the DM-1701
 
@@ -204,6 +205,7 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
   FM transmit path from the processor isn't written.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
   it hears nothing.
+- No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### MD-380 with qdmr
 
@@ -260,6 +262,8 @@ A 240 x 320 color screen. ODR draws at half resolution for now.
 - The air band AM receiver and the broadcast FM receiver are built in, but the board code behind them isn't written,
   so nothing runs yet.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
+- No vibration alerts: ODR doesn't drive a vibration motor on it, and **Settings > Sound > Vibrate** isn't in the
+  image.
 
 ### DM-32UV with qdmr
 

@@ -10,7 +10,8 @@ and your DMR ID.
 
 When a message arrives, the radio shows a banner with the sender and the first words for 8 s. Press **#** while the
 banner is up to open the message. The radio plays a short three-note tone with the banner unless **Settings > Sound >
-Message tone** is off.
+Message tone** is off. On a radio with a vibration motor it also vibrates twice, unless **Settings > Sound > Vibrate**
+is off. A call alert or a private call to you gives one long vibration, an emergency four.
 
 <img src="../ux/screens/160x120i5/banner_message.png" width="200" alt="A message banner">
 

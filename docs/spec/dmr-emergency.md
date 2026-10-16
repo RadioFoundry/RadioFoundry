@@ -71,7 +71,8 @@ data service's rule: not RX only, in band, not a VFO, not in hotspot mode, an ow
 An alarm (section 2) or a voice call with the emergency option that is played (to us or a group we listen to)
 raises an alert: `dmr_emergency_alert()` gives the newest (kind alarm / call, source, destination, group, the
 number not yet dismissed), and with `rx_tone` on the radio core plays `BEEP_EMERGENCY` (a 1500 / 900 Hz warble,
-about 1 s). The UI gets `UI_EV_EMERGENCY` (from `ui_svc_poll`) and opens the emergency screen. The same radio's
+about 1 s). The UI gets `UI_EV_EMERGENCY` (from `ui_svc_poll`), opens the emergency screen and, on a radio
+with a vibration motor, vibrates (`radio-features.md` 4.1). The same radio's
 emergency again within `DMR_EMERGENCY_REALERT_MS` (30 s) of its last activity (the repeated alarms, the call that
 follows, the next over) adds no alert, dismissed or not. `dmr_emergency_dismiss()` clears the banner.
 
