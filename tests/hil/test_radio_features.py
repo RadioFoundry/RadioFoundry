@@ -25,7 +25,8 @@ Pass criteria:
   within 4 s; CANCEL: the starting frequency again.
 - test_dual_watch: (zone of 2+ channels) dual watch with the next position: zone_pos alternates between exactly the
   two positions; CANCEL: back to the start.
-- test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx.
+- test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx; input.ptt_downs
+  counts the press and the debug log has "input: PTT down (host".
 - test_tot_warning (radio_tx): tot_s 6, tot_warn_s 3: tot_warning=1 between 2.5 and 4.5 s after key-up, then
   tx_deny=timeout and the state leaves tx between 5.4 and 7.5 s.
 - test_roger_beep (radio_tx): roger_beep 1, 1.5 s over: roger=1 is seen after PTT release while still transmitting,
@@ -268,14 +269,20 @@ def fm_tx(radio, pytestconfig):
 @pytest.mark.radio_tx
 def test_tx_inhibit(fm_tx):
     with settings(fm_tx, tx_inhibit=1):
+        fm_tx.link.log()            # empty the ring
+        downs = int(fm_tx.link.view(["link"])["input.ptt_downs"])
         fm_tx.link.ptt(True)
         try:
             seen, _ = collect(fm_tx, "state", 1.0)
             v = fm_tx.core()
         finally:
             fm_tx.link.ptt(False)
+        _, log = fm_tx.link.log()
+        after = int(fm_tx.link.view(["link"])["input.ptt_downs"])
     assert "tx" not in seen, seen
     assert v.get("tx_deny") == "inhibit", v
+    assert after == downs + 1, (downs, after)
+    assert "input: PTT down (host" in log, log
 
 
 @pytest.mark.radio_tx

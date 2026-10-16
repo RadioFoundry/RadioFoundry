@@ -228,7 +228,7 @@ static void link_section(dl_text_t *t)
 			(unsigned)es.steps_per_detent);
 	}
 	dl_text(t, "input.enc_deferred=%u\n", (unsigned)deferred);
-	dl_text(t, "input.long_ms=%u\n", (unsigned)input_long_ms());
+	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
 	dl_text(t, "dl.frames=%u\ndl.bad_crc=%u\ndl.too_long=%u\ndl.timeouts=%u\n", (unsigned)c[0], (unsigned)c[1],
 		(unsigned)c[2], (unsigned)c[3]);
 }
