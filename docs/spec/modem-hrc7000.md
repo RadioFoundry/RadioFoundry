@@ -452,7 +452,8 @@ information bits in the RX RAM (DS, BIN).
 | 0x560 | FM_PTT | b0 FM transmit | 1 in FM TX, 0 in FM RX |
 | 0x564 / 0x568 | FM_DECODE_FLAG1 / 2 | FLAG2: b11:8 DTMF digit received; **b1 CDCSS detected; b0 CTCSS detected**; XTCSS flags | sub-audio squelch |
 | 0x530–0x54C | FM_FUNCTION_COEF1..8 | detector coefficients, 2·cos(2πf / fs)·2^22 (fs 32 kHz for DTMF, 8 kHz for custom CTCSS) | |
-| 0x080 | AUDIO_CONTROL | b31 prompt FIFO full; b7 prompt path; **b6 FM audio to speaker**; b5 CPU-fed speaker PCM; b4 mic PCM to CPU; b3 sidetone; b2 I2S select; b1 I2S slave (reset 1); b0 voice source (0 codec, 1 TX RAM) | |
+| 0x080 | AUDIO_CONTROL | b31 prompt FIFO full; b7 prompt path; **b6 FM audio to speaker**; b5 CPU-fed speaker PCM; b4 mic PCM to CPU; b3 sidetone; b2 I2S select; b1 I2S slave (reset 1); b0 voice source (0 codec, 1 TX RAM), FM transmit included (8.4) | |
+| 0x56C | FM_ADDR_SW | 1 = low half, 2 = high half of the TX / RX RAM audio buffer in use (8.4) | |
 
 ### 8.2 FM entry sequences (KP; FM worked in the Dec 2025 build)
 
@@ -523,6 +524,18 @@ and the microphone muted by the board, the FIFO's samples are the modulation. A 
 speaker PCM is held off the FIFO meanwhile (`hrc_audio_pcm_hold`), since its chunks would land between the tones.
 Bell 202 decoded off air from this path with a valid FCS on the DM-32UV (BENCH, `aprs.md` 13). The DTMF tone
 generator (8.3) needs no PCM, but its deviation field tops out near 1.5 kHz, short of the 3 kHz APRS wants.
+
+The DS doesn't document this route. It names two FM transmit audio sources, selected by AUDIO_CONTROL b0 (DS 7.2.2.1):
+the codec ADC (0) or the TX RAM (1). As a source, the TX RAM is 0x16000030-0x1600042F, two 512-byte halves of 256
+samples (32 ms at 8 kHz), and FM_ADDR_SW (0x56C) names the half in use (1 low, 2 high); SYS_INTERP b15 is the FM TX
+interrupt. The prompt FIFO is documented only as playback to the codec DAC (DS 7.3). The codec's digital mixer
+(DS 6.5.2.10-11) is the documented way to get DAC audio into the ADC's record path: CR_MIX (codec 0x10: b7 mix_en, b6
+load (1 = write), b5:0 address) and DR_MIX (0x11) reach MIX_0..3, and MIX_2 b0 (mix_rec) makes the ADC output ADC + DAC.
+MIX_3 b7:4 = 3 zeroes the ADC's own input in that sum. LINEOUT_CTRL (0x088) b1 is line out 1 and b0 line out 2, the
+same PWM waveform on both (ODR sets 0x01). Two-point modulation (DS): SIG_CENTER b31:24 biases MOD1 (the VC-TCXO) and
+b23:16 MOD2 (the VCO), 3.3 mV a step; RF_MOD_BIAS b7:0 and b15:8 are the MOD1 and MOD2 amplitudes; RF_MODE b10 sends a
+40 Hz test square. The prompt FIFO path decodes on the DM-32UV but not on the DM-1801 Pro (`hardware-dm1801pro.md`
+10).
 
 ### 8.5 FM receive audio to the CPU
 

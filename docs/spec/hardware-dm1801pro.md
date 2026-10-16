@@ -401,8 +401,21 @@ receiving and orange flashing while scanning.
   cause is the PA or the measurement. The SDR's levels are relative and the radio is in its near field, so this wants
   a wattmeter, read against the `pa tx` diagnostics line.
 - The display controller part and its contrast.
-- PTB16's role; why the prompt FIFO's samples don't reach the FM modulator (APRS AFSK sends a bare carrier,
-  section 12).
+- Why the prompt FIFO's samples don't reach the FM modulator (APRS AFSK sends a bare carrier, section 12). The
+  HR_C7000 DS documents two FM transmit audio sources, the codec ADC and the TX RAM (AUDIO_CONTROL b0,
+  `modem-hrc7000.md` 8.1), and the prompt FIFO only toward the codec DAC. The DM-32UV's working AFSK so likely takes
+  a path the DS doesn't describe. Candidates, most likely first:
+  1. The codec's digital mixer: MIX_2 b0 (mix_rec) records ADC + DAC, which would put the FIFO's samples into the
+     FM transmit input. The indirect MIX_0..3 registers were never read, so the `cd` comparison doesn't cover them.
+  2. The TX RAM as the source (AUDIO_CONTROL b0 = 1), fed by the MCU, ping-pong halves paced by FM_ADDR_SW.
+  3. FD6818 register 0x47: this port writes 0x0140 in FM, the stock firmware and the DM-32UV 0x6042. It is the one
+     known difference in the FM transmit set-up, and the register comparison covered only the HR_C7000.
+  4. Line out 1 (LINEOUT_CTRL b1; ODR sets only line out 2) wired toward the modulator on this board.
+  5. PTB16: ODR leaves it an input, the stock firmware drives it low at start-up. Its role is unknown.
+  6. Less likely: FM_PTT order, TONE_SEND_CTRL b6, AUDIO_CONTROL b3.
+  If none carries the tones, the fallbacks are the FD6818's tone 1 generator retuned per symbol (as the DM-1701 does
+  with its AT1846S) or FSK on the two-point modulation bias (SIG_CENTER). A temporary experiment build selects each
+  candidate at run time (debug link APRS op 7, `tests/hil/test_afsk_route_exp.py`).
 - In the calibration page (6.4): what register 0x40 controls, what the squelch thresholds are compared with, the
   fields read at start-up without a found reader (0x203-0x209), and the unread rows.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
@@ -486,8 +499,9 @@ muted (CR_ADC b7) gave 3 Hz rms, with PTB14 low 43 Hz, normally 140 Hz. So the H
 too, and PTB14 high routes the microphone to its FM input (R). The prompt FIFO drains at the right rate during the
 tones (the frame keys for its full length, `aprs.rf_fail` none) but its samples don't reach the modulation. All 64
 codec byte registers during the tones (diagnostics lines `cd`) equal the DM-32UV's byte for byte, as do the
-AUDIO_CONTROL, WORK_MODE, FM_PTT and RF_MODE values and the PCM amplitude, so the HR_C7000 set-up is the same on both
-radios. The speaker-source pin doesn't explain it either: four frames with PTB15 low or high and PTB14 high or low
+AUDIO_CONTROL, WORK_MODE, FM_PTT and RF_MODE values and the PCM amplitude. That covers the direct registers only: the
+codec's indirect mixer registers (MIX_0..3) and the FD6818 weren't compared, and FD6818 0x47 does differ (section 10).
+The speaker-source pin doesn't explain it either: four frames with PTB15 low or high and PTB14 high or low
 carried no tones (10-15 Hz rms; PTB14 low only added a step at the start of the frame). Open;
 APRS receive is unchecked.
 
