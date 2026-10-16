@@ -66,7 +66,7 @@ def test_hotspot_sfr_mode(radio):
         finally:
             link.s.close()
     v = radio.wait_for(lambda x: x.get("hostlink") == "hotspot" and x.get("sfr.on") == "1", 3,
-                       sections=("hotspot",), what="SFR mode on")
+                       sections=("hotspot", "sfr"), what="SFR mode on")
     tx0 = v.get("sfr.tx_starts")
     with radio.released() as port:
         link = mmdvm_probe.Link(port, dtr=False)
@@ -77,10 +77,10 @@ def test_hotspot_sfr_mode(radio):
             assert kind == "reply" and len(st) == 13, st
         finally:
             link.s.close()
-    v = radio.wait_for(lambda x: x.get("sfr.on") == "0", 3, sections=("hotspot",), what="SFR mode off")
+    v = radio.wait_for(lambda x: x.get("sfr.on") == "0", 3, sections=("hotspot", "sfr"), what="SFR mode off")
     assert v.get("sfr.tx_starts") == tx0, "the SFR keyed on a quiet channel"
     radio.link.hotspot_exit()
-    radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
+    radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot", "sfr"), what="hotspot left")
 
 
 @pytest.mark.rf
@@ -96,7 +96,7 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     hz = round(freq * 1e6)
     radio.go_home()
     radio.find_channel(hz, "dmr")
-    v0 = radio.view(["hotspot"])
+    v0 = radio.view(["hotspot", "sfr"])
     rdir = sdr_bench.run_dir("hil_sfr_repeat")
     with sdr_bench.lease():
         cap = sdr_bench.capture_start(rdir, freq, seconds=12)
@@ -113,7 +113,7 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
                 time.sleep(0.3)
                 t.close()
         sdr_bench.capture_wait()
-    v1 = radio.view(["hotspot"])
+    v1 = radio.view(["hotspot", "sfr"])
     sdr = sdr_bench.analyze_dmr(cap, freq, cc)
     up = [d for _, cmd, d in frames if cmd == M.DMR_DATA1]
     ctl = [d[3] for d in up if len(d) > 3]

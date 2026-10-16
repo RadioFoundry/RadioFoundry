@@ -76,7 +76,14 @@ Offsets from 0x11000000. Values are those used by OpenDM32 (BIN) unless noted.
 | 0x15C / 0x160 | RECV_RC_SYNC_H / L | 0x77D55F / 0x7DFD77 | RC |
 
 Voice syncs are not programmed; the chip derives them (INF: they are the bitwise complements of the data syncs).
-Bit 31 of the RECV_MS / RECV_BS high halves is an undocumented enable (BIN).
+Bit 31 of the RECV_MS / RECV_BS high halves is an undocumented enable (BIN). The RECV_TDMA1 / RECV_TDMA2 high halves
+need it too: without it the chip never detects the direct mode syncs (bench, 2026-10-16: an SFR's TS1 inbound was not
+heard until it was set).
+
+SEND_DATA_SYNC is the only send pattern; a voice burst goes out with its complement. ODR rewrites it before a burst
+that asks for another sync family (`dmr_tx_burst_t.sync_override`: an SFR's TS2 direct mode outbound) and back to MS
+for the next burst without one. On air the burst then carries that family (bench, 2026-10-16: TS2 sync with the
+repeated LC).
 
 ### 2.3 CRC, RS and color code
 
@@ -331,7 +338,7 @@ code probe) does not work; replace it everywhere by this one (BIN).
 ## 6. Transmit sequences
 
 All transmit actions happen in the timeslot interrupts: the CPU arms one slot at a time with TXRX_CTRL = 0x80 and
-leaves the other slot unused (0x00, or 0x40 to listen), giving one burst per 60 ms in its timeslot (DS figures 99–100,
+leaves the other slot unused (0x00, or 0x40 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (DS figures 99–100,
 BIN). Every arming also starts the PA one-shot (`hardware-dm32.md` 8.6). The RF TX interrupt that follows keys the RF
 chip.
 

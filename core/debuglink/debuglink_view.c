@@ -169,7 +169,16 @@ static void hotspot_section(dl_text_t *t)
 	dl_text(t, "hs.cwid_requests=%u\nhs.cwid_unsent=%u\nhs.enter_attempts=%u\n", (unsigned)s.cwid_requests,
 		(unsigned)s.cwid_unsent, (unsigned)s.enter_attempts);
 	dl_text(t, "hs.starts=%u\nhs.stops=%u\n", (unsigned)s.starts, (unsigned)s.stops);
-#if CONFIG_SFR
+#else
+	dl_text(t, "hs.built=0\n");
+#endif
+}
+
+// The MMDVM hotspot's SFR mode (docs/spec/sfr.md), its own section: in the hotspot section the replies outgrew
+// DL_REPLY_MAX and the last keys were cut off
+static void sfr_section(dl_text_t *t)
+{
+#if CONFIG_HOTSPOT && CONFIG_SFR
 	hotspot_sfr_view_t f;
 
 	hotspot_sfr_get_view(&f);
@@ -182,9 +191,8 @@ static void hotspot_section(dl_text_t *t)
 		(unsigned)f.stats.tx_bursts, (unsigned)f.stats.tx_idle, (unsigned)f.stats.tx_starts,
 		(unsigned)f.stats.up_bursts, (unsigned)f.stats.up_lost);
 	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\n", (unsigned)f.stats.tx_beacons, (unsigned)f.stats.tx_gaps);
-#endif
 #else
-	dl_text(t, "hs.built=0\n");
+	dl_text(t, "sfr.built=0\n");
 #endif
 }
 
@@ -348,6 +356,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_SNMP:
 		debuglink_view_snmp(t);
+		break;
+	case DL_VIEW_SFR:
+		sfr_section(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP
