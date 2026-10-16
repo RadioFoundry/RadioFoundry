@@ -3,7 +3,7 @@
 // Time base (docs/spec/hardware-dm32.md 3.4): timer 2 runs free at APB 84 MHz with its interrupt masked and is read as
 // a cycle counter, so the millisecond clock works before the scheduler and inside critical sections. Its 32-bit count
 // wraps every 51 s; it is folded into a 64-bit count on every read and the RTOS tick hook reads it every millisecond.
-// Timer 1 is the RTOS tick, timer 3 the DMR PA one-shot (hrc_timer_oneshot).
+// Timer 1 is the RTOS tick, timer 3 the DMR PA one-shot (hrc_timer_oneshot), timer 4 the AFSK FIFO top-up.
 #include "platform.h"
 #include "hal_time.h"
 #include "FreeRTOS.h"
@@ -85,6 +85,15 @@ void hrc_timer_oneshot(uint8_t n, uint32_t us)
 	TMR_LOAD(n) = us * CYCLES_PER_US;
 	hrc_timer_ack(n);
 	TMR_CTRL(n) = TMR_CTRL_EN;
+}
+
+void hrc_timer_periodic(uint8_t n, uint32_t us)
+{
+	TMR_CTRL(n) = TMR_CTRL_INT_MASK;
+	TMR_LOAD(n) = us * CYCLES_PER_US;
+	TMR_CTRL(n) = TMR_CTRL_PERIODIC;
+	hrc_timer_ack(n);
+	TMR_CTRL(n) = TMR_CTRL_PERIODIC | TMR_CTRL_EN;
 }
 
 void hrc_timer_stop(uint8_t n)

@@ -496,6 +496,12 @@ carried no decodable sync on the SDR bench and the bench modem took the call by 
 transmitting, all three headers decoded in five runs (BENCH). Keep b7 clear during any transmission; a beep that
 starts then plays silently, and b7 comes back on at TX end if the beep is still running.
 
+The DM-32UV's APRS transmit uses the same path on purpose: during an FM transmission, with b7 set and the
+microphone muted, the FIFO's samples are the modulation (`boards/dm32/afsk_dm32.c`). A timer tops the FIFO up every
+2 ms; speaker PCM is held off the FIFO meanwhile (`hrc_audio_pcm_hold`), since its chunks would land between the
+tones. Bell 202 decoded off air from this path with a valid FCS (BENCH, `aprs.md` 13). The DTMF tone
+generator (8.3) needs no PCM, but its deviation field tops out near 1.5 kHz, short of the 3 kHz APRS wants.
+
 ### 8.5 FM receive audio to the CPU
 
 In FM (WORK_MODE 0x80) the modem copies its demodulated receive audio into the RX RAM as well as to the codec (the

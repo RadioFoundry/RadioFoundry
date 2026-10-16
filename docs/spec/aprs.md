@@ -49,7 +49,7 @@ What the boards provide today:
 |---|---|---|---|
 | DM-1701 | yes: the AT1846S tone generator retuned per symbol (`hardware-dm1701.md` 5.10) | not yet: FM audio reaches the MCU (`hardware-dm1701.md` 21), no `rx_start` | none |
 | MD-380 | not yet: needs a TX tone path (`boards/md380/config.mk`) | no | G models (`hardware-md380.md` 13) |
-| DM-32UV | no (`tx_start` NULL) | yes: the HR_C7000's FM receive audio, ungated (`modem-hrc7000.md` 8.5) | `CAP_GPS` (`hardware-dm32.md` 12) |
+| DM-32UV | yes: 8 kHz PCM through the HR_C7000's prompt FIFO into the FM modulator (`modem-hrc7000.md` 8.4) | yes: the HR_C7000's FM receive audio, ungated (`modem-hrc7000.md` 8.5) | `CAP_GPS` (`hardware-dm32.md` 12) |
 
 Everything is host tested. On the SDR bench (section 13, measured on the DM-1701): positions over DMR (LRRP and UDT)
 decode, and FM AFSK decodes with a valid FCS since the voice source fix (`hardware-dm1701.md` 5.10).
@@ -340,6 +340,12 @@ tones (about 25 Hz RMS deviation; the 1750 Hz burst likewise silent while CTCSS 
 the voice source bug in `hardware-dm1701.md` 5.10, fixed in 694249b. On ff6268b (HIL 2026-10-10) AFSK decoded off air with a valid FCS,
 twist 0.4-1.4 dB, continuous phase (6.5 degrees residual), but 7.2 kHz peak deviation at tone level 0x40; 237211a set
 0x1C (about 3.1 kHz, `hardware-dm1701.md`).
+
+DM-32UV (2026-10-16, 467.375 MHz, 25 kHz, lowest power, a canned frame through `hal_afsk_t.tx_start`): decoded off
+air with a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase residual.
+Level 50 (PCM amplitude 2750): 3.1 kHz peak, 2.2 / 2.5 kHz mark / space. Level 75: 4.5 kHz peak. PCM amplitude 5850
+and up is limited in the transmitter at 5.1 kHz peak (4.5 kHz on the tones). `test_aprs.py` itself is still to run
+there: it transmits on 2 m amateur.
 
 ## 14. Open decisions
 

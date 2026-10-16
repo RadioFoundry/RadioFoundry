@@ -224,6 +224,24 @@ void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
 void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
 // TX tone deviation (SUBVOICE_COEF b15:8) for a TX frequency and bandwidth (8.3)
 uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide);
+// --- Prompt FIFO (8.4) ---
+
+// Push one chunk (C7_PROMPT_CHUNK samples, low byte first) when the FIFO has room; false when it is full. Inline: the
+// AFSK symbol interrupt uses it
+static inline bool hrc7000_prompt_push(hrc7000_t *d, const int16_t *s)
+{
+	if ((hrc7000_rd(d, C7_AUDIO_CONTROL) & C7_AUDIO_RING_FULL) != 0) {
+		return false;
+	}
+	volatile uint8_t *f = &d->buf[C7_PROMPT_FIFO];
+	for (uint32_t i = 0; i < C7_PROMPT_CHUNK; i++) {
+		uint16_t v = (uint16_t)s[i];
+		f[2u * i] = (uint8_t)v;
+		f[2u * i + 1u] = (uint8_t)(v >> 8);
+	}
+	return true;
+}
+
 // --- FM receive audio to the CPU (8.5) ---
 
 // In FM the modem writes its demodulated receive audio, 8 kHz, into two 256-sample halves of the RX RAM in turn (high

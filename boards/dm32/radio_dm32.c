@@ -44,6 +44,7 @@ static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
 static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
 static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (dm32_aprs_listen)
+static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (dm32_afsk_tx)
 
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
@@ -306,6 +307,9 @@ static void tx_off(void)
 {
 	dmr_keyed = false;
 	pa_off();
+	if (afsk_tx) {
+		dm32_afsk_tx(false);	// the core stops the tones first; this is the safety net
+	}
 	if (mode == RADIO_MODE_FM) {
 		hrc7000_fm_idle(&modem);
 	}
@@ -415,7 +419,7 @@ static void audio(bool on)
 // silently, while transmitting
 static void ring_play(void)
 {
-	bool on = pcm_on && !transmitting;
+	bool on = (pcm_on && !transmitting) || afsk_tx;
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
 	hrc7000_audio_bits(&modem, on ? C7_AUDIO_RING_PLAY : 0, on ? 0 : C7_AUDIO_RING_PLAY);
 	hrc_irq_restore(s);
@@ -440,6 +444,26 @@ void dm32_speaker_pcm(bool on)
 		}
 	}
 	hrc_irq_restore(s);
+}
+
+// APRS AFSK (afsk_dm32.c): during an FM transmission the prompt FIFO's audio goes to the modulator (the path that put
+// beeps on DMR bursts, modem-hrc7000.md 8.4), so the tones go there with the microphone muted. A beep waits until
+// the tones end: its chunks would land between theirs. False when the radio isn't transmitting FM
+bool dm32_afsk_tx(bool on)
+{
+	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
+		return false;
+	}
+	afsk_tx = on;
+	hrc_audio_pcm_hold(on);
+	hrc7000_codec_mute(&modem, on, false);
+	ring_play();
+	return true;
+}
+
+bool dm32_prompt_push(const int16_t *s)
+{
+	return hrc7000_prompt_push(&modem, s);
 }
 
 void dm32_radio_diag(dm32_radio_diag_t *d)

@@ -595,6 +595,23 @@ static void test_fm_rx_audio(void)
 	CHECK(fm_hook_calls == 1);
 }
 
+// Prompt FIFO push (8.4): 32 samples low byte first while AUDIO_CONTROL b31 is clear; nothing written when full
+static void test_prompt_push(void)
+{
+	setup();
+	int16_t s[C7_PROMPT_CHUNK];
+	for (uint32_t i = 0; i < C7_PROMPT_CHUNK; i++) {
+		s[i] = (int16_t)(0x1234 + (int32_t)i - 0x1000 * (int32_t)(i & 1u));
+	}
+	CHECK(hrc7000_prompt_push(&dev, s));
+	CHECK(buf[C7_PROMPT_FIFO] == 0x34 && buf[C7_PROMPT_FIFO + 1] == 0x12);
+	CHECK(buf[C7_PROMPT_FIFO + 2] == (uint8_t)(s[1] & 0xFF) && buf[C7_PROMPT_FIFO + 3] == (uint8_t)((uint16_t)s[1] >> 8));
+	CHECK(buf[C7_PROMPT_FIFO + 62] == (uint8_t)(s[31] & 0xFF));
+	memset(&buf[C7_PROMPT_FIFO], 0, 64);
+	REG(C7_AUDIO_CONTROL) = C7_AUDIO_RING_FULL;
+	CHECK(!hrc7000_prompt_push(&dev, s) && buf[C7_PROMPT_FIFO] == 0);
+}
+
 int main(void)
 {
 	test_pure();
@@ -609,6 +626,7 @@ int main(void)
 	test_tx_tone();
 	test_subtone();
 	test_fm_rx_audio();
+	test_prompt_push();
 	if (failures) {
 		printf("hrc7000DmrTest: %d failures\n", failures);
 		return 1;
