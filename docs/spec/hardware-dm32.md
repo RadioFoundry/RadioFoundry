@@ -713,6 +713,12 @@ FM TX because 0x51 b15 also enables its transmitter.
 | Each DMR burst | at the modem RF TX interrupt: FD6818 0x30 = 0000 then C1FE. A one-shot timer started when the burst is armed (in the TX timeslot interrupt) fires after the DMR PA delay and then raises the band's PA select and writes DAC B (section 8.6) | BIN |
 | After each DMR burst | DAC B = 0; both PA selects low; FD6818 0x43 = 4048 (OpenDM32) or the RX bandwidth (port), 0x30 = 0000, 0x30 = BFF1 | BIN, KP |
 
+ODR departs from "Enter DMR TX" in one place: it leaves the FD6818 in RX (0x30 = BFF1) with the RX band's LNA on, and
+turns the LNA off at each burst's RF TX interrupt and back on after the burst. The hotspot keys the transmitter to
+listen (`radio_sm.c`, hotspot_arm); with C1FE and the LNAs off at key-up, the radio heard nothing until its first
+burst. Found on the DM-1801 Pro, which has the same chips (BENCH there); DMR TX off air still passes on the DM-32UV
+with the change (BENCH).
+
 Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range shares the VHF path) (KP).
 
 ### 8.6 DMR PA timer

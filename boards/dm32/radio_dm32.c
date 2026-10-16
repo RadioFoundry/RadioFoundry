@@ -34,7 +34,7 @@ static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
 static bool transmitting;
-static uint32_t tx_hz;		// FM TX frequency and bandwidth, for the TX tone deviation
+static uint32_t tx_hz;		// TX frequency: the FM tone deviation, the LNA band between DMR bursts
 static bool tx_wide;
 static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key the PA
 static volatile bool tx_uhf;
@@ -150,13 +150,19 @@ static void write_mod_bias(uint32_t hz)
 
 // ---- From the DMR interrupts ----
 
-// RF TX interrupt (tx): FD6818 idle then TX for our burst. After the burst: PA off, FD6818 back to RX
+// RF TX interrupt (tx): LNA off, FD6818 idle then TX for our burst. After the burst: PA off, FD6818 and the LNA back
+// to RX, so the radio hears the other slot (the hotspot listens while keyed)
 static void dmr_rf_switch(bool tx)
 {
 	if (!tx) {
 		pa_off();
+	} else {
+		lna(tx_hz, false);
 	}
 	fd6818_dmr_burst(&fd, tx, FD6818_BW_DMR);
+	if (!tx) {
+		lna(tx_hz, true);
+	}
 }
 
 // The PA one-shot expired: key the PA if the transmission is still on
@@ -275,20 +281,23 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_drive = bf_cal_power_level(hz, power);
-	lna(hz, false);
+	tx_hz = hz;
 	write_mod_bias(hz);
 	fd6818_set_freq(&fd, hz);
 	dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
-		// 8.5 "Enter DMR TX": the PA select and drive wait for the PA one-shot of each burst
+		// 8.5 "Enter DMR TX": the PA select and drive wait for the PA one-shot of each burst. Between bursts the radio
+		// receives: the FD6818 in RX and the LNA on until the RF TX interrupt switches to the first burst
+		// (dmr_rf_switch). In TX here, the hotspot, which keys to listen, heard nothing until its first burst
 		hrc_pin_write(PIN_MIC_PATH, false);
+		lna(hz, true);
 		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
-		fd6818_set_state(&fd, FD6818_STATE_TX);
+		fd6818_set_state(&fd, FD6818_STATE_RX);
 		dmr_keyed = true;
 	} else {
+		lna(hz, false);
 		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the C7000's
 		fd6818_fm_tx_prepare(&fd);
-		tx_hz = hz;
 		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
 			tone != NULL ? tone->value : 0);	// before FM_PTT: the modem takes the DCS code then
