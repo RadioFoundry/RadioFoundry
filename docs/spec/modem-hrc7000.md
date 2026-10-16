@@ -146,7 +146,11 @@ SYS_INTERP_LIST bits (DS):
 | 0x428–0x438 | LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS, BS_CACH | repeater / simulcast modes; never written by working firmware |
 
 Values written to LAYER2_CONTROL: **0xC0** = TX and RX enabled, passive timing (receive, follow the other side's
-slots); **0xC3** = TX and RX enabled, active TX and RX timing (we set the slot clock). Values written to
+slots); **0xC3** = TX and RX enabled, active TX and RX timing (we set the slot clock); **0xCB** = 0xC3 plus b3
+rx_master_auto_update, for `tx_listen`. The manual (DS 10.2.2.16) says b0 rx_master_mode should normally be 0, and that
+in active receive mode the receive slot edges move with the received sync only when b3 is set. With 0xC3 alone an SFR
+heard almost nothing in its listening slot while it sent (DM-1801 Pro, 2026-10-16: `L18/1`), so `tx_listen` sets b3.
+Untested on air. Values written to
 LAYER2_TXRX_CTRL: 0x00 nothing next slot; 0x40 receive next slot; 0x80 transmit next slot; 0x8040 receive next slot
 with the voice-access flag; 0x800000 release RX slot sync.
 
