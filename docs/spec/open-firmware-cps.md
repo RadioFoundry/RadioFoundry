@@ -169,6 +169,11 @@ The reply to every `C` request is a single `-`. It means "done", not "error".
 | 10 | Wait 10 ms |
 | 8, 9, other | Ignored |
 
+ODR takes `C` 6 0 and `C` 6 1 only in programming mode: after a `C` 0, with no quiet longer than the session time
+(10 s) since. Without it the reply is `-` and nothing happens (`cps.reboots_ignored` on the debug link). On a radio
+whose debug link shares the CPS's serial port, any three bytes "C 6 1" would otherwise reboot it (bench 2026-10-15).
+qdmr sends `C` 0 first (the typical session below).
+
 A typical session, as qdmr does it:
 - Read: `C` 0, `C` 1, three `C` 2 lines, `C` 3, `C` 6 3, `C` 6 2, the reads, then `C` 5.
 - Write: the same opening with `C` 6 4 instead of `C` 6 3, then `C` 6 2, the writes as prepare/data.../commit for
