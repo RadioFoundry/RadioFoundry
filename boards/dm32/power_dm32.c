@@ -91,4 +91,5 @@ const hal_power_t dm32_power = {
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,
+	.mic_level = HRC_MIC_LEVEL,	// from the mic PCM: the ADC channel D read is suspect (hardware-dm32.md 3.7)
 };

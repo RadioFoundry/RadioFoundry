@@ -155,6 +155,25 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
+#if CONFIG_DMR && CONFIG_VOX
+	case 16: {
+		// The VOX mic meter on the mic PCM (audio_pcm.c): level 0-100, the last 10 ms half's peak, halves measured,
+		// running. Reading this line doesn't start the meter; mic_level() (VOX, the view's vox.level) does
+		uint8_t lvl;
+		uint16_t pk;
+		uint32_t halves;
+		bool on;
+		hrc_audio_pcm_mic_stats(&lvl, &pk, &halves, &on);
+		put(&o, "mic lvl ");
+		put_u(&o, lvl);
+		put(&o, " pk ");
+		put_u(&o, pk);
+		put(&o, " n ");
+		put_u(&o, halves);
+		put(&o, on ? " on" : " off");
+		break;
+	}
+#endif
 	default:
 		return false;
 	}
