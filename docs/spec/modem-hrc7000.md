@@ -54,13 +54,24 @@ Offsets from 0x11000000. Values are those used by OpenDM32 (BIN) unless noted.
 | 0x110 | RF_CONTROL | b20:16 tx_pre_on (100 us steps); b13:8 rf_pre_on_tx (RF TX interrupt advance, 100 us); b5:0 rf_pre_on_rx | **0x00041F1A**: tx_pre_on 0.4 ms, RF TX interrupt **3.1 ms** before the TX burst, RF RX interrupt 2.6 ms before RX | The July build used 0x00040A0A (1.0 ms) and had bad timeslots at low power |
 | 0x114 | RF_MOD_BIAS_CTRL | b25:16 two_point_bias; b15:8 sig_reduce (Mod2 amplitude); b7:0 phase_reduce (Mod1 amplitude) | ((cal + 384) << 16) or modcal (0x4D4D before a frequency is set) | Modulation balance from calibration |
 | 0x118 | DEV_LIMITER | b15:0 | 0xFF00 (reset value) | KP |
-| 0x11C | RSSI_BIAS_VALUE | read-only per DS (rssi b31:16, ADC I/Q DC bias) | port writes 0x1381 (no effect expected) | KP |
+| 0x11C | RSSI_BIAS_VALUE | read-only per DS: rssi b31:16; b15:8 / b7:0 the measured DC bias of the ADC's I / Q inputs | port writes 0x1381 (no effect expected) | KP |
 | 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode (DS) | not written | A live check that AF reaches the ADC: a DM-1801 Pro receiving DMR reads about +1216 / -1149 (the guide expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives. On the DM-32UV that was GPIO 0x2F left high (`hardware-dm32.md` 5), which takes the FD6818's audio off the ADC (HW) |
 | 0x120 | THRESHOLD_VALUE | b28:24 sync ratio; b23:16 sync low threshold; b15:8 sync high threshold; b7:0 signal detect | **0x0978786F** | |
 | 0x164 | RECV_INFO_COUNT | b31:24 sync errors; b8 select FSK error/EVM; b7:0 FSK error | read for BER/EVM only | DS |
 | 0x168 | (undocumented, "REG_X06") | | 0x14 | BIN |
 | 0x1B0 | RX_IF_FREQ | b23:0 | 0x0BB800 | |
 | 0x1B4 | RF_RECV_DELAY | b18:0, 100 ns steps | **0x36B0** (1.4 ms). DS says 2000 (0.2 ms) for AF mode; the working value is 0x36B0 | BIN |
+
+**AF receive input (DS, HR_C7000 guide document 2).** In AF mode the RF chip's demodulated audio goes to the AF ADC's
+P input, and a DAC output biases its N input; on the DM-1801 Pro that is DAC C (`hardware-dm1801pro.md` 5.7).
+Document 1 says the AF bias is set through SIG_CENTER instead. A DC step on either input moves the PHASE_OUT center,
+which the DMR receiver reads as a frequency offset. AF mode has no frequency offset compensation: RX_IF_FREQ applies
+to IF mode only.
+
+**Reference oscillator control (MOD1, DS).** In receive the MOD1 level is RF_MOD_BIAS_CTRL b25:16 over 0-3.3 V, which
+holds only while DAC_CONTROL keeps that DAC powered. In TX it is SIG_CENTER b31:24, ±422 mV around 1.65 V in 3.3 mV
+steps; RF_MODE b9 sets where the ramp starts (0 = 1.65 V). With cal + 384 in b25:16 both states give about the same
+voltage, within one step on the DM-1801 Pro (I).
 
 ### 2.2 Sync words
 
@@ -280,7 +291,7 @@ Ordered; (register, value, why). OpenDM32 writes the whole DMR block once here a
 | 11 | RF_MODE | 0x03269860 | two-point TX, AF RX, dual RX channels | BIN |
 | 12 | DEV_LIMITER | 0x0000FF00 | | KP |
 | 13 | SYS_SOFT_RSTN | 0x190 | see the reset-bit caveat in `hardware-dm32.md` 16 | BIN, KP |
-| 14 | DAC_CONTROL (0x070) | 0x8000001B | baseband DAC set-up (undocumented bits) | KP |
+| 14 | DAC_CONTROL (0x070) | 0x8000001B | baseband DAC set-up: b31 offset code; b5 / b4 power down DAC A / B; b2 / b1 low power DAC A / B (1 = off or low power, DS). So DAC A on at full power, DAC B powered down and low power | KP |
 | 15 | ADC_CONTROL (0x074) | |= 0x41C3 | baseband ADC set-up | KP |
 | 16 | AUDIO_CONTROL (0x080) | 0x02 | I2S slave (reset default), all audio paths off | KP, BIN |
 | 17 | AUDIO_BUFFER_CLR (0x084) | 0x03 | clear vocoder encode and decode buffers | KP, BIN |
