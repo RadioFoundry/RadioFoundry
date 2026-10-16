@@ -86,7 +86,10 @@ So the tool uses dmrconf only offline (encode, decode) and writes with `tools/cp
    restart). Wait for ODR, read back, build `readback-odr.dfu` from the read and `decode` it; the counts must match
    what was written (after ODR's limits). Byte differences are counted and logged.
 5. ID database: `encode-db` to `iddb.dfu` (around the codeplug's radio ID, or `--id`), the area saved to
-   `iddb-area-before.bin`, then written the same way.
+   `iddb-area-before.bin`, then written the same way. ODR's window ends at 0xF00000 (image 0x800000), below qdmr's
+   UV380 limit, so a database that runs past it (the full world list, about 8.5 MB) is encoded again with `--limit`
+   set to the records that fit, about 300,000 at 27 bytes; dmrconf keeps the ones nearest the radio's ID. A
+   `--db-limit` given by the user is left as it is.
 
 Every step stops on failure. The work directory (`~/ODR-DM32-migration/<date-time>/`: `migration.log`,
 `dmrconf.log` with every dmrconf command and its output, `state.json`, the backups and reports) is never deleted.
