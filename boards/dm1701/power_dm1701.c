@@ -8,6 +8,7 @@
 #include "pins.h"
 #include "hal_time.h"
 #include "radio/power_switch.h"
+#include "audio/miclevel/miclevel.h"
 
 enum { CH_VOLUME, CH_BATTERY, CH_MIC, CH_TEMP, CH_COUNT };
 #define SCANS			16		// about 220 us per scan at 9 MHz ADC clock and 480-cycle sampling: 3.5 ms window
@@ -204,18 +205,11 @@ int16_t dm1701_temperature_c10(void)
 	return (int16_t)(250 + (raw - 943) * 100 / 31);
 }
 
-// Mic level 0..100 for VOX (hal_power_t.mic_level): 20 log10 of the raw reading over the ADC's 72 dB, from an integer
-// log2 (msb plus a linear mantissa, within 0.1 bit). Uncalibrated: the VOX thresholds want a bench check
+// Mic level 0..100 for VOX (hal_power_t.mic_level): the raw reading on the 12-bit ADC's 72 dB log scale.
+// Uncalibrated: the VOX thresholds want a bench check
 static uint8_t mic_level(void)
 {
-	uint32_t x = adc_read(CH_MIC);
-	if (x == 0) {
-		return 0;
-	}
-	uint32_t msb = 31u - (uint32_t)__builtin_clz(x);
-	uint32_t log2_q8 = msb * 256u + ((x << 8) >> msb) - 256u;	// log2(x) x 256
-	uint32_t level = log2_q8 * 100u / (12u * 256u);			// 4095 -> 12 bits -> 100
-	return (uint8_t)(level > 100u ? 100u : level);
+	return miclevel_log(adc_read(CH_MIC), 12);
 }
 
 const hal_power_t dm1701_power = {

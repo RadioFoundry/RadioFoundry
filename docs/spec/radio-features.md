@@ -108,7 +108,9 @@ On FM channels (all, or those with the codeplug VOX flag) the microphone level (
 or above `100 - 8 x vox_level` for 2 polls (50 ms) keys up; below it for `vox_tail_ms` unkeys (with the roger beep
 if on). Received audio, MONITOR, and 500 ms after a reception never key VOX (the speaker into the microphone). PTT
 works as usual and wins. The level comes from the board's `board.power->mic_level` hook; a board without it has no
-VOX (DM-1701: `hardware-dm1701.md` 11.3, not verified on the bench).
+VOX (DM-1701: `hardware-dm1701.md` 11.3, not verified on the bench). Boards put their reading on the hal's scale with
+`miclevel_log()` in `drivers/audio/miclevel/miclevel.h` (100 / 12 steps per bit, about 0.72 dB per step); the DM-1701
+and MD-380 pass their 12-bit ADC mic tap straight in.
 The Quick VOX tile (FM) turns the `vox` setting to all or off; `vox_on` in the view says whether VOX is armed on
 the current channel. On a board without the hook the tile refuses to turn it on ("VOX: not on this radio yet")
 rather than show "VOX on" for a VOX that never keys.
