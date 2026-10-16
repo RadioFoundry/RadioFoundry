@@ -18,6 +18,7 @@
 #define TONE_DIGIT_1		1u		// 697 + 1209 Hz: FM_TONE1 and FM_TONE3 high halves
 #define FM_TONE1_DEFAULT	0x05930629u
 #define FM_TONE3_DEFAULT	0x09AC0AB0u
+#define SUBAUDIO_DEV_RESET	0x28u		// SUBVOICE_COEF b15:8 at reset: 300 Hz CTCSS (8.2)
 
 uint16_t hrc7000_mod_dc(uint8_t tx_center)
 {
@@ -133,7 +134,10 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_wr(d, C7_FM_TONE2, 0x06D10787u);
 	hrc7000_wr(d, C7_FM_TONE3, FM_TONE3_DEFAULT);
 	hrc7000_wr(d, C7_FM_TONE4, 0x0BD10D10u);
-	d->subaudio_dev = (uint8_t)(hrc7000_rd(d, C7_SUBVOICE_COEF) >> 8);	// the chip's own: 300 Hz CTCSS at 12.5 kHz
+	// The reset value, not what the register holds: a restart that doesn't reset the modem (the boot stub's) finds the
+	// last transmission's value there, and at 25 kHz that is twice the narrow one (0xFF on the DM-32UV: 1.9 kHz CTCSS)
+	d->subaudio_dev = SUBAUDIO_DEV_RESET;
+	hrc7000_wr(d, C7_SUBVOICE_COEF, (hrc7000_rd(d, C7_SUBVOICE_COEF) & ~0xFF00u) | (SUBAUDIO_DEV_RESET << 8));
 	hrc7000_set_mic_gain(d, mic_gain_db);
 }
 
