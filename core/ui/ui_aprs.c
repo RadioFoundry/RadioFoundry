@@ -35,6 +35,12 @@ static const char *const pos_names[] = { "Auto", "GPS", "Computer", "Fixed" };
 static const char *const region_names[APRS_REGION_COUNT] = { "N America", "Europe", "Australia", "New Zealand",
 							      "Japan", "China", "Custom" };
 
+// The radio can send APRS on RF (a board with an AFSK transmit path; some only receive)
+static bool rf_send(void)
+{
+	return board.afsk != NULL && board.afsk->tx_start != NULL;
+}
+
 static const char *why_text(uint8_t block)
 {
 	switch (block) {
@@ -134,14 +140,14 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 		}
 		break;
 	case AP_POWER:
-		if (board.afsk == NULL) {
+		if (!rf_send()) {
 			it->flags |= UI_ITEM_DIM;	// no APRS on RF here (no transmit tone path)
 		} else {
 			sb_str(&b, c.power == 0 ? "As channel" : ui_power_name((uint8_t)(c.power - 1u)));
 		}
 		break;
 	case AP_PATH:
-		if (board.afsk == NULL) {
+		if (!rf_send()) {
 			it->flags |= UI_ITEM_DIM;	// the path is for RF packets only
 		} else {
 			sb_str(&b, path_names[c.path < APRS_PATH_COUNT ? c.path : 0]);
@@ -202,13 +208,13 @@ static void aprs_select(uint16_t i, bool hold)
 		}
 		break;
 	case AP_POWER:
-		if (board.afsk == NULL) {
+		if (!rf_send()) {
 			return;
 		}
 		c.power = (uint8_t)((c.power + 1u) % (board.power_count + 1u));	// as the channel, then each level
 		break;
 	case AP_PATH:
-		if (board.afsk == NULL) {
+		if (!rf_send()) {
 			return;
 		}
 		c.path = (uint8_t)((c.path + 1u) % APRS_PATH_COUNT);	// none, then more hops; WIDE2-2 wraps to none

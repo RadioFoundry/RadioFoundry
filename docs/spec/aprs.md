@@ -150,8 +150,9 @@ The receive setting and messaging default to on when the radio can receive (`apr
 `CONFIG_APRS_RX` and one of the two paths exists).
 
 The demodulator (`afsk.c`): 8-48 kHz samples, a correlator per tone with hysteresis and a PLL that tightens once a
-flag is seen. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio): 90 / 10 % of frames at 10 dB SNR, 97 / 61
-% at 12 dB, 100 / 94 % at 14 dB. Squelch gated audio loses the start of a transmission until the squelch opens; the
+flag is seen. Integer arithmetic only: the float version's soft-float square roots and divisions took most of the
+DM-32UV's CPU (no FPU) at 8 kHz. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio): 93 / 9 % of frames at
+10 dB SNR, 97 / 67 % at 12 dB, 100 / 94 % at 14 dB (the float version: 93 / 12, 97 / 63, 100 / 94). Squelch gated audio loses the start of a transmission until the squelch opens; the
 sender's TX delay (flags before the frame) covers that. The debug link's `aprs.rx_peak`, `rx_bits` and HDLC counters
 tell missing audio from a demodulator that finds no frame.
 

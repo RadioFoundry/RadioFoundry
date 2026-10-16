@@ -172,7 +172,7 @@ static void test_frames(void)
 	CHECK(chip.protocol_errors == 0);
 	CHECK(dev.state == 0xBFF1 && dev.writes == 1);
 	CHECK(chip.crit_depth == 0 && chip.crit_max == 1);
-	// The init table's 0xB3 / 0xB4 / 0xC7 addresses go out unmasked
+	// The address goes out unmasked (bit 7 set is a read cycle on the chip: the sequences never send one)
 	fd6818_write(&dev, 0xB3, 0xFE00);
 	CHECK(chip.n == 2 && chip.log[1].reg == 0xB3 && chip.log[1].val == 0xFE00);
 
@@ -191,10 +191,13 @@ static void test_sequences(void)
 	reset_chip();
 	fd6818_attach(&dev, &bus);
 	fd6818_init(&dev);
-	CHECK(chip.n == 57 + 20);
+	CHECK(chip.n == 53 + 20);
 	CHECK(chip.log[0].reg == 0x00 && chip.log[0].val == 0x8000);	// soft reset first
-	CHECK(chip.log[56].reg == 0x09 && chip.log[56].val == 0xF09F);	// last init entry
-	CHECK(chip.log[76].reg == 0x48 && chip.log[76].val == 0xBBBF);	// last post-init entry
+	CHECK(chip.log[52].reg == 0x09 && chip.log[52].val == 0xF09F);	// last init entry
+	for (int i = 0; i < chip.n; i++) {
+		CHECK(chip.log[i].reg < 0x80);	// no read cycle disguised as a write (the earlier 0xB3 / 0xB4 entries)
+	}
+	CHECK(chip.log[72].reg == 0x48 && chip.log[72].val == 0xBBBF);	// last post-init entry
 	CHECK(chip.protocol_errors == 0);
 
 	chip.n = 0;
@@ -227,6 +230,9 @@ static void test_sequences(void)
 	int i = find_last(0x43);
 	CHECK(i >= 0 && chip.log[i].val == 0x4048);
 	CHECK(chip.log[chip.n - 1].reg == 0x47 && chip.log[chip.n - 1].val == 0x0140);
+	for (int k = 0; k < chip.n; k++) {
+		CHECK(chip.log[k].reg < 0x80);	// the earlier 0xC7 entry was a read cycle
+	}
 	chip.n = 0;
 	fd6818_set_mode(&dev, FD6818_MODE_FM);
 	i = find_last(0x43);
@@ -235,6 +241,24 @@ static void test_sequences(void)
 	chip.n = 0;
 	fd6818_set_tx_ctcss(&dev, 885);
 	CHECK(chip.n == 2 && chip.log[0].reg == 0x07 && chip.log[0].val == 1827 && chip.log[1].val == 0x9045);
+}
+
+// Receiver power saving in the radio's own order: idle, then 0x37 low; waking puts 0x37 back and leaves the state idle
+static void test_rx_sleep(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach(&dev, &bus);
+	fd6818_rx_sleep(&dev, true, FD6818_MODE_FM);
+	CHECK(chip.n == 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0 && chip.log[1].reg == 0x37 &&
+		chip.log[1].val == 0x1D11);
+	CHECK(dev.state == FD6818_STATE_IDLE);
+	chip.n = 0;
+	fd6818_rx_sleep(&dev, true, FD6818_MODE_DMR);
+	CHECK(chip.n == 2 && chip.log[1].val == 0x1D00);
+	chip.n = 0;
+	fd6818_rx_sleep(&dev, false, FD6818_MODE_FM);
+	CHECK(chip.n == 2 && chip.log[0].reg == 0x37 && chip.log[0].val == 0x1F1F && chip.log[1].val == 0x1F0F);
 }
 
 // RX sub-audio set-up in the radio's own order, and the 0x0C detect bits
@@ -341,6 +365,7 @@ int main(void)
 	test_frames();
 	test_sequences();
 	test_rx_tones();
+	test_rx_sleep();
 	if (failures) {
 		printf("fd6818Test: %d failures\n", failures);
 		return 1;

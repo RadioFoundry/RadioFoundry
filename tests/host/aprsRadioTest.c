@@ -139,7 +139,7 @@ static void a_tx_stop(void)
 	hw.stops++;
 	hw.afsk_busy = false;
 }
-static const hal_afsk_t fake_afsk = { .tx_start = a_tx_start, .tx_busy = a_tx_busy, .tx_stop = a_tx_stop };
+static hal_afsk_t fake_afsk = { .tx_start = a_tx_start, .tx_busy = a_tx_busy, .tx_stop = a_tx_stop };	// a test swaps it
 
 // The PCM stream (no receive path of the AFSK's own): FM receive audio on its input when the tap says so
 static struct {
@@ -985,6 +985,75 @@ static void test_rx_stream(void)
 	CHECK(sm.view.state == RS_IDLE);
 	fake_tap.caps = 0;
 }
+// A board with its own receive path and no transmit one (tx_start NULL, as the DM-32UV): its audio reaches the
+// demodulator at its own rate, nothing is sent on RF and the transmitter is never keyed for APRS
+static struct {
+	const int16_t *s;
+	size_t n, pos;
+	int starts, stops;
+} brx;
+static bool b_rx_start(void) { brx.starts++; return true; }
+static void b_rx_stop(void) { brx.stops++; }
+static uint16_t b_rx_read(int16_t *buf, uint16_t max)
+{
+	uint16_t k = 0;
+	while (k < max && k < 200u && brx.pos < brx.n) {	// 25 ms at 8 kHz per poll
+		buf[k++] = brx.s[brx.pos++];
+	}
+	return k;
+}
+
+static void test_rx_board_only(void)
+{
+	hal_afsk_t saved = fake_afsk;
+	fake_afsk = (hal_afsk_t){ .rx_rate_hz = 8000, .rx_start = b_rx_start, .rx_read = b_rx_read, .rx_stop = b_rx_stop };
+	memset(&brx, 0, sizeof(brx));
+	reset();
+	CHECK(aprs_can_receive());
+	chan.rx_hz = chan.tx_hz = APRS_HZ;
+	settings_init();
+	radio_sm_init(&sm, now);
+	strcpy(cp_name, "N0TST");
+	configure(60, false);
+	run(200);
+	CHECK(aprs_rx_listening() && brx.starts == 1);
+	static uint8_t tones[256];
+	static int16_t audio[24000];
+	const char *line = "K1ABC-9>APRS,WIDE2-1:!4903.50N/07201.75W-Own path";
+	ax25_frame_t f;
+	uint8_t frame[AX25_FRAME_MAX];
+	CHECK(ax25_from_tnc2(line, strlen(line), &f));
+	f.dst.h = true;
+	size_t n = ax25_encode(&f, frame, sizeof(frame));
+	hdlc_enc_t e;
+	hdlc_enc_init(&e, tones, sizeof(tones));
+	CHECK(hdlc_enc_flags(&e, 30) && hdlc_enc_frame(&e, frame, n) && hdlc_enc_flags(&e, 3));
+	afsk_mod_t m;
+	afsk_mod_init(&m, 8000);
+	memset(audio, 0, sizeof(audio));
+	size_t k = afsk_mod(&m, tones, e.nbits, 8000, audio + 800, sizeof(audio) / sizeof(audio[0]) - 1600);
+	CHECK(k > 0);
+	brx.s = audio;
+	brx.n = k + 1600;
+	run(3000);
+	aprs_station_t st;
+	CHECK(aprs_station_count() == 1 && aprs_station(0, &st) && strcmp(st.call, "K1ABC-9") == 0);
+	// A beacon can't go out on RF: blocked, never keyed
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.block == APRS_NO_AFSK);
+	aprs_send_now();
+	run(60000);
+	CHECK(hw.tx_calls == 0 && !hw.keyed && hw.starts == 0);
+	// Receive off: the path stops
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.rx_on = false;
+	aprs_set_cfg(&c, now);
+	run(200);
+	CHECK(!aprs_rx_listening() && brx.stops == 1);
+	fake_afsk = saved;
+}
 #endif
 
 int main(void)
@@ -1007,6 +1076,7 @@ int main(void)
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();
 	test_rx_stream();
+	test_rx_board_only();
 #endif
 	printf("# aprsRadioTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

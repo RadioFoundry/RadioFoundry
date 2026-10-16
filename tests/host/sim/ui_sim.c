@@ -309,7 +309,15 @@ static hal_power_t power = { .battery_pct = p_battery };
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
-static const hal_afsk_t afsk;	// present (the APRS RF rows are live), never called: the UI doesn't key
+static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
+{
+	(void)t; (void)n; (void)baud; (void)mark; (void)space; (void)level;
+	return false;
+}
+static bool afsk_tx_busy(void) { return false; }
+static void afsk_tx_stop(void) {}
+// A transmit path (the APRS RF rows are live); the UI doesn't key, so it never sends
+static const hal_afsk_t afsk = { .tx_start = afsk_tx_start, .tx_busy = afsk_tx_busy, .tx_stop = afsk_tx_stop };
 
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,

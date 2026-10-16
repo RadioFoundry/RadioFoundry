@@ -72,6 +72,7 @@ typedef struct {
 #define FD6818_REG_CSS_STATUS	0x0C	// b10 CTCSS, b14 DCS normal, b15 DCS inverted detected
 #define FD6818_REG_BAND_A	0x1A
 #define FD6818_REG_STATE	0x30
+#define FD6818_REG_POWER	0x37	// block enables: 0x1F0F receive, 0x1D11 / 0x1D00 receiver asleep (FM / DMR)
 #define FD6818_REG_FREQ_LO	0x38	// 10 Hz units, low 16 bits
 #define FD6818_REG_FREQ_HI	0x39
 #define FD6818_REG_BAND_B	0x40
@@ -149,6 +150,10 @@ void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10);
 // also turns the chip's sub-audio transmitter on, so a radio that makes its tones elsewhere sets NONE before TX
 void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value);
 bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type);
+// Receiver power saving (8.8, the radio's own sequence): sleep = idle, then 0x37 to its low-power word (FM 0x1D11,
+// DMR 0x1D00); wake = 0x37 back to the receive word (0x1F1F, then 0x1F0F) with the state still idle: the caller
+// retunes and sets the RX state next (fd6818_set_freq, fd6818_set_state)
+void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode);
 // From an interrupt: idle then TX, or idle then RX with the bandwidth (DMR per-burst switching, 8.5)
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw);
 

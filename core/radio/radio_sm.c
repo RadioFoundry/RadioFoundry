@@ -2154,7 +2154,8 @@ enum { APRS_RF_OFF = 0, APRS_RF_LISTEN, APRS_RF_KEYUP, APRS_RF_SEND };
 static bool aprs_can_start(const radio_sm_t *sm)
 {
 	if (sm->aprs_phase != APRS_RF_OFF || sm->ptt || sm->hotspot || sm->view.state != RS_IDLE || sm->view.monitor ||
-	    sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL) {
+	    sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL ||
+	    board.afsk->tx_start == NULL) {
 		return false;
 	}
 #if CONFIG_SCAN
