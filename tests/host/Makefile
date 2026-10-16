@@ -254,15 +254,22 @@ run-flash: codeplugTest calibrationTest calCurveTest
 	./calCurveTest
 .PHONY: run-flash
 
-# The AT1846S driver: frequency word, DCS Golay word, register cache and write sequences, on a fake bus
-TESTS   += at1846sTest
+# The AT1846S driver: frequency word, register cache and write sequences, on a fake bus
+TESTS   += at1846sTest subaudioTest
 
-at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/rf/at1846s/at1846s.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c
+SUBAUDIO := $(ROOT)/drivers/rf/subaudio/subaudio.c
+
+at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/rf/at1846s/at1846s.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(SUBAUDIO)
+
+# The sub-audio math the RF drivers share: the DCS Golay word
+subaudioTest: subaudioTest.c $(SUBAUDIO) $(ROOT)/drivers/rf/subaudio/subaudio.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ subaudioTest.c $(SUBAUDIO)
 
 run: run-rf
-run-rf: at1846sTest
+run-rf: at1846sTest subaudioTest
 	./at1846sTest
+	./subaudioTest
 .PHONY: run-rf
 
 # The MD-380's chips (docs/spec/hardware-md380.md): the SKY72310 synthesizer's divider words against the data sheet
