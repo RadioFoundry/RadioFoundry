@@ -19,6 +19,8 @@ uint32_t input_idle_ms(void);
 // Raw state for the diagnostics page: physical key bits held now, encoder detents since start
 uint32_t input_raw_keys(void);
 int32_t input_encoder_total(void);
+// PTT presses the key engine produced since start, the blocked ones included (each is also in the debug log)
+uint32_t input_ptt_downs(void);
 // The board's encoder decoder counts (false: none) and how often the UI's queue was full and detents waited for the
 // next scan (debug link: input.enc_*)
 bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred);
