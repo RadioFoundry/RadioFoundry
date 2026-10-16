@@ -63,7 +63,8 @@ size_t debuglink_cmd_stub(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 			out[0] = DL_ST_UNAVAILABLE;
 			return 1;
 		}
-		dl_stub_init(&stub, region, size, (uint32_t)(uintptr_t)region);
+		uint32_t run = s->stub_run_addr != 0 ? s->stub_run_addr : (uint32_t)(uintptr_t)region;
+		dl_stub_init(&stub, region, size, run);
 		ready = true;
 	}
 	bool enter = false;
