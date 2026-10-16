@@ -490,6 +490,12 @@ ODR plays all speaker PCM through this FIFO (`platform/hrc7000/audio_pcm.c`). Th
 0x180000A0 (AUDIO_CONTROL b5, section 3) gave rough, choppy beeps on the DM-1801 Pro with every sample layout tried,
 with no queue underruns (BENCH).
 
+The prompt path also feeds the TX modulator: with AUDIO_CONTROL b7 set during a DMR transmission, the beep's audio
+rides on the 4FSK. On the DM-32UV the talk permit tone overlapped the second and third voice LC headers, which then
+carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while
+transmitting, all three headers decoded in five runs (BENCH). Keep b7 clear during any transmission; a beep that
+starts then plays silently, and b7 comes back on at TX end if the beep is still running.
+
 ---
 
 ## 9. The 2026 fixes (what made DMR work)

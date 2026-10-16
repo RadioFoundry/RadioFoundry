@@ -47,6 +47,7 @@ static bool rx_audio;		// the squelch is open (the radio's audio hook)
 #define AMP_PCM		0x02u	// speaker PCM
 
 static void speaker_source(void);
+static void ring_play(void);
 
 // ---- FD6818 bus ----
 
@@ -280,6 +281,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		pa_key();
 	}
 	transmitting = true;
+	ring_play();
 	return true;
 }
 
@@ -291,6 +293,7 @@ static void tx_off(void)
 		hrc7000_fm_idle(&modem);
 	}
 	transmitting = false;
+	ring_play();	// a beep that started during the transmission is heard from here on
 	if (have_rx) {
 		subtone_t t = rx_tone;
 		rx(rx_hz, rx_bw, &t);
@@ -364,6 +367,18 @@ static void audio(bool on)
 	}
 }
 
+// The codec plays the speaker PCM only outside a transmission: the HR_C7000 mixes its ring playback into the TX
+// modulator, so a beep during DMR TX (the talk permit tone) put audio on the 4FSK and the bursts it overlapped lost
+// their sync (checked on the SDR bench: the voice LC headers sent during the tone didn't decode). The beep still runs,
+// silently, while transmitting
+static void ring_play(void)
+{
+	bool on = pcm_on && !transmitting;
+	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
+	hrc7000_audio_bits(&modem, on ? C7_AUDIO_RING_PLAY : 0, on ? 0 : C7_AUDIO_RING_PLAY);
+	hrc_irq_restore(s);
+}
+
 // Speaker PCM (a beep, DMR voice): the codec plays the CPU's samples from the prompt FIFO, the speaker listens to the
 // codec, and the amplifier stays on for it whatever the squelch does. The modem's own FM playback is not used
 void dm32_speaker_pcm(bool on)
@@ -371,7 +386,8 @@ void dm32_speaker_pcm(bool on)
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
 	if (on != pcm_on) {
 		pcm_on = on;
-		hrc7000_audio_bits(&modem, on ? C7_AUDIO_RING_PLAY : 0, on ? C7_AUDIO_FM_PLAY : C7_AUDIO_RING_PLAY);
+		hrc7000_audio_bits(&modem, 0, on ? C7_AUDIO_FM_PLAY : 0);
+		ring_play();
 		// Off: the amplifier first, so the FD6818's squelched noise doesn't come through as the source switches back
 		if (!on) {
 			amp(AMP_PCM, false);
