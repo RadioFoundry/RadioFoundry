@@ -8,7 +8,7 @@
 
 import { h, svg, t } from "./dom.js";
 
-// led: off | wait (slow yellow) | busy (fast yellow) | done (three green flashes) | green (steady)
+// led: off | wait (slow orange) | busy (fast orange) | done (three green flashes) | green (steady)
 // screen: off | loader ("PC Loader Connected") | on | any (the state doesn't matter yet: no screen line in the caption)
 // knob: null | "cycle" (off, then on) | "on"
 // note: a line for the caption in place of the LED's, while the LED says nothing

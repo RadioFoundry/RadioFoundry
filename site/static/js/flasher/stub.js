@@ -30,7 +30,7 @@ export const MEM = {
 	progmem: { base: SSI_PROG, cs: null, size: 0x100000, name: "program memory" },
 	q128: { base: SSI_DATA, cs: 18, size: 0x1000000, name: "data memory" },
 };
-// played when a run finishes: three green flashes, then the slow yellow blink resumes
+// played when a run finishes: three green flashes, then the slow orange blink resumes
 export const DONE_LED = [[0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150]];
 
 const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
@@ -426,7 +426,7 @@ export class Stub {
 		return (((v0 - v1) >>> 0) / (performance.now() - t0)) * 1000;
 	}
 
-	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs make yellow.
+	// Status blink: slow while waiting (500 ms phases), fast while data moves (125 ms). Both LEDs make orange.
 	async setupLed(red, green) {
 		let hz = await this.timerHz();
 		if (!(hz > 1e6 && hz < 4e8)) hz = 24e6;
