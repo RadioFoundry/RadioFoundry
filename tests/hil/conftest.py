@@ -69,9 +69,9 @@ def pytest_addoption(parser):
                 help="test_aprs on air: the licensed operator's callsign ($ODR_APRS_CALL), set as the RAM-only test "
                      "call (never saved)")
     g.addoption("--aprs-ssid", type=int, default=15, help="test_aprs on air: the SSID sent (restored afterwards)")
-    g.addoption("--aprs-test-mhz", type=float, default=145.090,
-                help="MHz: test_aprs AFSK frequency, a 2 m packet simplex channel that is not an APRS frequency "
-                     "(test_aprs.py docstring); never 144.390")
+    g.addoption("--aprs-test-mhz", type=float, default=446.050,
+                help="MHz: test_aprs AFSK frequency, a 2 m or 70 cm amateur simplex frequency that is not an APRS "
+                     "frequency (test_aprs.py docstring); never 144.390")
     g.addoption("--aprs-dmr-dst", type=int, default=9990301,
                 help="test_aprs DMR position: the destination ID (the bench modem listens to any)")
 
