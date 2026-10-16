@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // AT1846S RF transceiver driver (docs/spec/hardware-dm1701.md section 5; AT1846S datasheet and programming guide)
 #include "at1846s.h"
+#include "rf/subaudio/subaudio.h"
 
 #define REG_PAGE	0x7F
 #define REG_CTRL	0x30
@@ -112,8 +113,6 @@ static const uint16_t ctrl_values[][2] = {
 	[AT1846S_STATE_DMR_TX] = { 0x60C6, 0x60C6 },
 };
 
-#define DCS_GOLAY_POLY	0xC75u	// x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1
-#define DCS_MARKER	0x800u	// word bits 11:9 = 100
 #define RX_DETECT_MASK	0x001Fu	// reg 0x3A bits 4:0
 #define RX_DETECT_BASE	0x0003u	// the mode tables' value for those bits
 #define TX_SEL_KEEP	0xF9FFu	// reg 0x4E: everything but bits 10:9
@@ -131,18 +130,6 @@ uint32_t at1846s_freq_word(uint32_t hz)
 uint16_t at1846s_state_value(at1846s_bw_t bw, at1846s_state_t state)
 {
 	return ctrl_values[state][bw == AT1846S_BW_25K ? 1 : 0];
-}
-
-uint32_t at1846s_dcs_word(uint16_t code)
-{
-	uint32_t data = DCS_MARKER | (code & 0x1FFu);
-	uint32_t rem = data << 11;
-	for (int bit = 22; bit >= 11; bit--) {
-		if (rem & (1u << bit)) {
-			rem ^= DCS_GOLAY_POLY << (bit - 11);
-		}
-	}
-	return (rem << 12) | data;
 }
 
 uint8_t at1846s_ctcss_threshold(uint16_t tone_reg)
@@ -353,7 +340,7 @@ bool at1846s_set_state(at1846s_t *dev, at1846s_state_t state)
 
 static bool dcs_code_regs(at1846s_t *dev, uint16_t code)
 {
-	uint32_t word = at1846s_dcs_word(code);
+	uint32_t word = subaudio_dcs_word(code);
 	bool ok = at1846s_write(dev, 0, 0x4B, (uint16_t)(word >> 16));
 	ok &= at1846s_write(dev, 0, 0x4C, (uint16_t)(word & 0xFFFFu));
 	return ok;

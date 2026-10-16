@@ -3,6 +3,7 @@
 // FD6818 transceiver driver (docs/spec/hardware-dm32.md 8)
 #include <stddef.h>
 #include "fd6818.h"
+#include "rf/subaudio/subaudio.h"
 
 #define READ_BIT	0x80u
 #define BIT_US		1u	// clock low and high time
@@ -259,15 +260,55 @@ void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10)
 	fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x9045);	// TX CTCSS on, gain 0x45
 }
 
-void fd6818_set_rx_ctcss(fd6818_t *dev, uint16_t hz_x10)
+// 0x51: b15 sub-audio on, b13 DCS inverted, b12 CTCSS (0 = DCS); b6:0 gain
+#define SUBAU_ON	0x8000u
+#define SUBAU_DCS_INV	0x2000u
+#define SUBAU_CTCSS	0x1000u
+#define SUBAU_GAIN	0x45u
+#define CTCSS_WORD_ALT	0x2000u		// 0x07 bit 13: the second tone word (the tail tone)
+#define DCS_RATE_WORD	0x0AD7u		// 134.4 Hz, the DCS bit rate
+#define DCS_HIGH_HALF	0x8000u
+
+void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value)
 {
-	if (hz_x10 == 0) {
-		fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x0000);
-		return;
+	switch (type) {
+	case FD6818_TONE_CTCSS:
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, fd6818_ctcss_word(value));
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, CTCSS_WORD_ALT | 0x01CEu);
+		fd6818_write(dev, FD6818_REG_CSS_THRESH, 0x028F);
+		fd6818_write(dev, FD6818_REG_SUBAUDIO, SUBAU_ON | SUBAU_CTCSS | SUBAU_GAIN);
+		break;
+	case FD6818_TONE_DCS:
+	case FD6818_TONE_DCS_INV: {
+		uint32_t word = subaudio_dcs_word(value);
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, DCS_RATE_WORD);	// the rate first
+		fd6818_write(dev, FD6818_REG_DCS_CODE, (uint16_t)(word & 0xFFFu));
+		fd6818_write(dev, FD6818_REG_DCS_CODE, (uint16_t)(DCS_HIGH_HALF | ((word >> 12) & 0xFFFu)));
+		fd6818_write(dev, FD6818_REG_SUBAUDIO,
+			(uint16_t)(SUBAU_ON | (type == FD6818_TONE_DCS_INV ? SUBAU_DCS_INV : 0u) | SUBAU_GAIN));
+		break;
 	}
-	fd6818_write(dev, FD6818_REG_CTCSS_FREQ, fd6818_ctcss_word(hz_x10));
-	fd6818_write(dev, 0x52, 0x028F);			// detect thresholds
-	fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x1000);
+	default:
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, 0x0470);
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, CTCSS_WORD_ALT | 0x01CEu);
+		fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x0000);
+		break;
+	}
+}
+
+bool fd6818_tone_found(uint16_t r0c, fd6818_tone_t type)
+{
+	switch (type) {
+	case FD6818_TONE_CTCSS: return (r0c & (1u << 10)) != 0;
+	case FD6818_TONE_DCS: return (r0c & (1u << 14)) != 0;
+	case FD6818_TONE_DCS_INV: return (r0c & (1u << 15)) != 0;
+	default: return true;
+	}
+}
+
+bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type)
+{
+	return type == FD6818_TONE_NONE || fd6818_tone_found(fd6818_read(dev, FD6818_REG_CSS_STATUS), type);
 }
 
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw)

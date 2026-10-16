@@ -57,8 +57,6 @@ typedef struct {
 uint32_t at1846s_freq_word(uint32_t hz);
 // Reg 0x30 value for a state at a bandwidth (5.3)
 uint16_t at1846s_state_value(at1846s_bw_t bw, at1846s_state_t state);
-// The 23-bit DCS word: Golay(23,12) parity bits 22:12, the marker 100 in 11:9, the 9-bit code in 8:0 (5.7)
-uint32_t at1846s_dcs_word(uint16_t code);
 // Reg 0x5B match / unmatch threshold byte for a CTCSS register value (Hz x 100)
 uint8_t at1846s_ctcss_threshold(uint16_t tone_reg);
 // CTCSS register value (Hz x 100) from Hz x 10
