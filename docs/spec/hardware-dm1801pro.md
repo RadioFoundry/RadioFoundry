@@ -321,9 +321,10 @@ hotspot network cases another 14, with no PTT press.
 
 ### 9.2 Battery
 
-ADC channel 2, averaged. The radio scales it with a calibration halfword (no fixed divider as on the DM-32UV) whose source
-isn't located, and shows bars at 8.99, 7.99, 7.50, 6.99, 6.49, 6.31 and 5.81 V. ODR uses the DM-32UV's 2S scale until
-that is measured. I.
+ADC channel 2, averaged. The radio scales it with a calibration halfword whose source isn't located, and shows bars at
+8.99, 7.99, 7.50, 6.99, 6.49, 6.31 and 5.81 V. On one radio, switched on, the channel read 856 counts while a DMM read
+8.306 V across the pack (2026-10-16), so ODR uses 103 counts per volt (the DM-32UV's divider gives 82). The scale is
+that single point. R.
 
 ### 9.3 Interrupts and timers
 

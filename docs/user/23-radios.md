@@ -340,8 +340,7 @@ the programming cable. The cable's plug switches the internal speaker off; unplu
 
 Three power levels, L, M and H, the stock firmware's Low, Middle and High. The radio refuses to transmit until ODR can
 read its factory calibration. The battery
-scale is the DM-32UV's until it has been measured, so the percentage is approximate. The screen is monochrome; the
-backlight is on or off.
+reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
 
 ### What the DM-1801 Pro lacks today
 
