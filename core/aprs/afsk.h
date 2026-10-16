@@ -7,7 +7,7 @@
 //     space per bit: two sliding one-bit correlators (quadrature, so the phase doesn't matter) whose magnitudes are
 //     each normalized by their own slowly decaying peak (this undoes the tilt pre-emphasis / de-emphasis mismatch
 //     puts between the tones), the difference sampled by a digital PLL that locks to the data transitions
-// Floating point (single precision; the STM32F4 has the FPU). No RTOS, no board.
+// Integer only (radios without an FPU run it at 8 kHz: the CK803S of the HR_C7000). No RTOS, no board.
 #ifndef ODR_AFSK_H
 #define ODR_AFSK_H
 
@@ -40,10 +40,11 @@ typedef struct {
 	uint32_t rate;
 	uint16_t win;			// correlator length (one bit)
 	uint16_t pos;
-	float ring[4][AFSK_WIN_MAX];	// x cos / x sin for mark, then space
-	float sum[4];
+	int32_t ring[4][AFSK_WIN_MAX];	// x cos / x sin for mark, then space
+	int32_t sum[4];
 	uint32_t ph_mark, ph_space, inc_mark, inc_space;
-	float peak_mark, peak_space, decay;
+	uint32_t peak_mark, peak_space;
+	uint8_t decay_shift;
 	int32_t pll;
 	int32_t pll_step;
 	bool last_mark;
