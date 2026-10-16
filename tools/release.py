@@ -5,6 +5,8 @@
 
     tools/release.py --board dm1701 --version v0.1.0 [--bin build/dm1701/odr_dm1701.bin] [--out dist]
     tools/release.py --board dm1701 --variant amateur --version v0.1.0     a release variant (make VARIANT=amateur)
+    tools/release.py --board dm1801pro --version v0.1.0     an HR_C7000 radio: build/dm1801pro/odr_dm1801pro.bin, the
+                                                            image without the codec slot (never the _codec.bin)
 
 Writes, into --out:
   odr-<board>-<version>.bin    the codec-less image, as built (a variant: odr-<board>-<variant>-<version>.bin); for a
@@ -25,7 +27,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
-from odrflash import boards, manifest as mf, stockfw  # noqa: E402
+from odrflash import boards, manifest as mf, serialflash, stockfw  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -52,11 +54,16 @@ def toolchain(board_id):
 
 def check_no_codec(board, image):
     """The release image must not contain any codec bytes: it ends before the codec sectors (manifest.generate checks
-    that), and for the DM-1701 the codec's first word must not appear at the code window either."""
+    that), and the codec's first word must not appear where a merged image puts it: the DM-1701's code window, an
+    HR_C7000 radio's codec slot (the build's _codec.bin)."""
+    off = board.codec.windows[0][0] - board.app_base
     if board.id == "dm1701":
-        off = board.codec.windows[0][0] - board.app_base
         if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == stockfw.CODEC_SIG:
             raise SystemExit("release: %s carries the codec signature: never release a merged image" % board.id)
+    elif board.family == "bfuv32-serial":
+        if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == serialflash.SLOT_MAGIC:
+            raise SystemExit("release: the %s image carries the codec slot (a _codec.bin): release odr_%s.bin, never "
+                             "a merged image" % (board.name, board.id))
 
 
 def main(argv=None):
