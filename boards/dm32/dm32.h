@@ -42,6 +42,9 @@ void dm32_lcdbus_unlock(void);
 
 // DMR PCM to the speaker instead of the FM path (radio_dm32.c; the hal_audio_t speaker_pcm hook of hrc_audio_pcm)
 void dm32_speaker_pcm(bool on);
+// APRS listens (afsk_dm32.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
+void dm32_aprs_listen(bool on);
+extern const hal_afsk_t dm32_afsk;
 
 // --- Diagnostics (diag_dm32.c) ---
 typedef struct {

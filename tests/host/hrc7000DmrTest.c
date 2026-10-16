@@ -547,6 +547,54 @@ static void test_subtone(void)
 	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D0FF10u);
 }
 
+// FM receive audio (8.5): the half FM_ADDR_SW names, high byte first; the interrupt bit in the mask; the engine's
+// system interrupt calls the hook for bit 14 and clears it, running or not
+static int fm_hook_calls;
+static void fm_hook(void) { fm_hook_calls++; REG(C7_SYS_INTERP_LIST) = 0; }	// the chip clears it on the write back
+
+static void test_fm_rx_audio(void)
+{
+	setup();
+	int16_t out[HRC7000_FM_RX_SAMPLES];
+	for (uint32_t i = 0; i < HRC7000_FM_RX_SAMPLES; i++) {
+		uint16_t a = (uint16_t)(i * 100u), b = (uint16_t)(0x8000u + i);
+		buf[C7_FM_RX_AUDIO + 2u * i] = (uint8_t)(a >> 8);
+		buf[C7_FM_RX_AUDIO + 2u * i + 1u] = (uint8_t)a;
+		buf[C7_FM_RX_AUDIO + 512u + 2u * i] = (uint8_t)(b >> 8);
+		buf[C7_FM_RX_AUDIO + 512u + 2u * i + 1u] = (uint8_t)b;
+	}
+	CHECK(C7_FM_RX_AUDIO == 0x4E0u && C7_FM_RX_AUDIO + 1024u == 0x8E0u);	// the datasheet's 0x160004E0..0x160008DF
+	REG(C7_FM_ADDR_SW) = 0;
+	CHECK(hrc7000_fm_rx_audio(&dev, out) == 0);
+	REG(C7_FM_ADDR_SW) = 1;
+	CHECK(hrc7000_fm_rx_audio(&dev, out) == HRC7000_FM_RX_SAMPLES);
+	CHECK(out[0] == 0 && out[1] == 100 && out[255] == 25500);
+	REG(C7_FM_ADDR_SW) = 2;
+	CHECK(hrc7000_fm_rx_audio(&dev, out) == HRC7000_FM_RX_SAMPLES);
+	CHECK(out[0] == -32768 && out[255] == -32768 + 255);
+	REG(C7_FM_ADDR_SW) = 3;
+	CHECK(hrc7000_fm_rx_audio(&dev, out) == 0);
+
+	REG(C7_SYS_INTERP_MASK) = 0x1187Fu;
+	hrc7000_fm_rx_audio_irq(&dev, true);
+	CHECK(REG(C7_SYS_INTERP_MASK) == (0x1187Fu | C7_SYS_FM_RX));
+	hrc7000_fm_rx_audio_irq(&dev, false);
+	CHECK(REG(C7_SYS_INTERP_MASK) == 0x1187Fu);
+
+	fm_hook_calls = 0;
+	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+	hrc7000_dmr_isr_sys(&eng);	// no hook: cleared, nothing else
+	CHECK(REG(C7_SYS_INTERP_CLEAR) == C7_SYS_FM_RX && fm_hook_calls == 0);
+	eng.fm_rx = fm_hook;
+	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+	REG(C7_SYS_INTERP_CLEAR) = 0;
+	hrc7000_dmr_isr_sys(&eng);	// engine not running (FM): the hook still runs
+	CHECK(fm_hook_calls == 1 && REG(C7_SYS_INTERP_CLEAR) == C7_SYS_FM_RX);
+	REG(C7_SYS_INTERP_LIST) = 1u << 5;
+	hrc7000_dmr_isr_sys(&eng);	// another bit: no call
+	CHECK(fm_hook_calls == 1);
+}
+
 int main(void)
 {
 	test_pure();
@@ -560,6 +608,7 @@ int main(void)
 	test_fm_rx_keeps_pcm();
 	test_tx_tone();
 	test_subtone();
+	test_fm_rx_audio();
 	if (failures) {
 		printf("hrc7000DmrTest: %d failures\n", failures);
 		return 1;

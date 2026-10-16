@@ -12,6 +12,7 @@
 #include "hal_time.h"
 #include "rf/fd6818/fd6818.h"
 #include "modem/hrc7000/hrc7000.h"
+#include "fm_rx_audio.h"
 
 #define DAC_C_INIT		0x06E2u
 
@@ -42,6 +43,7 @@ static uint16_t last_rssi_raw, last_noise_raw;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
 static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
+static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (dm32_aprs_listen)
 
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
@@ -49,6 +51,7 @@ static bool asleep;		// the receiver is powered down between listen windows (rx_
 
 static void speaker_source(void);
 static void ring_play(void);
+static void amp(uint8_t who, bool on);
 
 // ---- FD6818 bus ----
 
@@ -197,6 +200,7 @@ static void init(void)
 
 	hrc_dmr_board_init(&modem, &dmr_board);
 	hrc_audio_pcm_attach(&modem, dm32_speaker_pcm);
+	hrc_fm_rx_attach(&modem);
 }
 
 // Out of the receiver's sleep before anything else touches the FD6818: its 0x37 low-power word would stay otherwise
@@ -348,15 +352,40 @@ static void status(radio_status_t *st)
 // The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM
 // receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB15 = 1 also takes the FD6818's audio off the
 // HR_C7000's ADC, so DMR receive finds no sync while it is high. PTB14 is driven as its complement, as on the DM-1801
-// Pro; during a transmission the TX path owns PTB14 (the microphone route)
+// Pro; during a transmission the TX path owns PTB14 (the microphone route).
+//
+// While APRS listens the HR_C7000 must hear the FD6818 all the time (its FM receive audio is what the demodulator
+// gets, squelch open or not), so PTB15 stays 0 and an open squelch plays FM through the HR_C7000's own FM playback
+// (AUDIO_CONTROL b6) and the codec instead
 static void speaker_source(void)
 {
 	// The FD6818's output is squelched noise while the squelch is closed: the speaker listens to it only while it is open
-	bool analog = mode == RADIO_MODE_FM && !transmitting && !pcm_on && rx_audio;
+	bool fm_open = mode == RADIO_MODE_FM && !transmitting && !pcm_on && rx_audio;
+	bool analog = fm_open && !aprs_listen;
 	hrc_pin_write(PIN_SPK_SOURCE, analog);
 	if (!transmitting) {
 		hrc_pin_write(PIN_MIC_PATH, !analog);
 	}
+	if (mode == RADIO_MODE_FM && !transmitting) {
+		bool play = fm_open && aprs_listen;
+		uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
+		hrc7000_audio_bits(&modem, play ? C7_AUDIO_FM_PLAY : 0, play ? 0 : C7_AUDIO_FM_PLAY);
+		hrc_irq_restore(s);
+	}
+}
+
+void dm32_aprs_listen(bool on)
+{
+	uint32_t s = hrc_irq_save();	// dm32_speaker_pcm runs speaker_source from the audio task
+	aprs_listen = on;
+	if (rx_audio) {
+		amp(AMP_RADIO, false);	// the source changes under an open squelch: no click
+	}
+	speaker_source();
+	if (rx_audio) {
+		amp(AMP_RADIO, true);
+	}
+	hrc_irq_restore(s);
 }
 
 static void amp(uint8_t who, bool on)

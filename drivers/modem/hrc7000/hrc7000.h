@@ -87,10 +87,12 @@
 #define C7_FM_TONE4		0x55Cu
 #define C7_FM_PTT		0x560u
 #define C7_FM_DECODE_FLAG2	0x568u
+#define C7_FM_ADDR_SW		0x56Cu	// FM audio RAM half for the CPU: 1 = the first, 2 = the second (8.5)
 
 // --- Buffers (byte offsets from HRC7000_BUF_BASE) ---
 #define C7_TX_RAM		0x000u
 #define C7_RX_RAM		0x4B0u
+#define C7_FM_RX_AUDIO		(C7_RX_RAM + 0x30u)	// FM receive audio, two 512-byte halves (8.5)
 #define C7_VOICE_RAM		0x960u	// 27 bytes, TX and RX
 #define C7_PROMPT_FIFO		0x980u
 #define C7_CODEC		0x9C0u	// internal audio codec, byte registers
@@ -222,6 +224,31 @@ void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
 void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
 // TX tone deviation (SUBVOICE_COEF b15:8) for a TX frequency and bandwidth (8.3)
 uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide);
+// --- FM receive audio to the CPU (8.5) ---
+
+// In FM the modem writes its demodulated receive audio, 8 kHz, into two 256-sample halves of the RX RAM in turn (high
+// byte first) and raises SYS_INTERP bit 14 as each one fills; FM_ADDR_SW names the half the CPU may read
+#define C7_SYS_FM_RX		(1u << 14)
+#define HRC7000_FM_RX_SAMPLES	256u
+#define HRC7000_FM_RX_RATE	8000u
+
+// The SYS_INTERP_MASK bit for it (the power-on mask leaves it off)
+void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on);
+// Copy the half FM_ADDR_SW names into out (HRC7000_FM_RX_SAMPLES); 0 when it names neither. Inline: it runs in the
+// modem's system interrupt, which runs from RAM
+static inline uint16_t hrc7000_fm_rx_audio(hrc7000_t *d, int16_t *out)
+{
+	uint32_t sw = hrc7000_rd(d, C7_FM_ADDR_SW) & 3u;
+	if (sw != 1u && sw != 2u) {
+		return 0;
+	}
+	const volatile uint8_t *p = &d->buf[C7_FM_RX_AUDIO + (sw - 1u) * HRC7000_FM_RX_SAMPLES * 2u];
+	for (uint16_t i = 0; i < HRC7000_FM_RX_SAMPLES; i++) {
+		out[i] = (int16_t)(uint16_t)((uint16_t)p[2u * i] << 8 | p[2u * i + 1u]);
+	}
+	return HRC7000_FM_RX_SAMPLES;
+}
+
 // FM noise measure (FM_SQL bits 15:0, higher = less signal)
 static inline uint16_t hrc7000_fm_noise(hrc7000_t *d) { return (uint16_t)hrc7000_rd(d, C7_FM_SQL); }
 

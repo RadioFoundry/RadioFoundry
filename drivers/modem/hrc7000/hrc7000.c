@@ -140,6 +140,12 @@ void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear)
 	hrc7000_wr(d, C7_AUDIO_CONTROL, d->audio_ctl);
 }
 
+void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on)
+{
+	uint32_t m = hrc7000_rd(d, C7_SYS_INTERP_MASK);
+	hrc7000_wr(d, C7_SYS_INTERP_MASK, on ? (m | C7_SYS_FM_RX) : (m & ~C7_SYS_FM_RX));
+}
+
 void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted)
 {
 	uint8_t adc = hrc7000_codec_rd(d, C7_CODEC_CR_ADC), dac = hrc7000_codec_rd(d, C7_CODEC_CR_DAC);

@@ -75,6 +75,9 @@ const board_t board = {
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
 #endif
+#if CONFIG_APRS_RX
+	.afsk = &dm32_afsk,
+#endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
 #endif
