@@ -104,6 +104,8 @@
 #define C7_CODEC_CR_MIC2	0x0Cu
 #define C7_CODEC_CR_DAC		0x0Du	// b7 = mute line out
 #define C7_CODEC_CR_ADC		0x0Fu	// b7 = mute the mic
+#define C7_CODEC_CR_MIX		0x10u	// mixer: b7 enable, b6 load (1 = write), b5:0 the MIX_n address (DS 6.5.2.10)
+#define C7_CODEC_DR_MIX		0x11u	// mixer data (DS 6.5.2.11)
 #define C7_CODEC_CR_VIC		0x12u
 #define C7_CODEC_CR_CK		0x13u
 #define C7_CODEC_GCR_DACL	0x1Fu
@@ -149,6 +151,9 @@ typedef struct {
 	uint32_t subvoice;		// SUBVOICE_COEF before a TX tone (hrc7000_tx_tone)
 	bool tone_on;
 	uint8_t subaudio_dev;		// SUBVOICE_COEF b15:8 at 12.5 kHz (the chip's reset value, set by power_on_init)
+	// FM transmit limiter, FM_DEV_COEF b23:16, at 12.5 and 25 kHz: the peak deviation of audio through the codec ADC
+	// (the microphone, the codec mixer). The board sets it; 0 = HRC7000_FM_TX_LIMIT_DEF (8.1)
+	uint8_t fm_tx_limit[2];
 } hrc7000_t;
 
 static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
@@ -192,7 +197,10 @@ void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);
 
 // FM receive / transmit (8.2). wide = 25 kHz. FM receive turns the FM audio path to the speaker on
 void hrc7000_fm_rx(hrc7000_t *d, bool wide);
+#define HRC7000_FM_TX_LIMIT_DEF	4u	// the KP value; about 1.65 kHz peak at 25 kHz (DM-1801 Pro BENCH)
 void hrc7000_fm_tx(hrc7000_t *d, bool wide);
+// FM_DEV_COEF for a transmission: the limiter for the bandwidth, the RX and TX deviation coefficients
+uint32_t hrc7000_fm_tx_dev_coef(const hrc7000_t *d, bool wide);
 // Back to the FM idle state: FM_PTT off, FM audio off
 void hrc7000_fm_idle(hrc7000_t *d);
 
@@ -203,6 +211,10 @@ void hrc7000_dmr_enter(hrc7000_t *d, uint32_t mod_bias, uint8_t mic_gain_db);
 // Audio paths (AUDIO_CONTROL bits, the shadow keeps the CPU's view)
 void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear);
 void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted);
+// Codec mixer: the ADC's output to the modem becomes the DAC's audio (the prompt FIFO) alone, the ADC's own input
+// zeroed in the mix (MIX_2 mix_rec, MIX_3 mixadc_sel = 3). Off clears both and disables the mixer. The FM transmit
+// source for audio the CPU makes (APRS AFSK) where ring play doesn't reach the modulator by itself (8.4)
+void hrc7000_codec_dac_to_tx(hrc7000_t *d, bool on);
 
 // --- Sub-audio by the modem's own engine (8.1, 8.2) ---
 

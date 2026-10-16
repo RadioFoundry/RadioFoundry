@@ -138,6 +138,10 @@ CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 CONFIG_VOX ?= $(CONFIG_FM)
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
+# vibration alerts on the board's motor (hal_power_t.vibrate) for messages, call alerts, private calls and emergencies,
+# Settings > Sound > Vibrate (core/radio/vibe.c, docs/spec/radio-features.md 4.1). On for radios with a motor (their
+# config.mk); a board without one shows the setting dimmed
+CONFIG_VIBRATE ?= n
 # air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on radios whose
 # receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). On for the DM-32UV
 CONFIG_AM_RX ?= n
@@ -165,7 +169,7 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE AUDIO_PROBE STUB_ENTRY AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST
+	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))

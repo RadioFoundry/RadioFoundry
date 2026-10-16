@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DM-32UV factory calibration (boards/dm32/calibration_dm32.c) on a synthetic factory page in a fake data flash:
 // page search, the three pieces, BCD frequency tables, K values, modulation balance, PA drive interpolation and
-// power levels, and the fallbacks (docs/spec/hardware-dm32.md 11)
+// power levels, and the fallbacks (docs/spec/hardware-dm32.md 11); bf_cal_tx_byte, the row lookup at the page's own
+// TX points that the DM-1801 Pro uses
 #include <stdio.h>
 #include <string.h>
 #include "cal/baofeng/baofeng_cal.h"
@@ -111,6 +112,59 @@ static void test_values(void)
 	CHECK(bf_cal_byte(0x16) == 0x85 && bf_cal_byte(BF_CAL_LEN) == 0);
 }
 
+// The DM-1801 Pro's own lookup (bf_cal_tx_byte, hardware-dm1801pro.md 6.4) on a page with TX point lists that differ
+// from the even steps (155.5 MHz, not 155), clamping to the band limits and the three-byte register 0x40 row
+static void test_tx_byte(void)
+{
+	static const uint32_t uhf_tx[5] = { 0x40000000, 0x41750000, 0x43550000, 0x45250000, 0x47000000 };
+	static const uint32_t vhf_tx[5] = { 0x13600000, 0x14550000, 0x15550000, 0x16450000, 0x17400000 };
+	static const uint8_t vhf_mod[5] = { 240, 224, 208, 196, 184 };
+	static const uint8_t vhf_high[5] = { 200, 210, 190, 180, 220 };
+	static const uint8_t uhf_low[5] = { 110, 96, 92, 92, 84 };
+	uint8_t img[BF_CAL_LEN];
+	build_page();
+	for (int i = 0; i < 5; i++) {
+		put32(&page[0x314 + 4 * i], uhf_tx[i]);
+		put32(&page[0x33C + 4 * i], vhf_tx[i]);
+		page[0xA6 + i] = vhf_mod[i];
+		page[0xDA + i] = vhf_high[i];
+		page[0x40 + i] = uhf_low[i];
+	}
+	page[0x1C] = page[0x1D] = page[0x1E] = 0x85;	// UHF register 0x40 bytes
+	page[0xAB] = 134;				// VHF: at TX points 0, 2 and 4
+	page[0xAC] = 133;
+	page[0xAD] = 128;
+	CHECK(bf_cal_parse(page, sizeof page, img));
+	bf_cal_set_image(img, true);
+	// UHF limits from the header bytes (400.0 / 470.0), VHF limits erased: the defaults 136 / 174
+	CHECK(bf_cal_tx_byte(145500000u, BF_ROW_MOD) == 224);		// on a point
+	CHECK(bf_cal_tx_byte(146520000u, BF_ROW_MOD) == 223);		// 224 - 1.632, truncated toward 224
+	CHECK(bf_cal_tx_byte(155000000u, BF_ROW_MOD) == 209);		// 15.2 of 16 toward 208: the point is 155.5
+	CHECK(bf_cal_tx_byte(130000000u, BF_ROW_MOD) == 240);		// below the band: its lower limit
+	CHECK(bf_cal_tx_byte(200000000u, BF_ROW_MOD) == 184);		// 200 MHz is VHF, clamped to 174
+	CHECK(bf_cal_tx_byte(160000000u, BF_ROW_PA_HIGH) == 185);	// halfway from 190 to 180
+	CHECK(bf_cal_tx_byte(150000000u, BF_ROW_PA_HIGH) == 201);	// 210 down toward 190 by 4.5 of 10 MHz: 9
+	CHECK(bf_cal_tx_byte(145000000u, BF_ROW_PA_LOW) == 20 && bf_cal_tx_byte(145000000u, BF_ROW_PA_MID) == 60);
+	CHECK(bf_cal_tx_byte(140000000u, BF_ROW_REG40) == 134);	// 134 toward 133 over points 0-2: 0.2
+	CHECK(bf_cal_tx_byte(155500000u, BF_ROW_REG40) == 133);
+	CHECK(bf_cal_tx_byte(170000000u, BF_ROW_REG40) == 130);	// 133 toward 128 over points 2-4: 3.9
+	CHECK(bf_cal_tx_byte(461462500u, BF_ROW_PA_LOW) == 88);	// 92 toward 84, 8.9625 of 17.5 MHz: 4.1
+	CHECK(bf_cal_tx_byte(380000000u, BF_ROW_PA_LOW) == 110);	// UHF below 400: its first point
+	CHECK(bf_cal_tx_byte(446000000u, BF_ROW_REG40) == 0x85);
+	CHECK(bf_cal_tx_byte(446000000u, (bf_cal_row_t)5) == 0);
+	// VHF limits in the page: 140.0 to 175.0 MHz
+	page[0xCC] = 0x00;
+	page[0xCD] = 0x14;
+	page[0xCE] = 0x50;
+	page[0xCF] = 0x17;
+	CHECK(bf_cal_parse(page, sizeof page, img));
+	bf_cal_set_image(img, true);
+	CHECK(bf_cal_tx_byte(138000000u, BF_ROW_MOD) == 234);		// at 140: 240 - 6.7
+	CHECK(bf_cal_tx_byte(175000000u, BF_ROW_MOD) == 183);		// 1 MHz past the last point: 196 - 13.3
+	bf_cal_set_image(img, false);
+	CHECK(bf_cal_tx_byte(145500000u, BF_ROW_MOD) == 0);		// no calibration
+}
+
 int main(void)
 {
 	// Nothing in flash: no calibration, fallbacks
@@ -142,6 +196,8 @@ int main(void)
 	have_copy = false;
 	flash.size = 0;
 	CHECK(!bf_cal_load(&flash, COPY_ADDR));
+
+	test_tx_byte();
 
 	if (failures) {
 		printf("dm32CalTest: %d failures\n", failures);

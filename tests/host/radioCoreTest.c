@@ -22,6 +22,7 @@
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
+#include "radio/vibe.h"
 
 static int failures;
 static int checks;
@@ -129,7 +130,9 @@ static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL };
 static uint8_t p_mic(void) { return 0; }
-static hal_power_t fake_power = { .led = p_led };	// mic_level set by the VOX check
+static hal_power_t fake_power = { .led = p_led };	// mic_level set by the VOX check, vibrate by the vibrate check
+static int vibrations;
+static void p_vibrate(uint16_t ms) { (void)ms; vibrations++; }
 
 static const band_t bands[] = {
 	{ 108000000, 135999999, false },	// receive only
@@ -2068,6 +2071,7 @@ void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }
 void radio_req_roam(uint8_t cmd) { req(RREQ_ROAM, cmd); }
 void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
+void radio_req_vibrate(uint8_t v) { req(RREQ_VIBRATE, v); }
 void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0))); }
 void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }
 void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
@@ -2213,6 +2217,31 @@ static void test_ui_glue(void)
 	settings_read(&sv);
 	CHECK(sv.ui_flags == (SETTINGS_UI_LARGE_TEXT | SETTINGS_UI_MESSAGE_TONE | SETTINGS_UI_ALIAS | SETTINGS_UI_HEAR_ALL));
 	CHECK(sv.theme == 2 && sv.updown_home == 1 && sv.auto_off_min == 30 && sv.low_batt_pct == 20);
+	// Vibrate: on by default, kept as an "off" bit so records saved before it keep it on
+	CHECK(ui_svc_setting_get(UI_SET_VIBRATE) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_VIBRATE, 0) && ui_svc_setting_get(UI_SET_VIBRATE) == 0);
+	settings_read(&sv);
+	CHECK(sv.ui_flags == (SETTINGS_UI_LARGE_TEXT | SETTINGS_UI_MESSAGE_TONE | SETTINGS_UI_ALIAS |
+			      SETTINGS_UI_HEAR_ALL | SETTINGS_UI_NO_VIBRATE));
+	CHECK(ui_svc_setting_set(UI_SET_VIBRATE, 1) && ui_svc_setting_get(UI_SET_VIBRATE) == 1);
+	settings_read(&sv);
+	CHECK(!(sv.ui_flags & SETTINGS_UI_NO_VIBRATE));
+	// The setting is usable only on a board with a motor; ui_svc_vibrate reaches it through the radio core
+	CHECK(!(ui_svc_feat_radio() & UI_FEAT_VIBRATE));
+	vibrations = 0;
+	ui_svc_vibrate(UI_VIBE_CALL);
+	run(100);
+	CHECK(vibrations == 0 && !vibe_busy());
+	fake_power.vibrate = p_vibrate;
+	CHECK(ui_svc_feat_radio() & UI_FEAT_VIBRATE);
+	ui_svc_vibrate(UI_VIBE_MESSAGE);
+	ui_svc_vibrate(200);		// not a pattern: nothing
+	run(1000);
+	CHECK(vibrations == 2 && !vibe_busy());
+	ui_svc_vibrate(UI_VIBE_EMERGENCY);
+	run(3000);
+	CHECK(vibrations == 6);
+	fake_power.vibrate = NULL;
 	ui_svc_ptt_block(true);
 	CHECK(ptt_blocked);
 	ui_svc_ptt_block(false);

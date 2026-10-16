@@ -8,6 +8,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "radio/beep.h"
+#include "radio/vibe.h"
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -42,6 +43,12 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		(unsigned)b.played, (unsigned)b.no_stream, (unsigned)b.blocks, (unsigned)b.stalls, beep_busy());
 #else
 	dl_text(t, "beep.built=0\n");
+#endif
+#if CONFIG_VIBRATE
+	dl_text(t, "vibe.built=1\nvibe.motor=%u\nvibe.played=%u\nvibe.busy=%u\n",
+		board.power != NULL && board.power->vibrate != NULL, (unsigned)vibe_played(), vibe_busy());
+#else
+	dl_text(t, "vibe.built=0\n");
 #endif
 	radio_get_settings(&s);
 	dl_text(t, "set.tot_s=%u\nset.tot_warn_s=%u\nset.bcl=%s\nset.roger_beep=%u\nset.tx_inhibit=%u\n", s.tot_s,
@@ -135,6 +142,15 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return DL_ST_UNAVAILABLE;
 		}
 		radio_req_beep(a[0]);
+		return DL_ST_OK;
+	case DL_OP_VIBRATE:
+		if (len < 1 || a[0] == VIBE_NONE || a[0] >= VIBE_COUNT) {
+			return DL_ST_BAD_ARG;
+		}
+		if (!CONFIG_VIBRATE) {
+			return DL_ST_UNAVAILABLE;
+		}
+		radio_req_vibrate(a[0]);	// played whatever the UI's Vibrate setting; nothing without a motor
 		return DL_ST_OK;
 	case DL_OP_TONE_BURST:
 		if (len < 1) {

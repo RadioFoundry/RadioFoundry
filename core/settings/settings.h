@@ -171,13 +171,14 @@ typedef struct {
 	uint32_t snmp_write_hash;	// write community, 0 = none (SET refused)
 } settings_t;
 
-// settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)
+// settings_t.ui_flags (defaults: hints, message tone, talker alias, PTT when locked and vibrate on)
 #define SETTINGS_UI_LARGE_TEXT		0x01u
 #define SETTINGS_UI_HINTS		0x02u
 #define SETTINGS_UI_MESSAGE_TONE	0x04u
 #define SETTINGS_UI_ALIAS		0x08u	// show received talker aliases
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
+#define SETTINGS_UI_NO_VIBRATE		0x40u	// vibrate for alerts off (0 = on: older records keep it on)
 
 // settings_t.net_flags (the USB network personality; 0 = as before)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)

@@ -54,13 +54,24 @@ Offsets from 0x11000000. Values are those used by OpenDM32 (BIN) unless noted.
 | 0x110 | RF_CONTROL | b20:16 tx_pre_on (100 us steps); b13:8 rf_pre_on_tx (RF TX interrupt advance, 100 us); b5:0 rf_pre_on_rx | **0x00041F1A**: tx_pre_on 0.4 ms, RF TX interrupt **3.1 ms** before the TX burst, RF RX interrupt 2.6 ms before RX | The July build used 0x00040A0A (1.0 ms) and had bad timeslots at low power |
 | 0x114 | RF_MOD_BIAS_CTRL | b25:16 two_point_bias; b15:8 sig_reduce (Mod2 amplitude); b7:0 phase_reduce (Mod1 amplitude) | ((cal + 384) << 16) or modcal (0x4D4D before a frequency is set) | Modulation balance from calibration |
 | 0x118 | DEV_LIMITER | b15:0 | 0xFF00 (reset value) | KP |
-| 0x11C | RSSI_BIAS_VALUE | read-only per DS (rssi b31:16, ADC I/Q DC bias) | port writes 0x1381 (no effect expected) | KP |
+| 0x11C | RSSI_BIAS_VALUE | read-only per DS: rssi b31:16; b15:8 / b7:0 the measured DC bias of the ADC's I / Q inputs | port writes 0x1381 (no effect expected) | KP |
 | 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode (DS) | not written | A live check that AF reaches the ADC: a DM-1801 Pro receiving DMR reads about +1216 / -1149 (the guide expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives. On the DM-32UV that was GPIO 0x2F left high (`hardware-dm32.md` 5), which takes the FD6818's audio off the ADC (HW) |
 | 0x120 | THRESHOLD_VALUE | b28:24 sync ratio; b23:16 sync low threshold; b15:8 sync high threshold; b7:0 signal detect | **0x0978786F** | |
 | 0x164 | RECV_INFO_COUNT | b31:24 sync errors; b8 select FSK error/EVM; b7:0 FSK error | read for BER/EVM only | DS |
 | 0x168 | (undocumented, "REG_X06") | | 0x14 | BIN |
 | 0x1B0 | RX_IF_FREQ | b23:0 | 0x0BB800 | |
 | 0x1B4 | RF_RECV_DELAY | b18:0, 100 ns steps | **0x36B0** (1.4 ms). DS says 2000 (0.2 ms) for AF mode; the working value is 0x36B0 | BIN |
+
+**AF receive input (DS, HR_C7000 guide document 2).** In AF mode the RF chip's demodulated audio goes to the AF ADC's
+P input, and a DAC output biases its N input; on the DM-1801 Pro that is DAC C (`hardware-dm1801pro.md` 5.7).
+Document 1 says the AF bias is set through SIG_CENTER instead. A DC step on either input moves the PHASE_OUT center,
+which the DMR receiver reads as a frequency offset. AF mode has no frequency offset compensation: RX_IF_FREQ applies
+to IF mode only.
+
+**Reference oscillator control (MOD1, DS).** In receive the MOD1 level is RF_MOD_BIAS_CTRL b25:16 over 0-3.3 V, which
+holds only while DAC_CONTROL keeps that DAC powered. In TX it is SIG_CENTER b31:24, ±422 mV around 1.65 V in 3.3 mV
+steps; RF_MODE b9 sets where the ramp starts (0 = 1.65 V). With cal + 384 in b25:16 both states give about the same
+voltage, within one step on the DM-1801 Pro (I).
 
 ### 2.2 Sync words
 
@@ -280,7 +291,7 @@ Ordered; (register, value, why). OpenDM32 writes the whole DMR block once here a
 | 11 | RF_MODE | 0x03269860 | two-point TX, AF RX, dual RX channels | BIN |
 | 12 | DEV_LIMITER | 0x0000FF00 | | KP |
 | 13 | SYS_SOFT_RSTN | 0x190 | see the reset-bit caveat in `hardware-dm32.md` 16 | BIN, KP |
-| 14 | DAC_CONTROL (0x070) | 0x8000001B | baseband DAC set-up (undocumented bits) | KP |
+| 14 | DAC_CONTROL (0x070) | 0x8000001B | baseband DAC set-up: b31 offset code; b5 / b4 power down DAC A / B; b2 / b1 low power DAC A / B (1 = off or low power, DS). So DAC A on at full power, DAC B powered down and low power | KP |
 | 15 | ADC_CONTROL (0x074) | |= 0x41C3 | baseband ADC set-up | KP |
 | 16 | AUDIO_CONTROL (0x080) | 0x02 | I2S slave (reset default), all audio paths off | KP, BIN |
 | 17 | AUDIO_BUFFER_CLR (0x084) | 0x03 | clear vocoder encode and decode buffers | KP, BIN |
@@ -439,7 +450,7 @@ information bits in the RX RAM (DS, BIN).
 | Offset | Register | Fields (DS) | Values used |
 |---|---|---|---|
 | 0x500 | FM_BANDWIDTH | b6 band-pass on; b4 pre-emphasis; b3 TX 25 kHz; b2 adjacent-channel filter 25 kHz; b1 RX 25 kHz; b0 CTCSS RX 25 kHz | TX: 0x5F (25 kHz), 0x50 (12.5 kHz). RX: 0x4F (25 kHz), 0x40 (12.5 kHz) (KP) |
-| 0x504 | FM_DEV_COEF | b23:16 TX limiter, b15:8 RX deviation coefficient, b7:0 TX deviation coefficient | 0x40A20 (25 kHz), 0x40A25 (12.5 kHz) (KP) |
+| 0x504 | FM_DEV_COEF | b23:16 TX limiter (`tr_sig_lim`, reset 0x0F), b15:8 RX deviation coefficient, b7:0 TX deviation coefficient | 0x40A20 (25 kHz), 0x40A25 (12.5 kHz) (KP); the limiter is the board's (`hrc7000_t.fm_tx_limit`, 0 = 4) |
 | 0x508 | FM_SQL | b15:0 noise measure: higher = less signal | squelch threshold in software |
 | 0x50C | SUBVOICE_COEF | b27:16 detector sample depth (default 0x7D0), b15:8 sub-audio / DTMF deviation, b7:0 detection threshold | DTMF deviation (8.3) |
 | 0x510 | FM_MOD | b23:16 repeat-symbol threshold; b15:14 XTCSS length; b13:12 CTCSS reverse-burst mode (01 = 240°, 10 = 180°); b11 CDCSS TX invert; b10 CDCSS RX invert; b9 CDCSS turn-off code; b8 XTCSS EOM; b4 selcall; **b3 CTCSS; b2 CDCSS; b1 DTMF**; b0 XTCSS | |
@@ -523,6 +534,29 @@ and the microphone muted by the board, the FIFO's samples are the modulation. A 
 speaker PCM is held off the FIFO meanwhile (`hrc_audio_pcm_hold`), since its chunks would land between the tones.
 Bell 202 decoded off air from this path with a valid FCS on the DM-32UV (BENCH, `aprs.md` 13). The DTMF tone
 generator (8.3) needs no PCM, but its deviation field tops out near 1.5 kHz, short of the 3 kHz APRS wants.
+
+The FM transmit limiter (FM_DEV_COEF b23:16) caps the deviation of audio that enters through the codec ADC, the
+microphone and the mixer route below. The prompt FIFO's ring play is not capped by it: on the DM-32UV AFSK through
+ring play reached 5.1 kHz peak with the limiter at 4. Through the ADC path the ceiling scales with limiter x TX
+coefficient (BENCH, DM-1801 Pro, 25 kHz, Bell 202 tones):
+
+| Limiter | TX coefficient | Peak deviation |
+|---|---|---|
+| 4 | 0x20 | 1.65 kHz (clipped at every level tried) |
+| 4 | 0x30 | 2.48 kHz (clipped) |
+| 8 | 0x20 | 3.18 kHz (clipped) |
+| 0x0F | 0x40 | 4.18 kHz |
+| 0x0F | 0x20 | 4.57 kHz, max 4.84 kHz (not clipped) |
+
+So the KP value 4 holds speech to about 1.65 kHz at 25 kHz. A board sets `fm_tx_limit` for each bandwidth.
+
+Where ring play doesn't reach the modulator on its own, the codec's digital mixer (DS 6.5.2.10-11) carries the DAC's
+audio into the ADC's record path, which is the FM transmit input. CR_MIX (codec 0x10: b7 mix_en, b6 load, b5:0 the
+MIX_n address) and DR_MIX (0x11) reach MIX_0..3. MIX_2 b0 (mix_rec) makes the ADC's output ADC + DAC, and MIX_3 b7:4
+= 0xF zeroes the ADC's own input in that sum. `hrc7000_codec_dac_to_tx` sets MIX_3 and then MIX_2, clears them in the
+reverse order and ends with CR_MIX = 0. The codec mic mute (CR_ADC b7) must stay off on this route: it mutes the mix
+too. Through this route Bell 202 decoded off air with a valid FCS (BENCH, a board where ring play alone sent a bare
+carrier).
 
 ### 8.5 FM receive audio to the CPU
 

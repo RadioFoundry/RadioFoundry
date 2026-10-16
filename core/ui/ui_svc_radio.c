@@ -8,6 +8,7 @@
 #include "board.h"
 #include "radio/radio.h"
 #include "radio/beep.h"
+#include "radio/vibe.h"
 #include "input/input.h"
 #include "settings/settings.h"
 #include <string.h>
@@ -175,7 +176,9 @@ bool ui_svc_roam(uint8_t cmd)
 
 uint32_t ui_svc_feat_radio(void)
 {
-	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0);
+	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
+	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
+	       (motor ? UI_FEAT_VIBRATE : 0);
 }
 
 #if CONFIG_DMR
@@ -222,6 +225,18 @@ void ui_svc_beep(uint8_t beep)
 		[UI_BEEP_BATTERY_LOW] = BEEP_BATTERY_LOW,
 	};
 	radio_req_beep(beep < sizeof map ? map[beep] : BEEP_KEY);
+}
+#endif
+
+#if CONFIG_VIBRATE
+void ui_svc_vibrate(uint8_t vibe)
+{
+	static const uint8_t map[] = {
+		[UI_VIBE_MESSAGE] = VIBE_MESSAGE, [UI_VIBE_CALL] = VIBE_CALL, [UI_VIBE_EMERGENCY] = VIBE_EMERGENCY,
+	};
+	if (vibe < sizeof map) {
+		radio_req_vibrate(map[vibe]);
+	}
 }
 #endif
 

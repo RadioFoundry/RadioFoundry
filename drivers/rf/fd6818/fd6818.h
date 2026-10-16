@@ -48,6 +48,12 @@ typedef struct {
 	uint16_t tx_n;
 	const fd6818_regval_t *fm_tx_prepare;	// before the switch to TX, FM only
 	uint16_t fm_tx_prepare_n;
+	// DMR per-burst switch straight from the other state, no idle on the way and no bandwidth write; NULL = idle, then
+	// rx / tx (the DM-32UV)
+	const fd6818_regval_t *burst_rx;
+	uint16_t burst_rx_n;
+	const fd6818_regval_t *burst_tx;
+	uint16_t burst_tx_n;
 	uint16_t bw_fm_25k, bw_fm_12k5, bw_dmr;	// 0x43 values
 	uint32_t park_10hz;			// where post_init leaves the synthesizer, 0 if it doesn't tune
 	// Band words for a frequency in 10 Hz units: *r1a == 0 leaves 0x1A alone; false writes neither
@@ -154,7 +160,8 @@ bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type);
 // DMR 0x1D00); wake = 0x37 back to the receive word (0x1F1F, then 0x1F0F) with the state still idle: the caller
 // retunes and sets the RX state next (fd6818_set_freq, fd6818_set_state)
 void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode);
-// From an interrupt: idle then TX, or idle then RX with the bandwidth (DMR per-burst switching, 8.5)
+// From an interrupt: idle then TX, or idle then RX with the bandwidth (DMR per-burst switching, 8.5); a variant with
+// burst tables writes only those
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw);
 
 #endif

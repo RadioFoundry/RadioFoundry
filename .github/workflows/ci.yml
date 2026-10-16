@@ -14,7 +14,8 @@
 #              until it is in a registry)
 # The feature matrix and the other long builds run nightly (nightly.yml), the radio tests by hand (hil.yml).
 # Runs on Gitea Actions (the self-hosted runner) and GitHub Actions alike; a newer push to the same branch cancels
-# the run in progress.
+# the run in progress. On GitHub the repository variable ODR_CI_RUNNER (a runner label) moves the jobs from the
+# hosted runners to the self-hosted one in tools/ci-runner/, whose image has every tool installed (ODR_CI_IMAGE=1).
 name: CI
 
 on:
@@ -52,7 +53,7 @@ env:
 jobs:
   host:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -62,11 +63,16 @@ jobs:
       - name: Install tshark, numpy, pytest, pyserial
         run: |
           set -eu
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            tshark python3-numpy python3-pytest python3-serial
+          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              tshark python3-numpy python3-pytest python3-serial
+          fi
           # reuse lint only when the tree is expected to pass it (repository variable ODR_CI_REUSE=true)
-          if [ "${{ vars.ODR_CI_REUSE }}" = true ]; then pipx install reuse && echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
+          if [ "${{ vars.ODR_CI_REUSE }}" = true ]; then
+            if [ -x /opt/reuse/bin/reuse ]; then echo /opt/reuse/bin >> "$GITHUB_PATH"   # the self-hosted runner's image
+            else pipx install reuse && echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
+          fi
 
       - name: Host tests, Python checks, license checks
         run: tools/ci.sh --steps host,python,licenses
@@ -88,7 +94,7 @@ jobs:
 
   coverage:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -97,8 +103,10 @@ jobs:
       - name: Install gcovr, tshark, numpy
         run: |
           set -eu
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark python3-numpy
+          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark python3-numpy
+          fi
       - name: Coverage of the host tests
         run: tools/coverage.sh
       - name: Host tests under ASan and UBSan
@@ -114,7 +122,7 @@ jobs:
 
   firmware:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -125,6 +133,7 @@ jobs:
         with:
           submodules: recursive
       - uses: actions/cache@v4
+        if: runner.environment != 'self-hosted'   # the self-hosted image has the toolchain
         with:
           path: ~/opt/arm-gnu-toolchain-${{ env.ARM_GCC_VERSION }}-x86_64-arm-none-eabi
           key: arm-gnu-${{ env.ARM_GCC_VERSION }}-${{ hashFiles('tools/install-arm-toolchain.sh') }}
@@ -147,7 +156,7 @@ jobs:
 
   dm32:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -165,12 +174,18 @@ jobs:
           # own token (packages: read)
           REGISTRY_TOKEN: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
           REGISTRY_USER: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-        run: echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
+        run: |
+          command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
+          echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
       - name: DM-32UV default build in the csky-elf image
         run: |
           set -u
           rc=0
-          tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+          if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
+            tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+          else
+            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+          fi
           if [ "$rc" = 3 ]; then
             echo "::notice::DM-32UV build skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
             exit 0
@@ -179,7 +194,7 @@ jobs:
           exit "$rc"
       - name: Log out of the registry
         if: always() && vars.ODR_CSKY_REGISTRY != ''
-        run: docker logout "${{ vars.ODR_CSKY_REGISTRY }}"
+        run: command -v csky-elf-gcc > /dev/null || docker logout "${{ vars.ODR_CSKY_REGISTRY }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

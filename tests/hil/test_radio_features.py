@@ -16,6 +16,8 @@ Pass criteria:
 - test_beep_counts: a BEEP error request counts in beep.played or beep.no_stream (one of them, by 1); when played,
   beep.blocks grows within 1 s (the audio stream ran: on FM this shows whether the I2S clock runs) and beep.busy
   falls back to 0 within 2 s.
+- test_vibrate_counts: (CONFIG_VIBRATE builds) a VIBRATE emergency request: on a radio with a motor (vibe.motor=1)
+  vibe.played grows by 1 within 1 s and vibe.busy falls back to 0 within 3 s; without one vibe.played stays put.
 - test_zone_scan_cancel: (zone of 2+ channels) scan=zone within 1 s; at least 2 different zone positions within 4 s
   unless the scan stopped on a busy channel (scan_phase probe / hold / resume); CANCEL: scan=off and back on the
   starting position within 1 s.
@@ -172,6 +174,21 @@ def test_beep_counts(radio):
                           "audio blocks (the stream runs)")
         wait_features(radio, lambda v: v.get("beep.busy") == "0", 2.0, "the beep finished")
         print(f"blocks +{as_int(f['beep.blocks'], 0) - blocks0}")
+
+
+def test_vibrate_counts(radio):
+    f0 = features(radio)
+    if f0.get("vibe.built") != "1":
+        pytest.skip("built without CONFIG_VIBRATE")
+    played0 = as_int(f0.get("vibe.played"), 0)
+    radio.link.vibrate("emergency")
+    if f0.get("vibe.motor") != "1":
+        time.sleep(0.5)
+        assert as_int(features(radio).get("vibe.played"), 0) == played0
+        return
+    f = wait_features(radio, lambda v: as_int(v.get("vibe.played"), 0) > played0, 1.0, "the vibration counted")
+    assert as_int(f["vibe.played"], 0) == played0 + 1, f
+    wait_features(radio, lambda v: v.get("vibe.busy") == "0", 3.0, "the pattern finished")
 
 
 def test_zone_scan_cancel(radio):

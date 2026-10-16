@@ -325,6 +325,11 @@ void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
 
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw)
 {
+	const fd6818_variant_t *v = dev->variant;
+	if (tx ? v->burst_tx != NULL : v->burst_rx != NULL) {
+		write_table(dev, tx ? v->burst_tx : v->burst_rx, tx ? v->burst_tx_n : v->burst_rx_n);
+		return;
+	}
 	if (tx) {
 		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);
 		write_table(dev, dev->variant->tx, dev->variant->tx_n);

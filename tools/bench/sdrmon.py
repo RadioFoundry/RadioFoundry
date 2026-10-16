@@ -26,7 +26,9 @@ Runs on the SDR bench with the odr_sdrbench package (its Channelizer, FmDemod, s
         time (ms from sample 0), slot phase, family, sync bit errors, color code / data type, power (dBFS and a
         rough dBm), power spread inside the burst (a second transmitter shows up as a step), the frequency offset,
         and the LC where there is one (voice LC header / terminator: FLCO, source, destination; voice E: the
-        embedded LC assembled from B-E); then the carrier key-up / key-down edges and ramps from the 0.1 ms power
+        embedded LC assembled from B-E), and for voice bursts the AMBE FEC per frame (fec c0/c1 x3: Golay bit
+        corrections in the two protected parts of each of the burst's three frames, "!" when four or more errors are
+        proven; the 25 unprotected bits can't be checked; no vocoder involved); then the carrier key-up / key-down edges and ramps from the 0.1 ms power
         envelope, and a summary. --json OUT also writes all of it as JSON (dmr_bench.py checks pass criteria on
         it). The capture is read in 1 M-sample chunks; a 15 s capture needs about 150 MB of RAM to analyze.
         --cach also decodes the CACH before every BS-sourced burst (dmr_cach.py: TACT Hamming(7,4) with AT, TC,
@@ -232,8 +234,13 @@ class Burst:
 
 # ── analysis ─────────────────────────────────────────────────────────────────
 
+def _fec_str(fec3) -> str:
+    """'0/0 1/0 0/2!': per AMBE frame, Golay corrections in C0/C1; '!' = C0 parity proves 4+ errors."""
+    return " ".join(f"{c0}/{c1}{'!' if bad else ''}" for c0, c1, bad in fec3)
+
+
 def cmd_analyze(args) -> int:
-    from odr_sdrbench.dmr import fec, pdu
+    from odr_sdrbench.dmr import ambe, fec, pdu
     from odr_sdrbench import layer2 as L2
     meta = json.load(open(args.file + ".json")) if os.path.exists(args.file + ".json") else \
         {"freq": args.freq * 1e6, "center": args.freq * 1e6 - args.offset_khz * 1e3, "fs": args.rate,
@@ -452,6 +459,12 @@ def cmd_analyze(args) -> int:
                 else:
                     b.lc = {"emb": "bad"}
 
+    # AMBE channel-frame FEC per voice burst (Golay corrections in C0 / C1 of its three frames; no vocoder).
+    for b in bursts:
+        b.fec = None
+        if b.raw is not None and b.kind.startswith("VOICE_"):
+            b.fec = ambe.burst_fec(b.raw)
+
     # Per-burst power, spread, frequency offset.
     for b in bursts:
         a = int(b.start)
@@ -496,7 +509,8 @@ def cmd_analyze(args) -> int:
             kind = b.kind + (f" ts{b.slot}" if b.fam == "bs" and b.slot else "")
             print(f"{tm:9.2f} {phase:+6.2f} {sl}  {fam:7s} {err:>4s} {cc:>2s} {kind:24s} {b.pwr:6.1f} "
                   f"{b.pwr + dbm_off:6.1f} {b.spread:5.1f}{'!' if b.step else ' '} {b.center:+6.0f}"
-                  + (f"  {b.lc}" if b.lc else ""))
+                  + (f"  {b.lc}" if b.lc else "")
+                  + (f"  fec {_fec_str(b.fec)}" if b.fec else ""))
 
     # Edges.
     print()
@@ -541,6 +555,12 @@ def cmd_analyze(args) -> int:
     for k in sorted(counts):
         print(f"  {k[0]:7s} {k[1]:10s} slot {k[2]}: {counts[k]}")
     print(f"  total bursts {len(sel)}, carrier segments {len(segs)}")
+    vf = [x for b in sel if b.fec for x in b.fec]
+    if vf:
+        print(f"  AMBE FEC (C0/C1 Golay corrections; C2 has no FEC): {len(vf)} frames in "
+              f"{sum(1 for b in sel if b.fec)} voice bursts, clean {sum(1 for x in vf if x[:2] == (0, 0))}, "
+              f"corrected {sum(1 for x in vf if x[0] + x[1] and not x[2])} "
+              f"({sum(x[0] + x[1] for x in vf)} bits), uncorrectable {sum(1 for x in vf if x[2])}")
     ms_b = [b for b in sel if b.fam == "ms"]
     rep = [b for b in sel if b.fam in ("ts1", "ts2", "bs")]
     gaps = []
@@ -610,7 +630,9 @@ def cmd_analyze(args) -> int:
                         "kind": b.kind.split()[0], "detail": b.kind, "cach_ts": b.slot if b.fam == "bs" else None,
                         "dbfs": round(float(b.pwr), 1), "spread_db": round(b.spread, 1), "step": bool(b.step),
                         "foff_hz": round(float(b.center)), "lc": b.lc,
-                        "cach": getattr(b, "cach", None)} for b in sel],
+                        "cach": getattr(b, "cach", None),
+                        "ambe_fec": [{"c0": c0, "c1": c1, "bad": bad} for c0, c1, bad in b.fec] if b.fec else None}
+                       for b in sel],
             "edges": edges_out,
             "summary": {
                 "counts": {" ".join(k): v for k, v in sorted(counts.items())},

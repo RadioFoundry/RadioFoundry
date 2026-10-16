@@ -40,6 +40,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Talk permit tone | On, Off | On | The beep when a DMR transmission starts ([DMR](08-dmr.md)) | Works |
 | Voice prompts | On, Off | Off | Spoken prompts. There is no recorded speech yet | Dimmed |
 | Message tone | On, Off | On | A three-note tone when a text message arrives | Works |
+| Vibrate | On, Off | On | The radio vibrates for a text message, a call alert, a private call to you and an emergency it hears. Only on radios with a vibration motor ([Radio reference](23-radios.md)) | Works |
 
 ### Display (key 2)
 
