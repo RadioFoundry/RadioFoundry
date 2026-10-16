@@ -10,6 +10,9 @@
 #if CONFIG_BCAST_FM
 #include "bcast/rda5807m/rda5807m_hal.h"
 #endif
+#if CONFIG_APRS
+#include "hrc_afsk.h"
+#endif
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -82,6 +85,9 @@ const board_t board = {
 	.system = &hrc_system,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
+#endif
+#if CONFIG_APRS
+	.afsk = &hrc_afsk,
 #endif
 };
 

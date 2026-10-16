@@ -246,8 +246,13 @@ the ones the radio reads. K.
 | 0xFFF | 1 | logical sector tag, 0x02 | K |
 
 The PA drive for a frequency is linearly interpolated between the two segments around it and used times 16 as the DAC B
-value. Which menu power level uses which of the three arrays, how the 0x300 and 0x314 lists (and the 0x328 and 0x33C
-ones) differ in use, and the unlabeled fields are open. The ADC and the register 0x40 / CTCSS calibration bytes
+value (K). The radio's own firmware takes the segment edges from the 0x314 (UHF) and 0x33C (VHF) lists; ODR's shared
+driver uses even steps from 400 and 136 MHz, which differ from those lists by at most 0.5 MHz at an edge (K).
+
+The power level is one value for the three arrays: 0 = low (0x40 / 0xD0), 1 = middle (0x45 / 0xD5), 2 = high
+(0x4A / 0xDA, also used for 3). The radio's menu shows the setting as High / Low / Middle and stores 2 / 0 / 1, and the
+drive bytes rise with the level in every segment (K). ODR's L / M / H use the same arrays. How the 0x300 and 0x328
+lists are used, and the unlabeled fields, are open. The ADC and the register 0x40 / CTCSS calibration bytes
 have no located source.
 
 ### 6.5 The codec in the program flash
@@ -282,7 +287,7 @@ all on). Upright needs the segment outputs reversed (0xA1) and the common output
 | Device | Bus | Detail | Tag |
 |---|---|---|---|
 | FM broadcast tuner | I2C 7-bit 0x10 (sequential access; ODR uses 0x11, random access, the same chip's other address), SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable (low = on, from the order of start and stop, not measured); its audio needs the amplifier (PTA16) | I |
-| Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | SC7A20, a LIS3DH-compatible part: WHO_AM_I reads 0x11, not the LIS3DH's 0x33 (R). The radio writes CTRL1 = 0x47, CTRL4 = 0x88. ODR reads it for the diagnostics page only; at rest the reading is about 250 mg, so the scale is about 4 times low (?) | R |
+| Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | SC7A20, a LIS3DH-compatible part: WHO_AM_I reads 0x11, not the LIS3DH's 0x33 (R). The radio writes CTRL1 = 0x47, CTRL4 = 0x88. ODR reads it for the diagnostics page only. Lying flat it reads (17, -1008, 78) mg: 1 g, so the scale is right (1 mg per count in the 12-bit mode) | R |
 | Unknown | I2C 7-bit 0x3D, SCL PTA5, SDA PTA6 | registers 0x30, 0x40, 0x80, 0x20, 0x22 | ? |
 | Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call; ODR pulses it once at power-on (`hal_power_t.vibrate`), nothing else calls it yet | R |
 
@@ -324,11 +329,10 @@ receiving and orange flashing while scanning.
 
 ## 10. Open items
 
-- Which menu power level uses which calibration array; the lists at 0x300 / 0x314 / 0x328 / 0x33C.
+- What the 0x300 / 0x328 frequency lists are for (the PA drive uses 0x314 / 0x33C).
 - The 12.5 kHz bandwidth word; the VHF / UHF side of the path pins; the DMR per-burst handlers and PA delay.
 - The display controller part and its contrast.
 - PTB14's role, PTB16's role.
-- The accelerometer's scale (readings about 4 times low).
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
 - The update file header.
@@ -358,7 +362,7 @@ there:
 - FM receive audio on a weather station, the squelch and the monitor key
 - the squelch closes without a signal (`fd6818_noise`), CTCSS / DCS muting, and receiver battery save (`rx_sleep`: FD6818 idle and the RX path off)
 - beeps through the prompt FIFO, clean and without pops
-- the accelerometer answers (scale open)
+- the accelerometer answers and reads 1 g lying flat
 
 Checked with the SDR bench's modem: DMR voice receive and transmit with the radio's own codec, late entry (2026-10-15:
 18 of 36 bursts played, as the HIL test expects), the GPS, privacy and emergency call transmit tests, and DMR data:
@@ -367,3 +371,11 @@ confirmed data with its response, SMS and ETSI SMS received and acknowledged. FM
 The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
 Not in: the air band, the broadcast tuner's screens, USB (the radio has none). VOX: the radio doesn't read its
 microphone level yet, so VOX never arms (`vox.mic=0`).
+
+APRS: positions over DMR (LRRP and UDT) decode on the SDR bench. FM APRS uses the shared HR_C7000 AFSK
+(`platform/hrc7000/hrc_afsk.c`); in its first on-air run (2026-10-16) no frame went out (`aprs.rf_failed`, the step
+not yet known; `aprs.rf_fail` names it from 733e07e on). APRS receive is unchecked.
+
+MMDVM SFR: the radio hears the call's header, uplinks it and starts the repeat in the other slot with the right
+link control, but while it sends, the HR_C7000 delivers almost nothing from the listening slot, so the call doesn't
+continue (`sfr.rx` stops after a few bursts). Open.

@@ -12,7 +12,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases |
 | [Baofeng DM-32UV](#baofeng-dm-32uv) | | Builds and passes its host tests. Not run on a radio yet, not in the releases |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Early bring-up: FM receive only, not run on a radio yet. Not for use |
-| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Early bring-up: boots, screen, keys and storage work; FM and DMR not checked on air yet, DMR without voice. Not for use |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data and hotspot mode; APRS on FM, SFR repeating and VOX don't work yet. No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -311,9 +311,9 @@ forgets changes at power off. Only the PRO (two BK4819 receiver chips) is suppor
 
 ## Baofeng DM-1801 Pro
 
-A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. **Early
-bring-up, not for use:** ODR starts on the radio, and the screen, keys, storage and speaker work. FM and DMR haven't
-been checked on air yet. There is no release to install yet.
+A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. **Bring-up, not
+for everyday use:** FM and DMR work on air on the test bench: voice calls both ways, CTCSS and DCS, text messages and
+the other DMR data, and hotspot mode. There is no release to install yet.
 
 Bring-up builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
 the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/dm32_flash.py --model dm1801pro IMAGE` over
@@ -338,14 +338,19 @@ the programming cable. The cable's plug switches the internal speaker off; unplu
 
 ### DM-1801 Pro power and display
 
-Three power levels, L, M and H. The radio refuses to transmit until ODR can read its factory calibration. The battery
+Three power levels, L, M and H, the stock firmware's Low, Middle and High. The radio refuses to transmit until ODR can
+read its factory calibration. The battery
 scale is the DM-32UV's until it has been measured, so the percentage is approximate. The screen is monochrome; the
 backlight is on or off.
 
 ### What the DM-1801 Pro lacks today
 
-DMR runs without voice: ODR doesn't host this radio's codec yet, so calls have no audio. No air band receive. The
-broadcast FM tuner is wired, but the screens for it aren't built yet, and the motor only vibrates once at power-on.
+- APRS on FM doesn't send yet, and APRS receive is unchecked. APRS positions over DMR work.
+- MMDVM SFR (the radio as a one-frequency repeater) doesn't hear the incoming call while it transmits the repeat, so
+  calls don't repeat yet. Hotspot mode works.
+- No VOX: ODR can't read this radio's microphone level yet.
+- No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
+- The motor only vibrates once at power-on.
 
 ## Planned radios
 

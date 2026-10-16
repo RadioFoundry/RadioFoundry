@@ -16,6 +16,7 @@
 #include "modem/hrc7000/hrc7000.h"
 #include "dmr_glue.h"
 #include "audio_pcm.h"
+#include "hrc_afsk.h"
 
 // DAC C biases the modem's AF input. The radio's own value: with the DM-32UV's 0x06E2 the modem missed the sync of
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
@@ -49,6 +50,8 @@ static bool tx_wide;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static void ring_play_update(void);
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
+static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_route)
+static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
 
 static void speaker_source(void);
 static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key the PA
@@ -182,6 +185,17 @@ static const hrc_dmr_board_t dmr_board = {
 	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US,
 };
 
+#if CONFIG_APRS
+static bool afsk_tx_route(bool on);
+static void aprs_listen_route(bool on);
+
+// PCM amplitude per AFSK level step: the DM-32UV's value (55: about 3 kHz peak at level 50 there); this radio's
+// modulator gain is not checked yet (?)
+static const hrc_afsk_board_t afsk_board = {
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 55,
+};
+#endif
+
 // ---- hal_radio_t ----
 
 static void init(void)
@@ -210,6 +224,9 @@ static void init(void)
 
 	hrc_dmr_board_init(&modem, &dmr_board);
 	hrc_audio_pcm_attach(&modem, dm1801pro_speaker_pcm);
+#if CONFIG_APRS
+	hrc_afsk_attach(&modem, &afsk_board);
+#endif
 }
 
 static void set_mode(radio_mode_t m)
@@ -276,8 +293,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	if (!in_band(hz, true) || !bf_cal_valid()) {
 		return false;
 	}
-	// Levels 0..2 are the factory's low, mid and high points (hardware-dm1801pro.md 6.4); which menu level picks which
-	// is unverified
+	// Levels 0..2 are the factory's low, mid and high points, as the radio's own power setting picks them
+	// (hardware-dm1801pro.md 6.4)
 	static const uint8_t level_of[3] = { 1, 4, 8 };
 	tx_drive = bf_cal_power_level(hz, level_of[power > 2 ? 2 : power]);
 	rx_path(hz, false);
@@ -326,6 +343,11 @@ static void tx_off(void)
 		return;
 	}
 	dmr_keyed = false;
+#if CONFIG_APRS
+	if (afsk_tx) {
+		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
+	}
+#endif
 	if (mode == RADIO_MODE_FM) {
 		pa_ramp(tx_drive, 0);
 	}
@@ -396,17 +418,44 @@ static void rx_sleep(bool sleep)
 
 // The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM
 // receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB14 is driven as its complement, as the radio's own
-// firmware does; during a transmission the TX path owns PTB14 (the microphone route)
+// firmware does; during a transmission the TX path owns PTB14 (the microphone route).
+//
+// While APRS listens the HR_C7000 must hear the FD6818 all the time (PTB15 = 1 takes the FD6818's audio off its
+// input), so PTB15 stays 0 and an open squelch plays FM through the HR_C7000's own FM playback and the codec instead
 static void speaker_source(void)
 {
 	// The FD6818's output is squelched noise while the squelch is closed: switching the speaker to it then let a burst
 	// of static through at the end of every beep, even with the amplifier turned off first
-	bool analog = mode == RADIO_MODE_FM && !transmitting && !pcm_on && rx_audio;
+	bool fm_open = mode == RADIO_MODE_FM && !transmitting && !pcm_on && rx_audio;
+	bool analog = fm_open && !aprs_listen;
 	hrc_pin_write(PIN_SPK_SOURCE, analog);
 	if (!transmitting) {
 		hrc_pin_write(PIN_MIC_PATH, !analog);
 	}
+	if (mode == RADIO_MODE_FM && !transmitting) {
+		bool play = fm_open && aprs_listen;
+		uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
+		hrc7000_audio_bits(&modem, play ? C7_AUDIO_FM_PLAY : 0, play ? 0 : C7_AUDIO_FM_PLAY);
+		hrc_irq_restore(s);
+	}
 }
+
+#if CONFIG_APRS
+// APRS listens (hrc_afsk.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
+static void aprs_listen_route(bool on)
+{
+	uint32_t s = hrc_irq_save();	// dm1801pro_speaker_pcm runs speaker_source from the audio task
+	aprs_listen = on;
+	if (rx_audio) {
+		dm1801pro_amp(DM1801PRO_AMP_RADIO, false);	// the source changes under an open squelch: no click
+	}
+	speaker_source();
+	if (rx_audio) {
+		dm1801pro_amp(DM1801PRO_AMP_RADIO, true);
+	}
+	hrc_irq_restore(s);
+}
+#endif
 
 void dm1801pro_amp(uint8_t who, bool on)
 {
@@ -434,7 +483,7 @@ static void audio(bool on)
 // It plays only while receiving; the caller holds the AUDIO_CONTROL lock (interrupts off)
 static void ring_play_update(void)
 {
-	bool play = pcm_on && !transmitting;
+	bool play = (pcm_on && !transmitting) || afsk_tx;	// APRS tones go to the modulator on purpose
 	hrc7000_audio_bits(&modem, play ? C7_AUDIO_RING_PLAY : 0, play ? 0 : C7_AUDIO_RING_PLAY);
 }
 
@@ -462,6 +511,24 @@ void dm1801pro_speaker_pcm(bool on)
 	}
 	hrc_irq_restore(s);
 }
+
+#if CONFIG_APRS
+// APRS AFSK (hrc_afsk.c): during an FM transmission the prompt FIFO's audio goes to the modulator (ring play, the path
+// that put beeps on DMR bursts), so the tones go there with the microphone muted. False when the radio isn't
+// transmitting FM
+static bool afsk_tx_route(bool on)
+{
+	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
+		return false;
+	}
+	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
+	afsk_tx = on;
+	hrc7000_codec_mute(&modem, on, false);
+	ring_play_update();
+	hrc_irq_restore(s);
+	return true;
+}
+#endif
 
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d)
 {
