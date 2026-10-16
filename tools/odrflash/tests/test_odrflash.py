@@ -91,10 +91,12 @@ class SectorMap(unittest.TestCase):
     def test_dm1801pro_matches_its_linker_script(self):
         b = boards.get("dm1801pro")
         self.assertEqual((b.app_base, b.flash_end, b.family), (0x0300C000, 0x03100000, boards.DM32.family))
-        self.assertEqual(b.codec_sectors(), [])
+        self.assertEqual([(s.addr, s.size) for s in b.codec_sectors()], [(0x030E8000, 0x18000)])
+        self.assertEqual(b.codec.windows, boards.DM32.codec.windows)
         self.assertEqual(b.protected, boards.DM32.protected)
         ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1801pro", "dm1801pro.ld")).read()
-        self.assertIn("ORIGIN = 0x0300C000, LENGTH = 0x03100000 - 0x0300C000", ld)
+        self.assertIn("ORIGIN = 0x0300C000, LENGTH = 0x030E8000 - 0x0300C000", ld)
+        self.assertIn("__codec_slot = 0x030E8000;", ld)
         self.assertIs(boards.from_debuglink_name("DM-1801 Pro"), b)
 
 
@@ -665,6 +667,10 @@ class CodecDecision(unittest.TestCase):
         self.assertEqual(cli.decide_codec(boards.DM32, man, "auto", True, None, None, None).mode, plan.MERGE)
         with self.assertRaises(cli.UsageError):
             cli.decide_codec(boards.DM32, man, "auto", False, None, None, None)
+
+    def test_dm1801pro_always_merges(self):
+        man = {"codec": {"profile": "dm1801pro-049"}}
+        self.assertEqual(cli.decide_codec(boards.DM1801PRO, man, "auto", True, None, None, None).mode, plan.MERGE)
 
 
 class StateFile(unittest.TestCase):

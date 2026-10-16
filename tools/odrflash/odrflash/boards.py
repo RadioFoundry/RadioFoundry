@@ -132,17 +132,19 @@ DM32 = Board(
 )
 
 # Not released yet (docs/testing/dm1801pro-bringup.md). The same Baofeng serial updater as the DM-32UV, with its own ID
-# string (BF1801-V1); the same flash map and the same erase of the whole application area. No codec: this radio's
-# vocoder isn't known, so there is no slot, no codec to merge and nothing to keep. tools/dm32_flash.py --model
-# dm1801pro does the writing.
+# string (BF1801-V1); the same flash map, the same codec slot and the same erase of the whole application area. The
+# codec comes from the radio's own program flash (read with stub/stubtool.py), not from a stock file
+# (docs/spec/codec-dm1801pro.md, tools/dm32_codec.py --board dm1801pro). tools/dm32_flash.py --model dm1801pro does
+# the writing.
 DM1801PRO = Board(
     id="dm1801pro",
     name="Baofeng DM-1801 Pro",
     family="bfuv32-serial",
     app_base=0x0300C000,
     flash_end=0x03100000,
-    sectors=[Sector(0, 0x0300C000, 0x03100000 - 0x0300C000)],
-    codec=CodecProfile(id="none", windows=[], installed=[], sources=[]),
+    sectors=[Sector(0, 0x0300C000, 0x030E8000 - 0x0300C000), Sector(1, 0x030E8000, 0x03100000 - 0x030E8000)],
+    codec=CodecProfile(id="dm1801pro-049", windows=[(0x030E8000, 0x03100000 - 0x030E8000)],
+                       installed=[], sources=["a program flash read of the radio"]),
     debuglink_names=["DM-1801 Pro", "DM-1801Pro", "dm1801pro"],
     releasable=False,
     keep_codec_supported=False,

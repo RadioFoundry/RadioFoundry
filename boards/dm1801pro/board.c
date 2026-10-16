@@ -74,7 +74,7 @@ const board_t board = {
 #if CONFIG_DMR
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
-	// No .vocoder: the codec is located (hardware-dm1801pro.md 6.5) but not hosted, so DMR is signaling and data until it is (hardware-dm1801pro.md 12)
+	.vocoder = &hrc_vocoder,	// the radio's own codec in the slot (codec-dm1801pro.md 4); without it, no voice
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,

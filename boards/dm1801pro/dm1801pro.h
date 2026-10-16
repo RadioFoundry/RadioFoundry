@@ -9,6 +9,7 @@
 #include "board.h"
 #include "dmr_glue.h"
 #include "audio_pcm.h"
+#include "vocoder.h"
 
 // Ops each board file provides
 extern const hal_display_t dm1801pro_display;

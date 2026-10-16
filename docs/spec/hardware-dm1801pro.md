@@ -170,8 +170,10 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   about a millisecond with interrupts off; whether the slot timing tolerates that is a bench question.
 - **PA key:** the TX path comes on when the transmission starts and the DAC B drive is set 28 ms after each burst is armed
   (the DM-32UV's delay; this radio's isn't known, ?), in one write: a ramp doesn't fit in a burst.
-- **Voice:** no vocoder yet. The codec is located (6.5) but not hosted: ODR has no slot tool, driver or call wrapper
-  for it on this board, so DMR runs without voice: the core's signaling and data work, a call has no audio.
+- **Voice:** the radio's own codec, carved from a program flash read into the slot at 0x030E8000 and run by the shared
+  host `platform/hrc7000/vocoder.c` (codec-dm1801pro.md 4). Without the slot, DMR runs without voice. On the bench, a
+  voice call decoded by the SDR bench's modem had 1 corrected bit in 162 AMBE frames. Encode takes about 12 ms of each
+  20 ms frame and decode about 3 ms, so the radio's idle load has to stay low.
 
 ## 6. Flash
 

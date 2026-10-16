@@ -164,15 +164,17 @@ into the codec.
 The wrapper's start-up also creates three RTOS semaphores (names in the data image at RAM 0x18000EA0, 0xEAC, 0xEB8) and
 stops with an error code 1, 2 or 3 if one fails; that is task start-up, not the codec.
 
-## 4. What this means for ODR on this board
+## 4. How ODR hosts it
 
-| Need | Why |
+| Part | What it does |
 |---|---|
-| Table RAM window 0x18000EF0..0x18003E68 | The code's literal pointers expect it. The DM-32UV host accepts tables only inside 0x18000E48..0x18003E20 (`TAB_HI`), so it would reject this slot unless the window widens or the tables are carved for a moved base |
-| Code RAM window 0x16CDC..0x2B2DC | Inside the DM-32UV host's 0x16CDC..0x2F914 window |
-| A slot tool for this radio | `tools/dm32_codec.py` carves by the hash of an update file; this radio's source is a flash image. The windows above are the recipe; carve the code and tables, not the RAM image around them |
-| Linker | Reserve RAM 0x16CDC..0x2B2DC and the table window, as `boards/dm32/dm32.ld` does, and leave out the 0x18000800.. words this firmware's own `.data` uses |
-| Version check | Two signature words, then the sha256 of the carved windows from the table in section 1 |
+| Slot tool | `tools/dm32_codec.py --board dm1801pro` takes a 1 MB program flash read (offset 0 = 0x03000000), recognizes it by the sha256 of the code window (`8f7641b6…`), checks the tables' sha256 (`10684c33…`) and carves the two windows of section 1 into the slot at 0x030E8000, in the DM-32UV slot format. `tools/codec_auto.py` runs it on `make` when the read is in `codecs/` |
+| Host | The shared `platform/hrc7000/vocoder.c`, the DM-32UV's. It takes its RAM windows from the linker (`__codec_run_lo/hi`, `__codec_tab_lo/hi`) and its profile prefix from `HRC_CODEC_BOARD`, so it reports `codec=dm1801pro-049` |
+| Linker | `boards/dm1801pro/dm1801pro.ld`: code RAM 0x16CDC..0x2B2DC and table RAM 0x18000EF0..0x18003E68 are left free; ODR's own RAM starts at 0x2B2DC; the low-RAM state (`ODR_CPU_RAM_SECTION`) goes below 0x16CDC |
+| Flashing | `tools/odrflash` profile `dm1801pro-049`: the slot is merged on every flash, as on the DM-32UV (the updater erases the whole application area) |
+
+Measured on the radio: encode about 12.3 ms per 20 ms frame at the top priority, decode about 2.4 ms, stack use about
+3.9 KB. RX and TX voice work on the bench (hardware-dm1801pro.md 5).
 
 ## 5. Cross-check against an independent build
 

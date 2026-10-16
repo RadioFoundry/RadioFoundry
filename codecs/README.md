@@ -16,6 +16,10 @@ and the release images never contain it. Each radio uses the codec from its own 
    | DM-32 | Baofeng `DM32.01.01.049.bin` | `03107b6f600e7fa95105af8324cff349c0f17fe30db249c14d11e79baa8da97a` |
    | DM-32 | Baofeng `DM32.00.01.046HRVocoder.bin` | `f8484c13c994e920649d7b7bc2b98a98a76cfd0836865e5995a00627fc0c2887` |
    | MD-380 | TYT `MD-380-D2.32(AD).bin` ("Firmware 2.32", D002.032) | `e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43` |
+   | DM-1801 Pro | A 1 MB program flash read of the radio running its stock firmware (`stub/stubtool.py --progmem`) | Any file whose codec code window hashes to `8f7641b6…` (`tools/dm32_codec.py`) |
+
+   The DM-1801 Pro has no published update file, so the codec comes from the radio's own flash. Read it **before** the
+   first ODR install: ODR overwrites the stock firmware, and the codec with it.
 
 2. Build as usual:
 
