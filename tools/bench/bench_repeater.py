@@ -19,7 +19,8 @@ duplex) and the odr_sdrbench package. The bench's gateway service must not hold 
 down, the repeater keys its standard outbound (BS sync, CACH, idle bursts) for --beacon-len seconds and drops again,
 without a call. Made by handing the repeater a local BS_Dwn_Act (as if a radio had asked) with the hang time set to
 the beacon length, so nothing but the repeater's own outbound goes on air. The first beacon comes --beacon-phase
-seconds after the start (default 2). Emits "beacon" events with the time keyed. Not yet run on the bench.
+seconds after the start (default 2). Emits "beacon" events with the time keyed. Run on the bench 2026-10-15: each
+beacon is on air for its full length (BS sync, CACH, idle bursts).
 
 Frequencies: a split pair you are licensed for; there is no default on purpose. Prints one JSON line per event
 (--json): "key" (transmitter up / down), "wakeup" (BS_Dwn_Act heard, with the source), "rx" (each burst heard on the

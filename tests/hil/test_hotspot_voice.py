@@ -47,12 +47,13 @@ def test_hotspot_on_air(radio, sdr_bench, pytestconfig, hotspot_cases, case):
     if "HOTSPOT" not in radio.features():
         pytest.skip("built without the hotspot")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
-    # the bench modem as SdrBench runs it: this bench's host, directory, python and transmit level
     H.BENCH_HOST = sdr_bench.host
-    H.MODEM_CMD = f"cd ~/{sdr_bench.dir} && {sdr_bench.py} bench_tx.py --power {sdr_bench.tx_power}"
     args = type("Args", (), {"freq": freq, "cc": cc, "power": 12})()
     r = H.Result(case)
     with sdr_bench.lease(), radio.released() as port:
+        # the bench modem as SdrBench runs it: this bench's host, directory, python and transmit level (on a
+        # shared bench, the channel and the modem held for the case)
+        H.MODEM_CMD = sdr_bench.modem_prefix(freq, expect_s=60)
         t = H.M.Transport(port)
         hs = H.M.MmdvmLink(t, int(round(freq * 1e6)), cc, args.power, simplex=True)
         try:

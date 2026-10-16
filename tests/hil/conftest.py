@@ -34,6 +34,11 @@ def pytest_addoption(parser):
     g.addoption("--noaa-mhz", type=float, default=162.550, help="NOAA weather radio frequency for test_fm")
     g.addoption("--rssi-floor", type=int, default=-115, help="dBm: test_fm passes above this")
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
+    g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("ODR_SDR_BENCH_WAIT_MAX", "900")),
+                help="s: a test that would wait longer for a shared SDR bench (benchd) is skipped")
+    g.addoption("--bench-station", default=os.environ.get("ODR_BENCH_STATION"),
+                help="a shared bench's station (an ODR radio on the bench host) as the second radio of the tests "
+                     "that use one (bench_station fixture); odr-bench info lists them")
     g.addoption("--sdr-gain", type=float, default=5.0, help="RTL-SDR gain for raw captures (dmr_bench.py C0 picks it)")
     g.addoption("--sdr-ppm", type=float, default=None,
                 help="the SDR's own frequency error in ppm for FM carrier offsets (default: the SDR bench's calibration, "
@@ -143,11 +148,24 @@ def restore_radio(request):
 def sdr_bench(pytestconfig):
     b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"),
                  allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
-                 tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"))
+                 tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"),
+                 wait_max=pytestconfig.getoption("--bench-wait-max"))
     if not b.reachable():
         pytest.skip(f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
                     "sync)")
     return b
+
+
+@pytest.fixture(scope="session")
+def bench_station(pytestconfig, sdr_bench):
+    """The name of the bench station to use as the second radio (--bench-station); skips without one."""
+    name = pytestconfig.getoption("--bench-station")
+    if not name:
+        pytest.skip("no bench station: give --bench-station NAME (odr-bench info on the bench lists them)")
+    st = next((s for s in sdr_bench.info().get("stations", []) if s["name"] == name), None)
+    if st is None or not st.get("present"):
+        pytest.skip(f"bench station {name} is not on the bench (or the bench has no benchd)")
+    return name
 
 
 @pytest.fixture
