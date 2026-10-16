@@ -381,9 +381,9 @@ APRS: positions over DMR (LRRP and UDT) decode on the SDR bench. FM APRS uses th
 second run the same day the frame went out (`aprs.rf_sent`) but carried no tones: the SDR bench saw a 0.63 s
 carrier at 7 Hz rms in the 300-3000 Hz band, so nothing decoded. The same prompt FIFO path decodes on the DM-32UV.
 The board code is the same, so the difference is in this radio's audio wiring or in the FD6818's FM transmit set-up.
-A plain FM transmission with the microphone open showed 9 Hz rms in that band in a quiet room (CTCSS 100.0 at 298 Hz
-deviation), so whether the HR_C7000's voice audio reaches the modulator at all is not yet known. Open; APRS receive is
-unchecked.
+Both runs had the programming cable in the speaker/mic jack, which cuts the internal speaker and microphone. If the
+HR_C7000's audio reaches the FD6818 over that analog line, the cable also cuts the tones. FM voice from the microphone
+can only be checked with the cable out. Open; APRS receive is unchecked.
 
 MMDVM SFR: the radio hears the call's header, uplinks it and starts the repeat in the other slot with the right
 link control, but while it sends, the HR_C7000 delivers almost nothing from the listening slot, so the call doesn't
