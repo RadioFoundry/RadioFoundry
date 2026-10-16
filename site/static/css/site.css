@@ -352,3 +352,18 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .build-image { margin-top: var(--space-3); }
 .panel .panel { box-shadow: none; }
 .panel .panel > h3:first-child { margin-top: 0; }
+/* help: the reassurance stays on screen while the user works through it */
+.notice.calm { border-left-color: var(--ok); background: var(--ok-soft); }
+.notice.calm p { margin: 0; }
+.notice.calm p + p { margin-top: var(--space-1); }
+.help-link { margin: var(--space-2) 0 0; font-weight: 600; }
+@media (min-width: 760px) { .choice-grid.three { grid-template-columns: repeat(3, 1fr); } }
+
+/* version link: the banner on every step and the question before the build */
+.version-banner p { margin: 0; }
+.version-banner p + p { margin-top: var(--space-1); }
+dialog.confirm { max-width: 36rem; width: calc(100% - 2 * var(--space-4)); border: 1px solid var(--border); border-radius: var(--radius);
+	background: var(--surface); color: var(--text); padding: var(--space-5); }
+dialog.confirm::backdrop { background: rgb(0 0 0 / 0.45); }
+dialog.confirm h2 { margin-top: 0; }
+.confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }

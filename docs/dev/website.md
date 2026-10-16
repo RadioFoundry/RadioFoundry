@@ -250,6 +250,43 @@ A radio whose image depends on more than the feature switches lists the choices 
 connected radio's debug link name (`board_name`), sends it with the request, and refuses an image whose manifest
 doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name says another value.
 
+### Version links
+
+To have someone install a version that isn't a release (a commit to try out), send them the flasher with
+`?version=`:
+
+```
+https://<site>/flash/?version=<full 40-character commit hash>
+https://<site>/flash/?version=<full commit hash>#radio=dm1701
+https://<site>/flash/?version=v0.3.0
+```
+
+| Behavior | Detail |
+|---|---|
+| What it builds | The build request sends that ref in place of the newest release tag. The build service takes a release tag, `main` or a full commit hash, and the commit has to be pushed. A short hash shows a "can't find" banner and builds nothing. |
+| How long it lasts | The tab keeps it in `sessionStorage` for the session: reloads and visits to other pages keep it, a new browser session doesn't. `?version=` (empty) drops it. |
+| On every step | A banner names the version and has "Install the latest release instead", which drops it. |
+| Before the build | The build step's button says "Get version <hash>", and a dialog asks for confirmation. The dialog can also switch to the latest release and continue with it. |
+| `#radio=` | Picks the radio, as on any flasher link. |
+
+The feature list comes from the site's own release data. A commit with other feature names makes the build fail with
+the service's error.
+
+### A failed install (the help task)
+
+"My radio isn't working" on the start page asks for the radio and the symptom, then walks to a fix. Every screen
+keeps the reassurance that the page never writes the part of the radio that starts update mode.
+
+| Symptom | Path |
+|---|---|
+| Won't switch on | Battery check, then (STM32) a practice of update mode with a connection check, then the fix chooser. |
+| Stuck on a screen, or the install stopped | Update mode check (STM32) or straight to the fix chooser (HR_C7000, which the page reaches over the cable at power-on). |
+| Works but something is wrong | The fix chooser. |
+
+The fix chooser offers installing again (the install steps without the current-firmware question), putting back a
+backup (the restore task with the target preselected) or the original firmware (stock file, then update mode). Each
+failure message in the install steps links here (`helpLink`).
+
 ### USB network mode
 
 A radio in USB network mode (1FC9:0096, [usb-network.md](../spec/usb-network.md)) has no serial port, and the

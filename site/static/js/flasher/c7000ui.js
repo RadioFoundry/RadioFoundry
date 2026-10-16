@@ -106,10 +106,13 @@ function connectPanel(onReady) {
 	const body = h("div");
 	const box = panel(t("flash.c7.connect.title", { name: radio.name }), h("div", { class: "c7-grid" }, body, top.el));
 	let abort = null;
+	// each state shows its parts and, through act(), its one action in the nav bar
 	const show = (state, ...parts) => {
 		top.set(state);
 		fill(body, ...parts);
+		S().forward(null);
 	};
+	const act = (...btns) => S().forward(btns.length > 1 ? btns : btns[0]);
 
 	const cableStep = (err = null) => {
 		show({ led: "off", screen: "any", note: t("flash.c7.visual.cable") },
@@ -117,10 +120,10 @@ function connectPanel(onReady) {
 				h("li", {}, t("flash.c7.connect.step_cable")),
 				h("li", {}, t("flash.c7.connect.step_choose"))),
 			err ? notice(err, "bad") : null,
-			h("div", { class: "actions" }, button(t("flash.c7.connect.choose"), () => start(false), { primary: true })),
 			h("p", { class: "small muted" }, t("flash.c7.connect.no_cable"), " ",
 				h("a", { href: "#", onclick: (e) => { e.preventDefault(); start(true); } }, t("flash.c7.connect.all_ports"))),
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.connect.which_port")), h("p", {}, t("flash.c7.connect.which_port_text"))));
+		act(button(t("flash.c7.connect.choose"), () => start(false), { primary: true }));
 	};
 
 	const start = async (any) => {
@@ -164,8 +167,8 @@ function connectPanel(onReady) {
 			c.how = "odr";
 			await ready(t("flash.c7.connect.found_odr_stub"));
 		} catch (e) {
-			show({ led: "off", screen: "on" }, notice(t("flash.c7.connect.odr_failed", { error: ctx.errorText(e) }), "bad"),
-				h("div", { class: "actions" }, button(t("flash.c7.connect.power_instead"), () => powerCycle(), { primary: true })));
+			show({ led: "off", screen: "on" }, notice(t("flash.c7.connect.odr_failed", { error: ctx.errorText(e) }), "bad"));
+			act(button(t("flash.c7.connect.power_instead"), () => powerCycle(), { primary: true }));
 		}
 	};
 
@@ -207,8 +210,8 @@ function connectPanel(onReady) {
 			h("ol", { class: "steps c7-big" },
 				h("li", {}, t("flash.c7.connect.step_off")),
 				h("li", {}, t("flash.c7.connect.step_on"))),
-			h("p", {}, t("flash.c7.connect.no_keys")), sim, h("p", { class: "small" }, clock), hints,
-			h("div", { class: "actions" }, button(t("flash.c7.connect.cancel"), () => { ac.abort(); clearInterval(tick); cableStep(); })));
+			h("p", {}, t("flash.c7.connect.no_keys")), sim, h("p", { class: "small" }, clock), hints);
+		act(button(t("flash.c7.connect.cancel"), () => { ac.abort(); clearInterval(tick); cableStep(); }, { quiet: true }));
 		const stub = mkStub();
 		try {
 			await stub.waitForRom(ROM_WAIT, { signal: ac.signal });
@@ -217,8 +220,8 @@ function connectPanel(onReady) {
 		} catch (e) {
 			clearInterval(tick);
 			if (ac.signal.aborted && e.message === "stopped") return;
-			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.no_rom"), "bad"), powerHints(),
-				h("div", { class: "actions" }, button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true })));
+			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.no_rom"), "bad"), powerHints());
+			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }));
 		}
 	};
 
@@ -238,8 +241,8 @@ function connectPanel(onReady) {
 			c.how = "rom";
 			await ready(t("flash.c7.connect.found_rom"));
 		} catch (e) {
-			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) }), "bad"),
-				h("div", { class: "actions" }, button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true })));
+			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) }), "bad"));
+			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }));
 		}
 	};
 
@@ -256,19 +259,18 @@ function connectPanel(onReady) {
 			c.model = c.odr ? boardId() : c7.bootloaderModel(C(), c.progmem || (await st.dump("progmem", 0, C().app_start)));
 			if (c.model && c.model !== boardId()) {
 				const other = Object.values(S().data.radios).find((r) => r.flash.board === c.model);
-				return show({ led: "wait", screen }, notice(t("flash.c7.connect.wrong_radio", { name: S().radio.name, other: other?.name || c.model }), "bad"),
-					leaveLoaderButton());
+				show({ led: "wait", screen }, notice(t("flash.c7.connect.wrong_radio", { name: S().radio.name, other: other?.name || c.model }), "bad"));
+				return act(leaveLoaderButton());
 			}
 			show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)),
 				h("dl", { class: "kv-list" },
-					h("dt", {}, t("flash.c7.radio")), h("dd", {}, c.model ? S().radio.name : t("flash.c7.radio_unconfirmed")),
-					h("dt", {}, t("flash.c7.chips")), h("dd", {}, `${c.jedec.progmem} / ${c.jedec.q128}`)),
+					h("dt", {}, t("flash.c7.radio")), h("dd", {}, c.model ? S().radio.name : t("flash.c7.radio_unconfirmed"))),
 				h("p", {}, t(c.how === "odr" ? "flash.c7.connect.led_odr" : "flash.c7.connect.led_rom")));
 			await sleep(S().fakeC7 ? 400 : 1500);
 			onReady();
 		} catch (e) {
-			show({ led: "wait", screen }, notice(ctx.errorText(e), "bad"),
-				h("div", { class: "actions" }, button(t("flash.c7.connect.try_again"), () => find(), { primary: true })));
+			show({ led: "wait", screen }, notice(ctx.errorText(e), "bad"));
+			act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }));
 		}
 	};
 
@@ -281,11 +283,11 @@ function connectPanel(onReady) {
 
 // Leave loader mode: the chip restarts into whatever firmware is in flash
 function leaveLoaderButton(label = t("flash.c7.leave")) {
-	return h("div", { class: "actions" }, button(label, async () => {
+	return button(label, async () => {
 		try { await S().c7.stub.resetChip(); } catch (e) { /* the radio may be gone already */ }
 		await dropC7();
 		ctx.render();
-	}));
+	}, { primary: true });
 }
 
 export function connectView() {
@@ -327,9 +329,11 @@ export function checkView() {
 			h("span", {}, h("b", {}, t("flash.c7.check.opt_q128")), h("span", { class: "why" }, t("flash.c7.check.opt_q128_text"), " ", estimate(0x200000))), h("span")));
 	const run = button(t("flash.c7.check.run"), () => go(), { primary: true });
 	out.append(panel(t("flash.c7.check.title"), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t(firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")), options,
-			h("div", { class: "actions" }, run), checks, prog.el, status), top.el)));
-	forward(null);
+		h("div", {}, h("p", {}, t(firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
+			firstInstall && !S().radio.flash.stock_download ? h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.c7.check.only_copy"))), h("p", {}, t("flash.c7.check.only_copy_text"))) : null,
+			options,
+			checks, prog.el, status), top.el)));
+	forward(run);
 
 	async function go() {
 		run.disabled = true;
@@ -410,7 +414,7 @@ export function checkView() {
 			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, t("flash.c7.codec.action_text")), pick,
 				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
 			d && d.mode === "none" ? notice(t("flash.c7.codec.none_risk"), "bad") : null,
-			c.progmem ? h("div", { class: "actions" }, button(t("flash.c7.check.download_again"), () => saveBundle(firstInstall ? "before" : "update"))) : null,
+			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(firstInstall ? "before" : "update"); } }, t("flash.c7.check.download_again"))) : null,
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }), d ? h("span", {}, text) : null);
 	}
@@ -485,12 +489,11 @@ export function writeView() {
 		h("div", {},
 			h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.c7.write.firmware")), h("dd", {}, `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`),
-				h("dt", {}, t("flash.c7.write.codec")), h("dd", {}, what),
-				h("dt", {}, t("flash.c7.write.range")), h("dd", {}, `${hex(C().progmem_base + start)} .. ${hex(C().progmem_base + start + data.length - 1)}`)),
+				h("dt", {}, t("flash.c7.write.codec")), h("dd", {}, what)),
 			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t("flash.c7.write.careful_text"))),
-			h("div", { class: "actions" }, go), prog.el, status),
+			prog.el, status),
 		top.el), map.el, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
-	S().forward(null);
+	S().forward(go);
 
 	async function write() {
 		go.disabled = true;
@@ -524,8 +527,8 @@ export function writeView() {
 			ctx.flashFinished(started, e);
 			await busy(false);
 			top.set({ led: "wait", screen: "off" });
-			fill(status, notice(t("flash.c7.write.failed", { error: ctx.errorText(e) }), "bad"), retryHelp(),
-				h("div", { class: "actions" }, button(t("flash.c7.write.again"), async () => {
+			fill(status, notice(t("flash.c7.write.failed", { error: ctx.errorText(e) }), "bad"), retryHelp(), ctx.helpLink());
+			S().forward(button(t("flash.c7.write.again"), async () => {
 					if (!(await c.stub.attach())) {
 						await dropC7();
 						S().step--;	// back to connect: the radio has to be found again
@@ -534,7 +537,7 @@ export function writeView() {
 						return;
 					}
 					write();
-				}, { primary: true })));
+				}, { primary: true }));
 			go.disabled = false;
 		}
 	}
@@ -550,6 +553,7 @@ export function doneView() {
 	const status = h("div", {}, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
 	const box = panel(t("flash.done.title"), h("div", { class: "c7-grid" }, h("div", {}, h("p", {}, t("flash.c7.done.lead")), status), top.el));
 	const check = async () => {
+		S().forward(null);
 		fill(status, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
 		const until = Date.now() + 30000;
 		await sleep(Math.max(0, (c.resetAt || 0) + (S().fakeC7 ? 1500 : BOOT_MS) - Date.now()));
@@ -560,18 +564,19 @@ export function doneView() {
 		}
 		if (!p) {
 			top.set({ led: "off", screen: "off" });
-			return fill(status, notice(t("flash.c7.done.no_answer"), "bad"),
-				h("div", { class: "actions" }, button(t("flash.c7.done.check"), check, { primary: true })));
+			fill(status, notice(t("flash.c7.done.no_answer"), "bad"), ctx.helpLink());
+			return S().forward(button(t("flash.c7.done.check"), check, { primary: true }));
 		}
 		const wantCodec = c.decision?.mode !== "none";
 		const good = !wantCodec || (p.codec && !["absent", "none"].includes(p.codec));
 		top.set({ led: "off", screen: "on" });
 		fill(status, 
-			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git), h("dt", {}, t("flash.now.codec")), h("dd", {}, p.codec || "?")),
-			notice(good ? t("flash.c7.done.ready") : t("flash.c7.done.no_codec"), good ? "ok" : "bad"),
+			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git)),
+			notice(good ? t("flash.c7.done.ready") : t("flash.c7.done.no_codec"), good ? "ok" : "bad"), good ? null : ctx.helpLink(),
 			c.backupSaved ? h("p", { class: "small muted" }, t("flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks ODR's codec until the next restart (debuglink_stub.c)
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
+		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
 		await dropC7();
 	};
 	check();
@@ -614,7 +619,8 @@ export function backupView() {
 			ctx.flashFinished(started);
 			await c.stub.ledSequence(DONE_LED);
 			top.set({ led: "done", screen: c.how === "odr" ? "loader" : "off" });
-			fill(status, notice(t("flash.c7.backup.done"), "ok"), leaveLoaderButton(t("flash.c7.backup.leave")));
+			fill(status, notice(t("flash.c7.backup.done"), "ok"));
+			S().forward(leaveLoaderButton(t("flash.c7.backup.leave")));
 		} catch (e) {
 			ctx.flashFinished(started, e);
 			fill(status, notice(ctx.errorText(e), "bad"), retryHelp());
@@ -624,7 +630,8 @@ export function backupView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.backup.task_title", { name: S().radio.name }), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t("flash.c7.backup.lead")), opt("progmem"), opt("q128"), h("div", { class: "actions" }, go), prog.el, status), top.el)));
+		h("div", {}, h("p", {}, t("flash.c7.backup.lead")), opt("progmem"), opt("q128"), prog.el, status), top.el)));
+	S().forward(go);
 	return out;
 }
 
@@ -687,7 +694,8 @@ export function restoreView() {
 		}
 	}, { primary: true });
 	out.append(panel(t("flash.c7.restore.title"), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t("flash.c7.restore.lead")), h("div", { class: "actions" }, go), prog.el, status), top.el), map.el));
+		h("div", {}, h("p", {}, t("flash.c7.restore.lead")), prog.el, status), top.el), map.el));
+	S().forward(go);
 	return out;
 }
 
