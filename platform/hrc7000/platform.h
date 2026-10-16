@@ -202,6 +202,8 @@ typedef struct {
 extern hal_flash_t hrc_flash_spi0;
 void hrc_flash_spi0_configure(const hrc_flash_cfg_t *cfg);	// before hrc_flash_spi0.init
 uint32_t hrc_flash_spi0_jedec(void);
+// The task holding the data flash lock and for how long (ms), "-" when free: a stuck flash user shows here
+const char *hrc_flash_spi0_holder(uint32_t *held_ms);
 
 // --- ADC (adc.c): channels 1 (B) and 2 (C) ---
 
@@ -261,5 +263,12 @@ extern const hal_stream_t hrc_host_uart_stream;
 void hrc_host_uart_init(void);
 uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
 uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
+// Host port traffic for the diagnostics page: when the host link stops answering, these tell a dead receiver (rx
+// stops), a stuck transmitter (tx_stalls) and a stuck host link task (waits stops) apart
+typedef struct {
+	uint32_t rx_bytes, tx_bytes, tx_stalls, waits;
+	uint8_t ier;			// the interrupt enables as the UART has them now (0x05 expected)
+} hrc_uart_traffic_t;
+void hrc_host_uart_traffic(hrc_uart_traffic_t *t);
 
 #endif

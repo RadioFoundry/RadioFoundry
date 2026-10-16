@@ -15,6 +15,8 @@ static const hrc_flash_cfg_t *cfg;
 static SemaphoreHandle_t lock;
 static bool ready;
 static uint32_t jedec;
+static TaskHandle_t holder;		// who has the lock, for the diagnostics page
+static uint32_t held_since;
 
 static void chip_select(bool active)
 {
@@ -34,12 +36,15 @@ static void take(void)
 {
 	if (lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
 		xSemaphoreTake(lock, portMAX_DELAY);
+		held_since = hal_millis();
+		holder = xTaskGetCurrentTaskHandle();
 	}
 }
 
 static void give(void)
 {
 	if (lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+		holder = NULL;
 		xSemaphoreGive(lock);
 	}
 }
@@ -121,4 +126,11 @@ void hrc_flash_spi0_configure(const hrc_flash_cfg_t *c)
 uint32_t hrc_flash_spi0_jedec(void)
 {
 	return jedec;
+}
+
+const char *hrc_flash_spi0_holder(uint32_t *held_ms)
+{
+	TaskHandle_t h = holder;
+	*held_ms = h != NULL ? hal_millis() - held_since : 0;
+	return h != NULL ? pcTaskGetName(h) : "-";
 }

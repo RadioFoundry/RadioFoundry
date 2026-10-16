@@ -45,6 +45,9 @@ static uint8_t rx_buf[RX_SIZE];
 static volatile uint32_t rx_head, rx_tail;
 static volatile uint32_t rx_overruns;	// the ring was full
 static volatile uint32_t rx_line_errors;	// the UART flagged a character (FIFO overrun, parity, framing, break)
+static volatile uint32_t rx_bytes;
+static uint32_t tx_bytes, tx_stalls;	// a stall: the TX FIFO stayed full for TX_SPIN, the rest of the write dropped
+static uint32_t waits;			// wait_rx() calls: the host link task's heartbeat (one per pass, 5 ms at most)
 static SemaphoreHandle_t rx_sem;
 static bool started;
 
@@ -68,6 +71,7 @@ static void uart_isr(void)
 		} else {
 			rx_overruns++;
 		}
+		rx_bytes++;
 		any = true;
 	}
 	(void)U(UART_LSR);	// clears a line status interrupt
@@ -123,6 +127,7 @@ static size_t rd(uint8_t *buf, size_t max)
 
 static bool wait_rx(uint32_t timeout_ms)
 {
+	waits++;
 	if (rx_tail != rx_head) {
 		return true;
 	}
@@ -138,10 +143,12 @@ static size_t wr(const uint8_t *buf, size_t len)
 		uint32_t spins = TX_SPIN;
 		while ((U(UART_USR) & USR_TFNF) == 0) {
 			if (--spins == 0) {
+				tx_stalls++;
 				return i;
 			}
 		}
 		U(UART_RBR) = buf[i];
+		tx_bytes++;
 	}
 	return len;
 }
@@ -154,6 +161,15 @@ uint32_t hrc_host_uart_overruns(void)
 uint32_t hrc_host_uart_line_errors(void)
 {
 	return rx_line_errors;
+}
+
+void hrc_host_uart_traffic(hrc_uart_traffic_t *t)
+{
+	t->rx_bytes = rx_bytes;
+	t->tx_bytes = tx_bytes;
+	t->tx_stalls = tx_stalls;
+	t->waits = waits;
+	t->ier = (uint8_t)U(UART_IER);
 }
 
 const hal_stream_t hrc_host_uart_stream = {
