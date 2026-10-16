@@ -1435,6 +1435,8 @@ def main(argv=None):
     ap.add_argument("--end", type=lambda s: int(s, 0), help="old form: end (exclusive)")
     ap.add_argument("--verify-progmem", metavar="FILE", help="compare the program flash with FILE by CRC (no data transfer)")
     ap.add_argument("--verify-q128", metavar="FILE", help="compare the data flash with FILE by CRC")
+    ap.add_argument("--write-q128", metavar="FILE", help="STM32 radios: write FILE into the SPI flash from --q128-range's "
+                    "start (default 0), changed 4 KB sectors only, each verified by CRC")
     ap.add_argument("--probe", action="store_true", help="chip IDs, a first block of each flash and some registers")
     ap.add_argument("--peek", metavar="ADDR:LEN", help="print LEN bytes of radio memory (hex dump)")
     ap.add_argument("--retries", type=int, default=6)
@@ -1481,7 +1483,7 @@ def main(argv=None):
     for mem, f, rng in (("progmem", a.progmem, a.progmem_range), ("q128", a.q128, a.q128_range)):
         if f:
             jobs.append((mem,) + (f,) + parse_range(rng, MEM[mem][3]))
-    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app):
+    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app or a.write_q128):
         ap.error("nothing to do: give --progmem, --q128, --verify-*, --probe, --peek or OUT")
     try:
         import serial

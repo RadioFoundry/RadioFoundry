@@ -21,7 +21,7 @@ repository for now. Check the embedded images with `sha256sum stub_*.bin` agains
 
 A second stub, with its source here, for the STM32F405 radios behind the AnyRoad / TYT bootloader. A running ODR built
 with `CONFIG_STUB_ENTRY=y` loads it over the USB debug link; it then installs builds (changed sectors only, the codec
-kept), backs up and verifies the internal flash. Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
+kept), backs up and verifies the internal flash, and reads and writes the external SPI flash. Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
 
 | File | What |
 |---|---|

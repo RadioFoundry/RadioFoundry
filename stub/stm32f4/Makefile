@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The STM32F4 flash stub (docs/spec/stub-stm32f4.md): one image for every STM32F405 radio behind the AnyRoad / TYT
-# bootloader (DM-1701, MD-380). No board code: it keeps the pin levels ODR left and needs only the SoC.
+# bootloader (DM-1701, MD-380). No board code: it keeps the pin levels ODR left; the one wiring fact it carries, the
+# SPI flash on SPI1 with chip select PD7, is the same on both radios (f4stub_spi.c).
 #
 #   make -C stub/stm32f4                 build/stub-stm32f4/f4stub.bin (loaded by stub/stubtool.py --odr-enter)
 #   make -C stub/stm32f4 BUILD=DIR       elsewhere
@@ -20,12 +21,12 @@ CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -std=gnu11 -ffreestanding
 LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -nostdlib -nostartfiles -Wl,--gc-sections -T f4stub.ld \
 	-Wl,-Map=$(BUILD)/f4stub.map -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 
-SRC := f4stub_main.c f4stub_proto.c f4stub_usb.c f4stub_flash.c
+SRC := f4stub_main.c f4stub_proto.c f4stub_usb.c f4stub_flash.c f4stub_spi.c
 OBJ := $(patsubst %.c,$(BUILD)/%.o,$(SRC))
 
 all: $(BUILD)/f4stub.bin
 
-$(BUILD)/%.o: %.c f4stub.h f4stub_usb.h f4stub_flash.h Makefile
+$(BUILD)/%.o: %.c f4stub.h f4stub_usb.h f4stub_flash.h f4stub_spi.h Makefile
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
 

@@ -110,13 +110,15 @@ arriving for 200 ms is dropped. The largest payload is 4104 bytes (`F4STUB_MAX_P
 
 | Op | Name | Request | Reply |
 |---|---|---|---|
-| `01` | HELLO | none | `F4STUB`, version u8 (1), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted), application base u32 (0x0800C000) |
+| `01` | HELLO | none | `F4STUB`, version u8 (2), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted), application base u32 (0x0800C000), SPI flash size u32 (0: no chip answered), its JEDEC ID (3 bytes). Version 1 stopped after the application base |
 | `02` | PEEK | addr u32, n u16 (1 to max) | n bytes. Allowed: flash, 0x1FFF0000-0x1FFF7A2F (system memory, OTP, UID, flash size), option bytes 0x1FFFC000-0x1FFFC00F, SRAM, CCM. Peripherals are refused |
-| `07` | SUMS | addr u32 (4 KB aligned, flash), count u16 (1 to 820) | count x (CRC-32 u32, blank u8) |
-| `09` | READ | addr u32 (4 KB aligned, flash), count u8 (1 to 255), compress u8 | count frames, one per 4 KB block: CRC-32 u32, method u8 (0 raw, 2 blank), length u16, data. Compression is not offered; a compress request is answered raw |
+| `07` | SUMS | addr u32 (4 KB aligned), count u16 (1 to 820), memory u8 (optional: 0 internal flash, the default; 1 SPI flash, addresses from 0) | count x (CRC-32 u32, blank u8) |
+| `09` | READ | addr u32 (4 KB aligned), count u8 (1 to 255), compress u8, memory u8 (optional, as SUMS) | count frames, one per 4 KB block: CRC-32 u32, method u8 (0 raw, 2 blank), length u16, data. Compression is not offered; a compress request is answered raw |
 | `0D` | RESET | magic u32 | OK, then a system reset once the reply has left |
 | `10` | ERASE | sector u8, magic u32 | OK once erased |
 | `11` | PROGRAM | addr u32 (word aligned), 4 to 4096 bytes (whole words) | OK once programmed and read back |
+| `12` | XERASE | addr u32 (a 4 KB SPI flash sector), magic u32 | OK once erased |
+| `13` | XPROGRAM | addr u32, 1 to 4096 bytes inside one 4 KB SPI flash sector | OK once programmed and read back |
 
 The magic is `0x46345342` ("F4SB").
 
@@ -128,7 +130,7 @@ The magic is `0x46345342` ("F4SB").
 | `0D` | bad argument: length, alignment or range |
 | `0E` | payload longer than the maximum |
 | `0F` | refused by a safety rule (section 6) |
-| `10` | flash error: the controller flagged one, or the read-back differs |
+| `10` | flash error: the controller flagged one, the read-back differs, or the SPI flash stayed busy |
 
 ### 5.1 Shared with the HR_C7000 stub, and what differs
 
@@ -139,7 +141,8 @@ The magic is `0x46345342` ("F4SB").
 | PEEK | layout | refuses peripherals |
 | SUMS, READ | the reply records, 4 KB units | the request is a flash address, not an SPI controller, chip select and offset |
 | Writes | | the HR_C7000 stub passes SPI commands through (write enable, sector erase, page program); this one has ERASE and PROGRAM for the internal flash, with the rules in section 6 |
-| Baud rate, LED, CALL, SPI ops | | not present (USB, no board wiring in the stub) |
+| Baud rate, LED, CALL | | not present (USB) |
+| The SPI flash | | a memory byte on SUMS and READ, and XERASE / XPROGRAM, instead of the HR_C7000 stub's SPI pass-through. The stub drives the chip itself |
 | Entry | the debug link STUB command and its magic `C7SB` | the platform copies the image to its run address; INFO reports the run address |
 | Transport | | USB CDC-ACM instead of a UART at 115200 |
 
@@ -159,6 +162,19 @@ The stub enforces these, so a host bug can't break them:
 | Every programmed word is read back | a weak cell shows up as status `10` |
 | ERASE and RESET carry the magic | a stray frame can't erase or reset |
 | Caches and prefetch are off | reads after an erase or program see the flash, not a stale cache line |
+| XERASE carries the magic; XPROGRAM only goes to bytes that read erased, inside one 4 KB sector, and every byte is read back | the same rules as the internal flash. The SPI flash holds no code, so there is no interlock: what goes there (a backup put back, a codeplug) is the host's choice |
+
+### 6.1 The SPI flash
+
+Both radios wire their W25Q128 the same way: SPI1 on PB3 (SCK), PB4 (MISO), PB5 (MOSI), alternate function 5, chip
+select PD7, mode 0 ([hardware-dm1701.md](hardware-dm1701.md) 2, [hardware-md380.md](hardware-md380.md) 12). That is the
+one wiring fact the stub carries. It sets the bus up from scratch at the slowest prescaler at or under 4.5 MHz (ODR's
+rate), wakes the chip (0xAB), reads its JEDEC ID (0x9F) and takes the size from the ID's capacity byte, up to 16 MB
+(3 address bytes). Reads use 0x03, erases 0x20 (4 KB), programs 0x02 in pages, each behind write enable (0x06) with
+the status register (0x05) polled. A chip that doesn't answer gives size 0, and every SPI request is then refused.
+
+On the bench DM-1701 (2026-10-16): JEDEC `ef4018`, the whole 16 MB read in 59 s (about 280 KB/s) and verified, and a
+pattern written to a blank sector, read back and erased again, after which the whole chip matched the first read.
 
 ## 7. Update order and recovery
 
@@ -209,7 +225,7 @@ merge mode through the bootloader: the stub never writes codec bytes it didn't r
 
 | Case | What the stub gives |
 |---|---|
-| A radio running ODR with `CONFIG_STUB_ENTRY` | a full 1 MB internal flash image (bootloader, ODR, codec), every block CRC checked, with no button press. The external SPI flash is read by the running ODR already (debug link STORAGE) |
+| A radio running ODR with `CONFIG_STUB_ENTRY` | a full 1 MB internal flash image (bootloader, ODR, codec) and the whole external SPI flash (16 MB: codeplug, calibration), every block CRC checked, with no button press. The SPI flash can be written back the same way |
 | A stock radio | nothing yet. It can't run our code without the bootloader, and the bootloader reads no flash. A first install still goes through the bootloader, blind |
 | After the first install | everything above. The bootloader and the codec that came with the radio can be saved before any later update |
 
@@ -221,7 +237,7 @@ never committed.
 
 | Item | Size |
 |---|---|
-| Stub image | 5,324 bytes (limit 8 KB, asserted by `f4stub.ld`) |
+| Stub image | 6,764 bytes (limit 8 KB, asserted by `f4stub.ld`) |
 | Stub RAM after the jump | about 26 KB of SRAM (image, buffers, 8 KB receive ring) plus the stack |
 | ODR with `CONFIG_STUB_ENTRY=y`, DM-1701 | +768 bytes in sectors 3-6 (the STUB state machine, the entry) and +112 in sector 9 (the banner text); +8 KB of SRAM (the staging buffer): RAM 92.7 % used |
 | ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code: 275,640 of 281,668 bytes (2026-10-16), RAM 78.8 %. The default image has about 6 KB left, so the switch fits with no other switch off |
@@ -256,11 +272,13 @@ Then, with ODR running (PORT is its USB serial port, `/dev/cu.usbmodem…` on ma
 | 8 | `python3 stub/stubtool.py PORT --attach --board dm1701 --boot reset` | ODR starts; `odr_debug.py version` shows the new `git=` |
 | 9 | `python3 stub/stubtool.py PORT --odr-enter --write-app ...` with yet another build, USB unplugged during the write, then a power cycle | the radio comes up in the bootloader with no keys held; odrflash restores it |
 | 10 | `odr_debug.py radio usb network`, then `python3 stub/stubtool.py udp:RADIO_IP --odr-enter --peek 0x08000000:64` | the hand-over goes over UDP; the stub comes up as a serial port (`--stub-port`, default the one 1FC9:0094 port) and answers |
+| 11 | `python3 stub/stubtool.py PORT --odr-enter --q128 ~/spi.bin`, then `--attach --verify-q128 ~/spi.bin` | "SPI flash 16384 KB (JEDEC …)" in the HELLO line; 16 MB read, identical |
+| 12 | write a pattern to a blank 4 KB sector with `--write-q128 pat.bin --q128-range ADDR:ADDR+0x1000`, read it back, write 0xFF back the same way, then `--verify-q128 ~/spi.bin` | 1 sector written each time; the pattern reads back; the whole chip matches the first read; ODR starts with its codeplug |
 
 Steps 4 and 5 write the dump outside the repository. Step 9 needs odrflash and the stock file at hand. The HIL suite
 can gain a test for steps 2 and 3 (opt-in, reads only).
 
-Results on the bench DM-1701 (2026-10-16, RDP level 1): steps 1 to 8 and 10 pass. The stub reads the bootloader's
+Results on the bench DM-1701 (2026-10-16, RDP level 1): steps 1 to 8 and 10 to 12 pass. The stub reads the bootloader's
 vector table from SRAM (so code running from RAM reads flash at RDP 1), a 1 MB read takes 2 s and matches the image
 flashed through the bootloader, an unchanged image writes 0 sectors, a changed one writes 5 sectors in 8 s, and the
 codec sectors stay (the radio still finds its codec). Step 9 is still to do.
@@ -274,8 +292,6 @@ codec sectors stay (the radio still finds its codec). Step 9 is still to do.
 - odrflash: use the stub when the radio runs a `CONFIG_STUB_ENTRY` build, with the bootloader as the fallback.
 - Release use: pin the stub image (the radio could refuse a stub whose SHA-256 is not built in), then turn the switch on
   by default.
-- The external SPI flash from the stub (needs board wiring: SPI1 and the chip select differ per radio); today the
-  running ODR reads it.
 
 Sources: STM32F405/407 reference manual (embedded flash interface: unlock, sector erase, programming parallelism,
 read protection levels; OTG_FS device programming model), STM32F405 data sheet (flash erase and program times), USB 2.0

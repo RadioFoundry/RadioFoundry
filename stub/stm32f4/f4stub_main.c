@@ -10,6 +10,7 @@
 #include "stm32f4xx.h"
 #include "f4stub.h"
 #include "f4stub_flash.h"
+#include "f4stub_spi.h"
 #include "f4stub_usb.h"
 
 #define HANDOFF_USB_ADOPT	0x1u	// r0 bit 0: ODR's CDC-ACM device is configured (stub_entry.c)
@@ -57,6 +58,17 @@ void *memmove(void *dst, const void *src, size_t n)
 	return dst;
 }
 
+int memcmp(const void *a, const void *b, size_t n)
+{
+	const uint8_t *x = a, *y = b;
+	for (; n > 0; n--, x++, y++) {
+		if (*x != *y) {
+			return *x - *y;
+		}
+	}
+	return 0;
+}
+
 void *memset(void *dst, int c, size_t n)
 {
 	uint8_t *d = dst;
@@ -90,6 +102,13 @@ static uint32_t hclk_hz(void)
 	static const uint8_t shift[8] = { 1, 2, 3, 4, 6, 7, 8, 9 };	// HPRE 8..15
 	uint32_t hpre = (RCC->CFGR & RCC_CFGR_HPRE) >> RCC_CFGR_HPRE_Pos;
 	return hpre >= 8u ? sys >> shift[hpre - 8u] : sys;
+}
+
+// APB2 (SPI1's clock): HCLK / 1, 2, 4, 8 or 16 (PPRE2 0xx, 100..111)
+static uint32_t pclk2_hz(uint32_t hclk)
+{
+	uint32_t ppre2 = (RCC->CFGR & RCC_CFGR_PPRE2) >> RCC_CFGR_PPRE2_Pos;
+	return ppre2 >= 4u ? hclk >> (ppre2 - 3u) : hclk;
 }
 
 uint32_t stub_ms(void)
@@ -135,6 +154,24 @@ static bool port_program(void *ctx, uint32_t addr, const uint32_t *words, uint32
 	return f4flash_program(addr, words, n);
 }
 
+static bool port_xread(void *ctx, uint32_t addr, void *dst, uint32_t n)
+{
+	(void)ctx;
+	return f4spi_read(addr, dst, n);
+}
+
+static bool port_xerase(void *ctx, uint32_t addr)
+{
+	(void)ctx;
+	return f4spi_erase(addr);
+}
+
+static bool port_xprogram(void *ctx, uint32_t addr, const uint8_t *data, uint32_t n)
+{
+	(void)ctx;
+	return f4spi_program(addr, data, n);
+}
+
 static void port_reset(void *ctx)
 {
 	(void)ctx;
@@ -149,6 +186,9 @@ static f4stub_port_t port = {
 	.erase = port_erase,
 	.program = port_program,
 	.reset = port_reset,
+	.xread = port_xread,
+	.xerase = port_xerase,
+	.xprogram = port_xprogram,
 };
 static f4stub_t engine;
 static char serial[25];
@@ -174,12 +214,14 @@ void stub_main(uint32_t flags)
 	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
 	DWT->CYCCNT = 0;
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-	cycles_per_ms = hclk_hz() / 1000u;
+	uint32_t hclk = hclk_hz();
+	cycles_per_ms = hclk / 1000u;
 	if (cycles_per_ms == 0) {
 		cycles_per_ms = 16000u;
 	}
 
 	f4flash_init();
+	port.xsize = f4spi_init(pclk2_hz(hclk), port.xid);
 	make_serial();
 	port.flash_kb = *(const volatile uint16_t *)FLASHSIZE_BASE;
 	port.rdp = (uint8_t)(FLASH->OPTCR >> 8);

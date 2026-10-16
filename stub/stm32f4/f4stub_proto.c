@@ -8,7 +8,9 @@
 //    word (its initial stack pointer at 0x0800C000) to read erased. The bootloader stays in its DFU mode when that
 //    word is not a RAM address, so while any application sector is half written the radio comes up in the bootloader
 //    on its own. The host programs that word last, as the commit;
-//  - a program only goes to words that read erased, and every word is read back.
+//  - a program only goes to words that read erased, and every word is read back;
+//  - the external SPI flash holds no code: erase and program there need only the magic (erase) and erased bytes
+//    (program), with every byte read back. What to write is the host's choice (a backup put back, a codeplug).
 #include <string.h>
 #include "f4stub.h"
 
@@ -159,7 +161,9 @@ static void op_hello(f4stub_t *s)
 	o[11] = s->port->rdp;
 	o[12] = s->port->flags;
 	put32(o + 13, F4_APP_BASE);
-	reply(s, F4ST_OK, 17);
+	put32(o + 17, s->port->xread != NULL ? s->port->xsize : 0u);
+	memcpy(o + 21, s->port->xid, 3);
+	reply(s, F4ST_OK, 24);
 }
 
 static void op_peek(f4stub_t *s, const uint8_t *p, uint16_t len)
@@ -182,45 +186,82 @@ static void op_peek(f4stub_t *s, const uint8_t *p, uint16_t len)
 	reply(s, F4ST_OK, n);
 }
 
-// The flash blocks [addr, addr + count * 4 KB) lie in flash and start on a block boundary
-static bool blocks_ok(const f4stub_t *s, uint32_t addr, uint32_t count)
+// The memory byte SUMS and READ may end with (none: internal flash)
+static int mem_arg(const uint8_t *p, uint16_t len, uint16_t base_len)
 {
-	return count > 0 && (addr - F4_FLASH_BASE) % F4STUB_BLOCK == 0 &&
-	       in(addr, count * F4STUB_BLOCK, F4_FLASH_BASE, flash_end(s));
+	if (len == base_len) {
+		return F4_MEM_INTERNAL;
+	}
+	return len == base_len + 1u && p[base_len] <= F4_MEM_SPI ? p[base_len] : -1;
 }
 
-// CRC-32 of one 4 KB block, read through the output buffer's tail in 1 KB pieces; *blank when every byte is 0xFF
-static uint32_t block_crc(f4stub_t *s, uint32_t addr, bool *blank)
+static bool spi_present(const f4stub_t *s)
+{
+	return s->port->xread != NULL && s->port->xsize != 0;
+}
+
+// The blocks [addr, addr + count * 4 KB) lie in the memory and start on a block boundary
+static bool blocks_ok(const f4stub_t *s, int mem, uint32_t addr, uint32_t count)
+{
+	if (count == 0) {
+		return false;
+	}
+	if (mem == F4_MEM_SPI) {
+		return spi_present(s) && addr % F4STUB_BLOCK == 0 && in(addr, count * F4STUB_BLOCK, 0, s->port->xsize);
+	}
+	return (addr - F4_FLASH_BASE) % F4STUB_BLOCK == 0 && in(addr, count * F4STUB_BLOCK, F4_FLASH_BASE, flash_end(s));
+}
+
+static bool mem_read(f4stub_t *s, int mem, uint32_t addr, void *dst, uint32_t n)
+{
+	if (mem == F4_MEM_SPI) {
+		return s->port->xread(s->port->ctx, addr, dst, n);
+	}
+	s->port->read(s->port->ctx, addr, dst, n);
+	return true;
+}
+
+// CRC-32 of one 4 KB block, read through the word buffer in 1 KB pieces; *blank when every byte is 0xFF. False when
+// the SPI flash didn't answer
+static bool block_crc(f4stub_t *s, int mem, uint32_t addr, uint32_t *crc, bool *blank)
 {
 	uint8_t *buf = (uint8_t *)s->words;
-	uint32_t crc = 0;
+	*crc = 0;
 	*blank = true;
 	for (uint32_t off = 0; off < F4STUB_BLOCK; off += 1024u) {
-		s->port->read(s->port->ctx, addr + off, buf, 1024u);
+		if (!mem_read(s, mem, addr + off, buf, 1024u)) {
+			return false;
+		}
 		for (uint32_t i = 0; i < 1024u && *blank; i++) {
 			*blank = buf[i] == 0xFFu;
 		}
-		crc = f4stub_crc32(crc, buf, 1024u);
+		*crc = f4stub_crc32(*crc, buf, 1024u);
 	}
-	return crc;
+	return true;
 }
 
 static void op_sums(f4stub_t *s, const uint8_t *p, uint16_t len)
 {
-	if (len != 6) {
+	int mem = mem_arg(p, len, 6);
+	if (mem < 0) {
 		status(s, F4ST_BADARG);
 		return;
 	}
 	uint32_t addr = get32(p);
 	uint16_t count = get16(p + 4);
-	if (count > SUM_MAX || !blocks_ok(s, addr, count)) {
+	if (count > SUM_MAX || !blocks_ok(s, mem, addr, count)) {
 		status(s, F4ST_BADARG);
 		return;
 	}
 	uint8_t *o = s->out + F4STUB_FRAME_HDR;
 	for (uint16_t i = 0; i < count; i++) {
+		uint32_t crc;
 		bool blank;
-		put32(o + i * 5u, block_crc(s, addr + i * F4STUB_BLOCK, &blank));
+		if (!block_crc(s, mem, addr + i * F4STUB_BLOCK, &crc, &blank)) {
+			status(s, F4ST_FLASHERR);
+			return;
+		}
+		put32(o + i * 5u, crc);
 		o[i * 5u + 4u] = blank ? 1u : 0u;
 	}
 	reply(s, F4ST_OK, count * 5u);
@@ -230,20 +271,24 @@ static void op_sums(f4stub_t *s, const uint8_t *p, uint16_t len)
 // raw, which the record's method byte tells the host
 static void op_read(f4stub_t *s, const uint8_t *p, uint16_t len)
 {
-	if (len != 6) {
+	int mem = mem_arg(p, len, 6);
+	if (mem < 0) {
 		status(s, F4ST_BADARG);
 		return;
 	}
 	uint32_t addr = get32(p);
 	uint8_t count = p[4];
-	if (!blocks_ok(s, addr, count)) {
+	if (!blocks_ok(s, mem, addr, count)) {
 		status(s, F4ST_BADARG);
 		return;
 	}
 	uint8_t *o = s->out + F4STUB_FRAME_HDR;
 	for (uint8_t i = 0; i < count; i++) {
 		uint32_t a = addr + (uint32_t)i * F4STUB_BLOCK;
-		s->port->read(s->port->ctx, a, o + READ_REC_HDR, F4STUB_BLOCK);
+		if (!mem_read(s, mem, a, o + READ_REC_HDR, F4STUB_BLOCK)) {
+			status(s, F4ST_FLASHERR);
+			return;
+		}
 		bool blank = true;
 		for (uint32_t k = 0; k < F4STUB_BLOCK && blank; k++) {
 			blank = o[READ_REC_HDR + k] == 0xFFu;
@@ -254,6 +299,56 @@ static void op_read(f4stub_t *s, const uint8_t *p, uint16_t len)
 		put16(o + 5, n);
 		reply(s, F4ST_OK, READ_REC_HDR + n);
 	}
+}
+
+static void op_xerase(f4stub_t *s, const uint8_t *p, uint16_t len)
+{
+	if (len != 8) {
+		status(s, F4ST_BADARG);
+		return;
+	}
+	uint32_t addr = get32(p);
+	if (get32(p + 4) != F4STUB_MAGIC) {
+		status(s, F4ST_REFUSED);
+		return;
+	}
+	if (!blocks_ok(s, F4_MEM_SPI, addr, 1)) {
+		status(s, F4ST_BADARG);
+		return;
+	}
+	status(s, s->port->xerase(s->port->ctx, addr) ? F4ST_OK : F4ST_FLASHERR);
+}
+
+// Bytes inside one 4 KB sector, all reading erased first, read back after
+static void op_xprogram(f4stub_t *s, const uint8_t *p, uint16_t len)
+{
+	if (len < 5 || len - 4u > F4STUB_BLOCK) {
+		status(s, F4ST_BADARG);
+		return;
+	}
+	uint32_t addr = get32(p);
+	uint32_t n = len - 4u;
+	if (!spi_present(s) || !in(addr, n, 0, s->port->xsize) || addr / F4STUB_BLOCK != (addr + n - 1u) / F4STUB_BLOCK) {
+		status(s, F4ST_BADARG);
+		return;
+	}
+	uint8_t *buf = (uint8_t *)s->words;
+	if (!s->port->xread(s->port->ctx, addr, buf, n)) {
+		status(s, F4ST_FLASHERR);
+		return;
+	}
+	for (uint32_t i = 0; i < n; i++) {
+		if (buf[i] != 0xFFu) {
+			status(s, F4ST_REFUSED);	// not erased: nothing written
+			return;
+		}
+	}
+	if (!s->port->xprogram(s->port->ctx, addr, p + 4, n) || !s->port->xread(s->port->ctx, addr, buf, n) ||
+	    memcmp(buf, p + 4, n) != 0) {
+		status(s, F4ST_FLASHERR);
+		return;
+	}
+	status(s, F4ST_OK);
 }
 
 static void op_erase(f4stub_t *s, const uint8_t *p, uint16_t len)
@@ -341,6 +436,12 @@ static void dispatch(f4stub_t *s, uint8_t op, const uint8_t *p, uint16_t len)
 		break;
 	case F4OP_PROGRAM:
 		op_program(s, p, len);
+		break;
+	case F4OP_XERASE:
+		op_xerase(s, p, len);
+		break;
+	case F4OP_XPROGRAM:
+		op_xprogram(s, p, len);
 		break;
 	case F4OP_RESET:
 		if (len != 4 || get32(p) != F4STUB_MAGIC) {
