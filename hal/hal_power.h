@@ -23,6 +23,9 @@ typedef struct {
 	void (*led)(uint8_t which, bool on);
 	// Optional: microphone level 0..100, logarithmic (about 0.7 dB per step, 0 = silence), for VOX
 	uint8_t (*mic_level)(void);
+	// Optional: run the vibration motor for ms milliseconds and return at once (a call while it runs restarts the time);
+	// NULL when the radio has no motor. Nothing in the core calls it yet
+	void (*vibrate)(uint16_t ms);
 } hal_power_t;
 
 #endif

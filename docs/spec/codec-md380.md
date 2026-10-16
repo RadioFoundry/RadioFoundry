@@ -133,10 +133,11 @@ Radios use one of two patterns, each a constant value on every call of a transmi
 (0x1000 | 0x800 | 0x40). A word that changes from call to call is not one of them. A host that passes 0x1840 on
 the first call and 0x800 afterwards gets the 0x800 behavior: over 234 frames the output equals 0x800 on every call.
 
-What ODR passes (`drivers/vocoder/ambe2_flags.h`, used by the MD-380, DM-1701 and DM-32UV hosts): one word on every
-call, 0x800 plus 0x40 for `VOCODER_OPT_NOISE_REDUCTION`, 0x1000 for `VOCODER_OPT_TONE_FRAMES` and 0x2000 for
-`VOCODER_OPT_AGC`. Noise reduction and tone frames are on by default and AGC is off, which gives 0x1840 (0x3840 with
-Mic AGC on). 0x100 and 0x4000 are never set ([dmr-voice.md](dmr-voice.md) 6).
+What ODR passes (`drivers/vocoder/ambe2_flags.h`, used by the MD-380 and DM-1701 hosts and by
+`platform/hrc7000/vocoder.c` for the DM-1801 Pro and DM-32UV): one word on every call, 0x800 plus 0x40 for
+`VOCODER_OPT_NOISE_REDUCTION`, 0x1000 for `VOCODER_OPT_TONE_FRAMES` and 0x2000 for `VOCODER_OPT_AGC`. Noise
+reduction and tone frames are on by default and AGC is off, which gives 0x1840 (0x3840 with Mic AGC on). 0x100 and
+0x4000 are never set ([dmr-voice.md](dmr-voice.md) 6).
 
 Cross-check with the 0x2000 bit: with the same values in the AGC parameter block, all 43 tested flag words give the
 same output on the two builds. The difference seen earlier with 0x2000 set came from different values in that

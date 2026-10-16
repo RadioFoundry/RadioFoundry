@@ -1128,7 +1128,9 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 
-	switch (v->state) {
+	// The monitor open on a quiet channel shows the meter too: what the receiver hears with nothing to open the squelch
+	bool meter = v->state == RS_RX || (v->state == RS_IDLE && v->monitor && v->ch.mode != RADIO_MODE_DMR);
+	switch (meter ? RS_RX : v->state) {
 	case RS_RX: {
 		sb_i32(&b, v->rssi_dbm);
 		sb_str(&b, " dBm");

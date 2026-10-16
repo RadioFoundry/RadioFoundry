@@ -254,15 +254,22 @@ run-flash: codeplugTest calibrationTest calCurveTest
 	./calCurveTest
 .PHONY: run-flash
 
-# The AT1846S driver: frequency word, DCS Golay word, register cache and write sequences, on a fake bus
-TESTS   += at1846sTest
+# The AT1846S driver: frequency word, register cache and write sequences, on a fake bus
+TESTS   += at1846sTest subaudioTest
 
-at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/rf/at1846s/at1846s.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c
+SUBAUDIO := $(ROOT)/drivers/rf/subaudio/subaudio.c
+
+at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/rf/at1846s/at1846s.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(SUBAUDIO)
+
+# The sub-audio math the RF drivers share: the DCS Golay word
+subaudioTest: subaudioTest.c $(SUBAUDIO) $(ROOT)/drivers/rf/subaudio/subaudio.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ subaudioTest.c $(SUBAUDIO)
 
 run: run-rf
-run-rf: at1846sTest
+run-rf: at1846sTest subaudioTest
 	./at1846sTest
+	./subaudioTest
 .PHONY: run-rf
 
 # The MD-380's chips (docs/spec/hardware-md380.md): the SKY72310 synthesizer's divider words against the data sheet
@@ -517,8 +524,8 @@ DM32    := $(ROOT)/boards/dm32
 HRC7    := $(ROOT)/drivers/modem/hrc7000
 TESTS   += fd6818Test st7567Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
 
-fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c
+fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(SUBAUDIO)
 
 st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers/display/st7567/st7567.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c
@@ -537,16 +544,24 @@ TESTS   += rda5807mTest
 RDA     := $(ROOT)/drivers/bcast/rda5807m
 I2CG    := $(ROOT)/drivers/bus/i2c_gpio
 
-rda5807mTest: rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m.h $(I2CG)/i2c_gpio.c $(I2CG)/i2c_gpio.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ rda5807mTest.c $(RDA)/rda5807m.c $(I2CG)/i2c_gpio.c
+rda5807mTest: rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m.h $(RDA)/rda5807m_hal.c $(RDA)/rda5807m_hal.h \
+		$(I2CG)/i2c_gpio.c $(I2CG)/i2c_gpio.h $(ROOT)/hal/hal_bcast.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m_hal.c $(I2CG)/i2c_gpio.c
 
-dm32CalTest: dm32CalTest.c $(DM32)/calibration_dm32.c $(DM32)/dm32.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DM32) -I$(ROOT)/platform/hrc7000 -Wshadow -o $@ dm32CalTest.c $(DM32)/calibration_dm32.c
+# The LIS3DH accelerometer driver on a register model
+TESTS   += lis3dhTest
+lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c
+
+dm32CalTest: dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-dm32
-run-dm32: fd6818Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest
+run-dm32: fd6818Test st7567Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest
+	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
+	./st7567Test
 	./st7789Test
 	./keymatrixTest
 	./hrc7000DmrTest

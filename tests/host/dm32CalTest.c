@@ -5,7 +5,7 @@
 // power levels, and the fallbacks (docs/spec/hardware-dm32.md 11)
 #include <stdio.h>
 #include <string.h>
-#include "dm32.h"
+#include "cal/baofeng/baofeng_cal.h"
 
 static int failures;
 
@@ -18,7 +18,7 @@ static int failures;
 
 static uint8_t page[0x1000];
 static bool have_page;
-static uint8_t copy[DM32_CAL_LEN];
+static uint8_t copy[BF_CAL_LEN];
 static bool have_copy;
 
 static bool fake_read(uint32_t addr, void *buf, uint32_t len)
@@ -37,7 +37,7 @@ static bool fake_read(uint32_t addr, void *buf, uint32_t len)
 	return true;
 }
 
-hal_flash_t dm32_flash = { .size = 16u << 20, .erase_size = 4096, .read = fake_read };
+static hal_flash_t flash = { .size = 16u << 20, .erase_size = 4096, .read = fake_read };
 
 static void put32(uint8_t *p, uint32_t v)
 {
@@ -75,73 +75,73 @@ static void build_page(void)
 
 static void test_parse(void)
 {
-	uint8_t img[DM32_CAL_LEN];
+	uint8_t img[BF_CAL_LEN];
 	build_page();
-	CHECK(dm32_cal_parse(page, sizeof page, img));
+	CHECK(bf_cal_parse(page, sizeof page, img));
 	CHECK(img[0x108] == 0x5A);
 	CHECK(get32(&img[0x11D]) == 40000000u);			// table 0, BCD decoded to 10 Hz units
 	CHECK(get32(&img[0x11D + 4 * 4]) == 47000000u);
 	CHECK(get32(&img[0x145 + 4]) == 14550000u);		// table 2 point 1: 145.5 MHz
 	CHECK(get32(&img[0x16D]) == 15480u);			// K_VHF = (136+145+155+164+174) x 100 / 5
 	CHECK(get32(&img[0x171]) == 33479u);			// K_UHF = (400+417+435+452+470) x 77 / 5
-	CHECK(!dm32_cal_parse(page, 0x200, img));		// too short for the frequency tables
+	CHECK(!bf_cal_parse(page, 0x200, img));		// too short for the frequency tables
 }
 
 static void test_values(void)
 {
-	dm32_power_points_t p;
-	CHECK(dm32_cal_valid());
-	CHECK(dm32_cal_tx_center() == 0x85);
-	CHECK(dm32_cal_modcal(435000000u) == 0x4D4D);		// 33479 / 435 = 76.96 -> 77
-	CHECK(dm32_cal_modcal(145000000u) == 0x6B6B);		// 15480 / 145 = 106.8 -> 107
-	CHECK(dm32_cal_power(435000000u, &p) && p.low == 192 && p.mid == 832 && p.high == 1632 && p.very_low == 172);
-	CHECK(dm32_cal_power(426250000u, &p) && p.low == 184);	// halfway between points 1 and 2
-	CHECK(dm32_cal_power(470000000u, &p) && p.low == 224);	// the last point
-	CHECK(dm32_cal_power(480000000u, &p) && p.low == 233);	// past it: 2 v4 - v3, 10 of 17.5 MHz
-	CHECK(dm32_cal_power(350000000u, &p) && p.low == 160);	// UHF below 400 MHz: the first point, not the last
-	CHECK(dm32_cal_power(145500000u, &p) && p.low == 336 && p.high == 1936);
-	CHECK(dm32_cal_power(130000000u, &p) && p.low == 320 && p.mid == 960);	// below 136 MHz: VHF point 0
-	CHECK(dm32_cal_power_level(435000000u, 0) == 172);
-	CHECK(dm32_cal_power_level(435000000u, 1) == 192);
-	CHECK(dm32_cal_power_level(435000000u, 2) == 192 + 640 * 430 / 1000);
-	CHECK(dm32_cal_power_level(435000000u, 4) == 832);
-	CHECK(dm32_cal_power_level(435000000u, 5) == 832 + 800 * 270 / 1000);
-	CHECK(dm32_cal_power_level(435000000u, 8) == 1632);
-	CHECK(dm32_cal_power_level(145000000u, 3) > dm32_cal_power_level(145000000u, 2));
-	CHECK(dm32_cal_byte(0x16) == 0x85 && dm32_cal_byte(DM32_CAL_LEN) == 0);
+	bf_cal_power_points_t p;
+	CHECK(bf_cal_valid());
+	CHECK(bf_cal_tx_center() == 0x85);
+	CHECK(bf_cal_modcal(435000000u) == 0x4D4D);		// 33479 / 435 = 76.96 -> 77
+	CHECK(bf_cal_modcal(145000000u) == 0x6B6B);		// 15480 / 145 = 106.8 -> 107
+	CHECK(bf_cal_power(435000000u, &p) && p.low == 192 && p.mid == 832 && p.high == 1632 && p.very_low == 172);
+	CHECK(bf_cal_power(426250000u, &p) && p.low == 184);	// halfway between points 1 and 2
+	CHECK(bf_cal_power(470000000u, &p) && p.low == 224);	// the last point
+	CHECK(bf_cal_power(480000000u, &p) && p.low == 233);	// past it: 2 v4 - v3, 10 of 17.5 MHz
+	CHECK(bf_cal_power(350000000u, &p) && p.low == 160);	// UHF below 400 MHz: the first point, not the last
+	CHECK(bf_cal_power(145500000u, &p) && p.low == 336 && p.high == 1936);
+	CHECK(bf_cal_power(130000000u, &p) && p.low == 320 && p.mid == 960);	// below 136 MHz: VHF point 0
+	CHECK(bf_cal_power_level(435000000u, 0) == 172);
+	CHECK(bf_cal_power_level(435000000u, 1) == 192);
+	CHECK(bf_cal_power_level(435000000u, 2) == 192 + 640 * 430 / 1000);
+	CHECK(bf_cal_power_level(435000000u, 4) == 832);
+	CHECK(bf_cal_power_level(435000000u, 5) == 832 + 800 * 270 / 1000);
+	CHECK(bf_cal_power_level(435000000u, 8) == 1632);
+	CHECK(bf_cal_power_level(145000000u, 3) > bf_cal_power_level(145000000u, 2));
+	CHECK(bf_cal_byte(0x16) == 0x85 && bf_cal_byte(BF_CAL_LEN) == 0);
 }
 
 int main(void)
 {
 	// Nothing in flash: no calibration, fallbacks
-	CHECK(!dm32_cal_load());
-	CHECK(strcmp(dm32_cal_source(), "none") == 0);
-	CHECK(dm32_cal_tx_center() == 128 && dm32_cal_modcal(145000000u) == 0x4D4D);
-	CHECK(dm32_cal_power_level(145000000u, 8) == 1408);
-	dm32_power_points_t p;
-	CHECK(!dm32_cal_power(145000000u, &p));
+	CHECK(!bf_cal_load(&flash, COPY_ADDR));
+	CHECK(strcmp(bf_cal_source(), "none") == 0);
+	CHECK(bf_cal_tx_center() == 128 && bf_cal_modcal(145000000u) == 0x4D4D);
+	CHECK(bf_cal_power_level(145000000u, 8) == 1408);
+	bf_cal_power_points_t p;
+	CHECK(!bf_cal_power(145000000u, &p));
 
 	test_parse();
 	// Factory page found by its block ID
 	have_page = true;
-	CHECK(dm32_cal_load() && strcmp(dm32_cal_source(), "factory") == 0);
+	CHECK(bf_cal_load(&flash, COPY_ADDR) && strcmp(bf_cal_source(), "factory") == 0);
 	test_values();
 
 	// No factory page: OpenDM32's decoded copy, only with the right header
 	have_page = false;
-	uint8_t img[DM32_CAL_LEN];
-	dm32_cal_parse(page, sizeof page, img);
+	uint8_t img[BF_CAL_LEN];
+	bf_cal_parse(page, sizeof page, img);
 	memcpy(copy, img, sizeof copy);
 	have_copy = true;
-	CHECK(dm32_cal_load() && strcmp(dm32_cal_source(), "copy") == 0);
+	CHECK(bf_cal_load(&flash, COPY_ADDR) && strcmp(bf_cal_source(), "copy") == 0);
 	test_values();
 	copy[1] = 0x41;
-	CHECK(!dm32_cal_load() && strcmp(dm32_cal_source(), "none") == 0);
+	CHECK(!bf_cal_load(&flash, COPY_ADDR) && strcmp(bf_cal_source(), "none") == 0);
 
 	// No flash at all
 	have_copy = false;
-	dm32_flash.size = 0;
-	CHECK(!dm32_cal_load());
+	flash.size = 0;
+	CHECK(!bf_cal_load(&flash, COPY_ADDR));
 
 	if (failures) {
 		printf("dm32CalTest: %d failures\n", failures);

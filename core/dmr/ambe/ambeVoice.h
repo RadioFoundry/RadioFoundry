@@ -42,6 +42,7 @@ typedef struct {
 	uint32_t rx_bad;	// frames with an uncorrectable C0
 	uint32_t rx_lost;	// frames the call stack reported missing
 	uint32_t rx_underruns;	// blocks with nothing queued during a call
+	uint32_t rx_underrun_at;	// frames the call had played at its latest underrun: early = a prime too short, late = clocks
 	uint32_t rx_overflows;	// frames dropped, queue full
 	uint32_t rx_bit_errors;	// bits corrected by the FEC
 	uint32_t tx_frames;	// frames encoded

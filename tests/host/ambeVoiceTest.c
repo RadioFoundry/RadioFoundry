@@ -155,6 +155,7 @@ static void testRx(void)
 
 	ambe_voice_stats_t st;
 	ambeVoiceGetStats(&st);
+	CHECK(st.rx_underrun_at == 3, "underruns after the call's 3rd frame: %u", st.rx_underrun_at);
 	CHECK(st.rx_bad == 1 && st.rx_lost == 1 && st.rx_frames == 5 && st.rx_bit_errors == 1 && st.rx_underruns == 4,
 	      "stats bad %u lost %u frames %u biterr %u underruns %u", st.rx_bad, st.rx_lost, st.rx_frames,
 	      st.rx_bit_errors, st.rx_underruns);

@@ -9,7 +9,7 @@ BIN_SECTIONS := .isr_vector .text .ARM.extab .ARM .preinit_array .init_array .fi
 BIN2_SECTIONS := .rodata2
 # The linker script's CPU-only RAM (CCM: no DMA): zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmbss"' -DODR_CPU_RAM_NOINIT_SECTION='".ccmram"'
-BOARD_DIRS := boards/dm1701 drivers/rf/at1846s drivers/modem/hrc6000 drivers/display/st7735 drivers/flash/spi_nor \
+BOARD_DIRS := boards/dm1701 drivers/rf/at1846s drivers/rf/subaudio drivers/modem/hrc6000 drivers/display/st7735 drivers/flash/spi_nor \
 	drivers/input/quadrature
 # Built only with CONFIG_USB
 BOARD_USB_DIRS := drivers/usb

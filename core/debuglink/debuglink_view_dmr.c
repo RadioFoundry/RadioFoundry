@@ -120,8 +120,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			(unsigned)a.rx_in, (unsigned)a.rx_frames, (unsigned)a.rx_concealed, (unsigned)a.rx_silence);
 		dl_text(t, "voice.rx_calls=%u\nvoice.rx_queue_max=%u\nvoice.rx_bad=%u\nvoice.rx_lost=%u\n",
 			(unsigned)a.rx_calls, (unsigned)a.rx_queue_max, (unsigned)a.rx_bad, (unsigned)a.rx_lost);
-		dl_text(t, "voice.rx_underruns=%u\nvoice.rx_overflows=%u\nvoice.rx_bit_errors=%u\n",
-			(unsigned)a.rx_underruns, (unsigned)a.rx_overflows, (unsigned)a.rx_bit_errors);
+		dl_text(t, "voice.rx_underruns=%u\nvoice.rx_underrun_at=%u\nvoice.rx_overflows=%u\nvoice.rx_bit_errors=%u\n",
+			(unsigned)a.rx_underruns, (unsigned)a.rx_underrun_at, (unsigned)a.rx_overflows, (unsigned)a.rx_bit_errors);
 		dl_text(t, "voice.tx_frames=%u\nvoice.tx_overflows=%u\n", (unsigned)a.tx_frames, (unsigned)a.tx_overflows);
 		// Encode options (VOCODER_OPT_*): in force and supported; the codec's own word when the board reports it
 		dl_text(t, "voice.enc_options=0x%X\nvoice.enc_supported=0x%X\n", (unsigned)ambeVoiceEncodeOptions(),

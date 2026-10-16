@@ -482,7 +482,8 @@ def _battery_save(radio, pytestconfig):
     with radio.vfo_session():
         radio.link.vfo_set(hz)
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
-        with settings(radio, rx_save=1, rx_save_idle_s=3):
+        # VOX listens to the microphone and keeps the receiver awake, so it goes off for the test
+        with settings(radio, rx_save=1, rx_save_idle_s=3, vox=0):
             v = radio.wait_for(lambda x: x.get("rx_sleeping") == "1", 8.0, interval=0.05, sections=("features",),
                                what="the receiver asleep (rx_sleeping=1)")
             yield v
@@ -526,6 +527,8 @@ def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
 def test_vox_quiet(fm_tx):
     if "VOX" not in fm_tx.features():
         pytest.skip("built without CONFIG_VOX")
+    if fm_tx.view(["features"]).get("vox.mic") == "0":
+        pytest.skip("this radio doesn't read its mic level, so VOX can't key")
     with settings(fm_tx, tot_s=5, vox_tail_ms=500, vox_level=5, vox=2):
         try:
             wait_features(fm_tx, lambda x: x.get("vox_on") == "1", 1.0, "VOX armed (vox_on)")

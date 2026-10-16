@@ -43,7 +43,8 @@
 
 static uint8_t rx_buf[RX_SIZE];
 static volatile uint32_t rx_head, rx_tail;
-static volatile uint32_t rx_overruns;
+static volatile uint32_t rx_overruns;	// the ring was full
+static volatile uint32_t rx_line_errors;	// the UART flagged a character (FIFO overrun, parity, framing, break)
 static SemaphoreHandle_t rx_sem;
 static bool started;
 
@@ -51,7 +52,14 @@ static void uart_isr(void)
 {
 	BaseType_t woken = pdFALSE;
 	bool any = false;
-	for (uint32_t n = 0; n < 64 && (U(UART_LSR) & LSR_DR); n++) {
+	for (uint32_t n = 0; n < 64; n++) {
+		uint32_t lsr = U(UART_LSR);	// reading it clears the error bits: one read per character
+		if ((lsr & LSR_DR) == 0) {
+			break;
+		}
+		if (lsr & LSR_ERRORS) {
+			rx_line_errors++;
+		}
 		uint8_t b = (uint8_t)U(UART_RBR);
 		uint32_t next = (rx_head + 1u) & (RX_SIZE - 1u);
 		if (next != rx_tail) {
@@ -141,6 +149,11 @@ static size_t wr(const uint8_t *buf, size_t len)
 uint32_t hrc_host_uart_overruns(void)
 {
 	return rx_overruns;
+}
+
+uint32_t hrc_host_uart_line_errors(void)
+{
+	return rx_line_errors;
 }
 
 const hal_stream_t hrc_host_uart_stream = {

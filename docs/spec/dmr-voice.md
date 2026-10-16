@@ -154,8 +154,8 @@ codec bits.
   `reset()`, so a new transmission starts with the options in force.
 * The options are read at start-up from the settings and on every change (`ui_svc_apply`). With AGC on, the mic gain
   is not applied (the samples go to the codec at unity) and Mic gain is dimmed, showing "AGC".
-* Per codec mapping: [codec-md380.md](codec-md380.md) "Encode flags" (the AMBE+2 hosts on the MD-380, DM-1701 and
-  DM-32UV share `drivers/vocoder/ambe2_flags.h`).
+* Per codec mapping: [codec-md380.md](codec-md380.md) "Encode flags". The AMBE+2 hosts on the MD-380, DM-1701,
+  DM-1801 Pro and DM-32UV share `drivers/vocoder/ambe2_flags.h`.
 
 ## 7. Observing it
 

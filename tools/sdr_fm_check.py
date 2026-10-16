@@ -3,14 +3,15 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """FM transmit checker for an RTL-SDR capture (rtl_sdr raw unsigned-centered int8 I/Q, "CS8").
 
-    tools/sdr_fm_check.py CAPTURE.cs8 --offset -25000 [--center 461887500 --ppm 0.7] [--bw 12.5]
+    tools/sdr_fm_check.py CAPTURE.cs8 --offset -25000 [--center 461887500 --ppm P] [--bw 12.5]
                           [--expect-ctcss 100.0 | --expect-dcs 023N] [--wav voice.wav] [--tones]
 
 The channel sits --offset Hz from the tuner center (an offset keeps it away from the RTL's DC spike). For every
 keyed segment (carrier above the capture's noise floor) it reports:
   - level (dBFS, 10 ms power) and length
   - carrier offset from the channel; with --center and --ppm also corrected for the SDR's own frequency error
-    (corrected = measured - f_channel x ppm x 1e-6; find ppm with a known-good transmitter)
+    (corrected = measured - f_channel x ppm x 1e-6). Both default to the capture's CAPTURE.json (sdrmon.py capture
+    records the tuner center and the SDR bench's calibrated ppm there)
   - voice band 300-3000 Hz deviation: peak (99.5th and 99.9th percentile of |dev|) and RMS
   - the 4-7.5 kHz band RMS of the discriminator output, a reference for the noise / residual FM floor
   - sub-audio: a CTCSS tone (60-260 Hz) with its frequency and peak deviation, or a DCS code (134.4 bit/s NRZ,
@@ -32,6 +33,8 @@ decodes as other codes (rotations and inverted equivalents, for example D023N = 
 the bit stream matches, and an expectation passes when the expected code and polarity is among them.
 """
 import argparse
+import json
+import os
 import sys
 import wave
 
@@ -503,8 +506,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('capture', help='rtl_sdr capture: interleaved int8 I/Q (CS8), 1.536 Msps')
     ap.add_argument('--offset', type=float, required=True, help='channel frequency minus tuner center, Hz')
-    ap.add_argument('--center', type=float, default=0.0, help='tuner center frequency, Hz (for --ppm)')
-    ap.add_argument('--ppm', type=float, default=0.0, help="the SDR's frequency error, ppm (needs --center)")
+    ap.add_argument('--center', type=float, default=None, help='tuner center frequency, Hz (for --ppm; default: CAPTURE.json)')
+    ap.add_argument('--ppm', type=float, default=None, help="the SDR's frequency error, ppm (needs --center; default: CAPTURE.json)")
     ap.add_argument('--bw', type=float, default=12.5, help='channel bandwidth, kHz: 12.5 or 25 (channel filter)')
     ap.add_argument('--threshold', type=float, default=15.0, help='keyed when this many dB above the floor')
     ap.add_argument('--min-seconds', type=float, default=0.3, help='shortest keyed segment reported')
@@ -517,6 +520,17 @@ def main():
     ap.add_argument('--track', action='store_true', help='print the carrier frequency every 50 ms of each segment')
     ap.add_argument('--chunk', type=int, default=384000, help='I/Q samples per processing chunk')
     args = ap.parse_args()
+    meta = {}
+    if os.path.exists(args.capture + '.json'):
+        with open(args.capture + '.json') as f:
+            meta = json.load(f)
+    for key, flag in (('center', '--center'), ('ppm', '--ppm')):
+        rec = float(meta.get(key, 0.0))
+        given = getattr(args, key)
+        if given is None:
+            setattr(args, key, rec)
+        elif key in meta and given != rec:
+            sys.stderr.write("your %s %g overrides the capture's recorded %g\n" % (flag, given, rec))
     if args.chunk % (D1 * D2 * D3):
         args.chunk -= args.chunk % (D1 * D2 * D3)
     return analyze(args)

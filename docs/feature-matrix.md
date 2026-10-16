@@ -87,7 +87,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ○ | ● | Needs NAT on the host. MD-380: off for flash (no APRS over the air there) |
 | mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ● |  |
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ● |  |
-| SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ● | ● |  |
+| SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ○ | ● | MD-380: off by default for flash |
 | PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ● | New, untested on hardware; interop tested with pppd. Fits neither default image as it is (DM-1701 688 B short, MD-380 1,588 B short; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
 
 ## User interface
@@ -103,6 +103,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | ○ | ○ | ○ | Bench only, never in a release |
+| RAM monitor loader (debug link 0x1A) | `STUB_ENTRY` | — | — | ✕ | ✕ | ○ | HR_C7000 radios: flashing without the bootloader (`stub/`). Other platforms have no entry hook, so the command answers unavailable |
 
 ## Whole images
 

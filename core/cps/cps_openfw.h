@@ -16,6 +16,7 @@
 #define CPS_REQUEST_MAX		2048	// the request buffer (open-firmware-cps.md 1.1)
 #define CPS_REPLY_MAX		32768	// longest read reply payload: streamed, so not bound by a buffer (open-firmware-cps.md 2.1)
 #define CPS_GAP_MS		3	// quiet that ends a request whose length the header doesn't give
+#define CPS_STALL_MS		50	// quiet that ends one still short of the length its header gives
 #define CPS_SESSION_MS		10000	// a session ends this long after the last byte (pending sector dropped)
 
 typedef struct {
@@ -30,6 +31,8 @@ typedef struct {
 	uint32_t commits;	// sectors written (X 3)
 	uint32_t refused;	// requests answered '-' as an error (bad area, protected sector, ...)
 	uint32_t overflows;	// requests longer than CPS_REQUEST_MAX
+	uint32_t junk;		// bytes dropped because no request starts with them (line noise)
+	uint32_t reboots_ignored;	// C 6 0 / 1 without C 0 before it (stray bytes)
 	uint8_t last;		// first byte of the last request
 	bool session;		// a CPS session is going on
 	bool pending;		// a sector is prepared (X 1) and not committed yet
@@ -40,6 +43,8 @@ void cps_init(const cps_io_t *io);
 // requests complete, the session times out)
 void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms);
 void cps_get_stats(cps_stats_t *s);
+// Part of a request is held (waiting for the rest of it, or dropping an overlong one until the gap)
+bool cps_mid_request(void);
 
 // Firmware: set up the engine on the host link (cps_port.c)
 void cps_openfw_start(void);

@@ -88,7 +88,7 @@ E[0x172C] = 0x1840 at init. Whether the aftermarket firmware's other constants a
 The encode flags word is a set of feature bits, one value on every call of a transmission (0x800, or 0x1840 =
 0x1000 | 0x800 | 0x40); this build was measured as the DM-1801 Pro's ([codec-md380.md](codec-md380.md), "Encode
 flags"). "0x1840 on the first call, then 0x800" behaves as 0x800: no noise suppression and no tone frames.
-`boards/dm32/vocoder_dm32.c` passes one word on every call from `drivers/vocoder/ambe2_flags.h`: 0x800, plus 0x40
+`platform/hrc7000/vocoder.c` (the DM-32UV and the DM-1801 Pro) passes one word on every call from `drivers/vocoder/ambe2_flags.h`: 0x800, plus 0x40
 for noise reduction, 0x1000 for tone frames and 0x2000 for AGC (0x1840 by default).
 
 ## Comparison with the dh4570 pair and OpenDM32

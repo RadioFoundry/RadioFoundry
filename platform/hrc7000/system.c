@@ -5,6 +5,7 @@
 #include <string.h>
 #include "config.h"
 #include "platform.h"
+#include "vocoder.h"
 
 #define SOFT_RESET_SPINS	1000000u
 #define WDT_KEY			0x5ADA7200u
@@ -23,7 +24,8 @@ static void rd(uint32_t addr, void *dst, size_t n)
 HRC_RAMFUNC void hrc_soft_reset(void)
 {
 	__asm__ volatile ("psrclr ie");
-	QUAD_ENABLE = 0;	// XIP controller back to its reset mode, so the ROM and bootloader can read flash
+	QUAD_ENABLE = 0;	// XIP controller back to its reset mode, so the ROM and bootloader can read flash. The soft
+	LCSFC_BAUDR = 4;	// reset keeps the divider: single-bit reads at divider 2 fail and the radio never boots
 	SYS_SOFT_RSTN = 0;
 	for (volatile uint32_t i = 0; i < SOFT_RESET_SPINS; i++) {
 	}
@@ -42,9 +44,14 @@ static bool reboot(uint8_t mode)
 }
 
 #if CONFIG_STUB_ENTRY
-// Runtime RAM-monitor entry (docs/spec/hardware-dm32.md 17.2): the stock-codec RAM window, which ODR leaves free
+// Runtime RAM-monitor entry (docs/spec/hardware-dm32.md 17.2): the stock-codec RAM window. A radio that hosts its
+// codec runs it there, so the codec stops first (bench 2026-10-15: the upload overwrote the running codec and hung the
+// radio on a DMR channel)
 static uint8_t *stub_region(uint32_t *size)
 {
+#if CONFIG_DMR
+	hrc_vocoder_park();
+#endif
 	*size = HRC_STUB_SIZE;
 	return (uint8_t *)(uintptr_t)HRC_STUB_BASE;
 }
@@ -63,6 +70,7 @@ HRC_RAMFUNC static bool enter_stub(uint32_t entry)
 	REG32(WDT_BASE + 0x10) = 0;
 	REG32(WDT_BASE + 0x00) = 0;
 	QUAD_ENABLE = 0;				// XIP controller back to reset mode: the program flash is the SSI's
+	LCSFC_BAUDR = 4;				// (both registers: a later soft reset keeps the divider)
 							// again, as hrc_soft_reset does. No DMA reaches SRAM on this board
 	hrc_barrier();
 	((void (*)(void))(uintptr_t)entry)();		// run the stub; it serves the host until power-off

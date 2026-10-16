@@ -20,6 +20,7 @@ Every fact carries one tag.
 | **KP** | Taken from another firmware's source port (FM reportedly worked; DMR did not). Unverified on hardware |
 | **COM** | Community pin map (infotex58.ru forum topic 1168, `pinmap_14.06.26`), bench probing by others, unverified |
 | **INF** | Inferred by us from the above; not seen directly |
+| **HW** | Measured by us on a radio with this SoC (DM-32UV or DM-1801 Pro) |
 
 Where a KP value was later confirmed in an OpenDM32 binary it is tagged BIN.
 
@@ -58,7 +59,14 @@ All registers are in the modem/system block at 0x11000000. The sequence below is
 | 12 | IO_DIPLEX2 (0x03C) | clear bits 1:0 | CLK_OUT pin = PLLA clock out (DS: 0 = PLLA, the port's comment says PLLB) |
 
 Resulting clocks used everywhere below: CPU/AHB 168 MHz, APB 84 MHz (timers, UARTs, SPI, I2C), SoC reference
-24 MHz. Soft reset of the whole chip: QUAD_ENABLE = 0, then SYS_SOFT_RSTN = 0 (KP).
+24 MHz. Soft reset of the whole chip: QUAD_ENABLE = 0, then SYS_SOFT_RSTN = 0 (KP). The soft reset keeps
+LCSFC_BAUDR: after a session at divider 2 the ROM and bootloader can't read flash in single-bit mode and the radio stays
+dark until a power cycle. Set LCSFC_BAUDR = 4 before the reset (HW).
+
+The Baofeng bootloader starts the PLL itself but leaves the XIP controller in single-bit mode at the reset divider
+(QUAD_ENABLE = 0, LCSFC_BAUDR = 4, read on a DM-1801 Pro). Steps 2 and 3 must run anyway. Measured on the DM-1801 Pro,
+11.5 KB of straight-line code from flash: 2.9 ms as left, 0.9 ms with quad mode, 0.48 ms with quad mode and divider 2.
+Before the fix the idle radio used about 80% of the CPU and DMR voice encoding could not keep up (HW).
 
 ### 1.2 Boot header and start-up
 
@@ -629,6 +637,10 @@ The stock firmware never reads registers 0x65 / 0x67 (forum observation: S-meter
 | 18 | B3 = FF00 | 37 | 49 = 2A38 | 56 | 09 = E0B5 |
 | 19 | 33 = FE00 | 38 | 4E = 4708 | 57 | 09 = F09F |
 
+Rows 18, 20, 22 and 24 (B3 / B4) and the C7 = 0140 of Enter DMR below have address bit 7 set, which the FD6818
+reads as a read cycle: the chip drives the data line while the MCU drives it too. The radio's own firmware never
+sends them (BIN). ODR leaves them out; FM and DMR receive and transmit work without them (HW).
+
 Register 0x09 is written 16 times with the top nibble as an index: a 16-entry internal table (purpose unknown; looks
 like an AGC/gain table).
 
@@ -675,16 +687,21 @@ Below 16 MHz nothing is written (KP).
 | Item | Register | Use | Tag |
 |---|---|---|---|
 | RSSI | 0x67 bits 8:0 | dBm = value / 2 - 160 (FD6818 programming guide; reg 0x2C bits 4:0 hold the external LNA gain the chip takes off) | DS |
-| Noise | 0x65 low byte | | KP |
-| CTCSS mode | 0x51 | 0x9045 TX CTCSS on with gain 0x45; 0x1000 CTCSS RX / TX off; 0x0000 sub-audio off | KP |
-| CTCSS frequency | 0x07 | intended value = Hz × 20.64888 (e.g. 88.5 Hz → 1827). The port computes it with an integer division that truncates the tone to whole tens of Hz: **wrong** | KP |
-| CTCSS detect thresholds | 0x52 = 028F | | KP |
+| Noise | 0x65 low byte | Larger = more noise. No signal: 43-63 (UHF 43-51 on most channels, VHF 57-63); strong carrier: 8. The core's squelch levels open below 64 down to 40, so ODR adds 25 (`fd6818_noise`), or every level opens on noise. Measured on a DM-1801 Pro | KP, HW |
+| Sub-audio mode | 0x51 | b15 on (receive and transmit), b13 DCS inverted, b12 1 = CTCSS / 0 = DCS, b11 24-bit DCS, b6:0 gain. ODR: 0x9045 CTCSS, 0x8045 DCS, 0xA045 DCS inverted, 0 off | DS, BIN |
+| Tone word | 0x07 | b12:0 = Hz × 20.64888 (88.5 Hz → 0x0723, 100.0 Hz → 0x0811); b13 set selects the second (tail) tone word. DCS uses 0x0AD7 (134.4 Hz, the bit rate) | DS, BIN |
+| DCS code | 0x08 | written twice: the 23-bit word's low 12 bits (b15 = 0), then its high bits with b15 = 1 (023 → 0x0813, 0x8763). The word is the Golay(23,12) code word (`drivers/rf/subaudio`) | DS, BIN |
+| CTCSS detect thresholds | 0x52 = 0x028F | b11:6 found, b5:0 lost, in 0.1 Hz. The radio sets b15:13 per band (0x828F-0xE28F); ODR keeps 0x028F | DS, BIN |
 | Tone generator 1 | 0x71 | tone in Hz × 10 (1750 Hz burst) | KP |
-| CSS status | 0x0C high byte | bit 2 CTCSS detected; bit 7 DCS (normal) detected; bit 6 DCS (inverted) detected | KP |
-| DCS | — | no FD6818 DCS registers known; every DCS write in the port is commented out | KP |
+| CSS status | 0x0C | b10 CTCSS detected; b14 DCS normal, b15 DCS inverted. Polled; nothing to clear. The datasheet puts the same results in 0x60 | BIN, DS |
 
-Note: in this radio the C7000 does the FM modulation (two-point, `modem-hrc7000.md`), and the C7000 has its own CTCSS
-and CDCSS generators and detectors. Whether sub-audio set in the FD6818 reaches the air in TX is untested.
+Receive sequences, in the radio's own order. CTCSS: 0x07 = the tone word, 0x07 = 0x21CE, 0x52, then 0x51. DCS: 0x07 =
+0x0AD7 first, the two 0x08 halves, then 0x51. Off: 0x07 = 0x0470, 0x07 = 0x21CE, 0x51 = 0.
+
+The C7000 does the FM modulation (two-point, `modem-hrc7000.md`) and makes the TX sub-audio. Receive tones come from
+the FD6818: the speaker switch (PTB15) takes the FD6818's audio away from the C7000's ADC in FM receive, so the C7000's
+detector hears nothing. The FD6818 detects on its own demodulated audio. ODR turns the FD6818's sub-audio off before
+FM TX because 0x51 b15 also enables its transmitter.
 
 ### 8.5 TX/RX switching, PA and LNA
 
@@ -759,6 +776,20 @@ Planned `rx_am` (`boards/dm32/radio_dm32.c`, not written): the FD6818 FM registe
 A1), the AF gain in 0x48, VHF LNA on, C7000 FM playback off, speaker source to the FD6818 (A2) (INF).
 
 ---
+
+### 8.8 Receiver power saving
+
+The radio's own battery save, in order (BIN). ODR uses it in FM receive (the core only sleeps there).
+
+| Step | Sleep | Wake |
+|---|---|---|
+| FD6818 0x30 | 0x0000 (idle) first | 0xBFF1 (RX) last, after the retune |
+| FD6818 0x37 | 0x1D11 (FM) or 0x1D00 (DMR) | 0x1F1F, then 0x1F0F |
+| LNA supply (0x22 VHF / 0x24 UHF) | both off | the band's on |
+| HR_C7000 | a low-power clock profile (CLK_MGR); WORK_MODE, ADC and DAC unchanged. ODR leaves the clocks alone | the receive profile, CLK_MGR 0x02C = 0xFFF0FF3C |
+
+The radio's sleep lengths are 12, 18 or 30 ticks of its receive service by the battery save level, with a busy
+detect waking it at once (BIN; the tick's length in ms is not known). ODR's lengths come from the core settings.
 
 ## 9. Audio path
 
@@ -1012,8 +1043,8 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; packed with `tools/dm32_pack.py` for the Baofeng updater | `boards/dm32/dm32.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/dm32_codec.py` | `dm32.ld` |
 | SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `dm32.ld` |
-| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E20 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `vocoder_dm32.c` |
-| Clocks | PLL sequence of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
+| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E20 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
+| Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock) | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c` |
 | RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
@@ -1021,8 +1052,8 @@ Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checkli
 | Display | 240x320 at 2x: the core draws 120x160 (its frame buffer is 40 KB); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
 | Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
-| Calibration | 11, read only; OpenDM32's copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `calibration_dm32.c` |
-| Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM with its own sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
+| Calibration | 11, read only; OpenDM32's copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
+| Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM and TX sub-audio, FD6818 RX sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |
 
 ### 17.1 SRAM layout
@@ -1053,8 +1084,10 @@ the command answers unavailable on a board whose platform has no `hal_system_t.e
 HR_C7000 so far). The wire format is debug link command `0x1A` (`docs/spec/debuglink.md` 3.18).
 
 **RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `dm32.ld` leaves
-out of the image entirely (section 17.1): ODR links nothing there, and the stock codec it is reserved for is not running
-once the radio is quiesced, so the whole window is free. The load span is `0x17000..0x2F000` (`HRC_STUB_BASE` /
+out of the image entirely (section 17.1): ODR links nothing there. A radio that hosts its stock codec runs it in that
+window, so the first STUB command parks the codec (`hrc_vocoder_park`: it waits for a call in progress, then every
+later call returns silence) before the window is handed out. Without that, an upload on a DMR channel overwrote the
+running codec and hung the radio (bench 2026-10-15). The load span is `0x17000..0x2F000` (`HRC_STUB_BASE` /
 `HRC_STUB_SIZE`, 96 KB, 4 KB aligned inside the window). The monitor's runtime build is position dependent, linked to
 run at `0x17000`, and uses about 25 KB (5 KB code + ~20 KB bss and buffers) plus a stack growing down from `0x2F000`.
 Nothing in ODR's own RAM (RAM_LO below it, `.data`/`.bss`/heap/stack above it) is touched while the image loads, so the
@@ -1068,8 +1101,8 @@ hand-over. Timer 2, the monitor's tick source, also runs at 84 MHz here (the hos
 
 **Quiesce and jump** (`platform/hrc7000/system.c` `enter_stub`, a `.ramfunc` so it runs after flash is handed back):
 CPU interrupts off (`psrclr ie`), every PIC source masked (both banks), the watchdog off (defensive), then
-`QUAD_ENABLE = 0` to put the XIP flash controller back to its reset mode so the program flash answers the monitor's SSI
-again (the same step `hrc_soft_reset` relies on), and a jump to the entry address. No DMA reaches SRAM on this board, so
+`QUAD_ENABLE = 0` and `LCSFC_BAUDR = 4` to put the XIP flash controller back to its reset mode so the program flash
+answers the monitor's SSI again and a later soft reset boots (the same steps `hrc_soft_reset` relies on), and a jump to the entry address. No DMA reaches SRAM on this board, so
 no DMA engine has to be stopped. RTOS tasks are not stopped gracefully; masking interrupts freezes the scheduler and the
 jump never returns (recover by a power cycle).
 

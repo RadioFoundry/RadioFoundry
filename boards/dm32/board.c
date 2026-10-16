@@ -73,7 +73,7 @@ const board_t board = {
 #if CONFIG_DMR
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
-	.vocoder = &dm32_vocoder,
+	.vocoder = &hrc_vocoder,
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
@@ -183,5 +183,5 @@ void board_init(void)
 	lcdbus = xSemaphoreCreateRecursiveMutex();
 	dm32_power.init();
 	dm32_flash.init();
-	dm32_cal_load();
+	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// OpenDM32 keeps a decoded copy there
 }

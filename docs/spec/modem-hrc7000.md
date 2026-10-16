@@ -55,6 +55,7 @@ Offsets from 0x11000000. Values are those used by OpenDM32 (BIN) unless noted.
 | 0x114 | RF_MOD_BIAS_CTRL | b25:16 two_point_bias; b15:8 sig_reduce (Mod2 amplitude); b7:0 phase_reduce (Mod1 amplitude) | ((cal + 384) << 16) or modcal (0x4D4D before a frequency is set) | Modulation balance from calibration |
 | 0x118 | DEV_LIMITER | b15:0 | 0xFF00 (reset value) | KP |
 | 0x11C | RSSI_BIAS_VALUE | read-only per DS (rssi b31:16, ADC I/Q DC bias) | port writes 0x1381 (no effect expected) | KP |
+| 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode (DS) | not written | A live check that AF reaches the ADC: a DM-1801 Pro receiving DMR reads about +1216 / -1149 (the guide expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives. On the DM-32UV that was GPIO 0x2F left high (`hardware-dm32.md` 5), which takes the FD6818's audio off the ADC (HW) |
 | 0x120 | THRESHOLD_VALUE | b28:24 sync ratio; b23:16 sync low threshold; b15:8 sync high threshold; b7:0 signal detect | **0x0978786F** | |
 | 0x164 | RECV_INFO_COUNT | b31:24 sync errors; b8 select FSK error/EVM; b7:0 FSK error | read for BER/EVM only | DS |
 | 0x168 | (undocumented, "REG_X06") | | 0x14 | BIN |
@@ -76,7 +77,14 @@ Offsets from 0x11000000. Values are those used by OpenDM32 (BIN) unless noted.
 | 0x15C / 0x160 | RECV_RC_SYNC_H / L | 0x77D55F / 0x7DFD77 | RC |
 
 Voice syncs are not programmed; the chip derives them (INF: they are the bitwise complements of the data syncs).
-Bit 31 of the RECV_MS / RECV_BS high halves is an undocumented enable (BIN).
+Bit 31 of the RECV_MS / RECV_BS high halves is an undocumented enable (BIN). The RECV_TDMA1 / RECV_TDMA2 high halves
+need it too: without it the chip never detects the direct mode syncs (bench, 2026-10-16: an SFR's TS1 inbound was not
+heard until it was set).
+
+SEND_DATA_SYNC is the only send pattern; a voice burst goes out with its complement. ODR rewrites it before a burst
+that asks for another sync family (`dmr_tx_burst_t.sync_override`: an SFR's TS2 direct mode outbound) and back to MS
+for the next burst without one. On air the burst then carries that family (bench, 2026-10-16: TS2 sync with the
+repeated LC).
 
 ### 2.3 CRC, RS and color code
 
@@ -138,7 +146,11 @@ SYS_INTERP_LIST bits (DS):
 | 0x428–0x438 | LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS, BS_CACH | repeater / simulcast modes; never written by working firmware |
 
 Values written to LAYER2_CONTROL: **0xC0** = TX and RX enabled, passive timing (receive, follow the other side's
-slots); **0xC3** = TX and RX enabled, active TX and RX timing (we set the slot clock). Values written to
+slots); **0xC3** = TX and RX enabled, active TX and RX timing (we set the slot clock); **0xCB** = 0xC3 plus b3
+rx_master_auto_update, for `tx_listen`. The manual (DS 10.2.2.16) says b0 rx_master_mode should normally be 0, and that
+in active receive mode the receive slot edges move with the received sync only when b3 is set. With 0xC3 alone an SFR
+heard almost nothing in its listening slot while it sent (DM-1801 Pro, 2026-10-16: `L18/1`), so `tx_listen` sets b3.
+Untested on air. Values written to
 LAYER2_TXRX_CTRL: 0x00 nothing next slot; 0x40 receive next slot; 0x80 transmit next slot; 0x8040 receive next slot
 with the voice-access flag; 0x800000 release RX slot sync.
 
@@ -323,13 +335,15 @@ code probe) does not work; replace it everywhere by this one (BIN).
 | Color-code scan | set LOCAL_CC to the received CC, then LAYER2_CONTROL = 0xC0 and, in repeater mode, the 5.2 restart steps 4–7 (no busy wait) | BIN |
 | Late entry (bit 2) | embedded LC is in the RX RAM; voice reception should start at the next burst A | DS |
 | End | terminator (data type 2) or loss of bursts; TXRX_CTRL = 0 | BIN |
+| Reception over (nothing taken for 390 ms) | the 5.2 restart: the chip drops the sender's slot timing and its timeslot interrupts stop | BENCH |
+| Slot timing with nothing usable for 600 ms | the 5.2 restart, again every 600 ms while it lasts. Without it the chip kept a departed sender's timing, reported only unusable and abnormal slots and took no later call (DM-1801 Pro bench) | BENCH |
 
 ---
 
 ## 6. Transmit sequences
 
 All transmit actions happen in the timeslot interrupts: the CPU arms one slot at a time with TXRX_CTRL = 0x80 and
-leaves the other slot unused (0x00, or 0x40 to listen), giving one burst per 60 ms in its timeslot (DS figures 99–100,
+leaves the other slot unused (0x00, or 0x40 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (DS figures 99–100,
 BIN). Every arming also starts the PA one-shot (`hardware-dm32.md` 8.6). The RF TX interrupt that follows keys the RF
 chip.
 
@@ -422,7 +436,7 @@ information bits in the RX RAM (DS, BIN).
 | 0x510 | FM_MOD | b23:16 repeat-symbol threshold; b15:14 XTCSS length; b13:12 CTCSS reverse-burst mode (01 = 240°, 10 = 180°); b11 CDCSS TX invert; b10 CDCSS RX invert; b9 CDCSS turn-off code; b8 XTCSS EOM; b4 selcall; **b3 CTCSS; b2 CDCSS; b1 DTMF**; b0 XTCSS | |
 | 0x518 | CTCSS_ADDR | b15:8 RX tone address, b7:0 TX tone address (table 8.2) | |
 | 0x51C | USER_DEFINE_CTC | b31 enable, b20:0 step = round(f × 65.536) | non-standard tones |
-| 0x520 | CDCSS_ADDR | b24:16 RX code, b8:0 TX code (the 9-bit DCS code as binary, e.g. 114 octal = 001 001 100) | |
+| 0x520 | CDCSS_ADDR | b24:16 RX code, b8:0 TX code (the 9-bit DCS code as binary, e.g. 114 octal = 001 001 100). The TX code is taken when FM_PTT goes on; later writes don't change the code on air (BENCH, DM-1801 Pro: written after FM_PTT, the radio sent the previous code) | |
 | 0x524 | SELCALL_TONE | 2/5-tone frequency | |
 | 0x528 | TONE_SEND_CTRL | b9 selcall send; b8 selcall finish; **b7 dtmf_send; b6 dtmf_finish (0 mutes voice during signaling); b3:0 DTMF digit** | |
 | 0x550–0x55C | FM_TONE1..4 | two 16-bit DTMF tone steps each | 8.3 |
@@ -459,7 +473,11 @@ Standard CTCSS addresses (DS table 59; RX uses the same addresses in CTCSS_ADDR 
 | 0x0D | 103.5 | 0x1A | 162.2 | 0x27 | 69.3 | | |
 
 The address order is not ascending; map from frequency, not from a list index. Other tones: USER_DEFINE_CTC. TX
-sub-audio deviation via SUBVOICE_COEF b15:8 (typical 350 Hz narrow, 600 Hz wide). When FM_PTT drops, the chip sends
+sub-audio deviation via SUBVOICE_COEF b15:8 (typical 350 Hz narrow, 600 Hz wide). The FM_BANDWIDTH bits don't scale
+it: the reset value 0x28 gives 300 Hz CTCSS at both bandwidths, and ODR writes 0x50 at 25 kHz (600 Hz) (BENCH,
+DM-1801 Pro UHF). DCS at 0x28 measured about 100 Hz. The boot stub's restart doesn't reset the modem, so the field
+keeps the last transmission's value; ODR's init writes 0x28 rather than reading it back (a DM-32UV read 0xFF there
+after a 25 kHz transmission and sent CTCSS at 1.9 kHz deviation, BENCH). When FM_PTT drops, the chip sends
 the reverse burst / turn-off code before stopping (DS). On a detected tone the FM signaling system interrupt fires
 (SYS_INTERP_LIST b13) and FM_DECODE_FLAG2 b0 (CTCSS) or b1 (CDCSS) goes 1, back to 0 at the end (DS). CDCSS tail
 detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz) (DS).
@@ -470,9 +488,9 @@ detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz) (DS).
 |---|---|---|
 | Tone step | round(f × 2.048) (= f × 65536 / 32000) | DS |
 | Default tone registers | FM_TONE1 = 697 / 770 Hz (0x0593 / 0x0629), FM_TONE2 = 852 / 941 (0x06D1 / 0x0787), FM_TONE3 = 1209 / 1336 (0x09AC / 0x0AB0), FM_TONE4 = 1477 / 1633 (0x0BD1 / 0x0D10); high half = first tone | DS |
-| DTMF deviation (SUBVOICE_COEF b15:8) | UHF: 0x24 (25 kHz), 0x12 (12.5 kHz); VHF: 0x75 (25 kHz), 0x3A (12.5 kHz) (UHF above 300 MHz) | KP |
+| DTMF deviation (SUBVOICE_COEF b15:8) | KP: UHF 0x24 (25 kHz), 0x12 (12.5 kHz); VHF 0x75 / 0x3A. Measured (BENCH, DM-1801 Pro UHF, 1750 Hz single tone): about 5.8 Hz per step, 0x60 = 559 Hz, 0xC0 = 1117 Hz; KP's 0x12 is about 100 Hz. ODR uses 0xC0 at 12.5 kHz and 0xFF (the most, about 1.5 kHz) at 25 kHz; VHF unmeasured | KP, BENCH |
 | Send sequence | FM_MOD b1 = 1; FM_PTT = 1; TONE_SEND_CTRL b6 = 0 (mute voice); AUDIO_CONTROL b3 = 1 for sidetone; TONE_SEND_CTRL b3:0 = digit; b7 = 1 to start the digit, b7 = 0 to end it; repeat per digit; finally b6 = 1 to restore voice | DS |
-| Arbitrary single tone | write the tone step into the high halves of FM_TONE1 and FM_TONE3 and send DTMF digit "1" (697 + 1209 pair), restore the defaults after | KP |
+| Arbitrary single tone | write the tone step into the high halves of FM_TONE1 and FM_TONE3 and send DTMF digit "1" (697 + 1209 pair), restore the defaults after. On air at 1750 Hz on the DM-1801 Pro (BENCH): TONE_SEND_CTRL = 0x81 (digit 1 on, voice muted) with FM_MOD b1 set, 0 afterwards (the reset value) | KP, BENCH |
 | Receive | FM_MOD b1 = 1; SUBVOICE_COEF b27:16 = 1056 (33 ms at 32 kHz), b7:0 threshold; FM_FUNCTION_COEF1..8 = 0x7ECD9D, 0x7E8A34, 0x7E368C, 0x7DD245, 0x7C690D, 0x7B9F03, 0x7AA7A8, 0x7979F5; read FM_DECODE_FLAG2 b11:8 on each signaling interrupt; FM_MOD b23:16 sets the repeat-symbol window | DS |
 
 ### 8.4 Prompt / beep FIFO
@@ -484,6 +502,38 @@ samples per push), sounds distorted on the DM-1801 Pro. Flushing stale audio: fi
 ODR plays all speaker PCM through this FIFO (`platform/hrc7000/audio_pcm.c`). The CPU-fed speaker buffer at
 0x180000A0 (AUDIO_CONTROL b5, section 3) gave rough, choppy beeps on the DM-1801 Pro with every sample layout tried,
 with no queue underruns (BENCH).
+
+The prompt path also feeds the TX modulator: with AUDIO_CONTROL b7 set during a DMR transmission, the beep's audio
+rides on the 4FSK. On the DM-32UV the talk permit tone overlapped the second and third voice LC headers, which then
+carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while
+transmitting, all three headers decoded in five runs (BENCH). Keep b7 clear during any transmission; a beep that
+starts then plays silently, and b7 comes back on at TX end if the beep is still running.
+
+APRS transmit uses the same path on purpose (`platform/hrc7000/hrc_afsk.c`): during an FM transmission, with b7 set
+and the microphone muted by the board, the FIFO's samples are the modulation. A timer tops the FIFO up every 2 ms;
+speaker PCM is held off the FIFO meanwhile (`hrc_audio_pcm_hold`), since its chunks would land between the tones.
+Bell 202 decoded off air from this path with a valid FCS on the DM-32UV (BENCH, `aprs.md` 13). The DTMF tone
+generator (8.3) needs no PCM, but its deviation field tops out near 1.5 kHz, short of the 3 kHz APRS wants.
+
+### 8.5 FM receive audio to the CPU
+
+In FM (WORK_MODE 0x80) the modem copies its demodulated receive audio into the RX RAM as well as to the codec (the
+guide's "analog receive recording", on by default in FM; DS):
+
+| Item | Value | Tag |
+|---|---|---|
+| Buffer | RX RAM 0x160004E0..0x160008DF: two halves of 512 bytes (256 samples), used in turn | DS |
+| Sample format | 16-bit, high byte at the lower address | DS, BENCH |
+| Rate | 8 kHz: the halves alternate every 32.0 ms (DM-32UV, measured over 95 changes) | BENCH |
+| Half to read | FM_ADDR_SW (0x56C) b1:0: 1 = the first half, 2 = the second | DS |
+| Interrupt | SYS_INTERP bit 14 (`fm_rx_interp`) as each half fills; its mask bit (SYS_INTERP_MASK b14) is off in the power-on mask | DS |
+| Input | the modem's AF input. On the DM-32UV that is the FD6818's audio through PTB15 = 0 (`hardware-dm32.md` 9) | HW |
+
+The audio is not squelched: it carries noise while no signal is present, so a demodulator can work below the squelch.
+On the DM-32UV receiver noise reaches full scale (peak 32767) with the reset AF gain (BENCH).
+
+ODR reads it in the system interrupt (`platform/hrc7000/fm_rx_audio.c`): the DMR glue owns that interrupt and calls
+an FM hook for bit 14, in FM too, and the hook copies each half into a 128 ms ring for the APRS demodulator.
 
 ---
 

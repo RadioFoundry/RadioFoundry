@@ -80,16 +80,19 @@
 #define C7_CTCSS_ADDR		0x518u
 #define C7_USER_DEFINE_CTC	0x51Cu
 #define C7_CDCSS_ADDR		0x520u
+#define C7_TONE_SEND_CTRL	0x528u
 #define C7_FM_TONE1		0x550u
 #define C7_FM_TONE2		0x554u
 #define C7_FM_TONE3		0x558u
 #define C7_FM_TONE4		0x55Cu
 #define C7_FM_PTT		0x560u
 #define C7_FM_DECODE_FLAG2	0x568u
+#define C7_FM_ADDR_SW		0x56Cu	// FM audio RAM half for the CPU: 1 = the first, 2 = the second (8.5)
 
 // --- Buffers (byte offsets from HRC7000_BUF_BASE) ---
 #define C7_TX_RAM		0x000u
 #define C7_RX_RAM		0x4B0u
+#define C7_FM_RX_AUDIO		(C7_RX_RAM + 0x30u)	// FM receive audio, two 512-byte halves (8.5)
 #define C7_VOICE_RAM		0x960u	// 27 bytes, TX and RX
 #define C7_PROMPT_FIFO		0x980u
 #define C7_CODEC		0x9C0u	// internal audio codec, byte registers
@@ -143,6 +146,9 @@ typedef struct {
 	volatile uint32_t *regs;	// HRC7000_REG_BASE
 	volatile uint8_t *buf;		// HRC7000_BUF_BASE
 	uint32_t audio_ctl;		// shadow of AUDIO_CONTROL (the CPU's bits)
+	uint32_t subvoice;		// SUBVOICE_COEF before a TX tone (hrc7000_tx_tone)
+	bool tone_on;
+	uint8_t subaudio_dev;		// SUBVOICE_COEF b15:8 at 12.5 kHz (the chip's reset value, set by power_on_init)
 } hrc7000_t;
 
 static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
@@ -206,10 +212,61 @@ uint8_t hrc7000_ctcss_addr(uint16_t hz_x10);
 uint32_t hrc7000_user_ctcss(uint16_t hz_x10);
 
 typedef enum { HRC7000_TONE_NONE, HRC7000_TONE_CTCSS, HRC7000_TONE_DCS, HRC7000_TONE_DCS_INV } hrc7000_tone_t;
-// TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19)
+// TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19). Set the
+// TX tone before hrc7000_fm_tx(): the modem takes the DCS code when FM_PTT goes on
 void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t value);
 // The received tone or code matches (FM_DECODE_FLAG2 b0 CTCSS / b1 CDCSS); true when no RX tone is set
 bool hrc7000_subtone_ok(hrc7000_t *d);
+// A single FM TX tone instead of the microphone (8.3): DTMF digit "1" with both of its tones at hz, at the DTMF
+// deviation dev (SUBVOICE_COEF b15:8, which the sub-audio shares while the tone plays). hz = 0: the microphone, the
+// sub-audio deviation and the default DTMF steps back. tx_tone_key: the tone off (a silent carrier) and on again
+void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
+void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
+// TX tone deviation (SUBVOICE_COEF b15:8) for a TX frequency and bandwidth (8.3)
+uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide);
+// --- Prompt FIFO (8.4) ---
+
+// Push one chunk (C7_PROMPT_CHUNK samples, low byte first) when the FIFO has room; false when it is full. Inline: the
+// AFSK symbol interrupt uses it
+static inline bool hrc7000_prompt_push(hrc7000_t *d, const int16_t *s)
+{
+	if ((hrc7000_rd(d, C7_AUDIO_CONTROL) & C7_AUDIO_RING_FULL) != 0) {
+		return false;
+	}
+	volatile uint8_t *f = &d->buf[C7_PROMPT_FIFO];
+	for (uint32_t i = 0; i < C7_PROMPT_CHUNK; i++) {
+		uint16_t v = (uint16_t)s[i];
+		f[2u * i] = (uint8_t)v;
+		f[2u * i + 1u] = (uint8_t)(v >> 8);
+	}
+	return true;
+}
+
+// --- FM receive audio to the CPU (8.5) ---
+
+// In FM the modem writes its demodulated receive audio, 8 kHz, into two 256-sample halves of the RX RAM in turn (high
+// byte first) and raises SYS_INTERP bit 14 as each one fills; FM_ADDR_SW names the half the CPU may read
+#define C7_SYS_FM_RX		(1u << 14)
+#define HRC7000_FM_RX_SAMPLES	256u
+#define HRC7000_FM_RX_RATE	8000u
+
+// The SYS_INTERP_MASK bit for it (the power-on mask leaves it off)
+void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on);
+// Copy the half FM_ADDR_SW names into out (HRC7000_FM_RX_SAMPLES); 0 when it names neither. Inline: it runs in the
+// modem's system interrupt, which runs from RAM
+static inline uint16_t hrc7000_fm_rx_audio(hrc7000_t *d, int16_t *out)
+{
+	uint32_t sw = hrc7000_rd(d, C7_FM_ADDR_SW) & 3u;
+	if (sw != 1u && sw != 2u) {
+		return 0;
+	}
+	const volatile uint8_t *p = &d->buf[C7_FM_RX_AUDIO + (sw - 1u) * HRC7000_FM_RX_SAMPLES * 2u];
+	for (uint16_t i = 0; i < HRC7000_FM_RX_SAMPLES; i++) {
+		out[i] = (int16_t)(uint16_t)((uint16_t)p[2u * i] << 8 | p[2u * i + 1u]);
+	}
+	return HRC7000_FM_RX_SAMPLES;
+}
+
 // FM noise measure (FM_SQL bits 15:0, higher = less signal)
 static inline uint16_t hrc7000_fm_noise(hrc7000_t *d) { return (uint16_t)hrc7000_rd(d, C7_FM_SQL); }
 

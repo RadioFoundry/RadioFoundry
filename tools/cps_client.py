@@ -43,6 +43,8 @@ REGIONS = {
     "all": [(0x00000, 0x10000), (0x20000, 0x120000)],
 }
 
+REPLY_MAX = 32768      # the longest read reply (cps-protocol.md 2.2)
+
 RADIO_TYPES = {0: "GD-77", 1: "GD-77S", 2: "DM-1801", 3: "RD-5R", 4: "DM-1801A", 5: "MD-9600", 6: "MD-UV380",
                7: "MD-380", 8: "DM-1701 (BGR panel)", 9: "MD-2017", 10: "DM-1701 (RGB panel)", 11: "DM-32UV"}
 
@@ -147,16 +149,36 @@ class Cps:
         self.control(6, bytes([2]))     # the radio saves its settings / VFOs first
 
     # ── reads ──
-    def read(self, area, addr, n):
+    def read(self, area, addr, n, retries=2):
+        """A read is repeated (after the rest of a bad reply has drained) when its reply is missing or malformed, or
+        '-': on a programming cable (the DM-1801 Pro's) a burst of line noise now and then spoils a request, and the
+        radio refuses the garbled address. A real refusal is refused again and raised."""
+        for attempt in range(retries + 1):
+            try:
+                return self._read_once(area, addr, n)
+            except CpsError:
+                if attempt == retries:
+                    raise
+                self._drain()
+
+    def _read_once(self, area, addr, n):
         self.t.write(bytes([0x52, area]) + addr.to_bytes(4, "big") + n.to_bytes(2, "big"))
         h = self.t.read(1, self.timeout)
         if h != b"R":
             raise CpsError(f"R {area} {addr:#x} {n}: reply {h!r}")
         ln = int.from_bytes(self.t.read(2, self.timeout), "big")
+        if area in (1, 2) and ln != n and n <= REPLY_MAX:   # flash, EEPROM: as asked (longer: clipped)
+            raise CpsError(f"R {area} {addr:#x} {n}: reply length {ln}")
         d = self.t.read(ln, self.timeout)
         if len(d) != ln:
             raise CpsError(f"R {area} {addr:#x}: short reply {len(d)} of {ln}")
         return d
+
+    def _drain(self):
+        """Let the radio give up on a spoiled request (CPS_STALL_MS) and throw away what is still coming"""
+        time.sleep(0.1)
+        while self.t.read(4096, 0.1):
+            pass
 
     def info(self):
         d = self.read(9, 0, 0x20)
@@ -192,11 +214,34 @@ class Cps:
         if r != bytes([0x58, sub]):
             raise CpsError(f"{what}: reply {r!r}")
 
-    def write_sector(self, img, sector, start, end, block=BLOCK):
+    def write_sector(self, img, sector, start, end, block=BLOCK, retries=2):
+        """Write one sector's part of img, read it back and compare; on a bad reply or a difference the whole sector
+        is drained and done again (a burst of line noise on the DM-1801 Pro's cable spoils a request now and then, and
+        noise inside a data block can change its bytes without an error)"""
+        for attempt in range(retries + 1):
+            try:
+                self._write_sector_once(img, sector, start, end, block)
+                a, b = max(sector * SECTOR, start), min((sector + 1) * SECTOR, end)
+                if same_but_vfo(self.read(1, a + self.offset, b - a), img[a:b], a):
+                    return
+                err = CpsError(f"sector {sector:#x}: read back differs")
+            except CpsError as e:
+                err = e
+            if attempt == retries:
+                raise err
+            self._drain()
+
+    def _write_sector_once(self, img, sector, start, end, block):
         base = sector * SECTOR
         wire = sector + self.offset // SECTOR
-        self.t.write(bytes([0x58, 1]) + wire.to_bytes(3, "big"))
-        self._ack(f"prepare sector {wire:#x}", 1)
+        prepare = bytes([0x58, 1]) + wire.to_bytes(3, "big")
+        self.t.write(prepare)
+        r = self.t.read(2, self.timeout)
+        if r == b"-":                   # a sector left prepared by a spoiled attempt: that X 1 dropped it, try again
+            self.t.write(prepare)
+            r = self.t.read(2, self.timeout)
+        if r != bytes([0x58, 1]):
+            raise CpsError(f"prepare sector {wire:#x}: reply {r!r}")
         a = max(base, start)
         while a < min(base + SECTOR, end):
             n = min(block, min(base + SECTOR, end) - a)
@@ -218,6 +263,14 @@ class Cps:
         self.control(5)
         if reboot:
             self.control(6, bytes([0]))
+
+
+VFO_A = (0x7590, 0x7590 + 56)   # the VFO A record: a read shows the live VFO there (cps-protocol.md 2.2)
+
+
+def same_but_vfo(got, want, at):
+    """got == want for the bytes at image address at.., the VFO A record aside"""
+    return all(got[i] == want[i] for i in range(len(want)) if not VFO_A[0] <= at + i < VFO_A[1])
 
 
 def plan_write(img, regions, base=None):

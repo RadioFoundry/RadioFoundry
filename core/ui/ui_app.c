@@ -994,6 +994,7 @@ static void quick_unavailable(uint8_t kind)
 	case QT_SCAN: ui_toast("Scan: not in this build"); break;
 	case QT_MODE: ui_toast(view->vfo ? "VFO: FM only" : "Mode change: not in this build"); break;
 	case QT_STEP: ui_toast("Step: set it in qdmr"); break;
+	case QT_VOX: ui_toast("VOX: not on this radio yet"); break;
 	default: ui_toast("Not in this build"); break;
 	}
 }
@@ -1522,9 +1523,11 @@ void ui_app_key(const input_event_t *ev)
 	// The monitor key on DMR: a short press toggles digital monitor (the radio core does it on the release; the
 	// view follows). Its hold function (value 1 on the long press) runs on DMR only: on FM holding the key is the
 	// squelch break (#19)
-	if (CONFIG_DMR && ev->action == ACT_MONITOR && ev->gesture == GESTURE_UP && ev->value == 0 &&
+#if CONFIG_DMR
+	if (ev->action == ACT_MONITOR && ev->gesture == GESTURE_UP && ev->value == 0 &&
 	    view->ch.mode == RADIO_MODE_DMR && !view->monitor)
 		ui_toast(view->dmr.hear_all_latch ? UI_DMON_OFF : UI_DMON_ON);
+#endif
 	if (ev->gesture == GESTURE_LONG && ev->value != 0 && view->ch.mode != RADIO_MODE_DMR)
 		return;
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)

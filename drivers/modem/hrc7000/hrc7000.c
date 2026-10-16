@@ -13,6 +13,12 @@
 #define FM_MOD_CDCSS		(1u << 2)
 #define FM_MOD_CDCSS_TX_INV	(1u << 11)
 #define FM_MOD_CDCSS_RX_INV	(1u << 10)
+#define FM_MOD_DTMF		(1u << 1)
+#define TONE_SEND_START		(1u << 7)	// dtmf_send: the digit on
+#define TONE_DIGIT_1		1u		// 697 + 1209 Hz: FM_TONE1 and FM_TONE3 high halves
+#define FM_TONE1_DEFAULT	0x05930629u
+#define FM_TONE3_DEFAULT	0x09AC0AB0u
+#define SUBAUDIO_DEV_RESET	0x28u		// SUBVOICE_COEF b15:8 at reset: 300 Hz CTCSS (8.2)
 
 uint16_t hrc7000_mod_dc(uint8_t tx_center)
 {
@@ -26,6 +32,7 @@ void hrc7000_attach(hrc7000_t *d, volatile uint32_t *regs, volatile uint8_t *buf
 	d->regs = regs;
 	d->buf = buf;
 	d->audio_ctl = C7_AUDIO_I2S_SLAVE;
+	d->tone_on = false;
 }
 
 static void spin(uint32_t n)
@@ -118,12 +125,19 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_wr(d, C7_TX_IF_FREQ, 0x0BB800);
 	hrc7000_wr(d, C7_RECV_MS_SYNC_H, hrc7000_rd(d, C7_RECV_MS_SYNC_H) | (1u << 31));	// undocumented enables
 	hrc7000_wr(d, C7_RECV_BS_SYNC_H, hrc7000_rd(d, C7_RECV_BS_SYNC_H) | (1u << 31));
+	// The same enable for the TDMA direct mode syncs: without it they are never detected (bench, 2026-10-16)
+	hrc7000_wr(d, C7_RECV_TDMA1_SYNC_H, hrc7000_rd(d, C7_RECV_TDMA1_SYNC_H) | (1u << 31));
+	hrc7000_wr(d, C7_RECV_TDMA2_SYNC_H, hrc7000_rd(d, C7_RECV_TDMA2_SYNC_H) | (1u << 31));
 	hrc7000_wr(d, C7_RF_CONTROL, RF_CONTROL_VALUE);
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
-	hrc7000_wr(d, C7_FM_TONE1, 0x05930629u);	// DTMF tone steps (8.3)
+	hrc7000_wr(d, C7_FM_TONE1, FM_TONE1_DEFAULT);	// DTMF tone steps (8.3)
 	hrc7000_wr(d, C7_FM_TONE2, 0x06D10787u);
-	hrc7000_wr(d, C7_FM_TONE3, 0x09AC0AB0u);
+	hrc7000_wr(d, C7_FM_TONE3, FM_TONE3_DEFAULT);
 	hrc7000_wr(d, C7_FM_TONE4, 0x0BD10D10u);
+	// The reset value, not what the register holds: a restart that doesn't reset the modem (the boot stub's) finds the
+	// last transmission's value there, and at 25 kHz that is twice the narrow one (0xFF on the DM-32UV: 1.9 kHz CTCSS)
+	d->subaudio_dev = SUBAUDIO_DEV_RESET;
+	hrc7000_wr(d, C7_SUBVOICE_COEF, (hrc7000_rd(d, C7_SUBVOICE_COEF) & ~0xFF00u) | (SUBAUDIO_DEV_RESET << 8));
 	hrc7000_set_mic_gain(d, mic_gain_db);
 }
 
@@ -131,6 +145,12 @@ void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear)
 {
 	d->audio_ctl = (d->audio_ctl & ~clear) | set;
 	hrc7000_wr(d, C7_AUDIO_CONTROL, d->audio_ctl);
+}
+
+void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on)
+{
+	uint32_t m = hrc7000_rd(d, C7_SYS_INTERP_MASK);
+	hrc7000_wr(d, C7_SYS_INTERP_MASK, on ? (m | C7_SYS_FM_RX) : (m & ~C7_SYS_FM_RX));
 }
 
 void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted)
@@ -156,6 +176,9 @@ void hrc7000_fm_tx(hrc7000_t *d, bool wide)
 {
 	hrc7000_wr(d, C7_FM_BANDWIDTH, wide ? 0x5F : 0x50);
 	hrc7000_wr(d, C7_FM_DEV_COEF, wide ? 0x40A20 : 0x40A25);
+	// Sub-audio deviation (8.2): the bandwidth bits don't scale it; twice the narrow value at 25 kHz
+	uint32_t sv_dev = wide ? (uint32_t)d->subaudio_dev * 2u : d->subaudio_dev;
+	hrc7000_wr(d, C7_SUBVOICE_COEF, (hrc7000_rd(d, C7_SUBVOICE_COEF) & ~0xFF00u) | ((sv_dev > 0xFFu ? 0xFFu : sv_dev) << 8));
 	hrc7000_audio_bits(d, 0, C7_AUDIO_FM_PLAY);
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 	hrc7000_wr(d, C7_FM_PTT, 1);
@@ -163,6 +186,7 @@ void hrc7000_fm_tx(hrc7000_t *d, bool wide)
 
 void hrc7000_fm_idle(hrc7000_t *d)
 {
+	hrc7000_tx_tone(d, 0, 0);
 	hrc7000_wr(d, C7_FM_PTT, 0);
 	hrc7000_audio_bits(d, 0, C7_AUDIO_FM_PLAY);
 }
@@ -211,6 +235,7 @@ void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t va
 		hrc7000_wr(d, C7_USER_DEFINE_CTC, addr == 0 ? hrc7000_user_ctcss(value) : 0);
 		mod |= FM_MOD_CTCSS;
 	} else if (type == HRC7000_TONE_DCS || type == HRC7000_TONE_DCS_INV) {
+		// The TX code is taken when FM_PTT goes on: written after it, the radio sent the previous code (SDR bench)
 		uint32_t c = hrc7000_rd(d, C7_CDCSS_ADDR);
 		c = tx ? ((c & ~0x1FFu) | (value & 0x1FFu)) : ((c & ~0x1FF0000u) | ((uint32_t)(value & 0x1FFu) << 16));
 		hrc7000_wr(d, C7_CDCSS_ADDR, c);
@@ -233,4 +258,43 @@ bool hrc7000_subtone_ok(hrc7000_t *d)
 		return (flags & 0x2u) != 0;
 	}
 	return true;
+}
+
+void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev)
+{
+	if (hz != 0) {
+		uint32_t step = ((uint32_t)hz * 2048u + 500u) / 1000u;	// round(f x 2.048)
+		if (!d->tone_on) {
+			d->subvoice = hrc7000_rd(d, C7_SUBVOICE_COEF);
+		}
+		hrc7000_wr(d, C7_SUBVOICE_COEF, (d->subvoice & ~0xFF00u) | ((uint32_t)dev << 8));
+		hrc7000_wr(d, C7_FM_TONE1, (step << 16) | (FM_TONE1_DEFAULT & 0xFFFFu));
+		hrc7000_wr(d, C7_FM_TONE3, (step << 16) | (FM_TONE3_DEFAULT & 0xFFFFu));
+		hrc7000_wr(d, C7_FM_MOD, hrc7000_rd(d, C7_FM_MOD) | FM_MOD_DTMF);
+		hrc7000_wr(d, C7_TONE_SEND_CTRL, TONE_SEND_START | TONE_DIGIT_1);
+		d->tone_on = true;
+	} else if (d->tone_on) {
+		hrc7000_wr(d, C7_TONE_SEND_CTRL, 0);	// the reset value
+		hrc7000_wr(d, C7_FM_MOD, hrc7000_rd(d, C7_FM_MOD) & ~FM_MOD_DTMF);
+		hrc7000_wr(d, C7_FM_TONE1, FM_TONE1_DEFAULT);
+		hrc7000_wr(d, C7_FM_TONE3, FM_TONE3_DEFAULT);
+		hrc7000_wr(d, C7_SUBVOICE_COEF, d->subvoice);
+		d->tone_on = false;
+	}
+}
+
+// About 5.8 Hz of deviation per step (UHF, DM-1801 Pro on the SDR bench: 0x60 = 559 Hz, 0xC0 = 1117 Hz). The guide's
+// DTMF values (0x12 at UHF 12.5 kHz) gave about 100 Hz, too little to hear. 0xFF (about 1.5 kHz) is the most the
+// field holds, so 25 kHz gets less than twice the narrow value. VHF is unmeasured
+uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide)
+{
+	(void)hz;
+	return wide ? 0xFFu : 0xC0u;
+}
+
+void hrc7000_tx_tone_key(hrc7000_t *d, bool down)
+{
+	if (d->tone_on) {
+		hrc7000_wr(d, C7_TONE_SEND_CTRL, (down ? TONE_SEND_START : 0u) | TONE_DIGIT_1);
+	}
 }

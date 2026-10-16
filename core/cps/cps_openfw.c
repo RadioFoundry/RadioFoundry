@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors The open-firmware CPS protocol engine
 // (cps_openfw.h). Requests are assembled from the byte stream: the host link sees no USB packet boundaries, so a
 // request ends when its header says it is complete (R, W/X, most C commands), or after CPS_GAP_MS of quiet for the rest
-// (C 2 text without a NUL, D, unknown bytes). The PC waits for each reply before it sends again, so the gap never cuts
-// a request short in practice.
+// (C 2 text without a NUL, D, unknown bytes). A request still short of its header's length waits CPS_STALL_MS, so a
+// UART that delivers it in pieces doesn't cut it short; the PC waits for each reply before it sends again.
 #include <string.h>
 #include "cps/cps_openfw.h"
 #include "board.h"
@@ -35,6 +35,7 @@ static uint32_t sector_addr;
 static bool sector_cal;			// the calibration sector: only the window may change
 static bool image_written;		// a commit since the session began: re-read the codeplug at its end
 static int8_t reboot_req = -1;		// C 6 0 / 1 seen: reboot (1 = save first) once the bytes are handled
+static bool programming;		// C 0 seen, and no quiet longer than CPS_SESSION_MS since: C 6 0 / 1 may reboot
 
 static uint32_t be32(const uint8_t *p)
 {
@@ -465,6 +466,13 @@ static void cmd_control(void)
 		case 0:		// save settings and reboot
 		case 1:		// reboot
 			nak();
+			// Only after C 0: otherwise any three bytes "C 6 1" on a link shared with the debug link reboot
+			// the radio (bench 2026-10-15)
+			if (!programming) {
+				stats.reboots_ignored++;
+				return;
+			}
+			programming = false;
 			end_session();
 			if (req[2] == 0) {
 				settings_flush();
@@ -478,7 +486,10 @@ static void cmd_control(void)
 			break;
 		}
 		break;
-	default:	// 0 programming screen, 1-4 screen text and backlight, 7 GPS, 254 ping
+	case 0:		// programming screen
+		programming = true;
+		break;
+	default:	// 1-4 screen text and backlight, 7 GPS, 254 ping
 		break;
 	}
 	nak();
@@ -567,10 +578,30 @@ static void handle(size_t n)
 	}
 }
 
-// Take complete requests off the front of the buffer; with gap, the rest is one request too
-static void process(bool gap)
+// A byte no request starts with. The DM-1801 Pro's cable (on the microphone / speaker jack) now and then delivers a
+// burst of noise bytes (0xFC, 0xFE) between requests; answered '-', it was read as the reply to the next request
+static bool junk(uint8_t b)
+{
+	return b != 'R' && b != 'W' && b != 'X' && b != 'C' && b != 'D';
+}
+
+// Take complete requests off the front of the buffer, dropping noise in front of one (counted, never answered). After
+// the gap, a request whose length the header doesn't give is whatever came; one whose header gives its length (or
+// isn't whole yet) waits for the stall, so a UART that delivers it in pieces doesn't cut it short
+static void process(bool gap, bool stall)
 {
 	while (req_len > 0) {
+		size_t skip = 0;
+		while (skip < req_len && junk(req[skip])) {
+			skip++;
+		}
+		if (skip > 0) {
+			stats.junk += skip;
+			memmove(req, req + skip, req_len - skip);
+			req_len -= skip;
+			memset(req + req_len, 0, skip);
+			continue;
+		}
 		int n = needed();
 		if (n > CPS_REQUEST_MAX) {
 			overflow = true;	// the header asks for more than fits: wait for the gap, then '-'
@@ -581,8 +612,8 @@ static void process(bool gap)
 			memmove(req, req + n, req_len - (size_t)n);
 			req_len -= (size_t)n;
 			memset(req + req_len, 0, (size_t)n);	// clear behind, as a radio on the aftermarket firmware does
-		} else if (gap) {
-			handle(req_len);	// incomplete or gap-terminated: whatever came is the request
+		} else if (n < 0 ? gap : stall) {
+			handle(req_len);	// gap-terminated, or incomplete for too long: whatever came is the request
 			memset(req, 0, req_len);
 			req_len = 0;
 		} else {
@@ -599,6 +630,7 @@ void cps_init(const cps_io_t *p)
 	drop_sector();
 	image_written = false;
 	reboot_req = -1;
+	programming = false;
 	memset(&stats, 0, sizeof(stats));
 	memset(req, 0, sizeof(req));
 }
@@ -619,6 +651,7 @@ static void reboot_now(void)
 void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 {
 	bool gap = (now_ms - last_rx_ms) >= CPS_GAP_MS;
+	bool stall = (now_ms - last_rx_ms) >= CPS_STALL_MS;
 
 	// After a quiet gap, what waited is a whole request (or an overlong one, answered '-')
 	if (gap && overflow) {
@@ -628,7 +661,7 @@ void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 		stats.overflows++;
 		refuse();
 	} else if (gap && req_len > 0) {
-		process(true);
+		process(true, stall);
 	}
 	if (len == 0) {
 		// Tick: a long quiet ends the session
@@ -637,6 +670,9 @@ void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 		}
 		reboot_now();
 		return;
+	}
+	if ((now_ms - last_rx_ms) > CPS_SESSION_MS) {
+		programming = false;
 	}
 	last_rx_ms = now_ms;
 	if (overflow) {
@@ -648,11 +684,16 @@ void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 	}
 	memcpy(req + req_len, buf, len);
 	req_len += len;
-	process(false);
+	process(false, false);
 	reboot_now();
 }
 
 void cps_get_stats(cps_stats_t *s)
 {
 	*s = stats;
+}
+
+bool cps_mid_request(void)
+{
+	return req_len > 0 || overflow;
 }

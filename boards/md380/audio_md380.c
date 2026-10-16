@@ -247,8 +247,12 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	}
 	running = true;
 	if (!hw_start()) {
+		// No I2S clock from the HR_C5000 (powered down, or its codec not running): blocks the DMA caught before the
+		// clock check gave up must not reach the callback
 		running = false;
-		return false;	// no I2S clock from the HR_C5000 (powered down, or its codec not running)
+		pending = 0;
+		block_cb = NULL;
+		return false;
 	}
 	return true;
 }

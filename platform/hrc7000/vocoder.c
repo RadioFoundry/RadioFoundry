@@ -1,33 +1,44 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-32UV vocoder: the radio's own stock AMBE+2 codec (049 or 046), run from RAM at its stock address
-// (docs/spec/codec-dm32.md, "Recommended hosting" and "C. Codec state init tables").
+// HR_C7000 vocoder: the radio's own stock AMBE+2 codec, run from RAM at its stock address (docs/spec/codec-dm32.md,
+// "Recommended hosting" and "C. Codec state init tables"). Shared by the HR_C7000 radios that carry this codec build;
+// what differs between them (the slot, the RAM and table addresses) comes from the board.
 //
 // tools/dm32_codec.py carves the codec code and its table window out of the user's stock file and writes them into
-// the codec slot (0x030E8000..0x03100000) behind a small header; they are never part of this repository or a release.
-// On first use the code is copied to its stock RAM address (inside the window dm32.ld reserves) and the tables to their
-// stock modem SRAM address. Nothing is relocated or patched. Without a valid slot, present() is false: FM only.
+// the board's codec slot behind a small header; they are never part of this repository or a release. On first use the
+// code is copied to its stock RAM address (inside the window the board's linker script reserves) and the tables to
+// their stock modem SRAM address. Nothing is relocated or patched. Without a valid slot, present() is false: FM only.
+//
+// The board's linker script gives the slot (__codec_slot..__codec_slot_end) and the windows a slot may name
+// (__codec_run_lo/hi, __codec_tab_lo/hi); its board.mk names the profile prefix (HRC_CODEC_BOARD, e.g. "dm32").
 //
 // Not reentrant: one task (the audio task, through the audio block callback) makes all calls. The codec runs on the
 // caller's stack.
 #include <string.h>
-#include "dm32.h"
 #include "config.h"
+#include "vocoder.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "vocoder/ambe2_flags.h"
 
-#define SLOT_MAGIC		0x43524444u	// "DDRC" little-endian: ODR DM-32 codec slot
+#ifndef HRC_CODEC_BOARD
+#error "the board's board.mk must define HRC_CODEC_BOARD (the codec profile prefix)"
+#endif
+
+#define SLOT_MAGIC		0x43524444u	// "DDRC" little-endian: ODR HR_C7000 codec slot
 #define SLOT_VERSION		1u
 #define CODEC_SIG0		0x152514D8u	// first two words of the codec code (both versions)
 #define CODEC_SIG1		0x74C776CDu
 
-// Where a codec may run: the RAM window dm32.ld leaves out (049 and 046 code windows) and the modem SRAM table window
-#define RUN_LO			0x00016CDCu
-#define RUN_HI			0x0002F914u
-#define TAB_LO			0x18000E48u
-#define TAB_HI			0x18003E20u
+// Where a codec may run: the RAM window the linker script leaves out and the modem SRAM table window
+extern const uint8_t __codec_run_lo[], __codec_run_hi[], __codec_tab_lo[], __codec_tab_hi[];
+#define RUN_LO			((uint32_t)(uintptr_t)__codec_run_lo)
+#define RUN_HI			((uint32_t)(uintptr_t)__codec_run_hi)
+#define TAB_LO			((uint32_t)(uintptr_t)__codec_tab_lo)
+#define TAB_HI			((uint32_t)(uintptr_t)__codec_tab_hi)
 
 // The slot header, written by tools/dm32_codec.py (keep the two in step). Code follows at +code_off, tables at +tab_off
 typedef struct {
@@ -128,6 +139,8 @@ static bool load(void)
 	return true;
 }
 
+static volatile bool busy;	// a call is running the codec (hrc_vocoder_park waits it out)
+
 static bool present(void)
 {
 	if (presence < 0) {
@@ -142,7 +155,7 @@ static void *entry(uint32_t off)
 }
 
 // The stock init sequence (codec-dm32.md C), on our state blocks
-static void reset(void)
+static void reset_run(void)
 {
 	if (!present()) {
 		return;
@@ -176,14 +189,14 @@ static void reset(void)
 // Two calls per 20 ms frame, 80 samples each, half 0 then 1. Both calls pass the same flags word, read once per frame
 // (set_options; 0x1840 by default); r1 and the sp+8 argument are the state's own E[0x1736] / E[0x173A], as stock's
 // wrapper passes them. The 49 parameter bits come back one per halfword.
-static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
+static void encode_run(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
 {
 	if (!present()) {
 		memset(bits, 0, VOCODER_BITS);
 		return;
 	}
 	if (!ready) {
-		reset();
+		reset_run();
 	}
 	memcpy(pcmbuf, pcm, sizeof pcmbuf);
 	encode_t enc = (encode_t)entry(slot->encode);
@@ -199,14 +212,14 @@ static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODE
 
 // Two calls per frame on the same bit buffer; flags 0 (a good frame: the caller conceals bad ones, core/dmr/ambe);
 // r3 = D[0x1166] as stock's wrapper passes it
-static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES])
+static void decode_run(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES])
 {
 	if (!present()) {
 		memset(pcm, 0, VOCODER_FRAME_SAMPLES * sizeof(int16_t));
 		return;
 	}
 	if (!ready) {
-		reset();
+		reset_run();
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bitbuf[i] = bits[i] & 1;
@@ -218,13 +231,48 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
 }
 
+// The calls mark themselves busy, so a park can wait for the one running
+static void reset(void)
+{
+	busy = true;
+	hrc_barrier();		// set before present() reads presence: a park sees one or the other
+	reset_run();
+	busy = false;
+}
+
+static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
+{
+	busy = true;
+	hrc_barrier();
+	encode_run(pcm, bits);
+	busy = false;
+}
+
+static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES])
+{
+	busy = true;
+	hrc_barrier();
+	decode_run(bits, pcm);
+	busy = false;
+}
+
+void hrc_vocoder_park(void)
+{
+	presence = 0;		// every later call returns at once (silence, zero bits)
+	hrc_barrier();
+	while (busy) {
+		vTaskDelay(1);
+	}
+}
+
 // The id tools/odrflash and the release manifests use: which stock file the slot was carved from
 static const char *profile(void)
 {
 	if (!present()) {
 		return NULL;
 	}
-	return slot->stock_tag == 49u ? "dm32-049" : (slot->stock_tag == 46u ? "dm32-046" : "dm32-unknown");
+	return slot->stock_tag == 49u ? HRC_CODEC_BOARD "-049" :
+		(slot->stock_tag == 46u ? HRC_CODEC_BOARD "-046" : HRC_CODEC_BOARD "-unknown");
 }
 
 // Encode options (hal_vocoder_t): one flags word for every encode call, kept across reset()
@@ -243,12 +291,12 @@ static uint32_t encode_flags(void)
 	return enc_flags;
 }
 
-const hal_vocoder_t dm32_vocoder = {
+const hal_vocoder_t hrc_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
 	.options = options, .set_options = set_options, .encode_flags = encode_flags,
 };
 
-uint8_t dm32_vocoder_tag(void)
+uint8_t hrc_vocoder_tag(void)
 {
 	return present() ? (uint8_t)slot->stock_tag : 0;
 }

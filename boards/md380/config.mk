@@ -28,6 +28,9 @@ CONFIG_HOTSPOT ?= n
 # USRP voice over UDP (4.9 KB) is off by default too: it carries DMR only here (no FM audio path to the processor), and
 # a build with it on needs another feature off. Users can still pick it
 CONFIG_NET_USRP ?= n
+# SNMP (8 KB) is off for flash too: it is mostly for fixed hotspots and repeaters, and the default image had only
+# 56 bytes left. Users can pick it, with another feature off
+CONFIG_SNMP ?= n
 # Compressed UDP/IP headers on transmit (about 460 B) are off by default for room (the APRS position page, 2026-10-13):
 # IP over DMR still works, with full headers. Users can still pick it
 CONFIG_DMR_UDP_COMPRESS ?= n
@@ -47,5 +50,6 @@ CONFIG_DMR_CONTROL_STATION ?= n
 BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL HOTSPOT AM_RX BCAST_FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter; USRP, UDP header compression and the APRS-IS client don't
-# fit beside everything else (above), nor does control station mode or the Channels list
-MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS CHANNEL_LIST DMR_CONTROL_STATION
+# fit beside everything else (above), nor does control station mode or the Channels list, nor SNMP (with it the
+# maximal image overflowed flash by 1,776 bytes)
+MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS CHANNEL_LIST DMR_CONTROL_STATION SNMP

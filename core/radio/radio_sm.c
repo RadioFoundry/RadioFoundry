@@ -2154,7 +2154,8 @@ enum { APRS_RF_OFF = 0, APRS_RF_LISTEN, APRS_RF_KEYUP, APRS_RF_SEND };
 static bool aprs_can_start(const radio_sm_t *sm)
 {
 	if (sm->aprs_phase != APRS_RF_OFF || sm->ptt || sm->hotspot || sm->view.state != RS_IDLE || sm->view.monitor ||
-	    sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL) {
+	    sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL ||
+	    board.afsk->tx_start == NULL) {
 		return false;
 	}
 #if CONFIG_SCAN
@@ -2200,8 +2201,8 @@ static bool aprs_can_start(const radio_sm_t *sm)
 	return true;
 }
 
-// Back to the user's channel; sent / busy (gave up on a busy channel) for the engine
-static void aprs_rf_end(radio_sm_t *sm, bool sent, bool busy, uint32_t now_ms)
+// Back to the user's channel; how it ended for the engine
+static void aprs_rf_end(radio_sm_t *sm, aprs_rf_result_t r, uint32_t now_ms)
 {
 	uint8_t phase = sm->aprs_phase;
 	if (phase == APRS_RF_OFF) {
@@ -2216,13 +2217,13 @@ static void aprs_rf_end(radio_sm_t *sm, bool sent, bool busy, uint32_t now_ms)
 	}
 	sm->aprs_phase = APRS_RF_OFF;
 	sm->view.state = RS_IDLE;
-	aprs_rf_done(sent, busy, now_ms);
+	aprs_rf_done(r, now_ms);
 	tune(sm, now_ms);	// the channel again (DMR set up again if it was DMR)
 }
 
 static void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms)
 {
-	aprs_rf_end(sm, false, false, now_ms);
+	aprs_rf_end(sm, APRS_RF_ABORTED, now_ms);
 }
 
 static void aprs_rf_start(radio_sm_t *sm, uint32_t now_ms)
@@ -2254,7 +2255,7 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 	switch (sm->aprs_phase) {
 	case APRS_RF_LISTEN:
 		if (now_ms - sm->aprs_listen_ms >= APRS_CSMA_GIVE_UP_MS) {
-			aprs_rf_end(sm, false, true, now_ms);
+			aprs_rf_end(sm, APRS_RF_BUSY, now_ms);
 			return;
 		}
 		if (now_ms - sm->aprs_ms < APRS_SETTLE_MS + APRS_SLOT_MS) {
@@ -2278,7 +2279,7 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		// PTT. The settings' default (1 W on the DM-1701) ignored a lowered level
 		if (!board.radio->tx(sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K,
 				     aprs_tx_power(sm->view.power), &none)) {
-			aprs_rf_end(sm, false, false, now_ms);
+			aprs_rf_end(sm, APRS_RF_NO_KEY, now_ms);
 		}
 		break;
 	case APRS_RF_KEYUP:
@@ -2287,7 +2288,7 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		}
 		if (!board.afsk->tx_start(sm->aprs_job.tones, sm->aprs_job.nbits, AFSK_BAUD, AFSK_MARK_HZ, AFSK_SPACE_HZ,
 					  sm->aprs_job.level)) {
-			aprs_rf_end(sm, false, false, now_ms);
+			aprs_rf_end(sm, APRS_RF_NO_AFSK, now_ms);
 			return;
 		}
 		sm->aprs_phase = APRS_RF_SEND;
@@ -2295,9 +2296,9 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		break;
 	case APRS_RF_SEND:
 		if (!board.afsk->tx_busy()) {
-			aprs_rf_end(sm, true, false, now_ms);
+			aprs_rf_end(sm, APRS_RF_SENT, now_ms);
 		} else if (now_ms - sm->aprs_ms > APRS_SEND_MAX_MS) {
-			aprs_rf_end(sm, false, false, now_ms);
+			aprs_rf_end(sm, APRS_RF_TIMEOUT, now_ms);
 		}
 		break;
 	default:

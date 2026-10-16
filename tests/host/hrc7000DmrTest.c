@@ -236,6 +236,62 @@ static void test_rx(void)
 	CHECK(eng.tick == t);
 }
 
+// The receiver drops its slot timing when it stops giving bursts: at the end of a reception and when the chip keeps
+// the timing of a sender that left, reporting only unusable slots (bench: no later call was taken)
+static void test_rx_resync(void)
+{
+	setup();
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_run(&eng);
+	uint32_t rs = eng.st.rx_restarts;
+
+	// A call: no restart while bursts come in, one about 390 ms after the last
+	for (int i = 0; i < 40; i++) {
+		tick(false);
+		deframe(rti((uint8_t)(i % 6 + 1), 0, 2, 0, 0, 0));
+	}
+	CHECK(eng.st.rx_restarts == rs);
+	for (int i = 0; i < 13; i++) {
+		tick(false);
+	}
+	CHECK(eng.st.rx_restarts == rs && eng.st.rx_lost == 0);
+	tick(false);
+	CHECK(eng.st.rx_restarts == rs + 1 && eng.st.rx_lost == 1 && !eng.rx_any);
+	CHECK(REG(C7_LAYER2_SLOTON) == 0x05 && REG(C7_LAYER2_CONTROL) == 0xC0);
+
+	// Stale timing: ticks and unusable bursts only, a restart every 600 ms
+	for (int i = 0; i < 20; i++) {
+		tick(false);
+		deframe((rti(0, 0, 2, 0, 0, 0) & ~3u) | 1u);
+	}
+	CHECK(eng.st.rx_stale == 0);
+	tick(false);
+	CHECK(eng.st.rx_stale == 1 && eng.st.rx_restarts == rs + 2);
+	for (int i = 0; i < 21; i++) {
+		tick(false);
+	}
+	CHECK(eng.st.rx_stale == 2);
+
+	// A new call is taken and holds the receiver
+	for (int i = 0; i < 30; i++) {
+		tick(false);
+		deframe(rti((uint8_t)(i % 6 + 1), 0, 2, 0, 0, 0));
+	}
+	CHECK(eng.st.rx_stale == 2 && eng.st.rx_lost == 1);
+
+	// A restart after a transmission starts the count again (no restart at the first tick after it)
+	count_kind(0xFF, NULL);
+	for (int i = 0; i < 14; i++) {
+		tick(false);
+	}
+	CHECK(eng.st.rx_lost == 2);
+	hrc7000_dmr_rx_restart(&eng);
+	tick(false);
+	CHECK(eng.st.rx_stale == 2);
+	count_kind(0xFF, NULL);
+}
+
 static void test_cc_scan(void)
 {
 	setup();
@@ -445,16 +501,193 @@ static void test_fm_rx_keeps_pcm(void)
 	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_FM_PLAY);
 }
 
+// FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
+static void test_tx_tone(void)
+{
+	setup();
+	REG(C7_SUBVOICE_COEF) = 0x07D00930u;
+	hrc7000_tx_tone(&dev, 1750, hrc7000_dtmf_dev(467375000u, false));
+	CHECK(REG(C7_FM_TONE1) >> 16 == 3584u && REG(C7_FM_TONE3) >> 16 == 3584u);	// round(1750 x 2.048)
+	CHECK((REG(C7_FM_TONE1) & 0xFFFFu) == 0x0629u && (REG(C7_FM_TONE3) & 0xFFFFu) == 0x0AB0u);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D0C030u);
+	CHECK(REG(C7_FM_MOD) & 0x2u);
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0x81u);	// digit 1 on, voice muted
+	hrc7000_tx_tone(&dev, 1200, 0xC0);	// a new tone keeps the saved deviation
+	hrc7000_tx_tone_key(&dev, false);
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0x01u);
+	hrc7000_tx_tone_key(&dev, true);
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0x81u);
+	hrc7000_fm_idle(&dev);
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0 && (REG(C7_FM_MOD) & 0x2u) == 0);
+	CHECK(REG(C7_FM_TONE1) == 0x05930629u && REG(C7_FM_TONE3) == 0x09AC0AB0u);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D00930u && !dev.tone_on);
+	hrc7000_tx_tone_key(&dev, true);	// no tone: nothing
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0);
+	CHECK(hrc7000_dtmf_dev(446000000u, false) == 0xC0u && hrc7000_dtmf_dev(446000000u, true) == 0xFFu);
+}
+
+// Sub-audio: DCS TX code in CDCSS_ADDR b8:0 and RX in b24:16 (the guide); the sub-audio deviation doubles at 25 kHz
+static void test_subtone(void)
+{
+	setup();
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS, 0023);
+	CHECK(REG(C7_CDCSS_ADDR) == 0023u && (REG(C7_FM_MOD) & 0x4u));
+	hrc7000_set_subtone(&dev, false, HRC7000_TONE_DCS, 0754);
+	CHECK(REG(C7_CDCSS_ADDR) == ((0754u << 16) | 0023u));
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
+	CHECK(REG(C7_FM_MOD) & (1u << 11));
+	dev.subaudio_dev = 0x28;
+	REG(C7_SUBVOICE_COEF) = 0x07D02810u;
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D05010u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D02810u);
+	dev.subaudio_dev = 0x90;
+	hrc7000_fm_tx(&dev, true);	// capped at the field's top
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D0FF10u);
+	// A warm restart finds the last 25 kHz value in the register: the init sets the reset value, not that
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(dev.subaudio_dev == 0x28 && REG(C7_SUBVOICE_COEF) == 0x07D02810u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D02810u);
+}
+
+// FM receive audio (8.5): the half FM_ADDR_SW names, high byte first; the interrupt bit in the mask; the engine's
+// system interrupt calls the hook for bit 14 and clears it, running or not
+static int fm_hook_calls;
+static void fm_hook(void) { fm_hook_calls++; REG(C7_SYS_INTERP_LIST) = 0; }	// the chip clears it on the write back
+
+static void test_fm_rx_audio(void)
+{
+	setup();
+	int16_t out[HRC7000_FM_RX_SAMPLES];
+	for (uint32_t i = 0; i < HRC7000_FM_RX_SAMPLES; i++) {
+		uint16_t a = (uint16_t)(i * 100u), b = (uint16_t)(0x8000u + i);
+		buf[C7_FM_RX_AUDIO + 2u * i] = (uint8_t)(a >> 8);
+		buf[C7_FM_RX_AUDIO + 2u * i + 1u] = (uint8_t)a;
+		buf[C7_FM_RX_AUDIO + 512u + 2u * i] = (uint8_t)(b >> 8);
+		buf[C7_FM_RX_AUDIO + 512u + 2u * i + 1u] = (uint8_t)b;
+	}
+	CHECK(C7_FM_RX_AUDIO == 0x4E0u && C7_FM_RX_AUDIO + 1024u == 0x8E0u);	// the datasheet's 0x160004E0..0x160008DF
+	REG(C7_FM_ADDR_SW) = 0;
+	CHECK(hrc7000_fm_rx_audio(&dev, out) == 0);
+	REG(C7_FM_ADDR_SW) = 1;
+	CHECK(hrc7000_fm_rx_audio(&dev, out) == HRC7000_FM_RX_SAMPLES);
+	CHECK(out[0] == 0 && out[1] == 100 && out[255] == 25500);
+	REG(C7_FM_ADDR_SW) = 2;
+	CHECK(hrc7000_fm_rx_audio(&dev, out) == HRC7000_FM_RX_SAMPLES);
+	CHECK(out[0] == -32768 && out[255] == -32768 + 255);
+	REG(C7_FM_ADDR_SW) = 3;
+	CHECK(hrc7000_fm_rx_audio(&dev, out) == 0);
+
+	REG(C7_SYS_INTERP_MASK) = 0x1187Fu;
+	hrc7000_fm_rx_audio_irq(&dev, true);
+	CHECK(REG(C7_SYS_INTERP_MASK) == (0x1187Fu | C7_SYS_FM_RX));
+	hrc7000_fm_rx_audio_irq(&dev, false);
+	CHECK(REG(C7_SYS_INTERP_MASK) == 0x1187Fu);
+
+	fm_hook_calls = 0;
+	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+	hrc7000_dmr_isr_sys(&eng);	// no hook: cleared, nothing else
+	CHECK(REG(C7_SYS_INTERP_CLEAR) == C7_SYS_FM_RX && fm_hook_calls == 0);
+	eng.fm_rx = fm_hook;
+	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+	REG(C7_SYS_INTERP_CLEAR) = 0;
+	hrc7000_dmr_isr_sys(&eng);	// engine not running (FM): the hook still runs
+	CHECK(fm_hook_calls == 1 && REG(C7_SYS_INTERP_CLEAR) == C7_SYS_FM_RX);
+	REG(C7_SYS_INTERP_LIST) = 1u << 5;
+	hrc7000_dmr_isr_sys(&eng);	// another bit: no call
+	CHECK(fm_hook_calls == 1);
+}
+
+// Prompt FIFO push (8.4): 32 samples low byte first while AUDIO_CONTROL b31 is clear; nothing written when full
+static void test_prompt_push(void)
+{
+	setup();
+	int16_t s[C7_PROMPT_CHUNK];
+	for (uint32_t i = 0; i < C7_PROMPT_CHUNK; i++) {
+		s[i] = (int16_t)(0x1234 + (int32_t)i - 0x1000 * (int32_t)(i & 1u));
+	}
+	CHECK(hrc7000_prompt_push(&dev, s));
+	CHECK(buf[C7_PROMPT_FIFO] == 0x34 && buf[C7_PROMPT_FIFO + 1] == 0x12);
+	CHECK(buf[C7_PROMPT_FIFO + 2] == (uint8_t)(s[1] & 0xFF) && buf[C7_PROMPT_FIFO + 3] == (uint8_t)((uint16_t)s[1] >> 8));
+	CHECK(buf[C7_PROMPT_FIFO + 62] == (uint8_t)(s[31] & 0xFF));
+	memset(&buf[C7_PROMPT_FIFO], 0, 64);
+	REG(C7_AUDIO_CONTROL) = C7_AUDIO_RING_FULL;
+	CHECK(!hrc7000_prompt_push(&dev, s) && buf[C7_PROMPT_FIFO] == 0);
+}
+
+// An SFR's repeat: the send sync follows each burst's family (MS when none is asked), and with tx_listen the other
+// slot is received between our bursts; without it, nothing is taken while sending
+static void test_tx_sync_and_listen(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	tick(false);
+	count_kind(0xFF, NULL);
+
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t h = { .kind = DMR_BURST_VOICE_LC_HEADER, .len = 9, .sync_override = DMR_SYNC_TS2 };
+	dmr_tx_burst_t a = voice(0, 0x11);
+	CHECK(hrc7000_dmr_tx_queue(&eng, &h) && hrc7000_dmr_tx_queue(&eng, &a));
+	tick(true);
+	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD7557F && REG(C7_SEND_DATA_SYNC_L) == 0x5FF7F5);
+	// The other slot: closed, and a burst heard there is not taken
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0);
+	deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 1, 2, 0, 0));
+	CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 0);
+	// Voice A without an override: MS sync again
+	tick(true);
+	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD5D7F7 && REG(C7_SEND_DATA_SYNC_L) == 0x7FD757);
+
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xC3);
+	hrc7000_dmr_tx_listen(&eng);
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xCB);	// the receiver follows the other station's slot edges
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
+	deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 1, 2, 0, 0));
+	dmr_burst_t b;
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1 && b.sync == DMR_SYNC_TS1);
+
+	// A new transmission listens only when asked again, and writes its first sync even if unchanged
+	hrc7000_dmr_tx_abort(&eng);
+	tick(true);
+	CHECK(!hrc7000_dmr_is_transmitting(&eng));
+	REG(C7_SEND_DATA_SYNC_H) = 0;
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xC3);
+	CHECK(hrc7000_dmr_tx_queue(&eng, &a));
+	tick(true);
+	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD5D7F7);
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0);
+	hrc7000_dmr_tx_listen(&eng);
+	hrc7000_dmr_tx_abort(&eng);
+	tick(true);
+	hrc7000_dmr_tx_listen(&eng);	// not sending: ignored
+	CHECK(!eng.tx_listen);
+	count_kind(0xFF, NULL);
+}
+
 int main(void)
 {
 	test_pure();
 	test_rx();
+	test_rx_resync();
 	test_cc_scan();
 	test_tx();
 	test_tx_edges();
+	test_tx_sync_and_listen();
 	test_polite_and_repeater();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
+	test_tx_tone();
+	test_subtone();
+	test_fm_rx_audio();
+	test_prompt_push();
 	if (failures) {
 		printf("hrc7000DmrTest: %d failures\n", failures);
 		return 1;

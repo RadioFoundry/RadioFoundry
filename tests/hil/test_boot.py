@@ -53,7 +53,7 @@ def test_view_sections(radio):
     v = radio.view()
     for k in ("view", "state", "rx_hz", "ch.name", "dmr.built", "hostlink", "ui.screen", "input.idle_ms"):
         assert k in v, k
-    assert v["view"] == "1"
+    assert v["view"] == "2"
 
 
 def test_diag_has_clock_and_lines(radio):

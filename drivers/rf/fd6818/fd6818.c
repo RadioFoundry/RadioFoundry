@@ -3,6 +3,7 @@
 // FD6818 transceiver driver (docs/spec/hardware-dm32.md 8)
 #include <stddef.h>
 #include "fd6818.h"
+#include "rf/subaudio/subaudio.h"
 
 #define READ_BIT	0x80u
 #define BIT_US		1u	// clock low and high time
@@ -10,14 +11,15 @@
 
 typedef fd6818_regval_t regval_t;
 
-// 8.2 power-on init, in order (register 0x09 is a 16-entry table indexed by its top nibble)
+// 8.2 power-on init, in order (register 0x09 is a 16-entry table indexed by its top nibble). The earlier port also
+// sent 0xB3, 0xB4 (and 0xC7 in the DMR set): with bit 7 set those are read cycles, during which the MCU kept driving
+// the data line against the chip. The radio's own firmware never sends them, so they are left out
 static const regval_t init_table[] = {
 	{ 0x00, 0x8000 }, { 0x00, 0x0000 }, { 0x37, 0x1D0F }, { 0x13, 0x03BE }, { 0x12, 0x037B }, { 0x11, 0x027B },
 	{ 0x10, 0x007A }, { 0x14, 0x0019 }, { 0x49, 0x2A38 }, { 0x7B, 0x8420 }, { 0x48, 0x33EF }, { 0x1F, 0x5454 },
-	{ 0x25, 0xC1BA }, { 0x77, 0x88EF }, { 0x3E, 0xA037 }, { 0x13, 0x037E }, { 0x7D, 0xE35E }, { 0xB3, 0xFF00 },
-	{ 0x33, 0xFE00 }, { 0xB4, 0x0000 }, { 0x34, 0x0009 }, { 0xB3, 0xFE00 }, { 0x33, 0xFC00 }, { 0xB4, 0x0009 },
-	{ 0x34, 0x0019 }, { 0x10, 0x007A }, { 0x11, 0x027B }, { 0x12, 0x037B }, { 0x13, 0x03BE }, { 0x14, 0x0019 },
-	{ 0x1F, 0x5454 }, { 0x30, 0xBFF1 }, { 0x37, 0x1D1F }, { 0x3E, 0xA037 }, { 0x47, 0x0100 }, { 0x48, 0xBBBF },
+	{ 0x25, 0xC1BA }, { 0x77, 0x88EF }, { 0x3E, 0xA037 }, { 0x13, 0x037E }, { 0x7D, 0xE35E }, { 0x33, 0xFE00 },
+	{ 0x34, 0x0009 }, { 0x33, 0xFC00 }, { 0x34, 0x0019 }, { 0x10, 0x007A }, { 0x11, 0x027B }, { 0x12, 0x037B },
+	{ 0x13, 0x03BE }, { 0x14, 0x0019 }, { 0x1F, 0x5454 }, { 0x30, 0xBFF1 }, { 0x37, 0x1D1F }, { 0x3E, 0xA037 }, { 0x47, 0x0100 }, { 0x48, 0xBBBF },
 	{ 0x49, 0x2A38 }, { 0x4E, 0x4708 }, { 0x4F, 0x302F }, { 0x52, 0x028F }, { 0x7B, 0x8420 },
 	{ 0x09, 0x006F }, { 0x09, 0x106B }, { 0x09, 0x2067 }, { 0x09, 0x3062 }, { 0x09, 0x4050 }, { 0x09, 0x5047 },
 	{ 0x09, 0x603A }, { 0x09, 0x702C }, { 0x09, 0x8041 }, { 0x09, 0x9037 }, { 0x09, 0xA025 }, { 0x09, 0xB017 },
@@ -41,8 +43,7 @@ static const regval_t fm_table[] = {
 static const regval_t dmr_table[] = {
 	{ 0x47, 0x0000 }, { 0x30, 0x0000 }, { 0x30, 0x0000 }, { 0x13, 0x037E }, { 0x47, 0x0140 }, { 0x48, 0xBBBF },
 	{ 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x43, 0x4048 }, { 0x78, 0x6968 }, { 0x30, 0x0000 }, { 0x32, 0x0244 },
-	{ 0x37, 0x1F1F }, { 0x30, 0x0000 }, { 0x30, 0xBFF1 }, { 0x47, 0x0140 }, { 0x3F, 0x0000 }, { 0xC7, 0x0140 },
-	{ 0x47, 0x0140 },
+	{ 0x37, 0x1F1F }, { 0x30, 0x0000 }, { 0x30, 0xBFF1 }, { 0x47, 0x0140 }, { 0x3F, 0x0000 }, { 0x47, 0x0140 },
 };
 
 // 8.3 band select: first row whose threshold the frequency reaches (10 Hz units)
@@ -137,8 +138,7 @@ void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val)
 	const fd6818_bus_t *b = dev->bus;
 	uint32_t s = enter(b);
 	b->cs(false);
-	// The address byte goes out as given: the init table writes 0xB3, 0xB4 and 0xC7, which have the read bit set.
-	// What the chip makes of those is unknown; they are sent exactly as the working firmware sends them
+	// The address byte goes out as given: bit 7 is the chip's read flag, so callers write registers below 0x80
 	send_bits(b, (uint32_t)reg << 16 | val, 24);
 	b->clk(false);
 	b->cs(true);
@@ -259,15 +259,66 @@ void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10)
 	fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x9045);	// TX CTCSS on, gain 0x45
 }
 
-void fd6818_set_rx_ctcss(fd6818_t *dev, uint16_t hz_x10)
+// 0x51: b15 sub-audio on, b13 DCS inverted, b12 CTCSS (0 = DCS); b6:0 gain
+#define SUBAU_ON	0x8000u
+#define SUBAU_DCS_INV	0x2000u
+#define SUBAU_CTCSS	0x1000u
+#define SUBAU_GAIN	0x45u
+#define CTCSS_WORD_ALT	0x2000u		// 0x07 bit 13: the second tone word (the tail tone)
+#define DCS_RATE_WORD	0x0AD7u		// 134.4 Hz, the DCS bit rate
+#define DCS_HIGH_HALF	0x8000u
+
+void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value)
 {
-	if (hz_x10 == 0) {
-		fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x0000);
-		return;
+	switch (type) {
+	case FD6818_TONE_CTCSS:
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, fd6818_ctcss_word(value));
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, CTCSS_WORD_ALT | 0x01CEu);
+		fd6818_write(dev, FD6818_REG_CSS_THRESH, 0x028F);
+		fd6818_write(dev, FD6818_REG_SUBAUDIO, SUBAU_ON | SUBAU_CTCSS | SUBAU_GAIN);
+		break;
+	case FD6818_TONE_DCS:
+	case FD6818_TONE_DCS_INV: {
+		uint32_t word = subaudio_dcs_word(value);
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, DCS_RATE_WORD);	// the rate first
+		fd6818_write(dev, FD6818_REG_DCS_CODE, (uint16_t)(word & 0xFFFu));
+		fd6818_write(dev, FD6818_REG_DCS_CODE, (uint16_t)(DCS_HIGH_HALF | ((word >> 12) & 0xFFFu)));
+		fd6818_write(dev, FD6818_REG_SUBAUDIO,
+			(uint16_t)(SUBAU_ON | (type == FD6818_TONE_DCS_INV ? SUBAU_DCS_INV : 0u) | SUBAU_GAIN));
+		break;
 	}
-	fd6818_write(dev, FD6818_REG_CTCSS_FREQ, fd6818_ctcss_word(hz_x10));
-	fd6818_write(dev, 0x52, 0x028F);			// detect thresholds
-	fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x1000);
+	default:
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, 0x0470);
+		fd6818_write(dev, FD6818_REG_CTCSS_FREQ, CTCSS_WORD_ALT | 0x01CEu);
+		fd6818_write(dev, FD6818_REG_SUBAUDIO, 0x0000);
+		break;
+	}
+}
+
+bool fd6818_tone_found(uint16_t r0c, fd6818_tone_t type)
+{
+	switch (type) {
+	case FD6818_TONE_CTCSS: return (r0c & (1u << 10)) != 0;
+	case FD6818_TONE_DCS: return (r0c & (1u << 14)) != 0;
+	case FD6818_TONE_DCS_INV: return (r0c & (1u << 15)) != 0;
+	default: return true;
+	}
+}
+
+bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type)
+{
+	return type == FD6818_TONE_NONE || fd6818_tone_found(fd6818_read(dev, FD6818_REG_CSS_STATUS), type);
+}
+
+void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
+{
+	if (sleep) {
+		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);
+		fd6818_write(dev, FD6818_REG_POWER, mode == FD6818_MODE_DMR ? 0x1D00 : 0x1D11);
+	} else {
+		fd6818_write(dev, FD6818_REG_POWER, 0x1F1F);
+		fd6818_write(dev, FD6818_REG_POWER, 0x1F0F);
+	}
 }
 
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw)

@@ -68,9 +68,11 @@ typedef struct {
 
 // Registers with a known meaning
 #define FD6818_REG_CTCSS_FREQ	0x07
-#define FD6818_REG_CSS_STATUS	0x0C	// high byte: b2 CTCSS, b7 DCS normal, b6 DCS inverted detected
+#define FD6818_REG_DCS_CODE	0x08	// DCS word, low then high 12 bits (bit 15 marks the high half)
+#define FD6818_REG_CSS_STATUS	0x0C	// b10 CTCSS, b14 DCS normal, b15 DCS inverted detected
 #define FD6818_REG_BAND_A	0x1A
 #define FD6818_REG_STATE	0x30
+#define FD6818_REG_POWER	0x37	// block enables: 0x1F0F receive, 0x1D11 / 0x1D00 receiver asleep (FM / DMR)
 #define FD6818_REG_FREQ_LO	0x38	// 10 Hz units, low 16 bits
 #define FD6818_REG_FREQ_HI	0x39
 #define FD6818_REG_BAND_B	0x40
@@ -78,6 +80,7 @@ typedef struct {
 #define FD6818_REG_AF		0x47	// 0x6042 = AF muted in FM
 #define FD6818_REG_VOLUME	0x48
 #define FD6818_REG_SUBAUDIO	0x51
+#define FD6818_REG_CSS_THRESH	0x52
 #define FD6818_REG_NOISE	0x65
 #define FD6818_REG_RSSI		0x67
 #define FD6818_REG_TONE1	0x71
@@ -93,6 +96,7 @@ typedef struct {
 #define FD6818_BW_DMR		0x4048u
 
 typedef enum { FD6818_MODE_FM, FD6818_MODE_DMR } fd6818_mode_t;
+typedef enum { FD6818_TONE_NONE, FD6818_TONE_CTCSS, FD6818_TONE_DCS, FD6818_TONE_DCS_INV } fd6818_tone_t;
 
 // --- Pure helpers ---
 
@@ -101,11 +105,24 @@ bool fd6818_band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
 // CTCSS frequency register for a tone in Hz x 10: Hz x 20.64888, rounded (the old port truncated the tone to whole
 // tens of Hz first, hardware-dm32.md 16 #3)
 uint16_t fd6818_ctcss_word(uint16_t hz_x10);
+// Whether a 0x0C reading shows the tone the receiver was set up for (none: always true)
+bool fd6818_tone_found(uint16_t r0c, fd6818_tone_t type);
 // RSSI raw value from reg 0x67 (bits 8:0, halved: 1 dB steps)
 static inline uint16_t fd6818_rssi_raw(uint16_t r67) { return (uint16_t)((r67 & 0x1FFu) >> 1); }
 // RSSI in dBm: reg 0x67 bits 8:0 / 2 - 160 (programming guide, squelch section; reg 0x2C's external LNA gain is
 // already taken off by the chip)
 static inline int16_t fd6818_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)fd6818_rssi_raw(r67) - 160); }
+// Noise for the core's squelch (hal_radio_t status, larger = more noise): reg 0x65 bits 7:0 plus an offset. Without a
+// signal the raw value reads 43-63 (UHF 43-51 on most channels, VHF and 420 MHz 57-63), and a strong carrier reads 8 (a
+// DM-1801 Pro on the SDR bench). The core's levels open below 64 (loosest) down to 40 (tightest), so the raw floor
+// sits inside that range and every level opens on noise. The offset lifts the floor above 64 and keeps a strong
+// carrier at 33
+#define FD6818_NOISE_OFFSET	25u
+static inline uint8_t fd6818_noise(uint16_t r65)
+{
+	uint16_t n = (uint16_t)((r65 & 0xFFu) + FD6818_NOISE_OFFSET);
+	return n > 255u ? 255u : (uint8_t)n;
+}
 
 // --- Register access (one frame each, inside the critical section) ---
 
@@ -128,8 +145,15 @@ void fd6818_set_state(fd6818_t *dev, uint16_t state);
 void fd6818_fm_tx_prepare(fd6818_t *dev);
 // TX CTCSS from the FD6818 (hz_x10 = 0: sub-audio off)
 void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10);
-// RX CTCSS detect (0x51 = 0x1000 with the tone in 0x07), or off
-void fd6818_set_rx_ctcss(fd6818_t *dev, uint16_t hz_x10);
+// Sub-audio detect for receive: CTCSS (value = Hz x 10), DCS normal or inverted (value = the 9-bit code), or off.
+// The chip detects on its own demodulated audio; the result is polled from 0x0C (fd6818_rx_tone_ok). Bit 15 of 0x51
+// also turns the chip's sub-audio transmitter on, so a radio that makes its tones elsewhere sets NONE before TX
+void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value);
+bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type);
+// Receiver power saving (8.8, the radio's own sequence): sleep = idle, then 0x37 to its low-power word (FM 0x1D11,
+// DMR 0x1D00); wake = 0x37 back to the receive word (0x1F1F, then 0x1F0F) with the state still idle: the caller
+// retunes and sets the RX state next (fd6818_set_freq, fd6818_set_state)
+void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode);
 // From an interrupt: idle then TX, or idle then RX with the bandwidth (DMR per-burst switching, 8.5)
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw);
 

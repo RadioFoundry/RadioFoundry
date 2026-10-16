@@ -80,6 +80,7 @@
 #define TIMER_TICK		1
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
+#define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (hrc_afsk.c)
 
 // --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---
 #define PIC_MODE		REG32(PIC_BASE + 0x00)
@@ -217,12 +218,17 @@ void hrc_clock_init(void);
 // Vector table in RAM, PIC to a known state (everything masked and cleared)
 void hrc_irq_init(void);
 void hrc_time_init(void);
+// LCD backlight on PTA15 / PWM0 (backlight.c): 0 off, 100 fully on, otherwise PWM duty in percent
+void hrc_backlight(uint8_t percent);
+
 // Timer 1 at configTICK_RATE_HZ for the RTOS (called by the port when the scheduler starts)
 void hrc_tick_start(uint32_t hz);
 
 // One-shot on a timer: fires once after us microseconds, then the timer stops (the handler reads EOI)
 void hrc_timer_oneshot(uint8_t n, uint32_t us);
 void hrc_timer_stop(uint8_t n);
+// Periodic: an interrupt every us microseconds until hrc_timer_stop (the handler reads EOI)
+void hrc_timer_periodic(uint8_t n, uint32_t us);
 // Clear a timer's interrupt (read EOI)
 static inline void hrc_timer_ack(uint8_t n)
 {
@@ -236,7 +242,7 @@ static inline uint32_t hrc_cycles(void)
 }
 uint32_t hrc_micros(void);
 
-// Chip soft reset (QUAD_ENABLE = 0, SYS_SOFT_RSTN = 0; hardware-dm32.md 1.1). Does not return
+// Chip soft reset (QUAD_ENABLE = 0, LCSFC_BAUDR = 4, SYS_SOFT_RSTN = 0; hardware-dm32.md 1.1). Does not return
 void hrc_soft_reset(void) __attribute__((noreturn));
 
 // Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads a position-
@@ -256,6 +262,7 @@ extern const hal_system_t hrc_system;
 #include "hal_stream.h"
 extern const hal_stream_t hrc_host_uart_stream;
 void hrc_host_uart_init(void);
-uint32_t hrc_host_uart_overruns(void);
+uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
+uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
 
 #endif

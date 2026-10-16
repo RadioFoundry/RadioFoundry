@@ -397,7 +397,7 @@ complement), 22 `roam_hyst_db`, 23 `roam_probe`, 24 `roam_check_s`, 25 `roam_bea
 The SFR runner (`docs/spec/sfr.md`: today MMDVM SFR, later Standalone SFR's repeater roles) can send
 the beacon itself: with `rpt_beacon` on (debug link setting 28, off by default by P7), the runner keys its outbound with idle bursts for
 `roam_beacon_len_s` every `roam_beacon_s` while it carries nothing (`sfrRunnerSetBeacon`, counted in
-`sfr.tx_beacons` in the debug link's `hotspot` section). Traffic always has priority: a beacon due during a call is skipped, and a call that starts during a
+`sfr.tx_beacons` in the debug link's `sfr` section). Traffic always has priority: a beacon due during a call is skipped, and a call that starts during a
 beacon takes the outbound over. The beacon is standard idle bursts with the repeater's color code, nothing else.
 
 The radio keeps no network time, so its beacon starts at its own phase (the first one when the role starts) and is

@@ -76,30 +76,32 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, d.fd_writes);
 		put(&o, " uo ");
 		put_u(&o, hrc_host_uart_overruns());
+		put(&o, " ue ");
+		put_u(&o, hrc_host_uart_line_errors());
 		break;
 	case 3:
 		put(&o, "flash ");
 		put_x(&o, hrc_flash_spi0_jedec(), 6);
 		put(&o, " cal ");
-		put(&o, dm32_cal_source());
+		put(&o, bf_cal_source());
 		break;
 	case 4:
 		put(&o, "txc ");
-		put_u(&o, dm32_cal_tx_center());
+		put_u(&o, bf_cal_tx_center());
 		put(&o, " mod ");
-		put_x(&o, dm32_cal_modcal(145000000u), 4);
+		put_x(&o, bf_cal_modcal(145000000u), 4);
 		put(&o, " ");
-		put_x(&o, dm32_cal_modcal(435000000u), 4);
+		put_x(&o, bf_cal_modcal(435000000u), 4);
 		break;
 	case 5:	// PA drive, power level 1 (low) and 8 (high) at 145 / 435 MHz
 		put(&o, "pa ");
-		put_u(&o, dm32_cal_power_level(145000000u, 1));
+		put_u(&o, bf_cal_power_level(145000000u, 1));
 		put(&o, "/");
-		put_u(&o, dm32_cal_power_level(145000000u, 8));
+		put_u(&o, bf_cal_power_level(145000000u, 8));
 		put(&o, " ");
-		put_u(&o, dm32_cal_power_level(435000000u, 1));
+		put_u(&o, bf_cal_power_level(435000000u, 1));
 		put(&o, "/");
-		put_u(&o, dm32_cal_power_level(435000000u, 8));
+		put_u(&o, bf_cal_power_level(435000000u, 8));
 		break;
 #if CONFIG_DMR
 	case 6: {
@@ -115,9 +117,9 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 	case 7:
 		put(&o, "codec ");
-		if (dm32_vocoder_tag() != 0) {
+		if (hrc_vocoder_tag() != 0) {
 			put(&o, "0");
-			put_u(&o, dm32_vocoder_tag());
+			put_u(&o, hrc_vocoder_tag());
 		} else {
 			put(&o, "none");
 		}

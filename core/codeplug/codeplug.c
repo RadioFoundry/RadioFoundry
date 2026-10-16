@@ -527,13 +527,24 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	}
 }
 
+static uint32_t ch_errors;	// a used channel that couldn't be read or decoded (codeplug_channel_errors)
+
 static bool openfw_channel(uint16_t number, channel_t *out)
 {
 	uint8_t r[CH_SIZE];
-	if (!is_used(number) || !flash_read(channel_addr(number), r, sizeof(r))) {
+	if (!is_used(number)) {
 		return false;
 	}
-	return codeplug_openfw_decode(r, out);
+	if (!flash_read(channel_addr(number), r, sizeof(r)) || !codeplug_openfw_decode(r, out)) {
+		ch_errors++;
+		return false;
+	}
+	return true;
+}
+
+uint32_t codeplug_channel_errors(void)
+{
+	return ch_errors;
 }
 
 bool codeplug_channel(uint16_t number, channel_t *out)

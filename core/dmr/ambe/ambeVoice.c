@@ -45,6 +45,7 @@ static uint8_t cb_rx_seq, cb_tx_seq;
 static bool cb_rx_playing, cb_rx_primed, cb_rx_live;
 static bool cb_speaker;
 static uint8_t cb_bad_run;
+static uint32_t cb_call_frames;		// frames played in this call (rx_underrun_at)
 static uint8_t last_bits[VOCODER_BITS];
 static bool have_last;
 
@@ -202,6 +203,7 @@ static void rx_block(int16_t *spk)
 		cb_rx_playing = false;
 		cb_rx_primed = false;
 		cb_bad_run = 0;
+		cb_call_frames = 0;
 		have_last = false;
 		if (voc_ok()) {
 			voc->reset();
@@ -242,6 +244,7 @@ static void rx_block(int16_t *spk)
 			memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 		} else {
 			stats.rx_underruns++;
+			stats.rx_underrun_at = cb_call_frames;
 			conceal(spk);
 		}
 		return;
@@ -253,6 +256,7 @@ static void rx_block(int16_t *spk)
 		cb_bad_run = 0;
 		STORE(rx_tail, (uint8_t)(t + 1));
 		stats.rx_frames++;
+		cb_call_frames++;
 		if (voc_ok()) {
 			voc->decode(last_bits, spk);
 		} else {
