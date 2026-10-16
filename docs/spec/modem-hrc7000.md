@@ -135,7 +135,7 @@ SYS_INTERP_LIST bits (DS):
 | Offset | Register | Fields (DS) |
 |---|---|---|
 | 0x400 | LAYER2_CONTROL | b7 txen, b6 rxen, b5 layer2slot, b4 txtmp_master_mode, b3 rx_master_auto_update, b2 tx_slave_auto_mode, b1 tx_master_mode (active TX timing), b0 rx_master_mode |
-| 0x404 | LAYER2_SLOTON | write: b0 dll_tx_slot_on, b2 dll_rx_slot_on (establish TX / RX slot in active mode), plus self-clearing open/close strobes b5–b13; read: b31 TX slot on, b29 RX slot on |
+| 0x404 | LAYER2_SLOTON | write: b0 dll_tx_slot_on, b2 dll_rx_slot_on (establish TX / RX slot in active mode), plus self-clearing open/close strobes b5–b13 (b5 dll_rx_open_tx: build the TX slot from the receive slot, with tx_slave_auto_mode 0 and b0 set; DS 10.2.2.17); read: b31 TX slot on, b29 RX slot on |
 | 0x408 | LAYER2_TXRX_CTRL | b31 tx_complete_cpu (continuous mode only), b23 syncfail_layer2_rx (drop and re-acquire RX slot sync), b22 syncfail_layer2_tx, b15 begin_v_layer2 (voice access success), b7 txnextsloten (transmit in the next slot), b6 rxnextsloten (receive in the next slot), b0 autotest |
 | 0x40C | LAYER2_SLOT_CNT | slot counter presets (unused) |
 | 0x410 | LAYER2_MAX_CNT | slot fine tune ±n × 100 us (unused) |
@@ -149,8 +149,17 @@ Values written to LAYER2_CONTROL: **0xC0** = TX and RX enabled, passive timing (
 slots); **0xC3** = TX and RX enabled, active TX and RX timing (we set the slot clock); **0xCB** = 0xC3 plus b3
 rx_master_auto_update, for `tx_listen`. The manual (DS 10.2.2.16) says b0 rx_master_mode should normally be 0, and that
 in active receive mode the receive slot edges move with the received sync only when b3 is set. With 0xC3 alone an SFR
-heard almost nothing in its listening slot while it sent (DM-1801 Pro, 2026-10-16: `L18/1`), so `tx_listen` sets b3.
-Untested on air. Values written to
+heard almost nothing in its listening slot while it sent (DM-1801 Pro, 2026-10-16: `L18/1`), so `tx_listen` sets b3 for
+a transmission on our own timing.
+
+An aligned start (`DMR_TIMING_ALIGNED` with a burst received, an SFR's repeat) writes no LAYER2_CONTROL value: it stays
+0xC0 and LAYER2_SLOTON = **0x25** (0x05 plus b5 dll_rx_open_tx) builds the TX slot from the receive slot. Any
+LAYER2_CONTROL write at the start left the receiver without slot sync for about 1 s, deaf to the call being repeated:
+0xC3 (TX slots 37.7-41.6 ms after the caller's instead of 30), 0xC4 (b2, TX slots following the receiver: 28.6-30.1 ms),
+even 0xC4 written over 0xC4. With b0 rx_master_mode set (0xC5, 0xCD) the receiver kept its sync but no TX slot started.
+The first slot after the start is the one the received bursts came in; the driver sends in the slot whose number
+(LAYER2_STATUS b31) is the received bursts' chip slot for the same TS, the other one for another TS. DM-32UV on the SDR
+bench, 2026-10-16: our bursts 30.1 ms after the caller's, the whole call heard and repeated. Values written to
 LAYER2_TXRX_CTRL: 0x00 nothing next slot; 0x40 receive next slot; 0x80 transmit next slot; 0x8040 receive next slot
 with the voice-access flag; 0x800000 release RX slot sync.
 
@@ -343,7 +352,7 @@ code probe) does not work; replace it everywhere by this one (BIN).
 ## 6. Transmit sequences
 
 All transmit actions happen in the timeslot interrupts: the CPU arms one slot at a time with TXRX_CTRL = 0x80 and
-leaves the other slot unused (0x00, or 0x40 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (DS figures 99–100,
+leaves the other slot unused (0x00, or 0x40 / 0x8040 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (DS figures 99–100,
 BIN). Every arming also starts the PA one-shot (`hardware-dm32.md` 8.6). The RF TX interrupt that follows keys the RF
 chip.
 
