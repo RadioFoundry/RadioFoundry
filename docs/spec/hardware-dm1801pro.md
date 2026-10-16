@@ -247,6 +247,49 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   voice call decoded by the SDR bench's modem had 1 corrected bit in 162 AMBE frames. Encode takes about 12 ms of each
   20 ms frame and decode about 3 ms, so the radio's idle load has to stay low.
 
+### 5.7 FD6818 register fields
+
+From the FD6818 programming guide (DS) unless tagged. The guide's own addresses differ: it calls the state word REG_03H,
+and its offset calibration register is REG_04H. The radios write the state word at 0x30 (K), so the guide's address
+map doesn't carry over one to one, and where REG_04H sits on these radios isn't known (?).
+
+| Register | Bits | Meaning |
+|---|---|---|
+| 0x30 (state) | 15 | VCO calibration: a 0 to 1 edge starts one |
+| | 14 | PA bias |
+| | 13:10 | RX chain: LNA, mixer, filter, ADC |
+| | 9 | AF DAC (the audio output) |
+| | 8:4 | PLL and VCO |
+| | 3 | PA driver |
+| | 2 | Mic ADC |
+| | 1 | TX DSP |
+| | 0 | RX DSP |
+| 0x73 | 13:11 | AFC range |
+| | 4 | AFC off |
+| 0x7E | 7 | TX DC filter bypass |
+| | 6 | RX DC filter bypass |
+| | 5:3 | DC filter bandwidth: 111 = 15 Hz ... 010 = 480 Hz |
+| 0x0C (status) | 9 | PLL locked |
+| | 8 | AFC at its limit |
+| 0x3F (interrupt enable) | 7 | PLL lock lost |
+
+What follows for this radio:
+
+- RX word BFF1 has the RX chain, the AF DAC and the RX DSP on. TX word C1FE turns the RX chain and the AF DAC off. Every
+  return through idle (0000) restarts both and starts a VCO calibration (b15 edge). The guide's "TX with sidetone" is
+  C3FE (b9 set).
+- 0x73 = 6681: AFC on, range about 550 Hz. The guide gives no registers for PLL loop bandwidth, charge pump or VCO
+  band.
+- 0x7E = B03F (DMR): both DC filters on at 15 Hz. The guide documents the bandwidth field only for the TX filter;
+  that it sets the RX filter too is I. The guide's own DMR set-up uses 341E (240 Hz) with b7 set, and 0x73 = 569A (AFC
+  off).
+- Offset calibration (REG_04H b9:8) takes 50 ms with the RX chain on.
+- The FD6818's audio output drives the HR_C7000's AF ADC P input, and DAC C biases its N input (`modem-hrc7000.md`
+  2.1). That is why receive is sensitive to DAC C on this radio (DS for the inputs, I for the link).
+- The DM-32UV writes only the state word and 0x43 per burst, and its 0x37 is 1F1F / 1F0F in DMR receive against 9D1F
+  here (K). 0x37 is the only FD6818 word in the burst sequence that differs between the two; its bits aren't
+  documented (?).
+
 ## 6. Flash
 
 ### 6.1 Data flash (16 MB, SPI0)
