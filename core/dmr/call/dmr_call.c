@@ -88,6 +88,9 @@ static struct {
 	bool le_pair;		// two consecutive voice bursts seen
 	uint8_t le_last_index;
 	uint32_t le_last_ms;
+	bool le_held;		// le_burst: the last burst, its LC taken before the pair was complete
+	dmr_burst_t le_burst;
+	uint32_t le_burst_slot;
 	// PI header heard before the call was (late entry after a missed voice LC header)
 	bool pi_pending;
 	uint32_t pi_pending_ms;
@@ -367,6 +370,7 @@ static void le_reset(void)
 {
 	s.le_active = false;
 	s.le_pair = false;
+	s.le_held = false;
 }
 
 static bool group_listened(uint32_t tg, uint32_t now)
@@ -563,6 +567,9 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 }
 
 // Voice with no call: start one from the embedded LC once two consecutive bursts were seen (a lone burst is noise).
+// An LC that comes with the first burst is held with it until the next one makes the pair, then both are played: the
+// HR_C7000 reports voice only once it has the LC, so its first burst carries it (HIL 2026-10-15: dropping it made the
+// call wait for the next LC at F, 13 bursts instead of 18).
 // The stale LC (a modem's sticky LC buffer still holding the previous call's) is the driver's to filter: lc_valid on
 // a voice burst is an LC of this reception (docs/spec/dmr-modem.md 2.4, 6.1). Checking again here against the
 // previous call's LC cost a whole superframe more whenever the same talker called again (HIL 2026-10-10: a late entry
@@ -572,32 +579,48 @@ static void rx_late_entry(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	uint8_t i = b->voice_index % 6;
 
 	TR_WHAT('n');
+	bool held = false;
+
 	if (!s.le_active || elapsed(now, s.le_last_ms, true, fade_ms())) {
 		le_reset();
 		s.le_active = true;
 	} else if (i == (s.le_last_index + 1) % 6) {
 		s.le_pair = true;
+		held = s.le_held;
 	}
+	s.le_held = false;
 	s.le_last_index = i;
 	s.le_last_ms = now;
 
-	if (!b->lc_valid || !dmr_lc_is_voice(b->lc))
-		return;
+	const dmr_burst_t *from = b;	// the burst whose LC starts the call
+
+	if (!b->lc_valid || !dmr_lc_is_voice(b->lc)) {
+		if (!held)
+			return;
+		from = &s.le_burst;
+	}
 	// The call a terminator just ended: its last voice bursts reported after the terminator (the modem's reports come
 	// in batches) are not a new call. HIL 2026-10-10: one bench call counted as two or three, the extra ones without
 	// voice of their own
-	if (s.term_seen && !elapsed(now, s.term_ms, true, fade_ms()) && memcmp(b->lc, s.term_lc, DMR_LC_BYTES) == 0) {
+	if (s.term_seen && !elapsed(now, s.term_ms, true, fade_ms()) && memcmp(from->lc, s.term_lc, DMR_LC_BYTES) == 0) {
 		stats.rx_term_dropped++;
 		return;
 	}
 
-	if (!s.le_pair)
+	if (!s.le_pair) {
+		s.le_burst = *b;
+		s.le_burst_slot = slot;
+		s.le_held = true;
 		return;
-	rx_lc(b->lc, b, true, now);
+	}
+	rx_lc(from->lc, from, true, now);
 	s.have_index = false;
 	TR_WHAT('o');
-	if (s.rx == RXC_PLAY)
+	if (s.rx == RXC_PLAY) {
+		if (held)
+			rx_play(&s.le_burst, now, s.le_burst_slot);
 		rx_play(b, now, slot);
+	}
 #if DMR_RX_TRACE
 	if (tr.what == 'p')
 		tr.what = 'h';

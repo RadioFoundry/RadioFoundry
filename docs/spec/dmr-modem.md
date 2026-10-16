@@ -184,7 +184,10 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   (for example against the previous call's LC): the same talker calling again then costs a superframe more for
   each layer (HIL 2026-10-10: a late entry joined at burst 9 of 36 played 7 bursts instead of 13).
 - Skip the first two bursts A of a late entry before playing audio, unless the source is already known and isn't us.
-- A lone voice burst (noise, a stray) must not start a call: require a B 60 ms after an A (SFR practice).
+- A lone voice burst (noise, a stray) must not start a call: require a B 60 ms after an A (SFR practice). An LC that
+  comes with the first burst is held with that burst until the next burst makes the pair, then both are played. The
+  HR_C7000 reports voice only once it has the LC, so its first burst carries it (HIL 2026-10-15: dropping that LC cost a
+  superframe, 13 bursts played instead of 18).
 - A PI header missed => privacy parameters come from the embedded / F-burst privacy info (risk for privacy schemes).
 
 ### 2.5 Transmitting voice
