@@ -469,8 +469,8 @@ ground (DS). Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (
 | 0x17 | PTA23 | SPI1 CSN0 | — | unused | COM |
 | 0x18 | PTA24 | FD6818 chip select | out | low = selected | COM, KP |
 | 0x19 / 0x1A | PTA25 / 26 | RDA5807M broadcast FM receiver SDIO / SCLK | — | not used by any firmware seen | COM |
-| 0x20 | PTB0 | Green LED (port) / Red LED (community map) | out | high = on; **the two sources disagree** | KP, COM |
-| 0x21 | PTB1 | Red LED (port) / Green LED (community map) | out | high = on | KP, COM |
+| 0x20 | PTB0 | Green LED | out | high = on; color checked on a radio at bring-up | KP, COM, HW |
+| 0x21 | PTB1 | Red LED | out | high = on; color checked on a radio at bring-up | KP, COM, HW |
 | 0x22 | PTB2 | VHF LNA / RX supply (R5_V) | out | high = on | COM, KP |
 | 0x23 | PTB3 | UHF PA select | out | high = on | COM, BIN |
 | 0x24 | PTB4 | UHF LNA / RX supply (R5_U) | out | high = on | COM, KP |
@@ -538,6 +538,22 @@ against the keypad.
 Because SK1/SK2 pull a column low on their own, a matrix scan must ignore columns that are already low before any row
 is driven (KP). The radio's third programmable key (P1/P2, orange/top) has not been located.
 
+**PTT shares the cable's serial line (HW).** The PTT pin (0x2B) is also the K1 jack's line that carries the host's
+serial data to UART0, so every 0 bit the host sends pulls the pin low. Measured on a radio, 3 s per case, key scan
+every 10 ms:
+
+| Host sends | PTT low samples | Low edges |
+|---|---|---|
+| nothing | 0 | 0 |
+| 0xFF bytes back to back | 21 | 20 |
+| 0x00 bytes back to back | 266 | 31 |
+| the debug link polling chip registers | about 1.5 a second | same as samples |
+
+Two low scans in a row pass the key debounce, so a host polling the debug link can start a transmission. It did,
+twice, on the bench. A real press holds the line low, which UART0 reads as a break or framing error, never as a good
+byte. So the key scan counts the pin low as PTT only once no good byte has arrived for 50 ms
+(`drivers/input/sharedptt`, `hrc_host_uart_last_rx`). The diag line `ptt ign N` counts the low scans ignored.
+
 ### 6.3 Rotary encoder
 
 A = GPIO 0x27, B = 0x26, inputs with GPIO B interrupts (vector 46). On every change of B: direction = −1 if A == B
@@ -559,6 +575,10 @@ firmware then saves state and drops 0x11 (KP).
 
 240 × 320 color TFT with an ST7789-class controller on the 8-bit i8080 bus (KP; command set matches ST7789, no
 datasheet in hand). RGB565, two bytes per pixel.
+
+The case's bezel hides the panel's edges: ODR's safe-area insets are 5 px left, 4 px right, 3 px top and 2 px bottom in
+the 120x160 logical frame (`CONFIG_DISPLAY_INSET_*` in `boards/dm32/config.mk`, `ui.md` 1). Checked on a radio at
+bring-up.
 
 Reset: NRESET high, wait 120 ms, low, 120 ms, high, 120 ms. Then:
 
@@ -1050,7 +1070,7 @@ These are traps in the old port, listed so a fresh implementation does not copy 
 | 11 | Data flash accepts only JEDEC part 0x4018 | Puya-flash radios fail flash init |
 | 12 | Calibration menu still edits the MD-UV380 table, which the DM-32 does not use | |
 | 13 | SYS_SOFT_RSTN values 0x180 / 0x190 hold most modem blocks in reset if the manual's "low active" is right, yet FM worked | Bit meanings need checking on hardware |
-| 14 | LED color of GPIO 0x20 / 0x21 disagrees between the port and the community map | Check on hardware |
+| 14 | LED colors of GPIO 0x20 / 0x21 were unconfirmed | Settled on a radio: 0x20 green, 0x21 red (5) |
 | 15 | PWM backlight duty only spans half the range (FP 0..100 with PER 200) | Check on hardware |
 
 ---

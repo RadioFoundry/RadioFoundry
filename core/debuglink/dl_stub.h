@@ -19,6 +19,8 @@ typedef struct {
 	uint32_t total_crc;	// its CRC-32 (zlib / IEEE), checked before the jump
 	uint32_t entry;		// where to jump, inside [load_addr, load_addr + total_len)
 	uint32_t received;	// highest offset + length written, for progress and the exact-fill check
+	bool transmitting;	// set by the caller before each request: ENTER answers BUSY while the radio is on air,
+				// since the monitor would leave the transmitter keyed for the whole session
 } dl_stub_t;
 
 // The biggest DATA chunk that fits a DL_REQ_MAX request (op byte + offset u32 + bytes)

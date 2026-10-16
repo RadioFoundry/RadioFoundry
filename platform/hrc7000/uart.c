@@ -6,6 +6,7 @@
 // with the boards' other UARTs (hrc_uart_*, the DM-32UV's GPS).
 #include "platform.h"
 #include "hal_stream.h"
+#include "hal_time.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 
@@ -48,6 +49,8 @@ static volatile uint32_t rx_head, rx_tail;
 static volatile uint32_t rx_overruns;	// the ring was full
 static volatile uint32_t rx_line_errors;	// the UART flagged a character (FIFO overrun, parity, framing, break)
 static volatile uint32_t rx_bytes;
+static volatile uint32_t rx_good_ms;	// hal_millis() at the last byte with no line error (hrc_host_uart_last_rx)
+static volatile bool rx_good_seen;
 static uint32_t tx_bytes, tx_stalls;	// a stall: the TX FIFO stayed full for TX_SPIN, the rest of the write dropped
 static uint32_t waits;			// wait_rx() calls: the host link task's heartbeat (one per pass, 5 ms at most)
 static SemaphoreHandle_t rx_sem;
@@ -89,6 +92,9 @@ static void host_rx(uint8_t b, bool flagged)
 {
 	if (flagged) {
 		rx_line_errors++;
+	} else {
+		rx_good_ms = hal_millis();	// a break or framing error is a held line (a PTT press), not host data
+		rx_good_seen = true;
 	}
 	uint32_t next = (rx_head + 1u) & (RX_SIZE - 1u);
 	if (next != rx_tail) {
@@ -200,3 +206,9 @@ const hal_stream_t hrc_host_uart_stream = {
 	.wait_rx = wait_rx,
 	.write = wr,
 };
+
+bool hrc_host_uart_last_rx(uint32_t *ms)
+{
+	*ms = rx_good_ms;
+	return rx_good_seen;
+}

@@ -13,10 +13,9 @@
 #define PIN_FLASH_CS		0x12	// data flash chip select, low = selected
 #define PIN_FD_CS		0x18	// FD6818 chip select, low = selected
 
-// The two LEDs: the old port and the community pin map disagree on which is which (hardware-dm32.md 16 #14). The
-// community map is used here; swap these two if the bring-up shows red where green is expected
-#define PIN_LED_RED		0x20
-#define PIN_LED_GREEN		0x21
+// The two LEDs, high = on. Colors checked on the radio at bring-up (hardware-dm32.md 5)
+#define PIN_LED_GREEN		0x20
+#define PIN_LED_RED		0x21
 #define PIN_VHF_LNA		0x22	// VHF RX supply, high = on
 #define PIN_UHF_PA		0x23	// UHF PA select, high = on
 #define PIN_UHF_LNA		0x24	// UHF RX supply, high = on

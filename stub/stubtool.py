@@ -482,6 +482,8 @@ class Radio:
             if r[0] != 0:
                 raise DumpError("ODR refused the chunk at offset %d (status %d)" % (off, r[0]))
         r = self.dl_request(DL_STUB, b"\x03" + STUB_MAGIC.to_bytes(4, "little"))
+        if r[0] == 3:
+            raise DumpError("ODR refused to enter the stub: the radio is transmitting. Release PTT and run again")
         if r[0] != 0:
             raise DumpError("ODR refused to enter the stub (status %d): image incomplete or CRC mismatch" % r[0])
         self.log("ODR is jumping to the stub")

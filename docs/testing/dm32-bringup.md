@@ -75,7 +75,7 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "dm32 
 | SK1 (below PTT) = monitor, SK2 = talk target; holding SK1 doesn't kill the column 3 keys' neighbors | `direct[]` in `input_dm32.c` |
 | Encoder: one step per detent, right direction | `keymatrix_encoder_step` sign; one count per edge of B (6.3): if a detent gives two, count one edge only (`hrc_pin_irq` in `input_dm32.c`) |
 | PTT shows as key bit 20 | GPIO 0x2B |
-| Red LED on transmit, green on receive | swap `PIN_LED_RED` / `PIN_LED_GREEN` in `pins.h` (the two sources disagree) |
+| Red LED on transmit, green on receive | `PIN_LED_RED` / `PIN_LED_GREEN` in `pins.h` (settled on the radio: 0x20 green, 0x21 red) |
 | Turning the knob off saves and powers down | GPIO 0x10 sense in `power_dm32.c` |
 | `bat` line: raw about 600-690 and 7000-8400 mV on a charged pack | ADC channel C set-up in `power_dm32.c`; the scale raw / 8.2 = V x 10 |
 | Backlight dimming levels look even | `set_backlight` assumes FP counts against PER (duty = percent x 2); if half brightness is already full, use the percentage |
@@ -187,7 +187,7 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).
 - L2_STATUS slot polarity (`HRC7000_RX_NEXT_SLOT_XOR`).
-- LED colors, panel orientation, backlight PWM scale.
+- LED colors: 0x20 green, 0x21 red (settled on the radio). Panel orientation, backlight PWM scale.
 - Sub-audio: the C7000 makes the TX tones, the FD6818 detects the RX tones (settled on the radio and the SDR bench).
 - Codec 049: DMR voice encodes and decodes (the SDR bench modem decodes our AMBE with few FEC corrections); 046 untried.
 - UART divisor 46 (0.9 % slow) or 45 (1.3 % fast).

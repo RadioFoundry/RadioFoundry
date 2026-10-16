@@ -508,14 +508,19 @@ of the whole image checked before the jump.
 | 0 INFO | none | magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32: the span and transfer state |
 | 1 BEGIN | magic u32, total_len u32, crc32 u32, entry u32 | received u32 (0): zero the span and arm a transfer. Bad magic: refused; total 0 / over the span or entry outside it: bad argument |
 | 2 DATA | offset u32, bytes (<= max_chunk) | received u32: write a chunk (the frame's CRC-16 guards it). Not armed, or past total_len: bad argument |
-| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument |
+| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument; the radio transmitting: busy (the image stays loaded, ENTER again later) |
 
 The CRC-32 is the standard (zlib) CRC-32. Per-chunk integrity is the debug link frame's own CRC-16, so DATA carries no
 second checksum; the span is zeroed at BEGIN, so a dropped chunk leaves zeros that fail the ENTER CRC-32. After an ok
 ENTER the firmware sends the reply, draws a static banner on the display ("PC Loader Connected" / "Power-cycle to exit",
-flushed synchronously so the panel does not sit on a stale or hung frame while the monitor runs), then quiesces and jumps
+flushed synchronously so the panel does not sit on a stale or hung frame while the monitor runs) with the backlight at
+full, then quiesces and jumps
 and stops answering; the host then speaks the monitor's own protocol (`02 op len chk 03`, the stub's `PROTOCOL.md`) on
 the same UART at the same baud. Recover the radio with a power cycle.
+
+The monitor never touches the RF chips, so the transmitter stays as ODR left it for the whole session. ENTER is
+refused while the radio core is transmitting, the entry is dropped if PTT went down in the 100 ms between the reply and
+the jump, and the firmware calls `board.radio->tx_off()` just before the jump in every case.
 
 ## 4. Safety
 
@@ -525,6 +530,7 @@ the same UART at the same baud. Recover the radio with a power cycle.
 - Radio requests are rate limited (20 ms).
 - INFO_CHIP and READ_MEM only read. READ_MEM reads flash, system memory, OTP and option bytes only, never RAM or
   peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
+- STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).

@@ -560,6 +560,14 @@ and decode with a table that counts only whole detents at a rest state and ignor
 (`drivers/input/quadrature`, hardware-dm1701.md 10.3). Radios: all with an encoder (DM-1701, DM-32UV, MD-9600). Also:
 when the UI's event queue is full, carry the detents over to the next scan instead of dropping them.
 
+**16.2 PTT on the programming cable's serial line.**
+Symptom: on the DM-32UV a debug link host polling the radio started DMR transmissions on its own (ODR, 2026-10-15).
+Cause: the two-pin K-type programming jack carries the host's serial data on the same line as PTT, so every 0 bit
+pulls the PTT pin low, and two low key scans pass the debounce. Rule: on a radio whose PTT shares the host's RX line,
+count the pin low as PTT only after a quiet time with no good UART byte (`drivers/input/sharedptt`, hardware-dm32.md
+6.2). A real press holds the line low, which the UART reads as a break, never a good byte. Radios: DM-32UV confirmed.
+Many handhelds wire the K-type jack this way, so check every new radio (adding-a-radio.md, bring-up order).
+
 ## 17. Scan
 
 **17.1 Scanning DMR direct mode: the carrier is on air every other slot.**
