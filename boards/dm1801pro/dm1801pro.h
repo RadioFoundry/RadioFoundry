@@ -40,6 +40,7 @@ typedef struct {
 	uint8_t c7_work_mode, c7_fm_ptt;	// WORK_MODE, FM_PTT b0
 } dm1801pro_radio_diag_t;
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
+uint8_t dm1801pro_codec_byte(uint8_t reg);	// the HR_C7000's internal codec, byte registers 0x00-0x3F
 // DMR PCM to the speaker instead of the FM path (the speaker_pcm hook of hrc_audio_pcm)
 void dm1801pro_speaker_pcm(bool on);
 // The speaker amplifier (PTA16) is on while any user wants it: the channel audio, the broadcast tuner, speaker PCM

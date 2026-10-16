@@ -142,6 +142,17 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " rf ");
 		put_x(&o, d.c7_rf_mode, 8);
 		break;
+	case 12: case 13: case 14: case 15: {
+		// The codec's 64 byte registers, 16 per line (read one byte at a time: a word read returns one lane)
+		uint8_t base = (uint8_t)((i - 12u) * 16u);
+		put(&o, "cd ");
+		put_x(&o, base, 2);
+		put(&o, " ");
+		for (uint8_t k = 0; k < 16; k++) {
+			put_x(&o, dm1801pro_codec_byte((uint8_t)(base + k)), 2);
+		}
+		break;
+	}
 	default:
 		return false;
 	}
