@@ -479,7 +479,7 @@ ground (DS). Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (
 | 0x2B | PTB11 | PTT | in | low = pressed | COM, KP |
 | 0x2C | PTB12 | GPS power | out | **low = GPS on**, high = off | COM, KP |
 | 0x2E | PTB14 | Audio path select: mic to analog FM path vs to DMR codec | out | 1 = analog (FM TX), 0 = DMR; set at each TX start | COM, BIN |
-| 0x2F | PTB15 | Speaker source switch | out | 1 = the FD6818's audio output (FM receive), 0 = the C7000 codec (beeps, DMR voice) | HW |
+| 0x2F | PTB15 | FD6818 audio switch | out | 1 = the FD6818's audio output to the speaker and away from the C7000's ADC; 0 = the audio into the C7000 (DMR receive needs this) and the speaker on the codec | HW |
 | 0x31–0x34 | PTB17–20 | Keypad columns 1–4 | in | low = key closed | COM, KP |
 | 0x35 | PTB21 | Audio power amplifier enable | out | high = on | COM, KP |
 | 0x37 | PTB23 | VHF PA select | out | high = on | COM, BIN |
@@ -775,8 +775,8 @@ A1), the AF gain in 0x48, VHF LNA on, C7000 FM playback off, speaker source to t
 | Mic | into the C7000 codec ADC (MIC input 2: CR_MIC2 bit 6 = 1) | KP |
 | Mic routing switch | GPIO 0x2E: 1 = analog FM path, 0 = DMR path | BIN |
 | Speaker | codec DAC line out 2 (LINEOUT_CTRL bit 0, `line2out_en`) → speaker source switch GPIO 0x2F → audio PA (enable GPIO 0x35) | KP, DS |
-| Speaker source | 0x2F = 1: the FD6818's AF output; 0x2F = 0: the codec line out. 0x2E is driven as its complement outside TX. The amplifier (0x35) goes off before 0x2F changes | HW |
-| FM RX audio | the FD6818's AF output (0x47 = 0x0140) through 0x2F = 1 while the squelch is open. The C7000's FM playback (AUDIO_CONTROL bit 6, `fm_play_ctrl`) stays off: on the radio tested its AF input carries no audio (PHASE_OUT flat, `modem-hrc7000.md` 2) | HW |
+| Speaker source | 0x2F = 1: the FD6818's AF output (and the C7000's AF input disconnected: PHASE_OUT goes flat); 0x2F = 0: the codec line out, AF into the C7000. 0x2E is driven as its complement outside TX. The amplifier (0x35) goes off before 0x2F changes | HW |
+| FM RX audio | the FD6818's AF output (0x47 = 0x0140) through 0x2F = 1 while the squelch is open. The C7000's FM playback (AUDIO_CONTROL bit 6, `fm_play_ctrl`) stays off: with 0x2F = 1 its AF input is disconnected. The C7000's sub-audio decode loses its input while the squelch is open (open question) | HW, INF |
 | DMR RX audio | CPU writes 160 bytes of decoded 8 kHz PCM to 0x180000A0 per 10 ms and sets AUDIO_CONTROL bit 5; PCM_rd interrupt (vector 59) asks for the next block; clear with INTERP_CLEAR bit 5 | DS, KP |
 | Beeps / prompts | 64 bytes (32 samples, low byte first, 8 kHz) at a time to the prompt FIFO 0x16000980 while AUDIO_CONTROL bit 31 (`ring_full_two`) is 0; enable with AUDIO_CONTROL bit 7 (`ring_play_ctrl`). KP says 32 bytes, high byte first; the DM-1801 Pro's stock firmware and bench say otherwise (`modem-hrc7000.md` 8.4); not yet heard on a DM-32 | DS, KP, INF |
 

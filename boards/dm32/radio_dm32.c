@@ -318,7 +318,8 @@ static void status(radio_status_t *st)
 }
 
 // The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM
-// receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB14 is driven as its complement, as on the DM-1801
+// receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB15 = 1 also takes the FD6818's audio off the
+// HR_C7000's ADC, so DMR receive finds no sync while it is high. PTB14 is driven as its complement, as on the DM-1801
 // Pro; during a transmission the TX path owns PTB14 (the microphone route)
 static void speaker_source(void)
 {

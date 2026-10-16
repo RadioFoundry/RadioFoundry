@@ -55,7 +55,7 @@ Offsets from 0x11000000. Values are those used by OpenDM32 (BIN) unless noted.
 | 0x114 | RF_MOD_BIAS_CTRL | b25:16 two_point_bias; b15:8 sig_reduce (Mod2 amplitude); b7:0 phase_reduce (Mod1 amplitude) | ((cal + 384) << 16) or modcal (0x4D4D before a frequency is set) | Modulation balance from calibration |
 | 0x118 | DEV_LIMITER | b15:0 | 0xFF00 (reset value) | KP |
 | 0x11C | RSSI_BIAS_VALUE | read-only per DS (rssi b31:16, ADC I/Q DC bias) | port writes 0x1381 (no effect expected) | KP |
-| 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode (DS) | not written | A live check that AF reaches the ADC: a DM-1801 Pro receiving DMR reads about +1216 / -1149 (the guide expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives (HW) |
+| 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode (DS) | not written | A live check that AF reaches the ADC: a DM-1801 Pro receiving DMR reads about +1216 / -1149 (the guide expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives. On the DM-32UV that was GPIO 0x2F left high (`hardware-dm32.md` 5), which takes the FD6818's audio off the ADC (HW) |
 | 0x120 | THRESHOLD_VALUE | b28:24 sync ratio; b23:16 sync low threshold; b15:8 sync high threshold; b7:0 signal detect | **0x0978786F** | |
 | 0x164 | RECV_INFO_COUNT | b31:24 sync errors; b8 select FSK error/EVM; b7:0 FSK error | read for BER/EVM only | DS |
 | 0x168 | (undocumented, "REG_X06") | | 0x14 | BIN |
