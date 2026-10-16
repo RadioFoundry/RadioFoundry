@@ -548,14 +548,11 @@ receiving and orange flashing while scanning.
   cause is the PA or the measurement. The SDR's levels are relative and the radio is in its near field, so this wants
   a wattmeter, read against the `pa tx` diagnostics line.
 - The display controller part and its contrast.
-- The FM transmit deviation tops out near 1.7 kHz at 25 kHz (section 12, APRS). The AFSK tones go through the codec
-  ADC path, as the microphone does, and 3.3 times the PCM amplitude raises the peak from 1.48 to 1.65 kHz. The
-  2200 Hz tone hits the ceiling first, which looks like pre-emphasis ahead of a limiter. The candidates are the TX
-  limiter field, FM_DEV_COEF b23:16 (`modem-hrc7000.md` 8.1), which ODR sets to 4 as the DM-32UV does, and the radio's
-  FM factor on the modulation byte (6.4): x1.8 on a Wide channel, x0.9 on a Narrow one, kept to 255. The radio writes
-  FM_BANDWIDTH = 0x5F for both bandwidths, so the factor and register 0x43 are all it changes between them (I). ODR
-  leaves the factor out. Adding it would also scale the tone deviations set on the bench (`modem-hrc7000.md` 8.3), so
-  it needs a bench pass at both bandwidths. On VHF the Wide product passes the 255 limit on the radio examined.
+- FM transmit deviation at 12.5 kHz. The TX limiter is 5 there, scaled from the 25 kHz results (section 12); not
+  measured. Speech deviation at both bandwidths with the new limiter needs a cable-out session. The radio itself
+  writes FM_DEV_COEF only once, 0x33500 at start-up (limiter 3, TX coefficient 0, K), and FM_BANDWIDTH = 0x5F for both
+  bandwidths; how it reaches its deviation with those values is unknown (?). Its FM factor on the modulation byte
+  (6.4: x1.8 on a Wide channel, x0.9 on a Narrow one, kept to 255) may be the answer; ODR leaves it out.
 - In the calibration page (6.4): what register 0x40 controls, what the squelch thresholds are compared with, the
   fields read at start-up without a found reader (0x203-0x209), and the unread rows.
 - The authentication chip's marking (8.1), and what PTB16 drives (3.1).
@@ -676,17 +673,23 @@ FM_PTT and RF_MODE matched the DM-32UV's during the tones. An experiment build t
 
 ODR takes the mixer route (`hrc7000_codec_dac_to_tx`, `modem-hrc7000.md` 8.4): it keeps the FIFO feed both radios
 share. The codec's mic mute sits after the mix, so it would mute the tones too; MIX_3 keeps the microphone out
-instead. With it, positions decode off air with a valid FCS at every level tried. The deviation saturates (section
-10). With `amp_per_level` 103 at 25 kHz (BENCH 2026-10-16):
+instead. With it, positions decode off air with a valid FCS at every level tried.
 
-| APRS level | Peak | Mark | Space | Twist |
-|---|---|---|---|---|
-| 15 | 1.48 kHz | 1.07 kHz | 1.42 kHz | -2.4 dB |
-| 25 | 1.59 kHz | 1.35 kHz | 1.49 kHz | -0.8 dB |
-| 35 | 1.63 kHz | 1.42 kHz | 1.51 kHz | -0.6 dB |
-| 50 | 1.65 kHz | 1.43 kHz | 1.52 kHz | -0.5 dB |
+At first the deviation saturated near 1.65 kHz peak at 25 kHz, whatever the level. The cause was the TX limiter,
+FM_DEV_COEF b23:16 (`modem-hrc7000.md` 8.4): the KP value 4 caps all audio through the codec ADC, the microphone
+included. This radio sets 0x0F at 25 kHz (the chip's reset value; 4.7 kHz most) and 5 at 12.5 kHz. With 0x0F the
+tones are linear in the level, and the 2200 Hz tone sits 5.1 dB above the 1200 Hz one, the slope of the TX
+pre-emphasis (FM_BANDWIDTH b4) between them. With `amp_per_level` 68 at 25 kHz (BENCH 2026-10-16):
 
-APRS receive is unchecked.
+| APRS level | Peak | Mark | Space |
+|---|---|---|---|
+| 20 | 1.89 kHz | 0.95 kHz | 1.70 kHz |
+| 30 | 2.83 kHz | 1.41 kHz | 2.55 kHz |
+| 40 | 3.78 kHz | 1.89 kHz | 3.39 kHz |
+| 50 | 4.62 kHz | 2.36 kHz | 4.23 kHz |
+
+`amp_per_level` is 46: at level 50 the position decoded with 3.25 kHz peak (mark 1.61, space 2.91 kHz) and
+`test_aprs` passes. APRS receive is unchecked.
 
 MMDVM SFR: the radio hears the call's header, uplinks it and repeats it in the other slot with the right link
 control, on the right slot and a clean 60 ms grid. While it sends, it loses inbound bursts (2026-10-16,

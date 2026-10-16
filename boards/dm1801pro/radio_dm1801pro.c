@@ -219,10 +219,10 @@ static const hrc_dmr_board_t dmr_board = {
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
-// PCM amplitude per AFSK level step through the mixer route: 103 gave 4.57 kHz peak at level 50 and 25 kHz with the
-// limiter at 0x0F (BENCH 2026-10-16), so 68 aims at the 3 kHz APRS wants
+// PCM amplitude per AFSK level step through the mixer route: 68 gave 4.62 kHz peak at level 50 and 25 kHz, linear in
+// the level, the 2200 Hz tone 5.1 dB above the 1200 Hz one (pre-emphasis) (BENCH 2026-10-16). 46 aims at 3.1 kHz
 static const hrc_afsk_board_t afsk_board = {
-	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 68,
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 46,
 };
 #endif
 

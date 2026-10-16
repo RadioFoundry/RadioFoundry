@@ -12,7 +12,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases |
 | [Baofeng DM-32UV](#baofeng-dm-32uv) | | Builds and passes its host tests. Not run on a radio yet, not in the releases |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Early bring-up: FM receive only, not run on a radio yet. Not for use |
-| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data and hotspot mode; SFR repeating doesn't work yet, APRS on FM sends at low deviation, VOX is unchecked. No release |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data and hotspot mode; SFR repeating doesn't work yet, VOX is unchecked. No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -362,8 +362,7 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 ### What the DM-1801 Pro lacks today
 
-- APRS on FM sends, but at about half the usual deviation, so some receivers may miss it. APRS receive is
-  unchecked. APRS positions over DMR work.
+- APRS receive is unchecked. APRS sending works on FM and over DMR.
 - MMDVM SFR (the radio as a one-frequency repeater) doesn't hear the incoming call while it transmits the repeat, so
   calls don't repeat yet. Hotspot mode works.
 - VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been
