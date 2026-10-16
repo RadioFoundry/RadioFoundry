@@ -348,6 +348,12 @@ receiving and orange flashing while scanning.
 - Where the ADC and the register 0x40 / CTCSS calibration bytes come from.
 - The 0x7A I2C device, the I2C2 device, the SPI1 slave.
 - The update file header.
+- The FM mic gain. Proposal: an FM value written into GCR_ADCL at each FM transmit start
+  (`hrc7000_set_mic_gain`), apart from the DMR one, and settable at run time for the bench. The existing "Mic gain"
+  setting (0-10, 2 dB a step around 5, DMR only today: it scales the samples before the vocoder) could drive it as an
+  offset from `MIC_GAIN_DB`. Tune it with the SDR bench's FM deviation reading on speech or a tone at the microphone,
+  at 12.5 and 25 kHz, then fix `MIC_GAIN_DB`.
+- Whether the mic PCM carries the microphone in FM receive (PTB14 high), which VOX needs (section 12).
 
 ## 11. What ODR reuses
 
@@ -361,6 +367,7 @@ receiving and orange flashing while scanning.
 | Calibration | `drivers/cal/baofeng` |
 | Broadcast FM tuner | `drivers/bcast/rda5807m` (chip and `hal_bcast_t`), `drivers/bus/i2c_gpio` |
 | Accelerometer | `drivers/sensor/lis3dh` |
+| VOX mic level | `platform/hrc7000/audio_pcm.c` (the meter on the mic PCM), `drivers/audio/miclevel` (the level math) |
 | Board wiring | `boards/dm1801pro` |
 
 ## 12. Bring-up state
@@ -381,8 +388,25 @@ Checked with the SDR bench's modem: DMR voice receive and transmit with the radi
 confirmed data with its response, SMS and ETSI SMS received and acknowledged. FM transmit with CTCSS 100.0 and DCS 023
 (normal and inverted) was decoded by a DM-32UV, and the SDR bench's FM transmit tests (CTCSS, DCS, tone burst) pass.
 The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
-Not in: the air band, the broadcast tuner's screens, USB (the radio has none). VOX: the radio doesn't read its
-microphone level yet, so VOX never arms (`vox.mic=0`).
+Not in: the air band, the broadcast tuner's screens, USB (the radio has none).
+
+VOX (not checked on the radio): the radio has no analog microphone level tap, so ODR measures the level on the codec
+ADC's mic PCM, the same 10 ms halves DMR voice uses (`radio-features.md` 3.4). The first `mic_level()` call sets
+AUDIO_CONTROL b4 and unmasks the PCM interrupt without starting the PCM stream; 1 s without a call turns them off
+again unless the stream is running. The PCM interrupt runs in FM: FM beeps are paced by it. In FM receive with the
+squelch closed PTB14 is high (the microphone to the HR_C7000's FM input, as for an FM transmission), so the codec ADC
+should hear the microphone the way it does on transmit. Whether its samples carry the microphone in receive is the
+first thing to check. On the radio: `vox.mic=1`, then `vox.level` (features section) and the diagnostics line
+`mic lvl L pk P n N on|off` (level, the last half's peak from its mean, halves measured, running): N should grow by
+about 100 a second while `vox.level` is read, and L and P should rise when someone talks at the radio
+(`test_radio_features::test_mic_level`, radio only; `test_vox_quiet` with `--allow-rf`).
+
+Mic gain: `MIC_GAIN_DB` (11) goes into GCR_ADCL as 0x8B at power-on and at every DMR entry, the DM-32UV's value
+(`hardware-dm32.md` 9.1: bits 5:0 = 0 to 42 dB), and FM transmit uses the same value. Speech on FM gave 1.4 kHz peak
+deviation (above), which is low. The register's scale gives a basis for a change: if the path is linear up to the
+deviation limiter, each step adds 1 dB of deviation. The stock firmware writes separate FM and DMR mic gains into
+this register (`modem-hrc7000.md` 4 step 32, 5.1 step 2), so the two can be tuned apart. The channel bandwidth of the
+1.4 kHz measurement isn't recorded, so the target isn't settled. See section 10.
 
 APRS: positions over DMR (LRRP and UDT) decode on the SDR bench. FM APRS uses the shared HR_C7000 AFSK
 (`platform/hrc7000/hrc_afsk.c`). In its first on-air run (2026-10-16) no frame went out (`aprs.rf_failed`). In a

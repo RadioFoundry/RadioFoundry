@@ -102,7 +102,19 @@ DMR counters.
 | Hear a call | Silence: the codec is located but not hosted yet | |
 | Transmit on a dummy load (data call or a short key-up) | A burst per slot on a meter or SDR, `tx`, `rf` and `ok` rise | `un` (underrun) or `rj`: the per-burst switch takes too long (`dmr_rf_switch`, `RF_BIT_SCALE_US`); no carrier: `dmr_pa_on`, the 28 ms PA delay |
 
-## 10. After this
+## 10. VOX and the microphone level
+
+The level comes from the codec ADC's mic PCM ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 12). The
+programming cable in the speaker/mic jack cuts the microphone: unplug it for the talking steps, or read the values
+from the diagnostics page.
+
+| Step | Expect | If not |
+|---|---|---|
+| FM channel, VOX off; read the features view twice (`vox.level`), then the diagnostics line `mic lvl` | `vox.mic=1`; `mic lvl ... on`, and `n` grows by about 100 a second while the view is read | `off` or `n` stuck: the PCM interrupt or AUDIO_CONTROL b4 (`c7 ac` line, bit 4) |
+| Quiet room, then talk at the radio from 10 cm | `lvl` and `pk` low in silence, well up while talking | Flat while talking: the samples don't carry the microphone in receive (PTB14, the codec ADC mute, CR_ADC b7 in the `cd` lines) |
+| VOX on (Quick tile, FM), dummy load, talk | Keys on speech, drops `vox_tail_ms` after it | Keys in silence: the noise floor is above the threshold; lower `vox_level` or check `pk` |
+
+## 11. After this
 
 DMR voice needs the codec hosted (it is the DM-32UV's: [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.5) and the air band its own receive path. The
 open items are in [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 10.
