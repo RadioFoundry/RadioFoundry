@@ -56,9 +56,12 @@ bool debuglink_dmr_diag_line(uint8_t i, char *buf, uint8_t len);
 void debuglink_dmr_reset(void);
 
 // The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
-// tone burst and one setting (DL_OP_*; returns a DL_ST_* status)
+// tone burst, one setting, roaming and vibration (DL_OP_*; returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
-enum { DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24, DL_OP_ROAM = 26 };
+enum {
+	DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24,
+	DL_OP_ROAM = 26, DL_OP_VIBRATE = 29,
+};
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // The DMR data service (debuglink_dmr_data.c): the dmr_data view section, the DMR_DATA command (docs/spec/debuglink.md
 // 3.12) and its counter reset. Built without CONFIG_DMR_DATA_CORE: "data.built=0", the command answers unavailable
