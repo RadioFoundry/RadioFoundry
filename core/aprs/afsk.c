@@ -53,6 +53,14 @@ size_t afsk_mod(afsk_mod_t *m, const uint8_t *tones, uint32_t nbits, int16_t amp
 }
 
 // Hysteresis on the normalized difference, in 1/256 (13 = 0.05)
+// The high passed path's corner, two first-order stages. A one-bit correlator is short and its passband wide, so
+// audio under the tones (a receiver's hum, sub-audible tone residue) leaks into the mark correlator. A DM-32UV heard
+// a flat transmitter with 320-400 Hz 1-10 dB under the tones and decoded about half the frames; high passed, all of
+// them (BENCH, docs/spec/aprs.md 5). Alone the filter costs weak signals (its phase shift between the tones moves the
+// edges), so the path as received runs beside it
+#ifndef AFSK_HPF_HZ
+#define AFSK_HPF_HZ		700
+#endif
 #ifndef AFSK_HYST_Q8
 #define AFSK_HYST_Q8		13
 #endif
@@ -72,6 +80,8 @@ bool afsk_demod_init(afsk_demod_t *d, uint32_t rate, afsk_frame_fn fn, void *ctx
 		return false;
 	}
 	d->rate = rate;
+	// a = 1 / (1 + 2 pi fc / rate); 205887 = 2 pi in Q15
+	d->hp_a = (int32_t)(((uint64_t)rate << 15) / (rate + (uint32_t)(((uint64_t)AFSK_HPF_HZ * 205887u) >> 15)));
 	d->win = (uint16_t)win;
 	d->inc_mark = phase_inc(AFSK_MARK_HZ, rate);
 	d->inc_space = phase_inc(AFSK_SPACE_HZ, rate);
@@ -84,7 +94,9 @@ bool afsk_demod_init(afsk_demod_t *d, uint32_t rate, afsk_frame_fn fn, void *ctx
 	}
 	d->fn = fn;
 	d->ctx = ctx;
-	hdlc_dec_init(&d->hdlc);
+	for (int p = 0; p < AFSK_PATHS; p++) {
+		hdlc_dec_init(&d->path[p].hdlc);
+	}
 	return true;
 }
 
@@ -103,56 +115,111 @@ static uint32_t peak(uint32_t p, uint32_t m, uint8_t shift)
 	return m > p ? m : p;
 }
 
-static void sample(afsk_demod_t *d, int16_t s)
+// A frame from path p: delivered unless the other path just delivered the same one (the same length and FCS within
+// a quarter second)
+static void deliver(afsk_demod_t *d, const hdlc_dec_t *h, size_t n)
 {
-	int32_t x = s;
+	if (n == d->last_len && h->buf[n] == d->last_fcs[0] && h->buf[n + 1] == d->last_fcs[1] &&
+	    d->samples - d->last_at < d->rate / 4u) {
+		d->dups++;
+		return;
+	}
+	d->last_len = n;
+	d->last_fcs[0] = h->buf[n];
+	d->last_fcs[1] = h->buf[n + 1];
+	d->last_at = d->samples;
+	d->frames++;
+	if (d->fn != NULL) {
+		d->fn(h->buf, n, d->ctx);
+	}
+}
+
+static void path_sample(afsk_demod_t *d, afsk_path_t *p, int32_t x, int32_t cm, int32_t sm, int32_t cs, int32_t ss)
+{
 	int32_t v[4];
-	v[0] = (x * sine[((d->ph_mark >> 24) + 64u) & 255u]) >> MIX_SHIFT;
-	v[1] = (x * sine[d->ph_mark >> 24]) >> MIX_SHIFT;
-	v[2] = (x * sine[((d->ph_space >> 24) + 64u) & 255u]) >> MIX_SHIFT;
-	v[3] = (x * sine[d->ph_space >> 24]) >> MIX_SHIFT;
-	d->ph_mark += d->inc_mark;
-	d->ph_space += d->inc_space;
+	v[0] = (x * cm) >> MIX_SHIFT;
+	v[1] = (x * sm) >> MIX_SHIFT;
+	v[2] = (x * cs) >> MIX_SHIFT;
+	v[3] = (x * ss) >> MIX_SHIFT;
 	for (int k = 0; k < 4; k++) {	// exact integer sums: no drift to correct
-		d->sum[k] += v[k] - d->ring[k][d->pos];
-		d->ring[k][d->pos] = v[k];
+		p->sum[k] += v[k] - p->ring[k][d->pos];
+		p->ring[k][d->pos] = v[k];
 	}
-	if (++d->pos >= d->win) {
-		d->pos = 0;
-	}
-	uint32_t mm = mag(d->sum[0], d->sum[1]), ms = mag(d->sum[2], d->sum[3]);
-	d->peak_mark = peak(d->peak_mark, mm, d->decay_shift);
-	d->peak_space = peak(d->peak_space, ms, d->decay_shift);
+	uint32_t mm = mag(p->sum[0], p->sum[1]), ms = mag(p->sum[2], p->sum[3]);
+	p->peak_mark = peak(p->peak_mark, mm, d->decay_shift);
+	p->peak_space = peak(p->peak_space, ms, d->decay_shift);
 	// mm / peak_mark - ms / peak_space against the hysteresis, cross multiplied (both peaks > 0 once audio arrives):
 	// diff x pm x ps = mm x ps - ms x pm
-	int64_t pm = d->peak_mark, ps = d->peak_space;
+	int64_t pm = p->peak_mark, ps = p->peak_space;
 	int64_t diff = (int64_t)mm * ps - (int64_t)ms * pm;
 	int64_t hyst = (int64_t)(((uint64_t)pm * (uint64_t)ps) >> 8) * AFSK_HYST_Q8;
 	// a little hysteresis: noise near the crossing doesn't flip the tone back and forth (each flip moves the clock)
-	bool mark = d->last_mark ? diff > -hyst : diff > hyst;
+	bool mark = p->last_mark ? diff > -hyst : diff > hyst;
 
 	// Clock recovery: the PLL counter wraps from +2^31 to -2^31 once a bit, which is where the bit is sampled (mid
 	// bit); a tone change should come at 0, so each one pulls the counter a quarter of the way there
-	int32_t prev = d->pll;
-	d->pll = (int32_t)((uint32_t)d->pll + (uint32_t)d->pll_step);
-	if (prev > 0 && d->pll < 0) {
-		d->bits++;
-		size_t n = hdlc_dec_bit(&d->hdlc, mark);
-		if (n != 0 && d->fn != NULL) {
-			d->fn(d->hdlc.buf, n, d->ctx);
+	int32_t prev = p->pll;
+	p->pll = (int32_t)((uint32_t)p->pll + (uint32_t)d->pll_step);
+	if (prev > 0 && p->pll < 0) {
+		if (p == &d->path[0]) {
+			d->bits++;
+		}
+		size_t n = hdlc_dec_bit(&p->hdlc, mark);
+		if (n != 0) {
+			deliver(d, &p->hdlc, n);
 		}
 	}
-	if (mark != d->last_mark) {
+	if (mark != p->last_mark) {
 		// fast pull in on the preamble, gentle inside a frame where one noisy edge must not move the clock far
-		d->pll -= d->hdlc.nbits > 16u ? d->pll / AFSK_PLL_LOCKED : d->pll / AFSK_PLL_SEARCH;
-		d->last_mark = mark;
+		p->pll -= p->hdlc.nbits > 16u ? p->pll / AFSK_PLL_LOCKED : p->pll / AFSK_PLL_SEARCH;
+		p->last_mark = mark;
+	}
+}
+
+static void sample(afsk_demod_t *d, int16_t s)
+{
+	// the oscillators are shared: cos (sine a quarter turn on) and sin for each tone
+	int32_t cm = sine[((d->ph_mark >> 24) + 64u) & 255u], sm = sine[d->ph_mark >> 24];
+	int32_t cs = sine[((d->ph_space >> 24) + 64u) & 255u], ss = sine[d->ph_space >> 24];
+	d->ph_mark += d->inc_mark;
+	d->ph_space += d->inc_space;
+	d->samples++;
+	path_sample(d, &d->path[0], s, cm, sm, cs, ss);
+	afsk_path_t *h = &d->path[1];
+	int32_t x = s;
+	for (int k = 0; k < 2; k++) {
+		int32_t y = (int32_t)(((int64_t)d->hp_a * (h->hp_y[k] + x - h->hp_x[k])) >> 15);
+		h->hp_x[k] = x;
+		h->hp_y[k] = y;
+		x = y;
+	}
+	path_sample(d, h, x, cm, sm, cs, ss);
+	if (++d->pos >= d->win) {
+		d->pos = 0;
 	}
 }
 
 void afsk_demod(afsk_demod_t *d, const int16_t *s, size_t n)
 {
-	d->samples += (uint32_t)n;
 	while (n--) {
 		sample(d, *s++);
 	}
+}
+
+uint32_t afsk_demod_fcs_errors(const afsk_demod_t *d)
+{
+	uint32_t n = 0;
+	for (int p = 0; p < AFSK_PATHS; p++) {
+		n += d->path[p].hdlc.fcs_errors;
+	}
+	return n;
+}
+
+uint32_t afsk_demod_aborts(const afsk_demod_t *d)
+{
+	uint32_t n = 0;
+	for (int p = 0; p < AFSK_PATHS; p++) {
+		n += d->path[p].hdlc.aborts;
+	}
+	return n;
 }

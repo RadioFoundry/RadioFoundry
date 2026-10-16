@@ -70,3 +70,5 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - Never force-push, rewrite published history or run destructive cleanup on a shared checkout.
 - **Clean up after yourself.** When a worktree's branch is merged, remove the worktree and its `build/` directories.
   Builds take about 1.5 GB per worktree, and stale ones have filled the disk before.
+- **Remove `build/ci` when you're done with CI.** A full `tools/ci.sh` run leaves 5-6 GB there. Keep it while you
+  fix a failure and rerun; delete it (`rm -rf build/ci`) once the run passes and you move on to other work.

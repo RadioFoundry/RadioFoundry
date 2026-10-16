@@ -1041,9 +1041,9 @@ void aprs_rx_stats(aprs_rx_stats_t *out)
 {
 	out->peak = a.rx_peak;
 	out->bits = a.demod.bits;
-	out->frames = a.demod.hdlc.frames;
-	out->fcs_errors = a.demod.hdlc.fcs_errors;
-	out->aborts = a.demod.hdlc.aborts;
+	out->frames = a.demod.frames;
+	out->fcs_errors = afsk_demod_fcs_errors(&a.demod);
+	out->aborts = afsk_demod_aborts(&a.demod);
 }
 #endif
 
