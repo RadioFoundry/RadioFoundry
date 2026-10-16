@@ -24,7 +24,8 @@ python3 -m pytest tests/hil -v -rs -s -k encoder --manual                       
 ```
 
 Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094;
-`--radio-port` or `$ODR_PORT` picks one when there are several.
+`--radio-port` or `$ODR_PORT` picks one when there are several. The port can also be a pyserial URL, such as
+`rfc2217://host:7001` for a radio on another machine's RFC 2217 server.
 
 ### Opt-in flags
 
