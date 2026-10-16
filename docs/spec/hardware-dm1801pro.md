@@ -424,6 +424,33 @@ receiving and orange flashing while scanning.
   `tests/hil/test_mic_gain.py` at 12.5 and 25 kHz ([the bring-up checklist](../testing/dm1801pro-bringup.md) 5.1) and
   set `MIC_GAIN_FM_12K5_DB` and `MIC_GAIN_FM_25K_DB`.
 - Whether the mic PCM carries the microphone in FM receive (PTB14 high), which VOX needs (section 12).
+- MMDVM SFR loses inbound bursts while keyed (section 12). The DM-32UV runs the same engine, glue and SFR code and
+  passes, so the cause is in what this board does differently. The damage is in the middle of the burst (no sync, a
+  wrong EMB) and hits the same bursts in every run, so the receiver looks marginal after our own bursts rather than
+  late. The differences from the DM-32UV, most likely first:
+  1. The FD6818 reacquiring at each return to RX. Its AFC is on: the power-on table writes 0x73 = 6681, about
+     +-550 Hz, where the DM-32UV keeps the reset value (about +-1.1 kHz) and the FD6818 programming guide says to turn
+     AFC off with a TCXO. Its DMR RF filter is narrower: 0x43 = 3048 is 3 kHz, the DM-32UV's 4048 is 3.75 kHz. Both
+     fall back to 1.7 kHz on a weak signal (b11:9). A filter or AFC that settles at the start of each receive window
+     would cost the same bursts every run.
+  2. The skipped "Leave TX" retune. The per-burst return to RX doesn't write 0x32 = 0244 or the RX frequency (5.4).
+  3. A DC step on the demodulated audio after our burst. This radio's DMR receive is sensitive to the DAC C bias (4).
+     A step from the FD6818's audio output, or from the two-point modulation's reference path settling after the
+     burst, would cost the bursts whose symbols are least balanced.
+  4. The front end while keyed. The DM-32UV keeps both LNAs off for the whole transmission
+     ([hardware-dm32.md](hardware-dm32.md) 8.5). This radio turns its RX path back on between bursts.
+  5. The modem's dynamic sync threshold (RF_MODE b12, `modem-hrc7000.md` 2.1), which adapts to whatever the FD6818
+     outputs during our own slot.
+  6. The RF TX interrupt, 3.1 ms ahead of our burst, cuts the last 1.9 ms of each inbound burst on both radios. The
+     damage seen is mid-burst, so this is unlikely.
+  7. 0x50 = 3B18 and 0x52 = 028F, left set while receiving. The guide puts TX audio mute and limiter in 0x50 and
+     CTCSS thresholds in 0x52, so neither should touch DMR receive.
+
+  Ruled out on the radio: an FD6818 bit clock of 1 us instead of 5 us (switch 0.86 ms instead of 2.06 ms), the
+  DM-32UV's per-burst writes (bandwidth, idle, RX state only), and the RX path left on during TX bursts. Interrupt
+  latency is unlikely for the same reason as item 6. An experiment build (PR 38) selects these variants at run time
+  and records each modem interrupt, RF switch and deframe (RX_TYPE_INFO, RECV_INFO_COUNT, PHASE_OUT), so a run tells
+  receiver timing from demodulation.
 
 ## 11. What ODR reuses
 
@@ -505,6 +532,12 @@ The speaker-source pin doesn't explain it either: four frames with PTB15 low or 
 carried no tones (10-15 Hz rms; PTB14 low only added a step at the start of the frame). Open;
 APRS receive is unchecked.
 
-MMDVM SFR: the radio hears the call's header, uplinks it and starts the repeat in the other slot with the right
-link control, but while it sends, the HR_C7000 delivers almost nothing from the listening slot, so the call doesn't
-continue (`sfr.rx` stops after a few bursts). Open.
+MMDVM SFR: the radio hears the call's header, uplinks it and repeats it in the other slot with the right link
+control, on the right slot and a clean 60 ms grid. While it sends, it loses inbound bursts (2026-10-16,
+`test_hotspot_sfr.py::test_sfr_repeats_bench_call`). The bench's call is clean on the SDR (8 voice LC headers 60 ms
+apart, 18 voice bursts, 3 terminators, no errors), but only about 20 of its 29 bursts reach the SFR runner. Headers at
+60, 180 and 360 ms are missing and those at 118 and 299 ms fail their CRC; voice bursts at about 539, 722, 778, 838
+and 1210 ms come with a wrong EMB (color code 1, 0 or 9 for 2, a wrong voice index). The pattern is the same in every
+run, also right after a fresh start. The DM-32UV on the same test: 25 received, 22 repeated, 3 bad CRCs (the
+terminators). Our bursts: RF on to off 32-33 ms, the RF switch 2.06 ms with interrupts off, the PA keyed 2.1-3.2 ms
+after RF on. Open; the candidates are in section 10.
