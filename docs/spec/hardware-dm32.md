@@ -479,7 +479,7 @@ ground (DS). Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (
 | 0x2B | PTB11 | PTT | in | low = pressed | COM, KP |
 | 0x2C | PTB12 | GPS power | out | **low = GPS on**, high = off | COM, KP |
 | 0x2E | PTB14 | Audio path select: mic to analog FM path vs to DMR codec | out | 1 = analog (FM TX), 0 = DMR; set at each TX start | COM, BIN |
-| 0x2F | PTB15 | Speaker source switch (PWM/codec vs FD6818 audio) | out | port: 0 when audio on, 1 when muted | COM, KP |
+| 0x2F | PTB15 | Speaker source switch | out | 1 = the FD6818's audio output (FM receive), 0 = the C7000 codec (beeps, DMR voice) | HW |
 | 0x31–0x34 | PTB17–20 | Keypad columns 1–4 | in | low = key closed | COM, KP |
 | 0x35 | PTB21 | Audio power amplifier enable | out | high = on | COM, KP |
 | 0x37 | PTB23 | VHF PA select | out | high = on | COM, BIN |
@@ -739,7 +739,7 @@ Not decided by any source. The evidence:
 |---|---|---|
 | The FD6818's registers behave like the BK4819's: frequency in 10 Hz units in 0x38 / 0x39, state 0x30 = 0xBFF1 RX / 0xC1FE TX (the BK4819's enable bits: VCO calibration, RX link, AF DAC, discriminator, PLL, RX DSP), CTCSS word = Hz x 20.64888 in 0x07, RSSI in 0x67 bits 8:0, AF output 0x47, AF gain 0x48 | 8 (KP, BIN); BK4819 register names in the Apache-2.0 UV-K5 firmware ([bk4819-regs.h](https://github.com/DualTachyon/uv-k5-firmware)) | the FD6818 is a BK4819-class part (INF) |
 | The BK4819 selects its AF output type in 0x47 bits 11:8 (0x6040 \| type << 8); type 7 is AM | UV-K5 firmware (D) | AM is a register setting on that class of chip |
-| ODR's FM set-up writes 0x47 = 0x6042 (AF type 0, muted); DMR writes 0x0140 (type 1) | 8.2 (KP) | in FM the FD6818's own AF output is silent: the HR_C7000 demodulates FM from I/Q (its RX I/Q bias registers, modem-hrc7000.md) |
+| FM receive audio comes from the FD6818's AF output with 0x47 = 0x0140 and 0x2F = 1; with the stock FM word 0x6042 that output is silent | HW | the speaker plays the FD6818's demodulated audio in FM, not the C7000's FM block |
 | The FD6818 band table covers 16 MHz to over 740 MHz, with rows at 93 and 124 MHz | 8.3 (KP) | the synthesizer tunes the air band |
 | GPIO 0x2F is described as "speaker source switch (PWM/codec vs FD6818 audio)" | 5 (COM) | the FD6818's AF output can reach the speaker directly |
 | No AM demodulator noted in the HR_C7000 user guide summary | modem-hrc7000.md (DS) | AM is not the C7000's job (INF, low confidence: re-read the guide) |
@@ -754,7 +754,7 @@ audio fed into the C7000's audio path. Bring-up step 6.1 of airband-and-broadcas
 | # | Question | How bring-up answers it |
 |---|---|---|
 | A1 | Is 0x47 AF type 7 the FD6818's AM output? | 6.1: stock radio on ATIS for reference; ODR with `rx_am`, compare audio |
-| A2 | Which speaker source (0x2F level) carries FD6818 AF? | 6.1: try both levels while receiving AM |
+| A2 | Which speaker source (0x2F level) carries FD6818 AF? | answered: 0x2F = 1 (HW, FM receive) |
 | A3 | AM filter bandwidth (0x43) and AGC (0x13, 0x09 table) for AM | 6.1: listen to a strong and a weak station; the UV-K5 needed AGC changes for AM (D) |
 | A4 | RSSI offset in AM (the squelch's dBm) | 6.1: signal generator at -100 dBm, read `rssi` on the debug link |
 | B1 | Is the RDA5807M really at PTA25 / PTA26, and does it answer at 0x11? | 6.2: chip ID 0x58xx over the debug link probe |
@@ -775,8 +775,8 @@ A1), the AF gain in 0x48, VHF LNA on, C7000 FM playback off, speaker source to t
 | Mic | into the C7000 codec ADC (MIC input 2: CR_MIC2 bit 6 = 1) | KP |
 | Mic routing switch | GPIO 0x2E: 1 = analog FM path, 0 = DMR path | BIN |
 | Speaker | codec DAC line out 2 (LINEOUT_CTRL bit 0, `line2out_en`) → speaker source switch GPIO 0x2F → audio PA (enable GPIO 0x35) | KP, DS |
-| Speaker on | 0x2F = 0, 0x35 = 1; off: 0x2F = 1, 0x35 = 0 | KP |
-| FM RX audio | demodulated by the C7000 FM block and played through the codec DAC when AUDIO_CONTROL bit 6 (`fm_play_ctrl`) is set | DS, KP |
+| Speaker source | 0x2F = 1: the FD6818's AF output; 0x2F = 0: the codec line out. 0x2E is driven as its complement outside TX. The amplifier (0x35) goes off before 0x2F changes | HW |
+| FM RX audio | the FD6818's AF output (0x47 = 0x0140) through 0x2F = 1 while the squelch is open. The C7000's FM playback (AUDIO_CONTROL bit 6, `fm_play_ctrl`) stays off: on the radio tested its AF input carries no audio (PHASE_OUT flat, `modem-hrc7000.md` 2) | HW |
 | DMR RX audio | CPU writes 160 bytes of decoded 8 kHz PCM to 0x180000A0 per 10 ms and sets AUDIO_CONTROL bit 5; PCM_rd interrupt (vector 59) asks for the next block; clear with INTERP_CLEAR bit 5 | DS, KP |
 | Beeps / prompts | 64 bytes (32 samples, low byte first, 8 kHz) at a time to the prompt FIFO 0x16000980 while AUDIO_CONTROL bit 31 (`ring_full_two`) is 0; enable with AUDIO_CONTROL bit 7 (`ring_play_ctrl`). KP says 32 bytes, high byte first; the DM-1801 Pro's stock firmware and bench say otherwise (`modem-hrc7000.md` 8.4); not yet heard on a DM-32 | DS, KP, INF |
 

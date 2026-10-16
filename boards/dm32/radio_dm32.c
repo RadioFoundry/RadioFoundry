@@ -39,6 +39,14 @@ static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key th
 static volatile bool tx_uhf;
 static volatile uint16_t tx_drive;	// DAC B value for the transmission
 static uint16_t last_rssi_raw, last_noise_raw;
+static bool pcm_on;		// a beep or DMR voice plays through the codec
+static bool rx_audio;		// the squelch is open (the radio's audio hook)
+
+// The speaker amplifier is on while any user wants it
+#define AMP_RADIO	0x01u	// receive audio
+#define AMP_PCM		0x02u	// speaker PCM
+
+static void speaker_source(void);
 
 // ---- FD6818 bus ----
 
@@ -217,6 +225,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		dac_b_power(false);
 		hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
+		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);	// FM plays on the analog path (speaker_source)
 		hrc7000_set_subtone(&modem, false, c7_tone(tone != NULL ? tone->type : TONE_NONE),
 			tone != NULL ? tone->value : 0);
 	}
@@ -225,6 +234,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	rx_tone = tone != NULL ? *tone : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
 	transmitting = false;
+	speaker_source();
 	return true;
 }
 
@@ -307,19 +317,56 @@ static void status(radio_status_t *st)
 	st->tone_ok = mode != RADIO_MODE_FM || hrc7000_subtone_ok(&modem);
 }
 
-static void audio(bool on)
+// The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM
+// receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB14 is driven as its complement, as on the DM-1801
+// Pro; during a transmission the TX path owns PTB14 (the microphone route)
+static void speaker_source(void)
 {
-	hrc_pin_write(PIN_SPK_SOURCE, !on);
-	hrc_pin_write(PIN_AMP_EN, on);
+	// The FD6818's output is squelched noise while the squelch is closed: the speaker listens to it only while it is open
+	bool analog = mode == RADIO_MODE_FM && !transmitting && !pcm_on && rx_audio;
+	hrc_pin_write(PIN_SPK_SOURCE, analog);
+	if (!transmitting) {
+		hrc_pin_write(PIN_MIC_PATH, !analog);
+	}
 }
 
+static void amp(uint8_t who, bool on)
+{
+	static uint8_t users;
+	uint32_t s = hrc_irq_save();
+	users = on ? (uint8_t)(users | who) : (uint8_t)(users & ~who);
+	hrc_pin_write(PIN_AMP_EN, users != 0);
+	hrc_irq_restore(s);
+}
+
+static void audio(bool on)
+{
+	rx_audio = on;
+	if (!on) {
+		amp(AMP_RADIO, false);	// before the source switch, so the switch doesn't click
+	}
+	speaker_source();
+	if (on) {
+		amp(AMP_RADIO, true);
+	}
+}
+
+// Speaker PCM (a beep, DMR voice): the codec plays the CPU's samples from the prompt FIFO, the speaker listens to the
+// codec, and the amplifier stays on for it whatever the squelch does. The modem's own FM playback is not used
 void dm32_speaker_pcm(bool on)
 {
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
-	if (on) {
-		hrc7000_audio_bits(&modem, C7_AUDIO_RING_PLAY, C7_AUDIO_FM_PLAY);
-	} else {
-		hrc7000_audio_bits(&modem, mode == RADIO_MODE_FM && !transmitting ? C7_AUDIO_FM_PLAY : 0, C7_AUDIO_RING_PLAY);
+	if (on != pcm_on) {
+		pcm_on = on;
+		hrc7000_audio_bits(&modem, on ? C7_AUDIO_RING_PLAY : 0, on ? C7_AUDIO_FM_PLAY : C7_AUDIO_RING_PLAY);
+		// Off: the amplifier first, so the FD6818's squelched noise doesn't come through as the source switches back
+		if (!on) {
+			amp(AMP_PCM, false);
+		}
+		speaker_source();
+		if (on) {
+			amp(AMP_PCM, true);
+		}
 	}
 	hrc_irq_restore(s);
 }

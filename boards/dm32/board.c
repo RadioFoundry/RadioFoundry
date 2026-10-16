@@ -122,7 +122,7 @@ static void io_init(void)
 	hrc_pin_out(PIN_UHF_LNA, false);
 	hrc_pin_out(PIN_VHF_LNA, false);
 	hrc_pin_out(PIN_MIC_PATH, true);
-	hrc_pin_out(PIN_SPK_SOURCE, true);
+	hrc_pin_out(PIN_SPK_SOURCE, false);	// the codec until FM receive opens the squelch
 	hrc_pin_out(PIN_AMP_EN, false);
 	hrc_pin_out(PIN_LED_RED, false);
 	hrc_pin_out(PIN_LED_GREEN, false);
