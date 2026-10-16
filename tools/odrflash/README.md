@@ -5,7 +5,8 @@
 
 Flashes OpenDigitalRadio release images onto a radio. Release images never contain the AMBE codec; odrflash either
 keeps the codec already in the radio (it writes only the firmware's own flash sectors) or writes the codec from your
-radio's stock firmware file. Radios: Baofeng DM-1701 today; the DM-32UV is designed for but not released yet.
+radio's stock firmware file. Radios: Baofeng DM-1701 today; the DM-1801 Pro flashes over its programming cable (below,
+not released yet); the DM-32UV is designed for but not released yet.
 
 ## Install
 
@@ -33,6 +34,8 @@ odrflash detect                                         what's connected: ODR, a
 odrflash key --stock "DM-1701(CSV)-V02.06.bin" --save   derive the bootloader key once and keep it
 odrflash download --release v0.1.0 -o DIR               just fetch and verify the files
 odrflash merge odr-dm1701.bin --stock FILE -o merged.bin  a merged image for other flashing tools
+odrflash flash build/dm1801pro/odr_dm1801pro.bin --board dm1801pro --port /dev/ttyUSB0
+                                                        a DM-1801 Pro over its programming cable (below)
 ```
 
 `odrflash flash` does, in order: load the image and check it against its manifest (SHA-256, the radio model, the
@@ -82,6 +85,28 @@ checks it against the stock codec's hashes, saves a copy in its config directory
 needs no `--stock`. The saved copy also finishes an update that stopped halfway, when the radio can no longer start
 ODR.
 
+### The DM-1801 Pro
+
+The DM-1801 Pro has no USB data port: odrflash talks to it over the programming cable (a USB-serial cable, found by
+itself when it is the only one; `--port` names it). There are two ways in, and odrflash wraps the tool that already does
+each: the stub, `stub/stubtool.py` ([USER-GUIDE.md](../../stub/USER-GUIDE.md)), and Baofeng's update mode,
+`tools/dm32_flash.py --model dm1801pro`.
+
+| Route | When (`--route auto`) | Writes | The codec slot (0x030E8000..0x030FFFFF) |
+|---|---|---|---|
+| stub | ODR answers on the cable and offers stub entry (built with `CONFIG_STUB_ENTRY=y`) | only the 4 KB sectors that differ, each checked by CRC; then the radio restarts | kept when the image has none (keep); written when it has one or `--stock` is given (merge) |
+| bootloader | anything else: odrflash asks you to switch the radio on with PTT and SK1 held, and waits `--wait` seconds for the loader | the loader erases 0x0300C000..0x030FFFFF, then takes the whole image | erased: it must be in the image (`odr_dm1801pro_codec.bin`) or built from `--stock` (merge); keep is refused |
+
+`--stock` here is a program flash read of the radio (`stubtool.py PORT --progmem FILE`). `tools/dm32_codec.py` checks
+it by SHA-256 and builds the slot from it. `--route stub` or `--route bootloader` overrides the choice. A route the
+radio can't take is refused before anything is written, and so is a radio that reports another board. After the restart
+odrflash reads VERSION over the cable and compares the git hash and the codec with what it wrote. Neither route writes
+the bootloader below 0x0300C000.
+
+The serial route loads `tools/dm32_flash.py`, `tools/dm32_codec.py` and `stub/stubtool.py` from the checkout; the
+odrflash executable carries them. A `pipx` install from the subdirectory doesn't, and says so. Neither route of odrflash
+has flashed a radio yet; the tools it wraps have.
+
 ### USB access
 
 | System | Once |
@@ -103,9 +128,11 @@ ODR.
 | `odrflash/codecsave.py` | where an update erases the codec (the MD-380): the codec read back from a radio that runs ODR, checked by hash, saved in the config directory and written back |
 | `odrflash/bootkey.py` | the bootloader key from a radio that runs ODR, found in its bootloader by the key's hash |
 | `odrflash/fakedfu.py` | a fake bootloader with a flash model, for the tests and `--simulate` |
+| `odrflash/serialflash.py` | the HR_C7000 radios over the programming cable: the route choice, the codec slot, and the calls into `stub/stubtool.py` and `tools/dm32_flash.py` |
 | `odrflash/release.py`, `state.py`, `cli.py` | GitHub downloads, the remembered probe, the commands |
 
-Tests: `python3 -m unittest discover -s tools/odrflash/tests -v` (no USB; `tools/ci.sh` runs them). A whole flash
+Tests: `python3 -m unittest discover -s tools/odrflash/tests -v` (no USB, no serial port; `tools/ci.sh` runs them).
+`test_serialflash.py` runs both serial routes against the wrapped tools' own simulated radios. A whole flash
 against the fake bootloader: `odrflash flash IMAGE --simulate odr-codec` (or `stock` with `--stock-installed "V02.06
 CSV"`, or `odr-nocodec --stock synthetic`). A local build without a manifest: `odrflash flash
 build/dm1701/odr_dm1701.bin --board dm1701`. Design and the sector map: [docs/dev/release.md](../../docs/dev/release.md).
