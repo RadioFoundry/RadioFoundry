@@ -92,6 +92,11 @@ typedef enum {
 
 typedef enum { APRS_SRC_NONE, APRS_SRC_GPS, APRS_SRC_HOST, APRS_SRC_FIXED } aprs_src_t;
 
+// How an RF transmission ended (aprs_rf_done). The failures name the step that stopped it
+typedef enum {
+	APRS_RF_SENT, APRS_RF_BUSY, APRS_RF_ABORTED, APRS_RF_NO_KEY, APRS_RF_NO_AFSK, APRS_RF_TIMEOUT,
+} aprs_rf_result_t;
+
 typedef struct {
 	char call[AX25_CALL_LEN + 4];	// "N0CALL-7", "" = none
 	uint8_t block;		// aprs_block_t for RF
@@ -106,6 +111,7 @@ typedef struct {
 	uint8_t last_why;	// aprs_why_t of the last beacon
 	uint32_t last_ms;	// when (0 = none yet)
 	uint32_t rf_sent, rf_failed, rf_busy;	// RF transmissions done, failed, given up on a busy channel
+	uint8_t rf_fail;	// aprs_rf_result_t of the last failed one (APRS_RF_SENT: none yet)
 	uint32_t dmr_sent, dmr_failed;
 	uint32_t rx_frames, rx_bad;	// frames decoded, rejected (RX builds)
 	uint32_t host_in, host_out, host_dropped;	// KISS frames from / to the host, host frames refused
@@ -178,8 +184,8 @@ typedef struct {
 bool aprs_rf_pending(void);
 // The radio core starts it: fills job (tones stay valid until aprs_rf_done). False: nothing after all
 bool aprs_rf_take(aprs_rf_job_t *job, uint32_t now_ms);
-// It went out (sent), or not: busy channel (busy), aborted / failed
-void aprs_rf_done(bool sent, bool busy, uint32_t now_ms);
+// It went out, or not: a busy channel, or a failure (aprs_rf_result_t)
+void aprs_rf_done(aprs_rf_result_t r, uint32_t now_ms);
 // Seconds a pending job may wait for a clear channel before it is dropped
 #define APRS_CSMA_GIVE_UP_MS	10000u
 

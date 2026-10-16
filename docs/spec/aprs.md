@@ -174,7 +174,8 @@ job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags
 4. Back: transmitter off, the user's channel retuned exactly as it was.
 
 PTT, a channel change or any request other than beeps, DMR focus and settings aborts it (`rf_failed`, the frame
-retried after 15 s, 3 tries). The settings save waits while a job is pending.
+retried after 15 s, 3 tries). A failure counts in `rf_failed` and names its step in `rf_fail`: `aborted`, `no_key`
+(the transmitter didn't key), `no_afsk` (`tx_start` refused), `timeout` (the tones didn't finish in 6 s). The settings save waits while a job is pending.
 
 ## 7. Position and triggers
 
