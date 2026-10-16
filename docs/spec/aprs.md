@@ -151,9 +151,27 @@ The receive setting and messaging default to on when the radio can receive (`apr
 
 The demodulator (`afsk.c`): 8-48 kHz samples, a correlator per tone with hysteresis and a PLL that tightens once a
 flag is seen. Integer arithmetic only: the float version's soft-float square roots and divisions took most of the
-DM-32UV's CPU (no FPU) at 8 kHz. Host sweep (`aprsTest --sweep`, flat / pre-emphasized audio): 93 / 9 % of frames at
-10 dB SNR, 97 / 67 % at 12 dB, 100 / 94 % at 14 dB (the float version: 93 / 12, 97 / 63, 100 / 94). Squelch gated audio loses the start of a transmission until the squelch opens; the
-sender's TX delay (flags before the frame) covers that. The debug link's `aprs.rx_peak`, `rx_bits` and HDLC counters
+DM-32UV's CPU (no FPU) at 8 kHz.
+
+Two decision paths run side by side on the same samples, each with its own correlators, clock and HDLC decoder: one
+on the audio as received, one after a high pass (two first-order stages at 700 Hz). A frame either path finds is
+delivered once: the second copy (same length and FCS within a quarter second) is dropped. The correlators span one bit,
+so their passbands are wide, and audio under the tones leaks into the mark correlator. A DM-32UV receiving a flat
+transmitter at a strong level had 320-400 Hz 1-10 dB under the tones in its receive audio and decoded 50-80 % of
+the frames with one path; with both, 12 of 12 (BENCH, 2026-10-16). The high pass alone costs weak signals (its phase
+shift between the tones moves the tone edges), which is why the received path stays. Both paths together take about
+6 % of the DM-32UV's CPU at 8 kHz (BENCH).
+
+Host sweep (`aprsTest --sweep`, frames decoded of 100, noise over the full band):
+
+| Audio | 10 dB SNR | 12 dB | 14 dB | 20 dB, 350 Hz 3 dB under the tones |
+|---|---|---|---|---|
+| Flat | 96 | 100 | 100 | 100 (one path: 7) |
+| De-emphasized (flat transmitter, 750 us receiver) | 98 | 100 | 100 | 99 (one path: 57) |
+| Pre-emphasized (pre-emphasizing transmitter, flat receiver) | 11 | 51 | 76 | 92 (one path: 0) |
+
+Squelch gated audio loses the start of a transmission until the squelch opens; the sender's TX delay (flags before
+the frame) covers that. The debug link's `aprs.rx_peak`, `rx_bits` and HDLC counters
 tell missing audio from a demodulator that finds no frame.
 
 Later on the DM-1701: the HR_C6000's RX RAM carries the same audio ungated (`hardware-dm1701.md` 21.3.1), so packets

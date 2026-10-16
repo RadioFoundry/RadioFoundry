@@ -184,9 +184,17 @@ static void on_frame(const uint8_t *f, size_t n, void *ctx)
 	}
 }
 
+// FM emphasis on the channel (afsk_run): none, a flat transmitter heard through a receiver's 750 us de-emphasis (2200 Hz
+// 5.3 dB under 1200 Hz), or a pre-emphasizing transmitter heard flat (2200 Hz 5.3 dB over)
+enum { EMPH_NONE, EMPH_DE, EMPH_PRE };
+
+// Audio below the tones on the channel (afsk_run_emph): a 350 Hz tone this many dB under the AFSK tones, 0 = none.
+// A DM-32UV receiving a flat transmitter heard 320-400 Hz there 1-10 dB under the tones (BENCH)
+static float lf_db;
+
 // Modulate count copies of a frame at mod_rate, filter / add noise, demodulate at demod_rate (the rates differing is
 // a clock error). Returns the frames decoded
-static int afsk_run(uint32_t mod_rate, uint32_t demod_rate, float snr_db, float tilt, int count)
+static int afsk_run_emph(uint32_t mod_rate, uint32_t demod_rate, float snr_db, float tilt, int emph, int count)
 {
 	static uint8_t frame[AX25_FRAME_MAX], tones[1024];
 	static int16_t pcm[400000];
@@ -205,7 +213,8 @@ static int afsk_run(uint32_t mod_rate, uint32_t demod_rate, float snr_db, float 
 	want_frame = frame;
 	want_len = n;
 	float sigma = powf(10.0f, -snr_db / 20.0f) * 0.5f * 0.7071f;	// tone RMS 0.35 at amplitude 0.5
-	float y = 0.0f;
+	float y = 0.0f, px = 0.0f, de = 0.0f;
+	float tau = 750e-6f * (float)mod_rate;	// the emphasis time constant in samples
 	for (int c = 0; c < count; c++) {
 		afsk_mod_t m;
 		afsk_mod_init(&m, mod_rate);
@@ -221,6 +230,18 @@ static int afsk_run(uint32_t mod_rate, uint32_t demod_rate, float snr_db, float 
 			// de-emphasis of a receiver after a transmitter without pre-emphasis
 			y += 0.35f * (x - y);
 			x = (1.0f - tilt) * x + tilt * y * 1.6f;
+			// emphasis, scaled to keep the tones near their level (gain about 1 between 1200 and 2200 Hz)
+			if (emph == EMPH_DE) {
+				de = (x + tau * de) / (1.0f + tau);
+				x = de * 7.5f;
+			} else if (emph == EMPH_PRE) {
+				float v = (x + tau * (x - px)) / 9.0f;
+				px = x;
+				x = v;
+			}
+			if (lf_db != 0.0f) {
+				x += 0.5f * powf(10.0f, -lf_db / 20.0f) * sinf(2.0f * 3.14159265f * 350.0f * (float)i / (float)mod_rate);
+			}
 			x += sigma * gauss();
 			float v = x * 32768.0f;
 			out[o++] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
@@ -230,10 +251,15 @@ static int afsk_run(uint32_t mod_rate, uint32_t demod_rate, float snr_db, float 
 	return frames_found;
 }
 
+static int afsk_run(uint32_t mod_rate, uint32_t demod_rate, float snr_db, float tilt, int count)
+{
+	return afsk_run_emph(mod_rate, demod_rate, snr_db, tilt, EMPH_NONE, count);
+}
+
 static void test_afsk(void)
 {
 	int n = afsk_run(8000, 8000, 40.0f, 0.0f, 20);
-	CHECK(n == 20, "clean 8 kHz: %d of 20", n);
+	CHECK(n == 20, "clean 8 kHz: %d of 20 (both paths find each frame: delivered once)", n);
 	n = afsk_run(8000, 8000, 12.0f, 0.0f, 50);
 	CHECK(n >= 47, "noisy 8 kHz (12 dB): %d of 50", n);
 	n = afsk_run(8000, 8000, 20.0f, 0.8f, 50);
@@ -248,6 +274,17 @@ static void test_afsk(void)
 	CHECK(n >= 28, "48 kHz: %d of 30", n);
 	n = afsk_run(9600, 9600, 15.0f, 0.3f, 30);
 	CHECK(n >= 28, "9.6 kHz: %d of 30", n);
+	// emphasis mismatch both ways, and audio under the tones: the high passed path decodes what the received one loses
+	n = afsk_run_emph(8000, 8000, 20.0f, 0.0f, EMPH_DE, 50);
+	CHECK(n >= 48, "de-emphasized: %d of 50", n);
+	n = afsk_run_emph(8000, 8000, 20.0f, 0.0f, EMPH_PRE, 50);
+	CHECK(n >= 48, "pre-emphasized: %d of 50", n);
+	lf_db = 3.0f;
+	n = afsk_run(8000, 8000, 20.0f, 0.0f, 50);
+	CHECK(n >= 48, "350 Hz 3 dB under the tones: %d of 50", n);
+	n = afsk_run_emph(8000, 8000, 20.0f, 0.0f, EMPH_DE, 50);
+	CHECK(n >= 47, "350 Hz 3 dB under, de-emphasized: %d of 50", n);
+	lf_db = 0.0f;
 	afsk_demod_t d;
 	CHECK(!afsk_demod_init(&d, 6000, NULL, NULL), "rate too low");
 }
@@ -914,9 +951,18 @@ int main(int argc, char **argv)
 	if (argc == 2 && strcmp(argv[1], "--sweep") == 0) {
 		// frames decoded of 100 against the SNR (noise over the full band), flat and tilted, 8 kHz
 		for (int snr = 4; snr <= 20; snr += 2) {
-			printf("%2d dB: flat %3d tilt %3d\n", snr, afsk_run(8000, 8000, (float)snr, 0.0f, 100),
-			       afsk_run(8000, 8000, (float)snr, 0.8f, 100));
+			printf("%2d dB: flat %3d tilt %3d de-emphasized %3d pre-emphasized %3d\n", snr,
+			       afsk_run(8000, 8000, (float)snr, 0.0f, 100), afsk_run(8000, 8000, (float)snr, 0.8f, 100),
+			       afsk_run_emph(8000, 8000, (float)snr, 0.0f, EMPH_DE, 100),
+			       afsk_run_emph(8000, 8000, (float)snr, 0.0f, EMPH_PRE, 100));
 		}
+		for (int db = 12; db >= 0; db -= 3) {
+			lf_db = (float)(db == 0 ? 0.01 : db);
+			printf("350 Hz %2d dB under, 20 dB SNR: flat %3d de-emphasized %3d pre-emphasized %3d\n", db,
+			       afsk_run(8000, 8000, 20.0f, 0.0f, 100), afsk_run_emph(8000, 8000, 20.0f, 0.0f, EMPH_DE, 100),
+			       afsk_run_emph(8000, 8000, 20.0f, 0.0f, EMPH_PRE, 100));
+		}
+		lf_db = 0.0f;
 		return 0;
 	}
 	if (argc == 3 && strcmp(argv[1], "--wav") == 0) {
