@@ -38,6 +38,7 @@ static audio_block_cb_t block_cb;
 static void *block_ctx;
 static volatile bool running;
 static bool spk_routed;		// the last speaker_pcm() state
+static volatile bool fifo_held;	// another user (the board's AFSK) owns the FIFO: speaker PCM waits
 static volatile uint32_t blocks, overruns, underruns;	// underruns: the FIFO does not report them (stays 0)
 
 static volatile int16_t *const pcm_mic = (volatile int16_t *)C7_PCM_MIC_ADDR;
@@ -72,17 +73,10 @@ static void isr_pcm_wr(void)
 // 2 ms while the speaker is routed, faster than a chunk (4 ms) plays
 static void fifo_feed(void)
 {
-	if (!spk_routed) {
+	if (!spk_routed || fifo_held) {
 		return;
 	}
-	volatile uint8_t *f = (volatile uint8_t *)C7_PROMPT_FIFO_ADDR;
-	while (spk_tail != spk_head && (hrc7000_rd(modem, C7_AUDIO_CONTROL) & C7_AUDIO_RING_FULL) == 0) {
-		const int16_t *src = &spk_q[spk_tail][spk_pos];
-		for (uint32_t i = 0; i < C7_PROMPT_CHUNK; i++) {
-			uint16_t v = (uint16_t)src[i];
-			f[2 * i] = (uint8_t)v;
-			f[2 * i + 1] = (uint8_t)(v >> 8);
-		}
+	while (spk_tail != spk_head && hrc7000_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
 		spk_pos = (uint8_t)(spk_pos + C7_PROMPT_CHUNK);
 		if (spk_pos >= AUDIO_BLOCK_SAMPLES) {
 			spk_pos = 0;
@@ -133,6 +127,11 @@ void hrc_audio_pcm_attach(hrc7000_t *m, void (*speaker_pcm)(bool on))
 {
 	modem = m;
 	speaker_pcm_cb = speaker_pcm;
+}
+
+void hrc_audio_pcm_hold(bool on)
+{
+	fifo_held = on;
 }
 
 static bool start(audio_block_cb_t cb, void *ctx)

@@ -103,6 +103,9 @@ typedef struct {
 	hrc7000_t *dev;
 	const hrc7000_dmr_ops_t *ops;
 	bool running;
+	// FM receive audio half ready (SYS_INTERP bit 14, modem-hrc7000.md 8.5): called from the system interrupt whether
+	// or not the engine runs, NULL for none. Set it after hrc7000_dmr_init
+	void (*fm_rx)(void);
 	bool lcss;		// LCSS on voice bursts B-E (user guide); false = 0 on every burst like the 2026 builds
 	dmr_config_t cfg;
 	int8_t cc_filter;	// -1 any (scan)

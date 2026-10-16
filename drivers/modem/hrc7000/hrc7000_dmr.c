@@ -558,6 +558,9 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		}
 		w(e, C7_SYS_INTERP_CLEAR, list);
 		e->st.last_sys_list = list;
+		if ((list & C7_SYS_FM_RX) != 0 && e->fm_rx != NULL) {
+			e->fm_rx();
+		}
 		if (!e->running) {
 			continue;
 		}

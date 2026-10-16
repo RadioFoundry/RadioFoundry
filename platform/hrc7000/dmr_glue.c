@@ -114,7 +114,7 @@ static void isr_pa_timer(void)
 
 static void irqs_enable(bool on)
 {
-	hrc_irq_enable(IRQ_MODEM_SYS, on);
+	hrc_irq_enable(IRQ_MODEM_SYS, on || eng.fm_rx != NULL);	// FM receive audio uses it outside DMR too
 	hrc_irq_enable(IRQ_MODEM_TS_TX, on);
 	hrc_irq_enable(IRQ_MODEM_TS_RX, on);
 	hrc_irq_enable(IRQ_MODEM_RF_TX, on);
@@ -174,6 +174,15 @@ void hrc_dmr_leave(void)
 	irqs_enable(false);
 	active = false;
 	hrc7000_dmr_halt(&eng);
+}
+
+bool hrc_dmr_fm_rx_hook(void (*fn)(void))
+{
+	uint32_t s = hrc_irq_save();
+	eng.fm_rx = fn;
+	hrc_irq_restore(s);
+	hrc_irq_enable(IRQ_MODEM_SYS, active || fn != NULL);
+	return true;
 }
 
 void hrc_dmr_rx_restart(void)
