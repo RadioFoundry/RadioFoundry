@@ -937,6 +937,19 @@ OpenDM32 bug noted: for a UHF frequency below 400 MHz its unsigned subtraction g
 | Power | GPIO 0x2C: low = on, high = off | KP |
 | Interrupt | UART1, vector 42, IER = 0x05 | KP |
 
+ODR's driver is `boards/dm32/gps_dm32.c`, on the shared receive ring `drivers/gps/gps_rx` (also the MD-380's) and the
+line framing `drivers/gps/nmea_line`:
+
+| Step | What ODR does |
+|---|---|
+| Start-up | GPIO 0x2C low (module on), UART1 at 9600 8N1 (`hrc_uart_setup`, divisor 547, 0.02 % off), receive interrupt on |
+| Listen | 5 s for one checksum-valid sentence. The module sends a sentence a second from about 1 s after power-up, with or without a fix |
+| Heard | The module is present (`board.gps_present`). Every valid sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). The module stays powered |
+| Nothing heard | GPIO 0x2C high (module off), UART1 interrupt off. The radio reports no GPS and the Location settings are dimmed |
+| Diagnostics | The line `gps yes` (or `gps no`) `GOOD/BAD bBYTES`: valid sentences, bad ones (checksum, length, UART errors, ring overflow), bytes received |
+
+**Settings > Location > GPS** doesn't switch the module's power yet; neither board driver reads it.
+
 ---
 
 ## 13. Firmware file format and update paths
