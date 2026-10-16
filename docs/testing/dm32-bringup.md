@@ -179,7 +179,7 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 | Check | Expected | If not |
 |---|---|---|
 | The debug link's `aprs` view on 144.390 | `aprs.rx_listening=1`, `rx_bits` rising by about 1200 a second on noise, `rx_peak` above 0 | `rx_listening=0`: the receive setting (`odr_debug.py aprs set rx 1`) or the frequency. Bits not rising: SYS_INTERP_MASK bit 14 (0x1100039C) clear, or GPIO 0x2F high |
-| A packet on the air | `rx_hdlc_frames` and `stations` go up | `rx_fcs_errors` rising with packets present: the half read (FM_ADDR_SW), the level (noise reaches full scale) |
+| A packet on the air | `rx_hdlc_frames` and `stations` go up | `rx_fcs_errors` rising with packets present: the half read (FM_ADDR_SW), the level (noise reaches full scale), audio under the tones (below) |
 | An FM signal on 144.390 with the squelch open | heard on the speaker, through the C7000's FM playback | AUDIO_CONTROL bit 6, the codec line out |
 | A packet sent at level 50, recorded by the SDR bench (`aprs.md` 13) | decodes with a valid FCS, about 3 kHz peak deviation, twist within 2 dB | no tones: AUDIO_CONTROL bit 7 during the transmission, Timer 4 (vector 36) not firing. Deviation: `amp_per_level` in `radio_dm32.c` |
 
@@ -194,7 +194,13 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 - RSSI dBm offset and the noise scale for the squelch.
 - GPS: NMEA arrives on UART1 at 9600 (section 12): `gps yes`, 291 good sentences and 0 bad 26 s after start-up (on the
   radio, indoors, no fix). A fix outdoors is still to check.
-- APRS receive (section 13): the demodulator gets 8 kHz audio from the C7000; a packet decoded off air is still to
-  see (20 minutes on 144.390 indoors heard none, and the squelch never opened).
+- APRS receive (section 13): decodes off air, 12 of 12 frames from another radio at lowest power a few feet away
+  (2026-10-16). The receive audio had peaks about 19000 of 32767 and dropped no halves. Its space tone was 6-8 dB
+  under the mark tone (the FD6818's de-emphasis; the sender was flat within 1.3 dB on the SDR bench), and it carried
+  320-400 Hz 1-10 dB under the tones. With one demodulator path that cost half the frames; the high passed second
+  path (`aprs.md` 5.3) fixed it. Still open: where the 320-400 Hz comes from (the FD6818's receive audio filters,
+  REG 0x9B, sub-audio residue, the sender), and whether a hardware setting removes it. REG 0x9B (the receive
+  de-emphasis and filter bypasses) is on the FD6818's page 1: writing 0x7F = 1 over the 3-wire bus didn't select it
+  (page 1 reads matched page 0), so the page switch is still to find. Weak packets below the squelch are untested.
 - APRS transmit (section 13): decodes off air at 3.1 kHz peak (settled on the SDR bench). `test_aprs.py` on 2 m is
   still to run.
