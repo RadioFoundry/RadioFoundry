@@ -95,10 +95,10 @@ Tune the FM VFO to a known signal (NOAA 162.550 MHz, a local repeater output) an
 
 | Check | If not |
 |---|---|
-| Audio from the speaker with the squelch open | Speaker path: GPIO 0x2F low and 0x35 high (`radio_dm32.c audio()`); C7000 `fm_play` bit; codec line out |
+| Audio from the speaker with the squelch open | Works (checked on the radio). FM audio comes from the FD6818's output: GPIO 0x2F high, 0x35 high (`radio_dm32.c speaker_source()`), FD6818 0x47 = 0x0140. The C7000 `fm_play` bit stays off |
 | `rssi` / `nz` move with the signal; the squelch closes on a quiet channel | FD6818 reads (`fd6818_read` timing). The squelch uses the FD6818 noise byte (0x65): if its scale isn't dB-like, map it in `radio_dm32.c status()` |
 | RSSI in dBm roughly right against a signal generator | the offset in `status()` (raw - 135 now, a guess) |
-| CTCSS / DCS RX opens only on the right tone | C7000 sub-audio (`hrc7000_set_subtone`); the FD6818 has its own CTCSS detector if the C7000's doesn't work here |
+| CTCSS / DCS RX opens only on the right tone | With GPIO 0x2F high the C7000 gets no audio, so its sub-audio decoder can't work in FM receive. The FD6818's own detector does the job (0x07 / 0x08 / 0x51 / 0x52, result in 0x0C) |
 | Both bands: 145 MHz and 435 MHz | LNA selects 0x22 / 0x24, band words |
 
 ## 6. Hotspot / CPS on the cable (optional)
@@ -118,6 +118,11 @@ MMDVMHost or a CPS on the same serial port: the host link switches by what it re
 ## 8. DMR receive
 
 Select a DMR channel with traffic (or let the SDR bench send a call), then `diag`.
+
+DMR receive needs GPIO 0x2F low: that feeds the FD6818's audio into the C7000's ADC. With it high the modem sees
+no signal and `tk` stays at 0. The C7000's PHASE_OUT register (0x128) is a quick check that audio arrives
+(modem-hrc7000.md). Checked on the radio with an SDR bench call: sync ticks, slot interrupts, voice frames, headers,
+late entry and color code 2 all counted.
 
 | Diag line | Healthy | If not |
 |---|---|---|
@@ -149,7 +154,7 @@ The glue isn't written yet ([airband-and-broadcast.md](../spec/airband-and-broad
 | Check | Settles |
 |---|---|
 | The stock radio (or a scanner) on the local ATIS; ODR on the same frequency: AM audio, `am=1` in the view, read back FD6818 0x47 / 0x30 | which chip demodulates AM, the 0x47 AF type (spec 2.3 A1) |
-| No audio: the other level of the speaker source switch (GPIO 0x2F), then the C7000 path | AM audio route (A2) |
+| No audio: FD6818 0x47 (0x0140 gives FM audio), then the speaker source switch (GPIO 0x2F high) | AM audio route (A2) |
 | A strong and a weak station; a generator at -100 dBm with `rssi` on the link | AM AGC and filter (A3), the AM squelch offset (A4) |
 | PTT on an air channel and on a split channel with TX in 108-137 MHz | deny screen, red LED off, nothing on the SDR |
 | The RDA5807M chip ID (0x58xx at 0x11) on PTA25 / PTA26 | it is there, the SDA pull-up (B1, B3) |
