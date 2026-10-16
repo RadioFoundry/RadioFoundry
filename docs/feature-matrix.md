@@ -70,6 +70,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 12,584 | — | ● | ✕ | ● | MD-380: HR_C6000-only glue |
 | Debug link | `DEBUGLINK` | 32,376 | 29,084 | ● | ● | ● |  |
 | Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 | ● | ● | ● |  |
+| Loader hand-over (debug link 0x1A) | `STUB_ENTRY` | — | — | ✕ | ✕ | ● | HR_C7000 radios: the web flasher and `stub/stubtool.py` update without switching the radio off. On by default there |
 
 ## Network (USB network adapter and IP over DMR)
 
