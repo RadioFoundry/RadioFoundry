@@ -40,6 +40,7 @@ typedef struct {
 	uint32_t rx_calls;	// calls that started playing
 	uint32_t rx_queue_max;	// most frames queued at once (of AMBE_VOICE_QUEUE)
 	uint32_t rx_bad;	// frames with an uncorrectable C0
+	uint32_t rx_bad_at[3];	// ... by place in the burst (first, second, third frame)
 	uint32_t rx_lost;	// frames the call stack reported missing
 	uint32_t rx_underruns;	// blocks with nothing queued during a call
 	uint32_t rx_underrun_at;	// frames the call had played at its latest underrun: early = a prime too short, late = clocks
