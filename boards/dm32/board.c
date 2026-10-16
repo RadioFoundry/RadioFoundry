@@ -75,7 +75,7 @@ const board_t board = {
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
 #endif
-#if CONFIG_APRS_RX
+#if CONFIG_APRS_RX && CONFIG_DMR	// the FM audio interrupt is the DMR glue's
 	.afsk = &dm32_afsk,
 #endif
 #if CONFIG_HOSTLINK

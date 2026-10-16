@@ -5,7 +5,7 @@
 // speaker plays the HR_C7000's FM output instead (radio_dm32.c, hardware-dm32.md 9). No transmit path yet: tx_start
 // is NULL, so the core sends no packets on RF from this radio.
 #include "config.h"
-#if CONFIG_APRS_RX
+#if CONFIG_APRS_RX && CONFIG_DMR	// the FM audio interrupt is the DMR glue's (fm_rx_audio.h)
 #include "dm32.h"
 #include "fm_rx_audio.h"
 
