@@ -16,6 +16,7 @@ typedef enum {
 	SCR_RECENT, SCR_ZONES, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
 	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_APRS_POS, SCR_ABOUT,
 	SCR_CHANNELS, SCR_CHANNEL,	// every codeplug channel by number; one channel's settings (arg = its number)
+	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
 	SCR_COUNT
 } ui_scr_t;
 

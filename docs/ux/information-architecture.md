@@ -45,7 +45,7 @@ Screens consume only these. Each board maps physical inputs to them (`boards/<ra
 | `NAV_LEFT`, `NAV_RIGHT` | Change the focused value / switch tabs. If absent, screens fall back to `NAV_UP`/`NAV_DOWN` after `SELECT` | optional |
 | `SELECT` | Do or open the focused thing. Long: make it permanent (save) | yes |
 | `BACK` | Back one level; on Home clear temporary state. Long: Home | yes |
-| `QUICK` | Quick settings for the current context. Long: key lock | strongly recommended; fallback long `SELECT` |
+| `QUICK` | Quick settings for the current context. Long: key lock (on Home) | strongly recommended; fallback long `SELECT` |
 | `CONTEXT` | Actions for the focused thing; on Home, the last or current caller. Long: Recent | strongly recommended; fallback: first item in Hub |
 | `DIGIT_0` to `DIGIT_9` | Type (numbers, T9 letters). On Home: start Find. In quick settings and Hub: pick item by number. Long on Home: speed-dial slot | optional (keypad radios) |
 | `PTT` | Transmit to the talk target (or the focused target, one-shot) | yes |
@@ -111,7 +111,7 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 | 2 | **Messages** | Inbox (unread first), New message, Canned messages, Sent, Drafts |
 | 3 | **Recent** | Everyone heard and every call made, newest first, filters: All / Calls to me / Missed / Talkgroups. Item actions are the same as Contacts, plus "Save as contact" and "Show position" |
 | 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists |
-| 5 | **Channels** | Every channel by number; a channel's settings (read only today; Edit channel, New channel from current settings later) |
+| 5 | **Channels** | Every channel by number; New channel from current settings (first row); a channel's settings, edited in place and saved (ui.md 2.1) |
 | 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
 | 7 | **Settings** | Grouped by intent (below), with search |
 

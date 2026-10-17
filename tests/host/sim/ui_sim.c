@@ -500,10 +500,62 @@ static const sim_contact_t worst_contacts[] = {
 #define WORST_FIRST	985u
 
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
-uint16_t codeplug_channel_count(void) { return worst ? CODEPLUG_CHANNELS_MAX : 40; }
+
+// Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
+#define SIM_EDITS	8
+static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
+static uint8_t n_edits;
+
+static const channel_t *sim_edit(uint16_t number)
+{
+	for (uint8_t i = 0; i < n_edits; i++)
+		if (sim_edits[i].number == number)
+			return &sim_edits[i].ch;
+	return NULL;
+}
+
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+{
+	uint8_t i = 0;
+	while (i < n_edits && sim_edits[i].number != number)
+		i++;
+	if (i == SIM_EDITS)
+		return false;
+	if (i == n_edits)
+		n_edits++;
+	sim_edits[i].number = number;
+	sim_edits[i].ch = *ch;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+
+uint16_t codeplug_free_channel(void)
+{
+	for (uint16_t n = worst ? 1 : 41; n <= CODEPLUG_CHANNELS_MAX; n++) {
+		if (worst && n >= WORST_FIRST && n < WORST_FIRST + 40u)
+			continue;
+		if (sim_edit(n) == NULL)
+			return n;
+	}
+	return 0;
+}
+
+uint16_t codeplug_channel_count(void)
+{
+	uint16_t top = worst ? CODEPLUG_CHANNELS_MAX : 40;
+	for (uint8_t i = 0; i < n_edits; i++)
+		if (sim_edits[i].number > top)
+			top = sim_edits[i].number;
+	return top;
+}
 
 bool codeplug_channel(uint16_t number, channel_t *out)
 {
+	const channel_t *e = sim_edit(number);
+	if (e != NULL) {
+		*out = *e;
+		return true;
+	}
 	if (worst) {
 		if (number < WORST_FIRST || number >= WORST_FIRST + 40u)
 			return false;
@@ -1141,6 +1193,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	hotspot_on = rx_on = usb_net = usb_up = false;
 	board.netif = &sim_netif;
 	aprs_sim_reset();
+	n_edits = 0;
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;

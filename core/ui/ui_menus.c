@@ -3,6 +3,7 @@
 // The list screens and the screen table (information-architecture.md 4, 6, 8): the Hub with its six destinations,
 // actions on a station, Contacts, Messages, Recent, Channels, Tools, Settings grouped by intent, the talk target
 // picker, information pages and the one confirmation (factory reset, P7).
+#include <stddef.h>
 #include <string.h>
 #include "board.h"
 #include "ui_nav.h"
@@ -10,6 +11,8 @@
 #include "fmt.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
+#include "hal_time.h"
+#include "radio/tones.h"
 #include "radio/mic_gain.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
@@ -907,7 +910,13 @@ static const ui_scr_def_t zone_screen = {
 
 #if CONFIG_CHANNEL_LIST
 // ======================= Channels: every codeplug channel by number (hub 5) =======================
-// The raw row is the channel number - 1; empty slots have no label, so the filter leaves them out
+// The raw row is the channel number - 1 (with CONFIG_CHANNEL_EDIT, raw 0 is "New from current" and the raw
+// row is the channel number); empty slots have no label, so the filter leaves them out
+#define CHLIST_NEW	(CONFIG_CHANNEL_EDIT ? 1u : 0u)
+#define CHLIST_NUM(raw)	((uint16_t)((raw) + 1u - CHLIST_NEW))
+#if CONFIG_CHANNEL_EDIT
+static bool ced_from_current;		// the next push of the channel opens a copy of what the radio uses now
+#endif
 
 // The channel the radio is on, 0 in the VFO or when its zone can't be read
 static uint16_t chlist_current(void)
@@ -921,17 +930,21 @@ static uint16_t chlist_current(void)
 
 static uint16_t chlist_raw_count(void)
 {
-	return codeplug_channel_count();
+	return (uint16_t)(codeplug_channel_count() + CHLIST_NEW);
 }
 
 static bool chlist_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	static channel_t ch;
-	if (!codeplug_channel((uint16_t)(raw + 1u), &ch))
-		return false;
 	sbuf_t b;
 	sb_init(&b, buf, len);
-	sb_u32(&b, raw + 1u, 1);
+	if (CHLIST_NEW && raw == 0) {
+		sb_str(&b, "New from current");
+		return true;
+	}
+	if (!codeplug_channel(CHLIST_NUM(raw), &ch))
+		return false;
+	sb_u32(&b, CHLIST_NUM(raw), 1);
 	sb_chr(&b, ' ');
 	sb_str(&b, ch.name);
 	return true;
@@ -941,14 +954,18 @@ static void chlist_enter(void)
 {
 	uint16_t cur = chlist_current();
 	for (uint16_t i = 0; cur != 0 && i < ui_filter_count(); i++)
-		if (ui_filter_raw(i) + 1u == cur)
+		if (CHLIST_NUM(ui_filter_raw(i)) == cur)
 			ui_frame()->focus = i;
 }
 
 static void chlist_item(uint16_t i, ui_item_t *it)
 {
 	static channel_t ch;
-	uint16_t num = (uint16_t)(ui_filter_raw(i) + 1u);
+	if (CHLIST_NEW && ui_filter_raw(i) == 0) {
+		strcpy(it->label, "New from current");
+		return;
+	}
+	uint16_t num = CHLIST_NUM(ui_filter_raw(i));
 	if (!codeplug_channel(num, &ch))
 		return;
 	sbuf_t b;
@@ -992,12 +1009,26 @@ static bool chlist_tune(uint16_t num)
 static void chlist_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	ui_push(SCR_CHANNEL, (uint16_t)(ui_filter_raw(i) + 1u));
+#if CONFIG_CHANNEL_EDIT
+	if (ui_filter_raw(i) == 0) {
+		uint16_t num = codeplug_free_channel();
+		if (num == 0) {
+			ui_toast("No free channel");
+			return;
+		}
+		ced_from_current = true;
+		ui_push(SCR_CHANNEL, num);
+		return;
+	}
+#endif
+	ui_push(SCR_CHANNEL, CHLIST_NUM(ui_filter_raw(i)));
 }
 
 static void chlist_context(uint16_t i)
 {
-	chlist_tune((uint16_t)(ui_filter_raw(i) + 1u));
+	if (CHLIST_NEW && ui_filter_raw(i) == 0)
+		return;
+	chlist_tune(CHLIST_NUM(ui_filter_raw(i)));
 }
 
 static const ui_scr_def_t chlist_screen = {
@@ -1008,38 +1039,151 @@ static const ui_scr_def_t chlist_screen = {
 	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label,
 };
 
-// ======================= One channel's settings (read only; OK goes to it) =======================
+// ======================= One channel's settings, edited in place (ui.md 2.1) =======================
+// Without CONFIG_CHANNEL_EDIT the rows are read only and OK goes to the channel
 
-enum { CI_NUMBER, CI_MODE, CI_RX, CI_TX, CI_POWER, CI_RX_ONLY, CI_BW, CI_RX_TONE, CI_TX_TONE, CI_CC, CI_TS,
-       CI_CONTACT, CI_LIST, CI_ID, CI_TOT, CI_SCAN, CI_ZONES, CI_COUNT };
+enum { CE_NAME, CE_NUMBER, CE_MODE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
+       CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
+       CE_ZONES, CE_GO, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
 
-static channel_t chinfo_ch;
-static uint8_t chinfo_rows[CI_COUNT];
-static uint8_t chinfo_n;
+static channel_t ced_ch;		// what the screen shows (the working copy when editing)
+static uint16_t ced_num;		// its number, 0 = no such channel
+static uint8_t ced_rows[CE_COUNT];
+static uint8_t ced_n;
+
+#if CONFIG_CHANNEL_EDIT
+#define CE_TOT_MAX	495
+#define CE_TOT_STEP	15
+#define CE_ID_MAX	16777215
+#define CE_DIGITS	UI_ENTRY_MAX	// a frequency, or an ID (8 digits too)
+
+static channel_t ced_orig;		// what is stored
+static bool ced_new;			// not stored yet (New from current settings)
+static uint8_t ced_edit = CE_NONE;	// the row whose editor is open
+static int32_t ced_val;			// spinner: power level (power_count = the radio's), color code, time-out
+static bool ced_typed;
+static subtone_t ced_tone;		// spinner: a tone
+static char ced_digits[CE_DIGITS + 1];	// typed frequency or ID
+static uint8_t ced_len;
+
+static bool tone_same(const subtone_t *a, const subtone_t *b)
+{
+	return a->type == b->type && (a->type == TONE_NONE || a->value == b->value);
+}
+
+// Where each row's field is in channel_t, for the changed mark: offset, size (0 = never changes), and the bit for the
+// rows that share alias_tx
+#define CE_FIELD(f)	{ offsetof(channel_t, f), sizeof(((channel_t *)0)->f), 0 }
+static const struct { uint8_t off, len, bit; } ced_fields[CE_ZONES] = {
+	[CE_NAME] = CE_FIELD(name), [CE_MODE] = CE_FIELD(mode), [CE_RX] = CE_FIELD(rx_hz), [CE_TX] = CE_FIELD(tx_hz),
+	[CE_POWER] = CE_FIELD(power), [CE_RX_ONLY] = CE_FIELD(rx_only), [CE_BW] = CE_FIELD(bw),
+	[CE_RX_TONE] = CE_FIELD(rx_tone), [CE_TX_TONE] = CE_FIELD(tx_tone), [CE_VOX] = CE_FIELD(vox),
+	[CE_CC] = CE_FIELD(color_code), [CE_TS] = CE_FIELD(timeslot), [CE_CONTACT] = CE_FIELD(contact),
+	[CE_LIST] = CE_FIELD(listen_list), [CE_ID] = CE_FIELD(dmr_id), [CE_DMO] = CE_FIELD(dmo),
+	[CE_BEEP] = CE_FIELD(no_beep), [CE_ALIAS1] = { offsetof(channel_t, alias_tx), 1, CODEPLUG_ALIAS_TS1_TEXT },
+	[CE_ALIAS2] = { offsetof(channel_t, alias_tx), 1, CODEPLUG_ALIAS_TS2_TEXT }, [CE_TOT] = CE_FIELD(tot_s),
+	[CE_SCAN] = CE_FIELD(scan_skip), [CE_ECO] = CE_FIELD(no_eco),
+};
+
+// Whether row r differs from what is stored (the dot), or for CE_COUNT, any row
+static bool ced_changed(uint8_t r)
+{
+	if (ced_new)
+		return r == CE_COUNT;
+	if (r == CE_COUNT) {
+		for (uint8_t i = 0; i < CE_ZONES; i++)
+			if (ced_changed(i))
+				return true;
+		return false;
+	}
+	if (r >= CE_ZONES)
+		return false;
+	const uint8_t *a = (const uint8_t *)&ced_ch + ced_fields[r].off, *b = (const uint8_t *)&ced_orig + ced_fields[r].off;
+	if (r == CE_NAME)
+		return strcmp((const char *)a, (const char *)b) != 0;	// the bytes past the end may differ
+	if (r == CE_RX_TONE || r == CE_TX_TONE)
+		return !tone_same((const subtone_t *)a, (const subtone_t *)b);
+	if (ced_fields[r].bit != 0)
+		return ((*a ^ *b) & ced_fields[r].bit) != 0;
+	return memcmp(a, b, ced_fields[r].len) != 0;
+}
+
+// A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
+static void ced_from_view(void)
+{
+	const radio_view_t *v = ui_view();
+	ced_ch = v->ch;
+	if (v->temp & RADIO_TEMP_POWER)
+		ced_ch.power = v->power;
+	ced_ch.roam = false;
+	sbuf_t b;
+	char name[CODEPLUG_NAME_LEN + 1];
+	sb_init(&b, name, sizeof name);
+	if (v->vfo) {
+		sb_freq(&b, ced_ch.rx_hz);
+	} else {
+		ced_ch.name[CODEPLUG_NAME_LEN - 2] = 0;	// room for " 2"
+		sb_str(&b, ced_ch.name);
+		sb_str(&b, " 2");
+	}
+	strcpy(ced_ch.name, name);
+}
+#endif
+
+static void ced_build(void)
+{
+	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR;
+	bool edit = CONFIG_CHANNEL_EDIT;
+	bool fresh = false, changed = false;
+#if CONFIG_CHANNEL_EDIT
+	fresh = ced_new;
+	changed = ced_changed(CE_COUNT);
+#endif
+	ced_n = 0;
+	for (uint8_t r = 0; r < CE_COUNT; r++) {
+		bool fm_only = r == CE_BW || r == CE_RX_TONE || r == CE_TX_TONE || r == CE_VOX;
+		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
+		if ((fm_only && dmr) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
+			continue;
+		if ((r == CE_ZONES || r == CE_GO || r == CE_SAVE_NEW) && fresh)
+			continue;
+		if ((r == CE_SAVE && !(changed || fresh)) || ((r == CE_SAVE || r == CE_SAVE_NEW) && !edit))
+			continue;
+		ced_rows[ced_n++] = r;
+	}
+}
 
 static void chinfo_enter(void)
 {
-	chinfo_n = 0;
-	if (!codeplug_channel(ui_frame()->arg, &chinfo_ch))
+	ced_num = ui_frame()->arg;
+#if CONFIG_CHANNEL_EDIT
+	ced_edit = CE_NONE;
+	ced_new = ced_from_current;
+	ced_from_current = false;
+	if (ced_new) {
+		ced_from_view();
+		ced_orig = ced_ch;
 		return;
-	bool dmr = chinfo_ch.mode == RADIO_MODE_DMR;
-	for (uint8_t r = 0; r < CI_COUNT; r++) {
-		bool fm_only = r == CI_BW || r == CI_RX_TONE || r == CI_TX_TONE;
-		bool dmr_only = r == CI_CC || r == CI_TS || r == CI_CONTACT || r == CI_LIST || r == CI_ID;
-		if ((fm_only && dmr) || (dmr_only && (!dmr || !CONFIG_DMR)))
-			continue;
-		chinfo_rows[chinfo_n++] = r;
 	}
+#endif
+	if (!codeplug_channel(ced_num, &ced_ch))
+		ced_num = 0;
+#if CONFIG_CHANNEL_EDIT
+	ced_orig = ced_ch;
+#endif
 }
 
 static uint16_t chinfo_count(void)
 {
-	return chinfo_n;
+	if (ced_num == 0)
+		return 0;
+	ced_build();
+	return ced_n;
 }
 
 static const char *chinfo_title(void)
 {
-	return chinfo_ch.name;
+	return ced_ch.name[0] != 0 ? ced_ch.name : "New channel";
 }
 
 // The zones holding the channel, as much as fits: "Fav, Local, Ga" / "Fav +2" / "3 zones" (text alternates)
@@ -1082,30 +1226,84 @@ static void sb_chinfo_zones(sbuf_t *b, uint16_t num)
 	sb_str(b, TEXT_ALT_CLOSE);
 }
 
+static void sb_onoff(sbuf_t *b, bool on)
+{
+	sb_str(b, on ? "On" : "Off");
+}
+
+static void sb_ced_power(sbuf_t *b, int32_t level)
+{
+	sb_str(b, level < 0 || level >= board.power_count ? "Radio's" : ui_power_name((uint8_t)level));
+}
+
+static void sb_ced_tot(sbuf_t *b, int32_t s)
+{
+	if (s == 0) {
+		sb_str(b, "Radio's");
+		return;
+	}
+	sb_i32(b, s);
+	sb_str(b, " s");
+}
+
+// The open spinner's value; the stored one in a build without editing (never reached there: nothing is edited)
+static int32_t ced_val_or(int32_t stored)
+{
+#if CONFIG_CHANNEL_EDIT
+	(void)stored;
+	return ced_val;
+#else
+	return stored;
+#endif
+}
+
 static void chinfo_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const labels[CI_COUNT] = { "Number", "Mode", "RX", "TX", "Power", "RX only", "Bandwidth",
-		"RX tone", "TX tone", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID", "TX time-out",
-		"Scan", "Zones" };
-	const channel_t *ch = &chinfo_ch;
-	uint16_t num = ui_frame()->arg;
-	if (i >= chinfo_n)
+	static const char *const labels[CE_COUNT] = { "Name", "Number", "Mode", "RX", "TX", "Power", "RX only",
+		"Bandwidth", "RX tone", "TX tone", "VOX", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID",
+		"Direct mode", "Talk permit beeps", "Talker alias TS1", "Talker alias TS2", "TX time-out", "Scan",
+		"Battery saver", "Zones", "Go to it", "Save", "Save as new channel" };
+	const channel_t *ch = &ced_ch;
+	if (i >= ced_n)
 		return;
-	uint8_t r = chinfo_rows[i];
+	uint8_t r = ced_rows[i];
+	bool editing = false;
+#if CONFIG_CHANNEL_EDIT
+	editing = ced_edit == r;
+	if (editing)
+		it->flags |= UI_ITEM_EDIT;
+	if (ced_changed(r))
+		it->flags |= UI_ITEM_TEMP;
+#endif
 	strcpy(it->label, labels[r]);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
+#if CONFIG_CHANNEL_EDIT
+	if (editing && (r == CE_RX || r == CE_TX || r == CE_ID)) {
+		// What has been typed so far: "446.07_", "3101_"
+		for (uint8_t k = 0; k < ced_len; k++) {
+			if (r != CE_ID && k == UI_ENTRY_MHZ)
+				sb_chr(&b, '.');
+			sb_chr(&b, ced_digits[k]);
+		}
+		sb_chr(&b, '_');
+		return;
+	}
+#endif
 	switch (r) {
-	case CI_NUMBER:
-		sb_u32(&b, num, 1);
+	case CE_NAME:
+		sb_str(&b, ch->name);
 		break;
-	case CI_MODE:
+	case CE_NUMBER:
+		sb_u32(&b, ced_num, 1);
+		break;
+	case CE_MODE:
 		sb_str(&b, ch->mode == RADIO_MODE_DMR ? "DMR" : "FM");
 		break;
-	case CI_RX:
+	case CE_RX:
 		sb_freq(&b, ch->rx_hz);
 		break;
-	case CI_TX:
+	case CE_TX:
 		sb_freq(&b, ch->tx_hz);
 		if (ch->tx_hz != ch->rx_hz) {
 			// The repeater offset: "+5 MHz", "-600 kHz"
@@ -1116,29 +1314,42 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, mhz ? " MHz" : " kHz");
 		}
 		break;
-	case CI_POWER:
-		sb_str(&b, ch->power == CODEPLUG_POWER_DEFAULT ? "Radio's" : ui_power_name(ch->power));
+	case CE_POWER:
+#if CONFIG_CHANNEL_EDIT
+		if (editing) {
+			sb_ced_power(&b, ced_val);
+			break;
+		}
+#endif
+		sb_ced_power(&b, ch->power == CODEPLUG_POWER_DEFAULT ? -1 : ch->power);
 		break;
-	case CI_RX_ONLY:
+	case CE_RX_ONLY:
 		sb_str(&b, ch->rx_only ? "Yes" : "No");
 		break;
-	case CI_BW:
+	case CE_BW:
 		sb_str(&b, ch->bw == RADIO_BW_25K ? "25 kHz" : "12.5 kHz");
 		break;
-	case CI_RX_TONE:
-		sb_tone(&b, &ch->rx_tone);
+	case CE_RX_TONE:
+	case CE_TX_TONE: {
+		const subtone_t *t = r == CE_RX_TONE ? &ch->rx_tone : &ch->tx_tone;
+#if CONFIG_CHANNEL_EDIT
+		if (editing)
+			t = &ced_tone;
+#endif
+		sb_tone(&b, t);
 		break;
-	case CI_TX_TONE:
-		sb_tone(&b, &ch->tx_tone);
+	}
+	case CE_VOX:
+		sb_onoff(&b, ch->vox);
 		break;
-#if CONFIG_DMR
-	case CI_CC:
-		sb_u32(&b, ch->color_code, 1);
+	case CE_CC:
+		sb_u32(&b, editing ? (uint32_t)ced_val_or(ch->color_code) : ch->color_code, 1);
 		break;
-	case CI_TS:
+	case CE_TS:
 		sb_u32(&b, ch->timeslot, 1);
 		break;
-	case CI_CONTACT: {
+#if CONFIG_DMR
+	case CE_CONTACT: {
 		static contact_t c;
 		if (ch->contact != 0 && codeplug_contact(ch->contact, &c))
 			sb_str(&b, c.name);
@@ -1146,7 +1357,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, "None");
 		break;
 	}
-	case CI_LIST: {
+	case CE_LIST: {
 		static listen_list_t l;
 		if (ch->listen_list != 0 && codeplug_listen_list(ch->listen_list, &l))
 			sb_str(&b, l.name);
@@ -1154,44 +1365,597 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, "None");
 		break;
 	}
-	case CI_ID:
+#endif
+	case CE_ID:
 		if (ch->dmr_id != 0)
 			sb_u32(&b, ch->dmr_id, 1);
 		else
 			sb_str(&b, "Radio's");
 		break;
-#endif
-	case CI_TOT:
-		if (ch->tot_s != 0) {
-			sb_u32(&b, ch->tot_s, 1);
-			sb_str(&b, " s");
-		} else {
-			sb_str(&b, "Radio's");
-		}
+	case CE_DMO:
+		sb_onoff(&b, ch->dmo);
 		break;
-	case CI_SCAN:
+	case CE_BEEP:
+		sb_onoff(&b, !ch->no_beep);
+		break;
+	case CE_ALIAS1:
+		sb_onoff(&b, ch->alias_tx & CODEPLUG_ALIAS_TS1_TEXT);
+		break;
+	case CE_ALIAS2:
+		sb_onoff(&b, ch->alias_tx & CODEPLUG_ALIAS_TS2_TEXT);
+		break;
+	case CE_TOT:
+		sb_ced_tot(&b, editing ? ced_val_or(ch->tot_s) : ch->tot_s);
+		break;
+	case CE_SCAN:
 		sb_str(&b, ch->scan_skip ? "Skipped" : "Scanned");
 		break;
-	case CI_ZONES:
-		sb_chinfo_zones(&b, num);
+	case CE_ECO:
+		sb_onoff(&b, !ch->no_eco);
+		break;
+	case CE_ZONES:
+		sb_chinfo_zones(&b, ced_num);
 		break;
 	default:
 		break;
 	}
 }
 
+#if CONFIG_CHANNEL_EDIT
+static void ui_text_open(char *target, uint8_t max);
+
+// The first problem that keeps the copy from being saved, as a toast; NULL when it can be saved
+static const char *ced_problem(void)
+{
+	const channel_t *c = &ced_ch;
+	if (c->name[0] == 0)
+		return "Give it a name first";
+	if (!ui_in_band(c->rx_hz, false))
+		return "RX is outside the radio's bands";
+	if (!c->rx_only && !ui_in_band(c->tx_hz, true))
+		return "TX can't transmit there: set RX only";
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && c->contact == 0)
+		return "Pick a TX contact first";
+	return NULL;
+}
+
+static void ced_save(bool as_new)
+{
+	static char msg[32];
+	const char *why = ced_problem();
+	if (why != NULL) {
+		ui_toast(why);
+		return;
+	}
+	if (!as_new && !ced_new && !ced_changed(CE_COUNT)) {
+		ui_toast("No changes to save");
+		return;
+	}
+	uint16_t num = as_new ? codeplug_free_channel() : ced_num;
+	if (num == 0) {
+		ui_toast("No free channel");
+		return;
+	}
+	if (!ui_svc_write_channel(num, &ced_ch)) {
+		ui_toast("Couldn't save now: try again");
+		return;
+	}
+	ced_num = num;
+	ui_frame()->arg = num;
+	ced_orig = ced_ch;
+	sbuf_t b;
+	sb_init(&b, msg, sizeof msg);
+	sb_str(&b, as_new || ced_new ? "Saved as channel " : "Saved channel ");
+	sb_u32(&b, num, 1);
+	ced_new = false;
+	ui_toast(msg);
+}
+
+static void ced_spin(int dir)
+{
+	switch (ced_edit) {
+	case CE_POWER: {
+		int32_t n = board.power_count + 1;	// the levels, then the radio's
+		ced_val = (ced_val + dir + n) % n;
+		break;
+	}
+	case CE_CC:
+		ced_val = (ced_val + dir + 16) % 16;
+		break;
+	case CE_TOT:
+		ced_val += dir * CE_TOT_STEP;
+		ced_val = ced_val < 0 ? 0 : ced_val > CE_TOT_MAX ? CE_TOT_MAX : ced_val;
+		break;
+	case CE_RX_TONE:
+	case CE_TX_TONE:
+		ced_tone = tones_step(&ced_tone, dir);
+		break;
+	default:
+		break;
+	}
+	ced_typed = false;
+}
+
+// A digit into the open editor: frequency and ID digits are appended (refused when no band or ID can start so),
+// numbers typed as in Settings (starting over when too big). An ID's value builds up in ced_val as it is typed
+static void ced_digit(char d)
+{
+	int32_t v = ced_val * 10 + (d - '0');
+	switch (ced_edit) {
+	case CE_RX:
+	case CE_TX:
+		ui_freq_entry_digit(ced_digits, &ced_len, d);
+		break;
+	case CE_ID:
+		if (ced_len >= CE_DIGITS)
+			break;
+		if (v > CE_ID_MAX) {
+			ui_toast("IDs go up to 16777215");
+			break;
+		}
+		ced_val = v;
+		ced_digits[ced_len++] = d;
+		ced_digits[ced_len] = 0;
+		break;
+	case CE_CC:
+	case CE_TOT: {
+		int32_t hi = ced_edit == CE_CC ? 15 : CE_TOT_MAX;
+		v = ced_typed ? v : d - '0';
+		ced_val = v > hi ? d - '0' : v;
+		ced_typed = true;
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+// OK in the open editor: the value goes into the copy (or a toast says why not, and the editor stays open)
+static void ced_commit(void)
+{
+	channel_t *c = &ced_ch;
+	switch (ced_edit) {
+	case CE_RX:
+	case CE_TX: {
+		if (ced_len == 0)
+			break;		// nothing typed: unchanged
+		uint32_t hz = ui_freq_entry_hz(ced_digits, ced_len);
+		if (hz == 0)
+			return;
+		if (ced_edit == CE_RX) {
+			// TX moves with RX, keeping a repeater's offset; where that lands outside every band (or the channel
+			// had no TX frequency) TX becomes RX
+			uint32_t tx = c->tx_hz - c->rx_hz + hz;
+			c->tx_hz = ui_in_band(tx, false) ? tx : hz;
+			c->rx_hz = hz;
+		} else {
+			c->tx_hz = hz;
+		}
+		break;
+	}
+	case CE_ID:
+		if (ced_len > 0)
+			c->dmr_id = (uint32_t)ced_val;	// 0 = the radio's
+		break;
+	case CE_POWER:
+		c->power = ced_val >= board.power_count ? CODEPLUG_POWER_DEFAULT : (uint8_t)ced_val;
+		break;
+	case CE_CC:
+		c->color_code = (uint8_t)ced_val;
+		break;
+	case CE_TOT:
+		if (ced_val % CE_TOT_STEP != 0) {
+			ui_toast("Not changed: 0 to 495, steps of 15");
+			break;
+		}
+		c->tot_s = (uint16_t)ced_val;
+		break;
+	case CE_RX_TONE:
+		c->rx_tone = ced_tone;
+		break;
+	case CE_TX_TONE:
+		c->tx_tone = ced_tone;
+		break;
+	default:
+		break;
+	}
+	ced_edit = CE_NONE;
+}
+
+static bool chinfo_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	if (ced_edit == CE_NONE) {
+		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && ced_num != 0 &&
+				(ced_new || ced_changed(CE_COUNT))) {
+			ui_push(SCR_DISCARD, 0);
+			return true;
+		}
+		return false;
+	}
+	int dir = ev->action == ACT_NAV_UP ? 1 : ev->action == ACT_NAV_DOWN ? -1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir != 0 && ev->gesture != GESTURE_UP) {
+		if (ced_edit != CE_RX && ced_edit != CE_TX && ced_edit != CE_ID)
+			ced_spin(dir);	// typed fields ignore the knob, so the focus can't move under them either
+		ui_dirty();
+		return true;
+	}
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		ced_digit((char)('0' + ev->action - ACT_DIGIT_0));
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		if ((ced_edit == CE_RX || ced_edit == CE_TX || ced_edit == CE_ID) && ced_len > 0) {
+			ced_digits[--ced_len] = 0;	// takes the last digit back
+			ced_val /= 10;
+		} else {
+			ced_edit = CE_NONE;		// leaves the editor, the row unchanged
+		}
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_SELECT && press) {
+		ced_commit();
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+#endif
+
 static void chinfo_select(uint16_t i, bool hold)
 {
+#if CONFIG_CHANNEL_EDIT
+	if (i >= ced_n)
+		return;
+	if (hold) {
+		ced_save(false);	// long OK saves, as it makes a quick setting permanent
+		return;
+	}
+	channel_t *c = &ced_ch;
+	uint8_t r = ced_rows[i];
+	switch (r) {
+	case CE_NAME: ui_text_open(c->name, CODEPLUG_NAME_LEN); break;
+	case CE_MODE: c->mode = c->mode == RADIO_MODE_DMR ? RADIO_MODE_FM : RADIO_MODE_DMR; break;
+	case CE_RX:
+	case CE_TX:
+	case CE_ID:
+		ced_edit = r;
+		ced_len = 0;
+		ced_val = 0;
+		ced_digits[0] = 0;
+		break;
+	case CE_POWER:
+		ced_edit = r;
+		ced_val = c->power < board.power_count ? c->power : board.power_count;
+		break;
+	case CE_RX_ONLY: c->rx_only = !c->rx_only; break;
+	case CE_BW: c->bw = c->bw == RADIO_BW_25K ? RADIO_BW_12K5 : RADIO_BW_25K; break;
+	case CE_RX_TONE:
+	case CE_TX_TONE:
+		if (!CONFIG_SUBTONE) {
+			// The spinner would only offer none, and OK would wipe the codeplug's tone
+			ui_toast("Tones: not in this build");
+			break;
+		}
+		ced_edit = r;
+		ced_tone = r == CE_RX_TONE ? c->rx_tone : c->tx_tone;
+		break;
+	case CE_VOX: c->vox = !c->vox; break;
+	case CE_CC:
+	case CE_TOT:
+		ced_edit = r;
+		ced_val = r == CE_CC ? c->color_code : c->tot_s;
+		ced_typed = false;
+		break;
+	case CE_TS: c->timeslot = c->timeslot == 2 ? 1 : 2; break;
+#if CONFIG_DMR
+	case CE_CONTACT: ui_push(SCR_CHPICK, 0); break;
+	case CE_LIST: ui_push(SCR_CHPICK, 1); break;
+#endif
+	case CE_DMO: c->dmo = !c->dmo; break;
+	case CE_BEEP: c->no_beep = !c->no_beep; break;
+	case CE_ALIAS1: c->alias_tx ^= CODEPLUG_ALIAS_TS1_TEXT; break;
+	case CE_ALIAS2: c->alias_tx ^= CODEPLUG_ALIAS_TS2_TEXT; break;
+	case CE_SCAN: c->scan_skip = !c->scan_skip; break;
+	case CE_ECO: c->no_eco = !c->no_eco; break;
+	case CE_NUMBER: ui_toast("Save as new channel to use another number"); break;
+	case CE_ZONES: ui_toast("Zones: change them with qdmr for now"); break;
+	case CE_GO:
+		if (ced_changed(CE_COUNT))
+			ui_toast("Save first: hold OK");
+		else
+			chlist_tune(ced_num);
+		break;
+	case CE_SAVE: ced_save(false); break;
+	case CE_SAVE_NEW: ced_save(true); break;
+	default: break;
+	}
+	ui_dirty();
+#else
 	(void)i;
 	(void)hold;
 	chlist_tune(ui_frame()->arg);
+#endif
 }
 
 static const ui_scr_def_t chinfo_screen = {
-	.name = "channel", .flags = SF_LIST | SF_FIELD, .hint = "OK go to it  Back", .empty = "Empty channel",
+	.name = "channel", .flags = SF_LIST | SF_FIELD, .empty = "Empty channel",
+#if CONFIG_CHANNEL_EDIT
+	.hint = TEXT_ALT_OPEN "OK change  hold OK save  Back" TEXT_ALT_NEXT "OK change  hold OK save" TEXT_ALT_CLOSE,
+	.key = chinfo_key,
+#else
+	.hint = "OK go to it  Back",
+#endif
 	.count = chinfo_count, .item = chinfo_item, .select = chinfo_select, .title = chinfo_title,
 	.enter = chinfo_enter,
 };
+
+#if CONFIG_CHANNEL_EDIT
+// ======================= Leaving the channel editor with changes (defaults to keep editing; P7) ===============
+
+static uint16_t discard_count(void) { return 2; }
+
+static void discard_item(uint16_t i, ui_item_t *it)
+{
+	strcpy(it->label, i == 0 ? "No, keep editing" : "Yes, discard");
+	if (i == 1)
+		it->flags |= UI_ITEM_WARN;
+}
+
+static void discard_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_pop();		// this question
+	if (i == 1)
+		ui_pop();	// and the channel
+}
+
+static const char *discard_body(void) { return "Discard the changes to this channel?"; }
+
+static const ui_scr_def_t discard_screen = {
+	.name = "discard", .flags = SF_LIST, .prefix = "Unsaved changes", .hint = TEXT_ALT_OPEN "OK choose  Back keep editing" TEXT_ALT_NEXT "OK choose  Back" TEXT_ALT_CLOSE,
+	.count = discard_count, .item = discard_item, .select = discard_select, .body = discard_body,
+};
+
+// ======================= Text entry: keypad letters (ui.md 2.1) =======================
+// Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
+// c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
+// or the pause moves on. In 123 a digit types itself, as a held digit does
+// in any mode. # cycles ABC -> 123 -> abc. BACK deletes the last character and leaves once the field is empty, without
+// a change (the phone convention; the one exception to P4, principles 4); * or Left delete too. OK keeps. Without a
+// keypad Up / Down step the last character (down past the space deletes it), OK adds one and long OK keeps
+
+#define TEXT_MULTI_MS	1000u
+
+static char *text_target;
+static uint8_t text_max;
+static char text_buf[CODEPLUG_NAME_LEN + 1];
+static uint8_t text_len;
+static int8_t text_key = -1;		// the key that typed the last character, -1 = none to cycle
+static uint8_t text_idx;
+static uint32_t text_ms;
+enum { TEXT_UPPER, TEXT_DIGITS, TEXT_LOWER, TEXT_MODES };	// the order # cycles through
+static uint8_t text_mode;
+
+static void ui_text_open(char *target, uint8_t max)
+{
+	text_target = target;
+	text_max = max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN;
+	ui_push(SCR_TEXT, 0);
+}
+
+static void text_enter(void)
+{
+	strncpy(text_buf, text_target, text_max);
+	text_buf[text_max] = 0;
+	text_len = (uint8_t)strlen(text_buf);
+	text_key = -1;
+	text_mode = TEXT_UPPER;
+}
+
+static uint16_t text_count(void) { return 1; }
+
+static void text_item(uint16_t i, ui_item_t *it)
+{
+	(void)i;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, text_buf);
+	sb_chr(&b, '_');	// the cursor; the mode is in the title
+}
+
+static char text_case(char c)
+{
+	return text_mode == TEXT_LOWER && c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
+}
+
+// The keys with letters cycle letters, digit, then the letters again in the other case; the others their set as is
+static uint8_t text_cycle_len(const char *set)
+{
+	uint8_t n = (uint8_t)strlen(set);
+	return set[0] >= 'A' && set[0] <= 'Z' ? (uint8_t)(2u * n - 1u) : n;
+}
+
+static char text_char(const char *set, uint8_t idx)
+{
+	uint8_t n = (uint8_t)strlen(set);
+	if (!(set[0] >= 'A' && set[0] <= 'Z'))
+		return set[idx];
+	if (idx < n)
+		return idx == n - 1u ? set[idx] : text_case(set[idx]);	// the letters in the mode's case, then the digit
+	char c = set[idx - n];
+	return text_mode == TEXT_LOWER ? c : (char)(c - 'A' + 'a');	// then the other case
+}
+
+static void text_append(char c)
+{
+	if (text_len >= text_max) {
+		ui_toast("That's the most it can hold");
+		return;
+	}
+	text_buf[text_len++] = c;
+	text_buf[text_len] = 0;
+}
+
+static bool text_key_fn(const input_event_t *ev)
+{
+	// A key's characters within the timing window: its letters, its digit, its letters in the other case (text_char)
+	static const char *const keys[10] = { " 0+#*", ".-/,'&()@_!?1", "ABC2", "DEF3", "GHI4", "JKL5", "MNO6", "PQRS7",
+		"TUV8", "WXYZ9" };
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	uint32_t now = hal_millis();
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		int8_t k = (int8_t)(ev->action - ACT_DIGIT_0);
+		const char *set = keys[k];
+		if (text_mode == TEXT_DIGITS || ev->gesture == GESTURE_LONG) {
+			text_append((char)('0' + k));	// 123, or a held digit: the digit itself
+			text_key = -1;
+		} else if (k == text_key && text_len > 0 && now - text_ms < TEXT_MULTI_MS) {
+			text_idx = (uint8_t)((text_idx + 1u) % text_cycle_len(set));
+			text_buf[text_len - 1] = text_char(set, text_idx);
+			text_key = k;
+		} else {
+			text_idx = 0;
+			text_append(text_char(set, 0));
+			text_key = k;
+		}
+		text_ms = now;
+		ui_dirty();
+		return true;
+	}
+	int dir = ev->action == ACT_NAV_UP ? 1 : ev->action == ACT_NAV_DOWN ? -1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir != 0 && ev->gesture != GESTURE_UP) {
+		// Step the last character through the printable ones (the way in without a keypad); down past the space
+		// deletes it
+		if (text_len == 0)
+			text_append('A');
+		else if (dir < 0 && text_buf[text_len - 1] == ' ')
+			text_buf[--text_len] = 0;
+		else
+			text_buf[text_len - 1] = (char)(' ' + (text_buf[text_len - 1] - ' ' + dir + 95) % 95);
+		text_key = -1;
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS) {
+		text_mode = (uint8_t)((text_mode + 1u) % TEXT_MODES);
+		text_key = -1;	// the next key starts a new character
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && text_len == 0) {
+		ui_pop();	// an empty field: BACK leaves, the name as it was
+		return true;
+	}
+	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||
+			(ev->action == ACT_QUICK && press)) {	// a slow * deletes too (it doesn't lock here)
+		if (text_len > 0)
+			text_buf[--text_len] = 0;
+		text_key = -1;
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_SELECT && press) {
+		if (!(board.caps & CAP_KEYPAD) && ev->gesture == GESTURE_PRESS) {
+			text_append(text_len > 0 ? text_buf[text_len - 1] : 'A');	// the next character, started as this one
+		} else {
+			strcpy(text_target, text_buf);
+			ui_pop();
+		}
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+
+// The title carries the mode, so it shows however long the name is: "Name · ABC"
+static const char *text_title(void)
+{
+	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
+	return modes[text_mode];
+}
+
+static const ui_scr_def_t text_screen = {
+	.name = "text", .flags = SF_LIST, .prefix = "Name", .title = text_title,
+	.hint = TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE,
+	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+};
+
+#if CONFIG_DMR
+// ======================= A channel's TX contact or RX group list (arg 0 / 1) =======================
+// Raw row 0 is None, raw r the contact or list with index r
+
+static uint16_t chpick_raw_count(void)
+{
+	return (uint16_t)((ui_frame()->arg == 0 ? CODEPLUG_CONTACTS_MAX : CODEPLUG_LISTS_MAX) + 1u);
+}
+
+static contact_t chpick_c;	// the contact chpick_raw_label read last, for the row's value
+
+static bool chpick_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	static listen_list_t l;
+	const char *name = "None";
+	if (raw != 0) {
+		if (ui_frame()->arg == 0 ? !codeplug_contact(raw, &chpick_c) : !codeplug_listen_list(raw, &l))
+			return false;
+		name = ui_frame()->arg == 0 ? chpick_c.name : l.name;
+	}
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_str(&b, name);
+	return true;
+}
+
+static uint16_t chpick_current(void)
+{
+	return ui_frame()->arg == 0 ? ced_ch.contact : ced_ch.listen_list;
+}
+
+static void chpick_enter(void)
+{
+	for (uint16_t i = 0; i < ui_filter_count(); i++)
+		if (ui_filter_raw(i) == chpick_current())
+			ui_frame()->focus = i;
+}
+
+static void chpick_item(uint16_t i, ui_item_t *it)
+{
+	uint16_t raw = ui_filter_raw(i);
+	if (chpick_raw_label(raw, it->label, sizeof it->label) && raw != 0 && ui_frame()->arg == 0) {
+		sbuf_t b;
+		sb_init(&b, it->value, sizeof it->value);
+		sb_str(&b, chpick_c.type == CONTACT_PRIVATE ? "ID " : "TG ");
+		sb_u32(&b, chpick_c.id, 1);
+	}
+	if (raw == chpick_current())
+		it->flags |= UI_ITEM_TEMP;
+}
+
+static void chpick_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	uint16_t raw = ui_filter_raw(i);
+	if (ui_frame()->arg == 0)
+		ced_ch.contact = raw;
+	else
+		ced_ch.listen_list = raw;
+	ui_pop();
+}
+
+static const char *chpick_title(void) { return ui_frame()->arg == 0 ? "TX contact" : "RX group list"; }
+
+static const ui_scr_def_t chpick_screen = {
+	.name = "chpick", .flags = SF_LIST | SF_FILTER, .hint = "OK pick  0-9 find  Back", .empty = "None stored",
+	.count = ui_filter_count, .item = chpick_item, .select = chpick_select, .title = chpick_title,
+	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label,
+};
+#endif
+#endif
 #endif
 
 // ======================= Info pages =======================
@@ -2468,5 +3232,11 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
+#if CONFIG_CHANNEL_EDIT
+	[SCR_TEXT] = &text_screen, [SCR_DISCARD] = &discard_screen,
+#if CONFIG_DMR
+	[SCR_CHPICK] = &chpick_screen,
+#endif
+#endif
 #endif
 };

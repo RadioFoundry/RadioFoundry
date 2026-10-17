@@ -609,7 +609,7 @@ static void banner_open(void)
 
 // --- VFO frequency entry (digits on Home in the VFO; task-flows.md 12) ---
 
-static void entry_value(const char *digits, int len, uint32_t *lo, uint32_t *hi)
+static void entry_range(const char *digits, int len, uint32_t *lo, uint32_t *hi)
 {
 	// Digits are positional from 100 MHz down to 10 Hz: the prefix spans [lo, hi]
 	uint32_t v = 0, unit = 10;
@@ -622,55 +622,71 @@ static void entry_value(const char *digits, int len, uint32_t *lo, uint32_t *hi)
 	*hi = *lo + span - unit;
 }
 
-static bool entry_possible(const char *digits, int len)
+bool ui_in_band(uint32_t hz, bool tx)
 {
-	uint32_t lo, hi;
-	entry_value(digits, len, &lo, &hi);
 	for (int i = 0; i < board.band_count; i++)
-		if (lo <= board.bands[i].hi_hz && hi >= board.bands[i].lo_hz)
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz && (!tx || board.bands[i].tx))
 			return true;
 	return false;
 }
 
-static void entry_digit(char d)
+bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 {
 	static char hint[40];
+	if (*len >= UI_ENTRY_MAX)
+		return false;
+	digits[*len] = d;
+	uint32_t lo, hi;
+	entry_range(digits, *len + 1, &lo, &hi);
+	for (int i = 0; i < board.band_count; i++) {
+		if (lo <= board.bands[i].hi_hz && hi >= board.bands[i].lo_hz) {
+			digits[++*len] = 0;
+			return true;
+		}
+	}
+	digits[*len] = 0;
+	char bands[32];
+	ui_bands_text(bands, sizeof bands);
+	strcpy(hint, "Bands: ");
+	strncat(hint, bands, sizeof hint - strlen(hint) - 1);
+	ui_toast(hint);
+	return false;
+}
+
+uint32_t ui_freq_entry_hz(const char *digits, uint8_t len)
+{
+	if (len < UI_ENTRY_MHZ) {
+		ui_toast("Type at least the MHz digits");
+		return 0;
+	}
+	uint32_t lo, hi;
+	entry_range(digits, len, &lo, &hi);
+	if (!ui_in_band(lo, false)) {
+		ui_toast("Not in a band: type more digits");
+		return 0;
+	}
+	return lo;
+}
+
+static void entry_digit(char d)
+{
 	if (ui_st.entry_len >= UI_ENTRY_MAX) {
 		ui_toast("All digits typed: OK tunes");
 		return;
 	}
-	ui_st.entry_digits[ui_st.entry_len] = d;
-	if (!entry_possible(ui_st.entry_digits, ui_st.entry_len + 1)) {
-		ui_st.entry_digits[ui_st.entry_len] = 0;
-		char bands[32];
-		ui_bands_text(bands, sizeof bands);
-		strcpy(hint, "Bands: ");
-		strncat(hint, bands, sizeof hint - strlen(hint) - 1);
-		ui_toast(hint);
+	if (!ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, d))
 		return;
-	}
-	ui_st.entry_len++;
-	ui_st.entry_digits[ui_st.entry_len] = 0;
 	ui_st.entry = true;
 	dirty = true;
 }
 
 static void entry_commit(void)
 {
-	if (ui_st.entry_len < UI_ENTRY_MHZ) {
-		ui_toast("Type at least the MHz digits");
-		return;
+	uint32_t hz = ui_freq_entry_hz(ui_st.entry_digits, ui_st.entry_len);
+	if (hz != 0) {
+		radio_req_vfo_set(hz);
+		entry_cancel();
 	}
-	uint32_t lo, hi;
-	entry_value(ui_st.entry_digits, ui_st.entry_len, &lo, &hi);
-	for (int i = 0; i < board.band_count; i++) {
-		if (lo >= board.bands[i].lo_hz && lo <= board.bands[i].hi_hz) {
-			radio_req_vfo_set(lo);
-			entry_cancel();
-			return;
-		}
-	}
-	ui_toast("Not in a band: type more digits");
 }
 
 // --- input helpers ---
@@ -1568,7 +1584,10 @@ void ui_app_key(const input_event_t *ev)
 	if (emergency_key(ev))
 		return;
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
-	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG) :
+	// Long * locks only from Home (principles 3): in a menu it would lock the keys mid-task, and in text entry a slow *
+	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
+	bool typing = stack[sp].scr == SCR_TEXT;
+	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG && (sp == 0 || ui_st.locked)) :
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	// A side key set to key lock (keyassign.h) locks and unlocks on a press or a long press, as long QUICK does
 	if (ev->action == ACT_LOCK && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG))
@@ -1648,8 +1667,9 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast("Voice prompts: not in this build");
 		return;
 	}
+	// In text entry * and # are the typewriter's keys, not quick settings or a banner's
 	// A banner up: CONTEXT opens what it is about
-	if (ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&
+	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&
 			ui_st.banner.kind != UI_BANNER_RESULT && ui_st.banner.kind != UI_BANNER_INFO) {
 		banner_open();
 		return;
@@ -1657,7 +1677,7 @@ void ui_app_key(const input_event_t *ev)
 	// QUICK opens quick settings from any screen; BACK returns to where the user was
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS && stack[sp].scr != SCR_QUICK &&
-			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME) {
+			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME && !typing) {
 		ui_push(SCR_QUICK, 0);
 		return;
 	}

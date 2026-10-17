@@ -495,6 +495,33 @@ bool ui_svc_save_channel(void)
 	return take_channel() && storage_job_post(save_channel_job, NULL);
 }
 
+// The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
+// core re-reads it (codeplug_serial), and the edited values are what the user wants now. Whether it is the channel in
+// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v
+static void write_channel_job(void *ctx)
+{
+	(void)ctx;
+	if (!codeplug_set_channel(job.channel, &job.now)) {
+		save_failed("Couldn't write the codeplug: not saved");
+		return;
+	}
+	if (job.temp != 0) {
+		radio_req_clear_temporary();
+	}
+}
+
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+{
+	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || storage_job_busy()) {
+		return false;
+	}
+	radio_get_view(&v);
+	job.channel = number;
+	job.temp = !v.vfo && v.channel_number == number && v.temporary;	// here: drop the temporary changes after it
+	job.now = *ch;
+	return storage_job_post(write_channel_job, NULL);
+}
+
 #if CONFIG_DMR
 // The first stored contact with this ID and kind becomes the channel's talk target. Searching the contacts reads up
 // to 1024 records, so it is part of the job too. Until it is done the target is a temporary one (ui_svc_talk_to)

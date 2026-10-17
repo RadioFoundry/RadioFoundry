@@ -207,6 +207,55 @@
     "CHANNEL_LIST"
    ]
   },
+  "channel_power": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_changed": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_rx_entry": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_name": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_contact": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_discard": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_new": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
   "zone_channels": {
    "group": "channels",
    "needs": []

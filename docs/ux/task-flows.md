@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Task flows
 
-Step-by-step flows for the 20 most frequent or most important tasks, with press counts per radio class. Keys use the logical names from `information-architecture.md`; the reference mapping is `SELECT` = green/Menu, `BACK` = red/Back, `QUICK` = `*`, `CONTEXT` = `#`, `TALK_TARGET` = SK2, `MONITOR` = SK1.
+Step-by-step flows for the 22 most frequent or most important tasks, with press counts per radio class. Keys use the logical names from `information-architecture.md`; the reference mapping is `SELECT` = green/Menu, `BACK` = red/Back, `QUICK` = `*`, `CONTEXT` = `#`, `TALK_TARGET` = SK2, `MONITOR` = SK1.
 
 ## Radio classes
 
@@ -275,6 +275,39 @@ On a channel: `QUICK`, `4`. Temporary: the channel becomes its other mode with t
 
 ---
 
+## 21. Edit a channel
+
+1. `SELECT`, `5`: Channels opens on the channel in use. `NAV_UP`/`NAV_DOWN` or typing finds another one.
+2. `SELECT`: the channel's settings.
+3. `NAV_DOWN` to the row. Two-value rows (timeslot, mode, bandwidth) flip on `SELECT`; rows with more values (power,
+   PL / DCS tone, color code, time-out) open a spinner: turn the knob (or `NAV_UP`/`NAV_DOWN`) to the value, `SELECT`
+   keeps it; frequencies and the ID take digits; the name opens text entry; the TX contact opens a
+   picker.
+4. Long `SELECT` saves. Changed rows show a dot until then; `BACK` with changes asks "Discard the changes to this channel?".
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Timeslot of the channel in use, saved | 5+n | 5+n | 5+n | 5+n | 6+n |
+| TX contact by name ("WCRA": 9 2 7 2) | 9+n | 9+n | 9+n | 7+n+m | 10+n |
+
+Changing the channel in use for now is shorter from quick settings (flow 20). This flow is for saved changes, other
+channels and rows quick settings don't have.
+
+---
+
+## 22. New channel from current settings
+
+1. `SELECT`, `5`, `NAV_UP` to the first row, "New from current", `SELECT`: an unsaved copy of the channel in
+   use (with its temporary changes) or of the VFO, at the lowest free number.
+2. Change what differs (flow 21, step 3), for example the name and the TX contact.
+3. Long `SELECT` saves it. Add it to a zone with qdmr for now (issue #44 adds it to the current zone).
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Copy, saved unchanged | 5+n | 5+n | 5+n | 5+n | 6+n |
+
+---
+
 ## Summary
 
 | Task | K | Budget met? |
@@ -298,6 +331,8 @@ On a channel: `QUICK`, `4`. Temporary: the channel becomes its other mode with t
 | Emergency | 1 hold | yes |
 | FM / DMR | 2 | yes |
 | Monitor / hear all | 1 / 2 | yes |
+| Edit a channel (timeslot, saved) | 5+n | yes |
+| New channel from current | 5+n | yes |
 | TS / CC | 3 / 4 | yes |
 
 Every task except typed entries (IDs, frequencies, free text) completes in six presses or fewer, inside the NHTSA six-input guideline.

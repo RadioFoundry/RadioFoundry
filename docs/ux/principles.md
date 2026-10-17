@@ -36,7 +36,7 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 
 - Inputs go through a **logical action layer**. Screens only see logical actions, never physical keys.
 - `SELECT` = do/open the focused thing. `BACK` = go to where I was. `NAV_UP`/`NAV_DOWN` = move focus or change the value that Home is tuned to. `QUICK` = quick settings for the current context. `CONTEXT` = actions for the thing in focus (on Home: the last caller). Digits = type (numbers and T9 letters).
-- **Long press has one fixed meaning per key across all screens**: long `BACK` = Home, long `SELECT` = save/confirm the focused change (where a key for `QUICK` is missing, long `SELECT` = `QUICK`), long `QUICK` (`*`) = key lock, long `CONTEXT` (`#`) = the talk target picker on a DMR channel (TG pick or a typed ID, the `#` keycap's legend and the AnyTone 868/878/578 convention), long digit on Home = speed-dial slot. Inside a text field the keypad is a typewriter and long digit types the digit itself; that is the only exception. Navigation keys repeat when held.
+- **Long press has one fixed meaning per key across all screens**: long `BACK` = Home, long `SELECT` = save/confirm the focused change (where a key for `QUICK` is missing, long `SELECT` = `QUICK`), long `QUICK` (`*`) = key lock (from Home only: in a menu it doesn't lock mid-task; it unlocks from anywhere), long `CONTEXT` (`#`) = the talk target picker on a DMR channel (TG pick or a typed ID, the `#` keycap's legend and the AnyTone 868/878/578 convention), long digit on Home = speed-dial slot. Inside a text field the keypad is a typewriter: long digit types the digit itself and long `*` deletes like a short one; those are the only exceptions. Navigation keys repeat when held.
 - Long press never transmits, never deletes, never resets. Long-press threshold is one value (default 600 ms, settable), and a short tick confirms the threshold was reached.
 - No double presses, no triple presses, no chords (two keys at once) are required for anything. Chords may exist as optional shortcuts only.
 
@@ -45,6 +45,7 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 ## 4. One back stack, no dead ends
 
 - There is one navigation stack. `BACK` pops one level; at Home, `BACK` clears temporary state (dismisses a banner, ends a reply window), never something harmful.
+- One exception, the convention of phones and most radio makers: in text entry `BACK` deletes the last character, and leaves (without a change) once the field is empty.
 - Hold `BACK` from anywhere = Home, in one press, always.
 - Menu depth from Home is at most three levels for anything a user does in the field.
 - Incoming events (call, message, alert) show a **banner** that doesn't steal focus or keys, except a private call addressed to the user and emergency, which take the screen but are still dismissed with `BACK`.

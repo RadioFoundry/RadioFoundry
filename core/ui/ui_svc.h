@@ -63,6 +63,9 @@ bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
 // Make the temporary changes permanent (storage-cps): false if the codeplug can't be written
 bool ui_svc_save_channel(void);
+// Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
+// ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
 // Write the talk target into the channel (UI_TALK_PERMANENT): false if it isn't a stored contact or can't be written
 bool ui_svc_save_talk_target(uint32_t id, bool private_call);
 

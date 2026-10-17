@@ -81,14 +81,66 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Actions | `actions` | CONTEXT (`#`) on a person, a talkgroup, the last caller, a message |
 | Recent | `recent` | Hub 3 |
 | Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`) |
-| Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). OK opens the channel (`channel`), CONTEXT goes to it |
-| Channel | `channel` | OK in Channels: the channel's settings, read only (number, mode, RX, TX and offset, power, RX only, FM bandwidth and tones, DMR color code, timeslot, TX contact, RX group list, own ID, TX time-out, scan, the zones holding it). OK goes to it: in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone" |
+| Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
+| Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), save, and save as a new channel |
+| Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
+| Unsaved changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
+| List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (SK2), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
 The gallery (section 7) shows every screen at every display class.
+
+### 2.1 Channel editor
+
+The Channel screen edits a working copy of the channel. Nothing is written until the user saves.
+
+Rows by kind. A row with two values flips on OK; a row with more opens the spinner, so the knob picks the value
+instead of OK pressed once per step. The rows shown follow the copy's mode, so a mode change adds or removes rows at once.
+
+| Kind | OK does | Rows |
+|---|---|---|
+| Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
+| Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as the MD-380's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
+| Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16777215) |
+| Text | opens Text entry | Name |
+| Pick | opens the List picker | TX contact, RX group list |
+| Read only | nothing | Number, Zones |
+| Action | runs it | Go to it, Save, Save as new channel |
+
+- A changed row shows the temporary mark (`UI_ITEM_TEMP`, the dot Home uses).
+- Long SELECT anywhere saves, as long SELECT makes a quick setting permanent. The Save row does the same.
+- BACK with unsaved changes opens Unsaved changes (`discard`): "No, keep editing" first (the default, P7), then "Yes,
+  discard". Long BACK still goes Home (P3) and drops the copy without asking.
+- Save checks the copy first and names the first problem in a toast: an empty name, RX out of every band, TX out of
+  the transmit bands on a channel that isn't RX only, a DMR channel without a TX contact.
+- Save writes with `codeplug_set_channel` as a storage job (`ui_svc_write_channel`), like Save to channel, so the UI
+  never waits for a flash erase. A failed write raises `UI_EV_SAVE_FAILED`. The radio core re-reads the channel in
+  use when `codeplug_serial()` changes, so any save drops its temporary changes, whichever channel was written.
+  Whether the written channel is the one in use is decided when the job is posted, on the UI task.
+- Save as new channel writes the copy to the lowest free number (`codeplug_free_channel`) and opens that channel.
+  "No free channel" when all 1024 are used. The new channel is in no zone until one is edited (issue #44 adds it to
+  the current zone).
+- New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
+  with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
+  source with a number appended (or the frequency, from the VFO).
+
+Text entry supports both keypad conventions radios use: more presses of the same key (2: A B C 2 a b c) and `#` for
+the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their
+letters, the digit, then the letters in the other case; 1 cycles `. - / , ' & ( ) @ _ ! ? 1`, 0 a space, 0, `+ # *`.
+The same key again within 1 s takes the next character; another key or the pause moves on. The title shows the mode
+("Name ABC"). In 123 a digit types itself, and a held digit types itself in any mode (principles 3).
+CONTEXT (`#`) cycles ABC → 123 → abc (ABC first). BACK deletes the last character and, on an empty field, leaves
+without changing the name (the phone convention, the one exception to P4); QUICK (`*`) and Left delete too, and in
+text entry QUICK doesn't open quick settings. OK keeps the name. Without a keypad (class F): Up / Down step the last character (down past the space deletes it), OK adds the next
+one, long OK keeps. Names stop at `CODEPLUG_NAME_LEN` (16).
+
+Typed rows (frequencies, the ID): BACK takes back the last digit, and with none typed closes the editor; OK keeps what
+is typed, and with nothing typed leaves the row as it was. A new RX frequency moves TX with it, keeping a repeater's
+offset. Where that offset would put TX outside every band, TX becomes the new RX (simplex). Own ID refuses a digit
+that would take it past 16777215, and takes at most 8 digits.
 
 ## 3. Key meanings
 
@@ -282,7 +334,7 @@ draw the anti-aliased fonts (`CONFIG_FONT_AA`, as the DM-32 is built), and `240x
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
 and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
-BACK reaches Home, long QUICK locks, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
+BACK reaches Home, long QUICK locks on Home and nowhere else, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
 PTT shows TX, and every field-use screen is at most 3 presses deep. The About check scrolls the page to its end at
 every display class and fails if any text was shortened.
 

@@ -40,7 +40,8 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | VFO (hand-tuned frequency) | `VFO` | 520 | 464 | ● | ● | ● |  |
 | FM VFO | `VFO_FM` | 504 | 452 | ● | ● | ● |  |
 | DMR VFO (ID, color code, slot, talk target typed in) | `VFO_DMR` | 8 | 8 | ● | ● | ● | Switch exists; the feature isn't built yet |
-| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | — | — | ● | ○ | ● | About 1.9 KB on the MD-380. MD-380: off for flash (hub 5 says "not in this build") |
+| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 1,536 | 2,140 | ● | ● | ● |  |
+| Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | ● | ● | ● | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. DM-1701: 1,080 B of it in the second flash area (sector 9); measured 2026-10-17 |
 | Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — | ● | ● | ● |  |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 | ● | ● | ● |  |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 | ● | ● | ● |  |
@@ -88,7 +89,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | ● | ○ | ● | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet); off by default, needs another feature off to fit. DM-32UV: DMR only until its board code has the FM audio paths |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ○ | ● | Needs NAT on the host. MD-380: off for flash (no APRS over the air there) |
 | mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ● |  |
-| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ● |  |
+| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ○ | ● | MD-380: off for the Channels list and editor; CPS on the same USB port reads and writes the codeplug |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ○ | ● | MD-380: off by default for flash |
 | PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ● | New, untested on hardware; interop tested with pppd. Fits neither default image as it is (DM-1701 688 B short, MD-380 1,588 B short; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
 

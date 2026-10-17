@@ -191,6 +191,14 @@ uint8_t ui_diag_next_page(uint8_t first_line);
 bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *label, size_t label_len,
 	char *value, size_t value_len);
 
+// Whether a board band holds hz (tx: one the radio can transmit in)
+bool ui_in_band(uint32_t hz, bool tx);
+// Frequency typed as digits (VFO entry, the channel editor): positional from 100 MHz down to 10 Hz, at most
+// UI_ENTRY_MAX of them in digits[UI_ENTRY_MAX + 1]. A digit is appended when some band can still start so; false
+// when the digits are full, or with a toast naming the bands when no band can
+bool ui_freq_entry_digit(char *digits, uint8_t *len, char d);
+// The typed frequency, or 0 with a toast saying why (fewer than the MHz digits, not in a band)
+uint32_t ui_freq_entry_hz(const char *digits, uint8_t len);
 // Text for the board's bands ("136-174 400-480"), for hints
 void ui_bands_text(char *out, size_t len);
 // The board's power level name

@@ -2155,6 +2155,43 @@ static void test_ui_glue(void)
 	chans[4].timeslot = 1;
 	chans[4].color_code = 2;
 	reload_channel();
+	// The channel editor's whole channel (ui_svc_write_channel): numbers out of range are refused, a write in
+	// progress refuses the next, the channel in use drops its temporary changes. So does a write of another channel:
+	// any codeplug write reloads the channel in use (ui.md 2.1)
+	channel_t ed = chans[4];
+	CHECK(!ui_svc_write_channel(0, &ed) && !ui_svc_write_channel(CODEPLUG_CHANNELS_MAX + 1, &ed));
+	CHECK(ui_svc_dmr_color_code(9));
+	run(20);
+	CHECK(sm.view.temporary);
+	ed.timeslot = 2;
+	ed.color_code = 5;
+	w = cp_writes;
+	CHECK(ui_svc_write_channel(4, &ed) && cp_writes == w && !ui_svc_write_channel(6, &ed));
+	storage_job_poll();
+	CHECK(cp_writes == w + 1 && chans[4].timeslot == 2 && chans[4].color_code == 5);
+	run(100);
+	CHECK(!sm.view.temporary && d->ts == 2 && d->cc == 5);
+	CHECK(ui_svc_dmr_color_code(9));
+	run(20);
+	ed = chans[6];
+	ed.color_code = 7;
+	CHECK(ui_svc_write_channel(6, &ed));
+	storage_job_poll();
+	run(100);
+	CHECK(chans[6].color_code == 7 && !sm.view.temporary && d->cc == 5);
+	// A failed write: the event, and nothing reloaded
+	CHECK(ui_svc_dmr_color_code(9));
+	run(20);
+	cp_write_fails = true;
+	n_ev = 0;
+	CHECK(ui_svc_write_channel(6, &ed));
+	storage_job_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && sm.view.temporary);
+	cp_write_fails = false;
+	req(RREQ_CLEAR_TEMP, 0);
+	chans[4].timeslot = 1;
+	chans[4].color_code = 2;
+	reload_channel();
 	// A failed write comes back as an event
 	CHECK(ui_svc_dmr_color_code(4));
 	cp_write_fails = true;

@@ -88,7 +88,7 @@ below are for the DM-1701.
 | `CONFIG_NET_USRP` | = DMR_IP_GATEWAY | USRP voice over UDP on port 34001: the receiver's audio to AllStarLink / DVSwitch / a bridge with the squelch as keyup, the peer's keyup frames transmitted (FM through the board's audio tap, DMR through the encoder; `docs/spec/usb-audio.md` 9.1). About 5.6 KB RAM |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS (MD-380: n) | the radio's own APRS-IS client out through the host (NAT on the host): our beacons and the iGate's lines, off until a server address is set (`docs/spec/tcp-services.md` 7). About 0.2 KB RAM |
 | `CONFIG_MDNS` | = DMR_IP_GATEWAY | mDNS / DNS-SD responder on the USB network link: the radio answers for `odr-<DMR ID>.local` and advertises its debug link, MMDVM modem and TFTP server (`docs/spec/mdns.md`). About 0.4 KB RAM on the DM-1701 |
-| `CONFIG_TFTP` | = DMR_IP_GATEWAY | TFTP server on the USB network link: `codeplug.bin` read and written (staged in `hal_flash_map_t.staging_*`, checked, then committed through the journal), `info.txt` (`docs/spec/tftp.md`). About 0.1 KB RAM on the DM-1701 |
+| `CONFIG_TFTP` | = DMR_IP_GATEWAY (MD-380: n) | TFTP server on the USB network link: `codeplug.bin` read and written (staged in `hal_flash_map_t.staging_*`, checked, then committed through the journal), `info.txt` (`docs/spec/tftp.md`). About 0.1 KB RAM on the DM-1701 |
 | `CONFIG_DMR_CONTROL_STATION` | = DMR_IP_GATEWAY (MD-380: n) | control station mode for PC dispatch software: passthrough (the PC is the endpoint of the radio's own IP data while the link is up; the link layer stays on the radio) and the fixed link pair 192.168.10.1 / .2 instead of the address by DMR ID (`docs/spec/usb-network.md` 5). The power-on network setting belongs to `CONFIG_USB_NETWORK` |
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the ODR MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM on the DM-1701 |
 | `CONFIG_SFR` | = DMR (MD-380: n) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX); Standalone SFR (the repeater and user roles on a channel) is not wired yet (`docs/spec/sfr.md`) |
@@ -106,7 +106,8 @@ below are for the DM-1701.
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO (not built yet) |
 | `CONFIG_DIAG` | y | the diagnostics page |
-| `CONFIG_CHANNEL_LIST` | y (MD-380: n) | the hub's Channels list: every codeplug channel by number, and a channel's settings, read only (`docs/spec/ui.md` 2) |
+| `CONFIG_CHANNEL_LIST` | y | the hub's Channels list: every codeplug channel by number, and a channel's settings (`docs/spec/ui.md` 2) |
+| `CONFIG_CHANNEL_EDIT` | = `CHANNEL_LIST` | editing a channel on the radio, New channel from current settings, keypad text entry (`docs/spec/ui.md` 2.1). Needs `CONFIG_CHANNEL_LIST`; without it the channel's settings are read only |
 | `CONFIG_KEY_ASSIGN` | y | side key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's side keys do (`docs/spec/ui.md` 3.1) |
 | `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
@@ -156,6 +157,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 | md380 | `NET_USRP` (maximal build too; users can pick it) | flash, and it carries DMR only on this radio (no FM audio path to the processor yet) |
 | md380 | `DMR_UDP_COMPRESS` (maximal build too; users can pick it) | flash (about 460 B, for the APRS position page): IP over DMR still works, with full headers |
 | md380 | `SNMP` (8 KB; users can pick it with another feature off) | flash: the default had 56 bytes left. SNMP monitoring is mostly for fixed hotspots and repeaters |
+| md380 | `TFTP` (6.4 KB; maximal build too; users can pick it with another feature off) | flash, for the Channels list and the channel editor (2026-10-16; 6,152 B left with them on 2026-10-17): the CPS protocol on the same USB port reads and writes the codeplug too |
 | dm32 | `USB`, `USB_NETWORK` (maximal build too: `BOARD_UNSUPPORTED`) | no USB data port on the radio; PPP on the programming cable is its IP link |
 | dm1801pro | `UI_COLOR` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen: no colors to set |
 | every board | `AUDIO_PROBE` | a bench diagnostic |

@@ -63,7 +63,71 @@ static const flow_t flows[] = {
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },
 	{ "C a channel's settings", "", "ok 5 ok", "screen=channel", 3, false },
-	{ "C go to it from its settings", "ok 5 down down ok", "ok", "screen=home pos=5", 1, false },
+	// The channel's last rows are Go to it and Save as new channel: two Ups from the first row (lists wrap)
+	{ "C go to it from its settings", "ok 5 down down ok", "up up ok", "screen=home pos=5", 3, false },
+	// task-flows.md 21 and 22 (ui.md 2.1). On channel 3 (DMR) the timeslot is the ninth row, the TX contact the tenth
+	{ "21 timeslot of the channel in use, saved", "", "ok 5 ok down down down down down down down down ok long:ok", "writes=1 toast=Saved_channel_3",
+	  13, true },
+	{ "21 TX contact opens the picker", "ok 5 ok down down down down down down down down down", "ok", "screen=chpick", 1, false },
+	{ "21 a change asks before discarding", "ok 5 ok down down down down down down down down ok", "back", "screen=discard", 1, false },
+	{ "21 keep editing", "ok 5 ok down down down down down down down down ok back", "ok", "screen=channel", 1, false },
+	{ "21 discard goes back to Channels", "ok 5 ok down down down down down down down down ok back", "down ok", "screen=channels", 2, false },
+	{ "21 the name opens text entry", "ok 5 ok", "ok", "screen=text", 1, false },
+	// Back deletes in text entry, and leaves once the field is empty (principles 4's one exception)
+	{ "21 Back deletes in text entry", "ok 5 ok ok 4 6", "back", "screen=text focus=COUNTY_DMRG", 1, false },
+	{ "21 Back on an empty name leaves", "ok 5 ok ok", "back back back back back back back back back back back",
+	  "screen=channel", 11, false },
+	// Text entry (ui.md 2.1): * deletes, multi-tap letters move on with another key, # cycles ABC -> 123 -> abc
+	{ "21 * deletes the name", "ok 5 ok ok", "quick quick quick quick quick quick quick quick quick quick long:7", "focus=7 screen=text", 11, false },
+	{ "21 a name by multi-tap", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "9 2 2 2 7 7 7 2", "focus=WCRA", 8, false },
+	{ "21 # to digits", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx 3 1 3", "focus=313", 4, false },
+	{ "21 # twice to lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx ctx 4 4 4", "focus=i", 5, false },
+	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "focus=a", 5, false },
+	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "focus=,", 4, false },
+	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "focus=COUNTY_DMRG locked=0", 1, false },
+	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "focus=7", 1, false },
+	{ "22 new from current settings, saved", "", "ok 5 up up up ok long:ok",
+	  "writes=1 toast=Saved_as_channel_41", 7, true },
+	// The channel editor's rules (ui.md 2.1). Channel 1 is an FM repeater (146.940, TX 600 kHz below), channel 3 DMR
+	// simplex; on channel 3 the own ID is row 12 and the TX time-out row 17
+	{ "E new RX keeps the repeater offset", "ok 5 up up ok down down down", "ok 1 4 7 0 0 ok",
+	  "shows=147.000 shows=146.4 shows=600_kHz", 7, false },
+	{ "E new RX: an offset off the bands makes it simplex", "ok 5 up up ok down down down", "ok 1 3 6 0 0 ok",
+	  "shows=136.000 hides=135.4 hides=-600", 7, false },
+	{ "E RX refuses a digit no band starts with", "ok 5 up up ok down down down", "ok 2", "toast=Bands:", 2, false },
+	{ "E RX needs the MHz digits", "ok 5 up up ok down down down", "ok 1 4 ok", "toast=Type_at_least screen=channel",
+	  4, false },
+	{ "E own ID refuses a digit past 16777215", "ok 5 ok down down down down down down down down down down down",
+	  "ok 1 6 7 7 7 2 1 6", "toast=IDs_go_up shows=1677721", 9, false },
+	{ "E own ID: Back takes back a digit", "ok 5 ok down down down down down down down down down down down",
+	  "ok 5 5 5 1 back ok", "shows=555 hides=5551", 7, false },
+	{ "E own ID: at most 8 digits", "ok 5 ok down down down down down down down down down down down",
+	  "ok 0 0 0 0 0 0 0 0 0 0", "shows=00000000 hides=000000000", 11, false },
+	{ "E time-out in steps of 15", "ok 5 ok down down down down down down down down down down down down down down down "
+	  "down", "ok 7 ok", "toast=Not_changed", 3, false },
+	{ "E time-out spinner", "ok 5 ok down down down down down down down down down down down down down down down down",
+	  "ok up up ok", "shows=30_s", 4, false },
+#if CONFIG_SUBTONE
+	// Channel 1's RX tone is row 9 (none), its TX tone row 10 (100.0): the spinner walks the standard tone list
+	{ "E RX tone spinner from none", "ok 5 up up ok down down down down down down down down", "ok up ok",
+	  "shows=67.0", 3, false },
+	{ "E TX tone spinner, Up", "ok 5 up up ok down down down down down down down down down", "ok up ok",
+	  "shows=103.5 hides=100.0", 3, false },
+	{ "E TX tone spinner, Down", "ok 5 up up ok down down down down down down down down down", "ok down ok",
+	  "shows=97.4", 3, false },
+#endif
+	{ "E DMR needs a TX contact to save", "ok 5 ok down down down down down down down down down", "ok up ok long:ok",
+	  "toast=Pick_a_TX writes=0", 4, false },
+	{ "E a name to save", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ok long:ok",
+	  "toast=Give_it_a_name writes=0", 2, false },
+	{ "E nothing changed to save", "ok 5 ok", "long:ok", "toast=No_changes writes=0", 1, false },
+	{ "E go to it asks for a save first", "ok 5 ok down down ok", "up up up up up ok", "toast=Save_first screen=channel",
+	  6, false },
+	{ "E saved: Back leaves without asking", "ok 5 ok down down ok", "long:ok back", "screen=channels writes=1", 2,
+	  true },
+	{ "E save as new takes the next free number", "ok 5 ok up ok", "ok", "toast=Saved_as_channel_42 writes=2", 1, true },
+	{ "E the new channel is in the list", "ok 5 up up up ok long:ok", "back up", "focus=41_COUNTY_DMR_2", 2, true },
+	{ "E new from the VFO is named by its frequency", "ok 4 up ok", "ok 5 ok", "shows=146.520 shows=41", 3, false },
 	{ "C go to it from the list", "ok 5 down", "ctx", "screen=home pos=4", 1, false },
 	{ "12 into the VFO", "", "ok 4 up ok", "vfo=1 screen=home", 4, false },
 	{ "12 446.000 in the VFO", "ok 4 up ok", "4 4 6 0 0 0 ok", "freq=446000000", 7, false },
@@ -204,6 +268,10 @@ static const flow_t flows_k[] = {
 	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
 	{ "S large text is the third row", "", "ok 7 2 down down ok", "set8=1", 6, false },
 #endif
+#if CONFIG_SUBTONE
+	{ "E TX tone spinner, the knob", "ok 5 up up ok down down down down down down down down down", "ok enc+ enc+ ok",
+	  "shows=107.2", 4, false },
+#endif
 	{ "E emergency: hold the top key", "", "long:emerg", "toast=EMERGENCY_sent", 1, false },
 	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
@@ -289,7 +357,13 @@ static const flow_t flows_f[] = {
 	{ "F key lock unlocks on a long press", "lockkey", "long:lockkey", "locked=0", 1, false },
 	{ "F locked: long Back unlocks", "lockkey", "long:back", "locked=0", 1, false },
 	{ "F locked: call back is ignored", CALLER "lockkey", "cbkey", "talk=3100 toast=Keys_locked", 1, false },
-	{ "F no side keys to set", "ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
+	// Text entry without a keypad (ui.md 2.1): Down steps the last character, OK adds one, long OK keeps; long OK on
+	// the channel saves
+	{ "F text entry by Up / Down", "ok down down down down down ok ok ok", "down ok long:ok",
+	  "screen=channel shows=COUNTY_DMQQ", 3, false },
+	{ "F long OK saves the channel", "ok down down down down down ok ok ok down ok long:ok", "long:ok",
+	  "writes=1 toast=Saved_channel_3", 1, true },
+	{ "F no side keys to set","ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
 	  false },
 };
 
@@ -442,7 +516,8 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 			printf("FAIL crawl [%s] %s: no status strip (P2)\n", mapname, s0.screen);
 			fails++;
 		}
-		if (s0.depth > 0) {
+		// Text entry is the one exception to P4 (principles 4): BACK deletes, and leaves once the field is empty
+		if (s0.depth > 0 && strcmp(s0.screen, "text") != 0) {
 			snprintf(path, sizeof path, "%s back", nodes[i].path);
 			if (replay(g, map, path, &s1) && s1.depth >= s0.depth && strcmp(s1.screen, s0.screen) == 0) {
 				printf("FAIL crawl [%s] %s: BACK doesn't leave it (P4) via '%s'\n", mapname, s0.screen,
@@ -457,9 +532,12 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 			fails++;
 		}
 		if (map != SIM_MAP_F) {
+			// Long QUICK locks from Home only; in a menu it must not lock mid-task (P3)
 			snprintf(path, sizeof path, "%s long:quick", nodes[i].path);
-			if (replay(g, map, path, &s1) && !s1.locked) {
-				printf("FAIL crawl [%s] %s: long QUICK doesn't lock (P3)\n", mapname, s0.screen);
+			bool home = s0.depth == 0 && strcmp(s0.screen, "home") == 0;
+			if (replay(g, map, path, &s1) && s1.locked != home) {
+				printf("FAIL crawl [%s] %s: long QUICK %s (P3)\n", mapname, s0.screen,
+				       home ? "doesn't lock on Home" : "locks in a menu");
 				fails++;
 			}
 			snprintf(path, sizeof path, "%s long:ctx", nodes[i].path);

@@ -139,6 +139,9 @@ CONFIG_KEY_ASSIGN ?= y
 # the hub's Channels list: every codeplug channel by number, and a channel's settings (read only; core/ui/ui_menus.c,
 # docs/spec/ui.md 2)
 CONFIG_CHANNEL_LIST ?= y
+# editing a channel on the radio, New channel from current settings, keypad text entry (docs/spec/ui.md 2.1): with
+# the Channels list
+CONFIG_CHANNEL_EDIT ?= $(CONFIG_CHANNEL_LIST)
 # beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which the DM-1701 has with DMR)
 CONFIG_BEEP ?= y
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
@@ -180,7 +183,7 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST
+	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -190,6 +193,11 @@ ifneq ($(call feature_on,SUBTONE),)
   endif
 endif
 $(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+ifneq ($(call feature_on,CHANNEL_EDIT),)
+  ifeq ($(call feature_on,CHANNEL_LIST),)
+    $(error CONFIG_CHANNEL_EDIT=y needs CONFIG_CHANNEL_LIST=y)
+  endif
+endif
 ifneq ($(call feature_on,FONT_BIG),)
   ifeq ($(call feature_on,FONT_AA),)
     $(error CONFIG_FONT_BIG=y needs CONFIG_FONT_AA=y)

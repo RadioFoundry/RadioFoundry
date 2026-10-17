@@ -145,6 +145,9 @@
 #ifndef CONFIG_CHANNEL_LIST
 #define CONFIG_CHANNEL_LIST		1
 #endif
+#ifndef CONFIG_CHANNEL_EDIT
+#define CONFIG_CHANNEL_EDIT		CONFIG_CHANNEL_LIST
+#endif
 #ifndef CONFIG_BEEP
 #define CONFIG_BEEP			1
 #endif

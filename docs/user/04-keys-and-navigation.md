@@ -114,8 +114,9 @@ channel, hold **OK** on Home or in quick settings. The radio shows "Saved to cha
 
 ## Key lock
 
-Hold **\*** to lock the keys. The screen shows "Keys locked: hold * to unlock" and an "L" in the status line. While
-locked, **PTT** and **Monitor** still work. Any other key shows the unlock hint. Hold **\*** again to unlock.
+On Home, hold **\*** to lock the keys. The screen shows "Keys locked: hold * to unlock" and an "L" in the status line.
+While locked, **PTT** and **Monitor** still work. Any other key shows the unlock hint. Hold **\*** again to unlock.
+In menus holding **\*** doesn't lock, so a slow press can't lock the keys in the middle of a task.
 
 **Settings > Privacy > Auto lock** locks the keys by itself after a time without a key press.
 
