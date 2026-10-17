@@ -22,7 +22,7 @@ first ODR build still uses `tools/dm32_flash.py`. Items marked **[confirm]** are
    python3 stubtool.py PORT --progmem progmem.bin --q128 q128.bin
    ```
 
-3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly yellow. This is
+3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly orange. This is
    expected: the radio is in loader mode.
 4. Wait. The program memory takes about a minute and the data memory a few minutes. The LED blinks fast while data is
    moving. Do not touch the radio or the cable.
@@ -44,7 +44,7 @@ If the radio runs an ODR build with the loader option, you do not need to switch
    ```
 
 3. The screen shows "PC Loader Connected" and then stops responding to the keys. This is expected. The LED blinks
-   yellow as above.
+   orange as above.
 4. When it is done, restart the radio with the next section.
 
 ## Install an ODR build without entering the bootloader
@@ -100,12 +100,12 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 
 | LED | Meaning |
 |---|---|
-| Slow yellow blink (half a second on, half a second off) | The radio is in loader mode and waiting. Nothing is being copied. |
-| Fast yellow blink (an eighth of a second on and off) | Data is being read. Do not touch the radio or the cable. |
-| Three green flashes | Finished. The slow yellow blink comes back after. |
+| Slow orange blink (half a second on, half a second off) | The radio is in loader mode and waiting. Nothing is being copied. |
+| Fast orange blink (an eighth of a second on and off) | Data is being read. Do not touch the radio or the cable. |
+| Three green flashes | Finished. The slow orange blink comes back after. |
 | Nothing, screen dark, tool says "waiting" | The radio is not in loader mode yet: switch it off, make sure the tool is waiting, then switch it on. |
 
-Yellow is the red and green LEDs lit together, so it looks the same on every model **[confirm on the DM-32UV]**.
+Orange is the red and green LEDs lit together, so it looks the same on every model **[confirm on the DM-32UV]**.
 
 ## Faster transfer (experimental)
 

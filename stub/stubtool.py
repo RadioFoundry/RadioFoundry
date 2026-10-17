@@ -281,7 +281,7 @@ def parse_led_spec(spec):
     return steps, "repeat" in flags, "hold" in flags
 
 
-# played when a run finishes (--done-led): three green flashes, then the yellow status blink resumes
+# played when a run finishes (--done-led): three green flashes, then the orange status blink resumes
 DONE_LED = "0:255:150,0:0:150,0:255:150,0:0:150,0:255:150,0:0:150"
 
 
