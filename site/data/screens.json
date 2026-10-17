@@ -59,6 +59,18 @@
    "group": "home",
    "needs": []
   },
+  "home_usb_ip": {
+   "group": "home",
+   "needs": [
+    "USB_NETWORK"
+   ]
+  },
+  "home_usb_ip_up": {
+   "group": "home",
+   "needs": [
+    "USB_NETWORK"
+   ]
+  },
   "home_temporary": {
    "group": "home",
    "needs": []

@@ -12,7 +12,7 @@ is OK.
 
 | Region | Shows |
 |---|---|
-| Status line | Left: the state (IDLE, RX, TX, or NO TX when a transmission is refused; RX whenever the squelch is open, monitor included), the mode (DMR or FM), and SCAN or MON when scan or monitor is on. Right: "L" when the keys are locked, "M" and a number for unread messages, the signal bars, the battery icon and the battery percentage. On a color screen the line is filled with the highlight color, its text black (Settings > Display > Filled status bar) |
+| Status line | Left: the state (IDLE, RX, TX, or NO TX when a transmission is refused; RX whenever the squelch is open, monitor included), the mode (DMR or FM), SCAN or MON when scan or monitor is on, and IP while USB is a network adapter, with an up and a down arrow after it once the computer has connected to it. Right: "L" when the keys are locked, "M" and a number for unread messages, the signal bars, the battery icon and the battery percentage. On a color screen the line is filled with the highlight color, its text black (Settings > Display > Filled status bar) |
 | Place | The zone name and the channel's position in the zone ("3/16"). In the VFO: "VFO" |
 | Channel | The channel number and name, as large as they fit. In the VFO: the frequency |
 | Talk target | "PTT→" and where **PTT** goes. DMR: a talkgroup or person. FM: the transmit frequency. During the reply window: "Reply→" and a countdown |

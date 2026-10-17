@@ -29,6 +29,15 @@ typedef struct {
 static const flow_t flows[] = {
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
+	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,
+	// none on serial
+	{ "1 USB network: IP on the strip, no link arrows", "usbnet:on", "", "shows=IP nomarkafter=IP", 0, false },
+	{ "1 USB network brought up by the PC: the link arrows", "usbnet:up", "", "shows=IP markafter=IP", 0, false },
+	{ "1 USB serial again: no word", "usbnet:on", "usbnet:off", "hides=IP", 0, false },
+	{ "1 USB network: the PC brings the link up, the arrows appear", "usbnet:on", "usbnet:up", "markafter=IP", 0, false },
+	{ "1 USB network: the link goes down, the arrows go", "usbnet:up", "usbnet:on", "shows=IP nomarkafter=IP", 0, false },
+	{ "1 USB network: SCAN wins the strip's word", "usbnet:on", "ok 6 1", "scanning=1 shows=SCAN hides=IP", 3, false },
+	{ "1 USB network from Tools: IP", "", "ok 6 4 ok", "usbnet=1 shows=IP", 4, false },
 	{ "2 zone 2 positions away", "", "ok 4 down down ok", "zone=2 screen=home", 5, false },
 	{ "3 one-shot TG, 2nd in picker", "", "tt down ptt", "txid=91 txpriv=0", 3, false },
 	{ "3 one-shot typed TG 3100", "", "3 1 0 0 ptt", "txid=3100 txpriv=0", 5, false },

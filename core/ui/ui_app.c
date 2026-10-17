@@ -21,8 +21,10 @@
 #include "input/input.h"
 #include "radio/tones.h"
 #include "config.h"
-#if CONFIG_HOTSPOT
+#if CONFIG_HOTSPOT || (CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 #include "hostlink/hostlink.h"
+#endif
+#if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
 
@@ -1740,6 +1742,18 @@ static void hear_all_tick(const radio_view_t *v)
 
 #define DMR_OFF_SHOW_MS	1500u	// "DMR modem off" after the modem has been off this long
 
+// What the status strip says about USB (UI_USB_NET_*): IP while the network adapter waits for the computer, and
+// the link arrows beside it once the computer has brought it up (hal_netif_t.up, the debug link's usb.net_up). Both change without a key press
+// (a cable plugged in or out, an adapter the PC never set up going back to serial, usb-network.md 1)
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+static uint8_t usb_net_state(void)
+{
+	if (!hostlink_network_mode())
+		return UI_USB_NET_OFF;
+	return board.netif->up() ? UI_USB_NET_UP : UI_USB_NET_WAIT;	// network mode implies board.netif
+}
+#endif
+
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
@@ -1749,6 +1763,14 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
 	ui_svc_keys_poll();
+
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+	uint8_t usb_net = usb_net_state();
+	if (usb_net != ui_st.usb_net) {
+		ui_st.usb_net = usb_net;
+		dirty = true;
+	}
+#endif
 
 	while (ev_tail != ev_head) {
 		ui_event_t ev = events[ev_tail];

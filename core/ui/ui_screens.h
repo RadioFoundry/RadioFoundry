@@ -59,6 +59,7 @@ typedef struct {
 	uint8_t diag_first;	// first board line on the diagnostics page
 	bool locked;		// keys locked (long QUICK)
 	bool scanning;
+	uint8_t usb_net;	// UI_USB_NET_*: the status strip's USB network word and link arrows
 	bool hints;		// the hint row is shown (Settings > Display)
 	bool large_text;	// Home shows only the channel and the talk target (Settings > Display)
 	bool privacy;		// the next DMR transmission is encrypted
@@ -98,6 +99,10 @@ typedef struct {
 } ui_layout_t;
 
 extern ui_layout_t ui_layout;
+
+// ui_state_t.usb_net: USB is a serial port, a network adapter waiting for the computer ("IP"), or a network adapter
+// the computer has brought up, so IP over DMR can flow ("IP" and the up and down arrows, usb-network.md 1)
+enum { UI_USB_NET_OFF, UI_USB_NET_WAIT, UI_USB_NET_UP };
 
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper and
 // pills are inverse video

@@ -368,6 +368,32 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 #endif
 	else if (v->monitor && lx + 5 * f->w <= rx)
 		lx = gfx_text(f, lx + f->w, ty, "MON", swarn);
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+	// USB as a network adapter (Tools > USB network): the serial tools are off. IP, and once the PC has the link up an
+	// up and a down arrow right after it, as a phone shows its data link. The arrows stand close, each head beside the
+	// other's shaft, so the shafts stop short of the other arrow's head: 3 * hw + 3 columns, at least 6 rows (on the
+	// smallest font a shorter shaft reads as a cross). Room as for the other words, a space either side
+	else if (s->usb_net != UI_USB_NET_OFF) {
+		int hw = f->w >= 8 ? f->w / 4 : 1;	// a barb's width
+		int aw = s->usb_net == UI_USB_NET_UP ? 3 * hw + 3 : 0;	// the arrows; the glyph cell's own margin before them
+		if (lx + gfx_text_width(f, "IP") + aw + 2 * f->w <= rx) {
+			lx = gfx_text(f, lx + f->w, ty, "IP", swarn);
+			if (aw) {
+				int ah = ih < 6 ? 6 : ih, ay = iy + ih - ah;	// the arrows' height and top, on the icons' baseline
+				int ax = lx + hw, bx = ax + hw + 2, sh = ah - hw - 1;	// the shafts, up and down; shaft length
+				gfx_vline(ax, ay, sh, swarn);
+				gfx_vline(bx, ay + ah - sh, sh, swarn);
+				for (int i = 1; i <= hw; i++) {
+					gfx_pixel(ax - i, ay + i, swarn);
+					gfx_pixel(ax + i, ay + i, swarn);
+					gfx_pixel(bx - i, ay + ah - 1 - i, swarn);
+					gfx_pixel(bx + i, ay + ah - 1 - i, swarn);
+				}
+				lx += aw;
+			}
+		}
+	}
+#endif
 	if (!titled)
 		return L->strip_h;
 	// Tall display: the title on its own row, underlined

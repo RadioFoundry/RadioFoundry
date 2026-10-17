@@ -143,6 +143,8 @@
  "color.purple": "purple",
  "color.pink": "pink",
  "screen.home_locked": "Home, keys locked",
+ "screen.home_usb_ip": "Home with USB as a network adapter, waiting for the computer (IP)",
+ "screen.home_usb_ip_up": "Home with the computer connected over USB network (IP and the link arrows)",
  "screen.home_reply": "Home, reply to caller",
  "screen.home_temporary": "Home, temporary talk target",
  "screen.home_vfo_entry": "VFO, typing a frequency",

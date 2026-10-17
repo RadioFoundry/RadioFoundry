@@ -15,13 +15,14 @@
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //   hotspot:on|off      the host link enters / leaves hotspot mode
+//   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
-//                          text contains it / none does
+//                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -356,6 +357,7 @@ static bool hotspot_on;
 hostlink_mode_t hostlink_mode(void) { return hotspot_on ? HOSTLINK_HOTSPOT : HOSTLINK_IDLE; }
 void hostlink_hotspot_exit(void) { hotspot_on = false; }
 static bool usb_net;	// the USB personality (Tools > USB network)
+static bool usb_up;	// the computer has brought the network adapter up (hal_netif_t.up)
 
 // APRS (Tools > APRS, core/ui/ui_aprs.c): a small stand-in for the engine's view and configuration
 static struct {
@@ -414,6 +416,8 @@ bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 }
 bool hostlink_request_usb_network(bool network) { usb_net = network; return true; }
 bool hostlink_network_mode(void) { return usb_net; }
+static bool netif_up(void) { return usb_net && usb_up; }
+static const hal_netif_t sim_netif = { .up = netif_up };
 void hotspot_get_view(hotspot_view_t *v)
 {
 	memset(v, 0, sizeof *v);
@@ -1134,7 +1138,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.zone_index = 0;
 	view.zone_pos = 2;	// 3 COUNTY DMR
 	n_inbox = 0;
-	hotspot_on = rx_on = usb_net = false;
+	hotspot_on = rx_on = usb_net = usb_up = false;
+	board.netif = &sim_netif;
 	aprs_sim_reset();
 	focus_id = 0;
 	check_due = 0;
@@ -1316,6 +1321,21 @@ static bool check(const char *kv, char *err, size_t len)
 			}
 		}
 	}
+	else if (strcmp(key, "markafter") == 0 || strcmp(key, "nomarkafter") == 0) {
+		// A mark drawn (not a text) within a character cell right of the text that contains the value (an icon
+		// beside a word), or none
+		bool mark = false;
+		for (int i = 0; i < live_n; i++) {
+			if (strstr(live[i].s, want) == NULL || live[i].s[0] == 0)
+				continue;
+			int cw = (live[i].x1 - live[i].x0) / (int)strlen(live[i].s);
+			color_t paper = gfx_get_pixel(live[i].x0, live[i].y0);
+			for (int py = live[i].y0; py < live[i].y1; py++)
+				for (int px = live[i].x1; px < live[i].x1 + cw && px < gfx_width(); px++)
+					mark |= gfx_get_pixel(px, py) != paper;
+		}
+		snprintf(got, sizeof got, "%s", mark == (key[0] == 'm') ? want : mark ? "a mark after it" : "nothing after it");
+	}
 	else if (strcmp(key, "hides") == 0) {	// no text on the screen contains the value
 		snprintf(got, sizeof got, "%s", want);
 		for (int i = 0; i < live_n; i++)
@@ -1476,6 +1496,13 @@ static bool run_token(char *t, char *err, size_t len)
 		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
+		return true;
+	}
+	if (strcmp(t, "usbnet") == 0 && arg != NULL) {
+		usb_net = strcmp(arg, "off") != 0;
+		usb_up = strcmp(arg, "up") == 0;
+		// No changed(): the radio's view doesn't change with the USB link, the UI's own poll must see it
+		advance(100);
 		return true;
 	}
 	if (strcmp(t, "hotspot") == 0 && arg != NULL) {
