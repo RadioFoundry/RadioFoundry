@@ -154,9 +154,13 @@ def main():
     missing = 0
     data = []
     for slot, code in enumerate(codes):
+        cell = None
         if code in glyphs:
-            data.append(pack(glyphs[code], 2) if ttf else render(props, glyphs[code]))
+            cell = pack(glyphs[code], 2) if ttf else render(props, glyphs[code])
+        if cell is not None and (any(cell) or code < 0x7F):
+            data.append(cell)
         else:
+            # Not in the font, or an extra drawn blank (Spleen 5x8's middle dot and degree): gfx.c draws it
             if code < 0x7F:
                 raise SystemExit("font lacks ASCII 0x%02X" % code)
             missing |= 1 << (slot - 95)

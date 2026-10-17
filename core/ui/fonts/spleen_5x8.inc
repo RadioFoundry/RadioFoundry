@@ -47,7 +47,7 @@
 #define SPLEEN_5X8_W 5
 #define SPLEEN_5X8_H 8
 #define SPLEEN_5X8_ASCENT 7
-#define SPLEEN_5X8_MISSING 0x05u
+#define SPLEEN_5X8_MISSING 0x0Fu
 #define SPLEEN_5X8_BPP 1
 
 static const uint8_t spleen_5x8_bits[] = {
