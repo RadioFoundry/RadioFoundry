@@ -61,6 +61,23 @@ ARG REUSE_VERSION=6.1.2
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/opt/reuse/bin pipx install "reuse==${REUSE_VERSION}" \
 	&& PIPX_HOME=/opt/pipx pipx inject reuse chardet && /opt/reuse/bin/reuse --version
 
+# Bare clones of third_party's submodules, keyed by URL: tools/checkout-submodules.sh borrows their objects, so a job
+# fetches only commits newer than the image. Keep the list in step with .gitmodules; a submodule missing here still
+# comes over the network. Rebuild the image after a submodule bump to bring the clones up to date.
+ARG SUBMODULE_URLS="\
+https://github.com/STMicroelectronics/stm32f4xx-hal-driver.git \
+https://github.com/STMicroelectronics/cmsis-device-f4.git \
+https://github.com/STMicroelectronics/cmsis-core.git \
+https://github.com/FreeRTOS/FreeRTOS-Kernel.git \
+https://github.com/hathach/tinyusb.git"
+ENV ODR_GIT_CACHE=/opt/odr-git
+# owned by the runner, so git's safe.directory check never refuses them
+RUN set -eu; for url in $SUBMODULE_URLS; do \
+		dir="$ODR_GIT_CACHE/$(printf '%s\n' "$url" | sed -E 's#^[a-z]+://##; s#\.git$##').git"; \
+		git clone -q --bare "$url" "$dir"; \
+	done; \
+	chown -R "${RUNNER_UID}" "$ODR_GIT_CACHE"; du -sh "$ODR_GIT_CACHE"
+
 RUN useradd --create-home --uid "${RUNNER_UID}" --shell /bin/bash runner 2>/dev/null \
 	|| { userdel -r "$(id -nu "${RUNNER_UID}")" && useradd --create-home --uid "${RUNNER_UID}" --shell /bin/bash runner; }
 COPY ci-runner/entrypoint.sh /usr/local/bin/odr-ci-entrypoint

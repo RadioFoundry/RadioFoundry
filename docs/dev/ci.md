@@ -59,6 +59,19 @@ images and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are
 `reuse lint` is part of the `checks` job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
 the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
 
+## Submodules
+
+The jobs that build firmware check out without submodules, then run `tools/checkout-submodules.sh`. The self-hosted
+runner image keeps bare clones of the `third_party/` repositories in `/opt/odr-git` (`ODR_GIT_CACHE`), and the script
+borrows their objects (`git submodule update --reference`), so a job fetches from GitHub only the commits newer than
+the image. A submodule the image lacks, or a runner without the image, takes a plain network checkout. Each submodule
+gets three tries, so one dropped connection to GitHub no longer fails the job.
+
+The nested submodules of FreeRTOS-Kernel (its partner and community ports) aren't checked out: no build uses them,
+since the CK803 port is in `platform/hrc7000/freertos/`. After a submodule bump, rebuild the runner image to bring the
+clones up to date ([tools/ci-runner/README.md](../../tools/ci-runner/README.md)); until then the new commits come over
+the network. A new submodule also goes in the Dockerfile's `SUBMODULE_URLS`.
+
 ## Pull request checks: `pr-tests.yml`
 
 Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware (Arm)` for the DM-1701 and MD-380,
@@ -77,7 +90,8 @@ them. `ci.yml` and `manual.yml` have no `pull_request` trigger for the same reas
 branch's pushes either, so a pull request is checked once.
 
 The pull request's code runs with a read-only token that isn't stored in the checkout, no secrets and no cache, so
-it gets nothing a fork couldn't have. The firmware jobs download the toolchain each time (checksummed by
+it gets nothing a fork couldn't have. The image's submodule clones aren't a cache it could write to: each job gets a
+new container, so whatever a job changes is gone when it ends. The firmware jobs download the toolchain each time (checksummed by
 `tools/install-arm-toolchain.sh`, about 50 s). The `csky` jobs log in to the image registry with the job's own token
 (`packages: read`), pulls the image and logs out before the build runs. The status job is the only one with a write
 permission (`statuses: write`), and it checks out nothing. Keep it that way: never add secrets, another write
@@ -278,7 +292,8 @@ The UI gallery has a runner of its own, so a pull request's screenshot preview n
 jobs. One runner is registered with the label `odr-ui` instead of `odr-ci` (`LABELS=odr-ui` in its env file,
 [tools/ci-runner/README.md](../../tools/ci-runner/README.md)), and the repository variable `ODR_UI_RUNNER` is set to
 `odr-ui`. `ui-gallery.yml` and `ui-gallery-comment.yml` run on `ODR_UI_RUNNER`, falling back to `ODR_CI_RUNNER` when
-it's unset; no other job uses that label. With six runners that leaves five for everything else. Unset
+it's unset. So does `pr-tests.yml`'s `PR checks status` job: it runs a few seconds of `gh` after every other job, when
+the render is long done, so it never holds a build runner. No other job uses that label. With six runners that leaves five for everything else. Unset
 `ODR_UI_RUNNER` to share the pool again.
 
 ### GitHub

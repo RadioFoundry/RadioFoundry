@@ -103,7 +103,7 @@ The same again with 3, 4, ... for more runners.
 | Pause | `touch ~/odr-ci-runner/disabled` (a running job finishes; no new container starts) |
 | Resume | `rm ~/odr-ci-runner/disabled` |
 | Stop now | `sudo systemctl stop 'odr-ci-runner@*'` (a running job fails) (the runner gets SIGINT and closes its session; a running job fails) |
-| Update the runner or tools | change the pinned versions in the Dockerfile and rebuild; the next job uses the new image. Updates are off (`--disableupdate`), so keep `RUNNER_VERSION` current: GitHub stops sending jobs to runner versions that are too old |
+| Update the runner or tools | change the pinned versions in the Dockerfile and rebuild; the next job uses the new image. Updates are off (`--disableupdate`), so keep `RUNNER_VERSION` current: GitHub stops sending jobs to runner versions that are too old. Rebuild after a `third_party` submodule bump too: the image's clones of the submodules then cover the new commits ([docs/dev/ci.md](../../docs/dev/ci.md#submodules)) |
 | Allow another host | add it to `proxy/allow`, rebuild `odr/ci-proxy`, `docker rm -f odr-ci-proxy`, `runner-loop.sh setup` |
 | Re-register | delete the runner in Settings, Actions, Runners (or keep it: `--replace` takes over the name), then `register` as above |
 | Go back to hosted runners | `gh variable delete ODR_CI_RUNNER` |

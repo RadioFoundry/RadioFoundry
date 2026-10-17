@@ -72,8 +72,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
           fetch-depth: 0
+      - name: third_party submodules
+        run: tools/checkout-submodules.sh
 
       - name: Install the Arm GNU Toolchain (pinned)
         if: runner.environment != 'self-hosted'   # the self-hosted image has the same pinned toolchain
@@ -113,8 +115,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
           fetch-depth: 0
+      - name: third_party submodules
+        run: tools/checkout-submodules.sh
       - uses: actions/cache@v4
         if: runner.environment != 'self-hosted'   # the self-hosted image has csky-elf GCC in /opt/csky-elf
         with:
@@ -151,8 +155,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
           fetch-depth: 0
+      - name: third_party submodules
+        run: tools/checkout-submodules.sh
       - uses: actions/cache@v4
         if: runner.environment != 'self-hosted'   # the self-hosted image has csky-elf GCC in /opt/csky-elf
         with:
