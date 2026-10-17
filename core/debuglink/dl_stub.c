@@ -112,6 +112,9 @@ static size_t op_enter(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *
 	if (storage_crc32(0, s->region, s->total_len) != s->total_crc) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
+	if (s->transmitting) {
+		return status_only(out, DL_ST_BUSY);	// the image stays loaded: ENTER again once the radio is receiving
+	}
 	*enter = true;
 	*entry = s->entry;
 	return status_only(out, DL_ST_OK);

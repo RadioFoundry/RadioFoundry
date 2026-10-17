@@ -20,6 +20,8 @@ extern hal_flash_t hrc_flash_spi0;
 // Ops each board file provides
 extern const hal_display_t dm32_display;
 extern const hal_input_t dm32_input;
+// Key scans with the PTT pin low that were ignored as host serial data (hardware-dm32.md 6.2)
+uint32_t dm32_input_ptt_ignored(void);
 extern const hal_radio_t dm32_radio;
 extern const hal_power_t dm32_power;
 
@@ -42,6 +44,11 @@ void dm32_lcdbus_unlock(void);
 
 // DMR PCM to the speaker instead of the FM path (radio_dm32.c; the hal_audio_t speaker_pcm hook of hrc_audio_pcm)
 void dm32_speaker_pcm(bool on);
+
+// --- GPS (gps_dm32.c): powered and listened for at start-up, off again when no module answers ---
+void dm32_gps_init(void);
+bool dm32_gps_present(void);
+void dm32_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);
 
 // --- Diagnostics (diag_dm32.c) ---
 typedef struct {

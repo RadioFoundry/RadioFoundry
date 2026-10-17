@@ -192,8 +192,11 @@ def test_diagnostics_page(home):
 
 def test_screenshot_sanity(home):
     info, data = home.shot_until(lambda d: True, what="a picture")
-    px = {data[i:i + 2] for i in range(0, len(data), 2)} if info["bpp"] == 16 else set(data)
-    assert len(px) > 2, "the screen is blank"
+    # a 16-bit screen drawn in two colors (text on a plain background) holds exactly two pixel values
+    if info["bpp"] == 16:
+        assert len({data[i:i + 2] for i in range(0, len(data), 2)}) > 1, "the screen is blank"
+    else:
+        assert len(set(data)) > 2, "the screen is blank"
 
 
 def test_injected_keys_count_as_activity(home):

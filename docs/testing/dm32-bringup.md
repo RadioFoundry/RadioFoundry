@@ -75,7 +75,7 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "dm32 
 | SK1 (below PTT) = monitor, SK2 = talk target; holding SK1 doesn't kill the column 3 keys' neighbors | `direct[]` in `input_dm32.c` |
 | Encoder: one step per detent, right direction | `keymatrix_encoder_step` sign; one count per edge of B (6.3): if a detent gives two, count one edge only (`hrc_pin_irq` in `input_dm32.c`) |
 | PTT shows as key bit 20 | GPIO 0x2B |
-| Red LED on transmit, green on receive | swap `PIN_LED_RED` / `PIN_LED_GREEN` in `pins.h` (the two sources disagree) |
+| Red LED on transmit, green on receive | `PIN_LED_RED` / `PIN_LED_GREEN` in `pins.h` (settled on the radio: 0x20 green, 0x21 red) |
 | Turning the knob off saves and powers down | GPIO 0x10 sense in `power_dm32.c` |
 | `bat` line: raw about 600-690 and 7000-8400 mV on a charged pack | ADC channel C set-up in `power_dm32.c`; the scale raw / 8.2 = V x 10 |
 | Backlight dimming levels look even | `set_backlight` assumes FP counts against PER (duty = percent x 2); if half brightness is already full, use the percentage |
@@ -95,10 +95,10 @@ Tune the FM VFO to a known signal (NOAA 162.550 MHz, a local repeater output) an
 
 | Check | If not |
 |---|---|
-| Audio from the speaker with the squelch open | Speaker path: GPIO 0x2F low and 0x35 high (`radio_dm32.c audio()`); C7000 `fm_play` bit; codec line out |
+| Audio from the speaker with the squelch open | Works (checked on the radio). FM audio comes from the FD6818's output: GPIO 0x2F high, 0x35 high (`radio_dm32.c speaker_source()`), FD6818 0x47 = 0x0140. The C7000 `fm_play` bit stays off |
 | `rssi` / `nz` move with the signal; the squelch closes on a quiet channel | FD6818 reads (`fd6818_read` timing). The squelch uses the FD6818 noise byte (0x65): if its scale isn't dB-like, map it in `radio_dm32.c status()` |
 | RSSI in dBm roughly right against a signal generator | the offset in `status()` (raw - 135 now, a guess) |
-| CTCSS / DCS RX opens only on the right tone | C7000 sub-audio (`hrc7000_set_subtone`); the FD6818 has its own CTCSS detector if the C7000's doesn't work here |
+| CTCSS / DCS RX opens only on the right tone | With GPIO 0x2F high the C7000 gets no audio, so its sub-audio decoder can't work in FM receive. The FD6818's own detector does the job (0x07 / 0x08 / 0x51 / 0x52, result in 0x0C) |
 | Both bands: 145 MHz and 435 MHz | LNA selects 0x22 / 0x24, band words |
 
 ## 6. Hotspot / CPS on the cable (optional)
@@ -118,6 +118,11 @@ MMDVMHost or a CPS on the same serial port: the host link switches by what it re
 ## 8. DMR receive
 
 Select a DMR channel with traffic (or let the SDR bench send a call), then `diag`.
+
+DMR receive needs GPIO 0x2F low: that feeds the FD6818's audio into the C7000's ADC. With it high the modem sees
+no signal and `tk` stays at 0. The C7000's PHASE_OUT register (0x128) is a quick check that audio arrives
+(modem-hrc7000.md). Checked on the radio with an SDR bench call: sync ticks, slot interrupts, voice frames, headers,
+late entry and color code 2 all counted.
 
 | Diag line | Healthy | If not |
 |---|---|---|
@@ -149,20 +154,74 @@ The glue isn't written yet ([airband-and-broadcast.md](../spec/airband-and-broad
 | Check | Settles |
 |---|---|
 | The stock radio (or a scanner) on the local ATIS; ODR on the same frequency: AM audio, `am=1` in the view, read back FD6818 0x47 / 0x30 | which chip demodulates AM, the 0x47 AF type (spec 2.3 A1) |
-| No audio: the other level of the speaker source switch (GPIO 0x2F), then the C7000 path | AM audio route (A2) |
+| No audio: FD6818 0x47 (0x0140 gives FM audio), then the speaker source switch (GPIO 0x2F high) | AM audio route (A2) |
 | A strong and a weak station; a generator at -100 dBm with `rssi` on the link | AM AGC and filter (A3), the AM squelch offset (A4) |
 | PTT on an air channel and on a split channel with TX in 108-137 MHz | deny screen, red LED off, nothing on the SDR |
 | The RDA5807M chip ID (0x58xx at 0x11) on PTA25 / PTA26 | it is there, the SDA pull-up (B1, B3) |
 | A strong local station with each reference clock setting; with and without the headset | reference clock (B2), audio path (B4), antenna (B5) |
 | A call on the channel while listening | the broadcast mutes and comes back 2 s after |
 
+## 12. GPS
+
+No fix needed: the module talks from about 1 s after power-up, indoors too.
+
+| Check | Expected | If not |
+|---|---|---|
+| The diagnostics line `gps ...` (Settings > Diagnostics, or the debug link's diag lines) 10 s after start-up | `gps yes`, the good count rising by a few a second, bad near 0, `b` rising by about 300-600 a second | `gps no` with `b0`: no bytes on UART1: PTA9's mux (IO_DIPLEX0 bit 9 = 0), the power pin (0x2C low), the module. `gps no` with bytes but no good sentences: the baud rate (try 115200; stock may have reconfigured the module) |
+| Outdoors, a few minutes | Info > Position shows a fix and the satellite count | the NMEA talker or sentence set (`aprs_nmea`) |
+| Bad count rising steadily | near 0 | UART errors: the divisor (547 at 84 MHz APB) or noise on the line |
+
+## 13. APRS
+
+The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). APRS listens on the APRS frequency
+(144.390 in North America) with the receive setting on.
+
+| Check | Expected | If not |
+|---|---|---|
+| The debug link's `aprs` view on 144.390 | `aprs.rx_listening=1`, `rx_bits` rising by about 1200 a second on noise, `rx_peak` above 0 | `rx_listening=0`: the receive setting (`odr_debug.py aprs set rx 1`) or the frequency. Bits not rising: SYS_INTERP_MASK bit 14 (0x1100039C) clear, or GPIO 0x2F high |
+| A packet on the air | `rx_hdlc_frames` and `stations` go up | `rx_fcs_errors` rising with packets present: the half read (FM_ADDR_SW), the level (noise reaches full scale), audio under the tones (below) |
+| An FM signal on 144.390 with the squelch open | heard on the speaker, through the C7000's FM playback | AUDIO_CONTROL bit 6, the codec line out |
+| A packet sent at level 50, recorded by the SDR bench (`aprs.md` 13) | decodes with a valid FCS, about 3 kHz peak deviation, twist within 2 dB | no tones: AUDIO_CONTROL bit 7 during the transmission, Timer 4 (vector 36) not firing. Deviation: `amp_per_level` in `radio_dm32.c` |
+
 ## Open items to settle on the bench
 
-- PIC: vectored (32 + source, assumed) or one autovector.
+- PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).
 - L2_STATUS slot polarity (`HRC7000_RX_NEXT_SLOT_XOR`).
-- LED colors, panel orientation, backlight PWM scale.
-- FD6818 init writes to 0xB3 / 0xB4 / 0xC7 (sent with bit 7 set, exactly as the working firmware does).
-- C7000 or FD6818 sub-audio for CTCSS TX and RX.
-- Codec: 049 vs 046 window, D / E state sizes, the stock call constants, PCM byte order.
+- LED colors: 0x20 green, 0x21 red (settled on the radio). Panel orientation, backlight PWM scale.
+- Sub-audio: the C7000 makes the TX tones, the FD6818 detects the RX tones (settled on the radio and the SDR bench).
+- Codec 049: DMR voice encodes and decodes (the SDR bench modem decodes our AMBE with few FEC corrections); 046 untried.
 - UART divisor 46 (0.9 % slow) or 45 (1.3 % fast).
 - RSSI dBm offset and the noise scale for the squelch.
+- GPS: NMEA arrives on UART1 at 9600 (section 12): `gps yes`, 291 good sentences and 0 bad 26 s after start-up (on the
+  radio, indoors, no fix). A fix outdoors is still to check.
+- APRS receive (section 13): decodes off air, 12 of 12 frames from another radio at lowest power a few feet away
+  (2026-10-16). The receive audio had peaks about 19000 of 32767 and dropped no halves. Its space tone was 6-8 dB
+  under the mark tone (the FD6818's de-emphasis; the sender was flat within 1.3 dB on the SDR bench), and it carried
+  320-400 Hz 1-10 dB under the tones. With one demodulator path that cost half the frames; the high passed second
+  path (`aprs.md` 5.3) fixed it. Still open: where the 320-400 Hz comes from (the FD6818's receive audio filters,
+  REG 0x9B, sub-audio residue, the sender), and whether a hardware setting removes it. REG 0x9B (the receive
+  de-emphasis and filter bypasses) is on the FD6818's page 1: writing 0x7F = 1 over the 3-wire bus didn't select it
+  (page 1 reads matched page 0), so the page switch is still to find. Weak packets below the squelch are untested.
+- FM transmit voice deviation (section 7): the TX limiter (`hrc7000_t.fm_tx_limit`) is 5 at 12.5 kHz and 0x0F at
+  25 kHz, the DM-1801 Pro's values. At 12.5 kHz a loud whistle and voice peaked at 1.3 kHz (99.9 %, rms 167 Hz) on the
+  SDR bench (2026-10-16), under the 2.5 kHz target. Still to try: a higher limiter, or more mic gain (GCR_ADCL 11 dB),
+  and a measurement at 25 kHz. The K-plug cable cuts the mic, so the owner keys by hand with the cable out.
+- APRS transmit (section 13): decodes off air at 3.1 kHz peak (settled on the SDR bench). `test_aprs.py` on
+  446.050 MHz is still to run.
+- Host link lost with the UI running (2026-10-16, after a day of transmit tests): the debug link stopped answering,
+  and the diagnostics page showed `ur 0 ut 0` (not one byte received) with the host link task alive (`hb` climbing)
+  and the receive interrupt enabled (`ie 05`). The boot stub still worked on the same cable, and an image that had
+  answered that morning failed the same way, so the build wasn't the cause. Power-key cycles didn't help. A battery
+  pull left the radio dead (flat battery); after charging and a cold start the link answered. Cause unknown: the
+  battery or the full power cut. If it happens again, read `bat` on the diagnostics page first.
+- Boot stub, `stubtool.py --attach --boot reset` (warm reset into the new image): ODR came up but its host link never
+  answered, every time on the DM-32 (2026-10-16; 3 of 4 times on the DM-1801 Pro). A power cycle after the write
+  works. Until the reset path is fixed, power-cycle instead.
+- Boot stub LED: after a write finished and was verified by CRC, with no tool on the port, the LED kept blinking fast
+  (the "data moving, don't power off" pattern) for minutes (2026-10-16). The pattern should follow the stub's state.
+- DMR receive degraded after hours of uptime (2026-10-16): one, later two, of the three AMBE frames in every voice
+  burst failed C0 at -68 dBm, and the zone scan, VFO scan and battery-save wake never saw the bench carrier. The
+  errors were the same with the receiver retuned -1.5 to +0.6 kHz, so not RF; the bench's bursts decode clean
+  offline. A power cycle cleared it, and the full radio-only HIL file set plus an SFR run didn't bring it back.
+  If it returns, read `voice.rx_bad_at` (which frame of the burst fails) and the FD6818 and HR_C7000 registers
+  before power-cycling.

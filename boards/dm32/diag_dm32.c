@@ -79,13 +79,38 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " ue ");
 		put_u(&o, hrc_host_uart_line_errors());
 		break;
-	case 3:
+	case 3: {	// host port traffic: which side stopped when the link goes quiet
+		hrc_uart_traffic_t t;
+		hrc_host_uart_traffic(&t);
+		put(&o, "ur ");
+		put_u(&o, t.rx_bytes);
+		put(&o, " ut ");
+		put_u(&o, t.tx_bytes);
+		put(&o, " ts ");
+		put_u(&o, t.tx_stalls);
+		break;
+	}
+	case 4: {
+		hrc_uart_traffic_t t;
+		uint32_t ms;
+		hrc_host_uart_traffic(&t);
+		put(&o, "hb ");
+		put_u(&o, t.waits);
+		put(&o, " ie ");
+		put_x(&o, t.ier, 2);
+		put(&o, " fl ");
+		put(&o, hrc_flash_spi0_holder(&ms));
+		put(&o, " ");
+		put_u(&o, ms);
+		break;
+	}
+	case 5:
 		put(&o, "flash ");
 		put_x(&o, hrc_flash_spi0_jedec(), 6);
 		put(&o, " cal ");
 		put(&o, bf_cal_source());
 		break;
-	case 4:
+	case 6:
 		put(&o, "txc ");
 		put_u(&o, bf_cal_tx_center());
 		put(&o, " mod ");
@@ -93,7 +118,7 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " ");
 		put_x(&o, bf_cal_modcal(435000000u), 4);
 		break;
-	case 5:	// PA drive, power level 1 (low) and 8 (high) at 145 / 435 MHz
+	case 7:	// PA drive, power level 1 (low) and 8 (high) at 145 / 435 MHz
 		put(&o, "pa ");
 		put_u(&o, bf_cal_power_level(145000000u, 1));
 		put(&o, "/");
@@ -103,8 +128,23 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "/");
 		put_u(&o, bf_cal_power_level(435000000u, 8));
 		break;
+	case 8: {	// GPS (gps_dm32.c): module heard, valid / bad sentences, bytes received
+		uint32_t good, bad, n;
+		dm32_gps_counts(&good, &bad, &n);
+		put(&o, dm32_gps_present() ? "gps yes " : "gps no ");
+		put_u(&o, good);
+		put(&o, "/");
+		put_u(&o, bad);
+		put(&o, " b");
+		put_u(&o, n);
+		break;
+	}
+	case 9:	// key scans with the PTT pin low taken for host serial data (hardware-dm32.md 6.2)
+		put(&o, "ptt ign ");
+		put_u(&o, dm32_input_ptt_ignored());
+		break;
 #if CONFIG_DMR
-	case 6: {
+	case 10: {
 		uint32_t b, ov, un;
 		hrc_audio_pcm_stats(&b, &ov, &un);
 		put(&o, "aud ");
@@ -115,7 +155,7 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, un);
 		break;
 	}
-	case 7:
+	case 11:
 		put(&o, "codec ");
 		if (hrc_vocoder_tag() != 0) {
 			put(&o, "0");

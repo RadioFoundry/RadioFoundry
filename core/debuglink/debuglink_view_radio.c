@@ -40,6 +40,8 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	// VOX would run it in, and reads 0 on its first call
 	bool listen = mic && v->ch.mode == RADIO_MODE_FM && !v->hotspot;
 	dl_text(t, "vox_on=%u\nvox.mic=%u\nvox.level=%u\n", v->vox_on, mic, listen ? board.power->mic_level() : 0u);
+	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
+	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
 	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", word(v->battery, batt, 3),
 		v->battery_pct, v->battery_mv, v->power_off);
 #if CONFIG_BEEP

@@ -13,10 +13,9 @@
 #define PIN_FLASH_CS		0x12	// data flash chip select, low = selected
 #define PIN_FD_CS		0x18	// FD6818 chip select, low = selected
 
-// The two LEDs: the old port and the community pin map disagree on which is which (hardware-dm32.md 16 #14). The
-// community map is used here; swap these two if the bring-up shows red where green is expected
-#define PIN_LED_RED		0x20
-#define PIN_LED_GREEN		0x21
+// The two LEDs, high = on. Colors checked on the radio at bring-up (hardware-dm32.md 5)
+#define PIN_LED_GREEN		0x20
+#define PIN_LED_RED		0x21
 #define PIN_VHF_LNA		0x22	// VHF RX supply, high = on
 #define PIN_UHF_PA		0x23	// UHF PA select, high = on
 #define PIN_UHF_LNA		0x24	// UHF RX supply, high = on
@@ -26,7 +25,7 @@
 #define PIN_PTT			0x2B	// low = pressed
 #define PIN_GPS_POWER		0x2C	// low = GPS on
 #define PIN_MIC_PATH		0x2E	// 1 = mic to the analog FM path, 0 = to the DMR codec
-#define PIN_SPK_SOURCE		0x2F	// 0 = audio on, 1 = muted
+#define PIN_SPK_SOURCE		0x2F	// 1 = the FD6818's audio to the speaker, 0 = into the HR_C7000 (DMR receive)
 #define PIN_KEY_COL1		0x31	// keypad columns 1-4 (0x31-0x34), low = key closed
 #define PIN_KEY_COL4		0x34
 #define PIN_AMP_EN		0x35	// audio power amplifier, high = on

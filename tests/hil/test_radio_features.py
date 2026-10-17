@@ -52,7 +52,7 @@ Pass criteria:
   speaker and the level is printed (acoustic coupling, not judged). On radios whose debug link is the programming
   cable in the speaker/mic jack (DM-1801 Pro, DM-32UV) the cable cuts the microphone, so the level stays at the
   noise floor during the test: it checks the path, not the sound.
-- test_battery_save (radio only): rx_save 1 (200 ms asleep, 100 ms listening), rx_save_idle_s 3, the FM VFO on the
+- test_battery_save (radio only), skipped where the radio can't switch its receiver off (rx_save.hw=0): rx_save 1 (200 ms asleep, 100 ms listening), rx_save_idle_s 3, the FM VFO on the
   DMR test frequency (quiet): rx_sleeping=1 within 3 + 3 s, and it alternates (asleep and awake both seen within 2 s);
   MONITOR on wakes it (rx_sleeping=0 within 0.5 s and stays 0 for 2 s); the settings are put back.
 - test_battery_save_wakes_for_signal (rf): the same, asleep, then the bench sends a 20 superframe call on that
@@ -454,6 +454,8 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
         pytest.skip("built without the FM VFO")
+    if features(radio).get("rx_save.hw") == "0":
+        pytest.skip("this radio's driver can't switch the receiver off (no rx_sleep)")
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
     radio.go_home()
     with radio.vfo_session():
@@ -507,6 +509,8 @@ def _battery_save(radio, pytestconfig):
         pytest.skip("built without CONFIG_BATTERY_SAVE")
     if "VFO_FM" not in radio.features():
         pytest.skip("built without the FM VFO")
+    if features(radio).get("rx_save.hw") == "0":
+        pytest.skip("this radio's driver can't switch the receiver off (no rx_sleep)")
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
