@@ -23,6 +23,11 @@
 #define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
 #define DMR_PA_DELAY_US		28000u		// "DMR PA" default (8.6)
+// FM TX limiter (FM_DEV_COEF b23:16, hrc7000_t.fm_tx_limit) at 12.5 / 25 kHz: the driver's default 4 holds mic audio
+// to about 1.65 kHz peak at 25 kHz (modem-hrc7000.md 8.4). The DM-1801 Pro's values; at 12.5 kHz a loud whistle and
+// voice peaked at 1.3 kHz (99.9 %) on the SDR bench, so the 12.5 kHz value may still be low. 25 kHz not measured yet
+#define FM_TX_LIMIT_12K5	5u
+#define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
 
@@ -209,6 +214,8 @@ static void init(void)
 	pa_off();
 	lna(0, false);
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DB);
+	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
+	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 
 	hrc_pin_out(PIN_FD_CS, true);
 	hrc_pin_out(PIN_FD_CLK, false);
