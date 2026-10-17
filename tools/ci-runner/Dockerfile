@@ -23,11 +23,12 @@ ARG ARM_GCC_SHA256=95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83
 # the runner's uid; match the owner of the host directory mounted at /work
 ARG RUNNER_UID=1000
 
-# What ci.sh, coverage.sh, the manual and the site steps use; the apt installs in the workflows are skipped here
+# What ci.sh, coverage.sh, the manual and the site steps use; the apt installs in the workflows are skipped here.
+# libpython3.12t64: PyInstaller (release.yml's odrflash) needs the shared libpython, which python3 alone lacks
 RUN apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 		gcc libc6-dev zlib1g-dev make curl xz-utils zstd unzip jq ca-certificates git \
-		python3 python3-numpy python3-pytest python3-serial python3-markdown-it python3-pil pipx \
+		python3 libpython3.12t64 python3-numpy python3-pytest python3-serial python3-markdown-it python3-pil pipx \
 		gcovr tshark libicu74 libkrb5-3 liblttng-ust1t64 libssl3t64 zlib1g \
 	&& rm -rf /var/lib/apt/lists/*
 
