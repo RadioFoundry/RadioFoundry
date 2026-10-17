@@ -16,6 +16,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import zlib
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -96,7 +97,8 @@ class Images(unittest.TestCase):
         dump[c0:c0 + len(code)] = code
         t0 = real["tables"][0] - dc.PROGMEM_BASE
         dump[t0:t0 + len(tables)] = tables
-        prof = dict(real, tables_sha256=hashlib.sha256(tables).hexdigest())
+        prof = dict(real, code_sha256=hashlib.sha256(code).hexdigest(), tables_sha256=hashlib.sha256(tables).hexdigest(),
+                    tables_head_crc=zlib.crc32(tables[:64]))
         app = app_image(4000)
         with mock.patch.dict(dc.PROFILES, {hashlib.sha256(code).hexdigest(): prof}, clear=True):
             slot, name = sf.slot_from_file(B, app, bytes(dump))
