@@ -95,9 +95,10 @@ static void fill(uint32_t now)
 	}
 	data.board = board.name;
 	data.firmware = ODR_GIT;
-	data.batteryMv = view.battery_mv;
-	data.batteryPct = view.battery_pct;
-	data.batteryState = view.battery;
+	// The odrPower objects are mandatory: a radio without a battery reports 0 mV, 0 % and state ok, never a trap
+	data.batteryMv = board_has_battery() ? view.battery_mv : 0;
+	data.batteryPct = board_has_battery() ? view.battery_pct : 0;
+	data.batteryState = board_has_battery() ? view.battery : 0;
 	data.radioState = (uint8_t)view.state;
 	data.rssiDbm = view.rssi_dbm;
 	data.mode = (view.ch.mode == RADIO_MODE_DMR) ? 1 : 0;

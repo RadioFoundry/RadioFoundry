@@ -2,12 +2,13 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DB25-D front keys, encoder and the mic's PTT (docs/spec/hardware-db25d.md 3.3).
 //
-// Five drive lines and three sense lines make a 15-position matrix. Which front key sits where isn't traced, so the
-// map below is provisional: the diagnostics page shows the raw scan for the bring-up to fix it. The mic's PTT pulls
+// Five drive lines and three sense lines make a 15-position matrix. The front keys' positions were found on the radio
+// by pressing each one with the diagnostics page's raw scan running; the other positions report as spares. The mic's PTT pulls
 // its RXD line (UART1 RXD, also the PC link) low; a serial byte at 115200 is low for at most 87 us, so the line counts
 // as PTT only when it reads low on three scans in a row (INF: the pad level is assumed readable while the pin is the
-// UART's).
+// UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
 #include "db25d.h"
+#include "config.h"
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
@@ -17,22 +18,43 @@
 #define N		KEYMATRIX_NONE
 #define PTT_SCANS	3
 
-// [drive][sense] (provisional)
+// [drive][sense]: drive lines PTB18, PTB20, PTB21, PTB22, PTB23; sense lines PTB9, PTB10, PTB11. No front key uses
+// the first two drive lines or the direct positions (the stock firmware's codes for them, 3.3)
 static const uint8_t map[KEY_DRIVES * KEY_SENSES] = {
-	KEY_P1, KEY_P2, KEY_P3,
-	KEY_VOL, KEY_TONE, KEY_BE,
-	KEY_MENU, KEY_ENC_PUSH, KEY_SPARE0,
-	KEY_SPARE1, KEY_SPARE2, KEY_SPARE3,
-	KEY_SPARE4, KEY_SPARE5, KEY_SPARE6,
+	N, N, N,
+	N, N, N,
+	N, KEY_P1, KEY_P2,
+	KEY_P3, KEY_VOL, KEY_TONE,
+	KEY_BE, KEY_ENC_PUSH, N,
 };
 static const uint8_t direct[KEY_SENSES] = { N, N, N };
+
+// The hand mic's key numbers (3.4): 0-9 the digits, 10 *, 11 #, 12-14 P4-P6, 18 P7
+static uint8_t mic_bit(uint8_t code)
+{
+	if (code <= 9) {
+		return (uint8_t)(KEY_MIC_0 + code);
+	}
+	switch (code) {
+	case 10: return KEY_MIC_STAR;
+	case 11: return KEY_MIC_HASH;
+	case 12: return KEY_MIC_P4;
+	case 13: return KEY_MIC_P5;
+	case 14: return KEY_MIC_P6;
+	case 18: return KEY_MIC_P7;
+	default: return N;
+	}
+}
 static const keymatrix_t matrix = { .rows = KEY_DRIVES, .cols = KEY_SENSES, .map = map, .direct = direct };
 
 static uint32_t last_raw, stable;
 static uint8_t ptt_low;
+static uint8_t mic_levels;
+static uint16_t a9_changes, c11_changes;
 
 // Encoder: both lines on both edges into the table decoder, two steps per detent resting where A == B (as on the
-// DM-32; to check on the radio). The interrupt is the only writer
+// DM-32). PTB8 goes in as A and PTB5 as B: the other way round, clockwise stepped down on the radio. The interrupt is
+// the only writer
 #define ENC_STEPS	2
 static quad_dec_t enc;
 static int32_t enc_taken;
@@ -73,7 +95,7 @@ static void gpiob_isr(void)
 	uint32_t pending = hrc_gpio_pending(GPIOB_BASE);
 	hrc_gpio_ack(GPIOB_BASE, pending);
 	if (pending & (hrc_gpio_bit(PIN_ENC_A) | hrc_gpio_bit(PIN_ENC_B))) {
-		quad_sample(&enc, QUAD_AB(hrc_pin_read(PIN_ENC_A), hrc_pin_read(PIN_ENC_B)));
+		quad_sample(&enc, QUAD_AB(hrc_pin_read(PIN_ENC_B), hrc_pin_read(PIN_ENC_A)));
 	}
 }
 
@@ -85,15 +107,20 @@ static void init(void)
 	for (uint8_t c = 0; c < KEY_SENSES; c++) {
 		hrc_pin_in((uint8_t)(PIN_KEY_SENSE0 + c));
 	}
+	hrc_pin_in(PIN_PTT2);
 	hrc_pin_in(PIN_ENC_A);
 	hrc_pin_in(PIN_ENC_B);
-	quad_init(&enc, ENC_STEPS, QUAD_REST_EQUAL, QUAD_AB(hrc_pin_read(PIN_ENC_A), hrc_pin_read(PIN_ENC_B)));
+	quad_init(&enc, ENC_STEPS, QUAD_REST_EQUAL, QUAD_AB(hrc_pin_read(PIN_ENC_B), hrc_pin_read(PIN_ENC_A)));
 	enc_taken = 0;
 	ptt_low = 0;
+	mic_levels = (uint8_t)((hrc_pin_read(PIN_MIC_RXD) ? 1u : 0u) | (hrc_pin_read(PIN_PTT2) ? 2u : 0u));
 	hrc_irq_register(IRQ_GPIOB, gpiob_isr);
 	hrc_pin_irq(PIN_ENC_A, true, true, false);
 	hrc_pin_irq(PIN_ENC_B, true, true, false);
 	hrc_irq_enable(IRQ_GPIOB, true);
+#if CONFIG_DIAG
+	db25d_miccap_init();
+#endif
 }
 
 uint32_t db25d_input_raw(void)
@@ -101,11 +128,42 @@ uint32_t db25d_input_raw(void)
 	return last_raw;
 }
 
+uint8_t db25d_mic_lines(uint16_t *a9, uint16_t *c11)
+{
+	*a9 = a9_changes;
+	*c11 = c11_changes;
+	return mic_levels;
+}
+
+void db25d_mic_lines_reset(void)
+{
+	a9_changes = 0;
+	c11_changes = 0;
+}
+
+static void sample_mic_lines(void)
+{
+	uint8_t now = (uint8_t)((hrc_pin_read(PIN_MIC_RXD) ? 1u : 0u) | (hrc_pin_read(PIN_PTT2) ? 2u : 0u));
+	uint8_t diff = now ^ mic_levels;
+	if ((diff & 1u) && a9_changes < UINT16_MAX) {
+		a9_changes++;
+	}
+	if ((diff & 2u) && c11_changes < UINT16_MAX) {
+		c11_changes++;
+	}
+	mic_levels = now;
+}
+
 // Called every 10 ms: a change is reported once two scans in a row agree
 static uint32_t scan(void)
 {
 	uint32_t raw = scan_matrix();
-	if (!hrc_pin_read(PIN_MIC_RXD)) {
+	uint8_t mic = mic_bit(db25d_mic_key());
+	if (mic != N) {
+		raw |= 1u << mic;
+	}
+	sample_mic_lines();
+	if (!hrc_pin_read(PIN_MIC_RXD) || !hrc_pin_read(PIN_PTT2)) {
 		if (ptt_low < PTT_SCANS) {
 			ptt_low++;
 		}

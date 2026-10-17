@@ -85,7 +85,8 @@ const board_t board = {
 #if CONFIG_NET_PPP
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
-	.gps_present = dm32_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps_enable = hrc_gps_enable,
+	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 	.system = &hrc_system,
 };
 
@@ -133,7 +134,7 @@ static void io_init(void)
 	hrc_pin_out(PIN_LED_GREEN, false);
 	hrc_pin_out(PIN_KEY_BACKLIGHT, false);
 	hrc_pin_out(PIN_LCD_BACKLIGHT, false);
-	hrc_pin_out(PIN_GPS_POWER, true);	// GPS off until something wants it
+	hrc_pin_out(PIN_GPS_POWER, !GPS_POWER_ON_LEVEL);	// GPS off until something wants it
 	hrc_pin_out(PIN_LCD_RESET, true);
 	hrc_pin_out(PIN_LCD_RD, true);
 	for (uint8_t r = 0; r < KEY_ROWS; r++) {
@@ -182,6 +183,14 @@ static const hrc_flash_cfg_t flash_cfg = {
 	.map = &flash_map,
 };
 
+// The ATGM336H on UART1; PTA9 is UART1's RXD from io_init
+static const hrc_gps_cfg_t gps_cfg = {
+	.uart_base = UART1_BASE,
+	.irq = IRQ_UART1,
+	.power_pin = PIN_GPS_POWER,
+	.power_on_level = GPS_POWER_ON_LEVEL,
+};
+
 void board_init(void)
 {
 	hrc_flash_spi0_configure(&flash_cfg);
@@ -189,5 +198,5 @@ void board_init(void)
 	dm32_power.init();
 	dm32_flash.init();
 	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// OpenDM32 keeps a decoded copy there
-	dm32_gps_init();
+	hrc_gps_init(&gps_cfg);
 }

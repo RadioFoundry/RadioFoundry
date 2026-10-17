@@ -116,13 +116,13 @@ static bool vfo_from_settings(channel_t *ch)
 	strcpy(ch->name, "VFO A");
 	ch->rx_hz = st.vfo_rx_hz;
 	ch->tx_hz = st.vfo_tx_hz != 0 ? st.vfo_tx_hz : st.vfo_rx_hz;
-	ch->mode = st.vfo_mode;
-	ch->bw = st.vfo_bw;
+	ch->mode = settings_vfo_mode(&st);
+	ch->bw = settings_vfo_bw(&st);
 	ch->rx_tone = (subtone_t){ st.vfo_rx_tone_type, st.vfo_rx_tone };
 	ch->tx_tone = (subtone_t){ st.vfo_tx_tone_type, st.vfo_tx_tone };
 	ch->power = st.vfo_power == SETTINGS_UNSET8 ? CODEPLUG_POWER_DEFAULT : st.vfo_power;
-	ch->color_code = st.vfo_cc;
-	ch->timeslot = st.vfo_ts;
+	ch->color_code = settings_vfo_cc(&st);
+	ch->timeslot = settings_vfo_ts(&st);
 	return true;
 }
 
@@ -165,15 +165,14 @@ static void vfo_commit(void)
 	settings_t *st = settings_begin();
 	st->vfo_rx_hz = ch.rx_hz;
 	st->vfo_tx_hz = ch.tx_hz;
-	st->vfo_mode = RADIO_MODE_FM;	// the VFO is FM only for now
-	st->vfo_bw = ch.bw;
+	settings_set_vfo_mode_bw(st, ch.mode == RADIO_MODE_DMR && CONFIG_VFO_DMR ? RADIO_MODE_DMR :
+				 CONFIG_VFO_FM ? RADIO_MODE_FM : RADIO_MODE_DMR, ch.bw);
 	st->vfo_rx_tone_type = ch.rx_tone.type;
 	st->vfo_rx_tone = ch.rx_tone.value;
 	st->vfo_tx_tone_type = ch.tx_tone.type;
 	st->vfo_tx_tone = ch.tx_tone.value;
 	st->vfo_power = ch.power == CODEPLUG_POWER_DEFAULT ? SETTINGS_UNSET8 : ch.power;
-	st->vfo_cc = ch.color_code;
-	st->vfo_ts = ch.timeslot;
+	settings_set_vfo_cc_ts(st, ch.color_code, ch.timeslot);
 	settings_end(last_rx_ms);
 }
 

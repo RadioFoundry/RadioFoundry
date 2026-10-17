@@ -31,6 +31,7 @@
 #define UI_FEAT_FACTORY_RESET	(1u << 14)	// ui_svc_factory_reset (storage-cps)
 #define UI_FEAT_ROAMING		(1u << 15)	// ui_svc_roam (DMR repeater roaming, the radio core)
 #define UI_FEAT_VIBRATE		(1u << 16)	// ui_svc_vibrate: CONFIG_VIBRATE and hal_power_t.vibrate
+#define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -56,7 +57,10 @@ void ui_svc_focus_target(uint32_t id, bool private_call);
 // --- On-the-fly channel changes (temporary, P7) ---
 bool ui_svc_dmr_timeslot(uint8_t ts);
 bool ui_svc_dmr_color_code(uint8_t cc);
-bool ui_svc_mode(uint8_t mode);			// radio_mode_t
+bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's goes through Copy to VFO)
+// Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
+// when the request went to the radio core, else why nothing changed
+uint8_t ui_svc_vfo_copy(const radio_view_t *v);
 bool ui_svc_hear_all(bool on);
 bool ui_svc_privacy(bool on);			// false also when there is no key: the UI says how to add one
 bool ui_svc_monitor(bool on);			// FM monitor latch
@@ -160,6 +164,7 @@ typedef enum {
 	UI_SET_VIBRATE,		// vibrate for alerts (Settings > Sound, CONFIG_VIBRATE; settings_t.ui_flags)
 	UI_SET_ACCENT,		// the highlight color, UI_ACCENT_* (Settings > Display; settings_t.accent bits 0-2)
 	UI_SET_STRIP,		// the status strip filled with it (Settings > Display; settings_t.accent bit 3)
+	UI_SET_VOLUME,		// speaker volume 0 (mute) .. RADIO_VOLUME_MAX of a radio without a knob (UI_FEAT_VOLUME; settings_t.volume)
 	UI_SET_COUNT
 } ui_setting_t;
 

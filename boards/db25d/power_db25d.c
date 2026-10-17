@@ -2,9 +2,10 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DB25-D power latch and power key, status LEDs, raw ADC readings (docs/spec/hardware-db25d.md 3.3).
 //
-// A mobile on a 13.8 V supply: no battery curve. Which ADC channel sees the supply, and at what scale, isn't known
-// yet (10 #10), so battery_mv() reports 0 (no warnings: board.battery_low_mv is 0) and the diagnostics page shows the
-// raw channels. Volume is digital (VOL key and encoder), so volume() is -1.
+// A mobile on a fixed 13.8 V supply: no battery (CAP_NO_BATTERY), so battery_mv and battery_pct stay NULL and the core
+// shows no battery UI. Which ADC channel sees the supply, and at what scale, isn't known yet (10 #10), so there is
+// no supply reading either; the diagnostics page shows the raw channels. Volume is digital (VOL key and encoder),
+// so volume() is -1.
 #include "db25d.h"
 #include "pins.h"
 #include "platform.h"
@@ -92,16 +93,6 @@ static void latch(bool on)
 	hrc_pin_write(PIN_POWER_LATCH, on);
 }
 
-static uint16_t battery_mv(void)
-{
-	return 0;
-}
-
-static uint8_t battery_pct(void)
-{
-	return 100;
-}
-
 static int8_t volume(void)
 {
 	return -1;
@@ -119,17 +110,14 @@ static bool switch_on(void)
 	return held < POWER_OFF_POLLS;
 }
 
-// Which LED is red isn't known yet (3.3): LED_RED is taken to be the first
 static void led(uint8_t which, bool on)
 {
-	hrc_pin_write(which == LED_RED ? PIN_LED_A : PIN_LED_B, on);
+	hrc_pin_write(which == LED_RED ? PIN_LED_RED : PIN_LED_GREEN, on);
 }
 
 const hal_power_t db25d_power = {
 	.init = init,
 	.latch = latch,
-	.battery_mv = battery_mv,
-	.battery_pct = battery_pct,
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,

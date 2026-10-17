@@ -42,7 +42,9 @@
 #include "task.h"
 
 #define START_TASK_PRIORITY	5
-#define START_TASK_STACK	512	// words
+// words: the radio core's set-up runs here at boot (radio_sm_init, 584 bytes of frame on the DB25-D, then the APRS
+// identity load or a DMR VFO's contact search down to the flash driver); 512 left the DB25-D 88 bytes (make stack-check)
+#define START_TASK_STACK	640
 #define HOUSEKEEPING_MS		100
 #define POWER_OFF_TX_MS		200	// after the PTT release, before the latch drops
 #define POWER_OFF_DEREG_MS	3000	// at most this long for the ARS deregistration (gotcha 7.4)

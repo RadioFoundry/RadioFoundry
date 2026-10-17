@@ -969,18 +969,19 @@ OpenDM32 bug noted: for a UHF frequency below 400 MHz its unsigned subtraction g
 | Power | GPIO 0x2C: low = on, high = off | KP |
 | Interrupt | UART1, vector 42, IER = 0x05 | KP |
 
-ODR's driver is `boards/dm32/gps_dm32.c`, on the shared receive ring `drivers/gps/gps_rx` (also the MD-380's) and the
+ODR's driver is `platform/hrc7000/gps_hrc.c` (the DB25-D uses it on UART2; the board gives it the UART, power pin and level in `hrc_gps_cfg_t`), on the shared receive ring `drivers/gps/gps_rx` (also the MD-380's) and the
 line framing `drivers/gps/nmea_line`:
 
 | Step | What ODR does |
 |---|---|
 | Start-up | GPIO 0x2C low (module on), UART1 at 9600 8N1 (`hrc_uart_setup`, divisor 547, 0.02 % off), receive interrupt on |
 | Listen | 5 s for one checksum-valid sentence. The module sends a sentence a second from about 1 s after power-up, with or without a fix |
-| Heard | The module is present (`board.gps_present`). Every valid sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). The module stays powered |
+| Heard | The module is present (`board.gps_present`). Every valid sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). The module stays powered while Settings > Location > GPS is on; with it off, `hrc_gps_enable(false)` (`board_t.gps_enable`) powers it down and stops the UART within one 20 ms poll, and turning it on powers it up again. The setting is applied at start-up (the probe runs first, whatever it says) and on each change |
 | Nothing heard | GPIO 0x2C high (module off), UART1 interrupt off. The radio reports no GPS and the Location settings are dimmed |
-| Diagnostics | The line `gps yes` (or `gps no`) `GOOD/BAD bBYTES`: valid sentences, bad ones (checksum, length, UART errors, ring overflow), bytes received |
+| Diagnostics | The line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off`: valid sentences, bad ones (checksum, length, UART errors, ring overflow), bytes received, and whether the module is powered now (Settings > Location > GPS) |
+| Switching on again | The UART is set up once, before the module is first powered. While the module is off its line is held low, a break the UART is still receiving, and the UART ignores a line control write while busy, so switching on only clears the RX FIFO and status and enables the interrupt (`hrc_uart_rx_clear`). Setting the baud rate again there left the UART deaf on the DB25-D (2026-10-17) |
 
-**Settings > Location > GPS** doesn't switch the module's power yet; neither board driver reads it.
+**Settings > Location > GPS** switches the module's power on the DM-32UV and the DB25-D (`hal/board.h` `gps_enable`). The MD-380's driver doesn't implement the hook (its power pin is left where the stock hardware has it, hardware-md380.md 13.2): the setting there only stops APRS using the fix.
 
 ---
 
@@ -1019,7 +1020,8 @@ stock CPS also sends seven 130-byte zero blocks before rebooting; they are not n
 
 If the radio does not boot the new image, remove and refit the battery; update mode still works (COM).
 
-`tools/dm32_flash.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1).
+`tools/dm32_flash.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). `dm32_flash.py --probe` runs steps 1-3 only and prints the answers, for checking whether
+another HR_C7000 radio's update loader speaks this protocol and which model string it reports at step 3.
 
 ### 13.3 ROM serial boot (recovery, no bootloader needed)
 
@@ -1064,7 +1066,7 @@ These are traps in the old port, listed so a fresh implementation does not copy 
 | 1 | The HR-C6000 "SPI0 page register" access layer is kept as empty stubs. Every C7000 CTCSS / DCS / DTMF / RX gain call that still goes through it (RX CTCSS, RX and TX DCS code, DTMF mode/deviation save/restore, DMR RX gain) is a **no-op** | C7000 sub-audio receive, DCS and DMR volume do nothing |
 | 2 | DCS never finished: TX DCS sets FM_MOD bits but writes the code to the stub instead of CDCSS_ADDR; RX DCS writes are commented out (FD6818 side too). OpenDM32 Aug 2026 added DCS TX ("Check DCS TX") but it was not ported | No DCS |
 | 3 | FD6818 CTCSS tone value truncates the tone to whole tens of Hz before scaling | Wrong CTCSS frequency |
-| 4 | Volume pot level variable is never written (ADC channel not read) | No volume control from the knob |
+| 4 | Volume pot level variable is never written (ADC channel not read) | No volume control from the knob. ODR has no `hal_radio_t.volume` here: the knob works on the amplifier, the FM chip's register 0x48 (`BBBF`, the post-init and mode-entry lists in section 8) is written only at mode entry and a chip gain below an analog knob would not "override" it, so the debug link's volume operation answers "unavailable" (INF) |
 | 5 | Mic/VOX ADC read uses a channel set-up that single-scan mode cannot deliver | VOX and mic level meter wrong |
 | 6 | Timer naming clash: the SDK calls the timer at 0x14000000 "Timer 0", the port's header and the manual call it "Timer 1"; both "VECTOR_TIMER0" and "VECTOR_TIMER1" are 33. The RTOS tick is hooked on vector 33 but that timer is never configured, and a 10 ms-tick assumption (delay = (ms + 9) / 10 ticks) sits next to a 1000 Hz tick setting | RTOS timing source unclear; check on hardware |
 | 7 | The port's DMR PA one-shot is Timer 4 because Timer 3 polls the ADC; stock uses Timer 3 | Fine if consistent; do not mix |

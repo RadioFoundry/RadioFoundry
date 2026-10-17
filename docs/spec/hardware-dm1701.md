@@ -1469,6 +1469,10 @@ Verified on one radio with the new firmware; they override the unverified notes 
   0x00 on both bands while the other gain rows hold values: an all-zero gain row is valid data.
 - **Soft volume**: HR_C6000 4:0x37 (RX gain) scales FM feed-through audio as well as DMR audio; -31 dB is still
   audible, so the bottom of the knob must also mute the speaker path.
+- **Volume override**: because the MCU reads the knob and sets this gain itself, the debug link can set the level
+  instead (RADIO op 30, `radio-features.md` 4.2): a step 0..16 maps to the same 0..100 % scale as the knob, in force
+  until it is cleared (RAM only). The knob has no analog path around the gain, so the override fully takes its place (HW,
+  not yet run on a radio).
 - **HR_C6000**: 4:0x10 reads back 0x80 after FM RX set-up (the config port works with the 4.2 timing).
 - **FM TX** (VFO 461.8625 MHz, 12.5 kHz, 1 W, measured with an RTL-SDR, 2026-10-09): with the TX sequence of
   `radio_dm1701.c` (frequency written with the receiver off, straight to TX) the carrier is within about 50 Hz of the

@@ -98,7 +98,7 @@ written and verified (about 100 ms). Rules:
   board's.
 - **Calibration** (`calibration_addr`, `calibration_size` in the board's flash map; on the DM-1701 512 bytes inside
   the sector at 0x010000, `hardware-dm1701.md` 13.2): only the window's bytes take the CPS's values, and the rest of
-  the sector is kept. A board with no calibration window (size 0: the MD-380, the DM-32) refuses the sector. *Open decision: refuse calibration writes entirely.*
+  the sector is kept. A board with no calibration window (size 0: the MD-380, the DM-32, the DB25-D) takes the sector as plain data. *Open decision: refuse calibration writes entirely.*
 - **VFO A** (EEPROM 0x7590): a commit whose VFO A record differs from what the radio would show (the CPS edited the
   VFO) is decoded into the settings store's VFO fields. A record written back unchanged is ignored. The VFO
   follows after the next boot or reload.

@@ -124,6 +124,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 		if (id == UI_SET_BACKLIGHT_S)
 			return rs.backlight_dim_s;
 		return rs.rx_save != 0;
+	case UI_SET_VOLUME:
+		settings_read(&st);
+		return radio_volume_step(st.volume);
 	case UI_SET_BRIGHTNESS:
 		settings_read(&st);
 		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
@@ -338,6 +341,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		}
 		settings_end(hal_millis());
 		return true;
+	case UI_SET_VOLUME:
+		st = settings_begin();
+		st->volume = radio_volume_stored((uint8_t)clamp16(value, 0, RADIO_VOLUME_MAX));
+		settings_end(hal_millis());
+		radio_req_volume((uint8_t)clamp16(value, 0, RADIO_VOLUME_MAX));	// in force now, not at the next reload
+		return true;
 	case UI_SET_BRIGHTNESS:
 		st = settings_begin();
 		st->brightness = (uint8_t)(value < 10 ? 10 : value > 100 ? 100 : value);
@@ -549,7 +558,16 @@ static void save_target_job(void *ctx)
 
 bool ui_svc_save_talk_target(uint32_t id, bool private_call)
 {
-	if (id == 0 || !take_channel())
+	if (id == 0)
+		return false;
+	radio_get_view(&v);
+	if (v.vfo) {
+		if (!CONFIG_VFO_DMR || v.hotspot)
+			return false;
+		radio_req_dmr_target(id, private_call);	// the VFO's own target: kept with its settings, nothing to write
+		return true;
+	}
+	if (!take_channel())
 		return false;
 	job.id = id;
 	job.private_call = private_call;

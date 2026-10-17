@@ -107,6 +107,8 @@ def test_gps_nmea(dm32):
         line = find(diag_lines(dm32), "gps ")
     good0, bad0, b0 = (int(x) for x in re.findall(r"\d+", line)[:3])
     assert line.startswith("gps yes"), f"no valid NMEA heard: {line} (b0 = no bytes: PTA9 mux or GPIO 0x2C power)"
+    if line.endswith(" off"):
+        pytest.skip("Settings > Location > GPS is off: the module was heard at start-up, then powered down")
     time.sleep(3)
     good1, bad1, b1 = (int(x) for x in re.findall(r"\d+", find(diag_lines(dm32), "gps "))[:3])
     assert good1 > good0, f"no new sentences in 3 s ({good0} -> {good1})"

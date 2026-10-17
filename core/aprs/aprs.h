@@ -247,6 +247,8 @@ bool aprs_host_frame(const uint8_t *frame, size_t n, uint32_t now_ms);
 void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms);
 // An NMEA sentence from the host, or (gps true) from a board GPS driver
 void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms);
+// Settings > Location > GPS: off drops the board GPS fix and ignores its sentences, so the position falls back at once
+void aprs_gps_enable(bool on);
 // KISS-encoded bytes for the host: copies up to max, returns the count (0 = nothing waiting)
 size_t aprs_host_output(uint8_t *out, size_t max);
 // The KISS setting is on (host output allowed in the host link's idle mode)

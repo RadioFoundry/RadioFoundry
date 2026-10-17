@@ -35,7 +35,7 @@ same SoC with two BK4819).
 | Field | Fill with |
 |---|---|
 | `name` | The model as shown in About and the hotspot's description |
-| `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM` |
+| `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM`, `CAP_NO_BATTERY` (a mobile on a fixed supply: no battery UI, no battery monitor; leave `battery_mv` and `battery_pct` NULL) |
 | `bands`, `band_count` | Receive ranges, each with `tx` true where transmit is allowed |
 | `power_count`, `power_names`, `power_default` | Power levels as short labels, lowest first, and the default index |
 | `display`, `input`, `keymap`, `keymap_len` | Display and key interfaces, and the key map (below) |

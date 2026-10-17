@@ -15,6 +15,7 @@ typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_ZONES, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
 	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_APRS_POS, SCR_ABOUT,
+	SCR_VOLUME,			// the volume editor (VOL key, radios without a knob)
 	SCR_CHANNELS, SCR_CHANNEL,	// every codeplug channel by number; one channel's settings (arg = its number)
 	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
 	SCR_COUNT
@@ -133,6 +134,8 @@ bool ui_home_key(const input_event_t *ev);
 void ui_quick_draw(void);
 bool ui_quick_key(const input_event_t *ev);
 void ui_quick_enter(void);
+void ui_volume_draw(void);
+bool ui_volume_key(const input_event_t *ev);
 
 // Text helpers
 void ui_sb_target(char *buf, size_t len, const ui_target_t *t);	// "TG 91 World", "Joe 3101234"

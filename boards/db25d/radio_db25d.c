@@ -4,15 +4,25 @@
 // (docs/spec/hardware-db25d.md 3.2, 4).
 //
 // Receive on f: the LO chip synthesizes f + 51.55 MHz, the main chip receives and demodulates at the 51.55 MHz IF, and
-// DAC A tunes the front end from the calibration page (6.4). Transmit is refused for now: the PA power control (DAC B)
-// takes its value from the same page, and no page has been seen on a radio yet (9). Boards whose chips don't identify
-// as BK4819 (the older FD6818 batches) aren't driven at all.
+// DAC A tunes the front end from the calibration page (6.4).
+//
+// Analog FM transmit: the main chip is tuned to f itself and modulates the microphone (the stock firmware never uses
+// the C7000's FM modulator, 4.1), the LO chip is switched off, and the PA is keyed through the RF switch pins and DAC B
+// with its drive from the page (3.2, 6.4). TX is refused without a valid page, outside the bands, or with a tone other
+// than CTCSS. Boards whose chips don't identify as BK4819 (the older FD6818 batches) aren't driven at all.
+//
+// DMR transmit (make DB25D_DMR_TX=1 with CONFIG_DMR, 4.5): tx() only arms it. The modem's 4FSK goes on the reference
+// oscillator, the main chip sends a carrier with its deviation off, and the whole TX sequence above runs once per burst
+// (db25d_burst_on / db25d_burst_off, from the RF task in dmr_db25d.c).
 #include "db25d.h"
+#include "dmr_db25d.h"
 #include "config.h"
+#include "radio/radio.h"
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
 #include "rf/bk4819/bk4819.h"
+#include "modem/hrc7000/hrc7000.h"
 
 #define DAC_C_INIT		1762u			// 3.2: at init, and 1780 once receive is set up
 #define DAC_C_RX		1780u
@@ -20,13 +30,55 @@
 #define IF_HZ			51550000u
 #define UHF_FROM_HZ		280000000u
 
+// TX tuning knobs. DB25D_TX_DRIVE_PCT scales the page's PA drive (100 = the stock value, which the SDR bench measured as
+// working). The main chip's own output level (0x36) is the stock's 0xBF, written once at init
+#ifndef DB25D_TX_DRIVE_PCT
+#define DB25D_TX_DRIVE_PCT	100u
+#endif
+// FM TX tone level, the BK4819 tone generator's gain (0..127): the stock single tone's 0x30 (48)
+#ifndef DB25D_TX_TONE_GAIN
+#define DB25D_TX_TONE_GAIN	BK4819_TONE_GAIN_STOCK
+#endif
+// Speaker volume steps 1..RADIO_VOLUME_MAX -> the AF DAC gain nibble (register 0x48 bits 3:0): the nibble rises with
+// the step, step 1 = 0 up to DB25D_VOL_GAIN_TOP at the top step; with 16 steps and TOP 15 that is nibble = step - 1.
+// The other fields of 0x48 stay at the stock value. Step 0 is mute. The stock firmware leaves the nibble at 3 after
+// its init and has no volume of its own that was found (hardware-db25d.md 3.3). The dB per nibble step is not
+// measured (INF): lower DB25D_VOL_GAIN_TOP if the top steps distort at the speaker
+#ifndef DB25D_VOL_GAIN_TOP
+#define DB25D_VOL_GAIN_TOP	15u
+#endif
+#define DB25D_VOL_GAIN_DEFAULT	3u
+#define TX_RX_OFF_US		50u		// 3.2: RX paths off, then this long before the transmitter is tuned
+#define TX_SETTLE_MS		3u		// ours: the chip's VCO calibration, before the PA is selected. The stock has none beyond the page's delay
+#define TX_SUPPLY_US		200u		// 3.2: PA select and PTA23 low, then this long before the TX supply
+#define TX_END_PATH_US		300u		// 3.2: PA select off and PTA23 high, then this long before the receiver is retuned
+#define TX_END_RX_US		200u		// after the RX path is switched on again
+#define BIAS_DEFAULT_HZ		450000000u	// the modulation balance's frequency before one is known
+#define CTCSS_MIN_X10		600u
+#define CTCSS_MAX_X10		2600u
+
 static bk4819_t rf_main, rf_lo;
+static hrc7000_t modem;
 static bool supported;		// both chips answered as BK4819
 static uint16_t main_id, lo_id;
 static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
+static bool transmitting;
+static bool audio_open;		// what audio() was last asked, restored after a transmission
+static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
+static uint8_t vol_gain = DB25D_VOL_GAIN_DEFAULT;	// the AF DAC gain nibble the volume step selects
+static bool tx_uhf;
+static uint16_t tx_pa;
+static uint16_t tx_off_us;
+static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
+#if CONFIG_DMR && DB25D_DMR_TX
+static uint16_t tx_on_us;
+static uint32_t tx_hz;
+static void dmr_disarm(void);
+#endif
+static radio_mode_t mode = RADIO_MODE_FM;	// DMR only with CONFIG_DMR (transmit with DB25D_DMR_TX, dmr_db25d.c)
 static uint16_t last_rssi_raw, last_noise_raw;
 
 // ---- 3-wire bus: clock and data shared, one enable per chip ----
@@ -82,6 +134,26 @@ static void rx_paths(uint32_t hz, bool on)
 	hrc_pin_write(PIN_VHF_RX, on && !uhf);
 }
 
+// The PA control DAC is powered only for a transmission
+static void dac_b_power(bool on)
+{
+	uint32_t st = hrc_irq_save();
+	if (on) {
+		DAC_PD_CTRL &= ~DAC_B_OFF;
+	} else {
+		DAC_PD_CTRL |= DAC_B_OFF;
+	}
+	hrc_irq_restore(st);
+}
+
+static void apc_ramp(uint16_t target, bool up)
+{
+	for (uint16_t i = 0; i <= DB25D_APC_STEPS; i++) {
+		DAC_DATA_B = db25d_apc_level(target, up ? i : (uint16_t)(DB25D_APC_STEPS - i));
+		hal_delay_us(DB25D_APC_STEP_US);
+	}
+}
+
 static bool in_band(uint32_t hz)
 {
 	for (uint8_t i = 0; i < board.band_count; i++) {
@@ -92,6 +164,16 @@ static bool in_band(uint32_t hz)
 	return false;
 }
 
+// The C7000 modem's DC bias, as the stock firmware writes it at every receive set-up, in FM too (4.6): the TX center byte
+// of the page in SIG_CENTER and the two-point bias level with the modulation balance in RF_MOD_BIAS_CTRL. It is the
+// voltage on the TCXO's control pin, so it sets the frequency of both BK4819s
+static void ref_trim(uint32_t hz)
+{
+	uint8_t c = db25d_cal_tx_center();
+	hrc7000_wr(&modem, C7_SIG_CENTER, hrc7000_sig_center_dc(c));
+	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(c, db25d_cal_mod(hz)));
+}
+
 static void init(void)
 {
 	hrc_pin_out(PIN_RF_SEN_MAIN, true);
@@ -99,12 +181,17 @@ static void init(void)
 	hrc_pin_out(PIN_RF_CLK, false);
 	hrc_pin_in(PIN_RF_DATA);
 	tx_paths_off();
-	// As the stock init, except that the PA control stays powered down while TX is refused
+	// As the stock init, except that the PA control stays powered down until a transmission
 	DAC_PD_MODE_EN = 0;
 	DAC_PD_CTRL = DAC_B_OFF;
 	DAC_DATA_A = 0;
 	DAC_DATA_C = DAC_C_INIT;
 	rx_paths(0, false);
+
+	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
+	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	hrc7000_power_on_init(&modem, db25d_cal_tx_center(), DB25D_MIC_GAIN_DB);
+	ref_trim(BIAS_DEFAULT_HZ);
 
 	bk4819_attach(&rf_main, &bus_main);
 	bk4819_attach(&rf_lo, &bus_lo);
@@ -115,52 +202,315 @@ static void init(void)
 		return;
 	}
 	bk4819_init_main(&rf_main);
+	bk4819_write(&rf_main, BK4819_REG_PA, BK4819_PA_MAX);	// stock: once at detection, never changed
 	bk4819_init_lo(&rf_lo, BK4819_LO_PA_MAX);
-	bk4819_set_af(&rf_main, BK4819_AF_MUTE);
+	bk4819_analog_mode(&rf_main);
+#if CONFIG_DMR
+	db25d_dmr_init(&rf_main, &modem);
+#endif
 }
 
-static void set_mode(radio_mode_t mode)
+static void volume_apply(void);
+
+#ifndef DB25D_DMR_SPK_SWITCH
+#define DB25D_DMR_SPK_SWITCH	0	// 1: PTC18 stays high in DMR (the build before the stock trace)
+#endif
+
+static volatile bool pcm_on;	// the modem plays CPU samples (a beep, DMR voice): db25d_speaker_pcm()
+
+// PTC18 picks what the speaker amplifier hears (3.3): high for the main chip's AF (FM), low for the modem's line out
+// (DMR voice and beeps, as the stock firmware's call start and beeps do)
+static void speaker_source(void)
 {
-	(void)mode;	// FM only for now (CONFIG_DMR is off on this board)
+	hrc_pin_write(PIN_AUDIO_SWITCH, (mode != RADIO_MODE_DMR && !pcm_on) || DB25D_DMR_SPK_SWITCH != 0);
 }
+
+// The speaker pins: on for an open squelch (audio()) or while the modem plays samples. DMR voice never opens the
+// squelch path (the radio core leaves the speaker to the PCM stream), so without the PCM term a call played silently.
+// Off: the amplifier first, so the source switch isn't heard; on: the source first
+static void speaker_pins(void)
+{
+	bool on = (audio_open || pcm_on) && !transmitting;
+	uint32_t s = hrc_irq_save();	// also called from the audio task (db25d_speaker_pcm): the pin writes are read-modify-write
+	if (!on) {
+		hrc_pin_write(PIN_SPK_BODY, true);
+	}
+	speaker_source();
+	hrc_pin_write(PIN_SPK_SOURCE, !on);
+	hrc_pin_write(PIN_MIC_PATH, on);
+	if (on) {
+		hrc_pin_write(PIN_SPK_BODY, false);
+	}
+	hrc_irq_restore(s);
+}
+
+void db25d_speaker_pcm(bool on)
+{
+	if (on != pcm_on) {
+		pcm_on = on;
+		speaker_pins();
+	}
+}
+
+static void set_mode(radio_mode_t m)
+{
+#if CONFIG_DMR
+	if (!supported || m == mode) {
+		return;
+	}
+	if (m == RADIO_MODE_DMR) {
+		db25d_dmr_enter(rx_hz);
+		mode = RADIO_MODE_DMR;
+	} else {
+#if DB25D_DMR_TX
+		dmr_disarm();
+#endif
+		db25d_dmr_leave();
+		mode = RADIO_MODE_FM;
+		volume_apply();
+	}
+	speaker_source();
+	have_rx = false;	// the next rx() retunes
+#else
+	(void)m;	// FM only without CONFIG_DMR
+#endif
+}
+
+static bool tx_stop(void);
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 {
 	if (!supported || !in_band(hz)) {
 		return false;
 	}
+#if CONFIG_DMR && DB25D_DMR_TX
+	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
+#endif
+	bool from_tx = tx_stop();
 	rx_hz = hz;
 	rx_bw = bw;
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
 
+	ref_trim(hz);
 	tx_paths_off();
 	bk4819_set_state(&rf_main, BK4819_STATE_IDLE);
 	bk4819_lo_tune(&rf_lo, hz + IF_HZ);
 	bk4819_set_freq(&rf_main, IF_HZ);
-	bk4819_set_bandwidth(&rf_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
-	bk4819_set_rx_ctcss(&rf_main, rx_tone.type == TONE_CTCSS ? rx_tone.value : 0);
+	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's (4.5)
+		bk4819_set_bandwidth(&rf_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
+		bk4819_set_rx_ctcss(&rf_main, rx_tone.type == TONE_CTCSS ? rx_tone.value : 0);
+	}
 	DAC_DATA_A = db25d_cal_rx_tune(hz);	// 0 without a page, as before
 	DAC_DATA_C = DAC_C_RX;
+	if (from_tx) {
+		hal_delay_us(TX_END_PATH_US);	// stock TX end: the retune, this long, then the RX path
+	}
 	rx_paths(hz, true);
 	bk4819_set_state(&rf_main, BK4819_STATE_RX);
+	if (from_tx) {
+		hal_delay_us(TX_END_RX_US);
+	}
 	return true;
 }
 
+static void audio(bool on);
+
+#if CONFIG_DMR && DB25D_DMR_TX
+// DMR TX, armed at the key-up (4.5). The RF stays as it is, receiving, until the first burst's RF TX interrupt; the
+// modem's bias gets the modulation level for the TX frequency, the main chip the digital TX words (deviation off)
+static bool dmr_tx(uint32_t hz, uint8_t power)
+{
+	db25d_tx_plan_t plan;
+	if (!supported || !in_band(hz) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
+		return false;
+	}
+	if (dmr_armed) {
+		db25d_dmr_tx_disarm();
+	}
+	tx_uhf = hz >= UHF_FROM_HZ;
+	tx_pa = plan.pa;
+	tx_on_us = plan.on_us;
+	tx_off_us = plan.off_us;
+	tx_hz = hz;
+	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(hz)));
+	bk4819_dmr_tx_prepare(&rf_main);
+	DAC_DATA_B = 0;
+	dac_b_power(true);
+	dmr_armed = true;
+	db25d_dmr_tx_arm();
+	return true;
+}
+
+static void dmr_disarm(void)
+{
+	if (dmr_armed) {
+		db25d_dmr_tx_disarm();
+		dmr_armed = false;
+		DAC_DATA_B = 0;
+		dac_b_power(false);
+	}
+}
+
+// One burst, the stock TX on (3.2, 4.4 steps 2-7 without the audio): RX paths off, 50 us, main chip to f and the LO
+// off, the page's TX-on delay, PA select and the RX supply off, 200 us, the band's TX supply, the ramp up
+void db25d_burst_on(db25d_wait_fn wait)
+{
+	hrc_pin_write(PIN_RX_FRONT_END, false);
+	hrc_pin_write(PIN_UHF_RX, false);
+	hrc_pin_write(PIN_VHF_RX, false);
+	wait(TX_RX_OFF_US);
+	bk4819_burst_tune(&rf_main, tx_hz, BK4819_STATE_TX_MAIN);
+	bk4819_lo_off(&rf_lo);
+	wait(tx_on_us);
+	DAC_DATA_B = 0;
+	hrc_pin_write(tx_uhf ? PIN_VHF_TX : PIN_UHF_TX, false);
+	hrc_pin_write(tx_uhf ? PIN_UHF_TX : PIN_VHF_TX, true);
+	hrc_pin_write(PIN_RX_SUPPLY, false);
+	wait(TX_SUPPLY_US);
+	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_B : PIN_TX_SUPPLY_A, false);
+	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
+	apc_ramp(tx_pa, true);
+}
+
+// The stock TX off after a burst: the hold until the ramp-down point (db25d_dmr_hold_us; none when now), the ramp
+// down, supplies and PA selects off with PTA23 high, 300 us, the main chip back to the IF and the LO on again, 300 us,
+// the RX path of the band, 200 us. Returns how late the ramp down started, in us
+uint32_t db25d_burst_off(db25d_wait_fn wait, uint32_t elapsed_us, bool now)
+{
+	uint32_t late = now ? 0 : db25d_dmr_late_us(elapsed_us, tx_off_us);
+	if (!now) {
+		wait(db25d_dmr_hold_us(elapsed_us, tx_off_us));
+	}
+	apc_ramp(tx_pa, false);
+	tx_paths_off();
+	hrc_pin_write(PIN_RX_SUPPLY, true);
+	wait(TX_END_PATH_US);
+	bk4819_burst_tune(&rf_main, IF_HZ, BK4819_STATE_RX);
+	bk4819_lo_resume(&rf_lo);
+	wait(TX_END_PATH_US);
+	rx_paths(rx_hz, true);
+	wait(TX_END_RX_US);
+	return late;
+}
+#endif
+
+// 3.2 "To TX", with the PA ramp after the supply (the stock ramps up from the end of its sequence too, INF)
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
-	(void)hz;
-	(void)bw;
-	(void)power;
-	(void)tx_tone;
-	return false;	// no PA calibration yet (module comment)
+	if (mode == RADIO_MODE_DMR) {
+#if CONFIG_DMR && DB25D_DMR_TX
+		return dmr_tx(hz, power);
+#else
+		return false;	// DMR TX isn't built (make DB25D_DMR_TX=1)
+#endif
+	}
+	(void)bw;	// the deviation isn't switched by bandwidth yet: the chip's init value is used (spec 4.4)
+	uint16_t ctcss = 0;
+	if (tx_tone != NULL && tx_tone->type == TONE_CTCSS) {
+		if (tx_tone->value < CTCSS_MIN_X10 || tx_tone->value > CTCSS_MAX_X10) {
+			return false;
+		}
+		ctcss = tx_tone->value;
+	} else if (tx_tone != NULL && tx_tone->type != TONE_NONE) {
+		return false;	// no DCS transmit yet
+	}
+	db25d_tx_plan_t plan;
+	// Power index 1 ("H") is the stock's level 1, table 0x045; "L" the other table
+	if (!supported || !in_band(hz) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
+		return false;
+	}
+	tx_stop();
+	tx_uhf = hz >= UHF_FROM_HZ;
+	tx_pa = plan.pa;
+	tx_off_us = plan.off_us;
+	// Deviation and sub-audio words go in while the chip is still receiving, as the stock firmware does
+	bk4819_tx_prepare(&rf_main, ctcss);
+
+	// Receive audio muted at the chip before any audio pin moves, then the stock "audio off" pin state (3.3): with
+	// PTB14 raised here instead, the speaker popped at every key-up. That the microphone still reaches the chip is unchecked
+	bk4819_set_af(&rf_main, BK4819_AF_MUTE);
+	hrc_pin_write(PIN_SPK_SOURCE, true);
+	hrc_pin_write(PIN_SPK_BODY, true);
+	hrc_pin_write(PIN_MIC_PATH, false);
+	// RX paths off (PTA23 stays high until the PA is selected)
+	hrc_pin_write(PIN_RX_FRONT_END, false);
+	hrc_pin_write(PIN_UHF_RX, false);
+	hrc_pin_write(PIN_VHF_RX, false);
+	hal_delay_us(TX_RX_OFF_US);
+	bk4819_tx_tune(&rf_main, hz);
+	bk4819_lo_off(&rf_lo);
+	hal_delay_ms(TX_SETTLE_MS);
+	hal_delay_us(plan.on_us);
+
+	// PA select (UHF: PTA26 high, PB3 low; VHF the other way round) with the RX supply off, then the one TX supply of the
+	// band (UHF: PTA27 high, PTB2 low; VHF the other way round)
+	DAC_DATA_B = 0;
+	dac_b_power(true);
+	hrc_pin_write(tx_uhf ? PIN_VHF_TX : PIN_UHF_TX, false);
+	hrc_pin_write(tx_uhf ? PIN_UHF_TX : PIN_VHF_TX, true);
+	hrc_pin_write(PIN_RX_SUPPLY, false);
+	hal_delay_us(TX_SUPPLY_US);
+	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_B : PIN_TX_SUPPLY_A, false);
+	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
+	transmitting = true;
+	apc_ramp(tx_pa, true);
+	return true;
+}
+
+// End of a transmission without going back to receive (the stock order, 3.2): the main chip to its RX state first
+// (still on the TX frequency), the page's delay, the ramp down, supply and PA select off, PTA23 high. True when there
+// was one; rx() then retunes and waits the stock's 300 and 200 us
+static bool tx_stop(void)
+{
+	if (!transmitting) {
+		return false;
+	}
+	bk4819_tx_end(&rf_main);
+	hal_delay_us(tx_off_us);
+	apc_ramp(tx_pa, false);
+	DAC_DATA_B = 0;
+	hrc_pin_write(PIN_TX_SUPPLY_A, false);
+	hrc_pin_write(PIN_TX_SUPPLY_B, false);
+	hrc_pin_write(PIN_UHF_TX, false);
+	hrc_pin_write(PIN_VHF_TX, false);
+	hrc_pin_write(PIN_RX_SUPPLY, true);
+	dac_b_power(false);
+	transmitting = false;
+	audio(audio_open);
+	return true;
 }
 
 static void tx_off(void)
 {
+#if CONFIG_DMR && DB25D_DMR_TX
+	dmr_disarm();	// the RF task finishes the burst it is in; rx() then sets the receiver up again
+#endif
 	if (have_rx) {
-		rx(rx_hz, rx_bw, &rx_tone);
+		rx(rx_hz, rx_bw, &rx_tone);	// stops the transmission first
+	} else {
+		tx_stop();
 	}
+}
+
+// FM TX tone (1750 Hz burst, roger beep, CW ID): the chip's tone generator instead of the microphone (0xC3FA). The chip
+// drops it at the end of the transmission (bk4819_tx_end)
+static bool tx_tone(uint16_t hz)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	bk4819_tone_start(&rf_main, hz, DB25D_TX_TONE_GAIN);
+	return true;
+}
+
+static bool tx_tone_key(bool down)
+{
+	if (!transmitting || mode != RADIO_MODE_FM || rf_main.tone_hz == 0) {
+		return false;
+	}
+	bk4819_tone_key(&rf_main, down);
+	return true;
 }
 
 static void status(radio_status_t *st)
@@ -183,22 +533,47 @@ static void status(radio_status_t *st)
 	st->tone_ok = rx_tone.type != TONE_CTCSS || bk4819_ctcss_found(&rf_main);
 }
 
-// The amplifier pins follow the DM-32's polarities for the same pins (INF, 3.3): to check on the radio
+// The stock audio-on and audio-off steps (hardware-db25d.md 3.3) with the body speaker only. The mic speaker stays off:
+// its pin low also darkens the backlight
 static void audio(bool on)
 {
-	if (supported) {
-		bk4819_set_af(&rf_main, on ? BK4819_AF_FM : BK4819_AF_MUTE);
+	audio_open = on;
+	if (transmitting) {
+		return;		// the speaker stays muted until tx_stop() restores this
 	}
-	hrc_pin_write(PIN_SPK_SOURCE, !on);
-	hrc_pin_write(PIN_AUDIO_A, on);
-	hrc_pin_write(PIN_AUDIO_B, on);
+	if (supported) {
+		// In DMR the modem samples the chip's audio whether or not the speaker is on, so the output stays on, with the
+		// stock digital word (4.5)
+		if (mode == RADIO_MODE_DMR) {
+			bk4819_set_af(&rf_main, BK4819_AF_DMR);
+		} else {
+			bk4819_set_af(&rf_main, on && !vol_muted ? BK4819_AF_FM : BK4819_AF_MUTE);
+		}
+	}
+	speaker_pins();
+}
+
+// The speaker volume (the radio core passes the step as a percent, no knob here): the chip's AF DAC gain, register 0x48 bits
+// 3:0, stepping with DB25D_VOL_GAIN_TOP. Step 0 closes the chip output as well, as the gain alone isn't known to be
+// silent. DMR: the chip's output is the modem's input (4.5), so it keeps the stock gain; the volume comes back with FM
+static void volume_apply(void)
+{
+	if (!supported || mode == RADIO_MODE_DMR || transmitting) {
+		return;		// during a transmission nothing here moves: tx_stop() runs audio(), and the gain is in place
+	}
+	bk4819_set_af_gain(&rf_main, vol_gain);
+	bk4819_set_af(&rf_main, audio_open && !vol_muted ? BK4819_AF_FM : BK4819_AF_MUTE);
 }
 
 static void volume(uint8_t percent)
 {
-	if (supported) {
-		bk4819_set_af_gain(&rf_main, (uint8_t)((percent * 15u + 50u) / 100u));
+	unsigned step = (percent * RADIO_VOLUME_MAX + 50u) / 100u;	// the step back from its percent
+	if (step > RADIO_VOLUME_MAX) {
+		step = RADIO_VOLUME_MAX;
 	}
+	vol_muted = step == 0;
+	vol_gain = step == 0 ? 0 : (uint8_t)(((step - 1u) * DB25D_VOL_GAIN_TOP + (RADIO_VOLUME_MAX - 1u) / 2u) / (RADIO_VOLUME_MAX - 1u));
+	volume_apply();
 }
 
 void db25d_radio_diag(db25d_radio_diag_t *d)
@@ -208,6 +583,11 @@ void db25d_radio_diag(db25d_radio_diag_t *d)
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
 	d->rf_writes = rf_main.writes + rf_lo.writes;
+	d->hz = rx_hz;
+	d->transmitting = transmitting || dmr_armed;
+	db25d_tx_plan_t plan;
+	d->pa_low = have_rx && db25d_cal_tx_plan(rx_hz, false, DB25D_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
+	d->pa_high = have_rx && db25d_cal_tx_plan(rx_hz, true, DB25D_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
 }
 
 const hal_radio_t db25d_radio = {
@@ -219,4 +599,6 @@ const hal_radio_t db25d_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = volume,
+	.tx_tone = tx_tone,
+	.tx_tone_key = tx_tone_key,
 };

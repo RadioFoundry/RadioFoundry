@@ -45,6 +45,7 @@ typedef struct {
 typedef struct {
 	uint32_t now_ms;
 	uint8_t battery_pct;
+	bool no_battery;		// the radio has no battery: no icon, percentage or battery pages (board_has_battery)
 	bool dmr_off;			// the DMR channel's modem has been off a while (ui_app.c), not just a moment
 	bool entry;			// VFO frequency entry in progress
 	uint8_t entry_len;
@@ -72,6 +73,7 @@ typedef struct {
 	bool vibrate;		// vibrate for messages, calls to us, emergencies (Settings > Sound, CONFIG_VIBRATE)
 	uint8_t updown;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target (Settings > Keys)
 	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power)
+	uint8_t volume;		// speaker volume step 0..RADIO_VOLUME_MAX of a radio without a knob (the volume screen, Settings > Sound)
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power)
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
@@ -82,9 +84,13 @@ typedef struct {
 enum {
 	QT_POWER, QT_SQUELCH, QT_TONE, QT_MODE, QT_MONITOR, QT_VOX, QT_SCAN, QT_BANDWIDTH, QT_BRIGHTNESS,
 	QT_TIMESLOT, QT_CC, QT_HEAR_ALL, QT_PRIVACY, QT_TALK_TO, QT_STEP,
+	QT_TO_VFO,		// on a channel, in place of QT_MODE: copy the channel to the VFO
+
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO
 uint8_t ui_quick_kind(int pos, const radio_view_t *v);
+// True when a contact name only repeats its ID ("TG 201" for talkgroup 201): Home then shows the ID once
+bool ui_name_is_id(const char *name, uint32_t id, bool private_call);
 
 // Fonts and region positions for the current display, from gfx_width() / gfx_height()
 typedef struct {
@@ -182,6 +188,8 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 #endif
 // Received emergency: full screen, the caller, how to acknowledge
 void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, const char *name);
+// Volume (the VOL key, a radio without a knob): the step 0 (mute) .. RADIO_VOLUME_MAX as a bar and a number
+void ui_draw_volume(const radio_view_t *v, const ui_state_t *s);
 // Diagnostics: raw key bits, encoder total, radio readings and the board's own lines
 void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8_t first_line);
 // The first board line of the page after the one starting at first_line (wraps to 0)

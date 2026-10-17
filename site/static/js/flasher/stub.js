@@ -50,7 +50,24 @@ function find(buf, pat) {
 
 export function stubImages(json) {
 	const dec = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-	return { rom: dec(json.rom.data), romLoad: json.rom.load, romSha: json.rom.sha256, odr: dec(json.odr.data), odrSha: json.odr.sha256 };
+	// byBase: the stubs linked for other RAM spans (the DB25-D's 0x30000 and 0x1D000), by the base ODR reports
+	const byBase = {};
+	for (const [base, e] of Object.entries(json.odr_by_base || {})) byBase[base] = { name: e.name, image: dec(e.data), sha: e.sha256 };
+	return { rom: dec(json.rom.data), romLoad: json.rom.load, romSha: json.rom.sha256, odr: dec(json.odr.data), odrSha: json.odr.sha256, byBase,
+		// the image a running ODR wants for the span it offers (the default one is the DM-32UV / DM-1801 Pro's, 0x17000)
+		forBase: (base) => (base === 0x17000 ? { name: "HR_C7000", image: dec(json.odr.data) } : byBase[base] || null) };
+}
+
+// The monitor is position dependent: it has to be linked for exactly the RAM span the firmware offers, or jumping into
+// it runs wild and the radio needs a power cycle. The image's entry code holds its stack top and bss range after the
+// code (stub_link / check_stub_fits in stubtool.py).
+export function stubFits(image, load, size) {
+	if (image.length < 0x34 || image[0] !== 0x80 || image[1] !== 0xC0 || image[2] !== 0x20 || image[3] !== 0x70)
+		throw new StubError("this does not look like a stub image");
+	const top = u32le(image, 0x28), bss0 = u32le(image, 0x2C), bss1 = u32le(image, 0x30);
+	const d = bss0 - load - image.length;
+	if (!(load <= bss0 && bss0 <= bss1 && bss1 <= top && top <= load + size && d >= 0 && d < 4))
+		throw new StubError(`the stub is linked for another RAM span (0x${bss0.toString(16)}-0x${top.toString(16)}) than the 0x${load.toString(16)}-0x${(load + size).toString(16)} ODR offers`);
 }
 
 export class Stub {
@@ -61,6 +78,7 @@ export class Stub {
 		this.retries = retries;
 		this.retried = 0;
 		this.info = null;
+		this.size = {};		// per-radio memory sizes where they differ from MEM (the DB25-D's program flash is 2 MB)
 	}
 
 	async readExact(n, timeout) {
@@ -148,6 +166,7 @@ export class Stub {
 		const offer = await Stub.odrOffer(link);
 		if (!offer) throw new StubError("this ODR build cannot hand over to the loader (built without CONFIG_STUB_ENTRY)");
 		if (image.length > offer.size) throw new StubError(`the stub (${image.length} bytes) does not fit ODR's free RAM (${offer.size} bytes)`);
+		if (entry === null) stubFits(image, offer.load, offer.size);
 		this.log(`ODR offers ${offer.size} bytes of RAM at 0x${offer.load.toString(16)}; sending the ${image.length}-byte stub`);
 		await dl(concat(new Uint8Array([1]), le32(STUB_MAGIC), le32(image.length), le32(crc32(image)), le32(entry ?? offer.load)), "the stub transfer");
 		for (let off = 0; off < image.length; off += offer.chunk) {
@@ -296,7 +315,8 @@ export class Stub {
 	// the radio's own CRCs (op 07) and read again until it matches. progress(done, total, stats)
 	async dump(mem, start, end, { progress = () => {}, signal, compress = true } = {}) {
 		const m = MEM[mem];
-		if (!(start >= 0 && start < end && end <= m.size)) throw new StubError(`${m.name} range must lie within 0..0x${m.size.toString(16)}`);
+		const size = this.size[mem] || m.size;
+		if (!(start >= 0 && start < end && end <= size)) throw new StubError(`${m.name} range must lie within 0..0x${size.toString(16)}`);
 		await this.checkId(mem);
 		const lo = Math.floor(start / SECTOR) * SECTOR, hi = Math.ceil(end / SECTOR) * SECTOR;
 		const full = new Uint8Array(hi - lo);

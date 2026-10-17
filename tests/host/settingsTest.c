@@ -573,7 +573,7 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, brightness), 32 },
 		{ offsetof(settings_t, usb_mode), 37 },
 		{ offsetof(settings_t, accent), 38 },
-		{ offsetof(settings_t, reserved1), 39 },
+		{ offsetof(settings_t, vfo_talk_lo), 39 },
 		{ offsetof(settings_t, dmr_id), 40 },
 		{ offsetof(settings_t, radio_name), 44 },
 		{ offsetof(settings_t, privacy_key), 60 },
@@ -602,7 +602,7 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, rpt_beacon), 172 },
 		{ offsetof(settings_t, aprs_power), 173 },
 		{ offsetof(settings_t, aprs_cp_path), 174 },
-		{ offsetof(settings_t, reserved6), 175 },
+		{ offsetof(settings_t, volume), 175 },
 		{ offsetof(settings_t, aprs_flags), 176 },
 		{ offsetof(settings_t, aprs_freq_hz), 180 },
 		{ offsetof(settings_t, aprs_lat), 184 },
@@ -639,6 +639,27 @@ static void test_settings_layout(void)
 	CHECK(st.load == SETTINGS_LOADED && st.seq == 9 && st.sector == 1 && st.slot == 0);
 	CHECK(s.squelch == 4 && s.vfo_rx_hz == 146500000u && strcmp(s.radio_name, "W1AW") == 0 &&
 	      s.snmp_write_hash == 0x12345678u);
+
+	// The DMR VFO's talk target shares bytes with the mode, bandwidth, color code, slot and the old reserved1 (settings-store.md 3):
+	// an old record reads as no target, and each setter leaves the others' bits alone
+	CHECK(settings_vfo_cc(&s) == 0 && settings_vfo_ts(&s) == 1 && settings_vfo_talk_id(&s) == 0 &&
+	      !settings_vfo_talk_private(&s));
+	settings_defaults(&s);
+	CHECK(settings_vfo_cc(&s) == 1 && settings_vfo_ts(&s) == 1 && settings_vfo_talk_id(&s) == 0);
+	settings_set_vfo_cc_ts(&s, 7, 2);
+	CHECK(settings_vfo_cc(&s) == 7 && settings_vfo_ts(&s) == 2 && settings_vfo_talk_id(&s) == 0);
+	settings_set_vfo_talk(&s, 0xABCDEFu, true);
+	CHECK(settings_vfo_cc(&s) == 7 && settings_vfo_ts(&s) == 2 && settings_vfo_talk_id(&s) == 0xABCDEFu &&
+	      settings_vfo_talk_private(&s));
+	settings_set_vfo_cc_ts(&s, 15, 1);
+	CHECK(settings_vfo_cc(&s) == 15 && settings_vfo_ts(&s) == 1 && settings_vfo_talk_id(&s) == 0xABCDEFu &&
+	      settings_vfo_talk_private(&s));
+	settings_set_vfo_mode_bw(&s, 1, 1);
+	CHECK(settings_vfo_mode(&s) == 1 && settings_vfo_bw(&s) == 1 && settings_vfo_talk_id(&s) == 0xABCDEFu);
+	settings_set_vfo_talk(&s, 3101276, false);
+	CHECK(settings_vfo_cc(&s) == 15 && settings_vfo_ts(&s) == 1 && settings_vfo_talk_id(&s) == 3101276 &&
+	      !settings_vfo_talk_private(&s) && s.vfo_talk_lo == (3101276 & 0xFF) && settings_vfo_mode(&s) == 1 &&
+	      settings_vfo_bw(&s) == 1);
 }
 
 // Records that must not load: a bad CRC, no commit word, a length past the slot, a newer layout; the older valid

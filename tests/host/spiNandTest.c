@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // drivers/flash/spi_nand against a model of an SPI NAND with on-die ECC at the SPI bus (the commands the driver uses:
-// FF reset, 9F ID after a dummy byte, 0F get feature, 13 page read into the cache, 03 read from the cache after a
-// two-byte column and a dummy byte). The model stays busy for a while after a reset and a page read, sets the ECC
-// status per page, and can fail the bus, stay busy forever or float MISO. The geometry is small so every page fits.
+// FF reset, 9F ID after a dummy byte, 0F / 1F get / set feature, 13 page read into the cache, 03 read from the cache
+// after a two-byte column and a dummy byte, 06 write enable, 02 / 84 program load (02 clears the cache first), 10
+// program execute, D8 block erase). The model stays busy for a while after a reset, a page read, a program and an
+// erase, sets the ECC status per page, refuses program and erase without write enable or while the block lock is on
+// (status fail bits), counts a page programmed twice or out of order, and can fail the bus, stay busy forever or float
+// MISO. The geometry is small so every page fits.
 #include <stdio.h>
 #include <string.h>
 #include "flash/spi_nand/spi_nand.h"
@@ -31,6 +34,11 @@ static struct {
 	uint32_t busy_after;		// polls a reset or page read stays busy
 	bool stuck_busy, bus_fail, floating;
 	uint8_t id[2];
+	uint8_t lock, config;		// features 0xA0, 0xB0
+	uint16_t next[BLOCKS];		// the next page that may be programmed in each block
+	bool worn[BLOCKS];		// programs and erases there report failure
+	uint32_t violations;		// programs twice or out of order
+	uint32_t programs, erases;
 	// The transaction in progress
 	bool selected;
 	uint8_t hdr[4];
@@ -51,10 +59,44 @@ static void bus_select(bool active)
 		CHECK(!chip.selected);
 		chip.n = 0;
 	} else if (chip.selected) {
+		// While busy only status reads and a reset may go in
+		if (chip.n > 0 && chip.hdr[0] != 0x0F && chip.hdr[0] != 0xFF && (chip.status & SPI_NAND_STATUS_OIP)) {
+			chip.violations++;
+		}
 		// Commands that act when chip select goes high
 		if (chip.n == 1 && chip.hdr[0] == 0xFF) {
 			chip.resets++;
 			chip.status = 0;
+			start_busy();
+		} else if (chip.n == 3 && chip.hdr[0] == 0x1F) {
+			if (chip.hdr[1] == SPI_NAND_FEATURE_LOCK) {
+				chip.lock = chip.hdr[2];
+			} else if (chip.hdr[1] == SPI_NAND_FEATURE_CONFIG) {
+				chip.config = chip.hdr[2];
+			}
+		} else if (chip.n == 1 && chip.hdr[0] == 0x06) {
+			chip.status |= SPI_NAND_STATUS_WEL;
+		} else if (chip.n == 4 && (chip.hdr[0] == 0x10 || chip.hdr[0] == 0xD8)) {
+			uint32_t row = (uint32_t)chip.hdr[1] << 16 | chip.hdr[2] << 8 | chip.hdr[3];
+			uint32_t b = row / PPB;
+			CHECK(row < PAGES && (chip.status & SPI_NAND_STATUS_OIP) == 0);
+			bool ok = (chip.status & SPI_NAND_STATUS_WEL) && chip.lock == 0 && !chip.worn[b % BLOCKS];
+			uint8_t fail = chip.hdr[0] == 0x10 ? SPI_NAND_STATUS_P_FAIL : SPI_NAND_STATUS_E_FAIL;
+			chip.status = (uint8_t)(ok ? 0 : fail);
+			if (ok && chip.hdr[0] == 0x10) {
+				chip.programs++;
+				if (row % PPB != chip.next[b]) {
+					chip.violations++;
+				}
+				chip.next[b] = (uint16_t)(row % PPB + 1u);
+				for (uint32_t c = 0; c < PAGE + SPARE; c++) {
+					chip.array[row][c] &= chip.cache[c];
+				}
+			} else if (ok) {
+				chip.erases++;
+				chip.next[b] = 0;
+				memset(chip.array[b * PPB], 0xFF, sizeof(chip.array[0]) * PPB);
+			}
 			start_busy();
 		} else if (chip.n == 4 && chip.hdr[0] == 0x13) {
 			uint32_t page = (uint32_t)chip.hdr[1] << 16 | chip.hdr[2] << 8 | chip.hdr[3];
@@ -82,7 +124,27 @@ static uint8_t clock_byte(uint8_t in)
 	switch (chip.hdr[0]) {
 	case 0x9F:
 		return i >= 2 && i < 4 ? chip.id[i - 2] : 0x00;	// opcode, dummy, then the ID
+	case 0x02:
+	case 0x84:
+		if (i == 1 && chip.hdr[0] == 0x02) {
+			memset(chip.cache, 0xFF, sizeof(chip.cache));	// 02 clears the buffer
+		}
+		if (i >= 3) {
+			uint32_t col = (uint32_t)(chip.hdr[1] & 0x0F) << 8 | chip.hdr[2];
+			uint32_t at = col + (i - 3);
+			CHECK(at < sizeof(chip.cache));
+			if (at < sizeof(chip.cache)) {
+				chip.cache[at] = in;
+			}
+		}
+		return 0x00;
 	case 0x0F:
+		if (i == 2 && chip.hdr[1] == SPI_NAND_FEATURE_LOCK) {
+			return chip.lock;
+		}
+		if (i == 2 && chip.hdr[1] == SPI_NAND_FEATURE_CONFIG) {
+			return chip.config;
+		}
 		if (i == 2 && chip.hdr[1] == SPI_NAND_FEATURE_STATUS) {
 			uint8_t st = chip.status;
 			if (chip.busy_polls > 0 && !chip.stuck_busy) {
@@ -142,6 +204,11 @@ static void chip_reset(void)
 	chip.busy_after = 3;
 	chip.id[0] = 0x98;
 	chip.id[1] = 0xEB;
+	chip.lock = 0x38;		// every block locked at power-up
+	chip.config = 0x12;		// ECC on, high speed read on
+	for (uint32_t b = 0; b < BLOCKS; b++) {
+		chip.next[b] = PPB;	// the pattern above counts as programmed: an erase comes first
+	}
 }
 
 static void test_probe(void)
@@ -271,12 +338,109 @@ static void test_bad_blocks(void)
 	CHECK(!spi_nand_block_bad(&n, 6, &bad));
 }
 
+// The DB25-D's settings: ECC on and high speed read off (feature 0xB0), every block locked between operations
+static spi_nand_t writable(uint16_t first, uint16_t count)
+{
+	spi_nand_t n = fresh();
+	n.config = 0x10;
+	n.lock_all = 0x38;
+	n.write_first = first;
+	n.write_blocks = count;
+	return n;
+}
+
+static void test_program(void)
+{
+	chip_reset();
+	spi_nand_t n = writable(2, 4);
+	CHECK(spi_nand_probe(&n));
+	CHECK(chip.config == 0x10 && chip.lock == 0x38);
+
+	// Erase, then a page from an empty buffer: the chunks where they belong, 0xFF elsewhere; locked again after
+	CHECK(spi_nand_erase(&n, 2) == SPI_NAND_DONE && chip.erases == 1 && chip.lock == 0x38);
+	const uint8_t data[5] = { 1, 2, 3, 4, 5 }, meta[3] = { 0xA1, 0xA2, 0xA3 };
+	spi_nand_chunk_t c[2] = { { 10, sizeof(data), data }, { PAGE + 2, sizeof(meta), meta } };
+	uint32_t page = 2 * PPB;
+	CHECK(spi_nand_program(&n, page, SPI_NAND_NO_PAGE, c, 2) == SPI_NAND_DONE);
+	CHECK(chip.lock == 0x38 && (chip.status & SPI_NAND_STATUS_WEL) == 0);
+	CHECK(memcmp(&chip.array[page][10], data, sizeof(data)) == 0 && chip.array[page][9] == 0xFF &&
+	      chip.array[page][15] == 0xFF && memcmp(&chip.array[page][PAGE + 2], meta, sizeof(meta)) == 0 &&
+	      chip.array[page][PAGE] == 0xFF);
+	uint8_t buf[PAGE + SPARE];
+	CHECK(spi_nand_read_page(&n, page, 0, buf, sizeof(buf)) && memcmp(buf, chip.array[page], sizeof(buf)) == 0);
+
+	// No chunk: a page of 0xFF still takes its program
+	CHECK(spi_nand_program(&n, page + 1, SPI_NAND_NO_PAGE, NULL, 0) == SPI_NAND_DONE && chip.programs == 2);
+
+	// An internal data move: the source's bytes with one chunk changed, programmed elsewhere
+	const uint8_t patch[2] = { 0x00, 0x11 };
+	spi_nand_chunk_t m = { 11, sizeof(patch), patch };
+	CHECK(spi_nand_program(&n, page + 2, page, &m, 1) == SPI_NAND_DONE);
+	CHECK(chip.array[page + 2][10] == 1 && chip.array[page + 2][11] == 0x00 && chip.array[page + 2][12] == 0x11 &&
+	      chip.array[page + 2][13] == 4 && memcmp(&chip.array[page + 2][PAGE + 2], meta, sizeof(meta)) == 0);
+	// The page read before is no longer taken as cached
+	CHECK(spi_nand_read_page(&n, page + 2, 11, buf, 2) && buf[0] == 0x00 && buf[1] == 0x11);
+
+	// A source page ECC can't correct isn't copied
+	chip.ecc[page + 1] = SPI_NAND_ECC_FAILED;
+	uint32_t before = chip.programs;
+	CHECK(spi_nand_program(&n, page + 3, page + 1, NULL, 0) == SPI_NAND_ERROR && chip.programs == before);
+	CHECK(chip.lock == 0x38);
+	chip.ecc[page + 1] = SPI_NAND_ECC_OK;
+
+	// Outside the write window, outside the chip, chunks past the spare area: refused before the bus
+	CHECK(spi_nand_program(&n, 1 * PPB, SPI_NAND_NO_PAGE, c, 2) == SPI_NAND_ERROR);
+	CHECK(spi_nand_program(&n, 6 * PPB, SPI_NAND_NO_PAGE, c, 2) == SPI_NAND_ERROR);
+	CHECK(spi_nand_program(&n, PAGES, SPI_NAND_NO_PAGE, c, 2) == SPI_NAND_ERROR);
+	CHECK(spi_nand_program(&n, page + 3, PAGES, NULL, 0) == SPI_NAND_ERROR);
+	spi_nand_chunk_t past = { PAGE + SPARE - 1, 2, data };
+	CHECK(spi_nand_program(&n, page + 3, SPI_NAND_NO_PAGE, &past, 1) == SPI_NAND_ERROR);
+	CHECK(spi_nand_erase(&n, 1) == SPI_NAND_ERROR && spi_nand_erase(&n, 6) == SPI_NAND_ERROR);
+	CHECK(spi_nand_mark_bad(&n, 7) == SPI_NAND_ERROR);
+	CHECK(chip.programs == before && chip.erases == 1);
+	// A read-only chip (no window): nothing at all
+	spi_nand_t ro = fresh();
+	CHECK(spi_nand_probe(&ro) && spi_nand_erase(&ro, 2) == SPI_NAND_ERROR);
+
+	// The chip reports failures: FAILED, counted
+	chip.worn[3] = true;
+	CHECK(spi_nand_erase(&n, 3) == SPI_NAND_FAILED && n.program_fails == 1);
+	CHECK(spi_nand_program(&n, 3 * PPB, SPI_NAND_NO_PAGE, c, 2) == SPI_NAND_FAILED && n.program_fails == 2);
+	CHECK(chip.lock == 0x38);
+	// Retiring it: page 0 all 0x00, main and spare, which the bad-block check reports
+	chip.worn[3] = false;
+	CHECK(spi_nand_mark_bad(&n, 3) == SPI_NAND_DONE);
+	bool zero = true;
+	for (uint32_t i = 0; i < PAGE + SPARE; i++) {
+		zero = zero && chip.array[3 * PPB][i] == 0x00;
+	}
+	bool bad = false;
+	CHECK(zero && spi_nand_block_bad(&n, 3, &bad) && bad);
+
+	// The bus fails or the chip stays busy: ERROR, and the lock is put back when the bus allows
+	chip.bus_fail = true;
+	CHECK(spi_nand_program(&n, page + 3, SPI_NAND_NO_PAGE, c, 2) == SPI_NAND_ERROR);
+	CHECK(spi_nand_erase(&n, 4) == SPI_NAND_ERROR);
+	chip.bus_fail = false;
+	CHECK(chip.lock == 0x38);
+	// Still busy when the driver gives up: no command but status reads goes in (the model counts any as a
+	// violation); the next operation locks again
+	chip.stuck_busy = true;
+	CHECK(spi_nand_erase(&n, 4) == SPI_NAND_ERROR);
+	chip.stuck_busy = false;
+	chip.status = 0;
+	chip.busy_polls = 0;
+	CHECK(spi_nand_erase(&n, 4) == SPI_NAND_DONE && chip.lock == 0x38);
+	CHECK(chip.violations == 0);
+}
+
 int main(void)
 {
 	test_probe();
 	test_read();
 	test_ecc();
 	test_bad_blocks();
+	test_program();
 	if (failures) {
 		printf("spiNandTest: %d failure(s)\n", failures);
 		return 1;

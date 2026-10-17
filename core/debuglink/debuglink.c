@@ -43,6 +43,8 @@ enum {
 	OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
 	OP_PPP = 28,			// on u8: PPP on the serial host port (docs/spec/ppp.md; CONFIG_NET_PPP builds)
 	// 29: a vibration pattern (DL_OP_VIBRATE, debuglink_view_radio.c)
+	// 30: the speaker volume (DL_OP_VOLUME, debuglink_view_radio.c)
+	// 31, 32: DMR fields, Copy to VFO (DL_OP_DMR_FIELDS, DL_OP_VFO_COPY, debuglink_view_radio.c)
 };
 
 static dl_parser_t parser;
@@ -330,21 +332,6 @@ static size_t cmd_reset(uint8_t *out)
 
 // --- version ---
 
-// codec=: the vocoder profile the board recognized in flash (signature and hash checked by the board), "absent" when
-// the board has a vocoder but its check failed, "none" without one (FM-only build). Read only
-static const char *codec_id(void)
-{
-	const hal_vocoder_t *v = board.vocoder;
-	if (v == NULL) {
-		return "none";
-	}
-	if (!v->present()) {
-		return "absent";
-	}
-	const char *id = v->profile != NULL ? v->profile() : NULL;
-	return id != NULL ? id : "present";
-}
-
 static size_t cmd_version(uint8_t *out, size_t cap)
 {
 	dl_text_t t;
@@ -356,7 +343,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	dl_text_kv_str(&t, "git", ODR_GIT);
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "%s", features);
-	dl_text_kv_str(&t, "codec", codec_id());
+	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,
 			d->inset_bottom, d->inset_left, d->inset_right);
@@ -537,8 +524,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	};
 	uint32_t now = hal_millis();
 
-	if (len >= 1 && ((req[0] >= DL_OP_SCAN && req[0] <= DL_OP_SETTING) || req[0] == DL_OP_ROAM ||
-			 req[0] == DL_OP_VIBRATE)) {
+	if (len >= 1 && debuglink_is_feature_op(req[0])) {
 		// The radio features' operations (debuglink_view_radio.c), under the same rate limit
 		if (radio_op_done && (now - last_radio_op_ms) < RADIO_OP_GAP_MS) {
 			return status_only(out, DL_ST_BUSY);

@@ -330,14 +330,21 @@ def c7000_flash():
 		# the bootloader's ID string (dm32_flash.MODELS): in the first 48 KB of the program flash, it tells the radios apart
 		boards[bid] = {"slot": [lay["slot"][0] - dc.PROGMEM_BASE, lay["slot"][1] - dc.PROGMEM_BASE],
 			       "run": list(lay["run"]), "tables": list(lay["tables"]),
-			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None}
+			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None,
+			       # the whole program flash (a backup reads it all; writes stay in the application area), whether
+			       # the radio has the SPI data flash the stub reads, and the stub the power-on route loads
+			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
+			       "power_on_stub": lay.get("power_on_stub")}
 	profiles = []
 	for p in dc.PROFILES.values():
-		if "code_sha256" not in p:
+		# a stock file known only by its whole-file hash (the DB25-D 2024-05-09 build) has no codec hashes: it can be
+		# carved but not found in a program flash read
+		if "code_sha256" not in p and p.get("kind") == "progmem":
 			continue
 		profiles.append({"name": p["name"], "board": p["board"], "tag": p["tag"],
-				 "code_len": p["code"][1], "run": p["code"][2], "code_sha256": p["code_sha256"],
-				 "tables_len": p["tables"][1], "tables_ram": p["tables"][2], "tables_sha256": p["tables_sha256"],
+				 "code_len": p["code"][1], "run": p["code"][2], "code_sha256": p.get("code_sha256"),
+				 "tables_len": p["tables"][1], "tables_ram": p["tables"][2], "tables_sha256": p.get("tables_sha256"),
+				 "stock_header": p.get("hdr", dc.STOCK_HEADER),
 				 "tables_head_crc": p.get("tables_head_crc", dc.TABLES_HEAD_CRC),
 				 "entries": [p["entries"][k] for k in dc.ENTRIES],
 				 "stock_file": None if p.get("kind") == "progmem" else {"sha256": next(h for h, q in dc.PROFILES.items() if q is p),
@@ -354,11 +361,18 @@ def c7000_stub():
 	"""The two stub images stubtool embeds (the boot-ROM build and the build ODR jumps to), checked against their
 	SHA-256 by stubtool itself, as base64 for the page."""
 	import base64
+	import hashlib
 	st = _tool("stub", "stubtool.py")
 	rom, odr = st.stub_image(), st.stub_odr_image()
+	others = {}
+	for base, (name, image) in st.odr_stubs().items():
+		if base != 0x17000:
+			others[str(base)] = {"name": name, "sha256": hashlib.sha256(image).hexdigest(), "data": base64.b64encode(image).decode()}
 	return {"format": "odr-c7000-stub/1",
 		"rom": {"load": st.LOAD_ADDR, "sha256": st.STUB_SHA256, "data": base64.b64encode(rom).decode()},
-		"odr": {"sha256": st.STUB_ODR_SHA256, "data": base64.b64encode(odr).decode()}}
+		"odr": {"sha256": st.STUB_ODR_SHA256, "data": base64.b64encode(odr).decode()},
+		# the stubs linked for other RAM spans (the DB25-D's), by the base the running ODR reports in STUB INFO
+		"odr_by_base": others}
 
 
 def f4_flash():

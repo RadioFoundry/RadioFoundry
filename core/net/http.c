@@ -115,8 +115,11 @@ static void status_json(dl_text_t *t)
 	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\",\"power\":", (unsigned)ch->rx_hz,
 		(unsigned)ch->tx_hz, (ch->mode == RADIO_MODE_DMR) ? "dmr" : "fm", (ch->bw == RADIO_BW_25K) ? "25" : "12.5");
 	json_str(t, pw);
-	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u,\"battery_pct\":%u,\"battery_mv\":%u,\"hotspot\":%s", v->rssi_dbm,
-		v->squelch, v->battery_pct, v->battery_mv, bool_s(v->hotspot));
+	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u", v->rssi_dbm, v->squelch);
+	if (board_has_battery()) {	// a radio without a battery leaves both fields out
+		dl_text(t, ",\"battery_pct\":%u,\"battery_mv\":%u", v->battery_pct, v->battery_mv);
+	}
+	dl_text(t, ",\"hotspot\":%s", bool_s(v->hotspot));
 #if CONFIG_DMR
 	if (ch->mode == RADIO_MODE_DMR) {
 		dl_text(t, ",\"dmr\":{\"own_id\":%u,\"cc\":%u,\"ts\":%u,\"target\":%u,\"private\":%s,\"heard\":%u}",

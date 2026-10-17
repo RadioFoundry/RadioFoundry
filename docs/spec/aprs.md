@@ -41,7 +41,7 @@ aprx can stand in.
 | Positions over DMR (LRRP / UDT) | a DMR radio, on a DMR channel |
 | KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | nothing more (TX path; RX frames only with RX) |
 | iGate | RX for RF -> IS; IS -> RF messages only once RX exists |
-| GPS | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)`; otherwise host NMEA or the fixed position |
+| GPS | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)`; otherwise host NMEA or the fixed position. Settings > Location > GPS (`settings_t.gps`, default off) goes through `ui_svc_apply` at start-up and on each change to `board_t.gps_enable` (the module's power; the board probes the module at start-up whatever the setting says, so `board_has_gps()` stays true) and to `aprs_gps_enable`: off drops the board fix at once and ignores later sentences, so the position falls back to the computer or the fixed one |
 
 What the boards provide today:
 

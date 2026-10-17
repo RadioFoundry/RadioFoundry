@@ -26,6 +26,7 @@ WEAK void ui_svc_focus_target(uint32_t id, bool private_call) { (void)id; (void)
 WEAK bool ui_svc_dmr_timeslot(uint8_t ts) { (void)ts; return false; }
 WEAK bool ui_svc_dmr_color_code(uint8_t cc) { (void)cc; return false; }
 WEAK bool ui_svc_mode(uint8_t mode) { (void)mode; return false; }
+WEAK uint8_t ui_svc_vfo_copy(const radio_view_t *v) { (void)v; return VFO_COPY_NO_VFO; }
 WEAK bool ui_svc_hear_all(bool on) { (void)on; return false; }
 WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }
 WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
@@ -67,7 +68,7 @@ static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_PTT_LOCKED] = 1, [UI_SET_LOW_BATTERY] = 15, [UI_SET_LONG_PRESS_MS] = 600, [UI_SET_REPEAT_MS] = 120,
 	[UI_SET_ROAM_SURVEY] = 1, [UI_SET_ROAM_BEACON_S] = 60, [UI_SET_ROAM_BEACON_LEN] = 4, [UI_SET_TFTP_WRITE] = 1,
 	[UI_SET_MSG_FORMAT] = 2,	// ETSI IP text
-	[UI_SET_VIBRATE] = 1,
+	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT,
 };
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)

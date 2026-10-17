@@ -677,9 +677,9 @@ static const ui_scr_def_t recent_screen = {
 
 // ======================= Channels: VFO, the zones; a zone's channels =======================
 
-#define CH_VFO	(CONFIG_VFO_FM ? 1u : 0u)	// raw row 0 is the VFO when it is built
+#define CH_VFO	((CONFIG_VFO_FM || CONFIG_VFO_DMR) ? 1u : 0u)	// raw row 0 is the VFO when it is built
 
-static bool chans_is_vfo(uint16_t raw) { return CONFIG_VFO_FM && raw == 0; }
+static bool chans_is_vfo(uint16_t raw) { return (CONFIG_VFO_FM || CONFIG_VFO_DMR) && raw == 0; }
 static uint16_t chans_raw_count(void) { return (uint16_t)(CH_VFO + codeplug_zone_count()); }
 
 static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
@@ -2396,14 +2396,41 @@ static const ui_scr_def_t roam_screen = {
 // Diagnostics keeps number 7 (tests/hil/test_ui.py); Roaming follows (8, or 7 without diagnostics), then APRS
 enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_BATTERY, T_DIAG, T_ROAM, T_APRS, T_COUNT };
 
-static uint16_t tools_count(void) { return CONFIG_DIAG ? T_COUNT : T_COUNT - 1; }
-static uint16_t tools_row(uint16_t i) { return !CONFIG_DIAG && i >= T_DIAG ? (uint16_t)(i + 1u) : i; }
+// A tool this build or radio doesn't have is left out of the list (a radio without a battery has no Battery page)
+static bool tool_shown(uint16_t i)
+{
+	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_has_battery());
+}
+
+// The hint names the last number ("1-9 open"), which follows the tools this radio has
+static char tools_hint[] = "1-9 open  Back";
+
+static uint16_t tools_count(void)
+{
+	uint16_t n = 0;
+	for (uint16_t i = 0; i < T_COUNT; i++)
+		n += tool_shown(i);
+	tools_hint[2] = (char)('0' + (n < 9 ? n : 9));
+	return n;
+}
+
+// The tool on list row `row`
+static uint16_t tools_row(uint16_t row)
+{
+	for (uint16_t i = 0; i < T_COUNT; i++) {
+		if (tool_shown(i) && row-- == 0)
+			return i;
+	}
+	return T_COUNT;
+}
 
 static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single-freq repeater",
 					     "Battery", "Diagnostics", "Roaming", "APRS" };
 	uint16_t i = tools_row(row);
+	if (i >= T_COUNT)
+		return;
 	strcpy(it->label, names[i]);
 	item_num(it, (uint16_t)(row + 1u));
 	sbuf_t b;
@@ -2482,7 +2509,7 @@ static void tools_select(uint16_t row, bool hold)
 
 static const ui_scr_def_t tools_screen = {
 	.name = "tools", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Tools",
-	.hint = CONFIG_DIAG ? "1-9 open  Back" : "1-8 open  Back",
+	.hint = tools_hint,
 	.count = tools_count, .item = tools_item, .select = tools_select,
 };
 
@@ -2534,12 +2561,18 @@ static const char *const n_possend[] = { "Off", "1 min", "5 min", "15 min" };
 static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
 					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_KEY_LOCK,
 					 KEYFN_HOME_ZONE,
+#if CONFIG_VFO_FM || CONFIG_VFO_DMR
+					 KEYFN_COPY_VFO,
+#endif
 #if CONFIG_DMR
 					 KEYFN_CALL_BACK,
 #endif
 };
 static const char *const n_keyfn_press[] = { "Default", "Nothing", "Monitor", "Talk target", "Power level",
 					     "Next zone", "Previous zone", "Scan", "Key lock", "Home zone",
+#if CONFIG_VFO_FM || CONFIG_VFO_DMR
+					     "Copy to VFO",
+#endif
 #if CONFIG_DMR
 					     "Call back",
 #endif
@@ -2550,6 +2583,9 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 					KEYFN_EMERGENCY,
 #endif
 					KEYFN_KEY_LOCK, KEYFN_HOME_ZONE,
+#if CONFIG_VFO_FM || CONFIG_VFO_DMR
+					KEYFN_COPY_VFO,
+#endif
 #if CONFIG_DMR
 					KEYFN_CALL_BACK,
 #endif
@@ -2560,6 +2596,9 @@ static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target",
 					    "Emergency",
 #endif
 					    "Key lock", "Home zone",
+#if CONFIG_VFO_FM || CONFIG_VFO_DMR
+					    "Copy to VFO",
+#endif
 #if CONFIG_DMR
 					    "Call back",
 #endif
@@ -2590,6 +2629,7 @@ static const char *const n_ptype[] = { "Off", "Motorola", "Anytone" };
 #define ACTION(nm, syn_, a) { nm, syn_, ST_ACTION, a, 0, 0, 0, NULL, NULL, 0, NULL }
 
 static const set_item_t s_sound[] = {
+	NUMBER("Volume", "speaker loudness", UI_SET_VOLUME, 0, RADIO_VOLUME_MAX, 1, NULL),
 	TOGGLE("Key tones", "beep", UI_SET_KEY_TONES),
 	NUMBER("Tone volume", NULL, UI_SET_TONE_VOLUME, 0, 10, 1, NULL),
 	TOGGLE("Talk permit tone", NULL, UI_SET_TALK_PERMIT),
@@ -2686,15 +2726,43 @@ static const set_group_t groups[] = {
 
 uint8_t ui_set_group_count(void) { return GROUPS; }
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
-uint8_t ui_set_item_count(uint8_t g) { return g < GROUPS ? groups[g].count : 0; }
+
+// Settings a radio without a battery doesn't have are left out of the list, not shown disabled
+static bool set_hidden(const set_item_t *s)
+{
+	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
+		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
+	return !board_has_battery() && s->type != ST_ACTION &&
+	       (s->id == UI_SET_BATTERY_SAVER || s->id == UI_SET_LOW_BATTERY);
+}
+
+// The i-th setting of group g that this radio has, NULL past the end
+static const set_item_t *set_nth(uint8_t g, uint16_t i)
+{
+	if (g >= GROUPS)
+		return NULL;
+	for (uint8_t k = 0; k < groups[g].count; k++) {
+		if (set_hidden(&groups[g].items[k]))
+			continue;
+		if (i-- == 0)
+			return &groups[g].items[k];
+	}
+	return NULL;
+}
+
+uint8_t ui_set_item_count(uint8_t g)
+{
+	uint8_t n = 0;
+	while (set_nth(g, n) != NULL)
+		n++;
+	return n;
+}
 
 const char *ui_set_item_name(uint8_t g, uint8_t i, const char **synonyms)
 {
-	*synonyms = NULL;
-	if (g >= GROUPS || i >= groups[g].count)
-		return "";
-	*synonyms = groups[g].items[i].syn;
-	return groups[g].items[i].name;
+	const set_item_t *s = set_nth(g, i);
+	*synonyms = s != NULL ? s->syn : NULL;
+	return s != NULL ? s->name : "";
 }
 
 void ui_open_setting(uint8_t g, uint8_t i)
@@ -2733,7 +2801,7 @@ static int32_t set_value;
 static const set_item_t *set_item_at(uint16_t i)
 {
 	uint16_t g = ui_frame()->arg;
-	return g < GROUPS && i < groups[g].count ? &groups[g].items[i] : NULL;
+	return g < GROUPS ? set_nth((uint8_t)g, i) : NULL;
 }
 
 static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len)
@@ -3067,6 +3135,14 @@ static void picker_enter(void)
 	const radio_view_t *v = ui_view();
 	ui_target_t t;
 	contact_t c;
+	// The VFO's own target (it has no channel to take one from)
+	if (v->vfo && v->dmr.target_id != 0) {
+		memset(&t, 0, sizeof t);
+		t.id = v->dmr.target_id;
+		t.group = !v->dmr.target_private;
+		strcpy(t.name, v->dmr.target_name);
+		pick_add(&t, "Current");
+	}
 	// The channel's default
 	uint16_t def = codeplug_channel_talk_contact(&v->ch);
 	if (def && codeplug_contact(def, &c)) {
@@ -3216,6 +3292,9 @@ static const ui_scr_def_t quick_screen = {
 static const ui_scr_def_t diag_screen = {
 	.name = "diag", .flags = 0, .key = ui_diag_key, .draw = ui_diag_draw,
 };
+static const ui_scr_def_t volume_screen = {
+	.name = "volume", .flags = SF_FIELD, .key = ui_volume_key, .draw = ui_volume_draw,
+};
 static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
@@ -3230,6 +3309,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
+	[SCR_VOLUME] = &volume_screen,
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
 #if CONFIG_CHANNEL_EDIT

@@ -52,5 +52,8 @@ BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FO
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter; USRP, UDP header compression and the APRS-IS client don't
 # fit beside everything else (above), nor does control station mode or TFTP, nor SNMP (with it the
-# maximal image overflowed flash by 1,776 bytes)
-MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS TFTP DMR_CONTROL_STATION SNMP
+# maximal image overflowed flash by 1,776 bytes). Stub entry and NAND storage aren't used on this radio. The channel
+# editor is in the default build, which compiles it; beside the big fonts and the rest of the maximal set it overflowed
+# flash by 4,260 bytes (2026-10-17). Its default follows CONFIG_CHANNEL_LIST, so it is switched off here, not skipped
+MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS TFTP DMR_CONTROL_STATION SNMP STUB_ENTRY NAND_STORAGE
+MAXIMAL_VARS := CONFIG_CHANNEL_EDIT=n

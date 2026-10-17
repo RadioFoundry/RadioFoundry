@@ -384,6 +384,8 @@ def cmd_flash(args):
     board, man, image, merged = load_image(args, args.board)
     if board.family == "bfuv32-serial":
         return cmd_flash_serial(args, board, man, image, merged)
+    if board.family == "hrc7000-iap":
+        raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with odrflash" % board.name)
     if args.route != serialflash.AUTO:
         raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV)")
     stock = load_stock(args)

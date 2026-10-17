@@ -52,7 +52,7 @@ During a DMR call, Home shows the caller:
 - the DMR ID and the timeslot;
 - the talker alias as it arrives, unless **Settings > Talk & listen > Show talker alias** is off;
 - the talkgroup, or "Private to you";
-- the signal strength.
+- the signal strength (in DMR, the peak of the last 120 ms, so the empty timeslot doesn't show as a drop).
 
 <img src="../ux/screens/160x120i5/rx_group.png" width="200" alt="Receiving a group call">
 <img src="../ux/screens/160x120i5/rx_private.png" width="200" alt="Receiving a private call">

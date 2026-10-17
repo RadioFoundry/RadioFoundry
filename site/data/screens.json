@@ -43,6 +43,18 @@
     "VFO"
    ]
   },
+  "home_vfo_dmr": {
+   "group": "home",
+   "needs": [
+    "VFO_DMR"
+   ]
+  },
+  "home_copy_to_vfo": {
+   "group": "home",
+   "needs": [
+    "VFO"
+   ]
+  },
   "home_large_text": {
    "group": "home",
    "needs": []
@@ -105,6 +117,24 @@
     "DMR"
    ]
   },
+  "quick_vfo_fm": {
+   "group": "home",
+   "needs": [
+    "VFO"
+   ]
+  },
+  "quick_vfo_dmr": {
+   "group": "home",
+   "needs": [
+    "VFO_DMR"
+   ]
+  },
+  "quick_vfo_cc_editor": {
+   "group": "home",
+   "needs": [
+    "VFO_DMR"
+   ]
+  },
   "tx": {
    "group": "calls",
    "needs": []
@@ -137,6 +167,12 @@
    "group": "calls",
    "needs": [
     "DMR"
+   ]
+  },
+  "talk_target_picker_vfo": {
+   "group": "calls",
+   "needs": [
+    "VFO_DMR"
    ]
   },
   "recent": {
@@ -359,6 +395,14 @@
    "needs": [
     "UI_SETTINGS"
    ]
+  },
+  "volume": {
+   "group": "settings",
+   "needs": []
+  },
+  "volume_muted": {
+   "group": "settings",
+   "needs": []
   },
   "factory_reset": {
    "group": "settings",

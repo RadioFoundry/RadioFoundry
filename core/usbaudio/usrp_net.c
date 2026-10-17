@@ -12,6 +12,7 @@
 #include "hal_time.h"
 
 #define VIEW_MS		20u	// the radio's state (squelch, mode) read this often
+#define SEND_BUDGET_MS	20u	// one poll sends audio for at most this long (send_rx)
 
 typedef struct {
 	uint32_t sent;		// frames sent to the peer
@@ -130,10 +131,22 @@ static uint32_t peer(uint32_t now_ms)
 }
 
 // The receiver's audio, one frame per 20 ms block, while the squelch is open and one keyup 0 frame after it closes
+//
+// A send that blocks (a serial link: a frame takes 30 ms to clock out, longer than the 20 ms of audio in it) must not
+// keep this task in the loop: the audio arrives faster than it leaves, the loop never ends, and the host link never
+// reads its port again or refreshes the squelch state. After SEND_BUDGET_MS the rest of the backlog is dropped.
 static void send_rx(uint32_t now_ms)
 {
 	bool cos = view.state == RS_RX && !tx_on && !view.hotspot;
+	uint32_t t0 = hal_millis();
 	while (audio_mux_host_avail() >= USRP_FRAME_SAMPLES) {
+		if ((hal_millis() - t0) >= SEND_BUDGET_MS) {
+			while (audio_mux_host_avail() >= USRP_FRAME_SAMPLES) {
+				audio_mux_host_read(pcm, USRP_FRAME_SAMPLES);
+				st.send_busy++;
+			}
+			break;
+		}
 		audio_mux_host_read(pcm, USRP_FRAME_SAMPLES);
 		if (!cos && !cos_sent) {
 			continue;

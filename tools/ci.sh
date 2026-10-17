@@ -21,9 +21,10 @@
 #   1. host tests (make -C tests/host), and with ODR_CI_SANITIZE=1 again under ASan and UBSan
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing tools'
 #      tests (tools/odrflash/tests, codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate
-#      and dm32_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); every relative link, image and anchor in the Markdown resolves
-#      (tools/check_doc_links.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv)
-#      and the web flasher's tests pass against odrflash (site/tests/run.sh, needs Node 20+)
+#      and dm32_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
+#      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
+#      the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
+#      pass against odrflash (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
 #      notice: the DM-32's csky toolchain comes from tools/build-csky-toolchain.sh):
 #        default            the board's defaults
@@ -38,7 +39,9 @@
 #                           and LTO=1 (without LTO it no longer fits), so the probe keeps building
 #        vhf                (MD-380 only) the VHF band image, default config
 #      and the STM32F4 flash stub (stub/stm32f4, with the DM-1701 or MD-380 compiler).
-#      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md.
+#      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md. The default and the
+#      maximal configuration must pass the static stack check (make stack-check, docs/dev/stack-check.md): each task's
+#      deepest call chain fits its stack with the margin.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
 #   5. tools/similarity_scan.py against the trees in $ODR_SIMILARITY_REFS (space separated), only when it is set:
 #      the reference trees are never part of this repository or of public CI
@@ -59,7 +62,7 @@ while [ $# -gt 0 ]; do
 	--matrix) MATRIX=1 ;;
 	--board) ONLY="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,38p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,48p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -143,8 +146,9 @@ for f in sys.argv[1:]:
 	   python3 tools/dm32_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/dm32_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/ui_gallery_compare.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 stub/stubtool.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate, dm32_codec, ui_gallery_compare and f4stub self-tests"
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate, dm32_codec, ui_gallery_compare, stubtool and f4stub self-tests"
 	else
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
@@ -161,6 +165,13 @@ for f in sys.argv[1:]:
 		fi
 	else
 		skip "APRS AFSK decoder self-test: numpy not installed"
+	fi
+	# the stack check's parsers and search on a fixture (the check itself runs with each firmware build)
+	if python3 tools/stack_check.py --self-test > "$OUT/stack-check-test.log" 2>&1; then
+		ok "stack check self-test ($(grep -c '^ok' "$OUT/stack-check-test.log") checks)"
+	else
+		grep -v '^ok' "$OUT/stack-check-test.log" | head -20
+		bad "stack check self-test (see $OUT/stack-check-test.log)"
 	fi
 	if python3 tools/check_doc_links.py > "$OUT/doc-links.log" 2>&1; then
 		ok "doc links: $(tail -1 "$OUT/doc-links.log" | sed 's/^check_doc_links: //')"
@@ -223,6 +234,15 @@ build() {
 	if grep -qi 'warning:' "$log"; then
 		grep -i 'warning:' "$log" | sort -u | head -10
 		bad "$b $name: warnings ($*; see $log)"
+	fi
+	# the static stack check (docs/dev/stack-check.md) on the default and the maximal configuration
+	if [ "$name" = default ] || [ "$name" = maximal ]; then
+		if make -s BOARD="$b" BUILD="$dir" "$@" stack-check > "$dir.stack.log" 2>&1; then
+			ok "$b $name: $(grep -E '^stack check .*: every task fits' "$dir.stack.log" | sed 's/^stack check [^:]*: //')"
+		else
+			grep -E '^  [^ ]+ +(OVER|\?) ' "$dir.stack.log"
+			bad "$b $name: stack check (see $dir.stack.log)"
+		fi
 	fi
 	bin=$(ls "$dir"/odr_"$b".bin 2>/dev/null)
 	bytes=$(wc -c < "$bin" | tr -d ' ')

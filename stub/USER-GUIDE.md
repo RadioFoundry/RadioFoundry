@@ -71,6 +71,12 @@ switching off.
 `odrflash flash odr_dm1801pro.bin --board dm1801pro --port PORT` does steps 2 to 4 in one run, and checks the radio
 afterwards ([tools/odrflash/README.md](../tools/odrflash/README.md#the-dm-1801-pro)).
 
+**DB25-D:** the same, with the install image (`odr_db25d_install.bin`) and the script `db25d_update.sh IMAGE PORT`,
+which also restarts the radio and checks that it answers. The tool picks the loader that matches the running build by
+itself (a build with DMR keeps it in a different place than one without), so the same command installs a DMR build over
+a build without DMR, one DMR build over another, and a build without DMR over a DMR build. Use `--odr-stub FILE` only
+for a stub built elsewhere; the tool refuses one that does not match the running build, before the radio is touched.
+
 The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
 works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again
 once the radio is back in loader mode, or use update mode and `tools/dm32_flash.py`. A build for the **DM-1801 Pro** was
@@ -105,7 +111,7 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 | Three green flashes | Finished. The slow orange blink comes back after. |
 | Nothing, screen dark, tool says "waiting" | The radio is not in loader mode yet: switch it off, make sure the tool is waiting, then switch it on. |
 
-Orange is the red and green LEDs lit together, so it looks the same on every model **[confirm on the DM-32UV]**.
+Orange is the red LED at full and the green LED dimmed (about 16%), so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
 
 ## Faster transfer (experimental)
 

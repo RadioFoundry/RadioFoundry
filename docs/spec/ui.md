@@ -162,6 +162,12 @@ channel's contact and its listen list; the arrow keys only: the channel knob, EN
 VFO frequency, #25), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
 toast until voice prompts exist).
 
+VFO_TOGGLE is the VFO / MR key's short press (a board key map entry, not a side key function): between the channel
+and the VFO, "VFO" and "Back to channels". Its long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md`
+2.2). The DM-1801 Pro's VFO/MR key is the only one so far; a board with such a key gives its long press to COPY_VFO,
+and `keyassignTest` checks every board's key map for it. The key is a key map entry with fixed meanings (not one of the
+`board.side_keys`), so Settings > Keys doesn't change it.
+
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
 whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
 (`board.keymap`): on the DM-1701 the top side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long
@@ -177,7 +183,9 @@ The state pill follows the green LED (`radio_sm.c` `outputs()`): RX also while t
 stays beside the mode); DMR's monitor key is digital monitor and leaves it IDLE.
 
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
-idle, the bars and battery icon give way, the battery percent stays, and only the name part of the title is
+idle, the bars and battery icon give way, the battery percent stays (on a radio without a battery, `CAP_NO_BATTERY`,
+neither is drawn anywhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
+out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
 ### 3.1 Side key assignment
@@ -201,8 +209,9 @@ long press, and each takes one function:
 | Key lock (11) | LOCK: lock, and unlock while locked (as long QUICK) | yes | yes |
 | Call back (12) | CALL_BACK: talk for now to the last call heard, its talkgroup or, for a private call, its caller (`dmr-voice.md` 2) | yes | yes |
 | Home zone (13) | HOME_ZONE: the codeplug's first zone (the CPS's zone order picks it; no setting, the settings record has no byte to spare). Leaves the VFO; "Home zone: <name>" | yes | yes |
+| Copy to VFO (14) | COPY_VFO: copy the channel in effect to the VFO and open it (`dmr-voice.md` 2.2). In the VFO: "Already in VFO". A channel the VFO can't hold gets a "VFO: ..." toast and nothing changes. Offered in builds with a VFO (`CONFIG_VFO_FM` or `CONFIG_VFO_DMR`) | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK and HOME_ZONE do the same on a press and a long press and
+POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE and COPY_VFO do the same on a press and a long press and
 work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
@@ -243,6 +252,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
 | `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6) |
 | `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
+| `UI_FEAT_VOLUME`, `UI_SET_VOLUME` | radio-features | `ui_svc_radio.c`: the feature bit when `radio_volume_soft()` (no knob, a board volume hook); `ui_svc_storage.c`: the step in `settings_t.volume`, and `radio_req_volume` so it is in force at once. The UI side is the volume screen (`SCR_VOLUME`, opened by `ACT_VOLUME`) and Settings > Sound > Volume, both only with the feature (`radio-features.md` 4.2) |
 | `ui_svc_vibrate` patterns (message, call, emergency), `UI_FEAT_VIBRATE` | radio-features | `ui_svc_radio.c` (CONFIG_VIBRATE): a table from `UI_VIBE_*` to `VIBE_*` for `radio_req_vibrate`; the feature bit when the board has `hal_power_t.vibrate` (`radio-features.md` 4.1). Weak no-op otherwise |
 | `ui_svc_ptt_block`, `ui_svc_emergency_active` | input / dmr-ext | `ui_svc_radio.c`: `input_set_ptt_block`; `ui_svc_emergency.c`: `dmr_emergency_state` |
 | backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too) |
@@ -274,7 +284,7 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
 | `CONFIG_UI_COLOR` | y (DM-1801 Pro: n) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
-Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_SCAN`, data features) are
+Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are
 left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB by default) bounds the display: 240x320 at
 16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`. A board with a 240x320 color
 panel builds the 16-color frame buffer instead (`GFX_INDEXED`, bpp 4, 37.5 KB): drawing still takes RGB565 colors, and
@@ -383,7 +393,7 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   least 5:1 on its strip after RGB565 rounding. The shades are light so black
   text reads on them (at least 7.5:1 after RGB565 rounding); the red is lighter and pinker than TX's red, and there is
   no green, which would hide the RX pill. Gallery: `home_dmr*`, `home_plain`, `channels*` (section 7).
-- The VFO is FM only, so the Mode tile is dimmed in the VFO ("VFO: FM only") instead of a refusal.
+- The VFO has a mode of its own (`dmr-voice.md` 2.1). The Mode tile (tile 4 in the VFO only) switches it FM / DMR ("VFO: DMR", no "for now": it is kept), and in a build with only one VFO kind the tile is dimmed ("VFO: one mode in this build"). On a channel tile 4 is "To VFO" (`dmr-voice.md` 2.2): it copies what is in effect on the channel to the VFO and opens it on Home ("Copied to VFO"); a channel the VFO can't hold is refused with a toast. A channel has no temporary mode change any more. In DMR the quick menu is the DMR one: Timeslot, Color and Talk to change the VFO's own settings, with no dot on Home. The talk target picker lists the VFO's current target first ("Current"); both OK and hold OK keep the target for the VFO.
 - The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
   between steps is refused with the range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.

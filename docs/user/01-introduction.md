@@ -37,6 +37,7 @@ yet. The [Radio reference](23-radios.md) lists them for each radio.
 - DMR emergency: alarm, emergency call with hot mic, alerts when someone else declares an emergency.
 - DMR repeater roaming per zone.
 - FM: CTCSS and DCS tones, squelch, monitor, 12.5 and 25 kHz bandwidth, VOX.
+- A VFO for tuning a frequency by hand, in FM or in DMR.
 - Scan of a zone or of the VFO band.
 - APRS: position, status and messages on FM, positions over DMR, a KISS TNC.
 - Hotspot: the radio is an MMDVM modem for MMDVMHost and Pi-Star style hosts. It has a single frequency repeater mode

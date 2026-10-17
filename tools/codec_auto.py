@@ -18,7 +18,8 @@ ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 
 # Board -> codec tool (each takes --stock, --image, -o and keeps its supported stock files in PROFILES)
-CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "dm32_codec", "dm1801pro": "dm32_codec"}
+CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "dm32_codec", "dm1801pro": "dm32_codec",
+               "db25d": "dm32_codec"}
 SKIP = ("README.md", ".gitignore")
 
 

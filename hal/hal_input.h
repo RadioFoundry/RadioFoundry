@@ -19,7 +19,9 @@ typedef enum {
 	ACT_USER_1, ACT_USER_2, ACT_USER_3, ACT_USER_4,
 	// What a reassigned side key does (core/input/keyassign.h): the same on a press and a long press, on any screen
 	ACT_POWER, ACT_ZONE_UP, ACT_ZONE_DOWN, ACT_SCAN,
-	ACT_LOCK, ACT_CALL_BACK, ACT_HOME_ZONE,
+	ACT_LOCK, ACT_CALL_BACK, ACT_HOME_ZONE, ACT_COPY_VFO,
+	ACT_VOLUME,		// radios without a volume knob (hal_power_t.volume() = -1): opens the volume editor
+	ACT_VFO_TOGGLE,		// the VFO/MR key: between the channel and the VFO (a key map entry, not a side key function)
 	ACT_COUNT
 } input_action_t;
 

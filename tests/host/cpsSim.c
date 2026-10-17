@@ -3,10 +3,10 @@
 // The open-firmware CPS shim on a simulated 16 MB flash with the DM-1701 map, served on stdin / stdout, so host tools
 // (tools/cps_client.py --exec) can be tested without a radio:
 //
-//   cpsSim [--populate] [--image FILE] [--dump FILE]
+//   cpsSim [--populate] [--image FILE] [--dump FILE] [--list]
 //
 // --populate stores a small codeplug first, --image loads a flash image (file offset = flash address), --dump
-// writes the flash to FILE when stdin closes. A "reboot" (C 6 0 / 1) re-reads the settings and the codeplug, as the
+// writes the flash to FILE when stdin closes, --list prints the stored channels, contacts and zones and exits. A "reboot" (C 6 0 / 1) re-reads the settings and the codeplug, as the
 // radio would after its restart.
 #include <errno.h>
 #include <poll.h>
@@ -113,20 +113,53 @@ static void populate(void)
 	}
 }
 
+// What the radio's codeplug holds, one line each, for a test to compare
+static void list(void)
+{
+	printf("source %d channels %u\n", (int)codeplug_source(), (unsigned)codeplug_channel_count());
+	for (uint16_t n = 1; n <= codeplug_channel_count(); n++) {
+		channel_t c;
+		if (codeplug_channel(n, &c)) {
+			printf("channel %u \"%s\" rx %u tx %u mode %u bw %u cc %u ts %u contact %u\n", (unsigned)n, c.name,
+			       (unsigned)c.rx_hz, (unsigned)c.tx_hz, c.mode, c.bw, c.color_code, c.timeslot, (unsigned)c.contact);
+		}
+	}
+#if CONFIG_DMR
+	for (uint16_t n = 1; n <= 4; n++) {
+		contact_t ct;
+		if (codeplug_contact(n, &ct)) {
+			printf("contact %u \"%s\" id %u type %u\n", (unsigned)n, ct.name, (unsigned)ct.id, ct.type);
+		}
+	}
+#endif
+	for (uint16_t z = 0; z < 4; z++) {
+		zone_t zn;
+		if (codeplug_zone(z, &zn)) {
+			printf("zone %u \"%s\" %u:", (unsigned)z, zn.name, (unsigned)zn.count);
+			for (uint16_t i = 0; i < zn.count; i++) {
+				printf(" %u", (unsigned)zn.channels[i]);
+			}
+			printf("\n");
+		}
+	}
+}
+
 int main(int argc, char **argv)
 {
 	const char *image = NULL, *dump = NULL;
-	bool demo = false;
+	bool demo = false, listing = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--populate") == 0) {
 			demo = true;
 		} else if (strcmp(argv[i], "--image") == 0 && i + 1 < argc) {
 			image = argv[++i];
+		} else if (strcmp(argv[i], "--list") == 0) {
+			listing = true;
 		} else if (strcmp(argv[i], "--dump") == 0 && i + 1 < argc) {
 			dump = argv[++i];
 		} else {
-			fprintf(stderr, "usage: cpsSim [--populate] [--image FILE] [--dump FILE]\n");
+			fprintf(stderr, "usage: cpsSim [--populate] [--image FILE] [--dump FILE] [--list]\n");
 			return 2;
 		}
 	}
@@ -147,6 +180,11 @@ int main(int argc, char **argv)
 		boot();
 	}
 
+	if (listing) {
+		list();
+		sim_flash_free();
+		return 0;
+	}
 	uint8_t buf[512];
 	for (;;) {
 		struct pollfd p = { .fd = 0, .events = POLLIN };

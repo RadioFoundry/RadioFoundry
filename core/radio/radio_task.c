@@ -209,6 +209,21 @@ void radio_req_zone_pos(uint16_t pos) { post(RREQ_ZONE_POS, pos, 0); }
 void radio_req_zone(uint16_t index) { post(RREQ_ZONE, index, 0); }
 void radio_req_vfo(bool on) { post(RREQ_VFO, on, 0); }
 void radio_req_vfo_step(int8_t dir) { post(RREQ_VFO_STEP, dir, 0); }
+void radio_req_vfo_copy(void) { post(RREQ_VFO_COPY, 0, 0); }
+
+radio_vfo_copy_t radio_req_vfo_copy_checked(void)
+{
+	radio_vfo_copy_t r = VFO_COPY_NO_VFO;
+	if (view_lock != NULL) {
+		xSemaphoreTake(view_lock, portMAX_DELAY);
+		r = radio_vfo_copy_check(&shared_view.ch, shared_view.vfo);
+		xSemaphoreGive(view_lock);
+	}
+	if (r == VFO_COPY_OK) {
+		radio_req_vfo_copy();
+	}
+	return r;
+}
 void radio_req_vfo_set(uint32_t hz) { post(RREQ_VFO_SET, (int32_t)hz, 0); }
 void radio_req_vfo_step_size(uint32_t hz) { post(RREQ_VFO_STEP_SIZE, (int32_t)hz, 0); }
 // PTT and monitor edges must not be lost (a lost release would keep transmitting until the time-out)
@@ -218,6 +233,9 @@ void radio_req_monitor(bool down) { post(RREQ_MONITOR, down, pdMS_TO_TICKS(50));
 void radio_req_monitor_held_up(void) { post(RREQ_MONITOR, 2, pdMS_TO_TICKS(50)); }
 void radio_req_power(int8_t dir) { post(RREQ_POWER, dir, 0); }
 void radio_req_squelch(int8_t dir) { post(RREQ_SQUELCH, dir, 0); }
+// The level must not be lost: the user looks at the bar, and the setting is already saved
+void radio_req_volume(uint8_t step) { post(RREQ_VOLUME, step, pdMS_TO_TICKS(50)); }
+void radio_req_volume_override(int8_t step) { post(RREQ_VOLUME_OVERRIDE, step, pdMS_TO_TICKS(50)); }
 void radio_req_clear_temporary(void) { post(RREQ_CLEAR_TEMP, 0, 0); }
 void radio_req_reload(void) { post(RREQ_RELOAD, 0, pdMS_TO_TICKS(50)); }
 void radio_req_bandwidth(radio_bw_t bw) { post(RREQ_BANDWIDTH, bw, 0); }

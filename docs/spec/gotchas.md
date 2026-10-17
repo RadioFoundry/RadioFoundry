@@ -113,6 +113,12 @@ from flash about 6 times slower: the idle radio used about 80% of the CPU and vo
 Undo both before a soft reset or the stub entry: the soft reset keeps the divider, and the ROM can't read flash in
 single-bit mode at divider 2 (hardware-dm32.md 1.1).
 
+**2.8 Don't set a receive UART's baud rate while its line is held low.** The UART ignores a line control write while
+it is busy, and an unpowered GPS module holds its RX line low, a break the UART keeps receiving. Setting the baud rate
+again when switching the GPS back on left the UART deaf on the DB25-D. Set it up once, before the module is first
+powered; to switch on again, clear the RX FIFO and status (`hrc_uart_rx_clear`) and enable the interrupt
+(hardware-dm32.md 12).
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 (MD-380) register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
@@ -458,6 +464,13 @@ one. Commits 63244dd, 11a3ff4, 1f3f604, 10d57bd.
 
 **12.4 Memory regions belong to the board.** Shared code hard-coded linker section names (a CCM section, the MK22's
 second RAM bank); the DM-32 has one RAM. The board descriptor must say where large buffers go. Commit 0a9bf50.
+
+**12.5 Task stacks overflow without a sign.** A 768-byte buffer in `codeplug_contact_find` overflowed the DB25-D's
+start task at boot: the radio core's set-up runs there (`radio_sm_init` > `tune` > `dmr_configure` > `find_name`),
+and a DMR VFO whose talk target is a contact reaches the search. The radio hung before the debug link came up. The
+host tests run on large pthread stacks and FreeRTOS' overflow hook only spins. Rule: no large buffers on a task's
+stack (static, under the lock that already serializes the caller); `make stack-check` runs in ci.sh and fails a task
+whose deepest chain doesn't fit ([stack-check.md](../dev/stack-check.md)). Commit 43266a6.
 
 ## 13. Build and toolchain
 

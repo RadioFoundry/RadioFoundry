@@ -241,13 +241,15 @@ Hold `EMERGENCY` (top/orange key) 1.5 s. A rising tone during the hold, then "EM
 |---|---|---|---|---|---|
 | Start / cancel | 1 (hold) | 1 | 1 (mic key) | 1 if a key is free | 1 |
 
-## 18. Toggle FM / DMR
+## 18. Copy a channel to the VFO, switch the VFO's mode
 
-On a channel: `QUICK`, `4`. Temporary: the channel becomes its other mode with the same frequency (DMR → FM uses the channel's FM settings if it has any, otherwise no tone; FM → DMR uses CC 1 TS 1 and the last talk target, shown with a dot). In VFO it changes the VFO. Home's mode chip changes color and word.
+On a channel: `QUICK`, `4` ("To VFO"). What is in effect on the channel now (frequencies and offset, mode, bandwidth, power, tones, color code, timeslot and talk target, temporary changes included) becomes the VFO's own settings, the VFO opens on Home and the toast says "Copied to VFO". The channel is unchanged; the VFO's values are kept like its other settings (no dot). A channel the VFO can't hold (a mode this build's VFO lacks, a frequency outside the radio's bands) is refused with a toast and nothing changes. The same is on a key: Settings > Keys > Copy to VFO, or the VFO/MR key's long press where a radio has one. In the VFO "Already in VFO". The full rules are in `dmr-voice.md` 2.2.
+
+In the VFO: `QUICK`, `4` ("Mode") switches the VFO FM / DMR on its frequency, kept (no dot): FM → DMR uses the VFO's color code (1 at first), slot and talk target (talkgroup 9 at first); change them with quick tiles 2, 3 and 8. Home's mode chip changes color and word. A channel has no temporary mode change.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
-| Toggle | 2 | 2 | 2 | 3 | 2 |
+| Copy to VFO | 2 | 2 | 2 | 3 | 2 |
 
 ## 19. Monitor and hear all
 
@@ -329,7 +331,7 @@ channels and rows quick settings don't have.
 | Hotspot start / stop | 4 / 2 | yes |
 | Who is talking | 0 | yes |
 | Emergency | 1 hold | yes |
-| FM / DMR | 2 | yes |
+| Copy to VFO / VFO mode | 2 | yes |
 | Monitor / hear all | 1 / 2 | yes |
 | Edit a channel (timeslot, saved) | 5+n | yes |
 | New channel from current | 5+n | yes |

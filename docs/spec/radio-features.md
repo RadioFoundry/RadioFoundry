@@ -197,6 +197,39 @@ is dimmed ("This radio has no vibration motor") when the board has no motor (`UI
 ([build-config.md](../build-config.md)). The debug link shows `vibe.built vibe.motor vibe.played vibe.busy` in the
 `features` view and plays a pattern with RADIO op 29 (`debuglink.md` 3.7, 3.8), whatever the setting.
 
+### 4.2 Speaker volume
+
+Where the MCU can set the speaker level, the radio core owns it. The board gives it a `hal_radio_t.volume(percent)`
+hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_t`, the `volume.src` view key):
+
+| `volume.src` | Board | Level in force |
+|---|---|---|
+| `none` | No hook (the MD-380, the DM-32UV: the volume control works in analog hardware, after the chip) | Not set by ODR. The debug link operation answers "unavailable" |
+| `knob` | A hook and a knob the MCU reads (the DM-1701) | The knob's 0..100 % |
+| `soft` | A hook and no knob (`hal_power_t.volume()` = -1, the DB25-D); `radio_volume_soft()`, reported to the UI as `UI_FEAT_VOLUME` | The stored step |
+| `override` | As `knob`, with the debug link's level in force | The step the debug link set, whatever the knob does |
+
+| Item | Value |
+|---|---|
+| Steps | 0 (mute) to `RADIO_VOLUME_MAX` (16), default `RADIO_VOLUME_DEFAULT` (8). The step count is that one constant: the stored form, the screen bar, Settings, the debug link, and the boards' maps follow it |
+| Percent | The hook gets round(step * 100 / `RADIO_VOLUME_MAX`) (`radio_volume_percent`): step 1 is 6 %, step 8 is 50 %, step 16 is 100 %. The board decides what a percent means; step 0 must be silent |
+| Stored | `settings_t.volume` (`settings-store.md` 3): 0 = the default, else `0x80 \| (step + 1)`; a byte 1..11 from the first version (steps 0..10) reads as round(step * 16 / 10). Settings > Sound > Volume (`UI_SET_VOLUME`) and the volume screen write it, `soft` radios only |
+| To the board | `follow_volume` (radio poll) calls `hal_radio_t.volume(percent)` at start-up and after each change (the knob's changes of 2 % or more, and its ends); the same level twice calls nothing |
+| A change | `ui_svc_setting_set(UI_SET_VOLUME)` saves the step and posts `RREQ_VOLUME` (`radio_req_volume`), so it is in force at once. The request counts as neither user activity nor an interruption: a transmission or a roaming search goes on |
+| Override | `radio_req_volume_override(step)` (`RREQ_VOLUME_OVERRIDE`) holds a level over the knob until `-1`; RAM only, so a restart gives the knob back. Without a knob there is nothing to override, and the request changes nothing |
+| Beeps | Key and status tones keep their own level (Tone volume, 4) and are mixed at the board's speaker path as before |
+
+**Debug link.** RADIO op 30 (`debuglink.md` 3.8) sets a step 0..16, or `0xFF` for "back to the knob". On a `soft` radio
+it stores the step as the UI does (`0xFF` stores the default); on a `knob` radio it sets the override; on a radio with
+`volume.src=none` it answers unavailable. The `features` view shows `volume.src`, `volume.max`, `volume.step` (the
+stored step), `volume.override` (-1 = none), `volume.sent` (the percent last given to the board, -1 = none yet) and
+`volume.soft`. `odr_debug.py volume [N|knob]` prints them and sets.
+
+The volume screen (`SCR_VOLUME`) opens on `ACT_VOLUME`, a board key map entry (a radio with a knob answers with a
+toast). Up, Down and the encoder change the step by one and save it on each step; OK, Back or the same key close it,
+and so does 3 s without a key. The screen shows the step as a large number over a bar of 16 segments (7 px pitch at
+the smallest display, 5 px filled). On the radio without the feature the setting is left out of Settings.
+
 ## 5. Power
 
 ### 5.1 Battery
@@ -206,6 +239,13 @@ battery's state) and shows `battery_mv`, `battery_pct` (the board's) and `batter
 are per board (`board.battery_low_mv`, `battery_critical_mv`; 0 means no warnings; values in each radio's hardware
 page, e.g. `hardware-dm1701.md` 11.1). Three readings in a row
 below a threshold lower the level; it goes back up 200 mV above it.
+
+A board with `CAP_NO_BATTERY` (a mobile on a fixed supply) has no battery monitor. The core never reads
+`battery_mv`, the level stays ok, `battery_pct` and `battery_mv` stay 0, and nothing warns or refuses a transmission
+for the battery. The UI shows no battery icon, percentage, Tools > Battery page, Battery saver setting or Low battery
+warning setting. The debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
+`battery_pct` and `battery_mv` out, and SNMP reports odrBatteryVoltage 0, odrBatteryPercent 0 and odrBatteryState
+ok(1) without ever sending odrLowBattery.
 
 ### 5.2 Low and critical
 

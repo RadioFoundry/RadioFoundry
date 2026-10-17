@@ -41,8 +41,8 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    the codec library and key derivation, the codec decision, whole flashes against a fake bootloader with a flash
    model; [release.md](../dev/release.md)) and the `--self-test` of `tools/codec_extract.py`, `tools/stm32_dfu.py`,
    `tools/md380_migrate.py`, `tools/dm32_flash.py` (against a simulated Baofeng bootloader) and
-   `tools/dm32_migrate.py` (DfuSe files, the conversion report, CPS writes against a simulated DM-32 shim).
-   `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves.
+   `tools/dm32_migrate.py` (DfuSe files, the conversion report, CPS writes against a simulated DM-32 shim), and the
+   stack check's (`tools/stack_check.py`). `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves.
 3. **Firmware, every board with the feature matrix**. For each `boards/<b>/board.mk` whose compiler is installed:
    - `default`: the board's defaults;
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
@@ -52,7 +52,9 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
      `LTO=1` on the DM-1701);
    - `vhf`: the MD-380's VHF image (MD-380 only).
 
-   Every configuration must build with zero compiler and linker warnings. A board without its compiler (the DM-32's
+   Every configuration must build with zero compiler and linker warnings. The default and maximal ones must also pass
+   the stack check: every task's deepest call chain fits its stack ([docs/dev/stack-check.md](../dev/stack-check.md)).
+   A board without its compiler (the DM-32's
    csky GCC comes from `tools/build-csky-toolchain.sh` or the Docker image, [docs/dev/ci.md](../dev/ci.md#the-csky-elf-image))
    is skipped with a notice. Build trees are `build/ci/<board>-<config>/`, each
    with its log next to it. The sizes go to `build/ci/size-report.md`: image bytes, the change against the board's

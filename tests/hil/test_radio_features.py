@@ -18,6 +18,10 @@ Pass criteria:
   falls back to 0 within 2 s.
 - test_vibrate_counts: (CONFIG_VIBRATE builds) a VIBRATE emergency request: on a radio with a motor (vibe.motor=1)
   vibe.played grows by 1 within 1 s and vibe.busy falls back to 0 within 3 s; without one vibe.played stays put.
+- test_volume_op: RADIO op 30 (the speaker volume). volume.src none (no software volume): the op answers
+  unavailable. knob: step 3 gives volume.src=override, volume.override=3 and volume.sent=19 (round(3 * 100 / volume.max))
+  within 1 s, then "knob" gives volume.src=knob and override -1. soft: step 3 gives volume.step=3 and
+  volume.sent=19, and the old step is put back (the op stores it like the UI).
 - test_zone_scan_cancel: (zone of 2+ channels) scan=zone within 1 s; at least 2 different zone positions within 4 s
   unless the scan stopped on a busy channel (scan_phase probe / hold / resume); CANCEL: scan=off and back on the
   starting position within 1 s.
@@ -66,7 +70,7 @@ import time
 
 import pytest
 
-from odr_debug import as_int
+from odr_debug import DebugLinkError, as_int
 
 FEATURE_KEYS = ("scan.built", "scan", "scan_phase", "scan_skipped", "tot_warning", "tone_burst", "roger", "vox_keyed",
                 "vox.mic", "vox.level", "rx_sleeping", "battery", "battery_pct", "battery_mv", "power_off", "beep.built", "set.tot_s",
@@ -197,6 +201,38 @@ def test_vibrate_counts(radio):
     f = wait_features(radio, lambda v: as_int(v.get("vibe.played"), 0) > played0, 1.0, "the vibration counted")
     assert as_int(f["vibe.played"], 0) == played0 + 1, f
     wait_features(radio, lambda v: v.get("vibe.busy") == "0", 3.0, "the pattern finished")
+
+
+def test_volume_op(radio):
+    f0 = features(radio)
+    if "volume.src" not in f0:
+        pytest.skip("firmware without the volume view keys")
+    src = f0["volume.src"]
+    if src == "none":
+        with pytest.raises(DebugLinkError) as e:
+            radio.link.volume(3)
+        assert e.value.status == 4, e.value
+        return
+    vmax = as_int(f0["volume.max"], 16)
+    want = (3 * 100 + vmax // 2) // vmax
+    if src == "knob":
+        radio.link.volume(3)
+        try:
+            f = wait_features(radio, lambda v: v.get("volume.src") == "override", 1.0, "the override in force")
+            assert f["volume.override"] == "3" and as_int(f["volume.sent"], -1) == want, f
+        finally:
+            radio.link.volume("knob")
+        f = wait_features(radio, lambda v: v.get("volume.src") == "knob", 1.0, "the knob back")
+        assert f["volume.override"] == "-1", f
+    else:
+        old = as_int(f0["volume.step"], 0)
+        radio.link.volume(3)
+        try:
+            f = wait_features(radio, lambda v: v.get("volume.step") == "3", 1.0, "the step stored")
+            assert as_int(f["volume.sent"], -1) == want, f
+        finally:
+            radio.link.volume(old)
+        wait_features(radio, lambda v: v.get("volume.step") == str(old), 1.0, "the old step back")
 
 
 def test_zone_scan_cancel(radio):

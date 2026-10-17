@@ -108,12 +108,36 @@ A save that fails shows "Couldn't save: ..." and the change stays for now only.
 
 ## The VFO
 
-The VFO is FM only. A DMR VFO isn't built yet.
+The VFO is an FM VFO or, on a radio with DMR, a DMR VFO. It keeps its mode like its frequency. Everything you change in
+the VFO (mode, color code, timeslot, talk target) is kept, also when you go to a channel and come back, and after a
+restart.
 
 1. **OK**, **4** (Zones). The VFO is the first row.
 2. Press **OK**. Home shows the frequency large, and the radio says "VFO: type a frequency".
 
 <img src="../ux/screens/160x120i5/home_vfo.png" width="200" alt="Home in the VFO">
+
+### Copy a channel to the VFO
+
+To start from a channel, press **\***, **4** ("To VFO") on it. The channel's settings become the VFO's and Home shows
+the VFO ("Copied to VFO"). On a radio with a **VFO/MR** key, hold it instead. **Settings > Keys** can give any side
+key "Copy to VFO", on a press or a hold.
+
+| Copied | Notes |
+|---|---|
+| RX and TX frequency | A repeater's offset stays until you step the frequency |
+| Mode, bandwidth, power | Power stays "default" if the channel's is |
+| Tones (FM) | CTCSS or DCS, RX and TX |
+| Color code, timeslot, talk target (DMR) | The talk target is the contact's ID, as a group or private call. A channel with no contact gives what it would send now |
+
+- The VFO gets what is in effect now, so a temporary change you made on the channel (a bandwidth, a power level, a
+  talk target) is copied too.
+- The channel stays as it was. The VFO keeps the values like its other settings, also after a restart.
+- Not copied: the RX group list, the privacy key, roaming, the data and emergency settings, and the squelch level.
+  The VFO uses the radio's own values for these.
+- A channel the VFO can't hold is refused with a short message and nothing changes: a DMR channel on a radio build
+  whose VFO is FM only (or the other way round), or a frequency outside the radio's bands.
+- In the VFO the same key says "Already in VFO".
 
 ### Typing a frequency
 
@@ -138,6 +162,29 @@ what you typed as you go.
 
 **Up**, **Down** and the channel knob change the VFO frequency by its step. The step comes from the codeplug's VFO
 settings. The quick settings Step tile (8) shows it but can't change it yet ("Step: set it in qdmr for now").
+
+### DMR in the VFO
+
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"). In DMR the quick settings are the
+DMR ones:
+
+| Key | Tile | What it does in the DMR VFO |
+|---|---|---|
+| **2** | Slot | Switches the timeslot, 1 or 2 |
+| **3** | Color | Sets the color code, 0 to 15 (1 at first). Type it or use **Up** and **Down**, then **OK** |
+| **8** | Talk to | Picks or types the talk target, a talkgroup or a person. Both **OK** and holding **OK** keep it for the VFO |
+
+<img src="../ux/screens/160x120i5/quick_vfo_dmr.png" width="200" alt="Quick settings in the DMR VFO">
+
+- Pick the color code and timeslot of the repeater or the simplex frequency you use. The radio talks to talkgroup 9 until
+  you pick another target, with your own DMR ID.
+- The VFO has no listen list. It plays calls to its talk target, all calls and private calls to you. Other talkgroups
+  show as "Other TG: not played". To hear everything on the slot, turn on digital monitor.
+- Home shows the frequency, the talk target, the timeslot and the color code. Changes here don't show a dot and
+  **Back** doesn't undo them.
+- The VFO sends no talker alias and no data messages, and an emergency can't start in it.
+
+<img src="../ux/screens/160x120i5/home_vfo_dmr.png" width="200" alt="Home in the DMR VFO">
 
 ### Leaving the VFO
 

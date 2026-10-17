@@ -24,6 +24,8 @@ import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
+import { makeDb25d } from "./db25dui.js";
+import { Usmart, checkInstallImage } from "./db25d.js";
 
 // USB-serial chips found in programming cables (tools/dm32_flash.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -37,8 +39,17 @@ const C = () => ctx.fb().c7000;
 const boardId = () => S().radio.flash.board;
 const store = (what) => `c7000-${what}-${boardId()}`;
 
+// What the DB25-D adds (db25dui.js): reading a stock radio through its debug console and installing through the vendor
+// update mode, both before ODR runs on it
+let db25d = null;
+const hasData = () => C().boards[boardId()].data_flash !== false;	// the SPI data flash the stub reads (the DB25-D has none)
+const stockRadio = () => !!C().boards[boardId()].power_on_stub;
+const progSize = () => c7.totalSize(C(), boardId());
+const viaIap = () => ["stock", "iap"].includes(session().how);
+
 export function init(context) {
 	ctx = context;
+	db25d = makeDb25d({ S, ctx, C, boardId, session, busy, saveBundle: () => saveBundle(), store, fill: (el, ...p) => fill(el, ...p) });
 }
 
 // Radios the page flashes this way
@@ -94,7 +105,9 @@ const fill = (el, ...parts) => el.replaceChildren(...parts.filter(Boolean));
 
 const mkStub = () => {
 	const c = session();
-	return (c.stub = new Stub(c.stream, { log: (l) => c.log.add(l) }));
+	c.stub = new Stub(c.stream, { log: (l) => c.log.add(l) });
+	c.stub.size.progmem = progSize();
+	return c.stub;
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -152,19 +165,31 @@ function connectPanel(onReady) {
 			if (!S().board.debuglink_names.includes(p.board))
 				return cableStep(t("flash.err.wrong_board", { board: p.board, name: S().board.name }));
 			const offer = await Stub.odrOffer(link);
-			if (offer) return fromOdr();
+			if (offer) return fromOdr(offer);
 			return restartOdr();
 		}
+		if (stockRadio()) return stockOrNothing();
 		return powerCycle();
 	};
 
-	const fromOdr = async () => {
+	// A DB25-D on the cable that is not ODR: the stock firmware answers the debug console (read it), or nothing
+	// answers (update mode install, or the first stage's power-on window for an ODR that does not answer)
+	const stockOrNothing = async () => {
+		if (await new Usmart(c.stream, { log: (l) => c.log.add(l) }).probe()) {
+			return db25d.stockFound({ show, act, onReady: () => ctx.next() });
+		}
+		db25d.nothing({ show, act, onAgain: () => find(), onPowerOn: () => powerCycle(),
+			onUpdateMode: () => { c.how = "iap"; c.analysis = { firmware: "unknown", slot: null, codec: null }; ctx.next(); } });
+	};
+
+	const fromOdr = async (offer) => {
 		const prog = progressBar();
 		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.odr.git }))),
 			h("p", {}, t("flash.c7.connect.odr_loading")), prog.el);
 		try {
-			const { odr } = await stubs();
-			await mkStub().enterFromOdr(odr, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
+			const pick = (await stubs()).forBase(offer.load);
+			if (!pick) throw new Error(t("flash.db25d.err.no_stub", { base: "0x" + offer.load.toString(16) }));
+			await mkStub().enterFromOdr(pick.image, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
 			c.how = "odr";
 			await ready(t("flash.c7.connect.found_odr_stub"));
 		} catch (e) {
@@ -237,8 +262,12 @@ function connectPanel(onReady) {
 		const prog = progressBar();
 		show({ led: "off", screen: "off" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.rom_found"))), prog.el);
 		try {
-			const { rom, romLoad } = await stubs();
-			await stub.loadThroughRom(rom, romLoad, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
+			const st = await stubs();
+			// the DB25-D's first stage takes the stub linked for the loader's clocks, at that stub's RAM base
+			const base = C().boards[boardId()].power_on_stub;
+			const pick = base ? st.forBase(base) : null;
+			if (base && !pick) throw new Error(t("flash.db25d.err.no_stub", { base: "0x" + base.toString(16) }));
+			await stub.loadThroughRom(pick ? pick.image : st.rom, pick ? base : st.romLoad, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
 			c.how = "rom";
 			await ready(t("flash.c7.connect.found_rom"));
 		} catch (e) {
@@ -255,9 +284,11 @@ function connectPanel(onReady) {
 		try {
 			const led = C().led;
 			await st.setupLed(led.red, led.green);
-			c.jedec = { progmem: await st.checkId("progmem"), q128: await st.checkId("q128") };
-			// ODR named the radio already; otherwise the bootloader's ID string does (48 KB, a few seconds)
-			c.model = c.odr ? boardId() : c7.bootloaderModel(C(), c.progmem || (await st.dump("progmem", 0, C().app_start)));
+			c.jedec = { progmem: await st.checkId("progmem"), q128: hasData() ? await st.checkId("q128") : null };
+			// ODR named the radio already; otherwise the bootloader's ID string does (48 KB, a few seconds). A radio
+			// whose loader has no ID string (the DB25-D) is the one the page was told
+			c.model = c.odr || !C().boards[boardId()].bootloader_id ? boardId()
+				: c7.bootloaderModel(C(), c.progmem || (await st.dump("progmem", 0, C().app_start)));
 			if (c.model && c.model !== boardId()) {
 				const other = Object.values(S().data.radios).find((r) => r.flash.board === c.model);
 				show({ led: "wait", screen }, notice(t("flash.c7.connect.wrong_radio", { name: S().radio.name, other: other?.name || c.model }), "bad"));
@@ -315,6 +346,9 @@ function backupOptions(want, { firstInstall = false, text = (k) => t(`flash.c7.b
 			if (k === "q128") { box.cal.checked = want.cal || want.q128; box.cal.disabled = want.q128; }
 		} }),
 		h("span", {}, h("b", {}, title), h("span", { class: "why" }, why)), h("span"));
+	if (!hasData()) {
+		return h("div", {}, opt("progmem", t("flash.db25d.check.opt_progmem"), [t("flash.db25d.check.opt_progmem_text"), " ", estimate(0x200000, DB25D_READ_RATE)], firstInstall));
+	}
 	const el = h("div", {},
 		opt("progmem", t("flash.c7.check.opt_progmem"), [text("progmem"), " ", estimate(0xA0000)], firstInstall),
 		opt("cal", t("flash.c7.check.opt_cal"), [t("flash.c7.check.opt_cal_text"), " ", estimate(0x18000)], want.q128),
@@ -323,8 +357,12 @@ function backupOptions(want, { firstInstall = false, text = (k) => t(`flash.c7.b
 	return el;
 }
 
-function estimate(bytes) {
-	const rate = session().rate || 9000;	// bytes on the wire per second at 115200 baud, after LZ4 and blank sectors
+// The DB25-D's 2 MB program memory, read from a radio that runs ODR: about 45 s (radio, 2026-10-17). Blank sectors and
+// LZ4 make the memory read faster than the wire's 9 KB/s
+const DB25D_READ_RATE = 46000;
+
+function estimate(bytes, fallback = 9000) {
+	const rate = session().rate || fallback;	// bytes on the wire per second at 115200 baud, after LZ4 and blank sectors
 	const s = bytes / rate;
 	return s < 60 ? t("flash.c7.time_s", { n: Math.max(5, Math.round(s / 5) * 5) }) : t("flash.c7.time_min", { n: Math.round(s / 60) });
 }
@@ -336,7 +374,8 @@ export function checkView() {
 	const top = radioTop(S().radio, { led: "wait", screen: c.how === "odr" ? "loader" : "off" });
 	const firstInstall = !c.odr;
 	// a first install reads everything; an ODR update only what it needs (the codec slot), unless asked
-	const want = (S().c7want ||= { progmem: firstInstall, cal: true, q128: firstInstall });
+	const want = (S().c7want ||= { progmem: firstInstall, cal: hasData(), q128: firstInstall && hasData() });
+	if (viaIap() && !c.analysis) c.analysis = { firmware: "unknown", slot: null, codec: null };
 	const items = {};
 	const item = (key, title) => (items[key] = h("li", { "data-state": "" }, h("span", {}, h("b", {}, title), h("span", { class: "small muted" }))));
 	const say = (key, state, text = "") => {
@@ -351,8 +390,8 @@ export function checkView() {
 		text: (k) => t(k === "q128" ? "flash.c7.check.opt_q128_text" : firstInstall ? "flash.c7.check.opt_progmem_first" : "flash.c7.check.opt_progmem_text") });
 	const run = button(t("flash.c7.check.run"), () => go(), { primary: true });
 	out.append(panel(t("flash.c7.check.title"), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t(firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
-			firstInstall && !S().radio.flash.stock_download ? h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.c7.check.only_copy"))), h("p", {}, t("flash.c7.check.only_copy_text"))) : null,
+		h("div", {}, h("p", {}, t(viaIap() ? (c.progmem ? "flash.db25d.check.lead_stock" : "flash.db25d.check.lead_iap") : firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
+			firstInstall && !viaIap() && !S().radio.flash.stock_download ? h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.c7.check.only_copy"))), h("p", {}, t("flash.c7.check.only_copy_text"))) : null,
 			options,
 			checks, prog.el, status), top.el)));
 	// before the reading the choices say what happens; once it starts the progress list takes their place
@@ -371,7 +410,7 @@ export function checkView() {
 			let t0 = performance.now();
 			if (want.progmem) {
 				say("progmem", "run", t("flash.c7.check.reading"));
-				c.progmem = await st.dump("progmem", 0, C().progmem_size, { progress: (d, n, s) => {
+				c.progmem = await st.dump("progmem", 0, progSize(), { progress: (d, n, s) => {
 					prog.set(d, n, t("flash.c7.check.progmem"));
 					c.rate = s.wire / Math.max(0.5, (performance.now() - t0) / 1000);
 				} });
@@ -441,7 +480,7 @@ export function checkView() {
 			}
 		});
 		fill(status, 
-			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, t("flash.c7.codec.action_text")), pick,
+			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, t(stockRadio() ? "flash.db25d.codec.action_text" : "flash.c7.codec.action_text")), pick,
 				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
 			d && d.mode === "none" ? notice(t("flash.c7.codec.none_risk"), "bad") : null,
 			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(); } }, t("flash.c7.check.download_again"))) : null,
@@ -454,7 +493,7 @@ export function checkView() {
 		say("progmem", c.progmem ? "ok" : "skip");
 		say("q128", c.q128 ? "ok" : "skip");
 		say("cal", c.calArea ? (c.calAddr >= 0 ? "ok" : "bad") : "skip");
-		say("what", "ok", c.odr ? t("flash.c7.check.is_odr", { git: c.odr.git }) : t(`flash.c7.check.is_${c.analysis.firmware}`));
+		say("what", "ok", c.odr ? t("flash.c7.check.is_odr", { git: c.odr.git }) : fwName(c));
 		if (c.backupName) say("saved", "ok", t("flash.c7.check.saved_as", { name: c.backupName }));
 		run.disabled = true;
 		started();
@@ -476,11 +515,19 @@ async function saveBundle() {
 	const fwNow = c.odr ? { kind: "odr", git: c.odr.git, codec: c.odr.codec, features: c.odr.features } : { kind: c.analysis?.firmware === "stock" ? "stock" : "unknown",
 		version: c.analysis?.codec ? `with the ${String(c.analysis.codec.profile.tag).padStart(3, "0")} codec` : null };
 	const meta = { radio: { board: S().radio.id, name: S().radio.name, model: S().radio.model, chip: null, jedec: c.jedec }, firmware_now: fwNow, contents: parts.map((p) => p.what).join("+"),
-		notes: [t("flash.c7.bundle_note")] };
+		notes: [t(hasData() ? "flash.c7.bundle_note" : "flash.db25d.bundle_note")] };
 	const bytes = await makeBundle(meta, parts, { git: S().data.site.git, url: location.origin });
 	c.backupName = bundleName(meta);
 	download(c.backupName, bytes, "application/zip");
 	c.backupSaved = true;
+}
+
+// What the check step calls the firmware found. A DB25-D read through its debug console may run a stock version this
+// page has no codec recipe for, and one reached only through update mode was not read at all.
+function fwName(c) {
+	if (c.how === "iap" && !c.progmem) return t("flash.db25d.check.is_update_mode");
+	if (stockRadio() && c.analysis.firmware === "unknown") return t("flash.db25d.check.is_stock_other");
+	return t(`flash.c7.check.is_${c.analysis.firmware}`);
 }
 
 function retryHelp() {
@@ -508,6 +555,7 @@ function sectorMap(c) {
 }
 
 export function writeView() {
+	if (viaIap()) return db25d.iapWriteView();
 	const c = session();
 	const fw = S().firmware;
 	const d = c.decision;
@@ -517,6 +565,8 @@ export function writeView() {
 	const status = h("div");
 	let start, data;
 	try {
+		// the DB25-D's image starts with its first stage at 0xC000; the application alone would be written over it
+		if (stockRadio()) checkInstallImage(fw.image);
 		[start, data] = c7.target(C(), boardId(), fw.image, d.mode === "write" ? d.slot : null);
 	} catch (e) {
 		return panel(t("flash.write.title"), notice(ctx.errorText(e), "bad"));
@@ -619,7 +669,8 @@ export function doneView() {
 		fill(status, 
 			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git)),
 			notice(good ? t("flash.c7.done.ready") : t("flash.c7.done.no_codec"), good ? "ok" : "bad"), good ? null : ctx.helpLink(),
-			c.backupSaved ? h("p", { class: "small muted" }, t("flash.c7.done.backup_kept")) : null,
+			// a backup taken from a radio that ran ODR holds that ODR build, not the original firmware
+			c.backupSaved ? h("p", { class: "small muted" }, t(c.odr ? "flash.c7.done.backup_kept_odr" : "flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks ODR's codec until the next restart (debuglink_stub.c)
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
 		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
@@ -649,7 +700,7 @@ export function backupView() {
 	const top = radioTop(S().radio, { led: "wait", screen: c.how === "odr" ? "loader" : "off" });
 	const prog = progressBar();
 	const status = h("div");
-	const want = { progmem: true, cal: true, q128: true };
+	const want = { progmem: true, cal: hasData(), q128: hasData() };
 	const options = backupOptions(want);
 	const go = button(t("flash.backup.run"), async () => {
 		go.disabled = true;
@@ -657,7 +708,7 @@ export function backupView() {
 		top.set({ led: "busy", screen: c.how === "odr" ? "loader" : "off" });
 		const started = ctx.flashStarted({ task: "backup", source: Object.keys(want).filter((k) => want[k]).join("+"), radio: boardId(), firmware: c.odr?.git || "", features: c.odr?.features || "" });
 		try {
-			if (want.progmem) c.progmem = await c.stub.dump("progmem", 0, C().progmem_size, { progress: (d, n) => prog.set(d, n, t("flash.c7.check.progmem")) });
+			if (want.progmem) c.progmem = await c.stub.dump("progmem", 0, progSize(), { progress: (d, n) => prog.set(d, n, t("flash.c7.check.progmem")) });
 			if (want.q128) c.q128 = await c.stub.dump("q128", 0, MEM.q128.size, { progress: (d, n) => prog.set(d, n, t("flash.c7.check.q128")) });
 			if (want.cal || want.q128) await readCalibration(c, prog);
 			if (c.progmem) c.analysis = await c7.analyze(c.progmem, C(), boardId());

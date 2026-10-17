@@ -60,7 +60,7 @@ def check_no_codec(board, image):
     if board.id == "dm1701":
         if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == stockfw.CODEC_SIG:
             raise SystemExit("release: %s carries the codec signature: never release a merged image" % board.id)
-    elif board.family == "bfuv32-serial":
+    elif board.family in ("bfuv32-serial", "hrc7000-iap"):
         if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == serialflash.SLOT_MAGIC:
             raise SystemExit("release: the %s image carries the codec slot (a _codec.bin): release odr_%s.bin, never "
                              "a merged image" % (board.name, board.id))

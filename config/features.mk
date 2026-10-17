@@ -109,10 +109,13 @@ CONFIG_HOTSPOT_SPLIT ?= $(CONFIG_HOTSPOT)
 CONFIG_VFO ?= y
 # analog FM VFO (needs VFO and FM)
 CONFIG_VFO_FM ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_FM))),y,n)
-# digital DMR VFO: own ID, color code, timeslot, talk target typed in (needs VFO and DMR; not built yet)
+# digital DMR VFO: color code, timeslot and talk target typed in, the Mode tile switches it FM / DMR (needs VFO and DMR)
 CONFIG_VFO_DMR ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_DMR))),y,n)
 # the debug link: framed commands on the host port for bench automation (docs/spec/debuglink.md; needs HOSTLINK)
 CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
+# every task's least free stack in the debug link's tasks view: the kernel's task create / delete trace hooks keep a
+# table of the tasks (core/app/task_stack.c, docs/spec/debuglink.md 3.7; needs DEBUGLINK). About 0.6 KB
+CONFIG_TASK_STACKS ?= $(CONFIG_DEBUGLINK)
 # the open-firmware CPS protocol shim on the host port, so qdmr and the open-firmware CPS can read and write the
 # codeplug (docs/spec/open-firmware-cps.md; needs HOSTLINK)
 CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
@@ -170,6 +173,10 @@ CONFIG_AUDIO_PROBE ?= n
 # docs/spec/stub-stm32f4.md). On by default on the HR_C7000 radios (their config.mk), where the web flasher and
 # stub/stubtool.py update through it; off elsewhere for now
 CONFIG_STUB_ENTRY ?= n
+# the core's storage (settings, codeplug) on SPI NAND: the NOR-like 4 KB sector layer over the board's own block range
+# (drivers/flash/nand_sectors, docs/spec/nand-sectors.md). On in the config.mk of radios whose data flash is SPI NAND
+# (the DB25-D); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
+CONFIG_NAND_STORAGE ?= n
 
 # APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions
 # over DMR (LRRP / UDT), a KISS TNC on the host port. Transmit stays off until the user turns it on (needs FM)
@@ -181,9 +188,9 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
+	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY NAND_STORAGE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -216,6 +223,11 @@ endif
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)
+  endif
+endif
+ifneq ($(call feature_on,TASK_STACKS),)
+  ifeq ($(call feature_on,DEBUGLINK),)
+    $(error CONFIG_TASK_STACKS=y needs CONFIG_DEBUGLINK=y)
   endif
 endif
 ifneq ($(call feature_on,CPS_OPENFW),)

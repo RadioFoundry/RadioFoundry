@@ -23,7 +23,8 @@
 #define PIN_ENC_A		0x27
 #define PIN_KEY_BACKLIGHT	0x28
 #define PIN_PTT			0x2B	// low = pressed
-#define PIN_GPS_POWER		0x2C	// low = GPS on
+#define PIN_GPS_POWER		0x2C
+#define GPS_POWER_ON_LEVEL	false	// low = GPS on (hardware-dm32.md 12)
 #define PIN_MIC_PATH		0x2E	// 1 = mic to the analog FM path, 0 = to the DMR codec
 #define PIN_SPK_SOURCE		0x2F	// 1 = the FD6818's audio to the speaker, 0 = into the HR_C7000 (DMR receive)
 #define PIN_KEY_COL1		0x31	// keypad columns 1-4 (0x31-0x34), low = key closed

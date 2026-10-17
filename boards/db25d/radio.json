@@ -19,19 +19,20 @@
     "hardware": "docs/spec/hardware-db25d.md"
   },
   "flash": {
-    "backend": "none",
-    "board": null,
+    "backend": "c7000-stub",
+    "board": "db25d",
     "link": "serial-cable",
     "bootloader": [
       "Turn the radio off and connect the programming cable.",
       "Hold P1 and press power. The red LED lights and the display stays blank."
     ],
-    "stock_versions": []
+    "stock_versions": [],
+    "stub_tested": false
   },
   "backup": {
-    "stock": "none",
-    "odr": "none",
-    "spi_size": 16777216
+    "stock": "full",
+    "odr": "full",
+    "spi_size": 0
   },
   "frame": {
     "shape": "mobile",

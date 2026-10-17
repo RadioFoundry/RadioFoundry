@@ -140,6 +140,7 @@ generic drawing from `radio.json` `frame`.
 | `f4stub.js` | The STM32F4 loader (DM-1701, MD-380): handed over by ODR, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/dm32_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
+| `db25d.js`, `db25dui.js` | DB25-D: the stock debug console read (USMART), the vendor update mode write (IAP) and their steps | `docs/spec/hardware-db25d.md` 7 |
 | `c7000ui.js`, `radiotop.js` | The HR_C7000 backend: its steps (connect, back up and check, write, check) and the radio picture with its LED | |
 | `dom.js` | DOM helpers and strings shared by `app.js` and `c7000ui.js` | |
 | `app.js` | The page: the tasks, the shared steps and the `anyroad-dfu` backend | |
@@ -170,7 +171,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | Backend | Radios | Module |
 |---|---|---|
 | `anyroad-dfu` | DM-1701, MD-380 | `app.js` (`dfu.js`, `f4stub.js`) |
-| `c7000-stub` | DM-1801 Pro, DM-32UV | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `c7000-stub` | DM-1801 Pro, DM-32UV, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
 | `none` | DB25-D for now | none: the radio is listed but grayed out |
 
 A radio without a backend the page knows gets `none`, so a radio.json value can come before its module. The
@@ -222,7 +223,8 @@ documented, and ODR doesn't overwrite it unless an ID database is uploaded.
 
 ### HR_C7000 radios (the boot stub)
 
-Radios whose `radio.json` says `"backend": "c7000-stub"` (the DM-1801 Pro and the DM-32UV) are flashed over their
+Radios whose `radio.json` says `"backend": "c7000-stub"` (the DM-1801 Pro, the DM-32UV and the DB25-D PRO, which adds
+the section below) are flashed over their
 programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
 [debuglink.md](../spec/debuglink.md) 3.18). The Baofeng bootloader is never used and never written. The install has
 its own steps:
@@ -233,6 +235,25 @@ its own steps:
 | Back up and check | A first install reads the whole program memory (required) and, if asked, the data memory, keeps the program memory in IndexedDB and downloads a backup bundle. An update reads only the codec slot. The page then decides the codec |
 | Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
 | Check | The stub resets the chip; the page asks ODR's VERSION for the build and the codec |
+
+#### DB25-D PRO
+
+The DB25-D has no boot ROM window on its cable until ODR's first stage is installed, and no SPI data flash (its NAND is
+not read). The board's table entry in `data/flash-boards.json` (`c7000.boards.db25d`, from `tools/dm32_codec.py`
+BOARDS) carries the 2 MB program flash size, `data_flash: false` and the stub the power-on route loads. The steps are
+the ones above, with these changes:
+
+| Situation | What the page does |
+|---|---|
+| ODR runs (debug link answers) | The stub is chosen by the RAM span the firmware reports in STUB INFO (`forBase()` in `stub.js`: 0x30000 for a build without DMR, 0x1D000 with it) and refused if linked for another span (`stubFits()`, as `stubtool.py` does). The backup is the 2 MB program memory |
+| ODR runs but does not answer | "Recover at Power-On": the first stage offers the boot ROM handshake for about half a second at power-on. The page answers it and loads the 0x30000 stub (the first stage takes blocks below 0x4E000) |
+| The stock firmware runs | `db25d.js` `Usmart`: the stock firmware's debug console returns one 32-bit word per `read_addr` call (`@read_addr(0x...)`, the only line the page can send). The application's first 4 KB are read twice, then the rest. The partial image is kept in IndexedDB every 16 KB, so a stopped read resumes. The read is the backup and the codec source (the 018 versions; a version without a recipe, such as 020, gets a message and the stock file picker) |
+| Install over the stock loader | `db25d.js` `Iap`: the loader's update mode (P1 and power) takes `Erase` and 2 KB pages with additive checksums (`docs/spec/hardware-db25d.md` 7). The image is the first stage, ODR and the codec slot (`odr_db25d_install.bin` with the slot merged in, or the build service's equivalent); it must start with the first stage's `2C 11 01 C0` |
+
+The first stage is the only way into the stub from a radio that runs ODR without answering, and update mode is the
+only way to write a radio that runs the stock firmware. `site/tests/db25d.test.mjs` runs the USMART read and the IAP
+write against simulated radios and compares the codec carve with `tools/dm32_codec.py` (`ODR_DB25D_STOCK=<a real 018
+file> python3 site/tests/fixtures.py` adds the real file to the comparison).
 
 The codec decision (`decide()` in `c7000.js`), first match wins:
 

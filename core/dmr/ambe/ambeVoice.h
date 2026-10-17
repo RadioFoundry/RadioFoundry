@@ -46,6 +46,7 @@ typedef struct {
 	uint32_t rx_underrun_at;	// frames the call had played at its latest underrun: early = a prime too short, late = clocks
 	uint32_t rx_overflows;	// frames dropped, queue full
 	uint32_t rx_bit_errors;	// bits corrected by the FEC
+	uint32_t rx_peak;	// largest decoded sample (absolute) in the latest call that played: near 0 = silent output
 	uint32_t tx_frames;	// frames encoded
 	uint32_t tx_overflows;	// encoded frames dropped, queue full (the stack didn't pull)
 } ambe_voice_stats_t;

@@ -10,6 +10,8 @@
 #include "radio/beep.h"
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
+#include "hal_time.h"
+#include "settings/settings.h"
 
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 
@@ -42,8 +44,11 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "vox_on=%u\nvox.mic=%u\nvox.level=%u\n", v->vox_on, mic, listen ? board.power->mic_level() : 0u);
 	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
 	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
-	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", word(v->battery, batt, 3),
+	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", board_has_battery() ? word(v->battery, batt, 3) : "none",
 		v->battery_pct, v->battery_mv, v->power_off);
+	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
+	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
+		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
@@ -162,6 +167,57 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 		radio_req_vibrate(a[0]);	// played whatever the UI's Vibrate setting; nothing without a motor
 		return DL_ST_OK;
+	case DL_OP_VOLUME:
+		// step 0..RADIO_VOLUME_MAX; RADIO_VOLUME_KNOB (0xFF) gives the knob back. A radio without a knob keeps the
+		// step like a UI change (stored); one with a knob holds it in RAM over the knob. No hook: unavailable
+		if (len < 1 || (a[0] > RADIO_VOLUME_MAX && a[0] != RADIO_VOLUME_KNOB)) {
+			return DL_ST_BAD_ARG;
+		}
+		if (!radio_volume_settable()) {
+			return DL_ST_UNAVAILABLE;
+		}
+		if (radio_volume_soft()) {
+			settings_t *st = settings_begin();
+			st->volume = a[0] == RADIO_VOLUME_KNOB ? 0 : radio_volume_stored(a[0]);
+			settings_end(hal_millis());
+			radio_req_volume(a[0] == RADIO_VOLUME_KNOB ? RADIO_VOLUME_DEFAULT : a[0]);
+		} else {
+			radio_req_volume_override(a[0] == RADIO_VOLUME_KNOB ? -1 : (int8_t)a[0]);
+		}
+		return DL_ST_OK;
+	case DL_OP_DMR_FIELDS:
+		// mode (0xFF = keep, else radio_mode_t), color code (0xFF = keep), timeslot (0 = keep): on a channel they are
+		// temporary changes, in the VFO the VFO's own settings. The radio core refuses what it can't do
+		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_DMR) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_DMR
+		if (a[0] != 0xFF) {
+			radio_req_mode(a[0]);
+		}
+		if (a[1] != 0xFF) {
+			radio_req_dmr_color_code(a[1]);
+		}
+		if (a[2] != 0) {
+			radio_req_dmr_timeslot(a[2]);
+		}
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	case DL_OP_VFO_COPY: {
+		// Copy to VFO, as the quick menu's tile does: refused with a status when the VFO can't hold the channel
+		// (the check is the radio core's), nothing sent then
+		switch (radio_req_vfo_copy_checked()) {
+		case VFO_COPY_OK:
+			return DL_ST_OK;
+		case VFO_COPY_NO_MODE:
+		case VFO_COPY_OUT_OF_BAND:
+			return DL_ST_REFUSED;
+		default:
+			return DL_ST_UNAVAILABLE;	// no VFO in this build, or already in it
+		}
+	}
 	case DL_OP_TONE_BURST:
 		if (len < 1) {
 			return DL_ST_BAD_ARG;

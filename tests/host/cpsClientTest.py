@@ -5,6 +5,7 @@
 write with save-and-reboot, read back, verify, and the flash dump checked byte for byte. Run by `make -C tests/host`."""
 import os
 import sys
+import subprocess
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -19,6 +20,32 @@ def check(cond, what):
     if not cond:
         print(f"FAIL {what}")
         failures += 1
+
+
+def test_channels(sim):
+    """cps_client.py test-channels: the image it makes, written through the shim into an empty flash, comes up as the
+    FM and the DMR channel, the talk group contact and the zone the DB25-D bench test uses (461.4625 MHz, TG 201)"""
+    regions = cps_client.REGIONS["qdmr"]
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "test.bin")
+        dump = os.path.join(d, "flash.bin")
+        rc = cps_client.main(["test-channels", path, "--id", "3101276", "--call", "N4NQV"])
+        check(rc == 0 and os.path.getsize(path) == cps_client.IMAGE_SIZE, "test-channels makes an image")
+        img = cps_client.load_image(path)
+        check(cps_client.decode_channel(img, 1) == {"name": "ODR FM 461.4625", "rx_hz": 461462500, "tx_hz": 461462500},
+              "FM channel in the image")
+        cps = cps_client.open_cps(exec_cmd=f"{sim} --dump {dump}")
+        cps.write_image(img, regions, reboot=False)
+        check(not cps_client.compare(img, cps.read_image(regions), regions), "the image reads back")
+        cps.close()
+        out = subprocess.run([sim, "--image", dump, "--list"], capture_output=True, text=True).stdout.splitlines()
+        check("source 2 channels 2" in out, f"two channels stored: {out[:2]}")
+        check('channel 1 "ODR FM 461.4625" rx 461462500 tx 461462500 mode 0 bw 0 cc 0 ts 1 contact 0' in out,
+              f"FM channel: {out}")
+        check('channel 2 "ODR DMR TG201" rx 461462500 tx 461462500 mode 1 bw 0 cc 2 ts 1 contact 1' in out,
+              f"DMR channel: {out}")
+        check('zone 0 "ODR test" 2: 1 2' in out, f"zone: {out}")
+        check('contact 1 "TG 201" id 201 type 0' in out, f"contact: {out}")
 
 
 def main():
@@ -109,6 +136,7 @@ def main():
             f.write(back)
         rc = cps_client.main(["--exec", f"{sim} --image {dump}", "--quiet", "verify", path])
         check(rc == 0, "cps_client verify")
+    test_channels(sim)
     print(f"# cpsClientTest {'FAILED' if failures else 'PASSED'} ({failures} failures)")
     return 1 if failures else 0
 

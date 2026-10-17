@@ -40,6 +40,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_temporary", "down quick 1 2 up back" },
 	{ "home_vfo", "ok 4 up ok" },
 	{ "home_vfo_entry", "ok 4 up ok 4 4 6" },
+	{ "home_vfo_dmr", "ok 4 up ok quick 4 back" },
 	{ "home_large_text", "ok 7 2 down down down down down ok long:back" },
 	{ "home_monitor", "down mondown" },
 	{ "home_plain", "strip:off" },	// Settings > Display > Filled status bar off
@@ -58,6 +59,10 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "quick_fm", "down quick" },
 	{ "quick_fm_squelch", "down quick 2 up" },
 	{ "quick_cc_editor", "quick 3 7" },
+	{ "quick_vfo_fm", "ok 4 up ok quick" },
+	{ "home_copy_to_vfo", "down quick 4" },
+	{ "quick_vfo_dmr", "ok 4 up ok quick 4" },
+	{ "quick_vfo_cc_editor", "ok 4 up ok quick 4 3 7" },
 	{ "find_name", "5 6 3" },
 	{ "find_number", "3 1 0 0" },
 	{ "find_channel", "1 2" },
@@ -93,8 +98,11 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "factory_reset", "ok 7 0 down down down ok" },
 	{ "about", "ok 7 0 ok" },
 	{ "talk_target_picker", "call:3101234,91,g tt" },
+	{ "talk_target_picker_vfo", "ok 4 up ok quick 4 tt" },
 	{ "scan_actions", "quick 7 back ctx" },
 	{ "emergency", "emergency:3101234" },
+	{ "volume", "softvol volkey up up" },
+	{ "volume_muted", "softvol volkey down down down down down down down down" },
 	{ "hotspot", "hotspot:on" },
 };
 

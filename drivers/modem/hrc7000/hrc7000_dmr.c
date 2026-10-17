@@ -37,8 +37,9 @@
 #define SLOTON_RX_OPEN_TX	0x20u
 
 // The chip slot the RX timeslot interrupt decides is the one after the slot number LAYER2_STATUS b30 shows then
-// (assumed: the interrupt comes 1.6 ms ahead of the boundary, LAYER2_SLOT_PRE). Flip to 0 if the bring-up shows the
-// voice-access flag landing on the other slot
+// (assumed: the interrupt comes 1.6 ms ahead of the boundary, LAYER2_SLOT_PRE). A board whose interrupt comes after
+// the boundary sets 0 (the DB25-D): with the flag on the other slot the chip leaves the voice RAM unwritten, and every
+// voice burst reads the same stale bytes
 #ifndef HRC7000_RX_NEXT_SLOT_XOR
 #define HRC7000_RX_NEXT_SLOT_XOR	1u
 #endif

@@ -52,9 +52,9 @@ The call is unit to unit (FLCO 3) for a private target, else group (FLCO 0).
 
 For now changes (Quick settings, P7): `radio_req_dmr_timeslot` and `radio_req_dmr_color_code` set the timeslot
 (temp bit 0x20; it overrides a contact's timeslot) and the color code (0x40) without touching the channel;
-`radio_req_mode` listens in FM or DMR on the same frequencies (0x80). They are refused while transmitting or busy and
-in the VFO (the VFO's own fields are the place for those), and BACK on Home (`radio_req_clear_temporary`) or a
-channel change undoes them. Save to channel writes them into the channel.
+`radio_req_mode` listens in FM or DMR on the same frequencies (0x80). They are refused while transmitting or busy, and
+BACK on Home (`radio_req_clear_temporary`) or a channel change undoes them. Save to channel writes them into the
+channel. In the VFO the same requests change the VFO's own settings instead (section 2.1).
 
 TX time-out: the channel's codeplug TOT (15 s units) when it has one, else the radio's (180 s by default). The
 transmission ends at the next superframe boundary with its terminator, and PTT shows "timed out" until released.
@@ -65,6 +65,74 @@ slot starts), the stack aborts the transmission and returns to receive with `DMR
 on the debug link). With PTT still held the radio shows "Modem refused to send" until release. A modem without slot
 timing (the MD-380 with its HR_C5000 not answering) otherwise kept the radio keyed until the battery came out
 ([gotchas](gotchas.md) 3.12).
+
+### 2.1 The DMR VFO
+
+With `CONFIG_VFO_DMR` the VFO has a mode, FM or DMR, as a setting of its own, next to its frequency, bandwidth and
+tones. In DMR it works like a DMR channel that has no codeplug record behind it:
+
+| What | In the DMR VFO |
+|---|---|
+| Frequency | The VFO's. RX and TX are the same (simplex, direct mode). A VFO A record written by a CPS with a TX offset keeps it, and then the VFO is a repeater-mode channel by the channel rule (RX and TX differ) |
+| Color code | 0 to 15, default 1 |
+| Timeslot | 1 or 2, default 1. A contact's timeslot override is not applied: the VFO's slot is the slot |
+| Own ID | The radio's, as on a channel without an ID of its own |
+| Talk target | A typed ID or talkgroup, or a codeplug contact, private or group. Default: talkgroup 9, as a channel with no contact and no RX group list |
+| Heard | The talk target's group, all call, private calls to our ID, the reply window, and everything with digital monitor. The VFO has no RX group list, so no other talkgroup is played (it is shown as busy), as on a DMR channel whose list is empty |
+| Power, TOT, privacy key | The radio's, as on a channel (the VFO's power level, the radio's TOT, the radio-wide privacy key) |
+
+Not in the VFO: talker alias (a channel's setting), the data service and emergency (`dmr-data.md`: not a VFO), roaming, the "hear all by default" setting, saving to a channel.
+
+These are the VFO's own settings, so they are not temporary changes: no dot on Home, BACK on Home doesn't undo them,
+they stay while the radio is on a channel, and they are kept across power cycles with the VFO's frequency
+(`settings-store.md` 3). The requests are the ones a channel uses and the radio core gives them the VFO meaning:
+`radio_req_mode` (needs both `CONFIG_VFO_FM` and `CONFIG_VFO_DMR`; on a channel the mode is no longer a quick menu change, Copy to VFO (2.2) is the way in), `radio_req_dmr_color_code`,
+`radio_req_dmr_timeslot`, and `radio_req_dmr_target` / `radio_req_dmr_contact` for the talk target. A typed or
+chosen target is the VFO's from then on (`dmr.target_manual` stays 0); "call back" is for now as on a channel and
+`radio_req_dmr_target_clear` returns to the VFO's target. All are refused while transmitting.
+
+A mode change retunes the same frequency. FM to DMR starts the call stack and sets the board to DMR; DMR to FM stops
+it, and the VFO's FM bandwidth and tones come back. No sub-audio squelch is set while in DMR, whatever tone the VFO
+holds. A build with only `CONFIG_VFO_DMR` has a DMR VFO and no mode change; one with only `CONFIG_VFO_FM` is as
+before.
+
+### 2.2 Copy to VFO
+
+From a channel (FM or DMR), Copy to VFO (`radio_req_vfo_copy`, `RREQ_VFO_COPY`) makes the channel's settings the VFO's
+own and opens the VFO. It is in the channel's quick menu (tile 4, "To VFO"), on the assignable key function "Copy to
+VFO" (`KEYFN_COPY_VFO`, short or long press) and on the debug link (RADIO op 32). It needs `CONFIG_VFO_FM` or
+`CONFIG_VFO_DMR`.
+
+What is copied is what is in effect now, so a temporary change on the channel (bandwidth, tone, mode, color code,
+timeslot, power, a talk target chosen for now) goes along. The channel itself is unchanged: leaving the VFO brings
+back the channel as it was, without the temporary changes, as any channel change does.
+
+| Channel | VFO |
+|---|---|
+| RX and TX frequency | Both, so a repeater offset stays (the VFO is then a split VFO; its first step makes it simplex again). Direct-mode channels (DMO) copy RX only |
+| Mode, bandwidth | Both |
+| Power | The level in effect; a channel on "default" stays on the radio's default |
+| CTCSS / DCS, RX and TX (FM) | Both. A DMR channel has none: the VFO keeps its own for its FM mode |
+| Color code, timeslot (DMR) | Both. The slot is the one in use: a timeslot chosen for now, else the talk contact's override, else the channel's |
+| Talk target (DMR) | The ID and the group / private flag of what the channel would send now: a target chosen for now, else its contact, else the first talkgroup of its RX group list, else talkgroup 9 (the channel default). A one-shot or reply target is not copied |
+| FM channel into a VFO that has DMR values | Color code, timeslot and talk target stay as the VFO had them |
+
+Not copied, because the VFO has nothing to hold them: the RX group list, the privacy key, roaming, the data and
+emergency settings, the talker alias, TOT and the squelch level (a radio setting, not the VFO's). They apply to the VFO
+as the radio-wide values.
+
+The VFO's values are saved as its own settings (`settings-store.md` 3) and the VFO's temporary marks are cleared.
+Nothing changes, and the UI says why (`radio_vfo_copy_check`), when:
+
+| Reason | Toast | Debug link status |
+|---|---|---|
+| No VFO in the build | "VFO: not in this build" | UNAVAILABLE |
+| A DMR channel without `CONFIG_VFO_DMR`, or an FM channel without `CONFIG_VFO_FM` | "VFO: no DMR in this build" / "VFO: no FM in this build" | REFUSED |
+| RX or TX frequency outside the board's bands | "VFO: frequency outside its bands" | REFUSED |
+| Already in the VFO | "Already in VFO" | UNAVAILABLE |
+
+The radio core also ignores the request while transmitting and in hotspot mode. A scan in progress ends first (the
+channel it stopped on is the one copied).
 
 ## 3. Talker alias
 
@@ -136,7 +204,9 @@ privacy is recognized from the service options and PI headers only.
 
 ## 6. Observing it
 
-Debug link (`debuglink.md`): the `dmr` view's `target_manual`, `privacy`, `alias_tx`; the `dmr_call` view's
+Debug link (`debuglink.md`): the `core` view's `mode` and `vfo`, the `dmr` view's `dmr.cc`, `dmr.ts`, `dmr.target_id`,
+`dmr.target_private`, `dmr.target_manual`, `dmr.privacy`, `dmr.alias_tx`; RADIO op 31 sets the mode, color code and timeslot (the VFO's
+own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (2.2); the `dmr_call` view's
 `emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
 `rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`, `rx_gps`,
 `tx_gps_lcs`; GPS Info as `call.gps_valid gps_lat gps_lon gps_err gps_dist_m gps_bearing` (and `last.`). HIL tests:

@@ -56,7 +56,7 @@ Screens consume only these. Each board maps physical inputs to them (`boards/<ra
 | `ENC_STEP(+/-)` | Encoder detent. Forward (+, clockwise): next channel on Home (as `NAV_UP`), value up in editors, focus **down** in lists and quick tiles (the next row, like a scroll wheel). Back (-): the opposite | from encoder |
 | `USER_1` to `USER_4` | Side and top keys; each has a short and a long function from the assignable list | optional |
 
-Assignable functions for `USER_n` keys (short and long, chosen in Settings > Keys or in qdmr): Monitor, Talk target, Quick, Context, Recent, Power cycle, Scan on/off, Hear all on/off, Privacy on/off, Zone picker, Speak status, Backlight, Mode FM/DMR, Lock, Reply, Radio check last caller, Silent (mute tones and prompts), None.
+Assignable functions for `USER_n` keys (short and long, chosen in Settings > Keys or in qdmr): Monitor, Talk target, Quick, Context, Recent, Power cycle, Scan on/off, Hear all on/off, Privacy on/off, Zone picker, Speak status, Backlight, Mode FM/DMR (in the VFO), Copy to VFO, Lock, Reply, Radio check last caller, Silent (mute tones and prompts), None.
 
 Rules for key maps (P3, P10):
 
@@ -128,7 +128,7 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 | 1 | Power (each press cycles levels) | Power |
 | 2 | Timeslot 1/2 | Squelch level |
 | 3 | Color code | Tone (CTCSS/DCS, RX and TX) |
-| 4 | Mode → FM | Mode → DMR |
+| 4 | To VFO (copy the channel to the VFO and open it) | To VFO |
 | 5 | Hear all (promiscuous) on/off | Monitor latch on/off |
 | 6 | Privacy on/off | VOX on/off |
 | 7 | Scan on/off | Scan on/off |
@@ -138,10 +138,11 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 
 - Toggle tiles change on one press; cycle tiles (power, timeslot, bandwidth) advance one value per press; value tiles (CC, squelch, tone, brightness) open an inline editor (`NAV_UP`/`NAV_DOWN` or digits, `SELECT` or `QUICK` to close).
 - Every change is temporary on a channel (dot on Home). Long `SELECT` on a tile makes it permanent. In VFO, changes apply to the VFO directly.
+- Tile 4 depends on where you are. On a channel it is "To VFO": the channel's settings in effect now (temporary changes included) become the VFO's own and the VFO opens ("Copied to VFO"); the channel is unchanged, and a channel the VFO can't hold is refused with a toast. In the VFO, tile 4 is Mode (FM / DMR), kept like the VFO's other settings. A channel has no temporary mode change.
 - Each tile shows its current value. The voice prompt reads "Power, high" etc.
 - `BACK` or `QUICK` again closes and returns to where the user was.
 
-Mode tile behavior on a DMR channel with no codec installed: the DMR tiles show "DMR needs the codec (see docs)" instead of failing silently.
+DMR channel with no codec installed (any DMR tile, and the VFO's Mode tile switching to DMR): the DMR tiles show "DMR needs the codec (see docs)" instead of failing silently.
 
 ---
 
@@ -240,6 +241,7 @@ scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the kno
 | Mic Up / Down | `NAV_UP` / `NAV_DOWN` |
 | Mic 0-9, `*`, `#` | as on handhelds (`*` = `QUICK`, `#` = `CONTEXT`) |
 | Mic function keys (A-D or P1-P4, per mic) | `TALK_TARGET`, `MONITOR`, Scan, Power cycle by default; assignable |
+| Front VOL key, on a radio without a volume knob | `VOLUME`: the volume screen; the encoder and Up / Down change it, OK / Back or 3 s idle close it |
 | Mic PTT | `PTT` |
 
 Mobile-specific: while driving, the "driving" profile (Settings > Display, or automatic when the radio is a mobile and the mic is the input) hides the text keyboard (P5, NHTSA lockout: no manual text entry), offers canned messages only, and enlarges Home. Voice prompts are on by default on mobiles.
@@ -263,7 +265,7 @@ Mobile-specific: while driving, the "driving" profile (Settings > Display, or au
 | Back | `BACK` / Home |
 | Up / Down | `NAV_UP` / `NAV_DOWN` (repeat) |
 | Left / Right | `NAV_LEFT` / `NAV_RIGHT`, long: `USER_1` / `USER_4` |
-| VFO/MR | `USER_3` (assignable; default: switch between channel and VFO) |
+| VFO/MR | `VFO_TOGGLE` (switch between channel and VFO) / `COPY_VFO` (copy the channel to the VFO) |
 | A/B | `ZONE_UP` |
 | `*` | `QUICK` / lock |
 | `#` | `CONTEXT` / Recent |

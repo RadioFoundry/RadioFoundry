@@ -139,6 +139,29 @@ uint16_t db25d_cal_pa(uint32_t hz, bool high)
 	return v > 0 && v <= (int32_t)DAC_MAX ? (uint16_t)v : 0;
 }
 
+bool db25d_cal_tx_plan(uint32_t hz, bool high, uint8_t drive_pct, db25d_tx_plan_t *p)
+{
+	uint16_t pa = db25d_cal_pa(hz, high);
+	if (pa == 0 || drive_pct == 0 || drive_pct > 100) {
+		return false;
+	}
+	uint32_t scaled = ((uint32_t)pa * drive_pct + 50u) / 100u;
+	p->pa = (uint16_t)(scaled > 0 ? scaled : 1u);
+	db25d_cal_tx_delays(hz, &p->on_us, &p->off_us);
+	return true;
+}
+
+uint16_t db25d_apc_level(uint16_t target, uint16_t step)
+{
+	if (step >= DB25D_APC_STEPS) {
+		return target;
+	}
+	// Smoothstep 3x^2 - 2x^3 of x = step / STEPS: no jump at either end
+	uint64_t n = DB25D_APC_STEPS;
+	uint64_t x = step;
+	return (uint16_t)((uint64_t)target * x * x * (3u * n - 2u * x) / (n * n * n));
+}
+
 uint16_t db25d_cal_rx_tune(uint32_t hz)
 {
 	if (!valid) {
@@ -150,7 +173,11 @@ uint16_t db25d_cal_rx_tune(uint32_t hz)
 
 uint8_t db25d_cal_tx_center(void)
 {
+#ifdef DB25D_TX_CENTER_OVERRIDE
+	return DB25D_TX_CENTER_OVERRIDE;	// bench sweep of the reference trim: make DB25D_TX_CENTER=116 (config.mk)
+#else
 	return valid ? page[OFF_TX_CENTER] : 0x80u;
+#endif
 }
 
 uint8_t db25d_cal_mod(uint32_t hz)

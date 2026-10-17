@@ -6,8 +6,8 @@ bench sends one call carrying a real speech recording; every frame must reach th
 Pass criteria (README.md): the AMBE voice layer takes in every frame the bench sent (the file padded to whole
 superframes), plays at least all but AMBE_VOICE_PRIME (3) of them (a frame can still be queued when the terminator
 ends playback), and nothing is concealed, lost, dropped or overrun anywhere: call stack lost frames 0, voice
-concealed / silence / lost / overflows 0, audio overruns and dropped blocks 0. The counters say where frames went
-missing when it fails.
+concealed / silence / lost / overflows 0, audio overruns and dropped blocks 0, and the decoded speech is not silent
+(voice.rx_peak at least PEAK_MIN). The counters say where frames went missing when it fails.
 
 One exception: a single underrun after the call's last frame (voice.rx_underrun_at = the frames played). The queue
 can run dry before the terminator reaches the voice layer, and that block repeats the last frame; nothing is missing.
@@ -20,6 +20,8 @@ import pytest
 from odr_hil import counter_deltas
 
 PRIME = 3   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
+# Decoded speech peaks at thousands; a decoder fed the wrong bits gave 6 with every counter clean (DB25-D, 2026-10-17)
+PEAK_MIN = 1000
 
 
 @pytest.mark.rf
@@ -55,7 +57,11 @@ def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
     assert d["call.rx_late_entries"] == 0, f"the call started late (header missed): {d}"
     assert d["voice.rx_in"] == sent, f"frames into the voice layer {d['voice.rx_in']} != {sent}: {d}"
     assert sent - PRIME <= d["voice.rx_frames"] <= sent, f"frames played {d['voice.rx_frames']} of {sent}: {d}"
-    at = radio.view(["dmr_stats"]).get("voice.rx_underrun_at")
+    stats = radio.view(["dmr_stats"])
+    peak = stats.get("voice.rx_peak")
+    if peak is not None:
+        assert int(peak) >= PEAK_MIN, f"decoded speech peaks at {peak} (silent output: wrong bits into the decoder?): {d}"
+    at = stats.get("voice.rx_underrun_at")
     end_race = at is not None and d["voice.rx_underruns"] == 1 and int(at) == d["voice.rx_frames"]
     if end_race:
         print(f"one underrun after the last frame ({at}): the terminator came after the queue ran dry")

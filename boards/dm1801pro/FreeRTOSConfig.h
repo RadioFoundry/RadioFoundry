@@ -34,6 +34,13 @@
 #define configUSE_TRACE_FACILITY		0
 #define configUSE_STATS_FORMATTING_FUNCTIONS	0
 
+// Every task's handle for the debug link's tasks view, its least free stack (core/app/task_stack.c)
+#if CONFIG_TASK_STACKS && !defined(__ASSEMBLER__)
+#include "app/task_stack.h"
+#define traceTASK_CREATE(tcb)			task_stack_created(tcb)
+#define traceTASK_DELETE(tcb)			task_stack_deleted(tcb)
+#endif
+
 #define INCLUDE_vTaskPrioritySet		1
 #define INCLUDE_uxTaskPriorityGet		1
 #define INCLUDE_vTaskDelete			1

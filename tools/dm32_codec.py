@@ -4,14 +4,15 @@
 """Merge an HR_C7000 radio's own stock AMBE+2 codec into an OpenDigitalRadio image, on your machine.
 
 The radios differ only in where things are (BOARDS: the slot and the windows its linker script reserves; PROFILES: where
-a stock file keeps the codec). For the DM-32UV, the recipe from docs/spec/codec-dm32.md ("Where the codec is",
-"Recommended hosting"):
-  1. check the stock file (Baofeng DM32.01.01.049.bin or DM32.00.01.046HRVocoder.bin, "BFUV32-V2" header) by SHA-256;
-  2. carve the codec code window and the codec table window (file offset = address - 0x0300C000 + 0x100);
+a stock file keeps the codec). The recipe, for the DM-32UV from docs/spec/codec-dm32.md ("Where the codec is",
+"Recommended hosting") and for the DB25-D from docs/spec/hardware-db25d.md 8:
+  1. check the stock file by SHA-256 (DM-32UV: Baofeng DM32.01.01.049.bin or DM32.00.01.046HRVocoder.bin, "BFUV32-V2"
+     header; DB25-D PRO: a plain 909E.D6x.EARSAB.018 image of 2024-05-09 or later);
+  2. carve the codec code window and the codec table window (file offset = address - 0x0300C000 + the file's header);
   3. check the code's first two words (0x152514D8, 0x74C776CD);
-  4. write a new raw image: the built application from 0x0300C000, 0xFF padding, then the codec slot at 0x030E8000:
-     a 128-byte header (platform/hrc7000/vocoder.c, codec_slot_t), the code, the tables. At boot the firmware copies
-     them to their stock RAM addresses; nothing is relocated.
+  4. write a new raw image: the built image from 0x0300C000 (the DB25-D's includes its first stage), 0xFF padding,
+     then the codec slot at 0x030E8000: a 128-byte header (platform/hrc7000/vocoder.c, codec_slot_t), the code, the
+     tables. At boot the firmware copies them to their stock RAM addresses; nothing is relocated.
 
 The codec is DVSI's and Baofeng's, not ours: it is never stored in this repository or in a release. This tool reads
 your stock file and writes the merged image to a file you choose (by default next to the built image, in build/, which
@@ -38,6 +39,14 @@ BOARDS = {
     "dm32": {"slot": (0x030E8000, 0x03100000), "run": (0x00016CDC, 0x0002F914), "tables": (0x18000E48, 0x18003E28)},
     "dm1801pro": {"slot": (0x030E8000, 0x03100000), "run": (0x00016CDC, 0x0002B2DC),
                   "tables": (0x18000EF0, 0x18003E68)},
+    # The three 018 builds share the code's RAM address; their tables sit 4 bytes apart (0x180014AC / B0 / B4), so the
+    # window is the union
+    "db25d": {"slot": (0x030E8000, 0x03100000), "run": (0x0001CEB0, 0x0002F9D0), "tables": (0x180014AC, 0x18004204),
+              # What the web flasher needs beyond the codec (site/odrsite/repo.py c7000_flash): the program flash is 2 MB
+              # (Boya, JEDEC 68 40 15) and there is no data flash on the SPI0 chip select the other radios use (the
+              # DB25-D has a SPI NAND there, which the stub does not read). The power-on stub is the one linked for
+              # 0x30000: the first stage takes blocks below 0x4E000, and it runs at the loader's 36 MHz APB
+              "progmem_size": 0x200000, "data_flash": False, "power_on_stub": 0x30000},
 }
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 
@@ -164,6 +173,40 @@ PROFILES = {
     },
 }
 
+# DB25-D PRO stock images: plain, linked at 0x0300C000, no container (hardware-db25d.md 8). Code: 0x12B20 bytes at the
+# signature, run at 0x1CEB0 (the stock start-up copies the RAM block from 0x030B4DA8-class addresses to 0x10000, which puts
+# the codec at 0x1CEB0 in all three). Tables: one 0x2D50 window (two object groups, 4 bytes apart) in the modem SRAM
+# image, run at 0x180014AC + the build's shift. fec_init is +0x1DCC in all three
+_DB25D_ENTRIES = {"decode": 0x0, "encode": 0x260, "dec_init": 0xB4, "dec_set": 0x84, "enc_init": 0x314,
+                  "enc_set": 0x2E4, "fec_init": 0x1DCC}
+PROFILES.update({
+    "341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b": {
+        "name": "DB25-D PRO 909E.Dx.EARSAB.018_2025-01-21.bin", "board": "db25d", "tag": 2501, "size": 846700,
+        "hdr": 0, "magic": None,
+        "code_sha256": "c8152ea4f4eba93c5d83a6e30953c1872923aa67639399836906a5849db9e54e",
+        "code": (0x030C1C58, 0x12B20, 0x0001CEB0),
+        "tables": (0x0307A8EC, 0x2D50, 0x180014AC),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _DB25D_ENTRIES,
+    },
+    "f2a4b214720b971b58cdadcc53d44695e1462b75296afc41f2a0b53a704d36b4": {
+        "name": "DB25-D PRO 909E.Dx.EARSAB.018_2024-09-23.bin", "board": "db25d", "tag": 2409, "size": 845900,
+        "hdr": 0, "magic": None,
+        "code_sha256": "a2346ca4b122622476f437f9c031df70cace737b760bee614758cd5a4805b3cd",
+        "code": (0x030C192C, 0x12B20, 0x0001CEB0),
+        "tables": (0x0307A614, 0x2D50, 0x180014B4),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _DB25D_ENTRIES,
+    },
+    "9e199f54cd6545d153d39542ca5be3ac1076ee215eb93ca630a83cbdbbff4606": {
+        "name": "DB25-D 909E.D6x.EARSAB.018 2024-05-09 (db25d-v2024-05-09.bin)", "board": "db25d", "tag": 2405,
+        "size": 843944, "hdr": 0, "magic": None,
+        "code": (0x030C1130, 0x12B20, 0x0001CEB0),
+        "tables": (0x0307A150, 0x2D50, 0x180014B0),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _DB25D_ENTRIES,
+    },
+})
 # CRC-32 of the first 64 bytes of every table window above: a cheap first test when locate() looks for the tables in a
 # program flash dump, before the SHA-256. Not a codec byte, only a fingerprint
 TABLES_HEAD_CRC = 0x11475389
@@ -188,8 +231,8 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def file_offset(addr):
-    return addr - APP_BASE + STOCK_HEADER
+def file_offset(addr, hdr=STOCK_HEADER):
+    return addr - APP_BASE + hdr
 
 
 def carve(stock, prof):
@@ -197,8 +240,9 @@ def carve(stock, prof):
     windows = []
     for key in ("code", "tables"):
         addr, length, _ = prof[key]
-        off = addr - PROGMEM_BASE if prof.get("kind") == "progmem" else file_offset(addr)
-        if off < 0 or off + length > len(stock):
+        hdr = 0 if prof.get("kind") == "progmem" else prof.get("hdr", STOCK_HEADER)
+        off = addr - PROGMEM_BASE if prof.get("kind") == "progmem" else file_offset(addr, hdr)
+        if off < hdr or off + length > len(stock):
             raise ExtractError("%s window outside the file" % key)
         windows.append(stock[off:off + length])
     return windows
@@ -272,7 +316,8 @@ def extract(stock, profiles=None, board="dm32"):
     if prof is None:
         raise ExtractError("unsupported stock file (sha256 %s); supported: %s"
                            % (digest, ", ".join("%s (%s...)" % (p["name"], h[:8]) for h, p in profiles.items())))
-    if prof.get("kind") != "progmem" and not stock.startswith(MAGIC):
+    magic = prof.get("magic", MAGIC)
+    if prof.get("kind") != "progmem" and magic is not None and not stock.startswith(magic):
         raise ExtractError("not a BFUV32-V2 firmware file")
     code, tables = carve(stock, prof)
     if struct.unpack_from("<2I", code, 0) != CODEC_SIG:
@@ -413,6 +458,33 @@ def self_test():
     expect_error(lambda: extract(bad, {sha256(bad): dict(real)}), "signature check")
     expect_error(lambda: merge(b"\0" * (slot_base - APP_BASE + 1), p, c, t), "image too big")
     expect_error(lambda: check_output_path(os.path.join(repo_root(), "codec.bin")), "output outside build/")
+
+    # The DB25-D: a plain image (no header, no magic), the first stage inside the merged image's low part
+    d25 = PROFILES["341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b"]
+    plain = bytearray(d25["size"])
+    caddr, clen, crun = d25["code"]
+    taddr, tlen, trun = d25["tables"]
+    code25 = bytearray(os.urandom(clen))
+    struct.pack_into("<2I", code25, 0, *CODEC_SIG)
+    tables25 = os.urandom(tlen)
+    plain[file_offset(caddr, 0):file_offset(caddr, 0) + clen] = code25
+    plain[file_offset(taddr, 0):file_offset(taddr, 0) + tlen] = tables25
+    plain = bytes(plain)
+    p25, c25, t25 = extract(plain, {sha256(plain): dict(d25)}, board="db25d")
+    check(c25 == bytes(code25) and t25 == tables25, "DB25-D windows carved from a plain image")
+    out25 = merge(b"\x22" * 5000, p25, c25, t25)
+    slot25 = out25[BOARDS["db25d"]["slot"][0] - APP_BASE:]
+    f25 = struct.unpack_from("<8I7I2I", slot25, 0)
+    check(f25[4] == 0x1CEB0 and f25[7] == 0x180014AC and f25[3] == 0x12B20 and f25[6] == 0x2D50, "DB25-D windows")
+    check(f25[8:15] == (0, 0x260, 0xB4, 0x84, 0x314, 0x2E4, 0x1DCC) and f25[15] == 2501, "DB25-D entry points and tag")
+    check(len(slot25) <= BOARDS["db25d"]["slot"][1] - BOARDS["db25d"]["slot"][0], "DB25-D slot fits")
+    for key, prof in PROFILES.items():
+        lay = BOARDS[prof["board"]]
+        c0, cl, cr = prof["code"]
+        t0, tl, tr = prof["tables"]
+        check(lay["run"][0] <= cr and cr + cl <= lay["run"][1], "%s: code inside the RAM window" % prof["name"])
+        check(lay["tables"][0] <= tr and tr + tl <= lay["tables"][1], "%s: tables inside the table window" % prof["name"])
+    expect_error(lambda: extract(plain, {sha256(plain): dict(d25)}, board="dm32"), "DB25-D file refused for the DM-32")
     print("dm32_codec self-test: %s" % ("all passed" if ok else "FAILED"))
     return ok
 
@@ -422,7 +494,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--board", default="dm32", choices=sorted(BOARDS), help="the radio (default: dm32)")
     ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046; DM-1801 Pro: a program "
-                    "flash dump, stub/stubtool.py --progmem)")
+                    "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later)")
     ap.add_argument("--image", help="the built raw application image (default: build/<board>/odr_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     ap.add_argument("--self-test", action="store_true", help="run the built-in checks on synthetic data")

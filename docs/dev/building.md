@@ -22,6 +22,7 @@ and ST's HAL and CMSIS into `third_party/`.
 | `make BOARD=<b>` | Builds `build/<b>/odr_<b>.{elf,bin,map}` (the DM-1701 also `odr_dm1701_rodata2.bin`, its flash sector 9: [release.md](release.md#sector-9)), plus `odr_<b>_codec.bin` when `codecs/` holds the radio's stock file and the board has a codec tool (below). `BOARD` defaults to `dm1701` |
 | `make BOARD=md380 MD380_BAND=vhf` | The MD-380 VHF image (default `uhf`; one image per band) |
 | `make BOARD=<b> size` | Section sizes and the space left before the codec |
+| `make BOARD=<b> stack-check` | Each task's worst-case stack depth against its stack ([stack-check.md](stack-check.md)) |
 | `make test` | The host tests (the same as `make -C tests/host`) |
 | `make BOARD=<b> print-config` | The feature switches this board builds with, as `NAME=y/n` |
 | `make BOARD=<b> print-cc` | The compiler the board uses (ci.sh checks it is installed) |

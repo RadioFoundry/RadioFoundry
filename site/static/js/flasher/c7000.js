@@ -30,6 +30,11 @@ const find = (buf, pat, from = 0) => {
 export const sigBytes = (c) => concat(le32(c.codec_sig[0]), le32(c.codec_sig[1]));
 export const profilesFor = (c, boardId) => c.profiles.filter((p) => p.board === boardId);
 
+// The size of the board's whole program flash (the DB25-D's is 2 MB), and the first progmem_size bytes of a read of it,
+// which is where the codec and the profiles' addresses lie
+export const totalSize = (c, boardId) => c.boards[boardId]?.progmem_size || c.progmem_size;
+export const lowPart = (c, progmem) => (progmem.length > c.progmem_size ? progmem.subarray(0, c.progmem_size) : progmem);
+
 // A known codec anywhere in a program flash read: each stock version puts it at its own addresses. Returns
 // {profile, codeAddr, tablesAddr, code, tables} (addresses as flash offsets) or null.
 export async function locateCodec(progmem, c, boardId) {
@@ -41,7 +46,8 @@ export async function locateCodec(progmem, c, boardId) {
 		if (at % 4) continue;
 		// stock versions with the same codec bytes (DM-32 037, 039, 040) are told apart by where they put it
 		const here = (p) => p.stock_file?.code === c.progmem_base + at;
-		for (const p of [...profs.filter(here), ...profs.filter((p) => !here(p))]) {
+		// a profile without codec hashes (a stock file known only by its whole-file hash) can't be found in a read
+		for (const p of [...profs.filter(here), ...profs.filter((p) => !here(p))].filter((p) => p.code_sha256)) {
 			const code = progmem.subarray(at, at + p.code_len);
 			if (code.length !== p.code_len || (await sha256(code)) !== p.code_sha256) continue;
 			if (!heads) {
@@ -65,8 +71,8 @@ export async function locateCodec(progmem, c, boardId) {
 // The codec out of a Baofeng stock firmware file ("BFUV32-V2", file offset = address - 0x0300C000 + 0x100), or out of
 // a program flash backup (1 MB). Returns the same shape as locateCodec, or throws with what the file is.
 export async function codecFromFile(data, c, boardId) {
-	if (data.length === c.progmem_size) {
-		const got = await locateCodec(data, c, boardId);
+	if (data.length === c.progmem_size || data.length === totalSize(c, boardId)) {
+		const got = await locateCodec(lowPart(c, data), c, boardId);
 		if (got) return got;
 		throw new CodecError("this program memory backup contains no codec recognized for this radio");
 	}
@@ -76,10 +82,14 @@ export async function codecFromFile(data, c, boardId) {
 		const names = profilesFor(c, boardId).filter((x) => x.stock_file).map((x) => x.name);
 		throw new CodecError(`not a stock firmware file the codec can be taken from${names.length ? ` (supported: ${names.join(", ")})` : ""}`);
 	}
-	const off = (a) => a - c.app_base + c.stock_header;
+	// the whole file is identified by its SHA-256 above; the codec hashes, where the profile has them, check the carve too
+	const hdr = p.stock_header ?? c.stock_header;
+	const off = (a) => a - c.app_base + hdr;
 	const code = data.slice(off(p.stock_file.code), off(p.stock_file.code) + p.code_len);
 	const tables = data.slice(off(p.stock_file.tables), off(p.stock_file.tables) + p.tables_len);
-	if ((await sha256(code)) !== p.code_sha256 || (await sha256(tables)) !== p.tables_sha256) throw new CodecError("the codec areas in this file do not match");
+	if (code.length !== p.code_len || tables.length !== p.tables_len || u32le(code, 0) !== c.codec_sig[0] || u32le(code, 4) !== c.codec_sig[1] ||
+		(p.code_sha256 && (await sha256(code)) !== p.code_sha256) || (p.tables_sha256 && (await sha256(tables)) !== p.tables_sha256))
+		throw new CodecError("the codec areas in this file do not match");
 	return { profile: p, codeAddr: p.stock_file.code - c.progmem_base, tablesAddr: p.stock_file.tables - c.progmem_base, code, tables };
 }
 
@@ -126,7 +136,7 @@ export async function analyze(progmem, c, boardId) {
 	const app = progmem.subarray(c.app_start, c.boards[boardId].slot[0]);
 	const slotRaw = progmem.subarray(c.boards[boardId].slot[0], c.boards[boardId].slot[1]);
 	const slot = await parseSlot(c, boardId, slotRaw);
-	const codec = await locateCodec(progmem, c, boardId);
+	const codec = await locateCodec(lowPart(c, progmem), c, boardId);
 	const firmware = app.subarray(0, 4096).every((b) => b === 0xFF) ? "empty"
 		: find(app, ODR_MARK) >= 0 ? "odr" : codec ? "stock" : "unknown";
 	return { firmware, slot, slotBytes: slot ? slotRaw.slice(0, slot.length) : null, codec };
@@ -138,7 +148,7 @@ export async function decide(c, boardId, { slotInFlash = null, savedSlot = null,
 	if (slotInFlash) return { mode: "keep", slot: null, source: "flash", why: "keep" };
 	if (flashCodec) return { mode: "write", slot: slotBytes(c, boardId, flashCodec), source: "radio", name: flashCodec.profile.name, tag: flashCodec.profile.tag };
 	if (savedSlot && (await parseSlot(c, boardId, savedSlot))) return { mode: "write", slot: savedSlot, source: "browser" };
-	if (fileCodec instanceof Uint8Array && (await parseSlot(c, boardId, fileCodec))) return { mode: "write", slot: fileCodec, source: "file" };
+	if (fileCodec instanceof Uint8Array && (await parseSlot(c, boardId, fileCodec))) return { mode: "write", slot: fileCodec, source: "image" };
 	if (fileCodec?.profile) return { mode: "write", slot: slotBytes(c, boardId, fileCodec), source: "file", name: fileCodec.profile.name };
 	if (allowNone) return { mode: "none", slot: null, source: null };
 	return null;
@@ -160,7 +170,7 @@ export function target(c, boardId, image, slot = null) {
 
 // A program flash backup put back: the application area and the slot, exactly (the bootloader isn't written)
 export function restoreTarget(c, progmem) {
-	if (progmem.length !== c.progmem_size) throw new CodecError("not a whole program memory backup");
+	if (progmem.length < c.progmem_size) throw new CodecError("not a whole program memory backup");
 	return [c.app_start, progmem.slice(c.app_start, c.app_end)];
 }
 

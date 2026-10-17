@@ -8,7 +8,7 @@
 
 #define configUSE_PREEMPTION			1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION	0
-#define configCPU_CLOCK_HZ			168000000u
+#define configCPU_CLOCK_HZ			HRC_CPU_HZ	// board.mk: 168 MHz, or the IAP loader's 72 MHz
 #define configTICK_RATE_HZ			1000
 #define configMAX_PRIORITIES			7
 #define configMINIMAL_STACK_SIZE		128
@@ -33,6 +33,13 @@
 #define configTIMER_TASK_STACK_DEPTH		256
 #define configUSE_TRACE_FACILITY		0
 #define configUSE_STATS_FORMATTING_FUNCTIONS	0
+
+// Every task's handle for the debug link's tasks view, its least free stack (core/app/task_stack.c)
+#if CONFIG_TASK_STACKS && !defined(__ASSEMBLER__)
+#include "app/task_stack.h"
+#define traceTASK_CREATE(tcb)			task_stack_created(tcb)
+#define traceTASK_DELETE(tcb)			task_stack_deleted(tcb)
+#endif
 
 #define INCLUDE_vTaskPrioritySet		1
 #define INCLUDE_uxTaskPriorityGet		1

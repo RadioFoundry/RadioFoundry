@@ -47,6 +47,13 @@
 // RSSI moves smaller than this don't bump the view serial (the snapshot still carries the latest value)
 #define RADIO_RSSI_DEADBAND_DB	2
 
+// DMR is TDMA: a call puts RF on one 30 ms slot of each 60 ms frame, so an instantaneous reading lands in the empty
+// slot about half the time and shows the noise floor. While the DMR path is running the published RSSI is the peak of
+// the last RADIO_RSSI_HOLD_MS: two full frames, so one lost sample or a late poll still leaves a burst in the window.
+// RADIO_POLL_MS (25) is shorter than a slot (30), so every slot gets at least one sample.
+#define RADIO_RSSI_HOLD_MS	120
+#define RADIO_RSSI_HOLD_POLLS	((RADIO_RSSI_HOLD_MS + RADIO_POLL_MS - 1) / RADIO_POLL_MS)
+
 // Scan defaults and per-stop timing (docs/spec/radio-features.md 2)
 #define RADIO_SCAN_DWELL_MS	150	// listen per channel (from the retune) with nothing heard
 #define RADIO_SCAN_FM_PROBE_MS	350	// FM: a carrier without the RX tone yet (CTCSS detection takes 100-250 ms)
@@ -120,6 +127,9 @@ typedef enum {
 	RREQ_ROAM,		// DMR roaming: arg = radio_roam_cmd_t
 	RREQ_VFO_STEP_SIZE,	// arg: the VFO step in Hz
 	RREQ_VIBRATE,		// arg: vibe_t (radio/vibe.h)
+	RREQ_VOLUME,		// arg: the volume step 0..RADIO_VOLUME_MAX (radios without a knob)
+	RREQ_VOLUME_OVERRIDE,	// arg: the step over the knob, -1 = back to the knob
+	RREQ_VFO_COPY,		// the channel's settings into the VFO, and open it (CONFIG_VFO); no-op in the VFO
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -153,6 +163,8 @@ typedef struct {
 	zone_t zone;			// the current zone's channel list
 	channel_t vfo_ch;		// the VFO's settings, kept while on a channel
 	bool vfo_seeded;		// vfo_ch holds a frequency
+	uint32_t vfo_talk_id;		// the DMR VFO's talk target (CONFIG_VFO_DMR), 0 = none chosen: talkgroup 9
+	bool vfo_talk_private;
 	bool have_channels;		// some zone holds a readable channel
 
 	uint8_t base_squelch;		// squelch without the temporary change
@@ -166,6 +178,8 @@ typedef struct {
 	uint8_t base_mode;
 	uint8_t temp_ts;		// a timeslot chosen for now (RREQ_DMR_TS), 0 = none
 	uint8_t board_mode;		// radio_mode_t the board was last put in
+	uint8_t vol_step;		// the volume step of a radio without a knob
+	int8_t vol_override;		// the debug link's step over the knob, -1 = none
 	int16_t volume_sent;		// last level given to board.radio->volume, -1 = none yet
 
 	bool ptt;			// PTT held
@@ -177,6 +191,11 @@ typedef struct {
 	uint8_t close_count;		// polls in a row above the close threshold
 	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)
 	int16_t rssi_published;
+#if CONFIG_DMR
+	int16_t rssi_ring[RADIO_RSSI_HOLD_POLLS];	// the last polls' readings while the DMR path runs (peak hold)
+	uint8_t rssi_ring_n;		// readings in the ring (0 outside DMR)
+	uint8_t rssi_ring_pos;
+#endif
 	int8_t audio_out;		// last speaker / LED settings sent to the board, -1 = not yet
 	int8_t green_out;
 	int8_t red_out;

@@ -31,7 +31,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
 	{ KEY_LEFT, ACT_NAV_LEFT, ACT_USER_1, false, true },
 	{ KEY_RIGHT, ACT_NAV_RIGHT, ACT_USER_4, false, true },
-	{ KEY_VFO_MR, ACT_USER_3, ACT_USER_3, false, false },
+	{ KEY_VFO_MR, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false },
 	{ KEY_AB, ACT_ZONE_UP, ACT_ZONE_UP, false, false },
 	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false },
 	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },

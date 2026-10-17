@@ -186,6 +186,12 @@ test("a codec from a stock file or a program memory backup", async () => {
 	await assert.rejects(c7.codecFromFile(new Uint8Array(1000), sim.c, "dm1801pro"), c7.CodecError);
 	const slot = c7.slotBytes(sim.c, "dm1801pro", got);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { savedSlot: slot })).source, "browser");
+	// a codec slot that came with the user's firmware file has no name of its own: its text must not print an empty one
+	const fromImage = await c7.decide(sim.c, "dm1801pro", { fileCodec: slot });
+	assert.equal(fromImage.source, "image");
+	const text = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
+	for (const src of ["radio", "browser", "file", "image"]) assert.ok(text[`flash.c7.codec.from_${src}`], src);
+	assert.ok(!text["flash.c7.codec.from_image"].includes("{name}"));
 	assert.equal(await c7.decide(sim.c, "dm1801pro", {}), null);
 	assert.equal((await c7.decide(sim.c, "dm1801pro", { allowNone: true })).mode, "none");
 	assert.equal(crc32(slot.subarray(128, 136)), crc32(c7.sigBytes(sim.c)));

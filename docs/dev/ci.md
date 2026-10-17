@@ -173,6 +173,7 @@ tools/ci.sh --quick                           # what CI runs, without coverage a
 SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
 tools/ci.sh --steps python,licenses           # the checks job
 tools/ci.sh --quick --steps firmware --board md380
+make BOARD=db25d stack-check                  # the stack check alone, after a build (stack-check.md)
 ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board dm1701    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html
 tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm1801pro   # on a host with the image

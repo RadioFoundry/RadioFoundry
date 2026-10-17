@@ -13,6 +13,7 @@ typedef struct {
 	void (*init)(void);
 	// Keep the radio powered (true) or let it turn off (false)
 	void (*latch)(bool on);
+	// battery_mv and battery_pct are read only when the board has a battery (board_has_battery(), CAP_NO_BATTERY unset)
 	uint16_t (*battery_mv)(void);
 	// Battery percentage 0..100 from the board's own curve
 	uint8_t (*battery_pct)(void);

@@ -207,6 +207,7 @@ static void rx_block(int16_t *spk)
 		cb_bad_run = 0;
 		cb_call_frames = 0;
 		have_last = false;
+		stats.rx_peak = 0;
 		if (voc_ok()) {
 			voc->reset();
 		}
@@ -261,6 +262,13 @@ static void rx_block(int16_t *spk)
 		cb_call_frames++;
 		if (voc_ok()) {
 			voc->decode(last_bits, spk);
+			// A decoder fed the wrong bits plays silence with every counter clean (the DB25-D's stale voice RAM)
+			for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+				uint32_t a = (uint32_t)(spk[i] < 0 ? -spk[i] : spk[i]);
+				if (a > stats.rx_peak) {
+					stats.rx_peak = a;
+				}
+			}
 		} else {
 			memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 		}

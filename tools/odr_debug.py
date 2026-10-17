@@ -14,7 +14,8 @@
     odr_debug.py key --mask 0xBITS --hold MS    physical key bits
     odr_debug.py wake                           backlight on without a key event
     odr_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
-    odr_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq 162.550, power +1, ...
+    odr_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq 162.550, power +1, copy-vfo, ...
+    odr_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     odr_debug.py log [--follow]                 the firmware's dlog() ring
     odr_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
     odr_debug.py dump --addr A --len N [-o F]   read internal flash / system memory / OTP / option bytes to a file
@@ -126,7 +127,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr"]
+                 "sfr", "tasks"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -139,6 +140,10 @@ OP_USB_NETWORK = 25
 OP_ROAM = 26
 OP_USB_NET_SETTINGS = 27
 OP_VIBRATE = 29
+OP_VOLUME = 30
+OP_DMR_FIELDS = 31
+OP_VFO_COPY = 32
+VOLUME_KNOB = 0xFF
 OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
@@ -719,6 +724,23 @@ class DebugLink:
         """A vibration pattern on the board's motor (CONFIG_VIBRATE): message | call | emergency."""
         self.radio(OP_VIBRATE, bytes([VIBES[which] if isinstance(which, str) else which]))
 
+    def volume(self, step):
+        """The speaker volume: a step 0 (mute) .. volume.max, or "knob" to give a knob radio's knob back (a radio with
+        no knob goes back to its default step). Raises DebugLinkError "unavailable" on a radio whose MCU can't set it."""
+        self.radio(OP_VOLUME, bytes([VOLUME_KNOB if step == "knob" else int(step)]))
+
+    def dmr_fields(self, mode=None, cc=None, ts=None):
+        """Mode ("fm" / "dmr"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these are
+        temporary changes, in the VFO the VFO's own settings (RADIO op 31)."""
+        m = 0xFF if mode is None else {"fm": 0, "dmr": 1}[mode]
+        self.radio(OP_DMR_FIELDS, bytes([m, 0xFF if cc is None else int(cc), 0 if ts is None else int(ts)]))
+
+    def vfo_copy(self):
+        """Copy the channel on view to the VFO and open it (RADIO op 32). Raises DebugLinkError "refused" for a channel
+        the VFO can't hold (a mode this build lacks, a frequency outside the bands) and "unavailable" without a VFO or
+        in the VFO already."""
+        self.radio(OP_VFO_COPY)
+
     def tone_burst(self, on):
         """The 1750 Hz burst (FM): keys up and sends the tone while on."""
         self.radio(OP_TONE_BURST, bytes([1 if on else 0]))
@@ -1014,6 +1036,24 @@ def cmd_key(link, a):
     return 0
 
 
+def cmd_volume(link, a):
+    """volume [N|knob]: set, then print the volume.* lines of the features view (source, step, percent sent)."""
+    if a.value is not None:
+        try:
+            link.volume("knob" if a.value == "knob" else int(a.value, 0))
+        except DebugLinkError as e:
+            if e.status == 4:
+                print("volume: not supported on this radio (the knob works on the amplifier directly)", file=sys.stderr)
+                return 3
+            raise
+        time.sleep(0.3)         # the radio core applies it on its next poll
+    v = link.view(["features"])
+    for k in ("volume.src", "volume.step", "volume.max", "volume.override", "volume.sent", "volume.soft"):
+        if k in v:
+            print(f"{k}={v[k]}")
+    return 0
+
+
 def cmd_radio(link, a):
     op, args = a.op, a.args
 
@@ -1068,6 +1108,14 @@ def cmd_radio(link, a):
         link.beep(args[0] if args else "key")
     elif op == "vibrate":             # vibrate message|call|emergency
         link.vibrate(args[0] if args else "message")
+    elif op == "copy-vfo":            # the channel's settings into the VFO, and open it
+        link.vfo_copy()
+    elif op == "mode":                # mode fm|dmr (the VFO's own in the VFO, else temporary)
+        link.dmr_fields(mode=args[0])
+    elif op == "cc":                  # cc 0..15
+        link.dmr_fields(cc=num(0))
+    elif op == "ts":                  # ts 1|2
+        link.dmr_fields(ts=num(0))
     elif op == "burst":               # burst on|off
         link.tone_burst(args[:1] != ["off"])
     elif op == "set":                 # set NAME VALUE
@@ -1498,11 +1546,14 @@ def main(argv=None):
     p.add_argument("op", choices=["status", "set", "read", "write", "trap"])
     p.add_argument("args", nargs="*", help="set: FIELD VALUE (fields " + ", ".join(SNMP_FIELDS) + "; flags as a "
                    "number or names " + ",".join(SNMP_FLAGS) + "); read / write: [COMMUNITY] (none: the default)")
+    p = sub.add_parser("volume", help="speaker volume: print it, or set a step 0..volume.max / 'knob' to give the knob "
+                       "back (RADIO op 30; docs/spec/debuglink.md 3.8)")
+    p.add_argument("value", nargs="?", help="step 0..16 (0 mutes), or knob")
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp", "vibrate"])
+                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
@@ -1564,6 +1615,8 @@ def main(argv=None):
                 print(f"PTT held {a.seconds:g} s, released")
             elif a.cmd == "radio":
                 return cmd_radio(link, a)
+            elif a.cmd == "volume":
+                return cmd_volume(link, a)
             elif a.cmd == "data":
                 return cmd_data(link, a)
             elif a.cmd == "aprs":

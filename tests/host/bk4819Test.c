@@ -169,6 +169,8 @@ static void test_helpers(void)
 	CHECK(bk4819_ctcss_word(885) == 1827);
 	CHECK(bk4819_ctcss_word(1000) == 2065);
 	CHECK(bk4819_ctcss_word(2541) == 5247);
+	// The stock transmitter truncates: 100.0 Hz = 2064.888 -> 2064
+	CHECK(bk4819_ctcss_word_tx(1000) == 2064 && bk4819_ctcss_word_tx(885) == 1827 && bk4819_ctcss_word_tx(2541) == 5246);
 	CHECK(bk4819_rssi_dbm(0x0000) == -160);
 	CHECK(bk4819_rssi_dbm(0x0082) == -95);		// 130 half-dB
 	CHECK(bk4819_rssi_dbm(0xFFFF) == 95);		// bits above 8 ignored
@@ -221,8 +223,8 @@ static void test_init(void)
 	CHECK(i >= 0 && c->log[i].val == 0x3332);
 	i = find_last(c, 0x7D);
 	CHECK(i >= 0 && c->log[i].val == 0xE34A);
-	CHECK(c->log[c->n - 1].reg == 0x30 && c->log[c->n - 1].val == 0);	// ends idle
-	CHECK(m.state == 0 && m.af_gain == 0xB3B3);
+	CHECK(c->log[c->n - 1].reg == 0x30 && c->log[c->n - 1].val == 0x0200);	// ends idle, bit 9 set as the stock
+	CHECK(m.state == 0x0200 && m.idle == 0x0200 && m.af_gain == 0xB3B3);
 	CHECK(chips[1].n == 0);
 
 	bk4819_attach(&l, &bus_lo);
@@ -236,8 +238,8 @@ static void test_init(void)
 	CHECK(i >= 0 && c->log[i].val == 0x2F2E);
 	i = find_last(c, 0x36);
 	CHECK(i >= 0 && c->log[i].val == 0x00BF);
-	CHECK(c->log[c->n - 2].reg == 0x30 && c->log[c->n - 2].val == 0);	// ends off
-	CHECK(c->log[c->n - 1].reg == 0x37 && c->log[c->n - 1].val == BK4819_POWER_OFF);
+	CHECK(c->log[c->n - 1].reg == 0x30 && c->log[c->n - 1].val == 0);	// ends off, 0x37 left on
+	CHECK(l.idle == 0 && find_last(c, 0x37) < c->n - 1 && c->log[find_last(c, 0x37)].val == BK4819_POWER_ON);
 	CHECK(c->protocol_errors == 0 && chips[0].protocol_errors == 0);
 }
 
@@ -256,13 +258,19 @@ static void test_sequences(void)
 	CHECK(c->log[2].reg == 0x39 && c->log[2].val == (5155000u >> 16));
 	CHECK(m.freq_10hz == 5155000u);
 
-	// RX -> TX goes through idle; idle -> RX is one write
+	// The main chip's idle is 0x0200; BK4819_STATE_IDLE means the chip's own. RX -> TX goes through idle, idle -> RX is
+	// one write
+	m.idle = BK4819_STATE_IDLE_MAIN;
 	chips[0].n = 0;
 	bk4819_set_state(&m, BK4819_STATE_RX);
-	CHECK(c->n == 1 && c->log[0].val == BK4819_STATE_RX);
+	CHECK(c->n == 2 && c->log[0].val == 0x0200 && c->log[1].val == BK4819_STATE_RX);
 	chips[0].n = 0;
-	bk4819_set_state(&m, BK4819_STATE_TX);
-	CHECK(c->n == 2 && c->log[0].val == BK4819_STATE_IDLE && c->log[1].val == BK4819_STATE_TX);
+	bk4819_set_state(&m, BK4819_STATE_IDLE);
+	bk4819_set_state(&m, BK4819_STATE_RX);
+	CHECK(c->n == 2 && c->log[0].val == 0x0200 && c->log[1].val == BK4819_STATE_RX);
+	chips[0].n = 0;
+	bk4819_set_state(&m, BK4819_STATE_TX_MAIN);
+	CHECK(c->n == 2 && c->log[0].val == 0x0200 && c->log[1].val == 0xC3FE);
 
 	// The LO for 446.000 MHz sits 51.55 MHz above: 497.55 MHz
 	bk4819_lo_tune(&l, 446000000u + 51550000u);
@@ -273,11 +281,83 @@ static void test_sequences(void)
 	CHECK(c->log[2].reg == 0x39 && c->log[2].val == (49755000u >> 16));
 	CHECK(c->log[3].reg == 0x37 && c->log[3].val == BK4819_POWER_ON);
 	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0);
-	CHECK(c->log[5].reg == 0x30 && c->log[5].val == BK4819_STATE_TX);
+	CHECK(c->log[5].reg == 0x30 && c->log[5].val == 0xC1FE);	// the LO's value, bit 9 clear
 
+	// Off is 0x30 = 0 and nothing else; the same frequency again isn't rewritten (stock TX end: 37, 30 = 0, 30 = 0xC1FE)
 	chips[1].n = 0;
 	bk4819_lo_off(&l);
-	CHECK(c->n == 2 && c->log[0].val == 0 && c->log[1].reg == 0x37 && c->log[1].val == BK4819_POWER_OFF);
+	CHECK(c->n == 1 && c->log[0].reg == 0x30 && c->log[0].val == 0);
+	chips[1].n = 0;
+	bk4819_lo_tune(&l, 446000000u + 51550000u);
+	CHECK(c->n == 4 && c->log[0].val == 0 && c->log[1].reg == 0x37 && c->log[1].val == BK4819_POWER_ON);
+	CHECK(c->log[2].val == 0 && c->log[3].reg == 0x30 && c->log[3].val == 0xC1FE);
+
+	// TX preparation in RX: the plain words, then with CTCSS (100.0 Hz, truncated word), as the stock
+	c = &chips[0];
+	chips[0].n = 0;
+	bk4819_tx_prepare(&m, 0);
+	CHECK(c->n == 2 && c->log[0].reg == 0x40 && c->log[0].val == 0x34D0 && c->log[1].reg == 0x51 && c->log[1].val == 0x1050);
+	chips[0].n = 0;
+	bk4819_tx_prepare(&m, 1000);
+	CHECK(c->n == 3 && c->log[0].reg == 0x40 && c->log[0].val == 0x34A8 && c->log[1].reg == 0x51 && c->log[1].val == 0x9045);
+	CHECK(c->log[2].reg == 0x07 && c->log[2].val == 2064);
+
+	// TX on 461.4625 MHz: idle (0x0200), frequency, 0x37, then 0xC3FE. 0x36 is not touched
+	chips[0].n = 0;
+	bk4819_tx_tune(&m, 461462500u);
+	CHECK(c->n == 5);
+	CHECK(c->log[0].reg == 0x30 && c->log[0].val == 0x0200);
+	CHECK(c->log[1].reg == 0x38 && c->log[1].val == 0x22CA);
+	CHECK(c->log[2].reg == 0x39 && c->log[2].val == 0x02C0);
+	CHECK(c->log[3].reg == 0x37 && c->log[3].val == 0x1D0F);
+	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0xC3FE && m.state == 0xC3FE);
+	CHECK(find_last(c, 0x36) < 0);
+
+	// TX tone (stock order): 47, 70 at the gain, 50 = 0xBB18, 37, idle, 0xC3FA, 71 = Hz x 10.3244 truncated, 50 = 0x3B18
+	chips[0].n = 0;
+	bk4819_tone_start(&m, 1750, BK4819_TONE_GAIN_STOCK);
+	CHECK(c->n == 8);
+	CHECK(c->log[0].reg == 0x47 && c->log[0].val == 0x6342);
+	CHECK(c->log[1].reg == 0x70 && c->log[1].val == 0xB000);
+	CHECK(c->log[2].reg == 0x50 && c->log[2].val == 0xBB18);
+	CHECK(c->log[3].reg == 0x37 && c->log[3].val == 0x1D0F);
+	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0x0200);
+	CHECK(c->log[5].reg == 0x30 && c->log[5].val == 0xC3FA);
+	CHECK(c->log[6].reg == 0x71 && c->log[6].val == 18067);
+	CHECK(c->log[7].reg == 0x50 && c->log[7].val == 0x3B18);
+	CHECK(m.tone_hz == 1750);
+	// Key up: the generator off, the chip stays at 0xC3FA; key down: back on
+	chips[0].n = 0;
+	bk4819_tone_key(&m, false);
+	bk4819_tone_key(&m, true);
+	CHECK(c->n == 2 && c->log[0].reg == 0x70 && c->log[0].val == 0 && c->log[1].reg == 0x70 && c->log[1].val == 0xB000);
+	// A retune writes the generator and the word only; the gain clamps to 7 bits
+	chips[0].n = 0;
+	bk4819_tone_start(&m, 1000, 200);
+	CHECK(c->n == 3 && c->log[0].reg == 0x70 && c->log[0].val == 0xFF00 && c->log[1].reg == 0x71 && c->log[1].val == 10324);
+	// Stop: 47, 50, 70, 37, idle, 0xC3FE, 40 = 0x34A8; a second stop and a key do nothing
+	chips[0].n = 0;
+	bk4819_tone_stop(&m);
+	bk4819_tone_stop(&m);
+	bk4819_tone_key(&m, true);
+	CHECK(c->n == 7);
+	CHECK(c->log[0].reg == 0x47 && c->log[0].val == 0x6042 && c->log[1].reg == 0x50 && c->log[1].val == 0x3B18);
+	CHECK(c->log[2].reg == 0x70 && c->log[2].val == 0 && c->log[3].reg == 0x37 && c->log[3].val == 0x1D0F);
+	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0x0200 && c->log[5].reg == 0x30 && c->log[5].val == 0xC3FE);
+	CHECK(c->log[6].reg == 0x40 && c->log[6].val == 0x34A8);
+	CHECK(m.tone_hz == 0);
+	// End of a transmission, with or without a tone: 47, 50, 70, 37, idle, then the RX state; 0x36 stays
+	bk4819_tone_start(&m, 1750, 48);
+	chips[0].n = 0;
+	bk4819_tx_end(&m);
+	CHECK(c->n == 6);
+	CHECK(c->log[0].reg == 0x47 && c->log[0].val == 0x6042 && c->log[1].reg == 0x50 && c->log[1].val == 0x3B18);
+	CHECK(c->log[2].reg == 0x70 && c->log[2].val == 0 && c->log[3].reg == 0x37 && c->log[3].val == 0x1D0F);
+	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0x0200 && c->log[5].reg == 0x30 && c->log[5].val == 0xBFF1);
+	CHECK(m.tone_hz == 0 && m.state == BK4819_STATE_RX && find_last(c, 0x36) < 0);
+	CHECK(bk4819_pa_reg(0) == 0 && bk4819_pa_reg(15) == BK4819_PA_MAX && bk4819_pa_reg(99) == BK4819_PA_MAX);
+	CHECK(bk4819_tone_word(697) == 7196 && bk4819_tone_word(852) == 8796 && bk4819_tone_word(1209) == 12482 &&
+	      bk4819_tone_word(1336) == 13793 && bk4819_tone_word(1477) == 15249 && bk4819_tone_word(1633) == 16860);
 
 	// Gain changes only the low nibble of the last 0x48 value; out of range clamps
 	chips[0].n = 0;
@@ -286,6 +366,24 @@ static void test_sequences(void)
 	CHECK(chips[0].n == 1 && chips[0].log[0].reg == 0x48 && chips[0].log[0].val == 0xB3B7);
 	bk4819_set_af_gain(&m, 200);
 	CHECK(chips[0].log[1].val == 0xB3BF && m.af_gain == 0xB3BF);
+
+	// Analog mode set (stock): AFC on (0x73 bit 4 cleared, the rest kept), 0x7E, 0x2B, live microphone 0x50
+	chips[0].regs[0x73] = 0x0112;
+	chips[0].n = 0;
+	bk4819_analog_mode(&m);
+	CHECK(chips[0].n == 6 && chips[0].log[0].reg == 0x2A && chips[0].log[0].val == 0x4F18);
+	CHECK(chips[0].log[1].reg == 0x73 && chips[0].log[1].val == 0x0102);
+	CHECK(chips[0].log[2].reg == 0x47 && chips[0].log[2].val == 0x6042);
+	CHECK(chips[0].log[3].reg == 0x7E && chips[0].log[3].val == 0x302E);
+	CHECK(chips[0].log[4].reg == 0x2B && chips[0].log[4].val == 0xC000);
+	CHECK(chips[0].log[5].reg == 0x50 && chips[0].log[5].val == 0x3B18);
+	// The channel set: thresholds, bandwidth, and its 0x4F
+	chips[0].n = 0;
+	bk4819_set_bandwidth(&m, BK4819_BW_25K);
+	bk4819_set_bandwidth(&m, BK4819_BW_12K5);
+	CHECK(chips[0].n == 6 && chips[0].log[0].reg == 0x52 && chips[0].log[0].val == 0x028F);
+	CHECK(chips[0].log[1].reg == 0x43 && chips[0].log[1].val == 0x3028 && chips[0].log[2].reg == 0x4F && chips[0].log[2].val == 0x3332);
+	CHECK(chips[0].log[4].reg == 0x43 && chips[0].log[4].val == 0x4048 && chips[0].log[5].reg == 0x4F && chips[0].log[5].val == 0x3D3C);
 
 	chips[0].n = 0;
 	bk4819_set_rx_ctcss(&m, 885);
@@ -298,12 +396,105 @@ static void test_sequences(void)
 	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
 }
 
+// DMR receive (hardware-db25d.md 4.5): the stock digital mode set in its order; the end is the stock analog mode set
+// plus 0x27 and 0x48 as they were
+static void test_dmr_rx(void)
+{
+	static const struct { uint8_t reg; uint16_t val; } want[] = {
+		{ 0x2A, 0x4711 }, { 0x51, 0x0000 }, { 0x73, 0x0010 }, { 0x52, 0x028F }, { 0x47, 0x6943 }, { 0x7E, 0x3006 },
+		{ 0x43, 0x4444 }, { 0x40, 0x0000 }, { 0x27, 0x0430 }, { 0x2B, 0x8707 }, { 0x48, 0xB174 }, { 0x47, 0x6143 },
+	};
+	bk4819_t m;
+	reset_chips();
+	bk4819_attach(&m, &bus_main);
+	chips[0].regs[0x27] = 0xA430;
+	bk4819_set_af_gain(&m, 7);		// the FM volume's gain: 0xB3B7
+	chips[0].n = 0;
+
+	bk4819_dmr_rx_enter(&m);
+	const chip_t *c = &chips[0];
+	CHECK(m.digital && c->n == sizeof(want) / sizeof(want[0]));
+	for (size_t i = 0; i < sizeof(want) / sizeof(want[0]) && i < (size_t)c->n; i++) {
+		CHECK(c->log[i].reg == want[i].reg && c->log[i].val == want[i].val);
+	}
+	CHECK(m.af_gain == BK4819_AF_GAIN_DMR);
+	bk4819_set_af_gain(&m, 4);		// the board's DMR gain keeps the digital word's upper bits
+	CHECK(c->log[c->n - 1].reg == 0x48 && c->log[c->n - 1].val == 0xB174);
+
+	chips[0].n = 0;
+	bk4819_dmr_rx_enter(&m);		// a second enter must not save the DMR values over the analog ones
+	chips[0].n = 0;
+	bk4819_dmr_rx_end(&m);
+	CHECK(!m.digital && c->n == 8);
+	CHECK(c->log[0].reg == 0x2A && c->log[0].val == 0x4F18);
+	CHECK(c->log[1].reg == 0x73 && c->log[1].val == 0);		// analog: AFC on again
+	CHECK(c->log[2].reg == 0x47 && c->log[2].val == BK4819_AF_MUTE);
+	CHECK(c->log[3].reg == 0x7E && c->log[3].val == 0x302E);
+	CHECK(c->log[4].reg == 0x2B && c->log[4].val == 0xC000);
+	CHECK(c->log[5].reg == 0x50 && c->log[5].val == BK4819_TX_AUDIO_LIVE);
+	CHECK(c->log[6].reg == 0x27 && c->log[6].val == 0xA430);
+	CHECK(c->log[7].reg == 0x48 && c->log[7].val == 0xB3B7);
+	CHECK(m.af_gain == 0xB3B7);
+
+	chips[0].n = 0;
+	bk4819_dmr_rx_end(&m);		// not in DMR: nothing
+	CHECK(c->n == 0);
+	CHECK(chips[0].protocol_errors == 0);
+}
+
+// DMR transmit (4.5): the digital TX words, one burst's retune in the stock order on the main chip (TX on 461.4625 MHz,
+// back to the IF) and the LO's resume, which leaves its frequency alone
+static void test_dmr_tx(void)
+{
+	bk4819_t m, l;
+	reset_chips();
+	bk4819_attach(&m, &bus_main);
+	bk4819_attach(&l, &bus_lo);
+	m.idle = BK4819_STATE_IDLE_MAIN;
+	const chip_t *c = &chips[0];
+
+	bk4819_dmr_tx_prepare(&m);
+	CHECK(c->n == 2 && c->log[0].reg == 0x40 && c->log[0].val == 0x0000 && c->log[1].reg == 0x51 && c->log[1].val == 0x0000);
+
+	chips[0].n = 0;
+	bk4819_burst_tune(&m, 461462500u, BK4819_STATE_TX_MAIN);
+	CHECK(c->n == 5);
+	CHECK(c->log[0].reg == 0x38 && c->log[0].val == 0x22CA);	// 46,146,250 x 10 Hz
+	CHECK(c->log[1].reg == 0x39 && c->log[1].val == 0x02C0);
+	CHECK(c->log[2].reg == 0x37 && c->log[2].val == BK4819_POWER_ON);
+	CHECK(c->log[3].reg == 0x30 && c->log[3].val == 0x0200);
+	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0xC3FE);
+	CHECK(m.state == 0xC3FE && m.freq_10hz == 46146250u);
+
+	chips[0].n = 0;
+	bk4819_burst_tune(&m, 51550000u, BK4819_STATE_RX);
+	CHECK(c->n == 5);
+	CHECK(c->log[0].reg == 0x38 && c->log[0].val == 0xA8B8);	// 5,155,000
+	CHECK(c->log[1].reg == 0x39 && c->log[1].val == 0x004E);
+	CHECK(c->log[3].reg == 0x30 && c->log[3].val == 0x0200);
+	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0xBFF1);
+
+	c = &chips[1];
+	bk4819_lo_tune(&l, 461462500u + 51550000u);
+	bk4819_lo_off(&l);
+	chips[1].n = 0;
+	bk4819_lo_resume(&l);
+	CHECK(c->n == 3);
+	CHECK(c->log[0].reg == 0x37 && c->log[0].val == BK4819_POWER_ON);
+	CHECK(c->log[1].reg == 0x30 && c->log[1].val == 0x0000);
+	CHECK(c->log[2].reg == 0x30 && c->log[2].val == 0xC1FE);
+	CHECK(l.freq_10hz == 51301250u);
+	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
+}
+
 int main(void)
 {
 	test_helpers();
 	test_frames();
 	test_init();
 	test_sequences();
+	test_dmr_rx();
+	test_dmr_tx();
 	if (failures) {
 		printf("bk4819Test: %d failures\n", failures);
 		return 1;

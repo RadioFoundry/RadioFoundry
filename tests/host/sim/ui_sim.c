@@ -17,6 +17,7 @@
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
+//   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
@@ -662,6 +663,12 @@ static uint32_t temp_target;	// temporary talk target (0 = channel default)
 static bool temp_private;
 static uint32_t focus_id;
 static bool focus_private;
+// The VFO's own mode, color code, slot and talk target: kept while on a channel (core/radio/radio_sm.c vfo_ch)
+static uint8_t vfo_mode = RADIO_MODE_FM, vfo_cc = 1, vfo_ts = 1, vfo_bw = RADIO_BW_25K;
+static uint32_t vfo_rx_hz = 146520000, vfo_tx_hz = 146520000;
+static subtone_t vfo_rx_tone, vfo_tx_tone;
+static uint32_t vfo_talk;
+static bool vfo_talk_private;
 static uint32_t reply_until;
 static uint32_t ptt_up_at;
 static bool rx_on;
@@ -676,7 +683,11 @@ static void default_target(void)
 {
 	contact_t c;
 	view.dmr.target_manual = temp_target != 0;
-	if (temp_target) {
+	if (view.vfo && !temp_target) {
+		view.dmr.target_id = vfo_talk != 0 ? vfo_talk : 9;
+		view.dmr.target_private = vfo_talk != 0 && vfo_talk_private;
+		strcpy(view.dmr.target_name, contact_name(view.dmr.target_id, !view.dmr.target_private));
+	} else if (temp_target) {
 		view.dmr.target_id = temp_target;
 		view.dmr.target_private = temp_private;
 		strcpy(view.dmr.target_name, contact_name(temp_target, !temp_private));
@@ -743,21 +754,61 @@ void radio_req_vfo(bool on)
 {
 	view.vfo = on;
 	if (on) {
-		uint32_t hz = 146520000;
 		memset(&view.ch, 0, sizeof view.ch);
 		strcpy(view.ch.name, "VFO");
-		view.ch.rx_hz = view.ch.tx_hz = hz;
-		view.ch.bw = RADIO_BW_25K;
+		view.ch.rx_hz = vfo_rx_hz;
+		view.ch.tx_hz = vfo_tx_hz;
+		view.ch.rx_tone = vfo_rx_tone;
+		view.ch.tx_tone = vfo_tx_tone;
+		view.ch.bw = vfo_bw;
 		view.ch.power = CODEPLUG_POWER_DEFAULT;
-		view.dmr.active = false;
+		view.ch.mode = vfo_mode;
+		view.ch.color_code = vfo_cc;
+		view.ch.timeslot = vfo_ts;
+		view.dmr.active = vfo_mode == RADIO_MODE_DMR;
+		view.dmr.cc = vfo_cc;
+		view.dmr.ts = vfo_ts;
 		view.channel_number = 0;
+		view.temp = 0;		// the VFO has no temporary changes
+		view.temporary = false;
+		temp_target = 0;
+		default_target();
 		changed();
 	} else {
 		load_channel();
 	}
 }
-void radio_req_vfo_step(int8_t dir) { view.ch.rx_hz = view.ch.tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz; changed(); }
-void radio_req_vfo_set(uint32_t hz) { view.ch.rx_hz = view.ch.tx_hz = hz; changed(); }
+void radio_req_vfo_step(int8_t dir)
+{
+	view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz;
+	changed();
+}
+void radio_req_vfo_set(uint32_t hz) { view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = hz; changed(); }
+// Copy to VFO as the radio core does (core/radio/radio_sm.c vfo_copy): what is in effect now is the VFO's own
+uint8_t ui_svc_vfo_copy(const radio_view_t *v)
+{
+	if (v->vfo)
+		return VFO_COPY_ALREADY;
+	if (v->ch.mode == RADIO_MODE_DMR ? !CONFIG_VFO_DMR : !CONFIG_VFO_FM)
+		return VFO_COPY_NO_MODE;
+	if (v->ch.rx_hz < 136000000 || v->ch.rx_hz > 480000000 || (v->ch.rx_hz > 174000000 && v->ch.rx_hz < 400000000))
+		return VFO_COPY_OUT_OF_BAND;
+	vfo_rx_hz = v->ch.rx_hz;
+	vfo_tx_hz = v->ch.tx_hz ? v->ch.tx_hz : v->ch.rx_hz;
+	vfo_bw = v->ch.bw;
+	vfo_mode = v->ch.mode;
+	if (v->ch.mode == RADIO_MODE_DMR) {
+		vfo_cc = v->ch.color_code;
+		vfo_ts = v->ch.timeslot;
+		vfo_talk = v->dmr.target_id;
+		vfo_talk_private = v->dmr.target_private;
+	} else {
+		vfo_rx_tone = v->ch.rx_tone;
+		vfo_tx_tone = v->ch.tx_tone;
+	}
+	radio_req_vfo(true);
+	return VFO_COPY_OK;
+}
 void radio_req_monitor(bool down)
 {
 	// As the radio core (#19): on DMR a short press toggles digital monitor on its release; FM holds it open
@@ -903,7 +954,10 @@ typedef struct { ui_msg_t m; uint32_t at; } sim_msg_t;
 static sim_msg_t inbox[8];
 static uint16_t n_inbox;
 
-uint32_t ui_svc_features(void) { return 0xFFFFFFFFu; }
+// The volume feature (a radio without a knob: the VOL key, Settings > Sound > Volume) only with the "softvol" token, so
+// the other screens look as on the radios with a knob
+static bool soft_volume;
+uint32_t ui_svc_features(void) { return soft_volume ? 0xFFFFFFFFu : 0xFFFFFFFFu & ~UI_FEAT_VOLUME; }
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
 	strcpy(line1, "N0CALL");
@@ -911,6 +965,13 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 }
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 {
+	if (view.vfo && life != UI_TALK_DEFAULT) {
+		vfo_talk = id;		// the VFO's own target, kept with it: nothing to write
+		vfo_talk_private = private_call;
+		default_target();
+		changed();
+		return true;
+	}
 	if (life == UI_TALK_DEFAULT) {
 		temp_target = 0;
 	} else {
@@ -933,6 +994,10 @@ bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 	changed();
 	return true;
 }
+bool ui_svc_save_talk_target(uint32_t id, bool private_call)
+{
+	return view.vfo && ui_svc_talk_to(id, private_call, UI_TALK_TEMPORARY);	// the VFO has no channel to write
+}
 void ui_svc_focus_target(uint32_t id, bool private_call)
 {
 	focus_id = id;
@@ -940,13 +1005,39 @@ void ui_svc_focus_target(uint32_t id, bool private_call)
 	view.dmr.focus_id = id;
 	view.dmr.focus_private = id != 0 && private_call;
 }
-bool ui_svc_dmr_timeslot(uint8_t ts) { view.dmr.ts = view.ch.timeslot = ts; set_temp(0x20); return true; }
-bool ui_svc_dmr_color_code(uint8_t cc) { view.dmr.cc = view.ch.color_code = cc; set_temp(0x40); return true; }
+bool ui_svc_dmr_timeslot(uint8_t ts)
+{
+	view.dmr.ts = view.ch.timeslot = ts;
+	if (view.vfo) {
+		vfo_ts = ts;
+		changed();
+	} else {
+		set_temp(0x20);
+	}
+	return true;
+}
+bool ui_svc_dmr_color_code(uint8_t cc)
+{
+	view.dmr.cc = view.ch.color_code = cc;
+	if (view.vfo) {
+		vfo_cc = cc;
+		changed();
+	} else {
+		set_temp(0x40);
+	}
+	return true;
+}
 bool ui_svc_mode(uint8_t mode)
 {
 	view.ch.mode = mode;
 	view.dmr.active = mode == RADIO_MODE_DMR;
-	set_temp(0x80);
+	if (view.vfo) {
+		vfo_mode = mode;
+		default_target();
+		changed();
+	} else {
+		set_temp(0x80);
+	}
 	return true;
 }
 bool ui_svc_hear_all(bool on)
@@ -1182,6 +1273,13 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
+	vfo_cc = vfo_ts = 1;
+	vfo_bw = RADIO_BW_25K;
+	vfo_rx_hz = vfo_tx_hz = 146520000;
+	vfo_rx_tone = vfo_tx_tone = (subtone_t){ TONE_NONE, 0 };
+	vfo_talk = 0;
+	vfo_talk_private = false;
 	view.vfo_step_hz = 12500;
 	view.tot_s = 180;
 	view.rssi_dbm = -95;
@@ -1200,6 +1298,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	battery = 84;
 	now_ms = 1000;
 	load_channel();
+	soft_volume = false;
+	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
 	ui_svc_setting_set(UI_SET_BRIGHTNESS, 100);
@@ -1240,14 +1340,16 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	// what a reassigned side key sends (core/input/keyassign.h)
 	{ "powerkey", ACT_POWER }, { "zone+", ACT_ZONE_UP }, { "zone-", ACT_ZONE_DOWN }, { "scankey", ACT_SCAN },
 	{ "lockkey", ACT_LOCK }, { "cbkey", ACT_CALL_BACK },
-	{ "homekey", ACT_HOME_ZONE },
+	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
+	{ "vfokey", ACT_VFO_TOGGLE },		// the VFO/MR key: a key map entry of the board (DM-1801 Pro), not a side key function
+	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
 };
 
 static bool on_map(uint8_t action, bool lng)
 {
-	if ((action >= ACT_POWER && action <= ACT_HOME_ZONE) || (lng && action == ACT_TALK_TARGET))
+	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || (lng && action == ACT_TALK_TARGET))
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -1337,6 +1439,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
 	else if (strcmp(key, "txpriv") == 0) snprintf(got, sizeof got, "%u", sim_rec.tx_private);
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
+	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
@@ -1577,6 +1680,11 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "nobattery") == 0) {
+		board.caps |= CAP_NO_BATTERY;
+		advance(1100);
+		return true;
+	}
 	if ((strcmp(t, "color") == 0 || strcmp(t, "strip") == 0 || strcmp(t, "theme") == 0) && arg != NULL) {
 		bool color = t[0] == 'c', theme = t[0] == 't';
 		int v = color ? sim_color_find(arg) : theme ? sim_theme_find(arg) :
@@ -1607,6 +1715,11 @@ static bool run_token(char *t, char *err, size_t len)
 				return false;
 			}
 		}
+		return true;
+	}
+	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
+		soft_volume = true;
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)

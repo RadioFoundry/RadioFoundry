@@ -311,18 +311,24 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	// Right side, right to left: battery %, battery icon, signal bars, unread messages, lock
 	char pct[6];
 	sbuf_t b;
-	sb_init(&b, pct, sizeof pct);
-	sb_u32(&b, s->battery_pct, 1);
-	sb_chr(&b, '%');
-	int rx = w - gfx_text_width(f, pct);
-	uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
-	color_t bc = s->battery_pct <= low ? swarn : sfg;
-	gfx_text(f, rx, ty, pct, bc);
+	int rx = w;
+	color_t bc = sfg;
+	if (!s->no_battery) {
+		sb_init(&b, pct, sizeof pct);
+		sb_u32(&b, s->battery_pct, 1);
+		sb_chr(&b, '%');
+		rx -= gfx_text_width(f, pct);
+		uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
+		bc = s->battery_pct <= low ? swarn : sfg;
+		gfx_text(f, rx, ty, pct, bc);
+	}
 	if (!merged) {
 		int bh = f->ascent - 2 < 5 ? 5 : f->ascent - 2;
 		int bw = bh * 2;
-		rx -= bw + 2;
-		gfx_icon_battery(rx, ty + f->ascent - bh, bw, bh, s->battery_pct, sfg, bc);
+		if (!s->no_battery) {
+			rx -= bw + 2;
+			gfx_icon_battery(rx, ty + f->ascent - bh, bw, bh, s->battery_pct, sfg, bc);
+		}
 		int sw = bh + 4;
 		rx -= sw + f->w / 2;
 		gfx_icon_bars(rx, ty + f->ascent - bh - 1, sw, bh + 1, 4, rssi_bars(v->rssi_dbm), sfg, filled ? ui_col.idle : ui_col.line);
@@ -922,8 +928,34 @@ static const char *deny_action(const radio_view_t *v)
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
 #if CONFIG_DMR
 // "TG 201 Main Ops", "Joe 3101234", "All call"; a private call without a name shows the ID only
+// A contact name that only repeats the ID ("TG 201", "TG201", "201" for talkgroup 201; "3101276" for that radio):
+// codeplugs often name talkgroups that way, and Home would read "TG 201 TG 201"
+bool ui_name_is_id(const char *name, uint32_t id, bool private_call)
+{
+	const char *p = name;
+	while (*p == ' ')
+		p++;
+	if (!private_call && (p[0] == 'T' || p[0] == 't') && (p[1] == 'G' || p[1] == 'g'))
+		p += 2;
+	while (*p == ' ')
+		p++;
+	if (*p < '0' || *p > '9')
+		return false;
+	uint32_t v = 0;
+	for (; *p >= '0' && *p <= '9'; p++) {
+		if (v > 0xFFFFFFu)
+			return false;
+		v = v * 10u + (uint32_t)(*p - '0');
+	}
+	while (*p == ' ')
+		p++;
+	return *p == '\0' && v == id;
+}
+
 static void sb_target(sbuf_t *b, uint32_t id, bool private_call, const char *name)
 {
+	if (ui_name_is_id(name, id, private_call))
+		name = "";
 	if (id == 0xFFFFFFu) {
 		sb_str(b, "All call");
 		return;
@@ -948,7 +980,7 @@ static void sb_target(sbuf_t *b, uint32_t id, bool private_call, const char *nam
 // its name ("Joe"), since the name is what the user picked and the ID alone says nothing at a glance
 static void sb_target_short(sbuf_t *b, uint32_t id, bool private_call, const char *name)
 {
-	if (private_call && id != 0xFFFFFFu && name[0] != '\0')
+	if (private_call && id != 0xFFFFFFu && name[0] != '\0' && !ui_name_is_id(name, id, private_call))
 		sb_str(b, name);
 	else
 		sb_target(b, id, private_call, "");
@@ -958,7 +990,7 @@ static void sb_target_short(sbuf_t *b, uint32_t id, bool private_call, const cha
 // "TG 91 (9s)"), and when tail isn't empty last the short form without it. Without a name, the one form
 static void sb_target_alts(sbuf_t *b, uint32_t id, bool private_call, const char *name, const char *tail)
 {
-	bool named = name[0] != '\0' && id != 0xFFFFFFu;
+	bool named = name[0] != '\0' && id != 0xFFFFFFu && !ui_name_is_id(name, id, private_call);
 	if (named || tail[0])
 		sb_str(b, TEXT_ALT_OPEN);
 	sb_target(b, id, private_call, name);
@@ -1370,7 +1402,8 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 		return "Back undo  Hold OK save";
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR && v->dmr.target_manual)
-		return TEXT_ALT_OPEN "Back: channel's talkgroup" TEXT_ALT_NEXT "Back default target" TEXT_ALT_CLOSE;
+		return v->vfo ? TEXT_ALT_OPEN "Back: VFO's talk target" TEXT_ALT_NEXT "Back default target" TEXT_ALT_CLOSE :
+			TEXT_ALT_OPEN "Back: channel's talkgroup" TEXT_ALT_NEXT "Back default target" TEXT_ALT_CLOSE;
 #endif
 	if (v->vfo)
 		return "0-9 freq  * Quick  Up/Dn";
@@ -1860,6 +1893,39 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 	ui_draw_hint(s->toast != NULL ? s->toast : "OK acknowledge  Back hide", s->toast != NULL);
 }
 
+// The volume screen: the step as a number (a word at 0) over a bar of RADIO_VOLUME_MAX segments.
+// Large type, no scale to read
+void ui_draw_volume(const radio_view_t *v, const ui_state_t *s)
+{
+	const ui_layout_t *L = &ui_layout;
+	int w = gfx_width();
+	char buf[16];
+	sbuf_t b;
+	gfx_clear(ui_col.bg);
+	int y = ui_draw_top(v, s, "Volume", NULL) + 4;
+	sb_init(&b, buf, sizeof buf);
+	if (s->volume == 0)
+		sb_str(&b, "Muted");
+	else
+		sb_u32(&b, s->volume, 1);
+	const font_t *big = L->large;
+	if (gfx_text_width(big, buf) > w)
+		big = L->medium;
+	gfx_text(big, (w - gfx_text_width(big, buf)) / 2, y, buf, ui_col.fg);
+	y += big->h + 6;
+	int seg = RADIO_VOLUME_MAX;
+	int pitch = (w - 8) / seg;
+	int x0 = (w - pitch * seg) / 2;
+	int bh = L->row_h > 10 ? L->row_h : 10;
+	for (int i = 0; i < seg; i++) {
+		if (i < s->volume)
+			gfx_fill(x0 + i * pitch, y, pitch - 2, bh, ui_col.fg);
+		else
+			gfx_rect(x0 + i * pitch, y, pitch - 2, bh, ui_col.line);
+	}
+	ui_draw_bottom(s, "Up Down change  OK done");
+}
+
 // --- Hotspot ---
 #if CONFIG_HOTSPOT
 void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_state_t *s)
@@ -1925,6 +1991,8 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 	};
 	if (pos < 0 || pos >= UI_QUICK_TILES)
 		return QT_POWER;
+	if (!v->vfo && pos == 3)
+		return QT_TO_VFO;	// a channel's tile 4 copies it to the VFO; the VFO's stays Mode
 	if (v->ch.mode == RADIO_MODE_DMR)
 		return dmr[pos];
 	if (v->vfo && pos == 7)
@@ -1948,7 +2016,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_MONITOR] = QT_NAME("Monitor", "MON"), [QT_VOX] = "VOX", [QT_SCAN] = "Scan", [QT_BANDWIDTH] = "Width",
 		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
 		[QT_HEAR_ALL] = QT_NAME("Digital monitor", "DMon"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
-		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_STEP] = "Step",
+		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_STEP] = "Step", [QT_TO_VFO] = QT_NAME("Copy to VFO", "To VFO"),
 	};
 #undef QT_NAME
 	uint8_t kind = ui_quick_kind(tile, v);
@@ -1999,7 +2067,12 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	}
 	case QT_MODE:
 		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? GLYPH_ARROW "FM" : GLYPH_ARROW "DMR");
-		return feat(UI_FEAT_MODE) && CONFIG_FM && CONFIG_DMR && !v->vfo;	// the VFO is FM only for now
+		// Only in the VFO (a channel's tile 4 is QT_TO_VFO), in a build with both VFO kinds; it keeps the mode like
+		// its other settings
+		return feat(UI_FEAT_MODE) && v->vfo && CONFIG_VFO_FM && CONFIG_VFO_DMR;
+	case QT_TO_VFO:
+		sb_str(&b, "Copy");
+		return CONFIG_VFO_FM || CONFIG_VFO_DMR;	// a channel the VFO can't hold is refused on the press, with the reason
 	case QT_MONITOR:
 		sb_str(&b, v->monitor ? "On" : "Off");
 		return feat(UI_FEAT_MONITOR_LATCH);

@@ -14,6 +14,9 @@
 #include "settings/settings.h"
 #include <string.h>
 #include "config.h"
+#if CONFIG_APRS
+#include "aprs/aprs.h"
+#endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
@@ -128,6 +131,15 @@ bool ui_svc_mode(uint8_t mode)
 }
 #endif
 
+uint8_t ui_svc_vfo_copy(const radio_view_t *v)
+{
+	radio_vfo_copy_t r = radio_vfo_copy_check(&v->ch, v->vfo);
+	if (r == VFO_COPY_OK) {
+		radio_req_vfo_copy();
+	}
+	return (uint8_t)r;
+}
+
 bool ui_svc_hear_all(bool on)
 {
 	radio_req_dmr_hear_all(on);
@@ -176,7 +188,7 @@ uint32_t ui_svc_feat_radio(void)
 {
 	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
-	       (motor ? UI_FEAT_VIBRATE : 0);
+	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0);
 }
 
 #if CONFIG_DMR
@@ -309,6 +321,12 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		rs.roam_probe = value != 0;
 		break;
 #endif
+	case UI_SET_GPS:		// the module's power and the position sources, now (not a radio core setting)
+		board_gps_enable(value != 0);
+#if CONFIG_APRS
+		aprs_gps_enable(value != 0);
+#endif
+		return;
 	case UI_SET_LONG_PRESS_MS:	// the input layer's gesture timing (not a radio core setting)
 	case UI_SET_REPEAT_MS: {
 		static uint16_t long_ms, repeat_ms;

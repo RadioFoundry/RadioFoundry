@@ -12,6 +12,7 @@ firmware, and a tool merges the codec into their ODR image on their own machine.
 |---|---|---|---|---|
 | DM-1701 | `tools/odrflash` (`odrflash/stockfw.py`; also `tools/codec_extract.py`) | DM-1701(CSV) V02.06, encrypted container | Decrypted and placed at its stock flash addresses; runs in place, nothing relocated | [codec-dm1701.md](../spec/codec-dm1701.md) |
 | DM-32UV | `tools/dm32_codec.py` | DM32.01.01.049 or DM32.00.01.046HRVocoder | Placed in a codec slot at 0x030E8000 with a header; copied to its stock RAM addresses at boot | [codec-dm32.md](../spec/codec-dm32.md) |
+| DB25-D PRO | `tools/dm32_codec.py --board db25d` | 909E.Dx.EARSAB.018 of 2025-01-21, 2024-09-23 or 2024-05-09, plain images | Placed in the same slot (0x030E8000) behind the first stage and application; copied to its stock RAM addresses at boot | [hardware-db25d.md](../spec/hardware-db25d.md) 8 |
 | MD-380 | `tools/codec_extract.py` (and odrflash) | TYT D002.032 ("Firmware 2.32"), encrypted container (single segment) | Decrypted and placed at its stock flash addresses, six windows; runs in place. The code window shares sector 6 with the application, so every flash merges it again | [codec-md380.md](../spec/codec-md380.md) |
 
 Each tool checks the stock file by SHA-256 against a profile and refuses anything else, checks the codec's first words
@@ -29,7 +30,7 @@ For source builds, drop the stock file into `codecs/` and `make` runs the board'
 | The interface the core calls | `hal/hal_vocoder.h` (`board.vocoder`) |
 | DM-1701 hosting: state init, per-frame calls | `boards/dm1701/vocoder_dm1701.c` |
 | MD-380 hosting: the same, other addresses and window checks | `boards/md380/vocoder_md380.c` |
-| HR_C7000 radios (DM-32UV) hosting: the slot header, the copy to RAM | `platform/hrc7000/vocoder.c`; the slot and windows in the board's linker script, the profile prefix in its `board.mk` |
+| HR_C7000 radios (DM-32UV, DB25-D PRO) hosting: the slot header, the copy to RAM | `platform/hrc7000/vocoder.c`; the slot and windows in the board's linker script, the profile prefix in its `board.mk` |
 | The window kept free in flash | the board's linker script |
 | AMBE frame FEC and the voice path around the codec | `core/dmr/ambe` |
 

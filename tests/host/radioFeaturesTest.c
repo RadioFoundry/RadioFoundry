@@ -5,7 +5,10 @@
 // battery saving and the DMR beeps through radio_sm.c, against a fake board whose receiver hears signals per frequency
 #include <stdio.h>
 #include <string.h>
+// The caps change at run time here (a radio without a battery): defined writable, the core sees it const
+#define board board_as_declared
 #include "board.h"
+#undef board
 #include "radio/radio_sm.h"
 #include "radio/scan.h"
 #include "radio/beep.h"
@@ -199,7 +202,7 @@ static const band_t bands[] = {
 };
 static const char *const power_names[] = { "L", "M", "H" };
 
-const board_t board = {
+board_t board = {
 	.name = "fake",
 	.bands = bands,
 	.band_count = 2,
@@ -1520,6 +1523,26 @@ static void test_battery(void)
 	CHECK(!sm.view.power_off && sm.view.battery == RADIO_BATT_OK);
 }
 
+// CAP_NO_BATTERY: the monitor never reads the board, never warns, never refuses a transmission and never asks for
+// power off, whatever the (here absurdly low) reading says
+static void test_no_battery(void)
+{
+	board.caps |= CAP_NO_BATTERY;
+	start();
+	hw.battery_mv = 100;
+	settings(set_batt_off);
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	run(80000);
+	beep_get_stats(&b1);
+	CHECK(sm.view.battery == RADIO_BATT_OK && sm.view.battery_mv == 0 && sm.view.battery_pct == 0);
+	CHECK(b1.played == b0.played && !sm.view.power_off);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	board.caps &= ~CAP_NO_BATTERY;
+}
+
 static void set_save(radio_settings_t *s) { s->rx_save = 2; s->rx_save_idle_s = 5; }
 
 static void test_battery_save(void)
@@ -1720,6 +1743,7 @@ int main(void)
 	test_tot_tones_and_clamps();
 	test_vox();
 	test_battery();
+	test_no_battery();
 	test_battery_save();
 	test_dmr_beeps();
 	test_vibrate();

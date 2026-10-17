@@ -56,9 +56,17 @@ static uint32_t waits;			// wait_rx() calls: the host link task's heartbeat (one
 static SemaphoreHandle_t rx_sem;
 static bool started;
 
+// Every received character with its line status, from the interrupt. A board can override it to see bytes that aren't
+// host traffic (the DB25-D's hand mic shares the line)
+__attribute__((weak)) void hrc_host_uart_rx_tap(uint8_t b, bool error)
+{
+	(void)b;
+	(void)error;
+}
+
 void hrc_uart_setup(uint32_t base, uint32_t baud)
 {
-	uint32_t div = (HRC_APB_HZ + 8u * baud) / (16u * baud);	// 115200: 46 (45.6), 0.9 % slow; 9600: 547, 0.02 %
+	uint32_t div = hrc_uart_div(HRC_APB_HZ, baud);	// 84 MHz, 115200: 46 (45.6), 0.9 % slow; 9600: 547, 0.02 %
 	UB(base, UART_IER) = 0;
 	UB(base, UART_LCR) = LCR_DLAB;
 	UB(base, UART_RBR) = div & 0xFFu;
@@ -70,6 +78,15 @@ void hrc_uart_setup(uint32_t base, uint32_t baud)
 void hrc_uart_rx_irq(uint32_t base, bool on)
 {
 	UB(base, UART_IER) = on ? IER_RX : 0;
+}
+
+void hrc_uart_rx_clear(uint32_t base)
+{
+	for (uint32_t i = 0; i < 64u && (UB(base, UART_LSR) & LSR_DR) != 0; i++) {
+		(void)UB(base, UART_RBR);
+	}
+	(void)UB(base, UART_LSR);	// the error bits
+	(void)UB(base, UART_USR);	// a busy-detect interrupt
 }
 
 uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged))
@@ -90,6 +107,7 @@ uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged))
 
 static void host_rx(uint8_t b, bool flagged)
 {
+	hrc_host_uart_rx_tap(b, flagged);
 	if (flagged) {
 		rx_line_errors++;
 	} else {
@@ -115,9 +133,33 @@ static void uart_isr(void)
 	portYIELD_FROM_ISR(woken);
 }
 
+// Divisor latch and 8N1, FIFOs reset, receive interrupt off (the caller enables it). RAM code: the stub hand-over uses it
+static HRC_RAMFUNC void set_div(uint32_t div)
+{
+	U(UART_IER) = 0;
+	U(UART_LCR) = LCR_DLAB;
+	U(UART_RBR) = div & 0xFFu;
+	U(UART_IER) = (div >> 8) & 0xFFu;
+	U(UART_LCR) = LCR_8N1;
+	U(UART_FCR) = 0x67;	// FIFOs on and reset, RX trigger 1 character
+}
+
 void hrc_host_uart_init(void)
 {
-	hrc_uart_setup(HOST_BASE, BAUD);
+	// 84 MHz: 46 (0.9 % slow); 36 MHz: 20 (2.3 % slow)
+	set_div(hrc_uart_div(HRC_APB_HZ, BAUD));
+}
+
+// Transmit holding register and shifter empty (LSR bit 6), with a bound so a dead UART can't hang the hand-over
+HRC_RAMFUNC void hrc_host_uart_drain(void)
+{
+	for (uint32_t n = 2000000u; n != 0 && (U(UART_LSR) & 0x40u) == 0; n--) {
+	}
+}
+
+HRC_RAMFUNC void hrc_host_uart_loader_div(void)
+{
+	set_div(hrc_uart_div(HRC_LOADER_APB_HZ, BAUD));
 }
 
 static bool start(void)

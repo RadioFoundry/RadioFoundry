@@ -77,6 +77,7 @@ static struct {
 	uint8_t block;
 	uint32_t now;
 	fix_t host, gps;
+	bool gps_off;		// Settings > Location > GPS is off: the board's fix doesn't count (aprs_gps_enable)
 	qframe_t q[QUEUE_LEN];
 	uint8_t qn;
 	uint8_t taken;		// frames in the transmission under way
@@ -1553,6 +1554,10 @@ void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 		return;
 	}
 	LOCK();
+	if (gps && a.gps_off) {
+		UNLOCK();
+		return;
+	}
 	fix_t *f = gps ? &a.gps : &a.host;
 	if (!x.fix) {
 		f->valid = false;
@@ -1572,6 +1577,16 @@ void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 		} else {
 			f->alt_m = x.alt_dm == INT32_MIN ? APRS_ALT_NONE : x.alt_dm / 10;
 		}
+	}
+	UNLOCK();
+}
+
+void aprs_gps_enable(bool on)
+{
+	LOCK();
+	a.gps_off = !on;
+	if (!on) {
+		a.gps.valid = false;
 	}
 	UNLOCK();
 }

@@ -132,7 +132,7 @@ clean:
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
 CORE_HAL := -I$(ROOT)/hal -Wshadow
-TESTS   += radioCoreTest inputTest quadratureTest
+TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c \
@@ -146,11 +146,18 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEA
            $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c $(CORE)/hotspot/dmrDataFrame.c \
            $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
            $(CORE)/ui/ui_svc_radio.c $(CORE)/ui/ui_svc_storage.c $(CORE)/ui/ui_svc_data.c \
-           $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c
+           $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
+           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -o $@ $(RCORE) -lm
+
+# The same with the DMR VFO off (CONFIG_VFO_DMR=0): the VFO stays analog and nothing about it changes
+TESTS   += radioCoreTestNoVfoDmr
+radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                       $(CORE)/ui/ui_svc.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -DCONFIG_VFO_DMR=0 -o $@ $(RCORE) -lm
 
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
@@ -219,21 +226,27 @@ keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c
 
+# The hand mic key decoder on a UART shared with the PC link (drivers/input/serialmic; the DB25-D)
+serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROOT)/drivers/input/serialmic/serialmic.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
+
 # The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
 
 run: run-core
-run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest miclevelTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest
 	./aprsRadioTest
 	./radioCoreTest
+	./radioCoreTestNoVfoDmr
 	./radioFeaturesTest
 	./roamTest
 	./radioAmTest
 	./bcastTest
 	./inputTest
 	./quadratureTest
+	./serialmicTest
 	./miclevelTest
 .PHONY: run-core
 
@@ -280,7 +293,7 @@ run-rf: at1846sTest subaudioTest
 
 # The MD-380's chips (docs/spec/hardware-md380.md): the SKY72310 synthesizer's divider words against the data sheet
 # and a register model, the HR_C5000 variant of the HR_C6000 driver, and the GPS NMEA line framing and receive ring the
-# MD-380 and DM-32UV GPS drivers share
+# MD-380, DM-32UV and DB25-D GPS drivers share
 TESTS   += sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest
 
 sky72310Test: sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c $(ROOT)/drivers/rf/sky72310/sky72310.h
@@ -544,6 +557,18 @@ run-stubEntry: stubEntryTest
 	./stubEntryTest
 .PHONY: run-stubEntry
 
+# The debug link's tasks view section: each task's least free stack (core/debuglink/debuglink_view_tasks.c; the
+# kernel's task table is faked)
+TSTACK  := taskStackTest.c $(CORE)/debuglink/debuglink_view_tasks.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += taskStackTest
+taskStackTest: $(TSTACK) $(CORE)/debuglink/debuglink.h $(CORE)/app/task_stack.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_TASK_STACKS=1 -o $@ $(TSTACK)
+
+run: run-taskStack
+run-taskStack: taskStackTest
+	./taskStackTest
+.PHONY: run-taskStack
+
 # The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest
 f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
@@ -634,10 +659,24 @@ DB25D   := $(ROOT)/boards/db25d
 db25dCalTest: db25dCalTest.c $(DB25D)/calibration_db25d.c $(DB25D)/db25d.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DB25D) -Wshadow -o $@ db25dCalTest.c $(DB25D)/calibration_db25d.c
 
+# Its first stage in front of the application (boot/db25d): the stub load, dropped frames, the window, a cold UART
+TESTS   += bootDb25dTest
+
+bootDb25dTest: bootDb25dTest.c $(ROOT)/boot/db25d/boot.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ bootDb25dTest.c
+
+# Its clock arithmetic (platform/hrc7000/clock_math.h): the PLL words, UART divisor, bit-bang phase length
+TESTS   += hrc7000ClockTest
+
+hrc7000ClockTest: hrc7000ClockTest.c $(ROOT)/platform/hrc7000/clock_math.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000ClockTest.c
+
 run: run-db25d
-run-db25d: bk4819Test db25dCalTest
+run-db25d: bk4819Test db25dCalTest bootDb25dTest hrc7000ClockTest
 	./bk4819Test
 	./db25dCalTest
+	./bootDb25dTest
+	./hrc7000ClockTest
 .PHONY: run-db25d
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
@@ -712,10 +751,11 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest spiNorTest spiNandTest
+run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 	./settingsTest
 	./spiNorTest
 	./spiNandTest
+	./nandSectorsTest
 .PHONY: run-settings
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
@@ -727,13 +767,26 @@ spiNorTest: spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c $(ROOT)/drivers
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c \
 		$(CORE)/storage/storage.c $(CORE)/settings/settings.c
 
-# The SPI NAND driver (read side) against a model of the chip at the bus: ID, page reads through the cache, ECC
-# status, bad-block marks, a chip that stays busy or doesn't answer
+# The SPI NAND driver against a model of the chip at the bus: ID, page reads through the cache, ECC status, bad-block
+# marks, a chip that stays busy or doesn't answer; program loads, internal data moves, erase, the block lock, the write
+# window, reported failures
 TESTS   += spiNandTest
 
 spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/drivers/flash/spi_nand/spi_nand.h \
              $(ROOT)/drivers/bus/spi_bus.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c
+
+# NOR-like 4 KB sectors over NAND (drivers/flash/nand_sectors) on a simulated NAND: bad and worn blocks, garbage
+# collection, wear leveling, a power cut at every operation of a write, an erase and a garbage collection (torn pages
+# of several kinds), then core/storage and core/settings on top across reboots and cuts
+# and the open-firmware CPS writing a whole codeplug through the DB25-D's sector replace, with cuts
+NSECT   := $(ROOT)/drivers/flash/nand_sectors/nand_sectors.c $(CORE)/storage/storage.c $(CORE)/settings/settings.c \
+           $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c
+TESTS   += nandSectorsTest
+
+nandSectorsTest: nandSectorsTest.c $(NSECT) $(ROOT)/drivers/flash/nand_sectors/nand_sectors.h \
+                 $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h $(CORE)/cps/*.h $(CORE)/codeplug/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ nandSectorsTest.c $(NSECT)
 
 # Codeplug editing: the open-firmware record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit

@@ -70,6 +70,7 @@ def main(out):
 	variants = repo.variants()
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
 	c7000(out, rng)
+	db25d(out, rng)
 	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("f4-stub.json", repo.f4_stub()), ("flash-boards.json", repo.flash_boards()), ("features.json", {"features": feats}),
 			  ("variants.json", {"variants": variants}), ("radios.json", {"radios": radios})):
 		with open(os.path.join(out, name), "w") as f:
@@ -103,6 +104,38 @@ def c7000(out, rng):
 			   "entries": [prof["entries"][k] for k in dc.ENTRIES], "stock_file": None},
 	       "found": {"code": found["code"][0] - dc.PROGMEM_BASE, "tables": found["tables"][0] - dc.PROGMEM_BASE}}
 	with open(os.path.join(out, "c7000.json"), "w") as f:
+		json.dump(doc, f, indent=1)
+
+
+def db25d(out, rng):
+	"""The DB25-D's plain stock image (no header, no container), a synthetic one with the real profile's addresses, and
+	the merged image dm32_codec.merge() builds from it. With ODR_DB25D_STOCK=<one of the real 018 files> the expected
+	result for that file is made as well, so the JavaScript can be checked on the real bytes (never kept in the repo)."""
+	import struct
+	dc = repo._tool("tools", "dm32_codec.py")
+	real = dc.PROFILES["341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b"]
+	plain = bytearray(rng.getrandbits(8) for _ in range(real["size"]))
+	caddr, clen, _ = real["code"]
+	taddr, tlen, _ = real["tables"]
+	struct.pack_into("<2I", plain, dc.file_offset(caddr, 0), *dc.CODEC_SIG)
+	plain = bytes(plain)
+	prof = dict(real)
+	found, code, tables = dc.extract(plain, {dc.sha256(plain): prof}, board="db25d")
+	image = bytes(rng.getrandbits(8) for _ in range(0x1000 + 20000))
+	merged = dc.merge(image, found, code, tables)
+	files = {"db25d_stock.bin": plain, "db25d_image.bin": image, "db25d_merged.bin": merged}
+	doc = {"sha256": dc.sha256(plain), "size": len(plain), "code": caddr, "tables": taddr, "real": None}
+	path = os.environ.get("ODR_DB25D_STOCK")
+	if path:
+		with open(path, "rb") as f:
+			data = f.read()
+		p, c, t = dc.extract(data, board="db25d")
+		files["db25d_real_slot.bin"] = dc.slot_bytes(p, c, t)
+		doc["real"] = {"path": os.path.abspath(path), "name": p["name"]}
+	for name, data in files.items():
+		with open(os.path.join(out, name), "wb") as f:
+			f.write(data)
+	with open(os.path.join(out, "db25d.json"), "w") as f:
 		json.dump(doc, f, indent=1)
 
 
