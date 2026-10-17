@@ -42,7 +42,7 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 |---|---|---|
 | `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), `tools/ci.sh --steps python,licenses`, then the UI screen gallery (`uiSim --gallery`) | about 3.5 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, Python checks 15 s, gallery 2 s |
 | `firmware` (dm1701, md380) | `tools/ci.sh --quick --steps firmware --board <b>` | DM-1701 7 s, MD-380 UHF and VHF 15 s; the toolchain 50 s on a cache miss |
-| `dm32` | the same for `dm32`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | 4 s; skipped where the image isn't available |
+| `csky` (dm32, dm1801pro, db25d) | the same for each C-SKY board, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | DM-32UV 4 s; skipped where the image isn't available |
 
 The jobs run in parallel, so a push is checked in about four minutes plus the runner's image start. On an 8-core
 Mac the plain host tests take 43 s.
@@ -57,7 +57,8 @@ the current tree yet (run it to see the files), and the nightly reports it as a 
 
 ## Pull request checks: `pr-tests.yml`
 
-Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware` for the DM-1701 and MD-380, `dm32`) and the
+Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware` for the DM-1701 and MD-380, `csky` for the
+DM-32UV, DM-1801 Pro and DB25-D) and the
 manual check (doc links and the PDF build, as `manual.yml` does) on its merge commit. The first job, `changes`,
 looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s paths) run
 the build and test jobs, docs changes (`manual.yml`'s paths) the manual. The last job always runs and sets the
@@ -73,7 +74,7 @@ branch's pushes either, so a pull request is checked once.
 
 The pull request's code runs with a read-only token that isn't stored in the checkout, no secrets and no cache, so
 it gets nothing a fork couldn't have. The firmware jobs download the toolchain each time (checksummed by
-`tools/install-arm-toolchain.sh`, about 50 s). The `dm32` job logs in to the image registry with the job's own token
+`tools/install-arm-toolchain.sh`, about 50 s). The `csky` jobs log in to the image registry with the job's own token
 (`packages: read`), pulls the image and logs out before the build runs. The status job is the only one with a write
 permission (`statuses: write`), and it checks out nothing. Keep it that way: never add secrets, another write
 permission, `actions/cache` or the pull request's text (title, body, branch name) in a run step to `pr-tests.yml`.
@@ -121,7 +122,7 @@ support it, so check the first run on the Gitea runner before relying on the com
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
 | `matrix` (dm1701, md380) | `ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board <b>`: each switch off alone, fm-minimal, maximal | DM-1701 4.4 min (47 builds), MD-380 3.8 min (42) |
-| `dm32-matrix` | the same for `dm32` in the csky-elf image | 2.9 min (50 builds; measured on the CI VM) |
+| `csky-matrix` (dm32, dm1801pro, db25d) | the same for each C-SKY board in the csky-elf image | DM-32UV 2.9 min (50 builds; measured on the CI VM) |
 | `reuse` | `reuse lint`, a warning until it passes | under a minute |
 
 `--matrix` leaves out the default builds the per-push run already made; `ODR_CI_PRUNE=1` removes each build tree
@@ -144,7 +145,7 @@ SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run (t
 tools/ci.sh --quick --steps firmware --board md380
 ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board dm1701    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html
-tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32   # on a host with the image
+tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm1801pro   # on a host with the image
 ```
 
 `--steps` takes any of `host`, `python`, `firmware`, `licenses`, `similarity` (comma separated); `--quick` and
@@ -210,7 +211,7 @@ A VM (Ubuntu 24.04, 8 vCPUs, 7 GB RAM) running `gitea-runner` 2.1 (`act_runner.s
 `/etc/gitea_runner.conf`), capacity 4, with the labels `ubuntu-latest`, `ubuntu-24.04` and `ubuntu-22.04` mapped to
 `docker.gitea.com/runner-images`. Each job runs in a fresh container of that image, as root; the workspace is a
 Docker volume. The runner mounts the host's Docker socket into job containers (`container.docker_host` empty), which
-the DM-32 jobs use: `run.sh` starts the csky-elf image with the job container's volumes (`--volumes-from`), so the
+the C-SKY jobs use: `run.sh` starts the csky-elf image with the job container's volumes (`--volumes-from`), so the
 image never has to be the job's own container (it has no Node.js for the JavaScript actions) and the runner's
 `force_pull: true` never tries to fetch the locally built image from Docker Hub.
 
@@ -240,7 +241,7 @@ The runner is the image in `tools/ci-runner/` (its README has the setup): Ubuntu
 workflows install (the Arm and csky-elf toolchains, host GCC, Python with NumPy, pytest, pyserial, Pillow and
 markdown-it, gcovr, tshark, Node.js 22, gh, reuse). The workflows notice it by `ODR_CI_IMAGE=1` in the
 environment (and `runner.environment == 'self-hosted'` in a step's `if`) and skip their `apt-get` steps, the
-toolchain cache, `setup-python`, `setup-node`, `pip` and Docker: the DM-32 jobs build directly with the image's
+toolchain cache, `setup-python`, `setup-node`, `pip` and Docker: the C-SKY jobs build directly with the image's
 csky-elf GCC. Every job gets a new container, as a non-root user, with no Docker socket, no host network or other
 host directories, and CPU, memory and process limits. Its network has no route out: an egress proxy passes HTTPS
 to the hosts in `tools/ci-runner/proxy/allow` only (GitHub, the npm registry and PyPI), so a job can't download from
@@ -259,14 +260,14 @@ to the hosted runners.
 
 ### GitHub
 
-The same workflows run on GitHub's hosted runners when the repository is pushed there and `ODR_CI_RUNNER` is unset. Everything except the DM-32
+The same workflows run on GitHub's hosted runners when the repository is pushed there and `ODR_CI_RUNNER` is unset. Everything except the C-SKY
 jobs works as is; those skip with a notice until the csky-elf image is in a registry the runner can pull (below).
 On a private repository the hosted runners use the account's Actions minutes: a push costs about 6 runner minutes
-(five jobs), a nightly with changes about 12.
+(seven jobs), a nightly with changes about 12.
 
 ## The csky-elf image
 
-The DM-32 jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`:
+The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`:
 the tag `tools/docker/csky-toolchain/build.sh` gives its image on the Gitea runner (`odr/csky-gcc14:20261011b`,
 549 MB). `run.sh` uses an image already on the Docker host, and pulls one only when the name starts with a
 registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had the

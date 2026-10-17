@@ -10,9 +10,9 @@
 #              (gcovr's report as an artifact, totals in the job summary); Python checks, license checks, the UI
 #              screen gallery
 #   firmware   DM-1701 and MD-380 (UHF and VHF) default builds with zero warnings, the size report, app region fit
-#   dm32       the DM-32UV default build in the csky-elf image (repository variable ODR_CSKY_IMAGE, default
-#              odr/csky-gcc14:latest); skipped with a notice where that image isn't available (GitHub's runners
-#              until it is in a registry)
+#   csky       the default build of every C-SKY radio (DM-32UV, DM-1801 Pro, DB25-D), one matrix job each, in the
+#              csky-elf image (repository variable ODR_CSKY_IMAGE, default odr/csky-gcc14:latest); skipped with a
+#              notice where that image isn't available (GitHub's runners until it is in a registry)
 # The feature matrix and the other long builds run nightly (nightly.yml), the radio tests by hand (hil.yml).
 # Runs on Gitea Actions (the self-hosted runner) and GitHub Actions alike; a newer push to the same branch cancels
 # the run in progress. On GitHub the repository variable ODR_CI_RUNNER (a runner label) moves the jobs from the
@@ -139,10 +139,14 @@ jobs:
             build/ci/*/odr_*.bin
           if-no-files-found: ignore
 
-  dm32:
+  csky:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [dm32, dm1801pro, db25d]
     permissions:
       contents: read
       packages: read   # pulling a private ghcr.io image with the job token
@@ -162,17 +166,17 @@ jobs:
         run: |
           command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
           echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
-      - name: DM-32UV default build in the csky-elf image
+      - name: ${{ matrix.board }} default build in the csky-elf image
         run: |
           set -u
           rc=0
           if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
-            tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+            tools/ci.sh --quick --steps firmware --board ${{ matrix.board }} || rc=$?
           else
-            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board ${{ matrix.board }} || rc=$?
           fi
           if [ "$rc" = 3 ]; then
-            echo "::notice::DM-32UV build skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::${{ matrix.board }} build skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -183,7 +187,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: firmware-dm32
+          name: firmware-${{ matrix.board }}
           path: |
             build/ci/size-report.md
             build/ci/*.log

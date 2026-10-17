@@ -4,7 +4,8 @@
 # Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
 #   matrix       DM-1701 and MD-380: a build per feature switch turned off alone, fm-minimal and maximal (LTO), each
 #                with zero warnings and its size (tools/ci.sh --matrix; about 4-5 minutes per board on the runner)
-#   dm32-matrix  the same for the DM-32UV in the csky-elf image (skipped where the image isn't available)
+#   csky-matrix  the same for the DM-32UV, DM-1801 Pro and DB25-D in the csky-elf image (skipped where the image
+#                isn't available)
 #   reuse        `reuse lint`, reported as a warning until the tree passes it
 # A scheduled run does nothing when the commit it would test already passed a nightly run: a successful run saves
 # an empty cache entry named after the commit (nightly-ok-<sha>), and the next scheduled run looks that name up
@@ -91,11 +92,15 @@ jobs:
             build/ci/*.log
           if-no-files-found: ignore
 
-  dm32-matrix:
+  csky-matrix:
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [dm32, dm1801pro, db25d]
     permissions:
       contents: read
       packages: read   # pulling a private ghcr.io image with the job token
@@ -116,17 +121,17 @@ jobs:
         run: |
           command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
           echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
-      - name: DM-32UV feature matrix in the csky-elf image
+      - name: ${{ matrix.board }} feature matrix in the csky-elf image
         run: |
           set -u
           rc=0
           if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
-            tools/ci.sh --matrix --steps firmware --board dm32 || rc=$?
+            tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
           else
-            tools/docker/csky-toolchain/run.sh tools/ci.sh --matrix --steps firmware --board dm32 || rc=$?
+            tools/docker/csky-toolchain/run.sh tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
           fi
           if [ "$rc" = 3 ]; then
-            echo "::notice::DM-32UV matrix skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::${{ matrix.board }} matrix skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -137,7 +142,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: matrix-dm32
+          name: matrix-${{ matrix.board }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
@@ -162,7 +167,7 @@ jobs:
           fi
 
   mark:
-    needs: [matrix, dm32-matrix]
+    needs: [matrix, csky-matrix]
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5

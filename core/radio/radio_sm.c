@@ -3099,6 +3099,7 @@ static void host_audio_watch(radio_sm_t *sm, uint32_t now_ms)
 }
 
 #endif
+#if CONFIG_BEEP || CONFIG_DMR   // its only users; without either, it would be unused (a warning)
 // The PCM stream the radio's own users (beeps, DMR voice) take: the board's, shared with a host audio session
 static const hal_audio_t *pcm_audio(void)
 {
@@ -3108,6 +3109,7 @@ static const hal_audio_t *pcm_audio(void)
 	return board.audio;
 #endif
 }
+#endif
 
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
