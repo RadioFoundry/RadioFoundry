@@ -16,31 +16,24 @@
 
 import { hex, sha256 } from "./bytes.js";
 import { zip, unzip } from "./zip.js";
+import { debugLinkReader } from "./readers.js";
 
 export const FORMAT = "odr-backup/1";
-const CPS_SPI = 1, CPS_MCU = 5, CPS_INFO = 9, CPS_SECURITY = 10;
+const CPS_INFO = 9, CPS_SECURITY = 10;
 export const CODEPLUG_SPAN = 0x120000;	// the open-firmware layout: emulated EEPROM, calibration, codeplug, ID database
 
 export class BackupError extends Error {}
 
 // Read a radio that runs ODR. what: {internal, spi: "full" | "codeplug" | "none", security}. Returns the parts.
-export async function readRadio(link, board, radio, { what = {}, progress = () => {}, signal } = {}) {
+// readers (readers.js): bulk readers to try first, in order, for the two memories; the debug link reads them when
+// none opens. The small parts only the debug link reads (radio info, security registers) come first, before a reader
+// may hand the radio over to a loader. A reader that opened is closed (or aborted on a failure) before this returns.
+export async function readRadio(link, board, radio, { what = {}, progress = () => {}, signal, readers = [] } = {}) {
 	const parts = [];
 	const want = { internal: true, spi: "full", security: true, ...what };
 	const step = (name) => (done, total) => progress(name, done, total);
 	const info = await link.cpsRead(CPS_INFO, 0, 128);
 	if (info) parts.push({ file: "radio-info.bin", what: "radio-info", addr: 0, data: info, complete: true });
-	if (want.internal) {
-		// CPS area 5 addresses the MCU flash from 0x08000000 (open-firmware-cps.md 3)
-		const base = board.app_base, size = board.flash_end - board.app_base;
-		const r = await link.cpsDump(CPS_MCU, base - 0x08000000, size, { progress: step("internal"), signal });
-		parts.push({ file: "internal-flash.bin", what: "internal-flash", addr: base, data: r.data, complete: r.complete });
-	}
-	if (want.spi !== "none") {
-		const size = want.spi === "full" ? radio.backup.spi_size : CODEPLUG_SPAN;
-		const r = await link.cpsDump(CPS_SPI, 0, size, { progress: step("spi"), signal });
-		parts.push({ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: r.data, complete: r.complete && want.spi === "full" });
-	}
 	if (want.security) {
 		const regs = [];
 		for (const a of [0x1000, 0x2000, 0x3000]) {
@@ -54,7 +47,32 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 			parts.push({ file: "security-registers.bin", what: "security-registers", addr: 0x1000, data, complete: regs.length === 3 });
 		}
 	}
-	await link.cpsClose();
+	let reader = debugLinkReader(link);
+	if (readers.length && (want.internal || want.spi !== "none")) {
+		await link.cpsClose();	// the debug link's CPS session ends before a reader takes the radio
+		for (const r of readers) {
+			if (await r.open(step("loader"))) {
+				reader = r;
+				break;
+			}
+		}
+	}
+	try {
+		if (want.internal) {
+			const base = board.app_base, size = board.flash_end - board.app_base;
+			const r = await reader.read("internal", base, size, { progress: step("internal"), signal });
+			parts.push({ file: "internal-flash.bin", what: "internal-flash", addr: base, data: r.data, complete: r.complete });
+		}
+		if (want.spi !== "none") {
+			const size = want.spi === "full" ? radio.backup.spi_size : CODEPLUG_SPAN;
+			const r = await reader.read("spi", 0, size, { progress: step("spi"), signal });
+			parts.push({ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: r.data, complete: r.complete && want.spi === "full" });
+		}
+	} catch (e) {
+		await reader.abort();
+		throw e;
+	}
+	await reader.close();
 	return parts;
 }
 

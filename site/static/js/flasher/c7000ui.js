@@ -23,6 +23,7 @@ import * as c7 from "./c7000.js";
 import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
+import { register } from "./backends.js";
 
 // USB-serial chips found in programming cables (tools/dm32_flash.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -757,3 +758,22 @@ export async function splitOwnImage(c, board, data) {
 	while (end > 0 && data[end - 1] === 0xFF) end--;
 	return { image: data.slice(0, Math.ceil(end / 4) * 4), slot: info ? slot.slice(0, info.length) : null };
 }
+
+// The backend (backends.js): connect and check take the place of "now" and "codec"; a reinstall from the help task
+// skips the radio step. Stock firmware comes back from a backup, never from a stock file.
+const INSTALL = ["radio", "build", "connect", "check", "write", "done"], RECOVER = ["build", "connect", "check", "write", "done"];
+register({
+	id: "c7000-stub",
+	available: (radio, fb) => isC7000(radio, fb),		// install and backup, stock firmware or ODR
+	steps: (task, { recovering }) => (task === "install" ? (recovering ? RECOVER : INSTALL) : null),
+	stepLabel: (step, task) => (task === "install" && step === "done" ? "c7_done" : step),
+	views: { connect: connectView, check: checkView, write: writeView, done: doneView, backup: backupView, restore: restoreView },
+	recovery: { first: "fix", stock: "restore", reach: "flash.help.c7_reach", stockText: "flash.help.fix.stock_c7" },
+	ownsBundle: hasC7Backup,
+	ownImage: async (fb, board, data) => {
+		const { image, slot } = await splitOwnImage(fb.c7000, board, data);
+		if (slot) session().fileCodec = slot;
+		return image;
+	},
+	release: dropC7,
+});

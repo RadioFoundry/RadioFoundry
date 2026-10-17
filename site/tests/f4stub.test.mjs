@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The STM32F4 stub route (f4stub.js) against the simulated radio (fake.js): the hand-over from ODR, an install in the
-// interlock's order, the MD-380's shared sector 6, a cable pulled halfway, and SPI flash writes. Run with
+// interlock's order, the MD-380's shared sector 6, a cable pulled halfway, SPI flash writes, and backups through the
+// loader (readers.js). Run with
 // site/tests/run.sh, or: node --test site/tests/
 
 import { test } from "node:test";
@@ -13,6 +14,9 @@ import { crc32, equal } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
 import { F4Stub, f4Image, APP_BASE, MEM_SPI } from "../static/js/flasher/f4stub.js";
 import { StubError } from "../static/js/flasher/stub.js";
+import { Link } from "../static/js/flasher/link.js";
+import { readRadio } from "../static/js/flasher/backup.js";
+import { f4LoaderReader } from "../static/js/flasher/readers.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -139,3 +143,58 @@ test("SPI flash: only changed sectors are written, then verified; outside the ch
 	assert.ok(equal(back, data.subarray(0x4000, 0x8000)));
 	await assert.rejects(s.spiWrite(new Uint8Array(0x2000), 0x1FF000), StubError);
 });
+
+// A backup through the loader the way the backup step runs it
+async function backupVia(radio, sim, what) {
+	const link = new Link(radio.serialStream());
+	let handedOver = false;
+	const loader = f4LoaderReader(link, { stubJson: async () => stubJson, reopen: async () => radio.serialStream(), onHandOver: () => { handedOver = true; } });
+	const parts = await readRadio(link, sim.board, { backup: { spi_size: radio.spi.length } }, { what, readers: [loader] });
+	return { parts, loader, handedOver, get: (w) => parts.find((x) => x.what === w) };
+}
+
+test("backup through the loader: the security registers over the debug link, both memories through the loader, then ODR again", async () => {
+	for (const adopt of [true, false]) {
+		const { sim, radio } = await running("dm1701", { adopt });
+		const b = await backupVia(radio, sim, {});
+		assert.ok(b.loader.used && b.handedOver);
+		assert.deepEqual(radio.events, ["stub (from ODR)", "reset"]);
+		assert.equal(radio.mode, "normal", "the radio runs ODR again");
+		assert.ok(b.get("security-registers").complete, "read over the debug link before the hand-over");
+		const internal = b.get("internal-flash");
+		assert.equal(internal.addr, APP_BASE);
+		assert.ok(internal.complete);
+		assert.deepEqual(internal.data, radio.flash.subarray(APP_BASE - 0x08000000));
+		const spi = b.get("spi-flash");
+		assert.ok(spi.complete);
+		assert.deepEqual(spi.data, radio.spi);
+	}
+});
+
+test("backup without stub entry: the loader doesn't start and the debug link reads everything, ODR untouched", async () => {
+	const { sim, radio } = await running("dm1701", { stubEntry: false });
+	const b = await backupVia(radio, sim, { spi: "none" });
+	assert.ok(!b.loader.used && !b.handedOver);
+	assert.deepEqual(radio.events, []);
+	assert.deepEqual(b.get("internal-flash").data, radio.flash.subarray(APP_BASE - 0x08000000));
+	assert.equal(b.get("spi-flash"), undefined);
+});
+
+test("a codeplug-only backup with no reader reads over the debug link", async () => {
+	const { sim, radio } = await running("dm1701");
+	const parts = await readRadio(new Link(radio.serialStream()), sim.board, { backup: { spi_size: radio.spi.length } }, { what: { internal: false, spi: "codeplug" } });
+	assert.deepEqual(radio.events, []);
+	assert.equal(parts.find((x) => x.what === "spi-flash").data.length, 0x120000);
+});
+
+test("a read that fails inside the loader restarts the radio before the error goes up", async () => {
+	const { sim, radio } = await running("dm1701");
+	const link = new Link(radio.serialStream());
+	const loader = f4LoaderReader(link, { stubJson: async () => stubJson, reopen: async () => radio.serialStream() });
+	const read = loader.read;
+	loader.read = async (mem, ...rest) => { if (mem === "spi") throw new StubError("cable trouble"); return read(mem, ...rest); };
+	await assert.rejects(readRadio(link, sim.board, { backup: { spi_size: radio.spi.length } }, { readers: [loader] }), /cable trouble/);
+	assert.deepEqual(radio.events, ["stub (from ODR)", "reset"]);
+	assert.equal(radio.mode, "normal");
+});
+

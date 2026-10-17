@@ -5,14 +5,17 @@
 //   install   pick the radio and the build, find out what runs on the radio (backing it up if it runs ODR), decide
 //             the codec, write through the bootloader (or, on a radio already running ODR with stub entry, through
 //             the STM32F4 loader: f4stub.js), check the result and complete the backup
-//   backup    read everything a radio running ODR can give into a bundle the user keeps
+//   backup    read everything a radio running ODR can give into a bundle the user keeps (over the debug link, or
+//             through the STM32F4 loader when ODR offers it: readers.js)
 //   restore   put a radio back from a bundle: exactly as it was on ODR, or back on stock firmware
+//
+// How a radio is reached (which steps a task takes on it) is its backend's business: backends.js.
 //
 // Everything runs in the page: release images come from this site, custom images from the build API, stock files
 // and backups from the user's disk, which never leave it. Add #sim to the address for a simulated radio (no hardware;
 // for trying the flow), #sim=odr for one that already runs ODR.
 
-import { hex, sha256, toHex, fromHex, startsWith } from "./bytes.js";
+import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
@@ -31,6 +34,8 @@ import { FakeC7000, c7000Simulation } from "./fakec7000.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub } from "./stub.js";
 import { F4Stub, f4Image } from "./f4stub.js";
+import { f4LoaderReader } from "./readers.js";
+import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -161,14 +166,13 @@ const STEPS = {
 	restore: ["bundle", "restore"],
 	help: ["radio", "symptom", "recover"],
 };
-// The C7000 radios install through the stub: connect and check take the place of "now" and "codec"
-const C7_INSTALL = ["radio", "build", "connect", "check", "write", "done"];
 // A radio running ODR that updates over the cable has no codec decision to make: the step goes
 const STUB_INSTALL = ["radio", "build", "now", "write", "done"];
 // Installing again from the help task: what runs on the radio is known to be broken, so that question goes
-const RECOVER_INSTALL = ["build", "codec", "write", "done"], RECOVER_C7 = ["build", "connect", "check", "write", "done"];
-const stepsFor = () => (S.task !== "install" || !S.radio ? STEPS[S.task] : S.recovering ? (isC7() ? RECOVER_C7 : RECOVER_INSTALL)
-	: isC7() ? C7_INSTALL : stubRoute() ? STUB_INSTALL : STEPS.install);
+const RECOVER_INSTALL = ["build", "codec", "write", "done"];
+// The radio's backend (backends.js) decides a task's steps; the shared ones otherwise
+const stepsFor = () => (S.radio && backendOf(S.radio).steps(S.task, { recovering: !!S.recovering })) || STEPS[S.task];
+const backend = () => backendOf(S.radio);
 
 async function loadData() {
 	const get = async (name) => (await fetch(`${ROOT}data/${name}`)).json();
@@ -178,10 +182,19 @@ async function loadData() {
 }
 
 const fb = () => (S.sim ? S.sim.fb : S.data.fb);
-// Every image comes from the build service, so a radio needs only a bootloader the page speaks (or, on the HR_C7000
-// radios, the C7 stub: c7000ui.js)
-const flashable = (r) => (r.flash.backend === "anyroad-dfu" && !!S.data.fb.boards[r.flash.board]?.key_sha256) || isC7(r);
-const isC7 = (r = S.radio) => c7ui.isC7000(r, fb());
+// Every image comes from the build service, so a radio needs only a backend the page has for it (backends.js)
+const available = (r, task) => backendOf(r).available(r, fb(), task);
+
+// The STM32 radios (DM-1701, MD-380): stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
+// the key from the stock file; a radio running ODR with stub entry also updates and backs up through the STM32F4
+// loader (f4stub.js), and backs up over the debug link without it (backup.js). Stock firmware isn't backed up here.
+register({
+	id: "anyroad-dfu",
+	available: (r, fbd, task) => (task === "backup" ? r.backup.odr === "full" : !!fbd.boards[r.flash.board]?.key_sha256),
+	steps: (task, { recovering }) => (task !== "install" ? null : recovering ? RECOVER_INSTALL : stubRoute() ? STUB_INSTALL : null),
+	views: { now: nowView, codec: codecView, write: writeView, done: doneView, backup: backupView, restore: restoreView },
+	recovery: { first: "updatemode", stock: "file", reach: null, stockText: "flash.help.fix.stock_text" },
+});
 
 // The STM32F4 loader route (f4stub.js): the radio runs ODR with stub entry and its codec, the image leaves the codec
 // alone, and nobody asked for a bootloader mode. Everything else, a stock radio first of all, uses the bootloader.
@@ -244,6 +257,25 @@ async function reopenOdrPort() {
 	const ports = await grantedOdrPorts();
 	if (!ports.length) throw new Error("not back yet");
 	return SerialStream.open(ports[ports.length - 1]);
+}
+
+// After the loader's restart: ODR answering on its port again (S.link set), within ms. false: it hasn't come back
+async function waitForOdr(ms = 20000) {
+	const end = Date.now() + ms;
+	while (Date.now() < end) {
+		await sleep(S.fakeRadio ? 10 : 1000);
+		let stream = null;
+		try {
+			stream = await reopenOdrPort();
+			const link = new Link(stream);
+			if (await probe(link)) {
+				S.link = link;
+				return true;
+			}
+		} catch (e) { /* not back yet */ }
+		try { await stream?.close?.(); } catch (e) { /* gone */ }
+	}
+	return false;
 }
 
 // A radio in USB network mode that this page was allowed to see before (no prompt)
@@ -379,8 +411,9 @@ function render() {
 	document.querySelector(".page-head")?.classList.toggle("compact", !!S.task);
 	if (!S.task) return app.append(...[versionBanner(), startView()].filter(Boolean));
 	const steps = stepsFor();
+	const label = (s) => (S.radio && backend().stepLabel?.(s, S.task)) || s;
 	const stepper = () => h("ol", { class: "stepper" }, stepsFor().map((s, i) =>
-		h("li", { class: i < S.step ? "done" : "", "aria-current": i === S.step ? "step" : false }, t(`flash.step.${stepsFor() === C7_INSTALL && s === "done" ? "c7_done" : s}`))));
+		h("li", { class: i < S.step ? "done" : "", "aria-current": i === S.step ? "step" : false }, t(`flash.step.${label(s)}`))));
 	let shown = stepper();
 	app.append(shown);
 	render.stepper = () => { const n = stepper(); shown.replaceWith(n); shown = n; };
@@ -394,11 +427,10 @@ function render() {
 		fwd.replaceChildren(...[btn].flat().filter(Boolean));
 		info.replaceChildren(...[text].filter(Boolean));
 	};
-	const c7 = isC7(), c7bundle = c7ui.hasC7Backup(S.bundle);
-	const view = { radio: radioView, build: buildView, now: nowView, codec: codecView, write: c7 ? c7ui.writeView : writeView,
-		done: c7 ? c7ui.doneView : doneView, connect: c7ui.connectView, check: c7ui.checkView,
-		backup: c7 ? c7ui.backupView : backupView, bundle: bundleView, restore: c7bundle ? c7ui.restoreView : restoreView,
-		symptom: symptomView, recover: recoverView }[steps[S.step]];
+	// the shared steps, then the ones the radio's backend draws; a bundle's own backend restores it
+	const step = steps[S.step];
+	const view = (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
+		|| { radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView }[step];
 	app.append(view());
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },
@@ -415,7 +447,7 @@ function next() {
 
 async function reset() {
 	await dropSerial();
-	await c7ui.dropC7();
+	for (const b of allBackends()) await b.release?.();
 	const keep = { data: S.data, sim: S.sim, fakeRadio: S.fakeRadio, fakeC7: S.fakeC7 };
 	// exactly a fresh load: fields set along the way (buildOptions, keyFromRadio, ...) go, the rest start over
 	for (const k of Object.keys(S)) delete S[k];
@@ -449,7 +481,7 @@ function startView() {
 
 function radioView() {
 	const list = h("div", { class: "choice-grid" }, S.data.radios.map((r) => {
-		const ok = S.task === "backup" ? r.backup.odr === "full" || isC7(r) : flashable(r);
+		const ok = available(r, S.task === "backup" ? "backup" : "install");
 		return h("button", { class: "choice", type: "button", "aria-pressed": String(S.radio?.id === r.id), disabled: !ok,
 			onclick: () => { selectRadio(r); next(); } },
 		h("img", { src: ROOT + r.image, alt: "" }), h("strong", {}, r.name),
@@ -482,7 +514,7 @@ function radioView() {
 }
 
 function selectRadio(r) {
-	if (S.radio && S.radio.id !== r.id) c7ui.dropC7().then(() => { S.c7 = null; });
+	if (S.radio && S.radio.id !== r.id) Promise.resolve(backend().release?.()).then(() => { S.c7 = null; });
 	S.radio = r;
 	S.board = fb().boards[r.flash.board];
 	S.selection = new Selection(r, S.data.features, S.data.variants);
@@ -592,7 +624,7 @@ function buildView() {
 					: t("flash.build.custom_start")));
 		const busy = building && !S.build.error;
 		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]);
-		forward(button(t(busy ? "flash.nav.building" : missing ? "flash.nav.choose" : S.firmware || S.sim ? (isC7() ? "flash.nav.to_connect" : "flash.nav.to_now")
+		forward(button(t(busy ? "flash.nav.building" : missing ? "flash.nav.choose" : S.firmware || S.sim ? `flash.nav.to_${stepsFor()[S.step + 1]}`
 			: VERSION_REF ? "flash.nav.build_version" : "flash.nav.build", { what: missing?.title.toLowerCase(), ref: VERSION_REF && versionShort() }), go, { primary: true, disabled: busy || !!missing }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
@@ -721,12 +753,8 @@ async function requestBuild(redraw) {
 async function loadOwnImage(f, redraw) {
 	try {
 		if (startsWith(f.data, fb().magic)) throw new Error(t("flash.err.stock_as_image"));
-		if (isC7()) {
-			// an image merged with its codec (tools/dm32_codec.py): the slot becomes the codec source, the rest the image
-			const { image, slot } = await c7ui.splitOwnImage(fb().c7000, S.radio.flash.board, f.data);
-			if (slot) (S.c7 ||= {}).fileCodec = slot;
-			f = { ...f, data: image };
-		}
+		// an image merged with its codec (tools/dm32_codec.py): the backend keeps the codec, the rest is the image
+		if (backend().ownImage) f = { ...f, data: await backend().ownImage(fb(), S.radio.flash.board, f.data) };
 		const m = S.ownManifest || await forDevBuild(S.board, f.data);
 		const board = await verify(m, f.data, fb(), S.board.id);
 		S.firmware = { manifest: m, image: f.data, source: f.name, origin: "own", board };
@@ -832,20 +860,27 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 	};
 	let pick = "all";
 	const times = {};
+	// the loader reads the internal flash at about 500 KB/s and the SPI flash at about 280 KB/s (stub-stm32f4.md 11),
+	// plus the hand-over and the restart; the codeplug alone is no faster that way, so the debug link reads it
+	const viaLoader = () => !!(f4Board() && S.now?.kind === "odr" && S.now.stubOffer && pick !== "codeplug");
+	const seconds = (id) => (id !== "codeplug" && f4Board() && S.now?.stubOffer
+		? 12 + internalSize / 500e3 + (choices[id].what.spi === "full" ? S.radio.backup.spi_size / 280e3 : 0)
+		: S.readRate ? choices[id].bytes / S.readRate : null);
 	const run = async () => {
 		box.querySelectorAll("button, input").forEach((b) => { b.disabled = true; });
 		runBtn.disabled = true;
 		box.append(prog.el);
-		let started = null;
+		let started = null, bulk = null;
 		try {
 			const link = await connectSerial();
 			const p = S.now?.probe || await probe(link);
 			// the backup task is a use of its own; the backups around an install belong to the install
 			if (S.task === "backup") started = flashStarted({ task: "backup", source: pick, radio: S.board.id, firmware: p.git || "", features: p.features || "" });
 			const t0 = performance.now();
+			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenOdrPort, onHandOver: () => { S.link = null; } }) : null;
 			S.backupParts = await readRadio(link, S.board, S.radio, {
-				what: choices[pick].what, progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
-			S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
+				what: choices[pick].what, readers: bulk ? [bulk] : [], progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
+			if (!bulk?.used) S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
 			if (S.stock) S.backupParts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: S.stock.data, complete: true });
 			const after = when === "after";
 			const meta = {
@@ -863,9 +898,19 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			const incomplete = S.backupParts.filter((x) => !x.complete && x.what !== "spi-flash").map((x) => x.file);
 			box.append(notice(t("flash.backup.saved", { name, size: Math.round(bytes.length / 1024) }), "ok"));
 			if (incomplete.length) box.append(notice(t("flash.backup.incomplete", { files: incomplete.join(", ") })));
+			if (bulk?.used) {
+				// the next step talks to ODR again: it has to be back first
+				prog.set(0, 1, t("flash.backup.restarting"));
+				if (!await waitForOdr()) {
+					box.append(notice(t("flash.backup.not_back"), "action"));
+					return;
+				}
+				prog.el.remove();
+			}
 			onDone?.();
 		} catch (e) {
 			flashFinished(started, e);
+			if (bulk?.used) await waitForOdr();	// readRadio restarted the radio
 			box.append(notice(errorText(e), "bad"));
 			box.querySelectorAll("button, input").forEach((b) => { b.disabled = false; });
 			runBtn.disabled = false;
@@ -874,7 +919,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 	const option = (id) => h("label", { class: "toggle" },
 		h("input", { type: "radio", name: "backup-what", checked: id === pick, onchange: () => { pick = id; } }),
 		h("span", {}, h("b", {}, t(`flash.backup.opt.${id}`)),
-			h("span", { class: "why" }, t(`flash.backup.opt.${id}_text`), " ", times[id] = h("span", {}, estimate(choices[id].bytes)))),
+			h("span", { class: "why" }, t(`flash.backup.opt.${id}_text`), " ", times[id] = h("span", {}, estimate(choices[id].bytes, seconds(id))))),
 		h("span"));
 	box.append(h("h3", {}, t(`flash.backup.title_${when}`)),
 		h("p", {}, t(when === "after" && S.now?.kind !== "odr" ? "flash.backup.after_lead" : "flash.backup.lead")),
@@ -884,7 +929,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 	else box.append(h("div", { class: "actions" }, runBtn));
 	// the estimates come from this radio: a short timed read, unless a backup already measured it
 	if (!S.readRate) {
-		measureRate().then(() => { for (const id of Object.keys(choices)) times[id]?.replaceChildren(estimate(choices[id].bytes)); });
+		measureRate().then(() => { for (const id of Object.keys(choices)) times[id]?.replaceChildren(estimate(choices[id].bytes, seconds(id))); });
 	}
 	return box;
 }
@@ -899,11 +944,10 @@ async function measureRate() {
 	} catch (e) { /* no estimate */ }
 }
 
-function estimate(bytes) {
+function estimate(bytes, s) {
 	const mb = bytes / 1048576;
 	const size = mb >= 1 ? `${mb.toFixed(mb >= 10 ? 0 : 1)} MB` : `${Math.round(bytes / 1024)} KB`;
-	if (!S.readRate) return t("flash.backup.time_unknown", { size });
-	const s = bytes / S.readRate;
+	if (s == null) return t("flash.backup.time_unknown", { size });
 	return s < 60 ? t("flash.backup.time_lt1", { size }) : t("flash.backup.time_min", { size, n: Math.round(s / 60) });
 }
 
@@ -1398,7 +1442,7 @@ function symptomView() {
 	S.forward(null);
 	return h("div", { class: "flasher" }, reassure(),
 		panel(t("flash.help.symptom_title"), answers(SYMPTOMS.map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
-			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : ["stuck", "stopped"].includes(id) && !isC7() ? "updatemode" : "fix" }; next(); })));
+			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
 }
 
 function recoverView() {
@@ -1408,7 +1452,7 @@ function recoverView() {
 	let body;
 	if (st.stage === "battery") {
 		body = panel(t("flash.help.battery_title"), h("p", {}, t("flash.help.battery_text")),
-			answers([["ok", t("flash.help.works_now")], ["no", t("flash.help.still_dark")]], (a) => go(a === "ok" ? "fixed" : isC7() ? "fix" : "updatemode")));
+			answers([["ok", t("flash.help.works_now")], ["no", t("flash.help.still_dark")]], (a) => go(a === "ok" ? "fixed" : backend().recovery.first)));
 	} else if (st.stage === "updatemode") body = updateModeCheck(go);
 	else if (st.stage === "nohope") body = noResponse(go);
 	else if (st.stage === "fix") body = fixChooser(st, go);
@@ -1445,7 +1489,7 @@ function updateModeCheck(go) {
 
 function noResponse(go) {
 	const repo = S.data.site.repo;
-	S.forward(button(t("flash.help.try_again"), () => go(isC7() ? "fix" : "updatemode"), { primary: true }));
+	S.forward(button(t("flash.help.try_again"), () => go(backend().recovery.first), { primary: true }));
 	return panel(t("flash.help.nohope_title"), h("p", {}, t("flash.help.nohope_lead")),
 		h("ol", { class: "steps" }, h("li", {}, t("flash.help.nohope_battery")), h("li", {}, t("flash.help.hint_cable")),
 			h("li", {}, t("flash.help.nohope_port")), h("li", {}, t("flash.help.nohope_again"))),
@@ -1454,18 +1498,18 @@ function noResponse(go) {
 
 // The ways back, each saying what it needs. Picking one and pressing Continue starts it.
 function fixChooser(st, go) {
-	const c7 = isC7();
+	const rec = backend().recovery;
 	const files = S.board?.codec?.sources?.join(", ") || "";
 	const opts = {
 		again: [t("flash.help.fix.again"), t("flash.help.fix.again_text")],
 		codec: [t("flash.help.fix.codec"), t("flash.help.fix.codec_text", { files })],
 		backup: [t("flash.help.fix.backup"), t(st.symptom === "channels" ? "flash.help.fix.backup_channels" : "flash.help.fix.backup_text")],
-		stock: [t("flash.help.fix.stock"), c7 ? t("flash.help.fix.stock_c7") : t("flash.help.fix.stock_text", { files })],
+		stock: [t("flash.help.fix.stock"), t(rec.stockText, { files })],
 	};
 	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"] }[st.symptom] || ["again", "backup", "stock"];
 	const start = () => {
 		const pick = st.pick;
-		if (pick === "stock" && !c7) return go("stock");
+		if (pick === "stock" && rec.stock === "file") return go("stock");
 		if (pick === "again" || pick === "codec") {
 			S.task = "install";
 			S.recovering = true;
@@ -1481,7 +1525,7 @@ function fixChooser(st, go) {
 	};
 	S.forward(button(t("flash.help.continue"), start, { primary: true, disabled: !st.pick }));
 	return panel(t(st.fine ? "flash.help.fine_title" : "flash.help.fix_title"),
-		st.fine ? h("p", {}, t("flash.help.fine_text")) : c7 ? h("p", {}, t("flash.help.c7_reach")) : null,
+		st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(rec.reach)) : null,
 		answers(order.map((id) => [id, ...opts[id]]), (id) => go("fix", { pick: id }), st.pick));
 }
 
@@ -1535,7 +1579,7 @@ async function main() {
 	S.backupParts = [];
 	const m = location.hash.match(/radio=(\w+)/);
 	const r = m && S.data.radios.find((x) => x.id === m[1]);
-	if (r && flashable(r)) {
+	if (r && available(r, "install")) {
 		S.task = "install";
 		selectRadio(r);
 		S.step = 1;

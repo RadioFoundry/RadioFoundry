@@ -154,7 +154,8 @@ The magic is `0x46345342` ("F4SB").
 | Transport | | USB CDC-ACM instead of a UART at 115200 |
 
 `stubtool.Radio` holds the shared parts (frames, retries, the debug link loader, the READ record decoder) and
-`f4stub.F4Radio` subclasses it. The web flasher's `stub.js` can split the same way.
+`f4stub.F4Radio` subclasses it. The web flasher splits the same way: `f4stub.js` extends `stub.js`, and the flasher
+updates and backs up a radio running ODR with stub entry through it ([website.md](../dev/website.md)).
 
 ## 6. Safety rules
 
@@ -294,8 +295,6 @@ codec sectors stay (the radio still finds its codec). Step 9 is still to do.
 
 - Step 9 of section 11 (an interrupted write and the recovery) on hardware.
 - MD-380: the bootloader's stack pointer check, and the stub on a real MD-380.
-- The web flasher: a `stub.js` path for the STM32 radios (reconnect after a re-enumeration, the update order of
-  section 7).
 - odrflash: use the stub when the radio runs a `CONFIG_STUB_ENTRY` build, with the bootloader as the fallback.
 - Release use: pin the stub image (the radio could refuse a stub whose SHA-256 is not built in), then turn the switch on
   by default.

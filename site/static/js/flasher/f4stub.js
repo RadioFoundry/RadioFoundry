@@ -73,14 +73,14 @@ export class F4Stub extends Stub {
 		if (!this.reopen) throw new StubError("the loader does not answer on this port");
 		this.log("waiting for the loader's USB port to come back");
 		try { await this.s.close?.(); } catch (e) { /* gone */ }
-		const end = Date.now() + 15000;
+		const end = Date.now() + 20000;
 		for (;;) {
 			try {
 				this.s = await this.reopen();
 				await this.hello();
 				return this.attached();
 			} catch (e) {
-				if (Date.now() > end) throw new StubError("the loader's USB port did not come back within 15 s: switch the radio off and on (ODR starts again) and check the cable");
+				if (Date.now() > end) throw new StubError("the loader's USB port did not come back within 20 s: switch the radio off and on (ODR starts again) and check the cable");
 				await sleep(300);
 			}
 		}
