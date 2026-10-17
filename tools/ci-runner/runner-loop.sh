@@ -9,7 +9,8 @@
 #   runner-loop.sh             forever: one fresh container per job (`run.sh --once`, then `--rm`), repeat
 #
 # Settings come from runner.env next to this script ($ODR_CI_ENV overrides). Cron starts the loop at boot and every
-# few minutes; flock keeps one. Touch $BASE/disabled to stop starting new containers (a running job finishes).
+# few minutes; flock keeps one. Touch $BASE/disabled to stop starting new containers (a running job finishes). More
+# runners in parallel: one loop each, with its own env file (NAME, WORK_DIR, STATE_DIR) and lock (README.md).
 set -u
 BASE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck disable=SC1090
@@ -24,7 +25,7 @@ CPUS=${CPUS:-4}
 MEMORY=${MEMORY:-4g}
 PIDS=${PIDS:-4096}
 PROXY="http://$PROXY_IP:8888"
-LOG="$BASE/log/runner.log"
+LOG="$BASE/log/$NAME.log"
 mkdir -p "$WORK_DIR" "$BASE/log"
 
 log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
