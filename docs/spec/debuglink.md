@@ -160,14 +160,15 @@ Request: none (header only), or offset u32 and length u16 (at most 1000 bytes pe
 |---|---|---|
 | 1 | 2 | width (the whole panel, insets included) |
 | 3 | 2 | height |
-| 5 | 1 | bpp |
+| 5 | 1 | bpp (16 for a 16-color panel too: it is sent as RGB565) |
 | 6 | 1 | format: 1 = RGB565 little endian, row-major; 2 = 1 bpp rows of (width + 7) / 8 bytes, MSB left |
 | 7 | 4 | insets: top, bottom, left, right |
 | 11 | 4 | total frame buffer bytes |
 | 15 | 4 | offset of this chunk |
 | 19 | n | the chunk |
 
-The chunks are read live from the UI's frame buffer, without a lock (the UI task owns it, and a 38 KB copy would
+A 16-color frame buffer (bpp 4, the DM-32) is converted through its palette as each chunk is read, so the host sees
+an RGB565 frame of width x height x 2 bytes. The chunks are read live from the UI's frame buffer, without a lock (the UI task owns it, and a 38 KB copy would
 not fit in RAM). A redraw while the host reads the chunks can tear the image. `odr_debug.py screenshot` reads the
 whole buffer twice and repeats until two reads agree (`--tries`, default 4), which gives a consistent image unless
 the screen changes continuously (a running timer); it says so when it gives up.

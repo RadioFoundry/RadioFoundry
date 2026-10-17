@@ -210,11 +210,12 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 }
 
 const sim_geom_t sim_geoms[] = {
-	{ "160x120i5", 160, 120, 16, 5, 0 },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
-	{ "160x128", 160, 128, 16, 0, 0 },	// MD-380 / MD-UV380 / MD-9600 class
-	{ "120x160", 120, 160, 16, 0, 0 },	// DM-32UV: its 240x320 panel at half resolution (boards/dm32)
-	{ "128x64", 128, 64, 1, 0, 0 },		// GD-77 class, mono
-	{ "240x320", 240, 320, 16, 0, 0 },	// 240x320 class at full resolution
+	{ "160x120i5", 160, 120, 16, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
+	{ "160x128", 160, 128, 16, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
+	{ "128x64", 128, 64, 1, 0, 0, false, false },	// GD-77 class, mono
+	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG
+	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true },
+	{ "240x320", 240, 320, 16, 0, 0, true, false },	// 240x320 class at full resolution, standard text size
 };
 const int sim_geom_count = sizeof sim_geoms / sizeof sim_geoms[0];
 
@@ -224,16 +225,18 @@ const sim_geom_t *sim_geom_find(const char *name)
 	for (int i = 0; i < sim_geom_count; i++)
 		if (strcmp(name, sim_geoms[i].name) == 0)
 			return &sim_geoms[i];
-	unsigned w, h, inset = 0;
+	unsigned w, h, inset = 0, inset_tb = 0;
 	char tail = 0;
-	int n = sscanf(name, "%ux%u%c%u", &w, &h, &tail, &inset);
+	int n = sscanf(name, "%ux%u%c%ux%u", &w, &h, &tail, &inset, &inset_tb);
 	if (n < 2 || w < 64 || h < 48 || w > 320 || h > 320)
 		return NULL;
 	custom.name = name;
 	custom.w = (uint16_t)w;
 	custom.h = (uint16_t)h;
 	custom.bpp = tail == 'm' ? 1 : 16;
-	custom.inset = custom.inset_tb = tail == 'i' ? (uint8_t)inset : 0;
+	custom.inset = tail == 'i' ? (uint8_t)inset : 0;
+	custom.inset_tb = tail == 'i' ? (uint8_t)(n == 5 ? inset_tb : inset) : 0;
+	custom.aa = custom.bpp != 1 && w >= 220;	// as the gallery's classes
 	return &custom;
 }
 
@@ -302,8 +305,13 @@ static const struct {
 
 static void d_init(void) {}
 static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; (void)y0; (void)y1; }
+static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, uint16_t y1)
+{
+	(void)fb; (void)pal; (void)y0; (void)y1;
+}
 static void d_backlight(uint8_t p) { (void)p; }
 static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush,
+			      .flush_indexed = d_flush_indexed,
 			      .set_backlight = d_backlight };
 static uint8_t battery = 84;
 static uint8_t p_battery(void) { return battery; }
@@ -1091,6 +1099,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	disp.bpp = g->bpp;
 	disp.inset_left = disp.inset_right = g->inset;
 	disp.inset_top = disp.inset_bottom = g->inset_tb;
+	font_aa_on = g->aa;
+	font_big_on = g->big;
 	worst = false;
 	layout_reset();
 	board.keymap = maps[map].m;

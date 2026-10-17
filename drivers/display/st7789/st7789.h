@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // ST7789-class 240x320 color TFT controller on an 8-bit 8080 bus (docs/spec/hardware-dm32.md 7). Generic: the board
-// supplies the bus and the panel's orientation. The frame buffer may be smaller than the panel by an integer factor:
-// every pixel is then sent as a scale x scale block (the core's frame buffer is limited to 40 KB, core/ui/gfx.h).
+// supplies the bus and the panel's orientation. The frame buffer is RGB565 or 16 colors (4 bits a pixel, with a
+// palette), and may be smaller than the panel by an integer factor: every pixel is then sent as a scale x scale block.
 #ifndef ST7789_H
 #define ST7789_H
 
@@ -33,6 +33,8 @@ typedef struct {
 void st7789_init(const st7789_t *p);
 // Send frame buffer rows y0 .. y1-1 of a (width / scale) x (height / scale) RGB565 buffer (native uint16 order)
 void st7789_write_rows(const st7789_t *p, const uint16_t *fb, uint16_t y0, uint16_t y1);
+// The same from a 16-color frame buffer: two pixels a byte (high nibble left), palette of 16 RGB565 colors
+void st7789_write_rows_indexed(const st7789_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
 void st7789_fill(const st7789_t *p, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
 void st7789_invert(const st7789_t *p, bool on);
 void st7789_display_on(const st7789_t *p, bool on);

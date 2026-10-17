@@ -12,18 +12,21 @@
 
 // Display classes (information-architecture.md, wireframes) and key maps (7.1 - 7.5)
 typedef struct {
-	const char *name;	// "160x120i5", "160x128", "120x160", "128x64", "240x320"
+	const char *name;	// "160x120i5", "160x128", "240x320i10x5", "128x64", "240x320"
 	uint16_t w, h;
 	uint8_t bpp;
 	uint8_t inset;		// left and right
 	uint8_t inset_tb;	// top and bottom
+	bool aa;		// anti-aliased fonts: the radio is built with CONFIG_FONT_AA
+	bool big;		// lists and labels one size up: the radio is built with CONFIG_FONT_BIG
 } sim_geom_t;
 
 typedef enum { SIM_MAP_K, SIM_MAP_M, SIM_MAP_V, SIM_MAP_F, SIM_MAP_COUNT } sim_map_t;
 
 extern const sim_geom_t sim_geoms[];
 extern const int sim_geom_count;
-const sim_geom_t *sim_geom_find(const char *name);	// also "WxH", "WxHiN" (inset N all round), "WxHm" (mono)
+// Also "WxH", "WxHiN" (inset N all round), "WxHiNxM" (N left and right, M top and bottom), "WxHm" (mono)
+const sim_geom_t *sim_geom_find(const char *name);
 
 // Start over: the radio on zone 0 channel 1 (DMR), no calls heard, an empty inbox, Home
 void sim_reset(const sim_geom_t *g, sim_map_t map);

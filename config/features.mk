@@ -120,6 +120,12 @@ CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
+# anti-aliased fonts from 6x12 up (JetBrains Mono Bold, 2 bits a pixel) instead of the bitmap ones: smooth text on color
+# panels. About 5 KB more flash, 12 KB more with FONT_XL; a mono panel draws them as plain ink and gains nothing
+CONFIG_FONT_AA ?= n
+# larger text on 240 px and wider color panels: lists, labels and the status strip in a 9x18 font instead of 8x16
+# (12% larger, 24 characters a line on the DM-32 instead of 27). About 3 KB more flash (needs FONT_AA)
+CONFIG_FONT_BIG ?= n
 # color screen settings: theme, highlight color, filled status bar (off: the dark theme only; for radios whose only
 # screen is monochrome)
 CONFIG_UI_COLOR ?= y
@@ -173,7 +179,7 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
-	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST
 
 # Dependencies
@@ -184,6 +190,11 @@ ifneq ($(call feature_on,SUBTONE),)
   endif
 endif
 $(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+ifneq ($(call feature_on,FONT_BIG),)
+  ifeq ($(call feature_on,FONT_AA),)
+    $(error CONFIG_FONT_BIG=y needs CONFIG_FONT_AA=y)
+  endif
+endif
 ifneq ($(call feature_on,HOTSPOT),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)

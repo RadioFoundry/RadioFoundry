@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // ST7789 driver: reset and init command stream (MADCTL after 0x35, inversion, clear, display on), bus begin / end
-// pairing, and frame buffer rows sent at 2x scale (docs/spec/hardware-dm32.md 7)
+// pairing, and frame buffer rows sent at 2x scale and from a 16-color frame buffer (docs/spec/hardware-dm32.md 7)
 #include <stdio.h>
 #include <string.h>
 #include "display/st7789/st7789.h"
@@ -157,6 +157,39 @@ static void test_rows(void)
 	CHECK(wr >= 0 && log_e[wr].n_px == 240);
 }
 
+static void test_rows_indexed(void)
+{
+	// The DM-32's frame: 240 x 320, two pixels a byte, high nibble left, colors through the palette
+	const st7789_t p = { &bus, 240, 320, 0xC0, true, 1 };
+	static uint8_t fb[120 * 320];
+	uint16_t pal[16];
+	for (int i = 0; i < 16; i++) {
+		pal[i] = (uint16_t)(0x1000u * (unsigned)i + 7u);
+	}
+	for (int y = 0; y < 320; y++) {
+		for (int b = 0; b < 120; b++) {
+			fb[y * 120 + b] = (uint8_t)((y & 0x0F) << 4 | (b & 0x0F));
+		}
+	}
+	clear_log();
+	st7789_write_rows_indexed(&p, fb, pal, 3, 5);
+	CHECK(depth == 0 && begins == 1);
+	int ra = find(0x2B), wr = find(0x2C);
+	CHECK(ra >= 0 && log_e[ra].data[1] == 3 && log_e[ra].data[3] == 4);
+	CHECK(wr >= 0 && log_e[wr].n_px == 240u * 2u);
+	// Row 3: byte b holds pixel 2b (index 3) and pixel 2b+1 (index b & 15)
+	CHECK(px_log[0] == pal[3] && px_log[1] == pal[0] && px_log[2] == pal[3] && px_log[3] == pal[1]);
+	CHECK(px_log[239] == pal[119 & 15] && px_log[240] == pal[4]);
+	// Clipped like the RGB565 rows
+	clear_log();
+	st7789_write_rows_indexed(&p, fb, pal, 318, 400);
+	wr = find(0x2C);
+	CHECK(wr >= 0 && log_e[wr].n_px == 240u * 2u);
+	clear_log();
+	st7789_write_rows_indexed(&p, fb, pal, 7, 7);
+	CHECK(n_e == 0 && begins == 0);
+}
+
 static void test_misc(void)
 {
 	const st7789_t p = { &bus, 240, 320, 0xC0, true, 2 };
@@ -174,6 +207,7 @@ int main(void)
 {
 	test_init();
 	test_rows();
+	test_rows_indexed();
 	test_misc();
 	if (failures) {
 		printf("st7789Test: %d failures\n", failures);

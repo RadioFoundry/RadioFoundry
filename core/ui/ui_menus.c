@@ -1351,7 +1351,7 @@ static const ui_scr_def_t info_screen = {
 
 // ======================= About (Settings > Advanced) =======================
 // A text page, every word shown (nothing shortened), no status strip while idle: the version, ODR's license, the
-// authors, the third-party code in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
+// authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
 // through the header make generates (tools/gen_about.py)
 
 static const char *const about_authors[] = ODR_ABOUT_AUTHORS;
@@ -1381,6 +1381,10 @@ static const char *about_text(void)
 		sb_str(&b, ": ");
 		sb_str(&b, about_third[i][1]);
 	}
+	sb_str(&b, "\nSpleen font: BSD-2-Clause");	// core/ui/fonts.c
+#if CONFIG_FONT_AA
+	sb_str(&b, "\nJetBrains Mono font: OFL-1.1");
+#endif
 	sb_str(&b, "\nAMBE+2 codec: DVSI (stock)");	// from the radio's own firmware, not part of ODR
 	return t;
 }

@@ -10,6 +10,7 @@
 #include "config.h"
 
 ui_layout_t ui_layout;
+static const font_t *font_largest;	// the large text setting's font (large_font)
 
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper
 // and pills are inverse video
@@ -139,21 +140,39 @@ void ui_layout_init(void)
 
 	ui_theme_set(ui_theme);
 
-	// Display classes (P10): about 128 px wide, about 160 px wide, 240 px and wider. A narrow portrait panel (the
-	// DM-32's 120x160) keeps the narrow class's small font, so lists and labels keep their 24 characters a line, and
-	// has the rows for the larger channel and talk target fonts of the 160 px class
+	// Display classes (P10): about 128 px wide, about 160 px wide, 240 px and wider. A narrow portrait panel (120x160)
+	// keeps the narrow class's small font, so lists and labels keep their 24 characters a line, and has the rows for
+	// the larger channel and talk target fonts of the 160 px class
+	// Anti-aliased fonts on color panels (CONFIG_FONT_AA, font.h); a mono panel keeps the bitmap ones
+	bool aa = gfx_bpp() != 1;
+#if CONFIG_FONT_AA && defined(FONT_BOTH)
+	aa = aa && font_aa_on;
+#endif
+	const font_t *f6 = aa ? &font_aa_6x12 : &font_6x12, *f8 = aa ? &font_aa_8x16 : &font_8x16;
+	const font_t *f12 = aa ? &font_aa_12x24 : &font_12x24;
+	font_largest = aa ? FONT_AA_LARGEST : FONT_LARGEST;
 	if (w >= 220) {
-		L->tiny = &font_6x12; L->small = &font_8x16; L->medium = &font_12x24; L->large = FONT_LARGEST;
+		L->tiny = f6; L->small = f8; L->medium = f12; L->large = font_largest;
+#if CONFIG_FONT_BIG
+		// One size up for lists, labels and the status strip (CONFIG_FONT_BIG): 9 px characters instead of 8
+		bool big = aa;
+#ifdef FONT_BOTH
+		big = big && font_big_on;
+#endif
+		if (big) {
+			L->tiny = f8; L->small = &font_aa_9x18;
+		}
+#endif
 	} else if (w >= 150) {
-		L->tiny = &font_5x8; L->small = &font_6x12; L->medium = &font_8x16; L->large = &font_12x24;
+		L->tiny = &font_5x8; L->small = f6; L->medium = f8; L->large = f12;
 	} else if (h >= 150) {
-		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = &font_8x16; L->large = &font_12x24;
+		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = f8; L->large = f12;
 	} else {
-		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = &font_6x12; L->large = &font_8x16;
+		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = f6; L->large = f8;
 	}
 
 	// A pixel between the status strip and what is below it, and a pixel between list rows on displays 100 px and
-	// higher (3 on tall ones): easy to read comes before one more row
+	// higher (3 on tall ones, 6 in the 240 px class): easy to read comes before one more row
 	bool tall = h >= UI_TALL_PX;
 	L->strip_h = L->small->h + 1;
 	L->hint_y = h - L->small->h;
@@ -178,7 +197,7 @@ void ui_layout_init(void)
 	}
 	L->activity_y = y;
 	L->activity_h = L->hint_y - y;
-	L->row_h = L->small->h + (tall ? 3 : h >= 100 ? 1 : 0);
+	L->row_h = L->small->h + (w >= 220 ? 6 : tall ? 3 : h >= 100 ? 1 : 0);
 }
 
 // --- shared pieces ---
@@ -248,6 +267,8 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	}
 	if (gfx_bpp() == 1)
 		pfg = ui_col.pill_fg;
+	else if (pfg == pbg)	// high contrast: the idle pill is white, so its word is black
+		pfg = ui_col.pill_dark_fg;
 	// A filled strip (Settings > Display) draws on its own background in black, warnings in a dark shade that reads on
 	// it (accent_apply); the idle pill turns inverse on it, RX / TX / NO TX keep their colors and words (P5)
 	bool filled = CONFIG_UI_COLOR && ui_strip_fill && gfx_bpp() != 1;
@@ -1333,7 +1354,7 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 static const font_t *large_font(const char *text, int room, char *out, size_t cap)
 {
 	const ui_layout_t *L = &ui_layout;
-	const font_t *fonts[] = { FONT_LARGEST, L->large, L->medium };
+	const font_t *fonts[] = { font_largest, L->large, L->medium };
 	bool more = true;
 	for (int level = 0; more; level++) {
 		gfx_text_alt(text, level, out, cap, &more);

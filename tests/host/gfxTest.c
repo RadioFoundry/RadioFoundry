@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // UI drawing on the host: text helpers, row-change flushing, and Home / quick settings rendered at each display
-// class (160x120 and 160x128 color, 128x64 mono, 240x320 layout only), written to out/*.ppm for a look.
+// class (160x120 and 160x128 color, 128x64 mono, 240x320 layout only), written to out/*.ppm for a look. The 16-color
+// frame buffer (bpp 4: palette, reuse, nearest color, captures) and anti-aliased text.
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -16,6 +17,14 @@ static int fails;
 static int flushes, flushed_rows;
 static void d_init(void) {}
 static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; flushes++; flushed_rows += y1 - y0; }
+static uint16_t sent_pal[16];
+static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, uint16_t y1)
+{
+	(void)fb;
+	memcpy(sent_pal, pal, sizeof sent_pal);
+	flushes++;
+	flushed_rows += y1 - y0;
+}
 static void d_backlight(uint8_t p) { (void)p; }
 static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush, .set_backlight = d_backlight };
 
@@ -225,6 +234,155 @@ static void render_set(const char *cls)
 	CHECK(L->large->h >= L->medium->h && L->medium->h >= L->small->h);
 }
 
+#define C(i)	RGB565((i) * 15, 255 - (i) * 15, (i) * 7)	// 17 distinct colors
+
+static void test_indexed(void)
+{
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120; d.bpp = 4;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	d.flush_indexed = NULL;
+	CHECK(!gfx_init(&d));		// bpp 4 needs flush_indexed
+	d.flush_indexed = d_flush_indexed;
+	CHECK(gfx_init(&d) && gfx_bpp() == 4);
+
+	const color_t red = RGB565(255, 0, 0), green = RGB565(0, 255, 0), blue = RGB565(0, 0, 255);
+	gfx_clear(red);
+	gfx_fill(10, 10, 5, 5, green);
+	gfx_pixel(11, 20, blue);	// odd column: the low nibble
+	CHECK(gfx_get_pixel(0, 0) == red && gfx_get_pixel(12, 12) == green && gfx_get_pixel(11, 20) == blue);
+	CHECK(gfx_get_pixel(10, 20) == red && gfx_get_pixel(12, 20) == red);
+	// A capture reads RGB565, little endian
+	uint8_t px[4];
+	gfx_read_rgb565((20u * 160u + 10u) * 2u, px, 4);
+	CHECK(px[0] == (red & 0xFF) && px[1] == (red >> 8) && px[2] == (blue & 0xFF) && px[3] == (blue >> 8));
+	gfx_read_rgb565(160u * 120u * 2u, px, 1);
+	CHECK(px[0] == 0);		// past the frame
+	flushes = flushed_rows = 0;
+	gfx_flush();
+	CHECK(flushed_rows == 120 && sent_pal[0] == red);
+
+	// Past 16 colors on the screen a color gets the nearest one already there
+	gfx_clear(C(0));
+	for (int i = 1; i < 16; i++)
+		gfx_pixel(i, 0, C(i));
+	gfx_pixel(20, 0, C(16));
+	CHECK(gfx_get_pixel(15, 0) == C(15) && gfx_get_pixel(20, 0) == C(15));
+	gfx_flush();
+	// After a clear the entries are free again: new colors are exact, and the rows go out again even where their
+	// indexes didn't change (an entry now stands for another color)
+	gfx_clear(C(0));
+	gfx_pixel(1, 0, red);
+	CHECK(gfx_get_pixel(1, 0) == red);
+	flushes = flushed_rows = 0;
+	gfx_flush();
+	CHECK(flushed_rows == 120);
+	flushes = flushed_rows = 0;
+	gfx_flush();
+	CHECK(flushed_rows == 0);
+
+	// Anti-aliased edges never take the last free entries: with 12 colors on the screen the edges reuse them, and a
+	// 13th solid color is still exact
+	const font_t *f = &font_8x16;
+	CHECK(f->bpp == 2);		// host builds have CONFIG_FONT_AA
+	gfx_clear(C(0));
+	for (int i = 1; i < 12; i++)
+		gfx_pixel(150 + (i & 7), 100 + i / 8, C(i));
+	gfx_text(f, 0, 0, "Wg@", RGB565(255, 255, 255));
+	bool own = true;
+	for (int y = 0; y < f->h; y++)
+		for (int x = 0; x < 3 * f->w; x++) {
+			color_t c = gfx_get_pixel(x, y);
+			bool known = c == RGB565(255, 255, 255);
+			for (int i = 0; i < 12; i++)
+				known = known || c == C(i);
+			own = own && known;
+		}
+	CHECK(own);
+	gfx_pixel(140, 110, red);
+	CHECK(gfx_get_pixel(140, 110) == red);
+	gfx_init(&disp);
+}
+
+// High contrast: the idle pill is white, so its word must be dark (white on white showed a blank pill on the radio)
+static void test_idle_pill_contrast(void)
+{
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120; d.bpp = 16;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	CHECK(gfx_init(&d));
+	ui_layout_init();
+	ui_theme_set(2);
+	radio_view_t v;
+	ui_state_t st;
+	memset(&st, 0, sizeof st);
+	st.battery_pct = 84;
+	base_view(&v);
+	gfx_clear(ui_col.bg);
+	ui_draw_top(&v, &st, NULL, NULL);
+	int dark = 0;
+	for (int y = 0; y < ui_layout.small->h; y++)
+		for (int x = 2; x < 4 * ui_layout.small->w; x++)
+			dark += gfx_get_pixel(x, y) == ui_col.pill_dark_fg;
+	CHECK(gfx_get_pixel(1, 1) == ui_col.idle && dark > 10);
+	ui_theme_set(0);
+	gfx_init(&disp);
+}
+
+// CONFIG_FONT_BIG: the 240 px class's lists and labels in the 9x18 font, the other classes unchanged
+static void test_big_text(void)
+{
+	hal_display_t d = disp;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	d.width = 240; d.height = 160; d.bpp = 4;	// the 240 px class in 16 colors (the frame buffer here holds 160 rows)
+	d.flush_indexed = d_flush_indexed;
+	CHECK(gfx_init(&d));
+	ui_layout_init();
+	CHECK(ui_layout.small->w == (CONFIG_FONT_BIG ? 9 : 8) && ui_layout.small->h == (CONFIG_FONT_BIG ? 18 : 16));
+	CHECK(ui_layout.tiny->w == (CONFIG_FONT_BIG ? 8 : 6) && ui_layout.medium->w == 12);
+	CHECK(ui_layout.row_h == ui_layout.small->h + 6);
+	d.width = 160; d.height = 128;
+	CHECK(gfx_init(&d));
+	ui_layout_init();
+	CHECK(ui_layout.small->w == 6 && ui_layout.medium->w == 8);
+	gfx_init(&disp);
+	ui_layout_init();
+}
+
+static void test_aa_text(void)
+{
+	// RGB565: edges are blends between the text and what is under it
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120; d.bpp = 16;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	CHECK(gfx_init(&d));
+	gfx_clear(0);
+	gfx_text(&font_12x24, 0, 0, "O", RGB565(255, 255, 255));
+	int full = 0, edge = 0;
+	for (int y = 0; y < 24; y++)
+		for (int x = 0; x < 12; x++) {
+			color_t c = gfx_get_pixel(x, y);
+			full += c == RGB565(255, 255, 255);
+			edge += c != 0 && c != RGB565(255, 255, 255);
+			CHECK(((c >> 11) & 31) == (c & 31));	// gray: the blend of white over black
+		}
+	CHECK(full > 10 && edge > 10);
+	// gfx_text_bg: the edges blend with bg
+	gfx_text_bg(&font_12x24, 20, 0, "O", RGB565(255, 255, 255), RGB565(0, 0, 255));
+	CHECK(gfx_get_pixel(20, 0) == RGB565(0, 0, 255));
+	// Mono: ink from 2 of 3 coverage, nothing else
+	d.bpp = 1;
+	CHECK(gfx_init(&d));
+	gfx_clear(0);
+	gfx_text(&font_12x24, 0, 0, "O", 1);
+	int ink = 0;
+	for (int y = 0; y < 24; y++)
+		for (int x = 0; x < 12; x++)
+			ink += gfx_get_pixel(x, y) == 1;
+	CHECK(ink >= full && ink < full + edge);
+	gfx_init(&disp);
+}
+
 int main(void)
 {
 	mkdir("out", 0755);
@@ -328,6 +486,16 @@ int main(void)
 	// 240x320 color doesn't fit the frame buffer: gfx refuses it instead of overrunning
 	disp.width = 240; disp.height = 320; disp.bpp = 16;
 	CHECK(!gfx_init(&disp));
+
+	// At 16 colors it does (37.5 KB), given the rows
+	disp.bpp = 4;
+	disp.flush_indexed = d_flush_indexed;
+	CHECK(gfx_init(&disp) == (GFX_MAX_ROWS >= 320));
+
+	test_indexed();
+	test_aa_text();
+	test_idle_pill_contrast();
+	test_big_text();
 
 	printf(fails ? "# FAILED gfxTest: %d\n" : "# PASSED gfxTest\n", fails);
 	return fails != 0;

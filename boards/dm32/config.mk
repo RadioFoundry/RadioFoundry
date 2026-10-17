@@ -7,15 +7,17 @@
 # No USB on the radio: the host link (CPS, hotspot, debug link) runs on the programming cable's UART0
 CONFIG_USB ?= n
 CONFIG_HOSTLINK ?= y
-# The 240x320 panel is driven at half resolution (120x160 logical, every pixel doubled): the core's frame buffer
-# is 40 KB (core/ui/gfx.h), so CONFIG_FONT_XL buys nothing yet
-CONFIG_FONT_XL ?= n
-# The bezel hides the panel's edges: 5 px on the left, 4 px on the right, 3 px at the top and 2 px at the bottom,
-# checked on the radio
-CONFIG_DISPLAY_INSET_LEFT ?= 5
-CONFIG_DISPLAY_INSET_RIGHT ?= 4
-CONFIG_DISPLAY_INSET_TOP ?= 3
-CONFIG_DISPLAY_INSET_BOTTOM ?= 2
+# The 240x320 panel at full resolution in 16 colors (display_dm32.c, board.mk). The 16x32 font is the large class's
+# channel name; text is anti-aliased, and lists and labels are one size up (9x18)
+CONFIG_FONT_XL ?= y
+CONFIG_FONT_AA ?= y
+CONFIG_FONT_BIG ?= y
+# The bezel hides the panel's edges, in panel pixels: text 6 px from the left or right edge was still clipped on the
+# radio, so 10 px left and right (the 8 px measured on the right leaves no more 8 px columns), 5 px top and bottom
+CONFIG_DISPLAY_INSET_LEFT ?= 10
+CONFIG_DISPLAY_INSET_RIGHT ?= 10
+CONFIG_DISPLAY_INSET_TOP ?= 5
+CONFIG_DISPLAY_INSET_BOTTOM ?= 5
 # Air band AM receive and the RDA5807M broadcast FM receiver (docs/spec/airband-and-broadcast.md, parked): the core
 # is built and host tested, the board glue isn't written yet (no CAP_AM_RX / CAP_BCAST_FM), so nothing runs yet
 CONFIG_AM_RX ?= $(CONFIG_FM)

@@ -253,7 +253,7 @@ The volume control works on the audio amplifier directly. ODR doesn't read it.
 
 ### DM-32UV display
 
-A 240 x 320 color screen. ODR draws at half resolution for now.
+A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliased) bold text one size larger than on other 240 x 320 radios.
 
 ### What the DM-32UV lacks
 

@@ -25,10 +25,10 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip and, from 100 px high, each list row take
 one pixel more than the text cell, so lines never touch (easy to read comes before one more row; principles.md 5).
 The board's safe-area insets (`hal_display_t.inset_*`) are outside the drawing area (`gfx_width` / `gfx_height`),
-for panel edges hidden by the case (DM-1701: 5 px left and right under the lens, `hardware-dm1701.md` 9.1). At 160x120i5 a list shows 7 rows, at 160x128 7, at 120x160 (the DM-32) 15,
-at 128x64 5. The 240x320 class keeps 3 px per row and a separate title row; `uiSim --layout` fails a class whose row
-pitch drops below these. The 120x160 portrait panel keeps the 128 px class's small font (24 characters a line) and
-takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
+for panel edges hidden by the case (DM-1701: 5 px left and right under the lens, `hardware-dm1701.md` 9.1). At 160x120i5 a list shows 7 rows, at 160x128 7, at
+240x320i10x5 (the DM-32) 11, at 128x64 5. The 240 px class keeps 6 px between rows and a separate title row;
+`uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px
+class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
 (name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
 line ("No calls heard yet") is centered in the region. Text that doesn't fit is shortened (an alternate, the name
 dropped, then an ellipsis), never drawn in a smaller font.
@@ -217,11 +217,17 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_UI_SETTINGS` | y | the Settings menu is left out (about 5.3 KB, `docs/feature-matrix.md`); settings keep their stored values and are set with qdmr; Settings shows one row saying so, Find finds no settings |
 | `CONFIG_DIAG` | y | no diagnostics page (Tools has no Diagnostics row; Roaming moves up to 7) |
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
+| `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off |
+| `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
 | `CONFIG_UI_COLOR` | y (DM-1801 Pro: n) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_SCAN`, data features) are
-left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB) bounds the display: 240x320 at
-16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`.
+left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB by default) bounds the display: 240x320 at
+16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`. A board with a 240x320 color
+panel builds the 16-color frame buffer instead (`GFX_INDEXED`, bpp 4, 37.5 KB): drawing still takes RGB565 colors, and
+`gfx.c` keeps a 16-entry palette of the ones on the screen (a screen uses about a dozen). An entry gets a new color
+only once nothing drawn since the last clear uses it; anti-aliased edges never take the last 4 free entries and
+otherwise get the nearest color already there. Screen captures (debug link, `/api/screen.bmp`) read it as RGB565.
 
 ## 6. Debug link
 
@@ -247,9 +253,12 @@ The gallery draws a color page (Home with its filled status bar, the Channels li
 differ in color (`home_plain`) are left out at 128x64. The list is set in
 `.github/workflows/ui-gallery.yml` (`docs/dev/ci.md`), and `make ui-gallery` reads it from there.
 
-Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class), `120x160`
-(DM-32: the 240x320 panel at half resolution), `128x64` (mono), `240x320`, or any `WxH`, `WxHiN` (inset N all round),
-`WxHm` (mono). Script tokens:
+
+Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class),
+`240x320i10x5` (DM-32: 16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, or any
+`WxH`, `WxHiN` (inset N all round), `WxHiNxM` (N left and right, M top and bottom), `WxHm` (mono). The 240 px classes
+draw the anti-aliased fonts (`CONFIG_FONT_AA`, as the DM-32 is built), and `240x320i10x5` the larger text too
+(`CONFIG_FONT_BIG`); the others the bitmap ones. Script tokens:
 
 | Token | Meaning |
 |---|---|

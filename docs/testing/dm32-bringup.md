@@ -64,7 +64,7 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "dm32 
 
 | Look for | Proves | If not |
 |---|---|---|
-| `board=DM-32UV`, `display=120x160x16`, features with `HOSTLINK,DEBUGLINK` and no `USB` | UART RX interrupt, ring buffer, TX | Garbage: baud divisor (`uart.c`, 46 for 115200 at APB 84 MHz; 45 is the old port's) or APB not 84 MHz (clock.c skipped the PLL because the bootloader left it on: check `CLK_MGR_CTRL`) |
+| `board=DM-32UV`, `display=240x320x4`, features with `HOSTLINK,DEBUGLINK` and no `USB` | UART RX interrupt, ring buffer, TX | Garbage: baud divisor (`uart.c`, 46 for 115200 at APB 84 MHz; 45 is the old port's) or APB not 84 MHz (clock.c skipped the PLL because the bootloader left it on: check `CLK_MGR_CTRL`) |
 | `diag` lines ticking (`uo 0` = no UART overruns) | the debug link task | |
 
 ## 3. Keys, encoder, PTT, LEDs, power

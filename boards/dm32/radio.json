@@ -11,7 +11,7 @@
   "power": "1 / 5 W",
   "cpu": "HR_C7000",
   "display": "color, 240 × 320",
-  "gallery": "120x160",
+  "gallery": "240x320i10x5",
   "docs": {
     "hardware": "docs/spec/hardware-dm32.md",
     "install": "docs/user/19-moving-from-stock-dm32.md",

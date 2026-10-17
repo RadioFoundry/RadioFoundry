@@ -378,9 +378,11 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	if (d == NULL || gfx_width() <= 0 || gfx_framebuffer() == NULL) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
+	// A 16-color frame (bpp 4) goes out as RGB565, read through its palette
+	bool indexed = GFX_INDEXED && d->bpp == 4;
 	uint32_t stride = d->bpp == 1 ? (d->width + 7u) / 8u : d->width * 2u;
 	uint32_t total = stride * d->height;
-	if (total > GFX_FB_BYTES) {
+	if (!indexed && total > GFX_FB_BYTES) {
 		total = GFX_FB_BYTES;
 	}
 	uint32_t offset = len == 6 ? get32(req) : 0;
@@ -400,7 +402,7 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	out[0] = DL_ST_OK;
 	put16(out + 1, d->width);
 	put16(out + 3, d->height);
-	out[5] = d->bpp;
+	out[5] = indexed ? 16 : d->bpp;
 	out[6] = d->bpp == 1 ? 2 : 1;	// 1: RGB565 little endian, 2: 1 bpp rows, MSB left
 	out[7] = d->inset_top;
 	out[8] = d->inset_bottom;
@@ -412,7 +414,11 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	// hold, so the host's check pass sees the same frame; redraws resume SHOT_TAIL_MS after the last chunk (not the
 	// full hold: a key pressed right after a capture must show up in the next one)
 	gfx_hold(hal_millis() + (len == 6 && offset + n >= total ? SHOT_TAIL_MS : SHOT_HOLD_MS));
-	memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
+	if (indexed) {
+		gfx_read_rgb565(offset, out + 19, n);
+	} else {
+		memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
+	}
 	return 19u + n;
 }
 

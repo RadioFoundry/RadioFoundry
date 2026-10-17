@@ -29,7 +29,7 @@ def find(lines, prefix):
 
 def test_identity(dm32):
     v = dm32.version(fresh=True)
-    assert v["display"] == "120x160x16", "the 240x320 panel at 2x scale"
+    assert v["display"] == "240x320x4", "the 240x320 panel at full resolution in 16 colors"
     feats = dm32.features()
     assert "USB" not in feats and {"HOSTLINK", "DEBUGLINK"} <= feats, feats
 

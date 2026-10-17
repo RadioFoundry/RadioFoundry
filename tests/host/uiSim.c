@@ -204,7 +204,7 @@ static int run_layout(const char *only)
 		// line on displays 100 px and higher, never squeezed to the font's bare cell to fit one more row
 		sim_reset(&sim_geoms[g], SIM_MAP_K);
 		const ui_layout_t *L = &ui_layout;
-		int pitch = L->small->h + (gfx_height() >= UI_TALL_PX ? 3 : gfx_height() >= 100 ? 1 : 0);
+		int pitch = L->small->h + (gfx_width() >= 220 ? 6 : gfx_height() >= UI_TALL_PX ? 3 : gfx_height() >= 100 ? 1 : 0);
 		if (L->row_h < pitch || (gfx_height() >= 100 && L->strip_h < L->small->h + 1)) {
 			printf("%-10s rows squeezed: row pitch %d, strip %d (small font %d px high)\n", sim_geoms[g].name,
 				L->row_h, L->strip_h, L->small->h);
