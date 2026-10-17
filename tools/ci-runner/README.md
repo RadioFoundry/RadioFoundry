@@ -71,14 +71,35 @@ Start the loop with cron (survives reboots and restarts a loop that died; `flock
 
 Then set the repository variable: `gh variable set ODR_CI_RUNNER --body odr-ci`.
 
+### More runners
+
+One runner takes one job at a time. For more in parallel, run another loop with its own env file: the same `LABELS`
+(so jobs go to whichever is free), the same network and proxy, and its own `NAME`, `WORK_DIR` and `STATE_DIR`.
+Size `MEMORY` so the runners together fit the host's RAM (a job uses a few hundred MB; four runners at 2g on an
+8 GB host with no swap); `CPUS` is a cap, so runners can share the cores.
+
+```sh
+cd ~/odr-ci-runner
+sed -e 's/^NAME=.*/NAME=odr-ci-2/' -e 's|/work$|/work2|' -e 's|/state$|/state2|' runner.env > runner-2.env
+gh api -X POST repos/OWNER/OpenDigitalRadio/actions/runners/registration-token --jq .token |
+	ssh DOCKER_HOST 'ODR_CI_ENV=$HOME/odr-ci-runner/runner-2.env ~/odr-ci-runner/runner-loop.sh register'
+```
+
+and two more cron lines with their own lock (the same again with 3, 4, ... for more runners):
+
+```
+@reboot      ODR_CI_ENV=$HOME/odr-ci-runner/runner-2.env flock -n $HOME/odr-ci-runner/loop-2.lock $HOME/odr-ci-runner/runner-loop.sh
+*/5 * * * *  ODR_CI_ENV=$HOME/odr-ci-runner/runner-2.env flock -n $HOME/odr-ci-runner/loop-2.lock $HOME/odr-ci-runner/runner-loop.sh
+```
+
 ## Operate
 
 | Task | How |
 |---|---|
-| See what runs | `docker ps --filter name=odr-ci`; `~/odr-ci-runner/log/runner.log`; `docker logs odr-ci-proxy`; the repository's Settings, Actions, Runners |
+| See what runs | `docker ps --filter name=odr-ci`; `~/odr-ci-runner/log/NAME.log`; `docker logs odr-ci-proxy`; the repository's Settings, Actions, Runners |
 | Pause | `touch ~/odr-ci-runner/disabled` (a running job finishes; no new container starts) |
 | Resume | `rm ~/odr-ci-runner/disabled` |
-| Stop now | the pause above, then `docker stop odr-ci-1` (the runner gets SIGINT and closes its session; a running job fails) |
+| Stop now | the pause above, then `docker stop odr-ci-1` (and each other runner's `NAME`) (the runner gets SIGINT and closes its session; a running job fails) |
 | Update the runner or tools | change the pinned versions in the Dockerfile and rebuild; the next job uses the new image. Updates are off (`--disableupdate`), so keep `RUNNER_VERSION` current: GitHub stops sending jobs to runner versions that are too old |
 | Allow another host | add it to `proxy/allow`, rebuild `odr/ci-proxy`, `docker rm -f odr-ci-proxy`, `runner-loop.sh setup` |
 | Re-register | delete the runner in Settings, Actions, Runners (or keep it: `--replace` takes over the name), then `register` as above |

@@ -16,13 +16,13 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([release.md](release.md)) |
-| `release.yml` | `ubuntu-24.04` and the hosted macOS / Windows runners | `v*` tags, release tooling changes | release images and odrflash ([release.md](release.md)) |
+| `release.yml` | `ubuntu-24.04`, and for odrflash the hosted macOS / Windows runners | `v*` tags, release tooling changes | release images and odrflash ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `ODR_CI_GITHUB` is `true`: the
 repository is private, so hosted runners use paid minutes (about 6 per push). On Gitea they always run.
 
 The `ubuntu-24.04` in the table is the default. When the repository variable `ODR_CI_RUNNER` is set (to `odr-ci`),
-every Linux job except `release.yml`'s goes to the self-hosted runner with that label instead
+every Linux job goes to the self-hosted runner with that label instead
 ([below](#the-github-self-hosted-runner)). Pull request code from a fork always stays on `ubuntu-24.04`.
 
 ## Per push: `ci.yml`
@@ -226,8 +226,9 @@ Things to know:
 GitHub's hosted runners cost the account's Actions minutes on a private repository. The repository variable
 `ODR_CI_RUNNER` moves the Linux jobs to a self-hosted runner instead: each such job has
 `runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}`, so with the variable set to `odr-ci` they go to a runner
-with that label, and with it unset (or on Gitea, where it isn't defined) nothing changes. `release.yml` and `hil.yml`
-keep their own runners: the releases need GitHub's macOS and Windows runners for odrflash anyway.
+with that label, and with it unset (or on Gitea, where it isn't defined) nothing changes. `hil.yml` keeps its own
+runner. `release.yml` builds odrflash on GitHub's macOS and Windows runners only for a `v*` tag; a pull request or a
+push to `main` builds the Linux odrflash alone, on the self-hosted runner.
 
 The runner is the image in `tools/ci-runner/` (its README has the setup): Ubuntu 24.04 with everything the
 workflows install (the Arm and csky-elf toolchains, host GCC, Python with NumPy, pytest, pyserial, Pillow and
@@ -236,8 +237,9 @@ environment (and `runner.environment == 'self-hosted'` in a step's `if`) and ski
 toolchain cache, `setup-python`, `setup-node`, `pip` and Docker: the DM-32 jobs build directly with the image's
 csky-elf GCC. Every job gets a new container, as a non-root user, with no Docker socket, no host network or other
 host directories, and CPU, memory and process limits. Its network has no route out: an egress proxy passes HTTPS
-to GitHub's hosts only, so a job can't download from anywhere else (PyPI, nodejs.org). A tool a job needs goes into
-the image.
+to the hosts in `tools/ci-runner/proxy/allow` only (GitHub, the npm registry and PyPI), so a job can't download from
+anywhere else (nodejs.org, developer.arm.com). A tool a job needs goes into the image. Ubuntu's system Python takes
+no `pip install`; a job that needs packages makes a venv (`release.yml`'s odrflash job does).
 
 Pull request code from a fork never runs on it. `pr-tests.yml` runs on `pull_request_target`, which runs every
 pull request without approval, so its jobs (and `ui-gallery.yml`'s and the site's pull request build) choose the
