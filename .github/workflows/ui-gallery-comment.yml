@@ -276,10 +276,10 @@ jobs:
               for im in m["images"]:
                   if im["color"] != kind:
                       kind = im["color"]
-                      out += ["", "### Monochrome displays" if kind == "mono" else "### Color displays"]
+                      out += ["", "## Monochrome displays" if kind == "mono" else "## Color displays"]
                   if im["geometry"] != geom:
                       geom = im["geometry"]
-                      out += ["", f"#### {geom} ({kind})", ""]
+                      out += ["", f"### {geom} ({kind})", ""]
                   changed = f"Changed: {', '.join(im['screens'])}"
                   picture = f"![{geom} changed screens, before and after]({base}/{im['image']}{suffix})"
                   # a tall composite folds away, so the comment stays short (rows: the compare tool's row count; an
