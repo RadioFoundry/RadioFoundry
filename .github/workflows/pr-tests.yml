@@ -4,8 +4,9 @@
 # CI on every pull request (docs/dev/ci.md "Pull request checks"), from this file as it is on main: a pull request's
 # own copy of the workflows never runs here, so a change to them takes the owner's review first (.github/CODEOWNERS).
 # The jobs are ci.yml's and the manual check, run on the pull request's merge commit; `changes` skips the ones its
-# files don't touch. The last job always runs and sets the `PR checks` commit status on the pull request's head commit:
-# failure when any job failed or was canceled, success otherwise. That status is the one check the main ruleset
+# files don't touch. A branch with a pull request gets its CI only from here (ci.yml runs on main). The last job
+# always runs and sets the `PR checks` commit status on the pull request's head commit: failure when any job failed or
+# was canceled, success otherwise. That status is the one check the main ruleset
 # requires, so a skipped job never holds a pull request up. It is posted by hand because a pull_request_target run's
 # own checks belong to main's commit, not the pull request's.
 #
@@ -68,7 +69,8 @@ jobs:
           echo "docs=$docs" >> "$GITHUB_OUTPUT"
           echo "source: $src, docs: $docs"
 
-  host:
+  unit-tests:
+    name: unit tests
     needs: changes
     if: needs.changes.outputs.src == 'true'
     runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
@@ -79,16 +81,21 @@ jobs:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
           submodules: false   # the host tests use none of third_party
-      - name: Install tshark, numpy, pytest, pyserial
+      - name: Install gcovr, tshark, numpy, pytest, pyserial
         run: |
           set -eu
           if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-              tshark python3-numpy python3-pytest python3-serial
+              gcovr tshark python3-numpy python3-pytest python3-serial
           fi
-      - name: Host tests, Python checks, license checks
-        run: tools/ci.sh --steps host,python,licenses
+      - name: Unit tests, once, with coverage and under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1   # LeakSanitizer needs ptrace, which job containers may not allow
+          SANITIZE: "1"
+        run: tools/coverage.sh
+      - name: Python checks, license checks
+        run: tools/ci.sh --steps python,licenses
       - name: UI screen gallery
         run: |
           set -eu
@@ -102,31 +109,6 @@ jobs:
             build/ci/*.log
             build/ci/gallery/
           if-no-files-found: ignore
-
-  coverage:
-    needs: changes
-    if: needs.changes.outputs.src == 'true'
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.MERGE_REF }}
-          persist-credentials: false
-          submodules: false
-      - name: Install gcovr, tshark, numpy
-        run: |
-          set -eu
-          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
-            sudo apt-get update -qq
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark python3-numpy
-          fi
-      - name: Coverage of the host tests
-        run: tools/coverage.sh
-      - name: Host tests under ASan and UBSan
-        env:
-          ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1   # LeakSanitizer needs ptrace
-        run: make -C tests/host -j"$(nproc)" SANITIZE=1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -258,7 +240,7 @@ jobs:
 
   pr-checks:
     name: PR checks status
-    needs: [changes, host, coverage, firmware, dm32, manual]
+    needs: [changes, unit-tests, firmware, dm32, manual]
     if: always()
     runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5

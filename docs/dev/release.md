@@ -202,8 +202,10 @@ never handles the key. Updates of a radio that runs ODR need no stock file.
 | `odrflash` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel, the `certifi` CA bundle, and `dm32_flash`, `dm32_codec` and `stubtool` for the serial route inside) and runs `--version` on it |
 | `publish` | On a `v*` tag only: one `SHA256SUMS` over everything, checks every manifest against its image and that none includes the codec, creates the release if the manual workflow hasn't, uploads with `--clobber` |
 
-Pull requests and pushes to main that touch `tools/odrflash/`, `tools/release.py` or the workflow build everything
-as workflow artifacts and publish nothing. A manual run on a tag rebuilds and replaces the assets.
+Pull requests that touch `tools/odrflash/`, `tools/release.py`, the DM-32 flashing tools or the workflow build
+everything as workflow artifacts and publish nothing, without the release gate (the pull request's own checks run the
+same tests), and odrflash for Linux only when the self-hosted runner is set up. A manual run on a tag rebuilds and
+replaces the assets.
 
 The executables are not code-signed. macOS marks downloads as quarantined: `xattr -d com.apple.quarantine
 odrflash-*` (or right-click, Open). Windows SmartScreen asks once.

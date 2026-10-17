@@ -9,14 +9,15 @@ so one set serves the self-hosted Gitea runner and GitHub.
 
 | Workflow | Runs on | When | What |
 |---|---|---|---|
-| `ci.yml` | `ubuntu-24.04` | every push to any branch that changes source (below); by hand | host tests, Python and license checks, coverage, every board's default build |
-| `pr-tests.yml` | `ubuntu-24.04` | every pull request, from `main`'s copy of the workflow | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge |
+| `ci.yml` | `ubuntu-24.04` | every push to `main` that changes source (below); by hand on any branch | the unit tests (once, with coverage and sanitizers), Python and license checks, every board's default build |
+| `pr-tests.yml` | `ubuntu-24.04` | every pull request, from `main`'s copy of the workflow | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
 | `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when the default branch has an untested commit; by hand | the feature matrix of every board, `reuse lint` |
+| `site.yml` | `ubuntu-24.04` | 07:17 UTC daily when the site's inputs changed or a release came out; by hand | builds and deploys the web site ([website.md](website.md)); pull requests build it in the unit tests job instead |
 | `hil.yml` | `odr-hil` (the bench Mac) | by hand; nightly only when `ODR_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([release.md](release.md)) |
-| `release.yml` | `ubuntu-24.04`, and for odrflash the hosted macOS / Windows runners | `v*` tags, release tooling changes | release images and odrflash ([release.md](release.md)) |
+| `release.yml` | `ubuntu-24.04`, and for odrflash the hosted macOS / Windows runners | `v*` tags; pull requests that change the release tooling (packaging only, no release gate) | release images and odrflash ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `ODR_CI_GITHUB` is `true`: the
 repository is private, so hosted runners use paid minutes (about 6 per push). On Gitea they always run.
@@ -25,35 +26,38 @@ The `ubuntu-24.04` in the table is the default. When the repository variable `OD
 every Linux job goes to the self-hosted runner with that label instead
 ([below](#the-github-self-hosted-runner)). Pull request code from a fork always stays on `ubuntu-24.04`.
 
-## Per push: `ci.yml`
+Each change is checked once. A branch is tested through its pull request (`pr-tests.yml`), and `main` again after
+the merge (`ci.yml`). The unit tests run once per check, with the coverage counters and the sanitizers in the same
+build. The site's pull request build and the release gate on pull requests are gone: the unit tests job's Python step
+builds the site and runs the flasher's tests, and the release gate runs for a tag.
+
+## On main: `ci.yml`
 
 Triggered by changes under `boards/`, `config/`, `core/`, `drivers/`, `hal/`, `platform/`, `tests/`, `tools/`,
 `third_party/` (submodule bumps), the `Makefile`, `AUTHORS` (the About page), `.gitmodules`, `LICENSES/`,
-`REUSE.toml` or the workflow itself. A docs-only push runs only the manual workflow. A newer push to the same branch
-cancels the run in progress (`concurrency`).
+`REUSE.toml` or the workflow itself, pushed to `main`; by hand (Actions, CI, Run workflow) on any branch. A docs-only
+push runs only the manual workflow. A newer push cancels the run in progress (`concurrency`).
 
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
-| `host` | `tools/ci.sh --steps host,python,licenses`, then the UI screen gallery (`uiSim --gallery`) | about 1.5 min: apt 18 s, host tests 36 s (64 suites, tshark pcap checks), Python checks 15 s, gallery 2 s |
-| `coverage` | `tools/coverage.sh` | about 1.2 min: apt 15 s, instrumented host tests and gcovr 52 s |
+| `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), `tools/ci.sh --steps python,licenses`, then the UI screen gallery (`uiSim --gallery`) | about 3.5 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, Python checks 15 s, gallery 2 s |
 | `firmware` (dm1701, md380) | `tools/ci.sh --quick --steps firmware --board <b>` | DM-1701 7 s, MD-380 UHF and VHF 15 s; the toolchain 50 s on a cache miss |
 | `dm32` | the same for `dm32`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | 4 s; skipped where the image isn't available |
 
-The jobs run in parallel, so a push is checked in about two minutes plus the runner's image start. Times are from
-the Gitea runner (8 vCPUs), measured with the jobs' own commands in the same container images; on an 8-core Mac
-the host tests take 43 s and the coverage run 68 s.
+The jobs run in parallel, so a push is checked in about four minutes plus the runner's image start. On an 8-core
+Mac the plain host tests take 43 s.
 
 Each firmware job builds with zero warnings, writes the size report (image bytes and free space in the linker's
 application region, also put in the job summary on GitHub) and fails when the application region overflows. The
-images and logs are workflow artifacts (`firmware-<board>`), as are the host logs with the screen gallery
+images and logs are workflow artifacts (`firmware-<board>`), as are the unit test logs with the screen gallery
 (`host-logs`) and the coverage report (`coverage-report`).
 
-`reuse lint` is part of the host job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
+`reuse lint` is part of the unit tests job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
 the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
 
 ## Pull request checks: `pr-tests.yml`
 
-Every pull request runs `ci.yml`'s jobs (`host`, `coverage`, `firmware` for the DM-1701 and MD-380, `dm32`) and the
+Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware` for the DM-1701 and MD-380, `dm32`) and the
 manual check (doc links and the PDF build, as `manual.yml` does) on its merge commit. The first job, `changes`,
 looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s paths) run
 the build and test jobs, docs changes (`manual.yml`'s paths) the manual. The last job always runs and sets the
@@ -64,8 +68,8 @@ and a new job only has to be added to its `needs` list. The job posts the status
 
 The workflow runs on `pull_request_target`, so GitHub takes it from `main`, never from the pull request: a
 contributor's edited workflow doesn't run here, and the checks run on every pull request without anyone approving
-them. `ci.yml` and `manual.yml` have no `pull_request` trigger for the same reason. A member's branch also gets
-`ci.yml` from its pushes; the website (`site.yml`) isn't part of the pull request checks.
+them. `ci.yml` and `manual.yml` have no `pull_request` trigger for the same reason, and `ci.yml` doesn't run on a
+branch's pushes either, so a pull request is checked once.
 
 The pull request's code runs with a read-only token that isn't stored in the checkout, no secrets and no cache, so
 it gets nothing a fork couldn't have. The firmware jobs download the toolchain each time (checksummed by
@@ -76,8 +80,9 @@ permission, `actions/cache` or the pull request's text (title, body, branch name
 Changes to `.github/` need the owner's review (`.github/CODEOWNERS`, with code owner review required in the `main`
 ruleset), since `main`'s workflows are the ones that run.
 
-A branch pushed to this repository still runs its own copy of the workflows on `push`. Only the owner's review keeps
-a changed workflow off `main`; it doesn't stop it from running on that branch.
+None of `main`'s workflows runs on a branch's pushes, but a branch that gives its own copy of a workflow a `push`
+trigger runs it. Only the owner's review keeps a changed workflow off `main`; it doesn't stop it from running on that
+branch.
 
 ## UI gallery: `ui-gallery.yml` and `ui-gallery-comment.yml`
 
@@ -134,8 +139,8 @@ always builds.
 
 ```
 tools/ci.sh                                   # everything (the release gate), about 10 minutes on an 8-core Mac
-tools/ci.sh --quick                           # what the per-push workflow runs, minus coverage
-tools/ci.sh --steps host,python,licenses      # the host job
+tools/ci.sh --quick                           # what CI runs, without coverage and sanitizers
+SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run (then: tools/ci.sh --steps python,licenses)
 tools/ci.sh --quick --steps firmware --board md380
 ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board dm1701    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html
@@ -186,8 +191,9 @@ HTML artifact serves the same purpose.
 ### Sanitizers and fuzzing
 
 `make -C tests/host SANITIZE=1` builds every host test with AddressSanitizer and UndefinedBehaviorSanitizer (Apple
-clang and GCC; UBSan stops at the first report). CI's coverage job runs it after the report (leak checks off: job
-containers may not allow ptrace), `ODR_CI_SANITIZE=1 tools/ci.sh` runs it in the host step; build from clean when
+clang and GCC; UBSan stops at the first report). CI's unit tests job builds the tests this way and with coverage at
+once (`SANITIZE=1 tools/coverage.sh`; leak checks off: job containers may not allow ptrace), `ODR_CI_SANITIZE=1
+tools/ci.sh` runs it in the host step; build from clean when
 switching (`make -C tests/host clean`). It isn't optimized, like the plain build: with `__OPTIMIZE__` glibc's headers
 switch on extern inline and fortified functions, which don't build with the host flags' `__attribute__` override.
 The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's Ethernet
