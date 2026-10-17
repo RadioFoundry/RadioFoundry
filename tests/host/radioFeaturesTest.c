@@ -9,6 +9,7 @@
 #include "radio/radio_sm.h"
 #include "radio/scan.h"
 #include "radio/beep.h"
+#include "radio/vibe.h"
 #include "usbaudio/audio_mux.h"
 #include "radio/battery.h"
 #include "dmr/call/dmr_call.h"
@@ -52,6 +53,9 @@ static struct {
 	uint16_t battery_mv;
 	uint8_t mic;
 	bool has_tx_tone;
+	int vibes;		// vibrate() calls
+	uint16_t vibe_ms[8];	// their lengths
+	uint32_t vibe_at[8];	// and when
 } hw;
 
 static bool same_tone(subtone_t a, subtone_t b)
@@ -129,8 +133,17 @@ static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 static uint16_t p_battery_mv(void) { return hw.battery_mv; }
 static uint8_t p_battery_pct(void) { return hw.battery_mv >= 7400 ? 50 : 5; }
 static uint8_t p_mic(void) { return hw.mic; }
+static void p_vibrate(uint16_t ms)
+{
+	if (hw.vibes < 8) {
+		hw.vibe_ms[hw.vibes] = ms;
+		hw.vibe_at[hw.vibes] = now;
+	}
+	hw.vibes++;
+}
 static const hal_power_t fake_power = {
 	.led = p_led, .battery_mv = p_battery_mv, .battery_pct = p_battery_pct, .mic_level = p_mic,
+	.vibrate = p_vibrate,
 };
 
 static struct {
@@ -721,6 +734,87 @@ static void test_beep_module(void)
 }
 
 // ---- through the radio core ----
+
+// The vibration pattern player alone, with a recording motor and without one
+static void test_vibe_module(void)
+{
+	vibe_reset();
+	memset(&hw, 0, sizeof(hw));
+	const vibe_pulse_t *p;
+	CHECK(vibe_pattern(VIBE_NONE, &p) == 0 && p == NULL && vibe_pattern(VIBE_COUNT, &p) == 0);
+	for (int v = VIBE_MESSAGE; v < VIBE_COUNT; v++) {
+		uint8_t n = vibe_pattern((vibe_t)v, &p);
+		CHECK(n >= 1 && n <= VIBE_PULSES_MAX && p[0].on_ms >= 100 && p[n - 1].off_ms == 0);
+	}
+	CHECK(vibe_pattern(VIBE_CALL, &p) == 1 && p[0].on_ms == 500);
+
+	// Nothing asked: the motor stays still
+	vibe_service(0, p_vibrate);
+	CHECK(hw.vibes == 0 && !vibe_busy());
+	vibe_play(VIBE_NONE);
+	vibe_play(VIBE_COUNT);
+	vibe_service(0, p_vibrate);
+	CHECK(hw.vibes == 0 && !vibe_busy() && vibe_played() == 0);
+
+	// A message: two 150 ms pulses, the second 300 ms after the first started
+	vibe_play(VIBE_MESSAGE);
+	CHECK(vibe_busy());
+	vibe_service(1000, p_vibrate);
+	CHECK(hw.vibes == 1 && hw.vibe_ms[0] == 150 && vibe_busy() && vibe_played() == 1);
+	vibe_service(1275, p_vibrate);
+	CHECK(hw.vibes == 1);
+	vibe_service(1300, p_vibrate);
+	CHECK(hw.vibes == 2 && hw.vibe_ms[1] == 150 && !vibe_busy());
+	vibe_service(2000, p_vibrate);
+	CHECK(hw.vibes == 2 && vibe_played() == 1);
+
+	// A new alert replaces the one still running, from its first pulse
+	vibe_play(VIBE_EMERGENCY);
+	vibe_service(3000, p_vibrate);
+	CHECK(hw.vibes == 3 && hw.vibe_ms[2] == 400 && vibe_busy());
+	vibe_play(VIBE_CALL);
+	vibe_service(3100, p_vibrate);
+	CHECK(hw.vibes == 4 && hw.vibe_ms[3] == 500 && !vibe_busy() && vibe_played() == 3);
+
+	// The clock wrapping around between pulses
+	vibe_play(VIBE_MESSAGE);
+	vibe_service(0xFFFFFF00u, p_vibrate);
+	vibe_service(0x00000010u, p_vibrate);
+	CHECK(hw.vibes == 5 && vibe_busy());
+	vibe_service(0x0000002Cu, p_vibrate);
+	CHECK(hw.vibes == 6 && !vibe_busy());
+
+	// No motor on this radio: the pattern is dropped, nothing counted
+	vibe_play(VIBE_EMERGENCY);
+	vibe_service(5000, NULL);
+	CHECK(!vibe_busy() && vibe_played() == 4);
+	vibe_reset();
+	CHECK(vibe_played() == 0);
+}
+
+// Through the radio core: RREQ_VIBRATE plays on board.power->vibrate from the poll, and isn't user activity
+static void test_vibrate(void)
+{
+	start();
+	vibe_reset();
+	run(1000);
+	uint32_t act = sm.activity_ms;
+	uint32_t t0 = now;
+	req(RREQ_VIBRATE, VIBE_EMERGENCY);
+	CHECK(sm.activity_ms == act);
+	run(3000);
+	CHECK(hw.vibes == 4 && vibe_played() == 1 && !vibe_busy());
+	for (int i = 0; i < 4 && i < hw.vibes; i++) {
+		CHECK(hw.vibe_ms[i] == 400);
+		// The first pulse at the next poll, the rest 600 ms apart (within one poll)
+		uint32_t want = t0 + (uint32_t)i * 600u;
+		CHECK(hw.vibe_at[i] >= want && hw.vibe_at[i] <= want + 2u * RADIO_POLL_MS);
+	}
+	req(RREQ_VIBRATE, 99);		// out of range: nothing
+	req(RREQ_VIBRATE, VIBE_MESSAGE);
+	run(500);
+	CHECK(hw.vibes == 6 && hw.vibe_ms[5] == 150);
+}
 
 static void test_zone_scan(void)
 {
@@ -1614,6 +1708,7 @@ int main(void)
 	test_scan_engine();
 	test_battery_module();
 	test_beep_module();
+	test_vibe_module();
 	test_zone_scan();
 	test_scan_ptt_and_modes();
 	test_vfo_scan();
@@ -1627,6 +1722,7 @@ int main(void)
 	test_battery();
 	test_battery_save();
 	test_dmr_beeps();
+	test_vibrate();
 	test_host_audio();
 	printf("# radioFeaturesTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;

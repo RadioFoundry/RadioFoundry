@@ -8,8 +8,9 @@ radios on a real system. Don't rely on them for safety.
 ## When someone else declares an emergency
 
 When the radio hears an emergency alarm, or plays a call marked as an emergency, to you or to a talkgroup you listen
-to, it opens the emergency screen and plays an alert tone (a warble of about 1 s). The screen shows EMERGENCY and the
-station's name or ID.
+to, it opens the emergency screen and plays an alert tone (a warble of about 1 s). A radio with a vibration motor also
+vibrates four times, unless **Settings > Sound > Vibrate** is off. The screen shows EMERGENCY and the station's name or
+ID.
 
 <img src="../ux/screens/160x120i5/emergency.png" width="200" alt="An emergency received">
 

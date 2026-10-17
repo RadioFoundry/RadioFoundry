@@ -9,6 +9,7 @@
 #include "hal_time.h"
 #include "input/keymatrix/keymatrix.h"
 #include "input/quadrature/quadrature.h"
+#include "input/sharedptt/shared_ptt.h"
 
 #define DIPLEX2_DB0_DB6_GPIO	(0x7Fu << 9)	// IO_DIPLEX2 bits 9-15: DB0-DB6 as GPIOs
 #define N			KEYMATRIX_NONE
@@ -25,6 +26,7 @@ static const uint8_t direct[KEY_COLS] = { N, N, KEY_SK1, KEY_SK2 };
 static const keymatrix_t matrix = { .rows = KEY_ROWS, .cols = KEY_COLS, .map = map, .direct = direct };
 
 static uint32_t last_raw, stable;
+static shared_ptt_t ptt_gate;	// the PTT pin is also the cable's serial line (6.2)
 
 // Encoder (6.3): both lines on both edges into the table decoder, two steps per detent resting where A == B (as on
 // the DM-1701; "one count per B edge" in the stock firmware means the same detent). The interrupt is the only writer
@@ -97,7 +99,9 @@ static void init(void)
 static uint32_t scan(void)
 {
 	uint32_t raw = scan_matrix();
-	if (!hrc_pin_read(PIN_PTT)) {
+	uint32_t rx_ms;
+	bool rx_seen = hrc_host_uart_last_rx(&rx_ms);
+	if (shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_PTT), rx_seen, rx_ms, hal_millis())) {
 		raw |= 1u << KEY_PTT;
 	}
 	if (raw == last_raw) {
@@ -127,3 +131,9 @@ const hal_input_t dm32_input = {
 	.encoder = encoder,
 	.encoder_stats = encoder_stats,
 };
+
+// Key scans with the PTT pin low that the shared-line gate took for host data (diag line)
+uint32_t dm32_input_ptt_ignored(void)
+{
+	return ptt_gate.ignored;
+}

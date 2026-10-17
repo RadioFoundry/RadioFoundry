@@ -519,8 +519,8 @@ cleared). The raw 264-bit RX RAM areas (0x30 / 0x60) only held a fill pattern in
 
 **14.5 Late entry needs A then B 60 ms later** (a lone voice A is noise). Commit 800b57e.
 
-**14.6 MD-9600 synthesizer per burst** is the open risk (about 1.25 ms guard time); the MD-380 and DM-32 aren't
-ported (HR_C5000 register page 0 and no CRC_MCU_Control; no C7000 layer 2 docs). Commits a6b31f5, bf08887.
+**14.6 MD-9600 synthesizer per burst** is the open risk (about 1.25 ms guard time); the MD-380 isn't ported (HR_C5000
+register page 0 and no CRC_MCU_Control). The DM-32UV is (14.11). Commits a6b31f5, bf08887.
 
 **14.7 SFR channels never switch to repeater mode on BS sync.** RMO slot lock needs a CACH every slot and an SFR sends
 none. On the GD-77 the repeater ends its own burst at the RF RX interrupt once the PA has been on 20 ms. Commits
@@ -543,6 +543,18 @@ those are placeholders, and a burst heard next queued behind them went out 210 m
 identical copies: the own-echo rule (same kind and payload within 250 ms) dropped 6 of the bench's 8 headers. Rule:
 in an open inbound call, voice headers and terminators are never echo-checked (the SFR glue never did).
 
+**14.11 HR_C7000 SFR (DM-32UV, on the SDR bench 2026-10-16).** Four things, each lost the call or part of it:
+- Writing LAYER2_CONTROL to key up (0xC3, or 0xC4 for TX slots that follow the receiver) left the receiver without slot
+  sync for about 1 s: 5 of the bench's 8 headers and the first 10 voice bursts were never heard. Rule: leave it passive
+  and start the TX slot from the receive slot (LAYER2_SLOTON b5), then send in the slot numbered for our TS
+  (modem-hrc7000.md 2.5).
+- `DMR_BURST_EMPTY` was armed as a burst, so a gap in the inbound call went on air as data type 15. Rule: an empty slot
+  arms nothing and is received.
+- Without `tx_fill` the repeat after a gap ran 210 ms late (14.10), and the bench's silent call (the same AMBE every
+  superframe) then matched our own copy in the 250 ms echo window: 3 bursts dropped as echo.
+- Every terminator heard while keyed came with the chip's RS flag and was dropped in the driver. Rule: while sending,
+  the driver passes headers and terminators on with `crc_ok` false and the runner checks them itself (14.1).
+
 ## 15. Testing practice
 
 - An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests
@@ -559,6 +571,14 @@ back, and bounce edges merged by the single pending flag count twice. Rule: inte
 and decode with a table that counts only whole detents at a rest state and ignores samples where both lines changed
 (`drivers/input/quadrature`, hardware-dm1701.md 10.3). Radios: all with an encoder (DM-1701, DM-32UV, MD-9600). Also:
 when the UI's event queue is full, carry the detents over to the next scan instead of dropping them.
+
+**16.2 PTT on the programming cable's serial line.**
+Symptom: on the DM-32UV a debug link host polling the radio started DMR transmissions on its own (ODR, 2026-10-15).
+Cause: the two-pin K-type programming jack carries the host's serial data on the same line as PTT, so every 0 bit
+pulls the PTT pin low, and two low key scans pass the debounce. Rule: on a radio whose PTT shares the host's RX line,
+count the pin low as PTT only after a quiet time with no good UART byte (`drivers/input/sharedptt`, hardware-dm32.md
+6.2). A real press holds the line low, which the UART reads as a break, never a good byte. Radios: DM-32UV confirmed.
+Many handhelds wire the K-type jack this way, so check every new radio (adding-a-radio.md, bring-up order).
 
 ## 17. Scan
 

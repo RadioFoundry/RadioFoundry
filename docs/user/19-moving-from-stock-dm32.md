@@ -89,7 +89,8 @@ uses the parts of the codeplug listed in [Programming with qdmr](15-programming-
 
 ## The DMR ID database
 
-By default, dmrconf downloads the public DMR user database and picks the IDs nearest yours (internet needed).
+By default, dmrconf downloads the public DMR user database and picks the IDs nearest yours (internet needed). The
+radio holds about 300,000 records. When the list is longer, the tool keeps the ones nearest your ID.
 `--users FILE` takes radioid.net's `user.csv` instead. Options: `--db-limit N`, `--id-prefix`, `--no-db`.
 
 ## Flashing only

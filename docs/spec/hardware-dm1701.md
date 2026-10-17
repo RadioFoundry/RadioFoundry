@@ -987,7 +987,7 @@ breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approxima
 PA3 gives the microphone level; convert the raw value to dB (20 log10) for VOX.
 
 ODR's `mic_level` (`boards/dm1701/power_dm1701.c`, VOX in `radio-features.md` 3.4) gives 0-100: 20 log10 of the raw
-reading over the ADC's 72 dB. Not verified on the bench.
+reading over the ADC's 72 dB, from the shared scale in `drivers/audio/miclevel/miclevel.h`. Not verified on the bench.
 
 ### 11.4 Temperature
 

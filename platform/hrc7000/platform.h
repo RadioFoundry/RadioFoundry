@@ -203,6 +203,8 @@ typedef struct {
 extern hal_flash_t hrc_flash_spi0;
 void hrc_flash_spi0_configure(const hrc_flash_cfg_t *cfg);	// before hrc_flash_spi0.init
 uint32_t hrc_flash_spi0_jedec(void);
+// The task holding the data flash lock and for how long (ms), "-" when free: a stuck flash user shows here
+const char *hrc_flash_spi0_holder(uint32_t *held_ms);
 
 // --- ADC (adc.c): channels 1 (B) and 2 (C) ---
 
@@ -264,5 +266,24 @@ extern const hal_stream_t hrc_host_uart_stream;
 void hrc_host_uart_init(void);
 uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
 uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
+// When the last byte without a line error arrived (hal_millis()); false if none has yet. A board whose PTT shares the
+// serial line (drivers/input/sharedptt) reads it to tell host data from a press
+bool hrc_host_uart_last_rx(uint32_t *ms);
+// Host port traffic for the diagnostics page: when the host link stops answering, these tell a dead receiver (rx
+// stops), a stuck transmitter (tx_stalls) and a stuck host link task (waits stops) apart
+typedef struct {
+	uint32_t rx_bytes, tx_bytes, tx_stalls, waits;
+	uint8_t ier;			// the interrupt enables as the UART has them now (0x05 expected)
+} hrc_uart_traffic_t;
+void hrc_host_uart_traffic(hrc_uart_traffic_t *t);
+
+// Any of the SoC's UARTs (UART0_BASE, UART1_BASE, ...; uart.c). setup: baud 8N1 from the APB clock, FIFOs on, receive
+// trigger at one character, interrupts off. rx_irq: the received-data and line-status interrupts (IER = 0x05) on or
+// off. rx_isr, for the UART's interrupt handler: every waiting character (64 at most) to rx, flagged when the UART
+// marked it (FIFO overrun, parity, framing, break), then the line-status and busy-detect interrupts cleared; returns
+// how many came
+void hrc_uart_setup(uint32_t base, uint32_t baud);
+void hrc_uart_rx_irq(uint32_t base, bool on);
+uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
 
 #endif

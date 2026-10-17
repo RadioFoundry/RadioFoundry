@@ -41,6 +41,22 @@ static void put_x(out_t *o, uint32_t v, int digits)
 	}
 }
 
+// "L/M/H 1616/2544/3408": the drive tx() would use at hz (hardware-dm1801pro.md 6.4), or "L/M/H none"
+static void put_drive(out_t *o, uint32_t hz)
+{
+	put(o, "L/M/H ");
+	if (!bf_cal_valid()) {
+		put(o, "none");
+		return;
+	}
+	for (uint8_t k = 0; k < 3; k++) {
+		if (k > 0) {
+			put(o, "/");
+		}
+		put_u(o, dm1801pro_pa_drive(hz, k));
+	}
+}
+
 bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 {
 	if (len == 0) {
@@ -59,6 +75,8 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 0:
 		put(&o, "keys ");
 		put_x(&o, dm1801pro_key_raw(), 6);	// matrix bit = strobe * 4 + input; direct pins in bits 20-23
+		put(&o, " ptt ign ");
+		put_u(&o, dm1801pro_input_ptt_ignored());	// PTT lows taken for host serial data (hardware-dm1801pro.md 9.1)
 		break;
 	case 1:
 		put(&o, "bat ");
@@ -91,18 +109,28 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, bf_cal_tx_center());
 		break;
 	case 7:
-		put(&o, "pa 145 L/H ");
-		put_u(&o, bf_cal_power_level(145000000u, 1));
-		put(&o, " ");
-		put_u(&o, bf_cal_power_level(145000000u, 8));
+	case 8: {
+		// The factory's L / M / H drive at a VHF and a UHF frequency (hardware-dm1801pro.md 6.4)
+		uint32_t hz = i == 7 ? 145000000u : 435000000u;
+		put(&o, i == 7 ? "pa 145 " : "pa 435 ");
+		put_drive(&o, hz);
 		break;
-	case 8:
-		put(&o, "pa 435 L/H ");
-		put_u(&o, bf_cal_power_level(435000000u, 1));
-		put(&o, " ");
-		put_u(&o, bf_cal_power_level(435000000u, 8));
+	}
+	case 9:
+		// The frequency of the last transmission (the RX frequency before one) and the drive it used, then the
+		// L / M / H drive there: the L and M spacing on air can be compared with these (hardware-dm1801pro.md 6.4)
+		dm1801pro_radio_diag(&d);
+		put(&o, "pa ");
+		put_u(&o, d.pa_hz / 1000u);
+		put(&o, "k dac ");
+		put_u(&o, d.pa_drive);
 		break;
-	case 9: {
+	case 10:
+		dm1801pro_radio_diag(&d);
+		put(&o, "pa tx ");
+		put_drive(&o, d.pa_hz);
+		break;
+	case 11: {
 		int16_t mg[3];
 		if (!dm1801pro_accel_read(mg)) {
 			int16_t id = dm1801pro_accel_id();
@@ -124,12 +152,54 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
-	case 10:
+	case 12:
 		put(&o, "uart ring ");
 		put_u(&o, hrc_host_uart_overruns());
 		put(&o, " err ");
 		put_u(&o, hrc_host_uart_line_errors());
 		break;
+	case 13:
+		// The modem's audio routing as it is now: compares what an FM transmission sets up (APRS AFSK)
+		dm1801pro_radio_diag(&d);
+		put(&o, "c7 ac ");
+		put_x(&o, d.c7_audio, 8);
+		put(&o, " wm ");
+		put_x(&o, d.c7_work_mode, 2);
+		put(&o, " ptt ");
+		put_u(&o, d.c7_fm_ptt);
+		put(&o, " rf ");
+		put_x(&o, d.c7_rf_mode, 8);
+		break;
+	case 14: case 15: case 16: case 17: {
+		// The codec's 64 byte registers, 16 per line (read one byte at a time: a word read returns one lane)
+		uint8_t base = (uint8_t)((i - 14u) * 16u);
+		put(&o, "cd ");
+		put_x(&o, base, 2);
+		put(&o, " ");
+		for (uint8_t k = 0; k < 16; k++) {
+			put_x(&o, dm1801pro_codec_byte((uint8_t)(base + k)), 2);
+		}
+		break;
+	}
+#if CONFIG_DMR && CONFIG_VOX
+	case 18: {
+		// The VOX mic meter on the mic PCM (audio_pcm.c): level 0-100, the last 10 ms half's peak, halves measured,
+		// running. Reading this line doesn't start the meter; mic_level() (VOX, the view's vox.level) does
+		uint8_t lvl;
+		uint16_t pk;
+		uint32_t halves;
+		bool on;
+		hrc_audio_pcm_mic_stats(&lvl, &pk, &halves, &on);
+		put(&o, "mic lvl ");
+		put_u(&o, lvl);
+		put(&o, " pk ");
+		put_u(&o, pk);
+		put(&o, " n ");
+		put_u(&o, halves);
+		put(&o, on ? " on" : " off");
+		break;
+	}
+#endif
 	default:
 		return false;
 	}

@@ -30,16 +30,21 @@ static const fd6818_regval_t fm_table[] = {
 	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x0140 }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
 };
 
-// 5.4 "Mode select": DMR is these five registers (0x28 is its power-on value, written again). The per-burst handlers
-// that follow in the radio's own sequence (5.4's open item) are not known, so the burst switch is the RX and TX
-// sequences
+// 5.3: DMR is these five registers (0x28 is its power-on value, written again), then 0x3F = 0: the radio writes it
+// in every DMR receive set-up and at every burst end (5.4), so in DMR it never has the power-on 07FE
 static const fd6818_regval_t dmr_table[] = {
-	{ 0x47, 0x0140 }, { 0x48, 0xB2F5 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 },
+	{ 0x47, 0x0140 }, { 0x48, 0xB2F5 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
 };
 
 // 5.4: 0x37 first, the DM-32UV's 0x30 steps with a 0x0200 between idle and the final word
 static const fd6818_regval_t rx_seq[] = { { 0x37, 0x9D1F }, { 0x30, 0x0200 }, { 0x30, 0xBFF1 } };
 static const fd6818_regval_t tx_seq[] = { { 0x37, 0x9D1F }, { 0x52, 0x028F }, { 0x30, 0x0200 }, { 0x30, 0xC1FE } };
+
+// DMR bursts switch straight between the two final words (hardware-dm1801pro.md 5.6). Through idle, as the radio's
+// own handlers go (5.4), the first inbound burst after each of ours came back about 400 Hz off and lost sync; 0x37
+// keeps its 9D1F from the sequences above
+static const fd6818_regval_t burst_rx[] = { { 0x30, 0xBFF1 } };
+static const fd6818_regval_t burst_tx[] = { { 0x52, 0x028F }, { 0x30, 0xC1FE } };
 
 // 5.2: no 0x1A word; 0x40 is 0x3480 plus a calibration byte (the power-on value, 0x70, until the calibration is read)
 static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
@@ -56,6 +61,8 @@ const fd6818_variant_t fd6818_variant_dm1801pro = {
 	.dmr = dmr_table, .dmr_n = TBL_N(dmr_table),
 	.rx = rx_seq, .rx_n = TBL_N(rx_seq),
 	.tx = tx_seq, .tx_n = TBL_N(tx_seq),
+	.burst_rx = burst_rx, .burst_rx_n = TBL_N(burst_rx),
+	.burst_tx = burst_tx, .burst_tx_n = TBL_N(burst_tx),
 	// The radio's own firmware writes only these two words: 12.5 kHz FM shares the DMR word (hardware-dm1801pro.md 5.2)
 	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x3048u, .bw_dmr = 0x3048u,
 	.band_words = band_words,

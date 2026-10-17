@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DM-1801 Pro power latch and key, battery on ADC channel C, status LEDs (docs/spec/hardware-dm1801pro.md 3, 9.2, 9.4).
-// The battery scale and the power key's polarity are provisional: the divider's calibration isn't located, so the
-// DM-32UV's 2S Li-ion scale is used, and the level the power key has at start-up counts as "on".
+// The battery scale is measured on one radio (103 counts per volt, hardware-dm1801pro.md 9.2). The power key's polarity
+// is provisional: the level it has at start-up counts as "on".
 #include "dm1801pro.h"
 #include "pins.h"
 #include "platform.h"
@@ -13,6 +13,7 @@
 #define BAT_FULL_MV		8200u
 #define BAT_EMPTY_MV		6400u
 #define BAT_CACHE_MS		500u
+#define BAT_COUNTS_PER_V	103u	// ADC channel 2: 856 counts with 8.306 V across the pack, radio on (2026-10-16)
 #define FILTER_SHIFT		3		// battery_mv() is an average over about 8 readings
 #define SWITCH_SAMPLES		3
 
@@ -66,7 +67,7 @@ static uint16_t battery_mv(void)
 {
 	uint32_t now = hal_millis();
 	if (!bat_valid || now - bat_ms >= BAT_CACHE_MS) {
-		uint32_t mv = (uint32_t)hrc_adc_read(2) * 1000u / 82u;
+		uint32_t mv = (uint32_t)hrc_adc_read(2) * 1000u / BAT_COUNTS_PER_V;
 		if (!bat_valid) {
 			bat_mv_f = mv << FILTER_SHIFT;
 			bat_valid = true;
@@ -121,5 +122,6 @@ const hal_power_t dm1801pro_power = {
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,
+	.mic_level = HRC_MIC_LEVEL,	// the mic PCM; no analog level tap on this radio
 	.vibrate = vibrate,
 };

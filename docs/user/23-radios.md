@@ -8,11 +8,11 @@ and what has been checked on it.
 
 | Radio | Also sold as | ODR status |
 |---|---|---|
-| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases. The only radio ODR has run on |
+| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases |
-| [Baofeng DM-32UV](#baofeng-dm-32uv) | | Builds and passes its host tests. Not run on a radio yet, not in the releases |
+| [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Early bring-up: FM receive only, not run on a radio yet. Not for use |
-| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data and hotspot mode; APRS on FM, SFR repeating and VOX don't work yet. No release |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -123,6 +123,7 @@ manual are this size.
 - No GPS. LRRP location requests get "no fix". APRS positions come from a computer or a fixed position.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
+- No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### Verified on the DM-1701
 
@@ -205,6 +206,7 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
   FM transmit path from the processor isn't written.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
   it hears nothing.
+- No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### MD-380 with qdmr
 
@@ -214,7 +216,8 @@ The radio reports radio type 7. Moving from the stock firmware with the codeplug
 ## Baofeng DM-32UV
 
 A handheld for 136-174 and 400-480 MHz with a keypad, left and right arrow keys, a channel knob and a color screen.
-**Not run on a radio yet.** Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
+**In bring-up, not in the releases.** FM and DMR receive and transmit, CTCSS and DCS, and the battery saver work on a
+test radio. Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
 
 ### DM-32UV keys
 
@@ -257,10 +260,17 @@ A 240 x 320 color screen. ODR draws at half resolution for now.
 - No USB. The serial port is on the programming cable: hotspot mode, the debug link and the network (PPP,
   [USB network](14-usb-network.md#network-over-the-programming-cable-ppp)) all run there. USB network mode isn't
   available.
-- The radio has a GPS module, but ODR has no GPS driver for it yet. **Settings > Location > GPS** keeps its value.
+- The GPS module is powered while the radio is on (if it answers within 5 s of start-up). **Settings > Location >
+  GPS** doesn't switch it off yet. A fix outdoors hasn't been checked yet.
+- While APRS listens, FM on the APRS frequency plays through a different audio path, which may sound different.
 - The air band AM receiver and the broadcast FM receiver are built in, but the board code behind them isn't written,
   so nothing runs yet.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
+- No beeps while transmitting, the talk permit tone included: the radio's beep path would put them on the air. A beep
+  still playing when the transmission ends is heard from then on.
+- The signal strength in dBm is uncalibrated: strong signals read high.
+- No vibration alerts: ODR doesn't drive a vibration motor on it, and **Settings > Sound > Vibrate** isn't in the
+  image.
 
 ### DM-32UV with qdmr
 
@@ -317,7 +327,20 @@ the other DMR data, and hotspot mode. There is no release to install yet.
 
 Bring-up builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
 the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/dm32_flash.py --model dm1801pro IMAGE` over
-the programming cable. The cable's plug switches the internal speaker off; unplug it to hear the radio.
+the programming cable. The cable's plug switches the internal speaker and the microphone off; unplug it to hear the
+radio or to talk.
+
+Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on this radio.
+
+`odrflash flash IMAGE --board dm1801pro` does the same over the cable, and picks the way in by itself:
+
+| The radio runs | odrflash |
+|---|---|
+| ODR built with `CONFIG_STUB_ENTRY=y` | Enters the loader from ODR (the screen shows "PC Loader Connected"), writes only what changed and restarts the radio. No keys to hold. The codec in the radio stays |
+| Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `odr_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
+
+`--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
+odrflash has flashed a radio yet; `tools/dm32_flash.py` and `stub/stubtool.py` have.
 
 ### DM-1801 Pro keys
 
@@ -340,17 +363,16 @@ the programming cable. The cable's plug switches the internal speaker off; unplu
 
 Three power levels, L, M and H, the stock firmware's Low, Middle and High. The radio refuses to transmit until ODR can
 read its factory calibration. The battery
-scale is the DM-32UV's until it has been measured, so the percentage is approximate. The screen is monochrome; the
-backlight is on or off.
+reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
+The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
 
 ### What the DM-1801 Pro lacks today
 
-- APRS on FM doesn't send yet, and APRS receive is unchecked. APRS positions over DMR work.
-- MMDVM SFR (the radio as a one-frequency repeater) doesn't hear the incoming call while it transmits the repeat, so
-  calls don't repeat yet. Hotspot mode works.
-- No VOX: ODR can't read this radio's microphone level yet.
+- APRS receive is unchecked. APRS sending works on FM and over DMR.
+- VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
+- VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been
+  tried on the radio yet.
 - No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
-- The motor only vibrates once at power-on.
 
 ## Planned radios
 

@@ -501,6 +501,108 @@ static void test_fm_rx_keeps_pcm(void)
 	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_FM_PLAY);
 }
 
+// The AUDIO_CONTROL shadow changes only under the lock (hrc7000_set_crit): the FM and DMR entries too, so an
+// interrupt (the PCM mic meter clearing b4) that comes at the unlock is never undone. The "interrupt" here runs in
+// the exit hook, as a pending one does when the CPU's interrupts come back on
+static int crit_depth, crit_enters, crit_unlocked_changes, crit_unwritten;
+static uint32_t crit_seen;
+static bool irq_pending;
+
+static uint32_t crit_enter(void)
+{
+	if (crit_depth == 0 && dev.audio_ctl != crit_seen) {
+		crit_unlocked_changes++;
+	}
+	crit_enters++;
+	return (uint32_t)crit_depth++;
+}
+
+static void crit_exit(uint32_t s)
+{
+	if (REG(C7_AUDIO_CONTROL) != dev.audio_ctl) {
+		crit_unwritten++;	// the register must hold the shadow before the lock goes
+	}
+	crit_depth = (int)s;
+	crit_seen = dev.audio_ctl;
+	if (crit_depth == 0 && irq_pending) {
+		irq_pending = false;
+		hrc7000_audio_bits(&dev, 0, C7_AUDIO_PCM_MIC);	// the meter's interrupt, nested in its own lock
+	}
+}
+
+static void test_audio_lock(void)
+{
+	setup();
+	CHECK(dev.crit_enter == NULL && dev.crit_exit == NULL);
+	hrc7000_audio_bits(&dev, C7_AUDIO_PCM_MIC, 0);	// no lock set: plain update
+	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_PCM_MIC);
+	hrc7000_set_crit(&dev, crit_enter, crit_exit);
+	crit_depth = crit_enters = crit_unlocked_changes = crit_unwritten = 0;
+	crit_seen = dev.audio_ctl;
+
+	irq_pending = true;
+	hrc7000_fm_rx(&dev, false);
+	CHECK(!irq_pending && (REG(C7_AUDIO_CONTROL) & C7_AUDIO_PCM_MIC) == 0);	// the meter's clear stays
+	CHECK(REG(C7_AUDIO_CONTROL) & C7_AUDIO_FM_PLAY);
+	hrc7000_audio_bits(&dev, C7_AUDIO_PCM_MIC, 0);
+	irq_pending = true;
+	hrc7000_fm_tx(&dev, true);
+	CHECK((REG(C7_AUDIO_CONTROL) & (C7_AUDIO_PCM_MIC | C7_AUDIO_FM_PLAY)) == 0);
+	hrc7000_fm_idle(&dev);
+	hrc7000_dmr_enter(&dev, 0, 11);
+	uint32_t outer = crit_enter();	// a caller that holds the lock already: the nested update leaves it held
+	hrc7000_audio_bits(&dev, C7_AUDIO_RING_PLAY, 0);
+	CHECK(crit_depth == 1);
+	crit_exit(outer);
+	CHECK(crit_depth == 0 && crit_enters >= 7);
+	CHECK(crit_unlocked_changes == 0 && crit_unwritten == 0);
+	CHECK(REG(C7_AUDIO_CONTROL) == dev.audio_ctl && (dev.audio_ctl & C7_AUDIO_RING_PLAY));
+}
+
+// Mic gain: the board's value plus the user's offset, clamped to GCR_ADCL's 0..42 dB, written with bit 7 (shared)
+static void test_mic_gain(void)
+{
+	setup();
+	CHECK(hrc7000_mic_db(11, 0) == 11 && hrc7000_mic_db(11, 10) == 21 && hrc7000_mic_db(11, -10) == 1);
+	CHECK(hrc7000_mic_db(5, -10) == 0 && hrc7000_mic_db(40, 10) == HRC7000_MIC_GAIN_MAX_DB);
+	hrc7000_set_mic_gain(&dev, hrc7000_mic_db(11, 4));
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == 0x8Fu);
+	hrc7000_set_mic_gain(&dev, 60);
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == (0x80u | HRC7000_MIC_GAIN_MAX_DB));
+	hrc7000_dmr_enter(&dev, 0, hrc7000_mic_db(11, -6));
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == 0x85u);
+}
+
+// Codec mixer route for CPU-made FM TX audio: the last mixer write on is MIX_2 mix_rec (MIX_3 went first), the mic
+// mute bit is left alone (the mix zeroes the ADC's input instead), and off leaves the mixer disabled
+static void test_codec_dac_to_tx(void)
+{
+	setup();
+	buf[C7_CODEC + C7_CODEC_CR_ADC] = 0x00;
+	hrc7000_codec_dac_to_tx(&dev, true);
+	CHECK(buf[C7_CODEC + C7_CODEC_CR_MIX] == 0xC2u && buf[C7_CODEC + C7_CODEC_DR_MIX] == 0x01u);
+	CHECK(buf[C7_CODEC + C7_CODEC_CR_ADC] == 0x00);
+	hrc7000_codec_dac_to_tx(&dev, false);
+	CHECK(buf[C7_CODEC + C7_CODEC_CR_MIX] == 0x00 && buf[C7_CODEC + C7_CODEC_DR_MIX] == 0x00);
+}
+
+// FM TX limiter: the KP value unless the board set one, per bandwidth
+static void test_fm_tx_limit(void)
+{
+	setup();
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_FM_DEV_COEF) == 0x40A20u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_FM_DEV_COEF) == 0x40A25u);
+	dev.fm_tx_limit[0] = 5;
+	dev.fm_tx_limit[1] = 0x0F;
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_FM_DEV_COEF) == 0xF0A20u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_FM_DEV_COEF) == 0x50A25u);
+	dev.fm_tx_limit[0] = dev.fm_tx_limit[1] = 0;
+}
+
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
 static void test_tx_tone(void)
 {
@@ -643,7 +745,7 @@ static void test_tx_sync_and_listen(void)
 	tick(true);
 	CHECK(REG(C7_SEND_DATA_SYNC_H) == 0xD5D7F7 && REG(C7_SEND_DATA_SYNC_L) == 0x7FD757);
 
-	CHECK(REG(C7_LAYER2_CONTROL) == 0xC3);
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xC3);	// aligned with nothing received: our own timing
 	hrc7000_dmr_tx_listen(&eng);
 	CHECK(REG(C7_LAYER2_CONTROL) == 0xCB);	// the receiver follows the other station's slot edges
 	tick(true);
@@ -651,6 +753,16 @@ static void test_tx_sync_and_listen(void)
 	deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 1, 2, 0, 0));
 	dmr_burst_t b;
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1 && b.sync == DMR_SYNC_TS1);
+	// The call's voice follows: its slot gets the voice-access flag (0x40 alone loses bursts B-F), until the terminator
+	tick(true);
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);
+	// Its terminator with the chip's RS flag (wrong at times while we send, gotchas 14.1): passed on, marked bad
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0) | (1u << 25));
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.kind == DMR_BURST_TERMINATOR_LC && !b.crc_ok);
+	tick(true);
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
 
 	// A new transmission listens only when asked again, and writes its first sync even if unchanged
 	hrc7000_dmr_tx_abort(&eng);
@@ -665,10 +777,82 @@ static void test_tx_sync_and_listen(void)
 	tick(true);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0);
 	hrc7000_dmr_tx_listen(&eng);
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xCB);	// own timing: the receiver follows the other station's slot edges
 	hrc7000_dmr_tx_abort(&eng);
 	tick(true);
 	hrc7000_dmr_tx_listen(&eng);	// not sending: ignored
 	CHECK(!eng.tx_listen);
+	count_kind(0xFF, NULL);
+}
+
+// An aligned start (an SFR's repeat): LAYER2_CONTROL left passive so the receiver keeps its slot sync, the TX slot
+// built from the receive slot (SLOTON b5), and our slot picked by its number in LAYER2_STATUS b31: the other chip slot
+// than the received bursts' for another TS, the same one for the same TS
+static void test_tx_aligned(void)
+{
+	for (int same_ts = 0; same_ts < 2; same_ts++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+		hrc7000_dmr_configure(&eng, &cfg);
+		tick(false);
+		deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 1, 2, 1, 0));	// TS1 sync, chip slot 1
+		dmr_burst_t b;
+		CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1);
+		count_kind(0xFF, NULL);
+		REG(C7_LAYER2_CONTROL) = 0xC0;
+		REG(C7_LAYER2_SLOTON) = 0;
+		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, same_ts ? 1 : 2, DMR_ACCESS_IMPOLITE));
+		CHECK(REG(C7_LAYER2_CONTROL) == 0xC0 && REG(C7_LAYER2_SLOTON) == 0x25);
+		hrc7000_dmr_tx_listen(&eng);
+		CHECK(REG(C7_LAYER2_CONTROL) == 0xC0);
+		dmr_tx_burst_t a = voice(0, 0x11);
+		CHECK(hrc7000_dmr_tx_queue(&eng, &a));
+		REG(C7_LAYER2_STATUS) = 1u << 31;	// the coming slot: chip slot 1, the received one
+		tick(true);
+		CHECK(REG(C7_LAYER2_TXRX_CTRL) == (same_ts ? 0x80u : 0x40u));
+		tick(true);
+		CHECK(REG(C7_LAYER2_TXRX_CTRL) == (same_ts ? 0x40u : 0x80u));
+		hrc7000_dmr_tx_abort(&eng);
+		tick(true);
+		count_kind(0xFF, NULL);
+	}
+}
+
+// An SFR's gap: a queued DMR_BURST_EMPTY leaves our slot empty and received (nothing armed, no PA), still counts as
+// our slot for the caller, and tx_fill puts a burst in the oldest placeholder (gotchas 14.4, 14.10)
+static void test_tx_empty_and_fill(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	tick(false);
+	count_kind(0xFF, NULL);
+
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_IMPOLITE));
+	hrc7000_dmr_tx_listen(&eng);
+	dmr_tx_burst_t a = voice(0, 0x11), b = voice(1, 0x22), c = voice(2, 0x33);
+	dmr_tx_burst_t empty = { .kind = DMR_BURST_EMPTY };
+	CHECK(hrc7000_dmr_tx_queue(&eng, &a));
+	tick(true);	// A armed
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x80);
+	uint32_t bursts = eng.st.tx_bursts;
+	tick(true);	// the other slot
+	CHECK(hrc7000_dmr_tx_queue(&eng, &empty) && hrc7000_dmr_tx_queue(&eng, &empty));
+	CHECK(hrc7000_dmr_tx_fill(&eng, &b) == 1);	// the first placeholder taken, one queued after it
+	tick(true);	// B armed in it
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x80 && eng.st.tx_bursts == bursts + 1);
+	tick(true);
+	count_kind(0xFF, NULL);
+	tick(true);	// the second placeholder: received, not sent, still a slot of ours
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40 || REG(C7_LAYER2_TXRX_CTRL) == 0x8040);
+	CHECK(eng.st.tx_bursts == bursts + 1 && eng.st.tx_empty == 1);
+	CHECK(count_kind(DMR_EV_TX_SLOT_STARTED, NULL) == 1);
+	CHECK(hrc7000_dmr_tx_fill(&eng, &c) == -1);	// no placeholder left
+	CHECK(hrc7000_dmr_is_transmitting(&eng));
+	hrc7000_dmr_tx_abort(&eng);
+	tick(true);
 	count_kind(0xFF, NULL);
 }
 
@@ -681,9 +865,15 @@ int main(void)
 	test_tx();
 	test_tx_edges();
 	test_tx_sync_and_listen();
+	test_tx_aligned();
+	test_tx_empty_and_fill();
 	test_polite_and_repeater();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
+	test_mic_gain();
+	test_codec_dac_to_tx();
+	test_audio_lock();
+	test_fm_tx_limit();
 	test_tx_tone();
 	test_subtone();
 	test_fm_rx_audio();

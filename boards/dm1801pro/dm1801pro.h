@@ -28,6 +28,8 @@ enum {
 
 // Raw key state for the diagnostics page: matrix keys as a bit per strobe * 4 + input, the direct pins in bits 20-23
 uint32_t dm1801pro_key_raw(void);
+// Key scans with the PTT pin low that were ignored as host serial data (hardware-dm1801pro.md 9.1)
+uint32_t dm1801pro_input_ptt_ignored(void);
 
 uint16_t dm1801pro_battery_raw(void);	// the last ADC channel C reading
 
@@ -36,8 +38,16 @@ typedef struct {
 	uint16_t rssi_raw, noise_raw;	// FD6818 0x67 / 0x65 from the last status poll
 	uint16_t fm_noise;		// HR_C7000 FM_SQL
 	uint32_t rf_writes;
+	uint32_t c7_audio, c7_rf_mode;	// HR_C7000 AUDIO_CONTROL and RF_MODE, read now
+	uint8_t c7_work_mode, c7_fm_ptt;	// WORK_MODE, FM_PTT b0
+	uint32_t pa_hz;			// the last TX frequency, or the RX frequency before the first transmission
+	uint16_t pa_drive;		// the DAC B drive of the last transmission, 0 before the first
 } dm1801pro_radio_diag_t;
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
+// DAC B drive for a TX frequency and power level 0..2 (L, M, H; above 2 is H) from the factory calibration, as tx()
+// uses it; 0 without calibration (hardware-dm1801pro.md 6.4)
+uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power);
+uint8_t dm1801pro_codec_byte(uint8_t reg);	// the HR_C7000's internal codec, byte registers 0x00-0x3F
 // DMR PCM to the speaker instead of the FM path (the speaker_pcm hook of hrc_audio_pcm)
 void dm1801pro_speaker_pcm(bool on);
 // The speaker amplifier (PTA16) is on while any user wants it: the channel audio, the broadcast tuner, speaker PCM

@@ -14,7 +14,7 @@ LDSCRIPT   := boards/md380/md380.ld
 # The linker script's CPU-only RAM (CCM: no DMA): zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmbss"' -DODR_CPU_RAM_NOINIT_SECTION='".ccmram"'
 BOARD_DIRS := boards/md380 drivers/rf/sky72310 drivers/modem/hrc6000 drivers/display/st7735 drivers/flash/spi_nor \
-	drivers/gps/nmea_line
+	drivers/gps/nmea_line drivers/gps/gps_rx
 # Built only with CONFIG_USB
 BOARD_USB_DIRS := drivers/usb
 HAL_MODULES := hal hal_cortex hal_rcc hal_rcc_ex hal_gpio hal_pwr hal_pwr_ex hal_flash hal_flash_ex hal_dma \

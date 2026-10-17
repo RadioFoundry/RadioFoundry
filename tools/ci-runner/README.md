@@ -1,0 +1,105 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+
+# Self-hosted GitHub Actions runner
+
+A containerized runner for this repository's Linux CI jobs, for a Docker host you own: a fresh container for every
+job, and no way out to the network except HTTPS to GitHub. The workflows use it when the repository variable
+`ODR_CI_RUNNER` is set to its label (`odr-ci`); [docs/dev/ci.md](../../docs/dev/ci.md#the-github-self-hosted-runner)
+explains the routing and why pull requests from forks never reach it.
+
+| File | What |
+|---|---|
+| `Dockerfile` | the runner image: the DM-32 image (Ubuntu 24.04 + csky-elf GCC) plus the Arm toolchain, host GCC, Python packages, gcovr, tshark, Node.js, gh, reuse |
+| `entrypoint.sh` | in the container: empties `/work`, gets the pinned runner release (checksummed, cached in `/work/.cache`), then runs one job or registers |
+| `runner-loop.sh` | on the host: `setup` (networks and proxy), `register` (once), and the loop (one container per job) |
+| `runner.env.example` | the loop's settings |
+| `proxy/` | the egress proxy image: tinyproxy, HTTPS to the hosts in `proxy/allow` only (GitHub, npm, PyPI) |
+
+## How it is isolated
+
+- **A fresh container per job.** The runner is registered once; its configuration and credentials (`.runner`,
+  `.credentials*`) stay on the host in `STATE_DIR` (mode 700), mounted read-only. The loop starts
+  `docker run --rm ... run`, which copies them into the empty `/work`, runs `run.sh --once` (one job, then exit),
+  and the container is removed. The next job gets a new container from the image.
+  GitHub's runner warns that `--once` will be deprecated in favor of `--ephemeral`; an ephemeral runner needs a new
+  registration for every job, which needs a long-lived admin token on the host, so this setup doesn't use it.
+- **Unprivileged.** The user `runner`, `--cap-drop ALL`, `no-new-privileges`, no Docker socket, no host network, no
+  host directories except the work directory and the read-only registration. `--cpus`, `--memory` (no swap beyond
+  it) and `--pids-limit` from the runner's env file.
+- **Egress through one proxy.** The job container is only on a Docker network created with `--internal`: no route to
+  the LAN, the host or the internet, and no DNS for outside names. The proxy container (`odr-ci-proxy`: tinyproxy,
+  user `nobody`, read-only, 0.5 CPU, 64 MB) is on that network and on a normal bridge. It allows CONNECT to port 443
+  of the hosts in `proxy/allow` (GitHub, its Actions services and the artifact storage, the npm registry and PyPI) and
+  refuses everything else,
+  and it resolves the names. The runner reaches it through `https_proxy`/`http_proxy`, with `no_proxy` empty.
+  Anything a job needs from elsewhere (nodejs.org, for one) must be in the image.
+- **What a job could still do.** A job runs as the same user as the runner, so it can read the runner's
+  credentials, as on any runner. With them someone could take this runner's place and receive later jobs of this
+  repository until the runner is removed. That is why only this repository's own branches run here, never forks.
+
+## Set up
+
+On the Docker host, as a user in the `docker` group (no root needed):
+
+```sh
+mkdir -p ~/odr-ci-runner/context
+cp -r tools/install-arm-toolchain.sh tools/ci-runner ~/odr-ci-runner/context/
+cp tools/ci-runner/runner-loop.sh ~/odr-ci-runner/
+cp tools/ci-runner/runner.env.example ~/odr-ci-runner/runner-1.env   # then edit: REPO, directories, subnet, limits
+cd ~/odr-ci-runner/context
+docker build -t odr/ci-runner:latest --build-arg BASE=odr/csky-gcc14:latest --build-arg RUNNER_UID="$(id -u)" \
+	-f ci-runner/Dockerfile .
+docker build -t odr/ci-proxy:latest ci-runner/proxy
+~/odr-ci-runner/runner-loop.sh setup
+```
+
+Register once, from any machine where `gh` has admin rights on the repository. The registration token is valid for
+an hour and goes over stdin, never onto a command line:
+
+```sh
+gh api -X POST repos/OWNER/OpenDigitalRadio/actions/runners/registration-token --jq .token |
+	ssh DOCKER_HOST 'ODR_CI_ENV=$HOME/odr-ci-runner/runner-1.env ~/odr-ci-runner/runner-loop.sh register'
+```
+
+Run the loop as a systemd service, one instance per runner (`odr-ci-runner@1` reads `runner-1.env`). It starts after
+Docker, restarts a loop that died, and on `systemctl stop` stops the job's container with SIGINT so the runner
+closes its GitHub session:
+
+```sh
+sed "s/CI_USER/$USER/g" tools/ci-runner/odr-ci-runner@.service | sudo tee /etc/systemd/system/odr-ci-runner@.service
+sudo systemctl daemon-reload && sudo systemctl enable --now odr-ci-runner@1
+```
+
+Then set the repository variable: `gh variable set ODR_CI_RUNNER --body odr-ci`.
+
+### More runners
+
+One runner takes one job at a time. For more in parallel, run another service instance with its own env file: the same `LABELS`
+(so jobs go to whichever is free), the same network and proxy, and its own `NAME`, `WORK_DIR` and `STATE_DIR`.
+Size `MEMORY` so the runners together fit the host's RAM (a job uses a few hundred MB; four runners at 2g on an
+8 GB host with no swap); `CPUS` is a cap, so runners can share the cores.
+
+```sh
+cd ~/odr-ci-runner
+sed -e 's/^NAME=.*/NAME=odr-ci-2/' -e 's|/work$|/work2|' -e 's|/state$|/state2|' runner-1.env > runner-2.env
+gh api -X POST repos/OWNER/OpenDigitalRadio/actions/runners/registration-token --jq .token |
+	ssh DOCKER_HOST 'ODR_CI_ENV=$HOME/odr-ci-runner/runner-2.env ~/odr-ci-runner/runner-loop.sh register'
+sudo systemctl enable --now odr-ci-runner@2
+```
+
+The same again with 3, 4, ... for more runners.
+
+## Operate
+
+| Task | How |
+|---|---|
+| See what runs | `systemctl status 'odr-ci-runner@*'`; `docker ps --filter name=odr-ci`; `~/odr-ci-runner/log/NAME.log`; `docker logs odr-ci-proxy`; the repository's Settings, Actions, Runners |
+| Pause | `touch ~/odr-ci-runner/disabled` (a running job finishes; no new container starts) |
+| Resume | `rm ~/odr-ci-runner/disabled` |
+| Stop now | `sudo systemctl stop 'odr-ci-runner@*'` (a running job fails) (the runner gets SIGINT and closes its session; a running job fails) |
+| Update the runner or tools | change the pinned versions in the Dockerfile and rebuild; the next job uses the new image. Updates are off (`--disableupdate`), so keep `RUNNER_VERSION` current: GitHub stops sending jobs to runner versions that are too old |
+| Allow another host | add it to `proxy/allow`, rebuild `odr/ci-proxy`, `docker rm -f odr-ci-proxy`, `runner-loop.sh setup` |
+| Re-register | delete the runner in Settings, Actions, Runners (or keep it: `--replace` takes over the name), then `register` as above |
+| Go back to hosted runners | `gh variable delete ODR_CI_RUNNER` |
+| Remove | `gh variable delete ODR_CI_RUNNER`; `sudo systemctl disable --now 'odr-ci-runner@*'` and remove the unit file; delete the runner in Settings, Actions, Runners; `docker rm -f odr-ci-proxy`; `docker network rm odr-ci-internal odr-ci-egress`; `docker rmi odr/ci-runner:latest odr/ci-proxy:latest`; remove `~/odr-ci-runner` (with the credentials in `STATE_DIR`) and the work directory |

@@ -9,6 +9,7 @@
 #include "pins.h"
 #include "hal_time.h"
 #include "radio/power_switch.h"
+#include "audio/miclevel/miclevel.h"
 
 enum { CH_VOLUME = MD380_ADC_VOLUME, CH_BATTERY = MD380_ADC_BATTERY, CH_MIC = MD380_ADC_MIC, CH_RSSI = MD380_ADC_RSSI,
 	CH_BUSY = MD380_ADC_BUSY, CH_TEMP = MD380_ADC_TEMP, CH_COUNT = MD380_ADC_COUNT };
@@ -184,18 +185,11 @@ int16_t md380_temperature_c10(void)
 	return (int16_t)(250 + (raw - 943) * 100 / 31);
 }
 
-// Mic level 0..100 for VOX (hal_power_t.mic_level): 20 log10 of the raw reading over the ADC's 72 dB, from an integer
-// log2 (msb plus a linear mantissa, within 0.1 bit). Uncalibrated: the VOX thresholds want a bench check
+// Mic level 0..100 for VOX (hal_power_t.mic_level): the raw reading on the 12-bit ADC's 72 dB log scale.
+// Uncalibrated: the VOX thresholds want a bench check
 static uint8_t mic_level(void)
 {
-	uint32_t x = adc_read(CH_MIC);
-	if (x == 0) {
-		return 0;
-	}
-	uint32_t msb = 31u - (uint32_t)__builtin_clz(x);
-	uint32_t log2_q8 = msb * 256u + ((x << 8) >> msb) - 256u;	// log2(x) x 256
-	uint32_t level = log2_q8 * 100u / (12u * 256u);			// 4095 -> 12 bits -> 100
-	return (uint8_t)(level > 100u ? 100u : level);
+	return miclevel_log(adc_read(CH_MIC), 12);
 }
 
 const hal_power_t md380_power = {

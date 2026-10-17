@@ -42,6 +42,7 @@ enum {
 	// 26: DMR roaming (DL_OP_ROAM, debuglink_view_radio.c)
 	OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
 	OP_PPP = 28,			// on u8: PPP on the serial host port (docs/spec/ppp.md; CONFIG_NET_PPP builds)
+	// 29: a vibration pattern (DL_OP_VIBRATE, debuglink_view_radio.c)
 };
 
 static dl_parser_t parser;
@@ -530,7 +531,8 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	};
 	uint32_t now = hal_millis();
 
-	if (len >= 1 && ((req[0] >= DL_OP_SCAN && req[0] <= DL_OP_SETTING) || req[0] == DL_OP_ROAM)) {
+	if (len >= 1 && ((req[0] >= DL_OP_SCAN && req[0] <= DL_OP_SETTING) || req[0] == DL_OP_ROAM ||
+			 req[0] == DL_OP_VIBRATE)) {
 		// The radio features' operations (debuglink_view_radio.c), under the same rate limit
 		if (radio_op_done && (now - last_radio_op_ms) < RADIO_OP_GAP_MS) {
 			return status_only(out, DL_ST_BUSY);

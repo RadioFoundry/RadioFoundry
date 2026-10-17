@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Baofeng HR_C7000 factory calibration: TX I/Q center, modulation balance and PA drive (docs/spec/hardware-dm32.md 11).
 // The DM-32UV and the DM-1801 Pro keep it in the same page with the same field offsets (hardware-dm1801pro.md 6.4).
+// bf_cal_tx_byte reads a row the DM-1801 Pro's way, at the page's own TX points instead of OpenDM32's even steps.
 //
 // The factory data is the 4 KB page of the stock codeplug area (0x1000..0xC8000) whose last byte is 2. Three pieces
 // of it make a 0x175-byte working image: 0x108 bytes from its start, 0x15 from +0x200 and 0x50 (four tables of five BCD
@@ -22,7 +23,13 @@
 #define OFF_UHF_POWER		0x040u		// low, mid, high: 5 points each
 #define OFF_VHF_MOD		0x0A6u
 #define OFF_VHF_POWER		0x0D0u
+#define OFF_UHF_LIMITS		0x000u		// two BCD halfwords, 100 kHz units
+#define OFF_UHF_REG40		0x01Cu
+#define OFF_VHF_REG40		0x0ABu
+#define OFF_VHF_LIMITS		0x0CCu
 #define OFF_FREQ_TABLES		0x11Du		// 4 tables x 5 x u32 LE (10 Hz units once decoded)
+#define TABLE_UHF_TX		1u		// from page 0x314
+#define TABLE_VHF_TX		3u		// from page 0x33C
 #define OFF_K_VHF		0x16Du
 #define OFF_K_UHF		0x171u
 
@@ -144,6 +151,43 @@ uint8_t bf_cal_byte(uint16_t offset)
 	return offset < BF_CAL_LEN ? image[offset] : 0;
 }
 
+static void text_put(char *buf, uint8_t len, uint8_t *n, const char *s)
+{
+	while (*s && *n + 1u < len) {
+		buf[(*n)++] = *s++;
+	}
+}
+
+uint8_t bf_cal_drive_text(uint32_t hz, char *buf, uint8_t len)
+{
+	static const uint8_t levels[3] = { 1, 4, 8 };	// L, M, H: the factory's low, mid and high points
+	uint8_t n = 0;
+	if (len == 0) {
+		return 0;
+	}
+	text_put(buf, len, &n, "L/M/H ");
+	if (!valid) {
+		text_put(buf, len, &n, "none");
+	} else {
+		for (int i = 0; i < 3; i++) {
+			char d[6];
+			int k = (int)sizeof d - 1;
+			uint16_t v = bf_cal_power_level(hz, levels[i]);
+			d[k] = '\0';
+			do {
+				d[--k] = (char)('0' + v % 10u);
+				v /= 10u;
+			} while (v && k > 0);
+			if (i > 0) {
+				text_put(buf, len, &n, "/");
+			}
+			text_put(buf, len, &n, d + k);
+		}
+	}
+	buf[n] = '\0';
+	return n;
+}
+
 uint16_t bf_cal_modcal(uint32_t hz)
 {
 	uint32_t f = hz / 1000000u;
@@ -231,4 +275,59 @@ uint16_t bf_cal_power_level(uint32_t hz, uint8_t level)
 	default: v = h; break;
 	}
 	return (uint16_t)(v < 0 ? 0 : v > 4095 ? 4095 : v);
+}
+
+// Band limit in 10 Hz units from a BCD halfword in 100 kHz units (four zero digits below it give the 10 Hz value).
+// 0, or 1000 MHz and up (an erased page reads 1666.5), gives the default, as the radio's start-up does
+static uint32_t limit_10hz(uint16_t off, uint32_t dflt)
+{
+	uint32_t v = bcd8((uint32_t)(image[off] | image[off + 1u] << 8) << 16);
+	return v == 0 || v >= 100000000u ? dflt : v;
+}
+
+// The radio's interpolation: b_lo moved toward b_hi by the fraction of the way from f_lo to f_hi, truncated toward b_lo
+static uint8_t interp_byte(uint32_t f, uint32_t f_lo, uint8_t b_lo, uint32_t f_hi, uint8_t b_hi)
+{
+	if (f_hi <= f_lo) {
+		return b_lo;
+	}
+	int64_t step = (int64_t)f - (int64_t)f_lo;
+	int64_t diff = b_hi >= b_lo ? (int64_t)b_hi - b_lo : (int64_t)b_lo - b_hi;
+	int64_t delta = step * diff / (int64_t)(f_hi - f_lo);	// C truncates toward zero, as the radio's conversion
+	int64_t v = b_hi >= b_lo ? b_lo + delta : b_lo - delta;
+	return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
+uint8_t bf_cal_tx_byte(uint32_t hz, bf_cal_row_t row)
+{
+	static const uint8_t row_uhf[] = {
+		OFF_UHF_POWER, OFF_UHF_POWER + 5u, OFF_UHF_POWER + 10u, OFF_UHF_MOD, OFF_UHF_REG40,
+	};
+	static const uint8_t row_vhf[] = {
+		OFF_VHF_POWER, OFF_VHF_POWER + 5u, OFF_VHF_POWER + 10u, OFF_VHF_MOD, OFF_VHF_REG40,
+	};
+	if (!valid || (unsigned)row > (unsigned)BF_ROW_REG40) {
+		return 0;
+	}
+	bool uhf = hz > 200000000u;
+	uint32_t lo = uhf ? limit_10hz(OFF_UHF_LIMITS, 40000000u) : limit_10hz(OFF_VHF_LIMITS, 13600000u);
+	uint32_t hi = uhf ? limit_10hz(OFF_UHF_LIMITS + 2u, 47000000u) : limit_10hz(OFF_VHF_LIMITS + 2u, 17400000u);
+	uint32_t f = hz / 10u;
+	f = f < lo ? lo : f > hi ? hi : f;
+	const uint8_t *pts = image + OFF_FREQ_TABLES + 20u * (uhf ? TABLE_UHF_TX : TABLE_VHF_TX);
+	uint32_t p[5];
+	for (int i = 0; i < 5; i++) {
+		p[i] = rd32(pts + 4 * i);
+	}
+	const uint8_t *b = image + (uhf ? row_uhf : row_vhf)[row];
+	if (row == BF_ROW_REG40) {
+		return f <= p[2] ? interp_byte(f, p[0], b[0], p[2], b[1]) : interp_byte(f, p[2], b[1], p[4], b[2]);
+	}
+	// The segment: the first point at or above f, minus one, kept to 0..3
+	uint32_t i = 0;
+	while (i < 4u && p[i] < f) {
+		i++;
+	}
+	i = i > 0 ? i - 1u : 0;
+	return interp_byte(f, p[i], b[i], p[i + 1u], b[i + 1u]);
 }

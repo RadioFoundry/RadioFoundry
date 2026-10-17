@@ -8,6 +8,10 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "radio/beep.h"
+#include "radio/vibe.h"
+#include "radio/mic_gain.h"
+
+#define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -30,7 +34,14 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "scan_probes=%u\nscan_synced=%u\n", v->scan_probes, v->scan_synced);
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
-	dl_text(t, "vox_on=%u\nvox.mic=%u\n", v->vox_on, board.power != NULL && board.power->mic_level != NULL);
+	bool mic = board.power != NULL && board.power->mic_level != NULL;
+	// The hook itself, not the VOX poll's last reading, so the level reads with VOX off (nothing keys). Only where VOX
+	// could listen (FM, not a hotspot): a meter that starts on demand (the HR_C7000's mic PCM) then runs in the state
+	// VOX would run it in, and reads 0 on its first call
+	bool listen = mic && v->ch.mode == RADIO_MODE_FM && !v->hotspot;
+	dl_text(t, "vox_on=%u\nvox.mic=%u\nvox.level=%u\n", v->vox_on, mic, listen ? board.power->mic_level() : 0u);
+	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
+	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
 	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", word(v->battery, batt, 3),
 		v->battery_pct, v->battery_mv, v->power_off);
 #if CONFIG_BEEP
@@ -40,6 +51,12 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		(unsigned)b.played, (unsigned)b.no_stream, (unsigned)b.blocks, (unsigned)b.stalls, beep_busy());
 #else
 	dl_text(t, "beep.built=0\n");
+#endif
+#if CONFIG_VIBRATE
+	dl_text(t, "vibe.built=1\nvibe.motor=%u\nvibe.played=%u\nvibe.busy=%u\n",
+		board.power != NULL && board.power->vibrate != NULL, (unsigned)vibe_played(), vibe_busy());
+#else
+	dl_text(t, "vibe.built=0\n");
 #endif
 	radio_get_settings(&s);
 	dl_text(t, "set.tot_s=%u\nset.tot_warn_s=%u\nset.bcl=%s\nset.roger_beep=%u\nset.tx_inhibit=%u\n", s.tot_s,
@@ -52,6 +69,8 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		s.vox_tail_ms);
 	dl_text(t, "set.rx_save=%u\nset.rx_save_idle_s=%u\nset.battery_off_s=%u\n", s.rx_save, s.rx_save_idle_s,
 		s.battery_off_s);
+	// The step in effect (the UI's setting or the SETTING op's) and whether the board's audio path takes it
+	dl_text(t, "set.mic_gain=%u\nset.mic_gain_board=%u\n", radio_mic_gain(), mic_gain_on_board());
 	if (s.reply_s <= 30) {
 		dl_text(t, "set.reply_s=%u\n", s.reply_s);
 	} else {
@@ -134,6 +153,15 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 		radio_req_beep(a[0]);
 		return DL_ST_OK;
+	case DL_OP_VIBRATE:
+		if (len < 1 || a[0] == VIBE_NONE || a[0] >= VIBE_COUNT) {
+			return DL_ST_BAD_ARG;
+		}
+		if (!CONFIG_VIBRATE) {
+			return DL_ST_UNAVAILABLE;
+		}
+		radio_req_vibrate(a[0]);	// played whatever the UI's Vibrate setting; nothing without a motor
+		return DL_ST_OK;
 	case DL_OP_TONE_BURST:
 		if (len < 1) {
 			return DL_ST_BAD_ARG;
@@ -156,9 +184,20 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (len < 3) {
 			return DL_ST_BAD_ARG;
 		}
+		uint16_t v = (uint16_t)(a[1] | (a[2] << 8));
+		if (a[0] == DL_SETTING_MIC_GAIN) {	// not a radio_settings_t field: the UI stores it (radio/mic_gain.h)
+			if (v > MIC_GAIN_STEPS) {
+				return DL_ST_BAD_ARG;
+			}
+			if (!mic_gain_available()) {
+				return DL_ST_UNAVAILABLE;
+			}
+			radio_set_mic_gain((uint8_t)v);
+			return DL_ST_OK;
+		}
 		radio_settings_t s;
 		radio_get_settings(&s);
-		if (!set_one(&s, a[0], (uint16_t)(a[1] | (a[2] << 8)))) {
+		if (!set_one(&s, a[0], v)) {
 			return DL_ST_BAD_ARG;
 		}
 		radio_set_settings(&s);

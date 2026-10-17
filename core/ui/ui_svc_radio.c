@@ -8,15 +8,14 @@
 #include "board.h"
 #include "radio/radio.h"
 #include "radio/beep.h"
+#include "radio/vibe.h"
+#include "radio/mic_gain.h"
 #include "input/input.h"
 #include "settings/settings.h"
 #include <string.h>
 #include "config.h"
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
-#endif
-#if CONFIG_DMR
-#include "dmr/ambe/ambeVoice.h"
 #endif
 
 uint32_t ui_svc_feat_voice(void)
@@ -175,7 +174,9 @@ bool ui_svc_roam(uint8_t cmd)
 
 uint32_t ui_svc_feat_radio(void)
 {
-	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0);
+	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
+	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
+	       (motor ? UI_FEAT_VIBRATE : 0);
 }
 
 #if CONFIG_DMR
@@ -225,6 +226,18 @@ void ui_svc_beep(uint8_t beep)
 }
 #endif
 
+#if CONFIG_VIBRATE
+void ui_svc_vibrate(uint8_t vibe)
+{
+	static const uint8_t map[] = {
+		[UI_VIBE_MESSAGE] = VIBE_MESSAGE, [UI_VIBE_CALL] = VIBE_CALL, [UI_VIBE_EMERGENCY] = VIBE_EMERGENCY,
+	};
+	if (vibe < sizeof map) {
+		radio_req_vibrate(map[vibe]);
+	}
+}
+#endif
+
 void ui_svc_ptt_block(bool blocked)
 {
 	input_set_ptt_block(blocked);
@@ -261,11 +274,9 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_TALK_PERMIT:
 		rs.talk_permit = value != 0;
 		break;
-#if CONFIG_DMR
-	case UI_SET_MIC_GAIN:		// DMR: the samples are scaled before the vocoder (no board has an FM mic gain hook)
-		ambeVoiceSetMicGain((uint8_t)(v16 > 10 ? 10 : v16));
+	case UI_SET_MIC_GAIN:		// the board's gain (FM and DMR) or DMR's sample scaling (radio/mic_gain.h)
+		radio_set_mic_gain((uint8_t)(v16 > MIC_GAIN_STEPS ? MIC_GAIN_STEPS : v16));
 		return;
-#endif
 	case UI_SET_TONE_VOLUME:		// 0..10
 		rs.beep_level = (uint8_t)(v16 > 10 ? 100 : v16 * 10u);
 		break;

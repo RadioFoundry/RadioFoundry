@@ -18,6 +18,8 @@ MCU_DEFS += -DTCP_CONNS=$(TCP_CONNS)
 # The RDA5807-class broadcast tuner (CAP_BCAST_FM); the air band isn't wired yet
 CONFIG_BCAST_FM ?= y
 CONFIG_AM_RX ?= n
+# The vibration motor on PTB24 (Settings > Sound > Vibrate)
+CONFIG_VIBRATE ?= y
 # 128x64 monochrome: no room for the large font
 CONFIG_FONT_XL ?= n
 # The loader hand-over (debug link 0x1A): updates over the programming cable without switching the radio off, from the

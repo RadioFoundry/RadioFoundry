@@ -15,6 +15,7 @@
 #include "debuglink/dlog.h"
 #include "ui/gfx.h"
 #include "ui/ui_screens.h"
+#include "radio/radio.h"
 
 #ifndef ODR_GIT
 #define ODR_GIT "unknown"
@@ -39,6 +40,19 @@ static void show_banner(void)
 	}
 	ui_draw_splash(board.name, ODR_GIT, "PC Loader Connected", "Power-cycle to exit");
 	gfx_flush();
+	// Full backlight: the UI's idle timeout may have dimmed or switched it off, and the UI never runs again while the
+	// monitor has the radio, so the splash would otherwise sit on a dark panel
+	if (board.display->set_backlight != NULL) {
+		board.display->set_backlight(100);
+	}
+}
+
+// Transmitting in any mode the radio core knows about (FM, DMR voice or data)
+static bool on_air(void)
+{
+	radio_view_t v;
+	radio_get_view(&v);
+	return v.state == RS_TX;
 }
 
 static const hal_system_t *sys(void)
@@ -69,6 +83,7 @@ size_t debuglink_cmd_stub(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 	}
 	bool enter = false;
 	uint32_t entry = 0;
+	stub.transmitting = on_air();
 	size_t n = dl_stub_request(&stub, req, len, out, cap, &enter, &entry);
 	if (enter) {
 		enter_pending = true;
@@ -89,6 +104,15 @@ void debuglink_stub_service(void)
 		return;
 	}
 	hal_delay_ms(STUB_ENTER_DELAY_MS);	// the reply reaches the host before the radio goes quiet
+	if (on_air()) {				// PTT went down after the ENTER was accepted
+		dlog("debuglink: stub entry dropped, the radio is transmitting");
+		return;
+	}
+	// The monitor never touches the RF chips, so whatever the transmitter is doing now lasts the whole session. Put
+	// it in receive even when the core thinks it's idle (a hotspot or data burst the core doesn't track as RS_TX)
+	if (board.radio != NULL && board.radio->tx_off != NULL) {
+		board.radio->tx_off();
+	}
 	show_banner();				// tell the user, flushed to the panel before the jump
 	s->enter_stub(enter_addr);		// does not return on success
 	dlog("debuglink: stub entry failed");	// only reached if the jump was refused

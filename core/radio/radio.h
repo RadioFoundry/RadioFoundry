@@ -333,6 +333,9 @@ typedef enum {
 void radio_req_roam(uint8_t cmd);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
+// A vibration pattern (radio/vibe.h vibe_t) on the board's motor (CONFIG_VIBRATE; nothing on a radio without
+// hal_power_t.vibrate). Whether an alert vibrates is the caller's setting
+void radio_req_vibrate(uint8_t pattern);
 // FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off
 void radio_req_tone_burst(bool on);
 // Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them

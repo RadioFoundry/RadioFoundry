@@ -136,6 +136,9 @@ static void testRx(void)
 	CHECK(st.rx_bad == 1 && st.rx_lost == 1 && st.rx_frames == 5 && st.rx_bit_errors == 1 && st.rx_underruns == 4,
 	      "stats bad %u lost %u frames %u biterr %u underruns %u", st.rx_bad, st.rx_lost, st.rx_frames,
 	      st.rx_bit_errors, st.rx_underruns);
+	// Frames 0-2 fill a burst, frame 3 starts the next: the bad frame 4 is a burst's second
+	CHECK(st.rx_bad_at[0] == 0 && st.rx_bad_at[1] == 1 && st.rx_bad_at[2] == 0, "bad by place %u,%u,%u",
+	      st.rx_bad_at[0], st.rx_bad_at[1], st.rx_bad_at[2]);
 
 	// End: drain what's queued, then speaker off
 	makeFrame(6, bits[6], frame);

@@ -10,6 +10,11 @@
 // CPU-fed speaker buffer (b5, 0x180000A0) sounded rough and choppy on the DM-1801 Pro with every sample layout tried.
 //
 // Sample format: mic buffer 16-bit native words; prompt FIFO 16-bit samples, low byte first (DM-1801 Pro bench).
+//
+// Mic level for VOX (CONFIG_VOX, hrc_audio_pcm_mic_level): these radios have no analog mic level tap, so the level is
+// measured on the same mic PCM. The first call turns the PCM interrupt on without the stream (the meter), and the
+// interrupt turns it off again once nobody has asked for METER_IDLE_BLOCKS halves. The stream and the meter share
+// AUDIO_CONTROL b4 and the interrupt: each turns them off only when the other isn't using them.
 #include <string.h>
 #include "config.h"
 #include "audio_pcm.h"
@@ -18,6 +23,9 @@
 #include "platform.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#if CONFIG_VOX
+#include "audio/miclevel/miclevel.h"
+#endif
 
 #define AUDIO_TASK_PRIORITY	5	// above the radio task: a late block is an audible gap
 #define AUDIO_TASK_STACK	1536	// words: the vocoder in the callback
@@ -40,12 +48,32 @@ static volatile bool running;
 static bool spk_routed;		// the last speaker_pcm() state
 static volatile bool fifo_held;	// another user (the board's AFSK) owns the FIFO: speaker PCM waits
 static volatile uint32_t blocks, overruns, underruns;	// underruns: the FIFO does not report them (stays 0)
+static bool isr_registered;
+
+#if CONFIG_VOX
+#define METER_IDLE_BLOCKS	100u	// halves (1 s) without a mic_level() call: the meter stops
+static miclevel_t meter;
+static volatile bool meter_on;
+static volatile uint8_t meter_idle;	// halves since the last mic_level() call
+#endif
 
 static volatile int16_t *const pcm_mic = (volatile int16_t *)C7_PCM_MIC_ADDR;
 
 static void isr_pcm_wr(void)
 {
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR);
+#if CONFIG_VOX
+	if (meter_on) {
+		miclevel_block(&meter, pcm_mic, HALF);
+		if (++meter_idle >= METER_IDLE_BLOCKS) {
+			meter_on = false;	// nobody reads it (VOX off): the stream's use alone decides now
+			if (!running) {
+				hrc7000_audio_bits(modem, 0, C7_AUDIO_PCM_MIC);
+				hrc_irq_enable(IRQ_PCM_WR, false);
+			}
+		}
+	}
+#endif
 	if (!running) {
 		return;
 	}
@@ -116,17 +144,13 @@ static void audio_task(void *arg)
 	}
 }
 
-static void audio_bits(uint32_t set, uint32_t clear)
-{
-	uint32_t s = hrc_irq_save();
-	hrc7000_audio_bits(modem, set, clear);
-	hrc_irq_restore(s);
-}
-
 void hrc_audio_pcm_attach(hrc7000_t *m, void (*speaker_pcm)(bool on))
 {
 	modem = m;
 	speaker_pcm_cb = speaker_pcm;
+	// The meter's interrupt changes AUDIO_CONTROL b4 (isr_pcm_wr): from now on every shadow update, the board's FM
+	// receive, transmit, idle and DMR entry included, runs with interrupts off
+	hrc7000_set_crit(m, hrc_irq_save, hrc_irq_restore);
 }
 
 void hrc_audio_pcm_hold(bool on)
@@ -134,10 +158,21 @@ void hrc_audio_pcm_hold(bool on)
 	fifo_held = on;
 }
 
+// Once: registering masks the source, so never while the meter or the stream has it on
+static void isr_register(void)
+{
+	uint32_t s = hrc_irq_save();	// the stream (audio users' task) and the meter (radio task) can both get here first
+	if (!isr_registered) {
+		hrc_irq_register(IRQ_PCM_WR, isr_pcm_wr);
+		isr_registered = true;
+	}
+	hrc_irq_restore(s);
+}
+
 static bool start(audio_block_cb_t cb, void *ctx)
 {
 	if (task == NULL) {
-		hrc_irq_register(IRQ_PCM_WR, isr_pcm_wr);
+		isr_register();
 		if (xTaskCreate(audio_task, "audio", AUDIO_TASK_STACK, NULL, AUDIO_TASK_PRIORITY, &task) != pdPASS) {
 			task = NULL;
 			return false;
@@ -154,16 +189,25 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	running = true;
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR);
 	hrc_irq_enable(IRQ_PCM_WR, true);
-	audio_bits(C7_AUDIO_PCM_MIC, 0);
+	hrc7000_audio_bits(modem, C7_AUDIO_PCM_MIC, 0);	// under the lock set at attach
 	return true;
 }
 
 static void stop(void)
 {
-	audio_bits(0, C7_AUDIO_PCM_MIC);
-	hrc_irq_enable(IRQ_PCM_WR, false);
+	uint32_t s = hrc_irq_save();	// the meter's interrupt decides on the same state
 	running = false;
 	block_cb = NULL;
+#if CONFIG_VOX
+	bool keep = meter_on;
+#else
+	bool keep = false;
+#endif
+	if (!keep) {
+		hrc7000_audio_bits(modem, 0, C7_AUDIO_PCM_MIC);
+		hrc_irq_enable(IRQ_PCM_WR, false);
+	}
+	hrc_irq_restore(s);
 }
 
 // Speaker PCM: the modem plays the CPU's samples instead of its FM demodulator (the board's hook owns the bits).
@@ -198,5 +242,40 @@ void hrc_audio_pcm_reset_stats(void)
 {
 	blocks = overruns = underruns = 0;
 }
+
+#if CONFIG_VOX
+// hal_power_t.mic_level. Task level (the radio task's VOX poll, the debug link). The first call after the meter
+// stopped turns it on and returns 0: the level needs a block
+uint8_t hrc_audio_pcm_mic_level(void)
+{
+	if (modem == NULL) {
+		return 0;
+	}
+	meter_idle = 0;
+	if (meter_on) {
+		return meter.level;
+	}
+	isr_register();
+	uint32_t s = hrc_irq_save();
+	miclevel_reset(&meter);
+	meter_idle = 0;
+	meter_on = true;
+	if (!running) {
+		hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR);	// a stale flag would count as a block at once
+	}
+	hrc_irq_enable(IRQ_PCM_WR, true);
+	hrc7000_audio_bits(modem, C7_AUDIO_PCM_MIC, 0);
+	hrc_irq_restore(s);
+	return 0;
+}
+
+void hrc_audio_pcm_mic_stats(uint8_t *level, uint16_t *peak, uint32_t *halves, bool *on)
+{
+	*level = meter.level;
+	*peak = meter.peak;
+	*halves = meter.blocks;
+	*on = meter_on;
+}
+#endif
 
 #endif	// CONFIG_DMR

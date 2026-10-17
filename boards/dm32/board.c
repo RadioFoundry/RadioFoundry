@@ -6,6 +6,7 @@
 #include "dm32.h"
 #include "pins.h"
 #include "platform.h"
+#include "hrc_afsk.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 #if CONFIG_NET_PPP
@@ -75,12 +76,16 @@ const board_t board = {
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
 #endif
+#if CONFIG_APRS
+	.afsk = &hrc_afsk,
+#endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
 #endif
 #if CONFIG_NET_PPP
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
+	.gps_present = dm32_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 	.system = &hrc_system,
 };
 
@@ -122,7 +127,7 @@ static void io_init(void)
 	hrc_pin_out(PIN_UHF_LNA, false);
 	hrc_pin_out(PIN_VHF_LNA, false);
 	hrc_pin_out(PIN_MIC_PATH, true);
-	hrc_pin_out(PIN_SPK_SOURCE, true);
+	hrc_pin_out(PIN_SPK_SOURCE, false);	// the codec until FM receive opens the squelch
 	hrc_pin_out(PIN_AMP_EN, false);
 	hrc_pin_out(PIN_LED_RED, false);
 	hrc_pin_out(PIN_LED_GREEN, false);
@@ -184,4 +189,5 @@ void board_init(void)
 	dm32_power.init();
 	dm32_flash.init();
 	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// OpenDM32 keeps a decoded copy there
+	dm32_gps_init();
 }

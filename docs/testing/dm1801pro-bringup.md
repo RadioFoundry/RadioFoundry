@@ -15,7 +15,9 @@ change when it doesn't work. Steps 0 to 3, 7 and 8 passed on 2026-10-15 (hardwar
    into the jack, or the loader doesn't answer. `python3 tools/dm32_flash.py --model dm1801pro --dry-run IMAGE`
    checks the image and the cable first.
 3. Flash: `python3 tools/dm32_flash.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
-   The erase takes about 13 s. `odrflash` knows the board's flash map but has no serial route yet.
+   The erase takes about 13 s. `odrflash flash IMAGE --board dm1801pro` wraps the same tool, and the stub for a radio
+   that runs ODR with `CONFIG_STUB_ENTRY=y` ([tools/odrflash/README.md](../../tools/odrflash/README.md#the-dm-1801-pro));
+   neither odrflash route has flashed a radio yet.
 5. The debug link runs on the same cable at 115200 (`ODR_PORT=/dev/cu.usbserial-... tools/odr_debug.py diag`). The
    cable's plug switches the internal speaker off: unplug it to listen.
 4. Build: `make BOARD=dm1801pro` (csky-elf GCC: `tools/build-csky-toolchain.sh`).
@@ -63,7 +65,41 @@ read.
 1. Key at low power: the carrier is on frequency with no splatter. Check the PA ramp and the TX path pins.
 2. Compare the three power levels with a meter: L < M < H, the nominal values are
    [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.4's open item (which level uses which array).
-3. Deviation and modulation balance with a test set; the modulation calibration byte path is the DM-32UV's.
+3. Deviation and modulation balance with a test set; the modulation byte is read at the calibration page's TX points
+   (hardware-dm1801pro.md 6.4).
+4. Repeat 1 to 3 on VHF. The `pa 145` line shows the VHF drive. No power on VHF while UHF works points at the TX path's
+   VHF side (PTA31, hardware-dm1801pro.md 5.5).
+
+### 5.1 FM mic gain
+
+The FM mic gain is the board's level for the channel bandwidth (`MIC_GAIN_FM_12K5_DB`, `MIC_GAIN_FM_25K_DB` in
+`boards/dm1801pro/radio_dm1801pro.c`) plus the Mic gain setting's offset, (step - 5) x 2 dB
+([radio-features.md](../spec/radio-features.md) 3.6). The programming cable cuts the microphone, and no injected
+tone passes the mic gain, so every measurement is an over with the cable out. `tests/hil/test_mic_gain.py` runs the
+session: it sets the step and the bandwidth over the debug link, the SDR bench records while you key, and it reads
+the step back once the cable is in again.
+
+```
+python3 -m pytest tests/hil/test_mic_gain.py -v -rs -s --manual --allow-rf --fm-mhz MHZ --mic-gain-steps 3,5,7
+```
+
+For each over (3 steps at 12.5 kHz, then at 25 kHz):
+
+1. Wait for `=== over N/6: ... ===` and `GO`. The bench records for `--mic-gain-window` s (30).
+2. Unplug the cable, key PTT, give the same source each time for about 5 s (a steady whistle or a phone playing a
+   1 kHz tone at a fixed distance, or the same sentence), release PTT, plug the cable back in.
+3. The test prints sdr_fm_check.py's report and `link back: step S, GCR_ADCL 0xNN`.
+
+At the end it prints one row per over: bandwidth, step, offset, GCR_ADCL (bits 5:0 = dB), segment length, voice peak
+(99.5 %) and rms deviation, and the strongest tone with its deviation. Expect the deviation to rise about 2 dB a step
+until the deviation limiter. Target with speech: peak about 2.5 kHz at 12.5 kHz and 5 kHz at 25 kHz. Set the two
+board levels from the step that reaches the target (level = 11 + offset), then rerun at step 5 to confirm.
+
+| If | Check |
+|---|---|
+| GCR_ADCL doesn't follow the step | `set.mic_gain_board=1` in the features view; the FM transmit start writes the register (`tx()`) |
+| No keyed segment | PTT pressed inside the window; the capture under `~/<bench dir>/hil_mic_gain_N/` |
+| The same deviation at every step | the limiter (DEV_LIMITER) clips: try lower steps; or the gain isn't in the path the microphone takes |
 
 ## 6. Broadcast FM tuner
 
@@ -102,7 +138,19 @@ DMR counters.
 | Hear a call | Silence: the codec is located but not hosted yet | |
 | Transmit on a dummy load (data call or a short key-up) | A burst per slot on a meter or SDR, `tx`, `rf` and `ok` rise | `un` (underrun) or `rj`: the per-burst switch takes too long (`dmr_rf_switch`, `RF_BIT_SCALE_US`); no carrier: `dmr_pa_on`, the 28 ms PA delay |
 
-## 10. After this
+## 10. VOX and the microphone level
+
+The level comes from the codec ADC's mic PCM ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 12). The
+programming cable in the speaker/mic jack cuts the microphone: unplug it for the talking steps, or read the values
+from the diagnostics page.
+
+| Step | Expect | If not |
+|---|---|---|
+| FM channel, VOX off; read the features view twice (`vox.level`), then the diagnostics line `mic lvl` | `vox.mic=1`; `mic lvl ... on`, and `n` grows by about 100 a second while the view is read | `off` or `n` stuck: the PCM interrupt or AUDIO_CONTROL b4 (`c7 ac` line, bit 4) |
+| Quiet room, then talk at the radio from 10 cm | `lvl` and `pk` low in silence, well up while talking | Flat while talking: the samples don't carry the microphone in receive (PTB14, the codec ADC mute, CR_ADC b7 in the `cd` lines) |
+| VOX on (Quick tile, FM), dummy load, talk | Keys on speech, drops `vox_tail_ms` after it | Keys in silence: the noise floor is above the threshold; lower `vox_level` or check `pk` |
+
+## 11. After this
 
 DMR voice needs the codec hosted (it is the DM-32UV's: [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.5) and the air band its own receive path. The
 open items are in [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 10.

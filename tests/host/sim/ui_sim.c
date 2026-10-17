@@ -940,6 +940,7 @@ bool ui_svc_roam(uint8_t cmd)
 #endif
 }
 void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; sim_rec.last_beep = beep; }
+void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
 void ui_svc_apply(uint8_t id, int32_t value)
@@ -1133,6 +1134,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_THEME, 0);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
+	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
 	ui_svc_setting_set(UI_SET_ROAM_SURVEY, 1);
@@ -1272,6 +1274,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
 	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
 	else if (strcmp(key, "beep") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_beep);	// ui_beep_t
+	else if (strcmp(key, "vibes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.vibes);
+	else if (strcmp(key, "vibe") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_vibe);	// ui_vibe_t
 	else if (strcmp(key, "shows") == 0) {	// a text on the screen (as drawn, after fitting) contains the value
 		got[0] = 0;
 		for (int i = 0; i < live_n; i++) {

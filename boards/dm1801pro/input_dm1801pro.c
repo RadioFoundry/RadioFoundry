@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "input/keymatrix/keymatrix.h"
+#include "input/sharedptt/shared_ptt.h"
 
 #define N	KEYMATRIX_NONE
 
@@ -29,6 +30,7 @@ static const struct {
 };
 
 static uint32_t last_raw, stable, raw_matrix;
+static shared_ptt_t ptt_gate;	// the PTT pin is also the cable's serial line (9.1)
 
 static uint8_t read_inputs_low(void)
 {
@@ -74,9 +76,17 @@ static uint32_t scan(void)
 	uint32_t raw = scan_matrix();
 	uint32_t pins = 0;
 	for (uint8_t i = 0; i < sizeof(direct_keys) / sizeof(direct_keys[0]); i++) {
-		if (!hrc_pin_read(direct_keys[i].pin)) {
-			raw |= 1u << direct_keys[i].key;
+		bool low = !hrc_pin_read(direct_keys[i].pin);
+		if (low) {
 			pins |= 1u << i;
+		}
+		if (direct_keys[i].key == KEY_PTT) {
+			uint32_t rx_ms;
+			bool rx_seen = hrc_host_uart_last_rx(&rx_ms);
+			low = shared_ptt_pressed(&ptt_gate, low, rx_seen, rx_ms, hal_millis());
+		}
+		if (low) {
+			raw |= 1u << direct_keys[i].key;
 		}
 	}
 	raw_matrix |= pins << 20;
@@ -90,6 +100,12 @@ static uint32_t scan(void)
 uint32_t dm1801pro_key_raw(void)
 {
 	return raw_matrix;
+}
+
+// Key scans with the PTT pin low that the shared-line gate took for host data (diag line)
+uint32_t dm1801pro_input_ptt_ignored(void)
+{
+	return ptt_gate.ignored;
 }
 
 const hal_input_t dm1801pro_input = {

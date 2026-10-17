@@ -12,7 +12,7 @@
 #include "pins.h"
 #include "config.h"
 #include "hal_time.h"
-#include "gps/nmea_line/nmea_line.h"
+#include "gps/gps_rx/gps_rx.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #if CONFIG_APRS
@@ -25,12 +25,8 @@
 #define GPS_TASK_PRIORITY	1
 #define GPS_POLL_MS		20
 #define GPS_IRQ_PRIORITY	7	// numerically >= 5: may not call FreeRTOS, doesn't need to
-#define RING			256u
 
-static volatile uint8_t ring[RING];
-static volatile uint16_t head, tail;
-static volatile uint32_t bytes, uart_errors;
-static nmea_line_t line;
+static gps_rx_t rx;
 static volatile bool present;
 static TaskHandle_t task;
 
@@ -39,16 +35,11 @@ void USART3_IRQHandler(void)
 	uint32_t sr = USART3->SR;
 	uint8_t c = (uint8_t)USART3->DR;	// reading SR then DR clears RXNE and the error flags
 	if (sr & (USART_SR_ORE | USART_SR_FE | USART_SR_NE)) {
-		uart_errors++;
+		gps_rx_error(&rx);
 		return;
 	}
 	if (sr & USART_SR_RXNE) {
-		uint16_t h = head, n = (uint16_t)((h + 1u) % RING);
-		if (n != tail) {
-			ring[h] = c;
-			head = n;
-		}
-		bytes++;
+		gps_rx_byte(&rx, c);
 	}
 }
 
@@ -72,40 +63,44 @@ static void uart_on(bool on)
 	}
 }
 
+static void sentence(const char *s, uint8_t len, uint32_t now_ms)
+{
+#if CONFIG_APRS
+	aprs_nmea(s, len, true, now_ms);
+#else
+	(void)s;
+	(void)len;
+	(void)now_ms;
+#endif
+}
+
 static void gps_task(void *arg)
 {
 	(void)arg;
-	uint32_t start = hal_millis();
 	for (;;) {
 		vTaskDelay(pdMS_TO_TICKS(GPS_POLL_MS));
-		while (tail != head) {
-			uint8_t c = ring[tail];
-			tail = (uint16_t)((tail + 1u) % RING);
-			if (!nmea_line_feed(&line, c)) {
-				continue;
-			}
-			if (!present) {
-				// Heard: hold the power pin where it is (hardware-md380.md 13.2)
-				bool level = PIN_READ(PIN_GPS_POWER);
-				stm32_pin_out(PIN_PORT(PIN_GPS_POWER), PIN_MASK(PIN_GPS_POWER), level, false);
-				present = true;
-			}
-#if CONFIG_APRS
-			aprs_nmea(line.buf, line.len, true, hal_millis());
-#endif
+		switch (gps_rx_poll(&rx, hal_millis(), sentence)) {
+		case GPS_RX_FOUND: {
+			// Heard: hold the power pin where it is (hardware-md380.md 13.2)
+			bool level = PIN_READ(PIN_GPS_POWER);
+			stm32_pin_out(PIN_PORT(PIN_GPS_POWER), PIN_MASK(PIN_GPS_POWER), level, false);
+			present = true;
+			break;
 		}
-		if (!present && (uint32_t)(hal_millis() - start) >= LISTEN_MS) {
+		case GPS_RX_ABSENT:
 			uart_on(false);		// no module: nothing more to do
 			task = NULL;
 			vTaskDelete(NULL);
+			break;
+		default:
+			break;
 		}
 	}
 }
 
 void md380_gps_init(void)
 {
-	nmea_line_init(&line);
-	head = tail = 0;
+	gps_rx_init(&rx, hal_millis(), LISTEN_MS);
 	present = false;
 	uart_on(true);
 	if (task == NULL) {
@@ -120,7 +115,5 @@ bool md380_gps_present(void)
 
 void md380_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *n)
 {
-	*good = line.good;
-	*bad = line.bad + uart_errors;
-	*n = bytes;
+	gps_rx_counts(&rx, good, bad, n);
 }

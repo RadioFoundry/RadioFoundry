@@ -138,17 +138,19 @@ OP_SCAN, OP_SCAN_VFO, OP_BEEP, OP_TONE_BURST, OP_SETTING = range(20, 25)
 OP_USB_NETWORK = 25
 OP_ROAM = 26
 OP_USB_NET_SETTINGS = 27
+OP_VIBRATE = 29
 OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
+VIBES = {"message": 1, "call": 2, "emergency": 3}
 SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit": 5, "scan_resume": 6,
             "scan_hold_s": 7, "scan_delay_ms": 8, "scan_dwell_ms": 9, "scan_priority": 10, "beep_level": 11,
             "key_beep": 12, "vox": 13, "vox_level": 14, "vox_tail_ms": 15, "rx_save": 16, "rx_save_idle_s": 17,
             "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
-            "rpt_beacon": 28}
+            "rpt_beacon": 28, "mic_gain": 29}
 
 
 class DebugLinkError(Exception):
@@ -713,6 +715,10 @@ class DebugLink:
     def beep(self, which):
         self.radio(OP_BEEP, bytes([BEEPS[which] if isinstance(which, str) else which]))
 
+    def vibrate(self, which):
+        """A vibration pattern on the board's motor (CONFIG_VIBRATE): message | call | emergency."""
+        self.radio(OP_VIBRATE, bytes([VIBES[which] if isinstance(which, str) else which]))
+
     def tone_burst(self, on):
         """The 1750 Hz burst (FM): keys up and sends the tone while on."""
         self.radio(OP_TONE_BURST, bytes([1 if on else 0]))
@@ -1060,6 +1066,8 @@ def cmd_radio(link, a):
         link.scan_vfo(round(num(0, float) * 1e6), round(num(1, float) * 1e6))
     elif op == "beep":                # beep key|error|tx_permit|...
         link.beep(args[0] if args else "key")
+    elif op == "vibrate":             # vibrate message|call|emergency
+        link.vibrate(args[0] if args else "message")
     elif op == "burst":               # burst on|off
         link.tone_burst(args[:1] != ["off"])
     elif op == "set":                 # set NAME VALUE
@@ -1494,7 +1502,7 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp"])
+                                  "usb-settings", "ppp", "vibrate"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

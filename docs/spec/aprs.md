@@ -49,7 +49,7 @@ What the boards provide today:
 |---|---|---|---|
 | DM-1701 | yes: the AT1846S tone generator retuned per symbol (`hardware-dm1701.md` 5.10) | not yet: FM audio reaches the MCU (`hardware-dm1701.md` 21), no `rx_start` | none |
 | MD-380 | not yet: needs a TX tone path (`boards/md380/config.mk`) | no | G models (`hardware-md380.md` 13) |
-| DM-32UV | no (`board.afsk` NULL) | no | `CAP_GPS` (`hardware-dm32.md` 12) |
+| DM-32UV | yes: 8 kHz PCM through the HR_C7000's prompt FIFO into the FM modulator (`modem-hrc7000.md` 8.4) | yes: the HR_C7000's FM receive audio, ungated (`modem-hrc7000.md` 8.5) | `CAP_GPS` (`hardware-dm32.md` 12) |
 
 Everything is host tested. On the SDR bench (section 13, measured on the DM-1701): positions over DMR (LRRP and UDT)
 decode, and FM AFSK decodes with a valid FCS since the voice source fix (`hardware-dm1701.md` 5.10).
@@ -114,7 +114,8 @@ queries, weather and telemetry recognized by type (not decoded further).
 
 `hal/hal_afsk.h`: `tx_start(tones, nbits, baud, mark, space, level)` plays a symbol string (one bit per symbol,
 1 = mark), `tx_busy`, `tx_stop`; `rx_rate_hz`, `rx_start`, `rx_read`, `rx_stop` deliver received audio samples.
-`board.afsk` is NULL on boards without a tone path; then the reason is "no AFSK" and only DMR positions go out.
+`board.afsk` is NULL on boards without a tone path. A board that can only receive sets the `rx_*` members and leaves
+`tx_start` NULL. Without a transmit path the reason is "no AFSK" and only DMR positions go out.
 
 ### 5.2 Transmit
 
@@ -129,8 +130,9 @@ section 1).
 
 Received FM audio comes from one of two places (`aprs.c`, `rx_service`):
 
-1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. No board has one
-   yet.
+1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. The DM-32UV has
+   one: the HR_C7000's FM receive audio at 8 kHz, not squelch gated (`modem-hrc7000.md` 8.5). While it runs the
+   speaker plays FM through the HR_C7000 instead of straight from the FD6818 (`hardware-dm32.md` 9).
 2. Otherwise FM receive audio on the board's PCM stream, when its audio tap has `AUDIO_TAP_FM_RX` (`hal_audio_tap.h`):
    8 kHz, de-emphasized, squelch gated. The DM-1701's HR_C6000 puts it on I2S (`hardware-dm1701.md` 21.3.1). The
    shared stream (`core/usbaudio/audio_mux.c`) gives APRS a ring of its own (1024 samples, 128 ms) next to a USRP
@@ -357,6 +359,12 @@ tones (about 25 Hz RMS deviation; the 1750 Hz burst likewise silent while CTCSS 
 the voice source bug in `hardware-dm1701.md` 5.10, fixed in 694249b. On ff6268b (HIL 2026-10-10) AFSK decoded off air with a valid FCS,
 twist 0.4-1.4 dB, continuous phase (6.5 degrees residual), but 7.2 kHz peak deviation at tone level 0x40; 237211a set
 0x1C (about 3.1 kHz, `hardware-dm1701.md`).
+
+DM-32UV (2026-10-16, 467.375 MHz, 25 kHz, lowest power, a canned frame through `hal_afsk_t.tx_start`): decoded off
+air with a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase residual.
+Level 50 (PCM amplitude 2750): 3.1 kHz peak, 2.2 / 2.5 kHz mark / space. Level 75: 4.5 kHz peak. PCM amplitude 5850
+and up is limited in the transmitter at 5.1 kHz peak (4.5 kHz on the tones). `test_aprs.py` itself is still to run
+there: it transmits on 2 m amateur.
 
 ## 14. Open decisions
 

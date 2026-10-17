@@ -16,6 +16,8 @@ Pass criteria:
 - test_beep_counts: a BEEP error request counts in beep.played or beep.no_stream (one of them, by 1); when played,
   beep.blocks grows within 1 s (the audio stream ran: on FM this shows whether the I2S clock runs) and beep.busy
   falls back to 0 within 2 s.
+- test_vibrate_counts: (CONFIG_VIBRATE builds) a VIBRATE emergency request: on a radio with a motor (vibe.motor=1)
+  vibe.played grows by 1 within 1 s and vibe.busy falls back to 0 within 3 s; without one vibe.played stays put.
 - test_zone_scan_cancel: (zone of 2+ channels) scan=zone within 1 s; at least 2 different zone positions within 4 s
   unless the scan stopped on a busy channel (scan_phase probe / hold / resume); CANCEL: scan=off and back on the
   starting position within 1 s.
@@ -43,7 +45,14 @@ Pass criteria:
   Then a TOT warning beep (1000 Hz) plays in the speaker: whether it keys VOX through the air is printed (not
   judged; received audio and MONITOR are excluded by design, beeps are not). A voice-triggered key-up needs sound at
   the microphone, which the bench can't make.
-- test_battery_save (radio only): rx_save 1 (200 ms asleep, 100 ms listening), rx_save_idle_s 3, the FM VFO on the
+- test_mic_level (radio only, never keys): VOX off, on the FM VFO. vox.level (the mic_level hook, read by the view)
+  stays within 0-100 over 2 s of reads; min and max are printed (a quiet room: low; talk at the radio to see it rise).
+  Where the board has the HR_C7000 mic meter (diagnostics line "mic lvl"), the meter runs ("on") and counts at least
+  30 PCM halves in 0.5 s (100 a second nominal), which shows the mic PCM flows in FM receive. Then a beep plays in the
+  speaker and the level is printed (acoustic coupling, not judged). On radios whose debug link is the programming
+  cable in the speaker/mic jack (DM-1801 Pro, DM-32UV) the cable cuts the microphone, so the level stays at the
+  noise floor during the test: it checks the path, not the sound.
+- test_battery_save (radio only), skipped where the radio can't switch its receiver off (rx_save.hw=0): rx_save 1 (200 ms asleep, 100 ms listening), rx_save_idle_s 3, the FM VFO on the
   DMR test frequency (quiet): rx_sleeping=1 within 3 + 3 s, and it alternates (asleep and awake both seen within 2 s);
   MONITOR on wakes it (rx_sleeping=0 within 0.5 s and stays 0 for 2 s); the settings are put back.
 - test_battery_save_wakes_for_signal (rf): the same, asleep, then the bench sends a 20 superframe call on that
@@ -51,6 +60,7 @@ Pass criteria:
   in), stays open at least 3 s of the 6 s call, and rx_sleeping stays 0 while open.
 """
 import contextlib
+import re
 import threading
 import time
 
@@ -59,7 +69,7 @@ import pytest
 from odr_debug import as_int
 
 FEATURE_KEYS = ("scan.built", "scan", "scan_phase", "scan_skipped", "tot_warning", "tone_burst", "roger", "vox_keyed",
-                "rx_sleeping", "battery", "battery_pct", "battery_mv", "power_off", "beep.built", "set.tot_s",
+                "vox.mic", "vox.level", "rx_sleeping", "battery", "battery_pct", "battery_mv", "power_off", "beep.built", "set.tot_s",
                 "set.tot_warn_s", "set.bcl", "set.roger_beep", "set.tx_inhibit", "set.scan_resume", "set.scan_hold_s",
                 "set.scan_delay_ms", "set.scan_dwell_ms", "set.scan_priority", "set.beep_level", "set.key_beep",
                 "set.vox", "set.vox_level", "set.vox_tail_ms", "set.rx_save", "set.rx_save_idle_s",
@@ -172,6 +182,21 @@ def test_beep_counts(radio):
                           "audio blocks (the stream runs)")
         wait_features(radio, lambda v: v.get("beep.busy") == "0", 2.0, "the beep finished")
         print(f"blocks +{as_int(f['beep.blocks'], 0) - blocks0}")
+
+
+def test_vibrate_counts(radio):
+    f0 = features(radio)
+    if f0.get("vibe.built") != "1":
+        pytest.skip("built without CONFIG_VIBRATE")
+    played0 = as_int(f0.get("vibe.played"), 0)
+    radio.link.vibrate("emergency")
+    if f0.get("vibe.motor") != "1":
+        time.sleep(0.5)
+        assert as_int(features(radio).get("vibe.played"), 0) == played0
+        return
+    f = wait_features(radio, lambda v: as_int(v.get("vibe.played"), 0) > played0, 1.0, "the vibration counted")
+    assert as_int(f["vibe.played"], 0) == played0 + 1, f
+    wait_features(radio, lambda v: v.get("vibe.busy") == "0", 3.0, "the pattern finished")
 
 
 def test_zone_scan_cancel(radio):
@@ -429,6 +454,8 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
         pytest.skip("built without the FM VFO")
+    if features(radio).get("rx_save.hw") == "0":
+        pytest.skip("this radio's driver can't switch the receiver off (no rx_sleep)")
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
     radio.go_home()
     with radio.vfo_session():
@@ -482,6 +509,8 @@ def _battery_save(radio, pytestconfig):
         pytest.skip("built without CONFIG_BATTERY_SAVE")
     if "VFO_FM" not in radio.features():
         pytest.skip("built without the FM VFO")
+    if features(radio).get("rx_save.hw") == "0":
+        pytest.skip("this radio's driver can't switch the receiver off (no rx_sleep)")
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
@@ -528,6 +557,44 @@ def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
     assert t_open - t_start <= 4.0, f"opened {t_open - t_start:.2f} s after the bench started (it keys after ~2 s)"
     assert not asleep_during, f"asleep during the call at {asleep_during}"
     assert rx[-1][0] - t_open >= 3.0, f"open for only {rx[-1][0] - t_open:.1f} s of the 6 s call"
+
+
+def _mic_meter_line(radio):
+    for line in radio.link.diag()[1]:
+        if line.startswith("mic lvl "):
+            return line
+    return None
+
+
+def test_mic_level(fm_tx):
+    # fm_tx only puts the radio on the FM VFO at its lowest power: nothing here keys, and VOX stays off
+    if "VOX" not in fm_tx.features():
+        pytest.skip("built without CONFIG_VOX")
+    if features(fm_tx).get("vox.mic") != "1":
+        pytest.skip("this radio doesn't read its mic level")
+    with settings(fm_tx, vox=0):
+        levels, end = [], time.monotonic() + 2.0
+        while time.monotonic() < end:
+            levels.append(as_int(features(fm_tx).get("vox.level"), -1))
+            time.sleep(0.05)
+        print(f"vox.level over 2 s: min {min(levels)}, max {max(levels)}, last {levels[-5:]}")
+        assert all(0 <= x <= 100 for x in levels), levels
+        line0 = _mic_meter_line(fm_tx)
+        if line0 is not None:
+            features(fm_tx)     # keeps the meter asked for (it stops after 1 s without a reader)
+            time.sleep(0.5)
+            features(fm_tx)
+            line1 = _mic_meter_line(fm_tx)
+            n0, n1 = (int(re.search(r" n (\d+)", x).group(1)) for x in (line0, line1))
+            print(f"meter: {line0!r} -> {line1!r}")
+            assert line1.endswith(" on"), f"the mic meter isn't running while vox.level is read: {line1}"
+            assert n1 - n0 >= 30, f"only {n1 - n0} mic PCM halves in 0.5 s (100 a second expected): {line1}"
+        fm_tx.link.beep("tot_warn")
+        heard = []
+        for _ in range(10):
+            heard.append(as_int(features(fm_tx).get("vox.level"), -1))
+            time.sleep(0.05)
+        print(f"vox.level while a beep plays in the speaker: max {max(heard)} ({heard})")
 
 
 @pytest.mark.radio_tx

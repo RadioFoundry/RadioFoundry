@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Baofeng DM-1801 Pro: board descriptor, IO mux and reset-time pin levels, key map
 #include "board.h"
+#include "boot_pins.h"
 #include "config.h"
 #include "dm1801pro.h"
 #include "pins.h"
@@ -104,24 +105,8 @@ static void io_init(void)
 	IO_DIPLEX1 &= ~DIPLEX1_SPI0;
 	IO_DIPLEX2 &= ~(DIPLEX2_ADC_BC | IO_DIPLEX2_DAC_B);
 
-	// Outputs at their safe levels: transmitter and receiver paths off, speaker muted, chip selects high
-	hrc_pin_out(PIN_FLASH_CS, true);
-	hrc_pin_out(PIN_RF_CS, true);
-	hrc_pin_out(PIN_RF_CLK, false);
-	hrc_pin_out(PIN_TX_VHF, false);
-	hrc_pin_out(PIN_TX_UHF, false);
-	hrc_pin_out(PIN_RX_VHF, false);
-	hrc_pin_out(PIN_RX_UHF, false);
-	hrc_pin_out(PIN_MIC_PATH, true);
-	hrc_pin_out(PIN_SPK_SOURCE, true);
-	hrc_pin_out(PIN_AMP_EN, false);
-	hrc_pin_out(PIN_BCAST_EN, true);
-	hrc_pin_out(PIN_LED_RED, false);
-	hrc_pin_out(PIN_LED_GREEN, false);
-	hrc_pin_out(PIN_LCD_BACKLIGHT, false);
-	hrc_pin_out(PIN_VIBRATION, false);
-	hrc_pin_out(PIN_LCD_CS, true);
-	hrc_pin_out(PIN_LCD_RESET, true);
+	for (unsigned i = 0; i < DM1801PRO_BOOT_PIN_COUNT; i++)
+		hrc_pin_out(dm1801pro_boot_pins[i].pin, dm1801pro_boot_pins[i].level);
 
 	hrc_pin_in(PIN_RF_DATA);
 	hrc_pin_in(PIN_POWER_KEY);

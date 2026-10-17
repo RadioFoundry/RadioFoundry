@@ -10,7 +10,12 @@ CONFIG_HOSTLINK ?= y
 # The 240x320 panel is driven at half resolution (120x160 logical, every pixel doubled): the core's frame buffer
 # is 40 KB (core/ui/gfx.h), so CONFIG_FONT_XL buys nothing yet
 CONFIG_FONT_XL ?= n
-CONFIG_DISPLAY_INSET ?= 0
+# The bezel hides the panel's edges: 5 px on the left, 4 px on the right, 3 px at the top and 2 px at the bottom,
+# checked on the radio
+CONFIG_DISPLAY_INSET_LEFT ?= 5
+CONFIG_DISPLAY_INSET_RIGHT ?= 4
+CONFIG_DISPLAY_INSET_TOP ?= 3
+CONFIG_DISPLAY_INSET_BOTTOM ?= 2
 # Air band AM receive and the RDA5807M broadcast FM receiver (docs/spec/airband-and-broadcast.md, parked): the core
 # is built and host tested, the board glue isn't written yet (no CAP_AM_RX / CAP_BCAST_FM), so nothing runs yet
 CONFIG_AM_RX ?= $(CONFIG_FM)

@@ -44,6 +44,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — | ● | ● | ● |  |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 | ● | ● | ● |  |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 | ● | ● | ● |  |
+| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | ✕ | ✕ | ✕ | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one ODR drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
 
 ## DMR data
 
