@@ -2,9 +2,9 @@
 
 # DM-32UV bring-up checklist
 
-The DM-32UV port (`make BOARD=dm32`) builds, links in the stock memory map and passes its host tests, but it has
-never run on a radio. This is the order to try it in, what each step proves, and what to change when it doesn't
-work. Every step names the knob in the source that the likely failure points at.
+The DM-32UV port (`make BOARD=dm32`) runs on a radio. This is the order the bring-up follows, what each step proves,
+and what to change when it doesn't work; the open items at the end are what is still to settle. Every step names the
+knob in the source that the likely failure points at.
 
 Hardware facts: `docs/spec/hardware-dm32.md`, `docs/spec/modem-hrc7000.md`, `docs/spec/codec-dm32.md`.
 

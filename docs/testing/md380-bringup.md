@@ -3,8 +3,8 @@
 
 # MD-380 bring-up checklist
 
-The MD-380 port (`make BOARD=md380`, and `MD380_BAND=vhf` for VHF radios) builds and passes its host tests, but it has
-never run on a radio. This is the order to try it in, what each stage proves, and what to change when it doesn't
+The MD-380 port (`make BOARD=md380`, and `MD380_BAND=vhf` for VHF radios) builds, passes its host tests and has run
+on a radio. This is the order to try it in, what each stage proves, and what to change when it doesn't
 work. The stage numbers match the unknowns table in [hardware-md380.md](../spec/hardware-md380.md) section 17. Every
 row names the knob in the source that the likely failure points at.
 

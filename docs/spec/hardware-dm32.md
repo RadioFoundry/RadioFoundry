@@ -1077,7 +1077,7 @@ These are traps in the old port, listed so a fresh implementation does not copy 
 
 ## 17. How OpenDigitalRadio uses it (`make BOARD=dm32`)
 
-Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checklist.
+Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and lists what is still open.
 
 | Area | Choice | Where |
 |---|---|---|

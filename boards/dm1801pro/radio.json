@@ -15,7 +15,8 @@
   "display": "monochrome, 128 × 64",
   "gallery": "128x64",
   "docs": {
-    "hardware": "docs/spec/hardware-dm1801pro.md"
+    "hardware": "docs/spec/hardware-dm1801pro.md",
+    "codec": "docs/spec/codec-dm1801pro.md"
   },
   "flash": {
     "backend": "c7000-stub",

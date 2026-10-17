@@ -634,11 +634,11 @@ def step_iddb(sess, args):
 # package for a tester
 
 PACKAGE_README = """\
-OpenDigitalRadio for the Baofeng DM-32UV: migration kit (TESTING ONLY, never run on a radio before)
+OpenDigitalRadio for the Baofeng DM-32UV: migration kit (TESTING ONLY)
 
 This kit backs up your stock codeplug, flashes OpenDigitalRadio over the programming cable and writes your
-channels, zones, contacts, RX group lists and the DMR ID database back. The DM-32 port has never run on a radio:
-you are the first. Keep Baofeng's stock firmware file (DM32.01.01.049.bin) at hand to go back.
+channels, zones, contacts, RX group lists and the DMR ID database back. The DM-32 port is still in testing.
+Keep Baofeng's stock firmware file (DM32.01.01.049.bin) at hand to go back.
 
 Not for redistribution: the firmware image contains the codec from Baofeng's firmware.
 

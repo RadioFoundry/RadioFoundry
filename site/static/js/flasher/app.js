@@ -1518,7 +1518,7 @@ async function main() {
 		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over
 		const sim = await c7000Simulation(S.data.fb.c7000, "dm1801pro");
 		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
-		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600 });
+		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true } });
 		if (location.hash.includes("c7000-odr")) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);

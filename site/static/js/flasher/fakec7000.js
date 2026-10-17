@@ -63,8 +63,9 @@ export class FakeC7000 {
 		this.romWindow = romWindow;
 		this.bootTime = bootTime;
 		// flip: chance per stub frame of a damaged byte; misplace: sector addresses whose record, once, carries the next
-		// sector's data (as a record left over from an earlier request would)
-		this.faults = { flip: 0, misplace: [], ...faults };
+		// sector's data (as a record left over from an earlier request would); silentAfterReset: after the stub's soft
+		// reset ODR runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md)
+		this.faults = { flip: 0, misplace: [], silentAfterReset: false, ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub
 		this.inb = new Uint8Array(0);
@@ -126,6 +127,7 @@ export class FakeC7000 {
 
 	powerOff() {
 		this.state = "off";
+		this.softReset = false;
 		this.led = "off";
 		this.gen = (this.gen || 0) + 1;
 		this.events.push("off");
@@ -153,6 +155,7 @@ export class FakeC7000 {
 	// ---- what arrives from the host
 	receive(data) {
 		if (this.state === "off" || this.state === "booting") return;
+		if (this.state === "firmware" && this.softReset && this.faults.silentAfterReset) return;
 		this.inb = concat(this.inb, data);
 		for (;;) {
 			const used = this.state === "rom" || this.state === "romload" ? this.rom() : this.state === "stub" ? this.stub()
@@ -254,6 +257,7 @@ export class FakeC7000 {
 			if (u32be(p, 0) === SYS_SOFT_RSTN) {
 				this.events.push("reset");
 				this.led = "off";
+				this.softReset = true;
 				this.boot();
 				return 1;
 			}

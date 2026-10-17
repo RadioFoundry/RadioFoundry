@@ -218,6 +218,9 @@ def readme_status():
 	raise SourceError("README.md: no table under '## Radios and status'")
 
 
+BOARD_STATUSES = ("supported", "testing", "planned")
+
+
 def radio_status(readme_row, radio):
 	"""One word for a radio: supported (on the radio), testing (builds, not on a radio yet), or planned."""
 	if readme_row is None:
@@ -244,7 +247,11 @@ def boards(feature_names, variant_ids):
 		if row is None:
 			raise SourceError("%s: readme %r matches no row of the README radio table" % (p, r["readme"]))
 		row["board"] = bid
-		r["status"] = radio_status(row, r)
+		# radio.json "status" overrides the README's columns: a port that runs on a radio but isn't for use yet stays
+		# "testing" on the site
+		if r.get("status") not in (None, *BOARD_STATUSES):
+			raise SourceError("%s: status %r isn't one of %s" % (p, r["status"], ", ".join(BOARD_STATUSES)))
+		r["status"] = r.get("status") or radio_status(row, r)
 		r["status_detail"] = row
 		gal = path("docs", "ux", "screens", r["gallery"])
 		if not os.path.isdir(gal):

@@ -589,19 +589,27 @@ export function doneView() {
 	const top = radioTop(S().radio, { led: "off", screen: "off" });
 	const status = h("div", {}, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
 	const box = panel(t("flash.done.title"), h("div", { class: "c7-grid" }, h("div", {}, h("p", {}, t("flash.c7.done.lead")), status), top.el));
+	let tries = 0;
 	const check = async () => {
 		S().forward(null);
+		top.set({ led: "off", screen: "off" });
 		fill(status, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
-		const until = Date.now() + 30000;
+		// After the stub's reset ODR boots, but its host link often stays silent until a power cycle (DM-32UV every
+		// time, DM-1801 Pro most times; dm32-bringup.md open items). So the first check waits only a little past the
+		// boot and then asks for the power cycle; a check after one allows for the boot it starts.
 		await sleep(Math.max(0, (c.resetAt || 0) + (S().fakeC7 ? 1500 : BOOT_MS) - Date.now()));
+		const until = Date.now() + (tries++ ? 20000 : 6000);
 		let p = null;
 		while (!p && Date.now() < until) {
 			if (!c.stream) break;
 			p = await probe(new Link(c.stream, { timeout: 1000 }));
 		}
 		if (!p) {
-			top.set({ led: "off", screen: "off" });
-			fill(status, notice(t("flash.c7.done.no_answer"), "bad"), ctx.helpLink());
+			top.set({ led: "off", screen: "on", knob: "cycle" });
+			fill(status, notice(t("flash.c7.done.no_answer"), tries > 1 ? "bad" : ""),
+				S().fakeC7 ? h("div", { class: "actions" }, button(t("flash.sim.c7_off"), () => S().fakeC7.powerOff()),
+					button(t("flash.sim.c7_on"), () => S().fakeC7.powerOn())) : null,
+				tries > 1 ? ctx.helpLink() : null);
 			return S().forward(button(t("flash.c7.done.check"), check, { primary: true }));
 		}
 		const wantCodec = c.decision?.mode !== "none";

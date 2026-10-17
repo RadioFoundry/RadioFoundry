@@ -31,7 +31,7 @@
       "DM32.01.01.049",
       "DM32.00.01.046"
     ],
-    "stub_tested": false
+    "stub_tested": true
   },
   "backup": {
     "stock": "full",

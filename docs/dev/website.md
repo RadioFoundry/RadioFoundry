@@ -37,6 +37,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Radios, their status, planned radios | The README's "Radios and status" table |
 | A radio's one-line note for visitors | `radio.note.<radio>` and `planned.note.<slug of the README name>` in the string catalog (the README's notes are for developers; the build warns when one is missing) |
 | A radio's name, bands, processor, screen, bootloader steps, flash backend | `boards/<radio>/radio.json` |
+| A radio's status badge (Supported, In development, Planned) | the README radio table, or `radio.json` `status` (`supported`, `testing`, `planned`) where the two differ |
 | Which features a radio has, per variant | `make BOARD=<radio> [VARIANT=<v>] print-config`, `print-unsupported`, `print-required` |
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |

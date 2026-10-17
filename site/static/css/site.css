@@ -120,9 +120,9 @@ details.notice > summary { font-weight: 600; }
 .card > :last-child { margin-bottom: 0; }
 .pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--space-4); }
 .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
-.radio-card { display: grid; grid-template-rows: 150px auto; gap: var(--space-4); color: var(--text); text-decoration: none; justify-items: center; text-align: center; }
+.radio-card { display: grid; grid-template-rows: 170px auto; gap: var(--space-4); color: var(--text); text-decoration: none; justify-items: center; text-align: center; }
 .radio-card:hover { border-color: var(--accent); }
-.radio-card img { height: 200px; width: 100%; object-fit: contain; }
+.radio-card img { height: 170px; width: 100%; object-fit: contain; }
 .radio-card > div { min-width: 0; overflow-wrap: anywhere; }
 .radio-card .badge { white-space: normal; }
 .radio-list td:nth-child(3), .radio-list td:nth-child(4) { min-width: 8.5rem; }

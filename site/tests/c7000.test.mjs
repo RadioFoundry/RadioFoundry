@@ -122,6 +122,23 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 	assert.equal(p.codec, "dm1801pro-049");
 });
 
+test("simulated radio: after the stub's reset the host link stays silent until a power cycle, as on the real radios", async (t) => {
+	const { r } = await radio("odr", { faults: { silentAfterReset: true } });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.rom, stubs.romLoad);
+	await s.resetChip();
+	await new Promise((ok) => setTimeout(ok, 1500));
+	assert.equal(r.state, "firmware");
+	assert.equal(await probe(new Link(r.stream, { timeout: 500 })), null, "no answer after the soft reset");
+	r.powerOff();
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 1500));
+	assert.equal((await probe(new Link(r.stream))).board, "DM-1801 Pro", "answers after the power cycle");
+});
+
 test("ODR path: no buttons, keep the codec, write only what changed", async (t) => {
 	const { sim, r } = await radio("odr");
 	t.after(() => r.stop());

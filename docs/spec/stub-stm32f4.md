@@ -15,7 +15,7 @@ stub does for the DM-32UV and the DM-1801 Pro ([hardware-dm32.md](hardware-dm32.
 | Host tool | `stub/f4stub.py`, called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine |
 | Switch | `CONFIG_STUB_ENTRY` (default off), as for the HR_C7000 |
 
-Status (2026-10-16): built and host tested. **Not yet run on a radio.** The first hardware test is in section 11.
+Status (2026-10-16): built, host tested and run on the DM-1701: section 11 has the hardware test and its results.
 
 ## 1. Why
 
