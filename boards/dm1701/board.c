@@ -218,6 +218,14 @@ void board_sysboot_prepare(void)
 	reset_levels();
 }
 
+// Before the flash stub takes over (platform/stm32f4/stub_entry.c): only the transmitter off. The backlight and the
+// rest stay as they are, so the "PC Loader Connected" banner stays readable while the stub runs
+void board_stub_prepare(void)
+{
+	stm32_pin_write(PIN_PORT(PIN_PA_EN1), PIN_MASK(PIN_PA_EN1), false);
+	stm32_pin_write(PIN_PORT(PIN_PA_EN2), PIN_MASK(PIN_PA_EN2), false);
+}
+
 void board_early_init(void)
 {
 	reset_levels();		// latch the power before anything slow

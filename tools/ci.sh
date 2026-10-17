@@ -37,6 +37,7 @@
 #        audio-probe        (DM-1701 only, the board with an audio tap) the default config with CONFIG_AUDIO_PROBE=y
 #                           and LTO=1 (without LTO it no longer fits), so the probe keeps building
 #        vhf                (MD-380 only) the VHF band image, default config
+#      and the STM32F4 flash stub (stub/stm32f4, with the DM-1701 or MD-380 compiler).
 #      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
 #   5. tools/similarity_scan.py against the trees in $ODR_SIMILARITY_REFS (space separated), only when it is set:
@@ -140,8 +141,9 @@ for f in sys.argv[1:]:
 	   python3 tools/md380_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/dm32_flash.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/dm32_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/dm32_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate and dm32_codec self-tests"
+	   python3 tools/dm32_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate, dm32_codec and f4stub self-tests"
 	else
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
@@ -298,6 +300,25 @@ for bm in boards/*/board.mk boards/*/; do
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
 done
+# The STM32F4 flash stub (stub/stm32f4): one image for the DM-1701 and the MD-380, loaded by CONFIG_STUB_ENTRY builds
+if [ -z "$ONLY" ] || [ "$ONLY" = dm1701 ] || [ "$ONLY" = md380 ]; then
+	cc=$(make -s BOARD=dm1701 print-cc 2>/dev/null)
+	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
+		skip "STM32F4 flash stub: compiler ${cc:-?} not installed"
+	elif make -C stub/stm32f4 BUILD="$(pwd)/$OUT/stub-stm32f4" > "$OUT/stub-stm32f4.log" 2>&1; then
+		if grep -qi 'warning:' "$OUT/stub-stm32f4.log"; then
+			grep -i 'warning:' "$OUT/stub-stm32f4.log" | sort -u | head -10
+			bad "STM32F4 flash stub: warnings (see $OUT/stub-stm32f4.log)"
+		elif ! python3 stub/f4stub.py --check-embedded "$OUT/stub-stm32f4/f4stub.bin" > /dev/null; then
+			bad "STM32F4 flash stub: the copy embedded in stub/f4stub.py differs from this build (python3 stub/f4stub.py --embed $OUT/stub-stm32f4/f4stub.bin)"
+		else
+			ok "STM32F4 flash stub: $(wc -c < "$OUT/stub-stm32f4/f4stub.bin" | tr -d ' ') bytes (at most 8192), the embedded copy matches"
+		fi
+	else
+		grep -E 'error|ASSERT' "$OUT/stub-stm32f4.log" | head -10
+		bad "STM32F4 flash stub: build failed (see $OUT/stub-stm32f4.log)"
+	fi
+fi
 echo
 cat "$REPORT"
 echo

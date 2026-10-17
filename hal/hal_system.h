@@ -27,13 +27,17 @@ typedef struct {
 	void (*read)(uint32_t addr, void *dst, size_t n);
 	// Does not return (or returns false when the request could not be armed, e.g. the backup register didn't stick)
 	bool (*reboot)(uint8_t mode);
-	// Runtime RAM-monitor entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2), both optional (NULL where the
-	// platform has none, e.g. the STM32 radios). stub_region returns a writable RAM span the host image is loaded
-	// into (its base address is where it will run) and its length in *size, or NULL if unsupported. enter_stub
-	// quiesces the SoC (interrupts masked, watchdog off, flash controller handed back) and jumps to entry in that
-	// span; it does not return on success, and returns false only if it could not jump
+	// Runtime RAM-monitor entry (CONFIG_STUB_ENTRY, docs/spec/debuglink.md 3.18), both optional (NULL where the
+	// platform has none). stub_region returns a writable RAM span the host image is loaded into and its length in
+	// *size, or NULL if unsupported. enter_stub quiesces the SoC (interrupts masked, watchdog off, DMA stopped, flash
+	// controller handed back) and jumps to entry; it does not return on success, and returns false only if it could
+	// not jump. stub_run_addr is where the image runs: 0 means where it is loaded (the HR_C7000), otherwise
+	// enter_stub copies the span there first (the STM32: SRAM base, which ODR's own data holds until the jump)
 	uint8_t *(*stub_region)(uint32_t *size);
 	bool (*enter_stub)(uint32_t entry);
+#if defined(CONFIG_STUB_ENTRY) && CONFIG_STUB_ENTRY
+	uint32_t stub_run_addr;		// last, so a file built without config.h sees the same layout before it
+#endif
 } hal_system_t;
 
 #endif

@@ -334,8 +334,10 @@ RAM, CCM and peripheral addresses are always refused: a read there can have side
 popping a FIFO). The UID and the flash size register come through INFO_CHIP instead.
 
 RDP and reads: read protection level 1 does **not** stop the application from reading flash. Level 1 blocks flash
-access only from a debugger (SWD/JTAG), from code running in RAM and when the chip boots from system memory (the
-BOOT0 pin); code running from user flash, as this firmware does, reads every flash address. So READ_MEM works at
+access only while a debugger (SWD/JTAG) is connected and when the chip boots from SRAM or system memory (the BOOT
+pins). After a normal boot from user flash, user code reads every flash address, whether it runs from flash, as
+this firmware does, or from SRAM, as the flash stub does ([stub-stm32f4.md](stub-stm32f4.md) 2; the stub's first
+bench run confirms it). So READ_MEM works at
 RDP level 1, and that is how the stock bootloader was saved on the bench unit.
 
 The web flasher and odrflash read the bootloader sectors this way to find the bootloader key by its SHA-256
@@ -498,8 +500,9 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 
 ### 3.18 STUB
 
-Load the host's flash-access RAM monitor (the "C7 stub") into a free RAM span and hand the SoC to it at run time, no
-power cycle (`CONFIG_STUB_ENTRY`; `docs/spec/hardware-dm32.md` 17.2 for the SoC side). Built without the switch, or on a
+Load the host's flash-access RAM monitor into a free RAM span and hand the SoC to it at run time, no power cycle
+(`CONFIG_STUB_ENTRY`). Two platforms have it: the HR_C7000 (the "C7 stub", `docs/spec/hardware-dm32.md` 17.2) and the
+STM32F4 (the DM-1701 and the MD-380, [stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
 board whose platform has no `hal_system_t.enter_stub`, every operation answers `DL_ST_UNAVAILABLE`. All u32 are little
 endian. The guard is a 32-bit magic key `'C7SB'` (`0x42533743`) on BEGIN and ENTER, plus the exact length and a CRC-32
 of the whole image checked before the jump.
@@ -518,6 +521,13 @@ flushed synchronously so the panel does not sit on a stale or hung frame while t
 full, then quiesces and jumps
 and stops answering; the host then speaks the monitor's own protocol (`02 op len chk 03`, the stub's `PROTOCOL.md`) on
 the same UART at the same baud. Recover the radio with a power cycle.
+
+Where the image runs: INFO's load_addr is the address the image is linked for, and the host builds BEGIN's entry from
+it. On the HR_C7000 that is the span itself. On the STM32F4 the span is a staging buffer in ODR's own RAM and
+load_addr is the SRAM base (0x20000000, `hal_system_t.stub_run_addr`): `enter_stub` stops the DMA controllers,
+copies the buffer there and jumps with a handoff flag in r0 ([stub-stm32f4.md](stub-stm32f4.md) 3). The STM32F4
+stub then answers on the USB serial port, with the same framing as the C7 stub. ENTER is answered busy (3) while the
+radio transmits.
 
 The monitor never touches the RF chips, so the transmitter stays as ODR left it for the whole session. ENTER is
 refused while the radio core is transmitting, the entry is dropped if PTT went down in the 100 ms between the reply and
@@ -538,8 +548,9 @@ the jump, and the firmware calls `board.radio->tx_off()` just before the jump in
 - AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; nothing else in the debug link writes
   chip registers.
 - STUB (bench builds only) writes arbitrary RAM and then runs it, giving the host full control: it is gated by a magic
-  key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, and never returns (recover
-  by a power cycle). Off in a release.
+  key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, is refused while
+  transmitting, and never returns (recover by a power cycle). Off in a release. The stub, not the debug link, is
+  what writes flash ([stub-stm32f4.md](stub-stm32f4.md) 6 for the STM32 one's rules).
 - The debug link never enters hotspot or CPS mode, and never takes bytes that belong to an MMDVM frame or a CPS
   request (section 1).
 

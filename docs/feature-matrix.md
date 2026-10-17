@@ -104,7 +104,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | ○ | ○ | ○ | Bench only, never in a release |
-| RAM monitor loader (debug link 0x1A) | `STUB_ENTRY` | — | — | ✕ | ✕ | ○ | HR_C7000 radios: flashing without the bootloader (`stub/`). Other platforms have no entry hook, so the command answers unavailable |
+| Flash stub entry (debug link 0x1A) | `STUB_ENTRY` | 768* | — | ○ | ○ | ○ | Bench only for now: loads a RAM flash stub that installs and backs up the firmware with no bootloader key press ([stub-stm32f4.md](spec/stub-stm32f4.md)). The STM32 radios also give it 8 KB of RAM |
 
 ## Whole images
 

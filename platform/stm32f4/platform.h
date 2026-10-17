@@ -31,6 +31,13 @@ void stm32_sysboot_check(void);
 // transmitter off). Weak default does nothing
 void board_sysboot_prepare(void);
 
+// Runtime flash-stub entry (CONFIG_STUB_ENTRY, stub_entry.c): the staging buffer the debug link loads the image into,
+// and the quiesce, copy-to-SRAM-base and jump. board_stub_prepare is the optional board hook run first: transmitter
+// off, nothing else (the power latch, display and USB pins stay). Weak default does nothing
+uint8_t *stm32_stub_region(uint32_t *size);
+bool stm32_enter_stub(uint32_t entry);
+void board_stub_prepare(void);
+
 // Enable the clock of a GPIO port by its base address
 void stm32_gpio_clock(GPIO_TypeDef *port);
 
