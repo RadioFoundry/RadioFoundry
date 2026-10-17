@@ -125,7 +125,7 @@ jobs:
               rows = im.get("rows", 1)
               if not (isinstance(rows, int) and not isinstance(rows, bool) and 0 < rows <= 8):
                   bad.append(f"rows of {img} is not 1 to 8")
-              if not (isinstance(names, list) and 0 < len(names) <= 8
+              if not (isinstance(names, list) and 0 < len(names) <= 40   # 8 rows, a color page up to 9 shots
                       and all(isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9_]+", n) for n in names)):
                   bad.append(f"screens of {img} are not names")
               p = os.path.join(root, img)
