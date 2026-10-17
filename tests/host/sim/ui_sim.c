@@ -1386,6 +1386,16 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "autotx") == 0) {		// the radio keys by itself (an APRS beacon): TX without a PTT event
+		ptt(true);
+		advance(500);
+		return true;
+	}
+	if (strcmp(t, "autotxend") == 0) {
+		ptt(false);
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "mondown") == 0 || strcmp(t, "monup") == 0) {	// the monitor key held, as `mon` sends it
 		bool down = t[3] == 'd';
 		if (down)

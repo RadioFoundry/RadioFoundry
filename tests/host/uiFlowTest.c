@@ -162,6 +162,13 @@ static const flow_t flows[] = {
 	{ "A KISS on USB", "ok 6 9", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 9 up ok", "screen=aprs-heard count=2", 5, false },
 	{ "A not in this build", "aprs:off", "ok 6 9 2", "toast=APRS:_not aprs_auto=0", 4, false },
+	// Digit keys while transmitting (#37)
+	{ "T FM transmitting: a digit does nothing (#37)", "down pttdown", "5", "screen=home toast=none", 1, false },
+	{ "T FM transmitting: a held digit does nothing (#37)", "down pttdown", "long:5", "screen=home toast=none", 1, false },
+	{ "T DMR transmitting: a digit does nothing (#37)", "pttdown", "5", "screen=home toast=none", 1, false },
+	{ "T after the transmission a digit opens Find again", "down pttdown pttup", "5", "screen=find", 1, false },
+	{ "T a transmission without PTT (beacon) leaves the digits alone", "down autotx", "5", "screen=find", 1, false },
+	{ "T a refused transmission (RX only) leaves the digits alone", "ok 4 down ok up up up up up up up up pttdown", "5", "zone=1 pos=9 screen=find", 1, false },
 };
 
 // GD-77 key map on its 128x64 monochrome screen only

@@ -59,6 +59,7 @@ static uint32_t last_key_ms;		// the last key press (auto lock)
 static bool lock_armed;			// last_key_ms holds a time (from the first tick)
 static uint32_t last_use_ms;		// the last key press or call (auto power off)
 static bool off_warned;			// the "switching off in 1 min" banner is up for this idle spell
+static bool ptt_held;			// the PTT key is down (its DOWN came, its UP not yet)
 static bool power_off_due;		// auto power off: the housekeeping task switches off (ui_app_power_off_due)
 static bool batt_warned;		// the low battery banner was shown at this level (cleared 3 % above it)
 static uint32_t batt_warned_ms;
@@ -1439,6 +1440,7 @@ void ui_app_init(void)
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
+	ptt_held = false;
 	off_warned = power_off_due = batt_warned = false;
 	hear_all_key = 0;
 	has_quick_key = ui_has_action(ACT_QUICK);
@@ -1550,8 +1552,15 @@ void ui_app_key(const input_event_t *ev)
 #endif
 	if (ev->gesture == GESTURE_LONG && ev->value != 0 && view->ch.mode != RADIO_MODE_DMR)
 		return;
+	if (ev->action == ACT_PTT)
+		ptt_held = ev->gesture == GESTURE_DOWN;	// PTT sends only DOWN and UP (raw edges)
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
+	// While PTT keys the radio the digit keys do nothing: no Find, channel entry or speed dial under the TX screen.
+	// On FM they are for DTMF once it exists (#54). A transmission the radio starts by itself (an APRS beacon) leaves
+	// them alone: the user may be typing a frequency or a filter
+	if (ptt_held && view->state == RS_TX && ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9)
+		return;
 	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)
 		ui_svc_beep(UI_BEEP_KEY);
 	if (emergency_key(ev))
