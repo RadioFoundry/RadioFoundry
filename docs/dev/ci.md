@@ -269,6 +269,13 @@ fork code at all.
 When the runner is off, jobs routed to it wait in the queue (and fail after a day). Unset `ODR_CI_RUNNER` to go back
 to the hosted runners.
 
+The UI gallery has a runner of its own, so a pull request's screenshot preview never waits behind the build and test
+jobs. One runner is registered with the label `odr-ui` instead of `odr-ci` (`LABELS=odr-ui` in its env file,
+[tools/ci-runner/README.md](../../tools/ci-runner/README.md)), and the repository variable `ODR_UI_RUNNER` is set to
+`odr-ui`. `ui-gallery.yml` and `ui-gallery-comment.yml` run on `ODR_UI_RUNNER`, falling back to `ODR_CI_RUNNER` when
+it's unset; no other job uses that label. With six runners that leaves five for everything else. Unset
+`ODR_UI_RUNNER` to share the pool again.
+
 ### GitHub
 
 The same workflows run on GitHub's hosted runners when the repository is pushed there and `ODR_CI_RUNNER` is unset. Everything except the C-SKY

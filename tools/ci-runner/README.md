@@ -81,6 +81,10 @@ Size `MEMORY` so the runners together fit the host's RAM. A job peaked at about 
 the limit reclaims first, so six runners at 1200m fit an 8 GB host with no swap. `CPUS` is a cap, so runners can share
 the cores.
 
+One runner can be kept for the UI gallery: give it `LABELS=odr-ui` and set the repository variable `ODR_UI_RUNNER` to
+`odr-ui` ([docs/dev/ci.md](../../docs/dev/ci.md#the-github-self-hosted-runner)). Labels are set when the runner
+registers; to change a registered runner's, re-register it or set them in the repository's Settings, Actions, Runners.
+
 ```sh
 cd ~/odr-ci-runner
 sed -e 's/^NAME=.*/NAME=odr-ci-2/' -e 's|/work$|/work2|' -e 's|/state$|/state2|' runner-1.env > runner-2.env
