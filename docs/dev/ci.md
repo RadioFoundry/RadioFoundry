@@ -103,9 +103,11 @@ before and after, side by side. It's advisory: no required check waits on it.
    linked with `blob/...?raw=true` URLs, which render for signed-in viewers of a private repository (`gh --attach` needs a
    user session, not the job's token). The branch never grows: every run rebuilds it as one parentless commit and force-pushes it (it holds only
    pictures that can be regenerated), keeping the open pull requests, the newest 5 closed without a merge and the newest
-   20 merged, among those that have pictures; older folders are dropped, and GitHub collects their objects. It then
-   posts a new comment and deletes the previous one. Pictures of a pull request that fell out of the window no longer
-   load. The
+   20 merged, among those that have pictures; older folders are dropped, and GitHub collects their objects. A pull
+   request's folder holds only its newest commit: the pictures of its earlier commits are removed. It then edits the
+   pull request's comment in place, so it stays where it was near the top of the conversation; only if the edit fails
+   does it post a new comment and delete the old one. Pictures of a pull request that fell out of the window no longer
+   load. A composite of more than 3 rows is folded in a `<details>` block under its list of changed screens. The
    comment is found by its marker line (`<!-- odr-ui-gallery -->`) and carries the commit, the UTC time of the update
    and the base commit. A run for a commit the pull request has already moved past posts nothing.
 

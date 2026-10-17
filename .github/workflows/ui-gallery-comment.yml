@@ -5,8 +5,9 @@
 # ui-gallery.yml made. The changed screens are pushed to the `ui-previews` branch (made on first use) and the comment
 # links them (blob URLs with ?raw=true, which render for signed-in viewers of a private repository; --attach needs a user
 # session, not the job's token). The branch is rebuilt as one parentless commit on every run, keeping the open pull
-# requests, the newest 5 closed without a merge and the newest 20 merged, so it never grows. Each new commit replaces the
-# previous comment; the comment is found by its marker line.
+# requests, the newest 5 closed without a merge and the newest 20 merged, so it never grows; a pull request keeps only its
+# newest commit's pictures. Each new commit edits the pull request's one comment, found by its marker line (a new
+# comment, and the old one deleted, only when the edit fails).
 #
 # This is the only workflow with write permissions, and it runs main's copy against every pull request. It never runs
 # code from the pull request or the artifact: the artifact is checked as data (names, sizes, PNG signatures, no links,
@@ -121,6 +122,9 @@ jobs:
               if img is None or not re.fullmatch(re.escape(f"compare/{g}-") + r"[0-9]+\.png", str(img)):
                   bad.append(f"image {img!r}")
                   continue
+              rows = im.get("rows", 1)
+              if not (isinstance(rows, int) and not isinstance(rows, bool) and 0 < rows <= 8):
+                  bad.append(f"rows of {img} is not 1 to 8")
               if not (isinstance(names, list) and 0 < len(names) <= 8
                       and all(isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9_]+", n) for n in names)):
                   bad.append(f"screens of {img} are not names")
@@ -247,6 +251,7 @@ jobs:
           python3 -I - <<'PY'
           import datetime, json, os
 
+          FOLD_ROWS = 3   # a composite with more rows than this is collapsed
           m = json.load(open("ui/manifest.json"))
           head, commit, run = os.environ["HEAD"], os.environ["COMMIT_URL"], os.environ["RUN_URL"]
           base, suffix = os.environ["BASE"], os.environ["SUFFIX"]
@@ -265,7 +270,8 @@ jobs:
               out.append("No screen changed: every screen renders as it does on the base commit.")
           else:
               out.append("Each picture stacks the changed screens of one display class, before on the left and after "
-                         "on the right.")
+                         "on the right (a color page's shots side by side, before above after). Pictures of more than "
+                         f"{FOLD_ROWS} rows are folded: open one to see it.")
               geom = kind = None
               for im in m["images"]:
                   if im["color"] != kind:
@@ -274,20 +280,37 @@ jobs:
                   if im["geometry"] != geom:
                       geom = im["geometry"]
                       out += ["", f"#### {geom} ({kind})", ""]
-                  out.append(f"Changed: {', '.join(im['screens'])}")
-                  out.append("")
-                  out.append(f"![{geom} changed screens, before and after]({base}/{im['image']}{suffix})")
-                  out.append("")
+                  changed = f"Changed: {', '.join(im['screens'])}"
+                  picture = f"![{geom} changed screens, before and after]({base}/{im['image']}{suffix})"
+                  # a tall composite folds away, so the comment stays short (rows: the compare tool's row count; an
+                  # older manifest without it counts the changed screens)
+                  rows = im.get("rows", len(im["screens"]))
+                  if rows > FOLD_ROWS:
+                      out += ["<details>", f"<summary>{changed} ({rows} rows)</summary>", "", picture, "",
+                              "</details>", ""]
+                  else:
+                      out += [changed, "", picture, ""]
           open(os.environ["BODY"], "w").write("\n".join(out) + "\n")
           PY
 
-          # the previous comment, found by its marker, goes after the new one is up, so the pull request never has none
-          old=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-                --jq '.[] | select(.body | startswith("<!-- odr-ui-gallery -->")) | .id' | head -n 1)
-
-          gh pr comment "$PR" -R "$REPO" --body-file "$BODY"
-
-          if [ -n "$old" ]; then
-            gh api -X DELETE "repos/$REPO/issues/comments/$old" > /dev/null
-            echo "replaced comment $old on #$PR"
+          # The pull request's gallery comment, found by its marker, is edited in place, so it keeps its spot near the
+          # top of the conversation. Only when it can't be edited is a new one posted, and the old one then deleted
+          # (after, so the pull request never has none). Any duplicate from an earlier run goes too.
+          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+                --jq '.[] | select(.body | startswith("<!-- odr-ui-gallery -->")) | .id')
+          first=$(printf '%s\n' "$ids" | head -n 1)
+          extra=$(printf '%s\n' "$ids" | tail -n +2)
+          if [ -n "$first" ] && gh api -X PATCH "repos/$REPO/issues/comments/$first" -F "body=@$BODY" > /dev/null; then
+            echo "edited comment $first on #$PR"
+          else
+            new=$(gh api -X POST "repos/$REPO/issues/$PR/comments" -F "body=@$BODY" --jq .id)
+            echo "posted comment $new on #$PR"
+            extra="$first $extra"
           fi
+          for id in $extra; do
+            if gh api -X DELETE "repos/$REPO/issues/comments/$id" > /dev/null; then
+              echo "deleted comment $id on #$PR"
+            else
+              echo "::warning::couldn't delete comment $id on #$PR"
+            fi
+          done
