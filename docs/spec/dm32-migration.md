@@ -13,7 +13,9 @@ program and contains none of its code.
 
 ## 1. The flasher (`dm32_flash.py`)
 
-Implements [hardware-dm32.md](hardware-dm32.md) 13.2 on any pyserial port, 115200 8N1.
+Implements [hardware-dm32.md](hardware-dm32.md) 13.2 on any pyserial port, 115200 8N1. `--model dm1801pro` runs the same
+steps against the DM-1801 Pro's loader: only the ID string (`BF1801-V1`), the key combination and the missing codec slot
+differ ([hardware-dm1801pro.md](hardware-dm1801pro.md) 6.2).
 
 | Item | Handling |
 |---|---|

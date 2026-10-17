@@ -78,11 +78,16 @@ The register and stack roles match `DM32_firmware/.../codec_interface.c`, so the
 The stock wrapper passes values it keeps in the state blocks where the aftermarket firmware passes constants:
 
 * decode: r3 = D[0x1166], sp+0 = a flags word.
-* encode: r1 = E[0x1736], sp+0 = 0x800 on both calls, sp+8 = E[0x173A] (0x2000 after init).
+* encode: r1 = E[0x1736], sp+0 = the flags word (a literal 0x800 in three calls, E[0x172E] = 0x1840 in the other
+  three; see [codec-dm1801pro.md](codec-dm1801pro.md) section 3), sp+8 = E[0x173A] (0x2000 after init).
 * ECC: r2 = E[0x1738].
 
 The aftermarket firmware instead uses r3 = 0, encode sp+0 = 0x1840 and then 0x800, and sp+8 = 0x2000. Stock sets
-E[0x172C] = 0x1840 at init. Whether the aftermarket firmware's constants are right for stock is unverified (open item).
+E[0x172C] = 0x1840 at init. Checked on the DM-1801 Pro build of the same wrapper code
+([codec-dm1801pro.md](codec-dm1801pro.md) sections 3 and 5): the sequence 0x1840 once, then 0x800, matches none of the
+wrapper's calls, because each call pattern passes a single value on every call. `boards/dm32/vocoder_dm32.c` follows the aftermarket
+sequence, and since the first call has no measurable effect it behaves as the 0x800 pattern. Which pattern DMR voice
+uses is open.
 
 ## Comparison with the dh4570 pair and OpenDM32
 

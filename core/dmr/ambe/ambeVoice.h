@@ -64,7 +64,8 @@ bool ambeVoiceStreaming(void);
 typedef bool (*ambe_voice_mixer_t)(int16_t *spk);
 void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
 // Microphone gain for DMR transmissions (Settings > Talk & listen > Mic gain): step 0..10, 2 dB a step, 5 = as the
-// board delivers it (the samples are scaled, with saturation, before the vocoder). Any task
+// board delivers it (the samples are scaled, with saturation, before the vocoder). Any task. Set through
+// radio_set_mic_gain (radio/mic_gain.h), which keeps it at 5 when the board applies the gain itself
 void ambeVoiceSetMicGain(uint8_t step);
 void ambeVoiceGetStats(ambe_voice_stats_t *out);
 // Zero the counters (the debug link's RESET_COUNTERS). Counters only: no state changes. From any task; an increment

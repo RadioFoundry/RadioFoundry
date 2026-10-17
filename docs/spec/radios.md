@@ -6,7 +6,7 @@ Status: research, 2026-10-10. This page collects the main chips of every radio O
 close relatives, from public sources only. It also says which ODR platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
+[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
 
 Facts are not copyrightable. Every claim carries a source link and a confidence tag:
 
@@ -235,9 +235,10 @@ Two listings sold new in 2026 under the DM-1801 name. Neither is the DM-1801 v1 
   doesn't get the v1 board.
 - **Telling them apart:** v1 has a 128x64 mono display (D). The model and FCC ID label under the battery is the
   reliable check; the case alone isn't (see the DR-1801 below).
-- **ODR:** the air band and broadcast receive match the DM-32UV, so `platform/hrc7000`, `drivers/modem/hrc7000` and
-  perhaps the DM-32UV's RF and broadcast drivers apply (? until the photos or a teardown name the RF chip). Needs:
-  the chip list, the update path and the stock image's codec.
+- **ODR:** reuses `platform/hrc7000`, `drivers/modem/hrc7000`, the FD6818 driver (own register set) and the shared
+  factory calibration reader. New: the ST7567 display driver and the board. The hardware is in
+  [hardware-dm1801pro.md](hardware-dm1801pro.md); the radio is not yet run on a bench. Needs: the key map, the update
+  path and the codec's location.
 
 ### Baofeng DR-1801 / DR-1801UV
 

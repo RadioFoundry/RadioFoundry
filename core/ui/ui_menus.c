@@ -10,6 +10,7 @@
 #include "fmt.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
+#include "radio/mic_gain.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
@@ -2016,7 +2017,7 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_THEME:
 		return board.display != NULL && board.display->bpp == 1 ? "Themes are for color screens" : NULL;
 	case UI_SET_MIC_GAIN:
-		return CONFIG_DMR ? NULL : "Mic gain: not in this build";
+		return mic_gain_available() ? NULL : "Mic gain: not in this build";
 	case UI_SET_HEAR_ALL_DEFAULT:
 		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Digital monitor: not in this build";
 	case UI_SET_ALIAS_SHOW:

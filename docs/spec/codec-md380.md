@@ -108,7 +108,8 @@ prologues, argument lists and stack argument offsets match; only the addresses d
 | FEC decode | 0x0805170C | +0xAC8 | +0xB54 | (49 bits out, 0, 72 bits in, 1, stack: flags, F_dec): returns 0 good, 4 C0 uncorrectable |
 
 Bits are one per halfword in all buffers, the frame is two calls of 80 samples (half 0, then half 1). Flags: encode
-0x1840 on the first call of a transmission and 0x800 after; decode 0 for a good frame, 4 (repeat the previous frame)
+0x800 or 0x1840 on every call (two calling patterns, each constant; the earlier "0x1840 first, then 0x800"
+reading is not supported, see [codec-dm1801pro.md](codec-dm1801pro.md) section 3); decode 0 for a good frame, 4 (repeat the previous frame)
 or 8. These are the DM-1701's semantics ([codec-dm1701.md](codec-dm1701.md), "Per-frame calls"); the D002.032 call
 sites agree: encode at 0x08047FF0 (flags 0x800, half from the wrapper, the 0x2000 word, E), privacy XOR on the 49
 bits, encode ECC at 0x08048038, FEC decode at 0x08048B0C, decode at 0x0804893A.

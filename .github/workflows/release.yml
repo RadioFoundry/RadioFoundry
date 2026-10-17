@@ -8,7 +8,8 @@
 #
 # Pull requests and pushes to main touching the release tooling build everything as workflow artifacts and publish
 # nothing. The DM-32UV is built only when the repository variable ODR_RELEASE_DM32 is "true" (it isn't verified on
-# a radio yet, and its csky toolchain is built from source: docs/dev/release.md "Adding the DM-32UV").
+# a radio yet, and its csky toolchain is built from source: docs/dev/release.md "Adding the DM-32UV"); the DM-1801 Pro
+# only when ODR_RELEASE_DM1801PRO is "true" (bring-up: docs/dev/release.md "The DM-1801 Pro").
 name: Release
 
 on:
@@ -18,11 +19,17 @@ on:
     paths:
       - "tools/odrflash/**"
       - "tools/release.py"
+      - "tools/dm32_flash.py"
+      - "tools/dm32_codec.py"
+      - "stub/stubtool.py"
       - ".github/workflows/release.yml"
   pull_request:
     paths:
       - "tools/odrflash/**"
       - "tools/release.py"
+      - "tools/dm32_flash.py"
+      - "tools/dm32_codec.py"
+      - "stub/stubtool.py"
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
@@ -124,6 +131,42 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # Off until the DM-1801 Pro leaves bring-up (docs/testing/dm1801pro-bringup.md). Set the repository variable
+  # ODR_RELEASE_DM1801PRO=true to build it. The same csky-elf toolchain and cache as the DM-32UV job.
+  firmware-dm1801pro:
+    needs: version
+    if: vars.ODR_RELEASE_DM1801PRO == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: ~/toolchains/csky-elf
+          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh') }}
+      - name: Build the csky-elf toolchain (pinned versions in the script)
+        run: |
+          set -eu
+          if [ ! -x "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" ]; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev texinfo bison flex
+            tools/build-csky-toolchain.sh
+          fi
+          "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" --version | head -1
+      - name: Build and package
+        run: |
+          set -eu
+          tools/ci.sh --quick --board dm1801pro
+          make BOARD=dm1801pro -j"$(nproc)"
+          python3 tools/release.py --board dm1801pro --version "${{ needs.version.outputs.version }}" --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-dm1801pro
+          path: dist/
+          if-no-files-found: error
+
   odrflash:
     needs: version
     strategy:
@@ -160,7 +203,9 @@ jobs:
         run: |
           set -eu
           out="odrflash-${{ needs.version.outputs.version }}-${{ matrix.name }}"
-          pyinstaller --onefile --clean --name "$out" --paths tools/odrflash \
+          # the serial route (odrflash/serialflash.py) imports these tools from the checkout; bundle them
+          pyinstaller --onefile --clean --name "$out" --paths tools/odrflash --paths tools --paths stub \
+            --hidden-import dm32_flash --hidden-import dm32_codec --hidden-import stubtool \
             --collect-binaries libusb_package --collect-data certifi --hidden-import usb.backend.libusb1 \
             tools/odrflash/odrflash/__main__.py
           "./dist/$out${{ matrix.ext }}" --version
@@ -172,11 +217,12 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [version, firmware-dm1701, firmware-dm32, odrflash]
-    # firmware-dm32 may be skipped (variable off); publish anyway, but never after a failure
+    needs: [version, firmware-dm1701, firmware-dm32, firmware-dm1801pro, odrflash]
+    # firmware-dm32 and firmware-dm1801pro may be skipped (variables off); publish anyway, but never after a failure
     if: >-
       always() && needs.version.outputs.publish == 'true' && needs.firmware-dm1701.result == 'success' &&
-      needs.odrflash.result == 'success' && needs.firmware-dm32.result != 'failure'
+      needs.odrflash.result == 'success' && needs.firmware-dm32.result != 'failure' &&
+      needs.firmware-dm1801pro.result != 'failure'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

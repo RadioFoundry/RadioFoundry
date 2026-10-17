@@ -2,8 +2,8 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DM-32UV factory calibration (boards/dm32/calibration_dm32.c) on a synthetic factory page in a fake data flash:
 // page search, the three pieces, BCD frequency tables, K values, modulation balance, PA drive interpolation and
-// power levels, and the fallbacks (docs/spec/hardware-dm32.md 11); bf_cal_tx_byte, the row lookup at the page's own
-// TX points that the DM-1801 Pro uses
+// power levels, the L / M / H diagnostics text, and the fallbacks (docs/spec/hardware-dm32.md 11); the DM-1801 Pro's
+// own row lookup at its TX points (hardware-dm1801pro.md 6.4)
 #include <stdio.h>
 #include <string.h>
 #include "cal/baofeng/baofeng_cal.h"
@@ -88,6 +88,18 @@ static void test_parse(void)
 	CHECK(!bf_cal_parse(page, 0x200, img));		// too short for the frequency tables
 }
 
+// The diagnostics text of the L / M / H drive (levels 1, 4, 8), and its truncation to a short buffer
+static void test_drive_text(void)
+{
+	char buf[32];
+	CHECK(bf_cal_drive_text(435000000u, buf, sizeof buf) == 18 &&strcmp(buf, "L/M/H 192/832/1632") == 0);
+	// Between UHF points 3 (452.5) and 4 (470): 8.9625 of 17.5 MHz, as the DM-1801 Pro's 461.4625 MHz test channel
+	CHECK(bf_cal_drive_text(461462500u, buf, sizeof buf) > 0 && strcmp(buf, "L/M/H 216/856/1656") == 0);
+	CHECK(bf_cal_drive_text(435000000u, buf, 9) == 8 && strcmp(buf, "L/M/H 19") == 0);
+	CHECK(bf_cal_drive_text(435000000u, buf, 1) == 0 && buf[0] == '\0');
+	CHECK(bf_cal_drive_text(435000000u, buf, 0) == 0);
+}
+
 static void test_values(void)
 {
 	bf_cal_power_points_t p;
@@ -110,6 +122,7 @@ static void test_values(void)
 	CHECK(bf_cal_power_level(435000000u, 8) == 1632);
 	CHECK(bf_cal_power_level(145000000u, 3) > bf_cal_power_level(145000000u, 2));
 	CHECK(bf_cal_byte(0x16) == 0x85 && bf_cal_byte(BF_CAL_LEN) == 0);
+	test_drive_text();
 }
 
 // The DM-1801 Pro's own lookup (bf_cal_tx_byte, hardware-dm1801pro.md 6.4) on a page with TX point lists that differ
@@ -174,6 +187,8 @@ int main(void)
 	CHECK(bf_cal_power_level(145000000u, 8) == 1408);
 	bf_cal_power_points_t p;
 	CHECK(!bf_cal_power(145000000u, &p));
+	char text[16];
+	CHECK(bf_cal_drive_text(435000000u, text, sizeof text) == 10 && strcmp(text, "L/M/H none") == 0);
 
 	test_parse();
 	// Factory page found by its block ID

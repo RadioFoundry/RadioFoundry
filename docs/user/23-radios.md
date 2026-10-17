@@ -12,6 +12,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases |
 | [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Early bring-up: FM receive only, not run on a radio yet. Not for use |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -19,20 +20,20 @@ and what has been checked on it.
 
 The manual names keys by the job they do. Each radio puts those jobs on its own keys:
 
-| Name in this manual | Job (press / hold) | DM-1701 | MD-380 | DM-32UV | DB25-D PRO |
-|---|---|---|---|---|---|
-| **OK** | Open or choose / save, make permanent | Green Menu key | Green Menu key | Green Menu / OK key | Menu / OK key, or push the knob |
-| **Back** | Back one level / Home | Red Back key | Red Back key | Red Back key | B/E key |
-| **Up**, **Down** | Move the focus / repeat | Arrow keys | Arrow keys | Up and Down keys | None: turn the knob |
-| **\*** | Quick settings / lock or unlock the keys | **\*** | **\*** | **\*** | P1 |
-| **#** | Actions / Recent | **#** | **#** | **#** | P2 |
-| **0** to **9** | Number keys | Number keys | Number keys | Number keys | None |
-| **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 |
-| **Talk target** | Talk target picker / scan on or off | SK2 | SK2 | SK2 | TONE/T.SEL |
-| **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None |
-| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | VOL/SQL: previous zone only |
-| **PTT** | Transmit | PTT | PTT | PTT | PTT on the microphone |
-| Channel knob | One step per click | Channel knob | Channel switch (16 positions) | Channel knob | Front knob |
+| Name in this manual | Job (press / hold) | DM-1701 | MD-380 | DM-32UV | DB25-D PRO | DM-1801 Pro |
+|---|---|---|---|---|---|---|
+| **OK** | Open or choose / save, make permanent | Green Menu key | Green Menu key | Green Menu / OK key | Menu / OK key, or push the knob | Menu key |
+| **Back** | Back one level / Home | Red Back key | Red Back key | Red Back key | B/E key | Back key |
+| **Up**, **Down** | Move the focus / repeat | Arrow keys | Arrow keys | Up and Down keys | None: turn the knob | Up and Down keys |
+| **\*** | Quick settings / lock or unlock the keys | **\*** | **\*** | **\*** | P1 | **\*** |
+| **#** | Actions / Recent | **#** | **#** | **#** | P2 | **#** |
+| **0** to **9** | Number keys | Number keys | Number keys | Number keys | None | Number keys |
+| **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 | SK1 |
+| **Talk target** | Talk target picker / scan on or off | SK2 | SK2 | SK2 | TONE/T.SEL | SK2 |
+| **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None | None |
+| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | VOL/SQL: previous zone only | A/B key: next zone |
+| **PTT** | Transmit | PTT | PTT | PTT | PTT on the microphone | PTT |
+| Channel knob | One step per click | Channel knob | Channel switch (16 positions) | Channel knob | Front knob | None: Up and Down |
 
 These are the defaults. **Settings > Keys** can give SK1, SK2 and the DM-1701's top side key other jobs
 ([Settings](12-settings.md#keys-key-8)).
@@ -318,6 +319,61 @@ A 1.77" color screen, 160 x 128. There is no volume knob: the radio sets its vol
 No transmit, no DMR, no hotspot, no programming with qdmr, and no stored settings: the radio runs on the defaults and
 forgets changes at power off. Only the PRO (two BK4819 receiver chips) is supported, not the earlier batches.
 
+## Baofeng DM-1801 Pro
+
+A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. **Bring-up, not
+for everyday use:** FM and DMR work on air on the test bench: voice calls both ways, CTCSS and DCS, text messages and
+the other DMR data, and hotspot mode. There is no release to install yet.
+
+Bring-up builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
+the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/dm32_flash.py --model dm1801pro IMAGE` over
+the programming cable. The cable's plug switches the internal speaker and the microphone off; unplug it to hear the
+radio or to talk.
+
+Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on this radio.
+
+`odrflash flash IMAGE --board dm1801pro` does the same over the cable, and picks the way in by itself:
+
+| The radio runs | odrflash |
+|---|---|
+| ODR built with `CONFIG_STUB_ENTRY=y` | Enters the loader from ODR (the screen shows "PC Loader Connected"), writes only what changed and restarts the radio. No keys to hold. The codec in the radio stays |
+| Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `odr_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
+
+`--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
+odrflash has flashed a radio yet; `tools/dm32_flash.py` and `stub/stubtool.py` have.
+
+### DM-1801 Pro keys
+
+| Key | Role |
+|---|---|
+| Menu | **OK** |
+| Back | **Back** |
+| Up, Down | **Up**, **Down** |
+| Left, Right | Left and right in editors; hold for the user functions |
+| VFO/MR | User function 3 |
+| A/B | Next zone |
+| **\*** | **\*** |
+| **#** | **#** |
+| SK1 | **Monitor** |
+| SK2 | **Talk target** |
+| SOS (top) | Hold: emergency, where it is built |
+| **PTT** | **PTT** |
+
+### DM-1801 Pro power and display
+
+Three power levels, L, M and H, the stock firmware's Low, Middle and High. The radio refuses to transmit until ODR can
+read its factory calibration. The battery
+reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
+The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
+
+### What the DM-1801 Pro lacks today
+
+- APRS receive is unchecked. APRS sending works on FM and over DMR.
+- VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
+- VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been
+  tried on the radio yet.
+- No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
+
 ## Planned radios
 
 These radios aren't built yet. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
@@ -329,5 +385,4 @@ models it covers.
 | TYT MD-9600, Retevis RT90 | Mobile. Planned |
 | Radioddity GD-77 family | Planned. Needs a new processor platform |
 | Radioddity GD-88 | Planned |
-| Baofeng DM-1801 Pro | Planned. Hardware needed |
 | Radioddity DB40-D | Mobile. Planned. Hardware needed |

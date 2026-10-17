@@ -53,7 +53,7 @@ run; **none** = no automated test. Last run:
 | Roger beep | `test_fm_tx::test_fm_tx_roger_beep` | on air | 1200 / 900 Hz at the end of the over, none when off; silent before `ff6268b` |
 | TX inhibit, TOT warning and time-out | `test_radio_features` | radio | the radio's state, not the RF |
 | Power levels | `test_fm_tx::test_fm_tx_power_levels` | none (rig) | skipped: the RTL-SDR clips at gain 0 even at 50 mW; needs an attenuator |
-| VOX | `test_radio_features::test_vox_quiet` | partial | no key-up in silence, none from a beep in the speaker; a voice key-up needs sound at the microphone |
+| VOX | `test_radio_features::test_vox_quiet`, `test_mic_level` (the level, radio only) | partial | no key-up in silence, none from a beep in the speaker; a voice key-up needs sound at the microphone |
 | Battery saver | `test_radio_features::test_battery_save*` | on air | cycles when idle, MONITOR and a bench call wake it |
 | Zone scan stopping for calls | `test_radio_features::test_scan_stops_on_dmr_call` | on air | |
 | VFO scan | `test_radio_features::test_vfo_scan*` | on air | holds on the bench's carrier |

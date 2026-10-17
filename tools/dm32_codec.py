@@ -36,7 +36,10 @@ CODEC_SIG = (0x152514D8, 0x74C776CD)
 # table window (the __codec_* symbols of boards/<radio>/<radio>.ld; keep the two in step)
 BOARDS = {
     "dm32": {"slot": (0x030E8000, 0x03100000), "run": (0x00016CDC, 0x0002F914), "tables": (0x18000E48, 0x18003E20)},
+    "dm1801pro": {"slot": (0x030E8000, 0x03100000), "run": (0x00016CDC, 0x0002B2DC),
+                  "tables": (0x18000EF0, 0x18003E68)},
 }
+PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 
 # Entry points, offsets from the codec start (codec-dm32.md "Entry points"); fec_init differs per version
 ENTRIES = ("decode", "encode", "dec_init", "dec_set", "enc_init", "enc_set", "fec_init")
@@ -55,6 +58,18 @@ PROFILES = {
         "tables": (0x030723A8, 0x2F78, 0x18000E48),
         "entries": {"decode": 0x0, "encode": 0x260, "dec_init": 0xB4, "dec_set": 0x84, "enc_init": 0x314,
                     "enc_set": 0x2E4, "fec_init": 0x1DCC},
+    },
+    # A whole program flash dump (1 MB from 0x03000000, e.g. stub/stubtool.py --progmem) holds the radio's own data
+    # besides the firmware, so it's known by the SHA-256 of the code window (the key) and of the table window
+    # (docs/spec/codec-dm1801pro.md 1)
+    "8f7641b69a5cdfc946507ec48ddb67febe91d964520d5522bebd707f363f1a42": {
+        "name": "DM-1801 Pro program flash (049 codec)", "board": "dm1801pro", "kind": "progmem", "tag": 49,
+        "size": 0x100000,
+        "code": (0x030A22F0, 0x14600, 0x00016CDC),
+        "tables": (0x03068770, 0x2F78, 0x18000EF0),
+        "tables_sha256": "10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1",
+        "entries": {"decode": 0x0, "encode": 0x260, "dec_init": 0xB4, "dec_set": 0x84, "enc_init": 0x314,
+                    "enc_set": 0x2E4, "fec_init": 0x1BF8},
     },
 }
 
@@ -81,25 +96,45 @@ def file_offset(addr):
     return addr - APP_BASE + STOCK_HEADER
 
 
+def carve(stock, prof):
+    """The code and table windows of a stock file, by the profile's kind."""
+    windows = []
+    for key in ("code", "tables"):
+        addr, length, _ = prof[key]
+        off = addr - PROGMEM_BASE if prof.get("kind") == "progmem" else file_offset(addr)
+        if off < 0 or off + length > len(stock):
+            raise ExtractError("%s window outside the file" % key)
+        windows.append(stock[off:off + length])
+    return windows
+
+
+def identify(stock, profiles=None, board="dm32"):
+    """The profile a stock file matches (whole-file SHA-256, or a program flash dump by its windows), else None."""
+    profiles = PROFILES if profiles is None else profiles
+    profiles = {h: p for h, p in profiles.items() if p["board"] == board}
+    prof = profiles.get(sha256(stock))
+    if prof is not None and prof.get("kind") != "progmem":
+        return prof
+    for h, p in profiles.items():
+        if p.get("kind") == "progmem" and len(stock) == p["size"]:
+            code, tables = carve(stock, p)
+            if sha256(code) == h and sha256(tables) == p["tables_sha256"]:
+                return p
+    return None
+
+
 def extract(stock, profiles=None, board="dm32"):
     """Check the stock file and return (profile, code bytes, table bytes)."""
     profiles = PROFILES if profiles is None else profiles
     profiles = {h: p for h, p in profiles.items() if p["board"] == board}
     digest = sha256(stock)
-    prof = profiles.get(digest)
+    prof = identify(stock, profiles, board)
     if prof is None:
         raise ExtractError("unsupported stock file (sha256 %s); supported: %s"
                            % (digest, ", ".join("%s (%s...)" % (p["name"], h[:8]) for h, p in profiles.items())))
-    if not stock.startswith(MAGIC):
+    if prof.get("kind") != "progmem" and not stock.startswith(MAGIC):
         raise ExtractError("not a BFUV32-V2 firmware file")
-    windows = []
-    for key in ("code", "tables"):
-        addr, length, _ = prof[key]
-        off = file_offset(addr)
-        if off < STOCK_HEADER or off + length > len(stock):
-            raise ExtractError("%s window outside the file" % key)
-        windows.append(stock[off:off + length])
-    code, tables = windows
+    code, tables = carve(stock, prof)
     if struct.unpack_from("<2I", code, 0) != CODEC_SIG:
         raise ExtractError("codec signature words not found at the code window")
     return prof, code, tables
@@ -196,6 +231,29 @@ def self_test():
 
     expect_error(lambda: extract(stock[:-1] + b"\1", profiles), "other file: unsupported sha256")
     expect_error(lambda: extract(stock, profiles, board="other"), "another radio's stock file")
+
+    # A program flash dump (DM-1801 Pro): known by its windows, whatever else the dump holds
+    pm = PROFILES["8f7641b69a5cdfc946507ec48ddb67febe91d964520d5522bebd707f363f1a42"]
+    dump = bytearray(os.urandom(pm["size"]))
+    pcode = bytearray(os.urandom(pm["code"][1]))
+    struct.pack_into("<2I", pcode, 0, *CODEC_SIG)
+    ptab = os.urandom(pm["tables"][1])
+    co, to = pm["code"][0] - PROGMEM_BASE, pm["tables"][0] - PROGMEM_BASE
+    dump[co:co + len(pcode)] = pcode
+    dump[to:to + len(ptab)] = ptab
+    pprof = dict(pm, tables_sha256=sha256(ptab))
+    pprofiles = {sha256(bytes(pcode)): pprof}
+    q, qc, qt = extract(bytes(dump), pprofiles, board="dm1801pro")
+    check(qc == bytes(pcode) and qt == ptab, "program flash dump: windows carved at their addresses")
+    dump2 = bytearray(dump)
+    dump2[0x100] ^= 0xFF    # the radio's own data elsewhere in the dump doesn't matter
+    check(identify(bytes(dump2), pprofiles, board="dm1801pro") is pprof, "program flash dump: other bytes ignored")
+    qs = merge(b"\x22" * 64, q, qc, qt)[BOARDS["dm1801pro"]["slot"][0] - APP_BASE:]
+    g = struct.unpack_from("<8I7I2I", qs, 0)
+    check(g[4] == 0x16CDC and g[7] == 0x18000EF0 and g[14] == 0x1BF8, "program flash dump: slot header")
+    dump2[co + 100] ^= 1
+    expect_error(lambda: extract(bytes(dump2), pprofiles, board="dm1801pro"), "program flash dump: changed code")
+    expect_error(lambda: extract(bytes(dump), pprofiles, board="dm32"), "program flash dump: other radio")
     bad = bytearray(stock)
     bad[file_offset(caddr)] ^= 1
     bad = bytes(bad)
@@ -210,7 +268,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], epilog=EPILOG,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--board", default="dm32", choices=sorted(BOARDS), help="the radio (default: dm32)")
-    ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046)")
+    ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046; DM-1801 Pro: a program "
+                    "flash dump, stub/stubtool.py --progmem)")
     ap.add_argument("--image", help="the built raw application image (default: build/<board>/odr_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     ap.add_argument("--self-test", action="store_true", help="run the built-in checks on synthetic data")
