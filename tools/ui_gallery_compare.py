@@ -15,9 +15,10 @@
 # every screen that is not identical, with its status, and which composite it is in; each composite's entry has its
 # row count (the comment folds a tall one).
 #
-# A color page's highlight color shots (<screen>__<color>, uiSim UI_GALLERY_COLORS) stay together: when any of them
-# or the page itself changed, the whole set is shown in one row: a column per shot, the page first and then its colors
-# in --colors order, before above after (unchanged ones marked so). Such a row counts as two toward ROWS_PER_IMAGE.
+# A color page's highlight color and theme shots (<screen>__<color>, uiSim UI_GALLERY_COLORS; <screen>__light and
+# __high_contrast) stay together: when any of them or the page itself changed, the whole set is shown in one row: a
+# column per shot, the page first, then its colors in --colors order, then its themes, before above after (unchanged
+# ones marked so). Such a row counts as two toward ROWS_PER_IMAGE.
 import argparse
 import datetime
 import filecmp
@@ -26,6 +27,7 @@ import os
 import sys
 
 SCALE = 2
+THEMES = ("light", "high_contrast")    # uiSim's theme shots, after the colors
 GAP = 24          # between the two screens of a pair, room for the arrow
 PAD = 12          # around the picture
 ROW_HEADER = 20   # the screen's name above each pair
@@ -59,8 +61,8 @@ def page(name):
 
 
 def page_groups(rows, colors):
-    """rows grouped by page, each group the page first and then its colors in the configured order."""
-    order = {c: i for i, c in enumerate(colors)}
+    """rows grouped by page, each group the page first, then its colors in the configured order, then its themes."""
+    order = {c: i for i, c in enumerate(list(colors) + list(THEMES))}
     groups = {}
     for row in rows:
         groups.setdefault(page(row[0])[0], []).append(row)
@@ -88,12 +90,14 @@ def chunks(groups):
 
 
 def self_test():
-    rows = [("home_strip__yellow", "changed", None, None), ("home_strip", "unchanged", None, None),
+    rows = [("home_strip__yellow", "changed", None, None), ("home_strip__high_contrast", "changed", None, None),
+            ("home_strip", "unchanged", None, None), ("home_strip__light", "unchanged", None, None),
             ("home_strip__red", "unchanged", None, None), ("home", "changed", None, None),
             ("home_strip_monitor", "changed", None, None)]
     assert page("home_strip__light_blue") == ("home_strip", "light_blue") and page("home") == ("home", "")
     groups = page_groups(rows, ["red", "yellow"])
-    assert [[r[0] for r in g] for g in groups] == [["home"], ["home_strip", "home_strip__red", "home_strip__yellow"],
+    assert [[r[0] for r in g] for g in groups] == [["home"], ["home_strip", "home_strip__red", "home_strip__yellow",
+                                                    "home_strip__light", "home_strip__high_contrast"],
                                                    ["home_strip_monitor"]], groups
     one = [[("p%d" % i, "changed", None, None)] for i in range(7)]
     color = [("c", "unchanged", None, None)] + [("c__c%d" % i, "changed" if i else "unchanged", None, None)

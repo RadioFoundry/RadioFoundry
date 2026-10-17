@@ -17,6 +17,7 @@
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
+//   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
@@ -185,6 +186,17 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 		issue("cut by its box", s, x, y, w, h, NULL);
 	if (x0 >= x1 || y0 >= y1)
 		return;
+	// Invisible: a whole text (not one its box cuts) whose cells are one color after it is drawn, its ink the
+	// color of what is under it (the high-contrast theme's white idle pill had white text)
+	if (x0 == x && y0 == y && x1 == x + w && y1 == y + h) {
+		color_t c0 = gfx_get_pixel(x0, y0);
+		bool one = true;
+		for (int py = y0; py < y1 && one; py++)
+			for (int px = x0; px < x1 && one; px++)
+				one = gfx_get_pixel(px, py) == c0;
+		if (one)
+			issue("invisible", s, x, y, w, h, NULL);
+	}
 	for (int i = 0; i < live_n; i++) {
 		if (live[i].y0 >= y1 || live[i].y1 <= y0)
 			continue;
@@ -1485,14 +1497,15 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
-	if ((strcmp(t, "color") == 0 || strcmp(t, "strip") == 0) && arg != NULL) {
-		bool color = t[0] == 'c';
-		int v = color ? sim_color_find(arg) : strcmp(arg, "on") == 0 ? 1 : strcmp(arg, "off") == 0 ? 0 : -1;
+	if ((strcmp(t, "color") == 0 || strcmp(t, "strip") == 0 || strcmp(t, "theme") == 0) && arg != NULL) {
+		bool color = t[0] == 'c', theme = t[0] == 't';
+		int v = color ? sim_color_find(arg) : theme ? sim_theme_find(arg) :
+			strcmp(arg, "on") == 0 ? 1 : strcmp(arg, "off") == 0 ? 0 : -1;
 		if (v < 0) {
 			snprintf(err, len, "%s: no %s", t, arg);
 			return false;
 		}
-		uint8_t id = color ? UI_SET_ACCENT : UI_SET_STRIP;
+		uint8_t id = color ? UI_SET_ACCENT : theme ? UI_SET_THEME : UI_SET_STRIP;
 		ui_svc_setting_set(id, v);
 		ui_apply_setting(id, v);
 		advance(200);
@@ -1530,6 +1543,16 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "expect") == 0 && arg != NULL)
 		return check(arg, err, len);
 	return press(t, false, err, len);
+}
+
+const char *const sim_themes[SIM_THEME_COUNT] = { "dark", "light", "high_contrast" };	// ui_theme_set's order
+
+int sim_theme_find(const char *name)
+{
+	for (int i = 0; i < SIM_THEME_COUNT; i++)
+		if (strcmp(name, sim_themes[i]) == 0)
+			return i;
+	return -1;
 }
 
 int sim_color_find(const char *name)

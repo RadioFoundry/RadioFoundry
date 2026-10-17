@@ -188,13 +188,15 @@ class Site:
 		return self.i18n.t(lang, key, **fmt)
 
 	def screen(self, name):
-		"""A gallery screen's screens.json entry; a color page's shot in a highlight color (<page>__<color>) takes the
-		page's."""
+		"""A gallery screen's screens.json entry; a color page's shot in a highlight color or a theme (<page>__<color>)
+		takes the page's."""
 		return self.screens["screens"].get(name.partition("__")[0])
 
 	def screen_caption(self, lang, name):
 		page, _, color = name.partition("__")
 		cap = self.t(lang, "screen." + page)
+		if color in ("light", "high_contrast"):	# a theme page in another theme (uiSim G_THEMES)
+			return self.t(lang, "screen.in_theme", screen=cap, theme=self.t(lang, "theme." + color))
 		return self.t(lang, "screen.in_color", screen=cap, color=self.t(lang, "color." + color)) if color else cap
 
 	def ftitle(self, lang, f):

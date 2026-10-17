@@ -22,11 +22,12 @@ The drawings are the design intent. What the firmware draws is in `../screens/<g
 
 ## The layout check
 
-`uiSim --layout` (part of `make -C tests/host`, so CI) draws every gallery screen, every settings page and a set of worst-case screens at every geometry, once with the usability-test codeplug and once with worst-case content: 16-character channel, zone and contact names, 4-digit channel numbers, 8-digit talkgroups, 7-digit IDs, 31-character talker aliases, 143-character messages, 80-channel zones, every status mark at once (lock, unread, scan, low battery, hear all, privacy, a 5-character power level). It fails on:
+`uiSim --layout` (part of `make -C tests/host`, so CI) draws every gallery screen, every settings page and a set of worst-case screens at every geometry (in each theme on color ones), once with the usability-test codeplug and once with worst-case content: 16-character channel, zone and contact names, 4-digit channel numbers, 8-digit talkgroups, 7-digit IDs, 31-character talker aliases, 143-character messages, 80-channel zones, every status mark at once (lock, unread, scan, low battery, hear all, privacy, a 5-character power level). It fails on:
 
 - a text outside the safe area, or cut by its box (a quick settings tile);
 - two texts overlapping, or side by side with no space between them;
 - a box drawn over part of a text, or an overlay (banner, toast) cutting a line in half;
+- a text drawn invisibly: its cells one color after it is drawn (text the color of what is under it, or a blank glyph);
 - a text shortened in the middle with an ellipsis on ordinary content (worst-case content may be shortened; a message preview cut at its end is fine).
 
 `ODR_LAYOUT_SHOTS=DIR uiSim --layout` saves every screen it checked; `uiSim --ellipsis` lists every shortened text.

@@ -251,7 +251,9 @@ tests/host/uiSim --geom 160x120i5 --script "ok 4 down ok expect:zone=1" --out zo
 The gallery draws a color page (Home with its filled status bar, the Channels list) once more in each highlight color
 `UI_GALLERY_COLORS` names, as `<screen>__<color>.png` right after the page, on color displays only; screens that only
 differ in color (`home_plain`) are left out at 128x64. The list is set in
-`.github/workflows/ui-gallery.yml` (`docs/dev/ci.md`), and `make ui-gallery` reads it from there.
+`.github/workflows/ui-gallery.yml` (`docs/dev/ci.md`), and `make ui-gallery` reads it from there. Home (filled and plain
+status bar), RX, TX, the Channels list and Settings > Display are also drawn in the light and high-contrast themes, as
+`<screen>__light.png` and `<screen>__high_contrast.png` (color displays).
 
 
 Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class),
@@ -290,8 +292,9 @@ pages (lists scrolled through): `gfx_text_fit` reports each one through `gfx_fit
 `uiSim --layout [GEOM]` (run by `run-ui`, so CI) is the layout check: the gallery screens, the settings pages and the
 worst-case screens at every geometry, with ordinary and worst-case content. `gfx_draw_trace` (host builds) reports
 every text, fill and clear with its rectangle; the check fails on a text outside the safe area or cut by its clip box,
-overlapping texts, words with no space between them, a box over part of a text, an overlay cutting a line in half, and
-a middle ellipsis with ordinary content (`docs/ux/wireframes/README.md`). `ODR_LAYOUT_SHOTS=DIR` saves every screen
+overlapping texts, words with no space between them, a box over part of a text, an overlay cutting a line in half, an
+invisible text (its cells one color after it is drawn), and a middle ellipsis with ordinary content
+(`docs/ux/wireframes/README.md`). On color displays it runs in every theme. `ODR_LAYOUT_SHOTS=DIR` saves every screen
 checked.
 
 HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences on the radio over the debug link.

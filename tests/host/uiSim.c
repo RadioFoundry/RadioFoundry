@@ -7,14 +7,17 @@
 //   uiSim --gallery DIR      every screen at every display class: DIR/<geom>/<screen>.png, plus the contact sheets
 //                            in DIR/sheets. A color page is drawn again in each highlight color UI_GALLERY_COLORS
 //                            names (space separated, sim_color_find: "red yellow light_blue"), as
-//                            <screen>__<color>.png right after it, on color displays only (none when it is unset)
+//                            <screen>__<color>.png right after it, on color displays only (none when it is unset).
+//                            The theme pages are drawn again in the light and high-contrast themes too, as
+//                            <screen>__light.png and <screen>__high_contrast.png
 //   uiSim --sheets DIR [GEOM] contact sheets only: DIR/<geom>.png, every gallery screen at 2x under its name in one
 //                            palette PNG, at one display class or all of them (a quick layout audit)
 //   uiSim --ellipsis [GEOM]  every text shortened with an ellipsis on the gallery screens and the settings pages
 //                            (lists scrolled to their end), at one display class or all of them
 //   uiSim --layout [GEOM]    the layout check (sim_layout_issues) on the gallery screens, the settings pages and
 //                            the worst-case screens (longest names, IDs, aliases, messages, every status mark),
-//                            normal and worst-case content, every display class: exit status 1 on any problem
+//                            normal and worst-case content, every display class, every theme on color ones: exit
+//                            status 1 on any problem
 //
 // The script runs from Home after a reset (see tests/host/sim/ui_sim.c for the tokens); the screen at the end is
 // written to --out. Exit status 1 if a key isn't on the key map or an expect: fails.
@@ -210,18 +213,25 @@ static int run_layout(const char *only)
 				L->row_h, L->strip_h, L->small->h);
 			problems++;
 		}
+		// Every theme on color displays (Settings > Display): a text in its background's color shows up only in one
+		for (int th = 0; th < (sim_geoms[g].bpp == 1 ? 1 : SIM_THEME_COUNT); th++)
 		for (int pass = 0; pass < 4; pass++) {
 			size_t n = pass < 2 ? sizeof gallery / sizeof gallery[0] : pass == 2 ?
 				sizeof audit_extra / sizeof audit_extra[0] : sizeof worst_screens / sizeof worst_screens[0];
 			for (size_t i = 0; i < n; i++) {
-				const char *name = pass < 2 ? gallery[i].name : pass == 2 ? audit_extra[i].name : worst_screens[i].name;
-				const char *script = pass < 2 ? gallery[i].script : pass == 2 ? audit_extra[i].script :
-					worst_screens[i].script;
+				char name[96], script[1024];
+				snprintf(name, sizeof name, "%s%s%s", th ? sim_themes[th] : "", th ? " " : "",
+					 pass < 2 ? gallery[i].name : pass == 2 ? audit_extra[i].name : worst_screens[i].name);
+				snprintf(script, sizeof script, "%s%s%s", th ? "theme:" : "", th ? sim_themes[th] : "",
+					 th ? " " : "");
+				size_t sl = strlen(script);
+				snprintf(script + sl, sizeof script - sl, "%s", pass < 2 ? gallery[i].script : pass == 2 ?
+					 audit_extra[i].script : worst_screens[i].script);
 				sim_reset(&sim_geoms[g], SIM_MAP_K);
 				if (pass == 1 || pass == 3)
 					sim_worst(true);
 				layout_cut = 0;
-				sim_set_fit_hook(pass == 0 || pass == 2 ? layout_fit_hook : NULL);
+				sim_set_fit_hook(th == 0 && (pass == 0 || pass == 2) ? layout_fit_hook : NULL);
 				bool ran = sim_run(script, err, sizeof err);
 				sim_set_fit_hook(NULL);
 				if (ran && layout_cut) {
@@ -240,8 +250,9 @@ static int run_layout(const char *only)
 					snprintf(path, sizeof path, "%s/%s", shots, sim_geoms[g].name);
 					mkdir(shots, 0755);
 					mkdir(path, 0755);
-					snprintf(path, sizeof path, "%s/%s/%s%s%s.png", shots, sim_geoms[g].name,
-						 pass == 1 ? "worst_" : "", pass == 2 ? "x_" : "", name);
+					snprintf(path, sizeof path, "%s/%s/%s%s%s%s%s.png", shots, sim_geoms[g].name,
+						 th ? sim_themes[th] : "", th ? "_" : "", pass == 1 ? "worst_" : "", pass == 2 ? "x_" : "",
+						 pass < 2 ? gallery[i].name : pass == 2 ? audit_extra[i].name : worst_screens[i].name);
 					sim_save_png(path, 1);
 				}
 				int k = sim_layout_issues(found, SIM_LAYOUT_MAX);
@@ -343,13 +354,18 @@ static int run_audit(const char *only)
 }
 
 // Gallery screens drawn differently on color displays. G_COLOR: color displays only (on a monochrome one it would
-// repeat another screen); G_COLORS: also once in each UI_GALLERY_COLORS highlight color, on color displays
+// repeat another screen); G_COLORS: also once in each UI_GALLERY_COLORS highlight color, on color displays;
+// G_THEMES: also in the light and high-contrast themes (Settings > Display), on color displays
 #define G_COLOR		1u
 #define G_COLORS	2u
+#define G_THEMES	4u
 static const struct { const char *name; unsigned flags; } gallery_color[] = {
-	{ "home_dmr", G_COLORS },		// the filled status bar (the default) in the color
-	{ "home_plain", G_COLOR },
-	{ "channels", G_COLORS },		// the focus row in the color
+	{ "home_dmr", G_COLORS | G_THEMES },	// the filled status bar (the default) in the color
+	{ "home_plain", G_COLOR | G_THEMES },	// the plain strip's state pills
+	{ "rx_group", G_THEMES },
+	{ "tx", G_THEMES },
+	{ "channels", G_COLORS | G_THEMES },	// the focus row in the color
+	{ "settings_display", G_THEMES },
 };
 
 static unsigned gallery_flags(size_t i)
@@ -380,20 +396,26 @@ static bool gallery_colors(void)
 	return true;
 }
 
-// Shot c of gallery screen i at display class g: c 0 the screen itself, 1.. its colors. False: not at this class
+// Shots of a gallery screen: the screen itself, its highlight colors, then its themes after the dark one
+#define GAL_SHOTS	(1 + gal_ncolors + SIM_THEME_COUNT - 1)
+
+// Shot c of gallery screen i at display class g: c 0 the screen itself, 1.. its colors, then its themes. False: not
+// at this class
 static bool gallery_shot(size_t i, int c, const sim_geom_t *g, char *name, size_t nlen, char *script, size_t slen)
 {
 	unsigned flags = gallery_flags(i);
+	bool theme = c > gal_ncolors;
 	if (g->bpp == 1 && (c > 0 || (flags & G_COLOR)))
 		return false;
-	if (c > 0 && (!(flags & G_COLORS) || c > gal_ncolors))
+	if (c > 0 && !(flags & (theme ? G_THEMES : G_COLORS)))
 		return false;
 	if (c == 0) {
 		snprintf(name, nlen, "%s", gallery[i].name);
 		snprintf(script, slen, "%s", gallery[i].script);
 	} else {
-		snprintf(name, nlen, "%s__%s", gallery[i].name, gal_colors[c - 1]);
-		snprintf(script, slen, "color:%s %s", gal_colors[c - 1], gallery[i].script);
+		const char *v = theme ? sim_themes[c - gal_ncolors] : gal_colors[c - 1];
+		snprintf(name, nlen, "%s__%s", gallery[i].name, v);
+		snprintf(script, slen, "%s:%s %s", theme ? "theme" : "color", v, gallery[i].script);
 	}
 	return true;
 }
@@ -410,11 +432,11 @@ static int render_geom(const sim_geom_t *g, const char *dir, bool shots, const c
 		mkdir(path, 0755);
 	}
 	for (size_t i = 0; i < n; i++)
-		for (int c = 0; c <= gal_ncolors; c++)
+		for (int c = 0; c < GAL_SHOTS; c++)
 			count += gallery_shot(i, c, g, name, sizeof name, script, sizeof script);
 	sim_sheet_begin(count, 2);
 	for (size_t i = 0; i < n; i++) {
-		for (int c = 0; c <= gal_ncolors; c++) {
+		for (int c = 0; c < GAL_SHOTS; c++) {
 			if (!gallery_shot(i, c, g, name, sizeof name, script, sizeof script))
 				continue;
 			sim_reset(g, SIM_MAP_K);
@@ -453,8 +475,9 @@ static int run_gallery(const char *dir)
 	mkdir(sheets, 0755);
 	for (int g = 0; g < sim_geom_count; g++)
 		fails += render_geom(&sim_geoms[g], dir, true, sheets);
-	printf("# gallery: %zu screens x %d display classes (color pages also in %d colors) in %s, contact sheets in %s\n",
-	       sizeof gallery / sizeof gallery[0], sim_geom_count, gal_ncolors, dir, sheets);
+	printf("# gallery: %zu screens x %d display classes (color pages also in %d colors and %d themes) in %s, contact "
+	       "sheets in %s\n", sizeof gallery / sizeof gallery[0], sim_geom_count, gal_ncolors, SIM_THEME_COUNT - 1, dir,
+	       sheets);
 	return fails != 0;
 }
 

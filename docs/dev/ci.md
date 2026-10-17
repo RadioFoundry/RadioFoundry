@@ -100,9 +100,10 @@ before and after, side by side. It's advisory: no required check waits on it.
 
    The gallery's color pages are drawn once more in each highlight color the workflow's `UI_GALLERY_COLORS` names
    (`env` at the top of `ui-gallery.yml`: one line, in double quotes, any of `red orange yellow teal light_blue purple
-   pink`; three for now). When a color page or any of its color shots changed, the comparison shows the whole set as
-   one row of the composite: a column per shot, the page first and then its colors in the list's order, before above
-   after, the unchanged ones marked so. Such a row counts as two of the eight.
+   pink`; three for now). Theme pages are also drawn in the light and high-contrast themes (`<screen>__light`,
+   `<screen>__high_contrast`). When a color page or any of its color or theme shots changed, the comparison shows the
+   whole set as one row of the composite: a column per shot, the page first, then its colors in the list's order and
+   its themes, before above after, the unchanged ones marked so. Such a row counts as two of the eight.
    `make -C tests/host ui-gallery` reads the same line, so the committed gallery shows the same colors. Changing the
    list is a pull request that changes the workflow and regenerates the gallery.
 2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact and checks it as data (no links,
