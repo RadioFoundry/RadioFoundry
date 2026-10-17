@@ -202,6 +202,10 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
   REG 0x9B, sub-audio residue, the sender), and whether a hardware setting removes it. REG 0x9B (the receive
   de-emphasis and filter bypasses) is on the FD6818's page 1: writing 0x7F = 1 over the 3-wire bus didn't select it
   (page 1 reads matched page 0), so the page switch is still to find. Weak packets below the squelch are untested.
+- FM transmit voice deviation (section 7): the TX limiter (`hrc7000_t.fm_tx_limit`) is 5 at 12.5 kHz and 0x0F at
+  25 kHz, the DM-1801 Pro's values. At 12.5 kHz a loud whistle and voice peaked at 1.3 kHz (99.9 %, rms 167 Hz) on the
+  SDR bench (2026-10-16), under the 2.5 kHz target. Still to try: a higher limiter, or more mic gain (GCR_ADCL 11 dB),
+  and a measurement at 25 kHz. The K-plug cable cuts the mic, so the owner keys by hand with the cable out.
 - APRS transmit (section 13): decodes off air at 3.1 kHz peak (settled on the SDR bench). `test_aprs.py` on
   446.050 MHz is still to run.
 - Host link lost with the UI running (2026-10-16, after a day of transmit tests): the debug link stopped answering,
