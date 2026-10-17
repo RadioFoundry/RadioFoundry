@@ -40,28 +40,32 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
-| `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), `tools/ci.sh --steps python,licenses`, then the UI screen gallery (`uiSim --gallery`) | about 3.5 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, Python checks 15 s, gallery 2 s |
-| `firmware` (dm1701, md380) | `tools/ci.sh --quick --steps firmware --board <b>` | DM-1701 7 s, MD-380 UHF and VHF 15 s; the toolchain 50 s on a cache miss |
-| `csky` (dm32, dm1801pro, db25d) | the same for each C-SKY board, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | DM-32UV 4 s; skipped where the image isn't available |
+| `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) | about 3 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, gallery 2 s |
+| `checks` | `tools/ci.sh --steps python,licenses` (doc links among the Python checks) | about 1.5 min |
+| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --board dm1701,md380`: every Arm radio in one job | about 1 min with the checkout; the toolchain 50 s on a cache miss |
+| `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | about 1 min with the checkout; skipped where the image isn't available |
 
-The jobs run in parallel, so a push is checked in about four minutes plus the runner's image start. On an 8-core
+There is one firmware job per toolchain, not one per radio: a job's checkout and start take longer than a radio's
+build, and a runner has 4 cores, so the two firmware jobs side by side keep an 8-core host busy while leaving runners
+free for other pull requests. The jobs run in parallel, so a push is checked in about three minutes plus the
+runner's image start. On an 8-core
 Mac the plain host tests take 43 s.
 
 Each firmware job builds with zero warnings, writes the size report (image bytes and free space in the linker's
 application region, also put in the job summary on GitHub) and fails when the application region overflows. The
-images and logs are workflow artifacts (`firmware-<board>`), as are the unit test logs with the screen gallery
+images and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are the unit test logs with the screen gallery
 (`host-logs`) and the coverage report (`coverage-report`).
 
-`reuse lint` is part of the unit tests job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
+`reuse lint` is part of the `checks` job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
 the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
 
 ## Pull request checks: `pr-tests.yml`
 
-Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware` for the DM-1701 and MD-380, `csky` for the
-DM-32UV, DM-1801 Pro and DB25-D) and the
-manual check (doc links and the PDF build, as `manual.yml` does) on its merge commit. The first job, `changes`,
-looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s paths) run
-the build and test jobs, docs changes (`manual.yml`'s paths) the manual. The last job always runs and sets the
+Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware (Arm)` for the DM-1701 and MD-380,
+`firmware (C-SKY)` for the DM-32UV, DM-1801 Pro and DB25-D) and `checks` on its merge commit. The first job,
+`changes`, looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s
+paths) run the build and test jobs. `checks` runs on every pull request: the Python and license checks (doc links
+among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last job always runs and sets the
 `PR checks` commit status on the pull request's head commit: failure when any job failed or was canceled, success
 otherwise. It is the one status check the `main` ruleset requires, so a skipped job never holds a pull request up,
 and a new job only has to be added to its `needs` list. The job posts the status itself because a
@@ -152,7 +156,8 @@ always builds.
 ```
 tools/ci.sh                                   # everything (the release gate), about 10 minutes on an 8-core Mac
 tools/ci.sh --quick                           # what CI runs, without coverage and sanitizers
-SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run (then: tools/ci.sh --steps python,licenses)
+SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
+tools/ci.sh --steps python,licenses           # the checks job
 tools/ci.sh --quick --steps firmware --board md380
 ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board dm1701    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html

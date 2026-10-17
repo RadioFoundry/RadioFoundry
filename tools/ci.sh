@@ -6,7 +6,7 @@
 #
 #   tools/ci.sh                 host tests, Python checks, every board with its feature matrix, license checks
 #   tools/ci.sh --quick         the same with only each board's default build (no matrix)
-#   tools/ci.sh --board dm1701  one board only
+#   tools/ci.sh --board dm1701  one board only (or a comma separated list: --board dm1701,md380)
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
 #   tools/ci.sh --steps host,python   only these steps (host, python, firmware, licenses, similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
@@ -15,7 +15,7 @@
 #                               the matrix otherwise leaves about 65 MB per configuration)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps host,python,licenses` and
-# `--quick --steps firmware --board <b>`; nightly `--matrix --steps firmware --board <b>`.
+# `--quick --steps firmware --board <the Arm boards>` and `<the C-SKY boards>`; nightly `--matrix --steps firmware --board <b>`.
 #
 # Steps, each reported as ok / FAIL / skip:
 #   1. host tests (make -C tests/host), and with ODR_CI_SANITIZE=1 again under ASan and UBSan
@@ -272,7 +272,7 @@ for bm in boards/*/board.mk boards/*/; do
 	   continue ;;
 	esac
 	b=$(basename "$(dirname "$bm")")
-	[ -n "$ONLY" ] && [ "$b" != "$ONLY" ] && continue
+	[ -n "$ONLY" ] && case ",$ONLY," in *",$b,"*) false ;; *) true ;; esac && continue
 	echo "== firmware: $b"
 	cc=$(make -s BOARD="$b" print-cc 2>/dev/null)
 	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
@@ -302,7 +302,7 @@ for bm in boards/*/board.mk boards/*/; do
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
 done
 # The STM32F4 flash stub (stub/stm32f4): one image for the DM-1701 and the MD-380, loaded by CONFIG_STUB_ENTRY builds
-if [ -z "$ONLY" ] || [ "$ONLY" = dm1701 ] || [ "$ONLY" = md380 ]; then
+if [ -z "$ONLY" ] || case ",$ONLY," in *,dm1701,*|*,md380,*) true ;; *) false ;; esac; then
 	cc=$(make -s BOARD=dm1701 print-cc 2>/dev/null)
 	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
 		skip "STM32F4 flash stub: compiler ${cc:-?} not installed"
