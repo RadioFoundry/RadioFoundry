@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 1050">
+<defs>
+<linearGradient id="body" x1="0" x2="1"><stop offset="0" stop-color="#161819"/><stop offset=".5" stop-color="#2a2d30"/><stop offset="1" stop-color="#141617"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f3336"/><stop offset="1" stop-color="#1b1e20"/></linearGradient>
+<linearGradient id="key" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43484c"/><stop offset="1" stop-color="#1a1c1e"/></linearGradient>
+<linearGradient id="keyl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a5f64"/><stop offset="1" stop-color="#2a2d30"/></linearGradient>
+<linearGradient id="knob" x1="0" x2="1"><stop offset="0" stop-color="#0c0d0e"/><stop offset=".4" stop-color="#4b4f53"/><stop offset="1" stop-color="#0b0c0d"/></linearGradient>
+<linearGradient id="ant" x1="0" x2="1"><stop offset="0" stop-color="#0b0b0c"/><stop offset=".35" stop-color="#3c4043"/><stop offset="1" stop-color="#0b0b0c"/></linearGradient>
+<linearGradient id="bez" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#060607"/><stop offset="1" stop-color="#1f2224"/></linearGradient>
+<linearGradient id="slot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#050506"/><stop offset="1" stop-color="#26292b"/></linearGradient>
+</defs>
+<path d="M302 0 L384 0 L388 112 L298 112Z" fill="url(#ant)" stroke="#000" stroke-width="2"/>
+<line x1="304" y1="60" x2="384" y2="60" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="304" y1="70" x2="384" y2="70" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="304" y1="80" x2="384" y2="80" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="304" y1="90" x2="384" y2="90" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="304" y1="100" x2="384" y2="100" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<path d="M54 130 L56 48 Q58 32 106 32 Q158 34 162 52 L164 130Z" fill="url(#knob)" stroke="#000" stroke-width="2"/>
+<line x1="66" y1="40" x2="66" y2="122" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="78" y1="40" x2="78" y2="122" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="90" y1="40" x2="90" y2="122" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="102" y1="40" x2="102" y2="122" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="114" y1="40" x2="114" y2="122" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="126" y1="40" x2="126" y2="122" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="138" y1="40" x2="138" y2="122" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<line x1="150" y1="40" x2="150" y2="122" stroke="#000" stroke-opacity=".5" stroke-width="2"/>
+<path d="M48 140 L52 108 Q56 100 80 100 L400 100 Q418 102 420 124 L424 140Z" fill="#141516" stroke="#000" stroke-width="2"/>
+<rect x="124" y="114" width="26" height="9" rx="4" fill="#8a8f93"/>
+<rect x="284" y="104" width="46" height="12" rx="6" fill="#d9692a"/>
+<path d="M436 214 Q452 214 456 236 L474 540 Q474 556 458 560 L438 560Z" fill="#101112" stroke="#000" stroke-width="2"/>
+<path d="M38 134 Q40 126 66 126 L432 126 Q438 128 440 150 L478 930 Q478 985 436 988 L100 988 Q70 985 70 930 L62 640Z" fill="url(#body)" stroke="#000" stroke-width="3"/>
+<path d="M86 134 L432 134 L452 940 Q452 962 430 962 L96 962 Q74 962 76 940Z" fill="url(#face)" opacity=".55"/>
+<path d="M100 240 L66 240 Q32 240 30 272 L34 560 Q38 604 66 626 L100 626Z" fill="#141516"/><path d="M100 240 L66 240 Q32 240 30 272 L34 560 Q38 604 66 626" fill="none" stroke="#000" stroke-width="2"/>
+<rect x="30" y="246" width="46" height="166" rx="12" fill="url(#key)" stroke="#000" stroke-width="2"/>
+<rect x="44" y="446" width="42" height="62" rx="10" fill="url(#key)" stroke="#000" stroke-width="2"/>
+<rect x="44" y="532" width="42" height="60" rx="10" fill="url(#key)" stroke="#000" stroke-width="2"/>
+<text x="53" y="280" font-family="Helvetica,Arial,sans-serif" font-size="12" font-weight="bold" fill="#6c7378" transform="rotate(-90 53 280)" text-anchor="end">PTT</text>
+<rect x="136" y="142" width="284" height="48" rx="14" fill="#16181a" stroke="#4a4f53" stroke-width="2"/>
+<text x="278" y="178" font-family="Helvetica,Arial,sans-serif" font-size="34" font-weight="bold" font-style="italic" text-anchor="middle" fill="#e8e8e8" textLength="226" lengthAdjust="spacingAndGlyphs">BAOFENG</text>
+<rect x="140" y="220" width="290" height="48" rx="12" fill="url(#slot)" stroke="#000" stroke-width="2"/>
+<rect x="140" y="298" width="290" height="48" rx="12" fill="url(#slot)" stroke="#000" stroke-width="2"/>
+<rect x="140" y="376" width="290" height="48" rx="12" fill="url(#slot)" stroke="#000" stroke-width="2"/>
+<circle cx="180" cy="404" r="5" fill="#000" stroke="#3a3e41" stroke-width="1.5"/>
+<rect x="160" y="466" width="278" height="166" rx="22" fill="url(#bez)" stroke="#2c3033" stroke-width="3"/>
+<rect id="screen" x="180" y="488" width="240" height="120" fill="#000"/>
+<rect x="173" y="655" width="72" height="42" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="176" y="657" width="66" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="209" y="682.65" font-family="Helvetica,Arial,sans-serif" font-size="19" text-anchor="middle" fill="#c8d88a">MENU</text>
+<rect x="366" y="645" width="68" height="42" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="369" y="647" width="62" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="400" y="672.65" font-family="Helvetica,Arial,sans-serif" font-size="19" text-anchor="middle" fill="#e0463c">BACK</text>
+<rect x="175" y="710" width="72" height="45" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="178" y="712" width="66" height="14" rx="9" fill="#fff" fill-opacity=".07"/><text x="211" y="738.1" font-family="Helvetica,Arial,sans-serif" font-size="16" text-anchor="middle" fill="#6aa8e0">VFO/MR</text>
+<rect x="368" y="700" width="70" height="48" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="371" y="702" width="64" height="14" rx="9" fill="#fff" fill-opacity=".07"/><text x="403" y="732.4" font-family="Helvetica,Arial,sans-serif" font-size="24" text-anchor="middle" fill="#6aa8e0">A/B</text>
+<rect x="257" y="648" width="100" height="104" rx="14" fill="url(#keyl)" stroke="#000" stroke-width="1.5"/>
+<rect x="291" y="682" width="32" height="36" rx="4" fill="#33373b" stroke="#000" stroke-width="1.5"/>
+<path d="M298 672l8-12l8 12z M298 730l8 12l8-12z M268 700l12-8v16z M332 692l12 8l-12 8z" fill="#3c9be0"/>
+<rect x="178" y="765" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="181" y="767" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="187" y="798" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">1</text><text x="209" y="794" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">.,?</text>
+<rect x="248" y="765" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="251" y="767" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="257" y="798" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">2</text><text x="279" y="794" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">ABC</text>
+<rect x="318" y="765" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="321" y="767" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="327" y="798" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">3</text><text x="349" y="794" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">DEF</text>
+<rect x="388" y="765" width="54" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="391" y="767" width="48" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="415" y="799" font-family="Helvetica,Arial,sans-serif" font-size="30" font-weight="bold" text-anchor="middle" fill="#e6ecef">*</text>
+<rect x="178" y="822" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="181" y="824" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="187" y="855" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">4</text><text x="209" y="851" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">GHI</text>
+<rect x="248" y="822" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="251" y="824" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="257" y="855" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">5</text><text x="279" y="851" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">JKL</text>
+<rect x="318" y="822" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="321" y="824" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="327" y="855" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">6</text><text x="349" y="851" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">MNO</text>
+<rect x="388" y="822" width="54" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="391" y="824" width="48" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="415" y="856" font-family="Helvetica,Arial,sans-serif" font-size="30" font-weight="bold" text-anchor="middle" fill="#e6ecef">0</text>
+<rect x="178" y="879" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="181" y="881" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="187" y="912" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">7</text><text x="209" y="908" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">PQRS</text>
+<rect x="248" y="879" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="251" y="881" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="257" y="912" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">8</text><text x="279" y="908" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">TUV</text>
+<rect x="318" y="879" width="58" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="321" y="881" width="52" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="327" y="912" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="bold" fill="#e6ecef">9</text><text x="349" y="908" font-family="Helvetica,Arial,sans-serif" font-size="12" fill="#6aa8e0">WXYZ</text>
+<rect x="388" y="879" width="54" height="44" rx="12" fill="url(#key)" stroke="#000" stroke-width="1.5"/><rect x="391" y="881" width="48" height="13" rx="9" fill="#fff" fill-opacity=".07"/><text x="415" y="913" font-family="Helvetica,Arial,sans-serif" font-size="30" font-weight="bold" text-anchor="middle" fill="#e6ecef">#</text>
+</svg>

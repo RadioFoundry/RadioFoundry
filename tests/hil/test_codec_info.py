@@ -14,8 +14,8 @@ def test_version_reports_codec(radio):
     assert "codec" in v, "firmware without the codec= key (older than the release tooling)"
     board = boards.from_debuglink_name(v.get("board", ""))
     allowed = {"none", "absent", "present"} | ({board.codec.id} if board else set())
-    if board is not None and board.id == "dm32":
-        allowed |= {"dm32-049", "dm32-046", "dm32-unknown"}
+    if board is not None and board.id in ("dm32", "dm1801pro"):
+        allowed |= {board.id + "-049", board.id + "-046", board.id + "-unknown"}
     assert v["codec"] in allowed, v["codec"]
 
 

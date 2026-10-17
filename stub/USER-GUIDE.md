@@ -68,6 +68,9 @@ switching off.
    python3 stubtool.py PORT --attach --boot reset
    ```
 
+`odrflash flash odr_dm1801pro.bin --board dm1801pro --port PORT` does steps 2 to 4 in one run, and checks the radio
+afterwards ([tools/odrflash/README.md](../tools/odrflash/README.md#the-dm-1801-pro)).
+
 The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
 works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again
 once the radio is back in loader mode, or use update mode and `tools/dm32_flash.py`. A build for the **DM-1801 Pro** was

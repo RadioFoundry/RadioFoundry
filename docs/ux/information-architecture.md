@@ -254,6 +254,27 @@ Mobile-specific: while driving, the "driving" profile (Settings > Display, or au
 | `TALK_TARGET` | Quick tile 8 |
 | `MONITOR` | Quick tile 5 latch |
 
+
+### 7.6 Baofeng DM-1801 Pro: keypad with direction keys, side keys, SOS key, no encoder, 128x64 monochrome
+
+| Physical | Logical (short / long) |
+|---|---|
+| Menu | `SELECT` / save |
+| Back | `BACK` / Home |
+| Up / Down | `NAV_UP` / `NAV_DOWN` (repeat) |
+| Left / Right | `NAV_LEFT` / `NAV_RIGHT`, long: `USER_1` / `USER_4` |
+| VFO/MR | `USER_3` (assignable; default: switch between channel and VFO) |
+| A/B | `ZONE_UP` |
+| `*` | `QUICK` / lock |
+| `#` | `CONTEXT` / Recent |
+| 0-9 | digits / speed dial |
+| SK1 | `MONITOR` (while held) |
+| SK2 | `TALK_TARGET` / `USER_2` |
+| SOS (top) | hold: `EMERGENCY` where it is built |
+| PTT | `PTT` |
+
+The layouts are the 128x64 ones of section 7.3. Which matrix position is which key isn't known yet
+([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 9.1).
 ---
 
 ## 8. Screen inventory
