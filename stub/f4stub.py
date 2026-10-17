@@ -142,6 +142,78 @@ class F4Error(stubtool.DumpError):
     pass
 
 
+STUB_USB_ID = (0x1FC9, 0x0094)	# ODR's and the stub's USB identity (same serial number too)
+PORT_FALLBACK_S = 10.0		# how long the original port name gets before a look-alike is tried
+PORT_WAIT_S = 20.0		# how long attach() waits in all for the stub's port after a fresh enumeration
+
+
+class PortInfo:
+    def __init__(self, device, vid=None, pid=None, serial=None, location=None):
+        self.device, self.vid, self.pid, self.serial, self.location = device, vid, pid, serial, location
+
+
+def usb_ports():
+    """The serial ports pyserial can see, as PortInfo."""
+    from serial.tools import list_ports
+    return [PortInfo(p.device, p.vid, p.pid, p.serial_number, p.location) for p in list_ports.comports()]
+
+
+def pick_port(ports, orig):
+    """The port the stub came back on, when the one it left is gone or stale. ports: PortInfo list; orig: the PortInfo
+    of the port ODR was on (None if it's unknown). The radio keeps its USB serial number, but a re-enumeration can give
+    it the next ttyACM number while Linux still holds the old one, so the name is no proof. When the original's USB
+    location is known (the physical port, what /dev/serial/by-path encodes) only a port there counts. Otherwise the
+    same serial number if only one port has it, else the only port with the stub's USB ID. None when that is not
+    unique: a second radio must not be picked up."""
+    cands = [p for p in ports if (p.vid, p.pid) == STUB_USB_ID
+             and not (orig and os.path.realpath(p.device) == os.path.realpath(orig.device))]
+    if orig is not None and orig.location:
+        # a known physical port is decisive: the same radio re-enumerates on the same one
+        same = [p for p in cands if p.location == orig.location]
+        return same[0] if len(same) == 1 else None
+    if orig is not None and orig.serial:
+        same = [p for p in cands if p.serial == orig.serial]
+        if len(same) == 1:
+            return same[0]
+    return cands[0] if len(cands) == 1 else None
+
+
+class PortFollower:
+    """F4Radio's `reopen`: opens the stub's port again after a fresh enumeration. The original name first; once it
+    has had PORT_FALLBACK_S, every other try goes to a look-alike (pick_port), so a radio that came back as ttyACM1 is
+    found while a slow ttyACM0 still works."""
+
+    def __init__(self, serial_mod, path, baud=115200, ports=usb_ports, clock=time.monotonic, log=print):
+        self.serial, self.path, self.baud, self.ports, self.clock, self.log = serial_mod, path, baud, ports, clock, log
+        self.tries = 0
+        self.start = None
+        self.said = None
+        self.orig = None
+        try:
+            real = os.path.realpath(path)
+            self.orig = next((p for p in ports() if os.path.realpath(p.device) == real), None)
+        except (ImportError, OSError):
+            pass
+
+    def __call__(self):
+        now = self.clock()
+        if self.start is None:
+            self.start = now
+        self.tries += 1
+        path = self.path
+        if now - self.start >= PORT_FALLBACK_S and self.tries % 2 == 0:
+            try:
+                alt = pick_port(self.ports(), self.orig)
+            except (ImportError, OSError):
+                alt = None
+            if alt is not None:
+                if alt.device != self.path and self.said != alt.device:
+                    self.said = alt.device
+                    self.log("%s did not answer; trying %s (same USB device)" % (self.path, alt.device))
+                path = alt.device
+        return self.serial.Serial(path, self.baud, timeout=0.1)
+
+
 def f405_sectors(flash_kb=1024):
     """[(index, addr, size)] of a single-bank STM32F4: 4 x 16 KB, 64 KB, then 128 KB each."""
     out = []
@@ -238,7 +310,7 @@ class F4Radio(stubtool.Radio):
                 self.port.close()
             except OSError:
                 pass
-            end = time.monotonic() + 15.0
+            end = time.monotonic() + PORT_WAIT_S
             while True:
                 try:
                     self.port = self.reopen()
@@ -246,8 +318,8 @@ class F4Radio(stubtool.Radio):
                     break
                 except (stubtool.DumpError, OSError):
                     if time.monotonic() > end:
-                        raise F4Error("the stub's USB port did not come back within 15 s: power-cycle the radio "
-                                      "(ODR starts again) and check the cable")
+                        raise F4Error("the stub's USB port did not come back within %d s: power-cycle the radio "
+                                      "(ODR starts again) and check the cable" % PORT_WAIT_S)
                     time.sleep(0.3)
         self.log("STM32F4 stub v%d: %d KB flash, RDP byte 0x%02X, %s, USB %s" % (
             self.version, self.flash_kb, self.rdp,
@@ -819,6 +891,51 @@ def self_test():
         pass
 
     check(len(stub_image()) > 4096 and stub_image()[:4] != b"\xff" * 4, "the embedded stub decodes and checks")
+
+    # Finding the stub's port again: it came back as ttyACM1 while ttyACM0 is still held, or not at all
+    ID = STUB_USB_ID
+    old = PortInfo("/dev/ttyACM0", ID[0], ID[1], "00000000010C", "1-1.3")
+    new1 = PortInfo("/dev/ttyACM1", ID[0], ID[1], "00000000010C", "1-1.3")
+    other = PortInfo("/dev/ttyACM2", ID[0], ID[1], "00000000010C", "1-1.5")
+    ftdi = PortInfo("/dev/ttyUSB0", 0x0403, 0x6001, "A50285BI", "1-1.4")
+    check(pick_port([new1, ftdi], old) is new1, "port: the same USB ID, the only one")
+    check(pick_port([new1, other], old) is new1, "port: the same USB location wins over a second radio")
+    check(pick_port([other, ftdi], old) is None, "port: a look-alike on another USB port is a different radio")
+    check(pick_port([other, ftdi], PortInfo("/dev/ttyACM0", ID[0], ID[1], None, None)) is other,
+          "port: the lone look-alike when the location is unknown")
+    check(pick_port([new1, other], None) is None, "port: two look-alikes and no identity: none")
+    check(pick_port([other, PortInfo("/dev/ttyACM3", ID[0], ID[1], "00000000010C", "1-1.6")],
+                    PortInfo("/dev/ttyACM0", ID[0], ID[1], "00000000010C", "1-1.3")) is None,
+          "port: two other radios with the same serial number are not guessed")
+    check(pick_port([old, ftdi], old) is None, "port: the original itself is not a look-alike")
+
+    class Clock:
+        t = 0.0
+
+        def __call__(self):
+            return Clock.t
+
+    class FakeSerial:
+        opened = []
+
+        class Serial:
+            def __init__(self, path, baud, timeout):
+                FakeSerial.opened.append(path)
+
+    clock = Clock()
+    pf = PortFollower(FakeSerial, "/dev/ttyACM0", ports=lambda: [old, ftdi], clock=clock, log=quiet)
+    check(pf.orig is old, "follower: knows the port it started on")
+    pf.ports = lambda: [new1, ftdi]
+    for _ in range(4):
+        pf()
+        Clock.t += 1.0
+    check(FakeSerial.opened == ["/dev/ttyACM0"] * 4, "follower: the original name only for the first 10 s")
+    Clock.t = 10.0
+    FakeSerial.opened.clear()
+    for _ in range(4):
+        pf()
+    check("/dev/ttyACM1" in FakeSerial.opened and "/dev/ttyACM0" in FakeSerial.opened,
+          "follower: after 10 s it alternates between the original and the look-alike (%s)" % FakeSerial.opened)
 
     tmpdir.cleanup()
     print("f4stub self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),

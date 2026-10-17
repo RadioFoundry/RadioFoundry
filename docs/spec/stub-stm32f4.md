@@ -56,12 +56,13 @@ keeps the codec bytes (section 8).
    0x20000000 and the 8 KB span. The data goes into ODR's staging buffer (`stub_region`), which lies anywhere in ODR's
    `.bss`.
 2. ENTER is refused with busy (3) while the radio transmits. Otherwise the reply goes out, the banner "PC Loader
-   Connected" is drawn, and `enter_stub` runs in the host link task:
+   Connected" is drawn with the backlight at full (the generic entry code in `core/debuglink/debuglink_stub.c`, so a
+   dimmed or switched-off backlight does not hide it), and `enter_stub` runs in the host link task:
 
 | Step | Why |
 |---|---|
 | Note whether USB is in serial mode (`usb_device_mode`) | the handoff flag; in network mode the host bound CDC-NCM to the same endpoint numbers |
-| `board_stub_prepare`: PA enables off (DM-1701 PA_EN1, PA_EN2; MD-380 APC_EN, TX_5V) | nothing transmits while the stub runs. Backlight, power latch and USB pins stay |
+| `board_stub_prepare`: PA enables off (DM-1701 PA_EN1, PA_EN2; MD-380 APC_EN, TX_5V) | nothing transmits while the stub runs. The backlight (already at full for the banner), power latch and USB pins stay |
 | Interrupts masked, SysTick off, every NVIC enable and pending bit cleared | the stub polls; ODR's handlers live in flash it may erase |
 | DMA1 and DMA2 reset | circular I2S, SPI and ADC streams write into SRAM, where the stub is about to run |
 | Copy the staging buffer to 0x20000000 (8 KB, a forward word copy) | the stub is linked there. The copy runs from flash and its stack is the task stack in CCM, so it overwrites nothing it uses. The buffer lies at or above the target, so a forward copy is safe even if they overlap |
@@ -87,6 +88,12 @@ first), product "ODR flash stub".
 |---|---|---|
 | Adopt | flag bit 0 set, the device has an address, and endpoints 1 IN and OUT are active | nothing: the same port keeps working. An IN transfer TinyUSB left open is cut off and the FIFOs flushed |
 | Enumerate again | otherwise | the port disappears for about 0.1 s and comes back with the same IDs and serial number (on macOS the same `/dev/cu.usbmodem…` name) |
+
+After a fresh enumeration Linux may give the port the next number (`/dev/ttyACM1`) while it still holds the old name.
+`stubtool.py` waits up to 20 s for the stub. It tries the port name it was given for the first 10 s (a `/dev/serial/by-path/…`
+name stays valid across this). After that it also tries a port with the stub's USB ID, taken only from the same USB
+location as the port ODR was on, or, if the location is unknown, the one port with ODR's serial number or USB ID. Two
+candidates are never guessed between: it stops and says so.
 
 The stub handles a bus reset at any time, so a host that resets the port gets a fresh enumeration. FIFO RAM in cold
 start: RX 128 words, EP0 TX 16, EP1 TX 64, EP2 TX 16. A transfer that ends on a full 64-byte packet gets a

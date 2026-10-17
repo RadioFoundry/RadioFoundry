@@ -6,24 +6,18 @@
 # Linux, macOS and Windows, and attach everything to the GitHub release (created when missing; the user manual
 # workflow attaches its PDF to the same release). The AMBE codec is never part of any of it.
 #
-# Pull requests and pushes to main touching the release tooling build everything as workflow artifacts and publish
-# nothing. With the repository variable ODR_CI_RUNNER set, the Linux jobs run on that self-hosted runner, and only a
-# v* tag also builds odrflash on GitHub's macOS and Windows runners (docs/dev/ci.md). The DM-32UV is built only when the repository variable ODR_RELEASE_DM32 is "true" (it isn't verified on
-# a radio yet, and its csky toolchain is built from source: docs/dev/release.md "Adding the DM-32UV"); the DM-1801 Pro
-# only when ODR_RELEASE_DM1801PRO is "true" (bring-up: docs/dev/release.md "The DM-1801 Pro").
+# Pull requests touching the release tooling build everything as workflow artifacts and publish nothing; the release
+# gate (tools/ci.sh) runs for a tag only, since a pull request's own checks already ran it. With the repository
+# variable ODR_CI_RUNNER set, the Linux jobs run on that self-hosted runner, and only a v* tag also builds odrflash on
+# GitHub's macOS and Windows runners (docs/dev/ci.md). The DM-32UV is built only when the repository variable
+# ODR_RELEASE_DM32 is "true" (it isn't verified on a radio yet, and its csky toolchain is built from source:
+# docs/dev/release.md "Adding the DM-32UV"); the DM-1801 Pro only when ODR_RELEASE_DM1801PRO is "true" (bring-up:
+# docs/dev/release.md "The DM-1801 Pro").
 name: Release
 
 on:
   push:
     tags: ["v*"]
-    branches: [main]
-    paths:
-      - "tools/odrflash/**"
-      - "tools/release.py"
-      - "tools/dm32_flash.py"
-      - "tools/dm32_codec.py"
-      - "stub/stubtool.py"
-      - ".github/workflows/release.yml"
   pull_request:
     paths:
       - "tools/odrflash/**"
@@ -95,6 +89,7 @@ jobs:
           "$(make -s BOARD=dm1701 print-cc)" --version | head -1
 
       - name: Release gate (host tests, Python checks, DM-1701 build, license checks)
+        if: needs.version.outputs.publish == 'true'
         run: tools/ci.sh --quick --board dm1701
 
       - name: Build and package
@@ -138,7 +133,7 @@ jobs:
       - name: Build and package
         run: |
           set -eu
-          tools/ci.sh --quick --board dm32
+          [ "${{ needs.version.outputs.publish }}" != true ] || tools/ci.sh --quick --board dm32   # the gate: tags only
           make BOARD=dm32 -j"$(nproc)"
           python3 tools/release.py --board dm32 --version "${{ needs.version.outputs.version }}" --out dist
       - uses: actions/upload-artifact@v4
@@ -176,7 +171,7 @@ jobs:
       - name: Build and package
         run: |
           set -eu
-          tools/ci.sh --quick --board dm1801pro
+          [ "${{ needs.version.outputs.publish }}" != true ] || tools/ci.sh --quick --board dm1801pro   # the gate: tags only
           make BOARD=dm1801pro -j"$(nproc)"
           python3 tools/release.py --board dm1801pro --version "${{ needs.version.outputs.version }}" --out dist
       - uses: actions/upload-artifact@v4

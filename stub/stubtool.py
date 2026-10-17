@@ -1500,7 +1500,8 @@ def main(argv=None):
             reopen = lambda: serial.Serial(a.stub_port or find_odr_port(), 115200, timeout=0.1)
         else:
             port = serial.Serial(a.port, 115200, timeout=0.1)
-            reopen = lambda: serial.Serial(a.port, 115200, timeout=0.1)
+            import f4stub
+            reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)
         # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
         import f4stub

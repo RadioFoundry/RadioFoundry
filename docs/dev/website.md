@@ -24,7 +24,7 @@ npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and 
 |---|---|
 | Nightly (07:17 UTC) | Builds and deploys only if something changed since the last deployment: a file the site is built from (`SITE_INPUTS` in the workflow), or a release published after it. Otherwise stops after the check |
 | By hand (Actions > Web site > Run workflow) | Always builds and deploys |
-| Pull request touching the site's inputs | Builds and runs the tests, never deploys |
+| Pull request | Not run: the pull request's unit tests job builds the site (`--strict`) and runs the flasher's tests (`tools/ci.sh`'s Python step) |
 
 A merge or a release therefore shows on the site the next morning, or right away when the workflow is run by hand.
 

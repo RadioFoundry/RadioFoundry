@@ -526,7 +526,8 @@ Where the image runs: INFO's load_addr is the address the image is linked for, a
 it. On the HR_C7000 that is the span itself. On the STM32F4 the span is a staging buffer in ODR's own RAM and
 load_addr is the SRAM base (0x20000000, `hal_system_t.stub_run_addr`): `enter_stub` stops the DMA controllers,
 copies the buffer there and jumps with a handoff flag in r0 ([stub-stm32f4.md](stub-stm32f4.md) 3). The STM32F4
-stub then answers on the USB serial port, with the same framing as the C7 stub.
+stub then answers on the USB serial port, with the same framing as the C7 stub. ENTER is answered busy (3) while the
+radio transmits.
 
 The monitor never touches the RF chips, so the transmitter stays as ODR left it for the whole session. ENTER is
 refused while the radio core is transmitting, the entry is dropped if PTT went down in the 100 ms between the reply and
