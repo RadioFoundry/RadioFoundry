@@ -77,8 +77,9 @@ Then set the repository variable: `gh variable set ODR_CI_RUNNER --body odr-ci`.
 
 One runner takes one job at a time. For more in parallel, run another service instance with its own env file: the same `LABELS`
 (so jobs go to whichever is free), the same network and proxy, and its own `NAME`, `WORK_DIR` and `STATE_DIR`.
-Size `MEMORY` so the runners together fit the host's RAM (a job uses a few hundred MB; four runners at 2g on an
-8 GB host with no swap); `CPUS` is a cap, so runners can share the cores.
+Size `MEMORY` so the runners together fit the host's RAM. A job peaked at about 1.3 GB counting its page cache, which
+the limit reclaims first, so six runners at 1200m fit an 8 GB host with no swap. `CPUS` is a cap, so runners can share
+the cores.
 
 ```sh
 cd ~/odr-ci-runner
