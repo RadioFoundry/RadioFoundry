@@ -24,7 +24,7 @@ static bool ui_strip_fill;
 // (reverse video: the color as background, text and icons black) and the focus highlight (black text), so the two
 // match; also Home's channel number. All are light shades: black on each is at least 7.5:1 after RGB565 rounding.
 // The red is lighter and pinker than TX's (the TX pill also says TX); there is no green, which would hide the RX
-// pill. Default keeps the theme's blue focus; its filled strip is light gray. Built without CONFIG_UI_COLOR (radios
+// pill. Default keeps the theme's blue focus; its filled strip is light gray (white in high contrast). Built without CONFIG_UI_COLOR (radios
 // with only a monochrome screen) the theme's own colors stay
 static void accent_apply(void)
 {
@@ -56,6 +56,8 @@ static void accent_apply(void)
 	};
 	uint8_t a = ui_accent < UI_ACCENT_COUNT ? ui_accent : UI_ACCENT_DEFAULT;
 	color_t c = acc[a];
+	if (a == UI_ACCENT_DEFAULT && ui_theme == 2)
+		c = RGB565(255, 255, 255);	// high contrast has no gray: its default strip is white
 	ui_col.strip_bg = c;
 	ui_col.strip_warn = warn[a];
 	if (a != UI_ACCENT_DEFAULT) {

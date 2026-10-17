@@ -320,8 +320,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   `CONFIG_UI_COLOR` (section 5) has no such rows. A color other than
   Default is the list and tile focus (with black text) and Home's channel number (on the light theme the number stays
   the text color: the light shades don't read on white). The filled bar (on by default) is reverse video: the status
-  strip's background in the color (light gray with Default), its text and icons black, the IDLE pill inverse on it;
-  RX, TX and NO TX keep their own pill colors and words (P5). On it the pill is the strip's full height (a one-cell
+  strip's background in the color (light gray with Default, white in the high-contrast theme), its text and icons
+  black, the IDLE pill inverse on it; RX, TX and NO TX keep their own pill colors and words (P5). On it the pill is the strip's full height (a one-cell
   pill left a line of the strip's color under it) against the bezel, its corners rounded by two pixels. Left of the
   pill's middle the strip is the screen's background, so no strip color shows beside its left end. On the right a
   one-pixel black edge follows the curve: the pill colors are close in lightness to the strip colors, so hue alone

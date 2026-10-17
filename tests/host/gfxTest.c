@@ -10,6 +10,7 @@
 #include "ui/gfx.h"
 #include "ui/fmt.h"
 #include "ui/ui_screens.h"
+#include "ui/ui_svc.h"
 
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -330,6 +331,19 @@ static void test_idle_pill_contrast(void)
 }
 
 // CONFIG_FONT_BIG: the 240 px class's lists and labels in the 9x18 font, the other classes unchanged
+// The high-contrast theme has no gray: its default filled strip is white; a chosen highlight color stays
+static void test_hc_strip_white(void)
+{
+	ui_accent_set(UI_ACCENT_DEFAULT);
+	ui_theme_set(2);
+	CHECK(ui_col.strip_bg == RGB565(255, 255, 255));
+	ui_accent_set(UI_ACCENT_RED);
+	CHECK(ui_col.strip_bg == RGB565(240, 112, 112));
+	ui_accent_set(UI_ACCENT_DEFAULT);
+	ui_theme_set(0);
+	CHECK(ui_col.strip_bg == RGB565(216, 216, 216));
+}
+
 static void test_big_text(void)
 {
 	hal_display_t d = disp;
@@ -496,6 +510,7 @@ int main(void)
 	test_aa_text();
 	test_idle_pill_contrast();
 	test_big_text();
+	test_hc_strip_white();
 
 	printf(fails ? "# FAILED gfxTest: %d\n" : "# PASSED gfxTest\n", fails);
 	return fails != 0;
