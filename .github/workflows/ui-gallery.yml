@@ -27,6 +27,12 @@ on:
 permissions:
   contents: read
 
+# The highlight colors the gallery draws its color pages in (Settings > Display > Highlight color), in the order the
+# comment shows them: any of red orange yellow teal light_blue purple pink. `make -C tests/host ui-gallery` reads this
+# line too, so the committed gallery shows the same colors: keep it on one line, in double quotes.
+env:
+  UI_GALLERY_COLORS: "red yellow light_blue"
+
 concurrency:
   group: ui-gallery-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -72,7 +78,8 @@ jobs:
           python3 tools/ui_gallery_compare.py build/ui/before build/ui/after build/ui/out \
             --base-sha "${{ github.event.pull_request.base.sha }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
-            --pr "${{ github.event.pull_request.number }}"
+            --pr "${{ github.event.pull_request.number }}" \
+            --colors "$UI_GALLERY_COLORS"
           python3 -c 'import json; print(json.load(open("build/ui/out/manifest.json"))["counts"])' \
             >> "$GITHUB_STEP_SUMMARY"
 

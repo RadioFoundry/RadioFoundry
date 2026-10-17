@@ -88,10 +88,10 @@ class Site:
 					raise repo.SourceError("variant %s turns off unknown switch %s" % (v["id"], off["name"]))
 		for b in self.boards:
 			names = repo.screens(b["gallery"])
-			unknown = [n for n in names if n not in self.screens["screens"]]
+			unknown = [n for n in names if self.screen(n) is None]
 			if unknown:
 				self.warn("screens not in site/data/screens.json: %s" % ", ".join(unknown))
-			b["screens"] = [n for n in names if n in self.screens["screens"]]
+			b["screens"] = [n for n in names if self.screen(n) is not None]
 			if b["flash"].get("board") and b["flash"]["board"] not in self.flash["boards"]:
 				raise repo.SourceError("boards/%s/radio.json: flash board %s isn't in odrflash" % (b["id"],
 															 b["flash"]["board"]))
@@ -186,6 +186,16 @@ class Site:
 
 	def t(self, lang, key, **fmt):
 		return self.i18n.t(lang, key, **fmt)
+
+	def screen(self, name):
+		"""A gallery screen's screens.json entry; a color page's shot in a highlight color (<page>__<color>) takes the
+		page's."""
+		return self.screens["screens"].get(name.partition("__")[0])
+
+	def screen_caption(self, lang, name):
+		page, _, color = name.partition("__")
+		cap = self.t(lang, "screen." + page)
+		return self.t(lang, "screen.in_color", screen=cap, color=self.t(lang, "color." + color)) if color else cap
 
 	def ftitle(self, lang, f):
 		return self.i18n.opt(lang, "feature.%s.title" % f["name"], f["title"])
@@ -376,10 +386,10 @@ class Site:
 		for g in self.screens["groups"]:
 			items = []
 			for n in b["screens"]:
-				s = self.screens["screens"][n]
+				s = self.screen(n)
 				if s["group"] != g or any(x not in b["config"]["full"] for x in s["needs"]):
 					continue
-				cap = self.t(lang, "screen." + n)
+				cap = self.screen_caption(lang, n)
 				items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}docs/'
 					     'ux/screens/%s/%s.png"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
 					     'height="%d" loading="lazy"></button><figcaption>%s</figcaption></figure>'

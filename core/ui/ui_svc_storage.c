@@ -171,6 +171,12 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_THEME:
 		settings_read(&st);
 		return st.theme <= 2 ? st.theme : 0;
+	case UI_SET_ACCENT:
+		settings_read(&st);
+		return st.accent & SETTINGS_ACCENT_COLOR;
+	case UI_SET_STRIP:
+		settings_read(&st);
+		return (st.accent & SETTINGS_ACCENT_PLAIN) == 0;
 	case UI_SET_UPDOWN_HOME:
 		settings_read(&st);
 		return st.updown_home <= 2 ? st.updown_home : 0;
@@ -276,12 +282,19 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_THEME:
+	case UI_SET_ACCENT:
+	case UI_SET_STRIP:
 	case UI_SET_UPDOWN_HOME:
 	case UI_SET_LOW_BATTERY:
 	case UI_SET_AUTO_OFF_MIN:
 		st = settings_begin();
 		if (id == UI_SET_THEME) {
 			st->theme = (uint8_t)clamp16(value, 0, 2);
+		} else if (id == UI_SET_ACCENT) {
+			st->accent = (uint8_t)((st->accent & ~SETTINGS_ACCENT_COLOR) |
+					       clamp16(value, 0, SETTINGS_ACCENT_COLOR));
+		} else if (id == UI_SET_STRIP) {
+			st->accent = (uint8_t)(value ? st->accent & ~SETTINGS_ACCENT_PLAIN : st->accent | SETTINGS_ACCENT_PLAIN);
 		} else if (id == UI_SET_UPDOWN_HOME) {
 			st->updown_home = (uint8_t)clamp16(value, 0, 2);
 		} else if (id == UI_SET_LOW_BATTERY) {

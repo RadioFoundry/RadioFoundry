@@ -2337,6 +2337,18 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_set(UI_SET_POS_SEND_S, -1) && ui_svc_setting_get(UI_SET_POS_SEND_S) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_GPS, 0) && ui_svc_setting_get(UI_SET_GPS) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_THEME, -3) && ui_svc_setting_get(UI_SET_THEME) == 0);
+	// The highlight color and the filled strip share settings_t.accent: setting one keeps the other. A zero byte (new
+	// or older records) is the defaults: the theme's highlight, the strip filled
+	CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 0 && ui_svc_setting_get(UI_SET_STRIP) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_ACCENT, 2) && ui_svc_setting_set(UI_SET_STRIP, 0));
+	CHECK(ui_svc_setting_set(UI_SET_ACCENT, 9) && ui_svc_setting_get(UI_SET_ACCENT) == 7 &&
+	      ui_svc_setting_get(UI_SET_STRIP) == 0);
+	settings_read(&sv);
+	CHECK(sv.accent == (7 | SETTINGS_ACCENT_PLAIN));
+	CHECK(ui_svc_setting_set(UI_SET_STRIP, 1) && ui_svc_setting_get(UI_SET_ACCENT) == 7);
+	CHECK(ui_svc_setting_set(UI_SET_ACCENT, 0) && ui_svc_setting_get(UI_SET_STRIP) == 1);
+	settings_read(&sv);
+	CHECK(sv.accent == 0);
 	CHECK(ui_svc_setting_set(UI_SET_UPDOWN_HOME, 7) && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 2);
 	CHECK(ui_svc_setting_set(UI_SET_LOW_BATTERY, 80) && ui_svc_setting_get(UI_SET_LOW_BATTERY) == 50);
 	CHECK(ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 100000) && ui_svc_setting_get(UI_SET_AUTO_OFF_MIN) == 1440);

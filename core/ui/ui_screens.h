@@ -103,10 +103,18 @@ extern ui_layout_t ui_layout;
 // pills are inverse video
 typedef struct {
 	color_t bg, fg, dim, line, tx, rx, warn, idle, pill_fg, pill_dark_fg, focus, hint_bg, priv;
+	color_t focus_fg;		// text on the focus highlight
+	color_t chnum;			// Home's channel number
+	color_t strip_bg;		// the filled status strip's background (its text is pill_dark_fg)
+	color_t strip_warn;		// warnings on it
 } ui_colors_t;
 extern ui_colors_t ui_col;
 // Color theme on color displays (Settings > Display): 0 dark, 1 light, 2 high contrast. After ui_layout_init
 void ui_theme_set(uint8_t theme);
+// Color displays (Settings > Display): the highlight color (UI_ACCENT_*, ui_svc.h) for list and tile focus and Home's
+// channel number, and whether the status strip is filled with it. Both re-apply the theme's colors
+void ui_accent_set(uint8_t accent);
+void ui_strip_set(bool filled);
 
 // Pick fonts and place the regions; call after gfx_init
 void ui_layout_init(void);

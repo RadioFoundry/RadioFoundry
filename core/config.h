@@ -124,6 +124,9 @@
 #ifndef CONFIG_FONT_XL
 #define CONFIG_FONT_XL			1
 #endif
+#ifndef CONFIG_UI_COLOR
+#define CONFIG_UI_COLOR			1
+#endif
 #ifndef CONFIG_UI_SETTINGS
 #define CONFIG_UI_SETTINGS		1
 #endif

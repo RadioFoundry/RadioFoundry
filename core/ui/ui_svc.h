@@ -155,8 +155,16 @@ typedef enum {
 	UI_SET_KEY_SIDE1, UI_SET_KEY_SIDE1_HOLD, UI_SET_KEY_SIDE2, UI_SET_KEY_SIDE2_HOLD, UI_SET_KEY_TOP,
 	UI_SET_KEY_TOP_HOLD,
 	UI_SET_VIBRATE,		// vibrate for alerts (Settings > Sound, CONFIG_VIBRATE; settings_t.ui_flags)
+	UI_SET_ACCENT,		// the highlight color, UI_ACCENT_* (Settings > Display; settings_t.accent bits 0-2)
+	UI_SET_STRIP,		// the status strip filled with it (Settings > Display; settings_t.accent bit 3)
 	UI_SET_COUNT
 } ui_setting_t;
+
+// UI_SET_ACCENT values: the theme's own highlight (blue), or one of seven. Color displays only
+enum {
+	UI_ACCENT_DEFAULT, UI_ACCENT_RED, UI_ACCENT_ORANGE, UI_ACCENT_YELLOW, UI_ACCENT_TEAL, UI_ACCENT_BLUE,
+	UI_ACCENT_PURPLE, UI_ACCENT_PINK, UI_ACCENT_COUNT
+};
 int32_t ui_svc_setting_get(uint8_t id);
 bool ui_svc_setting_set(uint8_t id, int32_t value);
 // The RAM table behind the stub (defaults until set): for the settings no package stores

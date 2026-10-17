@@ -52,7 +52,9 @@ typedef struct {
 	uint8_t hotspot_allowed;	// the host may make the radio an MMDVM hotspot
 	uint8_t master_power;		// power for channels set to "default", SETTINGS_UNSET8 = the board's default
 	uint8_t usb_mode;		// the USB personality at power-on: 0 serial, 1 network (docs/spec/usb-network.md 1)
-	uint16_t reserved1;
+	uint8_t accent;			// color displays (docs/spec/ui.md 8): SETTINGS_ACCENT_* (was reserved1's first byte;
+					// 0 = the defaults: the theme's highlight, the strip filled)
+	uint8_t reserved1;
 	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's
 	char radio_name[SETTINGS_NAME_LEN];	// NUL padded, "" = the codeplug's callsign
 	// DMR basic privacy keys (the key store dmr-voice's privacy uses; docs/spec/settings-store.md 3). A channel's
@@ -170,6 +172,12 @@ typedef struct {
 	uint32_t snmp_read_hash;	// read community (FNV-1a of the text), 0 = "public"
 	uint32_t snmp_write_hash;	// write community, 0 = none (SET refused)
 } settings_t;
+
+// settings_t.accent: bits 0-2 the highlight color (0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue,
+// 6 purple, 7 pink), bit 3 set: the status strip on the screen's background, not filled (0, the default: filled),
+// bits 4-7 zero
+#define SETTINGS_ACCENT_COLOR	0x07u
+#define SETTINGS_ACCENT_PLAIN	0x08u
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias, PTT when locked and vibrate on)
 #define SETTINGS_UI_LARGE_TEXT		0x01u

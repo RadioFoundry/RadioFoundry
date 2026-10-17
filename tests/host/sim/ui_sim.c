@@ -9,12 +9,14 @@
 //   powerkey zone+ zone- scankey lockkey cbkey homekey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
+//   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   wait:<ms>           time passes
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
+//   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
@@ -32,6 +34,7 @@
 #include "ui/ui_screens.h"
 #include "ui/ui_app.h"
 #include "ui/ui_svc.h"
+#include "ui/ui_nav.h"
 #include "input/input.h"
 #include "hostlink/hostlink.h"
 #include "hotspot/hotspot.h"
@@ -1132,6 +1135,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 0);
 	ui_svc_setting_set(UI_SET_LOW_BATTERY, 15);
 	ui_svc_setting_set(UI_SET_THEME, 0);
+	ui_svc_setting_set(UI_SET_ACCENT, 0);
+	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
@@ -1371,6 +1376,16 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "mondown") == 0 || strcmp(t, "monup") == 0) {	// the monitor key held, as `mon` sends it
+		bool down = t[3] == 'd';
+		if (down)
+			presses++;
+		input_event_t ev = { ACT_MONITOR, down ? GESTURE_DOWN : GESTURE_UP, 0 };
+		ui_app_key(&ev);
+		radio_req_monitor(down);
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "wait") == 0) {
 		advance(arg != NULL ? (uint32_t)atoi(arg) : 1000u);
 		return true;
@@ -1450,6 +1465,19 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if ((strcmp(t, "color") == 0 || strcmp(t, "strip") == 0) && arg != NULL) {
+		bool color = t[0] == 'c';
+		int v = color ? sim_color_find(arg) : strcmp(arg, "on") == 0 ? 1 : strcmp(arg, "off") == 0 ? 0 : -1;
+		if (v < 0) {
+			snprintf(err, len, "%s: no %s", t, arg);
+			return false;
+		}
+		uint8_t id = color ? UI_SET_ACCENT : UI_SET_STRIP;
+		ui_svc_setting_set(id, v);
+		ui_apply_setting(id, v);
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "battery") == 0 && arg != NULL) {
 		battery = (uint8_t)atoi(arg);
 		advance(1100);
@@ -1482,6 +1510,20 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "expect") == 0 && arg != NULL)
 		return check(arg, err, len);
 	return press(t, false, err, len);
+}
+
+int sim_color_find(const char *name)
+{
+	// Settings > Display > Highlight color, lower case, a space as _ (gallery names are [A-Za-z0-9_])
+	static const char *const names[UI_ACCENT_COUNT] = {
+		[UI_ACCENT_DEFAULT] = "default", [UI_ACCENT_RED] = "red", [UI_ACCENT_ORANGE] = "orange",
+		[UI_ACCENT_YELLOW] = "yellow", [UI_ACCENT_TEAL] = "teal", [UI_ACCENT_BLUE] = "light_blue",
+		[UI_ACCENT_PURPLE] = "purple", [UI_ACCENT_PINK] = "pink",
+	};
+	for (int i = 0; i < UI_ACCENT_COUNT; i++)
+		if (strcmp(name, names[i]) == 0)
+			return i;
+	return -1;
 }
 
 bool sim_run(const char *script, char *err, size_t err_len)

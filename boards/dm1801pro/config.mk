@@ -20,10 +20,11 @@ CONFIG_BCAST_FM ?= y
 CONFIG_AM_RX ?= n
 # The vibration motor on PTB24 (Settings > Sound > Vibrate)
 CONFIG_VIBRATE ?= y
-# 128x64 monochrome: no room for the large font
+# 128x64 monochrome: no room for the large font, and no colors to set
 CONFIG_FONT_XL ?= n
+CONFIG_UI_COLOR ?= n
 # The loader hand-over (debug link 0x1A): updates over the programming cable without switching the radio off, from the
 # web flasher or stub/stubtool.py (docs/spec/debuglink.md 3.18)
 CONFIG_STUB_ENTRY ?= $(CONFIG_DEBUGLINK)
 # What the board can't do yet or lacks: ci's maximal configuration leaves these off
-BOARD_UNSUPPORTED := USB USB_NETWORK AM_RX AUDIO_PROBE FONT_XL
+BOARD_UNSUPPORTED := USB USB_NETWORK AM_RX AUDIO_PROBE FONT_XL UI_COLOR

@@ -98,6 +98,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 5,304 | 5,640 | ● | ● | ● |  |
 | Diagnostics page | `DIAG` | 3,752 | 3,532 | ● | ● | ● |  |
+| Color screen settings (theme, highlight color, filled status bar) | `UI_COLOR` | 672 | 608 | ● | ● | ● | Off on the DM-1801 Pro (monochrome screen; 628 B there). Measured 2026-10-17; DM-1701 with LTO 612 B, 308 of them in sector 9 |
 | 16x32 font | `FONT_XL` | 6,352* | — | ○ | ✕ | ○ | Only useful at 240 px and wider (MD-380 is 160 px); DM-32 runs at half resolution, so nothing gained yet |
 
 ## Bench

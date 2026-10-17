@@ -121,6 +121,9 @@ PTT while the keys are locked works unless Settings > Privacy > PTT when locked 
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
 UI gives an error beep and "PTT is off while locked: hold * to unlock".
 
+The state pill follows the green LED (`radio_sm.c` `outputs()`): RX also while the monitor holds an FM squelch open (MON
+stays beside the mode); DMR's monitor key is digital monitor and leaves it IDLE.
+
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
 idle, the bars and battery icon give way, the battery percent stays, and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
@@ -214,6 +217,7 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_UI_SETTINGS` | y | the Settings menu is left out (about 5.3 KB, `docs/feature-matrix.md`); settings keep their stored values and are set with qdmr; Settings shows one row saying so, Find finds no settings |
 | `CONFIG_DIAG` | y | no diagnostics page (Tools has no Diagnostics row; Roaming moves up to 7) |
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
+| `CONFIG_UI_COLOR` | y (DM-1801 Pro: n) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_SCAN`, data features) are
 left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB) bounds the display: 240x320 at
@@ -238,6 +242,11 @@ make -C tests/host ui-sheets GEOM=128x64                       # contact sheet o
 tests/host/uiSim --geom 160x120i5 --script "ok 4 down ok expect:zone=1" --out zone.png --scale 3
 ```
 
+The gallery draws a color page (Home with its filled status bar, the Channels list) once more in each highlight color
+`UI_GALLERY_COLORS` names, as `<screen>__<color>.png` right after the page, on color displays only; screens that only
+differ in color (`home_plain`) are left out at 128x64. The list is set in
+`.github/workflows/ui-gallery.yml` (`docs/dev/ci.md`), and `make ui-gallery` reads it from there.
+
 Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class), `120x160`
 (DM-32: the 240x320 panel at half resolution), `128x64` (mono), `240x320`, or any `WxH`, `WxHiN` (inset N all round),
 `WxHm` (mono). Script tokens:
@@ -247,6 +256,8 @@ Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `
 | `up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-` | a short press (counted) |
 | `long:<key>` | a long press (counted) |
 | `ptt`, `ptt:<ms>`, `pttdown`, `pttup` | PTT (counted) |
+| `mondown`, `monup` | the monitor key held, then released (FM: the squelch held open) |
+| `color:<name>`, `strip:on\|off` | Settings > Display > Highlight color (`red orange yellow teal light_blue purple pink default`) and Filled status bar, set directly |
 | `wait:<ms>` | time passes |
 | `rx:<src>,<dst>,g\|p[,name]`, `rxend`, `call:<src>,<dst>,g\|p` | a DMR call heard |
 | `msg:<src>,<text>`, `alert:<src>`, `emergency:<src>`, `privcall:<src>`, `hotspot:on\|off`, `battery:<pct>` | events |
@@ -291,7 +302,22 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   in software before the vocoder (radio-features.md 3.6). The
   GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
 - Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
-- Theme switches the color palette (dark, light, high contrast); on 1 bpp displays the row is dimmed.
+- Theme switches the color palette (dark, light, high contrast). Highlight color (Default, Red, Orange, Yellow, Teal,
+  Light blue, Purple, Pink) and Filled status bar (Settings > Display, `settings_t.accent`) are for color displays
+  too. On a 1 bpp display the three rows are dimmed ("Colors are for color screens"); a build without
+  `CONFIG_UI_COLOR` (section 5) has no such rows. A color other than
+  Default is the list and tile focus (with black text) and Home's channel number (on the light theme the number stays
+  the text color: the light shades don't read on white). The filled bar (on by default) is reverse video: the status
+  strip's background in the color (light gray with Default), its text and icons black, the IDLE pill inverse on it;
+  RX, TX and NO TX keep their own pill colors and words (P5). On it the pill is the strip's full height (a one-cell
+  pill left a line of the strip's color under it) against the bezel, its corners rounded by two pixels. Left of the
+  pill's middle the strip is the screen's background, so no strip color shows beside its left end. On the right a
+  one-pixel black edge follows the curve: the pill colors are close in lightness to the strip colors, so hue alone
+  would not separate them. Warnings on the strip (SCAN, MON, ROAM, unread messages, the lock, a low battery) keep
+  a color: a dark shade picked per strip color, dark amber where it reads and dark blue on red, orange and pink, at
+  least 5:1 on its strip after RGB565 rounding. The shades are light so black
+  text reads on them (at least 7.5:1 after RGB565 rounding); the red is lighter and pinker than TX's red, and there is
+  no green, which would hide the RX pill. Gallery: `home_dmr*`, `home_plain`, `channels*` (section 7).
 - The VFO is FM only, so the Mode tile is dimmed in the VFO ("VFO: FM only") instead of a refusal.
 - The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
   between steps is refused with the range. Only key slot 1 is reachable from the menu.

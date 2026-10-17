@@ -93,10 +93,18 @@ before and after, side by side. It's advisory: no required check waits on it.
 
 1. `ui-gallery.yml` (`pull_request`) builds `uiSim` from the base commit and from the pull request's merge commit,
    renders `--gallery` for both, and writes `tools/ui_gallery_compare.py`'s output: for each display class with a changed
-   screen, one composite per eight changed screens, stacked as before | after pairs (2x, labels with both commit ids;
-   a screen that's new or gone gets a gray panel), plus `manifest.json`. A class with no change
+   screen, one composite per eight rows, stacked as before | after pairs (2x, or 1x for a class whose widest row would
+   pass 1800 px; labels with both commit ids; a screen that's new or gone gets a gray panel), plus `manifest.json`. A class with no change
    gets no picture. Classes are ordered monochrome first, then color, each by resolution, and the comment groups them
    under those headings. The render is deterministic, so an unchanged screen never shows up.
+
+   The gallery's color pages are drawn once more in each highlight color the workflow's `UI_GALLERY_COLORS` names
+   (`env` at the top of `ui-gallery.yml`: one line, in double quotes, any of `red orange yellow teal light_blue purple
+   pink`; three for now). When a color page or any of its color shots changed, the comparison shows the whole set as
+   one row of the composite: a column per shot, the page first and then its colors in the list's order, before above
+   after, the unchanged ones marked so. Such a row counts as two of the eight.
+   `make -C tests/host ui-gallery` reads the same line, so the committed gallery shows the same colors. Changing the
+   list is a pull request that changes the workflow and regenerates the gallery.
 2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact and checks it as data (no links,
    file names and sizes, PNG signatures, the pull request and commit it names). It pushes each
    composite to the `ui-previews` branch (made on first use, one `pr-N/` folder per pull request holding its newest commit) and

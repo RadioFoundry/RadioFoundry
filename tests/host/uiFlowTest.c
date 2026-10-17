@@ -164,9 +164,30 @@ static const flow_t flows[] = {
 	{ "A not in this build", "aprs:off", "ok 6 9 2", "toast=APRS:_not aprs_auto=0", 4, false },
 };
 
+// GD-77 key map on its 128x64 monochrome screen only
+static const flow_t flows_mono[] = {
+#if CONFIG_UI_COLOR
+	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
+	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",
+	  "toast=Colors_are_for set49=0", 7, false },
+	{ "S filled status bar on a monochrome screen: dimmed", "", "ok 7 2 down down down down ok",
+	  "toast=Colors_are_for set50=1", 8, false },	// unchanged: on by default
+#else
+	{ "S no color rows on a monochrome screen", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
+#endif
+};
+
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+#if CONFIG_UI_COLOR
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
+	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set49=1", 7, false },
+	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set50=0", 8, false },
+#else
+	// Built without CONFIG_UI_COLOR: Display has no color rows; the third row is Large text
+	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
+	{ "S large text is the third row", "", "ok 7 2 down down ok", "set8=1", 6, false },
+#endif
 	{ "E emergency: hold the top key", "", "long:emerg", "toast=EMERGENCY_sent", 1, false },
 	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
@@ -216,6 +237,9 @@ static const flow_t flows_k[] = {
 	{ "H hold # opens the talk target picker", "", "long:ctx", "screen=picker", 1, false },
 	{ "H hold # then a typed TG", "", "long:ctx up ok 3 1 0 0 ptt", "txid=3100 txpriv=0", 8, false },
 	{ "H hold # on FM: DMR only", "down", "long:ctx", "screen=home toast=Talk_target:_DMR", 1, false },
+	{ "H FM monitor held: the pill says RX, MON stays", "down", "mondown", "shows=RX shows=MON", 1, false },
+	{ "H FM monitor released: IDLE again", "down mondown", "monup", "shows=IDLE hides=MON", 0, false },
+	{ "H DMR monitor: digital monitor, the pill stays IDLE", "", "mon", "shows=IDLE", 1, false },
 	// The encoder: forward = the next channel on Home, the next row down a list, the next quick tile; back = up
 	{ "N encoder: next channel", "", "enc+", "pos=4 screen=home", 1, false },
 	{ "N encoder: previous channel", "", "enc-", "pos=2 screen=home", 1, false },
@@ -533,6 +557,8 @@ int main(void)
 		for (size_t i = 0; i < sizeof flows / sizeof flows[0]; i++)
 			run_flow(&flows[i], g, runs[r].map, runs[r].name);
 	}
+	for (size_t i = 0; i < sizeof flows_mono / sizeof flows_mono[0]; i++)
+		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)
 		run_flow(&flows_k[i], sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	const sim_geom_t *gf = sim_geom_find("160x128");

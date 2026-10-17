@@ -338,26 +338,35 @@ $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm3
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
            '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DGFX_FIT_TRACE
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
-TESTS   += uiFlowTest uiSim
+TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiFlowTest.c $(UIAPP) -lz
 
+# The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows
+uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
+	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -o $@ uiFlowTest.c $(UIAPP) -lz
+
 uiSim: uiSim.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
 
+# The highlight colors the gallery shows its color pages in: the list in .github/workflows/ui-gallery.yml, so the
+# committed gallery and a pull request's before / after pictures show the same colors
+UI_GALLERY_COLORS ?= $(shell sed -n 's/^ *UI_GALLERY_COLORS: *"\([^"]*\)".*/\1/p' $(ROOT)/.github/workflows/ui-gallery.yml)
+
 ui-gallery: uiSim
 	rm -rf $(ROOT)/docs/ux/screens/*/
-	./uiSim --gallery $(ROOT)/docs/ux/screens
+	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --gallery $(ROOT)/docs/ux/screens
 
 # Contact sheets only (every screen of a display class on one page, to audit layouts), outside docs/: GEOM=128x64
 ui-sheets: uiSim
-	./uiSim --sheets out/sheets $(GEOM)
+	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest uiFlowTest uiSim
+run-ui: gfxTest uiFlowTest uiFlowTestNoColor uiSim
 	./gfxTest
 	./uiFlowTest
+	./uiFlowTestNoColor
 	./uiSim --layout
 .PHONY: run-ui ui-gallery ui-sheets
 

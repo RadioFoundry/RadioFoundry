@@ -29,6 +29,8 @@ const sim_geom_t *sim_geom_find(const char *name);	// also "WxH", "WxHiN" (inset
 void sim_reset(const sim_geom_t *g, sim_map_t map);
 // Run a script (tokens separated by spaces; see ui_sim.c). Returns false and fills err on the first failure
 bool sim_run(const char *script, char *err, size_t err_len);
+// A highlight color by its gallery name (red, light_blue, ...; color: in a script): UI_ACCENT_*, or -1
+int sim_color_find(const char *name);
 // Presses counted since the last sim_reset or sim_count_reset (PTT and long presses count one each)
 int sim_presses(void);
 void sim_count_reset(void);

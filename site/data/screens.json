@@ -1,5 +1,5 @@
 {
- "_about": "The UI gallery (docs/ux/screens) as the site shows it: each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here.",
+ "_about": "The UI gallery (docs/ux/screens) as the site shows it: each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here. A color page's shots in each gallery highlight color (<name>__<color>) take its entry, and the caption screen.in_color with color.<color>.",
  "groups": [
   "home",
   "calls",
@@ -44,6 +44,14 @@
    ]
   },
   "home_large_text": {
+   "group": "home",
+   "needs": []
+  },
+  "home_monitor": {
+   "group": "home",
+   "needs": []
+  },
+  "home_plain": {
    "group": "home",
    "needs": []
   },

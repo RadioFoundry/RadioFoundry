@@ -1745,8 +1745,13 @@ typedef struct {
 
 static const int16_t v_backlight[] = { 5, 10, 30, 60, 120, 0 };
 static const char *const n_backlight[] = { "5 s", "10 s", "30 s", "1 min", "2 min", "Never" };
+#if CONFIG_UI_COLOR
 static const int16_t v_theme[] = { 0, 1, 2 };
 static const char *const n_theme[] = { "Dark", "Light", "High contrast" };
+static const int16_t v_accent[] = { UI_ACCENT_DEFAULT, UI_ACCENT_RED, UI_ACCENT_ORANGE, UI_ACCENT_YELLOW, UI_ACCENT_TEAL,
+				     UI_ACCENT_BLUE, UI_ACCENT_PURPLE, UI_ACCENT_PINK };
+static const char *const n_accent[] = { "Default", "Red", "Orange", "Yellow", "Teal", "Light blue", "Purple", "Pink" };
+#endif
 static const int16_t v_tot[] = { 0, 30, 60, 120, 180, 300, 600 };
 static const char *const n_tot[] = { "Off", "30 s", "1 min", "2 min", "3 min", "5 min", "10 min" };
 static const int16_t v_lock[] = { 0, 30, 60, 300 };
@@ -1829,7 +1834,11 @@ static const set_item_t s_sound[] = {
 static const set_item_t s_display[] = {
 	NUMBER("Brightness", "backlight", UI_SET_BRIGHTNESS, 10, 100, 10, "%"),
 	LIST("Backlight time", "timeout", UI_SET_BACKLIGHT_S, v_backlight, n_backlight),
+#if CONFIG_UI_COLOR	// a radio whose only screen is monochrome has no colors to set: no rows for them
 	LIST("Theme", "contrast", UI_SET_THEME, v_theme, n_theme),
+	LIST("Highlight color", "accent", UI_SET_ACCENT, v_accent, n_accent),
+	TOGGLE("Filled status bar", "top line", UI_SET_STRIP),
+#endif
 	TOGGLE("Large text", "accessibility", UI_SET_LARGE_TEXT),
 	TOGGLE("Hint row", "help", UI_SET_HINTS),
 };
@@ -2015,7 +2024,9 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_VIBRATE:
 		return feats() & UI_FEAT_VIBRATE ? NULL : "This radio has no vibration motor";
 	case UI_SET_THEME:
-		return board.display != NULL && board.display->bpp == 1 ? "Themes are for color screens" : NULL;
+	case UI_SET_ACCENT:
+	case UI_SET_STRIP:
+		return board.display != NULL && board.display->bpp == 1 ? "Colors are for color screens" : NULL;
 	case UI_SET_MIC_GAIN:
 		return mic_gain_available() ? NULL : "Mic gain: not in this build";
 	case UI_SET_HEAR_ALL_DEFAULT:

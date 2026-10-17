@@ -111,6 +111,7 @@ below are for the DM-1701.
 | `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
 | `CONFIG_FONT_XL` | n | 16x32 font, for 240 px and wider displays (the DM-32 draws at 120x160, so it stays off there) |
+| `CONFIG_UI_COLOR` | y (DM-1801 Pro: n) | color screen settings: Theme, Highlight color and Filled status bar in Settings > Display (`docs/spec/ui.md` 5, 8). Off: no such rows, the dark theme's colors. About 600 B; off for radios whose only screen is monochrome |
 | `CONFIG_AUDIO_PROBE` | n | diagnostics: debug link command 0x10 reads / writes the audio chip's registers and measures the PCM stream, for the USB audio bench tests (`docs/spec/hardware-dm1701.md` 21.3, `docs/spec/debuglink.md` 3.14); needs DEBUGLINK and DMR; about 2 KB RAM and 2.2 KB flash on the DM-1701. Never for a release; CI builds it in the DM-1701's `audio-probe` configuration (with `LTO=1`: the default image has no room for it without), not in maximal. A bench image without LTO: add `CONFIG_SNMP=n` |
 | `CONFIG_UI_SETTINGS` | y | the Settings menu on the radio; off: settings keep their stored values and are set with qdmr (`docs/spec/ui.md` 5) |
 
@@ -155,6 +156,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 | md380 | `SNMP` (8 KB; users can pick it with another feature off) | flash: the default had 56 bytes left. SNMP monitoring is mostly for fixed hotspots and repeaters |
 | dm32 | `USB`, `USB_NETWORK` (maximal build too: `BOARD_UNSUPPORTED`) | no USB data port on the radio; PPP on the programming cable is its IP link |
 | dm32 | `FONT_XL` (on in the maximal build) | the core draws at 120x160 |
+| dm1801pro | `UI_COLOR` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen: no colors to set |
 | every board | `AUDIO_PROBE` | a bench diagnostic |
 
 The DM-32UV puts the state the core marks `ODR_CPU_RAM` in its low RAM below the codec window, and keeps the

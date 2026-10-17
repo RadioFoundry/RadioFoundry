@@ -1434,8 +1434,8 @@ void ui_app_init(void)
 		ui_svc_apply(id, ui_svc_setting_get(id));
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
-					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME,
-					  UI_SET_VIBRATE };
+					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
+					  UI_SET_STRIP, UI_SET_VIBRATE };
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
@@ -1474,6 +1474,12 @@ void ui_apply_setting(uint8_t id, int32_t v)
 		break;
 	case UI_SET_THEME:
 		ui_theme_set((uint8_t)v);
+		break;
+	case UI_SET_ACCENT:
+		ui_accent_set((uint8_t)v);
+		break;
+	case UI_SET_STRIP:
+		ui_strip_set(v != 0);
 		break;
 	default:
 		return;
