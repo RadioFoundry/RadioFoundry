@@ -81,7 +81,8 @@ jobs:
         run: |
           set -eu
           make -s -C tests/host uiSim
-          tests/host/uiSim --gallery build/ci/gallery > /dev/null
+          mkdir -p build/ci   # uiSim makes only the last directory
+          tests/host/uiSim --gallery build/ci/gallery > build/ci/gallery.log || { grep FAIL build/ci/gallery.log; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: always()
