@@ -8,6 +8,7 @@
     "Kydera CDR-300UV"
   ],
   "kind": "mobile",
+  "status": "testing",
   "readme": "Radioddity DB25-D PRO",
   "bands": "136-174 / 400-480 MHz",
   "power": "up to 25 W",

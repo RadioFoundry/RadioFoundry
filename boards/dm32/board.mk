@@ -10,5 +10,5 @@ BOARD_DIRS := boards/dm32 drivers/rf/fd6818 drivers/rf/subaudio drivers/modem/hr
 	drivers/input/keymatrix drivers/input/quadrature drivers/input/sharedptt drivers/cal/baofeng drivers/gps/nmea_line drivers/gps/gps_rx
 # State the core marks ODR_CPU_RAM goes to the low SRAM below the codec window (dm32.ld RAM_LO; zeroed by crt0)
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ram_lo"'
-# The stock codec host (platform/hrc7000/vocoder.c): its profile ids are dm32-049 and dm32-046
+# The stock codec host (platform/hrc7000/vocoder.c): its profile ids are dm32-<stock version> (dm32-049, dm32-032, ...)
 MCU_DEFS   += -DHRC_CODEC_BOARD='"dm32"'

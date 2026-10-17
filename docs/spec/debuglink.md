@@ -128,7 +128,7 @@ inject_max_ms=10000     longest hold of an injected key, PTT included
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`dm1701-v0206-csv`: signature word and the CRC-32 of both codec windows match stock V02.06 CSV;
-`dm32-049`, `dm32-046`: the DM-32 codec slot is valid and was carved from that stock file), `absent` (the board has a
+`dm32-049`, `dm1801pro-049`: an HR_C7000 codec slot is valid, and the digits are the stock version it was carved from), `absent` (the board has a
 vocoder but the check failed: erased, another stock version, damaged), `present` (a valid codec whose board names no
 profile) or `none` (built without DMR). The first request after boot may take some 20 ms longer while the board
 computes the CRCs. It reads flash only. `tools/odrflash` asks for it before flashing to decide whether the codec

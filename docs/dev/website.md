@@ -37,6 +37,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Radios, their status, planned radios | The README's "Radios and status" table |
 | A radio's one-line note for visitors | `radio.note.<radio>` and `planned.note.<slug of the README name>` in the string catalog (the README's notes are for developers; the build warns when one is missing) |
 | A radio's name, bands, processor, screen, bootloader steps, flash backend | `boards/<radio>/radio.json` |
+| A radio's status badge (Supported, In development, Planned) | the README radio table, or `radio.json` `status` (`supported`, `testing`, `planned`) where the two differ |
 | Which features a radio has, per variant | `make BOARD=<radio> [VARIANT=<v>] print-config`, `print-unsupported`, `print-required` |
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
@@ -69,7 +70,7 @@ file the build didn't write.
 | `site/static/js/flasher/` | The web flasher (below) |
 | `site/static/js/tools.js` | The Tools page (codeplug conversion) |
 | `site/static/img/radios/src/<radio>.svg` | Radio illustrations (below) |
-| `site/tests/` | Flasher tests: `fixtures.py` makes inputs with odrflash, `flasher.test.mjs` checks the JavaScript |
+| `site/tests/` | Flasher tests: `fixtures.py` makes inputs with odrflash and the HR_C7000 tools, `flasher.test.mjs` and `c7000.test.mjs` check the JavaScript |
 
 ## Templates and design
 
@@ -128,14 +129,58 @@ generic drawing from `radio.json` `frame`.
 | `codecsave.js` | Where an update erases the codec (the MD-380): the codec read back from a radio that runs ODR, checked against the profile's hashes, and a copy kept in IndexedDB until the next update | `odrflash/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs ODR: the bootloader read over READ_MEM, the block with the key's SHA-256 | `odrflash/bootkey.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `odrflash/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
+| `backends.js` | The radio access backend registry: which steps and views a radio's family uses (below) | |
+| `readers.js` | Bulk memory readers for backups: the debug link and the STM32F4 loader (below) | |
 | `backup.js`, `zip.js` | Backup bundles | |
 | `restore.js` | What a bundle can put back, and the plans for it | |
 | `select.js` | À la carte feature selection with the dependencies, matching prebuilt variants | |
 | `codeplug.js` | Codeplug formats and the converter registry | |
 | `fake.js` | A simulated radio: bootloader with a flash model, ODR's serial port, a synthetic stock file | `odrflash/fakedfu.py` |
-| `app.js` | The page | |
+| `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by ODR, then reads, sector writes and the LED | `stub/stubtool.py` |
+| `f4stub.js` | The STM32F4 loader (DM-1701, MD-380): handed over by ODR, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
+| `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/dm32_codec.py` |
+| `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
+| `c7000ui.js`, `radiotop.js` | The HR_C7000 backend: its steps (connect, back up and check, write, check) and the radio picture with its LED | |
+| `dom.js` | DOM helpers and strings shared by `app.js` and `c7000ui.js` | |
+| `app.js` | The page: the tasks, the shared steps and the `anyroad-dfu` backend | |
 
-Add `#sim` to the flasher's address to run every step against the simulated radio.
+Add `#sim` to the flasher's address to run every step against the simulated radio. `#sim=c7000` simulates a
+DM-1801 Pro on stock firmware, `#sim=c7000-odr` one that runs ODR with the loader hand-over. `#sim=odr` is a DM-1701
+running ODR, which updates through the STM32F4 loader.
+
+### Radio access backends
+
+A radio's `flash.backend` in radio.json names how the page reaches it. `app.js` runs the tasks and the steps every
+radio shares (radio, build, bundle, symptom, recover); the backend supplies the rest. A new way to install or back up
+a radio, such as another bootloader protocol or a stock firmware's own read-back protocol, is a new module that calls
+`register()` from `backends.js` and is imported by `app.js`. The task flow doesn't change.
+
+| Field | What it gives |
+|---|---|
+| `id` | The `flash.backend` value |
+| `available(radio, fb, task)` | Whether the page can run `install` or `backup` on the radio (grayed out in the radio list otherwise) |
+| `steps(task, {recovering})` | The task's step ids, or null for the shared default |
+| `views` | A view function per step the backend owns |
+| `stepLabel(step, task)` | Optional: the `flash.step.*` key of a step's name |
+| `recovery` | The help task: `first` (`updatemode` checks the bootloader first, `fix` goes to the choices), `stock` (`file`: stock firmware from the user's stock file; `restore`: from a backup), `reach` and `stockText` (string keys) |
+| `ownsBundle(bundle)` | Optional: a backup bundle this backend restores with its own view |
+| `ownImage(fb, board, data)` | Optional: a user's own image file, split into the image and anything the backend keeps (a merged codec slot) |
+| `release()` | Optional: let go of a port or loader still held (Start Over, another radio) |
+
+| Backend | Radios | Module |
+|---|---|---|
+| `anyroad-dfu` | DM-1701, MD-380 | `app.js` (`dfu.js`, `f4stub.js`) |
+| `c7000-stub` | DM-1801 Pro, DM-32UV | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `none` | DB25-D for now | none: the radio is listed but grayed out |
+
+A radio without a backend the page knows gets `none`, so a radio.json value can come before its module. The
+contract tests are in `site/tests/backends.test.mjs`.
+
+Bulk reads for a backup go through readers (`readers.js`). `backup.js` `readRadio` reads the small parts only the
+debug link has (radio info, security registers) first. It then tries the readers it is given, in order, and the debug
+link reads the memories when none opens. A reader has `open(progress)` (false: not possible now, nothing changed),
+`used`, `read(mem, addr, n)` giving `{data, complete}`, `close()` and `abort()`. A new read-back protocol is a reader,
+and the bundle format and the backup step stay as they are.
 
 ### Backup bundles (`odr-backup/1`)
 
@@ -144,7 +189,8 @@ each part's address, size, SHA-256 and whether the read completed), `internal-fl
 base; the bootloader is never read or written), `spi-flash.bin`, `security-registers.bin` (the factory calibration),
 `radio-info.bin`, and `stock-firmware.bin` when the user gave one.
 
-The user picks what to read, each with a time estimate from a short timed read of this radio:
+The user picks what to read, each with a time estimate: from a short timed read of this radio, or through the loader
+from its measured speeds (stub-stm32f4.md 11) plus the hand-over and the restart:
 
 | Choice | Reads |
 |---|---|
@@ -160,6 +206,7 @@ What can be read depends on the firmware running:
 | Radio runs | Read |
 |---|---|
 | ODR | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
+| ODR with stub entry (DM-1701, MD-380) | The same. The radio info and security registers come over the debug link; the internal flash and the SPI flash come through the STM32F4 loader, every 4 KB block checked against the radio's CRC, and the radio then restarts into ODR. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves ODR running, and the debug link reads everything |
 | Stock (DM-1701, MD-380) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing ODR: flashing never touches the SPI flash, and ODR doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
 
 ### Restore
@@ -173,6 +220,70 @@ What can be read depends on the firmware running:
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not
 documented, and ODR doesn't overwrite it unless an ID database is uploaded.
 
+### HR_C7000 radios (the boot stub)
+
+Radios whose `radio.json` says `"backend": "c7000-stub"` (the DM-1801 Pro and the DM-32UV) are flashed over their
+programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
+[debuglink.md](../spec/debuglink.md) 3.18). The Baofeng bootloader is never used and never written. The install has
+its own steps:
+
+| Step | What happens |
+|---|---|
+| Connect | The page looks for a stub that still runs, then for ODR. ODR with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); ODR without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The radio model is then checked by the bootloader's ID string |
+| Back up and check | A first install reads the whole program memory (required) and, if asked, the data memory, keeps the program memory in IndexedDB and downloads a backup bundle. An update reads only the codec slot. The page then decides the codec |
+| Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
+| Check | The stub resets the chip; the page asks ODR's VERSION for the build and the codec |
+
+The codec decision (`decide()` in `c7000.js`), first match wins:
+
+| Source | When |
+|---|---|
+| Keep | The codec slot in flash checks out (magic, CRC, signature, the board's RAM windows). Only the image is written |
+| The radio | The stock firmware in the read holds a known codec (found by its signature and SHA-256, wherever that stock version put it). It is copied into the slot |
+| This browser | A slot an earlier run kept in IndexedDB |
+| A file | A program memory backup, a known stock firmware file, or an image merged by `tools/dm32_codec.py` |
+| None | Only when the user asks for it: FM works, DMR voice stays off |
+
+The page never sends a STUB command to ODR except right before it enters the stub: any STUB command parks ODR's codec
+until the next restart.
+
+The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
+`tools/dm32_codec.py` and `tools/dm32_flash.py`) and the two stub images to `data/c7000-stub.json`. Bundle parts:
+
+| File | Part | Content |
+|---|---|---|
+| `program-memory.bin` | `c7000-progmem` | The whole 1 MB program memory |
+| `data-memory.bin` | `c7000-data` | The whole 16 MB data memory |
+| `original-channels.bin` | `c7000-data-start` | Data memory 0 to 0xC9000, the stock codeplug area, when the whole data memory isn't read |
+| `calibration.bin` | `c7000-calibration` | The 4 KB calibration page (logical ID 2, [hardware-dm32.md](../spec/hardware-dm32.md) 11.1), at its own address |
+
+The calibration choice reads the stock codeplug area, which is about 10 seconds, and is on by default. Choosing the whole
+data memory includes it. Restore writes the program memory back from 0x0300C000 up; the data memory is not written.
+
+### STM32F4 radios (the loader route)
+
+A DM-1701 or MD-380 on stock firmware always installs through its bootloader (`dfu.js`): that is the only way into a
+stock radio. Once it runs ODR, an update can skip the bootloader. When the "current firmware" step finds ODR, the page
+asks for the STUB offer (command 0x1A op 0; on the STM32 it only reports the staging buffer and parks nothing). The
+loader route is used when all of these hold:
+
+| Condition | Why |
+|---|---|
+| ODR offers stub entry (`CONFIG_STUB_ENTRY`) | the hand-over needs it |
+| ODR reports the radio's codec | the loader writes only the firmware's own flash, so the codec must already be in place |
+| the image has no codec in it, and no mode was forced under Advanced | a merge or a forced mode goes through the bootloader |
+
+The codec step then needs no stock file or key. The write step sends the embedded stub (`data/f4-stub.json`, from
+`stub/f4stub.py`), finds it on the same port or, if it enumerated again, on the granted port with the same serial
+number (one click picks it when the browser didn't keep the grant), and installs in the order of
+[stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 3 erased first and its first word written last. On the MD-380,
+sector 6 is shared with the codec: its current content is downloaded as a file before anything is erased, and the
+codec bytes are written back unchanged. The bootloader route stays on the same step, folded, and opens by itself when
+the loader can't finish. An install cut short leaves the radio in its bootloader at the next power-on, which that route
+finishes.
+
+`data/flash-boards.json` carries the owned flash per board (`f4stub`, from `stub/f4stub.py` `BOARDS`).
+
 ### Firmware images and custom builds
 
 The flasher gets every image, a prebuilt variant's included, by building it on request (`requestBuild` in `app.js`)
@@ -185,6 +296,43 @@ A radio whose image depends on more than the feature switches lists the choices 
 (the MD-380's band: `MD380_BAND=uhf|vhf`). The build step asks for each one before it builds, or takes it from a
 connected radio's debug link name (`board_name`), sends it with the request, and refuses an image whose manifest
 doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name says another value.
+
+### Version links
+
+To have someone install a version that isn't a release (a commit to try out), send them the flasher with
+`?version=`:
+
+```
+https://<site>/flash/?version=<full 40-character commit hash>
+https://<site>/flash/?version=<full commit hash>#radio=dm1701
+https://<site>/flash/?version=v0.3.0
+```
+
+| Behavior | Detail |
+|---|---|
+| What it builds | The build request sends that ref in place of the newest release tag. The build service takes a release tag, `main` or a full commit hash, and the commit has to be pushed. A short hash shows a "can't find" banner and builds nothing. |
+| How long it lasts | The tab keeps it in `sessionStorage` for the session: reloads and visits to other pages keep it, a new browser session doesn't. `?version=` (empty) drops it. |
+| On every step | A banner names the version and has "Install the latest release instead", which drops it. |
+| Before the build | The build step's button says "Get version <hash>", and a dialog asks for confirmation. The dialog can also switch to the latest release and continue with it. |
+| `#radio=` | Picks the radio, as on any flasher link. |
+
+The feature list comes from the site's own release data. A commit with other feature names makes the build fail with
+the service's error.
+
+### A failed install (the help task)
+
+"My radio isn't working" on the start page asks for the radio and the symptom, then walks to a fix. Every screen
+keeps the reassurance that the page never writes the part of the radio that starts update mode.
+
+| Symptom | Path |
+|---|---|
+| Won't switch on | Battery check, then (STM32) a practice of update mode with a connection check, then the fix chooser. |
+| Stuck on a screen, or the install stopped | Update mode check (STM32) or straight to the fix chooser (HR_C7000, which the page reaches over the cable at power-on). |
+| Works but something is wrong | The fix chooser. |
+
+The fix chooser offers installing again (the install steps without the current-firmware question), putting back a
+backup (the restore task with the target preselected) or the original firmware (stock file, then update mode). Each
+failure message in the install steps links here (`helpLink`).
 
 ### USB network mode
 

@@ -131,6 +131,8 @@ class Site:
 			"features.json": {"groups": self.groups, "features": features},
 			"variants.json": {"variants": self.variants},
 			"flash-boards.json": self.flash,
+			"c7000-stub.json": repo.c7000_stub(),
+			"f4-stub.json": repo.f4_stub(),
 			"screens.json": self.screens,
 			"releases.json": {"releases": self.release_list()},
 		}
@@ -390,7 +392,8 @@ class Site:
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
 				     for k, p in b["docs"].items())
 		fl = b["flash"]
-		can_flash = fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256"))
+		can_flash = ((fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256")))
+			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"]))
 		g = b["frame_geometry"]
 		pct = g["screen_pct"]
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",
@@ -403,7 +406,10 @@ class Site:
 		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],
 		       "flash_cta": self.tpl.partial("flash_cta" if can_flash else "flash_soon",
 						     {"id": b["id"], "name": b["name"]}, lang),
-		       "bootloader": "".join("<li>%s</li>" % html.escape(s) for s in fl.get("bootloader", []))}
+		       # the C7000 radios need no keys held: the page meets the chip's boot ROM when the radio is switched on
+		       "bootloader": "".join("<li>%s</li>" % html.escape(s) for s in (
+			       [self.t(lang, "radio.c7_step%d" % i) for i in (1, 2, 3)] if fl["backend"] == "c7000-stub"
+			       else fl.get("bootloader", [])))}
 		self.page(lang, "radios/%s.html" % b["id"], b["name"], self.tpl.render("radio", ctx, lang), "radio",
 			  description=self.t(lang, "radio.description", name=b["name"]), nav="radios")
 

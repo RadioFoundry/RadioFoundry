@@ -15,18 +15,20 @@
   "display": "monochrome, 128 × 64",
   "gallery": "128x64",
   "docs": {
-    "hardware": "docs/spec/hardware-dm1801pro.md"
+    "hardware": "docs/spec/hardware-dm1801pro.md",
+    "codec": "docs/spec/codec-dm1801pro.md"
   },
   "flash": {
-    "backend": "none",
-    "board": null,
+    "backend": "c7000-stub",
+    "board": "dm1801pro",
     "link": "serial-cable",
     "bootloader": [],
-    "stock_versions": []
+    "stock_versions": [],
+    "stub_tested": true
   },
   "backup": {
-    "stock": "none",
-    "odr": "none",
+    "stock": "full",
+    "odr": "full",
     "spi_size": 16777216
   },
   "frame": {

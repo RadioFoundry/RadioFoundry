@@ -7,8 +7,8 @@ the model and FCC facts, is in [radios.md](radios.md). The HR_C7000 itself (UART
 [hardware-dm32.md](hardware-dm32.md) and its modem in [modem-hrc7000.md](modem-hrc7000.md); this page only says
 where the DB25-D differs.
 
-**Nothing here has been checked on a radio.** The owner has a DB25-D PRO; its firmware version (batch code) hasn't
-been read yet.
+**The port has run on a radio, but most facts here are not yet checked on one.** The owner has a DB25-D PRO; its
+firmware version (batch code) hasn't been read yet.
 
 ## Confidence tags
 
@@ -303,7 +303,7 @@ recipe per stock file (BIN). ODR needs a recipe for at least one stock image a P
 
 ## 9. How ODR uses it (`make BOARD=db25d`)
 
-Bring-up state, nothing run on a radio yet:
+Bring-up state (the port has run on a radio):
 
 | Part | State |
 |---|---|

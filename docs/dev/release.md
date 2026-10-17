@@ -221,7 +221,7 @@ D002.032 file or, on a radio that runs ODR, from a copy read back from the radio
 
 ## Adding the DM-32UV
 
-The DM-32UV builds and passes its host tests but hasn't run on a radio. The workflow job is there and off. To turn it
+The DM-32UV runs on a radio but is still in bring-up. The workflow job is there and off. To turn it
 on once [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) passes:
 
 1. Set the repository variable `ODR_RELEASE_DM32=true` (Settings, Secrets and variables, Actions, Variables). The job

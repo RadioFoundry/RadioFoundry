@@ -71,6 +71,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 12,584 | — | ● | ✕ | ● | MD-380: HR_C6000-only glue |
 | Debug link | `DEBUGLINK` | 32,376 | 29,084 | ● | ● | ● |  |
 | Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 | ● | ● | ● |  |
+| Loader hand-over (debug link 0x1A) | `STUB_ENTRY` | 768* | — | ○ | ○ | ● | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default on the HR_C7000 radios; on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)), off for now |
 
 ## Network (USB network adapter and IP over DMR)
 
@@ -104,7 +105,6 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | ○ | ○ | ○ | Bench only, never in a release |
-| Flash stub entry (debug link 0x1A) | `STUB_ENTRY` | 768* | — | ○ | ○ | ○ | Bench only for now: loads a RAM flash stub that installs and backs up the firmware with no bootloader key press ([stub-stm32f4.md](spec/stub-stm32f4.md)). The STM32 radios also give it 8 KB of RAM |
 
 ## Whole images
 

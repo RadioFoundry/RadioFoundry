@@ -770,7 +770,9 @@ class Radio:
 
     def dump(self, out, mem, start, end, progress=None, compress=True):
         """The radio reads each sector, CRCs it and sends it blank (a flag), LZ4-compressed or raw; every sector must
-        match the radio's CRC-32. A sector that doesn't is asked for again, uncompressed from the second try."""
+        match the radio's CRC-32. A sector that doesn't is asked for again, uncompressed from the second try. A record
+        carries no address, so one left over from a stream cut short could pass for another sector: at the end every
+        sector is checked against the radio's sector CRCs (op 07) and read again until it matches."""
         self.check_id(mem)
         size = MEM[mem][3]
         if not 0 <= start < end <= size:
@@ -780,7 +782,8 @@ class Radio:
         self.skipped = self.packed = 0
         self.wire = 0
         total = fails = 0
-        sa = start // SECTOR * SECTOR
+        sa = lo = start // SECTOR * SECTOR
+        full = bytearray((end + SECTOR - 1) // SECTOR * SECTOR - lo)
         want = compress
         while sa < end:
             count = min(PACK, (end - sa + SECTOR - 1) // SECTOR)
@@ -792,9 +795,7 @@ class Radio:
                     self.skipped += method == 2
                     self.packed += method == 1
                     self.wire += len(data)
-                    lo, hi = max(start, sa), min(end, sa + SECTOR)
-                    out.seek(lo - start)
-                    out.write(sec[lo - sa:hi - sa])
+                    self.put(out, full, lo, start, end, sa, sec)
                     sa += SECTOR
                     total += 1
                     fails = 0
@@ -809,9 +810,34 @@ class Radio:
                 self.log("0x%X: %s, resuming here (%d of %d)" % (sa, e, fails, self.retries))
                 self.drain()
                 want = compress and fails < 2       # a second failure at the same sector: ask for it uncompressed
+        for attempt in range(self.retries + 1):
+            bad = self.verify(mem, bytes(full), lo)
+            if not bad:
+                break
+            if attempt == self.retries:
+                raise DumpError("0x%X: the read does not match the radio's sector CRC after %d tries" % (bad[0], attempt + 1))
+            self.log("%d sector(s) read wrong (first 0x%X), reading them again" % (len(bad), bad[0]))
+            self.retried += len(bad)
+            for sa in bad:
+                try:
+                    for crc, method, data in self.sectors(mem, sa, 1, False):
+                        sec = self.unpack(crc, method, data)
+                        if sec is not None:
+                            self.put(out, full, lo, start, end, sa, sec)
+                except FrameError as e:
+                    self.log("0x%X: %s" % (sa, e))
+                    self.drain()
         out.flush()
         if total == self.skipped:
             self.log("warning: every sector was blank (0xFF)")
+
+    @staticmethod
+    def put(out, full, lo, start, end, sa, sec):
+        """A sector read at sa: into the whole-sector copy (for the final check) and the part of it in [start, end) out"""
+        full[sa - lo:sa - lo + SECTOR] = sec
+        a, b = max(start, sa), min(end, sa + SECTOR)
+        out.seek(a - start)
+        out.write(sec[a - sa:b - sa])
 
     def verify(self, mem, data, start=0):
         """Sector addresses where the flash differs from `data` (a multiple of 4096 bytes at a 4096 boundary), by
@@ -840,7 +866,8 @@ def fingerprint(path):
 # simulated radio (self-test): the ROM handshake and loader upload, then the stub's frames over two simulated flashes.
 # The data flash answers only while its GPIO chip select is low, as on the radio (a read without it returns 0xFF).
 # Faults: `drop` = {request number: (offset, count)} bytes removed from a reply, `flip` = request numbers with a flipped
-# bit in the data, `silent` = request numbers with no reply.
+# bit in the data, `silent` = request numbers with no reply, `misplace` = request numbers whose first sector record
+# carries the next sector's data with its own CRC (as a record left over from a stream cut short would).
 
 def lz4_encode(src):
     """A greedy LZ4 block encoder, for the simulated radio only (the real one is stub/lz4enc.h)."""
@@ -884,9 +911,10 @@ def lz4_encode(src):
 
 
 class FakeRadio:
-    def __init__(self, images, drop=None, flip=(), silent=(), swap=(), stub_len=1536):
+    def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536):
         self.images = images                # {"progmem": bytes, "q128": bytes}
         self.drop, self.flip, self.silent, self.swap = drop or {}, set(flip), set(silent), set(swap)
+        self.misplace = set(misplace)
         self.data_bytes = 0                 # flash bytes sent over the cable
         self.sectors_sent = 0
         self.pokes = []
@@ -1050,7 +1078,8 @@ class FakeRadio:
             sel = bool(flags & 1) and (mem == "progmem" or (flags & 2 and cs == 18))
             frames = bytearray()
             for i in range(cnt):
-                sec = self.images[mem][addr + i * SECTOR:addr + (i + 1) * SECTOR] if sel else b"\xff" * SECTOR
+                at = addr + (i + 1 if i == 0 and n in self.misplace else i) * SECTOR
+                sec = self.images[mem][at:at + SECTOR] if sel else b"\xff" * SECTOR
                 crc = zlib.crc32(sec).to_bytes(4, "big")
                 if sec == b"\xff" * SECTOR:
                     rec = crc + bytes([2, 0, 0])
@@ -1166,6 +1195,16 @@ def self_test():
     check(r.retried >= 6, "retries counted (%d)" % r.retried)
     check(not radio.errors, "radio saw errors: %s" % radio.errors)
     check(radio.data_bytes < (len(prog) + len(data)) * 0.7, "blank sectors stay off the cable (%d bytes)" % radio.data_bytes)
+
+    # a record that belongs to the next sector passes its own CRC: the final check against the radio's sector CRCs
+    # catches it and reads the sector again
+    radio = FakeRadio(images, misplace={4}, stub_len=len(stub))
+    r = Radio(radio, log=quiet)
+    r.start(wait=2, stub=stub)
+    out = io.BytesIO()
+    r.dump(out, "progmem", 0, len(prog))
+    check(out.getvalue() == prog, "a misplaced sector record is caught by the sector CRCs and read again")
+    check(r.retried >= 1, "the misplaced sector was read again")
     out = io.BytesIO()
     r.dump(out, "q128", 0, len(data), compress=False)
     check(out.getvalue() == data and r.packed == 0, "uncompressed mode works")

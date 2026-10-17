@@ -29,7 +29,7 @@ kept), backs up and verifies the internal flash, and reads and writes the extern
 | `f4stub.py` | its host side, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands the DM-1701 and MD-380 to it (`--odr-enter`, or `--attach --board dm1701`); `--self-test` runs without a radio |
 
 Status (2026-10-16): built and host tested (`tests/host`: the protocol engine, and the host tool against the real
-engine through a pipe). Not run on a radio yet.
+engine through a pipe), and run on the DM-1701 ([stub-stm32f4.md](../docs/spec/stub-stm32f4.md) 11).
 
 ## HR_C7000 status
 

@@ -30,7 +30,7 @@ export function targets(bundle) {
 export function planInternal(bundle, board) {
 	const p = bundle.parts.get("internal-flash");
 	if (!p || !p.complete) throw new RestoreError("the bundle has no complete internal flash read");
-	if (p.addr !== board.app_base) throw new RestoreError("the internal flash read doesn't start at the application base");
+	if (p.addr !== board.app_base) throw new RestoreError("the internal flash read does not start at the application base");
 	return makePlan(board, [[p.addr, p.data]], RESTORE);
 }
 

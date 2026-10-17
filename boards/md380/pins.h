@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// TYT MD-380 pin map (docs/spec/hardware-md380.md section 2). Nothing here has been checked on a radio: the sources
-// are public schematic notes and pin tables, one of which warns that its schematic is wrong in places. Pins marked
+// TYT MD-380 pin map (docs/spec/hardware-md380.md section 2). The port has run on a radio, but not every pin here is
+// checked on one: the sources are public schematic notes and pin tables, one of which warns that its schematic is wrong in places. Pins marked
 // (?) disagree between sources or are guesses; the bring-up checklist (docs/testing/md380-bringup.md) confirms them.
 #ifndef MD380_PINS_H
 #define MD380_PINS_H

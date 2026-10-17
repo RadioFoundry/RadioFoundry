@@ -64,6 +64,26 @@ async function tx(mode, fn) {
 	}
 }
 
+// Any other bytes this page keeps for a radio (the C7000 program memory read before a first install, its codec slot):
+// true when saved, false where the browser keeps nothing
+export async function putBlob(id, bytes) {
+	try {
+		await tx("readwrite", (s) => s.put(bytes, id));
+		return true;
+	} catch (e) {
+		return false;
+	}
+}
+
+export async function getBlob(id) {
+	try {
+		const v = await tx("readonly", (s) => s.get(id));
+		return v instanceof Uint8Array ? v : null;
+	} catch (e) {
+		return null;
+	}
+}
+
 // true when saved; false where the browser keeps nothing (private window, storage off)
 export async function saveCodec(board, segments) {
 	const blob = new Uint8Array(segments.reduce((n, [, d]) => n + d.length, 0));

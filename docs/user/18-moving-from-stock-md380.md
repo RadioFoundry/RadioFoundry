@@ -9,7 +9,7 @@ firmware (the KD4Z toolkit). One program, `md380_migrate.py`, does the whole mov
 2. It flashes ODR.
 3. It writes the codeplug back, plus the DMR ID (callsign) database.
 
-> The MD-380 port has not run on a radio yet ([Radio reference](23-radios.md#tyt-md-380)). Try it only if you can go
+> The MD-380 port has run on a radio but is still in testing ([Radio reference](23-radios.md#tyt-md-380)). Try it only if you can go
 > back to stock with TYT's updater, and keep your stock firmware file.
 
 ## What you need

@@ -9,9 +9,9 @@ whole move over the programming cable:
 2. It flashes ODR through the radio's own bootloader (update mode).
 3. It writes the codeplug back, plus the DMR ID (callsign) database.
 
-> The DM-32UV port has never run on a radio, and these tools have never talked to one. Try it only if you can go
-> back to stock. Keep Baofeng's firmware file (`DM32.01.01.049.bin`), and read
-> [the bring-up checklist](../testing/dm32-bringup.md) first.
+> The DM-32UV port runs on a radio but is still in testing; [the bring-up checklist](../testing/dm32-bringup.md)
+> lists what is still open. Try it only if you can go back to stock, and keep Baofeng's firmware file
+> (`DM32.01.01.049.bin`).
 
 ODR never touches the bootloader, so update mode always works. It never touches the data flash below 7 MB either.
 The stock codeplug, the factory calibration and the stock contact database live there. Going back to stock gives you your old

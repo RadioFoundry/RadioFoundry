@@ -42,9 +42,9 @@ export async function verify(m, image, fb, boardId = null) {
 	const img = m.image || {};
 	if (num(img.size) !== image.length) throw new ManifestError(`the image is ${image.length} bytes, the manifest says ${img.size}`);
 	const got = await sha256(image);
-	if (got !== img.sha256) throw new ManifestError("the image's SHA-256 doesn't match its manifest: the download is damaged or the files don't belong together");
+	if (got !== img.sha256) throw new ManifestError("the image's SHA-256 does not match its manifest: the download is damaged or the files do not belong together");
 	const rs = ranges(m);
-	if (!rs.length || rs.reduce((a, r) => a + r[1], 0) !== image.length) throw new ManifestError("the manifest's ranges don't add up to the image size");
+	if (!rs.length || rs.reduce((a, r) => a + r[1], 0) !== image.length) throw new ManifestError("the manifest's ranges do not add up to the image size");
 	if (rs[0][0] !== board.app_base) throw new ManifestError(`the first range starts at ${hex(rs[0][0])}, not at the application base ${hex(board.app_base)}`);
 	for (const [addr, n] of rs.slice(1))
 		if (!(board.data_regions || []).some(([lo, size]) => lo <= addr && addr + n <= lo + size))

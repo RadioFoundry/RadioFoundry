@@ -132,7 +132,7 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - FCC ID PODMD-380, granted 2015-07-22, with an 8-page internal-photos exhibit (F, search snippet)
   ([fccid.io](https://fccid.io/PODMD-380/Internal-Photos/Internal-Photos-2688727)).
 - Open firmware: the OpenGD77 project has a port.
-- **ODR:** `boards/md380` builds (UHF and VHF images) and passes its host tests; not run on a radio
+- **ODR:** `boards/md380` builds (UHF and VHF images), passes its host tests and has run on a radio
   ([hardware-md380.md](hardware-md380.md), [md380-bringup.md](../testing/md380-bringup.md)). It reuses
   `platform/stm32f4`, `drivers/flash/spi_nor` and `drivers/display/st7735` (HX8302A assumed compatible, ?). The
   HR_C5000 is a variant of `drivers/modem/hrc6000` (a chip flag selects the register differences). New:

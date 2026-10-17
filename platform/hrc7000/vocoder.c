@@ -46,7 +46,7 @@ typedef struct {
 	uint32_t tab_off, tab_len, tab_ram;
 	// Entry points, offsets from the code start
 	uint32_t decode, encode, dec_init, dec_set, enc_init, enc_set, fec_init;
-	uint32_t stock_tag;			// 49 or 46: which stock file
+	uint32_t stock_tag;			// the stock version the codec came from (49, 46, ...)
 	uint32_t crc;				// CRC-32 of code then tables, as written to the slot
 	uint32_t reserved[15];
 } codec_slot_t;
@@ -265,14 +265,24 @@ void hrc_vocoder_park(void)
 	}
 }
 
-// The id tools/odrflash and the release manifests use: which stock file the slot was carved from
+// The id tools/odrflash and the release manifests use: which stock version the slot was carved from, as
+// "<board>-<three digits>" ("dm32-049"; tools/dm32_codec.py PROFILES has every version it knows)
 static const char *profile(void)
 {
+	static char name[sizeof(HRC_CODEC_BOARD) + 4];
+
 	if (!present()) {
 		return NULL;
 	}
-	return slot->stock_tag == 49u ? HRC_CODEC_BOARD "-049" :
-		(slot->stock_tag == 46u ? HRC_CODEC_BOARD "-046" : HRC_CODEC_BOARD "-unknown");
+	uint32_t tag = slot->stock_tag % 1000u;
+	memcpy(name, HRC_CODEC_BOARD, sizeof(HRC_CODEC_BOARD) - 1);
+	char *p = name + sizeof(HRC_CODEC_BOARD) - 1;
+	p[0] = '-';
+	p[1] = (char)('0' + tag / 100u);
+	p[2] = (char)('0' + tag / 10u % 10u);
+	p[3] = (char)('0' + tag % 10u);
+	p[4] = '\0';
+	return name;
 }
 
 const hal_vocoder_t hrc_vocoder = {
