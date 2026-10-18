@@ -307,6 +307,29 @@ class Manifests(unittest.TestCase):
                 release.main(["--board", "dm1701", "--version", "v9", "--bin", bp, "--out", out, "--git", "d" * 40,
                               "--features", "", "--toolchain", "", "--no-rodata2"])
 
+    def test_release_needs_the_first_stage(self):
+        """The DB25-D's image goes to 0x0300C000, its first stage's sector: the application alone is refused, the
+        install image (first stage, then the application) is released."""
+        sys.path.insert(0, os.path.join(HERE, "..", ".."))
+        import release
+        stage = bytes([0x2C, 0x11, 0x01, 0xC0]) + bytes(0x1000 - 4)
+        app = app_image(20000)
+        with tempfile.TemporaryDirectory() as d:
+            bp, out = os.path.join(d, "odr_db25d.bin"), os.path.join(d, "dist")
+            args = ["--board", "db25d", "--version", "v9.9.9", "--bin", bp, "--out", out, "--git", "d" * 40,
+                    "--features", "FM", "--toolchain", "test"]
+            open(bp, "wb").write(app)
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as e:
+                release.main(args)
+            self.assertIn("_install.bin", str(e.exception))
+            open(bp, "wb").write(stage)
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                release.main(args)							# the first stage alone
+            open(bp, "wb").write(stage + app)
+            with contextlib.redirect_stdout(io.StringIO()):
+                release.main(args)
+            self.assertEqual(open(os.path.join(out, "odr-db25d-v9.9.9.bin"), "rb").read(), stage + app)
+
 
 class ReleaseSector9(unittest.TestCase):
     def run_release(self, d, extra, rodata=None, name="odr_dm1701"):

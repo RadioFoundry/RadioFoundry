@@ -71,7 +71,8 @@ def main(argv=None):
     ap.add_argument("--board", required=True)
     ap.add_argument("--version", required=True, help="the release tag, e.g. v0.1.0")
     ap.add_argument("--variant", help="a release variant (config/variants/<name>.mk); default: the full build")
-    ap.add_argument("--bin", help="the built image (default build/<board>[-<variant>]/odr_<board>.bin)")
+    ap.add_argument("--bin", help="the built image (default build/<board>[-<variant>]/odr_<board>.bin, or "
+                    "odr_<board>_install.bin for a board with a first stage)")
     ap.add_argument("--bin2", help="the build's second image, for the board's second flash region (default: "
                     "<bin without .bin>_rodata2.bin next to the image)")
     ap.add_argument("--no-rodata2", action="store_true", help="release the application image alone (a build that links "
@@ -87,10 +88,16 @@ def main(argv=None):
     if variant and not os.path.isfile(os.path.join(ROOT, "config", "variants", variant + ".mk")):
         raise SystemExit("release: unknown variant %s (config/variants/)" % variant)
     build_dir = board.id + ("-" + variant if variant else "")
-    path = args.bin or os.path.join(ROOT, "build", build_dir, "odr_%s.bin" % board.id)
+    path = args.bin or os.path.join(ROOT, "build", build_dir, "odr_%s%s.bin" % (board.id, "_install" if board.first_stage else ""))
     with open(path, "rb") as f:
         image = f.read()
     check_no_codec(board, image)
+    # the image is written at app_base, where the first stage lives: the application alone would replace it
+    if board.first_stage:
+        size, head = board.first_stage
+        if len(image) <= size or not image.startswith(head):
+            raise SystemExit("release: the %s image must start with its first stage: release odr_%s_install.bin, not the "
+                             "application alone" % (board.name, board.id))
     data = b""
     if board.data_regions and not args.no_rodata2:
         path2 = args.bin2 or os.path.splitext(path)[0] + "_rodata2.bin"

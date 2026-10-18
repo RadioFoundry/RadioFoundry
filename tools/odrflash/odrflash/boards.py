@@ -37,7 +37,7 @@ class CodecProfile:
 class Board:
     def __init__(self, id, name, family, app_base, flash_end, sectors, codec, debuglink_names, releasable,
                  keep_codec_supported, key_sha256=None, dfu_ids=None, dfu_string1=None, dfu_product=None, protected=(),
-                 data_regions=()):
+                 data_regions=(), first_stage=None):
         self.id = id
         self.name = name
         self.family = family
@@ -55,6 +55,8 @@ class Board:
         self.protected = protected		# address ranges never written (bootloader)
         self.data_regions = list(data_regions)	# [(addr, size)] flash outside the application the firmware image may
         # also fill (the DM-1701's sector 9: read-only data, docs/dev/release.md "Sector 9"); never a codec sector
+        self.first_stage = first_stage		# (size, first bytes): the image at app_base starts with a first stage
+        # this long, then the application (make's odr_<board>_install.bin); None: the application starts at app_base
 
     def sector_at(self, addr):
         for s in self.sectors:
@@ -193,6 +195,7 @@ DB25D = Board(
     releasable=False,
     keep_codec_supported=False,
     protected=[(0x03000000, 0x0300C000)],
+    first_stage=(0x1000, bytes([0x2C, 0x11, 0x01, 0xC0])),
 )
 
 BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, DB25D)}

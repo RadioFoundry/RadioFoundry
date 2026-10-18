@@ -47,7 +47,7 @@ Not needed for a release; noted so they aren't lost.
 
 | File | What |
 |---|---|
-| `odr-<board>-<version>.bin` | The raw image `make BOARD=<board>` built, linked for the board's application base. No codec. The DM-1701 image is the application followed by its sector 9 data (below, "Sector 9") |
+| `odr-<board>-<version>.bin` | The raw image `make BOARD=<board>` built, linked for the board's application base. No codec. The DM-1701 image is the application followed by its sector 9 data (below, "Sector 9"). A board with a first stage (the DB25-D) releases `odr_<board>_install.bin`, the stage then the application; `tools/release.py` refuses the application alone |
 | `odr-<board>-<version>.json` | Its manifest (below) |
 | `odrflash-<version>-<os>-<arch>[.exe]` | odrflash, one file per system: `linux-x86_64`, `macos-arm64`, `macos-x86_64`, `windows-x86_64` |
 | `SHA256SUMS` | SHA-256 of every file above |
