@@ -3083,7 +3083,7 @@ static void test_soft_volume(void)
 	CHECK(debuglink_is_feature_op(DL_OP_VOLUME));	// the dispatcher routes it here
 	// VERSION's codec=: a codec stopped for a stub upload (present() false) still reports its profile from flash
 	{
-		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile };
+		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile, NULL, NULL, NULL };
 		bool was = codec_present;
 		CHECK(strcmp(debuglink_codec_id(NULL), "none") == 0);
 		codec_present = false;

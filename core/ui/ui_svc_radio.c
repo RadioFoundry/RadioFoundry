@@ -279,11 +279,12 @@ int32_t ui_svc_reply_shown(const radio_settings_t *s)
 // dimmed)
 static void apply_mic_gain(int32_t step, bool agc)
 {
-	if (!CONFIG_DMR || !agc) {
-		radio_set_mic_gain((uint8_t)(step < 0 ? 0 : step > (int32_t)MIC_GAIN_STEPS ? MIC_GAIN_STEPS : step));
-	} else {
-		radio_set_mic_gain(MIC_GAIN_UNITY);
+	if (CONFIG_DMR && agc) {
+		step = (int32_t)MIC_GAIN_UNITY;
+	} else if (step < 0) {
+		step = 0;
 	}
+	radio_set_mic_gain((uint8_t)(step > (int32_t)MIC_GAIN_STEPS ? (int32_t)MIC_GAIN_STEPS : step));
 }
 
 // The UI's settings that live in radio_settings_t. The radio core saves them (settings store) and restores them at

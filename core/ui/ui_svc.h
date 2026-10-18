@@ -165,8 +165,8 @@ typedef enum {
 	UI_SET_ACCENT,		// the highlight color, UI_ACCENT_* (Settings > Display; settings_t.accent bits 0-2)
 	UI_SET_STRIP,		// the status strip filled with it (Settings > Display; settings_t.accent bit 3)
 	UI_SET_VOLUME,		// speaker volume 0 (mute) .. RADIO_VOLUME_MAX of a radio without a knob (UI_FEAT_VOLUME; settings_t.volume)
-	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; audio_flags)
-	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (audio_flags); while on, mic gain is unity and dimmed
+	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; accent bits 6-7)
+	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (accent bits 6-7); while on, mic gain is step 5 and dimmed
 	UI_SET_COUNT
 } ui_setting_t;
 
