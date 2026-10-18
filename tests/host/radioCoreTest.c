@@ -2669,6 +2669,19 @@ static void test_ui_glue(void)
 	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
 	settings_read(&sv);
 	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);
+	// The debug link's SETTING 30 sets the options in RAM, any combination (0 = the codec's plain 0x800 word); the
+	// store is not touched, and the next settings change brings theirs back
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 30, 0, 0 }, 3) == DL_ST_OK);
+	CHECK(ambeVoiceEncodeOptions() == 0);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 30, 7, 0 }, 3) == DL_ST_OK);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 30, 8, 0 }, 3) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 30, 0, 1 }, 3) == DL_ST_BAD_ARG);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
+	settings_read(&sv);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);
+	ui_svc_apply(UI_SET_NOISE_REDUCTION, ui_svc_setting_get(UI_SET_NOISE_REDUCTION));
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
 	// Settings > Location > GPS reaches the board: the stored value at start-up (ui_app applies every setting), then
 	// each change (the setting store keeps it either way)
 	ui_svc_apply(UI_SET_GPS, ui_svc_setting_get(UI_SET_GPS));
