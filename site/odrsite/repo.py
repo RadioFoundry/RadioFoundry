@@ -256,6 +256,7 @@ def boards(feature_names, variant_ids):
 		gal = path("docs", "ux", "screens", r["gallery"])
 		if not os.path.isdir(gal):
 			raise SourceError("%s: gallery %s isn't in docs/ux/screens" % (p, r["gallery"]))
+		r["codeplug"] = codeplug_map(bid)
 		r["unsupported"] = make(bid, "print-unsupported").split()
 		r["required"] = make(bid, "print-required").split()
 		r["config"] = {}
@@ -268,6 +269,33 @@ def boards(feature_names, variant_ids):
 		out.append(r)
 	planned = [s for s in status_rows if "board" not in s]
 	return out, planned
+
+
+def codeplug_map(bid):
+	"""Where a radio keeps its codeplug, from its flash map (hal_flash_map_t in boards/<id>/*.c): the data flash address
+	of the open-firmware image (the codeplug editor adds it on the wire), the end of the room for it and the DMR ID
+	database, whether the radio takes a codeplug over TFTP (a staging area), and the names the radio reports as
+	"board=" on the debug link (board_t .name, and an option's board_name)."""
+	fields = {}
+	names = []
+	for c in sorted(glob.glob(path("boards", bid, "*.c"))):
+		with open(c, encoding="utf-8") as f:
+			text = f.read()
+		for key in ("openfw_eeprom", "openfw_flash", "openfw_end", "staging_addr"):
+			m = re.search(r"\.%s\s*=\s*(0x[0-9A-Fa-f]+)u?" % key, text)
+			if m:
+				fields[key] = int(m.group(1), 16)
+		names += re.findall(r'^\t\.name\s*=\s*"([^"]+)"', text, re.M)
+	if "openfw_eeprom" not in fields or "openfw_end" not in fields:
+		raise SourceError("boards/%s: no flash map with openfw_eeprom and openfw_end" % bid)
+	if fields.get("openfw_flash", fields["openfw_eeprom"] + 0x20000) != fields["openfw_eeprom"] + 0x20000:
+		raise SourceError("boards/%s: the open-firmware flash image isn't at +0x20000 (the editor assumes it)" % bid)
+	with open(path("boards", bid, "radio.json"), encoding="utf-8") as f:
+		r = json.load(f)
+		for opt in r.get("build_options", []) + r.get("flash", {}).get("build_options", []):
+			names += [v["board_name"] for v in opt.get("values", []) if v.get("board_name")]
+	return {"base": fields["openfw_eeprom"], "end": fields["openfw_end"], "tftp": "staging_addr" in fields,
+		"names": sorted(set(names + [bid]))}
 
 
 def screens(gallery):

@@ -38,6 +38,9 @@
 #if CONFIG_CPS_OPENFW
 #include "cps/cps_openfw.h"
 #endif
+#if CONFIG_CPS_FAST
+#include "cps/cps_fast.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -81,6 +84,9 @@ static void startup_task(void *arg)
 	board.display->set_backlight(100);
 	board.input->init();
 	storage_init();			// finishes a codeplug sector rewrite a power cut interrupted
+#if CONFIG_CPS_FAST
+	cps_fast_resume();		// and a fast codeplug protocol commit (docs/spec/cps-fast.md 7)
+#endif
 #if CONFIG_TFTP
 	tftp_codeplug_resume();		// and a TFTP codeplug write's commit (before the codeplug is read)
 #endif

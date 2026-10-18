@@ -90,7 +90,8 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | ● | ○ | ● | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet); off by default, needs another feature off to fit. DM-32UV: DMR only until its board code has the FM audio paths |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ○ | ● | Needs NAT on the host. MD-380: off for flash (no APRS over the air there) |
 | mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ● |  |
-| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ○ | ● | MD-380: off for the Channels list and editor; CPS on the same USB port reads and writes the codeplug |
+| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ○ | ● | MD-380: off for the Channels list and editor; CPS on the same USB port reads and writes the codeplug. Without the ID database below |
+| DMR ID database over TFTP (`iddb.bin`, combined `codeplug.bin`) | `TFTP_IDDB` | 2,184 | 2,264 | ● | ○ | ● | Follows `TFTP` |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ○ | ● | MD-380: off by default for flash |
 | PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ● | New, untested on hardware; interop tested with pppd. Fits neither default image as it is (DM-1701 688 B short, MD-380 1,588 B short; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
 

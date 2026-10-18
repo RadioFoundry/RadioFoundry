@@ -149,16 +149,26 @@ static void overlay_vfo(uint32_t addr, uint8_t *buf, uint32_t len, const uint8_t
 	}
 }
 
+void cps_openfw_vfo_overlay(uint32_t addr, uint8_t *buf, uint32_t len)
+{
+	uint8_t rec[CODEPLUG_OPENFW_CHANNEL_SIZE];
+	const hal_flash_map_t *m = map();
+	uint32_t v = m != NULL ? m->openfw_eeprom + EE_VFO_A : 0;
+	if (m != NULL && addr < v + CODEPLUG_OPENFW_CHANNEL_SIZE && addr + len > v && vfo_record(rec)) {
+		overlay_vfo(addr, buf, len, rec);
+	}
+}
+
 // A commit that changed the VFO A record (the CPS edited it): the VFO takes the new settings at the next boot
-static void vfo_commit(void)
+void cps_openfw_vfo_written(uint32_t addr, const uint8_t *data, uint32_t now_ms)
 {
 	uint32_t v = map()->openfw_eeprom + EE_VFO_A;
 	uint8_t live[CODEPLUG_OPENFW_CHANNEL_SIZE];
 	channel_t ch;
-	if (v < sector_addr || v + CODEPLUG_OPENFW_CHANNEL_SIZE > sector_addr + STORAGE_SECTOR) {
+	if (v < addr || v + CODEPLUG_OPENFW_CHANNEL_SIZE > addr + STORAGE_SECTOR) {
 		return;
 	}
-	const uint8_t *rec = &sector[v - sector_addr];
+	const uint8_t *rec = &data[v - addr];
 	if ((vfo_record(live) && memcmp(live, rec, sizeof(live)) == 0) || !codeplug_openfw_decode(rec, &ch)) {
 		return;		// unchanged (written back as read), or not a valid record
 	}
@@ -173,7 +183,7 @@ static void vfo_commit(void)
 	st->vfo_tx_tone = ch.tx_tone.value;
 	st->vfo_power = ch.power == CODEPLUG_POWER_DEFAULT ? SETTINGS_UNSET8 : ch.power;
 	settings_set_vfo_cc_ts(st, ch.color_code, ch.timeslot);
-	settings_end(last_rx_ms);
+	settings_end(now_ms);
 }
 
 // --- R: read ---
@@ -220,11 +230,20 @@ static void radio_info(void)
 	stats.reads++;
 }
 
+// A read reply's header goes out in the same write as the first data: qdmr takes a reply as soon as part of it is in,
+// and a 32-byte block written as header, then data reached it short (the late data was then read as the next reply)
+static size_t reply_header(uint8_t *c, uint16_t len)
+{
+	c[0] = 'R';
+	c[1] = (uint8_t)(len >> 8);
+	c[2] = (uint8_t)len;
+	return 3;
+}
+
 // Stream len bytes from the data flash at addr; the VFO overlay when the range touches VFO A
 static void read_flash(uint32_t addr, uint16_t len)
 {
-	uint8_t hdr[3] = { 'R', (uint8_t)(len >> 8), (uint8_t)len };
-	uint8_t c[CHUNK];
+	uint8_t c[3 + CHUNK];
 	uint8_t vfo[CODEPLUG_OPENFW_CHANNEL_SIZE];
 	const hal_flash_map_t *m = map();
 	uint32_t v = m != NULL ? m->openfw_eeprom + EE_VFO_A : 0;
@@ -235,16 +254,17 @@ static void read_flash(uint32_t addr, uint16_t len)
 		refuse();
 		return;
 	}
-	send(hdr, sizeof(hdr));
+	size_t h = reply_header(c, len);
 	for (uint32_t off = 0; off < len; off += CHUNK) {
 		uint32_t n = len - off < CHUNK ? len - off : CHUNK;
-		if (!board.flash->read(addr + off, c, n)) {
-			memset(c, 0xFF, n);
+		if (!board.flash->read(addr + off, c + h, n)) {
+			memset(c + h, 0xFF, n);
 		}
 		if (overlay) {
-			overlay_vfo(addr + off, c, n, vfo);
+			overlay_vfo(addr + off, c + h, n, vfo);
 		}
-		send(c, n);
+		send(c, h + n);
+		h = 0;
 	}
 	stats.reads++;
 }
@@ -252,8 +272,7 @@ static void read_flash(uint32_t addr, uint16_t len)
 // A read through a byte reader (MCU ROM, security registers), chunk by chunk
 static void read_other(bool rom, uint32_t addr, uint16_t len)
 {
-	uint8_t hdr[3] = { 'R', (uint8_t)(len >> 8), (uint8_t)len };
-	uint8_t c[CHUNK];
+	uint8_t c[3 + CHUNK];
 	const hal_cps_t *cps = board.cps;
 
 	if (rom) {
@@ -266,15 +285,16 @@ static void read_other(bool rom, uint32_t addr, uint16_t len)
 		refuse();
 		return;
 	}
-	send(hdr, sizeof(hdr));
+	size_t h = reply_header(c, len);
 	for (uint32_t off = 0; off < len; off += CHUNK) {
 		uint32_t n = len - off < CHUNK ? len - off : CHUNK;
 		if (rom) {
-			board.system->read(cps->rom_base + addr + off, c, n);
-		} else if (!cps->security_read(addr + off, c, n)) {
-			memset(c, 0xFF, n);
+			board.system->read(cps->rom_base + addr + off, c + h, n);
+		} else if (!cps->security_read(addr + off, c + h, n)) {
+			memset(c + h, 0xFF, n);
 		}
-		send(c, n);
+		send(c, h + n);
+		h = 0;
 	}
 	stats.reads++;
 }
@@ -428,7 +448,7 @@ static void cmd_write(void)
 			refuse();
 			return;
 		}
-		vfo_commit();
+		cps_openfw_vfo_written(sector_addr, sector, last_rx_ms);
 		bool ok = storage_sector_write(sector_addr, sector);
 		drop_sector();
 		if (!ok) {

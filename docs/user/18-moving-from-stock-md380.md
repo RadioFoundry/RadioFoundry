@@ -98,7 +98,7 @@ codeplugs have one list per channel holding just that channel's talkgroup. ODR a
 talks to, so those lists go, as do empty, duplicate and unused ones. Every channel keeps its talkgroup. `--no-cleanup`
 keeps the lists as they are.
 
-ODR uses the parts of the codeplug listed in [Programming with qdmr](15-programming-qdmr.md). Scan lists, GPS
+ODR uses the parts of the codeplug listed in [Programming the radio](15-programming-qdmr.md). Scan lists, GPS
 systems and TYT's menu and button settings are not carried over.
 
 ## The DMR ID database

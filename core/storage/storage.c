@@ -65,6 +65,25 @@ const hal_flash_map_t *storage_map(void)
 	return board.flash != NULL ? board.flash->map : NULL;
 }
 
+static bool overlaps(uint32_t a, uint32_t alen, uint32_t b, uint32_t blen)
+{
+	return blen != 0 && a < b + blen && b < a + alen;
+}
+
+uint32_t storage_staging_size(void)
+{
+	const hal_flash_map_t *m = storage_map();
+	if (m == NULL || m->staging_size < 2u * STORAGE_SECTOR || m->staging_addr % STORAGE_SECTOR != 0 ||
+	    m->staging_addr > board.flash->size || m->staging_size > board.flash->size - m->staging_addr) {
+		return 0;
+	}
+	uint32_t a = m->staging_addr, n = m->staging_size;
+	bool clear = !overlaps(a, n, m->settings_addr, m->settings_size) && !overlaps(a, n, m->journal_addr, 2u * STORAGE_SECTOR) &&
+		     !overlaps(a, n, m->openfw_eeprom, 0x10000u) && !overlaps(a, n, m->openfw_flash, m->openfw_end - m->openfw_flash) &&
+		     !overlaps(a, n, m->native_addr, m->native_size) && !overlaps(a, n, m->calibration_addr, m->calibration_size);
+	return clear ? n - n % STORAGE_SECTOR : 0;
+}
+
 static bool fail(void)
 {
 	stats.errors++;

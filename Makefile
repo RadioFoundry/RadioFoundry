@@ -69,6 +69,10 @@ APP_SRC := $(filter-out core/debuglink/dl_stub.c,$(APP_SRC))
 ifeq ($(CONFIG_STUB_ENTRY),y)
 APP_SRC += core/debuglink/dl_stub.c
 endif
+# The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
+ifneq ($(CONFIG_CPS_FAST),y)
+APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
+endif
 # The task table behind the debug link's tasks view (core/app is always globbed): only with its switch, which also
 # turns on the kernel's trace hooks in the boards' FreeRTOSConfig.h
 ifneq ($(CONFIG_TASK_STACKS),y)
@@ -110,6 +114,7 @@ NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/
 	core/net/aprsis.c
 NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
 NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
+NET_SRC-$(CONFIG_TFTP_IDDB) += core/net/tftp_iddb.c
 NET_SRC-$(CONFIG_NET_USRP) += core/net/net.c core/usbaudio/usrp_net.c core/usbaudio/usrp.c
 APP_SRC += $(sort $(NET_SRC-y))
 # The PCM stream shared between the radio's users, a host audio session (USRP) and APRS receive

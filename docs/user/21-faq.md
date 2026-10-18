@@ -43,8 +43,14 @@ Test it before you depend on it, and transmit only where you are licensed to.
 **Does qdmr work with ODR?**
 
 Yes, through a compatibility layer. qdmr's open-firmware driver reads and writes the codeplug
-([Programming with qdmr](15-programming-qdmr.md)). On the DM-32UV qdmr can't write the codeplug directly
+([Programming the radio](15-programming-qdmr.md)). On the DM-32UV qdmr can't write the codeplug directly
 ([DM-32UV with qdmr](23-radios.md#dm-32uv-with-qdmr)).
+
+**Can I program the radio without installing anything?**
+
+Yes. The Codeplug Editor on the project's web site reads and writes the radio from a Chromium-based browser (Chrome,
+Edge, Opera) and builds the DMR ID database from RadioID.net
+([The Codeplug Editor](15-programming-qdmr.md#the-codeplug-editor)).
 
 **Is basic privacy secure?**
 

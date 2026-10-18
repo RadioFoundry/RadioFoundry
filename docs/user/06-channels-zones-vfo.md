@@ -96,7 +96,7 @@ name.
 **OK**, **5**, then the first row, **New from current**. It opens an unsaved copy of the channel you are on, with any
 quick-settings changes, or of the VFO, at the lowest free channel number. The name gets " 2" added (from the VFO, the
 frequency). Change what differs, then hold **OK** to save it. A new channel is in no zone yet: add it to one with qdmr
-([Programming with qdmr](15-programming-qdmr.md)).
+([Programming the radio](15-programming-qdmr.md)).
 
 ## Saving changes to a channel
 

@@ -45,7 +45,7 @@ yet. The [Radio reference](23-radios.md) lists them for each radio.
 - USB network mode: the radio is a USB network adapter and routes IP over DMR. On that link the radio serves a status
   page, rig control, KISS over TCP, TFTP codeplug access, SNMP and mDNS. It can also act as a control station for
   dispatch software.
-- Programming with qdmr.
+- Programming with the Codeplug Editor in the browser or with qdmr, and a DMR ID database built from RadioID.net.
 
 ## The AMBE codec
 

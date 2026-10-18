@@ -79,6 +79,9 @@ CONFIG_MDNS ?= $(CONFIG_DMR_IP_GATEWAY)
 # TFTP server on the USB network link: codeplug.bin read and (staged, checked) written, info.txt (needs
 # DMR_IP_GATEWAY; core/net/tftp.c, docs/spec/tftp.md)
 CONFIG_TFTP ?= $(CONFIG_DMR_IP_GATEWAY)
+# DMR ID database over TFTP: iddb.bin read and written in place, and the database part of a combined codeplug.bin
+# (needs TFTP; core/net/tftp_iddb.c, docs/spec/tftp.md 5)
+CONFIG_TFTP_IDDB ?= $(CONFIG_TFTP)
 # control station mode for PC dispatch software on the USB network link: the PC as the endpoint of the radio's own
 # data ports (passthrough) and a fixed private link address pair (needs DMR_IP_GATEWAY; docs/spec/usb-network.md 5)
 CONFIG_DMR_CONTROL_STATION ?= $(CONFIG_DMR_IP_GATEWAY)
@@ -119,6 +122,9 @@ CONFIG_TASK_STACKS ?= $(CONFIG_DEBUGLINK)
 # the open-firmware CPS protocol shim on the host port, so qdmr and the open-firmware CPS can read and write the
 # codeplug (docs/spec/open-firmware-cps.md; needs HOSTLINK)
 CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
+# the fast codeplug protocol on the debug link: blank blocks skipped, CRC-32 compare so only changed blocks move, LZ4
+# both ways, staged writes with a power-cut safe commit (docs/spec/cps-fast.md; needs CPS_OPENFW and DEBUGLINK)
+CONFIG_CPS_FAST ?= $(if $(filter y,$(CONFIG_CPS_OPENFW)),$(CONFIG_DEBUGLINK),n)
 # the diagnostics page
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
@@ -188,8 +194,8 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
-	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY NAND_STORAGE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
 
 # Dependencies
@@ -235,6 +241,12 @@ ifneq ($(call feature_on,CPS_OPENFW),)
     $(error CONFIG_CPS_OPENFW=y needs CONFIG_HOSTLINK=y)
   endif
 endif
+ifneq ($(call feature_on,CPS_FAST),)
+  ifeq ($(call feature_on,CPS_OPENFW)$(call feature_on,DEBUGLINK),yy)
+  else
+    $(error CONFIG_CPS_FAST=y needs CONFIG_CPS_OPENFW=y and CONFIG_DEBUGLINK=y)
+  endif
+endif
 ifneq ($(call feature_on,USB_NETWORK),)
   ifeq ($(call feature_on,USB)$(call feature_on,HOSTLINK),yy)
   else
@@ -261,6 +273,7 @@ $(foreach f,NET_HTTP_GZIP,$(if $(and $(call feature_on,$(f)),$(if $(call feature
 $(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
 $(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS=y))))
 $(foreach f,MDNS TFTP NET_USRP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
+$(foreach f,TFTP_IDDB,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,TFTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_TFTP=y)))
 ifneq ($(call feature_on,DMR_TMS),)
   ifeq ($(call feature_on,DMR_SMS),)
     $(error CONFIG_DMR_TMS=y needs CONFIG_DMR_SMS=y)

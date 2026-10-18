@@ -112,6 +112,11 @@ large areas (the web flasher's backup) asks for 32 KB at a time and takes what c
 the original firmware and older ODR builds. qdmr checks that the returned length equals the requested one, and asks
 for 2045 or less. The radio info area always returns its own structure length, whatever length was asked for.
 
+Send the header and the first data in one USB write. qdmr (0.15) reads a reply as soon as part of it has arrived and
+doesn't wait for the rest. A 32-byte block sent as the header and then the data reached it short. qdmr then read the
+late data byte as the next reply's first byte, reported an error and asked the radio to reboot. One write of 35 bytes
+fits a single full-speed USB packet, as the original firmware sends it.
+
 ### 2.2 `W` / `X`: write
 
 | Sub (byte 1) | Request after bytes 0-1 | Action |
@@ -140,7 +145,9 @@ Special cases the radio applies to sub commands 1-3 (and 4 on the MK22). An inte
 
 ### 2.3 `C`: control
 
-The reply to every `C` request is a single `-`. It means "done", not "error".
+The reply to every `C` request is a single `-`. It means "done", not "error". qdmr sends every `C` request as a
+23-byte packet: the command, then zeros. The radio takes the command at its own length and drops the zeros, since no
+request starts with a zero byte ([cps-protocol.md](cps-protocol.md) 2.1, `cps.junk`).
 
 | Byte 1 | Arguments | Action |
 | --- | --- | --- |

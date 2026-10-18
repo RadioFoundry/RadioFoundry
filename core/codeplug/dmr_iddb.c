@@ -5,6 +5,7 @@
 // holding as many whole records as fit in 256 KB with the header, the rest from the start of area 2.
 #include <string.h>
 #include "codeplug/dmr_iddb.h"
+#include "codeplug/codeplug.h"
 #include "board.h"
 
 #if CONFIG_DMR
@@ -19,10 +20,11 @@
 #define IDDB_AREA2_VP		(CODEPLUG_OPENFW_FLASH_BASE + 0x8F400u)	// format 'n': in the voice prompt area
 #define IDDB_AREA1_SIZE		0x40000u
 #define IDDB_HEADER		12u
-#define IDDB_RECORD_MAX		(4u + 3u * DMR_IDDB_TEXT_MAX / 4u + 8u)
+#define IDDB_RECORD_MAX		DMR_IDDB_RECORD_MAX
 
 static struct {
 	bool checked;
+	uint32_t serial;	// codeplug_serial() when checked: a codeplug write (CPS, TFTP) re-reads the header
 	bool valid;
 	bool packed;		// formats 'N' / 'n': 3-byte LE IDs, 6-bit text
 	uint8_t rec;		// record size
@@ -42,6 +44,7 @@ bool dmr_iddb_init(void)
 
 	memset(&db, 0, sizeof(db));
 	db.checked = true;
+	db.serial = codeplug_serial();
 	if (!rd(IDDB_AREA1, h, sizeof(h)) || h[0] != 'I' || h[1] != 'd' || h[3] < 0x4Au) {
 		return false;
 	}
@@ -61,7 +64,7 @@ bool dmr_iddb_init(void)
 
 uint32_t dmr_iddb_count(void)
 {
-	if (!db.checked) {
+	if (!db.checked || db.serial != codeplug_serial()) {
 		dmr_iddb_init();
 	}
 	return db.valid ? db.count : 0;

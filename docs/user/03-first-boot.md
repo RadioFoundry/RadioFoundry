@@ -39,8 +39,8 @@ names. In that case, write a codeplug right away.
 
 ## Programming the radio
 
-Program channels, zones, contacts, talkgroup lists and your DMR ID with qdmr on a computer. See
-[Programming with qdmr](15-programming-qdmr.md). Most settings can also be changed on the radio
+Program channels, zones, contacts, talkgroup lists and your DMR ID with the Codeplug Editor on the project's web
+site, or with qdmr on a computer. See [Programming the radio](15-programming-qdmr.md). Most settings can also be changed on the radio
 ([Settings](12-settings.md)). Channels, contacts and the DMR ID come from the codeplug.
 
 DMR needs your DMR ID. Without one, the radio refuses to transmit on DMR channels and shows "No DMR ID in codeplug".

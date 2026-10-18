@@ -27,7 +27,7 @@ these files (`tools/build_manual.sh`).
 12. [Settings](12-settings.md): every setting, its default and status
 13. [Hotspot mode](13-hotspot.md): MMDVMHost and Pi-Star, SFR, two radios as a duplex repeater
 14. [USB network mode](14-usb-network.md): IP over DMR, the status page, rig control, KISS, TFTP, SNMP, control station
-15. [Programming with qdmr](15-programming-qdmr.md)
+15. [Programming the radio](15-programming-qdmr.md): the Codeplug Editor in the browser, qdmr, RadioID contacts
 16. [Battery and power](16-battery-and-power.md)
 17. [APRS](17-aprs.md): positions on FM and over DMR, beacons, KISS and iGate with a computer
 18. [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md): MD-380 / MD-390 / RT3, keeping the codeplug

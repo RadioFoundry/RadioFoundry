@@ -118,7 +118,7 @@ not built yet.
   on 4a9c002. One protocol at a time: the radio answers the sender of the last frame, so a tool closes its socket
   before another protocol's tool opens one. `tests/hil/test_dmr_ip.py` (on air, the bench modem decoding; its last
   test sends from the host over the USB network). The radio's own services: `tests/hil/test_tcp_services.py`,
-  `tests/hil/test_net_services.py` (`mdns.md` 5, `tftp.md` 5).
+  `tests/hil/test_net_services.py` (`mdns.md` 5, `tftp.md` 6).
 
 ## 5. Control station mode
 

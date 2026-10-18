@@ -10,12 +10,15 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
   - for the HR_C7000 radios: an LZ4 block from stubtool's encoder, and a synthetic program flash with a codec at
     made-up addresses, its profile, what dm32_codec.locate() finds and the slot dm32_codec.merge() builds from it
+  - for the codeplug editor: the radio's own codeplug code on the host (tests/host/cpsSim), a codeplug it stored
+    and what it reads back, so site/tests/codeplug.test.mjs checks the JavaScript decoder and encoder against it
 
     python3 site/tests/fixtures.py OUT_DIR
 """
 import json
 import os
 import random
+import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -71,6 +74,7 @@ def main(out):
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
 	c7000(out, rng)
 	db25d(out, rng)
+	codeplug(out)
 	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("f4-stub.json", repo.f4_stub()), ("flash-boards.json", repo.flash_boards()), ("features.json", {"features": feats}),
 			  ("variants.json", {"variants": variants}), ("radios.json", {"radios": radios})):
 		with open(os.path.join(out, name), "w") as f:
@@ -137,6 +141,17 @@ def db25d(out, rng):
 			f.write(data)
 	with open(os.path.join(out, "db25d.json"), "w") as f:
 		json.dump(doc, f, indent=1)
+
+
+def codeplug(out):
+	host = os.path.join(ROOT, "tests", "host")
+	subprocess.run(["make", "-s", "-C", host, "cpsSim"], check=True)
+	sim = os.path.join(host, "cpsSim")
+	image = os.path.join(out, "codeplug_sim.bin")
+	subprocess.run([sim, "--populate", "--dump", image], stdin=subprocess.DEVNULL, check=True)
+	detail = subprocess.run([sim, "--image", image, "--detail"], capture_output=True, text=True, check=True).stdout
+	with open(os.path.join(out, "codeplug.json"), "w") as f:
+		json.dump({"cpssim": sim, "detail": detail}, f, indent=1)
 
 
 if __name__ == "__main__":

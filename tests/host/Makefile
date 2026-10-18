@@ -720,15 +720,16 @@ run-ppp: pppTest pppPeer
 # The radio's own services on the USB network link, behind the real gateway (core/net): the mDNS responder, and the
 # TFTP server with codeplug.bin on a simulated flash. Their frames go to pcaps that tshark checks when it's there
 MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c
-TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/dmr/ipGateway.c $(CORE)/codeplug/codeplug.c \
-           $(CORE)/storage/storage.c sim/sim_flash.c
+TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/net/tftp_iddb.c $(CORE)/dmr/ipGateway.c \
+           $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += mdnsTest tftpTest
 
 mdnsTest: $(MDNST) $(CORE)/net/mdns.h $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ $(MDNST)
 
-tftpTest: $(TFTPT) $(CORE)/net/tftp.h $(CORE)/net/tftp_codeplug.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_flash.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ $(TFTPT)
+# (the fast codeplug protocol's share of the staging area is cpsFastTest's)
+tftpTest: $(TFTPT) $(CORE)/net/tftp.h $(CORE)/net/tftp_codeplug.h $(CORE)/net/tftp_iddb.h $(CORE)/codeplug/dmr_iddb.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_CPS_FAST=0 -o $@ $(TFTPT)
 
 run: run-net
 run-net: mdnsTest tftpTest
@@ -814,19 +815,35 @@ run-cps: cpsTest
 	./cpsTest
 .PHONY: run-cps
 
-# tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there
+# The fast codeplug protocol (core/cps/cps_fast.c, docs/spec/cps-fast.md): LZ4 both ways, blank blocks, CRC compare,
+# range refusals, direct and staged writes, power cuts all through a commit, the staging area shared with TFTP
+CPSF    := $(CORE)/cps/cps_fast.c $(CORE)/cps/cps_lz4.c
+TESTS   += cpsFastTest
+
+cpsFastTest: cpsFastTest.c $(CPS) $(CPSF) $(CORE)/net/tftp_codeplug.c $(wildcard $(CORE)/cps/*.h $(CORE)/net/tftp*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP_IDDB=0 -o $@ cpsFastTest.c $(CPS) $(CPSF) $(CORE)/net/tftp_codeplug.c
+
+run: run-cpsfast
+run-cpsfast: cpsFastTest
+	./cpsFastTest
+.PHONY: run-cpsfast
+
+# tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there; the sim also answers the
+# debug link's VERSION and CODEPLUG, for tools/cps_fast.py (cpsFastClientTest.py)
 PYTHON  ?= $(shell command -v python3)
 TESTS   += cpsSim
+SIMDL   := $(CPSF) $(CORE)/debuglink/debuglink_proto.c
 
-cpsSim: cpsSim.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsSim.c $(CPS)
+cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c
 
 run: run-cpsclient
 run-cpsclient: cpsSim
 ifneq ($(PYTHON),)
 	$(PYTHON) -B cpsClientTest.py
+	$(PYTHON) -B cpsFastClientTest.py
 else
-	@echo "# cpsClientTest skipped (no python3)"
+	@echo "# cpsClientTest, cpsFastClientTest skipped (no python3)"
 endif
 .PHONY: run-cpsclient
 

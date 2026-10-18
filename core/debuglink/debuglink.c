@@ -16,6 +16,9 @@
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
+#if CONFIG_CPS_FAST
+#include "cps/cps_fast.h"
+#endif
 #include "input/input.h"
 #include "radio/radio.h"
 #include "storage/storage.h"
@@ -153,6 +156,9 @@ static const char features[] = "features="
 #if CONFIG_TFTP
 	"TFTP,"
 #endif
+#if CONFIG_TFTP_IDDB
+	"TFTP_IDDB,"
+#endif
 #if CONFIG_SNMP
 	"SNMP,"
 #endif
@@ -182,6 +188,9 @@ static const char features[] = "features="
 #endif
 #if CONFIG_BATTERY_SAVE
 	"BATTERY_SAVE,"
+#endif
+#if CONFIG_CPS_FAST
+	"CPS_FAST,"
 #endif
 #if CONFIG_USB
 	"USB,"
@@ -904,6 +913,12 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		}
 #endif
 		return debuglink_cmd_stub(req, len, out, cap);
+	case DL_CMD_CODEPLUG:
+#if CONFIG_CPS_FAST
+		return cps_fast_cmd(req, len, out, cap, hal_millis());
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

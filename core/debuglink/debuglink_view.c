@@ -21,6 +21,9 @@
 #if CONFIG_CPS_OPENFW
 #include "cps/cps_openfw.h"
 #endif
+#if CONFIG_CPS_FAST
+#include "cps/cps_fast.h"
+#endif
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #if CONFIG_SFR
@@ -283,6 +286,13 @@ static void storage_section(dl_text_t *t)
 	dl_text(t, "cps.openfw_eeprom=0x%x\n", fm != NULL ? (unsigned)fm->openfw_eeprom : 0u);
 #else
 	dl_text(t, "cps.built=0\n");
+#endif
+#if CONFIG_CPS_FAST
+	cps_fast_stats_t f;
+
+	cps_fast_get_stats(&f);
+	dl_text(t, "cpsf.state=%u\ncpsf.read=%u\ncpsf.written=%u\ncpsf.commits=%u\ncpsf.refused=%u\n", f.state,
+		(unsigned)f.blocks_read, (unsigned)f.blocks_written, (unsigned)f.commits, (unsigned)f.refused);
 #endif
 }
 

@@ -161,7 +161,24 @@ A wrong file, a transfer that stops half way, or a cable pulled during the trans
 power cut while the new codeplug is being stored is finished at the next power on. The radio keeps its own quick
 keys, as with the CPS, and re-reads the codeplug right after the write.
 
-To stop writes over the network, turn off **Settings > Connections > TFTP codeplug write**. Reading stays possible.
+The DMR ID database (the names shown for IDs that aren't contacts) has its own file:
+
+```
+curl tftp://odr-3101234.local/iddb.bin -o iddb.bin             # read the ID database
+curl -T iddb.bin tftp://odr-3101234.local/iddb.bin              # write it
+```
+
+`iddb.bin` holds the database alone. The radio drops its old database as the new one starts arriving and shows names
+again once the whole file is in. A transfer that stops leaves no database until the next try, never a broken one.
+This works without a staging area, so also on radios where `codeplug.bin` can't be written.
+
+A `codeplug.bin` saved by the Codeplug Editor with **Save > For USB Network** also carries the ID database when the
+codeplug has one. The radio takes the database from it only when the client sends the file's size, as `curl` does.
+Otherwise, and with any older `codeplug.bin`, the radio keeps the database it has. The codeplug part is written as
+above.
+
+To stop writes over the network (`codeplug.bin` and `iddb.bin`), turn off **Settings > Connections > TFTP codeplug
+write**. Reading stays possible.
 
 ## Monitoring the radio with SNMP
 

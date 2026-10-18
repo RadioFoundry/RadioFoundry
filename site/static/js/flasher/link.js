@@ -219,18 +219,26 @@ export class Link {
 
 	// X 1 (prepare sector), X 2 (merge data), X 3 (commit): one 4 KB sector of the SPI flash
 	async cpsWriteSector(addr, data) {
+		return this.cpsWriteParts(addr, [[addr, data]]);
+	}
+
+	// One sector, changing only the given [addr, bytes] parts (each inside the sector at addr): the radio keeps the
+	// sector's other bytes, so a part of a sector the codeplug shares with other data can be written safely
+	async cpsWriteParts(addr, parts) {
 		const sector = addr >>> 12;
 		const ok = async (req) => {
 			this.s.clear();
 			await this.s.write(req);
-			const r = await this.waitFor((buf) => (buf.length >= 1 && buf[0] === 0x2D ? false : buf.length >= 2 ? true : undefined), 3000);
+			const r = await this.waitFor((buf) => (buf.length >= 1 && buf[0] === 0x2D ? false : buf.length >= 2 ? true : undefined), Math.max(3000, this.timeout));
 			this.s.clear();
 			return r === true;
 		};
 		if (!await ok(new Uint8Array([0x58, 1, sector >> 16, (sector >> 8) & 0xFF, sector & 0xFF]))) return false;
-		for (let o = 0; o < data.length; o += 1024) {
-			const part = data.subarray(o, o + 1024);
-			if (!await ok(concat(new Uint8Array([0x58, 2]), be32(addr + o), new Uint8Array([part.length >> 8, part.length & 0xFF]), part))) return false;
+		for (const [a, data] of parts) {
+			for (let o = 0; o < data.length; o += 1024) {
+				const part = data.subarray(o, o + 1024);
+				if (!await ok(concat(new Uint8Array([0x58, 2]), be32(a + o), new Uint8Array([part.length >> 8, part.length & 0xFF]), part))) return false;
+			}
 		}
 		return ok(new Uint8Array([0x58, 3]));
 	}

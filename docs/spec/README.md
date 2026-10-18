@@ -28,7 +28,9 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | Spec | Covers |
 |---|---|
 | [cps-protocol.md](cps-protocol.md) | The host port's protocols and how they share it; the CPS protocol |
+| [cps-fast.md](cps-fast.md) | The fast codeplug protocol: block sums, LZ4, staged commit |
 | [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
+| [qdmr-yaml.md](qdmr-yaml.md) | qdmr's YAML codeplug file and how the Codeplug Editor maps it |
 | [codeplug-port.md](codeplug-port.md) | Stock codeplug to ODR: the clean-up, contacts, CPS write shared by the migration tools |
 | [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
 | [stub-stm32f4.md](stub-stm32f4.md) | The STM32F4 flash stub: entry from ODR, USB, protocol, safety rules, update order |

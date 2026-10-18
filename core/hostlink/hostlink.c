@@ -18,6 +18,9 @@
 #if CONFIG_DEBUGLINK
 #include "debuglink/debuglink.h"
 #endif
+#if CONFIG_CPS_FAST
+#include "cps/cps_fast.h"
+#endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net.h"
 #include "dmr/ipGateway.h"
@@ -512,6 +515,9 @@ static void hostlink_task(void *arg)
 #endif
 #if CONFIG_SNMP
 		snmp_agent_poll(now);		// requests over RF, notifications (in either USB personality)
+#endif
+#if CONFIG_CPS_FAST
+		cps_fast_tick(now);		// the fast codeplug protocol: session time-out, a commit's next sector
 #endif
 		usb_switch_now();
 #if CONFIG_NET_PPP

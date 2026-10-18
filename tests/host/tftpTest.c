@@ -4,13 +4,17 @@
 // TIDs, busy, refusals, writes with a slow commit, the dally, a client's error. Then codeplug.bin
 // (core/net/tftp_codeplug.c) on a simulated flash with an open-firmware codeplug: the image read, written back edited
 // (the quick-key slots written too, the codeplug re-read), refused writes leaving the flash untouched, and power cuts all through a
-// commit, finished by tftp_codeplug_resume. The short transfers go to tftpTest.pcap for tshark.
+// commit, finished by tftp_codeplug_resume. Then the DMR ID database (core/net/tftp_iddb.c): iddb.bin written, looked up
+// and read back, refusals, transfers that stop or run long leaving no database, and a combined codeplug.bin that
+// carries one, or doesn't. The short transfers go to tftpTest.pcap for tshark.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "dmr/ipGateway.h"
 #include "net/tftp.h"
 #include "net/tftp_codeplug.h"
+#include "net/tftp_iddb.h"
+#include "codeplug/dmr_iddb.h"
 #include "codeplug/codeplug.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
@@ -117,7 +121,8 @@ static void w_abort(void) { aborts++; }
 static const tftp_file_t ram_file = { .name = "ram.bin", .open_read = ram_open, .read = ram_read };
 static const tftp_file_t wr_file = { .name = "wr.bin", .open_write = w_open, .write = w_write, .commit = w_commit,
 				     .abort = w_abort };
-static const tftp_file_t *const files[] = { &ram_file, &wr_file, &tftp_codeplug_file };
+static const tftp_file_t *const files[] = { &ram_file, &wr_file, &tftp_codeplug_file, &tftp_iddb_file };
+#define NFILES	((int)(sizeof(files) / sizeof(files[0])))
 
 // ---- the client ----
 static void put16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
@@ -693,7 +698,7 @@ static void test_power_cuts(void)
 		sim_flash_cut_after(0);
 		// power on again
 		sim_flash_power_on();
-		tftpInit(&io, files, 3);
+		tftpInit(&io, files, NFILES);
 		CHECK(storage_init());
 		bool resumed = tftp_codeplug_resume();
 		codeplug_init();
@@ -710,12 +715,13 @@ static void test_power_cuts(void)
 	capture = true;
 }
 
-// codeplug.bin writes at the edges: a size between the image and the full cps_client image, more than the full image,
+// codeplug.bin writes at the edges: any size between the image and the end of the codeplug space, more than that,
 // duplicate and out-of-order DATA in the middle of a write, the smallest blksize (block numbers roll over from 65535
 // to 0 inside the image). Refused ones leave every stored byte as it was.
+#define SPACE_END	(0x1C0000u - FL + 0x20000u)	// the image address the map's openfw_end gives
 static void test_codeplug_edges(void)
 {
-	static uint8_t img[TFTP_CODEPLUG_FULL + 1024], before[FLASH_SIZE];
+	static uint8_t img[SPACE_END + 1024], before[FLASH_SIZE];
 	channel_t ch;
 	capture = false;
 	populate();
@@ -723,10 +729,14 @@ static void test_codeplug_edges(void)
 	memset(img + TFTP_CODEPLUG_SIZE, 0xFF, sizeof(img) - TFTP_CODEPLUG_SIZE);
 	memcpy(before, sim_flash_data, FLASH_SIZE);
 
-	// sizes: one block past the image (no tsize: refused at the end), past the full image (refused on the way)
-	CHECK(put("codeplug.bin", NULL, img, TFTP_CODEPLUG_SIZE + 512, 512) == -(TFTP_ERR_OTHER + 1));
+	// sizes: one block past the image and past the cps_client image are taken (no ID database in them: its areas
+	// untouched), past the codeplug space refused on the way
+	CHECK(put("codeplug.bin", NULL, img, TFTP_CODEPLUG_SIZE + 512, 512) == 0);
+	CHECK(put("codeplug.bin", NULL, img, TFTP_CODEPLUG_FULL + 1024, 512) == 0);
 	CHECK(memcmp(before, sim_flash_data, STAGING) == 0);
-	CHECK(put("codeplug.bin", NULL, img, TFTP_CODEPLUG_FULL + 1024, 512) == -(TFTP_ERR_FULL + 1));
+	CHECK(put("codeplug.bin", NULL, img, SPACE_END + 1024, 512) == -(TFTP_ERR_FULL + 1));
+	const char *over[] = { "tsize", "1835520", NULL };	// SPACE_END + 512
+	CHECK(put("codeplug.bin", over, img, SPACE_END + 512, 512) == -(TFTP_ERR_FULL + 1));
 	CHECK(memcmp(before, sim_flash_data, STAGING) == 0);
 	const char *one_less[] = { "tsize", "716383", NULL };
 	CHECK(put("codeplug.bin", one_less, img, TFTP_CODEPLUG_SIZE - 1, 512) == -(TFTP_ERR_FULL + 1));
@@ -772,6 +782,214 @@ static void test_codeplug_edges(void)
 	tftpStats(&st);
 	CHECK(st.state == TFTP_DALLYING || st.state == TFTP_IDLE);
 	tick(10000);
+	capture = true;
+}
+
+// ---- the DMR ID database: iddb.bin and the database part of a combined codeplug.bin ----
+
+#define IDDB_PER1	((0x40000u - 12u) / 15u)	// records of 15 bytes (16 characters) in area 1
+#define A1_PHYS		(FL + 0x30000u)
+#define A2_PHYS		(FL + 0xB8000u)
+
+static char sixbit_char(unsigned c)
+{
+	return c == 0 ? ' ' : c <= 10 ? (char)('0' + c - 1) : c <= 36 ? (char)('A' + c - 11) : c <= 62 ? (char)('a' + c - 37) : '.';
+}
+
+static unsigned sixbit_code(char ch)
+{
+	for (unsigned c = 0; c < 64; c++) {
+		if (sixbit_char(c) == ch) {
+			return c;
+		}
+	}
+	return 0;
+}
+
+// Record i's text (16 characters)
+static void iddb_text(uint32_t i, unsigned salt, char *t)
+{
+	snprintf(t, 17, "K%uX%-13u", salt, (unsigned)i);
+}
+
+// A format N database of count records (ID 1000000 + 3i), as iddb.bin: header, then the records back to back
+static uint32_t make_db(uint8_t *db, uint32_t count, unsigned salt)
+{
+	memcpy(db, "IdN", 3);
+	db[3] = 15 + 0x4A;
+	memcpy(db + 4, "001", 4);
+	db[8] = (uint8_t)count;
+	db[9] = (uint8_t)(count >> 8);
+	db[10] = (uint8_t)(count >> 16);
+	db[11] = (uint8_t)(count >> 24);
+	for (uint32_t i = 0; i < count; i++) {
+		uint8_t *r = db + 12 + i * 15u;
+		uint32_t id = 1000000u + 3u * i;
+		char t[17];
+		iddb_text(i, salt, t);
+		r[0] = (uint8_t)id;
+		r[1] = (uint8_t)(id >> 8);
+		r[2] = (uint8_t)(id >> 16);
+		for (unsigned k = 0; k < 4; k++) {
+			uint32_t w = 0;
+			for (unsigned j = 0; j < 4; j++) {
+				w = (w << 6) | sixbit_code(t[4 * k + j]);
+			}
+			r[3 + 3 * k] = (uint8_t)(w >> 16);
+			r[4 + 3 * k] = (uint8_t)(w >> 8);
+			r[5 + 3 * k] = (uint8_t)w;
+		}
+	}
+	return 12u + count * 15u;
+}
+
+// The same database laid into a codeplug image (header and area 1 at 0x50000, area 2 at 0xD8000); the image end
+static uint32_t db_into_image(uint8_t *img, const uint8_t *db, uint32_t count)
+{
+	uint32_t a1 = (count < IDDB_PER1 ? count : IDDB_PER1) * 15u;
+	memcpy(img + TFTP_IDDB_AREA1, db, 12u + a1);
+	if (count <= IDDB_PER1) {
+		return TFTP_IDDB_AREA1 + 12u + a1;
+	}
+	memcpy(img + TFTP_IDDB_AREA2, db + 12u + a1, (count - IDDB_PER1) * 15u);
+	return TFTP_IDDB_AREA2 + (count - IDDB_PER1) * 15u;
+}
+
+// Record i of a database the radio finds by ID, with the text written
+static bool iddb_has(uint32_t i, unsigned salt)
+{
+	char want[17], got[DMR_IDDB_TEXT_MAX + 1];
+	iddb_text(i, salt, want);
+	for (int n = 16; n > 0 && want[n - 1] == ' '; n--) {
+		want[n - 1] = '\0';
+	}
+	return dmr_iddb_lookup(1000000u + 3u * i, got, sizeof(got)) && strcmp(got, want) == 0;
+}
+
+// Every byte outside the database's areas (and the staging area) as it was
+static bool outside_iddb_equal(const uint8_t *before)
+{
+	return memcmp(before, sim_flash_data, A1_PHYS) == 0 &&
+	       memcmp(before + A1_PHYS + 0x40000u, sim_flash_data + A1_PHYS + 0x40000u, A2_PHYS - A1_PHYS - 0x40000u) == 0 &&
+	       memcmp(before + 0x1C0000u, sim_flash_data + 0x1C0000u, STAGING - 0x1C0000u) == 0;
+}
+
+static void test_iddb(void)
+{
+	static uint8_t db[12 + 60000 * 15], back[12 + 60000 * 15], before[FLASH_SIZE];
+	static uint8_t img[SPACE_END], plain[TFTP_CODEPLUG_FULL], junk[TFTP_CODEPLUG_FULL];
+	char tsize[16];
+	channel_t ch;
+	pkt_t k;
+	capture = false;
+	populate();
+	memset(sim_flash_data + A1_PHYS, 0xFF, 0x40000);	// populate's filler there would read as no database anyway
+	dmr_iddb_init();
+	CHECK(get("iddb.bin", NULL, back, sizeof(back), 512) == -(TFTP_ERR_NOT_FOUND + 1));	// none yet
+
+	// iddb.bin: 20000 records, area 1 full and the rest in area 2; read back the same
+	uint32_t n = make_db(db, 20000, 1);
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+	snprintf(tsize, sizeof(tsize), "%u", (unsigned)n);
+	const char *opts[] = { "blksize", "1428", "tsize", tsize, NULL };
+	CHECK(put("iddb.bin", opts, db, n, 512) == 0);
+	CHECK(dmr_iddb_count() == 20000 && iddb_has(0, 1) && iddb_has(IDDB_PER1 - 1, 1) && iddb_has(IDDB_PER1, 1) &&
+	      iddb_has(19999, 1));
+	CHECK(outside_iddb_equal(before) && sim_flash_violations() == 0);
+	CHECK(get("iddb.bin", NULL, back, sizeof(back), 512) == (long)n && memcmp(back, db, n) == 0);
+	const char *tiny[] = { "blksize", "8", NULL };	// the header split over two blocks
+	n = make_db(db, 3000, 2);
+	CHECK(put("iddb.bin", tiny, db, n, 8) == 0 && dmr_iddb_count() == 3000 && iddb_has(2999, 2) && !iddb_has(0, 1));
+
+	// Refused before anything is erased: no header, format n, too big for the space, tsize against the header,
+	// writes off. The stored database stays
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+	uint8_t bad[64];
+	memset(bad, 0xFF, sizeof(bad));
+	CHECK(put("iddb.bin", NULL, bad, sizeof(bad), 512) == -(TFTP_ERR_OTHER + 1));
+	memcpy(bad, db, 12);
+	bad[2] = 'n';
+	CHECK(put("iddb.bin", NULL, bad, sizeof(bad), 512) == -(TFTP_ERR_OTHER + 1));
+	uint32_t too_many = IDDB_PER1 + (SPACE_END - TFTP_IDDB_AREA2) / 15u + 1u;
+	memcpy(bad, db, 12);
+	bad[8] = (uint8_t)too_many;
+	bad[9] = (uint8_t)(too_many >> 8);
+	bad[10] = (uint8_t)(too_many >> 16);
+	CHECK(put("iddb.bin", NULL, bad, sizeof(bad), 512) == -(TFTP_ERR_OTHER + 1));
+	const char *wrong[] = { "tsize", "1000", NULL };
+	CHECK(put("iddb.bin", wrong, db, 1000, 512) == -(TFTP_ERR_FULL + 1));
+	const char *small[] = { "tsize", "5", NULL };
+	CHECK(put("iddb.bin", small, db, 5, 512) == -(TFTP_ERR_FULL + 1));
+	tftp_codeplug_allow_write(false);
+	CHECK(put("iddb.bin", NULL, db, n, 512) == -(TFTP_ERR_ACCESS + 1));
+	tftp_codeplug_allow_write(true);
+	CHECK(memcmp(before, sim_flash_data, FLASH_SIZE) == 0 && dmr_iddb_count() == 3000);
+
+	// A transfer that stops half way, one longer than its header, one shorter: no database, never a broken one
+	n = make_db(db, 20000, 3);
+	drain();
+	request(2, CPORT, "iddb.bin", "octet", NULL);
+	CHECK(next_pkt(&k) && get16(k.p) == 4);
+	for (uint16_t b = 1; b <= 300; b++) {
+		send_data(k.sport, b, db + (b - 1u) * 512u, 512);
+		drain();
+		if (b == 1) {
+			CHECK(dmr_iddb_count() == 0);	// the header went first
+		}
+	}
+	tick(10000);
+	drain();
+	CHECK(dmr_iddb_count() == 0 && sim_flash_data[A1_PHYS] == 0xFF && outside_iddb_equal(before));
+	CHECK(get("iddb.bin", NULL, back, sizeof(back), 512) == -(TFTP_ERR_NOT_FOUND + 1));
+	CHECK(put("iddb.bin", NULL, db, n + 512, 512) == -(TFTP_ERR_FULL + 1) && dmr_iddb_count() == 0);
+	CHECK(put("iddb.bin", NULL, db, n - 15, 512) == -(TFTP_ERR_OTHER + 1) && dmr_iddb_count() == 0);
+
+	// Combined codeplug.bin: the codeplug and a database of 40000 records reaching past the cps_client image size
+	expected_image(img);
+	memset(img + TFTP_CODEPLUG_SIZE, 0xFF, sizeof(img) - TFTP_CODEPLUG_SIZE);
+	rename_channel(img, 8, "Combined");
+	n = make_db(db, 40000, 4);
+	uint32_t end = db_into_image(img, db, 40000);
+	CHECK(end > TFTP_CODEPLUG_FULL);
+	snprintf(tsize, sizeof(tsize), "%u", (unsigned)end);
+	const char *copts[] = { "blksize", "1428", "tsize", tsize, NULL };
+	CHECK(put("codeplug.bin", copts, img, end, 512) == 0);
+	CHECK(codeplug_channel(8, &ch) && strcmp(ch.name, "Combined") == 0);
+	CHECK(dmr_iddb_count() == 40000 && iddb_has(0, 4) && iddb_has(IDDB_PER1, 4) && iddb_has(39999, 4));
+	CHECK(get("iddb.bin", NULL, back, sizeof(back), 512) == (long)n && memcmp(back, db, n) == 0);
+	CHECK(get("codeplug.bin", NULL, back, sizeof(back), 512) == (long)TFTP_CODEPLUG_SIZE);	// reads stay the image
+	CHECK(back[TFTP_IDDB_AREA1] == 0xFF);
+
+	// Files that don't carry a database for the radio keep its own: an old-size image (0xFF there), a combined one
+	// without tsize, one whose tsize stops inside its database (a cps_client image of a radio with a big one)
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+	expected_image(plain);
+	memset(plain + TFTP_CODEPLUG_SIZE, 0xFF, sizeof(plain) - TFTP_CODEPLUG_SIZE);
+	rename_channel(plain, 8, "Old size");
+	CHECK(put("codeplug.bin", NULL, plain, TFTP_CODEPLUG_SIZE, 512) == 0);
+	CHECK(codeplug_channel(8, &ch) && strcmp(ch.name, "Old size") == 0 && dmr_iddb_count() == 40000 && iddb_has(39999, 4));
+	make_db(db, 40000, 5);
+	db_into_image(img, db, 40000);
+	rename_channel(img, 8, "No tsize");
+	CHECK(put("codeplug.bin", NULL, img, end, 512) == 0);
+	CHECK(codeplug_channel(8, &ch) && strcmp(ch.name, "No tsize") == 0 && iddb_has(39999, 4));
+	rename_channel(img, 8, "Cut short");
+	snprintf(tsize, sizeof(tsize), "%u", TFTP_CODEPLUG_FULL);
+	const char *full[] = { "tsize", tsize, NULL };
+	CHECK(put("codeplug.bin", full, img, TFTP_CODEPLUG_FULL, 512) == 0);
+	CHECK(codeplug_channel(8, &ch) && strcmp(ch.name, "Cut short") == 0 && iddb_has(39999, 4));
+	CHECK(memcmp(before + A1_PHYS, sim_flash_data + A1_PHYS, 0x40000) == 0);
+	CHECK(memcmp(before + A2_PHYS, sim_flash_data + A2_PHYS, 0x1C0000u - A2_PHYS) == 0);
+
+	// A combined file whose codeplug is refused still leaves its database, which arrived whole
+	memset(junk, 0xA5, sizeof(junk));
+	make_db(db, 500, 6);
+	db_into_image(junk, db, 500);
+	snprintf(tsize, sizeof(tsize), "%u", TFTP_CODEPLUG_SIZE);
+	const char *jopts[] = { "tsize", tsize, NULL };
+	CHECK(put("codeplug.bin", jopts, junk, TFTP_CODEPLUG_SIZE, 512) == -(TFTP_ERR_OTHER + 1));
+	CHECK(dmr_iddb_count() == 500 && iddb_has(499, 6) && codeplug_channel(8, &ch) && strcmp(ch.name, "Cut short") == 0);
+	CHECK(sim_flash_violations() == 0);
 	capture = true;
 }
 
@@ -870,7 +1088,7 @@ static void test_fuzz(void)
 	tftpStats(&st);
 	printf("# tftp fuzz: %ld packets, %ld answers (%u reads, %u writes done)\n", iters, answers, (unsigned)st.reads,
 	       (unsigned)st.writes);
-	tftpInit(&io, files, 3);
+	tftpInit(&io, files, NFILES);
 	capture = true;
 }
 
@@ -881,7 +1099,7 @@ int main(void)
 	fwrite(header, sizeof(header), 1, pcap);
 	sim_flash_create(FLASH_SIZE, &map);
 	ipGatewayInit(RADIO_MAC, HOST_MAC);
-	tftpInit(&io, files, 3);
+	tftpInit(&io, files, NFILES);
 	ipGatewayUdpBind(TFTP_PORT, udp_in);
 
 	test_reads();
@@ -890,6 +1108,7 @@ int main(void)
 	test_codeplug();
 	test_power_cuts();
 	test_codeplug_edges();
+	test_iddb();
 	test_fuzz();
 
 	fclose(pcap);

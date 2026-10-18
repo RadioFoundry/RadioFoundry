@@ -31,8 +31,36 @@ export const CONVERTERS = [
 	{ id: "rdt-to-odr", from: "tyt-rdt", to: "openfw-image", status: "planned", name: "TYT CPS file to an OpenDigitalRadio codeplug" },
 	{ id: "raw-to-odr", from: "tyt-raw", to: "openfw-image", status: "planned", name: "TYT memory image to an OpenDigitalRadio codeplug" },
 	{ id: "dfuse-to-odr", from: "dfuse", to: "openfw-image", status: "planned", name: "qdmr binary codeplug to an OpenDigitalRadio codeplug" },
-	{ id: "yaml-to-odr", from: "yaml", to: "openfw-image", status: "planned", name: "qdmr YAML to an OpenDigitalRadio codeplug" },
+	{
+		id: "yaml-to-odr", from: "yaml", to: "openfw-image", status: "ready",
+		name: "qdmr YAML to an OpenDigitalRadio codeplug image (open-firmware layout)",
+		async convert(bytes, name) {
+			// the codeplug modules load only when a conversion runs
+			const { importQdmr } = await import("../codeplug/qdmr.js");
+			const { empty, encode } = await import("../codeplug/model.js");
+			const m = empty();
+			try {
+				importQdmr(m, new TextDecoder().decode(bytes));
+			} catch (e) {
+				throw new Error(e.code === "not_qdmr" ? "this file is not a qdmr codeplug" : `this file is not valid YAML (${e.params?.error || e.message})`);
+			}
+			return { name: `${base(name)}.bin`, data: encode(m).bytes.slice(0, CODEPLUG_SPAN) };
+		},
+	},
+	{
+		id: "odr-to-yaml", from: "openfw-image", to: "yaml", status: "ready",
+		name: "OpenDigitalRadio codeplug image to qdmr YAML",
+		async convert(bytes, name) {
+			const { exportQdmr } = await import("../codeplug/qdmr.js");
+			const { decode } = await import("../codeplug/model.js");
+			const { CodeplugImage } = await import("../codeplug/image.js");
+			const { text } = exportQdmr(decode(CodeplugImage.from(bytes.subarray(0, CODEPLUG_SPAN))));
+			return { name: `${base(name)}.yaml`, data: new TextEncoder().encode(text) };
+		},
+	},
 ];
+
+const base = (name) => String(name || "codeplug").replace(/^.*[\\/]/, "").replace(/\.[^.]+$/, "") || "codeplug";
 
 export function detect(bytes, name) {
 	return FORMATS.find((f) => f.detect(bytes, name)) || null;
