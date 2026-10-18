@@ -545,8 +545,9 @@ placement). The firmware does not check where the image will run (it only checks
 `entry` lies inside the span); the host does: `stubtool.py` reads INFO first and refuses a span whose copy would overlap
 the run address or leave SRAM. The older position-dependent monitors (`--legacy-stub`, `--odr-stub FILE`) must be linked
 for exactly `load_addr`; the host refuses one whose linked data and stack lie outside the span or that does not end its
-text and data at `load_addr` plus its length. INFO is the whole discovery protocol, so firmware built before a board
-moved its span keeps working with the same tool.
+text and data at `load_addr` plus its length. On the STM32F4 the host checks instead that the image starts with the
+STM32F4 stub's entry code and that `load_addr` is the SRAM base. INFO is the whole discovery protocol, so firmware built
+before a board moved its span keeps working with the same tool.
 
 ## 4. Safety
 

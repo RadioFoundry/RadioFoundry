@@ -126,6 +126,8 @@ APP_BASE = 0x0800C000                  # sector 3: the bootloader starts the app
 SUM_MAX = 800                          # SUMS records per request (the stub allows 820)
 READ_PACK = 16                         # blocks per READ request
 ERASE_TIMEOUT = 6.0                    # 128 KB: 2 s worst case in the data sheet, the stub gives up at 4 s
+RUN_ADDR = 0x20000000                  # the stub's link address, which ODR reports as STUB INFO's load_addr
+SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
 # Flash the firmware owns on each radio (docs/spec/hardware-dm1701.md 1.4, hardware-md380.md 1.3). Everything else in
 # a sector that is rewritten is read back from the radio and written again unchanged: the codec windows, and the
@@ -273,6 +275,9 @@ class F4Radio(stubtool.Radio):
         self.flash_kb = 0
         self.rdp = 0
         self.adopted = False
+
+    def check_stub(self, image, load, size):
+        check_stub_fits(image, load, size)
 
     # ---- talking to the stub
     def hello(self):
@@ -547,6 +552,31 @@ def board_from_version(radio):
     return None
 
 
+def stub_stack_top(image):
+    """The initial stack pointer the image's entry code loads, or None if the image does not start with f4stub_entry
+    (stub/stm32f4/f4stub_main.c): `ldr r1, [pc, #imm]` and `mov sp, r1`, the literal in the pool after the branch."""
+    if len(image) < 8 or image[1] != 0x49 or image[2:4] != b"\x8d\x46":
+        return None
+    lit = 4 + image[0] * 4                     # Thumb LDR literal: Align(PC, 4) + imm8 * 4, PC = 4 here
+    if lit + 4 > len(image):
+        return None
+    return int.from_bytes(image[lit:lit + 4], "little")
+
+
+def check_stub_fits(image, load, size):
+    """Refuse an image that is not the STM32F4 stub, or a span ODR reports that is not where the stub runs. ODR stages
+    the image in an 8 KB buffer and copies it to its link address before the jump (docs/spec/debuglink.md 3.18), so
+    the HR_C7000 rule (bss and stack inside the span) does not apply: after the jump the stub owns all of SRAM."""
+    top = stub_stack_top(image)
+    if top is None or b"F4STUB" not in image:
+        raise F4Error("this does not look like the STM32F4 stub image (no f4stub_entry code at its start)")
+    if load != RUN_ADDR:
+        raise F4Error("ODR reports its stub span at 0x%X; the STM32F4 stub runs at 0x%X" % (load, RUN_ADDR))
+    if not RUN_ADDR + len(image) < top <= RUN_ADDR + SRAM_SIZE:
+        raise F4Error("this stub image's stack top 0x%X is outside the SRAM it runs in (0x%X-0x%X)"
+                      % (top, RUN_ADDR, RUN_ADDR + SRAM_SIZE))
+
+
 def stub_image():
     """The embedded stub build, checked against its SHA-256"""
     blob = zlib.decompress(base64.b64decode("".join(F4STUB_B64)))
@@ -582,7 +612,7 @@ def run(a, port, reopen, log=print):
         elif found is not None and found != board:
             raise F4Error("the radio says it is a %s, not a %s" % (found, board))
         image = open(a.odr_stub, "rb").read() if a.odr_stub else stub_image()
-        radio.odr_enter(image, 0x20000000)
+        radio.odr_enter(image, RUN_ADDR)
     else:
         radio.attach()
     radio.check_board()
@@ -891,6 +921,41 @@ def self_test():
         pass
 
     check(len(stub_image()) > 4096 and stub_image()[:4] != b"\xff" * 4, "the embedded stub decodes and checks")
+
+    # Entering the stub from a running ODR: the debug link reports the SRAM base and the 8 KB staging buffer
+    # (docs/spec/debuglink.md 3.18). The HR_C7000 image check must not reject the STM32F4 stub, and the reverse.
+    top = stub_stack_top(stub_image())
+    check(top == RUN_ADDR + SRAM_SIZE, "the embedded stub's entry code loads the stack top 0x%X" % (top or 0))
+    odr = stubtool.FakeODR((RUN_ADDR, 8192))
+    r = F4Radio(odr, log=quiet)
+    r.attach = lambda: None
+    try:
+        r.odr_enter(stub_image(), RUN_ADDR)
+    except stubtool.DumpError as e:
+        check(False, "odr_enter refused the embedded STM32F4 stub: %s" % e)
+    check(odr.entered and bytes(odr.mem[:len(stub_image())]) == stub_image(), "odr_enter sends the embedded STM32F4 stub")
+    c7 = stubtool.odr_stubs()[0x17000][1]
+    noise = bytes((i * 37 + 11) & 0xFF for i in range(4096))
+    fake_top = stub_image()[:8] + (RUN_ADDR + 0x100).to_bytes(4, "little") + stub_image()[12:]
+    for what, img, span in (("an HR_C7000 stub", c7, (RUN_ADDR, 8192)), ("a file that is not a stub", noise, (RUN_ADDR, 8192)),
+                            ("the stub on a span that is not the SRAM base", stub_image(), (0x2001C000, 8192)),
+                            ("a stub whose stack is inside its own image", fake_top, (RUN_ADDR, 8192))):
+        odr = stubtool.FakeODR(span)
+        r = F4Radio(odr, log=quiet)
+        r.attach = lambda: None
+        try:
+            r.odr_enter(img, RUN_ADDR)
+            check(False, "STM32F4 odr_enter refuses %s" % what)
+        except stubtool.DumpError:
+            check(not odr.entered and odr.total is None, "STM32F4 odr_enter refuses %s before BEGIN" % what)
+    odr = stubtool.FakeODR((0x17000, 0x18000))
+    r = stubtool.Radio(odr, log=quiet)
+    r.attach = lambda: None
+    try:
+        r.odr_enter(stub_image())
+        check(False, "the HR_C7000 path refuses the STM32F4 stub")
+    except stubtool.DumpError:
+        check(odr.total is None, "the HR_C7000 path refuses the STM32F4 stub before BEGIN")
 
     # Finding the stub's port again: it came back as ttyACM1 while ttyACM0 is still held, or not at all
     ID = STUB_USB_ID

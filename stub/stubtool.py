@@ -821,6 +821,16 @@ class Radio:
         return (1 if ser else 0) | (2 if cs is not None else 0) | (NAND_FLAG if mem == "nand" else 0)
 
     # ---- entering the stub from a running ODR (debug link frames: A5 5A cmd seq len(2 LE) payload crc16(2 LE))
+    def check_stub(self, image, load, size):
+        """Refuse an image that is not this SoC's stub or is linked for another span. A method so that the STM32 radios
+        (f4stub.F4Radio), whose stub has another entry code and runs at the SRAM base, check their own image."""
+        if univ_layout(image):
+            run, end = check_univ_load(image, load, (load, size))
+            self.log("universal stub: loaded at 0x%X, runs at 0x%X-0x%X" % (load, run, end))
+            self.stub_head = image[:0x80]
+        else:
+            check_stub_fits(image, load, size)
+
     def dl_request(self, cmd, payload, timeout=1.0, retries=3):
         self.dl_seq = (getattr(self, "dl_seq", 0) + 1) & 0xFF
         for attempt in range(retries + 1):
@@ -871,12 +881,7 @@ class Radio:
             image = known[load][1]
         elif image is None:
             image = stub_univ_image()
-        if univ_layout(image):
-            run, end = check_univ_load(image, load, (load, size))
-            self.log("universal stub: loaded at 0x%X, runs at 0x%X-0x%X" % (load, run, end))
-            self.stub_head = image[:0x80]
-        else:
-            check_stub_fits(image, load, size)
+        self.check_stub(image, load, size)
         if len(image) > size:
             raise DumpError("stub image (%d bytes) does not fit ODR's free RAM (%d bytes)" % (len(image), size))
         entry = load if entry is None else entry
@@ -1592,6 +1597,51 @@ class FakeRadio:
         return True
 
 
+class FakeODR:
+    """A running ODR's debug link STUB command (docs/spec/debuglink.md 3.18) for the self-tests: offers `span`,
+    takes the image, enters if its CRC matches. Also used by f4stub.py's self-test."""
+
+    def __init__(self, span=(0x17000, 0x18000)):
+        self.span = span                            # (base, size) the "firmware" offers in STUB INFO
+        self.timeout = 0.02
+        self.out = b""
+        self.mem = bytearray(span[1])
+        self.total = self.crc = None
+        self.entered = False
+
+    def reset_input_buffer(self):
+        self.out = b""
+
+    def read(self, n):
+        r, self.out = self.out[:n], self.out[n:]
+        return r
+
+    def write(self, b):
+        assert b[:2] == b"\xA5\x5A" and crc16_ccitt(b[2:-2]) == int.from_bytes(b[-2:], "little")
+        cmd, seq, n = b[2], b[3], b[4] | b[5] << 8
+        p = b[6:6 + n]
+        if cmd == 0x02:                             # VERSION: the board odr_enter picks the stub profile by
+            rep = bytes([cmd | 0x80, seq]) + (14).to_bytes(2, "little") + b"\0board=DB25-D\n"
+            self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
+            return
+        assert cmd == DL_STUB
+        op, st, body = p[0], 0, b""
+        if op == 0:
+            body = (STUB_MAGIC.to_bytes(4, "little") + self.span[0].to_bytes(4, "little") + self.span[1].to_bytes(4, "little")
+                    + (59).to_bytes(2, "little") + b"\0" + (0).to_bytes(4, "little"))
+        elif op == 1:
+            self.total, self.crc = int.from_bytes(p[5:9], "little"), int.from_bytes(p[9:13], "little")
+            self.mem = bytearray(self.span[1])
+        elif op == 2:
+            off = int.from_bytes(p[1:5], "little")
+            self.mem[off:off + len(p) - 5] = p[5:]
+        elif op == 3:
+            st = 0 if zlib.crc32(bytes(self.mem[:self.total])) == self.crc else 4
+            self.entered = st == 0
+        rep = bytes([cmd | 0x80, seq]) + (1 + len(body)).to_bytes(2, "little") + bytes([st]) + body
+        self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
+
+
 def rxn_big(payload):
     return int.from_bytes(payload[8:10], "big") >= 256
 
@@ -1742,48 +1792,11 @@ def self_test():
         check(False, "range beyond the chip refused")
     except DumpError:
         pass
-    # entering the stub from ODR: a small debug-link responder following docs/spec/debuglink.md 3.18
+    # entering the stub from ODR (FakeODR: the debug link STUB command)
     def fake_stub(base, length):                       # an image with the entry code's literal pool, linked at `base`
         return (b"\x80\xc0\x20\x70" + bytes(0x24) + (base + length).to_bytes(4, "little") + (base + 0x34 + 1024).to_bytes(4, "little")
                 + (base + 0x632C).to_bytes(4, "little") + bytes(range(256)) * 4)
 
-    class FakeODR:
-        def __init__(self, span=(0x17000, 0x18000)):
-            self.span = span                            # (base, size) the "firmware" offers in STUB INFO
-            self.timeout = 0.02
-            self.out = b""
-            self.mem = bytearray(span[1])
-            self.total = self.crc = None
-            self.entered = False
-        def reset_input_buffer(self):
-            self.out = b""
-        def read(self, n):
-            r, self.out = self.out[:n], self.out[n:]
-            return r
-        def write(self, b):
-            assert b[:2] == b"\xA5\x5A" and crc16_ccitt(b[2:-2]) == int.from_bytes(b[-2:], "little")
-            cmd, seq, n = b[2], b[3], b[4] | b[5] << 8
-            p = b[6:6 + n]
-            if cmd == 0x02:                             # VERSION: the board odr_enter picks the stub profile by
-                rep = bytes([cmd | 0x80, seq]) + (14).to_bytes(2, "little") + b"\0board=DB25-D\n"
-                self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
-                return
-            assert cmd == DL_STUB
-            op, st, body = p[0], 0, b""
-            if op == 0:
-                body = (STUB_MAGIC.to_bytes(4, "little") + self.span[0].to_bytes(4, "little") + self.span[1].to_bytes(4, "little")
-                        + (59).to_bytes(2, "little") + b"\0" + (0).to_bytes(4, "little"))
-            elif op == 1:
-                self.total, self.crc = int.from_bytes(p[5:9], "little"), int.from_bytes(p[9:13], "little")
-                self.mem = bytearray(self.span[1])
-            elif op == 2:
-                off = int.from_bytes(p[1:5], "little")
-                self.mem[off:off + len(p) - 5] = p[5:]
-            elif op == 3:
-                st = 0 if zlib.crc32(bytes(self.mem[:self.total])) == self.crc else 4
-                self.entered = st == 0
-            rep = bytes([cmd | 0x80, seq]) + (1 + len(body)).to_bytes(2, "little") + bytes([st]) + body
-            self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
     spans = {0x17000: (0x18000, "DM-32UV"), 0x30000: (0x20000, "DB25-D"), 0x1D000: (0x12000, "DB25-D with DMR")}
     known = odr_stubs()
     check(set(known) == set(spans), "embedded ODR stubs cover %s" % sorted(hex(k) for k in spans))

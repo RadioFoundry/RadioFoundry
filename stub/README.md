@@ -85,6 +85,10 @@ A second stub, with its source here, for the STM32F405 radios behind the AnyRoad
 with `CONFIG_STUB_ENTRY=y` loads it over the USB debug link; it then installs builds (changed sectors only, the codec
 kept), backs up and verifies the internal flash, and reads and writes the external SPI flash. Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
 
+The STM32F4 stub is linked for the SRAM base. ODR stages it in an 8 KB buffer and copies it there, so `--odr-enter`
+checks it differently from the HR_C7000 monitors: it must start with the STM32F4 stub's entry code, and the base ODR
+reports must be 0x20000000.
+
 | File | What |
 |---|---|
 | `stm32f4/` | the stub's C source, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (about 5.3 KB) |
