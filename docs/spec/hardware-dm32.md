@@ -1135,16 +1135,25 @@ out of the image entirely (section 17.1): ODR links nothing there. A radio that 
 window, so the first STUB command parks the codec (`hrc_vocoder_park`: it waits for a call in progress, then every
 later call returns silence) before the window is handed out. Without that, an upload on a DMR channel overwrote the
 running codec and hung the radio (bench 2026-10-15). The load span is `0x17000..0x2F000` (`HRC_STUB_BASE` /
-`HRC_STUB_SIZE`, 96 KB, 4 KB aligned inside the window). The monitor's runtime build is position dependent, linked to
-run at `0x17000`, and uses about 25 KB (5 KB code + ~20 KB bss and buffers) plus a stack growing down from `0x2F000`.
-Nothing in ODR's own RAM (RAM_LO below it, `.data`/`.bss`/heap/stack above it) is touched while the image loads, so the
-host link task keeps running to receive it; ODR abandons all of its RAM only at the jump.
+`HRC_STUB_SIZE`, 96 KB, 4 KB aligned inside the window). Nothing in ODR's own RAM (RAM_LO below it,
+`.data`/`.bss`/heap/stack above it) is touched while the image loads, so the host link task keeps running to receive
+it; ODR abandons all of its RAM only at the jump.
 
-**Clock and UART.** The monitor's ROM-load build assumes the ROM's 24 MHz oscillator (115200 from a /13 divisor). The
-runtime build is compiled with the ODR clock tree instead (`-DPORT_UART_HZ=84000000 -DPORT_TICK_HZ=84000000`,
-APB = 84 MHz, section 1.1), so its UART divisor and reported baud come out of the real clock; ODR has already programmed
-UART0 for 115200 at 84 MHz (/46), and the monitor leaves that divisor alone, so the link never drops a byte at the
-hand-over. Timer 2, the monitor's tick source, also runs at 84 MHz here (the host measures the rate regardless).
+The monitor (the universal build, protocol version 6) is 6,940 bytes and runs at `0x30000`, not where it was loaded.
+Its first 0x80 bytes are position independent and use no stack: interrupts off, then a copy of the image from the load
+address to `0x30000` and a jump there. It then zeroes its `.bss` and sets its own 4 KB stack. The whole footprint is
+`0x30000..0x37938` (31,032 B: image, `.bss` to `0x36934`, stack `0x36938..0x37938`); the linker refuses a layout over
+32 KB or outside SRAM. That range was ODR's `.data`/`.bss`, which is dead after the jump, and it does not overlap the
+loaded copy at `0x17000..0x18B1C`. The entry stops without writing anything if the two would overlap. Deepest stack use
+measured on the DM-32UV and the DM-1801 Pro: 168 bytes. The same image is what the serial boot ROM loads at `0x10000`
+with the radio off (28 blocks of 256 B; the ROM itself uses no RAM, only registers). Placement for every route:
+`stub/README.md`, RAM placement.
+
+**Clock and UART.** The monitor leaves the UART divisor ODR programmed (115200 at 84 MHz, /46), so the link never drops
+a byte at the hand-over, and listens on UART0 and UART1 until told otherwise. After HELLO the host measures timer 2 (the
+monitor's tick source, 84 MHz here, 24 MHz after a boot ROM load) and sends CONFIG: the clock rates, the UART to keep
+(the one the request came in on), the board id and the board's pins. The next HELLO echoes them, and the host checks the
+echo before any write; an unconfigured monitor refuses writes.
 
 **Quiesce and jump** (`platform/hrc7000/system.c` `enter_stub`, a `.ramfunc` so it runs after flash is handed back):
 CPU interrupts off (`psrclr ie`), every PIC source masked (both banks), the watchdog off (defensive), then
@@ -1159,8 +1168,7 @@ integrity is the debug link frame's own CRC-16, and the region is zeroed at BEGI
 check. ENTER repeats the magic, and ODR verifies the exact length and the CRC-32 of the loaded bytes before it quiesces
 and jumps: the three guards (magic, length, CRC-32) are what keep a stray or truncated frame from ever launching it.
 
-**Unverified without hardware** (build and simulation only so far): that a runtime `QUAD_ENABLE = 0` hands the program
-flash to the SSI at `0x04000000` without a full chip reset (the data flash on SPI0 is independent and should be
-unaffected); that the SSI's APB/2 = 42 MHz SCLK reads the program flash reliably at the PLL clock (the ROM-load path ran
-at ~12 MHz); and that nothing the stock codec left in the modem SRAM or a half-finished peripheral transaction trips the
-monitor. See the open questions in `docs/spec/hardware-dm32.md` history and the stub's own `README.md`.
+**Bench results.** Entry from ODR, program flash and data flash reads, `--write-app` and the restart ran on the DM-1801
+Pro (2026-10-15). The universal build ran from ODR on the DM-1801 Pro and the DM-32UV (2026-10-17): reads of both chips,
+the bootloader identical to earlier dumps, a write test on the data flash, and the restart. Not yet run with the
+universal build: the boot ROM load at power-on.

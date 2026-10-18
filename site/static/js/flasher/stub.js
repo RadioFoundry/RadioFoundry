@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The C7 stub over WebSerial: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro) through the RAM monitor
-// stub/stubtool.py loads, ported from that tool (its protocol, its retries, its checks). Two ways to get the stub
-// running:
+// The C7 stub over WebSerial: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D) through the RAM
+// monitor stub/stubtool.py loads, ported from that tool (its protocol, its retries, its checks). One image, the universal
+// stub, serves every radio: it copies itself to its run address wherever it was loaded, and the page sends it the
+// board's profile (CONFIG) after HELLO and checks the echo before any write. Two ways to get the stub running:
 //
 //   boot ROM   radio off, cable in, then switched on: the SoC's serial boot ROM greets the host and takes the stub
 //   from ODR   a running ODR built with CONFIG_STUB_ENTRY=y takes it over its debug link (docs/spec/debuglink.md 3.18)
@@ -48,26 +49,33 @@ function find(buf, pat) {
 	return -1;
 }
 
+export const SRAM = [0x10000, 0x58000];	// the HR_C7000's main SRAM (hardware-dm32.md 2)
+
+// The universal stub from data/c7000-stub.json: the image, its power-on load address, and the RAM it runs in
 export function stubImages(json) {
-	const dec = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-	// byBase: the stubs linked for other RAM spans (the DB25-D's 0x30000 and 0x1D000), by the base ODR reports
-	const byBase = {};
-	for (const [base, e] of Object.entries(json.odr_by_base || {})) byBase[base] = { name: e.name, image: dec(e.data), sha: e.sha256 };
-	return { rom: dec(json.rom.data), romLoad: json.rom.load, romSha: json.rom.sha256, odr: dec(json.odr.data), odrSha: json.odr.sha256, byBase,
-		// the image a running ODR wants for the span it offers (the default one is the DM-32UV / DM-1801 Pro's, 0x17000)
-		forBase: (base) => (base === 0x17000 ? { name: "HR_C7000", image: dec(json.odr.data) } : byBase[base] || null) };
+	const image = Uint8Array.from(atob(json.univ.data), (c) => c.charCodeAt(0));
+	return { image, sha: json.univ.sha256, load: json.univ.load, run: json.univ.run, end: json.univ.end };
 }
 
-// The monitor is position dependent: it has to be linked for exactly the RAM span the firmware offers, or jumping into
-// it runs wild and the radio needs a power cycle. The image's entry code holds its stack top and bss range after the
-// code (stub_link / check_stub_fits in stubtool.py).
-export function stubFits(image, load, size) {
-	if (image.length < 0x34 || image[0] !== 0x80 || image[1] !== 0xC0 || image[2] !== 0x20 || image[3] !== 0x70)
-		throw new StubError("this does not look like a stub image");
-	const top = u32le(image, 0x28), bss0 = u32le(image, 0x2C), bss1 = u32le(image, 0x30);
-	const d = bss0 - load - image.length;
-	if (!(load <= bss0 && bss0 <= bss1 && bss1 <= top && top <= load + size && d >= 0 && d < 4))
-		throw new StubError(`the stub is linked for another RAM span (0x${bss0.toString(16)}-0x${top.toString(16)}) than the 0x${load.toString(16)}-0x${(load + size).toString(16)} ODR offers`);
+// [run, end) from a universal stub's parameter block ('UCFG' at 0x80, layout 2 or later), or null
+export function univLayout(image) {
+	if (image.length < 0xC0 || String.fromCharCode(...image.subarray(0x80, 0x84)) !== "UCFG") return null;
+	if ((image[0x84] | (image[0x85] << 8)) < 2) return null;
+	return [u32le(image, 0xB8), u32le(image, 0xBC)];
+}
+
+// The checks stubtool's check_univ_load makes before the stub is sent: its run area inside SRAM, the image 4-byte
+// aligned inside SRAM and inside the window the firmware offers, and no overlap between the loaded copy and the copy
+// the entry code makes at the run address (the stub would stop at its entry instead)
+export function univFits(image, load, window = null) {
+	const lay = univLayout(image);
+	if (!lay) throw new StubError("this does not look like the universal stub image");
+	const [run, end] = lay, n = image.length, hex = (x) => "0x" + x.toString(16);
+	if (!(SRAM[0] <= run && run + n <= end && end <= SRAM[1])) throw new StubError(`the stub's RAM ${hex(run)}-${hex(end)} is outside SRAM`);
+	if (load % 4 || load < SRAM[0] || load + n > SRAM[1]) throw new StubError(`the stub can't be loaded at ${hex(load)}`);
+	if (window && (load < window[0] || load + n > window[0] + window[1])) throw new StubError(`the stub does not fit the RAM the firmware offers at ${hex(window[0])}`);
+	if (load !== run && load < run + n && run < load + n) throw new StubError(`loading the stub at ${hex(load)} overlaps its run address ${hex(run)}`);
+	return lay;
 }
 
 export class Stub {
@@ -79,6 +87,8 @@ export class Stub {
 		this.retried = 0;
 		this.info = null;
 		this.size = {};		// per-radio memory sizes where they differ from MEM (the DB25-D's program flash is 2 MB)
+		this.v6 = null;		// the universal stub's HELLO fields (protocol 6); null for an older stub
+		this.configured = null;	// the board profile the stub confirmed after CONFIG
 	}
 
 	async readExact(n, timeout) {
@@ -108,6 +118,7 @@ export class Stub {
 
 	// Answer the ROM's greeting at once (it waits only briefly), load the stub at `load` and start it
 	async loadThroughRom(image, load, progress = () => {}) {
+		univFits(image, load);
 		await this.s.write(new Uint8Array([0x02, 0x14, 0x00, 0x03]));
 		await sleep(50);
 		const padded = new Uint8Array(Math.ceil(image.length / ROM_BLOCK) * ROM_BLOCK).fill(0xFF);
@@ -166,7 +177,7 @@ export class Stub {
 		const offer = await Stub.odrOffer(link);
 		if (!offer) throw new StubError("this ODR build cannot hand over to the loader (built without CONFIG_STUB_ENTRY)");
 		if (image.length > offer.size) throw new StubError(`the stub (${image.length} bytes) does not fit ODR's free RAM (${offer.size} bytes)`);
-		if (entry === null) stubFits(image, offer.load, offer.size);
+		if (entry === null) univFits(image, offer.load, [offer.load, offer.size]);
 		this.log(`ODR offers ${offer.size} bytes of RAM at 0x${offer.load.toString(16)}; sending the ${image.length}-byte stub`);
 		await dl(concat(new Uint8Array([1]), le32(STUB_MAGIC), le32(image.length), le32(crc32(image)), le32(entry ?? offer.load)), "the stub transfer");
 		for (let off = 0; off < image.length; off += offer.chunk) {
@@ -218,11 +229,36 @@ export class Stub {
 		await this.s.write(concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload));
 	}
 
-	async hello() {
-		const r = await this.request(0x01, new Uint8Array(0), { retries: 0 });
+	async hello({ retries = 0 } = {}) {
+		const r = await this.request(0x01, new Uint8Array(0), { retries });
 		if (String.fromCharCode(...r.subarray(0, 6)) !== "C7STUB") throw new StubError("unexpected hello");
 		this.info = { version: r[6], maxPayload: (r[7] << 8) | r[8] };
+		const g = (o) => ((r[o] << 24) | (r[o + 1] << 16) | (r[o + 2] << 8) | r[o + 3]) >>> 0;
+		this.v6 = r.length >= 43 && r[6] >= 6 ? { load: g(9), board: r[17], flags: r[18], run: g(19), image: g(23), bssEnd: g(27),
+			stackLo: g(31), stackTop: g(35), stackUsed: g(39) } : null;
 		return this.info;
+	}
+
+	// Send the board's profile to the universal stub (CONFIG, op 0x0D: clock, power latch and key pins, LEDs, board id,
+	// flags, the UART this request came in on) and check the echo in the next HELLO. Writes wait for this. The clock is
+	// the APB clock, measured (24 MHz under the boot ROM, 36 MHz on the DB25-D, 84 MHz under ODR on the DM-32UV and
+	// DM-1801 Pro). An older stub has no CONFIG.
+	async configure(profile, led = { red: 33, green: 32 }) {
+		if (!this.v6) return;
+		if (this.v6.board && this.v6.board === profile.id && this.v6.flags === (profile.nand ? 1 : 0)) {
+			this.configured = profile;
+			return;
+		}
+		let hz = await this.timerHz(300);
+		if (!(hz > 1e6 && hz < 4e8)) throw new StubError("the radio's timer rate can't be right: not configuring the loader");
+		hz = Math.round(hz / 1e5) * 1e5;
+		await this.request(0x0D, concat(be32(hz), be32(hz), new Uint8Array([profile.latch, profile.key, led.red, led.green, profile.id,
+			profile.nand ? 1 : 0, 3, 0])));
+		await this.hello({ retries: this.retries });	// a request like any other here: a damaged reply is asked for again
+		if (!this.v6 || this.v6.board !== profile.id || this.v6.flags !== (profile.nand ? 1 : 0))
+			throw new StubError("the loader did not take the radio's configuration: nothing was written");
+		this.configured = profile;
+		this.log(`loader configured (board ${profile.id}, clock ${(hz / 1e6).toFixed(1)} MHz); runs at 0x${this.v6.run.toString(16)}-0x${this.v6.stackTop.toString(16)}, stack ${this.v6.stackUsed} of ${this.v6.stackTop - this.v6.stackLo} bytes used`);
 	}
 
 	async helloWithin(ms, message) {
@@ -413,6 +449,7 @@ export class Stub {
 	async writeProgram(data, start, { appStart, appEnd, onSector = () => {}, signal } = {}) {
 		if (start % SECTOR || data.length % SECTOR || !data.length) throw new StubError("writes are whole 4 KB sectors");
 		if (start < appStart || start + data.length > appEnd) throw new StubError(`refusing to write outside the application area 0x${appStart.toString(16)}..0x${appEnd.toString(16)}`);
+		if (this.v6 && !this.configured) throw new StubError("the loader's radio configuration is not confirmed: refusing to write");
 		await this.checkId("progmem");
 		const todo = await this.verify("progmem", data, start);
 		for (let a = start; a < start + data.length; a += SECTOR) onSector(a, todo.includes(a) ? "todo" : "same");

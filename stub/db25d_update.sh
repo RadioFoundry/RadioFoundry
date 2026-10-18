@@ -5,12 +5,12 @@
 # Update ODR on the DB25-D with no keys: enter the stub from the running ODR, write the changed sectors of the install
 # image (build/db25d*/odr_db25d_install.bin: first stage + ODR), restart into ODR, check it answers.
 #   stub/db25d_update.sh odr_db25d_install.bin [PORT]
-# The stub is chosen by the RAM span the running firmware reports, so this one command works from a build with or
-# without CONFIG_DMR and installs either kind (stub/README.md). Needs stubtool.py (this directory) and the debug link
-# tool (tools/odr_debug.py, or ODR_DEBUG=path).
-# Radio stuck (no ODR answering)? Power-on recovery: `stubtool.py PORT --wait 120 --load-base 0x30000 --write-app IMAGE`,
-# then turn the radio off and on (the first stage takes the stub at 0x30000; hardware-db25d.md 7). Plain --wait loads
-# the DM-32UV's boot ROM stub, which the DB25-D doesn't run.
+# The universal stub loads into whatever RAM span the running firmware reports and runs from 0x30000, so this one
+# command works from a build with or without CONFIG_DMR and installs either kind (stub/README.md). Needs stubtool.py
+# (this directory) and the debug link tool (tools/odr_debug.py, or ODR_DEBUG=path).
+# Radio stuck (no ODR answering)? Power-on recovery: `stubtool.py PORT --wait 120 --board db25d --write-app IMAGE`, then
+# turn the radio off and on (the first stage takes the universal stub at 0x10000; hardware-db25d.md 7). With the legacy
+# stub instead: `--legacy-stub --load-base 0x30000`.
 set -e
 IMG=${1:?install image}
 PORT=${2:-/dev/ttyUSB1}

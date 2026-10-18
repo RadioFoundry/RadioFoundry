@@ -1,6 +1,6 @@
 # Flash tool user guide (`stubtool.py`)
 
-For the DM-32UV and the DM-1801 Pro. The tool backs up and checks the radio's two memory chips over the programming
+For the DM-32UV, the DM-1801 Pro and the DB25-D. The tool backs up and checks the radio's two memory chips over the programming
 cable and installs ODR builds. It needs only Python 3 and `pyserial` (`pip install pyserial`). Installing the stock or a
 first ODR build still uses `tools/dm32_flash.py`. Items marked **[confirm]** are not checked on every radio yet.
 
@@ -19,8 +19,11 @@ first ODR build still uses `tools/dm32_flash.py`. Items marked **[confirm]** are
 2. Run:
 
    ```
-   python3 stubtool.py PORT --progmem progmem.bin --q128 q128.bin
+   python3 stubtool.py PORT --board dm1801pro --progmem progmem.bin --q128 q128.bin
    ```
+
+   `--board` names the radio (`dm32`, `dm1801pro` or `db25d`) so the tool sets up the right pins and checks them before
+   it writes anything. Without it a backup still works, but writing is refused.
 
 3. When the tool says to, switch the radio **on**. The screen stays blank and the LED blinks slowly orange. This is
    expected: the radio is in loader mode.
@@ -76,6 +79,10 @@ which also restarts the radio and checks that it answers. The tool picks the loa
 itself (a build with DMR keeps it in a different place than one without), so the same command installs a DMR build over
 a build without DMR, one DMR build over another, and a build without DMR over a DMR build. Use `--odr-stub FILE` only
 for a stub built elsewhere; the tool refuses one that does not match the running build, before the radio is touched.
+`--legacy-stub` uses the loaders of earlier tool versions, if the current one ever gives trouble.
+
+The DB25-D also has a 256 MB NAND chip (recordings, and ODR's own area at 0xF000000). Read part of it with
+`--nand nand.bin --nand-range START:END` and compare with `--verify-nand nand.bin`. The NAND is only read, never written.
 
 The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
 works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again

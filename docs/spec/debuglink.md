@@ -539,11 +539,14 @@ The monitor never touches the RF chips, so the transmitter stays as ODR left it 
 refused while the radio core is transmitting, the entry is dropped if PTT went down in the 100 ms between the reply and
 the jump, and the firmware calls `board.radio->tx_off()` just before the jump in every case.
 
-The monitor is position dependent, so the image has to be linked for exactly `load_addr`. The firmware does not check
-that (it only checks the length, the CRC-32 and that `entry` lies inside the span); the host does: `stubtool.py` reads
-INFO first, takes the embedded image whose base is `load_addr` (`stub/README.md`), and refuses a `--odr-stub` image whose
-linked data and stack lie outside the span or that does not end its text and data at `load_addr` plus its length. INFO is
-the whole discovery protocol, so firmware built before a board moved its span keeps working with the same tool.
+On the HR_C7000 the host sends the universal monitor: its entry is position independent, copies the image from
+`load_addr` to its run address (0x30000) and runs there, with `.bss` and stack after it (`stub/README.md`, RAM
+placement). The firmware does not check where the image will run (it only checks the length, the CRC-32 and that
+`entry` lies inside the span); the host does: `stubtool.py` reads INFO first and refuses a span whose copy would overlap
+the run address or leave SRAM. The older position-dependent monitors (`--legacy-stub`, `--odr-stub FILE`) must be linked
+for exactly `load_addr`; the host refuses one whose linked data and stack lie outside the span or that does not end its
+text and data at `load_addr` plus its length. INFO is the whole discovery protocol, so firmware built before a board
+moved its span keeps working with the same tool.
 
 ## 4. Safety
 

@@ -770,6 +770,11 @@ async function ensureFirmware() {
 		const img = randomBytes(rng(99), 200 * 1024);
 		img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);	// what a C7000 read recognizes ODR by
 		img.set([0xFC, 0xFF, 0x01, 0x20], 0);	// a RAM stack pointer, as the STM32 loader checks
+		if (S.radio?.flash.board === "db25d") {	// the DB25-D's install image: first stage, then ODR's reset handler
+			img.set([0x2C, 0x11, 0x01, 0xC0], 0);
+			img.set([0x80, 0xC0, 0x20, 0x70], 0x1000);
+			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1100);
+		}
 		return (S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name") });
 	}
 	throw new Error(t("flash.build.no_image"));
@@ -1506,16 +1511,22 @@ function fixChooser(st, go) {
 		backup: [t("flash.help.fix.backup"), t(st.symptom === "channels" ? "flash.help.fix.backup_channels" : "flash.help.fix.backup_text")],
 		stock: [t("flash.help.fix.stock"), t(rec.stockText, { files })],
 	};
-	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"] }[st.symptom] || ["again", "backup", "stock"];
+	// a backend's own ways back (the DB25-D's update mode) come after the reinstall
+	const extra = rec.extra?.(S.radio, fb()) || [];
+	for (const x of extra) opts[x.id] = [t(x.title), t(x.text)];
+	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"] }[st.symptom]
+		|| ["again", ...extra.map((x) => x.id), "backup", "stock"];
 	const start = () => {
 		const pick = st.pick;
+		const own = extra.find((x) => x.id === pick);
 		if (pick === "stock" && rec.stock === "file") return go("stock");
-		if (pick === "again" || pick === "codec") {
+		if (pick === "again" || pick === "codec" || own) {
 			S.task = "install";
 			S.recovering = true;
 			S.step = 0;
 			S.now = { kind: "unknown" };
 			S.requested = pick === "codec" ? MERGE : S.board.keep_codec_supported ? KEEP : null;
+			own?.prepare();
 		} else {
 			S.task = "restore";
 			S.step = 0;
@@ -1559,15 +1570,19 @@ async function main() {
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	if (location.hash.includes("sim=c7000")) {
-		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over
-		const sim = await c7000Simulation(S.data.fb.c7000, "dm1801pro");
+		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over;
+		// #sim=c7000-db25d: a DB25-D PRO running its original firmware 018, reached through its debug console
+		const db25 = location.hash.includes("c7000-db25d");
+		const board = db25 ? "db25d" : "dm1801pro";
+		const sim = await c7000Simulation(S.data.fb.c7000, board);
 		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
-		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true } });
+		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true },
+			...(db25 ? { board: "DB25-D", codecId: "db25d-018", dataSize: 0x200000, usmart: "018", stubSpan: [0x1D000, 0x12000] } : {}) });
 		if (location.hash.includes("c7000-odr")) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);
 			S.fakeC7.progmem.set(img, sim.c.app_start);
-			S.fakeC7.progmem.set(slotBytes(sim.c, "dm1801pro", await locateCodec(sim.progmem, sim.c, "dm1801pro")), sim.c.boards.dm1801pro.slot[0]);
+			S.fakeC7.progmem.set(slotBytes(sim.c, board, await locateCodec(sim.progmem, sim.c, board)), sim.c.boards[board].slot[0]);
 		}
 		S.fakeC7.powerOn();
 	} else if (location.hash.includes("sim")) {

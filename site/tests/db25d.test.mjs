@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The DB25-D pieces of the web flasher: the codec carved from a plain stock file against dm32_codec.py (fixtures from
-// site/tests/fixtures.py), the USMART read and the IAP write against simulated radios, and the stub choice by RAM span.
+// site/tests/fixtures.py), the stub loaded through the stock console and the IAP write against simulated radios, and the stub choice by RAM span.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,9 +9,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
-import { stubImages, stubFits, StubError } from "../static/js/flasher/stub.js";
+import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, usmartDump, usmartOrder, Iap, iapPlan, checkInstallImage, trimTail, erasePacket, DB25DError } from "../static/js/flasher/db25d.js";
+import { Usmart, HIJACK, Iap, iapPlan, checkInstallImage, checkRestoreImage, trimTail, erasePacket, DB25DError } from "../static/js/flasher/db25d.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -23,7 +23,8 @@ test("the DB25-D's data in the flasher tables", () => {
 	const b = C.boards.db25d;
 	assert.equal(b.progmem_size, 0x200000);
 	assert.equal(b.data_flash, false);
-	assert.equal(b.power_on_stub, 0x30000);
+	assert.equal(b.stock_console, true);
+	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");
 	assert.equal(ps.length, 3);
@@ -89,23 +90,6 @@ class Pipe {
 	async write(b) { this.onWrite(b, this); }
 }
 
-function consoleRadio(flash, { drop = 0, flaky = 0 } = {}) {
-	let dropped = 0, n = 0;
-	const sent = [];
-	const pipe = new Pipe((b, p) => {
-		const text = new TextDecoder().decode(b);
-		sent.push(text);
-		const m = /^@read_addr\(0x([0-9a-f]{8})\)\r\n$/.exec(text);
-		if (!m) return;
-		if (dropped < drop) { dropped++; return; }
-		const addr = parseInt(m[1], 16);
-		let v = new DataView(flash.buffer).getUint32(addr - 0x03000000, true);
-		if (flaky && addr >= 0x0300C000 && addr < 0x0300D000 && ++n % flaky === 0) v = (v ^ 1) >>> 0;	// the first 4 KB are read twice
-		p.push(`read_addr(0x${m[1]})=0x${v.toString(16).toUpperCase()};\r\n`);
-	});
-	return { pipe, sent };
-}
-
 const randomFlash = (size) => {
 	const f = new Uint8Array(size);
 	let x = 12345;
@@ -113,36 +97,100 @@ const randomFlash = (size) => {
 	return f;
 };
 
-test("USMART: probe, and only '@' with read_addr lines is ever sent", async () => {
-	const flash = randomFlash(0x200000);
-	const { pipe, sent } = consoleRadio(flash);
+// A DB25-D on its original firmware, build 018, with the stock console (fakec7000.js), fast
+async function stockDb25d(t, opts = {}) {
+	const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7000.js");
+	const sim = await c7000Simulation(C, "db25d");
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50, board: "DB25-D",
+		usmart: "018", ...opts });
+	t.after(() => r.stop());
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 300));
+	return { r, sim };
+}
+
+test("USMART: every command is one framed write; nothing unframed and no write outside the stub window is sent", async () => {
+	const sent = [];
+	const pipe = new Pipe((b, p) => {
+		sent.push(new TextDecoder().decode(b));
+		p.push("\r\nread_addr(0X300C000)=0XC001112C;\r\nclose slot.\r\n");
+	});
 	const u = new Usmart(pipe);
 	assert.equal(await u.probe(), true);
-	assert.deepEqual(sent, ["@read_addr(0x0300c000)\r\n"]);
-	await assert.rejects(u.send("write_addr(0x03000000,0)"), DB25DError);
+	assert.deepEqual(sent, ["@AT read_addr(0x0300c000)\r\n"]);
+	for (const bad of ["write_addr(0x0300c000,0x00000000)", "write_addr(0x00053ffc,0x00000000)", "write_addr(0x00058000,0x00000000)",
+		"write_addr(0x18000844,0x00054000)", "DMRCALL", "01", "TC58_INTF_BlocksErase(0)", "read_addr(0x0300c000);printk"])
+		await assert.rejects(u.send(bad), DB25DError, bad);
+	await u.send("write_addr(0x00057ffc,0x00000001)");
+	await u.send(`write_addr(0x${HIJACK.toString(16)},0x00054000)`);
 	assert.equal(await new Usmart(new Pipe(() => {})).probe(200), false, "nothing answers");
 });
 
-test("USMART: the read order starts with the application's first 4 KB and covers every word once", () => {
-	const o = usmartOrder(0x20000);
-	assert.equal(o[0], 0x0300C000);
-	assert.equal(o[1023], 0x0300CFFC);
-	assert.equal(o.length, 0x20000 / 4);
-	assert.equal(new Set(o).size, o.length);
+test("USMART: a write counts only with its echo, and the echo must carry the value", async () => {
+	let mode = "ok";
+	const pipe = new Pipe((b, p) => {
+		const m = /write_addr\(0x([0-9a-f]+),0x([0-9a-f]+)\)/.exec(new TextDecoder().decode(b));
+		const v = mode === "wrong" ? 1 : parseInt(m[2], 16);
+		if (mode !== "silent") p.push(`\r\nwrite_addr(0X${parseInt(m[1], 16).toString(16).toUpperCase()},0X${v.toString(16).toUpperCase()});\r\nclose slot.\r\n`);
+	});
+	const u = new Usmart(pipe, { quiet: 5 });
+	assert.equal(await u.writeWord(0x54000, 0x7020C080), true);
+	mode = "wrong";
+	assert.equal(await u.writeWord(0x54000, 0x7020C080), false);
+	mode = "silent";
+	assert.equal(await u.writeWord(0x54000, 0x7020C080, 100), false);
+	await assert.rejects(u.writeWordRetry(0x54000, 5, 2), /did not answer/);
 });
 
-test("USMART: a read with a lost reply and flaky head words is exact, and a stopped read resumes", { timeout: 60000 }, async () => {
-	const flash = randomFlash(0x200000);
-	const limit = 0x10000;
-	const { pipe } = consoleRadio(flash, { drop: 1, flaky: 7 });
-	const u = new Usmart(pipe);
-	const ac = new AbortController();
-	let state = null;
-	await assert.rejects(usmartDump(u, { limit, signal: ac.signal, onProgress: (d) => { if (d >= 3000) ac.abort(); },
-		onCheckpoint: (done, image) => { state = { done, image: image.slice() }; } }), DB25DError);
-	assert.ok(state.done >= 3000 && state.done < limit / 4);
-	const image = await usmartDump(u, { limit, state });
-	assert.ok(equal(image, flash.subarray(0, limit)));
+test("USMART: the build comes from the version string; an unknown build is reported as null", async (t) => {
+	const { r } = await stockDb25d(t);
+	assert.equal(await new Usmart(r.stream).build(), "018");
+	r.progmem.fill(0x20, 0x79F30, 0x79F50);
+	assert.equal(await new Usmart(r.stream).build(), null);
+});
+
+test("USMART: the stub goes into 0x54000, is read back, and the hijack word starts it; then it reads and writes the flash", { timeout: 120000 }, async (t) => {
+	const { r, sim } = await stockDb25d(t);
+	const { Stub } = await import("../static/js/flasher/stub.js");
+	const stubs = stubImages(json("c7000-stub.json"));
+	const u = new Usmart(r.stream, { quiet: 2 });
+	const phases = new Set();
+	await u.loadStub(stubs.image, { onProgress: (p) => phases.add(p) });
+	assert.deepEqual([...phases], ["write", "check", "start"]);
+	// the frames: the entry check, every word written, every word read back, the hijack word, one more frame
+	const n = Math.ceil(stubs.image.length / 4);
+	assert.equal(r.frames.length, 1 + n + n + 1 + 1);
+	assert.ok(r.frames.every((f) => /^(read_addr\(0x[0-9a-f]{8}\)|write_addr\(0x[0-9a-f]{8},0x[0-9a-f]{8}\))$/.test(f)));
+	assert.equal(r.frames.at(-2), "write_addr(0x18000848,0x00054000)");
+	assert.equal(r.state, "stub");
+	assert.ok(equal(r.loaded.subarray(0, stubs.image.length), stubs.image), "the RAM holds the image exactly");
+	const s = new Stub(r.stream, { log: () => {} });
+	await s.helloWithin(3000, "no stub");
+	await s.configure(C.boards.db25d.stub_board, C.led);
+	s.size.progmem = 0x200000;
+	assert.ok(equal(await s.dump("progmem", 0, 0x200000), sim.progmem), "the whole 2 MB, stock firmware included");
+	const image = randomFlash(0x3000);
+	image.set([0x2C, 0x11, 0x01, 0xC0], 0);
+	const res = await s.writeProgram(image, 0xC000, { appStart: C.app_start, appEnd: C.app_end });
+	assert.equal(res.written, 3);
+	assert.ok(equal(r.progmem.subarray(0xC000, 0xF000), image));
+});
+
+test("USMART: a word that reads back wrong stops the load before the hijack word is written", async (t) => {
+	const { r } = await stockDb25d(t);
+	const stubs = stubImages(json("c7000-stub.json"));
+	const set = r.ram.set.bind(r.ram);
+	r.ram.set = (a, v) => set(a, a === 0x54100 ? v ^ 0x100 : v);
+	await assert.rejects(new Usmart(r.stream, { quiet: 2 }).loadStub(stubs.image), /0x00054100/);
+	assert.equal(r.ram.get(HIJACK), undefined);
+	assert.equal(r.state, "firmware", "the original firmware still runs");
+});
+
+test("USMART: a radio whose application does not start with the stock entry is refused before any write", async (t) => {
+	const { r } = await stockDb25d(t);
+	r.progmem[0xC000] = 0;
+	await assert.rejects(new Usmart(r.stream).loadStub(stubImages(json("c7000-stub.json")).image), /original firmware/);
+	assert.ok(r.frames.every((f) => f.startsWith("read_addr")));
 });
 
 // ---- IAP
@@ -217,20 +265,44 @@ test("IAP: a checksum that differs is reported, and silence after the erase stop
 	await assert.rejects(new Iap(quiet).write(img, { eraseTimeout: 200 }), /erase/);
 });
 
-// ---- stubs by RAM span
+test("IAP: a backup's application area goes back through update mode; one without an application entry is refused", async () => {
+	const pm = randomFlash(0x200000);
+	pm.set([0x2C, 0x11, 0x01, 0xC0], 0xC000);
+	const [, area] = c7.restoreTarget(C, pm);
+	assert.throws(() => checkInstallImage(area), DB25DError, "a stock application is not an install image");
+	checkRestoreImage(area);
+	const head = area.subarray(0, 0x8000);	// the whole area is 500 pages: its head shows the same
+	const { pipe, got } = iapRadio();
+	await new Iap(pipe).write(head, { restore: true });
+	assert.ok(equal(Uint8Array.from(got.pages.flatMap((p) => [...p]).slice(0, head.length)), head));
+	const bad = area.slice();
+	bad[0] = 0xFF;
+	assert.throws(() => checkRestoreImage(bad), DB25DError);
+	await assert.rejects(new Iap(iapRadio().pipe).write(bad.subarray(0, 0x8000), { restore: true }), DB25DError);
+});
 
-test("the stub for a running DB25-D is chosen by the base ODR reports and refused for another span", async () => {
+// ---- one stub for every RAM span
+
+test("the universal stub loads into every span a running DB25-D offers and runs from 0x30000", async (t) => {
 	const stubs = stubImages(json("c7000-stub.json"));
-	const a = stubs.forBase(0x30000), b = stubs.forBase(0x1D000), d = stubs.forBase(0x17000);
-	assert.ok(a && b && d);
-	assert.equal(stubs.forBase(0x20000), null);
-	assert.equal(await sha256(a.image), stubs.byBase[0x30000].sha);
-	stubFits(a.image, 0x30000, 0x20000);
-	stubFits(b.image, 0x1D000, 0x12000);
-	stubFits(d.image, 0x17000, 0x18000);
-	assert.throws(() => stubFits(a.image, 0x1D000, 0x12000), StubError);
-	assert.throws(() => stubFits(b.image, 0x30000, 0x20000), StubError);
-	assert.throws(() => stubFits(new Uint8Array(100), 0x30000, 0x20000), StubError);
+	univFits(stubs.image, 0x30000, [0x30000, 0x20000]);
+	univFits(stubs.image, 0x1D000, [0x1D000, 0x12000]);
+	const { FakeC7000 } = await import("../static/js/flasher/fakec7000.js");
+	const { Stub } = await import("../static/js/flasher/stub.js");
+	const r = new FakeC7000({ progmem: randomFlash(0x200000), dataSize: 0x200000, speed: 200, romWindow: 400, bootTime: 200,
+		board: "DB25-D", stubSpan: [0x1D000, 0x12000] });
+	t.after(() => r.stop());
+	r.progmem.set(new TextEncoder().encode("OpenDigitalRadio"), 0xD000);
+	r.stubEntry = true;
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 800));
+	const s = new Stub(r.stream, { log: () => {} });
+	await s.enterFromOdr(stubs.image);
+	assert.equal(r.state, "stub");
+	assert.ok(s.v6 && s.v6.run === 0x30000, "HELLO v6 reports the run address");
+	await s.configure(C.boards.db25d.stub_board, C.led);
+	assert.deepEqual(r.stubCfg, { board: 3, flags: 1 });
+	assert.deepEqual([...r.configs[0].subarray(8, 10)], [45, 44], "power latch and key pins sent");
 });
 
 // ---- the stub on a 2 MB program flash
@@ -245,7 +317,7 @@ test("the stub reads the DB25-D's whole 2 MB program flash only once told its si
 	const s = new Stub(r.stream, { log: () => {} });
 	setTimeout(() => r.powerOn(), 50);
 	await s.waitForRom(5000);
-	await s.loadThroughRom(stubs.rom, stubs.romLoad);
+	await s.loadThroughRom(stubs.image, stubs.load);
 	await assert.rejects(s.dump("progmem", 0x1F0000, 0x1F2000), StubError);
 	s.size.progmem = 0x200000;
 	assert.ok(equal(await s.dump("progmem", 0x1F0000, 0x1F2000), progmem.subarray(0x1F0000, 0x1F2000)));

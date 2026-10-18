@@ -44,9 +44,9 @@ BOARDS = {
     "db25d": {"slot": (0x030E8000, 0x03100000), "run": (0x0001CEB0, 0x0002F9D0), "tables": (0x180014AC, 0x18004204),
               # What the web flasher needs beyond the codec (site/odrsite/repo.py c7000_flash): the program flash is 2 MB
               # (Boya, JEDEC 68 40 15) and there is no data flash on the SPI0 chip select the other radios use (the
-              # DB25-D has a SPI NAND there, which the stub does not read). The power-on stub is the one linked for
-              # 0x30000: the first stage takes blocks below 0x4E000, and it runs at the loader's 36 MHz APB
-              "progmem_size": 0x200000, "data_flash": False, "power_on_stub": 0x30000},
+              # DB25-D has a SPI NAND there, which the page does not read). Its stock firmware answers a debug console
+              # the page reads before ODR is installed (stock_console)
+              "progmem_size": 0x200000, "data_flash": False, "stock_console": True},
 }
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 

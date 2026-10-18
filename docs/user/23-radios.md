@@ -307,11 +307,14 @@ It is not in the releases, so there is no odrflash route. It marks the radio as 
 
 | The radio runs | What the radio programming utility does |
 |---|---|
-| The original firmware | Reads the whole program memory through the original firmware's diagnostic console and saves it as a backup file. Takes a long time (one value per request) and can be stopped and continued. The voice codec is taken from that read when the version is one of the 018 builds (2024-05-09 or later). Firmware 909E.DBB.EARSAB.020 has no codec recipe yet: select a stock 018 file instead, whose codec works on every version |
-| The original firmware, no read wanted | Skips the read. Then the original firmware cannot be restored |
-| Either of the above | Installs through the update mode of the original loader: turn the radio off, hold P1 and press power. The red LED lights and the display stays blank. The loader itself is never written |
+| The original firmware (909E.DBB.EARSAB.018 or .020) | Switches the radio to update mode through the original firmware's diagnostic console: about 4 minutes, with no keys and nothing written to the radio's memory. Then it backs up the whole 2 MB program memory (about a minute), installs, and restarts the radio, as for a radio that runs OpenDigitalRadio. The voice codec is taken from the backup when the version is one of the 018 builds (2024-05-09 or later). Firmware 909E.DBB.EARSAB.020 has no codec recipe yet: select a stock 018 file instead, whose codec works on every version |
+| Another version of the original firmware, or a radio that does not start | Installs through the factory update mode of the original loader: turn the radio off, hold P1 and press power. The red LED lights and the display stays blank. No backup is taken this way. The loader itself is never written |
 | OpenDigitalRadio | Hands over to a loader in RAM over the debug link (no keys, no power cycle), writes only the changed sectors and restarts the radio. The backup of the program memory is optional |
 | OpenDigitalRadio that does not answer | "Recover at Power-On": the first stage answers for half a second at every power-on, and the radio programming utility loads the loader then |
+
+When nothing answers on the cable, Troubleshooting offers "Reinstall in Factory Update Mode", and Restore puts a backup
+back through the factory update mode the same way. Restore through the console or OpenDigitalRadio is the normal route;
+the factory update mode is the way back when neither answers.
 
 The channels and contacts in the radio's NAND memory are not part of the radio programming utility's
 backup; back them up with the manufacturer's programming software or `tools/cps_client.py` (below).

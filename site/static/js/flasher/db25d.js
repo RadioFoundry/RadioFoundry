@@ -3,26 +3,44 @@
 // The Radioddity DB25-D PRO's two stock-side protocols, for a radio that does not run ODR yet (docs/spec/hardware-db25d.md
 // 7). Both run on the K1 programming cable (UART1, 115200 8N1):
 //
-//   USMART   read the whole program flash of a radio running the stock firmware, through the debug console the stock
-//            application carries. Read only.
-//   IAP      write an install image (ODR's first stage and application, plus the codec slot) through the vendor IAP
-//            loader the radio enters with P1 held at power-on. The image is the first stage followed by ODR.
+//   USMART   the debug console the stock application carries. It reads and writes single words of memory, which is
+//            enough to put the universal stub (stub.js) into a free stretch of RAM and start it. The stub then reads and
+//            writes the program flash as on every other HR_C7000 radio. The console writes RAM only, never flash.
+//   IAP      the vendor loader's update mode, entered with P1 held at power-on: writes an image to the application
+//            area. The recovery route when neither the stock console, ODR nor the first stage's power-on window answers.
 //
 // Once ODR runs, the radio is reached the way the other HR_C7000 radios are (stub.js, c7000.js).
 
 import { be32, concat, sleep } from "./bytes.js";
+import { univFits } from "./stub.js";
 
 export class DB25DError extends Error {}
 
 export const FLASH_BASE = 0x03000000, FLASH_SIZE = 0x200000;
-export const APP_HEAD = [0x0300C000, 0x0300D000];	// the application's first 4 KB: read first, twice
 
 // ---------------------------------------------------------------------------------------------------------------
-// USMART: the stock firmware treats a '@' byte as "the next line is a console command"; read_addr(addr) returns one
-// 32-bit word of memory, and the program flash is memory-mapped at 0x03000000. One word per round trip.
+// USMART (hardware-db25d.md 7, Stub from stock). A command is one frame: "@AT", one filler byte, the text, CR LF. The
+// console times every byte at 20 ms, so a frame goes out in a single write; anything unframed is ignored. Replies:
+//   read_addr(0x0300c000)        -> "read_addr(0X300C000)=0XC001112C;"
+//   write_addr(0x00054000,0x1)   -> "write_addr(0X54000,0X1);" (the function returns nothing; the echo is the reply)
+// The stock application's own log text follows on the same line, so a reply is matched by its address.
+//
+// The stub goes into 0x54000-0x58000, free RAM above the heap in both known builds (018, 020). The console's command
+// table lives in RAM at 0x18000840; its cmd_rec entry (+8) is called through the table for every ordinary frame, so
+// pointing it at the stub makes the next frame start the stub.
 
-const LINE = /^read_addr\(0x[0-9a-f]{8}\)$/;
-const REPLY = /read_addr\(\s*(0[xX][0-9A-Fa-f]+|\d+)\s*\)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)\s*;/g;
+const FRAME = "@AT ";
+export const STUB_WINDOW = [0x54000, 0x4000];		// [load address, size]
+export const HIJACK = 0x18000848;
+export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first word: 2C 11 01 C0
+// The version string "EARSAB.0NN" of each known build, and a word just below it: four words cover it
+export const BUILDS = [["018", 0x03079F3C], ["020", 0x0307DCCC]];
+
+const READ = /^read_addr\(0x[0-9a-f]{8}\)$/;
+const WRITE = /^write_addr\(0x([0-9a-f]{8}),0x[0-9a-f]{8}\)$/;
+const NUM = "(0[xX][0-9A-Fa-f]+|\\d+)";
+const READ_REPLY = new RegExp(`read_addr\\(\\s*${NUM}\\s*\\)\\s*=\\s*${NUM}\\s*;`, "g");
+const WRITE_REPLY = new RegExp(`write_addr\\(\\s*${NUM}\\s*,\\s*${NUM}\\s*\\)\\s*;`, "g");
 
 // one char per byte (TextDecoder("latin1") is windows-1252 and would change the checksum bytes)
 const latin = (b) => {
@@ -33,28 +51,32 @@ const latin = (b) => {
 
 export const hex8 = (n) => (n >>> 0).toString(16).padStart(8, "0");
 
+// Writes may go to the stub window and to the one hijack word; nothing else, and never to flash
+const writable = (a) => a === HIJACK || (a >= STUB_WINDOW[0] && a + 4 <= STUB_WINDOW[0] + STUB_WINDOW[1]);
+
 export class Usmart {
-	constructor(stream, { log = () => {} } = {}) {
+	constructor(stream, { log = () => {}, quiet = 80 } = {}) {
 		this.s = stream;
 		this.log = log;
+		this.quiet = quiet;	// after a write's echo, how long the line must stay quiet before the next frame
 	}
 
-	// The only things this class can send: '@' and read_addr lines. Anything else is refused before the port.
+	// The only things this class can send: framed read_addr lines, and write_addr lines to the stub window or the
+	// hijack word. Anything else is refused before the port.
 	async send(line) {
-		if (!LINE.test(line)) throw new DB25DError(`refused to send ${JSON.stringify(line)}`);
-		await this.s.write(new TextEncoder().encode(`@${line}\r\n`));
+		const w = WRITE.exec(line);
+		if (!(READ.test(line) || (w && writable(parseInt(w[1], 16))))) throw new DB25DError(`refused to send ${JSON.stringify(line)}`);
+		await this.s.write(new TextEncoder().encode(`${FRAME}${line}\r\n`));
 	}
 
-	// One read_addr call: the 32-bit value, or null when no matching reply came in time
-	async readWord(addr, timeout = 1000) {
-		this.s.clear();
-		await this.send(`read_addr(0x${hex8(addr)})`);
+	// Wait until a reply matching re with first number `addr` came in; returns its numbers, or null after `timeout`
+	async reply(re, addr, timeout) {
 		const until = Date.now() + timeout;
 		while (Date.now() < until) {
 			const text = latin(this.s.buf);
 			if (text.endsWith("\n")) {
-				for (const m of text.matchAll(REPLY)) {
-					if (Number(m[1]) === addr) return Number(m[2]) >>> 0;
+				for (const m of text.matchAll(re)) {
+					if (Number(m[1]) === addr) return [Number(m[1]) >>> 0, Number(m[2]) >>> 0];
 				}
 			}
 			await sleep(1);
@@ -62,62 +84,97 @@ export class Usmart {
 		return null;
 	}
 
-	async readWordRetry(addr, tries = 6, signal) {
+	// One read_addr: the 32-bit value, or null when no matching reply came in time
+	async readWord(addr, timeout = 1000) {
+		this.s.clear();
+		await this.send(`read_addr(0x${hex8(addr)})`);
+		const r = await this.reply(READ_REPLY, addr, timeout);
+		return r ? r[1] : null;
+	}
+
+	// One write_addr: true once the radio echoed the address and the value, false when it did not. A write to a fixed
+	// address can be sent again.
+	async writeWord(addr, value, timeout = 1000) {
+		this.s.clear();
+		await this.send(`write_addr(0x${hex8(addr)},0x${hex8(value)})`);
+		const r = await this.reply(WRITE_REPLY, addr, timeout);
+		if (!r) return false;
+		// the stock application prints its own lines after the echo: let them pass before the next frame
+		let n = this.s.buf.length, last = Date.now();
+		const until = Date.now() + 400;
+		while (Date.now() < until && Date.now() - last < this.quiet) {
+			if (this.s.buf.length !== n) { n = this.s.buf.length; last = Date.now(); }
+			await sleep(2);
+		}
+		return r[1] === value >>> 0;
+	}
+
+	async retry(what, addr, fn, tries, signal) {
 		for (let i = 0; i < tries; i++) {
 			if (signal?.aborted) throw new DB25DError("stopped");
-			const v = await this.readWord(addr, 1000 + i * 1000);
-			if (v !== null) return v;
-			await sleep(200);
+			const v = await fn(1000 + i * 500);
+			if (v !== null && v !== false) return v;
+			await sleep(100);
 		}
-		throw new DB25DError(`no answer for 0x${hex8(addr)} after ${tries} tries. Run the read again to continue where it stopped`);
+		throw new DB25DError(`the console did not answer the ${what} of 0x${hex8(addr)} after ${tries} tries`);
 	}
 
-	// Is a radio with the stock firmware on the cable? true when the console answers a read of the application's first word
+	readWordRetry(addr, tries = 6, signal) {
+		return this.retry("read", addr, (t) => this.readWord(addr, t), tries, signal);
+	}
+
+	writeWordRetry(addr, value, tries = 6, signal) {
+		return this.retry("write", addr, (t) => this.writeWord(addr, value, t), tries, signal);
+	}
+
+	// Is a radio with the stock firmware on the cable? true when the console answers a read of the application's
+	// first word
 	async probe(timeout = 1500) {
-		return (await this.readWord(APP_HEAD[0], timeout)) !== null;
+		return (await this.readWord(APP_SIG[0], timeout)) !== null;
 	}
-}
 
-// Word addresses in reading order: the application's first 4 KB, then the rest ascending
-export function usmartOrder(limit = FLASH_SIZE) {
-	const order = [];
-	for (let a = APP_HEAD[0]; a < APP_HEAD[1]; a += 4) order.push(a);
-	for (let a = FLASH_BASE; a < FLASH_BASE + limit; a += 4) if (a < APP_HEAD[0] || a >= APP_HEAD[1]) order.push(a);
-	return order;
-}
-
-// Read the program flash (first `limit` bytes of it). state: {done, image} from an earlier, stopped run (words done in
-// reading order, and the image so far), or null. onProgress(done, total), onCheckpoint(done, image) now and then, so a
-// stopped read can resume. The first 4 KB are read twice and must agree. Returns the image (limit bytes).
-export async function usmartDump(con, { limit = FLASH_SIZE, state = null, onProgress = () => {}, onCheckpoint = () => {}, signal, log = () => {} } = {}) {
-	const order = usmartOrder(limit);
-	const image = state?.image && state.image.length >= limit ? state.image : new Uint8Array(limit).fill(0xFF);
-	const view = new DataView(image.buffer, image.byteOffset, image.byteLength);
-	let done = state?.done || 0;
-	if (done) log(`continuing at word ${done} of ${order.length}`);
-	try {
-		for (let i = done; i < order.length; i++) {
-			if (signal?.aborted) throw new DB25DError("stopped");
-			const addr = order[i];
-			let v = await con.readWordRetry(addr, 6, signal);
-			if (i < 1024) {
-				let v2 = await con.readWordRetry(addr, 6, signal);
-				let again = 0;
-				while (v2 !== v) {
-					if (++again > 20) throw new DB25DError(`0x${hex8(addr)} reads differently every time`);
-					[v, v2] = [v2, await con.readWordRetry(addr, 6, signal)];
-				}
-			}
-			view.setUint32(addr - FLASH_BASE, v, true);
-			done = i + 1;
-			if (done % 64 === 0 || done === order.length) onProgress(done, order.length);
-			if (done % 4096 === 0) onCheckpoint(done, image);
+	// Which stock build runs: "018", "020", or null for one this page does not know (its RAM may differ)
+	async build(signal) {
+		for (const [name, addr] of BUILDS) {
+			const words = [];
+			for (let i = 0; i < 4; i++) words.push(await this.readWordRetry(addr + 4 * i, 6, signal));
+			const bytes = new Uint8Array(16);
+			words.forEach((w, i) => new DataView(bytes.buffer).setUint32(4 * i, w, true));
+			const text = latin(bytes);
+			if (text.includes(`EARSAB.${name}`)) return name;
 		}
-	} finally {
-		onCheckpoint(done, image);
+		return null;
 	}
-	onProgress(done, order.length);
-	return image;
+
+	// Write the universal stub into the window, read every word back, then point the hijack word at it and send one
+	// more frame, which starts it. The console stops answering from then on: the stub owns the cable.
+	// onProgress(phase, done, total), phase "write" | "check" | "start".
+	async loadStub(image, { onProgress = () => {}, signal } = {}) {
+		const [load, size] = STUB_WINDOW;
+		univFits(image, load, [load, size]);
+		const pad = new Uint8Array(Math.ceil(image.length / 4) * 4);
+		pad.set(image);
+		const words = Array.from({ length: pad.length / 4 }, (_, i) => new DataView(pad.buffer).getUint32(4 * i, true));
+		const sig = await this.readWordRetry(APP_SIG[0], 6, signal);
+		if (sig !== APP_SIG[1]) throw new DB25DError(`the application does not start as the original firmware does (0x${hex8(sig)})`);
+		for (let i = 0; i < words.length; i++) {
+			await this.writeWordRetry(load + 4 * i, words[i], 6, signal);
+			if (i % 16 === 15 || i === words.length - 1) onProgress("write", i + 1, words.length);
+		}
+		for (let i = 0; i < words.length; i++) {
+			const v = await this.readWordRetry(load + 4 * i, 6, signal);
+			if (v !== words[i]) throw new DB25DError(`RAM 0x${hex8(load + 4 * i)} reads 0x${hex8(v)} instead of 0x${hex8(words[i])}`);
+			if (i % 16 === 15 || i === words.length - 1) onProgress("check", i + 1, words.length);
+		}
+		onProgress("start", 0, 1);
+		this.log(`stub written to 0x${hex8(load)} and checked (${words.length} words); starting it`);
+		// Sent once, never again and never read back: with the word in place every frame starts the stub, a resend
+		// included. A lost echo is not an error here; whether the stub came up is what the caller checks.
+		if (!(await this.writeWord(HIJACK, load))) this.log("no echo for the hijack word; starting anyway");
+		this.s.clear();
+		await this.send(`read_addr(0x${hex8(APP_SIG[0])})`);
+		onProgress("start", 1, 1);
+	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -157,6 +214,13 @@ export function checkInstallImage(image) {
 	if (!head.every((b, i) => image[i] === b)) throw new DB25DError("this is not a DB25-D install image (it does not start with the first stage's 2C 11 01 C0)");
 	const app = [0x80, 0xC0, 0x20, 0x70];
 	if (!app.every((b, i) => image[0x1000 + i] === b)) throw new DB25DError("the application after the first stage does not start with ODR's reset handler");
+}
+
+// A program memory backup's application area put back through the loader (a backup of the original firmware, or of
+// ODR): it must start with the entry the loader checks at power-on, or the radio would stay in update mode
+export function checkRestoreImage(image) {
+	if (image.length <= 0x1000 || ![0x2C, 0x11, 0x01, 0xC0].every((b, i) => image[i] === b))
+		throw new DB25DError("the backup's application area does not start with an application the loader would start");
 }
 
 // The loader writes as far as the image reaches, so the 0xFF tail target() pads on is dropped (rounded up to whole words)
@@ -208,8 +272,9 @@ export class Iap {
 	}
 
 	// Erase and write `image`. onPage(i, total). Returns the checksum the radio reported (it matches ours or this throws).
-	async write(image, { onPage = () => {}, onPhase = () => {}, signal, eraseTimeout = 60000, pageTimeout = 10000 } = {}) {
-		checkInstallImage(image);
+	// restore: the image is a backup's application area (checkRestoreImage), not an install image
+	async write(image, { onPage = () => {}, onPhase = () => {}, signal, eraseTimeout = 60000, pageTimeout = 10000, restore = false } = {}) {
+		(restore ? checkRestoreImage : checkInstallImage)(image);
 		const { n, pages, sum } = iapPlan(image);
 		onPhase("erase");
 		this.s.clear();

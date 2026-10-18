@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { crc32, equal, sha256 } from "../static/js/flasher/bytes.js";
 import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
-import { Stub, stubImages, StubError, DONE_LED } from "../static/js/flasher/stub.js";
+import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation } from "../static/js/flasher/fakec7000.js";
@@ -23,10 +23,18 @@ const C = json("flash-boards.json").c7000;
 const stubs = stubImages(json("c7000-stub.json"));
 const quiet = () => {};
 
-test("the embedded stub images decode to their SHA-256", async () => {
-	assert.equal(await sha256(stubs.rom), stubs.romSha);
-	assert.equal(await sha256(stubs.odr), stubs.odrSha);
-	assert.equal(stubs.romLoad, 0x10000);
+test("the universal stub decodes to its SHA-256 and fits every way in", async () => {
+	assert.equal(await sha256(stubs.image), stubs.sha);
+	assert.equal(stubs.load, 0x10000);
+	assert.deepEqual(univLayout(stubs.image), [stubs.run, stubs.end]);
+	assert.equal(stubs.run, 0x30000);
+	// boot ROM / first stage, ODR on the DM-32UV and DM-1801 Pro, the DB25-D with and without DMR, a stock DB25-D's console
+	for (const [load, win] of [[0x10000, null], [0x17000, [0x17000, 0x18000]], [0x1D000, [0x1D000, 0x12000]], [0x30000, [0x30000, 0x20000]], [0x54000, null]])
+		univFits(stubs.image, load, win);
+	assert.throws(() => univFits(stubs.image, 0x30800), StubError);		// overlaps its run copy
+	assert.throws(() => univFits(stubs.image, 0x57000), StubError);		// past the end of SRAM
+	assert.throws(() => univFits(stubs.image, 0x1D000, [0x1D000, 0x1000]), StubError);
+	assert.throws(() => univFits(new Uint8Array(4096), 0x10000), StubError);
 });
 
 test("LZ4: stubtool's block decodes, and our encoder round-trips", () => {
@@ -79,7 +87,7 @@ test("a sector record that belongs to another sector is caught by the radio's ch
 	const s = new Stub(r.stream, { log: quiet });
 	setTimeout(() => r.powerOn(), 50);
 	await s.waitForRom(5000);
-	await s.loadThroughRom(stubs.rom, stubs.romLoad);
+	await s.loadThroughRom(stubs.image, stubs.load);
 	const got = await s.dump("progmem", 0x40000, 0xA0000);
 	assert.ok(equal(got, sim.progmem.subarray(0x40000, 0xA0000)), "the read matches the radio");
 	assert.equal(r.faults.misplace.length, 0, "both bad records were sent");
@@ -92,8 +100,10 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 	const s = new Stub(r.stream, { log: quiet });
 	setTimeout(() => r.powerOn(), 50);
 	await s.waitForRom(5000);
-	await s.loadThroughRom(stubs.rom, stubs.romLoad);
+	await s.loadThroughRom(stubs.image, stubs.load);
 	assert.equal(r.state, "stub");
+	await s.configure(C.boards.dm1801pro.stub_board, C.led);
+	assert.equal(r.stubCfg.board, 2, "the DM-1801 Pro profile reached the stub");
 	await s.setupLed(C.led.red, C.led.green);
 	const progmem = await s.dump("progmem", 0, C.progmem_size);
 	assert.ok(equal(progmem, sim.progmem), "program memory read exactly despite damaged frames");
@@ -128,7 +138,7 @@ test("simulated radio: after the stub's reset the host link stays silent until a
 	const s = new Stub(r.stream, { log: quiet });
 	setTimeout(() => r.powerOn(), 50);
 	await s.waitForRom(5000);
-	await s.loadThroughRom(stubs.rom, stubs.romLoad);
+	await s.loadThroughRom(stubs.image, stubs.load);
 	await s.resetChip();
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
@@ -149,8 +159,13 @@ test("ODR path: no buttons, keep the codec, write only what changed", async (t) 
 	assert.equal((await probe(link)).codec, "dm1801pro-049");
 	assert.ok(await Stub.odrOffer(link));
 	const s = new Stub(r.stream, { log: quiet });
-	await s.enterFromOdr(stubs.odr);
+	await s.enterFromOdr(stubs.image);
 	assert.equal(r.state, "stub");
+	assert.ok(s.v6 && s.v6.run === 0x30000, "HELLO v6 reports the run address");
+	const image0 = r.progmem.slice(0xC000, 0xC000 + 0x40000);
+	const [st0, d0] = c7.target(sim.c, "dm1801pro", image0, null);
+	await assert.rejects(s.writeProgram(d0, st0, { appStart: C.app_start, appEnd: C.app_end }), /configuration/, "no write before CONFIG");
+	await s.configure(C.boards.dm1801pro.stub_board, C.led);
 	const slot = await s.dump("progmem", C.boards.dm1801pro.slot[0], C.boards.dm1801pro.slot[1]);
 	assert.ok(await c7.parseSlot(sim.c, "dm1801pro", slot), "the slot in flash checks");
 	const image = r.progmem.slice(0xC000, 0xC000 + 0x40000);
@@ -169,7 +184,7 @@ test("ODR without stub entry says so; the stub refuses writes outside the applic
 	await new Promise((ok) => setTimeout(ok, 800));
 	assert.equal(await Stub.odrOffer(new Link(r.stream)), null);
 	const s = new Stub(r.stream, { log: quiet });
-	await assert.rejects(s.enterFromOdr(stubs.odr), StubError);
+	await assert.rejects(s.enterFromOdr(stubs.image), StubError);
 	await assert.rejects(s.writeProgram(new Uint8Array(4096), 0x8000, { appStart: C.app_start, appEnd: C.app_end }), /outside the application/);
 });
 
