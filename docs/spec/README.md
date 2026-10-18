@@ -20,6 +20,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | [aprs.md](aprs.md) | APRS on FM and over DMR |
 | [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive (parked) |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
+| [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
 | [codeplug-native.md](codeplug-native.md) | Native codeplug (draft) |
 
 ## Host link and network
@@ -30,6 +31,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
 | [codeplug-port.md](codeplug-port.md) | Stock codeplug to ODR: the clean-up, contacts, CPS write shared by the migration tools |
 | [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
+| [stub-stm32f4.md](stub-stm32f4.md) | The STM32F4 flash stub: entry from ODR, USB, protocol, safety rules, update order |
 | [mmdvm-protocol.md](mmdvm-protocol.md) | The MMDVM modem protocol (hotspot mode) |
 | [usb-network.md](usb-network.md) | USB network personality, the IP gateway, control station mode |
 | [ppp.md](ppp.md) | PPP on the serial host link |

@@ -502,6 +502,48 @@ static void test_rf_priority(void)
 	slots(60);
 }
 
+// A call of silence (the SDR bench's test call): every superframe's burst B is the same as the last one's. At the
+// 90 ms repeat latency our copy is out of the echo window when the next one arrives; a modem without tx_fill repeated
+// 210 ms late and dropped 3 of them as our echo (DM-32UV, HIL 2026-10-16)
+static void test_silent_call(void)
+{
+	hotspot_sfr_view_t v;
+	int o;
+
+	sfr_on();
+	o = out_count;
+	rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1, 1, DMR_SYNC_TS1);
+	rx_then_wait();
+	for (int sf = 0; sf < 3; sf++) {
+		for (uint8_t i = 0; i < 6; i++) {
+			rx_voice(i, 0x20, LC1, 1);
+			rx_then_wait();
+		}
+	}
+	// The terminator heard while keyed with its RS bytes garbled and the chip's flag set (gotchas 14.1): rebuilt
+	dmr_burst_t t;
+	memset(&t, 0, sizeof(t));
+	t.kind = DMR_BURST_TERMINATOR_LC;
+	t.sync = DMR_SYNC_TS1;
+	t.cc = 1;
+	t.ts = 1;
+	t.in_step = true;
+	t.len = 12;
+	dmr_lc_encode_full(LC1, DMR_RS_MASK_TERMINATOR, t.payload);
+	t.payload[10] ^= 0x5A;
+	memcpy(t.lc, t.payload, 9);
+	sim_rx(&t);
+	slots(6);
+	hotspot_sfr_get_view(&v);
+	CHECK(v.stats.rx_bad_crc == 0 && v.stats.rx_lc_rebuilt == 1);
+	CHECK(air_count_kind(DMR_BURST_TERMINATOR_LC, 0) == 1);
+	CHECK(v.stats.rx_echo == 0);
+	CHECK(v.stats.rx_repeated == 20);
+	CHECK(count_out(MMDVM_DMR_DATA1, o) == 20);	// the terminator too
+	CHECK(air_count_kind(DMR_BURST_VOICE, 0) == 18);
+	slots(60);
+}
+
 static void test_echo_and_late_entry(void)
 {
 	hotspot_sfr_view_t v;
@@ -642,6 +684,7 @@ int main(void)
 	test_rf_call();
 	test_net_stream();
 	test_rf_priority();
+	test_silent_call();
 	test_echo_and_late_entry();
 	test_vendor();
 	test_beacon();

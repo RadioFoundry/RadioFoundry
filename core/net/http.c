@@ -115,8 +115,11 @@ static void status_json(dl_text_t *t)
 	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\",\"power\":", (unsigned)ch->rx_hz,
 		(unsigned)ch->tx_hz, (ch->mode == RADIO_MODE_DMR) ? "dmr" : "fm", (ch->bw == RADIO_BW_25K) ? "25" : "12.5");
 	json_str(t, pw);
-	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u,\"battery_pct\":%u,\"battery_mv\":%u,\"hotspot\":%s", v->rssi_dbm,
-		v->squelch, v->battery_pct, v->battery_mv, bool_s(v->hotspot));
+	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u", v->rssi_dbm, v->squelch);
+	if (board_has_battery()) {	// a radio without a battery leaves both fields out
+		dl_text(t, ",\"battery_pct\":%u,\"battery_mv\":%u", v->battery_pct, v->battery_mv);
+	}
+	dl_text(t, ",\"hotspot\":%s", bool_s(v->hotspot));
 #if CONFIG_DMR
 	if (ch->mode == RADIO_MODE_DMR) {
 		dl_text(t, ",\"dmr\":{\"own_id\":%u,\"cc\":%u,\"ts\":%u,\"target\":%u,\"private\":%s,\"heard\":%u}",
@@ -272,8 +275,8 @@ static bool screen_ok(void)
 {
 	const hal_display_t *d = board.display;
 
-	return (d != NULL) && (d->bpp == 16) && (gfx_framebuffer() != NULL) &&
-	       ((uint32_t)d->width * d->height * 2u <= GFX_FB_BYTES);
+	return (d != NULL) && (gfx_framebuffer() != NULL) &&
+	       ((GFX_INDEXED && d->bpp == 4) || ((d->bpp == 16) && ((uint32_t)d->width * d->height * 2u <= GFX_FB_BYTES)));
 }
 
 static uint32_t bmp_row(void)
@@ -286,7 +289,6 @@ static void bmp_bytes(uint32_t off, uint8_t *out, size_t n)
 {
 	const hal_display_t *d = board.display;
 	uint32_t row = bmp_row(), raw = (uint32_t)d->width * 2u;
-	const uint8_t *fb = gfx_framebuffer();
 	uint8_t h[BMP_HEADER];
 
 	if (off < BMP_HEADER) {
@@ -312,7 +314,11 @@ static void bmp_bytes(uint32_t off, uint8_t *out, size_t n)
 		} else {
 			uint32_t p = off - BMP_HEADER, y = p / row, x = p % row;
 
-			out[i] = (x < raw) ? fb[y * raw + x] : 0;
+			if (x < raw) {
+				gfx_read_rgb565(y * raw + x, &out[i], 1);
+			} else {
+				out[i] = 0;
+			}
 		}
 	}
 	gfx_hold(hal_millis() + SHOT_HOLD_MS);

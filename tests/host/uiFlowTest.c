@@ -12,6 +12,7 @@
 #include <string.h>
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
+#include "ui/ui_screens.h"
 
 static int fails, flows_run;
 
@@ -29,6 +30,15 @@ typedef struct {
 static const flow_t flows[] = {
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
+	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,
+	// none on serial
+	{ "1 USB network: IP on the strip, no link arrows", "usbnet:on", "", "shows=IP nomarkafter=IP", 0, false },
+	{ "1 USB network brought up by the PC: the link arrows", "usbnet:up", "", "shows=IP markafter=IP", 0, false },
+	{ "1 USB serial again: no word", "usbnet:on", "usbnet:off", "hides=IP", 0, false },
+	{ "1 USB network: the PC brings the link up, the arrows appear", "usbnet:on", "usbnet:up", "markafter=IP", 0, false },
+	{ "1 USB network: the link goes down, the arrows go", "usbnet:up", "usbnet:on", "shows=IP nomarkafter=IP", 0, false },
+	{ "1 USB network: SCAN wins the strip's word", "usbnet:on", "ok 6 1", "scanning=1 shows=SCAN hides=IP", 3, false },
+	{ "1 USB network from Tools: IP", "", "ok 6 4 ok", "usbnet=1 shows=IP", 4, false },
 	{ "2 zone 2 positions away", "", "ok 4 down down ok", "zone=2 screen=home", 5, false },
 	{ "3 one-shot TG, 2nd in picker", "", "tt down ptt", "txid=91 txpriv=0", 3, false },
 	{ "3 one-shot typed TG 3100", "", "3 1 0 0 ptt", "txid=3100 txpriv=0", 5, false },
@@ -54,7 +64,71 @@ static const flow_t flows[] = {
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },
 	{ "C a channel's settings", "", "ok 5 ok", "screen=channel", 3, false },
-	{ "C go to it from its settings", "ok 5 down down ok", "ok", "screen=home pos=5", 1, false },
+	// The channel's last rows are Go to it and Save as new channel: two Ups from the first row (lists wrap)
+	{ "C go to it from its settings", "ok 5 down down ok", "up up ok", "screen=home pos=5", 3, false },
+	// task-flows.md 21 and 22 (ui.md 2.1). On channel 3 (DMR) the timeslot is the ninth row, the TX contact the tenth
+	{ "21 timeslot of the channel in use, saved", "", "ok 5 ok down down down down down down down down ok long:ok", "writes=1 toast=Saved_channel_3",
+	  13, true },
+	{ "21 TX contact opens the picker", "ok 5 ok down down down down down down down down down", "ok", "screen=chpick", 1, false },
+	{ "21 a change asks before discarding", "ok 5 ok down down down down down down down down ok", "back", "screen=discard", 1, false },
+	{ "21 keep editing", "ok 5 ok down down down down down down down down ok back", "ok", "screen=channel", 1, false },
+	{ "21 discard goes back to Channels", "ok 5 ok down down down down down down down down ok back", "down ok", "screen=channels", 2, false },
+	{ "21 the name opens text entry", "ok 5 ok", "ok", "screen=text", 1, false },
+	// Back deletes in text entry, and leaves once the field is empty (principles 4's one exception)
+	{ "21 Back deletes in text entry", "ok 5 ok ok 4 6", "back", "screen=text focus=COUNTY_DMRG", 1, false },
+	{ "21 Back on an empty name leaves", "ok 5 ok ok", "back back back back back back back back back back back",
+	  "screen=channel", 11, false },
+	// Text entry (ui.md 2.1): * deletes, multi-tap letters move on with another key, # cycles ABC -> 123 -> abc
+	{ "21 * deletes the name", "ok 5 ok ok", "quick quick quick quick quick quick quick quick quick quick long:7", "focus=7 screen=text", 11, false },
+	{ "21 a name by multi-tap", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "9 2 2 2 7 7 7 2", "focus=WCRA", 8, false },
+	{ "21 # to digits", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx 3 1 3", "focus=313", 4, false },
+	{ "21 # twice to lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx ctx 4 4 4", "focus=i", 5, false },
+	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "focus=a", 5, false },
+	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "focus=,", 4, false },
+	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "focus=COUNTY_DMRG locked=0", 1, false },
+	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "focus=7", 1, false },
+	{ "22 new from current settings, saved", "", "ok 5 up up up ok long:ok",
+	  "writes=1 toast=Saved_as_channel_41", 7, true },
+	// The channel editor's rules (ui.md 2.1). Channel 1 is an FM repeater (146.940, TX 600 kHz below), channel 3 DMR
+	// simplex; on channel 3 the own ID is row 12 and the TX time-out row 17
+	{ "E new RX keeps the repeater offset", "ok 5 up up ok down down down", "ok 1 4 7 0 0 ok",
+	  "shows=147.000 shows=146.4 shows=600_kHz", 7, false },
+	{ "E new RX: an offset off the bands makes it simplex", "ok 5 up up ok down down down", "ok 1 3 6 0 0 ok",
+	  "shows=136.000 hides=135.4 hides=-600", 7, false },
+	{ "E RX refuses a digit no band starts with", "ok 5 up up ok down down down", "ok 2", "toast=Bands:", 2, false },
+	{ "E RX needs the MHz digits", "ok 5 up up ok down down down", "ok 1 4 ok", "toast=Type_at_least screen=channel",
+	  4, false },
+	{ "E own ID refuses a digit past 16777215", "ok 5 ok down down down down down down down down down down down",
+	  "ok 1 6 7 7 7 2 1 6", "toast=IDs_go_up shows=1677721", 9, false },
+	{ "E own ID: Back takes back a digit", "ok 5 ok down down down down down down down down down down down",
+	  "ok 5 5 5 1 back ok", "shows=555 hides=5551", 7, false },
+	{ "E own ID: at most 8 digits", "ok 5 ok down down down down down down down down down down down",
+	  "ok 0 0 0 0 0 0 0 0 0 0", "shows=00000000 hides=000000000", 11, false },
+	{ "E time-out in steps of 15", "ok 5 ok down down down down down down down down down down down down down down down "
+	  "down", "ok 7 ok", "toast=Not_changed", 3, false },
+	{ "E time-out spinner", "ok 5 ok down down down down down down down down down down down down down down down down",
+	  "ok up up ok", "shows=30_s", 4, false },
+#if CONFIG_SUBTONE
+	// Channel 1's RX tone is row 9 (none), its TX tone row 10 (100.0): the spinner walks the standard tone list
+	{ "E RX tone spinner from none", "ok 5 up up ok down down down down down down down down", "ok up ok",
+	  "shows=67.0", 3, false },
+	{ "E TX tone spinner, Up", "ok 5 up up ok down down down down down down down down down", "ok up ok",
+	  "shows=103.5 hides=100.0", 3, false },
+	{ "E TX tone spinner, Down", "ok 5 up up ok down down down down down down down down down", "ok down ok",
+	  "shows=97.4", 3, false },
+#endif
+	{ "E DMR needs a TX contact to save", "ok 5 ok down down down down down down down down down", "ok up ok long:ok",
+	  "toast=Pick_a_TX writes=0", 4, false },
+	{ "E a name to save", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ok long:ok",
+	  "toast=Give_it_a_name writes=0", 2, false },
+	{ "E nothing changed to save", "ok 5 ok", "long:ok", "toast=No_changes writes=0", 1, false },
+	{ "E go to it asks for a save first", "ok 5 ok down down ok", "up up up up up ok", "toast=Save_first screen=channel",
+	  6, false },
+	{ "E saved: Back leaves without asking", "ok 5 ok down down ok", "long:ok back", "screen=channels writes=1", 2,
+	  true },
+	{ "E save as new takes the next free number", "ok 5 ok up ok", "ok", "toast=Saved_as_channel_42 writes=2", 1, true },
+	{ "E the new channel is in the list", "ok 5 up up up ok long:ok", "back up", "focus=41_COUNTY_DMR_2", 2, true },
+	{ "E new from the VFO is named by its frequency", "ok 4 up ok", "ok 5 ok", "shows=146.520 shows=41", 3, false },
 	{ "C go to it from the list", "ok 5 down", "ctx", "screen=home pos=4", 1, false },
 	{ "12 into the VFO", "", "ok 4 up ok", "vfo=1 screen=home", 4, false },
 	{ "12 446.000 in the VFO", "ok 4 up ok", "4 4 6 0 0 0 ok", "freq=446000000", 7, false },
@@ -63,7 +137,18 @@ static const flow_t flows[] = {
 	{ "14 GPS details", "", "ok 6 2", "screen=info", 3, false },
 	{ "15 hotspot page", "", "ok 6 3", "screen=info", 4, false },
 	{ "15 stop hotspot", "hotspot:on", "ok", "hotspot=0", 2, false },
-	{ "18 FM / DMR", "", "quick 4", "mode=fm", 2, false },
+	// Tile 4 on a channel copies it to the VFO (docs/spec/dmr-voice.md 2.2); the VFO's own tile 4 stays Mode
+	{ "18 Copy to VFO from a DMR channel", "", "quick 4", "vfo=1 mode=dmr screen=home toast=Copied_to_VFO temporary=0",
+	  2, false },
+	{ "18 Copy to VFO from an FM channel", "down", "quick 4", "vfo=1 mode=fm freq=147060000 toast=Copied_to_VFO", 2,
+	  false },
+	{ "18 Copy to VFO: a temporary color code goes along", "quick 3 7 ok back", "quick 4", "vfo=1 cc=7 temporary=0",
+	  2, false },
+	{ "18 Copy to VFO: the talk target goes along", "tt down ok", "quick 4", "vfo=1 talk=91 temporary=0", 2,
+	  false },
+	{ "18 Copy to VFO: the channel is unchanged", "quick 3 7 ok back quick 4", "ok 4 ok", "vfo=0 cc=1 temporary=0",
+	  3, false },
+	{ "18 Copy to VFO writes no codeplug", "quick 3 7 ok back", "quick 4", "writes=0", 2, false },
 	{ "19 hear all latched", "", "quick 5", "hearall=1", 2, false },
 	{ "19 hear all off on BACK", "quick 5 back", "back", "hearall=0", 1, false },
 	{ "19 hear all ends with the channel", "quick 5 back", "up", "hearall=0", 1, false },
@@ -113,13 +198,33 @@ static const flow_t flows[] = {
 	{ "S mic AGC on", "", "ok 7 3 down down down down ok", "set49=1 shows=AGC", 8, false },
 	{ "S mic gain while AGC is on", "ok 7 3 down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
 	{ "S message tone", "", "msg:3101234,Hi", "beep=2", 0, false },
+	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
+	{ "S vibrate on a message", "", "msg:3101234,Hi", "vibes=1 vibe=0", 0, false },
+	{ "S vibrate on a call alert", "", "alert:91", "vibes=1 vibe=1", 0, false },
+	{ "S vibrate on a private call", "", "privcall:91", "vibes=1 vibe=1", 0, false },
+	{ "S vibrate on an emergency", "", "emergency:91", "vibes=1 vibe=2", 0, false },
+	{ "S vibrate off", "ok 7 1 down down down down down ok long:back", "msg:3101234,Hi", "vibes=0 beep=2", 0,
+	  false },
 	{ "S low battery warning", "", "battery:14", "banner=Battery_14%", 0, false },
 	{ "S privacy key typed", "", "ok 7 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
 	{ "S privacy key needs a type", "ok 7 4 down", "ok", "toast=Pick_a_key", 1, false },
 	{ "S number typed", "", "ok 7 3 down down ok 3 ok", "sq=5 set12=3", 8, false },
 	{ "S voice prompts not built", "ok 7 1 down down down", "ok", "toast=Voice_prompts", 1, false },
-	{ "S mode tile in the VFO", "ok 4 up ok", "quick 4", "toast=VFO:_FM_only mode=fm", 2, false },
+	{ "S mode tile in the VFO", "ok 4 up ok", "quick 4", "toast=VFO:_DMR mode=dmr temporary=0 vfo=1", 2, false },
+	{ "S Copy to VFO key", "", "copykey", "vfo=1 screen=home toast=Copied_to_VFO", 1, false },
+	{ "S Copy to VFO key, long press", "", "long:copykey", "vfo=1 toast=Copied_to_VFO", 1, false },
+	{ "S Copy to VFO key in the VFO", "ok 4 up ok", "copykey", "vfo=1 toast=Already_in_VFO", 1, false },
+	{ "S Copy to VFO: tile 4 in the VFO is Mode", "copykey", "quick 4", "toast=VFO:_FM mode=fm vfo=1", 2, false },
+	{ "S VFO/MR key: channel to VFO and back", "", "vfokey vfokey", "vfo=0 toast=Back_to_channels", 2, false },
+	{ "S VFO/MR key: into the VFO", "", "vfokey", "vfo=1", 1, false },
+	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },
+	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },
+	{ "S VFO DMR: timeslot 2", "ok 4 up ok quick 4 back", "quick 2 back", "ts=2 temporary=0", 3, false },
+	{ "S VFO DMR: talk to a typed TG", "ok 4 up ok quick 4 back", "quick 8 down ok 3 1 0 0 ok", "talk=3100 temporary=0",
+	  9, false },
+	{ "S VFO DMR: the mode stays across a channel", "ok 4 up ok quick 4 back ok 4 ok", "ok 4 up ok", "mode=dmr vfo=1", 4,
+	  false },
 	{ "S scan in the VFO: the band", "ok 4 up ok", "ok 6 1", "toast=Scanning_the_band scanning=1", 3, false },
 	{ "S scan on a channel: the zone", "", "ok 6 1", "toast=Scanning_this_zone scanning=1", 3, false },
 	{ "S USB network on", "", "ok 6 4 ok", "usbnet=1 toast=USB_is_a_network screen=home", 4, false },
@@ -161,11 +266,43 @@ static const flow_t flows[] = {
 	{ "A KISS on USB", "ok 6 9", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 9 up ok", "screen=aprs-heard count=2", 5, false },
 	{ "A not in this build", "aprs:off", "ok 6 9 2", "toast=APRS:_not aprs_auto=0", 4, false },
+	// Digit keys while transmitting (#37)
+	{ "T FM transmitting: a digit does nothing (#37)", "down pttdown", "5", "screen=home toast=none", 1, false },
+	{ "T FM transmitting: a held digit does nothing (#37)", "down pttdown", "long:5", "screen=home toast=none", 1, false },
+	{ "T DMR transmitting: a digit does nothing (#37)", "pttdown", "5", "screen=home toast=none", 1, false },
+	{ "T after the transmission a digit opens Find again", "down pttdown pttup", "5", "screen=find", 1, false },
+	{ "T a transmission without PTT (beacon) leaves the digits alone", "down autotx", "5", "screen=find", 1, false },
+	{ "T a refused transmission (RX only) leaves the digits alone", "ok 4 down ok up up up up up up up up pttdown", "5", "zone=1 pos=9 screen=find", 1, false },
+};
+
+// GD-77 key map on its 128x64 monochrome screen only
+static const flow_t flows_mono[] = {
+#if CONFIG_UI_COLOR
+	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
+	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",
+	  "toast=Colors_are_for set49=0", 7, false },
+	{ "S filled status bar on a monochrome screen: dimmed", "", "ok 7 2 down down down down ok",
+	  "toast=Colors_are_for set50=1", 8, false },	// unchanged: on by default
+#else
+	{ "S no color rows on a monochrome screen", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
+#endif
 };
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+#if CONFIG_UI_COLOR
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
+	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set49=1", 7, false },
+	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set50=0", 8, false },
+#else
+	// Built without CONFIG_UI_COLOR: Display has no color rows; the third row is Large text
+	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
+	{ "S large text is the third row", "", "ok 7 2 down down ok", "set8=1", 6, false },
+#endif
+#if CONFIG_SUBTONE
+	{ "E TX tone spinner, the knob", "ok 5 up up ok down down down down down down down down down", "ok enc+ enc+ ok",
+	  "shows=107.2", 4, false },
+#endif
 	{ "E emergency: hold the top key", "", "long:emerg", "toast=EMERGENCY_sent", 1, false },
 	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
@@ -177,9 +314,11 @@ static const flow_t flows_k[] = {
 	{ "K side key 2 hold", "ok 7 8", "down down down down down down ok", "set45=1", 7, false },
 	{ "K top key hold: emergency after scan", "ok 7 8 up ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
 	  false },
-	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back", 1,
+	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
 	  false },
-	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1, false },
+	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back", 1,
+	  false },
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
 	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
 	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },
@@ -192,6 +331,20 @@ static const flow_t flows_k[] = {
 	{ "K key lock unlocks too", "lockkey", "lockkey", "locked=0", 1, false },
 	{ "K call back: the last talkgroup", CALLER, "cbkey ptt", "txid=91 txpriv=0", 2, false },
 	{ "K call back: nothing heard", "", "cbkey", "toast=No_calls", 1, false },
+	// The volume key of a radio without a knob (UI_FEAT_VOLUME, "softvol"): the editor, the encoder / Up / Down, the ends
+	{ "V volume key opens the editor", "softvol", "volkey", "screen=volume vol=8", 1, false },
+	{ "V volume up and down", "softvol volkey", "up up down", "vol=9 screen=volume", 3, false },
+	{ "V volume stops at the top", "softvol volkey", "up up up up up up up up up up", "vol=16", 10, false },
+	{ "V volume down to mute", "softvol volkey", "down down down down down down down down", "vol=0", 8, false },
+	{ "V volume stops at mute", "softvol volkey", "down down down down down down down down down down", "vol=0", 10, false },
+	{ "V volume OK closes it", "softvol volkey up", "ok", "screen=home vol=9", 1, false },
+	{ "V volume BACK closes it", "softvol volkey up", "back", "screen=home vol=9", 1, false },
+	{ "V volume key again closes it", "softvol volkey up", "volkey", "screen=home vol=9", 1, false },
+	{ "V volume closes after a pause", "softvol volkey", "up wait:3500", "screen=home vol=9", 1, false },
+	{ "V volume stays while keys come", "softvol volkey", "up wait:2000 up wait:2000", "screen=volume vol=10", 2, false },
+	{ "V volume from a menu, back returns to it", "softvol ok", "volkey back", "screen=hub", 2, false },
+	{ "V a knob radio: no editor", "", "volkey", "screen=home toast=Volume:_use", 1, false },
+	{ "V volume is in Settings > Sound", "softvol ok 7", "ok", "shows=Volume", 1, false },
 	{ "K home zone: back to the first zone", "zone+ zone+", "homekey", "zone=0 toast=Home_zone", 1, false },
 	{ "K home zone: already there", "", "homekey", "zone=0 toast=Home_zone", 1, false },
 	{ "K home zone: out of the VFO", "ok 4 up ok", "homekey", "vfo=0 zone=0", 1, false },
@@ -215,6 +368,9 @@ static const flow_t flows_k[] = {
 	{ "H hold # opens the talk target picker", "", "long:ctx", "screen=picker", 1, false },
 	{ "H hold # then a typed TG", "", "long:ctx up ok 3 1 0 0 ptt", "txid=3100 txpriv=0", 8, false },
 	{ "H hold # on FM: DMR only", "down", "long:ctx", "screen=home toast=Talk_target:_DMR", 1, false },
+	{ "H FM monitor held: the pill says RX, MON stays", "down", "mondown", "shows=RX shows=MON", 1, false },
+	{ "H FM monitor released: IDLE again", "down mondown", "monup", "shows=IDLE hides=MON", 0, false },
+	{ "H DMR monitor: digital monitor, the pill stays IDLE", "", "mon", "shows=IDLE", 1, false },
 	// The encoder: forward = the next channel on Home, the next row down a list, the next quick tile; back = up
 	{ "N encoder: next channel", "", "enc+", "pos=4 screen=home", 1, false },
 	{ "N encoder: previous channel", "", "enc-", "pos=2 screen=home", 1, false },
@@ -248,7 +404,13 @@ static const flow_t flows_f[] = {
 	{ "F key lock unlocks on a long press", "lockkey", "long:lockkey", "locked=0", 1, false },
 	{ "F locked: long Back unlocks", "lockkey", "long:back", "locked=0", 1, false },
 	{ "F locked: call back is ignored", CALLER "lockkey", "cbkey", "talk=3100 toast=Keys_locked", 1, false },
-	{ "F no side keys to set", "ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
+	// Text entry without a keypad (ui.md 2.1): Down steps the last character, OK adds one, long OK keeps; long OK on
+	// the channel saves
+	{ "F text entry by Up / Down", "ok down down down down down ok ok ok", "down ok long:ok",
+	  "screen=channel shows=COUNTY_DMQQ", 3, false },
+	{ "F long OK saves the channel", "ok down down down down down ok ok ok down ok long:ok", "long:ok",
+	  "writes=1 toast=Saved_channel_3", 1, true },
+	{ "F no side keys to set","ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
 	  false },
 };
 
@@ -401,7 +563,8 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 			printf("FAIL crawl [%s] %s: no status strip (P2)\n", mapname, s0.screen);
 			fails++;
 		}
-		if (s0.depth > 0) {
+		// Text entry is the one exception to P4 (principles 4): BACK deletes, and leaves once the field is empty
+		if (s0.depth > 0 && strcmp(s0.screen, "text") != 0) {
 			snprintf(path, sizeof path, "%s back", nodes[i].path);
 			if (replay(g, map, path, &s1) && s1.depth >= s0.depth && strcmp(s1.screen, s0.screen) == 0) {
 				printf("FAIL crawl [%s] %s: BACK doesn't leave it (P4) via '%s'\n", mapname, s0.screen,
@@ -416,9 +579,12 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 			fails++;
 		}
 		if (map != SIM_MAP_F) {
+			// Long QUICK locks from Home only; in a menu it must not lock mid-task (P3)
 			snprintf(path, sizeof path, "%s long:quick", nodes[i].path);
-			if (replay(g, map, path, &s1) && !s1.locked) {
-				printf("FAIL crawl [%s] %s: long QUICK doesn't lock (P3)\n", mapname, s0.screen);
+			bool home = s0.depth == 0 && strcmp(s0.screen, "home") == 0;
+			if (replay(g, map, path, &s1) && s1.locked != home) {
+				printf("FAIL crawl [%s] %s: long QUICK %s (P3)\n", mapname, s0.screen,
+				       home ? "doesn't lock on Home" : "locks in a menu");
 				fails++;
 			}
 			snprintf(path, sizeof path, "%s long:ctx", nodes[i].path);
@@ -519,8 +685,71 @@ static void call_screen_checks(void)
 	}
 }
 
+// A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
+// warning, and no Battery page, Battery saver or Low battery warning in the lists (the other rows move up). With a
+// battery they are all there
+static void no_battery_checks(void)
+{
+	static const struct { const char *name, *script, *expect; } cases[] = {
+		{ "strip with a battery", "", "shows=84%" },
+		{ "strip", "nobattery", "hides=%" },
+		{ "no warning", "nobattery battery:14", "banner=none" },
+		{ "Tools with a battery", "ok 6 6", "screen=info shows=Battery" },
+		{ "Tools", "nobattery ok 6", "hides=Battery" },
+		{ "Tools numbers move up", "nobattery ok 6 6", "screen=diag" },
+		{ "Power settings with a battery", "ok 7 7", "shows=Battery_saver shows=Low_battery" },
+		{ "Power settings", "nobattery ok 7 7", "hides=Battery_saver hides=Low_battery shows=Auto_power_off" },
+	};
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "%s", cases[i].script);
+			bool ok = sim_run(buf, err, sizeof err);
+			char *o = buf;	// "a=b c=d" -> "expect:a=b expect:c=d"
+			for (const char *p = cases[i].expect; ok && *p && o < buf + sizeof buf - 16;) {
+				while (*p == ' ')
+					p++;
+				memcpy(o, "expect:", 7);
+				o += 7;
+				while (*p && *p != ' ' && o < buf + sizeof buf - 2)
+					*o++ = *p++;
+				*o++ = ' ';
+			}
+			*o = 0;
+			if (ok)
+				ok = sim_run(buf, err, sizeof err);
+			if (!ok) {
+				printf("FAIL no battery %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
+	}
+}
+
+// Home's talk target line drops a contact name that only repeats the ID ("TG 201 TG 201" on the DB25-D, 2026-10-17)
+static int check_name_is_id(void)
+{
+	int bad = 0;
+	static const struct { const char *name; uint32_t id; bool priv, want; } c[] = {
+		{ "TG 201", 201, false, true }, { "TG201", 201, false, true }, { "tg 201 ", 201, false, true }, { "201", 201, false, true },
+		{ "3101276", 3101276, true, true }, { "TG 202", 201, false, false }, { "Main Ops", 201, false, false },
+		{ "TG 201 Ops", 201, false, false }, { "TG 3101276", 3101276, true, false }, { "", 201, false, false },
+		{ "99999999999", 201, false, false },
+	};
+	for (size_t i = 0; i < sizeof c / sizeof c[0]; i++) {
+		if (ui_name_is_id(c[i].name, c[i].id, c[i].priv) != c[i].want) {
+			printf("FAIL ui_name_is_id(\"%s\", %u, %d)\n", c[i].name, (unsigned)c[i].id, c[i].priv);
+			bad++;
+		}
+	}
+	return bad;
+}
+
 int main(void)
 {
+	if (check_name_is_id() != 0)
+		return 1;
 	static const struct { sim_map_t map; const char *name, *geom; } runs[] = {
 		{ SIM_MAP_K, "K DM-1701", "160x120i5" },
 		{ SIM_MAP_M, "M GD-77", "128x64" },
@@ -532,6 +761,8 @@ int main(void)
 		for (size_t i = 0; i < sizeof flows / sizeof flows[0]; i++)
 			run_flow(&flows[i], g, runs[r].map, runs[r].name);
 	}
+	for (size_t i = 0; i < sizeof flows_mono / sizeof flows_mono[0]; i++)
+		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)
 		run_flow(&flows_k[i], sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	const sim_geom_t *gf = sim_geom_find("160x128");
@@ -540,6 +771,7 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+	no_battery_checks();
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");

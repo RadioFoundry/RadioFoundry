@@ -10,14 +10,67 @@
 #include "config.h"
 
 ui_layout_t ui_layout;
+static const font_t *font_largest;	// the large text setting's font (large_font)
 
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper
 // and pills are inverse video
 ui_colors_t ui_col;
 static uint8_t ui_theme;
 
+static uint8_t ui_accent;	// UI_ACCENT_*
+static bool ui_strip_fill;
+
+// The highlight color over the theme's own (Settings > Display), one shade per color for both the filled status strip
+// (reverse video: the color as background, text and icons black) and the focus highlight (black text), so the two
+// match; also Home's channel number. All are light shades: black on each is at least 7.5:1 after RGB565 rounding.
+// The red is lighter and pinker than TX's (the TX pill also says TX); there is no green, which would hide the RX
+// pill. Default keeps the theme's blue focus; its filled strip is light gray (white in high contrast). Built without CONFIG_UI_COLOR (radios
+// with only a monochrome screen) the theme's own colors stay
+static void accent_apply(void)
+{
+	ui_col.focus_fg = ui_col.fg;
+	ui_col.chnum = ui_col.dim;
+	if (!CONFIG_UI_COLOR)
+		return;
+	static const color_t acc[UI_ACCENT_COUNT] = {
+		[UI_ACCENT_DEFAULT] = RGB565(216, 216, 216),
+		[UI_ACCENT_RED] = RGB565(240, 112, 112),
+		[UI_ACCENT_ORANGE] = RGB565(255, 160, 64),
+		[UI_ACCENT_YELLOW] = RGB565(255, 208, 0),
+		[UI_ACCENT_TEAL] = RGB565(72, 210, 210),
+		[UI_ACCENT_BLUE] = RGB565(104, 176, 255),
+		[UI_ACCENT_PURPLE] = RGB565(184, 150, 255),
+		[UI_ACCENT_PINK] = RGB565(255, 136, 200),
+	};
+	// Warnings on the filled strip (SCAN, MON, ROAM, unread, the lock, a low battery): dark amber where it reads, dark
+	// blue on the warm strips where amber can't; at least 5:1 on its strip after RGB565 rounding
+	static const color_t warn[UI_ACCENT_COUNT] = {
+		[UI_ACCENT_DEFAULT] = RGB565(136, 68, 0),
+		[UI_ACCENT_RED] = RGB565(0, 32, 120),
+		[UI_ACCENT_ORANGE] = RGB565(0, 48, 168),
+		[UI_ACCENT_YELLOW] = RGB565(128, 64, 0),
+		[UI_ACCENT_TEAL] = RGB565(112, 56, 0),
+		[UI_ACCENT_BLUE] = RGB565(88, 44, 0),
+		[UI_ACCENT_PURPLE] = RGB565(80, 40, 0),
+		[UI_ACCENT_PINK] = RGB565(0, 40, 152),
+	};
+	uint8_t a = ui_accent < UI_ACCENT_COUNT ? ui_accent : UI_ACCENT_DEFAULT;
+	color_t c = acc[a];
+	if (a == UI_ACCENT_DEFAULT && ui_theme == 2)
+		c = RGB565(255, 255, 255);	// high contrast has no gray: its default strip is white
+	ui_col.strip_bg = c;
+	ui_col.strip_warn = warn[a];
+	if (a != UI_ACCENT_DEFAULT) {
+		ui_col.focus = c;
+		ui_col.focus_fg = RGB565(0, 0, 0);
+		ui_col.chnum = ui_theme == 1 ? ui_col.fg : c;	// light shades don't read as digits on white
+	}
+}
+
 void ui_theme_set(uint8_t theme)
 {
+	if (!CONFIG_UI_COLOR)
+		theme = 0;	// the dark theme only
 	ui_theme = theme;
 	if (gfx_bpp() == 1)
 		return;		// ink on paper whatever the theme
@@ -61,6 +114,19 @@ void ui_theme_set(uint8_t theme)
 	}
 	ui_col.pill_fg = RGB565(255, 255, 255);
 	ui_col.pill_dark_fg = RGB565(0, 0, 0);
+	accent_apply();
+}
+
+void ui_accent_set(uint8_t accent)
+{
+	ui_accent = accent;
+	ui_theme_set(ui_theme);
+}
+
+void ui_strip_set(bool filled)
+{
+	ui_strip_fill = filled;
+	ui_theme_set(ui_theme);
 }
 
 void ui_layout_init(void)
@@ -76,21 +142,39 @@ void ui_layout_init(void)
 
 	ui_theme_set(ui_theme);
 
-	// Display classes (P10): about 128 px wide, about 160 px wide, 240 px and wider. A narrow portrait panel (the
-	// DM-32's 120x160) keeps the narrow class's small font, so lists and labels keep their 24 characters a line, and
-	// has the rows for the larger channel and talk target fonts of the 160 px class
+	// Display classes (P10): about 128 px wide, about 160 px wide, 240 px and wider. A narrow portrait panel (120x160)
+	// keeps the narrow class's small font, so lists and labels keep their 24 characters a line, and has the rows for
+	// the larger channel and talk target fonts of the 160 px class
+	// Anti-aliased fonts on color panels (CONFIG_FONT_AA, font.h); a mono panel keeps the bitmap ones
+	bool aa = gfx_bpp() != 1;
+#if CONFIG_FONT_AA && defined(FONT_BOTH)
+	aa = aa && font_aa_on;
+#endif
+	const font_t *f6 = aa ? &font_aa_6x12 : &font_6x12, *f8 = aa ? &font_aa_8x16 : &font_8x16;
+	const font_t *f12 = aa ? &font_aa_12x24 : &font_12x24;
+	font_largest = aa ? FONT_AA_LARGEST : FONT_LARGEST;
 	if (w >= 220) {
-		L->tiny = &font_6x12; L->small = &font_8x16; L->medium = &font_12x24; L->large = FONT_LARGEST;
+		L->tiny = f6; L->small = f8; L->medium = f12; L->large = font_largest;
+#if CONFIG_FONT_BIG
+		// One size up for lists, labels and the status strip (CONFIG_FONT_BIG): 9 px characters instead of 8
+		bool big = aa;
+#ifdef FONT_BOTH
+		big = big && font_big_on;
+#endif
+		if (big) {
+			L->tiny = f8; L->small = &font_aa_9x18;
+		}
+#endif
 	} else if (w >= 150) {
-		L->tiny = &font_5x8; L->small = &font_6x12; L->medium = &font_8x16; L->large = &font_12x24;
+		L->tiny = &font_5x8; L->small = f6; L->medium = f8; L->large = f12;
 	} else if (h >= 150) {
-		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = &font_8x16; L->large = &font_12x24;
+		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = f8; L->large = f12;
 	} else {
-		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = &font_6x12; L->large = &font_8x16;
+		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = f6; L->large = f8;
 	}
 
 	// A pixel between the status strip and what is below it, and a pixel between list rows on displays 100 px and
-	// higher (3 on tall ones): easy to read comes before one more row
+	// higher (3 on tall ones, 6 in the 240 px class): easy to read comes before one more row
 	bool tall = h >= UI_TALL_PX;
 	L->strip_h = L->small->h + 1;
 	L->hint_y = h - L->small->h;
@@ -115,7 +199,7 @@ void ui_layout_init(void)
 	}
 	L->activity_y = y;
 	L->activity_h = L->hint_y - y;
-	L->row_h = L->small->h + (tall ? 3 : h >= 100 ? 1 : 0);
+	L->row_h = L->small->h + (w >= 220 ? 6 : tall ? 3 : h >= 100 ? 1 : 0);
 }
 
 // --- shared pieces ---
@@ -172,7 +256,12 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	bool merged = titled && gfx_height() < UI_TALL_PX;
 	const char *word = "IDLE";
 	color_t pbg = ui_col.idle, pfg = ui_col.pill_fg;
-	switch (v->state) {
+	// FM with the monitor holding the squelch open shows RX, as the green LED does (radio_sm.c outputs()); MON stays
+	// beside the mode
+	radio_state_t st = v->state;
+	if (st == RS_IDLE && v->monitor && v->ch.mode != RADIO_MODE_DMR)
+		st = RS_RX;
+	switch (st) {
 	case RS_RX: word = "RX"; pbg = ui_col.rx; pfg = ui_col.pill_dark_fg; break;
 	case RS_TX: word = "TX"; pbg = ui_col.tx; break;
 	case RS_TX_DENIED: word = "NO TX"; pbg = ui_col.warn; pfg = ui_col.pill_dark_fg; break;
@@ -180,30 +269,69 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	}
 	if (gfx_bpp() == 1)
 		pfg = ui_col.pill_fg;
-	gfx_fill(0, 0, w, L->strip_h, ui_col.bg);
+	else if (pfg == pbg)	// high contrast: the idle pill is white, so its word is black
+		pfg = ui_col.pill_dark_fg;
+	// A filled strip (Settings > Display) draws on its own background in black, warnings in a dark shade that reads on
+	// it (accent_apply); the idle pill turns inverse on it, RX / TX / NO TX keep their colors and words (P5)
+	bool filled = CONFIG_UI_COLOR && ui_strip_fill && gfx_bpp() != 1;
+	color_t sbg = filled ? ui_col.strip_bg : ui_col.bg, sfg = filled ? ui_col.pill_dark_fg : ui_col.fg;
+	color_t swarn = filled ? ui_col.strip_warn : ui_col.warn;
+	if (filled && st == RS_IDLE) {
+		pbg = sfg;
+		pfg = sbg;
+	}
+	gfx_fill(0, 0, w, L->strip_h, sbg);
 	int x = 0;
-	if (!merged || v->state != RS_IDLE)
-		x = gfx_pill(f, 0, 0, ph, word, pfg, pbg) + f->w / 2;
+	if (!merged || st != RS_IDLE) {
+		if (filled) {
+			// On the filled strip the pill is the strip's full height (a one-cell pill leaves a line of the
+			// strip's color under it) against the bezel, its corners rounded by two pixels. Left of its middle the
+			// strip is the screen's background, so no strip color shows beside the left end. On the right a black
+			// edge follows the curve: RX, TX and NO TX are close in lightness to every strip color (NO TX on orange
+			// nearly equal)
+			int pad = f->w >= 8 ? 4 : 3, h = L->strip_h;
+			int pw = gfx_text_width(f, word) + 2 * pad;
+			gfx_fill(0, 0, pw / 2, h, ui_col.bg);
+			gfx_fill(2, 0, pw - 4, h, pbg);
+			for (int e = 0; e < 2; e++) {	// the rounded ends, and the edge: the two corner steps and the end
+				gfx_vline(1 - e, 1 + e, h - 2 - 2 * e, pbg);
+				gfx_vline(pw - 2 + e, 1 + e, h - 2 - 2 * e, pbg);
+				gfx_pixel(pw - 2 + e, e, sfg);
+				gfx_pixel(pw - 2 + e, h - 1 - e, sfg);
+			}
+			gfx_vline(pw, 2, h - 4, sfg);
+			gfx_text(f, pad, (ph - f->h + 1) / 2, word, pfg);
+			x = pw + 1 + f->w / 2;
+		} else {
+			x = gfx_pill(f, 0, 0, ph, word, pfg, pbg) + f->w / 2;
+		}
+	}
 	int ty = (ph - f->h + 1) / 2;
 
 	// Right side, right to left: battery %, battery icon, signal bars, unread messages, lock
 	char pct[6];
 	sbuf_t b;
-	sb_init(&b, pct, sizeof pct);
-	sb_u32(&b, s->battery_pct, 1);
-	sb_chr(&b, '%');
-	int rx = w - gfx_text_width(f, pct);
-	uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
-	color_t bc = s->battery_pct <= low ? ui_col.warn : ui_col.fg;
-	gfx_text(f, rx, ty, pct, bc);
+	int rx = w;
+	color_t bc = sfg;
+	if (!s->no_battery) {
+		sb_init(&b, pct, sizeof pct);
+		sb_u32(&b, s->battery_pct, 1);
+		sb_chr(&b, '%');
+		rx -= gfx_text_width(f, pct);
+		uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
+		bc = s->battery_pct <= low ? swarn : sfg;
+		gfx_text(f, rx, ty, pct, bc);
+	}
 	if (!merged) {
 		int bh = f->ascent - 2 < 5 ? 5 : f->ascent - 2;
 		int bw = bh * 2;
-		rx -= bw + 2;
-		gfx_icon_battery(rx, ty + f->ascent - bh, bw, bh, s->battery_pct, ui_col.fg, bc);
+		if (!s->no_battery) {
+			rx -= bw + 2;
+			gfx_icon_battery(rx, ty + f->ascent - bh, bw, bh, s->battery_pct, sfg, bc);
+		}
 		int sw = bh + 4;
 		rx -= sw + f->w / 2;
-		gfx_icon_bars(rx, ty + f->ascent - bh - 1, sw, bh + 1, 4, rssi_bars(v->rssi_dbm), ui_col.fg, ui_col.line);
+		gfx_icon_bars(rx, ty + f->ascent - bh - 1, sw, bh + 1, 4, rssi_bars(v->rssi_dbm), sfg, filled ? ui_col.idle : ui_col.line);
 	}
 	// Icons one cell high, drawn from lines: an envelope with the unread count, a padlock while the keys are locked
 	int ih = f->ascent - 2 < 5 ? 5 : f->ascent - 2, iy = ty + f->ascent - ih;
@@ -212,36 +340,66 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 		sb_init(&b, m, sizeof m);
 		sb_u32(&b, s->unread > 9 ? 9 : s->unread, 1);
 		rx -= gfx_text_width(f, m) + f->w / 2;
-		gfx_text(f, rx, ty, m, ui_col.warn);
+		gfx_text(f, rx, ty, m, swarn);
 		int ew = ih * 3 / 2;
 		rx -= ew + 1;
-		gfx_rect(rx, iy, ew, ih, ui_col.warn);
+		gfx_rect(rx, iy, ew, ih, swarn);
 		for (int i = 1; i <= ew / 2; i++) {	// the flap: two diagonals meeting in the middle
-			gfx_pixel(rx + i, iy + i * (ih - 2) / (ew / 2), ui_col.warn);
-			gfx_pixel(rx + ew - 1 - i, iy + i * (ih - 2) / (ew / 2), ui_col.warn);
+			gfx_pixel(rx + i, iy + i * (ih - 2) / (ew / 2), swarn);
+			gfx_pixel(rx + ew - 1 - i, iy + i * (ih - 2) / (ew / 2), swarn);
 		}
 	}
 	if (s->locked) {
 		int lw = ih - ih / 4;
 		rx -= lw + f->w / 2;
-		gfx_fill(rx, iy + ih / 2, lw, ih - ih / 2, ui_col.warn);		// body
-		gfx_rect(rx + 1, iy, lw - 2, ih / 2 + 1, ui_col.warn);		// shackle
+		gfx_fill(rx, iy + ih / 2, lw, ih - ih / 2, swarn);		// body
+		gfx_rect(rx + 1, iy, lw - 2, ih / 2 + 1, swarn);		// shackle
 	}
 
 	if (merged) {
-		ui_draw_title(f, x, ty, rx - f->w / 2 - x, prefix, name, ui_col.fg);
+		color_t dim = ui_col.dim;
+		if (filled)
+			ui_col.dim = sfg;	// the title's prefix, normally dim, in the strip's one text color
+		ui_draw_title(f, x, ty, rx - f->w / 2 - x, prefix, name, sfg);
+		ui_col.dim = dim;
 		return L->strip_h;
 	}
 	// Left side: the mode, and one mode word when there is room for it with a space either side
-	int lx = gfx_text(f, x, ty, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", ui_col.fg);
+	int lx = gfx_text(f, x, ty, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", sfg);
 	if (s->scanning && lx + 6 * f->w <= rx)
-		lx = gfx_text(f, lx + f->w, ty, "SCAN", ui_col.warn);
+		lx = gfx_text(f, lx + f->w, ty, "SCAN", swarn);
 #if CONFIG_DMR_ROAMING
 	else if (v->roam.state == RROAM_STATE_SEARCH && lx + 6 * f->w <= rx)
-		lx = gfx_text(f, lx + f->w, ty, "ROAM", ui_col.warn);	// searching the zone's sites
+		lx = gfx_text(f, lx + f->w, ty, "ROAM", swarn);	// searching the zone's sites
 #endif
 	else if (v->monitor && lx + 5 * f->w <= rx)
-		lx = gfx_text(f, lx + f->w, ty, "MON", ui_col.warn);
+		lx = gfx_text(f, lx + f->w, ty, "MON", swarn);
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+	// USB as a network adapter (Tools > USB network): the serial tools are off. IP, and once the PC has the link up an
+	// up and a down arrow right after it, as a phone shows its data link. The arrows stand close, each head beside the
+	// other's shaft, so the shafts stop short of the other arrow's head: 3 * hw + 3 columns, at least 6 rows (on the
+	// smallest font a shorter shaft reads as a cross). Room as for the other words, a space either side
+	else if (s->usb_net != UI_USB_NET_OFF) {
+		int hw = f->w >= 8 ? f->w / 4 : 1;	// a barb's width
+		int aw = s->usb_net == UI_USB_NET_UP ? 3 * hw + 3 : 0;	// the arrows; the glyph cell's own margin before them
+		if (lx + gfx_text_width(f, "IP") + aw + 2 * f->w <= rx) {
+			lx = gfx_text(f, lx + f->w, ty, "IP", swarn);
+			if (aw) {
+				int ah = ih < 6 ? 6 : ih, ay = iy + ih - ah;	// the arrows' height and top, on the icons' baseline
+				int ax = lx + hw, bx = ax + hw + 2, sh = ah - hw - 1;	// the shafts, up and down; shaft length
+				gfx_vline(ax, ay, sh, swarn);
+				gfx_vline(bx, ay + ah - sh, sh, swarn);
+				for (int i = 1; i <= hw; i++) {
+					gfx_pixel(ax - i, ay + i, swarn);
+					gfx_pixel(ax + i, ay + i, swarn);
+					gfx_pixel(bx - i, ay + ah - 1 - i, swarn);
+					gfx_pixel(bx + i, ay + ah - 1 - i, swarn);
+				}
+				lx += aw;
+			}
+		}
+	}
+#endif
 	if (!titled)
 		return L->strip_h;
 	// Tall display: the title on its own row, underlined
@@ -597,7 +755,8 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 	// too long even for the small font is shortened from the middle
 	sb_init(&b, buf, sizeof buf);
 	sb_u32(&b, v->channel_number, 1);
-	int x = gfx_text(L->medium, 0, base - L->medium->ascent, buf, ui_col.dim) + L->medium->w / 2;
+	int x = gfx_text(L->medium, 0, base - L->medium->ascent, buf, gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
+		L->medium->w / 2;
 	int avail = w - x;
 	if (v->temporary)
 		avail -= L->medium->w;
@@ -769,8 +928,34 @@ static const char *deny_action(const radio_view_t *v)
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
 #if CONFIG_DMR
 // "TG 201 Main Ops", "Joe 3101234", "All call"; a private call without a name shows the ID only
+// A contact name that only repeats the ID ("TG 201", "TG201", "201" for talkgroup 201; "3101276" for that radio):
+// codeplugs often name talkgroups that way, and Home would read "TG 201 TG 201"
+bool ui_name_is_id(const char *name, uint32_t id, bool private_call)
+{
+	const char *p = name;
+	while (*p == ' ')
+		p++;
+	if (!private_call && (p[0] == 'T' || p[0] == 't') && (p[1] == 'G' || p[1] == 'g'))
+		p += 2;
+	while (*p == ' ')
+		p++;
+	if (*p < '0' || *p > '9')
+		return false;
+	uint32_t v = 0;
+	for (; *p >= '0' && *p <= '9'; p++) {
+		if (v > 0xFFFFFFu)
+			return false;
+		v = v * 10u + (uint32_t)(*p - '0');
+	}
+	while (*p == ' ')
+		p++;
+	return *p == '\0' && v == id;
+}
+
 static void sb_target(sbuf_t *b, uint32_t id, bool private_call, const char *name)
 {
+	if (ui_name_is_id(name, id, private_call))
+		name = "";
 	if (id == 0xFFFFFFu) {
 		sb_str(b, "All call");
 		return;
@@ -795,7 +980,7 @@ static void sb_target(sbuf_t *b, uint32_t id, bool private_call, const char *nam
 // its name ("Joe"), since the name is what the user picked and the ID alone says nothing at a glance
 static void sb_target_short(sbuf_t *b, uint32_t id, bool private_call, const char *name)
 {
-	if (private_call && id != 0xFFFFFFu && name[0] != '\0')
+	if (private_call && id != 0xFFFFFFu && name[0] != '\0' && !ui_name_is_id(name, id, private_call))
 		sb_str(b, name);
 	else
 		sb_target(b, id, private_call, "");
@@ -805,7 +990,7 @@ static void sb_target_short(sbuf_t *b, uint32_t id, bool private_call, const cha
 // "TG 91 (9s)"), and when tail isn't empty last the short form without it. Without a name, the one form
 static void sb_target_alts(sbuf_t *b, uint32_t id, bool private_call, const char *name, const char *tail)
 {
-	bool named = name[0] != '\0' && id != 0xFFFFFFu;
+	bool named = name[0] != '\0' && id != 0xFFFFFFu && !ui_name_is_id(name, id, private_call);
 	if (named || tail[0])
 		sb_str(b, TEXT_ALT_OPEN);
 	sb_target(b, id, private_call, name);
@@ -1217,7 +1402,8 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 		return "Back undo  Hold OK save";
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR && v->dmr.target_manual)
-		return TEXT_ALT_OPEN "Back: channel's talkgroup" TEXT_ALT_NEXT "Back default target" TEXT_ALT_CLOSE;
+		return v->vfo ? TEXT_ALT_OPEN "Back: VFO's talk target" TEXT_ALT_NEXT "Back default target" TEXT_ALT_CLOSE :
+			TEXT_ALT_OPEN "Back: channel's talkgroup" TEXT_ALT_NEXT "Back default target" TEXT_ALT_CLOSE;
 #endif
 	if (v->vfo)
 		return "0-9 freq  * Quick  Up/Dn";
@@ -1229,7 +1415,7 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 static const font_t *large_font(const char *text, int room, char *out, size_t cap)
 {
 	const ui_layout_t *L = &ui_layout;
-	const font_t *fonts[] = { FONT_LARGEST, L->large, L->medium };
+	const font_t *fonts[] = { font_largest, L->large, L->medium };
 	bool more = true;
 	for (int level = 0; more; level++) {
 		gfx_text_alt(text, level, out, cap, &more);
@@ -1641,7 +1827,7 @@ void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l
 		if (focus) {
 			color_t bg = (it.flags & UI_ITEM_EDIT) ? ui_col.warn : ui_col.focus;
 			gfx_fill(0, ry, w, L->row_h, bg);
-			fg = gfx_bpp() == 1 ? ui_col.bg : (it.flags & UI_ITEM_EDIT) ? ui_col.pill_dark_fg : ui_col.fg;
+			fg = gfx_bpp() == 1 ? ui_col.bg : (it.flags & UI_ITEM_EDIT) ? ui_col.pill_dark_fg : ui_col.focus_fg;
 			vfg = fg;
 		}
 		int x = 1;
@@ -1705,6 +1891,39 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 		gfx_text(L->small, (w - gfx_text_width(L->small, buf)) / 2, y, buf, ui_col.fg);
 	}
 	ui_draw_hint(s->toast != NULL ? s->toast : "OK acknowledge  Back hide", s->toast != NULL);
+}
+
+// The volume screen: the step as a number (a word at 0) over a bar of RADIO_VOLUME_MAX segments.
+// Large type, no scale to read
+void ui_draw_volume(const radio_view_t *v, const ui_state_t *s)
+{
+	const ui_layout_t *L = &ui_layout;
+	int w = gfx_width();
+	char buf[16];
+	sbuf_t b;
+	gfx_clear(ui_col.bg);
+	int y = ui_draw_top(v, s, "Volume", NULL) + 4;
+	sb_init(&b, buf, sizeof buf);
+	if (s->volume == 0)
+		sb_str(&b, "Muted");
+	else
+		sb_u32(&b, s->volume, 1);
+	const font_t *big = L->large;
+	if (gfx_text_width(big, buf) > w)
+		big = L->medium;
+	gfx_text(big, (w - gfx_text_width(big, buf)) / 2, y, buf, ui_col.fg);
+	y += big->h + 6;
+	int seg = RADIO_VOLUME_MAX;
+	int pitch = (w - 8) / seg;
+	int x0 = (w - pitch * seg) / 2;
+	int bh = L->row_h > 10 ? L->row_h : 10;
+	for (int i = 0; i < seg; i++) {
+		if (i < s->volume)
+			gfx_fill(x0 + i * pitch, y, pitch - 2, bh, ui_col.fg);
+		else
+			gfx_rect(x0 + i * pitch, y, pitch - 2, bh, ui_col.line);
+	}
+	ui_draw_bottom(s, "Up Down change  OK done");
 }
 
 // --- Hotspot ---
@@ -1772,6 +1991,8 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 	};
 	if (pos < 0 || pos >= UI_QUICK_TILES)
 		return QT_POWER;
+	if (!v->vfo && pos == 3)
+		return QT_TO_VFO;	// a channel's tile 4 copies it to the VFO; the VFO's stays Mode
 	if (v->ch.mode == RADIO_MODE_DMR)
 		return dmr[pos];
 	if (v->vfo && pos == 7)
@@ -1795,7 +2016,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_MONITOR] = QT_NAME("Monitor", "MON"), [QT_VOX] = "VOX", [QT_SCAN] = "Scan", [QT_BANDWIDTH] = "Width",
 		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
 		[QT_HEAR_ALL] = QT_NAME("Digital monitor", "DMon"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
-		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_STEP] = "Step",
+		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_STEP] = "Step", [QT_TO_VFO] = QT_NAME("Copy to VFO", "To VFO"),
 	};
 #undef QT_NAME
 	uint8_t kind = ui_quick_kind(tile, v);
@@ -1846,7 +2067,12 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	}
 	case QT_MODE:
 		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? GLYPH_ARROW "FM" : GLYPH_ARROW "DMR");
-		return feat(UI_FEAT_MODE) && CONFIG_FM && CONFIG_DMR && !v->vfo;	// the VFO is FM only for now
+		// Only in the VFO (a channel's tile 4 is QT_TO_VFO), in a build with both VFO kinds; it keeps the mode like
+		// its other settings
+		return feat(UI_FEAT_MODE) && v->vfo && CONFIG_VFO_FM && CONFIG_VFO_DMR;
+	case QT_TO_VFO:
+		sb_str(&b, "Copy");
+		return CONFIG_VFO_FM || CONFIG_VFO_DMR;	// a channel the VFO can't hold is refused on the press, with the reason
 	case QT_MONITOR:
 		sb_str(&b, v->monitor ? "On" : "Off");
 		return feat(UI_FEAT_MONITOR_LATCH);
@@ -1964,7 +2190,7 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s)
 			fg = ui_col.fg;
 		if (focus) {
 			bg = s->quick_edit ? ui_col.warn : ui_col.focus;
-			fg = gfx_bpp() == 1 ? ui_col.bg : s->quick_edit ? ui_col.pill_dark_fg : ui_col.fg;
+			fg = gfx_bpp() == 1 ? ui_col.bg : s->quick_edit ? ui_col.pill_dark_fg : ui_col.focus_fg;
 			gfx_fill(x0 + 1, y0 + 1, x1 - x0 - 1, y1 - y0 - 1, bg);
 		}
 		gfx_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, ui_col.line);

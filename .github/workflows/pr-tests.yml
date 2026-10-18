@@ -4,16 +4,21 @@
 # CI on every pull request (docs/dev/ci.md "Pull request checks"), from this file as it is on main: a pull request's
 # own copy of the workflows never runs here, so a change to them takes the owner's review first (.github/CODEOWNERS).
 # The jobs are ci.yml's and the manual check, run on the pull request's merge commit; `changes` skips the ones its
-# files don't touch. The last job always runs and sets the `PR checks` commit status on the pull request's head commit:
-# failure when any job failed or was canceled, success otherwise. That status is the one check the main ruleset
+# files don't touch, except `checks` (Python and license checks), which runs on every pull request. A branch with a pull request gets its CI only from here (ci.yml runs on main). The last job
+# always runs and sets the `PR checks` commit status on the pull request's head commit: failure when any job failed or
+# was canceled, success otherwise. That status is the one check the main ruleset
 # requires, so a skipped job never holds a pull request up. It is posted by hand because a pull_request_target run's
 # own checks belong to main's commit, not the pull request's.
 #
 # The pull request's code gets a read-only token that isn't stored in the checkout, no secrets and no cache: nothing
-# a fork couldn't have. The DM-32 job logs in to the image registry with the job's own token, pulls the image and logs
+# a fork couldn't have. The C-SKY jobs log in to the image registry with the job's own token, pull the image and log
 # out before the build runs. The status job is the only one with a write permission (statuses), and it checks out
 # nothing. Never add secrets, another write permission, actions/cache or the pull request's text (title, body, branch
 # name) in a run step to this file.
+#
+# Runners: with the repository variable ODR_CI_RUNNER set, a pull request from a branch of this repository runs on
+# that self-hosted runner (tools/ci-runner/); one from a fork always runs on GitHub's hosted runners, since this
+# workflow runs every pull request's code without approval. Keep that condition in every job's runs-on.
 name: PR tests
 
 on:
@@ -36,7 +41,7 @@ env:
 
 jobs:
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       src: ${{ steps.files.outputs.src }}
@@ -64,10 +69,11 @@ jobs:
           echo "docs=$docs" >> "$GITHUB_OUTPUT"
           echo "source: $src, docs: $docs"
 
-  host:
+  unit-tests:
+    name: unit tests
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -75,19 +81,25 @@ jobs:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
           submodules: false   # the host tests use none of third_party
-      - name: Install tshark, numpy, pytest, pyserial
+      - name: Install gcovr, tshark, numpy, pytest, pyserial
         run: |
           set -eu
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            tshark python3-numpy python3-pytest python3-serial
-      - name: Host tests, Python checks, license checks
-        run: tools/ci.sh --steps host,python,licenses
+          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              gcovr tshark python3-numpy python3-pytest python3-serial
+          fi
+      - name: Unit tests, once, with coverage and under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1   # LeakSanitizer needs ptrace, which job containers may not allow
+          SANITIZE: "1"
+        run: tools/coverage.sh
       - name: UI screen gallery
         run: |
           set -eu
           make -s -C tests/host uiSim
-          tests/host/uiSim --gallery build/ci/gallery > /dev/null
+          mkdir -p build/ci   # uiSim makes only the last directory
+          tests/host/uiSim --gallery build/ci/gallery > build/ci/gallery.log || { grep FAIL build/ci/gallery.log; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -96,29 +108,6 @@ jobs:
             build/ci/*.log
             build/ci/gallery/
           if-no-files-found: ignore
-
-  coverage:
-    needs: changes
-    if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.MERGE_REF }}
-          persist-credentials: false
-          submodules: false
-      - name: Install gcovr, tshark, numpy
-        run: |
-          set -eu
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark python3-numpy
-      - name: Coverage of the host tests
-        run: tools/coverage.sh
-      - name: Host tests under ASan and UBSan
-        env:
-          ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1   # LeakSanitizer needs ptrace
-        run: make -C tests/host -j"$(nproc)" SANITIZE=1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -127,41 +116,41 @@ jobs:
           if-no-files-found: ignore
 
   firmware:
+    name: firmware (Arm)   # every Arm radio in one job: one checkout, the Arm toolchain once
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        board: [dm1701, md380]
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
-          submodules: recursive
+          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
+      - name: third_party submodules
+        run: tools/checkout-submodules.sh
       - name: Arm GNU Toolchain (pinned and checksummed; no cache here)
         run: tools/install-arm-toolchain.sh
       - name: Default build, warnings, size and app region fit
         run: |
           set -eu
-          tools/ci.sh --quick --steps firmware --board ${{ matrix.board }}
+          tools/ci.sh --quick --steps firmware --board dm1701,md380
           cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: firmware-${{ matrix.board }}
+          name: firmware-arm
           path: |
             build/ci/size-report.md
             build/ci/*.log
             build/ci/*/odr_*.bin
           if-no-files-found: ignore
 
-  dm32:
+  csky:
+    name: firmware (C-SKY)   # every C-SKY radio in one job, beside the Arm one: each runner has 4 cores
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -173,7 +162,9 @@ jobs:
         with:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
-          submodules: recursive
+          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
+      - name: third_party submodules
+        run: tools/checkout-submodules.sh
       - name: Pull the image, then log out before the pull request's code runs
         if: vars.ODR_CSKY_REGISTRY != ''
         env:
@@ -182,16 +173,21 @@ jobs:
           REGISTRY_USER: ${{ github.actor }}
         run: |
           set -u
+          command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
           echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
           docker pull "$ODR_CSKY_IMAGE" || true   # missing: the build step reports it as skipped
           docker logout "$REGISTRY"
-      - name: DM-32UV default build in the csky-elf image
+      - name: Default builds in the csky-elf image
         run: |
           set -u
           rc=0
-          tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32 || rc=$?
+          if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
+            tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d || rc=$?
+          else
+            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d || rc=$?
+          fi
           if [ "$rc" = 3 ]; then
-            echo "::notice::DM-32UV build skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::C-SKY builds skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -199,17 +195,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: firmware-dm32
+          name: firmware-csky
           path: |
             build/ci/size-report.md
             build/ci/*.log
             build/ci/*/odr_*.bin
           if-no-files-found: ignore
 
-  manual:
+  checks:
+    name: checks   # every pull request: Python and license checks (doc links among them), the manual when docs change
     needs: changes
-    if: needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -217,9 +213,18 @@ jobs:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
           submodules: false
-      - name: Check doc links
-        run: python3 tools/check_doc_links.py
+      - name: Install numpy, pytest, pyserial
+        run: |
+          set -eu
+          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              python3-numpy python3-pytest python3-serial
+          fi
+      - name: Python checks, license checks
+        run: tools/ci.sh --steps python,licenses
       - name: Install pandoc and typst
+        if: needs.changes.outputs.docs == 'true'
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/tools"
@@ -233,11 +238,13 @@ jobs:
           echo "PANDOC=$RUNNER_TEMP/tools/pandoc-${PANDOC_VERSION}/bin/pandoc" >> "$GITHUB_ENV"
           echo "TYPST=$RUNNER_TEMP/tools/typst-x86_64-unknown-linux-musl/typst" >> "$GITHUB_ENV"
       - name: Build the PDF
+        if: needs.changes.outputs.docs == 'true'
         run: |
           set -eu
           VERSION="$(git rev-parse --short=8 HEAD)"
           tools/build_manual.sh --version "$VERSION" --out "build/manual/OpenDigitalRadio-manual-${VERSION}.pdf"
       - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.docs == 'true'
         with:
           name: manual
           path: build/manual/*.pdf
@@ -245,9 +252,10 @@ jobs:
 
   pr-checks:
     name: PR checks status
-    needs: [changes, host, coverage, firmware, dm32, manual]
+    needs: [changes, unit-tests, firmware, csky, checks]
     if: always()
-    runs-on: ubuntu-24.04
+    # a few seconds of gh at the end: the UI gallery's runner, which is idle by then, so it never holds a build runner
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && (vars.ODR_UI_RUNNER || vars.ODR_CI_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       statuses: write   # the PR checks status on the head commit; this job runs none of the pull request's code

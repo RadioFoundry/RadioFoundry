@@ -2,9 +2,11 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The programming cable's UART as the host port (hal_stream.h): 115200 8N1 (docs/spec/hardware-dm32.md 3.1). UART0 on
 // the DM-32UV, UART1 on the DB25-D (the board sets HRC_HOST_UART). Receive by interrupt into a ring buffer; transmit by
-// polling the TX FIFO (the host link task is the only writer).
+// polling the TX FIFO (the host link task is the only writer). The set-up and the receive interrupt's loop are shared
+// with the boards' other UARTs (hrc_uart_*, the DM-32UV's GPS).
 #include "platform.h"
 #include "hal_stream.h"
+#include "hal_time.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 
@@ -40,53 +42,124 @@
 #endif
 
 #define U(off)		REG32(HOST_BASE + (off))
+#define UB(base, off)	REG32((base) + (off))
 
 static uint8_t rx_buf[RX_SIZE];
 static volatile uint32_t rx_head, rx_tail;
 static volatile uint32_t rx_overruns;	// the ring was full
 static volatile uint32_t rx_line_errors;	// the UART flagged a character (FIFO overrun, parity, framing, break)
+static volatile uint32_t rx_bytes;
+static volatile uint32_t rx_good_ms;	// hal_millis() at the last byte with no line error (hrc_host_uart_last_rx)
+static volatile bool rx_good_seen;
+static uint32_t tx_bytes, tx_stalls;	// a stall: the TX FIFO stayed full for TX_SPIN, the rest of the write dropped
+static uint32_t waits;			// wait_rx() calls: the host link task's heartbeat (one per pass, 5 ms at most)
 static SemaphoreHandle_t rx_sem;
 static bool started;
+
+// Every received character with its line status, from the interrupt. A board can override it to see bytes that aren't
+// host traffic (the DB25-D's hand mic shares the line)
+__attribute__((weak)) void hrc_host_uart_rx_tap(uint8_t b, bool error)
+{
+	(void)b;
+	(void)error;
+}
+
+void hrc_uart_setup(uint32_t base, uint32_t baud)
+{
+	uint32_t div = hrc_uart_div(HRC_APB_HZ, baud);	// 84 MHz, 115200: 46 (45.6), 0.9 % slow; 9600: 547, 0.02 %
+	UB(base, UART_IER) = 0;
+	UB(base, UART_LCR) = LCR_DLAB;
+	UB(base, UART_RBR) = div & 0xFFu;
+	UB(base, UART_IER) = (div >> 8) & 0xFFu;
+	UB(base, UART_LCR) = LCR_8N1;
+	UB(base, UART_FCR) = 0x67;	// FIFOs on and reset, RX trigger 1 character
+}
+
+void hrc_uart_rx_irq(uint32_t base, bool on)
+{
+	UB(base, UART_IER) = on ? IER_RX : 0;
+}
+
+void hrc_uart_rx_clear(uint32_t base)
+{
+	for (uint32_t i = 0; i < 64u && (UB(base, UART_LSR) & LSR_DR) != 0; i++) {
+		(void)UB(base, UART_RBR);
+	}
+	(void)UB(base, UART_LSR);	// the error bits
+	(void)UB(base, UART_USR);	// a busy-detect interrupt
+}
+
+uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged))
+{
+	uint32_t n = 0;
+	while (n < 64u) {
+		uint32_t lsr = UB(base, UART_LSR);	// reading it clears the error bits: one read per character
+		if ((lsr & LSR_DR) == 0) {
+			break;
+		}
+		rx((uint8_t)UB(base, UART_RBR), (lsr & LSR_ERRORS) != 0);
+		n++;
+	}
+	(void)UB(base, UART_LSR);	// clears a line status interrupt
+	(void)UB(base, UART_USR);	// clears a busy-detect interrupt
+	return n;
+}
+
+static void host_rx(uint8_t b, bool flagged)
+{
+	hrc_host_uart_rx_tap(b, flagged);
+	if (flagged) {
+		rx_line_errors++;
+	} else {
+		rx_good_ms = hal_millis();	// a break or framing error is a held line (a PTT press), not host data
+		rx_good_seen = true;
+	}
+	uint32_t next = (rx_head + 1u) & (RX_SIZE - 1u);
+	if (next != rx_tail) {
+		rx_buf[rx_head] = b;
+		rx_head = next;
+	} else {
+		rx_overruns++;
+	}
+	rx_bytes++;
+}
 
 static void uart_isr(void)
 {
 	BaseType_t woken = pdFALSE;
-	bool any = false;
-	for (uint32_t n = 0; n < 64; n++) {
-		uint32_t lsr = U(UART_LSR);	// reading it clears the error bits: one read per character
-		if ((lsr & LSR_DR) == 0) {
-			break;
-		}
-		if (lsr & LSR_ERRORS) {
-			rx_line_errors++;
-		}
-		uint8_t b = (uint8_t)U(UART_RBR);
-		uint32_t next = (rx_head + 1u) & (RX_SIZE - 1u);
-		if (next != rx_tail) {
-			rx_buf[rx_head] = b;
-			rx_head = next;
-		} else {
-			rx_overruns++;
-		}
-		any = true;
-	}
-	(void)U(UART_LSR);	// clears a line status interrupt
-	(void)U(UART_USR);	// clears a busy-detect interrupt
-	if (any && rx_sem != NULL) {
+	if (hrc_uart_rx_isr(HOST_BASE, host_rx) != 0 && rx_sem != NULL) {
 		xSemaphoreGiveFromISR(rx_sem, &woken);
 	}
 	portYIELD_FROM_ISR(woken);
 }
 
-void hrc_host_uart_init(void)
+// Divisor latch and 8N1, FIFOs reset, receive interrupt off (the caller enables it). RAM code: the stub hand-over uses it
+static HRC_RAMFUNC void set_div(uint32_t div)
 {
-	uint32_t div = (HRC_APB_HZ + 8u * BAUD) / (16u * BAUD);	// 46 (45.6): 0.9 % slow
 	U(UART_IER) = 0;
 	U(UART_LCR) = LCR_DLAB;
 	U(UART_RBR) = div & 0xFFu;
 	U(UART_IER) = (div >> 8) & 0xFFu;
 	U(UART_LCR) = LCR_8N1;
 	U(UART_FCR) = 0x67;	// FIFOs on and reset, RX trigger 1 character
+}
+
+void hrc_host_uart_init(void)
+{
+	// 84 MHz: 46 (0.9 % slow); 36 MHz: 20 (2.3 % slow)
+	set_div(hrc_uart_div(HRC_APB_HZ, BAUD));
+}
+
+// Transmit holding register and shifter empty (LSR bit 6), with a bound so a dead UART can't hang the hand-over
+HRC_RAMFUNC void hrc_host_uart_drain(void)
+{
+	for (uint32_t n = 2000000u; n != 0 && (U(UART_LSR) & 0x40u) == 0; n--) {
+	}
+}
+
+HRC_RAMFUNC void hrc_host_uart_loader_div(void)
+{
+	set_div(hrc_uart_div(HRC_LOADER_APB_HZ, BAUD));
 }
 
 static bool start(void)
@@ -100,7 +173,7 @@ static bool start(void)
 	hrc_host_uart_init();
 	rx_head = rx_tail = 0;
 	hrc_irq_register(HOST_IRQ, uart_isr);
-	U(UART_IER) = IER_RX;
+	hrc_uart_rx_irq(HOST_BASE, true);
 	hrc_irq_enable(HOST_IRQ, true);
 	started = true;
 	return true;
@@ -123,6 +196,7 @@ static size_t rd(uint8_t *buf, size_t max)
 
 static bool wait_rx(uint32_t timeout_ms)
 {
+	waits++;
 	if (rx_tail != rx_head) {
 		return true;
 	}
@@ -138,10 +212,12 @@ static size_t wr(const uint8_t *buf, size_t len)
 		uint32_t spins = TX_SPIN;
 		while ((U(UART_USR) & USR_TFNF) == 0) {
 			if (--spins == 0) {
+				tx_stalls++;
 				return i;
 			}
 		}
 		U(UART_RBR) = buf[i];
+		tx_bytes++;
 	}
 	return len;
 }
@@ -156,6 +232,15 @@ uint32_t hrc_host_uart_line_errors(void)
 	return rx_line_errors;
 }
 
+void hrc_host_uart_traffic(hrc_uart_traffic_t *t)
+{
+	t->rx_bytes = rx_bytes;
+	t->tx_bytes = tx_bytes;
+	t->tx_stalls = tx_stalls;
+	t->waits = waits;
+	t->ier = (uint8_t)U(UART_IER);
+}
+
 const hal_stream_t hrc_host_uart_stream = {
 	.start = start,
 	.connected = connected,
@@ -163,3 +248,9 @@ const hal_stream_t hrc_host_uart_stream = {
 	.wait_rx = wait_rx,
 	.write = wr,
 };
+
+bool hrc_host_uart_last_rx(uint32_t *ms)
+{
+	*ms = rx_good_ms;
+	return rx_good_seen;
+}

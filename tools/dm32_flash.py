@@ -218,6 +218,25 @@ class Flasher:
         self.exchange(5, bytes([0x31]), bytes([CRC_REQ]))
         self.exchange(6, bytes([SOH]), bytes([CRC_REQ]))
 
+    def probe(self):
+        """Steps 1-3 only, the loader's identification (13.2): (step 2 answer, step 3 answer) as received, whatever
+        they are. Stops before step 4; nothing in the radio changes before the erase at step 7. For checking whether
+        another HR_C7000 radio's update loader speaks this protocol and which model string it reports."""
+        self.port.reset_input_buffer()
+        for attempt in range(3):
+            self.port.write(bytes([0x52]))
+            got = self.read_exact(1, self.step_timeout)
+            if got:
+                break
+        if got != bytes([ACK]):
+            raise FlashError("step 1: %s: not this loader protocol, or not in update mode"
+                             % ("answered " + hexs(got) if got else "no answer"))
+        self.port.write(bytes([0x4D, 0, 0, 0, 1]))
+        step2 = self.read_exact(3, self.step_timeout)
+        self.port.write(bytes([ACK]))
+        step3 = self.read_exact(32, self.step_timeout)  # up to 32 bytes, as many as arrive (the DM-32 sends 9)
+        return step2, step3
+
     def send_header(self, name, size):
         blk = header_block(name, size)
         self.log("   step 7: header sent, the radio erases the application area (up to about 15 s) ...")
@@ -325,7 +344,7 @@ class FakeBootloader:
     """The radio side of 13.2 as a serial port object. Checks every step, the header CRC, each block's number (with
     the 0xFF -> 0x00 wrap), complement and CRC, and keeps what was written. Faults: `corrupt` = block numbers whose
     first transfer arrives damaged (the radio NAKs), `silent` = never answers, `bad_step2` = a wrong model answer,
-    `erase_reads` = empty reads before the erase answer."""
+    `erase_reads` = empty reads before the erase answer, `model` = the step 3 answer."""
 
     def __init__(self, corrupt=(), silent=False, bad_step2=False, erase_reads=5, model=MODEL_DM32):
         self.magic = model.magic
@@ -526,6 +545,19 @@ def self_test():
         except FlashError as e:
             check(want in str(e), "error mentions %r: %s" % (want, e))
 
+    fake = FakeBootloader()
+    s2, s3 = Flasher(fake, log=quiet, step_timeout=0.05).probe()
+    check(s2 == b"\x4D\x01\x09" and s3 == FILE_MAGIC, "probe reads the DM-32 identification: %s %r" % (hexs(s2), s3))
+    check(fake.state == 4 and not fake.blocks and fake.header is None, "probe stops before step 4")
+    other = Model("other", "another radio", b"OTHER-LDR", "?", False)
+    s2, s3 = Flasher(FakeBootloader(model=other), log=quiet, step_timeout=0.05).probe()
+    check(s3 == b"OTHER-LDR", "probe reports another model string: %r" % s3)
+    try:
+        Flasher(FakeBootloader(silent=True), log=quiet, step_timeout=0.05).probe()
+        check(False, "probe of a silent radio fails")
+    except FlashError as e:
+        check("step 1" in str(e), "silent probe names step 1: %s" % e)
+
     fake = FakeBootloader(erase_reads=10 ** 9)
     try:
         Flasher(fake, log=quiet, step_timeout=0.05, erase_timeout=0.2).flash(raw[:1024])
@@ -596,6 +628,21 @@ def run(image_path, port=None, dry_run=False, yes=False, log=print, stock=False,
     return raw
 
 
+def probe(port=None, log=print):
+    """--probe: identify the update loader of the radio on the cable, write nothing."""
+    dev = find_port(port)
+    log("cable: %s. The radio must be in its update mode already (the DM-32: PTT + SK1 at power-on)" % dev)
+    sp = SerialPort(dev)
+    try:
+        s2, s3 = Flasher(sp, log=log).probe()
+    finally:
+        sp.close()
+    log("   step 2 answer: %s (the DM-32 answers 4D 01 09)" % (hexs(s2) if s2 else "none"))
+    log("   step 3 answer: %r (the DM-32 answers %r)" % (s3, FILE_MAGIC))
+    log("   stopped before step 4: nothing was written. Switch the radio off to leave update mode")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Flash a Baofeng DM-32UV or DM-1801 Pro through its bootloader "
                                              "(update mode at power-on) over the programming cable.",
@@ -607,6 +654,8 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true", help="check the image and print the plan; touch nothing")
     ap.add_argument("--yes", "-y", action="store_true", help="don't wait for Enter before flashing")
     ap.add_argument("--list-ports", action="store_true", help="list the USB-serial cables found")
+    ap.add_argument("--probe", action="store_true", help="only identify the loader (steps 1-3): print what it "
+                    "answers, write nothing. For another HR_C7000 radio in its update mode")
     ap.add_argument("--self-test", action="store_true", help="run against a simulated bootloader")
     a = ap.parse_args(argv)
     if a.self_test:
@@ -619,6 +668,8 @@ def main(argv=None):
             if not cables:
                 print("no USB-serial cable found")
             return 0
+        if a.probe:
+            return probe(a.port)
         path = a.stock or a.image
         if not path or (a.stock and a.image):
             ap.error("give one image, or --stock FILE")

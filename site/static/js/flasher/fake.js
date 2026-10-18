@@ -3,13 +3,20 @@
 // A simulated radio for the tests and the flasher's "simulated radio" mode: the AnyRoad bootloader with a model of
 // the STM32F405 flash (a port of tools/odrflash/odrflash/fakedfu.py: erase sets a sector to 0xFF, programming only
 // clears bits), and ODR's USB serial port answering the debug link and the CPS reads from the same flash and an SPI
-// flash. A synthetic stock firmware file and key stand in for the real ones, which are never part of ODR.
+// flash. A synthetic stock firmware file and key stand in for the real ones, which are never part of ODR. A radio
+// running ODR also hands over to the STM32F4 stub (debug link STUB, then the stub's protocol and interlock as
+// stub/f4stub.py's FakeF4 has them).
 
 import { BLOCK, FIRST_BLOCK } from "./plan.js";
 import { concat, crc32, le32, sha256, u16be, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
+import { STUB_MAGIC } from "./stub.js";
+import { APP_BASE, F4_MAGIC, f405Sectors } from "./f4stub.js";
 
 const FLASH_BASE = 0x08000000, FLASH_SIZE = 0x100000;
+const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
+const be32 = (n) => new Uint8Array([(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>> 8) & 0xFF, n & 0xFF]);
+const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 
 export function rng(seed) {
 	let s = seed >>> 0 || 1;
@@ -64,8 +71,10 @@ export async function simulation(fbReal, boardId = "dm1701", seed = 1701) {
 // ---------------------------------------------------------------------------------------------------------------
 
 export class FakeRadio {
-	// state: "stock" (stock firmware: codec in place, no serial port), "odr", "odr-nocodec", "bootloader"
-	constructor(sim, { state = "stock", spiSize = 0x1000000 } = {}) {
+	// state: "stock" (stock firmware: codec in place, no serial port), "odr", "odr-nocodec", "bootloader".
+	// stubEntry: ODR built with CONFIG_STUB_ENTRY; adopt: the stub keeps ODR's USB device (else the port goes away
+	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;
@@ -82,6 +91,12 @@ export class FakeRadio {
 		this.running = state === "bootloader" ? "stock" : state;
 		this.mode = state === "bootloader" ? "bootloader" : "normal";
 		this.git = "5f034440";
+		this.stubEntry = stubEntry;
+		this.adopt = adopt;
+		this.cutAfter = cutAfter;
+		this.programs = 0;
+		this.events = [];
+		this.port = 0;
 		this.resetDfu();
 		this.log = [];
 	}
@@ -179,17 +194,110 @@ export class FakeRadio {
 
 	serialStream() {
 		const radio = this;
+		const port = this.port;
 		const s = {
 			buf: new Uint8Array(0),
+			inb: new Uint8Array(0),
 			clear() { s.buf = new Uint8Array(0); },
 			take(n) { const o = s.buf.slice(0, n); s.buf = s.buf.slice(n); return o; },
 			async write(data) {
+				if (port !== radio.port) throw new Error("the device has been lost");
+				if (radio.mode === "stub") {
+					if (radio.cutAfter !== null && radio.programs >= radio.cutAfter) throw new Error("the device has been lost");
+					s.inb = concat(s.inb, data);
+					s.inb = radio.stubFeed(s.inb, (b) => { s.buf = concat(s.buf, b); });
+					return;
+				}
 				if (radio.mode !== "normal" || !radio.running.startsWith("odr")) throw new Error("no serial port: the radio isn't running ODR");
 				s.buf = concat(s.buf, radio.serialAnswer(data));
 			},
 			async close() {},
 		};
 		return s;
+	}
+
+	// ---- the STM32F4 stub (stub/stm32f4/f4stub_proto.c's rules)
+
+	word(addr) { return u32le(this.flash, addr - FLASH_BASE); }
+
+	stubFeed(inb, send) {
+		while (inb.length >= 6) {
+			if (inb[0] !== 0x02) { inb = inb.slice(1); continue; }
+			const n = (inb[2] << 8) | inb[3];
+			if (inb.length < 6 + n) break;
+			const op = inb[1], p = inb.slice(6, 6 + n);
+			const bad = sum8(p) !== inb[4];
+			inb = inb.slice(6 + n);
+			const reply = (st, body = new Uint8Array(0)) => send(concat(new Uint8Array([0x02, st, body.length >> 8, body.length & 0xFF, sum8(body), 0x03]), body));
+			if (bad) reply(0x0A);
+			else this.stubOp(op, p, reply);
+		}
+		return inb;
+	}
+
+	stubOp(op, p, reply) {
+		const OK = 0x05, REFUSED = 0x0F;
+		const mem = (baseLen, addr) => (p.length > baseLen && p[baseLen] === 1 ? [this.spi, addr] : [this.flash, addr - FLASH_BASE]);
+		const appBlank = () => this.word(APP_BASE) === 0xFFFFFFFF;
+		if (op === 0x01) {
+			reply(OK, concat(new TextEncoder().encode("F4STUB"), new Uint8Array([2, 0x10, 0x08, 0x04, 0x00, 0x55, this.adopt ? 1 : 0]), be32(APP_BASE),
+				be32(this.spi.length), new Uint8Array([0xEF, 0x40, 0x18])));
+		} else if (op === 0x07) {
+			const a = u32be(p, 0), k = (p[4] << 8) | p[5];
+			const [m, o] = mem(6, a);
+			const body = new Uint8Array(5 * k);
+			for (let i = 0; i < k; i++) {
+				const blk = m.subarray(o + i * 4096, o + (i + 1) * 4096);
+				body.set(be32(crc32(blk)), i * 5);
+				body[i * 5 + 4] = blk.every((x) => x === 0xFF) ? 1 : 0;
+			}
+			reply(OK, body);
+		} else if (op === 0x09) {
+			const a = u32be(p, 0), k = p[4];
+			const [m, o0] = mem(6, a);
+			for (let i = 0; i < k; i++) {
+				const blk = m.subarray(o0 + i * 4096, o0 + (i + 1) * 4096);
+				const blank = blk.every((x) => x === 0xFF);
+				const data = blank ? new Uint8Array(0) : blk;
+				reply(OK, concat(be32(crc32(blk)), new Uint8Array([blank ? 2 : 0, data.length >> 8, data.length & 0xFF]), data));
+			}
+		} else if (op === 0x10) {
+			const sec = f405Sectors()[p[0]];
+			if (u32be(p, 1) !== F4_MAGIC || p[0] < 3 || !sec || (p[0] !== 3 && !appBlank())) return reply(REFUSED);
+			this.flash.fill(0xFF, sec.addr - FLASH_BASE, sec.addr - FLASH_BASE + sec.size);
+			this.events.push(`erase ${p[0]}`);
+			reply(OK);
+		} else if (op === 0x11) {
+			const a = u32be(p, 0), data = p.subarray(4), o = a - FLASH_BASE;
+			if (a < APP_BASE || (a + data.length > 0x08010000 && !appBlank())) return reply(REFUSED);
+			if (!this.flash.subarray(o, o + data.length).every((x) => x === 0xFF)) return reply(REFUSED);
+			this.flash.set(data, o);
+			this.programs++;
+			reply(OK);
+		} else if (op === 0x12) {
+			const a = u32be(p, 0);
+			if (u32be(p, 4) !== F4_MAGIC || a % 4096 || a >= this.spi.length) return reply(REFUSED);
+			this.spi.fill(0xFF, a, a + 4096);
+			reply(OK);
+		} else if (op === 0x13) {
+			const a = u32be(p, 0), data = p.subarray(4);
+			if (!this.spi.subarray(a, a + data.length).every((x) => x === 0xFF)) return reply(REFUSED);
+			this.spi.set(data, a);
+			reply(OK);
+		} else if (op === 0x0D) {
+			if (u32be(p, 0) !== F4_MAGIC) return reply(REFUSED);
+			reply(OK);
+			this.events.push("reset");
+			this.powerOn();
+		} else reply(0x0B);
+	}
+
+	// A reset or power cycle: the bootloader stays in DFU while the application's first word is erased
+	powerOn() {
+		this.port++;
+		if (this.word(APP_BASE) === 0xFFFFFFFF) { this.mode = "bootloader"; this.resetDfu(); return; }
+		this.mode = "normal";
+		this.running = this.codecReport() === "absent" ? "odr-nocodec" : "odr";
 	}
 
 	serialAnswer(req) {
@@ -204,6 +312,20 @@ export class FakeRadio {
 				const p = new Uint8Array(28);
 				p.set(le32(0x0009A413), 0); p[4] = 0x00; p[5] = 0x04; p.set(this.uid, 6); p.set(le32(0x0FFF55ED), 18); p[22] = 1; p[23] = 0x55;
 				return ok(p);
+			}
+			if (f.cmd === 0x1A && this.stubEntry) {
+				const op = f.payload[0], q = f.payload;
+				if (op === 0) return ok(concat(le32(STUB_MAGIC), le32(0x2001E000), le32(8192), new Uint8Array([59, 0, 0]), le32(0)));
+				if (op === 1) { this.stubLen = u32le(q, 5); this.stubCrc = u32le(q, 9); this.stubEntryAt = u32le(q, 13); this.loaded = new Uint8Array(this.stubLen); return ok(le32(0)); }
+				if (op === 2) { this.loaded.set(q.subarray(5), u32le(q, 1)); return ok(le32(u32le(q, 1) + q.length - 5)); }
+				if (op === 3) {
+					if (!this.loaded || crc32(this.loaded) !== this.stubCrc || this.stubEntryAt !== 0x20000000) return frame(f.cmd | 0x80, f.seq, new Uint8Array([4]));
+					this.mode = "stub";
+					this.events.push("stub (from ODR)");
+					if (!this.adopt) this.port++;	// the old port is gone; serialStream() is the new one
+					return ok(new Uint8Array(0));
+				}
+				return frame(f.cmd | 0x80, f.seq, new Uint8Array([3]));
 			}
 			if (f.cmd === 0x0C) {
 				const addr = u32le(f.payload, 0), n = f.payload[4] | (f.payload[5] << 8);

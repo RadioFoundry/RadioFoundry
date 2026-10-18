@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DM-32UV display: 240x320 ST7789-class TFT on the SoC's i8080 LCD controller, backlight on GPIO 0x0F / PWM0
-// (docs/spec/hardware-dm32.md 3.6, 3.10, 7). Shown at half resolution: the core draws 120x160 and every pixel goes
-// out as a 2x2 block (the core's frame buffer is 40 KB, core/ui/gfx.h).
+// (docs/spec/hardware-dm32.md 3.6, 3.10, 7). Full resolution in 16 colors: the core's frame buffer holds a palette
+// index per pixel (37.5 KB; RGB565 would take 150 KB), and each row goes out as RGB565 through the palette.
 //
 // The LCD data lines DB0-DB4 are also the keypad rows. Every LCD burst holds dm32_lcdbus_lock() and hands the bus
 // pins to the controller itself, so the key scan may leave them as GPIOs when it unlocks.
@@ -20,7 +20,6 @@
 #define LCDC_CFG_VALUE		0x303u
 #define LCDC_PINS_MASK		0xFFF80107u		// IO_DIPLEX2 &= this: CS, RS, WR, DB0-DB7 to the controller
 
-#define SCALE			2u
 #define PANEL_W			240u
 #define PANEL_H			320u
 
@@ -98,7 +97,7 @@ static const st7789_t panel = {
 	.height = PANEL_H,
 	.madctl = 0xC0,
 	.invert = true,
-	.scale = SCALE,
+	.scale = 1,
 };
 
 static void lcdc_init(void)
@@ -123,21 +122,21 @@ static void init(void)
 	ready = true;
 }
 
-static void flush(const void *fb, uint16_t y0, uint16_t y1)
+static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1)
 {
 	if (!ready || fb == NULL) {
 		return;
 	}
-	st7789_write_rows(&panel, (const uint16_t *)fb, y0, y1);
+	st7789_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
 const hal_display_t dm32_display = {
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
-	.width = PANEL_W / SCALE,
-	.height = PANEL_H / SCALE,
-	.bpp = 16,
+	.width = PANEL_W,
+	.height = PANEL_H,
+	.bpp = 4,
 	.init = init,
-	.flush = flush,
+	.flush_indexed = flush,
 	.set_backlight = set_backlight,
 };

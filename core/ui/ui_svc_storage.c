@@ -124,6 +124,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 		if (id == UI_SET_BACKLIGHT_S)
 			return rs.backlight_dim_s;
 		return rs.rx_save != 0;
+	case UI_SET_VOLUME:
+		settings_read(&st);
+		return radio_volume_step(st.volume);
 	case UI_SET_BRIGHTNESS:
 		settings_read(&st);
 		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
@@ -165,9 +168,18 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_HEAR_ALL_DEFAULT:
 		settings_read(&st);
 		return (st.ui_flags & ui_flag(id)) != 0;
+	case UI_SET_VIBRATE:
+		settings_read(&st);
+		return (st.ui_flags & SETTINGS_UI_NO_VIBRATE) == 0;
 	case UI_SET_THEME:
 		settings_read(&st);
 		return st.theme <= 2 ? st.theme : 0;
+	case UI_SET_ACCENT:
+		settings_read(&st);
+		return st.accent & SETTINGS_ACCENT_COLOR;
+	case UI_SET_STRIP:
+		settings_read(&st);
+		return (st.accent & SETTINGS_ACCENT_PLAIN) == 0;
 	case UI_SET_UPDOWN_HOME:
 		settings_read(&st);
 		return st.updown_home <= 2 ? st.updown_home : 0;
@@ -185,10 +197,10 @@ int32_t ui_svc_setting_get(uint8_t id)
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
 	case UI_SET_NOISE_REDUCTION:
 		settings_read(&st);
-		return (st.audio_flags & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
+		return (st.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
 	case UI_SET_MIC_AGC:
 		settings_read(&st);
-		return (st.audio_flags & SETTINGS_AUDIO_AGC) != 0;
+		return (st.accent & SETTINGS_AUDIO_AGC) != 0;
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:
@@ -272,13 +284,26 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		st->ui_flags = (uint8_t)(value != 0 ? st->ui_flags | ui_flag(id) : st->ui_flags & ~ui_flag(id));
 		settings_end(hal_millis());
 		return true;
+	case UI_SET_VIBRATE:
+		st = settings_begin();
+		st->ui_flags = (uint8_t)(value != 0 ? st->ui_flags & ~SETTINGS_UI_NO_VIBRATE :
+					 st->ui_flags | SETTINGS_UI_NO_VIBRATE);
+		settings_end(hal_millis());
+		return true;
 	case UI_SET_THEME:
+	case UI_SET_ACCENT:
+	case UI_SET_STRIP:
 	case UI_SET_UPDOWN_HOME:
 	case UI_SET_LOW_BATTERY:
 	case UI_SET_AUTO_OFF_MIN:
 		st = settings_begin();
 		if (id == UI_SET_THEME) {
 			st->theme = (uint8_t)clamp16(value, 0, 2);
+		} else if (id == UI_SET_ACCENT) {
+			st->accent = (uint8_t)((st->accent & ~SETTINGS_ACCENT_COLOR) |
+					       clamp16(value, 0, SETTINGS_ACCENT_COLOR));
+		} else if (id == UI_SET_STRIP) {
+			st->accent = (uint8_t)(value ? st->accent & ~SETTINGS_ACCENT_PLAIN : st->accent | SETTINGS_ACCENT_PLAIN);
 		} else if (id == UI_SET_UPDOWN_HOME) {
 			st->updown_home = (uint8_t)clamp16(value, 0, 2);
 		} else if (id == UI_SET_LOW_BATTERY) {
@@ -322,6 +347,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		}
 		settings_end(hal_millis());
 		return true;
+	case UI_SET_VOLUME:
+		st = settings_begin();
+		st->volume = radio_volume_stored((uint8_t)clamp16(value, 0, RADIO_VOLUME_MAX));
+		settings_end(hal_millis());
+		radio_req_volume((uint8_t)clamp16(value, 0, RADIO_VOLUME_MAX));	// in force now, not at the next reload
+		return true;
 	case UI_SET_BRIGHTNESS:
 		st = settings_begin();
 		st->brightness = (uint8_t)(value < 10 ? 10 : value > 100 ? 100 : value);
@@ -356,7 +387,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		uint8_t bit = id == UI_SET_MIC_AGC ? SETTINGS_AUDIO_AGC : SETTINGS_AUDIO_NO_NOISE_REDUCTION;
 		bool set = (value != 0) == (id == UI_SET_MIC_AGC);
 		st = settings_begin();
-		st->audio_flags = (uint8_t)(set ? (st->audio_flags | bit) : (st->audio_flags & ~bit));
+		st->accent = (uint8_t)(set ? (st->accent | bit) : (st->accent & ~bit));
 		settings_end(hal_millis());
 		return true;
 	}
@@ -489,6 +520,33 @@ bool ui_svc_save_channel(void)
 	return take_channel() && storage_job_post(save_channel_job, NULL);
 }
 
+// The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
+// core re-reads it (codeplug_serial), and the edited values are what the user wants now. Whether it is the channel in
+// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v
+static void write_channel_job(void *ctx)
+{
+	(void)ctx;
+	if (!codeplug_set_channel(job.channel, &job.now)) {
+		save_failed("Couldn't write the codeplug: not saved");
+		return;
+	}
+	if (job.temp != 0) {
+		radio_req_clear_temporary();
+	}
+}
+
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+{
+	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || storage_job_busy()) {
+		return false;
+	}
+	radio_get_view(&v);
+	job.channel = number;
+	job.temp = !v.vfo && v.channel_number == number && v.temporary;	// here: drop the temporary changes after it
+	job.now = *ch;
+	return storage_job_post(write_channel_job, NULL);
+}
+
 #if CONFIG_DMR
 // The first stored contact with this ID and kind becomes the channel's talk target. Searching the contacts reads up
 // to 1024 records, so it is part of the job too. Until it is done the target is a temporary one (ui_svc_talk_to)
@@ -516,7 +574,16 @@ static void save_target_job(void *ctx)
 
 bool ui_svc_save_talk_target(uint32_t id, bool private_call)
 {
-	if (id == 0 || !take_channel())
+	if (id == 0)
+		return false;
+	radio_get_view(&v);
+	if (v.vfo) {
+		if (!CONFIG_VFO_DMR || v.hotspot)
+			return false;
+		radio_req_dmr_target(id, private_call);	// the VFO's own target: kept with its settings, nothing to write
+		return true;
+	}
+	if (!take_channel())
 		return false;
 	job.id = id;
 	job.private_call = private_call;

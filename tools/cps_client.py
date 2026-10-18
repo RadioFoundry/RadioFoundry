@@ -8,10 +8,12 @@ docs/spec/cps-protocol.md 2), the way qdmr's open-firmware UV380 driver does it.
   cps_client.py read image.bin [--regions all]       read into a flat image (file offset = flash address)
   cps_client.py write image.bin [--no-reboot]        write the regions back (prepare / data / commit per sector)
   cps_client.py verify image.bin                     read back and compare
+  cps_client.py test-channels image.bin              put an FM and a DMR test channel (and a zone) into an image
 
 Transport: the radio's USB serial port (--port, $ODR_PORT, or the only 1FC9:0094 device), or a command speaking
-the protocol on stdin / stdout (--exec "tests/host/cpsSim --populate", for tests). The DM-32UV has no USB: give the
-programming cable's port with --port.
+the protocol on stdin / stdout (--exec "tests/host/cpsSim --populate", for tests). The DM-32UV and the DB25-D PRO have
+no USB: give the programming cable's port with --port (for example /dev/ttyUSB1; needs pyserial). The DB25-D's image
+sits at the STM32 addresses, so it takes no --offset.
 
 --offset ADDR adds ADDR to every flash address on the wire. The DM-32UV keeps the open-firmware image at +0x700000 in
 its data flash (boards/dm32/flash_dm32.c, open-firmware-cps.md 7.4) and its shim takes physical addresses, so it
@@ -343,6 +345,67 @@ def set_channel_alias(img, number, ts1=True, ts2=False):
     img[a + CH_FLAG1] = (img[a + CH_FLAG1] & ~0x0A) | (0x02 if ts1 else 0) | (0x08 if ts2 else 0)
 
 
+# ── a small test codeplug: one FM and one DMR channel, a contact, a zone ──
+CONTACT_BASE = 0xA7620          # contact 1 (flash image 0x87620 + the 128 KB offset), 24 bytes each
+ZONE_BITMAP = 0x8010
+ZONE_DATA = 0x8030              # slot 0, 80-channel layout: 16 name bytes, 80 channel numbers (LE)
+GENERAL = 0xE0                  # callsign (8) at +0, DMR ID (8 BCD digits, big endian) at +8
+BANK0_BITMAP = 0x3780
+
+
+def _bcd_freq(hz):
+    """A frequency as the channel record holds it: BCD of 10 Hz units, a little endian 32-bit word"""
+    units = hz // 10
+    if not 0 < units < 10 ** 8:
+        raise CpsError(f"frequency {hz} Hz out of range")
+    return int(str(units), 16).to_bytes(4, "little")
+
+
+def _bcd_id(n):
+    return int(f"{n:08d}", 16).to_bytes(4, "big")
+
+
+def _channel_record(name, rx_hz, tx_hz, dmr, cc=1, ts=1, contact=0, wide=False):
+    r = bytearray(CHANNEL_SIZE)
+    raw = name.encode("ascii")[:16]
+    r[0:16] = raw + b"\xff" * (16 - len(raw))
+    r[0x10:0x14] = _bcd_freq(rx_hz)
+    r[0x14:0x18] = _bcd_freq(tx_hz)
+    r[0x18] = 1 if dmr else 0
+    r[0x20:0x24] = b"\xff\xff\xff\xff"      # no tones
+    r[0x28] = 0x16                          # the vendor default bytes (open-firmware-cps.md 7.3.3)
+    r[0x2C] = cc if dmr else 0
+    r[0x2E:0x30] = contact.to_bytes(2, "little")
+    r[0x31] = 0x40 if dmr and ts == 2 else 0
+    r[0x33] = 0x02 if wide else 0           # bandwidth bit: set = 25 kHz
+    return r
+
+
+def make_test_codeplug(img, rx_mhz=461.4625, tg=201, cc=2, ts=1, dmr_id=None, callsign=None):
+    """Edit img (a flat image, file offset = flash address) so the radio has channel 1 (FM, 12.5 kHz, simplex), channel
+    2 (DMR on the same frequency, color code cc, timeslot ts, talk target group tg = contact 1) and zone 1 holding both.
+    Everything else in img stays; zone slot 0 and contact 1 are replaced. dmr_id and callsign set the radio's own."""
+    hz = round(rx_mhz * 1e6)
+    for number, rec in ((1, _channel_record(f"ODR FM {rx_mhz:.4f}", hz, hz, False)),
+                        (2, _channel_record(f"ODR DMR TG{tg}", hz, hz, True, cc, ts, contact=1))):
+        _, a = channel_addr(number)
+        img[a:a + CHANNEL_SIZE] = rec
+        i = number - 1
+        img[BANK0_BITMAP + i // 8] |= 1 << (i % 8)
+    name = f"TG {tg}".encode("ascii")[:16]
+    img[CONTACT_BASE:CONTACT_BASE + 24] = (name + b"\xff" * (16 - len(name)) + _bcd_id(tg) +
+                                           bytes([0, 0, 0, 0xFF]))
+    zone = b"ODR test".ljust(16, b"\xff") + (1).to_bytes(2, "little") + (2).to_bytes(2, "little") + bytes(156)
+    img[ZONE_DATA:ZONE_DATA + len(zone)] = zone     # the zeros after the list also select the 80-channel layout
+    img[ZONE_BITMAP] |= 1
+    if callsign:
+        raw = callsign.encode("ascii")[:8]
+        img[GENERAL:GENERAL + 8] = raw + b"\xff" * (8 - len(raw))
+    if dmr_id:
+        img[GENERAL + 8:GENERAL + 12] = _bcd_id(dmr_id)
+    return img
+
+
 def open_cps(port=None, exec_cmd=None, timeout=2.0, offset=0):
     if exec_cmd:
         return Cps(ExecTransport(exec_cmd), timeout, offset)
@@ -396,8 +459,24 @@ def main(argv=None):
     w.add_argument("--no-reboot", action="store_true", help="don't send save-and-reboot at the end")
     v = sub.add_parser("verify")
     v.add_argument("image")
+    t = sub.add_parser("test-channels", help="edit an image (a new blank one if the file is missing): an FM and a DMR "
+                       "test channel, a talk group contact and a zone")
+    t.add_argument("image")
+    t.add_argument("--rx", type=float, default=461.4625, help="MHz, simplex (default 461.4625)")
+    t.add_argument("--tg", type=int, default=201)
+    t.add_argument("--cc", type=int, default=2)
+    t.add_argument("--ts", type=int, choices=(1, 2), default=1)
+    t.add_argument("--id", type=int, help="the radio's DMR ID")
+    t.add_argument("--call", help="the radio's name / callsign")
     a = ap.parse_args(argv)
 
+    if a.cmd == "test-channels":
+        img = load_image(a.image) if os.path.exists(a.image) else bytearray(b"\xff" * IMAGE_SIZE)
+        make_test_codeplug(img, a.rx, a.tg, a.cc, a.ts, a.id, a.call)
+        with open(a.image, "wb") as f:
+            f.write(img)
+        print(f"{a.image}: channel 1 FM and channel 2 DMR (TG {a.tg}, CC {a.cc}, TS {a.ts}) on {a.rx:.4f} MHz, zone 1")
+        return 0
     regions = REGIONS[a.regions]
     progress = None if a.quiet else bar
     try:

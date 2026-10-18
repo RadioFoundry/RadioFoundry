@@ -78,18 +78,54 @@ The register and stack roles match `DM32_firmware/.../codec_interface.c`, so the
 The stock wrapper passes values it keeps in the state blocks where the aftermarket firmware passes constants:
 
 * decode: r3 = D[0x1166], sp+0 = a flags word.
-* encode: r1 = E[0x1736], sp+0 = the flags word, sp+8 = E[0x173A] (0x2000 after init).
+* encode: r1 = E[0x1736], sp+0 = the flags word (a literal 0x800 in three calls, E[0x172E] = 0x1840 in the other
+  three; see [codec-dm1801pro.md](codec-dm1801pro.md) section 3), sp+8 = E[0x173A] (0x2000 after init).
 * ECC: r2 = E[0x1738].
 
 The aftermarket firmware instead uses r3 = 0, encode sp+0 = 0x1840 and then 0x800, and sp+8 = 0x2000. Stock sets
-E[0x172C] = 0x1840 at init. Whether the aftermarket firmware's other constants are right for stock is unverified
-(open item).
+E[0x172C] = 0x1840 at init. Checked on the DM-1801 Pro build of the same wrapper code
+([codec-dm1801pro.md](codec-dm1801pro.md) sections 3 and 5): the sequence 0x1840 once, then 0x800, matches none of the
+wrapper's calls, because each call pattern passes a single value on every call. Which pattern DMR voice uses is open.
 
 The encode flags word is a set of feature bits, one value on every call of a transmission (0x800, or 0x1840 =
 0x1000 | 0x800 | 0x40); this build was measured as the DM-1801 Pro's ([codec-md380.md](codec-md380.md), "Encode
 flags"). "0x1840 on the first call, then 0x800" behaves as 0x800: no noise suppression and no tone frames.
-`platform/hrc7000/vocoder.c` (the DM-32UV and the DM-1801 Pro) passes one word on every call from `drivers/vocoder/ambe2_flags.h`: 0x800, plus 0x40
-for noise reduction, 0x1000 for tone frames and 0x2000 for AGC (0x1840 by default).
+`platform/hrc7000/vocoder.c` (the DM-32UV and the DM-1801 Pro) passes one word on every call from
+`drivers/vocoder/ambe2_flags.h`: 0x800, plus 0x40 for noise reduction, 0x1000 for tone frames and 0x2000 for AGC
+(0x1840 by default).
+
+## Stock versions
+
+Every DM-32UV stock build from 01.01.032 to 01.01.049 carries the same codec: the same length (0x14600), the same run
+address (0x16CDC), the same entry points (the 049 column above) and byte-identical tables (`10684c33...`). Inside the
+codec ranges the code differs only in its table pointers. The rest of the differences fall in the stock code that lies
+inside the window but isn't codec. Each version links the codec to its own flash addresses, so `tools/dm32_codec.py`
+keys each stock file by its SHA-256 and finds the codec in a program flash read by content, then by address.
+
+| Stock build | Code, flash | Tables, flash | Tables, modem RAM | Same code as |
+|---|---|---|---|---|
+| 01.01.032 | 0x030C74B4 | 0x03071908 | 0x18000EA8 | |
+| 01.01.037 | 0x030C5F08 | 0x03071D68 | 0x18000EA8 | 039, 040 |
+| 01.01.039 | 0x030C6414 | 0x03072228 | 0x18000EA8 | 037, 040 |
+| 01.01.040 | 0x030C6424 | 0x03072238 | 0x18000EA8 | 037, 039 |
+| 01.01.046 | 0x030C65B0 | 0x03072378 | 0x18000EA8 | 01.02.046 |
+| 01.02.046 | 0x030C6590 | 0x03072358 | 0x18000EA8 | 01.01.046 |
+| 01.01.047 | 0x030C68B8 | 0x03072658 | 0x18000EA8 | 049 |
+| 01.L01.048 | 0x030C4444 | 0x03070468 | 0x18000EA8 | |
+| 01.01.049 | 0x030C687C | 0x03072628 | 0x18000EA8 | 047 |
+| 01.01.049 NRF and fanti builds | 0x030C7914, 0x030C7954 | 0x03072E80, 0x03072EC0 | 0x18000EB0 | each other |
+
+How the addresses were found:
+
+| Value | Method |
+|---|---|
+| Run address | The three self-referencing pool words (section "Self-containment and position dependence") give it. Every build has 0x16CDC |
+| Table RAM address | Every table literal in the codec ranges moves by the same constant against 049: none for 032 to 049, +8 for the NRF and fanti builds (81 literals). The DM-1801 Pro's +0x48 (codec-dm1801pro.md) comes out the same way |
+| Table window | The 64-byte head CRC (`TABLES_HEAD_CRC`), then the SHA-256 |
+
+The NRF and fanti tables end at 0x18003E28, 8 bytes above the 049 window, so the DM-32UV linker script reserves modem
+SRAM up to 0x18003E28. The slot's stock tag is the version number (32 to 49), and the host reports it as
+`dm32-<three digits>`.
 
 ## Comparison with the dh4570 pair and OpenDM32
 
@@ -170,4 +206,3 @@ accesses are about D >= 0x1400 and E >= 0x1900; the exact sizes are open.
 * Hardware test: init sequence, stock call parameters vs the aftermarket firmware's constants, and audio quality.
 * Exact sizes of the D/E state blocks; whether the codec writes to its modem RAM tables (the boot copy covers
   both cases).
-* Whether stock 048 or later versions exist with other layouts. Per-version recipes are keyed by sha256.

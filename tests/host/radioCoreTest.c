@@ -22,6 +22,10 @@
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
+#include "radio/vibe.h"
+#include "debuglink/debuglink.h"
+#include "debuglink/debuglink_proto.h"
+#include "debuglink/dl_fmt.h"
 
 static int failures;
 static int checks;
@@ -102,10 +106,11 @@ static bool r_tx_tone_key(bool down)
 	tone.changes++;
 	return true;
 }
-static const hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
+static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
 					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
 					.tx_tone_key = r_tx_tone_key };
 
+// (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 
 // ---- fake PCM audio and vocoder (core/dmr/ambe runs on them) ----
@@ -131,8 +136,12 @@ static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_O
 static void v_set_options(uint32_t opts) { (void)opts; }
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, v_options, v_set_options,
 					    NULL };
+static const char *codec_profile;
+static const char *v_profile(void) { return codec_profile; }
 static uint8_t p_mic(void) { return 0; }
-static hal_power_t fake_power = { .led = p_led };	// mic_level set by the VOX check
+static hal_power_t fake_power = { .led = p_led };	// mic_level set by the VOX check, vibrate by the vibrate check
+static int vibrations;
+static void p_vibrate(uint16_t ms) { (void)ms; vibrations++; }
 
 static const band_t bands[] = {
 	{ 108000000, 135999999, false },	// receive only
@@ -148,8 +157,17 @@ static const keymap_entry_t keymap[] = {
 };
 static const uint8_t side_keys[] = { 1, 2 };
 
+static int gps_enable_calls;
+static bool gps_enabled;
+static void fake_gps_enable(bool on)
+{
+	gps_enable_calls++;
+	gps_enabled = on;
+}
+
 const board_t board = {
 	.name = "fake",
+	.gps_enable = fake_gps_enable,
 	.bands = bands,
 	.band_count = 3,
 	.power_count = 3,
@@ -867,10 +885,16 @@ static void test_tone_lists(void)
 
 // Advance in 5 ms steps: a modem slot every 30 ms, the stack tick every RADIO_TICK_MS, the status poll every
 // RADIO_POLL_MS
+static int16_t burst_rssi = -85;	// what the simulated modem reports per burst (0 = it doesn't)
+static bool rssi_alt;			// the fake radio's reading alternates strong / floor every 30 ms (TDMA)
+
 static void run(uint32_t ms)
 {
 	for (uint32_t t = 0; t < ms; t += 5) {
 		now += 5;
+		if (rssi_alt) {
+			hw.st.rssi_dbm = (now / 30) % 2 ? -125 : -70;
+		}
 		if (now % 30 == 0) {
 			sim_slot();
 		}
@@ -918,7 +942,7 @@ static void burst_voice(uint8_t index, uint8_t cc, const uint8_t *lc)
 	b.cc = cc;
 	b.crc_ok = true;
 	b.in_step = true;
-	b.rssi_dbm = -85;
+	b.rssi_dbm = burst_rssi;
 	b.len = 27;
 	for (int f = 0; f < 3; f++) {
 		memcpy(&b.payload[f * 9], dmr_ambe_silence, 9);
@@ -1149,6 +1173,363 @@ static void test_dmr_list_talk_target(void)
 	run(1000);
 	setup_codeplug();
 }
+
+#if !CONFIG_VFO_DMR
+// Without the DMR VFO (CONFIG_VFO_DMR=0) the VFO is analog and every DMR request in it is refused
+static void test_vfo_no_dmr(void)
+{
+	dmr_start(true);
+	req(RREQ_VFO_SET, 446000000);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	req(RREQ_DMR_CC, 7);
+	req(RREQ_DMR_TS, 2);
+	req(RREQ_DMR_TARGET, 3100);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_FM && !sim.started && hw_mode == RADIO_MODE_FM);
+	CHECK(sm.vfo_ch.color_code == 1 && sm.vfo_ch.timeslot == 1 && sm.vfo_talk_id == 0 && !sm.view.temporary);
+	CHECK(!ui_svc_save_talk_target(3100, false));
+	boot();				// a record that says DMR (another build wrote it): this one starts analog
+	settings_t *st = settings_begin();
+	st->vfo_mode = RADIO_MODE_DMR;
+	settings_set_vfo_talk(st, 3100, false);
+	settings_end(now);
+	boot();
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_FM && !sim.started);
+	req(RREQ_VFO_STEP, 1);		// and saves leave the talk target as the other build wrote it
+	st = settings_begin();
+	CHECK(settings_vfo_talk_id(st) == 3100);
+	settings_end(now);
+	req(RREQ_VFO, 0);
+	settings_defaults(settings_begin());
+	settings_end(now);
+	setup_codeplug();
+}
+#else
+// The DMR VFO (CONFIG_VFO_DMR): mode, color code, slot and talk target are the VFO's own settings, kept across
+// restarts, and receive and transmit follow them like a DMR channel's
+static void test_vfo_dmr(void)
+{
+	const radio_dmr_view_t *d = &sm.view.dmr;
+
+	dmr_start(true);			// channel 4: DMR, CC 2, TS 1, TG 201
+	req(RREQ_VFO_SET, 446000000);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_FM && !sim.started && hw_mode == RADIO_MODE_FM);
+	// FM -> DMR on the same frequency: the call stack starts, the board's mode follows, no temporary dot
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && hw_mode == RADIO_MODE_DMR && hw.rx_hz == 446000000);
+	CHECK(!sm.view.temporary && sm.view.temp == 0 && d->active && d->own_id == 3101276);
+	CHECK(d->cc == 1 && d->ts == 1 && d->target_id == 9 && !d->target_private && !d->target_manual);
+	CHECK(hw.rx_tone.type == TONE_NONE);
+	// Receive filtering as a DMR channel with no RX group list: the talk target's group (9) and nothing else
+	hear_call(true, 9, 3105555, 1, 1, true);
+	CHECK(d->last_ms != 0 && d->last.dst == 9 && d->last.src == 3105555);
+	hear_call(true, 3100, 3107777, 1, 1, false);
+	CHECK(d->state == RDMR_RX_OTHER);
+	run(500);
+	hear_call(true, 9, 3105555, 5, 1, false);	// another color code: not heard
+	CHECK(sm.view.state == RS_IDLE);
+	run(500);
+
+	// Color code, slot and a typed talk target
+	req(RREQ_DMR_CC, 7);
+	req(RREQ_DMR_TS, 2);
+	req(RREQ_DMR_TARGET, 3100);
+	run(50);
+	CHECK(d->cc == 7 && d->ts == 2 && sm.view.ch.color_code == 7 && sm.view.ch.timeslot == 2);
+	CHECK(!sm.view.temporary && sm.vfo_ch.color_code == 7 && sm.vfo_ch.timeslot == 2);
+	CHECK(d->target_id == 3100 && !d->target_private && !d->target_manual && sim.cc_filter == 7);
+	hear_call(true, 3100, 3107777, 7, 1, true);
+	CHECK(d->last.dst == 3100 && d->last.src == 3107777);
+	// The debug link's one request for mode, color code and slot (RADIO op 31), 0xFF / 0 = keep
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 9, 0 }, 3) == DL_ST_OK);
+	run(20);
+	CHECK(d->cc == 9 && d->ts == 2 && sm.vfo_ch.color_code == 9);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 1 }, 3) == DL_ST_OK);
+	run(20);
+	CHECK(d->cc == 9 && d->ts == 1);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0, 0xFF, 0 }, 3) == DL_ST_OK);
+	run(20);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !sim.started);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 7, 2 }, 3) == DL_ST_OK);
+	run(50);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && d->cc == 7 && d->ts == 2);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 2, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF }, 2) == DL_ST_BAD_ARG);
+	CHECK(debuglink_is_feature_op(DL_OP_DMR_FIELDS));
+	// PTT sends the typed target from our own ID
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 446000000 && d->call.dst == 3100 && d->call.group &&
+	      d->call.src == 3101276);
+	req(RREQ_PTT, 0);
+	run(1000);
+	// A private target
+	req(RREQ_DMR_TARGET, (int32_t)((1u << 24) | 3107777u));
+	run(50);
+	CHECK(d->target_id == 3107777 && d->target_private && !d->target_manual);
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX && d->call.dst == 3107777 && !d->call.group);
+	req(RREQ_PTT, 0);
+	run(1000);
+	// A call back is for now: the VFO's target is still there after it is cleared
+	req(RREQ_DMR_TARGET, 3100);
+	hear_call(false, 3101276, 3105555, 7, 1, true);
+	req(RREQ_DMR_CALL_BACK, 0);
+	CHECK(d->target_manual && d->target_id == 3105555 && d->target_private);
+	req(RREQ_DMR_TARGET_CLEAR, 0);
+	run(20);
+	CHECK(!d->target_manual && d->target_id == 3100 && !d->target_private);
+
+	// Back to FM and again: the stack stops and starts, the settings stay
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(20);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !sim.started && !d->active && hw_mode == RADIO_MODE_FM);
+	req(RREQ_DMR_CC, 3);			// color code only in DMR
+	CHECK(sm.vfo_ch.color_code == 7);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sim.started && d->cc == 7 && d->ts == 2 && d->target_id == 3100);
+
+	// A restart: the VFO comes back in DMR with all of it
+	req(RREQ_DMR_TARGET, (int32_t)((1u << 24) | 3107777u));
+	boot();
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sim.started && hw.rx_hz == 446000000);
+	CHECK(d->cc == 7 && d->ts == 2 && d->target_id == 3107777 && d->target_private);
+	// The channel is not touched by any of it
+	req(RREQ_VFO, 0);
+	run(50);
+	CHECK(!sm.view.vfo && sm.view.channel_number == 4 && d->cc == 2 && d->ts == 1 && d->target_id == 201 &&
+	      !sm.view.temporary);
+	req(RREQ_ZONE_POS, 0);			// an FM channel
+	run(20);
+	CHECK(!sim.started && sm.view.ch.mode == RADIO_MODE_FM);
+	req(RREQ_VFO, 1);			// the VFO is still a DMR one
+	run(50);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && d->cc == 7 && d->target_id == 3107777);
+	req(RREQ_VFO_STEP, 1);			// stepping the frequency retunes the DMR VFO
+	run(50);
+	CHECK(sm.view.ch.rx_hz == 446012500 && hw.rx_hz == 446012500 && sim.started && d->cc == 7);
+
+	// A record from before the DMR VFO (mode FM, the old color code and slot bytes, no target) reads as FM
+	settings_t *st = settings_begin();
+	st->vfo_mode = RADIO_MODE_FM;
+	st->vfo_cc = 1;
+	st->vfo_ts = 1;
+	st->vfo_bw &= 0x0Fu;			// the old bandwidth byte: a plain radio_bw_t
+	st->vfo_talk_lo = 0;
+	settings_end(now);
+	boot();
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_FM && !sim.started && sm.view.ch.color_code == 1);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sim.started && d->cc == 1 && d->ts == 1 && d->target_id == 9);
+	// An ID out of range in a damaged record is dropped
+	st = settings_begin();
+	st->vfo_cc = 0xF1;
+	st->vfo_ts = 0x3D;			// bits 2-5: 0xF; the ID is 0xFF0000 here, a valid 24 bit number
+	st->vfo_talk_lo = 0;
+	settings_end(now);
+	boot();
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(d->cc == 1 && d->ts == 1 && d->target_id == 0xFF0000u && !d->target_private);
+	// Leave the VFO the way the other tests expect it
+	req(RREQ_VFO, 0);
+	settings_defaults(settings_begin());
+	settings_end(now);
+	setup_codeplug();
+}
+#endif
+
+static void reload_channel(void);
+
+// Copy to VFO (RREQ_VFO_COPY, docs/spec/dmr-voice.md 2.2): what is in effect on the channel becomes the VFO's own
+// settings, the VFO opens, the channel stays as it was
+static void test_vfo_copy(void)
+{
+	setup_codeplug();
+	start();
+	// An FM channel with an offset and a TX tone (channel 7, zone "Tones"); temporary bandwidth, RX tone and power
+	req(RREQ_ZONE, 2);
+	run(20);
+	CHECK(sm.view.channel_number == 7 && !sm.view.vfo);
+	req(RREQ_BANDWIDTH, RADIO_BW_12K5);
+	req(RREQ_TONE, radio_tone_arg(RADIO_TONE_RX, (subtone_t){ TONE_CTCSS, 885 }));
+	req(RREQ_POWER, 1);			// the channel's default is 1: this is the high step
+	CHECK(sm.view.temporary && sm.view.power == 2);
+	req(RREQ_VFO_COPY, 0);
+	run(20);
+	CHECK(sm.view.vfo && sm.view.channel_number == 0 && !sm.view.temporary && sm.view.temp == 0);
+	CHECK(sm.view.ch.rx_hz == 146940000 && sm.view.ch.tx_hz == 146340000 && hw.rx_hz == 146940000);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.view.ch.bw == RADIO_BW_12K5);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 1000);
+	CHECK(sm.view.ch.rx_tone.type == TONE_CTCSS && sm.view.ch.rx_tone.value == 885 && hw.rx_tone.value == 885);
+	CHECK(sm.view.power == 2 && sm.vfo_ch.power == 2);
+	CHECK(strcmp(sm.view.ch.name, "VFO") == 0);
+	req(RREQ_PTT, 1);			// the split: TX on the channel's TX frequency
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146340000 && hw.tx_power == 2);
+	req(RREQ_PTT, 0);
+	// The VFO's values are its own settings, kept across a restart; the channel was not touched
+	boot();
+	run(20);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 146940000 && sm.view.ch.tx_hz == 146340000 &&
+	      sm.view.ch.bw == RADIO_BW_12K5 && sm.view.ch.rx_tone.value == 885 && sm.view.ch.tx_tone.value == 1000 &&
+	      sm.view.power == 2);
+	req(RREQ_VFO, 0);
+	run(20);
+	CHECK(!sm.view.vfo && sm.view.channel_number == 7 && sm.view.ch.bw == RADIO_BW_25K && !sm.view.temporary &&
+	      sm.view.ch.rx_tone.type == TONE_NONE && chans[7].bw == RADIO_BW_25K && sm.view.power == 1);
+	// In the VFO the request does nothing, and neither does it while transmitting
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 440000000);
+	req(RREQ_VFO_COPY, 0);
+	run(20);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 440000000);
+	req(RREQ_VFO, 0);
+	req(RREQ_PTT, 1);
+	req(RREQ_VFO_COPY, 0);
+	CHECK(!sm.view.vfo && sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(20);
+	// A frequency outside the board's bands: refused, nothing changes
+	chans[7].rx_hz = 520000000;
+	chans[7].tx_hz = 520000000;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 0);
+	run(20);
+	CHECK(radio_vfo_copy_check(&sm.view.ch, false) == VFO_COPY_OUT_OF_BAND);
+	CHECK(debuglink_radio_feature_op(DL_OP_VFO_COPY, NULL, 0) == DL_ST_REFUSED);
+	req(RREQ_VFO_COPY, 0);
+	run(20);
+	CHECK(!sm.view.vfo && sm.view.ch.rx_hz == 520000000 && sm.vfo_ch.rx_hz == 440000000);
+	chans[7].rx_hz = 146940000;
+	chans[7].tx_hz = 146340000;
+	chans[7].tx_tone.type = TONE_NONE;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 0);
+	run(20);
+	// The debug link op: the same request; nothing to do in the VFO
+	CHECK(debuglink_is_feature_op(DL_OP_VFO_COPY));
+	CHECK(debuglink_radio_feature_op(DL_OP_VFO_COPY, NULL, 0) == DL_ST_OK);
+	run(20);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 146940000 && sm.view.ch.tx_tone.type == TONE_NONE);
+	CHECK(debuglink_radio_feature_op(DL_OP_VFO_COPY, NULL, 0) == DL_ST_UNAVAILABLE);
+	CHECK(radio_vfo_copy_check(&sm.view.ch, true) == VFO_COPY_ALREADY);
+	// The UI's service call: the code of a refusal, or the request
+	req(RREQ_VFO, 0);
+	run(20);
+	CHECK(ui_svc_vfo_copy(&sm.view) == VFO_COPY_OK && sm.view.vfo);
+	CHECK(ui_svc_vfo_copy(&sm.view) == VFO_COPY_ALREADY);
+	req(RREQ_VFO, 0);
+	// An FM channel leaves the VFO's DMR values alone
+#if CONFIG_VFO_DMR
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 440000000);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	req(RREQ_DMR_CC, 9);
+	req(RREQ_DMR_TARGET, 3100);
+	req(RREQ_VFO, 0);
+	req(RREQ_VFO_COPY, 0);
+	run(20);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_FM && sm.vfo_ch.color_code == 9 && sm.vfo_talk_id == 3100);
+	req(RREQ_VFO, 0);
+#endif
+	settings_defaults(settings_begin());
+	settings_end(now);
+	setup_codeplug();
+}
+
+#if CONFIG_VFO_DMR
+// A DMR channel: color code, timeslot and the talk target (a contact is its ID and the group / private flag)
+static void test_vfo_copy_dmr(void)
+{
+	const radio_dmr_view_t *d = &sm.view.dmr;
+
+	dmr_start(true);			// channel 4: DMR, CC 2, TS 1, contact 1 = group 201
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sim.started && hw_mode == RADIO_MODE_DMR);
+	CHECK(sm.view.ch.rx_hz == 438500000 && d->cc == 2 && d->ts == 1 && d->target_id == 201 && !d->target_private);
+	CHECK(sm.vfo_talk_id == 201 && !sm.vfo_talk_private && !d->target_manual && sim.cc_filter == 2);
+	// The VFO has its own settings now: they stay when the channel is left, and the channel is as before
+	req(RREQ_DMR_CC, 5);
+	req(RREQ_VFO, 0);
+	run(50);
+	CHECK(!sm.view.vfo && d->cc == 2 && d->target_id == 201 && sm.vfo_ch.color_code == 5 && sm.view.channel_number == 4);
+	// A private contact
+	chans[4].contact = 2;
+	reload_channel();
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && d->target_id == 3101234 && d->target_private && sm.vfo_talk_private && d->cc == 2);
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX && d->call.dst == 3101234 && !d->call.group && hw.tx_hz == 438500000);
+	req(RREQ_PTT, 0);
+	run(1000);
+	req(RREQ_VFO, 0);
+	// No contact: what the channel itself would send, the RX group list's first talkgroup (201), else talkgroup 9
+	chans[4].contact = 0;
+	reload_channel();
+	CHECK(d->target_id == 201);
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && d->target_id == 201 && !d->target_private && sm.vfo_talk_id == 201);
+	req(RREQ_VFO, 0);
+	chans[4].listen_list = 0;
+	reload_channel();
+	CHECK(d->target_id == 9);
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && d->target_id == 9 && !d->target_private && sm.vfo_talk_id == 9);
+	req(RREQ_VFO, 0);
+	chans[4].listen_list = 1;
+	// Temporary changes in effect are copied: color code, slot, a talk target chosen for now
+	chans[4].contact = 1;
+	reload_channel();
+	req(RREQ_DMR_CC, 7);
+	req(RREQ_DMR_TS, 2);
+	req(RREQ_DMR_TARGET, (int32_t)((1u << 24) | 3107777u));
+	run(50);
+	CHECK(sm.view.temporary && d->target_manual && d->target_id == 3107777);
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && !sm.view.temporary && d->cc == 7 && d->ts == 2 && d->target_id == 3107777 &&
+	      d->target_private && !d->target_manual && sm.vfo_ch.color_code == 7 && sm.vfo_ch.timeslot == 2);
+	// All of it survives a restart
+	boot();
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sim.started && d->cc == 7 && d->ts == 2 &&
+	      d->target_id == 3107777 && d->target_private && hw.rx_hz == 438500000);
+	req(RREQ_VFO, 0);
+	run(50);
+	CHECK(!sm.view.vfo && d->cc == 2 && d->ts == 1 && d->target_id == 201 && !sm.view.temporary);
+	req(RREQ_VFO, 0);
+	settings_defaults(settings_begin());
+	settings_end(now);
+	setup_codeplug();
+}
+#else
+static void test_vfo_copy_dmr(void)
+{
+	// Without the DMR VFO a DMR channel is refused, nothing changes
+	dmr_start(true);
+	CHECK(radio_vfo_copy_check(&sm.view.ch, false) == VFO_COPY_NO_MODE);
+	CHECK(ui_svc_vfo_copy(&sm.view) == VFO_COPY_NO_MODE);
+	CHECK(debuglink_radio_feature_op(DL_OP_VFO_COPY, NULL, 0) == DL_ST_REFUSED);
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(!sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sim.started && sm.view.channel_number == 4);
+	setup_codeplug();
+}
+#endif
 
 static void test_dmr_denied(void)
 {
@@ -2067,15 +2448,31 @@ void radio_get_settings(radio_settings_t *s) { *s = sm.set; }
 void radio_set_settings(const radio_settings_t *s) { radio_sm_set_settings(&sm, s, now); }
 void radio_req_monitor(bool down) { req(RREQ_MONITOR, down); }
 void radio_req_reload(void) { req(RREQ_RELOAD, 0); }
+void radio_req_volume(uint8_t step) { req(RREQ_VOLUME, step); }
+void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
+// Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
+void radio_req_scan_dual(uint16_t pos) { (void)pos; }
+void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
+void radio_req_tone_burst(bool on) { (void)on; }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }
 void radio_req_roam(uint8_t cmd) { req(RREQ_ROAM, cmd); }
 void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
+void radio_req_vibrate(uint8_t v) { req(RREQ_VIBRATE, v); }
 void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0))); }
 void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }
 void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
 void radio_req_dmr_color_code(uint8_t cc) { req(RREQ_DMR_CC, cc); }
 void radio_req_mode(uint8_t mode) { req(RREQ_MODE, mode); }
+void radio_req_vfo_copy(void) { req(RREQ_VFO_COPY, 0); }
+radio_vfo_copy_t radio_req_vfo_copy_checked(void)
+{
+	radio_vfo_copy_t r = radio_vfo_copy_check(&sm.view.ch, sm.view.vfo);
+	if (r == VFO_COPY_OK) {
+		radio_req_vfo_copy();
+	}
+	return r;
+}
 void radio_req_dmr_hear_all(bool on) { req(RREQ_DMR_HEAR_ALL, on); }
 static int focus_posts;
 void radio_req_dmr_focus(uint32_t id, bool p)
@@ -2154,6 +2551,43 @@ static void test_ui_glue(void)
 	chans[4].timeslot = 1;
 	chans[4].color_code = 2;
 	reload_channel();
+	// The channel editor's whole channel (ui_svc_write_channel): numbers out of range are refused, a write in
+	// progress refuses the next, the channel in use drops its temporary changes. So does a write of another channel:
+	// any codeplug write reloads the channel in use (ui.md 2.1)
+	channel_t ed = chans[4];
+	CHECK(!ui_svc_write_channel(0, &ed) && !ui_svc_write_channel(CODEPLUG_CHANNELS_MAX + 1, &ed));
+	CHECK(ui_svc_dmr_color_code(9));
+	run(20);
+	CHECK(sm.view.temporary);
+	ed.timeslot = 2;
+	ed.color_code = 5;
+	w = cp_writes;
+	CHECK(ui_svc_write_channel(4, &ed) && cp_writes == w && !ui_svc_write_channel(6, &ed));
+	storage_job_poll();
+	CHECK(cp_writes == w + 1 && chans[4].timeslot == 2 && chans[4].color_code == 5);
+	run(100);
+	CHECK(!sm.view.temporary && d->ts == 2 && d->cc == 5);
+	CHECK(ui_svc_dmr_color_code(9));
+	run(20);
+	ed = chans[6];
+	ed.color_code = 7;
+	CHECK(ui_svc_write_channel(6, &ed));
+	storage_job_poll();
+	run(100);
+	CHECK(chans[6].color_code == 7 && !sm.view.temporary && d->cc == 5);
+	// A failed write: the event, and nothing reloaded
+	CHECK(ui_svc_dmr_color_code(9));
+	run(20);
+	cp_write_fails = true;
+	n_ev = 0;
+	CHECK(ui_svc_write_channel(6, &ed));
+	storage_job_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && sm.view.temporary);
+	cp_write_fails = false;
+	req(RREQ_CLEAR_TEMP, 0);
+	chans[4].timeslot = 1;
+	chans[4].color_code = 2;
+	reload_channel();
 	// A failed write comes back as an event
 	CHECK(ui_svc_dmr_color_code(4));
 	cp_write_fails = true;
@@ -2203,38 +2637,48 @@ static void test_ui_glue(void)
 	settings_t sv;
 	settings_read(&sv);
 	CHECK(sv.auto_lock_s == 60 && sv.mic_gain == 8 && sv.long_press_ms == 900 && sv.gps == 1 && sv.pos_send_s == 300);
-	// Mic noise reduction: on by default, kept in audio_flags, handed to the vocoder's encode options (tone frames
+	// Mic noise reduction: on by default, kept in accent bits 6-7, handed to the vocoder's encode options (tone frames
 	// stay on)
-	CHECK(ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1 && (sv.audio_flags & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0);
+	CHECK(ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1 && (sv.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0);
 	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
 	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 0) && ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 0);
 	ui_svc_apply(UI_SET_NOISE_REDUCTION, 0);
 	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_TONE_FRAMES);
 	settings_read(&sv);
-	CHECK(sv.audio_flags == SETTINGS_AUDIO_NO_NOISE_REDUCTION);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == SETTINGS_AUDIO_NO_NOISE_REDUCTION);
 	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 7) && ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1);
 	ui_svc_apply(UI_SET_NOISE_REDUCTION, 1);
 	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
 	settings_read(&sv);
-	CHECK(sv.audio_flags == 0);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);
 	// Mic AGC: off by default, its own bit, added to the options in force
 	CHECK(ui_svc_setting_get(UI_SET_MIC_AGC) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_MIC_AGC, 1) && ui_svc_setting_get(UI_SET_MIC_AGC) == 1);
 	ui_svc_apply(UI_SET_MIC_AGC, 1);
 	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
 	settings_read(&sv);
-	CHECK(sv.audio_flags == SETTINGS_AUDIO_AGC);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == SETTINGS_AUDIO_AGC);
 	// ... and kept when noise reduction changes
 	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 0));
 	ui_svc_apply(UI_SET_NOISE_REDUCTION, 0);
 	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC));
 	settings_read(&sv);
-	CHECK(sv.audio_flags == (SETTINGS_AUDIO_AGC | SETTINGS_AUDIO_NO_NOISE_REDUCTION));
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == (SETTINGS_AUDIO_AGC | SETTINGS_AUDIO_NO_NOISE_REDUCTION));
 	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1) && ui_svc_setting_set(UI_SET_MIC_AGC, 0));
 	ui_svc_apply(UI_SET_MIC_AGC, 0);
 	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
 	settings_read(&sv);
-	CHECK(sv.audio_flags == 0);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);
+	// Settings > Location > GPS reaches the board: the stored value at start-up (ui_app applies every setting), then
+	// each change (the setting store keeps it either way)
+	ui_svc_apply(UI_SET_GPS, ui_svc_setting_get(UI_SET_GPS));
+	CHECK(gps_enable_calls == 1 && gps_enabled);
+	CHECK(ui_svc_setting_set(UI_SET_GPS, 0));
+	ui_svc_apply(UI_SET_GPS, ui_svc_setting_get(UI_SET_GPS));
+	CHECK(gps_enable_calls == 2 && !gps_enabled);
+	CHECK(ui_svc_setting_set(UI_SET_GPS, 1));
+	ui_svc_apply(UI_SET_GPS, ui_svc_setting_get(UI_SET_GPS));
+	CHECK(gps_enable_calls == 3 && gps_enabled);
 	ui_svc_apply(UI_SET_LONG_PRESS_MS, 900);
 	ui_svc_apply(UI_SET_REPEAT_MS, 200);
 	CHECK(input_long == 900 && input_repeat == 200);
@@ -2248,6 +2692,31 @@ static void test_ui_glue(void)
 	settings_read(&sv);
 	CHECK(sv.ui_flags == (SETTINGS_UI_LARGE_TEXT | SETTINGS_UI_MESSAGE_TONE | SETTINGS_UI_ALIAS | SETTINGS_UI_HEAR_ALL));
 	CHECK(sv.theme == 2 && sv.updown_home == 1 && sv.auto_off_min == 30 && sv.low_batt_pct == 20);
+	// Vibrate: on by default, kept as an "off" bit so records saved before it keep it on
+	CHECK(ui_svc_setting_get(UI_SET_VIBRATE) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_VIBRATE, 0) && ui_svc_setting_get(UI_SET_VIBRATE) == 0);
+	settings_read(&sv);
+	CHECK(sv.ui_flags == (SETTINGS_UI_LARGE_TEXT | SETTINGS_UI_MESSAGE_TONE | SETTINGS_UI_ALIAS |
+			      SETTINGS_UI_HEAR_ALL | SETTINGS_UI_NO_VIBRATE));
+	CHECK(ui_svc_setting_set(UI_SET_VIBRATE, 1) && ui_svc_setting_get(UI_SET_VIBRATE) == 1);
+	settings_read(&sv);
+	CHECK(!(sv.ui_flags & SETTINGS_UI_NO_VIBRATE));
+	// The setting is usable only on a board with a motor; ui_svc_vibrate reaches it through the radio core
+	CHECK(!(ui_svc_feat_radio() & UI_FEAT_VIBRATE));
+	vibrations = 0;
+	ui_svc_vibrate(UI_VIBE_CALL);
+	run(100);
+	CHECK(vibrations == 0 && !vibe_busy());
+	fake_power.vibrate = p_vibrate;
+	CHECK(ui_svc_feat_radio() & UI_FEAT_VIBRATE);
+	ui_svc_vibrate(UI_VIBE_MESSAGE);
+	ui_svc_vibrate(200);		// not a pattern: nothing
+	run(1000);
+	CHECK(vibrations == 2 && !vibe_busy());
+	ui_svc_vibrate(UI_VIBE_EMERGENCY);
+	run(3000);
+	CHECK(vibrations == 6);
+	fake_power.vibrate = NULL;
 	ui_svc_ptt_block(true);
 	CHECK(ptt_blocked);
 	ui_svc_ptt_block(false);
@@ -2343,6 +2812,18 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_set(UI_SET_POS_SEND_S, -1) && ui_svc_setting_get(UI_SET_POS_SEND_S) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_GPS, 0) && ui_svc_setting_get(UI_SET_GPS) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_THEME, -3) && ui_svc_setting_get(UI_SET_THEME) == 0);
+	// The highlight color and the filled strip share settings_t.accent: setting one keeps the other. A zero byte (new
+	// or older records) is the defaults: the theme's highlight, the strip filled
+	CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 0 && ui_svc_setting_get(UI_SET_STRIP) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_ACCENT, 2) && ui_svc_setting_set(UI_SET_STRIP, 0));
+	CHECK(ui_svc_setting_set(UI_SET_ACCENT, 9) && ui_svc_setting_get(UI_SET_ACCENT) == 7 &&
+	      ui_svc_setting_get(UI_SET_STRIP) == 0);
+	settings_read(&sv);
+	CHECK(sv.accent == (7 | SETTINGS_ACCENT_PLAIN));
+	CHECK(ui_svc_setting_set(UI_SET_STRIP, 1) && ui_svc_setting_get(UI_SET_ACCENT) == 7);
+	CHECK(ui_svc_setting_set(UI_SET_ACCENT, 0) && ui_svc_setting_get(UI_SET_STRIP) == 1);
+	settings_read(&sv);
+	CHECK(sv.accent == 0);
 	CHECK(ui_svc_setting_set(UI_SET_UPDOWN_HOME, 7) && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 2);
 	CHECK(ui_svc_setting_set(UI_SET_LOW_BATTERY, 80) && ui_svc_setting_get(UI_SET_LOW_BATTERY) == 50);
 	CHECK(ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 100000) && ui_svc_setting_get(UI_SET_AUTO_OFF_MIN) == 1440);
@@ -2425,7 +2906,15 @@ static void test_ui_settings(void)
 	int w = cp_writes;
 	req(RREQ_VFO, 1);
 	run(50);
-	CHECK(sm.view.vfo && !ui_svc_save_channel() && !ui_svc_save_talk_target(9, false));
+	CHECK(sm.view.vfo && !ui_svc_save_channel());
+#if CONFIG_VFO_DMR
+	CHECK(ui_svc_save_talk_target(3100, false) && cp_writes == w);	// the VFO's own target: nothing to write
+	run(20);
+	CHECK(sm.vfo_talk_id == 3100 && !sm.vfo_talk_private);
+#else
+	CHECK(!ui_svc_save_talk_target(3100, false));
+#endif
+	sm.vfo_talk_id = 0;
 	req(RREQ_VFO, 0);
 	run(50);
 	CHECK(!sm.view.vfo && sm.view.channel_number == 4);
@@ -2524,6 +3013,131 @@ static int air_count(unsigned n0, uint8_t kind, uint8_t opcode)
 
 // The side keys (ui_svc_storage.c over core/input/keyassign.c): the codeplug's slots give the key map; a change in
 // Settings takes effect at once and goes to the codeplug through a storage job; a CPS write is taken
+// The speaker volume of a radio without a knob (radio-features.md 4.2): the stored step reaches hal_radio_t.volume() as a
+// percent at start-up and at each change; a knob radio, and a radio without the hook, are left alone
+static int vol_knob = -1;
+static int vol_calls, vol_last = -1;
+static void r_volume(uint8_t percent) { vol_calls++; vol_last = percent; }
+static int8_t p_volume(void) { return (int8_t)vol_knob; }
+
+static void test_soft_volume(void)
+{
+	settings_t st;
+	fake_radio.volume = NULL;
+	// A power HAL that doesn't report volume at all: not soft, nothing sent
+	start();
+	run(100);
+	CHECK(!radio_volume_soft() && vol_calls == 0 && !(ui_svc_feat_radio() & UI_FEAT_VOLUME));
+	fake_radio.volume = r_volume;
+	// No knob (-1): the default step goes out at start-up as 50 %
+	fake_power.volume = p_volume;
+	vol_knob = -1;
+	start();
+	run(100);
+	CHECK(radio_volume_soft() && (ui_svc_feat_radio() & UI_FEAT_VOLUME));
+	CHECK(vol_calls == 1 && vol_last == 50 && sm.view.volume == 50 && sm.view.volume_src == RVOL_SOFT);
+	CHECK(ui_svc_setting_get(UI_SET_VOLUME) == RADIO_VOLUME_DEFAULT);
+	// A change reaches the hook at once as round(step * 100 / RADIO_VOLUME_MAX) and is stored with bit 7 and step + 1
+	CHECK(ui_svc_setting_set(UI_SET_VOLUME, 13));
+	run(100);
+	CHECK(vol_calls == 2 && vol_last == 81 && sm.view.volume == 81 && ui_svc_setting_get(UI_SET_VOLUME) == 13);
+	settings_read(&st);
+	CHECK(st.volume == 0x8E);
+	// The ends: mute (0) is stored as 1, the maximum is 100 %; out-of-range values are clamped
+	CHECK(ui_svc_setting_set(UI_SET_VOLUME, 0));
+	run(100);
+	CHECK(vol_last == 0 && ui_svc_setting_get(UI_SET_VOLUME) == 0);
+	settings_read(&st);
+	CHECK(st.volume == 0x81);
+	CHECK(ui_svc_setting_set(UI_SET_VOLUME, 99));
+	run(100);
+	CHECK(vol_last == 100 && ui_svc_setting_get(UI_SET_VOLUME) == RADIO_VOLUME_MAX);
+	// The same step again sends nothing
+	int calls = vol_calls;
+	CHECK(ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_MAX));
+	run(100);
+	CHECK(vol_calls == calls);
+	// A boot with the step stored: it goes out at once, the settings' value rather than the default
+	CHECK(ui_svc_setting_set(UI_SET_VOLUME, 4));
+	run(100);
+	vol_calls = 0;
+	boot();
+	run(100);
+	CHECK(vol_calls == 1 && vol_last == 25);
+	// A byte stored by the 0..10 version (1..11) is scaled to the new range: step s -> round(s * 16 / 10)
+	settings_begin()->volume = 6;		// old step 5
+	settings_end(now);
+	CHECK(ui_svc_setting_get(UI_SET_VOLUME) == 8);
+	CHECK(radio_volume_step(1) == 0 && radio_volume_step(2) == 2 && radio_volume_step(4) == 5 &&
+	      radio_volume_step(11) == RADIO_VOLUME_MAX && radio_volume_step(0x80) == RADIO_VOLUME_MAX &&
+	      radio_volume_step(radio_volume_stored(7)) == 7);
+	// A knob that reads (0..100) wins: the stored step is not used
+	vol_knob = 64;
+	boot();
+	run(100);
+	CHECK(!radio_volume_soft() && vol_last == 64 && !(ui_svc_feat_radio() & UI_FEAT_VOLUME));
+	CHECK(sm.view.volume_src == RVOL_KNOB && radio_volume_settable());
+	CHECK(radio_volume_step(0) == RADIO_VOLUME_DEFAULT && radio_volume_step(200) == RADIO_VOLUME_MAX);
+	// The debug link's override (RADIO op 30) takes the knob's place until it is given back; RAM only
+	vol_calls = 0;
+	CHECK(debuglink_is_feature_op(DL_OP_VOLUME));	// the dispatcher routes it here
+	// VERSION's codec=: a codec stopped for a stub upload (present() false) still reports its profile from flash
+	{
+		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile };
+		bool was = codec_present;
+		CHECK(strcmp(debuglink_codec_id(NULL), "none") == 0);
+		codec_present = false;
+		codec_profile = "db25d-2501";
+		CHECK(strcmp(debuglink_codec_id(&pv), "db25d-2501") == 0);
+		codec_profile = NULL;
+		CHECK(strcmp(debuglink_codec_id(&pv), "absent") == 0);
+		CHECK(strcmp(debuglink_codec_id(&fake_vocoder), "absent") == 0);
+		codec_present = true;
+		CHECK(strcmp(debuglink_codec_id(&fake_vocoder), "present") == 0);
+		codec_present = was;
+	}
+	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 4 }, 1) == DL_ST_OK);
+	run(100);
+	CHECK(vol_calls == 1 && vol_last == 25 && sm.view.volume_src == RVOL_OVERRIDE && sm.view.volume_override == 4);
+	vol_knob = 90;		// the knob moves: no effect
+	run(100);
+	CHECK(vol_last == 25 && vol_calls == 1);
+	{
+		static char buf[2048];
+		dl_text_t t;
+		dl_text_init(&t, buf, sizeof buf);
+		debuglink_view_radio(&sm.view, &t);
+		CHECK(strstr(buf, "volume.src=override") != NULL && strstr(buf, "volume.override=4") != NULL &&
+		      strstr(buf, "volume.max=16") != NULL);
+	}
+	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 17 }, 1) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1) == DL_ST_OK);
+	run(100);
+	CHECK(vol_last == 90 && sm.view.volume_src == RVOL_KNOB && sm.view.volume_override == -1);
+	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 0 }, 1) == DL_ST_OK);
+	run(100);
+	CHECK(vol_last == 0);
+	debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1);
+	run(100);
+	// No knob: the op stores the step like a UI change; 0xFF gives the default back
+	vol_knob = -1;
+	boot();
+	run(100);
+	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 3 }, 1) == DL_ST_OK);
+	run(100);
+	CHECK(vol_last == 19 && sm.view.volume_src == RVOL_SOFT && ui_svc_setting_get(UI_SET_VOLUME) == 3);
+	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1) == DL_ST_OK);
+	run(100);
+	CHECK(vol_last == 50 && ui_svc_setting_get(UI_SET_VOLUME) == RADIO_VOLUME_DEFAULT);
+	// No hook at all (the volume works in analog hardware): not supported
+	fake_radio.volume = NULL;
+	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 3 }, 1) == DL_ST_UNAVAILABLE);
+	fake_radio.volume = r_volume;
+	vol_knob = 64;
+	fake_power.volume = NULL;
+	fake_radio.volume = NULL;
+}
+
 static void test_side_keys(void)
 {
 	memset(cp_quick, 0, sizeof(cp_quick));
@@ -2863,6 +3477,66 @@ static void test_factory_reset(void)
 	sim_flash_free();
 }
 
+// DMR is TDMA: the radio's reading alternates between the signal and the floor. The published level holds the peak
+static void test_dmr_rssi_hold(void)
+{
+	dmr_start(false);
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	burst_rssi = 0;				// a modem that reports no level per burst
+	rssi_alt = true;
+	int16_t lo = 0;
+	int16_t hi = -200;
+	uint8_t lc[9];
+	mk_lc(lc, true, 201, 3101234);
+	for (int h = 0; h < 3; h++) {
+		burst_lc(lc, 2, false);
+		run(60);
+	}
+	for (int sf = 0; sf < 3; sf++) {
+		for (int i = 0; i < 6; i++) {
+			burst_voice((uint8_t)i, 2, i == 5 ? lc : NULL);
+			for (int k = 0; k < 12; k++) {	// 60 ms in 5 ms steps, sampling the published value
+				run(5);
+				if (sf > 0) {
+					lo = sm.view.rssi_dbm < lo ? sm.view.rssi_dbm : lo;
+					hi = sm.view.rssi_dbm > hi ? sm.view.rssi_dbm : hi;
+				}
+			}
+		}
+	}
+	CHECK(d->state == RDMR_RX);
+	CHECK(lo >= -70 - RADIO_RSSI_DEADBAND_DB && hi <= -70);	// never the floor while the call runs
+	CHECK(d->rssi_dbm >= -70 - RADIO_RSSI_DEADBAND_DB && d->rssi_dbm <= -70);	// the call's level is the held one
+	burst_lc(lc, 2, true);
+	run(60);
+	CHECK(d->state == RDMR_IDLE && d->rssi_dbm <= -70 && d->rssi_dbm != 0);	// the last call keeps its level
+	run(RADIO_RSSI_HOLD_MS + 2 * RADIO_POLL_MS);
+	CHECK(sm.view.rssi_dbm == -70 || sm.view.rssi_dbm == -125);
+	rssi_alt = false;
+	hw.st.rssi_dbm = -125;			// the signal is gone: the floor shows within the window
+	run(RADIO_RSSI_HOLD_MS + RADIO_POLL_MS);
+	CHECK(sm.view.rssi_dbm == -125);
+	burst_rssi = -85;
+
+	// A modem that reports a level: its value wins for the call
+	rssi_alt = true;
+	hear_call(true, 201, 3101234, 2, 1, false);
+	CHECK(d->state == RDMR_RX && d->rssi_dbm == -85);
+	rssi_alt = false;
+}
+
+// FM keeps the raw reading: no hold
+static void test_fm_rssi_raw(void)
+{
+	setup_codeplug();
+	start();
+	for (int i = 0; i < 20; i++) {
+		hw.st.rssi_dbm = i % 2 ? -125 : -70;
+		poll_for(RADIO_POLL_MS);
+		CHECK(sm.view.rssi_dbm == hw.st.rssi_dbm);
+	}
+}
+
 int main(void)
 {
 	test_startup();
@@ -2879,15 +3553,25 @@ int main(void)
 	test_temp_bw_tone();
 	test_tone_lists();
 	test_dmr_rx();
+	test_dmr_rssi_hold();
+	test_fm_rssi_raw();
 	test_dmr_tx();
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
+#if CONFIG_VFO_DMR
+	test_vfo_dmr();
+#else
+	test_vfo_no_dmr();
+#endif
+	test_vfo_copy();
+	test_vfo_copy_dmr();
 	test_dmr_denied();
 	test_dmr_voice_features();
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
 	test_ui_settings();
+	test_soft_volume();
 	test_side_keys();
 	test_error_paths();
 	test_hotspot();

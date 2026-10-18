@@ -8,7 +8,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "app/task_stack.h"
 #include "debuglink/dl_fmt.h"
+#include "hal_vocoder.h"
 #include "radio/radio.h"
 
 // Register with the host link as its side protocol (hostlink_start calls it)
@@ -37,6 +39,7 @@ enum {
 	DL_VIEW_SNMP,		// the SNMP agent: settings and counters (debuglink_snmp.c)
 	DL_VIEW_USRP,		// USRP voice over UDP and the shared PCM stream (core/usbaudio/usrp_net.c)
 	DL_VIEW_SFR,		// the MMDVM hotspot's SFR mode (was in DL_VIEW_HOTSPOT until view version 2)
+	DL_VIEW_TASKS,		// every task's least free stack (debuglink_view_tasks.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		2	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -56,10 +59,34 @@ bool debuglink_dmr_diag_line(uint8_t i, char *buf, uint8_t len);
 void debuglink_dmr_reset(void);
 
 // The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
-// tone burst and one setting (DL_OP_*; returns a DL_ST_* status)
+// tone burst, one setting, roaming, vibration and volume (DL_OP_*; returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
-enum { DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24, DL_OP_ROAM = 26 };
+enum {
+	DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24,
+	DL_OP_ROAM = 26, DL_OP_VIBRATE = 29, DL_OP_VOLUME = 30, DL_OP_DMR_FIELDS = 31, DL_OP_VFO_COPY = 32,
+};
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
+// RADIO ops the dispatcher hands to debuglink_radio_feature_op: a new DL_OP_* goes here too
+static inline bool debuglink_is_feature_op(uint8_t op)
+{
+	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
+	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY;
+}
+// VERSION's codec=: the vocoder profile the board recognized in flash (signature and hash checked by the board),
+// "absent" when the board has a vocoder but its check failed, "none" without one (FM-only build). The profile comes
+// first: a codec the board has stopped for a stub upload is still in flash, and a flasher asking then must not see it
+// absent. Read only
+static inline const char *debuglink_codec_id(const hal_vocoder_t *v)
+{
+	if (v == NULL) {
+		return "none";
+	}
+	const char *id = v->profile != NULL ? v->profile() : NULL;
+	if (id != NULL) {
+		return id;
+	}
+	return v->present() ? "present" : "absent";
+}
 // The DMR data service (debuglink_dmr_data.c): the dmr_data view section, the DMR_DATA command (docs/spec/debuglink.md
 // 3.12) and its counter reset. Built without CONFIG_DMR_DATA_CORE: "data.built=0", the command answers unavailable
 void debuglink_view_dmr_data(uint8_t part, dl_text_t *t);	// part 0: state and settings, 1: counters, 2: IP packets
@@ -82,6 +109,10 @@ void debuglink_view_net(dl_text_t *t);
 // unavailable
 void debuglink_view_snmp(dl_text_t *t);
 size_t debuglink_cmd_snmp(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+// The tasks section (debuglink_view_tasks.c): each task's least free stack in bytes. The formatting takes the table
+// apart from the snapshot (task_stack_snapshot) so the host tests can feed it
+void debuglink_view_tasks(dl_text_t *t);
+void debuglink_view_tasks_format(const task_stack_t *ts, unsigned n, unsigned untracked, dl_text_t *t);
 
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 // The split duplex command SPLIT and its view text (debuglink_split.c, docs/spec/debuglink.md 3.15)

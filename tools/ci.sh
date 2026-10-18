@@ -6,7 +6,7 @@
 #
 #   tools/ci.sh                 host tests, Python checks, every board with its feature matrix, license checks
 #   tools/ci.sh --quick         the same with only each board's default build (no matrix)
-#   tools/ci.sh --board dm1701  one board only
+#   tools/ci.sh --board dm1701  one board only (or a comma separated list: --board dm1701,md380)
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
 #   tools/ci.sh --steps host,python   only these steps (host, python, firmware, licenses, similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
@@ -15,15 +15,16 @@
 #                               the matrix otherwise leaves about 65 MB per configuration)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps host,python,licenses` and
-# `--quick --steps firmware --board <b>`; nightly `--matrix --steps firmware --board <b>`.
+# `--quick --steps firmware --board <the Arm boards>` and `<the C-SKY boards>`; nightly `--matrix --steps firmware --board <b>`.
 #
 # Steps, each reported as ok / FAIL / skip:
 #   1. host tests (make -C tests/host), and with ODR_CI_SANITIZE=1 again under ASan and UBSan
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing tools'
 #      tests (tools/odrflash/tests, codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate
-#      and dm32_codec self-tests); every relative link, image and anchor in the Markdown resolves
-#      (tools/check_doc_links.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv)
-#      and the web flasher's tests pass against odrflash (site/tests/run.sh, needs Node 20+)
+#      and dm32_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
+#      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
+#      the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
+#      pass against odrflash (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
 #      notice: the DM-32's csky toolchain comes from tools/build-csky-toolchain.sh):
 #        default            the board's defaults
@@ -37,7 +38,10 @@
 #        audio-probe        (DM-1701 only, the board with an audio tap) the default config with CONFIG_AUDIO_PROBE=y
 #                           and LTO=1 (without LTO it no longer fits), so the probe keeps building
 #        vhf                (MD-380 only) the VHF band image, default config
-#      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md.
+#      and the STM32F4 flash stub (stub/stm32f4, with the DM-1701 or MD-380 compiler).
+#      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md. The default and the
+#      maximal configuration must pass the static stack check (make stack-check, docs/dev/stack-check.md): each task's
+#      deepest call chain fits its stack with the margin.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
 #   5. tools/similarity_scan.py against the trees in $ODR_SIMILARITY_REFS (space separated), only when it is set:
 #      the reference trees are never part of this repository or of public CI
@@ -58,7 +62,7 @@ while [ $# -gt 0 ]; do
 	--matrix) MATRIX=1 ;;
 	--board) ONLY="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,38p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,48p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -140,8 +144,11 @@ for f in sys.argv[1:]:
 	   python3 tools/md380_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/dm32_flash.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/dm32_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/dm32_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate and dm32_codec self-tests"
+	   python3 tools/dm32_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/ui_gallery_compare.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 stub/stubtool.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate, dm32_codec, ui_gallery_compare, stubtool and f4stub self-tests"
 	else
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
@@ -158,6 +165,13 @@ for f in sys.argv[1:]:
 		fi
 	else
 		skip "APRS AFSK decoder self-test: numpy not installed"
+	fi
+	# the stack check's parsers and search on a fixture (the check itself runs with each firmware build)
+	if python3 tools/stack_check.py --self-test > "$OUT/stack-check-test.log" 2>&1; then
+		ok "stack check self-test ($(grep -c '^ok' "$OUT/stack-check-test.log") checks)"
+	else
+		grep -v '^ok' "$OUT/stack-check-test.log" | head -20
+		bad "stack check self-test (see $OUT/stack-check-test.log)"
 	fi
 	if python3 tools/check_doc_links.py > "$OUT/doc-links.log" 2>&1; then
 		ok "doc links: $(tail -1 "$OUT/doc-links.log" | sed 's/^check_doc_links: //')"
@@ -221,6 +235,15 @@ build() {
 		grep -i 'warning:' "$log" | sort -u | head -10
 		bad "$b $name: warnings ($*; see $log)"
 	fi
+	# the static stack check (docs/dev/stack-check.md) on the default and the maximal configuration
+	if [ "$name" = default ] || [ "$name" = maximal ]; then
+		if make -s BOARD="$b" BUILD="$dir" "$@" stack-check > "$dir.stack.log" 2>&1; then
+			ok "$b $name: $(grep -E '^stack check .*: every task fits' "$dir.stack.log" | sed 's/^stack check [^:]*: //')"
+		else
+			grep -E '^  [^ ]+ +(OVER|\?) ' "$dir.stack.log"
+			bad "$b $name: stack check (see $dir.stack.log)"
+		fi
+	fi
 	bin=$(ls "$dir"/odr_"$b".bin 2>/dev/null)
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
@@ -269,7 +292,7 @@ for bm in boards/*/board.mk boards/*/; do
 	   continue ;;
 	esac
 	b=$(basename "$(dirname "$bm")")
-	[ -n "$ONLY" ] && [ "$b" != "$ONLY" ] && continue
+	[ -n "$ONLY" ] && case ",$ONLY," in *",$b,"*) false ;; *) true ;; esac && continue
 	echo "== firmware: $b"
 	cc=$(make -s BOARD="$b" print-cc 2>/dev/null)
 	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
@@ -298,6 +321,25 @@ for bm in boards/*/board.mk boards/*/; do
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
 done
+# The STM32F4 flash stub (stub/stm32f4): one image for the DM-1701 and the MD-380, loaded by CONFIG_STUB_ENTRY builds
+if [ -z "$ONLY" ] || case ",$ONLY," in *,dm1701,*|*,md380,*) true ;; *) false ;; esac; then
+	cc=$(make -s BOARD=dm1701 print-cc 2>/dev/null)
+	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
+		skip "STM32F4 flash stub: compiler ${cc:-?} not installed"
+	elif make -C stub/stm32f4 BUILD="$(pwd)/$OUT/stub-stm32f4" > "$OUT/stub-stm32f4.log" 2>&1; then
+		if grep -qi 'warning:' "$OUT/stub-stm32f4.log"; then
+			grep -i 'warning:' "$OUT/stub-stm32f4.log" | sort -u | head -10
+			bad "STM32F4 flash stub: warnings (see $OUT/stub-stm32f4.log)"
+		elif ! python3 stub/f4stub.py --check-embedded "$OUT/stub-stm32f4/f4stub.bin" > /dev/null; then
+			bad "STM32F4 flash stub: the copy embedded in stub/f4stub.py differs from this build (python3 stub/f4stub.py --embed $OUT/stub-stm32f4/f4stub.bin)"
+		else
+			ok "STM32F4 flash stub: $(wc -c < "$OUT/stub-stm32f4/f4stub.bin" | tr -d ' ') bytes (at most 8192), the embedded copy matches"
+		fi
+	else
+		grep -E 'error|ASSERT' "$OUT/stub-stm32f4.log" | head -10
+		bad "STM32F4 flash stub: build failed (see $OUT/stub-stm32f4.log)"
+	fi
+fi
 echo
 cat "$REPORT"
 echo

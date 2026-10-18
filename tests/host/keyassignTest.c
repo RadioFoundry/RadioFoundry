@@ -116,13 +116,13 @@ static void test_build(void)
 static void test_toggles(void)
 {
 	static const struct { uint8_t fn; uint8_t value; uint8_t action; } t[] = {
-		{ KEYFN_HEAR_ALL, 9, ACT_HEAR_ALL }, { KEYFN_MONITOR_LATCH, 10, ACT_MONITOR_LATCH },
 		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
+		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_COUNT == 14);
+	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 15);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);
@@ -144,12 +144,11 @@ static void test_toggles(void)
 	// A value one past the last is not a function: it reads as the default
 	uint16_t s[KEYASSIGN_SLOTS] = { KEYASSIGN_MARKER, KEYFN_COUNT, KEYFN_COUNT };
 	CHECK(keyassign_get(s, 0, false) == KEYFN_DEFAULT && keyassign_get(s, 0, true) == KEYFN_DEFAULT);
-	// The monitor latch on the monitor key's press frees the key from being held
+	// The retired monitor latch reads as the default: the monitor key stays held
 	uint16_t m[KEYASSIGN_SLOTS] = { 0 };
 	keyassign_set(m, 0, false, KEYFN_MONITOR_LATCH);
 	keyassign_build(base, N, side, 3, m, map);
-	CHECK(!entry(K_SK1)->raw_edges && entry(K_SK1)->short_action == ACT_MONITOR_LATCH &&
-	      entry(K_SK1)->long_action == ACT_NONE);
+	CHECK(entry(K_SK1)->raw_edges && entry(K_SK1)->short_action == ACT_MONITOR);
 }
 
 // The built map in the gesture engine
@@ -233,6 +232,37 @@ static void test_engine(void)
 	      evs[2].gesture == GESTURE_UP && evs[2].value == 1);
 }
 
+// A board key map entry whose short press is the VFO / channel toggle (ACT_VFO_TOGGLE) has Copy to VFO on its long
+// press (docs/ux/information-architecture.md 2). Read from the boards' sources: they don't build on the host
+static void test_board_defaults(void)
+{
+	static const char *const boards[] = { "db25d", "dm1701", "dm1801pro", "dm32", "md380" };
+	int toggles = 0;
+	for (unsigned b = 0; b < sizeof boards / sizeof boards[0]; b++) {
+		char path[64];
+		snprintf(path, sizeof path, "../../boards/%s/board.c", boards[b]);
+		FILE *f = fopen(path, "r");
+		CHECK(f != NULL);
+		if (f == NULL) {
+			continue;
+		}
+		char line[256];
+		while (fgets(line, sizeof line, f) != NULL) {
+			if (strstr(line, "{ KEY_") == NULL || strstr(line, "ACT_") == NULL) {
+				continue;
+			}
+			const char *comma = strchr(line, ',');	// after the key; the short action follows
+			if (comma != NULL && strncmp(comma + 2, "ACT_VFO_TOGGLE", 14) == 0) {
+				toggles++;
+				CHECK(strstr(comma + 2, ", ACT_COPY_VFO,") != NULL);
+			}
+			CHECK(strstr(line, "ACT_COPY_VFO") == NULL || strstr(line, "ACT_VFO_TOGGLE") != NULL);
+		}
+		fclose(f);
+	}
+	CHECK(toggles == 1);	// the DM-1801 Pro's VFO/MR key
+}
+
 int main(void)
 {
 	test_marker();
@@ -240,6 +270,7 @@ int main(void)
 	test_build();
 	test_toggles();
 	test_engine();
+	test_board_defaults();
 	printf("# keyassignTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }

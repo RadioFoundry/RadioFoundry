@@ -128,9 +128,10 @@ inject_max_ms=10000     longest hold of an injected key, PTT included
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`dm1701-v0206-csv`: signature word and the CRC-32 of both codec windows match stock V02.06 CSV;
-`dm32-049`, `dm32-046`: the DM-32 codec slot is valid and was carved from that stock file), `absent` (the board has a
+`dm32-049`, `dm1801pro-049`, `db25d-2501`: an HR_C7000 codec slot is valid, and the digits are the stock version it was carved from; on the DB25-D the year and month of the stock file), `absent` (the board has a
 vocoder but the check failed: erased, another stock version, damaged), `present` (a valid codec whose board names no
-profile) or `none` (built without DMR). The first request after boot may take some 20 ms longer while the board
+profile) or `none` (built without DMR). It describes flash, not whether voice can run at that moment: after the
+HR_C7000 stub entry has stopped the codec (its RAM is the stub's), the profile id is still reported. The first request after boot may take some 20 ms longer while the board
 computes the CRCs. It reads flash only. `tools/odrflash` asks for it before flashing to decide whether the codec
 sectors can be left alone ([docs/dev/release.md](../dev/release.md)).
 
@@ -160,14 +161,15 @@ Request: none (header only), or offset u32 and length u16 (at most 1000 bytes pe
 |---|---|---|
 | 1 | 2 | width (the whole panel, insets included) |
 | 3 | 2 | height |
-| 5 | 1 | bpp |
+| 5 | 1 | bpp (16 for a 16-color panel too: it is sent as RGB565) |
 | 6 | 1 | format: 1 = RGB565 little endian, row-major; 2 = 1 bpp rows of (width + 7) / 8 bytes, MSB left |
 | 7 | 4 | insets: top, bottom, left, right |
 | 11 | 4 | total frame buffer bytes |
 | 15 | 4 | offset of this chunk |
 | 19 | n | the chunk |
 
-The chunks are read live from the UI's frame buffer, without a lock (the UI task owns it, and a 38 KB copy would
+A 16-color frame buffer (bpp 4, the DM-32) is converted through its palette as each chunk is read, so the host sees
+an RGB565 frame of width x height x 2 bytes. The chunks are read live from the UI's frame buffer, without a lock (the UI task owns it, and a 38 KB copy would
 not fit in RAM). A redraw while the host reads the chunks can tear the image. `odr_debug.py screenshot` reads the
 whole buffer twice and repeats until two reads agree (`--tries`, default 4), which gives a consistent image unless
 the screen changes continuously (a running timer); it says so when it gives up.
@@ -224,14 +226,14 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 
 | # | Section | Keys |
 |---|---|---|
-| 0 | `core` | `view state tx_deny mode vfo zone_index zone_pos zone_size zone_count zone_name channel_number channel_name rx_hz tx_hz power power_name power_count temporary temp squelch monitor tone_ok rssi_dbm noise tx_elapsed_ms tot_s last_rx_ms vfo_step_hz codeplug hotspot`, `req_handled req_dropped` (radio requests taken by the radio task; lost to a full queue), `ch_read_errors` (reads of a used channel that failed: flash read or record decode), `serial` |
+| 0 | `core` | `view state tx_deny mode vfo zone_index zone_pos zone_size zone_count zone_name channel_number channel_name rx_hz tx_hz power power_name power_count temporary temp squelch monitor tone_ok rssi_dbm noise tx_elapsed_ms tot_s last_rx_ms vfo_step_hz codeplug hotspot`, `rssi_dbm` is the raw reading in FM and idle, and the peak of the last `RADIO_RSSI_HOLD_MS` (120 ms, two TDMA frames) while the DMR stack runs; `call.rssi_dbm` is the modem's per-burst level, else the held one; `req_handled req_dropped` (radio requests taken by the radio task; lost to a full queue), `ch_read_errors` (reads of a used channel that failed: flash read or record decode), `serial` |
 | 1 | `channel` | `ch.name ch.rx_hz ch.tx_hz ch.mode ch.bw ch.rx_tone ch.tx_tone ch.power ch.rx_only ch.color_code ch.timeslot ch.contact ch.listen_list ch.dmr_id ch.dmo` |
 | 2 | `dmr` | `dmr.built dmr.active dmr.codec dmr.state dmr.phase dmr.tx_error dmr.own_id dmr.cc dmr.ts dmr.rmo dmr.repeater_up dmr.target_id dmr.target_private dmr.target_name dmr.reply_active dmr.reply_s dmr.hear_all dmr.hear_all_latch dmr.focus_id dmr.focus_private dmr.one_shot dmr.underruns dmr.target_manual dmr.privacy dmr.alias_tx dmr.tx_alias` (the alias text our calls send, empty when none) |
 | 3 | `dmr_call` | `call.src call.dst call.group call.to_us call.encrypted call.emergency call.pi_header call.src_name call.dst_name call.late_entry call.alias_complete call.fid call.svc call.pi_alg call.pi_key call.alias call.rssi_dbm call.ms`, the same with `last.` (`src` to `dst_name`) and `last.ms`. The caller's ETSI GPS Info ([dmr-voice.md](dmr-voice.md) GPS Info): `call.gps_valid` (and `last.`), when 1 `call.gps_lat call.gps_lon` (degrees, 7 decimals) `call.gps_err` (position error code 0-7), when our own position is known `call.gps_dist_m call.gps_bearing` (degrees from north) |
-| 4 | `dmr_stats` | call stack (`call.rx_calls rx_calls_played rx_late_entries rx_voice_bursts rx_lost_frames rx_dup_dropped rx_enc_dropped rx_term_dropped tx_calls tx_denied tx_underruns evq_overflows rx_private_calls rx_emergency_calls rx_encrypted_calls rx_pi_headers rx_alias_complete tx_alias_lcs rx_gps tx_gps_lcs`), AMBE voice (`voice.rx_in rx_frames rx_concealed rx_silence rx_calls rx_queue_max rx_bad rx_lost rx_underruns rx_underrun_at rx_overflows rx_bit_errors tx_frames tx_overflows`; `rx_underrun_at`: frames the call had played at its latest underrun), the vocoder's encode options (`voice.enc_options` in force and `voice.enc_supported`, `VOCODER_OPT_*` bits in hex: 0x1 noise reduction, 0x2 tone frames, 0x4 AGC; `voice.enc_flags`, the codec's own flags word, only on boards that report it, e.g. 0x1840 on the AMBE+2 hosts with both on; `dmr-voice.md` 6) |
+| 4 | `dmr_stats` | call stack (`call.rx_calls rx_calls_played rx_late_entries rx_voice_bursts rx_lost_frames rx_dup_dropped rx_enc_dropped rx_term_dropped tx_calls tx_denied tx_underruns evq_overflows rx_private_calls rx_emergency_calls rx_encrypted_calls rx_pi_headers rx_alias_complete tx_alias_lcs rx_gps tx_gps_lcs`), AMBE voice (`voice.rx_in rx_frames rx_concealed rx_silence rx_calls rx_queue_max rx_bad rx_lost rx_underruns rx_underrun_at rx_overflows rx_bit_errors tx_frames tx_overflows rx_peak`; `rx_underrun_at`: frames the call had played at its latest underrun; `rx_peak`: the largest decoded sample of the latest call that played, near 0 when the decoder is fed the wrong bits), the vocoder's encode options (`voice.enc_options` in force and `voice.enc_supported`, `VOCODER_OPT_*` bits in hex: 0x1 noise reduction, 0x2 tone frames, 0x4 AGC; `voice.enc_flags`, the codec's own flags word, only on boards that report it, e.g. 0x1840 on the AMBE+2 hosts with both on; `dmr-voice.md` 6) |
 | 5 | `hotspot` | `hostlink` (idle / hotspot / cps), `hostlink.left` (why hotspot mode was last left: none / user / closed = DTR dropped / gone / idle), `hs.running hs.transmitting hs.receiving hs.rx_hz hs.tx_hz hs.cc hs.src hs.dst hs.group hs.from_net` and the engine counters `hs.net_frames ... hs.enter_attempts hs.starts hs.stops` (counted since boot, across sessions); USB network builds `usb.network usb.net_up` and with the IP gateway `usb.boot_network` and `net.*` (`docs/spec/usb-network.md` 3, 5.4: `net.passthrough net.passthrough_active net.fixed_link net.link_ip net.link_in_force` among them); `CONFIG_NET_PPP` builds `ppp.running ppp.ip_up ppp.lcp ppp.ipcp` (RFC 1661 state numbers, 9 = opened) `ppp.rx_frames ppp.tx_frames ppp.rx_errors` (`docs/spec/ppp.md`) (the SFR keys moved to section 19 in view version 2) |
-| 6 | `link` | `uptime_ms ui.screen` (the screen's name, `docs/spec/ui.md` 2) `ui.depth ui.focus ui.count ui.locked ui.banner ui.toast ui.query ui.draws input.idle_ms input.long_ms input.source input.raw_keys input.injected input.encoder_total input.enc_detents input.enc_transitions input.enc_illegal input.enc_reversals input.enc_steps input.enc_deferred dl.frames dl.bad_crc dl.too_long dl.timeouts` |
-| 7 | `features` | `scan.built scan` (off, zone, vfo, dual) `scan_phase` (listen, probe, hold, resume, paused) `scan_skipped scan_probes scan_synced tot_warning tone_burst roger vox_keyed vox_on vox.mic` (1: the radio reads its mic level, so VOX can work) `rx_sleeping battery` (ok, low, critical) `battery_pct battery_mv power_off`, `beep.built beep.played beep.no_stream beep.blocks beep.stalls beep.busy`, and the radio settings `set.tot_s set.tot_warn_s set.bcl set.roger_beep set.tx_inhibit set.scan_resume set.scan_hold_s set.scan_delay_ms set.scan_dwell_ms set.scan_priority set.beep_level set.key_beep set.vox set.vox_level set.vox_tail_ms set.rx_save set.rx_save_idle_s set.battery_off_s set.reply_s` (a number, or `codeplug` for the hang times; `docs/spec/radio-features.md`) |
+| 6 | `link` | `uptime_ms ui.screen` (the screen's name, `docs/spec/ui.md` 2) `ui.depth ui.focus ui.count ui.locked ui.banner ui.toast ui.query ui.draws input.idle_ms input.long_ms input.source input.raw_keys input.injected input.encoder_total input.enc_detents input.enc_transitions input.enc_illegal input.enc_reversals input.enc_steps input.enc_deferred input.ptt_downs dl.frames dl.bad_crc dl.too_long dl.timeouts` |
+| 7 | `features` | `scan.built scan` (off, zone, vfo, dual) `scan_phase` (listen, probe, hold, resume, paused) `scan_skipped scan_probes scan_synced tot_warning tone_burst roger vox_keyed vox_on vox.mic` (1: the radio reads its mic level, so VOX can work) `vox.level` (the mic level now, 0-100 on the VOX scale, `radio-features.md` 3.4; read from the board's hook on FM channels outside hotspot mode, with VOX on or off, else 0; an HR_C7000 radio's meter starts on the first read, which gives 0) `rx_sleeping rx_save.hw` (1: the radio driver can switch the receiver off for battery save) `battery` (ok, low, critical; `none` on a board without a battery, with `battery_pct` and `battery_mv` 0) `battery_pct battery_mv power_off`, `volume.soft` (1: no volume knob, the stored step is in force) `volume.sent` (percent last given to the board, -1 = none yet) `volume.src` (`none`, `knob`, `soft`, `override`) `volume.max` (16) `volume.step` (the stored step) `volume.override` (the debug link's step over the knob, -1 = none; `radio-features.md` 4.2), `beep.built beep.played beep.no_stream beep.blocks beep.stalls beep.busy`, `vibe.built vibe.motor` (1: the board has a vibration motor) `vibe.played vibe.busy` (`radio-features.md` 4.1), and the radio settings `set.tot_s set.tot_warn_s set.bcl set.roger_beep set.tx_inhibit set.scan_resume set.scan_hold_s set.scan_delay_ms set.scan_dwell_ms set.scan_priority set.beep_level set.key_beep set.vox set.vox_level set.vox_tail_ms set.rx_save set.rx_save_idle_s set.battery_off_s set.reply_s` (a number, or `codeplug` for the hang times; `docs/spec/radio-features.md`), `set.mic_gain` (the Mic gain step in effect, 0-10) `set.mic_gain_board` (1: the board sets it in its audio path for FM and DMR, `radio-features.md` 3.6) |
 | 8 | `dmr_data` | `data.built data.busy data.sms_state data.signal_state data.signal_kind data.signal_dst data.ars_state data.inbox_count data.inbox_unread data.serial data.event data.event_serial data.event_id data.ars_server data.radio_check_reply data.call_alert_ack data.lrrp_reply data.has_gps data.lrrp_triggers`; the counters are in section 11 (meanings: `core/dmr/dmrDataService.h` dmrDataStats_t). States: `idle queued sending ok failed`; ARS `off registering registered refused no_answer`; `data.event` the last event's name (`sms_received`, `call_alert`, `radio_check_answered`, ...), `data.event_id` its radio ID |
 | 9 | `storage` | settings store (`settings.load` ram / defaults / loaded / upgraded, `settings.dirty seq saves erases failures sector slot skipped`), flash journal (`storage.sector_writes sector_skips replays errors`), `codeplug.source codeplug.serial`, the UI settings (`settings.auto_lock_s long_press_ms repeat_ms mic_gain theme ui_flags updown_home low_batt_pct auto_off_min audio_flags`, `settings.privacy_type` of key slot 1 and `settings.privacy_active`; never the key), `storage.job_busy` (a save to channel, permanent talk target or factory reset pending on the housekeeping task), foreign region guard (`storage.region` none / ours / foreign, `storage.journal` none / ok / foreign, `storage.foreign_slots foreign_refusals claim_pending`; `settings.load` also `foreign`), open-firmware CPS (`cps.built requests reads commits refused overflows last session pending`; [settings-store.md](settings-store.md), [cps-protocol.md](cps-protocol.md)) |
 | 10 | `dmr_ext` | DMR extensions ([dmr-emergency.md](dmr-emergency.md), [dmr-data.md](dmr-data.md) 5.2): the ETSI forms `data.sms_format` (etsi_ip / etsi / tms, the radio's default) `data.radio_check_etsi` `data.tms_built` (`CONFIG_DMR_TMS`), ETSI IP text `data.ip_text_received data.ip_text_sent`, control station passthrough `data.pt_active data.pt_yielded` ([usb-network.md](usb-network.md) 5.2), counters `data.etsi_sms_received etsi_sms_sent etsi_responses emergency_alarms_heard emergency_alarms_received emergency_alarms_sent`; emergency `em.built em.state` (idle / alarm / hot_mic / active / failed) `em.serial em.mode` (alarm / alarm_call / call) `em.dst em.dst_private em.tries em.hot_mic_s em.etsi_fid em.rx_tone`, the newest alert `em.alert` (1 = not dismissed) `em.alert_kind` (none / alarm / call) `em.alert_src em.alert_dst em.alert_group em.alert_pending em.alert_serial`, counters `em.started failed alarms_started hot_mic_keyed alerts alerts_alarm alerts_call tones`; hotspot builds the CW ID `hs.cw_requests hs.cw_sent hs.cw_refused hs.cw_last_ms hs.cw_wpm hs.cw_active` |
@@ -244,6 +246,7 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 17 | `snmp` | the SNMP agent ([snmp.md](snmp.md) 7): `snmp.built snmp.flags snmp.write_set snmp.trap_port`, counters `snmp.rf_requests rf_answers rf_dropped traps_usb traps_rf traps_dropped` (the protocol counters and the other settings: the MIB). Built without the agent: `snmp.built=0` |
 | 18 | `usrp` | USRP voice over UDP ([usb-audio.md](usb-audio.md) 9.1): `usrp.peer` (the address that last sent a valid frame, 0.0.0.0 = none: the host's address is used) `usrp.keyed` (the peer's keyup) `usrp.tx` (we asked the radio to transmit) `usrp.cos` (the last frame sent had keyup 1) `usrp.rx_on` (the receive audio goes to the host: network mode is up), counters `usrp.frames voice lost out_of_order bad keys timeouts tx_limits sent send_busy refused ptt_downs`, the shared stream `mux.blocks rx_samples rx_overflow tx_blocks fm_pulls starts start_fails tx_fill`, the jitter buffer `slip.pushed underruns drops repeats primes`. Built without it: `usrp.built=0` |
 | 19 | `sfr` | The MMDVM hotspot's SFR mode (`docs/spec/sfr.md`): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps`. Built without it: `sfr.built=0` |
+| 20 | `tasks` | Every FreeRTOS task's least free stack since it started, in bytes (the kernel's high water mark, in creation order): `tasks.count tasks.untracked` (tasks created while the table of 16 was full) `tasks.min_free tasks.min_task` (the task with the least, the first of a tie), then `tasks.free.<name>` per task. A name's characters other than letters, digits and `_` become `_` (`tasks.free.Tmr_Svc`), an empty name is `_`. The kernel's task create and delete trace hooks keep the table (`core/app/task_stack.c`); each stack is walked with the scheduler suspended, one task at a time. Measured on the radio; `make stack-check` computes the worst case ([stack-check.md](../dev/stack-check.md)). Built without it (`CONFIG_TASK_STACKS=n`): `tasks.built=0` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -263,7 +266,7 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 2 | pos u16 | `radio_req_zone_pos`: position in the zone, 0-based |
 | 3 | index u16 | `radio_req_zone` |
 | 4 | on u8 | `radio_req_vfo` |
-| 5 | hz u32 | `radio_req_vfo_set` (simplex) |
+| 5 | hz u32 | `radio_req_vfo_set` (simplex; in the DMR VFO it retunes the DMR VFO) |
 | 6 | dir i8 | `radio_req_vfo_step` |
 | 7 | dir i8 | `radio_req_power` (a temporary change, wraps) |
 | 8 | dir i8 | `radio_req_squelch` |
@@ -273,7 +276,7 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 12 | none | `radio_req_clear_temporary` |
 | 13 | none | `radio_req_reply_cancel` (DMR builds) |
 | 14 | none | `hostlink_hotspot_exit`: leave hotspot mode |
-| 15 | target u32 | `radio_req_dmr_target`: ID or talkgroup in bits 23:0, bit 24 = private call (DMR builds) |
+| 15 | target u32 | `radio_req_dmr_target`: ID or talkgroup in bits 23:0, bit 24 = private call (DMR builds). In the DMR VFO it is the VFO's own talk target, kept with its settings (`dmr-voice.md` 2.1) |
 | 16 | index u16 | `radio_req_dmr_contact`: a codeplug contact as the talk target |
 | 17 | none | `radio_req_dmr_call_back`: talk to the last call heard (its ID if private, its talkgroup if group) |
 | 18 | none | `radio_req_dmr_target_clear`: back to the channel's talk target |
@@ -282,13 +285,17 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 21 | lo u32, hi u32 | `radio_req_scan_vfo`: VFO scan from lo to hi Hz in the VFO step |
 | 22 | beep u8 | `radio_req_beep`: 1 key (only with `set.key_beep`), 2 error, 3 TX permit, 4 TX deny, 5 call end, 6 time-out warning, 7 battery low, 8 battery critical, 9 scan hold (CONFIG_BEEP builds) |
 | 23 | on u8 | `radio_req_tone_burst`: the 1750 Hz burst, keys up while on (FM channels, CONFIG_FM_TX_TONES builds) |
-| 24 | id u8, value u16 | one radio setting in RAM (`radio_set_settings`; not stored): 1 tot_s, 2 tot_warn_s, 3 bcl (0 off, 1 carrier, 2 wrong tone), 4 roger_beep, 5 tx_inhibit, 6 scan_resume (0 time, 1 carrier, 2 stop), 7 scan_hold_s, 8 scan_delay_ms, 9 scan_dwell_ms, 10 scan_priority, 11 beep_level (0-100), 12 key_beep, 13 vox (0 off, 1 channel, 2 all), 14 vox_level (0-10), 15 vox_tail_ms, 16 rx_save (0-3), 17 rx_save_idle_s, 18 battery_off_s, 19 scan_beep, 20 reply_s (0-30, 255 = the codeplug's hang times), 21 roam_rssi_dbm (-125..-60, two's complement), 22 roam_hyst_db (1-30), 23 roam_probe (0 passive, 1 wake), 24 roam_check_s (0 or 30-3600), 25 roam_beacon_s (0 or 10-600), 26 roam_beacon_len_s (1-10), 27 roam_survey (0 off, 1 synced, 2 per site), 28 rpt_beacon (0/1). Out of range: bad argument |
+| 24 | id u8, value u16 | one radio setting in RAM (`radio_set_settings`; not stored): 1 tot_s, 2 tot_warn_s, 3 bcl (0 off, 1 carrier, 2 wrong tone), 4 roger_beep, 5 tx_inhibit, 6 scan_resume (0 time, 1 carrier, 2 stop), 7 scan_hold_s, 8 scan_delay_ms, 9 scan_dwell_ms, 10 scan_priority, 11 beep_level (0-100), 12 key_beep, 13 vox (0 off, 1 channel, 2 all), 14 vox_level (0-10), 15 vox_tail_ms, 16 rx_save (0-3), 17 rx_save_idle_s, 18 battery_off_s, 19 scan_beep, 20 reply_s (0-30, 255 = the codeplug's hang times), 21 roam_rssi_dbm (-125..-60, two's complement), 22 roam_hyst_db (1-30), 23 roam_probe (0 passive, 1 wake), 24 roam_check_s (0 or 30-3600), 25 roam_beacon_s (0 or 10-600), 26 roam_beacon_len_s (1-10), 27 roam_survey (0 off, 1 synced, 2 per site), 28 rpt_beacon (0/1), 29 mic_gain (0-10, `radio_set_mic_gain`: the UI's stored setting is not changed, so a restart brings it back; unavailable when the setting does nothing in this build). Out of range: bad argument |
 | 25 | on u8: 1 network, 0 serial | switch the USB personality once the reply has gone out (`CONFIG_USB_NETWORK`; status 4 without it). The radio re-enumerates; in network mode this link answers over UDP to the radio's address, port 3334 (`docs/spec/usb-network.md`) |
 | 26 | cmd u8 | `radio_req_roam` (CONFIG_DMR_ROAMING builds; status 4 without): 0 zone off, 1 zone on, 2 zone toggle (the current zone's roaming flag, stored), 3 roam now, 4 lock to this site, 5 unlock, 6 lock toggle ([dmr-roaming.md](dmr-roaming.md) 6.1) |
 | 27 | flags u8, link IP u32 | the USB network settings, stored and applied at once (`docs/spec/usb-network.md` 5.4): bit 0 the network personality at power-on, bit 1 control station passthrough, bit 2 the fixed link pair; the radio's link address (0 = 192.168.10.1). Bits 1 and 2 need `CONFIG_DMR_CONTROL_STATION` (ignored without); UNAVAILABLE without `CONFIG_USB_NETWORK`. `odr_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]` |
 | 28 | on u8: 1 start, 0 end | PPP on the serial host port once the reply has gone out (`CONFIG_NET_PPP` builds; status 2 without): 1 starts it actively (our LCP Configure-Request goes out at once; ignored while the USB network adapter is in use), 0 ends it with LCP Terminate (send it over UDP while PPP runs). pppd starts PPP by itself, so 1 is only for peers that wait. While PPP runs this link answers over UDP to the radio's address, port 3334, as in USB network mode (`ppp.md` 4). `odr_debug.py radio ppp on\|off` |
+| 29 | pattern u8 | `radio_req_vibrate`: 1 message, 2 call, 3 emergency, on the board's motor whatever the Vibrate setting (CONFIG_VIBRATE builds; status 4 without; nothing happens on a radio without a motor). `odr_debug.py radio vibrate message\|call\|emergency` |
+| 30 | step u8 | the speaker volume (`radio-features.md` 4.2): step 0 (mute) to `volume.max` (16), or 0xFF = back to the knob (a radio without a knob: back to its default step). A radio without a knob (`volume.src=soft`) stores the step like the UI and applies it; one whose MCU reads the knob (`knob`) holds it in RAM over the knob (`override`) until 0xFF or a restart; one whose volume control works in analog hardware (`none`: the MD-380, the DM-32UV) answers UNAVAILABLE (4); a step over 16 other than 0xFF answers BAD_ARG. `odr_debug.py volume [N\|knob]` |
+| 31 | mode u8, cc u8, ts u8 | `radio_req_mode`, `radio_req_dmr_color_code`, `radio_req_dmr_timeslot` in one request: mode 0 FM, 1 DMR (0xFF = keep), color code 0 to 15 (0xFF = keep), timeslot 1 or 2 (0 = keep). On a channel these are temporary changes, in the VFO the VFO's own settings (`dmr-voice.md` 2.1); the radio core refuses what it can't do (a mode change in a VFO needs both `VFO_FM` and `VFO_DMR`; check the `core` view). UNAVAILABLE without `CONFIG_DMR`. `odr_debug.py radio mode fm\|dmr`, `radio cc N`, `radio ts N` |
+| 32 | none | `radio_req_vfo_copy`: copy the channel on view to the VFO and open it (`dmr-voice.md` 2.2). The check is the radio core's own, made on the current view: OK when the request went out (read the `core` view for the VFO's values), REFUSED for a mode without a VFO in this build or a frequency outside the bands, UNAVAILABLE without a VFO or when already in the VFO. `odr_debug.py radio copy-vfo` |
 
-Ops 15-18 last until the channel changes (`dmr.target_manual`). Unavailable ops answer UNAVAILABLE.
+Ops 15-18 last until the channel changes (`dmr.target_manual`); in the DMR VFO ops 15 and 16 set the VFO's own target, which is kept. Unavailable ops answer UNAVAILABLE.
 
 ### 3.9 INFO_CHIP
 
@@ -333,8 +340,10 @@ RAM, CCM and peripheral addresses are always refused: a read there can have side
 popping a FIFO). The UID and the flash size register come through INFO_CHIP instead.
 
 RDP and reads: read protection level 1 does **not** stop the application from reading flash. Level 1 blocks flash
-access only from a debugger (SWD/JTAG), from code running in RAM and when the chip boots from system memory (the
-BOOT0 pin); code running from user flash, as this firmware does, reads every flash address. So READ_MEM works at
+access only while a debugger (SWD/JTAG) is connected and when the chip boots from SRAM or system memory (the BOOT
+pins). After a normal boot from user flash, user code reads every flash address, whether it runs from flash, as
+this firmware does, or from SRAM, as the flash stub does ([stub-stm32f4.md](stub-stm32f4.md) 2; the stub's first
+bench run confirms it). So READ_MEM works at
 RDP level 1, and that is how the stock bootloader was saved on the bench unit.
 
 The web flasher and odrflash read the bootloader sectors this way to find the bootloader key by its SHA-256
@@ -497,25 +506,44 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 
 ### 3.18 STUB
 
-Load the host's flash-access RAM monitor (the "C7 stub") into a free RAM span and hand the SoC to it at run time, no
-power cycle (`CONFIG_STUB_ENTRY`; `docs/spec/hardware-dm32.md` 17.2 for the SoC side). Built without the switch, or on a
+Load the host's flash-access RAM monitor into a free RAM span and hand the SoC to it at run time, no power cycle
+(`CONFIG_STUB_ENTRY`). Two platforms have it: the HR_C7000 (the "C7 stub", `docs/spec/hardware-dm32.md` 17.2) and the
+STM32F4 (the DM-1701 and the MD-380, [stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
 board whose platform has no `hal_system_t.enter_stub`, every operation answers `DL_ST_UNAVAILABLE`. All u32 are little
 endian. The guard is a 32-bit magic key `'C7SB'` (`0x42533743`) on BEGIN and ENTER, plus the exact length and a CRC-32
 of the whole image checked before the jump.
 
 | Op | Request | Reply / effect |
 |---|---|---|
-| 0 INFO | none | magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32: the span and transfer state |
+| 0 INFO | none | magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32: the span and transfer state. `load_addr` / `region_size` are the board's `HRC_STUB_BASE` / `HRC_STUB_SIZE` (the DB25-D reports 0x30000 / 0x20000, or 0x1D000 / 0x12000 with `CONFIG_DMR`) |
 | 1 BEGIN | magic u32, total_len u32, crc32 u32, entry u32 | received u32 (0): zero the span and arm a transfer. Bad magic: refused; total 0 / over the span or entry outside it: bad argument |
 | 2 DATA | offset u32, bytes (<= max_chunk) | received u32: write a chunk (the frame's CRC-16 guards it). Not armed, or past total_len: bad argument |
-| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument |
+| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument; the radio transmitting: busy (the image stays loaded, ENTER again later) |
 
 The CRC-32 is the standard (zlib) CRC-32. Per-chunk integrity is the debug link frame's own CRC-16, so DATA carries no
 second checksum; the span is zeroed at BEGIN, so a dropped chunk leaves zeros that fail the ENTER CRC-32. After an ok
 ENTER the firmware sends the reply, draws a static banner on the display ("PC Loader Connected" / "Power-cycle to exit",
-flushed synchronously so the panel does not sit on a stale or hung frame while the monitor runs), then quiesces and jumps
+flushed synchronously so the panel does not sit on a stale or hung frame while the monitor runs) with the backlight at
+full, then quiesces and jumps
 and stops answering; the host then speaks the monitor's own protocol (`02 op len chk 03`, the stub's `PROTOCOL.md`) on
 the same UART at the same baud. Recover the radio with a power cycle.
+
+Where the image runs: INFO's load_addr is the address the image is linked for, and the host builds BEGIN's entry from
+it. On the HR_C7000 that is the span itself. On the STM32F4 the span is a staging buffer in ODR's own RAM and
+load_addr is the SRAM base (0x20000000, `hal_system_t.stub_run_addr`): `enter_stub` stops the DMA controllers,
+copies the buffer there and jumps with a handoff flag in r0 ([stub-stm32f4.md](stub-stm32f4.md) 3). The STM32F4
+stub then answers on the USB serial port, with the same framing as the C7 stub. ENTER is answered busy (3) while the
+radio transmits.
+
+The monitor never touches the RF chips, so the transmitter stays as ODR left it for the whole session. ENTER is
+refused while the radio core is transmitting, the entry is dropped if PTT went down in the 100 ms between the reply and
+the jump, and the firmware calls `board.radio->tx_off()` just before the jump in every case.
+
+The monitor is position dependent, so the image has to be linked for exactly `load_addr`. The firmware does not check
+that (it only checks the length, the CRC-32 and that `entry` lies inside the span); the host does: `stubtool.py` reads
+INFO first, takes the embedded image whose base is `load_addr` (`stub/README.md`), and refuses a `--odr-stub` image whose
+linked data and stack lie outside the span or that does not end its text and data at `load_addr` plus its length. INFO is
+the whole discovery protocol, so firmware built before a board moved its span keeps working with the same tool.
 
 ## 4. Safety
 
@@ -525,14 +553,16 @@ the same UART at the same baud. Recover the radio with a power cycle.
 - Radio requests are rate limited (20 ms).
 - INFO_CHIP and READ_MEM only read. READ_MEM reads flash, system memory, OTP and option bytes only, never RAM or
   peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
+- STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).
 - AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; nothing else in the debug link writes
   chip registers.
 - STUB (bench builds only) writes arbitrary RAM and then runs it, giving the host full control: it is gated by a magic
-  key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, and never returns (recover
-  by a power cycle). Off in a release.
+  key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, is refused while
+  transmitting, and never returns (recover by a power cycle). Off in a release. The stub, not the debug link, is
+  what writes flash ([stub-stm32f4.md](stub-stm32f4.md) 6 for the STM32 one's rules).
 - The debug link never enters hotspot or CPS mode, and never takes bytes that belong to an MMDVM frame or a CPS
   request (section 1).
 

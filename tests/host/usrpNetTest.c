@@ -74,6 +74,8 @@ static struct {
 } sent[MAX_SENT];
 static int nsent;
 static bool send_busy;
+static uint32_t send_cost_ms;	// a blocking send: the clock runs and the audio interrupt delivers a block per 20 ms
+static int sends;
 
 bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler) { bound_port = port; bound = handler; return true; }
 uint8_t *ipGatewayLocalPayload(void) { return local; }
@@ -91,6 +93,13 @@ bool ipGatewayUdpSend(uint32_t ip, uint16_t sport, uint16_t dport, const uint8_t
 		memcpy(sent[nsent].data, p, (size_t)len);
 	}
 	nsent++;
+	sends++;
+	for (uint32_t t = 0; t < send_cost_ms; t += 5) {
+		now += 5;
+		if ((t % 20) == 15) {
+			block();
+		}
+	}
 	return true;
 }
 
@@ -116,6 +125,8 @@ static void reset(void)
 	view.state = RS_IDLE;
 	nsent = 0;
 	send_busy = false;
+	send_cost_ms = 0;
+	sends = 0;
 	ptt_downs = ptt_ups = host_downs = 0;
 	keyed = false;
 	prim_blocks = 0;
@@ -324,6 +335,33 @@ static void test_usrp_rx(void)
 	CHECK(!hw.streaming);
 }
 
+// A link that sends slower than real time (115200 baud serial): one poll must return, not chase the audio
+static void test_usrp_rx_slow_link(void)
+{
+	reset();
+	usrp_net_start();
+	for (int i = 0; i < 3; i++) {
+		tick();
+	}
+	view.state = RS_RX;
+	send_cost_ms = 31;
+	// A backlog of ten blocks, then one poll
+	for (int i = 0; i < 10; i++) {
+		block();
+	}
+	now += 5;
+	usrp_net_poll(now, true);
+	CHECK(sends >= 1 && sends <= 2);
+	CHECK(audio_mux_host_avail() < USRP_FRAME_SAMPLES);	// the backlog is gone, not kept for the next poll
+	// The next polls come back at once and the state is refreshed: the squelch closing is seen
+	send_cost_ms = 0;
+	view.state = RS_IDLE;
+	for (int i = 0; i < 4; i++) {
+		tick();
+	}
+	CHECK(sends <= 4);
+}
+
 static void test_usrp_tx(void)
 {
 	reset();
@@ -452,6 +490,7 @@ int main(void)
 	test_mux_passthrough();
 	test_mux_dmr_tx();
 	test_usrp_rx();
+	test_usrp_rx_slow_link();
 	test_usrp_tx();
 #if CONFIG_APRS_RX
 	test_mux_aprs();

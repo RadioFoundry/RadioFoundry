@@ -40,6 +40,9 @@ enum {
 	CAP_AM_RX	= 1u << 5,
 	// A separate broadcast FM receiver (board.bcast, hal_bcast.h)
 	CAP_BCAST_FM	= 1u << 6,
+	// The radio has no battery (a mobile on a fixed supply). The core shows no battery icon, percentage, menu item or
+	// warning, never refuses to transmit for a battery, and reports no battery level. Unset: a battery radio
+	CAP_NO_BATTERY	= 1u << 7,
 };
 
 typedef struct {
@@ -89,9 +92,27 @@ typedef struct {
 	// Optional, with CAP_GPS: whether the GPS module is there, for radios sold with and without one on the same board
 	// (the MD-380 / MD-380G): true once the module has been heard. NULL = CAP_GPS alone says
 	bool (*gps_present)(void);
+	// Optional, with CAP_GPS: Settings > Location > GPS. Power the module and its receive path on or off now. Called
+	// with the stored value at start-up and on each change; the module is still probed at start-up whatever the
+	// setting says, so board_has_gps() is known. NULL = the module is always on
+	void (*gps_enable)(bool on);
 } board_t;
 
 extern const board_t board;
+
+// The radio runs from a battery (every handheld). False for a mobile on a fixed supply (CAP_NO_BATTERY)
+static inline bool board_has_battery(void)
+{
+	return (board.caps & CAP_NO_BATTERY) == 0;
+}
+
+// Settings > Location > GPS took effect (a board without the hook has nothing to switch)
+static inline void board_gps_enable(bool on)
+{
+	if (board.gps_enable != NULL) {
+		board.gps_enable(on);
+	}
+}
 
 // The radio has a GPS receiver now: CAP_GPS and, where the board detects the module at run time, its answer
 static inline bool board_has_gps(void)

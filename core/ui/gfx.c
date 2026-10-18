@@ -12,6 +12,112 @@ static int clip_x0, clip_y0, clip_x1, clip_y1;	// panel coordinates, x1, y1 excl
 static int ox, oy, vw, vh;
 static uint32_t row_hash[GFX_MAX_ROWS];
 static bool all_dirty;
+#if GFX_INDEXED
+// bpp 4: the colors the indexes stand for. An entry is only given a new color once nothing drawn since the last clear
+// uses it, so no pixel on the screen changes color under it
+static color_t pal[16], pal_sent[16];	// pal_sent: as the display last got it
+static uint8_t pal_n, pal_n_sent;	// entries set
+static uint16_t pal_used;		// bit n: entry n drawn since the last gfx_clear
+static color_t last_color;		// the last lookup, for runs of one color (text is drawn pixel by pixel)
+static uint8_t last_index = 0xFFu;	// 0xFF: none
+
+static inline void put4(uint8_t *row, int x, uint8_t i)
+{
+	uint8_t *b = row + (x >> 1);
+	*b = (x & 1) ? (uint8_t)((*b & 0xF0u) | i) : (uint8_t)((*b & 0x0Fu) | (i << 4));
+}
+
+static void pal_reset(color_t c)
+{
+	pal[0] = c;
+	pal_n = 1;
+	pal_used = 1;
+	last_index = 0xFFu;
+}
+
+// Squared distance, each channel scaled to 6 bits and weighted for the eye (green most, blue least)
+static uint32_t color_dist(color_t a, color_t b)
+{
+	int dr = (int)((a >> 11) - (b >> 11)) * 2, dg = (int)((a >> 5) & 0x3Fu) - (int)((b >> 5) & 0x3Fu);
+	int db = (int)(a & 0x1Fu) * 2 - (int)(b & 0x1Fu) * 2;
+	return (uint32_t)(3 * dr * dr + 4 * dg * dg + 2 * db * db);
+}
+
+// Entries a blend may not take: anti-aliased edges must not use up the slots solid colors need. Past this, an edge
+// gets the nearest color already there (on a dark theme the grays, which suit it)
+#define PAL_SOLID_RESERVE	4
+
+static uint8_t pal_index(color_t c)
+{
+	if (last_index != 0xFFu && c == last_color)
+		return last_index;
+	uint8_t i = 0;
+	while (i < pal_n && pal[i] != c)
+		i++;
+	if (i == pal_n) {
+		if (pal_n < 16) {
+			pal[pal_n++] = c;
+		} else {
+			for (i = 0; i < 16 && (pal_used >> i) & 1u; i++) {
+			}
+			if (i < 16) {
+				pal[i] = c;	// an entry no pixel uses any more
+			} else {	// 16 colors on the screen: the nearest
+				uint32_t best = UINT32_MAX;
+				for (uint8_t k = 0; k < 16; k++) {
+					uint32_t d = color_dist(c, pal[k]);
+					if (d < best) {
+						best = d;
+						i = k;
+					}
+				}
+			}
+		}
+	}
+	pal_used |= (uint16_t)(1u << i);
+	last_color = c;
+	last_index = i;
+	return i;
+}
+
+static uint8_t pal_index_blend(color_t c)
+{
+	int free_n = 16;
+	for (uint8_t i = 0; i < pal_n; i++) {
+		if (pal[i] == c) {
+			pal_used |= (uint16_t)(1u << i);
+			return i;
+		}
+		if ((pal_used >> i) & 1u)
+			free_n--;
+	}
+	if (free_n > PAL_SOLID_RESERVE)
+		return pal_index(c);
+	uint8_t best_i = 0;
+	uint32_t best = UINT32_MAX;
+	for (uint8_t k = 0; k < pal_n; k++) {
+		if (!((pal_used >> k) & 1u))
+			continue;	// free: its color isn't on the screen
+		uint32_t d = color_dist(c, pal[k]);
+		if (d < best) {
+			best = d;
+			best_i = k;
+		}
+	}
+	return best_i;
+}
+#endif
+
+#if CONFIG_FONT_AA
+// a/3 of fg over bg, per channel
+static color_t blend(color_t fg, color_t bg, unsigned a)
+{
+	unsigned r = ((fg >> 11) * a + (bg >> 11) * (3u - a) + 1u) / 3u;
+	unsigned g = (((fg >> 5) & 0x3Fu) * a + ((bg >> 5) & 0x3Fu) * (3u - a) + 1u) / 3u;
+	unsigned b = ((fg & 0x1Fu) * a + (bg & 0x1Fu) * (3u - a) + 1u) / 3u;
+	return (color_t)(r << 11 | g << 5 | b);
+}
+#endif
 
 bool gfx_init(const hal_display_t *disp)
 {
@@ -19,8 +125,9 @@ bool gfx_init(const hal_display_t *disp)
 	width = disp->width;
 	height = disp->height;
 	bpp = disp->bpp;
-	stride = bpp == 1 ? (width + 7) / 8 : width * 2;
-	if ((bpp != 1 && bpp != 16) || (uint32_t)stride * (uint32_t)height > GFX_FB_BYTES || height > (int)GFX_MAX_ROWS) {
+	stride = bpp == 1 ? (width + 7) / 8 : bpp == 4 ? (width + 1) / 2 : width * 2;
+	if ((bpp != 1 && bpp != 16 && (bpp != 4 || !GFX_INDEXED || disp->flush_indexed == NULL)) ||
+	    (uint32_t)stride * (uint32_t)height > GFX_FB_BYTES || height > (int)GFX_MAX_ROWS) {
 		width = height = 0;
 		display = NULL;
 		return false;
@@ -35,6 +142,10 @@ bool gfx_init(const hal_display_t *disp)
 		vh = height;
 	}
 	gfx_clip_off();
+#if GFX_INDEXED
+	pal_reset(0);		// the frame buffer starts as zeros
+	pal_n_sent = 0;
+#endif
 	all_dirty = true;
 	return true;
 }
@@ -68,6 +179,12 @@ static void span(int x0, int x1, int y, color_t c)
 		uint16_t *p = (uint16_t *)row + x0;
 		for (int x = x0; x < x1; x++)
 			*p++ = c;
+#if GFX_INDEXED
+	} else if (bpp == 4) {
+		uint8_t i = pal_index(c);
+		for (int x = x0; x < x1; x++)
+			put4(row, x, i);
+#endif
 	} else {
 		for (int x = x0; x < x1; x++) {
 			uint8_t m = (uint8_t)(0x80u >> (x & 7));
@@ -78,6 +195,39 @@ static void span(int x0, int x1, int y, color_t c)
 		}
 	}
 }
+
+// A panel pixel, already clipped: RGB565 (0 / 1 at bpp 1)
+static color_t raw_pixel(int x, int y)
+{
+	const uint8_t *row = (const uint8_t *)fb_words + y * stride;
+	if (bpp == 16)
+		return ((const uint16_t *)row)[x];
+#if GFX_INDEXED
+	if (bpp == 4)
+		return pal[(row[x >> 1] >> ((x & 1) ? 0 : 4)) & 0x0Fu];
+#endif
+	return (row[x >> 3] >> (7 - (x & 7))) & 1u;
+}
+
+#if CONFIG_FONT_AA
+// An anti-aliased edge pixel: coverage a (1 or 2 of 3) of fg over what is there. On 1 bpp panels ink from 2 up
+static void edge_pixel(int x, int y, color_t fg, unsigned a)
+{
+	if (bpp == 1) {
+		if (a >= 2)
+			span(x, x + 1, y, fg);
+		return;
+	}
+	color_t c = blend(fg, raw_pixel(x, y), a);
+#if GFX_INDEXED
+	if (bpp == 4) {
+		put4((uint8_t *)fb_words + y * stride, x, pal_index_blend(c));
+		return;
+	}
+#endif
+	span(x, x + 1, y, c);
+}
+#endif
 
 #ifdef GFX_FIT_TRACE
 static void trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const char *s)
@@ -117,10 +267,7 @@ color_t gfx_get_pixel(int x, int y)
 		return 0;
 	x += ox;
 	y += oy;
-	const uint8_t *row = (const uint8_t *)fb_words + y * stride;
-	if (bpp == 16)
-		return ((const uint16_t *)row)[x];
-	return (row[x >> 3] >> (7 - (x & 7))) & 1u;
+	return raw_pixel(x, y);
 }
 
 void gfx_clear(color_t c)
@@ -128,8 +275,26 @@ void gfx_clear(color_t c)
 #ifdef GFX_FIT_TRACE
 	trace(GFX_TRACE_CLEAR, 0, 0, vw, vh, NULL);
 #endif
+#if GFX_INDEXED
+	if (bpp == 4) {		// nothing drawn before is left: the palette starts over with c
+		pal_reset(c);
+		memset(fb_words, 0, (size_t)stride * (size_t)height);
+		return;
+	}
+#endif
 	for (int y = 0; y < height; y++)	// the whole panel, margins included
 		span(0, width, y, c);
+}
+
+void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
+{
+	uint32_t total = (uint32_t)width * (uint32_t)height * 2u;
+	for (size_t k = 0; k < n; k++, off++) {
+		color_t c = 0;
+		if (off < total && bpp != 1)
+			c = raw_pixel((int)(off / 2u % (uint32_t)width), (int)(off / 2u / (uint32_t)width));
+		out[k] = (uint8_t)((off & 1u) ? c >> 8 : c);
+	}
 }
 
 void gfx_hline(int x, int y, int w, color_t c) { gfx_fill(x, y, w, 1, c); }
@@ -239,7 +404,7 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 	const char *s0 = s;
 	int x0 = x;
 #endif
-	int bytes = (f->w + 7) / 8;
+	int bytes = (f->w * f->bpp + 7) / 8;
 	for (; *s; s++, x += f->w) {
 		int px = x + ox, py = y + oy;	// panel coordinates for the clip tests and spans
 		if (px >= clip_x1)
@@ -248,21 +413,33 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 			continue;
 		if (opaque)
 			gfx_fill(x, y, f->w, f->h, bg);
-		const uint8_t *g = font_glyph(f, (uint8_t)*s);
+		int top, rows;
+		const uint8_t *g = font_glyph(f, (uint8_t)*s, &top, &rows);
 		if (g == NULL) {
 			fallback_glyph(f, x, y, (uint8_t)*s, fg);
 			continue;
 		}
-		for (int r = 0; r < f->h; r++, g += bytes) {
-			int yy = py + r;
+		for (int r = 0; r < rows; r++, g += bytes) {
+			int yy = py + top + r;
 			if (yy < clip_y0 || yy >= clip_y1)
 				continue;
 			for (int col = 0; col < f->w; col++) {
-				if (g[col >> 3] & (0x80u >> (col & 7))) {
-					int xx = px + col;
-					if (xx >= clip_x0 && xx < clip_x1)
-						span(xx, xx + 1, yy, fg);
+#if CONFIG_FONT_AA
+				unsigned a = f->bpp == 2 ? (g[col >> 2] >> (6 - 2 * (col & 3))) & 3u :
+					     (g[col >> 3] & (0x80u >> (col & 7))) ? 3u : 0;
+#else
+				unsigned a = (g[col >> 3] & (0x80u >> (col & 7))) ? 3u : 0;
+#endif
+				int xx = px + col;
+				if (a == 0 || xx < clip_x0 || xx >= clip_x1)
+					continue;
+#if CONFIG_FONT_AA
+				if (a != 3) {
+					edge_pixel(xx, yy, fg, a);
+					continue;
 				}
+#endif
+				span(xx, xx + 1, yy, fg);
 			}
 		}
 	}
@@ -382,10 +559,30 @@ static uint32_t hash_row(int y)
 	return h;
 }
 
+static void send(int y0, int y1)
+{
+#if GFX_INDEXED
+	if (bpp == 4) {
+		display->flush_indexed(fb_words, pal_sent, (uint16_t)y0, (uint16_t)y1);
+		return;
+	}
+#endif
+	display->flush(fb_words, (uint16_t)y0, (uint16_t)y1);
+}
+
 void gfx_flush(void)
 {
 	if (display == NULL)
 		return;
+#if GFX_INDEXED
+	if (bpp == 4) {		// an entry that changed color changes rows the hashes can't see
+		for (int i = 0; i < pal_n_sent; i++)
+			if (pal[i] != pal_sent[i])
+				all_dirty = true;
+		memcpy(pal_sent, pal, sizeof pal);
+		pal_n_sent = pal_n;
+	}
+#endif
 	int band = -1;
 	for (int y = 0; y < height; y++) {
 		uint32_t h = hash_row(y);
@@ -394,12 +591,12 @@ void gfx_flush(void)
 		if (changed && band < 0)
 			band = y;
 		if (!changed && band >= 0) {
-			display->flush(fb_words, (uint16_t)band, (uint16_t)y);
+			send(band, y);
 			band = -1;
 		}
 	}
 	if (band >= 0)
-		display->flush(fb_words, (uint16_t)band, (uint16_t)height);
+		send(band, height);
 	all_dirty = false;
 }
 

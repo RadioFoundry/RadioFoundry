@@ -33,6 +33,14 @@ void hrc7000_attach(hrc7000_t *d, volatile uint32_t *regs, volatile uint8_t *buf
 	d->buf = buf;
 	d->audio_ctl = C7_AUDIO_I2S_SLAVE;
 	d->tone_on = false;
+	d->crit_enter = NULL;
+	d->crit_exit = NULL;
+}
+
+void hrc7000_set_crit(hrc7000_t *d, uint32_t (*enter)(void), void (*exit_fn)(uint32_t state))
+{
+	d->crit_enter = enter;
+	d->crit_exit = exit_fn;
 }
 
 static void spin(uint32_t n)
@@ -43,7 +51,7 @@ static void spin(uint32_t n)
 
 void hrc7000_set_mic_gain(hrc7000_t *d, uint8_t db)
 {
-	hrc7000_codec_wr(d, C7_CODEC_GCR_ADCL, (uint8_t)(0x80u | (db > 42 ? 42 : db)));
+	hrc7000_codec_wr(d, C7_CODEC_GCR_ADCL, (uint8_t)(0x80u | (db > HRC7000_MIC_GAIN_MAX_DB ? HRC7000_MIC_GAIN_MAX_DB : db)));
 }
 
 void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code)
@@ -141,10 +149,18 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_set_mic_gain(d, mic_gain_db);
 }
 
+// The shadow and the register in one step: an interrupt that changed a bit between the read and the write (the PCM
+// mic meter turning b4 off) would have it undone
 void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear)
 {
+	uint32_t (*enter)(void) = d->crit_enter;
+	void (*exit_fn)(uint32_t) = d->crit_exit;
+	uint32_t s = enter != NULL ? enter() : 0;
 	d->audio_ctl = (d->audio_ctl & ~clear) | set;
 	hrc7000_wr(d, C7_AUDIO_CONTROL, d->audio_ctl);
+	if (exit_fn != NULL) {
+		exit_fn(s);
+	}
 }
 
 void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on)
@@ -160,6 +176,30 @@ void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted)
 	hrc7000_codec_wr(d, C7_CODEC_CR_DAC, (uint8_t)(lineout_muted ? (dac | 0x80u) : (dac & 0x7Fu)));
 }
 
+#define MIX_EN		0x80u
+#define MIX_LOAD	0x40u
+#define MIX_2_REC	0x01u	// MIX_2 b0 mix_rec: the ADC's output = ADC + DAC
+#define MIX_3_ADC_ZERO	0xF0u	// MIX_3 mixadcl_sel = mixadcr_sel = 3: the ADC's input to the mix = 0
+
+static void mix_wr(hrc7000_t *d, uint8_t addr, uint8_t v, bool en)
+{
+	hrc7000_codec_wr(d, C7_CODEC_DR_MIX, v);
+	hrc7000_codec_wr(d, C7_CODEC_CR_MIX, (uint8_t)((en ? MIX_EN : 0u) | MIX_LOAD | addr));
+}
+
+void hrc7000_codec_dac_to_tx(hrc7000_t *d, bool on)
+{
+	// The ADC's input is zeroed while mix_rec is set, so the microphone never rides on the tones
+	if (on) {
+		mix_wr(d, 3, MIX_3_ADC_ZERO, true);
+		mix_wr(d, 2, MIX_2_REC, true);
+	} else {
+		mix_wr(d, 2, 0, false);
+		mix_wr(d, 3, 0, false);
+		hrc7000_codec_wr(d, C7_CODEC_CR_MIX, 0);
+	}
+}
+
 void hrc7000_fm_rx(hrc7000_t *d, bool wide)
 {
 	hrc7000_wr(d, C7_FM_BANDWIDTH, wide ? 0x4F : 0x40);
@@ -172,10 +212,16 @@ void hrc7000_fm_rx(hrc7000_t *d, bool wide)
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 }
 
+uint32_t hrc7000_fm_tx_dev_coef(const hrc7000_t *d, bool wide)
+{
+	uint8_t lim = d->fm_tx_limit[wide ? 1 : 0];
+	return ((uint32_t)(lim != 0 ? lim : HRC7000_FM_TX_LIMIT_DEF) << 16) | (wide ? 0x0A20u : 0x0A25u);
+}
+
 void hrc7000_fm_tx(hrc7000_t *d, bool wide)
 {
 	hrc7000_wr(d, C7_FM_BANDWIDTH, wide ? 0x5F : 0x50);
-	hrc7000_wr(d, C7_FM_DEV_COEF, wide ? 0x40A20 : 0x40A25);
+	hrc7000_wr(d, C7_FM_DEV_COEF, hrc7000_fm_tx_dev_coef(d, wide));
 	// Sub-audio deviation (8.2): the bandwidth bits don't scale it; twice the narrow value at 25 kHz
 	uint32_t sv_dev = wide ? (uint32_t)d->subaudio_dev * 2u : d->subaudio_dev;
 	hrc7000_wr(d, C7_SUBVOICE_COEF, (hrc7000_rd(d, C7_SUBVOICE_COEF) & ~0xFF00u) | ((sv_dev > 0xFFu ? 0xFFu : sv_dev) << 8));
@@ -285,7 +331,8 @@ void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev)
 
 // About 5.8 Hz of deviation per step (UHF, DM-1801 Pro on the SDR bench: 0x60 = 559 Hz, 0xC0 = 1117 Hz). The guide's
 // DTMF values (0x12 at UHF 12.5 kHz) gave about 100 Hz, too little to hear. 0xFF (about 1.5 kHz) is the most the
-// field holds, so 25 kHz gets less than twice the narrow value. VHF is unmeasured
+// field holds, so 25 kHz gets less than twice the narrow value. VHF takes the same values: the board's modulation
+// calibration byte is per band, about three times the UHF one on VHF (modem-hrc7000.md 8.3). Unmeasured on VHF
 uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide)
 {
 	(void)hz;

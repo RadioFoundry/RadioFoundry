@@ -11,6 +11,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [Architecture](architecture.md) | The layers (core, hal, drivers, platform, boards), the tasks, where each feature lives |
 | [Building](building.md) | Toolchains (Arm, csky-elf, the Docker image), make targets, image size, flashing your own build |
 | [Testing](testing.md) | Host tests, the UI simulator and gallery, coverage, sanitizers, fuzzing, HIL and the SDR bench; where a new test goes |
+| [Stack check](stack-check.md) | The static worst-case stack depth of every task, how pointer calls are resolved, the table of hand-kept targets |
 | [CI](ci.md) | The workflows per push, nightly and on the radio; running each piece locally; coverage figures; the runners; the csky-elf image |
 | [Adding a radio](adding-a-radio.md) | The files a new board needs, `board_t`, the key map, the order to bring it up in |
 | [Debug link](debug-link.md) | The host-port debug protocol and `tools/odr_debug.py` |

@@ -1153,8 +1153,10 @@ bool codeplug_delete_listen_list(uint16_t index)
 
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 {
-	enum { PER_READ = 32 };	// records per flash read (768 bytes on the stack)
-	uint8_t r[PER_READ * CONTACT_SIZE];
+	enum { PER_READ = 32 };	// records per flash read
+	// Static, used only under the storage lock: on the stack it overflowed the radio task, whose DMR set-up calls
+	// this through find_name (a DMR VFO whose talk target is a contact, at boot)
+	static uint8_t r[PER_READ * CONTACT_SIZE];
 
 	if (source != CODEPLUG_OPENFW || id == 0 || id > 0xFFFFFFu) {
 		return false;

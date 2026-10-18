@@ -9,9 +9,9 @@ whole move over the programming cable:
 2. It flashes ODR through the radio's own bootloader (update mode).
 3. It writes the codeplug back, plus the DMR ID (callsign) database.
 
-> The DM-32UV port has never run on a radio, and these tools have never talked to one. Try it only if you can go
-> back to stock. Keep Baofeng's firmware file (`DM32.01.01.049.bin`), and read
-> [the bring-up checklist](../testing/dm32-bringup.md) first.
+> The DM-32UV port runs on a radio but is still in testing; [the bring-up checklist](../testing/dm32-bringup.md)
+> lists what is still open. Try it only if you can go back to stock, and keep Baofeng's firmware file
+> (`DM32.01.01.049.bin`).
 
 ODR never touches the bootloader, so update mode always works. It never touches the data flash below 7 MB either.
 The stock codeplug, the factory calibration and the stock contact database live there. Going back to stock gives you your old
@@ -89,7 +89,8 @@ uses the parts of the codeplug listed in [Programming with qdmr](15-programming-
 
 ## The DMR ID database
 
-By default, dmrconf downloads the public DMR user database and picks the IDs nearest yours (internet needed).
+By default, dmrconf downloads the public DMR user database and picks the IDs nearest yours (internet needed). The
+radio holds about 300,000 records. When the list is longer, the tool keeps the ones nearest your ID.
 `--users FILE` takes radioid.net's `user.csv` instead. Options: `--db-limit N`, `--id-prefix`, `--no-db`.
 
 ## Flashing only

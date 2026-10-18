@@ -201,6 +201,63 @@ static void test_squelch(void)
 
 }
 
+static void test_tx_plan(void)
+{
+	db25d_tx_plan_t p = { 11, 22, 33 };
+	// No page: refused, and the plan isn't touched
+	CHECK(!db25d_cal_load(NULL, NULL));
+	CHECK(!db25d_cal_tx_plan(403175000, true, 100, &p) && p.pa == 11 && p.on_us == 22 && p.off_us == 33);
+
+	build(flash_page, 1);
+	db25d_cal_load(flash_page, NULL);
+	// Level "H" is table 0x045, "L" table 0x056; delays come with the PA value
+	CHECK(db25d_cal_tx_plan(403175000, true, 100, &p) && p.pa == 1500 && p.on_us == 100 && p.off_us == 1800);
+	CHECK(db25d_cal_tx_plan(403175000, false, 100, &p) && p.pa == 900);
+	CHECK(db25d_cal_tx_plan(146125000, true, 100, &p) && p.pa == 2700 && p.on_us == 200);
+	// The drive scale rounds to nearest and never reaches 0
+	CHECK(db25d_cal_tx_plan(403175000, true, 40, &p) && p.pa == 600);
+	CHECK(db25d_cal_tx_plan(403175000, false, 1, &p) && p.pa == 9);
+	CHECK(!db25d_cal_tx_plan(403175000, true, 0, &p) && !db25d_cal_tx_plan(403175000, true, 101, &p));
+	// A PA value that isn't one (erased, or beyond the DAC) refuses just that frequency
+	put16(flash_page + 0x045 + 1 + 2 * 3, 0xFFFF);
+	put16(flash_page + 0x056 + 1 + 2 * 0, 0);
+	db25d_cal_load(flash_page, NULL);
+	CHECK(!db25d_cal_tx_plan(436625000, true, 100, &p));
+	CHECK(!db25d_cal_tx_plan(400000000, false, 100, &p));
+	CHECK(db25d_cal_tx_plan(414175000, true, 100, &p) && p.pa == 1600);
+}
+
+static void test_apc(void)
+{
+	CHECK(db25d_apc_level(1500, 0) == 0);
+	CHECK(db25d_apc_level(1500, DB25D_APC_STEPS) == 1500);
+	CHECK(db25d_apc_level(1500, DB25D_APC_STEPS + 50) == 1500);
+	CHECK(db25d_apc_level(1500, DB25D_APC_STEPS / 2) == 750);
+	CHECK(db25d_apc_level(0, 77) == 0);
+	for (uint16_t t = 1; t <= 4095; t = (uint16_t)(t * 3 / 2 + 1)) {
+		uint16_t prev = 0;
+		for (uint16_t i = 0; i <= DB25D_APC_STEPS; i++) {
+			uint16_t v = db25d_apc_level(t, i);
+			CHECK(v >= prev && v <= t);	// monotonic, never above the target
+			prev = v;
+		}
+	}
+	// Slow at both ends: the first and last steps move far less than the middle ones
+	CHECK(db25d_apc_level(4095, 1) < 4 && db25d_apc_level(4095, 179) > 4095 - 4);
+}
+
+// DMR burst end (4.5): the ramp down starts 30.5 ms + the page's TX-off delay after the RF TX interrupt, whatever woke
+// the TX-off; a trigger after that point ramps at once and counts as late
+static void test_dmr_hold(void)
+{
+	CHECK(db25d_dmr_hold_us(0, 1700) == 32200u);
+	CHECK(db25d_dmr_hold_us(30500, 1700) == 1700u);		// woken by the RF RX interrupt: the page's delay
+	CHECK(db25d_dmr_hold_us(30500, 0) == 0);
+	CHECK(db25d_dmr_hold_us(32200, 1700) == 0 && db25d_dmr_late_us(32200, 1700) == 0);
+	CHECK(db25d_dmr_hold_us(33100, 1700) == 0 && db25d_dmr_late_us(33100, 1700) == 900u);
+	CHECK(db25d_dmr_late_us(20000, 1700) == 0);
+}
+
 int main(void)
 {
 	test_choice();
@@ -208,6 +265,9 @@ int main(void)
 	test_interpolation();
 	test_limits();
 	test_squelch();
+	test_tx_plan();
+	test_apc();
+	test_dmr_hold();
 	if (failures) {
 		printf("db25dCalTest: %d failures\n", failures);
 		return 1;

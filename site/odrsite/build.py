@@ -88,10 +88,10 @@ class Site:
 					raise repo.SourceError("variant %s turns off unknown switch %s" % (v["id"], off["name"]))
 		for b in self.boards:
 			names = repo.screens(b["gallery"])
-			unknown = [n for n in names if n not in self.screens["screens"]]
+			unknown = [n for n in names if self.screen(n) is None]
 			if unknown:
 				self.warn("screens not in site/data/screens.json: %s" % ", ".join(unknown))
-			b["screens"] = [n for n in names if n in self.screens["screens"]]
+			b["screens"] = [n for n in names if self.screen(n) is not None]
 			if b["flash"].get("board") and b["flash"]["board"] not in self.flash["boards"]:
 				raise repo.SourceError("boards/%s/radio.json: flash board %s isn't in odrflash" % (b["id"],
 															 b["flash"]["board"]))
@@ -131,6 +131,8 @@ class Site:
 			"features.json": {"groups": self.groups, "features": features},
 			"variants.json": {"variants": self.variants},
 			"flash-boards.json": self.flash,
+			"c7000-stub.json": repo.c7000_stub(),
+			"f4-stub.json": repo.f4_stub(),
 			"screens.json": self.screens,
 			"releases.json": {"releases": self.release_list()},
 		}
@@ -184,6 +186,18 @@ class Site:
 
 	def t(self, lang, key, **fmt):
 		return self.i18n.t(lang, key, **fmt)
+
+	def screen(self, name):
+		"""A gallery screen's screens.json entry; a color page's shot in a highlight color or a theme (<page>__<color>)
+		takes the page's."""
+		return self.screens["screens"].get(name.partition("__")[0])
+
+	def screen_caption(self, lang, name):
+		page, _, color = name.partition("__")
+		cap = self.t(lang, "screen." + page)
+		if color in ("light", "high_contrast"):	# a theme page in another theme (uiSim G_THEMES)
+			return self.t(lang, "screen.in_theme", screen=cap, theme=self.t(lang, "theme." + color))
+		return self.t(lang, "screen.in_color", screen=cap, color=self.t(lang, "color." + color)) if color else cap
 
 	def ftitle(self, lang, f):
 		return self.i18n.opt(lang, "feature.%s.title" % f["name"], f["title"])
@@ -374,10 +388,10 @@ class Site:
 		for g in self.screens["groups"]:
 			items = []
 			for n in b["screens"]:
-				s = self.screens["screens"][n]
+				s = self.screen(n)
 				if s["group"] != g or any(x not in b["config"]["full"] for x in s["needs"]):
 					continue
-				cap = self.t(lang, "screen." + n)
+				cap = self.screen_caption(lang, n)
 				items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}docs/'
 					     'ux/screens/%s/%s.png"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
 					     'height="%d" loading="lazy"></button><figcaption>%s</figcaption></figure>'
@@ -390,7 +404,8 @@ class Site:
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
 				     for k, p in b["docs"].items())
 		fl = b["flash"]
-		can_flash = fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256"))
+		can_flash = ((fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256")))
+			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"]))
 		g = b["frame_geometry"]
 		pct = g["screen_pct"]
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",
@@ -403,7 +418,10 @@ class Site:
 		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],
 		       "flash_cta": self.tpl.partial("flash_cta" if can_flash else "flash_soon",
 						     {"id": b["id"], "name": b["name"]}, lang),
-		       "bootloader": "".join("<li>%s</li>" % html.escape(s) for s in fl.get("bootloader", []))}
+		       # the C7000 radios need no keys held: the page meets the chip's boot ROM when the radio is switched on
+		       "bootloader": "".join("<li>%s</li>" % html.escape(s) for s in (
+			       [self.t(lang, "radio.c7_step%d" % i) for i in (1, 2, 3)] if fl["backend"] == "c7000-stub"
+			       else fl.get("bootloader", [])))}
 		self.page(lang, "radios/%s.html" % b["id"], b["name"], self.tpl.render("radio", ctx, lang), "radio",
 			  description=self.t(lang, "radio.description", name=b["name"]), nav="radios")
 

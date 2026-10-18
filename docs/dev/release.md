@@ -90,6 +90,7 @@ hold the codec. Whether an update can leave the codec alone (keep) depends on th
 | dm1701 | sectors 3-6 (336 KB), and sector 9 (128 KB) for read-only data | sectors 7-8 (code) and 10-11 (tables), stock addresses | yes | [hardware-dm1701.md](../spec/hardware-dm1701.md) 1.4 |
 | md380 | 0x0800C000..0x08050C43 (281,668 B), into sector 6 | from 0x08050C44: shares sector 6 with the application | no | [hardware-md380.md](../spec/hardware-md380.md) 1.3 |
 | dm32 | 0x0300C000..0x030E8000 (880 KB) | slot 0x030E8000..0x03100000 | no: the updater erases the whole area | [hardware-dm32.md](../spec/hardware-dm32.md) 17 |
+| dm1801pro | 0x0300C000..0x030E8000 (880 KB) | slot 0x030E8000..0x03100000 | through the stub yes (it writes only the image's sectors); through update mode no (the updater erases the whole area) | [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2, [codec-dm1801pro.md](../spec/codec-dm1801pro.md) |
 
 ## Sector 9
 
@@ -197,11 +198,14 @@ never handles the key. Updates of a radio that runs ODR need no stock file.
 |---|---|
 | `firmware-dm1701` | Installs Arm GNU Toolchain 13.3.rel1 (checked by SHA-256) into `~/opt`, runs `tools/ci.sh --quick --board dm1701` as the gate, builds, runs `tools/release.py` |
 | `firmware-dm32` | Only when the repository variable `ODR_RELEASE_DM32` is `true` (below) |
-| `odrflash` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel and the `certifi` CA bundle inside) and runs `--version` on it |
+| `firmware-dm1801pro` | Only when the repository variable `ODR_RELEASE_DM1801PRO` is `true` (below, "The DM-1801 Pro"): the DM-32UV job's toolchain and cache, then `make BOARD=dm1801pro` and `tools/release.py --board dm1801pro` |
+| `odrflash` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel, the `certifi` CA bundle, and `dm32_flash`, `dm32_codec` and `stubtool` for the serial route inside) and runs `--version` on it |
 | `publish` | On a `v*` tag only: one `SHA256SUMS` over everything, checks every manifest against its image and that none includes the codec, creates the release if the manual workflow hasn't, uploads with `--clobber` |
 
-Pull requests and pushes to main that touch `tools/odrflash/`, `tools/release.py` or the workflow build everything
-as workflow artifacts and publish nothing. A manual run on a tag rebuilds and replaces the assets.
+Pull requests that touch `tools/odrflash/`, `tools/release.py`, the DM-32 flashing tools or the workflow build
+everything as workflow artifacts and publish nothing, without the release gate (the pull request's own checks run the
+same tests), and odrflash for Linux only when the self-hosted runner is set up. A manual run on a tag rebuilds and
+replaces the assets.
 
 The executables are not code-signed. macOS marks downloads as quarantined: `xattr -d com.apple.quarantine
 odrflash-*` (or right-click, Open). Windows SmartScreen asks once.
@@ -217,7 +221,7 @@ D002.032 file or, on a radio that runs ODR, from a copy read back from the radio
 
 ## Adding the DM-32UV
 
-The DM-32UV builds and passes its host tests but hasn't run on a radio. The workflow job is there and off. To turn it
+The DM-32UV runs on a radio but is still in bring-up. The workflow job is there and off. To turn it
 on once [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) passes:
 
 1. Set the repository variable `ODR_RELEASE_DM32=true` (Settings, Secrets and variables, Actions, Variables). The job
@@ -233,6 +237,34 @@ on once [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) passes:
    library, like `stockfw` for the DM-1701). The manifest already says so (`keep_supported: false`), and odrflash's
    codec decision refuses keep for it. Whether the updater erases only `size` bytes (which would make a keep mode
    possible with an image that ends before the slot) is a hardware question for the bring-up.
+
+## The DM-1801 Pro
+
+In bring-up ([docs/testing/dm1801pro-bringup.md](../testing/dm1801pro-bringup.md)): `releasable=False` in `boards.py`,
+and the workflow job is off until the repository variable `ODR_RELEASE_DM1801PRO` is `true`.
+
+**Package.** `tools/release.py --board dm1801pro --version v0.1.0` packs `build/dm1801pro/odr_dm1801pro.bin` like any
+board: one range from 0x0300C000, `sectors` `[0]`, codec profile `dm1801pro-049` in "sector" 1 (the slot), not
+included. The board has no second flash region. It refuses the build's `odr_dm1801pro_codec.bin` (the slot's `DDRC`
+word at 0x030E8000) and any image that reaches the slot.
+
+**The serial route.** odrflash flashes the package, a local build or a `_codec.bin` over the programming cable
+(`odrflash/serialflash.py`, [tools/odrflash/README.md](../../tools/odrflash/README.md#the-dm-1801-pro)). It doesn't
+speak either protocol itself; it calls the tools that do:
+
+| Route | Tool | Chosen by `--route auto` when | Codec |
+|---|---|---|---|
+| stub | `stub/stubtool.py`: `Radio.odr_enter`, `write_image`, `reset_chip` (the `--odr-enter --write-app IMAGE --boot reset` run) | VERSION answers on the cable with this board and the debug link's STUB info (op 0, [debuglink.md](../spec/debuglink.md) 3.18) carries its magic | keep: only the image's sectors are written, so the slot stays; merge when the image carries a slot or `--stock` builds one |
+| bootloader | `tools/dm32_flash.py`: `Flasher` with model `dm1801pro` (ID `BF1801-V1`) | otherwise | merge only: the loader erases the slot ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2), so a plain image without `--stock` is refused |
+
+`--stock` is a program flash read of this radio; `tools/dm32_codec.py` recognizes it by the code window's SHA-256 and
+builds the slot. The release package never carries the codec, so the first install of a release through update mode
+needs that read (`stub/stubtool.py PORT --progmem FILE`, radio off). Later updates go through the stub and keep the
+slot. The DM-32UV shares the family (`bfuv32-serial`) and so the route; its `--stock` is the stock firmware file.
+
+Host tests (`tools/odrflash/tests/test_serialflash.py`) run `write_image` against stubtool's simulated radio and the
+update mode protocol against dm32_flash's simulated loader, and check the route and codec choices, the package and the
+refusals. Not yet done on a radio: a whole odrflash run on either route.
 
 ## Testing odrflash on a radio
 

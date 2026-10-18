@@ -463,6 +463,17 @@ bool storage_sector_write(uint32_t addr, const uint8_t *data)
 		storage_unlock();
 		return true;
 	}
+	if (board.flash->replace != NULL) {
+		// Copy on write underneath: the new sector replaces the old in one step, so the journal's copy, header and
+		// the erase would only wear the flash (on NAND, 11 page programs against 2)
+		ok = board.flash->replace(addr, data) && same(addr, data, STORAGE_SECTOR);
+		stats.sector_writes += ok;
+		if (!ok) {
+			stats.errors++;
+		}
+		storage_unlock();
+		return ok;
+	}
 	uint32_t crc = storage_crc32(0, data, STORAGE_SECTOR);
 	uint32_t j1 = m->journal_addr + STORAGE_SECTOR;
 	uint8_t h[J_HDR_LEN];

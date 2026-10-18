@@ -248,7 +248,7 @@ CTRL_STOP 0x20, CH_VLD 0x24, PD_SEOC_TIME 0x28, P2S_EN 0x2C, DATA_AB 0x30 (A in 
 
 | Signal | How the port reads it | Scale | Tag |
 |---|---|---|---|
-| Battery | Single scan, CH_VLD = 0x04 (channel C = ADC2_IN), INTR = 0x10004, PD_SEOC_TIME = 0xA20, wait INTR_STA bit 2, DATA_CD bits 9:0 | volts × 10 = raw / 8.2 (so raw 672 = 8.2 V). Thresholds used: 8.2 V full, 6.4 / 6.2 V low-battery hysteresis, 5.5 V power-off | KP |
+| Battery | Single scan, CH_VLD = 0x04 (channel C = ADC2_IN), INTR = 0x10004, PD_SEOC_TIME = 0xA20, wait INTR_STA bit 2, DATA_CD bits 9:0 | volts × 10 = raw / 8.2 (so raw 672 = 8.2 V). ODR uses raw / 8.32: at 8.21 V by raw / 8.2 a meter on the pack read 8.09 V (2026-10-16). Thresholds used: 8.2 V full, 6.4 / 6.2 V low-battery hysteresis, 5.5 V power-off | KP |
 | Mic level (VOX) | CH_VLD = 0x05, INTR = 0x10005, reads DATA_CD bits 25:16 (channel D) | **Suspect**: single scan converts only channel A, and IO_DIPLEX2 leaves ADC0/ADC3 pins as GPIO, so this probably reads nothing useful | KP, INF |
 | Volume knob | **Not read at all** (the variable for it is never written) | — | KP |
 
@@ -469,8 +469,8 @@ ground (DS). Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (
 | 0x17 | PTA23 | SPI1 CSN0 | — | unused | COM |
 | 0x18 | PTA24 | FD6818 chip select | out | low = selected | COM, KP |
 | 0x19 / 0x1A | PTA25 / 26 | RDA5807M broadcast FM receiver SDIO / SCLK | — | not used by any firmware seen | COM |
-| 0x20 | PTB0 | Green LED (port) / Red LED (community map) | out | high = on; **the two sources disagree** | KP, COM |
-| 0x21 | PTB1 | Red LED (port) / Green LED (community map) | out | high = on | KP, COM |
+| 0x20 | PTB0 | Green LED | out | high = on; color checked on a radio at bring-up | KP, COM, HW |
+| 0x21 | PTB1 | Red LED | out | high = on; color checked on a radio at bring-up | KP, COM, HW |
 | 0x22 | PTB2 | VHF LNA / RX supply (R5_V) | out | high = on | COM, KP |
 | 0x23 | PTB3 | UHF PA select | out | high = on | COM, BIN |
 | 0x24 | PTB4 | UHF LNA / RX supply (R5_U) | out | high = on | COM, KP |
@@ -479,7 +479,7 @@ ground (DS). Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (
 | 0x2B | PTB11 | PTT | in | low = pressed | COM, KP |
 | 0x2C | PTB12 | GPS power | out | **low = GPS on**, high = off | COM, KP |
 | 0x2E | PTB14 | Audio path select: mic to analog FM path vs to DMR codec | out | 1 = analog (FM TX), 0 = DMR; set at each TX start | COM, BIN |
-| 0x2F | PTB15 | Speaker source switch (PWM/codec vs FD6818 audio) | out | port: 0 when audio on, 1 when muted | COM, KP |
+| 0x2F | PTB15 | FD6818 audio switch | out | 1 = the FD6818's audio output to the speaker and away from the C7000's ADC; 0 = the audio into the C7000 (DMR receive needs this) and the speaker on the codec | HW |
 | 0x31–0x34 | PTB17–20 | Keypad columns 1–4 | in | low = key closed | COM, KP |
 | 0x35 | PTB21 | Audio power amplifier enable | out | high = on | COM, KP |
 | 0x37 | PTB23 | VHF PA select | out | high = on | COM, BIN |
@@ -538,6 +538,22 @@ against the keypad.
 Because SK1/SK2 pull a column low on their own, a matrix scan must ignore columns that are already low before any row
 is driven (KP). The radio's third programmable key (P1/P2, orange/top) has not been located.
 
+**PTT shares the cable's serial line (HW).** The PTT pin (0x2B) is also the K1 jack's line that carries the host's
+serial data to UART0, so every 0 bit the host sends pulls the pin low. Measured on a radio, 3 s per case, key scan
+every 10 ms:
+
+| Host sends | PTT low samples | Low edges |
+|---|---|---|
+| nothing | 0 | 0 |
+| 0xFF bytes back to back | 21 | 20 |
+| 0x00 bytes back to back | 266 | 31 |
+| the debug link polling chip registers | about 1.5 a second | same as samples |
+
+Two low scans in a row pass the key debounce, so a host polling the debug link can start a transmission. It did,
+twice, on the bench. A real press holds the line low, which UART0 reads as a break or framing error, never as a good
+byte. So the key scan counts the pin low as PTT only once no good byte has arrived for 50 ms
+(`drivers/input/sharedptt`, `hrc_host_uart_last_rx`). The diag line `ptt ign N` counts the low scans ignored.
+
 ### 6.3 Rotary encoder
 
 A = GPIO 0x27, B = 0x26, inputs with GPIO B interrupts (vector 46). On every change of B: direction = −1 if A == B
@@ -559,6 +575,14 @@ firmware then saves state and drops 0x11 (KP).
 
 240 × 320 color TFT with an ST7789-class controller on the 8-bit i8080 bus (KP; command set matches ST7789, no
 datasheet in hand). RGB565, two bytes per pixel.
+
+The case's bezel hides the panel's edges: ODR's safe-area insets are 10 px left and right and 5 px top and bottom
+(`CONFIG_DISPLAY_INSET_*` in `boards/dm32/config.mk`, `ui.md` 1). At bring-up text 6 px from the left or right edge
+was still clipped (measured in a half-resolution frame: 5 px left, 4 px right, 3 px top and 2 px bottom there).
+
+ODR drives the panel at full resolution in 16 colors: the core's frame buffer holds a 4-bit palette index per pixel
+(37.5 KB; RGB565 would take 150 KB), and each changed row goes out as RGB565 through the palette (`gfx.c`,
+`st7789_write_rows_indexed`).
 
 Reset: NRESET high, wait 120 ms, low, 120 ms, high, 120 ms. Then:
 
@@ -713,6 +737,12 @@ FM TX because 0x51 b15 also enables its transmitter.
 | Each DMR burst | at the modem RF TX interrupt: FD6818 0x30 = 0000 then C1FE. A one-shot timer started when the burst is armed (in the TX timeslot interrupt) fires after the DMR PA delay and then raises the band's PA select and writes DAC B (section 8.6) | BIN |
 | After each DMR burst | DAC B = 0; both PA selects low; FD6818 0x43 = 4048 (OpenDM32) or the RX bandwidth (port), 0x30 = 0000, 0x30 = BFF1 | BIN, KP |
 
+ODR departs from "Enter DMR TX" in one place: it leaves the FD6818 in RX (0x30 = BFF1) with the RX band's LNA on, and
+turns the LNA off at each burst's RF TX interrupt and back on after the burst. The hotspot keys the transmitter to
+listen (`radio_sm.c`, hotspot_arm); with C1FE and the LNAs off at key-up, the radio heard nothing until its first
+burst. Found on the DM-1801 Pro, which has the same chips (BENCH there); DMR TX off air still passes on the DM-32UV
+with the change (BENCH).
+
 Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range shares the VHF path) (KP).
 
 ### 8.6 DMR PA timer
@@ -748,7 +778,7 @@ Not decided by any source. The evidence:
 |---|---|---|
 | The FD6818's registers behave like the BK4819's: frequency in 10 Hz units in 0x38 / 0x39, state 0x30 = 0xBFF1 RX / 0xC1FE TX (the BK4819's enable bits: VCO calibration, RX link, AF DAC, discriminator, PLL, RX DSP), CTCSS word = Hz x 20.64888 in 0x07, RSSI in 0x67 bits 8:0, AF output 0x47, AF gain 0x48 | 8 (KP, BIN); BK4819 register names in the Apache-2.0 UV-K5 firmware ([bk4819-regs.h](https://github.com/DualTachyon/uv-k5-firmware)) | the FD6818 is a BK4819-class part (INF) |
 | The BK4819 selects its AF output type in 0x47 bits 11:8 (0x6040 \| type << 8); type 7 is AM | UV-K5 firmware (D) | AM is a register setting on that class of chip |
-| ODR's FM set-up writes 0x47 = 0x6042 (AF type 0, muted); DMR writes 0x0140 (type 1) | 8.2 (KP) | in FM the FD6818's own AF output is silent: the HR_C7000 demodulates FM from I/Q (its RX I/Q bias registers, modem-hrc7000.md) |
+| FM receive audio comes from the FD6818's AF output with 0x47 = 0x0140 and 0x2F = 1; with the stock FM word 0x6042 that output is silent | HW | the speaker plays the FD6818's demodulated audio in FM, not the C7000's FM block |
 | The FD6818 band table covers 16 MHz to over 740 MHz, with rows at 93 and 124 MHz | 8.3 (KP) | the synthesizer tunes the air band |
 | GPIO 0x2F is described as "speaker source switch (PWM/codec vs FD6818 audio)" | 5 (COM) | the FD6818's AF output can reach the speaker directly |
 | No AM demodulator noted in the HR_C7000 user guide summary | modem-hrc7000.md (DS) | AM is not the C7000's job (INF, low confidence: re-read the guide) |
@@ -763,7 +793,7 @@ audio fed into the C7000's audio path. Bring-up step 6.1 of airband-and-broadcas
 | # | Question | How bring-up answers it |
 |---|---|---|
 | A1 | Is 0x47 AF type 7 the FD6818's AM output? | 6.1: stock radio on ATIS for reference; ODR with `rx_am`, compare audio |
-| A2 | Which speaker source (0x2F level) carries FD6818 AF? | 6.1: try both levels while receiving AM |
+| A2 | Which speaker source (0x2F level) carries FD6818 AF? | answered: 0x2F = 1 (HW, FM receive) |
 | A3 | AM filter bandwidth (0x43) and AGC (0x13, 0x09 table) for AM | 6.1: listen to a strong and a weak station; the UV-K5 needed AGC changes for AM (D) |
 | A4 | RSSI offset in AM (the squelch's dBm) | 6.1: signal generator at -100 dBm, read `rssi` on the debug link |
 | B1 | Is the RDA5807M really at PTA25 / PTA26, and does it answer at 0x11? | 6.2: chip ID 0x58xx over the debug link probe |
@@ -798,8 +828,9 @@ detect waking it at once (BIN; the tick's length in ms is not known). ODR's leng
 | Mic | into the C7000 codec ADC (MIC input 2: CR_MIC2 bit 6 = 1) | KP |
 | Mic routing switch | GPIO 0x2E: 1 = analog FM path, 0 = DMR path | BIN |
 | Speaker | codec DAC line out 2 (LINEOUT_CTRL bit 0, `line2out_en`) → speaker source switch GPIO 0x2F → audio PA (enable GPIO 0x35) | KP, DS |
-| Speaker on | 0x2F = 0, 0x35 = 1; off: 0x2F = 1, 0x35 = 0 | KP |
-| FM RX audio | demodulated by the C7000 FM block and played through the codec DAC when AUDIO_CONTROL bit 6 (`fm_play_ctrl`) is set | DS, KP |
+| Speaker source | 0x2F = 1: the FD6818's AF output (and the C7000's AF input disconnected: PHASE_OUT goes flat); 0x2F = 0: the codec line out, AF into the C7000. 0x2E is driven as its complement outside TX. The amplifier (0x35) goes off before 0x2F changes | HW |
+| FM RX audio while APRS listens | 0x2F stays 0, so the C7000 hears the FD6818 with the squelch open or shut and copies its FM audio to the CPU (`modem-hrc7000.md` 8.5). An open squelch plays FM through the C7000's FM playback (AUDIO_CONTROL bit 6) and the codec line out (`boards/dm32/radio_dm32.c`, `speaker_source`) | HW, INF |
+| FM RX audio | the FD6818's AF output (0x47 = 0x0140) through 0x2F = 1 while the squelch is open. The C7000's FM playback (AUDIO_CONTROL bit 6, `fm_play_ctrl`) stays off: with 0x2F = 1 its AF input is disconnected. The C7000's sub-audio decode loses its input while the squelch is open (open question) | HW, INF |
 | DMR RX audio | CPU writes 160 bytes of decoded 8 kHz PCM to 0x180000A0 per 10 ms and sets AUDIO_CONTROL bit 5; PCM_rd interrupt (vector 59) asks for the next block; clear with INTERP_CLEAR bit 5 | DS, KP |
 | Beeps / prompts | 64 bytes (32 samples, low byte first, 8 kHz) at a time to the prompt FIFO 0x16000980 while AUDIO_CONTROL bit 31 (`ring_full_two`) is 0; enable with AUDIO_CONTROL bit 7 (`ring_play_ctrl`). KP says 32 bytes, high byte first; the DM-1801 Pro's stock firmware and bench say otherwise (`modem-hrc7000.md` 8.4); not yet heard on a DM-32 | DS, KP, INF |
 
@@ -839,8 +870,9 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
   the microphone goes into the codec ADC, with GPIO 0x2E choosing the FM or DMR path (9). The C7000 documents more
   than the HR_C6000 here: "FM RX data" and "FM TX data" interrupt sources, and AUDIO_CONTROL bits for mic PCM to the
   CPU (bit 4), CPU-fed speaker PCM (bit 5) and the voice source (bit 0: codec or TX RAM)
-  ([modem-hrc7000.md](modem-hrc7000.md) 2.4, 8.1). A PCM path in FM is plausible; a probe run like the DM-1701's
-  would settle it.
+  ([modem-hrc7000.md](modem-hrc7000.md) 2.4, 8.1). FM receive audio reaches the CPU through the RX RAM
+  ([modem-hrc7000.md](modem-hrc7000.md) 8.5); APRS receive uses it. APRS transmit sends its tones as PCM through the
+  prompt FIFO into the modulator ([modem-hrc7000.md](modem-hrc7000.md) 8.4).
 
 ---
 
@@ -937,6 +969,20 @@ OpenDM32 bug noted: for a UHF frequency below 400 MHz its unsigned subtraction g
 | Power | GPIO 0x2C: low = on, high = off | KP |
 | Interrupt | UART1, vector 42, IER = 0x05 | KP |
 
+ODR's driver is `platform/hrc7000/gps_hrc.c` (the DB25-D uses it on UART2; the board gives it the UART, power pin and level in `hrc_gps_cfg_t`), on the shared receive ring `drivers/gps/gps_rx` (also the MD-380's) and the
+line framing `drivers/gps/nmea_line`:
+
+| Step | What ODR does |
+|---|---|
+| Start-up | GPIO 0x2C low (module on), UART1 at 9600 8N1 (`hrc_uart_setup`, divisor 547, 0.02 % off), receive interrupt on |
+| Listen | 5 s for one checksum-valid sentence. The module sends a sentence a second from about 1 s after power-up, with or without a fix |
+| Heard | The module is present (`board.gps_present`). Every valid sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). The module stays powered while Settings > Location > GPS is on; with it off, `hrc_gps_enable(false)` (`board_t.gps_enable`) powers it down and stops the UART within one 20 ms poll, and turning it on powers it up again. The setting is applied at start-up (the probe runs first, whatever it says) and on each change |
+| Nothing heard | GPIO 0x2C high (module off), UART1 interrupt off. The radio reports no GPS and the Location settings are dimmed |
+| Diagnostics | The line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off`: valid sentences, bad ones (checksum, length, UART errors, ring overflow), bytes received, and whether the module is powered now (Settings > Location > GPS) |
+| Switching on again | The UART is set up once, before the module is first powered. While the module is off its line is held low, a break the UART is still receiving, and the UART ignores a line control write while busy, so switching on only clears the RX FIFO and status and enables the interrupt (`hrc_uart_rx_clear`). Setting the baud rate again there left the UART deaf on the DB25-D (2026-10-17) |
+
+**Settings > Location > GPS** switches the module's power on the DM-32UV and the DB25-D (`hal/board.h` `gps_enable`). The MD-380's driver doesn't implement the hook (its power pin is left where the stock hardware has it, hardware-md380.md 13.2): the setting there only stops APRS using the fix.
+
 ---
 
 ## 13. Firmware file format and update paths
@@ -974,7 +1020,8 @@ stock CPS also sends seven 130-byte zero blocks before rebooting; they are not n
 
 If the radio does not boot the new image, remove and refit the battery; update mode still works (COM).
 
-`tools/dm32_flash.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1).
+`tools/dm32_flash.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). `dm32_flash.py --probe` runs steps 1-3 only and prints the answers, for checking whether
+another HR_C7000 radio's update loader speaks this protocol and which model string it reports at step 3.
 
 ### 13.3 ROM serial boot (recovery, no bootloader needed)
 
@@ -1019,7 +1066,7 @@ These are traps in the old port, listed so a fresh implementation does not copy 
 | 1 | The HR-C6000 "SPI0 page register" access layer is kept as empty stubs. Every C7000 CTCSS / DCS / DTMF / RX gain call that still goes through it (RX CTCSS, RX and TX DCS code, DTMF mode/deviation save/restore, DMR RX gain) is a **no-op** | C7000 sub-audio receive, DCS and DMR volume do nothing |
 | 2 | DCS never finished: TX DCS sets FM_MOD bits but writes the code to the stub instead of CDCSS_ADDR; RX DCS writes are commented out (FD6818 side too). OpenDM32 Aug 2026 added DCS TX ("Check DCS TX") but it was not ported | No DCS |
 | 3 | FD6818 CTCSS tone value truncates the tone to whole tens of Hz before scaling | Wrong CTCSS frequency |
-| 4 | Volume pot level variable is never written (ADC channel not read) | No volume control from the knob |
+| 4 | Volume pot level variable is never written (ADC channel not read) | No volume control from the knob. ODR has no `hal_radio_t.volume` here: the knob works on the amplifier, the FM chip's register 0x48 (`BBBF`, the post-init and mode-entry lists in section 8) is written only at mode entry and a chip gain below an analog knob would not "override" it, so the debug link's volume operation answers "unavailable" (INF) |
 | 5 | Mic/VOX ADC read uses a channel set-up that single-scan mode cannot deliver | VOX and mic level meter wrong |
 | 6 | Timer naming clash: the SDK calls the timer at 0x14000000 "Timer 0", the port's header and the manual call it "Timer 1"; both "VECTOR_TIMER0" and "VECTOR_TIMER1" are 33. The RTOS tick is hooked on vector 33 but that timer is never configured, and a 10 ms-tick assumption (delay = (ms + 9) / 10 ticks) sits next to a 1000 Hz tick setting | RTOS timing source unclear; check on hardware |
 | 7 | The port's DMR PA one-shot is Timer 4 because Timer 3 polls the ADC; stock uses Timer 3 | Fine if consistent; do not mix |
@@ -1029,27 +1076,27 @@ These are traps in the old port, listed so a fresh implementation does not copy 
 | 11 | Data flash accepts only JEDEC part 0x4018 | Puya-flash radios fail flash init |
 | 12 | Calibration menu still edits the MD-UV380 table, which the DM-32 does not use | |
 | 13 | SYS_SOFT_RSTN values 0x180 / 0x190 hold most modem blocks in reset if the manual's "low active" is right, yet FM worked | Bit meanings need checking on hardware |
-| 14 | LED color of GPIO 0x20 / 0x21 disagrees between the port and the community map | Check on hardware |
+| 14 | LED colors of GPIO 0x20 / 0x21 were unconfirmed | Settled on a radio: 0x20 green, 0x21 red (5) |
 | 15 | PWM backlight duty only spans half the range (FP 0..100 with PER 200) | Check on hardware |
 
 ---
 
 ## 17. How OpenDigitalRadio uses it (`make BOARD=dm32`)
 
-Not yet run on a radio: `docs/testing/dm32-bringup.md` is the first-test checklist.
+Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and lists what is still open.
 
 | Area | Choice | Where |
 |---|---|---|
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; packed with `tools/dm32_pack.py` for the Baofeng updater | `boards/dm32/dm32.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/dm32_codec.py` | `dm32.ld` |
 | SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `dm32.ld` |
-| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E20 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
+| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E28 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
-| Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock) | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c` |
+| Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock); 4: APRS AFSK, tops up the prompt FIFO every 2 ms while sending | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c`, `platform/hrc7000/hrc_afsk.c` |
 | RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
-| Display | 240x320 at 2x: the core draws 120x160 (its frame buffer is 40 KB); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
+| Display | 240x320 in 16 colors (a 37.5 KB frame buffer of palette indexes); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
 | Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
 | Calibration | 11, read only; OpenDM32's copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |

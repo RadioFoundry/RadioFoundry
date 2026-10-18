@@ -8,10 +8,11 @@ and what has been checked on it.
 
 | Radio | Also sold as | ODR status |
 |---|---|---|
-| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases. The only radio ODR has run on |
-| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Builds and passes its host tests. Not run on a radio yet, not in the releases |
-| [Baofeng DM-32UV](#baofeng-dm-32uv) | | Builds and passes its host tests. Not run on a radio yet, not in the releases |
-| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Early bring-up: FM receive only, not run on a radio yet. Not for use |
+| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases |
+| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | In testing on a radio. Not in the releases |
+| [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
+| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR receive and transmit, settings storage, cable programming and volume work. Hotspot and network builds not yet run. Not for use |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -19,20 +20,22 @@ and what has been checked on it.
 
 The manual names keys by the job they do. Each radio puts those jobs on its own keys:
 
-| Name in this manual | Job (press / hold) | DM-1701 | MD-380 | DM-32UV | DB25-D PRO |
-|---|---|---|---|---|---|
-| **OK** | Open or choose / save, make permanent | Green Menu key | Green Menu key | Green Menu / OK key | Menu / OK key, or push the knob |
-| **Back** | Back one level / Home | Red Back key | Red Back key | Red Back key | B/E key |
-| **Up**, **Down** | Move the focus / repeat | Arrow keys | Arrow keys | Up and Down keys | None: turn the knob |
-| **\*** | Quick settings / lock or unlock the keys | **\*** | **\*** | **\*** | P1 |
-| **#** | Actions / Recent | **#** | **#** | **#** | P2 |
-| **0** to **9** | Number keys | Number keys | Number keys | Number keys | None |
-| **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 |
-| **Talk target** | Talk target picker / scan on or off | SK2 | SK2 | SK2 | TONE/T.SEL |
-| **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None |
-| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | VOL/SQL: previous zone only |
-| **PTT** | Transmit | PTT | PTT | PTT | PTT on the microphone |
-| Channel knob | One step per click | Channel knob | Channel switch (16 positions) | Channel knob | Front knob |
+| Name in this manual | Job (press / hold) | DM-1701 | MD-380 | DM-32UV | DB25-D PRO | DM-1801 Pro |
+|---|---|---|---|---|---|---|
+| **OK** | Open or choose / save, make permanent | Green Menu key | Green Menu key | Green Menu / OK key | Menu / OK key, or push the knob | Menu key |
+| **Back** | Back one level / Home | Red Back key | Red Back key | Red Back key | B/E key | Back key |
+| **Up**, **Down** | Move the focus / repeat | Arrow keys | Arrow keys | Up and Down keys | None: turn the knob | Up and Down keys |
+| **\*** | Quick settings / lock or unlock the keys | **\*** | **\*** | **\*** | P1 | **\*** |
+| **#** | Actions / Recent | **#** | **#** | **#** | P2 | **#** |
+| **0** to **9** | Number keys | Number keys | Number keys | Number keys | None | Number keys |
+| **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 | SK1 |
+| **Talk target** | Talk target picker / scan on or off | SK2 | SK2 | SK2 | TONE/T.SEL | SK2 |
+| **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None | None |
+| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | None | A/B key: next zone |
+| **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | VFO/MR key |
+| **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
+| **PTT** | Transmit | PTT | PTT | PTT | PTT on the microphone | PTT |
+| Channel knob | One step per click | Channel knob | Channel switch (16 positions) | Channel knob | Front knob | None: Up and Down |
 
 These are the defaults. **Settings > Keys** can give SK1, SK2 and the DM-1701's top side key other jobs
 ([Settings](12-settings.md#keys-key-8)).
@@ -46,6 +49,19 @@ On a radio without a key for a job, the menus reach it:
 | Talk target | **\***, **8** |
 | Monitor | **\***, **5** latches it |
 | Emergency | No other way on the radio yet |
+
+## Setting the volume from a PC
+
+`odr_debug.py volume` prints the volume the radio uses and where it comes from. `odr_debug.py volume 12` sets step 12
+of 16 (0 is mute), and `odr_debug.py volume knob` gives the knob back (over the serial cable of the DM-32UV, add
+`--port /dev/ttyUSB1` or the port of your cable). What this does depends on the radio:
+
+| Radio | Volume from a PC |
+|---|---|
+| DM-1701 | Yes. The radio reads the knob and sets the audio gain itself, so the PC's level replaces the knob's until you send `knob` or restart the radio. It is not saved |
+| MD-380 | No. The knob works on the audio path directly; the radio answers "not supported" |
+| DM-32UV | No. The knob works on the audio amplifier directly; the radio answers "not supported" |
+| DB25-D PRO | Yes. There is no knob: the level is the radio's own volume setting, so the PC changes that setting and it is saved, as if you had set it on the radio. `knob` puts it back to the default (step 8) |
 
 ## Baofeng DM-1701
 
@@ -122,6 +138,7 @@ manual are this size.
 - No GPS. LRRP location requests get "no fix". APRS positions come from a computer or a fixed position.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
+- No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### Verified on the DM-1701
 
@@ -151,8 +168,8 @@ DM-1701, the one for the UV380 family.
 
 ## TYT MD-380
 
-Covers the TYT MD-380, the MD-390 and the Retevis RT3. **Not run on a radio yet**: everything here comes from the
-documentation of the hardware. Installing: [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
+Covers the TYT MD-380, the MD-390 and the Retevis RT3. **In testing**: the port has run on a radio, but much of what follows still
+comes from the documentation of the hardware. Installing: [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
 
 ### MD-380 keys
 
@@ -203,7 +220,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 - Audio linking (USRP, [USB network](14-usb-network.md#linking-audio-allstarlink-and-dvswitch)) carries DMR only: the
   FM transmit path from the processor isn't written.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
-  it hears nothing.
+  it hears nothing. **Settings > Location > GPS** off only stops APRS using the fix; the module stays powered.
+- No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### MD-380 with qdmr
 
@@ -213,7 +231,8 @@ The radio reports radio type 7. Moving from the stock firmware with the codeplug
 ## Baofeng DM-32UV
 
 A handheld for 136-174 and 400-480 MHz with a keypad, left and right arrow keys, a channel knob and a color screen.
-**Not run on a radio yet.** Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
+**In bring-up, not in the releases.** FM and DMR receive and transmit, CTCSS and DCS, and the battery saver work on a
+test radio. Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
 
 ### DM-32UV keys
 
@@ -245,21 +264,28 @@ warning (**Settings > Power > Low battery warning**) applies, and a low battery 
 ### DM-32UV power switch
 
 The power switch is on the knob. The radio sees it turn off (three readings in a row), saves and drops its own power.
-The volume control works on the audio amplifier directly. ODR doesn't read it.
+The volume control works on the audio amplifier directly. ODR doesn't read it and can't set it from a PC either.
 
 ### DM-32UV display
 
-A 240 x 320 color screen. ODR draws at half resolution for now.
+A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliased) bold text one size larger than on other 240 x 320 radios.
 
 ### What the DM-32UV lacks
 
 - No USB. The serial port is on the programming cable: hotspot mode, the debug link and the network (PPP,
   [USB network](14-usb-network.md#network-over-the-programming-cable-ppp)) all run there. USB network mode isn't
   available.
-- The radio has a GPS module, but ODR has no GPS driver for it yet. **Settings > Location > GPS** keeps its value.
+- The GPS module is checked at start-up (it must answer within 5 s) and is then powered only while **Settings >
+  Location > GPS** is on, which takes effect at once. A fix outdoors hasn't been checked yet.
+- While APRS listens, FM on the APRS frequency plays through a different audio path, which may sound different.
 - The air band AM receiver and the broadcast FM receiver are built in, but the board code behind them isn't written,
   so nothing runs yet.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
+- No beeps while transmitting, the talk permit tone included: the radio's beep path would put them on the air. A beep
+  still playing when the transmission ends is heard from then on.
+- The signal strength in dBm is uncalibrated: strong signals read high.
+- No vibration alerts: ODR doesn't drive a vibration motor on it, and **Settings > Sound > Vibrate** isn't in the
+  image.
 
 ### DM-32UV with qdmr
 
@@ -271,8 +297,24 @@ firmware](19-moving-from-stock-dm32.md)), which adds the offset. The radio repor
 ## Radioddity DB25-D PRO
 
 A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys and a hand microphone. **Early
-bring-up, not for use:** ODR builds for it and receives FM, and nothing has run on a radio yet. There is no install
-procedure.
+bring-up, not for use:** ODR builds for it, and FM and DMR receive and transmit work on a radio. It is installed with the
+[radio programming utility](#installing-the-db25-d-pro) only.
+
+### Installing the DB25-D PRO
+
+The radio programming utility on the web site installs and updates this radio over the programming cable (K1 jack).
+It is not in the releases, so there is no odrflash route. It marks the radio as bring-up.
+
+| The radio runs | What the radio programming utility does |
+|---|---|
+| The original firmware | Reads the whole program memory through the original firmware's diagnostic console and saves it as a backup file. Takes a long time (one value per request) and can be stopped and continued. The voice codec is taken from that read when the version is one of the 018 builds (2024-05-09 or later). Firmware 909E.DBB.EARSAB.020 has no codec recipe yet: select a stock 018 file instead, whose codec works on every version |
+| The original firmware, no read wanted | Skips the read. Then the original firmware cannot be restored |
+| Either of the above | Installs through the update mode of the original loader: turn the radio off, hold P1 and press power. The red LED lights and the display stays blank. The loader itself is never written |
+| OpenDigitalRadio | Hands over to a loader in RAM over the debug link (no keys, no power cycle), writes only the changed sectors and restarts the radio. The backup of the program memory is optional |
+| OpenDigitalRadio that does not answer | "Recover at Power-On": the first stage answers for half a second at every power-on, and the radio programming utility loads the loader then |
+
+The channels and contacts in the radio's NAND memory are not part of the radio programming utility's
+backup; back them up with the manufacturer's programming software or `tools/cps_client.py` (below).
 
 ### DB25-D PRO keys
 
@@ -287,7 +329,7 @@ aren't decoded yet, so there are no number keys.
 | P2 | **#** |
 | P3 | **Monitor** |
 | TONE/T.SEL | **Talk target** |
-| VOL/SQL | **Previous zone** |
+| VOL/SQL | **Volume** |
 | **PTT** on the microphone | **PTT** |
 | Front knob | Channel knob, and **Up** / **Down** in lists |
 | Power key | Press to switch on. Hold 2 s to switch off. Hold P1 while you press it to start the bootloader (the red LED lights and the screen stays blank) |
@@ -296,17 +338,117 @@ aren't decoded yet, so there are no number keys.
 
 Two levels, L and H (nominal 20 W). The radio refuses to transmit until ODR can read its power calibration.
 
-The radio runs from a 13.8 V supply. ODR doesn't read the supply voltage yet: the status line shows 100 % and there
-are no battery warnings.
+The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
+no Battery page, and Settings > Power has no Battery saver or Low battery warning. ODR doesn't read the supply
+voltage, so nothing warns about it.
 
 ### DB25-D PRO display
 
-A 1.77" color screen, 160 x 128. There is no volume knob: the radio sets its volume digitally.
+A 1.77" color screen, 160 x 128.
+
+There is no volume knob. Press **VOL/SQL**, turn the front knob (or press Up and Down) to set the volume from 0 (mute)
+to 16, and press OK or Back, or wait 3 seconds, to close it. The screen shows the step as a large number over a bar of
+16 segments. The level is also in Settings > Sound > Volume. ODR sets it at the receiver chip's audio output and
+keeps it. A value saved by an earlier build that had 10 steps is carried over (step 5 becomes 8, step 10 becomes 16).
+The steps are not calibrated yet: how loud each one is has not been measured, so expect to tune it.
+
+### Programming the DB25-D PRO over the cable
+
+The codeplug (channels, zones, contacts, the radio's name and DMR ID) is read and written over the programming cable
+in the side K1 jack, through a USB-serial adapter (115200 baud). The radio has no USB port. The codeplug is kept
+at the same addresses as on the DM-1701, so `tools/cps_client.py` needs no offset and qdmr's MD-UV380 driver should
+work with it (the radio reports type 6; not tried yet). The tool needs `pyserial`. The examples use `/dev/ttyUSB1`:
+
+```
+python3 tools/cps_client.py --port /dev/ttyUSB1 info                  # type 6, build date, flash size
+python3 tools/cps_client.py --port /dev/ttyUSB1 read backup.bin       # about 20 s
+python3 tools/cps_client.py --port /dev/ttyUSB1 write backup.bin      # then the radio restarts
+python3 tools/cps_client.py --port /dev/ttyUSB1 verify backup.bin     # "match"
+```
+
+Take a backup first. A radio with nothing stored shows the built-in simplex FM channels, and a read returns blank
+(0xFF) bytes. To get test channels onto it, read the codeplug, add them to the file, write it back:
+
+```
+python3 tools/cps_client.py --port /dev/ttyUSB1 read cp.bin
+python3 tools/cps_client.py test-channels cp.bin --rx 461.4625 --tg 201 --cc 2 --ts 1 --id 1234567 --call N0CALL
+python3 tools/cps_client.py --port /dev/ttyUSB1 write cp.bin
+python3 tools/cps_client.py --port /dev/ttyUSB1 verify cp.bin
+```
+
+`test-channels` makes channel 1 an FM channel (12.5 kHz, simplex, no tones), channel 2 a DMR channel on the same
+frequency (color code 2, timeslot 1, talk target group 201), and zone 1 holding both. It replaces those channels,
+the first contact and the first zone and leaves everything else in the file. A DMR channel needs a build with
+`CONFIG_DMR=y` (the default); without it the radio lists only its FM channels. `verify` compares the regions the tool
+transfers. The write replaces whole 4 KB sectors, each in one step: a
+power cut or a pulled cable leaves every sector as it was or as the file has it, never half and half. The radio's own
+settings and the factory calibration are never written by the programming tool. A write is refused while the radio's
+storage holds another firmware's data (`nst foreign` on the diagnostics page, below).
 
 ### What the DB25-D PRO lacks today
 
-No transmit, no DMR, no hotspot, no programming with qdmr, and no stored settings: the radio runs on the defaults and
-forgets changes at power off. Only the PRO (two BK4819 receiver chips) is supported, not the earlier batches.
+The GPS module is checked at start-up: if it answers within 5 s the radio has GPS (the APRS position source and the Location settings), if not the GPS features are hidden. It stays powered only while **Settings > Location > GPS** is on. The module is heard on the radio (valid NMEA sentences); a fix outdoors hasn't been checked yet.
+
+The build has the MMDVM hotspot (simplex, over the programming cable) and the IP network over PPP with its services, as the DM-32UV does, both checked on this radio. The DMR VFO works on this radio too (receive and transmit checked). There is no single frequency repeater and no split-duplex hotspot role, and no APRS receive or iGate (the radio gives the core no FM receive audio). DMR voice needs the codec from a supported stock file (8 in the hardware notes), and DMR
+audio from the speaker hasn't been listened to yet. Programming over the cable has been run on one radio. Settings are kept across power off, in a part of the radio's memory the stock firmware isn't known to use.
+If ODR finds data there it didn't write, it leaves it alone and keeps no settings (the diagnostics page shows `nst
+foreign`). This is new and not yet checked on a radio. Only the PRO (two BK4819 receiver chips) is supported, not the
+earlier batches.
+
+## Baofeng DM-1801 Pro
+
+A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. **Bring-up, not
+for everyday use:** FM and DMR work on air on the test bench: voice calls both ways, CTCSS and DCS, text messages and
+the other DMR data, and hotspot mode. There is no release to install yet.
+
+Bring-up builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
+the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/dm32_flash.py --model dm1801pro IMAGE` over
+the programming cable. The cable's plug switches the internal speaker and the microphone off; unplug it to hear the
+radio or to talk.
+
+Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on this radio.
+
+`odrflash flash IMAGE --board dm1801pro` does the same over the cable, and picks the way in by itself:
+
+| The radio runs | odrflash |
+|---|---|
+| ODR built with `CONFIG_STUB_ENTRY=y` | Enters the loader from ODR (the screen shows "PC Loader Connected"), writes only what changed and restarts the radio. No keys to hold. The codec in the radio stays |
+| Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `odr_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
+
+`--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
+odrflash has flashed a radio yet; `tools/dm32_flash.py` and `stub/stubtool.py` have.
+
+### DM-1801 Pro keys
+
+| Key | Role |
+|---|---|
+| Menu | **OK** |
+| Back | **Back** |
+| Up, Down | **Up**, **Down** |
+| Left, Right | Left and right in editors; hold for the user functions |
+| VFO/MR | Channel or VFO; hold: copy the channel to the VFO |
+| A/B | Next zone |
+| **\*** | **\*** |
+| **#** | **#** |
+| SK1 | **Monitor** |
+| SK2 | **Talk target** |
+| SOS (top) | Hold: emergency, where it is built |
+| **PTT** | **PTT** |
+
+### DM-1801 Pro power and display
+
+Three power levels, L, M and H, the stock firmware's Low, Middle and High. The radio refuses to transmit until ODR can
+read its factory calibration. The battery
+reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
+The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
+
+### What the DM-1801 Pro lacks today
+
+- APRS receive is unchecked. APRS sending works on FM and over DMR.
+- VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
+- VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been
+  tried on the radio yet.
+- No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
 
 ## Planned radios
 
@@ -319,5 +461,4 @@ models it covers.
 | TYT MD-9600, Retevis RT90 | Mobile. Planned |
 | Radioddity GD-77 family | Planned. Needs a new processor platform |
 | Radioddity GD-88 | Planned |
-| Baofeng DM-1801 Pro | Planned. Hardware needed |
 | Radioddity DB40-D | Mobile. Planned. Hardware needed |

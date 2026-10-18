@@ -9,6 +9,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -273,10 +274,16 @@ class SdrBench:
     service. Stopping that service goes through dmr_bench.py's lease: a detached process on the bench
     restarts it whatever happens here. Nothing transmits and nothing is stopped unless the run allowed it
     (--allow-rf, --allow-service-stop). Host, service, directory and python come from $ODR_SDR_BENCH_* (dmr_bench.py
-    reads them)."""
+    reads them).
+
+    A shared bench (the bench runs benchd, see dmr_bench.py) is used the same way but stops nothing: the lease
+    is a daemon session, the frequencies a test captures or transmits on are leased to it (another session's radio
+    test waits), bench modem jobs queue, captures come from the shared receiver. Waits are printed as they happen
+    (predicted time, worst case, who holds the bench); a test that would wait longer than --bench-wait-max is
+    skipped."""
 
     def __init__(self, allow_rf=False, allow_service_stop=False, tx_power=40, lease_max=300, gain=5.0,
-                 offset_khz=-200.0):
+                 offset_khz=-200.0, wait_max=None):
         import dmr_bench
         self.dmr_bench = dmr_bench
         self.host = dmr_bench.BENCH_HOST
@@ -289,6 +296,8 @@ class SdrBench:
         self.offset_khz = offset_khz
         self.bench = dmr_bench.Bench(argparse.Namespace(dry_run=False, lease_max=lease_max, yes=True))
         self.bench.note = lambda line: None         # dmr_bench prints every command; pytest -s shows ours anyway
+        if wait_max is not None:
+            dmr_bench.WAIT_MAX = float(wait_max)
         self.leased = False
         self.bg = []
 
@@ -317,8 +326,12 @@ class SdrBench:
         """The gateway service stopped for the duration and restarted afterwards, also on failure (the bench-side
         guard restarts it after lease_max seconds whatever happens). Background bench processes started inside are
         ended before the service comes back."""
-        if not self.allow_service_stop:
-            raise RuntimeError("stopping the SDR bench's gateway service needs --allow-service-stop")
+        shared = self.bench.uses_daemon()
+        if not shared and not self.allow_service_stop:
+            import pytest
+            pytest.skip("stops the SDR bench's gateway service: run with --allow-service-stop")
+        test = os.environ.get("PYTEST_CURRENT_TEST", "").split(" ")[0] or "hil"
+        self.bench.label = f"{os.environ['ODR_HIL_NAME']} {test}" if os.environ.get("ODR_HIL_NAME") else test
         self.bench.lease()
         self.leased = True
         try:
@@ -334,6 +347,18 @@ class SdrBench:
     def _need_lease(self):
         if not self.leased:
             raise RuntimeError("the bench modem and the SDR belong to the gateway service: take the lease first")
+
+    @staticmethod
+    def _busy(e):
+        import pytest
+        pytest.skip(f"the shared SDR bench stayed busy: {e}")
+
+    def _claim(self, freq):
+        """A shared bench: this test's lease on freq (another session's radio test waits for it)."""
+        try:
+            self.bench.claim(freq)
+        except self.dmr_bench.BenchBusy as e:
+            self._busy(e)
 
     def upload(self, local, name):
         remote = f"{self.dir}/runs/{name}"
@@ -353,15 +378,157 @@ class SdrBench:
         self.ssh(f"mkdir -p ~/{self.dir}/{d}")
         return d
 
+    # ── a shared bench's daemon: what it offers, and its stations (ODR radios on the bench host) ──
+    def info(self):
+        """benchd's view of the bench: the shared RX window, every frequency's caps and holder, the stations
+        (their bands, modes, who holds them), the modem queue. {} on a bench without the daemon."""
+        if not self.bench.uses_daemon():
+            return {}
+        return json.loads(self.ssh(f"{self.bench.ctl} info --json", timeout=30))
+
+    def free_channels(self, caps=("rx",), in_window=True):
+        """MHz of the bench's listed frequencies with all of caps that no session holds now (in_window: the
+        shared receiver covers them, so a capture there needs nobody's turn)."""
+        return [c["freq"] for c in self.info().get("channels", [])
+                if c.get("listed") and set(caps) <= set(c["caps"]) and not c.get("claimed_by")
+                and (c.get("in_window") or not in_window)]
+
+    @contextlib.contextmanager
+    def station_port(self, name, tx=(), mode=None):
+        """A bench station (an ODR radio on the bench host's USB) as a local port: a pty bridged to it through the
+        bench's guard, for odr_debug / Radio, the MMDVM hotspot tools, anything that opens a serial port. tx: MHz
+        it may transmit on (leased to this test), mode: dmr | nfm | wfm | aprs | sfr; none: receive only. The
+        guard keeps it at its lowest power and refuses PTT anywhere else."""
+        import select
+        import tty
+        self._need_lease()
+        if not self.bench.uses_daemon():
+            import pytest
+            pytest.skip("bench stations need the shared bench daemon (benchd)")
+        for f in tx:
+            self._claim(f)
+        cmd = (f"{self.bench.ctl} bridge --session {self.bench.session} --station {shlex.quote(name)}"
+               + "".join(f" --tx {f}" for f in tx) + (f" --mode {mode}" if mode else "")
+               + f" --wait-max {self.dmr_bench.WAIT_MAX:g}")
+        p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.host, cmd],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+        opened, text = None, ""
+        for line in iter(p.stderr.readline, b""):
+            text = line.decode(errors="replace").rstrip()
+            if text.startswith("odr-bench:"):
+                print(text, file=sys.stderr, flush=True)
+            if text.startswith("odr-bench: bridge open"):
+                opened = text
+                break
+        if opened is None:
+            p.wait(10)
+            if p.returncode == self.dmr_bench.EX_TEMPFAIL:
+                self._busy(text)
+            raise RuntimeError(f"bench station {name}: bridge failed ({p.returncode}): {text}")
+        master, slave = os.openpty()
+        tty.setraw(slave)
+        path = os.ttyname(slave)
+        stop = threading.Event()
+
+        def up():                                   # the local tool -> the bench
+            while not stop.is_set():
+                if select.select([master], [], [], 0.2)[0]:
+                    try:
+                        data = os.read(master, 4096)
+                        p.stdin.write(data)
+                    except OSError:
+                        return
+
+        def down():                                 # the bench -> the local tool
+            while not stop.is_set():
+                data = p.stdout.read1(4096) if hasattr(p.stdout, "read1") else os.read(p.stdout.fileno(), 4096)
+                if not data:
+                    return
+                try:
+                    os.write(master, data)
+                except OSError:
+                    return
+        ts = [threading.Thread(target=f, daemon=True) for f in (up, down)]
+        for t in ts:
+            t.start()
+        try:
+            yield path
+        finally:
+            stop.set()
+            try:
+                p.stdin.close()
+            except OSError:
+                pass
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+            for t in ts:
+                t.join(2)
+            for fd in (master, slave):
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
+    @contextlib.contextmanager
+    def station_radio(self, name, tx=(), mode=None):
+        """A bench station as a Radio (the whole debug link: keys, PTT, views, counters, screenshots, APRS, data,
+        hotspot / SFR control ...), as the second radio of a test."""
+        with self.station_port(name, tx, mode) as port:
+            r = Radio(port)
+            try:
+                yield r
+            finally:
+                r.close()
+
+    def station_run(self, name, cmd, tx=(), mode=None, expect_s=None, timeout=600):
+        """cmd (a string, run in ~/<dir> on the bench) with {port} the station's guarded port: for exchanges that
+        need the radio's port without a network hop (an MMDVM hotspot session). Returns (status, stdout)."""
+        self._need_lease()
+        for f in tx:
+            self._claim(f)
+        argv = (f"{self.bench.ctl} run --session {self.bench.session} --station {shlex.quote(name)}"
+                + "".join(f" --tx {f}" for f in tx) + (f" --mode {mode}" if mode else "")
+                + (f" --expect {expect_s:.1f}" if expect_s else "")
+                + f" --wait-max {self.dmr_bench.WAIT_MAX:g} -- {cmd}")
+        rc, out, err = self.bench.ssh_live(f"cd ~/{self.dir} && {argv}", timeout=timeout + self.dmr_bench.WAIT_MAX)
+        try:
+            self.bench.check_rc(rc, err, f"bench station {name}")
+        except self.dmr_bench.BenchBusy as e:
+            self._busy(e)
+        return rc, out
+
     # ── the bench modem ──
-    def transmit(self, args, freq, cc, timeout=300):
+    def modem_prefix(self, freq, expect_s=None):
+        """For code that runs bench_tx.py over ssh itself (hotspot_cases): the command prefix that puts it under
+        a shared bench's modem queue (the channel and the modem held for this lease), or the plain one."""
+        self._need_lease()
+        self._claim(freq)
+        try:
+            self.bench.hold_modem(expect_s)
+        except self.dmr_bench.BenchBusy as e:
+            self._busy(e)
+        return f"cd ~/{self.dir} && " + self.bench.modem_cmd(f"{self.py} bench_tx.py --power {self.tx_power}",
+                                                              "bench_tx")
+
+    def transmit(self, args, freq, cc, timeout=300, expect_s=None):
         """Run bench_tx.py with args (a string) on freq (MHz) / cc; returns the JSON lines it printed. Needs the
-        lease and --allow-rf."""
+        lease and --allow-rf. expect_s: about how long it keys up (a shared bench's queue predictions)."""
         if not self.allow_rf:
             raise RuntimeError("the bench transmitter keys up: needs --allow-rf")
         self._need_lease()
-        out = self.ssh(f"cd ~/{self.dir} && {self.py} bench_tx.py --freq {freq} --cc {cc} --power {self.tx_power} "
-                       f"{args}", timeout=timeout)
+        self._claim(freq)
+        cmd = self.bench.modem_cmd(f"{self.py} bench_tx.py --freq {freq} --cc {cc} --power {self.tx_power} {args}",
+                                   "bench_tx", expect_s)
+        rc, out, err = self.bench.ssh_live(f"cd ~/{self.dir} && {cmd}",
+                                           timeout=timeout + (self.dmr_bench.WAIT_MAX if self.bench.daemon else 0))
+        try:
+            self.bench.check_rc(rc, err, "bench modem")
+        except self.dmr_bench.BenchBusy as e:
+            self._busy(e)
+        if rc != 0:
+            raise RuntimeError(f"bench_tx.py {args!r} failed ({rc}): {err[-1500:]}")
         return self.dmr_bench.jsonl(out)
 
     def voice_call(self, freq, cc, dst, superframes=3, calls=1, headers=8, terminators=3, gap_ms=500, ambe=None,
@@ -392,7 +559,8 @@ class SdrBench:
             a += " --emergency"
         if service_options is not None:
             a += f" --service-options {service_options:02x}"
-        return self.transmit(a, freq, cc)
+        bursts = (0 if late is not None else headers) + 6 * superframes + terminators
+        return self.transmit(a, freq, cc, expect_s=calls * bursts * 0.06 + (calls - 1) * gap_ms / 1000)
 
     def csbk(self, freq, cc, dst, opcode=None, fid=0, octet3=0, src=None, count=4, listen_after=0):
         """A preamble CSBK train, then optionally one CSBK (bench_tx.py csbk); listen_after: then listen that many
@@ -403,7 +571,7 @@ class SdrBench:
             a += f" --opcode {opcode:x} --fid {fid:x} --octet3 {octet3:x}"
         if src:
             a += f" --src {src}"
-        return self.transmit(a, freq, cc)
+        return self.transmit(a, freq, cc, expect_s=(count + 1) * 0.06 + listen_after)
 
     def data(self, freq, cc, dst, tms=None, tms_seq=1, tms_ack=True, confirmed=False, octets=40, preambles=2,
              src=None, listen_after=0, etsi=None, etsi_response=True, ip_text=None):
@@ -423,18 +591,48 @@ class SdrBench:
             a += " --confirmed"
         if src:
             a += f" --src {src}"
-        return self.transmit(a, freq, cc)
+        return self.transmit(a, freq, cc, expect_s=(preambles + octets / 12 + 3) * 0.06 + listen_after)
 
     def listen_start(self, freq, cc, seconds, ambe_out=None):
         """bench_tx.py listen in the background (receive only); listen_result() collects its JSON lines."""
         self._need_lease()
         extra = f"--ambe-out {ambe_out} " if ambe_out else ""
-        p = self.ssh_bg(f"cd ~/{self.dir} && {self.py} bench_tx.py --freq {freq} --cc {cc} {extra}listen --json "
-                        f"--seconds {seconds}")
+        cmd = f"{self.py} bench_tx.py --freq {freq} --cc {cc} {extra}listen --json --seconds {seconds}"
+        if not self.bench.uses_daemon():
+            p = self.ssh_bg(f"cd ~/{self.dir} && {cmd}")
+            time.sleep(3)           # port open, tune, 1 s settle
+            return p
+        self._claim(freq)
+        p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.host,
+                              f"cd ~/{self.dir} && " + self.bench.modem_cmd(cmd, "bench_tx-listen", seconds)],
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.bg.append(p)
+        p.lines, p.started = [], threading.Event()
+
+        def pump():
+            for line in p.stdout:
+                p.lines.append(line)
+                if line.startswith("odr-bench:"):
+                    print(line.rstrip(), file=sys.stderr, flush=True)
+                    if line.startswith("odr-bench: started"):
+                        p.started.set()
+            p.started.set()
+        p.reader = threading.Thread(target=pump, daemon=True)
+        p.reader.start()
+        p.started.wait(self.dmr_bench.WAIT_MAX + 30)     # the modem may be queued behind another session's job
+        if p.poll() is not None and p.returncode == self.dmr_bench.EX_TEMPFAIL:
+            self._busy("".join(p.lines).strip().splitlines()[-1])
         time.sleep(3)           # port open, tune, 1 s settle
         return p
 
     def listen_result(self, p, timeout=120):
+        if hasattr(p, "lines"):
+            try:
+                p.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                p.kill()
+            p.reader.join(5)
+            return self.dmr_bench.jsonl("".join(p.lines))
         try:
             out, _ = p.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -450,15 +648,23 @@ class SdrBench:
         self._need_lease()
         f = f"~/{self.dir}/{run_dir}/{name}.cs8"
         g = self.gain if gain is None else gain
-        self.ssh(f"cd ~/{self.dir} && (setsid nohup {self.py} sdrmon.py capture --service '' --seconds {seconds} "
-                 f"--freq {freq} --offset-khz {self.offset_khz:.1f} --gain {g} --out {f} > {f}.log 2>&1 &) ; "
-                 f"for i in $(seq 1 60); do grep -q READY {f}.log && break; sleep 0.25; done; sleep 2; "
-                 f"grep READY {f}.log")
+        self._claim(freq)
+        try:
+            self.bench.capture_bg(freq, seconds, f, self.offset_khz, g)
+        except self.dmr_bench.BenchBusy as e:
+            self._busy(e)
         return f
 
     def capture_wait(self, timeout=120):
-        self.ssh(f"for i in $(seq 1 {timeout * 2}); do pgrep -f 'sdrmon[.]py capture' > /dev/null || exit 0; "
-                 f"sleep 0.5; done; exit 1", timeout=timeout + 30)
+        self.bench.captures_wait(timeout)
+
+    def _offset_khz(self, capture):
+        """The channel minus the tuner center of this capture: a shared bench's receiver sits at one center for
+        every channel, not at offset_khz."""
+        m = self.capture_meta(capture)
+        if "freq" in m and "center" in m:
+            return (m["freq"] - m["center"]) / 1e3
+        return self.offset_khz
 
     def capture_meta(self, capture):
         """The capture's FILE.json (sdrmon.py capture): gain, samples, overflows, clip_pct (I/Q samples at the ADC
@@ -479,7 +685,7 @@ class SdrBench:
         its JSON result (frames with a valid FCS, segments)."""
         self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))     # its filters
         tool = self.sync_tool(os.path.join(ROOT, "tools", "aprs_afsk_check.py"))
-        out = self.ssh(f"cd ~/{self.dir} && {self.py} {tool} {capture} --offset {self.offset_khz * 1000:.0f} "
+        out = self.ssh(f"cd ~/{self.dir} && {self.py} {tool} {capture} --offset {self._offset_khz(capture) * 1000:.0f} "
                        f"--bw {bw_khz} --json", timeout=600, check=False)
         lines = [ln for ln in out.splitlines() if ln.startswith("{")]
         if not lines:
@@ -491,7 +697,8 @@ class SdrBench:
         """tools/sdr_fm_check.py on the bench; returns (exit status, text). tones: also report the audio tones;
         track: the carrier every 50 ms; levels: the voice band rms every 50 ms."""
         tool = self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))
-        a = f"--offset {self.offset_khz * 1000:.0f} --bw {bw_khz}" + (" --tones" if tones else "") + \
+        off = self._offset_khz(capture)
+        a = f"--offset {off * 1000:.0f} --bw {bw_khz}" + (" --tones" if tones else "") + \
             (" --track" if track else "") + (" --levels" if levels else "") + \
             (f" --tone-snr {tone_snr}" if tone_snr else "")
         if ctcss is not None:
@@ -499,7 +706,7 @@ class SdrBench:
         if dcs is not None:
             a += f" --expect-dcs {dcs}"
         if ppm is not None and freq is not None:
-            a += f" --center {freq * 1e6 - self.offset_khz * 1e3:.0f} --ppm {ppm}"
+            a += f" --center {freq * 1e6 - off * 1e3:.0f} --ppm {ppm}"
         r = subprocess.run(["ssh", "-o", "BatchMode=yes", self.host,
                             f"cd ~/{self.dir} && {self.py} {tool} {capture} {a}"],
                            capture_output=True, text=True, timeout=600)

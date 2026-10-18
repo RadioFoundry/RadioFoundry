@@ -173,7 +173,7 @@ export class Link {
 		for (let done = 0; done < size;) {
 			const n = Math.min(1000, size - done);
 			const r = await this.request(CMD.READ_MEM, concat(le32(addr + done), new Uint8Array([n & 0xFF, n >> 8])));
-			if (r.length !== 4 + n || u32le(r, 0) !== addr + done) throw new LinkError(`READ_MEM answer doesn't match 0x${(addr + done).toString(16)}`);
+			if (r.length !== 4 + n || u32le(r, 0) !== addr + done) throw new LinkError(`READ_MEM answer does not match 0x${(addr + done).toString(16)}`);
 			out.set(r.subarray(4), done);
 			done += n;
 		}

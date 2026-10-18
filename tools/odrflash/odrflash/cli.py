@@ -15,6 +15,7 @@ import uuid
 from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf, plan as planmod, state, stockfw
 from . import dfu as dfumod
 from . import release as relmod
+from . import serialflash
 
 EPILOG = """\
 examples:
@@ -26,6 +27,9 @@ examples:
   odrflash probe                                        ask the radio (running ODR) whether its codec can be kept
   odrflash key --stock "DM-1701(CSV)-V02.06.bin" --save derive the bootloader key from the stock file, keep it
   odrflash key --save                                   read it from the radio instead (running ODR)
+  odrflash flash odr-dm1801pro-v0.1.0.bin --port /dev/ttyUSB0
+                                                        a DM-1801 Pro over its programming cable (the stub when it
+                                                        runs ODR with stub entry, else Baofeng's update mode)
 
 entering the bootloader (DM-1701): turn the radio off, hold PTT and SK1 (the side key just above PTT), turn it on.
 The screen stays dark.
@@ -130,6 +134,16 @@ def load_image(args, board_hint):
             % (os.path.basename(img_path), board.name, m.get("version"), m.get("git"), len(image),
                os.path.basename(man_path)))
         return board, m, image, None
+    hint = boards.get(board_hint) if board_hint else None
+    if hint is not None and hint.family == "bfuv32-serial":
+        # a local HR_C7000 build: odr_<board>.bin, or the build's _codec.bin with the codec slot merged in
+        app, slot = serialflash.split_slot(hint, image)
+        m = mf.for_dev_build(hint, app)
+        mf.verify(m, app, hint.id)
+        say("image    %s: a local %s build, application %d bytes%s" % (
+            os.path.basename(img_path), hint.name, len(app), ", codec slot merged in (%d bytes)" % len(slot)
+            if slot else ""))
+        return hint, m, app, slot
     try:
         merged = stockfw.split_merged(image)
     except stockfw.StockError as e:
@@ -150,7 +164,7 @@ def load_image(args, board_hint):
         return board, m, whole, (prof, codec)
     if not board_hint:
         raise UsageError("no manifest %s next to the image. Release images come with one; for a local build say "
-                         "which radio it is for with --board dm1701" % man_path)
+                         "which radio it is for with --board (dm1701, dm1801pro, ...)" % man_path)
     board = boards.get(board_hint)
     # A build with data in a second flash region (the DM-1701's sector 9) writes it next to the image as
     # <image>_rodata2.bin; the radio needs both
@@ -368,6 +382,12 @@ def cmd_flash(args):
         from . import fakedfu
         sim_key = fakedfu.synthetic_key()
     board, man, image, merged = load_image(args, args.board)
+    if board.family == "bfuv32-serial":
+        return cmd_flash_serial(args, board, man, image, merged)
+    if board.family == "hrc7000-iap":
+        raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with odrflash" % board.name)
+    if args.route != serialflash.AUTO:
+        raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV)")
     stock = load_stock(args)
     if merged and stock is not None:
         say("stock    the image carries the codec, so the stock file only gives the bootloader key")
@@ -486,6 +506,128 @@ def cmd_flash(args):
     if args.no_verify:
         return 0
     return verify_after(args, board, man, d)
+
+
+def _progress(unit):
+    tty = sys.stdout.isatty()
+
+    def progress(done, total):
+        if not total:
+            return
+        pct = done * 100 // total
+        if tty:
+            sys.stdout.write("\rwriting  %d/%d %s (%d%%)" % (done, total, unit, pct))
+            if done == total:
+                sys.stdout.write("\n")
+        elif done == total or pct // 25 != (done - 1) * 100 // total // 25:
+            sys.stdout.write("writing  %d/%d %s (%d%%)\n" % (done, total, unit, pct))
+        sys.stdout.flush()
+    return progress
+
+
+def cmd_flash_serial(args, board, man, app, slot):
+    """The HR_C7000 radios over the programming cable (serialflash.py): the stub when the radio runs ODR with stub
+    entry, else Baofeng's update mode."""
+    sf = serialflash
+    if args.simulate:
+        raise UsageError("--simulate runs the DM-1701 bootloader model only")
+    if args.key or args.stock_installed:
+        raise UsageError("the %s needs no bootloader key and no --stock-installed" % board.name)
+    stock = load_stock(args)
+    try:
+        dev = sf.find_cable(args.port)
+    except sf.SerialError as e:
+        if not args.dry_run:
+            raise
+        dev = None
+        say("cable    none found (%s)" % e)
+    probe = None
+    offered = False
+    if dev and not args.no_probe and args.route != sf.BOOTLOADER:
+        probe = sf.probe(dev)
+        if probe:
+            pb = boards.from_debuglink_name(probe.get("board") or "")
+            if pb is None or pb.id != board.id:
+                raise UsageError("the radio on %s reported board %r, the image is for the %s: refusing"
+                                 % (dev, probe.get("board"), board.name))
+            offered = sf.stub_offered(dev)
+            say("radio    ODR running on %s: board %s, git %s, codec %s, stub entry %s"
+                % (dev, probe.get("board"), probe.get("git"), probe.get("codec"), "yes" if offered else "no"))
+    route, why = sf.choose_route(args.route, probe, offered)
+    say("route    %s: %s" % (route.upper(), why))
+    mode, cwhy, risk, expect_codec, source = sf.decide_codec(board, route, args.codec, slot is not None,
+                                                             stock is not None, probe)
+    if mode == planmod.MERGE and source == "file":
+        slot, name = sf.slot_from_file(board, app, stock)
+        say("stock    %s verified (SHA-256), codec slot built" % name)
+    say("codec    %s: %s" % (mode.upper(), cwhy))
+    if risk:
+        warn(risk)
+    raw = sf.contiguous(board, app, slot if mode == planmod.MERGE else None)
+
+    say("")
+    say("plan:")
+    for line in sf.describe(board, route, raw, mode):
+        say("  " + line)
+    say("")
+    if args.dry_run:
+        say("dry run: nothing was erased or written")
+        return 0
+
+    if route == sf.BOOTLOADER:
+        for line in sf.update_mode_steps(board):
+            say(line)
+        if not args.yes:
+            if not sys.stdin.isatty():
+                raise UsageError("Baofeng's update mode needs you at the radio: run in a terminal, or pass --yes")
+            try:
+                input("Press Enter when the radio is in update mode (Ctrl-C stops; nothing is written yet) ")
+            except EOFError:
+                raise UsageError("stopped: nothing was written")
+        say("waiting  for the update mode loader on %s (up to %d s)..." % (dev, args.wait))
+    elif not args.yes and not ask_yes("Write the changed sectors now?", default=True):
+        say("nothing done")
+        return 1
+    started = flash_started(args, board, man)
+    try:
+        if route == sf.STUB:
+            written, same = sf.flash_stub(dev, raw, log=lambda m: say("         " + m),
+                                          progress=_progress("changed sectors"))
+            say("done     %d sector(s) written, %d unchanged, every one checked by CRC; the radio restarts into ODR %s"
+                % (written, same, man.get("version")))
+        else:
+            sf.flash_bootloader(dev, raw, board, log=say, progress=_progress("blocks"), wait_s=args.wait,
+                                name=os.path.basename(args.image or "odr.bin"))
+            say("done     the radio restarts into ODR %s" % man.get("version"))
+    except BaseException as e:
+        flash_finished(started, e)
+        raise
+    flash_finished(started)
+    state.forget_probe()
+    if args.no_verify:
+        return 0
+    return verify_serial(dev, board, man, expect_codec)
+
+
+def verify_serial(dev, board, man, expect_codec, wait_s=25, probe_fn=None, sleep=time.sleep):
+    """After the restart: ODR's VERSION over the cable, compared with what was flashed."""
+    say("checking the radio after the restart (up to %d s; --no-verify skips this)..." % wait_s)
+    p = serialflash.wait_for_odr(dev, wait_s, probe_fn, sleep)
+    if p is None:
+        say("the radio did not answer on its debug link. If its screen shows ODR, all is well. If it stays dark, "
+            "flash again through update mode (--route bootloader).")
+        return 0
+    want_git = man.get("git")
+    if want_git and want_git != "unknown" and not (p.get("git") or "").startswith(want_git):
+        warn("the radio reports git %s, the image is %s" % (p.get("git"), want_git))
+        return 1
+    say("radio    running ODR git %s, codec %s" % (p.get("git"), p.get("codec")))
+    if p.get("codec") == board.codec.id:
+        say("ok       DMR voice is ready")
+        return 0
+    say("note     the radio has no usable codec (codec=%s): FM works, DMR voice is off. Flash again with --stock FILE "
+        "(a program flash read of this radio: stubtool.py PORT --progmem FILE)" % p.get("codec"))
+    return 0 if not expect_codec else 1
 
 
 def report_simulation(board, p, dev, before, d):
@@ -670,8 +812,9 @@ def build_parser():
     sub = ap.add_subparsers(dest="cmd")
 
     def common(p):
-        p.add_argument("--board", help="radio model (dm1701); normally taken from the manifest and the radio")
-        p.add_argument("--port", help="the radio's serial port when it runs ODR (found by USB ID otherwise)")
+        p.add_argument("--board", help="radio model (dm1701, dm1801pro, ...); normally taken from the manifest and the radio")
+        p.add_argument("--port", help="the radio's serial port when it runs ODR (found by USB ID otherwise); DM-1801 "
+                       "Pro, DM-32UV: the programming cable's port (found when it is the only USB-serial cable)")
         p.add_argument("--no-probe", action="store_true", help="don't ask a running ODR radio over its debug link")
 
     f = sub.add_parser("flash", help="flash a release image", formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -682,7 +825,8 @@ def build_parser():
     f.add_argument("--codec", choices=("auto", "keep", "merge"), default="auto",
                    help="auto (default): keep the radio's codec when that is known to be safe, else write it from "
                         "--stock; keep: never touch the codec sectors; merge: write the codec from --stock")
-    f.add_argument("--stock", metavar="FILE", help="the radio's stock firmware file (codec source; also gives the key)")
+    f.add_argument("--stock", metavar="FILE", help="the radio's stock firmware file (codec source; also gives the key); "
+                   "DM-1801 Pro: a program flash read of the radio (stubtool.py PORT --progmem FILE)")
     f.add_argument("--stock-installed", metavar="VERSION",
                    help="the stock firmware the radio runs now, e.g. \"V02.06 CSV\" (instead of the question)")
     f.add_argument("--key", metavar="FILE", help="the 1024-byte bootloader key (else derived from --stock)")
@@ -690,6 +834,9 @@ def build_parser():
                    "touch nothing")
     f.add_argument("--yes", "-y", action="store_true", help="don't ask")
     f.add_argument("--wait", type=int, default=120, help="seconds to wait for the bootloader (default 120)")
+    f.add_argument("--route", choices=serialflash.ROUTES, default=serialflash.AUTO,
+                   help="DM-1801 Pro, DM-32UV: auto (default): the stub when the radio runs ODR with stub entry, else "
+                        "Baofeng's update mode; stub; bootloader (update mode, PTT and SK1 at power-on)")
     f.add_argument("--no-verify", action="store_true", help="don't check the radio after it restarts")
     f.add_argument("--no-reporting", action="store_true",
                    help="don't send the ODR project the radio model, build and result of this flash")
@@ -741,7 +888,7 @@ def main(argv=None):
     try:
         return args.fn(args)
     except (UsageError, mf.ManifestError, planmod.PlanError, dfumod.DfuError, relmod.ReleaseError,
-            stockfw.StockError, KeyError) as e:
+            stockfw.StockError, serialflash.SerialError, KeyError) as e:
         print("error: %s" % (e.args[0] if isinstance(e, KeyError) and e.args else e), file=sys.stderr)
         return 2
     except OSError as e:

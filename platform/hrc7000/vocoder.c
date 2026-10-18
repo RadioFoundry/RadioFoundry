@@ -47,7 +47,7 @@ typedef struct {
 	uint32_t tab_off, tab_len, tab_ram;
 	// Entry points, offsets from the code start
 	uint32_t decode, encode, dec_init, dec_set, enc_init, enc_set, fec_init;
-	uint32_t stock_tag;			// 49 or 46: which stock file
+	uint32_t stock_tag;			// which stock file: 49 / 46 (DM-32UV), 2501 / 2409 / 2405 (DB-25D, year and month)
 	uint32_t crc;				// CRC-32 of code then tables, as written to the slot
 	uint32_t reserved[15];
 } codec_slot_t;
@@ -74,7 +74,8 @@ typedef int (*encode_t)(int16_t *bits, int r1, const int16_t *in, int n, int fla
 
 static const codec_slot_t *slot;
 static uint32_t code_ram;
-static int8_t presence = -1;	// -1 not checked yet
+static int8_t presence = -1;	// the slot's check: -1 not run yet, 1 valid, 0 not
+static volatile bool parked;	// stopped for a stub upload: the calls return at once, the slot's check still holds
 static bool ready;
 static uint32_t enc_flags = AMBE2_ENC_DEFAULT;	// set_options (VOCODER_OPT_DEFAULT until then)
 
@@ -146,7 +147,7 @@ static bool present(void)
 	if (presence < 0) {
 		presence = load() ? 1 : 0;
 	}
-	return presence == 1;
+	return presence == 1 && !parked;
 }
 
 static void *entry(uint32_t off)
@@ -235,7 +236,7 @@ static void decode_run(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRA
 static void reset(void)
 {
 	busy = true;
-	hrc_barrier();		// set before present() reads presence: a park sees one or the other
+	hrc_barrier();		// set before present() reads parked: a park sees one or the other
 	reset_run();
 	busy = false;
 }
@@ -256,23 +257,49 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 	busy = false;
 }
 
+// The slot is checked first, before the stub upload overwrites the codec RAM: profile() and the tag then keep
+// reporting the codec in flash (a flasher's VERSION after the stub entry)
 void hrc_vocoder_park(void)
 {
-	presence = 0;		// every later call returns at once (silence, zero bits)
+	(void)present();
+	parked = true;		// every later call returns at once (silence, zero bits)
 	hrc_barrier();
 	while (busy) {
 		vTaskDelay(1);
 	}
 }
 
-// The id tools/odrflash and the release manifests use: which stock file the slot was carved from
+// The id tools/odrflash and the release manifests use: which stock file the slot was carved from, "<board>-<tag>" with
+// the tag in at least three digits (dm32-049, db25d-2501)
 static const char *profile(void)
 {
-	if (!present()) {
+	static char id[sizeof HRC_CODEC_BOARD + 8];
+	(void)present();
+	if (presence != 1) {
 		return NULL;
 	}
-	return slot->stock_tag == 49u ? HRC_CODEC_BOARD "-049" :
-		(slot->stock_tag == 46u ? HRC_CODEC_BOARD "-046" : HRC_CODEC_BOARD "-unknown");
+	uint32_t tag = slot->stock_tag;
+	if (tag == 0 || tag > 99999u) {
+		return HRC_CODEC_BOARD "-unknown";
+	}
+	char digits[6];
+	uint32_t n = 0;
+	for (uint32_t v = tag; v != 0; v /= 10) {
+		digits[n++] = (char)('0' + v % 10);
+	}
+	uint32_t o = 0;
+	for (const char *b = HRC_CODEC_BOARD; *b != '\0'; b++) {
+		id[o++] = *b;
+	}
+	id[o++] = '-';
+	for (uint32_t pad = n; pad < 3; pad++) {
+		id[o++] = '0';
+	}
+	while (n > 0) {
+		id[o++] = digits[--n];
+	}
+	id[o] = '\0';
+	return id;
 }
 
 // Encode options (hal_vocoder_t): one flags word for every encode call, kept across reset()
@@ -296,9 +323,10 @@ const hal_vocoder_t hrc_vocoder = {
 	.options = options, .set_options = set_options, .encode_flags = encode_flags,
 };
 
-uint8_t hrc_vocoder_tag(void)
+uint16_t hrc_vocoder_tag(void)
 {
-	return present() ? (uint8_t)slot->stock_tag : 0;
+	(void)present();
+	return presence == 1 ? (uint16_t)slot->stock_tag : 0;
 }
 
 #endif	// CONFIG_DMR

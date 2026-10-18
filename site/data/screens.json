@@ -1,5 +1,5 @@
 {
- "_about": "The UI gallery (docs/ux/screens) as the site shows it: each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here.",
+ "_about": "The UI gallery (docs/ux/screens) as the site shows it: each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here. A color page's shots in each gallery highlight color (<name>__<color>) take its entry, and the caption screen.in_color with color.<color>; its shots in the light and high-contrast themes (<name>__light, <name>__high_contrast) take screen.in_theme with theme.<theme>.",
  "groups": [
   "home",
   "calls",
@@ -43,13 +43,45 @@
     "VFO"
    ]
   },
+  "home_vfo_dmr": {
+   "group": "home",
+   "needs": [
+    "VFO_DMR"
+   ]
+  },
+  "home_copy_to_vfo": {
+   "group": "home",
+   "needs": [
+    "VFO"
+   ]
+  },
   "home_large_text": {
+   "group": "home",
+   "needs": []
+  },
+  "home_monitor": {
+   "group": "home",
+   "needs": []
+  },
+  "home_plain": {
    "group": "home",
    "needs": []
   },
   "home_locked": {
    "group": "home",
    "needs": []
+  },
+  "home_usb_ip": {
+   "group": "home",
+   "needs": [
+    "USB_NETWORK"
+   ]
+  },
+  "home_usb_ip_up": {
+   "group": "home",
+   "needs": [
+    "USB_NETWORK"
+   ]
   },
   "home_temporary": {
    "group": "home",
@@ -85,6 +117,24 @@
     "DMR"
    ]
   },
+  "quick_vfo_fm": {
+   "group": "home",
+   "needs": [
+    "VFO"
+   ]
+  },
+  "quick_vfo_dmr": {
+   "group": "home",
+   "needs": [
+    "VFO_DMR"
+   ]
+  },
+  "quick_vfo_cc_editor": {
+   "group": "home",
+   "needs": [
+    "VFO_DMR"
+   ]
+  },
   "tx": {
    "group": "calls",
    "needs": []
@@ -117,6 +167,12 @@
    "group": "calls",
    "needs": [
     "DMR"
+   ]
+  },
+  "talk_target_picker_vfo": {
+   "group": "calls",
+   "needs": [
+    "VFO_DMR"
    ]
   },
   "recent": {
@@ -185,6 +241,55 @@
    "group": "channels",
    "needs": [
     "CHANNEL_LIST"
+   ]
+  },
+  "channel_power": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_changed": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_rx_entry": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_name": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_contact": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_discard": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
+   ]
+  },
+  "channel_new": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT"
    ]
   },
   "zone_channels": {
@@ -290,6 +395,14 @@
    "needs": [
     "UI_SETTINGS"
    ]
+  },
+  "volume": {
+   "group": "settings",
+   "needs": []
+  },
+  "volume_muted": {
+   "group": "settings",
+   "needs": []
   },
   "factory_reset": {
    "group": "settings",

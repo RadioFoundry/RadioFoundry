@@ -40,11 +40,13 @@ typedef struct {
 	uint32_t rx_calls;	// calls that started playing
 	uint32_t rx_queue_max;	// most frames queued at once (of AMBE_VOICE_QUEUE)
 	uint32_t rx_bad;	// frames with an uncorrectable C0
+	uint32_t rx_bad_at[3];	// ... by place in the burst (first, second, third frame)
 	uint32_t rx_lost;	// frames the call stack reported missing
 	uint32_t rx_underruns;	// blocks with nothing queued during a call
 	uint32_t rx_underrun_at;	// frames the call had played at its latest underrun: early = a prime too short, late = clocks
 	uint32_t rx_overflows;	// frames dropped, queue full
 	uint32_t rx_bit_errors;	// bits corrected by the FEC
+	uint32_t rx_peak;	// largest decoded sample (absolute) in the latest call that played: near 0 = silent output
 	uint32_t tx_frames;	// frames encoded
 	uint32_t tx_overflows;	// encoded frames dropped, queue full (the stack didn't pull)
 } ambe_voice_stats_t;
@@ -63,7 +65,8 @@ bool ambeVoiceStreaming(void);
 typedef bool (*ambe_voice_mixer_t)(int16_t *spk);
 void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
 // Microphone gain for DMR transmissions (Settings > Talk & listen > Mic gain): step 0..10, 2 dB a step, 5 = as the
-// board delivers it (the samples are scaled, with saturation, before the vocoder). Any task
+// board delivers it (the samples are scaled, with saturation, before the vocoder). Any task. Set through
+// radio_set_mic_gain (radio/mic_gain.h), which keeps it at 5 when the board applies the gain itself
 void ambeVoiceSetMicGain(uint8_t step);
 // Encode options for DMR transmissions (VOCODER_OPT_*, default VOCODER_OPT_DEFAULT; Settings > Talk & listen > Mic
 // noise reduction). Handed to the vocoder in the audio callback before the next frame it encodes. Any task

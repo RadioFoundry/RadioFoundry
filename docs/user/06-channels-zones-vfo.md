@@ -34,20 +34,69 @@ The Zones list shows the VFO first, then every zone with its number of channels.
 
 **OK**, **5** (Channels) lists every channel in the codeplug by number and name, whichever zones hold it. Each
 row ends with the RX frequency and the talkgroup (DMR) or FM. A long name stays whole and the row shortens the rest:
-"TG" goes first, then the frequency. Builds
-without it (the DM-1701 and MD-380 by default, for flash room) say "Channels: not in this build". The channel
-you are on is marked. Type letters to filter the list.
+"TG" goes first, then the frequency. The channel you are on is marked. Type letters to filter the list.
 
 <img src="../ux/screens/160x120i5/channels.png" width="200" alt="Channels: every channel by number">
 
-- **OK** on a channel shows its settings: mode, RX and TX frequency with the offset, power, bandwidth and tones (FM),
-  color code, timeslot, TX contact and RX group list (DMR), TX time-out, scan, and the zones that hold it. The page is
-  read only. Change a channel in the codeplug ([Programming with qdmr](15-programming-qdmr.md)) or save quick settings
-  changes (below).
-- **OK** on that page, or **#** in the list, goes to the channel: in the current zone if it holds it, otherwise in the
-  first zone that does. A channel in no zone says "Not in any zone".
+- **OK** on a channel opens its settings, where you can change them (below).
+- **#** in the list goes to the channel: in the current zone if it holds it, otherwise in the first zone that does.
+  A channel in no zone says "Not in any zone".
+- The first row, **New from current**, starts a new channel from what the radio uses now (below).
+
+## Editing a channel
+
+The channel's page lists every setting: name, mode, RX and TX frequency, power, RX only, then bandwidth, tones and
+VOX on FM, or color code, timeslot, TX contact, RX group list, own ID, direct mode, talk permit beeps and talker
+alias on DMR, then TX time-out, scan, battery saver and the zones that hold it. The list scrolls.
 
 <img src="../ux/screens/160x120i5/channel.png" width="200" alt="A channel's settings">
+
+Focus a row and press **OK**:
+
+| Row | What OK does |
+|---|---|
+| Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, direct mode, beeps, talker alias, battery saver) | switches to the other one |
+| Power, RX tone, TX tone, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
+| RX, TX, own ID | type the digits, **OK** keeps them, **Back** takes the last digit back. Digits outside the radio's bands are refused as you type. A new RX moves TX with it, so a repeater keeps its offset. If that would put TX outside the radio's bands, TX is set to the new RX |
+| Name | opens text entry (below) |
+| TX contact, RX group list | opens the list of contacts or group lists; type letters to find one |
+
+<img src="../ux/screens/160x120i5/channel_power.png" width="200" alt="Picking the power level with the knob">
+
+A changed row is marked until you save. **Hold OK** anywhere on the page to save, or pick the **Save** row. The radio
+writes the channel in the background and says "Saved channel 3". **Back** with unsaved changes asks whether to
+discard them; the answer starts on "No, keep editing". Saving any channel drops the quick-settings changes on the
+channel you are on: the radio reloads it from the codeplug.
+
+The radio won't save a channel without a name, with RX outside its bands, with TX where it can't transmit (set RX only
+instead), or a DMR channel without a TX contact. It says which.
+
+**Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was.
+**Go to it** tunes the channel; save or discard your changes first.
+
+### Text entry
+
+It works like a phone keypad. Keys **2** to **9** type their letters, then the digit, then the letters in the other
+case: press **2** once for A, twice for B, four times for 2, five times for a. Press the same key again within a
+second for the next character; another key, or a pause, moves on. **1** types punctuation (`. - / , ' & ( ) @ _ ! ?`
+and 1), **0** a space, 0, `+`, `#` and `*`. The title shows the mode.
+
+**#** switches the mode: ABC (capitals, the start), then 123 (each key types its digit), then abc (lower case), then
+back to ABC. Holding a digit key types the digit in any mode. **Back** deletes the last character (**\*** does too).
+**OK** keeps the name. To leave without changing it, press **Back** until the field is empty and once more. Names hold
+up to 16 characters.
+
+On a radio without a keypad, Up / Down change the last character, **OK** adds another, and holding **OK** keeps the
+name.
+
+<img src="../ux/screens/160x120i5/channel_name.png" width="200" alt="Typing a channel name">
+
+### New channel from current settings
+
+**OK**, **5**, then the first row, **New from current**. It opens an unsaved copy of the channel you are on, with any
+quick-settings changes, or of the VFO, at the lowest free channel number. The name gets " 2" added (from the VFO, the
+frequency). Change what differs, then hold **OK** to save it. A new channel is in no zone yet: add it to one with qdmr
+([Programming with qdmr](15-programming-qdmr.md)).
 
 ## Saving changes to a channel
 
@@ -59,12 +108,36 @@ A save that fails shows "Couldn't save: ..." and the change stays for now only.
 
 ## The VFO
 
-The VFO is FM only. A DMR VFO isn't built yet.
+The VFO is an FM VFO or, on a radio with DMR, a DMR VFO. It keeps its mode like its frequency. Everything you change in
+the VFO (mode, color code, timeslot, talk target) is kept, also when you go to a channel and come back, and after a
+restart.
 
 1. **OK**, **4** (Zones). The VFO is the first row.
 2. Press **OK**. Home shows the frequency large, and the radio says "VFO: type a frequency".
 
 <img src="../ux/screens/160x120i5/home_vfo.png" width="200" alt="Home in the VFO">
+
+### Copy a channel to the VFO
+
+To start from a channel, press **\***, **4** ("To VFO") on it. The channel's settings become the VFO's and Home shows
+the VFO ("Copied to VFO"). On a radio with a **VFO/MR** key, hold it instead. **Settings > Keys** can give any side
+key "Copy to VFO", on a press or a hold.
+
+| Copied | Notes |
+|---|---|
+| RX and TX frequency | A repeater's offset stays until you step the frequency |
+| Mode, bandwidth, power | Power stays "default" if the channel's is |
+| Tones (FM) | CTCSS or DCS, RX and TX |
+| Color code, timeslot, talk target (DMR) | The talk target is the contact's ID, as a group or private call. A channel with no contact gives what it would send now |
+
+- The VFO gets what is in effect now, so a temporary change you made on the channel (a bandwidth, a power level, a
+  talk target) is copied too.
+- The channel stays as it was. The VFO keeps the values like its other settings, also after a restart.
+- Not copied: the RX group list, the privacy key, roaming, the data and emergency settings, and the squelch level.
+  The VFO uses the radio's own values for these.
+- A channel the VFO can't hold is refused with a short message and nothing changes: a DMR channel on a radio build
+  whose VFO is FM only (or the other way round), or a frequency outside the radio's bands.
+- In the VFO the same key says "Already in VFO".
 
 ### Typing a frequency
 
@@ -89,6 +162,29 @@ what you typed as you go.
 
 **Up**, **Down** and the channel knob change the VFO frequency by its step. The step comes from the codeplug's VFO
 settings. The quick settings Step tile (8) shows it but can't change it yet ("Step: set it in qdmr for now").
+
+### DMR in the VFO
+
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"). In DMR the quick settings are the
+DMR ones:
+
+| Key | Tile | What it does in the DMR VFO |
+|---|---|---|
+| **2** | Slot | Switches the timeslot, 1 or 2 |
+| **3** | Color | Sets the color code, 0 to 15 (1 at first). Type it or use **Up** and **Down**, then **OK** |
+| **8** | Talk to | Picks or types the talk target, a talkgroup or a person. Both **OK** and holding **OK** keep it for the VFO |
+
+<img src="../ux/screens/160x120i5/quick_vfo_dmr.png" width="200" alt="Quick settings in the DMR VFO">
+
+- Pick the color code and timeslot of the repeater or the simplex frequency you use. The radio talks to talkgroup 9 until
+  you pick another target, with your own DMR ID.
+- The VFO has no listen list. It plays calls to its talk target, all calls and private calls to you. Other talkgroups
+  show as "Other TG: not played". To hear everything on the slot, turn on digital monitor.
+- Home shows the frequency, the talk target, the timeslot and the color code. Changes here don't show a dot and
+  **Back** doesn't undo them.
+- The VFO sends no talker alias and no data messages, and an emergency can't start in it.
+
+<img src="../ux/screens/160x120i5/home_vfo_dmr.png" width="200" alt="Home in the DMR VFO">
 
 ### Leaving the VFO
 

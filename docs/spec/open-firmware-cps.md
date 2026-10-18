@@ -28,6 +28,7 @@ not NUL terminated, unless stated otherwise.
 | STM32F405 (DM-1701 / RT-84, MD-UV380 / RT-3S, MD-9600, MD-380, MD-2017) | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094, manufacturer string "www." + the aftermarket firmware's project domain + ".com", product string per model (for example "OpenDM1701 Transceiver", "OpenMDUV380 Transceiver", "OpenMD9600 Transceiver") | USB bulk packets (64 bytes max), reassembled as below |
 | NXP MK22 (GD-77, GD-77S, DM-1801, DM-1801A, RD-5R) | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094 | as STM32 |
 | DM-32UV (HR_C7000) | Programming cable on UART0 at 115200 8N1, through a USB-serial adapter. No USB on the radio | A request ends after 3 ms without a received byte |
+| Radioddity DB25-D PRO (HR_C7000, our build only) | The side K1 programming cable on UART1 at 115200 8N1, through a USB-serial adapter. No USB on the radio | As the DM-32: the host link takes a request when its header gives the length, or after 3 ms of quiet. Image at the STM32 addresses; radio type 6 |
 | STM32 radios in our USB network mode | USB CDC-NCM (VID 0x1FC9 PID 0x0096, no serial port). The serial protocol is carried in UDP datagrams to port 3334 at the radio's address | one datagram is one USB packet. Replies go back to the address and port that sent last. One client at a time |
 | MK22 radios in our USB network mode | Composite device VID 0x1FC9 PID 0x0095: CDC-ACM (interfaces 0-1) plus CDC-NCM (interfaces 2-3) | as USB |
 

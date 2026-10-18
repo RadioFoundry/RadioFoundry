@@ -37,13 +37,15 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 | ● | ● | ● |  |
 | Repeater roaming | `DMR_ROAMING` | 11,952 | 12,380 | ● | ● | ● |  |
 | CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 592 | 752 | ● | ● | ● |  |
-| VFO (hand-tuned frequency) | `VFO` | 520 | 464 | ● | ● | ● |  |
+| VFO (hand-tuned frequency) | `VFO` | 656 | 516 | ● | ● | ● | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
 | FM VFO | `VFO_FM` | 504 | 452 | ● | ● | ● |  |
-| DMR VFO (ID, color code, slot, talk target typed in) | `VFO_DMR` | 8 | 8 | ● | ● | ● | Switch exists; the feature isn't built yet |
-| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | — | — | ● | ○ | ● | About 1.9 KB on the MD-380. MD-380: off for flash (hub 5 says "not in this build") |
+| DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | ● | ● | ● | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
+| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 1,536 | 2,140 | ● | ● | ● |  |
+| Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | ● | ● | ● | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. DM-1701: 1,080 B of it in the second flash area (sector 9); measured 2026-10-17 |
 | Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — | ● | ● | ● |  |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 | ● | ● | ● |  |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 | ● | ● | ● |  |
+| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | ✕ | ✕ | ✕ | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one ODR drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
 
 ## DMR data
 
@@ -69,7 +71,9 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | MMDVM hotspot | `HOTSPOT` | 34,196 | ~12,400 | ● | ○ | ● | Includes split duplex and MMDVM SFR where built. MD-380: left out for flash (DMR_ROAMING off is the alternative); size estimated |
 | Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 12,584 | — | ● | ✕ | ● | MD-380: HR_C6000-only glue |
 | Debug link | `DEBUGLINK` | 32,376 | 29,084 | ● | ● | ● |  |
+| Task stacks in the debug link view | `TASK_STACKS` | 536 | 560 | ● | ● | ● | Each task's least free stack, the `tasks` view section ([debuglink](spec/debuglink.md) 3.7) |
 | Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 | ● | ● | ● |  |
+| Loader hand-over (debug link 0x1A) | `STUB_ENTRY` | 768* | — | ○ | ○ | ● | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default on the HR_C7000 radios; on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)), off for now |
 
 ## Network (USB network adapter and IP over DMR)
 
@@ -86,7 +90,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | ● | ○ | ● | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet); off by default, needs another feature off to fit. DM-32UV: DMR only until its board code has the FM audio paths |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | ● | ○ | ● | Needs NAT on the host. MD-380: off for flash (no APRS over the air there) |
 | mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 | ● | ● | ● |  |
-| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ● |  |
+| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ○ | ● | MD-380: off for the Channels list and editor; CPS on the same USB port reads and writes the codeplug |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ○ | ● | MD-380: off by default for flash |
 | PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ● | New, untested on hardware; interop tested with pppd. Fits neither default image as it is (DM-1701 688 B short, MD-380 1,588 B short; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
 
@@ -96,14 +100,22 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 5,304 | 5,640 | ● | ● | ● |  |
 | Diagnostics page | `DIAG` | 3,752 | 3,532 | ● | ● | ● |  |
-| 16x32 font | `FONT_XL` | 6,352* | — | ○ | ✕ | ○ | Only useful at 240 px and wider (MD-380 is 160 px); DM-32 runs at half resolution, so nothing gained yet |
+| Color screen settings (theme, highlight color, filled status bar) | `UI_COLOR` | 672 | 608 | ● | ● | ● | Off on the DM-1801 Pro (monochrome screen; 628 B there). Measured 2026-10-17; DM-1701 with LTO 612 B, 308 of them in sector 9 |
+| 16x32 font | `FONT_XL` | 6,352* | — | ○ | ✕ | ● | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
+| Anti-aliased fonts | `FONT_AA` | 3,004* | — | ○ | ○ | ● | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
+| Larger text | `FONT_BIG` | — | — | ✕ | ✕ | ● | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
+
+## Storage
+
+| Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
+|---|---|---:|---:|:-:|:-:|:-:|---|
+| Settings and codeplug storage on SPI NAND | `NAND_STORAGE` | — | — | ✕ | ✕ | ✕ | For radios whose data flash is SPI NAND: on for the DB25-D (about 6.6 KB flash, 1.5 KB RAM), not in these columns. These radios have SPI NOR and don't use it ([nand-sectors](spec/nand-sectors.md)) |
 
 ## Bench
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | ○ | ○ | ○ | Bench only, never in a release |
-| RAM monitor loader (debug link 0x1A) | `STUB_ENTRY` | — | — | ✕ | ✕ | ○ | HR_C7000 radios: flashing without the bootloader (`stub/`). Other platforms have no entry hook, so the command answers unavailable |
 
 ## Whole images
 
@@ -151,3 +163,14 @@ Flash each network switch costs on the DM-32UV (default minus the build with it 
 service 51,428 (`NET_PPP` or `DMR_IP_GATEWAY` off), TCP and what runs on it 17,028, SNMP 9,116, mDNS 7,220, TFTP
 6,584, HTTP 5,076, rigctld 4,020, APRS-IS 2,964, KISS 688, control station 272. Each TCP connection is about 1.5 KB
 of RAM (TCP, HTTP, rigctld).
+
+### DB25-D PRO
+
+Same SoC and glue as the DM-32UV, with 876 KB of code space and 165,424 bytes of main RAM above the codec window plus
+52,912 in RAM_LO (`boards/db25d/db25d_dmr.ld`). The network buffers stay in RAM_LO. Left off: split duplex, USRP (PCM does not fit the 115200 baud host port), SFR, APRS receive and
+iGate, USB, broadcast FM, air band AM, `FONT_XL`, `AUDIO_PROBE` (`boards/db25d/config.mk`).
+
+| DB25-D build | Image | RAM (165,424 B) | RAM_LO (52,912 B) |
+|---|---:|---:|---:|
+| DMR only (hotspot, VFO and network off) | 295,460 | 139,952 (25,472 free) | 19,024 (33,888 free) |
+| default (hotspot, PPP, gateway, every service but USRP, 3 TCP connections; no split duplex) | 362,364 | 150,080 (15,344 free) | 28,584 (24,328 free) |

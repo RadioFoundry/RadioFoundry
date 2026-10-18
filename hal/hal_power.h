@@ -13,6 +13,7 @@ typedef struct {
 	void (*init)(void);
 	// Keep the radio powered (true) or let it turn off (false)
 	void (*latch)(bool on);
+	// battery_mv and battery_pct are read only when the board has a battery (board_has_battery(), CAP_NO_BATTERY unset)
 	uint16_t (*battery_mv)(void);
 	// Battery percentage 0..100 from the board's own curve
 	uint8_t (*battery_pct)(void);
@@ -24,7 +25,7 @@ typedef struct {
 	// Optional: microphone level 0..100, logarithmic (about 0.7 dB per step, 0 = silence), for VOX
 	uint8_t (*mic_level)(void);
 	// Optional: run the vibration motor for ms milliseconds and return at once (a call while it runs restarts the time);
-	// NULL when the radio has no motor. Nothing in the core calls it yet
+	// NULL when the radio has no motor. The core's vibration alerts use it (core/radio/vibe.c, CONFIG_VIBRATE)
 	void (*vibrate)(uint16_t ms);
 } hal_power_t;
 

@@ -1,0 +1,12 @@
+^github\.com$
+^api\.github\.com$
+^codeload\.github\.com$
+^[a-z0-9.-]+\.actions\.githubusercontent\.com$
+^objects\.githubusercontent\.com$
+^objects-origin\.githubusercontent\.com$
+^release-assets\.githubusercontent\.com$
+^github-releases\.githubusercontent\.com$
+^productionresultssa[0-9]+\.blob\.core\.windows\.net$
+^registry\.npmjs\.org$
+^pypi\.org$
+^files\.pythonhosted\.org$

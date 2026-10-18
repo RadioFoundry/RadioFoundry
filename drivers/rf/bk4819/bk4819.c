@@ -25,7 +25,7 @@ static const regval_t init_common[] = {
 static const regval_t init_main_tail[] = {
 	{ 0x4F, 0x3332 }, { 0x27, 0xA430 }, { 0x48, 0xB3B3 }, { 0x37, 0x1D9F }, { 0x30, 0x0302 }, { 0x47, 0x6042 },
 	{ 0x30, 0x0200 }, { 0x33, 0x0000 }, { 0x30, 0x0200 }, { 0x47, 0x6042 }, { 0x30, 0x0200 }, { 0x37, 0x1D0F },
-	{ 0x7D, 0xE34A }, { 0x30, 0x0000 },
+	{ 0x7D, 0xE34A }, { 0x30, BK4819_STATE_IDLE_MAIN },
 };
 
 static const regval_t init_lo_tail[] = {
@@ -56,6 +56,28 @@ uint16_t bk4819_ctcss_word(uint16_t hz_x10)
 	return (uint16_t)(((uint64_t)hz_x10 * 258111u + 62500u) / 125000u);
 }
 
+uint16_t bk4819_ctcss_word_tx(uint16_t hz_x10)
+{
+	return (uint16_t)(((uint64_t)hz_x10 * 258111u) / 125000u);
+}
+
+uint16_t bk4819_tone_word(uint16_t hz)
+{
+	// Hz x 10.32444 = Hz x 1290555 / 125000
+	return (uint16_t)(((uint64_t)hz * 1290555u + 62500u) / 125000u);
+}
+
+uint16_t bk4819_pa_reg(uint8_t level)
+{
+	if (level == 0) {
+		return 0;
+	}
+	if (level > 15) {
+		level = 15;
+	}
+	return (uint16_t)(0x80u | (uint16_t)(level * 63u / 15u));
+}
+
 void bk4819_attach(bk4819_t *dev, const bk4819_bus_t *bus)
 {
 	dev->bus = bus;
@@ -63,6 +85,12 @@ void bk4819_attach(bk4819_t *dev, const bk4819_bus_t *bus)
 	dev->state = 0;
 	dev->af_gain = 0xB3B3u;
 	dev->writes = 0;
+	dev->digital = false;
+	dev->saved_27 = 0;
+	dev->saved_48 = 0;
+	dev->tone_hz = 0;
+	dev->tone_gain = 0;
+	dev->idle = BK4819_STATE_IDLE;
 }
 
 static uint32_t enter(const bk4819_bus_t *b)
@@ -152,6 +180,7 @@ void bk4819_init_main(bk4819_t *dev)
 {
 	reset(dev);
 	write_table(dev, init_main_tail, sizeof(init_main_tail) / sizeof(init_main_tail[0]));
+	dev->idle = BK4819_STATE_IDLE_MAIN;
 	dev->freq_10hz = 0;
 }
 
@@ -162,6 +191,7 @@ void bk4819_init_lo(bk4819_t *dev, uint16_t pa)
 	bk4819_write(dev, BK4819_REG_AFC, (uint16_t)(bk4819_read(dev, BK4819_REG_AFC) | BK4819_AFC_OFF));
 	write_table(dev, init_lo_after_afc, sizeof(init_lo_after_afc) / sizeof(init_lo_after_afc[0]));
 	bk4819_write(dev, BK4819_REG_PA, pa);
+	dev->idle = BK4819_STATE_IDLE;
 	bk4819_lo_off(dev);
 	dev->freq_10hz = 0;
 }
@@ -176,21 +206,36 @@ static void write_freq(bk4819_t *dev, uint32_t hz)
 
 void bk4819_set_freq(bk4819_t *dev, uint32_t hz)
 {
-	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_IDLE);
+	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
 	write_freq(dev, hz);
 }
 
 void bk4819_set_state(bk4819_t *dev, uint16_t state)
 {
-	if (state != BK4819_STATE_IDLE && dev->state != BK4819_STATE_IDLE) {
-		bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_IDLE);
+	if (state == BK4819_STATE_IDLE) {
+		state = dev->idle;
+	}
+	if (state != dev->idle && dev->state != dev->idle) {
+		bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
 	}
 	bk4819_write(dev, BK4819_REG_ENABLES, state);
 }
 
 void bk4819_set_bandwidth(bk4819_t *dev, uint16_t bw_reg)
 {
+	bk4819_write(dev, 0x52, 0x028F);	// detect thresholds, written by the stock channel set before the bandwidth
 	bk4819_write(dev, BK4819_REG_BANDWIDTH, bw_reg);
+	bk4819_write(dev, 0x4F, bw_reg == BK4819_BW_25K ? BK4819_4F_25K : BK4819_4F_12K5);
+}
+
+void bk4819_analog_mode(bk4819_t *dev)
+{
+	bk4819_write(dev, 0x2A, 0x4F18);
+	bk4819_write(dev, BK4819_REG_AFC, (uint16_t)(bk4819_read(dev, BK4819_REG_AFC) & ~BK4819_AFC_OFF));
+	bk4819_write(dev, BK4819_REG_AF, BK4819_AF_MUTE);
+	bk4819_write(dev, BK4819_REG_AGC_DC, 0x302E);
+	bk4819_write(dev, BK4819_REG_AF_FILTER, 0xC000);
+	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
 }
 
 void bk4819_set_af(bk4819_t *dev, uint16_t af)
@@ -206,20 +251,56 @@ void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain)
 	bk4819_write(dev, BK4819_REG_AF_GAIN, (uint16_t)((dev->af_gain & 0xFFF0u) | gain));
 }
 
-// 4.3 "LO tune": the enables go through idle with the power register set in between, then to the TX value
+// 4.5 DMR receive: the stock digital mode set, in its order. 0x27 and 0x48 are saved for the end; the stock firmware
+// leaves its digital values there when it goes back to analog, ODR doesn't
+static const regval_t dmr_rx_set[] = {
+	{ 0x2A, 0x4711 }, { BK4819_REG_SUBAUDIO, 0x0000 }, { 0x52, 0x028F }, { BK4819_REG_AF, 0x6943 },
+	{ BK4819_REG_AGC_DC, 0x3006 }, { BK4819_REG_BANDWIDTH, BK4819_BW_DMR }, { 0x40, 0x0000 }, { 0x27, 0x0430 },
+	{ BK4819_REG_AF_FILTER, 0x8707 }, { BK4819_REG_AF_GAIN, BK4819_AF_GAIN_DMR }, { BK4819_REG_AF, BK4819_AF_DMR },
+};
+
+void bk4819_dmr_rx_enter(bk4819_t *dev)
+{
+	if (!dev->digital) {
+		dev->saved_27 = bk4819_read(dev, 0x27);
+		dev->saved_48 = dev->af_gain;
+		dev->digital = true;
+	}
+	bk4819_write(dev, dmr_rx_set[0].reg, dmr_rx_set[0].val);
+	bk4819_write(dev, dmr_rx_set[1].reg, dmr_rx_set[1].val);
+	bk4819_write(dev, BK4819_REG_AFC, (uint16_t)(bk4819_read(dev, BK4819_REG_AFC) | BK4819_AFC_OFF));
+	write_table(dev, &dmr_rx_set[2], sizeof(dmr_rx_set) / sizeof(dmr_rx_set[0]) - 2u);
+}
+
+// The stock analog mode set (it also turns the AFC back on and mutes the AF), then what ODR's analog receive had
+void bk4819_dmr_rx_end(bk4819_t *dev)
+{
+	if (!dev->digital) {
+		return;
+	}
+	dev->digital = false;
+	bk4819_analog_mode(dev);
+	bk4819_write(dev, 0x27, dev->saved_27);
+	bk4819_write(dev, BK4819_REG_AF_GAIN, dev->saved_48);
+}
+
+// 4.3 "LO tune": the enables go through idle with the power register set in between, then to the TX value. The
+// frequency is written only when it changed: the stock firmware leaves the LO's frequency alone across a transmission
 void bk4819_lo_tune(bk4819_t *dev, uint32_t hz)
 {
-	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_IDLE);
-	write_freq(dev, hz);
+	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
+	if (dev->freq_10hz != (hz + 5u) / 10u) {
+		write_freq(dev, hz);
+	}
 	bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
-	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_IDLE);
+	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
 	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_TX);
 }
 
+// Stock TX: the LO's 0x30 = 0 and nothing else (0x37, 0x36 and the frequency stay)
 void bk4819_lo_off(bk4819_t *dev)
 {
-	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_IDLE);
-	bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_OFF);
+	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
 }
 
 void bk4819_set_rx_ctcss(bk4819_t *dev, uint16_t hz_x10)
@@ -236,4 +317,111 @@ void bk4819_set_rx_ctcss(bk4819_t *dev, uint16_t hz_x10)
 bool bk4819_ctcss_found(bk4819_t *dev)
 {
 	return (bk4819_read(dev, BK4819_REG_CSS_STATUS) & 0x0400u) != 0;
+}
+
+void bk4819_tx_prepare(bk4819_t *dev, uint16_t ctcss_hz_x10)
+{
+	if (ctcss_hz_x10 != 0) {
+		bk4819_write(dev, 0x40, BK4819_TX_DEV_CTCSS);
+		bk4819_write(dev, BK4819_REG_SUBAUDIO, BK4819_SUBAUDIO_TX_CTCSS);
+		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, bk4819_ctcss_word_tx(ctcss_hz_x10));
+	} else {
+		bk4819_write(dev, 0x40, BK4819_TX_DEV_PLAIN);
+		bk4819_write(dev, BK4819_REG_SUBAUDIO, BK4819_SUBAUDIO_TX_NONE);
+	}
+}
+
+void bk4819_tx_tune(bk4819_t *dev, uint32_t hz)
+{
+	bk4819_set_freq(dev, hz);
+	bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
+	bk4819_set_state(dev, BK4819_STATE_TX_MAIN);
+}
+
+// 4.4 TX tone: the stock order. Main chip in TX; 0x30 = 0xC3FA takes the microphone ADC out, the tone generator is
+// the only audio. 0x50 bit 15 is only set while the tone is set up
+void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain)
+{
+	if (hz == 0) {
+		bk4819_tone_stop(dev);
+		return;
+	}
+	if (gain > BK4819_TONE_GAIN_MAX) {
+		gain = BK4819_TONE_GAIN_MAX;
+	}
+	if (dev->tone_hz == 0) {
+		bk4819_write(dev, BK4819_REG_AF, 0x6342u);	// AF select 3, the stock side tone
+		bk4819_write(dev, BK4819_REG_TONE_CTRL, (uint16_t)(0x8000u | (uint16_t)gain << 8));
+		bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_TONE);
+		bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
+		bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
+		bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_TX_TONE);
+	} else {
+		bk4819_write(dev, BK4819_REG_TONE_CTRL, (uint16_t)(0x8000u | (uint16_t)gain << 8));
+	}
+	dev->tone_hz = hz;
+	dev->tone_gain = gain;
+	// The stock word is the product truncated: 1750 Hz = 18067
+	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
+	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
+}
+
+// Keyed by the tone generator's enable (0x70 bit 15) while the chip stays at 0xC3FA
+void bk4819_tone_key(bk4819_t *dev, bool down)
+{
+	if (dev->tone_hz == 0) {
+		return;
+	}
+	bk4819_write(dev, BK4819_REG_TONE_CTRL, down ? (uint16_t)(0x8000u | (uint16_t)dev->tone_gain << 8) : 0x0000u);
+}
+
+void bk4819_tone_stop(bk4819_t *dev)
+{
+	if (dev->tone_hz == 0) {
+		return;
+	}
+	bk4819_write(dev, BK4819_REG_AF, BK4819_AF_MUTE);
+	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
+	bk4819_write(dev, BK4819_REG_TONE_CTRL, 0x0000);
+	bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
+	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
+	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_TX_MAIN);
+	bk4819_write(dev, 0x40, BK4819_TX_DEV_CTCSS);
+	dev->tone_hz = 0;
+}
+
+// The stock tone-stop at the end of a transmission with the TX flag already clear: it ends in the RX state
+void bk4819_tx_end(bk4819_t *dev)
+{
+	bk4819_write(dev, BK4819_REG_AF, BK4819_AF_MUTE);
+	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
+	bk4819_write(dev, BK4819_REG_TONE_CTRL, 0x0000);
+	bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
+	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
+	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_RX);
+	dev->tone_hz = 0;
+}
+
+// 4.5 DMR transmit: the stock digital mode set's TX words. The main chip's microphone path stays on (0xC3FE), but with
+// the deviation off nothing of it reaches the carrier
+void bk4819_dmr_tx_prepare(bk4819_t *dev)
+{
+	bk4819_write(dev, 0x40, BK4819_TX_DEV_OFF);
+	bk4819_write(dev, BK4819_REG_SUBAUDIO, BK4819_SUBAUDIO_OFF);
+}
+
+// The stock per-burst tune (TX and back to the IF alike): the frequency is written in whatever state the chip is in
+void bk4819_burst_tune(bk4819_t *dev, uint32_t hz, uint16_t state)
+{
+	write_freq(dev, hz);
+	bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
+	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
+	bk4819_write(dev, BK4819_REG_ENABLES, state);
+}
+
+void bk4819_lo_resume(bk4819_t *dev)
+{
+	bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
+	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
+	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_TX);
 }

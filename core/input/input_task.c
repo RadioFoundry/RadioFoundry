@@ -42,10 +42,17 @@ static volatile uint8_t last_source = INPUT_SRC_KEYS;
 static volatile uint32_t timing;	// input_set_timing: long ms << 16 | repeat ms (one word: no lock needed)
 static volatile uint16_t long_now = INPUT_LONG_MS;
 static volatile bool ptt_blocked;	// input_set_ptt_block
+static volatile uint32_t ptt_downs;	// PTT presses seen by the engine (debug link: input.ptt_downs)
 
 static void emit(const input_event_t *ev, void *ctx)
 {
 	(void)ctx;
+	if (ev->action == ACT_PTT && ev->gesture == GESTURE_DOWN) {
+		// Every press is logged with where it came from: a transmission nobody asked for shows its cause
+		ptt_downs++;
+		dlog("input: PTT down (%s, keys 0x%08x%s)", last_source == INPUT_SRC_HOST ? "host" : "keys",
+		     (unsigned)raw_keys, ptt_blocked ? ", blocked" : "");
+	}
 	if (ev->action == ACT_PTT && (ev->gesture == GESTURE_UP || (ev->gesture == GESTURE_DOWN && !ptt_blocked))) {
 		radio_req_ptt(ev->gesture == GESTURE_DOWN);
 	} else if (ev->action == ACT_MONITOR && (ev->gesture == GESTURE_DOWN || ev->gesture == GESTURE_UP)) {
@@ -198,6 +205,11 @@ uint16_t input_long_ms(void)
 uint32_t input_raw_keys(void)
 {
 	return raw_keys;
+}
+
+uint32_t input_ptt_downs(void)
+{
+	return ptt_downs;
 }
 
 int32_t input_encoder_total(void)

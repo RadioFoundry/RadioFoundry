@@ -45,6 +45,7 @@ typedef struct {
 typedef struct {
 	uint32_t now_ms;
 	uint8_t battery_pct;
+	bool no_battery;		// the radio has no battery: no icon, percentage or battery pages (board_has_battery)
 	bool dmr_off;			// the DMR channel's modem has been off a while (ui_app.c), not just a moment
 	bool entry;			// VFO frequency entry in progress
 	uint8_t entry_len;
@@ -59,6 +60,7 @@ typedef struct {
 	uint8_t diag_first;	// first board line on the diagnostics page
 	bool locked;		// keys locked (long QUICK)
 	bool scanning;
+	uint8_t usb_net;	// UI_USB_NET_*: the status strip's USB network word and link arrows
 	bool hints;		// the hint row is shown (Settings > Display)
 	bool large_text;	// Home shows only the channel and the talk target (Settings > Display)
 	bool privacy;		// the next DMR transmission is encrypted
@@ -68,8 +70,10 @@ typedef struct {
 	bool ptt_locked;	// PTT works while the keys are locked (Settings > Privacy)
 	bool hear_all_default;	// hear all on whenever a DMR channel is selected (Settings > Talk & listen)
 	bool message_tone;	// a tone when a message arrives (Settings > Sound)
+	bool vibrate;		// vibrate for messages, calls to us, emergencies (Settings > Sound, CONFIG_VIBRATE)
 	uint8_t updown;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target (Settings > Keys)
 	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power)
+	uint8_t volume;		// speaker volume step 0..RADIO_VOLUME_MAX of a radio without a knob (the volume screen, Settings > Sound)
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power)
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
@@ -80,9 +84,13 @@ typedef struct {
 enum {
 	QT_POWER, QT_SQUELCH, QT_TONE, QT_MODE, QT_MONITOR, QT_VOX, QT_SCAN, QT_BANDWIDTH, QT_BRIGHTNESS,
 	QT_TIMESLOT, QT_CC, QT_HEAR_ALL, QT_PRIVACY, QT_TALK_TO, QT_STEP,
+	QT_TO_VFO,		// on a channel, in place of QT_MODE: copy the channel to the VFO
+
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO
 uint8_t ui_quick_kind(int pos, const radio_view_t *v);
+// True when a contact name only repeats its ID ("TG 201" for talkgroup 201): Home then shows the ID once
+bool ui_name_is_id(const char *name, uint32_t id, bool private_call);
 
 // Fonts and region positions for the current display, from gfx_width() / gfx_height()
 typedef struct {
@@ -98,14 +106,26 @@ typedef struct {
 
 extern ui_layout_t ui_layout;
 
+// ui_state_t.usb_net: USB is a serial port, a network adapter waiting for the computer ("IP"), or a network adapter
+// the computer has brought up, so IP over DMR can flow ("IP" and the up and down arrows, usb-network.md 1)
+enum { UI_USB_NET_OFF, UI_USB_NET_WAIT, UI_USB_NET_UP };
+
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper and
 // pills are inverse video
 typedef struct {
 	color_t bg, fg, dim, line, tx, rx, warn, idle, pill_fg, pill_dark_fg, focus, hint_bg, priv;
+	color_t focus_fg;		// text on the focus highlight
+	color_t chnum;			// Home's channel number
+	color_t strip_bg;		// the filled status strip's background (its text is pill_dark_fg)
+	color_t strip_warn;		// warnings on it
 } ui_colors_t;
 extern ui_colors_t ui_col;
 // Color theme on color displays (Settings > Display): 0 dark, 1 light, 2 high contrast. After ui_layout_init
 void ui_theme_set(uint8_t theme);
+// Color displays (Settings > Display): the highlight color (UI_ACCENT_*, ui_svc.h) for list and tile focus and Home's
+// channel number, and whether the status strip is filled with it. Both re-apply the theme's colors
+void ui_accent_set(uint8_t accent);
+void ui_strip_set(bool filled);
 
 // Pick fonts and place the regions; call after gfx_init
 void ui_layout_init(void);
@@ -168,6 +188,8 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 #endif
 // Received emergency: full screen, the caller, how to acknowledge
 void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, const char *name);
+// Volume (the VOL key, a radio without a knob): the step 0 (mute) .. RADIO_VOLUME_MAX as a bar and a number
+void ui_draw_volume(const radio_view_t *v, const ui_state_t *s);
 // Diagnostics: raw key bits, encoder total, radio readings and the board's own lines
 void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8_t first_line);
 // The first board line of the page after the one starting at first_line (wraps to 0)
@@ -177,6 +199,14 @@ uint8_t ui_diag_next_page(uint8_t first_line);
 bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *label, size_t label_len,
 	char *value, size_t value_len);
 
+// Whether a board band holds hz (tx: one the radio can transmit in)
+bool ui_in_band(uint32_t hz, bool tx);
+// Frequency typed as digits (VFO entry, the channel editor): positional from 100 MHz down to 10 Hz, at most
+// UI_ENTRY_MAX of them in digits[UI_ENTRY_MAX + 1]. A digit is appended when some band can still start so; false
+// when the digits are full, or with a toast naming the bands when no band can
+bool ui_freq_entry_digit(char *digits, uint8_t *len, char d);
+// The typed frequency, or 0 with a toast saying why (fewer than the MHz digits, not in a band)
+uint32_t ui_freq_entry_hz(const char *digits, uint8_t len);
 // Text for the board's bands ("136-174 400-480"), for hints
 void ui_bands_text(char *out, size_t len);
 // The board's power level name

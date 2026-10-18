@@ -8,6 +8,12 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "radio/beep.h"
+#include "radio/vibe.h"
+#include "radio/mic_gain.h"
+#include "hal_time.h"
+#include "settings/settings.h"
+
+#define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -30,9 +36,19 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "scan_probes=%u\nscan_synced=%u\n", v->scan_probes, v->scan_synced);
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
-	dl_text(t, "vox_on=%u\nvox.mic=%u\n", v->vox_on, board.power != NULL && board.power->mic_level != NULL);
-	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", word(v->battery, batt, 3),
+	bool mic = board.power != NULL && board.power->mic_level != NULL;
+	// The hook itself, not the VOX poll's last reading, so the level reads with VOX off (nothing keys). Only where VOX
+	// could listen (FM, not a hotspot): a meter that starts on demand (the HR_C7000's mic PCM) then runs in the state
+	// VOX would run it in, and reads 0 on its first call
+	bool listen = mic && v->ch.mode == RADIO_MODE_FM && !v->hotspot;
+	dl_text(t, "vox_on=%u\nvox.mic=%u\nvox.level=%u\n", v->vox_on, mic, listen ? board.power->mic_level() : 0u);
+	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
+	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
+	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", board_has_battery() ? word(v->battery, batt, 3) : "none",
 		v->battery_pct, v->battery_mv, v->power_off);
+	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
+	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
+		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
@@ -40,6 +56,12 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		(unsigned)b.played, (unsigned)b.no_stream, (unsigned)b.blocks, (unsigned)b.stalls, beep_busy());
 #else
 	dl_text(t, "beep.built=0\n");
+#endif
+#if CONFIG_VIBRATE
+	dl_text(t, "vibe.built=1\nvibe.motor=%u\nvibe.played=%u\nvibe.busy=%u\n",
+		board.power != NULL && board.power->vibrate != NULL, (unsigned)vibe_played(), vibe_busy());
+#else
+	dl_text(t, "vibe.built=0\n");
 #endif
 	radio_get_settings(&s);
 	dl_text(t, "set.tot_s=%u\nset.tot_warn_s=%u\nset.bcl=%s\nset.roger_beep=%u\nset.tx_inhibit=%u\n", s.tot_s,
@@ -52,6 +74,8 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		s.vox_tail_ms);
 	dl_text(t, "set.rx_save=%u\nset.rx_save_idle_s=%u\nset.battery_off_s=%u\n", s.rx_save, s.rx_save_idle_s,
 		s.battery_off_s);
+	// The step in effect (the UI's setting or the SETTING op's) and whether the board's audio path takes it
+	dl_text(t, "set.mic_gain=%u\nset.mic_gain_board=%u\n", radio_mic_gain(), mic_gain_on_board());
 	if (s.reply_s <= 30) {
 		dl_text(t, "set.reply_s=%u\n", s.reply_s);
 	} else {
@@ -134,6 +158,66 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 		radio_req_beep(a[0]);
 		return DL_ST_OK;
+	case DL_OP_VIBRATE:
+		if (len < 1 || a[0] == VIBE_NONE || a[0] >= VIBE_COUNT) {
+			return DL_ST_BAD_ARG;
+		}
+		if (!CONFIG_VIBRATE) {
+			return DL_ST_UNAVAILABLE;
+		}
+		radio_req_vibrate(a[0]);	// played whatever the UI's Vibrate setting; nothing without a motor
+		return DL_ST_OK;
+	case DL_OP_VOLUME:
+		// step 0..RADIO_VOLUME_MAX; RADIO_VOLUME_KNOB (0xFF) gives the knob back. A radio without a knob keeps the
+		// step like a UI change (stored); one with a knob holds it in RAM over the knob. No hook: unavailable
+		if (len < 1 || (a[0] > RADIO_VOLUME_MAX && a[0] != RADIO_VOLUME_KNOB)) {
+			return DL_ST_BAD_ARG;
+		}
+		if (!radio_volume_settable()) {
+			return DL_ST_UNAVAILABLE;
+		}
+		if (radio_volume_soft()) {
+			settings_t *st = settings_begin();
+			st->volume = a[0] == RADIO_VOLUME_KNOB ? 0 : radio_volume_stored(a[0]);
+			settings_end(hal_millis());
+			radio_req_volume(a[0] == RADIO_VOLUME_KNOB ? RADIO_VOLUME_DEFAULT : a[0]);
+		} else {
+			radio_req_volume_override(a[0] == RADIO_VOLUME_KNOB ? -1 : (int8_t)a[0]);
+		}
+		return DL_ST_OK;
+	case DL_OP_DMR_FIELDS:
+		// mode (0xFF = keep, else radio_mode_t), color code (0xFF = keep), timeslot (0 = keep): on a channel they are
+		// temporary changes, in the VFO the VFO's own settings. The radio core refuses what it can't do
+		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_DMR) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_DMR
+		if (a[0] != 0xFF) {
+			radio_req_mode(a[0]);
+		}
+		if (a[1] != 0xFF) {
+			radio_req_dmr_color_code(a[1]);
+		}
+		if (a[2] != 0) {
+			radio_req_dmr_timeslot(a[2]);
+		}
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	case DL_OP_VFO_COPY: {
+		// Copy to VFO, as the quick menu's tile does: refused with a status when the VFO can't hold the channel
+		// (the check is the radio core's), nothing sent then
+		switch (radio_req_vfo_copy_checked()) {
+		case VFO_COPY_OK:
+			return DL_ST_OK;
+		case VFO_COPY_NO_MODE:
+		case VFO_COPY_OUT_OF_BAND:
+			return DL_ST_REFUSED;
+		default:
+			return DL_ST_UNAVAILABLE;	// no VFO in this build, or already in it
+		}
+	}
 	case DL_OP_TONE_BURST:
 		if (len < 1) {
 			return DL_ST_BAD_ARG;
@@ -156,9 +240,20 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (len < 3) {
 			return DL_ST_BAD_ARG;
 		}
+		uint16_t v = (uint16_t)(a[1] | (a[2] << 8));
+		if (a[0] == DL_SETTING_MIC_GAIN) {	// not a radio_settings_t field: the UI stores it (radio/mic_gain.h)
+			if (v > MIC_GAIN_STEPS) {
+				return DL_ST_BAD_ARG;
+			}
+			if (!mic_gain_available()) {
+				return DL_ST_UNAVAILABLE;
+			}
+			radio_set_mic_gain((uint8_t)v);
+			return DL_ST_OK;
+		}
 		radio_settings_t s;
 		radio_get_settings(&s);
-		if (!set_one(&s, a[0], (uint16_t)(a[1] | (a[2] << 8)))) {
+		if (!set_one(&s, a[0], v)) {
 			return DL_ST_BAD_ARG;
 		}
 		radio_set_settings(&s);

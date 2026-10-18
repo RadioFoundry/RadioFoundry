@@ -5,14 +5,19 @@
 //   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F] [--scale N] [--out FILE.png]
 //         [--script "ok 4 down ok expect:zone=1"]
 //   uiSim --gallery DIR      every screen at every display class: DIR/<geom>/<screen>.png, plus the contact sheets
-//                            in DIR/sheets
+//                            in DIR/sheets. A color page is drawn again in each highlight color UI_GALLERY_COLORS
+//                            names (space separated, sim_color_find: "red yellow light_blue"), as
+//                            <screen>__<color>.png right after it, on color displays only (none when it is unset).
+//                            The theme pages are drawn again in the light and high-contrast themes too, as
+//                            <screen>__light.png and <screen>__high_contrast.png
 //   uiSim --sheets DIR [GEOM] contact sheets only: DIR/<geom>.png, every gallery screen at 2x under its name in one
 //                            palette PNG, at one display class or all of them (a quick layout audit)
 //   uiSim --ellipsis [GEOM]  every text shortened with an ellipsis on the gallery screens and the settings pages
 //                            (lists scrolled to their end), at one display class or all of them
 //   uiSim --layout [GEOM]    the layout check (sim_layout_issues) on the gallery screens, the settings pages and
 //                            the worst-case screens (longest names, IDs, aliases, messages, every status mark),
-//                            normal and worst-case content, every display class: exit status 1 on any problem
+//                            normal and worst-case content, every display class, every theme on color ones: exit
+//                            status 1 on any problem
 //
 // The script runs from Home after a reset (see tests/host/sim/ui_sim.c for the tokens); the screen at the end is
 // written to --out. Exit status 1 if a key isn't on the key map or an expect: fails.
@@ -35,8 +40,13 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_temporary", "down quick 1 2 up back" },
 	{ "home_vfo", "ok 4 up ok" },
 	{ "home_vfo_entry", "ok 4 up ok 4 4 6" },
-	{ "home_large_text", "ok 7 2 down down down ok long:back" },
+	{ "home_vfo_dmr", "ok 4 up ok quick 4 back" },
+	{ "home_large_text", "ok 7 2 down down down down down ok long:back" },
+	{ "home_monitor", "down mondown" },
+	{ "home_plain", "strip:off" },	// Settings > Display > Filled status bar off
 	{ "home_locked", "long:quick 5" },
+	{ "home_usb_ip", "usbnet:on" },
+	{ "home_usb_ip_up", "usbnet:up" },
 	{ "rx_group", "rx:3101234,91,g,Joe_-_Boston,_MA" },
 	{ "rx_private", "rx:3105678,0,p" },
 	{ "tx", "pttdown" },
@@ -49,6 +59,10 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "quick_fm", "down quick" },
 	{ "quick_fm_squelch", "down quick 2 up" },
 	{ "quick_cc_editor", "quick 3 7" },
+	{ "quick_vfo_fm", "ok 4 up ok quick" },
+	{ "home_copy_to_vfo", "down quick 4" },
+	{ "quick_vfo_dmr", "ok 4 up ok quick 4" },
+	{ "quick_vfo_cc_editor", "ok 4 up ok quick 4 3 7" },
 	{ "find_name", "5 6 3" },
 	{ "find_number", "3 1 0 0" },
 	{ "find_channel", "1 2" },
@@ -64,6 +78,13 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "zones", "ok 4" },
 	{ "channels", "ok 5" },
 	{ "channel", "ok 5 ok" },
+	{ "channel_power", "ok 5 ok down down down down down ok enc+ enc+" },
+	{ "channel_changed", "ok 5 ok down down down down down ok enc+ enc+ ok down down down ok" },
+	{ "channel_rx_entry", "ok 5 ok down down down ok 4 4 6 0" },
+	{ "channel_name", "ok 5 ok ok 4 4 4 wait:1200 6 6" },
+	{ "channel_contact", "ok 5 ok down down down down down down down down down ok" },
+	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
+	{ "channel_new", "ok 5 up up up ok" },
 	{ "zone_channels", "ok 4 ctx" },
 	{ "tools", "ok 6" },
 	{ "position", "ok 6 2" },
@@ -77,8 +98,11 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "factory_reset", "ok 7 0 down down down ok" },
 	{ "about", "ok 7 0 ok" },
 	{ "talk_target_picker", "call:3101234,91,g tt" },
+	{ "talk_target_picker_vfo", "ok 4 up ok quick 4 tt" },
 	{ "scan_actions", "quick 7 back ctx" },
 	{ "emergency", "emergency:3101234" },
+	{ "volume", "softvol volkey up up" },
+	{ "volume_muted", "softvol volkey down down down down down down down down" },
 	{ "hotspot", "hotspot:on" },
 };
 
@@ -152,8 +176,8 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_temporary", "quick 1 2 3 1 5 ok back" },
 	{ "w_scan", "quick 7 back" },
 	{ "w_lock_toast", "long:quick 5" },
-	{ "w_large", "ok 7 2 down down down ok long:back" },
-	{ "w_large_fm", "ok 7 2 down down down ok long:back down" },
+	{ "w_large", "ok 7 2 down down down down down ok long:back" },
+	{ "w_large_fm", "ok 7 2 down down down down down ok long:back down" },
 	{ "w_off_banner", "offfailed" },
 	{ "w_low_battery", "battery:5" },
 	{ "w_hub_unread", "msg:3109999,OK msg:3108765,OK wait:9000 quick 7 back ok" },
@@ -200,24 +224,31 @@ static int run_layout(const char *only)
 		// line on displays 100 px and higher, never squeezed to the font's bare cell to fit one more row
 		sim_reset(&sim_geoms[g], SIM_MAP_K);
 		const ui_layout_t *L = &ui_layout;
-		int pitch = L->small->h + (gfx_height() >= UI_TALL_PX ? 3 : gfx_height() >= 100 ? 1 : 0);
+		int pitch = L->small->h + (gfx_width() >= 220 ? 6 : gfx_height() >= UI_TALL_PX ? 3 : gfx_height() >= 100 ? 1 : 0);
 		if (L->row_h < pitch || (gfx_height() >= 100 && L->strip_h < L->small->h + 1)) {
 			printf("%-10s rows squeezed: row pitch %d, strip %d (small font %d px high)\n", sim_geoms[g].name,
 				L->row_h, L->strip_h, L->small->h);
 			problems++;
 		}
+		// Every theme on color displays (Settings > Display): a text in its background's color shows up only in one
+		for (int th = 0; th < (sim_geoms[g].bpp == 1 ? 1 : SIM_THEME_COUNT); th++)
 		for (int pass = 0; pass < 4; pass++) {
 			size_t n = pass < 2 ? sizeof gallery / sizeof gallery[0] : pass == 2 ?
 				sizeof audit_extra / sizeof audit_extra[0] : sizeof worst_screens / sizeof worst_screens[0];
 			for (size_t i = 0; i < n; i++) {
-				const char *name = pass < 2 ? gallery[i].name : pass == 2 ? audit_extra[i].name : worst_screens[i].name;
-				const char *script = pass < 2 ? gallery[i].script : pass == 2 ? audit_extra[i].script :
-					worst_screens[i].script;
+				char name[96], script[1024];
+				snprintf(name, sizeof name, "%s%s%s", th ? sim_themes[th] : "", th ? " " : "",
+					 pass < 2 ? gallery[i].name : pass == 2 ? audit_extra[i].name : worst_screens[i].name);
+				snprintf(script, sizeof script, "%s%s%s", th ? "theme:" : "", th ? sim_themes[th] : "",
+					 th ? " " : "");
+				size_t sl = strlen(script);
+				snprintf(script + sl, sizeof script - sl, "%s", pass < 2 ? gallery[i].script : pass == 2 ?
+					 audit_extra[i].script : worst_screens[i].script);
 				sim_reset(&sim_geoms[g], SIM_MAP_K);
 				if (pass == 1 || pass == 3)
 					sim_worst(true);
 				layout_cut = 0;
-				sim_set_fit_hook(pass == 0 || pass == 2 ? layout_fit_hook : NULL);
+				sim_set_fit_hook(th == 0 && (pass == 0 || pass == 2) ? layout_fit_hook : NULL);
 				bool ran = sim_run(script, err, sizeof err);
 				sim_set_fit_hook(NULL);
 				if (ran && layout_cut) {
@@ -236,8 +267,9 @@ static int run_layout(const char *only)
 					snprintf(path, sizeof path, "%s/%s", shots, sim_geoms[g].name);
 					mkdir(shots, 0755);
 					mkdir(path, 0755);
-					snprintf(path, sizeof path, "%s/%s/%s%s%s.png", shots, sim_geoms[g].name,
-						 pass == 1 ? "worst_" : "", pass == 2 ? "x_" : "", name);
+					snprintf(path, sizeof path, "%s/%s/%s%s%s%s%s.png", shots, sim_geoms[g].name,
+						 th ? sim_themes[th] : "", th ? "_" : "", pass == 1 ? "worst_" : "", pass == 2 ? "x_" : "",
+						 pass < 2 ? gallery[i].name : pass == 2 ? audit_extra[i].name : worst_screens[i].name);
 					sim_save_png(path, 1);
 				}
 				int k = sim_layout_issues(found, SIM_LAYOUT_MAX);
@@ -338,33 +370,107 @@ static int run_audit(const char *only)
 	return 0;
 }
 
+// Gallery screens drawn differently on color displays. G_COLOR: color displays only (on a monochrome one it would
+// repeat another screen); G_COLORS: also once in each UI_GALLERY_COLORS highlight color, on color displays;
+// G_THEMES: also in the light and high-contrast themes (Settings > Display), on color displays
+#define G_COLOR		1u
+#define G_COLORS	2u
+#define G_THEMES	4u
+static const struct { const char *name; unsigned flags; } gallery_color[] = {
+	{ "home_dmr", G_COLORS | G_THEMES },	// the filled status bar (the default) in the color
+	{ "home_plain", G_COLOR | G_THEMES },	// the plain strip's state pills
+	{ "rx_group", G_THEMES },
+	{ "tx", G_THEMES },
+	{ "channels", G_COLORS | G_THEMES },	// the focus row in the color
+	{ "settings_display", G_THEMES },
+};
+
+static unsigned gallery_flags(size_t i)
+{
+	for (size_t k = 0; k < sizeof gallery_color / sizeof gallery_color[0]; k++)
+		if (strcmp(gallery_color[k].name, gallery[i].name) == 0)
+			return gallery_color[k].flags;
+	return 0;
+}
+
+// The gallery's highlight colors (UI_GALLERY_COLORS), in its order
+static const char *gal_colors[8];
+static int gal_ncolors;
+
+static bool gallery_colors(void)
+{
+	static char buf[128];
+	const char *env = getenv("UI_GALLERY_COLORS");
+	snprintf(buf, sizeof buf, "%s", env != NULL ? env : "");
+	gal_ncolors = 0;
+	for (char *t = strtok(buf, " ,"); t != NULL; t = strtok(NULL, " ,")) {
+		if (sim_color_find(t) < 0 || gal_ncolors == (int)(sizeof gal_colors / sizeof gal_colors[0])) {
+			fprintf(stderr, "UI_GALLERY_COLORS: %s isn't a highlight color, or too many\n", t);
+			return false;
+		}
+		gal_colors[gal_ncolors++] = t;
+	}
+	return true;
+}
+
+// Shots of a gallery screen: the screen itself, its highlight colors, then its themes after the dark one
+#define GAL_SHOTS	(1 + gal_ncolors + SIM_THEME_COUNT - 1)
+
+// Shot c of gallery screen i at display class g: c 0 the screen itself, 1.. its colors, then its themes. False: not
+// at this class
+static bool gallery_shot(size_t i, int c, const sim_geom_t *g, char *name, size_t nlen, char *script, size_t slen)
+{
+	unsigned flags = gallery_flags(i);
+	bool theme = c > gal_ncolors;
+	if (g->bpp == 1 && (c > 0 || (flags & G_COLOR)))
+		return false;
+	if (c > 0 && !(flags & (theme ? G_THEMES : G_COLORS)))
+		return false;
+	if (c == 0) {
+		snprintf(name, nlen, "%s", gallery[i].name);
+		snprintf(script, slen, "%s", gallery[i].script);
+	} else {
+		const char *v = theme ? sim_themes[c - gal_ncolors] : gal_colors[c - 1];
+		snprintf(name, nlen, "%s__%s", gallery[i].name, v);
+		snprintf(script, slen, "%s:%s %s", theme ? "theme" : "color", v, gallery[i].script);
+	}
+	return true;
+}
+
 // One display class's screens: DIR/<geom>/<screen>.png when shots, and the contact sheet (2x, every screen under its
 // name) as SHEET_DIR/<geom>.png
 static int render_geom(const sim_geom_t *g, const char *dir, bool shots, const char *sheet_dir)
 {
-	char path[512], err[256];
-	int fails = 0;
+	char path[512], err[256], name[64], script[512];
+	int fails = 0, count = 0;
 	size_t n = sizeof gallery / sizeof gallery[0];
 	if (shots) {
 		snprintf(path, sizeof path, "%s/%s", dir, g->name);
 		mkdir(path, 0755);
 	}
-	sim_sheet_begin((int)n, 2);
+	for (size_t i = 0; i < n; i++)
+		for (int c = 0; c < GAL_SHOTS; c++)
+			count += gallery_shot(i, c, g, name, sizeof name, script, sizeof script);
+	sim_sheet_begin(count, 2);
 	for (size_t i = 0; i < n; i++) {
-		sim_reset(g, SIM_MAP_K);
-		if (!sim_run(gallery[i].script, err, sizeof err)) {
-			printf("FAIL gallery %s %s: %s\n", g->name, gallery[i].name, err);
-			fails++;
-			continue;
-		}
-		snprintf(path, sizeof path, "%s/%s/%s.png", dir, g->name, gallery[i].name);
-		if (shots && !sim_save_png(path, 1)) {
-			printf("FAIL can't write %s\n", path);
-			fails++;
-		}
-		if (!sim_sheet_add(gallery[i].name)) {
-			printf("FAIL sheet %s %s\n", g->name, gallery[i].name);
-			fails++;
+		for (int c = 0; c < GAL_SHOTS; c++) {
+			if (!gallery_shot(i, c, g, name, sizeof name, script, sizeof script))
+				continue;
+			sim_reset(g, SIM_MAP_K);
+			if (!sim_run(script, err, sizeof err)) {
+				printf("FAIL gallery %s %s: %s\n", g->name, name, err);
+				fails++;
+				continue;
+			}
+			snprintf(path, sizeof path, "%s/%s/%s.png", dir, g->name, name);
+			if (shots && !sim_save_png(path, 1)) {
+				printf("FAIL can't write %s\n", path);
+				fails++;
+			}
+			if (!sim_sheet_add(name)) {
+				printf("FAIL sheet %s %s\n", g->name, name);
+				fails++;
+			}
 		}
 	}
 	snprintf(path, sizeof path, "%s/%s.png", sheet_dir, g->name);
@@ -379,13 +485,16 @@ static int run_gallery(const char *dir)
 {
 	char sheets[512];
 	int fails = 0;
+	if (!gallery_colors())
+		return 2;
 	mkdir(dir, 0755);
 	snprintf(sheets, sizeof sheets, "%s/sheets", dir);
 	mkdir(sheets, 0755);
 	for (int g = 0; g < sim_geom_count; g++)
 		fails += render_geom(&sim_geoms[g], dir, true, sheets);
-	printf("# gallery: %zu screens x %d display classes in %s, contact sheets in %s\n",
-	       sizeof gallery / sizeof gallery[0], sim_geom_count, dir, sheets);
+	printf("# gallery: %zu screens x %d display classes (color pages also in %d colors and %d themes) in %s, contact "
+	       "sheets in %s\n", sizeof gallery / sizeof gallery[0], sim_geom_count, gal_ncolors, SIM_THEME_COUNT - 1, dir,
+	       sheets);
 	return fails != 0;
 }
 
@@ -393,6 +502,8 @@ static int run_gallery(const char *dir)
 static int run_sheets(const char *dir, const char *geom)
 {
 	int fails = 0;
+	if (!gallery_colors())
+		return 2;
 	mkdir(dir, 0755);
 	if (geom != NULL) {
 		const sim_geom_t *g = sim_geom_find(geom);

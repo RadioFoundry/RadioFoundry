@@ -18,7 +18,8 @@ ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 
 # Board -> codec tool (each takes --stock, --image, -o and keeps its supported stock files in PROFILES)
-CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "dm32_codec"}
+CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "dm32_codec", "dm1801pro": "dm32_codec",
+               "db25d": "dm32_codec"}
 SKIP = ("README.md", ".gitignore")
 
 
@@ -65,8 +66,16 @@ def main():
     if tool is None or not os.path.isdir(args.dir):
         return 0
     # one tool may serve several boards (codec_extract: DM-1701 and MD-380): only this board's stock files count
-    profiles = {h: p for h, p in __import__(tool).PROFILES.items() if p.get("board", args.board) == args.board}
-    stock = next((p for p in candidates(args.dir) if os.path.getsize(p) > 4096 and sha256_file(p) in profiles), None)
+    mod = __import__(tool)
+    profiles = {h: p for h, p in mod.PROFILES.items() if p.get("board", args.board) == args.board}
+    if hasattr(mod, "identify"):	# a tool that knows a file by more than its SHA-256 (a program flash dump)
+        def known(path):
+            with open(path, "rb") as f:
+                return mod.identify(f.read(), board=args.board) is not None
+    else:
+        def known(path):
+            return sha256_file(path) in profiles
+    stock = next((p for p in candidates(args.dir) if os.path.getsize(p) > 4096 and known(p)), None)
     out = args.output or os.path.splitext(args.image)[0] + "_codec.bin"
     if stock is None:
         print("codec: no supported %s stock firmware in %s, built without the codec (codecs/README.md)"

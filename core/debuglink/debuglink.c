@@ -42,6 +42,9 @@ enum {
 	// 26: DMR roaming (DL_OP_ROAM, debuglink_view_radio.c)
 	OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
 	OP_PPP = 28,			// on u8: PPP on the serial host port (docs/spec/ppp.md; CONFIG_NET_PPP builds)
+	// 29: a vibration pattern (DL_OP_VIBRATE, debuglink_view_radio.c)
+	// 30: the speaker volume (DL_OP_VOLUME, debuglink_view_radio.c)
+	// 31, 32: DMR fields, Copy to VFO (DL_OP_DMR_FIELDS, DL_OP_VFO_COPY, debuglink_view_radio.c)
 };
 
 static dl_parser_t parser;
@@ -329,21 +332,6 @@ static size_t cmd_reset(uint8_t *out)
 
 // --- version ---
 
-// codec=: the vocoder profile the board recognized in flash (signature and hash checked by the board), "absent" when
-// the board has a vocoder but its check failed, "none" without one (FM-only build). Read only
-static const char *codec_id(void)
-{
-	const hal_vocoder_t *v = board.vocoder;
-	if (v == NULL) {
-		return "none";
-	}
-	if (!v->present()) {
-		return "absent";
-	}
-	const char *id = v->profile != NULL ? v->profile() : NULL;
-	return id != NULL ? id : "present";
-}
-
 static size_t cmd_version(uint8_t *out, size_t cap)
 {
 	dl_text_t t;
@@ -355,7 +343,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	dl_text_kv_str(&t, "git", ODR_GIT);
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "%s", features);
-	dl_text_kv_str(&t, "codec", codec_id());
+	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,
 			d->inset_bottom, d->inset_left, d->inset_right);
@@ -377,9 +365,11 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	if (d == NULL || gfx_width() <= 0 || gfx_framebuffer() == NULL) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
+	// A 16-color frame (bpp 4) goes out as RGB565, read through its palette
+	bool indexed = GFX_INDEXED && d->bpp == 4;
 	uint32_t stride = d->bpp == 1 ? (d->width + 7u) / 8u : d->width * 2u;
 	uint32_t total = stride * d->height;
-	if (total > GFX_FB_BYTES) {
+	if (!indexed && total > GFX_FB_BYTES) {
 		total = GFX_FB_BYTES;
 	}
 	uint32_t offset = len == 6 ? get32(req) : 0;
@@ -399,7 +389,7 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	out[0] = DL_ST_OK;
 	put16(out + 1, d->width);
 	put16(out + 3, d->height);
-	out[5] = d->bpp;
+	out[5] = indexed ? 16 : d->bpp;
 	out[6] = d->bpp == 1 ? 2 : 1;	// 1: RGB565 little endian, 2: 1 bpp rows, MSB left
 	out[7] = d->inset_top;
 	out[8] = d->inset_bottom;
@@ -411,7 +401,11 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	// hold, so the host's check pass sees the same frame; redraws resume SHOT_TAIL_MS after the last chunk (not the
 	// full hold: a key pressed right after a capture must show up in the next one)
 	gfx_hold(hal_millis() + (len == 6 && offset + n >= total ? SHOT_TAIL_MS : SHOT_HOLD_MS));
-	memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
+	if (indexed) {
+		gfx_read_rgb565(offset, out + 19, n);
+	} else {
+		memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
+	}
 	return 19u + n;
 }
 
@@ -530,7 +524,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	};
 	uint32_t now = hal_millis();
 
-	if (len >= 1 && ((req[0] >= DL_OP_SCAN && req[0] <= DL_OP_SETTING) || req[0] == DL_OP_ROAM)) {
+	if (len >= 1 && debuglink_is_feature_op(req[0])) {
 		// The radio features' operations (debuglink_view_radio.c), under the same rate limit
 		if (radio_op_done && (now - last_radio_op_ms) < RADIO_OP_GAP_MS) {
 			return status_only(out, DL_ST_BUSY);
@@ -904,6 +898,11 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	case DL_CMD_SNMP:
 		return debuglink_cmd_snmp(req, len, out, cap);
 	case DL_CMD_STUB:
+#if CONFIG_STUB_ENTRY
+		if (len >= 1 && req[0] == DL_STUB_OP_ENTER && transmitting()) {
+			return status_only(out, DL_ST_BUSY);	// never hand the SoC over with the transmitter keyed
+		}
+#endif
 		return debuglink_cmd_stub(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);

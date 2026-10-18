@@ -34,10 +34,12 @@ static const regval_t post_init_table[] = {
 	{ 0x47, 0x6042 }, { 0x48, 0xBBBF },
 };
 
+// 0x47 = 0x0140 puts the demodulated audio on the chip's output, which the speaker plays in FM receive (checked on the
+// radio: the 0x6042 of the radio's own FM sequence leaves that output silent)
 static const regval_t fm_table[] = {
-	{ 0x30, 0x0000 }, { 0x13, 0x037E }, { 0x47, 0x6042 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 }, { 0x43, 0x3028 },
+	{ 0x30, 0x0000 }, { 0x13, 0x037E }, { 0x47, 0x0140 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 }, { 0x43, 0x3028 },
 	{ 0x07, 0x0470 }, { 0x07, 0x21CE }, { 0x51, 0x0000 }, { 0x3F, 0x0000 }, { 0x37, 0x1F0F }, { 0x30, 0x0000 },
-	{ 0x30, 0xBFF1 }, { 0x47, 0x6042 }, { 0x48, 0xBBBF },
+	{ 0x30, 0xBFF1 }, { 0x47, 0x0140 }, { 0x48, 0xBBBF },
 };
 
 static const regval_t dmr_table[] = {
@@ -323,6 +325,11 @@ void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
 
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw)
 {
+	const fd6818_variant_t *v = dev->variant;
+	if (tx ? v->burst_tx != NULL : v->burst_rx != NULL) {
+		write_table(dev, tx ? v->burst_tx : v->burst_rx, tx ? v->burst_tx_n : v->burst_rx_n);
+		return;
+	}
 	if (tx) {
 		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);
 		write_table(dev, dev->variant->tx, dev->variant->tx_n);

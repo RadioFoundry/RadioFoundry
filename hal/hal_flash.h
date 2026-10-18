@@ -42,6 +42,11 @@ typedef struct {
 	// Program already erased bytes; any length and alignment
 	bool (*write)(uint32_t addr, const void *buf, uint32_t len);
 	bool (*erase)(uint32_t addr);	// one erase_size unit
+	// Optional: replace one erase unit with new content of any bits in a single power-cut safe step (the old unit or
+	// the new one survives, never a mix). Flash that is copy on write underneath (NAND behind a sector layer) offers
+	// it; core/storage then rewrites a codeplug sector with it directly, with no journal and no erase first. NULL: the
+	// journaled erase and program
+	bool (*replace)(uint32_t addr, const void *data);
 	const hal_flash_map_t *map;	// NULL: no areas for the core (nothing is stored)
 } hal_flash_t;
 

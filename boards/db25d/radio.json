@@ -8,6 +8,7 @@
     "Kydera CDR-300UV"
   ],
   "kind": "mobile",
+  "status": "testing",
   "readme": "Radioddity DB25-D PRO",
   "bands": "136-174 / 400-480 MHz",
   "power": "up to 25 W",
@@ -18,19 +19,20 @@
     "hardware": "docs/spec/hardware-db25d.md"
   },
   "flash": {
-    "backend": "none",
-    "board": null,
+    "backend": "c7000-stub",
+    "board": "db25d",
     "link": "serial-cable",
     "bootloader": [
       "Turn the radio off and connect the programming cable.",
       "Hold P1 and press power. The red LED lights and the display stays blank."
     ],
-    "stock_versions": []
+    "stock_versions": [],
+    "stub_tested": false
   },
   "backup": {
-    "stock": "none",
-    "odr": "none",
-    "spi_size": 16777216
+    "stock": "full",
+    "odr": "full",
+    "spi_size": 0
   },
   "frame": {
     "shape": "mobile",

@@ -1,0 +1,43 @@
+{
+  "_about": "What the web site and the web flasher show for this radio (docs/dev/website.md). Hardware facts stay in docs/spec.",
+  "id": "dm1801pro",
+  "name": "Baofeng DM-1801 Pro",
+  "maker": "Baofeng",
+  "model": "DM-1801 Pro",
+  "also": [
+    "Baofeng DM-1801"
+  ],
+  "kind": "handheld",
+  "readme": "Baofeng DM-1801 Pro",
+  "bands": "136-174 / 400-470 MHz",
+  "power": "L / M / H",
+  "cpu": "HR_C7000",
+  "display": "monochrome, 128 × 64",
+  "gallery": "128x64",
+  "docs": {
+    "hardware": "docs/spec/hardware-dm1801pro.md",
+    "codec": "docs/spec/codec-dm1801pro.md"
+  },
+  "flash": {
+    "backend": "c7000-stub",
+    "board": "dm1801pro",
+    "link": "serial-cable",
+    "bootloader": [],
+    "stock_versions": [],
+    "stub_tested": true
+  },
+  "backup": {
+    "stock": "full",
+    "odr": "full",
+    "spi_size": 16777216
+  },
+  "frame": {
+    "shape": "handheld-tall",
+    "body": "#22252a",
+    "accent": "#e0a526",
+    "lens": [
+      24,
+      34
+    ]
+  }
+}

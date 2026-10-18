@@ -9,16 +9,21 @@
 //   powerkey zone+ zone- scankey lockkey cbkey homekey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
+//   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   wait:<ms>           time passes
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //   hotspot:on|off      the host link enters / leaves hotspot mode
+//   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
+//   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
+//   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
+//   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
-//                          text contains it / none does
+//                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +37,7 @@
 #include "ui/ui_screens.h"
 #include "ui/ui_app.h"
 #include "ui/ui_svc.h"
+#include "ui/ui_nav.h"
 #include "input/input.h"
 #include "hostlink/hostlink.h"
 #include "hotspot/hotspot.h"
@@ -182,6 +188,17 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 		issue("cut by its box", s, x, y, w, h, NULL);
 	if (x0 >= x1 || y0 >= y1)
 		return;
+	// Invisible: a whole text (not one its box cuts) whose cells are one color after it is drawn, its ink the
+	// color of what is under it (the high-contrast theme's white idle pill had white text)
+	if (x0 == x && y0 == y && x1 == x + w && y1 == y + h) {
+		color_t c0 = gfx_get_pixel(x0, y0);
+		bool one = true;
+		for (int py = y0; py < y1 && one; py++)
+			for (int px = x0; px < x1 && one; px++)
+				one = gfx_get_pixel(px, py) == c0;
+		if (one)
+			issue("invisible", s, x, y, w, h, NULL);
+	}
 	for (int i = 0; i < live_n; i++) {
 		if (live[i].y0 >= y1 || live[i].y1 <= y0)
 			continue;
@@ -207,11 +224,12 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 }
 
 const sim_geom_t sim_geoms[] = {
-	{ "160x120i5", 160, 120, 16, 5, 0 },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
-	{ "160x128", 160, 128, 16, 0, 0 },	// MD-380 / MD-UV380 / MD-9600 class
-	{ "120x160", 120, 160, 16, 0, 0 },	// DM-32UV: its 240x320 panel at half resolution (boards/dm32)
-	{ "128x64", 128, 64, 1, 0, 0 },		// GD-77 class, mono
-	{ "240x320", 240, 320, 16, 0, 0 },	// 240x320 class at full resolution
+	{ "160x120i5", 160, 120, 16, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
+	{ "160x128", 160, 128, 16, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
+	{ "128x64", 128, 64, 1, 0, 0, false, false },	// GD-77 class, mono
+	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG
+	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true },
+	{ "240x320", 240, 320, 16, 0, 0, true, false },	// 240x320 class at full resolution, standard text size
 };
 const int sim_geom_count = sizeof sim_geoms / sizeof sim_geoms[0];
 
@@ -221,16 +239,18 @@ const sim_geom_t *sim_geom_find(const char *name)
 	for (int i = 0; i < sim_geom_count; i++)
 		if (strcmp(name, sim_geoms[i].name) == 0)
 			return &sim_geoms[i];
-	unsigned w, h, inset = 0;
+	unsigned w, h, inset = 0, inset_tb = 0;
 	char tail = 0;
-	int n = sscanf(name, "%ux%u%c%u", &w, &h, &tail, &inset);
+	int n = sscanf(name, "%ux%u%c%ux%u", &w, &h, &tail, &inset, &inset_tb);
 	if (n < 2 || w < 64 || h < 48 || w > 320 || h > 320)
 		return NULL;
 	custom.name = name;
 	custom.w = (uint16_t)w;
 	custom.h = (uint16_t)h;
 	custom.bpp = tail == 'm' ? 1 : 16;
-	custom.inset = custom.inset_tb = tail == 'i' ? (uint8_t)inset : 0;
+	custom.inset = tail == 'i' ? (uint8_t)inset : 0;
+	custom.inset_tb = tail == 'i' ? (uint8_t)(n == 5 ? inset_tb : inset) : 0;
+	custom.aa = custom.bpp != 1 && w >= 220;	// as the gallery's classes
 	return &custom;
 }
 
@@ -299,8 +319,13 @@ static const struct {
 
 static void d_init(void) {}
 static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; (void)y0; (void)y1; }
+static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, uint16_t y1)
+{
+	(void)fb; (void)pal; (void)y0; (void)y1;
+}
 static void d_backlight(uint8_t p) { (void)p; }
 static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush,
+			      .flush_indexed = d_flush_indexed,
 			      .set_backlight = d_backlight };
 static uint8_t battery = 84;
 static uint8_t p_battery(void) { return battery; }
@@ -337,6 +362,7 @@ static bool hotspot_on;
 hostlink_mode_t hostlink_mode(void) { return hotspot_on ? HOSTLINK_HOTSPOT : HOSTLINK_IDLE; }
 void hostlink_hotspot_exit(void) { hotspot_on = false; }
 static bool usb_net;	// the USB personality (Tools > USB network)
+static bool usb_up;	// the computer has brought the network adapter up (hal_netif_t.up)
 
 // APRS (Tools > APRS, core/ui/ui_aprs.c): a small stand-in for the engine's view and configuration
 static struct {
@@ -395,6 +421,8 @@ bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 }
 bool hostlink_request_usb_network(bool network) { usb_net = network; return true; }
 bool hostlink_network_mode(void) { return usb_net; }
+static bool netif_up(void) { return usb_net && usb_up; }
+static const hal_netif_t sim_netif = { .up = netif_up };
 void hotspot_get_view(hotspot_view_t *v)
 {
 	memset(v, 0, sizeof *v);
@@ -408,6 +436,7 @@ void hotspot_get_view(hotspot_view_t *v)
 }
 uint32_t input_raw_keys(void) { return 0; }
 int32_t input_encoder_total(void) { return 0; }
+uint32_t input_ptt_downs(void) { return 0; }
 void ui_crit_enter(void) {}
 void ui_crit_exit(void) {}
 
@@ -476,10 +505,62 @@ static const sim_contact_t worst_contacts[] = {
 #define WORST_FIRST	985u
 
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
-uint16_t codeplug_channel_count(void) { return worst ? CODEPLUG_CHANNELS_MAX : 40; }
+
+// Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
+#define SIM_EDITS	8
+static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
+static uint8_t n_edits;
+
+static const channel_t *sim_edit(uint16_t number)
+{
+	for (uint8_t i = 0; i < n_edits; i++)
+		if (sim_edits[i].number == number)
+			return &sim_edits[i].ch;
+	return NULL;
+}
+
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+{
+	uint8_t i = 0;
+	while (i < n_edits && sim_edits[i].number != number)
+		i++;
+	if (i == SIM_EDITS)
+		return false;
+	if (i == n_edits)
+		n_edits++;
+	sim_edits[i].number = number;
+	sim_edits[i].ch = *ch;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+
+uint16_t codeplug_free_channel(void)
+{
+	for (uint16_t n = worst ? 1 : 41; n <= CODEPLUG_CHANNELS_MAX; n++) {
+		if (worst && n >= WORST_FIRST && n < WORST_FIRST + 40u)
+			continue;
+		if (sim_edit(n) == NULL)
+			return n;
+	}
+	return 0;
+}
+
+uint16_t codeplug_channel_count(void)
+{
+	uint16_t top = worst ? CODEPLUG_CHANNELS_MAX : 40;
+	for (uint8_t i = 0; i < n_edits; i++)
+		if (sim_edits[i].number > top)
+			top = sim_edits[i].number;
+	return top;
+}
 
 bool codeplug_channel(uint16_t number, channel_t *out)
 {
+	const channel_t *e = sim_edit(number);
+	if (e != NULL) {
+		*out = *e;
+		return true;
+	}
 	if (worst) {
 		if (number < WORST_FIRST || number >= WORST_FIRST + 40u)
 			return false;
@@ -586,6 +667,12 @@ static uint32_t temp_target;	// temporary talk target (0 = channel default)
 static bool temp_private;
 static uint32_t focus_id;
 static bool focus_private;
+// The VFO's own mode, color code, slot and talk target: kept while on a channel (core/radio/radio_sm.c vfo_ch)
+static uint8_t vfo_mode = RADIO_MODE_FM, vfo_cc = 1, vfo_ts = 1, vfo_bw = RADIO_BW_25K;
+static uint32_t vfo_rx_hz = 146520000, vfo_tx_hz = 146520000;
+static subtone_t vfo_rx_tone, vfo_tx_tone;
+static uint32_t vfo_talk;
+static bool vfo_talk_private;
 static uint32_t reply_until;
 static uint32_t ptt_up_at;
 static bool rx_on;
@@ -600,7 +687,11 @@ static void default_target(void)
 {
 	contact_t c;
 	view.dmr.target_manual = temp_target != 0;
-	if (temp_target) {
+	if (view.vfo && !temp_target) {
+		view.dmr.target_id = vfo_talk != 0 ? vfo_talk : 9;
+		view.dmr.target_private = vfo_talk != 0 && vfo_talk_private;
+		strcpy(view.dmr.target_name, contact_name(view.dmr.target_id, !view.dmr.target_private));
+	} else if (temp_target) {
 		view.dmr.target_id = temp_target;
 		view.dmr.target_private = temp_private;
 		strcpy(view.dmr.target_name, contact_name(temp_target, !temp_private));
@@ -667,21 +758,61 @@ void radio_req_vfo(bool on)
 {
 	view.vfo = on;
 	if (on) {
-		uint32_t hz = 146520000;
 		memset(&view.ch, 0, sizeof view.ch);
 		strcpy(view.ch.name, "VFO");
-		view.ch.rx_hz = view.ch.tx_hz = hz;
-		view.ch.bw = RADIO_BW_25K;
+		view.ch.rx_hz = vfo_rx_hz;
+		view.ch.tx_hz = vfo_tx_hz;
+		view.ch.rx_tone = vfo_rx_tone;
+		view.ch.tx_tone = vfo_tx_tone;
+		view.ch.bw = vfo_bw;
 		view.ch.power = CODEPLUG_POWER_DEFAULT;
-		view.dmr.active = false;
+		view.ch.mode = vfo_mode;
+		view.ch.color_code = vfo_cc;
+		view.ch.timeslot = vfo_ts;
+		view.dmr.active = vfo_mode == RADIO_MODE_DMR;
+		view.dmr.cc = vfo_cc;
+		view.dmr.ts = vfo_ts;
 		view.channel_number = 0;
+		view.temp = 0;		// the VFO has no temporary changes
+		view.temporary = false;
+		temp_target = 0;
+		default_target();
 		changed();
 	} else {
 		load_channel();
 	}
 }
-void radio_req_vfo_step(int8_t dir) { view.ch.rx_hz = view.ch.tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz; changed(); }
-void radio_req_vfo_set(uint32_t hz) { view.ch.rx_hz = view.ch.tx_hz = hz; changed(); }
+void radio_req_vfo_step(int8_t dir)
+{
+	view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz;
+	changed();
+}
+void radio_req_vfo_set(uint32_t hz) { view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = hz; changed(); }
+// Copy to VFO as the radio core does (core/radio/radio_sm.c vfo_copy): what is in effect now is the VFO's own
+uint8_t ui_svc_vfo_copy(const radio_view_t *v)
+{
+	if (v->vfo)
+		return VFO_COPY_ALREADY;
+	if (v->ch.mode == RADIO_MODE_DMR ? !CONFIG_VFO_DMR : !CONFIG_VFO_FM)
+		return VFO_COPY_NO_MODE;
+	if (v->ch.rx_hz < 136000000 || v->ch.rx_hz > 480000000 || (v->ch.rx_hz > 174000000 && v->ch.rx_hz < 400000000))
+		return VFO_COPY_OUT_OF_BAND;
+	vfo_rx_hz = v->ch.rx_hz;
+	vfo_tx_hz = v->ch.tx_hz ? v->ch.tx_hz : v->ch.rx_hz;
+	vfo_bw = v->ch.bw;
+	vfo_mode = v->ch.mode;
+	if (v->ch.mode == RADIO_MODE_DMR) {
+		vfo_cc = v->ch.color_code;
+		vfo_ts = v->ch.timeslot;
+		vfo_talk = v->dmr.target_id;
+		vfo_talk_private = v->dmr.target_private;
+	} else {
+		vfo_rx_tone = v->ch.rx_tone;
+		vfo_tx_tone = v->ch.tx_tone;
+	}
+	radio_req_vfo(true);
+	return VFO_COPY_OK;
+}
 void radio_req_monitor(bool down)
 {
 	// As the radio core (#19): on DMR a short press toggles digital monitor on its release; FM holds it open
@@ -827,7 +958,10 @@ typedef struct { ui_msg_t m; uint32_t at; } sim_msg_t;
 static sim_msg_t inbox[8];
 static uint16_t n_inbox;
 
-uint32_t ui_svc_features(void) { return 0xFFFFFFFFu; }
+// The volume feature (a radio without a knob: the VOL key, Settings > Sound > Volume) only with the "softvol" token, so
+// the other screens look as on the radios with a knob
+static bool soft_volume;
+uint32_t ui_svc_features(void) { return soft_volume ? 0xFFFFFFFFu : 0xFFFFFFFFu & ~UI_FEAT_VOLUME; }
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
 	strcpy(line1, "N0CALL");
@@ -835,6 +969,13 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 }
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 {
+	if (view.vfo && life != UI_TALK_DEFAULT) {
+		vfo_talk = id;		// the VFO's own target, kept with it: nothing to write
+		vfo_talk_private = private_call;
+		default_target();
+		changed();
+		return true;
+	}
 	if (life == UI_TALK_DEFAULT) {
 		temp_target = 0;
 	} else {
@@ -857,6 +998,10 @@ bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 	changed();
 	return true;
 }
+bool ui_svc_save_talk_target(uint32_t id, bool private_call)
+{
+	return view.vfo && ui_svc_talk_to(id, private_call, UI_TALK_TEMPORARY);	// the VFO has no channel to write
+}
 void ui_svc_focus_target(uint32_t id, bool private_call)
 {
 	focus_id = id;
@@ -864,13 +1009,39 @@ void ui_svc_focus_target(uint32_t id, bool private_call)
 	view.dmr.focus_id = id;
 	view.dmr.focus_private = id != 0 && private_call;
 }
-bool ui_svc_dmr_timeslot(uint8_t ts) { view.dmr.ts = view.ch.timeslot = ts; set_temp(0x20); return true; }
-bool ui_svc_dmr_color_code(uint8_t cc) { view.dmr.cc = view.ch.color_code = cc; set_temp(0x40); return true; }
+bool ui_svc_dmr_timeslot(uint8_t ts)
+{
+	view.dmr.ts = view.ch.timeslot = ts;
+	if (view.vfo) {
+		vfo_ts = ts;
+		changed();
+	} else {
+		set_temp(0x20);
+	}
+	return true;
+}
+bool ui_svc_dmr_color_code(uint8_t cc)
+{
+	view.dmr.cc = view.ch.color_code = cc;
+	if (view.vfo) {
+		vfo_cc = cc;
+		changed();
+	} else {
+		set_temp(0x40);
+	}
+	return true;
+}
 bool ui_svc_mode(uint8_t mode)
 {
 	view.ch.mode = mode;
 	view.dmr.active = mode == RADIO_MODE_DMR;
-	set_temp(0x80);
+	if (view.vfo) {
+		vfo_mode = mode;
+		default_target();
+		changed();
+	} else {
+		set_temp(0x80);
+	}
 	return true;
 }
 bool ui_svc_hear_all(bool on)
@@ -943,6 +1114,7 @@ bool ui_svc_roam(uint8_t cmd)
 #endif
 }
 void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; sim_rec.last_beep = beep; }
+void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
 void ui_svc_apply(uint8_t id, int32_t value)
@@ -1090,6 +1262,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	disp.bpp = g->bpp;
 	disp.inset_left = disp.inset_right = g->inset;
 	disp.inset_top = disp.inset_bottom = g->inset_tb;
+	font_aa_on = g->aa;
+	font_big_on = g->big;
 	worst = false;
 	layout_reset();
 	board.keymap = maps[map].m;
@@ -1103,6 +1277,13 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
+	vfo_cc = vfo_ts = 1;
+	vfo_bw = RADIO_BW_25K;
+	vfo_rx_hz = vfo_tx_hz = 146520000;
+	vfo_rx_tone = vfo_tx_tone = (subtone_t){ TONE_NONE, 0 };
+	vfo_talk = 0;
+	vfo_talk_private = false;
 	view.vfo_step_hz = 12500;
 	view.tot_s = 180;
 	view.rssi_dbm = -95;
@@ -1111,14 +1292,18 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.zone_index = 0;
 	view.zone_pos = 2;	// 3 COUNTY DMR
 	n_inbox = 0;
-	hotspot_on = rx_on = usb_net = false;
+	hotspot_on = rx_on = usb_net = usb_up = false;
+	board.netif = &sim_netif;
 	aprs_sim_reset();
+	n_edits = 0;
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
 	battery = 84;
 	now_ms = 1000;
 	load_channel();
+	soft_volume = false;
+	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
 	ui_svc_setting_set(UI_SET_BRIGHTNESS, 100);
@@ -1136,8 +1321,11 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 0);
 	ui_svc_setting_set(UI_SET_LOW_BATTERY, 15);
 	ui_svc_setting_set(UI_SET_THEME, 0);
+	ui_svc_setting_set(UI_SET_ACCENT, 0);
+	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
+	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
 	ui_svc_setting_set(UI_SET_ROAM_SURVEY, 1);
@@ -1158,14 +1346,16 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	// what a reassigned side key sends (core/input/keyassign.h)
 	{ "powerkey", ACT_POWER }, { "zone+", ACT_ZONE_UP }, { "zone-", ACT_ZONE_DOWN }, { "scankey", ACT_SCAN },
 	{ "lockkey", ACT_LOCK }, { "cbkey", ACT_CALL_BACK },
-	{ "homekey", ACT_HOME_ZONE },
+	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
+	{ "vfokey", ACT_VFO_TOGGLE },		// the VFO/MR key: a key map entry of the board (DM-1801 Pro), not a side key function
+	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
 };
 
 static bool on_map(uint8_t action, bool lng)
 {
-	if ((action >= ACT_POWER && action <= ACT_HOME_ZONE) || (lng && action == ACT_TALK_TARGET))
+	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || (lng && action == ACT_TALK_TARGET))
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -1255,6 +1445,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
 	else if (strcmp(key, "txpriv") == 0) snprintf(got, sizeof got, "%u", sim_rec.tx_private);
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
+	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
@@ -1277,6 +1468,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
 	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
 	else if (strcmp(key, "beep") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_beep);	// ui_beep_t
+	else if (strcmp(key, "vibes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.vibes);
+	else if (strcmp(key, "vibe") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_vibe);	// ui_vibe_t
 	else if (strcmp(key, "shows") == 0) {	// a text on the screen (as drawn, after fitting) contains the value
 		got[0] = 0;
 		for (int i = 0; i < live_n; i++) {
@@ -1289,6 +1482,21 @@ static bool check(const char *kv, char *err, size_t len)
 				strcat(got, live[i].s);
 			}
 		}
+	}
+	else if (strcmp(key, "markafter") == 0 || strcmp(key, "nomarkafter") == 0) {
+		// A mark drawn (not a text) within a character cell right of the text that contains the value (an icon
+		// beside a word), or none
+		bool mark = false;
+		for (int i = 0; i < live_n; i++) {
+			if (strstr(live[i].s, want) == NULL || live[i].s[0] == 0)
+				continue;
+			int cw = (live[i].x1 - live[i].x0) / (int)strlen(live[i].s);
+			color_t paper = gfx_get_pixel(live[i].x0, live[i].y0);
+			for (int py = live[i].y0; py < live[i].y1; py++)
+				for (int px = live[i].x1; px < live[i].x1 + cw && px < gfx_width(); px++)
+					mark |= gfx_get_pixel(px, py) != paper;
+		}
+		snprintf(got, sizeof got, "%s", mark == (key[0] == 'm') ? want : mark ? "a mark after it" : "nothing after it");
 	}
 	else if (strcmp(key, "hides") == 0) {	// no text on the screen contains the value
 		snprintf(got, sizeof got, "%s", want);
@@ -1372,6 +1580,26 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "autotx") == 0) {		// the radio keys by itself (an APRS beacon): TX without a PTT event
+		ptt(true);
+		advance(500);
+		return true;
+	}
+	if (strcmp(t, "autotxend") == 0) {
+		ptt(false);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "mondown") == 0 || strcmp(t, "monup") == 0) {	// the monitor key held, as `mon` sends it
+		bool down = t[3] == 'd';
+		if (down)
+			presses++;
+		input_event_t ev = { ACT_MONITOR, down ? GESTURE_DOWN : GESTURE_UP, 0 };
+		ui_app_key(&ev);
+		radio_req_monitor(down);
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "wait") == 0) {
 		advance(arg != NULL ? (uint32_t)atoi(arg) : 1000u);
 		return true;
@@ -1432,6 +1660,13 @@ static bool run_token(char *t, char *err, size_t len)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;
 	}
+	if (strcmp(t, "usbnet") == 0 && arg != NULL) {
+		usb_net = strcmp(arg, "off") != 0;
+		usb_up = strcmp(arg, "up") == 0;
+		// No changed(): the radio's view doesn't change with the USB link, the UI's own poll must see it
+		advance(100);
+		return true;
+	}
 	if (strcmp(t, "hotspot") == 0 && arg != NULL) {
 		hotspot_on = strcmp(arg, "on") == 0;
 		advance(300);
@@ -1448,6 +1683,25 @@ static bool run_token(char *t, char *err, size_t len)
 		memset(&ev, 0, sizeof ev);
 		ev.kind = UI_EV_POWER_OFF_FAILED;
 		ui_notify(&ev);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "nobattery") == 0) {
+		board.caps |= CAP_NO_BATTERY;
+		advance(1100);
+		return true;
+	}
+	if ((strcmp(t, "color") == 0 || strcmp(t, "strip") == 0 || strcmp(t, "theme") == 0) && arg != NULL) {
+		bool color = t[0] == 'c', theme = t[0] == 't';
+		int v = color ? sim_color_find(arg) : theme ? sim_theme_find(arg) :
+			strcmp(arg, "on") == 0 ? 1 : strcmp(arg, "off") == 0 ? 0 : -1;
+		if (v < 0) {
+			snprintf(err, len, "%s: no %s", t, arg);
+			return false;
+		}
+		uint8_t id = color ? UI_SET_ACCENT : theme ? UI_SET_THEME : UI_SET_STRIP;
+		ui_svc_setting_set(id, v);
+		ui_apply_setting(id, v);
 		advance(200);
 		return true;
 	}
@@ -1469,6 +1723,11 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		return true;
 	}
+	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
+		soft_volume = true;
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)
 		sim_worst(true);
 		advance(200);
@@ -1483,6 +1742,30 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "expect") == 0 && arg != NULL)
 		return check(arg, err, len);
 	return press(t, false, err, len);
+}
+
+const char *const sim_themes[SIM_THEME_COUNT] = { "dark", "light", "high_contrast" };	// ui_theme_set's order
+
+int sim_theme_find(const char *name)
+{
+	for (int i = 0; i < SIM_THEME_COUNT; i++)
+		if (strcmp(name, sim_themes[i]) == 0)
+			return i;
+	return -1;
+}
+
+int sim_color_find(const char *name)
+{
+	// Settings > Display > Highlight color, lower case, a space as _ (gallery names are [A-Za-z0-9_])
+	static const char *const names[UI_ACCENT_COUNT] = {
+		[UI_ACCENT_DEFAULT] = "default", [UI_ACCENT_RED] = "red", [UI_ACCENT_ORANGE] = "orange",
+		[UI_ACCENT_YELLOW] = "yellow", [UI_ACCENT_TEAL] = "teal", [UI_ACCENT_BLUE] = "light_blue",
+		[UI_ACCENT_PURPLE] = "purple", [UI_ACCENT_PINK] = "pink",
+	};
+	for (int i = 0; i < UI_ACCENT_COUNT; i++)
+		if (strcmp(name, names[i]) == 0)
+			return i;
+	return -1;
 }
 
 bool sim_run(const char *script, char *err, size_t err_len)

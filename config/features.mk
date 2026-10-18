@@ -109,10 +109,13 @@ CONFIG_HOTSPOT_SPLIT ?= $(CONFIG_HOTSPOT)
 CONFIG_VFO ?= y
 # analog FM VFO (needs VFO and FM)
 CONFIG_VFO_FM ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_FM))),y,n)
-# digital DMR VFO: own ID, color code, timeslot, talk target typed in (needs VFO and DMR; not built yet)
+# digital DMR VFO: color code, timeslot and talk target typed in, the Mode tile switches it FM / DMR (needs VFO and DMR)
 CONFIG_VFO_DMR ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_DMR))),y,n)
 # the debug link: framed commands on the host port for bench automation (docs/spec/debuglink.md; needs HOSTLINK)
 CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
+# every task's least free stack in the debug link's tasks view: the kernel's task create / delete trace hooks keep a
+# table of the tasks (core/app/task_stack.c, docs/spec/debuglink.md 3.7; needs DEBUGLINK). About 0.6 KB
+CONFIG_TASK_STACKS ?= $(CONFIG_DEBUGLINK)
 # the open-firmware CPS protocol shim on the host port, so qdmr and the open-firmware CPS can read and write the
 # codeplug (docs/spec/open-firmware-cps.md; needs HOSTLINK)
 CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
@@ -120,6 +123,15 @@ CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
 CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
+# anti-aliased fonts from 6x12 up (JetBrains Mono Bold, 2 bits a pixel) instead of the bitmap ones: smooth text on color
+# panels. About 5 KB more flash, 12 KB more with FONT_XL; a mono panel draws them as plain ink and gains nothing
+CONFIG_FONT_AA ?= n
+# larger text on 240 px and wider color panels: lists, labels and the status strip in a 9x18 font instead of 8x16
+# (12% larger, 24 characters a line on the DM-32 instead of 27). About 3 KB more flash (needs FONT_AA)
+CONFIG_FONT_BIG ?= n
+# color screen settings: theme, highlight color, filled status bar (off: the dark theme only; for radios whose only
+# screen is monochrome)
+CONFIG_UI_COLOR ?= y
 # the Settings menu on the radio (off: settings keep their stored values and are set with qdmr; docs/spec/ui.md)
 CONFIG_UI_SETTINGS ?= y
 # channel / zone scan, VFO band scan, dual watch, nuisance delete (docs/spec/radio-features.md)
@@ -130,6 +142,9 @@ CONFIG_KEY_ASSIGN ?= y
 # the hub's Channels list: every codeplug channel by number, and a channel's settings (read only; core/ui/ui_menus.c,
 # docs/spec/ui.md 2)
 CONFIG_CHANNEL_LIST ?= y
+# editing a channel on the radio, New channel from current settings, keypad text entry (docs/spec/ui.md 2.1): with
+# the Channels list
+CONFIG_CHANNEL_EDIT ?= $(CONFIG_CHANNEL_LIST)
 # beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which the DM-1701 has with DMR)
 CONFIG_BEEP ?= y
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
@@ -138,6 +153,10 @@ CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 CONFIG_VOX ?= $(CONFIG_FM)
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
 CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
+# vibration alerts on the board's motor (hal_power_t.vibrate) for messages, call alerts, private calls and emergencies,
+# Settings > Sound > Vibrate (core/radio/vibe.c, docs/spec/radio-features.md 4.1). On for radios with a motor (their
+# config.mk); a board without one shows the setting dimmed
+CONFIG_VIBRATE ?= n
 # air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on radios whose
 # receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). On for the DM-32UV
 CONFIG_AM_RX ?= n
@@ -150,8 +169,14 @@ CONFIG_BCAST_FM ?= n
 CONFIG_AUDIO_PROBE ?= n
 # runtime RAM-monitor entry: debug link command 0x1A loads the host's flash-access stub into free RAM and jumps to it
 # without a power cycle, for bench recovery and flash work (docs/spec/debuglink.md 3.18, hardware-dm32.md 17.2; needs
-# DEBUGLINK and a platform with hal_system_t.enter_stub, the HR_C7000 so far). A bench tool, off in a release
+# DEBUGLINK and a platform with hal_system_t.enter_stub: the HR_C7000, and the STM32F4 with an 8 KB staging buffer,
+# docs/spec/stub-stm32f4.md). On by default on the HR_C7000 radios (their config.mk), where the web flasher and
+# stub/stubtool.py update through it; off elsewhere for now
 CONFIG_STUB_ENTRY ?= n
+# the core's storage (settings, codeplug) on SPI NAND: the NOR-like 4 KB sector layer over the board's own block range
+# (drivers/flash/nand_sectors, docs/spec/nand-sectors.md). On in the config.mk of radios whose data flash is SPI NAND
+# (the DB25-D); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
+CONFIG_NAND_STORAGE ?= n
 
 # APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions
 # over DMR (LRRP / UDT), a KISS TNC on the host port. Transmit stays off until the user turns it on (needs FM)
@@ -163,9 +188,9 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR \
-	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE AUDIO_PROBE STUB_ENTRY AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
+	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY NAND_STORAGE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -175,6 +200,16 @@ ifneq ($(call feature_on,SUBTONE),)
   endif
 endif
 $(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+ifneq ($(call feature_on,CHANNEL_EDIT),)
+  ifeq ($(call feature_on,CHANNEL_LIST),)
+    $(error CONFIG_CHANNEL_EDIT=y needs CONFIG_CHANNEL_LIST=y)
+  endif
+endif
+ifneq ($(call feature_on,FONT_BIG),)
+  ifeq ($(call feature_on,FONT_AA),)
+    $(error CONFIG_FONT_BIG=y needs CONFIG_FONT_AA=y)
+  endif
+endif
 ifneq ($(call feature_on,HOTSPOT),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)
@@ -188,6 +223,11 @@ endif
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)
+  endif
+endif
+ifneq ($(call feature_on,TASK_STACKS),)
+  ifeq ($(call feature_on,DEBUGLINK),)
+    $(error CONFIG_TASK_STACKS=y needs CONFIG_DEBUGLINK=y)
   endif
 endif
 ifneq ($(call feature_on,CPS_OPENFW),)

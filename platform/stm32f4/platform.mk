@@ -8,6 +8,10 @@ OBJCOPY := $(CROSS)objcopy
 SIZE := $(CROSS)size
 
 CPUFLAGS := -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
+# Bytes a task's stack holds beyond its call chain (make stack-check): interrupts run on the main stack (MSP), but the
+# exception entry stacks its frame on the task's stack, 26 words with the FPU's lazy space plus 1 for alignment, and the
+# port's context switch adds r4-r11, lr and s16-s31 (25 words): 52 words
+STACK_OVERHEAD := 208
 
 HALDIR := third_party/stm32f4xx-hal-driver
 CMSIS_DEV := third_party/cmsis-device-f4

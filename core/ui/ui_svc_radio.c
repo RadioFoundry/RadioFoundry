@@ -8,10 +8,15 @@
 #include "board.h"
 #include "radio/radio.h"
 #include "radio/beep.h"
+#include "radio/vibe.h"
+#include "radio/mic_gain.h"
 #include "input/input.h"
 #include "settings/settings.h"
 #include <string.h>
 #include "config.h"
+#if CONFIG_APRS
+#include "aprs/aprs.h"
+#endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
@@ -129,6 +134,15 @@ bool ui_svc_mode(uint8_t mode)
 }
 #endif
 
+uint8_t ui_svc_vfo_copy(const radio_view_t *v)
+{
+	radio_vfo_copy_t r = radio_vfo_copy_check(&v->ch, v->vfo);
+	if (r == VFO_COPY_OK) {
+		radio_req_vfo_copy();
+	}
+	return (uint8_t)r;
+}
+
 bool ui_svc_hear_all(bool on)
 {
 	radio_req_dmr_hear_all(on);
@@ -175,7 +189,9 @@ bool ui_svc_roam(uint8_t cmd)
 
 uint32_t ui_svc_feat_radio(void)
 {
-	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0);
+	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
+	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
+	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0);
 }
 
 #if CONFIG_DMR
@@ -225,6 +241,18 @@ void ui_svc_beep(uint8_t beep)
 }
 #endif
 
+#if CONFIG_VIBRATE
+void ui_svc_vibrate(uint8_t vibe)
+{
+	static const uint8_t map[] = {
+		[UI_VIBE_MESSAGE] = VIBE_MESSAGE, [UI_VIBE_CALL] = VIBE_CALL, [UI_VIBE_EMERGENCY] = VIBE_EMERGENCY,
+	};
+	if (vibe < sizeof map) {
+		radio_req_vibrate(map[vibe]);
+	}
+}
+#endif
+
 void ui_svc_ptt_block(bool blocked)
 {
 	input_set_ptt_block(blocked);
@@ -247,6 +275,17 @@ int32_t ui_svc_reply_shown(const radio_settings_t *s)
 	return 10;
 }
 
+// Mic gain: the step, or step 5 (the board's levels, FM included) while the vocoder's AGC sets the level (Mic gain
+// dimmed)
+static void apply_mic_gain(int32_t step, bool agc)
+{
+	if (!CONFIG_DMR || !agc) {
+		radio_set_mic_gain((uint8_t)(step < 0 ? 0 : step > (int32_t)MIC_GAIN_STEPS ? MIC_GAIN_STEPS : step));
+	} else {
+		radio_set_mic_gain(MIC_GAIN_UNITY);
+	}
+}
+
 // The UI's settings that live in radio_settings_t. The radio core saves them (settings store) and restores them at
 // start-up, so ui_svc_setting_get reads them back from it (ui_svc_storage.c) and a value it already has is not sent
 // again. A local copy, so a run of changes doesn't read back one the radio task hasn't taken in yet
@@ -261,22 +300,19 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_TALK_PERMIT:
 		rs.talk_permit = value != 0;
 		break;
+	case UI_SET_MIC_GAIN:		// the board's gain (FM and DMR) or DMR's sample scaling (radio/mic_gain.h)
+		apply_mic_gain(value, ui_svc_setting_get(UI_SET_MIC_AGC) != 0);
+		return;
 #if CONFIG_DMR
-	case UI_SET_MIC_AGC:		// with AGC on the codec sets the level: the samples go in at unity (Mic gain dimmed)
-		v16 = (uint16_t)(value != 0 ? 5 : ui_svc_setting_get(UI_SET_MIC_GAIN));
-		// fall through
-	case UI_SET_MIC_GAIN:		// DMR: the samples are scaled before the vocoder (no board has an FM mic gain hook)
-		if (id == UI_SET_MIC_GAIN && ui_svc_setting_get(UI_SET_MIC_AGC) != 0)
-			v16 = 5;
-		ambeVoiceSetMicGain((uint8_t)(v16 > 10 ? 10 : v16));
-		if (id == UI_SET_MIC_GAIN)
-			return;
-		// fall through
+	case UI_SET_MIC_AGC:
 	case UI_SET_NOISE_REDUCTION: {	// tone frames stay on (no setting)
 		bool nr = (id == UI_SET_NOISE_REDUCTION ? value : ui_svc_setting_get(UI_SET_NOISE_REDUCTION)) != 0;
 		bool agc = (id == UI_SET_MIC_AGC ? value : ui_svc_setting_get(UI_SET_MIC_AGC)) != 0;
 		ambeVoiceSetEncodeOptions(VOCODER_OPT_TONE_FRAMES | (nr ? VOCODER_OPT_NOISE_REDUCTION : 0u) |
 					  (agc ? VOCODER_OPT_AGC : 0u));
+		if (id == UI_SET_MIC_AGC) {
+			apply_mic_gain(ui_svc_setting_get(UI_SET_MIC_GAIN), agc);
+		}
 		return;
 	}
 #endif
@@ -312,6 +348,12 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		rs.roam_probe = value != 0;
 		break;
 #endif
+	case UI_SET_GPS:		// the module's power and the position sources, now (not a radio core setting)
+		board_gps_enable(value != 0);
+#if CONFIG_APRS
+		aprs_gps_enable(value != 0);
+#endif
+		return;
 	case UI_SET_LONG_PRESS_MS:	// the input layer's gesture timing (not a radio core setting)
 	case UI_SET_REPEAT_MS: {
 		static uint16_t long_ms, repeat_ms;

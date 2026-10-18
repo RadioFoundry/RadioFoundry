@@ -4,7 +4,8 @@
 # Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
 #   matrix       DM-1701 and MD-380: a build per feature switch turned off alone, fm-minimal and maximal (LTO), each
 #                with zero warnings and its size (tools/ci.sh --matrix; about 4-5 minutes per board on the runner)
-#   dm32-matrix  the same for the DM-32UV in the csky-elf image (skipped where the image isn't available)
+#   csky-matrix  the same for the DM-32UV, DM-1801 Pro and DB25-D in the csky-elf image (skipped where the image
+#                isn't available)
 #   reuse        `reuse lint`, reported as a warning until the tree passes it
 # A scheduled run does nothing when the commit it would test already passed a nightly run: a successful run saves
 # an empty cache entry named after the commit (nightly-ok-<sha>), and the next scheduled run looks that name up
@@ -31,7 +32,7 @@ env:
 jobs:
   changes:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       run: ${{ steps.decide.outputs.run }}
@@ -56,7 +57,7 @@ jobs:
   matrix:
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -65,8 +66,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
+      - name: third_party submodules
+        run: tools/checkout-submodules.sh
       - uses: actions/cache@v4
+        if: runner.environment != 'self-hosted'   # the self-hosted image has the toolchain
         with:
           path: ~/opt/arm-gnu-toolchain-${{ env.ARM_GCC_VERSION }}-x86_64-arm-none-eabi
           key: arm-gnu-${{ env.ARM_GCC_VERSION }}-${{ hashFiles('tools/install-arm-toolchain.sh') }}
@@ -90,11 +94,15 @@ jobs:
             build/ci/*.log
           if-no-files-found: ignore
 
-  dm32-matrix:
+  csky-matrix:
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [dm32, dm1801pro, db25d]
     permissions:
       contents: read
       packages: read   # pulling a private ghcr.io image with the job token
@@ -104,7 +112,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
+      - name: third_party submodules
+        run: tools/checkout-submodules.sh
       - name: Log in to the image's registry
         if: vars.ODR_CSKY_REGISTRY != ''
         env:
@@ -112,25 +122,31 @@ jobs:
           # own token (packages: read)
           REGISTRY_TOKEN: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
           REGISTRY_USER: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-        run: echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
-      - name: DM-32UV feature matrix in the csky-elf image
+        run: |
+          command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
+          echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
+      - name: ${{ matrix.board }} feature matrix in the csky-elf image
         run: |
           set -u
           rc=0
-          tools/docker/csky-toolchain/run.sh tools/ci.sh --matrix --steps firmware --board dm32 || rc=$?
+          if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
+            tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
+          else
+            tools/docker/csky-toolchain/run.sh tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
+          fi
           if [ "$rc" = 3 ]; then
-            echo "::notice::DM-32UV matrix skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::${{ matrix.board }} matrix skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
       - name: Log out of the registry
         if: always() && vars.ODR_CSKY_REGISTRY != ''
-        run: docker logout "${{ vars.ODR_CSKY_REGISTRY }}"
+        run: command -v csky-elf-gcc > /dev/null || docker logout "${{ vars.ODR_CSKY_REGISTRY }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: matrix-dm32
+          name: matrix-${{ matrix.board }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
@@ -139,7 +155,7 @@ jobs:
   reuse:
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -148,15 +164,16 @@ jobs:
       - name: reuse lint (a warning until the tree passes)
         run: |
           set -u
-          pipx install reuse > /dev/null
-          if ! "$HOME/.local/bin/reuse" lint; then
+          if [ -x /opt/reuse/bin/reuse ]; then PATH="/opt/reuse/bin:$PATH"   # the self-hosted runner's image
+          else pipx install reuse > /dev/null && PATH="$HOME/.local/bin:$PATH"; fi
+          if ! reuse lint; then
             echo "::warning::reuse lint does not pass yet (see the log; docs/dev/ci.md)"
           fi
 
   mark:
-    needs: [matrix, dm32-matrix]
+    needs: [matrix, csky-matrix]
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Remember that this commit passed

@@ -52,6 +52,7 @@ void settings_defaults(settings_t *s)
 	s->roam_beacon_s = 60;		// ROAM_BEACON_DEFAULT_S
 	s->roam_beacon_len_s = 4;	// ROAM_BEACON_LEN_DEFAULT
 	s->roam_survey = 1;		// ROAM_SURVEY_SYNC
+	s->gps = 1;			// powered only on radios where a module was heard (board_t.gps_enable)
 }
 
 static void put32(uint8_t *p, uint32_t v)

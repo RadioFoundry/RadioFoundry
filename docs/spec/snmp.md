@@ -83,7 +83,8 @@ for documentation (RFC 5612), a placeholder** until the project has its own Priv
 | odrAgent (.2.1.7) | the agent's settings (section 6, writable) and its notification counters |
 | odrEvent (.2.1.8) | the notification objects (accessible-for-notify) |
 
-Enumerations start at 1 as SMIv2 asks (odrBatteryState ok(1), low(2), critical(3), ...). The radio has no
+Enumerations start at 1 as SMIv2 asks (odrBatteryState ok(1), low(2), critical(3), ...). A radio without a battery reports odrBatteryVoltage 0, odrBatteryPercent 0 and
+odrBatteryState ok(1), and sends no odrLowBattery. The radio has no
 temperature sensor the firmware reads, so there is no temperature object.
 
 ## 5. Notifications

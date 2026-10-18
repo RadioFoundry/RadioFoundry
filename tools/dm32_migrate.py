@@ -54,6 +54,9 @@ NAME_MAX = 16                 # names in the open-firmware layout (open-firmware
 BANDS = ((136000000, 174000000), (400000000, 480000000))     # boards/dm32/board.c
 CPS_BLOCK = 32                # bytes per CPS request, as qdmr
 BULK_BLOCK = 512              # bytes per CPS read for the data flash backup
+CPS_CEILING = 0xF00000        # the native codeplug's last 1 MB starts here: open-firmware data stays below (board.c)
+IDDB_AREA1 = (0x50000, 0x40000)   # the ID database's header and area 1 in the open-firmware image (open-firmware-cps.md 7.5)
+IDDB_AREA2 = 0xD8000
 LIST_SECTIONS = ("radioIDs", "contacts", "groupLists", "channels", "zones", "scanLists", "positioning",
                  "roamingChannels", "roamingZones", "smsTemplates", "encryptionKeys")
 
@@ -541,7 +544,7 @@ def step_flash_backup(sess, args):
 def cps_write_dfu(sess, dfu_path, label, before_name, reboot=True):
     """Back up what the regions hold, write the DfuSe file's elements at +CPS_OFFSET, return (targets, image)."""
     return cp.cps_write_dfu(sess, lambda: open_cps(sess, CPS_OFFSET), dfu_path, label, before_name, offset=CPS_OFFSET,
-                            floor=WRITE_FLOOR, ceiling=0xF00000, block=CPS_BLOCK, progress=bar, reboot=reboot)
+                            floor=WRITE_FLOOR, ceiling=CPS_CEILING, block=CPS_BLOCK, progress=bar, reboot=reboot)
 
 
 def step_restore(sess, args):
@@ -566,6 +569,19 @@ def step_restore(sess, args):
                        block=CPS_BLOCK, progress=bar)
     sess.save_state(restored=True)
     return True
+
+
+def iddb_fit(targets, ceiling=CPS_CEILING - CPS_OFFSET):
+    """None when an encoded ID database (DfuSe targets) fits below ceiling (an image address), else the most records
+    that do: area 1 holds whole records after the 12-byte header, area 2 runs from IDDB_AREA2 to the ceiling."""
+    img, regions = dfu_image(targets)
+    if all(e <= ceiling for _, e in regions):
+        return None
+    a1 = IDDB_AREA1[0]
+    if img[a1:a1 + 2] != b"Id" or img[a1 + 3] <= 0x4A:
+        raise MigrateError("the encoded ID database has no header at 0x%X" % a1)
+    rec = img[a1 + 3] - 0x4A
+    return (IDDB_AREA1[1] - 12) // rec + (ceiling - IDDB_AREA2) // rec
 
 
 def step_iddb(sess, args):
@@ -597,6 +613,16 @@ def step_iddb(sess, args):
         return True
     sess.dmr(*(cmd + [out]), radio=False)
     need_file(sess, out, "the encoded ID database")
+    if not args.db_limit:
+        # dmrconf fills up to the 14 MB mark of the UV380 layout; on the DM-32 the window ends at CPS_CEILING. Keep the
+        # records that fit (dmrconf keeps the ones nearest the radio's ID)
+        with open(out, "rb") as f:
+            fit = iddb_fit(parse_dfuse(f.read()))
+        if fit is not None:
+            sess.say("   the full database doesn't fit below 0x%06X: keeping the %d records nearest your ID" %
+                     (CPS_CEILING, fit))
+            sess.dmr(*(cmd + ["--limit", str(fit), out]), radio=False)
+            need_file(sess, out, "the encoded ID database")
     sess.say("   a large database takes many minutes at 115200 baud; don't unplug the cable")
     wait_odr(sess, args.wait)
     cps_write_dfu(sess, out, "ID database", "iddb-area-before.bin")
@@ -608,11 +634,11 @@ def step_iddb(sess, args):
 # package for a tester
 
 PACKAGE_README = """\
-OpenDigitalRadio for the Baofeng DM-32UV: migration kit (TESTING ONLY, never run on a radio before)
+OpenDigitalRadio for the Baofeng DM-32UV: migration kit (TESTING ONLY)
 
 This kit backs up your stock codeplug, flashes OpenDigitalRadio over the programming cable and writes your
-channels, zones, contacts, RX group lists and the DMR ID database back. The DM-32 port has never run on a radio:
-you are the first. Keep Baofeng's stock firmware file (DM32.01.01.049.bin) at hand to go back.
+channels, zones, contacts, RX group lists and the DMR ID database back. The DM-32 port is still in testing.
+Keep Baofeng's stock firmware file (DM32.01.01.049.bin) at hand to go back.
 
 Not for redistribution: the firmware image contains the codec from Baofeng's firmware.
 
@@ -860,6 +886,20 @@ def self_test():
     check(regions == [(0x80, 0x280), (0x7500, 0x762C), (0x20000, 0x20040), (0x9B000, 0x9C388)], "regions %r" % regions)
     check(img[0x80:0x280] == flash[0][1] and img[0x7F] == 0xFF and len(img) == 0x120000, "flat image")
     check(image_to_dfu(targets, img) == targets, "read back to DfuSe")
+
+    # the ID database: a full one is cut to what fits below the ceiling, a small one is left alone
+    def iddb(records, rec=27):
+        n1 = (IDDB_AREA1[1] - 12) // rec
+        hdr = b"IdN" + bytes([rec + 0x4A]) + b"001\0" + struct.pack("<I", records)
+        elems = [(IDDB_AREA1[0], hdr + bytes(min(records, n1) * rec))]
+        if records > n1:
+            elems.append((IDDB_AREA2, bytes((records - n1) * rec)))
+        return [("Codeplug FLASH", elems)]
+    check(iddb_fit(iddb(5000)) is None, "a small ID database fits")
+    fit = iddb_fit(iddb(330000))    # about 8.9 MB, the size dmrconf encoded for the world in 2026
+    check(fit == (0x40000 - 12) // 27 + (0x800000 - 0xD8000) // 27, "ID database records that fit: %r" % fit)
+    check(iddb_fit(iddb(fit)) is None, "the cut database fits")
+    check(iddb_fit(iddb(fit + 1)) == fit, "one record more doesn't")
 
     # the conversion report
     rep = conversion_report(SAMPLE_STOCK_YAML, sample_odr_yaml())

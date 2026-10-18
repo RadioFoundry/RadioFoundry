@@ -27,6 +27,12 @@ on:
 permissions:
   contents: read
 
+# The highlight colors the gallery draws its color pages in (Settings > Display > Highlight color), in the order the
+# comment shows them: any of red orange yellow teal light_blue purple pink. `make -C tests/host ui-gallery` reads this
+# line too, so the committed gallery shows the same colors: keep it on one line, in double quotes.
+env:
+  UI_GALLERY_COLORS: "red yellow light_blue"
+
 concurrency:
   group: ui-gallery-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -34,7 +40,8 @@ concurrency:
 jobs:
   render:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ubuntu-24.04
+    # ODR_UI_RUNNER: a runner kept for the gallery, so its preview never waits behind the build and test jobs
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && (vars.ODR_UI_RUNNER || vars.ODR_CI_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -52,8 +59,10 @@ jobs:
       - name: Install Pillow
         run: |
           set -eu
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends python3-pil
+          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends python3-pil
+          fi
 
       - name: Render the gallery at the base and at the pull request
         run: |
@@ -70,7 +79,8 @@ jobs:
           python3 tools/ui_gallery_compare.py build/ui/before build/ui/after build/ui/out \
             --base-sha "${{ github.event.pull_request.base.sha }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
-            --pr "${{ github.event.pull_request.number }}"
+            --pr "${{ github.event.pull_request.number }}" \
+            --colors "$UI_GALLERY_COLORS"
           python3 -c 'import json; print(json.load(open("build/ui/out/manifest.json"))["counts"])' \
             >> "$GITHUB_STEP_SUMMARY"
 

@@ -9,50 +9,76 @@ so one set serves the self-hosted Gitea runner and GitHub.
 
 | Workflow | Runs on | When | What |
 |---|---|---|---|
-| `ci.yml` | `ubuntu-24.04` | every push to any branch that changes source (below); by hand | host tests, Python and license checks, coverage, every board's default build |
-| `pr-tests.yml` | `ubuntu-24.04` | every pull request, from `main`'s copy of the workflow | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge |
+| `ci.yml` | `ubuntu-24.04` | every push to `main` that changes source (below); by hand on any branch | the unit tests (once, with coverage and sanitizers), Python and license checks, every board's default build |
+| `pr-tests.yml` | `ubuntu-24.04` | every pull request, from `main`'s copy of the workflow | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
 | `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when the default branch has an untested commit; by hand | the feature matrix of every board, `reuse lint` |
+| `site.yml` | `ubuntu-24.04` | 07:17 UTC daily when the site's inputs changed or a release came out; by hand | builds and deploys the web site ([website.md](website.md)); pull requests build it in the unit tests job instead |
 | `hil.yml` | `odr-hil` (the bench Mac) | by hand; nightly only when `ODR_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([release.md](release.md)) |
-| `release.yml` | `ubuntu-24.04` and the hosted macOS / Windows runners | `v*` tags, release tooling changes | release images and odrflash ([release.md](release.md)) |
+| `release.yml` | `ubuntu-24.04`, and for odrflash the hosted macOS / Windows runners | `v*` tags; pull requests that change the release tooling (packaging only, no release gate) | release images and odrflash ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `ODR_CI_GITHUB` is `true`: the
 repository is private, so hosted runners use paid minutes (about 6 per push). On Gitea they always run.
 
-## Per push: `ci.yml`
+The `ubuntu-24.04` in the table is the default. When the repository variable `ODR_CI_RUNNER` is set (to `odr-ci`),
+every Linux job goes to the self-hosted runner with that label instead
+([below](#the-github-self-hosted-runner)). Pull request code from a fork always stays on `ubuntu-24.04`.
+
+Each change is checked once. A branch is tested through its pull request (`pr-tests.yml`), and `main` again after
+the merge (`ci.yml`). The unit tests run once per check, with the coverage counters and the sanitizers in the same
+build. The site's pull request build and the release gate on pull requests are gone: the unit tests job's Python step
+builds the site and runs the flasher's tests, and the release gate runs for a tag.
+
+## On main: `ci.yml`
 
 Triggered by changes under `boards/`, `config/`, `core/`, `drivers/`, `hal/`, `platform/`, `tests/`, `tools/`,
 `third_party/` (submodule bumps), the `Makefile`, `AUTHORS` (the About page), `.gitmodules`, `LICENSES/`,
-`REUSE.toml` or the workflow itself. A docs-only push runs only the manual workflow. A newer push to the same branch
-cancels the run in progress (`concurrency`).
+`REUSE.toml` or the workflow itself, pushed to `main`; by hand (Actions, CI, Run workflow) on any branch. A docs-only
+push runs only the manual workflow. A newer push cancels the run in progress (`concurrency`).
 
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
-| `host` | `tools/ci.sh --steps host,python,licenses`, then the UI screen gallery (`uiSim --gallery`) | about 1.5 min: apt 18 s, host tests 36 s (64 suites, tshark pcap checks), Python checks 15 s, gallery 2 s |
-| `coverage` | `tools/coverage.sh` | about 1.2 min: apt 15 s, instrumented host tests and gcovr 52 s |
-| `firmware` (dm1701, md380) | `tools/ci.sh --quick --steps firmware --board <b>` | DM-1701 7 s, MD-380 UHF and VHF 15 s; the toolchain 50 s on a cache miss |
-| `dm32` | the same for `dm32`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | 4 s; skipped where the image isn't available |
+| `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) | about 3 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, gallery 2 s |
+| `checks` | `tools/ci.sh --steps python,licenses` (doc links among the Python checks) | about 1.5 min |
+| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --board dm1701,md380`: every Arm radio in one job | about 1 min with the checkout; the toolchain 50 s on a cache miss |
+| `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | about 1 min with the checkout; skipped where the image isn't available |
 
-The jobs run in parallel, so a push is checked in about two minutes plus the runner's image start. Times are from
-the Gitea runner (8 vCPUs), measured with the jobs' own commands in the same container images; on an 8-core Mac
-the host tests take 43 s and the coverage run 68 s.
+There is one firmware job per toolchain, not one per radio: a job's checkout and start take longer than a radio's
+build, and a runner has 4 cores, so the two firmware jobs side by side keep an 8-core host busy while leaving runners
+free for other pull requests. The jobs run in parallel, so a push is checked in about three minutes plus the
+runner's image start. On an 8-core
+Mac the plain host tests take 43 s.
 
 Each firmware job builds with zero warnings, writes the size report (image bytes and free space in the linker's
 application region, also put in the job summary on GitHub) and fails when the application region overflows. The
-images and logs are workflow artifacts (`firmware-<board>`), as are the host logs with the screen gallery
+images and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are the unit test logs with the screen gallery
 (`host-logs`) and the coverage report (`coverage-report`).
 
-`reuse lint` is part of the host job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
+`reuse lint` is part of the `checks` job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
 the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
+
+## Submodules
+
+The jobs that build firmware check out without submodules, then run `tools/checkout-submodules.sh`. The self-hosted
+runner image keeps bare clones of the `third_party/` repositories in `/opt/odr-git` (`ODR_GIT_CACHE`), and the script
+borrows their objects (`git submodule update --reference`), so a job fetches from GitHub only the commits newer than
+the image. A submodule the image lacks, or a runner without the image, takes a plain network checkout. Each submodule
+gets three tries, so one dropped connection to GitHub no longer fails the job.
+
+The nested submodules of FreeRTOS-Kernel (its partner and community ports) aren't checked out: no build uses them,
+since the CK803 port is in `platform/hrc7000/freertos/`. After a submodule bump, rebuild the runner image to bring the
+clones up to date ([tools/ci-runner/README.md](../../tools/ci-runner/README.md)); until then the new commits come over
+the network. A new submodule also goes in the Dockerfile's `SUBMODULE_URLS`.
 
 ## Pull request checks: `pr-tests.yml`
 
-Every pull request runs `ci.yml`'s jobs (`host`, `coverage`, `firmware` for the DM-1701 and MD-380, `dm32`) and the
-manual check (doc links and the PDF build, as `manual.yml` does) on its merge commit. The first job, `changes`,
-looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s paths) run
-the build and test jobs, docs changes (`manual.yml`'s paths) the manual. The last job always runs and sets the
+Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware (Arm)` for the DM-1701 and MD-380,
+`firmware (C-SKY)` for the DM-32UV, DM-1801 Pro and DB25-D) and `checks` on its merge commit. The first job,
+`changes`, looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s
+paths) run the build and test jobs. `checks` runs on every pull request: the Python and license checks (doc links
+among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last job always runs and sets the
 `PR checks` commit status on the pull request's head commit: failure when any job failed or was canceled, success
 otherwise. It is the one status check the `main` ruleset requires, so a skipped job never holds a pull request up,
 and a new job only has to be added to its `needs` list. The job posts the status itself because a
@@ -60,20 +86,22 @@ and a new job only has to be added to its `needs` list. The job posts the status
 
 The workflow runs on `pull_request_target`, so GitHub takes it from `main`, never from the pull request: a
 contributor's edited workflow doesn't run here, and the checks run on every pull request without anyone approving
-them. `ci.yml` and `manual.yml` have no `pull_request` trigger for the same reason. A member's branch also gets
-`ci.yml` from its pushes; the website (`site.yml`) isn't part of the pull request checks.
+them. `ci.yml` and `manual.yml` have no `pull_request` trigger for the same reason, and `ci.yml` doesn't run on a
+branch's pushes either, so a pull request is checked once.
 
 The pull request's code runs with a read-only token that isn't stored in the checkout, no secrets and no cache, so
-it gets nothing a fork couldn't have. The firmware jobs download the toolchain each time (checksummed by
-`tools/install-arm-toolchain.sh`, about 50 s). The `dm32` job logs in to the image registry with the job's own token
+it gets nothing a fork couldn't have. The image's submodule clones aren't a cache it could write to: each job gets a
+new container, so whatever a job changes is gone when it ends. The firmware jobs download the toolchain each time (checksummed by
+`tools/install-arm-toolchain.sh`, about 50 s). The `csky` jobs log in to the image registry with the job's own token
 (`packages: read`), pulls the image and logs out before the build runs. The status job is the only one with a write
 permission (`statuses: write`), and it checks out nothing. Keep it that way: never add secrets, another write
 permission, `actions/cache` or the pull request's text (title, body, branch name) in a run step to `pr-tests.yml`.
 Changes to `.github/` need the owner's review (`.github/CODEOWNERS`, with code owner review required in the `main`
 ruleset), since `main`'s workflows are the ones that run.
 
-A branch pushed to this repository still runs its own copy of the workflows on `push`. Only the owner's review keeps
-a changed workflow off `main`; it doesn't stop it from running on that branch.
+None of `main`'s workflows runs on a branch's pushes, but a branch that gives its own copy of a workflow a `push`
+trigger runs it. Only the owner's review keeps a changed workflow off `main`; it doesn't stop it from running on that
+branch.
 
 ## UI gallery: `ui-gallery.yml` and `ui-gallery-comment.yml`
 
@@ -83,19 +111,30 @@ before and after, side by side. It's advisory: no required check waits on it.
 
 1. `ui-gallery.yml` (`pull_request`) builds `uiSim` from the base commit and from the pull request's merge commit,
    renders `--gallery` for both, and writes `tools/ui_gallery_compare.py`'s output: for each display class with a changed
-   screen, one composite per eight changed screens, stacked as before | after pairs (2x, labels with both commit ids;
-   a screen that's new or gone gets a gray panel), plus `manifest.json`. A class with no change
+   screen, one composite per eight rows, stacked as before | after pairs (2x, or 1x for a class whose widest row would
+   pass 1800 px; labels with both commit ids; a screen that's new or gone gets a gray panel), plus `manifest.json`. A class with no change
    gets no picture. Classes are ordered monochrome first, then color, each by resolution, and the comment groups them
    under those headings. The render is deterministic, so an unchanged screen never shows up.
+
+   The gallery's color pages are drawn once more in each highlight color the workflow's `UI_GALLERY_COLORS` names
+   (`env` at the top of `ui-gallery.yml`: one line, in double quotes, any of `red orange yellow teal light_blue purple
+   pink`; three for now). Theme pages are also drawn in the light and high-contrast themes (`<screen>__light`,
+   `<screen>__high_contrast`). When a color page or any of its color or theme shots changed, the comparison shows the
+   whole set as one row of the composite: a column per shot, the page first, then its colors in the list's order and
+   its themes, before above after, the unchanged ones marked so. Such a row counts as two of the eight.
+   `make -C tests/host ui-gallery` reads the same line, so the committed gallery shows the same colors. Changing the
+   list is a pull request that changes the workflow and regenerates the gallery.
 2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact and checks it as data (no links,
    file names and sizes, PNG signatures, the pull request and commit it names). It pushes each
    composite to the `ui-previews` branch (made on first use, one `pr-N/` folder per pull request holding its newest commit) and
    linked with `blob/...?raw=true` URLs, which render for signed-in viewers of a private repository (`gh --attach` needs a
    user session, not the job's token). The branch never grows: every run rebuilds it as one parentless commit and force-pushes it (it holds only
    pictures that can be regenerated), keeping the open pull requests, the newest 5 closed without a merge and the newest
-   20 merged, among those that have pictures; older folders are dropped, and GitHub collects their objects. It then
-   posts a new comment and deletes the previous one. Pictures of a pull request that fell out of the window no longer
-   load. The
+   20 merged, among those that have pictures; older folders are dropped, and GitHub collects their objects. A pull
+   request's folder holds only its newest commit: the pictures of its earlier commits are removed. It then edits the
+   pull request's comment in place, so it stays where it was near the top of the conversation; only if the edit fails
+   does it post a new comment and delete the old one. Pictures of a pull request that fell out of the window no longer
+   load. A composite of more than 3 rows is folded in a `<details>` block under its list of changed screens. The
    comment is found by its marker line (`<!-- odr-ui-gallery -->`) and carries the commit, the UTC time of the update
    and the base commit. A run for a commit the pull request has already moved past posts nothing.
 
@@ -112,7 +151,7 @@ support it, so check the first run on the Gitea runner before relying on the com
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
 | `matrix` (dm1701, md380) | `ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board <b>`: each switch off alone, fm-minimal, maximal | DM-1701 4.4 min (47 builds), MD-380 3.8 min (42) |
-| `dm32-matrix` | the same for `dm32` in the csky-elf image | 2.9 min (50 builds; measured on the CI VM) |
+| `csky-matrix` (dm32, dm1801pro, db25d) | the same for each C-SKY board in the csky-elf image | DM-32UV 2.9 min (50 builds; measured on the CI VM) |
 | `reuse` | `reuse lint`, a warning until it passes | under a minute |
 
 `--matrix` leaves out the default builds the per-push run already made; `ODR_CI_PRUNE=1` removes each build tree
@@ -130,12 +169,14 @@ always builds.
 
 ```
 tools/ci.sh                                   # everything (the release gate), about 10 minutes on an 8-core Mac
-tools/ci.sh --quick                           # what the per-push workflow runs, minus coverage
-tools/ci.sh --steps host,python,licenses      # the host job
+tools/ci.sh --quick                           # what CI runs, without coverage and sanitizers
+SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
+tools/ci.sh --steps python,licenses           # the checks job
 tools/ci.sh --quick --steps firmware --board md380
+make BOARD=db25d stack-check                  # the stack check alone, after a build (stack-check.md)
 ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board dm1701    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html
-tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32   # on a host with the image
+tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm1801pro   # on a host with the image
 ```
 
 `--steps` takes any of `host`, `python`, `firmware`, `licenses`, `similarity` (comma separated); `--quick` and
@@ -182,8 +223,9 @@ HTML artifact serves the same purpose.
 ### Sanitizers and fuzzing
 
 `make -C tests/host SANITIZE=1` builds every host test with AddressSanitizer and UndefinedBehaviorSanitizer (Apple
-clang and GCC; UBSan stops at the first report). CI's coverage job runs it after the report (leak checks off: job
-containers may not allow ptrace), `ODR_CI_SANITIZE=1 tools/ci.sh` runs it in the host step; build from clean when
+clang and GCC; UBSan stops at the first report). CI's unit tests job builds the tests this way and with coverage at
+once (`SANITIZE=1 tools/coverage.sh`; leak checks off: job containers may not allow ptrace), `ODR_CI_SANITIZE=1
+tools/ci.sh` runs it in the host step; build from clean when
 switching (`make -C tests/host clean`). It isn't optimized, like the plain build: with `__OPTIMIZE__` glibc's headers
 switch on extern inline and fortified functions, which don't build with the host flags' `__attribute__` override.
 The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's Ethernet
@@ -200,7 +242,7 @@ A VM (Ubuntu 24.04, 8 vCPUs, 7 GB RAM) running `gitea-runner` 2.1 (`act_runner.s
 `/etc/gitea_runner.conf`), capacity 4, with the labels `ubuntu-latest`, `ubuntu-24.04` and `ubuntu-22.04` mapped to
 `docker.gitea.com/runner-images`. Each job runs in a fresh container of that image, as root; the workspace is a
 Docker volume. The runner mounts the host's Docker socket into job containers (`container.docker_host` empty), which
-the DM-32 jobs use: `run.sh` starts the csky-elf image with the job container's volumes (`--volumes-from`), so the
+the C-SKY jobs use: `run.sh` starts the csky-elf image with the job container's volumes (`--volumes-from`), so the
 image never has to be the job's own container (it has no Node.js for the JavaScript actions) and the runner's
 `force_pull: true` never tries to fetch the locally built image from Docker Hub.
 
@@ -217,16 +259,54 @@ Things to know:
   (`actions/cache@v4` on the runner's built-in cache server) and `actions/upload-artifact@v4`. The job summary
   (`$GITHUB_STEP_SUMMARY`) is written but not shown by Gitea; the size and coverage tables are also in the logs.
 
+### The GitHub self-hosted runner
+
+GitHub's hosted runners cost the account's Actions minutes on a private repository. The repository variable
+`ODR_CI_RUNNER` moves the Linux jobs to a self-hosted runner instead: each such job has
+`runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}`, so with the variable set to `odr-ci` they go to a runner
+with that label, and with it unset (or on Gitea, where it isn't defined) nothing changes. `hil.yml` keeps its own
+runner. `release.yml` builds odrflash on GitHub's macOS and Windows runners only for a `v*` tag; a pull request or a
+push to `main` builds the Linux odrflash alone, on the self-hosted runner.
+
+The runner is the image in `tools/ci-runner/` (its README has the setup): Ubuntu 24.04 with everything the
+workflows install (the Arm and csky-elf toolchains, host GCC, Python with NumPy, pytest, pyserial, Pillow and
+markdown-it, gcovr, tshark, Node.js 22, gh, reuse). The workflows notice it by `ODR_CI_IMAGE=1` in the
+environment (and `runner.environment == 'self-hosted'` in a step's `if`) and skip their `apt-get` steps, the
+toolchain cache, `setup-python`, `setup-node`, `pip` and Docker: the C-SKY jobs build directly with the image's
+csky-elf GCC. Every job gets a new container, as a non-root user, with no Docker socket, no host network or other
+host directories, and CPU, memory and process limits. Its network has no route out: an egress proxy passes HTTPS
+to the hosts in `tools/ci-runner/proxy/allow` only (GitHub, the npm registry and PyPI), so a job can't download from
+anywhere else (nodejs.org, developer.arm.com). A tool a job needs goes into the image. Ubuntu's system Python takes
+no `pip install`; a job that needs packages makes a venv (`release.yml`'s odrflash job does).
+
+Pull request code from a fork never runs on it. `pr-tests.yml` runs on `pull_request_target`, which runs every
+pull request without approval, so its jobs (and `ui-gallery.yml`'s and the site's pull request build) choose the
+runner with `github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER ||
+'ubuntu-24.04'`: a branch of this repository gets the self-hosted runner, a fork GitHub's. The repository's setting
+for fork pull requests ("Run workflows from fork pull requests", off) keeps the `pull_request` workflows from running
+fork code at all.
+
+When the runner is off, jobs routed to it wait in the queue (and fail after a day). Unset `ODR_CI_RUNNER` to go back
+to the hosted runners.
+
+The UI gallery has a runner of its own, so a pull request's screenshot preview never waits behind the build and test
+jobs. One runner is registered with the label `odr-ui` instead of `odr-ci` (`LABELS=odr-ui` in its env file,
+[tools/ci-runner/README.md](../../tools/ci-runner/README.md)), and the repository variable `ODR_UI_RUNNER` is set to
+`odr-ui`. `ui-gallery.yml` and `ui-gallery-comment.yml` run on `ODR_UI_RUNNER`, falling back to `ODR_CI_RUNNER` when
+it's unset. So does `pr-tests.yml`'s `PR checks status` job: it runs a few seconds of `gh` after every other job, when
+the render is long done, so it never holds a build runner. No other job uses that label. With six runners that leaves five for everything else. Unset
+`ODR_UI_RUNNER` to share the pool again.
+
 ### GitHub
 
-The same workflows run on GitHub's hosted runners when the repository is pushed there. Everything except the DM-32
+The same workflows run on GitHub's hosted runners when the repository is pushed there and `ODR_CI_RUNNER` is unset. Everything except the C-SKY
 jobs works as is; those skip with a notice until the csky-elf image is in a registry the runner can pull (below).
 On a private repository the hosted runners use the account's Actions minutes: a push costs about 6 runner minutes
-(five jobs), a nightly with changes about 12.
+(seven jobs), a nightly with changes about 12.
 
 ## The csky-elf image
 
-The DM-32 jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`:
+The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`:
 the tag `tools/docker/csky-toolchain/build.sh` gives its image on the Gitea runner (`odr/csky-gcc14:20261011b`,
 549 MB). `run.sh` uses an image already on the Docker host, and pulls one only when the name starts with a
 registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had the
@@ -302,7 +382,7 @@ Gotchas:
   and back. When macOS misses the NCM carrier the radio can stay a network adapter, and only a power cycle brings the
   serial port back; later tests then skip with "no radio". Leave `usb_switch` off for unattended runs.
 - **Transmitting stays on the approved test frequencies.** The RF tests use the defaults in `tests/hil/conftest.py`
-  (DMR and FM at 461.6875 MHz at the lowest power, APRS AFSK at 145.090 MHz with the operator's call). Never pass
+  (DMR and FM at 461.6875 MHz at the lowest power, APRS AFSK at 446.050 MHz with the operator's call). Never pass
   other frequencies in the `extra` input, and run `rf` only with the dummy load or antenna of the bench set-up.
 - **One radio, one run.** The workflow's concurrency group keeps HIL runs one at a time and never cancels a running
   one (it might be transmitting or restoring a codeplug); the lock keeps people and agents off the radio meanwhile.

@@ -168,6 +168,7 @@ static const char *const power_names[] = { "L", "H" };
 
 const board_t board = {
 	.name = "fake",
+	.caps = CAP_GPS,
 	.bands = bands,
 	.band_count = 2,
 	.power_count = 2,
@@ -721,6 +722,34 @@ static void test_dmr_position(void)
 #endif
 }
 
+// Settings > Location > GPS (aprs_gps_enable): a board fix is the position while the setting is on, and with it off
+// the fix is gone at once (not 60 s later) and new sentences from the driver are ignored
+static void test_gps_setting(void)
+{
+	const char *rmc = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	aprs_view_t v;
+
+	reset();
+	configure(0, false);
+	aprs_nmea(rmc, strlen(rmc), true, now);
+	run(100);
+	aprs_get_view(&v);
+	CHECK(v.pos_valid && v.pos_src == APRS_SRC_GPS && v.lat == 481173000);
+	aprs_gps_enable(false);
+	run(100);
+	aprs_get_view(&v);
+	CHECK(v.pos_src == APRS_SRC_FIXED);		// the fixed position, not the GPS fix
+	aprs_nmea(rmc, strlen(rmc), true, now);	// a sentence that was already in the driver's queue
+	run(100);
+	aprs_get_view(&v);
+	CHECK(v.pos_src == APRS_SRC_FIXED);
+	aprs_gps_enable(true);
+	aprs_nmea(rmc, strlen(rmc), true, now);
+	run(100);
+	aprs_get_view(&v);
+	CHECK(v.pos_src == APRS_SRC_GPS);
+}
+
 // The configuration kept in the settings (settings_t aprs_*): back exactly after a reload, and a stored record with
 // values out of range (another firmware's, a damaged one) loads field by field with the defaults for the bad ones
 static void test_cfg_store(void)
@@ -1072,6 +1101,7 @@ int main(void)
 	test_host_kiss_nmea();
 	test_messages();
 	test_dmr_position();
+	test_gps_setting();
 	test_cfg_store();
 	test_codeplug_path();
 	test_rf_failures();

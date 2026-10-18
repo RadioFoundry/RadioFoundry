@@ -38,9 +38,10 @@ CONFIG_DMR_UDP_COMPRESS ?= n
 # assignment, 2026-10-13): this radio sends no APRS over the air and has no iGate, so it would only forward DMR-side
 # beacons. Users can still pick it
 CONFIG_NET_APRSIS ?= n
-# The hub's Channels list (about 1.9 KB) doesn't fit beside everything else: off by default here; a build with
-# CONFIG_CHANNEL_LIST=y needs room made, as CONFIG_DMR_IP_GATEWAY=n does
-CONFIG_CHANNEL_LIST ?= n
+# Codeplug read and write over the USB network (TFTP, about 6.4 KB) is off by default to make room for the Channels
+# list and the channel editor (2026-10-16): the CPS protocol over the same USB port reads and writes the codeplug too.
+# Users can still pick it, with another feature off
+CONFIG_TFTP ?= n
 # Control station mode (PC dispatch software on the USB network link, 288 bytes) is off by default for room (the side
 # key functions and the Channels list, 2026-10-14). Users can still pick it
 CONFIG_DMR_CONTROL_STATION ?= n
@@ -50,6 +51,9 @@ CONFIG_DMR_CONTROL_STATION ?= n
 BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL HOTSPOT AM_RX BCAST_FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter; USRP, UDP header compression and the APRS-IS client don't
-# fit beside everything else (above), nor does control station mode or the Channels list, nor SNMP (with it the
-# maximal image overflowed flash by 1,776 bytes)
-MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS CHANNEL_LIST DMR_CONTROL_STATION SNMP
+# fit beside everything else (above), nor does control station mode or TFTP, nor SNMP (with it the
+# maximal image overflowed flash by 1,776 bytes). Stub entry and NAND storage aren't used on this radio. The channel
+# editor is in the default build, which compiles it; beside the big fonts and the rest of the maximal set it overflowed
+# flash by 4,260 bytes (2026-10-17). Its default follows CONFIG_CHANNEL_LIST, so it is switched off here, not skipped
+MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS TFTP DMR_CONTROL_STATION SNMP STUB_ENTRY NAND_STORAGE
+MAXIMAL_VARS := CONFIG_CHANNEL_EDIT=n

@@ -158,8 +158,14 @@ int main(void)
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_REFUSED && !enter, "ENTER bad magic refused (%u)", out[0]);
 
-	// A good ENTER verifies the CRC-32 and fires, with the right entry address
+	// A good ENTER while the radio transmits answers BUSY and doesn't fire; the image stays loaded
 	put32(r + 1, DL_STUB_MAGIC);
+	s.transmitting = true;
+	n = req(&s, r, 5, out, &enter, &entry);
+	CHECK(n == 1 && out[0] == DL_ST_BUSY && !enter, "ENTER while transmitting busy (%u)", out[0]);
+	s.transmitting = false;
+
+	// A good ENTER verifies the CRC-32 and fires, with the right entry address
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(n == 1 && out[0] == DL_ST_OK, "ENTER ok (%u)", out[0]);
 	CHECK(enter && entry == img_entry, "ENTER fires at 0x%x (want 0x%x)", entry, img_entry);

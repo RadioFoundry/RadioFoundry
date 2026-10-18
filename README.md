@@ -23,14 +23,14 @@ It's early. Read the status section before you flash anything.
 | Radio | Builds | Host tests | On the radio | Support |
 |---|:---:|:---:|:---:|---|
 | Baofeng DM-1701 | ● | ● | ◐ | First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (one radio), scan, and the network services. Still open: Standalone SFR and a two-radio split duplex pair (below) |
-| Baofeng DM-32UV | ● | ● | ○ | Builds and passes its host tests; hasn't run on a radio yet ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core, parked until bring-up ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
-| TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ○ | Builds (UHF and VHF images) and passes its host tests; hardware needed: it hasn't run on a radio yet ([bring-up checklist](docs/testing/md380-bringup.md)). DMR voice with the codec from the stock D2.32 file, merged at build time ([codec-md380](docs/spec/codec-md380.md)); untested on a radio. No CTCSS / DCS or FM TX tones yet, and the default image leaves out the hotspot to fit |
-| Radioddity DB25-D PRO (mobile) | ● | ● | ○ | Bring-up started: FM receive on the two BK4819s, display, keys, host link. No TX, DMR or storage yet; not run on a radio ([hardware-db25d](docs/spec/hardware-db25d.md) 9). The older DB25-D batches (FD6818) and the Retevis RT73 aren't covered yet |
+| Baofeng DM-32UV | ● | ● | ◐ | Runs on a radio. FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit and GPS data checked, most of it on the SDR bench. Still open: FM transmit deviation at 12.5 kHz, an outdoor GPS fix, and the host link after a warm restart from the boot stub ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core but not wired up on this radio yet ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
+| Baofeng DM-1801 Pro, DM-1801 (current) | ● | ● | ◐ | Runs on a radio. FM receive and transmit with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and SMS, the MMDVM hotspot and single frequency repeating checked on the SDR bench. Still open: VHF transmit and VOX ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md)) |
+| TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ◐ | Builds (UHF and VHF images), passes its host tests and has run on a radio; the on-radio checks are not all recorded yet ([bring-up checklist](docs/testing/md380-bringup.md)). DMR voice with the codec from the stock D2.32 file, merged at build time ([codec-md380](docs/spec/codec-md380.md)). No CTCSS / DCS or FM TX tones yet, and the default image leaves out the hotspot to fit |
+| Radioddity DB25-D PRO (mobile) | ● | ● | ◐ | Bring-up on a radio: FM receive and transmit, display, keys, host link, settings storage, the open-firmware CPS and volume work. DMR voice receive and transmit checked on the SDR bench; the hotspot, the DMR VFO and the PPP network services work on the radio ([hardware-db25d](docs/spec/hardware-db25d.md) 9). The older DB25-D batches (FD6818) and the Retevis RT73 aren't covered yet |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
 | Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Hardware needed. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated ([radios](docs/spec/radios.md)) |
 | Radioddity GD-88 | ○ | ○ | ○ | Planned. Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
-| Baofeng DM-1801 Pro, DM-1801 (current) | ○ | ○ | ○ | Planned. Hardware needed. An HR_C7000 radio, so the DM-32UV's platform and modem carry over; the RF chip and display aren't known yet. Not the GD-77 family despite the name ([radios](docs/spec/radios.md)) |
 | Radioddity DB40-D (mobile) | ○ | ○ | ○ | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port |
 
 ● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet
@@ -69,6 +69,8 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
   each half passes on air, a two-radio pair hasn't been tested yet
   ([split-duplex](docs/spec/split-duplex.md))
 - **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
+- **VFO:** tune any frequency by hand, in FM or DMR (the DMR VFO has its own color code, timeslot and talk target)
+  ([dmr-voice](docs/spec/dmr-voice.md) 2.1)
 - **Scan:** zone, VFO and dual watch scan; on DMR it stops for calls in progress, using late entry
   ([radio-features](docs/spec/radio-features.md))
 - **qdmr as the CPS:** program the radio with qdmr ([cps-protocol](docs/spec/cps-protocol.md))
@@ -122,7 +124,7 @@ releases: [The codec](docs/dev/codec.md).
 You need make, Python 3, and `arm-none-eabi-gcc` (STM32F405 radios) or a `csky-elf` GCC (HR_C7000 radios).
 
 ```
-make BOARD=dm1701           # or md380, dm32, db25d
+make BOARD=dm1701           # or md380, dm32, db25d, dm1801pro
 make -C tests/host          # host tests
 tools/ci.sh                 # everything a pull request must pass
 ```
@@ -220,6 +222,7 @@ of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make su
 | `drivers/` | Chip drivers shared across radios |
 | `platform/` | Per-SoC startup, clocks, interrupts and RTOS glue (`stm32f4`, `hrc7000`) |
 | `boards/` | One directory per radio: board descriptor, pins, feature defaults, linker script, codec hosting |
+| `boot/` | First stages in front of the application, for radios whose loader starts it directly (`boot/db25d`) |
 | `config/` | Build-time feature switches |
 | `third_party/` | Permissively licensed upstream code, as submodules (FreeRTOS, ST HAL and CMSIS, TinyUSB) |
 | `tools/` | Flashing (`odrflash`), release packaging, codec merge, CPS client, debug link client (`odr_debug.py`), CI, SDR bench tools |

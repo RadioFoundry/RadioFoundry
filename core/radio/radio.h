@@ -230,6 +230,10 @@ typedef struct {
 	uint8_t battery_pct;	// board.power->battery_pct(), 0 if unknown
 	uint16_t battery_mv;
 	bool power_off;		// the radio core asks to be switched off (critical battery, battery_off_s)
+	int8_t volume;		// percent last passed to hal_radio_t.volume (the knob, the override or the step), -1 = none yet
+	uint8_t volume_src;	// radio_volume_src_t: where that level comes from
+	uint8_t volume_step;	// the stored step (0..RADIO_VOLUME_MAX); in force when volume_src is RVOL_SOFT
+	int8_t volume_override;	// the debug link's step in force over the knob (RVOL_OVERRIDE), -1 = none
 	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
@@ -273,6 +277,20 @@ void radio_req_zone(uint16_t index);
 void radio_req_vfo(bool on);
 void radio_req_vfo_step(int8_t dir);
 void radio_req_vfo_set(uint32_t hz);		// rx and tx frequency (simplex)
+// Copy to VFO: what is in effect on the channel now (temporary changes too) becomes the VFO's own settings and the VFO
+// opens; the channel is unchanged (docs/spec/dmr-voice.md 2.2). Nothing changes when radio_vfo_copy_check refuses
+void radio_req_vfo_copy(void);
+typedef enum {
+	VFO_COPY_OK,
+	VFO_COPY_NO_VFO,	// the build has no VFO
+	VFO_COPY_NO_MODE,	// the channel's mode has no VFO in this build (CONFIG_VFO_FM / CONFIG_VFO_DMR)
+	VFO_COPY_OUT_OF_BAND,	// a frequency outside the board's bands: the VFO can't hold it
+	VFO_COPY_ALREADY,	// already in the VFO (the VFO is not a channel)
+} radio_vfo_copy_t;
+// Whether the VFO can take ch (the channel on view); implemented in radio_sm.c, safe to call from any task
+radio_vfo_copy_t radio_vfo_copy_check(const channel_t *ch, bool in_vfo);
+// The check on the shared view, then the request when it passes (the debug link); returns the check's answer
+radio_vfo_copy_t radio_req_vfo_copy_checked(void);
 // The VFO's step (Up / Down, VFO scan), kept in the settings: 1 kHz .. 1 MHz; RADIO_AM_STEP_833 (8333) is the exact
 // 8.33 kHz air band grid (radio/radio_am.h)
 void radio_req_vfo_step_size(uint32_t hz);
@@ -295,17 +313,21 @@ void radio_req_tone(uint8_t which, subtone_t tone);	// which: RADIO_TONE_TX, RAD
 #if CONFIG_DMR
 void radio_req_reply_cancel(void);		// BACK on Home: end the DMR reply window
 // Talk to someone else for now (until the channel changes or radio_req_dmr_target_clear): a typed ID or talkgroup,
-// a codeplug contact, or back to whoever was heard last (their ID for a private call, the talkgroup for a group call)
+// a codeplug contact, or back to whoever was heard last (their ID for a private call, the talkgroup for a group call).
+// In the VFO a typed ID or a contact is the VFO's own talk target, kept with its settings (CONFIG_VFO_DMR); the call
+// back is for now as on a channel
 void radio_req_dmr_target(uint32_t id, bool private_call);
 void radio_req_dmr_contact(uint16_t index);
 void radio_req_dmr_call_back(void);
 void radio_req_dmr_target_clear(void);
 // On-the-fly channel changes (temporary, P7; undone by radio_req_clear_temporary, kept by a save to the channel).
-// Refused while transmitting, in the VFO and in hotspot mode. Timeslot and color code only on a DMR channel; the
-// timeslot beats a contact's timeslot override. The mode change retunes (the call stack starts or stops)
+// Refused while transmitting and in hotspot mode. Timeslot and color code only on a DMR channel (or in the DMR VFO);
+// the timeslot beats a contact's timeslot override. The mode change retunes (the call stack starts or stops). In the
+// VFO these are the VFO's own settings, kept with it (not temporary, no dot on Home); the mode needs both
+// CONFIG_VFO_FM and CONFIG_VFO_DMR
 void radio_req_dmr_timeslot(uint8_t ts);	// 1 or 2
 void radio_req_dmr_color_code(uint8_t cc);	// 0..15
-void radio_req_mode(uint8_t mode);		// radio_mode_t: FM or DMR on the current channel
+void radio_req_mode(uint8_t mode);		// radio_mode_t: FM or DMR on the current channel or the VFO
 // Hear all latched on (every talkgroup on our slot, as while MONITOR is held) until off or the channel changes
 void radio_req_dmr_hear_all(bool on);
 // The talk target focused in a list (the UI calls it on every focus change; id 0 = none). A PTT press while one is
@@ -333,8 +355,37 @@ typedef enum {
 void radio_req_roam(uint8_t cmd);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
+// A vibration pattern (radio/vibe.h vibe_t) on the board's motor (CONFIG_VIBRATE; nothing on a radio without
+// hal_power_t.vibrate). Whether an alert vibrates is the caller's setting
+void radio_req_vibrate(uint8_t pattern);
 // FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off
 void radio_req_tone_burst(bool on);
+// Speaker volume steps (radio-features.md 4.2): 0 (mute) .. RADIO_VOLUME_MAX, passed to hal_radio_t.volume() as a
+// percent, round(step * 100 / RADIO_VOLUME_MAX). The step count is this one constant: the stored form, the screens,
+// the debug link and the boards' tables follow it. A radio without a volume knob (radio_volume_soft(): the board has
+// the hook and hal_power_t.volume() reports -1) is set by the stored step; a radio whose MCU reads the knob follows
+// the knob unless the debug link overrides it (radio_req_volume_override)
+#define RADIO_VOLUME_MAX	16
+#define RADIO_VOLUME_DEFAULT	8
+#define RADIO_VOLUME_KNOB	0xFF	// the debug link's "back to the knob" (and, with no knob, back to the default)
+typedef enum {
+	RVOL_NONE,		// the board has no hook: the volume works in analog hardware (the MCU can't set it)
+	RVOL_KNOB,		// the MCU reads the knob and passes it on
+	RVOL_SOFT,		// no knob: the stored step
+	RVOL_OVERRIDE,		// a knob radio with the debug link's level in force
+} radio_volume_src_t;
+void radio_req_volume(uint8_t step);
+// The level over the knob (step 0..RADIO_VOLUME_MAX), or -1 to give it back; RAM only. Does nothing without a knob
+void radio_req_volume_override(int8_t step);
+bool radio_volume_soft(void);
+// Whether the MCU can set the speaker level at all (the board has the hook): knob radios accept an override
+bool radio_volume_settable(void);
+uint8_t radio_volume_percent(uint8_t step);
+// settings_t.volume (0 = default, else a stored step) to a step, and back. A byte written by the 0..10 version (1..11)
+// is scaled to the new range; the new form has bit 7 set
+uint8_t radio_volume_step(uint8_t stored);
+uint8_t radio_volume_stored(uint8_t step);
+
 // Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them
 void radio_settings_default(radio_settings_t *s);
 void radio_set_settings(const radio_settings_t *s);

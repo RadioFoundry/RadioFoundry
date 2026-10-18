@@ -13,9 +13,21 @@
 #define REG32(a)		(*(volatile uint32_t *)(uintptr_t)(a))
 
 // --- Clocks: APB peripherals run from sys / 2 (hardware-dm32.md 1.1) ---
+// HRC_CPU_HZ is the clock the application runs at: 168 MHz unless the board sets it in board.mk. The loader in front of
+// it may leave the PLL at another rate: HRC_LOADER_CPU_HZ (default the same). The Baofeng bootloader leaves 168 MHz,
+// the DB25-D's IAP loader 72 MHz. When the two differ, clock.c reprograms the PLL at start-up and
+// hrc_clock_restore_loader() puts the loader's clocks back before a hand-over to RAM code built for them (the runtime
+// stub) or a soft reset
+#ifndef HRC_CPU_HZ
 #define HRC_CPU_HZ		168000000u
-#define HRC_APB_HZ		84000000u
+#endif
+#ifndef HRC_LOADER_CPU_HZ
+#define HRC_LOADER_CPU_HZ	HRC_CPU_HZ
+#endif
+#define HRC_APB_HZ		(HRC_CPU_HZ / 2u)
+#define HRC_LOADER_APB_HZ	(HRC_LOADER_CPU_HZ / 2u)
 #define HRC_XTAL_HZ		24000000u
+#include "clock_math.h"
 
 // --- System / modem block (hardware-dm32.md 1.1, 5.1) ---
 #define SYS_BASE		0x11000000u
@@ -43,6 +55,7 @@
 #define GPIOA_BASE		0x14020000u
 #define UART0_BASE		0x14030000u
 #define UART1_BASE		0x14040000u
+#define UART2_BASE		0x14050000u
 #define SPI0_BASE		0x140A0000u
 #define SPI2_BASE		0x140E0000u
 #define PWM_BASE		0x140C0000u
@@ -76,11 +89,12 @@
 #define TMR_CTRL_INT_MASK	0x04u	// 1 = interrupt masked
 
 // Timer allocation: 1 = RTOS tick, 2 = free-running microsecond clock (no interrupt), 3 = DMR PA one-shot (as
-// stock; hardware-dm32.md 8.6), 4-6 free
+// stock; hardware-dm32.md 8.6), 4 = AFSK, 5 = the board's own, 6 free
 #define TIMER_TICK		1
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
 #define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (hrc_afsk.c)
+#define TIMER_BOARD		5	// a board's one-shot (DB25-D: the waits of its DMR burst sequence, dmr_db25d.c)
 
 // --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---
 #define PIC_MODE		REG32(PIC_BASE + 0x00)
@@ -203,6 +217,8 @@ typedef struct {
 extern hal_flash_t hrc_flash_spi0;
 void hrc_flash_spi0_configure(const hrc_flash_cfg_t *cfg);	// before hrc_flash_spi0.init
 uint32_t hrc_flash_spi0_jedec(void);
+// The task holding the data flash lock and for how long (ms), "-" when free: a stuck flash user shows here
+const char *hrc_flash_spi0_holder(uint32_t *held_ms);
 
 // --- ADC (adc.c): channels 1 (B) and 2 (C) ---
 
@@ -215,10 +231,23 @@ uint16_t hrc_adc_last(uint8_t ch);	// the last reading, for diagnostics
 // Watchdog off, PLL to 168 MHz unless the bootloader already runs on it, peripheral clocks on, flash cache.
 // Runs from RAM (it reprograms the XIP flash controller)
 void hrc_clock_init(void);
+// Back to the clocks the loader left (a no-op when the application never changed them). From RAM, interrupts off,
+// nothing running from XIP flash. The caller reprograms the UART divisor afterwards (hrc_host_uart_settle)
+void hrc_clock_restore_loader(void);
 // Vector table in RAM, PIC to a known state (everything masked and cleared)
 void hrc_irq_init(void);
 void hrc_time_init(void);
-// LCD backlight on PTA15 / PWM0 (backlight.c): 0 off, 100 fully on, otherwise PWM duty in percent
+// LCD backlight on PWM channel ch, output on PTA15 + ch (backlight.c). cfg is the CFG value before load and enable,
+// rpt the repeat count (0: not written), period in PWM clocks (24 MHz)
+typedef struct {
+	uint8_t ch;
+	uint16_t cfg;
+	uint16_t rpt;
+	uint32_t period;
+} hrc_backlight_t;
+// 0 off, 100 fully on, otherwise PWM duty in percent
+void hrc_backlight_pwm(const hrc_backlight_t *bl, uint8_t percent);
+// PTA15 / PWM0 with the DM-32 port's settings
 void hrc_backlight(uint8_t percent);
 
 // Timer 1 at configTICK_RATE_HZ for the RTOS (called by the port when the scheduler starts)
@@ -248,9 +277,12 @@ void hrc_soft_reset(void) __attribute__((noreturn));
 // Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads a position-
 // dependent image here and ODR jumps to it without a power cycle. The span is the stock-codec RAM window, which ODR
 // never links anything into (dm32.ld leaves 0x16CDC..0x2F914 out); the codec is not running once the radio is quiesced,
-// so the whole window is free. Base is 4 KB aligned inside it and the length stays clear of 0x2F914
+// so the whole window is free. Base is 4 KB aligned inside it and the length stays clear of 0x2F914. A board without
+// that window sets its own free span in board.mk (the DB25-D: above its bss)
+#ifndef HRC_STUB_BASE
 #define HRC_STUB_BASE		0x00017000u
 #define HRC_STUB_SIZE		0x00018000u	// 96 KB: image (~25 KB code+bss) and its stack, ends at 0x2F000
+#endif
 
 // Code that must not run from XIP flash (flash controller set-up, the modem slot interrupts): the linker script
 // places .ramfunc in SRAM
@@ -262,7 +294,49 @@ extern const hal_system_t hrc_system;
 #include "hal_stream.h"
 extern const hal_stream_t hrc_host_uart_stream;
 void hrc_host_uart_init(void);
+// The hand-over to the runtime stub: drain the transmitter while the clocks are still ours, restore the loader's clocks
+// (hrc_clock_restore_loader), then set the divisor for the loader's APB clock. Both run from RAM
+void hrc_host_uart_drain(void);
+void hrc_host_uart_loader_div(void);
+// Weak, called from the receive interrupt for every character (error: the UART flagged it)
+void hrc_host_uart_rx_tap(uint8_t b, bool error);
 uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
 uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
+// When the last byte without a line error arrived (hal_millis()); false if none has yet. A board whose PTT shares the
+// serial line (drivers/input/sharedptt) reads it to tell host data from a press
+bool hrc_host_uart_last_rx(uint32_t *ms);
+// Host port traffic for the diagnostics page: when the host link stops answering, these tell a dead receiver (rx
+// stops), a stuck transmitter (tx_stalls) and a stuck host link task (waits stops) apart
+typedef struct {
+	uint32_t rx_bytes, tx_bytes, tx_stalls, waits;
+	uint8_t ier;			// the interrupt enables as the UART has them now (0x05 expected)
+} hrc_uart_traffic_t;
+void hrc_host_uart_traffic(hrc_uart_traffic_t *t);
+
+// Any of the SoC's UARTs (UART0_BASE, UART1_BASE, ...; uart.c). setup: baud 8N1 from the APB clock, FIFOs on, receive
+// trigger at one character, interrupts off. rx_irq: the received-data and line-status interrupts (IER = 0x05) on or
+// off. rx_isr, for the UART's interrupt handler: every waiting character (64 at most) to rx, flagged when the UART
+// marked it (FIFO overrun, parity, framing, break), then the line-status and busy-detect interrupts cleared; returns
+// how many came
+void hrc_uart_setup(uint32_t base, uint32_t baud);
+void hrc_uart_rx_irq(uint32_t base, bool on);
+void hrc_uart_rx_clear(uint32_t base);	// drain the RX FIFO, clear line status and busy-detect
+uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
+
+// A GPS module's NMEA output on one of the UARTs, 9600 8N1, receive only (gps_hrc.c; hardware-dm32.md 12, hardware-db25d.md
+// 3.1). The module is powered and listened for for 5 s at start-up; one checksum-valid sentence makes it present (and
+// every sentence then goes to the APRS position source, CONFIG_APRS), nothing heard powers it off and stops the UART
+typedef struct {
+	uint32_t uart_base;	// UART0_BASE ... UART2_BASE
+	uint8_t irq;		// the UART's interrupt source (IRQ_UARTn)
+	uint8_t power_pin;	// GPIO that switches the module's supply
+	bool power_on_level;	// the level on power_pin that powers the module
+	uint32_t rxd_mux_clear;	// IO_DIPLEX0 bits cleared to give the RXD pad to the UART; 0 = the board's io init has
+} hrc_gps_cfg_t;
+void hrc_gps_init(const hrc_gps_cfg_t *cfg);
+void hrc_gps_enable(bool on);	// Settings > Location > GPS (board_t.gps_enable): the module's power, once it has been heard
+bool hrc_gps_present(void);	// the module has been heard: board_t.gps_present
+void hrc_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);	// valid / bad sentences, bytes received
+bool hrc_gps_running(void);	// the module is powered and listened to (diagnostics)
 
 #endif

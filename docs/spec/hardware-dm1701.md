@@ -987,7 +987,7 @@ breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approxima
 PA3 gives the microphone level; convert the raw value to dB (20 log10) for VOX.
 
 ODR's `mic_level` (`boards/dm1701/power_dm1701.c`, VOX in `radio-features.md` 3.4) gives 0-100: 20 log10 of the raw
-reading over the ADC's 72 dB. Not verified on the bench.
+reading over the ADC's 72 dB, from the shared scale in `drivers/audio/miclevel/miclevel.h`. Not verified on the bench.
 
 ### 11.4 Temperature
 
@@ -1343,6 +1343,11 @@ boots into DFU every time until a full image is written again, which `tools/stm3
 touched, so the bootloader always stays reachable. This is not implemented; it is a candidate `REBOOT` mode 2 with the
 same gate plus an explicit confirmation in the tool.
 
+**Route 3: no bootloader at all, for updates.** A build with `CONFIG_STUB_ENTRY=y` loads a RAM flash stub over the
+debug link and the stub writes the application sectors itself ([stub-stm32f4.md](stub-stm32f4.md)). It uses the DFU
+check above as its safety net: it erases sector 3 first and programs the word at 0x0800C000 last, so an interrupted
+update leaves the radio in DFU at the next power-on with no keys held.
+
 Sources: `FLASH_OPTCR` and the flash size register read on the bench unit through the debug link (2026-10-10);
 STM32F405 reference manual (RDP levels, option bytes, `SYSCFG_MEMRMP`, backup domain); ST's application note on the
 system-memory bootloader (supported interfaces, read-unprotect behavior).
@@ -1464,6 +1469,10 @@ Verified on one radio with the new firmware; they override the unverified notes 
   0x00 on both bands while the other gain rows hold values: an all-zero gain row is valid data.
 - **Soft volume**: HR_C6000 4:0x37 (RX gain) scales FM feed-through audio as well as DMR audio; -31 dB is still
   audible, so the bottom of the knob must also mute the speaker path.
+- **Volume override**: because the MCU reads the knob and sets this gain itself, the debug link can set the level
+  instead (RADIO op 30, `radio-features.md` 4.2): a step 0..16 maps to the same 0..100 % scale as the knob, in force
+  until it is cleared (RAM only). The knob has no analog path around the gain, so the override fully takes its place (HW,
+  not yet run on a radio).
 - **HR_C6000**: 4:0x10 reads back 0x80 after FM RX set-up (the config port works with the 4.2 timing).
 - **FM TX** (VFO 461.8625 MHz, 12.5 kHz, 1 W, measured with an RTL-SDR, 2026-10-09): with the TX sequence of
   `radio_dm1701.c` (frequency written with the receiver off, straight to TX) the carrier is within about 50 Hz of the

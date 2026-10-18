@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Task flows
 
-Step-by-step flows for the 20 most frequent or most important tasks, with press counts per radio class. Keys use the logical names from `information-architecture.md`; the reference mapping is `SELECT` = green/Menu, `BACK` = red/Back, `QUICK` = `*`, `CONTEXT` = `#`, `TALK_TARGET` = SK2, `MONITOR` = SK1.
+Step-by-step flows for the 22 most frequent or most important tasks, with press counts per radio class. Keys use the logical names from `information-architecture.md`; the reference mapping is `SELECT` = green/Menu, `BACK` = red/Back, `QUICK` = `*`, `CONTEXT` = `#`, `TALK_TARGET` = SK2, `MONITOR` = SK1.
 
 ## Radio classes
 
@@ -241,13 +241,15 @@ Hold `EMERGENCY` (top/orange key) 1.5 s. A rising tone during the hold, then "EM
 |---|---|---|---|---|---|
 | Start / cancel | 1 (hold) | 1 | 1 (mic key) | 1 if a key is free | 1 |
 
-## 18. Toggle FM / DMR
+## 18. Copy a channel to the VFO, switch the VFO's mode
 
-On a channel: `QUICK`, `4`. Temporary: the channel becomes its other mode with the same frequency (DMR → FM uses the channel's FM settings if it has any, otherwise no tone; FM → DMR uses CC 1 TS 1 and the last talk target, shown with a dot). In VFO it changes the VFO. Home's mode chip changes color and word.
+On a channel: `QUICK`, `4` ("To VFO"). What is in effect on the channel now (frequencies and offset, mode, bandwidth, power, tones, color code, timeslot and talk target, temporary changes included) becomes the VFO's own settings, the VFO opens on Home and the toast says "Copied to VFO". The channel is unchanged; the VFO's values are kept like its other settings (no dot). A channel the VFO can't hold (a mode this build's VFO lacks, a frequency outside the radio's bands) is refused with a toast and nothing changes. The same is on a key: Settings > Keys > Copy to VFO, or the VFO/MR key's long press where a radio has one. In the VFO "Already in VFO". The full rules are in `dmr-voice.md` 2.2.
+
+In the VFO: `QUICK`, `4` ("Mode") switches the VFO FM / DMR on its frequency, kept (no dot): FM → DMR uses the VFO's color code (1 at first), slot and talk target (talkgroup 9 at first); change them with quick tiles 2, 3 and 8. Home's mode chip changes color and word. A channel has no temporary mode change.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
-| Toggle | 2 | 2 | 2 | 3 | 2 |
+| Copy to VFO | 2 | 2 | 2 | 3 | 2 |
 
 ## 19. Monitor and hear all
 
@@ -275,6 +277,39 @@ On a channel: `QUICK`, `4`. Temporary: the channel becomes its other mode with t
 
 ---
 
+## 21. Edit a channel
+
+1. `SELECT`, `5`: Channels opens on the channel in use. `NAV_UP`/`NAV_DOWN` or typing finds another one.
+2. `SELECT`: the channel's settings.
+3. `NAV_DOWN` to the row. Two-value rows (timeslot, mode, bandwidth) flip on `SELECT`; rows with more values (power,
+   PL / DCS tone, color code, time-out) open a spinner: turn the knob (or `NAV_UP`/`NAV_DOWN`) to the value, `SELECT`
+   keeps it; frequencies and the ID take digits; the name opens text entry; the TX contact opens a
+   picker.
+4. Long `SELECT` saves. Changed rows show a dot until then; `BACK` with changes asks "Discard the changes to this channel?".
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Timeslot of the channel in use, saved | 5+n | 5+n | 5+n | 5+n | 6+n |
+| TX contact by name ("WCRA": 9 2 7 2) | 9+n | 9+n | 9+n | 7+n+m | 10+n |
+
+Changing the channel in use for now is shorter from quick settings (flow 20). This flow is for saved changes, other
+channels and rows quick settings don't have.
+
+---
+
+## 22. New channel from current settings
+
+1. `SELECT`, `5`, `NAV_UP` to the first row, "New from current", `SELECT`: an unsaved copy of the channel in
+   use (with its temporary changes) or of the VFO, at the lowest free number.
+2. Change what differs (flow 21, step 3), for example the name and the TX contact.
+3. Long `SELECT` saves it. Add it to a zone with qdmr for now (issue #44 adds it to the current zone).
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Copy, saved unchanged | 5+n | 5+n | 5+n | 5+n | 6+n |
+
+---
+
 ## Summary
 
 | Task | K | Budget met? |
@@ -296,8 +331,10 @@ On a channel: `QUICK`, `4`. Temporary: the channel becomes its other mode with t
 | Hotspot start / stop | 4 / 2 | yes |
 | Who is talking | 0 | yes |
 | Emergency | 1 hold | yes |
-| FM / DMR | 2 | yes |
+| Copy to VFO / VFO mode | 2 | yes |
 | Monitor / hear all | 1 / 2 | yes |
+| Edit a channel (timeslot, saved) | 5+n | yes |
+| New channel from current | 5+n | yes |
 | TS / CC | 3 / 4 | yes |
 
 Every task except typed entries (IDs, frequencies, free text) completes in six presses or fewer, inside the NHTSA six-input guideline.

@@ -24,6 +24,9 @@ static void rd(uint32_t addr, void *dst, size_t n)
 HRC_RAMFUNC void hrc_soft_reset(void)
 {
 	__asm__ volatile ("psrclr ie");
+#if HRC_LOADER_CPU_HZ != HRC_CPU_HZ
+	hrc_clock_restore_loader();	// the clock manager survives a soft reset: the loader has to start on its own PLL
+#endif
 	QUAD_ENABLE = 0;	// XIP controller back to its reset mode, so the ROM and bootloader can read flash. The soft
 	LCSFC_BAUDR = 4;	// reset keeps the divider: single-bit reads at divider 2 fail and the radio never boots
 	SYS_SOFT_RSTN = 0;
@@ -72,6 +75,13 @@ HRC_RAMFUNC static bool enter_stub(uint32_t entry)
 	QUAD_ENABLE = 0;				// XIP controller back to reset mode: the program flash is the SSI's
 	LCSFC_BAUDR = 4;				// (both registers: a later soft reset keeps the divider)
 							// again, as hrc_soft_reset does. No DMA reaches SRAM on this board
+#if HRC_LOADER_CPU_HZ != HRC_CPU_HZ
+	// The stub is built for the loader's clocks (its UART divisor and tick come from them): put them back, then the
+	// divisor that gives 115200 on them. The transmitter drains first, at our own clock, so the last reply isn't cut
+	hrc_host_uart_drain();
+	hrc_clock_restore_loader();
+	hrc_host_uart_loader_div();
+#endif
 	hrc_barrier();
 	((void (*)(void))(uintptr_t)entry)();		// run the stub; it serves the host until power-off
 	for (;;) {					// unreachable: the stub does not return

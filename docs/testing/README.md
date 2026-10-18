@@ -41,8 +41,8 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    the codec library and key derivation, the codec decision, whole flashes against a fake bootloader with a flash
    model; [release.md](../dev/release.md)) and the `--self-test` of `tools/codec_extract.py`, `tools/stm32_dfu.py`,
    `tools/md380_migrate.py`, `tools/dm32_flash.py` (against a simulated Baofeng bootloader) and
-   `tools/dm32_migrate.py` (DfuSe files, the conversion report, CPS writes against a simulated DM-32 shim).
-   `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves.
+   `tools/dm32_migrate.py` (DfuSe files, the conversion report, CPS writes against a simulated DM-32 shim), and the
+   stack check's (`tools/stack_check.py`). `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves.
 3. **Firmware, every board with the feature matrix**. For each `boards/<b>/board.mk` whose compiler is installed:
    - `default`: the board's defaults;
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
@@ -52,7 +52,9 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
      `LTO=1` on the DM-1701);
    - `vhf`: the MD-380's VHF image (MD-380 only).
 
-   Every configuration must build with zero compiler and linker warnings. A board without its compiler (the DM-32's
+   Every configuration must build with zero compiler and linker warnings. The default and maximal ones must also pass
+   the stack check: every task's deepest call chain fits its stack ([docs/dev/stack-check.md](../dev/stack-check.md)).
+   A board without its compiler (the DM-32's
    csky GCC comes from `tools/build-csky-toolchain.sh` or the Docker image, [docs/dev/ci.md](../dev/ci.md#the-csky-elf-image))
    is skipped with a notice. Build trees are `build/ci/<board>-<config>/`, each
    with its log next to it. The sizes go to `build/ci/size-report.md`: image bytes, the change against the board's
@@ -143,7 +145,7 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k aprs --aprs-call CALL   # APRS, 145.090 MHz
+python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k aprs --aprs-call CALL   # APRS, 446.050 MHz
 ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s --allow-rf --allow-service-stop
 ```
 
@@ -152,7 +154,7 @@ ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s -
 | `test_dmr_rx`, `test_dmr_voice` | the bench modem sends calls; the radio's counters show every burst, every voice frame reaches the speaker path |
 | `test_dmr_tx` | the radio keys 3 s; an SDR capture (`sdrmon.py`) and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
 | `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz, the 1750 Hz burst, the roger beep, three power levels; `tools/sdr_fm_check.py` decodes the tones (`--tones`: audio tones) and compares the deviations |
-| `test_aprs` | APRS at the lowest power on a 2 m packet simplex channel (145.090 MHz by default, never an APRS frequency, no path): position, status and message decoded off air by `tools/aprs_afsk_check.py` (Bell 202 / AX.25 from the RTL-SDR's I/Q), with the deviation, twist, phase continuity and TX delay; positions over DMR (LRRP, UDT) decoded from the bench modem |
+| `test_aprs` | APRS at the lowest power on a 70 cm simplex frequency (446.050 MHz by default, never an APRS frequency, no path): position, status and message decoded off air by `tools/aprs_afsk_check.py` (Bell 202 / AX.25 from the RTL-SDR's I/Q), with the deviation, twist, phase continuity and TX delay; positions over DMR (LRRP, UDT) decoded from the bench modem |
 | `test_dmr_data` | the bench sends data, a text message, a call alert and radio checks to the radio, which answers (its `dmr_data` counters, the answers heard by the bench modem); the radio sends a call alert, a radio check and a text message the bench modem hears (`docs/spec/dmr-data.md`) |
 | `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `ODR_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
 | `test_hotspot_voice` | the hotspot on air both ways: bench calls and data up the USB link, host calls and data heard on air |

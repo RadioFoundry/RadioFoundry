@@ -201,7 +201,8 @@ no FPU instructions.
 
 * Encode flags: a set of feature bits, one value on every call of a transmission (stock's init value at E+0x1730
   is 0x1840). The bit meanings were measured on the DM-1801 Pro and MD-380 builds of this codec family
-  ([codec-md380.md](codec-md380.md), "Encode flags"): 0x40 noise suppression, 0x800 noise gate, 0x1000 tone frames,
+  ([codec-md380.md](codec-md380.md), "Encode flags";
+  [codec-dm1801pro.md](codec-dm1801pro.md) section 3): 0x40 noise suppression, 0x800 noise gate, 0x1000 tone frames,
   0x2000 input AGC.
   **On this build they are unverified**: the code is the same family, but the bits were not measured on it. ODR's
   host passes the same word as the MD-380's (`drivers/vocoder/ambe2_flags.h`, 0x1840 by default). The encoder reads

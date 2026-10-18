@@ -35,11 +35,11 @@ typedef struct {
 	uint32_t vfo_rx_hz;
 	uint32_t vfo_tx_hz;
 	uint32_t vfo_step_hz;		// 0 = the radio's default
-	uint8_t vfo_mode;		// radio_mode_t
-	uint8_t vfo_bw;			// radio_bw_t
+	uint8_t vfo_mode;		// radio_mode_t in bits 0-3; bits 4-7: the VFO's talk target ID bits 8-11 (see below)
+	uint8_t vfo_bw;			// radio_bw_t in bits 0-3; bits 4-7: the talk target ID bits 12-15 (see below)
 	uint8_t vfo_power;		// board power level, SETTINGS_UNSET8 = default
-	uint8_t vfo_cc;			// DMR color code
-	uint8_t vfo_ts;			// DMR timeslot 1 / 2
+	uint8_t vfo_cc;			// DMR color code in bits 0-3; bits 4-7: the VFO's talk target ID bits 16-19 (see below)
+	uint8_t vfo_ts;			// DMR timeslot 1 / 2 in bits 0-1; the rest holds the talk target (see below)
 	uint8_t vfo_rx_tone_type;	// tone_type_t
 	uint8_t vfo_tx_tone_type;
 	uint8_t net_flags;		// SETTINGS_NET_* bits (was reserved0: 0 = as before)
@@ -52,7 +52,9 @@ typedef struct {
 	uint8_t hotspot_allowed;	// the host may make the radio an MMDVM hotspot
 	uint8_t master_power;		// power for channels set to "default", SETTINGS_UNSET8 = the board's default
 	uint8_t usb_mode;		// the USB personality at power-on: 0 serial, 1 network (docs/spec/usb-network.md 1)
-	uint16_t reserved1;
+	uint8_t accent;			// color displays (docs/spec/ui.md 8): SETTINGS_ACCENT_* (was reserved1's first byte;
+					// 0 = the defaults: the theme's highlight, the strip filled)
+	uint8_t vfo_talk_lo;		// the DMR VFO's talk target ID, bits 0-7 (was reserved1's second byte; see below)
 	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's
 	char radio_name[SETTINGS_NAME_LEN];	// NUL padded, "" = the codeplug's callsign
 	// DMR basic privacy keys (the key store dmr-voice's privacy uses; docs/spec/settings-store.md 3). A channel's
@@ -96,7 +98,7 @@ typedef struct {
 	uint16_t auto_lock_s;		// lock the keys after this long without a key press, 0 = never
 	uint16_t long_press_ms;		// long press threshold for core/input, 0 = INPUT_LONG_MS
 	uint16_t repeat_ms;		// key repeat period, 0 = INPUT_REPEAT_MS
-	uint8_t gps;			// GPS on (kept only: no GPS driver yet)
+	uint8_t gps;			// GPS on: Settings > Location > GPS powers the module (board_gps_enable) and lets APRS use its fix
 	uint8_t pos_format;		// position format shown (UI list index)
 	uint16_t pos_send_s;		// send our position every so many seconds, 0 = never (kept only)
 	// DMR emergency (dmr_emergency_settings_t, docs/spec/dmr-emergency.md); em_stored 0 = never set (the defaults)
@@ -134,7 +136,9 @@ typedef struct {
 					// with the aprs_ fields below)
 	uint8_t aprs_cp_path;		// the codeplug APRS record's path last taken into aprs_path, aprs_path_t + 1 (0 = none
 					// yet; was reserved6[1]). A different path in the codeplug replaces aprs_path (aprs.md 11)
-	uint8_t audio_flags;		// SETTINGS_AUDIO_* bits (was reserved6; 0 = the defaults)
+	uint8_t volume;			// speaker volume on radios without a knob: 0 = the default, else 0x80 | (step + 1)
+					// (step 0..RADIO_VOLUME_MAX, 0 = mute); 1..11 = a step 0..10 of the first version
+					// (was reserved6, radio.h RADIO_VOLUME_*, radio_volume_step)
 	// APRS (core/aprs/aprs.h aprs_cfg_t, docs/spec/aprs.md 11); taken only when aprs_stored is 1, else the defaults
 	// (automatic transmit off)
 	uint8_t aprs_flags;		// SETTINGS_APRS_* bits
@@ -171,17 +175,62 @@ typedef struct {
 	uint32_t snmp_write_hash;	// write community, 0 = none (SET refused)
 } settings_t;
 
-// settings_t.ui_flags (defaults: hints, message tone, talker alias and PTT when locked on)
+// The DMR VFO's talk target (docs/spec/settings-store.md 3): a 24-bit ID and a private call flag, packed into bytes
+// that were reserved or held a small value, so the record stays 236 bytes and an older record reads as "none" (0).
+// ID bits 0-7 vfo_talk_lo, 8-11 vfo_mode bits 4-7, 12-15 vfo_bw bits 4-7, 16-19 vfo_cc bits 4-7, 20-23 vfo_ts bits
+// 2-5; vfo_ts bit 7 = private call. Use these accessors: vfo_mode, vfo_bw, vfo_cc and vfo_ts are not plain numbers
+// any more
+static inline uint8_t settings_vfo_mode(const settings_t *s) { return s->vfo_mode & 0x0Fu; }
+static inline uint8_t settings_vfo_bw(const settings_t *s) { return s->vfo_bw & 0x0Fu; }
+static inline uint8_t settings_vfo_cc(const settings_t *s) { return s->vfo_cc & 0x0Fu; }
+static inline uint8_t settings_vfo_ts(const settings_t *s) { return (s->vfo_ts & 3u) == 2u ? 2u : 1u; }
+static inline uint32_t settings_vfo_talk_id(const settings_t *s)
+{
+	return (uint32_t)s->vfo_talk_lo | ((uint32_t)(s->vfo_mode >> 4) << 8) | ((uint32_t)(s->vfo_bw >> 4) << 12) |
+	       ((uint32_t)(s->vfo_cc >> 4) << 16) | ((uint32_t)((s->vfo_ts >> 2) & 0x0Fu) << 20);
+}
+static inline bool settings_vfo_talk_private(const settings_t *s) { return (s->vfo_ts & 0x80u) != 0; }
+// Mode and bandwidth, color code and timeslot of the VFO, leaving the talk target; and the talk target, leaving those
+static inline void settings_set_vfo_mode_bw(settings_t *s, uint8_t mode, uint8_t bw)
+{
+	s->vfo_mode = (uint8_t)((s->vfo_mode & 0xF0u) | (mode & 0x0Fu));
+	s->vfo_bw = (uint8_t)((s->vfo_bw & 0xF0u) | (bw & 0x0Fu));
+}
+static inline void settings_set_vfo_cc_ts(settings_t *s, uint8_t cc, uint8_t ts)
+{
+	s->vfo_cc = (uint8_t)((s->vfo_cc & 0xF0u) | (cc & 0x0Fu));
+	s->vfo_ts = (uint8_t)((s->vfo_ts & 0xFCu) | (ts == 2 ? 2u : 1u));
+}
+static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool private_call)
+{
+	s->vfo_talk_lo = (uint8_t)id;
+	s->vfo_mode = (uint8_t)((s->vfo_mode & 0x0Fu) | (((id >> 8) & 0x0Fu) << 4));
+	s->vfo_bw = (uint8_t)((s->vfo_bw & 0x0Fu) | (((id >> 12) & 0x0Fu) << 4));
+	s->vfo_cc = (uint8_t)((s->vfo_cc & 0x0Fu) | (((id >> 16) & 0x0Fu) << 4));
+	s->vfo_ts = (uint8_t)((s->vfo_ts & 0x03u) | (((id >> 20) & 0x0Fu) << 2) | (private_call ? 0x80u : 0));
+}
+
+// settings_t.accent: bits 0-2 the highlight color (0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue,
+// 6 purple, 7 pink), bit 3 set: the status strip on the screen's background, not filled (0, the default: filled),
+// bits 4-5 zero, bits 6-7 the vocoder's mic options (SETTINGS_AUDIO_* below)
+#define SETTINGS_ACCENT_COLOR	0x07u
+#define SETTINGS_ACCENT_PLAIN	0x08u
+
+// settings_t.ui_flags (defaults: hints, message tone, talker alias, PTT when locked and vibrate on)
 #define SETTINGS_UI_LARGE_TEXT		0x01u
 #define SETTINGS_UI_HINTS		0x02u
 #define SETTINGS_UI_MESSAGE_TONE	0x04u
 #define SETTINGS_UI_ALIAS		0x08u	// show received talker aliases
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
+#define SETTINGS_UI_NO_VIBRATE		0x40u	// vibrate for alerts off (0 = on: older records keep it on)
 
-// settings_t.audio_flags (0: noise reduction on, AGC off)
-#define SETTINGS_AUDIO_NO_NOISE_REDUCTION	0x01u	// the vocoder's mic noise reduction off (DMR TX)
-#define SETTINGS_AUDIO_AGC			0x02u	// the vocoder's mic AGC on (DMR TX; mic gain then unity)
+// The vocoder's mic options in settings_t.accent bits 6-7: no byte was left for them, and a record from before reads
+// as 0, noise reduction on and AGC off
+#define SETTINGS_AUDIO_NO_NOISE_REDUCTION	0x40u	// the vocoder's mic noise reduction off (DMR TX)
+#define SETTINGS_AUDIO_AGC			0x80u	// the vocoder's mic AGC on (DMR TX; mic gain then step 5)
+#define SETTINGS_AUDIO_MASK			0xC0u
+#define SETTINGS_AUDIO_SHIFT			6
 
 // settings_t.net_flags (the USB network personality; 0 = as before)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)

@@ -131,6 +131,26 @@ DM32 = Board(
     protected=[(0x03000000, 0x0300C000)],
 )
 
+# Not released yet (docs/testing/dm1801pro-bringup.md). The same Baofeng serial updater as the DM-32UV, with its own ID
+# string (BF1801-V1); the same flash map, the same codec slot and the same erase of the whole application area. The
+# codec comes from the radio's own program flash (read with stub/stubtool.py), not from a stock file
+# (docs/spec/codec-dm1801pro.md, tools/dm32_codec.py --board dm1801pro). tools/dm32_flash.py --model dm1801pro does
+# the writing.
+DM1801PRO = Board(
+    id="dm1801pro",
+    name="Baofeng DM-1801 Pro",
+    family="bfuv32-serial",
+    app_base=0x0300C000,
+    flash_end=0x03100000,
+    sectors=[Sector(0, 0x0300C000, 0x030E8000 - 0x0300C000), Sector(1, 0x030E8000, 0x03100000 - 0x030E8000)],
+    codec=CodecProfile(id="dm1801pro-049", windows=[(0x030E8000, 0x03100000 - 0x030E8000)],
+                       installed=[], sources=["a program flash read of the radio"]),
+    debuglink_names=["DM-1801 Pro", "DM-1801Pro", "dm1801pro"],
+    releasable=False,
+    keep_codec_supported=False,
+    protected=[(0x03000000, 0x0300C000)],
+)
+
 # Not released yet (docs/testing/md380-bringup.md). The TYT bootloader takes the same DFU protocol and sector order as
 # the DM-1701's, with its own key (tools/stm32_dfu.py --model md380). The stock D002.032 codec runs in place at its
 # stock addresses (docs/spec/codec-md380.md): the code window starts at 0x08050C44, inside sector 6, so the application
@@ -157,7 +177,25 @@ MD380 = Board(
     protected=[(0x08000000, 0x0800C000)],
 )
 
-BOARDS = {b.id: b for b in (DM1701, DM32, MD380)}
+# Bring-up, not released (docs/spec/hardware-db25d.md 2, 7, 8). The vendor IAP loader (0x03000000..0x0300BFFF) is never
+# written. The first stage fills the sector at 0x0300C000, ODR starts at 0x0300D000, the codec slot is the same as the
+# DM-32UV's. No tool here flashes it: the web flasher does (IAP loader, or the stub from ODR), and stub/stubtool.py.
+DB25D = Board(
+    id="db25d",
+    name="Radioddity DB25-D PRO",
+    family="hrc7000-iap",
+    app_base=0x0300C000,
+    flash_end=0x03100000,
+    sectors=[Sector(0, 0x0300C000, 0x030E8000 - 0x0300C000), Sector(1, 0x030E8000, 0x03100000 - 0x030E8000)],
+    codec=CodecProfile(id="db25d-018", windows=[(0x030E8000, 0x03100000 - 0x030E8000)],
+                       installed=[], sources=["DB25-D PRO 909E.Dx.EARSAB.018 stock files", "a program flash read of the radio"]),
+    debuglink_names=["DB25-D", "DB25-D PRO", "db25d"],
+    releasable=False,
+    keep_codec_supported=False,
+    protected=[(0x03000000, 0x0300C000)],
+)
+
+BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, DB25D)}
 
 
 def get(board_id):

@@ -25,10 +25,10 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip and, from 100 px high, each list row take
 one pixel more than the text cell, so lines never touch (easy to read comes before one more row; principles.md 5).
 The board's safe-area insets (`hal_display_t.inset_*`) are outside the drawing area (`gfx_width` / `gfx_height`),
-for panel edges hidden by the case (DM-1701: 5 px left and right under the lens, `hardware-dm1701.md` 9.1). At 160x120i5 a list shows 7 rows, at 160x128 7, at 120x160 (the DM-32) 15,
-at 128x64 5. The 240x320 class keeps 3 px per row and a separate title row; `uiSim --layout` fails a class whose row
-pitch drops below these. The 120x160 portrait panel keeps the 128 px class's small font (24 characters a line) and
-takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
+for panel edges hidden by the case (DM-1701: 5 px left and right under the lens, `hardware-dm1701.md` 9.1). At 160x120i5 a list shows 7 rows, at 160x128 7, at
+240x320i10x5 (the DM-32) 11, at 128x64 5. The 240 px class keeps 6 px between rows and a separate title row;
+`uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px
+class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
 (name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
 line ("No calls heard yet") is centered in the region. Text that doesn't fit is shortened (an alternate, the name
 dropped, then an ellipsis), never drawn in a smaller font.
@@ -81,14 +81,66 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Actions | `actions` | CONTEXT (`#`) on a person, a talkgroup, the last caller, a message |
 | Recent | `recent` | Hub 3 |
 | Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`) |
-| Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). OK opens the channel (`channel`), CONTEXT goes to it |
-| Channel | `channel` | OK in Channels: the channel's settings, read only (number, mode, RX, TX and offset, power, RX only, FM bandwidth and tones, DMR color code, timeslot, TX contact, RX group list, own ID, TX time-out, scan, the zones holding it). OK goes to it: in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone" |
+| Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
+| Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), save, and save as a new channel |
+| Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
+| Unsaved changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
+| List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (SK2), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
 The gallery (section 7) shows every screen at every display class.
+
+### 2.1 Channel editor
+
+The Channel screen edits a working copy of the channel. Nothing is written until the user saves.
+
+Rows by kind. A row with two values flips on OK; a row with more opens the spinner, so the knob picks the value
+instead of OK pressed once per step. The rows shown follow the copy's mode, so a mode change adds or removes rows at once.
+
+| Kind | OK does | Rows |
+|---|---|---|
+| Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
+| Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as the MD-380's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
+| Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16777215) |
+| Text | opens Text entry | Name |
+| Pick | opens the List picker | TX contact, RX group list |
+| Read only | nothing | Number, Zones |
+| Action | runs it | Go to it, Save, Save as new channel |
+
+- A changed row shows the temporary mark (`UI_ITEM_TEMP`, the dot Home uses).
+- Long SELECT anywhere saves, as long SELECT makes a quick setting permanent. The Save row does the same.
+- BACK with unsaved changes opens Unsaved changes (`discard`): "No, keep editing" first (the default, P7), then "Yes,
+  discard". Long BACK still goes Home (P3) and drops the copy without asking.
+- Save checks the copy first and names the first problem in a toast: an empty name, RX out of every band, TX out of
+  the transmit bands on a channel that isn't RX only, a DMR channel without a TX contact.
+- Save writes with `codeplug_set_channel` as a storage job (`ui_svc_write_channel`), like Save to channel, so the UI
+  never waits for a flash erase. A failed write raises `UI_EV_SAVE_FAILED`. The radio core re-reads the channel in
+  use when `codeplug_serial()` changes, so any save drops its temporary changes, whichever channel was written.
+  Whether the written channel is the one in use is decided when the job is posted, on the UI task.
+- Save as new channel writes the copy to the lowest free number (`codeplug_free_channel`) and opens that channel.
+  "No free channel" when all 1024 are used. The new channel is in no zone until one is edited (issue #44 adds it to
+  the current zone).
+- New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
+  with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
+  source with a number appended (or the frequency, from the VFO).
+
+Text entry supports both keypad conventions radios use: more presses of the same key (2: A B C 2 a b c) and `#` for
+the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their
+letters, the digit, then the letters in the other case; 1 cycles `. - / , ' & ( ) @ _ ! ? 1`, 0 a space, 0, `+ # *`.
+The same key again within 1 s takes the next character; another key or the pause moves on. The title shows the mode
+("Name ABC"). In 123 a digit types itself, and a held digit types itself in any mode (principles 3).
+CONTEXT (`#`) cycles ABC → 123 → abc (ABC first). BACK deletes the last character and, on an empty field, leaves
+without changing the name (the phone convention, the one exception to P4); QUICK (`*`) and Left delete too, and in
+text entry QUICK doesn't open quick settings. OK keeps the name. Without a keypad (class F): Up / Down step the last character (down past the space deletes it), OK adds the next
+one, long OK keeps. Names stop at `CODEPLUG_NAME_LEN` (16).
+
+Typed rows (frequencies, the ID): BACK takes back the last digit, and with none typed closes the editor; OK keeps what
+is typed, and with nothing typed leaves the row as it was. A new RX frequency moves TX with it, keeping a repeater's
+offset. Where that offset would put TX outside every band, TX becomes the new RX (simplex). Own ID refuses a digit
+that would take it past 16777215, and takes at most 8 digits.
 
 ## 3. Key meanings
 
@@ -101,7 +153,7 @@ The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
 | QUICK | Quick settings (closes them again) | lock / unlock the keys |
 | CONTEXT | the focused item's actions; a banner's target while one is up | Recent |
 | TALK_TARGET | the talk target picker | |
-| digits | Find on Home, numbered rows in lists, T9 letters in filters | speed dial (a toast for now) |
+| digits | Find on Home, numbered rows in lists, T9 letters in filters; nothing while PTT keys the radio (on FM, DTMF once it exists, #54) | speed dial (a toast for now); nothing while PTT keys the radio |
 | PTT | talk to the focused person or talkgroup once (one-shot), else the channel's target | |
 
 Radios without some keys fall back as the key maps say (few-key map F in the tests). Up / Down on Home change the
@@ -109,6 +161,12 @@ channel (Settings > Keys > Up/Down on Home: or the zone, or on a DMR channel the
 channel's contact and its listen list; the arrow keys only: the channel knob, ENC_STEP, always steps the channel or the
 VFO frequency, #25), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
 toast until voice prompts exist).
+
+VFO_TOGGLE is the VFO / MR key's short press (a board key map entry, not a side key function): between the channel
+and the VFO, "VFO" and "Back to channels". Its long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md`
+2.2). The DM-1801 Pro's VFO/MR key is the only one so far; a board with such a key gives its long press to COPY_VFO,
+and `keyassignTest` checks every board's key map for it. The key is a key map entry with fixed meanings (not one of the
+`board.side_keys`), so Settings > Keys doesn't change it.
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
 whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
@@ -121,8 +179,13 @@ PTT while the keys are locked works unless Settings > Privacy > PTT when locked 
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
 UI gives an error beep and "PTT is off while locked: hold * to unlock".
 
+The state pill follows the green LED (`radio_sm.c` `outputs()`): RX also while the monitor holds an FM squelch open (MON
+stays beside the mode); DMR's monitor key is digital monitor and leaves it IDLE.
+
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
-idle, the bars and battery icon give way, the battery percent stays, and only the name part of the title is
+idle, the bars and battery icon give way, the battery percent stays (on a radio without a battery, `CAP_NO_BATTERY`,
+neither is drawn anywhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
+out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
 ### 3.1 Side key assignment
@@ -146,8 +209,9 @@ long press, and each takes one function:
 | Key lock (11) | LOCK: lock, and unlock while locked (as long QUICK) | yes | yes |
 | Call back (12) | CALL_BACK: talk for now to the last call heard, its talkgroup or, for a private call, its caller (`dmr-voice.md` 2) | yes | yes |
 | Home zone (13) | HOME_ZONE: the codeplug's first zone (the CPS's zone order picks it; no setting, the settings record has no byte to spare). Leaves the VFO; "Home zone: <name>" | yes | yes |
+| Copy to VFO (14) | COPY_VFO: copy the channel in effect to the VFO and open it (`dmr-voice.md` 2.2). In the VFO: "Already in VFO". A channel the VFO can't hold gets a "VFO: ..." toast and nothing changes. Offered in builds with a VFO (`CONFIG_VFO_FM` or `CONFIG_VFO_DMR`) | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK and HOME_ZONE do the same on a press and a long press and
+POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE and COPY_VFO do the same on a press and a long press and
 work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
@@ -177,16 +241,19 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | Calls | Owner | State in this branch |
 |---|---|---|
 | `ui_svc_talk_to` temporary / default | dmr-voice (radio core) | `ui_svc_radio.c`: `radio_req_dmr_target`, `radio_req_dmr_target_clear` |
-| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, mic AGC and mic noise reduction (`audio_flags`), auto lock, long press and repeat times, the GPS options, theme, Up/Down on Home, low battery level, auto power off and the `ui_flags` bits (large text, hint row, message tone, talker alias, PTT when locked, hear all by default) have `settings_t` fields (appended, settings-store.md); the talk permit tone is the radio core's (`radio_settings_t.talk_permit`); the privacy key type and key (Settings > Privacy) are key slot 1 of the key store (`privacy_type[0]`, `privacy_key[0]`, `privacy_active`), and a change while privacy is on goes to the radio core at once (`radio_req_dmr_privacy`); only the ones without a field stay in RAM (voice prompts). Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
+| `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, mic AGC and mic noise reduction (`accent` bits 6-7), auto lock, long press and repeat times, the GPS options, theme, Up/Down on Home, low battery level, auto power off and the `ui_flags` bits (large text, hint row, message tone, talker alias, PTT when locked, hear all by default, vibrate as an off bit) have `settings_t` fields (appended, settings-store.md); the talk permit tone is the radio core's (`radio_settings_t.talk_permit`); the privacy key type and key (Settings > Privacy) are key slot 1 of the key store (`privacy_type[0]`, `privacy_key[0]`, `privacy_active`), and a change while privacy is on goes to the radio core at once (`radio_req_dmr_privacy`); only the ones without a field stay in RAM (voice prompts). Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
 | `ui_svc_factory_reset` | storage-cps | `ui_svc_storage.c`, as a storage job: `settings_t` back to its defaults and saved, then `storage_native_erase` (the native area, only when it carries the `ODRN` magic or is already blank; never the open-firmware codeplug, calibration or a foreign region), then a restart (`board.system->reboot`), or a radio core reload where the board can't restart |
 | `ui_svc_focus_target` (one-shot PTT to the focused row), `ui_svc_dmr_timeslot`, `ui_svc_dmr_color_code`, `ui_svc_mode`, `ui_svc_hear_all` | dmr-voice / radio core | `ui_svc_radio.c` on the new requests `radio_req_dmr_focus`, `radio_req_dmr_timeslot`, `radio_req_dmr_color_code`, `radio_req_mode`, `radio_req_dmr_hear_all` (radio-features.md, dmr-voice.md). Timeslot, color code and mode are temporary changes (temp bits 0x20, 0x40, 0x80) that BACK on Home undoes and Save to channel keeps; the hear-all latch ends with the channel, a mode change or BACK on Home (not with the call) |
 | `ui_svc_privacy`, `ui_svc_monitor`, `ui_svc_vox` | radio core | `ui_svc_radio.c`: `radio_req_dmr_privacy` on the active privacy slot (else the first set one), `radio_req_monitor` as a latch, the `vox` setting (all / off) with `radio_view_t.vox_on` for the tile |
 | `ui_svc_emergency`, `ui_svc_feat_ext` | dmr-ext | weak seams: the EMERGENCY key action calls `ui_svc_emergency`, and dmr-ext reports `UI_FEAT_EMERGENCY` through its own strong `ui_svc_feat_ext`; without it the key says "Emergency isn't in this build" |
 | `ui_svc_scan`, `ui_svc_scan_skip`, `ui_svc_feat_radio`; scanning state from `radio_view_t.scan` | radio-features | `ui_svc_radio.c`: `radio_req_scan` (toggle, stop, nuisance) |
 | `ui_svc_roam` (`UI_FEAT_ROAMING`); roaming state from `radio_view_t.roam` (the Home chip, `ROAM` in the strip, Tools > Roaming, the "Moved to" toast) | radio core (CONFIG_DMR_ROAMING) | `ui_svc_radio.c`: `radio_req_roam` |
+| `hostlink_network_mode`, `board.netif->up`: the strip's USB word (`ui_state_t.usb_net`, polled in `ui_app_tick` so a change without a key press redraws): `IP` while USB is a network adapter, and right after it an up and a down arrow standing close (as U+21C5, a phone's data link mark) once the computer has brought the adapter up (the debug link's `usb.net_up`, [usb-network.md](usb-network.md) 1); after SCAN / ROAM / MON, which win while they last; not on screens that merge their title into the strip | host link and the board's netif (CONFIG_USB_NETWORK, CONFIG_HOSTLINK) | direct calls; Tools > USB network uses the first too |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
-| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; mic gain goes to `ambeVoiceSetMicGain` (DMR: 2 dB a step on the samples before the vocoder, 5 = unity); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain goes in as unity |
+| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
 | `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
+| `UI_FEAT_VOLUME`, `UI_SET_VOLUME` | radio-features | `ui_svc_radio.c`: the feature bit when `radio_volume_soft()` (no knob, a board volume hook); `ui_svc_storage.c`: the step in `settings_t.volume`, and `radio_req_volume` so it is in force at once. The UI side is the volume screen (`SCR_VOLUME`, opened by `ACT_VOLUME`) and Settings > Sound > Volume, both only with the feature (`radio-features.md` 4.2) |
+| `ui_svc_vibrate` patterns (message, call, emergency), `UI_FEAT_VIBRATE` | radio-features | `ui_svc_radio.c` (CONFIG_VIBRATE): a table from `UI_VIBE_*` to `VIBE_*` for `radio_req_vibrate`; the feature bit when the board has `hal_power_t.vibrate` (`radio-features.md` 4.1). Weak no-op otherwise |
 | `ui_svc_ptt_block`, `ui_svc_emergency_active` | input / dmr-ext | `ui_svc_radio.c`: `input_set_ptt_block`; `ui_svc_emergency.c`: `dmr_emergency_state` |
 | backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too) |
 | `ui_svc_msg_*`, `ui_svc_radio_check`, `ui_svc_call_alert`, `ui_svc_poll`, `ui_svc_feat_data` | dmr-data | `ui_svc_data.c` on `dmr_data_api.h`; `ui_svc_msg_delete` is `sms_inbox_delete` |
@@ -213,10 +280,17 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_UI_SETTINGS` | y | the Settings menu is left out (about 5.3 KB, `docs/feature-matrix.md`); settings keep their stored values and are set with qdmr; Settings shows one row saying so, Find finds no settings |
 | `CONFIG_DIAG` | y | no diagnostics page (Tools has no Diagnostics row; Roaming moves up to 7) |
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
+| `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off |
+| `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
+| `CONFIG_UI_COLOR` | y (DM-1801 Pro: n) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
-Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_SCAN`, data features) are
-left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB) bounds the display: 240x320 at
-16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`.
+Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are
+left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB by default) bounds the display: 240x320 at
+16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`. A board with a 240x320 color
+panel builds the 16-color frame buffer instead (`GFX_INDEXED`, bpp 4, 37.5 KB): drawing still takes RGB565 colors, and
+`gfx.c` keeps a 16-entry palette of the ones on the screen (a screen uses about a dozen). An entry gets a new color
+only once nothing drawn since the last clear uses it; anti-aliased edges never take the last 4 free entries and
+otherwise get the nearest color already there. Screen captures (debug link, `/api/screen.bmp`) read it as RGB565.
 
 ## 6. Debug link
 
@@ -237,15 +311,27 @@ make -C tests/host ui-sheets GEOM=128x64                       # contact sheet o
 tests/host/uiSim --geom 160x120i5 --script "ok 4 down ok expect:zone=1" --out zone.png --scale 3
 ```
 
-Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class), `120x160`
-(DM-32: the 240x320 panel at half resolution), `128x64` (mono), `240x320`, or any `WxH`, `WxHiN` (inset N all round),
-`WxHm` (mono). Script tokens:
+The gallery draws a color page (Home with its filled status bar, the Channels list) once more in each highlight color
+`UI_GALLERY_COLORS` names, as `<screen>__<color>.png` right after the page, on color displays only; screens that only
+differ in color (`home_plain`) are left out at 128x64. The list is set in
+`.github/workflows/ui-gallery.yml` (`docs/dev/ci.md`), and `make ui-gallery` reads it from there. Home (filled and plain
+status bar), RX, TX, the Channels list and Settings > Display are also drawn in the light and high-contrast themes, as
+`<screen>__light.png` and `<screen>__high_contrast.png` (color displays).
+
+
+Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class),
+`240x320i10x5` (DM-32: 16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, or any
+`WxH`, `WxHiN` (inset N all round), `WxHiNxM` (N left and right, M top and bottom), `WxHm` (mono). The 240 px classes
+draw the anti-aliased fonts (`CONFIG_FONT_AA`, as the DM-32 is built), and `240x320i10x5` the larger text too
+(`CONFIG_FONT_BIG`); the others the bitmap ones. Script tokens:
 
 | Token | Meaning |
 |---|---|
 | `up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-` | a short press (counted) |
 | `long:<key>` | a long press (counted) |
 | `ptt`, `ptt:<ms>`, `pttdown`, `pttup` | PTT (counted) |
+| `mondown`, `monup` | the monitor key held, then released (FM: the squelch held open) |
+| `color:<name>`, `strip:on\|off` | Settings > Display > Highlight color (`red orange yellow teal light_blue purple pink default`) and Filled status bar, set directly |
 | `wait:<ms>` | time passes |
 | `rx:<src>,<dst>,g\|p[,name]`, `rxend`, `call:<src>,<dst>,g\|p` | a DMR call heard |
 | `msg:<src>,<text>`, `alert:<src>`, `emergency:<src>`, `privcall:<src>`, `hotspot:on\|off`, `battery:<pct>` | events |
@@ -258,7 +344,7 @@ Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
 and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
-BACK reaches Home, long QUICK locks, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
+BACK reaches Home, long QUICK locks on Home and nowhere else, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
 PTT shows TX, and every field-use screen is at most 3 presses deep. The About check scrolls the page to its end at
 every display class and fails if any text was shortened.
 
@@ -269,8 +355,9 @@ pages (lists scrolled through): `gfx_text_fit` reports each one through `gfx_fit
 `uiSim --layout [GEOM]` (run by `run-ui`, so CI) is the layout check: the gallery screens, the settings pages and the
 worst-case screens at every geometry, with ordinary and worst-case content. `gfx_draw_trace` (host builds) reports
 every text, fill and clear with its rectangle; the check fails on a text outside the safe area or cut by its clip box,
-overlapping texts, words with no space between them, a box over part of a text, an overlay cutting a line in half, and
-a middle ellipsis with ordinary content (`docs/ux/wireframes/README.md`). `ODR_LAYOUT_SHOTS=DIR` saves every screen
+overlapping texts, words with no space between them, a box over part of a text, an overlay cutting a line in half, an
+invisible text (its cells one color after it is drawn), and a middle ellipsis with ordinary content
+(`docs/ux/wireframes/README.md`). On color displays it runs in every theme. `ODR_LAYOUT_SHOTS=DIR` saves every screen
 checked.
 
 HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences on the radio over the debug link.
@@ -288,12 +375,29 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   Home and in menus alike; injected keys count).
 - Mic AGC and mic noise reduction are the vocoder's (DMR only). Each is dimmed ("Not on this radio") when the board's
   vocoder lacks the option (`hal_vocoder_t.options`), and in a build without DMR. While Mic AGC is on, Mic gain shows
-  "AGC", is dimmed and OK says "Mic AGC sets the level".
-- Mic gain acts on DMR only, in software before the vocoder; FM's microphone path is the modem's (no hook yet). The
+  "AGC", is dimmed, OK says "Mic AGC sets the level"
+  and the gain is step 5, the board's levels (FM too on a radio whose board sets the gain).
+- Mic gain acts on FM and DMR where the board sets it in its audio path (`hal_radio_t.mic_gain`), else on DMR only,
+  in software before the vocoder (radio-features.md 3.6). The
   GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
 - Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
-- Theme switches the color palette (dark, light, high contrast); on 1 bpp displays the row is dimmed.
-- The VFO is FM only, so the Mode tile is dimmed in the VFO ("VFO: FM only") instead of a refusal.
+- Theme switches the color palette (dark, light, high contrast). Highlight color (Default, Red, Orange, Yellow, Teal,
+  Light blue, Purple, Pink) and Filled status bar (Settings > Display, `settings_t.accent`) are for color displays
+  too. On a 1 bpp display the three rows are dimmed ("Colors are for color screens"); a build without
+  `CONFIG_UI_COLOR` (section 5) has no such rows. A color other than
+  Default is the list and tile focus (with black text) and Home's channel number (on the light theme the number stays
+  the text color: the light shades don't read on white). The filled bar (on by default) is reverse video: the status
+  strip's background in the color (light gray with Default, white in the high-contrast theme), its text and icons
+  black, the IDLE pill inverse on it; RX, TX and NO TX keep their own pill colors and words (P5). On it the pill is the strip's full height (a one-cell
+  pill left a line of the strip's color under it) against the bezel, its corners rounded by two pixels. Left of the
+  pill's middle the strip is the screen's background, so no strip color shows beside its left end. On the right a
+  one-pixel black edge follows the curve: the pill colors are close in lightness to the strip colors, so hue alone
+  would not separate them. Warnings on the strip (SCAN, MON, ROAM, unread messages, the lock, a low battery) keep
+  a color: a dark shade picked per strip color, dark amber where it reads and dark blue on red, orange and pink, at
+  least 5:1 on its strip after RGB565 rounding. The shades are light so black
+  text reads on them (at least 7.5:1 after RGB565 rounding); the red is lighter and pinker than TX's red, and there is
+  no green, which would hide the RX pill. Gallery: `home_dmr*`, `home_plain`, `channels*` (section 7).
+- The VFO has a mode of its own (`dmr-voice.md` 2.1). The Mode tile (tile 4 in the VFO only) switches it FM / DMR ("VFO: DMR", no "for now": it is kept), and in a build with only one VFO kind the tile is dimmed ("VFO: one mode in this build"). On a channel tile 4 is "To VFO" (`dmr-voice.md` 2.2): it copies what is in effect on the channel to the VFO and opens it on Home ("Copied to VFO"); a channel the VFO can't hold is refused with a toast. A channel has no temporary mode change any more. In DMR the quick menu is the DMR one: Timeslot, Color and Talk to change the VFO's own settings, with no dot on Home. The talk target picker lists the VFO's current target first ("Current"); both OK and hold OK keep the target for the VFO.
 - The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
   between steps is refused with the range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.

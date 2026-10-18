@@ -3,7 +3,9 @@
 # Battery and power
 
 The battery, power level and power switch values depend on the radio. The [Radio reference](23-radios.md) has them
-for each radio.
+for each radio. A radio without a battery (a mobile on a fixed supply) has none of the battery items in this chapter:
+no battery icon or percentage, no Tools > Battery page, no Battery saver or Low battery warning setting, and no
+battery warnings.
 
 ## Battery level
 

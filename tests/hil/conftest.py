@@ -18,7 +18,8 @@ def pytest_addoption(parser):
                 help="tests may transmit (the SDR bench's transmitter; the radio only in tests marked radio_tx)")
     g.addoption("--allow-service-stop", action="store_true",
                 help="tests may stop the SDR bench's gateway service to use its transmitter and "
-                     "receiver (dmr_bench.py's lease: always restarted)")
+                     "receiver (dmr_bench.py's lease: always restarted). Not needed on a bench that runs the "
+                     "shared bench daemon: nothing is stopped there")
     g.addoption("--allow-usb-switch", action="store_true",
                 help="tests may switch the radio's USB personality to the network adapter (it re-enumerates; the "
                      "test switches it back over UDP)")
@@ -34,6 +35,11 @@ def pytest_addoption(parser):
     g.addoption("--noaa-mhz", type=float, default=162.550, help="NOAA weather radio frequency for test_fm")
     g.addoption("--rssi-floor", type=int, default=-115, help="dBm: test_fm passes above this")
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
+    g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("ODR_SDR_BENCH_WAIT_MAX", "900")),
+                help="s: a test that would wait longer for a shared SDR bench (benchd) is skipped")
+    g.addoption("--bench-station", default=os.environ.get("ODR_BENCH_STATION"),
+                help="a shared bench's station (an ODR radio on the bench host) as the second radio of the tests "
+                     "that use one (bench_station fixture); odr-bench info lists them")
     g.addoption("--sdr-gain", type=float, default=5.0, help="RTL-SDR gain for raw captures (dmr_bench.py C0 picks it)")
     g.addoption("--sdr-ppm", type=float, default=None,
                 help="the SDR's own frequency error in ppm for FM carrier offsets (default: the SDR bench's calibration, "
@@ -64,17 +70,23 @@ def pytest_addoption(parser):
                 help="test_aprs on air: the licensed operator's callsign ($ODR_APRS_CALL), set as the RAM-only test "
                      "call (never saved)")
     g.addoption("--aprs-ssid", type=int, default=15, help="test_aprs on air: the SSID sent (restored afterwards)")
-    g.addoption("--aprs-test-mhz", type=float, default=145.090,
-                help="MHz: test_aprs AFSK frequency, a 2 m packet simplex channel that is not an APRS frequency "
-                     "(test_aprs.py docstring); never 144.390")
+    g.addoption("--aprs-test-mhz", type=float, default=446.050,
+                help="MHz: test_aprs AFSK frequency, a 2 m or 70 cm amateur simplex frequency that is not an APRS "
+                     "frequency (test_aprs.py docstring); never 144.390")
     g.addoption("--aprs-dmr-dst", type=int, default=9990301,
                 help="test_aprs DMR position: the destination ID (the bench modem listens to any)")
+    g.addoption("--mic-gain-steps", default="3,5,7",
+                help="test_mic_gain: the Mic gain steps (0-10, 2 dB a step, 5 = the board's level) keyed at each "
+                     "bandwidth, one over per step")
+    g.addoption("--mic-gain-window", type=float, default=30.0,
+                help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
-    config.addinivalue_line("markers", "bench_service: stops the SDR bench's gateway service (needs "
-                            "--allow-service-stop)")
+    config.addinivalue_line("markers", "bench_service: uses the SDR bench's transmitter / receiver through the "
+                            "lease (a bench without a shared bench daemon stops its gateway service for it: "
+                            "needs --allow-service-stop, else the test skips when it takes the lease)")
     config.addinivalue_line("markers", "radio_tx: the radio under test transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "codeplug_write: writes the radio's codeplug over CPS, backed up and restored "
                             "(needs --allow-codeplug-write)")
@@ -90,9 +102,6 @@ def pytest_collection_modifyitems(config, items):
         elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
             item.add_marker(pytest.mark.skip(reason="re-enumerates the radio as a network adapter: run with "
                                                     "--allow-usb-switch"))
-        elif "bench_service" in item.keywords and not config.getoption("--allow-service-stop"):
-            item.add_marker(pytest.mark.skip(reason="stops the SDR bench's gateway service: run with "
-                                                    "--allow-service-stop"))
         elif "codeplug_write" in item.keywords and not config.getoption("--allow-codeplug-write"):
             item.add_marker(pytest.mark.skip(reason="writes the codeplug: run with --allow-codeplug-write"))
         elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):
@@ -143,11 +152,24 @@ def restore_radio(request):
 def sdr_bench(pytestconfig):
     b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"),
                  allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
-                 tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"))
+                 tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"),
+                 wait_max=pytestconfig.getoption("--bench-wait-max"))
     if not b.reachable():
         pytest.skip(f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
                     "sync)")
     return b
+
+
+@pytest.fixture(scope="session")
+def bench_station(pytestconfig, sdr_bench):
+    """The name of the bench station to use as the second radio (--bench-station); skips without one."""
+    name = pytestconfig.getoption("--bench-station")
+    if not name:
+        pytest.skip("no bench station: give --bench-station NAME (odr-bench info on the bench lists them)")
+    st = next((s for s in sdr_bench.info().get("stations", []) if s["name"] == name), None)
+    if st is None or not st.get("present"):
+        pytest.skip(f"bench station {name} is not on the bench (or the bench has no benchd)")
+    return name
 
 
 @pytest.fixture

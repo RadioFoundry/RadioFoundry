@@ -21,13 +21,16 @@
 #include "input/input.h"
 #include "radio/tones.h"
 #include "config.h"
-#if CONFIG_HOTSPOT
+#if CONFIG_HOTSPOT || (CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 #include "hostlink/hostlink.h"
+#endif
+#if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
 
 #define UI_STACK_MAX		6
 #define TOAST_MS		1800
+#define VOLUME_MS		3000	// the volume screen closes this long after the last key
 #define ENTRY_TIMEOUT_MS	10000
 #define BANNER_MS		8000
 #define REFRESH_MS		1000
@@ -59,6 +62,7 @@ static uint32_t last_key_ms;		// the last key press (auto lock)
 static bool lock_armed;			// last_key_ms holds a time (from the first tick)
 static uint32_t last_use_ms;		// the last key press or call (auto power off)
 static bool off_warned;			// the "switching off in 1 min" banner is up for this idle spell
+static bool ptt_held;			// the PTT key is down (its DOWN came, its UP not yet)
 static bool power_off_due;		// auto power off: the housekeeping task switches off (ui_app_power_off_due)
 static bool batt_warned;		// the low battery banner was shown at this level (cleared 3 % above it)
 static uint32_t batt_warned_ms;
@@ -475,6 +479,14 @@ static void station(sbuf_t *b, const ui_event_t *ev)
 		sb_u32(b, ev->id, 1);
 }
 
+// The alerts that reach the user anyway (a banner, a screen, maybe a tone) also vibrate when Settings > Sound > Vibrate
+// is on; on a radio without a motor the request does nothing
+static void vibrate(uint8_t vibe)
+{
+	if (ui_st.vibrate)
+		ui_svc_vibrate(vibe);
+}
+
 static void handle_event(const ui_event_t *ev)
 {
 	char title[UI_BANNER_TEXT];
@@ -493,6 +505,7 @@ static void handle_event(const ui_event_t *ev)
 		ui_st.banner.msg = ev->index;
 		if (ui_st.message_tone)
 			ui_svc_beep(UI_BEEP_MESSAGE);
+		vibrate(UI_VIBE_MESSAGE);
 		break;
 	case UI_EV_MESSAGE_SENT:
 		if (ev->ok) {
@@ -509,11 +522,13 @@ static void handle_event(const ui_event_t *ev)
 		sb_str(&b, "Call alert from ");
 		station(&b, ev);
 		banner(UI_BANNER_CALL_ALERT, false, ev->id, title, "PTT replies");
+		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_PRIVATE_CALL:
 		sb_str(&b, "Private call from ");
 		station(&b, ev);
 		banner(UI_BANNER_PRIVATE, false, ev->id, title, "PTT replies");
+		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_RADIO_CHECK:
 		station(&b, ev);
@@ -539,6 +554,7 @@ static void handle_event(const ui_event_t *ev)
 		strcpy(emerg_name, ev->name);
 		if (stack[sp].scr != SCR_EMERGENCY)
 			ui_push(SCR_EMERGENCY, 0);
+		vibrate(UI_VIBE_EMERGENCY);
 		break;
 	case UI_EV_HOTSPOT_STARTED:
 		banner(UI_BANNER_INFO, false, 0, "Hotspot started by host", "OK stops it");
@@ -594,7 +610,7 @@ static void banner_open(void)
 
 // --- VFO frequency entry (digits on Home in the VFO; task-flows.md 12) ---
 
-static void entry_value(const char *digits, int len, uint32_t *lo, uint32_t *hi)
+static void entry_range(const char *digits, int len, uint32_t *lo, uint32_t *hi)
 {
 	// Digits are positional from 100 MHz down to 10 Hz: the prefix spans [lo, hi]
 	uint32_t v = 0, unit = 10;
@@ -607,55 +623,71 @@ static void entry_value(const char *digits, int len, uint32_t *lo, uint32_t *hi)
 	*hi = *lo + span - unit;
 }
 
-static bool entry_possible(const char *digits, int len)
+bool ui_in_band(uint32_t hz, bool tx)
 {
-	uint32_t lo, hi;
-	entry_value(digits, len, &lo, &hi);
 	for (int i = 0; i < board.band_count; i++)
-		if (lo <= board.bands[i].hi_hz && hi >= board.bands[i].lo_hz)
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz && (!tx || board.bands[i].tx))
 			return true;
 	return false;
 }
 
-static void entry_digit(char d)
+bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 {
 	static char hint[40];
+	if (*len >= UI_ENTRY_MAX)
+		return false;
+	digits[*len] = d;
+	uint32_t lo, hi;
+	entry_range(digits, *len + 1, &lo, &hi);
+	for (int i = 0; i < board.band_count; i++) {
+		if (lo <= board.bands[i].hi_hz && hi >= board.bands[i].lo_hz) {
+			digits[++*len] = 0;
+			return true;
+		}
+	}
+	digits[*len] = 0;
+	char bands[32];
+	ui_bands_text(bands, sizeof bands);
+	strcpy(hint, "Bands: ");
+	strncat(hint, bands, sizeof hint - strlen(hint) - 1);
+	ui_toast(hint);
+	return false;
+}
+
+uint32_t ui_freq_entry_hz(const char *digits, uint8_t len)
+{
+	if (len < UI_ENTRY_MHZ) {
+		ui_toast("Type at least the MHz digits");
+		return 0;
+	}
+	uint32_t lo, hi;
+	entry_range(digits, len, &lo, &hi);
+	if (!ui_in_band(lo, false)) {
+		ui_toast("Not in a band: type more digits");
+		return 0;
+	}
+	return lo;
+}
+
+static void entry_digit(char d)
+{
 	if (ui_st.entry_len >= UI_ENTRY_MAX) {
 		ui_toast("All digits typed: OK tunes");
 		return;
 	}
-	ui_st.entry_digits[ui_st.entry_len] = d;
-	if (!entry_possible(ui_st.entry_digits, ui_st.entry_len + 1)) {
-		ui_st.entry_digits[ui_st.entry_len] = 0;
-		char bands[32];
-		ui_bands_text(bands, sizeof bands);
-		strcpy(hint, "Bands: ");
-		strncat(hint, bands, sizeof hint - strlen(hint) - 1);
-		ui_toast(hint);
+	if (!ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, d))
 		return;
-	}
-	ui_st.entry_len++;
-	ui_st.entry_digits[ui_st.entry_len] = 0;
 	ui_st.entry = true;
 	dirty = true;
 }
 
 static void entry_commit(void)
 {
-	if (ui_st.entry_len < UI_ENTRY_MHZ) {
-		ui_toast("Type at least the MHz digits");
-		return;
+	uint32_t hz = ui_freq_entry_hz(ui_st.entry_digits, ui_st.entry_len);
+	if (hz != 0) {
+		radio_req_vfo_set(hz);
+		entry_cancel();
 	}
-	uint32_t lo, hi;
-	entry_value(ui_st.entry_digits, ui_st.entry_len, &lo, &hi);
-	for (int i = 0; i < board.band_count; i++) {
-		if (lo >= board.bands[i].lo_hz && lo <= board.bands[i].hi_hz) {
-			radio_req_vfo_set(lo);
-			entry_cancel();
-			return;
-		}
-	}
-	ui_toast("Not in a band: type more digits");
 }
 
 // --- input helpers ---
@@ -750,6 +782,42 @@ static void zone_step(int dir)
 		return;
 	}
 	zone_go((uint16_t)((view->zone_index + n + dir) % n), false);
+}
+
+// Copy to VFO (quick tile 4 on a channel, the Copy to VFO key): what is in effect on the channel becomes the VFO's
+// own settings and the VFO opens on Home. A channel the VFO can't hold is refused with the reason, nothing changes
+static void copy_to_vfo(void)
+{
+	switch (ui_svc_vfo_copy(view)) {
+	case VFO_COPY_OK:
+		ui_go_home();
+		ui_toast("Copied to VFO");
+		break;
+	case VFO_COPY_ALREADY:
+		ui_toast("Already in VFO");
+		break;
+	case VFO_COPY_NO_MODE:
+		ui_toast(view->ch.mode == RADIO_MODE_DMR ? "VFO: no DMR in this build" : "VFO: no FM in this build");
+		break;
+	case VFO_COPY_OUT_OF_BAND:
+		ui_toast("VFO: frequency outside its bands");
+		break;
+	default:
+		ui_toast("VFO: not in this build");
+		break;
+	}
+}
+
+// The VFO/MR key: between the channel and the VFO
+static void vfo_key(void)
+{
+	if (!CONFIG_VFO_FM && !CONFIG_VFO_DMR) {
+		ui_toast("VFO: not in this build");
+		return;
+	}
+	bool was = view->vfo;	// the view may change at once (the host simulator)
+	radio_req_vfo(!was);
+	ui_toast(was ? "Back to channels" : "VFO");
 }
 
 void ui_scan_toggle(void)
@@ -992,7 +1060,8 @@ static void quick_unavailable(uint8_t kind)
 		break;
 	case QT_PRIVACY: ui_toast("Privacy: not in this build"); break;
 	case QT_SCAN: ui_toast("Scan: not in this build"); break;
-	case QT_MODE: ui_toast(view->vfo ? "VFO: FM only" : "Mode change: not in this build"); break;
+	case QT_MODE: ui_toast("VFO: one mode in this build"); break;
+	case QT_TO_VFO: ui_toast("VFO: not in this build"); break;
 	case QT_STEP: ui_toast("Step: set it in qdmr"); break;
 	case QT_VOX: ui_toast("VOX: not on this radio yet"); break;
 	default: ui_toast("Not in this build"); break;
@@ -1024,12 +1093,17 @@ static void quick_activate(int tile)
 		ui_toast("Up/Dn tone  # TX/RX");
 		break;
 	}
-	case QT_MODE:
-		if (ui_svc_mode(view->ch.mode == RADIO_MODE_DMR ? RADIO_MODE_FM : RADIO_MODE_DMR))
-			ui_toast(view->ch.mode == RADIO_MODE_DMR ? "FM for now" : "DMR for now");
+	case QT_TO_VFO:
+		copy_to_vfo();
+		break;
+	case QT_MODE: {
+		bool to_dmr = view->ch.mode != RADIO_MODE_DMR;	// the view may change at once (the host simulator)
+		if (ui_svc_mode(to_dmr ? RADIO_MODE_DMR : RADIO_MODE_FM))
+			ui_toast(to_dmr ? "VFO: DMR" : "VFO: FM");	// the VFO keeps its mode
 		else
 			quick_unavailable(kind);
 		break;
+	}
 	case QT_MONITOR:
 		if (!ui_svc_monitor(!view->monitor))
 			quick_unavailable(kind);
@@ -1047,7 +1121,8 @@ static void quick_activate(int tile)
 	case QT_TIMESLOT: {
 		uint8_t ts = view->dmr.ts ? view->dmr.ts : view->ch.timeslot;
 		if (ui_svc_dmr_timeslot(ts == 2 ? 1 : 2))
-			ui_toast(ts == 2 ? "Timeslot 1 for now" : "Timeslot 2 for now");
+			ui_toast(view->vfo ? (ts == 2 ? "Timeslot 1" : "Timeslot 2") :
+				ts == 2 ? "Timeslot 1 for now" : "Timeslot 2 for now");
 		else
 			quick_unavailable(kind);
 		break;
@@ -1207,6 +1282,39 @@ bool ui_diag_key(const input_event_t *ev)
 	(void)ev;
 	return false;
 #endif
+}
+
+void ui_volume_draw(void)
+{
+	ui_draw_volume(view, &ui_st);
+}
+
+// Up / Down, the encoder: one step. Back and OK close it (so does a pause, ui_app_tick)
+bool ui_volume_key(const input_event_t *ev)
+{
+	int dir = 0;
+	if (ev->action == ACT_ENC_STEP) {
+		dir = ev->value > 0 ? 1 : ev->value < 0 ? -1 : 0;
+	} else if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_REPEAT) {
+		if (ev->action == ACT_NAV_UP || ev->action == ACT_NAV_RIGHT)
+			dir = 1;
+		else if (ev->action == ACT_NAV_DOWN || ev->action == ACT_NAV_LEFT)
+			dir = -1;
+	}
+	if (dir != 0) {
+		int v = ui_st.volume + dir;
+		v = v < 0 ? 0 : v > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : v;
+		if (v != ui_st.volume) {
+			ui_st.volume = (uint8_t)v;
+			ui_svc_setting_set(UI_SET_VOLUME, v);
+		}
+		return true;
+	}
+	if (ev->gesture == GESTURE_PRESS && (ev->action == ACT_SELECT || ev->action == ACT_BACK)) {
+		ui_pop();
+		return true;
+	}
+	return false;
 }
 
 void ui_emergency_draw(void)
@@ -1422,10 +1530,12 @@ void ui_app_init(void)
 		ui_svc_apply(id, ui_svc_setting_get(id));
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
-					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME };
+					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
+					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME };
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
+	ptt_held = false;
 	off_warned = power_off_due = batt_warned = false;
 	hear_all_key = 0;
 	has_quick_key = ui_has_action(ACT_QUICK);
@@ -1451,6 +1561,8 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_ALIAS_SHOW: ui_st.alias_show = v != 0; break;
 	case UI_SET_HEAR_ALL_DEFAULT: ui_st.hear_all_default = v != 0; hear_all_key = 0; break;
 	case UI_SET_MESSAGE_TONE: ui_st.message_tone = v != 0; break;
+	case UI_SET_VIBRATE: ui_st.vibrate = v != 0; break;
+	case UI_SET_VOLUME: ui_st.volume = (uint8_t)(v >= 0 && v <= RADIO_VOLUME_MAX ? v : RADIO_VOLUME_DEFAULT); break;
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
 	case UI_SET_AUTO_OFF_MIN: ui_st.auto_off_min = clamp_u16(v); off_warned = false; break;
@@ -1460,6 +1572,12 @@ void ui_apply_setting(uint8_t id, int32_t v)
 		break;
 	case UI_SET_THEME:
 		ui_theme_set((uint8_t)v);
+		break;
+	case UI_SET_ACCENT:
+		ui_accent_set((uint8_t)v);
+		break;
+	case UI_SET_STRIP:
+		ui_strip_set(v != 0);
 		break;
 	default:
 		return;
@@ -1530,14 +1648,24 @@ void ui_app_key(const input_event_t *ev)
 #endif
 	if (ev->gesture == GESTURE_LONG && ev->value != 0 && view->ch.mode != RADIO_MODE_DMR)
 		return;
+	if (ev->action == ACT_PTT)
+		ptt_held = ev->gesture == GESTURE_DOWN;	// PTT sends only DOWN and UP (raw edges)
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
+	// While PTT keys the radio the digit keys do nothing: no Find, channel entry or speed dial under the TX screen.
+	// On FM they are for DTMF once it exists (#54). A transmission the radio starts by itself (an APRS beacon) leaves
+	// them alone: the user may be typing a frequency or a filter
+	if (ptt_held && view->state == RS_TX && ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9)
+		return;
 	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)
 		ui_svc_beep(UI_BEEP_KEY);
 	if (emergency_key(ev))
 		return;
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
-	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG) :
+	// Long * locks only from Home (principles 3): in a menu it would lock the keys mid-task, and in text entry a slow *
+	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
+	bool typing = stack[sp].scr == SCR_TEXT;
+	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG && (sp == 0 || ui_st.locked)) :
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	// A side key set to key lock (keyassign.h) locks and unlocks on a press or a long press, as long QUICK does
 	if (ev->action == ACT_LOCK && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG))
@@ -1597,6 +1725,17 @@ void ui_app_key(const input_event_t *ev)
 		case ACT_CALL_BACK:
 			call_back_key();
 			return;
+		case ACT_VOLUME:
+			if (!(ui_svc_features() & UI_FEAT_VOLUME))
+				ui_toast("Volume: use the knob");
+			else if (stack[sp].scr == SCR_VOLUME)
+				ui_pop();
+			else
+				ui_push(SCR_VOLUME, 0);
+			return;
+		case ACT_COPY_VFO:
+			copy_to_vfo();
+			return;
 		case ACT_HOME_ZONE:
 			// The codeplug's first zone: the CPS's zone order picks it (no setting; the settings record is full)
 			zone_go(0, true);
@@ -1604,6 +1743,10 @@ void ui_app_key(const input_event_t *ev)
 		default:
 			break;
 		}
+	}
+	if (ev->action == ACT_VFO_TOGGLE && ev->gesture == GESTURE_PRESS) {
+		vfo_key();
+		return;
 	}
 	if (ev->action == ACT_USER_2 && ev->gesture == GESTURE_LONG) {
 		ui_scan_toggle();	// long SK2 (DM-1701 key map): scan on / off
@@ -1617,8 +1760,9 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast("Voice prompts: not in this build");
 		return;
 	}
+	// In text entry * and # are the typewriter's keys, not quick settings or a banner's
 	// A banner up: CONTEXT opens what it is about
-	if (ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&
+	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&
 			ui_st.banner.kind != UI_BANNER_RESULT && ui_st.banner.kind != UI_BANNER_INFO) {
 		banner_open();
 		return;
@@ -1626,7 +1770,7 @@ void ui_app_key(const input_event_t *ev)
 	// QUICK opens quick settings from any screen; BACK returns to where the user was
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS && stack[sp].scr != SCR_QUICK &&
-			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME) {
+			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME && !typing) {
 		ui_push(SCR_QUICK, 0);
 		return;
 	}
@@ -1711,6 +1855,18 @@ static void hear_all_tick(const radio_view_t *v)
 
 #define DMR_OFF_SHOW_MS	1500u	// "DMR modem off" after the modem has been off this long
 
+// What the status strip says about USB (UI_USB_NET_*): IP while the network adapter waits for the computer, and
+// the link arrows beside it once the computer has brought it up (hal_netif_t.up, the debug link's usb.net_up). Both change without a key press
+// (a cable plugged in or out, an adapter the PC never set up going back to serial, usb-network.md 1)
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+static uint8_t usb_net_state(void)
+{
+	if (!hostlink_network_mode())
+		return UI_USB_NET_OFF;
+	return board.netif->up() ? UI_USB_NET_UP : UI_USB_NET_WAIT;	// network mode implies board.netif
+}
+#endif
+
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
@@ -1720,6 +1876,14 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
 	ui_svc_keys_poll();
+
+#if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
+	uint8_t usb_net = usb_net_state();
+	if (usb_net != ui_st.usb_net) {
+		ui_st.usb_net = usb_net;
+		dirty = true;
+	}
+#endif
 
 	while (ev_tail != ev_head) {
 		ui_event_t ev = events[ev_tail];
@@ -1746,6 +1910,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (ui_st.toast != NULL && (int32_t)(now - toast_until) >= 0) {
 		ui_st.toast = NULL;
 		dirty = true;
+	}
+	if (stack[sp].scr == SCR_VOLUME && now - last_key_ms >= VOLUME_MS) {
+		ui_pop();
 	}
 	if (ui_st.banner.kind != UI_BANNER_NONE && (int32_t)(now - ui_st.banner.until_ms) >= 0) {
 		ui_st.banner.kind = UI_BANNER_NONE;
@@ -1825,7 +1992,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		serial_seen = serial;
 		dirty = true;
 	}
-	uint8_t bat = board.power != NULL ? board.power->battery_pct() : 0;
+	bool has_batt = board_has_battery();
+	uint8_t bat = has_batt && board.power != NULL && board.power->battery_pct != NULL ? board.power->battery_pct() : 0;
+	ui_st.no_battery = !has_batt;
 	if (bat != battery_seen) {
 		battery_seen = bat;
 		dirty = true;

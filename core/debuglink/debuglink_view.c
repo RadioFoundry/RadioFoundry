@@ -228,7 +228,7 @@ static void link_section(dl_text_t *t)
 			(unsigned)es.steps_per_detent);
 	}
 	dl_text(t, "input.enc_deferred=%u\n", (unsigned)deferred);
-	dl_text(t, "input.long_ms=%u\n", (unsigned)input_long_ms());
+	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
 	dl_text(t, "dl.frames=%u\ndl.bad_crc=%u\ndl.too_long=%u\ndl.timeouts=%u\n", (unsigned)c[0], (unsigned)c[1],
 		(unsigned)c[2], (unsigned)c[3]);
 }
@@ -257,7 +257,8 @@ static void storage_section(dl_text_t *t)
 		sv.ui_flags, sv.updown_home, sv.low_batt_pct);
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", sv.auto_off_min,
 		sv.privacy_type[0], sv.privacy_active);
-	dl_text(t, "settings.audio_flags=%u\n", sv.audio_flags);
+	// bit 0 noise reduction off, bit 1 AGC on (settings_t.accent bits 6-7)
+	dl_text(t, "settings.audio_flags=%u\n", (unsigned)((sv.accent & SETTINGS_AUDIO_MASK) >> SETTINGS_AUDIO_SHIFT));
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);
@@ -289,7 +290,8 @@ static void storage_section(dl_text_t *t)
 
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
-						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp" };
+						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
+						  "sfr", "tasks" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -364,6 +366,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_SFR:
 		sfr_section(t);
+		break;
+	case DL_VIEW_TASKS:
+		debuglink_view_tasks(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

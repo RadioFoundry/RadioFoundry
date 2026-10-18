@@ -122,13 +122,14 @@ static void sheet_text(int x, int y, const char *s, uint32_t rgb)
 	const font_t *f = &font_6x12;
 	int stride = (f->w + 7) / 8;
 	for (; *s; s++, x += f->w) {
-		const uint8_t *g = font_glyph(f, (uint8_t)*s);
+		int top, rows;
+		const uint8_t *g = font_glyph(f, (uint8_t)*s, &top, &rows);
 		if (g == NULL)
 			continue;
-		for (int r = 0; r < f->h; r++)
+		for (int r = 0; r < rows; r++)
 			for (int c = 0; c < f->w; c++)
 				if (g[r * stride + c / 8] & (0x80u >> (c & 7)))
-					sheet_put(x + c, y + r, rgb);
+					sheet_put(x + c, y + top + r, rgb);
 	}
 }
 

@@ -368,7 +368,9 @@ the amplifier on (unverified for the pins; the routing (?)). The GT3136's discri
 ODR doesn't use.
 
 The volume knob sets the level in the analog path; the MCU only sees its position on PA0. The board therefore has no
-`CAP_VOLUME_POT` and `hal_power_t.volume()` returns -1.
+`CAP_VOLUME_POT` and `hal_power_t.volume()` returns -1. There is no `hal_radio_t.volume` either: the MCU has no way to set
+the speaker level (the HR_C5000's feed-through gain isn't used for it, and the knob acts after it), so the debug link's
+volume operation (RADIO op 30) answers "unavailable" (`radio-features.md` 4.2).
 
 ### 6.2 I2S PCM
 

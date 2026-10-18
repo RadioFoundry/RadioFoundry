@@ -7,15 +7,17 @@ the position source. Nothing transmits.
 
 On air, AFSK (radio_tx + bench_service: --allow-rf --allow-service-stop, and --aprs-call / $ODR_APRS_CALL, a licensed
 operator's callsign; the transmissions are amateur ones). The radio sends a position, a status and a message on the
-2 m band at its lowest power while the bench's RTL-SDR records I/Q (the gateway service stopped through the lease and
+70 cm band at its lowest power while the bench's RTL-SDR records I/Q (the gateway service stopped through the lease and
 started again afterwards). tools/aprs_afsk_check.py FM demodulates the capture on the bench, decodes Bell 202 / AX.25
 and measures the tones.
 
 Where and how it transmits, so that nothing reaches the APRS network:
-- Frequency: --aprs-test-mhz, default 145.090 MHz, through the custom APRS region. US band plans put 2 m packet at
-  145.01-145.09 MHz; 144.390 is the national APRS frequency, where digipeaters and iGates would repeat the test
-  frames and gate them to APRS-IS. The tests refuse every regional APRS frequency (144.390, 144.800, 145.175,
-  144.575, 144.660, 144.640). Pick another simplex packet channel with the option if 145.090 is busy locally.
+- Frequency: --aprs-test-mhz, default 446.050 MHz (a 70 cm simplex frequency), through the custom APRS region. APRS
+  lives on 2 m: 144.390 is the national APRS frequency, where digipeaters and iGates would repeat the test frames and
+  gate them to APRS-IS. A 70 cm test frequency keeps the frames away from that network and away from 2 m receivers on
+  the bench. The option takes any 2 m or 70 cm amateur frequency (144-148, 420-450 MHz) except the regional APRS ones
+  (144.390, 144.800, 145.175, 144.575, 144.660, 144.640), which are refused. Pick another simplex frequency with the
+  option if 446.050 is busy locally.
 - Path: none (no WIDEn-N), so a digipeater that hears a frame does not repeat it.
 - Power: the radio's lowest level (50 mW on the DM-1701). The tests check `aprs.tx_power` (the level an APRS
   transmission keys at) is 0 before keying, and skip on firmware without that key: it used to key APRS at the
@@ -59,6 +61,11 @@ from odr_hil import DebugLinkError
 
 POS = (33.7490, -84.3880)
 APRS_HZ = {144390000, 144800000, 145175000, 144575000, 144660000, 144640000}
+
+
+def allowed_test_hz(hz):
+    """An amateur 2 m or 70 cm frequency that is not a regional APRS frequency"""
+    return hz not in APRS_HZ and (144000000 <= hz <= 148000000 or 420000000 <= hz <= 450000000)
 PATHS = ["", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2"]
 VIAS = {"rf": 0, "dmr": 1, "both": 2}
 REGION_CUSTOM, POS_FIXED, PATH_NONE = 6, 3, 0
@@ -158,7 +165,7 @@ class AprsSession:
 
     def rf_setup(self, call, ssid, hz):
         """AFSK on hz (custom region), no path, via RF, our test call and SSID, the fixed test position."""
-        assert hz not in APRS_HZ and 144000000 <= hz <= 148000000, f"{hz} Hz: not a 2 m non-APRS frequency"
+        assert allowed_test_hz(hz), f"{hz} Hz: not an amateur non-APRS test frequency"
         self.set("region", REGION_CUSTOM)
         time.sleep(0.3)             # the view's frequency follows on the engine's next tick (25 ms)
         self.custom_hz = int(self.radio.view(["aprs"])["aprs.freq_hz"])
@@ -270,8 +277,9 @@ def aprs_air(radio, pytestconfig, request):
     if "FM" not in radio.features():
         pytest.skip("built without FM")
     hz = round(pytestconfig.getoption("--aprs-test-mhz") * 1e6)
-    if hz in APRS_HZ or not 144000000 <= hz <= 148000000:
-        pytest.fail(f"--aprs-test-mhz {hz / 1e6:.3f}: must be a 2 m frequency that is not an APRS frequency")
+    if not allowed_test_hz(hz):
+        pytest.fail(f"--aprs-test-mhz {hz / 1e6:.3f}: must be a 2 m or 70 cm amateur frequency that is not an APRS "
+                    "frequency")
     radio.go_home()
     if radio.screen() == "hotspot":
         pytest.skip("the radio is in hotspot mode")

@@ -56,6 +56,10 @@ endif
 ifeq ($(CONFIG_SNMP),y)
 CORE_DIRS += core/snmp
 endif
+# The storage layer over SPI NAND, for the boards that list it (BOARD_NAND_DIRS in their board.mk)
+ifeq ($(CONFIG_NAND_STORAGE),y)
+BOARD_DIRS += $(BOARD_NAND_DIRS)
+endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
@@ -64,6 +68,11 @@ APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
 APP_SRC := $(filter-out core/debuglink/dl_stub.c,$(APP_SRC))
 ifeq ($(CONFIG_STUB_ENTRY),y)
 APP_SRC += core/debuglink/dl_stub.c
+endif
+# The task table behind the debug link's tasks view (core/app is always globbed): only with its switch, which also
+# turns on the kernel's trace hooks in the boards' FreeRTOSConfig.h
+ifneq ($(CONFIG_TASK_STACKS),y)
+APP_SRC := $(filter-out core/app/task_stack.c,$(APP_SRC))
 endif
 # Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
@@ -131,7 +140,10 @@ ODR_VERSION := $(GITVERSION)$(GITDIRTY)
 DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\"
 
 OPT ?= -Os
-COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP
+# Every function's frame size and calls, next to each object (or each LTO partition, next to the .elf), for the stack
+# check (make stack-check, tools/stack_check.py). Output files only: the image is the same with or without it
+STACK_INFO := -fcallgraph-info=su
+COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP $(STACK_INFO)
 CFLAGS_APP := $(COMMON) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wshadow -Wdouble-promotion $(DEFS) $(INCLUDES)
 CFLAGS_3P := $(COMMON) -std=gnu11 -w $(DEFS) $(INCLUDES)
 # The C library flavor and linker extras come from the platform (platform.mk); these are the arm-none-eabi ones
@@ -148,7 +160,7 @@ LTO_3P ?= 0
 LTO_EXCLUDE ?= platform/stm32f4/codec_call.c
 ifeq ($(LTO),1)
 CFLAGS_APP += -flto=auto
-LDFLAGS += $(OPT) -flto=auto
+LDFLAGS += $(OPT) -flto=auto $(STACK_INFO)
 ifeq ($(LTO_3P),1)
 CFLAGS_3P += -flto=auto
 endif
@@ -166,12 +178,14 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
-.PHONY: all codec clean size test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
-all: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin) codec
+.PHONY: all codec clean size stack-check test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
+all: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin) $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
-codec: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin)
-	@python3 tools/codec_auto.py --board $(BOARD) --image $(TARGET).bin $(if $(BIN2_SECTIONS),--image2 $(TARGET)_rodata2.bin)
+# A board with a first stage (BOOT_STAGE) merges the codec into the install image, so the merged file starts with the stage
+codec: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin) $(if $(BOOT_STAGE),$(TARGET)_install.bin)
+	@python3 tools/codec_auto.py --board $(BOARD) --image $(if $(BOOT_STAGE),$(TARGET)_install.bin,$(TARGET).bin) \
+		$(if $(BOOT_STAGE),-o $(TARGET)_codec.bin) $(if $(BIN2_SECTIONS),--image2 $(TARGET)_rodata2.bin)
 
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
@@ -204,6 +218,7 @@ $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += 
 endif
 
 $(TARGET).elf: $(OBJ) $(LDSCRIPT)
+	@rm -f $@.ltrans*.ci	# LTO's call graphs, one per partition: none left from a link with more partitions
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) -lm
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN_SECTIONS)) $< $@
@@ -212,6 +227,11 @@ ifneq ($(BIN2_SECTIONS),)
 $(TARGET)_rodata2.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN2_SECTIONS)) $< $@
 	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes (sector 9, written with the application)"
+endif
+
+# A first stage in front of the application (boot/), for a board that sets BOOT_STAGE
+ifneq ($(BOOT_STAGE),)
+include boot/boot.mk
 endif
 
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
@@ -233,6 +253,17 @@ size: $(TARGET).elf
 
 test:
 	$(MAKE) -C tests/host
+
+# Static worst-case stack depth of every task against its stack (docs/dev/stack-check.md). The platform gives the bytes
+# its RTOS port saves on a task stack (STACK_OVERHEAD); STACK_MARGIN bytes must stay free; a board still bringing up its
+# call graph may set STACK_CHECK_REPORT_ONLY=1 in its config.mk
+STACK_MARGIN ?= 128
+STACK_CHECK_REPORT_ONLY ?= 0
+stack-check: $(TARGET).elf
+	@python3 tools/stack_check.py --build $(BUILD) --label $(BOARD) --cc '$(CC)' --cflags '$(CFLAGS_APP)' \
+		--objdump $(CROSS)objdump --elf $(TARGET).elf \
+		--overhead $(STACK_OVERHEAD) --margin $(STACK_MARGIN) $(if $(filter 1,$(STACK_CHECK_REPORT_ONLY)),--report-only) \
+		$(STACK_CHECK_ARGS)
 
 # For tools/ci.sh: the resolved feature switches (NAME=y|n, one per line) and the compiler this board uses
 print-config:

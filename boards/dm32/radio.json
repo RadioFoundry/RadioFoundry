@@ -11,14 +11,14 @@
   "power": "1 / 5 W",
   "cpu": "HR_C7000",
   "display": "color, 240 × 320",
-  "gallery": "120x160",
+  "gallery": "240x320i10x5",
   "docs": {
     "hardware": "docs/spec/hardware-dm32.md",
     "install": "docs/user/19-moving-from-stock-dm32.md",
     "codec": "docs/spec/codec-dm32.md"
   },
   "flash": {
-    "backend": "bfuv32-serial",
+    "backend": "c7000-stub",
     "board": "dm32",
     "link": "serial-cable",
     "bootloader": [
@@ -30,10 +30,11 @@
     "stock_versions": [
       "DM32.01.01.049",
       "DM32.00.01.046"
-    ]
+    ],
+    "stub_tested": true
   },
   "backup": {
-    "stock": "planned",
+    "stock": "full",
     "odr": "full",
     "spi_size": 16777216
   },

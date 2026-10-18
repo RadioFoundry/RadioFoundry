@@ -12,10 +12,14 @@ SIZE := $(CROSS)size
 
 # Little endian, no FPU, no DSP, no high registers (r16-r31): the context switch saves r0-r13 and r15 only
 CPUFLAGS := -mcpu=ck803s -mlittle-endian -mno-high-registers -msoft-float
+# Bytes a task's stack holds beyond its call chain (make stack-check): an interrupt or a yield saves 17 words there
+# (freertos/portasm.S), then a handler runs on the interrupt stack with interrupts off, so frames never nest
+STACK_OVERHEAD := 68
 
 RTOS := third_party/FreeRTOS-Kernel
 
-PLATFORM_DIRS := platform/hrc7000 platform/hrc7000/freertos
+# drivers/gps/*: the shared GPS receive ring under gps_hrc.c (unreferenced, so linked out, on a radio without a GPS)
+PLATFORM_DIRS := platform/hrc7000 platform/hrc7000/freertos drivers/gps/nmea_line drivers/gps/gps_rx
 PLATFORM_INC := -I$(RTOS)/include -Iplatform/hrc7000/freertos
 
 PLATFORM_3P_SRC := $(RTOS)/tasks.c $(RTOS)/queue.c $(RTOS)/list.c $(RTOS)/timers.c $(RTOS)/event_groups.c \

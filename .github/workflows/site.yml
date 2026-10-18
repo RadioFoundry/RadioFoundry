@@ -7,7 +7,8 @@
 #   nightly              rebuilt and deployed only when something changed since the last deployment: a file the site
 #                        is built from (the paths below), or a release published after it
 #   by hand              (workflow_dispatch) always rebuilt and deployed
-#   pull requests        built and tested, never deployed
+# Pull requests don't run it: their unit-tests job (tools/ci.sh's Python step) builds the site with --strict and runs
+# the web flasher's tests already.
 #
 # Needs Pages enabled with "GitHub Actions" as the source (repository Settings > Pages); until then the nightly and
 # manual runs stop after the check.
@@ -17,35 +18,23 @@ on:
   schedule:
     - cron: "17 7 * * *"   # 07:17 UTC, once a night
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "site/**"
-      - "docs/**"
-      - "README.md"
-      - "boards/*/radio.json"
-      - "boards/*/config.mk"
-      - "config/**"
-      - "tools/odrflash/odrflash/**"
-      - ".github/workflows/site.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  # one deployment at a time; pull requests in their own group, so they never cancel a pending deployment
-  group: ${{ github.event_name == 'pull_request' && format('site-{0}', github.ref) || 'pages' }}
+  # one deployment at a time
+  group: pages
   cancel-in-progress: false
 
 env:
-  # what the site is built from: a change here since the last deployment means a rebuild (keep in step with the
-  # pull_request paths above)
+  # what the site is built from: a change here since the last deployment means a rebuild
   SITE_INPUTS: >-
     site docs README.md boards config tools/odrflash/odrflash Makefile .github/workflows/site.yml
 
 jobs:
   changes:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read
       deployments: read
@@ -84,23 +73,26 @@ jobs:
 
   build:
     needs: changes
-    # pull requests skip `changes` and always build; the nightly run builds only when `changes` says so
-    if: always() && (github.event_name == 'pull_request' || needs.changes.outputs.build == 'true')
-    runs-on: ubuntu-24.04
+    # the nightly run builds only when `changes` says so
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v4
+      # the self-hosted runner's image has Python with markdown-it and Node.js 22, and its proxy doesn't reach PyPI
       - uses: actions/setup-python@v5
+        if: runner.environment != 'self-hosted'
         with:
           python-version: "3.12"
       - uses: actions/setup-node@v4
+        if: runner.environment != 'self-hosted'
         with:
           node-version: "22"
       - name: Generator dependency
-        run: pip install -r site/requirements.txt
+        run: |
+          [ "${ODR_CI_IMAGE:-}" = 1 ] || pip install -r site/requirements.txt
       - name: Web flasher tests (against odrflash)
         run: site/tests/run.sh
       - name: Newest release's firmware for the flasher
-        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -112,14 +104,13 @@ jobs:
           python3 site/build.py --strict --out build/site --firmware dist \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" --ref "${{ github.sha }}"
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
         with:
           path: build/site
 
   deploy:
     needs: build
-    if: always() && needs.build.result == 'success' && github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    if: needs.build.result == 'success'
+    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       pages: write
       id-token: write

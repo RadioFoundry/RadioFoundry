@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Drawing into the UI's frame buffer and sending changed rows to the display (hal_display_t).
-// Works on any panel whose frame buffer fits GFX_FB_BYTES: RGB565 (bpp 16) or 1 bit per pixel (bpp 1, MSB left).
+// Works on any panel whose frame buffer fits GFX_FB_BYTES: RGB565 (bpp 16), 16 colors (bpp 4) or 1 bit per pixel (bpp 1,
+// MSB left). At bpp 4 the drawing calls still take RGB565: gfx keeps a 16-entry palette of the colors in use (a screen
+// uses about a dozen); past 16, a color gets the nearest one already there.
 #ifndef UI_GFX_H
 #define UI_GFX_H
 
@@ -12,13 +14,17 @@
 #include "font.h"
 
 // Frame buffer size, static in main SRAM (DMA capable). 160 x 128 x 16 bpp = 40 KB. A 240 x 320 color panel
-// (150 KB) does not fit the STM32F405's 128 KB SRAM and will need band rendering instead of a whole frame.
+// (150 KB) does not fit the STM32F405's 128 KB SRAM; at bpp 4 it takes 37.5 KB.
 // The host simulator sets larger values to render 240 x 320.
 #ifndef GFX_FB_BYTES
 #define GFX_FB_BYTES	(160u * 128u * 2u)
 #endif
 #ifndef GFX_MAX_ROWS
 #define GFX_MAX_ROWS	160u
+#endif
+// The 16-color frame buffer (bpp 4): only boards with such a panel build it (the palette and its code)
+#ifndef GFX_INDEXED
+#define GFX_INDEXED	0
 #endif
 
 // RGB565. On a 1 bpp panel any nonzero color is ink (pixel set), zero is paper
@@ -38,6 +44,9 @@ void gfx_clip_off(void);
 
 void gfx_pixel(int x, int y, color_t c);
 color_t gfx_get_pixel(int x, int y);	// RGB565, or 0 / 1 on a 1 bpp panel
+// n bytes of the frame as RGB565 (little endian, rows of width * 2 bytes) from byte off: screen captures of a bpp 4
+// panel. At bpp 16 the frame buffer itself
+void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n);
 void gfx_fill(int x, int y, int w, int h, color_t c);
 void gfx_clear(color_t c);
 void gfx_hline(int x, int y, int w, color_t c);

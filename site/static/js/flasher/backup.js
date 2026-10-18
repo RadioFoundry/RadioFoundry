@@ -16,31 +16,24 @@
 
 import { hex, sha256 } from "./bytes.js";
 import { zip, unzip } from "./zip.js";
+import { debugLinkReader } from "./readers.js";
 
 export const FORMAT = "odr-backup/1";
-const CPS_SPI = 1, CPS_MCU = 5, CPS_INFO = 9, CPS_SECURITY = 10;
+const CPS_INFO = 9, CPS_SECURITY = 10;
 export const CODEPLUG_SPAN = 0x120000;	// the open-firmware layout: emulated EEPROM, calibration, codeplug, ID database
 
 export class BackupError extends Error {}
 
 // Read a radio that runs ODR. what: {internal, spi: "full" | "codeplug" | "none", security}. Returns the parts.
-export async function readRadio(link, board, radio, { what = {}, progress = () => {}, signal } = {}) {
+// readers (readers.js): bulk readers to try first, in order, for the two memories; the debug link reads them when
+// none opens. The small parts only the debug link reads (radio info, security registers) come first, before a reader
+// may hand the radio over to a loader. A reader that opened is closed (or aborted on a failure) before this returns.
+export async function readRadio(link, board, radio, { what = {}, progress = () => {}, signal, readers = [] } = {}) {
 	const parts = [];
 	const want = { internal: true, spi: "full", security: true, ...what };
 	const step = (name) => (done, total) => progress(name, done, total);
 	const info = await link.cpsRead(CPS_INFO, 0, 128);
 	if (info) parts.push({ file: "radio-info.bin", what: "radio-info", addr: 0, data: info, complete: true });
-	if (want.internal) {
-		// CPS area 5 addresses the MCU flash from 0x08000000 (open-firmware-cps.md 3)
-		const base = board.app_base, size = board.flash_end - board.app_base;
-		const r = await link.cpsDump(CPS_MCU, base - 0x08000000, size, { progress: step("internal"), signal });
-		parts.push({ file: "internal-flash.bin", what: "internal-flash", addr: base, data: r.data, complete: r.complete });
-	}
-	if (want.spi !== "none") {
-		const size = want.spi === "full" ? radio.backup.spi_size : CODEPLUG_SPAN;
-		const r = await link.cpsDump(CPS_SPI, 0, size, { progress: step("spi"), signal });
-		parts.push({ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: r.data, complete: r.complete && want.spi === "full" });
-	}
 	if (want.security) {
 		const regs = [];
 		for (const a of [0x1000, 0x2000, 0x3000]) {
@@ -54,7 +47,32 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 			parts.push({ file: "security-registers.bin", what: "security-registers", addr: 0x1000, data, complete: regs.length === 3 });
 		}
 	}
-	await link.cpsClose();
+	let reader = debugLinkReader(link);
+	if (readers.length && (want.internal || want.spi !== "none")) {
+		await link.cpsClose();	// the debug link's CPS session ends before a reader takes the radio
+		for (const r of readers) {
+			if (await r.open(step("loader"))) {
+				reader = r;
+				break;
+			}
+		}
+	}
+	try {
+		if (want.internal) {
+			const base = board.app_base, size = board.flash_end - board.app_base;
+			const r = await reader.read("internal", base, size, { progress: step("internal"), signal });
+			parts.push({ file: "internal-flash.bin", what: "internal-flash", addr: base, data: r.data, complete: r.complete });
+		}
+		if (want.spi !== "none") {
+			const size = want.spi === "full" ? radio.backup.spi_size : CODEPLUG_SPAN;
+			const r = await reader.read("spi", 0, size, { progress: step("spi"), signal });
+			parts.push({ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: r.data, complete: r.complete && want.spi === "full" });
+		}
+	} catch (e) {
+		await reader.abort();
+		throw e;
+	}
+	await reader.close();
 	return parts;
 }
 
@@ -73,8 +91,8 @@ export async function makeBundle(meta, parts, site = {}) {
 		`Firmware when the backup was taken: ${describeFirmware(meta.firmware_now)}`,
 		meta.firmware_before ? `Firmware before ODR was installed: ${describeFirmware(meta.firmware_before)}` : "",
 		"",
-		"Keep this file. The OpenDigitalRadio web flasher (Restore) can put the radio back the way it was from it.",
-		"It holds your radio's calibration and codeplug: don't share it.",
+		"Keep this file. The OpenDigitalRadio radio programming utility (Restore) can restore the radio from it.",
+		"It contains your radio's calibration and codeplug. Do not share it.",
 		"",
 		...listed.map((p) => `${p.file}: ${p.what} at ${p.addr}, ${p.size} bytes${p.complete ? "" : " (incomplete read)"}, sha256 ${p.sha256}`),
 	].filter((l, i, a) => l !== "" || a[i - 1] !== "").join("\n") + "\n";
@@ -88,9 +106,12 @@ export function describeFirmware(f) {
 	return "unknown";
 }
 
-export function bundleName(meta) {
-	const uid = meta.radio.chip?.uid?.slice(0, 8) || "radio";
-	return `odr-backup-${meta.radio.board}-${uid}-${new Date().toISOString().slice(0, 10)}.zip`;
+// The name people see in their downloads or on the desktop: the model and the local date, letters and digits only,
+// always .zip (DM1801Pro_Backup_2026-10-16.zip)
+export function bundleName(meta, when = new Date()) {
+	const p = (n) => String(n).padStart(2, "0");
+	const model = String(meta.radio.model || meta.radio.board).replace(/[^A-Za-z0-9]/g, "") || "Radio";
+	return `${model}_Backup_${when.getFullYear()}-${p(when.getMonth() + 1)}-${p(when.getDate())}.zip`;
 }
 
 // Read a bundle back; every part checked against its SHA-256. Returns {meta, parts: Map(what -> {..., data})}
@@ -99,17 +120,17 @@ export async function openBundle(bytes) {
 	try {
 		files = await unzip(bytes);
 	} catch (e) {
-		throw new BackupError(`not a backup bundle: ${e.message}`);
+		throw new BackupError(`this file is not a backup created by the radio programming utility (${e.message})`);
 	}
 	const doc = files.get("backup.json");
-	if (!doc) throw new BackupError("not a backup bundle: no backup.json inside");
+	if (!doc) throw new BackupError("this file is not a backup created by the radio programming utility (no backup.json)");
 	const meta = JSON.parse(new TextDecoder().decode(doc));
 	if (meta.format !== FORMAT) throw new BackupError(`unknown backup format ${meta.format}`);
 	const parts = new Map();
 	for (const p of meta.parts) {
 		const data = files.get(p.file);
-		if (!data) throw new BackupError(`${p.file} is missing from the bundle`);
-		if (await sha256(data) !== p.sha256) throw new BackupError(`${p.file} doesn't match its checksum: the bundle is damaged`);
+		if (!data) throw new BackupError(`${p.file} is missing from the backup file`);
+		if (await sha256(data) !== p.sha256) throw new BackupError(`${p.file} does not match its checksum; the backup file is damaged`);
 		parts.set(p.what, { ...p, addr: Number(p.addr), data });
 	}
 	return { meta, parts };

@@ -26,19 +26,21 @@ settings start from the defaults at every boot and nothing can be written.
 The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there. The
 boards' maps:
 
-| Field | DM-1701, MD-380 (16 MB part) | DM-32UV |
-|---|---|---|
-| `settings_addr` / `settings_size` | 0x011000, 32 KB (8 sectors) | 0x711000, 32 KB (8 sectors) |
-| `journal_addr` | 0x019000 | 0x719000 |
-| `openfw_eeprom` | 0x000000 | 0x700000 |
-| `openfw_flash` | 0x020000 | 0x720000 |
-| `openfw_end` | 0xE00000 | 0xF00000 |
-| `calibration_addr` / `_size` | DM-1701 0x010000, 512 B; MD-380 none | none |
-| `native_addr` / `native_size` | 0xE00000, 1 MB | 0xF00000, 1 MB |
-| `staging_addr` / `staging_size` | 0xF00000, 256 KB | none |
-| Details | `hardware-dm1701.md` 13.2, `hardware-md380.md` 12.2 | `hardware-dm32.md` 10.1, 17 |
+| Field | DM-1701, MD-380 (16 MB part) | DM-32UV | DB25-D PRO (NAND, 2.375 MB logical) |
+|---|---|---|---|
+| `settings_addr` / `settings_size` | 0x011000, 32 KB (8 sectors) | 0x711000, 32 KB (8 sectors) | 0x011000, 32 KB (8 sectors) |
+| `journal_addr` | 0x019000 | 0x719000 | 0x019000 |
+| `openfw_eeprom` | 0x000000 | 0x700000 | 0x000000 |
+| `openfw_flash` | 0x020000 | 0x720000 | 0x020000 |
+| `openfw_end` | 0xE00000 | 0xF00000 | 0x120000 |
+| `calibration_addr` / `_size` | DM-1701 0x010000, 512 B; MD-380 none | none | none |
+| `native_addr` / `native_size` | 0xE00000, 1 MB | 0xF00000, 1 MB | 0x120000, 1 MB |
+| `staging_addr` / `staging_size` | 0xF00000, 256 KB | none | 0x220000, 256 KB |
+| Details | `hardware-dm1701.md` 13.2, `hardware-md380.md` 12.2 | `hardware-dm32.md` 10.1, 17 | `hardware-db25d.md` 6.6 |
 
-The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes.
+The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes. A
+NAND board puts `drivers/flash/nand_sectors` in between, which gives NOR behavior in 4 KB sectors
+([nand-sectors.md](nand-sectors.md)).
 
 ## 2. Settings records
 
@@ -111,19 +113,19 @@ codeplug's callsign.
 | Group | Fields |
 |---|---|
 | position | `vfo`, `squelch`, `zone_index`, `channel`, `zone_pos` (used when the channel number is gone after a codeplug write) |
-| VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz`, `vfo_mode`, `vfo_bw`, `vfo_power`, `vfo_cc`, `vfo_ts`, tone types and values; `net_flags` sits in the VFO block's spare byte (was `reserved0`; 0 = as before): bit 0 refuses TFTP codeplug writes (`tftp.md` 4, appended for mdnstftp), bit 1 control station passthrough, bit 2 the fixed link (`usb-network.md` 5.4, appended for dispatch) |
-| preferences | `brightness`, `backlight_s`, `beeps`, `hotspot_allowed`, `master_power`, `usb_mode` (the USB personality at power-on: 0 serial, 1 network; `usb-network.md` 1) |
+| VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz`, `vfo_mode` (bits 0-3: FM or DMR; a record from before the DMR VFO holds FM, and a build without the DMR VFO reads DMR as FM), `vfo_bw` (bits 0-3), `vfo_power`, `vfo_cc` (bits 0-3, the color code), `vfo_ts` (bits 0-1, the slot), tone types and values; the DMR VFO's talk target (a 24-bit ID and a private call flag) is packed into bytes that were reserved or hold a small number, so the record stays 236 bytes and an old record reads as no target (ID 0, talkgroup 9): ID bits 0-7 in `vfo_talk_lo` (the old `reserved1`'s second byte; `accent` has the first), bits 8-11 in `vfo_mode` bits 4-7, bits 12-15 in `vfo_bw` bits 4-7, bits 16-19 in `vfo_cc` bits 4-7, bits 20-23 in `vfo_ts` bits 2-5, private call in `vfo_ts` bit 7 (always through `settings_vfo_mode` / `_bw` / `_cc` / `_ts` / `_talk_id` / `_talk_private` and the setters in `settings.h`; appended for the DMR VFO); `net_flags` sits in the VFO block's spare byte (was `reserved0`; 0 = as before): bit 0 refuses TFTP codeplug writes (`tftp.md` 4, appended for mdnstftp), bit 1 control station passthrough, bit 2 the fixed link (`usb-network.md` 5.4, appended for dispatch) |
+| preferences | `brightness`, `backlight_s`, `beeps`, `hotspot_allowed`, `master_power`, `usb_mode` (the USB personality at power-on: 0 serial, 1 network; `usb-network.md` 1), `accent` (in the old `reserved1`'s first byte: bits 0-2 the highlight color, 0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue, 6 purple, 7 pink; bit 3 set: the status strip not filled; 0 = the defaults, the theme's highlight and the strip filled with it; `ui.md` 8; bits 6-7 the vocoder's mic options: bit 6 noise reduction off, bit 7 AGC on, `dmr-voice.md` 6, so a record from before them reads as noise reduction on and AGC off) |
 | identity | `dmr_id` (0 = the codeplug's), `radio_name[16]` ("" = the codeplug's callsign) |
 | privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (appended for dmr-voice) |
 | radio core settings | `rs_tot_s rs_tot_warn_s rs_bcl rs_flags` (roger beep, TX inhibit, scan priority, scan beep, key beep, no talk permit tone: 0 = on, as before) `rs_scan_resume rs_scan_hold_s rs_beep_level rs_scan_delay_ms rs_scan_dwell_ms rs_vox rs_vox_level rs_vox_tail_ms rs_rx_save rs_stored rs_rx_save_idle_s rs_battery_off_s rs_backlight_dim_s rs_backlight_off_s` (appended for radio-features) |
 | DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply, SMS format ETSI short data, radio check ETSI form, UDP compression off, UDP compression all, SMS format ETSI IP text) `ds_stored` (appended for dmr-data; the ETSI bits for dmr-ext and dispatch, 0 = as before: a record with neither SMS format bit sends TMS, while the default without a record is ETSI IP text, `dmr-data.md` 8), `ds_ip_cnf` (in the old reserved4: confirmed IP tries in bits 0-3, 0 = the default 4; bits 4-5 0 rules, 1 off, 2 all) and `ds_ip_rule[2]` (appended at the end for sap3: 0 unused, a radio ID, or 0x80000000 \| a UDP port); the two compression bits 0 = auto ([dmr-data.md](dmr-data.md) 11, 12) |
-| UI settings | `rs_reply_s` (the reply window in s, 0..30; `SETTINGS_UNSET8` = the codeplug's hang times; a radio core setting), `mic_gain` (0..10, default 5 = unity; applied to DMR audio), `auto_lock_s` (0 = off), `long_press_ms`, `repeat_ms` (0 = the input layer's defaults), `gps`, `pos_format`, `pos_send_s` (stored for a GPS owner, act on nothing yet) (appended for glue) |
+| UI settings | `rs_reply_s` (the reply window in s, 0..30; `SETTINGS_UNSET8` = the codeplug's hang times; a radio core setting), `mic_gain` (0..10, default 5 = the board's levels; `radio_set_mic_gain`, radio-features.md 3.6), `auto_lock_s` (0 = off), `long_press_ms`, `repeat_ms` (0 = the input layer's defaults), `gps` (Settings > Location > GPS: `ui_svc_apply` hands it to `board_gps_enable` and `aprs_gps_enable`, at start-up and on each change, see aprs.md 4), `pos_format`, `pos_send_s` (stored for a GPS owner, act on nothing yet) (appended for glue) |
 | DMR emergency | `em_dst em_mode em_flags` (target is a radio, ETSI alarm FID, no alert tone) `em_alarm_tries em_hot_mic_s em_stored` (appended for dmr-ext, `dmr-emergency.md` 5) |
 | hotspot CW ID | `cw_wpm cw_tone_hz` (0 = 20 wpm / 800 Hz; appended for dmr-ext) |
 | DMR roaming | `roam_rssi_dbm roam_hyst_db roam_probe roam_stored roam_check_s` (the radio core's roaming settings, taken when `roam_stored` is 1) and `roam_zones[10]` (bit z: zone z is a roaming zone, zones 0..79; written by the radio core on RREQ_ROAM) (appended for roaming, `dmr-roaming.md` 5.1) |
-| more UI settings | `theme` (0 dark, 1 light, 2 high contrast), `ui_flags` (large text, hint row, message tone, talker alias shown, PTT when locked, hear all by default; default hint row, message tone, talker alias and PTT when locked on), `updown_home` (0 channel, 1 zone, 2 talk target), `low_batt_pct` (5..30, default 15; 0 = the radio core's voltage levels only), `auto_off_min` (0 = never) and a reserved u16, now `aprsis_port` (appended for uifix; a record without them keeps these defaults) |
+| more UI settings | `theme` (0 dark, 1 light, 2 high contrast), `ui_flags` (large text, hint row, message tone, talker alias shown, PTT when locked, hear all by default, 0x40 vibrate off; default hint row, message tone, talker alias and PTT when locked on, and the vibrate-off bit clear, so vibrate is on), `updown_home` (0 channel, 1 zone, 2 talk target), `low_batt_pct` (5..30, default 15; 0 = the radio core's voltage levels only), `auto_off_min` (0 = never) and a reserved u16, now `aprsis_port` (appended for uifix; a record without them keeps these defaults) |
 | roaming survey | `roam_beacon_s` (the repeaters' beacon interval, 0 = none, else 10..600, default 60), `roam_beacon_len_s` (1..10, default 4), `roam_survey` (0 off, 1 synced, 2 per site; default 1), `rpt_beacon` (our repeater roles' idle beacon, default 0), `aprs_power` (APRS's RF power, `aprs.md` 11; 0 = the radio's current level, which a record from before it reads as), `aprs_cp_path` (the codeplug APRS path last taken into `aprs_path`,
-`aprs.md` 11; 0 = none yet), `audio_flags` (bit 0: the vocoder's mic noise reduction off, bit 1: its mic AGC on, `dmr-voice.md` 6; 0 = noise reduction on and AGC off, which a record from before it reads as; was `reserved6`) (appended for roam2, `dmr-roaming.md` 5.1; a record without them keeps these defaults) |
+`aprs.md` 11; 0 = none yet), `volume` (the speaker volume of a radio without a knob; in the old `reserved6`, so a record from before it reads as the default. 0 = the default step; bit 7 set = `0x80 | (step + 1)` for step 0..16 (0 = mute); 1..11 = step + 1 of the first version's 0..10 range, read as step 0..10 scaled to 0..16 (round(step * 16 / 10): the default 5 is 8, 10 is 16) and rewritten in the new form at the next save; `radio-features.md` 4.2) |
 | APRS | `aprs_flags aprs_flags2` (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX; iGate, iGate TX, messaging, UDT, to APRS-IS, DMR GPS Info) `aprs_region aprs_ssid aprs_freq_hz aprs_lat aprs_lon aprs_dmr_dst aprs_alt_m aprs_interval_s aprs_distance_m aprs_symbol[2] aprs_path aprs_pos_src aprs_level aprs_txdelay aprs_misc aprs_stored` and a reserved u16, now `snmp_rf_gap_s`; taken when `aprs_stored` is 1 (appended for aprs, `aprs.md` 11) |
 | APRS-IS client | `aprsis_ip` (the server's IPv4 address, 0 = off; appended for tcp), `aprsis_port` (0 = 14580; in the old `reserved5`), `aprsis_range_km` (the filter `m/<km>`, 0 = none; in the old `reserved3`) (`tcp-services.md` 7) |
 | control station | `net_link_ip` (the radio's fixed link address, 0 = 192.168.10.1; in force with `net_flags` bit 2), 0 = off, the link by DMR ID (appended for dispatch after `aprsis_ip`, `usb-network.md` 5.4) |
@@ -131,9 +133,9 @@ codeplug's callsign.
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
 payload is 236 bytes now, the most a slot holds: the later fields went into reserved bytes where 0 already meant
-"as before" (`net_flags`, `snmp_rf_manager[3]`, `aprsis_range_km`, `snmp_flags`, `aprsis_port`, `snmp_rf_gap_s`, `aprs_power`, `aprs_cp_path`, `audio_flags`). The
-reserved bytes left are `reserved1` (2 bytes) and the 6 free bits of `audio_flags`. The next
-setting either takes those or needs a new layout (rule 1: a bigger record no longer fits a slot, so layout 2 would
+"as before" (`net_flags`, `snmp_rf_manager[3]`, `aprsis_range_km`, `snmp_flags`, `aprsis_port`, `snmp_rf_gap_s`, `aprs_power`, `aprs_cp_path`, `volume`, `vfo_talk_lo`), or the new defaults (`accent`: the filled status strip, a new look on purpose). No reserved byte is left. One-byte
+fields that hold small numbers (`hotspot_allowed`, `usb_mode`, `theme`, `updown_home`) still have free upper bits; `vfo_power` does not
+(its "not set" is 0xFF). The next setting either packs into spare bits like that or needs a new layout (rule 1: a bigger record no longer fits a slot, so layout 2 would
 have to drop or pack fields).
 
 ### 3.0 Who writes, and storage jobs
@@ -215,6 +217,11 @@ been erased yet, so it is merged with the data from J0 again; a staged one is co
 (none of the core's callers makes one) goes sector by sector through `storage_sector_write`. The bytes are merged
 in the shared 4 KB buffer, which is shared with the CPS shim's pending sector (`storage_buffer_acquire`), so an edit
 while a CPS write is going on fails cleanly instead of waiting.
+
+A flash that is copy on write underneath offers `hal_flash_t.replace` (the DB25-D's NAND, `nand-sectors.md` 5): the
+sector rewrite then calls it and checks the result. There is no journal on such a flash (J0 and J1 stay blank), because
+the replace is one atomic record, and the replay at boot finds nothing to finish. The patch transaction of
+`storage_write` (up to 4 KB across one or two sectors) still uses the journal.
 
 Wear: J0 and J1 are erased once per sector rewrite. A full qdmr write is about 46 sectors, so the journal sectors
 take 46 erases per write. At 100,000 cycles, that is about 2,000 full codeplug writes. Spreading the journal over a

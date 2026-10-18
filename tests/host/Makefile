@@ -132,11 +132,11 @@ clean:
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
 CORE_HAL := -I$(ROOT)/hal -Wshadow
-TESTS   += radioCoreTest inputTest quadratureTest
+TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c \
-           $(CORE)/codeplug/codeplug_talk.c
+           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/codeplug/codeplug_talk.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
@@ -146,11 +146,18 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEA
            $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c $(CORE)/hotspot/dmrDataFrame.c \
            $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
            $(CORE)/ui/ui_svc_radio.c $(CORE)/ui/ui_svc_storage.c $(CORE)/ui/ui_svc_data.c \
-           $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c
+           $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
+           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -o $@ $(RCORE) -lm
+
+# The same with the DMR VFO off (CONFIG_VFO_DMR=0): the VFO stays analog and nothing about it changes
+TESTS   += radioCoreTestNoVfoDmr
+radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                       $(CORE)/ui/ui_svc.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -DCONFIG_VFO_DMR=0 -o $@ $(RCORE) -lm
 
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
@@ -186,7 +193,7 @@ TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
 APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
-           $(CORE)/codeplug/codeplug_talk.c \
+           $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            $(CORE)/radio/radio_am.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
@@ -219,16 +226,28 @@ keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c
 
+# The hand mic key decoder on a UART shared with the PC link (drivers/input/serialmic; the DB25-D)
+serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROOT)/drivers/input/serialmic/serialmic.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
+
+# The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
+TESTS   += miclevelTest
+miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
+
 run: run-core
-run-core: radioCoreTest radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest
 	./aprsRadioTest
 	./radioCoreTest
+	./radioCoreTestNoVfoDmr
 	./radioFeaturesTest
 	./roamTest
 	./radioAmTest
 	./bcastTest
 	./inputTest
 	./quadratureTest
+	./serialmicTest
+	./miclevelTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
@@ -273,8 +292,9 @@ run-rf: at1846sTest subaudioTest
 .PHONY: run-rf
 
 # The MD-380's chips (docs/spec/hardware-md380.md): the SKY72310 synthesizer's divider words against the data sheet
-# and a register model, the HR_C5000 variant of the HR_C6000 driver, and the GPS NMEA line framing
-TESTS   += sky72310Test hrc5000Test nmeaLineTest md380RfbusTest
+# and a register model, the HR_C5000 variant of the HR_C6000 driver, and the GPS NMEA line framing and receive ring the
+# MD-380, DM-32UV and DB25-D GPS drivers share
+TESTS   += sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest
 
 sky72310Test: sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c $(ROOT)/drivers/rf/sky72310/sky72310.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c
@@ -287,6 +307,11 @@ hrc5000Test: hrc5000Test.c $(ROOT)/drivers/modem/hrc6000/hrc6000_dmr.c $(ROOT)/d
 nmeaLineTest: nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c $(ROOT)/drivers/gps/nmea_line/nmea_line.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
 
+gpsRxTest: gpsRxTest.c $(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/gps_rx/gps_rx.h \
+           $(ROOT)/drivers/gps/nmea_line/nmea_line.c $(ROOT)/drivers/gps/nmea_line/nmea_line.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ gpsRxTest.c $(ROOT)/drivers/gps/gps_rx/gps_rx.c \
+		$(ROOT)/drivers/gps/nmea_line/nmea_line.c
+
 # The MD-380's bit-banged RF bus (boards/md380/rfbus_md380.c, with the real pins.h) against fake chips on the documented
 # wiring; md380_stub/ holds the stand-in platform.h and FreeRTOS.h the board code includes
 md380RfbusTest: md380RfbusTest.c $(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/boards/md380/rfbus_md380.h \
@@ -296,10 +321,11 @@ md380RfbusTest: md380RfbusTest.c $(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/boar
 		$(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/drivers/modem/hrc6000/hrc6000.c
 
 run: run-md380
-run-md380: sky72310Test hrc5000Test nmeaLineTest md380RfbusTest
+run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
+	./gpsRxTest
 	./md380RfbusTest
 .PHONY: run-md380
 
@@ -308,7 +334,7 @@ UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_sc
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ gfxTest.c $(UI)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -o $@ gfxTest.c $(UI)
 
 # The UI host simulator (tests/host/sim/ui_sim.c): the whole of core/ui against a simulated radio, codeplug and
 # board at any display geometry and key map. uiFlowTest runs the task flows of docs/ux/task-flows.md against their
@@ -323,28 +349,37 @@ UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c 
 ABOUT_H := out/gen/odr_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
-           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DGFX_FIT_TRACE
+           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
-TESTS   += uiFlowTest uiSim
+TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiFlowTest.c $(UIAPP) -lz
 
+# The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows
+uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
+	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -o $@ uiFlowTest.c $(UIAPP) -lz
+
 uiSim: uiSim.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
 
+# The highlight colors the gallery shows its color pages in: the list in .github/workflows/ui-gallery.yml, so the
+# committed gallery and a pull request's before / after pictures show the same colors
+UI_GALLERY_COLORS ?= $(shell sed -n 's/^ *UI_GALLERY_COLORS: *"\([^"]*\)".*/\1/p' $(ROOT)/.github/workflows/ui-gallery.yml)
+
 ui-gallery: uiSim
 	rm -rf $(ROOT)/docs/ux/screens/*/
-	./uiSim --gallery $(ROOT)/docs/ux/screens
+	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --gallery $(ROOT)/docs/ux/screens
 
 # Contact sheets only (every screen of a display class on one page, to audit layouts), outside docs/: GEOM=128x64
 ui-sheets: uiSim
-	./uiSim --sheets out/sheets $(GEOM)
+	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest uiFlowTest uiSim
+run-ui: gfxTest uiFlowTest uiFlowTestNoColor uiSim
 	./gfxTest
 	./uiFlowTest
+	./uiFlowTestNoColor
 	./uiSim --layout
 .PHONY: run-ui ui-gallery ui-sheets
 
@@ -359,10 +394,16 @@ ambeVoiceTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/amb
 	       $(ROOT)/drivers/vocoder/ambe2_flags.h $(ROOT)/hal/hal_vocoder.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c
 
+# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
+TESTS   += micGainTest
+micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
+
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest
+run-ambe: ambeFecTest ambeVoiceTest micGainTest
 	./ambeFecTest
 	./ambeVoiceTest
+	./micGainTest
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
@@ -517,12 +558,39 @@ run-stubEntry: stubEntryTest
 	./stubEntryTest
 .PHONY: run-stubEntry
 
+# The debug link's tasks view section: each task's least free stack (core/debuglink/debuglink_view_tasks.c; the
+# kernel's task table is faked)
+TSTACK  := taskStackTest.c $(CORE)/debuglink/debuglink_view_tasks.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += taskStackTest
+taskStackTest: $(TSTACK) $(CORE)/debuglink/debuglink.h $(CORE)/app/task_stack.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_TASK_STACKS=1 -o $@ $(TSTACK)
+
+run: run-taskStack
+run-taskStack: taskStackTest
+	./taskStackTest
+.PHONY: run-taskStack
+
+# The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
+TESTS   += f4stubTest
+f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+
+TESTS   += f4stubSim
+f4stubSim: f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+
+run: run-f4stub
+run-f4stub: f4stubTest f4stubSim
+	./f4stubTest
+	python3 f4stub_wire_check.py ./f4stubSim
+.PHONY: run-f4stub
+
 # DM-32UV drivers and board logic: FD6818 frames on a fake three-wire chip, ST7789 init stream and 2x scaling, key
 # matrix decode with the column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the factory
 # calibration decoder (docs/spec/hardware-dm32.md, modem-hrc7000.md)
 DM32    := $(ROOT)/boards/dm32
 HRC7    := $(ROOT)/drivers/modem/hrc7000
-TESTS   += fd6818Test st7567Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest
+TESTS   += fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest
 
 fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(SUBAUDIO)
@@ -533,6 +601,8 @@ st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers
 st7789Test: st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c $(ROOT)/drivers/display/st7789/st7789.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c
 
+sharedPttTest: sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/sharedptt/shared_ptt.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c
 keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
 
@@ -556,14 +626,22 @@ lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/
 dm32CalTest: dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
+# The DM-1801 Pro's start-up pin levels (hardware-dm1801pro.md 3.1)
+TESTS   += dm1801proPinsTest
+dm1801proPinsTest: dm1801proPinsTest.c $(ROOT)/boards/dm1801pro/boot_pins.h $(ROOT)/boards/dm1801pro/pins.h
+	$(CC) $(CFLAGS) -I$(ROOT)/boards/dm1801pro -Wshadow -o $@ dm1801proPinsTest.c
+
 run: run-dm32
-run-dm32: fd6818Test st7567Test st7789Test keymatrixTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest
+run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest \
+          dm1801proPinsTest
+	./dm1801proPinsTest
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
 	./st7567Test
 	./st7789Test
 	./keymatrixTest
+	./sharedPttTest
 	./hrc7000DmrTest
 	./dm32CalTest
 	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
@@ -582,10 +660,24 @@ DB25D   := $(ROOT)/boards/db25d
 db25dCalTest: db25dCalTest.c $(DB25D)/calibration_db25d.c $(DB25D)/db25d.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DB25D) -Wshadow -o $@ db25dCalTest.c $(DB25D)/calibration_db25d.c
 
+# Its first stage in front of the application (boot/db25d): the stub load, dropped frames, the window, a cold UART
+TESTS   += bootDb25dTest
+
+bootDb25dTest: bootDb25dTest.c $(ROOT)/boot/db25d/boot.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ bootDb25dTest.c
+
+# Its clock arithmetic (platform/hrc7000/clock_math.h): the PLL words, UART divisor, bit-bang phase length
+TESTS   += hrc7000ClockTest
+
+hrc7000ClockTest: hrc7000ClockTest.c $(ROOT)/platform/hrc7000/clock_math.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000ClockTest.c
+
 run: run-db25d
-run-db25d: bk4819Test db25dCalTest
+run-db25d: bk4819Test db25dCalTest bootDb25dTest hrc7000ClockTest
 	./bk4819Test
 	./db25dCalTest
+	./bootDb25dTest
+	./hrc7000ClockTest
 .PHONY: run-db25d
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
@@ -660,10 +752,11 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest spiNorTest spiNandTest
+run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 	./settingsTest
 	./spiNorTest
 	./spiNandTest
+	./nandSectorsTest
 .PHONY: run-settings
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
@@ -675,13 +768,26 @@ spiNorTest: spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c $(ROOT)/drivers
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c \
 		$(CORE)/storage/storage.c $(CORE)/settings/settings.c
 
-# The SPI NAND driver (read side) against a model of the chip at the bus: ID, page reads through the cache, ECC
-# status, bad-block marks, a chip that stays busy or doesn't answer
+# The SPI NAND driver against a model of the chip at the bus: ID, page reads through the cache, ECC status, bad-block
+# marks, a chip that stays busy or doesn't answer; program loads, internal data moves, erase, the block lock, the write
+# window, reported failures
 TESTS   += spiNandTest
 
 spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/drivers/flash/spi_nand/spi_nand.h \
              $(ROOT)/drivers/bus/spi_bus.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c
+
+# NOR-like 4 KB sectors over NAND (drivers/flash/nand_sectors) on a simulated NAND: bad and worn blocks, garbage
+# collection, wear leveling, a power cut at every operation of a write, an erase and a garbage collection (torn pages
+# of several kinds), then core/storage and core/settings on top across reboots and cuts
+# and the open-firmware CPS writing a whole codeplug through the DB25-D's sector replace, with cuts
+NSECT   := $(ROOT)/drivers/flash/nand_sectors/nand_sectors.c $(CORE)/storage/storage.c $(CORE)/settings/settings.c \
+           $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c
+TESTS   += nandSectorsTest
+
+nandSectorsTest: nandSectorsTest.c $(NSECT) $(ROOT)/drivers/flash/nand_sectors/nand_sectors.h \
+                 $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h $(CORE)/cps/*.h $(CORE)/codeplug/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ nandSectorsTest.c $(NSECT)
 
 # Codeplug editing: the open-firmware record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit

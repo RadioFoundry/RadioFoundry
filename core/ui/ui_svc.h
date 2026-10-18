@@ -30,6 +30,8 @@
 #define UI_FEAT_MONITOR_LATCH	(1u << 13)	// ui_svc_monitor latch (FM)
 #define UI_FEAT_FACTORY_RESET	(1u << 14)	// ui_svc_factory_reset (storage-cps)
 #define UI_FEAT_ROAMING		(1u << 15)	// ui_svc_roam (DMR repeater roaming, the radio core)
+#define UI_FEAT_VIBRATE		(1u << 16)	// ui_svc_vibrate: CONFIG_VIBRATE and hal_power_t.vibrate
+#define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -55,13 +57,19 @@ void ui_svc_focus_target(uint32_t id, bool private_call);
 // --- On-the-fly channel changes (temporary, P7) ---
 bool ui_svc_dmr_timeslot(uint8_t ts);
 bool ui_svc_dmr_color_code(uint8_t cc);
-bool ui_svc_mode(uint8_t mode);			// radio_mode_t
+bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's goes through Copy to VFO)
+// Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
+// when the request went to the radio core, else why nothing changed
+uint8_t ui_svc_vfo_copy(const radio_view_t *v);
 bool ui_svc_hear_all(bool on);
 bool ui_svc_privacy(bool on);			// false also when there is no key: the UI says how to add one
 bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
 // Make the temporary changes permanent (storage-cps): false if the codeplug can't be written
 bool ui_svc_save_channel(void);
+// Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
+// ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
 // Write the talk target into the channel (UI_TALK_PERMANENT): false if it isn't a stored contact or can't be written
 bool ui_svc_save_talk_target(uint32_t id, bool private_call);
 
@@ -75,6 +83,10 @@ bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, l
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
 typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW } ui_beep_t;
 void ui_svc_beep(uint8_t beep);
+// --- Vibration (radio-features 4.1): a pattern on the board's motor; the UI asks only when Settings > Sound >
+// Vibrate is on. Weak no-op without CONFIG_VIBRATE ---
+typedef enum { UI_VIBE_MESSAGE, UI_VIBE_CALL, UI_VIBE_EMERGENCY } ui_vibe_t;
+void ui_svc_vibrate(uint8_t vibe);
 // PTT while the keys are locked (Settings > Privacy > PTT when locked): blocked = the input layer doesn't hand PTT
 // presses to the radio core (a PTT already held is still released). Weak no-op without the input layer
 void ui_svc_ptt_block(bool blocked);
@@ -149,10 +161,20 @@ typedef enum {
 	// quick-key slots. Press and long press of side key 1, side key 2 and the top key, in this order
 	UI_SET_KEY_SIDE1, UI_SET_KEY_SIDE1_HOLD, UI_SET_KEY_SIDE2, UI_SET_KEY_SIDE2_HOLD, UI_SET_KEY_TOP,
 	UI_SET_KEY_TOP_HOLD,
+	UI_SET_VIBRATE,		// vibrate for alerts (Settings > Sound, CONFIG_VIBRATE; settings_t.ui_flags)
+	UI_SET_ACCENT,		// the highlight color, UI_ACCENT_* (Settings > Display; settings_t.accent bits 0-2)
+	UI_SET_STRIP,		// the status strip filled with it (Settings > Display; settings_t.accent bit 3)
+	UI_SET_VOLUME,		// speaker volume 0 (mute) .. RADIO_VOLUME_MAX of a radio without a knob (UI_FEAT_VOLUME; settings_t.volume)
 	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; audio_flags)
 	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (audio_flags); while on, mic gain is unity and dimmed
 	UI_SET_COUNT
 } ui_setting_t;
+
+// UI_SET_ACCENT values: the theme's own highlight (blue), or one of seven. Color displays only
+enum {
+	UI_ACCENT_DEFAULT, UI_ACCENT_RED, UI_ACCENT_ORANGE, UI_ACCENT_YELLOW, UI_ACCENT_TEAL, UI_ACCENT_BLUE,
+	UI_ACCENT_PURPLE, UI_ACCENT_PINK, UI_ACCENT_COUNT
+};
 int32_t ui_svc_setting_get(uint8_t id);
 bool ui_svc_setting_set(uint8_t id, int32_t value);
 // The RAM table behind the stub (defaults until set): for the settings no package stores

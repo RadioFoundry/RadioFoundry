@@ -183,8 +183,8 @@ color code takes effect when the editor closes.
 
 <img src="../ux/screens/160x120i5/quick_cc_editor.png" width="200" alt="Editing the color code">
 
-Timeslot, color code and mode are temporary. They can't be changed while transmitting or in the VFO. Hold **OK**
-to save them to the channel.
+Timeslot and color code are temporary. They can't be changed while transmitting. Hold **OK**
+to save them to the channel. In the VFO they are the VFO's own settings and are kept ([the VFO](06-channels-zones-vfo.md#dmr-in-the-vfo)).
 
 ## Digital monitor
 

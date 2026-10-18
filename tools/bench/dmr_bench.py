@@ -23,7 +23,13 @@ user's home), ODR_SDR_BENCH_PY (the bench's Python with the odr_sdrbench package
 /opt/odr-sdrbench/.venv/bin/python), ODR_SDR_BENCH_ENV_FILE (the gateway's environment file with the MQTT login,
 default /etc/odr-sdrbench/env).
 
-Service handling. The bench modem and the RTL-SDR are normally held by the bench's gateway service. A case that needs either
+Shared bench. When the bench runs the shared bench daemon (the bench repo's benchd: its socket
+/run/benchd/bench.sock exists), nothing is stopped: a lease is a daemon *session* (held by an ssh process for the
+lease's length), bench modem jobs go through its FIFO queue, captures come from its always-on receiver, and every
+wait is reported (predicted time, worst case, who holds what). ODR_SDR_BENCH_DAEMON=0 forces the old lease below,
+=1 the daemon; ODR_SDR_BENCH_WAIT_MAX (default 900 s) is the longest wait for the bench before giving up.
+
+Service handling (no daemon). The bench modem and the RTL-SDR are normally held by the bench's gateway service. A case that needs either
 takes a *lease*: one detached process on the SDR bench stops the service, waits while ~/odr-bench/hold exists (at most
 --lease-max seconds, default 300), then starts the service again, whatever happens to this script or the ssh link
 (a signal to the lease process also ends the wait and restarts the service). This script removes the hold file in a
@@ -45,6 +51,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +62,14 @@ DIR = os.environ.get("ODR_SDR_BENCH_DIR", "odr-bench")          # relative to th
 PY = os.environ.get("ODR_SDR_BENCH_PY", "/opt/odr-sdrbench/.venv/bin/python")
 ENV_FILE = os.environ.get("ODR_SDR_BENCH_ENV_FILE", "/etc/odr-sdrbench/env")
 BENCH_TOOLS = ["bench_tx.py", "bench_repeater.py", "sdrmon.py", "sdr_watch.py"]
+DAEMON = os.environ.get("ODR_SDR_BENCH_DAEMON", "auto")         # auto (the socket exists) | 1 | 0
+DAEMON_SOCK = "/run/benchd/bench.sock"
+WAIT_MAX = float(os.environ.get("ODR_SDR_BENCH_WAIT_MAX", "900"))
+EX_TEMPFAIL, EX_NOPERM = 75, 77                                  # odr-bench: waited too long / refused by the config
+
+
+class BenchBusy(RuntimeError):
+    """The shared bench stayed busy past the wait limit (the message says for how long and who holds it)."""
 
 # ── test cases ───────────────────────────────────────────────────────────────
 # Step kinds: ("capture", seconds[, freq_key]) raw SDR capture in the background (READY + 2 s waited);
@@ -249,6 +264,11 @@ class Bench:
         self.bg = []
         self.leased = False
         self.out = None
+        self.daemon = None          # the bench runs benchd (decided on first use)
+        self.session = None         # its session id while leased
+        self.session_p = None
+        self.claimed = set()
+        self.label = os.environ.get("PYTEST_CURRENT_TEST", "").split(" ")[0] or "dmr_bench"
 
     def fmt(self, s):
         a = self.a
@@ -277,8 +297,147 @@ class Bench:
     def ssh(self, cmd, bg=False, capture=False, timeout=600):
         return self.local(["ssh", BENCH_HOST, cmd], bg=bg, capture=capture, timeout=timeout)
 
-    # The lease: a detached process on the SDR bench owns the service stop and its restart
+    # ── the shared bench daemon ──
+    def uses_daemon(self):
+        if self.daemon is None:
+            if DAEMON in ("0", "1"):
+                self.daemon = DAEMON == "1"
+            elif self.dry:
+                self.daemon = False
+            else:
+                r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", BENCH_HOST,
+                                    f"test -S {DAEMON_SOCK}"], capture_output=True, timeout=30)
+                self.daemon = r.returncode == 0
+        return self.daemon
+
+    @property
+    def ctl(self):
+        return f"{PY} -m odr_sdrbench.benchd.cli"
+
+    def ssh_live(self, cmd, timeout=600):
+        """(exit status, stdout, stderr) of cmd on the bench; the daemon's wait reports ("odr-bench: ...") are
+        printed as they come, so a caller sees why it is waiting and for how long."""
+        self.note(f"$ ssh {BENCH_HOST} {cmd}")
+        p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", BENCH_HOST, cmd], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True)
+        err = []
+
+        def pump():
+            for line in p.stderr:
+                err.append(line)
+                if line.startswith("odr-bench:"):
+                    print(line.rstrip(), file=sys.stderr, flush=True)
+        t = threading.Thread(target=pump, daemon=True)
+        t.start()
+        try:
+            out, _ = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            out, _ = p.communicate()
+        t.join(5)
+        return p.returncode, out, "".join(err)
+
+    @staticmethod
+    def check_rc(rc, err, what):
+        if rc == EX_TEMPFAIL:
+            raise BenchBusy(next((ln for ln in reversed(err.splitlines()) if ln.startswith("odr-bench:")),
+                                 f"{what}: the bench stayed busy"))
+        if rc == EX_NOPERM:
+            raise RuntimeError(f"{what} refused by the bench config: {err.strip()[-500:]}")
+
+    def claim(self, freq):
+        """This session's lease on freq (MHz): no other session's radio test uses it meanwhile. Waits its turn."""
+        if not self.uses_daemon() or freq in self.claimed:
+            return
+        rc, out, err = self.ssh_live(f"{self.ctl} claim --session {self.session} {freq} --wait-max {WAIT_MAX:g}")
+        self.check_rc(rc, err, f"channel {freq} MHz")
+        if rc != 0:
+            raise RuntimeError(f"claim {freq} MHz failed ({rc}): {err[-1500:]}")
+        self.claimed.add(freq)
+
+    def hold_modem(self, expect=None):
+        """The modem to this session until the lease ends (a sequence of modem jobs nobody may come between)."""
+        if not self.uses_daemon():
+            return
+        rc, out, err = self.ssh_live(f"{self.ctl} hold --session {self.session}"
+                                     + (f" --expect {expect:.0f}" if expect else "") + f" --wait-max {WAIT_MAX:g}")
+        self.check_rc(rc, err, "bench modem")
+        if rc != 0:
+            raise RuntimeError(f"modem hold failed ({rc}): {err[-1500:]}")
+
+    def modem_cmd(self, cmd, kind="bench_tx", expect=None):
+        """cmd (run in ~/DIR) under the daemon's modem queue, or as is without a daemon."""
+        if not self.uses_daemon():
+            return cmd
+        return (f"{self.ctl} run --session {self.session} --modem --kind {kind}"
+                + (f" --expect {expect:.1f}" if expect else "") + f" --wait-max {WAIT_MAX:g} -- {cmd}")
+
+    def capture_cmd(self, freq, seconds, out, offset_khz, gain):
+        """The bench command for a raw capture (cs8 + .json): the daemon's shared receiver when it has one,
+        sdrmon.py capture otherwise."""
+        if self.uses_daemon():
+            return (f"{self.ctl} capture --session {self.session} --freq {freq} --seconds {seconds} --out {out} "
+                    f"--offset-khz {offset_khz:.1f} --gain {gain} --wait-max {WAIT_MAX:g}")
+        return (f"{PY} sdrmon.py capture --service '' --seconds {seconds} --freq {freq} --offset-khz {offset_khz:.1f} "
+                f"--gain {gain} --out {out}")
+
+    def capture_bg(self, freq, seconds, out, offset_khz, gain):
+        """A capture in the background on the bench; returns once it records (READY), with the READY line."""
+        cmd = self.capture_cmd(freq, seconds, out, offset_khz, gain)
+        if self.uses_daemon():
+            # the daemon may queue it (another gain or frequency needs the SDR to itself): wait while it lives
+            wait = (f"sleep 0.3; for i in $(seq 1 {int(WAIT_MAX * 4) + 40}); do grep -q READY {out}.log && break; "
+                    f"pgrep -f 'benchd[.]cli capture --session {self.session} .*{os.path.basename(out)}' > /dev/null "
+                    f"|| break; sleep 0.25; done; sleep 0.5; grep -h '^odr-bench:' {out}.log >&2; grep READY {out}.log")
+        else:
+            wait = f"for i in $(seq 1 60); do grep -q READY {out}.log && break; sleep 0.25; done; sleep 2; " \
+                   f"grep READY {out}.log"
+        rc, text, err = self.ssh_live(f"cd ~/{DIR} && (setsid nohup {cmd} > {out}.log 2>&1 &) ; {wait}",
+                                      timeout=WAIT_MAX + 120)
+        if "READY" not in (text or ""):
+            if self.dry:
+                return ""
+            if "waited" in err:
+                raise BenchBusy(err.strip().splitlines()[-1])
+            raise RuntimeError(f"capture of {freq} MHz did not start: {err[-1500:]}")
+        return text
+
+    def captures_wait(self, timeout=120):
+        pat = f"benchd[.]cli capture --session {self.session}" if self.uses_daemon() else "sdrmon[.]py capture"
+        self.ssh(f"for i in $(seq 1 {timeout * 2}); do pgrep -f '{pat}' > /dev/null || exit 0; sleep 0.5; done; "
+                 f"exit 1", timeout=timeout + 30)
+
+    def _session_open(self):
+        lmax = getattr(self.a, "lease_max", 300)
+        cmd = f"{self.ctl} session --label {shlex.quote(self.label)} --max {lmax}"
+        self.note(f"$ ssh {BENCH_HOST} {cmd} &")
+        p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", BENCH_HOST, cmd], stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        line = p.stdout.readline()
+        try:
+            d = json.loads(line)
+        except ValueError:
+            p.kill()
+            raise RuntimeError(f"benchd session failed: {line}{p.stderr.read()[-1500:]}")
+        self.session, self.session_p, self.leased = d["session"], p, True
+        self.claimed = set()
+
+    def _session_close(self):
+        p, self.session_p = self.session_p, None
+        if p is not None:
+            try:
+                p.stdin.close()            # the session ends when its stdin does
+                p.wait(timeout=10)
+            except (OSError, subprocess.TimeoutExpired):
+                p.kill()
+        self.session, self.leased = None, False
+        self.claimed = set()
+
+    # The lease: with the daemon, a session; else a detached process on the SDR bench owns the service stop and
+    # its restart
     def lease(self):
+        if self.uses_daemon():
+            return self._session_open()
         hold = f"~/{DIR}/hold"
         guard = (f"trap 'rm -f {hold}' TERM HUP INT; sudo systemctl stop {SERVICE}; t=0; "
                  f"while [ -e {hold} ] && [ $t -lt {self.a.lease_max} ]; do sleep 1; t=$((t+1)); done; "
@@ -295,6 +454,8 @@ class Bench:
     def release(self):
         if not self.leased:
             return
+        if self.session_p is not None:
+            return self._session_close()
         self.ssh(f"rm -f ~/{DIR}/hold; for i in $(seq 1 80); do systemctl is-active --quiet {SERVICE} && "
                  f"{{ echo {SERVICE} active; exit 0; }}; sleep 0.25; done; "
                  f"echo \"{SERVICE} NOT active: run sudo systemctl start {SERVICE}\" >&2; exit 1")
@@ -511,7 +672,7 @@ def cmd_run(a):
     out = os.path.join(a.out, run)
     if not b.dry:
         os.makedirs(out, exist_ok=True)
-    modem = f"cd ~/{DIR} && {PY} bench_tx.py --freq {a.freq} --cc {a.cc} --power {a.modem_power}"
+    modem = f"{PY} bench_tx.py --freq {a.freq} --cc {a.cc} --power {a.modem_power}"
     results = {"case": case["id"], "title": case["title"], "run": run, "args": vars(a), "radio": [], "steps": []}
     captures, listen_p, rpt_p, sdr, modem_recs, rpt_recs = [], None, None, None, [], []
 
@@ -525,7 +686,11 @@ def cmd_run(a):
             b.ssh(f"mkdir -p ~/{DIR}/runs")
             b.local(["scp", a.ambe, f"{BENCH_HOST}:{DIR}/runs/speech.ambe"])
         if needs_lease(case):
+            b.label = f"dmr_bench {case['id']}"
             b.lease()
+            if b.uses_daemon():         # this case's channels, for its length
+                for f_ in sorted({a.freq} | ({a.rpt_rx, a.rpt_tx} - {None})):
+                    b.claim(f_)
         b.ssh(f"mkdir -p {rdir}")
         for step in case["steps"]:
             kind = step[0]
@@ -538,35 +703,38 @@ def cmd_run(a):
                     center = (a.rpt_rx + a.rpt_tx) / 2 + 0.1
                     off = (a.rpt_rx - center) * 1000
                 name = f"{rdir}/cap{len(captures)}.cs8"
-                b.ssh(f"cd ~/{DIR} && (setsid nohup {PY} sdrmon.py capture --service '' --seconds {secs} --freq {freq} "
-                      f"--offset-khz {off:.1f} --gain {a.gain} --out {name} > {name}.log 2>&1 &) ; "
-                      f"for i in $(seq 1 60); do grep -q READY {name}.log && break; sleep 0.25; done; sleep 2; "
-                      f"grep READY {name}.log")
+                b.capture_bg(freq, secs, name, off, a.gain)
                 captures.append((name, freq, off, secs))
             elif kind == "gains":
                 for g in step[1]:
                     name = f"{rdir}/gain{g}.cs8"
-                    b.ssh(f"cd ~/{DIR} && {PY} sdrmon.py capture --service '' --seconds {step[2]} --freq {a.freq} "
-                          f"--offset-khz {a.offset_khz} --gain {g} --out {name} 2>/dev/null | tail -2")
+                    b.ssh(f"cd ~/{DIR} && {b.capture_cmd(a.freq, step[2], name, a.offset_khz, g)} 2>/dev/null | tail -2")
                     if not b.dry:
                         meta = json.loads(b.ssh(f"cat {name}.json", capture=True) or "{}")
                         results["steps"].append({"gain": g, "clip_pct": meta.get("clip_pct")})
                         b.note(f"    gain {g}: ADC clipping {meta.get('clip_pct')} %")
             elif kind == "listen":
-                listen_p = b.ssh(f"{modem} --ambe-out {rdir}/heard listen --json --seconds {step[1]}", bg=True)
+                listen_p = b.ssh(f"cd ~/{DIR} && " + b.modem_cmd(f"{modem} --ambe-out {rdir}/heard listen --json "
+                                                                 f"--seconds {step[1]}", "bench_tx-listen", step[1]),
+                                 bg=True)
                 if not b.dry:
                     time.sleep(3)       # port open + tune + 1 s settle
             elif kind == "repeater":
-                rpt_p = b.ssh(f"cd ~/{DIR} && {PY} bench_repeater.py --rx {a.rpt_rx} --tx {a.rpt_tx} --cc {a.cc} "
-                              f"--power {a.modem_power} --seconds {step[1]} --json", bg=True)
+                rpt_p = b.ssh(f"cd ~/{DIR} && " + b.modem_cmd(
+                    f"{PY} bench_repeater.py --rx {a.rpt_rx} --tx {a.rpt_tx} --cc {a.cc} --power {a.modem_power} "
+                    f"--seconds {step[1]} --json", "bench_repeater", step[1]), bg=True)
                 if not b.dry:
                     time.sleep(3)
             elif kind == "modem":
-                text = b.ssh(f"{modem} {b.fmt(step[1])}", capture=True, timeout=300)
+                text = b.ssh(f"cd ~/{DIR} && " + b.modem_cmd(f"{modem} {b.fmt(step[1])}"), capture=True,
+                             timeout=WAIT_MAX + 300)
                 modem_recs += jsonl(text)
                 results["steps"].append({"modem": b.fmt(step[1]), "ok": text is not None})
             elif kind == "watch":
-                listen_p = b.ssh(f"cd ~/{DIR} && export $(sudo cat {ENV_FILE} | xargs) && "
+                # the shared bench daemon publishes to a localhost broker without a login; the old gateway's
+                # broker login comes from its environment file
+                env = "" if b.uses_daemon() else f"export $(sudo cat {ENV_FILE} | xargs) && "
+                listen_p = b.ssh(f"cd ~/{DIR} && {env}"
                                  f"{PY} -W ignore sdr_watch.py --receiver {a.receiver} --seconds {step[1]} --json",
                                  bg=True)
             elif kind == "prompt":
@@ -602,7 +770,7 @@ def cmd_run(a):
                 with open(os.path.join(out, "repeater.jsonl"), "w") as f:
                     f.write(txt)
         if captures:
-            b.ssh(f"for i in $(seq 1 120); do pgrep -f 'sdrmon[.]py capture' > /dev/null || exit 0; sleep 0.5; done")
+            b.captures_wait(60)
     except KeyboardInterrupt:
         b.note("# interrupted")
     finally:

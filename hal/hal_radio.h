@@ -53,6 +53,11 @@ typedef struct {
 	// tone_ok = true and an RSSI the core's AM squelch uses (noise isn't meaningful in AM). False: out of band or the
 	// board can't. NULL = no AM on this radio
 	bool (*rx_am)(uint32_t hz, radio_bw_t bw);
+	// Optional: the microphone gain of FM and DMR transmissions, db relative to the board's own levels (the Mic gain
+	// setting, -10..+10; core/radio/mic_gain.h). The board only stores it and applies it at the next transmission
+	// start, so any task may call it. NULL = no gain in the board's audio path: DMR then scales the samples before the
+	// vocoder and FM stays as it is
+	void (*mic_gain)(int8_t db);
 } hal_radio_t;
 
 #endif

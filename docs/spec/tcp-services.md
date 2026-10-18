@@ -90,7 +90,7 @@ header lines are skipped; a request not complete within 10 s is reset. Responses
 | Path | Response |
 |---|---|
 | `/` and `/<file>` | the static files (below); `/` is `index.html`, the status as a table and the screen, refreshed every 3 s |
-| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open` |
+| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open` |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
 | `/api/screen.bmp` | the frame buffer as a BMP: top-down (negative height), 16 bit BI_BITFIELDS (RGB565 masks), about 40 KB on a 160 x 128 screen; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame. 404 on a 1 bpp display |
