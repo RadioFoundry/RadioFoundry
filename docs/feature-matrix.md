@@ -73,6 +73,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Debug link | `DEBUGLINK` | 32,376 | 29,084 | ● | ● | ● |  |
 | Task stacks in the debug link view | `TASK_STACKS` | 536 | 560 | ● | ● | ● | Each task's least free stack, the `tasks` view section ([debuglink](spec/debuglink.md) 3.7) |
 | Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 | ● | ● | ● |  |
+| Fast codeplug protocol (debug link CODEPLUG) | `CPS_FAST` | 3,732 | 3,948* | ● | ○ | ● | Changed 4 KB blocks only, LZ4 both ways, staged commit ([cps-fast.md](spec/cps-fast.md)). DM-1701 figure with LTO (2026-10-18). MD-380: off for flash (1,348 B short); the CPS protocol reads and writes the codeplug |
 | Loader hand-over (debug link 0x1A) | `STUB_ENTRY` | 768* | — | ○ | ○ | ● | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default on the HR_C7000 radios; on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)), off for now |
 
 ## Network (USB network adapter and IP over DMR)

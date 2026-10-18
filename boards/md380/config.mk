@@ -45,15 +45,18 @@ CONFIG_TFTP ?= n
 # Control station mode (PC dispatch software on the USB network link, 288 bytes) is off by default for room (the side
 # key functions and the Channels list, 2026-10-14). Users can still pick it
 CONFIG_DMR_CONTROL_STATION ?= n
+# The fast codeplug protocol (debug link CODEPLUG, about 3.9 KB) overflowed flash by 1,348 bytes (2026-10-18). The CPS
+# protocol reads and writes the codeplug. Users can still pick it, with another feature off
+CONFIG_CPS_FAST ?= n
 # Not written for this radio (above), left out for flash, or no use on it (FONT_XL is for 240 px and wider panels,
 # this one is 160 px; no air band receiver or broadcast receiver, docs/spec/airband-and-broadcast.md): tools/ci.sh's
 # maximal configuration leaves these off
 BOARD_UNSUPPORTED := SUBTONE FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL HOTSPOT AM_RX BCAST_FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter; USRP, UDP header compression and the APRS-IS client don't
-# fit beside everything else (above), nor does control station mode or TFTP, nor SNMP (with it the
+# fit beside everything else (above), nor does control station mode, TFTP or the fast codeplug protocol, nor SNMP (with it the
 # maximal image overflowed flash by 1,776 bytes). Stub entry and NAND storage aren't used on this radio. The channel
 # editor is in the default build, which compiles it; beside the big fonts and the rest of the maximal set it overflowed
 # flash by 4,260 bytes (2026-10-17). Its default follows CONFIG_CHANNEL_LIST, so it is switched off here, not skipped
-MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS TFTP DMR_CONTROL_STATION SNMP STUB_ENTRY NAND_STORAGE
+MAXIMAL_SKIP := NET_PPP NET_USRP DMR_UDP_COMPRESS NET_APRSIS TFTP DMR_CONTROL_STATION SNMP CPS_FAST STUB_ENTRY NAND_STORAGE
 MAXIMAL_VARS := CONFIG_CHANNEL_EDIT=n
