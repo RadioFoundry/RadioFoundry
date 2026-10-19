@@ -370,6 +370,13 @@ dialog.confirm::backdrop { background: rgb(0 0 0 / 0.45); }
 dialog.confirm h2 { margin-top: 0; }
 .confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
 
+/* bug reports (static/js/report.js): the line under a failure, the dialog */
+.report-line { margin: var(--space-2) 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.report-label { display: grid; gap: var(--space-1); font-weight: 600; margin-bottom: var(--space-3); }
+.report-text { font: inherit; font-weight: normal; width: 100%; padding: var(--space-2); border: 1px solid var(--border);
+	border-radius: var(--radius-sm); background: var(--bg); color: var(--text); resize: vertical; }
+.report-check { display: flex; gap: var(--space-2); align-items: baseline; margin-bottom: var(--space-2); }
+
 /* codeplug editor (static/js/editor/): toolbar, tabs, the table, forms */
 .page-codeplug .wrap { max-width: 1400px; }
 .editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }

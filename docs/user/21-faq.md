@@ -23,6 +23,14 @@ amateur use.
 
 Open an issue or pull request, or donate a new radio model for testing.
 
+**The web flasher or the Codeplug Editor failed. How do I report it?**
+
+Click **Report a Problem** under the error message, describe what you were doing, and download the report. It's a zip
+file with the steps the page took, the errors and your browser's details. Email it to the developers or attach it to a
+GitHub issue. If the problem is reading or writing a codeplug, tick the box that includes it: a codeplug holds your
+callsign, DMR ID and contacts, so it's left out unless you add it. Developers can also open the browser's console
+(F12): every error is printed there with its details.
+
 **Why doesn't the release include the codec?**
 
 The AMBE+2 codec DMR voice needs is DVSI's, and ODR can't distribute it. Your radio already has it, in its stock

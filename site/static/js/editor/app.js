@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The Codeplug Editor page: a codeplug from a file or a radio, edited in tables and forms, saved to a file or
-// written back to the radio. Everything runs in the page; nothing is sent to a server. The working codeplug is kept
-// in this browser (IndexedDB) so a reload doesn't lose edits.
+// written back to the radio. Everything runs in the page; the codeplug never leaves it unless the user puts it in a
+// bug report (report.js). The working codeplug is kept in this browser (IndexedDB) so a reload doesn't lose edits.
 
 import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/dom.js";
 import { SerialStream, serialSupported, ODR_USB } from "../flasher/link.js";
@@ -17,6 +17,8 @@ import { columns, channelForm, formDialog, membersDialog, refLabel } from "./vie
 import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
+import * as diag from "../diag.js";
+import { initReporting, reportLine } from "../report.js";
 
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "iddb", "problems"];
@@ -31,6 +33,7 @@ const S = {
 	grid: null,
 	radios: [],
 	conn: null,		// {transport, radio, image: the radio's bytes as last read or written, cable}
+	lastRadioImage: null,	// the last connection's image, for a bug report after it closed
 	iddbChanged: false,
 	sim: location.hash === "#sim",
 	filter: {},
@@ -82,8 +85,11 @@ function draftSoon() {
 	}, 800);
 }
 
-function say(text, kind = "info") {
+// report: a failure worth a bug report gets the way to make one
+function say(text, kind = "info", { report = false } = {}) {
+	if (kind === "bad") diag.note(`shown: ${text}`);
 	const n = notice(text, kind);
+	if (report) n.append(reportLine());
 	const close = button("×", () => n.remove(), { quiet: true });
 	close.setAttribute("aria-label", t("editor.dismiss"));
 	n.prepend(close);
@@ -413,7 +419,8 @@ async function openPicked(name, bytes) {
 			if (!handled) say(t("editor.err.unknown_file"), "bad");
 		}
 	} catch (e) {
-		say(e instanceof FileError ? t(`editor.err.${e.message}`) : t("editor.err.open_failed", { error: e.message }), "bad");
+		diag.error("open file", e, { name, size: bytes?.length });
+		say(e instanceof FileError ? t(`editor.err.${e.message}`) : t("editor.err.open_failed", { error: e.message }), "bad", { report: true });
 	}
 }
 
@@ -455,11 +462,13 @@ async function connect() {
 		if (!choice) return null;
 		cable = choice === "cable";
 		const port = await navigator.serial.requestPort(cable ? { filters: CABLES } : { filters: [ODR_USB] });
+		diag.note("port chosen", { cable, ...port.getInfo?.() });
 		stream = await SerialStream.open(port);
 	}
 	const tr = new CpsSerial(stream, { cable });
 	try {
 		const { radio, probe } = await tr.identify(S.radios);
+		diag.note("radio found", { radio: radio.id, board: probe.board, git: probe.git, features: probe.features });
 		S.conn = { transport: tr, radio, probe, image: null, cable };
 		return S.conn;
 	} catch (e) {
@@ -489,6 +498,14 @@ function radioError(e) {
 	return t("editor.radio_err.other", { error: e?.message || String(e) });
 }
 
+// A failure with a radio: into the log and the console with what was being done, then shown with the way to report it
+async function fail(stage, e) {
+	diag.error(stage, e);
+	await dropConnection();
+	const msg = radioError(e);
+	if (msg) say(msg, "bad", { report: !diag.expected(e) });
+}
+
 async function withProgress(title, fn) {
 	const bar = progressBar();
 	const ctrl = new AbortController();
@@ -507,13 +524,12 @@ async function readRadio() {
 			if (!c) return;
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
 				c.transport.read({ signal, progress: (n, total) => bar.set(n, total) }));
+			diag.note("read done", { bytes: img.bytes.length });
 			c.image = img.clone();
 			load(decode(img), `${c.radio.id}-codeplug`, { fromRadio: true });
 			say(t("editor.read_done", { radio: c.radio.name, channels: S.model.channels.length, contacts: S.model.contacts.length }), "ok");
 		} catch (e) {
-			await dropConnection();
-			const msg = radioError(e);
-			if (msg) say(msg, "bad");
+			await fail("read codeplug", e);
 		}
 	};
 	if (S.dirty) confirmDialog(t("editor.read_confirm"), t("editor.read"), go);
@@ -526,27 +542,36 @@ async function writeRadio() {
 		say(t("editor.err.fix_first", { n: errors.length }), "bad");
 		return show("problems");
 	}
+	let stage = "connect";
 	try {
 		const c = await connect();
 		if (!c) return;
+		stage = "encode codeplug";
 		const want = encode(S.model);
 		if (!c.image) {
+			stage = "read before write";
 			c.image = await withProgress(t("editor.comparing", { radio: c.radio.name }), (bar, signal) =>
 				c.transport.read({ iddb: false, signal, progress: (n, total) => bar.set(n, total) }));
 		}
 		const iddb = S.iddbChanged;
-		const { bytes } = c.transport.plan(want, c.image, { iddb });
+		stage = "plan write";
+		const { plan, bytes } = c.transport.plan(want, c.image, { iddb });
+		diag.note("write plan", { bytes, sectors: plan.length, iddb });
 		if (!bytes) return say(t("editor.write_nothing", { radio: c.radio.name }), "ok");
 		const text = [t("editor.write_summary", { radio: c.radio.name, bytes: bytes.toLocaleString(), seconds: estimate(bytes, c.cable) })];
 		if (iddb) text.push(t("editor.write_iddb", { n: S.model.iddb?.count || 0 }));
 		confirmDialog(text.join(" "), t("editor.write"), async () => {
+			let step = "write codeplug";
 			try {
 				const res = await withProgress(t("editor.writing", { radio: c.radio.name }), async (bar, signal) => {
 					const r = await c.transport.write(want, iddb ? null : c.image, { iddb, signal, progress: (n, total) => bar.set(n, total, t("editor.progress.write")) });
+					step = "verify codeplug";
 					await c.transport.verify(want, r.plan, { progress: (n, total) => bar.set(n, total, t("editor.progress.verify")) });
+					step = "finish write";
 					await c.transport.finish();
 					return r;
 				});
+				diag.note("write done", { bytes: res.bytes, sectors: res.sectors });
 				c.image = want.clone();
 				S.iddbChanged = false;
 				S.model.base = want;
@@ -554,20 +579,17 @@ async function writeRadio() {
 				refresh();
 				say(t("editor.write_done", { radio: c.radio.name, bytes: res.bytes.toLocaleString() }), "ok");
 			} catch (e) {
-				await dropConnection();
-				const msg = radioError(e);
-				if (msg) say(msg, "bad");
+				await fail(step, e);
 			}
 		}, { primary: true });
 	} catch (e) {
-		await dropConnection();
-		const msg = radioError(e);
-		if (msg) say(msg, "bad");
+		await fail(stage, e);
 	}
 }
 
 async function dropConnection() {
 	if (!S.conn) return;
+	S.lastRadioImage = S.conn.image || S.lastRadioImage;	// a bug report can still offer it
 	await S.conn.transport.close();
 	S.conn = null;
 	refresh();
@@ -649,7 +671,29 @@ function api() {
 
 // --- Start ---
 
+// What a bug report says about the editor: no names, callsigns or IDs (automatic error reports carry it too)
+function reportContext() {
+	const c = S.conn, m = S.model;
+	return {
+		sim: S.sim,
+		radio: c ? { id: c.radio?.id, board: c.probe?.board, git: c.probe?.git, features: c.probe?.features, codec: c.probe?.codec, cable: c.cable } : null,
+		codeplug: m ? { channels: m.channels.length, zones: m.zones.length, contacts: m.contacts.length, iddb: m.iddb?.count || 0,
+			dirty: S.dirty, iddbChanged: S.iddbChanged, errors: problems().filter((p) => p.level === "error").length } : null,
+		tab: S.tab,
+	};
+}
+
+// What the user may add to a report: the codeplug being edited and the one last read from the radio
+function reportFiles() {
+	const out = [];
+	if (S.model) out.push({ name: "codeplug-edited.bin", label: t("report.attach_codeplug"), data: () => saveBytes(encode(S.model)) });
+	const radio = S.conn?.image || S.lastRadioImage;
+	if (radio) out.push({ name: "codeplug-radio.bin", label: t("report.attach_radio"), data: () => saveBytes(radio) });
+	return out;
+}
+
 async function start() {
+	initReporting({ tool: "editor", context: reportContext, attachments: reportFiles });
 	root.replaceChildren(h("div", { class: "ed-head" }, toolbar, status), messages, tabs, view);
 	try {
 		const r = await fetch(`${ROOT}data/radios.json`);

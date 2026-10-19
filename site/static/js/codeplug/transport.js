@@ -16,6 +16,7 @@ import { Link, probe } from "../flasher/link.js";
 export class TransportError extends Error {
 	constructor(code, params = {}) {
 		super(code);
+		this.name = "TransportError";
 		this.code = code;
 		this.params = params;
 	}

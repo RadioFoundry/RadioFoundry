@@ -6,6 +6,7 @@
 // codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas.
 
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
+import { wire, note } from "../diag.js";
 
 export const ODR_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
@@ -97,6 +98,7 @@ export class SerialStream {
 					this.buf = concat(this.buf, value);
 				}
 			} catch (e) {
+				if (!this.closed) note("serial read stopped", String(e?.message || e));
 				break;
 			} finally {
 				this.reader.releaseLock();
@@ -149,8 +151,12 @@ export class Link {
 		this.s.clear();
 		await this.s.write(frame(cmd, seq, payload));
 		const reply = await this.waitFor((buf) => parseFrames(buf).find((f) => f.seq === seq && (f.cmd === (cmd | 0x80) || f.cmd === 0xFF)));
-		if (!reply) throw new LinkError(`no answer to command 0x${cmd.toString(16)}`);
+		if (!reply) {
+			wire(`cmd 0x${cmd.toString(16)} seq ${seq} len ${payload.length}: no answer`);
+			throw new LinkError(`no answer to command 0x${cmd.toString(16)}`);
+		}
 		this.s.take(reply.end);
+		wire(`cmd 0x${cmd.toString(16)} seq ${seq} len ${payload.length}: status ${reply.payload[0]} len ${reply.payload.length}`);
 		if (!reply.payload.length || reply.payload[0] !== 0) throw new LinkError(`command 0x${cmd.toString(16)}: status ${reply.payload[0]}`);
 		return reply.payload.subarray(1);
 	}
@@ -195,6 +201,7 @@ export class Link {
 				return undefined;
 			});
 			this.s.clear();
+			wire(`R ${area} 0x${addr.toString(16)} ${len}: ${got === undefined ? "no answer" : got === null ? "refused" : `${got.length} bytes`}`);
 			if (got !== undefined) return got;	// null: refused (out of range, not offered)
 		}
 		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
@@ -226,21 +233,22 @@ export class Link {
 	// sector's other bytes, so a part of a sector the codeplug shares with other data can be written safely
 	async cpsWriteParts(addr, parts) {
 		const sector = addr >>> 12;
-		const ok = async (req) => {
+		const ok = async (req, what) => {
 			this.s.clear();
 			await this.s.write(req);
 			const r = await this.waitFor((buf) => (buf.length >= 1 && buf[0] === 0x2D ? false : buf.length >= 2 ? true : undefined), Math.max(3000, this.timeout));
 			this.s.clear();
+			wire(`${what}: ${r === true ? "ok" : r === false ? "refused" : "no answer"}`);
 			return r === true;
 		};
-		if (!await ok(new Uint8Array([0x58, 1, sector >> 16, (sector >> 8) & 0xFF, sector & 0xFF]))) return false;
+		if (!await ok(new Uint8Array([0x58, 1, sector >> 16, (sector >> 8) & 0xFF, sector & 0xFF]), `X 1 sector 0x${addr.toString(16)}`)) return false;
 		for (const [a, data] of parts) {
 			for (let o = 0; o < data.length; o += 1024) {
 				const part = data.subarray(o, o + 1024);
-				if (!await ok(concat(new Uint8Array([0x58, 2]), be32(a + o), new Uint8Array([part.length >> 8, part.length & 0xFF]), part))) return false;
+				if (!await ok(concat(new Uint8Array([0x58, 2]), be32(a + o), new Uint8Array([part.length >> 8, part.length & 0xFF]), part), `X 2 0x${(a + o).toString(16)} ${part.length}`)) return false;
 			}
 		}
-		return ok(new Uint8Array([0x58, 3]));
+		return ok(new Uint8Array([0x58, 3]), "X 3 commit");
 	}
 
 	async cpsClose() {

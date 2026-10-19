@@ -36,6 +36,8 @@ import { Stub } from "./stub.js";
 import { F4Stub, f4Image } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
+import * as diag from "../diag.js";
+import { initReporting, reportLine } from "../report.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -44,7 +46,9 @@ const app = document.getElementById("flasher");
 
 class NetworkModeError extends Error {}
 
+// Every error shown goes through here: it is logged once (console, bug report) with the step it happened in
 function errorText(e) {
+	diag.error(`${S.task || "start"}/${stepsFor()?.[S.step] ?? S.step}`, e);
 	if (e instanceof NetworkModeError) return t("flash.net.found");
 	if (e?.name === "NotFoundError") return t("flash.err.no_device");
 	if (e?.name === "SecurityError") return t("flash.err.security");
@@ -144,6 +148,7 @@ const useId = () => (FLASH_LOG && !S.sim ? (S.useId ||= crypto.randomUUID()) : u
 
 // Fire and forget: a flash never waits for these or fails because of them
 function flashStarted(what) {
+	diag.note("flash started", what);
 	const id = useId();
 	if (!id) return null;
 	S.useId = null;
@@ -153,6 +158,8 @@ function flashStarted(what) {
 }
 
 async function flashFinished(started, error = null) {
+	if (error) errorText(error);
+	else diag.note("flash finished");
 	if (!started) return;
 	await started.sent;
 	const body = error ? { result: "fail", reason: errorText(error).slice(0, 300) } : { result: "success" };
@@ -429,6 +436,7 @@ function render() {
 	};
 	// the shared steps, then the ones the radio's backend draws; a bundle's own backend restores it
 	const step = steps[S.step];
+	diag.note(`step ${S.task || "start"}/${step}`);
 	const view = (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
 		|| { radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView }[step];
 	app.append(view());
@@ -1427,9 +1435,21 @@ function startHelp() {
 	app.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+// Under every failure: troubleshooting, and the bug report
 function helpLink() {
-	return h("p", { class: "help-link" }, t("flash.help.link_lead"), " ",
-		h("a", { href: "#", onclick: (e) => { e.preventDefault(); startHelp(); } }, t("flash.help.link")));
+	return h("div", {}, h("p", { class: "help-link" }, t("flash.help.link_lead"), " ",
+		h("a", { href: "#", onclick: (e) => { e.preventDefault(); startHelp(); } }, t("flash.help.link"))), reportLine());
+}
+
+// What a bug report says about the flasher: no names, callsigns or IDs (automatic error reports carry it too)
+function reportContext() {
+	const p = S.now?.probe;
+	return {
+		task: S.task, step: stepsFor()?.[S.step] ?? S.step, radio: S.radio?.id || null, board: S.board?.id || null, sim: !!S.sim,
+		version: VERSION_REF || null,
+		firmware: S.firmware ? { source: S.firmware.source, version: S.firmware.manifest?.version, git: S.firmware.manifest?.git } : null,
+		now: S.now ? { kind: S.now.kind, version: S.now.version || null, board: p?.board, git: p?.git, features: p?.features, codec: p?.codec } : null,
+	};
 }
 
 function reassure() {
@@ -1556,6 +1576,7 @@ function stockRecovery(go) {
 }
 
 async function main() {
+	initReporting({ tool: "flasher", context: reportContext });
 	if (!FLASH_LOG) document.getElementById("flash-log-off")?.replaceWith(t("flash.log.is_off"));
 	// the privacy contact is put together here, so address scrapers don't find it in the page or the repository
 	const mail = ["tseuqer-ycavirp-rdo", "moc.relwofrecneps"].map((x) => [...x].reverse().join("")).join("@");
@@ -1564,7 +1585,8 @@ async function main() {
 	try {
 		S.data = await loadData();
 	} catch (e) {
-		app.replaceChildren(notice(t("flash.err.load"), "bad"));
+		diag.error("load data", e);
+		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,

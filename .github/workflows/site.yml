@@ -100,6 +100,9 @@ jobs:
           # no release yet is fine: the flasher then offers local images only
           gh release download --repo "${{ github.repository }}" --pattern 'odr-*' --dir dist || echo "no release assets"
       - name: Build
+        env:
+          # where the web tools send error reports (Sentry); unset: no reports leave the page
+          ODR_SENTRY_DSN: ${{ vars.ODR_SENTRY_DSN }}
         run: |
           python3 site/build.py --strict --out build/site --firmware dist \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" --ref "${{ github.sha }}"

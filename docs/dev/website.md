@@ -118,6 +118,35 @@ screen's position in `data/radios.json` (`frame_geometry`: viewBox units and per
 laid over the frame; the radio pages do that when a screenshot is clicked. A radio without an illustration gets a
 generic drawing from `radio.json` `frame`.
 
+## Error logging and bug reports
+
+The flasher and the Codeplug Editor log what they do in memory (`static/js/diag.js`). Neither keeps the log after
+the page closes.
+
+| Entry | Holds |
+|---|---|
+| Note | A step: the radio found and its firmware, a write plan's size, a flasher step, each line of the flasher's log box |
+| Wire | One line per debug link or CPS frame (`link.js`): command, address, length, result. Never the data |
+| Error | Every error shown to the user, once, with the stage it happened in, its code and params, stack and causes |
+
+Every error also goes to the browser console (`[odr] <stage> failed:`). Failure messages carry **Report a Problem**
+(`static/js/report.js`). It downloads a zip with `report.json` (the log, the browser, the tool's state) and, if the
+user ticks them, the edited codeplug and the one last read from the radio.
+
+Automatic error reports go to Sentry when the build has `ODR_SENTRY_DSN` set (`site.yml` takes it from the
+repository variable of the same name; `site.json` `reports.sentry_dsn`). Without it nothing is sent and the privacy
+note is left off the pages. With it:
+
+| Sent | When |
+|---|---|
+| The error, its stage and code, the tool's state (radio model, firmware version, task; no codeplug contents) | Every error except ones the user caused (port chooser closed, Stop) |
+| The whole report and any codeplug the user ticked | Only when the user clicks Send Report |
+
+Automatic reports go through `diag.scrub()`, which removes callsigns, DMR IDs and email addresses. The Sentry bundle
+is pinned with an SRI hash in `report.js`. It loads without breadcrumbs or other default integrations, so it sends only
+what `diag.error` hands it. `?reporting=0` turns sending off, as it does for the flash log. Ad blockers often block
+Sentry; the page then works the same and offers the download only.
+
 ## The web flasher
 
 `site/static/js/flasher/`, plain ES modules. The logic ports odrflash, and the tests check the two agree:
