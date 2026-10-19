@@ -506,7 +506,7 @@
  "radio.note.dm32": "FM and DMR voice, CTCSS/DCS, APRS and GPS work on a radio. FM transmit deviation and an outdoor GPS fix are still being checked.",
  "radio.note.md380": "Has run on a radio and is in testing. No CTCSS/DCS yet.",
  "radio.note.dm1801pro": "FM with CTCSS/DCS, DMR voice and data, text messages, the hotspot and single frequency repeating work on a radio. VHF transmit and VOX are still being checked.",
- "radio.note.db25d": "Bring-up, not for general use: FM receive and transmit work, DMR is a build option that is not finished. Installation reads the original firmware first.",
+ "radio.note.db25d": "FM receive and transmit work, DMR is a build option that is not finished. Installation reads the original firmware first.",
  "planned.note.tyt-md-uv380--md-uv390-retevis-rt3s": "Same hardware family as the DM-1701. Next in line.",
  "planned.note.tyt-md-9600-retevis-rt90": "Mobile radio, same hardware family as the DM-1701.",
  "planned.note.radioddity-gd-77-tyt-md-760-baofeng-dm-1801-v1-rd-5r": "Needs a radio for development. A DM-1801 bought new today is not v1.",
