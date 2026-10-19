@@ -144,6 +144,11 @@ int32_t ui_svc_setting_get(uint8_t id)
 		radio_get_settings(&rs);
 		return rs.sfr_rx;
 #endif
+#if CONFIG_SFR_CWID
+	case UI_SET_SFR_CWID:
+		radio_get_settings(&rs);
+		return rs.sfr_cwid;
+#endif
 	case UI_SET_MIC_GAIN:
 		settings_read(&st);
 		return st.mic_gain <= 10 ? st.mic_gain : 5;
@@ -268,6 +273,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_TALK_PERMIT:
 #if CONFIG_SFR
 	case UI_SET_SFR_RX:
+#endif
+#if CONFIG_SFR_CWID
+	case UI_SET_SFR_CWID:
 #endif
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:

@@ -1062,7 +1062,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 		sb_str(&b, "RX only");
 		c = ui_col.warn;
 	} else if (d->sfr_rpt) {
-		sb_str(&b, d->sfr_busy ? "Repeating" : "SFR repeater");	// the channel's repeater role has the modem
+		sb_str(&b, d->sfr_cw ? "Sending ID" : d->sfr_busy ? "Repeating" : "SFR repeater");	// the channel's repeater role has the modem
 	} else if (!d->active && ui_st_dmr_off) {
 		sb_str(&b, "DMR modem off");
 		c = ui_col.warn;

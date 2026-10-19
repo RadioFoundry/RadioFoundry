@@ -136,7 +136,8 @@ TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c \
-           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/radio/radio_sfr.c
+           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/radio/radio_sfr.c \
+           $(CORE)/radio/radio_cwid.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \

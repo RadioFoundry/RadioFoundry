@@ -2068,7 +2068,7 @@ static const char *info_body(void)
 			sb_chr(&b, in);
 			sb_str(&b, ", out TS");
 			sb_chr(&b, out);
-			sb_str(&b, !d->sfr_rpt ? "\nOff: transmit not allowed now" : d->sfr_busy ? "\nRepeating a call" :
+			sb_str(&b, !d->sfr_rpt ? "\nOff: transmit not allowed now" : d->sfr_cw ? "\nSending its CW ID" : d->sfr_busy ? "\nRepeating a call" :
 				d->sfr_keyed ? "\nHang time" : "\nListening");
 		} else {
 			sb_str(&b, d->sfr_role == SFR_ROLE_USER_ERDM ? "User of an ERDM repeater\nTalk on TS" :
@@ -2657,6 +2657,10 @@ static const int16_t v_sfrrx[] = { 0, 1,	// dmr_sfr_rx_t
 };
 static const char *const n_sfrrx[] = { "Repeater", "First copy", "Voting" };
 #endif
+#if CONFIG_SFR_CWID
+static const int16_t v_sfrcwid[] = { 0, 1, 2, 3, 4 };	// radio_cwid_interval_ms codes
+static const char *const n_sfrcwid[] = { "Off", "5 min", "10 min", "15 min", "30 min" };
+#endif
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const char *const n_ptype[] = { "Off", "Motorola", "Anytone" };
 
@@ -2696,6 +2700,9 @@ static const set_item_t s_talk[] = {
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
 #if CONFIG_SFR
 	LIST("SFR receive", "single frequency repeater both copies voting", UI_SET_SFR_RX, v_sfrrx, n_sfrrx),
+#endif
+#if CONFIG_SFR_CWID
+	LIST("SFR CW ID", "single frequency repeater morse callsign identify", UI_SET_SFR_CWID, v_sfrcwid, n_sfrcwid),
 #endif
 };
 static const set_item_t s_privacy[] = {

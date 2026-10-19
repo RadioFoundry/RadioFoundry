@@ -129,6 +129,21 @@ in the VFO, the bytes are ignored and the channel is an ordinary one.
 The setting is stored in bits 1-2 of the settings record's `rpt_beacon` byte (`settings-store.md`), set in
 Settings > Talk & listen > SFR receive and by debug link setting 30.
 
+CW ID (`CONFIG_SFR_CWID`, `core/radio/radio_cwid.c`): the repeater role can identify itself in Morse. The setting
+`sfr_cwid` picks the interval: 0 off (default), 1 5 min, 2 10 min, 3 15 min, 4 30 min. It is stored in bits 3-5 of
+`rpt_beacon`, set in Settings > Talk & listen > SFR CW ID and by debug link setting 31.
+
+| Rule | Detail |
+|---|---|
+| When | The repeater has transmitted since the last ID (a repeat or its beacon), has been quiet `RADIO_CWID_QUIET_MS` (2 s), and the interval has passed since the last ID. The first ID comes as soon as the first traffic ends. No traffic, no ID |
+| What | The callsign: the radio name's first word, up to a space or `-` (an SSID), in upper case. A name without one: nothing is keyed and the ID counts as skipped |
+| How | The runner stops (`radio_sfr_stop`), the board goes to FM and keys a carrier on the channel's frequency at the channel's power, the TX tone is keyed in Morse with the settings' speed and tone (`cw_wpm`, `cw_tone_hz`; 20 wpm, 800 Hz by default) after a 150 ms lead and before a 150 ms tail. Then DMR mode again, the receiver back on the frequency, and the role starts again with its schedule kept. This is the hotspot's CW keyer (`radio_sm.c`) |
+| Meanwhile | The role stays active: PTT is still refused, calls aren't repeated, the Home screen says "Sending ID" |
+| Cut | A channel change or hotspot mode during the ID ends it at once; it counts as cut |
+
+Debug link view `dmr`: `dmr.sfr_cwid` (the setting), `dmr.sfr_cw` (keying now), `dmr.sfr_cwid_sent`,
+`dmr.sfr_cwid_cut` (cut or skipped).
+
 Why a user may want both slots: the inbound copy comes straight from a talker in range, the repeat from one out of range.
 A user whose inbound slot is TS2 has TS1 as its outbound slot, so two users on the same frequency with different
 inbound slots still hear each other: they are users of two different repeater set-ups, which can't share one frequency.
@@ -166,7 +181,9 @@ is active the SFR stays off, and without a role the SFR works exactly as describ
   stream, RF priority, echo, late entry, DMR_LOST1, command 0xD5, DMR_ABORT, back to simplex),
   `tests/host/dmrCallTest.c` test_sfr_user (both copies played once, the talker fading out, TX slot, sync and timing,
   ERDM color code), `tests/host/radioCoreTest.c` test_sfr_roles (the repeater role from the codeplug bytes repeats a
-  call on TS2, PTT refused, TX inhibit, two-frequency channel refused; the user role's TX slot and sync).
+  call on TS2, PTT refused, TX inhibit, two-frequency channel refused; the user role's TX slot and sync), test_sfr_cwid (the ID schedule and callsign, an ID
+  after a call in FM on the channel's frequency, the role back after it, a retune cutting it, no callsign);
+  `tests/host/roamTest.c` (the `sfr_cwid` bits stored and clamped).
 - HIL: `tests/hil/test_hotspot_sfr.py` (MMDVM SFR on and off through MMDVM on the radio's channel, no traffic sent;
   marked `radio_tx` because a call heard would be repeated). On-air repeat tests need the driver work of section 3
   and the SDR bench (`tools/bench/mmdvm_hotspot.py --sfr`, `tools/bench/sfr_call.sh`).

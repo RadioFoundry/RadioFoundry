@@ -11,6 +11,7 @@
 #include "radio/scan.h"
 #include "radio/battery.h"
 #include "radio/morse.h"
+#include "radio/radio_cwid.h"
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
@@ -19,6 +20,7 @@
 #include "settings/settings.h"	// SETTINGS_ROAM_ZONE_BYTES
 #endif
 
+#define RADIO_SM_CW		(CONFIG_HOTSPOT || CONFIG_SFR_CWID)	// the CW keyer (radio_sm.c)
 #define RADIO_POLL_MS		25	// status poll and squelch period
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
@@ -274,13 +276,17 @@ typedef struct {
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
-#if CONFIG_HOTSPOT
-	uint8_t cw_phase;		// hotspot CW ID: CW_* in radio_sm.c, 0 = not keying
+#if RADIO_SM_CW
+	uint8_t cw_phase;		// a CW ID: CW_* in radio_sm.c, 0 = not keying
 	morse_t cw;
 	uint32_t cw_ms;			// start of the current phase
 	uint32_t cw_start_ms;		// carrier up
 	uint16_t cw_tone_hz;
 	bool cw_key;			// the tone keyed now
+	bool cw_sfr;			// the SFR repeater's ID (CONFIG_SFR_CWID), not the hotspot's
+#endif
+#if CONFIG_SFR_CWID
+	radio_cwid_t cwid;		// the SFR repeater's ID schedule (the counts are in view.dmr)
 #endif
 #endif
 #if CONFIG_DMR_ROAMING

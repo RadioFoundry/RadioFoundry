@@ -76,6 +76,7 @@ typedef struct {
 	uint8_t roam_survey;	// 0 off, 1 the sites beacon together (one window), 2 each on its own schedule
 	bool rpt_beacon;	// our repeater roles (SFR) key an idle beacon on that interval and duration
 	uint8_t sfr_rx;		// SFR user channels hear: dmr_sfr_rx_t (0 the repeat only, 1 both first arrival, 2 voting)
+	uint8_t sfr_cwid;	// our SFR repeater's CW ID interval: 0 off, 1 5 min, 2 10, 3 15, 4 30 (CONFIG_SFR_CWID)
 } radio_settings_t;
 
 #define RADIO_REPLY_CODEPLUG	0xFFu	// radio_settings_t.reply_s: the codeplug's hang times (else the stack's 10 s)
@@ -141,6 +142,8 @@ typedef struct {
 	bool sfr_rpt;
 	bool sfr_keyed;
 	bool sfr_busy;
+	bool sfr_cw;		// the repeater role keys its CW ID now (CONFIG_SFR_CWID, sfr.md 4, CW ID)
+	uint16_t sfr_cwid_sent, sfr_cwid_cut;	// its IDs keyed to the end, and cut or skipped (no callsign, retuned)
 	bool focus_private;
 	bool one_shot;		// PTT went to the focused target: it stays the talk target for the reply window
 	// The current call (RX or TX); valid while state != RDMR_IDLE
