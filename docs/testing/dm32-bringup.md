@@ -130,7 +130,7 @@ late entry and color code 2 all counted.
 | `ts a/b si c` | RX timeslot (b) and system (c) interrupts counting | |
 | `V H T I` | voice, headers, terminators counted in a call | Bursts deframed but dropped: color code (`cc` line) or CRC flags |
 | `cc 1 ts 1 <RX_TYPE_INFO>` | the call's color code and slot | |
-| Voice heard from both slots of a repeater, and a simplex call | `HRC7000_RX_NEXT_SLOT_XOR` in `hrc7000_dmr.c` (1 now): if every other voice burst is lost or only one slot plays, build with `-DHRC7000_RX_NEXT_SLOT_XOR=0` |
+| Voice heard from both slots of a repeater, and a simplex call | `HRC7000_RX_NEXT_SLOT_XOR`, 0 on the DM-32 (`boards/dm32/config.mk`; the driver's default is 1). With 1 every call decodes to silence: `voice.rx_peak` about 6, every frame exactly 3 bit errors, all other counters clean (#73) |
 | `codec 049` (or 046) and clean audio | without a merged codec DMR is silent; garbled audio: PCM byte order (`platform/hrc7000/audio_pcm.c`), the codec call parameters (`platform/hrc7000/vocoder.c`: flags 0x1840 / 0x800, E[0x1736] / D[0x1166]) |
 
 ## 9. DMR transmit (dummy load and an SDR or a second DMR radio)
@@ -186,7 +186,9 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).
-- L2_STATUS slot polarity (`HRC7000_RX_NEXT_SLOT_XOR`).
+- L2_STATUS slot polarity (`HRC7000_RX_NEXT_SLOT_XOR`): 0, settled for simplex on the radio (2026-10-19: AT-D878UV
+  speech, 234 frames with 23 bit errors, `voice.rx_peak` 4288, clean audio). Both slots through a duplex hotspot are
+  still to check.
 - LED colors: 0x20 green, 0x21 red (settled on the radio). Panel orientation, backlight PWM scale.
 - Sub-audio: the C7000 makes the TX tones, the FD6818 detects the RX tones (settled on the radio and the SDR bench).
 - Codec 049: DMR voice encodes and decodes (the SDR bench modem decodes our AMBE with few FEC corrections); 046 untried.
