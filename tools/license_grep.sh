@@ -3,9 +3,11 @@
 # Fails if any source file outside docs/ and LICENSES/ carries a marker of
 # code that must not be in this repository (see docs/CLEANROOM.md). The README's
 # Acknowledgements section names people on purpose and is skipped.
+# The qdmr codeplug files use qdmr's YAML keys (openGD77 blocks), which must match
+# what qdmr writes and reads; they name the key, not any code.
 cd "$(dirname "$0")/.." || exit 2
 pattern='commercial purposes|Micrium|GNU General Public|GPL-2|GPL-3|G4KLX|Naylor|Roger Clark|VK3KYY|Kai Ludwig|DG4KLU|F1RMB|Caujolle|G4EML|DL4LEX|open[g]d77|Hangzhou C-SKY|Wang Huibin'
-hits=$(git ls-files | grep -Ev '^(docs/|LICENSES/|PROVENANCE.md|README.md|tools/license_grep.sh)' |
+hits=$(git ls-files | grep -Ev '^(docs/|LICENSES/|PROVENANCE.md|README.md|tools/license_grep.sh|site/static/js/codeplug/qdmr\.js$|site/tests/qdmr\.test\.mjs$)' |
        xargs grep -niIE "$pattern" 2>/dev/null)
 readme=$(awk '/^## /{skip=($0=="## Acknowledgements")} !skip{print FILENAME":"FNR":"$0}' README.md |
          grep -iE "$pattern")
