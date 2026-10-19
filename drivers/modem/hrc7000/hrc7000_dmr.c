@@ -538,9 +538,12 @@ static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 		e->tc_slot[s->chip_slot ^ 1u] = (int8_t)(2 - s->tc);
 		return (int8_t)(s->tc + 1);
 	case DMR_SYNC_TS1:
-		return 1;
 	case DMR_SYNC_TS2:
-		return 2;
+		// TDMA direct mode sync names the slot too: kept for the voice bursts after it (no sync of their own), so
+		// an SFR user tells the talker's copy from the repeat on every burst
+		e->tc_slot[s->chip_slot] = s->sync == DMR_SYNC_TS1 ? 1 : 2;
+		e->tc_slot[s->chip_slot ^ 1u] = s->sync == DMR_SYNC_TS1 ? 2 : 1;
+		return e->tc_slot[s->chip_slot];
 	default:
 		return e->tc_slot[s->chip_slot] != 0 ? e->tc_slot[s->chip_slot] : (int8_t)(s->chip_slot + 1);
 	}

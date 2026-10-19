@@ -220,6 +220,14 @@ static void test_rx(void)
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 2 && b.sync == DMR_SYNC_BS);
 	deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));	// MS sync on the other chip slot: TS 1 learned
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1);
+	// TDMA direct mode sync names the slot too, and the voice after it on the same chip slot keeps that number (an SFR
+	// user tells the talker's copy from the repeat on bursts B-F, which carry no sync)
+	deframe(rti(1, 0, 3, 3, 0, 0));			// voice A, TS2 sync, chip slot 0
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 2 && b.sync == DMR_SYNC_TS2);
+	deframe(rti(2, 0, 3, 0, 0, 0));			// voice B, no sync of its own
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 2);
+	deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));	// the other chip slot: TS 1
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1);
 	// Slot lock
 	hrc7000_dmr_rx_lock_slot(&eng, 2);
 	deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));
