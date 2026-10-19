@@ -83,6 +83,9 @@
 #ifndef CONFIG_SFR
 #define CONFIG_SFR			1
 #endif
+#ifndef CONFIG_SFR_VOTING
+#define CONFIG_SFR_VOTING		CONFIG_SFR
+#endif
 #ifndef CONFIG_USB
 #define CONFIG_USB			1
 #endif

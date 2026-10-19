@@ -95,6 +95,7 @@ void radio_settings_default(radio_settings_t *s)
 	s->roam_beacon_len_s = 4;	// ROAM_BEACON_LEN_DEFAULT
 	s->roam_survey = 1;		// listening only (P7 allows it): the survey of the synchronized beacon window
 	s->rpt_beacon = false;		// transmits: off until the user turns it on (P7)
+	s->sfr_rx = 0;			// DMR_SFR_RX_REPEATER
 }
 
 static void activity(radio_sm_t *sm, uint32_t now_ms)
@@ -783,13 +784,14 @@ static void dmr_configure(radio_sm_t *sm)
 	cfg.ts = ts_override != 0 ? ts_override : (ch->timeslot == 2 ? 2 : 1);
 	cfg.rmo = ch->tx_hz != 0 && ch->rx_hz != ch->tx_hz && !ch->dmo;
 #if CONFIG_SFR
-	// A user of a single frequency repeater: the inbound slot and its sync, both copies heard (sfr.md 4)
+	// A user of a single frequency repeater: the inbound slot and its sync, the copies heard (sfr.md 4)
 	sfrConfig_t sc;
 	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
 	sm->view.dmr.sfr_inbound = sc.inboundSlot;
 	if (sfrRoleIsUser(sm->view.dmr.sfr_role) && !cfg.rmo) {
 		cfg.sfr_user = true;
-		radio_sfr_user(&sc, &cfg.ts, &cfg.tx_sync, &cfg.cc2);
+		radio_sfr_user(&sc, &cfg.ts, &cfg.tx_sync, &cfg.rx_sync, &cfg.cc2);
+		cfg.sfr_rx = sm->set.sfr_rx;
 	}
 #endif
 	cfg.talk_target.id = sm->one_shot ? sm->one_shot_id : sm->manual ? sm->manual_id : sm->talk_id;
@@ -3132,6 +3134,12 @@ static void clamp_settings(radio_settings_t *s)
 	if (s->roam_survey > 2) {
 		s->roam_survey = 1;
 	}
+	// 0 repeat only, 1 both (first arrival), 2 both (voting, CONFIG_SFR_VOTING; else first arrival)
+	if (s->sfr_rx > 2) {
+		s->sfr_rx = 0;
+	} else if (s->sfr_rx == 2 && !CONFIG_SFR_VOTING) {
+		s->sfr_rx = 1;
+	}
 }
 
 // The radio core's settings as kept in the settings store (docs/spec/settings-store.md 3); the defaults if never set
@@ -3146,7 +3154,8 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 		s->roam_beacon_s = st->roam_beacon_s;
 		s->roam_beacon_len_s = st->roam_beacon_len_s;
 		s->roam_survey = st->roam_survey;
-		s->rpt_beacon = st->rpt_beacon == 1;
+		s->rpt_beacon = (st->rpt_beacon & SETTINGS_RPT_BEACON) != 0;
+		s->sfr_rx = (uint8_t)((st->rpt_beacon & SETTINGS_RPT_SFR_RX) >> SETTINGS_RPT_SFR_RX_SHIFT);
 		clamp_settings(s);
 	}
 	if (st->rs_stored != 1) {
@@ -3210,7 +3219,8 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->roam_beacon_s = s->roam_beacon_s;
 	st->roam_beacon_len_s = s->roam_beacon_len_s;
 	st->roam_survey = s->roam_survey;
-	st->rpt_beacon = s->rpt_beacon ? 1 : 0;
+	st->rpt_beacon = (uint8_t)((s->rpt_beacon ? SETTINGS_RPT_BEACON : 0) |
+				   ((s->sfr_rx << SETTINGS_RPT_SFR_RX_SHIFT) & SETTINGS_RPT_SFR_RX));
 	st->roam_stored = 1;
 	settings_end(now_ms);
 }
@@ -3218,7 +3228,7 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
 {
 #if CONFIG_DMR
-	bool reply_changed = s->reply_s != sm->set.reply_s;
+	bool reply_changed = s->reply_s != sm->set.reply_s || s->sfr_rx != sm->set.sfr_rx;
 #endif
 	sm->set = *s;
 	clamp_settings(&sm->set);
@@ -3231,7 +3241,7 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 	activity(sm, now_ms);
 #if CONFIG_DMR
 	if (reply_changed && sm->dmr_running) {
-		dmr_configure(sm);	// the reply window
+		dmr_configure(sm);	// the reply window, an SFR user's copies
 	}
 #endif
 #if CONFIG_VOX

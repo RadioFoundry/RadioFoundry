@@ -118,9 +118,18 @@ in the VFO, the bytes are ignored and the channel is an ordinary one.
 | Role | Behavior |
 |---|---|
 | Rpt, Rpt Moto | The radio core starts the runner (section 2) on the modem instead of the call stack: DMO framing, every slot received, the inbound color code, no uplink. The keying stays armed on the frequency for the modem's per-burst keying, as in hotspot mode. The modem events reach the radio task through a queue (`radio_sfr_poll` every tick). PTT is refused (`TXDENY_SFR_RPT`). The screen shows receiving while an inbound call is repeated, the red LED while the outbound slot is sent. The settings' idle beacon (`rpt_beacon`) applies. With TX inhibit set, a critical battery or a frequency outside the TX bands the channel is an ordinary one, and it goes back to one if that happens while it runs |
-| User, ERDM | The call stack's SFR user mode (`dmr_call_config_t.sfr_user`). TX on the inbound slot (it replaces the channel's timeslot), every burst with the sync of `radio_sfr_user()`: TS1 / TS2 direct mode sync with TS framing, MS sync with MS or BS framing. Keyed in step with the repeater's slots (`DMR_TIMING_ALIGNED`) when a burst whose sync named its slot (TS1, TS2, BS) was heard in the last `DMR_CALL_ALIGN_MS`, else on its own timing (the repeater aligns to us); always impolite at the modem (the repeater's hang). RX on both slots: the talker's copy on the inbound slot and the repeat on the outbound one; each voice burst is played once, whichever copy comes first (`sfrDedupVoice`, `dmr_call` stat `rx_sfr_dup`), and the second copy of a header doesn't restart the burst sequence. ERDM: the outbound color code is heard too (the modem passes every color code, the stack filters) |
+| User, ERDM | The call stack's SFR user mode (`dmr_call_config_t.sfr_user`). TX on the inbound slot (it replaces the channel's timeslot), every burst with the sync of `radio_sfr_user()`: TS1 / TS2 direct mode sync with TS framing, MS sync with MS or BS framing. Keyed in step with the repeater's slots (`DMR_TIMING_ALIGNED`) when a burst whose sync named its slot (TS1, TS2, BS) was heard in the last `DMR_CALL_ALIGN_MS`, else on its own timing (the repeater aligns to us); always impolite at the modem (the repeater's hang). RX by the setting `sfr_rx` (`dmr_call_config_t.sfr_rx`, table below). The repeat is the burst with `rx_sync`: the outbound slot's TS sync (TS framing) or BS sync (BS framing); the talker's copy has the inbound sync or comes on the inbound slot. With MS framing the copies look alike, and the call locks to the first slot heard. ERDM: the outbound color code is heard too (the modem passes every color code, the stack filters) |
 
-Why a user hears both slots: the inbound copy comes straight from a talker in range, the repeat from one out of range.
+| `sfr_rx` | What the user plays |
+|---|---|
+| 0 Repeater (default) | The repeat only. The talker's copy is dropped (`dmr_call` stat `rx_sfr_direct`) |
+| 1 First copy | Both copies; each voice burst once, whichever comes first (`sfrDedupVoice`, stat `rx_sfr_dup`). The second copy of a header doesn't restart the burst sequence |
+| 2 Voting (`CONFIG_SFR_VOTING`) | As first copy, but a voice burst with a frame whose C0 Golay check fails (`ambeFecDecode`) is held up to `DMR_SFR_VOTE_MS` (120 ms) for the other copy, and each failed frame is taken from it when its own check passes (stats `rx_sfr_held`, `rx_sfr_fixed`). A pass/fail check per frame, nothing ranked. No other copy in time: the burst plays as it came. Encrypted voice is never held |
+
+The setting is stored in bits 1-2 of the settings record's `rpt_beacon` byte (`settings-store.md`), set in
+Settings > Talk & listen > SFR receive and by debug link setting 30.
+
+Why a user may want both slots: the inbound copy comes straight from a talker in range, the repeat from one out of range.
 A user whose inbound slot is TS2 has TS1 as its outbound slot, so two users on the same frequency with different
 inbound slots still hear each other: they are users of two different repeater set-ups, which can't share one frequency.
 

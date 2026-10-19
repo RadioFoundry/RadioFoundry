@@ -115,6 +115,7 @@ static bool set_one(radio_settings_t *s, uint8_t id, uint16_t v)
 	case 26: if (v < 1 || v > 10) return false; s->roam_beacon_len_s = (uint8_t)v; break;
 	case 27: if (v > 2) return false; s->roam_survey = (uint8_t)v; break;
 	case 28: s->rpt_beacon = v != 0; break;
+	case 30: if (v > 2 || (v == 2 && !CONFIG_SFR_VOTING)) return false; s->sfr_rx = (uint8_t)v; break;
 	default: return false;
 	}
 	return true;

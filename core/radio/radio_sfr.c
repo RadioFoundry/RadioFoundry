@@ -38,13 +38,15 @@ uint8_t radio_sfr_channel(const channel_t *ch, bool vfo, sfrConfig_t *cfg)
 	return s.role;
 }
 
-void radio_sfr_user(const sfrConfig_t *cfg, uint8_t *ts, uint8_t *tx_sync, int8_t *cc2)
+void radio_sfr_user(const sfrConfig_t *cfg, uint8_t *ts, uint8_t *tx_sync, uint8_t *rx_sync, int8_t *cc2)
 {
 	*ts = cfg->inboundSlot ? 2 : 1;
 	if (cfg->framing == SFR_FRAMING_TS) {
 		*tx_sync = cfg->inboundSlot ? DMR_SYNC_TS2 : DMR_SYNC_TS1;
+		*rx_sync = cfg->inboundSlot ? DMR_SYNC_TS1 : DMR_SYNC_TS2;
 	} else {
 		*tx_sync = DMR_SYNC_MS;
+		*rx_sync = cfg->framing == SFR_FRAMING_BS ? DMR_SYNC_BS : DMR_SYNC_MS;
 	}
 	*cc2 = cfg->outboundCC != cfg->inboundCC ? (int8_t)cfg->outboundCC : -1;
 }

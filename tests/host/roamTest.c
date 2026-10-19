@@ -1280,6 +1280,23 @@ static void test_rc_defaults_and_store(void)
 	CHECK(sm.set.roam_beacon_s == 10 && sm.set.roam_beacon_len_s == 10 && sm.set.roam_survey == 2 && sm.set.rpt_beacon);
 	settings_read(&s);
 	CHECK(s.roam_beacon_s == 10 && s.roam_beacon_len_s == 10 && s.roam_survey == 2 && s.rpt_beacon == 1);
+	// The SFR user receive mode shares rpt_beacon's byte (bits 1-2); an out of range value is the repeat only
+	CHECK(sm.set.sfr_rx == 0);
+	rs = sm.set;
+	rs.sfr_rx = 2;
+	radio_sm_set_settings(&sm, &rs, now);
+	settings_read(&s);
+	CHECK(sm.set.sfr_rx == (CONFIG_SFR_VOTING ? 2 : 1) && sm.set.rpt_beacon);
+	CHECK(s.rpt_beacon == (CONFIG_SFR_VOTING ? 0x05 : 0x03));
+	radio_sm_init(&sm, now);
+	run(100);
+	CHECK(sm.set.sfr_rx == (CONFIG_SFR_VOTING ? 2 : 1) && sm.set.rpt_beacon);
+	rs = sm.set;
+	rs.sfr_rx = 7;
+	rs.rpt_beacon = false;
+	radio_sm_set_settings(&sm, &rs, now);
+	settings_read(&s);
+	CHECK(sm.set.sfr_rx == 0 && s.rpt_beacon == 0);
 }
 
 // Run until the radio is on a survey visit (or ms ran out)

@@ -21,9 +21,9 @@
 uint8_t radio_sfr_channel(const channel_t *ch, bool vfo, sfrConfig_t *cfg);
 
 // The call stack's SFR user settings from a user role's configuration: the inbound slot (1 or 2), the sync our bursts
-// carry (TS1 / TS2 with TS framing, MS otherwise: an ERDM repeater takes MS sync in) and a second color code (ERDM's
-// outbound one, -1 none)
-void radio_sfr_user(const sfrConfig_t *cfg, uint8_t *ts, uint8_t *tx_sync, int8_t *cc2);
+// carry (TS1 / TS2 with TS framing, MS otherwise: an ERDM repeater takes MS sync in), the sync of the repeat (the
+// outbound slot's TS1 / TS2, BS or MS) and a second color code (ERDM's outbound one, -1 none)
+void radio_sfr_user(const sfrConfig_t *cfg, uint8_t *ts, uint8_t *tx_sync, uint8_t *rx_sync, int8_t *cc2);
 
 // Repeater role: start the runner on the modem (the board already in DMR mode on the frequency, the keying armed).
 // The modem starts in DMO, every slot received, the inbound color code. False if the modem didn't start

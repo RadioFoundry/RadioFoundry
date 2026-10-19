@@ -75,6 +75,7 @@ typedef struct {
 	uint8_t roam_beacon_len_s;	// their beacon duration (1 .. 10)
 	uint8_t roam_survey;	// 0 off, 1 the sites beacon together (one window), 2 each on its own schedule
 	bool rpt_beacon;	// our repeater roles (SFR) key an idle beacon on that interval and duration
+	uint8_t sfr_rx;		// SFR user channels hear: dmr_sfr_rx_t (0 the repeat only, 1 both first arrival, 2 voting)
 } radio_settings_t;
 
 #define RADIO_REPLY_CODEPLUG	0xFFu	// radio_settings_t.reply_s: the codeplug's hang times (else the stack's 10 s)

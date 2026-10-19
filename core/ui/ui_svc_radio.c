@@ -307,6 +307,11 @@ void ui_svc_apply(uint8_t id, int32_t value)
 			rs.reply_s = value >= 0 && value <= 30 ? (uint8_t)value : RADIO_REPLY_CODEPLUG;
 		}
 		break;
+#if CONFIG_SFR
+	case UI_SET_SFR_RX:		// the radio core clamps (voting only with CONFIG_SFR_VOTING)
+		rs.sfr_rx = (uint8_t)(v16 > 2 ? 0 : v16);
+		break;
+#endif
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 		rs.roam_survey = (uint8_t)(v16 > 2 ? 1 : v16);

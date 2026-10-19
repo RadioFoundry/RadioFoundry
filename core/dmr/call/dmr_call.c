@@ -9,6 +9,10 @@
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
+#if CONFIG_SFR && CONFIG_SFR_VOTING
+#include "dmr/ambe/ambeFec.h"
+#define SFR_VOTE_DEPTH	3	// bursts held: the repeat of the first comes 90 ms later, after the talker's next
+#endif
 
 // RX trace into the debug link's log (see dmr_call.h). Host tests that don't link dlog build with DMR_RX_TRACE=0
 #ifndef DMR_RX_TRACE
@@ -83,7 +87,18 @@ static struct {
 	uint32_t slots_ms;	// last burst whose sync gave its slot number (TS1 / TS2 / BS), our CC
 	bool slots_seen;
 #if CONFIG_SFR
-	sfrDedup_t sfr_dd;	// SFR user: the voice burst last played, of either copy
+	sfrDedup_t sfr_dd;	// SFR user, both copies heard: the voice burst last taken, of either copy
+#endif
+#if CONFIG_SFR && CONFIG_SFR_VOTING
+	// SFR user, voting: voice bursts taken but not played yet, oldest first (play order). A burst waits while one of
+	// its frames failed the FEC and the other copy may still fix it
+	struct {
+		dmr_burst_t b;
+		uint32_t ms, slot;	// arrival, the modem's slot counter
+		uint8_t bad;		// bit f: frame f failed the FEC
+		bool wait;		// the other copy hasn't come yet
+	} vq[SFR_VOTE_DEPTH];
+	uint8_t vq_n;
 #endif
 	uint32_t last_call_end_ms;
 	bool call_end_seen;
@@ -319,6 +334,35 @@ static bool sfr_user(void)
 	return CONFIG_SFR && s.cfg.sfr_user && !s.cfg.rmo;
 }
 
+// SFR user hearing both copies (first arrival or voting), and voting
+static bool sfr_both(void)
+{
+	return sfr_user() && s.cfg.sfr_rx != DMR_SFR_RX_REPEATER;
+}
+
+#if CONFIG_SFR && CONFIG_SFR_VOTING
+static bool sfr_voting(void)
+{
+	return sfr_user() && s.cfg.sfr_rx == DMR_SFR_RX_VOTE;
+}
+#endif
+
+// A burst of the talker's own copy, not the repeat. TS framing: the slot is in the sync, and the modem numbers the
+// bursts without one (voice B-F) from it. BS framing: the talker's bursts carry MS sync. MS framing: the copies look
+// alike, and the call stays on the slot of the copy heard first
+static bool sfr_direct(const dmr_burst_t *b)
+{
+	switch (s.cfg.rx_sync) {
+	case DMR_SYNC_TS1:
+	case DMR_SYNC_TS2:
+		return b->sync == s.cfg.tx_sync || (b->ts != 0 && b->ts == (int8_t)s.cfg.ts);
+	case DMR_SYNC_BS:
+		return b->sync == DMR_SYNC_MS;
+	default:
+		return false;
+	}
+}
+
 // DMO start timing. An SFR user keys in step with the repeater's slots (the sync told their numbers) when they were
 // heard lately, else on its own clock: an aligned start with no slot numbers to go by would wait for a slot that never
 // comes and be refused. Everyone else: in step with a station heard within align_ms
@@ -426,11 +470,14 @@ static bool rx_accept(const dmr_lc_t *l, uint32_t now)
 	return l->dst == s.cfg.own_id || l->dst == DMR_ID_ALL_CALL || s.cfg.listen.hear_all;
 }
 
+static void vote_flush(void);
+
 static void rx_end(uint32_t now)
 {
 	if (s.rx == RXC_NONE)
 		return;
 	if (s.rx == RXC_PLAY) {
+		vote_flush();
 		if (s.sink && s.sink->end)
 			s.sink->end(s.sink->ctx);
 		s.view.last_heard = s.view.caller;
@@ -462,8 +509,11 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	bool continuing = s.rx != RXC_NONE;
 	bool new_talker = !continuing || l.src != s.view.caller.src;
 
-	if (s.rx == RXC_PLAY && s.sink && s.sink->end)
-		s.sink->end(s.sink->ctx);
+	if (s.rx == RXC_PLAY) {
+		vote_flush();
+		if (s.sink && s.sink->end)
+			s.sink->end(s.sink->ctx);
+	}
 
 	memcpy(s.call_lc, lc, DMR_LC_BYTES);
 	s.call_ts = b->ts;
@@ -595,6 +645,108 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	if (s.sink && s.sink->frame)
 		for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++)
 			s.sink->frame(&v[f * DMR_AMBE_FRAME_BYTES], s.sink->ctx);
+}
+
+#if CONFIG_SFR && CONFIG_SFR_VOTING
+// Bit f set: frame f of a voice burst failed the FEC (its C0 word, the one the vocoder can't do without)
+static uint8_t frames_bad(const uint8_t v[DMR_VOICE_BYTES])
+{
+	uint8_t bits[AMBE_PARAM_BITS];
+	uint8_t bad = 0;
+
+	for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++) {
+		ambe_fec_result_t r;
+
+		ambeFecDecode(&v[f * DMR_AMBE_FRAME_BYTES], bits, &r);
+		if (r.c0_failed)
+			bad |= (uint8_t)(1u << f);
+	}
+	return bad;
+}
+
+static void vote_pop(void)
+{
+	rx_play(&s.vq[0].b, s.vq[0].ms, s.vq[0].slot);
+	s.vq_n--;
+	memmove(&s.vq[0], &s.vq[1], s.vq_n * sizeof(s.vq[0]));
+}
+
+// Play the held bursts that are ready, in order: the head's other copy came, or it waited long enough
+static void vote_drain(uint32_t now)
+{
+	while (s.vq_n && (!s.vq[0].wait || elapsed(now, s.vq[0].ms, true, DMR_SFR_VOTE_MS)))
+		vote_pop();
+}
+
+static void vote_flush(void)
+{
+	while (s.vq_n)
+		vote_pop();
+	s.vq_n = 0;
+}
+
+// A voice burst of the call to play. Encrypted voice can't be checked (the FEC is over the scrambled bits): played
+static void vote_take(const dmr_burst_t *b, uint32_t now, uint32_t slot)
+{
+	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
+	uint8_t bad = enc ? 0 : frames_bad(b->payload);
+
+	if (bad == 0 && s.vq_n == 0) {
+		rx_play(b, now, slot);
+		return;
+	}
+	if (s.vq_n == SFR_VOTE_DEPTH)
+		vote_pop();
+	s.vq[s.vq_n].b = *b;
+	s.vq[s.vq_n].ms = now;
+	s.vq[s.vq_n].slot = slot;
+	s.vq[s.vq_n].bad = bad;
+	s.vq[s.vq_n].wait = bad != 0;
+	s.vq_n++;
+	if (bad)
+		stats.rx_sfr_held++;
+	vote_drain(now);
+}
+
+// The other copy of a burst already taken: a frame that failed the FEC in the held one is taken from it if it decodes
+static void vote_other(const dmr_burst_t *b, uint32_t now)
+{
+	for (uint8_t k = 0; k < s.vq_n; k++) {
+		if (!s.vq[k].wait || s.vq[k].b.voice_index % 6 != b->voice_index % 6)
+			continue;
+		uint8_t other = frames_bad(b->payload);
+
+		for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++) {
+			uint8_t m = (uint8_t)(1u << f);
+
+			if ((s.vq[k].bad & m) && !(other & m)) {
+				memcpy(&s.vq[k].b.payload[f * DMR_AMBE_FRAME_BYTES], &b->payload[f * DMR_AMBE_FRAME_BYTES],
+				       DMR_AMBE_FRAME_BYTES);
+				s.vq[k].bad &= (uint8_t)~m;
+				stats.rx_sfr_fixed++;
+			}
+		}
+		s.vq[k].wait = false;
+		break;
+	}
+	vote_drain(now);
+}
+#else
+static void vote_flush(void)
+{
+}
+#endif
+
+// A voice burst of a call being played: straight to the sink, or through the vote
+static void rx_voice(const dmr_burst_t *b, uint32_t now, uint32_t slot)
+{
+#if CONFIG_SFR && CONFIG_SFR_VOTING
+	if (sfr_voting()) {
+		vote_take(b, now, slot);
+		return;
+	}
+#endif
+	rx_play(b, now, slot);
 }
 
 // Voice with no call: start one from the embedded LC once two consecutive bursts were seen (a lone burst is noise).
@@ -772,9 +924,16 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		s.slots_ms = now;
 		s.slots_seen = true;
 	}
-	// An SFR user hears both slots: the talker on the inbound one, the repeat on the outbound one
-	if (!sfr_user() &&
-	    ((ts_known && b->ts != s.cfg.ts) || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts))) {
+	// An SFR user hearing only the repeat drops the talker's own copy; one hearing both takes either slot
+	if (sfr_user() && !sfr_both() && sfr_direct(b)) {
+		stats.rx_sfr_direct++;
+		TR_WHAT('s');
+		return;
+	}
+	bool other_slot = sfr_user() ? false : ts_known && b->ts != s.cfg.ts;
+
+	if (!sfr_both() &&
+	    (other_slot || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts))) {
 		stats.rx_ts_dropped++;
 		TR_WHAT('s');
 		return;
@@ -801,7 +960,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			rx_lc(lc, b, false, now);
 			if (s.rx != RXC_NONE) {
 				s.last_rx_ms = now;
-				if (was && sfr_user())
+				if (was && sfr_both())
 					break;	// the other copy of the call's header: its voice may be playing already
 				s.have_index = true;
 				s.next_index = 0;
@@ -830,10 +989,14 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		break;
 	case DMR_BURST_VOICE:
 #if CONFIG_SFR
-		if (sfr_user() && !sfrDedupVoice(&s.sfr_dd, b->voice_index % 6, now)) {
+		if (sfr_both() && !sfrDedupVoice(&s.sfr_dd, b->voice_index % 6, now)) {
 			if (s.rx != RXC_NONE)
 				s.last_rx_ms = now;
 			stats.rx_sfr_dup++;
+#if CONFIG_SFR_VOTING
+			if (s.rx == RXC_PLAY && sfr_voting())
+				vote_other(b, now);
+#endif
 			TR_WHAT('d');
 			break;
 		}
@@ -847,7 +1010,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			rx_embedded(b, now);
 		TR_WHAT('o');
 		if (s.rx == RXC_PLAY)
-			rx_play(b, now, slot);
+			rx_voice(b, now, slot);
 		break;
 	default:
 		// Any other burst on the call's slot keeps the call (a PI header precedes the voice of a call too; bench
@@ -1419,7 +1582,7 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
 			 cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->access != s.cfg.access ||
 			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
-			 cfg->cc2 != s.cfg.cc2;
+			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2;
 	bool target_change = !same_target(cfg->talk_target, s.cfg.talk_target);
 
 	if (rf_change && s.configured) {
@@ -1602,6 +1765,10 @@ void dmr_call_poll(uint32_t now_ms)
 		tr_flush();
 #endif
 
+#if CONFIG_SFR && CONFIG_SFR_VOTING
+	if (s.vq_n)
+		vote_drain(now_ms);
+#endif
 	// Fade: no burst on the call for a while ends it
 	if (s.rx != RXC_NONE && elapsed(now_ms, s.last_rx_ms, true, fade_ms()))
 		rx_end(now_ms);

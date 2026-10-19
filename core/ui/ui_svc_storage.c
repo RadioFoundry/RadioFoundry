@@ -139,6 +139,11 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_REPLY_S:
 		radio_get_settings(&rs);
 		return ui_svc_reply_shown(&rs);
+#if CONFIG_SFR
+	case UI_SET_SFR_RX:
+		radio_get_settings(&rs);
+		return rs.sfr_rx;
+#endif
 	case UI_SET_MIC_GAIN:
 		settings_read(&st);
 		return st.mic_gain <= 10 ? st.mic_gain : 5;
@@ -261,6 +266,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
+#if CONFIG_SFR
+	case UI_SET_SFR_RX:
+#endif
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:

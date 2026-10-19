@@ -2649,6 +2649,14 @@ static const char *const n_msgfmt[] = { "ETSI", "ETSI short", "Motorola" };
 static const int16_t v_netlink[] = { 0, 1 };
 static const char *const n_netlink[] = { "By DMR ID", "192.168.10.x" };
 #endif
+#if CONFIG_SFR
+static const int16_t v_sfrrx[] = { 0, 1,	// dmr_sfr_rx_t
+#if CONFIG_SFR_VOTING
+				   2,
+#endif
+};
+static const char *const n_sfrrx[] = { "Repeater", "First copy", "Voting" };
+#endif
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const char *const n_ptype[] = { "Off", "Motorola", "Anytone" };
 
@@ -2686,6 +2694,9 @@ static const set_item_t s_talk[] = {
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
+#if CONFIG_SFR
+	LIST("SFR receive", "single frequency repeater both copies voting", UI_SET_SFR_RX, v_sfrrx, n_sfrrx),
+#endif
 };
 static const set_item_t s_privacy[] = {
 	LIST("Key type", "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),

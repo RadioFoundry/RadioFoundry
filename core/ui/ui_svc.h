@@ -165,6 +165,7 @@ typedef enum {
 	UI_SET_ACCENT,		// the highlight color, UI_ACCENT_* (Settings > Display; settings_t.accent bits 0-2)
 	UI_SET_STRIP,		// the status strip filled with it (Settings > Display; settings_t.accent bit 3)
 	UI_SET_VOLUME,		// speaker volume 0 (mute) .. RADIO_VOLUME_MAX of a radio without a knob (UI_FEAT_VOLUME; settings_t.volume)
+	UI_SET_SFR_RX,		// what an SFR user channel hears, dmr_sfr_rx_t (Settings > Talk, CONFIG_SFR; radio_settings_t.sfr_rx)
 	UI_SET_COUNT
 } ui_setting_t;
 

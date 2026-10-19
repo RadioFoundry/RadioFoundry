@@ -88,9 +88,11 @@ CONFIG_DMR_CONTROL_STATION ?= $(CONFIG_DMR_IP_GATEWAY)
 # SNMP agent (SNMPv2c) on UDP 161 of the radio's address, over the USB network and over the air, with notifications
 # (needs DMR_IP_GATEWAY; core/snmp, docs/spec/snmp.md)
 CONFIG_SNMP ?= $(CONFIG_DMR_IP_GATEWAY)
-# single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c);
-# the stand-alone repeater and user roles on a channel are not wired yet (docs/spec/sfr.md)
+# single frequency repeater (needs DMR): the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c, core/dmr/sfrRunner.c)
+# and the standalone repeater and user roles of a channel (core/radio/radio_sfr.c, docs/spec/sfr.md 4)
 CONFIG_SFR ?= $(CONFIG_DMR)
+# SFR user receive mode "both, voting": a voice frame whose FEC failed is taken from the other copy (needs SFR)
+CONFIG_SFR_VOTING ?= $(CONFIG_SFR)
 # USB device (CDC serial)
 CONFIG_USB ?= y
 # the host link (core/hostlink): MMDVM hotspot, CPS and debug link over the board's host port (USB CDC, or the
@@ -194,7 +196,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR SFR_VOTING TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
 	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY NAND_STORAGE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
 
@@ -206,6 +208,11 @@ ifneq ($(call feature_on,SUBTONE),)
   endif
 endif
 $(foreach f,DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+ifneq ($(call feature_on,SFR_VOTING),)
+  ifeq ($(call feature_on,SFR),)
+    $(error CONFIG_SFR_VOTING=y needs CONFIG_SFR=y)
+  endif
+endif
 ifneq ($(call feature_on,CHANNEL_EDIT),)
   ifeq ($(call feature_on,CHANNEL_LIST),)
     $(error CONFIG_CHANNEL_EDIT=y needs CONFIG_CHANNEL_LIST=y)
