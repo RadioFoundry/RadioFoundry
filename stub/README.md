@@ -18,6 +18,9 @@ The binaries are built from the monitor's source (C, about 1,400 lines, written 
 toolchain (`-Os`). The source and its protocol document are kept with the reverse-engineering notes outside this
 repository for now. `stubtool.py --self-test` decodes every embedded image and checks its layout.
 
+The port can be a device or a pyserial URL: `rfc2217://HOST:PORT` reaches a radio on a networked serial server, so the
+server keeps running while the tool writes through it (`--write-app` took 111 s for 24 changed sectors that way).
+
 ## The universal stub
 
 One image (6,940 bytes, protocol version 6) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000

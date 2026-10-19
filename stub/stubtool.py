@@ -1646,6 +1646,11 @@ def rxn_big(payload):
     return int.from_bytes(payload[8:10], "big") >= 256
 
 
+def open_port(serial, path):
+    """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server."""
+    return serial.serial_for_url(path, 115200, timeout=0.1)
+
+
 def self_test():
     import io
     fails = []
@@ -1656,6 +1661,15 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
+    try:
+        import serial
+    except ImportError:
+        serial = None
+    if serial is not None:	# the port argument takes pyserial URLs (rfc2217:// through a serial server)
+        p = open_port(serial, "loop://")
+        p.write(b"\x5a")
+        check(p.read(1) == b"\x5a", "a pyserial URL opens as the port")
+        p.close()
     def image(seed, blank_from):
         d = bytearray(bytes((i * seed + (i >> 8) * 13 + 1) & 0xFF for i in range(64 * SECTOR)))
         d[blank_from * SECTOR:] = b"\xff" * (len(d) - blank_from * SECTOR)          # erased tail
@@ -2023,7 +2037,8 @@ def find_odr_port():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    ap.add_argument("port", nargs="?", help="serial port, or udp:ADDR[:PORT] for an STM32 radio in USB network mode")
+    ap.add_argument("port", nargs="?", help="serial port or pyserial URL (rfc2217://HOST:PORT), or udp:ADDR[:PORT] for an "
+                    "STM32 radio in USB network mode")
     ap.add_argument("--stub-port", metavar="PORT", help="with a udp: port: the serial port the stub comes up on "
                     "(default: the one USB device 1FC9:0094)")
     ap.add_argument("out", nargs="?", help="old form: output file for the memory chosen with --mem")
@@ -2112,9 +2127,9 @@ def main(argv=None):
         if a.port.startswith("udp:"):
             # a radio in USB network mode: the hand-over goes over UDP; the stub then enumerates as a serial port
             port = UdpPort(a.port[4:])
-            reopen = lambda: serial.Serial(a.stub_port or find_odr_port(), 115200, timeout=0.1)
+            reopen = lambda: open_port(serial, a.stub_port or find_odr_port())
         else:
-            port = serial.Serial(a.port, 115200, timeout=0.1)
+            port = open_port(serial, a.port)
             import f4stub
             reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)

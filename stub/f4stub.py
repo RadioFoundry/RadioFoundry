@@ -213,7 +213,7 @@ class PortFollower:
                     self.said = alt.device
                     self.log("%s did not answer; trying %s (same USB device)" % (self.path, alt.device))
                 path = alt.device
-        return self.serial.Serial(path, self.baud, timeout=0.1)
+        return self.serial.serial_for_url(path, self.baud, timeout=0.1)
 
 
 def f405_sectors(flash_kb=1024):
@@ -983,9 +983,9 @@ def self_test():
     class FakeSerial:
         opened = []
 
-        class Serial:
-            def __init__(self, path, baud, timeout):
-                FakeSerial.opened.append(path)
+        @staticmethod
+        def serial_for_url(path, baud, timeout):
+            FakeSerial.opened.append(path)
 
     clock = Clock()
     pf = PortFollower(FakeSerial, "/dev/ttyACM0", ports=lambda: [old, ftdi], clock=clock, log=quiet)
