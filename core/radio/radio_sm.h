@@ -229,6 +229,7 @@ typedef struct {
 	bool power_off_req;		// RREQ_POWER_OFF seen
 	bool power_off_busy;		// still sending what has to go out before the supply drops
 #if CONFIG_DMR
+	uint8_t dmr_wake_admits;	// the stack's wake_admits at the last tick (the permit tone for a short press)
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem

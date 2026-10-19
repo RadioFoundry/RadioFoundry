@@ -194,13 +194,13 @@ static void dmr_rf_switch(bool tx)
 {
 	if (tx) {
 		rx_path(rx_hz, false);
-		fd6818_dmr_burst(&fd, true, fd.variant->bw_dmr);
+		fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, tx_hz);
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
 		tx_path(tx_hz, true);
 	} else {
 		DAC_DATA_B = 0;
 		tx_path(tx_hz, false);
-		fd6818_dmr_burst(&fd, false, fd.variant->bw_dmr);
+		fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, rx_hz);
 		rx_path(rx_hz, true);
 	}
 }
@@ -336,7 +336,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	rx_path(hz, false);
 	hal_delay_ms(1);
 	write_mod_bias(hz);
-	fd6818_set_freq(&fd, hz);
+	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
+	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
+	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
 	fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the HR_C7000's
 	dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {

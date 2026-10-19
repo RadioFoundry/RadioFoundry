@@ -1142,6 +1142,13 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		sm->view.state = RS_IDLE;
 		sm->view.tx_deny = TXDENY_NONE;
 		changed(sm);
+		if (cv->tx_error == DMR_TX_ERR_NO_REPEATER) {
+			// A short press goes on waking the repeater after the release: its failure still gets the deny tone
+			beep(sm, BEEP_TX_DENY);
+#if CONFIG_DMR_ROAMING
+			roam_trigger(&sm->roam, ROAM_WHY_TX_FAIL);
+#endif
+		}
 	}
 #if CONFIG_DMR_GPS && CONFIG_APRS_RX
 	// A caller's position (ETSI GPS Info) into the APRS station list, once per change of the call view
@@ -1167,6 +1174,12 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 
 	// Talk permit when the voice goes on air (unless turned off in the settings), call end when a call we played
 	// ends (neither on no-beep channels)
+	if (cv->wake_admits != sm->dmr_wake_admits) {
+		sm->dmr_wake_admits = cv->wake_admits;
+		if (!sm->view.ch.no_beep && sm->set.talk_permit) {
+			beep(sm, BEEP_TX_PERMIT);	// a short press: the repeater woke after PTT was let go
+		}
+	}
 	uint8_t st = sm->view.dmr.state;
 	if (st != sm->dmr_prev_state) {
 		if (!sm->view.ch.no_beep) {

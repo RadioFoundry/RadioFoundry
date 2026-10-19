@@ -168,9 +168,64 @@ An aligned start (`DMR_TIMING_ALIGNED` with a burst received, an SFR's repeat) w
 LAYER2_CONTROL write at the start left the receiver without slot sync for about 1 s, deaf to the call being repeated:
 0xC3 (TX slots 37.7-41.6 ms after the caller's instead of 30), 0xC4 (b2, TX slots following the receiver: 28.6-30.1 ms),
 even 0xC4 written over 0xC4. With b0 rx_master_mode set (0xC5, 0xCD) the receiver kept its sync but no TX slot started.
-The first slot after the start is the one the received bursts came in; the driver sends in the slot whose number
-(LAYER2_STATUS b31) is the received bursts' chip slot for the same TS, the other one for another TS. DM-32UV on the SDR
-bench, 2026-10-16: our bursts 30.1 ms after the caller's, the whole call heard and repeated. Values written to
+Without a CACH (an SFR's repeat, a direct-mode answer) the first slot after the start is the one the received bursts
+came in; the driver sends in the slot whose number (LAYER2_STATUS b31) is the received bursts' chip slot for the same
+TS, the other one for another TS. DM-32UV on the SDR bench, 2026-10-16: our bursts 30.1 ms after the caller's, the
+whole call heard and repeated.
+
+Through a repeater (BS-sourced bursts; DM-32UV and DM-1801 Pro on the SDR bench, issue 72, 6 of 6 runs on the right
+slot and on the grid) the slot comes from the CACH TC alone (5.3), as stock does: the TC lock, then a TC estimate that
+toggles at every timeslot interrupt and gives the TC of the slot starting at that interrupt. The receiver runs in
+LAYER2_CONTROL 0xC4 (TX slots follow the receiver) from every receive restart on a repeater channel, and that restart
+releases **both** slot syncs (TXRX b23 and b22) and is also the end of every transmission. A start waits in receive for
+the lock, then writes only TXRX (no LAYER2_CONTROL or SLOTON write at the key-up); the first TX tick sends in the next
+slot when the estimate is the other TS's TC. A first TX-vector interrupt less than half a slot after the last receive
+one is the same slot and does not toggle the estimate. Without the lock in 1 s the start is refused (TX_REJECTED,
+nothing sent).
+
+Bench findings behind this (DM-32UV and DM-1801 Pro on the SDR bench, 2026-10-18):
+
+| Tried | Result |
+|---|---|
+| Slot from the last burst's chip slot (RX_TYPE_INFO b19 against LAYER2_STATUS b31) | the other slot about half the time: b31 read 0 at every TX start, and the first burst after the receiver synced carried TC 0 whatever its slot, with b31 set |
+| SLOTON 0x25 (TX slot built from the receive slot) at the start | on the repeater's slot grid only when strobed at one parity of receive interrupt, and then always TS2; a skipped first slot put the bursts 8-20 ms off the grid |
+| 0xC4 written only at the receive restart, only b23 released | TX slots at the phase they had then (the wake-up burst's, sent on our own timing): 0-30 ms off the grid from run to run |
+| 0xC4 rewritten at the key-up | the same phase problem on one radio, right on the other: the write is not what sets the phase |
+| First TX-vector interrupt counted as a new slot | about 5 ms after the last receive one in some runs: the estimate one slot off |
+| **b22 released with b23 at every receive restart, full reset after every TX, nothing written at the key-up** | **TS1 and on the grid, 6 of 6**: the first TX tick comes 29.9-30.0 ms after the last receive tick |
+
+Timing rules the chip follows (what the bench showed; the data sheet doesn't say):
+
+- **The TX slot phase is latched, not derived.** In 0xC4 the TX slots follow the receiver, but only from the moment the
+  TX slot sync was last released and re-acquired. A TX sync left from an earlier transmission, including a burst sent
+  on our own timing (the wake-up), keeps its phase and the next call goes out off the repeater's grid by whatever the
+  difference was. Every receive restart must release b22 as well as b23.
+- **Check the phase, not the slot.** The measure of "on the grid" is the first TX-vector interrupt 30 ms (one slot)
+  after the last receive one (`txh u` in the diagnostics: 299-300 in the passing runs, 90-180 in the failing ones). It
+  is cheaper to read than the air capture and gives the same verdict.
+- **LAYER2_STATUS b31 is not a usable slot number** at the start of a transmission (always 0), and RX_TYPE_INFO b19 is
+  one burst's chip slot, not a reference. Neither decides a TX slot on a repeater.
+- **Writing LAYER2_CONTROL drops the receiver's slot sync for about 1 s**, in every value tried. Set it at a receive
+  restart and leave it.
+- **A TX-vector tick right after an RX-vector one is the same slot.** The two interrupts of one slot came about 5 ms
+  apart in some runs; counting both as slots put the estimate one slot off.
+- **A deframe near a tick belongs to the previous slot.** A burst is deframed late in its slot, around the next
+  timeslot interrupt: in the first half of a slot count it to the one before.
+- **A slot estimate needs a lock first.** The first bursts after the receiver syncs can carry a wrong TC; stock waits
+  for four alternating values, and so do we.
+
+SFR (DM-32UV and DM-1801 Pro on the SDR bench, 2026-10-18, each run after a key-up on our own timing): the repeat's
+TX slot comes 30.1 ms (DM-32UV) and 30.7 ms (DM-1801 Pro) after the inbound one, with the TX slot sync released only
+on repeater channels (6 runs) and on every channel (10 runs) alike: the SLOTON b5 start takes the receiver's phase
+whatever the TX sync held, so the stale phase that broke the repeater path does not reach an SFR. Every receive
+restart releases both syncs anyway, as stock does. Read at an SFR's start, LAYER2_STATUS b31 picked the right slot
+in every run (`txh e1`: b31 set, the received chip slot next, ours after it). The first TX-vector interrupt comes two
+slots after the last receive one (`txh u` 599-600), not one as through a repeater: the slot right after the SLOTON
+strobe has no TX tick, so a tick count across an SFR's start is one short. The phase check is a whole number of
+slots. Stock's direct mode (mode 4) takes the slot from the TDMA1 / TDMA2 sync type in RX_TYPE_INFO b3:2 plus
+LAYER2_STATUS b29 against an offset captured at that moment, never from b31 or b19.
+
+Values written to
 LAYER2_TXRX_CTRL: 0x00 nothing next slot; 0x40 receive next slot; 0x80 transmit next slot; 0x8040 receive next slot
 with the voice-access flag; 0x800000 release RX slot sync.
 
@@ -351,7 +406,7 @@ code probe) does not work; replace it everywhere by this one (BIN).
 | System interrupt, bit 3 (deframe) while idle, good CRC, wanted CC | start following: TXRX_CTRL = 0x40 for the next slot (OpenDM32 uses 0x40 here; the Dec 2025 code used 0x8040) | BIN |
 | Each TX/RX timeslot interrupt while following one slot | alternate: our slot → TXRX = 0x8040 (receive, voice-access flag) for the next; other slot → 0x00 | BIN |
 | Voice deframe | read RX_TYPE_INFO, 27 bytes from the voice RAM; burst number from bits 14:12; LC header / terminator / CSBK / data from the RX RAM | DS, BIN |
-| BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours | BIN |
+| BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. Stock never uses RX_TYPE_INFO b19 or LAYER2_STATUS b30/b31 for this | BIN, BENCH |
 | Color-code scan | set LOCAL_CC to the received CC, then LAYER2_CONTROL = 0xC0 and, in repeater mode, the 5.2 restart steps 4–7 (no busy wait) | BIN |
 | Late entry (bit 2) | embedded LC is in the RX RAM; voice reception should start at the next burst A | DS |
 | End | terminator (data type 2) or loss of bursts; TXRX_CTRL = 0 | BIN |

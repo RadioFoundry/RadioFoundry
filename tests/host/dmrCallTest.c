@@ -744,6 +744,30 @@ static void test_rmo_wakeup(void)
 	dmr_call_ptt(false);
 	run_ms(600);
 
+	// A short press: the wake-up goes on after the release, and nothing else is sent once the repeater is up
+	setup(&c);
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	dmr_call_ptt(false);
+	run_ms(20);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP);
+	run_ms(600);
+	CHECK(sim.air_count == 1 && sim.air[0].kind == DMR_BURST_CSBK);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_OK && V()->repeater_up);
+
+	// A short press and no repeater: every try is sent, then given up without a denial left on show
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(10);
+	dmr_call_ptt(false);
+	run_ms(3000);
+	unsigned tries = 0;
+	for (unsigned i = 0; i < sim.air_count; i++)
+		tries += sim.air[i].kind == DMR_BURST_CSBK;
+	CHECK(tries == DMR_CALL_WAKEUP_ATTEMPTS && sim.air_count == tries);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_ERR_NO_REPEATER);
+
 	// No repeater: three tries 600 ms apart, then refused
 	setup(&c);
 	dmr_call_ptt(true);

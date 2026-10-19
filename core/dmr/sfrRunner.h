@@ -42,6 +42,7 @@ typedef struct {
 	uint32_t rx_repeated;		// queued for the outbound slot
 	uint32_t rx_ignored;		// not for the repeater (engine: color code, sync, idle; or the outbound slot)
 	uint32_t rx_ignored_slot;	// of those, reported on the outbound slot
+	uint32_t rx_ignored_cc;		// of those, with another color code than the inbound one
 	uint32_t rx_bad_crc;		// data bursts whose checksum failed
 	uint32_t rx_duplicate, rx_tot, rx_full;
 	uint32_t rx_echo;		// our own bursts heard back
@@ -54,6 +55,7 @@ typedef struct {
 	uint32_t up_bursts, up_lost;
 	uint8_t last_rx;		// sync (bits 7-6, sfrSync_t), data type or 0x0F voice (3-0)
 	uint8_t last_rx_cc;		// color code, 0x80 checksum good
+	uint8_t last_ignored;		// the last ignored burst: color code (7-4), data type or voice index (3-0)
 } sfrRunnerStats_t;
 
 typedef enum { SFR_RUN_OFF, SFR_RUN_IDLE, SFR_RUN_KEYED, SFR_RUN_ENDING } sfrRunState_t;

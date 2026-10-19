@@ -165,9 +165,10 @@ static void dmr_rf_switch(bool tx)
 	} else {
 		lna(tx_hz, false);
 	}
-	fd6818_dmr_burst(&fd, tx, FD6818_BW_DMR);
+	// A split channel (repeater, duplex hotspot): the one synthesizer moves to the TX frequency for the burst and back
+	fd6818_dmr_burst_at(&fd, tx, FD6818_BW_DMR, tx ? tx_hz : rx_hz);
 	if (!tx) {
-		lna(tx_hz, true);
+		lna(rx_hz, true);
 	}
 }
 
@@ -305,14 +306,16 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	tx_drive = bf_cal_power_level(hz, power);
 	tx_hz = hz;
 	write_mod_bias(hz);
-	fd6818_set_freq(&fd, hz);
+	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
+	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
+	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
 	dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for the PA one-shot of each burst. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF TX interrupt switches to the first burst
 		// (dmr_rf_switch). In TX here, the hotspot, which keys to listen, heard nothing until its first burst
 		hrc_pin_write(PIN_MIC_PATH, false);
-		lna(hz, true);
+		lna(have_rx ? rx_hz : hz, true);
 		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		dmr_keyed = true;

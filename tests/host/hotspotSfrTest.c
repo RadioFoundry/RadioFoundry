@@ -605,6 +605,20 @@ static void test_echo_and_late_entry(void)
 	hotspot_sfr_get_view(&v);
 	CHECK(v.stats.rx_ignored_slot == slot0 + 1);
 
+	// Another color code (a bad EMB): ignored, counted as such, and the last ignored burst's CC and voice index kept
+	uint32_t cc0 = v.stats.rx_ignored_cc, ign0 = v.stats.rx_ignored;
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_VOICE;
+	b.voice_index = 3;
+	b.cc = 9;
+	b.ts = 1;
+	b.len = DMR_VOICE_BYTES;
+	memset(b.payload, 0x5A, DMR_VOICE_BYTES);
+	sim_rx(&b);
+	slot();
+	hotspot_sfr_get_view(&v);
+	CHECK(v.stats.rx_ignored == ign0 + 1 && v.stats.rx_ignored_cc == cc0 + 1 && v.stats.last_ignored == 0x93);
+
 	// Lost without its terminator: DMR_LOST1 after 300 ms
 	o = out_count;
 	slots(14);

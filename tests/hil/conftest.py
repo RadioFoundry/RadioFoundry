@@ -62,6 +62,12 @@ def pytest_addoption(parser):
                      "(bench_repeater.py --tx); no default: a pair you are licensed for")
     g.addoption("--roam-tx", type=float, default=None,
                 help="MHz: the radio's transmit frequency of that site (bench_repeater.py --rx)")
+    g.addoption("--split-tx-mhz", type=float, default=None,
+                help="MHz: test_dmr_tx_split_repeater, the radio's TX frequency on its DMR test channel made split "
+                     "(the bench repeater's input; its output is --dmr-freq); no default: one you may transmit on")
+    g.addoption("--split-calls", type=int, default=1,
+                help="test_dmr_tx_split_repeater: key up this many times in one run (the split is written and "
+                     "restored once; every call needs a fresh repeater start)")
     g.addoption("--roam-beacon", type=float, default=20.0,
                 help="s: test_roaming's beacon tests, the bench repeater's beacon interval (set on the radio too)")
     g.addoption("--roam-beacon-len", type=int, default=3,

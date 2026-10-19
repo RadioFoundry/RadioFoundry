@@ -176,7 +176,8 @@ which gives receive audio on the speaker path (R).
     its value. No wait between steps; each costs a software floating-point calculation. K.
   - 0x43 isn't written per burst, and the RX path is on between bursts. The RX frequency and 0x32 are written at every
     burst end, also on a simplex channel. Every DMR receive set-up writes 0x3F = 0000 and 0x47 = 0140, so in DMR the
-    radio keeps 0x3F at 0, not the power-on 07FE. K.
+    radio keeps 0x3F at 0, not the power-on 07FE. K. ODR does the same retune on a split channel only
+    (`fd6818_dmr_burst_at`; `hardware-dm32.md` 8.5).
   - RF_CONTROL (`modem-hrc7000.md`) is only ever ORed, never written whole. A simplex channel with flag bit 5 of channel
     byte 0x0D ORs in an RF TX lead of 0x1A (2.6 ms) and sets RF_MODE b11 (dual receive channels); any other channel,
     simplex or repeater, ORs in 0x15 (2.1 ms) and clears RF_MODE b11. Both OR in an RF RX lead of 0x12 (1.8 ms). K. The

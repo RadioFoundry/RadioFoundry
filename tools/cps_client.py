@@ -58,7 +58,7 @@ class CpsError(Exception):
 class SerialTransport:
     def __init__(self, port):
         import serial  # pyserial
-        self.s = serial.Serial(port, 115200, timeout=0.05)
+        self.s = serial.serial_for_url(port, 115200, timeout=0.05)	# a device, or a URL such as rfc2217://host:port
         self.s.reset_input_buffer()
 
     def write(self, b):
@@ -136,10 +136,15 @@ class Cps:
         if r != b"-":
             raise CpsError(f"C {sub}: reply {r!r}")
 
-    def text(self, y, s, font=1, align=1):
-        self.t.write(bytes([0x43, 2, 0, y, font, align, 0]) + s.encode("ascii")[:16] + b"\0")
-        if self.t.read(1, self.timeout) != b"-":
-            raise CpsError("C 2: no reply")
+    def text(self, y, s, font=1, align=1, retries=2):
+        """Screen text; sent again when the reply is missing (line noise on a programming cable, as for reads):
+        drawing it twice is harmless."""
+        for _ in range(retries + 1):
+            self.t.write(bytes([0x43, 2, 0, y, font, align, 0]) + s.encode("ascii")[:16] + b"\0")
+            if self.t.read(1, self.timeout) == b"-":
+                return
+            self.t.read(64, 0.2)        # drain the rest of a garbled reply
+        raise CpsError("C 2: no reply")
 
     def opening(self, writing):
         self.control(0)
@@ -343,6 +348,12 @@ def set_channel_alias(img, number, ts1=True, ts2=False):
     """Turn on the channel's talker alias TX (our radio name as text) on TS1 / TS2."""
     _, a = channel_addr(number)
     img[a + CH_FLAG1] = (img[a + CH_FLAG1] & ~0x0A) | (0x02 if ts1 else 0) | (0x08 if ts2 else 0)
+
+
+def set_channel_tx(img, number, hz):
+    """Set the channel's TX frequency (a split channel when it differs from RX)."""
+    _, a = channel_addr(number)
+    img[a + 0x14:a + 0x18] = _bcd_freq(hz)
 
 
 # ── a small test codeplug: one FM and one DMR channel, a contact, a zone ──

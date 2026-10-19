@@ -22,6 +22,7 @@
 // LAYER2 values (2.5)
 #define L2_PASSIVE		0xC0u
 #define L2_ACTIVE		0xC3u
+#define L2_RX_FOLLOW		0xC4u	// b2 tx_slave_auto_mode: TX slots follow the receiver's (receive through a repeater)
 // Active timing with the receive slot edges following the received sync (b3 rx_master_auto_update): without it the
 // receiver keeps our own slot edges while we send, and a station in the other slot isn't deframed (2.5)
 #define L2_ACTIVE_RX_FOLLOW	0xCBu
@@ -29,7 +30,8 @@
 #define TXRX_RX			0x40u
 #define TXRX_TX			0x80u
 #define TXRX_RX_VOICE		0x8040u
-#define TXRX_SYNC_RELEASE	0x800000u
+#define TXRX_SYNC_RELEASE	0x800000u	// b23: release the receive slot sync
+#define TXRX_TX_SYNC_RELEASE	0x400000u	// b22: release the transmit slot sync
 #define SLOTON_OFF		0x00u
 #define SLOTON_RXTX		0x05u
 // b5 dll_rx_open_tx (write 1, clears itself): the TX slot built from the receive slot, with LAYER2_CONTROL passive
@@ -50,11 +52,15 @@
 #define BUSY_TICKS		12u	// polite access: activity in the last 360 ms
 #define RX_LOST_TICKS		13u	// a reception is over (390 ms without a burst taken)
 #define RX_IDLE_TICKS		20u	// slot timing but nothing taken for 600 ms: the timing is stale
+#define SLOT_US			30000u
+#define TC_LOCK			4u	// a repeater's slot numbering: this many BS bursts in a row with TC alternating
+#define TC_LOCK_WAIT_TICKS	33u	// an aligned start through a repeater waits this long for the lock (1 s)
 #define PA_OFF_US		20000u	// the PA goes off at the first tick at least this long after the RF TX interrupt
 #define STALL_US		200000u
 #define SYS_LOOPS		4u
 
-enum { TXS_IDLE, TXS_ARMING, TXS_RUN, TXS_DRAIN };
+// TXS_LOCK: an aligned start through a repeater waits, still receiving, for the TC lock before it arms
+enum { TXS_IDLE, TXS_LOCK, TXS_ARMING, TXS_RUN, TXS_DRAIN };
 #define KIND_UNSET		0xFEu
 
 static const uint8_t ambe_silence[9] = { 0xB9, 0xE8, 0x81, 0x52, 0x61, 0x73, 0x00, 0x2A, 0x6B };
@@ -193,18 +199,32 @@ static uint32_t tick_arg(const hrc7000_dmr_t *e)
 
 // 5.2: the DMR state machine reset through FM (step 1, the WORK_MODE pair of 5.1), burst F EMB from the chip, passive
 // timing, drop slot sync, receive the next slot, slots on
+// LAYER2_CONTROL while receiving. Through a repeater the TX slots follow the receiver from the start (0xC4, as stock
+// does), so a transmission needs no LAYER2 write: written at the key-up instead it left the receiver without slot sync
+// for about 1 s (2.5), and building the TX slot from the receive slot there (SLOTON b5) put the bursts on the
+// repeater's grid only for one of the two slots (issue 72)
+static uint32_t l2_rx(const hrc7000_dmr_t *e)
+{
+	return e->cfg.repeater ? L2_RX_FOLLOW : L2_PASSIVE;
+}
+
 static void chip_rx_restart(hrc7000_dmr_t *e)
 {
 	w(e, C7_WORK_MODE, C7_WORK_MODE_FM);
 	w(e, C7_WORK_MODE, C7_WORK_MODE_DMR);
 	w(e, C7_VOICE_EMB_CTRL, 0x02);
-	w(e, C7_LAYER2_CONTROL, L2_PASSIVE);
+	w(e, C7_LAYER2_CONTROL, l2_rx(e));
 	w(e, C7_LAYER2_SLOTON, SLOTON_OFF);
-	w(e, C7_LAYER2_TXRX_CTRL, TXRX_SYNC_RELEASE);
+	// The TX slot sync too, as stock does: kept, the TX slots stayed at the phase of our last transmission (the
+	// wake-up, in our own timing) instead of taking the receiver's, and calls went out 10-20 ms off the repeater's
+	// slot grid (issue 72, SDR bench, 2026-10-18). An SFR's aligned start builds its TX slot from the receiver the
+	// same way, so every channel releases both
+	w(e, C7_LAYER2_TXRX_CTRL, TXRX_SYNC_RELEASE | TXRX_TX_SYNC_RELEASE);
 	w(e, C7_LAYER2_TXRX_CTRL, TXRX_RX);
 	w(e, C7_LAYER2_SLOTON, SLOTON_RXTX);
 	e->voice_chip_slot = -1;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
+	e->tc_agree = 0;
 	e->emb_pending = false;
 	e->resync_tick = e->tick;
 	e->st.rx_restarts++;
@@ -257,13 +277,9 @@ static void tx_finish(hrc7000_dmr_t *e)
 	e->tx_state = TXS_IDLE;
 	e->tx_listen = false;
 	e->st.tx_done++;
-	if (e->cfg.repeater) {
-		// Repeater: passive timing now, receive from the next tick on (keeps the repeater's slot timing)
-		w(e, C7_LAYER2_CONTROL, L2_PASSIVE);
-		e->rx_restart_ticks = 1;
-	} else {
-		chip_rx_restart(e);
-	}
+	// Through a repeater too, as stock does: both slot syncs released and a new TC lock, so the next transmission's
+	// slots come from the repeater's timing, not ours (issue 72)
+	chip_rx_restart(e);
 	ev_simple(e, DMR_EV_TX_DONE, e->tx_ts, tick_arg(e));
 }
 
@@ -361,6 +377,75 @@ static uint32_t listen_ctl(const hrc7000_dmr_t *e)
 	return (e->listen_voice || e->voice_chip_slot >= 0) ? TXRX_RX_VOICE : TXRX_RX;
 }
 
+// In a TX state that ticks on the TX vector (not the TC lock wait, which still receives)
+static bool tx_ticking(const hrc7000_dmr_t *e)
+{
+	return e->tx_state != TXS_IDLE && e->tx_state != TXS_LOCK;
+}
+
+// A repeater's slot numbering (modem-hrc7000.md 5.3): the CACH TC of BS-sourced bursts, locked once it alternated
+// TC_LOCK times in a row; the estimate then runs on with the slot ticks. The first bursts after the receiver syncs
+// to a repeater can carry a wrong TC (LAYER2_STATUS b31 still set): a TX slot picked from one of them was the wrong
+// one about half the time (issue 72, DM-32UV on the SDR bench, 2026-10-18)
+static void track_tc(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
+{
+	e->rx_bs = s->sync == DMR_SYNC_BS;
+	if (!e->rx_bs) {
+		e->tc_agree = 0;
+		return;
+	}
+	// A burst's deframe comes near the end of its slot, around the next timeslot interrupt: in the first half of a slot
+	// it is the previous slot's burst. Counting it to the slot of the last interrupt either way set the estimate one
+	// slot off in some runs and not others (DM-32UV on the SDR bench, 2026-10-18)
+	uint32_t us = now(e) - e->t_tick;
+	bool early = us < SLOT_US / 2u;
+	uint32_t slot = e->tick - (early ? 1u : 0u);
+	e->st.rx_deframe_ms = (uint8_t)(us / 1000u > 255u ? 255u : us / 1000u);
+	bool next = e->tc_agree > 0 && s->tc != e->tc_prev && slot - e->tc_tick == 1u;
+	e->tc_agree = next ? (uint8_t)(e->tc_agree < 255u ? e->tc_agree + 1u : 255u) : 1u;
+	e->tc_prev = s->tc;
+	e->tc_tick = slot;
+	e->tc_est = early ? (uint8_t)(s->tc ^ 1u) : s->tc;	// the slot started at the last interrupt
+}
+
+// The lock holds while the repeater is heard: a burst in the last 390 ms
+static bool tc_locked(const hrc7000_dmr_t *e)
+{
+	return e->tc_agree >= TC_LOCK && e->tick - e->tc_tick <= RX_LOST_TICKS;
+}
+
+// Aligned start (2.5): LAYER2_CONTROL stays passive and the TX slot is built from the receive slot. Writing
+// LAYER2_CONTROL (0xC3, or 0xC4 for the TX slots to follow) left the receiver without slot sync for about 1 s, deaf to
+// an SFR's inbound call (DM-32UV, 2026-10-16)
+static void aligned_arm(hrc7000_dmr_t *e)
+{
+	w(e, C7_LAYER2_SLOTON, SLOTON_RXTX | SLOTON_RX_OPEN_TX);
+	w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+	e->tx_state = TXS_ARMING;
+}
+
+// The TC lock wait, at each receive tick: arm once locked, give up (TX_REJECTED, nothing sent) after
+// TC_LOCK_WAIT_TICKS, as stock does not key on a repeater without the lock either
+static void lock_tick(hrc7000_dmr_t *e)
+{
+	if (e->tx_abort_req) {
+		tx_finish(e);
+	} else if (tc_locked(e)) {
+		e->st.txb_lock_wait = e->tx_wait;
+		e->st.txb_tc_agree = e->tc_agree;
+		e->st.txb_deframe_ms = e->st.rx_deframe_ms;
+		// No LAYER2_CONTROL or SLOTON write: in 0xC4 the TX slots already follow the receiver (stock writes only
+		// TXRX at the key-up)
+		w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+		e->tx_state = TXS_ARMING;
+	} else if (++e->tx_wait > TC_LOCK_WAIT_TICKS) {
+		e->st.tx_rejected++;
+		e->st.txb_lock_wait = e->tx_wait;
+		ev_simple(e, DMR_EV_TX_REJECTED, e->tx_ts, 1u);	// arg 1: no slot timing to align to
+		tx_finish(e);
+	}
+}
+
 static void tx_tick(hrc7000_dmr_t *e)
 {
 	if (e->tx_abort_req) {
@@ -369,10 +454,24 @@ static void tx_tick(hrc7000_dmr_t *e)
 	}
 	switch (e->tx_state) {
 	case TXS_ARMING:
-		// Own timing: the first slot is ours. Aligned: the slot whose number (LAYER2_STATUS b31) is ours; the first
-		// one after an aligned start is the one the received bursts came in (DM-32UV on the SDR bench, 2026-10-16)
-		e->tx_our_next = e->tx_timing != DMR_TIMING_ALIGNED ||
-				 ((r(e, C7_LAYER2_STATUS) >> 31) & 1u) == e->tx_chip_slot;
+		// Own timing: the first slot is ours. Aligned to an SFR or a direct-mode station (no CACH): the slot whose
+		// number (LAYER2_STATUS b31) is ours; the first one after an aligned start is the one the received bursts
+		// came in (DM-32UV on the SDR bench, 2026-10-16)
+		// Through a repeater: the next slot is ours when the one starting now (the TC estimate) is the other TS
+		if (e->tx_timing != DMR_TIMING_ALIGNED) {
+			e->tx_our_next = true;
+		} else if (e->tx_bs) {
+			e->tx_our_next = (e->tc_est ^ 1u) == (uint8_t)(e->tx_ts - 1);
+			uint32_t us = e->t_tick - e->t_rx_tick;
+			e->st.txa_rx_us = (uint16_t)(us / 100u > 65535u ? 65535u : us / 100u);
+			e->st.txa_est = (uint8_t)(e->tc_est | (e->tx_our_next ? 2u : 0u));
+		} else {
+			uint32_t b31 = (r(e, C7_LAYER2_STATUS) >> 31) & 1u;
+			e->tx_our_next = b31 == e->tx_chip_slot;
+			uint32_t us = e->t_tick - e->t_rx_tick;
+			e->st.txa_rx_us = (uint16_t)(us / 100u > 65535u ? 65535u : us / 100u);
+			e->st.txa_est = (uint8_t)(b31 | (e->tx_our_next ? 2u : 0u));
+		}
 		e->tx_state = TXS_RUN;
 		// fall through
 	case TXS_RUN:
@@ -449,11 +548,6 @@ static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 
 static void rx_tick(hrc7000_dmr_t *e)
 {
-	if (e->rx_restart_ticks > 0) {
-		e->rx_restart_ticks = 0;
-		w(e, C7_LAYER2_TXRX_CTRL, TXRX_RX);	// 6.3 step 3
-		return;
-	}
 	if (e->voice_chip_slot >= 0 && (uint32_t)(e->tick - e->voice_tick) > VOICE_LOST_TICKS) {
 		ev_simple(e, DMR_EV_VOICE_LOST, e->tc_slot[e->voice_chip_slot], tick_arg(e));
 		e->voice_chip_slot = -1;
@@ -483,10 +577,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 	uint32_t rti = r(e, C7_RX_TYPE_INFO);
 	hrc7000_rx_status_t s;
 	e->st.last_rx_type_info = rti;
-	if (e->tx_state != TXS_IDLE) {
+	if (tx_ticking(e)) {
 		e->st.rx_in_tx[(e->tick - e->tx_last_arm) & 1u]++;	// which slot the chip hears in (tx_listen)
 	}
-	if (e->tx_state != TXS_IDLE && !e->tx_listen) {
+	if (tx_ticking(e) && !e->tx_listen) {
 		return;	// not receiving while we send, unless asked to (tx_listen)
 	}
 	hrc7000_dmr_decode(rti, &s);
@@ -501,6 +595,9 @@ static void rx_burst(hrc7000_dmr_t *e)
 	e->st.last_cc = s.cc;
 	e->st.last_ts = ts;
 	e->rx_chip_slot = s.chip_slot;
+	track_tc(e, &s);
+	e->st.rx_hist = (e->st.rx_hist << 4) | ((uint32_t)s.tc << 3) | ((uint32_t)s.chip_slot << 2) |
+			((r(e, C7_LAYER2_STATUS) >> 30) & 3u);
 	if (e->lock_ts != 0 && ts != e->lock_ts) {
 		return;
 	}
@@ -626,20 +723,38 @@ void hrc7000_dmr_isr_timeslot(hrc7000_dmr_t *e, bool tx_vector)
 	} else {
 		e->st.ts_rx_ints++;
 	}
-	if (!e->running || tx_vector != (e->tx_state != TXS_IDLE)) {
+	if (!e->running || tx_vector != tx_ticking(e)) {
 		return;	// TX states tick on the TX vector, the rest on the RX vector
 	}
+	uint32_t t = now(e);
+	// Slots alternate: the estimate is the TC of the slot now starting. Through a repeater the receive timing keeps
+	// running when the TX slots take over (l2_rx), and the first TX-vector interrupt came either a slot after the
+	// last receive one or about 5 ms after it, in the same slot: counted as a new slot there, the estimate was one
+	// slot off and the call went out on the other slot (DM-32UV on the SDR bench, 2026-10-18)
+	bool same_slot = tx_vector && !e->tick_tx && t - e->t_rx_tick < SLOT_US / 2u;
+	if (!same_slot) {
+		e->tc_est ^= 1u;
+	}
+	e->tick_tx = tx_vector;
 	e->tick++;
 	e->st.ticks++;
-	e->t_tick = now(e);
+	e->t_tick = t;
+	if (!tx_vector) {
+		e->t_rx_tick = t;
+	}
 	e->timing = true;
 	if (e->rf_tx && (uint32_t)(e->t_tick - e->t_rf_tx) >= PA_OFF_US) {
 		rf_off(e);
 	}
-	if (e->tx_state != TXS_IDLE) {
+	if (tx_ticking(e)) {
 		tx_tick(e);
 	} else {
-		rx_tick(e);
+		if (e->tx_state == TXS_LOCK) {
+			lock_tick(e);
+		}
+		if (!tx_ticking(e)) {
+			rx_tick(e);	// armed: the TX vector ticks from the next slot
+		}
 	}
 	e->st.tx_state = e->tx_state;
 	ev_simple(e, DMR_EV_SLOT_TICK, 0, tick_arg(e));
@@ -680,7 +795,6 @@ void hrc7000_dmr_run(hrc7000_dmr_t *e)
 	e->txq_tail = e->txq_head;
 	e->rx_any = false;
 	e->cc_tick = e->tick;
-	e->rx_restart_ticks = 0;
 	set_cc(e, e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur);
 	chip_rx_restart(e);
 	e->running = true;
@@ -736,10 +850,13 @@ void hrc7000_dmr_poll(hrc7000_dmr_t *e)
 void hrc7000_dmr_configure(hrc7000_dmr_t *e, const dmr_config_t *cfg)
 {
 	lock(e);
+	bool framing = cfg->repeater != e->cfg.repeater;	// LAYER2_CONTROL changes with it (l2_rx)
 	e->cfg = *cfg;
 	e->cc_filter = cfg->cc;
 	if (e->running && cfg->cc >= 0 && (uint8_t)cfg->cc != e->cc_cur) {
 		set_cc(e, (uint8_t)cfg->cc);
+		chip_rx_restart(e);
+	} else if (e->running && framing && e->tx_state == TXS_IDLE) {
 		chip_rx_restart(e);
 	}
 	unlock(e);
@@ -782,23 +899,33 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->tx_wait = 0;
 		e->last_kind = KIND_UNSET;
 		e->next_voice = 0;
-		e->rx_restart_ticks = 0;
 		e->t_tick = now(e);	// the stall watchdog counts from here
 		// 6.1 step 1: codec buffers cleared, nothing in the next slot
 		w(e, C7_AUDIO_BUFFER_CLR, 0x03);
-		if (timing == DMR_TIMING_ALIGNED && e->rx_any) {
-			// In step with the bursts being received (2.5): LAYER2_CONTROL stays passive and the TX slot is built
-			// from the receive slot. Writing LAYER2_CONTROL (0xC3, or 0xC4 for the TX slots to follow) left the
-			// receiver without slot sync for about 1 s, deaf to an SFR's inbound call (DM-32UV, 2026-10-16). Our
-			// chip slot: the received one for the same TS, else the other
+		e->tx_bs = timing == DMR_TIMING_ALIGNED && e->rx_bs && ts > 0;
+		if (e->tx_bs) {
+			e->tx_state = TXS_LOCK;	// lock_tick arms with the lock
+		} else if (timing == DMR_TIMING_ALIGNED && e->rx_any) {
+			// Our chip slot (no CACH): the received one for the same TS, else the other
 			e->tx_chip_slot = ts == e->st.last_ts ? e->rx_chip_slot : (uint8_t)(e->rx_chip_slot ^ 1u);
-			w(e, C7_LAYER2_SLOTON, SLOTON_RXTX | SLOTON_RX_OPEN_TX);
+			aligned_arm(e);
 		} else {
 			e->tx_timing = (uint8_t)DMR_TIMING_OWN;
 			w(e, C7_LAYER2_CONTROL, L2_ACTIVE);	// active timing: we own the slot clock
+			w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+			e->tx_state = TXS_ARMING;
 		}
-		w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
-		e->tx_state = TXS_ARMING;
+		uint32_t age = e->tick - e->rx_tick;
+		e->st.txb_tc_agree = e->tc_agree;
+		e->st.txb_lock_wait = 0;
+		e->st.txb_timing = e->tx_timing;
+		e->st.txb_chip_slot = e->tx_chip_slot;
+		e->st.txb_rx_chip_slot = e->rx_chip_slot;
+		e->st.txb_rx_age = (uint8_t)(e->rx_any ? (age > 254u ? 254u : age) : 255u);
+		e->st.txb_ts = ts;
+		e->st.txb_last_ts = e->st.last_ts;
+		e->st.txb_rx_type_info = e->st.last_rx_type_info;
+		e->st.txb_rx_hist = e->st.rx_hist;
 	}
 	unlock(e);
 	return ok;

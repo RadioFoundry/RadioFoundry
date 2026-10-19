@@ -222,6 +222,10 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 - Then listen: the repeater is up when its outbound is heard with the slot number toggling correctly more than 3 times
   in a row.
 - No answer within 600 ms: send again, up to the configured number of attempts; then report failure to the user.
+- A short PTT press still runs the whole wake-up (the user only starts the call; other radios do the same). On release the
+  stack keeps listening and retrying. If the repeater answers after release, nothing is sent and the call view's
+  `wake_admits` counter goes up, so the radio plays its talk permit tone. If no repeater is heard in the last attempt, the
+  call ends with `DMR_TX_ERR_NO_REPEATER` and the radio plays its deny tone.
 
 ### 2.8 Hang time and TX hold-off
 

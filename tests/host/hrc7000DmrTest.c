@@ -457,8 +457,10 @@ static void test_polite_and_repeater(void)
 	hrc7000_dmr_run(&eng);
 	const dmr_config_t cfg = { .own_id = 1, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc7000_dmr_configure(&eng, &cfg);
-	tick(false);
-	deframe(rti(1, 0, 1, 1, 0, 0));	// own color code heard just now
+	for (uint8_t tc = 0; tc < 4; tc++) {	// own color code heard just now, the TC locked (test_tx_repeater_lock)
+		tick(false);
+		deframe(rti(1, 0, 1, 1, tc & 1u, tc & 1u));
+	}
 	CHECK(!hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_POLITE_CC));
 	CHECK(count_kind(DMR_EV_TX_REJECTED, NULL) == 1 && eng.st.tx_rejected == 1);
 	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
@@ -468,17 +470,35 @@ static void test_polite_and_repeater(void)
 		tick(false);
 	}
 	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_POLITE_CC));	// quiet for 390 ms
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) != 0);	// the TC lock went stale with the quiet: still receiving, waiting
+	hrc7000_dmr_tx_abort(&eng);
+	tick(false);
+	CHECK(!hrc7000_dmr_is_transmitting(&eng));
 
-	// Repeater end of transmission: passive timing, receive from the next tick (keeps the repeater's timing)
+	// Repeater end of transmission: the receiver restarts as stock does (both slot syncs released, 0xC4, receive), and
+	// the next transmission waits for a new TC lock
+	count_kind(0xFF, NULL);
+	for (uint8_t tc = 0; tc < 4; tc++) {
+		tick(false);
+		deframe(rti(1, 0, 1, 1, tc & 1u, tc & 1u));
+		count_kind(0xFF, NULL);		// a full event queue would leave the interrupt list set
+	}
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+	tick(false);				// locked: armed
 	dmr_tx_burst_t c = { .kind = DMR_BURST_CSBK, .len = 10 };
 	hrc7000_dmr_tx_queue(&eng, &c);
 	for (int i = 0; i < 6 && hrc7000_dmr_is_transmitting(&eng); i++) {
 		tick(true);
 	}
 	CHECK(!hrc7000_dmr_is_transmitting(&eng));
-	CHECK(REG(C7_LAYER2_CONTROL) == 0xC0 && REG(C7_LAYER2_TXRX_CTRL) == 0);
+	CHECK(REG(C7_LAYER2_CONTROL) == 0xC4 && REG(C7_LAYER2_TXRX_CTRL) == 0x40 && REG(C7_LAYER2_SLOTON) == 0x05);
+	CHECK(eng.tc_agree == 0);
+	count_kind(0xFF, NULL);
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
 	tick(false);
-	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) != 0 && !rf_state);	// waiting for the lock, still receiving
+	hrc7000_dmr_tx_abort(&eng);
+	tick(false);
 	count_kind(0xFF, NULL);
 }
 
@@ -816,12 +836,99 @@ static void test_tx_aligned(void)
 		REG(C7_LAYER2_STATUS) = 1u << 31;	// the coming slot: chip slot 1, the received one
 		tick(true);
 		CHECK(REG(C7_LAYER2_TXRX_CTRL) == (same_ts ? 0x80u : 0x40u));
+		// What the HIL test reads (diag txh): the first TX tick a slot after the last receive one, b31 and whether
+		// the next slot was ours
+		CHECK(eng.st.txa_rx_us == 300 && eng.st.txa_est == (same_ts ? 3u : 1u));
 		tick(true);
 		CHECK(REG(C7_LAYER2_TXRX_CTRL) == (same_ts ? 0x40u : 0x80u));
 		hrc7000_dmr_tx_abort(&eng);
 		tick(true);
 		count_kind(0xFF, NULL);
 	}
+}
+
+// Through a repeater (BS-sourced bursts): the TX slot comes from the CACH TC, locked over TC_LOCK bursts that
+// alternate; an aligned start before the lock keeps receiving and arms once locked, and is refused (nothing sent)
+// when the lock never comes. A single burst's TC is not trusted (issue 72)
+static void deframe_at(uint32_t info, uint32_t us)	// us after the last timeslot interrupt
+{
+	now += us;
+	deframe(info);
+	now -= us;
+}
+
+static void test_tx_repeater_lock(void)
+{
+	// The repeater's slots: slot n (started at the n-th tick from here) carries TC n & 1. Its burst's deframe comes
+	// late in slot n, or just after the interrupt that starts slot n + 1; the first TX-vector interrupt a slot after
+	// the last receive one, or 5 ms after it in the same slot: every way the same lock and TX slot
+	for (int mode = 0; mode < 4; mode++) {
+		int early = mode & 1, same = mode >> 1;
+		for (int ts = 1; ts <= 2; ts++) {
+			setup();
+			hrc7000_dmr_run(&eng);
+			const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+			hrc7000_dmr_configure(&eng, &cfg);
+			CHECK(REG(C7_LAYER2_CONTROL) == 0xC4);	// through a repeater: TX slots follow the receiver
+			int n = -1;
+			REG(C7_LAYER2_SLOTON) = 0;
+			for (int k = 0; k < 4; k++) {		// four bursts, TC alternating: locked with the last
+				tick(false);
+				n++;
+				if (early) {
+					if (k > 0) {
+						deframe_at(rti(0, 9, 1, 1, 0, (uint8_t)((k - 1) & 1)), 2000);
+					}
+				} else {
+					deframe_at(rti(0, 9, 1, 1, 0, (uint8_t)(k & 1)), 25000);
+				}
+				if (k == early) {	// the call starts after the first burst: it waits, receiving, for the lock
+					CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, (int8_t)ts, DMR_ACCESS_IMPOLITE));
+					dmr_tx_burst_t a = voice(0, 0x11);
+					CHECK(hrc7000_dmr_tx_queue(&eng, &a));
+				}
+				count_kind(0xFF, NULL);
+			}
+			if (early) {
+				tick(false);
+				n++;
+				deframe_at(rti(0, 9, 1, 1, 0, 1), 2000);
+			}
+			CHECK(eng.st.rx_lc_header == 0 && hrc7000_dmr_is_transmitting(&eng) && REG(C7_LAYER2_SLOTON) == 0);
+			tick(false);				// arms: no LAYER2 write but TXRX
+			n++;
+			CHECK(REG(C7_LAYER2_SLOTON) == 0 && REG(C7_LAYER2_CONTROL) == 0xC4 && REG(C7_LAYER2_TXRX_CTRL) == 0);
+			REG(C7_LAYER2_STATUS) = 1u << 31;	// not used through a repeater
+			for (int i = 0; i < 2; i++) {		// the TX slot decided at each tick is the next one, n + 1
+				if (i == 0 && same) {
+					now -= 25000;		// 5 ms after the receive tick: the same slot
+				} else {
+					n++;
+				}
+				tick(true);
+				CHECK(REG(C7_LAYER2_TXRX_CTRL) == (((n + 1) & 1) == ts - 1 ? 0x80u : 0u));
+			}
+			hrc7000_dmr_tx_abort(&eng);
+			tick(true);
+			count_kind(0xFF, NULL);
+		}
+	}
+
+	// No lock (TC stuck): refused after the wait, nothing armed
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+	hrc7000_dmr_configure(&eng, &cfg);
+	tick(false);
+	deframe(rti(0, 9, 1, 1, 0, 0));
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+	int rejected = 0;
+	for (int i = 0; i < 40 && hrc7000_dmr_is_transmitting(&eng); i++) {
+		tick(false);
+		deframe(rti(0, 9, 1, 1, (uint8_t)(i & 1), 0));
+		rejected += count_kind(DMR_EV_TX_REJECTED, NULL);
+	}
+	CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.tx_rejected == 1 && rf_on_calls == 0 && rejected == 1);
 }
 
 // An SFR's gap: a queued DMR_BURST_EMPTY leaves our slot empty and received (nothing armed, no PA), still counts as
@@ -871,6 +978,7 @@ int main(void)
 	test_tx_edges();
 	test_tx_sync_and_listen();
 	test_tx_aligned();
+	test_tx_repeater_lock();
 	test_tx_empty_and_fill();
 	test_polite_and_repeater();
 	test_event_overflow();

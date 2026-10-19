@@ -198,6 +198,9 @@ static void sfr_section(dl_text_t *t)
 		(unsigned)f.stats.tx_bursts, (unsigned)f.stats.tx_idle, (unsigned)f.stats.tx_starts,
 		(unsigned)f.stats.up_bursts, (unsigned)f.stats.up_lost);
 	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\n", (unsigned)f.stats.tx_beacons, (unsigned)f.stats.tx_gaps);
+	// Why bursts were ignored: on the outbound slot, another color code; the last one's CC and type (sfrRunner.h)
+	dl_text(t, "sfr.ignored_slot=%u\nsfr.ignored_cc=%u\nsfr.last_ignored=%02x\n", (unsigned)f.stats.rx_ignored_slot,
+		(unsigned)f.stats.rx_ignored_cc, f.stats.last_ignored);
 #else
 	dl_text(t, "sfr.built=0\n");
 #endif

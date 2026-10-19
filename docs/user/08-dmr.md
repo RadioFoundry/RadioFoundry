@@ -186,6 +186,17 @@ color code takes effect when the editor closes.
 Timeslot and color code are temporary. They can't be changed while transmitting. Hold **OK**
 to save them to the channel. In the VFO they are the VFO's own settings and are kept ([the VFO](06-channels-zones-vfo.md#dmr-in-the-vfo)).
 
+## Waking a repeater
+
+A repeater that is idle may need a wake-up before it carries your call. On a repeater channel (TX and RX frequencies
+differ) the radio sends the wake-up when you press **PTT** and then waits for the repeater to answer. A short press is
+enough: let go of **PTT** and the radio keeps trying, up to the usual number of attempts.
+
+| What you hear | Meaning |
+|---|---|
+| The talk permit tone (if it is on) | The repeater answered. If you were still holding **PTT**, the call starts. If not, nothing more is sent, and you can press **PTT** again |
+| The low error tone | No repeater answered. Check the color code and your range |
+
 ## Digital monitor
 
 Digital monitor plays every talkgroup on this frequency, timeslot and color code.

@@ -743,6 +743,14 @@ listen (`radio_sm.c`, hotspot_arm); with C1FE and the LNAs off at key-up, the ra
 burst. Found on the DM-1801 Pro, which has the same chips (BENCH there); DMR TX off air still passes on the DM-32UV
 with the change (BENCH).
 
+Split channels (RX and TX frequencies differ: a repeater or a duplex hotspot) have one synthesizer for both. ODR keeps
+it on the RX frequency from key-up on, so the radio hears the downlink's CACH and sync between bursts and can time its
+bursts to it. The RF TX interrupt moves it to the TX frequency for a burst (idle, frequency words, C1FE), and the
+switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel writes no frequency frames. Before
+this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and left it there: the radio was deaf to the
+hotspot's downlink, never aligned to it, and its bursts were not taken. The stock firmware retunes at every burst end
+too (`hardware-dm1801pro.md` 5.4). The PLL lock time after each retune is not measured yet (HIL check open).
+
 Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range shares the VHF path) (KP).
 
 ### 8.6 DMR PA timer

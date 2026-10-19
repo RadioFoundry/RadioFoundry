@@ -35,7 +35,23 @@ terminator from us that the SDR or the bench modem decoded carries the privacy s
 embedded call LC FID 0x10, and a clear over just before carries no privacy option. The scrambling itself isn't
 checked (the microphone's frames are unknown; the bench modem's frame counts are printed). The key is turned off
 afterwards (the test skips when a key was set already).
+
+test_dmr_tx_split_repeater (also --allow-codeplug-write and --split-tx-mhz): the test channel's TX frequency is set to
+--split-tx-mhz over CPS (backed up first, restored and verified afterwards), so the channel is a repeater pair: RX
+--dmr-freq, TX --split-tx-mhz. The bench modem is a duplex repeater on that pair (bench_repeater.py, input
+--split-tx-mhz, output --dmr-freq), down at the key-up. A 4 s over: the radio sends its wake-up (BS_Dwn_Act, seen by
+the SDR on --split-tx-mhz) and listens; the repeater keys its outbound 0.6 s after the key-up, inside the first listen
+window; the radio must hear it on --dmr-freq and go on to voice: tx_voice reached, never tx_error no_repeater,
+call.tx_calls + 1, call.tx_denied unchanged, and the SDR or the repeater's input hears a voice LC header from the
+radio's ID and its voice bursts, on the test channel's TS (90% of them, by the repeater's input and by the outbound
+capture's slot grid, the latter only when 90% of its labeled bursts fit that grid). A radio whose one synthesizer stays on the TX frequency after the wake-up is deaf to
+the answer and gives up with no_repeater (issue 72). The repeater answers on a timer rather than on the BS_Dwn_Act
+because its idle receiver didn't hear a radio on this bench (2026-10-18); keyed, it does. Whether the radio still hears
+the outbound while it talks (dmr.repeater_up during tx_voice) is printed, not judged: the HR_C7000 radios don't
+receive between their own bursts outside SFR (tx_listen).
 """
+import collections
+import time
 import warnings
 
 import pytest
@@ -246,6 +262,163 @@ def test_dmr_tx_talker_alias(radio, sdr_bench, pytestconfig, backup_dir):
     for name, got in (("SDR", on_sdr), ("bench modem", on_bench)):
         assert got is None or got == alias, f"{name} heard alias {got!r}, the radio sends {alias!r}"
 
+
+BEACON_PHASE_S = 6.0     # the bench repeater's beacon (its answer) this long after it started
+WAKE_ANSWER_S = 0.6      # ... which is this long after the radio's key-up: inside its first 600 ms listen window
+
+
+def _wait_line(p, text, timeout):
+    """When (time.monotonic()) a background bench job on a shared bench (SdrBench._daemon_bg) printed a line containing
+    text; waits for it."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        for line, at in zip(list(getattr(p, "lines", [])), list(getattr(p, "stamps", []))):
+            if text in line:
+                return at
+        time.sleep(0.05)
+    raise AssertionError(f"the bench job never printed {text!r}: {''.join(getattr(p, 'lines', []))[-600:]}")
+
+
+def _repeated_slots(outbound):
+    """Which outbound slot the repeater repeated voice on, from the outbound capture alone: idle and data bursts carry
+    their slot in the CACH (TC), and a repeated voice burst falls in the same 60 ms frame position as the slot's other
+    bursts. The repeater puts an inbound TSx call on outbound TSx, so this is the slot the radio sent on. Returns
+    ({1: n, 2: n} voice bursts, the share of labeled bursts within 5 ms of the slot grid), or None without at least 4
+    labeled bursts."""
+    import math
+    starts = [b["t_ms"] / 1e3 - (0.030 if b.get("cach_ts") == 2 else 0.0) for b in outbound
+              if b.get("family") == "bs" and not b.get("voice") and b.get("cach_ts") in (1, 2)]
+    if len(starts) < 4:
+        return None
+    ang = [2 * math.pi * (t % 0.060) / 0.060 for t in starts]
+    epoch = (math.atan2(sum(map(math.sin, ang)), sum(map(math.cos, ang))) % (2 * math.pi)) / (2 * math.pi) * 0.060
+    agree = sum(abs(((t - epoch + 0.030) % 0.060) - 0.030) < 0.005 for t in starts) / len(starts)
+    pos = [((b["t_ms"] / 1e3 - epoch) % 0.060) * 1e3 for b in outbound if b.get("voice")]
+    return dict(collections.Counter(2 if 15.0 <= p < 45.0 else 1 for p in pos)), round(agree, 3)
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.codeplug_write
+def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
+    split = pytestconfig.getoption("--split-tx-mhz")
+    if not split:
+        pytest.skip("give the split channel's TX frequency: --split-tx-mhz MHz (one you may transmit on)")
+    import cps_client
+    from test_cps import codeplug_edited
+    freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
+    if abs(split - freq) < 0.0125:
+        pytest.skip("--split-tx-mhz must differ from --dmr-freq")
+    if radio.view().get("set.tx_inhibit") == "1":
+        pytest.skip("the radio's TX inhibit is on (set.tx_inhibit=1)")
+    own, ts = int(d["dmr.own_id"]), int(d["dmr.ts"])
+    number = int(radio.core()["channel_number"])
+    tx_hz = round(split * 1e6)
+    samples = []        # (s since key-up, dmr.phase, dmr.repeater_up, dmr.tx_error) while PTT is held
+    with codeplug_edited(radio, backup_dir, lambda img: cps_client.set_channel_tx(img, number, tx_hz), "split"):
+        v = radio.wait_for(lambda x: x.get("tx_hz") == str(tx_hz), timeout=5, what="the channel's TX frequency")
+        assert v.get("rx_hz") == str(round(freq * 1e6)), v.get("rx_hz")
+        def one_call():
+            nonlocal samples
+            samples = []
+            _, before = radio.counters()
+            rdir = sdr_bench.run_dir("hil_dmr_split")
+            with sdr_bench.lease():
+                # The repeater answers the radio's wake-up: it keys its outbound (one long beacon) WAKE_ANSWER_S after
+                # the key-up, inside the radio's first listen window (see the docstring for why not on the BS_Dwn_Act)
+                # The captures first: starting them takes 6-8 s on the shared bench, longer than the beacon's delay, so
+                # started after the repeater the beacon was already on at the check below (SDR bench, 2026-10-18)
+                cap = sdr_bench.capture_start(rdir, split, seconds=22)     # the radio's side: what it sent, where
+                cap_out = sdr_bench.capture_start(rdir, freq, seconds=22, name="cap1")   # the repeater's: slot timing
+                rpt = sdr_bench.repeater_start(split, freq, cc, seconds=30,
+                                               extra=f"--beacon 60 --beacon-len 16 --beacon-phase {BEACON_PHASE_S}")
+                at = _wait_line(rpt, "beacon every", 20)       # the beacon timer starts as this is logged
+                late = time.monotonic() - at
+                assert late < BEACON_PHASE_S - WAKE_ANSWER_S - 1.0, f"the repeater's start line came {late:.1f} s late"
+                assert radio.view(["dmr"]).get("dmr.repeater_up") == "0", \
+                    f"the repeater is up before its beacon ({late:.1f} s after its start line)"
+                time.sleep(max(0.0, at + BEACON_PHASE_S - WAKE_ANSWER_S - time.monotonic()))
+                ints0 = [x for x in radio.link.diag()[1] if x.startswith("ts ")]
+                radio.link.ptt(True, 6000)
+                t0 = time.monotonic()
+                try:
+                    while time.monotonic() - t0 < 5.0:
+                        x = radio.view(["dmr"])
+                        samples.append((round(time.monotonic() - t0, 2), x.get("dmr.phase"), x.get("dmr.repeater_up"),
+                                        x.get("dmr.tx_error")))
+                        time.sleep(0.15)
+                finally:
+                    radio.link.ptt(False)
+                radio.wait_for(lambda x: x.get("state") != "tx", timeout=5, what="TX ended")
+                sdr_bench.capture_wait()
+                events = sdr_bench.repeater_result(rpt, timeout=60)
+                sdr = sdr_bench.analyze_dmr(cap, split, cc)
+                out = sdr_bench.analyze_dmr(cap_out, freq, cc)
+                _, after = radio.counters()
+                # HR_C7000: the slot choice, and the timeslot interrupt counts after and before
+                txb = [x for x in radio.link.diag()[1] if x.startswith(("txb ", "txh ", "ts "))] + ints0
+                bursts = sdr.get("bursts", [])
+                kinds = collections.Counter(f"{b.get('family')}:{b.get('kind')}" for b in bursts)
+                headers = [b for b in bursts if b.get("kind") == "VLC_HDR" and (b.get("lc") or {}).get("src") == own]
+                voice = [b for b in bursts if str(b.get("kind", "")).startswith("VOICE_")]
+                rx = [e["rx"] for e in events if "rx" in e]
+                # The repeater's input hears the radio once keyed (only its idle wake-up receiver doesn't, see above)
+                rpt_headers = [r for r in rx if r.get("dt") == 1 and r.get("src") == own]
+                rpt_voice = [r for r in rx if "voice" in r and r.get("slot") == ts]
+                tx_calls = after.get("call.tx_calls", 0) - before.get("call.tx_calls", 0)
+                denied = after.get("call.tx_denied", 0) - before.get("call.tx_denied", 0)
+                talking = [x for x in samples if x[1] == "tx_voice"]
+                wakes = [b for b in bursts if b.get("kind") == "CSBK"]
+                slots = _repeated_slots(out.get("bursts", []))
+                heard = [x[2] for x in talking]
+                print(f"while talking dmr.repeater_up was 1 in {heard.count('1')} of {len(heard)} samples (not judged)")
+                print(f"radio while keyed: {samples}")
+                if txb:
+                    print(f"radio TX slot choice: {txb}")
+                if slots:
+                    print(f"voice the repeater repeated, by outbound slot: {slots[0]} ({slots[1]:.1%} of the labeled "
+                          f"bursts on the slot grid)")
+                else:
+                    print(f"no slot labels in the outbound capture on {freq} MHz ({len(out.get('bursts', []))} bursts)")
+                print(f"radio: call.tx_calls +{tx_calls}, call.tx_denied +{denied}; SDR on {split} MHz (the radio's TX): "
+                      f"{dict(kinds)}; captures: ~/{sdr_bench.dir}/{rdir}/")
+                print(f"bench repeater: keyed {[e['key'] for e in events if 'key' in e]}, heard {len(rx)} bursts on its "
+                      f"input: {len(rpt_headers)} voice LC headers from us, {len(rpt_voice)} voice bursts on TS{ts}; "
+                      f"per slot {next((e['summary'] for e in events if 'summary' in e), None)}")
+            assert wakes, f"no BS_Dwn_Act CSBK from the radio on {split} MHz (the wake-up path wasn't taken)"
+            assert talking, f"the radio never reached tx_voice (tx_error {sorted({x[3] for x in samples})}: deaf to the " \
+                            f"repeater's answer?)"
+            assert not any(x[3] == "no_repeater" for x in samples), "tx_error no_repeater: the radio didn't hear the repeater"
+            assert denied == 0 and tx_calls == 1, f"call.tx_calls +{tx_calls}, call.tx_denied +{denied}"
+            # Either receiver will do: the SDR's capture can clip with the repeater keyed next to it
+            assert headers or rpt_headers, f"neither the SDR nor the repeater heard a voice LC header from us on {split} MHz"
+            n = max(len(voice), len(rpt_voice))
+            assert n >= 30, f"only {n} voice bursts from us on {split} MHz (4 s is about 66)"
+            # The slot: the repeater's input labels what it heard, its outbound shows what it repeated (either can miss it)
+            by_rpt = collections.Counter(r.get("slot") for r in rx if "voice" in r)
+            # The outbound counts only with a clean slot grid fit: at 21% of the labeled bursts on it, the capture put
+            # a TS1 call on TS2 while the repeater's input had all 78 bursts on TS1 (DM-1801 Pro, SDR bench, 2026-10-18)
+            by_out = slots[0] if slots and sum(slots[0].values()) >= 10 and slots[1] >= 0.9 else {}
+            # Voice off the repeater's slot grid is neither labeled nor repeated: one of them must have the call
+            assert by_out or sum(by_rpt.values()) >= 10, \
+                f"the repeater neither heard nor repeated our voice (input {dict(by_rpt)}, outbound {slots[0] if slots else {}})"
+            for name, got in (("the repeater's input", by_rpt), ("the repeated outbound", by_out)):
+                if sum(got.values()) >= 10:
+                    assert got.get(ts, 0) >= 0.9 * sum(got.values()), \
+                        f"the radio's voice is not on TS{ts}: {name} has {dict(got)}"
+
+        calls = pytestconfig.getoption("--split-calls")
+        failed = []
+        for k in range(calls):
+            try:
+                one_call()
+                print(f"split call {k + 1} of {calls}: ok")
+            except AssertionError as e:
+                failed.append(str(e).split(chr(10))[0][:200])
+                print(f"split call {k + 1} of {calls}: {failed[-1]}")
+            if k + 1 < calls:
+                time.sleep(8)      # the radio is back to idle and the bench jobs are over
+        assert not failed, f"{len(failed)} of {calls} calls failed: {failed}"
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service

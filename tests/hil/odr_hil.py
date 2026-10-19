@@ -603,14 +603,20 @@ class SdrBench:
             time.sleep(3)           # port open, tune, 1 s settle
             return p
         self._claim(freq)
+        return self._daemon_bg(self.bench.modem_cmd(cmd, "bench_tx-listen", seconds))
+
+    def _daemon_bg(self, cmd):
+        """A modem job (cmd from modem_cmd) in the background on a shared bench: returns once it started, its output
+        lines collected in p.lines."""
         p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.host,
-                              f"cd ~/{self.dir} && " + self.bench.modem_cmd(cmd, "bench_tx-listen", seconds)],
+                              f"cd ~/{self.dir} && " + cmd],
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.bg.append(p)
-        p.lines, p.started = [], threading.Event()
+        p.lines, p.stamps, p.started = [], [], threading.Event()     # stamps: time.monotonic() each line arrived
 
         def pump():
             for line in p.stdout:
+                p.stamps.append(time.monotonic())
                 p.lines.append(line)
                 if line.startswith("odr-bench:"):
                     print(line.rstrip(), file=sys.stderr, flush=True)
@@ -639,6 +645,25 @@ class SdrBench:
             p.kill()
             out = ""
         return self.dmr_bench.jsonl(out)
+
+    def repeater_start(self, rx, tx, cc, seconds, extra=""):
+        """bench_repeater.py --json in the background: a duplex repeater with input rx and output tx (MHz), under a
+        shared bench's modem queue; repeater_result() collects its JSON events. extra: more bench_repeater.py
+        arguments (e.g. --beacon). Needs the lease and --allow-rf."""
+        if not self.allow_rf:
+            raise RuntimeError("the bench repeater keys up: needs --allow-rf")
+        self._need_lease()
+        cmd = (f"{self.py} bench_repeater.py --rx {rx} --tx {tx} --cc {cc} --power {self.tx_power} "
+               f"--seconds {seconds} --json {extra}")
+        if not self.bench.uses_daemon():
+            p = self.ssh_bg(f"cd ~/{self.dir} && {cmd}")
+            time.sleep(3)
+            return p
+        self._claim(rx)
+        self._claim(tx)
+        return self._daemon_bg(self.bench.modem_cmd(cmd, "bench_repeater", seconds))
+
+    repeater_result = listen_result
 
     # ── the RTL-SDR ──
     def capture_start(self, run_dir, freq, seconds, name="cap0", gain=None):

@@ -339,3 +339,11 @@ void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw)
 		write_table(dev, dev->variant->rx, dev->variant->rx_n);
 	}
 }
+
+void fd6818_dmr_burst_at(fd6818_t *dev, bool tx, uint16_t rx_bw, uint32_t hz)
+{
+	if (hz != 0 && (hz + 5u) / 10u != dev->freq_10hz) {
+		fd6818_set_freq(dev, hz);	// leaves the chip idle, as the burst switch below expects
+	}
+	fd6818_dmr_burst(dev, tx, rx_bw);
+}

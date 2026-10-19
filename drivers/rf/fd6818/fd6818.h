@@ -163,5 +163,9 @@ void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode);
 // From an interrupt: idle then TX, or idle then RX with the bandwidth (DMR per-burst switching, 8.5); a variant with
 // burst tables writes only those
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw);
+// The same switch for a split channel (RX and TX frequencies differ, a repeater or duplex hotspot): the synthesizer is
+// retuned to hz first, so the receiver listens on the RX frequency between bursts and a burst goes out on the TX
+// frequency. hz already tuned (simplex): no extra frames
+void fd6818_dmr_burst_at(fd6818_t *dev, bool tx, uint16_t rx_bw, uint32_t hz);
 
 #endif
