@@ -127,6 +127,20 @@ inbound slots still hear each other: they are users of two different repeater se
 No CACH: the repeater keys only its own slot (it listens on the other one), so there is no continuous BS outbound to
 carry it. Users find the slots from the outbound slot's sync (TS framing) and the hang's idle bursts.
 
+On air (SDR bench, 2026-10-19; DM-32UV repeater, DM-1701 user, 461.1375 MHz CC 2):
+
+- The user's call goes out on slot A with the TS1 direct mode sync; the DM-32UV repeats it on slot B with the TS2
+  sync, every voice burst 90.2 ms after the original (72 of 72), then the hang's idle bursts. The repeat carried 2 of
+  the 3 headers and no terminator (the users' fade time ends the call), and its voice frames needed Golay
+  corrections where the direct copy was clean (212 of 216 repeated frames corrected, 4 uncorrectable): the DM-32UV's
+  receiver takes bit errors while it switches per burst. Both open.
+- The DM-1701 as a user played a bench call (TS1 sync) whole, 24 of 24 voice bursts, no frame lost. It never
+  reported the repeated copy during the call (`rx_sfr_dup` 0): its HR_C6000 stays synced to the slot it locked onto
+  in passive direct mode timing, although the driver writes "receive" for every slot (`rx_lock_slot(0)`), and the
+  outbound slot is reported only after the inbound call's terminator. A user out of range of the talker locks to
+  the repeat; one whose talker fades mid-call hears a gap until the receiver's lost-signal restart. Hearing both
+  slots during a call is open HR_C6000 work (gotchas 1.6).
+
 Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
 command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it). On the radio, Tools > Single-freq repeater shows the
 channel's role, slots and the repeater's state, and a repeater channel's Home screen says "SFR repeater" or "Repeating"
