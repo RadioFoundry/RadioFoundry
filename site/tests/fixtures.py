@@ -9,7 +9,7 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - a release manifest for that image (manifest.generate)
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
   - for the HR_C7000 radios: an LZ4 block from stubtool's encoder, and a synthetic program flash with a codec at
-    made-up addresses, its profile, what dm32_codec.locate() finds and the slot dm32_codec.merge() builds from it
+    made-up addresses, its profile, what hrc7000_codec.locate() finds and the slot hrc7000_codec.merge() builds from it
   - for the codeplug editor: the radio's own codeplug code on the host (tests/host/cpsSim), a codeplug it stored
     and what it reads back, so site/tests/codeplug.test.mjs checks the JavaScript decoder and encoder against it
 
@@ -26,13 +26,28 @@ sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
 
 sys.path.insert(0, os.path.join(ROOT, "site"))
 
-from odrflash import boards, manifest, plan, stockfw  # noqa: E402
+from odrflash import boards, codecmap, manifest, plan, stockfw  # noqa: E402
 from odrsite import repo  # noqa: E402
 from odrflash.fakedfu import synthetic_key  # noqa: E402
 
 
+def codec_map_vectors(out):
+	"""odrflash's shared codec map vectors with the map normalized, as data/flash-boards.json carries maps"""
+	with open(os.path.join(ROOT, "tools", "odrflash", "tests", "codecmap_vectors.json")) as f:
+		v = json.load(f)
+	v["map"] = codecmap.normalize(v["map"])
+	v["new_run"] = int(v["new_run"], 0)
+	v["table_moves"] = {int(k, 0): int(x, 0) for k, x in v["table_moves"].items()}
+	t = v["thumb"]
+	t["map"] = codecmap.normalize(t["map"])
+	t["new_run"], t["window_addr"] = int(t["new_run"], 0), int(t["window_addr"], 0)
+	with open(os.path.join(out, "codecmap.json"), "w") as f:
+		json.dump(v, f, indent=1)
+
+
 def main(out):
 	os.makedirs(out, exist_ok=True)
+	codec_map_vectors(out)
 	rng = random.Random(42)
 	key = synthetic_key(1701)
 	stock, profiles, code, tables = stockfw.build_synthetic_stock(key, rng)
@@ -43,15 +58,10 @@ def main(out):
 	keep = plan.make_plan(board, [(board.app_base, image)], plan.KEEP)
 	merge = plan.make_plan(board, [(board.app_base, image)], plan.MERGE, stockfw.codec_segments(prof, codec))
 	m = manifest.generate(board, image, "v0.0.0-test", "ab" * 20, features="FM,DMR")
-	data = bytes(rng.getrandbits(8) for _ in range(20 * 1024 + 7))	# the build's sector 9 image
-	keep9 = plan.make_plan(board, [(board.app_base, image), (0x080A0000, data)], plan.KEEP)
-	m9 = manifest.generate(board, image, "v0.0.0-test", "ab" * 20, features="FM,DMR", data=data)
 	with open(os.path.join(out, "stock.bin"), "wb") as f:
 		f.write(stock)
 	with open(os.path.join(out, "image.bin"), "wb") as f:
 		f.write(image)
-	with open(os.path.join(out, "image9.bin"), "wb") as f:
-		f.write(image + data)
 	doc = {
 		"key": key.hex(),
 		"stock_sha256": sha,
@@ -61,8 +71,8 @@ def main(out):
 		"keep": keep.describe(),
 		"merge": merge.describe(),
 		"manifest": m,
-		"keep9": keep9.describe(),
-		"manifest9": m9,
+		# the codec as the merge places it (code moved, tables cut, descriptor): what stockfw.js must give
+		"placed": [[a, stockfw.sha256(d), len(d)] for a, d in codec],
 	}
 	for k in ("code", "tables", "extra"):
 		doc["profile"].pop(k, None)
@@ -72,10 +82,13 @@ def main(out):
 	feats = repo.features()
 	variants = repo.variants()
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
-	c7000(out, rng)
-	db25d(out, rng)
+	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
+	test_maps = {**c7000(out, rng), **db25d(out, rng)}
 	codeplug(out)
-	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("f4-stub.json", repo.f4_stub()), ("flash-boards.json", repo.flash_boards()), ("features.json", {"features": feats}),
+	fb = repo.flash_boards()
+	fb["codec_maps"].update(test_maps)
+	fb["c7000"]["codec_maps"].update(test_maps)
+	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("f4-stub.json", repo.f4_stub()), ("flash-boards.json", fb), ("features.json", {"features": feats}),
 			  ("variants.json", {"variants": variants}), ("radios.json", {"radios": radios})):
 		with open(os.path.join(out, name), "w") as f:
 			json.dump(obj, f)
@@ -84,7 +97,7 @@ def main(out):
 def c7000(out, rng):
 	import struct
 	import zlib
-	st, dc = repo._tool("stub", "stubtool.py"), repo._tool("tools", "dm32_codec.py")
+	st, dc = repo._tool("stub", "stubtool.py"), repo._tool("tools", "hrc7000_codec.py")
 	sector = bytes(rng.choice(b"ODR flash  \x00\xff") for _ in range(st.SECTOR))
 	real = next(p for p in dc.PROFILES.values() if p["board"] == "dm1801pro")
 	dump = bytearray(rng.getrandbits(8) for _ in range(dc.PROGMEM_SIZE))
@@ -97,7 +110,8 @@ def c7000(out, rng):
 		    tables_head_crc=zlib.crc32(tables[:64]))
 	found = dc.locate(bytes(dump), {prof["code_sha256"]: prof}, "dm1801pro")
 	image = bytes(rng.getrandbits(8) for _ in range(300 * 1024 + 5))
-	merged = dc.merge(image, found, *dc.carve(bytes(dump), found))
+	maps = dc.synthetic_map(found, bytes(code))
+	merged = dc.merge(image, found, *dc.carve(bytes(dump), found), maps)
 	for name, data in (("lz4_plain.bin", sector), ("lz4_block.bin", st.lz4_encode(sector)), ("c7000_progmem.bin", dump),
 			   ("c7000_image.bin", image), ("c7000_merged.bin", merged)):
 		with open(os.path.join(out, name), "wb") as f:
@@ -107,16 +121,23 @@ def c7000(out, rng):
 			   "tables_sha256": prof["tables_sha256"], "tables_head_crc": prof["tables_head_crc"],
 			   "entries": [prof["entries"][k] for k in dc.ENTRIES], "stock_file": None},
 	       "found": {"code": found["code"][0] - dc.PROGMEM_BASE, "tables": found["tables"][0] - dc.PROGMEM_BASE}}
+	# a slot (hrc7000_codec.test_slot: a synthetic DB25-D codec with a map), the code window it was made for
+	slot2, windows, moved_crc, m = dc.test_slot()
+	with open(os.path.join(out, "c7000_slot_v2.bin"), "wb") as f:
+		f.write(slot2)
+	run_lo, run_hi = struct.unpack_from("<2I", windows, 0)
+	doc["v2"] = {"map": m, "run": [run_lo, run_hi], "moved_crc": moved_crc}
 	with open(os.path.join(out, "c7000.json"), "w") as f:
 		json.dump(doc, f, indent=1)
+	return maps
 
 
 def db25d(out, rng):
 	"""The DB25-D's plain stock image (no header, no container), a synthetic one with the real profile's addresses, and
-	the merged image dm32_codec.merge() builds from it. With ODR_DB25D_STOCK=<one of the real 018 files> the expected
+	the merged image hrc7000_codec.merge() builds from it. With ODR_DB25D_STOCK=<one of the real 018 files> the expected
 	result for that file is made as well, so the JavaScript can be checked on the real bytes (never kept in the repo)."""
 	import struct
-	dc = repo._tool("tools", "dm32_codec.py")
+	dc = repo._tool("tools", "hrc7000_codec.py")
 	real = dc.PROFILES["341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b"]
 	plain = bytearray(rng.getrandbits(8) for _ in range(real["size"]))
 	caddr, clen, _ = real["code"]
@@ -126,7 +147,8 @@ def db25d(out, rng):
 	prof = dict(real)
 	found, code, tables = dc.extract(plain, {dc.sha256(plain): prof}, board="db25d")
 	image = bytes(rng.getrandbits(8) for _ in range(0x1000 + 20000))
-	merged = dc.merge(image, found, code, tables)
+	maps = dc.synthetic_map(found, code)
+	merged = dc.merge(image, found, code, tables, maps)
 	files = {"db25d_stock.bin": plain, "db25d_image.bin": image, "db25d_merged.bin": merged}
 	doc = {"sha256": dc.sha256(plain), "size": len(plain), "code": caddr, "tables": taddr, "real": None}
 	path = os.environ.get("ODR_DB25D_STOCK")
@@ -141,6 +163,7 @@ def db25d(out, rng):
 			f.write(data)
 	with open(os.path.join(out, "db25d.json"), "w") as f:
 		json.dump(doc, f, indent=1)
+	return maps
 
 
 def codeplug(out):

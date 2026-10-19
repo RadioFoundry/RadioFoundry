@@ -63,8 +63,8 @@ The ECC and FEC init offsets differ between versions because 049 links extra sto
 * Branches and calls are PC-relative. Exactly 3 literal-pool words hold absolute codec addresses. In 049 they are
   the pool words at RAM 0x187B0, 0x187B4 and 0x19B68, holding 0x19540, 0x22754 and 0x26CAC. 046 has the same 3.
 * So the code runs unmodified only at its stock RAM address, with the tables at their stock modem RAM addresses.
-  To move the contiguous block by a constant delta, you would patch those 3 words. To move the tables, you would
-  patch every modem RAM literal.
+  To move the contiguous block by a constant delta, patch those 3 words; ODR does (Hosting, step 2). To move the
+  tables, you would patch every modem RAM literal.
 
 ### Calling convention
 
@@ -94,7 +94,7 @@ uses is open.
 Every DM-32UV stock build from 01.01.032 to 01.01.049 carries the same codec: the same length (0x14600), the same run
 address (0x16CDC), the same entry points (the 049 column above) and byte-identical tables (`10684c33...`). Inside the
 codec ranges the code differs only in its table pointers. The rest of the differences fall in the stock code that lies
-inside the window but isn't codec. Each version links the codec to its own flash addresses, so `tools/dm32_codec.py`
+inside the window but isn't codec. Each version links the codec to its own flash addresses, so `tools/hrc7000_codec.py`
 keys each stock file by its SHA-256 and finds the codec in a program flash read by content, then by address.
 
 | Stock build | Code, flash | Tables, flash | Tables, modem RAM | Same code as |
@@ -178,26 +178,25 @@ buffer at E+0x1898. It runs these steps in order:
 `codec.c` arrays. The state blocks can live anywhere, because they're passed by pointer. Minimum sizes from the
 accesses are about D >= 0x1400 and E >= 0x1900; the exact sizes are open.
 
-## Recommended hosting
+## Hosting
 
-1. **At the user's machine**, check the sha256 of the stock file, then carve the code (file offset, length) and
-   the table window into a codec slot in our image. The slot is load-only data in XIP flash after the app, at a
-   fixed address so the merge tool can patch a prebuilt release. It needs 0x14600 + 0x2F78 bytes plus a small
-   header (version, lengths), about 94 KB; a slot at 0x030E8000..0x03100000 would fit. Confirm that nothing else
-   uses the top of the GD25Q80.
-2. **At boot**, crt0 copies the code verbatim to its stock RAM address (049: 0x16CDC) and the tables to their
-   stock modem RAM address (049: 0x18000EA8). Nothing is relocated or patched, which matches stock behavior:
-   stock runs the codec from RAM, not XIP. Check the first two words before you enable DMR.
-3. **Memory map**: the app's RAM becomes 0x10000..0x16CDC plus 0x2B2DC..top of SRAM. The modem RAM window
-   0x18000EA8..0x18003E20 is reserved. **0x03061000 no longer applies**: drop `CODEC_BASE`, and the app owns the
-   flash up to the codec slot.
-4. **Versions**: support 049 first (newest). 046 needs a different RAM window (0x1B838..0x2F914). To accept both,
-   either reserve the union (RAM 0x16CDC..0x2F914, about 100 KB; modem 0x18000E48..0x18003E20), or move the block
-   to one fixed window by patching the 3 self-literal words. The patch option changes code bytes, so it's the
-   fallback.
+How ODR runs it ([codec-placement.md](codec-placement.md), "HR_C7000 radios"):
+
+1. **At the user's machine**, `tools/hrc7000_codec.py` (or the web flasher) checks the sha256 of the stock file,
+   carves the code and the table window, and writes them unchanged into the codec slot at 0x030E8000..0x03100000,
+   after a 128-byte version 2 header and before the relocation list: the offsets of the 3 self-referencing words,
+   from the build's codec map. The slot is load-only data in XIP flash after the application.
+2. **At boot**, `platform/hrc7000/vocoder.c` copies the code to the board's codec window at the top of SRAM
+   (0x43A00..0x58000), adds (window start - stock run address) to each listed word, checks the first two words, and
+   copies the tables to their stock modem RAM address (049: 0x18000EA8).
+3. **Memory map** (`boards/dm32/dm32.ld`): one RAM region for ODR from 0x10000 to the codec window. The modem RAM
+   window 0x18000E48..0x18003E28 (the union of the builds' tables) is reserved.
+4. **Versions**: every DM-32UV build with a codec map (12 stock files, six code windows) runs in the same window,
+   since only the 3 words depend on the run address.
 
 ## Open items
 
-* Hardware test: init sequence, stock call parameters vs the aftermarket firmware's constants, and audio quality.
+* Audio quality against stock. On the radio (2026-10-19) the 049 codec in the moved window decodes on-air speech
+  with every frame (234 of 234, 78 of 78 bursts).
 * Exact sizes of the D/E state blocks; whether the codec writes to its modem RAM tables (the boot copy covers
   both cases).

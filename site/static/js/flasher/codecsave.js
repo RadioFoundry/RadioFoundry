@@ -1,21 +1,28 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The codec read back from a radio that runs ODR, for radios where an update erases part of it (the MD-380: ODR's image
-// shares a flash sector with the codec, keep_codec_supported false). Every codec window is read over the debug link
-// (READ_MEM, docs/spec/debuglink.md 3.10) and checked against the stock profile's SHA-256, then kept in this browser
-// (IndexedDB) before anything is erased: an update that stops halfway leaves no codec in the radio to read, and the
-// retry writes the saved copy. It is checked again when loaded. Same rules as odrflash/codecsave.py.
+// The codec read back from a radio that runs ODR and kept in this browser (IndexedDB), so that a later install needs
+// no stock file: where an update erases part of it (the MD-380: ODR's image shares a flash sector with the codec,
+// keep_codec_supported false), and on every other radio for when it can't be kept (a radio back on stock firmware, an
+// install that stopped halfway, a radio in its bootloader). Every codec window is read over the debug link (READ_MEM,
+// docs/spec/debuglink.md 3.10) and checked against the stock profile's SHA-256, either where stock firmware keeps it or
+// where the merge placed it (stockfw.placedWindows: the DM-1701's code in sector 11). It is checked again when loaded.
+// The same rules as odrflash/codecsave.py.
 
 import { sha256, u32le } from "./bytes.js";
+import { descriptor, place, placedWindows } from "./stockfw.js";
 
 // The stock profiles whose codec this board runs
 export const profilesFor = (board, fb) =>
 	Object.values(fb.profiles).filter((p) => p.board === board.id && p.codec_profile === board.codec.id);
 
+// Where a profile's codec can be in a radio: [[addr, length, sha256], ...] where stock firmware keeps it, and where the
+// merge placed it when the profile moves the code
+const forms = (prof) => (prof.placement ? [prof.windows, placedWindows(prof)] : [prof.windows]);
+
 // [[addr, bytes], ...] when every window matches its hash and the code starts with the codec's signature, else null
-async function check(prof, parts, fb) {
-	if (parts.length !== prof.windows.length) return null;
-	for (const [i, [addr, length, want]] of prof.windows.entries()) {
+async function check(wins, parts, fb) {
+	if (parts.length !== wins.length) return null;
+	for (const [i, [addr, length, want]] of wins.entries()) {
 		const [a, d] = parts[i];
 		if (a !== addr || d.length !== length || (await sha256(d)) !== want) return null;
 	}
@@ -25,15 +32,25 @@ async function check(prof, parts, fb) {
 // {profile, segments} through an open debug link, or null when the flash doesn't hold this codec or can't be read
 export async function readCodec(link, board, fb) {
 	for (const prof of profilesFor(board, fb)) {
-		const parts = [];
-		try {
-			for (const [addr, length] of prof.windows) parts.push([addr, await link.readMem(addr, length)]);
-		} catch (e) {
-			return null;
+		for (const wins of forms(prof)) {
+			const parts = [];
+			try {
+				for (const [addr, length] of wins) parts.push([addr, await link.readMem(addr, length)]);
+			} catch (e) {
+				return null;
+			}
+			if (await check(wins, parts, fb)) return { profile: prof, segments: parts };
 		}
-		if (await check(prof, parts, fb)) return { profile: prof, segments: parts };
 	}
 	return null;
+}
+
+// A copy (readCodec, loadCodec) as the merge writes it: windows at their stock addresses placed (stockfw.place), placed
+// windows with their descriptor
+export async function codecSegments(prof, segments, fb) {
+	if (!prof.placement) return segments;
+	if (segments[0][0] === prof.windows[0][0]) return place(prof, segments, fb);
+	return [...segments, [fb.descriptor.addr, descriptor(prof, fb)]];
 }
 
 // --- the copy in this browser: one record per board and codec, the windows concatenated in profile order
@@ -110,13 +127,15 @@ export async function loadCodec(board, fb) {
 	}
 	if (!(blob instanceof Uint8Array)) return null;
 	for (const prof of profilesFor(board, fb)) {
-		const parts = [];
-		let off = 0;
-		for (const [addr, length] of prof.windows) {
-			parts.push([addr, blob.subarray(off, off + length)]);
-			off += length;
+		for (const wins of forms(prof)) {
+			const parts = [];
+			let off = 0;
+			for (const [addr, length] of wins) {
+				parts.push([addr, blob.subarray(off, off + length)]);
+				off += length;
+			}
+			if (off === blob.length && (await check(wins, parts, fb))) return { profile: prof, segments: parts };
 		}
-		if (off === blob.length && (await check(prof, parts, fb))) return { profile: prof, segments: parts };
 	}
 	return null;
 }

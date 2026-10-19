@@ -47,7 +47,7 @@ Not needed for a release; noted so they aren't lost.
 
 | File | What |
 |---|---|
-| `odr-<board>-<version>.bin` | The raw image `make BOARD=<board>` built, linked for the board's application base. No codec. The DM-1701 image is the application followed by its sector 9 data (below, "Sector 9"). A board with a first stage (the DB25-D) releases `odr_<board>_install.bin`, the stage then the application; `tools/release.py` refuses the application alone |
+| `odr-<board>-<version>.bin` | The raw image `make BOARD=<board>` built, linked for the board's application base. No codec. A board with a first stage (the DB25-D) releases `odr_<board>_install.bin`, the stage then the application; `tools/release.py` refuses the application alone |
 | `odr-<board>-<version>.json` | Its manifest (below) |
 | `odrflash-<version>-<os>-<arch>[.exe]` | odrflash, one file per system: `linux-x86_64`, `macos-arm64`, `macos-x86_64`, `windows-x86_64` |
 | `SHA256SUMS` | SHA-256 of every file above |
@@ -68,17 +68,19 @@ The manifest (`format` `odr-release/1`, written and checked by `tools/odrflash/o
   "image": {"file": "odr-dm1701-v0.1.0.bin", "size": 220780, "sha256": "dc8b8ed7..."},
   "ranges": [{"addr": "0x0800C000", "size": 220780}],
   "sectors": [3, 4, 5, 6],
-  "codec": {"included": false, "profile": "dm1701-v0206-csv", "sectors": [7, 8, 10, 11],
-            "windows": [{"addr": "0x08074714", "size": 66076}, {"addr": "0x080D19F0", "size": 75856}],
+  "codec": {"included": false, "profile": "dm1701-v0206-csv-s11", "sectors": [10, 11],
+            "windows": [{"addr": "0x080E3A74", "size": 66076}, {"addr": "0x080D19F0", "size": 73858},
+                        {"addr": "0x080FFF80", "size": 128}],
             "keep_supported": true},
   "features": "FM,SUBTONE,DMR,...",
   "toolchain": "arm-none-eabi-gcc (Arm GNU Toolchain 13.3.Rel1 (Build arm-13.24)) 13.3.1 20240614"
 }
 ```
 
-`ranges` says where each part of the `.bin` goes: the application at the board's base, and for the DM-1701 a second
-range, the sector 9 data (`{"addr": "0x080A0000", ...}`); `sectors` then reads `[3, 4, 5, 6, 9]`. `sectors` are the flash sectors the image covers. `codec.profile` is the id the firmware reports for
-a matching codec (`codec=` in the debug link's VERSION, [debuglink.md](../spec/debuglink.md) 3.1).
+`ranges` says where the `.bin` goes: one range, the application at the board's base. `sectors` are the flash sectors
+the image covers. `codec.windows` are where the merge puts the codec: on the DM-1701 the code, the tables and the
+descriptor ([codec-placement.md](../spec/codec-placement.md), "STM32 radios"). `codec.profile` is the id the firmware
+reports for a matching codec (`codec=` in the debug link's VERSION, [debuglink.md](../spec/debuglink.md) 3.1).
 
 ## Sector maps
 
@@ -87,82 +89,59 @@ hold the codec. Whether an update can leave the codec alone (keep) depends on th
 
 | Board | Application | Codec | Keep | Map |
 |---|---|---|---|---|
-| dm1701 | sectors 3-6 (336 KB), and sector 9 (128 KB) for read-only data | sectors 7-8 (code) and 10-11 (tables), stock addresses | yes | [hardware-dm1701.md](../spec/hardware-dm1701.md) 1.4 |
-| md380 | 0x0800C000..0x08050C43 (281,668 B), into sector 6 | from 0x08050C44: shares sector 6 with the application | no | [hardware-md380.md](../spec/hardware-md380.md) 1.3 |
+| dm1701 | sectors 3-9 (720 KB) | sectors 10 and 11: tables at their stock address, code moved to 0x080E3A74, descriptor | yes | [hardware-dm1701.md](../spec/hardware-dm1701.md) 1.4 |
+| md380 | sectors 3-7 (464 KB) | sectors 8, 10 and 11: main tables at their stock address in sector 8, code moved to 0x080E0000, descriptor; sector 9 unused | yes | [hardware-md380.md](../spec/hardware-md380.md) 1.3 |
 | dm32 | 0x0300C000..0x030E8000 (880 KB) | slot 0x030E8000..0x03100000 | no: the updater erases the whole area | [hardware-dm32.md](../spec/hardware-dm32.md) 17 |
 | dm1801pro | 0x0300C000..0x030E8000 (880 KB) | slot 0x030E8000..0x03100000 | through the stub yes (it writes only the image's sectors); through update mode no (the updater erases the whole area) | [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2, [codec-dm1801pro.md](../spec/codec-dm1801pro.md) |
 
-## Sector 9
-
-The DM-1701 links all read-only data (string literals, fonts, tables: about 49 KB) into sector 9, `.rodata2` in
-`boards/dm1701/dm1701.ld`. The 336 KB of sectors 3-6 are then free for code. The linker's `FLASH` and `FLASH2` lines
-show both regions (`make BOARD=dm1701`, and the "Sector 9" column of `tools/ci.sh`'s size report).
-
-| Part | File | Written to | Made by |
-|---|---|---|---|
-| Application | `odr_dm1701.bin` | sectors 3-6, from 0x0800C000 | `make` (`BIN_SECTIONS`) |
-| Data | `odr_dm1701_rodata2.bin` | sector 9, from 0x080A0000 | `make` (`BIN2_SECTIONS`, `board.mk`) |
-| Both, in a release | `odr-dm1701-<version>.bin` + manifest | two ranges, `sectors` 3-6 and 9 | `tools/release.py` |
-| Both, with the codec | `odr_dm1701_codec.bin` | one contiguous image from 0x0800C000 | `tools/codec_auto.py`, `odrflash merge` |
-
-A release is one file because the manifest's `ranges` already cut one file into parts: the application's bytes, then
-the data's. The alternative, one `.bin` padded from 0x0800C000 through sector 9, would carry 256 KB of 0xFF over the
-codec sectors 7 and 8, and so could not leave the codec in place (keep mode).
-
-What each tool does:
-
-| Tool | Behavior |
-|---|---|
-| `make BOARD=dm1701` | writes both files. `BIN2_SECTIONS` is empty on every other board, which then build exactly as before |
-| `tools/release.py` | packs `odr_<board>_rodata2.bin` after the application. A board with a data region and no such file is refused (`--no-rodata2` releases the application alone, for a build that links nothing there) |
-| `odrflash flash` | a release image with its manifest: the plan erases and writes sectors 3-6 and 9 (keep) and never 7, 8, 10, 11 or the bootloader. A local build: `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701` also reads `odr_dm1701_rodata2.bin` next to it, and warns when it isn't there |
-| `odrflash merge`, the build's `_codec.bin` | the data goes in at 0x080A0000 with the codec windows at theirs |
-| `tools/stm32_dfu.py` | writes one contiguous image: it warns about an application with a `_rodata2.bin` next to it, and takes the merged `_codec.bin` |
-| web flasher | the same manifest ranges (`site/static/js/flasher`), checked the same way |
-
-The checks are the same in `odrflash/manifest.py` (`verify`), `odrflash/plan.py` (`make_plan`) and the web flasher's
-ports: the first range starts at the application base, every other range lies wholly inside a data region of the board
-(DM-1701: 0x080A0000, 128 KB), nothing touches a codec sector or the bootloader, and a board without a data region takes
-no second range.
-
 **What an interrupted update leaves.** All erases come first, then the writes in address order, so sector 3 (the vector
 table) is the first one written back: an update cut off before that leaves the bootloader in DFU. Cut off later, the
-radio may boot half an application, or one whose data in sector 9 is missing: garbled text or a crash, never a brick.
-Enter the bootloader by hand (PTT and SK1 at power on) and flash again.
+radio may boot half an application: a crash, never a brick. Enter the bootloader by hand (PTT and SK1 at power on)
+and flash again.
 
-**Checked on a radio (2026-10-14).** A DM-1701 flashed from a local build with `odrflash flash --stock FILE --codec keep`:
-the plan listed sectors 3-6 and 9 and kept 7, 8, 10 and 11, the bootloader accepted the sector 9 erase and write, the
-radio booted with readable text, reported `codec=` as before and "DMR voice is ready", and the radio-only HIL group
-passed (61 passed; the one failure is the git version check, which can't match a build from a source archive). The
-other flashers (`stm32_dfu.py`, the web flasher) have not flashed a radio with sector 9 data.
+## Releases from before the codec moved
+
+On the DM-1701, sector 9 is part of the application area, like sectors 3-8. Releases made before the codec moved
+linked the read-only data into sector 9 and carried it as a second range, with the profile `dm1701-v0206-csv`
+(their codec code sat in sectors 7 and 8). odrflash and the web flasher refuse a manifest with two ranges or with
+that profile, and `tools/stm32_dfu.py` refuses a release image whose manifest lists two ranges.
 
 ## Codec handling
 
 odrflash picks one of two modes; `--dry-run` prints the exact sectors either would erase and write.
 
-**Keep (the default when it is known to be safe).** Erase and write only the sectors the image covers (3-6); never
-touch 7, 8, 10 and 11, so the codec already in the radio stays. Flash can't be read back over the bootloader (the
-radio is at RDP level 1), so odrflash needs another way to know the codec is there. In order:
+**Keep (the default when it is known to be safe).** Erase and write only the sectors the image covers (DM-1701: within
+3-9); never touch the codec sectors (10 and 11), so the codec already in the radio stays. Flash can't be read back
+over the bootloader (the radio is at RDP level 1), so odrflash needs another way to know the codec is there:
 
 1. **ODR is running.** Before the user switches the radio into its bootloader, odrflash asks over the debug link
    (`odrflash probe`, or automatically at the start of `odrflash flash`). VERSION's `codec=` is the firmware's own check,
-   the same one that gates DMR voice (on the DM-1701: the signature word and the CRC-32 of both windows against stock
-   V02.06 CSV). If it reports the board's codec profile (`dm1701-v0206-csv`), keep is safe. The answer is remembered for 30 minutes (odrflash's settings directory),
-   because the debug link is gone once the radio is in its bootloader.
-2. **Stock firmware is running.** Stock has no debug link, so the user says which version it is (`--stock-installed
-   "V02.06 CSV"` or the interactive question). Only V02.06 CSV holds this codec at these addresses; V02.01-V02.03 and
-   the noCSV builds keep theirs elsewhere, so for those odrflash asks for the stock file instead.
-3. Otherwise keep is not chosen automatically; `--codec keep` forces it.
+   the same one that gates DMR voice (on the DM-1701: the descriptor, the signature word and the CRC-32 of both
+   windows at their placed addresses). If it reports the board's codec profile (`dm1701-v0206-csv-s11`), keep is safe.
+   The answer is remembered for 30 minutes (odrflash's settings directory), because the debug link is gone once the
+   radio is in its bootloader. A build from before the codec moved reports `dm1701-v0206-csv`: its codec code is in
+   sectors 7 and 8, which the update overwrites, so keep is not safe.
+2. **Otherwise the codec is written (merge),** from the copy odrflash saved from this radio if it has one, else from
+   the stock file. No stock firmware holds the codec where ODR keeps it, so `--stock-installed` never makes keep safe.
+3. `--codec keep` forces keep in every case.
 
-Why a wrong guess is harmless: the firmware never runs the codec without checking it first (signature and both CRCs,
-`boards/dm1701/vocoder_dm1701.c`). If the bytes in sectors 7-11 aren't the expected codec, `present()` is false: FM
+**The saved copy.** Whenever odrflash or the web flasher sees a radio running ODR, it reads the codec over the debug
+link (READ_MEM, in the stock or the placed layout), checks it against the profile's hashes and saves it (odrflash's
+config directory, or the browser). It uses that copy instead of the stock file whenever the radio's codec can't be
+kept or checked: no answer over the debug link, the radio back on stock firmware, or no codec reported
+(`odrflash/codecsave.py`, `site/static/js/flasher/codecsave.js`). There is no read-back during the update itself, so
+a radio on a build from before the move needs the stock file once unless a copy was saved earlier.
+
+Why a wrong guess is harmless: the firmware never runs the codec without checking it first (descriptor, signature and both CRCs,
+`boards/dm1701/vocoder_dm1701.c`). If the bytes in sectors 10 and 11 aren't the expected codec, `present()` is false: FM
 works, DMR calls show "No codec: voice off", and the debug link reports `codec=absent`. The fix is to flash again with
 `--stock`. odrflash checks this itself after flashing: it waits for the radio to restart and reads `codec=` again.
 
 **Merge.** The user supplies the stock firmware file (`--stock`). odrflash checks it by SHA-256 against the codec
 profile, decrypts the two windows, checks their SHA-256 and the signature (`odrflash/stockfw.py`, the same library
-`tools/codec_extract.py` uses), and writes them at their stock addresses: sectors 3-6, 7, 8, 10 and 11 are erased and
-written, and so is sector 9 with the firmware's data. The merged codec exists only in memory on the user's machine and in the radio.
+`tools/codec_extract.py` uses), places them as the board's codec map says and writes the descriptor
+([codec-placement.md](../spec/codec-placement.md), "STM32 radios"). The image's sectors and the codec sectors (DM-1701:
+10 and 11) are erased and written. The merged codec exists only in memory on the user's machine and in the radio.
 
 **Downloading the stock file for the user (not implemented).** The supported V02.06 CSV file is not on a Baofeng or
 dealer URL; the known copy is a third-party archive (BG7QVB's GitHub repository). Radioddity's public bucket has
@@ -199,7 +178,7 @@ never handles the key. Updates of a radio that runs ODR need no stock file.
 | `firmware-dm1701` | Installs Arm GNU Toolchain 13.3.rel1 (checked by SHA-256) into `~/opt`, runs `tools/ci.sh --quick --board dm1701` as the gate, builds, runs `tools/release.py` |
 | `firmware-dm32` | Only when the repository variable `ODR_RELEASE_DM32` is `true` (below) |
 | `firmware-dm1801pro` | Only when the repository variable `ODR_RELEASE_DM1801PRO` is `true` (below, "The DM-1801 Pro"): the DM-32UV job's toolchain and cache, then `make BOARD=dm1801pro` and `tools/release.py --board dm1801pro` |
-| `odrflash` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel, the `certifi` CA bundle, and `dm32_flash`, `dm32_codec` and `stubtool` for the serial route inside) and runs `--version` on it |
+| `odrflash` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel, the `certifi` CA bundle, and `dm32_flash`, `hrc7000_codec` and `stubtool` for the serial route inside) and runs `--version` on it |
 | `publish` | On a `v*` tag only: one `SHA256SUMS` over everything, checks every manifest against its image and that none includes the codec, creates the release if the manual workflow hasn't, uploads with `--clobber` |
 
 Pull requests that touch `tools/odrflash/`, `tools/release.py`, the DM-32 flashing tools or the workflow build
@@ -213,10 +192,10 @@ odrflash-*` (or right-click, Open). Windows SmartScreen asks once.
 ## The MD-380
 
 Not released yet: `releasable=False` in `tools/odrflash/odrflash/boards.py` and no job in `release.yml` until
-[docs/testing/md380-bringup.md](../testing/md380-bringup.md) passes. Its codec shares flash sector 6 with the
-application, so keep is impossible (`keep_codec_supported=False`): every flash writes the codec again, from TYT's
-D002.032 file or, on a radio that runs ODR, from a copy read back from the radio and saved locally
-([codec-md380.md](../spec/codec-md380.md), "Updates"). `tools/md380_migrate.py` flashes it today and keeps the codeplug
+[docs/testing/md380-bringup.md](../testing/md380-bringup.md) passes. The application has sectors 3-7 and the codec
+sectors 8, 10 and 11, so an update can keep the codec (`keep_codec_supported=True`), as on the DM-1701. The codec
+profile is `md380-d2032-s11` (a build from before the move reports `md380-d2032`). The moved code has run only in an
+emulator, not on a radio. `tools/md380_migrate.py` flashes it today and keeps the codeplug
 ([md380-migration.md](../spec/md380-migration.md)).
 
 ## Adding the DM-32UV
@@ -233,7 +212,7 @@ on once [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) passes:
 3. Flashing: the DM-32UV uses Baofeng's serial updater protocol ([hardware-dm32.md](../spec/hardware-dm32.md) 13.2), not
    DFU. odrflash would get a second backend speaking it over pyserial (the `bfuv32-serial` family). The updater erases
    the whole application area before writing (step 7), the codec slot 0x030E8000..0x03100000 included, so **keep is not
-   possible on the DM-32UV**: every flash merges the codec from the stock file (`tools/dm32_codec.py` logic as a
+   possible on the DM-32UV**: every flash merges the codec from the stock file (`tools/hrc7000_codec.py` logic as a
    library, like `stockfw` for the DM-1701). The manifest already says so (`keep_supported: false`), and odrflash's
    codec decision refuses keep for it. Whether the updater erases only `size` bytes (which would make a keep mode
    possible with an image that ends before the slot) is a hardware question for the bring-up.
@@ -257,7 +236,7 @@ speak either protocol itself; it calls the tools that do:
 | stub | `stub/stubtool.py`: `Radio.odr_enter`, `write_image`, `reset_chip` (the `--odr-enter --write-app IMAGE --boot reset` run) | VERSION answers on the cable with this board and the debug link's STUB info (op 0, [debuglink.md](../spec/debuglink.md) 3.18) carries its magic | keep: only the image's sectors are written, so the slot stays; merge when the image carries a slot or `--stock` builds one |
 | bootloader | `tools/dm32_flash.py`: `Flasher` with model `dm1801pro` (ID `BF1801-V1`) | otherwise | merge only: the loader erases the slot ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2), so a plain image without `--stock` is refused |
 
-`--stock` is a program flash read of this radio; `tools/dm32_codec.py` recognizes it by the code window's SHA-256 and
+`--stock` is a program flash read of this radio; `tools/hrc7000_codec.py` recognizes it by the code window's SHA-256 and
 builds the slot. The release package never carries the codec, so the first install of a release through update mode
 needs that read (`stub/stubtool.py PORT --progmem FILE`, radio off). Later updates go through the stub and keep the
 slot. The DM-32UV shares the family (`bfuv32-serial`) and so the route; its `--stock` is the stock firmware file.
@@ -275,10 +254,10 @@ answer, in this order (the first flash of a new build is always a merge, so the 
 
 1. `odrflash detect` with the radio in its bootloader: record the strings (they become the model fingerprint table).
 2. Merge: `odrflash flash odr-dm1701-<v>.bin --stock "DM-1701(CSV)-V02.06.bin" --dry-run`, then without `--dry-run`. The
-   radio restarts; odrflash reports `codec dm1701-v0206-csv` and "DMR voice is ready".
+   radio restarts; odrflash reports `codec dm1701-v0206-csv-s11` and "DMR voice is ready".
 3. Keep, which proves the bootloader erases only the listed sectors: with ODR running, `odrflash probe` (codec
-   `dm1701-v0206-csv`), then `odrflash flash odr-dm1701-<v>.bin` (no `--stock`; the plan shows erase 3, 4, 5, 6 and keep
-   7, 8, 10, 11). After the restart odrflash must report the codec still present. If it reports `absent`, the
+   `dm1701-v0206-csv-s11`), then `odrflash flash odr-dm1701-<v>.bin` (no `--stock`; the plan shows the image's sectors
+   from 3 to at most 9 erased and 10, 11 kept). After the restart odrflash must report the codec still present. If it reports `absent`, the
    bootloader erased more than asked: keep must be disabled for the DM-1701 (`keep_codec_supported=False`) and the
    radio is fixed by step 2.
 4. A DMR call both ways after step 3 (the codec really works, not only its CRC).

@@ -7,7 +7,8 @@ The stub (stub/stm32f4, built with `make -C stub/stm32f4`) is loaded by a runnin
 through the debug link's STUB command, over the radio's USB serial port. It then answers on the same port (or, if it
 had to enumerate again, on a port with the same serial number). stubtool.py hands STM32 radios to this module:
 
-    stubtool.py PORT --odr-enter --write-app build/dm1701/odr_dm1701.bin   install a build (sector 9 part found next to it)
+    stubtool.py PORT --odr-enter --write-app build/dm1701/odr_dm1701.bin   install a build
+    stubtool.py PORT --odr-enter --write-app build/dm1701/odr_dm1701_codec.bin   a build merged with the codec
     stubtool.py PORT --odr-enter --progmem flash.bin                      back up the whole internal flash (1 MB)
     stubtool.py PORT --odr-enter --verify-progmem flash.bin               compare by CRC
     stubtool.py PORT --odr-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
@@ -23,8 +24,8 @@ fails while the embedded copy and a fresh build differ.
 
 Framing and the debug link loader are stubtool.Radio's; what differs is here: the ops (ERASE / PROGRAM / RESET are
 new, SUMS and READ take a flash address), 4 KB blocks inside coarse erase sectors (16 to 128 KB), the sector 3
-interlock and the update order that goes with it, and the bytes a sector shares with the codec (the MD-380's sector 6),
-which are read back and kept.
+interlock and the update order that goes with it, and the bytes a sector shares with other data, which are read back
+and kept (no radio has such a sector since the codec moved).
 """
 import base64
 import hashlib
@@ -130,13 +131,15 @@ RUN_ADDR = 0x20000000                  # the stub's link address, which ODR repo
 SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
 # Flash the firmware owns on each radio (docs/spec/hardware-dm1701.md 1.4, hardware-md380.md 1.3). Everything else in
-# a sector that is rewritten is read back from the radio and written again unchanged: the codec windows, and the
-# MD-380's sector 6 tail. Sectors with no owned byte are never erased (the DM-1701's codec sectors 7, 8, 10 and 11).
+# a sector that is rewritten is read back from the radio and written again unchanged (no radio shares a sector with
+# the codec any more, since it moved; the rule stays for one that does). Sectors with no owned byte are never erased,
+# except "codec": the codec's own sectors (the DM-1701's 10 and 11, the MD-380's 8 to 11), written only from an image
+# merged with the codec (docs/spec/codec-placement.md), which carries all of them.
 BOARDS = {
     "dm1701": {"name": "Baofeng DM-1701", "names": ("DM-1701", "dm1701"),
-               "owned": [(0x0800C000, 0x08060000), (0x080A0000, 0x080C0000)], "rodata2": 0x080A0000},
+               "owned": [(0x0800C000, 0x080C0000)], "codec": (0x080C0000, 0x08100000)},
     "md380": {"name": "TYT MD-380", "names": ("MD-380", "MD-380 VHF", "md380"),
-              "owned": [(0x0800C000, 0x08050C44)], "rodata2": None},
+              "owned": [(0x0800C000, 0x08080000)], "codec": (0x08080000, 0x08100000)},
 }
 
 
@@ -249,20 +252,18 @@ def inside_git_tree(path):
     return r.returncode == 0 and r.stdout.strip() == "true"
 
 
-def load_segments(path, board_id, no_rodata2=False):
-    """[(addr, bytes)] for a build: the application .bin at 0x0800C000 and, on the DM-1701, the sector 9 part
-    (<name>_rodata2.bin next to it). A merged _codec.bin is refused by write_image (it reaches past the owned flash)."""
-    segs = [(APP_BASE, open(path, "rb").read())]
-    r2 = BOARDS[board_id]["rodata2"]
-    if r2 is not None:
-        base, ext = os.path.splitext(path)
-        side = base + "_rodata2" + ext
-        if os.path.exists(side):
-            segs.append((r2, open(side, "rb").read()))
-        elif not no_rodata2:
-            raise F4Error("%s has no %s next to it: the DM-1701 image has two parts (hardware-dm1701.md 1.4); "
-                          "pass --no-rodata2 if the application is meant to go alone" % (path, os.path.basename(side)))
-    return segs
+def load_segments(path, board_id):
+    """[(addr, bytes)] for a build: the application .bin at 0x0800C000, and for an image merged with the codec
+    (odr_<board>_codec.bin, which runs to the end of flash) the codec sectors as a second segment."""
+    data = open(path, "rb").read()
+    codec = BOARDS[board_id]["codec"]
+    if codec is None or APP_BASE + len(data) <= codec[0]:
+        return [(APP_BASE, data)]
+    if APP_BASE + len(data) != codec[1]:
+        raise F4Error("%s runs to 0x%08X: a build merged with the codec runs to 0x%08X, a plain build ends before "
+                      "0x%08X" % (path, APP_BASE + len(data), codec[1], codec[0]))
+    cut = codec[0] - APP_BASE
+    return [(APP_BASE, data[:cut].rstrip(b"\xff")), (codec[0], data[cut:])]
 
 
 class F4Radio(stubtool.Radio):
@@ -413,12 +414,16 @@ class F4Radio(stubtool.Radio):
 
     def plan(self, board_id, segments):
         """{sector index: new content} for every sector that holds firmware-owned flash, and which of those differ
-        from the radio. Owned bytes come from the segments (0xFF where they have none); the rest is read back."""
-        owned = BOARDS[board_id]["owned"]
+        from the radio. Owned bytes come from the segments (0xFF where they have none); the rest is read back. A
+        segment that covers the codec sectors whole (load_segments) makes them owned too."""
+        owned = list(BOARDS[board_id]["owned"])
+        codec = BOARDS[board_id]["codec"]
+        if codec and any(a == codec[0] and len(d) == codec[1] - codec[0] for a, d in segments):
+            owned.append(codec)
         for addr, data in segments:
             if not any(lo <= addr and addr + len(data) <= hi for lo, hi in owned):
                 raise F4Error("image data at 0x%08X..0x%08X is outside the flash the firmware owns on the %s (%s): a "
-                              "codec-merged image or the wrong board?" % (addr, addr + len(data) - 1, BOARDS[board_id]["name"],
+                              "wrong board?" % (addr, addr + len(data) - 1, BOARDS[board_id]["name"],
                               ", ".join("0x%08X..0x%08X" % (lo, hi - 1) for lo, hi in owned)))
         if not segments or segments[0][0] != APP_BASE or len(segments[0][1]) < 8:
             raise F4Error("the image must start at 0x%08X with the vector table" % APP_BASE)
@@ -456,7 +461,7 @@ class F4Radio(stubtool.Radio):
             return 0, len(new)
         sec = {i: (a, s) for i, a, s in f405_sectors(self.flash_kb)}
         for idx in changed:
-            if idx in kept:			# bytes that are not ours (the MD-380's codec in sector 6): a copy first
+            if idx in kept:			# bytes that are not ours: a copy first
                 if backup_dir is None:
                     raise F4Error("sector %d holds bytes that are not the firmware's (the codec): give a backup "
                                   "directory outside any git tree" % idx)
@@ -619,7 +624,7 @@ def run(a, port, reopen, log=print):
     if a.write_app:
         if board is None:
             raise F4Error("which radio? pass --board dm1701 or --board md380")
-        segs = load_segments(a.write_app, board, a.no_rodata2)
+        segs = load_segments(a.write_app, board)
         t0 = time.monotonic()
         nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),
                                    progress=lambda i, n: log("sector step %d of %d" % (i, n)))
@@ -815,34 +820,53 @@ def self_test():
     tmpdir = tempfile.TemporaryDirectory(prefix="odr-f4stub-")
     tmp = tmpdir.name
 
-    # DM-1701: application + sector 9; codec sectors 7, 8, 10, 11 and the bootloader never touched
+    # DM-1701: the application in sectors 3-9; codec sectors 10 and 11 and the bootloader never touched
     f = stock(5)
     fake = FakeF4(f)
     r = F4Radio(fake, log=quiet)
     r.hello()
     check(r.flash_kb == 1024 and r.adopted, "hello parsed")
-    segs = [(APP_BASE, app(300000, 3)), (0x080A0000, app(50000, 11))]
+    segs = [(APP_BASE, app(300000, 3))]
     nw, nk = r.write_image("dm1701", segs, backup_dir=tmp)
     fl = fake.flash
-    check(nw == 5 and nk == 0, "dm1701: sectors 3-6 and 9 written (%d, %d)" % (nw, nk))
-    check(fake.erased[0] == 3 and sorted(fake.erased) == [3, 4, 5, 6, 9], "dm1701: sector 3 erased first, only owned sectors %s" % fake.erased)
+    check(nw == 7 and nk == 0, "dm1701: sectors 3-9 written (%d, %d)" % (nw, nk))
+    check(fake.erased[0] == 3 and sorted(fake.erased) == [3, 4, 5, 6, 7, 8, 9],
+          "dm1701: sector 3 erased first, only owned sectors %s" % fake.erased)
     check(bytes(fl[:0xC000]) == boot, "dm1701: bootloader untouched")
-    check(bytes(fl[0x60000:0xA0000]) == bytes(f[0x60000:0xA0000]) and bytes(fl[0xC0000:]) == bytes(f[0xC0000:]),
-          "dm1701: codec sectors untouched")
+    check(bytes(fl[0xC0000:]) == bytes(f[0xC0000:]), "dm1701: codec sectors untouched")
     check(bytes(fl[0xC000:0xC000 + 300000]) == segs[0][1], "dm1701: application in place")
-    check(bytes(fl[0xC000 + 300000:0x60000]) == b"\xff" * (0x60000 - 0xC000 - 300000), "dm1701: the old tail is cleared")
-    check(bytes(fl[0xA0000:0xA0000 + 50000]) == segs[1][1], "dm1701: sector 9 part in place")
+    check(bytes(fl[0xC000 + 300000:0xC0000]) == b"\xff" * (0xC0000 - 0xC000 - 300000), "dm1701: the old tail is cleared")
     fake.erased = []
     nw, nk = r.write_image("dm1701", segs, backup_dir=tmp)
-    check(nw == 0 and nk == 5 and fake.erased == [], "dm1701: the same image again writes nothing")
-    segs2 = [(APP_BASE, app(300000, 3)[:200000] + app(100000, 9)), segs[1]]
+    check(nw == 0 and nk == 7 and fake.erased == [], "dm1701: the same image again writes nothing")
+    segs2 = [(APP_BASE, app(300000, 3)[:200000] + app(100000, 9))]
     fake.erased = []
     nw, _ = r.write_image("dm1701", segs2, backup_dir=tmp)
     check(sorted(fake.erased) == [3, 5, 6] and nw == 3, "dm1701: only changed sectors (plus 3) %s" % fake.erased)
 
-    # A merged codec image and a bad vector table are refused before anything is erased
+    # A build merged with the codec (load_segments splits it): sectors 10 and 11 written whole, too
+    merged = bytearray(b"\xff" * (0x100000 - 0xC000))
+    merged[:300000] = app(300000, 3)
+    merged[0xD19F0 - 0xC000:0xD19F0 - 0xC000 + 0x12082] = app(0x12082, 13)
+    merged[0xE3A74 - 0xC000:0xE3A74 - 0xC000 + 0x1021C] = app(0x1021C, 17)
+    merged[0xFFF80 - 0xC000:] = app(0x80, 19)
+    mp = os.path.join(tmp, "odr_dm1701_codec.bin")
+    open(mp, "wb").write(merged)
+    msegs = load_segments(mp, "dm1701")
+    check([(a, len(d)) for a, d in msegs] == [(APP_BASE, 300000), (0x080C0000, 0x40000)], "merged image split in two")
     fake.erased = []
-    for bad, what in (([(APP_BASE, app(0x80000, 3))], "reaches the codec sectors"),
+    nw, _ = r.write_image("dm1701", msegs, backup_dir=tmp)
+    check(sorted(fake.erased) == [3, 5, 6, 10, 11], "merged image: the codec sectors written too %s" % fake.erased)
+    check(bytes(fake.flash[0xC000:]) == bytes(merged), "merged image in place")
+    pp = os.path.join(tmp, "plain.bin")
+    open(pp, "wb").write(app(5000, 3))
+    check(load_segments(pp, "md380") == [(APP_BASE, app(5000, 3))], "md380: a plain image is one segment")
+
+    # An image into the codec sectors that is not a whole merged image, and a bad vector table, are refused before
+    # anything is erased
+    fake.erased = []
+    for bad, what in (([(APP_BASE, app(0xB8000, 3))], "reaches the codec sectors"),
+                      ([(APP_BASE, app(5000, 3)), (0x080C0000, app(0x1000, 3))], "part of the codec sectors"),
                       ([(APP_BASE, b"\x00" * 64)], "no stack pointer"),
                       ([(0x08004000, app(64, 3))], "bootloader")):
         try:
@@ -850,6 +874,13 @@ def self_test():
             check(False, "refused: " + what)
         except F4Error:
             check(fake.erased == [], "refused before erasing: " + what)
+    short = os.path.join(tmp, "short_codec.bin")
+    open(short, "wb").write(bytes(merged[:-0x1000]))
+    try:
+        load_segments(short, "dm1701")
+        check(False, "an image ending inside the codec sectors refused")
+    except F4Error:
+        check(True, "an image ending inside the codec sectors refused")
 
     # Interrupted after a few programs: the first word is still erased, so the bootloader stays in DFU
     f = stock(7)
@@ -867,24 +898,41 @@ def self_test():
     nw, _ = r.write_image("dm1701", segs, backup_dir=tmp)
     check(bytes(fake.flash[0xC000:0xC000 + 300000]) == segs[0][1], "a second run completes the install")
 
-    # MD-380: sector 6 shared with the codec; the codec bytes from 0x08050C44 are read back and kept, and saved
+    # MD-380: sectors 3-7 for the application, the codec sectors 8-11 untouched
     f = stock(13)
     fake = FakeF4(f)
     r = F4Radio(fake, log=quiet)
     r.hello()
-    segs = [(APP_BASE, app(0x08050C44 - APP_BASE - 1000, 17))]
+    segs = [(APP_BASE, app(0x08080000 - APP_BASE, 17))]
     nw, nk = r.write_image("md380", segs, backup_dir=tmp)
     fl = fake.flash
-    check(sorted(fake.erased) == [3, 4, 5, 6], "md380: sectors 3-6 %s" % fake.erased)
-    check(bytes(fl[0x50C44:]) == bytes(f[0x50C44:]), "md380: codec bytes in sector 6 and after kept")
-    check(bytes(fl[0xC000:0xC000 + len(segs[0][1])]) == segs[0][1], "md380: application in place")
-    saved = os.path.join(tmp, "md380_sector6_0x08040000.bin")
-    check(os.path.exists(saved) and open(saved, "rb").read() == bytes(f[0x40000:0x60000]), "md380: sector 6 saved first")
+    check(sorted(fake.erased) == [3, 4, 5, 6, 7], "md380: sectors 3-7 %s" % fake.erased)
+    check(bytes(fl[0x80000:]) == bytes(f[0x80000:]), "md380: codec sectors untouched")
+    check(bytes(fl[0xC000:0x80000]) == segs[0][1], "md380: application in place")
     try:
-        r.write_image("md380", [(APP_BASE, app(0x08050C44 - APP_BASE + 4, 3))], backup_dir=tmp)
-        check(False, "md380: an image into the codec window is refused")
+        r.write_image("md380", [(APP_BASE, app(0x08080000 - APP_BASE + 4, 3))], backup_dir=tmp)
+        check(False, "md380: an image into the codec sectors is refused")
     except F4Error:
         pass
+
+    # A sector shared with other data (no radio has one since the codec moved; the rule stays): the bytes after the
+    # owned range are read back and kept, and the sector saved first
+    BOARDS["shared"] = {"name": "test", "names": (), "owned": [(0x0800C000, 0x08050C44)], "codec": None}
+    try:
+        f = stock(13)
+        fake = FakeF4(f)
+        r = F4Radio(fake, log=quiet)
+        r.hello()
+        segs = [(APP_BASE, app(0x08050C44 - APP_BASE - 1000, 17))]
+        r.write_image("shared", segs, backup_dir=tmp)
+        fl = fake.flash
+        check(sorted(fake.erased) == [3, 4, 5, 6], "shared: sectors 3-6 %s" % fake.erased)
+        check(bytes(fl[0x50C44:]) == bytes(f[0x50C44:]), "shared: the bytes after the owned range kept")
+        check(bytes(fl[0xC000:0xC000 + len(segs[0][1])]) == segs[0][1], "shared: application in place")
+        saved = os.path.join(tmp, "shared_sector6_0x08040000.bin")
+        check(os.path.exists(saved) and open(saved, "rb").read() == bytes(f[0x40000:0x60000]), "shared: sector 6 saved first")
+    finally:
+        del BOARDS["shared"]
 
     # Reads check every block's CRC
     data = r.read_flash(0x08040000, 0x20000)

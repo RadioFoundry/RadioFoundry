@@ -20,6 +20,7 @@ import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, probe, serialSupported } from "./link.js";
 import { Stub, stubImages, StubError, DONE_LED, MEM } from "./stub.js";
 import * as c7 from "./c7000.js";
+import { upgradeSlot } from "./c7000v1.js";
 import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
@@ -493,7 +494,9 @@ export function checkView() {
 	async function decideView() {
 		const saved = await getBlob(store("slot"));
 		const slotInFlash = c.slotBytes && (await c7.parseSlot(C(), boardId(), c.slotBytes)) ? c.slotBytes : null;
-		c.decision = await c7.decide(C(), boardId(), { slotInFlash, savedSlot: saved, flashCodec: c.analysis.codec, fileCodec: c.fileCodec,
+		// a version 1 slot from before the codec moved, on the radio or saved here, rebuilt (c7000v1.js, temporary)
+		const movedSlot = slotInFlash ? null : (await upgradeSlot(C(), boardId(), c.slot)) || (saved ? await upgradeSlot(C(), boardId(), saved) : null);
+		c.decision = await c7.decide(C(), boardId(), { slotInFlash, movedSlot, savedSlot: saved, flashCodec: c.analysis.codec, fileCodec: c.fileCodec,
 			allowNone: S().c7none });
 		const d = c.decision;
 		const text = !d ? t("flash.c7.codec.missing") : d.mode === "keep" ? t("flash.c7.codec.keep")
@@ -847,7 +850,7 @@ export function restoreView() {
 	return out;
 }
 
-// A merged image (application + codec slot, tools/dm32_codec.py output) split into the two, so the page can treat
+// A merged image (application + codec slot, tools/hrc7000_codec.py output) split into the two, so the page can treat
 // the slot like any other codec source. Returns {image, slot} (slot null when the file has none).
 export async function splitOwnImage(c, board, data) {
 	const off = c.boards[board].slot[0] - c.app_start;

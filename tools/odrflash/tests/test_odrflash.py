@@ -21,7 +21,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from odrflash import boards, bootkey, cli, codecsave, debuglink, fakedfu, manifest as mf, plan, state, stockfw  # noqa: E402
+from odrflash import boards, bootkey, cli, codecmap, codecsave, debuglink, fakedfu, manifest as mf, plan, state, stockfw  # noqa: E402
 from odrflash import dfu as dfumod  # noqa: E402
 
 DM1701 = boards.DM1701
@@ -49,6 +49,14 @@ def synthetic_stock():
     return _STOCK["v"]
 
 
+def placed():
+    """The synthetic DM-1701 codec as the merge writes it: (profile, segments: code moved into sector 11, the tables
+    at their stock address, the descriptor)"""
+    _, profiles, code, tables = synthetic_stock()
+    prof = list(profiles.values())[0]
+    return prof, stockfw.place(prof, [(prof["code"][0], code), (prof["tables"][0], tables)])
+
+
 class SectorMap(unittest.TestCase):
     def test_f405_layout(self):
         s = DM1701.sectors
@@ -59,7 +67,9 @@ class SectorMap(unittest.TestCase):
             self.assertEqual(a.end, b.addr)
 
     def test_codec_sectors(self):
-        self.assertEqual([x.index for x in DM1701.codec_sectors()], [7, 8, 10, 11])
+        self.assertEqual([x.index for x in DM1701.codec_sectors()], [10, 11])
+        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "dm1701.ld")).read()
+        self.assertNotIn("FLASH2", ld)			# one region: no second image any more
 
     def test_every_sector_key_aligned(self):
         for s in DM1701.sectors:
@@ -67,26 +77,21 @@ class SectorMap(unittest.TestCase):
 
     def test_linker_keeps_app_out_of_codec_sectors(self):
         ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "dm1701.ld")).read()
-        self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x08060000 - 0x0800C000", ld)
-        self.assertIn("ORIGIN = 0x080A0000, LENGTH = 0x080C0000 - 0x080A0000", ld)
+        self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x080C0000 - 0x0800C000", ld)
         first_codec = min(s.addr for s in DM1701.codec_sectors())
-        self.assertEqual(first_codec, 0x08060000)
-
-    def test_sector9_is_the_data_region(self):
-        """The linker's FLASH2, the board's data region and the profile's app_data are the same sector 9, which is not a
-        codec sector."""
-        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "dm1701.ld")).read()
-        self.assertIn("FLASH2  (r)   : ORIGIN = 0x080A0000, LENGTH = 0x080C0000 - 0x080A0000", ld)
-        self.assertIn("} >FLASH2", ld)
-        self.assertEqual(DM1701.data_regions, [(0x080A0000, 0x20000)])
-        s9 = DM1701.sector_at(0x080A0000)
-        self.assertEqual((s9.index, s9.addr, s9.size), (9, 0x080A0000, 0x20000))
-        self.assertNotIn(9, [x.index for x in DM1701.codec_sectors()])
-        mk = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "board.mk")).read()
-        self.assertIn("BIN2_SECTIONS := .rodata2", mk)
-        self.assertEqual(boards.DM32.data_regions, [])
-        self.assertEqual(boards.MD380.data_regions, [])
-
+        self.assertEqual(first_codec, 0x080C0000)
+        # the firmware looks for the codec where the merge puts it
+        voc = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "vocoder_dm1701.c")).read()
+        prof = stockfw.PROFILES["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
+        self.assertIn("#define CODEC_TAG\t\t0x%04Xu" % prof["placement"]["tag"], voc)
+        self.assertIn("#define CODEC_CODE\t\t0x%08Xu" % prof["placement"]["code"], voc)
+        self.assertIn("#define CODEC_CRC\t\t0x%08Xu" % prof["placed"]["code"][0], voc)
+        self.assertIn("#define CODEC_TABLES_LEN\t0x%05Xu" % prof["placement"]["tables_len"], voc)
+        self.assertIn("#define CODEC_TABLES_CRC\t0x%08Xu" % prof["placed"]["tables"][0], voc)
+        self.assertIn('"%s"' % prof["codec_profile"], voc)
+        desc = open(os.path.join(HERE, "..", "..", "..", "platform", "stm32f4", "codec_desc.h")).read()
+        self.assertIn("#define CODEC_DESC_ADDR\t\t0x%08Xu" % stockfw.DESC_ADDR, desc)
+        self.assertIn("#define CODEC_DESC_MAGIC\t0x%08Xu" % stockfw.DESC_MAGIC, desc)
 
     def test_dm1801pro_matches_its_linker_script(self):
         b = boards.get("dm1801pro")
@@ -105,7 +110,7 @@ class Planning(unittest.TestCase):
         img = app_image(5000)
         p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.KEEP)
         self.assertEqual([s.index for s in p.erase], [3])
-        self.assertEqual([s.index for s in p.kept], [7, 8, 10, 11])
+        self.assertEqual([s.index for s in p.kept], [10, 11])
         st = p.writes[0]
         self.assertEqual([n for n, _ in st.blocks], [2, 3, 4, 5, 6])
         self.assertEqual(st.blocks[-1][1], img[4096:] + b"\xFF" * (5 * 1024 - len(img)))
@@ -120,82 +125,52 @@ class Planning(unittest.TestCase):
         self.assertEqual(len(p.writes[3].blocks), (220780 - 0x34000 - 1) // 1024 + 1)
         self.assertEqual(b"".join(b for st in p.writes for _, b in st.blocks)[:len(img)], img)
         skipped = [st.sector.index for st in p.steps if st.action == "skip"]
-        self.assertEqual(skipped, [9])
+        self.assertEqual(skipped, [7, 8, 9])	# application sectors the image doesn't reach
 
     def test_keep_fills_whole_app_area(self):
-        img = app_image(0x08060000 - 0x0800C000)
+        img = app_image(0x080C0000 - 0x0800C000)
         p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.KEEP)
-        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6])
+        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 8, 9])
 
-    def sector9_plan(self, mode, n=40000, app_n=150000, segs=()):
-        data = app_image(n, seed=5)
-        p = plan.make_plan(DM1701, [(DM1701.app_base, app_image(app_n)), (0x080A0000, data)], mode, segs)
-        return p, data
-
-    def test_keep_with_sector9_data(self):
-        p, data = self.sector9_plan(plan.KEEP)
-        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 9])
-        self.assertEqual([s.index for s in p.kept], [7, 8, 10, 11])
-        s9 = [st for st in p.writes if st.sector.index == 9][0]
-        self.assertEqual([n for n, _ in s9.blocks][:2], [2, 3])			# numbered from 2 per sector
-        self.assertEqual(len(s9.blocks), (40000 + 1023) // 1024)
-        flat = b"".join(b for _, b in s9.blocks)
-        self.assertEqual(flat[:40000], data)
-        self.assertEqual(flat[40000:], b"\xFF" * (len(flat) - 40000))
-        text = "\n".join(p.describe())
-        self.assertIn("sector  9  0x080A0000..0x080BFFFF", text)
-        self.assertIn("never erased or written: codec sector(s) 7, 8, 10, 11", text)
-        self.assertIn("never erased or written: the bootloader", text)
-
-    def test_merge_with_sector9_data(self):
-        _, profiles, code, tables = synthetic_stock()
-        prof = list(profiles.values())[0]
-        segs = [(prof["code"][0], code), (prof["tables"][0], tables)]
-        p, _ = self.sector9_plan(plan.MERGE, segs=segs)
-        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 7, 8, 9, 10, 11])
-
-    def test_sector9_data_outside_its_region_refused(self):
-        """Firmware data goes in sector 9 only: never the codec sectors, the bootloader or the gap past sector 9."""
+    def test_second_range_refused(self):
+        """The firmware is one image from the base: a second range (as releases from before the codec moved carried for
+        sector 9) is refused anywhere, in both modes and on every board."""
         img = app_image(5000)
-        for addr, n in ((0x08060000, 100), (0x08090000, 100), (0x080C0000, 100), (0x080E0000, 100),
-                        (0x0800F000, 100), (0x08000000, 100), (0x080BFFC0, 100), (0x08040000, 100)):
+        for addr in (0x08060000, 0x080A0000, 0x080C0000, 0x080E0000, 0x0800F000, 0x08000000):
             for mode in (plan.KEEP, plan.MERGE):
-                _, profiles, code, tables = synthetic_stock()
-                prof = list(profiles.values())[0]
-                csegs = [(prof["code"][0], code), (prof["tables"][0], tables)] if mode == plan.MERGE else []
+                csegs = placed()[1] if mode == plan.MERGE else []
                 with self.assertRaises(plan.PlanError, msg="%s %s" % (hex(addr), mode)):
-                    plan.make_plan(DM1701, [(DM1701.app_base, img), (addr, b"d" * n)], mode, csegs)
-        # a board without a data region takes no second range
+                    plan.make_plan(DM1701, [(DM1701.app_base, img), (addr, b"d" * 100)], mode, csegs)
         with self.assertRaises(plan.PlanError):
             plan.make_plan(boards.MD380, [(boards.MD380.app_base, img), (0x080A0000, b"d" * 100)], plan.MERGE,
                            [(a, b"\0" * n) for a, n in boards.MD380.codec.windows])
 
     def test_image_into_codec_sector_refused(self):
-        img = app_image(0x08060000 - 0x0800C000 + 1)
+        img = app_image(0x080C0000 - 0x0800C000 + 1)
         for mode in (plan.KEEP, plan.MERGE):
             with self.assertRaises(plan.PlanError):
                 plan.make_plan(DM1701, [(DM1701.app_base, img)], mode)
 
     def test_merge_writes_codec_sectors(self):
-        _, profiles, code, tables = synthetic_stock()
-        prof = list(profiles.values())[0]
+        prof, segs = placed()
+        (ca, mc), (ta, mt), (da, desc) = segs
         img = app_image(100000)
-        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.MERGE, [(prof["code"][0], code), (prof["tables"][0], tables)])
-        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 7, 8, 10, 11])
+        p = plan.make_plan(DM1701, [(DM1701.app_base, img)], plan.MERGE, segs)
+        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 10, 11])
         self.assertEqual(p.kept, [])
-        s7 = [st for st in p.writes if st.sector.index == 7][0]
-        flat = b"".join(b for _, b in s7.blocks)
-        off = 0x08074714 - 0x08060000
-        self.assertEqual(flat[:off], b"\xFF" * off)
-        self.assertEqual(flat[off:], code[:0x08080000 - 0x08074714])
         s11 = [st for st in p.writes if st.sector.index == 11][0]
-        self.assertEqual(b"".join(b for _, b in s11.blocks)[:0x080E4240 - 0x080E0000],
-                         tables[0x080E0000 - 0x080D19F0:])
+        flat = b"".join(b for _, b in s11.blocks)
+        flat += b"\xFF" * (0x20000 - len(flat))
+        end = ta + len(mt) - 0x080E0000
+        self.assertEqual(flat[:end], mt[0x080E0000 - ta:])			# the tables' tail
+        at = ca - 0x080E0000
+        self.assertEqual(flat[end:at], b"\xFF" * (at - end))
+        self.assertEqual(flat[at:at + len(mc)], mc)				# the code, moved
+        self.assertEqual(flat[0x1FF80:], desc)					# the descriptor
+        self.assertEqual(flat[at + len(mc):0x1FF80], b"\xFF" * (0x1FF80 - at - len(mc)))
 
     def test_merge_needs_whole_codec(self):
-        _, profiles, code, tables = synthetic_stock()
-        prof = list(profiles.values())[0]
-        segs = [(prof["code"][0], code), (prof["tables"][0], tables)][:1]
+        segs = placed()[1][:2]
         with self.assertRaises(plan.PlanError):
             plan.make_plan(DM1701, [(DM1701.app_base, app_image(1000))], plan.MERGE, segs)
 
@@ -217,7 +192,7 @@ class Planning(unittest.TestCase):
         for i in range(3, 12):
             self.assertIn("sector %2d" % i, text)
         self.assertIn("erase 2 sector(s): 3, 4", text)
-        self.assertIn("never erased or written: codec sector(s) 7, 8, 10, 11", text)
+        self.assertIn("never erased or written: codec sector(s) 10, 11", text)
 
 
 class Manifests(unittest.TestCase):
@@ -225,8 +200,8 @@ class Manifests(unittest.TestCase):
         img = app_image(220780)
         m = mf.generate(DM1701, img, "v1.2.3", "a" * 40, "FM,DMR", "gcc 13.3")
         self.assertEqual(m["sectors"], [3, 4, 5, 6])
-        self.assertEqual(m["codec"]["sectors"], [7, 8, 10, 11])
-        self.assertEqual(m["codec"]["profile"], "dm1701-v0206-csv")
+        self.assertEqual(m["codec"]["sectors"], [10, 11])
+        self.assertEqual(m["codec"]["profile"], "dm1701-v0206-csv-s11")
         self.assertFalse(m["codec"]["included"])
         self.assertEqual(m["ranges"], [{"addr": "0x0800C000", "size": 220780}])
         self.assertEqual(m["image"]["file"], "odr-dm1701-v1.2.3.bin")
@@ -246,39 +221,13 @@ class Manifests(unittest.TestCase):
         with self.assertRaises(mf.ManifestError):
             mf.verify(bad, img)
         bad = json.loads(mf.dumps(m))
-        bad["codec"]["profile"] = "dm1701-v0203-csv"
+        bad["codec"]["profile"] = "dm1701-v0206-csv"	# a release from before the codec moved
         with self.assertRaises(mf.ManifestError):
             mf.verify(bad, img)
 
-    def test_manifest_with_sector9_data(self):
-        img, data = app_image(150000), app_image(40000, seed=3)
-        m = mf.generate(DM1701, img, "v1.2.3", "a" * 40, data=data)
-        self.assertEqual(m["ranges"], [{"addr": "0x0800C000", "size": 150000}, {"addr": "0x080A0000", "size": 40000}])
-        self.assertEqual(m["sectors"], [3, 4, 5, 9])
-        self.assertEqual(m["image"]["size"], 190000)
-        self.assertEqual(m["image"]["sha256"], hashlib.sha256(img + data).hexdigest())
-        m2 = json.loads(mf.dumps(m))
-        self.assertIs(mf.verify(m2, img + data, "dm1701"), DM1701)
-        self.assertEqual(mf.segments(m2, img + data), [(0x0800C000, img), (0x080A0000, data)])
-        with self.assertRaises(mf.ManifestError):
-            mf.verify(m2, img)								# the file must hold both parts
-        for addr in ("0x08060000", "0x08090000", "0x080C0000", "0x080BFFF0", "0x0800F000", "0x08000000"):
-            bad = json.loads(mf.dumps(m))
-            bad["ranges"][1]["addr"] = addr
-            with self.assertRaises(mf.ManifestError, msg=addr):
-                mf.verify(bad, img + data)
-        bad = json.loads(mf.dumps(m))
-        bad["ranges"][0]["addr"] = "0x08010000"
-        with self.assertRaises(mf.ManifestError):
-            mf.verify(bad, img + data)						# the application starts at the base
-        with self.assertRaises(mf.ManifestError):
-            mf.generate(DM1701, img, "v1", "a" * 40, data=b"x" * (0x20000 + 1))	# more than sector 9
-        with self.assertRaises(mf.ManifestError):
-            mf.generate(boards.DM32, img, "v1", "a" * 40, data=data)		# no data region on that board
-
     def test_generate_refuses_codec_overlap(self):
         with self.assertRaises(mf.ManifestError):
-            mf.generate(DM1701, app_image(0x08060000 - 0x0800C000 + 4), "v1", "c" * 40)
+            mf.generate(DM1701, app_image(0x080C0000 - 0x0800C000 + 4), "v1", "c" * 40)
 
     def test_release_tool(self):
         sys.path.insert(0, os.path.join(HERE, "..", ".."))
@@ -290,22 +239,26 @@ class Manifests(unittest.TestCase):
             out = os.path.join(d, "dist")
             with contextlib.redirect_stdout(io.StringIO()):
                 release.main(["--board", "dm1701", "--version", "v9.9.9", "--bin", bp, "--out", out, "--git", "d" * 40,
-                              "--features", "FM", "--toolchain", "test", "--no-rodata2"])
+                              "--features", "FM", "--toolchain", "test"])
                 release.main(["--board", "dm1701", "--version", "v9.9.9", "--bin", bp, "--out", out, "--git", "d" * 40,
-                              "--features", "FM", "--toolchain", "test", "--no-rodata2"])	# again: SHA256SUMS not duplicated
+                              "--features", "FM", "--toolchain", "test"])	# again: SHA256SUMS not duplicated
             m = mf.load(os.path.join(out, "odr-dm1701-v9.9.9.json"))
             self.assertIs(mf.verify(m, open(os.path.join(out, "odr-dm1701-v9.9.9.bin"), "rb").read()), DM1701)
             sums = open(os.path.join(out, "SHA256SUMS")).read().splitlines()
             self.assertEqual(len(sums), 2)
             self.assertIn(hashlib.sha256(img).hexdigest() + "  odr-dm1701-v9.9.9.bin", sums)
-            # a merged image (codec signature at the code window) is refused
-            merged = bytearray(b"\xFF" * (0x08074714 - 0x0800C000 + 4))
-            merged[:len(img)] = img
-            struct.pack_into("<I", merged, 0x08074714 - 0x0800C000, stockfw.CODEC_SIG)
-            open(bp, "wb").write(merged)
-            with self.assertRaises(SystemExit):
-                release.main(["--board", "dm1701", "--version", "v9", "--bin", bp, "--out", out, "--git", "d" * 40,
-                              "--features", "", "--toolchain", "", "--no-rodata2"])
+            # a merged image is refused: the codec where this layout puts it, or where merges before the move did
+            for at in (0x080E3A74, 0x08074714):
+                merged = bytearray(b"\xFF" * (at - 0x0800C000 + 4))
+                merged[:len(img)] = img
+                struct.pack_into("<I", merged, at - 0x0800C000, stockfw.CODEC_SIG)
+                open(bp, "wb").write(merged)
+                with self.assertRaises(SystemExit) as e:
+                    release.check_no_codec(DM1701, bytes(merged))
+                self.assertIn("codec signature", str(e.exception))
+                with self.assertRaises(SystemExit):
+                    release.main(["--board", "dm1701", "--version", "v9", "--bin", bp, "--out", out, "--git", "d" * 40,
+                                  "--features", "", "--toolchain", ""])
 
     def test_release_needs_the_first_stage(self):
         """The DB25-D's image goes to 0x0300C000, its first stage's sector: the application alone is refused, the
@@ -331,32 +284,58 @@ class Manifests(unittest.TestCase):
             self.assertEqual(open(os.path.join(out, "odr-db25d-v9.9.9.bin"), "rb").read(), stage + app)
 
 
-class ReleaseSector9(unittest.TestCase):
-    def run_release(self, d, extra, rodata=None, name="odr_dm1701"):
+class SingleImage(unittest.TestCase):
+    """The DM-1701 image is one range, sectors 3-9 (docs/spec/codec-placement.md); a release from before the codec
+    moved (two ranges, the old codec profile) is refused by odrflash and by the old route."""
+
+    def run_release(self, d, size=30000, name="odr_dm1701"):
         sys.path.insert(0, os.path.join(HERE, "..", ".."))
         import release
         bp = os.path.join(d, name + ".bin")
-        open(bp, "wb").write(app_image(30000))
-        if rodata is not None:
-            open(os.path.join(d, name + "_rodata2.bin"), "wb").write(rodata)
+        open(bp, "wb").write(app_image(size))
         out = os.path.join(d, "dist")
         with contextlib.redirect_stdout(io.StringIO()):
             release.main(["--board", "dm1701", "--version", "v9.9.9", "--bin", bp, "--out", out, "--git", "d" * 40,
-                          "--features", "FM", "--toolchain", "test"] + extra)
+                          "--features", "FM", "--toolchain", "test"])
         return out
 
-    def test_release_packs_both_ranges(self):
-        data = app_image(9000, seed=4)
+    def old_release(self, d):
+        """A release laid out as before the codec moved: application + sector 9 data, the old codec profile"""
+        img, data = app_image(30000), app_image(9000, seed=4)
+        m = mf.generate(DM1701, img, "v0.9.0", "e" * 40)
+        m["ranges"].append({"addr": "0x080A0000", "size": len(data)})
+        m["image"]["size"] = len(img) + len(data)
+        m["image"]["sha256"] = hashlib.sha256(img + data).hexdigest()
+        m["codec"]["profile"] = "dm1701-v0206-csv"
+        bp = os.path.join(d, "odr-dm1701-v0.9.0.bin")
+        open(bp, "wb").write(img + data)
+        open(os.path.join(d, "odr-dm1701-v0.9.0.json"), "w").write(mf.dumps(m))
+        return bp, m, img + data
+
+    def test_release_is_one_range(self):
         with tempfile.TemporaryDirectory() as d:
-            out = self.run_release(d, [], data)
+            out = self.run_release(d, size=0x080C0000 - 0x0800C000)		# all of sectors 3-9
             whole = open(os.path.join(out, "odr-dm1701-v9.9.9.bin"), "rb").read()
-            self.assertEqual(whole, app_image(30000) + data)
             m = mf.load(os.path.join(out, "odr-dm1701-v9.9.9.json"))
-            self.assertEqual(m["sectors"], [3, 4, 9])
-            self.assertEqual([r["addr"] for r in m["ranges"]], ["0x0800C000", "0x080A0000"])
+            self.assertEqual(m["sectors"], [3, 4, 5, 6, 7, 8, 9])
+            self.assertEqual(m["ranges"], [{"addr": "0x0800C000", "size": len(whole)}])
             self.assertIs(mf.verify(m, whole), DM1701)
-            sums = open(os.path.join(out, "SHA256SUMS")).read()
-            self.assertIn(hashlib.sha256(whole).hexdigest() + "  odr-dm1701-v9.9.9.bin", sums)
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(SystemExit):
+                self.run_release(d, size=0x080C0000 - 0x0800C000 + 4)		# into codec sector 10
+
+    def test_old_release_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            _, m, whole = self.old_release(d)
+            with self.assertRaises(mf.ManifestError) as e:
+                mf.verify(m, whole)
+            self.assertIn("2 flash ranges", str(e.exception))
+            m1 = json.loads(mf.dumps(m))
+            m1["ranges"] = m1["ranges"][:1]
+            m1["ranges"][0]["size"] = len(whole)
+            with self.assertRaises(mf.ManifestError) as e:
+                mf.verify(m1, whole)
+            self.assertIn("dm1701-v0206-csv", str(e.exception))
 
     def merge_cli(self, image, extra=()):
         """odrflash merge with the synthetic stock file and key (the real profile and key hash are patched out)."""
@@ -370,54 +349,20 @@ class ReleaseSector9(unittest.TestCase):
                 rc, out, err = run_cli(["merge", image, "--stock", sp, "-o", op] + list(extra))
             return rc, out, err, (open(op, "rb").read() if os.path.exists(op) else b"")
 
-    def test_cli_merge_of_a_release_image_keeps_sector9(self):
-        """odrflash merge odr-dm1701-v.bin (two ranges, manifest next to it) puts the data at 0x080A0000, not on the
-        application's end."""
-        data = app_image(9000, seed=4)
+    def test_cli_merge_of_a_release_image(self):
         with tempfile.TemporaryDirectory() as d:
-            out = self.run_release(d, [], data)
+            out = self.run_release(d)
             rc, so, se, merged = self.merge_cli(os.path.join(out, "odr-dm1701-v9.9.9.bin"))
         self.assertEqual(rc, 0, so + se)
         self.assertEqual(merged[:30000], app_image(30000))
-        self.assertEqual(merged[30000:0x08074714 - 0x0800C000], b"\xFF" * (0x08074714 - 0x0800C000 - 30000))
-        self.assertEqual(merged[0x080A0000 - 0x0800C000:][:9000], data)
-
-    def test_cli_merge_of_a_local_build_reads_the_sector9_file(self):
-        data = app_image(9000, seed=4)
+        self.assertEqual(merged[30000:0x080D19F0 - 0x0800C000], b"\xFF" * (0x080D19F0 - 0x0800C000 - 30000))
+        for a, data in placed()[1]:
+            self.assertEqual(merged[a - 0x0800C000:][:len(data)], data)
+        self.assertEqual(len(merged), 0x08100000 - 0x0800C000)
         with tempfile.TemporaryDirectory() as d:
-            bp = os.path.join(d, "odr_dm1701.bin")
-            open(bp, "wb").write(app_image(30000))
-            open(os.path.join(d, "odr_dm1701_rodata2.bin"), "wb").write(data)
-            rc, so, se, merged = self.merge_cli(bp)
-            self.assertEqual(rc, 0, so + se)
-            self.assertEqual(merged[0x080A0000 - 0x0800C000:][:9000], data)
-            other = os.path.join(d, "other.bin")
-            open(other, "wb").write(app_image(7000, seed=5))
-            rc, so, se, merged = self.merge_cli(bp, ["--rodata2", other])
-            self.assertEqual(rc, 0, so + se)
-            self.assertEqual(merged[0x080A0000 - 0x0800C000:][:7000], app_image(7000, seed=5))
-            rc, so, se, _ = self.merge_cli(bp, ["--rodata2", os.path.join(d, "nope.bin")])
-            self.assertNotEqual(rc, 0)							# an explicit file that isn't there
-            self.assertIn("nope.bin", se)
-
-    def test_release_needs_the_sector9_image(self):
-        with tempfile.TemporaryDirectory() as d:
-            with self.assertRaises(SystemExit) as e:
-                self.run_release(d, [])							# no sibling file
-            self.assertIn("_rodata2.bin", str(e.exception))
-        with tempfile.TemporaryDirectory() as d:
-            with self.assertRaises(SystemExit):
-                self.run_release(d, [], b"")						# empty
-        with tempfile.TemporaryDirectory() as d:
-            with self.assertRaises(SystemExit):
-                self.run_release(d, ["--no-rodata2", "--bin2", "x"])
-        with tempfile.TemporaryDirectory() as d:
-            with self.assertRaises(SystemExit):
-                self.run_release(d, [], b"x" * 0x20001)					# does not fit sector 9
-        with tempfile.TemporaryDirectory() as d:
-            out = self.run_release(d, ["--no-rodata2"], b"ignored")			# explicit: the application alone
-            m = mf.load(os.path.join(out, "odr-dm1701-v9.9.9.json"))
-            self.assertEqual(m["sectors"], [3, 4])
+            bp, _, _ = self.old_release(d)
+            rc, so, se, _ = self.merge_cli(bp)
+        self.assertNotEqual(rc, 0)
 
 
 class WaitForDfu(unittest.TestCase):
@@ -429,37 +374,20 @@ class WaitForDfu(unittest.TestCase):
 
 
 class OldRouteGuard(unittest.TestCase):
-    def test_stm32_dfu_warns_about_a_sector9_image(self):
-        """tools/stm32_dfu.py writes one contiguous image: next to a build that has a sector 9 image it warns."""
-        sys.path.insert(0, os.path.join(HERE, "..", ".."))
-        import stm32_dfu
-        with tempfile.TemporaryDirectory() as d:
-            bp = os.path.join(d, "odr_dm1701.bin")
-            open(bp, "wb").write(app_image(5000))
-            for sibling, expect in ((False, False), (True, True)):
-                if sibling:
-                    open(os.path.join(d, "odr_dm1701_rodata2.bin"), "wb").write(b"x")
-                err = io.StringIO()
-                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
-                    rc = stm32_dfu.main([bp, "--model", "dm1701", "--dry-run"])
-                self.assertEqual(rc, 0)
-                self.assertEqual("odr_dm1701_rodata2.bin exists" in err.getvalue(), expect)
-
     def test_stm32_dfu_refuses_a_release_image_with_two_ranges(self):
-        """A release .bin holds the application and its sector 9 data back to back; written as one image the data
-        would land over sectors 3-6. The manifest next to it says so."""
+        """A release from before the codec moved holds the application and its sector 9 data back to back; written as
+        one image the data would land over the application. The manifest next to it says so."""
         sys.path.insert(0, os.path.join(HERE, "..", ".."))
         import stm32_dfu
         with tempfile.TemporaryDirectory() as d:
-            out = ReleaseSector9().run_release(d, [], app_image(9000, seed=4))
-            bp = os.path.join(out, "odr-dm1701-v9.9.9.bin")
+            bp, _, _ = SingleImage().old_release(d)
             err = io.StringIO()
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
                 rc = stm32_dfu.main([bp, "--model", "dm1701", "--dry-run"])
             self.assertEqual(rc, 2)
             self.assertIn("2 flash ranges", err.getvalue())
             os.makedirs(os.path.join(d, "x"))
-            out1 = ReleaseSector9().run_release(os.path.join(d, "x"), ["--no-rodata2"])
+            out1 = SingleImage().run_release(os.path.join(d, "x"))
             err = io.StringIO()
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
                 rc = stm32_dfu.main([os.path.join(out1, "odr-dm1701-v9.9.9.bin"), "--model", "dm1701", "--dry-run"])
@@ -470,13 +398,38 @@ class StockLibrary(unittest.TestCase):
     def test_extract_and_merge(self):
         stock, profiles, code, tables = synthetic_stock()
         prof, segs = stockfw.extract(stock, KEY, profiles)
-        self.assertEqual(segs, [(0x08074714, code), (0x080D19F0, tables)])
+        self.assertEqual(segs, placed()[1])
+        self.assertEqual([(a, len(d)) for a, d in segs], [(0x080E3A74, len(code)), (0x080D19F0, 0x12082),
+                                                         (stockfw.DESC_ADDR, 0x80)])
         img = app_image(5000)
         merged = stockfw.merge(img, prof, segs)
-        self.assertEqual(len(merged), 0x080E4240 - 0x0800C000)
+        self.assertEqual(len(merged), 0x08100000 - 0x0800C000)
         self.assertEqual(merged[:len(img)], img)
-        self.assertEqual(merged[0x08074714 - 0x0800C000:0x08084930 - 0x0800C000], code)
-        self.assertEqual(merged[0x080D19F0 - 0x0800C000:], tables)
+        for a, d in segs:
+            self.assertEqual(merged[a - 0x0800C000:a - 0x0800C000 + len(d)], d)
+        self.assertEqual(merged[0x08074714 - 0x0800C000:0x080D19F0 - 0x0800C000].count(0xFF),
+                         0x080D19F0 - 0x08074714)				# nothing at the stock code address
+
+    def test_place_rewrites_and_checks(self):
+        """The move rewrites the self reference and the island's call, and nothing else; a wrong map or profile stops"""
+        _, profiles, code, tables = synthetic_stock()
+        prof = list(profiles.values())[0]
+        (ca, mc), (ta, mt), _ = placed()[1]
+        delta = ca - prof["code"][0]
+        word = lambda b, o: struct.unpack_from("<I", b, o)[0]
+        self.assertEqual(word(mc, stockfw.SYN_SELF_REF), word(code, stockfw.SYN_SELF_REF) + delta)
+        self.assertEqual(codecmap.bl_target(mt, stockfw.SYN_BL, ta + stockfw.SYN_BL),
+                         codecmap.bl_target(tables, stockfw.SYN_BL, ta + stockfw.SYN_BL) + delta)
+        diff = [i for i in range(len(mc)) if mc[i] != code[i]]
+        self.assertTrue(diff and all(stockfw.SYN_SELF_REF <= i < stockfw.SYN_SELF_REF + 4 for i in diff))
+        diff = [i for i in range(len(mt)) if mt[i] != tables[i]]
+        self.assertTrue(diff and all(stockfw.SYN_BL <= i < stockfw.SYN_BL + 4 for i in diff))
+        segs = [(prof["code"][0], code), (prof["tables"][0], tables)]
+        for bad in (dict(prof, map=None, code=prof["code"][:2] + ("0" * 64,)),			# no map for this code
+                    dict(prof, placed=dict(prof["placed"], code=(0, "0" * 64))),		# placed hash wrong
+                    dict(prof, placement=dict(prof["placement"], code=prof["placement"]["code"] + 2))):	# alignment
+            with self.assertRaises(stockfw.StockError):
+                stockfw.place(bad, segs)
 
     def test_refusals(self):
         stock, profiles, _, _ = synthetic_stock()
@@ -493,37 +446,18 @@ class StockLibrary(unittest.TestCase):
         stock, profiles, code, tables = synthetic_stock()
         prof, segs = stockfw.extract(stock, KEY, profiles)
         img = app_image(5000)
-        app, got, csegs, data = stockfw.split_merged(stockfw.merge(img, prof, segs), profiles)
-        self.assertEqual((app, got["codec_profile"], csegs, data), (img, prof["codec_profile"], segs, []))
+        app, got, csegs = stockfw.split_merged(stockfw.merge(img, prof, segs), profiles)
+        self.assertEqual((app, got["codec_profile"], csegs), (img, prof["codec_profile"], segs))
         self.assertIsNone(stockfw.split_merged(img, profiles))
         self.assertIsNone(stockfw.split_merged(app_image(0x80000), profiles))	# past the codec start, no codec there
         bad = bytearray(stockfw.merge(img, prof, segs))
-        bad[0x08074714 - 0x0800C000 + 100] ^= 1
+        bad[0x080E3A74 - 0x0800C000 + 100] ^= 1
         with self.assertRaises(stockfw.StockError):
             stockfw.split_merged(bytes(bad), profiles)				# a codec, but not this profile's
         extra = bytearray(stockfw.merge(img, prof, segs))
-        extra[0x08090000 - 0x0800C000] = 0
+        extra[0x080F8000 - 0x0800C000] = 0
         with self.assertRaises(stockfw.StockError):
-            stockfw.split_merged(bytes(extra), profiles)			# data between the windows, outside sector 9
-
-    def test_merge_with_sector9_data(self):
-        stock, profiles, code, tables = synthetic_stock()
-        prof, segs = stockfw.extract(stock, KEY, profiles)
-        img = app_image(5000)
-        rodata = app_image(3000, seed=9)
-        merged = stockfw.merge(img, prof, segs, [(0x080A0000, rodata)])
-        self.assertEqual(merged[0x080A0000 - 0x0800C000:0x080A0000 - 0x0800C000 + 3000], rodata)
-        self.assertEqual(merged[0x08074714 - 0x0800C000:0x08084930 - 0x0800C000], code)
-        app, _, csegs, data = stockfw.split_merged(merged, profiles)
-        self.assertEqual((app, csegs, data), (img, segs, [(0x080A0000, rodata)]))
-        # trailing 0xFF of the data is dropped (an erased sector holds the same), an empty sector 9 gives no data
-        _, _, _, data = stockfw.split_merged(stockfw.merge(img, prof, segs, [(0x080A0000, rodata + b"\xFF" * 10)]), profiles)
-        self.assertEqual(data, [(0x080A0000, rodata)])
-        for bad in (0x08090000, 0x080BFFFF, 0x080C0000, 0x0800C000):	# sector 8, past sector 9, sector 10, the application
-            with self.assertRaises(stockfw.StockError, msg=hex(bad)):
-                stockfw.merge(img, prof, segs, [(bad, b"xx")])
-        with self.assertRaises(stockfw.StockError):				# a profile without a data region takes none
-            stockfw.merge(img, dict(prof, app_data=[]), segs, [(0x080A0000, rodata)])
+            stockfw.split_merged(bytes(extra), profiles)			# data between the windows
 
     def test_derive_key(self):
         stock, _, _, _ = synthetic_stock()
@@ -563,12 +497,13 @@ class StockLibrary(unittest.TestCase):
     def test_md380_board(self):
         b = boards.get("md380")
         self.assertFalse(b.releasable)
-        self.assertFalse(b.keep_codec_supported)	# the code window shares sector 6 with the application
-        self.assertEqual(b.codec.id, "md380-d2032")
-        self.assertEqual([s.index for s in b.codec_sectors()], [6, 7, 8, 10, 11])
+        self.assertTrue(b.keep_codec_supported)	# the application has sectors 3-7, the codec 8, 10 and 11
+        self.assertEqual(b.codec.id, "md380-d2032-s11")
+        self.assertEqual([s.index for s in b.codec_sectors()], [8, 10, 11])
         ld = open(os.path.join(HERE, "..", "..", "..", "boards", "md380", "md380.ld")).read()
-        self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x08050C44 - 0x0800C000", ld)
-        self.assertEqual(b.codec.windows[0][0], 0x08050C44)
+        self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x08080000 - 0x0800C000", ld)
+        self.assertEqual(b.codec.windows[0][0], 0x080E0000)
+        self.assertEqual(b.codec.windows[-1], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
         self.assertIs(boards.from_debuglink_name("MD-380 VHF"), b)
 
     def test_md380_profile(self):
@@ -583,30 +518,30 @@ class StockLibrary(unittest.TestCase):
         self.assertEqual(stockfw.identify(b"x"), None)
 
     def test_md380_extract_merge_and_plan(self):
-        """A synthetic file with the D002.032 layout: six windows out, merge, and a merge plan that shares sector 6."""
+        """A synthetic file with the D002.032 layout: the code moved to sector 11, the five table windows at their stock
+        addresses, the descriptor; the merge plan writes sectors 3-7 and the codec sectors, a keep plan only 3-7."""
         b = boards.get("md380")
         stock, profiles, code, tables = stockfw.build_synthetic_stock(KEY, random.Random(380),
                                                                       stockfw.profile_for_board("md380"))
         self.assertEqual(stockfw.parse_container(stock), [(0x0800C000, 0xF2C00)])
         prof, segs = stockfw.extract(stock, KEY, profiles)
-        self.assertEqual(len(segs), 6)
-        self.assertEqual(segs[0], (0x08050C44, code))
-        img = app_image(0x08050C44 - 0x0800C000)
+        self.assertEqual([a for a, _ in segs], [0x080E0000, 0x0808FC64, 0x080D0FC8, 0x080F9698, 0x080F9E74, 0x080FD490,
+                                                stockfw.DESC_ADDR])
+        self.assertEqual(len(segs[0][1]), len(code))
+        self.assertNotEqual(segs[0][1], code)		# the self reference moved with the code
+        img = app_image(0x08080000 - 0x0800C000)
         merged = stockfw.merge(img, prof, segs)
-        self.assertEqual(merged[0x08050C44 - 0x0800C000:0x08050C44 - 0x0800C000 + len(code)], code)
+        self.assertEqual(merged[:len(img)], img)
+        for a, d in segs:
+            self.assertEqual(merged[a - 0x0800C000:a - 0x0800C000 + len(d)], d)
         with self.assertRaises(stockfw.StockError):
-            stockfw.merge(img + b"\0", prof, segs)
+            stockfw.merge(img + b"\0" * (0x0808FC64 - 0x08080000 + 1), prof, segs)
         p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs)
         self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 8, 10, 11])
-        s6 = [st for st in p.writes if st.sector.index == 6][0]
-        self.assertEqual(s6.content, "app+codec")
-        flat = b"".join(d for _, d in s6.blocks)
-        self.assertEqual(flat[:0x08050C44 - 0x08040000], img[0x08040000 - 0x0800C000:])
-        self.assertEqual(flat[0x08050C44 - 0x08040000:], code[:0x08060000 - 0x08050C44])
-        with self.assertRaises(plan.PlanError):		# keep would erase the codec's part of sector 6
-            plan.make_plan(b, [(b.app_base, app_image(0x08040000 - 0x0800C000 + 4))], plan.KEEP)
-        with self.assertRaises(plan.PlanError):		# the application can't overlap the code window
-            plan.make_plan(b, [(b.app_base, app_image(0x08050C44 - 0x0800C000 + 4))], plan.MERGE, segs)
+        p = plan.make_plan(b, [(b.app_base, img)], plan.KEEP)
+        self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7])
+        with self.assertRaises(plan.PlanError):		# the application can't reach the codec sectors
+            plan.make_plan(b, [(b.app_base, app_image(0x08080000 - 0x0800C000 + 4))], plan.KEEP)
 
     def test_derive_key_refines_a_bad_vote(self):
         """Plain text like Thumb code (a Markov chain over a vocabulary of halfwords) where 0x00 is common but not
@@ -637,11 +572,20 @@ class StockLibrary(unittest.TestCase):
     def test_real_profile_table(self):
         p = stockfw.PROFILES["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
         self.assertEqual(p["codec_profile"], DM1701.codec.id)
-        self.assertEqual(DM1701.codec.windows, [(0x08074714, 0x1021C), (0x080D19F0, 0x12850)])
+        self.assertEqual(DM1701.codec.windows, [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80)])
+        # the real map covers the real code, and the placement keeps the move whole words
+        m = stockfw.code_map(p)
+        self.assertEqual(m["profile"], "dm1701-v0206-csv")
+        self.assertEqual((p["placement"]["code"] - p["code"][0]) % 4, 0)
+        self.assertEqual(p["placement"]["code"], (p["tables"][0] + p["placement"]["tables_len"] + 3) & ~3)
+        w = m["table_windows"][0]
+        self.assertEqual((w["min_start"], w["min_len"]), (p["tables"][0], p["placement"]["tables_len"]))
+        self.assertEqual(codecmap.branches_in(m, p["tables"][0], p["placement"]["tables_len"]), len(m["branches"]))
 
 
 class CodecDecision(unittest.TestCase):
-    man = {"codec": {"profile": "dm1701-v0206-csv"}}
+    man = {"codec": {"profile": "dm1701-v0206-csv-s11"}}
+    NEW, OLD = "dm1701-v0206-csv-s11", "dm1701-v0206-csv"	# the codec where this layout keeps it, where older ODR did
 
     def d(self, **kw):
         args = dict(requested="auto", have_stock=False, probe=None, stock_installed=None, ask=None)
@@ -653,8 +597,8 @@ class CodecDecision(unittest.TestCase):
         return {"board": board, "codec": codec, "git": "x"}
 
     def test_probe_with_codec_keeps_even_with_stock(self):
-        self.assertEqual(self.d(probe=self.probe("dm1701-v0206-csv")).mode, plan.KEEP)
-        self.assertEqual(self.d(probe=self.probe("dm1701-v0206-csv"), have_stock=True).mode, plan.KEEP)
+        self.assertEqual(self.d(probe=self.probe(self.NEW)).mode, plan.KEEP)
+        self.assertEqual(self.d(probe=self.probe(self.NEW), have_stock=True).mode, plan.KEEP)
 
     def test_probe_without_codec(self):
         self.assertEqual(self.d(probe=self.probe("absent"), have_stock=True).mode, plan.MERGE)
@@ -666,29 +610,36 @@ class CodecDecision(unittest.TestCase):
         with self.assertRaises(cli.UsageError):
             self.d(probe=self.probe(None))				# older firmware: unknown, no stock
 
+    def test_codec_in_the_old_place_is_written_again(self):
+        """ODR from before the codec moved runs its codec from sectors 7 and 8, which this application overwrites"""
+        self.assertEqual(self.d(probe=self.probe(self.OLD), have_stock=True).mode, plan.MERGE)
+        with self.assertRaises(cli.UsageError):
+            self.d(probe=self.probe(self.OLD))
+
     def test_probe_other_board_refused(self):
         with self.assertRaises(cli.UsageError):
-            self.d(probe=self.probe("dm1701-v0206-csv", board="DM-32UV"))
+            self.d(probe=self.probe(self.NEW, board="DM-32UV"))
 
     def test_stock_installed(self):
-        self.assertEqual(self.d(stock_installed="V02.06 CSV").mode, plan.KEEP)
-        self.assertEqual(self.d(stock_installed="v02.06-csv").mode, plan.KEEP)
-        with self.assertRaises(cli.UsageError):
-            self.d(stock_installed="V02.03 CSV")
-        self.assertEqual(self.d(stock_installed="V02.03 CSV", have_stock=True).mode, plan.MERGE)
+        """No stock firmware holds the codec where ODR keeps it: the stock file is always needed"""
+        self.assertEqual(DM1701.codec.installed, [])
+        for v in ("V02.06 CSV", "v02.06-csv", "V02.03 CSV"):
+            with self.assertRaises(cli.UsageError):
+                self.d(stock_installed=v)
+            self.assertEqual(self.d(stock_installed=v, have_stock=True).mode, plan.MERGE)
 
     def test_unknown(self):
         with self.assertRaises(cli.UsageError):
             self.d()
         self.assertEqual(self.d(have_stock=True).mode, plan.MERGE)
         self.assertEqual(self.d(requested="keep").mode, plan.KEEP)
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(self.d(ask=lambda q: True).mode, plan.KEEP)
-            with self.assertRaises(cli.UsageError):
-                self.d(ask=lambda q: False)
+        asked = []
+        with self.assertRaises(cli.UsageError):
+            self.d(ask=lambda q: asked.append(q) or True)		# nothing a user could say makes it safe
+        self.assertEqual(asked, [])
 
     def test_merge_requested(self):
-        self.assertEqual(self.d(requested="merge", have_stock=True, probe=self.probe("dm1701-v0206-csv")).mode,
+        self.assertEqual(self.d(requested="merge", have_stock=True, probe=self.probe(self.NEW)).mode,
                          plan.MERGE)
         with self.assertRaises(cli.UsageError):
             self.d(requested="merge")
@@ -725,9 +676,7 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
         img = app_image(150000)
         segs = []
         if mode == plan.MERGE:
-            _, profiles, code, tables = synthetic_stock()
-            prof = list(profiles.values())[0]
-            segs = [(prof["code"][0], code), (prof["tables"][0], tables)]
+            segs = placed()[1]
         p = plan.make_plan(DM1701, [(DM1701.app_base, img)], mode, segs)
         dfumod.Dfu(dev, 0, log=lambda *a: None, sleep=lambda s: None).run(p, KEY)
         return dev, before, img, p, segs
@@ -739,73 +688,18 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
         self.assertTrue(dev.exited)
         self.assertEqual(dev.violations, [])
         self.assertEqual(dev.read(0x0800C000, len(img)), img)
-        for s in DM1701.codec_sectors() + [DM1701.sectors[6]]:	# 7, 8, 10, 11 and the free sector 9
+        for s in DM1701.codec_sectors():				# 10 and 11
             self.assertEqual(dev.read(s.addr, s.size), before[s.addr - 0x08000000:s.end - 0x08000000], s)
         self.assertEqual(dev.read(0x08000000, 0xC000), before[:0xC000])
 
     def test_merge_writes_codec(self):
         dev, before, img, p, segs = self.flash_with(plan.MERGE, initial_codec=False)
-        self.assertEqual(dev.erased, [0x0800C000, 0x08010000, 0x08020000, 0x08060000, 0x08080000, 0x080C0000,
-                                      0x080E0000])
+        self.assertEqual(dev.erased, [0x0800C000, 0x08010000, 0x08020000, 0x080C0000, 0x080E0000])
         self.assertEqual(dev.violations, [])
         for a, data in segs:
             self.assertEqual(dev.read(a, len(data)), data)
-        self.assertEqual(dev.read(0x08060000, 0x08074714 - 0x08060000), b"\xFF" * (0x08074714 - 0x08060000))
+        self.assertEqual(dev.read(0x080C0000, 0x080D19F0 - 0x080C0000), b"\xFF" * (0x080D19F0 - 0x080C0000))
         self.assertEqual(dev.read(0x08000000, 0xC000), before[:0xC000])
-
-    def test_sector9_written_with_the_application(self):
-        """The application and sector 9 data in one run: sectors 3-5 and 9 erased and written, 7, 8, 10, 11 and the
-        bootloader untouched, and the fake bootloader (which flags any write outside an erased sector) saw no violation."""
-        rng = random.Random(21)
-        codec = [(a, stockfw.random_bytes(rng, n)) for a, n in DM1701.codec.windows]
-        dev = fakedfu.FakeAnyRoad(DM1701, KEY, fakedfu.stock_flash(DM1701, rng, codec))
-        before = bytes(dev.flash)
-        img, data = app_image(150000), app_image(40000, seed=8)
-        p = plan.make_plan(DM1701, [(DM1701.app_base, img), (0x080A0000, data)], plan.KEEP)
-        dfumod.Dfu(dev, 0, log=lambda *a: None, sleep=lambda s: None).run(p, KEY)
-        self.assertEqual(dev.erased, [0x0800C000, 0x08010000, 0x08020000, 0x080A0000])
-        self.assertEqual(dev.violations, [])
-        self.assertEqual(dev.read(0x0800C000, len(img)), img)
-        self.assertEqual(dev.read(0x080A0000, len(data)), data)
-        self.assertEqual(dev.read(0x080A0000 + len(data), 0x20000 - len(data)), b"\xFF" * (0x20000 - len(data)))
-        for s in DM1701.codec_sectors():
-            self.assertEqual(dev.read(s.addr, s.size), before[s.addr - 0x08000000:s.end - 0x08000000], s)
-        self.assertEqual(dev.read(0x08000000, 0xC000), before[:0xC000])
-
-    def test_cli_dev_build_with_sector9_image(self):
-        """odrflash flash odr_dm1701.bin --board dm1701 picks up odr_dm1701_rodata2.bin next to it."""
-        img, data = app_image(150000), app_image(40000, seed=8)
-        with tempfile.TemporaryDirectory() as d:
-            bp = os.path.join(d, "odr_dm1701.bin")
-            open(bp, "wb").write(img)
-            open(os.path.join(d, "odr_dm1701_rodata2.bin"), "wb").write(data)
-            rc, out, err = run_cli(["flash", bp, "--board", "dm1701", "--simulate", "odr-codec", "--dry-run"])
-            self.assertEqual(rc, 0, out + err)
-            self.assertIn("40000 bytes for sector 9", out)
-            self.assertIn("erase 4 sector(s): 3, 4, 5, 9", out)
-            self.assertIn("never erased or written: codec sector(s) 7, 8, 10, 11", out)
-            rc, out, err = run_cli(["flash", bp, "--board", "dm1701", "--simulate", "odr-codec", "--yes"])
-            self.assertEqual(rc, 0, out + err)
-            self.assertIn("sim      PASS", out)
-            os.remove(os.path.join(d, "odr_dm1701_rodata2.bin"))
-            rc, out, err = run_cli(["flash", bp, "--board", "dm1701", "--simulate", "odr-codec", "--dry-run"])
-            self.assertEqual(rc, 0, out + err)
-            self.assertIn("no odr_dm1701_rodata2.bin next to the image", err)	# warned, not silent
-            self.assertIn("erase 3 sector(s): 3, 4, 5", out)
-
-    def test_cli_merged_image_with_sector9_data(self):
-        """A merged image (codec at its addresses, data in sector 9) splits back into application, codec and data."""
-        stock, profiles, code, tables = synthetic_stock()
-        prof, segs = stockfw.extract(stock, KEY, profiles)
-        img, data = app_image(150000), app_image(40000, seed=8)
-        with tempfile.TemporaryDirectory() as d:
-            bp = os.path.join(d, "odr_dm1701_codec.bin")
-            open(bp, "wb").write(stockfw.merge(img, prof, segs, [(0x080A0000, data)]))
-            with mock.patch.dict(stockfw.PROFILES, profiles, clear=True):
-                rc, out, err = run_cli(["flash", bp, "--simulate", "blank", "--dry-run"])
-            self.assertEqual(rc, 0, out + err)
-            self.assertIn("sector 9 data 40000 bytes", out)
-            self.assertIn("erase 8 sector(s): 3, 4, 5, 7, 8, 9, 10, 11", out)
 
     def test_keyless_write_detected(self):
         """Blocks are XORed with the key: the fake decrypts with its own key, so the wrong key gives other bytes."""
@@ -829,7 +723,8 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             self.assertIn("sim      PASS", out)
             self.assertIn("codec sector 11 unchanged", out)
             rc, out, err = run_cli(["flash", bp, "--simulate", "stock", "--stock-installed", "V02.06 CSV", "--yes"])
-            self.assertEqual(rc, 0, out + err)
+            self.assertEqual(rc, 2, out + err)			# stock keeps the codec elsewhere: --stock is needed
+            self.assertIn("--stock FILE", err)
             rc, out, err = run_cli(["flash", bp, "--simulate", "odr-nocodec", "--stock", "synthetic", "--yes"])
             self.assertEqual(rc, 0, out + err)
             self.assertIn("MERGE", out)
@@ -854,15 +749,16 @@ class FakeBootloaderEndToEnd(unittest.TestCase):
             self.assertIn("official", err)
 
     def test_md380_merge_simulation(self):
-        """A local MD-380 build up to the code window: merged from a synthetic D002.032 file, sector 6 shared."""
+        """A local MD-380 build filling sectors 3-7: merged from a synthetic D002.032 file."""
         with tempfile.TemporaryDirectory() as d:
             bp = os.path.join(d, "odr_md380.bin")
-            open(bp, "wb").write(app_image(0x08050C44 - 0x0800C000 - 100))
+            open(bp, "wb").write(app_image(0x08080000 - 0x0800C000 - 100))
             rc, out, err = run_cli(["flash", bp, "--board", "md380", "--simulate", "odr-nocodec", "--stock", "synthetic",
                                     "--yes"])
             self.assertEqual(rc, 0, out + err)
             self.assertIn("MERGE", out)
-            self.assertIn("ERASE + WRITE app+codec", out)
+            self.assertIn("sector 11  0x080E0000..0x080FFFFF   128 KB  ERASE + WRITE codec", out)
+            self.assertIn("sector  9  0x080A0000..0x080BFFFF   128 KB  not touched (free)", out)
             self.assertIn("sim      PASS", out)
 
     def test_merged_image_simulation(self):
@@ -941,8 +837,8 @@ class BootKeyFromRadio(unittest.TestCase):
 
 
 class CodecFromRadio(unittest.TestCase):
-    """The codec read back over READ_MEM where an update erases it (the MD-380), checked window by window, saved and
-    loaded again; and the decision that uses it."""
+    """The codec read back over READ_MEM (the MD-380's stock windows), checked window by window, saved and loaded again;
+    and the decision that uses it."""
 
     def setUp(self):
         r = random.Random(11)
@@ -990,6 +886,68 @@ class CodecFromRadio(unittest.TestCase):
         self.assertEqual(cli.decide_codec(self.board, man, "auto", True, None, None, None).source, "stock")
         with self.assertRaises(cli.UsageError):
             cli.decide_codec(self.board, man, "auto", False, None, None, None)
+
+
+class CodecCopyEverywhere(unittest.TestCase):
+    """On a radio that keeps its codec (the DM-1701), a copy is read once, from where the merge placed it or where stock
+    keeps it, and written instead of asking for the stock file whenever the codec can't be kept or checked."""
+
+    def setUp(self):
+        self.stock, profiles, code, tables = stockfw.build_synthetic_stock(KEY, random.Random(7))
+        self.profiles = mock.patch.dict(stockfw.PROFILES, profiles, clear=True)
+        self.profiles.start()
+        self.addCleanup(self.profiles.stop)
+        self.board = boards.get("dm1701")
+        self.prof = next(iter(profiles.values()))
+        self.placed = stockfw.extract(self.stock, KEY)[1]
+        self.stock_windows = (code, tables)
+
+    def flash(self, segs):
+        f = bytearray(b"\xff" * 0x100000)
+        for a, d in segs:
+            f[a - 0x08000000:a - 0x08000000 + len(d)] = d
+        return BootKeyFromRadio.Radio(bytes(f))
+
+    def test_read_from_either_layout_and_written_as_the_merge_writes_it(self):
+        prof, parts = codecsave.read_codec(self.flash(self.placed), self.board)
+        self.assertEqual([(a, len(d)) for a, d in parts], [(a, n) for a, n, _ in stockfw.placed_windows(prof)])
+        self.assertEqual(codecsave.segments(prof, parts), self.placed)
+        old = list(zip([w[0] for w in stockfw.windows(self.prof)], self.stock_windows))
+        prof, parts = codecsave.read_codec(self.flash(old), self.board)
+        self.assertEqual(parts[0][0], self.prof["code"][0])
+        self.assertEqual(codecsave.segments(prof, parts), self.placed)
+        tmp = tempfile.mkdtemp()
+        codecsave.save(self.board, parts, tmp)
+        self.assertEqual(codecsave.load(self.board, tmp), (prof, parts))
+        bad = [(a, bytes([d[0] ^ 1]) + d[1:]) for a, d in self.placed]
+        self.assertIsNone(codecsave.read_codec(self.flash(bad), self.board))
+
+    def test_decision(self):
+        man = {"codec": {"profile": self.board.codec.id}}
+        odr = lambda c: {"board": "DM-1701", "codec": c}	# noqa: E731
+        dc = lambda *a, **k: cli.decide_codec(self.board, man, *a, **k)	# noqa: E731
+        self.assertEqual(dc("auto", False, odr(self.board.codec.id), None, None, have_saved=True).mode, plan.KEEP)
+        self.assertEqual(dc("auto", False, None, None, None, have_saved=True).source, "saved")
+        self.assertEqual(dc("auto", False, None, "V02.06 CSV", None, have_saved=True).source, "saved")
+        self.assertEqual(dc("auto", False, odr("absent"), None, None, have_saved=True).source, "saved")
+        self.assertEqual(dc("keep", False, None, None, None, have_saved=True).mode, plan.KEEP)
+        with self.assertRaises(cli.UsageError):
+            dc("auto", False, odr("absent"), None, None)
+
+    def test_read_once_on_a_board_that_keeps_it(self):
+        args = collections.namedtuple("A", "no_probe port")(False, None)
+        got = (self.prof, [])
+        probe = {"board": "DM-1701", "codec": self.board.codec.id}
+        with mock.patch.object(codecsave, "load", return_value=None), \
+                mock.patch.object(codecsave, "from_radio", return_value=got) as rd, \
+                mock.patch.object(codecsave, "save", return_value="x"):
+            self.assertEqual(cli.get_saved_codec(args, self.board, probe), got)
+            self.assertEqual(rd.call_count, 1)
+        with mock.patch.object(codecsave, "load", return_value=got), \
+                mock.patch.object(codecsave, "from_radio") as rd:
+            self.assertEqual(cli.get_saved_codec(args, self.board, probe), got)
+            self.assertEqual(rd.call_count, 0)	# a copy already: not read again
+            self.assertEqual(cli.get_saved_codec(args, self.board, None), got)
 
 
 class FlashLog(unittest.TestCase):

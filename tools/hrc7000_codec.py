@@ -11,8 +11,10 @@ a stock file keeps the codec). The recipe, for the DM-32UV from docs/spec/codec-
   2. carve the codec code window and the codec table window (file offset = address - 0x0300C000 + the file's header);
   3. check the code's first two words (0x152514D8, 0x74C776CD);
   4. write a new raw image: the built image from 0x0300C000 (the DB25-D's includes its first stage), 0xFF padding,
-     then the codec slot at 0x030E8000: a 128-byte header (platform/hrc7000/vocoder.c, codec_slot_t), the code, the
-     tables. At boot the firmware copies them to their stock RAM addresses; nothing is relocated.
+     then the codec slot at 0x030E8000: a 128-byte header (platform/hrc7000/codec_slot.h, codec_slot_t), the code, the
+     tables and the relocation list. The code and tables are the stock bytes. At boot the firmware copies the code to
+     the start of the board's codec window and moves the words the list names (the build's codec map, self_refs:
+     docs/spec/codec-placement.md), and copies the tables to their stock modem SRAM address.
 
 The codec is DVSI's and Baofeng's, not ours: it is never stored in this repository or in a release. This tool reads
 your stock file and writes the merged image to a file you choose (by default next to the built image, in build/, which
@@ -25,23 +27,28 @@ import struct
 import sys
 import zlib
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
+from odrflash import codecmap  # noqa: E402  (the codec maps: which words of each build hold addresses)
+
 APP_BASE = 0x0300C000
 STOCK_HEADER = 0x100
 MAGIC = b"BFUV32-V2"
 SLOT_MAGIC = 0x43524444  # "DDRC"
-SLOT_VERSION = 1
+SLOT_VERSION = 2   # the only one: code at the window's start, the listed words moved (platform/hrc7000/codec_slot.h)
+REL_MAX = 64
 HEADER_LEN = 128
 CODEC_SIG = (0x152514D8, 0x74C776CD)
 
-# Per radio: the codec slot in program flash, the RAM window its linker script leaves to the codec and the modem SRAM
-# table window (the __codec_* symbols of boards/<radio>/<radio>.ld; keep the two in step)
+# Per radio: the codec slot in program flash, the codec window at the top of SRAM (the slot's code runs at its
+# start; sized for the largest code among the board's maps) and the modem SRAM table window (the __codec_* symbols of
+# boards/<radio>/<radio>.ld; keep the two in step; docs/spec/codec-placement.md)
 BOARDS = {
-    "dm32": {"slot": (0x030E8000, 0x03100000), "run": (0x00016CDC, 0x0002F914), "tables": (0x18000E48, 0x18003E28)},
-    "dm1801pro": {"slot": (0x030E8000, 0x03100000), "run": (0x00016CDC, 0x0002B2DC),
+    "dm32": {"slot": (0x030E8000, 0x03100000), "run": (0x00043A00, 0x00058000), "tables": (0x18000E48, 0x18003E28)},
+    "dm1801pro": {"slot": (0x030E8000, 0x03100000), "run": (0x00043A00, 0x00058000),
                   "tables": (0x18000EF0, 0x18003E68)},
-    # The three 018 builds share the code's RAM address; their tables sit 4 bytes apart (0x180014AC / B0 / B4), so the
-    # window is the union
-    "db25d": {"slot": (0x030E8000, 0x03100000), "run": (0x0001CEB0, 0x0002F9D0), "tables": (0x180014AC, 0x18004204),
+    # The window fits the 020 code, the longest; the three 018 builds put the same tables 4 bytes apart (0x180014AC / B0 /
+    # B4) and 020 at 0x18001610, so the table window is the union
+    "db25d": {"slot": (0x030E8000, 0x03100000), "run": (0x00044E00, 0x00058000), "tables": (0x180014AC, 0x18004360),
               # What the web flasher needs beyond the codec (site/odrsite/repo.py c7000_flash): the program flash is 2 MB
               # (Boya, JEDEC 68 40 15) and there is no data flash on the SPI0 chip select the other radios use (the
               # DB25-D has a SPI NAND there, which the page does not read). Its stock firmware answers a debug console
@@ -206,6 +213,19 @@ PROFILES.update({
         "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
         "entries": _DB25D_ENTRIES,
     },
+    # 020: a different compile of the same codec (other function order, run at 0x180B8, its own entry offsets; the tables
+    # are byte for byte 018's, at 0x18001610). No vendor file is published, so it is known by its code window in a program
+    # flash read, as the DM-1801 Pro's (hardware-db25d.md 8)
+    "a9e67fb713b56c89b6571ee01b6d49fd605fb723ee2668d0b6afc09962bd8b90": {
+        "name": "DB25-D PRO 909E.D6x.EARSAB.020 (program flash read)", "board": "db25d", "kind": "progmem", "tag": 20,
+        "size": 0x100000,
+        "code": (0x030C142C, 0x1315C, 0x000180B8),
+        "tables": (0x0307E760, 0x2D50, 0x18001610),
+        "code_sha256": "a9e67fb713b56c89b6571ee01b6d49fd605fb723ee2668d0b6afc09962bd8b90",
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": {"decode": 0x0, "encode": 0x294, "dec_init": 0xE8, "dec_set": 0xA4, "enc_init": 0x400,
+                    "enc_set": 0x32C, "fec_init": 0x1CE4},
+    },
 })
 # CRC-32 of the first 64 bytes of every table window above: a cheap first test when locate() looks for the tables in a
 # program flash dump, before the SHA-256. Not a codec byte, only a fingerprint
@@ -291,20 +311,28 @@ def identify(stock, profiles=None, board="dm32"):
 
 def parse_slot(slot):
     """The header of a codec slot read back from a radio, checked: magic, version, windows inside the slot and the CRC
-    of code then tables. Returns a dict of its fields, else None (an empty or damaged slot)."""
+    of code, tables and the relocation list. Returns a dict of its fields, else None (an empty or damaged slot, or a
+    version 1 slot from before the code moved)."""
     if len(slot) < HEADER_LEN:
         return None
-    f = struct.unpack_from("<8I7I2I", slot, 0)
+    f = struct.unpack_from("<8I7I4I", slot, 0)
     magic, version, code_off, code_len, run, tab_off, tab_len, tab_ram = f[:8]
     if magic != SLOT_MAGIC or version != SLOT_VERSION:
         return None
     if code_off < HEADER_LEN or code_off + code_len > len(slot) or tab_off + tab_len > len(slot) or not code_len:
         return None
     code, tables = slot[code_off:code_off + code_len], slot[tab_off:tab_off + tab_len]
-    if zlib.crc32(tables, zlib.crc32(code)) & 0xFFFFFFFF != f[16] or struct.unpack_from("<2I", code, 0) != CODEC_SIG:
+    crc = zlib.crc32(tables, zlib.crc32(code))
+    rel_off, rel_count = f[17], f[18]
+    if rel_count > REL_MAX or rel_off % 4 or rel_off + 4 * rel_count > len(slot):
         return None
-    return {"run": run, "tables_ram": tab_ram, "tag": f[15], "crc": f[16], "length": tab_off + tab_len,
-            "code_sha256": sha256(code), "tables_sha256": sha256(tables)}
+    rels = list(struct.unpack_from("<%dI" % rel_count, slot, rel_off))
+    crc = zlib.crc32(slot[rel_off:rel_off + 4 * rel_count], crc)
+    end = max(tab_off + tab_len, rel_off + 4 * rel_count)
+    if crc & 0xFFFFFFFF != f[16] or struct.unpack_from("<2I", code, 0) != CODEC_SIG:
+        return None
+    return {"version": version, "run": run, "tables_ram": tab_ram, "tag": f[15], "crc": f[16], "length": end,
+            "relocations": rels, "code_sha256": sha256(code), "tables_sha256": sha256(tables)}
 
 
 def extract(stock, profiles=None, board="dm32"):
@@ -325,33 +353,53 @@ def extract(stock, profiles=None, board="dm32"):
     return prof, code, tables
 
 
-def slot_bytes(prof, code, tables):
-    """The codec slot contents: header, code, tables (4-byte aligned)."""
+def codec_map(code, maps=None):
+    """The codec map of this build (found by the code's SHA-256), or None"""
+    found = codecmap.by_code_sha(codecmap.load_maps() if maps is None else maps, sha256(code))
+    return found[0] if found else None
+
+
+def slot_bytes(prof, code, tables, maps=None):
+    """The codec slot contents: header, code, tables (4-byte aligned), the relocation list from the build's codec
+    map (the code runs at the start of the board's window). A build without a map is refused."""
     lay = BOARDS[prof["board"]]
     code_off = HEADER_LEN
     tab_off = code_off + ((len(code) + 3) & ~3)
     run = prof["code"][2]
     tab_ram = prof["tables"][2]
-    if not (lay["run"][0] <= run and run + len(code) <= lay["run"][1]):
-        raise ExtractError("code run address outside the reserved RAM window")
     if not (lay["tables"][0] <= tab_ram and tab_ram + len(tables) <= lay["tables"][1]):
         raise ExtractError("table address outside the reserved modem SRAM window")
-    crc = zlib.crc32(tables, zlib.crc32(code)) & 0xFFFFFFFF
+    m = codec_map(code, maps)
+    if m is None:
+        raise ExtractError("no codec map for this build (code sha256 %s...): its code can't be moved to the board's "
+                           "codec window" % sha256(code)[:8])
+    if m["code"]["run"] != run or m["code"]["len"] != len(code):
+        raise ExtractError("the codec map of %s doesn't match its profile" % prof["name"])
+    if len(code) > lay["run"][1] - lay["run"][0]:
+        raise ExtractError("the codec (%d bytes) is bigger than the board's codec window" % len(code))
+    if (lay["run"][0] - run) % 4:
+        raise ExtractError("the codec window would change the code's word alignment")
+    codecmap.move_code(code, m, lay["run"][0])     # checks every listed word against the code
+    rels = codecmap.relocations(m)
+    rel_off = tab_off + ((len(tables) + 3) & ~3)
+    rel_bytes = struct.pack("<%dI" % len(rels), *rels)
+    crc = zlib.crc32(rel_bytes, zlib.crc32(tables, zlib.crc32(code)))
     entries = [prof["entries"][k] for k in ENTRIES]
-    header = struct.pack("<8I7I2I", SLOT_MAGIC, SLOT_VERSION, code_off, len(code), run, tab_off, len(tables), tab_ram,
-                         *entries, prof["tag"], crc)
+    header = struct.pack("<8I7I4I", SLOT_MAGIC, SLOT_VERSION, code_off, len(code), run, tab_off, len(tables), tab_ram,
+                         *entries, prof["tag"], crc & 0xFFFFFFFF, rel_off, len(rels))
     header += b"\0" * (HEADER_LEN - len(header))
     body = header + code + b"\xff" * (tab_off - code_off - len(code)) + tables
+    body += b"\xff" * (rel_off - len(body)) + rel_bytes
     if len(body) > lay["slot"][1] - lay["slot"][0]:
         raise ExtractError("codec does not fit the slot")
     return body
 
 
-def merge(image, prof, code, tables):
+def merge(image, prof, code, tables, maps=None):
     slot_off = BOARDS[prof["board"]]["slot"][0] - APP_BASE
     if len(image) > slot_off:
         raise ExtractError("the application image (%d bytes) runs into the codec slot at +0x%X" % (len(image), slot_off))
-    return image + b"\xff" * (slot_off - len(image)) + slot_bytes(prof, code, tables)
+    return image + b"\xff" * (slot_off - len(image)) + slot_bytes(prof, code, tables, maps)
 
 
 def repo_root():
@@ -364,6 +412,16 @@ def check_output_path(path):
     full = os.path.abspath(path)
     if full.startswith(root + os.sep) and not full.startswith(os.path.join(root, "build") + os.sep):
         raise ExtractError("write the merged image under build/ (ignored by git), not %s" % path)
+
+
+def synthetic_map(prof, code, refs=()):
+    """A codec map for a synthetic codec (the self-test's random bytes): {profile id: map}"""
+    pid = "test-%s-%s" % (prof["board"], prof["tag"])
+    return {pid: codecmap.normalize({"format": codecmap.FORMAT, "profile": pid, "board": prof["board"], "isa": "csky",
+                                     "code": {"flash": prof["code"][0], "len": len(code), "run": prof["code"][2],
+                                              "sha256": sha256(code)},
+                                     "entries": dict(prof["entries"]),
+                                     "self_refs": [{"off": o, "value": v} for o, v in refs]})}
 
 
 def self_test():
@@ -393,13 +451,19 @@ def self_test():
     p, c, t = extract(stock, profiles)
     check(c == bytes(code) and t == tables, "windows carved at the right offsets")
     image = b"\x11" * 1000
-    out = merge(image, p, c, t)
+    maps = synthetic_map(p, c)
+    try:
+        merge(image, p, c, t, {})
+        check(False, "a build without a codec map is refused")
+    except ExtractError:
+        pass
+    out = merge(image, p, c, t, maps)
     slot_base, slot_end = BOARDS["dm32"]["slot"]
     slot = out[slot_base - APP_BASE:]
     check(out[:1000] == image and out[1000] == 0xFF, "image then padding")
     f = struct.unpack_from("<8I7I2I", slot, 0)
-    check(f[0] == SLOT_MAGIC and f[1] == SLOT_VERSION, "header magic and version")
-    check(f[2] == HEADER_LEN and f[3] == clen and f[4] == 0x16CDC, "code window")
+    check(f[0] == SLOT_MAGIC and f[1] == SLOT_VERSION, "header magic and version 2")
+    check(f[2] == HEADER_LEN and f[3] == clen and f[4] == 0x16CDC, "code window, its stock run address")
     check(f[6] == tlen and f[7] == 0x18000EA8, "table window")
     check(f[8:15] == (0, 0x260, 0xB4, 0x84, 0x314, 0x2E4, 0x1BF8), "entry points")
     check(f[15] == 49, "stock tag")
@@ -440,13 +504,14 @@ def self_test():
     check(found and found["code"][0] == PROGMEM_BASE + (0xC1234 & ~3) and found["tables"][0] == PROGMEM_BASE + 0x70010,
           "program flash dump: the codec found wherever the stock version put it")
     check(locate(bytes(moved[:-1]), pprofiles, board="dm1801pro") is None, "locate wants a whole program flash")
-    slot = merge(b"\x22" * 64, found, *carve(bytes(moved), found))[BOARDS["dm1801pro"]["slot"][0] - APP_BASE:]
+    pmaps = synthetic_map(found, bytes(pcode))
+    slot = merge(b"\x22" * 64, found, *carve(bytes(moved), found), pmaps)[BOARDS["dm1801pro"]["slot"][0] - APP_BASE:]
     ps = parse_slot(slot)
     check(ps and ps["code_sha256"] == pprof["code_sha256"] and ps["tag"] == 49, "parse_slot reads a slot back")
     broken = bytearray(slot)
     broken[HEADER_LEN + 500] ^= 1
     check(parse_slot(bytes(broken)) is None and parse_slot(b"\xff" * 4096) is None, "parse_slot refuses a damaged or empty slot")
-    qs = merge(b"\x22" * 64, q, qc, qt)[BOARDS["dm1801pro"]["slot"][0] - APP_BASE:]
+    qs = merge(b"\x22" * 64, q, qc, qt, pmaps)[BOARDS["dm1801pro"]["slot"][0] - APP_BASE:]
     g = struct.unpack_from("<8I7I2I", qs, 0)
     check(g[4] == 0x16CDC and g[7] == 0x18000EF0 and g[14] == 0x1BF8, "program flash dump: slot header")
     dump2[co + 100] ^= 1
@@ -456,7 +521,7 @@ def self_test():
     bad[file_offset(caddr)] ^= 1
     bad = bytes(bad)
     expect_error(lambda: extract(bad, {sha256(bad): dict(real)}), "signature check")
-    expect_error(lambda: merge(b"\0" * (slot_base - APP_BASE + 1), p, c, t), "image too big")
+    expect_error(lambda: merge(b"\0" * (slot_base - APP_BASE + 1), p, c, t, maps), "image too big")
     expect_error(lambda: check_output_path(os.path.join(repo_root(), "codec.bin")), "output outside build/")
 
     # The DB25-D: a plain image (no header, no magic), the first stage inside the merged image's low part
@@ -472,7 +537,7 @@ def self_test():
     plain = bytes(plain)
     p25, c25, t25 = extract(plain, {sha256(plain): dict(d25)}, board="db25d")
     check(c25 == bytes(code25) and t25 == tables25, "DB25-D windows carved from a plain image")
-    out25 = merge(b"\x22" * 5000, p25, c25, t25)
+    out25 = merge(b"\x22" * 5000, p25, c25, t25, synthetic_map(p25, c25))
     slot25 = out25[BOARDS["db25d"]["slot"][0] - APP_BASE:]
     f25 = struct.unpack_from("<8I7I2I", slot25, 0)
     check(f25[4] == 0x1CEB0 and f25[7] == 0x180014AC and f25[3] == 0x12B20 and f25[6] == 0x2D50, "DB25-D windows")
@@ -482,11 +547,72 @@ def self_test():
         lay = BOARDS[prof["board"]]
         c0, cl, cr = prof["code"]
         t0, tl, tr = prof["tables"]
-        check(lay["run"][0] <= cr and cr + cl <= lay["run"][1], "%s: code inside the RAM window" % prof["name"])
+        check(cl <= lay["run"][1] - lay["run"][0], "%s: code fits the codec window" % prof["name"])
         check(lay["tables"][0] <= tr and tr + tl <= lay["tables"][1], "%s: tables inside the table window" % prof["name"])
     expect_error(lambda: extract(plain, {sha256(plain): dict(d25)}, board="dm32"), "DB25-D file refused for the DM-32")
-    print("dm32_codec self-test: %s" % ("all passed" if ok else "FAILED"))
+
+    # The DB25-D's 020: no vendor file, found in a program flash read by its windows; another run address and entries
+    p20 = next(p for p in PROFILES.values() if p["board"] == "db25d" and p["tag"] == 20)
+    (c0, cl, cr), (t0, tl, tr) = p20["code"], p20["tables"]
+    code20 = bytearray(os.urandom(cl))
+    struct.pack_into("<2I", code20, 0, *CODEC_SIG)
+    struct.pack_into("<I", code20, 0x1BC0, cr + 0x2B14)		# a word that holds an address in the code
+    code20 = bytes(code20)
+    dump = bytearray(b"\xFF" * PROGMEM_SIZE)
+    dump[c0 - PROGMEM_BASE:c0 - PROGMEM_BASE + cl] = code20
+    dump[t0 - PROGMEM_BASE:t0 - PROGMEM_BASE + tl] = tables25
+    syn20 = {sha256(code20): dict(p20, code_sha256=sha256(code20), tables_sha256=sha256(tables25),
+                                  tables_head_crc=zlib.crc32(tables25[:64]))}
+    q20, k20, u20 = extract(bytes(dump), syn20, board="db25d")
+    check(q20["tag"] == 20 and k20 == code20 and u20 == tables25, "DB25-D 020 found in a program flash read")
+    s20 = slot_bytes(q20, k20, u20, synthetic_map(q20, k20, ((0x1BC0, cr + 0x2B14),)))
+    ps20 = parse_slot(s20)
+    check(ps20 and ps20["version"] == SLOT_VERSION and ps20["run"] == 0x180B8 and ps20["relocations"] == [0x1BC0],
+          "DB25-D 020: a slot from its stock address")
+    f20 = struct.unpack_from("<8I7I2I", s20, 0)
+    check(f20[8:15] == (0, 0x294, 0xE8, 0xA4, 0x400, 0x32C, 0x1CE4) and f20[7] == 0x18001610, "DB25-D 020 entries and tables")
+    check((BOARDS["db25d"]["run"][0] - 0x180B8) % 4 == 0 and (BOARDS["db25d"]["run"][0] - 0x1CEB0) % 4 == 0,
+          "DB25-D window keeps both builds' word alignment")
+
+    # A build with a codec map runs at the window's start with its listed words moved
+    slot2, windows, moved_crc, _ = test_slot()
+    ps2 = parse_slot(slot2)
+    check(ps2 and ps2["version"] == SLOT_VERSION and ps2["relocations"] == [0x40, 0x84, 0x1000], "version 2 slot read back")
+    f2 = struct.unpack_from("<8I7I4I", slot2, 0)
+    check(f2[4] == 0x1CEB0, "version 2 keeps the stock run address in the header")
+    broken2 = bytearray(slot2)
+    broken2[f2[17]] ^= 4
+    check(parse_slot(bytes(broken2)) is None, "the relocation list is covered by the CRC")
+    old = bytearray(slot2)
+    struct.pack_into("<I", old, 4, 1)
+    check(parse_slot(bytes(old)) is None, "a version 1 slot (from before the code moved) is refused")
+    print("hrc7000_codec self-test: %s" % ("all passed" if ok else "FAILED"))
     return ok
+
+
+def test_slot():
+    """A version 2 slot for a synthetic DB25-D codec (random bytes, the signature, three planted address words) and
+    a synthetic map, the window it was made for, the CRC-32 of the code once moved there, and the map. tests/host
+    hrc7000CodecSlotTest reads it (--test-slot) to check that the firmware's slot code agrees with this writer."""
+    import random
+    rng = random.Random(25)
+    prof = dict(PROFILES["341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b"])
+    clen, run = prof["code"][1], prof["code"][2]
+    code = bytearray(rng.randrange(256) for _ in range(clen))
+    struct.pack_into("<2I", code, 0, *CODEC_SIG)
+    refs = [(0x40, run + 0x100), (0x84, run), (0x1000, run + clen - 4)]
+    for off, v in refs:
+        struct.pack_into("<I", code, off, v)
+    code = bytes(code)
+    tables = bytes(rng.randrange(256) for _ in range(prof["tables"][1]))
+    m = codecmap.normalize({"format": codecmap.FORMAT, "profile": "test-db25d", "board": "db25d", "isa": "csky",
+                            "code": {"flash": prof["code"][0], "len": clen, "run": run, "sha256": sha256(code)},
+                            "entries": dict(prof["entries"]),
+                            "self_refs": [{"off": o, "value": v} for o, v in refs]})
+    lay = BOARDS["db25d"]
+    slot = slot_bytes(prof, code, tables, {"test-db25d": m})
+    windows = struct.pack("<4I", lay["run"][0], lay["run"][1], *lay["tables"])
+    return slot, windows, zlib.crc32(codecmap.move_code(code, m, lay["run"][0])) & 0xFFFFFFFF, m
 
 
 def main():
@@ -494,13 +620,21 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--board", default="dm32", choices=sorted(BOARDS), help="the radio (default: dm32)")
     ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046; DM-1801 Pro: a program "
-                    "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later)")
+                    "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later, or a program flash read of a "
+                    "radio with 020)")
     ap.add_argument("--image", help="the built raw application image (default: build/<board>/odr_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     ap.add_argument("--self-test", action="store_true", help="run the built-in checks on synthetic data")
+    ap.add_argument("--test-slot", metavar="FILE", help="write a synthetic version 2 slot, its windows and the moved "
+                    "code's CRC (for tests/host/hrc7000CodecSlotTest)")
     args = ap.parse_args()
     if args.self_test:
         sys.exit(0 if self_test() else 1)
+    if args.test_slot:
+        slot, windows, crc, _ = test_slot()
+        with open(args.test_slot, "wb") as f:
+            f.write(slot + windows + struct.pack("<I", crc))
+        return
     if not args.stock:
         ap.error("--stock is required")
     args.image = args.image or os.path.join(repo_root(), "build", args.board, "odr_%s.bin" % args.board)
@@ -510,10 +644,10 @@ def main():
         prof, code, tables = extract(open(args.stock, "rb").read(), board=args.board)
         merged = merge(open(args.image, "rb").read(), prof, code, tables)
     except (ExtractError, OSError) as e:
-        sys.exit("dm32_codec: %s" % e)
+        sys.exit("hrc7000_codec: %s" % e)
     with open(out, "wb") as f:
         f.write(merged)
-    print("dm32_codec: %s codec (%d + %d bytes) merged into %s" % (prof["name"], len(code), len(tables), out))
+    print("hrc7000_codec: %s codec (%d + %d bytes) merged into %s" % (prof["name"], len(code), len(tables), out))
 
 
 if __name__ == "__main__":

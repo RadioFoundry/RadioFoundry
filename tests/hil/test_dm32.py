@@ -92,7 +92,7 @@ def test_codec_present(dm32):
     line = find(diag_lines(dm32), "codec ")
     assert line, "no codec line"
     if line.endswith("none"):
-        pytest.skip("no stock codec merged (tools/dm32_codec.py): DMR voice is silent")
+        pytest.skip("no stock codec merged (tools/hrc7000_codec.py): DMR voice is silent")
     assert line in ("codec 049", "codec 046"), line
 
 

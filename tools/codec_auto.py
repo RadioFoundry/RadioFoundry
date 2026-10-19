@@ -18,8 +18,8 @@ ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 
 # Board -> codec tool (each takes --stock, --image, -o and keeps its supported stock files in PROFILES)
-CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "dm32_codec", "dm1801pro": "dm32_codec",
-               "db25d": "dm32_codec"}
+CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "hrc7000_codec",
+               "dm1801pro": "hrc7000_codec", "db25d": "hrc7000_codec"}
 SKIP = ("README.md", ".gitignore")
 
 
@@ -57,7 +57,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--board", required=True)
     ap.add_argument("--image", required=True, help="the built image")
-    ap.add_argument("--image2", help="the build's second image (sector 9 data), merged in at its address")
     ap.add_argument("--dir", default=os.path.join(ROOT, "codecs"), help="where to look (default: codecs/)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     args = ap.parse_args()
@@ -85,9 +84,6 @@ def main():
         return 0
     cmd = [sys.executable, os.path.join(TOOLS, tool + ".py"), "--stock", stock, "--image", args.image, "-o", out]
     cmd += ["--board", args.board]
-    if tool == "codec_extract":
-        if args.image2:
-            cmd += ["--image2", args.image2]
     key = find_key(args.dir, args.board)
     if key:
         cmd += ["--key", key]

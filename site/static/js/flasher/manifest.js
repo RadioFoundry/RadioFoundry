@@ -46,9 +46,7 @@ export async function verify(m, image, fb, boardId = null) {
 	const rs = ranges(m);
 	if (!rs.length || rs.reduce((a, r) => a + r[1], 0) !== image.length) throw new ManifestError("the manifest's ranges do not add up to the image size");
 	if (rs[0][0] !== board.app_base) throw new ManifestError(`the first range starts at ${hex(rs[0][0])}, not at the application base ${hex(board.app_base)}`);
-	for (const [addr, n] of rs.slice(1))
-		if (!(board.data_regions || []).some(([lo, size]) => lo <= addr && addr + n <= lo + size))
-			throw new ManifestError(`range ${hex(addr)} is not inside a flash region the ${board.name} image may use for data`);
+	if (rs.length > 1) throw new ManifestError(`the manifest lists ${rs.length} flash ranges: an image from before the codec moved, which this flasher no longer writes`);
 	for (const [addr, n] of rs) {
 		if (addr < board.app_base || addr + n > board.flash_end) throw new ManifestError(`range ${hex(addr)} is outside the application flash`);
 		for (const [lo, hi] of board.protected) if (addr < hi && addr + n > lo) throw new ManifestError(`range ${hex(addr)} overlaps the bootloader`);

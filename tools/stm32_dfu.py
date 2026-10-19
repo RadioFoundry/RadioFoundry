@@ -62,13 +62,14 @@ ALIASES = {
     "md9600": "md9600",
 }
 
-# Stock codec windows: DM-1701 V02.06 (docs/spec/codec-dm1701.md), MD-380 D002.032 code and main table window
-# (docs/spec/codec-md380.md). An image that reaches into them must carry the merged codec, recognized by its first word.
+# Where a merged image holds the codec (docs/spec/codec-placement.md: the tables at their stock address, the code moved
+# into sector 11: the DM-1701 V02.06's right after its tables, the MD-380 D002.032's at the start of the sector), and
+# where its code starts. An image that reaches into them must carry the merged codec, recognized by its first word.
 CODEC_WINDOWS = {
-    "dm1701": [(0x08074714, 0x08084930), (0x080D19F0, 0x080E4240)],
-    "md380": [(0x08050C44, 0x080614C8), (0x0808FC64, 0x0809AC5C)],
+    "dm1701": [(0x080D19F0, 0x080E3A72), (0x080E3A74, 0x080F3C90)],
+    "md380": [(0x0808FC64, 0x0809AC5C), (0x080E0000, 0x080F0884)],
 }
-CODEC_SIG_ADDR = {"dm1701": 0x08074714, "md380": 0x08050C44}
+CODEC_SIG_ADDR = {"dm1701": 0x080E3A74, "md380": 0x080E0000}
 CODEC_SIG = 0x4FF0E92D
 
 STOCK_MAGIC = b"OutSecurityBin"
@@ -555,13 +556,14 @@ def self_test():
             check(expect == "refuse", name)
     small = vt + b"\0" * 1000
     check(check_image(small, "dm1701") == [], "small dm1701 image: no warnings")
-    over = bytearray(vt + b"\0" * (0x08074800 - APP_BASE))
+    over = bytearray(vt + b"\0" * (0x080E3B00 - APP_BASE))
     check(any("codec window" in w for w in check_image(bytes(over), "dm1701")),
           "dm1701 image into the codec window without signature warns")
-    struct.pack_into("<I", over, 0x08074714 - APP_BASE, CODEC_SIG)
+    struct.pack_into("<I", over, 0x080E3A74 - APP_BASE, CODEC_SIG)
     check(not any("codec window" in w for w in check_image(bytes(over), "dm1701")),
           "dm1701 image with merged codec signature does not warn")
-    check(any("codec window" in w for w in check_image(bytes(over[:0x08074716 - APP_BASE]), "dm1701")),
+    check(not check_image(bytes(over[:0x080C0000 - APP_BASE]), "dm1701"), "dm1701 image filling sectors 3-9: no warnings")
+    check(any("codec window" in w for w in check_image(bytes(over[:0x080E3A76 - APP_BASE]), "dm1701")),
           "image ending inside the signature word warns")
     check(any("stack pointer" in w for w in check_image(b"\xFF" * 64, "md380")), "bad vector table warns")
 
@@ -619,8 +621,8 @@ def main(argv=None):
         warnings = check_image(data, model)
         man = os.path.splitext(args.image)[0] + ".json"
         if os.path.exists(man):
-            # a release image packs more than one flash range (application + sector 9 data) into the one file; this tool
-            # writes it as one contiguous application, so it would put the data over sectors 3-6
+            # a DM-1701 release from before the codec moved packed two flash ranges (application + sector 9 data) into
+            # the one file; this tool writes one contiguous application, so it would put the data over sectors 3-6
             try:
                 with open(man) as f:
                     nranges = len(json.load(f).get("ranges", []))
@@ -629,12 +631,6 @@ def main(argv=None):
             if nranges > 1:
                 raise DfuError("%s lists %d flash ranges (application and sector 9 data in one file); this tool writes "
                                "one contiguous image. Use tools/odrflash" % (os.path.basename(man), nranges))
-        side = os.path.splitext(args.image)[0] + "_rodata2.bin"
-        if os.path.exists(side):
-            # a build with constant data in sector 9 (boards/dm1701/dm1701.ld): this tool writes one contiguous image,
-            # so give it the merged image (odr_dm1701_codec.bin) or use tools/odrflash, which writes both parts
-            warnings.append("%s exists: this build keeps its constant data in flash sector 9, which this image does "
-                            "not contain. Flash the merged *_codec.bin or use tools/odrflash" % os.path.basename(side))
         for w in warnings:
             print("warning: " + w, file=sys.stderr)
         print("image %s: %d bytes, 0x%08X..0x%08X, model %s, SHA-256 %s"

@@ -274,14 +274,14 @@ uint32_t hrc_micros(void);
 // Chip soft reset (QUAD_ENABLE = 0, LCSFC_BAUDR = 4, SYS_SOFT_RSTN = 0; hardware-dm32.md 1.1). Does not return
 void hrc_soft_reset(void) __attribute__((noreturn));
 
-// Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads a position-
-// dependent image here and ODR jumps to it without a power cycle. The span is the stock-codec RAM window, which ODR
-// never links anything into (dm32.ld leaves 0x16CDC..0x2F914 out); the codec is not running once the radio is quiesced,
-// so the whole window is free. Base is 4 KB aligned inside it and the length stays clear of 0x2F914. A board without
-// that window sets its own free span in board.mk (the DB25-D: above its bss)
+// Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads the stub here
+// and ODR jumps to it without a power cycle. The span is the codec window at the top of SRAM, which ODR never links
+// anything into (dm32.ld: 0x43A00..0x58000); the codec is parked before the load, so the whole window is free. Base is
+// 4 KB aligned inside it. The universal stub copies itself to 0x30000 (ODR's RAM, dead by then), clear of this span. A
+// board with another layout sets its own span in board.mk or config.mk (the DB25-D)
 #ifndef HRC_STUB_BASE
-#define HRC_STUB_BASE		0x00017000u
-#define HRC_STUB_SIZE		0x00018000u	// 96 KB: image (~25 KB code+bss) and its stack, ends at 0x2F000
+#define HRC_STUB_BASE		0x00044000u
+#define HRC_STUB_SIZE		0x00014000u	// 80 KB, to the end of SRAM
 #endif
 
 // Code that must not run from XIP flash (flash controller set-up, the modem slot interrupts): the linker script

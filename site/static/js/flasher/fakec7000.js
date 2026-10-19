@@ -38,6 +38,7 @@ export async function c7000Simulation(cReal, boardId, seed = 7000) {
 	const real = c.profiles.find((p) => p.board === boardId);
 	const code = randomBytes(r, real.code_len);
 	code.set(sigBytes(c), 0);
+	code.set(le32(real.run + 0x100), 0x40);		// one address word inside the code, which the map lists
 	const tables = randomBytes(r, real.tables_len);
 	const codeAt = 0xA4000, tabAt = 0x6A000;
 	progmem.set(code, codeAt);
@@ -49,6 +50,11 @@ export async function c7000Simulation(cReal, boardId, seed = 7000) {
 	c.profiles = c.profiles.filter((p) => p.board !== boardId);
 	c.profiles.push({ ...real, name: `simulated ${real.name}`, code_sha256: await sha256(code), tables_sha256: await sha256(tables),
 		tables_head_crc: crc32(tables.subarray(0, 64)), stock_file: null });
+	// its codec map (docs/spec/codec-placement.md), as a real build has one
+	const id = `sim-${boardId}`;
+	c.codec_maps = { ...(c.codec_maps || {}), [id]: { format: "odr-codec-map/1", profile: id, board: boardId, isa: "csky",
+		code: { flash: 0, len: code.length, run: real.run, sha256: await sha256(code) }, entries: {},
+		self_refs: [{ off: 0x40, value: real.run + 0x100 }], table_refs: [], objects: [], groups: [], outside_refs: [] } };
 	return { c, progmem, codec: { code, tables, codeAt, tabAt } };
 }
 

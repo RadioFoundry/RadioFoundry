@@ -214,8 +214,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 - No CTCSS or DCS yet: a channel with a tone opens on any carrier and sends no tone.
 - No roger beep, 1750 Hz burst or APRS on FM (the transmit tone path isn't written). APRS positions over DMR work.
 - No APRS receive.
-- No hotspot mode in the default image (left out for flash space). MMDVM SFR and the split duplex repeater need the
-  DMR chip of the DM-1701 (HR_C6000) and aren't built for the MD-380 (HR_C5000).
+- MMDVM SFR and the split duplex repeater need the DMR chip of the DM-1701 (HR_C6000) and aren't built for the
+  MD-380 (HR_C5000). Hotspot mode is in.
 - USB network mode and its services are in.
 - Audio linking (USRP, [USB network](14-usb-network.md#linking-audio-allstarlink-and-dvswitch)) carries DMR only: the
   FM transmit path from the processor isn't written.
@@ -307,7 +307,7 @@ It is not in the releases, so there is no odrflash route. It marks the radio as 
 
 | The radio runs | What the radio programming utility does |
 |---|---|
-| The original firmware (909E.DBB.EARSAB.018 or .020) | Switches the radio to update mode through the original firmware's diagnostic console: about 4 minutes, with no keys and nothing written to the radio's memory. Then it backs up the whole 2 MB program memory (about a minute), installs, and restarts the radio, as for a radio that runs OpenDigitalRadio. The voice codec is taken from the backup when the version is one of the 018 builds (2024-05-09 or later). Firmware 909E.DBB.EARSAB.020 carries a different build of the codec that runs at other memory addresses, so OpenDigitalRadio can't use it. The backup is still complete. The utility says so and asks for a stock 018 file from the manufacturer, whose codec works on every version |
+| The original firmware (909E.DBB.EARSAB.018 or .020) | Switches the radio to update mode through the original firmware's diagnostic console: about 4 minutes, with no keys and nothing written to the radio's memory. Then it backs up the whole 2 MB program memory (about a minute), installs, and restarts the radio, as for a radio that runs OpenDigitalRadio. The voice codec is taken from the backup when the version is 020 or one of the 018 builds (2024-05-09 or later). For any other version the backup is still complete; the utility says so and asks for a stock 018 file from the manufacturer, whose codec works on every version |
 | Another version of the original firmware, or a radio that does not start | Installs through the factory update mode of the original loader: turn the radio off, hold P1 and press power. The red LED lights and the display stays blank. No backup is taken this way. The loader itself is never written |
 | OpenDigitalRadio | Hands over to a loader in RAM over the debug link (no keys, no power cycle), writes only the changed sectors and restarts the radio. The backup of the program memory is optional |
 | OpenDigitalRadio that does not answer | "Recover at Power-On": the first stage answers for half a second at every power-on, and the radio programming utility loads the loader then |

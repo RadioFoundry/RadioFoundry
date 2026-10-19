@@ -9,16 +9,12 @@
                                                             image without the codec slot (never the _codec.bin)
 
 Writes, into --out:
-  odr-<board>-<version>.bin    the codec-less image, as built (a variant: odr-<board>-<variant>-<version>.bin); for a
-                               board with a second flash region (the DM-1701's sector 9) the application followed by
-                               that region's image (build/<board>/odr_<board>_rodata2.bin)
+  odr-<board>-<version>.bin    the codec-less image, as built (a variant: odr-<board>-<variant>-<version>.bin)
   odr-<board>-<version>.json   its manifest (board, variant, version, git hash, image ranges, codec profile, sectors)
   SHA256SUMS                   one line per file (appended; one file for the whole release)
 
 Refuses an image that reaches into a codec sector or that carries the codec signature, so a release can never ship
-the codec or break "keep the radio's codec" (tools/odrflash). A board with a second flash region needs its image: the
-build's linker script put the constant data there, so an application image alone would run without it. --no-rodata2
-releases the application image alone, for a build that links nothing into that region.
+the codec or break "keep the radio's codec" (tools/odrflash).
 """
 import argparse
 import os
@@ -54,11 +50,13 @@ def toolchain(board_id):
 
 def check_no_codec(board, image):
     """The release image must not contain any codec bytes: it ends before the codec sectors (manifest.generate checks
-    that), and the codec's first word must not appear where a merged image puts it: the DM-1701's code window, an
-    HR_C7000 radio's codec slot (the build's _codec.bin)."""
+    that), and the codec's first word must not appear where a merged image puts it: an STM32 radio's code window (or
+    the stock address, where merges from before the codec moved put it), an HR_C7000 radio's codec slot (the build's
+    _codec.bin)."""
     off = board.codec.windows[0][0] - board.app_base
-    if board.id == "dm1701":
-        if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == stockfw.CODEC_SIG:
+    if board.family == "anyroad-dfu":
+        offs = {off} | {p["code"][0] - board.app_base for p in stockfw.PROFILES.values() if p["board"] == board.id}
+        if any(o + 4 <= len(image) and struct.unpack_from("<I", image, o)[0] == stockfw.CODEC_SIG for o in offs):
             raise SystemExit("release: %s carries the codec signature: never release a merged image" % board.id)
     elif board.family in ("bfuv32-serial", "hrc7000-iap"):
         if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == serialflash.SLOT_MAGIC:
@@ -73,10 +71,6 @@ def main(argv=None):
     ap.add_argument("--variant", help="a release variant (config/variants/<name>.mk); default: the full build")
     ap.add_argument("--bin", help="the built image (default build/<board>[-<variant>]/odr_<board>.bin, or "
                     "odr_<board>_install.bin for a board with a first stage)")
-    ap.add_argument("--bin2", help="the build's second image, for the board's second flash region (default: "
-                    "<bin without .bin>_rodata2.bin next to the image)")
-    ap.add_argument("--no-rodata2", action="store_true", help="release the application image alone (a build that links "
-                    "nothing into the second flash region)")
     ap.add_argument("--out", default=os.path.join(ROOT, "dist"))
     ap.add_argument("--git", help="full commit hash (default: git rev-parse HEAD)")
     ap.add_argument("--features", help="feature list (default: make print-config)")
@@ -98,20 +92,6 @@ def main(argv=None):
         if len(image) <= size or not image.startswith(head):
             raise SystemExit("release: the %s image must start with its first stage: release odr_%s_install.bin, not the "
                              "application alone" % (board.name, board.id))
-    data = b""
-    if board.data_regions and not args.no_rodata2:
-        path2 = args.bin2 or os.path.splitext(path)[0] + "_rodata2.bin"
-        try:
-            with open(path2, "rb") as f:
-                data = f.read()
-        except OSError as e:
-            raise SystemExit("release: the %s build has its constant data in a second flash region and %s is missing "
-                             "(%s); build with make BOARD=%s, or pass --no-rodata2 for an image without it"
-                             % (board.name, path2, e.strerror, board.id))
-        if not data:
-            raise SystemExit("release: %s is empty; pass --no-rodata2 if the build has no data in that region" % path2)
-    elif args.bin2:
-        raise SystemExit("release: --bin2 with --no-rodata2, or for a board without a second flash region")
     commit = args.git or git("rev-parse", "HEAD")
     feats = args.features if args.features is not None else features(board.id, variant)
     tc = args.toolchain if args.toolchain is not None else toolchain(board.id)
@@ -120,11 +100,11 @@ def main(argv=None):
     bin_name = mf.image_name(name_id, args.version)
     json_name = mf.image_name(name_id, args.version, "json")
     try:
-        man = mf.generate(board, image, args.version, commit, feats, tc, file_name=bin_name, data=data)
+        man = mf.generate(board, image, args.version, commit, feats, tc, file_name=bin_name)
     except mf.ManifestError as e:
         raise SystemExit("release: %s" % e)
     man["variant"] = variant or "full"
-    whole = image + data	# the file: the ranges' bytes in the manifest's order
+    whole = image
     mf.verify(man, whole, board.id)
 
     os.makedirs(args.out, exist_ok=True)
@@ -142,9 +122,8 @@ def main(argv=None):
         f.writelines(old)
         f.write(mf.sha256sums_line(bin_name, whole))
         f.write(mf.sha256sums_line(json_name, text.encode("utf-8")))
-    print("release: %s (%d bytes%s, sectors %s; codec %s in sectors %s, not included)"
-          % (bin_name, len(whole), " = application %d + sector 9 data %d" % (len(image), len(data)) if data else "",
-             man["sectors"], man["codec"]["profile"], man["codec"]["sectors"]))
+    print("release: %s (%d bytes, sectors %s; codec %s in sectors %s, not included)"
+          % (bin_name, len(whole), man["sectors"], man["codec"]["profile"], man["codec"]["sectors"]))
     print("release: %s, SHA256SUMS in %s" % (json_name, args.out))
     return 0
 

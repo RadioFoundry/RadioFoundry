@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-1701 vocoder: the stock V02.06 AMBE+2 codec run in place from flash (docs/spec/codec-dm1701.md, sections
-// "Recommended hosting" and "Codec state init and calls (stock V02.06)").
+// DM-1701 vocoder: the stock V02.06 AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32 radios";
+// the codec: docs/spec/codec-dm1701.md, "Codec state init and calls (stock V02.06)").
 //
-// The codec code (0x08074714..0x08084930) and its tables (0x080D19F0..0x080E4240) are merged into the image on the
-// user's machine (tools/codec_extract.py); they are never part of this repository or a release. Without them,
-// present() is false and the radio is FM only.
+// The merge on the user's machine (odrflash, tools/codec_extract.py, the web flasher) writes the codec's tables at their
+// stock address (0x080D19F0..0x080E3A72, the codec's own data), its code right after them at 0x080E3A74, and the
+// descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute
+// addresses, which don't change. The merge rewrites what does: one pointer into the code and the 12 calls from the code
+// that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
+// release. Without a valid descriptor and codec, present() is false and the radio is FM only.
 //
 // Not reentrant: one task (the audio task, through the audio block callback) makes all calls. The codec needs about
 // 4 KB of the caller's stack (3.8 KB measured).
@@ -14,24 +17,24 @@
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "codec_call.h"
+#include "codec_desc.h"
 
 #include <string.h>
 
-#define CODEC_BASE		0x08074714u
-#define CODEC_END		0x08084930u
-#define CODEC_TABLES		0x080D19F0u
-#define CODEC_TABLES_END	0x080E4240u
 #define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
+#define CODEC_TAG		0x0206u		// the descriptor's tag for stock V02.06 CSV
+#define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash dm1701.ld leaves to the codec
+#define CODEC_FLASH_HI		CODEC_DESC_ADDR
 
-// Entry points (offsets from CODEC_BASE)
-#define CODEC_ENCODE		(CODEC_BASE + 0x130u)
-#define CODEC_DECODE		(CODEC_BASE + 0x5D8u)
-#define CODEC_ENC_INIT		(CODEC_BASE + 0x284u)	// (E, 1, 1)
-#define CODEC_FEC_INIT		(CODEC_BASE + 0x4CCu)	// (F, 1): state of the codec's own FEC routines
-#define CODEC_DEC_INIT		(CODEC_BASE + 0x6D0u)	// (D, 1)
-#define CODEC_ENC_PARAMS	(CODEC_BASE + 0x848u)	// (E, 10 parameters)
-#define CODEC_ENC_SET		(CODEC_BASE + 0x1C0u)	// (E, a, b)
-#define CODEC_DEC_SET		(CODEC_BASE + 0x688u)	// (D, a, b)
+// Entry points (offsets from the code start)
+#define CODEC_ENCODE		(base + 0x130u)
+#define CODEC_DECODE		(base + 0x5D8u)
+#define CODEC_ENC_INIT		(base + 0x284u)	// (E, 1, 1)
+#define CODEC_FEC_INIT		(base + 0x4CCu)	// (F, 1): state of the codec's own FEC routines
+#define CODEC_DEC_INIT		(base + 0x6D0u)	// (D, 1)
+#define CODEC_ENC_PARAMS	(base + 0x848u)	// (E, 10 parameters)
+#define CODEC_ENC_SET		(base + 0x1C0u)	// (E, a, b)
+#define CODEC_DEC_SET		(base + 0x688u)	// (D, a, b)
 // Not used: encode ECC +0x4E8 and FEC decode +0xB54. The air frame FEC is ours (core/dmr/ambe) and matches stock's.
 
 // State sizes found by running the stock code with each block ending at a fault boundary: the codec touches
@@ -40,9 +43,14 @@
 #define ENC_STATE_BYTES		0x16E0u
 #define FEC_STATE_BYTES		0x44u
 
-// CRC-32 (IEEE 802.3) of the decrypted windows of the stock V02.06 CSV file (their SHA-256 are in the spec)
-#define CODEC_CRC		0x42CF501Du
-#define CODEC_TABLES_CRC	0x673D0006u
+// The V02.06 CSV codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
+// the code and tables after the rewrites. The descriptor must carry exactly these
+#define CODEC_CODE		0x080E3A74u
+#define CODEC_CODE_LEN		0x1021Cu
+#define CODEC_CRC		0x485BFC13u
+#define CODEC_TABLES		0x080D19F0u
+#define CODEC_TABLES_LEN	0x12082u
+#define CODEC_TABLES_CRC	0xC1EEFA8Bu
 
 #define HALF			(VOCODER_FRAME_SAMPLES / 2)
 
@@ -54,6 +62,7 @@ static int16_t bitbuf[72] __attribute__((section(".ccmram"), aligned(4)));	// on
 static int16_t pcmbuf[VOCODER_FRAME_SAMPLES] __attribute__((section(".ccmram"), aligned(4)));
 
 static int8_t presence = -1;	// -1 not checked yet
+static uint32_t base;		// the code's start, from the descriptor
 static bool ready;		// states initialized
 static bool enc_first;		// next encode is the first of a transmission
 
@@ -64,28 +73,20 @@ static uint32_t call(uint32_t fn, uint32_t nargs, uint32_t a0, uint32_t a1, uint
 	return stm32_codec_call(fn, args, nargs);
 }
 
-static uint32_t crc32(const uint8_t *p, uint32_t len)
-{
-	static const uint32_t nib[16] = {
-		0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC, 0x76DC4190, 0x6B6B51F4, 0x4DB26158, 0x5005713C,
-		0xEDB88320, 0xF00F9344, 0xD6D6A3E8, 0xCB61B38C, 0x9B64C2B0, 0x86D3D2D4, 0xA00AE278, 0xBDBDF21C,
-	};
-	uint32_t c = 0xFFFFFFFFu;
-	while (len--) {
-		c ^= *p++;
-		c = (c >> 4) ^ nib[c & 15];
-		c = (c >> 4) ^ nib[c & 15];
-	}
-	return ~c;
-}
-
-// Signature word first (an erased or zero region fails fast), then the CRC of both windows, once (about 140 KB)
+// The descriptor (its own checks, the V02.06 build at its placement and CRCs), then the
+// code's signature word (an erased or zero region fails fast), then the CRC of both windows, once (about 140 KB)
 static bool present(void)
 {
 	if (presence < 0) {
-		bool ok = *(const volatile uint32_t *)CODEC_BASE == CODEC_SIGNATURE &&
-			  crc32((const uint8_t *)CODEC_BASE, CODEC_END - CODEC_BASE) == CODEC_CRC &&
-			  crc32((const uint8_t *)CODEC_TABLES, CODEC_TABLES_END - CODEC_TABLES) == CODEC_TABLES_CRC;
+		const codec_desc_t *d = (const codec_desc_t *)CODEC_DESC_ADDR;
+		bool ok = codec_desc_check(d, CODEC_TAG, CODEC_FLASH_LO, CODEC_FLASH_HI, CODEC_CODE_LEN) &&
+			  d->code.addr == CODEC_CODE && d->code.len == CODEC_CODE_LEN && d->code.crc == CODEC_CRC &&
+			  d->windows == 1 &&
+			  d->table[0].addr == CODEC_TABLES && d->table[0].len == CODEC_TABLES_LEN &&
+			  d->table[0].crc == CODEC_TABLES_CRC &&
+			  *(const volatile uint32_t *)d->code.addr == CODEC_SIGNATURE &&
+			  codec_desc_check_bytes(d, (const uint8_t *)CODEC_FLASH_LO, CODEC_FLASH_LO);
+		base = ok ? d->code.addr : 0;
 		presence = ok ? 1 : 0;
 	}
 	return presence == 1;
@@ -165,10 +166,12 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
 }
 
-// The id tools/odrflash and the release manifests use for this codec (signature and both CRCs above matched)
+// The id tools/odrflash and the release manifests use for this codec: V02.06 CSV placed as above (the descriptor and
+// both CRCs matched). A build from before the move reports "dm1701-v0206-csv", which tells odrflash that the codec
+// isn't where this layout keeps it
 static const char *profile(void)
 {
-	return present() ? "dm1701-v0206-csv" : NULL;
+	return present() ? "dm1701-v0206-csv-s11" : NULL;
 }
 
 const hal_vocoder_t dm1701_vocoder = {

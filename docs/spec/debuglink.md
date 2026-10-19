@@ -118,7 +118,7 @@ view=2                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
 board=DM-1701
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
-codec=dm1701-v0206-csv  the codec profile found in flash (below)
+codec=dm1701-v0206-csv-s11  the codec profile found in flash (below)
 display=160x120x16      panel width x height x bpp
 inset=5,5,5,5           safe area insets: top, bottom, left, right
 uptime_ms=123456
@@ -128,13 +128,17 @@ inject_max_ms=10000     longest hold of an injected key, PTT included
 ```
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
-profile id (`dm1701-v0206-csv`: signature word and the CRC-32 of both codec windows match stock V02.06 CSV;
+profile id (`dm1701-v0206-csv-s11`, `md380-d2032-s11`: the descriptor is valid and the signature word and the CRC-32 of
+every codec window match the stock codec as the merge places it, code in sector 11, as
+[codec-placement.md](codec-placement.md) "STM32 radios" describes;
 `dm32-049`, `dm1801pro-049`, `db25d-2501`: an HR_C7000 codec slot is valid, and the digits are the stock version it was carved from; on the DB25-D the year and month of the stock file), `absent` (the board has a
 vocoder but the check failed: erased, another stock version, damaged), `present` (a valid codec whose board names no
 profile) or `none` (built without DMR). It describes flash, not whether voice can run at that moment: after the
 HR_C7000 stub entry has stopped the codec (its RAM is the stub's), the profile id is still reported. The first request after boot may take some 20 ms longer while the board
 computes the CRCs. It reads flash only. `tools/odrflash` asks for it before flashing to decide whether the codec
-sectors can be left alone ([docs/dev/release.md](../dev/release.md)).
+sectors can be left alone ([docs/dev/release.md](../dev/release.md)). A build from before the STM32 codec moved
+reports the stock id (`dm1701-v0206-csv`, `md380-d2032`) for the codec at its stock addresses, so the flashing tools
+know the new layout doesn't hold it.
 
 Unknown keys must be ignored by hosts; keys may be added without a version change.
 

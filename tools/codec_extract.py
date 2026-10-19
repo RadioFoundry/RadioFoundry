@@ -11,8 +11,10 @@ recipe"):
      (a key file checked by SHA-256 as tools/stm32_dfu.py does, or derived from the stock file and checked the same
      way);
   3. check each window's SHA-256 and the code's first word 0x4FF0E92D;
-  4. write a new image: the built application from 0x0800C000, then every window at its stock address, 0xFF between.
-     Nothing is relocated: the codec runs in place at its stock addresses.
+  4. write a new image: the built application from 0x0800C000, then the codec where its profile places it, 0xFF between
+     (docs/spec/codec-placement.md): the tables at their stock address, the code moved as one block into sector 11 (the
+     DM-1701's right after its tables, the MD-380's at the start of the sector), with the addresses the build's codec
+     map lists rewritten, and the descriptor at 0x080FFF80 that tells the firmware where the code is.
 
 The codec is DVSI's and the radio maker's, not ours: it is never stored in this repository or in a release. This tool
 reads your stock file and your key file and writes the merged image to a file you choose (by default next to the
@@ -29,9 +31,12 @@ import stm32_dfu  # noqa: E402  (key table and key file check, hardware-dm1701.m
 
 # The container, decryption, profiles and merge live in the odrflash package (one implementation for both tools)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
-from odrflash.stockfw import (APP_BASE, CODEC_SIG, FLASH_END, HEADER_LEN, KEY_LEN, MAGIC, PROFILES,  # noqa: E402,F401
-                              StockError as ExtractError, app_file_offset, build_synthetic_stock, decrypt, derive_key,
-                              extract, find_profile, merge, parse_container, sha256, windows)
+from odrflash.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_END, HEADER_LEN, KEY_LEN, MAGIC,  # noqa: E402,F401
+                              PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError, app_file_offset, build_synthetic_stock, decrypt,
+                              derive_key, descriptor, extract, find_profile, layout, merge, parse_container, sha256,
+                              windows)
+from odrflash.codecmap import bl_target  # noqa: E402
+import zlib  # noqa: E402
 
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
 MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
@@ -103,63 +108,85 @@ def self_test():
     check((0xC5C14 - HEADER_LEN) % KEY_LEN == 0x314 and (0x122EF0 - HEADER_LEN) % KEY_LEN == 0x1F0,
           "cipher phases 0x314 and 0x1F0 (spec)")
     p, wins = extract(stock, key, profiles)
-    check(wins == [(0x08074714, code), (0x080D19F0, tables)], "windows decrypted")
+    CODE, TABN = 0x080E3A74, 0x12082
+    delta = CODE - 0x08074714
+    check([(a, len(b)) for a, b in wins] == [(CODE, len(code)), (0x080D19F0, TABN), (DESC_ADDR, 0x80)],
+          "windows placed: the code right after the codec's data, the tables cut there, then the descriptor")
+    mc, mt = wins[0][1], wins[1][1]
+    check(struct.unpack_from("<I", mc, SYN_SELF_REF)[0] == 0x08074714 + 0x201 + delta, "self reference moved")
+    check(mc[:SYN_SELF_REF] + mc[SYN_SELF_REF + 4:] == code[:SYN_SELF_REF] + code[SYN_SELF_REF + 4:],
+          "nothing else in the code changed")
+    check(bl_target(mt, SYN_BL, 0x080D19F0 + SYN_BL) == 0x08074714 + 0x200 + delta, "island call re-encoded")
+    check(mt[:SYN_BL] + mt[SYN_BL + 4:] == tables[:SYN_BL] + tables[SYN_BL + 4:TABN], "nothing else in the tables changed")
+    d = wins[2][1]
+    f = struct.unpack_from("<7I", d, 0)
+    check(f == (0x43534544, 1, 0x0206, CODE, len(code), zlib.crc32(mc), 1), "descriptor header and code window")
+    check(struct.unpack_from("<3I", d, 28) == (0x080D19F0, TABN, zlib.crc32(mt)), "descriptor table window")
+    check(struct.unpack_from("<I", d, 124)[0] == zlib.crc32(d[:124]) & 0xFFFFFFFF, "descriptor CRC")
 
     image = struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(rng.randrange(256) for _ in range(5000))
     merged = merge(image, p, wins)
-    check(len(merged) == 0x080E4240 - APP_BASE, "merged image ends at the table window end 0x080E4240")
+    check(len(merged) == FLASH_END - APP_BASE, "merged image ends with the descriptor at the end of flash")
     check(merged[:len(image)] == image, "application unchanged")
-    check(merged[len(image):0x08074714 - APP_BASE] == b"\xFF" * (0x08074714 - APP_BASE - len(image)),
-          "0xFF up to the code window")
-    check(merged[0x08074714 - APP_BASE:0x08084930 - APP_BASE] == code, "code at 0x08074714")
-    check(merged[0x08084930 - APP_BASE:0x080D19F0 - APP_BASE] == b"\xFF" * (0x080D19F0 - 0x08084930),
-          "0xFF between the windows")
-    check(merged[0x080D19F0 - APP_BASE:] == tables, "tables at 0x080D19F0")
+    check(merged[len(image):0x080D19F0 - APP_BASE] == b"\xFF" * (0x080D19F0 - APP_BASE - len(image)),
+          "0xFF up to the tables")
+    check(merged[0x080D19F0 - APP_BASE:0x080D19F0 - APP_BASE + TABN] == mt, "tables at 0x080D19F0")
+    check(merged[0x080D19F0 + TABN - APP_BASE:CODE - APP_BASE] == b"\xFF\xFF", "0xFF between tables and code")
+    check(merged[CODE - APP_BASE:CODE - APP_BASE + len(code)] == mc, "code at 0x080E3A74")
+    check(merged[DESC_ADDR - APP_BASE:] == d, "descriptor at 0x080FFF80")
     check(not stm32_dfu.check_image(merged, "dm1701"), "stm32_dfu accepts the merged image without warnings")
-
-    # the firmware's sector 9 data (the build's _rodata2.bin) goes in at 0x080A0000, between the windows
-    rodata = bytes(rng.randrange(256) for _ in range(3000))
-    merged2 = merge(image, p, wins, [(0x080A0000, rodata)])
-    check(len(merged2) == len(merged) and merged2[0x080A0000 - APP_BASE:0x080A0000 - APP_BASE + 3000] == rodata,
-          "sector 9 data at 0x080A0000")
-    check(merged2[0x08074714 - APP_BASE:0x08084930 - APP_BASE] == code and merged2[0x080D19F0 - APP_BASE:] == tables,
-          "windows unchanged by sector 9 data")
-    check(not stm32_dfu.check_image(merged2, "dm1701"), "stm32_dfu accepts the image with sector 9 data")
+    big = struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8)
+    check(len(merge(big, p, wins)) == FLASH_END - APP_BASE, "an application filling sectors 3-9 merges")
 
     bad_key = bytes([key[0] ^ 1]) + key[1:]
     expect_error(lambda: extract(stock, bad_key, profiles), "wrong key: window hash mismatch")
     expect_error(lambda: extract(stock[:-1] + b"\0", key, profiles), "other file: unsupported sha256")
     expect_error(lambda: extract(stock, key), "synthetic file is not the real stock file")
-    expect_error(lambda: merge(b"\0" * (0x08074714 - APP_BASE + 1), p, wins), "image overlapping the codec refused")
+    expect_error(lambda: merge(b"\0" * (0x080D19F0 - APP_BASE + 1), p, wins), "image overlapping the codec refused")
     expect_error(lambda: merge(stock, p, wins), "official file as --image refused")
-    expect_error(lambda: merge(image, p, wins, [(0x08090000, b"x")]), "data inside codec sector 8 refused")
-    expect_error(lambda: merge(image, p, wins, [(0x080BFFFF, b"xx")]), "data running past sector 9 refused")
+    expect_error(lambda: merge(big + b"\0" * 0x119F4, p, wins), "an application reaching the tables refused")
     expect_error(lambda: parse_container(b"x" * 300), "non-container refused")
 
-    # MD-380 D002.032: single-segment container, code window in sector 6, four small extra table windows
+    # MD-380 D002.032: single-segment container, code window in sectors 6 and 7, four small extra table windows; the
+    # merge moves the code to the start of sector 11
     mstock, mprofiles, mcode, mtables = build_synthetic_stock(key, rng, MD380_D2032)
     mreal = PROFILES[MD380_D2032]
     check(parse_container(mstock) == [(0x0800C000, 0xF2C00)], "MD-380 single-segment container parsed")
     check(app_file_offset(mreal["segments"], 0x08050C44) == 0x44D44, "MD-380 code window file offset 0x44D44 (spec)")
     check(app_file_offset(mreal["segments"], 0x0808FC64) == 0x83D64, "MD-380 table window file offset 0x83D64 (spec)")
     mp, mwins = extract(mstock, key, mprofiles)
-    check([a for a, _ in mwins] == [0x08050C44, 0x0808FC64, 0x080D0FC8, 0x080F9698, 0x080F9E74, 0x080FD490],
-          "MD-380: all six windows, code first")
-    check(mwins[0][1] == mcode and mwins[1][1] == mtables, "MD-380 windows decrypted")
-    mimage = struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(rng.randrange(256) for _ in range(0x44C44 - 8))
+    MCODE = 0x080E0000
+    check([a for a, _ in mwins] == [MCODE, 0x0808FC64, 0x080D0FC8, 0x080F9698, 0x080F9E74, 0x080FD490, DESC_ADDR],
+          "MD-380: the code moved to sector 11, the five table windows at their stock addresses, the descriptor")
+    mc = mwins[0][1]
+    check(mc[SYN_SELF_REF:SYN_SELF_REF + 4] == struct.pack("<I", MCODE + 0x201) and
+          mc[:SYN_SELF_REF] + mc[SYN_SELF_REF + 4:] == mcode[:SYN_SELF_REF] + mcode[SYN_SELF_REF + 4:],
+          "MD-380: the code's self reference rewritten, nothing else")
+    check(bl_target(mwins[1][1], SYN_BL, 0x0808FC64 + SYN_BL) == MCODE + 0x200,
+          "MD-380: the island's call follows the code")
+    check(all(sha256(d) == w[2] for (_, d), w in zip(mwins[2:6], mprofiles[sha256(mstock)]["extra"])),
+          "MD-380: the small windows unchanged")
+    md = mwins[6][1]
+    check(struct.unpack_from("<7I", md, 0) == (0x43534544, 1, 0x2032, MCODE, len(mcode), zlib.crc32(mc), 5),
+          "MD-380 descriptor header, code window and five table windows")
+    check(struct.unpack_from("<3I", md, 28) == (0x0808FC64, len(mtables), zlib.crc32(mwins[1][1])),
+          "MD-380 descriptor main table window")
+    check(struct.unpack_from("<3I", md, 40) == (0x080D0FC8, 0x24, zlib.crc32(mwins[2][1])),
+          "MD-380 descriptor first small window")
+    mimage = struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(rng.randrange(256) for _ in range(0x74000 - 8))
     mmerged = merge(mimage, mp, mwins)
-    check(len(mmerged) == 0x080FD4B0 - APP_BASE, "MD-380 merged image ends at the last window 0x080FD4B0")
-    check(mmerged[:len(mimage)] == mimage and mmerged[0x08050C44 - APP_BASE:0x080614C8 - APP_BASE] == mcode,
-          "MD-380: an application up to 0x08050C44 and the code right after it")
+    check(len(mmerged) == FLASH_END - APP_BASE, "MD-380 merged image ends with the descriptor at the end of flash")
+    check(mmerged[:len(mimage)] == mimage, "MD-380: an application filling sectors 3-7 unchanged")
     check(all(mmerged[a - APP_BASE:a - APP_BASE + len(d)] == d for a, d in mwins), "MD-380 windows in place")
-    check(mmerged[0x080614C8 - APP_BASE:0x0808FC64 - APP_BASE] == b"\xFF" * (0x0808FC64 - 0x080614C8),
-          "MD-380: 0xFF between code and tables")
+    check(mmerged[len(mimage):0x0808FC64 - APP_BASE] == b"\xFF" * (0x0808FC64 - APP_BASE - len(mimage)),
+          "MD-380: 0xFF up to the tables")
     check(not stm32_dfu.check_image(mmerged, "md380"), "stm32_dfu accepts the MD-380 merged image without warnings")
-    expect_error(lambda: merge(mimage + b"\0", mp, mwins), "MD-380: application one byte into the code refused")
+    expect_error(lambda: merge(mimage + b"\0" * (0x0808FC64 - 0x08080000 + 1), mp, mwins),
+                 "MD-380: application reaching the tables refused")
     expect_error(lambda: extract(mstock, bad_key, mprofiles), "MD-380 wrong key refused")
     check(find_profile(mstock, mprofiles)["board"] == "md380", "MD-380 profile found by SHA-256")
 
-    # main(): a missing explicit --image2 is an error, the default sibling file stays optional
+    # main() end to end on the synthetic file
     import contextlib
     import io
     import tempfile
@@ -182,14 +209,8 @@ def self_test():
                 return main(), err.getvalue()
 
         rc, err = run()
-        check(rc == 0, "no sector 9 file next to the image: merged without it")
-        rc, err = run("--image2", os.path.join(d, "missing_rodata2.bin"))
-        check(rc == 1 and "missing_rodata2.bin" in err, "an explicit --image2 that doesn't exist is an error")
-        with open(os.path.join(d, "x2.bin"), "wb") as f:
-            f.write(rodata)
-        rc, err = run("--image2", os.path.join(d, "x2.bin"))
         with open(op, "rb") as f:
-            check(rc == 0 and f.read()[0x080A0000 - APP_BASE:][:3000] == rodata, "an explicit --image2 lands in sector 9")
+            check(rc == 0 and f.read() == merged, "main() writes the merged image")
 
     expect_error(lambda: check_output_path(os.path.join(repo_root(), "tools", "x_codec.img")),
                  "output inside the tree and not ignored refused")
@@ -204,6 +225,24 @@ def self_test():
     return 1 if fails else 0
 
 
+def test_desc(path, board="dm1701"):
+    """Write the codec sectors as the merge leaves them for a synthetic codec, for tests/host/codecDescTest.c (the
+    firmware's descriptor checks and this writer must agree): the DM-1701's sectors 10 and 11 (0x080C0000..0x08100000),
+    the MD-380's sectors 8-11 (0x08080000..0x08100000)"""
+    import random
+    rng = random.Random(1701)
+    key = bytes(rng.randrange(256) for _ in range(KEY_LEN))
+    stock, profiles, _, _ = build_synthetic_stock(key, rng, MD380_D2032 if board == "md380" else DM1701_V0206)
+    p, wins = extract(stock, key, profiles)
+    lo = 0x08080000 if board == "md380" else 0x080C0000
+    out = bytearray(b"\xFF" * (FLASH_END - lo))
+    for a, d in wins:
+        out[a - lo:a - lo + len(d)] = d
+    with open(path, "wb") as f:
+        f.write(out)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], epilog=EPILOG,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -212,14 +251,16 @@ def main():
     ap.add_argument("--board", choices=("dm1701", "md380"),
                     help="refuse a stock file for another radio (the stock file picks the board otherwise)")
     ap.add_argument("--image", help="built OpenDigitalRadio image (default: build/<board>/odr_<board>.bin)")
-    ap.add_argument("--image2", help="the build's sector 9 image (DM-1701: odr_dm1701_rodata2.bin), written at its address "
-                    "in the merged image (default: <image>_rodata2.bin next to the image, when it exists)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on a synthetic file and key")
+    ap.add_argument("--test-desc", metavar="FILE", help="write the codec sectors for a synthetic codec, as merged "
+                    "(tests/host/codecDescTest.c; --board md380 for the MD-380's)")
     args = ap.parse_args()
 
     if args.self_test:
         return self_test()
+    if args.test_desc:
+        return test_desc(args.test_desc, args.board or "dm1701")
     if not args.stock:
         ap.error("--stock is required (or --self-test)")
     try:
@@ -236,13 +277,7 @@ def main():
             image = f.read()
         check_output_path(out)
         prof, wins = extract(stock, key)
-        data = []
-        image2 = args.image2 or os.path.splitext(os.path.expanduser(image_path))[0] + "_rodata2.bin"
-        # an explicit --image2 must exist (open() fails into the OSError handler); only the default is optional
-        if prof.get("app_data") and (args.image2 or os.path.exists(os.path.expanduser(image2))):
-            with open(os.path.expanduser(image2), "rb") as f:
-                data = [(prof["app_data"][0][0], f.read())]
-        merged = merge(image, prof, wins, data)
+        merged = merge(image, prof, wins)
         for w in stm32_dfu.check_image(merged, board):
             print("warning: %s" % w)
         with open(out, "wb") as f:
@@ -252,7 +287,7 @@ def main():
         return 1
     print("stock  %s (%s), %s codec: %s verified"
           % (prof["name"], sha256(stock)[:8], board,
-             ", ".join("0x%08X+0x%X" % (a, n) for a, n, _ in windows(prof))))
+             ", ".join("0x%08X+0x%X" % (a, n) for a, n, _ in layout(prof))))
     print("wrote  %s (%d bytes; contains the proprietary codec: keep it to yourself)" % (out, len(merged)))
     return 0
 

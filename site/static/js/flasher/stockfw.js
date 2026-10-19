@@ -4,7 +4,8 @@
 // A port of tools/odrflash/odrflash/stockfw.py; the profiles come from that file through data/flash-boards.json, so
 // both read the same table. The codec and the key are only ever handled on the user's machine.
 
-import { u32le, sha256, startsWith } from "./bytes.js";
+import { u32le, sha256, startsWith, crc32 } from "./bytes.js";
+import { byCodeSha, moveCode, moveBranches, branchesIn, MapError } from "./codecmap.js";
 
 export class StockError extends Error {}
 
@@ -44,7 +45,55 @@ export async function identify(data, fb) {
 	return { sha, known: fb.known_files[sha] || null, profile: fb.profiles[sha] || null };
 }
 
-// The codec windows decrypted and checked: [[addr, bytes], ...] (code first)
+// Where the merge puts a profile's codec (stockfw.placed_windows): [[addr, length, sha256]], code first, then the
+// table windows (the extra ones at their stock address, unchanged)
+export function placedWindows(prof) {
+	if (!prof.placement) return prof.windows;
+	const pl = prof.placement, pd = prof.placed, tab = prof.windows[1];
+	return [[pl.code, prof.windows[0][1], pd.code[1]], [tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...prof.windows.slice(2)];
+}
+
+// The 128-byte descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h, stockfw.descriptor)
+export function descriptor(prof, fb) {
+	const wins = placedWindows(prof);
+	const crcs = [prof.placed.code[0], prof.placed.tables[0], ...(prof.placed.extra || [])];
+	const d = fb.descriptor;
+	const words = [d.magic, d.version, prof.placement.tag, wins[0][0], wins[0][1], crcs[0], wins.length - 1];
+	for (let i = 0; i < d.windows; i++) words.push(...(i + 1 < wins.length ? [wins[i + 1][0], wins[i + 1][1], crcs[i + 1]] : [0, 0, 0]));
+	const out = new Uint8Array(d.len);
+	const view = new DataView(out.buffer);
+	words.forEach((w, i) => view.setUint32(4 * i, w >>> 0, true));
+	view.setUint32(d.len - 4, crc32(out.subarray(0, d.len - 4)), true);
+	return out;
+}
+
+// The decrypted stock windows as the merge writes them (stockfw.place): the code moved (its self references
+// rewritten by the codec map), the table window cut to the codec's data with the islands' calls into the code
+// re-encoded, the extra windows unchanged, then the descriptor; every part checked against the profile's "placed" hashes
+export async function place(prof, segs, fb) {
+	if (!prof.placement) return segs;
+	const pl = prof.placement;
+	const m = prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0];
+	if (!m) throw new StockError(`no codec map for ${prof.name}: its code can't be moved`);
+	const [[, code], [tabAddr, tables], ...extra] = segs;
+	let moved, tab;
+	try {
+		moved = await moveCode(code, m, pl.code);
+		tab = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), m, pl.code);
+	} catch (e) {
+		if (e instanceof MapError) throw new StockError(`can't move the codec: ${e.message}`);
+		throw e;
+	}
+	if (branchesIn(m, tabAddr, tab.length) !== (m.branches || []).length) throw new StockError("a branch into the code lies outside the tables the merge keeps");
+	const want = placedWindows(prof);
+	const got = [moved, tab, ...extra.map(([, d]) => d)];
+	for (const [i, d] of got.entries()) {
+		if ((await sha256(d)) !== want[i][2]) throw new StockError("the moved codec doesn't match the profile");
+	}
+	return [[pl.code, moved], [tabAddr, tab], ...extra, [fb.descriptor.addr, descriptor(prof, fb)]];
+}
+
+// The codec windows decrypted, checked and placed as the merge writes them: [[addr, bytes], ...] (code first)
 export async function extract(data, key, fb, profiles = fb.profiles) {
 	const sha = await sha256(data);
 	const prof = profiles[sha];
@@ -64,7 +113,7 @@ export async function extract(data, key, fb, profiles = fb.profiles) {
 		out.push([addr, plain]);
 	}
 	if (u32le(out[0][1], 0) !== fb.codec_sig) throw new StockError("the codec's first word is wrong");
-	return { profile: prof, segments: out };
+	return { profile: prof, segments: await place(prof, out, fb) };
 }
 
 // The whole application segment of a stock file, decrypted: what the stock firmware is in internal flash. Used to

@@ -21,7 +21,7 @@
 #   1. host tests (make -C tests/host), and with ODR_CI_SANITIZE=1 again under ASan and UBSan
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing tools'
 #      tests (tools/odrflash/tests, codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate
-#      and dm32_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
+#      and hrc7000_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
 #      the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against odrflash (site/tests/run.sh, needs Node 20+)
@@ -144,11 +144,11 @@ for f in sys.argv[1:]:
 	   python3 tools/md380_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/dm32_flash.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/dm32_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/dm32_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/hrc7000_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/ui_gallery_compare.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 stub/stubtool.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate, dm32_codec, ui_gallery_compare, stubtool and f4stub self-tests"
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate, hrc7000_codec, ui_gallery_compare, stubtool and f4stub self-tests"
 	else
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
@@ -257,17 +257,14 @@ build() {
 		# the app region's fit: the linker fails on an overflow; this catches a log it couldn't be read from
 		[ -n "$size" ] && [ -n "$used" ] && bad "$b $name: $used bytes used in a $size byte app region"
 	fi
-	# a board with a second flash region (the DM-1701's sector 9, FLASH2 in its linker script): the bytes in it
-	set -- $(grep -E '^ *FLASH2:' "$log" | head -1)
-	if [ -n "${2:-}" ]; then s9=$(tobytes "${2:-}" "${3:-}"); else s9="-"; fi
 	delta=""
 	if [ "$name" = default ]; then
 		default_bytes=$bytes
 	elif [ -n "${default_bytes:-}" ]; then
 		delta=$((bytes - default_bytes))
 	fi
-	echo "| $b | $name | $bytes | $delta | $free | $pct % | $s9 |" >> "$REPORT"
-	ok "$b $name: $bytes bytes, $free bytes free in the app region$( [ "$s9" != - ] && echo ", $s9 bytes in sector 9")"
+	echo "| $b | $name | $bytes | $delta | $free | $pct % |" >> "$REPORT"
+	ok "$b $name: $bytes bytes, $free bytes free in the app region"
 	if [ "${ODR_CI_PRUNE:-0}" = 1 ]; then
 		cp "$bin" "$dir.bin" && rm -rf "$dir"
 	fi
@@ -278,11 +275,10 @@ if step firmware; then
 	echo "# Image sizes ($(git rev-parse --short=8 HEAD 2>/dev/null), $(date '+%Y-%m-%d %H:%M'))"
 	echo
 	echo "Bytes of the .bin; delta against the board's default; free = the linker's app FLASH region minus used (the"
-	echo "codec windows are outside that region); sector 9 = bytes in the linker's FLASH2 region (the DM-1701's constant"
-	echo "data, a second image written with the application)."
+	echo "codec windows are outside that region)."
 	echo
-	echo "| Board | Config | Image bytes | Delta | Free | Used | Sector 9 |"
-	echo "|---|---|---|---|---|---|---|"
+	echo "| Board | Config | Image bytes | Delta | Free | Used |"
+	echo "|---|---|---|---|---|---|"
 } > "$REPORT"
 
 for bm in boards/*/board.mk boards/*/; do

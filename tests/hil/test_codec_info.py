@@ -6,7 +6,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "odrflash"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
 from odrflash import boards  # noqa: E402
+import hrc7000_codec  # noqa: E402
 
 
 def test_version_reports_codec(radio):
@@ -14,8 +16,10 @@ def test_version_reports_codec(radio):
     assert "codec" in v, "firmware without the codec= key (older than the release tooling)"
     board = boards.from_debuglink_name(v.get("board", ""))
     allowed = {"none", "absent", "present"} | ({board.codec.id} if board else set())
-    if board is not None and board.id in ("dm32", "dm1801pro"):
-        allowed |= {board.id + "-049", board.id + "-046", board.id + "-unknown"}
+    if board is not None and board.family != "anyroad-dfu":
+        # HR_C7000: "<board>-<tag>" for each stock build of the radio (platform/hrc7000/vocoder.c profile())
+        allowed |= {"%s-%03d" % (board.id, p["tag"]) for p in hrc7000_codec.PROFILES.values() if p["board"] == board.id}
+        allowed.add(board.id + "-unknown")
     assert v["codec"] in allowed, v["codec"]
 
 

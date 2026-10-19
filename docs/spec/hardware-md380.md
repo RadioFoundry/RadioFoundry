@@ -51,14 +51,15 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
 | Sectors | Addresses | Use |
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (unverified) |
-| 3-5, 6 up to 0x08050C43 | 0x0800C000-0x08050C43 | ODR application, 275 KB (`boards/md380/md380.ld`) |
-| 6 from 0x08050C44, 7, 8, 10, 11 | see [codec-md380.md](codec-md380.md) | The stock D002.032 codec's code and table windows, run in place (C) |
-| 9 | 0x080A0000-0x080BFFFF | Free |
+| 3-7 | 0x0800C000-0x0807FFFF | ODR application, 464 KB in one piece (`boards/md380/md380.ld`) |
+| 8, 10, 11 | see [codec-md380.md](codec-md380.md) | The stock D002.032 codec as the merge places it: the table windows at their stock addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11), the descriptor at 0x080FFF80 |
+| 9 | 0x080A0000-0x080BFFFF | Holds nothing |
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (unverified).
 
-The 275 KB hold every feature written for this radio only with link time optimization, on by default here, and the
-MMDVM hotspot left out: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380).
+`md380.ld` asserts that the image ends before 0x08080000. The default UHF image takes 320,236 bytes with link time
+optimization, on by default here: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380). Stock firmware keeps
+the codec code at 0x08050C44 (sectors 6 and 7), so the merge moves it.
 
 ### 1.4 RAM
 
@@ -563,16 +564,20 @@ fixes them ([codec-md380.md](codec-md380.md), "Key recovery"; `odrflash/stockfw.
 Entered by holding PTT and the upper side key while switching on (unverified). USB DFU 0483:DF11 with TYT's
 non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (unverified). Flash an ODR
 image with `tools/stm32_dfu.py --model md380 --key KEY odr_md380.bin`. The image is plain, starts at 0x0800C000, and the
-tool encrypts it for the loader. odrflash knows the board (`boards.py` MD380: not releasable, codec sectors 7-11 kept).
+tool encrypts it for the loader. odrflash knows the board (`boards.py` MD380: not releasable, an update writes
+sectors 3-7 and keeps the codec).
 
 ### 14.4 The codec
 
 The AMBE+2 codec is inside the stock application. Located in D002.032 (C, 2026-10-10): the same library as the
-DM-1701's, at other addresses; code window 0x08050C44+0x10884, table window 0x0808FC64+0xAFF8 and four small table
-windows in sectors 10 and 11, run in place. Entry points, calling convention, state sizes and the extraction recipe
-are in [codec-md380.md](codec-md380.md). `stockfw.PROFILES` has the profile (`md380-d2032`), `boards.py` the windows,
-`md380.ld` ends the application at the code window, `vocoder_md380.c` hosts it, and `make BOARD=md380` merges it when
-the stock file is in `codecs/`. Without the codec merged the radio is FM only.
+DM-1701's, at other addresses. In the stock file: code window 0x08050C44+0x10884, table window 0x0808FC64+0xAFF8 and
+four small table windows in sectors 10 and 11. The merge moves the code to 0x080E0000, keeps the table windows at
+their stock addresses and writes a descriptor at 0x080FFF80; the codec runs in place from there. Entry points,
+calling convention, state sizes, the placement and the extraction recipe are in [codec-md380.md](codec-md380.md).
+`stockfw.PROFILES` has the profile, the codec map (`odrflash/codec_maps/md380/md380-d2032.json`) the rewrites,
+`md380.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
+`make BOARD=md380` merges it when the stock file is in `codecs/`. The debug link reports the codec as
+`md380-d2032-s11`; a build from before the move reports `md380-d2032`. Without the codec merged the radio is FM only.
 
 ---
 
@@ -643,7 +648,5 @@ hashed and its container header read (14.1).
 ## 19. Sizes
 
 Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
-[feature-matrix.md](../feature-matrix.md) (the default UHF image, with LTO, leaves about 2 KB of 281,668 bytes).
-
-Obsolete (2026-10-10, before the 275 KB limit of `md380.ld`, LTO and the CCM move): default UHF 252,136 B flash,
-116,248 B SRAM, 8,516 B CCM; maximal 299,808 B flash, 127,784 B SRAM, 15,520 B CCM.
+[feature-matrix.md](../feature-matrix.md). Measured 2026-10-19 with LTO: default UHF image 320,236 B of 475,136 B
+(464 KB), 107,120 B of 131,068 B SRAM, 59,640 B of 64 KB CCM; maximal 327,064 B flash.

@@ -149,40 +149,24 @@ def load_image(args, board_hint):
     except stockfw.StockError as e:
         raise UsageError("%s: %s" % (img_path, e))
     if merged:
-        app, prof, codec, data = merged
+        app, prof, codec = merged
         board = boards.get(prof["board"])
         if board_hint and boards.get(board_hint).id != board.id:
             raise UsageError("%s holds the %s codec, but --board says %s: refusing"
                              % (img_path, board.name, boards.get(board_hint).name))
-        blob = b"".join(d for _, d in data)	# the board's data region is one range (boards.py)
-        m = mf.for_dev_build(board, app, data=blob)
-        whole = app + blob
-        mf.verify(m, whole, board.id)
+        m = mf.for_dev_build(board, app)
+        mf.verify(m, app, board.id)
         say("image    %s: a %s image with the codec merged in (%s, every window verified by SHA-256), "
-            "application %d bytes%s" % (os.path.basename(img_path), board.name, prof["codec_profile"], len(app),
-                                        ", sector 9 data %d bytes" % len(blob) if blob else ""))
-        return board, m, whole, (prof, codec)
+            "application %d bytes" % (os.path.basename(img_path), board.name, prof["codec_profile"], len(app)))
+        return board, m, app, (prof, codec)
     if not board_hint:
         raise UsageError("no manifest %s next to the image. Release images come with one; for a local build say "
                          "which radio it is for with --board (dm1701, dm1801pro, ...)" % man_path)
     board = boards.get(board_hint)
-    # A build with data in a second flash region (the DM-1701's sector 9) writes it next to the image as
-    # <image>_rodata2.bin; the radio needs both
-    data = b""
-    side = os.path.splitext(os.path.expanduser(img_path))[0] + "_rodata2.bin"
-    if board.data_regions and os.path.exists(side):
-        with open(side, "rb") as f:
-            data = f.read()
-        say("image    %s: %d bytes for sector 9 (0x%08X), written with the application"
-            % (os.path.basename(side), len(data), board.data_regions[0][0]))
-    m = mf.for_dev_build(board, image, data=data)
-    whole = image + data
-    mf.verify(m, whole, board.id)
+    m = mf.for_dev_build(board, image)
+    mf.verify(m, image, board.id)
     warn("no manifest: treating %s as a local %s build (nothing to verify it against)" % (img_path, board.name))
-    if board.data_regions and not data:
-        warn("no %s next to the image: the %s build links its constant data into sector 9 and writes it there; without "
-             "it the radio would run with whatever sector 9 holds" % (os.path.basename(side), board.name))
-    return board, m, whole, None
+    return board, m, image, None
 
 
 def load_stock(args):
@@ -223,17 +207,19 @@ def get_key(args, board, stock, sim_key=None):
 
 
 def get_saved_codec(args, board, probe):
-    """For a radio whose update erases the codec: read it back from the radio when it runs ODR with this codec and
-    save a copy, else the copy saved by an earlier run (an update that stopped halfway leaves no codec to read)."""
-    if probe and probe.get("codec") == board.codec.id and not args.no_probe:
+    """The codec read back from the radio, or the copy saved from it earlier (codecsave.py). A radio running ODR with
+    this codec hands over a copy: before every update where an update erases it, once on the other boards. Else the
+    copy an earlier run saved (an update that stopped halfway, a radio back on stock firmware or in its bootloader)."""
+    saved = codecsave.load(board)
+    has_codec = bool(probe) and probe.get("codec") == board.codec.id
+    if has_codec and not args.no_probe and (not board.keep_codec_supported or saved is None):
         got = codecsave.from_radio(board, args.port)
         if got:
             say("codec    read back from the radio (debug link) and checked; saved in %s" % codecsave.save(board, got[1]))
             return got
-    got = codecsave.load(board)
-    if got:
+    if saved and not (has_codec and board.keep_codec_supported):
         say("codec    the copy saved from this radio earlier, checked: %s" % codecsave.path(board))
-    return got
+    return saved
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -252,7 +238,8 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
     """Pick keep or merge (docs/dev/release.md "Codec handling"). probe: a debug-link probe of the radio (this run or
     remembered), or None. stock_installed: what the user says the radio runs ("V02.06 CSV"), or None. ask: a yes/no
     callable for the interactive question, or None (non-interactive). have_saved: the codec read back from this radio
-    (codecsave.py), used where an update can't keep it. Raises UsageError when neither is safe."""
+    (codecsave.py), used where an update can't keep it or the radio's codec can't be checked, before the stock file.
+    Raises UsageError when neither is safe."""
     profile = (manifest.get("codec") or {}).get("profile") or board.codec.id
     merge_hint = "flash with --stock FILE to write the codec from your stock firmware (%s)" % STOCK_HINT
     if requested == planmod.MERGE:
@@ -277,12 +264,15 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
                              % (probe.get("board"), board.name))
         codec = probe.get("codec")
         if codec == profile:
-            return Decision(planmod.KEEP, "ODR on the radio checked its codec (%s, signature and CRC of both windows) "
+            return Decision(planmod.KEEP, "ODR on the radio checked its codec (%s: where it is and every window's CRC) "
                             "and the codec sectors are left alone" % codec)
         if codec is None:
             what = "firmware too old to report its codec"
         else:
             what = "codec=%s" % codec
+        if have_saved and requested != planmod.KEEP:
+            return Decision(planmod.MERGE, "the radio has no codec to keep (%s), so the copy saved from it earlier is "
+                            "written" % what, source="saved")
         if have_stock and requested != planmod.KEEP:
             return Decision(planmod.MERGE, "the radio has no codec to keep (%s), so it is written from your stock "
                             "file" % what)
@@ -290,6 +280,9 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
             return Decision(planmod.KEEP, "asked for, although the radio reported %s" % what,
                             risk="DMR voice will stay off (FM works) until you flash with --stock", expect_codec=False)
         raise UsageError("the radio reported %s: there is no matching codec in it to keep; %s" % (what, merge_hint))
+    if have_saved and requested != planmod.KEEP:
+        return Decision(planmod.MERGE, "the radio's codec can't be checked, so the copy saved from it earlier is "
+                        "written", source="saved")
     if stock_installed:
         norm = stock_installed.upper().replace("-", " ").replace("_", " ")
         if any(norm == v.upper() for v in board.codec.installed):
@@ -300,6 +293,9 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
         if have_stock:
             return Decision(planmod.MERGE, "stock %s keeps its codec at other addresses, so it is written from your "
                             "stock file" % stock_installed)
+        if not board.codec.installed:
+            raise UsageError("no stock firmware leaves the codec where ODR keeps it on the %s (stock %s holds its code "
+                             "in flash ODR's application uses); %s" % (board.name, stock_installed, merge_hint))
         raise UsageError("stock %s keeps its codec at other addresses than %s; %s"
                          % (stock_installed, ", ".join(board.codec.installed), merge_hint))
     if have_stock and requested != planmod.KEEP:
@@ -308,7 +304,7 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
             "the firmware checks the codec before using it, so nothing worse happens")
     if requested == planmod.KEEP:
         return Decision(planmod.KEEP, "asked for; the radio's codec could not be checked", risk=risk)
-    if ask is not None:
+    if ask is not None and board.codec.installed:
         say("")
         say("odrflash can keep the codec that is already in the radio instead of writing one, if the radio holds")
         say("the right one: it is running Baofeng's stock firmware %s, or ODR with working DMR voice."
@@ -316,9 +312,12 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
         say("(Start the radio normally with ODR and run 'odrflash probe' first to have it checked instead.)")
         if ask("Is the radio running stock %s (or ODR with DMR voice working)?" % " or ".join(board.codec.installed)):
             return Decision(planmod.KEEP, "you confirmed the radio holds the codec", risk=risk)
+    if not board.codec.installed:	# no stock firmware holds it where ODR does: only ODR's own check can tell
+        raise UsageError("odrflash can't tell whether the radio holds the codec where this firmware keeps it. Either "
+                         "start the radio with ODR and run 'odrflash probe' first, or %s" % merge_hint)
     raise UsageError("odrflash can't tell whether the radio holds the codec. Either start the radio with ODR and run "
                      "'odrflash probe' first, or say --stock-installed \"%s\" if it runs that stock firmware, or %s"
-                     % (board.codec.installed[0] if board.codec.installed else "?", merge_hint))
+                     % (board.codec.installed[0], merge_hint))
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -394,8 +393,9 @@ def cmd_flash(args):
 
     # the codec: what the radio says, what the user says
     if sim:
-        probe = {"odr-codec": {"board": "DM-1701", "git": "00000000", "codec": board.codec.id, "port": "sim"},
-                 "odr-nocodec": {"board": "DM-1701", "git": "00000000", "codec": "absent", "port": "sim"}}.get(sim)
+        name = board.debuglink_names[0]
+        probe = {"odr-codec": {"board": name, "git": "00000000", "codec": board.codec.id, "port": "sim"},
+                 "odr-nocodec": {"board": name, "git": "00000000", "codec": "absent", "port": "sim"}}.get(sim)
         if probe:
             say("radio    (simulated) ODR running: codec %s" % probe["codec"])
     else:
@@ -406,7 +406,7 @@ def cmd_flash(args):
             raise UsageError("the radio is a %s, the image is for the %s: refusing" % (pb.name, board.name))
     interactive = None if (args.yes or args.dry_run) else ask_yes
     saved = None
-    if not board.keep_codec_supported and not merged and not sim:
+    if not merged and not sim:
         saved = get_saved_codec(args, board, probe)
     if merged and args.codec != planmod.KEEP:
         d = Decision(planmod.MERGE, "the image carries the codec (%s), so it is written from the image"
@@ -423,7 +423,7 @@ def cmd_flash(args):
     if d.mode == planmod.MERGE and merged:
         codec_segs = merged[1]
     elif d.mode == planmod.MERGE and d.source == "saved":
-        codec_segs = stockfw.codec_segments(*saved)
+        codec_segs = codecsave.segments(*saved)
     elif d.mode == planmod.MERGE:
         if stock == "synthetic":
             stock_bytes, profiles, _, _ = stockfw.build_synthetic_stock(sim_key, random.Random(7),
@@ -768,25 +768,13 @@ def cmd_merge(args):
     with open(os.path.expanduser(args.stock), "rb") as f:
         stock = f.read()
     key = dfumod.load_key(args.key, board) if args.key else dfumod.check_key(stockfw.derive_key(stock), board)
-    # A release image packs the application and its sector 9 data, described by the manifest next to it; a local build
-    # writes the data as <image>_rodata2.bin (--rodata2 names another). docs/dev/release.md "Sector 9"
-    data = []
+    # a release image comes with its manifest: check the two belong together
     man_path = os.path.splitext(os.path.expanduser(args.image))[0] + ".json"
-    if not args.rodata2 and os.path.exists(man_path):
-        m = mf.load(man_path)
-        mf.verify(m, image, board.id)
-        segs = mf.segments(m, image)
-        image, data = segs[0][1], segs[1:]
-    else:
-        side = args.rodata2 or os.path.splitext(os.path.expanduser(args.image))[0] + "_rodata2.bin"
-        if args.rodata2 and not os.path.exists(os.path.expanduser(side)):
-            raise UsageError("%s doesn't exist" % args.rodata2)
-        if board.data_regions and os.path.exists(os.path.expanduser(side)):
-            with open(os.path.expanduser(side), "rb") as f:
-                data = [(board.data_regions[0][0], f.read())]
+    if os.path.exists(man_path):
+        mf.verify(mf.load(man_path), image, board.id)
     try:
         prof, segs = stockfw.extract(stock, key)
-        merged = stockfw.merge(image, prof, segs, data)
+        merged = stockfw.merge(image, prof, segs)
     except stockfw.StockError as e:
         raise UsageError(str(e))
     with open(args.output, "wb") as f:
@@ -867,7 +855,6 @@ def build_parser():
     m.add_argument("--key")
     m.add_argument("-o", "--output", required=True)
     m.add_argument("--board")
-    m.add_argument("--rodata2", help="the build's sector 9 image (default: <image>_rodata2.bin next to the image)")
     m.set_defaults(fn=cmd_merge)
 
     g = sub.add_parser("download", help="download a release image and manifest, verified")

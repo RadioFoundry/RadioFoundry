@@ -158,7 +158,7 @@ Sentry; the page then works the same and offers the download only.
 | `manifest.js` | Release manifest checks | `odrflash/manifest.py` |
 | `decide.js` | Keep or merge the codec | `odrflash/cli.py` `decide_codec` |
 | `dfu.js` | The AnyRoad DFU bootloader over WebUSB | `odrflash/dfu.py` |
-| `codecsave.js` | Where an update erases the codec (the MD-380): the codec read back from a radio that runs ODR, checked against the profile's hashes, and a copy kept in IndexedDB until the next update | `odrflash/codecsave.py` |
+| `codecsave.js` | The codec read back from a radio that runs ODR (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: on the MD-380 before every update erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `odrflash/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs ODR: the bootloader read over READ_MEM, the block with the key's SHA-256 | `odrflash/bootkey.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `odrflash/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
 | `backends.js` | The radio access backend registry: which steps and views a radio's family uses (below) | |
@@ -170,7 +170,7 @@ Sentry; the page then works the same and offers the download only.
 | `fake.js` | A simulated radio: bootloader with a flash model, ODR's serial port, a synthetic stock file | `odrflash/fakedfu.py` |
 | `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by ODR, then reads, sector writes and the LED | `stub/stubtool.py` |
 | `f4stub.js` | The STM32F4 loader (DM-1701, MD-380): handed over by ODR, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
-| `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/dm32_codec.py` |
+| `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
 | `db25d.js`, `db25dui.js` | DB25-D: the stub loaded through the stock debug console (USMART), the vendor update mode write (IAP) and their steps | `docs/spec/hardware-db25d.md` 7 |
 | `c7000ui.js`, `radiotop.js` | The HR_C7000 backend: its steps (connect, back up and check, write, check) and the radio picture with its LED | |
@@ -271,7 +271,7 @@ its own steps:
 #### DB25-D PRO
 
 The DB25-D has no boot ROM window on its cable until ODR's first stage is installed, and no SPI data flash (its NAND is
-not read). The board's table entry in `data/flash-boards.json` (`c7000.boards.db25d`, from `tools/dm32_codec.py`
+not read). The board's table entry in `data/flash-boards.json` (`c7000.boards.db25d`, from `tools/hrc7000_codec.py`
 BOARDS) carries the 2 MB program flash size, `data_flash: false`, `stock_console: true` and `stub_board`, the profile the page sends in CONFIG (`stub/stubtool.py` `C7_BOARDS`). The steps are
 the ones above, with these changes:
 
@@ -284,7 +284,7 @@ the ones above, with these changes:
 
 The first stage is the only way into the stub from a radio that runs ODR without answering. `site/tests/db25d.test.mjs`
 runs the console stub load and the IAP write against simulated radios (`fakec7000.js` with `usmart: "018"` models the
-console; `#sim=c7000-db25d` runs it in the page) and compares the codec carve with `tools/dm32_codec.py` (`ODR_DB25D_STOCK=<a real 018
+console; `#sim=c7000-db25d` runs it in the page) and compares the codec carve with `tools/hrc7000_codec.py` (`ODR_DB25D_STOCK=<a real 018
 file> python3 site/tests/fixtures.py` adds the real file to the comparison).
 
 The codec decision (`decide()` in `c7000.js`), first match wins:
@@ -294,14 +294,14 @@ The codec decision (`decide()` in `c7000.js`), first match wins:
 | Keep | The codec slot in flash checks out (magic, CRC, signature, the board's RAM windows). Only the image is written |
 | The radio | The stock firmware in the read holds a known codec (found by its signature and SHA-256, wherever that stock version put it). It is copied into the slot |
 | This browser | A slot an earlier run kept in IndexedDB |
-| A file | A program memory backup, a known stock firmware file, or an image merged by `tools/dm32_codec.py` |
+| A file | A program memory backup, a known stock firmware file, or an image merged by `tools/hrc7000_codec.py` |
 | None | Only when the user asks for it: FM works, DMR voice stays off |
 
 The page never sends a STUB command to ODR except right before it enters the stub: any STUB command parks ODR's codec
 until the next restart.
 
 The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
-`tools/dm32_codec.py` and `tools/dm32_flash.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
+`tools/hrc7000_codec.py` and `tools/dm32_flash.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
 
 | File | Part | Content |
 |---|---|---|

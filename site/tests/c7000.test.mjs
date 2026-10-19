@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The HR_C7000 flasher modules: LZ4 and the codec slot against stubtool.py and dm32_codec.py (fixtures from
+// The HR_C7000 flasher modules: LZ4 and the codec slot against stubtool.py and hrc7000_codec.py (fixtures from
 // site/tests/fixtures.py), and the stub protocol end to end against the simulated radio (fakec7000.js): the boot-ROM
 // load, entry from ODR, reads with damaged frames, writes of changed sectors only, the reset back into the firmware.
 
@@ -44,7 +44,7 @@ test("LZ4: stubtool's block decodes, and our encoder round-trips", () => {
 	assert.throws(() => decodeBlock(bin("lz4_block.bin").subarray(0, 100), plain.length));
 });
 
-test("codec located wherever the stock firmware put it, slot as dm32_codec builds it", async () => {
+test("codec located wherever the stock firmware put it, slot as hrc7000_codec builds it", async () => {
 	const fx = json("c7000.json");
 	const c = { ...C, profiles: [fx.profile] };
 	const progmem = bin("c7000_progmem.bin");
@@ -55,7 +55,7 @@ test("codec located wherever the stock firmware put it, slot as dm32_codec build
 	const image = bin("c7000_image.bin"), merged = bin("c7000_merged.bin");
 	const [start, data] = c7.target(c, "dm1801pro", image, c7.slotBytes(c, "dm1801pro", found));
 	assert.equal(start, 0xC000);
-	assert.ok(equal(data.subarray(0, merged.length), merged), "image, padding and slot match dm32_codec.merge()");
+	assert.ok(equal(data.subarray(0, merged.length), merged), "image, padding and slot match hrc7000_codec.merge()");
 	assert.ok(data.subarray(merged.length).every((b) => b === 0xFF), "the slot's tail is erased");
 	const slot = merged.subarray(C.boards.dm1801pro.slot[0] - C.app_start);
 	const ps = await c7.parseSlot(c, "dm1801pro", slot);
@@ -223,4 +223,29 @@ test("factory calibration: the first page of the stock codeplug area whose ID by
 	assert.equal(c7.findCalibration(area), 0x7C000);
 	// the simulated radio carries one where the DM-1801 Pro examined had it
 	assert.equal(c7.findCalibration(new FakeC7000({ progmem: new Uint8Array(0x100000) }).q128), 0x7C000);
+});
+
+// Slots (docs/spec/codec-placement.md): the same bytes as hrc7000_codec.py, read back; a version 1 slot from before the
+// code moved, and a build without a codec map, are refused
+test("a codec with a map gets hrc7000_codec.py's slot; a version 1 slot or a build without a map is refused", async () => {
+	const fx = json("c7000.json").v2;
+	const want = bin("c7000_slot_v2.bin");
+	const c = { ...C, codec_maps: { [fx.map.profile]: fx.map }, boards: { ...C.boards, db25d: { ...C.boards.db25d, run: fx.run } } };
+	const r = await c7.parseSlot(c, "db25d", want);
+	assert.ok(r && r.version === 2 && r.length === want.length);
+	const w = (i) => want[4 * i] | (want[4 * i + 1] << 8) | (want[4 * i + 2] << 16) | (want[4 * i + 3] * 2 ** 24);
+	const code = want.slice(w(2), w(2) + w(3)), tables = want.slice(w(5), w(5) + w(6));
+	const profile = { name: "synthetic", run: w(4), tables_ram: w(7), entries: Array.from({ length: 7 }, (_, i) => w(8 + i)), tag: w(15) };
+	const got = { profile, code, tables, codeSha: await sha256(code) };
+	assert.ok(equal(c7.slotBytes(c, "db25d", got), want), "the same bytes as hrc7000_codec.py");
+	assert.equal(await c7.parseSlot({ ...c, boards: { ...c.boards, db25d: { ...c.boards.db25d, run: [fx.run[0], fx.run[0] + 0x1000] } } }, "db25d", want), null,
+		"a codec bigger than the window is refused");
+	const v1 = want.slice();
+	v1[4] = 1;
+	assert.equal(await c7.parseSlot(c, "db25d", v1), null, "a version 1 slot is refused");
+	assert.equal(await c7.decide(c, "db25d", { savedSlot: v1 }), null, "and isn't written from a saved copy");
+	assert.throws(() => c7.slotBytes({ ...c, codec_maps: {} }, "db25d", got), /no codec map/);
+	const bad = code.slice();
+	bad.fill(0, 0x40, 0x44);
+	assert.throws(() => c7.slotBytes(c, "db25d", { ...got, code: bad }), /doesn't hold/);
 });

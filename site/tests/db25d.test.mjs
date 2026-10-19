@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The DB25-D pieces of the web flasher: the codec carved from a plain stock file against dm32_codec.py (fixtures from
-// site/tests/fixtures.py), the stub loaded through the stock console and the IAP write against simulated radios, and the stub choice by RAM span.
+// The DB25-D pieces of the web flasher: the codec carved from a plain stock file against hrc7000_codec.py (fixtures
+// from site/tests/fixtures.py), the stub loaded through the stock console and the IAP write against simulated radios, and the stub choice by RAM span.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -27,12 +27,14 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");
-	assert.equal(ps.length, 3);
-	assert.ok(ps.every((p) => p.stock_header === 0 && p.stock_file));
+	assert.equal(ps.length, 4);
+	// the 018 builds come as vendor files; 020 has no vendor file, only a program flash read of the radio
+	assert.ok(ps.filter((p) => p.tag !== 20).every((p) => p.stock_header === 0 && p.stock_file));
+	assert.equal(ps.find((p) => p.tag === 20).stock_file, null);
 	assert.equal(C.boards.dm32.data_flash, true);
 });
 
-test("codec carved from a plain stock file is byte-identical to dm32_codec.py", async () => {
+test("codec carved from a plain stock file is byte-identical to hrc7000_codec.py", async () => {
 	const base = C.profiles.find((p) => p.board === "db25d" && p.tag === 2501);
 	const c = { ...C, profiles: [{ ...base, stock_file: { ...base.stock_file, sha256: fx.sha256 }, code_sha256: null, tables_sha256: null }] };
 	const plain = bin("db25d_stock.bin");
@@ -41,13 +43,13 @@ test("codec carved from a plain stock file is byte-identical to dm32_codec.py", 
 	const image = bin("db25d_image.bin"), merged = bin("db25d_merged.bin");
 	const [start, data] = c7.target(c, "db25d", image, c7.slotBytes(c, "db25d", got));
 	assert.equal(start, 0xC000);
-	assert.ok(equal(data.subarray(0, merged.length), merged), "image, padding and slot match dm32_codec.merge()");
+	assert.ok(equal(data.subarray(0, merged.length), merged), "image, padding and slot match hrc7000_codec.merge()");
 	assert.ok(data.subarray(merged.length).every((b) => b === 0xFF));
 	await assert.rejects(c7.codecFromFile(plain.slice(1), c, "db25d"), c7.CodecError);
 	await assert.rejects(c7.codecFromFile(plain, c, "dm32"), c7.CodecError, "another radio's file");
 });
 
-test("a real stock file gives the slot dm32_codec.py gives", { skip: !fx.real && "set ODR_DB25D_STOCK when making the fixtures" }, async () => {
+test("a real stock file gives the slot hrc7000_codec.py gives", { skip: !fx.real && "set ODR_DB25D_STOCK when making the fixtures" }, async () => {
 	const data = new Uint8Array(readFileSync(fx.real.path));
 	const got = await c7.codecFromFile(data, C, "db25d");
 	assert.ok(equal(c7.slotBytes(C, "db25d", got), bin("db25d_real_slot.bin")));

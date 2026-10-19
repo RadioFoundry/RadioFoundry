@@ -25,10 +25,11 @@ to be on it at the start.
    tools/stm32_dfu.py --model md380 --key ~/keys/md380.key build/md380/odr_md380.bin
    ```
 
-   The plain image fills flash sectors 3-6 only. Sector 6 also holds the start of the stock codec, so flashing the
-   plain image leaves the radio without a working codec (FM only). For DMR voice flash the merged image instead:
-   with `MD-380-D2.32(AD).bin` in `codecs/`, the build also writes `build/md380/odr_md380_codec.bin` (no key file
-   needed; [codec-md380.md](../spec/codec-md380.md)).
+   The plain image fills flash sectors 3-7 only and leaves the codec sectors (8, 10, 11) alone. Coming from stock
+   firmware there is no codec there yet, so the first flash for DMR voice is the merged image: with
+   `MD-380-D2.32(AD).bin` in `codecs/`, the build also writes `build/md380/odr_md380_codec.bin`, which moves the codec
+   code to sector 11 (no key file needed; [codec-md380.md](../spec/codec-md380.md)). After that the plain image is
+   enough for an update.
 4. Antenna on, **no PTT** until stage 6, and then only into a dummy load.
 5. The SWD pins become the bandwidth switch and microphone supply once the radio starts (hardware-md380.md 2.6). For a
    debugger session build with `MD380_DEFS=-DMD380_KEEP_SWD` and connect under reset.
@@ -99,14 +100,16 @@ Open Diagnostics (Menu > Settings > Diagnostics, or `odr_debug.py diag`). The bo
 ## 7. DMR receive
 
 Needs the codec merged: put `MD-380-D2.32(AD).bin` in `codecs/`, build, and flash `build/md380/odr_md380_codec.bin`
-([codec-md380.md](../spec/codec-md380.md)); the debug link VERSION line then reports `codec=md380-d2032`. Without it
-the radio is FM only; the slot engine can still be checked without voice:
+([codec-md380.md](../spec/codec-md380.md)); the debug link VERSION line then reports `codec=md380-d2032-s11`. Without
+it the radio is FM only; the slot engine can still be checked without voice:
 
 | Check | If not |
 |---|---|
 | On a DMR channel with traffic: "tk" climbs by 33 per second, voice and LC counters move | the IF path (DMR_SW), the C5000 DMR mode (0x10 = 0x6B), interrupts on PC0-PC2 |
 | The caller's ID and talk group show | the embedded LC (`hrc6000_voice_lcss`), the 0x5F stand-in for DMO / RMO |
 | With a codec profile: clean voice, "aud blk" climbing, no "ov" | I2S directions and format in `audio_md380.c`. Unknown 17 |
+| No codec profile with the merged image flashed | the boot check in `vocoder_md380.c` failed: descriptor, placement or a CRC of the moved codec (codec-md380.md, Hosting) |
+| After an update with the plain image (keep mode): still `codec=md380-d2032-s11` and clean voice RX and TX | the update reached a codec sector (8, 10 or 11), or the image passed 0x08080000 |
 
 ## 8. DMR transmit (dummy load, then a hotspot or repeater)
 

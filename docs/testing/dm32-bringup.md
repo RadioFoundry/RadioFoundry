@@ -26,7 +26,7 @@ Hardware facts: `docs/spec/hardware-dm32.md`, `docs/spec/modem-hrc7000.md`, `doc
    For DMR voice, merge your own stock codec first (never commit or share the result):
 
    ```
-   tools/dm32_codec.py --stock DM32.01.01.049.bin    # writes build/dm32/odr_dm32_codec.bin
+   tools/hrc7000_codec.py --stock DM32.01.01.049.bin    # writes build/dm32/odr_dm32_codec.bin
    tools/dm32_pack.py build/dm32/odr_dm32_codec.bin build/dm32/odr_dm32_codec_BFUV32.bin
    ```
 

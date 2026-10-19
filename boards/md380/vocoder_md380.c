@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// MD-380 vocoder: the stock D002.032 AMBE+2 codec run in place from flash (docs/spec/codec-md380.md, sections
-// "Hosting" and "State init and calls").
+// MD-380 vocoder: the stock D002.032 AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32
+// radios"; the codec: docs/spec/codec-md380.md, "State init and calls").
 //
-// The codec code (0x08050C44..0x080614C8), its main table window (0x0808FC64..0x0809AC5C) and four small table windows
-// are merged into the image on the user's machine (tools/codec_extract.py); they are never part of this repository or
-// a release. Without them, present() is false and the radio is FM only.
+// The merge on the user's machine (odrflash, tools/codec_extract.py, the web flasher) writes the codec's main table
+// window at its stock address (0x0808FC64..0x0809AC5C, sector 8) and its four small table windows at theirs (sectors
+// 10 and 11), its code at the start of sector 11 (0x080E0000), and the descriptor at the end of sector 11
+// (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute addresses, which don't change. The
+// merge rewrites what does: two address pairs in the code that point into the code, and the 12 calls from the code
+// that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
+// release. Without a valid descriptor and codec, present() is false and the radio is FM only.
 //
 // It is the same AMBE+2 library as the DM-1701's, linked at other addresses: the init sequence, the arguments and the
 // state sizes are the same, only the entry addresses differ. Not reentrant: one task (the audio task, through the
@@ -15,24 +19,24 @@
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "codec_call.h"
+#include "codec_desc.h"
 
 #include <string.h>
 
-#define CODEC_BASE		0x08050C44u
-#define CODEC_END		0x080614C8u
-#define CODEC_TABLES		0x0808FC64u
-#define CODEC_TABLES_END	0x0809AC5Cu
 #define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
+#define CODEC_TAG		0x2032u		// the descriptor's tag for stock D002.032
+#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash md380.ld leaves to the codec
+#define CODEC_FLASH_HI		CODEC_DESC_ADDR
 
-// Entry points (offsets from CODEC_BASE)
-#define CODEC_ENCODE		(CODEC_BASE + 0x14Cu)
-#define CODEC_DECODE		(CODEC_BASE + 0x604u)
-#define CODEC_ENC_INIT		(CODEC_BASE + 0x294u)	// (E, 1, 1)
-#define CODEC_FEC_INIT		(CODEC_BASE + 0x4FCu)	// (F, 1): state of the codec's own FEC routines
-#define CODEC_DEC_INIT		(CODEC_BASE + 0x6F0u)	// (D, 1)
-#define CODEC_ENC_PARAMS	(CODEC_BASE + 0x854u)	// (E, 10 parameters)
-#define CODEC_ENC_SET		(CODEC_BASE + 0x1E0u)	// (E, a, b)
-#define CODEC_DEC_SET		(CODEC_BASE + 0x6ACu)	// (D, a, b)
+// Entry points (offsets from the code start)
+#define CODEC_ENCODE		(base + 0x14Cu)
+#define CODEC_DECODE		(base + 0x604u)
+#define CODEC_ENC_INIT		(base + 0x294u)	// (E, 1, 1)
+#define CODEC_FEC_INIT		(base + 0x4FCu)	// (F, 1): state of the codec's own FEC routines
+#define CODEC_DEC_INIT		(base + 0x6F0u)	// (D, 1)
+#define CODEC_ENC_PARAMS	(base + 0x854u)	// (E, 10 parameters)
+#define CODEC_ENC_SET		(base + 0x1E0u)	// (E, a, b)
+#define CODEC_DEC_SET		(base + 0x6ACu)	// (D, a, b)
 // Not used: encode ECC +0x514 and FEC decode +0xAC8. The air frame FEC is ours (core/dmr/ambe) and matches stock's.
 
 // State sizes found by running the stock code with each block ending at a fault boundary (the same as the DM-1701's)
@@ -40,13 +44,16 @@
 #define ENC_STATE_BYTES		0x16E0u
 #define FEC_STATE_BYTES		0x44u
 
-// CRC-32 (IEEE 802.3) of the decrypted windows of the stock D002.032 file (their SHA-256 are in the spec)
-#define CODEC_CRC		0x32F0A7C1u
-#define CODEC_TABLES_CRC	0x91E708C1u
+// The D002.032 codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
+// the code and the main table window after the rewrites, and of the small windows (unchanged). The descriptor must
+// carry exactly these
+#define CODEC_CODE		0x080E0000u
+#define CODEC_CODE_LEN		0x10884u
+#define CODEC_CRC		0x067E6A77u
+#define CODEC_WINDOWS		5u
 
-static const struct {
-	uint32_t addr, len, crc;
-} small_tables[] = {
+static const codec_desc_window_t tables[CODEC_WINDOWS] = {
+	{ 0x0808FC64u, 0xAFF8u, 0x2A5C9EE1u },
 	{ 0x080D0FC8u, 0x24u, 0x7AAFE1D3u },
 	{ 0x080F9698u, 0x18u, 0x33E82E70u },
 	{ 0x080F9E74u, 0x14u, 0xFFF0E930u },
@@ -63,6 +70,7 @@ static int16_t bitbuf[72] __attribute__((section(".ccmram"), aligned(4)));	// on
 static int16_t pcmbuf[VOCODER_FRAME_SAMPLES] __attribute__((section(".ccmram"), aligned(4)));
 
 static int8_t presence = -1;	// -1 not checked yet
+static uint32_t base;		// the code's start, from the descriptor
 static bool ready;		// states initialized
 static bool enc_first;		// next encode is the first of a transmission
 
@@ -73,32 +81,18 @@ static uint32_t call(uint32_t fn, uint32_t nargs, uint32_t a0, uint32_t a1, uint
 	return stm32_codec_call(fn, args, nargs);
 }
 
-static uint32_t crc32(const uint8_t *p, uint32_t len)
-{
-	static const uint32_t nib[16] = {
-		0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC, 0x76DC4190, 0x6B6B51F4, 0x4DB26158, 0x5005713C,
-		0xEDB88320, 0xF00F9344, 0xD6D6A3E8, 0xCB61B38C, 0x9B64C2B0, 0x86D3D2D4, 0xA00AE278, 0xBDBDF21C,
-	};
-	uint32_t c = 0xFFFFFFFFu;
-	while (len--) {
-		c ^= *p++;
-		c = (c >> 4) ^ nib[c & 15];
-		c = (c >> 4) ^ nib[c & 15];
-	}
-	return ~c;
-}
-
-// Signature word first (an erased region or the application's own bytes fail fast), then the CRC of every window,
-// once (about 112 KB)
+// The descriptor (its own checks, the D002.032 build at its placement and CRCs), then the code's signature word (an
+// erased or zero region fails fast), then the CRC of every window, once (about 112 KB)
 static bool present(void)
 {
 	if (presence < 0) {
-		bool ok = *(const volatile uint32_t *)CODEC_BASE == CODEC_SIGNATURE &&
-			  crc32((const uint8_t *)CODEC_BASE, CODEC_END - CODEC_BASE) == CODEC_CRC &&
-			  crc32((const uint8_t *)CODEC_TABLES, CODEC_TABLES_END - CODEC_TABLES) == CODEC_TABLES_CRC;
-		for (uint32_t i = 0; ok && i < sizeof small_tables / sizeof small_tables[0]; i++) {
-			ok = crc32((const uint8_t *)small_tables[i].addr, small_tables[i].len) == small_tables[i].crc;
-		}
+		const codec_desc_t *d = (const codec_desc_t *)CODEC_DESC_ADDR;
+		bool ok = codec_desc_check(d, CODEC_TAG, CODEC_FLASH_LO, CODEC_FLASH_HI, CODEC_CODE_LEN) &&
+			  d->code.addr == CODEC_CODE && d->code.len == CODEC_CODE_LEN && d->code.crc == CODEC_CRC &&
+			  d->windows == CODEC_WINDOWS && memcmp(d->table, tables, sizeof tables) == 0 &&
+			  *(const volatile uint32_t *)d->code.addr == CODEC_SIGNATURE &&
+			  codec_desc_check_bytes(d, (const uint8_t *)CODEC_FLASH_LO, CODEC_FLASH_LO);
+		base = ok ? d->code.addr : 0;
 		presence = ok ? 1 : 0;
 	}
 	return presence == 1;
@@ -176,10 +170,12 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
 }
 
-// The id tools/odrflash and the release manifests use for this codec (signature and every CRC above matched)
+// The id tools/odrflash and the release manifests use for this codec: D002.032 placed as above (the descriptor and
+// every CRC matched). A build from before the move reports "md380-d2032", which tells odrflash that the codec isn't
+// where this layout keeps it
 static const char *profile(void)
 {
-	return present() ? "md380-d2032" : NULL;
+	return present() ? "md380-d2032-s11" : NULL;
 }
 
 const hal_vocoder_t md380_vocoder = {

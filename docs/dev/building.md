@@ -19,7 +19,7 @@ and ST's HAL and CMSIS into `third_party/`.
 
 | Command | Does |
 |---|---|
-| `make BOARD=<b>` | Builds `build/<b>/odr_<b>.{elf,bin,map}` (the DM-1701 also `odr_dm1701_rodata2.bin`, its flash sector 9: [release.md](release.md#sector-9)), plus `odr_<b>_codec.bin` when `codecs/` holds the radio's stock file and the board has a codec tool (below). `BOARD` defaults to `dm1701` |
+| `make BOARD=<b>` | Builds `build/<b>/odr_<b>.{elf,bin,map}`, plus `odr_<b>_codec.bin` when `codecs/` holds the radio's stock file and the board has a codec tool (below). `BOARD` defaults to `dm1701` |
 | `make BOARD=md380 MD380_BAND=vhf` | The MD-380 VHF image (default `uhf`; one image per band) |
 | `make BOARD=<b> size` | Section sizes and the space left before the codec |
 | `make BOARD=<b> stack-check` | Each task's worst-case stack depth against its stack ([stack-check.md](stack-check.md)) |
@@ -69,8 +69,8 @@ The user manual covers it for users: [Installing](../user/02-installing.md). In 
 | Radio | Flash |
 |---|---|
 | DM-1701 | `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701 [--stock FILE]` ([tools/odrflash](../../tools/odrflash/README.md)): keeps the radio's codec or merges it from the stock file, erases only the sectors it needs. The older two-step route still works: `tools/codec_extract.py --stock FILE` (key derived from the file, or `--key`), then `tools/stm32_dfu.py IMAGE --model dm1701 --key dm1701.key`, which erases every application sector |
-| MD-380 | `tools/md380_migrate.py flash --image IMAGE --stock FILE` (merges the codec; every flash needs it, the codec shares sector 6 with the application), or `tools/codec_extract.py` then `tools/stm32_dfu.py --model md380`. Moving a radio from stock with its codeplug: [md380-migration.md](../spec/md380-migration.md) |
-| DM-32UV | `tools/dm32_codec.py` merges the codec; `tools/dm32_flash.py IMAGE` writes it through the Baofeng bootloader over the programming cable (or `tools/dm32_pack.py` wraps it for Baofeng's updater). Moving a radio from stock with its codeplug: [dm32-migration.md](../spec/dm32-migration.md) |
+| MD-380 | `tools/md380_migrate.py flash --image IMAGE --stock FILE` (merges the codec), or `tools/codec_extract.py` then `tools/stm32_dfu.py --model md380`. Moving a radio from stock with its codeplug: [md380-migration.md](../spec/md380-migration.md) |
+| DM-32UV | `tools/hrc7000_codec.py` merges the codec; `tools/dm32_flash.py IMAGE` writes it through the Baofeng bootloader over the programming cable (or `tools/dm32_pack.py` wraps it for Baofeng's updater). Moving a radio from stock with its codeplug: [dm32-migration.md](../spec/dm32-migration.md) |
 
 Without a codec the firmware runs, with FM only. See [The codec](codec.md).
 

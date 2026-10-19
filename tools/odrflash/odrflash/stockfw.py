@@ -13,6 +13,9 @@ import collections
 import hashlib
 import itertools
 import struct
+import zlib
+
+from . import codecmap
 
 APP_BASE = 0x0800C000
 FLASH_END = 0x08100000
@@ -20,6 +23,12 @@ KEY_LEN = 1024
 HEADER_LEN = 0x100
 MAGIC = b"OutSecurityBin"
 CODEC_SIG = 0x4FF0E92D
+# The descriptor the merge writes at the end of sector 11 (platform/stm32f4/codec_desc.h; docs/spec/codec-placement.md)
+DESC_ADDR = 0x080FFF80
+DESC_LEN = 0x80
+DESC_MAGIC = 0x43534544      # "DESC"
+DESC_VERSION = 1
+DESC_WINDOWS = 5
 
 # DM-1701 bootloader key identity (docs/spec/hardware-dm1701.md 15.3); the key bytes are never stored here
 DM1701_KEY_SHA256 = "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff"
@@ -30,32 +39,37 @@ SINGLE_SEGMENT = 0xFFFFFFFF
 
 # One profile per supported stock file, keyed by its SHA-256 (codec-dm1701.md and codec-md380.md, "Stock files" and
 # "Codec in the stock image"). Window = (flash address, length, SHA-256 of the decrypted bytes): "code" (its first word
-# is CODEC_SIG), "tables", and "extra" for profiles whose codec has further small table windows, and "app_data" for the flash regions the firmware's
-# own data may take between the windows. "codec_profile" is
+# is CODEC_SIG), "tables", and "extra" for profiles whose codec has further small table windows. "codec_profile" is
 # the id the firmware reports (debug link VERSION codec=) and the release manifests carry; "board" the radio it is
-# for; "key_sha256" the identity of that radio's bootloader key.
+# for; "key_sha256" the identity of that radio's bootloader key. "placement" (docs/spec/codec-placement.md): where the
+# merge puts the code ("code"), how much of the table window it keeps ("tables_len": the codec's own data, from the
+# codec map; the tables stay at their stock address) and the descriptor's tag; "placed": the CRC-32 and SHA-256 of the
+# code and tables as placed (the code's self references and the islands' calls into it rewritten for the new address),
+# which the descriptor carries and the firmware checks, and the CRC-32 of each "extra" window (written unchanged).
 PROFILES = {
     "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d": {
         "name": "DM-1701(CSV)-V02.06.bin",
         "version": "V02.06 CSV",
         "board": "dm1701",
         "key_sha256": DM1701_KEY_SHA256,
-        "codec_profile": "dm1701-v0206-csv",
+        "codec_profile": "dm1701-v0206-csv-s11",
         "size": 1272320,
         "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xD9400)],
         "code": (0x08074714, 0x1021C, "1d8d04603b288e102f70252c1dd489600dfde656eccea6264e7bf4fac413f0cd"),
         "tables": (0x080D19F0, 0x12850, "b99f14e72bf72555946c1f04e8a1636652e6f62843baaf7a135787879e028894"),
-        # Flash between the codec windows that the firmware may use for read-only data (sector 9, hardware-dm1701.md 1.4):
-        # a merged image carries it at its address
-        "app_data": [(0x080A0000, 0x20000)],
+        # The code goes right after the codec's data (which ends at 0x080E3A72) in sector 11, word aligned
+        # (boards/dm1701/dm1701.ld, boards/dm1701/vocoder_dm1701.c); sectors 3-9 are the application's
+        "placement": {"code": 0x080E3A74, "tables_len": 0x12082, "tag": 0x0206},
+        "placed": {"code": (0x485BFC13, "d88c93ba5c3eac043558d05b182fe824a25aa373f84c48a341b369c0cc942e8c"),
+                   "tables": (0xC1EEFA8B, "9ed939d23dd7b20f633d084f4713c35277d0227821070c551990caf8df409215")},
     },
-    # TYT MD-380 "Firmware 2.32" (D002.032), single-segment container; the code window starts inside flash sector 6
+    # TYT MD-380 "Firmware 2.32" (D002.032), single-segment container. Stock keeps the code in sectors 6 and 7
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": {
         "name": "MD-380-D2.32(AD).bin",
         "version": "D002.032",
         "board": "md380",
         "key_sha256": MD380_KEY_SHA256,
-        "codec_profile": "md380-d2032",
+        "codec_profile": "md380-d2032-s11",
         "size": 0xF2E00,
         "segments": [(0x0800C000, 0xF2C00)],
         "code": (0x08050C44, 0x10884, "00d9565dc459c47119690e47c35daf9ae1a89c13bb3513d966390e0835b0c0ad"),
@@ -66,6 +80,12 @@ PROFILES = {
             (0x080F9E74, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FD490, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
+        # The code goes to the start of sector 11, below the small windows there (boards/md380/md380.ld,
+        # boards/md380/vocoder_md380.c); the tables stay in sector 8, so sectors 3-7 are the application's
+        "placement": {"code": 0x080E0000, "tag": 0x2032},
+        "placed": {"code": (0x067E6A77, "d5c68973b33d5709b6d1df719b80841b77f1835d3bef5b61c6c682147da6bebc"),
+                   "tables": (0x2A5C9EE1, "8c704a9606ec19fbe4af275de4fbd1ded64e2ab644e0115ec34bff86cb3d21a9"),
+                   "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
     },
 }
 
@@ -129,8 +149,78 @@ def identify(stock):
 
 
 def windows(prof):
-    """Every codec window of a profile in a fixed order: [(addr, length, sha256)], code first, then tables, then extra."""
+    """Every codec window of a profile in the stock file, in a fixed order: [(addr, length, sha256)], code first, then
+    tables, then extra. Where the merge puts them in the radio: layout()."""
     return [prof["code"], prof["tables"]] + list(prof.get("extra", ()))
+
+
+def code_map(prof, code=None):
+    """The codec map for a profile's code (a synthetic profile carries its own, "map"), or None"""
+    if prof.get("map"):
+        return prof["map"]
+    found = codecmap.by_code_sha(codecmap.load_maps(), prof["code"][2])
+    return found[0] if found else None
+
+
+def placed_windows(prof):
+    """Where the merge puts a profile's codec: [(addr, length, sha256)], code first, then the table windows (the extra
+    ones at their stock address, unchanged). Without "placement", the stock windows."""
+    if not prof.get("placement"):
+        return windows(prof)
+    pl, pd = prof["placement"], prof["placed"]
+    tab = prof["tables"]
+    return [(pl["code"], prof["code"][1], pd["code"][1]),
+            (tab[0], pl.get("tables_len", tab[1]), pd["tables"][1])] + list(prof.get("extra", ()))
+
+
+def descriptor(prof):
+    """The 128-byte descriptor for a placed codec (codec_desc.h): tag, code window, table windows, each with its CRC"""
+    wins = placed_windows(prof)
+    crcs = [prof["placed"]["code"][0], prof["placed"]["tables"][0]] + list(prof["placed"].get("extra", ()))
+    if len(wins) - 1 > DESC_WINDOWS:
+        raise StockError("%d table windows: the descriptor holds %d" % (len(wins) - 1, DESC_WINDOWS))
+    words = [DESC_MAGIC, DESC_VERSION, prof["placement"]["tag"], wins[0][0], wins[0][1], crcs[0], len(wins) - 1]
+    for i in range(DESC_WINDOWS):
+        words += [wins[i + 1][0], wins[i + 1][1], crcs[i + 1]] if i + 1 < len(wins) else [0, 0, 0]
+    body = struct.pack("<%dI" % len(words), *words)
+    body += b"\0" * (DESC_LEN - 4 - len(body))
+    return body + struct.pack("<I", zlib.crc32(body) & 0xFFFFFFFF)
+
+
+def layout(prof):
+    """Where the merge puts the codec in the radio: [(addr, length, sha256)], code first, then the tables, then the
+    descriptor when the profile moves the code. Without "placement", the stock windows."""
+    if not prof.get("placement"):
+        return windows(prof)
+    desc = descriptor(prof)
+    return placed_windows(prof) + [(DESC_ADDR, DESC_LEN, sha256(desc))]
+
+
+def place(prof, segments):
+    """The decrypted stock windows [(stock address, bytes)] as the merge writes them (layout()). With "placement": the
+    code moved (codec map: its self references rewritten), the table window cut to the codec's data with the islands'
+    calls into the code re-encoded, the extra windows unchanged, then the descriptor. Every result is checked against
+    "placed"."""
+    if not prof.get("placement"):
+        return list(segments)
+    pl = prof["placement"]
+    m = code_map(prof)
+    if m is None:
+        raise StockError("no codec map for %s: its code can't be moved" % prof["name"])
+    (_, code), (tab_addr, tables) = segments[0], segments[1]
+    try:
+        moved = codecmap.move_code(code, m, pl["code"])
+        tab = codecmap.move_branches(tab_addr, tables[:pl.get("tables_len", len(tables))], m, pl["code"])
+    except codecmap.MapError as e:
+        raise StockError("can't move the codec: %s" % e)
+    if codecmap.branches_in(m, tab_addr, len(tab)) != len(m["branches"]):
+        raise StockError("a branch into the code lies outside the tables the merge keeps")
+    extra = list(segments[2:])
+    for (_, n, want), got, what in zip(placed_windows(prof), [moved, tab] + [d for _, d in extra],
+                                       ["code", "tables"] + ["table 0x%08X" % a for a, _ in extra]):
+        if sha256(got) != want:
+            raise StockError("the moved %s doesn't match the profile (sha256 %s)" % (what, sha256(got)))
+    return [(pl["code"], moved), (tab_addr, tab)] + extra + [(DESC_ADDR, descriptor(prof))]
 
 
 def profile_for_board(board_id):
@@ -152,8 +242,8 @@ def find_profile(stock, profiles=None):
 
 
 def extract(stock, key, profiles=None):
-    """Check the stock file and return (profile, segments): every codec window decrypted and checked, as
-    [(flash address, bytes)] in windows() order (segments[0] is the code)."""
+    """Check the stock file and return (profile, segments): every codec window decrypted and checked, placed as the
+    merge writes them, [(flash address, bytes)] in layout() order (segments[0] is the code)."""
     prof = find_profile(stock, profiles)
     if len(stock) != prof["size"]:
         raise StockError("size %d, expected %d" % (len(stock), prof["size"]))
@@ -170,7 +260,7 @@ def extract(stock, key, profiles=None):
         out.append((addr, plain))
     if struct.unpack_from("<I", out[0][1], 0)[0] != CODEC_SIG:
         raise StockError("codec first word is not 0x%08X" % CODEC_SIG)
-    return prof, out
+    return prof, place(prof, out)
 
 
 def codec_segments(prof, segments):
@@ -178,10 +268,9 @@ def codec_segments(prof, segments):
     return [(a, d) for a, d in segments]
 
 
-def merge(image, prof, segments, data=()):
-    """The built application image (plain, from 0x0800C000) with every codec window written at its stock address, as
-    one contiguous image (0xFF between the parts). data: the firmware's read-only data for the profile's "app_data"
-    regions as [(addr, bytes)] (the DM-1701's sector 9), written at its address too."""
+def merge(image, prof, segments):
+    """The built application image (plain, from 0x0800C000) with every codec segment (extract()) written at its
+    address, as one contiguous image (0xFF between the parts)."""
     if image.startswith(MAGIC):
         raise StockError("the image is an official firmware file; pass the OpenDigitalRadio build (odr_%s.bin)"
                          % prof.get("board", "dm1701"))
@@ -191,37 +280,30 @@ def merge(image, prof, segments, data=()):
                          "the window reserved (boards/%s/%s.ld)" % (APP_BASE + len(image), first,
                                                                     prof.get("board", "dm1701"),
                                                                     prof.get("board", "dm1701")))
-    regions = prof.get("app_data", ())
-    for a, d in data:
-        if not any(lo <= a and a + len(d) <= lo + n for lo, n in regions):
-            raise StockError("firmware data at 0x%08X+0x%X is outside the flash this radio's layout gives it %s"
-                             % (a, len(d), ", ".join("0x%08X+0x%X" % r for r in regions) or "(none)"))
-    end = max([a + len(d) for a, d in segments] + [a + len(d) for a, d in data])
+    end = max(a + len(d) for a, d in segments)
     if end > FLASH_END:
         raise StockError("merged image would pass the end of flash")
     out = bytearray(b"\xFF" * (end - APP_BASE))
     out[0:len(image)] = image
-    for a, d in list(segments) + list(data):
+    for a, d in segments:
         out[a - APP_BASE:a - APP_BASE + len(d)] = d
     return bytes(out)
 
 
 def split_merged(image, profiles=None):
-    """The reverse of merge(): (application image, profile, codec segments, data segments) when the image carries a
-    codec at a profile's stock addresses, None when it holds none (a plain image, which the planner checks as usual).
-    The data segments are what lies in the profile's "app_data" regions (the DM-1701's sector 9; trailing 0xFF
-    dropped, an empty region gives none). A merged image has no manifest, so the codec windows are checked by their
-    SHA-256 (which also names the radio) and every byte outside the application, the windows and the data regions must
-    be 0xFF, as merge() leaves it. Raises StockError for an image with the codec signature at a profile's code window
-    whose windows don't match that profile."""
+    """The reverse of merge(): (application image, profile, codec segments) when the image carries a codec where a
+    profile's layout() puts it, None when it holds none (a plain image, which the planner checks as usual). A merged
+    image has no manifest, so the codec windows are checked by their SHA-256 (which also names the radio) and every
+    byte outside the application and the windows must be 0xFF, as merge() leaves it. Raises StockError for an image
+    with the codec signature where a profile puts its code whose windows don't match that profile."""
     profiles = PROFILES if profiles is None else profiles
     candidates = []
     for prof in profiles.values():
-        wins = windows(prof)
+        wins = layout(prof)
         first = min(a for a, _, _ in wins)
         if APP_BASE + len(image) <= first:
             continue
-        code = prof["code"][0] - APP_BASE
+        code = wins[0][0] - APP_BASE
         if len(image) >= code + 4 and struct.unpack_from("<I", image, code)[0] == CODEC_SIG:
             candidates.append(prof)	# looks merged: a mismatch below is an error, not a plain image
         if APP_BASE + len(image) < max(a + n for a, n, _ in wins):
@@ -232,21 +314,13 @@ def split_merged(image, profiles=None):
         rest = bytearray(image[first - APP_BASE:])
         for a, d in segs:
             rest[a - first:a - first + len(d)] = b"\xFF" * len(d)
-        data = []
-        for lo, n in prof.get("app_data", ()):
-            if lo < first:
-                continue
-            chunk = bytes(rest[lo - first:lo - first + n]).rstrip(b"\xFF")
-            if chunk:
-                data.append((lo, chunk))
-            rest[lo - first:lo - first + n] = b"\xFF" * len(rest[lo - first:lo - first + n])
         if rest.count(0xFF) != len(rest):
             raise StockError("the image holds the %s codec, but also other data between or after its windows: not "
                              "an image odrflash merge (or the build's codec step) wrote" % prof["codec_profile"])
-        return image[:first - APP_BASE].rstrip(b"\xFF"), prof, segs, data
+        return image[:first - APP_BASE].rstrip(b"\xFF"), prof, segs
     if candidates:
         raise StockError("the image has a codec at 0x%08X, but not the one from %s: a merged image must be made from "
-                         "a supported stock file" % (candidates[0]["code"][0], candidates[0]["name"]))
+                         "a supported stock file" % (layout(candidates[0])[0][0], candidates[0]["name"]))
     return None
 
 
@@ -361,6 +435,10 @@ def random_bytes(rng, n):
     return rng.getrandbits(8 * n).to_bytes(n, "little") if n else b""
 
 
+SYN_SELF_REF = 0x40      # the synthetic codec's self reference (code offset) and island call (table window offset)
+SYN_BL = 0x110
+
+
 def build_synthetic_stock(key, rng, profile_sha=None):
     """A synthetic stock file with the layout of a real profile (default the DM-1701 V02.06 CSV), for tests:
     random key-independent content with the statistics of a firmware image (mostly zero bytes), random codec windows
@@ -373,10 +451,15 @@ def build_synthetic_stock(key, rng, profile_sha=None):
     plain = bytearray(raw.translate(bytes(b if b < 100 else 0 for b in range(256))))
     app_off = sum(length for base, length in segs if base != APP_BASE and base < APP_BASE)	# app segment offset
     wins = []
+    run = real["code"][0]
     for i, (addr, length, _) in enumerate(windows(real)):
         data = bytearray(random_bytes(rng, length))
         if i == 0:
             struct.pack_into("<I", data, 0, CODEC_SIG)
+            if real.get("placement"):
+                struct.pack_into("<I", data, SYN_SELF_REF, run + 0x201)	# a Thumb pointer into the code
+        elif i == 1 and real.get("placement"):
+            codecmap.put_bl(data, SYN_BL, addr + SYN_BL, run + 0x200)	# an island's call into the code
         off = app_off + addr - APP_BASE
         plain[off:off + length] = data
         wins.append((addr, length, sha256(bytes(data)), bytes(data)))
@@ -391,4 +474,20 @@ def build_synthetic_stock(key, rng, profile_sha=None):
     prof = dict(real, code=wins[0][:3], tables=wins[1][:3], size=len(stock))
     if "extra" in real:
         prof["extra"] = [w[:3] for w in wins[2:]]
+    if real.get("placement"):	# its own codec map (a self reference, an island with a call into the code), placed
+        code, tab = wins[0][3], wins[1][3]
+        isl = wins[1][0] + SYN_BL - 0x10
+        prof["map"] = codecmap.normalize({
+            "format": codecmap.FORMAT, "profile": "synthetic-" + real["codec_profile"], "board": real["board"],
+            "isa": "thumb2", "code": {"flash": run, "len": len(code), "run": run, "sha256": sha256(code)},
+            "entries": {}, "self_refs": [{"off": SYN_SELF_REF, "value": run + 0x201}],
+            "islands": [{"start": isl, "len": 0x40}],
+            "branches": [{"at": wins[1][0] + SYN_BL, "target": run + 0x200}]})
+        at, n = real["placement"]["code"], real["placement"].get("tables_len", len(tab))
+        mc = codecmap.move_code(code, prof["map"], at)
+        mt = codecmap.move_branches(wins[1][0], tab[:n], prof["map"], at)
+        prof["placed"] = {"code": (zlib.crc32(mc) & 0xFFFFFFFF, sha256(mc)),
+                          "tables": (zlib.crc32(mt) & 0xFFFFFFFF, sha256(mt))}
+        if "extra" in real:
+            prof["placed"]["extra"] = [zlib.crc32(w[3]) & 0xFFFFFFFF for w in wins[2:]]
     return stock, {sha256(stock): prof}, wins[0][3], wins[1][3]

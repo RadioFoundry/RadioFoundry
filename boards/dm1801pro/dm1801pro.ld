@@ -6,34 +6,31 @@
  * from 0x0300C000, the codec slot 0x030E8000..0x03100000 (docs/spec/codec-dm1801pro.md 4: the radio's own codec code
  * and tables are merged there on the user's machine; never linked into). The layout is the DM-32UV's (boards/dm32/dm32.ld).
  *
- * SRAM (288 KB at 0x10000): the stock codec runs at its own RAM address, so its code window 0x16CDC..0x2B2DC is
- * reserved. Below it (RAM_LO, 27,868 B): the vector table, code that must not run from flash (.ramfunc: interrupt
- * entry, the DMR slot engine and its glue), then the zeroed section .ram_lo: the state the core marks ODR_CPU_RAM
- * (board.mk sets ODR_CPU_RAM_SECTION to ".ram_lo") and the interrupt stack. The network's ODR_CPU_RAM buffers go to
- * main RAM instead. Above the codec window (RAM): data, bss, the RTOS heap (inside bss) and the start-up stack at the
- * top. Both regions are checked at the end. The modem SRAM window the codec's tables are copied to,
- * 0x18000EF0..0x18003E68, is reserved by not being in this script at all. */
+ * SRAM (288 KB at 0x10000): one region for ODR from 0x10000 (the vector table, .ramfunc: interrupt entry, the DMR slot
+ * engine and its glue, the zeroed .ram_lo state the core marks ODR_CPU_RAM and the interrupt stack, then data, bss with
+ * the RTOS heap, and the start-up stack), and at the top the codec window 0x43A00..0x58000 (83,456 B, the 049 code): the
+ * slot's code is copied there at boot and its address words moved (docs/spec/codec-placement.md). The modem SRAM window
+ * the codec's tables are copied to, 0x18000EF0..0x18003E68, is reserved by not being in this script at all. */
 
 ENTRY(Reset_Handler)
 
-__stack_top = 0x00057FF8;
+__stack_top = 0x000439F8;	/* just below the codec window */
 _Min_Stack_Size = 0x800;	/* start-up only: tasks have their own stacks, interrupts the interrupt stack */
 _Irq_Stack_Size = 0x800;
 
 __codec_slot = 0x030E8000;
 __codec_slot_end = 0x03100000;
-/* Where a slot's codec may run (platform/hrc7000/vocoder.c checks the slot against them): the RAM window below and the
- * modem SRAM table window */
-__codec_run_lo = 0x00016CDC;
-__codec_run_hi = 0x0002B2DC;
+/* The codec window (platform/hrc7000/codec_slot.h: the slot's code runs at its start; the size is the largest code
+ * among the board's codec maps) and the modem SRAM table window, the union of the builds' stock table addresses */
+__codec_run_lo = 0x00043A00;
+__codec_run_hi = 0x00058000;
 __codec_tab_lo = 0x18000EF0;
 __codec_tab_hi = 0x18003E68;
 
 MEMORY
 {
 	FLASH  (rx)  : ORIGIN = 0x0300C000, LENGTH = 0x030E8000 - 0x0300C000
-	RAM_LO (rwx) : ORIGIN = 0x00010000, LENGTH = 0x00016CDC - 0x00010000
-	RAM    (rwx) : ORIGIN = 0x0002B2DC, LENGTH = 0x00058000 - 0x0002B2DC
+	RAM    (rwx) : ORIGIN = 0x00010000, LENGTH = 0x00043A00 - 0x00010000	/* up to the codec window */
 }
 
 SECTIONS
@@ -55,7 +52,7 @@ SECTIONS
 	.vectors (NOLOAD) :
 	{
 		KEEP(*(.vectors))
-	} >RAM_LO
+	} >RAM
 
 	.ramfunc :
 	{
@@ -66,19 +63,19 @@ SECTIONS
 		*dmr_glue.o(.text .text.*)
 		. = ALIGN(4);
 		__ramfunc_end = .;
-	} >RAM_LO AT>FLASH
+	} >RAM AT>FLASH
 	__ramfunc_load = LOADADDR(.ramfunc);
 
 	.ram_lo (NOLOAD) :
 	{
 		. = ALIGN(8);
 		__ram_lo_bss_start = .;
-		*(EXCLUDE_FILE(*core/net/*.o *hostlink_net*.o *ipGateway.o) .ram_lo EXCLUDE_FILE(*core/net/*.o *hostlink_net*.o *ipGateway.o) .ram_lo.*)
+		*(.ram_lo .ram_lo.*)
 		. = ALIGN(8);
 		. = . + _Irq_Stack_Size;
 		__irq_stack_top = .;
 		__ram_lo_bss_end = .;
-	} >RAM_LO
+	} >RAM
 
 	.data :
 	{
@@ -95,7 +92,6 @@ SECTIONS
 		. = ALIGN(4);
 		__bss_start = .;
 		*(.bss .bss.* .sbss .sbss.* COMMON)
-		*(.ram_lo .ram_lo.*)	/* what RAM_LO leaves out (the network's buffers): zeroed with .bss */
 		. = ALIGN(4);
 		__bss_end = .;
 	} >RAM
@@ -109,8 +105,7 @@ SECTIONS
 	} >RAM
 
 	ASSERT(Reset_Handler == ORIGIN(FLASH), "crt0 must be the first byte of the image (the boot loader jumps there)")
-	ASSERT(ADDR(.vectors) == 0x00010000, "the vector table must start RAM_LO (1 KB aligned for VBR)")
-	ASSERT(. <= __stack_top, "RAM overflows into the start-up stack")
-	ASSERT(__ram_lo_bss_end <= ORIGIN(RAM_LO) + LENGTH(RAM_LO), "RAM_LO overflows into the codec's RAM window: move ODR_CPU_RAM state out (dm1801pro.ld .ram_lo)")
+	ASSERT(ADDR(.vectors) == 0x00010000, "the vector table must start RAM (1 KB aligned for VBR)")
+	ASSERT(. <= __stack_top, "RAM overflows into the start-up stack and the codec window")
 	ASSERT(__data_load + SIZEOF(.data) <= __codec_slot, "the image runs into the codec slot")
 }

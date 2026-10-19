@@ -11,8 +11,8 @@ the programming cable, through one of two existing tools that odrflash wraps ins
               application area, the codec slot included, so the codec must be in what is written.
 
 auto picks stub when the radio answers the debug link and offers stub entry, else the bootloader. The codec slot is
-built by tools/dm32_codec.py from the user's own file (DM-1801 Pro: a program flash read, stubtool.py --progmem; DM-32UV:
-the stock firmware file). docs/dev/release.md "The serial route".
+built by tools/hrc7000_codec.py from the user's own file (DM-1801 Pro: a program flash read, stubtool.py --progmem;
+DM-32UV: the stock firmware file). docs/dev/release.md "The serial route".
 
 The tools are loaded from the checkout (tools/, stub/) or, in the odrflash executable, from the copies PyInstaller
 bundles (--hidden-import).
@@ -28,11 +28,11 @@ from . import debuglink
 AUTO, STUB, BOOTLOADER = "auto", "stub", "bootloader"
 ROUTES = (AUTO, STUB, BOOTLOADER)
 
-SLOT_MAGIC = 0x43524444		# "DDRC": the first word of a codec slot (platform/hrc7000/vocoder.c, dm32_codec.py)
+SLOT_MAGIC = 0x43524444		# "DDRC": the first word of a codec slot (platform/hrc7000/vocoder.c, hrc7000_codec.py)
 BAUD = 115200
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-_PLACES = {"dm32_flash": "tools", "dm32_codec": "tools", "stubtool": "stub"}
+_PLACES = {"dm32_flash": "tools", "hrc7000_codec": "tools", "stubtool": "stub"}
 _loaded = {}
 
 
@@ -41,7 +41,7 @@ class SerialError(Exception):
 
 
 def tool(name):
-    """The module of an ODR tool script (dm32_flash, dm32_codec, stubtool)."""
+    """The module of an ODR tool script (dm32_flash, hrc7000_codec, stubtool)."""
     if name in _loaded:
         return _loaded[name]
     path = os.path.join(_ROOT, _PLACES[name], name + ".py")
@@ -66,8 +66,8 @@ def slot_offset(board):
 
 def split_slot(board, image):
     """(application, slot bytes or None) of a contiguous image from the application base. An image with the codec
-    merged in (the build's _codec.bin, tools/dm32_codec.py) carries "DDRC" at the slot; everything between the
-    application and the slot must be 0xFF, as dm32_codec.merge() pads it."""
+    merged in (the build's _codec.bin, tools/hrc7000_codec.py) carries "DDRC" at the slot; everything between the
+    application and the slot must be 0xFF, as hrc7000_codec.merge() pads it."""
     off = slot_offset(board)
     if len(image) < off + 4 or struct.unpack_from("<I", image, off)[0] != SLOT_MAGIC:
         return image, None
@@ -89,8 +89,8 @@ def contiguous(board, app, slot=None):
 
 
 def slot_from_file(board, app, data):
-    """The codec slot made from the user's file by tools/dm32_codec.py (checked by SHA-256): (slot bytes, name)."""
-    dc = tool("dm32_codec")
+    """The codec slot made from the user's file by tools/hrc7000_codec.py (checked by SHA-256): (slot bytes, name)."""
+    dc = tool("hrc7000_codec")
     try:
         prof, code, tables = dc.extract(data, board=board.id)
         merged = dc.merge(app, prof, code, tables)

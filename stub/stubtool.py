@@ -2095,10 +2095,8 @@ def main(argv=None):
                     help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (dm32, dm1801pro, db25d: the board "
                          "profile the universal stub gets). Found from the radio's VERSION reply with --odr-enter; give it at "
                          "power-on and with --attach (without it the stub gets a profile that drives no board pins)")
-    ap.add_argument("--no-rodata2", action="store_true", help="STM32 --write-app: the DM-1701 application without its "
-                    "sector 9 part, on purpose")
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
-                    "is saved before it is erased (the MD-380's sector 6; default the home directory, never a git tree)")
+                    "is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:

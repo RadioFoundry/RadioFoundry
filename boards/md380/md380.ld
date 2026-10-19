@@ -4,11 +4,15 @@
  * 1.3, 13). The bootloader starts the application at 0x0800C000 like the DM-1701's, so the vector table, stack rule and
  * start-up are the same.
  *
- * Codec: the stock D002.032 AMBE+2 codec runs in place at its stock addresses (docs/spec/codec-md380.md). Its code
- * window starts at 0x08050C44, inside sector 6, so the application ends there: 0x0800C000..0x08050C43 (275 KB). The
- * rest of flash holds the codec's code and table windows (0x08050C44..0x080614C7, 0x0808FC64..0x0809AC5B and four
- * small windows in sectors 10 and 11) and is never linked into. This script, tools/odrflash/odrflash/boards.py and
- * the profile in tools/odrflash/odrflash/stockfw.py change together. */
+ * Codec (docs/spec/codec-placement.md, "STM32 radios"): the merge on the user's machine puts the stock D002.032
+ * codec's main table window at its stock address 0x0808FC64..0x0809AC5B (sector 8), its four small table windows at
+ * theirs (sectors 10 and 11), its code at 0x080E0000 (sector 11), and the descriptor that says where at 0x080FFF80.
+ * The code runs in place.
+ *
+ * Whole flash sectors are kept free of our code, so the flashing tool can update the firmware without erasing the
+ * codec: the application gets sectors 3-7 (0x0800C000..0x0807FFFF, 464 KB in one piece) and never links into sectors
+ * 8-11 (sector 9 holds nothing yet). This script, tools/odrflash/odrflash/boards.py and the profile in
+ * tools/odrflash/odrflash/stockfw.py change together. */
 
 ENTRY(Reset_Handler)
 
@@ -18,7 +22,7 @@ _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts */
 
 MEMORY
 {
-	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x08050C44 - 0x0800C000	/* sectors 3-5, sector 6 to the codec */
+	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x08080000 - 0x0800C000	/* sectors 3-7 */
 	RAM     (xrw) : ORIGIN = 0x20000000, LENGTH = 128K - 4
 	CCMRAM  (rw)  : ORIGIN = 0x10000000, LENGTH = 64K
 }
@@ -84,6 +88,6 @@ SECTIONS
 	/DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }
 	.ARM.attributes 0 : { *(.ARM.attributes) }
 
-	/* Everything loaded into flash ends before the codec code window */
-	ASSERT(_sidata + SIZEOF(.data) <= 0x08050C44, "the image reaches into the codec code window (0x08050C44)")
+	/* Belt and braces for the sector rule above: everything loaded into flash ends before codec sector 8 */
+	ASSERT(_sidata + SIZEOF(.data) <= 0x08080000, "the image reaches into codec sector 8 (0x08080000)")
 }

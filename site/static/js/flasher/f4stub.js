@@ -181,7 +181,7 @@ export class F4Stub extends Stub {
 
 	// {sectors: [{index, addr, size, data, kept}], changed: [index]} for every sector holding firmware-owned flash.
 	// Owned bytes come from the segments (0xFF where they have none); the rest of a sector is read back from the radio
-	// and written again unchanged (kept: the MD-380's codec in sector 6). owned: [[lo, hi)] (data/f4-stub.json)
+	// and written again unchanged (kept; no radio shares a sector since the codec moved). owned: [[lo, hi)] (data/f4-stub.json)
 	async plan(owned, segs) {
 		for (const [addr, data] of segs) {
 			if (!owned.some(([lo, hi]) => lo <= addr && addr + data.length <= hi))

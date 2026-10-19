@@ -25,8 +25,7 @@ odrflash flash --release latest                         newest release, download
 odrflash flash --release v0.1.0 --dry-run               show exactly which sectors would be erased and written
 odrflash flash odr-dm1701-v0.1.0.bin                    a downloaded image (its .json manifest next to it)
 odrflash flash odr_dm1701_codec.bin                     an image with the codec already merged in (see below)
-odrflash flash build/dm1701/odr_dm1701.bin --board dm1701   a local build; its odr_dm1701_rodata2.bin (sector 9) is
-                                                        written with it
+odrflash flash build/dm1701/odr_dm1701.bin --board dm1701   a local build
 odrflash flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
                                                         also write the codec from the stock firmware file
 odrflash probe                                          radio running ODR: can its codec be kept?
@@ -47,8 +46,13 @@ restart and check what it reports.
 
 | Mode | Erases and writes | When |
 |---|---|---|
-| keep | the firmware's sectors only (DM-1701: 3-6); the codec sectors 7, 8, 10, 11 are never touched | the radio runs ODR and reports a matching codec (`odrflash probe`, or the start of `flash`); or you say it runs stock V02.06 CSV (`--stock-installed "V02.06 CSV"`, or answer the question); or `--codec keep` |
-| merge | the firmware's sectors and the codec sectors, with the codec from `--stock` | `--stock FILE` is given and keeping isn't known to be safe, or `--codec merge` |
+| keep | the firmware's sectors only (DM-1701: within 3-9; MD-380: within 3-7); the codec sectors (DM-1701: 10, 11; MD-380: 8, 10, 11) are never touched | the radio runs ODR and reports a matching codec (`odrflash probe`, or the start of `flash`); or `--codec keep` |
+| merge | the firmware's sectors and the codec sectors, with the codec from the copy saved from the radio or from `--stock` | keeping isn't known to be safe and odrflash has a saved copy or `--stock FILE`; or `--codec merge` |
+
+A radio on an ODR build from before the codec moved reports `dm1701-v0206-csv` (the new layout's profile is
+`dm1701-v0206-csv-s11`). Its codec code sits in sectors the update overwrites, so odrflash writes the codec: from a
+copy saved earlier, else from `--stock`. Stock firmware never holds the codec where ODR keeps it, so `--stock-installed`
+does not make keep safe.
 
 If odrflash keeps a codec that turns out not to be there, nothing breaks: the firmware checks the codec before it
 uses it, so the radio runs FM only and shows "No codec: voice off". Flash again with `--stock`.
@@ -57,12 +61,10 @@ An image with the codec already merged in (`odrflash merge`, or the `_codec.bin`
 in `codecs/`) needs no manifest or `--board`, and `--stock` only for the bootloader key: odrflash checks every codec
 window against the supported stock files by SHA-256, which also names the radio, requires 0xFF everywhere else past the
 application, and flashes it in merge mode with the codec from the image. `--codec keep` writes only its application
-and sector 9 parts.
+part.
 
-**Sector 9 (DM-1701).** The firmware's read-only data lives in flash sector 9, so a DM-1701 image has two ranges: the
-application (sectors 3-6) and the data (sector 9). A release's manifest lists both, and `flash` erases and writes
-sectors 3-6 and 9 and never 7, 8, 10, 11 or the bootloader. For a local build it reads `odr_dm1701_rodata2.bin` next to
-the image. [release.md](../../docs/dev/release.md#sector-9) has the details.
+An image is one range from 0x0800C000. A release whose manifest lists two ranges (an application and a sector 9 data
+part) is from before the codec moved, and odrflash refuses it.
 
 The stock file is Baofeng's `DM-1701(CSV)-V02.06.bin` (sha256 `0314efd4...`); an archive is at
 github.com/daniel5600/BAOFENG-DM1701-Original-Firmware. odrflash checks it by SHA-256 and refuses other files as a
@@ -77,13 +79,14 @@ itself: odrflash reads the stock bootloader over the debug link and takes the bl
 (`odrflash/bootkey.py`), so an update needs none of these (`odrflash key --save` keeps it from the radio). The key is
 never part of ODR.
 
-### The codec on the MD-380
+### The saved codec
 
-On the MD-380 every update erases part of the codec (ODR's image shares a flash sector with it), so it is written
-again each time. A radio that runs ODR with the codec hands it over: odrflash reads it back over the debug link,
-checks it against the stock codec's hashes, saves a copy in its config directory and writes that back, so an update
-needs no `--stock`. The saved copy also finishes an update that stopped halfway, when the radio can no longer start
-ODR.
+The codec stays in place across an update. odrflash still reads a copy, the first time it sees the radio running ODR
+with its codec: over the debug link, where stock keeps it or where the merge placed it, checked against the stock
+codec's hashes, saved in its config directory. That copy is written instead of asking for `--stock` whenever the
+radio's codec can't be kept or checked: the radio doesn't answer over the debug link, is back on stock firmware, or
+reports no codec. `--codec keep` still wins. The copy also finishes an update that stopped halfway, when the radio can
+no longer start ODR.
 
 ### The DM-1801 Pro
 
@@ -97,13 +100,13 @@ each: the stub, `stub/stubtool.py` ([USER-GUIDE.md](../../stub/USER-GUIDE.md)), 
 | stub | ODR answers on the cable and offers stub entry (built with `CONFIG_STUB_ENTRY=y`) | only the 4 KB sectors that differ, each checked by CRC; then the radio restarts | kept when the image has none (keep); written when it has one or `--stock` is given (merge) |
 | bootloader | anything else: odrflash asks you to switch the radio on with PTT and SK1 held, and waits `--wait` seconds for the loader | the loader erases 0x0300C000..0x030FFFFF, then takes the whole image | erased: it must be in the image (`odr_dm1801pro_codec.bin`) or built from `--stock` (merge); keep is refused |
 
-`--stock` here is a program flash read of the radio (`stubtool.py PORT --progmem FILE`). `tools/dm32_codec.py` checks
+`--stock` here is a program flash read of the radio (`stubtool.py PORT --progmem FILE`). `tools/hrc7000_codec.py` checks
 it by SHA-256 and builds the slot from it. `--route stub` or `--route bootloader` overrides the choice. A route the
 radio can't take is refused before anything is written, and so is a radio that reports another board. After the restart
 odrflash reads VERSION over the cable and compares the git hash and the codec with what it wrote. Neither route writes
 the bootloader below 0x0300C000.
 
-The serial route loads `tools/dm32_flash.py`, `tools/dm32_codec.py` and `stub/stubtool.py` from the checkout; the
+The serial route loads `tools/dm32_flash.py`, `tools/hrc7000_codec.py` and `stub/stubtool.py` from the checkout; the
 odrflash executable carries them. A `pipx` install from the subdirectory doesn't, and says so. Neither route of odrflash
 has flashed a radio yet; the tools it wraps have.
 
@@ -125,7 +128,7 @@ has flashed a radio yet; the tools it wraps have.
 | `odrflash/stockfw.py` | the DM-1701 and MD-380 stock files: container, decryption, codec extraction and merge, key derivation (also used by `tools/codec_extract.py`) |
 | `odrflash/dfu.py` | the AnyRoad DFU bootloader: find, open, run a plan |
 | `odrflash/debuglink.py` | VERSION / INFO_CHIP / READ_MEM over the debug link (read only) |
-| `odrflash/codecsave.py` | where an update erases the codec (the MD-380): the codec read back from a radio that runs ODR, checked by hash, saved in the config directory and written back |
+| `odrflash/codecsave.py` | the codec read back from a radio that runs ODR (where stock keeps it, or where the merge placed it), checked by hash, saved in the config directory and written back where the radio's codec can't be kept or checked |
 | `odrflash/bootkey.py` | the bootloader key from a radio that runs ODR, found in its bootloader by the key's hash |
 | `odrflash/fakedfu.py` | a fake bootloader with a flash model, for the tests and `--simulate` |
 | `odrflash/serialflash.py` | the HR_C7000 radios over the programming cable: the route choice, the codec slot, and the calls into `stub/stubtool.py` and `tools/dm32_flash.py` |

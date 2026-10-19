@@ -56,8 +56,8 @@ export function makePlan(board, segments, mode, codecSegments = []) {
 			const hit = codecSecs.filter((s) => overlaps(s, addr, addr + data.length)).map((s) => s.index);
 			if (hit.length && (mode === KEEP || board.keep_codec_supported))
 				throw new PlanError(`the firmware image reaches into codec sector(s) ${hit.join(", ")}; a release image never does`);
-			if (addr !== board.app_base && !(board.data_regions || []).some(([lo, n]) => lo <= addr && addr + data.length <= lo + n))
-				throw new PlanError(`firmware data at ${hex(addr)} is neither the application nor inside a data region of the ${board.name}`);
+			if (addr !== board.app_base)
+				throw new PlanError(`firmware data at ${hex(addr)}: the firmware is one image from ${hex(board.app_base)}`);
 		}
 	}
 	if (mode !== MERGE && codecSegments.length) throw new PlanError(`codec data given in ${mode} mode`);

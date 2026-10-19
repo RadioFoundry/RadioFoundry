@@ -122,7 +122,7 @@ ifneq ($(TSHARK),)
 endif
 
 clean:
-	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert
+	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert hrc7000_test_slot.bin codec_desc_test.bin codec_desc_md380.bin
 	rm -rf gen
 	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTest.expert
 	rm -rf *.dSYM out
@@ -320,13 +320,23 @@ md380RfbusTest: md380RfbusTest.c $(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/boar
 	$(CC) $(CFLAGS) -Imd380_stub -I$(ROOT)/boards/md380 -I$(ROOT)/hal -Wshadow -o $@ md380RfbusTest.c \
 		$(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/drivers/modem/hrc6000/hrc6000.c
 
+# The STM32 codec descriptor (platform/stm32f4/codec_desc.h): its checks, and codec sectors 10 and 11 as
+# tools/codec_extract.py merges them (docs/spec/codec-placement.md)
+TESTS   += codecDescTest
+
+codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
+
 run: run-md380
-run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest
+run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest codecDescTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
 	./gpsRxTest
 	./md380RfbusTest
+	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin
+	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
+	./codecDescTest codec_desc_test.bin codec_desc_md380.bin
 .PHONY: run-md380
 
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
@@ -643,7 +653,7 @@ run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000Dm
 	./sharedPttTest
 	./hrc7000DmrTest
 	./dm32CalTest
-	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
+	python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test
 .PHONY: run-dm32
 
 # The DB25-D PRO's BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
@@ -671,12 +681,21 @@ TESTS   += hrc7000ClockTest
 hrc7000ClockTest: hrc7000ClockTest.c $(ROOT)/platform/hrc7000/clock_math.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000ClockTest.c
 
+# The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
+# tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)
+TESTS   += hrc7000CodecSlotTest
+
+hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
+
 run: run-db25d
-run-db25d: bk4819Test db25dCalTest bootDb25dTest hrc7000ClockTest
+run-db25d: bk4819Test db25dCalTest bootDb25dTest hrc7000ClockTest hrc7000CodecSlotTest
 	./bk4819Test
 	./db25dCalTest
 	./bootDb25dTest
 	./hrc7000ClockTest
+	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
+	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-db25d
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the

@@ -23,8 +23,8 @@ back, CPS write and read back) are shared with the other radios' tools (codeplug
 docs/spec/codeplug-port.md).
 
 Needs Python 3.8+, dmrconf (qdmr 0.15 or newer, with the dm32uv driver) on PATH and pyserial. The helpers
-(dm32_flash.py, cps_client.py, codeplug_port.py, odr_debug.py, md380_migrate.py, dm32_codec.py) are loaded from this script's
-directory.
+(dm32_flash.py, cps_client.py, codeplug_port.py, odr_debug.py, md380_migrate.py, hrc7000_codec.py) are loaded from this
+script's directory.
 """
 import argparse
 import datetime
@@ -384,7 +384,7 @@ def prepare_image(sess, args):
         sess.say("   " + n)
     if not fl.has_codec_slot(raw):
         if getattr(args, "codec_from", None):
-            cd = mod("dm32_codec")
+            cd = mod("hrc7000_codec")
             with open(args.codec_from, "rb") as f:
                 stock = f.read()
             try:
@@ -672,7 +672,7 @@ def cmd_package(sess, args):
     out = os.path.abspath(args.outdir)
     files = {os.path.abspath(__file__): "dm32_migrate.py"}
     for helper in ("dm32_flash.py", "cps_client.py", "codeplug_port.py", "odr_debug.py", "md380_migrate.py",
-                   "dm32_codec.py"):
+                   "hrc7000_codec.py"):
         files[os.path.join(HERE, helper)] = helper
     bringup = os.path.join(os.path.dirname(HERE), "docs", "testing", "dm32-bringup.md")
     if os.path.isfile(bringup):

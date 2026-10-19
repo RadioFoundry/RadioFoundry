@@ -12,6 +12,8 @@ import { concat, crc32, le32, sha256, u16be, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { STUB_MAGIC } from "./stub.js";
 import { APP_BASE, F4_MAGIC, f405Sectors } from "./f4stub.js";
+import { moveCode, moveBranches, putBl } from "./codecmap.js";
+import { place } from "./stockfw.js";
 
 const FLASH_BASE = 0x08000000, FLASH_SIZE = 0x100000;
 const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
@@ -35,7 +37,11 @@ export function randomBytes(r, n) {
 }
 
 // A synthetic stock file shaped like a real profile, the board and profiles made to accept it. Returns
-// {fb, board, key, stock, codecSegments}: fb is a copy of flash-boards.json whose board and profile match the key.
+// {fb, board, key, stock, codecSegments, stockSegments}: fb is a copy of flash-boards.json whose board and profile
+// match the key; codecSegments: the codec as ODR's merge places it (the profile's placement), stockSegments: where
+// the stock firmware keeps it. Where the profile moves the code, the synthetic codec gets what stockfw.py's
+// build_synthetic_stock plants (a self reference, an island's call into the code) and a codec map for them.
+const SYN_SELF_REF = 0x40, SYN_BL = 0x110;
 export async function simulation(fbReal, boardId = "dm1701", seed = 1701) {
 	const fb = structuredClone(fbReal);
 	const board = fb.boards[boardId];
@@ -47,13 +53,16 @@ export async function simulation(fbReal, boardId = "dm1701", seed = 1701) {
 	const payloadLen = real.segments.reduce((a, s) => a + s[1], 0);
 	const plain = randomBytes(r, payloadLen).map((b) => (b < 100 ? b : 0));	// firmware-like: mostly zero
 	const appOff = real.segments.filter(([base]) => base < board.app_base).reduce((a, s) => a + s[1], 0);
-	const windows = [], codecSegments = [];
+	const windows = [], stockSegments = [];
+	const run = real.windows[0][0];
 	for (const [i, [addr, length]] of real.windows.entries()) {
 		const data = randomBytes(r, length);
 		if (i === 0) data.set(le32(fb.codec_sig), 0);
+		if (i === 0 && real.placement) data.set(le32(run + 0x201), SYN_SELF_REF);
+		if (i === 1 && real.placement) putBl(data, SYN_BL, addr + SYN_BL, run + 0x200);
 		plain.set(data, appOff + addr - board.app_base);
 		windows.push([addr, length, await sha256(data)]);
-		codecSegments.push([addr, data]);
+		stockSegments.push([addr, data]);
 	}
 	const header = new Uint8Array(fb.header_len);
 	for (let i = 0; i < fb.magic.length; i++) header[i] = fb.magic.charCodeAt(i);
@@ -63,9 +72,23 @@ export async function simulation(fbReal, boardId = "dm1701", seed = 1701) {
 	const stock = concat(header, enc, randomBytes(r, 0x100));
 	const sha = await sha256(stock);
 	delete fb.profiles[realSha];
-	fb.profiles[sha] = { ...real, windows, size: stock.length, key_sha256: board.key_sha256, name: real.name + " (simulated)" };
+	const prof = { ...real, windows, size: stock.length, key_sha256: board.key_sha256, name: real.name + " (simulated)" };
+	if (real.placement) {
+		const [[, code], [tabAddr, tables]] = stockSegments;
+		const pl = real.placement;
+		prof.map = { format: "odr-codec-map/1", profile: "sim-" + boardId, board: boardId, isa: "thumb2",
+			code: { flash: run, len: code.length, run, sha256: windows[0][2] }, entries: {},
+			self_refs: [{ kind: "word", off: SYN_SELF_REF, value: run + 0x201 }], island_ptrs: [], table_refs: [], island_refs: [],
+			islands: [{ start: tabAddr + SYN_BL - 0x10, len: 0x40 }], branches: [{ at: tabAddr + SYN_BL, target: run + 0x200, kind: "bl" }],
+			objects: [], groups: [], outside_refs: [] };
+		const mc = await moveCode(code, prof.map, pl.code);
+		const mt = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), prof.map, pl.code);
+		prof.placed = { code: [crc32(mc), await sha256(mc)], tables: [crc32(mt), await sha256(mt)] };
+	}
+	fb.profiles[sha] = prof;
 	fb.known_files[sha] = real.version + " (simulated)";
-	return { fb, board, key, stock, codecSegments };
+	const codecSegments = await place(prof, stockSegments, fb);
+	return { fb, board, key, stock, codecSegments, stockSegments };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -81,7 +104,8 @@ export class FakeRadio {
 		this.flash = new Uint8Array(FLASH_SIZE);
 		const r = rng(380);
 		for (let i = 0; i < FLASH_SIZE; i += 4096) this.flash.set(randomBytes(r, 64), i);	// "stock code"
-		for (const [a, d] of sim.codecSegments) this.flash.set(d, a - FLASH_BASE);
+		// stock keeps its codec in its stock place; ODR (with its codec) where the merge put it
+		for (const [a, d] of state === "stock" || state === "bootloader" ? sim.stockSegments : sim.codecSegments) this.flash.set(d, a - FLASH_BASE);
 		this.spi = new Uint8Array(spiSize).fill(0xFF);
 		this.spi.set(randomBytes(r, 0x40000), 0);		// a stock codeplug where ODR's settings go
 		this.spi.set(randomBytes(r, 0x5D400), 0x60000);		// stock resources

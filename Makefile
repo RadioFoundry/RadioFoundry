@@ -172,10 +172,6 @@ endif
 endif
 # Sections copied into the .bin (one contiguous image from the start of the application)
 BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data
-# A board with a second flash region (the DM-1701's sector 9, boards/dm1701/dm1701.ld) lists its sections here: they go
-# to $(TARGET)_rodata2.bin, which starts at the region's first byte (docs/dev/release.md "Sector 9"). Empty: no second
-# image, and a stale one is removed
-BIN2_SECTIONS ?=
 
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
@@ -184,13 +180,13 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
 .PHONY: all codec clean size stack-check test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
-all: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin) $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
+all: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
 # A board with a first stage (BOOT_STAGE) merges the codec into the install image, so the merged file starts with the stage
-codec: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin) $(if $(BOOT_STAGE),$(TARGET)_install.bin)
+codec: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin)
 	@python3 tools/codec_auto.py --board $(BOARD) --image $(if $(BOOT_STAGE),$(TARGET)_install.bin,$(TARGET).bin) \
-		$(if $(BOOT_STAGE),-o $(TARGET)_codec.bin) $(if $(BIN2_SECTIONS),--image2 $(TARGET)_rodata2.bin)
+		$(if $(BOOT_STAGE),-o $(TARGET)_codec.bin)
 
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
@@ -228,11 +224,6 @@ $(TARGET).elf: $(OBJ) $(LDSCRIPT)
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN_SECTIONS)) $< $@
 	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(ODR_VERSION)"
-ifneq ($(BIN2_SECTIONS),)
-$(TARGET)_rodata2.bin: $(TARGET).elf
-	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN2_SECTIONS)) $< $@
-	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes (sector 9, written with the application)"
-endif
 
 # A first stage in front of the application (boot/), for a board that sets BOOT_STAGE
 ifneq ($(BOOT_STAGE),)
@@ -254,7 +245,7 @@ $(BUILD)/%.o: %.S
 	$(CC) $(CPUFLAGS) $(DEFS) $(INCLUDES) -MMD -MP -c $< -o $@
 
 size: $(TARGET).elf
-	$(SIZE) -A $< | grep -E '^\.(isr_vector|text|rodata|rodata2|data|bss|ccmram)'
+	$(SIZE) -A $< | grep -E '^\.(isr_vector|text|rodata|data|bss|ccmram)'
 
 test:
 	$(MAKE) -C tests/host

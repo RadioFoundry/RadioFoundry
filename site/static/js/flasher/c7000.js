@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The HR_C7000 radios' program flash, seen from the web flasher: what a read of it holds (ODR, stock firmware, the
-// codec and where), the codec slot ODR boots from, and the bytes an install writes. A port of tools/dm32_codec.py
+// codec and where), the codec slot ODR boots from, and the bytes an install writes. A port of tools/hrc7000_codec.py
 // (locate, slot_bytes, parse_slot, the stock-file windows); the layout and the codec profiles come from that file and
 // stub/stubtool.py through data/flash-boards.json ("c7000"), so the two read the same table.
 //
 // Program flash, as offsets from 0x03000000 (1 MB):
 //   0x00000 .. 0x0C000   the Baofeng bootloader: never written
 //   0x0C000 .. slot      the application (stock firmware, or ODR)
-//   slot .. 0x100000     ODR's codec slot: a 128-byte header, the radio's own stock codec code and tables
+//   slot .. 0x100000     ODR's codec slot: a 128-byte header, the radio's own stock codec code and tables, and
+//                        the relocation list: the words the firmware moves when it copies the code to its window
+//                        (platform/hrc7000/codec_slot.h, docs/spec/codec-placement.md)
 //
 // The codec is DVSI's and Baofeng's. It only ever moves between the user's radio, files and this browser.
 
 import { concat, crc32, sha256, u32le, le32 } from "./bytes.js";
+import { byCodeSha, checkWords } from "./codecmap.js";
 
 export class CodecError extends Error {}
 
@@ -61,7 +64,7 @@ export async function locateCodec(progmem, c, boardId) {
 			for (const t of heads.get(p.tables_head_crc) || []) {
 				const tables = progmem.subarray(t, t + p.tables_len);
 				if (tables.length === p.tables_len && (await sha256(tables)) === p.tables_sha256)
-					return { profile: p, codeAddr: at, tablesAddr: t, code: code.slice(), tables: tables.slice() };
+					return { profile: p, codeAddr: at, tablesAddr: t, code: code.slice(), tables: tables.slice(), codeSha: p.code_sha256 };
 			}
 		}
 	}
@@ -127,42 +130,75 @@ export async function codecFromFile(data, c, boardId) {
 	if (code.length !== p.code_len || tables.length !== p.tables_len || u32le(code, 0) !== c.codec_sig[0] || u32le(code, 4) !== c.codec_sig[1] ||
 		(p.code_sha256 && (await sha256(code)) !== p.code_sha256) || (p.tables_sha256 && (await sha256(tables)) !== p.tables_sha256))
 		throw new CodecError("the codec areas in this file do not match");
-	return { profile: p, codeAddr: p.stock_file.code - c.progmem_base, tablesAddr: p.stock_file.tables - c.progmem_base, code, tables };
+	return { profile: p, codeAddr: p.stock_file.code - c.progmem_base, tablesAddr: p.stock_file.tables - c.progmem_base, code, tables,
+		codeSha: await sha256(code) };
 }
 
-// The slot contents: header, code, tables (4-byte aligned). The board's linker leaves the codec its RAM windows.
-export function slotBytes(c, boardId, { profile: p, code, tables }) {
+const align4 = (n) => (n + 3) & ~3;
+const fitsRun = (lay, len) => len <= lay.run[1] - lay.run[0];
+
+// The codec map of a located codec (by its code's SHA-256), or null
+export const codecMap = (c, got) => (got.codeSha ? byCodeSha(c.codec_maps, got.codeSha)[0] || null : null);
+
+// The slot contents (hrc7000_codec.slot_bytes): header, code, tables (4-byte aligned), the relocation list from the
+// build's codec map (the firmware runs the code at its window's start). The code and tables stay the stock bytes.
+export function slotBytes(c, boardId, got) {
+	const { profile: p, code, tables } = got;
 	const lay = c.boards[boardId];
 	const codeOff = c.slot_header;
-	const tabOff = codeOff + ((code.length + 3) & ~3);
-	if (!(lay.run[0] <= p.run && p.run + code.length <= lay.run[1])) throw new CodecError("code run address outside the reserved RAM window");
+	const tabOff = codeOff + align4(code.length);
 	if (!(lay.tables[0] <= p.tables_ram && p.tables_ram + tables.length <= lay.tables[1])) throw new CodecError("table address outside the reserved modem SRAM window");
+	const m = codecMap(c, got);
+	if (!m) throw new CodecError("no codec map for this build: its code can't be moved to the board's codec window");
+	if (m.code.run !== p.run || m.code.len !== code.length) throw new CodecError(`the codec map of ${p.name} doesn't match its profile`);
+	if (!fitsRun(lay, code.length)) throw new CodecError("the codec is bigger than the board's codec window");
+	if ((lay.run[0] - p.run) % 4) throw new CodecError("the codec window would change the code's word alignment");
+	checkWords(code, m);
+	const rels = m.self_refs.map((r) => r.off).sort((a, b) => a - b);
+	const relOff = tabOff + align4(tables.length);
+	const relBytes = concat(...rels.map(le32));
+	const crc = crc32(relBytes, crc32(tables, crc32(code)));
 	const words = [c.slot_magic, c.slot_version, codeOff, code.length, p.run, tabOff, tables.length, p.tables_ram,
-		...p.entries, p.tag, crc32(tables, crc32(code))];
-	const out = new Uint8Array(tabOff + tables.length).fill(0xFF);
+		...p.entries, p.tag, crc, relOff, rels.length];
+	const out = new Uint8Array(relOff + relBytes.length).fill(0xFF);
 	out.fill(0, 0, codeOff);
 	words.forEach((w, i) => out.set(le32(w), 4 * i));
 	out.set(code, codeOff);
 	out.set(tables, tabOff);
+	out.set(relBytes, relOff);
 	if (out.length > lay.slot[1] - lay.slot[0]) throw new CodecError("the codec does not fit the codec slot");
 	return out;
 }
 
-// A slot read back (from the radio, a backup or this browser), checked: magic, version, windows, CRC, signature and
-// the board's RAM windows. Returns {length, tag, crc, codeSha} or null.
-export async function parseSlot(c, boardId, slot) {
+// A slot's own checks, whatever board it is for: magic, version (a version 1 slot, from before the code moved, is
+// refused: the codec is merged again), parts inside it, CRC, signature. Returns its fields, code and tables, or null
+async function readSlot(c, slot) {
 	if (!slot || slot.length < c.slot_header) return null;
 	const w = (i) => u32le(slot, 4 * i);
-	if (w(0) !== c.slot_magic || w(1) !== c.slot_version) return null;
+	const version = w(1);
+	if (w(0) !== c.slot_magic || version !== c.slot_version) return null;
 	const [codeOff, codeLen, run, tabOff, tabLen, tabRam] = [w(2), w(3), w(4), w(5), w(6), w(7)];
 	if (codeOff < c.slot_header || !codeLen || codeOff + codeLen > slot.length || tabOff + tabLen > slot.length) return null;
 	const code = slot.subarray(codeOff, codeOff + codeLen), tables = slot.subarray(tabOff, tabOff + tabLen);
-	if (crc32(tables, crc32(code)) !== w(8 + ENTRIES + 1) || u32le(code, 0) !== c.codec_sig[0] || u32le(code, 4) !== c.codec_sig[1]) return null;
+	const [relOff, relCount] = [w(17), w(18)];
+	if (relCount > c.slot_rel_max || relOff % 4 || relOff + 4 * relCount > slot.length) return null;
+	const rels = Array.from({ length: relCount }, (_, i) => u32le(slot, relOff + 4 * i));
+	const crc = crc32(slot.subarray(relOff, relOff + 4 * relCount), crc32(tables, crc32(code)));
+	const end = Math.max(tabOff + tabLen, relOff + 4 * relCount);
+	if (crc !== w(16) || u32le(code, 0) !== c.codec_sig[0] || u32le(code, 4) !== c.codec_sig[1]) return null;
+	return { version, run, tabRam, code, tables, rels, end, tag: w(15), crc: w(16), entries: Array.from({ length: ENTRIES }, (_, i) => w(8 + i)) };
+}
+
+// A slot read back (from the radio, a backup or this browser), checked as above and against the board's windows.
+// Returns {length, version, tag, crc, codeSha, name} or null.
+export async function parseSlot(c, boardId, slot) {
+	const r = await readSlot(c, slot);
+	if (!r) return null;
 	const lay = c.boards[boardId];
-	if (lay && !(lay.run[0] <= run && run + codeLen <= lay.run[1] && lay.tables[0] <= tabRam && tabRam + tabLen <= lay.tables[1])) return null;
-	const codeSha = await sha256(code);
+	if (lay && !(fitsRun(lay, r.code.length) && lay.tables[0] <= r.tabRam && r.tabRam + r.tables.length <= lay.tables[1])) return null;
+	const codeSha = await sha256(r.code);
 	const known = profilesFor(c, boardId).find((p) => p.code_sha256 === codeSha);
-	return { length: tabOff + tabLen, tag: w(8 + ENTRIES), crc: w(8 + ENTRIES + 1), codeSha, name: known?.name || null };
+	return { length: r.end, version: r.version, tag: r.tag, crc: r.crc, codeSha, name: known?.name || null };
 }
 
 const ODR_MARK = new TextEncoder().encode("OpenDigitalRadio");
@@ -181,10 +217,11 @@ export async function analyze(progmem, c, boardId) {
 	return { firmware, slot, slotBytes: slot ? slotRaw.slice(0, slot.length) : null, codec, otherCodec };
 }
 
-// The codec decision for an install. have: {slotInFlash, savedSlot, flashCodec, fileCodec} (any may be null): slots
-// (Uint8Array) or located codecs (fileCodec either: a merged image's slot, or a codec out of a stock file). Returns {mode: "keep" | "write" | "none", slot, why, source}.
-export async function decide(c, boardId, { slotInFlash = null, savedSlot = null, flashCodec = null, fileCodec = null, allowNone = false } = {}) {
+// The codec decision for an install. have: {slotInFlash, movedSlot, savedSlot, flashCodec, fileCodec} (any may be null):
+// slots (Uint8Array) or located codecs; movedSlot: a version 1 slot rebuilt by c7000v1.js (temporary) (fileCodec either: a merged image's slot, or a codec out of a stock file). Returns {mode: "keep" | "write" | "none", slot, why, source}.
+export async function decide(c, boardId, { slotInFlash = null, movedSlot = null, savedSlot = null, flashCodec = null, fileCodec = null, allowNone = false } = {}) {
 	if (slotInFlash) return { mode: "keep", slot: null, source: "flash", why: "keep" };
+	if (movedSlot) return { mode: "write", slot: movedSlot, source: "moved" };
 	if (flashCodec) return { mode: "write", slot: slotBytes(c, boardId, flashCodec), source: "radio", name: flashCodec.profile.name, tag: flashCodec.profile.tag };
 	if (savedSlot && (await parseSlot(c, boardId, savedSlot))) return { mode: "write", slot: savedSlot, source: "browser" };
 	if (fileCodec instanceof Uint8Array && (await parseSlot(c, boardId, fileCodec))) return { mode: "write", slot: fileCodec, source: "image" };

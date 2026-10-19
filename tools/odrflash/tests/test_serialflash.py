@@ -55,11 +55,11 @@ class Tools(unittest.TestCase):
     def test_the_wrapped_tools_load_from_the_checkout(self):
         self.assertTrue(hasattr(sf.tool("dm32_flash"), "Flasher"))
         self.assertTrue(hasattr(sf.tool("stubtool"), "Radio"))
-        self.assertTrue(hasattr(sf.tool("dm32_codec"), "merge"))
+        self.assertTrue(hasattr(sf.tool("hrc7000_codec"), "merge"))
         self.assertIn("dm1801pro", sf.tool("dm32_flash").MODELS)
 
     def test_slot_magic_matches_the_tools(self):
-        self.assertEqual(sf.SLOT_MAGIC, sf.tool("dm32_codec").SLOT_MAGIC)
+        self.assertEqual(sf.SLOT_MAGIC, sf.tool("hrc7000_codec").SLOT_MAGIC)
         self.assertEqual(sf.SLOT_MAGIC, sf.tool("dm32_flash").SLOT_MAGIC)
         self.assertEqual(B.codec.windows[0][0] - B.app_base, sf.tool("stubtool").APP_END - FLASH_OFF - 0x18000)
 
@@ -86,8 +86,8 @@ class Images(unittest.TestCase):
             sf.contiguous(B, app_image(100), b"\x01" * (0x18000 + 1))
 
     def test_slot_from_a_program_flash_read(self):
-        """dm32_codec.py builds the slot from a (here synthetic) 1 MB program flash read, checked by SHA-256."""
-        dc = sf.tool("dm32_codec")
+        """hrc7000_codec.py builds the slot from a (here synthetic) 1 MB program flash read, checked by SHA-256."""
+        dc = sf.tool("hrc7000_codec")
         real = [p for p in dc.PROFILES.values() if p["board"] == "dm1801pro"][0]
         rng = random.Random(3)
         code = struct.pack("<2I", *dc.CODEC_SIG) + bytes(rng.getrandbits(8) for _ in range(real["code"][1] - 8))
@@ -100,7 +100,13 @@ class Images(unittest.TestCase):
         prof = dict(real, code_sha256=hashlib.sha256(code).hexdigest(), tables_sha256=hashlib.sha256(tables).hexdigest(),
                     tables_head_crc=zlib.crc32(tables[:64]))
         app = app_image(4000)
-        with mock.patch.dict(dc.PROFILES, {hashlib.sha256(code).hexdigest(): prof}, clear=True):
+        # the synthetic codec's map: one word that holds an address in the code
+        struct.pack_into("<I", dump, c0 + 0x40, real["code"][2] + 0x100)
+        code = bytes(dump[c0:c0 + len(code)])
+        prof["code_sha256"] = hashlib.sha256(code).hexdigest()
+        maps = dc.synthetic_map(prof, code, refs=((0x40, real["code"][2] + 0x100),))
+        with mock.patch.dict(dc.PROFILES, {hashlib.sha256(code).hexdigest(): prof}, clear=True), \
+                mock.patch.object(dc.codecmap, "load_maps", lambda *a: maps):
             slot, name = sf.slot_from_file(B, app, bytes(dump))
             with self.assertRaises(sf.SerialError) as e:
                 sf.slot_from_file(B, app, bytes(dump[:-1]))

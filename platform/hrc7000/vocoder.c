@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// HR_C7000 vocoder: the radio's own stock AMBE+2 codec, run from RAM at its stock address (docs/spec/codec-dm32.md,
-// "Recommended hosting" and "C. Codec state init tables"). Shared by the HR_C7000 radios that carry this codec build;
-// what differs between them (the slot, the RAM and table addresses) comes from the board.
+// HR_C7000 vocoder: the radio's own stock AMBE+2 codec, run from RAM in the board's codec window
+// (docs/spec/codec-placement.md, "HR_C7000 radios"; the codec itself: docs/spec/codec-dm32.md, "C. Codec state init
+// tables"). Shared by the HR_C7000 radios that carry this codec build; what differs between them (the slot, the windows)
+// comes from the board.
 //
-// tools/dm32_codec.py carves the codec code and its table window out of the user's stock file and writes them into
-// the board's codec slot behind a small header; they are never part of this repository or a release. On first use the
-// code is copied to its stock RAM address (inside the window the board's linker script reserves) and the tables to
-// their stock modem SRAM address. Nothing is relocated or patched. Without a valid slot, present() is false: FM only.
+// tools/hrc7000_codec.py carves the codec code and its table window out of the user's stock file and writes them into
+// the board's codec slot behind a small header (codec_slot.h); they are never part of this repository or a release.
+// On first use the code is copied to the start of the window and the words the slot lists are moved with it, and the
+// tables are copied to their stock modem SRAM address. Without a valid slot, present() is false: FM only.
 //
 // The board's linker script gives the slot (__codec_slot..__codec_slot_end) and the windows a slot may name
 // (__codec_run_lo/hi, __codec_tab_lo/hi); its board.mk names the profile prefix (HRC_CODEC_BOARD, e.g. "dm32").
@@ -17,6 +18,7 @@
 #include <string.h>
 #include "config.h"
 #include "vocoder.h"
+#include "codec_slot.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
@@ -27,30 +29,11 @@
 #error "the board's board.mk must define HRC_CODEC_BOARD (the codec profile prefix)"
 #endif
 
-#define SLOT_MAGIC		0x43524444u	// "DDRC" little-endian: ODR HR_C7000 codec slot
-#define SLOT_VERSION		1u
-#define CODEC_SIG0		0x152514D8u	// first two words of the codec code (both versions)
+#define CODEC_SIG0		0x152514D8u	// first two words of the codec code (every build)
 #define CODEC_SIG1		0x74C776CDu
 
 // Where a codec may run: the RAM window the linker script leaves out and the modem SRAM table window
 extern const uint8_t __codec_run_lo[], __codec_run_hi[], __codec_tab_lo[], __codec_tab_hi[];
-#define RUN_LO			((uint32_t)(uintptr_t)__codec_run_lo)
-#define RUN_HI			((uint32_t)(uintptr_t)__codec_run_hi)
-#define TAB_LO			((uint32_t)(uintptr_t)__codec_tab_lo)
-#define TAB_HI			((uint32_t)(uintptr_t)__codec_tab_hi)
-
-// The slot header, written by tools/dm32_codec.py (keep the two in step). Code follows at +code_off, tables at +tab_off
-typedef struct {
-	uint32_t magic, version;
-	uint32_t code_off, code_len, code_ram;	// run address
-	uint32_t tab_off, tab_len, tab_ram;
-	// Entry points, offsets from the code start
-	uint32_t decode, encode, dec_init, dec_set, enc_init, enc_set, fec_init;
-	uint32_t stock_tag;			// which stock file: 49 / 46 (DM-32UV), 2501 / 2409 / 2405 (DB-25D, year and month)
-	uint32_t crc;				// CRC-32 of code then tables, as written to the slot
-	uint32_t reserved[15];
-} codec_slot_t;
-_Static_assert(sizeof(codec_slot_t) == 128, "codec slot header layout");
 
 extern const uint8_t __codec_slot[];
 extern const uint8_t __codec_slot_end[];
@@ -78,64 +61,34 @@ static volatile bool parked;	// stopped for a stub upload: the calls return at o
 static bool ready;
 static bool enc_first;
 
-static uint32_t crc32(const uint8_t *p, uint32_t len, uint32_t c)
-{
-	static const uint32_t nib[16] = {
-		0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC, 0x76DC4190, 0x6B6B51F4, 0x4DB26158, 0x5005713C,
-		0xEDB88320, 0xF00F9344, 0xD6D6A3E8, 0xCB61B38C, 0x9B64C2B0, 0x86D3D2D4, 0xA00AE278, 0xBDBDF21C,
-	};
-	c = ~c;
-	while (len--) {
-		c ^= *p++;
-		c = (c >> 4) ^ nib[c & 15];
-		c = (c >> 4) ^ nib[c & 15];
-	}
-	return ~c;
-}
-
 static int16_t *h16(void *state, uint32_t off)
 {
 	return (int16_t *)((uint8_t *)state + off);
 }
 
-static bool within(uint32_t a, uint32_t len, uint32_t lo, uint32_t hi)
-{
-	return a >= lo && a <= hi && len <= hi - a;
-}
-
-// Header sane, windows inside what the memory map reserves, CRC right; then the copy and the signature check
+// The slot checked (codec_slot.h: header, windows, entries, relocations, CRC), the code copied to where it runs and
+// moved there, the tables copied, then the signature
 static bool load(void)
 {
+	const codec_windows_t win = {
+		(uint32_t)(uintptr_t)__codec_run_lo, (uint32_t)(uintptr_t)__codec_run_hi,
+		(uint32_t)(uintptr_t)__codec_tab_lo, (uint32_t)(uintptr_t)__codec_tab_hi,
+	};
+	uint32_t run;
+	if (!codec_slot_check(__codec_slot, (uint32_t)(__codec_slot_end - __codec_slot), &win, &run)) {
+		return false;
+	}
 	const codec_slot_t *s = (const codec_slot_t *)__codec_slot;
-	uint32_t room = (uint32_t)(__codec_slot_end - __codec_slot);
-	if (s->magic != SLOT_MAGIC || s->version != SLOT_VERSION) {
-		return false;
-	}
-	if (s->code_off < sizeof *s || s->code_off > room || s->code_len > room - s->code_off ||
-		s->tab_off > room || s->tab_len > room - s->tab_off ||
-		!within(s->code_ram, s->code_len, RUN_LO, RUN_HI) || !within(s->tab_ram, s->tab_len, TAB_LO, TAB_HI)) {
-		return false;
-	}
-	uint32_t ep[7] = { s->decode, s->encode, s->dec_init, s->dec_set, s->enc_init, s->enc_set, s->fec_init };
-	for (int i = 0; i < 7; i++) {
-		if (ep[i] >= s->code_len || (ep[i] & 1u) != 0) {
-			return false;
-		}
-	}
-	const uint8_t *code = __codec_slot + s->code_off;
-	const uint8_t *tab = __codec_slot + s->tab_off;
-	if (crc32(tab, s->tab_len, crc32(code, s->code_len, 0)) != s->crc) {
-		return false;
-	}
-	memcpy((void *)(uintptr_t)s->code_ram, code, s->code_len);
-	memcpy((void *)(uintptr_t)s->tab_ram, tab, s->tab_len);
+	memcpy((void *)(uintptr_t)run, __codec_slot + s->code_off, s->code_len);
+	codec_slot_relocate(__codec_slot, (uint8_t *)(uintptr_t)run, run);
+	memcpy((void *)(uintptr_t)s->tab_ram, __codec_slot + s->tab_off, s->tab_len);
 	hrc_barrier();
-	const volatile uint32_t *w = (const volatile uint32_t *)(uintptr_t)s->code_ram;
+	const volatile uint32_t *w = (const volatile uint32_t *)(uintptr_t)run;
 	if (w[0] != CODEC_SIG0 || w[1] != CODEC_SIG1) {
 		return false;
 	}
 	slot = s;
-	code_ram = s->code_ram;
+	code_ram = run;
 	return true;
 }
 

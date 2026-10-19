@@ -26,7 +26,7 @@ import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codep
 import { Selection } from "./select.js";
 import { decideCodec } from "./decide.js";
 import { readBootKey } from "./bootkey.js";
-import { loadCodec, readCodec, saveCodec } from "./codecsave.js";
+import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
@@ -387,11 +387,13 @@ async function keyFromRadio(link) {
 	if (!S.sim) try { localStorage.setItem(KEY_STORE(S.board.id), toHex(key)); } catch (e) { /* not remembered */ }
 }
 
-// Where an update erases the codec (keep_codec_supported false), a radio running ODR with that codec hands it over
-// first (codecsave.js), and this browser keeps a copy before anything is erased. Quiet when it can't: the stock file
-// still works.
+// A radio running ODR with its codec hands it over (codecsave.js), and this browser keeps a copy: where an update
+// erases the codec (keep_codec_supported false) before anything is erased, elsewhere once, for an install that can't
+// keep it (a radio back on stock firmware, an interrupted install, a radio in its bootloader). Quiet when it can't:
+// the stock file still works.
 async function codecFromRadio(link, probe, status) {
-	if (S.board.keep_codec_supported || probe?.codec !== S.board.codec.id || S.savedCodec?.from === "radio") return;
+	if (probe?.codec !== S.board.codec.id || S.savedCodec?.from === "radio") return;
+	if (S.board.keep_codec_supported && !S.sim && (await loadCodec(S.board, fb()))) return;
 	status?.replaceChildren(h("p", { class: "muted" }, t("flash.now.reading_codec")));
 	const got = await readCodec(link, S.board, fb());
 	if (got) S.savedCodec = { ...got, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments) };
@@ -761,7 +763,7 @@ async function requestBuild(redraw) {
 async function loadOwnImage(f, redraw) {
 	try {
 		if (startsWith(f.data, fb().magic)) throw new Error(t("flash.err.stock_as_image"));
-		// an image merged with its codec (tools/dm32_codec.py): the backend keeps the codec, the rest is the image
+		// an image merged with its codec (tools/hrc7000_codec.py): the backend keeps the codec, the rest is the image
 		if (backend().ownImage) f = { ...f, data: await backend().ownImage(fb(), S.radio.flash.board, f.data) };
 		const m = S.ownManifest || await forDevBuild(S.board, f.data);
 		const board = await verify(m, f.data, fb(), S.board.id);
@@ -1001,8 +1003,9 @@ function codecView() {
 		}
 		const haveStock = !!(S.stock && fb().profiles[S.stock.info.sha]);
 		const keyKnown = S.sim || !!S.key || !!savedKey(S.board);
-		// the copy an earlier visit read from this radio: an update that stopped halfway leaves none in the radio
-		if (!S.board.keep_codec_supported && !S.savedCodec && !S.sim) {
+		// the copy an earlier visit read from this radio: an update that stopped halfway leaves none in the radio, and a
+		// radio back on stock firmware or in its bootloader can't say what it holds
+		if (!S.savedCodec && !S.sim) {
 			const got = await loadCodec(S.board, fb());
 			if (got) S.savedCodec = { ...got, from: "browser", stored: true };
 		}
@@ -1174,7 +1177,8 @@ function writeView() {
 		// from the cable route the codec step was skipped: decide now, from what the radio reported
 		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: false, haveSaved: !!S.savedCodec, probe: S.now?.probe || null });
 		let codec = [];
-		if (S.decision.mode === MERGE) codec = S.decision.source === "saved" ? S.savedCodec.segments : (await stockfw.extract(S.stock.data, S.key, fb())).segments;
+		if (S.decision.mode === MERGE) codec = S.decision.source === "saved" ? await codecSegments(S.savedCodec.profile, S.savedCodec.segments, fb())
+			: (await stockfw.extract(S.stock.data, S.key, fb())).segments;
 		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec);
 	}, next, what, opts);
 	if (!stubRoute()) return dfu();
@@ -1200,7 +1204,7 @@ function stubPanel(fallback, onDone, what) {
 			started = flashStarted(what);
 			prog.set(0, 1, t("flash.f4.reading"));
 			const r = await stub.writeImage(f4Board().owned, segments(fw.manifest, fw.image), {
-				// bytes in a rewritten sector that aren't the firmware's (the MD-380's codec in sector 6): a copy first
+				// bytes in a rewritten sector that aren't the firmware's (no radio has them since the codec moved): a copy first
 				onKept: async (sec) => {
 					const file = `${S.board.id}_sector${sec.index}_${hex(sec.addr)}.bin`;
 					if (!S.sim) download(file, sec.kept);

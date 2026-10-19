@@ -7,36 +7,35 @@
  * 0x0300C000..0x0300D000, the application from 0x0300D000, the codec slot 0x030E8000..0x03100000 (hardware-db25d.md 8:
  * the stock codec code and tables are merged there on the user's machine; never linked into).
  *
- * SRAM (288 KB at 0x10000): the stock codec runs at its own RAM address, 0x1CEB0..0x2F9D0 (all three 018 builds the
- * recipe supports put it there), so that window is reserved. Below it (RAM_LO, 52,912 B): the vector table, code that
- * must not run from flash (.ramfunc: interrupt entry, the modem slot handlers), the zeroed section .ram_lo (the state
- * the core marks ODR_CPU_RAM; config.mk sets ODR_CPU_RAM_SECTION to ".ram_lo") and the interrupt stack. Above it (RAM,
- * 164,400 B): data, bss (the RTOS heap is inside it) and the start-up stack at the top. Both regions are checked at
- * the end. The runtime stub entry (CONFIG_STUB_ENTRY) loads its monitor into the codec window, 0x1D000..0x2F000
- * (HRC_STUB_BASE in config.mk), after the codec is parked; the DMR-less script db25d.ld keeps it at 0x30000. The
- * modem SRAM window the codec's tables are copied to, 0x180014AC..0x18004204, is reserved by not being in this script
- * at all. */
+ * SRAM (288 KB at 0x10000): one region for ODR from 0x10000 (the vector table, .ramfunc: interrupt entry and the modem
+ * slot engine, the zeroed .ram_lo state the core marks ODR_CPU_RAM and the interrupt stack, then data, bss with the RTOS
+ * heap, and the start-up stack), and at the top the codec window 0x44E00..0x58000 (78,336 B: the 020 code, 78,172 B,
+ * the largest of the supported builds): the slot's code is copied there at boot and its address words moved
+ * (docs/spec/codec-placement.md). The runtime stub entry (CONFIG_STUB_ENTRY) loads the stub into the codec window
+ * (HRC_STUB_BASE in config.mk) after the codec is parked. The modem SRAM window the codec's tables are copied to,
+ * 0x180014AC..0x18004360 (the three 018 builds and 020 put the same tables at four addresses; hardware-db25d.md 8), is
+ * reserved by not being in this script at all. */
 
 ENTRY(Reset_Handler)
 
-__stack_top = 0x00057FF8;
+__stack_top = 0x00044DF8;	/* just below the codec window */
 _Min_Stack_Size = 0x800;	/* start-up only: tasks have their own stacks, interrupts the interrupt stack */
 _Irq_Stack_Size = 0x800;
 
 __codec_slot = 0x030E8000;
 __codec_slot_end = 0x03100000;
-/* Where a slot's codec may run (platform/hrc7000/vocoder.c checks the slot against them; tools/dm32_codec.py BOARDS
- * "db25d" keeps the same numbers): the RAM window below and the modem SRAM table window */
-__codec_run_lo = 0x0001CEB0;
-__codec_run_hi = 0x0002F9D0;
+/* The codec window (platform/hrc7000/codec_slot.h: the slot's code runs at its start; the size is the largest code
+ * among the board's codec maps; tools/hrc7000_codec.py BOARDS "db25d" keeps the same numbers) and the modem SRAM table
+ * window, the union of the builds' stock table addresses */
+__codec_run_lo = 0x00044E00;
+__codec_run_hi = 0x00058000;
 __codec_tab_lo = 0x180014AC;
-__codec_tab_hi = 0x18004204;
+__codec_tab_hi = 0x18004360;
 
 MEMORY
 {
 	FLASH  (rx)  : ORIGIN = 0x0300D000, LENGTH = 0x030E8000 - 0x0300D000
-	RAM_LO (rwx) : ORIGIN = 0x00010000, LENGTH = 0x0001CEB0 - 0x00010000
-	RAM    (rwx) : ORIGIN = 0x0002F9D0, LENGTH = 0x00058000 - 0x0002F9D0
+	RAM    (rwx) : ORIGIN = 0x00010000, LENGTH = 0x00044E00 - 0x00010000	/* up to the codec window */
 }
 
 SECTIONS
@@ -58,7 +57,7 @@ SECTIONS
 	.vectors (NOLOAD) :
 	{
 		KEEP(*(.vectors))
-	} >RAM_LO
+	} >RAM
 
 	.ramfunc :
 	{
@@ -69,7 +68,7 @@ SECTIONS
 		*dmr_glue.o(.text .text.*)
 		. = ALIGN(4);
 		__ramfunc_end = .;
-	} >RAM_LO AT>FLASH
+	} >RAM AT>FLASH
 	__ramfunc_load = LOADADDR(.ramfunc);
 
 	.ram_lo (NOLOAD) :
@@ -81,7 +80,7 @@ SECTIONS
 		. = . + _Irq_Stack_Size;
 		__irq_stack_top = .;
 		__ram_lo_bss_end = .;
-	} >RAM_LO
+	} >RAM
 
 	.data :
 	{
@@ -111,8 +110,7 @@ SECTIONS
 	} >RAM
 
 	ASSERT(Reset_Handler == ORIGIN(FLASH), "crt0 must be the first byte of the image (the first stage jumps there)")
-	ASSERT(ADDR(.vectors) == 0x00010000, "the vector table must start RAM_LO (1 KB aligned for VBR)")
-	ASSERT(. <= __stack_top, "RAM overflows into the start-up stack")
-	ASSERT(__ram_lo_bss_end <= ORIGIN(RAM_LO) + LENGTH(RAM_LO), "RAM_LO overflows into the codec's RAM window: move ODR_CPU_RAM state out")
+	ASSERT(ADDR(.vectors) == 0x00010000, "the vector table must start RAM (1 KB aligned for VBR)")
+	ASSERT(. <= __stack_top, "RAM overflows into the start-up stack and the codec window")
 	ASSERT(__data_load + SIZEOF(.data) <= __codec_slot, "the image runs into the codec slot")
 }

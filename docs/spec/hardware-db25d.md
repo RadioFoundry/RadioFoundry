@@ -624,24 +624,27 @@ The diagnostics page (`CONFIG_DIAG`) shows the storage on lines 12-15, after the
 
 The stock image links the HR_C7000 vocoder library (V1.9.6); AMBE+2 runs in software on the CK803S and the frames pass
 through the CPU, as on the DM-32 (BIN). ODR hosts it as on the DM-32UV ([codec-dm32.md](codec-dm32.md)): the user's
-machine carves the codec out of the radio's own stock file into a slot in the image, and the firmware copies it to its
-stock RAM address at boot. Nothing is relocated, and no codec bytes are in the repository or in a release.
+machine carves the codec out of the radio's own stock file or program flash into a slot in the image, and the firmware
+copies it to the board's codec window at the top of RAM at boot and moves the addresses its codec map lists
+([codec-placement.md](codec-placement.md)). No codec bytes are in the repository or in a release.
 
 ### 8.1 Stock files
 
 The 2024-05-09 build is the first a PRO can run (1), and older images must never be loaded on one, so no recipe is kept
-for them. Three files are supported, all plain images linked at 0x0300C000 (no header, no container,
-no key). The three carry the same codec code, built from the same library, with different literal pool words.
+for them. Three 018 files are supported, all plain images linked at 0x0300C000 (no header, no container, no key), and
+the 020 build from a read of the radio's program flash. The three 018 files carry the same codec code, built from the
+same library, with different literal pool words.
 
 | File | Size | sha256 | Profile id |
 |---|---|---|---|
 | `DB25-D PRO 909E.Dx.EARSAB.018_2025-01-21.bin` | 846,700 | `341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b` | `db25d-2501` |
 | `DB25-D PRO 909E.Dx.EARSAB.018_2024-09-23.bin` | 845,900 | `f2a4b214720b971b58cdadcc53d44695e1462b75296afc41f2a0b53a704d36b4` | `db25d-2409` |
 | 2024-05-09 build (`909E.D6x.EARSAB.018`) | 843,944 | `9e199f54cd6545d153d39542ca5be3ac1076ee215eb93ca630a83cbdbbff4606` | `db25d-2405` |
+| 909E.DBB.EARSAB.020, a 1 MB program flash read (`stub/stubtool.py --progmem`) | 1,048,576 | none: found by the codec's own hashes | `db25d-020` |
 
-The owner's radio runs 909E.DBB.EARSAB.020, whose codec is a different compile. It isn't supported: no stock file of
-that version is at hand, only a read of the radio. A radio can run the 018 codec whatever its own firmware version,
-because the codec is plain code and tables. What the read of the 020 radio shows (BIN):
+The owner's radio runs 020, whose codec is a different compile. No stock file of that version is at hand, so its
+profile works from a read of the radio. A radio can run any supported codec whatever its own firmware version, because
+the codec is plain code and tables. What the read of the 020 radio shows (BIN):
 
 | | 020 |
 |---|---|
@@ -650,14 +653,15 @@ because the codec is plain code and tables. What the read of the 020 radio shows
 | Code run address | 0x180B8, inferred: the RAM image starts at flash 0x030B9374 (its first 256 bytes are 018's, and occur once), and 020's start-up copy is in the 4 KB the read lacks |
 | Tables | Byte-identical to 018's (same sha256), at flash 0x0307E760 |
 
-0x180B8 lies in the RAM that `db25d_dmr.ld` gives ODR below the codec window (8.3), so the 020 codec needs its own RAM
-layout as well as a recipe.
+0x180B8 lay inside ODR's RAM in the layout from before the move. With the codec copied to the board's window (8.3), the
+run address only sets the offset added to the three words its codec map lists. The 020 code is 78,172 bytes, the
+largest of the four builds, and sizes the window.
 
 The web flasher finds the codec by content: the two signature words, then the SHA-256 of the code and the tables against
 every profile, wherever an image or a backup holds them. A stock file not known by its own SHA-256 is placed as the
 radio would hold it and searched the same way, so a re-release that carries a known codec unchanged works. When the
-signature is there but no profile matches (020), the page says that the radio's codec is a build ODR can't use and asks
-for an 018 file; the backup is not affected.
+signature is there but no profile matches, the page says that the radio's codec is a build ODR can't use and asks for
+a supported file; the backup is not affected.
 
 ### 8.2 Where the codec is
 
@@ -702,10 +706,10 @@ addresses (as the DM-32UV's). The build reserves them.
 |---|---|
 | Stock file | Put one of the files above in `codecs/` (any name; the build recognizes it by sha256) |
 | Build | `make BOARD=db25d`. Next to `odr_db25d_install.bin` (first stage + application) it writes `build/db25d/odr_db25d_codec.bin`: the same, padded with 0xFF to 0x030E8000, then the 128-byte slot header, the code and the tables. With no supported file in `codecs/` the build says so and writes only the plain images |
-| Slot | 0x030E8000..0x03100000 (96 KB, 88,304 used): code and tables after the header of `platform/hrc7000/vocoder.c`, `tools/dm32_codec.py` writes it |
+| Slot | 0x030E8000..0x03100000 (96 KB; 88,316 bytes used for 018, 89,912 for 020): the version 2 header of `platform/hrc7000/codec_slot.h`, the code and tables as stock has them, and the relocation list. `tools/hrc7000_codec.py --board db25d --stock FILE` writes it from a stock file or a program flash read |
 | Flash | The merged image goes where `_install.bin` goes (the loader's update mode or `stubtool --write-app`, 7): it is the stage, the application and the slot in one file. The loader writes as far as the image reaches, about 1 MB, so the first flash takes a while; `stubtool --write-app` writes only the sectors that changed |
-| Check | The debug link's VERSION reports `codec=db25d-2501` (or `-2409`, `-2405`) when the slot is valid, `absent` when it's built with `CONFIG_DMR=y` and the slot is missing or damaged |
-| RAM | `CONFIG_DMR=y` links `db25d_dmr.ld`: RAM 0x10000..0x1CEB0 (52,912 B) for the vectors, the slot engine and the core's CPU state, 0x1CEB0..0x2F9D0 for the codec, 0x2F9D0..0x58000 (164,400 B) for the rest. The runtime stub window moves to 0x1D000..0x2F000 (inside the codec window, after the codec is parked; `HRC_STUB_BASE` in `config.mk`). The universal stub loads there and copies itself to 0x30000, which is ODR's RAM and dead after the jump (7). Without DMR the span is 0x30000 (`db25d.ld`) |
+| Check | The debug link's VERSION reports `codec=db25d-2501` (or `-2409`, `-2405`, `-020`) when the slot is valid, `absent` when it's built with `CONFIG_DMR=y` and the slot is missing, damaged or version 1 |
+| RAM | `CONFIG_DMR=y` links `db25d_dmr.ld`: one region for ODR, 0x10000..0x44E00 (216,576 B: the vectors, the slot engine, the core's CPU state, data, bss with the RTOS heap, the start-up stack), and the codec window 0x44E00..0x58000 (78,336 B) at the top. The tables go to modem SRAM 0x180014AC..0x18004360, which the script leaves out. The runtime stub window is 0x45000..0x58000 (inside the codec window, after the codec is parked; `HRC_STUB_BASE` in `config.mk`). The universal stub loads there and copies itself to 0x30000, which is ODR's RAM and dead after the jump (7). Without DMR the span is 0x30000 (`db25d.ld`) |
 
 ## 9. How ODR uses it (`make BOARD=db25d`)
 
@@ -724,7 +728,7 @@ Bring-up state (the port has run on a radio):
 | Volume | No knob (`hal_power_t.volume()` is -1): the stored step (0..16) goes to `hal_radio_t.volume()` and sets the BK4819 AF DAC gain (3.3); the debug link sets it too (RADIO op 30). Checked on the radio: the steps change the level and step 0 is silent |
 | Storage | `CONFIG_NAND_STORAGE` (on): settings kept in NAND blocks 1920-1951 through `drivers/flash/nand_sectors` (6.6). On the owner's radio the region mounted clean (no foreign data, no bad blocks) and the VFO frequency survived a chip reset |
 | Codeplug over the cable | `CONFIG_CPS_OPENFW` (on): the open-firmware CPS on the host link (UART1, 115200) over the codeplug areas of 6.6, at the STM32 radios' addresses (EEPROM part at 0, flash part at 0x20000, no `--offset`). Radio info reports type 6 (MD-UV380); no MCU ROM or flash security register area; no calibration window. `tools/cps_client.py --port /dev/ttyUSB1 read / write / verify`, qdmr's MD-UV380 driver should work as well (not tried). The channels and zones come from the stored codeplug (`core/codeplug`), which the radio re-reads at the end of a session. Host-tested on a simulated NAND with power cuts; read, write and verify run on the owner's radio (read 63 s, write 76 s). `CONFIG_APRS_RX` and `CONFIG_APRS_IGATE` are off (no FM receive PCM on this radio) |
-| Codec | Recipe for three stock files (8); `make` merges it into `odr_db25d_codec.bin` when the stock file is in `codecs/`. The 2025-01-21 recipe runs on the owner's radio (VERSION `codec=db25d-2501`, DMR voice decodes, 4.5) |
+| Codec | Profiles for three 018 stock files and the 020 program flash read (8); `make` merges one into `odr_db25d_codec.bin` when its file is in `codecs/`. On the owner's radio (2026-10-19), with the code moved to the codec window: the 020 read and the 2024-09-23 file each give VERSION `codec=db25d-020` / `db25d-2409` and decode a bench voice call with every one of its 234 AMBE frames |
 | DMR | `CONFIG_DMR=y` (default on): the shared HR_C7000 glue of the DM-32UV with the main BK4819's stock digital set (4.5). Receive works on the radio: a bench voice call decodes with every AMBE frame, and a bench SMS arrives (4.5). Speaker audio for DMR not yet heard. Transmit (`DB25D_DMR_TX=1`, default on): the stock per-burst TX sequence from an RF task (4.5), checked on the SDR bench; `DB25D_DMR_TX=0` builds receive only. Builds clean with every DMR feature, the network ones included (the next rows) |
 | Hotspot | `CONFIG_HOTSPOT=y` (default on): the MMDVM host port on UART1, simplex. The core's hotspot drives the same `hal_dmr_modem_t` as a call (`tx_begin`, `tx_queue`, `tx_end`) and keys through `hal_radio_t.tx()` in DMR mode, so it runs on the per-burst TX path of 4.5 (the `dmrrf` RF task) with nothing added to the board: whole calls and data go out as the host sends them, and a retune (`rx()`) disarms the keying until the hotspot arms it again. A split RX / TX frequency pair works as a call's does (each burst tunes to the TX frequency, then back). Not offered: the split-duplex roles (`CONFIG_HOTSPOT_SPLIT=n`: the driver has no continuous BS outbound, so the core would refuse the role) and SFR / `tx_listen` per-slot switching (`CONFIG_SFR=n`). Checked on the radio with `tools/bench/hotspot_cases.py` against the SDR bench modem (frequency 461.4625 MHz, color code 2): GET_VERSION, SET_FREQ, SET_CONFIG, SET_MODE and GET_STATUS answer (status DMR, TS2 space 22); all 13 cases pass (`rf_voice8`, `rf_late`, `rf_long`, `rf_lost`, `rf_b2b`, `rf_csbk`, `rf_data_unconf`, `rf_data_conf` for uplink frames; `net_voice`, `net_voice_ctl`, `net_data`, `net_data_conf`, `net_b2b` for calls sent from the host and heard on air). The radio is back on its channel within 25 s of the last frame |
 | DMR VFO | `CONFIG_VFO_DMR=y` follows the default: the core's DMR VFO (`dmr-voice.md` 2.1; the VFO quick menu's Mode tile switches it FM / DMR). On the radio (2026-10-17, debug link): mode, color code, slot and a group or private target set and kept across leaving the VFO and a restart; at 461.4625 MHz CC 2 TS 1 TG 201 a bench call received with every voice burst (120 voice, 8 headers, 3 terminators), and a 4 s key-up decoded by the bench modem as a group call to TG 201 (72 voice bursts, 216 AMBE frames). A record written by an older build keeps the color code its FM VFO stored (often 0) until the user sets one |
