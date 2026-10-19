@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The SFR repeater roles on hal_dmr_modem_t (see sfrRunner.h)
-#if CONFIG_SFR || defined(HAS_SFR)	// the whole file
+#include "config.h"
+#if CONFIG_SFR	// the whole file
 
 #include <string.h>
 #include "dmr/sfrRunner.h"
@@ -109,6 +110,8 @@ static bool is_echo(const sfrRunner_t *r, const sfrBurst_t *b, uint32_t now_ms)
 	}
 	return false;
 }
+
+sfrRunner_t sfr_runner;
 
 void sfrRunnerStart(sfrRunner_t *r, const hal_dmr_modem_t *modem, const sfrConfig_t *cfg, const sfrRunnerUplink_t *up)
 {

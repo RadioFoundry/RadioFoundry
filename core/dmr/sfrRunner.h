@@ -92,6 +92,10 @@ typedef struct {
 	sfrRunnerStats_t stats;
 } sfrRunner_t;
 
+// The one runner (RAM is short on some radios): the MMDVM hotspot's SFR mode and a channel's repeater role
+// (core/radio/radio_sfr.c) never run together, since hotspot mode takes the modem from the channel first
+extern sfrRunner_t sfr_runner;
+
 // The modem is the caller's, started in DMR mode (DMO framing, every slot received, the inbound color code). up: NULL
 // for no host
 void sfrRunnerStart(sfrRunner_t *r, const hal_dmr_modem_t *modem, const sfrConfig_t *cfg, const sfrRunnerUplink_t *up);

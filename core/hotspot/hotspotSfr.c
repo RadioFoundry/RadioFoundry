@@ -27,7 +27,7 @@ enum {
 #define STATE_RF_CALL		0x10
 #define STATE_BUSY		0x20
 
-static sfrRunner_t run;
+#define run sfr_runner	// shared with a channel's repeater role (sfrRunner.h)
 static bool wanted;		// the host's SET_CONFIG / SET_FREQ ask for it
 static bool on;
 static sfrChannelSettings_t settings = {
@@ -349,7 +349,6 @@ static const mmdvm_ext_t ext = {
 
 void hotspot_sfr_init(void)
 {
-	memset(&run, 0, sizeof(run));
 	wanted = false;
 	on = false;
 	memset(&dbg, 0, sizeof(dbg));

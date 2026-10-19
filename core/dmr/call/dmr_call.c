@@ -6,6 +6,9 @@
 #include <string.h>
 #include "dmr/call/dmr_call.h"
 #include "config.h"
+#if CONFIG_SFR
+#include "dmr/sfr.h"
+#endif
 
 // RX trace into the debug link's log (see dmr_call.h). Host tests that don't link dlog build with DMR_RX_TRACE=0
 #ifndef DMR_RX_TRACE
@@ -77,6 +80,11 @@ static struct {
 	bool activity_seen;
 	uint32_t last_any_ms;	// last burst of any kind / CC (polite to all)
 	bool any_seen;
+	uint32_t slots_ms;	// last burst whose sync gave its slot number (TS1 / TS2 / BS), our CC
+	bool slots_seen;
+#if CONFIG_SFR
+	sfrDedup_t sfr_dd;	// SFR user: the voice burst last played, of either copy
+#endif
 	uint32_t last_call_end_ms;
 	bool call_end_seen;
 	uint8_t term_lc[DMR_LC_BYTES];	// the LC of the last call a terminator ended, and when
@@ -306,6 +314,26 @@ static void set_reply(dmr_target_t t, uint32_t now)
 	s.dirty = true;
 }
 
+static bool sfr_user(void)
+{
+	return CONFIG_SFR && s.cfg.sfr_user && !s.cfg.rmo;
+}
+
+// DMO start timing. An SFR user keys in step with the repeater's slots (the sync told their numbers) when they were
+// heard lately, else on its own clock: an aligned start with no slot numbers to go by would wait for a slot that never
+// comes and be refused. Everyone else: in step with a station heard within align_ms
+static dmr_timing_t dmo_timing(uint32_t now, uint32_t align_ms)
+{
+	if (sfr_user())
+		return elapsed(now, s.slots_ms, s.slots_seen, DMR_CALL_ALIGN_MS) ? DMR_TIMING_OWN : DMR_TIMING_ALIGNED;
+	return elapsed(now, s.last_activity_ms, s.activity_seen, align_ms) ? DMR_TIMING_OWN : DMR_TIMING_ALIGNED;
+}
+
+static uint8_t tx_sync(void)
+{
+	return sfr_user() ? s.cfg.tx_sync : (uint8_t)DMR_SYNC_NONE;
+}
+
 static bool transmitting(void)
 {
 	return s.tx == TX_WAKE || s.tx == TX_ON || s.tx == TX_END || s.tx == TX_DATA || s.tx == TX_DATA_END;
@@ -469,6 +497,9 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 			c->encrypted = true;
 		}
 		s.view.call_start_ms = now;
+#if CONFIG_SFR
+		sfrDedupReset(&s.sfr_dd);
+#endif
 		stats.rx_calls++;
 		if (late)
 			stats.rx_late_entries++;
@@ -725,7 +756,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	// A was dropped here, three frames concealed per superframe)
 	bool cc_known = !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
 
-	if (!s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc) {
+	if (!s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc && !(sfr_user() && s.cfg.cc2 >= 0 && b->cc == s.cfg.cc2)) {
 		stats.rx_cc_dropped++;
 		TR_WHAT('x');
 		return;
@@ -737,7 +768,13 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	// The slot number is only known through a repeater (CACH) or from the TDMA direct mode sync
 	bool ts_known = b->ts != 0 && (s.cfg.rmo || b->sync == DMR_SYNC_BS || b->sync == DMR_SYNC_TS1 ||
 				       b->sync == DMR_SYNC_TS2);
-	if ((ts_known && b->ts != s.cfg.ts) || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts)) {
+	if (ts_known && b->sync != DMR_SYNC_MS) {
+		s.slots_ms = now;
+		s.slots_seen = true;
+	}
+	// An SFR user hears both slots: the talker on the inbound one, the repeat on the outbound one
+	if (!sfr_user() &&
+	    ((ts_known && b->ts != s.cfg.ts) || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts))) {
 		stats.rx_ts_dropped++;
 		TR_WHAT('s');
 		return;
@@ -764,6 +801,8 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			rx_lc(lc, b, false, now);
 			if (s.rx != RXC_NONE) {
 				s.last_rx_ms = now;
+				if (was && sfr_user())
+					break;	// the other copy of the call's header: its voice may be playing already
 				s.have_index = true;
 				s.next_index = 0;
 				s.last_voice_ms = now;
@@ -790,6 +829,15 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		}
 		break;
 	case DMR_BURST_VOICE:
+#if CONFIG_SFR
+		if (sfr_user() && !sfrDedupVoice(&s.sfr_dd, b->voice_index % 6, now)) {
+			if (s.rx != RXC_NONE)
+				s.last_rx_ms = now;
+			stats.rx_sfr_dup++;
+			TR_WHAT('d');
+			break;
+		}
+#endif
 		if (s.rx == RXC_NONE) {
 			rx_late_entry(b, now, slot);
 			break;
@@ -875,7 +923,7 @@ static bool tx_put(uint8_t kind, uint8_t index, bool host_crc, const uint8_t *pa
 	tb.kind = kind;
 	tb.voice_index = index;
 	tb.host_crc = host_crc;
-	tb.sync_override = DMR_SYNC_NONE;
+	tb.sync_override = tx_sync();
 	tb.len = len;
 	memcpy(tb.payload, payload, len);
 	if (!s.modem->tx_queue(&tb))
@@ -979,10 +1027,10 @@ static void tx_start_voice(uint32_t now)
 	if (s.cfg.rmo)
 		timing = DMR_TIMING_ALIGNED;
 	else	// DMO: answer in step with a station just heard, else on our own timing
-		timing = elapsed(now, s.last_activity_ms, s.activity_seen, DMR_CALL_ALIGN_MS) ? DMR_TIMING_OWN
-											    : DMR_TIMING_ALIGNED;
-	// Our own check is done; through a repeater the modem must not refuse because of the hang time (gotcha 1.8)
-	dmr_access_t access = s.cfg.rmo ? DMR_ACCESS_IMPOLITE : s.cfg.access;
+		timing = dmo_timing(now, DMR_CALL_ALIGN_MS);
+	// Our own check is done; through a repeater the modem must not refuse because of the hang time (gotcha 1.8). An
+	// SFR's hang (idle bursts on its outbound slot) is the same
+	dmr_access_t access = s.cfg.rmo || sfr_user() ? DMR_ACCESS_IMPOLITE : s.cfg.access;
 
 	if (!s.modem->tx_begin(timing, (int8_t)s.cfg.ts, access)) {
 		tx_deny(DMR_TX_ERR_REJECTED);
@@ -1104,6 +1152,8 @@ static void tx_data_fill(uint32_t now)
 			}
 			s.data_staged = true;
 		}
+		if (s.data_stage.sync_override == DMR_SYNC_NONE)
+			s.data_stage.sync_override = tx_sync();
 		if (!s.modem->tx_queue(&s.data_stage))
 			return;	// kept staged for the next poll
 		s.data_staged = false;
@@ -1120,8 +1170,7 @@ static void tx_start_data(uint32_t now)
 	else	// DMO: in step with a station just heard (an ACK to its data), else on our own timing. The modem keeps the
 		// slot timing of a reception only briefly (the HR_C6000 engine: 390 ms), so not DMR_CALL_ALIGN_MS here: an
 		// aligned start after that waits for a slot that never comes and is refused (found by dmrDataChainTest)
-		timing = elapsed(now, s.last_activity_ms, s.activity_seen, DMR_CALL_DATA_ALIGN_MS) ? DMR_TIMING_OWN
-												 : DMR_TIMING_ALIGNED;
+		timing = dmo_timing(now, DMR_CALL_DATA_ALIGN_MS);
 	if (!s.modem->tx_begin(timing, (int8_t)s.cfg.ts, DMR_ACCESS_IMPOLITE)) {
 		tx_deny(DMR_TX_ERR_REJECTED);
 		return;
@@ -1322,6 +1371,7 @@ void dmr_call_config_default(dmr_call_config_t *cfg)
 	cfg->reply_window_s = DMR_CALL_REPLY_WINDOW_S;
 	cfg->wakeup_attempts = DMR_CALL_WAKEUP_ATTEMPTS;
 	cfg->fade_ms = DMR_CALL_FADE_MS;
+	cfg->cc2 = -1;
 }
 
 void dmr_call_init(const hal_dmr_modem_t *modem)
@@ -1347,7 +1397,9 @@ void dmr_call_set_voice(const dmr_voice_sink_t *sink, const dmr_voice_source_t *
 static void modem_config(dmr_config_t *mc)
 {
 	mc->own_id = s.cfg.own_id;
-	mc->cc = (s.cfg.listen.any_cc || s.cfg.access == DMR_ACCESS_POLITE_ALL) ? -1 : (int8_t)s.cfg.cc;
+	bool two_cc = sfr_user() && s.cfg.cc2 >= 0 && s.cfg.cc2 != s.cfg.cc;	// an ERDM user: the stack filters
+
+	mc->cc = (s.cfg.listen.any_cc || s.cfg.access == DMR_ACCESS_POLITE_ALL || two_cc) ? -1 : (int8_t)s.cfg.cc;
 	mc->access = s.cfg.access;
 	mc->repeater = s.cfg.rmo;
 }
@@ -1366,7 +1418,8 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 {
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
 			 cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->access != s.cfg.access ||
-			 cfg->own_id != s.cfg.own_id;
+			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
+			 cfg->cc2 != s.cfg.cc2;
 	bool target_change = !same_target(cfg->talk_target, s.cfg.talk_target);
 
 	if (rf_change && s.configured) {

@@ -94,6 +94,13 @@ typedef struct {
 	void *privacy_ctx;
 	char tx_alias[DMR_TA_TEXT_MAX + 1];	// our talker alias, "" = none (CONFIG_DMR_TALKER_ALIAS)
 	uint8_t tx_alias_format;	// DMR_TA_7BIT or DMR_TA_ISO8
+	// A user of a single frequency repeater (CONFIG_SFR, docs/spec/sfr.md 4; never with rmo): ts is the inbound slot.
+	// Both copies of a call are heard (the talker's on the inbound slot, the repeat on the other one) and each voice
+	// burst is played once; PTT sends on the inbound slot with tx_sync, in step with the repeater's slots when they
+	// were heard recently (DMR_CALL_ALIGN_MS), else on our own timing (the repeater follows us)
+	bool sfr_user;
+	uint8_t tx_sync;		// dmr_sync_family_t of our bursts: DMR_SYNC_TS1 / TS2 / MS (DMR_SYNC_NONE = MS)
+	int8_t cc2;			// a second color code heard (an ERDM repeater's outbound), -1 = none
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -229,6 +236,7 @@ typedef struct {
 	uint32_t tx_alias_lcs;		// superframes sent with a talker alias block instead of the voice LC
 	uint32_t rx_gps;		// GPS Info LCs decoded on our call
 	uint32_t tx_gps_lcs;		// superframes sent with our GPS Info instead of the voice LC
+	uint32_t rx_sfr_dup;		// SFR user: voice bursts dropped as the other copy of one already played
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // The talker alias our calls send now ("" = none: off for the channel, no callsign, or built without it)

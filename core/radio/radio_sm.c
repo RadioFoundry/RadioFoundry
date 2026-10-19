@@ -30,6 +30,9 @@
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
 #endif
+#if CONFIG_SFR
+#include "radio/radio_sfr.h"		// standalone SFR roles (docs/spec/sfr.md 4)
+#endif
 #if CONFIG_HOTSPOT
 #include "radio/radio_hotspot.h"	// the CW ID handover
 #endif
@@ -280,7 +283,7 @@ static void outputs(radio_sm_t *sm)
 	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
 		green = true;
 	}
-	if (sm->hotspot && board.dmr != NULL && board.dmr->is_transmitting()) {
+	if ((sm->hotspot || sm->sfr_rpt) && board.dmr != NULL && board.dmr->is_transmitting()) {
 		tx = true;
 	}
 #endif
@@ -779,6 +782,15 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 	cfg.ts = ts_override != 0 ? ts_override : (ch->timeslot == 2 ? 2 : 1);
 	cfg.rmo = ch->tx_hz != 0 && ch->rx_hz != ch->tx_hz && !ch->dmo;
+#if CONFIG_SFR
+	// A user of a single frequency repeater: the inbound slot and its sync, both copies heard (sfr.md 4)
+	sfrConfig_t sc;
+	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
+	if (sfrRoleIsUser(sm->view.dmr.sfr_role) && !cfg.rmo) {
+		cfg.sfr_user = true;
+		radio_sfr_user(&sc, &cfg.ts, &cfg.tx_sync, &cfg.cc2);
+	}
+#endif
 	cfg.talk_target.id = sm->one_shot ? sm->one_shot_id : sm->manual ? sm->manual_id : sm->talk_id;
 	cfg.talk_target.private_call = sm->one_shot ? sm->one_shot_private : sm->manual ? sm->manual_private :
 		sm->talk_private;
@@ -945,9 +957,64 @@ static void dmr_set_timeslot(radio_sm_t *sm, int32_t ts, bool busy)
 	dmr_reconfigure(sm);
 }
 
+#if CONFIG_SFR
+// The repeater role lets go of the modem and the keying
+static void sfr_rpt_end(radio_sm_t *sm)
+{
+	if (!sm->sfr_rpt) {
+		return;
+	}
+	radio_sfr_stop();
+	if (sm->dmr_keyed) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
+	sm->sfr_rpt = false;
+	sm->view.dmr.sfr_rpt = false;
+	sm->view.dmr.sfr_keyed = false;
+	sm->view.dmr.sfr_busy = false;
+}
+
+// A channel whose SFR role is a repeater: the runner takes the modem instead of the call stack, and the keying is armed
+// on the channel's frequency for the modem's per-burst keying, as in hotspot mode. Not while the radio may not transmit
+// (TX inhibit, the battery, the band): then the channel is an ordinary one. False: the call stack's channel
+static bool sfr_rpt_begin(radio_sm_t *sm)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	const channel_t *ch = &sm->view.ch;
+	sfrConfig_t sc;
+
+	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
+	sfr_rpt_end(sm);
+	if (!sfrRoleIsRepeater(sm->view.dmr.sfr_role) || board.dmr == NULL || tx_check(sm) != TXDENY_NONE) {
+		return false;
+	}
+	if (sm->dmr_running) {
+		dmr_call_ptt(false);
+		dmr_call_stop();
+		ambeVoiceStop();
+		sm->dmr_running = false;
+	}
+	if (!radio_sfr_start(board.dmr, &sc, sm->set.rpt_beacon ? sm->set.roam_beacon_s : 0, sm->set.roam_beacon_len_s,
+			     0)) {	// the beacon schedule starts at the first poll
+		return false;
+	}
+	sm->dmr_keyed = board.radio->tx(ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none);
+	sm->sfr_rpt = true;
+	sm->view.dmr.sfr_rpt = true;
+	sm->view.dmr.active = false;
+	return true;
+}
+#endif
+
 // On a DMR channel, after set_mode(DMR) and rx(): configure, and start the stack if it isn't running
 static void dmr_begin(radio_sm_t *sm)
 {
+#if CONFIG_SFR
+	if (sfr_rpt_begin(sm)) {
+		return;
+	}
+#endif
 	dmr_load_channel(sm);
 	dmr_configure(sm);
 	if (!sm->dmr_running && board.dmr != NULL) {
@@ -960,6 +1027,9 @@ static void dmr_begin(radio_sm_t *sm)
 // Leaving DMR (or into hotspot mode): drop any transmission, stop the stack and the PCM stream
 static void dmr_end(radio_sm_t *sm)
 {
+#if CONFIG_SFR
+	sfr_rpt_end(sm);
+#endif
 	dmr_call_ptt(false);
 	dmr_call_stop();
 	ambeVoiceStop();
@@ -2533,6 +2603,12 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		deny(sm, TXDENY_HOTSPOT);	// the host link transmits for the hotspot; PTT does nothing until it ends
 		return;
 	}
+#if CONFIG_DMR && CONFIG_SFR
+	if (sm->sfr_rpt) {
+		deny(sm, TXDENY_SFR_RPT);	// the repeater keys for the calls it repeats
+		return;
+	}
+#endif
 	end_reception(sm, now_ms);
 
 	uint8_t reason = tx_check(sm);
@@ -4175,6 +4251,11 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->dmr_running) {
 		return;		// the state follows the call stack (radio_sm_tick), and the stack keeps its own TX time-out
 	}
+#if CONFIG_SFR
+	if (sm->sfr_rpt) {
+		return;		// the state follows the repeater (sfr_rpt_tick)
+	}
+#endif
 #endif
 
 	if (sm->view.state == RS_TX) {
@@ -4231,6 +4312,35 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	outputs(sm);
 }
 
+#if CONFIG_SFR
+// The repeater role: its runner, the state shown (receiving while it repeats a call), and back to an ordinary channel
+// once the radio may not transmit any more (TX inhibit set, the battery critical)
+static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	radio_sfr_view_t v;
+
+	if (tx_check(sm) != TXDENY_NONE) {
+		sfr_rpt_end(sm);
+		dmr_begin(sm);
+		changed(sm);
+		return;
+	}
+	radio_sfr_poll(now_ms);
+	radio_sfr_get_view(&v);
+	uint8_t state = v.inbound_busy ? RS_RX : RS_IDLE;
+	if (v.keyed != sm->view.dmr.sfr_keyed || v.inbound_busy != sm->view.dmr.sfr_busy || state != sm->view.state) {
+		sm->view.dmr.sfr_keyed = v.keyed;
+		sm->view.dmr.sfr_busy = v.inbound_busy;
+		if (state == RS_IDLE && sm->view.state == RS_RX) {
+			end_reception(sm, now_ms);
+		}
+		sm->view.state = state;
+		changed(sm);
+	}
+	outputs(sm);
+}
+#endif
+
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 #if CONFIG_HOTSPOT
@@ -4242,6 +4352,11 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 		dmr_follow(sm, now_ms);
 		one_shot_follow(sm, now_ms);
 	}
+#if CONFIG_SFR
+	if (sm->sfr_rpt) {
+		sfr_rpt_tick(sm, now_ms);
+	}
+#endif
 #if CONFIG_DMR_DATA_CORE
 	data_tick(sm, now_ms);	// also off DMR: requests fail at once, ARS keeps its state. A list it starts is queued
 				// to the modem at once (dmr_call_data_tx)

@@ -6,6 +6,7 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#include "radio/radio_sfr.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
@@ -3502,6 +3503,98 @@ static void test_fm_rssi_raw(void)
 	}
 }
 
+#if CONFIG_SFR
+// Standalone SFR (docs/spec/sfr.md 4): a channel's SFR role in the codeplug. Repeater: the runner takes the modem
+// instead of the call stack and repeats the inbound slot on the other one. User: the call stack on the inbound slot
+static void test_sfr_roles(void)
+{
+	dmr_start(true);
+	CHECK(sm.view.dmr.active && !sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+
+	// Repeater, inbound TS1, TS framing (Auto): the keying armed on the channel's frequency, the stack stopped
+	int tx0 = hw.tx_calls, off0 = hw.tx_off_calls;
+	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+	reload_channel();
+	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_rpt && !sm.view.dmr.active && !sm.dmr_running);
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	CHECK(sim.started && sim.cb != NULL && sim.locked_ts == 0 && sim.cc_filter == 2 && !sim.cfg.repeater);
+	CHECK(hw.tx_calls > tx0 && hw.tx_hz == 438500000 && sm.dmr_keyed);
+
+	// A call on the inbound slot: repeated on TS2 with the TS2 direct mode sync; the radio shows it as receiving
+	unsigned air0 = sim.air_count;
+	uint8_t lc[9];
+	mk_lc(lc, true, 201, 3101999);
+	for (int h = 0; h < 3; h++) {
+		burst_lc(lc, 2, false);
+		run(60);
+	}
+	CHECK(sm.view.dmr.sfr_busy && sm.view.state == RS_RX);
+	for (int i = 0; i < 6; i++) {
+		burst_voice((uint8_t)i, 2, i == 5 ? lc : NULL);
+		run(60);
+	}
+	CHECK(sm.view.dmr.sfr_keyed && sim.tx_begins >= 1 && sim.tx_listens >= 1);
+	burst_lc(lc, 2, true);
+	run(400);
+	unsigned voice = 0;
+	for (unsigned i = air0; i < sim.air_count; i++) {
+		CHECK(sim.air[i].sync == DMR_SYNC_TS2);
+		if (sim.air[i].kind == DMR_BURST_VOICE) {
+			voice++;
+		}
+	}
+	CHECK(voice == 6);
+	radio_sfr_view_t v;
+	radio_sfr_get_view(&v);
+	CHECK(v.on && v.stats.rx_repeated >= 10 && v.inbound_slot == 0 && v.framing == SFR_FRAMING_TS);
+	run(3000);		// the hang ends
+	CHECK(!sm.view.dmr.sfr_keyed && !sm.view.dmr.sfr_busy && sm.view.state == RS_IDLE);
+
+	// PTT does nothing on the repeater
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_SFR_RPT);
+	req(RREQ_PTT, 0);
+	run(50);
+	CHECK(sm.view.state == RS_IDLE && sm.sfr_rpt);
+
+	// TX inhibit: an ordinary channel again (the keying released, the stack back)
+	radio_settings_t set = sm.set;
+	set.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &set, now);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && hw.tx_off_calls > off0 && !sm.dmr_keyed);
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	reload_channel();
+	CHECK(sm.sfr_rpt);
+
+	// A repeater role on a two-frequency channel is refused: the channel is an ordinary repeater channel
+	chans[4].tx_hz = 433500000;
+	reload_channel();
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.view.dmr.rmo);
+	chans[4].tx_hz = 438500000;
+
+	// User, inbound TS2 (the channel says TS1): PTT on TS2 with the TS2 direct mode sync, both slots heard
+	chans[4].sfr_a = SFR_ROLE_USER_STANDARD | 0x20;
+	reload_channel();
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_USER_STANDARD);
+	CHECK(dmr_call_view()->ts == 2);
+	air0 = sim.air_count;
+	tx_once();
+	CHECK(sim.air_count > air0 + 4 && sim.last_ts == 2);
+	for (unsigned i = air0; i < sim.air_count; i++) {
+		CHECK(sim.air[i].sync == DMR_SYNC_TS2);
+	}
+
+	// No SFR flag: the bytes are not read
+	chans[4].sfr_flag1 = 0;
+	reload_channel();
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_OFF && dmr_call_view()->ts == 1);
+	chans[4].sfr_a = 0;
+}
+#endif
+
 int main(void)
 {
 	test_startup();
@@ -3542,6 +3635,9 @@ int main(void)
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();
+#if CONFIG_SFR
+	test_sfr_roles();
+#endif
 	test_dmr_emergency();
 	test_power_off_ars();
 	test_dmr_data_glue();	// (last: the data service's state carries over)

@@ -904,6 +904,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_REJECTED: sb_str(&b, "Modem refused to send"); break;
 	case TXDENY_HOTSPOT: sb_str(&b, "Hotspot mode: PTT off"); break;
 	case TXDENY_NO_ID: sb_str(&b, "No DMR ID in codeplug"); break;
+	case TXDENY_SFR_RPT: sb_str(&b, "Repeater channel: PTT off"); break;
 	default: sb_str(&b, "Not allowed here"); break;
 	}
 	return buf;
@@ -921,6 +922,7 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_NO_DMR: return "Release PTT, try again";
 	case TXDENY_HOTSPOT: return "OK stop hotspot";
 	case TXDENY_NO_ID: return "Set your DMR ID in qdmr";
+	case TXDENY_SFR_RPT: return "Pick a user channel to talk";
 	default: return "Pick another channel";
 	}
 }

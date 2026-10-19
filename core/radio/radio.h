@@ -20,13 +20,13 @@ typedef enum {
 // TXDENY_MODE: the channel's mode is not built in (a DMR channel in an FM-only build, or the reverse).
 // DMR: NO_CODEC no vocoder merged (receive only), NO_DMR the modem didn't start, BUSY a call on our slot (polite
 // access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
-// NO_ID no DMR ID in the codeplug. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
+// NO_ID no DMR ID in the codeplug, SFR_RPT the radio is the channel's single frequency repeater. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
 // settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
 // only, the radio never transmits there
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
-	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM,
+	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_SFR_RPT,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -133,6 +133,12 @@ typedef struct {
 	bool hear_all;		// every talkgroup on our slot: MONITOR held, or the hear all latch
 	bool hear_all_latch;	// hear all latched (radio_req_dmr_hear_all), until the channel changes
 	uint32_t focus_id;	// the focused row's target (radio_req_dmr_focus), 0 = none: PTT talks to it once
+	// The channel's SFR role (CONFIG_SFR, docs/spec/sfr.md 4): sfrRole_t, 0 none. A repeater role runs instead of the
+	// call stack (active false): sfr_rpt, with its outbound slot keyed (sfr_keyed) and an inbound call (sfr_busy)
+	uint8_t sfr_role;
+	bool sfr_rpt;
+	bool sfr_keyed;
+	bool sfr_busy;
 	bool focus_private;
 	bool one_shot;		// PTT went to the focused target: it stays the talk target for the reply window
 	// The current call (RX or TX); valid while state != RDMR_IDLE

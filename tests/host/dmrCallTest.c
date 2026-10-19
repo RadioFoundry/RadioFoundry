@@ -1779,6 +1779,156 @@ static void test_gps_call(void)
 		CHECK(memcmp(got[k], lc, 9) == 0);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// SFR user (docs/spec/sfr.md 4)
+
+// A call as a user of a single frequency repeater hears it: each burst from the talker on the inbound slot (TS1 sync
+// on burst A) and, 90 ms later, the repeater's copy on the outbound slot (TS2 sync). direct_until: the talker's copies
+// stop after this many bursts (out of range), -1 = all heard
+static void sfr_rx_call(const uint8_t lc[9], int superframes, int direct_until)
+{
+	int n = 3 + superframes * 6 + 1;	// headers, voice, terminator
+	unsigned fd = 1, fr = 1;
+
+	for (int step = 0; step < 2 * n + 3; step++) {	// 30 ms steps; burst k direct at step 2k, repeated at 2k + 3
+		for (int copy = 0; copy < 2; copy++) {
+			int k = copy == 0 ? step / 2 : (step - 3) / 2;
+			bool due = copy == 0 ? (step % 2 == 0) : (step >= 3 && (step - 3) % 2 == 0);
+
+			if (!due || k >= n || (copy == 0 && direct_until >= 0 && k >= direct_until))
+				continue;
+			int8_t ts = copy == 0 ? 1 : 2;
+			uint8_t sync = copy == 0 ? DMR_SYNC_TS1 : DMR_SYNC_TS2;
+			unsigned *f = copy == 0 ? &fd : &fr;
+
+			if (k < 3) {
+				rx_header(lc, 1, ts, sync, false);
+			} else if (k < n - 1) {
+				int v = (k - 3) % 6;
+
+				rx_voice((uint8_t)v, 1, ts, sync, f, v == 5 ? lc : NULL, false);
+			} else {
+				rx_header(lc, 1, ts, sync, true);
+			}
+		}
+		run_ms(30);
+	}
+}
+
+static void test_sfr_user(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9];
+	dmr_call_stats_t st;
+
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 2345678);
+
+	// Without the SFR role, the repeat on the other slot is dropped (the TDMA direct mode sync names it)
+	setup(&c);
+	sfr_rx_call(lc, 2, -1);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 36 && sink_log.losts == 0);
+	CHECK(st.rx_ts_dropped >= 12 && st.rx_sfr_dup == 0);
+
+	// SFR user: both copies heard, each voice burst played once, in order, nothing concealed
+	c.sfr_user = true;
+	c.tx_sync = DMR_SYNC_TS1;
+	setup(&c);
+	sfr_rx_call(lc, 2, -1);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.ends == 1 && sink_log.frames == 36 && sink_log.losts == 0);
+	for (unsigned i = 0; i < 36; i++)
+		CHECK(sink_log.seq[i] == (uint8_t)(i + 1));
+	CHECK(st.rx_ts_dropped == 0 && st.rx_sfr_dup == 12 && st.rx_calls == 1);
+	run_ms(600);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.begins == 1);	// the repeat's tail started no second call
+
+	// The talker fades out after the headers and burst C: the repeat carries the rest, still nothing concealed
+	setup(&c);
+	sfr_rx_call(lc, 2, 3 + 3);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 36 && sink_log.losts == 0);
+	for (unsigned i = 0; i < 36; i++)
+		CHECK(sink_log.seq[i] == (uint8_t)(i + 1));
+
+	// Only the repeat heard (the talker out of range): a normal call on the outbound slot
+	setup(&c);
+	sfr_rx_call(lc, 1, 0);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && sink_log.losts == 0);
+
+	// TX: on the inbound slot with its TDMA direct mode sync; own timing with no repeater heard, impolite (the
+	// repeater's hang would make a polite modem refuse)
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(400);
+	dmr_call_ptt(false);
+	run_ms(800);
+	CHECK(sim.tx_begins == 1 && sim.first_timing == DMR_TIMING_OWN && sim.first_ts == 1);
+	CHECK(sim.last_access == DMR_ACCESS_IMPOLITE);
+	CHECK(sim.air_count > 4);
+	for (unsigned i = 0; i < sim.air_count; i++)
+		CHECK(sim.air[i].sync == DMR_SYNC_TS1);
+
+	// The repeater's hang heard just now (idle bursts with TS2 sync): keyed in step with its slots, on TS1
+	setup(&c);
+	{
+		dmr_burst_t b;
+
+		memset(&b, 0, sizeof(b));
+		b.kind = DMR_BURST_IDLE;
+		b.sync = DMR_SYNC_TS2;
+		b.ts = 2;
+		b.cc = 1;
+		b.crc_ok = true;
+		b.in_step = true;
+		sim_rx(&b);
+	}
+	run_ms(60);
+	dmr_call_ptt(true);
+	run_ms(100);
+	CHECK(sim.tx_begins == 1 && sim.first_timing == DMR_TIMING_ALIGNED && sim.first_ts == 1);
+	dmr_call_ptt(false);
+	run_ms(800);
+	// ... but not once it has been quiet longer than the modem keeps slot timing
+	run_ms(DMR_CALL_ALIGN_MS);
+	sim.tx_begins = 0;
+	dmr_call_ptt(true);
+	run_ms(100);
+	CHECK(sim.tx_begins == 1 && sim.last_timing == DMR_TIMING_OWN);
+	dmr_call_ptt(false);
+	run_ms(800);
+
+	// Plain DMO keeps MS sync
+	c.sfr_user = false;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(200);
+	dmr_call_ptt(false);
+	run_ms(800);
+	CHECK(sim.air_count > 0 && sim.air[0].sync == DMR_SYNC_NONE);
+
+	// ERDM user: the repeater's outbound color code is heard too; the modem passes every color code to the stack
+	c = base_cfg();
+	c.sfr_user = true;
+	c.tx_sync = DMR_SYNC_MS;
+	c.cc2 = 5;
+	setup(&c);
+	CHECK(sim.cc_filter == -1);
+	{
+		unsigned f = 1;
+
+		rx_header(lc, 5, 2, DMR_SYNC_BS, false);
+		run_ms(60);
+		for (int i = 0; i < 6; i++) {
+			rx_voice((uint8_t)i, 5, 2, DMR_SYNC_BS, &f, i == 5 ? lc : NULL, false);
+			run_ms(60);
+		}
+		rx_header(lc, 7, 2, DMR_SYNC_BS, false);	// a third color code: not ours
+	}
+	run_ms(60);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && st.rx_cc_dropped == 1);
+}
+
 int main(void)
 {
 	test_lc_pack();
@@ -1809,6 +1959,7 @@ int main(void)
 	test_basic_privacy();
 	test_gps_lc();
 	test_gps_call();
+	test_sfr_user();
 	printf("# dmrCallTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

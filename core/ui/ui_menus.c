@@ -2052,8 +2052,8 @@ static const char *info_body(void)
 #endif
 		break;
 	case INFO_SFR:
-		sb_str(&b, CONFIG_SFR ? "Runs in hotspot mode: the hotspot host turns it on. Repeater and user roles on a "
-			"channel: not built yet." : "Single-freq repeater: not in this build");
+		sb_str(&b, CONFIG_SFR ? "Hotspot mode: the hotspot host turns it on. On a channel: set its repeater or "
+			"user role in the Codeplug Editor." : "Single-freq repeater: not in this build");
 		break;
 	default:
 		break;

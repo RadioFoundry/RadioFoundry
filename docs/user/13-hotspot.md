@@ -102,8 +102,19 @@ The host turns MMDVM SFR on by running duplex with the receive and transmit freq
 `RXFrequency` = `TXFrequency`). Setting `Duplex=0` or different frequencies turns it off.
 
 The repeat timing measured on air is in the [Radio reference](23-radios.md).
-Standalone SFR isn't built yet. It would give a channel the repeater and user roles without a host.
-**Tools > Single-freq repeater** shows only an information page. Details are in [docs/spec/sfr.md](../spec/sfr.md).
+## Standalone SFR
+
+A channel can be a single frequency repeater, or a radio using one, without a host. Set the channel's SFR role in the
+Codeplug Editor. The channel must have one frequency (receive = transmit).
+
+| Role | What the radio does |
+|---|---|
+| Repeater (Rpt, Rpt Moto) | Repeats every call heard on the inbound slot on the other slot, 90 ms later. PTT is off ("Repeater channel"). The radio shows receiving while it repeats; the red LED lights while it sends. It stays an ordinary channel while transmit is inhibited or the battery is critical |
+| User (User, ERDM) | Talks on the inbound slot, in step with the repeater. Hears both copies of a call, the talker's and the repeat, and plays it once |
+
+All radios on the frequency must use the same inbound slot. A user with inbound slot 2 listens on slot 1, so it still
+hears a user set to inbound slot 1: two set-ups can't share a frequency. There is no CACH on an SFR: users follow the
+repeater's slot sync. Details are in [docs/spec/sfr.md](../spec/sfr.md).
 
 ## Two radios as a duplex repeater
 

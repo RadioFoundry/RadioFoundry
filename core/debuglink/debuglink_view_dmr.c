@@ -75,6 +75,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dmr_call_tx_alias(alias);
 		dl_text(t, "dmr.tx_alias=%s\n", alias);
 		dl_text(t, "dmr.rmo=%u\ndmr.repeater_up=%u\n", d->rmo, d->repeater_up);
+		// The channel's SFR role (sfrRole_t; sfr.md 4) and whether its repeater role has the modem
+		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\n", d->sfr_role, d->sfr_rpt);
 		dl_text(t, "dmr.target_id=%u\ndmr.target_private=%u\n", (unsigned)d->target_id, d->target_private);
 		dl_text_kv_str(t, "dmr.target_name", d->target_name);
 		dl_text(t, "dmr.reply_active=%u\ndmr.reply_s=%u\n", d->reply_active, d->reply_s);

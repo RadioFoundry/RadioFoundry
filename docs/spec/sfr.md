@@ -13,7 +13,7 @@ There are two kinds:
 | Name | What | State |
 |---|---|---|
 | **MMDVM SFR** | The hotspot repeats; an MMDVM host turns it on and links it to a network (section 2) | Built, passes on air |
-| **Standalone SFR** | A channel set up for SFR in the codeplug, no host: the repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) | Not built (section 4) |
+| **Standalone SFR** | A channel set up for SFR in the codeplug, no host: the repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) | Built, host tested; not yet on air (section 4) |
 
 ## 1. Layers
 
@@ -22,6 +22,7 @@ There are two kinds:
 | Logic | `core/dmr/sfr.c` | roles, channel settings, framing, the repeat queue and its rules (`sfrEngine_t`: RF priority, TOT, data hold, hang), voice dedup, late entry, the uplink rules, checksums, version suffix, the MMDVM trigger. No hardware |
 | Runner | `core/dmr/sfrRunner.c` | the repeater roles on any modem behind `hal_dmr_modem_t`: received bursts filtered and fed to the engine, the outbound slot kept fed, an optional uplink to a host |
 | MMDVM SFR | `core/hotspot/hotspotSfr.c` | the MMDVM extension (version suffix, status flag 0x80, the space bytes, 108 extra status bytes, command 0xD5) and `hotspot.c`'s other mode (`hotspot_alt_t`) |
+| Standalone SFR | `core/radio/radio_sfr.c`, `core/radio/radio_sm.c`, `core/dmr/call/dmr_call.c` | a channel's role from its codeplug bytes; the repeater roles run the runner instead of the call stack; the user roles are the call stack's SFR user mode |
 
 The HR_C6000 glue in `drivers/modem/hrc6000/sfr_glue/` is not built; it documents what a driver
 level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra status bytes' layout.
@@ -63,7 +64,8 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
   with idle bursts for `roam_beacon_len_s` every `roam_beacon_s` while it carries nothing, so roaming radios can
   measure the site (`sfrRunnerSetBeacon`, `hotspot_sfr_set_beacon`; `dmr-roaming.md` 7). Traffic has priority. The
   phase is the runner's own (no network time).
-- **Debug link** (section `sfr`): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored
+- **Debug link** (section `sfr`, the channel's repeater role when it runs, else the hotspot's mode, `sfr.mode` =
+  `channel`, `hotspot` or `off`; `sfr.evq_drops` the role's modem events lost): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored
   sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps
   sfr.ignored_slot sfr.ignored_cc sfr.last_ignored` (why bursts were ignored: reported on the outbound slot, another
   color code; the last one's color code and data type or voice index in hex).
@@ -105,14 +107,28 @@ inbound burst, not 90 ms, and only 2 of the bench's 8 headers were repeated: the
 headers, and the gap left two placeholders queued ahead of the voice (gotchas 14.10). Both fixed in the runner
 (host tested), to be confirmed on air.
 
-## 4. Not built yet
+## 4. Standalone SFR
 
-- Standalone SFR: the repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) on a channel: they need the
-  codeplug's SFR bytes (`sfrChannelDecode`), a radio core mode that hands the modem to the runner (repeater) and
-  call stack changes for the users (transmit on the inbound slot aligned to the repeater, hear both copies with
-  `sfrDedupVoice`, the ERDM outbound color code). The call stack is `core/dmr/call/dmr_call.c`.
-- The HR_C6000 driver level parts: raw RX RAM classification (`sfrRawClassify`), the register switches of command
-  0xD5.
+A channel's role comes from its codeplug bytes (`sfrChannelDecode`, `docs/spec/open-firmware-cps.md` 7.3.3: flag 1
+bit 1, SFR bytes A and B; the CPS keeps them as read, the Codeplug Editor sets them). `codeplug.c` hands them to the
+core as read (`channel_t.sfr_flag1 / sfr_a / sfr_b`); `radio_sfr_channel()` turns them into a role and an
+`sfrConfig_t`. A role needs one frequency: RX = TX (a user may have no TX frequency). On a two-frequency channel, or
+in the VFO, the bytes are ignored and the channel is an ordinary one.
+
+| Role | Behavior |
+|---|---|
+| Rpt, Rpt Moto | The radio core starts the runner (section 2) on the modem instead of the call stack: DMO framing, every slot received, the inbound color code, no uplink. The keying stays armed on the frequency for the modem's per-burst keying, as in hotspot mode. The modem events reach the radio task through a queue (`radio_sfr_poll` every tick). PTT is refused (`TXDENY_SFR_RPT`). The screen shows receiving while an inbound call is repeated, the red LED while the outbound slot is sent. The settings' idle beacon (`rpt_beacon`) applies. With TX inhibit set, a critical battery or a frequency outside the TX bands the channel is an ordinary one, and it goes back to one if that happens while it runs |
+| User, ERDM | The call stack's SFR user mode (`dmr_call_config_t.sfr_user`). TX on the inbound slot (it replaces the channel's timeslot), every burst with the sync of `radio_sfr_user()`: TS1 / TS2 direct mode sync with TS framing, MS sync with MS or BS framing. Keyed in step with the repeater's slots (`DMR_TIMING_ALIGNED`) when a burst whose sync named its slot (TS1, TS2, BS) was heard in the last `DMR_CALL_ALIGN_MS`, else on its own timing (the repeater aligns to us); always impolite at the modem (the repeater's hang). RX on both slots: the talker's copy on the inbound slot and the repeat on the outbound one; each voice burst is played once, whichever copy comes first (`sfrDedupVoice`, `dmr_call` stat `rx_sfr_dup`), and the second copy of a header doesn't restart the burst sequence. ERDM: the outbound color code is heard too (the modem passes every color code, the stack filters) |
+
+Why a user hears both slots: the inbound copy comes straight from a talker in range, the repeat from one out of range.
+A user whose inbound slot is TS2 has TS1 as its outbound slot, so two users on the same frequency with different
+inbound slots still hear each other: they are users of two different repeater set-ups, which can't share one frequency.
+
+No CACH: the repeater keys only its own slot (it listens on the other one), so there is no continuous BS outbound to
+carry it. Users find the slots from the outbound slot's sync (TS framing) and the hang's idle bursts.
+
+Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
+command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it); a Home screen mark for the role.
 
 A two-frequency repeater made of two radios is the split duplex extension (`split-duplex.md`, `CONFIG_HOTSPOT_SPLIT`),
 not the SFR: it registers in mmdvm.c and hotspot.c ahead of the SFR (a priority extension), so while a split role
@@ -122,7 +138,10 @@ is active the SFR stays off, and without a role the SFR works exactly as describ
 
 - Host: `tests/host/sfrTest.c` (the logic), `tests/host/hotspotSfrTest.c` (MMDVM SFR through mmdvm.c and
   hotspot.c against the simulated modem: trigger and suffix, status bytes, an RF call repeated and sent up, a network
-  stream, RF priority, echo, late entry, DMR_LOST1, command 0xD5, DMR_ABORT, back to simplex).
+  stream, RF priority, echo, late entry, DMR_LOST1, command 0xD5, DMR_ABORT, back to simplex),
+  `tests/host/dmrCallTest.c` test_sfr_user (both copies played once, the talker fading out, TX slot, sync and timing,
+  ERDM color code), `tests/host/radioCoreTest.c` test_sfr_roles (the repeater role from the codeplug bytes repeats a
+  call on TS2, PTT refused, TX inhibit, two-frequency channel refused; the user role's TX slot and sync).
 - HIL: `tests/hil/test_hotspot_sfr.py` (MMDVM SFR on and off through MMDVM on the radio's channel, no traffic sent;
   marked `radio_tx` because a call heard would be repeated). On-air repeat tests need the driver work of section 3
   and the SDR bench (`tools/bench/mmdvm_hotspot.py --sfr`, `tools/bench/sfr_call.sh`).

@@ -123,15 +123,15 @@ void sim_event(uint8_t kind, int8_t ts)
 static void send_one(void)
 {
 	dmr_tx_burst_t b = sim.q[sim.q_head];
-	sim_air_t *a = sim.air_count < SIM_AIR_MAX ? &sim.air[sim.air_count++] : NULL;
 
 	sim.q_head = (uint8_t)((sim.q_head + 1) % SIM_QUEUE_DEPTH);
 	sim.q_count--;
 	emit(DMR_EV_TX_SLOT_STARTED, 0, sim.slot, NULL);
 	if (b.kind == DMR_BURST_EMPTY) {
-		sim.empty_slots++;	// nothing on air
+		sim.empty_slots++;	// nothing on air: no air[] entry
 		return;
 	}
+	sim_air_t *a = sim.air_count < SIM_AIR_MAX ? &sim.air[sim.air_count++] : NULL;
 	if (b.kind == DMR_BURST_VOICE && b.voice_index == 0 && sim.pending_emb) {
 		memcpy(sim.cur_emb_lc, sim.pending_emb_lc, 9);	// new embedded LC from this superframe
 		sim.pending_emb = false;

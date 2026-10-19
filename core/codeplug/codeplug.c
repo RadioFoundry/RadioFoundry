@@ -39,8 +39,10 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define CH_TOT		0x1Bu	// 15 s units, 0 = off
 #define CH_RX_TONE	0x20u
 #define CH_TX_TONE	0x22u
+#define CH_SFR_A	0x25u	// SFR byte A (ours, open-firmware-cps.md 7.3.3)
 #define CH_LFLAG1	0x26u
 #define CH_DMR_ID	0x27u
+#define CH_SFR_B	0x2Au	// SFR byte B (ours)
 #define CH_RX_GROUP	0x2Bu
 #define CH_CC		0x2Cu
 #define CH_CONTACT	0x2Eu
@@ -56,6 +58,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define LFLAG1_NO_BEEP	0x40u
 #define LFLAG1_NO_ECO	0x20u	// no power saving on this channel
 #define LFLAG1_DMO	0x04u	// force direct mode
+#define LFLAG1_SFR	0x02u	// SFR set for this channel (read only, like the SFR bytes)
 #define LFLAG1_ROAM	0x01u	// roaming (read only: the encoder keeps the bit as read)
 
 // General settings (7.3.2): the callsign (radio name) and the radio's DMR ID, 8 BCD digits big endian
@@ -475,6 +478,11 @@ bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 	out->no_beep = (r[CH_LFLAG1] & LFLAG1_NO_BEEP) != 0;
 	out->no_eco = (r[CH_LFLAG1] & LFLAG1_NO_ECO) != 0;
 	out->roam = (r[CH_LFLAG1] & LFLAG1_ROAM) != 0;
+	if (r[CH_LFLAG1] & LFLAG1_SFR) {
+		out->sfr_flag1 = LFLAG1_SFR;
+		out->sfr_a = r[CH_SFR_A];
+		out->sfr_b = r[CH_SFR_B];
+	}
 	out->alias_tx = (uint8_t)(((r[CH_FLAG1] & 0x02u) ? CODEPLUG_ALIAS_TS1_TEXT : 0u) |
 				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u));
 	return true;

@@ -30,6 +30,9 @@
 #include "hotspot/hotspotSfr.h"
 #endif
 #endif
+#if CONFIG_SFR
+#include "radio/radio_sfr.h"
+#endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net.h"
 #include "hostlink/hostlink_net_air.h"
@@ -181,26 +184,50 @@ static void hotspot_section(dl_text_t *t)
 #endif
 }
 
-// The MMDVM hotspot's SFR mode (docs/spec/sfr.md), its own section: in the hotspot section the replies outgrew
-// DL_REPLY_MAX and the last keys were cut off
+// The SFR (docs/spec/sfr.md), its own section: in the hotspot section the replies outgrew DL_REPLY_MAX and the last
+// keys were cut off. The runner of whichever mode runs: a channel's repeater role, else the MMDVM hotspot's SFR mode
 static void sfr_section(dl_text_t *t)
 {
-#if CONFIG_HOTSPOT && CONFIG_SFR
+#if CONFIG_SFR
+	radio_sfr_view_t c;
+	bool on, keyed, busy;
+	uint8_t slot;
+	const sfrRunnerStats_t *st;
+	const char *mode;
+
+	radio_sfr_get_view(&c);
+	on = c.on;
+	keyed = c.keyed;
+	busy = c.inbound_busy;
+	slot = c.inbound_slot;
+	st = &c.stats;
+	mode = c.on ? "channel" : "off";
+#if CONFIG_HOTSPOT
 	hotspot_sfr_view_t f;
 
-	hotspot_sfr_get_view(&f);
-	dl_text(t, "sfr.on=%u\nsfr.keyed=%u\nsfr.busy=%u\nsfr.slots=%u>%u\n", f.on, f.keyed, f.inbound_busy,
-		f.inbound_slot + 1u, 2u - f.inbound_slot);
+	if (!c.on) {
+		hotspot_sfr_get_view(&f);
+		on = f.on;
+		keyed = f.keyed;
+		busy = f.inbound_busy;
+		slot = f.inbound_slot;
+		st = &f.stats;
+		mode = f.on ? "hotspot" : "off";
+	}
+#endif
+	dl_text(t, "sfr.on=%u\nsfr.mode=%s\nsfr.keyed=%u\nsfr.busy=%u\nsfr.slots=%u>%u\n", on, mode, keyed, busy,
+		slot + 1u, 2u - slot);
 	dl_text(t, "sfr.rx=%u\nsfr.repeated=%u\nsfr.ignored=%u\nsfr.echo=%u\nsfr.bad_crc=%u\n",
-		(unsigned)f.stats.rx_bursts, (unsigned)f.stats.rx_repeated, (unsigned)f.stats.rx_ignored,
-		(unsigned)f.stats.rx_echo, (unsigned)f.stats.rx_bad_crc);
+		(unsigned)st->rx_bursts, (unsigned)st->rx_repeated, (unsigned)st->rx_ignored,
+		(unsigned)st->rx_echo, (unsigned)st->rx_bad_crc);
 	dl_text(t, "sfr.tx_bursts=%u\nsfr.tx_idle=%u\nsfr.tx_starts=%u\nsfr.up=%u\nsfr.up_lost=%u\n",
-		(unsigned)f.stats.tx_bursts, (unsigned)f.stats.tx_idle, (unsigned)f.stats.tx_starts,
-		(unsigned)f.stats.up_bursts, (unsigned)f.stats.up_lost);
-	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\n", (unsigned)f.stats.tx_beacons, (unsigned)f.stats.tx_gaps);
+		(unsigned)st->tx_bursts, (unsigned)st->tx_idle, (unsigned)st->tx_starts,
+		(unsigned)st->up_bursts, (unsigned)st->up_lost);
+	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\nsfr.evq_drops=%u\n", (unsigned)st->tx_beacons,
+		(unsigned)st->tx_gaps, (unsigned)c.evq_drops);
 	// Why bursts were ignored: on the outbound slot, another color code; the last one's CC and type (sfrRunner.h)
-	dl_text(t, "sfr.ignored_slot=%u\nsfr.ignored_cc=%u\nsfr.last_ignored=%02x\n", (unsigned)f.stats.rx_ignored_slot,
-		(unsigned)f.stats.rx_ignored_cc, f.stats.last_ignored);
+	dl_text(t, "sfr.ignored_slot=%u\nsfr.ignored_cc=%u\nsfr.last_ignored=%02x\n", (unsigned)st->rx_ignored_slot,
+		(unsigned)st->rx_ignored_cc, st->last_ignored);
 #else
 	dl_text(t, "sfr.built=0\n");
 #endif
