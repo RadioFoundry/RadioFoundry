@@ -128,7 +128,9 @@ No CACH: the repeater keys only its own slot (it listens on the other one), so t
 carry it. Users find the slots from the outbound slot's sync (TS framing) and the hang's idle bursts.
 
 Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
-command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it); a Home screen mark for the role.
+command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it). On the radio, Tools > Single-freq repeater shows the
+channel's role, slots and the repeater's state, and a repeater channel's Home screen says "SFR repeater" or "Repeating"
+where a DMR channel shows its talk target.
 
 A two-frequency repeater made of two radios is the split duplex extension (`split-duplex.md`, `CONFIG_HOTSPOT_SPLIT`),
 not the SFR: it registers in mmdvm.c and hotspot.c ahead of the SFR (a priority extension), so while a split role

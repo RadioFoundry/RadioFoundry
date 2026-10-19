@@ -136,6 +136,7 @@ typedef struct {
 	// The channel's SFR role (CONFIG_SFR, docs/spec/sfr.md 4): sfrRole_t, 0 none. A repeater role runs instead of the
 	// call stack (active false): sfr_rpt, with its outbound slot keyed (sfr_keyed) and an inbound call (sfr_busy)
 	uint8_t sfr_role;
+	uint8_t sfr_inbound;	// the role's inbound slot: 0 TS1, 1 TS2 (the outbound one is the other)
 	bool sfr_rpt;
 	bool sfr_keyed;
 	bool sfr_busy;

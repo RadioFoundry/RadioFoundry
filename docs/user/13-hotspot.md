@@ -114,7 +114,8 @@ Codeplug Editor. The channel must have one frequency (receive = transmit).
 
 All radios on the frequency must use the same inbound slot. A user with inbound slot 2 listens on slot 1, so it still
 hears a user set to inbound slot 1: two set-ups can't share a frequency. There is no CACH on an SFR: users follow the
-repeater's slot sync. Details are in [docs/spec/sfr.md](../spec/sfr.md).
+repeater's slot sync. **Tools > Single-freq repeater** shows the channel's role, its slots and what the repeater is
+doing. Details are in [docs/spec/sfr.md](../spec/sfr.md).
 
 ## Two radios as a duplex repeater
 

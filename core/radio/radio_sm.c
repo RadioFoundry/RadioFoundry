@@ -786,6 +786,7 @@ static void dmr_configure(radio_sm_t *sm)
 	// A user of a single frequency repeater: the inbound slot and its sync, both copies heard (sfr.md 4)
 	sfrConfig_t sc;
 	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
+	sm->view.dmr.sfr_inbound = sc.inboundSlot;
 	if (sfrRoleIsUser(sm->view.dmr.sfr_role) && !cfg.rmo) {
 		cfg.sfr_user = true;
 		radio_sfr_user(&sc, &cfg.ts, &cfg.tx_sync, &cfg.cc2);
@@ -985,6 +986,7 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 	sfrConfig_t sc;
 
 	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
+	sm->view.dmr.sfr_inbound = sc.inboundSlot;
 	sfr_rpt_end(sm);
 	if (!sfrRoleIsRepeater(sm->view.dmr.sfr_role) || board.dmr == NULL || tx_check(sm) != TXDENY_NONE) {
 		return false;

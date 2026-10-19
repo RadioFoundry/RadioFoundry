@@ -19,6 +19,9 @@
 #include "hostlink/hostlink.h"
 #endif
 #include "odr_about.h"
+#if CONFIG_SFR
+#include "dmr/sfr.h"
+#endif
 
 #ifndef ODR_GIT
 #define ODR_GIT "host"
@@ -2051,10 +2054,36 @@ static const char *info_body(void)
 		sb_str(&b, "USB network: not in this build");
 #endif
 		break;
-	case INFO_SFR:
-		sb_str(&b, CONFIG_SFR ? "Hotspot mode: the hotspot host turns it on. On a channel: set its repeater or "
-			"user role in the Codeplug Editor." : "Single-freq repeater: not in this build");
+	case INFO_SFR: {
+#if CONFIG_SFR
+		// The channel's SFR role and what it is doing now (docs/spec/sfr.md 4)
+		const radio_dmr_view_t *d = &ui_view()->dmr;
+		char in = d->sfr_inbound ? '2' : '1', out = d->sfr_inbound ? '1' : '2';
+
+		if (ui_view()->ch.mode != RADIO_MODE_DMR || d->sfr_role == SFR_ROLE_OFF) {
+			sb_str(&b, "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel "
+				"with one frequency.");
+		} else if (d->sfr_role == SFR_ROLE_RPT_STANDARD || d->sfr_role == SFR_ROLE_RPT_MOTOROLA) {
+			sb_str(&b, d->sfr_role == SFR_ROLE_RPT_MOTOROLA ? "Repeater (ERDM style)\nIn TS" : "Repeater\nIn TS");
+			sb_chr(&b, in);
+			sb_str(&b, ", out TS");
+			sb_chr(&b, out);
+			sb_str(&b, !d->sfr_rpt ? "\nOff: transmit not allowed now" : d->sfr_busy ? "\nRepeating a call" :
+				d->sfr_keyed ? "\nHang time" : "\nListening");
+		} else {
+			sb_str(&b, d->sfr_role == SFR_ROLE_USER_ERDM ? "User of an ERDM repeater\nTalk on TS" :
+				"User of a repeater\nTalk on TS");
+			sb_chr(&b, in);
+			sb_str(&b, ", hear TS");
+			sb_chr(&b, in);
+			sb_str(&b, " and TS");
+			sb_chr(&b, out);
+		}
+#else
+		sb_str(&b, "Single-freq repeater: not in this build");
+#endif
 		break;
+	}
 	default:
 		break;
 	}
