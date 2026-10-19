@@ -5,7 +5,8 @@
 #include "hrc7000.h"
 
 #define RF_MODE_VALUE		0x03269860u	// AF RX with averaging, gain 2.375, RX IQ invert, dynamic sync, dual RX, two-point TX
-#define RF_CONTROL_VALUE	0x00041F1Au	// RF TX interrupt 3.1 ms before the burst (gotchas 2.4)
+#define RF_CONTROL_VALUE	0x0004001Au	// tx_pre_on 0.4 ms, RF RX interrupt 2.6 ms early; b13:8 from rf_tx_lead
+#define RF_CONTROL_TX_LEAD	8u
 #define SYS_INT_ENABLE		0x1187Fu	// layer-2 TX/RX points, late entry, deframe, short LC, slot abnormal, PHY
 #define CODEC_RESET_SPINS	400u		// > 2 us at 168 MHz
 
@@ -136,7 +137,8 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	// The same enable for the TDMA direct mode syncs: without it they are never detected (bench, 2026-10-16)
 	hrc7000_wr(d, C7_RECV_TDMA1_SYNC_H, hrc7000_rd(d, C7_RECV_TDMA1_SYNC_H) | (1u << 31));
 	hrc7000_wr(d, C7_RECV_TDMA2_SYNC_H, hrc7000_rd(d, C7_RECV_TDMA2_SYNC_H) | (1u << 31));
-	hrc7000_wr(d, C7_RF_CONTROL, RF_CONTROL_VALUE);
+	uint32_t lead = d->rf_tx_lead != 0 ? d->rf_tx_lead : HRC7000_RF_TX_LEAD_DEF;
+	hrc7000_wr(d, C7_RF_CONTROL, RF_CONTROL_VALUE | ((lead & 0x3Fu) << RF_CONTROL_TX_LEAD));
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 	hrc7000_wr(d, C7_FM_TONE1, FM_TONE1_DEFAULT);	// DTMF tone steps (8.3)
 	hrc7000_wr(d, C7_FM_TONE2, 0x06D10787u);

@@ -590,8 +590,10 @@ Symptom: on the DM-32UV a debug link host polling the radio started DMR transmis
 Cause: the two-pin K-type programming jack carries the host's serial data on the same line as PTT, so every 0 bit
 pulls the PTT pin low, and two low key scans pass the debounce. Rule: on a radio whose PTT shares the host's RX line,
 count the pin low as PTT only after a quiet time with no good UART byte (`drivers/input/sharedptt`, hardware-dm32.md
-6.2). A real press holds the line low, which the UART reads as a break, never a good byte. Radios: DM-32UV confirmed.
-Many handhelds wire the K-type jack this way, so check every new radio (adding-a-radio.md, bring-up order).
+6.2). A real press holds the line low, which the UART reads as a break, never a good byte. Radios: DM-32UV, DM-1801 Pro
+and DB25-D confirmed. On the DB25-D a filter of three low scans in a row still let debug link polling key the radio:
+hundreds of PTT presses, each with a key beep, in one SFR test session (2026-10-19). Many handhelds wire the K-type
+jack this way, so check every new radio (adding-a-radio.md, bring-up order).
 
 ## 17. Scan
 

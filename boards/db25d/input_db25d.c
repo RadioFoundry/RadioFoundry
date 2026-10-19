@@ -4,9 +4,10 @@
 //
 // Five drive lines and three sense lines make a 15-position matrix. The front keys' positions were found on the radio
 // by pressing each one with the diagnostics page's raw scan running; the other positions report as spares. The mic's PTT pulls
-// its RXD line (UART1 RXD, also the PC link) low; a serial byte at 115200 is low for at most 87 us, so the line counts
-// as PTT only when it reads low on three scans in a row (INF: the pad level is assumed readable while the pin is the
-// UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
+// its RXD line (UART1 RXD, also the PC link and the hand mic's key frames) low. Every 0 bit on that line pulls it low
+// too, so a low read within 50 ms of a good byte is serial data, not PTT (drivers/input/sharedptt, as on the DM-32UV),
+// and the line then has to read low on three scans in a row (INF: the pad level is assumed readable while the pin is
+// the UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
 #include "db25d.h"
 #include "config.h"
 #include "pins.h"
@@ -14,6 +15,7 @@
 #include "hal_time.h"
 #include "input/keymatrix/keymatrix.h"
 #include "input/quadrature/quadrature.h"
+#include "input/sharedptt/shared_ptt.h"
 
 #define N		KEYMATRIX_NONE
 #define PTT_SCANS	3
@@ -49,6 +51,7 @@ static const keymatrix_t matrix = { .rows = KEY_DRIVES, .cols = KEY_SENSES, .map
 
 static uint32_t last_raw, stable;
 static uint8_t ptt_low;
+static shared_ptt_t ptt_gate;	// PTA9 is also the host UART's RXD
 static uint8_t mic_levels;
 static uint16_t a9_changes, c11_changes;
 
@@ -135,6 +138,11 @@ uint8_t db25d_mic_lines(uint16_t *a9, uint16_t *c11)
 	return mic_levels;
 }
 
+uint32_t db25d_input_ptt_ignored(void)
+{
+	return ptt_gate.ignored;
+}
+
 void db25d_mic_lines_reset(void)
 {
 	a9_changes = 0;
@@ -163,7 +171,10 @@ static uint32_t scan(void)
 		raw |= 1u << mic;
 	}
 	sample_mic_lines();
-	if (!hrc_pin_read(PIN_MIC_RXD) || !hrc_pin_read(PIN_PTT2)) {
+	uint32_t rx_ms;
+	bool rx_seen = hrc_host_uart_last_rx(&rx_ms);
+	bool rxd_low = shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_MIC_RXD), rx_seen, rx_ms, hal_millis());
+	if (rxd_low || !hrc_pin_read(PIN_PTT2)) {
 		if (ptt_low < PTT_SCANS) {
 			ptt_low++;
 		}

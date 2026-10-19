@@ -17,7 +17,7 @@ else
 MCU_DEFS   += -DHRC_CPU_HZ=72000000u
 endif
 LDSCRIPT   := boards/db25d/db25d.ld
-BOARD_DIRS := boards/db25d drivers/rf/bk4819 drivers/display/st7735 drivers/input/keymatrix drivers/input/quadrature drivers/input/serialmic \
+BOARD_DIRS := boards/db25d drivers/rf/bk4819 drivers/display/st7735 drivers/input/keymatrix drivers/input/quadrature drivers/input/sharedptt drivers/input/serialmic \
 	drivers/flash/spi_nand drivers/modem/hrc7000
 # The core's storage on the NAND, with CONFIG_NAND_STORAGE (hardware-db25d.md 6.6)
 BOARD_NAND_DIRS := drivers/flash/nand_sectors

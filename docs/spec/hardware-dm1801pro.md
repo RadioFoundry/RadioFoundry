@@ -117,8 +117,8 @@ Bluetooth.
 Three-wire serial, bit-banged: clock PTA7, data PTA8, chip select PTA30. A frame is CS low, an 8-bit address (bit 7 set
 for a read), 16 data bits MSB first, CS high. K. The radio's wait per half clock is five passes of a short busy loop,
 well under a microsecond at the 168 MHz core clock, so with the GPIO calls a frame takes some tens of microseconds (I;
-an earlier reading took the loop for 5 microseconds). ODR scales the driver's delays by 5, which is slower than the
-radio.
+an earlier reading took the loop for 5 microseconds). ODR clocks it at 1 us per half clock, still slower than the
+radio; the per-burst switch (5.6) needs the speed.
 
 ### 5.2 Frequency and band
 
@@ -237,13 +237,24 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   0x43 keep their values from the RX / TX sequences and the DMR mode set. Against the radio's own handlers (5.4) this
   skips idle and the frequency, 0x47, 0x32 and 0x3F writes (0x3F stays 0 from the DMR mode set), has none of the
   waits, steps the drive instead of ramping it, and ends the burst on a slot tick instead of the RF RX interrupt.
-  Each frame takes 240 us with ODR's bus delays, so a switch is up to about 0.7 ms with interrupts off. The DMR mode
-  set ends with 0x3F = 0000, the radio's DMR receive value.
+  The switch to TX takes 0.46-0.48 ms and back to RX 0.17-0.21 ms with interrupts off (1 us bus, 5.1; with the earlier
+  5 us bus about 1.07 and 0.40 ms). The DMR mode set ends with 0x3F = 0000, the radio's DMR receive value.
+- **RF TX interrupt 2.0 ms ahead** (`hrc7000_t.rf_tx_lead` = 20, RF_CONTROL b13:8), not the DM-32UV's 3.1 ms. The
+  inbound burst's payload ends about 2.5 ms before ours starts (the guard times of both slots), so with 3.1 ms the
+  switch cut off the end of the inbound burst before each of ours (I). In SFR mode a header clipped that way failed its
+  RS check, and the radio then lost the whole first voice superframe after it, with the reception itself clean (bit
+  errors 0, PHASE_OUT centered): 5 of 5 calls with the last header flagged lost superframe 1, 7 of 7 with it clean
+  kept it (BENCH 2026-10-19, interrupt trace of PR 38). With 2.0 ms the inbound headers decode clean while keyed. The
+  PA timer runs from the burst, not from this interrupt, so the drive keeps its place against the burst (next item).
+  With the 2.0 ms lead the SFR repeat test (`tests/hil/test_hotspot_sfr.py`) passed 10 of 10 runs, 25-26 bursts
+  repeated each, and `test_dmr_tx_off_air` passed: ramps up 0.33 ms, down 0.29 ms, slot spacing 60.00 ms, no AMBE bit
+  corrected in 162 frames (BENCH 2026-10-19).
 - **PA key:** the TX path switches on and off with each burst. With it on for the whole transmission, a hotspot (keyed
   while it listens) received nothing (2026-10-16). Per burst, `test_dmr_tx_off_air` passes: ramps up 1.44 ms, down
   0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's "DMR PA"
-  delay), in one write. That puts it 2.1-3.2 ms after the RF TX interrupt (section 12), about where the radio's own
-  ramp starts (5.4, I), so the delay stays.
+  delay), in one write. That puts it 1.0 ms before to 0.1 ms after the burst start, 1.0-2.1 ms after the RF TX
+  interrupt (2.1-3.2 ms with the earlier 3.1 ms lead, section 12), about where the radio's own ramp starts (5.4, I), so
+  the delay stays.
 - **Keyed but idle:** a DMR `tx()` leaves the FD6818 and the RX path in receive until the first burst. The hotspot keeps
   the radio keyed while it listens, and with the FD6818 in TX from `tx()` it heard nothing (checked on the bench).
 - **Voice:** the radio's own codec, carved from a program flash read into the slot at 0x030E8000 and run by the shared
@@ -609,9 +620,10 @@ receiving and orange flashing while scanning.
   `tests/hil/test_mic_gain.py` at 12.5 and 25 kHz ([the bring-up checklist](../testing/dm1801pro-bringup.md) 5.1) and
   set `MIC_GAIN_FM_12K5_DB` and `MIC_GAIN_FM_25K_DB`.
 - Whether the mic PCM carries the microphone in FM receive (PTB14 high), which VOX needs (section 12).
-- MMDVM SFR: the inbound losses are fixed by switching the FD6818 straight between its RX and TX words (5.6). What
-  remains: 28 of 29 bursts heard with 2-4 bad header CRCs, and the SDR bench can't confirm the repeats during a call,
-  since its station keeps its carrier up through our slot. How the trip through idle detunes the receiver isn't
+- MMDVM SFR: the inbound losses are fixed by switching the FD6818 straight between its RX and TX words and by the
+  2.0 ms RF TX lead (5.6). The SDR bench still can't confirm the repeats during a call, since its station keeps its
+  carrier up through our slot. Before the lead change, the straight switch passed the SFR repeat test in 6 of 8 runs;
+  the failures were the clipped-header case (5.6). How the trip through idle detunes the receiver isn't
   known (?). The experiment build (PR 38) recorded each modem interrupt, RF switch and deframe (RX_TYPE_INFO,
   RECV_INFO_COUNT, PHASE_OUT) and switched these variants at run time (BENCH 2026-10-16, 461.4625 MHz, a 29-burst bench
   call):
@@ -639,7 +651,9 @@ receiving and orange flashing while scanning.
   (I). DMR transmit with the straight switch passes `test_dmr_tx_off_air` (ramps up 0.88 ms, down 0.38 ms, AMBE 1 bit
   corrected in 162 frames).
 
-  Ruled out earlier: an FD6818 bit clock of 1 us instead of 5 us, and the RX path left on during TX bursts.
+  Ruled out earlier: an FD6818 bit clock of 1 us instead of 5 us, and the RX path left on during TX bursts. Ruled out
+  for the clipped-header losses (2026-10-19): the empty slot's sync pattern (0 instead of the listen word) and a header
+  sent in the gap before voice.
 
 ## 11. What ODR reuses
 

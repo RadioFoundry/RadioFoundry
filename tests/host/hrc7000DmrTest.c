@@ -628,6 +628,18 @@ static void test_fm_tx_limit(void)
 	dev.fm_tx_limit[0] = dev.fm_tx_limit[1] = 0;
 }
 
+// RF_CONTROL at power-on: the RF TX interrupt 3.1 ms ahead unless the board set its lead, the other fields unchanged
+static void test_rf_tx_lead(void)
+{
+	setup();
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
+	dev.rf_tx_lead = 20;	// the DM-1801 Pro's 2.0 ms
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(REG(C7_RF_CONTROL) == 0x0004141Au);
+	dev.rf_tx_lead = 0;
+}
+
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
 static void test_tx_tone(void)
 {
@@ -987,6 +999,7 @@ int main(void)
 	test_codec_dac_to_tx();
 	test_audio_lock();
 	test_fm_tx_limit();
+	test_rf_tx_lead();
 	test_tx_tone();
 	test_subtone();
 	test_fm_rx_audio();
