@@ -13,7 +13,7 @@ stub does for the DM-32UV and the DM-1801 Pro ([hardware-dm32.md](hardware-dm32.
 | The stub | `stub/stm32f4/` (`make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin`) |
 | Its protocol engine (portable, host tested) | `stub/stm32f4/f4stub_proto.c`, `tests/host/f4stubTest.c` |
 | Host tool | `stub/f4stub.py`, called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine |
-| Switch | `CONFIG_STUB_ENTRY` (default off), as for the HR_C7000 |
+| Switch | `CONFIG_STUB_ENTRY` (on with the debug link), as for the HR_C7000 |
 
 Status (2026-10-16): built, host tested and run on the DM-1701: section 11 has the hardware test and its results.
 

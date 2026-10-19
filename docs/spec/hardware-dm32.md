@@ -1134,9 +1134,9 @@ link task, as on the DM-1701).
 A bench and recovery path: the host loads its own flash-access RAM monitor (the "C7 stub", a small program that reads
 and writes the radio's flash chips with no firmware running) into SRAM and ODR jumps to it at run time, with the radio
 powered on, no power cycle and no DFU. It is the same monitor the serial boot ROM loads with the radio off; this just
-gets it running from a radio that is already up. Off by default (`CONFIG_STUB_ENTRY=n`, a switch like the audio probe);
-the command answers unavailable on a board whose platform has no `hal_system_t.enter_stub` (every board but the
-HR_C7000 so far). The wire format is debug link command `0x1A` (`docs/spec/debuglink.md` 3.18).
+gets it running from a radio that is already up. On by default wherever the debug link is (`CONFIG_STUB_ENTRY`);
+the command answers unavailable on a board whose platform has no `hal_system_t.enter_stub`. The wire format is debug
+link command `0x1A` (`docs/spec/debuglink.md` 3.18).
 
 **RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `dm32.ld` leaves
 out of the image entirely (section 17.1): ODR links nothing there. A radio that hosts its stock codec runs it in that

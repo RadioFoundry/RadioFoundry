@@ -415,7 +415,7 @@ Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on 
 
 | The radio runs | odrflash |
 |---|---|
-| ODR built with `CONFIG_STUB_ENTRY=y` | Enters the loader from ODR (the screen shows "PC Loader Connected"), writes only what changed and restarts the radio. No keys to hold. The codec in the radio stays |
+| ODR built with `CONFIG_STUB_ENTRY=y` (the default) | Enters the loader from ODR (the screen shows "PC Loader Connected"), writes only what changed and restarts the radio. No keys to hold. The codec in the radio stays |
 | Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `odr_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
 
 `--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
