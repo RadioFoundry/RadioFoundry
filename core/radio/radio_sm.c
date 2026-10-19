@@ -4122,11 +4122,12 @@ static void vox_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 #if CONFIG_DMR
-// The RSSI to publish for this poll's reading: the peak of the last RADIO_RSSI_HOLD_MS while the DMR path runs, the
+// The RSSI to publish for this poll's reading: the peak of the last RADIO_RSSI_HOLD_MS while the DMR path runs (the
+// call stack, or an SFR repeater role: a reading in an empty slot, or one of the repeater's own, is the floor), the
 // reading itself otherwise (FM, idle, hotspot). The squelch and scan keep using the raw reading.
 static int16_t rssi_held(radio_sm_t *sm, int16_t rssi_dbm)
 {
-	if (!sm->dmr_running) {
+	if (!sm->dmr_running && !sm->sfr_rpt) {
 		sm->rssi_ring_n = 0;
 		return rssi_dbm;
 	}

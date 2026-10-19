@@ -3551,6 +3551,12 @@ static void test_sfr_roles(void)
 	run(3000);		// the hang ends
 	CHECK(!sm.view.dmr.sfr_keyed && !sm.view.dmr.sfr_busy && sm.view.state == RS_IDLE);
 
+	// The RSSI shown is the held peak, as with the call stack: half the readings fall in empty slots or our own
+	rssi_alt = true;
+	run(600);
+	CHECK(sm.view.rssi_dbm == -70);
+	rssi_alt = false;
+
 	// PTT does nothing on the repeater
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_SFR_RPT);
