@@ -35,7 +35,7 @@ const S = {
 	conn: null,		// {transport, radio, image: the radio's bytes as last read or written, cable}
 	lastRadioImage: null,	// the last connection's image, for a bug report after it closed
 	iddbChanged: false,
-	sim: location.hash === "#sim",
+	sim: location.hash.startsWith("#sim"),		// #sim-foreign: a radio still holding stock data in its settings area
 	filter: {},
 };
 
@@ -414,6 +414,20 @@ async function openPicked(name, bytes) {
 		if (f.kind === "image") {
 			load(decode(f.image), name.replace(/\.[^.]+$/, ""));
 			say(t("editor.opened", { name }), "ok");
+		} else if (f.kind === "converted") {
+			// another firmware's codeplug (a stock radio's backup, say): converted, never shown as raw bytes
+			load(decode(f.image), name.replace(/\.[^.]+$/, ""));
+			const c = f.counts;
+			diag.note("codeplug converted", { from: f.from, ...c, notes: f.notes });
+			say(t("editor.converted", { name, format: t(`editor.format.${f.from}`), channels: c.channels, zones: c.zones, contacts: c.contacts, rxLists: c.rxLists }),
+				f.notes.length ? "warn" : "ok");
+			if (f.notes.length) {
+				dialog(t("editor.converted_left_out"), [h("ul", {}, ...f.notes.map((x) => h("li", {}, t(`editor.qdmr.note.${x.code}`, { n: x.n }))))],
+					null, null, () => {}, { cancel: t("editor.close") });
+			}
+		} else if (f.kind === "foreign") {
+			diag.note("codeplug not readable", { format: f.format, size: bytes.length });
+			say(f.format === "tyt-uv380-rdt" ? t("editor.err.foreign_rdt") : t("editor.err.foreign", { format: t(`editor.format.${f.format}`) }), "bad");
 		} else {
 			const handled = await extensions.openText(f, name, api());
 			if (!handled) say(t("editor.err.unknown_file"), "bad");
@@ -454,7 +468,7 @@ async function connect() {
 	if (S.conn) return S.conn;
 	let stream, cable = false;
 	if (S.sim) {
-		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes });
+		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: location.hash === "#sim-foreign" });
 		stream = S.fake.stream();
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
@@ -493,7 +507,11 @@ function chooseLink() {
 }
 
 function radioError(e) {
-	if (e instanceof TransportError) return t(`editor.radio_err.${e.code}`, e.params);
+	if (e instanceof TransportError) {
+		const p = { ...e.params };
+		if (typeof p.addr === "number") p.addr = `0x${p.addr.toString(16).toUpperCase()}`;
+		return t(`editor.radio_err.${e.code}`, p);
+	}
 	if (e?.name === "NotFoundError") return null;	// the user closed the port chooser
 	return t("editor.radio_err.other", { error: e?.message || String(e) });
 }
@@ -504,6 +522,31 @@ async function fail(stage, e) {
 	await dropConnection();
 	const msg = radioError(e);
 	if (msg) say(msg, "bad", { report: !diag.expected(e) });
+}
+
+// A radio fresh from its original firmware may still hold that firmware's data where ODR keeps its settings: it then
+// refuses every write (settings-store.md 5). Offer to prepare it; true when the radio can take the write
+async function ensureStorage(c) {
+	if (c.storage?.region === "ours") return true;
+	c.storage = await c.transport.storage();
+	diag.note("storage region", c.storage);
+	if (c.storage?.region !== "foreign") return true;
+	const go = await new Promise((resolve) => {
+		let ok = false;
+		dialog(t("editor.storage.title"), [h("p", {}, t("editor.storage.text", { radio: c.radio.name })), h("p", {}, t("editor.storage.text2"))],
+			t("editor.storage.prepare"), (close) => { ok = true; close(); }, () => resolve(ok));
+	});
+	if (!go) return false;
+	const done = await withProgress(t("editor.storage.preparing", { radio: c.radio.name }), async (bar) => {
+		bar.set(0, 1);
+		return c.transport.claimStorage();
+	});
+	diag.note("storage claim", { done });
+	if (!done) throw new TransportError("storage_claim_failed");
+	c.storage = { region: "ours" };
+	say(t("editor.storage.done", { radio: c.radio.name }), "ok");
+	c.prepared = true;	// said again with the write's outcome, which replaces this message
+	return true;
 }
 
 async function withProgress(title, fn) {
@@ -546,6 +589,8 @@ async function writeRadio() {
 	try {
 		const c = await connect();
 		if (!c) return;
+		stage = "prepare radio";
+		if (!await ensureStorage(c)) return;
 		stage = "encode codeplug";
 		const want = encode(S.model);
 		if (!c.image) {
@@ -557,7 +602,9 @@ async function writeRadio() {
 		stage = "plan write";
 		const { plan, bytes } = c.transport.plan(want, c.image, { iddb });
 		diag.note("write plan", { bytes, sectors: plan.length, iddb });
-		if (!bytes) return say(t("editor.write_nothing", { radio: c.radio.name }), "ok");
+		const prepared = c.prepared ? `${t("editor.storage.done", { radio: c.radio.name })} ` : "";
+		c.prepared = false;
+		if (!bytes) return say(prepared + t("editor.write_nothing", { radio: c.radio.name }), "ok");
 		const text = [t("editor.write_summary", { radio: c.radio.name, bytes: bytes.toLocaleString(), seconds: estimate(bytes, c.cable) })];
 		if (iddb) text.push(t("editor.write_iddb", { n: S.model.iddb?.count || 0 }));
 		confirmDialog(text.join(" "), t("editor.write"), async () => {
@@ -577,7 +624,7 @@ async function writeRadio() {
 				S.model.base = want;
 				S.dirty = false;
 				refresh();
-				say(t("editor.write_done", { radio: c.radio.name, bytes: res.bytes.toLocaleString() }), "ok");
+				say(prepared + t("editor.write_done", { radio: c.radio.name, bytes: res.bytes.toLocaleString() }), "ok");
 			} catch (e) {
 				await fail(step, e);
 			}
@@ -676,7 +723,7 @@ function reportContext() {
 	const c = S.conn, m = S.model;
 	return {
 		sim: S.sim,
-		radio: c ? { id: c.radio?.id, board: c.probe?.board, git: c.probe?.git, features: c.probe?.features, codec: c.probe?.codec, cable: c.cable } : null,
+		radio: c ? { id: c.radio?.id, board: c.probe?.board, git: c.probe?.git, features: c.probe?.features, codec: c.probe?.codec, cable: c.cable, storage: c.storage?.region } : null,
 		codeplug: m ? { channels: m.channels.length, zones: m.zones.length, contacts: m.contacts.length, iddb: m.iddb?.count || 0,
 			dirty: S.dirty, iddbChanged: S.iddbChanged, errors: problems().filter((p) => p.level === "error").length } : null,
 		tab: S.tab,

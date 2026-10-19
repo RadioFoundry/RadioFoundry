@@ -12,6 +12,8 @@
 import { CodeplugImage, REGIONS, IDDB_HEADER, CODEPLUG_SPAN } from "./image.js";
 import { readHeader, AREA1, AREA1_SIZE, AREA2 } from "./iddb.js";
 import { Link, probe } from "../flasher/link.js";
+import { sleep } from "../flasher/bytes.js";
+import { note } from "../diag.js";
 
 export class TransportError extends Error {
 	constructor(code, params = {}) {
@@ -24,6 +26,9 @@ export class TransportError extends Error {
 
 // The radio's settings block starts inside the first region (open-firmware-cps.md 7.1): never written
 const KEEP_OUT = [[0x604B, 0x6060]];
+// The VFO pair: a read shows the radio's live VFOs there, not the bytes written (open-firmware-cps.md 2.2, "VFO
+// overlay"), so a verify doesn't compare it
+const VFOS = [0x7590, 0x7600];
 
 // Regions of the codeplug a write may change
 export function writeRanges() {
@@ -149,6 +154,39 @@ export class CpsSerial {
 		return { plan, bytes };
 	}
 
+	// The radio's settings region (debuglink.md 3.13): {region: "ours" | "foreign" | "none", ...}, or null when the
+	// radio doesn't say. A foreign region (another firmware's data still there) makes the radio refuse every write
+	async storage() {
+		try {
+			return await this.link.storageInfo();
+		} catch {
+			return null;
+		}
+	}
+
+	// Erase a foreign region and take it; true once the radio reports it ours
+	async claimStorage() {
+		return this.link.storageClaim();
+	}
+
+	// One sector, tried twice: a sector left pending by an interrupted session is refused once and then dropped, and a
+	// reply lost on the way is worth one more try (the sector is rewritten whole from the radio's copy, so a repeat is
+	// harmless)
+	async writeSector(sector, runs) {
+		const parts = runs.map(([a, d]) => [this.base + a, d]);
+		if (await this.link.cpsWriteParts(this.base + sector, parts)) return;
+		const first = this.link.writeFailure;
+		note("sector write failed, trying again", { sector, ...first });
+		await sleep(first?.result === "no answer" ? 1500 : 200);
+		this.stream.clear?.();
+		if (await this.link.cpsWriteParts(this.base + sector, parts)) return;
+		const fail = this.link.writeFailure || first || {};
+		if (fail.result === "no answer") throw new TransportError("write_no_answer", { addr: sector, step: fail.what });
+		const st = await this.storage();
+		if (st?.region === "foreign") throw new TransportError("storage_foreign", { addr: sector });
+		throw new TransportError("write_refused", { addr: sector, step: fail.what });
+	}
+
 	// Write the plan; throws when the radio refuses a sector
 	async write(want, have, { iddb = false, progress = () => {}, signal } = {}) {
 		if (iddb && idDbEnd(want.bytes) > this.end) throw new TransportError("iddb_too_big");
@@ -156,8 +194,7 @@ export class CpsSerial {
 		let done = 0;
 		for (const [sector, runs] of plan) {
 			if (signal?.aborted) throw new TransportError("stopped");
-			const ok = await this.link.cpsWriteParts(this.base + sector, runs.map(([a, d]) => [this.base + a, d]));
-			if (!ok) throw new TransportError("write_refused", { addr: sector });
+			await this.writeSector(sector, runs);
 			done += runs.reduce((m, [, d]) => m + d.length, 0);
 			progress(done, total);
 		}
@@ -170,7 +207,8 @@ export class CpsSerial {
 		for (const [, runs] of plan) {
 			for (const [a, d] of runs) {
 				const r = await this.link.cpsDump(1, this.base + a, d.length, { chunk: this.chunk });
-				if (!r.complete || r.data.some((x, i) => x !== d[i])) throw new TransportError("verify_failed", { addr: a });
+				const bad = !r.complete ? 0 : r.data.findIndex((x, i) => x !== d[i] && !(a + i >= VFOS[0] && a + i < VFOS[1]));
+				if (bad >= 0) throw new TransportError("verify_failed", { addr: a + bad });
 			}
 			progress(++done, plan.length);
 		}

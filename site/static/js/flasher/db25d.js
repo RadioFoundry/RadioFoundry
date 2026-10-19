@@ -36,6 +36,14 @@ export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first wor
 // The version string "EARSAB.0NN" of each known build, and a word just below it: four words cover it
 export const BUILDS = [["018", 0x03079F3C], ["020", 0x0307DCCC]];
 
+// The stock application's version string ("909E.D6x.EARSAB.020") in a read of the program flash, wherever the build
+// put it, or null. Only for messages: what a read holds is decided by its contents (c7000.js analyze)
+export function stockVersion(progmem) {
+	const app = progmem.subarray(APP_SIG[0] - FLASH_BASE, Math.min(progmem.length, APP_MAX + APP_SIG[0] - FLASH_BASE));
+	const m = /909E\.[0-9A-Za-z]{2,4}\.EARSAB\.\d{3}/.exec(latin(app));
+	return m ? m[0] : null;
+}
+
 const READ = /^read_addr\(0x[0-9a-f]{8}\)$/;
 const WRITE = /^write_addr\(0x([0-9a-f]{8}),0x[0-9a-f]{8}\)$/;
 const NUM = "(0[xX][0-9A-Fa-f]+|\\d+)";

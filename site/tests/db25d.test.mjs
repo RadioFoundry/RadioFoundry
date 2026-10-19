@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, Iap, iapPlan, checkInstallImage, checkRestoreImage, trimTail, erasePacket, DB25DError } from "../static/js/flasher/db25d.js";
+import { Usmart, HIJACK, Iap, iapPlan, checkInstallImage, checkRestoreImage, trimTail, erasePacket, DB25DError, stockVersion } from "../static/js/flasher/db25d.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -75,6 +75,78 @@ test("a program flash read of a radio that runs a stock DB25-D firmware is analy
 	const none = new Uint8Array(0x200000).fill(0xFF);
 	none.set(plain.subarray(0, 0x1000), 0xC000);
 	assert.equal((await c7.analyze(none, c, "db25d")).codec, null, "an unsupported stock version has no codec recipe");
+});
+
+// The synthetic stock file's profile with the hashes of its (random) codec bytes, so the codec can be found by content
+async function syntheticProfile(fileSha = fx.sha256) {
+	const { crc32 } = await import("../static/js/flasher/bytes.js");
+	const base = C.profiles.find((p) => p.board === "db25d" && p.tag === 2501);
+	const plain = bin("db25d_stock.bin");
+	const code = plain.subarray(fx.code - 0x0300C000, fx.code - 0x0300C000 + base.code_len);
+	const tables = plain.subarray(fx.tables - 0x0300C000, fx.tables - 0x0300C000 + base.tables_len);
+	const p = { ...base, stock_file: { ...base.stock_file, sha256: fileSha }, code_sha256: await sha256(code),
+		tables_sha256: await sha256(tables), tables_head_crc: crc32(tables.subarray(0, 64)) };
+	return { c: { ...C, profiles: [p] }, plain };
+}
+
+// A build whose codec is another compile: the signature at its start, the rest of the code different
+function otherBuild(plain) {
+	const f = plain.slice();
+	const at = fx.code - 0x0300C000;
+	for (let i = at + 64; i < at + 0x2000; i++) f[i] ^= 0x5A;
+	return f;
+}
+
+test("a stock file not known by its SHA-256 gives its codec when the codec's own hashes match", async () => {
+	const { c, plain } = await syntheticProfile("00".repeat(32));
+	const longer = new Uint8Array(plain.length + 300).fill(0x11);
+	longer.set(plain, 0);		// a re-release: other bytes after the codec, the codec unchanged
+	for (const f of [plain, longer]) {
+		const got = await c7.codecFromFile(f, c, "db25d");
+		assert.equal(got.profile.tag, 2501);
+		assert.equal(got.codeAddr, fx.code - 0x03000000);
+		assert.equal(got.tablesAddr, fx.tables - 0x03000000);
+	}
+	await assert.rejects(c7.codecFromFile(otherBuild(plain), c, "db25d"), /no recipe/, "a codec of another compile is refused");
+	const noSig = plain.slice();
+	noSig.fill(0, fx.code - 0x0300C000, fx.code - 0x0300C000 + 8);
+	await assert.rejects(c7.codecFromFile(noSig, c, "db25d"), /not a stock firmware file the codec can be taken from/);
+	await assert.rejects(c7.codecFromFile(new Uint8Array(0x300000), c, "db25d"), c7.CodecError, "larger than the program flash");
+});
+
+test("a radio whose stock build carries a codec without a recipe is told apart from one without a codec", async () => {
+	const { c, plain } = await syntheticProfile();
+	const progmem = (f) => {
+		const p = new Uint8Array(0x200000).fill(0xFF);
+		p.set(f, 0xC000);
+		return p;
+	};
+	const known = await c7.analyze(progmem(plain), c, "db25d");
+	assert.equal(known.otherCodec, false);
+	const other = progmem(otherBuild(plain));
+	const a = await c7.analyze(other, c, "db25d");
+	assert.equal(a.codec, null);
+	assert.equal(a.firmware, "unknown");
+	assert.equal(a.otherCodec, true);
+	await assert.rejects(c7.codecFromFile(other, c, "db25d"), /backup holds a stock codec build OpenDigitalRadio has no recipe for/);
+	const none = new Uint8Array(0x200000).fill(0xFF);
+	none.set(plain.subarray(0, 0x1000), 0xC000);
+	assert.equal((await c7.analyze(none, c, "db25d")).otherCodec, false);
+	await assert.rejects(c7.codecFromFile(none, c, "db25d"), /contains no codec recognized/);
+	// ODR's own code may hold the signature words as constants: that is not a stock codec
+	const odr = progmem(otherBuild(plain));
+	odr.set(new TextEncoder().encode("OpenDigitalRadio"), 0xD000);
+	assert.equal((await c7.analyze(odr, c, "db25d")).otherCodec, false);
+});
+
+test("the stock version string is read from the program flash wherever the build put it", () => {
+	const p = new Uint8Array(0x200000).fill(0xFF);
+	assert.equal(stockVersion(p), null);
+	p.set(new TextEncoder().encode("909E.D6x.EARSAB.020.Jan 10 2026"), 0x7DCC4);
+	assert.equal(stockVersion(p), "909E.D6x.EARSAB.020");
+	const q = new Uint8Array(0x200000).fill(0xFF);
+	q.set(new TextEncoder().encode("909E.D6x.EARSAB.018"), 0x1000);		// in the bootloader, not the application
+	assert.equal(stockVersion(q), null);
 });
 
 // ---- USMART

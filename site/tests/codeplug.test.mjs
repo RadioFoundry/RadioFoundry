@@ -15,6 +15,7 @@ import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber } from "../static/js/codeplug/model.js";
 import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes } from "../static/js/codeplug/fields.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
+import { targets } from "../static/js/flasher/restore.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const fx = JSON.parse(readFileSync(join(DIR, "codeplug.json"), "utf8"));
@@ -287,6 +288,43 @@ test("a refused write and an unknown radio are reported", async () => {
 	await assert.rejects(tr.write(encode(rich()), null), (e) => e.code === "write_refused");
 	const other = new CpsSerial(new FakeCpsRadio({ board: "GD-77" }).stream());
 	await assert.rejects(other.identify(RADIOS), (e) => e.code === "unknown_radio" && e.params.board === "GD-77");
+});
+
+test("a radio still holding another firmware's settings data is prepared, then written", async () => {
+	const radio = new FakeCpsRadio({ board: "DM-1701", foreign: true });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify(RADIOS);
+	assert.equal((await tr.storage()).region, "foreign");
+	await assert.rejects(tr.write(encode(rich()), null), (e) => e.code === "storage_foreign");
+	assert.equal(await tr.claimStorage(), true);
+	assert.equal(radio.claims, 1);
+	assert.equal((await tr.storage()).region, "ours");
+	const want = encode(rich());
+	const res = await tr.write(want, null);
+	await tr.verify(want, res.plan);
+});
+
+test("a sector left pending by an interrupted write is retried; verify skips the live VFOs", async () => {
+	const radio = new FakeCpsRadio({ board: "DM-1701" });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify(RADIOS);
+	radio.sector = new Uint8Array(4096);	// a session that stopped between X 1 and X 3
+	radio.pending = 0x5000;
+	const want = encode(rich());
+	const res = await tr.write(want, null);
+	radio.spi[0x7590] ^= 0xFF;		// the radio shows its live VFO A there, not the bytes written
+	radio.spi[0x75FF] ^= 0xFF;
+	await tr.verify(want, res.plan);
+	radio.spi[0x7600] ^= 0xFF;
+	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_failed" && e.params.addr === 0x7600);
+});
+
+test("a backup's codeplug is offered for restore only in ODR's layout", () => {
+	const bundle = (data) => ({ meta: { firmware_now: { kind: "odr" } }, parts: new Map([["spi-flash", { data }]]) });
+	assert.deepEqual(targets(bundle(encode(rich()).bytes)), ["codeplug"]);
+	const noise = new Uint8Array(CODEPLUG_SPAN);
+	for (let i = 0; i < noise.length; i++) noise[i] = (i * 7919 + (i >> 5)) & 0xFF;
+	assert.deepEqual(targets(bundle(noise)), []);
 });
 
 test("changed runs stay inside their ranges and sectors", () => {

@@ -266,7 +266,15 @@ defaults past it (no settings layout is 0) and the first real save gets sequence
 always exists, because saves never erase the sector with the newest record, so a power cut inside a journal
 rewrite (J0 erased, J1 full) can't make the region look foreign at the next boot.
 
-**Claim.** Only through the debug link, behind the chip UID token like REBOOT (`debuglink.md` 3.13):
+**Claim.** Only through the debug link, behind the chip UID token like REBOOT (`debuglink.md` 3.13). Two clients
+send it:
+
+- The web radio programming utility, right after a full backup (the backup holds the whole SPI flash, the region
+  included), when `STORAGE INFO` reports the region foreign. The Codeplug Editor checks before every write and, on a
+  foreign region, explains and claims only when the user confirms. Both poll INFO until the region is ours (20 s
+  limit).
+- `odr_debug.py storage claim`:
+
 
 1. `odr_debug.py storage claim` reads the settings ring, the journal and the calibration copy through the debug
    link's read-only SPI flash window (twice, compared) into `the external reference folder` (refused inside any git

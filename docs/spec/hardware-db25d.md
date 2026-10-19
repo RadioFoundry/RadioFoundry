@@ -639,9 +639,25 @@ no key). The three carry the same codec code, built from the same library, with 
 | `DB25-D PRO 909E.Dx.EARSAB.018_2024-09-23.bin` | 845,900 | `f2a4b214720b971b58cdadcc53d44695e1462b75296afc41f2a0b53a704d36b4` | `db25d-2409` |
 | 2024-05-09 build (`909E.D6x.EARSAB.018`) | 843,944 | `9e199f54cd6545d153d39542ca5be3ac1076ee215eb93ca630a83cbdbbff4606` | `db25d-2405` |
 
-The owner's radio runs 909E.DBB.EARSAB.020, whose codec is a different compile (the entry points are at other offsets
-and the RAM address differs). It isn't supported: no stock file of that version is at hand, only a read of the radio.
-A radio can run the 018 codec whatever its own firmware version, because the codec is plain code and tables.
+The owner's radio runs 909E.DBB.EARSAB.020, whose codec is a different compile. It isn't supported: no stock file of
+that version is at hand, only a read of the radio. A radio can run the 018 codec whatever its own firmware version,
+because the codec is plain code and tables. What the read of the 020 radio shows (BIN):
+
+| | 020 |
+|---|---|
+| Code start (the two signature words) | flash 0x030C142C |
+| Code | Another compile: 32 of the 19,144 words match 018's at the same offset. Most 32-byte runs of the 018 code are there, shifted by 0x4F0, 0x430 and other amounts |
+| Code run address | 0x180B8, inferred: the RAM image starts at flash 0x030B9374 (its first 256 bytes are 018's, and occur once), and 020's start-up copy is in the 4 KB the read lacks |
+| Tables | Byte-identical to 018's (same sha256), at flash 0x0307E760 |
+
+0x180B8 lies in the RAM that `db25d_dmr.ld` gives ODR below the codec window (8.3), so the 020 codec needs its own RAM
+layout as well as a recipe.
+
+The web flasher finds the codec by content: the two signature words, then the SHA-256 of the code and the tables against
+every profile, wherever an image or a backup holds them. A stock file not known by its own SHA-256 is placed as the
+radio would hold it and searched the same way, so a re-release that carries a known codec unchanged works. When the
+signature is there but no profile matches (020), the page says that the radio's codec is a build ODR can't use and asks
+for an 018 file; the backup is not affected.
 
 ### 8.2 Where the codec is
 
@@ -748,4 +764,4 @@ radio on the same channel.
 | 12 | Answered (4.5): the stock digital set with RF_MODE 0x034C9860 decodes every frame | - |
 | 13 | The modem's input is the main chip's AF output (4.5, decodes on the radio). The voice output's speaker route (PTC18 low) still needs a listen | Yes, a listen |
 | 14 | Answered (4.5): single-point modulation on the TCXO, the stock per-burst sequence, decoded on the SDR bench; deviation 101 % of nominal at 461.4625 MHz | - |
-| 15 | The 020 stock codec's windows (a separate compile, 8.1) | A 020 stock file |
+| 15 | The 020 stock codec's windows, entry points and a RAM layout for its run address (a separate compile at 0x030C142C, 8.1) | A 020 stock file, or a read of 0x0300C000-0x0300CFFF |

@@ -22,7 +22,7 @@ import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, SerialStream, ODR_USB, ODR_NET, probe, serialSupported } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
-import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "./restore.js";
+import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
 import { decideCodec } from "./decide.js";
 import { readBootKey } from "./bootkey.js";
@@ -920,6 +920,8 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 				}
 				prog.el.remove();
 			}
+			// the backup holds the whole memory chip now, so the original firmware's data in ODR's settings area can go
+			if (pick === "all") await prepareStorage(box);
 			onDone?.();
 		} catch (e) {
 			flashFinished(started, e);
@@ -945,6 +947,24 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 		measureRate().then(() => { for (const id of Object.keys(choices)) times[id]?.replaceChildren(estimate(choices[id].bytes, seconds(id))); });
 	}
 	return box;
+}
+
+// A radio fresh from its original firmware still holds that firmware's data where ODR keeps its settings and journal:
+// until that area is claimed the radio keeps no settings and refuses every codeplug write (settings-store.md 5)
+async function prepareStorage(box) {
+	try {
+		const link = await connectSerial();
+		const st = await link.storageInfo();
+		diag.note("storage region", st);
+		if (st?.region !== "foreign") return;
+		const line = notice(t("flash.storage.preparing"));
+		box.append(line);
+		const ok = await link.storageClaim();
+		line.replaceWith(notice(t(ok ? "flash.storage.done" : "flash.storage.failed"), ok ? "ok" : "bad"));
+	} catch (e) {
+		diag.error("flash/prepare storage", e);
+		box.append(notice(t("flash.storage.failed"), "bad"));
+	}
 }
 
 // How fast this radio's memory reads over its serial port: 64 KB from the memory chip, timed
@@ -1390,6 +1410,11 @@ function afterRestore() {
 		S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
 		return panel(t("flash.restore.done_fw_title"), h("p", {}, t("flash.restore.done_fw")));
 	}
+	if (codeplugLayout(S.bundle) !== "openfw") {
+		S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
+		return panel(t("flash.restore.done_fw_title"), h("p", {}, t("flash.restore.done_fw_only")),
+			notice(t("flash.restore.codeplug_not_odr"), "info"));
+	}
 	const status = h("div");
 	const prog = progressBar();
 	const go = button(t("flash.restore.codeplug_go"), async () => {
@@ -1401,6 +1426,7 @@ function afterRestore() {
 			const spi = S.bundle.parts.get("spi-flash");
 			const now = await link.cpsDump(1, 0, Math.min(spi.data.length, 0x120000), { progress: (d, n) => prog.set(d, n, t("flash.restore.comparing")) });
 			const sectors = codeplugSectors(spi.data, now.data);
+			await prepareStorage(status);	// the radio refuses every codeplug write until its settings area is ODR's
 			const refused = await writeCodeplug(link, sectors, (d, n) => prog.set(d, n, t("flash.restore.writing_codeplug")));
 			status.append(notice(refused.length ? t("flash.restore.codeplug_refused", { n: refused.length, total: sectors.length })
 				: t("flash.restore.codeplug_done", { n: sectors.length }), refused.length ? "" : "ok"));

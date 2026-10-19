@@ -79,6 +79,7 @@ test("a refused codeplug write leaves its frames in the log", async () => {
 	await assert.rejects(tr.write(encode(empty()), null), (e) => e.code === "write_refused");
 	const wire = diag.report().log.filter((l) => l.kind === "wire").map((l) => l.text);
 	assert.ok(wire.some((w) => /^cmd 0x2 seq \d+ len 0: status 0/.test(w)), "the VERSION request");
-	assert.match(wire.at(-1), /: refused$/);
+	assert.equal(wire.filter((w) => /^X 2 0x[0-9a-f]+ \d+: refused$/.test(w)).length, 2, "tried twice");
+	assert.match(wire.at(-1), /^cmd 0xf seq \d+ len 1: status 0/, "then the settings region is asked about");
 	assert.ok(wire.some((w) => w.startsWith("X 1 sector") && w.endsWith(": ok")));
 });

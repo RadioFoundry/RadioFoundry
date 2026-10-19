@@ -169,8 +169,41 @@ export class Link {
 	async chip() {
 		const r = await this.request(CMD.INFO_CHIP);
 		if (r.length < 28) return null;
-		return { idcode: u32le(r, 0), flashKb: u16le(r, 4), uid: toHex(r.subarray(6, 18)), optcr: u32le(r, 18),
+		return { idcode: u32le(r, 0), flashKb: u16le(r, 4), uid: toHex(r.subarray(6, 18)), token: u32le(r, 6), optcr: u32le(r, 18),
 			rdp: r[22], wrp: u16le(r, 24), bor: r[26], user: r[27] };
+	}
+
+	// STORAGE INFO (debuglink.md 3.13): whether the settings and journal region is ours, or still holds another
+	// firmware's data ("foreign": the radio then refuses every settings save and codeplug write). null from a build
+	// without the command
+	async storageInfo() {
+		let r;
+		try {
+			r = await this.request(CMD.STORAGE, new Uint8Array([0]));
+		} catch (e) {
+			if (e instanceof LinkError && !/no answer/.test(e.message)) return null;
+			throw e;
+		}
+		if (r.length < 2) return null;
+		const region = ["none", "ours", "foreign"][r[0]] || String(r[0]);
+		const range = (o) => (r.length >= o + 8 ? { addr: u32le(r, o), size: u32le(r, o + 4) } : null);
+		return { region, pending: !!r[1], settings: range(2), journal: range(10), calibration: range(18) };
+	}
+
+	// STORAGE CLAIM: the radio erases a foreign region and takes it (some 10 sector erases), then the poll sees it
+	// ours. The token is the chip UID's low word, so only a client that read INFO_CHIP can ask. True once it is ours
+	async storageClaim({ timeout = 20000 } = {}) {
+		const chip = await this.chip();
+		if (!chip) throw new LinkError("no chip info");
+		await this.request(CMD.STORAGE, concat(new Uint8Array([2]), le32(chip.token)));
+		note("storage claim sent");
+		const until = Date.now() + timeout;
+		while (Date.now() < until) {
+			await sleep(500);
+			const i = await this.storageInfo().catch(() => null);
+			if (i?.region === "ours") return true;
+		}
+		return false;
 	}
 
 	// READ_MEM (debuglink.md 3.10) in 1000-byte pieces: internal flash, the stock bootloader included
@@ -230,7 +263,8 @@ export class Link {
 	}
 
 	// One sector, changing only the given [addr, bytes] parts (each inside the sector at addr): the radio keeps the
-	// sector's other bytes, so a part of a sector the codeplug shares with other data can be written safely
+	// sector's other bytes, so a part of a sector the codeplug shares with other data can be written safely. False
+	// when a step fails; writeFailure then says which and how ("refused": '-', "no answer")
 	async cpsWriteParts(addr, parts) {
 		const sector = addr >>> 12;
 		const ok = async (req, what) => {
@@ -238,9 +272,12 @@ export class Link {
 			await this.s.write(req);
 			const r = await this.waitFor((buf) => (buf.length >= 1 && buf[0] === 0x2D ? false : buf.length >= 2 ? true : undefined), Math.max(3000, this.timeout));
 			this.s.clear();
-			wire(`${what}: ${r === true ? "ok" : r === false ? "refused" : "no answer"}`);
+			const result = r === true ? "ok" : r === false ? "refused" : "no answer";
+			wire(`${what}: ${result}`);
+			if (r !== true) this.writeFailure = { what, result };
 			return r === true;
 		};
+		this.writeFailure = null;
 		if (!await ok(new Uint8Array([0x58, 1, sector >> 16, (sector >> 8) & 0xFF, sector & 0xFF]), `X 1 sector 0x${addr.toString(16)}`)) return false;
 		for (const [a, data] of parts) {
 			for (let o = 0; o < data.length; o += 1024) {

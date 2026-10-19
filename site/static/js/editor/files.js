@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Codeplug files for the editor: what a file holds and the image in it (a codeplug image, a radio backup bundle, the
-// USB network codeplug.bin), and the draft the page keeps in the browser between visits.
+// USB network codeplug.bin), and the draft the page keeps in the browser between visits. A file in another layout (a
+// stock TYT-family codeplug, docs/spec/codeplug-stock-tyt.md) is converted, or reported as foreign.
 
 import { CodeplugImage, CODEPLUG_SPAN, TFTP_SIZE } from "../codeplug/image.js";
 import { readHeader, recordSize, AREA1, AREA1_SIZE, HEADER, AREA2 } from "../codeplug/iddb.js";
 import { openBundle } from "../flasher/backup.js";
 import { unzip } from "../flasher/zip.js";
 import { startsWith } from "../flasher/bytes.js";
+import { classify } from "../codeplug/detect.js";
+import { importStock, STOCK, RDT_MD380 } from "../codeplug/stock_tyt.js";
+import { empty, encode } from "../codeplug/model.js";
 
 export class FileError extends Error {}
 
@@ -24,7 +28,24 @@ export function imageFrom(bytes) {
 	return CodeplugImage.from(bytes.subarray(0, Math.min(bytes.length, keep)));
 }
 
-// {kind: "image" | "yaml" | "csv" | "csv-set", image?, text?, files?} from a file the user picked
+// What a codeplug image or SPI flash dump holds, as openFile returns it:
+//   {kind: "image", image, board}: the open-firmware layout, or blank
+//   {kind: "converted", from, model, image, counts, notes, board}: a stock codeplug, converted. model is the editing
+//     model (on a blank image), image its encoding; notes are {code, n} with qdmr.js's note codes
+//   {kind: "foreign", format, board}: a layout the editor can't read ("tyt-uv380-rdt" or "unknown")
+export function fromBytes(bytes, board = null) {
+	const { layout } = classify(bytes);
+	if (layout === "openfw" || layout === "blank") return { kind: "image", image: imageFrom(bytes), board };
+	if (STOCK[layout]) {
+		const model = empty();
+		const { counts, notes } = importStock(model, bytes, layout);
+		return { kind: "converted", from: layout, model, image: encode(model), counts, notes, board };
+	}
+	return { kind: "foreign", format: layout, board };
+}
+
+// {kind: "image" | "converted" | "foreign" | "yaml" | "csv" | "csv-set", ...} from a file the user picked (fromBytes
+// for the first three)
 export async function openFile(name, bytes) {
 	if (startsWith(bytes, "PK\u0003\u0004")) {
 		// a radio backup, or the editor's own .zip of CSV tables
@@ -38,13 +59,18 @@ export async function openFile(name, bytes) {
 		const { meta, parts } = await openBundle(bytes);
 		const spi = parts.get("spi-flash");
 		if (!spi || spi.data.length < TFTP_SIZE) throw new FileError("backup_no_codeplug");
-		return { kind: "image", image: imageFrom(spi.data), board: meta?.radio?.board || null };
+		return fromBytes(spi.data, meta?.radio?.board || null);
 	}
 	if (/\.ya?ml$/i.test(name)) return { kind: "yaml", text: new TextDecoder().decode(bytes) };
 	if (/\.(csv|txt)$/i.test(name)) return { kind: "csv", text: new TextDecoder().decode(bytes) };
 	if (startsWith(bytes, "OutSecurityBin")) throw new FileError("firmware_not_codeplug");
-	// a codeplug image (0x120000), the USB network codeplug.bin (0xAEE60) or a whole data flash dump
-	if (bytes.length >= TFTP_SIZE) return { kind: "image", image: imageFrom(bytes) };
+	// a codeplug image (0x120000), the USB network codeplug.bin (0xAEE60), a whole data flash dump, or a TYT MD-380
+	// CPS file or memory image
+	if (bytes.length >= TFTP_SIZE) return fromBytes(bytes);
+	if (bytes.length === RDT_MD380 || bytes.length === 0x40000) {
+		const f = fromBytes(bytes);
+		if (f.kind === "converted") return f;
+	}
 	throw new FileError("unknown_file");
 }
 

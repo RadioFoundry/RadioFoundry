@@ -134,7 +134,8 @@ test("a la carte selection keeps dependencies and finds prebuilt variants", () =
 test("codeplug formats", () => {
 	assert.equal(detect(stock).id, "stock-firmware");
 	assert.equal(detect(new Uint8Array(262709)).id, "tyt-rdt");
-	assert.equal(convertersFor("tyt-rdt")[0].status, "planned");
+	assert.equal(convertersFor("tyt-rdt")[0].status, "ready");
+	assert.equal(convertersFor("dfuse")[0].status, "planned");
 });
 
 // ---- end to end against the simulated radio
@@ -167,8 +168,25 @@ test("first install on stock: keep the codec, then back up through ODR", async (
 	const meta = { radio: { board: "dm1701", name: sim.board.name, chip: p.chip }, firmware_now: { kind: "odr", git: p.git, codec: p.codec },
 		firmware_before: { kind: "stock", version: "V02.06 CSV" } };
 	const bundle = await openBundle(await makeBundle(meta, parts));
-	assert.deepEqual(targets(bundle), ["odr", "codeplug", "stock"]);
+	// the memory chip still holds the stock codeplug: written back to ODR it would be garbage, so it isn't offered
+	assert.deepEqual(targets(bundle), ["odr", "stock"]);
 	assert.deepEqual(bundle.parts.get("internal-flash").data, radio.flash.subarray(0xC000));
+});
+
+test("after the backup, the stock data in ODR's settings area is claimed; a wrong token changes nothing", async () => {
+	const { radio } = await simulated("odr");
+	const link = new Link(radio.serialStream());
+	const before = await link.storageInfo();
+	assert.equal(before.region, "foreign");
+	assert.deepEqual(before.journal, { addr: 0x19000, size: 0x2000 });
+	const good = link.chip.bind(link);
+	link.chip = async () => ({ ...(await good()), token: 0x12345678 });
+	await assert.rejects(link.storageClaim({ timeout: 600 }), /status 7/);
+	assert.equal((await link.storageInfo()).region, "foreign");
+	link.chip = good;
+	assert.equal(await link.storageClaim(), true);
+	assert.ok(radio.spi.subarray(0x11000, 0x1B000).every((x) => x === 0xFF));
+	assert.ok(radio.events.includes("storage claimed"));
 });
 
 test("a read whose reply lost its tail is asked again", async () => {

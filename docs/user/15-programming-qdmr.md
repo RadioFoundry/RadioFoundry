@@ -28,6 +28,11 @@ sent to a server: files, the codeplug and your RadioID API key stay on your comp
    changed. It shows how many bytes and about how long it takes, then writes and verifies them. The radio loads the
    new codeplug without restarting.
 
+The first write to a radio that came straight from its original firmware may ask to **Prepare Radio**. The original
+firmware's data is still in the area where ODR keeps its settings, and until that area is erased the radio can't
+store a codeplug or keep its settings when turned off. The web radio programming utility does this by itself after
+the full backup it offers when it installs ODR. The backup holds a copy of that data; the calibration isn't touched.
+
 Write to Radio is blocked while the **Problems** tab lists errors, such as a name that is too long or a frequency
 that isn't valid. Warnings, such as a frequency outside the radio's bands or a DMR channel without a TX contact,
 don't block it.
@@ -62,7 +67,17 @@ starts over.
 - a codeplug file (`.bin`) saved by the editor, `tools/cps_client.py read` or a TFTP read;
 - a backup from the radio programming utility (`.zip`);
 - a qdmr codeplug (`.yaml`);
-- CSV files, one table each, or a `.zip` of them.
+- CSV files, one table each, or a `.zip` of them;
+- the original firmware's codeplug, from a DM-1701, RT84, MD-UV380/390 or MD-380: in a backup, a dump of the radio's
+  data flash, or a TYT MD-380 CPS file (`.rdt`).
+
+A backup made when ODR was installed still holds the original firmware's codeplug, because ODR keeps its own
+codeplug in a different layout. The editor recognizes that codeplug and converts it: channels, zones, contacts, RX
+group lists, the DMR ID, the radio name and the boot text. Afterwards it lists what it left out, such as scan lists
+and names that were shortened. A zone with an A and a B list becomes two zones, "Name A" and "Name B". Check the
+result before writing it to the radio. The radio's codeplug stays as it is until you write it. MD-UV380 family CPS
+files (`.rdt`) can't be opened yet: convert one with qdmr first (`dmrconf decode --manufacturer --radio dm1701
+FILE.rdt FILE.yaml`) and open the YAML file.
 
 **Save** writes a codeplug file, a qdmr codeplug (`.yaml`), the open table as CSV, every table as a `.zip` of CSV
 files, or `codeplug.bin` for USB network mode.
@@ -77,7 +92,8 @@ Radio tab's settings in one change, so one **Undo** reverses it. The VFOs and th
 Afterwards the editor lists what it changed or left out, such as scan lists, encryption keys and names that were
 shortened. A qdmr zone with an A and a B list becomes two zones, "Name A" and "Name B". Saving as qdmr YAML lists
 what qdmr's format can't hold: SFR settings, power levels qdmr has no name for, and locations, which are rounded to
-6-character grid locators (about 5 km). The Tools page converts between qdmr YAML and codeplug files too.
+6-character grid locators (about 5 km). The Tools page converts between qdmr YAML and codeplug files too, and converts an original firmware codeplug to
+either.
 
 ### DMR ID database and contacts from RadioID.net
 

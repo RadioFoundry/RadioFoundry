@@ -68,19 +68,56 @@ export async function locateCodec(progmem, c, boardId) {
 	return null;
 }
 
-// The codec out of a Baofeng stock firmware file ("BFUV32-V2", file offset = address - 0x0300C000 + 0x100), or out of
-// a program flash backup (1 MB). Returns the same shape as locateCodec, or throws with what the file is.
+// The flash offset of the first codec signature on a word boundary in buf[from, to), or -1. A stock build whose codec
+// is a compile no profile describes (the DB25-D's 020: other code bytes, another RAM address) still starts with it,
+// which tells "a codec ODR has no recipe for" from "no codec at all". The signature alone never makes a codec usable.
+export function codecSignature(buf, c, from = 0, to = buf.length) {
+	const sig = sigBytes(c);
+	for (let at = find(buf, sig, from); at >= 0 && at + sig.length <= to; at = find(buf, sig, at + 1)) if (at % 4 === 0) return at;
+	return -1;
+}
+
+// A stock file not known by its SHA-256, laid out as the radio would hold it (after the header its profiles give, at
+// the application start) and searched as a program flash read is: a re-release that carries a known codec unchanged
+// is accepted by the codec's own hashes, anything else is not
+async function locateInFile(data, c, boardId) {
+	const at = c.app_base - c.progmem_base;
+	for (const hdr of new Set(profilesFor(c, boardId).map((p) => p.stock_header ?? c.stock_header))) {
+		const body = data.subarray(hdr);
+		if (body.length > c.progmem_size - at) continue;
+		const progmem = new Uint8Array(c.progmem_size).fill(0xFF);
+		progmem.set(body, at);
+		const got = await locateCodec(progmem, c, boardId);
+		if (got) return got;
+	}
+	return null;
+}
+
+const supported = (c, boardId) => {
+	const names = profilesFor(c, boardId).filter((x) => x.stock_file).map((x) => x.name);
+	return names.length ? ` (supported: ${names.join(", ")})` : "";
+};
+
+// The codec out of a Baofeng stock firmware file ("BFUV32-V2", file offset = address - 0x0300C000 + 0x100; the DB25-D's
+// are plain), or out of a program flash backup (1 or 2 MB). A file is known by its SHA-256 or, failing that, by the
+// codec's hashes wherever it holds it. Returns the same shape as locateCodec, or throws with what the file is.
 export async function codecFromFile(data, c, boardId) {
 	if (data.length === c.progmem_size || data.length === totalSize(c, boardId)) {
-		const got = await locateCodec(lowPart(c, data), c, boardId);
+		const low = lowPart(c, data);
+		const got = await locateCodec(low, c, boardId);
 		if (got) return got;
-		throw new CodecError("this program memory backup contains no codec recognized for this radio");
+		throw new CodecError(codecSignature(low, c, c.app_start, c.boards[boardId].slot[0]) >= 0
+			? `this program memory backup holds a stock codec build OpenDigitalRadio has no recipe for; take the codec from a stock firmware file${supported(c, boardId)}`
+			: "this program memory backup contains no codec recognized for this radio");
 	}
 	const sha = await sha256(data);
 	const p = profilesFor(c, boardId).find((x) => x.stock_file?.sha256 === sha);
 	if (!p) {
-		const names = profilesFor(c, boardId).filter((x) => x.stock_file).map((x) => x.name);
-		throw new CodecError(`not a stock firmware file the codec can be taken from${names.length ? ` (supported: ${names.join(", ")})` : ""}`);
+		const got = await locateInFile(data, c, boardId);
+		if (got) return got;
+		throw new CodecError(codecSignature(data, c) >= 0
+			? `this file holds a codec build OpenDigitalRadio has no recipe for${supported(c, boardId)}`
+			: `not a stock firmware file the codec can be taken from${supported(c, boardId)}`);
 	}
 	// the whole file is identified by its SHA-256 above; the codec hashes, where the profile has them, check the carve too
 	const hdr = p.stock_header ?? c.stock_header;
@@ -131,7 +168,8 @@ export async function parseSlot(c, boardId, slot) {
 const ODR_MARK = new TextEncoder().encode("OpenDigitalRadio");
 
 // What a program flash read holds: {firmware: "odr" | "stock" | "empty" | "unknown", slot: parseSlot() | null,
-// codec: locateCodec() | null (the stock codec in the application area)}
+// codec: locateCodec() | null (the stock codec in the application area), otherCodec: whether firmware that isn't ODR
+// carries a codec no profile describes (a stock version without a recipe)}
 export async function analyze(progmem, c, boardId) {
 	const app = progmem.subarray(c.app_start, c.boards[boardId].slot[0]);
 	const slotRaw = progmem.subarray(c.boards[boardId].slot[0], c.boards[boardId].slot[1]);
@@ -139,7 +177,8 @@ export async function analyze(progmem, c, boardId) {
 	const codec = await locateCodec(lowPart(c, progmem), c, boardId);
 	const firmware = app.subarray(0, 4096).every((b) => b === 0xFF) ? "empty"
 		: find(app, ODR_MARK) >= 0 ? "odr" : codec ? "stock" : "unknown";
-	return { firmware, slot, slotBytes: slot ? slotRaw.slice(0, slot.length) : null, codec };
+	const otherCodec = firmware === "unknown" && codecSignature(app, c) >= 0;
+	return { firmware, slot, slotBytes: slot ? slotRaw.slice(0, slot.length) : null, codec, otherCodec };
 }
 
 // The codec decision for an install. have: {slotInFlash, savedSlot, flashCodec, fileCodec} (any may be null): slots

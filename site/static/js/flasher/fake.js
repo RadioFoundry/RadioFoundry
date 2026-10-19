@@ -327,6 +327,19 @@ export class FakeRadio {
 				}
 				return frame(f.cmd | 0x80, f.seq, new Uint8Array([3]));
 			}
+			if (f.cmd === 0x0F) {
+				// STORAGE (debuglink.md 3.13): the settings ring and journal hold the stock codeplug until claimed
+				const foreign = !this.spi.subarray(0x11000, 0x1B000).every((x) => x === 0xFF) && !this.storageOurs;
+				if (f.payload[0] === 0) return ok(concat(new Uint8Array([foreign ? 2 : 1, 0]), le32(0x11000), le32(0x8000), le32(0x19000), le32(0x2000), le32(0x10000), le32(0x200)));
+				if (f.payload[0] === 2) {
+					if (!foreign) return frame(f.cmd | 0x80, f.seq, new Uint8Array([4]));
+					if (u32le(f.payload, 1) !== u32le(this.uid, 0)) return frame(f.cmd | 0x80, f.seq, new Uint8Array([7, 1]));
+					this.spi.fill(0xFF, 0x11000, 0x1B000);
+					this.storageOurs = true;
+					this.events.push("storage claimed");
+					return ok(new Uint8Array(0));
+				}
+			}
 			if (f.cmd === 0x0C) {
 				const addr = u32le(f.payload, 0), n = f.payload[4] | (f.payload[5] << 8);
 				if (n < 1 || n > 1000 || addr < FLASH_BASE || addr + n > FLASH_BASE + FLASH_SIZE) return frame(f.cmd | 0x80, f.seq, new Uint8Array([7]));

@@ -25,7 +25,7 @@ import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
 import { makeDb25d } from "./db25dui.js";
-import { Usmart, checkInstallImage } from "./db25d.js";
+import { Usmart, checkInstallImage, stockVersion } from "./db25d.js";
 
 // USB-serial chips found in programming cables (tools/dm32_flash.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -508,12 +508,22 @@ export function checkView() {
 			}
 		});
 		fill(status, 
-			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, t(stockRadio() ? "flash.db25d.codec.action_text" : "flash.c7.codec.action_text")), pick,
+			d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, codecActionText()), pick,
 				h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without")))),
 			d && d.mode === "none" ? notice(t("flash.c7.codec.none_risk"), "bad") : null,
 			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(); } }, t("flash.c7.check.download_again"))) : null,
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
+	}
+
+	// Why no codec was found, and what to select instead. A stock DB25-D whose codec is a build without a recipe (020)
+	// is named, so the message says that the backup is fine and only the codec needs a file
+	function codecActionText() {
+		if (!stockRadio()) return t("flash.c7.codec.action_text");
+		if (!c.analysis?.otherCodec) return t("flash.db25d.codec.action_text");
+		// named as the update-mode step names it (db25dui.js); the image's own string carries another batch code
+		const v = c.progmem && stockVersion(c.progmem);
+		return t("flash.db25d.codec.action_other", { version: v ? `909E.DBB.EARSAB.${v.slice(-3)}` : t("flash.db25d.codec.version_unknown") });
 	}
 
 	// Coming back to this step: what was read is still here

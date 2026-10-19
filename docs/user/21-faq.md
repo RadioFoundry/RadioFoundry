@@ -31,6 +31,13 @@ GitHub issue. If the problem is reading or writing a codeplug, tick the box that
 callsign, DMR ID and contacts, so it's left out unless you add it. Developers can also open the browser's console
 (F12): every error is printed there with its details.
 
+**Writing a codeplug fails with "The radio refused to write the codeplug". What now?**
+
+If the radio came straight from its original firmware, choose **Write to Radio** again: the editor offers **Prepare
+Radio**, which erases the original firmware's data from the area ODR keeps its settings in. Without that, the radio
+refuses every write and forgets its settings when it's turned off. If the error comes back after that, use **Report a
+Problem**.
+
 **Why doesn't the release include the codec?**
 
 The AMBE+2 codec DMR voice needs is DVSI's, and ODR can't distribute it. Your radio already has it, in its stock
