@@ -91,7 +91,10 @@ def test_private_call_to_other(radio, sdr_bench, pytestconfig):
 def test_emergency_call(radio, sdr_bench, pytestconfig):
     """The emergency service option is flagged on the call and counted."""
     _on_dmr_channel(radio, pytestconfig)
-    d, v = _bench_call(radio, sdr_bench, pytestconfig, emergency=True)
+    try:
+        d, v = _bench_call(radio, sdr_bench, pytestconfig, emergency=True)
+    finally:
+        radio.go_home()  # the heard call raises the emergency screen; go_home acknowledges it
     assert d["call.rx_calls"] == 1 and d["call.rx_emergency_calls"] == 1, d
     assert v["last.emergency"] == "1", v
 

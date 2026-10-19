@@ -27,7 +27,7 @@ static inline void bus_delay(void)
 	__NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
 }
 
-// HR_C5000 byte: the clock idles low. Per bit: clock high, set MOSI, clock low (the chip samples MOSI here), then
+// HR_C5000 byte: the clock idles low. Per bit: clock high, set MOSI, clock low (the chip samples MOSI here), wait, then
 // sample MISO
 static uint8_t bus_byte(uint8_t out)
 {
@@ -38,6 +38,10 @@ static uint8_t bus_byte(uint8_t out)
 		out = (uint8_t)(out << 1);
 		bus_delay();
 		PIN_WRITE(PIN_C5000_CLK, false);
+		// The chip drives the next bit after the falling edge: sampled at once, every read came one bit late
+		// (0x10 read 0x40 after 0x80 was written, an LC read 00 .. 31 98 2D 2F for 00 .. 63 30 5A 5E, on air
+		// 2026-10-18)
+		bus_delay();
 		in = (uint8_t)((in << 1) | (PIN_READ(PIN_C5000_MISO) ? 1u : 0u));
 	}
 	return in;

@@ -442,6 +442,31 @@ static bool builtin_channel(uint16_t number, channel_t *out)
 	return true;
 }
 
+// The power byte is qdmr's 10-step scale (1 min ... 10 max, 7.x). A radio with fewer levels gets the scale spread over
+// them, so a 2-level radio runs Min and Low at its low level and Mid and above at its high one. Radios with 9 or more
+// levels read it as level n - 1, clamped to the top level
+static uint8_t power_from_byte(uint8_t n)
+{
+	uint8_t count = board.power_count;
+	uint8_t step = (uint8_t)(n - 1u);
+	if (count == 0 || count >= 9u) {
+		return count != 0 && step >= count ? (uint8_t)(count - 1u) : step;
+	}
+	if (step > 9u) {
+		step = 9u;
+	}
+	return (uint8_t)((step * (count - 1u) + 4u) / 9u);
+}
+
+static uint8_t power_to_byte(uint8_t level)
+{
+	uint8_t count = board.power_count;
+	if (count < 2u || count >= 9u) {
+		return (uint8_t)(level + 1u);
+	}
+	return (uint8_t)((level * 9u + (count - 1u) / 2u) / (count - 1u) + 1u);
+}
+
 bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 {
 	memset(out, 0, sizeof(*out));
@@ -453,13 +478,7 @@ bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 	out->bw = (r[CH_FLAG4] & FLAG4_25K) ? RADIO_BW_25K : RADIO_BW_12K5;
 	out->rx_tone = tone(le16(&r[CH_RX_TONE]));
 	out->tx_tone = tone(le16(&r[CH_TX_TONE]));
-	// 0 = the radio's master power, n = level n - 1 (levels are per radio; clamp to this board's top level)
-	if (r[CH_POWER] == 0) {
-		out->power = CODEPLUG_POWER_DEFAULT;
-	} else {
-		uint8_t level = (uint8_t)(r[CH_POWER] - 1u);
-		out->power = (board.power_count != 0 && level >= board.power_count) ? (uint8_t)(board.power_count - 1u) : level;
-	}
+	out->power = r[CH_POWER] == 0 ? CODEPLUG_POWER_DEFAULT : power_from_byte(r[CH_POWER]);
 	out->rx_only = (r[CH_FLAG4] & FLAG4_RX_ONLY) != 0;
 	out->color_code = r[CH_CC] & 0x0Fu;
 	out->timeslot = (r[CH_FLAG2] & FLAG2_TS2) ? 2 : 1;
@@ -500,7 +519,7 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	put_freq(&r[CH_RX], ch->rx_hz);
 	put_freq(&r[CH_TX], ch->tx_hz);
 	r[CH_MODE] = ch->mode == RADIO_MODE_DMR ? 1 : 0;
-	r[CH_POWER] = ch->power == CODEPLUG_POWER_DEFAULT ? 0 : (uint8_t)(ch->power + 1u);
+	r[CH_POWER] = ch->power == CODEPLUG_POWER_DEFAULT ? 0 : power_to_byte(ch->power);
 	put16(&r[CH_RX_TONE], tone_word(&ch->rx_tone));
 	put16(&r[CH_TX_TONE], tone_word(&ch->tx_tone));
 	r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~(FLAG4_RX_ONLY | FLAG4_25K)) | (ch->rx_only ? FLAG4_RX_ONLY : 0) |

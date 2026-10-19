@@ -26,7 +26,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Analog FM receive and transmit | `FM` | 29,296 | 28,056 | ● | ● | ● | Includes its children (tones, VOX, APRS, FM VFO) |
-| CTCSS / DCS encode and decode | `SUBTONE` | 904 | — | ● | ✕ | ● | MD-380: software decode (ADC) and PWM encode not written |
+| CTCSS / DCS encode and decode | `SUBTONE` | 904 | 3,292* | ● | ● | ● | MD-380: software decode (ADC) and PWM encode; CTCSS 100.0 Hz works on air both ways (2026-10-19), DCS not yet checked |
 | FM TX tones: roger beep, 1750 Hz burst | `FM_TX_TONES` | 568 | — | ● | ✕ | ● | MD-380: TX tone path not written |
 | FM VOX | `VOX` | 496 | 1,064 | ● | ● | ● |  |
 | Receiver battery saver | `BATTERY_SAVE` | 296 | 740 | ● | ● | ● |  |

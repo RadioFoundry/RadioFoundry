@@ -4,7 +4,8 @@
 // the slot engine, against a fake config port, voice port and RF switch with a fake microsecond clock
 #include <stdio.h>
 #include <string.h>
-#include "modem/hrc6000/hrc6000_dmr.h"
+#include "modem/hrc_common/hrc6000_dmr.h"
+#include "modem/hrc6000/hrc6000.h"
 
 static int failures;
 
@@ -62,8 +63,8 @@ static bool fake_voice(void *ctx, bool write, uint8_t *buf, uint8_t len)
 
 static void no_delay(uint32_t v) { (void)v; }
 
-static const hrc6000_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
-static hrc6000_t dev;
+static const hrc_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
+static hrc_t dev;
 
 static uint32_t t_us;
 static int rf_on_calls, rf_off_calls, locks, unlocks, notifies;

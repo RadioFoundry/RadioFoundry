@@ -22,21 +22,21 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "hrc6000.h"
+#include "hrc.h"
 #include "hal_dmr_modem.h"
 
 // --- Chip-level helpers (any context that owns the bus; each register write is one atomic transaction) ---
 
 // Section 3.1: DMR modulation pair from calibration, 0x10 = 0x6E, codec, mic gain. Restart the receiver after
-bool hrc6000_dmr_enter(hrc6000_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain);
+bool hrc6000_dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain);
 // Section 5.1: 0x40 = 0xC3, 0x41 = 0x20, 0x00, 0x20, 0x50 (rx_ctl replaces the last 0x50 when non-zero)
-bool hrc6000_dmr_chip_rx_restart(hrc6000_t *dev, uint8_t rx_ctl);
+bool hrc6000_dmr_chip_rx_restart(hrc_t *dev, uint8_t rx_ctl);
 // 0x1F = CC << 4 (PI clear)
-bool hrc6000_dmr_set_cc(hrc6000_t *dev, uint8_t cc);
+bool hrc6000_dmr_set_cc(hrc_t *dev, uint8_t cc);
 // Page 1 0x04: the data sync pattern the chip transmits for a family (dmr_sync_family_t; NONE = MS)
-bool hrc6000_dmr_set_sync(hrc6000_t *dev, uint8_t family);
+bool hrc6000_dmr_set_sync(hrc_t *dev, uint8_t family);
 // One 27-byte voice frame on page 3 (the bus's voice op, else the config port)
-bool hrc6000_dmr_voice(hrc6000_t *dev, bool write, uint8_t *buf);
+bool hrc6000_dmr_voice(hrc_t *dev, bool write, uint8_t *buf);
 // Reg 0x21 value for an access policy (bit 1 also clears the vocoder encode buffer)
 uint8_t hrc6000_dmr_access_reg(dmr_access_t access);
 
@@ -112,6 +112,8 @@ typedef struct {
 	uint32_t sys_ints;	// system interrupts
 	uint32_t rftx_ints;	// RF TX interrupts
 	uint32_t rx_voice;	// voice bursts delivered
+	uint32_t tr_calls;	// receptions whose voice is read at the ticks (rx_voice_read chips)
+	uint32_t tr_bursts;	// voice bursts read at the ticks
 	uint32_t rx_lc_header;	// voice LC headers
 	uint32_t rx_terminator;
 	uint32_t rx_csbk;	// CSBK, MBC
@@ -206,7 +208,7 @@ typedef struct {
 } hrc6000_dmr_held_t;
 
 typedef struct {
-	hrc6000_t *dev;
+	hrc_t *dev;
 	const hrc6000_dmr_ops_t *ops;
 	bool running;		// chip in DMR and the engine in charge of it
 	dmr_config_t cfg;
@@ -296,13 +298,26 @@ typedef struct {
 	volatile uint8_t evq_head, evq_tail;
 	bool notify_req;	// events pushed since the task was last woken
 
+	// Voice read at the ticks (chips with rx_voice_read): a call in progress, the tick parity whose read holds its
+	// bursts (-1 until found), the next burst's voice index, reads in a row without a new burst, the last burst read
+	bool tr_active;
+	int8_t tr_ph;
+	uint8_t tr_index;
+	uint8_t tr_miss;
+	uint8_t tr_wait;
+	uint8_t tr_last[27];
+	// The tick phase of the header that started this read (-1: none yet), and the parity flip that names the read
+	// bursts with their call's slot: learned when a header-started read locks, kept for later calls (late entry too)
+	int8_t tr_hdr_ph;
+	uint8_t tr_ph_flip;
+
 	hrc6000_dmr_stats_t st;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	struct hrc6000_bs *bs;	// split duplex BS outbound in charge of the chip (hrc6000_bs.c), NULL otherwise
 #endif
 } hrc6000_dmr_t;
 
-void hrc6000_dmr_init(hrc6000_dmr_t *e, hrc6000_t *dev, const hrc6000_dmr_ops_t *ops);
+void hrc6000_dmr_init(hrc6000_dmr_t *e, hrc_t *dev, const hrc6000_dmr_ops_t *ops);
 
 // The chip has just been put in DMR (hrc6000_dmr_enter): engine on, receiver restarted. Task level
 void hrc6000_dmr_run(hrc6000_dmr_t *e);
@@ -339,5 +354,39 @@ void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc);
 bool hrc6000_dmr_is_transmitting(const hrc6000_dmr_t *e);
 
 void hrc6000_dmr_stats(const hrc6000_dmr_t *e, hrc6000_dmr_stats_t *out);
+
+#ifdef HRC5000_INT_LOG
+#define HRC_INT_LOG_N	40
+typedef struct {
+	uint8_t pass, flags, r51, r52, r42;
+	bool at_tick;
+	uint32_t dt;
+	uint8_t lc[9];	// page 2 from 0x00 (the LC / info data RAM) at the interrupt
+} hrc_int_rec_t;
+extern hrc_int_rec_t hrc_int_log[HRC_INT_LOG_N];
+extern volatile uint8_t hrc_int_n;
+#endif
+
+#ifdef HRC5000_TICK_LOG
+// Bench knob (issue 3): one call's timeline, timeslot ticks ('T') and system interrupts ('S') in order. A system
+// interrupt with flags arms it; it records until full, the board's probe task prints it, then it re-arms. A tick
+// record reads the voice port: all 27 bytes, and vh (a 16-bit hash of them), show whether and when it changes
+#define HRC_TICK_LOG_N	120
+typedef struct {
+	char kind;
+	uint8_t flags, r42, r51, r52, r90;
+	uint8_t ph;	// the engine's tick parity: which slot the tick starts
+	uint16_t vh;
+	uint8_t v[27];	// the voice port as read (DMR_VOICE_BYTES)
+	uint32_t dt;	// 'T': microseconds since the previous tick; 'S': since the tick
+} hrc_tick_rec_t;
+extern hrc_tick_rec_t hrc_tick_log[HRC_TICK_LOG_N];
+extern volatile uint8_t hrc_tick_n;
+extern volatile bool hrc_tick_armed;
+// Two consecutive ticks' snapshots of the voice RAM from offset 0, taken at tick records HRC_SNAP_AT and + 1
+#define HRC_SNAP_AT	40
+#define HRC_SNAP_LEN	240
+extern uint8_t hrc_tick_snap[2][HRC_SNAP_LEN];
+#endif
 
 #endif

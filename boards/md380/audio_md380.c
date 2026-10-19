@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // MD-380 PCM audio: I2S3 full duplex slave to the HR_C5000's built-in codec (docs/spec/hardware-md380.md 6.2).
-// The wiring and format are taken to be the DM-1701's (the same chip family, the same STM32 pins in the public pin
-// tables); which data line carries which direction is unconfirmed (bring-up stage 6).
+// The pins and format are the MD-380's own (the pins and AF numbers of its I2S3 set-up; 8 kHz, Philips, 16 bits in a
+// 32-bit channel, clock idle low); which data line carries which direction is unconfirmed (bring-up stage 6).
 //
 // The HR_C5000 drives CK (PC10) and WS (PA15); SPI3 receives the microphone on PC12 (I2S3_SD), I2S3ext sends speaker
 // PCM on PC11 (I2S3ext_SD). Philips standard, 16-bit data in 32-bit channels, 8 kHz, so every sample period has a left
@@ -70,21 +70,74 @@ static void dma_stop(void)
 	DMA1->HIFCR = DMA_HIFCR_CFEIF5 | DMA_HIFCR_CDMEIF5 | DMA_HIFCR_CTEIF5 | DMA_HIFCR_CHTIF5 | DMA_HIFCR_CTCIF5;
 }
 
+#ifdef MD380_I2S_MASTER
+// Bench knob (issue 3): the STM32 generates CK and WS (SPI3 master receive, I2S3ext slave transmit), for an HR_C5000
+// that doesn't drive its I2S. Only when nothing else drives the two lines: each must follow a pull-up and a pull-down
+#include "debuglink/dlog.h"
+static bool i2s_master;
+
+static bool line_free(GPIO_TypeDef *port, uint16_t pin)
+{
+	stm32_pin_in(port, pin, GPIO_PULLUP);
+	hal_delay_us(50);
+	bool up = (port->IDR & pin) != 0;
+	stm32_pin_in(port, pin, GPIO_PULLDOWN);
+	hal_delay_us(50);
+	bool down = (port->IDR & pin) != 0;
+	return up && !down;
+}
+
+// PLLI2S from the 2 MHz PLL input (HSE 8 MHz / M 4): N 128 = 256 MHz, R 5 = 51.2 MHz; with I2SDIV 50 and 32-bit
+// channels Fs = 51.2 MHz / (64 x 100) = 8 kHz
+static void plli2s_on(void)
+{
+	RCC->CR &= ~RCC_CR_PLLI2SON;
+	while (RCC->CR & RCC_CR_PLLI2SRDY) {
+	}
+	RCC->PLLI2SCFGR = (5u << RCC_PLLI2SCFGR_PLLI2SR_Pos) | (128u << RCC_PLLI2SCFGR_PLLI2SN_Pos);
+	RCC->CFGR &= ~RCC_CFGR_I2SSRC;
+	RCC->CR |= RCC_CR_PLLI2SON;
+	uint32_t t0 = hal_millis();
+	while (!(RCC->CR & RCC_CR_PLLI2SRDY) && (uint32_t)(hal_millis() - t0) < 10u) {
+	}
+}
+#endif
+
 static void hw_setup(void)
 {
 	__HAL_RCC_SPI3_CLK_ENABLE();
 	__HAL_RCC_DMA1_CLK_ENABLE();
+#ifdef MD380_I2S_MASTER
+	bool ck_free = line_free(PIN_PORT(PIN_I2S_CK), PIN_MASK(PIN_I2S_CK));
+	bool ws_free = line_free(PIN_PORT(PIN_I2S_WS), PIN_MASK(PIN_I2S_WS));
+	i2s_master = ck_free && ws_free;
+	dlog("i2s: ck %s, ws %s: %s", ck_free ? "free" : "driven", ws_free ? "free" : "driven",
+		i2s_master ? "STM32 master" : "slave (a line is driven)");
+	if (i2s_master) {
+		plli2s_on();
+	}
+#endif
 	stm32_pin_af(PIN_PORT(PIN_I2S_WS), PIN_MASK(PIN_I2S_WS), GPIO_AF6_SPI3, false, GPIO_NOPULL);
 	stm32_pin_af(PIN_PORT(PIN_I2S_CK), PIN_MASK(PIN_I2S_CK), GPIO_AF6_SPI3, false, GPIO_NOPULL);
 	stm32_pin_af(PIN_PORT(PIN_I2S_SD), PIN_MASK(PIN_I2S_SD), GPIO_AF6_SPI3, false, GPIO_NOPULL);
 	stm32_pin_af(PIN_PORT(PIN_I2S_EXT_SD), PIN_MASK(PIN_I2S_EXT_SD), GPIO_AF5_I2S3ext, false, GPIO_NOPULL);
 
-	// Philips, CKPOL high (as the DM-1701), 16-bit data in a 32-bit channel. Main: slave receive; ext: slave transmit
-	const uint32_t fmt = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_CKPOL | SPI_I2SCFGR_CHLEN;
+	// Philips, 16-bit data in a 32-bit channel, clock idle low (the MD-380's own I2S set-up; the DM-1701's is idle
+	// high: -DMD380_I2S_CKPOL=1). Main: slave receive; ext: slave transmit
+#ifndef MD380_I2S_CKPOL
+#define MD380_I2S_CKPOL	0
+#endif
+	const uint32_t fmt = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_CHLEN | (MD380_I2S_CKPOL ? SPI_I2SCFGR_CKPOL : 0u);
 	SPI3->I2SCFGR = 0;
 	I2S3ext->I2SCFGR = 0;
 	SPI3->I2SPR = 2;	// unused in slave mode; reset value
 	SPI3->I2SCFGR = fmt | SPI_I2SCFGR_I2SCFG_0;	// 01 = slave receive
+#ifdef MD380_I2S_MASTER
+	if (i2s_master) {
+		SPI3->I2SPR = 50u;					// I2SDIV 50, ODD 0, MCKOE 0
+		SPI3->I2SCFGR = fmt | SPI_I2SCFGR_I2SCFG_1 | SPI_I2SCFGR_I2SCFG_0;	// 11 = master receive
+	}
+#endif
 	I2S3ext->I2SCFGR = fmt;				// 00 = slave transmit
 	SPI3->CR2 = SPI_CR2_RXDMAEN;
 	I2S3ext->CR2 = SPI_CR2_TXDMAEN;
@@ -133,6 +186,13 @@ static bool hw_start(void)
 
 	// As the DM-1701: enable right after a WS rising edge (low, high, low, high) so both channels line up. Slave I2S in
 	// Philips mode must be enabled while WS is high. Interrupts off for the short window between the edge and enable
+#ifdef MD380_I2S_MASTER
+	if (i2s_master) {
+		I2S3ext->I2SCFGR |= SPI_I2SCFGR_I2SE;	// the slave transmitter first, then the master starts the clock
+		SPI3->I2SCFGR |= SPI_I2SCFGR_I2SE;
+		return true;
+	}
+#endif
 	if (!ws_wait(false) || !ws_wait(true) || !ws_wait(false)) {
 		dma_stop();
 		return false;
@@ -246,12 +306,14 @@ static bool start(audio_block_cb_t cb, void *ctx)
 		return true;	// already streaming: just the new callback
 	}
 	running = true;
+	md380_i2s_clock(true);	// the chip's set-ups leave CK and WS off (hardware-md380.md 4.7)
 	if (!hw_start()) {
 		// No I2S clock from the HR_C5000 (powered down, or its codec not running): blocks the DMA caught before the
 		// clock check gave up must not reach the callback
 		running = false;
 		pending = 0;
 		block_cb = NULL;
+		md380_i2s_clock(false);
 		return false;
 	}
 	return true;
@@ -264,6 +326,7 @@ static void stop(void)
 	hw_stop();
 	pending = 0;
 	block_cb = NULL;
+	md380_i2s_clock(false);
 }
 
 uint32_t md380_audio_overruns(void)

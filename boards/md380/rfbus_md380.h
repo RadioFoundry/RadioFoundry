@@ -12,7 +12,7 @@
 uint32_t md380_rfbus_lock(void);
 void md380_rfbus_unlock(uint32_t mask);
 
-// HR_C5000 transfer (hrc6000_bus_t.transfer): CS low, hdr_len header bytes, len data bytes, CS high
+// HR_C5000 transfer (hrc_bus_t.transfer): CS low, hdr_len header bytes, len data bytes, CS high
 bool md380_rfbus_modem_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx,
 				uint16_t len);
 // SKY72310 (sky72310_bus_t): one 16-bit word, and the lock detect line

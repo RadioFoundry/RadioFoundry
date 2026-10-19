@@ -211,7 +211,7 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 
 ### What the MD-380 lacks
 
-- No CTCSS or DCS yet: a channel with a tone opens on any carrier and sends no tone.
+- CTCSS works on air both ways. DCS isn't checked on a radio yet. A build with `CONFIG_SUBTONE=n` ([build switches](../build-config.md)) opens a channel with a tone on any carrier and sends no tone.
 - No roger beep, 1750 Hz burst or APRS on FM (the transmit tone path isn't written). APRS positions over DMR work.
 - No APRS receive.
 - MMDVM SFR and the split duplex repeater need the DMR chip of the DM-1701 (HR_C6000) and aren't built for the

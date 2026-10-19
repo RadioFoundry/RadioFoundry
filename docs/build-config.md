@@ -58,7 +58,7 @@ below are for the DM-1701.
 | Switch | Default | What it covers |
 |---|---|---|
 | `CONFIG_FM` | y | analog FM receive and transmit |
-| `CONFIG_SUBTONE` | = FM (MD-380: n) | CTCSS / DCS encode and decode |
+| `CONFIG_SUBTONE` | = FM | CTCSS / DCS encode and decode. MD-380: software decode from the ADC and PWM encode, 3.3 KB |
 | `CONFIG_FM_TX_TONES` | = FM (MD-380: n) | roger beep and 1750 Hz burst sent over the air (`docs/spec/radio-features.md` 3) |
 | `CONFIG_VOX` | = FM | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
@@ -138,7 +138,7 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | Variable | Board | Meaning |
 |---|---|---|
 | `MD380_BAND` | md380 | `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz): the band table, the frequency plan and the board name ("MD-380 VHF") |
-| `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_GRAY=1` / `-DMD380_CH_ACTIVE_HIGH=1` (channel switch code), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
+| `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_ACTIVE_HIGH=1` (channel switch polarity), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
 | `LTO` | 0 (MD-380, DM-1701: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller on the DM-1701 (20 KB with `LTO_3P=1`). The DM-1701 and MD-380 defaults needed it while their application areas were 336 KB and 275 KB; since the codec moved ([codec-placement.md](spec/codec-placement.md)) they have 720 KB and 464 KB, and it stays on for the smaller image. The DM-32 (csky) doesn't use it |
 | `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
 | `TCP_CONNS` | dm32 | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the DM-32UV, about 1.5 KB RAM each across TCP, HTTP and rigctld |
@@ -154,7 +154,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 
 | Board | Off by default | Why |
 |---|---|---|
-| md380 | `SUBTONE`, `FM_TX_TONES`, `APRS_RX` (maximal build too: `BOARD_UNSUPPORTED`) | no sub-audio or tone path written for the board yet; `APRS_IGATE` follows `APRS_RX` |
+| md380 | `FM_TX_TONES`, `APRS_RX` (maximal build too: `BOARD_UNSUPPORTED`) | no tone path or APRS receive written for the board yet; `APRS_IGATE` follows `APRS_RX` |
 | md380 | `SFR`, `HOTSPOT_SPLIT` (maximal build too) | HR_C6000 only |
 | md380 | `FONT_XL`, `AM_RX`, `BCAST_FM`, `NET_PPP` (off on most boards; the maximal build leaves them off here too) | a 160 px panel has no use for the font; no air band or broadcast receiver; PPP stands in for USB |
 | dm32 | `USB`, `USB_NETWORK` (maximal build too: `BOARD_UNSUPPORTED`) | no USB data port on the radio; PPP on the programming cable is its IP link |

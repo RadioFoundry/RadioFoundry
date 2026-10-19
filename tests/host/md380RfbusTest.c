@@ -9,7 +9,7 @@
 #include <string.h>
 #include "platform.h"
 #include "rfbus_md380.h"
-#include "modem/hrc6000/hrc6000.h"
+#include "modem/hrc5000/hrc5000.h"
 
 static int failures;
 
@@ -307,22 +307,23 @@ static void test_c5000_registers(void)
 static void test_c5000_driver(void)
 {
 	bus_reset();
-	static const hrc6000_bus_t bus = { .transfer = md380_rfbus_modem_transfer };
-	hrc6000_t dev;
-	hrc6000_attach_chip(&dev, &bus, HRC6000_CHIP_C5000);
+	static const hrc_bus_t bus = { .transfer = md380_rfbus_modem_transfer };
+	hrc5000_t chip;
+	hrc5000_attach(&chip, &bus, false);
+	hrc_t *dev = hrc5000_hrc(&chip);
 	uint8_t v = 0;
-	CHECK(hrc6000_write(&dev, 4, 0x10, 0x80));
-	CHECK(hrc6000_read(&dev, 4, 0x10, &v));
+	CHECK(hrc_write(dev, 4, 0x10, 0x80));
+	CHECK(hrc_read(dev, 4, 0x10, &v));
 	CHECK(v == 0x80);
 	CHECK(c5000.regs[0][0x10] == 0x80);	// the C5000's configuration page is 0 on the wire
-	CHECK(hrc6000_write(&dev, 1, 0x52, 0x08));
-	CHECK(hrc6000_read(&dev, 1, 0x52, &v));
+	CHECK(hrc_write(dev, 1, 0x52, 0x08));
+	CHECK(hrc_read(dev, 1, 0x52, &v));
 	CHECK(v == 0x08);
 	CHECK(c5000.regs[1][0x52] == 0x08);
 	static const uint8_t blk[] = { 0x69, 0x69, 0x96, 0x96, 0x96, 0x99, 0x99, 0x99 };
 	uint8_t back[sizeof(blk)];
-	CHECK(hrc6000_write_burst(&dev, 1, 0x10, blk, sizeof(blk)));
-	CHECK(hrc6000_read_burst(&dev, 1, 0x10, back, sizeof(back)));
+	CHECK(hrc_write_burst(dev, 1, 0x10, blk, sizeof(blk)));
+	CHECK(hrc_read_burst(dev, 1, 0x10, back, sizeof(back)));
 	CHECK(memcmp(blk, back, sizeof(blk)) == 0);
 	check_idle("the driver");
 	check_clean("the driver");

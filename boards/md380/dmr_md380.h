@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "modem/hrc6000/hrc6000_dmr.h"
+#include "modem/hrc_common/hrc6000_dmr.h"
 
 // --- Bring-up ---
 
@@ -34,14 +34,14 @@ void md380_dmr_set_trace(bool on);
 
 #include "config.h"
 #if CONFIG_DMR
-void md380_dmr_board_init(hrc6000_t *modem);	// once, from the radio init: pins, task
+void md380_dmr_board_init(hrc_t *modem);	// once, from the radio init: pins, task
 void md380_dmr_enter(void);	// the HR_C5000 has just been put in DMR (hrc6000_dmr_enter): engine on, interrupts on
 void md380_dmr_leave(void);	// leaving DMR: transmission dropped, interrupts off, engine off
 void md380_dmr_rx_restart(void);	// new channel in DMR
 bool md380_dmr_tx_active(void);	// the engine's slot state says a transmission is in progress
 void md380_dmr_tx_drop(void);	// abort a transmission now (radio retune or tx_off while one runs)
 #else	// built without DMR (CONFIG_DMR): the radio never enters DMR
-static inline void md380_dmr_board_init(hrc6000_t *modem) { (void)modem; }
+static inline void md380_dmr_board_init(hrc_t *modem) { (void)modem; }
 static inline void md380_dmr_enter(void) {}
 static inline void md380_dmr_leave(void) {}
 static inline void md380_dmr_rx_restart(void) {}

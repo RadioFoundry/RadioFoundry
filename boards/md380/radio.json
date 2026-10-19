@@ -9,7 +9,6 @@
     "Retevis RT3"
   ],
   "kind": "handheld",
-  "status": "testing",
   "readme": "TYT MD-380",
   "bands": "400-480 MHz or 136-174 MHz (one band per radio)",
   "power": "1 / 5 W",

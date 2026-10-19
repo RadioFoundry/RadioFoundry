@@ -23,12 +23,11 @@ addresses. Every fact carries a confidence tag as in [radios.md](radios.md):
 | **C** | Confirmed: manufacturer data, a datasheet, or our own bench work on the radio |
 | **D** | Documented by our own tool or schematic reading; used rarely. Facts that rest only on public notes we cannot name are marked (unverified) instead |
 | **unverified** | Reported in public notes, a review or a forum we cannot name or cannot check, with no independent basis. Needs a radio |
-| **F** | A value from [ref] or [gotchas] (our own notes) or carried over from a sibling radio, not checked on this radio |
+| **F** | A value from [gotchas] (our own notes) or the bench or carried over from a sibling radio, not checked on this radio |
 | **?** | Not found, contradictory, or our own assumption. Needs a radio |
 
 The sources are listed in section 18 and cited by the short names used there ([SKY], [ST],
-[gotchas], [ref]). [gotchas] is [gotchas.md](gotchas.md) in this repo;
-[ref] is the prose notes of the reference port (kept outside the repository), facts only.
+[gotchas]). [gotchas] is [gotchas.md](gotchas.md) in this repo.
 
 ---
 
@@ -82,14 +81,14 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 |---|---|---|
 | PA0 | ADC1 IN0: volume knob position | (unverified); a TX LED function here is also reported (unverified, ?) |
 | PA1 | ADC1 IN1: battery voltage | (unverified) |
-| PA2 | ADC1 IN2: QT_DQT_IN, sub-audio tone input | (unverified); stock decodes CTCSS / DCS in software (?) |
+| PA2 | ADC1 IN2: QT_DQT_IN, sub-audio tone input | (unverified); stock decodes CTCSS / DCS in software; ODR samples it with `CONFIG_SUBTONE` (section 6.4) |
 | PA3 | ADC1 IN3: VOX, mic level | (unverified) |
 | PA4 | DAC1: APC / TV (PA power reference in TX, front-end tuning in RX) | (unverified); the double use (?) |
 | PA5 | DAC2: MOD2_BIAS (reference oscillator bias) | (unverified); value from [gotchas] 11.1 (F) |
 | PA6 | Keypad row K1 | (unverified) |
 | PA7 | POW_C, power latch | (unverified) |
 | PA8 | SAVE: enable of the 5C rail (U404), high = on (5.7) | (C) schematic and stock firmware; output, driven high |
-| PA9 | VCOVCC_SW: RX or TX VCO supply, high = receive VCO, low = transmit VCO | (F) [ref] |
+| PA9 | VCOVCC_SW: RX or TX VCO supply, high = receive VCO, low = transmit VCO | (F) bench |
 | PA10 | DMR_SW: receiver IF to the HR_C5000 | (unverified); low in TX, high in RX (F) [gotchas] 2.6 |
 | PA11 / PA12 | USB OTG_FS D- / D+ | (unverified) |
 | PA13 | W/N_SW, IF bandwidth; also SWDIO | (unverified); polarity (?) |
@@ -102,11 +101,11 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 |---|---|---|
 | PB0 | ADC1 IN8: RSSI | (unverified) |
 | PB1 | ADC1 IN9: BUSY, the receiver's noise squelch level | (unverified); polarity (?) |
-| PB2 | FM_SW, FM receive path select | (unverified); polarity (?) |
+| PB2 | FM_SW, FM receive path select | high in FM receive (measured on ODR) |
 | PB3 / PB4 / PB5 | SPI1 SCK / MISO / MOSI, SPI flash (AF5) | (unverified) |
 | PB6 / PB7 | I2C1 SCL / SDA | (unverified); nothing on it is known; unused |
-| PB8 | SPK_C, speaker mute | (unverified); high = muted (?) |
-| PB9 | AFCO, audio amplifier enable | (unverified); high = on (?) |
+| PB8 | SPK_C, speaker mute | high = muted (measured on ODR) |
+| PB9 | AFCO, audio amplifier enable | high = on (measured on ODR) |
 | PB10 / PB11 | Channel switch ECN2 / ECN3 | (unverified) |
 | PB12 | HR_C5000 voice port chip select | (F) [gotchas] 2.6 |
 | PB13 / PB14 / PB15 | SPI2 SCK / MISO / MOSI, HR_C5000 voice port (AF5) | (F) [gotchas] 2.6 |
@@ -122,7 +121,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PC4 | RF_APC_SW, PA power loop on | (unverified) |
 | PC5 | 5TC, transmitter supply | (unverified) |
 | PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice |
-| PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); unused |
+| PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); TIM3 CH2 (AF2) with `CONFIG_SUBTONE` (section 6.4), otherwise a low output |
 | PC8 | BEEP (TIM8 CH3) | (unverified); unused |
 | PC9 | 5RC, receiver supply | (unverified) |
 | PC13 | HR_C5000 configuration clock, idles low (section 4.2) | stock bus pin; was wrongly PE3 |
@@ -154,14 +153,14 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PE0 | Green LED (RX) | (unverified) |
 | PE1 | Red LED (TX) | (unverified) |
 | PE2 | HR_C5000 configuration port chip select | (unverified) |
-| PE3 | HR_C5000 SDO -> MCU (input, pull-up) | (F) [ref] |
-| PE4 | SKY72310 clock (idles high) | (F) [ref] |
-| PE5 | MCU -> HR_C5000 SDI, also the SKY72310 data | (F) [ref] |
+| PE3 | HR_C5000 SDO -> MCU (input, pull-up) | (F) bench |
+| PE4 | SKY72310 clock (idles high) | (F) bench |
+| PE5 | MCU -> HR_C5000 SDI, also the SKY72310 data | (F) bench |
 | PE6 | DMR_SLEEP, HR_C5000 power down (high = down) | (unverified); polarity as the HR_C6000 (?) |
 | PE7-PE10 | FSMC D4-D7 | (unverified) |
 | PE11 | PTT, active low | (unverified) |
 | PE12 | External PTT (accessory jack), active low | (unverified) |
-| PE13 | FM_MUTE | (unverified); high = muted (?) |
+| PE13 | FM_MUTE | high = FM audio through, low = muted (measured on ODR) |
 | PE14 / PE15 | Channel switch ECN0 / ECN1 | (unverified) |
 
 ### 2.6 Reset-time levels and the SWD pins
@@ -189,9 +188,10 @@ Our allocation, following the DM-1701 (`boards/dm1701`), since the same MCU pins
 | EXTI0 / EXTI1 / EXTI2 (PC0-PC2) | HR_C5000 timeslot / system / RF TX interrupts (falling edge) | 5 |
 | TIM7 | 30 ms one-shot after the RF TX interrupt: the burst's PA off (section 5.6) | 5 |
 | DMA1 Stream0 ch0 / Stream5 ch2 | I2S3 receive / I2S3ext transmit (PCM, section 6.2) | 6 |
-| DMA2 Stream4 ch0 | ADC1 continuous scan (circular, no interrupt) | - |
+| DMA2 Stream4 ch0 | ADC1 continuous scan (circular; with `CONFIG_SUBTONE` half and full transfer interrupts feed the sub-audio detector, section 6.4) | 7 with `CONFIG_SUBTONE`, else none |
 | USART3 | GPS NMEA receive (RXNE interrupt into a ring buffer) | 7 |
 | TIM8 | LCD backlight PWM, CH1 on PC6 | - |
+| TIM3 | sub-audio tone PWM, CH2 on PC7, only with `CONFIG_SUBTONE` and only while a tone is sent (section 6.4) | 6 |
 | OTG_FS | USB (platform) | platform |
 
 Priority 5 is FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` (`boards/md380/FreeRTOSConfig.h`): the modem ISRs
@@ -205,71 +205,224 @@ atomic.
 ### 4.1 Overview
 
 The HR_C5000 is the HR_C6000's predecessor in the same family: DMR layer 1/2 baseband, two-point modulation outputs,
-an IF input from the receiver, the AMBE-less voice frame interface, and an audio codec with I2S (unverified).
-ODR drives it with the HR_C6000 driver (`drivers/modem/hrc6000`) in its C5000 variant, `hrc6000_attach_chip(...,
-HRC6000_CHIP_C5000)`: the register map is close enough that the slot engine is shared, and the variant flag selects
-the differences in 4.3. There is no public HR_C5000 data sheet; the differences come from [gotchas] 2.6, 5.2, 11.1 and
-the reference port's notes [ref] (F).
+an IF input from the receiver, and an audio codec with I2S. ODR has a driver of its own for it,
+`drivers/modem/hrc5000`, which shares only the chip-independent code (`drivers/modem/hrc_common`: the bus accessors and
+the DMR slot engine) with the HR_C6000 driver. The shared engine reaches the chip through a description struct
+(`hrc_chip_t`); the MD-380 build links no HR_C6000 code. The HR_C5000 user manual (HR_C5000 用户手册 V2.0, Chinese,
+35 pages, `datasheets/C5000/hrc5000.pdf`) is the source for the register names and reset values in 4.6 (F). It has no
+register map for 0x25, 0x26, 0x37, 0x39, 0x3D, 0x41, 0x45, 0x47, 0x48 or 0xB9-0xBB; those values are (?) until a radio
+confirms them.
 
 ### 4.2 Configuration port and the synthesizer bus
 
-Bit-banged SPI on PE2 (CS), **PC13 (clock)**, PE5 (MCU -> chip) and **PE3 (chip -> MCU)** (F) [ref]. Unlike the
+Bit-banged SPI on PE2 (CS), **PC13 (clock)**, PE5 (MCU -> chip) and **PE3 (chip -> MCU)** (F) bench. Unlike the
 HR_C6000 on the DM-1701, the clock idles LOW. Per bit: clock high, set MOSI, clock low (the chip samples MOSI on this
-falling edge), then the MCU samples MISO. Both PC13 and PE3 are not where the pin tables first put them (PE3 clock,
-PE4 data in); on those pins every read returned 0xFF. A transaction is 3 bytes for a register write (page, register,
-value) and 2 bytes plus the data for a read (0x80 | page, register), with CS low around the whole frame. A few
-cycles per half bit is enough; speed is not a constraint.
+falling edge), waits, then samples MISO. The chip drives the next MISO bit only after the falling edge: sampled at
+once, every read comes one bit late (0x10 read back 0x40 after 0x80 was written, and the LC 00 00 00 00 00 63 30 5A 5E
+read 80 00 00 00 00 31 98 2D 2F) (F) on air 2026-10-18. Register reads in logs taken before that fix (issue 3,
+issue 66, up to 2026-10-18) are shifted right by one bit. On any other pin choice every read returned 0xFF. A
+transaction is 3 bytes
+for a register write (page, register, value) and 2 bytes plus the data for a read (0x80 | page, register), with CS low
+around the whole frame. A few cycles per half bit is enough; speed is not a constraint.
 
 The SKY72310 has its own clock (PE4) and chip select (PD11); only the data line (PE5) is shared with the HR_C5000
-(F) [ref]. Its clock idles high: the MCU sets the data bit while the clock is high, drops the clock, raises it again,
+(F) bench. Its clock idles high: the MCU sets the data bit while the clock is high, drops the clock, raises it again,
 and the chip latches the bit on the rising edge. Because PE5 is shared, a transaction on either chip is one masked
 section (`md380_rfbus_lock`), so a modem ISR's register access never lands inside a synthesizer word or the reverse.
 
-### 4.3 Register differences from the HR_C6000
+### 4.3 Differences from the HR_C6000
 
-| Item | HR_C6000 | HR_C5000 | Driver |
+The chip description in `hrc5000.c` carries these; the HR_C6000 description in `hrc6000.c` carries the other column.
+
+| Item | HR_C6000 | HR_C5000 | Status |
 |---|---|---|---|
-| Configuration page | 4 | 0 | `hrc6000_page()` maps page 4 to 0 on every access (F) [gotchas] 2.6 |
-| Reg 0x10 in DMR | 0x6E | 0x6B simplex, 0x4F on a repeater; never 0x6E | `hrc6000_dmr_mode_value()` (F) |
-| 0x20-0x22 at TX start | access policy and vocoder control written | not written; 0x21 = 0x00 and 0x22 = 0x07 once at init | `hrc6000_tx_start_access()`, `hrc6000_power_on_init()` (F) |
-| Reg 0x5F (sync / slot report) | read at every burst | absent: DMO / RMO come from the channel | `hrc6000_has_sync_reg()` (F) |
-| Embedded LC LCSS | chip | MCU writes it in 0x50 for every voice burst: A-F = 0x08 0x19 0x2B 0x3B 0x4A 0x58 | `hrc6000_voice_lcss()` (F) |
-| Own DMR ID 0x14-0x16 | big endian | 0x14 holds the low byte | `hrc6000_set_dmr_id()` (F) [ref] |
-| CRC_MCU_Control (0x40 bit 3) | present | absent: for CSBK, MBC header and data header write 10 bytes and the chip appends the CRC | `hrc6000_has_mcu_crc()`, `hrc6000_chip_crc_len()` (F) [gotchas] 5.2 |
-| TX / RX switch in DMR | full DMR table not needed | small sets, below | `hrc6000_c5000_dmr_path()` (F) [ref] |
+| Configuration page | 4 | 0 | (F) bench |
+| Reg 0x10 in DMR | 0x6E | 0x6B simplex, 0x4F on a repeater | (F) manual, bit 2 = ISRepeater |
+| Own DMR ID 0x14-0x16 | big endian | 0x14 holds the low byte | (F) manual (LocalSreAddress L, M, H) |
+| TX start / stop | access policy and vocoder control written | `tx_begin` / `tx_end` hooks absent | (?) the vocoder runs on the MCU, so 0x22 (EncodeStart) and 0x60 are not used for voice |
+| Reg 0x5F (sync / slot report) | read at every burst | absent: DMO / RMO come from the channel | (?) not in the manual's table |
+| Embedded LC LCSS | chip | MCU writes it in 0x50 for every voice burst: A-F = 0x08 0x19 0x2B 0x3B 0x4A 0x58 | (?) |
+| CRC_MCU_Control (0x40 bit 3) | present | absent: for CSBK, MBC header and data header write 10 bytes and the chip appends the CRC | (?) |
+| Mic gain | 0xE4 = 0x20 + gain | 0x0F = raw value (`C5000_MIC_GAIN` in `radio_md380.c`) | (?) |
 
-The small DMR sets (F) [ref]:
+DMR set-up (`hrc5000_set_mode_dmr`) writes 0x06 before the reset-release block (0x00 = 0xFF) and FM after it (?);
+it runs once per mode change; per-burst switching (`hrc5000_dmr_path`) touches only the
+RF side:
 
 - TX: 0x0D = 0x8C, 0x0E = 0x44, mic gain, 0x37 = 0xC2, 0x25 = 0x0E, 0x26 = 0xFE (RX IF and audio off), 0x45 / 0x46 =
   the calibrated DMR modulation pair, 0x35 = 0x1E, 0x3F = 0x04.
 - RX: 0x0E = 0x44, mic gain, 0x37 = 0xC2, 0x25 = 0x0E, 0x26 = 0xFD.
 
-The rule of [gotchas] 3.3 holds: the full DMR mode set-up runs once per mode change; per-burst switching only touches
-the RF side. VHF radios swap I and Q with 0x01 = 0xF0 (F) [ref]; not written yet (?: confirm on a VHF radio which
-value the receiver needs).
+VHF radios swap I and Q with 0x01 = 0xF0 after the init. The manual gives 0x01 as the TX and RX IQ/QI bits; which value
+the receiver needs is still to be confirmed on a VHF radio (?).
 
-FM uses the HR_C6000 FM tables through the page mapping, then the C5000's own reference registers (4.5). Whether the
-FM TX deviation table and the FM RX feed-through (0x36) mean the same on the C5000 is unconfirmed (?).
+FM (`hrc5000_set_mode_fm_rx`, `hrc5000_set_mode_fm_tx`) uses its own tables. The TX deviation register 0x35 takes 0x30
+(narrow) or 0x3C (wide) in FM and 0x1E in DMR; the narrow / wide mapping is inferred (?). CTCSS and DTMF are not
+implemented for this chip yet.
 
 ### 4.4 Voice port
 
 Hardware SPI2 (PB13-PB15, AF5) with chip select PB12, commands 0x03 (write) and 0x83 (read) followed by 0x00 and 27
-bytes (one voice burst's payload) (F) [gotchas] 2.6. ODR uses SPI mode 2 at 4.5 MHz as on the DM-1701 (?).
+bytes (one voice burst's payload) (F) bench. ODR uses SPI mode 2 at 1.125 MHz (F) on air 2026-10-18. At 4.5 MHz
+transmit voice decodes on another radio, but received voice reads back with the first bits of every byte wrong: the
+C0 words check only two bits off their place and C1 never does. At 1.125 MHz the three frames are in place and C1
+checks too; the first data byte after the command still has a few bit errors that the Golay codes correct (?).
+
+The voice RAM is 32 bytes: a longer read wraps. A received burst is in it as the three 72-bit AMBE+2 air frames in a
+row (the HR_C6000 layout, `core/dmr/ambe/ambeFec.h`), but only while the decoder runs (4.8).
 
 ### 4.5 Reference oscillator
 
 The calibration's reference tune byte t (section 11) sets regs 0x47 = 0x04 = 0x7F - t, 0x48 = 0x00 if t < 0x80
-else 0x03, and DAC2 = t x 4 + 0x600 (F) [gotchas] 11.1. `hrc6000_c5000_set_ref()` and `hrc6000_c5000_ref_dac()`.
+else 0x03, and DAC2 = t x 4 + 0x600 (F) bench. `hrc5000_set_ref()` and `hrc5000_ref_dac()`; the stored tune is
+re-applied by every full mode set-up.
 
 ### 4.6 Power and start-up
 
-PE6 low wakes the chip; ODR waits 12 ms before the first access, as for the HR_C6000 (?). `hrc6000_power_on_init` then
-runs the HR_C6000 sequence through the page mapping, with the C5000's 0x21 / 0x22 values. After init the driver reads
-0x10 back for the diagnostics page (bring-up stage 4).
+PE6 low wakes the chip; ODR waits 12 ms before the first access. `hrc5000_power_on` then programs the clock
+(0x0A, 0x0B, 0x0C, 0xB9-0xBB) and enters FM receive. After init the driver reads 0x10 back for the diagnostics page
+(bring-up stage 4).
 
-Sources: [gotchas] 2.6, 3.3, 5.2, 11.1; [ref] notes (facts only).
+### 4.7 Checked against the HR_C5000 user manual
 
----
+The manual's register table (section 2, "参数配置") runs from 0x00 to 0x90 with reset values. What it says about the
+registers this driver writes:
+
+| Register | Manual | Driver value | Status |
+|---|---|---|---|
+| 0x0A | CLKOutDiv, the output clock divider on CKOut (reset 0x02) | 0x80, then 0x00, in the clock step | Not a clock source switch; the effect is unknown (?) |
+| 0x0B | PLLM (reset 0x0A) | 0x28 | (F): with XTAL 29.4912 MHz, M = 40 |
+| 0x0C | PLLBP bit 7 (0 = PLL, reset 0x82 = bypass), PLL SLEEP bit 6, PLLDO bits 5-4, PLLN bits 3-0 | 0x33 | (F): N = 3, DO = 3 (divide by 8), PLL on. 29.4912 x 40 / 3 / 8 = 49.152 MHz, the manual's system clock |
+| 0xB9-0xBB | not in the register table | 0x32, 0x22, 0x11 | Not confirmed. The manual gives the system clocks as fixed from 49.152 MHz: DMR 9.8304 MHz, FM 8.192 MHz, CodeC 12.288 MHz, external CodeC 24.576 MHz (?) |
+| 0x18 / 0x19 | section 6 says the system clock is set here; the table defines them as group address registers | not written | Contradiction in the manual; unresolved (?) |
+| 0x00 | active-low resets: bit 7 DMR protocol, bit 6 PHY, bit 5 codec, bit 4 FM, bit 3 vocoder, bit 2 UDC/DDC, bit 1 I2S, bit 0 CodeC (0 = reset) | 0x28 | DMR frames go out with DMR protocol and PHY at 0, so 0 is a running block here and the manual's polarity looks inverted (?) |
+| 0x01 | bit 7 RFTransIQMode, bit 6 RFRecvIQMode (0 = IQ, 1 = QI) | 0xB0 (UHF), 0xF0 (VHF) | UHF: TX QI, RX IQ. VHF: both QI (?) |
+| 0x10 | ModulatorMode bit 7 (0 DMR, 1 FM), ISRepeater bit 2 | 0x6B simplex, 0x4F repeater, 0x80 FM | (F) |
+| 0x11 | LocalChanMode bit 7 (1 = valid) | 0x80 | (F) |
+| 0x14-0x16 | LocalSreAddress L, M, H (low byte first) | DMR ID, low byte first | (F) |
+| 0x1F | LocalEMB, colour code in bits 7-4 | 0x10 (CC 1) | (F) |
+| 0x06 | Vocoder638 bit 7 (0 = CMX638 interface off); bit 0 LocalVocoderControl (1 = the CPU controls the vocoder switch) | 0x21 | Consistent; the other bits are not described (?) |
+| 0x0D | Codec Ctrl, 0xC8 reset: bit 7 MCU controls the codec signals | 0x8C | Bit 7 set; the other bits unconfirmed (?) |
+| 0x0E | HPoutEn, bit 7 (0 = off, reset 0x40) | 0x44 | Headphone output off; the value stays until a test shows otherwise (?) |
+| 0x0F | ADLinVol (reset 0xB8) | 0xC8 | In range; the function is not confirmed (?) |
+| 0x1D, 0x1E | LocalUnaddress and LocalBroadCast, receive addresses in bits 7-4 | 0xFF and 0xF1 | Reads as address 0xF; confirm on air (?) |
+| 0x21 / 0x22 | access policy; EncodeStart bit 7, EncodeStop bit 6 | not written by default | See 4.3 (?) |
+| 0x83, 0x87 | InterClear (write 1 to clear), SendStopMask | 0xFF, 0x00 | (F) for the clear |
+| 0x30-0x33 | BCLK / LRCK counts for the external codec I2S: Mclk / BCLK and Mclk / LRCK (reset 0) | 0x00 0x17 0x02 0xFF, from the 0x11 block | (F) [ref]: 24 and 768 counts, so BCLK 512 kHz and LRCK 16 kHz from a 12.288 MHz Mclk, or 256 kHz and 8 kHz from 6.144 MHz. Which Mclk the board gives is not known (?) |
+| 0x36 | not in the manual. The HR_C6000's manual has bit 7 = external codec BCLK / LRCK off | 0xF0 from the 0x11 block; `hrc5000_i2s_clock()` writes 0x70 (bit 7 clear) while a PCM stream runs | See 4.8 (?) |
+
+Not in the manual: 0x25, 0x26, 0x36, 0x37, 0x39, 0x3D, 0x41, 0x45, 0x47, 0x48 and 0xB9-0xBB. Their values stay unconfirmed (?)
+until they are checked on a radio.
+
+### 4.8 I2S clocks and the receive interrupts
+
+Facts from the user manual and the reference port's notes ([ref]; the register values were read from stock firmware
+there). Tester logs: [issue 3](https://github.com/sfowlr/OpenDigitalRadio/issues/3).
+
+| Fact | Basis |
+|---|---|
+| Before any ODR write the chip's I2S pins toggle (the reset state has the clocks running); after the set-ups they are driven but do not move (`ck 0 ws 0`) | tester logs |
+| Every set-up's 0x11 block writes 0x36 = 0xF0. On the HR_C6000 bit 7 of 0x36 turns the external-codec BCLK / LRCK off; the C5000 has the same pins (17-20, BCLK / LRCK / ADCDAT / DACDAT) | (F) [ref], HR_C6000 manual |
+| The stock firmware changes 0x36 at run time, in a mute / unmute routine | (F) [ref] |
+| ODR never wrote 0x36 after the block, so with the same bit meaning the clocks stay off. Every other register of the DMR and FM set-ups matches the stock sequence, and the reset register tries (0x28, 0x2A, 0x3F, 0xFF) changed nothing | (F) [ref], tester logs |
+
+The driver writes 0x36 = 0x00 while a PCM stream runs and puts 0xF0 back when it stops. Clearing bit 7 alone (0x70)
+left the clocks stopped; with 0x00 they run and DMR transmit voice decodes on another radio (issue 66, 2026-10-17).
+On receive the PCM doesn't reach the speaker yet: with every value from 0x00 to 0x60 the speaker plays only a faint
+TDMA buzz, which sounds like the receiver's audio passed through (4.9)
+(`hrc5000_i2s_clock()`, called from `audio_md380.c`); a full set-up re-applies the state, since its block rewrites 0x36.
+The value is a hypothesis (?): the bit is not in the C5000 manual, and bits 6-4 are unknown. `-DHRC5000_I2S_CTL_ON=<v>`
+tries another value (0x00, 0x30). With the clocks running, the diagnostics line `i2s ck N ws N` (`MD380_I2S_PROBE`)
+gives the rates. The Mclk arithmetic in 4.7 says 16 kHz or 8 kHz for WS; the STM32 side assumes 8 kHz with 32-bit
+channels, so a 16 kHz WS means the sample rate or the channel length needs changing (?).
+
+Interrupts (manual section 7, with the sub-status registers):
+
+| Item | Fact |
+|---|---|
+| 0x82 flags | bit 7 send request rejected, bit 6 send start (sub-status 0x84, mask 0x85), bit 5 send end (0x86, mask 0x87), bit 4 late access, bit 3 data received (0x51 gives type and CRC), bit 2 information received (sub-status 0x90: 0 = the whole message passed its check, 1 = failed), bit 1 abnormal exit, bit 0 physical-layer receive. Only the system interrupt needs the write-1 clear in 0x83 |
+| 0x51 | bits 7-4 data type, bit 3 PI, bit 2 CRC (0 = good), bits 1-0 sync class (0 none, 1 voice, 2 data, 3 RC) |
+| 0x52 | bits 7-4 received color code, bits 3-0 reserved; the reference port reads the slot (timecode) from bit 2 |
+| Pins | TIME_SLOT_INTER every 30 ms in layer 2, used by the CPU to decide whether and what to send in the next slot; RF_RX_INTER / RF_TX_INTER the receive / transmit switch; SYS_INTER the system interrupt |
+| Voice | The CPU reads and writes the voice port (SPI2 on this board) at times it derives from the captured start and end of a call; voice is not announced per burst by the system interrupt |
+
+The tester's logs fit this: flag 0x04 (information) carries the sync-class reports, 0x08 (data) the others, and 0x52
+reads 0x08 or 0x18 because the color code is only valid in a report that decoded a burst with one (a voice sync burst
+has none). Whether the engine can take a received voice call from these reports alone, or must run its voice
+reads from the 30 ms tick as the manual describes, is open (?).
+
+### 4.9 DMR receive
+
+The HR_C5000 doesn't report each received burst: there is no voice class report per burst as on the HR_C6000. With
+the reads fixed (4.2), a call shows as (F) on air 2026-10-18, against an AnyTone AT-D878UV:
+
+| Event | What the chip gives |
+|---|---|
+| Voice LC header, terminator | System interrupt 0x08 with 0x51 = 0x12 / 0x22 (type, class 2) and the LC in page 2 from 0x00 |
+| Voice | Nothing per burst. The voice RAM changes at every tick, the other slot's ticks included |
+| Late entry, information | 0x10 and 0x04: the LC of the superframe |
+
+The manual's receive flow: with the CPU in charge of the vocoder (0x06 bit 0, which ODR sets), the CPU starts the
+decoder after the voice LC header or late entry interrupt by writing 0x22 bit 5 (DecodeStart), and stops it at the
+terminator or loss of sync (bit 4, DecodeStop). Without DecodeStart the voice RAM never holds received voice (0 of 324
+frames checked at any bit offset); with it, the read at the tick after the call's slot holds that slot's burst.
+
+The slot engine does this for chips with `rx_voice_read` (`hrc_chip_t`): a header, late entry or information report
+starts the decoder (0x22 = 0x27, bits 2-0 keeping the 0x11 block's 0x07), the voice port is read at every tick, the
+first read whose frames check (two of three C0 words with at most one error) locks the slot, and that slot's reads
+go to the stack as bursts A to F. A read that hasn't changed, or has no frame that checks, is a lost burst; six in a
+row end the reception (0x22 = 0x17). The chip's voice class reports are ignored, and its 25 ms report delay doesn't
+count as out of step.
+
+On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
+2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),
+but the speaker plays only a faint buzz (4.8). Leads, not checked: 0x0E (HPoutEn, bit 7; ODR writes 0x44, which
+leaves it off), 0x37 (DAC gain), the I2S data line directions and sample rate (unknown 17).
+
+### 4.10 Codec and audio routing
+
+DMR receive audio plays with the LINEOUT values below (on air, 2026-10-19: our test, not authoritative). This section
+keeps the manual's facts apart from what our tests showed and what we only suspect.
+
+**From the user manual [C5K] (C):**
+
+| Item | Fact |
+|---|---|
+| Audio pins | 2 HPOUT, 10 LINEOUT, 5-8 MIC2 / MIC1 differential inputs, 11 MICBIAS |
+| External-codec I2S | 17 ADCDAT (in), 18 BCLK (out), 19 LRCK (out), 20 DACDAT (out): for an external codec |
+| SPI ports | SPI0 = pins 53-57 (the configuration port; the chip is the slave). SPI1 = pins 33-36, "generic vocoder interface" (the voice port; slave). SPI2 = pins 37-43, "codec and vocoder interface" (C_CS and C_SCLK are outputs: the chip drives it) |
+| SPI0 command, bits 2-0 | 000 configuration registers, 001 auxiliary table, 010 information data, **011 tone data**, 100 CMX638, 101 AMBE3000; bit 7 = read |
+| Tone data | the CPU writes the codec over SPI0 with command 0x03, address 0x00 and two bytes; the required write interval is missing from the manual's text |
+| 0x06 | bits 7-6 vocoder interface (AMBE3000 / CMX638), 5 DMRFrom (1 = from SPI1), 4 VocoderFrom, 3 SPIFrom, 2 CodeCMode (0 internal, 1 external), 1 OpenMusic, 0 CPU vocoder control |
+| MUX4 (codec source) | 0x06 bit 1 = 1: SPI >> codec (highest priority); else 0x10 bit 7 = 1 (FM): codec <> FM; else (DMR): codec <> vocoder |
+| 0x0D | bit 7 CPU controls the codec, 6 suspend, 5 sleep, 4 Switch2 (K2), 3 anti-pop; reset 0xC8 |
+| 0x0E | bit 7 HPoutEn, 6 HPMute, 5-4 HP volume (0 / 2 / 4 / 6 dB), **3 LineOutEn**, 2 Mic1En, 1 Mic2En, 0 Switch1; reset 0x40 |
+| 0x0F | bits 7-3 ADLinVol (+12 to -34.5 dB in 1.5 dB steps), 2-1 MicVol (0 / 6 / 12 / 20 dB) |
+
+The driver writes 0x0E = 0x44 (headphone muted, line out off, mic 1 on) and 0x06 = 0x21 in DMR.
+
+**What the tests showed (on air, 2026-10-19; not authoritative).** The full log is in the `feature/md380_follow_up`
+pull request. Each test started from a power-on, and register reads confirmed the writes took effect.
+
+- Tone data works in FM: a 1 kHz square wave (16-bit, MSB first, one sample every 125 us) played cleanly with 0x0E = 0xBD,
+  which needs bit 2 (Mic1En) and bit 0 (Switch1) set.
+- In DMR, no HPOUT-side setting played the MCU's samples, by I2S or as tone data. With 0x0E bit 2 set, DMR mode feeds
+  the codec's input to the speaker (acoustic feedback). FM_SW and FM_MUTE both high plays the receiver's 4FSK as a buzz.
+- 0x06 bit 2 = 1 (external codec) during a call stops the voice decoding until the next set-up.
+- During a received call the chip sends the MCU a slow ramp near 0x55F8 over I2S (the mic converter's level), never
+  the samples the MCU sent.
+- A handheld transmitting a few feet away puts a TDMA buzz into the audio amplifier: faint pulsing in a test can be
+  that, not a routing result.
+
+**The fix (our test, on air 2026-10-19; not authoritative).** The speaker amplifier is fed from the codec's LINEOUT
+(pin 10, 0x0E bit 3), not HPOUT. The tests above never had 0x0D bit 4 (Switch2) and 0x0E bit 3 (LineOutEn) set together
+while a call played. `hrc5000_speaker_voice()` now writes, when a DMR PCM stream opens the route: 0x0D = 0x9C, 0x0E = 0x4C
+(HPMute stays set, HPoutEn stays off, Mic1En on) and 0x37 = 0xC2, with 0x36 = 0x00 already written; it writes 0x0D = 0x8C and
+0x0E = 0x44 back when the route closes, which should also end the buzz after a call. `-DHRC5000_SPK_VOICE=0` leaves it out.
+On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on 446.075 TS1, with the build at 17d89001 plus the codec
+move: received speech plays clear from the speaker and transmit is clear (one 10 s call: 498 frames, 10 bit errors, 3
+concealed, 0 lost). Why both bits are needed together isn't in the manual (?). Not yet checked with it: the buzz after
+a call or after our own transmit, the key beep in DMR and FM, and FM receive.
 
 ## 5. RF
 
@@ -302,7 +455,7 @@ oscillator. The lock detect output's configuration isn't in our copy of the data
 ### 5.3 Frequency plan
 
 Assumed from the MD-9600, which has the same TCXO and synthesizer and whose notes give the IF (F) [radios.md MD-9600
-section], [ref]:
+section]:
 
 | Item | Value | Tag |
 |---|---|---|
@@ -320,7 +473,7 @@ plan shows at once on the bench: no lock (diagnostics "pll UNLK") or a carrier o
 
 Receive: VCOVCC_SW selects the RX VCO, the synthesizer is tuned, 5RC (PC9) powers the receiver, DAC1 sets the
 front-end tuning voltage from the calibration (11.2), the GT3136 IF goes to the HR_C5000 with DMR_SW (PA10) high, and
-FM_SW (PB2) selects the FM audio path in FM (unverified, polarities ?). W/N_SW (PA13) sets the IF filter for 12.5 or 25 kHz
+FM_SW (PB2) is high in FM receive (6.1). W/N_SW (PA13) sets the IF filter for 12.5 or 25 kHz
 (unverified, polarity ?).
 
 Transmit: 5RC off, DMR_SW low, VCOVCC_SW to the TX VCO, the synthesizer to the TX frequency and locked, then 5TC
@@ -332,6 +485,17 @@ and refuses to key without it.
 RSSI is an analog level on PB0 and the receiver's noise level ("BUSY") on PB1 (unverified). Neither curve is known (?). ODR
 reports rssi_dbm = -130 + raw x 90 / 4095 and noise = raw / 16 as placeholders, and shows both raw values on the
 diagnostics page so a bench session with a signal generator can fit them.
+
+Measured on ODR (UHF, 446.000 MHz, raw ADC, a second radio nearby; 2026-10-14):
+
+| | RSSI (IN8) | BUSY (IN9) |
+|---|---|---|
+| no signal | 690-760 | 1340-1620 |
+| FM carrier, shown as -71 dBm | 2720-2732 | 39-81 |
+
+BUSY falls with a signal (larger = more noise). With the USB programming cable in the accessory jack the receiver
+doesn't detect a signal at all (RSSI stays near the no-signal level): read these values with the cable out (a log
+line read back afterwards), or by ear.
 
 ### 5.6 PA and power control
 
@@ -354,7 +518,7 @@ Measured on a UHF MD-380 with no signal: the raw RSSI reading (ADC1 IN8) went fr
 640-720 with it high, and the RSSI follows a received carrier. PD10 (PS, pulled up) reads 1 with SAVE low (the
 synthesizer unpowered, PS floating) and 0 with SAVE high (powered, not yet programmed: out of lock) (C).
 
-Sources: [SKY] (C); [radios.md](radios.md) MD-9600 notes and [ref] for the
+Sources: [SKY] (C); [radios.md](radios.md) MD-9600 notes for the
 frequency plan (F); [gotchas] 3.3, 3.4; MD-380 UHF RF schematic for 5.7.
 
 ---
@@ -365,8 +529,12 @@ frequency plan (F); [gotchas] 3.3, 3.4; MD-380 UHF RF schematic for 5.7.
 
 FM receive audio and DMR voice both reach the amplifier through the HR_C5000 in ODR's model: FM through its
 feed-through (0x36) behind FM_MUTE (PE13), DMR through its codec DAC; SPK_C (PB8) mutes the speaker, AFCO (PB9) turns
-the amplifier on (unverified for the pins; the routing (?)). The GT3136's discriminator audio also reaches the MCU on PC3, which
+the amplifier on (the routing (?)). Measured on ODR with a pin scan (the 16 levels of FM_MUTE, FM_SW, SPK_C and AFCO,
+monitor held on an FM channel): noise only with FM_MUTE high, FM_SW high, SPK_C low and AFCO high. With those levels
+a received FM call plays clearly. The GT3136's discriminator audio also reaches the MCU on PC3, which
 ODR doesn't use.
+Our tests (2026-10-19, not authoritative) found the HR_C5000's codec output reaching the speaker with FM_SW and
+FM_MUTE low; DMR voice through it doesn't work yet (4.10).
 
 The volume knob sets the level in the analog path; the MCU only sees its position on PA0. The board therefore has no
 `CAP_VOLUME_POT` and `hal_power_t.volume()` returns -1. There is no `hal_radio_t.volume` either: the MCU has no way to set
@@ -377,7 +545,8 @@ volume operation (RADIO op 30) answers "unavailable" (`radio-features.md` 4.2).
 
 I2S3 full duplex, slave to the HR_C5000's codec: WS PA15, CK PC10, SD PC12 (chip -> MCU) and ext SD PC11 (MCU ->
 chip), Philips, 16-bit samples in 32-bit channels, 8 kHz (unverified for the pins; format and directions copied from the
-DM-1701 (?)). `audio_md380.c` is the DM-1701's driver.
+DM-1701 (?)). `audio_md380.c` is the DM-1701's driver. Which HR_C5000 port these lines reach (the external-codec
+pins or SPI2, the codec / vocoder port) is open (4.10).
 
 ### 6.3 Microphone
 
@@ -386,9 +555,50 @@ Bias from MICPWR_SW (PA14), on whenever the radio runs (section 2.6). Mic level 
 ### 6.4 Sub-audio
 
 The stock firmware is reported to decode CTCSS / DCS in software from QT_DQT_IN (PA2) and to generate tones as PWM on
-CTC/DCS_OUT (PC7) (unverified, details ?). Neither is written: `CONFIG_SUBTONE` is off for this board, so channels with a tone
-open on carrier and send no tone. The FM TX tones (1750 Hz, roger beep) and APRS AFSK are off for the same reason
-(`config.mk`).
+CTC/DCS_OUT (PC7) (unverified). ODR does the same behind `CONFIG_SUBTONE` (on by default, 3.3 KB of
+flash). CTCSS 100.0 Hz works on air both ways (tester, 2026-10-19); DCS and the deviation aren't checked yet. Without
+the switch, channels with a tone open on carrier and send no tone.
+The FM TX tones (1750 Hz, roger beep) and APRS AFSK are not written (`CONFIG_FM_TX_TONES`, `CONFIG_APRS_RX` in
+`config.mk`).
+
+The DSP is chip independent (`drivers/rf/subaudio`, host-tested on synthetic signals); `boards/md380/subtone_md380.c`
+and `power_md380.c` are the glue.
+
+**Receive.** PA2 is one more rank of the ADC1 scan that `power_md380.c` already runs (IN2 after the temperature
+sensor, 480-cycle sampling, ADC clock PCLK2 / 8). Seven ranks give a pass every 383 us, so the sub-audio is sampled at
+PCLK2 / 8 / (7 x 492) = 2613 Hz (computed at run time). The DMA stream's half and full transfer interrupts (DMA2
+Stream4, priority 7) hand each new sample to the detector; the ring grows from 8 to 16 scans, so the averaged RSSI
+and battery readings cover 6 ms instead of 3 ms. The detector (`subaudio_rx.h`):
+
+| | CTCSS | DCS |
+|---|---|---|
+| Method | Goertzel at the tone and 3 Hz either side, over overlapping 0.2 s windows, a result every 0.1 s | slicer with peak-tracked threshold, clock recovery on the edges, 23-bit register against the Golay word |
+| Opens | tone holds 30 % of the AC power, beats both guard bins by 1 dB, amplitude at least 8 counts; two results in a row | word matches with at most 2 bit errors, twice 23 bits (+-1) apart |
+| Closes | three bad results in a row (0.3 s); a 150 ms phase reversal at the end of a transmission is ridden out | no match for three words (0.5 s) |
+| Tested | all 50 standard tones, neighbors rejected, +-1 Hz sender error, noise only for 60 s | all 104 codes both polarities, wrong code and polarity rejected, +-1 % bit rate |
+
+`status().tone_ok` is the detector's verdict (true for a channel without an RX tone); the core debounces it and gates
+the squelch (`radio-features.md`). An inverted code is the same bits inverted on the wire; if the analog path inverts
+the waveform, `MD380_SUBTONE_RX_INVERT` flips it back.
+
+**Transmit.** TIM3 CH2 on PC7 (AF2) is a 10-bit PWM at 17.6 kHz (the timer clock divided by 4 x 1024). Its update
+interrupt (priority 6, running only while a tone is sent) computes a new duty every fourth period, 4.4 kHz: a sine
+from a 65-point table for CTCSS, the 23-bit word at 134.4 baud with a light smoothing for DCS. The level ramps up over
+20 ms; `MD380_SUBTONE_PERCENT` (default 30) sets the swing as a share of the duty range. `tx()` starts it after the PA is
+on, `tx_off()` stops it, and the pin returns to its idle low output. TIM3 and DMA2 Stream4's interrupt are the only
+resources added (section 3).
+
+**Unverified, check on a radio** (`docs/testing/md380-bringup.md` 5 and 6):
+
+- That PC7 reaches the modulator and where (summing into the HR_C5000's modulation input or the VCO line), and the
+  deviation 30 % gives. CTCSS wants 0.5 to 0.75 kHz of deviation.
+- The PWM's own filter: the carrier is 17.6 kHz and the tone at most 254.1 Hz, so any RC corner under about 1 kHz works.
+- The signal on PA2: its level (`MD380_SUBTONE_MIN_AMP`, default 8 counts of 4096) and its polarity for DCS.
+- That the ADC rate really is 2613 Hz (the 480-cycle sampling is the existing scan's) and that PA2 is not
+  loaded by the longer sampling.
+- That the stock firmware's tone path is the same: the sources describing it are second hand.
+- A DCS transmission ends without the 134.4 Hz turn-off burst (not written); the receiving squelch tail may be
+  longer than with a stock radio.
 
 ---
 
@@ -398,7 +608,7 @@ open on carrier and send no tone. The FM TX tones (1750 Hz, roger beep) and APRS
 chip select PD6, reset PD13: the DM-1701's wiring (unverified). The controller is reported as an HX8302A
 (unverified) or possibly an ILI9481 (unverified, ?); RT3 and MD-380 panels are said to be "slightly
 incompatible" (unverified). ODR drives it with `drivers/display/st7735` (the HX8302A takes the ST7735 command set (?)) with
-every row visible (no inset) and two build-time knobs for the bench: `MD380_PANEL_TYPE` (the st7735 driver's panel
+safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16) and two build-time knobs for the bench: `MD380_PANEL_TYPE` (the st7735 driver's panel
 type, default 0) and `MD380_PANEL_MADCTL_XOR` (orientation bits flipped, default 0). Backlight: LAMP (PC6), TIM8 CH1
 PWM at 1 kHz (unverified for the pin; PWM ours).
 
@@ -430,8 +640,15 @@ The diagnostics page shows the raw row bits ("keys rr rr rr"), so one press of e
 
 A 16-position switch with four code lines ECN0-ECN3 on PE14, PE15, PB10, PB11 (unverified), not a quadrature encoder.
 `input_md380.c` reads the code at every 10 ms scan and reports position changes as encoder steps (the shorter way
-round across the stop). Pulled up with closed contacts reading low, plain binary, by default; `MD380_CH_ACTIVE_HIGH`
-and `MD380_CH_GRAY` switch both assumptions (?). The diagnostics page shows the raw code ("ch x").
+round across the stop). A code counts after three equal scans (30 ms): the contacts bounce. Pulled up, closed contacts
+reading low (`MD380_CH_ACTIVE_HIGH` flips it). The code is a Gray code in its own line order. Read on ODR's diagnostics
+page ("ch x", after the polarity), one detent at a time clockwise (bench, 2026-10-16):
+
+| Position | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Code | 0 | 8 | A | 2 | 3 | B | 9 | 1 | 5 | D | F | 7 | 6 | E | C | 4 |
+
+Each step changes one line, so a bouncing contact reads as the next or previous position, never a jump.
 
 ### 9.3 PTT
 
@@ -467,7 +684,7 @@ ADC1 scans IN0 (volume), IN1 (battery), IN3 (mic), IN8 (RSSI), IN9 (noise) and I
 ### 11.1 Location
 
 512 bytes in the SPI flash's security registers 1 and 2 (flash addresses 0x1000 and 0x2000, 256 bytes each) (F)
-[gotchas] 11.1, [ref]. The reference port once read a third 256-byte block into a 512-byte buffer (F) [gotchas] 11.1;
+[gotchas] 11.1. A third 256-byte block must not be read into a 512-byte buffer (F) [gotchas] 11.1;
 ODR reads exactly two. Read only: ODR never writes them.
 
 ### 11.2 Layout
@@ -613,7 +830,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 1 | HSE crystal or external clock | Stage 1: the radio boots on HSE (USB enumerates); if only bypass works, record it |
 | 2 | Display controller, orientation, colors | Stage 2: try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` until the boot screen is right side up and in color |
 | 3 | Key matrix positions, side keys on K3 | Stage 3: press each key, read "keys" on the diagnostics page, correct section 9.1 and `input_md380.c` |
-| 4 | Channel switch code polarity and order | Stage 3: turn through all 16 positions, read "ch"; set `MD380_CH_ACTIVE_HIGH` / `MD380_CH_GRAY` |
+| 4 | Channel switch code polarity and order | Settled 2026-10-16: a Gray code, table in 9.2 |
 | 5 | Volume knob on PA0 vs the TX LED | Stage 3: "vol" on the diagnostics page follows the knob, and the red LED lights on PE1 |
 | 6 | Battery divider | Stage 3: compare "bat raw" against a meter; set `MD380_BATT_COUNTS_X10` |
 | 7 | Power switch wiring (direct or sensed) | Stage 3: switch off with the knob: does the radio die at once? |
@@ -621,7 +838,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 9 | Calibration layout and scaling | Stage 4: "cal" must say factory; read both security registers over the open-firmware CPS protocol (area 10, which `md380_cps_security_read` serves) and compare the rows with what the stock CPS shows |
 | 10 | Frequency plan (TCXO, IF, LO side, VCO multiplier per band) | Stage 4: "pll lock" on every channel; an SDR on a 25 kHz-spaced pair of channels shows the receive LO leak and TX carrier |
 | 11 | SKY72310 bus timing and lock detect polarity | Stage 4: "pll lock" with a correct carrier; a scope on PD10 while retuning |
-| 12 | FM_SW, W/N_SW, DMR_SW, FM_MUTE, SPK_C, AFCO polarities | Stage 4/5: receive a known FM signal; invert one pin's level at a time in `radio_md380.c` (one rebuild each, batched) until IF, audio and bandwidth are right |
+| 12 | W/N_SW and DMR_SW polarities (FM_SW, FM_MUTE, SPK_C and AFCO measured, 6.1) | Stage 4/5: receive a known FM signal; invert one pin's level at a time in `radio_md380.c` (one rebuild each, batched) until IF, audio and bandwidth are right |
 | 13 | RSSI and noise curves | Stage 5: signal generator steps, record "rssi" and "busy", fit `status()` |
 | 14 | HR_C5000 configuration port timing, page mapping, reg 0x10 read-back | Stage 4: "C5000 10=" shows a sane value after init |
 | 15 | FM TX deviation and modulation balance on the C5000 | Stage 6: TX into a dummy load and an SDR: deviation and frequency against the stock firmware |
@@ -639,8 +856,8 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 |---|---|---|
 | [SKY] | Skyworks SKY72310-11 data sheet 203639L, https://www.skyworksinc.com/Products/PLLs-Synthesizers-VCOs/SKY72310-11 | Data sheet (C) |
 | [ST] | STMicroelectronics STM32F405xx data sheet and RM0090 | Data sheet (C) |
+| [C5K] | Hangzhou Hongrui HR_C5000 user manual (Chinese): pins, SPI ports, configuration registers, audio routing | Data sheet (C) |
 | [gotchas] | [gotchas.md](gotchas.md) 2.6, 3.3, 3.4, 5.2, 11.1, 13.7 | This repo |
-| [ref] | the reference port's prose notes, outside the repository (not the hunk code) | Facts from the reference port's notes (F) |
 
 No GPL source, no disassembly and no binary of another project were read for this file. The stock D2.32 file was only
 hashed and its container header read (14.1).

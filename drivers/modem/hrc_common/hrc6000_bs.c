@@ -40,7 +40,7 @@ static const uint8_t IDLE_INFO[12] = { 0xFF, 0x83, 0xDF, 0x17, 0x32, 0x09, 0x4E,
 
 static bool w(hrc6000_dmr_t *e, uint8_t reg, uint8_t val)
 {
-	return hrc6000_write(e->dev, HRC6000_PAGE_SYS, reg, val);
+	return hrc_write(e->dev, HRC_PAGE_SYS, reg, val);
 }
 
 static void lock(hrc6000_dmr_t *e)
@@ -227,7 +227,7 @@ static void write_page2(hrc6000_dmr_t *e, uint8_t addr, const uint8_t *data, uin
 	}
 	memset(buf, 0, size);
 	memcpy(buf, data, (len < size) ? len : size);
-	hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, addr, buf, size);
+	hrc_write_burst(e->dev, HRC_PAGE_DATA, addr, buf, size);
 }
 
 // One burst for the next slot (modem-hrc6000.md 6.1, 6.4); ts is that slot
@@ -248,8 +248,8 @@ static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_bu
 		if (!bs->raw_slot(b, cach, ts, bs->cfg.cc, bs->lc_valid[k] ? bs->lc[k] : NULL, raw)) {
 			bs->st.uncoded++;
 		}
-		hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, RAW_HALF0, raw, sizeof(raw));
-		hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, RAW_HALF1, raw, sizeof(raw));
+		hrc_write_burst(e->dev, HRC_PAGE_DATA, RAW_HALF0, raw, sizeof(raw));
+		hrc_write_burst(e->dev, HRC_PAGE_DATA, RAW_HALF1, raw, sizeof(raw));
 		bs->st.raw++;
 		bs->st.cach_written += cach != NULL;
 		w(e, R_SLOT_CTL, CTL_TX);
@@ -309,7 +309,7 @@ static void setup(hrc6000_dmr_t *e, hrc6000_bs_t *bs, int8_t ts, const dmr_tx_bu
 		if (cach->lcss == 1u) {	// the first fragment (dmr_cach_t): the set's short LC
 			uint8_t slc[5] = { (uint8_t)(cach->slc >> 20), (uint8_t)(cach->slc >> 12), (uint8_t)(cach->slc >> 4),
 					   (uint8_t)(cach->slc << 4), cach->slc_crc };
-			hrc6000_write_burst(e->dev, HRC6000_PAGE_DATA, PAGE2_SLC, slc, sizeof(slc));
+			hrc_write_burst(e->dev, HRC_PAGE_DATA, PAGE2_SLC, slc, sizeof(slc));
 		}
 		bs->st.cach_written++;
 	}
@@ -380,7 +380,7 @@ void hrc6000_bs_isr_sys(hrc6000_dmr_t *e)
 {
 	uint8_t flags = 0;
 
-	(void)hrc6000_read(e->dev, HRC6000_PAGE_SYS, R_INT_FLAGS, &flags);
+	(void)hrc_read(e->dev, HRC_PAGE_SYS, R_INT_FLAGS, &flags);
 	if (flags != 0) {
 		w(e, R_INT_CLEAR, flags);	// nothing is received meanwhile: keep the line from staying low
 	}

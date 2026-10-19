@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// MD-380 DMR modem: the HR_C6000 slot engine (drivers/modem/hrc6000/hrc6000_dmr.c) in its HR_C5000 variant on the
+// MD-380 DMR modem: the HR_C6000 slot engine (drivers/modem/hrc_common/hrc6000_dmr.c) in its HR_C5000 variant on the
 // board's three modem interrupt lines, with the deferred event task that calls the DMR stack
 // (docs/spec/dmr-modem.md 6, docs/spec/hardware-md380.md 4). The same structure as the DM-1701's dmr_dm1701.c: the
 // interrupt lines are the same pins (PC0-PC2), the difference is the RF switch (radio_md380.c).
@@ -26,7 +26,7 @@
 #include "task.h"
 #include "debuglink/dlog.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-#include "modem/hrc6000/hrc6000_bs.h"
+#include "modem/hrc_common/hrc6000_bs.h"
 #include "dmr/bsOutbound.h"
 #endif
 
@@ -356,7 +356,7 @@ static void dmr_task(void *arg)
 
 // --- radio_md380.c interface ---
 
-void md380_dmr_board_init(hrc6000_t *modem)
+void md380_dmr_board_init(hrc_t *modem)
 {
 	hrc6000_dmr_init(&eng, modem, &ops);
 	exti_setup();

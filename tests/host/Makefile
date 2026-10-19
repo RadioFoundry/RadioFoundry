@@ -260,6 +260,12 @@ codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codepl
 calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c
 
+# The power byte on 2-, 3- and 9-level radios
+TESTS   += codeplugPower2Test codeplugPower3Test codeplugPower9Test
+
+codeplugPower%Test: codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -DPOWER_COUNT=$* -o $@ codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+
 # The calibration curve every board's reader shares
 TESTS   += calCurveTest
 
@@ -267,7 +273,10 @@ calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c
 
 run: run-flash
-run-flash: codeplugTest calibrationTest calCurveTest
+run-flash: codeplugTest calibrationTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
+	./codeplugPower2Test
+	./codeplugPower3Test
+	./codeplugPower9Test
 	./codeplugTest
 	./calibrationTest
 	./calCurveTest
@@ -299,10 +308,11 @@ TESTS   += sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest
 sky72310Test: sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c $(ROOT)/drivers/rf/sky72310/sky72310.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c
 
-hrc5000Test: hrc5000Test.c $(ROOT)/drivers/modem/hrc6000/hrc6000_dmr.c $(ROOT)/drivers/modem/hrc6000/hrc6000.c \
-             $(wildcard $(ROOT)/drivers/modem/hrc6000/*.h) $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc5000Test.c $(ROOT)/drivers/modem/hrc6000/hrc6000_dmr.c \
-		$(ROOT)/drivers/modem/hrc6000/hrc6000.c
+# The HR_C5000 driver with the shared code only: the HR_C6000 driver is not linked
+HRC5K := $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c $(ROOT)/drivers/modem/hrc_common/hrc6000_dmr.c \
+         $(ROOT)/core/dmr/ambe/ambeFec.c
+hrc5000Test: hrc5000Test.c $(HRC5K) $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc5000Test.c $(HRC5K)
 
 nmeaLineTest: nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c $(ROOT)/drivers/gps/nmea_line/nmea_line.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
@@ -315,10 +325,11 @@ gpsRxTest: gpsRxTest.c $(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/g
 # The MD-380's bit-banged RF bus (boards/md380/rfbus_md380.c, with the real pins.h) against fake chips on the documented
 # wiring; md380_stub/ holds the stand-in platform.h and FreeRTOS.h the board code includes
 md380RfbusTest: md380RfbusTest.c $(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/boards/md380/rfbus_md380.h \
-                $(ROOT)/boards/md380/pins.h $(wildcard md380_stub/*.h) $(ROOT)/drivers/modem/hrc6000/hrc6000.c \
-                $(wildcard $(ROOT)/drivers/modem/hrc6000/*.h) $(ROOT)/hal/hal_dmr_modem.h
+                $(ROOT)/boards/md380/pins.h $(wildcard md380_stub/*.h) $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c \
+                $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -Imd380_stub -I$(ROOT)/boards/md380 -I$(ROOT)/hal -Wshadow -o $@ md380RfbusTest.c \
-		$(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/drivers/modem/hrc6000/hrc6000.c
+		$(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c \
+		$(ROOT)/core/dmr/ambe/ambeFec.c
 
 # The STM32 codec descriptor (platform/stm32f4/codec_desc.h): its checks, and codec sectors 10 and 11 as
 # tools/codec_extract.py merges them (docs/spec/codec-placement.md)
@@ -338,6 +349,20 @@ run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest codecD
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
 	./codecDescTest codec_desc_test.bin codec_desc_md380.bin
 .PHONY: run-md380
+
+# Sub-audio: the DCS Golay word, and the software CTCSS / DCS detector and tone generators the MD-380 uses
+# (docs/spec/hardware-md380.md 6.4), on synthetic signals
+TESTS   += subaudioDspTest
+SUBAUDIO_ALL := $(wildcard $(ROOT)/drivers/rf/subaudio/*.c)
+
+subaudioDspTest: subaudioDspTest.c $(SUBAUDIO_ALL) $(wildcard $(ROOT)/drivers/rf/subaudio/*.h) $(CORE)/radio/tones.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ subaudioDspTest.c $(SUBAUDIO_ALL) $(CORE)/radio/tones.c -lm
+
+run: run-subaudio
+run-subaudio: subaudioTest subaudioDspTest
+	./subaudioTest
+	./subaudioDspTest
+.PHONY: run-subaudio
 
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
 UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c
@@ -430,10 +455,11 @@ run-call: dmrCallTest
 
 # The HR_C6000 DMR modem: register sequences, burst status decode, RX de-duplication, TX queue and slot scheduling
 TESTS   += hrc6000DmrTest
-HRCDMR  := $(ROOT)/drivers/modem/hrc6000
+HRCDMR  := $(ROOT)/drivers/modem/hrc_common
+HRC6K   := $(ROOT)/drivers/modem/hrc6000
 
-hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c
+hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
 run: run-hrcdmr
 run-hrcdmr: hrc6000DmrTest
@@ -443,15 +469,15 @@ run-hrcdmr: hrc6000DmrTest
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
 # stack to the voice sink (every burst on air out once, in order, nothing concealed)
 TESTS   += dmrRxChainTest
-RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(CORE)/dmr/call/dmr_call.c \
+RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
 
-dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h)
+dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDMR_RX_TRACE=1 -o $@ $(RXCHAIN)
 
 # DMR data end to end: chip model -> slot engine -> call stack -> data service, and its answers back out the engine
 TESTS   += dmrDataChainTest
-DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(CORE)/dmr/call/dmr_call.c \
+DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(DATA) $(FRAME) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrLrrp.c \
            $(CORE)/dmr/dmr_emergency.c
 
@@ -524,8 +550,8 @@ TESTS   += splitSim
 splitSim: $(SPLITSIM) $(SPLITH)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Isim -Wshadow $(SPLITF) -o $@ $(SPLITSIM)
 
-# The HR_C6000 BS outbound (drivers/modem/hrc6000/hrc6000_bs.c), and the slot engine's suite again with its hooks built in
-HRCBS   := $(HRCDMR)/hrc6000_bs.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c
+# The HR_C6000 BS outbound (drivers/modem/hrc_common/hrc6000_bs.c), and the slot engine's suite again with its hooks built in
+HRCBS   := $(HRCDMR)/hrc6000_bs.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 hrc6000BsTest: hrc6000BsTest.c $(HRCBS) $(wildcard $(HRCDMR)/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ hrc6000BsTest.c $(HRCBS)
 
