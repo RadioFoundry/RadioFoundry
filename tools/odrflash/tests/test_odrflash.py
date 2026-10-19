@@ -420,6 +420,14 @@ class ReleaseSector9(unittest.TestCase):
             self.assertEqual(m["sectors"], [3, 4])
 
 
+class WaitForDfu(unittest.TestCase):
+    def test_no_bootloader_raises_the_hint_not_a_format_error(self):
+        with mock.patch.object(dfumod, "find", return_value=[]):
+            with self.assertRaises(cli.UsageError) as cm:
+                cli.wait_for_dfu(None, boards.get("md380"), 0)
+        self.assertIn("no radio bootloader found (USB 0483:DF11)", str(cm.exception))
+
+
 class OldRouteGuard(unittest.TestCase):
     def test_stm32_dfu_warns_about_a_sector9_image(self):
         """tools/stm32_dfu.py writes one contiguous image: next to a build that has a sector 9 image it warns."""
