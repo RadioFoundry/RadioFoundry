@@ -27,6 +27,8 @@ def pytest_addoption(parser):
     g.addoption("--dmr-freq", type=float, default=461.6875,
                 help="MHz: the DMR test channel (Ch 15 of the bench's gateway configuration)")
     g.addoption("--dmr-cc", type=int, default=2)
+    g.addoption("--sfr-freq", type=float, default=None,
+                help="MHz: the SFR test channels' frequency (test_sfr_standalone); default --dmr-freq")
     g.addoption("--dmr-tg", type=int, default=9,
                 help="talkgroup the bench transmitter calls (in the radio channel's RX group list)")
     g.addoption("--ambe", default=os.environ.get("ODR_HIL_AMBE"),
@@ -53,6 +55,9 @@ def pytest_addoption(parser):
     g.addoption("--codeplug-backup-dir", default=None,
                 help="keep the codeplug backups the codeplug_write tests take here (default: the test's tmp "
                      "directory, which pytest prunes after a few runs); outside the repository")
+    g.addoption("--codeplug-image", default=os.environ.get("ODR_HIL_CODEPLUG_IMAGE"),
+                help="the radio's codeplug as a file (env ODR_HIL_CODEPLUG_IMAGE): the codeplug_write tests take it "
+                     "as the backup instead of reading the radio, and restore and verify it afterwards")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
     g.addoption("--allow-reboot", action="store_true",
@@ -89,6 +94,8 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    if config.getoption("--codeplug-image"):    # test_cps.codeplug_edited reads it from there
+        os.environ["ODR_HIL_CODEPLUG_IMAGE"] = os.path.expanduser(config.getoption("--codeplug-image"))
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "bench_service: uses the SDR bench's transmitter / receiver through the "
                             "lease (a bench without a shared bench daemon stops its gateway service for it: "
