@@ -27,8 +27,9 @@ void radio_sfr_user(const sfrConfig_t *cfg, uint8_t *ts, uint8_t *tx_sync, uint8
 
 // Repeater role: start the runner on the modem (the board already in DMR mode on the frequency, the keying armed).
 // The modem starts in DMO, every slot received, the inbound color code. False if the modem didn't start
+// keep_stats: the runner's counters carry on (the same role back after its CW ID), else they start from 0
 bool radio_sfr_start(const hal_dmr_modem_t *modem, const sfrConfig_t *cfg, uint16_t beacon_s, uint8_t beacon_len_s,
-		     uint32_t now_ms);
+		     bool keep_stats, uint32_t now_ms);
 void radio_sfr_stop(void);
 bool radio_sfr_running(void);
 // Every radio tick: the queued modem events, then the runner's poll

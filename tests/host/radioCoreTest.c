@@ -3677,6 +3677,7 @@ static void test_sfr_cwid(void)
 	}
 	radio_sfr_view_t v;
 	radio_sfr_get_view(&v);
+	CHECK(v.stats.rx_repeated >= 10);	// (the runner's counters, kept while it is stopped)
 	CHECK(sm.cw_phase != 0 && sm.view.dmr.sfr_cw && sm.sfr_rpt && !v.on && !sm.dmr_keyed);
 	CHECK(hw_mode == RADIO_MODE_FM && hw.set_mode_calls == modes + 1 && hw.tx_hz == 438500000 && tone.hz == 800);
 	req(RREQ_PTT, 1);		// PTT still refused
@@ -3686,8 +3687,10 @@ static void test_sfr_cwid(void)
 	run(4500);
 	CHECK(tone.changes == 36 && tone.hz == 0);
 	CHECK(sm.cw_phase == 0 && !sm.view.dmr.sfr_cw && sm.view.dmr.sfr_cwid_sent == 1 && sm.view.dmr.sfr_cwid_cut == 0);
+	radio_sfr_view_t v0 = v;
 	radio_sfr_get_view(&v);
 	CHECK(hw_mode == RADIO_MODE_DMR && hw.set_mode_calls == modes + 2 && v.on && sm.sfr_rpt && sm.dmr_keyed);
+	CHECK(v.stats.rx_repeated >= 10 && v.stats.rx_repeated == v0.stats.rx_repeated);	// the counters carried on
 	run(100);
 	CHECK(sm.view.state == RS_IDLE);
 

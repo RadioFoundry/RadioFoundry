@@ -985,6 +985,12 @@ static void sfr_rpt_end(radio_sm_t *sm)
 	sm->view.dmr.sfr_busy = false;
 }
 
+#if CONFIG_SFR_CWID
+#define SFR_RPT_RESUMING(sm)	((sm)->cw_sfr)	// back from its CW ID: the same role, its counters carry on
+#else
+#define SFR_RPT_RESUMING(sm)	false
+#endif
+
 // A channel whose SFR role is a repeater: the runner takes the modem instead of the call stack, and the keying is armed
 // on the channel's frequency for the modem's per-burst keying, as in hotspot mode. Not while the radio may not transmit
 // (TX inhibit, the battery, the band): then the channel is an ordinary one. False: the call stack's channel
@@ -1007,7 +1013,7 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 		sm->dmr_running = false;
 	}
 	if (!radio_sfr_start(board.dmr, &sc, sm->set.rpt_beacon ? sm->set.roam_beacon_s : 0, sm->set.roam_beacon_len_s,
-			     0)) {	// the beacon schedule starts at the first poll
+			     SFR_RPT_RESUMING(sm), 0)) {	// the beacon schedule starts at the first poll
 		return false;
 	}
 	sm->dmr_keyed = board.radio->tx(ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none);

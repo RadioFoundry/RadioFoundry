@@ -75,8 +75,10 @@ static void on_event(const dmr_event_t *ev, void *ctx)
 }
 
 bool radio_sfr_start(const hal_dmr_modem_t *modem, const sfrConfig_t *cfg, uint16_t beacon_s, uint8_t beacon_len_s,
-		     uint32_t now_ms)
+		     bool keep_stats, uint32_t now_ms)
 {
+	sfrRunnerStats_t stats = run.stats;	// (the runner's state survives its stop)
+
 	radio_sfr_stop();
 	if (modem == NULL) {
 		return false;
@@ -94,6 +96,9 @@ bool radio_sfr_start(const hal_dmr_modem_t *modem, const sfrConfig_t *cfg, uint1
 	modem->rx_lock_slot(0);			// both slots: the inbound one, and ours to recognize our echo
 	modem->set_cc_filter(mc.cc);
 	sfrRunnerStart(&run, modem, cfg, NULL);
+	if (keep_stats) {
+		run.stats = stats;
+	}
 	sfrRunnerSetBeacon(&run, beacon_s, beacon_len_s, now_ms);
 	running = true;
 	return true;
@@ -134,6 +139,7 @@ void radio_sfr_get_view(radio_sfr_view_t *v)
 {
 	memset(v, 0, sizeof(*v));
 	v->evq_drops = evq_drops;
+	v->stats = run.stats;	// the last role's counters also while stopped (its CW ID)
 	if (!running) {
 		return;
 	}
@@ -145,7 +151,6 @@ void radio_sfr_get_view(radio_sfr_view_t *v)
 	v->role = c->role;
 	v->inbound_slot = c->inboundSlot;
 	v->framing = c->framing;
-	v->stats = run.stats;
 }
 
 #endif	// CONFIG_SFR
