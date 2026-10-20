@@ -284,6 +284,13 @@ void hrc_soft_reset(void) __attribute__((noreturn));
 #define HRC_STUB_SIZE		0x00014000u	// 80 KB, to the end of SRAM
 #endif
 
+// Crash log (CONFIG_CRASH_LOG, crash_hrc.c): the record lives at the top of the SRAM shared with the modem, which the
+// codec's tables (from 0x18000800, at most to 0x18004F90 in any stock image) and the microphone PCM (0x18000000)
+// don't reach (hardware-dm32.md 2: free for software). Main SRAM is the bootloader's and the start-up's
+#define HRC_CRASH_STORE		0x18007F00u	// 256 bytes to the end, 0x18008000
+// hrc_fault's capture: the frame is hrc_fault_entry's (r0..r13, r15, EPSR, EPC); does not return
+void hrc_crash_fault(const uint32_t *frame, uint32_t vector) __attribute__((noreturn));
+
 // Code that must not run from XIP flash (flash controller set-up, the modem slot interrupts): the linker script
 // places .ramfunc in SRAM
 #define HRC_RAMFUNC		__attribute__((section(".ramfunc"), noinline))

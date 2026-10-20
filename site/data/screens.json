@@ -408,6 +408,24 @@
    "group": "settings",
    "needs": []
   },
+  "crash_log": {
+   "group": "settings",
+   "needs": [
+    "CRASH_SCREEN"
+   ]
+  },
+  "crash_prompt": {
+   "group": "settings",
+   "needs": [
+    "CRASH_REPORT"
+   ]
+  },
+  "crash_send_to": {
+   "group": "settings",
+   "needs": [
+    "CRASH_REPORT"
+   ]
+  },
   "about": {
    "group": "settings",
    "needs": []

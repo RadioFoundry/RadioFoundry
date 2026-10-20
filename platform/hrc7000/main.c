@@ -20,6 +20,8 @@ int main(void)
 	}
 }
 
+// Without the crash log a crash stops the radio here (core/crash and crash_hrc.c otherwise: kept and restarted)
+#if !CONFIG_CRASH_LOG
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name)
 {
 	(void)task;
@@ -35,3 +37,4 @@ void vApplicationMallocFailedHook(void)
 	for (;;) {
 	}
 }
+#endif

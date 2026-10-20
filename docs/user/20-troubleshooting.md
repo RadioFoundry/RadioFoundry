@@ -67,3 +67,6 @@ Developers get the same and more over USB with `tools/odr_debug.py diag` and `to
 Open an issue in the project repository. Include the firmware version (**Settings > Advanced > About**), the radio
 model, what you did, what you expected and what happened. A screenshot helps: `tools/odr_debug.py screenshot -o
 screen.png` saves one over USB.
+
+If the radio restarted by itself, look at **Settings > Advanced > Crash log** ([Settings](12-settings.md#crash-log))
+and copy its lines into the issue. Developers get the whole record with `tools/odr_debug.py crash`.

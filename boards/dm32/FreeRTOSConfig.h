@@ -11,7 +11,11 @@
 #define configCPU_CLOCK_HZ			168000000u
 #define configTICK_RATE_HZ			1000
 #define configMAX_PRIORITIES			7
+#if CONFIG_CRASH_LOG
+#define configMINIMAL_STACK_SIZE		144	// the idle task: a configASSERT in the kernel captures on it (make stack-check)
+#else
 #define configMINIMAL_STACK_SIZE		128
+#endif
 #define configTOTAL_HEAP_SIZE			(40 * 1024)	// task stacks and queues (the DM-1701 needs 28 KB; more room here)
 #define configMAX_TASK_NAME_LEN			12
 #define configUSE_16_BIT_TICKS			0
@@ -51,6 +55,12 @@
 #define INCLUDE_xTaskGetCurrentTaskHandle	1
 #define INCLUDE_uxTaskGetStackHighWaterMark	1
 
+// A failed assertion: with the crash log, kept (the line, the caller) and the radio restarts (core/crash/crash.h)
+#if CONFIG_CRASH_LOG && !defined(__ASSEMBLER__)
+void crash_assert(unsigned line) __attribute__((noreturn));
+#define configASSERT(x)				do { if (!(x)) { crash_assert(__LINE__); } } while (0)
+#else
 #define configASSERT(x)				do { if (!(x)) { __asm__ volatile ("psrclr ie"); for (;;) {} } } while (0)
+#endif
 
 #endif

@@ -433,6 +433,20 @@ TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
+# The crash log's record, its start-up side on a fake store, the packed report (core/crash/crash.c), and the UI's side
+# of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
+TESTS   += crashTest
+CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
+	   $(CORE)/debuglink/dl_fmt.c
+crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui_svc.h $(CORE)/debuglink/debuglink.h \
+	   $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(CRASHT)
+
+run: run-crash
+run-crash: crashTest
+	./crashTest
+.PHONY: run-crash
+
 run: run-ambe
 run-ambe: ambeFecTest ambeVoiceTest micGainTest
 	./ambeFecTest

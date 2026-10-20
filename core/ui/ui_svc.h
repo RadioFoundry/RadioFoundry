@@ -136,6 +136,31 @@ void ui_svc_emergency_dismiss(void);
 // task, not the UI's; false if it can't be started (no flash, or a save still going on)
 bool ui_svc_factory_reset(void);
 
+// --- The crash log (CONFIG_CRASH_LOG) and its report (CONFIG_CRASH_REPORT; ui_svc_crash.c, docs/spec/crash-log.md) ---
+typedef struct {
+	bool seen;		// shown or answered before (no prompt after the restart)
+	bool sent;		// the report went out
+	uint8_t count;		// crashes in a row nobody looked at
+	uint32_t uptime_ms;	// how long the radio had run
+	uint32_t build;		// the commit's first 8 hex digits (0 unknown)
+	char summary[48];	// "Fault 3 at 0802C4A9 in radio"
+} ui_crash_t;
+// What happens after a crash (UI_SET_CRASH_MODE)
+enum { UI_CRASH_SEND_OFF, UI_CRASH_SEND_ASK, UI_CRASH_SEND_AUTO };
+// The report's progress (the DMR data service's request states)
+enum { UI_CRASH_TX_IDLE, UI_CRASH_TX_QUEUED, UI_CRASH_TX_SENDING, UI_CRASH_TX_OK, UI_CRASH_TX_FAILED };
+// The record kept from before this start; false when there is none
+bool ui_svc_crash_get(ui_crash_t *out);
+// Shown or answered: no prompt for it after the next restart, and the next crash counts from 1 again
+void ui_svc_crash_seen(void);
+// Forget it
+void ui_svc_crash_clear(void);
+// Send the report to the target contact (UI_SET_CRASH_CONTACT) on the current channel. False: no record, no target
+// (or the contact is gone), or one is still going
+bool ui_svc_crash_send(void);
+// UI_CRASH_TX_*: the last report's progress; OK also marks the record sent
+uint8_t ui_svc_crash_tx_state(void);
+
 // --- Settings persistence (storage-cps). The stub keeps them in RAM (lost at power off) ---
 typedef enum {
 	UI_SET_KEY_TONES, UI_SET_TONE_VOLUME, UI_SET_TALK_PERMIT, UI_SET_VOICE_PROMPTS, UI_SET_MESSAGE_TONE,
@@ -164,6 +189,9 @@ typedef enum {
 	UI_SET_VIBRATE,		// vibrate for alerts (Settings > Sound, CONFIG_VIBRATE; settings_t.ui_flags)
 	UI_SET_ACCENT,		// the highlight color, UI_ACCENT_* (Settings > Display; settings_t.accent bits 0-2)
 	UI_SET_STRIP,		// the status strip filled with it (Settings > Display; settings_t.accent bit 3)
+	// The crash report (Settings > Advanced > Crash log, CONFIG_CRASH_REPORT; settings_crash_mode / settings_crash_contact):
+	// after a crash UI_CRASH_SEND_*, the target's codeplug contact number (1-based, 0 none)
+	UI_SET_CRASH_MODE, UI_SET_CRASH_CONTACT,
 	UI_SET_VOLUME,		// speaker volume 0 (mute) .. RADIO_VOLUME_MAX of a radio without a knob (UI_FEAT_VOLUME; settings_t.volume)
 	UI_SET_COUNT
 } ui_setting_t;

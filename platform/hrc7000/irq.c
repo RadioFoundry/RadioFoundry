@@ -12,7 +12,13 @@ extern void hrc_fault_entry(void);
 
 static uint32_t vectors[VECTORS] __attribute__((section(".vectors"), aligned(1024)));
 hrc_irq_fn hrc_irq_table[PIC_SOURCES];
-volatile uint32_t hrc_fault_info[3];	// vector, EPC, EPSR of the last CPU exception (written by hrc_fault_entry)
+volatile uint32_t hrc_fault_info[3];	// vector, EPC, EPSR of the last CPU exception (written by hrc_fault)
+
+// The fault path's own stack (portasm.S hrc_fault_entry): the faulting one may be the problem, and the interrupt
+// stack holds the frame when the fault was in a handler. The crash capture needs the room for its record
+#define FAULT_STACK_WORDS	(CONFIG_CRASH_LOG ? 256u : 32u)
+static uint32_t fault_stack[FAULT_STACK_WORDS] __attribute__((aligned(8)));
+uint32_t *hrc_fault_sp = &fault_stack[FAULT_STACK_WORDS];	// in RAM (.data): the entry reads it without the flash
 
 void hrc_irq_enable(uint8_t source, bool on)
 {
@@ -68,11 +74,19 @@ void hrc_modem_irqs_restore(uint32_t saved)
 	hrc_irq_restore(psr);
 }
 
-// Last stop of a CPU exception (fault): nothing to recover. The watchdog is off, so the radio stays here until the
-// battery comes out; the debugger sees hrc_fault_info
-void hrc_fault(void)
+// Last stop of a CPU exception (fault), from hrc_fault_entry: frame = r0..r13, r15, EPSR, EPC as they were, on the
+// faulting stack. With the crash log the record is kept and the radio restarts; without it (or if that returns) the
+// watchdog is off, so the radio stays here until the battery comes out, and the debugger sees hrc_fault_info
+void hrc_fault(const uint32_t *frame, uint32_t vector) __attribute__((used, noreturn));
+void hrc_fault(const uint32_t *frame, uint32_t vector)
 {
 	__asm__ volatile ("psrclr ie");
+	hrc_fault_info[0] = vector;
+	hrc_fault_info[1] = frame[16];
+	hrc_fault_info[2] = frame[15];
+#if CONFIG_CRASH_LOG
+	hrc_crash_fault(frame, vector);
+#endif
 	for (;;) {
 	}
 }

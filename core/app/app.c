@@ -38,6 +38,9 @@
 #if CONFIG_CPS_OPENFW
 #include "cps/cps_openfw.h"
 #endif
+#if CONFIG_CRASH_LOG
+#include "crash/crash.h"
+#endif
 #if CONFIG_CPS_FAST
 #include "cps/cps_fast.h"
 #endif
@@ -123,5 +126,8 @@ static void startup_task(void *arg)
 
 void app_start(void)
 {
+#if CONFIG_CRASH_LOG
+	crash_init();			// the record of a crash before this start, before anything can crash again
+#endif
 	xTaskCreate(startup_task, "start", START_TASK_STACK, NULL, START_TASK_PRIORITY, NULL);
 }

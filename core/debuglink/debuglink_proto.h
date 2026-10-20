@@ -46,8 +46,19 @@ enum {
 	DL_CMD_APRS		= 0x11,	// APRS: send now, status, message, test call, settings, NMEA (debuglink_aprs.c, 3.16)
 	DL_CMD_SNMP		= 0x19,	// the SNMP agent: settings, communities, notification port, test (debuglink_snmp.c, 3.17)
 	DL_CMD_STUB		= 0x1A,	// load and enter the RAM-monitor stub (CONFIG_STUB_ENTRY; debuglink_stub.c, 3.18)
+	DL_CMD_CRASH		= 0x1B,	// the crash log: clear, crash on purpose (CONFIG_CRASH_LOG; debuglink_crash.c, 3.19)
 	DL_CMD_CODEPLUG		= 0x1C,	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
 };
+
+// DL_CMD_CRASH operations (first payload byte; docs/spec/debuglink.md 3.19)
+enum {
+	DL_CRASH_OP_CLEAR = 0,	// -> status: forget the kept record
+	DL_CRASH_OP_TEST = 1,	// kind u8 (DL_CRASH_TEST_*), token u32 -> status; the crash comes after the reply
+};
+enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2 };
+// The test's guard, little endian in the payload: bytes 'C' 'R' 'S' 'H' (as CRASH_MAGIC), so a stray frame can't crash
+// the radio
+#define DL_CRASH_TOKEN		0x48535243u
 
 // DL_CMD_STUB operations (first payload byte; docs/spec/debuglink.md 3.18). A guarded way to hand the SoC to the host's
 // RAM monitor at run time, no power cycle: INFO, then BEGIN, DATA chunks, ENTER. All u32 are little endian

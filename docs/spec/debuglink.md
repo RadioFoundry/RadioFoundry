@@ -106,6 +106,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x15` | SPLIT | operation u8 + arguments (3.15); only in `CONFIG_HOTSPOT_SPLIT` builds, unknown otherwise | none, or the split view text (3.15) |
 | `0x19` | SNMP | operation u8 + arguments (3.17) | none (3.17) |
 | `0x1A` | STUB | operation u8 + arguments (3.18); `CONFIG_STUB_ENTRY` builds on a supported SoC, else status 4 | region info, progress, or a reason (3.18) |
+| `0x1B` | CRASH | operation u8 + arguments (3.19); `CONFIG_CRASH_LOG` builds, else status 4 | none (3.19) |
 | `0x1C` | CODEPLUG | operation u8 + arguments (3.20); `CONFIG_CPS_FAST` builds, else status 4 | layout, block sums, an LZ4 stream, or a reason (3.20) |
 
 ### 3.1 VERSION
@@ -252,6 +253,7 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 18 | `usrp` | USRP voice over UDP ([usb-audio.md](usb-audio.md) 9.1): `usrp.peer` (the address that last sent a valid frame, 0.0.0.0 = none: the host's address is used) `usrp.keyed` (the peer's keyup) `usrp.tx` (we asked the radio to transmit) `usrp.cos` (the last frame sent had keyup 1) `usrp.rx_on` (the receive audio goes to the host: network mode is up), counters `usrp.frames voice lost out_of_order bad keys timeouts tx_limits sent send_busy refused ptt_downs`, the shared stream `mux.blocks rx_samples rx_overflow tx_blocks fm_pulls starts start_fails tx_fill`, the jitter buffer `slip.pushed underruns drops repeats primes`. Built without it: `usrp.built=0` |
 | 19 | `sfr` | The MMDVM hotspot's SFR mode (`docs/spec/sfr.md`): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps sfr.ignored_slot sfr.ignored_cc sfr.last_ignored`. Built without it: `sfr.built=0` |
 | 20 | `tasks` | Every FreeRTOS task's least free stack since it started, in bytes (the kernel's high water mark, in creation order): `tasks.count tasks.untracked` (tasks created while the table of 16 was full) `tasks.min_free tasks.min_task` (the task with the least, the first of a tie), then `tasks.free.<name>` per task. A name's characters other than letters, digits and `_` become `_` (`tasks.free.Tmr_Svc`), an empty name is `_`. The kernel's task create and delete trace hooks keep the table (`core/app/task_stack.c`); each stack is walked with the scheduler suspended, one task at a time. Measured on the radio; `make stack-check` computes the worst case ([stack-check.md](../dev/stack-check.md)). Built without it (`CONFIG_TASK_STACKS=n`): `tasks.built=0` |
+| 21 | `crash` | the crash log's record from before this start ([crash-log.md](crash-log.md) 3): `crash.built crash.valid`, when valid `crash.arch` (1 CM4, 2 CK803) `crash.kind` (1 fault, 2 stack overflow, 3 out of heap, 4 assert) `crash.cause crash.flags crash.count crash.pc crash.lr crash.sp crash.psr crash.status` (four words) `crash.task crash.uptime_ms crash.build` (the commit's first 8 hex digits, 00000000 unknown) `crash.r0` .. `crash.r13`, and `crash.stack` (the 16 words at `sp`, comma separated hex) when the flags have bit 2. Built without the crash log: `crash.built=0` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -554,6 +556,20 @@ text and data at `load_addr` plus its length. On the STM32F4 the host checks ins
 STM32F4 stub's entry code and that `load_addr` is the SRAM base. INFO is the whole discovery protocol, so firmware built
 before a board moved its span keeps working with the same tool.
 
+### 3.19 CRASH
+
+The crash log (`CONFIG_CRASH_LOG`, [crash-log.md](crash-log.md)): forget the kept record, or crash on purpose so a HIL
+test can check the capture. Built without the switch, every operation answers `DL_ST_UNAVAILABLE`.
+
+| Op | Name | Arguments | Effect |
+|---|---|---|---|
+| 0 | CLEAR | none | the record kept from before this start is forgotten (the store too) |
+| 1 | TEST | kind u8, token u32 | after the reply, about 100 ms later: kind 1 runs a trap instruction (a CPU exception: CM4 UsageFault escalated to HardFault, CK803 breakpoint vector 7), kind 2 fails an assertion. The radio keeps the record and restarts |
+
+The token is `'CRSH'` (`0x48535243`, little endian in the payload); another value, or a transmitting radio, is answered
+refused (7). The test is dropped if PTT went down between the reply and the crash. The record shows in view section 21
+after the restart. `odr_debug.py crash [show|clear|test trap|test assert]`.
+
 ### 3.20 CODEPLUG
 
 The fast codeplug protocol: the open-firmware codeplug image read and written in 4 KB blocks, with CRC-32 sums so only
@@ -586,6 +602,7 @@ written, 3 no staging area, 4 staging full, 5 staging busy, 6 out of order, 7 CR
 - INFO_CHIP and READ_MEM only read. READ_MEM reads flash, system memory, OTP and option bytes only, never RAM or
   peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
+- CRASH TEST needs its token and is refused while transmitting (3.19).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).

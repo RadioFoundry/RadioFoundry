@@ -96,6 +96,9 @@ for every feature are planned (issue 106).
 | Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 | ● | ● | ● |  |
 | Fast codeplug protocol (debug link CODEPLUG) | `CPS_FAST` | 3,732 | 3,948* | ● | ● | ● | Changed 4 KB blocks only, LZ4 both ways, staged commit ([cps-fast.md](spec/cps-fast.md)). DM-1701 figure with LTO (2026-10-18) |
 | Loader hand-over (debug link 0x1A) | `STUB_ENTRY` | 768* | — | ○ | ○ | ● | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default on the HR_C7000 radios; on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)), off for now |
+| Crash log | `CRASH_LOG` | 1,572 | 1,756 | ● | ● | ● | A fault, stack overflow, heap exhaustion or failed assertion keeps a record across the restart; the debug link shows it ([crash-log.md](spec/crash-log.md)) |
+| Crash log screen | `CRASH_SCREEN` | 1,024 | 1,408* | ● | ● | ● | Settings > Advanced > Crash log: the record's summary and Clear |
+| Crash report over DMR | `CRASH_REPORT` | 1,440 | 1,712* | ● | ● | ● | Sends the crash record as one UDP datagram to a codeplug contact, from the menu or after the restart (Off, Ask, Auto) ([crash-log.md](spec/crash-log.md) 5). Needs the screen |
 
 ## Network (USB network adapter and IP over DMR)
 

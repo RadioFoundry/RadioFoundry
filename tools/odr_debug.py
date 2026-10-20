@@ -21,6 +21,9 @@
     odr_debug.py dump --addr A --len N [-o F]   read internal flash / system memory / OTP / option bytes to a file
                                                 outside the git tree (default the external reference folder)
     odr_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
+    odr_debug.py crash [show|clear|test trap|test assert]
+                                                the crash log (CONFIG_CRASH_LOG): the record kept from before this
+                                                start, forget it, or crash on purpose (the radio restarts)
     odr_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
     odr_debug.py storage dump [--out DIR]       the region and the calibration copy (SPI flash) to files outside git
     odr_debug.py storage claim [--out DIR]      dump first, then let the firmware erase a foreign region and use it
@@ -69,6 +72,10 @@ SPLIT = 0x15                        # split duplex (CONFIG_HOTSPOT_SPLIT builds 
 SPLIT_OP_VARIANT, SPLIT_OP_VIEW = 1, 2
 APRS = 0x11
 APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
+CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec/debuglink.md 3.19)
+CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
+CRASH_TESTS = {"trap": 1, "assert": 2}
+CRASH_TOKEN = 0x48535243            # 'CRSH'
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -127,7 +134,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks"]
+                 "sfr", "tasks", "crash"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -502,6 +509,13 @@ class DebugLink:
     def reboot(self, mode, token):
         """Ask for a reboot; raises DebugLinkError (status 7, data = reason) when the firmware refuses."""
         self.request(REBOOT, struct.pack("<BI", mode, token))
+
+    def crash_clear(self):
+        self.request(CRASH, bytes([CRASH_OP_CLEAR]))
+
+    def crash_test(self, kind):
+        """Crash on purpose (kind: 'trap' or 'assert'); the radio restarts about 100 ms after the reply."""
+        self.request(CRASH, struct.pack("<BBI", CRASH_OP_TEST, CRASH_TESTS[kind], CRASH_TOKEN))
 
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
@@ -1482,6 +1496,23 @@ def cmd_aprobe(link, a):
     return 0
 
 
+def cmd_crash(link, a):
+    if a.op == "clear":
+        link.crash_clear()
+        print("crash record cleared")
+    elif a.op == "test":
+        if a.kind not in CRASH_TESTS:
+            print(f"crash test: one of {', '.join(CRASH_TESTS)}", file=sys.stderr)
+            return 2
+        link.crash_test(a.kind)
+        print(f"crash test '{a.kind}' sent: the radio restarts")
+    else:
+        for k, v in link.view(["crash"]).items():
+            if k.startswith("crash."):
+                print(f"{k}={v}")
+    return 0
+
+
 def cmd_reboot(link, a):
     c = link.chip()
     print_chip(c)
@@ -1575,6 +1606,9 @@ def main(argv=None):
     p.add_argument("-o", "--output", help=f"file outside any git tree (default {DEFAULT_DUMP_DIR}/dump_ADDR_LEN.bin)")
     p = sub.add_parser("reboot")
     p.add_argument("--rom-dfu", action="store_true", help="into ST's ROM USB DFU (refused unless RDP level 0)")
+    p = sub.add_parser("crash", help="the crash log: show, clear, test trap|assert (docs/spec/crash-log.md)")
+    p.add_argument("op", nargs="?", default="show", choices=["show", "clear", "test"])
+    p.add_argument("kind", nargs="?", default="trap")
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -1629,6 +1663,8 @@ def main(argv=None):
                 return cmd_dump(link, a)
             elif a.cmd == "reboot":
                 return cmd_reboot(link, a)
+            elif a.cmd == "crash":
+                return cmd_crash(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "aprobe":
