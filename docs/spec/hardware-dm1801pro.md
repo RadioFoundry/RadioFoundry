@@ -194,13 +194,17 @@ which gives receive audio on the speaker path (R).
   still follows that order with 1 ms waits, and FM transmit works with it.
 - RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external
   LNA gain). On this radio that formula reads high, by an amount that changes with frequency, so ODR adds a correction
-  table (`rssi_cal` in `radio_dm1801pro.c`, `fd6818_rssi_cal_db`). Measured against the DM-1701 side by side
-  (2026-10-20): the SDR bench's carrier read +19 to +20 dB at 461.1375 and 467.375 MHz at three levels from -108 to
-  -70 dBm (linear, an offset only); a NOAA station at 162.475 MHz read +41 dB. The noise floor across each band gives
-  the shape in between: +22 dB at 136 MHz, +31 to +38 dB from 140 to 174 MHz, +16 to +19 dB from 400 to 445 MHz and
-  +10 to +12 dB above 460 MHz (the DM-1701's UHF floor sits at the bottom of its own range, so the UHF floor
-  difference reads about 7 dB under the signal one). Corrections: VHF -26 dB at 136 MHz, -36 dB at 140-150, -41 dB at
-  162, -40 dB at 174; UHF -26 dB at 400-440, -20 dB at 461-470. About 3 dB either way; checked at those frequencies only.
+  table (`rssi_cal` in `radio_dm1801pro.c`, `fd6818_rssi_cal_db`), measured against the DM-1701 (2026-10-20).
+  - UHF: the SDR bench's carrier at three levels from -125 to -99 dBm, both radios side by side on identical dummy
+    loads, read +16 dB at 451.5 MHz, +11 dB at 461.1375 and 461.4625, +10 dB at 467.375 (linear, an offset only; the
+    same in FM and DMR). Corrections -16 dB at 400-451, -11 at 461, -10 at 467-470. 400-450 isn't measured: 451's value
+    is carried down. An earlier run the same day read +19 to +20 dB above 460 MHz and left the two radios 9 dB apart
+    (the difference in that setup wasn't found). The UHF noise floor difference doesn't follow the signal one (+14 dB against +11 at 461), so the floor isn't used
+    for UHF.
+  - VHF (first run): a NOAA station at 162.475 MHz read +41 dB; the noise floor across the band gives the shape: +22 dB
+    at 136 MHz, +31 to +38 dB from 140 to 174 MHz. Corrections -26 dB at 136 MHz, -36 dB at 140-150, -41 dB at 162,
+    -40 dB at 174. Not rechecked side by side.
+  - About 1 dB either way on UHF at the measured frequencies, about 3 dB elsewhere.
   Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte (6.4: 0x201 for CTCSS, 0x202 for DCS); the
   tone frequency scale (register 0x07) isn't decoded. ODR sends the tone with the modem's generator and detects it with
 the FD6818 (`fd6818_set_rx_tone`, result in 0x0C), as on the DM-32UV: the modem's detector has no input while the FD6818
