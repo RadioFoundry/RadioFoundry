@@ -192,7 +192,16 @@ which gives receive audio on the speaker path (R).
   write the five words before the TX path, and FM transmit works without them on UHF. Earlier
   versions of this page gave the DMR per-burst order as the radio's general "Enter TX / Leave TX"; ODR's FM `tx()`
   still follows that order with 1 ms waits, and FM transmit works with it.
-- RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external LNA gain). Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte (6.4: 0x201 for CTCSS, 0x202 for DCS); the
+- RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external
+  LNA gain). On this radio that formula reads high, by an amount that changes with frequency, so ODR adds a correction
+  table (`rssi_cal` in `radio_dm1801pro.c`, `fd6818_rssi_cal_db`). Measured against the DM-1701 side by side
+  (2026-10-20): the SDR bench's carrier read +19 to +20 dB at 461.1375 and 467.375 MHz at three levels from -108 to
+  -70 dBm (linear, an offset only); a NOAA station at 162.475 MHz read +41 dB. The noise floor across each band gives
+  the shape in between: +22 dB at 136 MHz, +31 to +38 dB from 140 to 174 MHz, +16 to +19 dB from 400 to 445 MHz and
+  +10 to +12 dB above 460 MHz (the DM-1701's UHF floor sits at the bottom of its own range, so the UHF floor
+  difference reads about 7 dB under the signal one). Corrections: VHF -26 dB at 136 MHz, -36 dB at 140-150, -41 dB at
+  162, -40 dB at 174; UHF -26 dB at 400-440, -20 dB at 461-470. About 3 dB either way; checked at those frequencies only.
+  Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte (6.4: 0x201 for CTCSS, 0x202 for DCS); the
   tone frequency scale (register 0x07) isn't decoded. ODR sends the tone with the modem's generator and detects it with
 the FD6818 (`fd6818_set_rx_tone`, result in 0x0C), as on the DM-32UV: the modem's detector has no input while the FD6818
 plays FM to the speaker.
@@ -239,16 +248,29 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   waits, steps the drive instead of ramping it, and ends the burst on a slot tick instead of the RF RX interrupt.
   The switch to TX takes 0.46-0.48 ms and back to RX 0.17-0.21 ms with interrupts off (1 us bus, 5.1; with the earlier
   5 us bus about 1.07 and 0.40 ms). The DMR mode set ends with 0x3F = 0000, the radio's DMR receive value.
-- **RF TX interrupt 2.0 ms ahead** (`hrc7000_t.rf_tx_lead` = 20, RF_CONTROL b13:8), not the DM-32UV's 3.1 ms. The
+- **RF TX interrupt 0.6 ms ahead** (`hrc7000_t.rf_tx_lead` = 6, RF_CONTROL b13:8), not the DM-32UV's 3.1 ms. The
   inbound burst's payload ends about 2.5 ms before ours starts (the guard times of both slots), so with 3.1 ms the
   switch cut off the end of the inbound burst before each of ours (I). In SFR mode a header clipped that way failed its
   RS check, and the radio then lost the whole first voice superframe after it, with the reception itself clean (bit
   errors 0, PHASE_OUT centered): 5 of 5 calls with the last header flagged lost superframe 1, 7 of 7 with it clean
-  kept it (BENCH 2026-10-19, interrupt trace of PR 38). With 2.0 ms the inbound headers decode clean while keyed. The
-  PA timer runs from the burst, not from this interrupt, so the drive keeps its place against the burst (next item).
-  With the 2.0 ms lead the SFR repeat test (`tests/hil/test_hotspot_sfr.py`) passed 10 of 10 runs, 25-26 bursts
-  repeated each, and `test_dmr_tx_off_air` passed: ramps up 0.33 ms, down 0.29 ms, slot spacing 60.00 ms, no AMBE bit
-  corrected in 162 frames (BENCH 2026-10-19).
+  kept it (BENCH 2026-10-19, interrupt trace of PR 38). The PA timer runs from the burst, not from this interrupt, so
+  the drive keeps its place against the burst (next item).
+  2.0 ms fixed the headers but still cost inbound voice bits: in a 72-frame SFR repeat the third frame of each
+  inbound pair, the one that ends just before our burst, carried most of the errors. A sweep of the lead (BENCH
+  2026-10-20, 2-8 calls per value, AMBE bits corrected in 72 inbound frames):
+
+  | Lead | Bits corrected | Third frame's share | Frames lost |
+  |---|---|---|---|
+  | 3.1, 2.5, 2.0 ms | 71-213, mostly above 160 | about 110-120 | 0-3 |
+  | 1.5 ms | 170-178 | about 100 | 1 |
+  | 0.8-1.2 ms | 101-148 | 52-75 | 0 |
+  | 0.6 ms | 79-114 | 23-53, even with the other two | 0 |
+  | 0.4 ms | 84-121 | even | 0 |
+
+  Our own repeated bursts stayed clean at every lead (FEC errors 0, carrier offset within 10 Hz). 0.6 ms keeps a
+  margin above 0.4 ms, which measured the same. Earlier, with 2.0 ms, the SFR repeat test
+  (`tests/hil/test_hotspot_sfr.py`) passed 10 of 10 runs and `test_dmr_tx_off_air` passed: ramps up 0.33 ms, down
+  0.29 ms, slot spacing 60.00 ms (BENCH 2026-10-19).
 - **PA key:** the TX path switches on and off with each burst. With it on for the whole transmission, a hotspot (keyed
   while it listens) received nothing (2026-10-16). Per burst, `test_dmr_tx_off_air` passes: ramps up 1.44 ms, down
   0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's "DMR PA"

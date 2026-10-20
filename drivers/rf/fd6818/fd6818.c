@@ -90,6 +90,33 @@ const fd6818_variant_t fd6818_variant_dm32 = {
 	.park_10hz = 14400000u,
 };
 
+#define RSSI_CAL_BAND_GAP_MHZ	100u
+
+int8_t fd6818_rssi_cal_db(const fd6818_rssi_cal_t *t, uint8_t n, uint32_t hz)
+{
+	if (t == NULL || n == 0) {
+		return 0;
+	}
+	uint32_t khz = hz / 1000u;
+	if (khz <= t[0].mhz * 1000u) {
+		return t[0].db;
+	}
+	for (uint8_t i = 1; i < n; i++) {
+		uint32_t lo = t[i - 1].mhz * 1000u, hi = t[i].mhz * 1000u;
+		if (khz > hi) {
+			continue;
+		}
+		if (hi - lo > RSSI_CAL_BAND_GAP_MHZ * 1000u) {
+			return khz - lo < hi - khz ? t[i - 1].db : t[i].db;	// between the bands: the nearer end
+		}
+		int32_t d = (int32_t)(t[i].db - t[i - 1].db) * (int32_t)(khz - lo);
+		int32_t span = (int32_t)(hi - lo);
+		d += d >= 0 ? span / 2 : -span / 2;	// rounded
+		return (int8_t)(t[i - 1].db + d / span);
+	}
+	return t[n - 1].db;
+}
+
 uint16_t fd6818_ctcss_word(uint16_t hz_x10)
 {
 	// Hz x 20.64888 = (Hz x 10) x 2.064888 = (Hz x 10) x 258111 / 125000 (exact; fits 32 bits up to 1664 Hz x 10,

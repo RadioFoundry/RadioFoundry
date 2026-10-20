@@ -40,13 +40,21 @@
 // The DM-32UV's "DMR PA" default. The radio has no PA timer: its ramp starts about 2 ms after the RF TX interrupt
 // (5.4). This delay puts the drive 1.0-2.1 ms after it (1.0 ms before the burst to 0.1 ms into it, 5.6)
 #define DMR_PA_DELAY_US		28000u
-// RF TX interrupt 2.0 ms before our burst, not the DM-32UV's 3.1 ms: earlier, the switch cut off the tail of the
-// inbound burst before ours, and in SFR mode a clipped header before voice lost the next superframe (5.6)
-#define RF_TX_LEAD		20u
+// RF TX interrupt 0.6 ms before our burst, not the DM-32UV's 3.1 ms: earlier, the switch cut off the tail of the
+// inbound burst before ours (a clipped SFR header lost the next superframe; at 2.0 ms the frame before ours still
+// carried most of the voice bit errors). Swept 0.4-3.1 ms in hardware-dm1801pro.md 5.6.
+#define RF_TX_LEAD		6u
 #define FM_TX_LIMIT_12K5	5u	// FM_DEV_COEF b23:16 (hrc7000_t.fm_tx_limit)
 #define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
+// The RSSI correction (hardware-dm1801pro.md 5.4): the DM-1701 as the reference, side by side, 2026-10-20. UHF from
+// the SDR bench's carrier at 461.1375 and 467.375 MHz (-108 to -70 dBm: +19 to +20 dB, the same at every level) and
+// the shape of the noise floor below; VHF from the floor across the band and a NOAA station at 162.475 (+41 dB)
+static const fd6818_rssi_cal_t rssi_cal[] = {
+	{ 136, -26 }, { 140, -36 }, { 150, -36 }, { 162, -41 }, { 174, -40 },
+	{ 400, -26 }, { 440, -26 }, { 461, -20 }, { 470, -20 },
+};
 
 static fd6818_t fd;
 static hrc7000_t modem;
@@ -442,7 +450,8 @@ static void status(radio_status_t *st)
 	uint16_t r65 = fd6818_read(&fd, FD_REG_NOISE);
 	last_rssi_raw = fd6818_rssi_raw(r67);
 	last_noise_raw = r65 & 0xFFu;
-	st->rssi_dbm = fd6818_rssi_dbm(r67);
+	st->rssi_dbm = (int16_t)(fd6818_rssi_dbm(r67) + fd6818_rssi_cal_db(rssi_cal, sizeof(rssi_cal) / sizeof(rssi_cal[0]),
+									    rx_hz));
 	st->noise = fd6818_noise(r65);	// the chip's floor lifted above the core's squelch levels (fd6818.h)
 	st->carrier = false;
 	st->tone_ok = mode != RADIO_MODE_FM || fd6818_rx_tone_ok(&fd, fd_tone(rx_tone.type));

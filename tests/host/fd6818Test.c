@@ -142,6 +142,25 @@ static int find_last(uint8_t reg)
 	return -1;
 }
 
+static void test_rssi_cal(void)
+{
+	static const fd6818_rssi_cal_t t[] = { { 136, -26 }, { 140, -36 }, { 174, -40 }, { 400, -25 }, { 446, -25 },
+					       { 461, -20 }, { 480, -20 } };
+	uint8_t n = sizeof(t) / sizeof(t[0]);
+	CHECK(fd6818_rssi_cal_db(NULL, 0, 146000000u) == 0);
+	CHECK(fd6818_rssi_cal_db(t, n, 100000000u) == -26);	// below the first point
+	CHECK(fd6818_rssi_cal_db(t, n, 136000000u) == -26);
+	CHECK(fd6818_rssi_cal_db(t, n, 138000000u) == -31);	// halfway
+	CHECK(fd6818_rssi_cal_db(t, n, 157000000u) == -38);
+	CHECK(fd6818_rssi_cal_db(t, n, 174000000u) == -40);
+	CHECK(fd6818_rssi_cal_db(t, n, 220000000u) == -40);	// between the bands: the nearer end
+	CHECK(fd6818_rssi_cal_db(t, n, 350000000u) == -25);
+	CHECK(fd6818_rssi_cal_db(t, n, 449000000u) == -24);
+	CHECK(fd6818_rssi_cal_db(t, n, 470000000u) == -20);
+	CHECK(fd6818_rssi_cal_db(t, n, 520000000u) == -20);	// past the last point
+	CHECK(fd6818_rssi_cal_db(t, 1, 446000000u) == -26);
+}
+
 static void test_helpers(void)
 {
 	uint16_t a, b;
@@ -430,6 +449,7 @@ int main(void)
 	test_dm1801pro();
 	test_burst_tables();
 	test_helpers();
+	test_rssi_cal();
 	test_frames();
 	test_sequences();
 	test_rx_tones();
