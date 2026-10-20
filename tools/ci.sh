@@ -23,7 +23,7 @@
 #      tests (tools/odrflash/tests, codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate
 #      and hrc7000_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
-#      the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
+#      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against odrflash (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
 #      notice: the DM-32's csky toolchain comes from tools/build-csky-toolchain.sh):
@@ -179,6 +179,12 @@ for f in sys.argv[1:]:
 		head -20 "$OUT/doc-links.log"
 		bad "doc links (see $OUT/doc-links.log)"
 	fi
+	if python3 tools/glossary.py --check > "$OUT/glossary.log" 2>&1; then
+		ok "glossary: $(tail -1 "$OUT/glossary.log" | sed 's/^glossary: //')"
+	else
+		head -20 "$OUT/glossary.log"
+		bad "glossary (see $OUT/glossary.log)"
+	fi
 	# the web site (docs/dev/website.md): its generator with markdown-it-py, from the environment or through uv
 	if python3 -c "import markdown_it" 2> /dev/null; then SITE_PY="python3"
 	elif command -v uv > /dev/null; then SITE_PY="uv run --no-project -q --with-requirements site/requirements.txt python3"
@@ -189,6 +195,12 @@ for f in sys.argv[1:]:
 		else
 			tail -20 "$OUT/site.log"
 			bad "web site build (see $OUT/site.log)"
+		fi
+		if $SITE_PY site/tests/glossary_test.py > "$OUT/glossary-site.log" 2>&1; then
+			ok "glossary markup tests: $(tail -3 "$OUT/glossary-site.log" | head -1)"
+		else
+			tail -20 "$OUT/glossary-site.log"
+			bad "glossary markup tests (see $OUT/glossary-site.log)"
 		fi
 	else
 		skip "web site build: markdown-it-py not installed (pip install -r site/requirements.txt, or install uv)"

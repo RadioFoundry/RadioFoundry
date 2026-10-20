@@ -11,6 +11,7 @@ Translations (later): docs/i18n/<lang>/<path under docs> replaces a page for tha
 fall back to English with a notice.
 """
 import html
+import importlib.util
 import os
 import posixpath
 import re
@@ -20,13 +21,25 @@ from . import repo
 
 try:
 	from markdown_it import MarkdownIt
+	from markdown_it.token import Token
 except ImportError:		# reported by build.py with the install hint
-	MarkdownIt = None
+	MarkdownIt = Token = None
 
 # Section order and the directory each comes from; titles are translated (docs.section.<id>)
 SECTIONS = ["user", "dev", "spec", "testing", "ux", "general"]
 SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:", re.I)
 HTML_REF = re.compile(r"(<(?:img|a)\b[^>]*?\b(?:src|href)\s*=\s*\")([^\"]+)(\")", re.I)
+
+
+def _load_glossary():
+	"""tools/glossary.py, which owns the data file and the matching rules."""
+	spec = importlib.util.spec_from_file_location("odr_glossary", repo.path("tools", "glossary.py"))
+	mod = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(mod)
+	return mod
+
+
+OFF = re.compile(r"<!--\s*glossary:\s*off\b([^>]*?)-->", re.I)
 
 
 def slug(text):
@@ -55,6 +68,17 @@ class Docs:
 		self.langs = langs
 		self.default_lang = default_lang
 		self.pages = self._collect()
+		self.glossary = _load_glossary()
+		self.terms = self._terms()
+
+	def _terms(self):
+		"""[(compiled pattern, entry)], longest names first so "Tier III" wins over "Tier"."""
+		out = []
+		for e in self.glossary.load()["entries"]:
+			if e.get("preview", True):
+				out += [(self.glossary.pattern(n), n, e) for n in self.glossary.names(e)]
+		out.sort(key=lambda t: -len(t[1]))
+		return out
 
 	def _collect(self):
 		pages = []
@@ -116,9 +140,80 @@ class Docs:
 						c.content = self.html_links(c.content, page["src"])
 			if tok.type == "html_block":
 				tok.content = self.html_links(tok.content, page["src"])
+		self.mark_terms(tokens, page, text)
 		body = self.md.renderer.render(tokens, self.md.options, {})
 		body = body.replace("<table>", '<div class="table-wrap"><table>').replace("</table>", "</table></div>")
 		return body, toc, fallback
+
+	def mark_terms(self, tokens, page, text):
+		"""Wrap the first use of each glossary term in every section in <abbr> (docs/dev/website.md, Glossary).
+
+		Plain text only: not code, headings or link text. A section starts at each h1 or h2. A page opts out of
+		everything with <!-- glossary: off --> or out of some terms with <!-- glossary: off TG, SFR -->."""
+		skip = set()
+		for m in OFF.finditer(text):
+			names = [n.strip() for n in m.group(1).split(",") if n.strip()]
+			if not names:
+				return
+			skip.update(names)
+		scope = "user" if page["section"] == "user" else None
+		seen = set()
+		depth = 0
+		in_heading = False
+		for tok in tokens:
+			if tok.type == "heading_open":
+				in_heading = True
+				if tok.tag in ("h1", "h2"):
+					seen = set()
+			elif tok.type == "heading_close":
+				in_heading = False
+			if tok.type != "inline" or not tok.children or in_heading:
+				continue
+			out = []
+			for c in tok.children:
+				if c.type == "link_open":
+					depth += 1
+				elif c.type == "link_close":
+					depth -= 1
+				if c.type != "text" or depth:
+					out.append(c)
+				else:
+					out += self.split_terms(c, scope, seen, skip, page)
+			tok.children = out
+
+	def split_terms(self, tok, scope, seen, skip, page):
+		"""The text token as text and <abbr> tokens."""
+		text, cands = tok.content, {}
+		for pat, name, e in self.terms:
+			if e["term"] in seen or e["term"] in skip or (scope and e["scope"] != scope):
+				continue
+			m = pat.search(text)
+			if m and (e["term"] not in cands or (m.start(), -(m.end() - m.start())) < cands[e["term"]][:2]):
+				cands[e["term"]] = (m.start(), -(m.end() - m.start()), m.end(), e)
+		out, pos = [], 0
+		for a, _, b, e in sorted(cands.values(), key=lambda c: c[:2]):
+			if a < pos:
+				continue		# overlapped by an earlier match in this text
+			seen.add(e["term"])
+			if a > pos:
+				out.append(_text(text[pos:a]))
+			out.append(self.abbr(e, text[a:b], page))
+			pos = b
+		if not out:
+			return [tok]
+		if pos < len(text):
+			out.append(_text(text[pos:]))
+		return out
+
+	def abbr(self, e, shown, page):
+		g = self.glossary
+		page_name = "user/22-glossary.md" if e["scope"] == "user" else "dev/glossary.md"
+		more = e["link"] or "%s#%s" % (page_name, g.anchor(e["term"]))
+		more = self.link(posixpath.relpath("docs/" + more, posixpath.dirname(page["src"])), page["src"])
+		t = Token("html_inline", "", 0)
+		t.content = '<abbr class="gl" tabindex="0" title="%s" data-more="%s">%s</abbr>' % (
+			html.escape(e["definition"], quote=True), html.escape(more, quote=True), html.escape(shown))
+		return t
 
 	def html_links(self, text, src):
 		return HTML_REF.sub(lambda m: m.group(1) + self.link(m.group(2), src) + m.group(3), text)
@@ -162,6 +257,12 @@ class Docs:
 				shutil.copy2(src, dst)
 				n += 1
 		return n
+
+
+def _text(content):
+	t = Token("text", "", 0)
+	t.content = content
+	return t
 
 
 def plain(md_inline):

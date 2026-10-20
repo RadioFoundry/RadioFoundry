@@ -90,6 +90,36 @@ All visual decisions are variables in `tokens.css`: colors for light and dark, t
 change. Readability comes first ([principles](../ux/principles.md)): 18 px base type, high contrast, nothing
 squeezed.
 
+## Glossary
+
+`docs/glossary.json` is the one source. `python3 tools/glossary.py --write` generates the two glossary pages from it:
+[user/22-glossary.md](../user/22-glossary.md) (entries with scope `user`) and [glossary.md](glossary.md) (scope `dev`).
+Never edit those pages by hand. `tools/ci.sh` fails when they are stale.
+
+| Field | Meaning |
+|---|---|
+| `term` | The name as the page shows it. A plain word (lowercase, or one capital) also matches in any case and with a plural `s`. An acronym or mixed-case name matches exactly. |
+| `aliases` | Other spellings and plurals. Each follows the same matching rule. |
+| `category` | One of `categories` in the file. It is the page's section. |
+| `scope` | `user`: listed in the user glossary, previewed in the whole site. `dev`: listed in the developer glossary, previewed outside the user guide. |
+| `definition` | One or two short sentences. Say what the standard calls it when a vendor uses another name. |
+| `link` | Optional path under `docs/` of the section that explains it. The preview's "More" link goes there, else to the glossary row. |
+| `preview` | `false` keeps a common word (Monitor, Zone) in the glossary but never marks it in the text. |
+
+The site build (`docs.py`) wraps a term in `<abbr class="gl" title="...">` at build time. The Markdown stays unmarked, so GitHub
+shows plain text. Rules:
+
+- Whole words only. Not inside code, headings, link text, hyphenated words or paths.
+- The first use in each section (a section ends at the next `#` or `##` heading).
+- `<!-- glossary: off -->` in a page turns marking off for that page. `<!-- glossary: off TG, SFR -->` turns off those terms.
+
+`site.js` turns each `<abbr>` into a popover on hover, keyboard focus and tap, with a "More" link (Enter follows it from the
+keyboard). Without JavaScript the `title` shows the definition. `site/tests/glossary_test.py` tests the rules.
+
+To add a term, add an entry to the file, run `python3 tools/glossary.py --write` and `python3 tools/glossary.py --check`.
+`python3 tools/glossary.py --unexplained` lists all-capital words the docs use that have no entry (pin names and
+identifiers with digits or underscores are skipped). Add an entry for each one that matters to a reader, or its name to `excluded`.
+
 ## Translating
 
 `site/i18n/languages.json` lists the languages. The default (English) is at the site root, others under `/<code>/`.

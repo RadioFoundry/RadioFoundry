@@ -472,3 +472,11 @@ dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflo
 .members-list { width: 100%; font: inherit; font-size: var(--text-sm); }
 .members-actions { display: grid; gap: var(--space-2); align-self: center; }
 @media (max-width: 640px) { .members { grid-template-columns: 1fr; } .ed-status { text-align: start; } }
+
+/* glossary terms in the docs (site.js turns the title into a popover) */
+abbr.gl { text-decoration: underline dotted; text-decoration-thickness: 1.5px; text-underline-offset: 0.2em; cursor: help; }
+abbr.gl:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+.gl-pop { position: absolute; z-index: 50; max-width: min(24rem, calc(100vw - 16px)); padding: var(--space-3) var(--space-4);
+	background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);
+	box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); font-size: var(--text-sm); line-height: var(--line); }
+.gl-pop[hidden] { display: none; }

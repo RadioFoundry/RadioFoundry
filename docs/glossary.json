@@ -1,0 +1,1774 @@
+{
+ "categories": [
+  "DMR",
+  "RF and hardware",
+  "Vendor terms",
+  "Amateur and network",
+  "ODR and firmware"
+ ],
+ "excluded": [],
+ "entries": [
+  {
+   "term": "DMR",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "Digital Mobile Radio, the ETSI digital radio standard (TS 102 361).",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "TDMA",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Time division multiple access. A DMR channel carries two conversations by alternating them in 30 ms slots.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Timeslot",
+   "aliases": [
+    "TS",
+    "TS1",
+    "TS2",
+    "timeslots"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "One of the two time slots of a DMR channel, TS1 and TS2.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Color code",
+   "aliases": [
+    "CC",
+    "color codes"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "A number from 0 to 15 a DMR channel uses. Radios only hear calls with their color code.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Burst",
+   "aliases": [
+    "bursts"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "One DMR transmission in a slot: 264 bits, with a sync pattern or embedded signaling in the middle.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "Sync",
+   "aliases": [
+    "sync pattern"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "The 48-bit pattern in the middle of a burst. It tells the receiver the burst's kind (voice or data, base station or radio) and its timing.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "CACH",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Common announcement channel: 24 bits ahead of each burst a repeater sends. It carries the slot number and short link control.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "LC",
+   "aliases": [
+    "link control",
+    "embedded LC"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Link control: the call's addressing (source, destination, group or private) that DMR repeats through a voice call.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "CSBK",
+   "aliases": [
+    "CSBKs"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Control signaling block: a one-burst DMR message for signaling such as call alert, radio check and Tier III control.",
+   "link": "spec/dmr-data.md",
+   "preview": true
+  },
+  {
+   "term": "MBC",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Multi block control: a DMR signaling message that spans several bursts.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "SAP",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Service access point: the field in a DMR data header that says what the payload is (IP, short data, GPS and so on).",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "SPID",
+   "aliases": [
+    "DPID"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Source port ID: the index in a compressed UDP/IP header that stands for a well-known UDP port.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "PDU",
+   "aliases": [
+    "PDUs"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Protocol data unit: one packet or message of a protocol, as the standard defines its fields.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "FLCO",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Full link control opcode: the field of a link control message that says its kind.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Talkgroup",
+   "aliases": [
+    "TG",
+    "TGs",
+    "talkgroups"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "A DMR group number. Everyone listening to it hears calls to it.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Private call",
+   "aliases": [
+    "private calls"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "A DMR call to one radio.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "All call",
+   "aliases": [
+    "all calls"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "DMR talkgroup 16777215, heard by every radio on the slot.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Call alert",
+   "aliases": [
+    "call alerts"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "A DMR page that makes another radio ring.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Radio check",
+   "aliases": [
+    "radio checks"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "A DMR request another radio answers automatically, to show it is on and in range.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Confirmed data",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "DMR packet data the receiving radio acknowledges. What didn't arrive is sent again.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Talker alias",
+   "aliases": [
+    "talker aliases"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "A short text, usually a callsign and name, sent along with DMR voice.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "PI header",
+   "aliases": [
+    "PI headers"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "A DMR header that announces encryption with a changing key. ODR never plays such calls.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Hang time",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "How long after a call a repeater or radio keeps the call's talkgroup ready for a reply.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Direct mode",
+   "aliases": [
+    "DMO"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "DMR radio to radio on one frequency, with no repeater. The standard calls it DMO.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Repeater mode",
+   "aliases": [
+    "RMO"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "DMR through a repeater, which receives on one frequency and transmits on another. The standard calls it RMO.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Tier II",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "The conventional DMR tier of the standard (TS 102 361-2): repeaters and direct mode without trunking.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Tier III",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "The trunked DMR tier of the standard (TS 102 361-4): a control channel assigns traffic channels.",
+   "link": "spec/dmr-tier3-plan.md",
+   "preview": true
+  },
+  {
+   "term": "TSCC",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Trunked station control channel: the Tier III channel that carries control signaling.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "AIS",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Air interface specification, the ETSI name for DMR's over-the-air rules.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "C_ALOHA",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "The Tier III CSBK a trunked base station sends to announce the system and its slot timing.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "LCSS",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Link control start/stop: the 2-bit field of a burst's embedded signaling that says which fragment it carries.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "BS",
+   "aliases": [
+    "base station"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Base station: the repeater or modem side of a DMR link, as opposed to the radio (MS).",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "BER",
+   "aliases": [
+    "bit error rate"
+   ],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Bit error rate: the share of received bits that were wrong. A measure of how clean a signal is.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "AMBE+2",
+   "aliases": [
+    "AMBE",
+    "vocoder"
+   ],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "DVSI's voice codec used by DMR. Not part of ODR. Taken from each radio's stock firmware.",
+   "link": "dev/codec.md",
+   "preview": true
+  },
+  {
+   "term": "Codec",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "A voice codec. DMR uses AMBE+2.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "FM",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Frequency modulation: the analog voice mode. Speech moves the carrier's frequency.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "Deviation",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "How far an FM transmitter's frequency swings from the channel center. It sets loudness and bandwidth.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "Bandwidth",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "The width of an FM channel: 12.5 kHz (narrow) or 25 kHz (wide).",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "CTCSS",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Continuous tone coded squelch system: a sub-audible tone on FM that opens the squelch only for the right signal.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "DCS",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Digital coded squelch: a sub-audible digital code on FM that opens the squelch only for the right signal.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Squelch",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "The level a received signal must exceed before the radio plays it.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "RSSI",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Received signal strength indicator: how strong the received signal is, in dBm.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "ppm",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Parts per million: a frequency error as a fraction of the frequency. At 450 MHz, 1 ppm is 450 Hz.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Split duplex",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Transmitting on one frequency and receiving on another at the same time. Repeaters do, and so does the duplex hotspot setup.",
+   "link": "spec/split-duplex.md",
+   "preview": true
+  },
+  {
+   "term": "SFR",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Single frequency repeater. It repeats a call from one timeslot on the other timeslot of the same frequency. In MMDVM SFR the hotspot repeats, turned on by its host. In standalone SFR a channel repeats on its own (not built yet).",
+   "link": "spec/sfr.md",
+   "preview": true
+  },
+  {
+   "term": "PLL",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Phase locked loop: the circuit that holds the radio's synthesizer on its frequency.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Synthesizer",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "The part that makes the radio's transmit and receive frequencies.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "PA",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Power amplifier: the stage that boosts the transmit signal to the output power.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "VCO",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Voltage controlled oscillator: the oscillator in a synthesizer, tuned by a voltage.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "VFO",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Variable frequency oscillator: tuning any frequency by hand instead of a stored channel.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "VOX",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Voice-operated transmit.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "TOT",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Transmit timeout: the longest transmission the radio allows.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Dual watch",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Alternating between two channels to hear both.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "SPI",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Serial peripheral interface: the 4-wire bus the processor uses to talk to chips such as the modem.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "I2C",
+   "aliases": [
+    "I²C"
+   ],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Inter-integrated circuit: a 2-wire bus for small chips such as the RF transceiver.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "DFU",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Device Firmware Upgrade: the USB protocol of the radio's bootloader.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "MCU",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Microcontroller: the processor that runs the firmware.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "DSP",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Digital signal processor: a chip, or a processor core, that does the audio and modem math.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "USB",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Universal Serial Bus. The radio uses it for the debug link, the network mode and firmware updates.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "GPS",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Global positioning system: the satellite receiver that gives the radio its position.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "HR_C6000",
+   "aliases": [
+    "HRC6000",
+    "C6000"
+   ],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "The HRC6000 family: the baseband chip that codes and decodes DMR bursts in the DM-1701 and MD-380 class radios.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "HR_C7000",
+   "aliases": [
+    "HRC7000",
+    "C7000"
+   ],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "The HRC7000 family: the baseband chip of the DM-32UV and DM-1801 Pro class radios.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "AT1846S",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "The RF transceiver chip that sets the frequency, deviation and power of many handheld DMR radios. Programmed over I2C.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "MOTOTRBO",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "user",
+   "definition": "Motorola's DMR product line. Its extensions (ARS, TMS, LRRP, Capacity Plus) are not in the ETSI standard.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Capacity Plus",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "dev",
+   "definition": "A MOTOTRBO single-site trunking mode in which the radios share a pool of repeater channels.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Connect Plus",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "dev",
+   "definition": "A MOTOTRBO multi-site trunking system with a central controller.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Linked Capacity Plus",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "dev",
+   "definition": "A MOTOTRBO system of several Capacity Plus sites joined by a network.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "ARS",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "user",
+   "definition": "Automatic Registration Service: a radio tells a presence server it is on the air.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "TMS",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "user",
+   "definition": "Text message service: Motorola's text message format on DMR. The standard's own short data uses other formats.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "LRRP",
+   "aliases": [
+    "LIP"
+   ],
+   "category": "Vendor terms",
+   "scope": "user",
+   "definition": "Location Request and Response Protocol: a dispatcher asks a radio for its position. Motorola's position format; the standard has LIP.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Basic privacy",
+   "aliases": [
+    "Basic Privacy",
+    "Enhanced privacy",
+    "Enhanced Privacy"
+   ],
+   "category": "Vendor terms",
+   "scope": "user",
+   "definition": "A fixed voice scrambling from Motorola and Anytone radios. Not encryption.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "CPS",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "user",
+   "definition": "Customer programming software: the program that writes the codeplug. ODR uses qdmr.",
+   "link": "user/15-programming-qdmr.md",
+   "preview": true
+  },
+  {
+   "term": "CAI",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "dev",
+   "definition": "Common air interface: Motorola's name for the DMR air interface, also the name of its IP addressing on the air.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Control station",
+   "aliases": [
+    "control stations"
+   ],
+   "category": "Vendor terms",
+   "scope": "user",
+   "definition": "A radio a dispatch program on a computer uses to reach the fleet over the air.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "DMR ID",
+   "aliases": [
+    "RadioID",
+    "DMR IDs"
+   ],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "The number that identifies your radio on DMR. Amateur IDs come from RadioID.net.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "BrandMeister",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "A worldwide amateur DMR network of linked servers and talkgroups.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Hotspot",
+   "aliases": [
+    "hotspots"
+   ],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "A small DMR modem that connects radios nearby to a DMR network over the internet.",
+   "link": "user/13-hotspot.md",
+   "preview": true
+  },
+  {
+   "term": "APRS",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "Automatic Packet Reporting System: positions and short messages shared between amateur stations.",
+   "link": "user/17-aprs.md",
+   "preview": true
+  },
+  {
+   "term": "iGate",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "A station that passes APRS packets between the air and the APRS-IS internet network.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "KISS",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "A simple protocol between a computer's APRS program and a radio modem (TNC).",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "TNC",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "Terminal node controller: the modem that turns packet data into audio tones and back.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "AFSK",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "Audio frequency shift keying: data as two audio tones on an FM carrier. APRS at 1200 baud uses it.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "MMDVM",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "Multi-Mode Digital Voice Modem: the modem protocol MMDVMHost speaks.",
+   "link": "spec/mmdvm-protocol.md",
+   "preview": true
+  },
+  {
+   "term": "rigctld",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "Hamlib's network rig control protocol, used by loggers and SDR programs.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "mDNS",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "Multicast DNS: finding a device on a local network by a `.local` name.",
+   "link": "spec/mdns.md",
+   "preview": true
+  },
+  {
+   "term": "SNMP",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "Simple Network Management Protocol: reading a device's state over the network.",
+   "link": "spec/snmp.md",
+   "preview": true
+  },
+  {
+   "term": "TFTP",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "Trivial File Transfer Protocol: a minimal way to copy files to and from a device.",
+   "link": "spec/tftp.md",
+   "preview": true
+  },
+  {
+   "term": "NCM",
+   "aliases": [
+    "CDC-NCM"
+   ],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "Network control model: the USB class that makes the radio appear as a network adapter.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "PPP",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "Point-to-point protocol: IP over a serial link.",
+   "link": "spec/ppp.md",
+   "preview": true
+  },
+  {
+   "term": "DHCP",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "Dynamic Host Configuration Protocol: how a device gets its IP address on a network.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Codeplug",
+   "aliases": [
+    "codeplugs"
+   ],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "The radio's programming: channels, zones, contacts, talkgroup lists, DMR ID.",
+   "link": "dev/cps-and-codeplug.md",
+   "preview": true
+  },
+  {
+   "term": "qdmr",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "A free, open source codeplug editor for DMR radios.",
+   "link": "user/15-programming-qdmr.md",
+   "preview": true
+  },
+  {
+   "term": "Zone",
+   "aliases": [
+    "zones"
+   ],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "A named list of channels.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "Contact",
+   "aliases": [
+    "contacts"
+   ],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "A person in the codeplug: name and DMR ID.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "Listen list",
+   "aliases": [
+    "RX group list"
+   ],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "The talkgroups a channel listens to. The codeplug calls it the RX group list.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Talk target",
+   "aliases": [
+    "talk targets"
+   ],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "Where PTT goes: a talkgroup, a person or all call.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "One-shot",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "A talk target used for one call and its reply window.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Reply window",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "The time after a call during which PTT answers it.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Temporary change",
+   "aliases": [
+    "temporary changes"
+   ],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "A change that lasts until the channel changes or you press Back on Home. Hold OK to keep it.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Monitor",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "Opening the squelch (FM) or hearing all talkgroups (DMR) while a key is held.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "Digital monitor",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "Playing every talkgroup on the timeslot (promiscuous mode; \"hear all\" in older ODR builds).",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Recent",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "ODR's list of stations heard and calls made.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "PTT",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "Push to talk: the key that transmits.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "HIL",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Hardware in the loop: tests that run against a real radio, and a bench radio or SDR for the other side.",
+   "link": "dev/testing.md",
+   "preview": true
+  },
+  {
+   "term": "SIL",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Software in the loop: tests that run the firmware's core on the host with a simulated radio.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "SDR",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Software defined radio: a receiver that digitizes the radio spectrum so software can decode it. The SDR bench uses one.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Debug link",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "ODR's USB serial protocol for reading state and driving the radio from a computer.",
+   "link": "dev/debug-link.md",
+   "preview": true
+  },
+  {
+   "term": "Stub",
+   "aliases": [
+    "boot stub",
+    "stubs"
+   ],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "A small program that runs on the radio in place of the firmware so the computer can read or write flash without the stock bootloader.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Board",
+   "aliases": [
+    "boards"
+   ],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "The code and description of one radio model's hardware wiring: pins, chips, memory map.",
+   "link": "dev/architecture.md",
+   "preview": false
+  },
+  {
+   "term": "HAL",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Hardware abstraction layer: the interfaces the core uses instead of touching a chip.",
+   "link": "dev/architecture.md",
+   "preview": true
+  },
+  {
+   "term": "SoC",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "System on chip: the processor and its on-chip peripherals.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "Feature switch",
+   "aliases": [
+    "build switch",
+    "feature switches"
+   ],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "A CONFIG_ option that turns a feature's code in or out of the build.",
+   "link": "build-config.md",
+   "preview": true
+  },
+  {
+   "term": "Stock firmware",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "The firmware a radio shipped with, before ODR. Each ODR radio takes its voice codec from it.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "RX",
+   "aliases": [
+    "receive"
+   ],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Receive.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "TX",
+   "aliases": [
+    "transmit"
+   ],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Transmit.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "RF",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Radio frequency: the signal in the air, as opposed to audio or data inside the radio.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "ETSI",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "European Telecommunications Standards Institute, which publishes the DMR standard.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "VHF",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Very high frequency: 30 to 300 MHz. The amateur 2 m band is VHF.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "UHF",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Ultra high frequency: 300 MHz to 3 GHz. The amateur 70 cm band is UHF.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "DTMF",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Dual tone multi frequency: the touch tones a keypad sends, in the audio.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "CRC",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Cyclic redundancy check: a checksum that detects damaged data.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "FEC",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Forward error correction: extra bits that let the receiver repair errors without a resend.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "ECC",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Error correcting code: a code that repairs damaged bits, such as the one a NAND flash needs.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "UART",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Universal asynchronous receiver transmitter: a serial port.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "ADC",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Analog to digital converter.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "DAC",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Digital to analog converter.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "PCM",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Pulse code modulation: audio as a stream of sample numbers.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "I2S",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Inter-IC sound: the bus audio samples travel on between chips.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "DMA",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Direct memory access: moving data between memory and a peripheral without the processor.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "GPIO",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "General purpose input/output: a pin the firmware can read or drive.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "PWM",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Pulse width modulation: a pin switched on and off to give an average level, as for backlight or tone.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "RTOS",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Real-time operating system: the scheduler that runs the firmware's tasks.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "FIFO",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "First in, first out: a queue of data between a producer and a consumer.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "NAND",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "The flash chip type that holds large data, such as the codeplug and contacts, in some radios.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "NOR",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "The flash chip type that holds code and can run it in place.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "EEPROM",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Electrically erasable programmable read-only memory: a small chip that keeps settings.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "SRAM",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Static RAM: the processor's fast working memory.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "RAM",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Random access memory: working memory that loses its content at power off.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "ROM",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Read-only memory: code fixed in the chip.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "UDP",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "User Datagram Protocol: IP packets with no delivery guarantee.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "TCP",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "Transmission Control Protocol: IP connections with ordered, guaranteed delivery.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "IP",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "Internet Protocol: the addressing and packet layer of networks.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "NMEA",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "The text format GPS receivers use to report position and time.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "SMS",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "user",
+   "definition": "Short message service: text messages. On DMR, short data carries them.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "YAML",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "A text file format. qdmr stores its codeplug as YAML.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "CSV",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "Comma separated values: a table as plain text, as the stock programming software exports it.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "UI",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "User interface: the screen, keys and menus.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "LED",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Light-emitting diode: the radio's status light.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "TYT",
+   "aliases": [],
+   "category": "Vendor terms",
+   "scope": "user",
+   "definition": "A Chinese maker of DMR radios (MD-380, MD-UV380). \"Stock\" for those radios means TYT's firmware.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "UDT",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Unified data transport: DMR short data sent as a plain block of bytes.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "BPTC",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Block product turbo code: the error correction on DMR headers and control blocks.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "EMB",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Embedded signaling: the 32 bits in the middle of a voice burst that carry link control.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "FID",
+   "aliases": [],
+   "category": "DMR",
+   "scope": "dev",
+   "definition": "Feature set ID: the byte that says whether a message is standard or manufacturer specific.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "TCXO",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Temperature compensated crystal oscillator: the stable clock the radio's frequency is derived from.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "AGC",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Automatic gain control: the receiver adjusting itself to the signal level.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "AFC",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Automatic frequency control: following a transmitter that is slightly off frequency.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "FSK",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Frequency shift keying: data as frequency steps. DMR uses 4-level FSK.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "AM",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Amplitude modulation: speech varies the carrier's strength. Airband uses it.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "SNR",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Signal to noise ratio.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "USRP",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "The UDP stream that carries a call's audio between ODR and a network gateway.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "OTG",
+   "aliases": [
+    "OTG_FS"
+   ],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "USB On-The-Go: the controller can act as the host or the device.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "SWD",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Serial wire debug: the two-wire debug port of ARM processors.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "JTAG",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "A debug and test port of many processors.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "LTO",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Link-time optimization: the compiler optimizes across files. It shrinks the firmware.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "XIP",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Execute in place: running code straight from flash.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "CPU",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "Central processing unit.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "LCD",
+   "aliases": [],
+   "category": "RF and hardware",
+   "scope": "user",
+   "definition": "Liquid crystal display: the radio's screen.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "PC",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "Personal computer.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "ACK",
+   "aliases": [
+    "NAK"
+   ],
+   "category": "Amateur and network",
+   "scope": "dev",
+   "definition": "Acknowledgment: the reply that says a message arrived.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "MSB",
+   "aliases": [
+    "LSB"
+   ],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Most significant bit (or byte): the first, highest-value one.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "BCD",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Binary coded decimal: each decimal digit in 4 bits.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "ASCII",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "The 7-bit character set of plain text.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "XOR",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Exclusive or: a bit operation that flips bits where the other operand has a 1.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "KB",
+   "aliases": [
+    "MB"
+   ],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Kilobytes (1024 bytes).",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "OS",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Operating system.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "CI",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Continuous integration: the checks every change must pass (tools/ci.sh).",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "GPL",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "GNU General Public License. ODR does not use GPL code.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "MIT",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "The permissive license ODR uses.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "ODR",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "OpenDigitalRadio, this firmware.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "ID",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "Identifier: a number or name that picks out one thing.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "OK",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "user",
+   "definition": "The key that selects or confirms.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "ST",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "STMicroelectronics, the maker of the STM32 processors.",
+   "link": "",
+   "preview": false
+  },
+  {
+   "term": "STM32",
+   "aliases": [
+    "STM32F4",
+    "STM32F405"
+   ],
+   "category": "RF and hardware",
+   "scope": "dev",
+   "definition": "STMicroelectronics' family of ARM microcontrollers. The DM-1701 and MD-380 class radios use them.",
+   "link": "",
+   "preview": true
+  },
+  {
+   "term": "SD",
+   "aliases": [],
+   "category": "ODR and firmware",
+   "scope": "dev",
+   "definition": "Secure Digital: removable memory card.",
+   "link": "",
+   "preview": false
+  }
+ ]
+}
