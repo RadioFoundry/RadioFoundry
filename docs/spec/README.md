@@ -68,6 +68,7 @@ stock codec: [codec-placement.md](codec-placement.md). Per radio:
 | TYT MD-9600 | [hardware-md9600.md](hardware-md9600.md) | [codec-md9600.md](codec-md9600.md) | |
 | Baofeng DM-32UV | [hardware-dm32.md](hardware-dm32.md) | [codec-dm32.md](codec-dm32.md) | [dm32-migration.md](dm32-migration.md), [dm32-stock-cps.md](dm32-stock-cps.md) |
 | Radioddity DB25-D PRO | [hardware-db25d.md](hardware-db25d.md) | | |
+| Radioddity GD-77 | [hardware-gd77.md](hardware-gd77.md) | | |
 | Radioddity GD-88 | [hardware-gd88.md](hardware-gd88.md) | | |
 | Anytone AT-D868UV / D878UV / D578UV | [hardware-anytone.md](hardware-anytone.md) | | |
 

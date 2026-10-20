@@ -463,13 +463,13 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 ## Planned radios
 
-These radios aren't built yet. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
+These radios aren't supported yet. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
 models it covers.
 
 | Radio | Note |
 |---|---|
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned as a variant of the DM-1701 board |
 | TYT MD-9600, Retevis RT90 | Mobile. Planned |
-| Radioddity GD-77 family | Planned. Needs a new processor platform |
+| Radioddity GD-77 family | Bring-up started on the GD-77. Not supported yet: it builds, but hasn't run on a radio, and it can't transmit or store settings |
 | Radioddity GD-88 | Planned |
 | Radioddity DB40-D | Mobile. Planned. Hardware needed |

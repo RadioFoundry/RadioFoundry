@@ -6,7 +6,7 @@ Status: research, 2026-10-10. This page collects the main chips of every radio O
 close relatives, from public sources only. It also says which ODR platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
+[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd77.md](hardware-gd77.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
 
 Facts are not copyrightable. Every claim carries a source link and a confidence tag:
 
@@ -31,7 +31,7 @@ and F tags into C, and it should happen before a port starts.
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG (D) | HR_C6000 (D) | AT1846S (D) | 160x128 color, HX8302A (unverified) | 25Q128FV, 16 MB (unverified) | optional, JS-H210 (unverified) | USB DFU on the MCU, XOR-keyed images (C, key derived from stock 19.26) | Planned: board variant of the DM-1701 ([hardware-mduv380.md](hardware-mduv380.md)) |
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG (D) | HR_C6000 (D) | 2x SKY72310 (V1-V3), "PLL1590" (V4, C for the name; TYT's V4 firmware folder), LMX2571 (V4A/V5, F) PLLs; AK2365A IF x2 on V1-V4 (D) | 128x64 mono, ST7567 (D) | 25Q128FV, 16 MB (D) | optional, JS-M710 (unverified) | USB DFU on the MCU (D) | Planned |
 | TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (unverified) | HR_C5000 (unverified) | SKY72310 PLL + GT3136 receiver (unverified) | 160x128 color, HX8302A (unverified, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (unverified) | optional "G" models (unverified, module ?) | USB DFU, encrypted images (unverified) | Builds, not on a radio yet |
-| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (unverified) | HR_C6000 (unverified) | AT1846S (unverified) | 128x64 mono, UC1701 (unverified) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (unverified) | none (unverified) | USB HID bootloader, .sgl files (F) | Planned: new platform |
+| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (unverified) | HR_C6000 (unverified) | AT1846S (unverified) | 128x64 mono, UC1701 (unverified) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (unverified) | none (unverified) | USB HID bootloader (F) | Bring-up: builds, not on a radio yet ([hardware-gd77.md](hardware-gd77.md)) |
 | Radioddity GD-88 | HR_C7000 class SoC (F) | HR_C7000 (F) | ? (two transceivers, F) | 2" color TFT (C), controller ? | ? | yes (C), module ? | Radioddity updater over K-plug cable (C) | Planned |
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (F, BIN) | HR_C7000 (F, BIN) | FD6818 (community pin map) | 240x320 color, ST7789 class (community, BIN) | 16 MB data flash (F); program flash size ? | yes (C), ATGM336H (community) | Baofeng bootloader over UART cable (BIN, F) | Builds, not on a radio yet |
 | Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (C for the HR_C7000, FCC photo; the MCU part ?) | HR_C7000 (C, FCC photo) | ? | 1.77" (C), type and controller ? | ? | none (C) | ? | Planned, hardware needed. Not the GD-77 family |
@@ -162,11 +162,12 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   [swenton.com](https://swenton.com/ham-radio/ham-radio-articles/opengd77)). Sources contradict each other on the
   DM-1801A (?).
 - Open firmware: the OpenGD77 project supports the whole family.
-- **ODR:** reuses `drivers/modem/hrc6000`, `drivers/rf/at1846s`, `drivers/flash/spi_nor` and the 128x64 display
-  class. New: a `platform/mk22` (Kinetis start-up, clocks, SPI, I2C, USB device for TinyUSB), a UC1701 display driver,
-  an I2C EEPROM driver for settings, and an .sgl image tool. The 512 KB of internal flash is half the STM32 radios'
-  1 MB, so check ODR's image size with codec early. The HD1 v1 is the same platform with a color display and a serial
-  bootloader.
+- **ODR:** bring-up started on the GD-77 (`boards/gd77`, [hardware-gd77.md](hardware-gd77.md)). It reuses
+  `drivers/modem/hrc6000`, `drivers/rf/at1846s`, `drivers/flash/spi_nor` and `drivers/display/st7567` on a new
+  `platform/k22f` (start-up, clocks, GPIO, SPI, I2S with DMA, PIT, ADC, DAC). Still to come: an I2C controller and a USB
+  device driver for TinyUSB, an I2C EEPROM driver for settings, and the image packaging the update path needs. The
+  512 KB of internal flash is half the STM32 radios' 1 MB, so check ODR's image size with codec early. The HD1 v1 is
+  the same platform with a color display and a serial bootloader.
 
 ### Radioddity GD-88
 
@@ -392,10 +393,10 @@ different architecture from anything in ODR. The Retevis C62 and Quansheng-style
 | `drivers/rf/fd6818` | yes | DM-32UV (GD-88 ?) |
 | `drivers/display/st7735` | yes | 160x128 color radios (HX8302A compatibility per radio ?) |
 | `drivers/display/st7789` | yes | DM-32UV |
-| `platform/mk22` | **new** | GD-77 family, HD1 |
+| `platform/k22f` | started (GD-77 bring-up) | GD-77 family, HD1 |
 | `drivers/modem/hrc5000` (with `hrc_common`) | yes (`hrc5000_attach`) | MD-380 |
 | `drivers/rf/sky72310` (+ receive chain) | yes (MD-380 board glue) | MD-380, MD-9600 (older boards), CS7000 |
-| UC1701 / ST7567 mono display driver | **new** | GD-77 family (UC1701), MD-9600 (ST7567). Both are 128x64-class page-addressed controllers, so one driver may cover both (?) |
+| UC1701 / ST7567 mono display driver | yes (`drivers/display/st7567`) | DM-1801 Pro, GD-77 family (UC1701), MD-9600 (ST7567) |
 | I2C EEPROM | **new** | GD-77 family |
 | GPS NMEA reader on a UART | yes (`drivers/gps/nmea_line`; the UART in the board) | MD-UV380G, MD-9600G, MD-380G, DM-32UV, GD-88, DB25-D, DB40-D |
 | BK4819 transceiver | **new** | DB25-D PRO (two per radio) |
