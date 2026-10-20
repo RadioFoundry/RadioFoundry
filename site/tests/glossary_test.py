@@ -46,6 +46,10 @@ class Marking(unittest.TestCase):
 		html = self.render("## About CTCSS\n\n`CTCSS` and [DCS](a.md) and\n\n```\nAPRS\n```\n")
 		self.assertEqual(self.marked(html), [])
 
+	def test_table_first_column_is_a_definition(self):
+		html = self.render("| Term | Meaning |\n|---|---|\n| CTCSS | A tone for DCS |\n")
+		self.assertEqual(self.marked(html), ["DCS"])
+
 	def test_page_opt_out(self):
 		self.assertEqual(self.marked(self.render("<!-- glossary: off -->\n\nUse CTCSS.\n")), [])
 		html = self.render("<!-- glossary: off CTCSS -->\n\nUse CTCSS and DCS.\n")

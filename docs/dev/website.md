@@ -109,7 +109,7 @@ Never edit those pages by hand. `tools/ci.sh` fails when they are stale.
 The site build (`docs.py`) wraps a term in `<abbr class="gl" title="...">` at build time. The Markdown stays unmarked, so GitHub
 shows plain text. Rules:
 
-- Whole words only. Not inside code, headings, link text, hyphenated words or paths.
+- Whole words only. Not inside code, headings, link text, a table's first column, hyphenated words or paths.
 - The first use in each section (a section ends at the next `#` or `##` heading).
 - `<!-- glossary: off -->` in a page turns marking off for that page. `<!-- glossary: off TG, SFR -->` turns off those terms.
 

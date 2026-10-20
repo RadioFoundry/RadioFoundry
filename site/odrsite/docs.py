@@ -148,7 +148,7 @@ class Docs:
 	def mark_terms(self, tokens, page, text):
 		"""Wrap the first use of each glossary term in every section in <abbr> (docs/dev/website.md, Glossary).
 
-		Plain text only: not code, headings or link text. A section starts at each h1 or h2. A page opts out of
+		Plain text only: not code, headings, link text or a table's first column. A section starts at each h1 or h2. A page opts out of
 		everything with <!-- glossary: off --> or out of some terms with <!-- glossary: off TG, SFR -->."""
 		skip = set()
 		for m in OFF.finditer(text):
@@ -160,14 +160,20 @@ class Docs:
 		seen = set()
 		depth = 0
 		in_heading = False
+		col = 0
 		for tok in tokens:
+			if tok.type == "tr_open":
+				col = 0
+			elif tok.type in ("td_open", "th_open"):
+				col += 1
 			if tok.type == "heading_open":
 				in_heading = True
 				if tok.tag in ("h1", "h2"):
 					seen = set()
 			elif tok.type == "heading_close":
 				in_heading = False
-			if tok.type != "inline" or not tok.children or in_heading:
+			# the first column of a table is usually the term the row defines
+			if tok.type != "inline" or not tok.children or in_heading or col == 1:
 				continue
 			out = []
 			for c in tok.children:
