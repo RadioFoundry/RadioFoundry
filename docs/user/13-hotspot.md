@@ -108,6 +108,8 @@ Standalone SFR isn't built yet. It would give a channel the repeater and user ro
 ## Two radios as a duplex repeater
 
 Experimental: two radios, each on its own port of one computer, act as one full duplex repeater. One receives, the
-other transmits. Both need split duplex in their image ([Radio reference](23-radios.md)). The computer runs
+other transmits. Both need split duplex in their image. Only the DM-1701 offers it today, and each half has been
+checked alone, not as a pair. The DM-32UV, DM-1801 Pro and DB25-D don't offer the roles yet
+([Radio reference](23-radios.md)). The computer runs
 `tools/split_duplex_host.py`. The slot numbering is still being checked on the bench. Details are in
 [docs/spec/split-duplex.md](../spec/split-duplex.md).

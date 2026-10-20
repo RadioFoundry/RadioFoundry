@@ -158,8 +158,9 @@ Tested on one DM-1701, on air against the SDR bench where RF is involved:
 | USB network | The switch to network mode, the address from the computer (macOS) and ping |
 
 Partly checked: VOX. Silence and the radio's own beeps don't key it. Keying on a voice hasn't been checked.
-Host-tested only: the split duplex repeater, IP over DMR to another radio and the services in USB network mode,
-control station mode, roaming, ARS and LRRP.
+Each half of the split duplex repeater passes on air with one radio; a real pair of radios hasn't been tested.
+Host-tested only: IP over DMR to another radio and the services in USB network mode, control station mode, roaming,
+ARS and LRRP.
 
 ### DM-1701 with qdmr
 
@@ -272,6 +273,11 @@ A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliase
 
 ### What the DM-32UV lacks
 
+- No split duplex repeater. The extension is in the build, but the radio offers neither the transmit nor the receive
+  half yet: the HR_C7000 base station transmit mode and the slot clock aren't driven. A host that asks for a role is
+  refused.
+- Not checked on this radio yet: emergency, basic privacy, talker alias, text and data messages, roaming, scan,
+  MMDVM SFR, the network services over PPP and control station mode. They are built in and host tested.
 - No USB. The serial port is on the programming cable: hotspot mode, the debug link and the network (PPP,
   [USB network](14-usb-network.md#network-over-the-programming-cable-ppp)) all run there. USB network mode isn't
   available.
@@ -448,6 +454,7 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 ### What the DM-1801 Pro lacks today
 
+- No split duplex repeater: the build offers neither half until the HR_C7000 base station transmit mode is driven.
 - APRS receive is unchecked. APRS sending works on FM and over DMR.
 - VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
 - VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been
