@@ -484,7 +484,7 @@ run-mmdvm: mmdvmTest
 # against the simulated modem
 HSFR    := hotspotSfrTest.c $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
            $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c \
-           $(FRAME) $(CORE)/dmr/call/dmr_lc.c sim/dmr_sim_modem.c
+           $(FRAME) $(CORE)/dmr/call/dmr_lc.c sim/dmr_sim_modem.c $(CORE)/dmr/ambe/ambeFec.c
 TESTS   += hotspotSfrTest
 
 hotspotSfrTest: $(HSFR) $(wildcard $(CORE)/hotspot/*.h $(CORE)/dmr/sfr*.h sim/*.h)

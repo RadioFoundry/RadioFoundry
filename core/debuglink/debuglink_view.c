@@ -228,6 +228,9 @@ static void sfr_section(dl_text_t *t)
 	// Why bursts were ignored: on the outbound slot, another color code; the last one's CC and type (sfrRunner.h)
 	dl_text(t, "sfr.ignored_slot=%u\nsfr.ignored_cc=%u\nsfr.last_ignored=%02x\n", (unsigned)st->rx_ignored_slot,
 		(unsigned)st->rx_ignored_cc, st->last_ignored);
+	// The repeated voice's AMBE FEC as heard (frames, Golay bits corrected, frames lost)
+	dl_text(t, "sfr.rx_fec=%u/%u/%u\n", (unsigned)st->rx_fec_frames, (unsigned)st->rx_fec_bits,
+		(unsigned)st->rx_fec_lost);
 #else
 	dl_text(t, "sfr.built=0\n");
 #endif

@@ -237,6 +237,8 @@ typedef struct {
 	bool dmr_running;		// the call stack has the modem
 	bool dmr_keyed;			// board.radio->tx() armed the per-burst keying (until tx_off)
 	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
+	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit: the role
+					// starts once it may (TX inhibit cleared, the battery recovered)
 	uint32_t own_id;		// the radio's DMR ID (codeplug, else RADIO_DMR_ID_DEFAULT)
 	uint32_t dmr_serial;		// call stack view serial last copied
 	uint32_t talk_id;		// the channel's talk target

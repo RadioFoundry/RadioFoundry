@@ -48,6 +48,9 @@ typedef struct {
 	uint32_t rx_echo;		// our own bursts heard back
 	uint32_t rx_late_held;		// a voice A outside a call, waiting for its B
 	uint32_t rx_lc_rebuilt;		// headers / terminators heard while keyed, rebuilt from the call's LC
+	// The repeated voice as heard: AMBE frames checked, Golay bits corrected in them, frames whose C0 failed. The bits
+	// go out as heard; this tells the repeater's own reception errors from what the air path adds
+	uint32_t rx_fec_frames, rx_fec_bits, rx_fec_lost;
 	uint32_t tx_bursts, tx_idle, tx_starts, tx_rejected;
 	uint32_t tx_gaps;	// outbound slots left empty in an inbound call's gaps
 	uint32_t tx_filled;	// of those, taken by a burst heard after they were queued (tx_fill)

@@ -3570,9 +3570,20 @@ static void test_sfr_roles(void)
 	radio_sm_set_settings(&sm, &set, now);
 	run(50);
 	CHECK(!sm.sfr_rpt && sm.view.dmr.active && hw.tx_off_calls > off0 && !sm.dmr_keyed);
+	run(500);
+	CHECK(!sm.sfr_rpt && sm.sfr_denied);
+	set.tx_inhibit = false;	// the role back by itself, no channel change
+	radio_sm_set_settings(&sm, &set, now);
+	run(50);
+	CHECK(sm.sfr_rpt && !sm.sfr_denied && sm.dmr_keyed && !sm.view.dmr.active);
+	set.tx_inhibit = true;	// a repeater channel selected while inhibited waits, then starts
+	radio_sm_set_settings(&sm, &set, now);
+	run(50);
+	reload_channel();
+	CHECK(!sm.sfr_rpt && sm.sfr_denied && sm.view.dmr.active);
 	set.tx_inhibit = false;
 	radio_sm_set_settings(&sm, &set, now);
-	reload_channel();
+	run(50);
 	CHECK(sm.sfr_rpt);
 
 	// A repeater role on a two-frequency channel is refused: the channel is an ordinary repeater channel

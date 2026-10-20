@@ -1003,7 +1003,12 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
 	sm->view.dmr.sfr_inbound = sc.inboundSlot;
 	sfr_rpt_end(sm);
-	if (!sfrRoleIsRepeater(sm->view.dmr.sfr_role) || board.dmr == NULL || tx_check(sm) != TXDENY_NONE) {
+	sm->sfr_denied = false;
+	if (!sfrRoleIsRepeater(sm->view.dmr.sfr_role) || board.dmr == NULL) {
+		return false;
+	}
+	if (tx_check(sm) != TXDENY_NONE) {
+		sm->sfr_denied = true;	// radio_sm_tick starts the role once the radio may transmit
 		return false;
 	}
 	if (sm->dmr_running) {
@@ -4482,6 +4487,10 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_SFR
 	if (sm->sfr_rpt) {
 		sfr_rpt_tick(sm, now_ms);
+	} else if (sm->sfr_denied && sm->dmr_running && !sm->ptt && sm->view.state == RS_IDLE &&
+		   tx_check(sm) == TXDENY_NONE) {
+		dmr_begin(sm);		// the repeater role back, between calls
+		changed(sm);
 	}
 #endif
 #if CONFIG_DMR_DATA_CORE

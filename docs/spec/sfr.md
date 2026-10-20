@@ -68,7 +68,9 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
   `channel`, `hotspot` or `off`; `sfr.evq_drops` the role's modem events lost): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored
   sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps
   sfr.ignored_slot sfr.ignored_cc sfr.last_ignored` (why bursts were ignored: reported on the outbound slot, another
-  color code; the last one's color code and data type or voice index in hex).
+  color code; the last one's color code and data type or voice index in hex), `sfr.rx_fec` (frames/bits/lost: the
+  repeated voice's AMBE frames as heard, the C0/C1 Golay bits corrected in them and the frames whose C0 failed; the
+  bits go out as heard, so an SDR seeing more errors in the repeat than this means the transmit side adds them).
 
 ## 3. What the modem driver must do
 
@@ -117,7 +119,7 @@ in the VFO, the bytes are ignored and the channel is an ordinary one.
 
 | Role | Behavior |
 |---|---|
-| Rpt, Rpt Moto | The radio core starts the runner (section 2) on the modem instead of the call stack: DMO framing, every slot received, the inbound color code, no uplink. The keying stays armed on the frequency for the modem's per-burst keying, as in hotspot mode. The modem events reach the radio task through a queue (`radio_sfr_poll` every tick). PTT is refused (`TXDENY_SFR_RPT`). The screen shows receiving while an inbound call is repeated, the red LED while the outbound slot is sent. The settings' idle beacon (`rpt_beacon`) applies. With TX inhibit set, a critical battery or a frequency outside the TX bands the channel is an ordinary one, and it goes back to one if that happens while it runs |
+| Rpt, Rpt Moto | The radio core starts the runner (section 2) on the modem instead of the call stack: DMO framing, every slot received, the inbound color code, no uplink. The keying stays armed on the frequency for the modem's per-burst keying, as in hotspot mode. The modem events reach the radio task through a queue (`radio_sfr_poll` every tick). PTT is refused (`TXDENY_SFR_RPT`). The screen shows receiving while an inbound call is repeated, the red LED while the outbound slot is sent. The settings' idle beacon (`rpt_beacon`) applies. With TX inhibit set, a critical battery or a frequency outside the TX bands the channel is an ordinary one, and it goes back to one if that happens while it runs. Once the radio may transmit again, the role starts by itself between calls (`sfr_denied`), with no channel change |
 | User, ERDM | The call stack's SFR user mode (`dmr_call_config_t.sfr_user`). TX on the inbound slot (it replaces the channel's timeslot), every burst with the sync of `radio_sfr_user()`: TS1 / TS2 direct mode sync with TS framing, MS sync with MS or BS framing. Keyed in step with the repeater's slots (`DMR_TIMING_ALIGNED`) when a burst whose sync named its slot (TS1, TS2, BS) was heard in the last `DMR_CALL_ALIGN_MS`, else on its own timing (the repeater aligns to us); always impolite at the modem (the repeater's hang). RX by the setting `sfr_rx` (`dmr_call_config_t.sfr_rx`, table below). The repeat is the burst with `rx_sync`: the outbound slot's TS sync (TS framing) or BS sync (BS framing); the talker's copy has the inbound sync or comes on the inbound slot. With MS framing the copies look alike, and the call locks to the first slot heard. ERDM: the outbound color code is heard too (the modem passes every color code, the stack filters) |
 
 | `sfr_rx` | What the user plays |
