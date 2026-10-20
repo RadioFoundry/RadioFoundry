@@ -31,18 +31,43 @@ void radio_cwid_sent(radio_cwid_t *c, uint32_t now_ms)
 	c->last_id_ms = now_ms;
 }
 
+// The end of the name's first word: a space, an SSID ('-') or a suffix ('/')
+static bool word_end(char ch)
+{
+	return ch == '\0' || ch == ' ' || ch == '-' || ch == '/';
+}
+
 uint8_t radio_cwid_callsign(const char *name, char *out, uint8_t cap)
 {
 	uint8_t n = 0;
+	bool letter = false, digit = false;
 	if (cap == 0) {
 		return 0;
 	}
+	out[0] = '\0';
 	while (*name == ' ') {
 		name++;
 	}
-	while (name[n] != '\0' && name[n] != ' ' && name[n] != '-' && n < cap - 1u) {
+	for (; !word_end(name[n]); n++) {
 		char ch = name[n];
-		out[n++] = (ch >= 'a' && ch <= 'z') ? (char)(ch - 'a' + 'A') : ch;
+		if (ch >= 'a' && ch <= 'z') {
+			ch = (char)(ch - 'a' + 'A');
+		}
+		if (ch >= 'A' && ch <= 'Z') {
+			letter = true;
+		} else if (ch >= '0' && ch <= '9') {
+			digit = true;
+		} else {
+			break;
+		}
+		if (n >= RADIO_CWID_CALL_MAX || n + 1u >= cap) {
+			break;
+		}
+		out[n] = ch;
+	}
+	if (!word_end(name[n]) || n < RADIO_CWID_CALL_MIN || !letter || !digit) {
+		out[0] = '\0';
+		return 0;	// a name, not a callsign (or too long, or no room): never key it as the station's ID
 	}
 	out[n] = '\0';
 	return n;

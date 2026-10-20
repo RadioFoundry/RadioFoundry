@@ -10,6 +10,8 @@
 
 #define RADIO_CWID_QUIET_MS	2000u	// the repeater idle this long before the ID is keyed
 #define RADIO_CWID_CODES	5u	// interval codes 0..4
+#define RADIO_CWID_CALL_MIN	4u	// a callsign: 4 to 6 letters and digits, at least one of each
+#define RADIO_CWID_CALL_MAX	6u
 
 typedef struct {
 	bool pending;		// the repeater transmitted since the last ID
@@ -28,8 +30,9 @@ bool radio_cwid_due(radio_cwid_t *c, uint32_t interval_ms, bool busy, uint32_t n
 // The ID was keyed (or given up): the next one waits for new traffic and the interval
 void radio_cwid_sent(radio_cwid_t *c, uint32_t now_ms);
 
-// The callsign from the radio name: its first word up to a space or '-' (an SSID), upper case. Returns its length,
-// 0 if the name has none; out gets a terminating NUL (cap includes it)
+// The callsign from the radio name: its first word up to a space, '-' (an SSID) or '/', upper case, and only if it
+// clearly is one: 4 to 6 letters and digits with at least one of each. Returns its length, 0 if the name has none
+// (out is then empty); out gets a terminating NUL (cap includes it, so at least 7 for a 6-character callsign)
 uint8_t radio_cwid_callsign(const char *name, char *out, uint8_t cap);
 
 #endif

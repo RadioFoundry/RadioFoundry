@@ -3641,8 +3641,15 @@ static void test_sfr_cwid(void)
 	// The callsign: the name's first word, an SSID dropped, upper case, cut to fit
 	char cs[8];
 	CHECK(radio_cwid_callsign("  n4abc-7 Base", cs, sizeof(cs)) == 5 && strcmp(cs, "N4ABC") == 0);
-	CHECK(radio_cwid_callsign("Test Radio", cs, sizeof(cs)) == 4 && strcmp(cs, "TEST") == 0);
-	CHECK(radio_cwid_callsign("ABCDEFGHIJ", cs, 4) == 3 && strcmp(cs, "ABC") == 0);
+	CHECK(radio_cwid_callsign("W1AW/P", cs, sizeof(cs)) == 4 && strcmp(cs, "W1AW") == 0);
+	CHECK(radio_cwid_callsign("VE3ABC", cs, sizeof(cs)) == 6 && strcmp(cs, "VE3ABC") == 0);
+	// Only something that clearly is one: 4 to 6 letters and digits, at least one of each
+	CHECK(radio_cwid_callsign("Test Radio", cs, sizeof(cs)) == 0 && cs[0] == '\0');	// no digit
+	CHECK(radio_cwid_callsign("1234", cs, sizeof(cs)) == 0 && cs[0] == '\0');		// no letter
+	CHECK(radio_cwid_callsign("W1A", cs, sizeof(cs)) == 0);				// too short
+	CHECK(radio_cwid_callsign("KD2ABCD", cs, sizeof(cs)) == 0 && cs[0] == '\0');	// too long
+	CHECK(radio_cwid_callsign("N4.ABC", cs, sizeof(cs)) == 0);				// not letters and digits
+	CHECK(radio_cwid_callsign("N4ABC", cs, 5) == 0);					// no room
 	CHECK(radio_cwid_callsign("", cs, sizeof(cs)) == 0 && cs[0] == '\0');
 
 	// The radio core: a repeater role with the ID every 5 min and the name "ab1cd"
@@ -3701,8 +3708,8 @@ static void test_sfr_cwid(void)
 	CHECK(sm.cw_phase == 0 && !sm.view.dmr.sfr_cw && tone.hz == 0 && sm.view.dmr.sfr_cwid_cut == 1);
 	CHECK(!sm.sfr_rpt && sm.view.dmr.active && hw_mode == RADIO_MODE_DMR);
 
-	// No callsign in the radio name: nothing keyed, counted as skipped, the role goes on
-	sm.radio_name[0] = '\0';
+	// No callsign in the radio name (a personal name): nothing keyed, counted as skipped, the role goes on
+	strcpy(sm.radio_name, "Base 1");
 	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
 	reload_channel();
 	CHECK(sm.sfr_rpt);
