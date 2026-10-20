@@ -1,0 +1,273 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The OpenDigitalRadio Authors
+// GD-77 buses (docs/spec/hardware-gd77.md 4). Each is built from its entry in bus_cfg.h and handed to the chip glue as
+// a generic interface: I2C bus A (AT1846S, EEPROM) and B as i2c_bus_t, the data flash, the display and the HR_C6000
+// port as spi_bus_t. Software buses run on GPIO through bus/i2c_gpio and bus/spi_gpio. Of the hardware choices, SPI0
+// with a GPIO chip select is written; the K22F I2C controller and SPI0's own chip select are not yet, and a bus
+// configured for them reports K22F_ERR_NOT_IMPLEMENTED and refuses every transfer.
+#include "gd77.h"
+#include "bus_cfg.h"
+#include "pins.h"
+#include "platform.h"
+#include "hal_time.h"
+#include "bus/i2c_gpio/i2c_gpio.h"
+#include "bus/spi_gpio/spi_gpio.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
+
+static k22f_status_t status[GD77_BUS_COUNT];
+
+// A set of choices the pins can't carry (bus_cfg.h) leaves every bus refusing
+static bool cfg_valid(void)
+{
+	return gd77_bus_cfg_check(gd77_bus_cfg, GD77_BUS_COUNT) == 0;
+}
+
+// --- Open-drain lines for the software I2C buses: released = input (the pull-up takes it high), low = driven 0 ---
+
+static void od_line(uint8_t pin, bool high)
+{
+	if (high) {
+		k22f_pin_dir(pin, false);
+	} else {
+		k22f_pin_write(pin, false);
+		k22f_pin_dir(pin, true);
+	}
+}
+
+static void a_scl(bool high) { k22f_pin_write(PIN_I2CA_SCL, high); }
+static void a_sda(bool high) { od_line(PIN_I2CA_SDA, high); }
+static bool a_sda_in(void) { return k22f_pin_read(PIN_I2CA_SDA); }
+static void b_scl(bool high) { k22f_pin_write(PIN_I2CB_SCL, high); }
+static void b_sda(bool high) { od_line(PIN_I2CB_SDA, high); }
+static bool b_sda_in(void) { return k22f_pin_read(PIN_I2CB_SDA); }
+
+// 100 kHz standard mode on both
+static const i2c_gpio_t soft_i2c_a = { .scl = a_scl, .sda = a_sda, .sda_in = a_sda_in, .delay_us = hal_delay_us,
+				       .half_us = 5 };
+static const i2c_gpio_t soft_i2c_b = { .scl = b_scl, .sda = b_sda, .sda_in = b_sda_in, .delay_us = hal_delay_us,
+				       .half_us = 5 };
+
+static bool refuse_write(void *ctx, uint8_t addr7, const uint8_t *data, size_t n)
+{
+	(void)ctx;
+	(void)addr7;
+	(void)data;
+	(void)n;
+	return false;
+}
+
+static bool refuse_write_read(void *ctx, uint8_t addr7, const uint8_t *w, size_t wn, uint8_t *r, size_t rn)
+{
+	(void)ctx;
+	(void)addr7;
+	(void)w;
+	(void)wn;
+	(void)r;
+	(void)rn;
+	return false;
+}
+
+// The K22F I2C controller isn't written yet: a bus configured for it refuses
+static const i2c_bus_t hw_i2c_missing = { .write = refuse_write, .write_read = refuse_write_read };
+static const i2c_bus_t soft_bus_a = I2C_GPIO_BUS(&soft_i2c_a);
+static const i2c_bus_t soft_bus_b = I2C_GPIO_BUS(&soft_i2c_b);
+
+static const i2c_bus_t *i2c_a, *i2c_b;
+static SemaphoreHandle_t i2c_a_lock;
+
+static const i2c_bus_t *i2c_setup(gd77_bus_id_t id, const i2c_bus_t *soft, const i2c_gpio_t *gpio)
+{
+	if (!cfg_valid() || gd77_bus_cfg[id].hw) {
+		status[id] = cfg_valid() ? K22F_ERR_NOT_IMPLEMENTED : K22F_ERR_ARG;
+		return &hw_i2c_missing;
+	}
+	i2c_gpio_recover(gpio);
+	status[id] = K22F_OK;
+	return soft;
+}
+
+void gd77_i2c_init(void)
+{
+	if (i2c_a_lock == NULL) {
+		i2c_a_lock = xSemaphoreCreateMutex();
+	}
+	i2c_a = i2c_setup(GD77_BUS_I2C_A, &soft_bus_a, &soft_i2c_a);
+	i2c_b = i2c_setup(GD77_BUS_I2C_B, &soft_bus_b, &soft_i2c_b);
+}
+
+static bool lock(void)
+{
+	return i2c_a_lock == NULL || xSemaphoreTake(i2c_a_lock, pdMS_TO_TICKS(100)) == pdTRUE;
+}
+
+static void unlock(void)
+{
+	if (i2c_a_lock != NULL) {
+		xSemaphoreGive(i2c_a_lock);
+	}
+}
+
+bool gd77_i2c_write(uint8_t addr7, const uint8_t *data, uint32_t n)
+{
+	if (i2c_a == NULL || !lock()) {
+		return false;
+	}
+	bool ok = i2c_a->write(i2c_a->ctx, addr7, data, n);
+	unlock();
+	return ok;
+}
+
+bool gd77_i2c_write_read(uint8_t addr7, const uint8_t *w, uint32_t wn, uint8_t *r, uint32_t rn)
+{
+	if (i2c_a == NULL || !lock()) {
+		return false;
+	}
+	bool ok = i2c_a->write_read(i2c_a->ctx, addr7, w, wn, r, rn);
+	unlock();
+	return ok;
+}
+
+// Bus B carries no radio function; it is set up (released lines) and offered for the diagnostics only
+const i2c_bus_t *gd77_i2c_b(void)
+{
+	return i2c_b;
+}
+
+// --- SPI buses ---
+
+static bool spi_refuse(const uint8_t *tx, uint8_t *rx, uint32_t len)
+{
+	(void)tx;
+	(void)rx;
+	(void)len;
+	return false;
+}
+
+static void cs_none(bool active)
+{
+	(void)active;
+}
+
+// Data flash: software, mode 0. Selected = driven low; deselected = released to its external pull-up (PTA19 is also
+// XTAL0, so it is never driven high)
+static void nor_sck(bool high) { k22f_pin_write(PIN_NOR_SCK, high); }
+static void nor_mosi(bool high) { k22f_pin_write(PIN_NOR_MOSI, high); }
+static bool nor_miso(void) { return k22f_pin_read(PIN_NOR_MISO); }
+static const spi_gpio_t soft_nor = { .sck = nor_sck, .mosi = nor_mosi, .miso = nor_miso, .cpol = false, .cpha = false };
+
+static void nor_select(bool active)
+{
+	if (active) {
+		k22f_pin_write(PIN_NOR_CS, false);
+		k22f_pin_dir(PIN_NOR_CS, true);
+	} else {
+		k22f_pin_dir(PIN_NOR_CS, false);
+	}
+}
+
+static bool nor_xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
+{
+	if (status[GD77_BUS_NOR] != K22F_OK) {
+		return false;
+	}
+	spi_gpio_xfer(&soft_nor, tx, rx, len);
+	return true;
+}
+
+const spi_bus_t gd77_nor_bus = { .select = nor_select, .xfer = nor_xfer };
+
+// Display: software, write only, data set while the clock is low and taken on the rising edge (mode 3). The A0
+// (command / data) line stays with the display code
+static void lcd_sck(bool high) { k22f_pin_write(PIN_LCD_SCK, high); }
+static void lcd_sda(bool high) { k22f_pin_write(PIN_LCD_SDA, high); }
+static const spi_gpio_t soft_lcd = { .sck = lcd_sck, .mosi = lcd_sda, .cpol = true, .cpha = true };
+
+static void lcd_select(bool active)
+{
+	k22f_pin_write(PIN_LCD_CS, !active);
+}
+
+static bool lcd_xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
+{
+	(void)rx;
+	if (status[GD77_BUS_LCD] != K22F_OK) {
+		return false;
+	}
+	spi_gpio_xfer(&soft_lcd, tx, NULL, len);
+	return true;
+}
+
+const spi_bus_t gd77_lcd_bus = { .select = lcd_select, .xfer = lcd_xfer };
+
+// HR_C6000 port: SPI0, mode 1, about 770 kHz at a 49 MHz bus (bus / 2 / 64 x 2, clock_math.h k22f_dspi_hz), the chip
+// select by GPIO. Interrupts stay on: nothing else uses SPI0 until the DMR glue does, which will have to mask the
+// modem's interrupt lines around thread-level transfers (modem-hrc6000.md 1)
+static const k22f_dspi_cfg_t c6k_spi = { .inst = 0, .cpol = false, .cpha = true, .pbr = 0, .br = 6, .dbr = true };
+
+static void c6k_select(bool active)
+{
+	if (active) {
+		k22f_pin_write(PIN_C6K_CS, false);
+		hal_delay_us(1);
+	} else {
+		hal_delay_us(1);
+		k22f_pin_write(PIN_C6K_CS, true);
+	}
+}
+
+static bool c6k_xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
+{
+	return k22f_dspi_xfer(0, tx, rx, len);
+}
+
+static const spi_bus_t c6k_hw = { .select = c6k_select, .xfer = c6k_xfer };
+static const spi_bus_t spi_missing = { .select = cs_none, .xfer = spi_refuse };
+static const spi_bus_t *c6k_bus = &spi_missing;
+
+// SPI0 with the peripheral's own chip select (PCS0 on PTD0) isn't written yet; neither is a software port on PTD0..3
+void gd77_c6k_bus_init(void)
+{
+	const gd77_bus_cfg_t *c = &gd77_bus_cfg[GD77_BUS_C6K];
+	if (!c->hw || c->hw_cs) {
+		status[GD77_BUS_C6K] = K22F_ERR_NOT_IMPLEMENTED;
+		c6k_bus = &spi_missing;
+		return;
+	}
+	if (!cfg_valid()) {
+		status[GD77_BUS_C6K] = K22F_ERR_ARG;
+		return;
+	}
+	k22f_dspi_init(&c6k_spi);
+	status[GD77_BUS_C6K] = K22F_OK;
+	c6k_bus = &c6k_hw;
+}
+
+// One configuration port transaction with the chip select held: header, then data
+bool gd77_c6k_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
+{
+	(void)ctx;
+	c6k_bus->select(true);
+	bool ok = c6k_bus->xfer(hdr, NULL, hdr_len) && c6k_bus->xfer(tx, rx, len);
+	c6k_bus->select(false);
+	return ok;
+}
+
+// The software SPI buses need only their clock at its idle level
+void gd77_bus_init(void)
+{
+	if (!cfg_valid()) {
+		status[GD77_BUS_NOR] = K22F_ERR_ARG;
+		status[GD77_BUS_LCD] = K22F_ERR_ARG;
+		return;
+	}
+	spi_gpio_idle(&soft_nor);
+	spi_gpio_idle(&soft_lcd);
+	status[GD77_BUS_NOR] = K22F_OK;
+	status[GD77_BUS_LCD] = K22F_OK;
+}
+
+k22f_status_t gd77_bus_status(uint8_t id)
+{
+	return id < GD77_BUS_COUNT ? status[id] : K22F_ERR_ARG;
+}
