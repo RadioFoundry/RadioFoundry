@@ -231,6 +231,8 @@ static void sfr_section(dl_text_t *t)
 	// The repeated voice's AMBE FEC as heard (frames, Golay bits corrected, frames lost)
 	dl_text(t, "sfr.rx_fec=%u/%u/%u\n", (unsigned)st->rx_fec_frames, (unsigned)st->rx_fec_bits,
 		(unsigned)st->rx_fec_lost);
+	dl_text(t, "sfr.rx_fec_pos=%u/%u/%u\n", (unsigned)st->rx_fec_pos[0], (unsigned)st->rx_fec_pos[1],
+		(unsigned)st->rx_fec_pos[2]);
 #else
 	dl_text(t, "sfr.built=0\n");
 #endif

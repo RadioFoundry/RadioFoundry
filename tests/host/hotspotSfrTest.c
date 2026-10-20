@@ -728,6 +728,8 @@ static void test_rx_fec(void)
 	CHECK(v.stats.rx_fec_frames - v0.stats.rx_fec_frames == 18);
 	CHECK(v.stats.rx_fec_bits - v0.stats.rx_fec_bits == 12);
 	CHECK(v.stats.rx_fec_lost - v0.stats.rx_fec_lost == 6);
+	CHECK(v.stats.rx_fec_pos[0] == v0.stats.rx_fec_pos[0] && v.stats.rx_fec_pos[1] - v0.stats.rx_fec_pos[1] == 12 &&
+	      v.stats.rx_fec_pos[2] == v0.stats.rx_fec_pos[2]);
 	int n = 0;
 	for (unsigned i = 0; i < sim.air_count; i++) {
 		n += sim.air[i].kind == DMR_BURST_VOICE && memcmp(sim.air[i].payload, payload, sizeof(payload)) == 0;

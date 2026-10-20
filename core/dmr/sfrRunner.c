@@ -440,6 +440,7 @@ static void rx_voice_fec(sfrRunner_t *r, const sfrBurst_t *s)
 			r->stats.rx_fec_lost++;
 		} else {
 			r->stats.rx_fec_bits += res.errors;
+			r->stats.rx_fec_pos[f] += res.errors;
 		}
 	}
 }

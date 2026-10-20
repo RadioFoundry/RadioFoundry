@@ -70,7 +70,9 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
   sfr.ignored_slot sfr.ignored_cc sfr.last_ignored` (why bursts were ignored: reported on the outbound slot, another
   color code; the last one's color code and data type or voice index in hex), `sfr.rx_fec` (frames/bits/lost: the
   repeated voice's AMBE frames as heard, the C0/C1 Golay bits corrected in them and the frames whose C0 failed; the
-  bits go out as heard, so an SDR seeing more errors in the repeat than this means the transmit side adds them).
+  bits go out as heard, so an SDR seeing more errors in the repeat than this means the transmit side adds them),
+  `sfr.rx_fec_pos` (those bits by the frame's place in the burst: errors piling up in the first frame point at the
+  receiver still settling at the slot's start).
 
 ## 3. What the modem driver must do
 

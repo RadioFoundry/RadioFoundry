@@ -51,6 +51,7 @@ typedef struct {
 	// The repeated voice as heard: AMBE frames checked, Golay bits corrected in them, frames whose C0 failed. The bits
 	// go out as heard; this tells the repeater's own reception errors from what the air path adds
 	uint32_t rx_fec_frames, rx_fec_bits, rx_fec_lost;
+	uint32_t rx_fec_pos[3];		// rx_fec_bits by the frame's place in the burst (the first frame is next to the slot's start)
 	uint32_t tx_bursts, tx_idle, tx_starts, tx_rejected;
 	uint32_t tx_gaps;	// outbound slots left empty in an inbound call's gaps
 	uint32_t tx_filled;	// of those, taken by a burst heard after they were queued (tx_fill)
