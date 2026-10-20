@@ -115,7 +115,11 @@ static void beep(radio_sm_t *sm, uint8_t b)
 #if CONFIG_DMR
 	shared = ambeVoiceStreaming();
 #endif
-	beep_play((beep_t)b, sm->set.beep_level, shared);
+	uint8_t level = sm->set.beep_level;
+	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
+		level = radio_beep_level(level, sm->volume_sent);
+	}
+	beep_play((beep_t)b, level, shared);
 #else
 	(void)sm;
 	(void)b;
@@ -4027,6 +4031,14 @@ uint8_t radio_volume_step(uint8_t stored)
 	}
 	unsigned old = stored > 11 ? 10u : stored - 1u;
 	return (uint8_t)((old * RADIO_VOLUME_MAX + 5u) / 10u);
+}
+
+uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent)
+{
+	if (volume_percent < 0 || volume_percent >= cap) {
+		return cap;
+	}
+	return (uint8_t)volume_percent;
 }
 
 uint8_t radio_volume_stored(uint8_t step)

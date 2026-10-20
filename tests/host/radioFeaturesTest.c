@@ -1307,6 +1307,78 @@ static void test_tot_and_beeps(void)
 
 static void set_tot(radio_settings_t *s) { s->tot_s = 60; s->tot_warn_s = 0; s->key_beep = false; }
 
+// A beep's peak sample: the error beep (400 Hz, 150 ms) played out on its own stream
+static int beep_peak(void)
+{
+	req(RREQ_BEEP, BEEP_ERROR);
+	int peak = 0;
+	for (int i = 0; i < 12 && aud.cb != NULL; i++) {
+		aud.cb(mic, spk, NULL);
+		for (int k = 0; k < AUDIO_BLOCK_SAMPLES; k++) {
+			int v = spk[k] < 0 ? -spk[k] : spk[k];
+			peak = v > peak ? v : peak;
+		}
+	}
+	run(500);	// the own stream stops
+	return peak;
+}
+
+static uint8_t soft_vol = 255;
+static void r_volume(uint8_t percent) { soft_vol = percent; }
+static int8_t p_no_knob(void) { return -1; }
+static void set_beep_80(radio_settings_t *s) { s->beep_level = 80; }
+
+// Beeps follow the soft volume up to beep_level (radio_beep_level), unless the board's volume already scales the PCM
+// path (volume_pcm), and radios without the hook (an analog knob) keep beep_level as it is
+static void test_beep_follows_volume(void)
+{
+	CHECK(radio_beep_level(50, -1) == 50 && radio_beep_level(50, 100) == 50 && radio_beep_level(50, 50) == 50);
+	CHECK(radio_beep_level(50, 25) == 25 && radio_beep_level(50, 0) == 0 && radio_beep_level(0, 80) == 0);
+
+	audio_mux_reset();	// an earlier test's stream may still count as running
+	start();
+	req(RREQ_ZONE_POS, 6);	// FM: the beep starts its own stream
+	int analog = beep_peak();	// no volume hook: beep_level 50 whatever the volume
+	CHECK(analog > 7000 && analog <= 8100);
+
+	hal_radio_t soft_radio = fake_radio;
+	hal_power_t soft_power = fake_power;
+	soft_radio.volume = r_volume;
+	soft_power.volume = p_no_knob;
+	board.radio = &soft_radio;
+	board.power = &soft_power;
+	audio_mux_reset();
+	start();
+	req(RREQ_ZONE_POS, 6);
+	settings(set_beep_80);
+	req(RREQ_VOLUME, RADIO_VOLUME_MAX / 4);	// 25 %
+	run(100);
+	CHECK(soft_vol == 25);
+	int quiet = beep_peak();
+	CHECK(quiet > 3500 && quiet <= 4100);	// level 25
+	req(RREQ_VOLUME, RADIO_VOLUME_MAX);
+	run(100);
+	int loud = beep_peak();
+	CHECK(soft_vol == 100 && loud > 11500 && loud <= 12900);	// capped at beep_level 80
+	beep_stats_t b0, b1;
+	req(RREQ_VOLUME, 0);
+	run(100);
+	beep_get_stats(&b0);
+	req(RREQ_BEEP, BEEP_ERROR);
+	beep_get_stats(&b1);
+	CHECK(soft_vol == 0 && b1.played == b0.played);	// muted: no beep
+	run(500);
+
+	soft_radio.volume_pcm = true;	// the board's volume reaches the beeps itself
+	req(RREQ_VOLUME, RADIO_VOLUME_MAX / 4);
+	run(100);
+	int pcm = beep_peak();
+	CHECK(pcm > 11500 && pcm <= 12900);
+
+	board.radio = &fake_radio;
+	board.power = &fake_power;
+}
+
 static void set_bcl_carrier(radio_settings_t *s) { s->bcl = RADIO_BCL_CARRIER; }
 static void set_bcl_tone(radio_settings_t *s) { s->bcl = RADIO_BCL_WRONG_TONE; }
 static void set_inhibit(radio_settings_t *s) { s->tx_inhibit = true; }
@@ -1778,6 +1850,7 @@ int main(void)
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
 	test_tot_and_beeps();
+	test_beep_follows_volume();
 	test_bcl_inhibit();
 	test_roger_burst();
 	test_tot_tones_and_clamps();

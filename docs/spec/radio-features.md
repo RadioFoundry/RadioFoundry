@@ -29,7 +29,7 @@ link's SETTING op goes through `radio_set_settings()` too, so its changes are sa
 | `scan_dwell_ms` | 150 | listen time per channel with nothing heard (at least 50) |
 | `scan_priority` | off | zone scan: the start channel again after every 2 others |
 | `scan_beep` | off | a short beep when the scan stops on a signal |
-| `beep_level` | 50 | 0 (silent) to 100, relative to the volume knob |
+| `beep_level` | 50 | 0 (silent) to 100: the loudest a beep gets (section 4) |
 | `key_beep` | on | `radio_req_beep(BEEP_KEY)` sounds |
 | `talk_permit` | on | DMR: the talk permit tone when the voice goes on air (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |
@@ -161,8 +161,11 @@ the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
-scale so a beep mixed over voice doesn't clip. Volume is relative to the knob: the beep goes through the same
-speaker path. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
+scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog
+knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`, the DM-1701's
+HR_C6000 RX gain) play the beep at `beep_level`, and the volume acts on it in the speaker path. On a radio where the
+MCU sets the volume somewhere the PCM path doesn't pass (the DB25-D's BK4819 AF gain), the core plays each beep at the
+volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
 starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec

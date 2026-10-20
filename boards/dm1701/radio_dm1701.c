@@ -1049,6 +1049,7 @@ const hal_radio_t dm1701_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = volume,
+	.volume_pcm = true,	// HR_C6000 4:0x37 scales the codec DAC's PCM as well
 	.tx_tone = tx_tone,
 	.tx_tone_key = tx_tone_key,
 	.rx_sleep = rx_sleep,

@@ -51,7 +51,7 @@ typedef struct {
 	bool scan_priority;	// zone scan: revisit the start channel between the others
 	bool scan_beep;		// a short beep when the scan stops on a signal
 	// Beeps (CONFIG_BEEP)
-	uint8_t beep_level;	// 0 = silent .. 100, relative to the volume knob
+	uint8_t beep_level;	// 0 = silent .. 100: the loudest a beep gets (it follows the volume up to this)
 	bool key_beep;		// radio_req_beep(BEEP_KEY) sounds
 	bool talk_permit;	// DMR: the talk permit tone when the voice goes on air (channels without no_beep)
 	// VOX (CONFIG_VOX)
@@ -396,6 +396,10 @@ uint8_t radio_volume_percent(uint8_t step);
 // is scaled to the new range; the new form has bit 7 set
 uint8_t radio_volume_step(uint8_t stored);
 uint8_t radio_volume_stored(uint8_t step);
+// A beep's level when the MCU sets the speaker volume (the board has hal_radio_t.volume) and that volume doesn't
+// reach the PCM path the beeps play on (volume_pcm false): the volume percent last given to the board, up to the
+// beep_level setting (cap). volume_percent < 0 (none given yet): the cap
+uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
 
 // Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them
 void radio_settings_default(radio_settings_t *s);
