@@ -136,7 +136,7 @@ CW ID (`CONFIG_SFR_CWID`, `core/radio/radio_cwid.c`): the repeater role can iden
 | Rule | Detail |
 |---|---|
 | When | The repeater has transmitted since the last ID (a repeat or its beacon), has been quiet `RADIO_CWID_QUIET_MS` (2 s), and the interval has passed since the last ID. The first ID comes as soon as the first traffic ends. No traffic, no ID |
-| What | The callsign: the radio name's first word, up to a space, `-` (an SSID) or `/`, in upper case, and only if it clearly is one: 4 to 6 letters and digits with at least one of each (`radio_cwid_callsign`). Otherwise (a personal name, an empty name) nothing is keyed and the ID counts as skipped |
+| What | The callsign: the radio name's first word, up to a space, `-` (an SSID) or `/`, in upper case, and only if it clearly is one: 4 to 7 letters and digits with at least one of each (`radio_cwid_callsign`). Otherwise (a personal name, an empty name) nothing is keyed and the ID counts as skipped |
 | How | The runner stops (`radio_sfr_stop`), the board goes to FM and keys a carrier on the channel's frequency at the channel's power, the TX tone is keyed in Morse with the settings' speed and tone (`cw_wpm`, `cw_tone_hz`; 20 wpm, 800 Hz by default) after a 150 ms lead and before a 150 ms tail. Then DMR mode again, the receiver back on the frequency, and the role starts again with its schedule kept. This is the hotspot's CW keyer (`radio_sm.c`) |
 | Meanwhile | The role stays active: PTT is still refused, calls aren't repeated, the Home screen says "Sending ID" |
 | Cut | A channel change or hotspot mode during the ID ends it at once; it counts as cut |
