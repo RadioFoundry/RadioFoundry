@@ -173,6 +173,8 @@ def _load(path: str, meta: dict, freq_override=None):
     bps = {"cu8": 2, "cs8": 2, "cs16": 4, "cf32": 8}[meta["fmt"]]
     fs_out, ps_out = [], []
     clipped = total = 0
+    from odr_sdrbench.burstmetrics import ClipTrack
+    track = ClipTrack(D) if meta["fmt"] in ("cs8", "cu8") else None
     with open(path, "rb") as fh:
         while True:
             data = fh.read((1 << 20) * bps)
@@ -183,6 +185,8 @@ def _load(path: str, meta: dict, freq_override=None):
                 if meta["fmt"] == "cu8":
                     v -= 128
                 clipped += int(np.count_nonzero((v >= 127) | (v <= -127)))
+                if track is not None:
+                    track.add(v.astype(np.int8), total // 2)         # per-burst clipping, see burstmetrics
                 total += len(v)
             y = chz.process(from_bytes(data[:len(data) - len(data) % bps], meta["fmt"]))[0]
             f, p = fm.process(y)
@@ -192,7 +196,9 @@ def _load(path: str, meta: dict, freq_override=None):
     p = np.concatenate(ps_out)
     delay = (chz.N - chz.hop) // (2 * D) + fm.delay       # channel FIR + matched filter group delays
     meta["clip_pct_analyzed"] = round(100.0 * clipped / total, 3) if total else None
-    return f[delay:], p[delay:]
+    f, p = f[delay:], p[delay:]
+    clip = track.aligned(0, len(f)) if track is not None else None   # f[i] is the input around sample i * D
+    return f, p, clip
 
 
 def _movavg(x: np.ndarray, n: int) -> np.ndarray:
@@ -248,7 +254,7 @@ def cmd_analyze(args) -> int:
     if args.ppm is not None and meta.get("ppm") is not None and args.ppm != meta["ppm"]:
         print(f"your --ppm {args.ppm:g} overrides the capture's recorded {meta['ppm']:g}", file=sys.stderr)
         meta["ppm"] = args.ppm
-    f, p = _load(args.file, meta, args.freq * 1e6 if args.freq_given else None)
+    f, p, clip = _load(args.file, meta, args.freq * 1e6 if args.freq_given else None)
     n = len(f)
     ms = lambda i: i / FS_CH * 1000.0  # noqa: E731
     t0 = meta.get("t0")
@@ -432,32 +438,12 @@ def cmd_analyze(args) -> int:
                     cb = _slice(f[st - 12 * SPS + np.arange(12) * SPS], b.center, b.outer)
                     b.cach = cdec.push(dmr_cach.bits_to_int(cb))
 
-    # LCs: voice LC header / terminator (RS(12,9) checked by pdu), CSBK opcode, embedded LC from B-E (voice E)
-    frags = {}
+    # LCs: voice LC header / terminator (RS(12,9) checked by pdu), CSBK opcode, embedded LC from B-E (voice E), each
+    # with a `type` (grp_voice, talker_alias_hdr, gps_info, ...): odr_sdrbench.rxmon._decode_lc / lcinfo
+    from odr_sdrbench.rxmon import _decode_lc
+    frags, ta_state = {}, {}
     for b in bursts:
-        b.lc = None
-        if b.raw is None:
-            continue
-        if b.kind in ("VLC_HDR", "TERM_LC"):
-            lc = pdu.decode_voice_lc(b.raw, b.dt)
-            if lc is not None:
-                b.lc = {"flco": lc.flco, "src": lc.src_id, "dst": lc.dst_id, "so": lc.service_options}
-        elif b.kind == "CSBK":
-            c = pdu.decode_csbk(b.raw)
-            if c is not None:
-                b.lc = {"csbko": c.opcode, "crc_ok": c.crc_ok, "src": c.src_id, "dst": c.dst_id}
-        elif b.kind == "VOICE_A":
-            frags = {}
-        elif b.kind[:7] in ("VOICE_B", "VOICE_C", "VOICE_D", "VOICE_E"):
-            frags[b.kind[6]] = fec.embedded_signalling(b.raw)
-            if b.kind[6] == "E" and all(k in frags for k in "BCDE"):
-                lc9 = fec.embedded_lc_decode(sum((frags[k] for k in "BCDE"), []))
-                if lc9 is not None:
-                    lc = pdu.parse_full_lc(lc9)
-                    b.lc = {"emb_flco": lc.flco, "fid": lc.fid, "src": lc.src_id, "dst": lc.dst_id,
-                            "raw": bytes(lc9).hex()}     # talker alias / GPS blocks are decoded from the raw LC
-                else:
-                    b.lc = {"emb": "bad"}
+        _decode_lc(b, frags, ta_state)
 
     # AMBE channel-frame FEC per voice burst (Golay corrections in C0 / C1 of its three frames; no vocoder).
     for b in bursts:
@@ -474,6 +460,9 @@ def cmd_analyze(args) -> int:
         bd = 10 * np.log10(blocks + 1e-12)
         b.spread = float(bd.max() - bd.min())
         b.step = b.spread > args.step_db
+    # Ramp times, first-burst flag, per-burst ADC clipping and misread-family flags (odr_sdrbench.burstmetrics)
+    from odr_sdrbench import burstmetrics
+    burstmetrics.annotate(bursts, f, p, clip, D=int(round(meta["fs"] / FS_CH)), noise_db=noise)
 
     # Window.
     lo_ms = args.from_ms if args.from_ms is not None else -1e9
@@ -546,6 +535,25 @@ def cmd_analyze(args) -> int:
     print()
     print("summary:")
     sel = [b for b in bursts if lo_ms <= ms(b.start) <= hi_ms]
+
+    def slot_of(b):
+        rel = ms(b.start - tref)
+        return "AB"[int(((rel + SLOT_MS / 2) % (2 * SLOT_MS)) // SLOT_MS)]
+    bj = [{"t_ms": round(ms(b.start), 2), "slot": slot_of(b), "family": b.fam, "voice": bool(b.voice),
+           "anchor_family": getattr(b, "anchor_fam", None) if b.fam == "emb" else None,
+           "sync_errors": b.errs, "sync_corr": round(float(b.corr), 3), "slot_type_errors": b.st_err, "cc": b.cc,
+           "dt": b.dt, "kind": b.kind.split()[0], "detail": b.kind, "cach_ts": b.slot if b.fam == "bs" else None,
+           "dbfs": round(float(b.pwr), 1), "spread_db": round(b.spread, 1), "step": bool(b.step),
+           "foff_hz": round(float(b.center)), "lc": b.lc,
+           "cach": getattr(b, "cach", None),
+           "ramp_up_ms": b.ramp_up_ms, "ramp_down_ms": b.ramp_down_ms, "on_ms": b.on_ms, "tx_start": b.tx_start,
+           "clip_samples": b.clip_samples, "clip_pct": b.clip_pct, "clipped": b.clipped,
+           "isolated": bool(b.isolated), "neighbor_family": b.neighbor_family,
+           "errs_vs_neighbor": b.errs_vs_neighbor,
+           "ambe_fec": [{"c0": c0, "c1": c1, "bad": bad} for c0, c1, bad in b.fec] if b.fec else None}
+          for b in sel]
+    from odr_sdrbench import calls as _calls
+    grouped = _calls.group_calls(bj)
     counts = {}
     for b in sel:
         rel = ms(b.start - tref)
@@ -555,6 +563,29 @@ def cmd_analyze(args) -> int:
     for k in sorted(counts):
         print(f"  {k[0]:7s} {k[1]:10s} slot {k[2]}: {counts[k]}")
     print(f"  total bursts {len(sel)}, carrier segments {len(segs)}")
+    for c in grouped["calls"]:
+        line = (f"  call {c['id']}: {c['family']}{'' if c['slot'] is None else ' ts%d' % c['slot']} {c['lc_type']}, "
+                f"{c['voice_bursts']} voice bursts {c['voice_letters']}"
+                f"{'' if c['letters_ok'] else ' (NOT whole superframes in order)'}"
+                f"{', late entry' if c['late_entry'] else ''}")
+        if c["talker_alias"]:
+            line += (f"; alias {c['talker_alias']['text']!r}" if c["talker_alias"]["complete"]
+                     else "; alias incomplete")
+        if c["gps"]:
+            line += f"; GPS {c['gps']['lat']:.5f}, {c['gps']['lon']:.5f}"
+        if c["isolated_in_call"]:
+            line += f"; {len(c['isolated_in_call'])} burst(s) with a misread sync family counted in"
+        print(line)
+    if grouped["left_out"]:
+        print(f"  left out of every call: " + ", ".join(
+            f"{d['t_ms']:.1f} {d['kind']} ({d['reason']})" for d in grouped["left_out"][:12]))
+    iso = [x for x in bj if x["isolated"] and x["family"] != "emb"]
+    if iso:
+        print(f"  isolated sync family (differs from both neighbors): "
+              + ", ".join(f"{x['t_ms']:.1f} {x['family']} vs {x['neighbor_family']}" for x in iso[:12]))
+    cl = [x for x in bj if x["clipped"]]
+    if cl:
+        print(f"  {len(cl)} of {len(bj)} bursts reached the ADC rails (clip_pct per burst in the JSON)")
     vf = [x for b in sel if b.fec for x in b.fec]
     if vf:
         print(f"  AMBE FEC (C0/C1 Golay corrections; C2 has no FEC): {len(vf)} frames in "
@@ -619,20 +650,10 @@ def cmd_analyze(args) -> int:
               f"{sum(1 for _, ok in slcs if not ok)} bad"
               + (f", last {dmr_cach.describe_slc(slcs[-1][0])}" if slcs else ""))
     if args.json:
-        def slot_of(b):
-            rel = ms(b.start - tref)
-            return "AB"[int(((rel + SLOT_MS / 2) % (2 * SLOT_MS)) // SLOT_MS)]
         out = {
             "file": args.file, "meta": meta, "seconds": n / FS_CH, "noise_dbfs": round(noise, 1),
             "dbm_offset": round(float(dbm_off), 1),
-            "bursts": [{"t_ms": round(ms(b.start), 2), "slot": slot_of(b), "family": b.fam, "voice": bool(b.voice),
-                        "sync_errors": b.errs, "slot_type_errors": b.st_err, "cc": b.cc, "dt": b.dt,
-                        "kind": b.kind.split()[0], "detail": b.kind, "cach_ts": b.slot if b.fam == "bs" else None,
-                        "dbfs": round(float(b.pwr), 1), "spread_db": round(b.spread, 1), "step": bool(b.step),
-                        "foff_hz": round(float(b.center)), "lc": b.lc,
-                        "cach": getattr(b, "cach", None),
-                        "ambe_fec": [{"c0": c0, "c1": c1, "bad": bad} for c0, c1, bad in b.fec] if b.fec else None}
-                       for b in sel],
+            "bursts": bj,
             "edges": edges_out,
             "summary": {
                 "counts": {" ".join(k): v for k, v in sorted(counts.items())},
@@ -641,6 +662,11 @@ def cmd_analyze(args) -> int:
                 "repeat_gap_ms": sorted(round(x, 2) for x in gaps),
                 "overlaps": len(ov), "power_steps": len(steps),
                 "unexplained_carrier": [[round(a, 1), round(u, 1)] for a, u in unexpl],
+                # calls (odr_sdrbench.calls): per call its own voice letters, LC types, alias, GPS, and every burst
+                # left out of the calls with the reason (another family / slot, outside the call, a false sync match)
+                "calls": grouped["calls"], "left_out": grouped["left_out"],
+                "isolated": [x["t_ms"] for x in bj if x["isolated"]],
+                "clipped_bursts": sum(1 for x in bj if x["clipped"]),
             },
         }
         with open(args.json, "w") as fh:

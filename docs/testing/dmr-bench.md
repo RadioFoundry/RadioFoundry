@@ -197,7 +197,8 @@ T1 pass criteria (all automatic):
 - every burst MS sync (direct mode), color code = the channel's;
 - at least one voice LC header (three expected, `docs/spec/dmr-modem.md` 2.5), header and terminator LC with
   source = the radio's ID, destination = the TG, FLCO 0;
-- voice A-F in order, whole superframes; the embedded LC from B-E decodes and equals the header's;
+- voice A-F in order, whole superframes; the embedded LC from B-E decodes and its call LCs (FLCO 0 or 3, not talker
+  alias or GPS) equal the header's;
 - at least one terminator with LC after the last voice burst;
 - same-slot spacing 60.00 +- 0.05 ms, standard deviation < 0.1 ms;
 - median frequency offset within +-500 Hz (the FM carrier was within 50 Hz);

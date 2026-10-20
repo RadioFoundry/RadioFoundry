@@ -510,8 +510,13 @@ def check_tx(sdr, expect, radio_id, cc, c):
     c.add("bursts found" + (" (from the radio's first header)" if mine else ""), len(b) > 0, f"{len(b)}")
     if not b:
         return
-    fams = sorted({x["family"] for x in b if x["family"] != "emb"})
-    c.add("sync family MS only (DMO)", fams == ["ms"], ",".join(fams))
+    # A lone burst whose family differs from both neighbors (`isolated`: one misread in a weak signal, not a second
+    # transmitter) is reported but does not fail the check.
+    fams = sorted({x["family"] for x in b if x["family"] != "emb" and not x.get("isolated")})
+    lone = [x for x in b if x["family"] != "emb" and x.get("isolated")]
+    c.add("sync family MS only (DMO)", fams == ["ms"],
+          ",".join(fams) + (f" ({len(lone)} isolated misread ignored: "
+                            + ", ".join(f"{x['family']}@{x['t_ms']:.0f}" for x in lone[:4]) + ")" if lone else ""))
     ccs = sorted({x["cc"] for x in b if x["cc"] is not None})
     c.add(f"color code {cc} only", ccs == [cc], f"{ccs}")
     hdr = [x for x in b if x["kind"] == "VLC_HDR"]
@@ -533,14 +538,25 @@ def check_tx(sdr, expect, radio_id, cc, c):
         c.add("header / terminator LC decoded", False)
     emb = [x["lc"] for x in voice if x.get("lc") and "emb_flco" in x["lc"]]
     c.add("embedded LC decoded (B-E)", len(emb) > 0, f"{len(emb)} superframes")
-    if emb and lcs:
+    emb_call = [e for e in emb if e.get("type", "grp_voice") in ("grp_voice", "priv_voice")]   # not alias / GPS
+    if emb_call and lcs:
         c.add("embedded LC = header LC", all((e.get("src"), e.get("dst")) == (lcs[0].get("src"), lcs[0].get("dst"))
-                                            for e in emb), "")
+                                            for e in emb_call), "")
     if voice:
         c.add("terminator after the last voice", any(t["t_ms"] > voice[-1]["t_ms"] for t in term), f"{len(term)}")
-        letters = [x["kind"][6:7] for x in voice]
-        c.add("voice A-F in order (whole superframes)", "".join(letters).replace("ABCDEF", "") == "",
-              "".join(letters)[-24:])
+        # The letters of the call's own bursts (odr_sdrbench.calls: same stream, header to terminator; a false sync
+        # match, another channel's burst or a misread family is left out, listed in summary.left_out)
+        calls = sdr["summary"].get("calls")
+        if calls:
+            big = max(calls, key=lambda k: k["voice_bursts"])
+            c.add("voice A-F in order (whole superframes)", big["letters_ok"],
+                  f"{big['voice_letters'][-24:]}"
+                  + (f", {len(big['left_out'])} burst(s) left out" if big["left_out"] else "")
+                  + (f", {big['inferred_letters']} letter(s) from position" if big["inferred_letters"] else ""))
+        else:
+            letters = [x["kind"][6:7] for x in voice]
+            c.add("voice A-F in order (whole superframes)", "".join(letters).replace("ABCDEF", "") == "",
+                  "".join(letters)[-24:])
     sp = sdr["summary"].get("same_slot_spacing_ms") or {}
     c.add("same-slot spacing 60.00 +- 0.05 ms", sp and abs(sp["mean"] - 60.0) <= 0.05 and sp["sd"] < 0.1, f"{sp}")
     fo = sorted(x["foff_hz"] for x in b)
