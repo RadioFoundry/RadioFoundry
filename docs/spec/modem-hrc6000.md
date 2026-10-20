@@ -243,9 +243,10 @@ step with the sender, because it locked to noise or to another station. The rece
 
 The interrupt comes before each burst the chip is about to send. The handler keys the PA and switches the RF chip to
 TX. The DM-1701 has no RF RX interrupt, so the MCU ends each TX burst itself. At the next timeslot interrupt, if the PA
-has been on for more than 20 ms, the MCU turns it off and puts the RF chip back in RX. After the last burst of a
-transmission, a one-shot 29 ms timer does the same. Keying takes the PA enables high and writes AT1846S register
-0x30 = 0x60C6 (digital TX). Un-keying takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz).
+has been on for more than 20 ms, the MCU turns it off and puts the RF chip back in RX, after the last burst of a
+transmission too. Keying takes the PA enables high and writes AT1846S register 0x30 = 0x60C6 (digital TX). Un-keying
+takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz). The DM-1701 keys 1 ms after the interrupt, and
+its two switching sequences (straight from RX, or through idle) are in hardware-dm1701.md 6.
 
 On these radios the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
 know whether a transmission is in progress must use the modem slot state (section 7.5), not the PA.

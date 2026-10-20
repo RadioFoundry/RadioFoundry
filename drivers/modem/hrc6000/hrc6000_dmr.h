@@ -166,6 +166,8 @@ typedef struct {
 	uint8_t last_r42;	// raw 0x42 at the last timeslot interrupt
 	uint8_t last_report_ms;	// last report: ms after its timeslot interrupt
 	uint8_t last_pa_ms;	// last burst of ours: ms the PA was on
+	uint16_t pa_lead_us;	// last burst of ours: from the RF TX interrupt to the next timeslot interrupt
+	uint16_t pa_on_us;	// last burst of ours: from the RF TX interrupt to the PA drop
 	int8_t last_ts;		// slot number of the last burst heard (0 unknown)
 	uint8_t tx_state;	// engine TX state (0 idle)
 	// The LC trace of the last reception (not cleared by a counter reset)

@@ -149,11 +149,22 @@ static void test_blank(void)
 	CHECK(writes == 0);
 }
 
+static void test_direct_tx_ref(void)
+{
+	int8_t v = 0;
+	CHECK(dm1701_direct_tx_ref(461137500u, -49, &v) && v == -49 + DM1701_DIRECT_TX_REF_STEPS);
+	CHECK(dm1701_direct_tx_ref(461137500u, 127 - DM1701_DIRECT_TX_REF_STEPS, &v) && v == 127);
+	v = 5;
+	CHECK(!dm1701_direct_tx_ref(461137500u, 128 - DM1701_DIRECT_TX_REF_STEPS, &v) && v == 5);	// overflow: idle path
+	CHECK(!dm1701_direct_tx_ref(146520000u, 0, &v) && v == 5);	// VHF: idle path
+}
+
 int main(void)
 {
 	test_factory();
 	test_working();
 	test_blank();
+	test_direct_tx_ref();
 	printf(failures ? "# calibrationTest FAILED (%d)\n" : "# calibrationTest PASSED\n", failures);
 	return failures ? 1 : 0;
 }

@@ -106,6 +106,15 @@ bool dm1701_cal_load(void);
 // Calibration values interpolated at a frequency (Hz); returns false if no calibration is loaded (safe defaults filled)
 bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out);
 
+// Direct DMR keying (hardware-dm1701.md 6): the AT1846S switched from RX straight to DMR TX, no idle step, puts the
+// carrier about 3.07 kHz low, and a frequency write can't fix it (it applies only coming out of idle). The HR_C6000
+// MOD1 reference offset (4:0x04, about 75 Hz a step at 461 MHz) is raised for the burst instead. Measured at 461.1375
+// MHz (SDR bench, 2026-10-19): 41 steps -57..-15 Hz, 42 steps +16..+60 Hz, 43 steps +94..+132 Hz
+#define DM1701_DIRECT_TX_REF_STEPS	42
+// 4:0x04 for a direct burst at hz from the calibrated offset; false where direct keying doesn't apply (VHF) or the
+// value would overflow the register, and the burst then goes through idle
+bool dm1701_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out);
+
 // A DMA stream's memory address must be in main SRAM (0x2000_0000): the DMA controllers can't reach the CCM, where
 // ODR_CPU_RAM state and every task stack live. Stops here, at set-up, instead of a silent transfer error later
 #define DMA_RAM_OK(p)	configASSERT(((uintptr_t)(p) >> 24) == 0x20u)

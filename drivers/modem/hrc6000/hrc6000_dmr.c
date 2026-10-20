@@ -369,7 +369,9 @@ static void pa_drop(hrc6000_dmr_t *e, uint32_t t)
 		e->st.rf_fail++;
 	}
 	e->pa_on = false;
-	uint32_t ms = (t - e->t_pa_on) / 1000u;
+	uint32_t us = t - e->t_pa_on;
+	e->st.pa_on_us = (uint16_t)(us > 0xFFFFu ? 0xFFFFu : us);
+	uint32_t ms = us / 1000u;
 	e->st.last_pa_ms = (uint8_t)(ms > 255u ? 255u : ms);
 	push(e, DMR_EV_TX_SLOT_ENDED, e->phase_ts[e->tx_phase], e->tick);
 }
@@ -1132,6 +1134,10 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	if (e->ops->sys_line_low != NULL && e->ops->sys_line_low(e->ops->ctx)) {
 		e->st.sys_at_tick++;
 		sys_service(e, t, true);
+	}
+	if (e->pa_on && e->pa_on_tick == e->tick) {
+		uint32_t lead = t - e->t_pa_on;
+		e->st.pa_lead_us = (uint16_t)(lead > 0xFFFFu ? 0xFFFFu : lead);
 	}
 	// PA off first: our burst of the slot that just ended (hardware-dm1701.md 6, gotchas 3.4)
 	if (e->pa_on && (uint32_t)(t - e->t_pa_on) > PA_MIN_ON_US) {

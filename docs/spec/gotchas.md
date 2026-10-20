@@ -154,7 +154,9 @@ MCU, [hardware-dm1701.md](hardware-dm1701.md)); the GD-77 routes the RF RX inter
 **3.5 DM-1701 +3 kHz TX offset is a sequencing hack.** The driver adds 3 kHz to the TX frequency to compensate an
 offset caused by turning the receiver on between the frequency write and TX. A switch that writes the frequency with
 the receiver off and goes straight to TX must not add it (bursts were +2.93 kHz off). Rule: measure TX frequency per
-switching sequence; don't carry a fixed offset. Commit cb17867.
+switching sequence; don't carry a fixed offset. Commit cb17867. ODR's direct sequence (RX straight to TX, no idle,
+which an SFR needs: [hardware-dm1701.md](hardware-dm1701.md) 6) corrects the same shift with the HR_C6000 MOD1 offset,
+because the AT1846S applies a frequency write only coming out of idle.
 
 **3.6 Listen before talk for machine traffic.** Data, ACKs and CSBK answers collided with the far end. Rule: direct
 mode: no voice, data burst or carrier for 120 ms; repeater: 180 ms without data bursts and wait for the hang time to
