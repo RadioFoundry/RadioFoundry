@@ -11,7 +11,7 @@ and what has been checked on it.
 | [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | In testing on a radio. Not in the releases |
 | [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
-| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR receive and transmit, settings storage, cable programming and volume work. Hotspot and network builds not yet run. Not for use |
+| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR voice receive and transmit, the hotspot and the network services, settings storage, cable programming and volume work. Not for general use |
 | [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -297,7 +297,8 @@ firmware](19-moving-from-stock-dm32.md)), which adds the offset. The radio repor
 ## Radioddity DB25-D PRO
 
 A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys and a hand microphone. **Early
-bring-up, not for use:** ODR builds for it, and FM and DMR receive and transmit work on a radio. It is installed with the
+bring-up, not for general use:** ODR builds for it, and FM and DMR voice receive and transmit work on a radio, with the
+hotspot and the network services. It is installed with the
 [radio programming utility](#installing-the-db25-d-pro) only.
 
 ### Installing the DB25-D PRO
