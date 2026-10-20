@@ -55,6 +55,10 @@ class Marking(unittest.TestCase):
 		html = self.render("<!-- glossary: off CTCSS -->\n\nUse CTCSS and DCS.\n")
 		self.assertEqual(self.marked(html), ["DCS"])
 
+	def test_opt_out_by_alias(self):
+		html = self.render("<!-- glossary: off TS -->\n\nTS 1 is a timeslot.\n")
+		self.assertEqual(self.marked(html), [])
+
 	def test_title_carries_the_definition(self):
 		html = self.render("Use CTCSS.\n")
 		self.assertIn('title="Continuous tone coded squelch system', html)

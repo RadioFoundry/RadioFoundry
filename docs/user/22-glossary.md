@@ -17,7 +17,7 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 | <a id="t-confirmed-data"></a>Confirmed data | DMR packet data the receiving radio acknowledges. What didn't arrive is sent again. |
 | <a id="t-dmr"></a>DMR | Digital Mobile Radio, the ETSI digital radio standard (TS 102 361). |
 | <a id="t-hang-time"></a>Hang time | How long after a call a repeater or radio keeps the call's talkgroup ready for a reply. |
-| <a id="t-pi-header"></a>PI header (PI headers) | A DMR header that announces encryption with a changing key. ODR never plays such calls. |
+| <a id="t-pi-header"></a>PI header (PI headers, PI) | A DMR header that announces encryption with a changing key. ODR never plays such calls. |
 | <a id="t-private-call"></a>Private call | A DMR call to one radio. |
 | <a id="t-radio-check"></a>Radio check | A DMR request another radio answers automatically, to show it is on and in range. |
 | <a id="t-sms"></a>SMS | Short message service: text messages. On DMR, short data carries them. |
@@ -30,6 +30,7 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 | Term | Meaning |
 |---|---|
 | <a id="t-am"></a>AM | Amplitude modulation: speech varies the carrier's strength. Airband uses it. |
+| <a id="t-ani"></a>ANI | Automatic number identification: the caller's ID sent as tones in an analog call. |
 | <a id="t-bandwidth"></a>Bandwidth | The width of an FM channel: 12.5 kHz (narrow) or 25 kHz (wide). |
 | <a id="t-ctcss"></a>CTCSS | Continuous tone coded squelch system: a sub-audible tone on FM that opens the squelch only for the right signal. |
 | <a id="t-dcs"></a>DCS | Digital coded squelch: a sub-audible digital code on FM that opens the squelch only for the right signal. |

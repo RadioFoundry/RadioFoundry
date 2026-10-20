@@ -191,7 +191,7 @@ class Docs:
 		"""The text token as text and <abbr> tokens."""
 		text, cands = tok.content, {}
 		for pat, name, e in self.terms:
-			if e["term"] in seen or e["term"] in skip or (scope and e["scope"] != scope):
+			if e["term"] in seen or skip.intersection(self.glossary.names(e)) or (scope and e["scope"] != scope):
 				continue
 			m = pat.search(text)
 			if m and (e["term"] not in cands or (m.start(), -(m.end() - m.start())) < cands[e["term"]][:2]):
