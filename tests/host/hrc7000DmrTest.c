@@ -636,16 +636,19 @@ static void test_fm_tx_limit(void)
 	dev.fm_tx_limit[0] = dev.fm_tx_limit[1] = 0;
 }
 
-// RF_CONTROL at power-on: the RF TX interrupt 3.1 ms ahead unless the board set its lead, the other fields unchanged
+// RF_CONTROL: the RF TX interrupt 3.1 ms ahead unless the board set its lead, the other fields unchanged. The setter
+// reaches the chip after power-on (the DM-32UV once set the field after it, and kept 3.1 ms), and power-on keeps it
 static void test_rf_tx_lead(void)
 {
 	setup();
 	hrc7000_power_on_init(&dev, 128, 20);
 	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
-	dev.rf_tx_lead = 20;	// the DM-1801 Pro's 2.0 ms
+	hrc7000_set_rf_tx_lead(&dev, 4);	// the DM-32UV's 0.4 ms
+	CHECK(REG(C7_RF_CONTROL) == 0x0004041Au);
 	hrc7000_power_on_init(&dev, 128, 20);
-	CHECK(REG(C7_RF_CONTROL) == 0x0004141Au);
-	dev.rf_tx_lead = 0;
+	CHECK(REG(C7_RF_CONTROL) == 0x0004041Au);
+	hrc7000_set_rf_tx_lead(&dev, 0);
+	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
 }
 
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after

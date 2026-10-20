@@ -60,6 +60,18 @@ void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code)
 	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, (uint8_t)(0x80u | (code & 0x3Fu)));
 }
 
+static void rf_control_wr(hrc7000_t *d)
+{
+	uint32_t lead = d->rf_tx_lead != 0 ? d->rf_tx_lead : HRC7000_RF_TX_LEAD_DEF;
+	hrc7000_wr(d, C7_RF_CONTROL, RF_CONTROL_VALUE | ((lead & 0x3Fu) << RF_CONTROL_TX_LEAD));
+}
+
+void hrc7000_set_rf_tx_lead(hrc7000_t *d, uint8_t lead)
+{
+	d->rf_tx_lead = lead;
+	rf_control_wr(d);
+}
+
 void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 {
 	hrc7000_wr(d, C7_FM_BANDWIDTH, 0x5F);
@@ -137,8 +149,7 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	// The same enable for the TDMA direct mode syncs: without it they are never detected (bench, 2026-10-16)
 	hrc7000_wr(d, C7_RECV_TDMA1_SYNC_H, hrc7000_rd(d, C7_RECV_TDMA1_SYNC_H) | (1u << 31));
 	hrc7000_wr(d, C7_RECV_TDMA2_SYNC_H, hrc7000_rd(d, C7_RECV_TDMA2_SYNC_H) | (1u << 31));
-	uint32_t lead = d->rf_tx_lead != 0 ? d->rf_tx_lead : HRC7000_RF_TX_LEAD_DEF;
-	hrc7000_wr(d, C7_RF_CONTROL, RF_CONTROL_VALUE | ((lead & 0x3Fu) << RF_CONTROL_TX_LEAD));
+	rf_control_wr(d);
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 	hrc7000_wr(d, C7_FM_TONE1, FM_TONE1_DEFAULT);	// DTMF tone steps (8.3)
 	hrc7000_wr(d, C7_FM_TONE2, 0x06D10787u);

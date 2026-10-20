@@ -158,7 +158,7 @@ typedef struct {
 	// (the microphone, the codec mixer). The board sets it; 0 = HRC7000_FM_TX_LIMIT_DEF (8.1)
 	uint8_t fm_tx_limit[2];
 	// The RF TX interrupt's lead on each TX burst, RF_CONTROL b13:8 in 100 us steps: the board's time to switch its RF
-	// chip to TX. The board sets it before power_on_init; 0 = HRC7000_RF_TX_LEAD_DEF (3.1 ms)
+	// chip to TX. Set with hrc7000_set_rf_tx_lead; 0 = HRC7000_RF_TX_LEAD_DEF (3.1 ms)
 	uint8_t rf_tx_lead;
 } hrc7000_t;
 
@@ -202,6 +202,9 @@ static inline uint32_t hrc7000_mod_bias_dc(uint8_t tx_center, uint16_t modcal)
 // FM (WORK_MODE 0x80) with every DMR register written once, the modem system interrupts enabled at the chip and
 // mic_gain (0..42 dB) in GCR_ADCL
 void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db);
+// The RF TX interrupt's lead (rf_tx_lead), written to RF_CONTROL at once. Call it after power_on_init, which writes the
+// stored lead again. A plain field write after power_on_init never reached the chip on the DM-32UV
+void hrc7000_set_rf_tx_lead(hrc7000_t *d, uint8_t lead);
 // GCR_ADCL bits 5:0 (0..42 dB, clamped). The stock firmware writes one value for FM at each FM transmit start and
 // another for DMR at each DMR entry and DMR transmit start (modem-hrc7000.md 4 step 32, 5.1 step 2)
 #define HRC7000_MIC_GAIN_MAX_DB	42u

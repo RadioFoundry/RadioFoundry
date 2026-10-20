@@ -249,7 +249,6 @@ static void init(void)
 	// reset value, peaked at 4.8 kHz; 5 at 12.5 kHz scales to about 2.4 kHz (limiter x coefficient, not measured)
 	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
-	modem.rf_tx_lead = RF_TX_LEAD;
 	// modem-hrc7000.md 4 steps 1-3: ADC reset and idle, DAC B to its pin, DACs B and C on with the PA drive at 0
 	ADC_CTRL = ADC_CTRL_RESET;
 	hal_delay_us(2);
@@ -263,6 +262,7 @@ static void init(void)
 	DAC_DATA_B = 0;
 	DAC_DATA_C = DAC_C_INIT;
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DMR_DB);
+	hrc7000_set_rf_tx_lead(&modem, RF_TX_LEAD);
 
 	hrc_pin_out(PIN_RF_CS, true);
 	hrc_pin_out(PIN_RF_CLK, false);

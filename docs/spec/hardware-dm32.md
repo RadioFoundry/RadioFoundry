@@ -751,6 +751,22 @@ this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and le
 hotspot's downlink, never aligned to it, and its bursts were not taken. The stock firmware retunes at every burst end
 too (`hardware-dm1801pro.md` 5.4). The PLL lock time after each retune is not measured yet (HIL check open).
 
+ODR raises the RF TX interrupt **0.4 ms** before each burst (`hrc7000_t.rf_tx_lead` = 4), not the driver's 3.1 ms. At
+the interrupt the switch above leaves receive, and with a long lead it cut off the end of the inbound burst before
+ours. That is the same fault as on the DM-1801 Pro (`hardware-dm1801pro.md` 5.6). An SFR repeat sweep (BENCH
+2026-10-20, 72 inbound frames per call, the radio in another room from the bench, so with a weak signal):
+
+| Lead | Frames lost per call | Bits corrected per call in the frames before ours |
+|---|---|---|
+| 2.0 ms | 7, 9, 17 | 79-143 |
+| 1.2 ms | 4, 5, 8 | 44-96 |
+| 0.6 ms | 0, 0, 0, 0, 0, 6, 7 | 51-96 |
+| 0.4 ms | 0, 0, 0, 2, 2, 4, 6 | 22-46 |
+
+The radio's own repeated bursts decoded clean at every lead. The first frame of each inbound pair kept about 6 bits
+corrected per frame at every TX lead and at RF RX interrupt leads of 1.6, 2.6 and 4.8 ms. That is the weak signal, not
+the switch timing.
+
 Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range shares the VHF path) (KP).
 
 ### 8.6 DMR PA timer
