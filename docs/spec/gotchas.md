@@ -568,6 +568,17 @@ in an open inbound call, voice headers and terminators are never echo-checked (t
 - Every terminator heard while keyed came with the chip's RS flag and was dropped in the driver. Rule: while sending,
   the driver passes headers and terminators on with `crc_ok` false and the runner checks them itself (14.1).
 
+**14.12 An HR_C6000 SFR user hears one copy of a call (DM-1701, SDR bench 2026-10-19).** In direct mode the chip
+decodes the voice stream of the slot it locked onto. Reports for the other slot during the call are stale status
+(class 0, the same values again and again), not the other copy. So the user modes "First copy" and "Voting" only fall
+over from one copy to the other between calls or after a loss, never take frames from both. Not timing (the repeat
+sat 0.13 ms off the talker's slot grid) and not the repeat's sync (clean TS2 voice sync); a stronger repeat made it
+worse. Rule: don't count on both copies from an HR_C6000; hearing both needs the raw RX RAM path (sfr.md 3).
+
+**14.13 The HR_C7000 repeat carries bit errors (DM-32UV).** The repeater's own receiver takes errors while it switches
+TX/RX every burst: on air 212 of 216 repeated voice frames needed Golay corrections and 4 were uncorrectable, where
+the talker's direct copy was clean. It plays, but it is the reason a user would want the direct copy (sfr.md 4).
+
 ## 15. Testing practice
 
 - An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests

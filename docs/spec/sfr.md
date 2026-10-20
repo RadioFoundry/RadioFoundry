@@ -141,6 +141,11 @@ CW ID (`CONFIG_SFR_CWID`, `core/radio/radio_cwid.c`): the repeater role can iden
 | Meanwhile | The role stays active: PTT is still refused, calls aren't repeated, the Home screen says "Sending ID" |
 | Cut | A channel change or hotspot mode during the ID ends it at once; it counts as cut |
 
+On air (SDR bench, 2026-10-19; DM-32UV repeater, 461.1375 MHz): after a user's call the ID came 2 s after the
+hang, "N4NQV" at 20 wpm (60 ms elements), 800 Hz, about 1.8 kHz deviation, the 150 ms lead and tail; the next one
+5 min later after new traffic (interval 5 min). The runner's counters carry on over the ID (`radio_sfr_start`
+`keep_stats`).
+
 Debug link view `dmr`: `dmr.sfr_cwid` (the setting), `dmr.sfr_cw` (keying now), `dmr.sfr_cwid_sent`,
 `dmr.sfr_cwid_cut` (cut or skipped).
 
@@ -159,11 +164,11 @@ On air (SDR bench, 2026-10-19; DM-32UV repeater, DM-1701 user, 461.1375 MHz CC 2
   corrections where the direct copy was clean (212 of 216 repeated frames corrected, 4 uncorrectable): the DM-32UV's
   receiver takes bit errors while it switches per burst. Both open.
 - The DM-1701 as a user played a bench call (TS1 sync) whole, 24 of 24 voice bursts, no frame lost. It never
-  reported the repeated copy during the call (`rx_sfr_dup` 0): its HR_C6000 stays synced to the slot it locked onto
-  in passive direct mode timing, although the driver writes "receive" for every slot (`rx_lock_slot(0)`), and the
-  outbound slot is reported only after the inbound call's terminator. A user out of range of the talker locks to
-  the repeat; one whose talker fades mid-call hears a gap until the receiver's lost-signal restart. Hearing both
-  slots during a call is open HR_C6000 work (gotchas 1.6).
+  reported the repeated copy during the call (`rx_sfr_dup` 0): its HR_C6000 decodes the voice of the slot it locked
+  onto, although the driver writes "receive" for every slot (`rx_lock_slot(0)`); its reports for the other slot are
+  stale status (gotchas 14.12). With `sfr_rx` 1 or 2 it falls over to the other copy only between calls or after a
+  loss. A user out of range of the talker locks to the repeat; one whose talker fades mid-call hears a gap until the
+  receiver's lost-signal restart. Hearing both slots during a call needs the raw RX RAM path (section 3).
 
 Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
 command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it). On the radio, Tools > Single-freq repeater shows the
