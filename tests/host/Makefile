@@ -1059,3 +1059,14 @@ run-gd77: k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest k22fSystem
 	./gd77BoardTest
 	./hrc6000ClockTest
 .PHONY: run-gd77
+
+# The generic 24-series I2C EEPROM driver against a model of the part (page wrap, write cycle, acknowledge polling)
+EEPROMD := $(ROOT)/drivers/flash/i2c_eeprom
+TESTS   += i2cEepromTest
+i2cEepromTest: i2cEepromTest.c $(EEPROMD)/i2c_eeprom.c $(EEPROMD)/i2c_eeprom.h $(ROOT)/drivers/bus/i2c_bus.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ i2cEepromTest.c $(EEPROMD)/i2c_eeprom.c
+
+run: run-i2c-eeprom
+run-i2c-eeprom: i2cEepromTest
+	./i2cEepromTest
+.PHONY: run-i2c-eeprom
