@@ -59,12 +59,20 @@ One 12.288 MHz reference feeds the K22F's EXTAL0 and the HR_C6000's XTALI (I). T
 | Plan | Mode | PLL | Core | Bus, FlexBus | Flash | Status |
 |---|---|---|---|---|---|---|
 | Bring-up | RUN | 12.288 / 6 = 2.048 MHz, x 24 | 49.152 MHz | 49.152 MHz | 24.576 MHz | in `board.c` |
-| Target | HSRUN | 12.288 / 4 = 3.072 MHz, x 31 | 95.232 MHz | 47.616 MHz | 23.808 MHz | defined, not used yet |
+| Target | HSRUN | 12.288 / 4 = 3.072 MHz, x 31 | 95.232 MHz | 47.616 MHz | 23.808 MHz | with `GD77_CLOCK_TARGET=1` |
+| RUN step of the target | RUN | as the target | 47.616 MHz | 47.616 MHz | 23.808 MHz | around flash commands (15.1) |
 
 The limits the plans are checked against (`platform/k22f/clock_math.h`, host test `k22fPlatformTest`): PLL output 48
 to 120 MHz; RUN core at most 80 MHz and bus at most 50 MHz; HSRUN core at most 120 MHz and bus at most 60 MHz; flash
 at most 25 MHz; FlexBus at most 50 MHz. The switch goes FBI, then FBE, PBE and PEE, with every wait bounded. When the
 reference never comes, the radio stays on the internal FLL and the diagnostics page shows `fll`.
+
+Start-up tries the plans in order (`k22f_clock_init_first`). The default build has the bring-up plan alone. A build
+with `GD77_DEFS="-DGD77_CLOCK_TARGET=1"` tries the target first, then the bring-up plan, then stays on the FLL. HSRUN
+is requested while the core runs from the 4 MHz internal reference, before the PLL is set up for 95.232 MHz; a fallback
+returns to RUN after the clocks are back within the RUN limits. The fallback switches the clock source before the
+dividers, so no clock passes above its limit. The millisecond clock (the core's cycle counter) carries on across every
+clock change; every plan has a whole number of cycles per millisecond.
 
 ## 3. Pin map
 
@@ -133,9 +141,18 @@ reference never comes, the radio stays on the internal FLL and the diagnostics p
 Each bus reaches the chip code through a generic interface: `drivers/bus/i2c_bus.h` for the two I2C buses and
 `drivers/bus/spi_bus.h` for the data flash, the LCD and the HR_C6000 port. The software masters are
 `drivers/bus/i2c_gpio` and `drivers/bus/spi_gpio`. Which one a bus uses is an entry in `boards/gd77/bus_cfg.h`, and a
-build can change it (`MCU_DEFS += -DGD77_I2C_A_HW=1`). `gd77_bus_cfg_check` refuses a choice the pins can't carry or a
-peripheral chosen twice. A hardware choice whose driver isn't written yet reports `K22F_ERR_NOT_IMPLEMENTED` on the
-diagnostics page (`bus` line) and refuses every transfer.
+build can change it (`make BOARD=gd77 GD77_DEFS="-DGD77_I2C_A_HW=1"`). `gd77_bus_cfg_check` refuses a peripheral
+chosen twice, and a pin that doesn't carry the function at the ALT number given: every hardware choice lists its pins,
+and each must be in the K22F alternate table (`platform/k22f/k22f_mux.h`). A refused set leaves those buses refusing
+every transfer, shown on the diagnostics page (`bus` line) and in the debug link's board view (`board.bus.*`, 14).
+
+| Knob | Default | Effect |
+|---|---|---|
+| `GD77_I2C_A_HW` | 0 | I2C bus A on I2C0 (`platform/k22f/i2c.c`), 100 kHz, open drain with the pull-ups |
+| `GD77_I2C_B_HW` | 0 | I2C bus B on I2C0 (refused together with bus A) |
+| `GD77_C6K_HW_CS` | 0 | the HR_C6000 port's chip select as SPI0 PCS0 on PTD0, 1 µs select setup, hold and idle time |
+| `GD77_BACKLIGHT_PWM` | 0 | the backlight dimmed by an FTM channel (section 7) |
+| `GD77_CLOCK_TARGET` | 0 | the HSRUN target plan first (section 2.2) |
 
 Bring-up drives each bus the way the wiring was designed to be driven, since those timings are the known ones.
 
@@ -146,9 +163,10 @@ on the bench.
 
 | Bus | Hardware option | Constraint | Tag |
 |---|---|---|---|
-| I2C bus A (PTE24, PTE25) | I2C0 on ALT5 | I2C0 is also the only controller on PTB2 / PTB3 (ALT2), so only one of the two buses can have it | U |
-| I2C bus B (PTB2, PTB3) | I2C0 on ALT2 | as above; bus B has no radio function, so bus A is the better use of I2C0 | U |
-| HR_C6000 configuration (PTD0..PTD3) | SPI0 PCS0 on PTD0 (ALT2), the chip select in hardware | needs a PCS mode in `platform/k22f/dspi.c` | U |
+| I2C bus A (PTE24, PTE25) | I2C0 on ALT5 (`GD77_I2C_A_HW`) | I2C0 is also the only controller on PTB2 / PTB3 (ALT2), so only one of the two buses can have it | U |
+| I2C bus B (PTB2, PTB3) | I2C0 on ALT2 (`GD77_I2C_B_HW`) | as above; bus B has no radio function, so bus A is the better use of I2C0 | U |
+| HR_C6000 configuration (PTD0..PTD3) | SPI0 PCS0 on PTD0 (ALT2), the chip select in hardware (`GD77_C6K_HW_CS`) | each byte but a transaction's last carries CONT, so the select stays low across header and data | U |
+| Backlight (PTC4) | FTM0 channel 3 on ALT4 (`GD77_BACKLIGHT_PWM`) | the alternate number is unverified; check it against the data sheet before turning it on | U |
 | Data flash (PTE4..PTE6, PTA19) | none | PTE4..PTE6 carry SPI1 chip selects, not its clock and data; PTA19 is XTAL0 | U |
 | LCD (PTC8..PTC12) | none | no SPI function on these pins | U |
 
@@ -364,7 +382,9 @@ the transmitter stays refused.
 128x64 monochrome, UC1701 / ST7567 class controller on the shared driver (`drivers/display/st7567`). Init: 0x2F
 (regulator, follower and booster on), 0x81 0x11 (electronic volume), 0xE3, 0xA2 (bias 1/9), 0xA1 (segment
 reverse), 0xC0 (common normal), 0xA4, 0xA7, 0xAF; column offset 4 (U). Whether the panel needs 0xA7 (inverse) is open
-(?); the driver's default (normal) is used. The backlight on PTC4 is on or off; the pin has no PWM function in use.
+(?); the driver's default (normal) is used. The backlight on PTC4 is on or off. A build with `GD77_BACKLIGHT_PWM`
+dims it instead: FTM0 channel 3 on the pin's ALT4, edge-aligned at 1 kHz from the bus clock, the brightness setting as
+the duty cycle (U, 4.2). The pin starts as a GPIO driven low; it moves to the FTM only once the timer runs at 0 %.
 
 ## 8. Audio path
 
@@ -399,22 +419,24 @@ The matrix reads as 4 driven lines (PTC0..PTC3) by 5 read lines (PTB19..PTB23).
 
 The digit positions follow the keypad layout (U). The six navigation keys (green, red, up, down and the two
 left / right keys) haven't been matched to their positions (?), so the board's key map is provisional: A select, B
-back, C up, D down, E left, F right. The scan drives one line low at a time, waits 5 µs and reads the rows; a change
+back, C up, D down, E left, F right (`boards/gd77/keymap_gd77.h`, the only file that changes when a radio shows
+otherwise). The scan drives one line low at a time, waits 5 µs and reads the rows; a change
 counts after two equal scans 10 ms apart. The diagnostics page shows the raw bits (`keys`): bit = column x 5 + row,
 direct keys at bits 20 to 23.
 
 | Direct key | Pin | Provisional role | Tag |
 |---|---|---|---|
 | Side key 1 | PTB1 | monitor | ? |
-| Side key 2 | PTB9 | talk target | ? |
-| Top key | PTA2 | emergency on long press | ? |
+| Side key 2 | PTB9 | talk target; held: scan | ? |
+| Top key | PTA2 | power level; held: emergency where it is built, else speak status | ? |
 | PTT | PTA1 | PTT | ? |
 
 ### 9.2 Power, battery, LEDs
 
 PTE26 holds power. The power knob switch on PTA13 reads high while on; three low polls in a row start the shutdown
 (U). The battery reading takes ADC0_DP1 (channel 1) with a provisional 3:1 divider and a 3.3 V reference (?), so the
-board sets no low-battery thresholds yet. The LEDs are the PTC14 / PTB18 pair (?), red on PTB18 in the code.
+board sets no low-battery thresholds yet. The LEDs are the PTC14 / PTB18 pair (?), red on PTB18 in the code. The
+power-off sequence is in 15.3.
 
 ## 10. Update path and image packaging
 
@@ -444,6 +466,10 @@ Each needs a radio on the bench.
 | Time slot edges | both edges of PTC18 | the `ts` counts: one accepted per 30 ms, the other edge dropped |
 | RX DAC0 value | what DAC0 drives during receive | measure with and without it |
 | Bus pin mux (4.2) | the hardware options listed | check against the K22F data sheet's pin mux table, then try one |
+| Backlight PWM (4.2, 7) | FTM0 channel 3 on PTC4 ALT4, or another timer | the data sheet's pin mux table, then `GD77_BACKLIGHT_PWM=1` |
+| HSRUN target (2.2) | 95.232 MHz in HSRUN | `GD77_CLOCK_TARGET=1`: `board.clk.hsrun=1` and the core clock in the board view (14) |
+| USB clock (13) | IRC48M with clock recovery | enumeration, then `board.usb.trim_error=0` |
+| Crash record (15.4) | kept across a reset in SRAM_U | a test crash (`odr_debug.py crash test`) and the record shown after the restart |
 | Data flash size | 16 to 128 Mbit; ODR needs 2 MB for its areas (6.2) | the `nor` diagnostics line's JEDEC ID |
 | EEPROM | 24C512 class at 0x50 | the `eep` diagnostics line |
 | Calibration blocks | 0x7C00 / 0x7C70 hold valid blocks on a factory radio | the `cal` diagnostics line shows `oo` |
@@ -455,8 +481,9 @@ Each needs a radio on the bench.
 |---|---|
 | SoC: start-up, vector table, clocks, SysTick, GPIO / PORT, DSPI, PIT, ADC, DAC, watchdog off | written, builds |
 | SoC: I2S0 with DMA | written, started by the board's audio stream |
-| SoC: flash self-programming | stub, returns not implemented |
-| SoC: I2C controller, USB device | not written |
+| SoC: flash self-programming (15.1) | written, host tested (window, command object), unverified |
+| SoC: I2C controller, DSPI chip select, FTM PWM (4.1) | written, off by default, unverified |
+| SoC: HSRUN target, RUN step, crash capture (2.2, 15) | written, target off by default, unverified |
 | Display, keys, power hold, power switch, backlight, LEDs | written, unverified |
 | FM receive (AT1846S, HR_C6000 FM path) | written, unverified |
 | Audio: PCM stream, speaker amplifier, beeps (8) | written, host tested (framing), unverified |
@@ -466,5 +493,83 @@ Each needs a radio on the bench.
 | DMR voice codec (5.6) | none: DMR without voice |
 | Storage: settings and codeplug on the data flash (6.2), EEPROM read only (6.3) | written, host tested, unverified |
 | Factory calibration: both blocks loaded and checked (6.4) | written, host tested; fields not named, not applied |
-| USB (programming, debug link) | not wired |
+| USB serial: host link, debug link, board view (13, 14) | written, unverified; the CPS and the network adapter off |
 | Update image packaging | open |
+
+## 13. USB
+
+The K22F's full-speed USB controller in device mode on its dedicated USB0_DP / USB0_DM pins (U), driven by TinyUSB's
+buffer descriptor table driver (`portable/chipidea/ci_fs`) behind the repository's USB device layer
+(`drivers/usb`), as on the STM32 radios.
+
+| Item | Value | Tag |
+|---|---|---|
+| Clock | IRC48M, the internal 48 MHz oscillator, as the USB clock (SIM_SOPT2 PLLFLLSEL = 3, USBSRC = 1, CLKDIV2 = 0); the controller's clock recovery trims it to the host's start-of-frame packets. No PLL plan gives 48 MHz | I |
+| Regulator | the controller's regulator on (SIM_SOPT1 USBREGEN, after SOPT1CFG URWE) | U |
+| Interrupt | USB0 (IRQ 53) at priority 6 | U |
+| Identity | 1FC9:0094 serial, 1FC9:0096 network, the same as the other ODR radios with USB; product "GD-77"; serial number: the low 96 bits of the chip's unique ID as 24 hex digits | |
+| Personality | CDC-ACM: the host link (`core/hostlink`) and the debug link on it. The network adapter (CDC-NCM) and the open-firmware CPS are off in this build | |
+| Endpoints | interrupt IN 0x82 (8 bytes), bulk OUT 0x01 / IN 0x81 (64 bytes), control 64 bytes | |
+
+The selector the USB clock uses (PLLFLLSEL) also feeds the I2S master clock, which this radio doesn't use: the
+HR_C6000 drives the I2S clocks (section 8). The clock switch at start-up leaves the selector alone once USB has it.
+The radio's own update mode (section 10) is a different USB device, from the bootloader.
+
+## 14. Debug link board view
+
+The debug link's `board` view section ([debuglink.md](debuglink.md) 3.7, section 22) carries the readings a first
+session on a radio needs, read without side effects. `tests/hil/test_gd77.py` checks them.
+
+| Key | Value |
+|---|---|
+| `board.clk.core_hz`, `board.clk.bus_hz` | the clocks now |
+| `board.clk.source` | `pll`, or `fll` after a fallback |
+| `board.clk.hsrun`, `board.clk.stepped_down` | HSRUN mode; in the RUN step of 15.1 |
+| `board.reset.cause`, `board.reset.srs` | the last reset's source by name (`por`, `pin`, `sw`, `wdog`, `lockup`, ...), RCM_SRS0 \| RCM_SRS1 << 8 |
+| `board.chip.sdid`, `board.chip.flash_kb` | SIM_SDID; the program flash size from SIM_FCFG1 |
+| `board.pins.a` .. `board.pins.e` | each port's input data register (GPIO_PDIR): the level of every digital pin |
+| `board.keys.raw` | the raw key bits of 9.1 |
+| `board.adc.dp1` .. `board.adc.dp3` | the last ADC0 readings of DP1 (battery candidate), DP2, DP3; 65535 = none yet |
+| `board.chip.at1846s` | `ok:<reg 0x00>` or `none:` |
+| `board.chip.hrc6000`, `board.chip.eeprom` | `ok` or `none` |
+| `board.chip.nor_jedec` | the data flash's JEDEC ID, 0 = no answer |
+| `board.bus.i2c_a`, `i2c_b`, `nor`, `lcd`, `c6000` | `soft` or `hw`, then the bus state (`ok`, `refused`, `not_implemented`, ...) |
+| `board.i2c0.errors` | failed I2C0 transactions |
+| `board.usb.trim_error` | the clock recovery ran out of trim range |
+| `board.backlight.pwm` | the backlight runs on the FTM channel |
+
+## 15. System
+
+### 15.1 Flash self-programming
+
+`platform/k22f/ftfa.c`: erase a 2 KB sector (FTFA command 0x09) and program longwords (0x06). The window is
+0x4000..0x7F7FF: the bootloader below 0x4000 (with the flash configuration field at 0x400) and the last sector
+(6.1) are refused (`ftfa_math.h`, host test `k22fSystemTest`). The command loop runs from RAM (`.ramfunc`, copied with
+`.data`) with interrupts off, since the flash can't be read while a command runs. Waits are bounded by the cycle
+counter: 300 ms for an erase, 5 ms for a longword. The flash cache and prefetch buffer are invalidated after each
+command. The flash controller doesn't run commands in HSRUN, so around each one an HSRUN plan steps down to RUN: the
+core drops to the bus clock (47.616 MHz) and the bus, flash and peripheral clocks stay as they are. Nothing in this
+build calls the API yet; it is for an update path and the radio's data sector, both open.
+
+### 15.2 Watchdog and standby
+
+The watchdog is switched off at start-up and stays off, as on the other ODR radios: the debug link, flash commands
+and bring-up waits block for long stretches, and a watchdog would need a policy for the whole tree first. Standby is
+the same RUN step as 15.1 (the core at the bus clock, no peripheral change); no core hook calls it yet. Wait and stop
+modes aren't used: the cycle counter the millisecond clock runs on doesn't count while the core sleeps.
+
+### 15.3 Power off
+
+The core saves and drops the power hold (PTE26). With the knob switch off (PTA13 low) the supply should go; if the
+radio still runs 500 ms later, it resets, so it comes back in its start-up state instead of staying dark. When this
+start was already a software reset, it doesn't reset again: it stays down and dark until the knob turns it on. With the
+knob on (auto power off), the core carries on and says so. (U)
+
+### 15.4 Reset cause and crash log
+
+The reset cause is read at start-up from RCM_SRS0 and RCM_SRS1 and named in the board view (14) and on the
+diagnostics page (`rst`). The crash log ([crash-log.md](crash-log.md)) is on: the Cortex-M4 fault capture
+(`platform/k22f/crash_k22f.c`) keeps the record in `.crash_noinit` in SRAM_U, which start-up doesn't clear. The K22F has
+no backup RAM; the bootloader runs between the reset and the next start and may use that RAM (U). The record's CRC
+decides: a record it overwrote is ignored, never shown wrong.
+
