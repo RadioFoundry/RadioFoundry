@@ -10,6 +10,8 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
   - for the HR_C7000 radios: an LZ4 block from stubtool's encoder, and a synthetic program flash with a codec at
     made-up addresses, its profile, what hrc7000_codec.locate() finds and the slot hrc7000_codec.merge() builds from it
+  - for the STM32F4 loader: each radio's board record from stub/f4stub.py config_record(), and the HELLO replies its
+    simulated stub (FakeF4) gives before and after CONFIG, so f4stub.js sends and parses the Python tool's bytes
   - for the codeplug editor: the radio's own codeplug code on the host (tests/host/cpsSim), a codeplug it stored
     and what it reads back, so site/tests/codeplug.test.mjs checks the JavaScript decoder and encoder against it
 
@@ -45,9 +47,32 @@ def codec_map_vectors(out):
 		json.dump(v, f, indent=1)
 
 
+def f4_vectors(out):
+	"""stub/f4stub.py's board records, and HELLO from its FakeF4 before and after each radio's CONFIG"""
+	f4 = repo._tool("stub", "f4stub.py")
+	st = f4.stubtool
+
+	def ask(fake, op, payload=b""):
+		fake.write(bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, st.sum8(payload), 0x03]) + payload)
+		r = bytes(fake.out)
+		fake.out.clear()
+		return {"status": r[1], "body": r[6:].hex()}
+
+	doc = {"protocol": f4.VERSION, "records": {}, "hello": {}}
+	for bid in f4.BOARDS:
+		rec = f4.config_record(bid)
+		doc["records"][bid] = rec.hex()
+		fake = f4.FakeF4(b"\xff" * 0x100000, spi=b"\xff" * 0x10000)
+		doc["hello"][bid] = {"before": ask(fake, f4.OP_HELLO), "config": ask(fake, f4.OP_CONFIG, rec),
+				     "after": ask(fake, f4.OP_HELLO)}
+	with open(os.path.join(out, "f4-vectors.json"), "w") as f:
+		json.dump(doc, f, indent=1)
+
+
 def main(out):
 	os.makedirs(out, exist_ok=True)
 	codec_map_vectors(out)
+	f4_vectors(out)
 	rng = random.Random(42)
 	key = synthetic_key(1701)
 	stock, profiles, code, tables = stockfw.build_synthetic_stock(key, rng)

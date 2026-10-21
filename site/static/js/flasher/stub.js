@@ -213,7 +213,7 @@ export class Stub {
 				else if (sum8(body) !== hdr[4]) why = "reply checksum";
 				else if (hdr[1] === OK) return body;
 				else if (hdr[1] === BADSUM) why = "the radio saw a bad request checksum";
-				else throw new StubError(`stub op 0x${op.toString(16)} refused: status 0x${hdr[1].toString(16)}`);
+				else throw Object.assign(new StubError(`stub op 0x${op.toString(16)} refused: status 0x${hdr[1].toString(16)}`), { status: hdr[1] });
 			}
 			this.retried++;
 			if (attempt < retries) {

@@ -214,7 +214,8 @@ The HR_C7000 stub made the same choice.
 
 `stubtool.Radio` holds the shared parts (frames, retries, the debug link loader, the READ record decoder) and
 `f4stub.F4Radio` subclasses it. The web flasher splits the same way: `f4stub.js` extends `stub.js`, and the flasher
-updates and backs up a radio running ODR with stub entry through it ([website.md](../dev/website.md)).
+updates and backs up a radio running ODR with stub entry through it ([website.md](../dev/website.md)). It sends the
+records `config_record()` makes, carried in the site's `data/flash-boards.json`, and builds none itself.
 
 ## 6. Safety rules
 

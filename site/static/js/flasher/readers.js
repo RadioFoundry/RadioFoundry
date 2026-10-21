@@ -35,8 +35,10 @@ export function debugLinkReader(link) {
 // The STM32F4 loader (f4stub.js, docs/spec/stub-stm32f4.md), on a radio whose ODR offers the hand-over: both memories
 // at the loader's speed, every 4 KB block checked against the radio's CRC, then a restart into ODR. A loader that did
 // not start leaves ODR as it was (open gives false). stubJson: async () => data/f4-stub.json; reopen: the port after
-// a fresh enumeration; onHandOver: the debug link's port now belongs to the loader.
-export function f4LoaderReader(link, { stubJson, reopen, log = () => {}, onHandOver = () => {} }) {
+// a fresh enumeration; onHandOver: the debug link's port now belongs to the loader; board: the radio's f4stub entry of
+// data/flash-boards.json, whose record the loader needs before it reaches the SPI flash. A loader that refuses the
+// record is restarted into ODR before the error goes up.
+export function f4LoaderReader(link, { stubJson, reopen, board, log = () => {}, onHandOver = () => {} }) {
 	let stub = null, holding = false;
 	return {
 		id: "f4-loader",
@@ -44,7 +46,7 @@ export function f4LoaderReader(link, { stubJson, reopen, log = () => {}, onHandO
 		open: async (progress = () => {}) => {
 			try {
 				const json = await stubJson();
-				stub = new F4Stub(link.s, { log, reopen });
+				stub = new F4Stub(link.s, { log, reopen, board });
 				await stub.enterFromOdr(f4Image(json), progress, { entry: json.run });
 			} catch (e) {
 				if (!stub?.jumped) {
@@ -55,6 +57,13 @@ export function f4LoaderReader(link, { stubJson, reopen, log = () => {}, onHandO
 				throw e;
 			}
 			onHandOver();
+			try {
+				await stub.configure();
+			} catch (e) {
+				try { await stub.resetChip(); } catch (e2) { /* the radio needs a power cycle */ }
+				try { await stub.s.close?.(); } catch (e2) { /* gone */ }
+				throw e;
+			}
 			holding = true;
 			return true;
 		},

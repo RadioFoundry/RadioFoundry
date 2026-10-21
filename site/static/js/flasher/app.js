@@ -192,7 +192,7 @@ const fb = () => (S.sim ? S.sim.fb : S.data.fb);
 // Every image comes from the build service, so a radio needs only a backend the page has for it (backends.js)
 const available = (r, task) => backendOf(r).available(r, fb(), task);
 
-// The STM32 radios (DM-1701, MD-380): stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
+// The STM32 radios (DM-1701, MD-380, MD-9600): stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
 // the key from the stock file; a radio running ODR with stub entry also updates and backs up through the STM32F4
 // loader (f4stub.js), and backs up over the debug link without it (backup.js). Stock firmware isn't backed up here.
 register({
@@ -892,7 +892,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			// the backup task is a use of its own; the backups around an install belong to the install
 			if (S.task === "backup") started = flashStarted({ task: "backup", source: pick, radio: S.board.id, firmware: p.git || "", features: p.features || "" });
 			const t0 = performance.now();
-			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenOdrPort, onHandOver: () => { S.link = null; } }) : null;
+			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenOdrPort, board: f4Board(), onHandOver: () => { S.link = null; } }) : null;
 			S.backupParts = await readRadio(link, S.board, S.radio, {
 				what: choices[pick].what, readers: bulk ? [bulk] : [], progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
 			if (!bulk?.used) S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
@@ -1202,6 +1202,7 @@ function stubPanel(fallback, onDone, what) {
 		let started = null;
 		try {
 			started = flashStarted(what);
+			await stub.configure();	// the radio's board record, its echo checked before any write
 			prog.set(0, 1, t("flash.f4.reading"));
 			const r = await stub.writeImage(f4Board().owned, segments(fw.manifest, fw.image), {
 				// bytes in a rewritten sector that aren't the firmware's (no radio has them since the codec moved): a copy first
@@ -1259,7 +1260,7 @@ function stubPanel(fallback, onDone, what) {
 		try {
 			const link = await connectSerial();
 			const json = await f4StubJson();
-			stub = new F4Stub(link.s, { log: log.add, reopen: reopenOdrPort });
+			stub = new F4Stub(link.s, { log: log.add, reopen: reopenOdrPort, board: f4Board() });
 			S.link = null;		// the port belongs to the loader from here
 			await stub.enterFromOdr(f4Image(json), (d, n) => prog.set(d, n, t("flash.f4.sending")), { entry: json.run });
 		} catch (e) {
