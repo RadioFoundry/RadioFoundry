@@ -20,6 +20,7 @@
 #include "rf/at1846s/at1846s.h"
 #include "modem/hrc6000/hrc6000.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
+#include "hrc/hrc_bus.h"
 #include "dmr_dm1701.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -43,7 +44,6 @@
 
 // Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
-#define VOICE_SPI_TIMEOUT_MS	2
 
 // DM-1701 power interpolation fractions (hardware-dm1701.md 7), per mille: f0 f1 f2 f3
 static const uint16_t frac_vhf[4] = { 450, 750, 250, 530 };
@@ -83,7 +83,6 @@ static struct {
 
 static I2C_HandleTypeDef i2c3;
 static DAC_HandleTypeDef dac;
-static SPI_HandleTypeDef spi2;
 
 static bool in_isr(void)
 {
@@ -183,92 +182,22 @@ static const at1846s_bus_t rf_bus = { .write = rf_write, .read = rf_read, .delay
 
 // --- HR_C6000 bus: bit-banged config SPI on PE2-PE5 (hardware-dm1701.md 4.2) ---
 
-// About 110 ns at 72 MHz on top of the GPIO writes, keeping the clock near the 1-2 MHz the chip is known to take
-static inline void spi_delay(void)
-{
-	__NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-}
+// The configuration port on PE2-PE5 and the voice port on SPI2 (PB13-PB15, AF5, chip select PIN_C6000_VCS): mode 2,
+// PCLK1 / 8 = 4.5 MHz. The shared transfers (platform/stm32f4/hrc/hrc_bus.c) mask the modem interrupts around each
+static const stm32_hrc_bus_cfg_t modem_cfg = {
+	.port = GPIOE,
+	.cs = PIN_MASK(PIN_C6000_CS), .clk = PIN_MASK(PIN_C6000_CLK), .mosi = PIN_MASK(PIN_C6000_MOSI),
+	.miso = PIN_MASK(PIN_C6000_MISO),
+	.voice_spi = SPI2, .voice_br = 2,
+	.voice_cs_port = PIN_PORT(PIN_C6000_VCS), .voice_cs = PIN_MASK(PIN_C6000_VCS),
+};
+static hrc_bus_t modem_bus;
 
-// Clock idles high; MOSI set, clock low, sample MISO, clock high (the chip latches on the rising edge)
-static uint8_t spi_byte(uint8_t out)
-{
-	uint8_t in = 0;
-	for (int i = 0; i < 8; i++) {
-		PIN_WRITE(PIN_C6000_MOSI, (out & 0x80u) != 0);
-		out = (uint8_t)(out << 1);
-		PIN_WRITE(PIN_C6000_CLK, false);
-		spi_delay();
-		in = (uint8_t)((in << 1) | (PIN_READ(PIN_C6000_MISO) ? 1u : 0u));
-		PIN_WRITE(PIN_C6000_CLK, true);
-		spi_delay();
-	}
-	return in;
-}
-
-// One transaction with interrupts up to the RTOS syscall priority masked (the HR_C6000 interrupts run at that level),
-// so a modem ISR never lands inside it. Safe from tasks and from those ISRs; never blocks
-static bool modem_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
-{
-	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
-	PIN_WRITE(PIN_C6000_CLK, true);
-	PIN_WRITE(PIN_C6000_CS, false);
-	spi_delay();
-	for (uint8_t i = 0; i < hdr_len; i++) {
-		spi_byte(hdr[i]);
-	}
-	for (uint16_t i = 0; i < len; i++) {
-		uint8_t in = spi_byte(tx != NULL ? tx[i] : 0xFF);
-		if (rx != NULL) {
-			rx[i] = in;
-		}
-	}
-	spi_delay();
-	PIN_WRITE(PIN_C6000_CS, true);
-	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
-	return true;
-}
-
-// Voice port: STM32 SPI2 master, mode 2, prescaler 8 (4.5 MHz)
 static void voice_spi_setup(void)
 {
-	__HAL_RCC_SPI2_CLK_ENABLE();
 	stm32_pin_af(GPIOB, VOICE_SPI_PINS, GPIO_AF5_SPI2, false, GPIO_NOPULL);
-	PIN_WRITE(PIN_C6000_VCS, true);
-	spi2.Instance = SPI2;
-	spi2.Init.Mode = SPI_MODE_MASTER;
-	spi2.Init.Direction = SPI_DIRECTION_2LINES;
-	spi2.Init.DataSize = SPI_DATASIZE_8BIT;
-	spi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
-	spi2.Init.CLKPhase = SPI_PHASE_1EDGE;
-	spi2.Init.NSS = SPI_NSS_SOFT;
-	spi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
-	spi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
-	spi2.Init.TIMode = SPI_TIMODE_DISABLE;
-	spi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-	spi2.Init.CRCPolynomial = 7;
-	HAL_SPI_Init(&spi2);
+	stm32_hrc_bus_init(&modem_cfg, &modem_bus);
 }
-
-// One page 3 frame on the voice port: 0x03 / 0x83, 0x00, then the data. Atomic with respect to the modem ISRs
-static bool voice_xfer(void *ctx, bool write, uint8_t *buf, uint8_t len)
-{
-	uint8_t hdr[2] = { write ? 0x03 : 0x83, 0x00 };
-	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
-	PIN_WRITE(PIN_C6000_VCS, false);
-	bool ok = HAL_SPI_Transmit(&spi2, hdr, 2, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
-	if (ok) {
-		ok = write ? HAL_SPI_Transmit(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK
-			   : HAL_SPI_Receive(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
-	}
-	PIN_WRITE(PIN_C6000_VCS, true);
-	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
-	return ok;
-}
-
-static const hrc_bus_t modem_bus = {
-	.transfer = modem_transfer, .delay_ms = hal_delay_ms, .delay_us = hal_delay_us, .ctx = NULL,
-	.voice = voice_xfer,
-};
 
 // --- APC DAC and RF path GPIOs (hardware-dm1701.md 6, 7) ---
 
@@ -570,9 +499,6 @@ static void init(void)
 	if (speaker_lock == NULL) {
 		speaker_lock = xSemaphoreCreateMutex();
 	}
-	stm32_pin_in(PIN_PORT(PIN_C6000_MISO), PIN_MASK(PIN_C6000_MISO), GPIO_PULLUP);
-	PIN_WRITE(PIN_C6000_CS, true);
-	PIN_WRITE(PIN_C6000_CLK, true);		// clock idles high
 	PIN_WRITE(PIN_MIC_POWER, true);		// kept on in RX and TX (4.5: some speaker-mics see false PTT without bias)
 	rx_supply(false, false);
 	dac_setup();
