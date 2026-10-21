@@ -228,6 +228,14 @@ bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx)
 	return ok;
 }
 
+bool hrc6000_set_mod_bias(hrc_t *dev, uint16_t bias, uint8_t offset)
+{
+	bool ok = hrc_write(dev, 4, 0x47, (uint8_t)bias);
+	ok &= hrc_write(dev, 4, 0x48, (uint8_t)(bias >> 8));
+	ok &= hrc_write(dev, 4, 0x04, offset);
+	return ok;
+}
+
 bool hrc6000_fm_audio(hrc_t *dev, bool on)
 {
 	return hrc_write(dev, 4, 0x36, on ? 0x02 : 0x00);

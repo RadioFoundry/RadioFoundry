@@ -74,3 +74,19 @@ uint8_t cal_field_get(const cal_block_t *b, const cal_layout_t *layout, uint8_t 
 	memcpy(out, &b->raw[off], n);
 	return n;
 }
+
+uint16_t cal_lerp(uint32_t x0, uint32_t x1, uint32_t x, uint16_t y0, uint16_t y1)
+{
+	if (x1 <= x0 || x <= x0) {
+		return y0;
+	}
+	if (x >= x1) {
+		return y1;
+	}
+	uint32_t num = x - x0, span = x1 - x0;
+	// Step from y0 by the truncated share of the difference, so the result never passes y1
+	if (y1 >= y0) {
+		return (uint16_t)(y0 + (uint32_t)(y1 - y0) * num / span);
+	}
+	return (uint16_t)(y0 - (uint32_t)(y0 - y1) * num / span);
+}

@@ -58,6 +58,10 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg);
 bool hrc6000_fm_audio(hrc_t *dev, bool on);
 // Reference oscillator offset (hardware-dm1701.md 12.4). fm_tx: the FM TX form (0x48 = 0)
 bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx);
+// Two-point modulation bias and DC offset where a radio's calibration holds them as such (the GD-77): 4:0x47 = the
+// bias's low byte, 4:0x48 = the bits above it, 4:0x04 = the offset. The other form of the same registers is
+// hrc6000_set_ref_offset()
+bool hrc6000_set_mod_bias(hrc_t *dev, uint16_t bias, uint8_t offset);
 // RX audio gain, -31..+31 dB (4:0x37 = 0x80 + 0x40 if positive + the low 5 bits of the gain, modem-hrc6000.md 2)
 bool hrc6000_set_rx_gain(hrc_t *dev, int8_t db);
 

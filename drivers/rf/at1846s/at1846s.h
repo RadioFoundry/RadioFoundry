@@ -128,6 +128,20 @@ bool at1846s_set_state(at1846s_t *dev, at1846s_state_t state);
 // Sub-audio (5.7). value: CTCSS Hz x 10, DCS the 9-bit code (octal digits as 3-bit groups, 023 -> 0x13)
 bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);
 bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);
+// A radio's calibrated TX values, with the register map's field names. Each goes into its bit field only; the other
+// bits of the register keep their value
+typedef struct {
+	uint8_t pa_drv;		// reg 0x0A bits 14:11, PA driver current (padrv_ibit)
+	uint8_t mic_pga;	// reg 0x0A bits 10:6, microphone PGA gain (pga_gain)
+	uint8_t voice_gain;	// reg 0x41 bits 6:0, digital TX voice gain (voice_gain_tx)
+	uint8_t gain_tx;	// reg 0x44 bits 11:8, digital gain after the TX ADC (gain_tx)
+	uint16_t fm_dev;	// reg 0x59 bits 15:6, FM deviation (xmitter_dev)
+	uint8_t tone_dev;	// reg 0x59 bits 5:0, CTCSS / DCS deviation (c_dev)
+} at1846s_tx_cal_t;
+
+bool at1846s_set_tx_cal(at1846s_t *dev, const at1846s_tx_cal_t *cal);
+// RX audio levels: reg 0x44 bits 7:4 (DAC analog gain) and 3:0 (digital volume)
+bool at1846s_set_rx_volume(at1846s_t *dev, uint8_t dac_gain, uint8_t volume);
 // Reg 0x1B: rssi_db (high byte) and noise_db (low byte), 1 dB units, chip scale (5.9)
 bool at1846s_read_signal(at1846s_t *dev, uint8_t *rssi_db, uint8_t *noise_db);
 // Reg 0x1C flags (AT1846S_FLAG_*)

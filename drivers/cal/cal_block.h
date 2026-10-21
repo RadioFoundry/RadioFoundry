@@ -58,6 +58,10 @@ int cal_field_offset(const cal_layout_t *layout, uint8_t id, uint8_t *size);
 // the field is unknown
 uint8_t cal_field_get(const cal_block_t *b, const cal_layout_t *layout, uint8_t id, uint8_t *out, uint8_t max);
 
+// Straight line from (x0, y0) to (x1, y1) at x, truncated toward y0 (integer only, no overflow for 16-bit y and x
+// spans below 65536). Outside [x0, x1] the nearer end value; x1 <= x0 gives y0
+uint16_t cal_lerp(uint32_t x0, uint32_t x1, uint32_t x, uint16_t y0, uint16_t y1);
+
 static inline uint16_t cal_le16(const uint8_t *p)
 {
 	return (uint16_t)(p[0] | (p[1] << 8));

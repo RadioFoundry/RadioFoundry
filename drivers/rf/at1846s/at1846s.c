@@ -439,6 +439,21 @@ bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)
 	}
 }
 
+bool at1846s_set_tx_cal(at1846s_t *dev, const at1846s_tx_cal_t *cal)
+{
+	bool ok = at1846s_modify(dev, 0, 0x0A, 0x803Fu,
+				 (uint16_t)(((cal->pa_drv & 0x0Fu) << 11) | ((cal->mic_pga & 0x1Fu) << 6)));
+	ok &= at1846s_modify(dev, 0, 0x41, 0xFF80u, (uint16_t)(cal->voice_gain & 0x7Fu));
+	ok &= at1846s_modify(dev, 0, 0x44, 0xF0FFu, (uint16_t)((cal->gain_tx & 0x0Fu) << 8));
+	ok &= at1846s_write(dev, 0, 0x59, (uint16_t)(((cal->fm_dev & 0x3FFu) << 6) | (cal->tone_dev & 0x3Fu)));
+	return ok;
+}
+
+bool at1846s_set_rx_volume(at1846s_t *dev, uint8_t dac_gain, uint8_t volume)
+{
+	return at1846s_modify(dev, 0, 0x44, 0xFF00u, (uint16_t)(((dac_gain & 0x0Fu) << 4) | (volume & 0x0Fu)));
+}
+
 bool at1846s_read_signal(at1846s_t *dev, uint8_t *rssi_db, uint8_t *noise_db)
 {
 	uint16_t v;
