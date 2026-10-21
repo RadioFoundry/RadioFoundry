@@ -116,7 +116,7 @@ static void pane_fill(uint8_t i)
 static bool apply(uint8_t sel)
 {
 	if (!ui_svc_dual(ref, sel)) {
-		ui_toast(TEXT_ALT_OPEN "This radio watches 2 channels of one zone" TEXT_ALT_NEXT "Pick B from this zone"
+		ui_toast(TEXT_ALT_OPEN "Can't watch that channel: pick another" TEXT_ALT_NEXT "Can't watch that channel"
 			 TEXT_ALT_CLOSE);
 		return false;
 	}
@@ -367,8 +367,11 @@ bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 	if (v->state == RS_TX)
 		was_tx = true;
 	if (v->scan != 3 /* SCAN_DUAL */ && now - started_ms >= START_GRACE_MS && v->state != RS_TX) {
-		if (was_tx) {
-			apply(d->sel);	// today's radio core ends the watch on PTT; the watch goes on (#96 moves this to the core)
+		if (was_tx || tuned_pane(v) == d->sel) {
+			// A change to the selected channel (a quick setting retunes it) ends the watch in the radio core: it goes
+			// on. So does a transmission, for a core that ends it on PTT
+			apply(d->sel);
+			pane_fill(d->sel);
 		} else {
 			d->on = false;	// ended by the radio (hotspot mode, a channel change from the debug link)
 			ui_toast("Dual watch stopped");
