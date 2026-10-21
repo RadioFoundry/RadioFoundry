@@ -6,6 +6,7 @@
 #include "config.h"
 #include "md380.h"
 #include "hrc/dmr_glue.h"
+#include "hrc/vocoder.h"
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -116,7 +117,7 @@ const board_t board = {
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
 	.audio = &md380_audio,
-	.vocoder = &md380_vocoder,
+	.vocoder = &stm32_vocoder,
 #endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,

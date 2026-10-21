@@ -29,7 +29,6 @@ extern const hal_radio_t dm1701_radio;
 extern const hal_power_t dm1701_power;
 extern hal_flash_t dm1701_flash;
 extern const hal_audio_t dm1701_audio;
-extern const hal_vocoder_t dm1701_vocoder;
 
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 // The audio tap: FM receive audio on the PCM stream for APRS (CONFIG_APRS_RX) and USRP, FM transmit audio for USRP

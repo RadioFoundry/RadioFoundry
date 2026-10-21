@@ -29,7 +29,6 @@ extern const hal_radio_t md380_radio;
 extern const hal_power_t md380_power;
 extern hal_flash_t md380_flash;
 extern const hal_audio_t md380_audio;
-extern const hal_vocoder_t md380_vocoder;
 
 // ADC readings (power_md380.c): raw 12-bit averages
 enum { MD380_ADC_VOLUME, MD380_ADC_BATTERY, MD380_ADC_MIC, MD380_ADC_RSSI, MD380_ADC_BUSY, MD380_ADC_TEMP,
