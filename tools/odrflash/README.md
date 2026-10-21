@@ -110,6 +110,19 @@ The serial route loads `tools/dm32_flash.py`, `tools/hrc7000_codec.py` and `stub
 odrflash executable carries them. A `pipx` install from the subdirectory doesn't, and says so. Neither route of odrflash
 has flashed a radio yet; the tools it wraps have.
 
+### The flash stub route (DM-1701, MD-380, MD-9600, GD-77)
+
+A radio that runs ODR built with `CONFIG_STUB_ENTRY=y` can be updated without the bootloader key press:
+
+    odrflash flash build/dm1701/odr_dm1701.bin --board dm1701 --route stub
+    odrflash flash build/gd77/odr_gd77.bin --board gd77 --route stub --stock GD-77-update-file.sgl
+
+odrflash hands the image to `stub/stubtool.py`, which loads the flash stub into the radio's RAM over the USB debug link,
+writes the sectors that differ and restarts the radio. The radio keeps its codec. On the GD-77, `--stock` merges the codec
+into the image first; without it the radio keeps the one it has. `--port` names the debug link's serial port (found
+when there is only one). Not tried on a radio ([stub-stm32f4.md](../../docs/spec/stub-stm32f4.md),
+[stub-k22f.md](../../docs/spec/stub-k22f.md)).
+
 ### USB access
 
 | System | Once |
