@@ -347,7 +347,8 @@ static void call_ended(ui_dual_t *d, uint8_t i, uint32_t now)
 
 // Every UI tick: which panes hear a call (both at once on a radio with two receivers), the last calls and their
 // panes, the watch going on after a transmission. True: redraw
-bool ui_dual_tick(const radio_view_t *v, uint32_t now)
+// Not inlined: its frame would add to ui_task's, which is on the UI's deepest drawing path (stack-check.md)
+__attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 {
 	ui_dual_t *d = dual();
 	if (!d->on)

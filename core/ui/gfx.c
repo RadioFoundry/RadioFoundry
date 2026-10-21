@@ -300,12 +300,13 @@ void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
 void gfx_hline(int x, int y, int w, color_t c) { gfx_fill(x, y, w, 1, c); }
 void gfx_vline(int x, int y, int h, color_t c) { gfx_fill(x, y, 1, h, c); }
 
+// gfx_fill directly, not through the line helpers: one frame less on the deepest drawing path (stack-check.md)
 void gfx_rect(int x, int y, int w, int h, color_t c)
 {
-	gfx_hline(x, y, w, c);
-	gfx_hline(x, y + h - 1, w, c);
-	gfx_vline(x, y + 1, h - 2, c);
-	gfx_vline(x + w - 1, y + 1, h - 2, c);
+	gfx_fill(x, y, w, 1, c);
+	gfx_fill(x, y + h - 1, w, 1, c);
+	gfx_fill(x, y + 1, 1, h - 2, c);
+	gfx_fill(x + w - 1, y + 1, 1, h - 2, c);
 }
 
 void gfx_round_fill(int x, int y, int w, int h, color_t c)
