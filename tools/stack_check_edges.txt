@@ -31,6 +31,10 @@ file platform/hrc7000/vocoder.c @hrc_codec
 extern flash_stub 0
 call enter_stub @flash_stub
 
+# GD-77: the EEPROM glue wraps I2C bus A's locked calls in an i2c_bus_t of its own (boards/gd77/eeprom_gd77.c), so the
+# bus calls look like a cycle through i2c_bus_t. Bus A itself is the software master: there is no recursion
+recursion gd77_i2c_write gd77_i2c_write_read
+
 # The C library, where its worst path needs arguments ODR never passes. Each cuts that function out of the disassembly
 # walk: check the reason still holds when adding a call.
 # vPortYield (C-SKY port, assembly): saves the 17-word frame the port overhead already counts

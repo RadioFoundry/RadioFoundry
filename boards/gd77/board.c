@@ -97,5 +97,7 @@ void board_early_init(void)
 void board_init(void)
 {
 	gd77_power.init();
-	(void)gd77_flash.init();
+	(void)gd77_flash.init();	// before storage_init: the core's flash map comes from the probed size
+	gd77_i2c_init();
+	gd77_eeprom_init();		// the factory calibration, before the radio is set up
 }

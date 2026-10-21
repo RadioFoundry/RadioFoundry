@@ -7,6 +7,7 @@
 #include "config.h"
 #include "platform.h"
 #include "ftfa_math.h"
+#include "cal_blocks_gd77.h"
 
 #if CONFIG_DIAG
 bool gd77_diag_line(uint8_t i, char *buf, uint8_t len)
@@ -45,6 +46,15 @@ bool gd77_diag_line(uint8_t i, char *buf, uint8_t len)
 		snprintf(buf, len, "bus %d%d%d%d%d", gd77_bus_status(0), gd77_bus_status(1), gd77_bus_status(2),
 			 gd77_bus_status(3), gd77_bus_status(4));
 		break;
+	case 8: {
+		// EEPROM answer, calibration block state per band (UHF, VHF: o ok, f read failed, b blank, r rejected) and
+		// NOR writes refused below 1 MB
+		static const char st[] = "-ofbr";
+		snprintf(buf, len, "eep %s cal %c%c nor- %lu", gd77_eeprom_present() ? "ok" : "--",
+			 st[gd77_cal_state(GD77_CAL_UHF)], st[gd77_cal_state(GD77_CAL_VHF)],
+			 (unsigned long)gd77_flash_refusals());
+		break;
+	}
 	default:
 		return false;
 	}

@@ -17,7 +17,7 @@ extern const hal_display_t gd77_display;
 extern const hal_input_t gd77_input;
 extern const hal_radio_t gd77_radio;
 extern const hal_power_t gd77_power;
-extern const hal_flash_t gd77_flash;
+extern hal_flash_t gd77_flash;	// size and map set by its init (storage_gd77.c)
 
 // --- Buses (bus_gd77.c; software or hardware per bus_cfg.h) ---
 void gd77_bus_init(void);	// the software SPI buses; before anything uses them
@@ -41,6 +41,16 @@ uint16_t gd77_battery_raw(void);	// the last ADC reading of the battery candidat
 
 // --- Data flash (flash_gd77.c) ---
 uint32_t gd77_flash_jedec(void);	// manufacturer << 16 | device, 0 when nothing answered
+uint32_t gd77_flash_refusals(void);	// erases and programs refused outside ODR's areas
+// Any part of the chip, the first megabyte included (read only: diagnostics, the logical space below)
+bool gd77_flash_raw_read(uint32_t addr, void *buf, uint32_t len);
+
+// --- EEPROM and calibration (eeprom_gd77.c, cal_blocks_gd77.h) ---
+void gd77_eeprom_init(void);		// probe, then load the calibration; after gd77_i2c_init
+bool gd77_eeprom_present(void);
+bool gd77_eeprom_read(uint32_t addr, void *buf, uint32_t len);
+// The radio's own logical codeplug space across both chips (storage_gd77.h), read only
+bool gd77_logical_read(uint32_t logical, void *buf, uint32_t len);
 
 // --- Radio (radio_gd77.c) ---
 typedef struct {
