@@ -2450,6 +2450,7 @@ void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
+void radio_req_zone_pos(uint16_t pos) { (void)pos; }
 void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
 void radio_req_tone_burst(bool on) { (void)on; }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }

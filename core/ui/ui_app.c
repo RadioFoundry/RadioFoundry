@@ -437,6 +437,11 @@ static void open_caller_actions(void)
 		ui_toast("No calls heard yet");
 }
 
+void ui_open_caller_actions(void)
+{
+	open_caller_actions();
+}
+
 // --- banners and events ---
 
 static ui_event_t events[UI_EVENTS];
@@ -822,6 +827,12 @@ static void vfo_key(void)
 
 void ui_scan_toggle(void)
 {
+#if CONFIG_DUAL_WATCH
+	if (ui_st.dual.on) {	// dual watch is a kind of scan to the radio: the scan key ends it too
+		ui_dual_stop();
+		return;
+	}
+#endif
 	bool on = !ui_st.scanning;
 	if (!ui_svc_scan(on)) {
 		ui_toast("Scan: not in this build");
@@ -880,6 +891,10 @@ static bool talk_step(int dir)
 
 bool ui_home_key(const input_event_t *ev)
 {
+#if CONFIG_DUAL_WATCH
+	if (ui_dual_home_key(ev))
+		return true;
+#endif
 	bool press = ev->gesture == GESTURE_PRESS;
 	int d = digit_of(ev);
 	if (is_nav(ev)) {
@@ -1115,6 +1130,15 @@ static void quick_activate(int tile)
 			quick_unavailable(kind);
 		break;
 	case QT_SCAN:
+#if CONFIG_DUAL_WATCH
+		// Off: the chooser (dual watch or the zone); on: one press stops whichever runs
+		if (ui_st.dual.on) {
+			ui_go_home();
+			ui_dual_stop();
+		} else if (!ui_st.scanning) {
+			ui_push(SCR_WATCH, 0);
+		} else
+#endif
 		ui_scan_toggle();
 		break;
 #if CONFIG_DMR
@@ -1520,6 +1544,9 @@ void ui_app_init(void)
 #endif
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
+#if CONFIG_DUAL_WATCH
+	ui_dual_reset();
+#endif
 	recent_n = 0;
 	recent_seen_ms = 0;
 	recent_tx = false;
@@ -1725,6 +1752,14 @@ void ui_app_key(const input_event_t *ev)
 		case ACT_SCAN:
 			ui_scan_toggle();
 			return;
+#if CONFIG_DUAL_WATCH
+		case ACT_DUAL_WATCH:
+			ui_dual_key();
+			return;
+		case ACT_AB:
+			ui_dual_ab_key();
+			return;
+#endif
 		case ACT_CALL_BACK:
 			call_back_key();
 			return;
@@ -1931,7 +1966,11 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.unread = unread;
 		dirty = true;
 	}
-	bool scanning = v->scan != 0;
+	bool scanning = v->scan != 0 && v->scan != 3;	// 3: dual watch, which Home shows on its own (ui_dual.c)
+#if CONFIG_DUAL_WATCH
+	if (ui_dual_tick(v, now_ms))
+		dirty = true;
+#endif
 	if (scanning != ui_st.scanning && (ui_svc_features() & UI_FEAT_SCAN)) {
 		ui_st.scanning = scanning;
 		dirty = true;

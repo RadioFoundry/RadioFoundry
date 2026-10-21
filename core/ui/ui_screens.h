@@ -41,6 +41,33 @@ typedef struct {
 	char text[UI_BANNER_TEXT];
 } ui_banner_t;
 
+#if CONFIG_DUAL_WATCH
+// Dual watch (docs/ux/dual-watch.md): the two channels Home shows, A and B, each a channel of any zone or the VFO. Read
+// from the codeplug when they are picked, so the panes stay still while the radio alternates between them
+#define UI_DUAL_NONE	0xFFu
+typedef struct {
+	bool vfo;		// the VFO, not a channel
+	uint16_t number;	// codeplug channel number (0: the VFO)
+	uint8_t mode;		// radio_mode_t
+	uint32_t rx_hz;
+	char name[CODEPLUG_NAME_LEN + 1];
+	char zone[CODEPLUG_NAME_LEN + 1];	// the zone's name, "VFO" for the VFO
+	char target[32];	// what PTT talks to here on DMR: "TG 3100 USA" ("" on FM: Home shows the frequency)
+	char detail[24];	// the rest, short: "TS1 CC1" (DMR), "T100.0 25k" (FM)
+} ui_dual_pane_t;
+
+typedef struct {
+	bool on;
+	bool both;		// the radio hears both at once (two receivers); else it alternates and can miss a call
+	uint8_t sel;		// the selected pane, 0 A or 1 B: PTT transmits on it, keys and quick settings act on it
+	uint8_t rx;		// the pane receiving now, UI_DUAL_NONE
+	uint8_t last;		// the pane the last call came in on, UI_DUAL_NONE
+	uint32_t last_ms;	// when that call ended
+	char caller[40];	// the current or last caller: "Joe Smith TG 91", "FM signal"
+	ui_dual_pane_t pane[2];
+} ui_dual_t;
+#endif
+
 // What the screens show besides the radio view; owned by the UI (ui_app.c)
 typedef struct {
 	uint32_t now_ms;
@@ -78,6 +105,9 @@ typedef struct {
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
 	ui_banner_t banner;
+#if CONFIG_DUAL_WATCH
+	ui_dual_t dual;
+#endif
 } ui_state_t;
 
 // Quick settings tiles. The position of each depends on the mode (information-architecture.md 5): ui_quick_kind()
@@ -181,6 +211,11 @@ int ui_list_rows(const ui_list_t *l);
 // The boot screen: the mark, the name, the owner's two boot text lines (empty: left out), board and version
 void ui_draw_splash(const char *board_name, const char *git, const char *line1, const char *line2);
 void ui_draw_home(const radio_view_t *v, const ui_state_t *s);
+#if CONFIG_DUAL_WATCH
+// Home while dual watch runs: both channels, each with its frequency, which one PTT uses (PTT) and which one a call is
+// coming in on (RX) or came in on last (Heard)
+void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s);
+#endif
 void ui_draw_quick(const radio_view_t *v, const ui_state_t *s);
 #if CONFIG_HOTSPOT
 // Hotspot mode (hostlink in MMDVM mode): frequencies, color code, TX / RX, last call, how to leave

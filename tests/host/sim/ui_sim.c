@@ -6,11 +6,13 @@
 //
 // Script tokens (separated by spaces):
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
-//   powerkey zone+ zone- scankey lockkey cbkey homekey: what a reassigned side key sends
+//   powerkey zone+ zone- scankey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   wait:<ms>           time passes
+//   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
+//   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -875,6 +877,7 @@ static void ptt(bool down)
 		}
 		view.state = RS_TX;
 		view.tx_elapsed_ms = 0;
+		view.scan = 0;		// as the radio core does today: PTT ends any scan, dual watch too (#96)
 		if (view.dmr.active) {
 			if (focus_id) {
 				// one-shot: the focused row's target, kept for the reply window
@@ -1123,6 +1126,51 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		sim_rec.backlight_s = (uint32_t)value;
 }
 bool ui_svc_scan_skip(void) { radio_req_channel_step(1); return true; }
+// Dual watch as the radio core does it with a receiver per channel: the view stays on the selected channel (the
+// keys act on it); `tune:a` / `tune:b` move it to a channel, as the alternating receiver does when a call holds it
+static ui_dual_ref_t sim_dual[2];
+static void sim_tune(int pane);
+bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
+{
+	if (ref == NULL) {
+		view.scan = 0;
+		changed();
+		return true;
+	}
+	sim_dual[0] = ref[0];
+	sim_dual[1] = ref[1];
+	sim_tune(sel);
+	view.scan = 3;	// SCAN_DUAL
+	changed();
+	return true;
+}
+static void sim_tune(int pane)
+{
+	const ui_dual_ref_t *r = &sim_dual[pane];
+	if (r->vfo) {
+		radio_req_vfo(true);
+		return;
+	}
+	view.vfo = false;
+	view.zone_index = r->zone;
+	view.zone_pos = r->pos;
+	load_channel();
+}
+uint8_t ui_svc_receivers(void) { return 1; }
+bool ui_svc_vfo_get(channel_t *out)
+{
+	memset(out, 0, sizeof *out);
+	strcpy(out->name, "VFO");
+	out->rx_hz = vfo_rx_hz;
+	out->tx_hz = vfo_tx_hz;
+	out->rx_tone = vfo_rx_tone;
+	out->tx_tone = vfo_tx_tone;
+	out->bw = vfo_bw;
+	out->mode = vfo_mode;
+	out->color_code = vfo_cc;
+	out->timeslot = vfo_ts;
+	return true;
+}
 uint16_t ui_svc_msg_count(void) { return n_inbox; }
 uint16_t ui_svc_msg_unread(void)
 {
@@ -1385,6 +1433,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "powerkey", ACT_POWER }, { "zone+", ACT_ZONE_UP }, { "zone-", ACT_ZONE_DOWN }, { "scankey", ACT_SCAN },
 	{ "lockkey", ACT_LOCK }, { "cbkey", ACT_CALL_BACK },
 	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
+	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// the VFO/MR key: a key map entry of the board (DM-1801 Pro), not a side key function
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
@@ -1393,7 +1442,8 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 
 static bool on_map(uint8_t action, bool lng)
 {
-	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || (lng && action == ACT_TALK_TARGET))
+	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
+	    action == ACT_AB || (lng && action == ACT_TALK_TARGET))
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -1497,7 +1547,13 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
-	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0);
+	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0 && view.scan != 3);
+#if CONFIG_DUAL_WATCH
+	else if (strcmp(key, "dual") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.on && view.scan == 3);
+	else if (strcmp(key, "bzone") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].zone);
+	else if (strcmp(key, "bvfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].vfo);
+	else if (strcmp(key, "sel") == 0) snprintf(got, sizeof got, "%c", ui_st.dual.sel ? 'B' : 'A');
+#endif
 	else if (strcmp(key, "privacy") == 0) snprintf(got, sizeof got, "%u", view.dmr.privacy);
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", view.dmr.hear_all_latch);
 	else if (strcmp(key, "vox") == 0) snprintf(got, sizeof got, "%u", view.vox_on);
@@ -1663,6 +1719,25 @@ static bool run_token(char *t, char *err, size_t len)
 		} else {
 			advance(300);
 		}
+		return true;
+	}
+	if (strcmp(t, "tune") == 0 && arg != NULL && (arg[0] == 'a' || arg[0] == 'b')) {	// dual watch: the receiver
+		sim_tune(arg[0] == 'b');							// on A or B
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "fmrx") == 0) {		// an FM signal opens the squelch; fmrxend closes it
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "fmrxend") == 0) {
+		view.state = RS_IDLE;
+		view.last_rx_ms = now_ms;
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "rxend") == 0) {

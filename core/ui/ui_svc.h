@@ -76,6 +76,18 @@ bool ui_svc_save_talk_target(uint32_t id, bool private_call);
 // --- Scan (radio-features). Whether a scan runs is radio_view_t.scan ---
 bool ui_svc_scan(bool on);			// on: the zone (in the VFO: the band); off: stop where it is
 bool ui_svc_scan_skip(void);			// nuisance delete of the channel that stopped the scan
+// Dual watch (docs/ux/dual-watch.md): two channels, each a channel of any zone or the VFO. ref[sel] is the selected
+// one: PTT transmits on it (and the watch goes on after), keys and quick settings act on it. NULL refs stop the
+// watch on the selected one. False: the radio can't watch this pair (today's radio core: two channels of one zone)
+typedef struct {
+	bool vfo;
+	uint16_t zone, pos;	// a channel: zone index and position in it
+} ui_dual_ref_t;
+bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel);
+// How many channels the radio hears at once: 1 = dual watch alternates between them (no radio in the tree has more)
+uint8_t ui_svc_receivers(void);
+// The VFO's settings while a channel is on view (a dual watch pane). False: not known
+bool ui_svc_vfo_get(channel_t *out);
 
 // --- DMR repeater roaming (the radio core, docs/spec/dmr-roaming.md). Its state is radio_view_t.roam ---
 bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, lock / unlock

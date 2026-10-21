@@ -26,10 +26,18 @@
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
+#if CONFIG_DUAL_WATCH
+extern const ui_scr_def_t ui_watch_screen, ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
+#endif
 
 static void item_num(ui_item_t *it, uint16_t n)
 {
 	it->num = (char)('0' + n % 10u);
+}
+
+void item_num_set(ui_item_t *it, uint16_t n)
+{
+	item_num(it, n);
 }
 
 // ======================= Hub =======================
@@ -2707,6 +2715,12 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
 	case T_SCAN:
+#if CONFIG_DUAL_WATCH
+		if (ui_st.dual.on) {
+			sb_str(&b, "Dual watch");
+			break;
+		}
+#endif
 		sb_str(&b, ui_st.scanning ? "On" : "Off");
 		if (!(feats() & UI_FEAT_SCAN))
 			it->flags |= UI_ITEM_DIM;
@@ -2761,6 +2775,12 @@ static void tools_select(uint16_t row, bool hold)
 		if (!(feats() & UI_FEAT_SCAN)) {
 			ui_toast("Scan: not in this build");
 		} else {
+#if CONFIG_DUAL_WATCH
+			if (!ui_st.dual.on && !ui_st.scanning) {
+				ui_push(SCR_WATCH, 0);	// dual watch or the zone
+				break;
+			}
+#endif
 			ui_go_home();
 			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO
 		}
@@ -2837,6 +2857,9 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 #if CONFIG_DMR
 					 KEYFN_CALL_BACK,
 #endif
+#if CONFIG_DUAL_WATCH
+					 KEYFN_AB, KEYFN_DUAL_WATCH,
+#endif
 };
 static const char *const n_keyfn_press[] = { "Default", "Nothing", "Monitor", "Talk target", "Power level",
 					     "Next zone", "Previous zone", "Scan", "Key lock", "Home zone",
@@ -2845,6 +2868,9 @@ static const char *const n_keyfn_press[] = { "Default", "Nothing", "Monitor", "T
 #endif
 #if CONFIG_DMR
 					     "Call back",
+#endif
+#if CONFIG_DUAL_WATCH
+					     "A/B", "Dual watch",
 #endif
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
@@ -2859,6 +2885,9 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #if CONFIG_DMR
 					KEYFN_CALL_BACK,
 #endif
+#if CONFIG_DUAL_WATCH
+					KEYFN_AB, KEYFN_DUAL_WATCH,
+#endif
 };
 static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target", "Power level", "Next zone",
 					    "Previous zone", "Scan",
@@ -2871,6 +2900,9 @@ static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target",
 #endif
 #if CONFIG_DMR
 					    "Call back",
+#endif
+#if CONFIG_DUAL_WATCH
+					    "A/B", "Dual watch",
 #endif
 };
 #endif
@@ -3602,5 +3634,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_CRASH_REPORT && CONFIG_DMR
 	[SCR_CRASH_TO] = &crash_to_screen,
+#endif
+#if CONFIG_DUAL_WATCH
+	[SCR_WATCH] = &ui_watch_screen, [SCR_DUAL] = &ui_dual_screen, [SCR_DUAL_PICK] = &ui_dual_pick_screen,
+	[SCR_DUAL_ZONE] = &ui_dual_zone_screen,
 #endif
 };

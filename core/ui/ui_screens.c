@@ -364,8 +364,19 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 		ui_col.dim = dim;
 		return L->strip_h;
 	}
-	// Left side: the mode, and one mode word when there is room for it with a space either side
-	int lx = gfx_text(f, x, ty, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", sfg);
+	// Left side: the mode, and one mode word when there is room for it with a space either side. In dual watch the
+	// mode is the selected channel's (the tuned one alternates) and the word is DUAL
+	uint8_t mode = v->ch.mode;
+#if CONFIG_DUAL_WATCH
+	if (s->dual.on)
+		mode = s->dual.pane[s->dual.sel].mode;
+#endif
+	int lx = gfx_text(f, x, ty, mode == RADIO_MODE_DMR ? "DMR" : "FM", sfg);
+#if CONFIG_DUAL_WATCH
+	if (s->dual.on && lx + 6 * f->w <= rx)
+		lx = gfx_text(f, lx + f->w, ty, "DUAL", swarn);
+	else
+#endif
 	if (s->scanning && lx + 6 * f->w <= rx)
 		lx = gfx_text(f, lx + f->w, ty, "SCAN", swarn);
 #if CONFIG_DMR_ROAMING
@@ -1473,6 +1484,12 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 
 void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 {
+#if CONFIG_DUAL_WATCH
+	if (s->dual.on) {
+		ui_draw_home_dual(v, s);
+		return;
+	}
+#endif
 #if CONFIG_DMR
 	ui_st_dmr_off = s->dmr_off;
 	if (dmr_call_screen(v)) {
@@ -1498,6 +1515,322 @@ void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 	ui_draw_banner(s);
 	ui_draw_bottom(s, home_hint(v, s));
 }
+
+#if CONFIG_DUAL_WATCH
+// --- Dual watch Home (docs/ux/dual-watch.md 3) ---
+// Two panes, A over B, the same size: neither channel is second class. Each pane has a letter tag, the channel's
+// number and name (the VFO: its frequency), then what PTT talks to there (DMR) or its frequency (FM), and its
+// frequency and chips where there is room. The selected pane's tag is filled and says PTT; the pane a call is coming
+// in on is green and says RX, with the caller; the pane the last call came in on says how long ago. Every color has
+// its word (P5)
+
+typedef struct {
+	const font_t *name, *target, *detail;	// detail NULL: no third row
+	int act;				// activity lines under the panes
+} dual_fit_t;
+
+static int dual_pane_h(const dual_fit_t *ft)
+{
+	return ft->name->h + ft->target->h + (ft->detail != NULL ? ft->detail->h : 0);
+}
+
+// Text right-aligned at x_end on a row of font rf that starts at y with height row_h; returns its left edge, or
+// x_end when it doesn't fit right of min_x
+static int dual_right(const font_t *rf, int x_end, int y, int row_h, int min_x, const char *text, color_t c)
+{
+	char fit[48];
+	int room = x_end - min_x;
+	if (room < 3 * rf->w)
+		return x_end;
+	gfx_text_fit(rf, text, room, fit, sizeof fit);
+	int tw = gfx_text_width(rf, fit);
+	gfx_text(rf, x_end - tw, y + (row_h - rf->h + 1) / 2, fit, c);
+	return x_end - tw;
+}
+
+static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, int h, int pad, const dual_fit_t *ft)
+{
+	const ui_layout_t *L = &ui_layout;
+	const ui_dual_t *d = &s->dual;
+	const ui_dual_pane_t *p = &d->pane[i];
+	const font_t *nf = ft->name, *sm = L->small;
+	int w = gfx_width();
+	bool tx = v->state == RS_TX && d->sel == i, rx = !tx && d->rx == i, sel = d->sel == i;
+	bool quiet = d->rx != UI_DUAL_NONE && !rx;	// the other pane has the call: this one steps back
+	color_t fg = quiet ? ui_col.dim : ui_col.fg;
+	char buf[48], fit[48];
+	sbuf_t b;
+
+	// The tag: the pane's letter in a box as tall as the pane's text. Filled for the selected pane (red while it
+	// transmits), green while a call comes in on it, an outline otherwise
+	int ty = y + pad, th = h - 2 * pad;
+	int tw = nf->w + (nf->w >= 12 ? 10 : nf->w >= 8 ? 6 : 4);
+	const char *letter = i ? "B" : "A";
+	color_t tbg = ui_col.bg, tfg = ui_col.dim;
+	if (tx) {
+		tbg = ui_col.tx;
+		tfg = ui_col.pill_fg;
+	} else if (rx) {
+		tbg = ui_col.rx;
+		tfg = ui_col.pill_dark_fg;
+	} else if (sel) {
+		tbg = ui_col.fg;
+		tfg = ui_col.bg;
+	}
+	if (tbg != ui_col.bg)
+		gfx_round_fill(0, ty, tw, th, tbg);
+	else
+		gfx_rect(0, ty, tw, th, ui_col.line);
+	gfx_text(nf, (tw - gfx_text_width(nf, letter) + 1) / 2, ty + (th - nf->h + 1) / 2, letter, tfg);
+
+	int x0 = tw + (sm->w + 1) / 2;
+	int rx_end = w;
+
+	// Row 1, right: the state word as a pill (TX, RX, PTT), and the age of the last call on this pane
+	int y1 = ty, pill_h = sm->h;
+	const char *word = tx ? "TX" : rx ? "RX" : sel ? "PTT" : NULL;
+	if (word != NULL) {
+		int pad_w = sm->w >= 8 ? 4 : 3;
+		int pw = gfx_text_width(sm, word) + 2 * pad_w;
+		color_t pbg = tx ? ui_col.tx : rx ? ui_col.rx : ui_col.fg;
+		color_t pfg = tx ? ui_col.pill_fg : rx ? ui_col.pill_dark_fg : ui_col.bg;
+		rx_end -= pw;
+		gfx_pill(sm, rx_end, y1 + (nf->h - pill_h + 1) / 2, pill_h, word, pfg, pbg);
+		rx_end -= sm->w / 2 + 1;
+	}
+	if (d->last == i && !rx && !tx) {
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, TEXT_ALT_OPEN "Heard ");
+		sb_age_long(&b, s->now_ms - d->last_ms);
+		sb_str(&b, TEXT_ALT_NEXT);
+		sb_age_long(&b, s->now_ms - d->last_ms);
+		sb_str(&b, TEXT_ALT_CLOSE);
+		int nx = dual_right(sm, rx_end, y1, nf->h, x0 + 6 * sm->w, buf, ui_col.warn);
+		if (nx < rx_end)
+			rx_end = nx - sm->w;
+	}
+
+	// Row 1, left: the channel number (medium, the channel number's color) and name, in the largest font that fits;
+	// the VFO: its frequency
+	int base = y1 + nf->ascent;
+	int x = x0;
+	int avail;
+	sb_init(&b, buf, sizeof buf);
+	if (p->vfo) {
+		sb_freq(&b, p->rx_hz);
+	} else {
+		char num[8];
+		sbuf_t nb;
+		sb_init(&nb, num, sizeof num);
+		sb_u32(&nb, p->number, 1);
+		const font_t *mf = nf == L->large ? L->medium : nf;
+		x = gfx_text(mf, x, base - mf->ascent, num, quiet || gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
+			mf->w / 2;
+		sb_str(&b, p->name);
+	}
+	avail = rx_end - x;
+	const font_t *f = nf;
+	if (gfx_text_width(f, buf) > avail && f != L->medium && nf->h > L->medium->h)
+		f = L->medium;
+	if (gfx_text_width(f, buf) > avail)
+		f = sm;
+	gfx_text_fit(f, buf, avail, fit, sizeof fit);
+	x = gfx_text(f, x, base - f->ascent, fit, rx ? ui_col.rx : fg);
+	if (p->vfo && x + sm->w / 2 + gfx_text_width(sm, "MHz") <= rx_end)
+		gfx_text(sm, x + sm->w / 2, base - sm->ascent, "MHz", ui_col.dim);
+
+	// Row 2: the caller while a call comes in here; else what PTT talks to (DMR) or the frequency (FM). Right: the
+	// frequency (DMR) or the chips (FM) when there is no third row, the signal while receiving
+	const font_t *tf = ft->target;
+	int y2 = y1 + nf->h;
+	char right[32];
+	sbuf_t rb;
+	sb_init(&rb, right, sizeof right);
+	sb_init(&b, buf, sizeof buf);
+	color_t c2 = fg;
+	if (rx) {
+		sb_str(&b, d->caller[0] ? d->caller : "Receiving");
+		c2 = ui_col.rx;
+		sb_i32(&rb, v->rssi_dbm);
+		sb_str(&rb, " dBm");
+	} else if (p->mode == RADIO_MODE_DMR) {
+		sb_str(&b, p->target[0] ? p->target : "DMR");
+		if (ft->detail == NULL && !p->vfo)
+			sb_freq(&rb, p->rx_hz);
+		else if (ft->detail == NULL)
+			sb_str(&rb, p->detail);
+	} else if (p->vfo) {
+		sb_str(&b, "VFO FM");
+		if (ft->detail == NULL)
+			sb_str(&rb, p->detail);
+	} else {
+		sb_freq(&b, p->rx_hz);
+		sb_str(&b, " MHz");
+		if (ft->detail == NULL)
+			sb_str(&rb, p->detail);
+	}
+	int r2 = w;
+	if (right[0]) {
+		int need = gfx_text_width(tf, buf) + sm->w;
+		int nx = dual_right(sm, w, y2, tf->h, x0 + need, right, rx ? ui_col.fg : ui_col.dim);
+		if (nx < w)
+			r2 = nx - sm->w;
+	}
+	gfx_text_fit(tf, buf, r2 - x0, fit, sizeof fit);
+	gfx_text(tf, x0, y2, fit, c2);
+
+	// Row 3: the frequency and the chips, the zone at the right (B may be in another zone than A)
+	if (ft->detail != NULL) {
+		const font_t *df = ft->detail;
+		int y3 = y2 + tf->h;
+		sb_init(&b, buf, sizeof buf);
+		if (p->mode == RADIO_MODE_DMR && !p->vfo) {
+			sb_freq(&b, p->rx_hz);
+			sb_str(&b, " MHz  ");
+		}
+		sb_str(&b, p->detail);
+		int lx = gfx_text(df, x0, y3, buf, ui_col.dim);
+		dual_right(df, w, y3, df->h, lx + 2 * df->w, p->zone, ui_col.dim);
+	}
+}
+
+// Large text (Settings > Display): the two channels only, each as large as fits, the selected one marked
+static void dual_large(const radio_view_t *v, const ui_state_t *s)
+{
+	const ui_layout_t *L = &ui_layout;
+	const ui_dual_t *d = &s->dual;
+	int w = gfx_width();
+	int y = L->strip_h + 2;
+	int room = (L->hint_y - y) / 2;
+	for (int i = 0; i < 2; i++) {
+		const ui_dual_pane_t *p = &d->pane[i];
+		char buf[48], form[48], fit[48];
+		sbuf_t b;
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, i ? "B " : "A ");
+		if (p->vfo)
+			sb_freq(&b, p->rx_hz);
+		else
+			sb_str(&b, p->name);
+		const font_t *f = large_font(buf, room, form, sizeof form);
+		bool tx = v->state == RS_TX && d->sel == i, rx = !tx && d->rx == i;
+		// The selected channel: a bar at the left edge in the text's color; the other is dim unless a call comes in
+		color_t c = tx ? ui_col.tx : rx ? ui_col.rx : d->sel == i ? ui_col.fg : ui_col.dim;
+		int bar = d->sel == i ? f->w / 3 + 2 : 0;
+		if (bar)
+			gfx_fill(0, y, bar - 2, f->h, c);
+		gfx_text_fit(f, form, w - bar, fit, sizeof fit);
+		gfx_text(f, bar, y, fit, c);
+		y += room;
+	}
+}
+
+// The lines under the panes: what is happening, and the last call with its pane
+static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int lines)
+{
+	const ui_layout_t *L = &ui_layout;
+	const ui_dual_t *d = &s->dual;
+	const font_t *sm = L->small;
+	int w = gfx_width();
+	char buf[64], fit[64];
+	sbuf_t b;
+	if (lines <= 0)
+		return;
+	const char *both = d->both ? "Listening to both" :
+		TEXT_ALT_OPEN "One receiver: alternating A and B" TEXT_ALT_NEXT "Alternating A and B" TEXT_ALT_CLOSE;
+	sb_init(&b, buf, sizeof buf);
+	if (v->state == RS_TX) {
+		sb_str(&b, "TALKING on ");
+		sb_str(&b, d->sel ? "B" : "A");
+		gfx_text(sm, 0, y, buf, ui_col.tx);
+		sb_init(&b, buf, sizeof buf);
+		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
+		gfx_text(sm, w - gfx_text_width(sm, buf), y, buf, ui_col.fg);
+	} else if (d->rx != UI_DUAL_NONE) {
+		sb_str(&b, "Receiving on ");
+		sb_str(&b, d->rx ? "B" : "A");
+		int x = gfx_text(sm, 0, y, buf, ui_col.rx) + sm->w;
+		draw_meter(x, y + sm->h / 4, w - x, sm->h / 2, v->rssi_dbm);
+	} else if (d->last != UI_DUAL_NONE && d->caller[0]) {
+		// "B" in an outline tag, the caller, the age at the right
+		int tw = sm->w + 4;
+		gfx_rect(0, y, tw, sm->h, ui_col.line);
+		gfx_text(sm, 2, y, d->last ? "B" : "A", ui_col.fg);
+		char age[16];
+		sbuf_t ab;
+		sb_init(&ab, age, sizeof age);
+		sb_age(&ab, s->now_ms - d->last_ms);
+		int ax = dual_right(sm, w, y, sm->h, tw + 8 * sm->w, age, ui_col.dim);
+		gfx_text_fit(sm, d->caller, ax - sm->w - tw - sm->w / 2, fit, sizeof fit);
+		gfx_text(sm, tw + sm->w / 2, y, fit, ui_col.fg);
+	} else {
+		gfx_text_fit(sm, lines > 1 ? "No calls heard yet" : both, w, fit, sizeof fit);
+		gfx_text(sm, 0, y, fit, ui_col.dim);
+		if (lines == 1)
+			return;
+	}
+	if (lines > 1) {
+		gfx_text_fit(sm, both, w, fit, sizeof fit);
+		gfx_text(sm, 0, y + sm->h, fit, ui_col.dim);
+	}
+}
+
+static const char *dual_hint(const radio_view_t *v, const ui_state_t *s)
+{
+	const ui_dual_t *d = &s->dual;
+	if (v->state == RS_TX_DENIED)
+		return deny_action(v);
+	if (s->locked)
+		return TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE;
+	// A call just came in on the other channel: the way to answer it there
+	if (d->last != UI_DUAL_NONE && d->last != d->sel && s->now_ms - d->last_ms < 10000u)
+		return d->last ? TEXT_ALT_OPEN "# 1 talk on B  Back stop" TEXT_ALT_NEXT "# 1 talk on B" TEXT_ALT_CLOSE :
+			TEXT_ALT_OPEN "# 1 talk on A  Back stop" TEXT_ALT_NEXT "# 1 talk on A" TEXT_ALT_CLOSE;
+	return "# options  Back stop";
+}
+
+void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
+{
+	const ui_layout_t *L = &ui_layout;
+	int w = gfx_width();
+	gfx_clear(ui_col.bg);
+	ui_draw_top(v, s, NULL, NULL);
+	if (s->large_text) {
+		dual_large(v, s);
+	} else {
+		// The richest layout that fits: names in the large font first, then fewer rows, never a smaller font for a
+		// row than the single-channel Home uses for it (P5)
+		const font_t *lg = L->large, *md = L->medium, *sm = L->small;
+		const dual_fit_t fits[] = {
+			{ lg, md, sm, 2 }, { lg, md, sm, 1 }, { lg, md, NULL, 1 }, { lg, sm, NULL, 1 },
+			{ md, sm, NULL, 1 }, { md, sm, NULL, 0 }, { sm, sm, NULL, 0 },
+		};
+		int top = L->strip_h, avail = L->hint_y - top;
+		bool tall = gfx_height() >= UI_TALL_PX;
+		int gap = tall ? 6 : 2;
+		const dual_fit_t *ft = &fits[sizeof fits / sizeof fits[0] - 1];
+		int used = 0;
+		for (unsigned k = 0; k < sizeof fits / sizeof fits[0]; k++) {
+			used = 2 * dual_pane_h(&fits[k]) + gap + fits[k].act * sm->h + (fits[k].act ? 2 : 0);
+			if (used <= avail) {
+				ft = &fits[k];
+				break;
+			}
+		}
+		int extra = avail - used;
+		int pad = extra / 4 < (tall ? 5 : 1) ? extra / 4 : (tall ? 5 : 1);
+		if (pad < 0)
+			pad = 0;
+		int ph = dual_pane_h(ft) + 2 * pad;
+		dual_pane(v, s, 0, top, ph, pad, ft);
+		gfx_hline(0, top + ph + gap / 2, w, ui_col.line);
+		dual_pane(v, s, 1, top + ph + gap, ph, pad, ft);
+		dual_activity(v, s, top + 2 * ph + gap + 2, ft->act);
+	}
+	ui_draw_banner(s);
+	ui_draw_bottom(s, dual_hint(v, s));
+}
+#endif
 
 void ui_draw_bottom(const ui_state_t *s, const char *hint)
 {
@@ -2080,6 +2413,12 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		sb_str(&b, v->vox_on ? "On" : "Off");
 		return feat(UI_FEAT_VOX) && v->ch.mode == RADIO_MODE_FM;
 	case QT_SCAN:
+#if CONFIG_DUAL_WATCH
+		if (s->dual.on) {
+			sb_str(&b, "Dual");
+			return true;
+		}
+#endif
 		sb_str(&b, s->scanning ? "On" : "Off");
 		return feat(UI_FEAT_SCAN);
 	case QT_BANDWIDTH:

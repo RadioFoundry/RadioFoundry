@@ -225,6 +225,32 @@ bool ui_svc_scan_skip(void)
 	radio_req_scan(RSCAN_NUISANCE);
 	return true;
 }
+
+// Today's radio core alternates between the current channel and another position of the same zone (radio-features.md
+// 2), and PTT or a channel change ends it (the UI starts it again after a transmission). Other zones and the VFO need
+// the receive-set model of #96
+bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
+{
+	if (ref == NULL) {
+		radio_req_scan(RSCAN_STOP);
+		return true;
+	}
+	const ui_dual_ref_t *on = &ref[sel], *other = &ref[!sel];
+	static radio_view_t view;	// static: not on the UI task's stack
+	const radio_view_t *v = &view;
+	radio_get_view(&view);
+	if (on->vfo || other->vfo || on->zone != other->zone || on->zone != v->zone_index || on->pos == other->pos)
+		return false;
+	if (v->vfo || v->zone_pos != on->pos)
+		radio_req_zone_pos(on->pos);
+	radio_req_scan_dual(other->pos);
+	return true;
+}
+
+uint8_t ui_svc_receivers(void)
+{
+	return 1;	// a board with two receivers reports them here (#96)
+}
 #endif
 
 #if CONFIG_BEEP
