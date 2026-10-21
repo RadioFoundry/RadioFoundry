@@ -6,6 +6,7 @@
 #include "gd77.h"
 #include "config.h"
 #include "platform.h"
+#include "ftfa_math.h"
 
 #if CONFIG_DIAG
 bool gd77_diag_line(uint8_t i, char *buf, uint8_t len)
@@ -35,8 +36,9 @@ bool gd77_diag_line(uint8_t i, char *buf, uint8_t len)
 		snprintf(buf, len, "nor %06lx", (unsigned long)gd77_flash_jedec());
 		break;
 	case 6:
-		snprintf(buf, len, "clk %lu %s rst %02x", (unsigned long)(SystemCoreClock / 1000u),
-			 k22f_clock_on_pll() ? "pll" : "fll", k22f_reset_cause());
+		snprintf(buf, len, "clk %lu %s%s rst %s", (unsigned long)(SystemCoreClock / 1000u),
+			 k22f_clock_on_pll() ? "pll" : "fll", k22f_clock_hsrun() ? " hs" : "",
+			 k22f_reset_name(k22f_reset_cause()));
 		break;
 	case 7:
 		// Bus status per bus_cfg.h (I2C A, I2C B, NOR, LCD, C6000): 0 ok, 3 = choice not implemented

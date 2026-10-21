@@ -14,6 +14,8 @@
 #define BAT_EMPTY_MV		6600u
 #define BAT_CACHE_MS		500u
 #define SWITCH_SAMPLES		3
+#define OFF_RESET_MS		500u	// after the hold drops with the knob off: the supply should be gone by then
+#define RCM_SRS1_SW		(1u << 10)	// k22f_reset_cause(): the last reset was a software one
 
 static bool adc_ok;
 static uint16_t bat_raw;
@@ -29,9 +31,20 @@ static void init(void)
 	off_count = 0;
 }
 
+// Off: the hold line low. With the knob off that cuts the supply; if something still powers the radio after
+// OFF_RESET_MS (unverified: a supply other than the battery), a reset brings it back to its start-up state instead of
+// leaving it dark. Not twice in a row: when this start was already that reset, the radio stays down and dark until
+// the knob turns it on, rather than restarting every few seconds. With the knob on, the core carries on (app.c)
 static void latch(bool on)
 {
 	k22f_pin_write(PIN_POWER_HOLD, on);
+	if (on || k22f_pin_read(PIN_POWER_SWITCH)) {
+		return;
+	}
+	hal_delay_ms(OFF_RESET_MS);
+	if (!k22f_pin_read(PIN_POWER_SWITCH) && (k22f_reset_cause() & RCM_SRS1_SW) == 0) {
+		k22f_reset();
+	}
 }
 
 uint16_t gd77_battery_raw(void)

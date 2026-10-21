@@ -11,3 +11,6 @@ BOARD_DIRS := boards/gd77 drivers/rf/at1846s drivers/rf/subaudio drivers/modem/h
 	drivers/display/st7567 drivers/flash/spi_nor drivers/input/keymatrix drivers/bus/i2c_gpio drivers/bus/spi_gpio
 # The 128x64 panel at 1 bit a pixel: a 1 KB frame buffer of 64 rows instead of the 40 KB default
 MCU_DEFS   += -DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u
+# Bring-up knobs (docs/spec/hardware-gd77.md 4.1, 2.2), e.g. GD77_DEFS="-DGD77_I2C_A_HW=1 -DGD77_CLOCK_TARGET=1"
+GD77_DEFS ?=
+MCU_DEFS   += $(GD77_DEFS)

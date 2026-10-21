@@ -53,6 +53,7 @@ SECTIONS
 	{
 		. = ALIGN(4);
 		_sdata = .;
+		*(.ramfunc) *(.ramfunc*)	/* code that runs from RAM: the flash controller's command loop (platform/k22f/ftfa.c) */
 		*(.data) *(.data*)
 		. = ALIGN(4);
 		_edata = .;
@@ -80,6 +81,8 @@ SECTIONS
 
 	.ramu_bss (NOLOAD) : { . = ALIGN(4); _sramu_bss = .; *(.ramu_bss) *(.ramu_bss*) . = ALIGN(4); _eramu_bss = .; } >SRAM_U
 	.ramu_noinit (NOLOAD) : { . = ALIGN(8); *(.ramu_noinit) *(.ramu_noinit*) . = ALIGN(8); } >SRAM_U
+	/* The crash log's record (platform/k22f/crash_k22f.c): never cleared at start-up, so it outlives a reset */
+	.crash_noinit (NOLOAD) : { . = ALIGN(4); *(.crash_noinit) *(.crash_noinit*) . = ALIGN(4); } >SRAM_U
 	._main_stack (NOLOAD) : { . = ALIGN(8); . = . + _Min_Stack_Size; . = ALIGN(8); } >SRAM_U
 
 	/DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }

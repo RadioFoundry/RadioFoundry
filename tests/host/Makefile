@@ -1035,20 +1035,26 @@ run-httpassets: httpAssetsTest httpAssetsTestPlain
 # the HR_C6000 power-on clock presets
 K22F    := $(ROOT)/platform/k22f
 GD77    := $(ROOT)/boards/gd77
-TESTS   += k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest
+TESTS   += k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest k22fSystemTest
 k22fPlatformTest: k22fPlatformTest.c $(K22F)/clock_math.h $(K22F)/k22f_pin.h $(GD77)/clock_gd77.h
 	$(CC) $(CFLAGS) -I$(K22F) -I$(GD77) -Wshadow -o $@ k22fPlatformTest.c
 spiGpioTest: spiGpioTest.c $(ROOT)/drivers/bus/spi_gpio/spi_gpio.c $(ROOT)/drivers/bus/spi_gpio/spi_gpio.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ spiGpioTest.c $(ROOT)/drivers/bus/spi_gpio/spi_gpio.c
 gd77BoardTest: gd77BoardTest.c $(GD77)/pin_table.h $(GD77)/pins.h $(GD77)/keys.h $(GD77)/bus_cfg.h $(K22F)/k22f_pin.h \
+               $(K22F)/k22f_mux.h \
                $(ROOT)/drivers/input/keymatrix/keymatrix.c
 	$(CC) $(CFLAGS) -I$(K22F) -I$(GD77) -Wshadow -o $@ gd77BoardTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
+# The K22F's flash window, reset causes, HSRUN step and time base, I2C / DSPI / PWM arithmetic and pin alternates
+k22fSystemTest: k22fSystemTest.c $(K22F)/clock_math.h $(K22F)/ftfa_math.h $(K22F)/periph_math.h $(K22F)/k22f_mux.h \
+                $(K22F)/k22f_pin.h $(GD77)/clock_gd77.h $(GD77)/pin_table.h $(GD77)/bus_cfg.h $(GD77)/pins.h
+	$(CC) $(CFLAGS) -I$(K22F) -I$(GD77) -Wshadow -o $@ k22fSystemTest.c
 hrc6000ClockTest: hrc6000ClockTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRC6K)/hrc6000.h $(HRCDMR)/hrc.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ClockTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
 run: run-gd77
-run-gd77: k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest
+run-gd77: k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest k22fSystemTest
 	./k22fPlatformTest
+	./k22fSystemTest
 	./spiGpioTest
 	./gd77BoardTest
 	./hrc6000ClockTest

@@ -85,7 +85,13 @@ void board_early_init(void)
 	k22f_pin_config(PIN_POWER_HOLD, GPIO_OUT_HIGH);
 	k22f_pins_apply(gd77_pin_table, GD77_PIN_COUNT);
 	gd77_bus_init();
-	(void)k22f_clock_init(&gd77_clock_bringup);	// the target plan (clock_gd77.h) once the radio runs
+	static const k22f_clock_t *const plans[] = {
+#if GD77_CLOCK_TARGET
+		&gd77_clock_target,
+#endif
+		&gd77_clock_bringup,
+	};
+	(void)k22f_clock_init_first(plans, sizeof(plans) / sizeof(plans[0]));
 }
 
 void board_init(void)

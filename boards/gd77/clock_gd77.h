@@ -24,4 +24,11 @@ __attribute__((unused)) static const k22f_clock_t gd77_clock_target = {
 	.div_core = 1, .div_bus = 2, .div_flexbus = 2, .div_flash = 4, .hsrun = true,
 };
 
+// Which plans start-up tries, in order (board.c). The default is the bring-up plan alone until a radio has run the
+// target; a build can choose the target first (MCU_DEFS += -DGD77_CLOCK_TARGET=1), and then falls back to the
+// bring-up plan, then to the internal FLL, if the HSRUN switch or the PLL fails
+#ifndef GD77_CLOCK_TARGET
+#define GD77_CLOCK_TARGET	0
+#endif
+
 #endif

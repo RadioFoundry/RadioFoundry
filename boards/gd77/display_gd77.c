@@ -2,8 +2,10 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-77 display: a UC1701 / ST7567-class 128x64 monochrome LCD on a write-only serial bus on port C (chip select PTC8,
 // reset PTC9, A0 PTC10, clock PTC11, data PTC12; docs/spec/hardware-gd77.md 7), reached through gd77_lcd_bus. The
-// controller driver is the shared one (drivers/display/st7567); the backlight on PTC4 is on or off, with no dimming.
+// controller driver is the shared one (drivers/display/st7567). The backlight on PTC4 is on or off; a build with
+// GD77_BACKLIGHT_PWM (bus_cfg.h) dims it with an FTM channel on the same pin instead (unverified pin mux).
 #include "gd77.h"
+#include "bus_cfg.h"
 #include "config.h"
 #include "pins.h"
 #include "platform.h"
@@ -11,6 +13,7 @@
 #include "display/st7567/st7567.h"
 
 static bool ready;
+static bool pwm;	// the backlight runs on the FTM channel
 
 static void bus_begin(void)
 {
@@ -61,8 +64,22 @@ static const st7567_t panel = {
 	.bias = 0,
 };
 
+static void backlight_init(void)
+{
+	const k22f_mux_t *m = k22f_mux_find(PIN_BACKLIGHT, GD77_BACKLIGHT_FN);
+	if (!GD77_BACKLIGHT_PWM || gd77_backlight_cfg_check(true) != 0 || m == 0) {
+		return;
+	}
+	// Off on the GPIO until the FTM runs, then the pin moves to the channel (which starts at 0 %)
+	if (k22f_pwm_start(GD77_BACKLIGHT_FTM, GD77_BACKLIGHT_CH, GD77_BACKLIGHT_HZ)) {
+		k22f_pin_config(PIN_BACKLIGHT, K22F_MUX(m->alt));
+		pwm = true;
+	}
+}
+
 static void init(void)
 {
+	backlight_init();
 	st7567_init(&panel);
 	ready = true;
 }
@@ -77,7 +94,11 @@ static void flush(const void *fb, uint16_t y0, uint16_t y1)
 
 static void set_backlight(uint8_t percent)
 {
-	k22f_pin_write(PIN_BACKLIGHT, percent > 0);
+	if (pwm) {
+		k22f_pwm_set(GD77_BACKLIGHT_FTM, GD77_BACKLIGHT_CH, percent > 100u ? 100u : percent);
+	} else {
+		k22f_pin_write(PIN_BACKLIGHT, percent > 0);
+	}
 }
 
 const hal_display_t gd77_display = {

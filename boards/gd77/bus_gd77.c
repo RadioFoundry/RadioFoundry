@@ -2,9 +2,9 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-77 buses (docs/spec/hardware-gd77.md 4). Each is built from its entry in bus_cfg.h and handed to the chip glue as
 // a generic interface: I2C bus A (AT1846S, EEPROM) and B as i2c_bus_t, the data flash, the display and the HR_C6000
-// port as spi_bus_t. Software buses run on GPIO through bus/i2c_gpio and bus/spi_gpio. Of the hardware choices, SPI0
-// with a GPIO chip select is written; the K22F I2C controller and SPI0's own chip select are not yet, and a bus
-// configured for them reports K22F_ERR_NOT_IMPLEMENTED and refuses every transfer.
+// port as spi_bus_t. Software buses run on GPIO through bus/i2c_gpio and bus/spi_gpio. The hardware choices: I2C0 for
+// either two-wire bus (platform/k22f/i2c.c), SPI0 for the HR_C6000 port with its chip select by GPIO or as SPI0's
+// PCS0. A set of choices bus_cfg.h refuses leaves those buses refusing every transfer.
 #include "gd77.h"
 #include "bus_cfg.h"
 #include "pins.h"
@@ -68,23 +68,36 @@ static bool refuse_write_read(void *ctx, uint8_t addr7, const uint8_t *w, size_t
 	return false;
 }
 
-// The K22F I2C controller isn't written yet: a bus configured for it refuses
-static const i2c_bus_t hw_i2c_missing = { .write = refuse_write, .write_read = refuse_write_read };
+// A bus whose configuration is refused refuses every transfer
+static const i2c_bus_t i2c_refused = { .write = refuse_write, .write_read = refuse_write_read };
 static const i2c_bus_t soft_bus_a = I2C_GPIO_BUS(&soft_i2c_a);
 static const i2c_bus_t soft_bus_b = I2C_GPIO_BUS(&soft_i2c_b);
 
 static const i2c_bus_t *i2c_a, *i2c_b;
 static SemaphoreHandle_t i2c_a_lock;
 
+#define I2C_HW_HZ	100000u		// the rate the software buses run at, until a radio shows the chips take more
+// I2C on the pins: open drain with the pull-ups the software bus uses
+#define I2C_PCR(mux)	(K22F_MUX(mux) | K22F_OPEN_DRAIN | K22F_PULLUP)
+
 static const i2c_bus_t *i2c_setup(gd77_bus_id_t id, const i2c_bus_t *soft, const i2c_gpio_t *gpio)
 {
-	if (!cfg_valid() || gd77_bus_cfg[id].hw) {
-		status[id] = cfg_valid() ? K22F_ERR_NOT_IMPLEMENTED : K22F_ERR_ARG;
-		return &hw_i2c_missing;
+	const gd77_bus_cfg_t *c = &gd77_bus_cfg[id];
+	if (!cfg_valid()) {
+		status[id] = K22F_ERR_ARG;
+		return &i2c_refused;
 	}
+	// A hung slave holding SDA low is clocked free on the pins as GPIO first, whichever master runs the bus
 	i2c_gpio_recover(gpio);
-	status[id] = K22F_OK;
-	return soft;
+	if (!c->hw) {
+		status[id] = K22F_OK;
+		return soft;
+	}
+	for (uint32_t k = 0; k < GD77_BUS_PINS && c->pins[k].fn != K22F_FN_NONE; k++) {
+		k22f_pin_config(c->pins[k].pin, I2C_PCR(c->mux));
+	}
+	status[id] = k22f_i2c0_init(I2C_HW_HZ);
+	return status[id] == K22F_OK ? &k22f_i2c0_bus : &i2c_refused;
 }
 
 void gd77_i2c_init(void)
@@ -201,9 +214,12 @@ static bool lcd_xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 const spi_bus_t gd77_lcd_bus = { .select = lcd_select, .xfer = lcd_xfer };
 
 // HR_C6000 port: SPI0, mode 1, about 770 kHz at a 49 MHz bus (bus / 2 / 64 x 2, clock_math.h k22f_dspi_hz), the chip
-// select by GPIO. Interrupts stay on: nothing else uses SPI0 until the DMR glue does, which will have to mask the
-// modem's interrupt lines around thread-level transfers (modem-hrc6000.md 1)
-static const k22f_dspi_cfg_t c6k_spi = { .inst = 0, .cpol = false, .cpha = true, .pbr = 0, .br = 6, .dbr = true };
+// select by GPIO, or SPI0's PCS0 on the same pin with the GPIO version's 1 us setup and hold. Interrupts stay on:
+// nothing else uses SPI0 until the DMR glue does, which will have to mask the modem's interrupt lines around
+// thread-level transfers (modem-hrc6000.md 1)
+static const k22f_dspi_cfg_t c6k_spi = { .inst = 0, .cpol = false, .cpha = true, .pbr = 0, .br = 6, .dbr = true,
+					 .cs_ns = 1000 };
+#define C6K_PCS		0u	// PTD0 = SPI0_PCS0
 
 static void c6k_select(bool active)
 {
@@ -224,29 +240,42 @@ static bool c6k_xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 static const spi_bus_t c6k_hw = { .select = c6k_select, .xfer = c6k_xfer };
 static const spi_bus_t spi_missing = { .select = cs_none, .xfer = spi_refuse };
 static const spi_bus_t *c6k_bus = &spi_missing;
+static bool c6k_pcs;
 
-// SPI0 with the peripheral's own chip select (PCS0 on PTD0) isn't written yet; neither is a software port on PTD0..3
+// A software port on PTD0..3 isn't written (the pins carry SPI0, the faster choice)
 void gd77_c6k_bus_init(void)
 {
 	const gd77_bus_cfg_t *c = &gd77_bus_cfg[GD77_BUS_C6K];
-	if (!c->hw || c->hw_cs) {
-		status[GD77_BUS_C6K] = K22F_ERR_NOT_IMPLEMENTED;
-		c6k_bus = &spi_missing;
-		return;
-	}
+	c6k_bus = &spi_missing;
+	c6k_pcs = false;
 	if (!cfg_valid()) {
 		status[GD77_BUS_C6K] = K22F_ERR_ARG;
 		return;
 	}
-	k22f_dspi_init(&c6k_spi);
+	if (!c->hw) {
+		status[GD77_BUS_C6K] = K22F_ERR_NOT_IMPLEMENTED;
+		return;
+	}
+	if (c->hw_cs) {
+		// The pin goes from its idle GPIO high to PCS0, which the module holds high (PCSIS) while deselected
+		k22f_dspi_init(&c6k_spi);
+		k22f_pin_config(PIN_C6K_CS, K22F_MUX(c->mux) | K22F_DRIVE_HIGH);
+		c6k_pcs = true;
+	} else {
+		k22f_dspi_init(&c6k_spi);
+		c6k_bus = &c6k_hw;
+	}
 	status[GD77_BUS_C6K] = K22F_OK;
-	c6k_bus = &c6k_hw;
 }
 
 // One configuration port transaction with the chip select held: header, then data
 bool gd77_c6k_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
 {
 	(void)ctx;
+	if (c6k_pcs) {
+		return k22f_dspi_xfer_pcs(0, C6K_PCS, hdr, NULL, hdr_len, len == 0u) &&
+		       (len == 0u || k22f_dspi_xfer_pcs(0, C6K_PCS, tx, rx, len, true));
+	}
 	c6k_bus->select(true);
 	bool ok = c6k_bus->xfer(hdr, NULL, hdr_len) && c6k_bus->xfer(tx, rx, len);
 	c6k_bus->select(false);
