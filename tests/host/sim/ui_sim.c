@@ -11,6 +11,7 @@
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   wait:<ms>           time passes
+//   reboot              power off and on: the screens start over, the settings stay
 //   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
 //                       rxaend / rxbend its end
 //   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
@@ -1440,6 +1441,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ROAM_PROBE, 0);
 	ui_svc_setting_set(UI_SET_CRASH_MODE, UI_CRASH_SEND_OFF);
 	ui_svc_setting_set(UI_SET_CRASH_CONTACT, 0);
+#if CONFIG_DUAL_WATCH
+	ui_svc_setting_set(UI_SET_DUAL_TALK_BACK, 0);
+	ui_svc_setting_set(UI_SET_DUAL_B, 0);
+#endif
 	memset(&crash_sim, 0, sizeof crash_sim);
 	ptt_blocked = false;
 	ui_app_init();
@@ -1575,6 +1580,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "dual") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.on && view.scan == 3);
 	else if (strcmp(key, "bzone") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].zone);
 	else if (strcmp(key, "bvfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].vfo);
+	else if (strcmp(key, "bpos") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].pos + 1u);
 	else if (strcmp(key, "sel") == 0) snprintf(got, sizeof got, "%c", ui_st.dual.sel ? 'B' : 'A');
 	else if (strcmp(key, "rx") == 0) snprintf(got, sizeof got, "%c", "AB-"[ui_st.dual.rx > 1 ? 2 : ui_st.dual.rx]);
 	else if (strcmp(key, "last") == 0) snprintf(got, sizeof got, "%c", "AB-"[ui_st.dual.last > 1 ? 2 : ui_st.dual.last]);
@@ -1858,6 +1864,12 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "hotspot") == 0 && arg != NULL) {
 		hotspot_on = strcmp(arg, "on") == 0;
 		advance(300);
+		return true;
+	}
+	if (strcmp(t, "reboot") == 0) {		// power off and on: the screens start over, the settings stay
+		view.scan = 0;
+		ui_app_init();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)

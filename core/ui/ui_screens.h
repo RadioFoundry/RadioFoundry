@@ -75,6 +75,9 @@ typedef struct {
 		char caller[48];
 	} hist[4];		// the last calls, newest first: Home lists them where there is room
 	ui_dual_pane_t pane[2];
+	bool talk_back;		// the setting: after a call on the other channel, PTT talks there a while
+	uint8_t back_to;	// talk back running: the pane selected before it, UI_DUAL_NONE when none runs
+	uint32_t back_ms;	// ... when it goes back (moved on by a call or a transmission there)
 } ui_dual_t;
 #endif
 

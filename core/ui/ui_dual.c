@@ -16,10 +16,11 @@
 #include "codeplug/codeplug.h"
 
 #define START_GRACE_MS	500	// the radio view may still show no watch this soon after asking for one
+#define TALK_BACK_MS	10000	// talk back: PTT stays on the other channel this long after its call or our reply
 #define PICK_ZONES	0xFFFFu	// SCR_DUAL_ZONE's "zone" for its own list of zones
 
 static ui_dual_ref_t ref[2];
-static bool b_known;		// a B channel was picked since power on: the Scan chooser offers it again
+static bool b_known;		// ref[1] holds the last B (picked, or the saved one found: b_last)
 static uint32_t started_ms;
 static bool was_tx;		// the radio transmitted since the last tick (today's core ends the watch then)
 static uint16_t pick_zone;	// the zone SCR_DUAL_PICK lists
@@ -33,6 +34,42 @@ void ui_dual_reset(void)
 	b_known = false;
 	was_tx = false;
 	started_ms = 0;
+	dual()->back_to = UI_DUAL_NONE;
+}
+
+// The last B: picked since power on, else the saved one (UI_SET_DUAL_B), found in A's zone first, then in any zone.
+// False: none, or its channel is gone
+static bool b_last(void)
+{
+	if (b_known)
+		return true;
+	int32_t code = ui_svc_setting_get(UI_SET_DUAL_B);
+	if (code == UI_DUAL_B_VFO) {
+		ref[1] = (ui_dual_ref_t){ true, 0, 0 };
+		return b_known = true;
+	}
+	if (code <= 0 || code > CODEPLUG_CHANNELS_MAX)
+		return false;
+	static zone_t z;	// static: not on the UI task's stack
+	uint16_t n = codeplug_zone_count(), first = ui_view()->zone_index;
+	for (uint16_t k = 0; k < n; k++) {
+		uint16_t zi = (uint16_t)((first + k) % n);
+		if (!codeplug_zone(zi, &z))
+			continue;
+		for (uint16_t p = 0; p < z.count && p < CODEPLUG_ZONE_MAX; p++) {
+			if (z.channels[p] == code) {
+				ref[1] = (ui_dual_ref_t){ false, zi, p };
+				return b_known = true;
+			}
+		}
+	}
+	return false;
+}
+
+// Kept across power off: the channel number (its zone is found again), or the VFO
+static void b_save(void)
+{
+	ui_svc_setting_set(UI_SET_DUAL_B, ref[1].vfo ? UI_DUAL_B_VFO : dual()->pane[1].number);
 }
 
 static void ref_here(ui_dual_ref_t *r)
@@ -150,11 +187,12 @@ bool ui_dual_start(const ui_dual_ref_t *b)
 	b_known = true;
 	d->on = true;
 	d->both = ui_svc_receivers() > 1;
-	d->rx = d->last = UI_DUAL_NONE;
+	d->rx = d->last = d->back_to = UI_DUAL_NONE;
 	d->caller[0] = 0;
 	d->calls = 0;
 	pane_fill(0);
 	pane_fill(1);
+	b_save();
 	ui_toast("Dual watch on");
 	return true;
 }
@@ -167,6 +205,7 @@ void ui_dual_stop(void)
 		return;
 	ui_svc_dual(NULL, 0);	// the radio stops on the selected channel
 	d->on = false;
+	d->back_to = UI_DUAL_NONE;
 	ui_toast(d->sel ? "Dual watch off: on B" : "Dual watch off: on A");
 }
 
@@ -175,8 +214,36 @@ void ui_dual_select(uint8_t pane)
 	ui_dual_t *d = dual();
 	if (!d->on || pane == d->sel)
 		return;
+	d->back_to = UI_DUAL_NONE;	// the user's choice ends talk back
 	if (apply(pane))
 		ui_toast(pane ? "Talking on B" : "Talking on A");
+}
+
+// Talk back (the setting): a call ended on the other channel, so PTT talks there for TALK_BACK_MS, then goes back
+static void talk_back(ui_dual_t *d, uint8_t pane, uint32_t now)
+{
+	uint8_t from = d->back_to != UI_DUAL_NONE ? d->back_to : d->sel;
+	if (!apply(pane))
+		return;
+	d->back_to = from;
+	d->back_ms = now + TALK_BACK_MS;
+	ui_toast(pane ? "Talk back on B" : "Talk back on A");
+}
+
+static void talk_back_poll(ui_dual_t *d, const radio_view_t *v, uint32_t now)
+{
+	if (d->back_to == UI_DUAL_NONE)
+		return;
+	if (v->state == RS_TX || d->pane[d->sel].rx) {
+		d->back_ms = now + TALK_BACK_MS;	// a reply, or the other station again: the time starts over
+		return;
+	}
+	if ((int32_t)(now - d->back_ms) < 0)
+		return;
+	uint8_t to = d->back_to;
+	d->back_to = UI_DUAL_NONE;
+	if (to != d->sel && apply(to))
+		ui_toast(to ? "Talking on B" : "Talking on A");
 }
 
 // Pane `pane` becomes r (a channel of any zone, or the VFO); starts the watch when it is off
@@ -191,6 +258,7 @@ static void set_pane(uint8_t pane, const ui_dual_ref_t *r)
 		ui_toast(pane ? "That is A: pick another" : "That is B: pick another");
 		return;
 	}
+	d->back_to = UI_DUAL_NONE;
 	ui_dual_ref_t old = ref[pane];
 	ref[pane] = *r;
 	if (!apply(d->sel)) {
@@ -207,6 +275,8 @@ static void set_pane(uint8_t pane, const ui_dual_ref_t *r)
 			d->hist[keep++] = d->hist[k];
 	d->calls = keep;
 	pane_fill(pane);
+	if (pane == 1)
+		b_save();
 }
 
 // Up / Down and the knob on Home: the selected channel moves through its zone (the other channel is skipped), or the
@@ -285,18 +355,19 @@ void ui_dual_ab_key(void)
 	ui_dual_t *d = dual();
 	if (d->on)
 		ui_dual_select(!d->sel);
-	else if (b_known)
+	else if (b_last())
 		ui_dual_start(&ref[1]);
 	else
 		ui_push(SCR_DUAL_PICK, 1);
 }
 
-// The Dual watch key (a side key function): on with the last B (or the picker), or off
+// Dual watch on with the last B (or the picker the first time), or off: Quick tile 7, the Dual watch key, long SK2
 void ui_dual_key(void)
 {
+	ui_go_home();
 	if (dual()->on)
 		ui_dual_stop();
-	else if (b_known)
+	else if (b_last())
 		ui_dual_start(&ref[1]);
 	else
 		ui_push(SCR_DUAL_PICK, 1);
@@ -391,12 +462,16 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 #endif
 		}
 	}
+	uint8_t sel0 = d->sel, back0 = d->back_to;
 	uint8_t heard = UI_DUAL_NONE;
 	for (uint8_t i = 0; i < 2; i++) {
 		ui_dual_pane_t *p = &d->pane[i];
 		ui_dual_rx_t *x = &r[i];
-		if (p->rx && !x->active)
+		if (p->rx && !x->active) {
 			call_ended(d, i, now);
+			if (d->talk_back && i != d->sel && v->state != RS_TX)
+				talk_back(d, i, now);
+		}
 		if (x->active) {
 			caller_text(caller_buf, sizeof caller_buf, x->dmr, x->src, x->src_name, x->dst, x->group);
 			if (strcmp(caller_buf, p->caller) != 0) {
@@ -418,61 +493,9 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 			strcpy(d->caller, d->pane[heard].caller);
 		dirty = true;
 	}
-	return dirty;
+	talk_back_poll(d, v, now);
+	return dirty || d->sel != sel0 || d->back_to != back0;
 }
-
-// ======================= Scan: dual watch or the zone (quick 7, Tools > Scan) =======================
-
-static uint16_t watch_count(void) { return 2; }
-
-static void watch_item(uint16_t i, ui_item_t *it)
-{
-	item_num_set(it, (uint16_t)(i + 1u));
-	if (i == 0) {
-		strcpy(it->label, "Dual watch");
-		sbuf_t b;
-		sb_init(&b, it->value, sizeof it->value);
-		if (b_known) {
-			sb_str(&b, "+ ");
-			if (ref[1].vfo)
-				sb_str(&b, "VFO");
-			else
-				sb_str(&b, dual()->pane[1].name);
-		} else {
-			sb_str(&b, "Pick B");
-		}
-	} else {
-		strcpy(it->label, ui_view()->vfo ? "Scan the band" : "Scan this zone");
-	}
-}
-
-static void watch_select(uint16_t i, bool hold)
-{
-	(void)hold;
-	if (i == 0) {
-		if (b_known) {
-			ui_go_home();
-			ui_dual_start(&ref[1]);
-		} else {
-			ui_push(SCR_DUAL_PICK, 1);
-		}
-	} else {
-		ui_go_home();
-		ui_scan_toggle();
-	}
-}
-
-static void watch_context(uint16_t i)
-{
-	if (i == 0)
-		ui_push(SCR_DUAL_PICK, 1);	// another B
-}
-
-const ui_scr_def_t ui_watch_screen = {
-	.name = "watch", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Scan",
-	.hint = TEXT_ALT_OPEN "1-2 start  # change B  Back" TEXT_ALT_NEXT "1-2 start  # change B" TEXT_ALT_CLOSE,
-	.count = watch_count, .item = watch_item, .select = watch_select, .context = watch_context,
-};
 
 // ======================= Dual watch actions (# on Home while it runs) =======================
 
@@ -609,7 +632,7 @@ static void pick_enter(void)
 {
 	uint8_t pane = (uint8_t)ui_frame()->arg;
 	const ui_dual_ref_t *r = &ref[pane];
-	bool have = dual()->on || (pane == 1 && b_known);
+	bool have = dual()->on || (pane == 1 && b_last());
 	pick_zone = have && !r->vfo ? r->zone : ui_view()->zone_index;
 	ui_filter_reset();
 	// Focus the pane's channel, else the first channel after the zone row

@@ -585,6 +585,28 @@ static void test_crash_bits(void)
 	CHECK(settings_theme(&s) == 0);
 }
 
+// The last dual watch B in beeps bits 1-7 and mic_gain bits 4-7: every code reads back, beeps and the mic gain stay
+static void test_dual_b_bits(void)
+{
+	settings_t s;
+	settings_defaults(&s);
+	CHECK(settings_dual_b(&s) == 0 && settings_mic_gain(&s) == 5);	// an older record: none
+	settings_set_mic_gain(&s, 10);
+	for (uint16_t n = 0; n <= 2047; n++) {
+		settings_set_dual_b(&s, n);
+		if (settings_dual_b(&s) != n || settings_mic_gain(&s) != 10 || (s.beeps & 1u) != 1u) {
+			printf("FAIL dual B %u: read %u, mic gain %u, beeps %u\n", n, settings_dual_b(&s),
+			       settings_mic_gain(&s), s.beeps & 1u);
+			failures++;
+			break;
+		}
+	}
+	settings_set_dual_b(&s, 1025);	// the VFO
+	settings_set_mic_gain(&s, 3);
+	CHECK(settings_dual_b(&s) == 1025 && settings_mic_gain(&s) == 3);
+	CHECK(s.mic_gain > 10);		// firmware from before reads it as out of range: the default
+}
+
 // The payload is settings_t as in RAM, and layout 1 is frozen: fields are only appended (settings-store.md 3). A
 // field that moved would make every stored record load into the wrong fields
 static void test_settings_layout(void)
@@ -939,6 +961,7 @@ int main(void)
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();
+	test_dual_b_bits();
 	test_settings_bad_records();
 	test_settings_worn_sector();
 	test_write_across_sectors();

@@ -21,7 +21,6 @@ typedef enum {
 	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
 	SCR_CRASH_TO,			// the crash report's target, picked from the contacts (CONFIG_CRASH_REPORT)
 	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
-	SCR_WATCH,			// quick 7 / Tools > Scan with dual watch built: dual watch or the zone (ui_dual.c)
 	SCR_DUAL, SCR_DUAL_PICK, SCR_DUAL_ZONE,	// dual watch: its actions, a channel for A or B (arg: the pane), a zone
 	SCR_COUNT
 } ui_scr_t;

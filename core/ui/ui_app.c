@@ -828,10 +828,8 @@ static void vfo_key(void)
 void ui_scan_toggle(void)
 {
 #if CONFIG_DUAL_WATCH
-	if (ui_st.dual.on) {	// dual watch is a kind of scan to the radio: the scan key ends it too
+	if (ui_st.dual.on)	// dual watch is a kind of scan to the radio: a zone scan takes its place
 		ui_dual_stop();
-		return;
-	}
 #endif
 	bool on = !ui_st.scanning;
 	if (!ui_svc_scan(on)) {
@@ -1131,15 +1129,10 @@ static void quick_activate(int tile)
 		break;
 	case QT_SCAN:
 #if CONFIG_DUAL_WATCH
-		// Off: the chooser (dual watch or the zone); on: one press stops whichever runs
-		if (ui_st.dual.on) {
-			ui_go_home();
-			ui_dual_stop();
-		} else if (!ui_st.scanning) {
-			ui_push(SCR_WATCH, 0);
-		} else
-#endif
+		ui_dual_key();		// tile 7 is Dual watch; a zone scan is in Tools > Scan
+#else
 		ui_scan_toggle();
+#endif
 		break;
 #if CONFIG_DMR
 	case QT_TIMESLOT: {
@@ -1558,7 +1551,11 @@ void ui_app_init(void)
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
 					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
-					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME };
+					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME,
+#if CONFIG_DUAL_WATCH
+					  UI_SET_DUAL_TALK_BACK,
+#endif
+	};
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
@@ -1592,6 +1589,9 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_HEAR_ALL_DEFAULT: ui_st.hear_all_default = v != 0; hear_all_key = 0; break;
 	case UI_SET_MESSAGE_TONE: ui_st.message_tone = v != 0; break;
 	case UI_SET_VIBRATE: ui_st.vibrate = v != 0; break;
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_TALK_BACK: ui_st.dual.talk_back = v != 0; break;
+#endif
 	case UI_SET_VOLUME: ui_st.volume = (uint8_t)(v >= 0 && v <= RADIO_VOLUME_MAX ? v : RADIO_VOLUME_DEFAULT); break;
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
@@ -1787,7 +1787,11 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (ev->action == ACT_USER_2 && ev->gesture == GESTURE_LONG) {
-		ui_scan_toggle();	// long SK2 (DM-1701 key map): scan on / off
+#if CONFIG_DUAL_WATCH
+		ui_dual_key();		// long SK2: dual watch on / off
+#else
+		ui_scan_toggle();	// long SK2: scan on / off
+#endif
 		return;
 	}
 	if (ev->action == ACT_USER_2 && ev->gesture == GESTURE_PRESS) {

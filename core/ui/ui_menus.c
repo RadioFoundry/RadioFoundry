@@ -27,7 +27,7 @@
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
 #if CONFIG_DUAL_WATCH
-extern const ui_scr_def_t ui_watch_screen, ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
+extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
 #endif
 
 static void item_num(ui_item_t *it, uint16_t n)
@@ -2775,14 +2775,8 @@ static void tools_select(uint16_t row, bool hold)
 		if (!(feats() & UI_FEAT_SCAN)) {
 			ui_toast("Scan: not in this build");
 		} else {
-#if CONFIG_DUAL_WATCH
-			if (!ui_st.dual.on && !ui_st.scanning) {
-				ui_push(SCR_WATCH, 0);	// dual watch or the zone
-				break;
-			}
-#endif
 			ui_go_home();
-			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO
+			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO (dual watch ends)
 		}
 		break;
 	case T_POSITION: ui_push(SCR_INFO, INFO_POSITION); break;
@@ -2959,6 +2953,9 @@ static const set_item_t s_talk[] = {
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
+#if CONFIG_DUAL_WATCH
+	TOGGLE("Dual watch talk back", "reply other channel A B", UI_SET_DUAL_TALK_BACK),
+#endif
 };
 static const set_item_t s_privacy[] = {
 	LIST("Key type", "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
@@ -3636,7 +3633,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CRASH_TO] = &crash_to_screen,
 #endif
 #if CONFIG_DUAL_WATCH
-	[SCR_WATCH] = &ui_watch_screen, [SCR_DUAL] = &ui_dual_screen, [SCR_DUAL_PICK] = &ui_dual_pick_screen,
+	[SCR_DUAL] = &ui_dual_screen, [SCR_DUAL_PICK] = &ui_dual_pick_screen,
 	[SCR_DUAL_ZONE] = &ui_dual_zone_screen,
 #endif
 };

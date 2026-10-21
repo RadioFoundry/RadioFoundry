@@ -185,6 +185,9 @@ bool ui_svc_crash_send(void);
 // UI_CRASH_TX_*: the last report's progress; OK also marks the record sent
 uint8_t ui_svc_crash_tx_state(void);
 
+// UI_SET_DUAL_B: 0 none, a codeplug channel number 1..CODEPLUG_CHANNELS_MAX, or the VFO
+#define UI_DUAL_B_VFO	(CODEPLUG_CHANNELS_MAX + 1)
+
 // --- Settings persistence (storage-cps). The stub keeps them in RAM (lost at power off) ---
 typedef enum {
 	UI_SET_KEY_TONES, UI_SET_TONE_VOLUME, UI_SET_TALK_PERMIT, UI_SET_VOICE_PROMPTS, UI_SET_MESSAGE_TONE,
@@ -217,6 +220,9 @@ typedef enum {
 	// after a crash UI_CRASH_SEND_*, the target's codeplug contact number (1-based, 0 none)
 	UI_SET_CRASH_MODE, UI_SET_CRASH_CONTACT,
 	UI_SET_VOLUME,		// speaker volume 0 (mute) .. RADIO_VOLUME_MAX of a radio without a knob (UI_FEAT_VOLUME; settings_t.volume)
+	// Dual watch (CONFIG_DUAL_WATCH, docs/ux/dual-watch.md): after a call on the other channel, PTT talks there for a
+	// while (settings_t.ui_flags); the last B, UI_DUAL_B_* (settings_dual_b)
+	UI_SET_DUAL_TALK_BACK, UI_SET_DUAL_B,
 	UI_SET_COUNT
 } ui_setting_t;
 

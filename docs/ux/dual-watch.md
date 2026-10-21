@@ -27,15 +27,16 @@ or the VFO: dual watch is two frequencies, not the two timeslots of one DMR freq
 
 | How | Does |
 |---|---|
-| **\***, **7** (Quick tile Scan), or Tools › Scan | Opens **Scan**: **1** Dual watch (with the last B: "+ Metro DMR", or "+ VFO"; the first time "Pick B"), **2** Scan this zone ("Scan the band" in the VFO). Tile 7 says "Dual" while it runs, and Tools › Scan says "Dual watch" |
-| **\***, **7**, **1** | Dual watch with the last B (3 presses). The first time: the B picker |
-| **#** on the Scan screen's dual-watch row | Pick another B |
-| **A/B** key (a side key function) | Off: starts dual watch with the last B (or the picker). On: selects the other channel |
-| **Dual watch** key (a side key function) | On (last B, or the picker) / off |
+| **\***, **7** (Quick tile **Dual watch**) | On with the last B (2 presses), the first time the B picker; off while it runs. The tile says On or Off |
+| Hold **SK2** (every radio with an SK2; the DB25-D PRO's tone key) | The same: on with the last B / off |
+| **A/B** key (DM-1801 Pro's A/B key on a press; a side key function elsewhere) | Off: starts dual watch with the last B (or the picker). On: selects the other channel |
+| **Dual watch** key (DM-1801 Pro's A/B key held; a side key function elsewhere) | On (last B, or the picker) / off |
 | **Back** on Home | Off, staying on the selected channel (a banner or VFO entry goes first, as on the normal Home) |
-| **\***, **7** or Tools › Scan while it runs, **Scan** key, long SK2 | Off, staying on the selected channel (they do not start a zone scan) |
+| Tools › Scan, the **Scan** key function | A zone scan (the band in the VFO) in its place: dual watch stops on the selected channel, then the scan starts |
+| **#** **3** while it runs | Another B (**Change B**) |
 
-<img src="screens/160x120i5/dual_chooser.png" width="200" alt="Scan: dual watch or the zone">
+A zone scan is in Tools › Scan only (and on a side key set to Scan): tile 7 and SK2 hold are dual watch.
+
 <img src="screens/160x120i5/dual_pick.png" width="200" alt="B picker">
 <img src="screens/160x120i5/dual_zones.png" width="200" alt="Zone for B">
 
@@ -71,7 +72,8 @@ PTT (row 1) and RX (row 2). The other pane dims.
 **Under the panes**: the state line (TALKING or Receiving) when there is one, then the last calls, newest first, each with its pane's letter: "B Joe
 Smith TG 91 10s ago". On displays without room for the list (128x64), the pane the last call came in on says how long
 ago in amber: "Heard 7s ago" in its first row where it fits, else "7s ago" at the right of its second row. For 10 s
-after a call on the other channel, the hint row says "# 1 talk on B  Back stop"; otherwise "# options  Back stop".
+after a call on the other channel, the hint row says "# 1 talk on B  Back stop"; during talk back (section 4.2) "# 1
+back to A  Back stop"; otherwise "# options  Back stop".
 
 The status strip shows **DUAL** (amber) and the selected channel's mode (the radio's own mode alternates). It says RX while a call comes in on either pane. Every color comes with a word (P5).
 
@@ -116,50 +118,61 @@ Every screen in every class is in the gallery (`docs/ux/screens/*/home_dual*.png
 
 <img src="screens/160x120i5/dual_actions.png" width="200" alt="Dual watch actions">
 
+### 4.2 Talk back
+
+**Settings › Talk › Dual watch talk back** (off by default). Off, a call on the other channel never moves PTT: "# 1
+talk on B" is one press away. On, when a call ends on the other channel, that channel is selected ("Talk back on B")
+so PTT answers there. The time starts over with each reply and each call there; 10 s after the last, the selection goes
+back ("Talking on A"). **#** **1**, the A/B key or Left / Right go back at once and end it.
+
+<img src="screens/240x320/home_dual_talk_back.png" width="200" alt="Talk back on B">
+
 ### 4.1 Per radio
 
-No board assigns A/B or Dual watch by default. Every side key can take either one in Settings › Keys (press or
-hold). What each radio has without that:
+SK2 held is Dual watch on every radio, and the DM-1801 Pro's A/B key is A/B (press) and Dual watch (hold). Every side
+key can take A/B or Dual watch in Settings › Keys (press or hold).
 
-| Radio | Switch A / B | Start |
+| Radio | Switch A / B | Start / stop |
 |---|---|---|
-| DM-1701 | `#` **1**, or a side key set to A/B | `*` `7` `1` |
-| DM-1801 Pro | **Left** / **Right** (the A/B key is Next zone by default; it can be reassigned) | `*` `7` `1` |
-| DM-32UV | **Left** / **Right** | `*` `7` `1` |
-| MD-380 | `#` **1**, or a side key set to A/B | `*` `7` `1` |
-| DB25-D PRO (no number keys) | A side key set to A/B | A side key set to Dual watch or A/B, or Tools › Scan with the knob |
+| DM-1701 | `#` **1**, or a side key set to A/B | `*` `7`, or hold SK2 |
+| DM-1801 Pro | The **A/B** key, **Left** / **Right** | Hold **A/B**, `*` `7`, or hold SK2 (zones: hold Left / Right, or Zones) |
+| DM-32UV | **Left** / **Right** | `*` `7`, or hold SK2 |
+| MD-380 | `#` **1**, or a side key set to A/B | `*` `7`, or hold SK2 |
+| DB25-D PRO (no number keys) | A side key set to A/B | Hold the tone key, or a side key set to Dual watch |
 | Radios planned (GD-77 family, MD-UV380, MD-9600) | Not decided: A/B on a side key or mic key | |
-
-Open question 2 asks whether SK2 long (Scan today) should become Dual watch on the DM-1701 class.
 
 ## 5. Rules
 
-- Dual watch is a kind of scan to the radio: starting it stops a zone scan, and while it runs the Scan key (or
-  `*` `7`, or Tools › Scan) stops it instead of starting a zone scan.
+- Dual watch is a kind of scan to the radio: starting it stops a zone scan, and a zone scan (Tools › Scan, the Scan
+  key) stops it.
 - If the radio ends the watch (hotspot mode, a channel change from the debug link), Home says "Dual watch stopped".
 - A channel picked for A or B can't be the other one's.
 - Changing A or B clears the calls listed for it (they were on the old channel).
-- The last B is remembered until power off; the Scan screen offers it. The radio powers up on the selected channel,
-  even when it was listening to the other one at the time.
-- PTT is never moved to the other channel by a call there: "# 1 talk on B" is one press away, and the
-  selection stays where you put it.
+- The last B is kept across power off (its channel number, or the VFO; settings-store.md 3), so `*` `7` starts with it
+  at once. If its zone isn't known any more, the first zone holding that channel is used (A's zone first); a channel
+  gone from the codeplug means the picker. The radio powers up on the selected channel, even when it was listening to
+  the other one at the time.
+- PTT is moved to the other channel by a call there only with talk back on (section 4.2), and only for its 10 s.
 
 ## 6. Press budgets (uiFlowTest)
 
 | Task | Presses |
 |---|---|
-| Start with the last B | 3 (`* 7 1`) |
-| Start, B from this zone by number | 5 (`* 7 1 5 OK`) |
-| Start, B on the VFO | 7 |
-| Start, B in another zone | 8 |
+| Start with the last B (also after power off) | 2 (`* 7`), 1 (hold SK2) |
+| Start, B from this zone by number | 4 (`* 7 5 OK`) |
+| Start, B on the VFO | 6 |
+| Start, B in another zone | 7 |
 | Talk on B | 1 (A/B key, Right) or 2 (`# 1`) |
-| Stop | 1 (Back), 2 (`* 7`) |
-| Zone scan | 3 (`* 7 2`; was 2) |
+| Stop | 1 (Back, hold SK2), 2 (`* 7`) |
+| Zone scan | 3 (Tools › Scan: `OK 6 1`; was 2 with `* 7`) |
+| Talk back on | 10 (Settings › Talk) |
 
-## 7. Open questions
+## 7. Decisions
 
-1. A zone scan costs one more press (`* 7 2`): is the Scan screen worth it, or should Dual watch get its own tile?
-2. SK2's default on the DM-1701 class: keep Scan on hold, or make it Dual watch?
-3. Should a call on B keep the selection on A (today), or offer a timed "talk back on B" like the reply window?
-4. Should the last B be kept in the codeplug across power off?
-5. DM-1801 Pro: make its A/B key A/B on a press and Dual watch on a hold (Next zone is the default today; zones stay reachable from Zones)?
+Asked in this design's first round and decided by the owner (2026-10-21):
+
+1. Tile 7 is Dual watch; a zone scan is in Tools › Scan only.
+2. SK2 held is Dual watch (it was Scan).
+3. A call on B keeps PTT on A by default; talk back (section 4.2) is a setting.
+4. The last B is kept across power off.
+5. The DM-1801 Pro's A/B key is A/B on a press and Dual watch on a hold (it was Next zone).

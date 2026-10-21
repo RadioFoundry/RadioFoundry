@@ -63,6 +63,9 @@ static uint8_t ui_flag(uint8_t id)
 	case UI_SET_ALIAS_SHOW: return SETTINGS_UI_ALIAS;
 	case UI_SET_PTT_LOCKED: return SETTINGS_UI_PTT_LOCKED;
 	case UI_SET_HEAR_ALL_DEFAULT: return SETTINGS_UI_HEAR_ALL;
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_TALK_BACK: return SETTINGS_UI_DUAL_TALK_BACK;
+#endif
 	default: return 0;
 	}
 }
@@ -146,7 +149,12 @@ int32_t ui_svc_setting_get(uint8_t id)
 		return ui_svc_reply_shown(&rs);
 	case UI_SET_MIC_GAIN:
 		settings_read(&st);
-		return st.mic_gain <= 10 ? st.mic_gain : 5;
+		return settings_mic_gain(&st) <= 10 ? settings_mic_gain(&st) : 5;
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_B:
+		settings_read(&st);
+		return settings_dual_b(&st) <= UI_DUAL_B_VFO ? settings_dual_b(&st) : 0;
+#endif
 	case UI_SET_AUTO_LOCK_S:
 		settings_read(&st);
 		return st.auto_lock_s;
@@ -171,6 +179,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_ALIAS_SHOW:
 	case UI_SET_PTT_LOCKED:
 	case UI_SET_HEAR_ALL_DEFAULT:
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_TALK_BACK:
+#endif
 		settings_read(&st);
 		return (st.ui_flags & ui_flag(id)) != 0;
 	case UI_SET_VIBRATE:
@@ -287,6 +298,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_ALIAS_SHOW:
 	case UI_SET_PTT_LOCKED:
 	case UI_SET_HEAR_ALL_DEFAULT:
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_TALK_BACK:
+#endif
 		st = settings_begin();
 		st->ui_flags = (uint8_t)(value != 0 ? st->ui_flags | ui_flag(id) : st->ui_flags & ~ui_flag(id));
 		settings_end(hal_millis());
@@ -349,7 +363,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_POS_SEND_S:
 		st = settings_begin();
 		if (id == UI_SET_MIC_GAIN) {
-			st->mic_gain = (uint8_t)clamp16(value, 0, 10);
+			settings_set_mic_gain(st, (uint8_t)clamp16(value, 0, 10));
 		} else if (id == UI_SET_AUTO_LOCK_S) {
 			st->auto_lock_s = clamp16(value, 0, 3600);
 		} else if (id == UI_SET_LONG_PRESS_MS) {

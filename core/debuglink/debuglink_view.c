@@ -260,7 +260,7 @@ static void storage_section(dl_text_t *t)
 	settings_t sv;
 	settings_read(&sv);
 	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
-		sv.auto_lock_s, sv.long_press_ms, sv.repeat_ms, sv.mic_gain);
+		sv.auto_lock_s, sv.long_press_ms, sv.repeat_ms, settings_mic_gain(&sv));
 	dl_text(t, "settings.theme=%u\nsettings.ui_flags=%u\nsettings.updown_home=%u\nsettings.low_batt_pct=%u\n",
 		settings_theme(&sv), sv.ui_flags, settings_updown_home(&sv), sv.low_batt_pct);
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", sv.auto_off_min,

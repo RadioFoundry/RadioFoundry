@@ -252,6 +252,26 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
 #define SETTINGS_UI_NO_VIBRATE		0x40u	// vibrate for alerts off (0 = on: older records keep it on)
+#define SETTINGS_UI_DUAL_TALK_BACK	0x80u	// dual watch: after a call on the other channel, PTT talks there a while
+
+// The last dual watch B (docs/ux/dual-watch.md), packed into spare bits so the record stays 236 bytes and an older
+// record reads as none: an 11-bit code, 0 none, 1..1024 a codeplug channel number, 1025 the VFO. Bits 0-6 in beeps
+// bits 1-7 (beeps is 0 / 1 in bit 0), bits 7-10 in mic_gain bits 4-7 (mic_gain is 0-10 in bits 0-3; firmware from
+// before reads a mic_gain with these bits as out of range: the default, 5). Read mic_gain through settings_mic_gain
+static inline uint8_t settings_mic_gain(const settings_t *s) { return s->mic_gain & 0x0Fu; }
+static inline void settings_set_mic_gain(settings_t *s, uint8_t g)
+{
+	s->mic_gain = (uint8_t)((s->mic_gain & 0xF0u) | (g & 0x0Fu));
+}
+static inline uint16_t settings_dual_b(const settings_t *s)
+{
+	return (uint16_t)((s->beeps >> 1) | ((s->mic_gain >> 4) << 7));
+}
+static inline void settings_set_dual_b(settings_t *s, uint16_t code)
+{
+	s->beeps = (uint8_t)((s->beeps & 1u) | ((code & 0x7Fu) << 1));
+	s->mic_gain = (uint8_t)((s->mic_gain & 0x0Fu) | (((code >> 7) & 0x0Fu) << 4));
+}
 
 // settings_t.net_flags (the USB network personality; 0 = as before)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)

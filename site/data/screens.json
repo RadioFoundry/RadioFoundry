@@ -334,6 +334,96 @@
     "SCAN"
    ]
   },
+  "home_dual": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_rx_b": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_heard": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_on_b": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_tx": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_vfo": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_other_zone": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_fm": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_large_text": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_two_rx": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_two_rx_large_text": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_talk_back": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "dual_pick": {
+   "group": "channels",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "dual_zones": {
+   "group": "channels",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "dual_actions": {
+   "group": "channels",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
   "hub": {
    "group": "tools",
    "needs": []

@@ -1905,6 +1905,10 @@ static const char *dual_hint(const radio_view_t *v, const ui_state_t *s)
 		return deny_action(v);
 	if (s->locked)
 		return TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE;
+	// Talk back on the channel a call came in on: the way back now
+	if (d->back_to != UI_DUAL_NONE)
+		return d->back_to ? TEXT_ALT_OPEN "# 1 back to B  Back stop" TEXT_ALT_NEXT "# 1 back to B" TEXT_ALT_CLOSE :
+			TEXT_ALT_OPEN "# 1 back to A  Back stop" TEXT_ALT_NEXT "# 1 back to A" TEXT_ALT_CLOSE;
 	// A call just came in on the other channel: the way to answer it there
 	if (d->last != UI_DUAL_NONE && d->last != d->sel && s->now_ms - d->last_ms < 10000u)
 		return d->last ? TEXT_ALT_OPEN "# 1 talk on B  Back stop" TEXT_ALT_NEXT "# 1 talk on B" TEXT_ALT_CLOSE :
@@ -2473,9 +2477,14 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	// The whole word, and an abbreviation of 6 characters at most for a tile (font.h alternates), so a tile's name
 	// never runs into the next tile's digit in the label font
 #define QT_NAME(full, abbr) TEXT_ALT_OPEN full TEXT_ALT_NEXT abbr TEXT_ALT_CLOSE
+#if CONFIG_DUAL_WATCH
+#define QT_SCAN_NAME	QT_NAME("Dual watch", "Dual")	// tile 7 is Dual watch; a zone scan is in Tools > Scan
+#else
+#define QT_SCAN_NAME	"Scan"
+#endif
 	static const char *const names[] = {
 		[QT_POWER] = "Power", [QT_SQUELCH] = QT_NAME("Squelch", "SQL"), [QT_TONE] = "Tone", [QT_MODE] = "Mode",
-		[QT_MONITOR] = QT_NAME("Monitor", "MON"), [QT_VOX] = "VOX", [QT_SCAN] = "Scan", [QT_BANDWIDTH] = "Width",
+		[QT_MONITOR] = QT_NAME("Monitor", "MON"), [QT_VOX] = "VOX", [QT_SCAN] = QT_SCAN_NAME, [QT_BANDWIDTH] = "Width",
 		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
 		[QT_HEAR_ALL] = QT_NAME("Digital monitor", "DMon"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
 		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_STEP] = "Step", [QT_TO_VFO] = QT_NAME("Copy to VFO", "To VFO"),
@@ -2543,12 +2552,10 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		return feat(UI_FEAT_VOX) && v->ch.mode == RADIO_MODE_FM;
 	case QT_SCAN:
 #if CONFIG_DUAL_WATCH
-		if (s->dual.on) {
-			sb_str(&b, "Dual");
-			return true;
-		}
-#endif
+		sb_str(&b, s->dual.on ? "On" : "Off");
+#else
 		sb_str(&b, s->scanning ? "On" : "Off");
+#endif
 		return feat(UI_FEAT_SCAN);
 	case QT_BANDWIDTH:
 		if (v->temp & RADIO_TEMP_BW)
