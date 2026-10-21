@@ -174,6 +174,38 @@ def contacts(text):
 
 
 # ---------------------------------------------------------------------------------------------------------------
+# step 0: contact timeslot override
+
+NO_TS_OVERRIDE = "openGD77: {timeSlotOverride: None}"
+
+
+def clear_ts_overrides(text):
+    """(text, n): every contact without an openGD77 extension gets timeSlotOverride None. qdmr's open-firmware
+    encoder writes a contact without the extension as 'override TS1' (contact byte 0x17 = 0), which then wins over
+    the channel's timeslot on every call to that contact (issue 93). A contact that has the extension is kept as
+    written, so a real override survives. n is the number of contacts changed."""
+    lines = text.split("\n")
+    _, items = _section_items(lines, "contacts")
+    n = 0
+    for a, b in reversed(items):
+        if any("openGD77" in l for l in lines[a:b]):
+            continue
+        n += 1
+        flow = re.match(r"^(  - \w+: \{.*)\}\s*$", lines[a])
+        if flow and b - a == 1:
+            lines[a] = flow.group(1) + ", " + NO_TS_OVERRIDE + "}"
+            continue
+        # block style: the fields sit two columns in from the dash's key
+        fields = [l for l in lines[a + 1:b] if l.strip()]
+        indent = re.match(r"^ *", fields[0]).group(0) if fields else "      "
+        end = a + 1 + len(lines[a + 1:b])
+        while end > a + 1 and not lines[end - 1].strip():
+            end -= 1
+        lines[end:end] = [indent + "openGD77:", indent + "  timeSlotOverride: None"]
+    return "\n".join(lines), n
+
+
+# ---------------------------------------------------------------------------------------------------------------
 # step 1: RX group list clean-up
 
 def clean_group_lists(text):
@@ -428,7 +460,10 @@ def convert_for_odr(sess, yaml_path, odr_driver, cleanup=True):
     odr-source.yaml. Offline only: needs the YAML file to exist."""
     with open(yaml_path, encoding="utf-8") as f:
         src_text = f.read()
-    rep = {"cleanup": None, "restored": [], "skipped": []}
+    rep = {"cleanup": None, "restored": [], "skipped": [], "ts_cleared": 0}
+    src_text, rep["ts_cleared"] = clear_ts_overrides(src_text)
+    if rep["ts_cleared"]:
+        sess.say("   %d contacts: timeslot override set to None (the encoder would make it TS1)" % rep["ts_cleared"])
     if cleanup:
         src_text, rep["cleanup"] = clean_group_lists(src_text)
         sess.say("   " + format_cleanup(rep["cleanup"]))
@@ -454,6 +489,10 @@ def convert_for_odr(sess, yaml_path, odr_driver, cleanup=True):
         final = channels(f.read())
     want = sum(1 for ch in channels(src_text) if ch["kind"] == "dmr" and ch["contact"])
     have = sum(1 for ch in final if ch["kind"] == "dmr" and ch["contact"])
+    with open(odr_yaml, encoding="utf-8") as f:
+        over = len(re.findall(r"timeSlotOverride:\s*(?!None)\w+", f.read()))
+    sess.say("   contacts with a timeslot override in the result: %d" % over)
+    rep["ts_overrides"] = over
     sess.say("   TX contacts: %d of %d channels keep theirs (%d put back after the encoder)" % (have, want,
                                                                                          len(rep["restored"])))
     for name, why in rep["skipped"]:
@@ -539,6 +578,21 @@ def self_test():
         "groupList: grp3", "groupList: grp2"))
     check(nrep["lists_after"] == 0 and "groupLists: []" in none and not yaml_sections(none)["groupLists"],
           "an emptied section stays valid YAML")
+
+    # contact timeslot override (issue 93)
+    ts, n = clear_ts_overrides(SAMPLE)
+    check(n == 3 and ts.count("timeSlotOverride: None") == 3, "every contact gets override None (%d)" % n)
+    check(clear_ts_overrides(ts) == (ts, 0), "override None is idempotent")
+    check(codeplug_summary(ts)["counts"] == codeplug_summary(SAMPLE)["counts"], "the rest left as written")
+    kept = SAMPLE.replace("number: 9}", "number: 9, openGD77: {timeSlotOverride: TS2}}")
+    ts, n = clear_ts_overrides(kept)
+    check(n == 2 and "timeSlotOverride: TS2" in ts and ts.count("timeSlotOverride") == 3, "a real override is kept")
+    block = ("contacts:\n  - dmr:\n      id: c1\n      name: A\n      number: 9\n  - dmr:\n      id: c2\n"
+             "      name: B\n      number: 10\n      openGD77:\n        timeSlotOverride: TS1\n"
+             "channels: []\n")
+    ts, n = clear_ts_overrides(block)
+    check(n == 1 and ts == block.replace("      number: 9\n", "      number: 9\n      openGD77:\n"
+          "        timeSlotOverride: None\n"), "block-style contact: %r" % ts)
 
     # restore_contacts against a small fake image: two records, the channel layout passed in
     def addr(n):
