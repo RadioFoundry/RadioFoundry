@@ -86,6 +86,18 @@ typedef struct {
 bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel);
 // How many channels the radio hears at once: 1 = dual watch alternates between them (no radio in the tree has more)
 uint8_t ui_svc_receivers(void);
+// On a radio with a receiver per dual watch channel (ui_svc_receivers() > 1): what pane's receiver hears. Both can
+// receive at once; the audio is one of them (heard). False: no receiver of its own (one receiver alternates)
+typedef struct {
+	bool active;		// a call or a signal now
+	bool heard;		// its audio is the one playing
+	bool dmr;
+	bool group;
+	int16_t rssi_dbm;
+	uint32_t src, dst;
+	char src_name[24];
+} ui_dual_rx_t;
+bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out);
 // The VFO's settings while a channel is on view (a dual watch pane). False: not known
 bool ui_svc_vfo_get(channel_t *out);
 

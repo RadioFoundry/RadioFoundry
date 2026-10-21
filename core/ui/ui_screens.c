@@ -261,6 +261,10 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	radio_state_t st = v->state;
 	if (st == RS_IDLE && v->monitor && v->ch.mode != RADIO_MODE_DMR)
 		st = RS_RX;
+#if CONFIG_DUAL_WATCH
+	if (st == RS_IDLE && s->dual.on && s->dual.rx != UI_DUAL_NONE)
+		st = RS_RX;	// a channel's own receiver (two receivers) hears a call the view's one doesn't show
+#endif
 	switch (st) {
 	case RS_RX: word = "RX"; pbg = ui_col.rx; pfg = ui_col.pill_dark_fg; break;
 	case RS_TX: word = "TX"; pbg = ui_col.tx; break;
@@ -1546,12 +1550,15 @@ static int dual_right(const font_t *rf, int x_end, int y, int row_h, int min_x, 
 {
 	char fit[48];
 	int room = x_end - min_x;
-	if (room < rf->w)
+	bool more = true;
+	int tw = 0;
+	for (int level = 0; more; level++) {	// the longest alternate that fits
+		tw = (int)gfx_text_alt(text, level, fit, sizeof fit, &more) * rf->w;
+		if (tw <= room)
+			break;
+	}
+	if (tw > room || fit[0] == 0)
 		return x_end;
-	gfx_text_fit(rf, text, room, fit, sizeof fit);
-	if (strchr(fit, GLYPH_ELLIPSIS[0]) != NULL || fit[0] == 0)
-		return x_end;
-	int tw = gfx_text_width(rf, fit);
 	gfx_text(rf, x_end - tw, y + (row_h - rf->h + 1) / 2, fit, c);
 	return x_end - tw;
 }
@@ -1603,6 +1610,17 @@ static const font_t *dual_name_font(const ui_dual_t *d, int i, const font_t *nf)
 	return L->small;
 }
 
+// A right-pointing triangle ah high (odd) and aw wide at x, y: the selected channel's mark
+static void dual_arrow(int x, int y, int ah, int aw, color_t c)
+{
+	int mid = ah / 2;
+	for (int r = 0; r < ah; r++) {
+		int d = r < mid ? mid - r : r - mid;
+		int len = mid ? (aw * (mid - d) + mid - 1) / mid : aw;
+		gfx_hline(x, y + r, len > 0 ? len : 1, c);
+	}
+}
+
 static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, int h, int pad, const dual_fit_t *ft)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1610,8 +1628,8 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	const ui_dual_pane_t *p = &d->pane[i];
 	const font_t *nf = ft->name, *sm = L->small;
 	int w = gfx_width();
-	bool tx = v->state == RS_TX && d->sel == i, rx = !tx && d->rx == i, sel = d->sel == i;
-	bool quiet = d->rx != UI_DUAL_NONE && !rx;	// the other pane has the call: this one steps back
+	bool tx = v->state == RS_TX && d->sel == i, rx = !tx && p->rx, sel = d->sel == i;
+	bool quiet = !rx && d->pane[!i].rx;	// the other pane has a call: this one steps back
 	color_t fg = quiet ? ui_col.dim : ui_col.fg;
 	char buf[48], fit[48];
 	sbuf_t b;
@@ -1636,19 +1654,35 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 		gfx_round_fill(0, ty, tw, th, tbg);
 	else
 		gfx_rect(0, ty, tw, th, ui_col.line);
-	gfx_text(nf, (tw - gfx_text_width(nf, letter) + 1) / 2, ty + (th - nf->h + 1) / 2, letter, tfg);
+	// The letter, and under it on the selected pane an arrow pointing at its channel (none on the other). Both
+	// letters sit at the same height; a font smaller where the tag is too short for the letter and the arrow
+	int ah = nf->h / 3 < 5 ? 5 : nf->h / 3 | 1;		// the arrow's height, odd
+	const font_t *lf = nf;
+	if (lf->h + 2 + ah > th)
+		lf = nf == L->large ? L->medium : L->small;
+	if (lf->h + 2 + ah > th)
+		lf = L->small;
+	if (lf->h + 1 + ah > th)
+		ah = 0;					// no room even so: the filled tag says it alone
+	else if (ah < lf->h * 2 / 3 && lf->h + 2 + lf->h * 2 / 3 <= th)
+		ah = lf->h * 2 / 3 | 1;			// tall tags: an arrow in proportion to the letter
+	int ly = ty + (th - lf->h - (ah ? ah + 2 : 0) + 1) / 2;
+	gfx_text(lf, (tw - gfx_text_width(lf, letter) + 1) / 2, ly, letter, tfg);
+	if (sel && ah) {
+		dual_arrow((tw - (ah + 1) / 2) / 2, ly + lf->h + 2, ah, (ah + 1) / 2, tfg);
+	}
 
 	int x0 = dual_x0(nf);
 	int rx_end = w;
 
-	// Row 1, right: the state word as a pill (TX, RX, PTT)
+	// Row 1, right: PTT on the selected pane, always (TX while transmitting), so where PTT goes stays plain with
+	// calls on both; RX is on row 2
 	int y1 = ty, pill_h = sm->h;
-	const char *word = tx ? "TX" : rx ? "RX" : sel ? "PTT" : NULL;
-	if (word != NULL) {
-		color_t pbg = tx ? ui_col.tx : rx ? ui_col.rx : ui_col.fg;
-		color_t pfg = tx ? ui_col.pill_fg : rx ? ui_col.pill_dark_fg : ui_col.bg;
+	if (tx || sel) {
+		const char *word = tx ? "TX" : "PTT";
 		rx_end -= dual_pill_w(word);
-		gfx_pill(sm, rx_end, y1 + (nf->h - pill_h + 1) / 2, pill_h, word, pfg, pbg);
+		gfx_pill(sm, rx_end, y1 + (nf->h - pill_h + 1) / 2, pill_h, word, tx ? ui_col.pill_fg : ui_col.bg,
+			 tx ? ui_col.tx : ui_col.fg);
 		rx_end -= sm->w / 2 + 1;
 	}
 
@@ -1695,10 +1729,8 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	sb_init(&b, buf, sizeof buf);
 	color_t c2 = fg;
 	if (rx) {
-		sb_str(&b, d->caller[0] ? d->caller : "Receiving");
+		sb_str(&b, p->caller[0] ? p->caller : "Receiving");
 		c2 = ui_col.rx;
-		sb_i32(&rb, v->rssi_dbm);
-		sb_str(&rb, " dBm");
 	} else if (p->mode == RADIO_MODE_DMR) {
 		sb_str(&b, p->target[0] ? p->target : "DMR");
 		if (ft->detail == NULL && !p->vfo)
@@ -1719,11 +1751,19 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	color_t rc = rx ? ui_col.fg : ui_col.dim;
 	if (ft->act == 0 && d->last == i && !rx && !tx && !aged) {
 		sb_init(&rb, right, sizeof right);
-		sb_age(&rb, s->now_ms - d->last_ms);
+		sb_str(&rb, TEXT_ALT_OPEN "Heard ");
+		sb_age_long(&rb, s->now_ms - d->last_ms);
+		sb_str(&rb, TEXT_ALT_NEXT);
+		sb_age_long(&rb, s->now_ms - d->last_ms);
+		sb_str(&rb, TEXT_ALT_CLOSE);
 		rc = ui_col.warn;
 	}
 	int r2 = w;
-	if (right[0]) {
+	if (rx) {	// the RX pill at the right of the caller
+		r2 -= dual_pill_w("RX");
+		gfx_pill(sm, r2, y2 + (tf->h - pill_h + 1) / 2, pill_h, "RX", ui_col.pill_dark_fg, ui_col.rx);
+		r2 -= sm->w / 2 + 1;
+	} else if (right[0]) {
 		int need = gfx_text_width(tf, buf) + sm->w;
 		int nx = dual_right(sm, w, y2, tf->h, x0 + need, right, rc);
 		if (nx < w)
@@ -1750,7 +1790,8 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	}
 }
 
-// Large text (Settings > Display): the two channels only, each as large as fits, the selected one marked
+// Large text (Settings > Display): the two channels only, each as large as fits. The selected one has the arrow;
+// the one a call comes in on is green and says RX (a word, for mono displays)
 static void dual_large(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1769,14 +1810,22 @@ static void dual_large(const radio_view_t *v, const ui_state_t *s)
 		else
 			sb_str(&b, p->name);
 		const font_t *f = large_font(buf, room, form, sizeof form);
-		bool tx = v->state == RS_TX && d->sel == i, rx = !tx && d->rx == i;
-		// The selected channel: a bar at the left edge in the text's color; the other is dim unless a call comes in
+		bool tx = v->state == RS_TX && d->sel == i, rx = !tx && p->rx;
 		color_t c = tx ? ui_col.tx : rx ? ui_col.rx : d->sel == i ? ui_col.fg : ui_col.dim;
-		int bar = d->sel == i ? f->w / 3 + 2 : 0;
-		if (bar)
-			gfx_fill(0, y, bar - 2, f->h, c);
-		gfx_text_fit(f, form, w - bar, fit, sizeof fit);
-		gfx_text(f, bar, y, fit, c);
+		// The arrow in the room a selection bar would take: f->w / 3 wide, half the letter high, a 2 px gap; the
+		// other line starts at 0
+		int aw = d->sel == i ? f->w / 3 + 2 : 0, ah = (f->h / 2) | 1;
+		if (aw)
+			dual_arrow(0, y + (f->h - ah) / 2, ah, aw - 2, c);
+		gfx_text_fit(f, form, w - aw, fit, sizeof fit);
+		if (rx || tx) {	// receiving or transmitting: the letter in a filled box, as the tag on Home (the strip has the word)
+			char letter[2] = { fit[0], 0 };
+			gfx_fill(aw, y, f->w, f->h, c);
+			gfx_text(f, aw, y, letter, gfx_bpp() == 1 ? ui_col.bg : ui_col.pill_dark_fg);
+			gfx_text(f, aw + f->w, y, fit + 1, c);
+		} else {
+			gfx_text(f, aw, y, fit, c);
+		}
 		y += room;
 	}
 }
@@ -1805,12 +1854,11 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 	const ui_dual_t *d = &s->dual;
 	const font_t *sm = L->small;
 	int w = gfx_width();
-	char buf[64], fit[64];
+	char buf[64];
 	sbuf_t b;
 	if (lines <= 0)
 		return;
-	const char *both = d->both ? "Listening to both" :
-		TEXT_ALT_OPEN "One receiver: alternating A and B" TEXT_ALT_NEXT "Alternating A and B" TEXT_ALT_CLOSE;
+	// A transmission or a call coming in takes the first line
 	sb_init(&b, buf, sizeof buf);
 	if (v->state == RS_TX) {
 		sb_str(&b, "TALKING on ");
@@ -1819,23 +1867,34 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 		sb_init(&b, buf, sizeof buf);
 		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		gfx_text(sm, w - gfx_text_width(sm, buf), y, buf, ui_col.fg);
+		y += sm->h;
+		lines--;
+	} else if (d->pane[0].rx && d->pane[1].rx && lines == 1) {
+		gfx_text(sm, 0, y, "Receiving on A and B", ui_col.rx);	// two receivers, a call on each
+		y += sm->h;
+		lines--;
 	} else if (d->rx != UI_DUAL_NONE) {
-		sb_str(&b, "Receiving on ");
-		sb_str(&b, d->rx ? "B" : "A");
-		int x = gfx_text(sm, 0, y, buf, ui_col.rx) + sm->w;
-		draw_meter(x, y + sm->h / 4, w - x, sm->h / 2, v->rssi_dbm);
-	} else if (lines == 1 && d->calls) {
-		dual_call(y, d->hist[0].pane, d->hist[0].caller, s->now_ms - d->hist[0].ms, ui_col.fg);
-		return;
-	} else {
-		gfx_text_fit(sm, both, w, fit, sizeof fit);
-		gfx_text(sm, 0, y, fit, ui_col.dim);
+		// A line per pane receiving, the one heard first; the other (two receivers) says it is muted
+		for (int k = 0; k < 2 && lines > 0; k++) {
+			uint8_t i = (uint8_t)(k ? !d->rx : d->rx);
+			if (!d->pane[i].rx)
+				continue;
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, "Receiving on ");
+			sb_str(&b, i ? "B" : "A");
+			if (k)
+				sb_str(&b, ", muted");
+			int x = gfx_text(sm, 0, y, buf, ui_col.rx) + sm->w;
+			if (w - x >= 4 * sm->w)
+				draw_meter(x, y + sm->h / 4, w - x, sm->h / 2, d->pane[i].rssi_dbm);
+			y += sm->h;
+			lines--;
+		}
 	}
-	// The calls heard, newest first, as many as fit
-	y += sm->h;
-	if (lines > 1 && d->calls == 0)
+	// Then the calls heard, newest first, as many as fit
+	if (lines > 0 && d->calls == 0)
 		gfx_text(sm, 0, y, "No calls heard yet", ui_col.dim);
-	for (int k = 0; k < d->calls && k < lines - 1; k++, y += sm->h)
+	for (int k = 0; k < d->calls && k < lines; k++, y += sm->h)
 		dual_call(y, d->hist[k].pane, d->hist[k].caller, s->now_ms - d->hist[k].ms, k ? ui_col.dim : ui_col.fg);
 }
 

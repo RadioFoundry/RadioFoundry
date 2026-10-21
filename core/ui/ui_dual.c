@@ -22,7 +22,7 @@ static bool b_known;		// a B channel was picked since power on: the Scan chooser
 static uint32_t started_ms;
 static bool was_tx;		// the radio transmitted since the last tick (today's core ends the watch then)
 static uint16_t pick_zone;	// the zone SCR_DUAL_PICK lists
-static char caller_buf[40];
+static char caller_buf[48];
 
 static ui_dual_t *dual(void) { return &ui_st.dual; }
 
@@ -154,7 +154,7 @@ bool ui_dual_start(const ui_dual_ref_t *b)
 	d->calls = 0;
 	pane_fill(0);
 	pane_fill(1);
-	ui_toast(d->both ? "Dual watch: hearing both" : "Dual watch on: alternating");
+	ui_toast("Dual watch on");
 	return true;
 }
 
@@ -313,30 +313,51 @@ void ui_dual_key(void)
 		ui_push(SCR_DUAL_PICK, 1);
 }
 
-static void caller_text(const radio_view_t *v)
+// "Joe Smith TG 91", with "Joe Smith" as the shorter alternate (font.h): the caller's name gives way last
+static void caller_text(char *out, size_t len, bool dmr, uint32_t src, const char *name, uint32_t dst, bool group)
 {
 	sbuf_t b;
-	sb_init(&b, caller_buf, sizeof caller_buf);
-#if CONFIG_DMR
-	if (v->ch.mode == RADIO_MODE_DMR && (v->dmr.call.src || v->dmr.call.dst)) {
-		const radio_dmr_call_t *c = &v->dmr.call;
-		if (c->src_name[0])
-			sb_str(&b, c->src_name);
-		else
-			sb_u32(&b, c->src, 1);
-		if (c->group) {
-			sb_str(&b, " TG ");
-			sb_u32(&b, c->dst, 1);
-		} else {
-			sb_str(&b, " to you");
-		}
+	sb_init(&b, out, len);
+	if (!dmr || (!src && !dst)) {
+		sb_str(&b, dmr ? "DMR call" : "FM signal");
 		return;
 	}
-#endif
-	sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? "DMR call" : "FM signal");
+	sb_str(&b, TEXT_ALT_OPEN);
+	for (int alt = 0; alt < 2; alt++) {
+		if (name[0])
+			sb_str(&b, name);
+		else
+			sb_u32(&b, src, 1);
+		if (alt == 0) {
+			if (group) {
+				sb_str(&b, " TG ");
+				sb_u32(&b, dst, 1);
+			} else {
+				sb_str(&b, " to you");
+			}
+			sb_str(&b, TEXT_ALT_NEXT);
+		}
+	}
+	sb_str(&b, TEXT_ALT_CLOSE);
 }
 
-// Every UI tick: which pane hears a call, the last call's pane, the watch going on after a transmission. True: redraw
+// A call that ended on pane i goes to the top of the list
+static void call_ended(ui_dual_t *d, uint8_t i, uint32_t now)
+{
+	const unsigned n = sizeof d->hist / sizeof d->hist[0];
+	d->last = i;
+	d->last_ms = now;
+	strcpy(d->caller, d->pane[i].caller);
+	memmove(&d->hist[1], &d->hist[0], (n - 1) * sizeof d->hist[0]);
+	d->hist[0].pane = i;
+	d->hist[0].ms = now;
+	strcpy(d->hist[0].caller, d->pane[i].caller);
+	if (d->calls < n)
+		d->calls++;
+}
+
+// Every UI tick: which panes hear a call (both at once on a radio with two receivers), the last calls and their
+// panes, the watch going on after a transmission. True: redraw
 bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 {
 	ui_dual_t *d = dual();
@@ -356,30 +377,52 @@ bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 	}
 	if (v->state != RS_TX)
 		was_tx = false;
-	uint8_t rx = UI_DUAL_NONE;
-	if (v->state == RS_RX)
-		rx = tuned_pane(v);
-	if (rx != UI_DUAL_NONE) {
-		caller_text(v);
-		if (strcmp(caller_buf, d->caller) != 0) {
-			strcpy(d->caller, caller_buf);
-			dirty = true;
+
+	// What each pane hears now: its own receiver's report, or the one receiver's on the pane it is tuned to
+	static ui_dual_rx_t r[2];	// static: not on the UI task's stack
+	memset(r, 0, sizeof r);
+	bool own = d->both && ui_svc_dual_rx(0, &r[0]) && ui_svc_dual_rx(1, &r[1]);
+	if (!own) {
+		memset(r, 0, sizeof r);
+		uint8_t t = v->state == RS_RX ? tuned_pane(v) : UI_DUAL_NONE;
+		if (t != UI_DUAL_NONE) {
+			ui_dual_rx_t *x = &r[t];
+			x->active = x->heard = true;
+			x->rssi_dbm = v->rssi_dbm;
+			x->dmr = v->ch.mode == RADIO_MODE_DMR;
+#if CONFIG_DMR
+			x->src = v->dmr.call.src;
+			x->dst = v->dmr.call.dst;
+			x->group = v->dmr.call.group;
+			strncpy(x->src_name, v->dmr.call.src_name, sizeof x->src_name - 1);
+#endif
 		}
 	}
-	if (rx != d->rx) {
-		if (d->rx != UI_DUAL_NONE) {
-			d->last = d->rx;
-			d->last_ms = now;
-			const unsigned n = sizeof d->hist / sizeof d->hist[0];
-			memmove(&d->hist[1], &d->hist[0], (n - 1) * sizeof d->hist[0]);
-			d->hist[0].pane = d->rx;
-			d->hist[0].ms = now;
-			strncpy(d->hist[0].caller, d->caller, sizeof d->hist[0].caller - 1);
-			d->hist[0].caller[sizeof d->hist[0].caller - 1] = 0;
-			if (d->calls < n)
-				d->calls++;
+	uint8_t heard = UI_DUAL_NONE;
+	for (uint8_t i = 0; i < 2; i++) {
+		ui_dual_pane_t *p = &d->pane[i];
+		ui_dual_rx_t *x = &r[i];
+		if (p->rx && !x->active)
+			call_ended(d, i, now);
+		if (x->active) {
+			caller_text(caller_buf, sizeof caller_buf, x->dmr, x->src, x->src_name, x->dst, x->group);
+			if (strcmp(caller_buf, p->caller) != 0) {
+				strcpy(p->caller, caller_buf);
+				dirty = true;
+			}
+			if (x->heard || heard == UI_DUAL_NONE)
+				heard = i;
 		}
-		d->rx = rx;
+		if (p->rx != x->active || p->heard != x->heard || p->rssi_dbm != x->rssi_dbm)
+			dirty = true;
+		p->rx = x->active;
+		p->heard = x->heard;
+		p->rssi_dbm = x->rssi_dbm;
+	}
+	if (heard != d->rx) {
+		d->rx = heard;
+		if (heard != UI_DUAL_NONE)
+			strcpy(d->caller, d->pane[heard].caller);
 		dirty = true;
 	}
 	return dirty;
@@ -451,9 +494,13 @@ static void pane_value(sbuf_t *b, uint8_t i)
 		sb_str(b, "VFO ");
 		sb_freq(b, p->rx_hz);
 	} else {
+		sb_str(b, TEXT_ALT_OPEN);
 		sb_u32(b, p->number, 1);
 		sb_chr(b, ' ');
 		sb_str(b, p->name);
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_str(b, p->name);
+		sb_str(b, TEXT_ALT_CLOSE);
 	}
 }
 
@@ -592,8 +639,13 @@ static void pick_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_DIM;
 		return;
 	}
+	// "146.940 FM", else "146.940": the channel's name gives way last
+	sb_str(&b, TEXT_ALT_OPEN);
 	sb_freq(&b, ch.rx_hz);
 	sb_str(&b, ch.mode == RADIO_MODE_DMR ? " DMR" : " FM");
+	sb_str(&b, TEXT_ALT_NEXT);
+	sb_freq(&b, ch.rx_hz);
+	sb_str(&b, TEXT_ALT_CLOSE);
 	if (d->on && ref_same(&r, &ref[pane]))
 		it->flags |= UI_ITEM_TEMP;	// the pane's channel now
 }

@@ -41,6 +41,7 @@ WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel) { (void)ref; (void)sel; return false; }
 WEAK bool ui_svc_vfo_get(channel_t *out) { (void)out; return false; }
 WEAK uint8_t ui_svc_receivers(void) { return 1; }
+WEAK bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out) { (void)pane; (void)out; return false; }
 WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
 WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }

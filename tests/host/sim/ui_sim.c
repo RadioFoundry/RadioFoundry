@@ -11,6 +11,8 @@
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   wait:<ms>           time passes
+//   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
+//                       rxaend / rxbend its end
 //   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
@@ -1156,7 +1158,18 @@ static void sim_tune(int pane)
 	view.zone_pos = r->pos;
 	load_channel();
 }
-uint8_t ui_svc_receivers(void) { return 1; }
+// receivers:2 makes the radio one with a receiver per dual watch channel; rxa: / rxb: then start a call on A's or
+// B's own receiver (the first call is the one heard), rxaend / rxbend end it
+static uint8_t sim_receivers = 1;
+static ui_dual_rx_t sim_drx[2];
+uint8_t ui_svc_receivers(void) { return sim_receivers; }
+bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
+{
+	if (sim_receivers < 2 || pane > 1)
+		return false;
+	*out = sim_drx[pane];
+	return true;
+}
 bool ui_svc_vfo_get(channel_t *out)
 {
 	memset(out, 0, sizeof *out);
@@ -1366,6 +1379,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	vfo_cc = vfo_ts = 1;
 	vfo_bw = RADIO_BW_25K;
 	vfo_rx_hz = vfo_tx_hz = 146520000;
+	sim_receivers = 1;
+	memset(sim_drx, 0, sizeof sim_drx);
 	vfo_rx_tone = vfo_tx_tone = (subtone_t){ TONE_NONE, 0 };
 	vfo_talk = 0;
 	vfo_talk_private = false;
@@ -1719,6 +1734,38 @@ static bool run_token(char *t, char *err, size_t len)
 		} else {
 			advance(300);
 		}
+		return true;
+	}
+	if (strcmp(t, "receivers") == 0 && arg != NULL) {
+		sim_receivers = (uint8_t)atoi(arg);
+		return true;
+	}
+	if ((strcmp(t, "rxa") == 0 || strcmp(t, "rxb") == 0) && arg != NULL) {
+		unsigned src = 0, dst = 0;
+		char kind = 'g';
+		if (sscanf(arg, "%u,%u,%c", &src, &dst, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		ui_dual_rx_t *x = &sim_drx[t[2] == 'b'];
+		memset(x, 0, sizeof *x);
+		x->active = x->dmr = true;
+		x->heard = !sim_drx[t[2] != 'b'].active;
+		x->group = kind != 'p';
+		x->src = src;
+		x->dst = dst;
+		x->rssi_dbm = t[2] == 'b' ? -92 : -71;
+		strncpy(x->src_name, contact_name(src, false), sizeof x->src_name - 1);
+		changed();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "rxaend") == 0 || strcmp(t, "rxbend") == 0) {
+		ui_dual_rx_t *x = &sim_drx[t[2] == 'b'], *o = &sim_drx[t[2] != 'b'];
+		x->active = x->heard = false;
+		o->heard = o->active;	// the other call's audio now
+		changed();
+		advance(300);
 		return true;
 	}
 	if (strcmp(t, "tune") == 0 && arg != NULL && (arg[0] == 'a' || arg[0] == 'b')) {	// dual watch: the receiver

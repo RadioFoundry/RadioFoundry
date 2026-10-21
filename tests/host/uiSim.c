@@ -117,6 +117,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_dual_other_zone", "quick 7 1 up ok down ok ok wait:3000 tune:b fmrx" },
 	{ "home_dual_fm", "quick 7 1 down ok wait:3000" },
 	{ "home_dual_large_text", "ok 7 2 down down down down down ok long:back quick 7 1 5 ok wait:3000 tune:b rx:3101234,91,g" },
+	// A radio with a receiver per channel: calls on both at once, the second one muted
+	{ "home_dual_two_rx", "receivers:2 quick 7 1 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
+	{ "home_dual_two_rx_large_text", "ok 7 2 down down down down down ok long:back receivers:2 quick 7 1 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
 	{ "dual_actions", "quick 7 1 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx" },
 #endif
 	{ "emergency", "emergency:3101234" },
@@ -402,6 +405,7 @@ static const struct { const char *name; unsigned flags; } gallery_color[] = {
 	{ "tx", G_THEMES },
 #if CONFIG_DUAL_WATCH
 	{ "home_dual_rx_b", G_THEMES },
+	{ "home_dual_two_rx", G_THEMES },
 #endif
 	{ "channels", G_COLORS | G_THEMES },	// the focus row in the color
 	{ "settings_display", G_THEMES },

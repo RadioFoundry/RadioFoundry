@@ -55,7 +55,7 @@ tuned channel or frequency is the core view's as usual.
   channel change would.
 - **VFO scan** steps the VFO frequency by its step from `lo` to `hi` and wraps. Without a range it sweeps the board
   band the VFO frequency is in. Both ends must be in one band, at least one step apart.
-- **Dual watch** alternates between the current channel and a second one (`pos`), skip flags ignored.
+- **Dual watch** alternates between the current channel and a second one (`pos`), skip flags ignored. The UI on top of it (A and B, the screens, the keys) is in [dual-watch.md](../ux/dual-watch.md).
 - **Priority** (zone scan): the start channel again after every 2 others.
 
 Each stop: 50 ms settle (readings from the previous frequency are ignored), then `scan_dwell_ms` listening. A signal

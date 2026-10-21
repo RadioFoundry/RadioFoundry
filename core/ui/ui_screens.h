@@ -54,21 +54,25 @@ typedef struct {
 	char zone[CODEPLUG_NAME_LEN + 1];	// the zone's name, "VFO" for the VFO
 	char target[32];	// what PTT talks to here on DMR: "TG 3100 USA" ("" on FM: Home shows the frequency)
 	char detail[24];	// the rest, short: "TS1 CC1" (DMR), "T100.0 25k" (FM)
+	bool rx;		// a call or signal coming in on it now (on two receivers, both can)
+	bool heard;		// its audio is playing (with two calls at once, one of them)
+	int16_t rssi_dbm;
+	char caller[48];	// the call coming in: "Joe Smith TG 91" (with a shorter alternate, font.h)
 } ui_dual_pane_t;
 
 typedef struct {
 	bool on;
 	bool both;		// the radio hears both at once (two receivers); else it alternates and can miss a call
 	uint8_t sel;		// the selected pane, 0 A or 1 B: PTT transmits on it, keys and quick settings act on it
-	uint8_t rx;		// the pane receiving now, UI_DUAL_NONE
+	uint8_t rx;		// the pane whose call is heard now, UI_DUAL_NONE (pane[].rx: every pane receiving)
 	uint8_t last;		// the pane the last call came in on, UI_DUAL_NONE
 	uint32_t last_ms;	// when that call ended
-	char caller[40];	// the current or last caller: "Joe Smith TG 91", "FM signal"
+	char caller[48];	// the current or last caller: "Joe Smith TG 91", "FM signal"
 	uint8_t calls;		// calls in hist[]
 	struct {
 		uint8_t pane;
 		uint32_t ms;	// when it ended
-		char caller[28];
+		char caller[48];
 	} hist[4];		// the last calls, newest first: Home lists them where there is room
 	ui_dual_pane_t pane[2];
 } ui_dual_t;

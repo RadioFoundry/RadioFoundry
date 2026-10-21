@@ -56,7 +56,7 @@ Screens consume only these. Each board maps physical inputs to them (`boards/<ra
 | `ENC_STEP(+/-)` | Encoder detent. Forward (+, clockwise): next channel on Home (as `NAV_UP`), value up in editors, focus **down** in lists and quick tiles (the next row, like a scroll wheel). Back (-): the opposite | from encoder |
 | `USER_1` to `USER_4` | Side and top keys; each has a short and a long function from the assignable list | optional |
 
-Assignable functions for `USER_n` keys (short and long, chosen in Settings > Keys or in qdmr): Monitor, Talk target, Quick, Context, Recent, Power cycle, Scan on/off, Hear all on/off, Privacy on/off, Zone picker, Speak status, Backlight, Mode FM/DMR (in the VFO), Copy to VFO, Lock, Reply, Radio check last caller, Silent (mute tones and prompts), None.
+Assignable functions for `USER_n` keys (short and long, chosen in Settings > Keys or in qdmr): Monitor, Talk target, Quick, Context, Recent, Power cycle, Scan on/off, Hear all on/off, Privacy on/off, Zone picker, Speak status, Backlight, Mode FM/DMR (in the VFO), Copy to VFO, Lock, Reply, Radio check last caller, Silent (mute tones and prompts), A/B and Dual watch ([dual-watch.md](dual-watch.md)), None.
 
 Rules for key maps (P3, P10):
 
@@ -131,7 +131,7 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 | 4 | To VFO (copy the channel to the VFO and open it) | To VFO |
 | 5 | Hear all (promiscuous) on/off | Monitor latch on/off |
 | 6 | Privacy on/off | VOX on/off |
-| 7 | Scan on/off | Scan on/off |
+| 7 | Scan: dual watch or this zone (on: stops it) | Scan: dual watch or this zone (on: stops it) |
 | 8 | Talk target | Bandwidth 12.5/25 kHz |
 | 9 | Brightness | Brightness |
 | 0 | All settings | All settings |
