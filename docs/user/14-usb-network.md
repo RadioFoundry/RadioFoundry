@@ -214,8 +214,8 @@ from emergencies, they go at most once a minute. Nothing is encrypted. SNMP comm
 ## Network over the programming cable (PPP)
 
 Radios without USB ([Radio reference](23-radios.md)) can get the same network over their programming cable with PPP. A
-radio's image includes PPP when the radio has no USB and runs DMR. Other builds need `CONFIG_NET_PPP=y`. PPP hasn't
-been tried on a radio yet. Run this on the computer as root. pppd comes with macOS and most Linux systems.
+radio's image includes PPP when the radio has no USB and runs DMR. Other builds need `CONFIG_NET_PPP=y`. PPP has
+been checked on the DB25-D PRO and the DM-1801 Pro. Run this on the computer as root. pppd comes with macOS and most Linux systems.
 
 ```
 sudo tools/odr_ppp.sh /dev/ttyUSB0                 # Linux

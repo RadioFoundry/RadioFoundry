@@ -100,8 +100,8 @@ CONFIG_HOSTLINK ?= $(CONFIG_USB)
 CONFIG_USB_NETWORK ?= $(if $(and $(filter y,$(CONFIG_USB)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # IPv4 over PPP on the serial host port, into the IP gateway and its services: for radios whose only host link is a
 # USB-serial cable (DM-32UV, GD-88), and a fallback on the USB serial port (needs HOSTLINK and DMR_IP_GATEWAY, which
-# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). New, untested on hardware:
-# on for the DM-32UV, its only IP link (boards/dm32/config.mk); off on the USB radios
+# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). Checked on the DB25-D PRO
+# and the DM-1801 Pro; on for the DM-32UV, its only IP link (boards/dm32/config.mk); off on the USB radios
 CONFIG_NET_PPP ?= n
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)

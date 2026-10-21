@@ -139,6 +139,8 @@ static void hotspot_section(dl_text_t *t)
 
 	hostlink_net_stats(&ns);
 	dl_text(t, "net.host_ip=%08x\nnet.radio_ip=%08x\n", (unsigned)ipGatewayHostIP(), (unsigned)ipGatewayRadioIP());
+	// The board's host netif: without one the gateway's answers have nowhere to go (a link can still negotiate)
+	dl_text(t, "net.netif=%u\n", board.netif != NULL);
 	dl_text(t, "net.frames_in=%u\nnet.to_air=%u\nnet.to_air_refused=%u\n", (unsigned)ns.frames_in,
 		(unsigned)ns.to_air, (unsigned)ns.to_air_refused);
 	dl_text(t, "net.packets_air=%u\nnet.packets_up=%u\nnet.packets_dropped=%u\n", (unsigned)ns.packets_air,

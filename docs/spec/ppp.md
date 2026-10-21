@@ -7,7 +7,7 @@ IPv4 over PPP on the radio's serial host port, into the same IP gateway and serv
 with USB it can also run on the USB serial port, as a fallback when a host doesn't bring up the network adapter.
 
 Switch `CONFIG_NET_PPP` (`docs/build-config.md`), on for boards without USB (their only IP link, with the gateway and
-every service) and off on the USB radios ([feature-matrix.md](../feature-matrix.md)): new, host tested and interop tested with pppd, not yet tried on a radio. It needs `CONFIG_HOSTLINK` and `CONFIG_DMR_IP_GATEWAY`; the gateway needs a link to
+every service) and off on the USB radios ([feature-matrix.md](../feature-matrix.md)): host tested, interop tested with pppd, and run on the DB25-D PRO and the DM-1801 Pro (section 8). It needs `CONFIG_HOSTLINK` and `CONFIG_DMR_IP_GATEWAY`; the gateway needs a link to
 the host, `CONFIG_USB_NETWORK` or `CONFIG_NET_PPP`, and follows PPP by default.
 
 Written from RFC 1661 (PPP, LCP), RFC 1662 (HDLC-like framing) and RFC 1332 (IPCP) only.
@@ -20,6 +20,9 @@ Written from RFC 1661 (PPP, LCP), RFC 1662 (HDLC-like framing) and RFC 1332 (IPC
 | `tests/host/pppTest.c` | host test and fuzz loop; `tests/host/pppPeer.c` the same code on a pseudo-terminal |
 | `tools/odr_ppp.sh` | host side: pppd on the radio's serial port, routes |
 | `tools/odr_ppp_interop.sh` | interop test against pppd (Linux, root) |
+
+A board with PPP sets `board.netif = &hostlink_ppp_netif`. Without it the link still negotiates, but the gateway's
+answers go nowhere. The view key `net.netif` shows whether the board has a netif.
 
 ## 1. Framing (RFC 1662)
 
@@ -194,4 +197,14 @@ figure is the gateway, its air side and the network personality (`hostlink_net*.
   (Ubuntu 24.04 container on the CI VM, `--cap-add NET_ADMIN --device /dev/ppp`). Passes passive and `--active`:
   ping, a 500 byte ping with `7E 7D 11 13` in it, HTTP, SNMP get (`tools/odr_snmp.py`), `odr_debug.py --port udp:`
   ping and version, IPv6CP and CCP Protocol-Rejected, pppd's hang-up ending the link cleanly.
-- Not tried yet: a radio, macOS pppd (it needs root).
+- On a radio, DM-1801 Pro, 2026-10-21: pppd 2.5.2 on Linux (`tools/odr_ppp.sh`) over the programming cable at
+  115200 baud. LCP and IPCP open, the host gets 12.<ID> and the routes. Ping (56 and 500 bytes, no loss), the debug
+  link over UDP 3334, HTTP 200 and an SNMP get work. Two UDP datagrams, one to a talkgroup (225.0.0.201) and one to a
+  radio ID (12.x.y.z), went out as SAP 3 data, and the SDR bench decoded the preamble CSBKs (our source ID, the right
+  destination), the data headers and the blocks, CC 2, no FEC failures. `odr_ppp.sh --stop` hangs up; the debug link
+  answers on the cable right after. `ppp.rx_errors` stayed 0. The DB25-D PRO runs the network services over PPP too
+  ([23-radios](../user/23-radios.md)).
+- `test_gateway_has_netif` (`tests/hil/test_dmr_ip.py`, radio only): a build with the gateway reports `net.netif=1`.
+  The DM-1801 Pro's board first set no `board.netif`. LCP and IPCP still opened, but nothing the gateway sent reached
+  the host (no ping reply). This test catches that without root or pppd.
+- Not tried yet: macOS pppd (it needs root).

@@ -14,6 +14,9 @@
 #if CONFIG_APRS
 #include "hrc_afsk.h"
 #endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
+#endif
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -82,6 +85,9 @@ const board_t board = {
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
+#endif
+#if CONFIG_NET_PPP
+	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
 	.system = &hrc_system,
 #if CONFIG_BCAST_FM
