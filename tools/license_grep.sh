@@ -7,7 +7,7 @@
 # what qdmr writes and reads; they name the key, not any code.
 cd "$(dirname "$0")/.." || exit 2
 pattern='commercial purposes|Micrium|GNU General Public|GPL-2|GPL-3|G4KLX|Naylor|Roger Clark|VK3KYY|Kai Ludwig|DG4KLU|F1RMB|Caujolle|G4EML|DL4LEX|open[g]d77|Hangzhou C-SKY|Wang Huibin'
-hits=$(git ls-files | grep -Ev '^(docs/|LICENSES/|PROVENANCE.md|README.md|tools/license_grep.sh|site/static/js/codeplug/qdmr\.js$|site/tests/qdmr\.test\.mjs$)' |
+hits=$(git ls-files | grep -Ev '^(docs/|LICENSES/|PROVENANCE.md|README.md|tools/license_grep.sh|tools/codeplug_port\.py$|site/static/js/codeplug/qdmr\.js$|site/tests/qdmr\.test\.mjs$)' |
        xargs grep -niIE "$pattern" 2>/dev/null)
 readme=$(awk '/^## /{skip=($0=="## Acknowledgements")} !skip{print FILENAME":"FNR":"$0}' README.md |
          grep -iE "$pattern")
