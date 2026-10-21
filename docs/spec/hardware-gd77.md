@@ -173,7 +173,7 @@ handler is attached yet: they come with DMR.
 ### 5.4 Transmit path
 
 Not enabled. The candidates are PTA17 (TX / PA enable), PTE2, PTE3, PTC13, PTC15 (RF switches) and DAC0 (power
-drive), all **?**. The factory calibration hasn't been located either. `tx()` refuses and both bands are marked
+drive), all **?**. The factory calibration is located (6.4) but none of its fields is named. `tx()` refuses and both bands are marked
 receive only until both are settled on a radio.
 
 ## 6. Memory map
@@ -191,11 +191,103 @@ receive only until both are settled on a radio.
 
 The initial stack pointer is 0x2000FEF0.
 
-### 6.2 Data flash and EEPROM
+### 6.2 Data flash (SPI NOR)
 
-The SPI NOR chip and the 64 KB EEPROM on I2C bus A hold the radio's codeplug and settings between them (U). This
-build reads the flash's JEDEC ID and nothing else: the board gives the core no flash map, so nothing is stored and
-settings don't survive a power cycle. Mapping ODR's storage onto the two chips is an open task (section 12).
+| Item | Value | Tag |
+|---|---|---|
+| Part | 25-series SPI NOR, 16 to 128 Mbit (capacity code 0x15 to 0x18 in the JEDEC ID); the fitted part is not known | U |
+| Commands | 0x9F JEDEC ID, 0x05 status, 0x06 write enable, 0x0B fast read (one dummy byte), 0x02 page program (256 bytes), 0x20 4 KB erase, 0xD8 64 KB erase, 0xC7 chip erase | U |
+| ODR's driver | `drivers/flash/spi_nor` with `fast_read` set, through `gd77_nor_bus` (section 4) | |
+
+The first megabyte holds the factory header (magic "TYT" at 0x000000) and the radio's codeplug as it came, the part
+above the EEPROM's share at 0x07B1B0-0x08FFFF (U). ODR never erases or programs below 0x100000: `flash_gd77.c`
+refuses it whatever asks, and counts the refusals (diagnostics line 8, `nor-`). Going back to the radio's original
+firmware therefore finds all of that as it was.
+
+ODR's areas follow the STM32 radios' layout ([settings-store.md](settings-store.md) 1), moved up by 1 MB
+(`boards/gd77/storage_gd77.h`):
+
+| Range | Area | Parts |
+|---|---|---|
+| 0x100000-0x10FFFF | open-firmware EEPROM image (64 KB) | 2 MB and up |
+| 0x110000-0x110FFF | unused | |
+| 0x111000-0x118FFF | settings ring, 8 sectors | 2 MB and up |
+| 0x119000-0x11AFFF | sector journal, 2 sectors | 2 MB and up |
+| 0x11B000-0x11FFFF | unused | |
+| 0x120000-0x1FFFFF | open-firmware flash image, image offsets 0x00000-0xDFFFF (`openfw_end` 0x200000) | 2 MB and up |
+| 0x200000-0x2FFFFF | native codeplug | 4 MB and up |
+| 0x300000-0x33FFFF | codeplug staging | 4 MB and up |
+
+The flash image is 128 KB after the EEPROM image, as on the STM32 radios, so ODR's own tools (fast CPS, TFTP) see the
+same image offsets. The core gets this map only when the probed part holds it: a part under 2 MB, or one whose JEDEC
+ID gives no size, gets no map, and the radio then runs its settings from RAM. The settings ring, the journal, the
+foreign region guard, the first-boot ownership mark, record versions and CRCs are the core's
+([settings-store.md](settings-store.md)); the board adds nothing to them.
+
+### 6.3 EEPROM
+
+| Item | Value | Tag |
+|---|---|---|
+| Part | 24C512 class: 64 KB, 16-bit memory address, 64-byte write page, 5 ms write cycle, erased value 0xFF | U |
+| Address | 7-bit 0x50 (0xA0 / 0xA1) on I2C bus A, shared with the AT1846S | U |
+| ODR's driver | `drivers/flash/i2c_eeprom`, acknowledge polling, reads in 64-byte transactions so the AT1846S never waits long | |
+
+ODR only reads the EEPROM: the factory calibration (6.4) and, for diagnostics and a future import, the radio's own
+logical codeplug space (`gd77_logical_read`):
+
+| Logical address | Stored in | Tag |
+|---|---|---|
+| 0x00000-0x0B1AF | EEPROM, same address | U |
+| 0x0B1B0-0x1FFFF | data flash at logical + 0x70000 (0x07B1B0-0x08FFFF) | U |
+
+EEPROM 0x0B1B0-0x0B1B3 holds the target address of an interrupted rewrite of a data flash sector of that codeplug (0 or
+0xFFFFFFFF when none), to be rebuilt from the copy at data flash 0x00D000 (U). ODR leaves both alone.
+
+Settings stay on the data flash, not in the EEPROM's free top (0xB1B4-0xFFFF). The core's settings ring already
+spreads wear over 128 slots. At the bus's 100 kHz, reading even a 2-sector ring (8 KB) from the EEPROM takes about
+0.75 s, and start-up reads the ring twice (the region guard, then the settings load).
+
+### 6.4 Factory calibration
+
+Two blocks in the EEPROM, one per band, 0x70 bytes each: an 8-byte header, 103 bytes of fields in table order and one
+spare byte. ODR reads both at start-up (`board_init`, before the radio is set up), twice each and compared, and
+never writes them (`boards/gd77/cal_blocks_gd77.h`, on the generic loader `drivers/cal/cal_block`).
+
+| Block | EEPROM | Used for | Tag |
+|---|---|---|---|
+| UHF | 0x7C00 | 180 MHz and up | U |
+| VHF | 0x7C70 | below 180 MHz | U |
+
+Header: two ranges of two 16-bit little-endian values, type 0 at +0 and type 1 at +4, most likely in 100 kHz units
+(I: the limits below are 136.0 to 520.0 MHz with a 260.1 to 399.9 MHz hole).
+
+Fields (offsets from the block start; no field is named yet):
+
+| Id | Offset | Size | Shape |
+|---|---|---|---|
+| 0x40 | 0x08 | 3 | unknown |
+| 0x41 | 0x0B | 48 | unknown; an array (24 x 16 bit or 48 x 8 bit) |
+| 0x42 | 0x3B | 4 | unknown |
+| 0x43 | 0x3F | 20 | unknown; an array |
+| 0x44 | 0x53 | 2 | unknown |
+| 0x01 | 0x55 | 8 | unknown |
+| 0x30, 0x31, 0x32 | 0x5D, 0x5E, 0x5F | 1 each | unknown |
+| 0x33, 0x34 | 0x60, 0x62 | 2 each | unknown |
+| 0x50 | 0x64 | 8 | unknown; the first three bytes are range checked |
+| 0x51 | 0x6C | 3 | unknown |
+
+A block is used only when it reads the same twice, isn't all 0xFF or all 0x00, and passes these checks:
+
+| Check | Limit |
+|---|---|
+| field 0x50 bytes 0, 1, 2 | below 0x20, 0x40, 0x10 |
+| type 1 range, each value | 0x550-0x1450 (1360-5200), not 0xA29-0xF9F (2601-3999) |
+| type 1 range | low below high |
+
+The radio code reads a field with `gd77_cal_field(hz, id, buf, max)`, which picks the block by frequency and returns
+the raw bytes, or 0 bytes without a valid block, so the caller keeps its uncalibrated value. Diagnostics line 8 shows
+each block's state (`cal` UHF then VHF: `o` ok, `f` read failed, `b` blank, `r` rejected). What each field means, and
+so how it reaches the AT1846S and the HR_C6000, is open (section 11).
 
 ## 7. Display
 
@@ -270,6 +362,10 @@ Each needs a radio on the bench.
 | Data flash chip select | PTA19 released to a pull-up | the `nor` diagnostics line shows a JEDEC ID |
 | Transmit path | PTA17, RF switches, DAC0, calibration location | with the radio on a dummy load, after the receive path works |
 | Bus pin mux (4.2) | the hardware options listed | check against the K22F data sheet's pin mux table, then try one |
+| Data flash size | 16 to 128 Mbit; ODR needs 2 MB for its areas (6.2) | the `nor` diagnostics line's JEDEC ID |
+| EEPROM | 24C512 class at 0x50 | the `eep` diagnostics line |
+| Calibration blocks | 0x7C00 / 0x7C70 hold valid blocks on a factory radio | the `cal` diagnostics line shows `oo` |
+| Calibration fields | what each id in 6.4 means | change one field's value in RAM and watch the AT1846S registers and the output |
 
 ## 12. Bring-up status
 
@@ -283,6 +379,7 @@ Each needs a radio on the bench.
 | FM receive (AT1846S, HR_C6000 FM path) | written, unverified |
 | Transmit | refused |
 | DMR (vocoder port, interrupts, codec) | not wired |
-| Storage (EEPROM, data flash map) | read-only probe |
+| Storage: settings and codeplug on the data flash (6.2), EEPROM read only (6.3) | written, host tested, unverified |
+| Factory calibration: both blocks loaded and checked (6.4) | written, host tested; fields not named, not applied |
 | USB (programming, debug link) | not wired |
 | Update image packaging | open |

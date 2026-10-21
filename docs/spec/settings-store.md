@@ -38,6 +38,9 @@ boards' maps:
 | `staging_addr` / `staging_size` | 0xF00000, 256 KB | none | 0x220000, 256 KB |
 | Details | `hardware-dm1701.md` 13.2, `hardware-md380.md` 12.2 | `hardware-dm32.md` 10.1, 17 | `hardware-db25d.md` 6.6 |
 
+The GD-77 uses the DM-1701's layout moved up by 1 MB, above the radio's own data, with no calibration window and a
+native and staging area only on 4 MB parts ([hardware-gd77.md](hardware-gd77.md) 6.2).
+
 The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes. A
 NAND board puts `drivers/flash/nand_sectors` in between, which gives NOR behavior in 4 KB sectors
 ([nand-sectors.md](nand-sectors.md)).
