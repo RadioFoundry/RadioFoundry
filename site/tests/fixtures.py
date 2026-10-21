@@ -10,6 +10,9 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
   - for the HR_C7000 radios: an LZ4 block from stubtool's encoder, and a synthetic program flash with a codec at
     made-up addresses, its profile, what hrc7000_codec.locate() finds and the slot hrc7000_codec.merge() builds from it
+  - for the GD-77: a synthetic stock update file with a made-up codec (the odrflash tests' builders), what
+    updatefile.py and gd77codec.py make of it with an application image, and every frame gd77boot's updater sends to
+    its model loader, so site/tests/gd77.test.mjs checks gd77.js and gd77codec.js byte for byte
   - for the codeplug editor: the radio's own codeplug code on the host (tests/host/cpsSim), a codeplug it stored
     and what it reads back, so site/tests/codeplug.test.mjs checks the JavaScript decoder and encoder against it
 
@@ -84,6 +87,7 @@ def main(out):
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
 	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
 	test_maps = {**c7000(out, rng), **db25d(out, rng)}
+	gd77(out)
 	codeplug(out)
 	fb = repo.flash_boards()
 	fb["codec_maps"].update(test_maps)
@@ -164,6 +168,78 @@ def db25d(out, rng):
 	with open(os.path.join(out, "db25d.json"), "w") as f:
 		json.dump(doc, f, indent=1)
 	return maps
+
+
+def gd77(out):
+	"""The GD-77 update file round: a synthetic stock file (tools/odrflash/tests: test_gd77codec.synthetic,
+	test_gd77flash.make_update_file), an application image, the update file odrflash writes with the codec merged and
+	without it, the placed codec's CRC-32s and descriptor, and the frames the updater sends the model loader. With
+	ODR_GD77_STOCK=<a real stock update file> the expected result for that file is made as well (never kept in the repo)."""
+	import hashlib
+	sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash", "tests"))
+	try:
+		import test_gd77codec as tc
+		import test_gd77flash as tf
+	finally:
+		sys.path.pop(0)
+	from odrflash import gd77boot as gb, gd77codec as gc, updatefile as uf
+	sha = lambda b: hashlib.sha256(bytes(b)).hexdigest()
+	stock, spec = tc.synthetic(random.Random(77))
+	donor = tf.make_update_file(stock)
+	app = bytes(random.Random(9).getrandbits(8) for _ in range(20000))
+	tag = 0x1234
+	pk = gc.pack(stock, spec)
+	merged = gc.merge(app, pk, tag)
+	sgl = uf.pack(merged, donor)
+	keep = uf.pack(app, donor)
+	u = uf.UpdateFile(sgl)
+	fake = gb.FakeBootloader(u)
+	frames = []
+
+	class Recorder:
+		def write(self, report):
+			frames.append(bytes(report))
+			fake.write(report)
+
+		def read(self, timeout_s):
+			return fake.read(timeout_s)
+	gb.Updater(Recorder(), sleep=lambda s: None).flash(u)
+	if fake.received() != u.body[:u.length]:
+		raise SystemExit("gd77 fixture: the model loader received something else than the body")
+	d = uf.UpdateFile(donor)
+	doc = {
+		"spec": dict(spec, words=[list(w) for w in spec["words"]], branches=[list(b) for b in spec["branches"]]),
+		"tag": tag,
+		"info": {"start": d.start, "length": d.length, "company": d.company.hex(), "model": d.model.hex(),
+			 "version": d.version.hex(), "tag": d.tag.hex(), "addr_width": d.addr_width, "len_width": d.len_width,
+			 "block_size": d.block_size, "use_fprog": d.use_fprog, "send_tag": d.send_tag, "room": d.room,
+			 "label": d.label(), "pad": d.pad, "info_at": d.info_at},
+		"unpacked_sha256": sha(uf.unpack(donor)),
+		"stock_sha256": sha(stock),
+		"placed": {"main_new": pk.main_new, "low_new": pk.low_new, "code_len": len(pk.code), "code_crc": gc.crc32(pk.code),
+			   "tab_crc": gc.crc32(pk.tab), "descriptor": pk.descriptor(tag).hex()},
+		"merged_sha256": sha(merged), "merged_len": len(merged),
+		"out_sha256": sha(sgl), "keep_sha256": sha(keep),
+		"frames": {"count": len(frames), "sha256": sha(b"".join(frames)), "head": [f.hex() for f in frames[:12]],
+			   "tail": [f.hex() for f in frames[-3:]]},
+		"real": None,
+	}
+	files = {"gd77_donor.sgl": donor, "gd77_app.bin": app, "gd77_out.sgl": sgl}
+	path = os.environ.get("ODR_GD77_STOCK")
+	if path:
+		with open(path, "rb") as f:
+			real = f.read()
+		ru = uf.UpdateFile(real)
+		flat = uf.unpack(ru)
+		rspec = gc.find_spec(flat)
+		out_real = uf.pack(gc.merge(app, gc.pack(flat, rspec)) if rspec else app, ru)
+		doc["real"] = {"path": os.path.abspath(path), "label": ru.label(), "profile": rspec and rspec["profile"],
+			       "out_sha256": sha(out_real)}
+	for name, data in files.items():
+		with open(os.path.join(out, name), "wb") as f:
+			f.write(data)
+	with open(os.path.join(out, "gd77.json"), "w") as f:
+		json.dump(doc, f, indent=1)
 
 
 def codeplug(out):

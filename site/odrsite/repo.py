@@ -278,13 +278,19 @@ def codeplug_map(bid):
 	"board=" on the debug link (board_t .name, and an option's board_name)."""
 	fields = {}
 	names = []
+	# a map may name its addresses by the board header's defines (the GD-77's storage_gd77.h)
+	defines = {}
+	for hdr in sorted(glob.glob(path("boards", bid, "*.h"))):
+		with open(hdr, encoding="utf-8") as f:
+			defines.update(re.findall(r"^#define\s+(\w+)\s+(0x[0-9A-Fa-f]+)u?\b", f.read(), re.M))
 	for c in sorted(glob.glob(path("boards", bid, "*.c"))):
 		with open(c, encoding="utf-8") as f:
 			text = f.read()
 		for key in ("openfw_eeprom", "openfw_flash", "openfw_end", "staging_addr"):
-			m = re.search(r"\.%s\s*=\s*(0x[0-9A-Fa-f]+)u?" % key, text)
-			if m:
-				fields[key] = int(m.group(1), 16)
+			for m in re.finditer(r"\.%s\s*=\s*(0x[0-9A-Fa-f]+|[A-Za-z_]\w*)u?\b" % key, text):
+				v = m.group(1) if m.group(1).startswith("0x") else defines.get(m.group(1))
+				if v and key not in fields:
+					fields[key] = int(v, 16)
 		names += re.findall(r'^\t\.name\s*=\s*"([^"]+)"', text, re.M)
 	if "openfw_eeprom" not in fields or "openfw_end" not in fields:
 		raise SourceError("boards/%s: no flash map with openfw_eeprom and openfw_end" % bid)
@@ -339,7 +345,32 @@ def flash_boards():
 	out["codec_maps"] = codecmap.load_maps()
 	out["c7000"] = c7000_flash()
 	out["f4stub"] = f4_flash()
+	out["gd77"] = gd77_flash()
 	return out
+
+
+def gd77_flash():
+	"""What the web flasher needs for the radios it installs through the GD-77's update mode (backend "gd77-hid"): the
+	update file and loader constants (updatefile.py, gd77boot.py), the codec placement constants and the spec of each
+	supported stock build (gd77codec.py: addresses, lengths, hashes, never codec bytes), and the codec as the merge
+	places it (PLACED: the descriptor tag, the code region's length and both CRC-32s)."""
+	sys.path.insert(0, path("tools", "odrflash"))
+	try:
+		from odrflash import boards as ob, gd77boot as gb, gd77codec as gc, updatefile as uf
+	finally:
+		sys.path.pop(0)
+	specs = {}
+	for name, s in gc.load_specs().items():
+		specs[name] = {"profile": s["profile"], "stock": s["stock"], "entries": s["entries"],
+			       "words": [list(w) for w in s["words"]], "branches": [list(b) for b in s["branches"]],
+			       **{p: dict(s[p]) for p in ("main", "low", "tab")}}
+	return {"boards": sorted(b.id for b in ob.BOARDS.values() if b.family == "gd77-hid"),
+		"flash_base": gc.FLASH_BASE, "code_base": gc.CODE_BASE, "desc_addr": gc.DESC_ADDR, "desc_len": gc.DESC_LEN,
+		"desc_magic": gc.DESC_MAGIC, "desc_version": gc.DESC_VERSION, "table_lo": gc.TABLE_LO, "table_hi": gc.TABLE_HI,
+		"codec_id": gc.CODEC_ID, "placed": gc.PLACED, "specs": specs,
+		"update": {"period": uf.PERIOD, "info_len": uf.INFO_LEN, "body_at": uf.BODY_AT, "flash_base": uf.FLASH_BASE},
+		"loader": {"vid": gb.VID, "pid": gb.PID, "report": gb.REPORT, "step_timeout_ms": int(gb.STEP_TIMEOUT * 1000),
+			   "erase_timeout_ms": int(gb.ERASE_TIMEOUT * 1000)}}
 
 
 def _tool(*parts):
