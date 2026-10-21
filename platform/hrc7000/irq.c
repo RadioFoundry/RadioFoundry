@@ -75,12 +75,14 @@ void hrc_modem_irqs_restore(uint32_t saved)
 }
 
 // Last stop of a CPU exception (fault), from hrc_fault_entry: frame = r0..r13, r15, EPSR, EPC as they were, on the
-// faulting stack. With the crash log the record is kept and the radio restarts; without it (or if that returns) the
-// watchdog is off, so the radio stays here until the battery comes out, and the debugger sees hrc_fault_info
+// faulting stack. The transmitter goes off first. With the crash log the record is kept and the radio restarts; without
+// it (or if that returns) the watchdog is off, so the radio stays here until the battery comes out, and the debugger
+// sees hrc_fault_info
 void hrc_fault(const uint32_t *frame, uint32_t vector) __attribute__((used, noreturn));
 void hrc_fault(const uint32_t *frame, uint32_t vector)
 {
 	__asm__ volatile ("psrclr ie");
+	hrc_rf_safe();	// first: whatever follows (the capture, the restart, a hang) must not keep the PA keyed
 	hrc_fault_info[0] = vector;
 	hrc_fault_info[1] = frame[16];
 	hrc_fault_info[2] = frame[15];

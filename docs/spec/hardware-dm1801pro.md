@@ -224,6 +224,10 @@ on the radio examined the VHF bytes are about three times the UHF ones, which ke
 bands, as the DM-32UV's K / f model assumes ([hardware-dm32.md](hardware-dm32.md) 11.3). ODR uses the UHF tone
 deviations on VHF too (`modem-hrc7000.md` 8.3, I).
 
+Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
+in `main()`: the TX path selects (0x1F, 0x27) low, DAC B (the PA drive) 0 and powered down; on the fault and reset
+paths also the modem's FM_PTT and LAYER2_TXRX_CTRL 0. The FD6818 keeps its state until the next start.
+
 ### 5.6 DMR
 
 The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM audio are the DM-32UV's, shared

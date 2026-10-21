@@ -9,7 +9,7 @@ stub does for the DM-32UV and the DM-1801 Pro ([hardware-dm32.md](hardware-dm32.
 
 | Part | Where |
 |---|---|
-| ODR side: staging buffer, quiesce, copy, jump | `platform/stm32f4/stub_entry.c`, `hal_system_t.stub_region / enter_stub / stub_run_addr`, `board_stub_prepare` in `boards/dm1701/board.c` and `boards/md380/board.c` |
+| ODR side: staging buffer, quiesce, copy, jump | `platform/stm32f4/stub_entry.c`, `hal_system_t.stub_region / enter_stub / stub_run_addr`, `board_rf_safe` in `boards/dm1701/board.c` and `boards/md380/board.c` |
 | The stub | `stub/stm32f4/` (`make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin`) |
 | Its protocol engine (portable, host tested) | `stub/stm32f4/f4stub_proto.c`, `tests/host/f4stubTest.c` |
 | Host tool | `stub/f4stub.py`, called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine |
@@ -58,7 +58,7 @@ The bootloader route ([hardware-dm1701.md](hardware-dm1701.md) 15) costs three t
 | Step | Why |
 |---|---|
 | Note whether USB is in serial mode (`usb_device_mode`) | the handoff flag; in network mode the host bound CDC-NCM to the same endpoint numbers |
-| `board_stub_prepare`: PA enables off (DM-1701 PA_EN1, PA_EN2; MD-380 APC_EN, TX_5V) | nothing transmits while the stub runs. The backlight (already at full for the banner), power latch and USB pins stay |
+| `board_rf_safe` ([crash-log.md](crash-log.md) 8): transmitter off (DM-1701 PA_EN1, PA_EN2, PA_BAND, APC DAC; MD-380 APC_EN, TX_5V, VCO_SEL, APC DAC) | nothing transmits while the stub runs. The backlight (already at full for the banner), power latch and USB pins stay |
 | Interrupts masked, SysTick off, every NVIC enable and pending bit cleared | the stub polls; ODR's handlers live in flash it may erase |
 | DMA1 and DMA2 reset | circular I2S, SPI and ADC streams write into SRAM, where the stub is about to run |
 | Copy the staging buffer to 0x20000000 (8 KB, a forward word copy) | the stub is linked there. The copy runs from flash and its stack is the task stack in CCM, so it overwrites nothing it uses. The buffer lies at or above the target, so a forward copy is safe even if they overlap |

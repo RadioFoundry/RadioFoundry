@@ -506,6 +506,10 @@ Then individually: audio path pin 0x2E = 1; rows 0x47–0x4B = 1; LCD DB6 (0x4D)
 latch 0x11 = 1; flash CS 0x12 = 1; columns 0x31–0x34 inputs; PTT 0x2B input; LNA and PA selects (0x22, 0x24, 0x37,
 0x23) = 0; FD6818 GP0/GP1 inputs.
 
+Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
+in `main()`: the PA selects UHF (0x23) and VHF (0x37) low, DAC B (the PA drive) 0 and powered down; on the fault and
+reset paths also the modem's FM_PTT and LAYER2_TXRX_CTRL 0. The FD6818 keeps its state until the next start.
+
 ---
 
 ## 6. Keys, encoder, LEDs, power

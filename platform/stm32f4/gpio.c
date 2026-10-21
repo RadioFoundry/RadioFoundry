@@ -9,6 +9,20 @@ void stm32_gpio_clock(GPIO_TypeDef *port)
 	(void)RCC->AHB1ENR;
 }
 
+void stm32_pin_force(GPIO_TypeDef *port, uint16_t pins, bool level)
+{
+	stm32_gpio_clock(port);
+	stm32_pin_write(port, pins, level);	// level first, so the pin never glitches
+	port->OTYPER &= ~(uint32_t)pins;	// push-pull
+	uint32_t moder = port->MODER;
+	for (uint32_t n = 0; n < 16u; n++) {
+		if (pins & (1u << n)) {
+			moder = (moder & ~(3u << (2u * n))) | (1u << (2u * n));	// general purpose output
+		}
+	}
+	port->MODER = moder;
+}
+
 static void pin_init(GPIO_TypeDef *port, uint16_t pins, uint32_t mode, uint32_t pull, uint8_t af)
 {
 	GPIO_InitTypeDef init = {
