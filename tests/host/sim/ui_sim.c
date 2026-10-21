@@ -857,9 +857,12 @@ void radio_req_clear_temporary(void)
 	default_target();
 	changed();
 }
-void radio_req_bandwidth(radio_bw_t bw) { view.ch.bw = bw; if (!view.vfo) set_temp(RADIO_TEMP_BW); changed(); }
+// A setting that retunes ends dual watch on the selected channel, as the radio core does (radio-features.md 2.1)
+static void retune(void) { if (view.scan == 3) view.scan = 0; }
+void radio_req_bandwidth(radio_bw_t bw) { retune(); view.ch.bw = bw; if (!view.vfo) set_temp(RADIO_TEMP_BW); changed(); }
 void radio_req_tone(uint8_t which, subtone_t tone)
 {
+	retune();
 	if (which & RADIO_TONE_TX) view.ch.tx_tone = tone;
 	if (which & RADIO_TONE_RX) view.ch.rx_tone = tone;
 	if (!view.vfo)
