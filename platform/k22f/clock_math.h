@@ -107,19 +107,17 @@ static inline bool k22f_clock_run_variant(const k22f_clock_t *c, k22f_clock_t *r
 	return k22f_clock_check(run) == 0;
 }
 
-// The time base's fold (time.c): d more core cycles into whole milliseconds and a remainder below per_ms. 32-bit
-// arithmetic unless the sum wraps (only when nothing read the clock for close to a whole counter period)
+// The time base's fold (time.c): d more core cycles into whole milliseconds and a remainder below per_ms, all in
+// 32-bit division (it runs in the crash capture too, on the idle task's small stack)
 static inline void k22f_time_fold(uint64_t *ms, uint32_t *rem, uint32_t d, uint32_t per_ms)
 {
-	uint32_t t = *rem + d;
-	if (t < d) {
-		uint64_t t64 = (uint64_t)*rem + d;
-		*ms += t64 / per_ms;
-		*rem = (uint32_t)(t64 % per_ms);
-	} else {
-		*ms += t / per_ms;
-		*rem = t % per_ms;
+	*ms += d / per_ms;
+	uint32_t t = *rem + d % per_ms;		// below 2 x per_ms: no wrap
+	if (t >= per_ms) {
+		t -= per_ms;
+		*ms += 1u;
 	}
+	*rem = t;
 }
 
 // A clock change: the part millisecond counted at the old rate carries over in proportion
