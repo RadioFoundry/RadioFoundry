@@ -492,8 +492,8 @@ power-off sequence is in 15.3.
 Holding both side keys at power-on starts the radio's update mode (U). `make BOARD=gd77` produces the raw application
 image (`odr_gd77.bin`, linked for flash 0x4000) with its `.elf` and `.map`, and, with a stock firmware file in
 `codecs/`, `odr_gd77_codec.bin`: the same image with the codec merged in (`tools/gd77_codec.py`), a flat image from
-flash 0x4000 up to 0x7B800. The update path takes the radio's own update file format, which needs a packaging step that
-this repository doesn't have yet (section 12).
+flash 0x4000 up to 0x7B800. The radio's loader takes an update file over USB HID: odrflash and the web flasher write the image into a copy of an
+update file the user supplies and send it ([update-gd77.md](update-gd77.md)). Unverified on a radio.
 
 ## 11. Open items
 
@@ -545,7 +545,7 @@ Each needs a radio on the bench.
 | Storage: settings and codeplug on the data flash (6.2), EEPROM read only (6.3) | written, host tested, unverified |
 | Factory calibration: both blocks loaded and checked, converted and applied (6.4) | written, host tested, unverified |
 | USB serial: host link, debug link, board view (13, 14) | written, unverified; the CPS and the network adapter off |
-| Update image packaging | open |
+| Update image packaging and flashing (odrflash, web flasher) | written and host tested; unverified on a radio |
 
 ## 13. USB
 
