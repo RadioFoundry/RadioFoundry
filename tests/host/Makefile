@@ -449,9 +449,16 @@ CRASHC  := crashCaptureTest.c $(CORE)/crash/crash_capture.c $(CORE)/crash/crash.
 crashCaptureTest: $(CRASHC) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(ROOT)/hal/board.h $(wildcard stubs/crash_rtos/*.h)
 	$(CC) $(CFLAGS) -Istubs/crash_rtos -I$(ROOT)/hal -Wshadow -o $@ $(CRASHC)
 
+# The same with the on-air crash test built in (CONFIG_CRASH_TEST_TX)
+TESTS   += crashTestTx
+crashTestTx: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui_svc.h $(CORE)/debuglink/debuglink.h \
+	   $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_CRASH_TEST_TX=1 -DCONFIG_DEBUGLINK=1 -o $@ $(CRASHT)
+
 run: run-crash
-run-crash: crashTest crashCaptureTest
+run-crash: crashTest crashTestTx crashCaptureTest
 	./crashTest
+	./crashTestTx
 	./crashCaptureTest
 .PHONY: run-crash
 

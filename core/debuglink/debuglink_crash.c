@@ -17,6 +17,7 @@
 #define CRASH_TEST_DELAY_MS	100u	// let the reply leave before the radio goes down
 
 static uint8_t test_pending;		// DL_CRASH_TEST_* to run after the reply, 0 none
+static bool test_on_air;		// DL_CRASH_TEST_ON_AIR: crash even while transmitting (CONFIG_CRASH_TEST_TX)
 
 void debuglink_view_crash(dl_text_t *t)
 {
@@ -67,16 +68,20 @@ size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	}
 	if (req[0] == DL_CRASH_OP_TEST && len == 6) {
 		uint32_t token = (uint32_t)req[2] | (uint32_t)req[3] << 8 | (uint32_t)req[4] << 16 | (uint32_t)req[5] << 24;
-		if (req[1] < DL_CRASH_TEST_TRAP || req[1] > DL_CRASH_TEST_ASSERT) {
+		uint8_t kind = (uint8_t)(req[1] & ~DL_CRASH_TEST_ON_AIR);
+		bool tx_ok = (req[1] & DL_CRASH_TEST_ON_AIR) != 0;
+		if (kind < DL_CRASH_TEST_TRAP || kind > DL_CRASH_TEST_ASSERT) {
 			out[0] = DL_ST_BAD_ARG;
 			return 1;
 		}
-		if (token != DL_CRASH_TOKEN || on_air()) {
-			out[0] = DL_ST_REFUSED;	// a stray frame, or the transmitter is keyed
+		// A stray frame; the transmitter keyed; on air asked for in a build without CONFIG_CRASH_TEST_TX
+		if (token != DL_CRASH_TOKEN || (tx_ok ? !CONFIG_CRASH_TEST_TX : on_air())) {
+			out[0] = DL_ST_REFUSED;
 			return 1;
 		}
-		dlog("debuglink: crash test %u in %u ms", req[1], (unsigned)CRASH_TEST_DELAY_MS);
-		test_pending = req[1];
+		dlog("debuglink: crash test %u%s in %u ms", kind, tx_ok ? " (on air)" : "", (unsigned)CRASH_TEST_DELAY_MS);
+		test_pending = kind;
+		test_on_air = tx_ok;
 		out[0] = DL_ST_OK;
 		return 1;
 	}
@@ -91,7 +96,7 @@ void debuglink_crash_service(void)
 	uint8_t kind = test_pending;
 	test_pending = 0;
 	hal_delay_ms(CRASH_TEST_DELAY_MS);
-	if (on_air())
+	if (on_air() && !test_on_air)
 		return;		// a PTT came in meanwhile
 	if (kind == DL_CRASH_TEST_TRAP)
 		__builtin_trap();	// an undefined instruction (CM4) / a breakpoint (CK803): a CPU exception

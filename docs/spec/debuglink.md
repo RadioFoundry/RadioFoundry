@@ -570,6 +570,10 @@ The token is `'CRSH'` (`0x48535243`, little endian in the payload); another valu
 refused (7). The test is dropped if PTT went down between the reply and the crash. The record shows in view section 21
 after the restart. `odr_debug.py crash [show|clear|test trap|test assert]`.
 
+Kind with bit 7 set (`DL_CRASH_TEST_ON_AIR`, `--on-air`): the crash also while transmitting, and it is not dropped when
+PTT goes down. This is the bench check that a crash turns the transmitter off ([crash-log.md](crash-log.md) 8). Only a
+build with `CONFIG_CRASH_TEST_TX` (default off, test builds) takes it; any other build answers refused (7).
+
 ### 3.20 CODEPLUG
 
 The fast codeplug protocol: the open-firmware codeplug image read and written in 4 KB blocks, with CRC-32 sums so only
@@ -602,7 +606,8 @@ written, 3 no staging area, 4 staging full, 5 staging busy, 6 out of order, 7 CR
 - INFO_CHIP and READ_MEM only read. READ_MEM reads flash, system memory, OTP and option bytes only, never RAM or
   peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
-- CRASH TEST needs its token and is refused while transmitting (3.19).
+- CRASH TEST needs its token and is refused while transmitting (3.19), unless a `CONFIG_CRASH_TEST_TX` test build is
+  asked for the on-air test. Every crash turns the transmitter off first ([crash-log.md](crash-log.md) 8).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).
