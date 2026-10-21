@@ -56,9 +56,6 @@ enum {
 	DL_CRASH_OP_TEST = 1,	// kind u8 (DL_CRASH_TEST_*), token u32 -> status; the crash comes after the reply
 };
 enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2 };
-// Or'd into the kind: crash even while transmitting (the bench check that the transmitter goes off, crash-log.md 8).
-// Refused unless the build has CONFIG_CRASH_TEST_TX
-#define DL_CRASH_TEST_ON_AIR	0x80u
 // The test's guard, little endian in the payload: bytes 'C' 'R' 'S' 'H' (as CRASH_MAGIC), so a stray frame can't crash
 // the radio
 #define DL_CRASH_TOKEN		0x48535243u

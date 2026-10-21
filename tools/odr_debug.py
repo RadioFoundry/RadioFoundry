@@ -21,10 +21,9 @@
     odr_debug.py dump --addr A --len N [-o F]   read internal flash / system memory / OTP / option bytes to a file
                                                 outside the git tree (default the external reference folder)
     odr_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
-    odr_debug.py crash [show|clear|test trap|test assert] [--on-air]
+    odr_debug.py crash [show|clear|test trap|test assert]
                                                 the crash log (CONFIG_CRASH_LOG): the record kept from before this
-                                                start, forget it, or crash on purpose (the radio restarts); --on-air
-                                                also while transmitting (builds with CONFIG_CRASH_TEST_TX only)
+                                                start, forget it, or crash on purpose (the radio restarts)
     odr_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
     odr_debug.py storage dump [--out DIR]       the region and the calibration copy (SPI flash) to files outside git
     odr_debug.py storage claim [--out DIR]      dump first, then let the firmware erase a foreign region and use it
@@ -77,7 +76,6 @@ CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec
 CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
 CRASH_TESTS = {"trap": 1, "assert": 2}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
-CRASH_TEST_ON_AIR = 0x80            # or'd into the kind: crash while transmitting too (CONFIG_CRASH_TEST_TX)
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -515,11 +513,9 @@ class DebugLink:
     def crash_clear(self):
         self.request(CRASH, bytes([CRASH_OP_CLEAR]))
 
-    def crash_test(self, kind, on_air=False):
-        """Crash on purpose (kind: 'trap' or 'assert'); the radio restarts about 100 ms after the reply. on_air: also
-        while transmitting (refused, status 7, unless the build has CONFIG_CRASH_TEST_TX)."""
-        code = CRASH_TESTS[kind] | (CRASH_TEST_ON_AIR if on_air else 0)
-        self.request(CRASH, struct.pack("<BBI", CRASH_OP_TEST, code, CRASH_TOKEN))
+    def crash_test(self, kind):
+        """Crash on purpose (kind: 'trap' or 'assert'); the radio restarts about 100 ms after the reply."""
+        self.request(CRASH, struct.pack("<BBI", CRASH_OP_TEST, CRASH_TESTS[kind], CRASH_TOKEN))
 
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
@@ -1508,8 +1504,8 @@ def cmd_crash(link, a):
         if a.kind not in CRASH_TESTS:
             print(f"crash test: one of {', '.join(CRASH_TESTS)}", file=sys.stderr)
             return 2
-        link.crash_test(a.kind, a.on_air)
-        print(f"crash test '{a.kind}'{' (on air)' if a.on_air else ''} sent: the radio restarts")
+        link.crash_test(a.kind)
+        print(f"crash test '{a.kind}' sent: the radio restarts")
     else:
         for k, v in link.view(["crash"]).items():
             if k.startswith("crash."):
@@ -1613,8 +1609,6 @@ def main(argv=None):
     p = sub.add_parser("crash", help="the crash log: show, clear, test trap|assert (docs/spec/crash-log.md)")
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear", "test"])
     p.add_argument("kind", nargs="?", default="trap")
-    p.add_argument("--on-air", action="store_true",
-                   help="test: crash even while transmitting (CONFIG_CRASH_TEST_TX builds; docs/spec/crash-log.md 8)")
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")

@@ -13,7 +13,6 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "radio/radio.h"
-#include "config.h"
 
 static int failures;
 
@@ -502,30 +501,6 @@ static void test_debuglink(void)
 	fake_radio_state = RS_RX;
 	debuglink_crash_service();
 	CHECK(asserts == 1 && delays == 2);
-
-	// On air (DL_CRASH_TEST_ON_AIR, crash-log.md 8): refused unless the build has CONFIG_CRASH_TEST_TX; with it, taken
-	// while transmitting and run even though the radio is still on air at the service
-	test[1] = DL_CRASH_TEST_ASSERT | DL_CRASH_TEST_ON_AIR;
-	fake_radio_state = RS_TX;
-#if CONFIG_CRASH_TEST_TX
-	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_OK);
-	debuglink_crash_service();
-	CHECK(asserts == 2 && delays == 3);
-	test[1] = (DL_CRASH_TEST_ASSERT + 1) | DL_CRASH_TEST_ON_AIR;
-	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_BAD_ARG);		// still only the known tests
-	test[1] = DL_CRASH_TEST_ASSERT;
-	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_REFUSED);		// without the flag: still refused on air
-	debuglink_crash_service();
-	CHECK(asserts == 2 && delays == 3);
-#else
-	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_REFUSED);
-	fake_radio_state = RS_RX;
-	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_REFUSED);		// the flag alone, off air: refused too
-	debuglink_crash_service();
-	CHECK(asserts == 1 && delays == 2);
-#endif
-	fake_radio_state = RS_RX;
-	test[1] = DL_CRASH_TEST_ASSERT;
 
 	// Clear: the record goes
 	const uint8_t clear[] = { DL_CRASH_OP_CLEAR };

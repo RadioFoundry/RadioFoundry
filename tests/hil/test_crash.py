@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """The crash log (docs/spec/crash-log.md): the view section, and on purpose crashes that must leave a record the next
-start shows. The crash tests restart the radio: opt-in with --allow-reboot (marker reboot). The crash while
-transmitting (crash-log.md 8) also keys the radio: --allow-rf too, and a CONFIG_CRASH_TEST_TX build."""
+start shows. The crash tests restart the radio: opt-in with --allow-reboot (marker reboot)."""
 import time
 
 import pytest
@@ -86,42 +85,3 @@ def test_crash_assert_kept(radio):
     assert as_int(v["crash.cause"]) > 0, v         # the line
     radio.link.crash_clear()
     assert radio.view(["crash"]).get("crash.valid") == "0"
-
-
-@pytest.mark.reboot
-@pytest.mark.radio_tx
-def test_crash_while_transmitting(radio, pytestconfig):
-    """A trap while keyed (crash-log.md 8): the FM VFO on --fm-mhz at the lowest power, PTT held over the debug link,
-    then the on-air crash test. The radio keeps the record, restarts and comes back receiving. This sees only the
-    radio's own view: the supply current and the carrier stopping at the crash are checked on the bench."""
-    _need(radio)
-    feats = radio.features()
-    if "CRASH_TEST_TX" not in feats:
-        pytest.skip("built without CONFIG_CRASH_TEST_TX")
-    if "VFO_FM" not in feats:
-        pytest.skip("built without the FM VFO")
-    hz = round(pytestconfig.getoption("--fm-mhz") * 1e6)
-    radio.go_home()
-    if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
-    with radio.vfo_session():
-        L = radio.link
-        L.vfo_set(hz)
-        radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
-        radio.lowest_power()
-        L.crash_clear()
-        L.ptt(True, 3000)
-        try:
-            radio.wait_for(lambda v: v.get("state") == "tx", timeout=2, interval=0.05, what="keyed")
-            L.crash_test("trap", on_air=True)
-        except BaseException:
-            L.ptt(False)
-            raise
-        L.close()
-        time.sleep(2.0)
-        _reconnect(radio)
-        v = radio.view(["crash"])
-        assert v.get("crash.valid") == "1", v
-        assert as_int(v["crash.kind"]) == CRASH_KIND_FAULT, v
-        assert radio.core().get("state") != "tx", "keyed after the restart"
-        radio.link.crash_clear()
